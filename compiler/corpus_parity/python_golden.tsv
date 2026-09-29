@@ -598,7 +598,7 @@ examples/systems/manual_memory.flow	ok	0	2246474296-68	det	-
 examples/systems/memory_pool.flow	ok	0	1813916162-726	det	-
 examples/systems/ring_buffer.flow	ok	0	1379410510-596	det	-
 examples/systems/system_info.flow	ok	0	4032694771-144	det	-
-examples/systems/tiny_pointers.flow	ok	134	2813721591-3426	det	-
+examples/systems/tiny_pointers.flow	ok	134	1724169249-3399	det	-
 examples/threed/billboard_particles.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
 examples/threed/fps_camera.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
 examples/threed/heightmap_terrain.flow	ccfail	-	-	-	clang: error: linker command failed with exit code 1 (use -v to see invocation)
@@ -794,7 +794,7 @@ tests/lang/test_expect_fails.flow	ok	1	4294967295-0	det	-
 tests/lang/test_expr_type_port.flow	ok	0	509901505-43	det	-
 tests/lang/test_extern_type.flow	ok	0	428704804-29	det	-
 tests/lang/test_field_dsl_core.flow	ok	0	2659331179-32	det	-
-tests/lang/test_fileio_ext.flow	ok	0	3044477900-190	det	-
+tests/lang/test_fileio_ext.flow	ok	0	1434989201-190	det	-
 tests/lang/test_fileio_subproc.flow	ok	0	163500948-122	det	-
 tests/lang/test_fir_analysis.flow	ok	0	1859047473-30	det	-
 tests/lang/test_fir_opts.flow	ok	0	4284065851-26	det	-
@@ -872,7 +872,7 @@ tests/lang/test_overload_args_port.flow	ok	0	1868620793-56	det	-
 tests/lang/test_overload_call_port.flow	ok	0	3464632666-48	det	-
 tests/lang/test_overload_param_scope.flow	ok	0	4294967295-0	det	-
 tests/lang/test_overload_port.flow	ok	0	2616444467-36	det	-
-tests/lang/test_overload_registry_port.flow	ok	1	2792502147-21	det	-
+tests/lang/test_overload_registry_port.flow	ok	0	4044022810-51	det	-
 tests/lang/test_overload_select_port.flow	ok	0	1543800749-52	det	-
 tests/lang/test_overload_table_port.flow	ok	0	1754834137-42	det	-
 tests/lang/test_parallel_for.flow	ok	0	4294967295-0	det	-

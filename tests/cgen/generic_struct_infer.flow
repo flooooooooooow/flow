@@ -1,0 +1,16 @@
+# Generic struct literals without type arguments are specialized from the
+# field values or the let annotation.
+struct Box<T> { value: T }
+
+struct Pair<A, B> { first: A, second: B }
+
+function identity<T>(x: T) -> T { return x }
+
+function main() -> i32 {
+    let a: Box<i32> = Box { value: 4 }
+    let b = Box { value: 1.5 }
+    let p = Pair { first: 2, second: "two" }
+    let c = Box<f64> { value: 2.5 }
+    let y = identity<f64>(0.5)
+    return a.value + p.first + (b.value + c.value + y) as i32 - 10
+}

@@ -1,0 +1,11 @@
+# Several externs from one C header build as one unit.
+# From tests/integration/test_stdlib_c_declarations.py.
+extern {
+    function usleep(usec: i32) -> i32
+    function sleep(seconds: i32) -> i32
+    function getcwd(buf: ptr<i8>, size: i32) -> ptr<i8>
+}
+
+function main() -> i32 {
+    return 0
+}

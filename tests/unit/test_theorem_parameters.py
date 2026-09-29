@@ -13,7 +13,6 @@ parser required one, so every such block failed with
 
 import pytest
 
-from flow.c_generator import flow_to_c
 from flow.parser import FlowSyntaxError, parse_flow_code
 
 
@@ -44,19 +43,3 @@ def test_a_function_parameter_still_needs_its_type():
     with pytest.raises(FlowSyntaxError):
         parse_flow_code("function f(a, b) -> i32 { return 0 }")
 
-
-def test_proof_statements_do_not_stop_codegen():
-    """`assume` and `therefore` are for the proof layer and emit nothing.
-
-    The C backend raised NotImplementedError on AssumeStmt, so a file
-    containing one could not be compiled at all.
-    """
-    c = flow_to_c(parse_flow_code("""
-theorem Nat/+.commutes(a, b) {
-    assume Nat/+.zero-right(a)
-    therefore a + b == b + a
-}
-
-function main() -> i32 { return 0 }
-"""))
-    assert "int32_t main" in c

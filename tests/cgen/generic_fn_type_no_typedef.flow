@@ -1,0 +1,20 @@
+# A function type written inside a generic declaration names its type
+# parameters, so it has no C form until the declaration is instantiated
+# (#1047). The Python host emitted no typedef for it. flowc emitted
+# `typedef struct { U (*fn)(void*, T); ... } fn_T__U;`, which C rejects.
+function map_one<T, U>(x: T, f: (T) -> U) -> U {
+    return f(x)
+}
+
+struct Holder<A> {
+    cb: (A) -> i32
+}
+
+# A concrete function type in the same program still gets its typedef.
+function apply(f: (i32) -> i32, x: i32) -> i32 {
+    return f(x)
+}
+
+function main() -> i32 {
+    return 0
+}

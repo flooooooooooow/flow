@@ -1,0 +1,21 @@
+# An output section lowers to <Flow>_outputs, which step calls after it
+# integrates the state.
+flow Motor {
+    state speed : f64 = 0.0
+    input voltage : f64
+    output torque : f64 = 0.6 * speed
+    param damping : f64 = 0.1
+
+    speed evolves as voltage - damping * speed
+}
+
+function main() -> i32 {
+    let mut m: Motor = Motor_new()
+    m.voltage = 10.0
+    Motor_step(&m, 1.0)
+    # speed = 10, torque = 6
+    if m.torque > 5.99 && m.torque < 6.01 {
+        return 0
+    }
+    return 1
+}

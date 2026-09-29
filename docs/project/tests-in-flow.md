@@ -9,6 +9,12 @@ and a nonzero check number on failure, executed by the shell harness.
 This document classifies every Python test file and records the pilot
 migration.
 
+The Python C backend is now retired, and flowc is the only C compiler. Python
+tests that drove the Python C backend are removed or rewritten against flowc.
+Language tests are `tests/lang` (`./flow test-lang`), and C output goldens are
+`tests/cgen` (`tests/cgen/run.sh`). The inventory below records the files as
+they were classified before the retirement.
+
 ## Classes
 
 - (a) BEHAVIORAL. Transpile, compile, run, assert exit code or stdout.
@@ -92,8 +98,9 @@ each file compiles, so it stays green.
 
 ### Run tests that stay in Python
 
-These behaviours pass under the Python host but fail under Stage-A, or fail
-the strict checker. Each Python test stays until its issue is fixed.
+These behaviours passed under the retired Python C backend but failed under
+flowc, or failed the strict checker, when this table was written. Each
+Python test stayed until its issue was fixed.
 
 | Python test | Blocker |
 |---|---|

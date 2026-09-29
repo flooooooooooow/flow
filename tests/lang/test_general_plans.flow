@@ -1,5 +1,5 @@
 # Test for general_plans.flow port of general_plans.py (#147).
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_general_plans.flow
+# Run with: ./flow run tests/lang/test_general_plans.flow
 # Exit 0 on success.
 
 import "compiler/src/general_plans.flow"

@@ -1,5 +1,5 @@
 # Test for lsp_intel.flow port of lsp_intel.py.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_lsp_intel.flow
+# Run with: ./flow run tests/lang/test_lsp_intel.flow
 # Exit 0 on success.
 
 import "compiler/src/lsp_intel.flow"

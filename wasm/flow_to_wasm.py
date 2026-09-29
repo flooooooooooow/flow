@@ -64,23 +64,22 @@ class FlowToWasmConverter:
             return False
     
     def flow_to_c(self, flow_file):
-        """Compile FLOW to C using the transpiler"""
-        try:
-            from flow.parser import parse_flow_code
-            from flow.c_generator import flow_to_c
-            
-            with open(flow_file, 'r') as f:
-                code = f.read()
-            
-            declarations = parse_flow_code(code)
-            c_code = flow_to_c(declarations)
-            return c_code
-            
-        except Exception as e:
-            print(f"Error compiling FLOW to C: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
+        """Compile FLOW to C with flowc (compiler/scripts/flowc_emit.sh)"""
+        import tempfile
+
+        emit = self.project_root / "compiler" / "scripts" / "flowc_emit.sh"
+        with tempfile.TemporaryDirectory(prefix="flow_to_wasm_") as tmp:
+            c_path = Path(tmp) / (Path(flow_file).stem + ".c")
+            result = subprocess.run(
+                [str(emit), str(flow_file), str(c_path)],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0 or not c_path.exists():
+                detail = result.stderr.strip() or result.stdout.strip()
+                print(f"Error compiling FLOW to C: {detail}")
+                return None
+            return c_path.read_text()
     
     def compile_wasm(self, c_file, output_path, output_name):
         """Try to compile C to WASM using emscripten"""

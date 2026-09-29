@@ -1,0 +1,19 @@
+# Top-level `let mut` lowers to a file-scope C static.
+let mut counter: i32 = 0
+let mut table: array<i32, 4> = [1, 2, 3, 4]
+let mut zeros: array<f32, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+let mut head: ptr<i32> = null
+
+function bump() -> i32 {
+    counter = counter + 1
+    return counter
+}
+
+function main() -> i32 {
+    bump()
+    bump()
+    if head != null {
+        return 100
+    }
+    return bump() + table[3] + (zeros[7] as i32)
+}

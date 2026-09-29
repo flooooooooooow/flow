@@ -4,7 +4,7 @@
 Every runnable snippet in docs/tutorials/*.md is extracted exactly the way
 scripts/build_wiki.py's build_tutorial_exercises() extracts it, then run twice:
 
-  native   flow.transpiler -> C -> clang -> execute, capture stdout
+  native   flowc -> C -> clang -> execute, capture stdout
   browser  node shim around site/flow-compile.js, capture stdout
 
 The two outputs are diffed. Each snippet lands in one bucket:
@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -100,8 +99,7 @@ def extract_snippets() -> list[dict]:
 
 
 def run_native(snippets: list[dict], work: Path, timeout: int) -> dict:
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
+    emit = ROOT / "compiler" / "scripts" / "flowc_emit.sh"
     results: dict[str, dict] = {}
     for sn in snippets:
         sid = sn["id"]
@@ -111,8 +109,8 @@ def run_native(snippets: list[dict], work: Path, timeout: int) -> dict:
         binf = work / f"{sid}.bin"
         rec: dict = {"id": sid}
         proc = subprocess.run(
-            [sys.executable, "-m", "flow.transpiler", str(src), "--c", "-o", str(cfile)],
-            capture_output=True, text=True, cwd=str(ROOT), env=env, timeout=timeout,
+            [str(emit), str(src), str(cfile)],
+            capture_output=True, text=True, cwd=str(ROOT), timeout=timeout,
         )
         if proc.returncode != 0:
             rec["stage"] = "transpile"
@@ -120,7 +118,8 @@ def run_native(snippets: list[dict], work: Path, timeout: int) -> dict:
             results[sid] = rec
             continue
         proc = subprocess.run(
-            ["clang", "-w", str(cfile), "-o", str(binf), "-lm"],
+            ["clang", "-w", "-D_DEFAULT_SOURCE", "-I" + str(ROOT / "runtime"),
+             str(cfile), "-o", str(binf), "-lm"],
             capture_output=True, text=True, timeout=timeout,
         )
         if proc.returncode != 0:

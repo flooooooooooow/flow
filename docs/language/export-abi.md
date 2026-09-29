@@ -3,27 +3,41 @@
 Flow provides a stable export path so WASM and FFI consumers do not need to
 know the compiler's overload-mangling scheme.
 
-## CLI flags
+flowc emits the aliases (#1030). The retired Python C backend emitted the
+same shape.
+
+## Flags
 
 ```
-flow transpile prog.flow --c --export foo bar --module-name mymod -o prog.c
+compiler/scripts/flowc_emit.sh --export foo --export bar prog.flow prog.c
+FLOWC_EXPORT="foo,bar" FLOWC_IN=prog.flow FLOWC_OUT=prog.c flowc
 ```
 
-- `--export NAME ...`: emit a visible alias `flow_export_<name>` for each
-  named function. The alias forwards to the mangled C symbol.
-- `--module-name NAME`: sets the module name (used by `flow wasm` for the
-  Emscripten MODULARIZE name and as a prefix in future ABI versions).
+- `--export NAME` (repeatable, or a comma list; `FLOWC_EXPORT`): emit a
+  visible alias `flow_export_<name>` for each named function. The alias
+  forwards to the C symbol. A name no module defines gets a
+  `/* --export NAME: not found in this TU */` comment.
+- `--library` (`FLOWC_LIBRARY=1`): emit a unit to link next to a program.
+  It has no runtime checks and no fault handler, keeps plain C names with
+  external linkage, needs no `main`, and never moves `main` onto a fiber.
+- `--module-name NAME`: accepted for older command lines. It does not change
+  the C.
 
 ## Generated aliases
 
-For a Flow function `function add(a: i32, b: i32) -> i32`, the C backend
-mangles the symbol to `add_i32_i32`. With `--export add`, the generated C
-also contains:
+flowc keeps the plain name of a function that is not overloaded and mangles
+overloads by parameter type (`pick(a: i32)` becomes `pick_i32`). With
+`--export add --export pick`, the generated C ends with:
 
 ```c
-__attribute__((visibility("default")))
-int32_t flow_export_add(int32_t a, int32_t b) { return add_i32_i32(a, b); }
+/* Flow export aliases (#396) */
+__attribute__((visibility("default"))) int32_t flow_export_add(int32_t a, int32_t b) { return add(a, b); }
+__attribute__((visibility("default"))) int32_t flow_export_pick(int32_t a) { return pick_i32(a); }
 ```
+
+An overloaded name aliases its first definition. A `void` function's alias
+calls it without `return`. In a bundle, each module aliases the names it
+defines.
 
 The consumer links against `flow_export_add`, which is stable across
 overload-resolution changes.
@@ -31,7 +45,7 @@ overload-resolution changes.
 ## Emscripten usage
 
 ```
-flow transpile prog.flow --c --export add --module-name mymod -o build/prog.c
+compiler/scripts/flowc_emit.sh --library --export add prog.flow build/prog.c
 emcc build/prog.c -o build/prog.js \
   -sEXPORTED_FUNCTIONS=_flow_export_add \
   -sEXPORTED_RUNTIME_METHODS=ccall,cwrap

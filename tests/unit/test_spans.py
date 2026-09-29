@@ -1,6 +1,6 @@
 """Spans: borrowed views over contiguous storage (docs/language/spans.md).
 
-Layer 1 — concrete element types. Covers both spellings desugaring to one
+Layer 1: concrete element types. Covers both spellings desugaring to one
 type, the two-word lowering, auto-borrow at call sites, slice expressions,
 and every diagnostic the design doc specifies.
 """
@@ -12,7 +12,7 @@ import pytest
 from flow.parser import parse_flow_code
 from flow.type_checker import TypeKind
 
-from .compiler_helpers import errors, to_c
+from .compiler_helpers import errors
 
 
 def _param_type(source: str, function: str = "f", index: int = 0):
@@ -65,89 +65,8 @@ def test_span_is_its_own_semantic_kind():
 
 # --- Lowering ----------------------------------------------------------------
 
-
-def test_typedef_emitted_per_element_and_mutability():
-    c = to_c(
-        """
-        function reads(v: span<f32>) -> f32 { return v[0] }
-        function writes(v: span<mut f32>) { v[0] = 1.0 }
-        function main() -> i32 { return 0 }
-        """
-    )
-    assert (
-        "typedef struct { const float *data; int64_t len; } flow_span_const_f32;"
-        in c
-    )
-    assert "typedef struct { float *data; int64_t len; } flow_span_mut_f32;" in c
-
-
-def test_typedef_emitted_once_per_program():
-    c = to_c(
-        """
-        function a(v: span<f32>) -> f32 { return v[0] }
-        function b(v: span<f32>) -> f32 { return v[1] }
-        function c(v: span<f32, 4>) -> f32 { return v[2] }
-        function main() -> i32 { return 0 }
-        """
-    )
-    assert c.count("} flow_span_const_f32;") == 1
-
-
-def test_span_parameter_lowers_to_the_view_struct():
-    c = to_c(
-        """
-        function total(values: span<i32>) -> i32 { return values[0] }
-        function main() -> i32 { return 0 }
-        """
-    )
-    assert "int32_t total_span_const_i32(flow_span_const_i32 values)" in c
-
-
-# --- Auto-borrow -------------------------------------------------------------
-
-
-def test_fixed_array_auto_borrows_at_the_call_site():
-    c = to_c(
-        """
-        function total(values: span<i32>) -> i32 { return values[0] }
-        function main() -> i32 {
-            let xs: array<i32, 4> = [1, 2, 3, 4]
-            return total(xs)
-        }
-        """
-    )
-    assert ".data = (const int32_t*)(xs), .len = (int64_t)4" in c
-
-
-def test_slice_with_literal_bounds_lowers_to_pointer_offset():
-    c = to_c(
-        """
-        function total(values: span<i32>) -> i32 { return values[0] }
-        function main() -> i32 {
-            let xs: array<i32, 8> = [1, 2, 3, 4, 5, 6, 7, 8]
-            return total(xs[2..5])
-        }
-        """
-    )
-    assert "((xs)) + (2)" in c
-    assert "(5) - (2)" in c
-
-
-def test_slice_with_runtime_bounds_uses_the_same_form():
-    c = to_c(
-        """
-        function total(values: span<i32>) -> i32 { return values[0] }
-        function main() -> i32 {
-            let xs: array<i32, 8> = [1, 2, 3, 4, 5, 6, 7, 8]
-            let mut lo: i32 = 1
-            let mut hi: i32 = 6
-            return total(xs[lo..hi])
-        }
-        """
-    )
-    assert "((xs)) + (lo)" in c
-    assert "(hi) - (lo)" in c
-
+# The view typedef, parameter lowering, auto-borrow and slice lowering are
+# pinned against flowc by tests/cgen/spans_lowering.
 
 # The six compile-and-run cases (summing a borrowed array, filling through a
 # mutable span, a slice passed onward, a span forwarded unchanged, a

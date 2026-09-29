@@ -2,20 +2,12 @@
 
 Card: evolves-syntax (docs/vision/north-star.md sections 1 and 2).
 Covers: parse shapes, contextual-keyword non-regression, lowering and
-validation, strict type checking of lowered output, generated-C structure,
-and an end-to-end compile-and-run trajectory check against a Python
-reference Euler integration.
+validation, and strict type checking of lowered output. The generated C
+and the end-to-end trajectory are tests/cgen/evolves_*.
 """
-
-import math
-import shutil
-import subprocess
-import sys
-from pathlib import Path
 
 import pytest
 
-from flow.c_generator import flow_to_c
 from flow.parser import (
     BinaryOperation,
     FlowDecl,
@@ -338,127 +330,5 @@ flow F {
         )
 
 
-class TestCodegenStructure:
-    def generate(self, code: str = PENDULUM) -> str:
-        return flow_to_c(parse_lowered(code))
-
-    def test_unmangled_c_api(self):
-        c_code = self.generate()
-        assert "Pendulum Pendulum_new(void)" in c_code
-        assert "void Pendulum_init(Pendulum* self)" in c_code
-        assert (
-            "void Pendulum_derivs(Pendulum* self, double* d_angle, "
-            "double* d_velocity)" in c_code
-        )
-        assert "void Pendulum_step(Pendulum* self, double dt)" in c_code
-        # No mangled variants of the flow API.
-        assert "Pendulum_step_ptr_Pendulum" not in c_code
-        assert "Pendulum_derivs_ptr_Pendulum" not in c_code
-
-    def test_struct_fields(self):
-        c_code = self.generate()
-        struct_body = c_code.split("struct Pendulum {", 1)[1].split("};", 1)[0]
-        for field in ("angle", "velocity", "gravity", "length", "damping"):
-            assert f"double {field};" in struct_body
-
-    def test_step_calls_derivs_before_integrating(self):
-        c_code = self.generate()
-        step_body = c_code.split(
-            "void Pendulum_step(Pendulum* self, double dt) {", 1
-        )[1]
-        step_body = step_body.split("\n}", 1)[0]
-        derivs_at = step_body.index("Pendulum_derivs(self")
-        angle_write = step_body.index("self->angle =")
-        velocity_write = step_body.index("self->velocity =")
-        assert derivs_at < angle_write
-        assert derivs_at < velocity_write
-        # Euler update reads the derivative locals, scaled by dt.
-        assert "self->angle + (d_angle * dt)" in step_body
-        assert "self->velocity + (d_velocity * dt)" in step_body
-
-    def test_derivs_reads_pre_step_state_only(self):
-        c_code = self.generate()
-        derivs_body = c_code.split(
-            "void Pendulum_derivs(Pendulum* self, double* d_angle, "
-            "double* d_velocity) {", 1
-        )[1].split("\n}", 1)[0]
-        assert "d_angle[0] = self->velocity;" in derivs_body
-        # No writes to self inside derivs.
-        assert "self->angle =" not in derivs_body
-        assert "self->velocity =" not in derivs_body
-
-    def test_outputs_generated_and_called_after_integration(self):
-        code = """
-flow Motor {
-    state speed : f64 = 0.0
-    input voltage : f64
-    output torque : f64 = 0.6 * speed
-    param damping : f64 = 0.1
-
-    speed evolves as voltage - damping * speed
-}
-"""
-        c_code = flow_to_c(parse_lowered(code))
-        assert "void Motor_outputs(Motor* self)" in c_code
-        step_body = c_code.split("void Motor_step(Motor* self, double dt)", 1)[1]
-        step_body = step_body.split("Motor_outputs(self);", 1)
-        assert len(step_body) == 2  # outputs called inside step
-        assert "self->speed =" in step_body[0]  # integration first
-
-
-class TestEndToEnd:
-    @pytest.mark.skipif(shutil.which("clang") is None, reason="clang not found")
-    def test_compile_and_run_matches_reference_euler(self, tmp_path):
-        program = PENDULUM + """
-extern {
-    function printf(fmt: string, val: f64) -> i32
-}
-
-function main() -> i32 {
-    let mut p: Pendulum = Pendulum_new()
-    for k in 0 to 2400 {
-        Pendulum_step(&p, 0.01)
-    }
-    printf("%.15f\\n", p.angle)
-    printf("%.15f\\n", p.velocity)
-    return 0
-}
-"""
-        src = tmp_path / "pendulum_e2e.flow"
-        src.write_text(program)
-        c_file = tmp_path / "pendulum_e2e.c"
-        exe = tmp_path / "pendulum_e2e"
-        repo_root = Path(__file__).resolve().parents[2]
-
-        transpile = subprocess.run(
-            [sys.executable, "-m", "flow.transpiler", str(src), "--c",
-             "--strict", "-o", str(c_file)],
-            capture_output=True, text=True, timeout=120,
-            cwd=repo_root, env={"PYTHONPATH": str(repo_root / "src"),
-                                "PATH": "/usr/bin:/bin"},
-        )
-        assert transpile.returncode == 0, transpile.stderr
-        compile_run = subprocess.run(
-            ["clang", str(c_file), "-o", str(exe), "-lm"],
-            capture_output=True, text=True, timeout=120,
-        )
-        assert compile_run.returncode == 0, compile_run.stderr
-        run = subprocess.run(
-            [str(exe)], capture_output=True, text=True, timeout=60
-        )
-        assert run.returncode == 0
-        angle, velocity = (float(line) for line in run.stdout.split())
-
-        # Reference: same Euler integration in Python.
-        ref_angle, ref_velocity = 2.0, 0.0
-        for _ in range(2400):
-            d_angle = ref_velocity
-            d_velocity = -(9.81 / 1.0) * math.sin(ref_angle) - 0.5 * ref_velocity
-            ref_angle += d_angle * 0.01
-            ref_velocity += d_velocity * 0.01
-
-        assert abs(angle - ref_angle) < 1e-9
-        assert abs(velocity - ref_velocity) < 1e-9
-        # Damped pendulum settles near the stable equilibrium.
-        assert abs(angle) < 0.05
-        assert abs(velocity) < 0.05
+# The generated-C structure and the end-to-end Euler trajectory checks are
+# tests/cgen/evolves_pendulum and tests/cgen/evolves_outputs.

@@ -21,7 +21,7 @@ Run any example natively:
 Record one headlessly, no display needed:
 
 ```bash
-FLOW_HOST=python ./flow record examples/evoleco/wright_fisher.flow \
+./flow record examples/evoleco/wright_fisher.flow \
   --frames 120 --skip 2 --gif docs/demos/evoleco/wright_fisher.gif
 ```
 

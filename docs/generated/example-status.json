@@ -1,14 +1,15 @@
 {
-  "generated": "2026-08-21",
+  "generated": "2026-09-29",
   "totals": {
-    "verified": 594,
-    "expected-error": 9
+    "verified": 623,
+    "expected-error": 10,
+    "ignored": 2
   },
   "blocks": [
     {
       "key": "README.md#4cdecf27f98e",
       "path": "README.md",
-      "line": 51,
+      "line": 53,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -16,7 +17,7 @@
     {
       "key": "README.md#7dbb128f9b73",
       "path": "README.md",
-      "line": 76,
+      "line": 78,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -24,7 +25,7 @@
     {
       "key": "README.md#caf06a8aad02",
       "path": "README.md",
-      "line": 238,
+      "line": 239,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -32,7 +33,7 @@
     {
       "key": "README.md#1fa4df611254",
       "path": "README.md",
-      "line": 259,
+      "line": 260,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -64,7 +65,7 @@
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#8d364bae4b7e",
       "path": "docs/AI_FLOW_HANDBOOK.md",
-      "line": 502,
+      "line": 493,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -72,7 +73,7 @@
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#3645e09701ab",
       "path": "docs/AI_FLOW_HANDBOOK.md",
-      "line": 580,
+      "line": 570,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -80,7 +81,7 @@
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#e8163ee23708",
       "path": "docs/AI_FLOW_HANDBOOK.md",
-      "line": 604,
+      "line": 594,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -88,7 +89,7 @@
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#7dbb128f9b73",
       "path": "docs/AI_FLOW_HANDBOOK.md",
-      "line": 624,
+      "line": 614,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -96,7 +97,7 @@
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#8d5eb65c2b2e",
       "path": "docs/AI_FLOW_HANDBOOK.md",
-      "line": 654,
+      "line": 644,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -104,7 +105,7 @@
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#026de532b371",
       "path": "docs/AI_FLOW_HANDBOOK.md",
-      "line": 711,
+      "line": 701,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -112,7 +113,7 @@
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#5f44c64b37f4",
       "path": "docs/AI_FLOW_HANDBOOK.md",
-      "line": 729,
+      "line": 719,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -120,7 +121,7 @@
     {
       "key": "docs/AI_FLOW_HANDBOOK.md#4d611b2b76a6",
       "path": "docs/AI_FLOW_HANDBOOK.md",
-      "line": 981,
+      "line": 970,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -160,7 +161,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#0ab0dffe953c",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 356,
+      "line": 360,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
@@ -168,7 +169,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#fcedd2b3013d",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 373,
+      "line": 377,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -176,7 +177,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#0b59ab2e6047",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 424,
+      "line": 428,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -184,7 +185,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#100cfe4eeb26",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 448,
+      "line": 452,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -192,7 +193,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#8b941731e66d",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 607,
+      "line": 614,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
@@ -200,7 +201,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#e3d945b4e92e",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 713,
+      "line": 721,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
@@ -208,7 +209,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#4bd6f3746d63",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 792,
+      "line": 800,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -216,7 +217,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#f5fec4e3617b",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 819,
+      "line": 827,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -224,7 +225,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#0a1aaa9252df",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 852,
+      "line": 860,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -232,7 +233,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#8e9217f6533f",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 944,
+      "line": 952,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -240,7 +241,7 @@
     {
       "key": "docs/LANGUAGE_SPEC.md#70806f82a0e2",
       "path": "docs/LANGUAGE_SPEC.md",
-      "line": 1037,
+      "line": 1045,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
@@ -1080,7 +1081,7 @@
     {
       "key": "docs/book/16-targets-and-distribution.md#eb44a7f5ff5d",
       "path": "docs/book/16-targets-and-distribution.md",
-      "line": 56,
+      "line": 58,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1088,7 +1089,7 @@
     {
       "key": "docs/book/17-engineering-and-verification.md#c1641da9bd25",
       "path": "docs/book/17-engineering-and-verification.md",
-      "line": 178,
+      "line": 177,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1153,6 +1154,166 @@
       "key": "docs/book/appendix-a-language-card.md#dd0d32f2a853",
       "path": "docs/book/appendix-a-language-card.md",
       "line": 78,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/book/appendix-c-command-reference.md#6ba6505fb8e0",
+      "path": "docs/book/appendix-c-command-reference.md",
+      "line": 87,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/community/rosetta-code.md#4cdecf27f98e",
+      "path": "docs/community/rosetta-code.md",
+      "line": 37,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/community/rosetta-code.md#e34ae7326b0e",
+      "path": "docs/community/rosetta-code.md",
+      "line": 52,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/community/rosetta-code.md#1ebffe7ae46f",
+      "path": "docs/community/rosetta-code.md",
+      "line": 73,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/community/rosetta-code.md#97d46498f0a8",
+      "path": "docs/community/rosetta-code.md",
+      "line": 92,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/community/rosetta-code.md#f03fdcbaecf3",
+      "path": "docs/community/rosetta-code.md",
+      "line": 109,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/community/rosetta-code.md#6944202ebfe3",
+      "path": "docs/community/rosetta-code.md",
+      "line": 129,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/community/rosetta-code.md#6b860cead7c6",
+      "path": "docs/community/rosetta-code.md",
+      "line": 151,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparison.md#e8787bc6437d",
+      "path": "docs/comparison.md",
+      "line": 44,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/c.md#e8787bc6437d",
+      "path": "docs/comparisons/c.md",
+      "line": 23,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/c.md#0d5d264a32b1",
+      "path": "docs/comparisons/c.md",
+      "line": 83,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/cpp.md#e8787bc6437d",
+      "path": "docs/comparisons/cpp.md",
+      "line": 17,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/cpp.md#0d5d264a32b1",
+      "path": "docs/comparisons/cpp.md",
+      "line": 70,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/go.md#e8787bc6437d",
+      "path": "docs/comparisons/go.md",
+      "line": 13,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/julia.md#e8787bc6437d",
+      "path": "docs/comparisons/julia.md",
+      "line": 13,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/mojo.md#e8787bc6437d",
+      "path": "docs/comparisons/mojo.md",
+      "line": 17,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/python.md#e8787bc6437d",
+      "path": "docs/comparisons/python.md",
+      "line": 13,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/rust.md#e8787bc6437d",
+      "path": "docs/comparisons/rust.md",
+      "line": 17,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/rust.md#0d5d264a32b1",
+      "path": "docs/comparisons/rust.md",
+      "line": 65,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/zig.md#e8787bc6437d",
+      "path": "docs/comparisons/zig.md",
+      "line": 13,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1226,7 +1387,7 @@
       "path": "docs/effects-showcase.md",
       "line": 155,
       "status": "verified",
-      "mode": "stmt-wrap",
+      "mode": "split-wrap",
       "stage": "codegen"
     },
     {
@@ -1314,7 +1475,7 @@
       "path": "docs/effects-showcase.md",
       "line": 363,
       "status": "verified",
-      "mode": "stmt-wrap",
+      "mode": "split-wrap",
       "stage": "codegen"
     },
     {
@@ -1392,7 +1553,7 @@
     {
       "key": "docs/getting-started.md#4cdecf27f98e",
       "path": "docs/getting-started.md",
-      "line": 31,
+      "line": 42,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1400,7 +1561,7 @@
     {
       "key": "docs/getting-started.md#b211e45ec479",
       "path": "docs/getting-started.md",
-      "line": 50,
+      "line": 61,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1408,7 +1569,7 @@
     {
       "key": "docs/getting-started.md#890b21936236",
       "path": "docs/getting-started.md",
-      "line": 83,
+      "line": 94,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1416,7 +1577,7 @@
     {
       "key": "docs/getting-started.md#e8787bc6437d",
       "path": "docs/getting-started.md",
-      "line": 108,
+      "line": 119,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1424,7 +1585,7 @@
     {
       "key": "docs/language/README.md#450e3b0a9a1d",
       "path": "docs/language/README.md",
-      "line": 38,
+      "line": 39,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
@@ -1432,7 +1593,7 @@
     {
       "key": "docs/language/README.md#2e465ad3d003",
       "path": "docs/language/README.md",
-      "line": 44,
+      "line": 45,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1440,7 +1601,7 @@
     {
       "key": "docs/language/README.md#c83e3fc38802",
       "path": "docs/language/README.md",
-      "line": 51,
+      "line": 52,
       "status": "verified",
       "mode": "split-wrap",
       "stage": "codegen"
@@ -1737,9 +1898,9 @@
       "key": "docs/language/modules-namespacing.md#7336d9635cd6",
       "path": "docs/language/modules-namespacing.md",
       "line": 120,
-      "status": "verified",
-      "mode": "standalone",
-      "stage": "codegen"
+      "status": "expected-error",
+      "stage": "types",
+      "detail": "flowc: flowc gather: block.flow: cannot resolve import .alpha"
     },
     {
       "key": "docs/language/modules.md#3c178c94a485",
@@ -1822,15 +1983,23 @@
       "stage": "codegen"
     },
     {
+      "key": "docs/language/recognition-semantics.md#4109d10387b0",
+      "path": "docs/language/recognition-semantics.md",
+      "line": 28,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
       "key": "docs/language/shaders.md#226fbe4da600",
       "path": "docs/language/shaders.md",
-      "line": 13,
+      "line": 17,
       "status": "verified",
       "mode": "standalone",
       "stage": "shader"
     },
     {
-      "key": "docs/language/spans.md#3ae148c11ab1",
+      "key": "docs/language/spans.md#47009bd825c0",
       "path": "docs/language/spans.md",
       "line": 19,
       "status": "verified",
@@ -1840,7 +2009,7 @@
     {
       "key": "docs/language/spans.md#ad33eb3de2cd",
       "path": "docs/language/spans.md",
-      "line": 32,
+      "line": 37,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1848,7 +2017,7 @@
     {
       "key": "docs/language/spans.md#518e6950c187",
       "path": "docs/language/spans.md",
-      "line": 56,
+      "line": 61,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1856,7 +2025,7 @@
     {
       "key": "docs/language/spans.md#0e64ed1280d5",
       "path": "docs/language/spans.md",
-      "line": 70,
+      "line": 75,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1864,7 +2033,7 @@
     {
       "key": "docs/language/spans.md#ab7bd3a2db8d",
       "path": "docs/language/spans.md",
-      "line": 99,
+      "line": 104,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1872,7 +2041,7 @@
     {
       "key": "docs/language/spans.md#f20af5f97f03",
       "path": "docs/language/spans.md",
-      "line": 165,
+      "line": 170,
       "status": "expected-error",
       "stage": "types",
       "detail": "span outlives borrowed storage `local` at line 3, column 5"
@@ -1880,7 +2049,7 @@
     {
       "key": "docs/language/spans.md#82181f61c982",
       "path": "docs/language/spans.md",
-      "line": 233,
+      "line": 238,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1902,20 +2071,52 @@
       "stage": "codegen"
     },
     {
-      "key": "docs/language/syntax.md#262453d93453",
+      "key": "docs/language/syntax.md#cbea162176fe",
       "path": "docs/language/syntax.md",
       "line": 156,
       "status": "verified",
-      "mode": "stmt-wrap",
+      "mode": "split-wrap",
       "stage": "codegen"
     },
     {
       "key": "docs/language/syntax.md#0c049903ce23",
       "path": "docs/language/syntax.md",
-      "line": 161,
+      "line": 166,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
+    },
+    {
+      "key": "docs/language/testing.md#f591c841dd97",
+      "path": "docs/language/testing.md",
+      "line": 11,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/testing.md#76ba94580623",
+      "path": "docs/language/testing.md",
+      "line": 65,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/testing.md#90120f93fd6f",
+      "path": "docs/language/testing.md",
+      "line": 157,
+      "status": "ignored",
+      "detail": "illustrative placeholder syntax",
+      "reason": "illustrative placeholder syntax"
+    },
+    {
+      "key": "docs/language/testing.md#a2186bce2c34",
+      "path": "docs/language/testing.md",
+      "line": 203,
+      "status": "ignored",
+      "detail": "illustrative placeholder syntax",
+      "reason": "illustrative placeholder syntax"
     },
     {
       "key": "docs/language/types.md#4d2e7427008d",
@@ -2400,7 +2601,7 @@
     {
       "key": "docs/project/CHANGELOG.md#d40e0f3ed5e8",
       "path": "docs/project/CHANGELOG.md",
-      "line": 22,
+      "line": 135,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
@@ -2433,6 +2634,14 @@
       "key": "docs/python-target.md#1eb8a4795a0a",
       "path": "docs/python-target.md",
       "line": 96,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/python-target.md#20ad9038df40",
+      "path": "docs/python-target.md",
+      "line": 158,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -3194,7 +3403,7 @@
       "path": "docs/tutorials/effects-basics.md",
       "line": 149,
       "status": "verified",
-      "mode": "stmt-wrap",
+      "mode": "split-wrap",
       "stage": "codegen"
     },
     {
@@ -3393,6 +3602,54 @@
       "key": "docs/tutorials/evolution.md#237d8860e8bc",
       "path": "docs/tutorials/evolution.md",
       "line": 328,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/flow-in-one-hour.md#4cdecf27f98e",
+      "path": "docs/tutorials/flow-in-one-hour.md",
+      "line": 27,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/flow-in-one-hour.md#091acd86faff",
+      "path": "docs/tutorials/flow-in-one-hour.md",
+      "line": 44,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/flow-in-one-hour.md#5fe5c28a3384",
+      "path": "docs/tutorials/flow-in-one-hour.md",
+      "line": 61,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/flow-in-one-hour.md#6944202ebfe3",
+      "path": "docs/tutorials/flow-in-one-hour.md",
+      "line": 89,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/flow-in-one-hour.md#0f1e1821f376",
+      "path": "docs/tutorials/flow-in-one-hour.md",
+      "line": 111,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/flow-in-one-hour.md#7dbb128f9b73",
+      "path": "docs/tutorials/flow-in-one-hour.md",
+      "line": 134,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -3920,7 +4177,7 @@
     {
       "key": "docs/tutorials/ml-on-macbook.md#02cf9c614b7a",
       "path": "docs/tutorials/ml-on-macbook.md",
-      "line": 48,
+      "line": 47,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -3928,7 +4185,7 @@
     {
       "key": "docs/tutorials/ml-on-macbook.md#3c848638c9be",
       "path": "docs/tutorials/ml-on-macbook.md",
-      "line": 69,
+      "line": 68,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -3936,7 +4193,7 @@
     {
       "key": "docs/tutorials/ml-on-macbook.md#64772dbb5db2",
       "path": "docs/tutorials/ml-on-macbook.md",
-      "line": 245,
+      "line": 244,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -3944,7 +4201,7 @@
     {
       "key": "docs/tutorials/ml-on-macbook.md#549c4db8dc6a",
       "path": "docs/tutorials/ml-on-macbook.md",
-      "line": 262,
+      "line": 261,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -3952,7 +4209,7 @@
     {
       "key": "docs/tutorials/ml-on-macbook.md#b4234c5d9975",
       "path": "docs/tutorials/ml-on-macbook.md",
-      "line": 280,
+      "line": 279,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -3960,7 +4217,7 @@
     {
       "key": "docs/tutorials/ml-on-macbook.md#02d5408bd370",
       "path": "docs/tutorials/ml-on-macbook.md",
-      "line": 297,
+      "line": 296,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -3968,7 +4225,7 @@
     {
       "key": "docs/tutorials/ml-on-macbook.md#5d20ad5b0985",
       "path": "docs/tutorials/ml-on-macbook.md",
-      "line": 315,
+      "line": 314,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -3976,7 +4233,7 @@
     {
       "key": "docs/tutorials/ml-on-macbook.md#9c032d8c4432",
       "path": "docs/tutorials/ml-on-macbook.md",
-      "line": 331,
+      "line": 330,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"

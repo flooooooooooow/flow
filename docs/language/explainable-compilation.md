@@ -13,13 +13,14 @@ A decision like that is only trustworthy if you can look at it.
 ./flow explain program.flow
 ```
 
-or, through the transpiler directly:
+or, through flowc directly:
 
 ```
-python3 -m flow.transpiler program.flow --c --strict --explain -o out.c
+FLOWC_EXPLAIN=1 compiler/scripts/flowc_emit.sh program.flow out.c
 ```
 
 The report goes to stderr, so it does not mix with generated output.
+`FLOWC_EXPLAIN_SOURCE` sets the file name the header prints.
 
 ## What it prints
 
@@ -48,7 +49,7 @@ Compilation plan for tests/lang/test_sort_plans.flow
 
       chose counting: cheapest applicable plan: 2560 vs 10240 for natural_merge (75% less work)
 
-Costs are estimated element operations from a static model, not measurements.
+Costs are estimated element operations from a static model. They are not measurements.
 ```
 
 Reading it top to bottom:
@@ -103,43 +104,34 @@ left standing. An ordinary rejection already explains itself on its own line.
 
 ## How a construct joins in
 
-`src/flow/plan_selector.py` is construct-agnostic. Registering an
-implementation takes four things: when it applies, what it costs, what
-scratch it claims, and what a programmer could change if it is refused.
+`compiler/src/sort_plans.flow` holds the selector and the plans. A plan is a
+code with four answers: when it applies (`plan_check`), what it costs
+(`plan_cost`), what scratch it claims (`plan_scratch`), and what a programmer
+could change if it is refused (`plan_resolution`).
 
-```python
-register(
-    Implementation(
-        name="binary_search",
-        construct="search",
-        summary="lower-bound binary search; provenance proves the array is ascending",
-        applicable=lambda f: (
-            None
-            if f.get("input_order", "unknown").startswith("asc")
-            else f"input is not proven to be in ascending order "
-                 f"(provenance: {f.get('input_order')})"
-        ),
-        cost=lambda f: math.log2(max(2.0, float(f.n))),
-        rank=0,
-        resolution="sort the array immediately before searching it",
-    )
-)
+```flow-pseudocode
+if plan == FLOWC_PLAN_BINARY_SEARCH {
+    if plan_order_is_asc(f.order) == 1 {
+        return ""
+    }
+    return "input is not proven to be in ascending order (provenance: ...)"
+}
 ```
 
-The applicability predicate returns `None` to mean yes, and otherwise the
-sentence the report prints. Writing the rejection as a sentence rather than a
-boolean is the whole design: a constraint that cannot explain itself is not
-worth having.
+The applicability check returns an empty string to mean yes, and otherwise
+the sentence the report prints. Writing the rejection as a sentence rather
+than a boolean is the whole design: a constraint that cannot explain itself
+is not worth having.
 
-`select(facts, location, detail)` then runs every implementation for the
-construct, applies the scratch budget, keeps the cheapest survivor, and
-returns a record of all of it. The C generator appends each record to
-`self._selections`, and `flow_to_c` exposes the list as
-`flow_to_c.last_selections`.
+`flowc_plan_select(facts, location, detail, index, report)` then runs every
+plan for the construct, applies the scratch budget, keeps the cheapest
+survivor, and appends the record to the report when one is being written.
+cgen (`flowc_cgen_plan_choose`) builds the facts for each site and writes
+the record to stderr under `FLOWC_EXPLAIN=1`.
 
-Two constructs use this today, `sort` and `search`, both in
-`src/flow/ordering_plans.py`. They deliberately share facts: `input_order` is
-produced by the ordering-hints pass for `sort` and consumed by `search`.
+Two constructs use this today, `sort` and `search`. They deliberately share
+facts: `input_order` is produced by the ordering-provenance pass
+(`compiler/src/sort_sites.flow`) for `sort` and consumed by `search`.
 
 ## Scope
 

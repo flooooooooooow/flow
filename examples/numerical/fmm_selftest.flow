@@ -1,6 +1,6 @@
 # FMM self-test: Theorem 2.1 multipole vs direct for a well-separated cluster.
 #
-# Run: FLOW_HOST=python ./flow run examples/numerical/fmm_selftest.flow
+# Run: ./flow run examples/numerical/fmm_selftest.flow
 
 import "stdlib/fmm2d.flow"
 

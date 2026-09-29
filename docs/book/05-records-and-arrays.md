@@ -157,7 +157,7 @@ function main() -> i32 {
 Source: [`examples/book/05_records_arrays.flow`](../../examples/book/05_records_arrays.flow)
 
 ```bash
-FLOW_HOST=python ./flow run examples/book/05_records_arrays.flow
+./flow run examples/book/05_records_arrays.flow
 ```
 
 ## 5.6 Shape belongs in the type

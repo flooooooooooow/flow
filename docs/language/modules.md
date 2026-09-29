@@ -142,10 +142,8 @@ For theorems: **if it's not exported, no other package can `assume` it**. This f
 
 ### What the compilers enforce today
 
-Both hosts compile a program and its imports as one bundle, and neither
-hides unexported functions or consts yet. The Python host puts every
-declaration of an imported module into the program
-(`src/flow/module_resolver.py`), and Stage-A flowc seeds every top-level
+flowc compiles a program and its imports as one bundle, and it does not
+hide unexported functions or consts yet: it seeds every top-level
 function and const of a dependency into the bundle typecheck (#988). So
 a module can call a plain `function` of a module it imports, as
 `lib/stdlib/dynamics/core.flow` does with the helpers in `linalg.flow`.

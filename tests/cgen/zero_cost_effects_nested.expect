@@ -1,0 +1,26 @@
+# Inside a handle block the handler is known at compile time, so an effect
+# operation written in the block calls the capability directly (#1056), as
+# the Python host did. The innermost block wins, a multi-effect block maps
+# each effect to its own handler, and leaving a block restores the outer one.
+# A lambda body keeps the vtable call: the closure may run after the block
+# exits. The lambda captures nothing, since the effect name is a type (#1057).
+# Outside every block the call dispatches through the runtime handler.
++ Loud_info("a");
++ Soft_info("b");
++ total = (total + Counter_tick(1));
++ Loud_info("c");
++ Soft_info("d");
++ Loud_info("f");
++ Log_info("g");
++ Log_info(msg);
+- Log_info("a")
+- Meter_tick(1)
+- .Log = Log
+exit 0
+stdout [loud] a
+stdout [soft] b
+stdout [tick] 1
+stdout [loud] c
+stdout [soft] d
+stdout [loud] e
+stdout [loud] f

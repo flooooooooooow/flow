@@ -4,6 +4,18 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+### C backend: flowc only
+
+- flowc is the only C compiler. `flow run`, `compile`, `test`, `test-lang`, `test-runtime`, `gfx`, `record`, `window`, `audio`, `debug`, `patch` and `ml test` all build through it. On the corpus it matches the Python host on 1037 of 1053 programs with `main()` and builds 6 the Python host could not (`compiler/corpus_parity/report.txt`).
+- The Python C backend is deleted: `src/flow/c_generator.py` and the modules only it used (`overload.py`, `ordering_plans.py`, `plan_selector.py`, `general_plans.py`, `constraints.py`). `FLOW_HOST=python` stops with a pointer to flowc, and `python3 -m flow.transpiler --c` exits with the same pointer. `compiler/scripts/flowc_emit.sh IN.flow OUT.c` is the C-only command for scripts and tools.
+- `flow debug` keeps its source mapping: with `FLOWC_DEBUG_INFO=1` flowc writes a `#line` directive before every statement.
+- flowc selects sort and find plans by cost, as the Python host did (`compiler/src/sort_plans.flow`, #1054), and `flow explain` prints the same report from flowc (#1055).
+- The bootstrap C regenerates without Python. `compiler/scripts/bootstrap_from_c.sh --regen` self-emits from the previous bootstrap until the C reaches a fixed point, and `compiler/scripts/flowc_host.sh` builds a flowc from the current `compiler/src` for `roundtrip.sh` and `ensure_flowc.sh`.
+- C output goldens live in `tests/cgen` (`tests/cgen/run.sh`). They replace the pytest tests that asserted on the Python backend's C.
+- flowc lowers `@inline`, `@always_inline`, `@noinline` and `@target("...")` to the same C specifiers the Python host emitted, on the prototype and the definition (#1028). The type checker reports an unknown attribute, a malformed `@target` and `@noinline` with `@inline`.
+- Inside `handle E with C { ... }` flowc emits an operation written in the block as a direct call `C_op(args)`, as the Python host did (#1056). Lambda bodies and functions called from the block keep the vtable dispatch `E_op(args)`. A lambda that performs an effect no longer captures the effect name (#1057).
+- flowc applies `@only` / `@guard` build-mode guards: a function whose modes are all off is dropped, so two definitions under different guards compile to one (#1029). `FLOWC_MODE` replaces `--mode`.
+
 ### Language server
 
 - `flow lsp` and `./flow-lsp` run a language server written in Flow (`tools/lsp/main.flow`), built with the Stage-A compiler on first use. Diagnostics come from the flowc parser and Stage-A type checker in process. It serves hover, completion, definition, references, highlight, rename, document symbols, formatting and idiom quick fixes. The VS Code extension starts it by default.
@@ -437,7 +449,7 @@ host on real language surface:
   pipeline (cubesphere, tectonics, elevation).
 - Games: physics3d, raycast_shooter, Icy Tower, The Falling Sand Game,
   billboard particles; software-3D clips recorded offline.
-- Numerical: Carrier–Greengard–Rokhlin adaptive FMM.
+- Numerical: Carrier-Greengard-Rokhlin adaptive FMM.
 
 ### Branding, editor, CI
 
@@ -892,7 +904,7 @@ First annotated git tags and GitHub Releases for Flow. Documentation ships from
 - Version metadata aligned to **0.8.0** (`flow.toml`, `pyproject.toml`, wiki hero).
 
 ### Notes
-- Production compiler remains Python (`src/flow/`) with `flowc` as the self-host ladder (Phases A–E on the roadmap).
+- Production compiler remains Python (`src/flow/`) with `flowc` as the self-host ladder (Phases A-E on the roadmap).
 - Prior unreleased notes below are folded into this cut.
 
 ## [0.7.0] - 2026-02-09
@@ -960,6 +972,6 @@ See the [GitHub Issues](https://github.com/flooooooooooow/flow/issues) page for 
 ## [Unreleased]
 
 ### Planned
-- Self-hosting Phases B–E (`flowc` default host)
+- Self-hosting Phases B-E (`flowc` default host)
 - Package registry beyond git deps
 - Custom domain for docs

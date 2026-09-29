@@ -1,0 +1,7 @@
+# Chained assignment nests as a C assignment expression (#1036).
+function main() -> i32 {
+    let mut a: i32 = 0
+    let mut b: i32 = 0
+    a = b = 7
+    return a + b - 14
+}

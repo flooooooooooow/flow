@@ -174,7 +174,7 @@ Use `examples/STATUS.md` to see machine-generated compile status across the exam
 ./flow mlir program.flow
 ```
 
-The default production path is the self-hosted compiler targeting portable C. Advanced language and backend surfaces can still require the Python host; the repository documents those boundaries explicitly.
+The production path is `flowc`, the self-hosted compiler, targeting portable C. It is the only C compiler. The MLIR backend has its own feature limits, which the repository documents.
 
 ## 9. Where to go next
 

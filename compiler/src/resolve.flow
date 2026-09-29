@@ -9,8 +9,12 @@
 # flowc_bundle_typecheck: deps-first check with growing seed of dep exports.
 
 import .ast {
-    AST_IMPORT, AST_FN, AST_EXPORT, AST_STRUCT, AST_NONE, AstArena
+    AST_IMPORT, AST_FN, AST_EXPORT, AST_STRUCT, AST_NONE, AstArena,
+    AST_PARAM, AST_LET, AST_FIELD, AST_STRUCT_LIT, AST_TYPE, AST_INT,
+    AST_FLOAT, AST_STRING, AST_BOOL, AST_CAST, AST_CALL, AST_IDENT,
+    AST_UNARY, AST_CONST
 }
+import .token { TOK_MINUS }
 import .parser {
     flowc_parser_new, flowc_parser_free, flowc_parse_program, flowc_parser_print_error, Parser
 }
@@ -19,7 +23,7 @@ import .field_dsl { flowc_field_expand_in_place }
 import .dynamics_dsl { flowc_dynamics_expand_in_place }
 import .flow_blocks { flowc_flow_blocks_expand_in_place }
 import .shader_dsl { flowc_shader_expand_in_place }
-import .cgen { flowc_cgen_emit_sigs, flowc_cgen_collect_sigs }
+import .cgen { flowc_cgen_emit_sigs, flowc_cgen_collect_sigs, flowc_cgen_export_missing }
 import .effects { flowc_eff_collect }
 import .typecheck {
     TcCtx,
@@ -33,6 +37,7 @@ extern {
     function strlen(s: string) -> i64
     function puts(s: string) -> i32
     function printf(fmt: string, val: i32) -> i32
+    function setenv(name: string, value: string, overwrite: i32) -> i32
     function putchar(c: i32) -> i32
 }
 
@@ -151,7 +156,11 @@ export function flowc_expand_all_in_place(src: ptr<u8>, n: i32, cap: i32) -> i32
     if m < 0 {
         return m
     }
-    return flowc_impl_expand_in_place(src, m, cap)
+    let m2: i32 = flowc_impl_expand_in_place(src, m, cap)
+    if m2 < 0 {
+        return m2
+    }
+    return flowc_mono_lit_expand_in_place(src, m2, cap)
 }
 
 # --- impl blocks -----------------------------------------------------------
@@ -416,6 +425,456 @@ function flowc_resolve_read_source(path: string, src: ptr<u8>, cap: i32) -> i32 
         return n
     }
     return flowc_expand_all_in_place(src, n, cap)
+}
+
+# --- generic struct literals (#1042, #954) ---------------------------------
+# Source expansion that spells out the type arguments of a generic struct
+# literal written without them.
+#
+# `Box { value: 1.5 }` for `struct Box<T> { value: T }` becomes
+# `Box<f64> { value: 1.5 }` before the program is parsed for good, so the
+# type checker, the monomorphizer and the C generator all see the explicit
+# form they already handle. The type arguments come from, in order:
+#
+#   1. the annotation of the `let` the literal initialises
+#      (`let b: Box<i32> = Box { value: 42 }`);
+#   2. the values of the fields whose declared type is a bare type
+#      parameter: a literal (i32, f64, string, bool), a cast, a struct
+#      literal of a plain struct, a call to a function of the module, or a
+#      name declared earlier in the same function (a parameter, a `let`,
+#      or a module constant).
+#
+# A literal whose type arguments are not all found this way is left as it
+# is. Only generic structs declared in the same module are considered. The
+# rewrite inserts text on the literal's own line, so line numbers stay put.
+
+const MLI_MAX_EDITS: i32 = 1024
+const MLI_POOL_CAP: i32 = 65536
+
+function mli_is_ident(c: i32) -> i32 {
+    if (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or (c >= 48 and c <= 57) or c == 95 {
+        return 1
+    }
+    return 0
+}
+
+function mli_span_eq(src: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i32 {
+    if a1 - a0 != b1 - b0 or a1 <= a0 {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < a1 - a0 {
+        if src[a0 + i] != src[b0 + i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+# 1 when some line declares `struct Name<`: the only sources worth parsing.
+function mli_has_generic_struct(src: ptr<u8>, n: i32) -> i32 {
+    let mut i: i32 = 0
+    while i + 7 < n {
+        if src[i] == 115 and src[i + 1] == 116 and src[i + 2] == 114 and src[i + 3] == 117 and src[i + 4] == 99 and src[i + 5] == 116 and (src[i + 6] == 32 or src[i + 6] == 9) {
+            let mut before: i32 = 0
+            if i > 0 {
+                before = mli_is_ident(src[i - 1] as i32)
+            }
+            if before == 0 {
+                let mut k: i32 = i + 6
+                while k < n and (src[k] == 32 or src[k] == 9) {
+                    k = k + 1
+                }
+                let s: i32 = k
+                while k < n and mli_is_ident(src[k] as i32) == 1 {
+                    k = k + 1
+                }
+                while k < n and (src[k] == 32 or src[k] == 9) {
+                    k = k + 1
+                }
+                if k > s and k < n and src[k] == 60 {
+                    return 1
+                }
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# A plain named type node: no type arguments, no array size, no fn type.
+function mli_plain_type(arena: AstArena, ty: i32) -> i32 {
+    if ty == AST_NONE or ty < 0 or ty >= arena.len {
+        return 0
+    }
+    if arena.nodes[ty].kind != AST_TYPE or arena.nodes[ty].a != AST_NONE or arena.nodes[ty].ival != 0 or arena.nodes[ty].c != AST_NONE {
+        return 0
+    }
+    if arena.nodes[ty].name_end <= arena.nodes[ty].name_start {
+        return 0
+    }
+    return 1
+}
+
+function mli_find_struct(arena: AstArena, src: ptr<u8>, ns: i32, ne: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_STRUCT and mli_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+            return i
+        }
+        i = i + 1
+    }
+    return AST_NONE
+}
+
+# The outermost function whose body holds position `pos`, else AST_NONE.
+function mli_enclosing_fn(arena: AstArena, pos: i32) -> i32 {
+    let mut best: i32 = AST_NONE
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_FN and arena.nodes[i].c != AST_NONE and arena.nodes[i].start <= pos and pos < arena.nodes[i].end {
+            if best == AST_NONE or arena.nodes[i].start < arena.nodes[best].start {
+                best = i
+            }
+        }
+        i = i + 1
+    }
+    return best
+}
+
+# The parameter or `let` named [ns, ne) declared last before `pos` inside
+# function `fn`, else a module constant of that name, else AST_NONE.
+function mli_find_decl(arena: AstArena, src: ptr<u8>, fn: i32, ns: i32, ne: i32, pos: i32) -> i32 {
+    let mut best: i32 = AST_NONE
+    if fn != AST_NONE {
+        let lo: i32 = arena.nodes[fn].start
+        let mut i: i32 = 0
+        while i < arena.len {
+            let k: i32 = arena.nodes[i].kind
+            if (k == AST_LET or k == AST_PARAM) and arena.nodes[i].start >= lo and arena.nodes[i].start < pos {
+                if mli_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                    if best == AST_NONE or arena.nodes[i].start > arena.nodes[best].start {
+                        best = i
+                    }
+                }
+            }
+            i = i + 1
+        }
+    }
+    if best != AST_NONE {
+        return best
+    }
+    let mut j: i32 = 0
+    while j < arena.len {
+        if arena.nodes[j].kind == AST_CONST and mli_span_eq(src, ns, ne, arena.nodes[j].name_start, arena.nodes[j].name_end) == 1 {
+            return j
+        }
+        j = j + 1
+    }
+    return AST_NONE
+}
+
+# Append `lit` to pool[len..); returns the new length or -1 when full.
+function mli_pool_str(pool: ptr<u8>, len: i32, lit: string) -> i32 {
+    let lp: ptr<u8> = lit as ptr<u8>
+    let mut o: i32 = len
+    let mut i: i32 = 0
+    while lp[i] != 0 {
+        if o < 0 or o + 1 >= MLI_POOL_CAP {
+            return 0 - 1
+        }
+        pool[o] = lp[i]
+        o = o + 1
+        i = i + 1
+    }
+    return o
+}
+
+function mli_pool_span(pool: ptr<u8>, len: i32, src: ptr<u8>, s: i32, e: i32) -> i32 {
+    let mut o: i32 = len
+    let mut i: i32 = s
+    while i < e {
+        if o < 0 or o + 1 >= MLI_POOL_CAP {
+            return 0 - 1
+        }
+        pool[o] = src[i]
+        o = o + 1
+        i = i + 1
+    }
+    return o
+}
+
+# Append the type name of expression `e` (inside function `fn`) to the pool.
+# Returns the new pool length, or -1 when the type is not known here.
+function mli_expr_type(arena: AstArena, src: ptr<u8>, fn: i32, e: i32, pool: ptr<u8>, len: i32, depth: i32) -> i32 {
+    if e == AST_NONE or e < 0 or e >= arena.len or depth > 6 or len < 0 {
+        return 0 - 1
+    }
+    let k: i32 = arena.nodes[e].kind
+    if k == AST_INT {
+        return mli_pool_str(pool, len, "i32")
+    }
+    if k == AST_FLOAT {
+        # A float literal is a C double, as `let x = 1.5` is.
+        return mli_pool_str(pool, len, "f64")
+    }
+    if k == AST_STRING {
+        return mli_pool_str(pool, len, "string")
+    }
+    if k == AST_BOOL {
+        return mli_pool_str(pool, len, "bool")
+    }
+    if k == AST_UNARY and arena.nodes[e].ival == TOK_MINUS {
+        return mli_expr_type(arena, src, fn, arena.nodes[e].a, pool, len, depth + 1)
+    }
+    if k == AST_CAST {
+        let ty: i32 = arena.nodes[e].b
+        if mli_plain_type(arena, ty) == 1 {
+            return mli_pool_span(pool, len, src, arena.nodes[ty].name_start, arena.nodes[ty].name_end)
+        }
+        return 0 - 1
+    }
+    if k == AST_STRUCT_LIT {
+        let st: i32 = mli_find_struct(arena, src, arena.nodes[e].name_start, arena.nodes[e].name_end)
+        if st != AST_NONE and arena.nodes[st].b == AST_NONE and arena.nodes[e].b == AST_NONE {
+            return mli_pool_span(pool, len, src, arena.nodes[e].name_start, arena.nodes[e].name_end)
+        }
+        return 0 - 1
+    }
+    if k == AST_CALL {
+        if arena.nodes[e].b != AST_NONE {
+            return 0 - 1
+        }
+        let mut found: i32 = AST_NONE
+        let mut count: i32 = 0
+        let mut i: i32 = 0
+        while i < arena.len {
+            if arena.nodes[i].kind == AST_FN and arena.nodes[i].name_start >= 0 and mli_span_eq(src, arena.nodes[e].name_start, arena.nodes[e].name_end, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                found = i
+                count = count + 1
+            }
+            i = i + 1
+        }
+        if count == 1 and arena.nodes[found].ival == 0 and mli_plain_type(arena, arena.nodes[found].b) == 1 {
+            let rt: i32 = arena.nodes[found].b
+            return mli_pool_span(pool, len, src, arena.nodes[rt].name_start, arena.nodes[rt].name_end)
+        }
+        return 0 - 1
+    }
+    if k == AST_IDENT {
+        let decl: i32 = mli_find_decl(arena, src, fn, arena.nodes[e].name_start, arena.nodes[e].name_end, arena.nodes[e].start)
+        if decl == AST_NONE {
+            return 0 - 1
+        }
+        let mut ty: i32 = arena.nodes[decl].a
+        if arena.nodes[decl].kind == AST_PARAM and ty == AST_NONE {
+            ty = arena.nodes[decl].b
+        }
+        if ty != AST_NONE {
+            if mli_plain_type(arena, ty) == 1 {
+                return mli_pool_span(pool, len, src, arena.nodes[ty].name_start, arena.nodes[ty].name_end)
+            }
+            return 0 - 1
+        }
+        if arena.nodes[decl].kind == AST_LET {
+            return mli_expr_type(arena, src, fn, arena.nodes[decl].b, pool, len, depth + 1)
+        }
+        return 0 - 1
+    }
+    return 0 - 1
+}
+
+# The `let` whose initialiser is `lit`, else AST_NONE.
+function mli_let_of(arena: AstArena, lit: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_LET and arena.nodes[i].b == lit {
+            return i
+        }
+        i = i + 1
+    }
+    return AST_NONE
+}
+
+# Append `<T0, T1>` for literal `lit` of generic struct `st` to the pool.
+# Returns the new length, or -1 when some type argument is not known.
+function mli_infer_args(arena: AstArena, src: ptr<u8>, st: i32, lit: i32, pool: ptr<u8>, len: i32) -> i32 {
+    let mut o: i32 = mli_pool_str(pool, len, "<")
+    # 1. The annotation of the `let` this literal initialises.
+    let decl: i32 = mli_let_of(arena, lit)
+    if decl != AST_NONE {
+        let ann: i32 = arena.nodes[decl].a
+        if ann != AST_NONE and arena.nodes[ann].kind == AST_TYPE and arena.nodes[ann].a != AST_NONE and arena.nodes[ann].ival == 0 and mli_span_eq(src, arena.nodes[ann].name_start, arena.nodes[ann].name_end, arena.nodes[lit].name_start, arena.nodes[lit].name_end) == 1 {
+            let mut ok: i32 = 1
+            let mut ta: i32 = arena.nodes[ann].a
+            let mut tp: i32 = arena.nodes[st].b
+            let mut first: i32 = 1
+            let mut o2: i32 = o
+            while ta != AST_NONE and tp != AST_NONE and ok == 1 {
+                if mli_plain_type(arena, ta) == 0 {
+                    ok = 0
+                } else {
+                    if first == 0 {
+                        o2 = mli_pool_str(pool, o2, ", ")
+                    }
+                    first = 0
+                    o2 = mli_pool_span(pool, o2, src, arena.nodes[ta].name_start, arena.nodes[ta].name_end)
+                }
+                ta = arena.nodes[ta].next
+                tp = arena.nodes[tp].next
+            }
+            if ok == 1 and ta == AST_NONE and tp == AST_NONE and o2 >= 0 {
+                return mli_pool_str(pool, o2, ">")
+            }
+        }
+    }
+    # 2. The values of the fields typed by a bare type parameter.
+    let fn: i32 = mli_enclosing_fn(arena, arena.nodes[lit].start)
+    let mut tp: i32 = arena.nodes[st].b
+    let mut first: i32 = 1
+    while tp != AST_NONE {
+        if o < 0 {
+            return 0 - 1
+        }
+        let mut got: i32 = 0
+        let mut f: i32 = arena.nodes[st].a
+        while f != AST_NONE and got == 0 {
+            let fty: i32 = arena.nodes[f].a
+            if arena.nodes[f].kind == AST_FIELD and mli_plain_type(arena, fty) == 1 and mli_span_eq(src, arena.nodes[fty].name_start, arena.nodes[fty].name_end, arena.nodes[tp].name_start, arena.nodes[tp].name_end) == 1 {
+                let mut lf: i32 = arena.nodes[lit].a
+                while lf != AST_NONE and got == 0 {
+                    if mli_span_eq(src, arena.nodes[lf].name_start, arena.nodes[lf].name_end, arena.nodes[f].name_start, arena.nodes[f].name_end) == 1 {
+                        let mut o3: i32 = o
+                        if first == 0 {
+                            o3 = mli_pool_str(pool, o3, ", ")
+                        }
+                        o3 = mli_expr_type(arena, src, fn, arena.nodes[lf].a, pool, o3, 0)
+                        if o3 >= 0 {
+                            o = o3
+                            got = 1
+                        }
+                    }
+                    lf = arena.nodes[lf].next
+                }
+            }
+            f = arena.nodes[f].next
+        }
+        if got == 0 {
+            return 0 - 1
+        }
+        first = 0
+        tp = arena.nodes[tp].next
+    }
+    return mli_pool_str(pool, o, ">")
+}
+
+# Spell out the inferred type arguments of bare generic struct literals in
+# src[0, n). Returns the new length (n when nothing changes), or -1 when the
+# result does not fit in `cap` bytes.
+function flowc_mono_lit_expand_in_place(src: ptr<u8>, n: i32, cap: i32) -> i32 {
+    if n <= 0 or mli_has_generic_struct(src, n) == 0 {
+        return n
+    }
+    let mut p: Parser = flowc_parser_new(src, n, n * 2 + 4096)
+    let root: i32 = flowc_parse_program(&p)
+    if root < 0 or p.err != 0 {
+        # The real parse reports the error.
+        flowc_parser_free(p)
+        return n
+    }
+    let arena: AstArena = p.arena
+    let pool: ptr<u8> = malloc(MLI_POOL_CAP as i64)
+    let edit_pos: ptr<i32> = malloc((MLI_MAX_EDITS as i64) * 4) as ptr<i32>
+    let edit_s: ptr<i32> = malloc((MLI_MAX_EDITS as i64) * 4) as ptr<i32>
+    let edit_e: ptr<i32> = malloc((MLI_MAX_EDITS as i64) * 4) as ptr<i32>
+    if pool == null or edit_pos == null or edit_s == null or edit_e == null {
+        flowc_parser_free(p)
+        return n
+    }
+    let mut nedits: i32 = 0
+    let mut plen: i32 = 0
+    let mut grow: i32 = 0
+    let mut i: i32 = 0
+    while i < arena.len and nedits < MLI_MAX_EDITS {
+        if arena.nodes[i].kind == AST_STRUCT_LIT and arena.nodes[i].b == AST_NONE {
+            let st: i32 = mli_find_struct(arena, src, arena.nodes[i].name_start, arena.nodes[i].name_end)
+            if st != AST_NONE and arena.nodes[st].b != AST_NONE {
+                let o: i32 = mli_infer_args(arena, src, st, i, pool, plen)
+                if o > plen {
+                    edit_pos[nedits] = arena.nodes[i].name_end
+                    edit_s[nedits] = plen
+                    edit_e[nedits] = o
+                    grow = grow + (o - plen)
+                    nedits = nedits + 1
+                    plen = o
+                }
+            }
+        }
+        i = i + 1
+    }
+    flowc_parser_free(p)
+    let mut result: i32 = n
+    if nedits > 0 {
+        if n + grow + 1 > cap {
+            result = 0 - 1
+        } else {
+            let out: ptr<u8> = malloc((n + grow + 1) as i64)
+            if out == null {
+                result = 0 - 1
+            } else {
+                # Apply the edits in source order.
+                let mut o: i32 = 0
+                let mut s: i32 = 0
+                let mut done: i32 = 0
+                while done < nedits {
+                    let mut pick: i32 = 0 - 1
+                    let mut j: i32 = 0
+                    while j < nedits {
+                        if edit_pos[j] >= s and (pick < 0 or edit_pos[j] < edit_pos[pick]) {
+                            pick = j
+                        }
+                        j = j + 1
+                    }
+                    if pick < 0 {
+                        done = nedits
+                    } else {
+                        while s < edit_pos[pick] {
+                            out[o] = src[s]
+                            o = o + 1
+                            s = s + 1
+                        }
+                        let mut q: i32 = edit_s[pick]
+                        while q < edit_e[pick] {
+                            out[o] = pool[q]
+                            o = o + 1
+                            q = q + 1
+                        }
+                        edit_pos[pick] = 0 - 1
+                        done = done + 1
+                    }
+                }
+                while s < n {
+                    out[o] = src[s]
+                    o = o + 1
+                    s = s + 1
+                }
+                let mut z: i32 = 0
+                while z < o {
+                    src[z] = out[z]
+                    z = z + 1
+                }
+                src[o] = 0
+                free(out)
+                result = o
+            }
+        }
+    }
+    free(pool)
+    free(edit_pos as ptr<u8>)
+    free(edit_s as ptr<u8>)
+    free(edit_e as ptr<u8>)
+    return result
 }
 
 # Map import span to a filesystem path under search_dir.
@@ -717,6 +1176,17 @@ function flowc_resolve_dotted_any(
         let r2: i32 = flowc_resolve_dotted_path(src, s, end, search_dir, out_path, out_path_cap)
         if r2 >= 0 {
             return r2
+        }
+        # A bare stdlib module name (`import concurrent`) and the `std.`
+        # prefix (`import std.concurrent`) resolve in lib/stdlib, as in the
+        # Python resolver (#1038).
+        let mut ss: i32 = s
+        if end - s > 4 and src[s] == 115 and src[s + 1] == 116 and src[s + 2] == 100 and src[s + 3] == 46 {
+            ss = s + 4
+        }
+        let r3: i32 = flowc_resolve_dotted_path(src, ss, end, "lib/stdlib", out_path, out_path_cap)
+        if r3 >= 0 {
+            return r3
         }
         # Drop the last `.segment` and try once more.
         let mut k: i32 = end - 1
@@ -1749,6 +2219,8 @@ function flowc_resolve_emit_one(
     if tpl != null {
         tpl_len[0] = flowc_resolve_add_templates(p.arena, root, src, own, tpl, tpl_cap, tpl_len[0])
     }
+    # The file this module's #line directives name (FLOWC_DEBUG_INFO=1).
+    let _setf: i32 = setenv("FLOWC_CGEN_FILE", path, 1)
     let mut n: i32 = flowc_cgen_emit_sigs(p.arena, root, src, out, out_cap, flags, sigs, siglen[0])
     if sigs != null {
         siglen[0] = flowc_cgen_collect_sigs(p.arena, root, src, sigs, sigcap, siglen[0])
@@ -2229,6 +2701,11 @@ export function flowc_bundle_emit(
         }
         written = written + nundef
         mi = mi + 1
+    }
+    # --export names no module defined (#1030).
+    let nmiss: i32 = flowc_cgen_export_missing(sigs, siglen, out + written, out_cap - written)
+    if nmiss > 0 {
+        written = written + nmiss
     }
 
     if tpl != null {

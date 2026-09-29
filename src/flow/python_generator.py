@@ -3,7 +3,7 @@
 FLOW to Python Package Generator
 
 Generates Python wheels from Flow source code by:
-1. Compiling Flow to C (via c_generator)
+1. Compiling Flow to C with flowc (compiler/scripts/flowc_emit.sh)
 2. Generating CPython extension bindings
 3. Building a standard Python wheel
 
@@ -32,7 +32,51 @@ from .parser import (
     TypeAliasDecl,
     DistinctTypeDecl,
 )
-from .c_generator import flow_to_c
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+FLOWC_EMIT = REPO_ROOT / "compiler" / "scripts" / "flowc_emit.sh"
+
+
+def flowc_c_source(source_path: Path) -> str:
+    """Compile a Flow file to C with flowc and return the C source.
+
+    The Python C backend is retired. flowc reads the program from disk, so
+    the caller passes the path of the source file.
+    """
+    with tempfile.TemporaryDirectory(prefix="flow_py_ext_") as tmp:
+        c_path = Path(tmp) / (Path(source_path).stem + ".c")
+        result = subprocess.run(
+            [str(FLOWC_EMIT), "--lenient", str(Path(source_path).resolve()), str(c_path)],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0 or not c_path.exists():
+            detail = result.stderr.strip() or result.stdout.strip()
+            raise RuntimeError(f"flowc could not compile {source_path}: {detail}")
+        return c_path.read_text()
+
+
+def c_symbol_for(fn: FunctionDecl, c_code: Optional[str]) -> str:
+    """Return the C name flowc gave a Flow function.
+
+    flowc keeps the plain Flow name for a function that is not overloaded.
+    An overloaded function gets its parameter types appended, as in
+    `twice_i32`. The name that is defined in the C wins. Without C to look
+    at, the plain name is returned.
+    """
+    mangled = fn.name
+    if fn.parameters:
+        param_suffix = "_".join(
+            (p.type.name if isinstance(p.type, Type) else str(p.type)).replace("<", "_").replace(">", "").replace(",", "_")
+            for p in fn.parameters
+        )
+        mangled = f"{fn.name}_{param_suffix}"
+    if c_code:
+        for cand in (mangled, fn.name):
+            if re.search(r"\b" + re.escape(cand) + r"\s*\(", c_code):
+                return cand
+    return fn.name
 
 
 # =============================================================================
@@ -339,6 +383,7 @@ class PythonBindingGenerator:
         self.module_name = module_name
         self.exports = exports
         self.structs = structs
+        self.c_code: Optional[str] = None
     
     def generate_header(self) -> str:
         """Generate the C header for the Python extension."""
@@ -391,14 +436,8 @@ class PythonBindingGenerator:
             ret_decl = ""
             call_prefix = "    "
         
-        # Build mangled C function name (Flow uses type-based name mangling)
-        mangled_name = fn.name
-        if fn.parameters:
-            param_suffix = "_".join(
-                (p.type.name if isinstance(p.type, Type) else str(p.type)).replace("<", "_").replace(">", "").replace(",", "_")
-                for p in fn.parameters
-            )
-            mangled_name = f"{fn.name}_{param_suffix}"
+        # The C name flowc gave the function (overloads carry type suffixes)
+        mangled_name = c_symbol_for(fn, self.c_code)
         
         # Generate wrapper
         wrapper = f'''
@@ -459,6 +498,7 @@ PyMODINIT_FUNC PyInit_{self.module_name}(void) {{
     
     def generate(self, c_code: str) -> str:
         """Generate the complete Python extension source."""
+        self.c_code = c_code
         parts = [
             self.generate_header(),
             "",
@@ -585,8 +625,10 @@ class PythonTarget:
         module_name: str,
         version: str = "0.1.0",
         verbose: bool = False,
+        source_path: Optional[Path] = None,
     ):
         self.ast = ast
+        self.source_path = Path(source_path) if source_path is not None else None
         self.module_name = module_name
         self.version = version
         self.verbose = verbose
@@ -656,8 +698,13 @@ class PythonTarget:
         if not self.export_result:
             self.analyze_exports()
         
-        # Generate C code via standard C generator
-        self.c_code = flow_to_c(self.ast)
+        # Generate C code with flowc, which compiles the source file
+        if self.source_path is None:
+            raise RuntimeError(
+                "PythonTarget needs source_path: the C comes from flowc, "
+                "which compiles the .flow file"
+            )
+        self.c_code = flowc_c_source(self.source_path)
         
         # Generate Python bindings
         binding_gen = PythonBindingGenerator(
@@ -728,7 +775,7 @@ def compile_to_python(
         module_name = source_path.stem.replace("-", "_").replace(".", "_")
     
     # Create target
-    target = PythonTarget(ast, module_name, version, verbose)
+    target = PythonTarget(ast, module_name, version, verbose, source_path=source_path)
     
     if verbose:
         target.print_diagnostics()

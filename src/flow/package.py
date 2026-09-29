@@ -6,7 +6,6 @@ Installing dependencies (add, install, sync) and registry queries (search,
 info) are the Flow package manager in compiler/src/pkg.flow.
 """
 
-import os
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -96,7 +95,7 @@ class FlowPackage:
         lines.append("")
         lines.append("[build]")
         lines.append('host = "python"')
-        lines.append('# test_command = "FLOW_HOST=python flow run tests/test_main.flow"')
+        lines.append('# test_command = "flow run tests/test_main.flow"')
         lines.append("")
         lines.append("[conventions]")
         lines.append("# avoid = [")
@@ -446,23 +445,17 @@ flow_packages/
         
         print(f"{self.BLUE}Building {config.name} with native support...{self.RESET}")
         
-        # Step 1: Transpile Flow to C (without compiling C)
-        repo_root = Path(__file__).parent.parent.parent
+        # Step 1: Compile Flow to C with flowc (without compiling the C)
+        repo_root = Path(__file__).resolve().parent.parent.parent
         cmd = [
-            "python3",
-            "-m",
-            "flow.transpiler",
-            str(src_file),
-            "--c",
+            str(repo_root / "compiler" / "scripts" / "flowc_emit.sh"),
             "--lenient",
-            "-o",
-            str(c_file),
+            str(src_file.resolve()),
+            str(c_file.resolve()),
         ]
         
         try:
-            env = os.environ.copy()
-            env["PYTHONPATH"] = f"{repo_root / 'src'}{os.pathsep}{env.get('PYTHONPATH', '')}".rstrip(os.pathsep)
-            result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+            result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:
                 print(f"{self.RED}Flow compilation failed:{self.RESET}")
                 print(result.stderr)

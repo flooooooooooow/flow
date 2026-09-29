@@ -31,8 +31,10 @@ import .ast {
     AST_THEOREM, AST_ASSUME, AST_THEREFORE, AST_CLAIM_REF,
     AST_FLOW_DECL, AST_FLOW_ITEM, AST_LAYOUT, AST_PIPE_BLOCK, AST_HANDLE, AST_EFFECT_ROW, AST_MATCH_ARM_EXT,
     AST_FIXED_ARRAY_TYPE, AST_CAPABILITY_TYPE, AST_TRY, AST_VECTOR_LIT,
-    AST_SORT_BY, AST_MODULE,
+    AST_SORT_BY, AST_MODULE, AST_SORT_DESC, AST_SORT_UNIQUE, AST_SORT_UNSTABLE,
+    AST_SORT_ADAPTIVE, AST_SORT_GENERAL, AST_CALL_PIPE_FIND,
     AST_EFFECT, AST_CAPABILITY, AST_EFFECT_OP, AST_CAP_METHOD, AST_TYPE_CAPABILITY,
+    AST_ATTR, AST_ATTR_EXPORTED, AST_ATTR_HAS_ARGS,
     PIPE_BLOCK_FORK, PIPE_BLOCK_STAGE, PIPE_BLOCK_CHOOSE,
     FLOW_ITEM_MEMBER, FLOW_ITEM_EVOLVES, FLOW_ITEM_WHEN, FLOW_ITEM_EVERY,
     FLOW_ITEM_SOLVER, FLOW_ITEM_ALWAYS, FLOW_ITEM_NEVER, FLOW_ITEM_RECOGNIZE,
@@ -40,6 +42,7 @@ import .ast {
     flowc_ast_new, flowc_ast_free, flowc_ast_alloc, flowc_ast_chain_push,
     flowc_ast_type_set_span_mutable
 }
+import .attributes { flowc_attr_args_from_span, flowc_attr_guard_step }
 
 extern {
     function puts(s: string) -> i32
@@ -52,7 +55,10 @@ export struct Parser {
     cur: Token,
     arena: AstArena,
     err: i32,
-    err_tok: Token
+    err_tok: Token,
+    # `import M as name` aliases seen so far: a chain of AST_IDENT nodes
+    # (linked by next) naming each alias. `name.f` then parses as `f`.
+    aliases: i32
 }
 
 # Say where parsing stopped, as `path:line:col: parse error at 'tok'`. A
@@ -74,7 +80,7 @@ export function flowc_parser_new(input: ptr<u8>, len: i32, ast_cap: i32) -> Pars
     let mut lex: Lexer = flowc_lexer_new(input, len)
     let cur: Token = flowc_lexer_next(&lex)
     let arena: AstArena = flowc_ast_new(ast_cap)
-    return Parser { lex: lex, cur: cur, arena: arena, err: 0, err_tok: cur }
+    return Parser { lex: lex, cur: cur, arena: arena, err: 0, err_tok: cur, aliases: AST_NONE }
 }
 
 # Flag a parse error. The first one wins, so the report points at the token
@@ -153,6 +159,26 @@ function flowc_parser_span_is(p: Parser, start: i32, end: i32, lit: string) -> i
         i = i + 1
     }
     return 1
+}
+
+# 1 if [start, end) names an `import M as name` alias seen so far.
+function flowc_parser_is_alias(p: Parser, start: i32, end: i32) -> i32 {
+    let mut al: i32 = p.aliases
+    while al != AST_NONE {
+        let s: i32 = p.arena.nodes[al].name_start
+        let e: i32 = p.arena.nodes[al].name_end
+        if e - s == end - start {
+            let mut i: i32 = 0
+            while i < e - s and p.lex.input[s + i] == p.lex.input[start + i] {
+                i = i + 1
+            }
+            if i == e - s {
+                return 1
+            }
+        }
+        al = p.arena.nodes[al].next
+    }
+    return 0
 }
 
 # Identifier, or a soft keyword the Python parser accepts as a name
@@ -1042,6 +1068,12 @@ function flowc_parse_postfix(p: ptr<Parser>) -> i32 {
             let fs: i32 = p[0].cur.start
             let fe: i32 = p[0].cur.end
             flowc_parser_advance(p)
+            # `alias.f` for `import M as alias` names `f` itself (#1039).
+            if p[0].arena.nodes[base].kind == AST_IDENT and flowc_parser_is_alias(p[0], p[0].arena.nodes[base].name_start, p[0].arena.nodes[base].name_end) == 1 {
+                p[0].arena.nodes[base].name_start = fs
+                p[0].arena.nodes[base].name_end = fe
+                continue
+            }
             let id: i32 = flowc_ast_alloc(&p[0].arena, AST_FIELD_ACCESS, 0, 0)
             if id == AST_NONE {
                 flowc_parser_fail(p)
@@ -1331,6 +1363,27 @@ function flowc_parse_primary(p: ptr<Parser>) -> i32 {
         }
         p[0].arena.nodes[id].ival = op
         p[0].arena.nodes[id].a = operand
+        return id
+    }
+    # Prefix `*p` dereferences a pointer. It is the same load or store as
+    # `p[0]`, so it parses to that index node and reuses its type and C.
+    if tok.kind == TOK_STAR {
+        flowc_parser_advance(p)
+        let target: i32 = flowc_parse_primary(p)
+        if target == AST_NONE {
+            return AST_NONE
+        }
+        let zero: i32 = flowc_ast_alloc(&p[0].arena, AST_INT, 0, 0)
+        let id: i32 = flowc_ast_alloc(&p[0].arena, AST_INDEX, 0, 0)
+        if zero == AST_NONE or id == AST_NONE {
+            flowc_parser_fail(p)
+            return AST_NONE
+        }
+        p[0].arena.nodes[zero].name_start = 0
+        p[0].arena.nodes[zero].name_end = 0
+        p[0].arena.nodes[zero].ival = 0
+        p[0].arena.nodes[id].a = target
+        p[0].arena.nodes[id].b = zero
         return id
     }
     # `not` keyword → logical negation (same as !)
@@ -1664,9 +1717,20 @@ function flowc_parse_pipe_chain(p: ptr<Parser>, first: i32) -> i32 {
                 }
             }
         }
+        # `xs |> find(t)` is the declarative search (Python FindExpr).
+        let mut pipe_find: i32 = 0
+        if p[0].arena.nodes[rhs].kind == AST_CALL and p[0].arena.nodes[rhs].ival == 0 {
+            let fa: i32 = p[0].arena.nodes[rhs].a
+            if flowc_parser_span_is(p[0], p[0].arena.nodes[rhs].name_start, p[0].arena.nodes[rhs].name_end, "find") == 1 and fa != AST_NONE and p[0].arena.nodes[fa].next == AST_NONE {
+                pipe_find = 1
+            }
+        }
         result = flowc_parse_apply_pipe(p, result, rhs)
         if result == AST_NONE {
             return AST_NONE
+        }
+        if pipe_find == 1 and result == rhs {
+            p[0].arena.nodes[result].ival = AST_CALL_PIPE_FIND
         }
     }
     return result
@@ -1759,21 +1823,39 @@ function flowc_parse_sort_by(p: ptr<Parser>, source: i32) -> i32 {
             return AST_NONE
         }
     }
-    # ival bit 1: global descending; bit 2: unique.
+    # ival: the AST_SORT_* flag bits. name_* spans the modifiers.
     let mut desc: i32 = 0
     let mut uniq: i32 = 0
+    let mut unstable: i32 = 0
+    let mut adaptive: i32 = 0
+    let mut general: i32 = 0
+    let mod_start: i32 = p[0].cur.start
+    let mut mod_end: i32 = mod_start
     let mut more_mods: i32 = 1
     while more_mods == 1 {
         if flowc_parser_is_sort_modifier(p[0]) == 1 or flowc_parser_check_kw(p[0], KW_PARALLEL) == 1 {
             if flowc_parser_ident_is(p[0], "descending") + flowc_parser_ident_is(p[0], "desc") > 0 {
-                desc = 1
+                desc = AST_SORT_DESC
             }
             if flowc_parser_ident_is(p[0], "ascending") + flowc_parser_ident_is(p[0], "asc") > 0 {
                 desc = 0
             }
             if flowc_parser_ident_is(p[0], "unique") == 1 {
-                uniq = 2
+                uniq = AST_SORT_UNIQUE
             }
+            if flowc_parser_ident_is(p[0], "unstable") == 1 {
+                unstable = AST_SORT_UNSTABLE
+            }
+            if flowc_parser_ident_is(p[0], "stable") == 1 {
+                unstable = 0
+            }
+            if flowc_parser_ident_is(p[0], "adaptive") == 1 {
+                adaptive = AST_SORT_ADAPTIVE
+            }
+            if flowc_parser_ident_is(p[0], "general") == 1 {
+                general = AST_SORT_GENERAL
+            }
+            mod_end = p[0].cur.end
             flowc_parser_advance(p)
         } else {
             if flowc_parser_ident_is(p[0], "with") == 1 {
@@ -1782,6 +1864,7 @@ function flowc_parse_sort_by(p: ptr<Parser>, source: i32) -> i32 {
                     flowc_parser_fail(p)
                     return AST_NONE
                 }
+                mod_end = p[0].cur.end
                 flowc_parser_advance(p)
                 if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
                     flowc_parser_advance(p)
@@ -1800,6 +1883,7 @@ function flowc_parse_sort_by(p: ptr<Parser>, source: i32) -> i32 {
                         }
                         flowc_parser_advance(p)
                     }
+                    mod_end = p[0].cur.end
                     if flowc_parser_eat(p, TOK_RPAREN) == 0 {
                         return AST_NONE
                     }
@@ -1816,7 +1900,9 @@ function flowc_parse_sort_by(p: ptr<Parser>, source: i32) -> i32 {
     }
     p[0].arena.nodes[id].a = source
     p[0].arena.nodes[id].b = keys
-    p[0].arena.nodes[id].ival = desc + uniq
+    p[0].arena.nodes[id].ival = desc + uniq + unstable + adaptive + general
+    p[0].arena.nodes[id].name_start = mod_start
+    p[0].arena.nodes[id].name_end = mod_end
     return id
 }
 
@@ -2001,7 +2087,7 @@ function flowc_parse_stmt_inner(p: ptr<Parser>) -> i32 {
         if k == TOK_INT or k == TOK_FLOAT or k == TOK_STRING or k == TOK_IDENT or k == TOK_LPAREN or k == TOK_LBRACK or k == TOK_BAR {
             is_expr = 1
         }
-        if k == TOK_BANG or k == TOK_MINUS or k == TOK_AMP or k == TOK_TILDE {
+        if k == TOK_BANG or k == TOK_MINUS or k == TOK_AMP or k == TOK_TILDE or k == TOK_STAR {
             is_expr = 1
         }
         # `return <a, b>` returns a vector literal.
@@ -2103,13 +2189,19 @@ function flowc_parse_stmt_inner(p: ptr<Parser>) -> i32 {
         p[0].arena.nodes[id].b = body
         return id
     }
-    # parallel for ... — skip the parallel prefix and parse as a normal for
+    # `parallel for ...` parses as a normal for whose node span starts at the
+    # `parallel` keyword; cgen reads that to emit the OpenMP form (#1032).
+    let mut par_start: i32 = -1
     if flowc_parser_check_kw(p[0], KW_PARALLEL) == 1 {
+        par_start = p[0].cur.start
         flowc_parser_advance(p)
     }
     # for name in lo to hi { body } | for name in lo .. hi { body }
     if flowc_parser_check_kw(p[0], KW_FOR) == 1 {
-        let start: i32 = p[0].cur.start
+        let mut start: i32 = p[0].cur.start
+        if par_start >= 0 {
+            start = par_start
+        }
         flowc_parser_advance(p)
         if flowc_parser_check(p[0], TOK_IDENT) == 0 {
             flowc_parser_fail(p)
@@ -2505,7 +2597,7 @@ function flowc_parse_stmt_inner(p: ptr<Parser>) -> i32 {
         let lk: i32 = p[0].arena.nodes[expr].kind
         if flowc_parser_check(p[0], TOK_EQ) == 1 and (lk == AST_IDENT or lk == AST_FIELD_ACCESS or lk == AST_INDEX) {
             flowc_parser_advance(p)
-            let rhs: i32 = flowc_parse_expr(p)
+            let rhs: i32 = flowc_parse_assign_rhs(p)
             let id: i32 = flowc_ast_alloc(&p[0].arena, AST_ASSIGN, saved_start, p[0].cur.start)
             if id == AST_NONE {
                 flowc_parser_fail(p)
@@ -2552,6 +2644,31 @@ function flowc_parse_stmt_inner(p: ptr<Parser>) -> i32 {
     }
     flowc_parser_fail(p)
     return AST_NONE
+}
+
+# Right side of `lhs = ...`. A chained assignment `a = b = 1` nests: the
+# rhs is itself an AST_ASSIGN (b = 1), right-associative as in the Python
+# parser, so both targets receive the value (#1036).
+function flowc_parse_assign_rhs(p: ptr<Parser>) -> i32 {
+    let start: i32 = p[0].cur.start
+    let rhs: i32 = flowc_parse_expr(p)
+    if rhs == AST_NONE {
+        return AST_NONE
+    }
+    let rk: i32 = p[0].arena.nodes[rhs].kind
+    if flowc_parser_check(p[0], TOK_EQ) == 0 or (rk != AST_IDENT and rk != AST_FIELD_ACCESS and rk != AST_INDEX) {
+        return rhs
+    }
+    flowc_parser_advance(p)
+    let inner: i32 = flowc_parse_assign_rhs(p)
+    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_ASSIGN, start, p[0].cur.start)
+    if id == AST_NONE {
+        flowc_parser_fail(p)
+        return AST_NONE
+    }
+    p[0].arena.nodes[id].a = rhs
+    p[0].arena.nodes[id].b = inner
+    return id
 }
 
 function flowc_parse_block(p: ptr<Parser>) -> i32 {
@@ -3149,6 +3266,25 @@ function flowc_parse_import(p: ptr<Parser>) -> i32 {
     let names: i32 = flowc_parse_brace_idents(p)
     if p[0].err != 0 {
         return AST_NONE
+    }
+    # `import M as name`: the module's symbols stay in scope under their own
+    # names, and `name.f` also reaches them (#1039).
+    if names == AST_NONE and flowc_parser_check_kw(p[0], KW_AS) == 1 {
+        flowc_parser_advance(p)
+        if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+            flowc_parser_fail(p)
+            return AST_NONE
+        }
+        let al: i32 = flowc_ast_alloc(&p[0].arena, AST_IDENT, p[0].cur.start, p[0].cur.end)
+        if al == AST_NONE {
+            flowc_parser_fail(p)
+            return AST_NONE
+        }
+        p[0].arena.nodes[al].name_start = p[0].cur.start
+        p[0].arena.nodes[al].name_end = p[0].cur.end
+        p[0].arena.nodes[al].next = p[0].aliases
+        p[0].aliases = al
+        flowc_parser_advance(p)
     }
     let id: i32 = flowc_ast_alloc(&p[0].arena, AST_IMPORT, start, p[0].cur.start)
     if id == AST_NONE {
@@ -4782,13 +4918,65 @@ function flowc_parse_flow_decl(p: ptr<Parser>) -> i32 {
     return id
 }
 
+# Attach the AST_ATTR nodes in arena[lo..hi) to `item` when it is a
+# function (`export function` too). Returns 0 when an @only / @guard
+# attribute leaves the function out of this build (#1029), else 1.
+# Port of `_function_allowed` in the Python transpiler.
+function flowc_parse_attach_attrs(p: ptr<Parser>, lo: i32, hi: i32, item: i32) -> i32 {
+    if lo >= hi {
+        return 1
+    }
+    let mut fn: i32 = AST_NONE
+    let mut bits: i32 = 0
+    if p[0].arena.nodes[item].kind == AST_FN {
+        fn = item
+    } elif p[0].arena.nodes[item].kind == AST_EXPORT {
+        let inner: i32 = p[0].arena.nodes[item].a
+        if inner != AST_NONE and p[0].arena.nodes[inner].kind == AST_FN {
+            fn = inner
+            bits = AST_ATTR_EXPORTED
+        }
+    }
+    if fn == AST_NONE {
+        return 1
+    }
+    let src: ptr<u8> = p[0].lex.input
+    let mut guard: i32 = 0
+    let mut i: i32 = lo
+    while i < hi {
+        if p[0].arena.nodes[i].kind == AST_ATTR {
+            let name: string = flowc_attr_args_from_span(src, p[0].arena.nodes[i].name_start, p[0].arena.nodes[i].name_end)
+            let mut args: string = ""
+            if (p[0].arena.nodes[i].ival & AST_ATTR_HAS_ARGS) != 0 {
+                args = flowc_attr_args_from_span(src, p[0].arena.nodes[i].start, p[0].arena.nodes[i].end)
+            }
+            guard = flowc_attr_guard_step(guard, name, args)
+        }
+        i = i + 1
+    }
+    if guard == 1 {
+        return 0
+    }
+    i = lo
+    while i < hi {
+        if p[0].arena.nodes[i].kind == AST_ATTR {
+            p[0].arena.nodes[i].b = fn
+            p[0].arena.nodes[i].ival = p[0].arena.nodes[i].ival | bits
+        }
+        i = i + 1
+    }
+    return 1
+}
+
 export function flowc_parse_program(p: ptr<Parser>) -> i32 {
     let start: i32 = 0
     let mut items: i32 = AST_NONE
     while flowc_parser_check(p[0], TOK_EOF) == 0 {
         let mut item: i32 = AST_NONE
-        # Skip attributes: @name, @name(args), @name { body }
-        # Capture @cInclude("header.h") as AST_C_INCLUDE.
+        # Attributes: @name, @name(args). @cInclude, @cEmbed and @cImport
+        # become their own items. Every other one becomes an AST_ATTR node
+        # that attaches to the function below (flowc_parse_attach_attrs).
+        let attr_lo: i32 = p[0].arena.len
         while flowc_parser_check(p[0], TOK_AT) == 1 {
             flowc_parser_advance(p)
             let mut attr_name: i32 = -1
@@ -4863,8 +5051,9 @@ export function flowc_parse_program(p: ptr<Parser>) -> i32 {
                     }
                     continue
                 }
-                # Skip generic @name(args)
+                # Generic @name(args): keep the name and argument spans.
                 flowc_parser_advance(p)
+                let args_start: i32 = p[0].cur.start
                 let mut depth: i32 = 1
                 while depth > 0 and flowc_parser_check(p[0], TOK_EOF) == 0 {
                     if flowc_parser_check(p[0], TOK_LPAREN) == 1 {
@@ -4878,11 +5067,28 @@ export function flowc_parse_program(p: ptr<Parser>) -> i32 {
                         flowc_parser_advance(p)
                     }
                 }
+                if attr_name >= 0 {
+                    let at: i32 = flowc_ast_alloc(&p[0].arena, AST_ATTR, args_start, p[0].cur.start)
+                    if at != AST_NONE {
+                        p[0].arena.nodes[at].name_start = attr_name
+                        p[0].arena.nodes[at].name_end = attr_name_end
+                        p[0].arena.nodes[at].ival = AST_ATTR_HAS_ARGS
+                    }
+                }
                 if flowc_parser_check(p[0], TOK_RPAREN) == 1 {
                     flowc_parser_advance(p)
                 }
+            } else {
+                if attr_name >= 0 {
+                    let at: i32 = flowc_ast_alloc(&p[0].arena, AST_ATTR, attr_name_end, attr_name_end)
+                    if at != AST_NONE {
+                        p[0].arena.nodes[at].name_start = attr_name
+                        p[0].arena.nodes[at].name_end = attr_name_end
+                    }
+                }
             }
         }
+        let attr_hi: i32 = p[0].arena.len
         if flowc_parser_ident_is(p[0], "theorem") == 1 {
             let th: i32 = flowc_parse_theorem(p, 0)
             if th == AST_NONE {
@@ -5009,6 +5215,12 @@ export function flowc_parse_program(p: ptr<Parser>) -> i32 {
         }
         if item == AST_NONE {
             return AST_NONE
+        }
+        # A function whose @only / @guard mode is off is not part of this
+        # build (#1029): drop every node it allocated.
+        if flowc_parse_attach_attrs(p, attr_lo, attr_hi, item) == 0 {
+            p[0].arena.len = attr_hi
+            continue
         }
         items = flowc_ast_chain_push(&p[0].arena, items, item)
     }

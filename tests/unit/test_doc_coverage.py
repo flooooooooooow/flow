@@ -78,7 +78,7 @@ def test_stdlib_modules_are_discovered_including_subdirectories():
 
 
 def test_backends_are_discovered():
-    assert {"c_generator", "mlir_generator", "wasm_compiler"} <= _inventory()["backend"]
+    assert {"mlir_generator", "wasm_compiler"} <= _inventory()["backend"]
 
 
 @pytest.mark.parametrize(

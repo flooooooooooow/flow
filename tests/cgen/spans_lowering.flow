@@ -1,0 +1,31 @@
+# A span lowers to a two-word view struct, one typedef per element type and
+# mutability. A fixed array auto-borrows at the call site, and a slice
+# lowers to a pointer offset plus a length.
+function total(values: span<i32>) -> i32 {
+    return values[0] + values[1]
+}
+
+function head(values: span<i32>) -> i32 {
+    return values[0]
+}
+
+function fixed(values: span<i32, 4>) -> i32 {
+    return values[3]
+}
+
+function fill(values: span<mut i32>) {
+    values[0] = 7
+}
+
+function main() -> i32 {
+    let xs: array<i32, 8> = [1, 2, 3, 4, 5, 6, 7, 8]
+    let a: i32 = total(xs)
+    let b: i32 = total(xs[2..5])
+    let mut lo: i32 = 1
+    let mut hi: i32 = 6
+    let c: i32 = head(xs[lo..hi])
+    let d: i32 = fixed(xs[0..4])
+    let mut ys: array<i32, 2> = [0, 0]
+    fill(ys)
+    return a + b + c + d + ys[0]
+}

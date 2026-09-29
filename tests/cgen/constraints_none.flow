@@ -1,0 +1,11 @@
+# A flow with no always / never block gets no Name_check.
+flow F {
+    state x : f64 = 0.0
+    x evolves as 1.0
+}
+
+function main() -> i32 {
+    let mut f: F = F_new()
+    F_step(&f, 0.5)
+    return 0
+}

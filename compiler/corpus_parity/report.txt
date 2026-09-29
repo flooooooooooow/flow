@@ -1,18 +1,19 @@
 flowc corpus parity with the Python host (C backend)
 
-files with main(): 1053
-at parity:         1037 (98.5%)
-  same run:        776 of 783 that Python builds (99.1%)
+files with main(): 1055
+at parity:         1034 (98.0%)
+  same run:        773 of 783 that Python builds (98.7%)
   both reject:     261
 flowc better:      6 (Python's C does not compile, flowc's does)
 
 by status:
-  match            1037
+  match            1034
+  run-exit            6
   flowc-better        6
-  run-timeout         3
-  run-exit            3
   flowc-accepts       3
-  run-stdout          1
+  run-timeout         2
+  run-stdout          2
+  nogolden            2
 
 by directory (parity / files):
   apps                                 6 /     6  100.0%
@@ -33,7 +34,7 @@ by directory (parity / files):
   examples/ai                          3 /     4   75.0%
   examples/audio                      24 /    24  100.0%
   examples/basics                     25 /    25  100.0%
-  examples/bench                       2 /     2  100.0%
+  examples/bench                       1 /     2   50.0%
   examples/book                       14 /    14  100.0%
   examples/circuits                   13 /    13  100.0%
   examples/compilers                  10 /    10  100.0%
@@ -44,7 +45,7 @@ by directory (parity / files):
   examples/dsp                         1 /     1  100.0%
   examples/dynamics                    9 /     9  100.0%
   examples/ecosystem                  16 /    16  100.0%
-  examples/effects                     6 /     6  100.0%
+  examples/effects                     5 /     6   83.3%
   examples/evoleco                    25 /    25  100.0%
   examples/evolution                  33 /    34   97.1%
   examples/flow_way                    2 /     2  100.0%
@@ -80,7 +81,7 @@ by directory (parity / files):
   tests/core                          41 /    41  100.0%
   tests/experimental                   3 /     3  100.0%
   tests/fixtures                      11 /    11  100.0%
-  tests/lang                         194 /   196   99.0%
+  tests/lang                         194 /   198   98.0%
   tests/memory                         3 /     3  100.0%
   tests/misc                           3 /     3  100.0%
   tests/mlir                           1 /     1  100.0%
@@ -88,15 +89,17 @@ by directory (parity / files):
   tests/simd                           4 /     4  100.0%
   tests/stdlib                        49 /    49  100.0%
   tests/tools                         16 /    16  100.0%
-  tools                                2 /     4   50.0%
+  tools                                1 /     4   25.0%
   wasm                                 1 /     1  100.0%
 
 failure causes, ranked (count, status, first flowc diagnostic):
-      3  run-timeout flowc build times out (Python exit 0) 
-      3  run-exit exit code differs (Python timeout, flowc 0) 
+      5  run-exit exit code differs (Python timeout, flowc 0) 
+      2  run-timeout flowc build times out (Python exit 0) 
+      2  run-stdout stdout differs 
+      2  nogolden no Python golden for this file 
       2  flowc-better Python C does not compile: clang: error: linker command failed with exit code 1 (use -v to see invocation) 
       2  flowc-accepts Python reject: Error resolving modules: Invalid escape sequence: \x 
-      1  run-stdout stdout differs 
+      1  run-exit exit code differs (Python 138, flowc 0) 
       1  flowc-better Python C does not compile: link: undefined symbol main 
       1  flowc-better Python C does not compile: error: use of undeclared identifier 'X' 
       1  flowc-better Python C does not compile: error: returning 'int32_t (int32_t)' (aka 'int (int)') from a function with incompatible result type 'X' 

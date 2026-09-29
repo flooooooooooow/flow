@@ -1,0 +1,25 @@
+# Flow-native language test: `import M as name` (#1039).
+# The Python parser accepted the alias; the module's names stay in scope
+# under their own names, and flowc also reads `name.f` as `f`.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+import tests.fixtures.modules.testlib.alpha as al
+import tests.fixtures.modules.testlib.greeter as gr
+
+function main() -> i32 {
+    if al.alpha_one() != 1 {
+        return 1
+    }
+    if alpha_two() != 2 {
+        return 2
+    }
+    if gr.greet() != 42 {
+        return 3
+    }
+    # An alias used inside a larger expression.
+    let total: i32 = al.alpha_one() + al.alpha_two() * gr.greet()
+    if total != 85 {
+        return 4
+    }
+    return 0
+}

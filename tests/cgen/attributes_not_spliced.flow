@@ -1,0 +1,22 @@
+# Attribute text never reaches the C verbatim. An unknown attribute and a
+# crafted @target string that tries to close the C attribute are both kept
+# out of the output. A `test` block is not run by the program, so a
+# failing body still exits 0.
+@fastcall
+function f() -> i32 {
+    return 0
+}
+
+@target("x\")) __attribute__((constructor")
+function evil() -> i32 {
+    return 0
+}
+
+test "always fails" {
+    expect 1 + 1 == 3
+    return false
+}
+
+function main() -> i32 {
+    return f() + evil()
+}

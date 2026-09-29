@@ -1,7 +1,7 @@
 """Shell-independent Flow program runner (#400).
 
-Transpiles a .flow file to C, compiles it with clang, and runs the resulting
-binary. This is equivalent to `flow run` but works without bash, so it runs
+Compiles a .flow file to C with flowc, compiles the C with clang, and runs
+the resulting binary. This is equivalent to `flow run` but works without bash, so it runs
 under any shell or directly via `python3 -m flow.run`.
 
 Usage:
@@ -101,15 +101,12 @@ def main() -> int:
     t0 = time.monotonic()
     
     if backend == "c":
-        transpile_cmd = [
-            sys.executable, "-m", "flow.transpiler",
-            str(input_path), "--c", "-o", str(c_path),
-        ]
+        # Flow to C goes through flowc (compiler/scripts/flowc_emit.sh).
+        transpile_cmd = [str(ROOT / "compiler" / "scripts" / "flowc_emit.sh")]
         if args.lenient:
             transpile_cmd.append("--lenient")
-        env = dict(os.environ)
-        env["PYTHONPATH"] = str(ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
-        result = subprocess.run(transpile_cmd, capture_output=True, text=True, env=env)
+        transpile_cmd += [str(input_path), str(c_path)]
+        result = subprocess.run(transpile_cmd, capture_output=True, text=True)
         if result.returncode != 0:
             msg = result.stderr.strip() or result.stdout.strip()
             if args.json:
@@ -128,7 +125,8 @@ def main() -> int:
                 print("Error: clang not found", file=sys.stderr)
             return 1
 
-        cflags = ["-std=c11", "-O2", "-Wno-everything", "-lm"]
+        cflags = ["-std=c11", "-D_DEFAULT_SOURCE", "-I" + str(ROOT / "runtime"),
+                  "-O2", "-Wno-everything", "-lm"]
         # Enable vector math library on Linux/glibc (see #751)
         if sys.platform.startswith("linux"):
             cflags.append("-fveclib=libmvec")

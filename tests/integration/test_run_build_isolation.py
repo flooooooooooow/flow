@@ -33,7 +33,7 @@ def _make_project(root: Path, tag: str) -> Path:
 
 
 def _run(main: Path) -> str:
-    env = dict(os.environ, FLOW_HOST="python")
+    env = dict(os.environ, FLOW_HOST="flowc")
     res = subprocess.run(
         [str(DRIVER), "run", str(main)],
         capture_output=True, text=True, env=env, cwd=str(REPO), timeout=180,

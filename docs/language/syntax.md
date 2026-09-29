@@ -154,6 +154,11 @@ function_name(arg1, arg2)
 
 ### Struct Literal
 ```flow
+struct Point {
+    x: f64,
+    y: f64
+}
+
 Point { x: 1.0, y: 2.0 }
 ```
 

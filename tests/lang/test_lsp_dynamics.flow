@@ -1,5 +1,5 @@
 # Test for lsp_dynamics.flow port of dynamics_hover.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_lsp_dynamics.flow
+# Run with: ./flow run tests/lang/test_lsp_dynamics.flow
 # Exit 0 on success.
 
 import "compiler/src/lsp_dynamics.flow"

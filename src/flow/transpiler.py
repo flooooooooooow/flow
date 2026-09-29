@@ -3,6 +3,10 @@
 FLOW Language Transpiler
 Main entry point for transpiling FLOW to MLIR/LLVMIR
 With module system and GPU integration
+
+The C backend is flowc (compiler/src, `flow compile`,
+compiler/scripts/flowc_emit.sh). The Python C backend is retired and
+`--c` exits with a pointer to flowc.
 """
 
 import sys
@@ -15,11 +19,17 @@ from .parser import (
     StructDecl,
 )
 from .mlir_generator import flow_to_mlir
-from .c_generator import flow_to_c
 from .module_resolver import resolve_modules, get_module_resolver
 from .gpu_integration import get_gpu_integration
 from .type_checker import TypeChecker
 from .monomorphize import monomorphize
+
+
+C_BACKEND_RETIRED = (
+    "flow.transpiler: the Python C backend is retired. Compile to C with flowc:\n"
+    "  ./flow compile <file.flow>                      (executable)\n"
+    "  compiler/scripts/flowc_emit.sh <in.flow> <out.c>  (C only)"
+)
 
 
 def _parse_decorator(attr: str) -> tuple[str, list[str]]:
@@ -53,7 +63,8 @@ def mlir_opt_kwargs_from_args(args) -> dict:
     return {
         "enable_vectorization": not getattr(args, "no_vectorization", False),
         # loop_fusion is opt-in (--loop-fusion) since the generator emits
-        # scf/cf, not affine. Default off to avoid mlir-opt hangs (flow#466).
+        # scf/cf and affine fusion does not apply. Default off to avoid
+        # mlir-opt hangs (flow#466).
         "enable_loop_fusion": getattr(args, "loop_fusion", False),
         "enable_mem2reg": not getattr(args, "no_mem2reg", False),
         "enable_sccp": not getattr(args, "no_sccp", False),
@@ -99,7 +110,11 @@ def main():
     parser.add_argument("input", nargs="?", help="Input FLOW file")
     parser.add_argument("-o", "--output", help="Output file (default: stdout)")
     parser.add_argument("--mlir", action="store_true", help="Output MLIR (default)")
-    parser.add_argument("--c", action="store_true", help="Output C code")
+    parser.add_argument(
+        "--c",
+        action="store_true",
+        help="Retired: the C backend is flowc (flow compile, compiler/scripts/flowc_emit.sh)",
+    )
     parser.add_argument(
         "--llvm", action="store_true", help="Output LLVM IR (requires mlir-opt)"
     )
@@ -197,15 +212,6 @@ def main():
         help="SPIR-V output path (default: build/<input>.spv)",
     )
     parser.add_argument(
-        "--explain",
-        action="store_true",
-        help=(
-            "Print the selected compilation plan for every declarative "
-            "construct (sort, find): what was considered, each cost, the "
-            "choice, and the constraint each rejected candidate failed"
-        ),
-    )
-    parser.add_argument(
         "--module-info", action="store_true", help="Show module information"
     )
     parser.add_argument(
@@ -219,16 +225,6 @@ def main():
     )
     parser.add_argument(
         "--lenient", action="store_true", help="Lenient type checking (warnings only)"
-    )
-    parser.add_argument(
-        "--library",
-        action="store_true",
-        help="Emit a linkable runtime/library TU (static _ui_state, no name mangling)",
-    )
-    parser.add_argument(
-        "--no-bounds-check",
-        action="store_true",
-        help="Disable runtime array bounds checks (for performance-critical builds)",
     )
     parser.add_argument(
         "--python", action="store_true", help="Generate Python package (wheel)"
@@ -249,18 +245,6 @@ def main():
         choices=["compile", "jit", "hot", "interp", "mlir", "c"],
         help="Guard mode for @only/@guard decorators (default: inferred)",
     )
-    parser.add_argument(
-        "--export",
-        nargs="*",
-        default=[],
-        help="Function names to export with stable C symbols (for WASM/FFI). "
-        "Use --export foo bar to export foo() and bar() as flow_export_foo / flow_export_bar.",
-    )
-    parser.add_argument(
-        "--module-name",
-        help="Module name for WASM/Python package (default: input filename stem). "
-        "Sets the Emscripten MODULARIZE name and the --export prefix.",
-    )
 
     args = parser.parse_args()
 
@@ -270,12 +254,12 @@ def main():
         print(MLIROptimizer.build_pass_pipeline(**mlir_opt_kwargs_from_args(args)))
         sys.exit(0)
 
+    if args.c:
+        print(C_BACKEND_RETIRED, file=sys.stderr)
+        sys.exit(2)
+
     if not args.input:
         parser.error("the following arguments are required: input")
-
-    if args.c and args.llvm:
-        print("Error: --llvm is only valid for MLIR backend (remove --c).", file=sys.stderr)
-        sys.exit(1)
 
     # --lenient overrides --strict
     strict_mode = args.strict
@@ -304,10 +288,7 @@ def main():
         source_dir = _os.path.dirname(_os.path.abspath(args.input))
         declarations = resolve_c_imports(declarations, source_dir)
 
-        # Decide backend early so mode filtering can use it.
         backend = "mlir"
-        if args.c:
-            backend = "c"
 
         active_modes = _active_modes(args, backend)
         declarations = _filter_declarations(declarations, active_modes)
@@ -465,6 +446,7 @@ def main():
                 module_name=module_name,
                 version=args.python_version,
                 verbose=True,
+                source_path=args.input,
             )
 
             # Print export analysis
@@ -508,124 +490,77 @@ def main():
             traceback.print_exc()
             sys.exit(1)
 
-    # Decide backend (may have been inferred earlier)
-    backend = "mlir"  # Default backend
-    if args.c:
-        backend = "c"
+    # Generate MLIR
+    try:
+        source_file = Path(args.input).name
+        out_code = flow_to_mlir(
+            declarations,
+            source_file=source_file,
+            emit_debug_info=args.debug_info,
+            emit_gpu=args.mlir_gpu,
+            size_t_bits=32 if args.wasm32 else 64,
+        )
 
-    if backend == "c":
-        try:
-            # For the C backend, reuse --debug-info to emit coarse source mappings
-            # (via C preprocessor #line directives) for LLDB/GDB.
-            src_path = args.input
-            if args.debug_info:
-                try:
-                    src_path = str(Path(args.input).resolve())
-                except Exception:
-                    src_path = args.input
-            out_code = flow_to_c(
-                declarations,
-                source_file=src_path,
-                debug_info=args.debug_info,
-                strict_effects=args.strict_effects,
-                library=args.library,
-                no_bounds_check=getattr(args, "no_bounds_check", False),
-                export_names=getattr(args, "export", None),
-                module_name=getattr(args, "module_name", None),
-            )
-            if getattr(args, "explain", False):
-                from .plan_selector import format_selections
+        # Apply optimizations if requested
+        if args.optimize:
+            from .mlir_optimizer import MLIROptimizer
+            import tempfile
 
-                selections = getattr(flow_to_c, "last_selections", []) or []
-                print(
-                    format_selections(selections, source=args.input),
-                    file=sys.stderr,
-                )
-            overload_warnings = getattr(flow_to_c, "last_warnings", None)
-            if overload_warnings:
-                print("Overload resolution warnings:", file=sys.stderr)
-                for warning in overload_warnings[:10]:
-                    print(f"  ⚠ {warning}", file=sys.stderr)
-                if len(overload_warnings) > 10:
-                    print(
-                        f"  ... and {len(overload_warnings) - 10} more",
-                        file=sys.stderr,
-                    )
-        except Exception as e:
-            print(f"C generation error: {e}", file=sys.stderr)
-            sys.exit(1)
-    else:
-        # Generate MLIR
-        try:
-            source_file = Path(args.input).name
-            out_code = flow_to_mlir(
-                declarations,
-                source_file=source_file,
-                emit_debug_info=args.debug_info,
-                emit_gpu=args.mlir_gpu,
-                size_t_bits=32 if args.wasm32 else 64,
-            )
-
-            # Apply optimizations if requested
-            if args.optimize:
-                from .mlir_optimizer import MLIROptimizer
-                import tempfile
-
-                # Write generated MLIR to temp file
-                tmp_path = None
-                try:
-                    with tempfile.NamedTemporaryFile(
-                        mode="w", suffix=".mlir", delete=False
-                    ) as tmp:
-                        tmp.write(out_code)
-                        tmp_path = tmp.name
-
-                    # Optimize
-                    optimizer = MLIROptimizer()
-                    opt_kwargs = mlir_opt_kwargs_from_args(args)
-                    opt_result = optimizer.optimize(
-                        tmp_path,
-                        tmp_path,
-                        **opt_kwargs,
-                    )
-
-                    if opt_result != 0:
-                        print("MLIR optimization failed", file=sys.stderr)
-                        sys.exit(1)
-
-                    # Read optimized MLIR
-                    with open(tmp_path, "r") as f:
-                        out_code = f.read()
-
-                    # Generate optimization report if requested
-                    if args.opt_report:
-                        report = optimizer.get_optimization_report(
-                            tmp_path, **opt_kwargs
-                        )
-                        print(report, file=sys.stderr)
-                finally:
-                    if tmp_path and Path(tmp_path).exists():
-                        Path(tmp_path).unlink()
-
-        except Exception as e:
-            print(f"MLIR generation error: {e}", file=sys.stderr)
-            sys.exit(1)
-
-        # Optional: Lower MLIR to LLVM IR
-        if args.llvm:
+            # Write generated MLIR to temp file
+            tmp_path = None
             try:
-                from .mlir_jit import MLIRJIT
-                jit = MLIRJIT()
-                try:
-                    out_code = jit.compile_mlir_to_llvm(out_code)
-                finally:
-                    jit.cleanup()
-            except Exception as e:
-                print(f"LLVM IR generation failed: {e}", file=sys.stderr)
-                sys.exit(1)
+                with tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".mlir", delete=False
+                ) as tmp:
+                    tmp.write(out_code)
+                    tmp_path = tmp.name
+
+                # Optimize
+                optimizer = MLIROptimizer()
+                opt_kwargs = mlir_opt_kwargs_from_args(args)
+                opt_result = optimizer.optimize(
+                    tmp_path,
+                    tmp_path,
+                    **opt_kwargs,
+                )
+
+                if opt_result != 0:
+                    print("MLIR optimization failed", file=sys.stderr)
+                    sys.exit(1)
+
+                # Read optimized MLIR
+                with open(tmp_path, "r") as f:
+                    out_code = f.read()
+
+                # Generate optimization report if requested
+                if args.opt_report:
+                    report = optimizer.get_optimization_report(
+                        tmp_path, **opt_kwargs
+                    )
+                    print(report, file=sys.stderr)
+            finally:
+                if tmp_path and Path(tmp_path).exists():
+                    Path(tmp_path).unlink()
+
+    except Exception as e:
+        print(f"MLIR generation error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    # Optional: Lower MLIR to LLVM IR
+    if args.llvm:
+        try:
+            from .mlir_jit import MLIRJIT
+            jit = MLIRJIT()
+            try:
+                out_code = jit.compile_mlir_to_llvm(out_code)
+            finally:
+                jit.cleanup()
+        except Exception as e:
+            print(f"LLVM IR generation failed: {e}", file=sys.stderr)
+            sys.exit(1)
 
     # Optional: Lower GPU module to SPIR-V
-    if backend != "c" and args.emit_spirv:
+    if args.emit_spirv:
         try:
             from .mlir_spirv import MLIRSPIRVCompiler
 
@@ -710,9 +645,7 @@ def main():
         try:
             with open(args.output, "w") as f:
                 f.write(out_code)
-            if backend == "c":
-                print(f"Generated C written to {args.output}", file=sys.stderr)
-            elif args.llvm:
+            if args.llvm:
                 print(f"Generated LLVM IR written to {args.output}", file=sys.stderr)
             else:
                 print(f"Generated MLIR written to {args.output}", file=sys.stderr)

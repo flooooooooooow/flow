@@ -1,6 +1,6 @@
 # Data-parallel gradient accumulation for the digits MLP.
 #
-#   FLOW_HOST=python ./flow run examples/ml/digits_mlp_parallel.flow
+#   ./flow run examples/ml/digits_mlp_parallel.flow
 #
 # Same dataset and model as examples/ml/digits_mlp.flow (8x8 procedural
 # seven-segment digits, 64 -> 32 relu -> 10 softmax CE, module statics).

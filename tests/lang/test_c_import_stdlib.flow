@@ -1,6 +1,6 @@
 # Test for @cImport with a real system header.
 # Imports stdlib.h and uses functions from it.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_import_stdlib.flow
+# Run with: ./flow run tests/lang/test_c_import_stdlib.flow
 # Exit 0 on success.
 
 @cImport("stdlib.h")

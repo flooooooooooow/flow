@@ -1,0 +1,9 @@
+# An effect operation called with no handler installed.
+effect Log {
+    write(msg: i32) -> void,
+}
+
+function main() -> i32 {
+    Log.write(1)
+    return 0
+}

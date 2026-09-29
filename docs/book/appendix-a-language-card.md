@@ -93,7 +93,7 @@ flow Model {
 ./flow fmt program.flow
 ./flow test
 
-FLOW_HOST=python ./flow run full_language_program.flow
+./flow run full_language_program.flow
 python3 -m flow.run program.flow --json
 ```
 

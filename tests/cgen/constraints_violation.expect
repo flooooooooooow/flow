@@ -1,0 +1,2 @@
++ invariant violated: x < 1.5
+exit 1

@@ -1,10 +1,5 @@
 """Tests for c64/c128 complex number types."""
-import subprocess
-import sys
-import os
-import pytest
-
-from tests.unit.compiler_helpers import errors, to_c, compile_c_only
+from tests.unit.compiler_helpers import errors
 
 
 def test_c64_type_recognized():
@@ -142,34 +137,5 @@ def test_complex_array():
     """)
 
 
-def test_complex_c_codegen():
-    """Verify the generated C uses complex.h types and CMPLXF."""
-    c_code = compile_c_only("""
-    function main() -> i32 {
-        let z: c64 = c64(3.0, 4.0)
-        let w: c64 = c64(1.0, 2.0)
-        let s: c64 = z + w
-        return 0
-    }
-    """)
-    assert "complex.h" in c_code
-    assert "float complex" in c_code
-    assert "* I" in c_code  # C99 complex construction via I macro
-
-
-def test_complex_mul_real_codegen_no_mulsc3():
-    """Verify complex * real lowers to direct element-wise multiplies without mulsc3."""
-    from tests.unit.compiler_helpers import compile_c_only
-    c_code = compile_c_only("""
-    function main() -> i32 {
-        let z: c64 = c64(1.0, 2.0)
-        let s: f32 = 3.0
-        let p: c64 = z * s
-        return 0
-    }
-    """)
-    # Should not use a direct binary op * (which clang turns into __mulsc3)
-    assert "(z * s)" not in c_code
-    assert "crealf" in c_code
-    assert "cimagf" in c_code
-    assert "__mulsc3" not in c_code
+# test_complex_c_codegen and test_complex_mul_real_codegen_no_mulsc3 ->
+# tests/cgen/complex_types_arith.flow (checked against flowc).

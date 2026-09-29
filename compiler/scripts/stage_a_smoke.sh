@@ -9,6 +9,9 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
+# flowc built from the current compiler/src by the checked-in bootstrap
+# (compiler/scripts/flowc_host.sh). It stands in for the retired Python host.
+FLOWC_SRC_BIN="$(./compiler/scripts/flowc_host.sh)"
 mkdir -p compiler/build
 
 # Avoid ./flow hanging on `brew --prefix llvm` when Homebrew is busy/locked.
@@ -48,7 +51,7 @@ stage_a_emit() {
     # Host emit: picks up latest Stage-A sources; no stale driver binary.
     export FLOWC_IN="$src"
     export FLOWC_OUT="$c_out"
-    ./flow run compiler/src/main.flow
+    "$FLOWC_SRC_BIN"
 }
 
 echo "=== stage_a_smoke (${FIXTURE} → exit ${EXPECT}) ==="

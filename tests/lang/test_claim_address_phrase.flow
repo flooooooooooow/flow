@@ -1,5 +1,5 @@
 # Test for address_phrase addition to claim_address.flow.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_claim_address_phrase.flow
+# Run with: ./flow run tests/lang/test_claim_address_phrase.flow
 # Exit 0 on success.
 
 import "compiler/src/claim_address.flow"

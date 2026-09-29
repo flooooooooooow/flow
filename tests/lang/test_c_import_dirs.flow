@@ -1,6 +1,6 @@
 # Test for @cImport with -I include path support.
 # Preprocesses a local header using flowc_cparser_preprocess_with_dirs.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_import_dirs.flow
+# Run with: ./flow run tests/lang/test_c_import_dirs.flow
 # Exit 0 on success.
 
 import "compiler/src/c_parser.flow"

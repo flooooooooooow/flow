@@ -22,7 +22,7 @@ module, effect, DSL, and runtime work.
 Strict compilation turns type and effect findings into failures:
 
 ```bash
-FLOW_HOST=python ./flow transpile program.flow --c --strict -o build/program.c
+compiler/scripts/flowc_emit.sh --strict program.flow build/program.c
 ```
 
 A good diagnostic names the source location, the failed rule, the actual and
@@ -146,8 +146,7 @@ selection:
 ```
 
 The report lists candidate plans, applicability failures, costs, constraints,
-and the selected implementation. The report is most useful for sorting,
-search, matrix operations, and reductions.
+and the selected implementation. It covers sorting and search today.
 
 ## 17.11 FIR-G
 
@@ -222,7 +221,7 @@ No row implies the rows beneath it automatically.
 
 1. Give each failing branch of a program a distinct exit code.
 2. Run AddressSanitizer on a deliberately out-of-bounds pointer example.
-3. Compare an explain report before and after supplying an ordering hint.
+3. Compare the generated C for a sort before and after supplying an ordering hint.
 4. Classify one repository proof by its actual checker status.
 
 Next: [A complete instrument](18-a-complete-instrument.md).

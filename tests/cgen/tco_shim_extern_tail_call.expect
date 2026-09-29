@@ -1,0 +1,4 @@
++ foo_get_c_c(i)
++ goto __flowc_tail
+~ int32_t foo_get\(int32_t i\) \{$
+exit 42

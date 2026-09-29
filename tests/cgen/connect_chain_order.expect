@@ -1,0 +1,6 @@
+# From tests/unit/test_connect_composition.py::test_step_copies_then_calls_children
++ Chain __self = (Chain){ .a = Ramp_new(), .b = Integrator_new() };
++ (self->b).u = (self->a).out;
++ Ramp_step((&self->a), dt);
++ Integrator_step((&self->b), dt);
+exit 0

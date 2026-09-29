@@ -11,7 +11,12 @@ import .ast {
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM,
     AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_TYPE_ALIAS, AST_SHADER, AST_IDENT_SORT_MOD, AST_MATCH_ARM_EXT, AST_LAYOUT, AST_PIPE_BLOCK, PIPE_BLOCK_CHOOSE, AST_IDENT_FORK_SRC, AST_SORT_BY, AST_TRY, AST_VECTOR_LIT,
     AST_HANDLE, AST_CAPABILITY, AST_CAP_METHOD, AST_TYPE_CAPABILITY,
+    AST_ATTR, AST_ATTR_HAS_ARGS,
     flowc_ast_chain_len, flowc_ast_reject_unsupported, flowc_ast_enum_of_const
+}
+import .attributes {
+    flowc_attr_args_from_span, flowc_attr_span_is, flowc_is_known_attr,
+    flowc_attr_takes_args, flowc_validate_target_spec
 }
 import .effects {
     FLOWC_EFF_EFFECT, FLOWC_EFF_CAP, FLOWC_EFF_ROW,
@@ -535,6 +540,20 @@ function flowc_tc_lookup_fn_arity(ctx: TcCtx, start: i32, end: i32) -> i32 {
     return -1
 }
 
+# 1 when some function entry named [start, end) takes n parameters.
+function flowc_tc_fn_has_arity(ctx: TcCtx, start: i32, end: i32, n: i32) -> i32 {
+    let mut i: i32 = ctx.nlen
+    while i > 0 {
+        i = i - 1
+        if ctx.nk[i] == 1 and ctx.na[i] == n {
+            if flowc_tc_name_eq(ctx, start, end, i) == 1 {
+                return 1
+            }
+        }
+    }
+    return 0
+}
+
 function flowc_tc_unwrap_fn(arena: AstArena, item: i32) -> i32 {
     if item == AST_NONE {
         return AST_NONE
@@ -671,6 +690,64 @@ function flowc_tc_line_of(ctx: ptr<TcCtx>, pos: i32) -> i32 {
         i = i + 1
     }
     return line
+}
+
+# 1 when fn `fn` carries an attribute spelled `lit`.
+function flowc_tc_fn_has_attr(ctx: ptr<TcCtx>, arena: AstArena, fn: i32, lit: string) -> i32 {
+    let mut i: i32 = 0
+    while i < fn {
+        if arena.nodes[i].kind == AST_ATTR and arena.nodes[i].b == fn {
+            if flowc_attr_span_is(ctx[0].src, arena.nodes[i].name_start, arena.nodes[i].name_end, lit) == 1 {
+                return 1
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# Function attributes (#1028). Port of `attribute_errors` in
+# src/flow/attributes.py for the checks the C backend depends on: an
+# unknown attribute, arguments on one that takes none, a missing or
+# malformed @target spec, and @noinline with @inline or @always_inline.
+# Errors, so --lenient downgrades them as the Python host did.
+function flowc_tc_check_attrs(ctx: ptr<TcCtx>, arena: AstArena) {
+    let src: ptr<u8> = ctx[0].src
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_ATTR and arena.nodes[i].b != AST_NONE {
+            let fn: i32 = arena.nodes[i].b
+            let fl: i32 = arena.nodes[fn].name_end - arena.nodes[fn].name_start
+            let fp: ptr<u8> = src + arena.nodes[fn].name_start
+            let name: string = flowc_attr_args_from_span(src, arena.nodes[i].name_start, arena.nodes[i].name_end)
+            let line: i32 = flowc_tc_line_of(ctx, arena.nodes[i].name_start)
+            let mut args: string = ""
+            if (arena.nodes[i].ival & AST_ATTR_HAS_ARGS) != 0 {
+                args = flowc_attr_args_from_span(src, arena.nodes[i].start, arena.nodes[i].end)
+            }
+            if flowc_is_known_attr(name) == 0 {
+                printf("line %d: Unknown attribute '@%s' on function '%.*s'\n", line, name, fl, fp)
+                flowc_tc_err(ctx)
+            } elif strlen(args) > 0 and flowc_attr_takes_args(name) == 0 {
+                printf("line %d: Attribute '@%s' on function '%.*s' takes no arguments\n", line, name, fl, fp)
+                flowc_tc_err(ctx)
+            } elif flowc_attr_span_is(src, arena.nodes[i].name_start, arena.nodes[i].name_end, "target") == 1 {
+                if strlen(args) == 0 {
+                    printf("line %d: Attribute '@target' on function '%.*s' requires a target string, e.g. @target(\"avx2\")\n", line, fl, fp)
+                    flowc_tc_err(ctx)
+                } elif flowc_validate_target_spec(args) == 0 {
+                    printf("line %d: @target(\"%s\") is not a valid target spec; expected forms are 'avx2', '+avx2', '-sse', 'no-sse', 'arch=haswell' or 'tune=native' (on function '%.*s')\n", line, args, fl, fp)
+                    flowc_tc_err(ctx)
+                }
+            } elif flowc_attr_span_is(src, arena.nodes[i].name_start, arena.nodes[i].name_end, "noinline") == 1 {
+                if flowc_tc_fn_has_attr(ctx, arena, fn, "inline") == 1 or flowc_tc_fn_has_attr(ctx, arena, fn, "always_inline") == 1 {
+                    printf("line %d: Function '%.*s' cannot be both '@noinline' and '@inline'/'@always_inline'\n", line, fl, fp)
+                    flowc_tc_err(ctx)
+                }
+            }
+        }
+        i = i + 1
+    }
 }
 
 # Fork / choose block (#996). Rejects what src/flow/fork_records.py rejects,
@@ -1243,6 +1320,11 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         flowc_tc_check_expr(ctx, arena, arena.nodes[id].a)
         return
     }
+    # Inner link of a chained assignment `a = b = 1` (#1036).
+    if kind == AST_ASSIGN {
+        flowc_tc_check_stmt(ctx, arena, id)
+        return
+    }
     if kind == AST_VECTOR_LIT {
         let mut el: i32 = arena.nodes[id].a
         while el != AST_NONE {
@@ -1390,7 +1472,9 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
                 if arity >= 0 {
                     if nargs < arity and flowc_tc_eff_implicit_ok(ctx, arena, id, nargs) == 1 {
                         let unused_implicit: i32 = 0
-                    } elif nargs != arity {
+                    } elif nargs != arity and flowc_tc_fn_has_arity(ctx[0], ns, ne, nargs) == 0 {
+                        # An imported overload set seeds one entry per
+                        # overload; any of them may take nargs (#1044).
                         flowc_tc_note(ctx, "flowc tc: arity mismatch", ns, ne)
                         flowc_tc_err(ctx)
                     }
@@ -3362,6 +3446,12 @@ function ut_expr(u: ptr<UCtx>, arena: AstArena, id: i32) -> UTy {
     if kind == AST_IDENT {
         return ut_lookup(u, arena.nodes[id].name_start, arena.nodes[id].name_end)
     }
+    # Inner link of a chained assignment `a = b = 1` (#1036): the value is
+    # the one stored in the target.
+    if kind == AST_ASSIGN {
+        ut_stmt(u, arena, id)
+        return ut_expr(u, arena, arena.nodes[id].a)
+    }
     if kind == AST_CAST {
         return ut_cast(u, arena, id)
     }
@@ -3737,6 +3827,7 @@ export function flowc_tc_check_program(ctx: ptr<TcCtx>, arena: AstArena, root: i
     ctx[0].eff_len = flowc_eff_collect(arena, root, ctx[0].src, ctx[0].eff, ctx[0].eff_cap, ctx[0].eff_seed_len)
     flowc_tc_collect_globals(ctx, arena, root)
     flowc_tc_check_rows(ctx, arena, root)
+    flowc_tc_check_attrs(ctx, arena)
     flowc_tc_check_fns(ctx, arena, root)
     ctx[0].err = ctx[0].err + flowc_units_check(arena, ctx[0].src, root)
     ctx[0].eff_len = ctx[0].eff_seed_len

@@ -70,6 +70,15 @@ export const AST_EFFECT_OP: i32 = 50
 # AST_HANDLE: `handle E1, E2 with H1, H2 { body }`. a = body block,
 #   b = effect name chain, c = handler name chain (AST_IDENT).
 export const AST_CAP_METHOD: i32 = 70
+# AST_ATTR: one `@name` or `@name(args)` in front of a top-level function
+#   (#1028). name_* = attribute name, start/end = the text between the
+#   parentheses, b = the AST_FN it belongs to (not linked from it; AST_NONE
+#   when the attribute sits on anything else). ival = AST_ATTR_* bits.
+#   Never chained into the program. Readers scan the arena for it, as they
+#   do for AST_EFFECT_ROW.
+export const AST_ATTR: i32 = 69
+export const AST_ATTR_EXPORTED: i32 = 1
+export const AST_ATTR_HAS_ARGS: i32 = 2
 
 # Parse-only kinds, numbered from 80 to stay clear of concurrent additions.
 # The parser accepts them so tools can read every file the Python parser
@@ -116,8 +125,9 @@ export const AST_CAPABILITY_TYPE: i32 = 91
 export const AST_TRY: i32 = 92
 export const AST_VECTOR_LIT: i32 = 93
 # AST_SORT_BY: any `|> sort`, `|> sortBy` or `|> order`. a = source,
-#   b = key chain (AST_IDENT field, ival = 1 when descending), ival = 1 for a
-#   global `descending` plus 2 for `unique`.
+#   b = key chain (AST_IDENT field, ival = 1 when descending), ival = the
+#   AST_SORT_* flag bits below, name_* = the source span of the trailing
+#   modifiers (policies are read back from it for `flow explain`).
 # AST_MODULE: `module Name { ... }`. name_* = name, a = item chain.
 export const AST_SORT_BY: i32 = 94
 export const AST_MODULE: i32 = 95
@@ -149,6 +159,17 @@ export const AST_TYPE_SPAN_MUTABLE: i32 = 1
 export const AST_TYPE_FIXED_ARRAY: i32 = 2
 # AST_TYPE.c for `capability E`: the type names effect E and lowers to void*.
 export const AST_TYPE_CAPABILITY: i32 = 3
+
+# AST_SORT_BY.ival flag bits.
+export const AST_SORT_DESC: i32 = 1
+export const AST_SORT_UNIQUE: i32 = 2
+export const AST_SORT_UNSTABLE: i32 = 4
+export const AST_SORT_ADAPTIVE: i32 = 8
+export const AST_SORT_GENERAL: i32 = 16
+
+# AST_CALL.ival marker for `xs |> find(t)`, the declarative search (#145).
+# The call is find(xs, t); the marker keeps it apart from a plain find call.
+export const AST_CALL_PIPE_FIND: i32 = 16
 
 # AST_IDENT.ival marker for a sort DSL modifier (`xs |> sort descending`).
 # Only the pipeline lowering sets it, so `descending`, `desc`, `unique` and

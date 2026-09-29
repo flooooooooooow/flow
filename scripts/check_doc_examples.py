@@ -3,7 +3,7 @@
 
 Every ```flow block goes through the same front end a real build uses: the
 fill-shader / field / dynamics source expanders, the parser, the strict type
-checker, the C generator, and clang. A block passes when it survives that as
+checker, flowc for the C, and clang. A block passes when it survives that as
 written, or survives inside a generated harness, or is tagged `expect-error`
 and is genuinely rejected, or carries `ignore="reason"`.
 
@@ -14,7 +14,10 @@ produced a checker that reported success on documentation that does not work.
 undefined identifiers survive all the way to clang. Of the first 120 blocks a
 lenient run called verified, 52 failed transpile or clang.
 
-**Blocks go all the way to clang**, for the same reason.
+**Blocks go all the way to clang**, for the same reason. The C comes from
+flowc (compiler/scripts/flowc_emit.sh), the compiler `flow compile` runs. The
+Python front end still gates each block first, so flowc only sees blocks that
+parse and type check strictly.
 
 **A block that compiles to nothing does not count.** `theorem nat_zero_add(...)`
 and unused generic declarations are erased before codegen, so the C is empty and
@@ -38,6 +41,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import os
 import shutil
 import signal
 import subprocess
@@ -57,6 +61,56 @@ sys.path.insert(0, str(ROOT / "src"))
 from docs_blocks import Block, InfoStringError, collect  # noqa: E402
 
 LEDGER = ROOT / "docs" / "generated" / "example-status.json"
+FLOWC_EMIT = ROOT / "compiler" / "scripts" / "flowc_emit.sh"
+FLOWC_TIMEOUT = 60
+_FLOWC_BIN: Optional[str] = None
+
+
+def _flowc_bin() -> str:
+    """Resolve the flowc binary once, so each block skips ensure_flowc.sh."""
+    global _FLOWC_BIN
+    if _FLOWC_BIN is None:
+        proc = subprocess.run(
+            ["bash", str(ROOT / "compiler" / "scripts" / "ensure_flowc.sh")],
+            capture_output=True, text=True, cwd=str(ROOT),
+        )
+        path = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else ""
+        if proc.returncode != 0 or not path:
+            raise RuntimeError("no flowc: " + (proc.stderr.strip() or "ensure_flowc.sh failed"))
+        if not Path(path).is_absolute():
+            path = str(ROOT / path)
+        _FLOWC_BIN = path
+    return _FLOWC_BIN
+
+
+def _flowc_c(source: str) -> tuple[Optional[str], str]:
+    """Compile one translation unit with flowc. Returns (c_source, error)."""
+    env = dict(os.environ)
+    env["FLOWC_BIN"] = _flowc_bin()
+    with tempfile.TemporaryDirectory(prefix="flow_doc_flowc_") as td:
+        src = Path(td) / "block.flow"
+        out = Path(td) / "block.c"
+        src.write_text(source, encoding="utf-8")
+        try:
+            proc = subprocess.run(
+                [str(FLOWC_EMIT), str(src), str(out)],
+                capture_output=True, text=True, env=env, cwd=str(ROOT),
+                timeout=FLOWC_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            return None, f"flowc did not finish within {FLOWC_TIMEOUT}s"
+        if proc.returncode != 0 or not out.exists():
+            lines = [
+                ln.replace(td + "/", "").strip()
+                for ln in (proc.stderr + proc.stdout).splitlines() if ln.strip()
+            ]
+            at = next((i for i, ln in enumerate(lines) if "error" in ln.lower()), 0)
+            detail = lines[at] if lines else f"flowc exited {proc.returncode}"
+            # flowc puts the message of a parse error on the next line.
+            if detail.endswith(":") and at + 1 < len(lines):
+                detail += " " + lines[at + 1]
+            return None, "flowc: " + detail[:300]
+        return out.read_text(encoding="utf-8", errors="replace"), ""
 
 
 def _rel(path: Path) -> str:
@@ -230,10 +284,8 @@ def _compile(source: str, guard_noop: bool, mode: str = "standalone") -> tuple[O
 
     c_source is None when the block did not get that far.
     """
-    from flow.c_generator import flow_to_c
     from flow.c_header_parser import resolve_c_imports
     from flow.module_resolver import resolve_modules
-    from flow.monomorphize import monomorphize
     from flow.parser import parse_flow_code
     from flow.shader_dsl import fill_names, has_fill_shader_dsl
     from flow.type_checker import TypeChecker
@@ -314,11 +366,14 @@ def _compile(source: str, guard_noop: bool, mode: str = "standalone") -> tuple[O
     if not substantive:
         return None, "vacuous", "declares nothing; the block is only comments"
 
+    # The C comes from flowc, from the same source text the front end checked.
     try:
-        with redirect_stdout(sink), redirect_stderr(sink):
-            return flow_to_c(monomorphize(decls)), "codegen", ""
+        csource, problem = _flowc_c(source)
     except Exception as exc:
         return None, "codegen", f"{type(exc).__name__}: {exc}"
+    if csource is None:
+        return None, "codegen", problem
+    return csource, "codegen", ""
 
 
 def _preamble_text(block: Block) -> tuple[str, str]:
@@ -493,7 +548,8 @@ def _batch_clang(results: list[Result], batch: int = 150) -> None:
         for start in range(0, len(names), batch):
             chunk = names[start : start + batch]
             proc = subprocess.run(
-                ["clang", "-fsyntax-only", "-w", "-Wreturn-type"]
+                ["clang", "-fsyntax-only", "-w", "-Wreturn-type",
+                 "-D_DEFAULT_SOURCE", "-I" + str(ROOT / "runtime")]
                 + [str(work / name) for name in chunk],
                 capture_output=True,
                 text=True,
@@ -552,7 +608,8 @@ def _batch_execute(results: list[Result], timeout: int = RUN_TIMEOUT) -> int:
             exe = work / f"r{i:04d}"
             csrc.write_text(res.csource or "")
             build = subprocess.run(
-                ["clang", "-w", "-O0", "-o", str(exe), str(csrc), "-lm"],
+                ["clang", "-w", "-O0", "-D_DEFAULT_SOURCE", "-I" + str(ROOT / "runtime"),
+                 "-o", str(exe), str(csrc), "-lm"],
                 capture_output=True, text=True,
             )
             if build.returncode != 0:

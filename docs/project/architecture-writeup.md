@@ -11,7 +11,7 @@ Flow is a classic front end with multiple back ends:
 1. **Parser** (`src/flow/parser.py`) lexes and parses `.flow` source into an AST.
 2. **Type checking** (`src/flow/type_checker.py`) performs semantic checks and type inference in a mostly conventional static type system.
 3. **Lowering** chooses a backend:
-   - **C generator** (`src/flow/c_generator.py`): default CPU path (`./flow run`, portable Clang/GCC).
+   - **C generator**: flowc (`compiler/src/cgen.flow`), the only C compiler and the default CPU path (`./flow run`, portable Clang/GCC). The Python `c_generator.py` is retired.
    - **MLIR generator** (`src/flow/mlir_generator.py`): co-equal CPU path via `--backend=mlir` / `FLOW_CPU_BACKEND=mlir`, plus `mlir` / `mlir-run` / `jit`.
    - **Metal codegen** (`src/flow/metal_codegen.py`): primary macOS `@gpu` / fill-shader path.
    - **WGSL codegen** (`src/flow/wgsl_codegen.py`): WebGPU emit.

@@ -1,0 +1,4 @@
+# A bare array literal statement evaluates its elements (#1050).
+- { 1, 2, 3, 4, 5 };
++ (void)(bump());
+exit 0

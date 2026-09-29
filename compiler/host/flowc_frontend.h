@@ -14,6 +14,8 @@
 #include "ast_flowc.h"
 #include "lexer_flowc.h"
 #include "parser_flowc.h"
+/* cgen.flow names the plan types of sort_plans.flow (#1054). */
+#include "sort_plans_flowc.h"
 #include "cgen_flowc.h"
 /* typecheck.flow resolves calls through the native overload modules, so its
    header names their types. Include order matters here: each of these names

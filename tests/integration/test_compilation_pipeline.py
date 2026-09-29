@@ -175,7 +175,7 @@ class TestBackendSelection:
             os.remove(output_file)
 
     def test_c_backend(self, temp_flow_file):
-        """Test C backend."""
+        """The C backend is flowc, driven through compiler/scripts/flowc_emit.sh."""
         flow_code = """
         function main() -> i32 {
             return 42
@@ -183,15 +183,21 @@ class TestBackendSelection:
         """
         input_file = temp_flow_file(flow_code)
         output_file = input_file.replace(".flow", ".c")
+        root = Path(__file__).resolve().parents[2]
 
-        result = TestHelpers.run_transpiler(input_file, output_file, c=True)
+        result = subprocess.run(
+            [str(root / "compiler" / "scripts" / "flowc_emit.sh"), input_file, output_file],
+            cwd=root,
+            capture_output=True,
+            text=True,
+        )
 
-        assert result.returncode == 0
+        assert result.returncode == 0, result.stderr + result.stdout
         assert os.path.exists(output_file)
 
         with open(output_file, "r") as f:
             c_content = f.read()
-            assert "int main" in c_content or "return 42" in c_content
+            assert "main(" in c_content and "return 42" in c_content
 
         # Cleanup
         if os.path.exists(output_file):
@@ -350,7 +356,7 @@ class TestErrorPropagation:
 
         result = TestHelpers.run_transpiler(input_file)
 
-        # Type checker is lenient — undefined variables get inferred as i32.
+        # Type checker is lenient: undefined variables get inferred as i32.
         # The transpiler should complete without crashing.
         assert result.returncode == 0 or len(result.stderr) > 0
 

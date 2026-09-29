@@ -1,0 +1,9 @@
+# Arithmetic on Dual values lowers to the Dual overloads.
++ mul_Dual_Dual(x, x)
++ mul_f32_Dual((float)(3.0), x)
++ add_Dual_Dual(
++ add_Dual_f32(
++ div_Dual_f32(y, (float)(2.0))
+# Unary minus on a Dual calls the stdlib neg.
++ neg(x)
+- add(neg

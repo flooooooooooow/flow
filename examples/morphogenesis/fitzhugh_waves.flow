@@ -29,7 +29,7 @@
 #   D. Barkley, Physica D 49:61-70 (1991).
 #
 # Run (headless, gated):
-#   FLOW_HOST=python ./flow record examples/morphogenesis/fitzhugh_waves.flow \
+#   ./flow record examples/morphogenesis/fitzhugh_waves.flow \
 #       --frames 4 --out /tmp/rec_fitzhugh_waves
 # Run (windowed):
 #   ./flow gfx examples/morphogenesis/fitzhugh_waves.flow

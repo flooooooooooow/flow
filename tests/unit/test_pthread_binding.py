@@ -1,4 +1,4 @@
-"""The pthread types are the platform's own, not sizes guessed in Flow.
+"""The pthread types are the platform's own. Flow does not guess their sizes.
 
 lib/stdlib/concurrent.flow used to model the pthread objects as byte arrays
 with hand-written sizes. Two of the four guesses were wrong on macOS, and the
@@ -133,7 +133,7 @@ def test_the_stdlib_locks_are_at_least_as_large_as_the_objects_they_hold(tmp_pat
     """
     src = tmp_path / "sizes.flow"
     src.write_text(textwrap.dedent("""
-        import concurrent
+        import "stdlib/concurrent.flow"
 
         function main() -> i32 {
             if sizeof<Mutex>() < sizeof<pthread_mutex_t>() { return 1 }
@@ -154,7 +154,7 @@ def test_the_stdlib_locks_are_at_least_as_large_as_the_objects_they_hold(tmp_pat
     run = subprocess.run(
         ["./flow", "run", str(src)],
         cwd=ROOT, capture_output=True, text=True,
-        env={**os.environ, "FLOW_HOST": "python"},
+        env=dict(os.environ),
     )
     assert "Exit code: 0" in run.stdout, (
         "a lock is smaller than the pthread object it holds\n"

@@ -1,0 +1,4 @@
+# From tests/integration/test_range_sum.py::test_sum_range_compiles_to_closed_form.
+~ return .*__flowc_range_sum\(\(int64_t\)\(start\), \(int64_t\)\(end\), \(int64_t\)\(step\)\)
+~ return .*__flowc_range_sum\(\(int64_t\)\(0\), \(int64_t\)\(10\), \(int64_t\)\(3\)\)
+exit 0

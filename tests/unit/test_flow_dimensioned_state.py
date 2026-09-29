@@ -107,51 +107,7 @@ flow F {
         )
 
 
-def test_a_dimensioned_flow_integrates():
-    """End to end: units on state, a real step, correct arithmetic."""
-    import os
-    import subprocess
-    import tempfile
-
-    source = """
-unit Angle
-unit AngularVelocity
-
-flow Pendulum {
-    angle : Angle
-    velocity : AngularVelocity
-    solver { dt 100 ms  method euler }
-
-    angle evolves as 2.0
-    velocity evolves as 0.0 - 9.81
-}
-
-function main() -> i32 {
-    let mut p: Pendulum = Pendulum_new()
-    let mut i: i32 = 0
-    while i < 10 {
-        Pendulum_step(&p, Pendulum_default_dt())
-        i = i + 1
-    }
-    printf("%.3f %.3f\\n", p.angle, p.velocity)
-    return 0
-}
-"""
-    env = {**os.environ, "PYTHONPATH": str(ROOT / "src")}
-    with tempfile.TemporaryDirectory() as td:
-        src, c, exe = Path(td) / "p.flow", Path(td) / "p.c", Path(td) / "p"
-        src.write_text(source)
-        assert subprocess.run(
-            [sys.executable, "-m", "flow.transpiler", str(src), "--c", "-o", str(c)],
-            cwd=ROOT, env=env, capture_output=True, text=True,
-        ).returncode == 0
-        assert subprocess.run(
-            ["clang", "-w", "-O0", "-o", str(exe), str(c), "-lm"],
-            capture_output=True, text=True,
-        ).returncode == 0
-        out = subprocess.run([str(exe)], capture_output=True, text=True).stdout
-    # 2.0 rad/s and -9.81 rad/s^2 over ten 100ms steps.
-    assert out.strip() == "2.000 -9.810", out
+# The end-to-end integration run is tests/cgen/flow_dimensioned_state_pendulum.
 
 
 def test_an_alias_of_radian_satisfies_sin():

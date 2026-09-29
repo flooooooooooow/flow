@@ -5,19 +5,15 @@ Card: time-blocks (docs/vision/north-star.md sections 2.3 and 4).
 Covers: duration literal parsing (every suffix, i64 nanosecond values),
 contextual-keyword non-regression (suffix words stay identifiers),
 every-block and solver-block parse shapes, validation with located
-messages, generated-C structure (accumulator fields, firing condition,
-ordering relative to integration, events, and outputs), and end-to-end
-compile-and-run checks.
-"""
+messages.
 
-import shutil
-import subprocess
-import sys
-from pathlib import Path
+The generated C and the runtime behaviour are checked under flowc by
+tests/cgen/time_blocks_every_shape, tests/lang/test_time_blocks.flow and
+tests/lang/test_time_blocks_rk4.flow.
+"""
 
 import pytest
 
-from flow.c_generator import flow_to_c
 from flow.parser import (
     DURATION_UNIT_NS,
     BinaryOperation,
@@ -70,32 +66,6 @@ flow F {{
 }}
 """
     return flow_of(parse_raw(code))
-
-
-def run_flow_program(program: str, tmp_path, name: str) -> str:
-    """Transpile --strict, compile with clang, run, return stdout."""
-    src = tmp_path / f"{name}.flow"
-    src.write_text(program)
-    c_file = tmp_path / f"{name}.c"
-    exe = tmp_path / name
-    repo_root = Path(__file__).resolve().parents[2]
-
-    transpile = subprocess.run(
-        [sys.executable, "-m", "flow.transpiler", str(src), "--c",
-         "--strict", "-o", str(c_file)],
-        capture_output=True, text=True, timeout=120,
-        cwd=repo_root, env={"PYTHONPATH": str(repo_root / "src"),
-                            "PATH": "/usr/bin:/bin"},
-    )
-    assert transpile.returncode == 0, transpile.stderr
-    compile_run = subprocess.run(
-        ["clang", str(c_file), "-o", str(exe), "-lm"],
-        capture_output=True, text=True, timeout=120,
-    )
-    assert compile_run.returncode == 0, compile_run.stderr
-    run = subprocess.run([str(exe)], capture_output=True, text=True, timeout=60)
-    assert run.returncode == 0, run.stdout + run.stderr
-    return run.stdout
 
 
 class TestDurationLiterals:
@@ -450,210 +420,3 @@ flow F {
 """,
             "sets 'dt' twice",
         )
-
-
-class TestCodegenStructure:
-    def generate(self, code: str = COUNTER) -> str:
-        return flow_to_c(parse_lowered(code))
-
-    def step_body(self, c_code: str, name: str = "Counter") -> str:
-        body = c_code.split(f"void {name}_step({name}* self, double dt) {{", 1)[1]
-        return body.split("\n}", 1)[0]
-
-    def test_struct_has_accumulator_field(self):
-        c_code = self.generate()
-        struct_body = c_code.split("struct Counter {", 1)[1].split("};", 1)[0]
-        assert "int64_t __every_0_acc;" in struct_body
-
-    def test_init_zeroes_accumulator(self):
-        c_code = self.generate()
-        init_body = c_code.split("void Counter_init(Counter* self) {", 1)[1]
-        init_body = init_body.split("\n}", 1)[0]
-        assert "self->__every_0_acc = 0;" in init_body
-
-    def test_dt_converts_to_ns_once(self):
-        step = self.step_body(self.generate())
-        assert step.count("int64_t __dt_ns") == 1
-        assert "(int64_t)((dt * 1000000000.0))" in step
-
-    def test_firing_condition_and_catchup_cap(self):
-        step = self.step_body(self.generate())
-        assert "self->__every_0_acc = (self->__every_0_acc + __dt_ns);" in step
-        assert ("while ((self->__every_0_acc >= 10000000 "
-                "&& __every_0_n < 1024))") in step
-        assert "self->__every_0_acc = (self->__every_0_acc - 10000000);" in step
-
-    def test_every_runs_after_integration(self):
-        step = self.step_body(self.generate())
-        integrate_at = step.index("self->t = (self->t +")
-        acc_at = step.index("self->__every_0_acc = (self->__every_0_acc +")
-        assert integrate_at < acc_at
-
-    def test_every_runs_before_events(self):
-        code = """
-flow Mixed {
-    state x : f64 = 0.0
-    state n : f64 = 0.0
-    x evolves as 1.0
-    every 10 ms {
-        n becomes n + 1.0
-    }
-    when x reaches 1.0 {
-        x becomes 0.0
-    }
-}
-"""
-        step = self.step_body(flow_to_c(parse_lowered(code)), "Mixed")
-        every_at = step.index("self->__every_0_acc")
-        guard_at = step.index("double __g_0")
-        assert every_at < guard_at
-
-    def test_every_runs_before_outputs(self):
-        code = """
-flow Gauge {
-    state level : f64 = 0.0
-    output display : f64 = level * 100.0
-    every 10 ms {
-        level becomes level + 1.0
-    }
-}
-"""
-        step = self.step_body(flow_to_c(parse_lowered(code)), "Gauge")
-        assert step.index("__every_0_acc") < step.index("Gauge_outputs(self);")
-
-    def test_updates_are_staged_then_assigned(self):
-        code = """
-flow Swap {
-    state a : f64 = 1.0
-    state b : f64 = 2.0
-    every 10 ms {
-        a becomes b
-        b becomes a
-    }
-}
-"""
-        step = self.step_body(flow_to_c(parse_lowered(code)), "Swap")
-        stage_a = step.index("double __tick_0_a = self->b;")
-        stage_b = step.index("double __tick_0_b = self->a;")
-        write_a = step.index("self->a = __tick_0_a;")
-        write_b = step.index("self->b = __tick_0_b;")
-        assert stage_a < write_a
-        assert stage_b < write_a
-        assert stage_a < write_b
-
-    def test_default_dt_from_solver_block(self):
-        c_code = self.generate()
-        assert "double Counter_default_dt(void) {" in c_code
-        body = c_code.split("double Counter_default_dt(void) {", 1)[1]
-        body = body.split("\n}", 1)[0]
-        assert "return 0.001;" in body
-
-    def test_default_dt_fallback_is_one_ms(self):
-        code = """
-flow Plain {
-    state x : f64 = 0.0
-    x evolves as 1.0
-}
-"""
-        c_code = flow_to_c(parse_lowered(code))
-        body = c_code.split("double Plain_default_dt(void) {", 1)[1]
-        body = body.split("\n}", 1)[0]
-        assert "return 0.001;" in body
-
-    def test_step_signature_unchanged_by_solver(self):
-        # The solver block pins a default; dt stays caller-supplied.
-        c_code = self.generate()
-        assert "void Counter_step(Counter* self, double dt)" in c_code
-
-    def test_rk4_step_calls_derivs_four_times(self):
-        code = """
-flow Ramp {
-    state x : f64 = 0.0
-    state v : f64 = 1.0
-    solver { dt 1 ms  method rk4 }
-    x evolves as v
-    v evolves as 0.0 - x
-}
-"""
-        step = self.step_body(flow_to_c(parse_lowered(code)), "Ramp")
-        assert step.count("Ramp_derivs(self,") == 4
-        assert "double y0_x = self->x;" in step
-        assert "double y0_v = self->v;" in step
-        assert "double k1_x = 0.0;" in step
-        assert "double k4_v = 0.0;" in step
-        # Classic combine uses dt/6.
-        assert "/ 6.0)" in step or "/ 6.0" in step
-
-
-class TestEndToEnd:
-
-    @pytest.mark.skipif(shutil.which("clang") is None, reason="clang not found")
-    def test_rk4_matches_reference_and_moves_state(self, tmp_path):
-        # Constant-rate ODE is exact under RK4; also check against a
-        # hand-rolled classic RK4 for a linear spring (x'' = -x).
-        program = """
-extern {
-    function printf(fmt: string, val: f64) -> i32
-    function fabs(x: f64) -> f64
-}
-
-flow Spring {
-    state x : f64 = 1.0
-    state v : f64 = 0.0
-    solver { dt 1 ms  method rk4 }
-    x evolves as v
-    v evolves as 0.0 - x
-}
-
-flow Ramp {
-    state x : f64 = 0.0
-    solver { dt 1 ms  method rk4 }
-    x evolves as 1.0
-}
-
-function main() -> i32 {
-    let mut s: Spring = Spring_new()
-    let x0: f64 = s.x
-    for k in 0 to 100 {
-        Spring_step(&s, 0.01)
-    }
-    printf("%.15f\\n", s.x)
-    printf("%.15f\\n", s.v)
-    if fabs(s.x - x0) < 1e-12 {
-        return 2
-    }
-    if s.x != s.x or s.v != s.v {
-        return 3
-    }
-
-    let mut r: Ramp = Ramp_new()
-    for k in 0 to 8 {
-        Ramp_step(&r, 0.25)
-    }
-    printf("%.15f\\n", r.x)
-    return 0
-}
-"""
-        out = run_flow_program(program, tmp_path, "rk4_e2e")
-        sx, sv, ramp_x = (float(line) for line in out.split())
-
-        def rk4_spring(x, v, dt, steps):
-            for _ in range(steps):
-                k1x, k1v = v, -x
-                k2x, k2v = v + 0.5 * dt * k1v, -(x + 0.5 * dt * k1x)
-                k3x, k3v = v + 0.5 * dt * k2v, -(x + 0.5 * dt * k2x)
-                k4x, k4v = v + dt * k3v, -(x + dt * k3x)
-                x = x + (dt / 6.0) * (k1x + 2 * k2x + 2 * k3x + k4x)
-                v = v + (dt / 6.0) * (k1v + 2 * k2v + 2 * k3v + k4v)
-            return x, v
-
-        ref_x, ref_v = rk4_spring(1.0, 0.0, 0.01, 100)
-        assert abs(sx - ref_x) < 1e-9
-        assert abs(sv - ref_v) < 1e-9
-        assert abs(ramp_x - 2.0) < 1e-12
-
-    # test_firing_count_and_catchup and test_every_updates_are_simultaneous
-    # are now tests/lang/test_time_blocks.flow. What stays is
-    # test_rk4_matches_reference_and_moves_state, which compares the rk4
-    # solver against a reference integrator recomputed in Python; a Flow
-    # rewrite would only compare the compiler with itself.

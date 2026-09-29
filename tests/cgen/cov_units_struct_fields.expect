@@ -1,0 +1,6 @@
+flags --strict
++ typedef double Meter;
++ typedef double Second;
++ Meter distance;
++ Second elapsed;
+exit 0

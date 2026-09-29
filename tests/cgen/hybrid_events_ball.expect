@@ -1,0 +1,16 @@
+# Guard memory lives in the struct and is seeded in init.
++ double __guard_0_prev;
++ self->__guard_0_prev = (self->height - 0.0);
+# The guard fires on a sign change against the previous value, or an exact hit.
++ double __g_0 = (self->height - 0.0);
++ __g_0 < 0.0 != self->__guard_0_prev < 0.0
++ __g_0 == 0.0
+# Resets are staged into locals, then assigned, so they are simultaneous.
++ double __reset_0_velocity = ((-self->restitution) * self->velocity);
++ double __reset_0_height = 0.0;
++ self->velocity = __reset_0_velocity;
++ self->height = __reset_0_height;
++ Gauge_outputs(self);
+# Statement order inside step is checked by behaviour in
+# tests/lang/test_hybrid_events.flow.
+exit 0

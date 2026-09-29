@@ -1,6 +1,6 @@
 # Test for dlopen + cfn function pointer call pattern.
 # Loads libm via dlopen, looks up sqrt via dlsym, casts to cfn, and calls it.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_dlopen.flow
+# Run with: ./flow run tests/lang/test_dlopen.flow
 # Exit 0 on success.
 
 extern type DynLib

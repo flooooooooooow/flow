@@ -29,7 +29,7 @@ compile_flow_to_wasm() {
     
     # First compile FLOW to C
     cd ..
-    PYTHONPATH=src python3 -m flow.transpiler "$flow_file" --c -o "wasm_examples/${output_name}.c" 2>/dev/null
+    compiler/scripts/flowc_emit.sh "$flow_file" "wasm_examples/${output_name}.c" 2>/dev/null
     
     if [ $? -ne 0 ]; then
         echo "❌ Failed to compile $flow_file to C"

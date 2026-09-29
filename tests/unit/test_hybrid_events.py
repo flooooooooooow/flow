@@ -1,15 +1,13 @@
 """Tests for hybrid events: `when x reaches L { x becomes expr }`.
 
 Card: hybrid-events (docs/vision/north-star.md section 5).
-Covers: parse shapes, contextual-keyword non-regression, validation with
-located messages, generated-C structure (guard checked after integration,
-synchronous reset staging, guard memory updates), and end-to-end
-compile-and-run checks including a decaying bouncing ball.
+Covers: parse shapes, contextual-keyword non-regression, and validation with
+located messages. The generated C is tests/cgen/hybrid_events_ball and the
+runtime behaviour is tests/lang/test_hybrid_events.flow.
 """
 
 import pytest
 
-from flow.c_generator import flow_to_c
 from flow.parser import (
     BinaryOperation,
     FlowDecl,
@@ -279,72 +277,9 @@ flow F {
         )
 
 
-class TestCodegenStructure:
-    def generate(self, code: str = BALL) -> str:
-        return flow_to_c(parse_lowered(code))
-
-    def step_body(self, c_code: str, name: str = "Ball") -> str:
-        body = c_code.split(f"void {name}_step({name}* self, double dt) {{", 1)[1]
-        return body.split("\n}", 1)[0]
-
-    def test_struct_has_guard_memory(self):
-        c_code = self.generate()
-        struct_body = c_code.split("struct Ball {", 1)[1].split("};", 1)[0]
-        assert "double __guard_0_prev;" in struct_body
-
-    def test_init_seeds_guard_from_init_state(self):
-        c_code = self.generate()
-        init_body = c_code.split("void Ball_init(Ball* self) {", 1)[1]
-        init_body = init_body.split("\n}", 1)[0]
-        seed_at = init_body.index("self->__guard_0_prev = (self->height - 0.0);")
-        height_at = init_body.index("self->height = 2.0;")
-        assert height_at < seed_at  # seeded after states get their defaults
-
-    def test_guard_checked_after_integration(self):
-        step = self.step_body(self.generate())
-        integrate_height = step.index("self->height = (self->height +")
-        integrate_velocity = step.index("self->velocity = (self->velocity +")
-        guard_at = step.index("double __g_0 = (self->height - 0.0);")
-        assert integrate_height < guard_at
-        assert integrate_velocity < guard_at
-        # Fires on sign change against the stored previous value, or an
-        # exact hit.
-        assert "__g_0 < 0.0 != self->__guard_0_prev < 0.0" in step
-        assert "__g_0 == 0.0" in step
-
-    def test_resets_are_staged_then_assigned(self):
-        step = self.step_body(self.generate())
-        stage_velocity = step.index(
-            "double __reset_0_velocity = ((-self->restitution) * self->velocity);"
-        )
-        stage_height = step.index("double __reset_0_height = 0.0;")
-        write_velocity = step.index("self->velocity = __reset_0_velocity;")
-        write_height = step.index("self->height = __reset_0_height;")
-        # Every right-hand side is evaluated before any target is written.
-        assert stage_velocity < write_velocity
-        assert stage_height < write_velocity
-        assert stage_velocity < write_height
-
-    def test_guard_memory_updated_after_reset(self):
-        step = self.step_body(self.generate())
-        write_height = step.index("self->height = __reset_0_height;")
-        prev_update = step.index("self->__guard_0_prev = (self->height - 0.0);")
-        assert write_height < prev_update  # stores the post-reset value
-
-    def test_events_run_before_outputs(self):
-        code = """
-flow Gauge {
-    state level : f64 = 1.0
-    output display : f64 = level * 100.0
-    level evolves as -0.1
-    when level reaches 0.0 {
-        level becomes 1.0
-    }
-}
-"""
-        step = self.step_body(flow_to_c(parse_lowered(code)), "Gauge")
-        assert step.index("__g_0") < step.index("Gauge_outputs(self);")
-
+# TestCodegenStructure checked the generated C for guard memory, the guard
+# check, staged resets and outputs ordering. That is now
+# tests/cgen/hybrid_events_ball.
 
 # TestEndToEnd compiled and ran the simultaneous-reset swap and the bouncing
 # ball. Both are now tests/lang/test_hybrid_events.flow, which checks the

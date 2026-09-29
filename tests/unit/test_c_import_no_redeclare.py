@@ -21,26 +21,11 @@ same thing on every platform.
 
 from __future__ import annotations
 
-import shutil
-import subprocess
-import textwrap
-
 import pytest
 
-from flow.c_generator import flow_to_c
 from flow.c_header_parser import _preprocess_header, parse_c_header, resolve_c_imports
-from flow.parser import CImportDecl, ExternTypeDecl, parse_flow_code
+from flow.parser import CImportDecl, ExternTypeDecl
 
-needs_clang = pytest.mark.skipif(
-    shutil.which("clang") is None, reason="clang not available"
-)
-
-
-def build_c(source: str, source_dir) -> str:
-    """Parse, resolve @cImport, and generate C, as the transpiler does."""
-    decls = parse_flow_code(source)
-    decls = resolve_c_imports(decls, str(source_dir))
-    return flow_to_c(decls)
 
 # Shaped like glibc's stdlib.h (names chosen not to clash with libc): an anonymous struct bound to a name by typedef,
 # plus extern functions. This is the shape that broke the build.
@@ -73,7 +58,7 @@ def test_preprocessor_expands_the_header(header_dir):
 
 
 def test_every_imported_declaration_is_marked(header_dir):
-    """resolve_c_imports must mark all declarations, not just functions."""
+    """resolve_c_imports must mark every declaration, functions and the rest."""
     decls = resolve_c_imports(
         [CImportDecl(header="fixture.h", alias=None)], str(header_dir)
     )
@@ -88,71 +73,10 @@ def test_every_imported_declaration_is_marked(header_dir):
     assert marked, "expected at least one marked declaration"
 
 
-PROGRAM = """\
-@cImport("fixture.h")
-
-extern {
-    function puts(s: string) -> i32
-}
-
-function main() -> i32 {
-    puts("ok")
-    return 0
-}
-"""
-
-
-def test_imported_types_are_not_redeclared_in_c(header_dir):
-    """The generated C must not contain a typedef for an imported type."""
-    c_out = build_c(PROGRAM, header_dir)
-
-    assert '#include "fixture.h"' in c_out, "the header include should still be emitted"
-    for name in ("fixdiv_t", "fixopaque_t"):
-        assert f"typedef struct {name} {name};" not in c_out, (
-            f"{name} is declared by the included header; re-emitting it is a "
-            "typedef redefinition and clang rejects it on glibc"
-        )
-
-
-@needs_clang
-def test_generated_c_compiles_against_the_real_header(header_dir, tmp_path):
-    """The end the bug was actually felt at: clang must accept the output."""
-    c_out = build_c(PROGRAM, header_dir)
-    c_file = tmp_path / "prog.c"
-    c_file.write_text(c_out)
-
-    result = subprocess.run(
-        ["clang", "-fsyntax-only", "-I", str(header_dir), str(c_file)],
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, (
-        "generated C does not compile against the header it imported:\n"
-        f"{result.stderr}"
-    )
-
-
-def test_non_imported_extern_types_still_emit(tmp_path):
-    """The skip must be scoped to @cImport, not applied to every extern type."""
-    source = textwrap.dedent(
-        """\
-        extern type MyHandle
-
-        extern {
-            function puts(s: string) -> i32
-        }
-
-        function main() -> i32 {
-            puts("ok")
-            return 0
-        }
-        """
-    )
-    c_out = build_c(source, tmp_path)
-    assert "typedef struct MyHandle MyHandle;" in c_out, (
-        "a plain `extern type` has no #include behind it, so it still needs "
-        "its own declaration"
-    )
+# The C-output checks (no typedef for an imported type, the output builds
+# against the header, a plain `extern type` still gets its typedef) are now
+# tests/cgen/c_import_no_redeclare.flow and
+# tests/cgen/c_import_no_redeclare_extern_type.flow.
 
 
 def test_parse_returns_extern_type_for_named_struct_typedef(header_dir):

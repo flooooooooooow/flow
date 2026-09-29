@@ -168,7 +168,7 @@ function compile_all(d: ptr<Data>, have_rust: bool) -> void {
         let bd: string = build_dir()
         tc[b] = timed("clang\t-O3\t-march=native\t-lm\t" + pub_dir() + "/c/" + name + ".c\t-o\t" + bd + "/" + name + "_c")
         let gen_c: string = bd + "/" + name + "_flow.c"
-        tt[b] = timed("python3\t-m\tflow.transpiler\t" + pub_dir() + "/flow/" + name + ".flow\t--c\t--lenient\t-o\t" + gen_c)
+        tt[b] = timed(root() + "/compiler/scripts/flowc_emit.sh\t--lenient\t" + pub_dir() + "/flow/" + name + ".flow\t" + gen_c)
         tl[b] = timed("clang\t-O3\t-march=native\t-lm\t" + gen_c + "\t-o\t" + bd + "/" + name + "_flow")
         if have_rust {
             tr[b] = timed("rustc\t-C\topt-level=3\t-C\ttarget-cpu=native\t" + pub_dir() + "/rust/" + name + ".rs\t-o\t" + bd + "/" + name + "_rust")
@@ -479,7 +479,6 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         reps = 1
     }
     let _c: i32 = chdir(root())
-    let _s: i32 = setenv("PYTHONPATH", ft_join(root(), "src"), 1)
 
     let have_rust: bool = ft_len(pr_chomp(pr_capture("command -v rustc"))) > 0
     if have_rust == false {

@@ -75,11 +75,6 @@ def compile_and_maybe_run(
             "error": f"source exceeds {MAX_SOURCE_BYTES} byte limit",
         }
 
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(REPO_ROOT / "src") + (
-        os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else ""
-    )
-
     tmp = tempfile.mkdtemp(prefix="flow-playground-")
     try:
         flow_path = Path(tmp) / "main.flow"
@@ -89,20 +84,16 @@ def compile_and_maybe_run(
 
         try:
             tp = subprocess.run(
+                # Flow to C goes through flowc.
                 [
-                    sys.executable,
-                    "-m",
-                    "flow.transpiler",
-                    str(flow_path),
-                    "--c",
+                    str(REPO_ROOT / "compiler" / "scripts" / "flowc_emit.sh"),
                     "--lenient",
-                    "-o",
+                    str(flow_path),
                     str(c_path),
                 ],
                 capture_output=True,
                 text=True,
                 timeout=transpile_timeout,
-                env=env,
                 cwd=REPO_ROOT,
             )
         except subprocess.TimeoutExpired:
@@ -218,7 +209,8 @@ def compile_and_maybe_run(
 
         try:
             cp = subprocess.run(
-                [clang, "-O0", "-o", str(bin_path), str(c_path)],
+                [clang, "-O0", "-D_DEFAULT_SOURCE", "-I" + str(REPO_ROOT / "runtime"),
+                 "-o", str(bin_path), str(c_path), "-lm"],
                 capture_output=True,
                 text=True,
                 timeout=transpile_timeout,

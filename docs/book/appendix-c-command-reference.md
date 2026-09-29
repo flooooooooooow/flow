@@ -153,7 +153,8 @@ flow wasm FILE \
 
 | Variable | Meaning |
 |---|---|
-| <code>FLOW_HOST=flowc&#124;python&#124;auto</code> | choose compiler host |
+| `FLOW_HOST=flowc` | the only compiler host; `python` is retired and stops with an error, `auto` means flowc |
+| `FLOWC_BIN=PATH` | use this flowc binary |
 | <code>FLOW_CPU_BACKEND=c&#124;mlir</code> | choose CPU backend |
 | `FLOW_STRICT_EFFECTS=1` | reject uncovered effect operations |
 | `FLOW_PROFILE=safety` | select safety C flags |

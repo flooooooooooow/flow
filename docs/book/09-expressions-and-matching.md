@@ -69,7 +69,7 @@ backend represents a capturing closure as a function pointer plus an
 environment; escaping environments are copied to heap storage.
 
 ```bash
-FLOW_HOST=python ./flow run tests/lang/test_closures.flow
+./flow run tests/lang/test_closures.flow
 ```
 
 The MLIR backend does not implement capturing closures.
@@ -107,7 +107,7 @@ Source:
 [`examples/book/11_closure_snapshot.flow`](../../examples/book/11_closure_snapshot.flow)
 
 ```bash
-FLOW_HOST=python ./flow run examples/book/11_closure_snapshot.flow
+./flow run examples/book/11_closure_snapshot.flow
 ```
 
 ```text
@@ -288,9 +288,9 @@ let result = input
 Run the complete demonstrations:
 
 ```bash
-FLOW_HOST=python ./flow run examples/basics/pipeline_fork.flow
-FLOW_HOST=python ./flow run examples/basics/pipeline_fork_inferred.flow
-FLOW_HOST=python ./flow run examples/basics/pipeline_choose.flow
+./flow run examples/basics/pipeline_fork.flow
+./flow run examples/basics/pipeline_fork_inferred.flow
+./flow run examples/basics/pipeline_choose.flow
 ```
 
 ## Exercises
@@ -298,7 +298,6 @@ FLOW_HOST=python ./flow run examples/basics/pipeline_choose.flow
 1. Pack four Boolean settings into an integer and recover each setting.
 2. Use a guarded match to classify negative, small, and large values.
 3. Write a closure that captures two coefficients of a linear function.
-4. Compare the plan selected for sorted and unsorted integer data with
-   `flow explain`.
+4. Sort an already sorted array and a reversed one, and time both.
 
 Next: [Memory, spans, and lifetime domains](10-memory-and-lifetimes.md).

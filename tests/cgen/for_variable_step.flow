@@ -1,0 +1,26 @@
+# A variable step picks its direction at run time (#1053); literal steps
+# keep the plain comparison so the loop stays vectorizable (#1004).
+
+function by_var(a: i32, b: i32, s: i32) -> i32 {
+    let mut n: i32 = 0
+    for i in a to b step s {
+        n = n + 1
+    }
+    return n
+}
+
+function by_literal(n: i32) -> i32 {
+    let mut c: i32 = 0
+    for k in 0 to n step 2 {
+        c = c + 1
+    }
+    for j in n to 0 step -2 {
+        c = c + 1
+    }
+    return c
+}
+
+function main() -> i32 {
+    # 10, 7, 4, 1 counting down, then 0, 2, 4 and 6, 4, 2.
+    return by_var(10, 0, 0 - 3) + by_literal(6)
+}

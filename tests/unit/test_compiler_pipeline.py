@@ -1,12 +1,10 @@
-"""End-to-end compiler pipeline smoke — parse → typecheck → mono → C → clang."""
+"""Front-end pipeline smoke: parse, typecheck, monomorphize.
 
-from tests.unit.compiler_helpers import (
-    parse,
-    typecheck,
-    to_c,
-    needs_clang,
-    compile_c_only,
-)
+The C half of the pipeline is flowc; tests/lang/test_structs.flow and
+tests/lang/test_functions.flow compile and run these programs with it.
+"""
+
+from tests.unit.compiler_helpers import parse, typecheck
 from flow.monomorphize import monomorphize
 
 
@@ -27,20 +25,14 @@ function main() -> i32 {
 """
 
 
-def test_pipeline_parse_typecheck_mono_c():
+def test_pipeline_parse_typecheck_mono():
     decls = parse(PIPELINE_SRC)
     result = typecheck(PIPELINE_SRC)
     assert result.errors == []
     mono = monomorphize(decls)
-    c = to_c(PIPELINE_SRC)
-    assert "dist2" in c
-    assert "Point" in c
-    assert mono
-
-
-@needs_clang
-def test_pipeline_clang_syntax_only():
-    compile_c_only(PIPELINE_SRC)
+    names = {getattr(d, "name", None) for d in mono}
+    assert "dist2" in names
+    assert "Point" in names
 
 
 # test_pipeline_runs and test_pipeline_control_and_calls compiled and ran

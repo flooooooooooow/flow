@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import os
 import subprocess
-import sys
 
 import pytest
 
@@ -27,22 +26,16 @@ DELAY_CS = 5
 
 @pytest.fixture(scope="module")
 def demo_gif(tmp_path_factory):
-    """Transpile, compile, and run the example; return the GIF path."""
+    """Compile with flowc, build, and run the example; return the GIF path."""
     pytest.importorskip("PIL")
     td = tmp_path_factory.mktemp("gif_demo")
     c_path = td / "gif_writer.c"
     bin_path = td / "gif_writer"
 
-    env = dict(os.environ)
-    env["PYTHONPATH"] = (
-        os.path.join(REPO_ROOT, "src")
-        + os.pathsep
-        + env.get("PYTHONPATH", "")
-    )
     transpile = subprocess.run(
-        [sys.executable, "-m", "flow.transpiler", EXAMPLE, "--c", "--strict",
-         "-o", str(c_path)],
-        capture_output=True, text=True, env=env, cwd=REPO_ROOT,
+        [os.path.join(REPO_ROOT, "compiler", "scripts", "flowc_emit.sh"),
+         "--strict", EXAMPLE, str(c_path)],
+        capture_output=True, text=True, cwd=REPO_ROOT,
     )
     assert transpile.returncode == 0, transpile.stderr or transpile.stdout
     assert c_path.exists()

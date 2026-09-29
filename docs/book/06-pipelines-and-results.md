@@ -1,9 +1,9 @@
 # 6. Pipelines and explicit results
 
-Run the examples with the Python compiler host:
+Run the examples with flowc:
 
 ```bash
-FLOW_HOST=python ./flow run file.flow
+./flow run file.flow
 ```
 
 ## 6.1 Forward composition
@@ -146,7 +146,7 @@ Source:
 [`examples/book/06_pipeline_result.flow`](../../examples/book/06_pipeline_result.flow)
 
 ```bash
-FLOW_HOST=python ./flow run examples/book/06_pipeline_result.flow
+./flow run examples/book/06_pipeline_result.flow
 ```
 
 ```text

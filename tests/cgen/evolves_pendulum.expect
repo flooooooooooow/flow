@@ -1,0 +1,23 @@
+flags --strict
+# Unmangled flow API.
+~ Pendulum Pendulum_new\((void)?\)
++ void Pendulum_init(Pendulum* self)
++ void Pendulum_derivs(Pendulum* self, double* d_angle, double* d_velocity)
++ void Pendulum_step(Pendulum* self, double dt)
+- Pendulum_step_ptr_Pendulum
+- Pendulum_derivs_ptr_Pendulum
+# Struct fields in state, param order.
++ double angle;
++ double velocity;
++ double gravity;
++ double length;
++ double damping;
+# derivs reads pre-step state, step integrates the derivative locals.
++ d_angle[0] = self->velocity;
++ Pendulum_derivs(self, (&d_angle), (&d_velocity));
++ self->angle + (d_angle * dt)
++ self->velocity + (d_velocity * dt)
+# Matches a Python reference Euler run to 1e-9.
+exit 0
+stdout -0.007447212
+stdout 0.037753204

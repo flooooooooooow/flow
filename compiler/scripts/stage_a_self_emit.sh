@@ -72,10 +72,27 @@ self_emit_module effects compiler/build/self_ast.h
 python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/self_effects.c compiler/build/self_effects.h
 
+# Function attribute vocabulary (#1028, #1029) and sort plan selection
+# (#1054), used by the parser, typecheck and cgen.
+self_emit_module attributes
+self_emit_module ordering_hints
+self_emit_module sort_plans
+for m in attributes ordering_hints sort_plans; do
+    python3 compiler/scripts/flowc_c_to_hdr.py \
+        "compiler/build/self_${m}.c" "compiler/build/self_${m}.h"
+done
+self_emit_module sort_sites \
+    compiler/build/self_token.h \
+    compiler/build/self_ast.h \
+    compiler/build/self_ordering_hints.h
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/self_sort_sites.c compiler/build/self_sort_sites.h
+
 self_emit_module parser \
     compiler/build/self_token.h \
     compiler/build/self_ast.h \
-    compiler/build/self_lexer.h
+    compiler/build/self_lexer.h \
+    compiler/build/self_attributes.h
 
 # Proof-layer erasure, called from cgen and the typecheck (#996).
 self_emit_module proof_lower compiler/build/self_ast.h
@@ -86,7 +103,10 @@ self_emit_module cgen \
     compiler/build/self_token.h \
     compiler/build/self_ast.h \
     compiler/build/self_effects.h \
-    compiler/build/self_proof_lower.h
+    compiler/build/self_proof_lower.h \
+    compiler/build/self_attributes.h \
+    compiler/build/self_sort_plans.h \
+    compiler/build/self_sort_sites.h
 
 # typecheck.flow resolves calls through the native overload modules, so those
 # are emitted first, in dependency order, and their headers are included below.
@@ -124,6 +144,7 @@ python3 compiler/scripts/flowc_c_to_hdr.py \
 
 self_emit_module typecheck \
     compiler/build/self_ast.h \
+    compiler/build/self_attributes.h \
     compiler/build/self_effects.h \
     compiler/build/self_proof_lower.h \
     compiler/build/self_overload_table.h \
@@ -151,6 +172,7 @@ self_emit_module resolve \
     compiler/build/self_flow_blocks.h \
     compiler/build/self_shader_dsl.h \
     compiler/build/self_effects.h \
+    compiler/build/self_sort_plans.h \
     compiler/build/self_cgen.h \
     compiler/build/self_overload_table.h \
     compiler/build/self_overload_call.h \
@@ -169,6 +191,10 @@ cc -r -o compiler/build/flowc_frontend_self.o \
     compiler/build/self_shader_dsl.o \
     compiler/build/self_effects.o \
     compiler/build/self_proof_lower.o \
+    compiler/build/self_attributes.o \
+    compiler/build/self_ordering_hints.o \
+    compiler/build/self_sort_plans.o \
+    compiler/build/self_sort_sites.o \
     compiler/build/self_cgen.o \
     compiler/build/self_overload.o \
     compiler/build/self_overload_table.o \
@@ -224,6 +250,7 @@ cc -O0 -c \
     -include compiler/build/self_dynamics_dsl.h \
     -include compiler/build/self_flow_blocks.h \
     -include compiler/build/self_shader_dsl.h \
+    -include compiler/build/self_sort_plans.h \
     -include compiler/build/self_cgen.h \
     -include compiler/build/self_overload_table.h \
     -include compiler/build/self_overload_call.h \

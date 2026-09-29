@@ -264,10 +264,10 @@ With strict effects enabled, the call is valid because the enclosing handler cov
 ### 13. Turn unhandled effects into compile-time errors
 
 ```sh
-./flow transpile program.flow --c --strict-effects -o build/program.c
+FLOWC_STRICT_EFFECTS=1 compiler/scripts/flowc_emit.sh program.flow build/program.c
 ```
 
-`--strict-effects` checks bare performs and function effect rows. The default language mode
+`FLOWC_STRICT_EFFECTS=1` checks bare performs and function effect rows. The default language mode
 remains backwards-compatible with soft defaults.
 
 ### 14. Turn unhandled effects into runtime failures
@@ -519,9 +519,9 @@ to swap.
 
 ### 24. Direct operations can become direct calls
 
-Inside a `handle E with H` block, an `E.op(...)` written directly in that block can be emitted as
-a direct call to `H`'s implementation. Calls where the handler is not statically knowable keep
-dynamic dispatch.
+Inside a `handle E with H` block, an `E.op(...)` written directly in that block is emitted as a
+direct call to `H`'s implementation, `H_op(...)`. The innermost block decides. Calls in a function
+called from the block, and calls inside a lambda written in the block, keep dynamic dispatch.
 
 That gives Flow two useful modes from the same source model: compile-time substitution where the
 handler is obvious, and scoped dynamic dispatch through deeper call chains.
@@ -599,8 +599,8 @@ The current C backend uses vtable-based dynamic dispatch:
   the previous pointer on exit;
 - `E.op(args)` calls through the current handler or uses the soft zero/no-op default when none is
   installed;
-- operations written directly inside a statically-known `handle E with H` block can be emitted as
-  direct calls, while deeper calls retain dynamic dispatch.
+- operations written directly inside a `handle E with H` block are emitted as direct calls to
+  `H`'s methods; calls from deeper functions and from lambdas keep dynamic dispatch.
 
 The handler mechanism itself allocates nothing and does not use continuations. Async capabilities
 such as `FiberAsync` and `NetpollAsyncIO` pull in their runtime support only when used.

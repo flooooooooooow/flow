@@ -55,7 +55,6 @@ echo -e "${BLUE}=== Running example programs ===${NC}"
 echo ""
 echo -e "${BLUE}=== Running Lint checks ===${NC}"
 python3 -m py_compile src/flow/parser.py
-python3 -m py_compile src/flow/c_generator.py
 python3 -m py_compile src/flow/transpiler.py
 python3 -m py_compile src/flow/type_checker.py
 python3 -m py_compile src/flow/mlir_generator.py

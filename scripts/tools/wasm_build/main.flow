@@ -9,11 +9,12 @@
 # The first argument the shims pass selects the mode: `build`, `gallery`, or
 # `gallery-one` (one gallery target, run in parallel by the gallery through
 # xargs -P). The shims set FLOW_REPO_ROOT, WASM_BUILD_PYTHON (the python3 the
-# transpiler runs under), WASM_BUILD_BIN (this executable) and the emscripten
+# MLIR backend runs under), WASM_BUILD_BIN (this executable) and the emscripten
 # environment the Homebrew toolchain needs.
 #
-# Flow sources go to C, or through MLIR to LLVM IR, with the Python-hosted
-# compiler (python3 -m flow.transpiler), as before the port. emcc links the
+# Flow sources go to C with flowc (compiler/scripts/flowc_emit.sh). The MLIR
+# backend still runs the Python-hosted compiler (python3 -m flow.transpiler
+# --mlir --llvm --wasm32) to reach LLVM IR. emcc links the
 # result, gfx programs against runtime/gfx_wasm.c. Page text lives in
 # scripts/tools/wasm_build/assets. Those files store the em dash, the en
 # dash and curly quotes as @MDASH@, @NDASH@, @LDQUO@ and @RDQUO@, which this
@@ -638,14 +639,17 @@ function resolve_backend(explicit: string, errs: ptr<StrList>) -> string {
 
 function flow_to_c(b: ptr<Build>, program: string, c_out: string, library: bool) -> string {
     let _m: bool = pr_mkdir_p(parent_dir(c_out))
-    let mut cmd: string = pr_quote(python()) + " -m flow.transpiler " + pr_quote(program) + " --c"
+    # flowc through compiler/scripts/flowc_emit.sh. A runtime module is a
+    # library unit (--library, #1030): no runtime checks and plain external
+    # names, so it links next to the program's C.
+    let mut cmd: string = pr_quote(root() + "/compiler/scripts/flowc_emit.sh")
     if library {
         cmd = cmd + " --library"
     }
-    cmd = cmd + " --lenient -o " + pr_quote(c_out)
+    cmd = cmd + " --lenient " + pr_quote(program) + " " + pr_quote(c_out)
     let pr: ptr<Proc> = run_capture(cmd, "")
     if pr[0].code != 0 or ft_exists(c_out) == false {
-        let _f: bool = fail(b, "flow->c: " + last_detail(pr, "transpiler failed"))
+        let _f: bool = fail(b, "flow->c: " + last_detail(pr, "flowc failed"))
         return null
     }
     return ft_read_file(c_out)

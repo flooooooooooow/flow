@@ -1,0 +1,10 @@
+# `assume` and `therefore` belong to the proof layer and emit no C, so a
+# file holding a theorem with untyped parameters still compiles (#587).
+theorem Nat/+.commutes(a, b) {
+    assume Nat/+.zero-right(a)
+    therefore a + b == b + a
+}
+
+function main() -> i32 {
+    return 0
+}

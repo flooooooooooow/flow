@@ -4,20 +4,21 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 mkdir -p compiler/build
-# Gen0 bootstrap + dogfood of compiler/src via ./flow always uses the Python host.
-# (Default FLOW_HOST=flowc is for user Stage-A programs after a driver exists.)
-export FLOW_HOST=python
+# flowc built from the current compiler/src by the checked-in bootstrap
+# (compiler/scripts/flowc_host.sh). It stands in for the retired Python host.
+FLOWC_SRC_BIN="$(./compiler/scripts/flowc_host.sh)"
 
-# Emit Flow → C. Prefer Stage-A Flow driver when built (fast, low mem); else
-# Python host bootstrap for latest Stage-A sources. Force host with FLOWC_FORCE_HOST=1
-# after editing compiler/src/*.flow before rebuilding the frontend objects.
+# Emit Flow to C. Prefer the Stage-A Flow driver when built (fast, low mem);
+# else the flowc built from the current compiler/src. Force the latter with
+# FLOWC_FORCE_HOST=1 after editing compiler/src/*.flow before rebuilding the
+# frontend objects.
 stage_a_emit() {
     local src="$1"
     local c_out="$2"
     if [[ "${FLOWC_FORCE_HOST:-}" == "1" ]] && [[ -f compiler/src/main.flow ]]; then
         export FLOWC_IN="$src"
         export FLOWC_OUT="$c_out"
-        ./flow run compiler/src/main.flow
+        "$FLOWC_SRC_BIN"
     elif [[ -x compiler/build/stage_a_driver_flow ]]; then
         ./compiler/build/stage_a_driver_flow "$src" "$c_out"
     elif [[ -x compiler/build/stage_a_driver ]]; then
@@ -25,7 +26,7 @@ stage_a_emit() {
     elif [[ -f compiler/src/main.flow ]]; then
         export FLOWC_IN="$src"
         export FLOWC_OUT="$c_out"
-        ./flow run compiler/src/main.flow
+        "$FLOWC_SRC_BIN"
     else
         echo "FAIL stage_a_emit: no emitter (compiler/src/main.flow or stage_a_driver*)" >&2
         return 1
@@ -51,7 +52,7 @@ run_case() {
     echo "PASS ${name}"
 }
 
-# Compile a real flowc module to a C object (no link/run — modules have no main).
+# Compile a real flowc module to a C object (no link/run: modules have no main).
 # Optional further args: header paths for `cc -include` (imported sibling types/consts).
 # Typecheck stays on (default); imports seed names so frontend modules resolve.
 compile_module() {
@@ -175,7 +176,7 @@ for needle in 'flowc_ast_new' 'typedef struct AstNode' 'AstArena'; do
 done
 echo "PASS compile_module ast greps"
 
-# Third module: lexer.flow (imports .token — skipped at emit; -include token header).
+# Third module: lexer.flow (imports .token: skipped at emit; -include token header).
 python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/token_flowc.c compiler/build/token_flowc.h
 compile_module lexer compiler/src/lexer.flow compiler/build/token_flowc.h
@@ -187,7 +188,7 @@ for needle in 'flowc_lexer_new' 'flowc_lexer_next' 'flowc_lex_classify_keyword' 
         exit 1
     fi
 done
-# Linkability smoke: both objects resolve (no main — relocatable link).
+# Linkability smoke: both objects resolve (no main: relocatable link).
 cc -r -o compiler/build/token_lexer_flowc.o \
     compiler/build/token_flowc.o compiler/build/lexer_flowc.o
 if ! nm compiler/build/lexer_flowc.o | grep 'flowc_lexer_next' >/dev/null; then
@@ -232,7 +233,7 @@ compile_module shader_dsl compiler/src/shader_dsl.flow
 python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/shader_dsl_flowc.c compiler/build/shader_dsl_flowc.h
 
-# Fifth module: parser.flow (imports token/ast/lexer — -include their headers).
+# Fifth module: parser.flow (imports token/ast/lexer: -include their headers).
 python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/ast_flowc.c compiler/build/ast_flowc.h
 python3 compiler/scripts/flowc_c_to_hdr.py \
@@ -242,10 +243,29 @@ compile_module effects compiler/src/effects.flow \
     compiler/build/ast_flowc.h
 python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/effects_flowc.c compiler/build/effects_flowc.h
+# Function attribute vocabulary: parser guards, typecheck checks, cgen
+# lowering (#1028, #1029).
+compile_module attributes compiler/src/attributes.flow
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/attributes_flowc.c compiler/build/attributes_flowc.h
+# Sort and find plan selection used by cgen (#1054).
+compile_module ordering_hints compiler/src/ordering_hints.flow
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/ordering_hints_flowc.c compiler/build/ordering_hints_flowc.h
+compile_module sort_plans compiler/src/sort_plans.flow
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/sort_plans_flowc.c compiler/build/sort_plans_flowc.h
+compile_module sort_sites compiler/src/sort_sites.flow \
+    compiler/build/token_flowc.h \
+    compiler/build/ast_flowc.h \
+    compiler/build/ordering_hints_flowc.h
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/sort_sites_flowc.c compiler/build/sort_sites_flowc.h
 compile_module parser compiler/src/parser.flow \
     compiler/build/token_flowc.h \
     compiler/build/ast_flowc.h \
-    compiler/build/lexer_flowc.h
+    compiler/build/lexer_flowc.h \
+    compiler/build/attributes_flowc.h
 for needle in 'flowc_parser_new' 'flowc_parse_program' 'typedef struct Parser'; do
     if ! grep -Fq "$needle" compiler/build/parser_flowc.c; then
         echo "FAIL compile_module parser: missing '${needle}' in emitted C" >&2
@@ -266,12 +286,15 @@ compile_module proof_lower compiler/src/proof_lower.flow \
 python3 compiler/scripts/flowc_c_to_hdr.py \
     compiler/build/proof_lower_flowc.c compiler/build/proof_lower_flowc.h
 
-# Sixth module: cgen.flow (imports token/ast — -include their headers; extern → string.h).
+# Sixth module: cgen.flow (imports token/ast: -include their headers; extern → string.h).
 compile_module cgen compiler/src/cgen.flow \
     compiler/build/token_flowc.h \
     compiler/build/ast_flowc.h \
     compiler/build/effects_flowc.h \
-    compiler/build/proof_lower_flowc.h
+    compiler/build/proof_lower_flowc.h \
+    compiler/build/attributes_flowc.h \
+    compiler/build/sort_plans_flowc.h \
+    compiler/build/sort_sites_flowc.h
 for needle in 'flowc_cgen_emit' 'flowc_cgen_emit_ex' 'typedef struct CgenBuf' '#include <string.h>' ' % '; do
     if ! grep -Fq "$needle" compiler/build/cgen_flowc.c; then
         echo "FAIL compile_module cgen: missing '${needle}' in emitted C" >&2
@@ -332,6 +355,7 @@ python3 compiler/scripts/flowc_c_to_hdr.py \
 # Seventh module: typecheck.flow (imports ast and the overload modules).
 compile_module typecheck compiler/src/typecheck.flow \
     compiler/build/ast_flowc.h \
+    compiler/build/attributes_flowc.h \
     compiler/build/effects_flowc.h \
     compiler/build/proof_lower_flowc.h \
     compiler/build/overload_table_flowc.h \
@@ -366,6 +390,7 @@ compile_module resolve compiler/src/resolve.flow \
     compiler/build/flow_blocks_flowc.h \
     compiler/build/shader_dsl_flowc.h \
     compiler/build/effects_flowc.h \
+    compiler/build/sort_plans_flowc.h \
     compiler/build/cgen_flowc.h \
     compiler/build/overload_table_flowc.h \
     compiler/build/overload_call_flowc.h \
@@ -379,7 +404,7 @@ done
 echo "PASS compile_module resolve greps"
 
 # Optional backends (kept out of flowc_frontend.o / self-host fixed-point):
-# jsgen.flow + fmt.flow — emit→cc -c + separate relocatable link with token/ast.
+# jsgen.flow + fmt.flow: emit→cc -c + separate relocatable link with token/ast.
 compile_module jsgen compiler/src/jsgen.flow \
     compiler/build/token_flowc.h \
     compiler/build/ast_flowc.h \
@@ -422,7 +447,7 @@ echo "PASS link smoke flowc_jsgen_fmt.o"
 echo "=== jsgen fixture smoke (FLOWC_BACKEND=js) ==="
 FLOWC_BACKEND=js FLOWC_IN=compiler/fixtures/stage_a_sum.flow \
 FLOWC_OUT=compiler/build/stage_a_sum.js \
-    ./flow run compiler/src/main.flow
+    "$FLOWC_SRC_BIN"
 for needle in 'function' 'return'; do
     if ! grep -Fq "$needle" compiler/build/stage_a_sum.js; then
         echo "FAIL jsgen fixture: missing '${needle}' in stage_a_sum.js" >&2
@@ -438,7 +463,7 @@ echo "PASS jsgen fixture smoke"
 echo "=== fmt fixture smoke (FLOWC_BACKEND=fmt) ==="
 FLOWC_BACKEND=fmt FLOWC_IN=compiler/fixtures/stage_a_sum.flow \
 FLOWC_OUT=compiler/build/stage_a_sum.fmt.flow \
-    ./flow run compiler/src/main.flow
+    "$FLOWC_SRC_BIN"
 if ! grep -Fq 'function' compiler/build/stage_a_sum.fmt.flow; then
     echo "FAIL fmt fixture: missing pretty-printed 'function'" >&2
     exit 1
@@ -523,7 +548,7 @@ if [[ ! -f compiler/build/bundle_tc_bad_optout.c ]]; then
     exit 1
 fi
 # bundle_infer_main: `let p = make_pair(...)` where make_pair lives in the
-# sibling module — the type has to come from the bundle signature table.
+# sibling module: the type has to come from the bundle signature table.
 FLOWC_FORCE_HOST=1 FLOWC_BUNDLE=1 FLOWC_DIR=compiler/fixtures \
     stage_a_emit \
     compiler/fixtures/bundle_infer_main.flow \
@@ -548,7 +573,7 @@ test "$bundle_infer_code" -eq 42
 echo "PASS FLOWC_BUNDLE fixtures"
 
 # Real frontend pair: FLOWC_BUNDLE=1 emits token.flow then lexer.flow in one TU
-# (deps first). No flowc_c_to_hdr.py / cc -include — Token/TOK_* live in the same file.
+# (deps first). No flowc_c_to_hdr.py / cc -include: Token/TOK_* live in the same file.
 echo "=== FLOWC_BUNDLE lexer (token+lexer one TU) ==="
 FLOWC_FORCE_HOST=1 FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
     stage_a_emit compiler/src/lexer.flow compiler/build/bundle_lexer.c
@@ -613,7 +638,7 @@ if ! nm compiler/build/bundle_parser.o | grep 'flowc_lexer_next' >/dev/null; the
 fi
 echo "PASS FLOWC_BUNDLE parser (token+ast+lexer+parser one TU)"
 
-# Default-ON typecheck fixtures (host emit — picks up latest main.flow semantics
+# Default-ON typecheck fixtures (host emit: picks up latest main.flow semantics
 # before stage_a_driver_flow is rebuilt later in this script).
 echo "=== FLOWC_TYPECHECK fixtures (default on) ==="
 FLOWC_FORCE_HOST=1 stage_a_emit \
@@ -679,6 +704,10 @@ cc -r -o compiler/build/flowc_frontend.o \
     compiler/build/shader_dsl_flowc.o \
     compiler/build/effects_flowc.o \
     compiler/build/proof_lower_flowc.o \
+    compiler/build/attributes_flowc.o \
+    compiler/build/ordering_hints_flowc.o \
+    compiler/build/sort_plans_flowc.o \
+    compiler/build/sort_sites_flowc.o \
     compiler/build/cgen_flowc.o \
     compiler/build/overload_flowc.o \
     compiler/build/overload_table_flowc.o \
@@ -741,6 +770,7 @@ compile_module driver compiler/src/driver.flow \
     compiler/build/dynamics_dsl_flowc.h \
     compiler/build/flow_blocks_flowc.h \
     compiler/build/shader_dsl_flowc.h \
+    compiler/build/sort_plans_flowc.h \
     compiler/build/cgen_flowc.h \
     compiler/build/overload_table_flowc.h \
     compiler/build/overload_call_flowc.h \
@@ -750,7 +780,7 @@ if ! grep -Fq 'int main(int argc, char **argv)' compiler/build/driver_flowc.c; t
     echo "FAIL stage_a_driver_flow: expected int main(int argc, char **argv) in emitted C" >&2
     exit 1
 fi
-# Imports skipped — parse/cgen bodies must not appear in the driver TU.
+# Imports skipped: parse/cgen bodies must not appear in the driver TU.
 if grep -Eq '^int32_t flowc_parse_program' compiler/build/driver_flowc.c; then
     echo "FAIL stage_a_driver_flow: parse symbols must come from frontend, not driver emit" >&2
     exit 1
@@ -782,7 +812,7 @@ echo "driven_sum_flow exit=$driven_flow_code"
 test "$driven_flow_code" -eq 45
 echo "PASS stage_a_driver_flow"
 
-# f32/f64 + float literals — after frontend rebuild so Stage-A driver can parse TOK_FLOAT.
+# f32/f64 + float literals: after frontend rebuild so Stage-A driver can parse TOK_FLOAT.
 run_case stage_a_float 42
 if ! grep -Fq 'float x = 40.5f;' compiler/build/stage_a_float.c; then
     echo "FAIL stage_a_float: expected f32 let with 40.5f" >&2
@@ -797,7 +827,7 @@ if ! grep -Fq '(int32_t)(z)' compiler/build/stage_a_float.c; then
     exit 1
 fi
 
-# match statement — after frontend rebuild so the Stage-A driver can parse it.
+# match statement: after frontend rebuild so the Stage-A driver can parse it.
 # Arms: int literals (incl. negative), `_` wildcard, binding ident catch-all.
 run_case stage_a_match 42
 if ! grep -Fq 'int32_t __flowc_match = v;' compiler/build/stage_a_match.c; then

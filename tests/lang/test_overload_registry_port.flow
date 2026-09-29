@@ -24,6 +24,8 @@ function make_fn(arena: ptr<AstArena>, ns: i32, ne: i32, arity: i32) -> i32 {
         i = i + 1
     }
     arena[0].nodes[fn].a = params
+    # A body: the registry skips bodiless forward declarations.
+    arena[0].nodes[fn].c = flowc_ast_alloc(arena, AST_BLOCK, 0, 0)
     return fn
 }
 

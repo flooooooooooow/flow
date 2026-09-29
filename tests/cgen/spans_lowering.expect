@@ -1,0 +1,11 @@
+# One guarded view typedef per element type. 3 + 7 + 2 + 4 + 7 = 23.
+flags --strict
++ #define FLOWC_SPAN_int32_t
++ typedef struct { int32_t* data; int32_t len; } flowc_span_int32_t;
++ int32_t total(flowc_span_int32_t values)
+# A fixed array auto-borrows with its static length.
++ total(((flowc_span_int32_t){ xs, 8 }))
+# Literal and runtime slice bounds lower to the same pointer offset form.
++ (int32_t*)xs + 2, 5 - 2}
++ (int32_t*)xs + lo, hi - lo}
+exit 23

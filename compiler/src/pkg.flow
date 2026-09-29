@@ -692,8 +692,8 @@ function to_toml(pm: ptr<Pm>, root: i32) -> string {
         toml_list_line(pm, sb, "cflags", jd_get(d, native, "cflags"))
         toml_list_line(pm, sb, "ldflags", jd_get(d, native, "ldflags"))
     }
-    sb_puts(sb, "\n[build]\nhost = \"python\"\n")
-    sb_puts(sb, "# test_command = \"FLOW_HOST=python flow run tests/test_main.flow\"\n")
+    sb_puts(sb, "\n[build]\nhost = \"flowc\"\n")
+    sb_puts(sb, "# test_command = \"flow run tests/test_main.flow\"\n")
     sb_puts(sb, "\n[conventions]\n# avoid = [\n")
     sb_puts(sb, "#   { pattern = \"reverse for loop\", reason = \"generates incorrect step direction (#410)\", workaround = \"use while with explicit decrement\" },\n")
     sb_puts(sb, "# ]\n\n[patterns]\n")

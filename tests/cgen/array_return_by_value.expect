@@ -1,0 +1,11 @@
+# A returned array<T, N> is a struct returned by value, never a pointer to
+# the callee's frame (#573). From tests/integration/test_array_return.py.
++ __flowc_arr_i32_3 from_literal(int32_t root) {
++ __flowc_arr_i32_3 from_local(int32_t root) {
+- int32_t* from_literal(
+- int32_t* from_local(
+exit 0
+stdout literal 60 64 67
+stdout local 60 64 67
+stdout indexed 64
+stdout passed 191

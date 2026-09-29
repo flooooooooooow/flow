@@ -1,0 +1,213 @@
+# Flow-native language test: every sort and search plan flowc selects gives
+# the right answer, and every sort plan is stable (#1054).
+#
+# The plan comes from the cost model in compiler/src/sort_plans.flow, so a
+# compiler change can swap it under a program. Each site below is shaped to
+# reach one plan (see tests/cgen/sort_plan_*.flow for the C each one gets);
+# the checks look at results only. `flow explain` on this file shows the
+# choices.
+#
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+struct Row {
+    key: i32,
+    tag: i32
+}
+
+struct Pair {
+    hi: u8,
+    lo: f64,
+    tag: i32
+}
+
+function fill_rows(rs: ptr<Row>, n: i32, m: i32) -> i32 {
+    for i in 0 to n {
+        rs[i] = Row { key: (i * 7919) % m, tag: i }
+    }
+    return 0
+}
+
+# 1 when rs is ordered by key (ascending, or descending when desc = 1) and
+# rows with equal keys keep their fill order (tag ascending).
+function rows_ok(rs: ptr<Row>, n: i32, desc: i32) -> i32 {
+    for i in 1 to n {
+        let a: Row = rs[i - 1]
+        let b: Row = rs[i]
+        if desc == 0 and a.key > b.key {
+            return 0
+        }
+        if desc == 1 and a.key < b.key {
+            return 0
+        }
+        if a.key == b.key and a.tag > b.tag {
+            return 0
+        }
+    }
+    return 1
+}
+
+function fill_i32(xs: ptr<i32>, n: i32, m: i32) -> i32 {
+    for i in 0 to n {
+        xs[i] = (i * 7919) % m - m / 2
+    }
+    return 0
+}
+
+function ascending_i32(xs: ptr<i32>, n: i32) -> i32 {
+    for i in 1 to n {
+        if xs[i - 1] > xs[i] {
+            return 0
+        }
+    }
+    return 1
+}
+
+function sum_i32(xs: ptr<i32>, n: i32) -> i64 {
+    let mut s: i64 = 0
+    for i in 0 to n {
+        s = s + (xs[i] as i64)
+    }
+    return s
+}
+
+function fill_u8(xs: ptr<u8>, n: i32) -> i32 {
+    for i in 0 to n {
+        xs[i] = ((i * 91) % 251) as u8
+    }
+    return 0
+}
+
+function main() -> i32 {
+    # insertion: small struct array, sorted by key, stable.
+    let mut small: array<Row, 12> = [Row { key: 0, tag: 0 }]
+    fill_rows(small, 12, 3)
+    small |> sortBy [asc .key]
+    if rows_ok(small, 12, 0) != 1 {
+        return 1
+    }
+
+    # natural_merge: many rows, no provenance, stable.
+    let mut mid: array<Row, 900> = [Row { key: 0, tag: 0 }]
+    fill_rows(mid, 900, 17)
+    mid |> sort by .key
+    if rows_ok(mid, 900, 0) != 1 {
+        return 2
+    }
+
+    # natural_merge, descending key: equal keys still keep fill order.
+    let mut middesc: array<Row, 900> = [Row { key: 0, tag: 0 }]
+    fill_rows(middesc, 900, 17)
+    middesc |> sortBy [desc .key]
+    if rows_ok(middesc, 900, 1) != 1 {
+        return 3
+    }
+
+    # bottom_up_merge: `general` pins the general plan.
+    let mut gen: array<Row, 900> = [Row { key: 0, tag: 0 }]
+    fill_rows(gen, 900, 17)
+    gen |> sort by .key general
+    if rows_ok(gen, 900, 0) != 1 {
+        return 4
+    }
+
+    # insertion again: 70000 i32 needs a 273 KiB merge buffer, over the
+    # 256 KiB scratch budget, so both merges are rejected.
+    let mut big: array<i32, 70000> = [0]
+    fill_i32(big, 70000, 100)
+    let before: i64 = sum_i32(big, 70000)
+    big |> sort
+    if ascending_i32(big, 70000) != 1 {
+        return 5
+    }
+    if sum_i32(big, 70000) != before {
+        return 6
+    }
+
+    # counting: u8 bounds the key range to [0, 255].
+    let mut bytes: array<u8, 2000> = [0]
+    fill_u8(bytes, 2000)
+    bytes |> sort descending
+    for i in 1 to 2000 {
+        if bytes[i - 1] < bytes[i] {
+            return 7
+        }
+    }
+    if bytes[0] != 250 || bytes[1999] != 0 {
+        return 8
+    }
+
+    # counting with unique: the prefix holds each value once, ascending.
+    let mut u: array<u8, 20> = [5, 3, 5, 3, 9, 1, 1, 0, 9, 7, 7, 2, 2, 8, 8, 6, 6, 4, 4, 0]
+    u |> sort unique
+    for i in 0 to 10 {
+        if u[i] != i as u8 {
+            return 9
+        }
+    }
+
+    # A literal's proven range with negative values rules counting out: this
+    # i32 literal spans [-3, 12], so the site takes insertion.
+    let mut neg: array<i32, 16> = [12, -3, 7, 0, 5, 5, -1, 9, 11, 2, 3, 4, 6, 8, 10, 1]
+    neg |> sort
+    if neg[0] != -3 || neg[15] != 12 || ascending_i32(neg, 16) != 1 {
+        return 10
+    }
+
+    # already_ordered and reverse_in_place from literal provenance.
+    let mut asc: array<i32, 16> = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    asc |> sort
+    let mut rev: array<i32, 16> = [16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
+    rev |> sort
+    if asc[0] != 1 || asc[15] != 16 || rev[0] != 1 || rev[15] != 16 {
+        return 11
+    }
+
+    # binary_search: the sort above leaves `rev` provably ascending.
+    let hit: i32 = rev |> find(11)
+    let miss: i32 = rev |> find(40)
+    if hit != 10 || miss != -1 {
+        return 12
+    }
+
+    # Search compares under the sort order for every element type, not as
+    # int32: f64 with binary search (literal is ascending), f64 and strings
+    # with a linear scan.
+    let fs: array<f64, 6> = [0.5, 1.5, 2.5, 3.5, 4.5, 5.5]
+    if (fs |> find(3.5)) != 3 {
+        return 13
+    }
+    let mut fu: array<f64, 5> = [2.5, -1.0, 7.25, 0.0, 3.0]
+    if (fu |> find(7.25)) != 2 {
+        return 14
+    }
+    if (fu |> find(0.0)) != 3 {
+        return 15
+    }
+    let names: array<string, 4> = ["pear", "fig", "kiwi", "plum"]
+    if (names |> find("kiwi")) != 2 {
+        return 16
+    }
+    let wide: array<i64, 4> = [5000000000, 7, 6000000000, 8]
+    if (wide |> find(6000000000)) != 2 {
+        return 17
+    }
+
+    # Multi-key over mixed field types keeps stability on the last tie.
+    let mut ps: array<Pair, 6> = [
+        Pair { hi: 2, lo: 0.5, tag: 1 },
+        Pair { hi: 1, lo: 0.5, tag: 2 },
+        Pair { hi: 2, lo: 0.25, tag: 3 },
+        Pair { hi: 1, lo: 0.5, tag: 4 },
+        Pair { hi: 2, lo: 0.5, tag: 5 },
+        Pair { hi: 1, lo: 0.75, tag: 6 }
+    ]
+    ps |> sortBy [desc .hi, asc .lo]
+    if ps[0].tag != 3 || ps[1].tag != 1 || ps[2].tag != 5 {
+        return 18
+    }
+    if ps[3].tag != 2 || ps[4].tag != 4 || ps[5].tag != 6 {
+        return 19
+    }
+
+    return 0
+}

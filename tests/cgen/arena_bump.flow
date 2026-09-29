@@ -1,0 +1,33 @@
+# stdlib/memory.flow Arena (#425): arena_alloc bumps the offset by the size
+# rounded up to 8, and arena_reset sets the offset back to 0.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+import stdlib.memory { Arena, arena_create, arena_alloc, arena_reset, arena_destroy, arena_used }
+
+function main() -> i32 {
+    let mut a: Arena = arena_create(64)
+    let ap: ptr<Arena> = &a
+    let p: ptr<void> = arena_alloc(ap, 3)
+    if p == null {
+        return 1
+    }
+    if arena_used(a) != 8 {
+        return 2
+    }
+    let q: ptr<void> = arena_alloc(ap, 16)
+    if q == null {
+        return 3
+    }
+    if arena_used(a) != 24 {
+        return 4
+    }
+    let big: ptr<void> = arena_alloc(ap, 100)
+    if big != null {
+        return 5
+    }
+    arena_reset(ap)
+    if arena_used(a) != 0 {
+        return 6
+    }
+    arena_destroy(ap)
+    return 0
+}

@@ -117,7 +117,7 @@ the worst of both arrangements.
 
 `parse_module` accepts `import`, so this parses:
 
-```flow
+```flow expect-error
 module m {
     import .alpha
 

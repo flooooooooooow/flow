@@ -13,7 +13,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 mkdir -p compiler/build/pkg_add
-export FLOW_HOST=python
+# flowc built from the current compiler/src by the checked-in bootstrap
+# (compiler/scripts/flowc_host.sh). It stands in for the retired Python host.
+FLOWC_SRC_BIN="$(./compiler/scripts/flowc_host.sh)"
 
 PKG="compiler/fixtures/pkg_add"
 BUILD="compiler/build/pkg_add"
@@ -28,7 +30,7 @@ emit_one() {
     else
         export FLOWC_IN="$src"
         export FLOWC_OUT="$c_out"
-        ./flow run compiler/src/main.flow
+        "$FLOWC_SRC_BIN"
     fi
 }
 
@@ -47,7 +49,7 @@ if grep -Eq '^static int32_t add\(' "$BUILD/math.c"; then
     exit 1
 fi
 
-# Import skipped — main still calls add by free name.
+# Import skipped: main still calls add by free name.
 if ! grep -Fq 'add(40, 2)' "$BUILD/main.c"; then
     echo "FAIL stage_a_link_two: expected add(40, 2) call in main.c" >&2
     exit 1
@@ -77,7 +79,7 @@ if [[ "${FLOWC_RESOLVE_IMPORTS:-}" == "1" ]]; then
 fi
 
 cc -O0 -c "$BUILD/math.c" -o "$BUILD/math.o"
-# Prototype for imported `add` (imports skipped at emit — supply via sibling header).
+# Prototype for imported `add` (imports skipped at emit: supply via sibling header).
 python3 compiler/scripts/flowc_c_to_hdr.py "$BUILD/math.c" "$BUILD/math.h"
 cc -O0 -c -include "$BUILD/math.h" "$BUILD/main.c" -o "$BUILD/main.o"
 cc -O0 -o "$BUILD/pkg_add" "$BUILD/main.o" "$BUILD/math.o"

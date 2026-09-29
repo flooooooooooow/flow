@@ -1,0 +1,76 @@
+# Flow-native language test: string `==`, `!=` and `len` (#1037).
+# Equality compares contents, and len is the byte length. The Python host
+# compared pointers and took sizeof of the pointer; flowc compares with
+# strcmp and measures with strlen.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+struct Named {
+    name: string,
+    id: i32
+}
+
+function greeting() -> string {
+    return "hel" + "lo"
+}
+
+function same(a: string, b: string) -> bool {
+    return a == b
+}
+
+function main() -> i32 {
+    let s: string = "hello"
+    let t: string = "hel"
+    let u: string = t + "lo"
+    if len(s) != 5 {
+        return 1
+    }
+    if len(u) != 5 {
+        return 2
+    }
+    if len("") != 0 {
+        return 3
+    }
+    # Built at run time, so a pointer compare would fail.
+    if s != u {
+        return 4
+    }
+    if !(s == u) {
+        return 5
+    }
+    if s == t {
+        return 6
+    }
+    if greeting() != s {
+        return 7
+    }
+    if !same(u, "hello") {
+        return 8
+    }
+    if same(t, s) {
+        return 9
+    }
+    let n: Named = Named { name: t + "p", id: 1 }
+    if n.name != "help" {
+        return 10
+    }
+    if len(n.name) != 4 {
+        return 11
+    }
+    # A null string is equal only to null and has length 0.
+    let z: string = null
+    if z != null {
+        return 12
+    }
+    if z == s {
+        return 13
+    }
+    if len(z) != 0 {
+        return 14
+    }
+    # Arrays keep their element count.
+    let xs: array<i32, 4> = [1, 2, 3, 4]
+    if len(xs) != 4 {
+        return 15
+    }
+    return 0
+}

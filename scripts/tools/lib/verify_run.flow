@@ -287,18 +287,11 @@ export function vr_run_stage(root: string, cmd: string, timeout: i32, out_path: 
     return rc
 }
 
-# The transpile command line for one file, as check_one() ran it.
+# The transpile command line for one file: flowc through
+# compiler/scripts/flowc_emit.sh, lenient, as `flow compile` runs it.
+# FLOWC_BIN in the environment skips the per-file ensure_flowc.sh step.
 export function vr_transpile_cmd(root: string, flow_file: string, c_file: string) -> string {
-    let mut pypath: string = root + "/src"
-    let old: string = vr_env("PYTHONPATH")
-    if ft_len(old) > 0 {
-        pypath = pypath + ":" + old
-    }
-    let mut py: string = vr_env("VERIFY_PYTHON")
-    if ft_len(py) == 0 {
-        py = "python3"
-    }
-    return "env PYTHONPATH=" + pr_quote(pypath) + " " + pr_quote(py) + " -m flow.transpiler " + pr_quote(flow_file) + " --c --lenient -o " + pr_quote(c_file)
+    return pr_quote(root + "/compiler/scripts/flowc_emit.sh") + " --lenient " + pr_quote(flow_file) + " " + pr_quote(c_file)
 }
 
 # Temp-file name check_one() used: the relative path with "/" as "-".

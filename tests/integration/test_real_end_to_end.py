@@ -86,52 +86,6 @@ class TestRealEndToEnd:
                 if os.path.exists(f):
                     os.remove(f)
 
-    def test_c_backend_generation(self):
-        """Test C backend generation."""
-        flow_code = """
-        function add(a: i32, b: i32) -> i32 {
-            return a + b
-        }
-        """
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".flow", delete=False) as f:
-            f.write(flow_code)
-            input_file = f.name
-
-        try:
-            # Test C generation
-            result = subprocess.run(
-                [
-                    "python3",
-                    "-m",
-                    "flow.transpiler",
-                    input_file,
-                    "--c",
-                    "-o",
-                    input_file.replace(".flow", ".c"),
-                ],
-                capture_output=True,
-                text=True,
-                cwd=Path(__file__).parent.parent.parent,
-            )
-
-            assert result.returncode == 0
-            assert "Generated C" in result.stderr or "Generated" in result.stderr
-
-            # Verify C code was generated
-            output_file = input_file.replace(".flow", ".c")
-            assert os.path.exists(output_file)
-
-            with open(output_file, "r") as f:
-                c_content = f.read()
-                assert "add" in c_content
-
-        finally:
-            # Cleanup
-            for f in [input_file, input_file.replace(".flow", ".c")]:
-                if os.path.exists(f):
-                    os.remove(f)
-
     def test_error_handling(self):
         """Test that errors are properly handled."""
         flow_code = """

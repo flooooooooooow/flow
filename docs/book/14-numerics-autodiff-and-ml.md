@@ -60,9 +60,9 @@ The checked-in complete program is [`examples/book/14_numeric_gradient.flow`](..
 Complete executable examples cover matrix construction, indexing, multiplication, decomposition, and BLAS integration:
 
 ```bash
-FLOW_HOST=python ./flow run examples/linalg/matrix_ops.flow
-FLOW_HOST=python ./flow run examples/linalg/lu_decomposition.flow
-FLOW_HOST=python ./flow run examples/linalg/blas_demo.flow
+./flow run examples/linalg/matrix_ops.flow
+./flow run examples/linalg/lu_decomposition.flow
+./flow run examples/linalg/blas_demo.flow
 ```
 
 BLAS bindings additionally depend on a platform BLAS implementation.
@@ -72,8 +72,8 @@ BLAS bindings additionally depend on a platform BLAS implementation.
 Forward AD is provided by `stdlib/autodiff.flow`. Because the `Dual` type and operations come from that module, use the complete imported examples rather than copying calls without their declaration context:
 
 ```bash
-FLOW_HOST=python ./flow run examples/ml/autodiff/dual_ops.flow
-FLOW_HOST=python ./flow run examples/ml/autodiff/autodiff_benchmark.flow
+./flow run examples/ml/autodiff/dual_ops.flow
+./flow run examples/ml/autodiff/autodiff_benchmark.flow
 ```
 
 A dual value carries a primal value plus a directional derivative. Forward mode is efficient when the number of input directions is small.
@@ -83,7 +83,7 @@ A dual value carries a primal value plus a directional derivative. Forward mode 
 `stdlib/autodiff_reverse.flow` records operations on a tape and propagates adjoints from outputs to inputs:
 
 ```bash
-FLOW_HOST=python ./flow run examples/ml/tape_mul.flow
+./flow run examples/ml/tape_mul.flow
 ```
 
 Gradient implementations should be checked against finite differences or an independent analytic result.
@@ -93,7 +93,7 @@ Gradient implementations should be checked against finite differences or an inde
 Some workloads generate derivative functions ahead of time rather than interpreting a runtime tape. Treat generated derivatives like generated C: reproducible, inspectable at boundaries, and tested against the primal calculation.
 
 ```bash
-FLOW_HOST=python ./flow run examples/ml/models/mlp_xor.flow
+./flow run examples/ml/models/mlp_xor.flow
 ```
 
 ## 14.9 Tensors and MLIR
@@ -101,16 +101,16 @@ FLOW_HOST=python ./flow run examples/ml/models/mlp_xor.flow
 Tensor modules provide shaped numeric storage and elementwise operations. MLIR can lower selected tensor and matrix workloads, but backend parity is not claimed for every language feature.
 
 ```bash
-FLOW_HOST=python ./flow run examples/ml/autodiff/tensor_ops.flow
+./flow run examples/ml/autodiff/tensor_ops.flow
 ./flow ml bench examples/ml/mlir_tensor_bench.flow
 ```
 
 ## 14.10 Neural networks and optimization
 
 ```bash
-FLOW_HOST=python ./flow run examples/ml/models/mlp_xor_from_scratch.flow
-FLOW_HOST=python ./flow run examples/ml/models/mlp_xor_adam.flow
-FLOW_HOST=python ./flow run examples/ml/digits_mlp.flow
+./flow run examples/ml/models/mlp_xor_from_scratch.flow
+./flow run examples/ml/models/mlp_xor_adam.flow
+./flow run examples/ml/digits_mlp.flow
 ```
 
 Validation belongs in the example: objective reduction, held-out accuracy, gradient checks, residuals, or comparison with a known solution.
@@ -118,10 +118,10 @@ Validation belongs in the example: objective reduction, held-out accuracy, gradi
 ## 14.11 Numerical and statistical examples
 
 ```bash
-FLOW_HOST=python ./flow run examples/numerical/ode_solver.flow
-FLOW_HOST=python ./flow run examples/numerical/optimization.flow
-FLOW_HOST=python ./flow run examples/numerical/fmm_selftest.flow
-FLOW_HOST=python ./flow run examples/stats/regression_gd.flow
+./flow run examples/numerical/ode_solver.flow
+./flow run examples/numerical/optimization.flow
+./flow run examples/numerical/fmm_selftest.flow
+./flow run examples/stats/regression_gd.flow
 ```
 
 ## Exercises

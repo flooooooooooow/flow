@@ -40,41 +40,58 @@ committing, or the `bootstrap_from_c.sh --verify` fixed-point check will fail.
 
 ### Regeneration steps
 
+flowc regenerates itself. There is no Python step: the binary built from the
+previous bootstrap C compiles your edited `compiler/src`, the result compiles
+it again, and the C stops changing (a fixed point, usually at the second
+generation). `self_host_full.sh` proves that fixed point on every run.
+
 Link with `-lm`: the proof layer puts math calls into flowc, and Linux does
 not link libm by default.
 
 ```bash
-# 1. Build a temporary bootstrap binary from the CURRENT checked-in C
-cc -O2 -o compiler/build/flowc_bootstrap compiler/bootstrap/flowc_stage_a.c -lm
+# 1. Selftest the edited compiler. flowc_host.sh builds a flowc from the
+#    current compiler/src with the binary of the checked-in bootstrap C.
+env -u FLOWC_IN -u FLOWC_OUT "$(./compiler/scripts/flowc_host.sh)"
+# Look for "flowc: PASS" at the end.
 
-# 2. Emit main.flow in bundle mode using the Python host (picks up your edits)
-FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
-  FLOWC_IN=compiler/src/main.flow FLOWC_OUT=compiler/build/bootstrap_regen.c \
-  FLOW_HOST=python ./flow run compiler/src/main.flow
+# 2. Regenerate: self-emit from the previous bootstrap until the C reaches a
+#    fixed point, then rewrite compiler/bootstrap/flowc_stage_a.c and rebuild
+#    compiler/bootstrap/flowc_stage_a and compiler/build/flowc_bootstrap.
+./compiler/scripts/bootstrap_from_c.sh --regen
 
-# 3. Verify fixed point: the new binary emits the same C
-cp compiler/build/bootstrap_regen.c compiler/bootstrap/flowc_stage_a.c
-cc -O2 -o compiler/build/flowc_bootstrap compiler/bootstrap/flowc_stage_a.c -lm
-FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
-  FLOWC_IN=compiler/src/main.flow FLOWC_OUT=/tmp/verify.c \
-  ./compiler/build/flowc_bootstrap
-cmp -s compiler/bootstrap/flowc_stage_a.c /tmp/verify.c \
-  && echo "FIXED POINT OK" || echo "DRIFT"
-
-# 4. Rebuild the checked-in binary
-cc -O2 -o compiler/bootstrap/flowc_stage_a compiler/bootstrap/flowc_stage_a.c -lm
-
-# 5. Run the full verification
+# 3. Run the full verification
 ./compiler/scripts/bootstrap_from_c.sh --verify
 ./compiler/scripts/self_host_full.sh
+./compiler/scripts/roundtrip.sh
 ```
+
+Step 2 by hand, for when you need to see each generation:
+
+```bash
+cc -O2 -o compiler/build/flowc_gen0 compiler/bootstrap/flowc_stage_a.c -lm
+FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src FLOWC_IN=compiler/src/main.flow \
+  FLOWC_OUT=compiler/build/gen1.c ./compiler/build/flowc_gen0
+cc -O2 -o compiler/build/flowc_gen1 compiler/build/gen1.c -lm
+FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src FLOWC_IN=compiler/src/main.flow \
+  FLOWC_OUT=compiler/build/gen2.c ./compiler/build/flowc_gen1
+cmp -s compiler/build/gen1.c compiler/build/gen2.c \
+  && echo "FIXED POINT OK" || echo "not yet: build gen2 and emit gen3"
+cp compiler/build/gen2.c compiler/bootstrap/flowc_stage_a.c
+cc -O2 -o compiler/bootstrap/flowc_stage_a compiler/bootstrap/flowc_stage_a.c -lm
+```
+
+gen1.c and gen2.c differ only when your edit changes the C that flowc writes
+(a cgen change): gen1 is your compiler as emitted by the old one, gen2 as
+emitted by itself. Keep going until two generations agree.
 
 Then run the parity gates for what you touched. All of them work without
 Python in golden mode: `parity_lowering.sh`, `parity_effects.sh`,
 `parity_proofs.sh`, `parity_mlir.sh`, `parity_field_dsl.sh`,
 `parity_dynamics_dsl.sh`, `parity_flow_blocks.sh`, `parity_shader_dsl.sh`,
 `parse_coverage.sh --check`, `fmt_check.sh --check` and
-`corpus_parity.sh --check`, all under `compiler/scripts/`.
+`corpus_parity.sh --check`, all under `compiler/scripts/`. The C output
+goldens are `tests/cgen/run.sh`, and the language tests are
+`./flow test-lang`.
 
 ### Coordination protocol
 
@@ -82,16 +99,16 @@ If multiple agents are editing `compiler/src/` simultaneously:
 
 1. **Announce your scope.** Note which files you are editing below.
 2. **Regenerate bootstrap C last.** Only regenerate after all `compiler/src/`
-   edits are done and the selftest passes via the Python host:
+   edits are done and the selftest of the edited compiler passes:
    ```bash
-   FLOW_HOST=python ./flow run compiler/src/main.flow
+   env -u FLOWC_IN -u FLOWC_OUT "$(./compiler/scripts/flowc_host.sh)"
    # Look for "flowc: PASS" at the end
    ```
 3. **Commit bootstrap C in a separate commit** from source edits, with a
    message like `fix: regenerate bootstrap C after <change>`. This avoids
    merge conflicts on the large generated file.
-4. **If the Python host emit fails**, do NOT regenerate the bootstrap C.
-   Fix the source first.
+4. **If the old bootstrap cannot compile your sources**, do not regenerate
+   the bootstrap C. Fix the source first. flowc_host.sh prints the error.
 
 ### Current in-flight work
 
@@ -116,8 +133,10 @@ vector-field structure of `flow` evolution blocks for the MLIR passes (#664,
 `denotational_blocks` kwarg of `flow_to_mlir` and the `FLOW_DENOTATIONAL=1`
 path in `transpiler.py` are not on main.
 
-As of 2026-09-29 the Python suite on CI is at 1656 passed, 0 failed, 103
-skipped, and the tracked Python is 310 files and 79712 lines.
+The Python C backend is retired (flowc is the only C compiler). After that,
+on 2026-09-29, the local Python suite (`pytest tests/ -m "not slow"`) is at
+1443 passed, 0 failed, 9 skipped, and the tracked Python is 278 files and
+67005 lines.
 
 ### Bootstrap suite
 

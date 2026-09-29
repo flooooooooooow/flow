@@ -169,7 +169,7 @@ function main() -> i32 {
 Run a checked-in version with:
 
 ```bash
-FLOW_HOST=python ./flow run examples/dynamics/ga_dsys_syntax.flow
+./flow run examples/dynamics/ga_dsys_syntax.flow
 ```
 
 ## Namespaced spelling

@@ -15,12 +15,6 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from flow.parser import parse_flow_code, Literal
-from flow.c_generator import flow_to_c
-
-
-def _gen_c(source: str) -> str:
-    decls = parse_flow_code(source)
-    return flow_to_c(decls)
 
 
 def test_escaped_quote_parses():
@@ -42,23 +36,7 @@ def test_escaped_quote_literal_value():
     assert found, "No string literal found in AST"
 
 
-def test_escaped_quote_c_codegen():
-    """The C generator emits a valid C string with escaped quotes."""
-    c_code = _gen_c(r'function main() -> i32 { print("node [shape=box, style=\"filled\"];") ; return 0 }')
-    assert 'filled' in c_code
-    assert 'shape=box' in c_code
-
-
-def test_multiple_escaped_quotes_c_codegen():
-    """Multiple escaped quotes in one string work."""
-    c_code = _gen_c(r'function main() -> i32 { let s: string = "a\"b\"c" ; println(s) ; return 0 }')
-    assert "main" in c_code
-
-
-def test_escaped_quote_concatenation():
-    """Escaped quotes work inside string concatenation."""
-    c_code = _gen_c(r'function main() -> i32 { let s: string = "hello\"world" + " test\"test" ; println(s) ; return 0 }')
-    assert "flow_strcat" in c_code
+# The C codegen checks for escaped quotes are tests/cgen/escaped_strings_quotes.
 
 
 def test_escaped_backslash_parses():

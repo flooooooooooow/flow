@@ -1,16 +1,17 @@
 # Python compiler → Flow
 
 > Status: hybrid. See [self-hosting plan](self-hosting.md).
-> Default `./flow run|compile` is Stage-A **flowc** (`FLOW_HOST=flowc`), and
-> since #960 that default path runs with no Python on `PATH`.
-> Full language, most DSL expansion and most of the test suite still use
-> `FLOW_HOST=python` (`src/flow/`). The Field DSL is the exception: flowc
-> expands it itself (#956).
+> **flowc** is the only C compiler. `./flow run`, `compile`, `test`,
+> `test-lang` and the other C commands all use it, and since #960 they run
+> with no Python on `PATH`. The Python C backend (`c_generator.py`) is
+> retired and `FLOW_HOST=python` stops with an error. Python still runs the
+> MLIR generator fallback, `flow check`, `flow python`, the package publish
+> and build commands and the scripts not yet ported.
 > New code is written in Flow. `scripts/python_ratchet.sh` fails CI when a new
 > `.py` file appears or tracked Python grows (#981).
 
-Production Python compiler lives in [`src/flow/`](../../src/flow/).
-Stage-A self-host lives in [`compiler/`](../../compiler/) (`flowc`).
+The compiler is [`compiler/`](../../compiler/) (`flowc`). The Python modules
+that remain live in [`src/flow/`](../../src/flow/).
 
 This page describes what is merged on `main`. Open pull requests are listed as
 in progress and are not counted as landed.
@@ -19,12 +20,12 @@ in progress and are not counted as landed.
 
 | Claim | Reality |
 |---|---|
-| Default `./flow compile` / `./flow run` | **flowc** (Stage-A subset); escape hatch `FLOW_HOST=python` |
+| Default `./flow compile` / `./flow run` | **flowc**, the only C compiler. `FLOW_HOST=python` is retired and stops with an error |
 | `./flow run` with no Python installed | **Yes** on the flowc host (#960). The package sync decision is `scripts/tools/pkg_sync/main.flow`; a project that must fetch a dependency still calls `package.py`. `scripts/check_run_without_python.sh` checks it |
 | Stage-A lexer / parser / cgen / typecheck / resolve | Landed in `compiler/src/*.flow`; fixtures + module dogfood |
 | Emit → cc → run for subset fixtures | Works (sum/fib/structs/ptr/bundle/…) |
 | Self-emit fixed-point (`stage_a_self_emit*.sh`) | Works for the Stage-A frontend object graph |
-| Full language without Python host | **No**: effects, generics, match, gfx, MLIR, DSLs stay host |
+| Full language on the C path without Python | **Yes**. On the corpus flowc matches the retired Python backend on 1037 of 1053 programs with `main()` and builds 6 it could not ([`report.txt`](../../compiler/corpus_parity/report.txt)). The MLIR backend still falls back to the Python generator |
 | CI user-compile without `pip install` | **Yes**: `flowc-compile` job (Phase D slice 1) |
 | Flow-in-WASM compiler | **No**. See [wasm.md](../language/wasm.md) |
 
@@ -40,14 +41,14 @@ Full Stage-A suite (fixtures + frontend modules + driver + self-emit):
 ./compiler/scripts/roundtrip.sh
 ```
 
-## Host plugins (stay on `FLOW_HOST=python`)
+## Python modules and their Flow ports
 
-These are Python host modules on `main` today. Call them through the escape
-hatch until the Flow port for each one merges.
+These Python modules were the Python host's plugins. The C path now runs
+the Flow port of each one. The table records where each port stands.
 
 | Plugin / module | Role | Flow port |
 |---|---|---|
-| `field_dsl.py` | Thin bridge for the Python host: calls flowc with `FLOWC_EXPAND_ONLY=1` | Complete in [`field_dsl.flow`](../../compiler/src/field_dsl.flow) (#956) |
+| `field_dsl.py` | Thin bridge for the remaining Python tools: calls flowc with `FLOWC_EXPAND_ONLY=1` | Complete in [`field_dsl.flow`](../../compiler/src/field_dsl.flow) (#956) |
 | `dynamics_dsl.py` / `flow_blocks.py` | Dynamics DSL and `flow` block lowering | Line helpers in [`dynamics_dsl.flow`](../../compiler/src/dynamics_dsl.flow). Full expansion in flowc: open PR #999 |
 | `shader_dsl.py` / `shader_codegen.py` / `shader_codegen_wgsl.py` | Shader DSL (FSL) and its Metal and WGSL backends | Parsing and validation in [`shader_dsl.flow`](../../compiler/src/shader_dsl.flow). Both backends in flowc: open PR #998 |
 | Verify / proof modules | `proof_*.py`, math prose host path | Helpers landed (see below); document assembly and PDF stay Python |
@@ -60,11 +61,13 @@ hatch until the Flow port for each one merges.
 
 | Stay Python / host | Why |
 |---|---|
-| `./flow` bash + Gen0 bootstrap | orchestrates flowc; Gen0 still emits via `src/flow` once |
+| `./flow` bash | orchestrates flowc. The bootstrap needs no Python: flowc is built from `compiler/bootstrap/flowc_stage_a.c` with `cc` |
+| `mlir_generator.py` | fallback when the Flow MLIR emitter cannot handle a program (`--backend=mlir`) |
+| `flow check`, wcet and MISRA scanners, fir tools, the DAP server, the project test runner | not ported yet |
 | `mlir_jit.py` loading half, GPU/Metal **runtimes** | ctypes, numpy; planned to move to C (see [MLIR in Flow](../design/mlir-in-flow.md)) |
-| `package.py` | git and network |
-| `python_generator.py` (wheel) | setuptools/pip |
-| `wasm/flow_to_wasm.py`, `wasm/flow_webgpu_shader.py`, `wasm/flow_wasm_gpu.py` | call the Python C and WGSL generators in process |
+| `package.py` (publish, build, fetch) | git and network |
+| `python_generator.py` (wheel) | setuptools/pip. It takes its C from flowc |
+| `wasm/flow_to_wasm.py`, `wasm/flow_webgpu_shader.py`, `wasm/flow_wasm_gpu.py` | `flow_to_wasm.py` takes its C from `compiler/scripts/flowc_emit.sh`; the other two call the Python WGSL and shader generators in process |
 | `benchmarks/**/python/*` baselines | the Python side of a Python-versus-Flow comparison |
 
 ## Scripts and tools ported to Flow
@@ -188,20 +191,21 @@ from `replace(s, from, to)` needs different parameter names.
 
 ```bash
 ./compiler/scripts/stage_a_smoke.sh
-FLOW_HOST=python ./flow run compiler/src/main.flow
+./flow run compiler/src/main.flow
 ./compiler/scripts/roundtrip.sh
 FLOWC_EMIT_ONLY=1 ./compiler/scripts/emit_basics.sh
 ./compiler/scripts/smoke_math_prose.sh
 ./compiler/scripts/parity_proofs.sh
 ./compiler/scripts/smoke_know.sh
 ./compiler/scripts/parity_field_dsl.sh
-FLOW_HOST=python ./flow run examples/compilers/claim_address_demo.flow
-FLOW_HOST=python ./flow run examples/compilers/math_prose_demo.flow
-FLOW_HOST=python ./flow run examples/compilers/math_prose_expr_demo.flow
-FLOW_HOST=python ./flow run examples/compilers/proof_parse_demo.flow
-FLOW_HOST=python ./flow run examples/compilers/know_index_demo.flow
-FLOW_HOST=python ./flow run examples/compilers/know_demo.flow
+./flow run examples/compilers/claim_address_demo.flow
+./flow run examples/compilers/math_prose_demo.flow
+./flow run examples/compilers/math_prose_expr_demo.flow
+./flow run examples/compilers/proof_parse_demo.flow
+./flow run examples/compilers/know_index_demo.flow
+./flow run examples/compilers/know_demo.flow
 ```
 
-Python remains the Gen0 bootstrap and the full-language host until Stage-A covers
-those surfaces; default Stage-A user compile is already flowc.
+flowc compiles the whole C path and rebuilds itself from the checked-in C
+with `./compiler/scripts/bootstrap_from_c.sh --regen`. Python remains for the
+tools listed under Boundary.

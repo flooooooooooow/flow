@@ -15,13 +15,12 @@ The three programs:
 | `examples/ml/digits_mlp_parallel.flow` | Data-parallel gradient accumulation on pthreads |
 | `examples/ml/digits_mlp_metal.flow` | What the Metal GPU path can and cannot do today |
 
-Run them with the Python host (the Stage-A flowc driver does not cover these
-programs yet):
+Run them with flowc, the default compiler:
 
 ```bash
-FLOW_HOST=python ./flow run examples/ml/digits_mlp.flow
-FLOW_HOST=python ./flow run examples/ml/digits_mlp_parallel.flow
-FLOW_HOST=python ./flow run examples/ml/digits_mlp_metal.flow
+./flow run examples/ml/digits_mlp.flow
+./flow run examples/ml/digits_mlp_parallel.flow
+./flow run examples/ml/digits_mlp_metal.flow
 ```
 
 Each prints PASS and exits 0 only when its checks hold.
@@ -210,12 +209,12 @@ Gap list for the training loop on Metal, as of this branch:
 
 ## Where flowc and the MLIR JIT fit
 
-These examples run through the Python host and the C backend. The other two
-compilation paths, checked on this machine:
+These examples run through flowc and the C backend. flowc is the only C
+compiler; it builds all three, and all 19 programs in `examples/ml` match the
+retired Python backend in the corpus parity report
+(`compiler/corpus_parity/report.txt`). The other compilation path, checked on
+this machine:
 
-- `FLOW_HOST=flowc` (the self-hosted Stage-A driver) does not yet cover this
-  subset; the bootstrap on this branch fails before reaching the examples,
-  hence `FLOW_HOST=python` in every command above.
 - `./flow jit` (MLIR) rejects the programs at compile time:
   `module statics not yet supported in MLIR backend (static 'w1')`. Module
   statics are the storage mechanism for weights here, so MLIR JIT training
@@ -226,10 +225,10 @@ compilation paths, checked on this machine:
 ## Reproducing
 
 ```bash
-FLOW_HOST=python ./flow run examples/ml/digits_mlp.flow           # ~0.3 s train, PASS at 98.75%
-FLOW_HOST=python ./flow run examples/ml/digits_mlp_parallel.flow  # prints measured speedup
-FLOW_HOST=python ./flow run examples/ml/digits_mlp_metal.flow     # Metal parity + crossover table
-FLOW_CFLAGS='-O2' FLOW_HOST=python ./flow run examples/ml/digits_mlp.flow  # optimized build
+./flow run examples/ml/digits_mlp.flow           # ~0.3 s train, PASS at 98.75%
+./flow run examples/ml/digits_mlp_parallel.flow  # prints measured speedup
+./flow run examples/ml/digits_mlp_metal.flow     # Metal parity + crossover table
+FLOW_CFLAGS='-O2' ./flow run examples/ml/digits_mlp.flow  # optimized build
 ```
 
 All three gate their PASS on checks (accuracy threshold, serial/parallel

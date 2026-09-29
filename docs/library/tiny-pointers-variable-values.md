@@ -77,7 +77,7 @@ What the numbers show:
   the construction saves nothing for uniform large values and never loses.
 - **Bit-exact round-trips.** Every stored i64 is read back and compared against
   the recorded value for *all* live keys after every sub-phase (the registry
-  model, same as Phases 1–10), so the size-classed storage is proven lossless
+  model, same as Phases 1-10), so the size-classed storage is proven lossless
   for every key, every value size, every seed.
 - **Constant time.** Two-choice hashing keeps per-op cost flat; the phase
   scales linearly in n (0.86 → 1.77 → 4.33 ms across n = 2^14..2^16; see the
@@ -96,7 +96,7 @@ key, one registry entry per pair, everything verified bit-exactly.
 
 **The key chain.** Phase 12 lifts the KEY cap exactly as Phase 15 lifts the
 VALUE cap: the key side runs the same r-levels-of-indirection chain, so keys
-of 65–256 bits live in a compact key arena (an RLTable, 2 classes of
+of 65-256 bits live in a compact key arena (an RLTable, 2 classes of
 128/256-bit slots keyed on the key) behind a 5-bit p₁ = O(log 256) held in an
 8-bit base class-3 holder slot, with flag bit 7 marking chained keys. Keys
 ≤ 64 bits store directly in the base key VDTable. The base pointer stays
@@ -110,7 +110,7 @@ independence), and the chain costs **13 bits per big key** (8-bit holder +
 |---|---|
 | Load (49,152 pairs, skewed key and value sizes) | 0 verify errors · 0 key-table / 0 key-arena / 0 value-table invariant violations |
 | Key-size histogram (1,2,4,8,16,32,64-bit slots + 128/256-bit arena) | 3636 · 3751 · 7320 · 14776 · 8855 · 1933 · 4020 · **3412 · 1449** |
-| Chained keys (65–256 bits through the arena) | **4,861 of 49,152** (9.9%): verify 0 through base → p₁ → arena |
+| Chained keys (65-256 bits through the arena) | **4,861 of 49,152** (9.9%): verify 0 through base → p₁ → arena |
 | Value-size histogram (same pairs) | 4126 · 4319 · 8751 · 17306 · 9749 · 1660 · 3241 |
 | **Combined key+value space** (payloads + 7-bit key/value pointers; chained keys +13) | **2,747,160 bits = 55.89 bits/pair** vs uniform 64+64 = 6,291,456 bits → **56.3% saved** vs uniform 256+64 = 15,728,640 bits → **82.5% saved** |
 | 30,000-op churn (deletes + fresh skewed pairs, big keys through the chain) | 0 errors · 0 invariant violations |
@@ -145,7 +145,7 @@ holder slot  = 8-bit base slot (class 3) holding p₁
 value        = 128 or 256 bits, in the level-1 arena (compact, keyed on the key)
 ```
 
-Values ≤ 64 bits store directly (Phase-11 classes); values of 65–256 bits go
+Values ≤ 64 bits store directly (Phase-11 classes); values of 65-256 bits go
 through the chain. The flag bit (the paper's "points at a pointer vs a value"
 metadata) marks chained pointers, and the 5-bit p₁ (O(log k)) lives in an
 8-bit base slot, so the **base pointer stays 8 bits for every value size**,
@@ -159,10 +159,10 @@ store becomes a word pool that an arena slot points at, so a value can be
 **any width**:
 
 ```text
-base pointer = 8 bits, UNCHANGED (flag + class + choice + slot) — holds p₂
-p₂           = 6 bits = class(1) + choice(1) + slot(4) — into the level-2 table
-p₁           = 5 bits = class(1) + choice(1) + slot(3) — into the level-1 arena
-value        = up to 2^32 bits in the design (demo stores up to 2^18) — words
+base pointer = 8 bits, UNCHANGED (flag + class + choice + slot): holds p₂
+p₂           = 6 bits = class(1) + choice(1) + slot(4): into the level-2 table
+p₁           = 5 bits = class(1) + choice(1) + slot(3): into the level-1 arena
+value        = up to 2^32 bits in the design (demo stores up to 2^18): words
                in a shared pool behind the 5-bit p₁
 ```
 
@@ -279,14 +279,14 @@ never half-written).
 
 | Section | Phase | Result |
 |---|---|---|
-| Thm 1: fixed-size tiny pointers (§3) | 1–4 | 6-bit pointers |
-| Thm 2: variable-size tiny pointers (§4) | 5–6 | ~3-bit pointers, doubly-exponential tail |
-| Thm 6: relaxed retrieval (§6.2) | 7–8, 8b | O(1)-expected hints beat Ω(log log n); Phase 8b sweeps the r = 1..4 tradeoff: O(r) insert/delete vs `O(n log⁽ʳ⁾ n)` space (retriever term 15 → 4 → 2 → 1 bits/key) |
-| Thm 7: succinct rotation-based BSTs (§6.3) | 9–10 | ~3 bits/child pointer, O(1) rotations |
-| Thm 8: stable dictionaries (§6.4) | 3–4 | values never move across rehash |
+| Thm 1: fixed-size tiny pointers (§3) | 1-4 | 6-bit pointers |
+| Thm 2: variable-size tiny pointers (§4) | 5-6 | ~3-bit pointers, doubly-exponential tail |
+| Thm 6: relaxed retrieval (§6.2) | 7-8, 8b | O(1)-expected hints beat Ω(log log n); Phase 8b sweeps the r = 1..4 tradeoff: O(r) insert/delete vs `O(n log⁽ʳ⁾ n)` space (retriever term 15 → 4 → 2 → 1 bits/key) |
+| Thm 7: succinct rotation-based BSTs (§6.3) | 9-10 | ~3 bits/child pointer, O(1) rotations |
+| Thm 8: stable dictionaries (§6.4) | 3-4 | values never move across rehash |
 | **Thm 9: variable-size value dictionaries** | **11** | **19.3 bits/value vs 64 uniform** |
 | **Thm 9 keys analogue: variable-size key+value dicts** | **12** | **55.9 bits/pair: 56.3% vs 64+64, 82.5% vs 256+64: keys to 256 bits through the same chain as Phase 15** |
-| **Thm 3–5: the lower bounds** | **13** | **floor holds at every budget s; < 6 bits collides** |
+| **Thm 3-5: the lower bounds** | **13** | **floor holds at every budget s; < 6 bits collides** |
 | **§6.1: deamortized resize** | **14** | **worst op 81 units vs 143,363 naive: Θ(live) → O(1)** |
 | **§6.5: r-levels of indirection** | **15** | **values to 256 bits behind a 5-bit p₁; base pointer stays 8 bits (r=2); r=3 inserts a 6-bit p₂ and lifts the cap to 2^32 bits: pointers 8 → 6 → 5, all constant in v** |
 | **Thm 10: optimal internal-memory stash** | **16** | **O(m log ε⁻¹) = O(m) internal bits; 7.76 bits/key vs 15 naive; one external read per query** |
@@ -301,22 +301,22 @@ in [tiny-pointers.md](tiny-pointers.md)). This deep-dive is the **application
 
 | Abstract claim | Row |
 |---|---|
-| Fixed-size pointers of `Θ(log log log n + log k)` bits | Theorem 1 (Phases 1–4) |
-| Variable-size pointers of `Θ(log k)` expected bits | Theorem 2 (Phases 5–6) |
-| `nv + O(n log⁽ʳ⁾ n)`-bit store with an O(1)-expected pointer per key, O(r) insert/delete | Theorem 6 (Phases 7–8, 8b) |
-| Succinct BSTs, rotations included | Theorem 7 (Phases 9–10) |
-| Stable fixed-capacity dictionaries, `1 + o(1)` overhead | Theorem 8 (Phases 3–4) |
+| Fixed-size pointers of `Θ(log log log n + log k)` bits | Theorem 1 (Phases 1-4) |
+| Variable-size pointers of `Θ(log k)` expected bits | Theorem 2 (Phases 5-6) |
+| `nv + O(n log⁽ʳ⁾ n)`-bit store with an O(1)-expected pointer per key, O(r) insert/delete | Theorem 6 (Phases 7-8, 8b) |
+| Succinct BSTs, rotations included | Theorem 7 (Phases 9-10) |
+| Stable fixed-capacity dictionaries, `1 + o(1)` overhead | Theorem 8 (Phases 3-4) |
 | **Arbitrary-size values at `log⁽ʳ⁾ n + O(log j)` bits per j-bit value** | **Theorem 9 (Phases 11/12/14/15): this doc (§6.5)** |
 | `O(n log ε⁻¹)`-bit internal-memory stash, no IOs | Theorem 10 (Phase 16) |
 
-(Theorems 3–5 are *lower bounds* / intermediate steps rather than constructions;
+(Theorems 3-5 are *lower bounds* / intermediate steps rather than constructions;
 e.g. Theorem 3 proves `Ω(log log log n + log k)` is optimal for fixed-size
 tiny pointers. The demo implements the matching constructions.)
 
 ## Run it
 
 ```bash
-FLOW_HOST=python ./flow run examples/systems/tiny_pointers.flow
+./flow run examples/systems/tiny_pointers.flow
 ```
 
 Exit code 0 = PASS. Every phase (including the variable-value dictionary, its
@@ -329,15 +329,15 @@ through base(8) → p₂(6) → p₁(5) → pool, verified word-by-word), and th
 Phase 16 optimal internal-memory stash (Theorem 10,
 §6.6: 4-bit tiny pointers in a prefix-free adaptive filter, one external read
 per query)) passes across all tested seeds (the size draws are deterministic
-per seed; the savings stay 69.7–70.0% for the value-only accounting, 55.9–56.4%
-vs 64+64 / 82.3–82.8% vs 256+64 for the combined key+value accounting,
-84.8–85.0% vs a uniform 256-bit baseline for the r-levels chain, and ≈48% vs
+per seed; the savings stay 69.7-70.0% for the value-only accounting, 55.9-56.4%
+vs 64+64 / 82.3-82.8% vs 256+64 for the combined key+value accounting,
+84.8-85.0% vs a uniform 256-bit baseline for the r-levels chain, and ≈48% vs
 a naive full-address stash for Phase 16).
 
 ## See also
 
 - Main reference: [tiny-pointers.md](tiny-pointers.md): all seven
-  constructions, the Section-5 lower bounds (Thm 3–5, Phase 13), the
+  constructions, the Section-5 lower bounds (Thm 3-5, Phase 13), the
   deamortized resize (Phase 14), the r-levels-of-indirection chain (Phase 15,
   incl. the r=3 extension to 2^32-bit values), the optimal internal-memory
   stash (Phase 16, Theorem 10), the parameter

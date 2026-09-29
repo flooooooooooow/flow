@@ -1,0 +1,15 @@
+# `src |> choose sel { A => f, B => g }` runs the stage picked by sel.
+enum Mode { Slow, Fast }
+function f(x: i32) -> i32 { return x * 2 }
+function g(x: i32) -> i32 { return x * 3 }
+function norm(x: i32) -> i32 { return x + 1 }
+
+function main() -> i32 {
+    let m: Mode = Mode { tag: Mode_Fast }
+    let r = 5 |> choose m.tag { Mode_Slow => f, Mode_Fast => g } |> norm
+    let s: Mode = Mode { tag: Mode_Slow }
+    let q = 5 |> choose s.tag { Mode_Slow => f, Mode_Fast => g }
+    println(r)
+    println(q)
+    return r + q
+}

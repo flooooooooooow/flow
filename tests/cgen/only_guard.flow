@@ -1,0 +1,21 @@
+# @only / @guard drop a function whose modes are all off for a C build
+# (#1029). Only the `compile` definition of pick reaches the C, so it keeps
+# its plain name. FLOWC_MODE is the Python --mode flag.
+@only(jit)
+function pick() -> i32 {
+    return 111
+}
+
+@only(compile)
+function pick() -> i32 {
+    return 7
+}
+
+@hot
+function reload_hook() -> i32 {
+    return 222
+}
+
+function main() -> i32 {
+    return pick()
+}

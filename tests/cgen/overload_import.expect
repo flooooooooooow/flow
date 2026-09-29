@@ -1,0 +1,6 @@
+# An importer calls the mangled overload the arguments fit (#1044), as the
+# Python host did: area_f64(2.0), area_i32_i32(3, 4), show_f64(1.5).
++ double a = area_f64(2.0);
++ int32_t b = area_i32_i32(3, 4);
++ int32_t c = show_f64(1.5);
+exit 0

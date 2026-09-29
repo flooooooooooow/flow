@@ -9,7 +9,7 @@ The default teaching chain guards NaN/infinity, removes DC, flushes denormals, a
 The canonical usage, including `SampleRate`, `SafetyChain`, frame input, sink handling, reporting, and teardown, is kept in complete source rather than repeated here with undeclared `left`/`right` samples:
 
 ```bash
-FLOW_HOST=python ./flow run tests/stdlib/audio/test_safety.flow
+./flow run tests/stdlib/audio/test_safety.flow
 ```
 
 The implementation is `lib/stdlib/audio/safety.flow`; offline rendered-file checks are in `lib/stdlib/audio/verify.flow`.

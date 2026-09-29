@@ -5,7 +5,7 @@ import shutil
 
 @pytest.mark.skipif(not shutil.which("strip") or not shutil.which("size"), reason="requires strip and size")
 def test_hello_world_size_regression(tmp_path):
-    env = dict(os.environ, FLOW_HOST='python')
+    env = dict(os.environ)
     
     # Compile hello world
     prog = "examples/basics/hello_world.flow"
