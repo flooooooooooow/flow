@@ -365,7 +365,7 @@ function flowc_emit_mode() -> i32 {
         }
 
         if want_mlir == 1 {
-            nout = flowc_mlirgen_emit(p.arena, root, src, out, out_cap)
+            nout = flowc_mlirgen_emit(p.arena, root, src, nsrc, src_cap, out, out_cap)
             if nout <= 0 {
                 free(out)
                 flowc_parser_free(p)
