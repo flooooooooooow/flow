@@ -25,7 +25,7 @@
 #   3 HIGH K       N 12  K 5     nearly uncorrelated
 #   R reseed   P pause   Esc quit
 #
-# Run: FLOW_HOST=python ./flow record examples/evoleco/fitness_landscape.flow --frames 4
+# Run: ./flow record examples/evoleco/fitness_landscape.flow --frames 4
 
 import "stdlib/gfx.flow"
 import "stdlib/text.flow"

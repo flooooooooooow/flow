@@ -18,7 +18,7 @@ and gates its exit code on a self-check (exit 0 = PASS).
 ## tiny_pointers.flow
 
 ```bash
-FLOW_HOST=python ./flow run examples/systems/tiny_pointers.flow
+./flow run examples/systems/tiny_pointers.flow
 ```
 
 The run output opens with an **Abstract-claim coverage** map: each promise in

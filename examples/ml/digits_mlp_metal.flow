@@ -1,6 +1,6 @@
 # Metal GPU status check for the digits MLP: what runs on the GPU today.
 #
-#   FLOW_HOST=python ./flow run examples/ml/digits_mlp_metal.flow
+#   ./flow run examples/ml/digits_mlp_metal.flow
 #
 # Honest scope. Flow's Metal runtime currently exposes:
 #   - unified (shared CPU/GPU) buffers        flow_gpu_alloc / flow_gpu_host_ptr

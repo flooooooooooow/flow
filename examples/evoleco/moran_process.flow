@@ -23,7 +23,7 @@
 #   R reseed   P pause   Esc quit
 #
 # Run (headless, gated):
-#   FLOW_HOST=python ./flow record examples/evoleco/moran_process.flow \
+#   ./flow record examples/evoleco/moran_process.flow \
 #       --frames 4 --out /tmp/eco_moran_process
 # Run (windowed):
 #   ./flow gfx examples/evoleco/moran_process.flow

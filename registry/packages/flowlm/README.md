@@ -15,7 +15,7 @@ else, and the package does not pretend otherwise. See
 ## Quick run
 
 ```
-FLOW_HOST=python ./flow run examples/ai/flowlm_charlm.flow
+./flow run examples/ai/flowlm_charlm.flow
 ```
 
 That single file fits a vocabulary on the embedded 5 KB corpus, runs the
@@ -289,7 +289,7 @@ Numbers below are measured. None are estimates.
 | Demo parameters | 15,677 (V=29, D=32, T=32, F=128) |
 | Corpus | 5131 bytes, 29 distinct characters |
 | Demo training | 3000 steps x batch 8: ~4 s at `-O2`, ~23 s at `-O0` |
-| Demo end to end | ~48 s wall for `FLOW_HOST=python ./flow run`, transpile and clang included |
+| Demo end to end | ~48 s wall for `./flow run`, transpile and clang included |
 | Gradient check | ~0.05 s |
 | Held-out loss | 2.04 nats/char (7.70 ppl) vs 3.37 baseline (29.0 ppl) |
 | Train loss | 0.74 nats/char |

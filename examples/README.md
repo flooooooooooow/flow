@@ -57,7 +57,7 @@ examples/
 | Basics / hello | `examples/basics/hello_world.flow` | `./flow run examples/basics/hello_world.flow` |
 | Effects | `examples/effects/showcase.flow` | `./flow run examples/effects/showcase.flow` |
 | ML (XOR net) | `examples/ml/models/mlp_xor.flow` | `./flow run examples/ml/models/mlp_xor.flow` |
-| ML (digits trainer) | `examples/ml/digits_mlp.flow` | `FLOW_HOST=python ./flow run examples/ml/digits_mlp.flow` |
+| ML (digits trainer) | `examples/ml/digits_mlp.flow` | `./flow run examples/ml/digits_mlp.flow` |
 | Audio / `@rt_safe` | `examples/audio/rt_safe_callback.flow` | `./flow run examples/audio/rt_safe_callback.flow` |
 | Audio / DSP | `examples/audio/lattice_allpass_phase_engine.flow` | `./flow run examples/audio/lattice_allpass_phase_engine.flow` |
 | UI layout | `examples/ui/layout_hello.flow` | `./flow run examples/ui/layout_hello.flow` |
@@ -207,7 +207,7 @@ Neural network framework + autodiff:
 - `optimizers.flow` - SGD, Adam, RMSprop
 - `models/mlp_xor.flow` - XOR via grad codegen (`nn_autogen`)
 - `models/mlp_xor_from_scratch.flow` - pedagogical hand backprop
-- `digits_mlp.flow` - 10-class 8x8 digits MLP, synthetic dataset generated in Flow, minibatch SGD + momentum, 90% accuracy gate (`FLOW_HOST=python ./flow run`)
+- `digits_mlp.flow` - 10-class 8x8 digits MLP, synthetic dataset generated in Flow, minibatch SGD + momentum, 90% accuracy gate (`./flow run`)
 - `digits_mlp_parallel.flow` - same model with pthread gradient-accumulation shards; prints measured serial vs parallel speedup
 - `digits_mlp_metal.flow` - Metal GPU status: unified buffers, elementwise kernel parity + CPU/GPU crossover timings
 - `autodiff/` - Autodiff benchmarks, backprop, `nn_xor.flow` (merged from `neural_networks/`)
@@ -306,7 +306,7 @@ gates a stage measurement before the window opens.
 - `planet_erosion.flow` / `planet_climate.flow` - stream power; orographic precip
 - `planet_biomes.flow` / `planet_spin.flow` - Whittaker map; shaded globe + determinism
 
-Run with `FLOW_HOST=python ./flow gfx examples/planet/<name>.flow` or headless
+Run with `./flow gfx examples/planet/<name>.flow` or headless
 `./flow record`. Gallery: [docs/demos/planet.md](../docs/demos/planet.md);
 regenerate with `python3 scripts/record_demos.py --group planet`.
 
@@ -320,7 +320,7 @@ regions, islands, and biome tile maps (see
 - `cave_worms.flow` / `wfc_dungeon.flow` - 3D porosity band; 16-tile pipe WFC
 - `voronoi_sites.flow` / `island_mask.flow` / `tile_map.flow` - sites, island, biomes
 
-Run with `FLOW_HOST=python ./flow gfx examples/procgen/<name>.flow` or headless
+Run with `./flow gfx examples/procgen/<name>.flow` or headless
 `./flow record`. Gallery: [docs/demos/procgen.md](../docs/demos/procgen.md);
 regenerate with `python3 scripts/record_demos.py --group procgen`.
 

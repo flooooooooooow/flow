@@ -32,10 +32,10 @@
 #   1-4 presets   R reseed   P pause   Esc quit
 #
 # Run (headless, gated):
-#   FLOW_HOST=python ./flow record examples/numerical/fmm_adaptive.flow \
+#   ./flow record examples/numerical/fmm_adaptive.flow \
 #       --frames 4 --out /tmp/fmm
 # Run (windowed):
-#   FLOW_HOST=python ./flow gfx examples/numerical/fmm_adaptive.flow
+#   ./flow gfx examples/numerical/fmm_adaptive.flow
 
 import "stdlib/gfx.flow"
 import "stdlib/text.flow"

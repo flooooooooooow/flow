@@ -6,7 +6,7 @@
 # KEYS
 #   1-4 seed presets   Esc quit
 #
-# Run: FLOW_HOST=python ./flow gfx examples/planet/planet_elevation.flow
+# Run: ./flow gfx examples/planet/planet_elevation.flow
 
 import "stdlib/gfx.flow"
 import "stdlib/text.flow"

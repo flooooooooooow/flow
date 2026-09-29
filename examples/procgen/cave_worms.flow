@@ -14,7 +14,7 @@
 #   R reseed   P pause   Esc quit
 #
 # Run (headless, gated):
-#   FLOW_HOST=python ./flow record examples/procgen/cave_worms.flow \
+#   ./flow record examples/procgen/cave_worms.flow \
 #       --frames 4 --out /tmp/pg_cave_worms
 # Run (windowed):
 #   ./flow gfx examples/procgen/cave_worms.flow

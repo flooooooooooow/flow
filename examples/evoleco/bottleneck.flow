@@ -23,7 +23,7 @@
 #   1 mild   2 severe   3 brief   R reseed   P pause   Esc quit
 #
 # Run (headless, gated):
-#   FLOW_HOST=python ./flow record examples/evoleco/bottleneck.flow \
+#   ./flow record examples/evoleco/bottleneck.flow \
 #       --frames 4 --out /tmp/eco_bottleneck
 # Run (windowed):
 #   ./flow gfx examples/evoleco/bottleneck.flow

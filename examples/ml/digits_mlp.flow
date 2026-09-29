@@ -1,6 +1,6 @@
 # Multi-class digits MLP trained from scratch on the CPU.
 #
-#   FLOW_HOST=python ./flow run examples/ml/digits_mlp.flow
+#   ./flow run examples/ml/digits_mlp.flow
 #
 # Dataset: synthetic 8x8 "digits" rendered in Flow by a procedural
 # seven-segment glyph renderer, augmented with LCG-driven shift, intensity
