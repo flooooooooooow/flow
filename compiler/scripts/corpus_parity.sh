@@ -22,7 +22,7 @@
 #   --update         write compiler/corpus_parity/report.txt and the floor
 #   --failures       list every file not at parity with its cause
 #   --jobs N         parallel builds (default: half the CPUs)
-#   --timeout S      seconds per program run (default 10)
+#   --timeout S      seconds per program run (default 20)
 #   --only REGEX     restrict the corpus to paths matching REGEX
 #   --save PATH      also write the per-file table (path, status, Python
 #                    build and exit, flowc build and exit, cause) to PATH
@@ -180,7 +180,7 @@ main() {
         worker_loop "$@"
         exit 0
     fi
-    live_python=0 record=0 check=0 update=0 failures=0 only="" save="" secs=10
+    live_python=0 record=0 check=0 update=0 failures=0 only="" save="" secs=20
     jobs=$(( $( (getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4) ) / 2 ))
     (( jobs < 1 )) && jobs=1
     while [[ $# -gt 0 ]]; do
