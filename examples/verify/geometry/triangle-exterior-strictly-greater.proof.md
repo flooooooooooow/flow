@@ -2,9 +2,9 @@
 
 *An exterior angle strictly exceeds a remote interior angle when the triangle is non-degenerate.*
 
-**Source.** euclid — Elements, Book I, Proposition 16
+**Source.** euclid: Elements, Book I, Proposition 16
 
-## Derived fact 1 — exterior at C is greater than angle B when angle A is positive
+## Derived fact 1: exterior at C is greater than angle B when angle A is positive
 
 **Coordinate.** the Euclidean plane · triangle · exterior strictly greater remote interior · **Derived fact**
 

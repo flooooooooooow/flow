@@ -2,9 +2,9 @@
 
 *Union intersected with empty has cardinality zero.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — card((a ∪ b) ∩ empty) = 0
+## Derived fact 1: card((a ∪ b) ∩ empty) = 0
 
 **Coordinate.** Finset · cardinality · union intersect empty has size zero · **Derived fact**
 

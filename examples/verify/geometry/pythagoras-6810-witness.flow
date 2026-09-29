@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  The 6-8-10 triangle satisfies the Pythagorean relation.
-# @from   euclid — Elements, Book I, Proposition 47
+# @from   euclid: Elements, Book I, Proposition 47
 # @tier   derived
 
 # @means  10 squared equals 6 squared plus 8 squared.

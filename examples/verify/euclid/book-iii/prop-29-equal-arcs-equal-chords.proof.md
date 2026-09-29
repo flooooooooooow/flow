@@ -2,13 +2,13 @@
 
 *In equal circles equal circumferences are subtended by equal straight lines.*
 
-**Source.** euclid — Elements, Book III, Proposition 29
+**Source.** euclid: Elements, Book III, Proposition 29
 
-## Derived fact 1 — In equal circles equal circumferences are subtended by equal straight lines
+## Derived fact 1: In equal circles equal circumferences are subtended by equal straight lines
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 29: in equal circles equal arcs subtend equal chords · **Derived fact**
 
-*Source: euclid — Elements, Book III, Proposition 29*
+*Source: euclid: Elements, Book III, Proposition 29*
 
 *Built on: proposition 28: in equal circles equal chords cut off equal arcs, for Euclid Book III on the Euclidean plane*
 

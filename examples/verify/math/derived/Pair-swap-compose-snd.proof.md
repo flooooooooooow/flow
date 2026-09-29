@@ -2,9 +2,9 @@
 
 *Swapping twice restores the second projection.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Product_type
+**Source.** church: https://en.wikipedia.org/wiki/Product_type
 
-## Derived fact 1 — snd(swap(swap(pair(a, b)))) = b
+## Derived fact 1: snd(swap(swap(pair(a, b)))) = b
 
 **Coordinate.** Pair · swap · double swap preserves second projection · **Derived fact**
 

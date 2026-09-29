@@ -2,9 +2,9 @@
 
 *Thirty-three times one is thirty-three.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 33 * 1 = 33
+## Derived fact 1: 33 * 1 = 33
 
 **Coordinate.** the natural numbers · multiplication · thirty three times one is thirty three · **Derived fact**
 

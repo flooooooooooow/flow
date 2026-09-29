@@ -2,9 +2,9 @@
 
 *Equal ring elements can be subtracted from both sides.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.1
+**Source.** dummit-foote: *Abstract Algebra*, §7.1
 
-## Derived fact 1 — a + c = b + c implies a = b
+## Derived fact 1: a + c = b + c implies a = b
 
 **Coordinate.** Ring · addition · right cancellation holds · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that right cancellation holds for addition on Ring. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose a + c  equals  b + c. |  |  |
 | ④ | We invoke the derived fact governing addition on Ring: parentheses do not matter, for addition on Ring (instantiated for a, c, -c). |  |  |
 | ⑤ | We invoke the derived fact governing addition on Ring: zero is the right identity, for addition on Ring (instantiated for a). |  |  |

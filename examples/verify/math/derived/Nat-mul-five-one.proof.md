@@ -2,9 +2,9 @@
 
 *Five times one is five for natural numbers.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 5 * 1 = 5
+## Derived fact 1: 5 * 1 = 5
 
 **Coordinate.** the natural numbers · multiplication · five times one is five · **Derived fact**
 

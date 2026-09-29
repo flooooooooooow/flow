@@ -1,16 +1,16 @@
 # FIR-G: Heterogeneous Program-Graph Compiler
 
-Flow’s production path today is **AST → C | MLIR** (dual CPU) with Metal/WGSL/SPIR-V
+Flow's production path today is **AST → C | MLIR** (dual CPU) with Metal/WGSL/SPIR-V
 GPU emit. That remains. This document describes the **next IR layer** that sits
 between semantic AST and backend lowering: a dense-ID, columnar **program graph**.
 
 ## Goal
 
 A compiler that reasons about a program as a **whole graph**, not only by walking
-heap AST nodes one instruction at a time — with CPU, GPU (MLX), and learned models
+heap AST nodes one instruction at a time, with CPU, GPU (MLX), and learned models
 each used only where they have a structural advantage.
 
-This is **not** “run LLVM on the GPU.” Expensive global reasoning becomes explicitly
+This is **not** "run LLVM on the GPU." Expensive global reasoning becomes explicitly
 parallel over bulk arrays.
 
 ## Correctness vs profitability (absolute rule)
@@ -23,7 +23,7 @@ parallel over bulk arrays.
 ML/GPU may **propose** and **score**. They never replace typechecking or semantic
 validation. Bulk MLX/NumPy paths must match the CPU oracle bit-for-bit
 (`tests/unit/test_fir_mlx_oracle.py`). Opt candidates are proposals only
-(`fir_opts.py`) — they do not rewrite IR yet.
+(`fir_opts.py`). They do not rewrite IR yet.
 
 ## Three IR levels
 
@@ -136,4 +136,4 @@ Parse → typecheck → monomorphize
 ```
 
 FIR-G does not retire C or MLIR. It prepares whole-program reasoning that can
-later *drive* those backends’ optimisation policies.
+later *drive* those backends' optimisation policies.

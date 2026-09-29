@@ -2,13 +2,13 @@
 
 *If a first magnitude is greater than a second, the third is greater than the fourth when the four are proportional.*
 
-**Source.** euclid — Elements, Book V, Proposition 9
+**Source.** euclid: Elements, Book V, Proposition 9
 
-## Derived fact 1 — If a first magnitude is greater than a second, the third is greater than the fourth when the four are proportional
+## Derived fact 1: If a first magnitude is greater than a second, the third is greater than the fourth when the four are proportional
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 9: if the first exceeds the second then the third exceeds the fourth · **Derived fact**
 
-*Source: euclid — Elements, Book V, Proposition 9*
+*Source: euclid: Elements, Book V, Proposition 9*
 
 *Built on: proposition 8: if the first exceeds the third then the second exceeds the fourth, for Euclid Book V on the Euclidean plane*
 

@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  Two equal radii sum to a diameter through their endpoints.
-# @from   euclid — Elements, Book I, Definition 15
+# @from   euclid: Elements, Book I, Definition 15
 # @tier   derived
 
 # @means  radius OA plus radius OB equals diameter AB.

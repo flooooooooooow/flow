@@ -2,9 +2,9 @@
 
 *Finite set algebra on Finset carriers.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Definition 1 — Union with the empty set changes nothing
+## Definition 1: Union with the empty set changes nothing
 
 **Coordinate.** Finset · union · empty is the right identity · **Definition**
 
@@ -16,12 +16,12 @@
 
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
-| ① | We stipulate empty is the right identity for union on Finset — this is a definition, not a derived fact. |  |  |
+| ① | We stipulate empty is the right identity for union on Finset. This is a definition rather than a derived fact. |  |  |
 | ② | This follows directly from the definition: s ∪ empty equals s. Hence proven. | ② | $s ∪ empty = s$ |
 
 `Finset · union · empty is the right identity`
 
-## Definition 2 — Union with the empty set on the left changes nothing
+## Definition 2: Union with the empty set on the left changes nothing
 
 **Coordinate.** Finset · union · empty is the left identity · **Definition**
 
@@ -33,12 +33,12 @@
 
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
-| ① | We stipulate empty is the left identity for union on Finset — this is a definition, not a derived fact. |  |  |
+| ① | We stipulate empty is the left identity for union on Finset. This is a definition rather than a derived fact. |  |  |
 | ② | This follows directly from the definition: empty ∪ s equals s. Hence proven. | ② | $empty ∪ s = s$ |
 
 `Finset · union · empty is the left identity`
 
-## Derived fact 3 — Union order does not matter
+## Derived fact 3: Union order does not matter
 
 **Coordinate.** Finset · union · order does not matter · **Derived fact**
 
@@ -55,7 +55,7 @@
 
 `Finset · union · order does not matter`
 
-## Definition 4 — The empty finite set has cardinality zero
+## Definition 4: The empty finite set has cardinality zero
 
 **Coordinate.** Finset · cardinality · the empty set has size zero · **Definition**
 
@@ -67,12 +67,12 @@
 
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
-| ① | We stipulate the empty set has size zero for cardinality on Finset — this is a definition, not a derived fact. |  |  |
+| ① | We stipulate the empty set has size zero for cardinality on Finset. This is a definition rather than a derived fact. |  |  |
 | ② | This follows directly from the definition: card(empty) equals 0. Hence proven. | ② | $card(empty) = 0$ |
 
 `Finset · cardinality · the empty set has size zero`
 
-## Definition 5 — Intersecting with the empty set yields the empty set
+## Definition 5: Intersecting with the empty set yields the empty set
 
 **Coordinate.** Finset · intersection · empty is the right annihilator · **Definition**
 
@@ -84,12 +84,12 @@
 
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
-| ① | We stipulate empty is the right annihilator for intersection on Finset — this is a definition, not a derived fact. |  |  |
+| ① | We stipulate empty is the right annihilator for intersection on Finset. This is a definition rather than a derived fact. |  |  |
 | ② | This follows directly from the definition: s ∩ empty equals empty. Hence proven. | ② | $s ∩ empty = empty$ |
 
 `Finset · intersection · empty is the right annihilator`
 
-## Definition 6 — Intersecting the empty set on the left yields the empty set
+## Definition 6: Intersecting the empty set on the left yields the empty set
 
 **Coordinate.** Finset · intersection · empty is the left annihilator · **Definition**
 
@@ -101,7 +101,7 @@
 
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
-| ① | We stipulate empty is the left annihilator for intersection on Finset — this is a definition, not a derived fact. |  |  |
+| ① | We stipulate empty is the left annihilator for intersection on Finset. This is a definition rather than a derived fact. |  |  |
 | ② | This follows directly from the definition: empty ∩ s equals empty. Hence proven. | ② | $empty ∩ s = empty$ |
 
 `Finset · intersection · empty is the left annihilator`

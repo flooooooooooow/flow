@@ -2,9 +2,9 @@
 
 *Base angles are symmetric about the apex median.*
 
-**Source.** euclid — Elements, Book I, Proposition 5
+**Source.** euclid: Elements, Book I, Proposition 5
 
-## Derived fact 1 — angle at B equals reflect of angle at C across apex median
+## Derived fact 1: angle at B equals reflect of angle at C across apex median
 
 **Coordinate.** the Euclidean plane · isosceles triangle · base angles symmetric about apex median · **Derived fact**
 

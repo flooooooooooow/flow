@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Four plus zero maps to four under a ring homomorphism.
-# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @from   dummit-foote: *Abstract Algebra*, §7.3
 # @tier   derived
 
 # @means  f(4 + 0) = 4.

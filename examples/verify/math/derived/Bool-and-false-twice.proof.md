@@ -2,9 +2,9 @@
 
 *False conjoined with itself is false.*
 
-**Source.** boole — https://en.wikipedia.org/wiki/Boolean_algebra
+**Source.** boole: https://en.wikipedia.org/wiki/Boolean_algebra
 
-## Derived fact 1 — false and false = false
+## Derived fact 1: false and false = false
 
 **Coordinate.** boolean truth values · conjunction · false conjoined with itself is false · **Derived fact**
 

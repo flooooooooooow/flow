@@ -2,9 +2,9 @@
 
 *Reverse preserves length of an octuple cons list.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len(rev(octuple cons ending in nil)) = 8
+## Derived fact 1: len(rev(octuple cons ending in nil)) = 8
 
 **Coordinate.** List · length · reverse of octuple cons has length eight · **Derived fact**
 

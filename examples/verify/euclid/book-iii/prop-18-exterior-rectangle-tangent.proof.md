@@ -2,13 +2,13 @@
 
 *If from a point outside a circle two straight lines are drawn, one through the center and one cutting the circle, and the rectangle on the whole and the exterior segment equals the square on the other, then the other is tangent.*
 
-**Source.** euclid — Elements, Book III, Proposition 18
+**Source.** euclid: Elements, Book III, Proposition 18
 
-## Derived fact 1 — If from a point outside a circle two straight lines are drawn, one through the center and one cutting the circle, and the rectangle on the whole and the exterior segment equals the square on the other, then the other is tangent
+## Derived fact 1: If from a point outside a circle two straight lines are drawn, one through the center and one cutting the circle, and the rectangle on the whole and the exterior segment equals the square on the other, then the other is tangent
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 18: exterior rectangle condition characterizes tangents · **Derived fact**
 
-*Source: euclid — Elements, Book III, Proposition 18*
+*Source: euclid: Elements, Book III, Proposition 18*
 
 *Built on: proposition 9: if the rectangle equals the square then the line is a tangent, for Euclid Book III on the Euclidean plane*
 

@@ -180,7 +180,7 @@ flow Pendulum {
 
 <div class="wiki-showcase-item">
 <p class="wiki-showcase-label">Built-in autodiff</p>
-<p class="wiki-showcase-desc">Forward mode with dual numbers in the language, not a bolted-on library.</p>
+<p class="wiki-showcase-desc">Forward mode with dual numbers built into the language rather than a bolted-on library.</p>
 
 ```flow-pseudocode
 function quadratic(x: Dual, a: f32, b: f32, c: f32) -> Dual {
@@ -201,7 +201,7 @@ let q: Dual = quadratic(x, 2.0, 3.0, 1.0)
 
 ## See Flow moving
 
-This is the curated **showcase**, not the whole example bank. Each tile opens a proper gallery. GIFs are recordings of compiled Flow output: CPU `gfx` galleries use the headless framebuffer, while FSL shader GIFs come from the offscreen Metal renderer.
+This is the curated **showcase**. The full example bank is larger. Each tile opens a proper gallery. GIFs are recordings of compiled Flow output: CPU `gfx` galleries use the headless framebuffer, while FSL shader GIFs come from the offscreen Metal renderer.
 
 <div class="demo-showcase-grid">
 

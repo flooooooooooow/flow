@@ -2,9 +2,9 @@
 
 *Eight plus zero is eight in an ideal witness.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.1
+**Source.** dummit-foote: *Abstract Algebra*, §7.1
 
-## Derived fact 1 — 8 + 0 = 8 in an ideal
+## Derived fact 1: 8 + 0 = 8 in an ideal
 
 **Coordinate.** Ideal · addition · eight plus zero in ideal · **Derived fact**
 

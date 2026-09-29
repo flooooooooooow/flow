@@ -2,9 +2,9 @@
 
 *Reverse preserves length of a quadruple cons list.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len(rev(cons(a, cons(b, cons(c, cons(d, nil)))))) = 4
+## Derived fact 1: len(rev(cons(a, cons(b, cons(c, cons(d, nil)))))) = 4
 
 **Coordinate.** List · length · reverse of quadruple cons has length four · **Derived fact**
 

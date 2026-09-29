@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Claim Paths — legacy shim.  Prefer claim_address.ClaimAddress (Claim Coordinates).
+Claim Paths: legacy shim.  Prefer claim_address.ClaimAddress (Claim Coordinates).
 
 New syntax: «Nat» «addition» «zero is the left identity»
 Legacy:     Nat/+.zero-left  (still parsed, displayed as coordinates)
@@ -29,11 +29,11 @@ VALID_TIERS = frozenset({"definition", "axiom", "derived"})
 TIER_BOUNDARY = {
     "definition": (
         "definitional boundary",
-        "We stipulate how this operation is defined — we do not derive it.",
+        "We stipulate how this operation is defined. We do not derive it.",
     ),
     "axiom": (
         "axiomatic boundary",
-        "We accept this without proof — it marks an ontological commitment.",
+        "We accept this without proof. It marks an ontological commitment.",
     ),
     "derived": (
         "derived boundary",
@@ -122,7 +122,7 @@ def tier_opening(tier: str, claim: ClaimPath) -> str:
     addr = try_parse_claim_address(claim.address) if hasattr(claim, "address") else None
     loc = addr.display if addr else claim.ontology_line()
     return (
-        f"**{tier_label(t)}** at {loc} — {boundary} "
+        f"**{tier_label(t)}** at {loc}: {boundary} "
         f"Carrier: **{claim.domain}**; structure: **{claim.morphism_gloss}**."
     )
 
@@ -135,16 +135,16 @@ def tier_opening_plain(tier: str, claim: ClaimPath) -> str:
         if addr:
             return (
                 f"We stipulate the law «{addr.law}» for {addr.structure} on "
-                f"{addr.carrier} — this is a definition, not a derived fact."
+                f"{addr.carrier}. This is a definition rather than a derived fact."
             )
         return (
-            f"We stipulate how {claim.morphism_gloss} behaves on {claim.domain} "
-            f"— this is a definition, not a derived fact."
+            f"We stipulate how {claim.morphism_gloss} behaves on {claim.domain}. "
+            f"This is a definition rather than a derived fact."
         )
     if t == "axiom":
         return (
-            f"We accept this axiom on {claim.domain} without proof — "
-            f"it is an ontological commitment, not a lemma."
+            f"We accept this axiom on {claim.domain} without proof. "
+            f"It is an ontological commitment rather than a lemma."
         )
     if addr:
         return (
@@ -199,7 +199,7 @@ def assume_premise(
 
 
 def claim_fingerprint(expr: str) -> str:
-    """Canonical form of a therefore-clause — duplicate claims share a fingerprint."""
+    """Canonical form of a therefore-clause. Duplicate claims share a fingerprint."""
     s = expr.strip()
     s = re.sub(r"\s+by\s+\w+.*$", "", s)
     s = s.replace("==", "=")
@@ -232,7 +232,7 @@ def check_duplicate_claims(
         if key in seen and seen[key] != path:
             errors.append(
                 f"Duplicate claim: `{path}` and `{seen[key]}` say the same thing "
-                f"({addr.display}, fingerprint {fp!r}) — "
+                f"({addr.display}, fingerprint {fp!r}); "
                 f"see {file_path}"
             )
         else:

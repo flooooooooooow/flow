@@ -1,8 +1,8 @@
 # Appendix B. Feature coverage index
 
-The index lists the public features in Flow v0.11.1. “Full” means that the
-feature works with the stated compiler and backend. “Partial” marks an
-important limit. “Target” requires a platform or external toolchain. “Planned”
+The index lists the public features in Flow v0.11.1. "Full" means that the
+feature works with the stated compiler and backend. "Partial" marks an
+important limit. "Target" requires a platform or external toolchain. "Planned"
 means that the syntax or design is not implemented.
 
 ## Lexical rules and operators

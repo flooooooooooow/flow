@@ -2,13 +2,13 @@
 
 *Equal summands stay equal when the same term is added on the left.*
 
-**Source.** leibniz — https://en.wikipedia.org/wiki/Substitution_(logic)
+**Source.** leibniz: https://en.wikipedia.org/wiki/Substitution_(logic)
 
-## Derived fact 1 — From a = b we deduce c + a = c + b
+## Derived fact 1: From a = b we deduce c + a = c + b
 
 **Coordinate.** equality · equality · equal terms add the same on the left · **Derived fact**
 
-*Source: peano/induction — Gries & Schneider, Ch. 3*
+*Source: peano/induction: Gries & Schneider, Ch. 3*
 
 *Built on: you can swap the order when you add, equal terms add the same on the right, for equality on equality*
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that equal terms add the same on the left for equality on equality. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose a  equals  b. |  |  |
 | ④ | We invoke the derived fact governing addition on the natural numbers: you can swap the order when you add (instantiated for a, c). | ④ | $a + c = c + a$ |
 | ⑤ | We invoke the derived fact governing equality on equality: equal terms add the same on the right, for equality on equality (instantiated for a, b, c). |  |  |

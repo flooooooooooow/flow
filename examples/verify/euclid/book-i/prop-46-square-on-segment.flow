@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-i
 # @means  On a given straight line to describe a square.
-# @from   euclid — Elements, Book I, Proposition 46
+# @from   euclid: Elements, Book I, Proposition 46
 # @tier   derived
 # @needs  «Geometry» «Euclid Book I» «Proposition 11: erect a perpendicular at a point on a line», «Geometry» «Euclid Book I» «Proposition 3: cut a segment equal to a smaller segment»
 

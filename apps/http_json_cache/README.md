@@ -44,8 +44,8 @@ cd apps/http_json_cache
 
 ## Live HTTP (libcurl)
 
-`src/live_http.flow` uses owned `HttpBody` (`http_get` / `http_body_free`) —
-no caller buffer allocate/free ceremony — then runs a local JSON check:
+`src/live_http.flow` uses owned `HttpBody` (`http_get` / `http_body_free`),
+with no caller buffer allocate/free ceremony, then runs a local JSON check:
 
 ```bash
 cd apps/http_json_cache

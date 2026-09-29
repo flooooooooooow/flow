@@ -2,8 +2,8 @@
 
 Installs everything useful for Flow development in VS Code / Cursor:
 
-- **FLOW Language** — syntax, snippets, run/compile, LSP
-- **Flow Themes** — Flow Dark + Flow Dim
+- **FLOW Language**: syntax, snippets, run/compile, LSP
+- **Flow Themes**: Flow Dark + Flow Dim
 
 ```bash
 # after packaging siblings:

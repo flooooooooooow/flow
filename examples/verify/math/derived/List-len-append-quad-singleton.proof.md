@@ -2,9 +2,9 @@
 
 *Appending four singletons gives length four.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len(cons(a, nil) ++ cons(b, nil) ++ cons(c, nil) ++ cons(d, nil)) = 4
+## Derived fact 1: len(cons(a, nil) ++ cons(b, nil) ++ cons(c, nil) ++ cons(d, nil)) = 4
 
 **Coordinate.** List · length · append of four singletons has length four · **Derived fact**
 

@@ -2,9 +2,9 @@
 
 *Fourteen plus one is fifteen.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 14 + 1 = 15
+## Derived fact 1: 14 + 1 = 15
 
 **Coordinate.** the natural numbers · addition · fourteen plus one is fifteen · **Derived fact**
 

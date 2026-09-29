@@ -103,7 +103,7 @@ documentation. `./flow test --tier2` covers `tests/` and `examples/`, and
 nothing in either returns a fixed-size array, concatenates a string with an
 i64, or reads a value past a `defer`.
 
-### Added — range algebra
+### Added: range algebra
 
 Two ranges compose with `|` for union and `&` for intersection inside `sum`:
 
@@ -122,7 +122,7 @@ Limits are compile errors with a message rather than silent truncation: eight
 ranges folded, one operator between two ranges at runtime. Ranges are still
 not values. See [Ranges and range algebra](../language/ranges.md). (#476)
 
-### Fixed — wrong answers
+### Fixed: wrong answers
 
 - **Returning `array<T, N>` returned garbage.** The C backend lowered it to
   `T*` over automatic storage, so the caller read a frame that no longer
@@ -134,7 +134,7 @@ not values. See [Ranges and range algebra](../language/ranges.md). (#476)
   frame that built them. It is now a real 2D array behind a row typedef,
   which also makes `rows[0][0]` one load instead of two. (#575)
 - **`defer` ran before the return value was read**, so `return data[3] - 40`
-  after `defer free(data)` read freed memory: deterministically wrong, not
+  after `defer free(data)` read freed memory: deterministically wrong rather than
   intermittently. A return inside a nested block skipped defers altogether.
   Both defects were in the C and the MLIR backend. (#594)
 - **String concatenation inferred a numeric type.** `"i64=" + v` printed the
@@ -145,7 +145,7 @@ not values. See [Ranges and range algebra](../language/ranges.md). (#476)
   `"sql" + (buf as string)` formatted the buffer pointer with `%d` into a
   64-byte stack buffer. (#577)
 
-### Fixed — misleading diagnostics
+### Fixed: misleading diagnostics
 
 - An undeclared type reported as a type failing to match itself: `Variable
   'p' initialized with Point but annotated as Point`. It now says the
@@ -179,7 +179,7 @@ Patch release. 0.11.0 shipped its headline feature broken on Linux: every
 was unaffected and its own tests could not catch it, for the reason in the
 last bullet below.
 
-### Fixed — @cImport on Linux
+### Fixed: @cImport on Linux
 
 `@cImport` emitted C that clang rejected on glibc, so every `@cImport` test
 failed in CI while macOS stayed green. Four defects, each hiding the next:
@@ -395,9 +395,9 @@ host on real language surface:
 
 ### Standard library
 
-- `render3d` — software 3D renderer with pipeline documentation and measured
+- `render3d`: software 3D renderer with pipeline documentation and measured
   rates.
-- `psychstats` and `experiment` — the analysis and presentation halves of
+- `psychstats` and `experiment`: the analysis and presentation halves of
   experiment support; `automata` cellular-automaton framework.
 - Audio safety chain, WAV render target, and DSP fixes.
 
@@ -640,7 +640,7 @@ host on real language surface:
 
 ## [0.5.0] - 2026-01-08
 
-### 🎉 Major Release - Project Cleanup & Documentation Overhaul
+### Major Release - Project Cleanup & Documentation Overhaul
 
 ### Added
 - **Complete Documentation System**
@@ -758,7 +758,7 @@ docs/
 
 ## [0.6.0] - 2026-01-08
 
-### 🚀 Major Release - Import/Export System & GPU Integration
+### Major Release - Import/Export System & GPU Integration
 
 ### Added
 - **Complete Import/Export System**
@@ -844,15 +844,15 @@ Every open branch, worktree, stash, and PR merged into `main`; the repository
 now has a single branch tagged `v0.9.0`.
 
 ### Added
-- **Go-style concurrency runtime** — fibers, channels (`Chan<T>` with monomorphization), select, work stealing, netpoll, multi-shot continuations, TLS/HTTPS accept loop, HTTP over fibers. C kernels under `runtime/`, Flow wrappers under `lib/runtime/`, 25 examples under `examples/concurrency/`.
-- **Package registry** — `registry/` with 16 seed packages and ecosystem demo projects.
-- **Pipeline `choose`** — state-driven stage selection: `x |> choose sel { A => f, B => g }`.
-- **VS Code extension 0.3.0** — debug adapter, test explorer, snippets, file icon, published under the `quilio` Open VSX namespace; `flow-pack` and `flow-themes` companions.
-- **Recorded demo gallery** — headless `./flow record` backend and GIFs regenerated from the real programs.
+- **Go-style concurrency runtime**: fibers, channels (`Chan<T>` with monomorphization), select, work stealing, netpoll, multi-shot continuations, TLS/HTTPS accept loop, HTTP over fibers. C kernels under `runtime/`, Flow wrappers under `lib/runtime/`, 25 examples under `examples/concurrency/`.
+- **Package registry**: `registry/` with 16 seed packages and ecosystem demo projects.
+- **Pipeline `choose`**: state-driven stage selection: `x |> choose sel { A => f, B => g }`.
+- **VS Code extension 0.3.0**: debug adapter, test explorer, snippets, file icon, published under the `quilio` Open VSX namespace; `flow-pack` and `flow-themes` companions.
+- **Recorded demo gallery**: headless `./flow record` backend and GIFs regenerated from the real programs.
 - Runtime-in-Flow build wiring (`flow_runtime_flow_sources`), `FLOW_CFLAGS` / `FLOW_TSAN` overrides, OpenSSL and OpenMP probes.
 
 ### Changed
-- **Stricter type checking** — `let` immutability enforced (use `let mut`), bool vs i32 distinction, overload arity checks; corpus updated.
+- **Stricter type checking**: `let` immutability enforced (use `let mut`), bool vs i32 distinction, overload arity checks; corpus updated.
 - LANGUAGE_SPEC refreshed to match shipped surfaces; spec version now tracks the release.
 - Version metadata aligned to **0.9.0** (`flow.toml`, `pyproject.toml`, wiki hero).
 
@@ -868,8 +868,8 @@ First annotated git tags and GitHub Releases for Flow. Documentation ships from
 [GitHub Pages](https://flooooooooooow.github.io/flow/). VPS wiki deploy is disabled.
 
 ### Added
-- **Self-hosting bootstrap (`flowc`)** — Flow-written Stage-A compiler under `compiler/` (lexer, parser, AST, cgen, typecheck, resolve, roundtrip/self-emit). Plan: `docs/project/self-hosting.md`.
-- **Declarative ordering** — `xs |> sort` / `sortBy` (Phase 1).
+- **Self-hosting bootstrap (`flowc`)**: Flow-written Stage-A compiler under `compiler/` (lexer, parser, AST, cgen, typecheck, resolve, roundtrip/self-emit). Plan: `docs/project/self-hosting.md`.
+- **Declarative ordering**: `xs |> sort` / `sortBy` (Phase 1).
 - **GPU / unified memory** + fill-shader surface language.
 - **Dynamics namespaces**, connect composition, `always`/`never` constraints, units, RK4 solver path.
 - **GitHub Pages** wiki deploy (`.github/workflows/wiki.yml`); community files (`CODE_OF_CONDUCT`, `SECURITY`, `CITATION.cff`).

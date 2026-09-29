@@ -2,9 +2,9 @@
 
 *The sum of leg lengths is greater than the hypotenuse.*
 
-**Source.** euclid — Elements, Book I, Proposition 20
+**Source.** euclid: Elements, Book I, Proposition 20
 
-## Derived fact 1 — a plus b is greater than c
+## Derived fact 1: a plus b is greater than c
 
 **Coordinate.** the Euclidean plane · right triangle · sum of legs exceeds hypotenuse · **Derived fact**
 

@@ -1,6 +1,6 @@
 # @module verify.Ideal
 # @means  Ring ideal axioms as a subring closed under absorption.
-# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @from   dummit-foote: *Abstract Algebra*, §7.3
 # @tier   definitions-only
 
 # @means  An ideal contains the ring zero.

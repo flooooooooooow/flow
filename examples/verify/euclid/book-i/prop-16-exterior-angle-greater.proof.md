@@ -2,13 +2,13 @@
 
 *In a triangle, an exterior angle is greater than either remote interior angle.*
 
-**Source.** euclid — Elements, Book I, Proposition 16
+**Source.** euclid: Elements, Book I, Proposition 16
 
-## Derived fact 1 — In a triangle, an exterior angle is greater than either remote interior angle
+## Derived fact 1: In a triangle, an exterior angle is greater than either remote interior angle
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 16: an exterior angle exceeds either remote interior angle · **Derived fact**
 
-*Source: euclid — Elements, Book I, Proposition 16*
+*Source: euclid: Elements, Book I, Proposition 16*
 
 *Built on: proposition 4: side-angle-side congruence, for Book I of the Elements in on the Euclidean plane, proposition 15: vertical angles are equal, for Book I of the Elements in on the Euclidean plane*
 

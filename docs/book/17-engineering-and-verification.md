@@ -157,8 +157,8 @@ search, matrix operations, and reductions.
 ```
 
 FIR-G exposes a graph representation and analyses used for routes,
-dependencies, calibration, and optimisation work. FIR-G is compiler analysis,
-not ordinary source syntax.
+dependencies, calibration, and optimisation work. FIR-G is compiler analysis
+rather than ordinary source syntax.
 
 ## 17.12 Reproducible builds
 
@@ -191,8 +191,8 @@ logic, arithmetic, data structures, circuits, transforms, and Euclid material.
 Theorem syntax and tooling are partial and intentionally ahead of the core
 parser/checker in parts of the corpus. A `.proof.md` document may be a formal
 artefact, a stepped derivation, or a scaffold awaiting checker support. Do not
-equate “present in the proof catalog” with “machine-checked by the current
-kernel”.
+equate "present in the proof catalog" with "machine-checked by the current
+kernel".
 
 The authoritative distinctions are:
 

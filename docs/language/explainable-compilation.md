@@ -147,7 +147,7 @@ This covers implementation selection for declarative constructs. It does not
 yet cover buffer or arena placement, worst-case latency estimates, or heap
 operations remaining inside real-time regions, which is where issue #146
 eventually points. `flow verify --explain` remains a separate thing: it
-prints proof traces, not plans.
+prints proof traces rather than plans.
 
 ## See also
 

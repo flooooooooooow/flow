@@ -2,9 +2,9 @@
 
 *One is the right multiplicative identity for reals.*
 
-**Source.** landau — *Foundations of Analysis*
+**Source.** landau: *Foundations of Analysis*
 
-## Derived fact 1 — x * 1 = x
+## Derived fact 1: x * 1 = x
 
 **Coordinate.** the real numbers · multiplication · one is the right identity · **Derived fact**
 

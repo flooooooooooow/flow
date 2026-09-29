@@ -2,9 +2,9 @@
 
 *Sedecuple cons ending in nil has length sixteen.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len of sixteen cons ending in nil equals 16
+## Derived fact 1: len of sixteen cons ending in nil equals 16
 
 **Coordinate.** List · length · sedecuple cons nil has length sixteen · **Derived fact**
 

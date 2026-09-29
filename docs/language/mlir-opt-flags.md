@@ -1,7 +1,7 @@
 # MLIR optimization flags
 
 When compiling with the MLIR backend (`--mlir`), pass `--optimize` to run
-`mlir-opt` through Flow’s pass pipeline.
+`mlir-opt` through Flow's pass pipeline.
 
 ## Levels
 

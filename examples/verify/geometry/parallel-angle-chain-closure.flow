@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  Parallel angle chains close back to alternate angles.
-# @from   euclid — Elements, Book I, Proposition 29
+# @from   euclid: Elements, Book I, Proposition 29
 # @tier   derived
 
 # @means  f-angle beta equals alternate alpha after full chain closure.

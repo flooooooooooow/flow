@@ -106,7 +106,7 @@ Tunables before generation: `planet_set_target_land` (default 0.29),
 | `planet_total_area()` | Solid angle → 4π |
 | `planet_area_max() / planet_area_min()` | Distortion bound (~1.40 at N=96) |
 | `planet_land_fraction()` | Matches `planet_set_target_land` |
-| `planet_measure_hack` / `planet_hack_*` | Drainage length–area (Hack) |
+| `planet_measure_hack` / `planet_hack_*` | Drainage length-area (Hack) |
 | `planet_rain_shadow_ratio(hmin)` | Orographic rain > 1 on slopes |
 | `planet_biome_land_fraction` | Whittaker mix on land sums to ~1 |
 

@@ -2,13 +2,13 @@
 
 *If from a point outside a circle two straight lines touch it, the line joining the point to the center bisects the angle between the tangents.*
 
-**Source.** euclid — Elements, Book III, Proposition 36
+**Source.** euclid: Elements, Book III, Proposition 36
 
-## Derived fact 1 — If from a point outside a circle two straight lines touch it, the line joining the point to the center bisects the angle between the tangents
+## Derived fact 1: If from a point outside a circle two straight lines touch it, the line joining the point to the center bisects the angle between the tangents
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 36: the line to the center bisects the angle between tangents · **Derived fact**
 
-*Source: euclid — Elements, Book III, Proposition 36*
+*Source: euclid: Elements, Book III, Proposition 36*
 
 *Built on: proposition 35: tangents drawn from a point to a circle are equal, for Euclid Book III on the Euclidean plane, proposition 8: side-side-side angle equality, for Book I of the Elements in on the Euclidean plane*
 

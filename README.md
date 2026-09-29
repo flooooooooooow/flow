@@ -338,7 +338,7 @@ FLOW_HOST=python ./flow run <file>   # Full Python-host language surface
 ./flow test --strict --tier2   # + transpile / clang compile checks
 ./flow fmt <file>              # Format
 ./flow repl                    # Interactive mode
-./flow lsp                     # Language server
+./flow-lsp                     # Language server (Python, src/flow/lsp_server.py)
 ./flow gfx <file>              # Compile and run with graphics
 ./flow mlir <file>             # Emit MLIR (requires LLVM/MLIR tools)
 ```
@@ -396,7 +396,7 @@ Counted from tracked files by CI so the numbers match the tree.
 | **Verify corpus** | 1,078 | 18,715 |
 | **Tests (`.py` + `.flow`)** | 455 | 48,539 |
 | **Application programs** | 8 | 1,537 |
-| **Registry packages** | 19 | n/a |
+| **Registry packages** | 19 | - |
 | **Documentation pages** | 173 | 39,462 |
 
 <details>

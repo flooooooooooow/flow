@@ -2,13 +2,13 @@
 
 *In equal and equiangular parallelograms the sides about the equal angles are reciprocally proportional.*
 
-**Source.** euclid — Elements, Book VI, Proposition 14
+**Source.** euclid: Elements, Book VI, Proposition 14
 
-## Derived fact 1 — In equal and equiangular parallelograms the sides about the equal angles are reciprocally proportional
+## Derived fact 1: In equal and equiangular parallelograms the sides about the equal angles are reciprocally proportional
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 14: equal equiangular parallelograms have reciprocally proportional sides · **Derived fact**
 
-*Source: euclid — Elements, Book VI, Proposition 14*
+*Source: euclid: Elements, Book VI, Proposition 14*
 
 *Built on: proposition 4: equiangular triangles have proportional corresponding sides, for Euclid Book VI on the Euclidean plane, proposition 7: proportional magnitudes satisfy alternando, for Euclid Book V on the Euclidean plane*
 

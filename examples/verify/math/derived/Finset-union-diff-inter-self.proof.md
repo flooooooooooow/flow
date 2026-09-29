@@ -2,9 +2,9 @@
 
 *Union difference intersection with self is empty.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — (s ∪ t) \ (s ∩ t) \ (s ∪ t) = empty
+## Derived fact 1: (s ∪ t) \ (s ∩ t) \ (s ∪ t) = empty
 
 **Coordinate.** Finset · difference · union diff intersect self derived · **Derived fact**
 

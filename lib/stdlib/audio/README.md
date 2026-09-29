@@ -313,7 +313,7 @@ function main() -> i32 {
 
 1. **No Setup** - Import and play. No server, no initialization, no configuration.
 
-2. **Type Safety** - Catch bugs at compile time, not runtime.
+2. **Type Safety** - Catch bugs at compile time instead of at runtime.
 
 3. **Performance** - Compiled to native code, 10x faster than interpreted languages.
 
@@ -323,7 +323,7 @@ function main() -> i32 {
 
 6. **Euclidean Rhythms** - Generate complex patterns automatically.
 
-7. **BPM-Based Timing** - Musical time, not sample math.
+7. **BPM-Based Timing** - Musical time instead of sample math.
 
 8. **GPU Acceleration** - Available for heavy processing (optional).
 
@@ -430,7 +430,7 @@ FLOW audio is designed around three principles:
 
 1. **Immediate** - No setup, no boilerplate, just make sound.
 
-2. **Musical** - Think in musical terms (BPM, scales, chords), not DSP math.
+2. **Musical** - Think in musical terms (BPM, scales, chords) instead of DSP math.
 
 3. **Powerful** - When you need low-level control, it's there. When you don't, it's hidden.
 

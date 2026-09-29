@@ -1,5 +1,5 @@
 # @means  Near the origin, sin(x) agrees with each successive Maclaurin partial sum.
-# @from   brook taylor — https://en.wikipedia.org/wiki/Taylor_series
+# @from   brook taylor: https://en.wikipedia.org/wiki/Taylor_series
 # @tier   derived
 # @needs  «Analysis» «smooth functions» «derivatives of sine are known»
 # @diagram-script scripts/taylor-sin.geom

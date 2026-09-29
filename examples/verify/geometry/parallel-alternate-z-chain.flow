@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  Alternate and Z-angle equalities chain along a transversal.
-# @from   euclid — Elements, Book I, Proposition 29
+# @from   euclid: Elements, Book I, Proposition 29
 # @tier   derived
 
 # @means  alternate alpha equals z-angle beta.

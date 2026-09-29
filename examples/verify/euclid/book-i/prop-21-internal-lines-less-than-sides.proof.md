@@ -2,13 +2,13 @@
 
 *If two lines are drawn from the ends of a side to an interior point, their sum is less than the sum of the other two sides.*
 
-**Source.** euclid — Elements, Book I, Proposition 21
+**Source.** euclid: Elements, Book I, Proposition 21
 
-## Derived fact 1 — If two lines are drawn from the ends of a side to an interior point, their sum is less than the sum of the other two sides
+## Derived fact 1: If two lines are drawn from the ends of a side to an interior point, their sum is less than the sum of the other two sides
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 21: two internal lines from the base are shorter than the other sides · **Derived fact**
 
-*Source: euclid — Elements, Book I, Proposition 21*
+*Source: euclid: Elements, Book I, Proposition 21*
 
 *Built on: proposition 20: the sum of two sides exceeds the third, for Book I of the Elements in on the Euclidean plane*
 

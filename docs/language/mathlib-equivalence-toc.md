@@ -1,4 +1,4 @@
-# Flow Mathlib Equivalence — Master Table of Contents
+# Flow Mathlib Equivalence: Master Table of Contents
 
 > **Status:** Living roadmap  
 > **Goal:** A single numbered proof book and `lib/verify` corpus that covers the same mathematical ground as [Lean + Mathlib](https://leanprover-community.github.io/mathlib-overview.html), with every fact at a stable Claim Path and traceable proof steps.  
@@ -26,7 +26,7 @@ Phases are **dependency-ordered**. Each phase ships a PDF slice via `BOOK_PARTS`
 
 | Phase | Name | Target theorems | Mathlib mirror | Depends on | ETA (aggressive) |
 |-------|------|-----------------|----------------|------------|------------------|
-| **0** | Engine & book contract | — | `Tactic`, `Testing` | — | ✅ done |
+| **0** | Engine & book contract | - | `Tactic`, `Testing` | - | ✅ done |
 | **1** | Logic + Peano spine | **~200** | `Init`, `Logic`, `Data.Nat` | 0 | **now → 8 wk** |
 | **2** | Discrete structures | **~350** | `Data`, `Order`, `Combinatorics` (basic) | 1 | 8 wk |
 | **3** | Euclidean corpus | **~350** | `Geometry` (synthetic) | 1 | 6 wk (I done, II–VI next) |
@@ -39,9 +39,9 @@ Phases are **dependency-ordered**. Each phase ships a PDF slice via `BOOK_PARTS`
 | **10** | Category theory & homological | **~800** | `CategoryTheory`, homological slice | 4–5 | 16 wk |
 | **11** | Set theory & foundations | **~400** | `SetTheory`, `ModelTheory` | 1 | 10 wk |
 | **12** | Computability & dynamics | **~300** | `Computability`, `Dynamics` | 11 | 8 wk |
-| **Σ** | **Full Mathlib parity** | **~7,600** (core) → **~150k** (complete) | all `Mathlib/*` | — | multi-year |
+| **Σ** | **Full Mathlib parity** | **~7,600** (core) → **~150k** (complete) | all `Mathlib/*` | - | multi-year |
 
-**Phase 1–3 = “undergraduate Mathlib”** (~900 theorems): enough to replace a first proof course + discrete math + Euclid.
+**Phase 1–3 = "undergraduate Mathlib"** (~900 theorems): enough to replace a first proof course + discrete math + Euclid.
 
 ---
 
@@ -76,7 +76,7 @@ Command: `./flow doc bundle` → `build/proofs/flow-proof-book.pdf`
 
 ---
 
-## Volume I — Foundations (Phase 1)
+## Volume I: Foundations (Phase 1)
 
 **Mathlib:** `Init`, `Logic`, `Order` (basic), `Data.Nat`  
 **Flow package:** `lib/verify/` + `examples/verify/math/`
@@ -99,7 +99,7 @@ Command: `./flow doc bundle` → `build/proofs/flow-proof-book.pdf`
 
 **Files:** `lib/verify/Eq.flow`, `lib/verify/Bool.flow`, `lib/verify/Prop.flow`
 
-### §2 Natural numbers — Peano core (`Data.Nat.Basic`)
+### §2 Natural numbers: Peano core (`Data.Nat.Basic`)
 
 | § | Claim Path | Tier | Mathlib anchor | Status |
 |---|------------|------|----------------|--------|
@@ -113,7 +113,7 @@ Command: `./flow doc bundle` → `build/proofs/flow-proof-book.pdf`
 
 **Files:** `lib/verify/Nat-core.flow`
 
-### §3 Natural numbers — addition (`Algebra.Group.Nat`)
+### §3 Natural numbers: addition (`Algebra.Group.Nat`)
 
 | § | Claim Path | Tier | Status |
 |---|------------|------|--------|
@@ -128,7 +128,7 @@ Command: `./flow doc bundle` → `build/proofs/flow-proof-book.pdf`
 
 **Files:** `lib/verify/Nat.flow`, `examples/verify/math/derived/Nat-plus-*.flow`
 
-### §4 Natural numbers — multiplication
+### §4 Natural numbers: multiplication
 
 | § | Claim Path | Tier | Status |
 |---|------------|------|--------|
@@ -145,7 +145,7 @@ Command: `./flow doc bundle` → `build/proofs/flow-proof-book.pdf`
 
 **Files:** `lib/verify/Nat-mul.flow`
 
-### §5 Natural numbers — order
+### §5 Natural numbers: order
 
 | § | Claim Path | claim | Status |
 |---|------------|-------|--------|
@@ -189,7 +189,7 @@ Command: `./flow doc bundle` → `build/proofs/flow-proof-book.pdf`
 | 8.3 | `Real/sup.exists` | least upper bound | ⬜ |
 | 8.4 | `Real/archimedean` | Archimedean property | ⬜ |
 
-**Files:** `lib/verify/Real.flow` (Dedekind or Cauchy — pick one, document in `@from`)
+**Files:** `lib/verify/Real.flow` (Dedekind or Cauchy; pick one, document in `@from`)
 
 ### §9 Complex numbers (`Data.Complex`)
 
@@ -202,11 +202,11 @@ Command: `./flow doc bundle` → `build/proofs/flow-proof-book.pdf`
 
 **Files:** `lib/verify/Complex.flow`
 
-**Phase 1 target:** ~200 theorems, fully stepped proofs for §1–§5; §6–§9 definitions + 10 flagship derived facts.
+**Phase 1 target:** ~200 theorems, fully stepped proofs for §1 to §5; §6 to §9 definitions + 10 flagship derived facts.
 
 ---
 
-## Volume II — Data structures & order (Phase 2)
+## Volume II: Data structures & order (Phase 2)
 
 **Mathlib:** `Data`, `Order`, `Combinatorics` (enumerative basics)  
 **Flow package:** `lib/verify/Data/`, `lib/verify/Order/`
@@ -265,11 +265,11 @@ lib/verify/Comb.flow
 
 ---
 
-## Volume III — Euclidean geometry (Phase 3)
+## Volume III: Euclidean geometry (Phase 3)
 
 **Mathlib:** synthetic geometry via `Geometry.Euclidean` (later volumes); primary source is Euclid.
 
-### Book I — Straight-line geometry ✅ scaffolded
+### Book I: Straight-line geometry ✅ scaffolded
 
 | Prop | Claim coordinate | File | Status |
 |------|------------------|------|--------|
@@ -277,34 +277,34 @@ lib/verify/Comb.flow
 
 **Next:** replace stubs with stepped proofs citing prior props by theorem number.
 
-### Book II — Geometric algebra (areas)
+### Book II: Geometric algebra (areas)
 
 | Prop | Topic | Target |
 |------|-------|--------|
 | 1–14 | rectangles, gnomons, `a+b` squares | 14 theorems |
 
 **Files:** `examples/verify/euclid/book-ii/prop-*.flow`  
-**Generator:** `tools/generate_euclid_book_ii.py` (mirror Book I)
+**Generator:** none. The one-shot Euclid generators were removed in #965, so edit the `.flow` files directly.
 
-### Book III — Circles
+### Book III: Circles
 
 | Prop | Topic | Target |
 |------|-------|--------|
 | 1–37 | chords, tangents, power of a point | 37 theorems |
 
-### Book IV — Polygons
+### Book IV: Polygons
 
 | Prop | Topic | Target |
 |------|-------|--------|
 | 1–16 | inscribed/circumscribed | 16 theorems |
 
-### Book V — Proportion
+### Book V: Proportion
 
 | Prop | Topic | Target |
 |------|-------|--------|
 | 1–25 | Eudoxus theory of proportion | 25 theorems |
 
-### Book VI — Similar figures
+### Book VI: Similar figures
 
 | Prop | Topic | Target |
 |------|-------|--------|
@@ -322,7 +322,7 @@ lib/verify/Comb.flow
 
 ---
 
-## Volume IV — Algebra (Phase 4)
+## Volume IV: Algebra (Phase 4)
 
 **Mathlib:** `Algebra`, `GroupTheory`, `RingTheory`, `FieldTheory`
 
@@ -379,7 +379,7 @@ lib/verify/Comb.flow
 
 ---
 
-## Volume V — Linear algebra (Phase 5)
+## Volume V: Linear algebra (Phase 5)
 
 **Mathlib:** `LinearAlgebra`
 
@@ -418,7 +418,7 @@ lib/verify/Comb.flow
 
 ---
 
-## Volume VI — Topology (Phase 6)
+## Volume VI: Topology (Phase 6)
 
 **Mathlib:** `Topology`
 
@@ -451,7 +451,7 @@ lib/verify/Comb.flow
 
 ---
 
-## Volume VII — Analysis (Phase 6–7)
+## Volume VII: Analysis (Phase 6–7)
 
 **Mathlib:** `Analysis`, `MeasureTheory` (intro)
 
@@ -504,7 +504,7 @@ lib/verify/Comb.flow
 
 ---
 
-## Volume VIII — Measure theory & probability (Phase 7)
+## Volume VIII: Measure theory & probability (Phase 7)
 
 **Mathlib:** `MeasureTheory`, `Probability`
 
@@ -529,7 +529,7 @@ lib/verify/Comb.flow
 
 ---
 
-## Volume IX — Number theory (Phase 8)
+## Volume IX: Number theory (Phase 8)
 
 **Mathlib:** `NumberTheory`
 
@@ -558,7 +558,7 @@ lib/verify/Comb.flow
 
 ---
 
-## Volume X — Combinatorics (Phase 2+)
+## Volume X: Combinatorics (Phase 2+)
 
 **Mathlib:** `Combinatorics`
 
@@ -581,7 +581,7 @@ lib/verify/Comb.flow
 
 ---
 
-## Volume XI — Geometry advanced (Phase 9)
+## Volume XI: Geometry advanced (Phase 9)
 
 **Mathlib:** `Geometry.Manifold`, `AlgebraicGeometry`
 
@@ -609,7 +609,7 @@ lib/verify/Comb.flow
 
 ---
 
-## Volume XII — Category theory & homological algebra (Phase 10)
+## Volume XII: Category theory & homological algebra (Phase 10)
 
 **Mathlib:** `CategoryTheory`
 
@@ -632,7 +632,7 @@ lib/verify/Comb.flow
 
 ---
 
-## Volume XIII — Set theory, logic, computability (Phase 11–12)
+## Volume XIII: Set theory, logic, computability (Phase 11–12)
 
 **Mathlib:** `SetTheory`, `ModelTheory`, `Computability`, `Dynamics`
 
@@ -665,7 +665,7 @@ lib/verify/Comb.flow
 
 ---
 
-## Parallel track — Verification engine (not in book)
+## Parallel track: Verification engine (not in book)
 
 | Component | Purpose | Mathlib analogue |
 |-----------|---------|------------------|
@@ -699,14 +699,12 @@ lib/verify/
 examples/verify/
   math/derived/          # stepped proofs importing lib/verify
   euclid/book-i/         # ✅ 48 props
-  euclid/book-ii/ … vi/  # generators + props
+  euclid/book-ii/ … vi/  # props
   analysis/              # calculus, special functions
   geometry/              # legacy + analytic bridge
 
-tools/
-  generate_euclid_book_i.py   # ✅
-  generate_euclid_book_ii.py  # planned
-  generate_book_manifest.py   # planned: BOOK_PARTS from YAML
+scripts/tools/
+  book_manifest/main.flow     # planned: BOOK_PARTS from YAML
 
 docs/language/
   mathlib-equivalence-toc.md  # this file
@@ -733,7 +731,7 @@ Every `Mathlib/*` root directory maps to a Flow volume:
 | `FieldTheory` | IV §24 | 4 |
 | `Geometry` | III, XI §90–91 | 3, 9 |
 | `GroupTheory` | IV §20 | 4 |
-| `InformationTheory` | (future) | — |
+| `InformationTheory` | (future) | - |
 | `LinearAlgebra` | V §30–34 | 5 |
 | `Logic` | I §1 | 1 |
 | `MeasureTheory` | VIII §60 | 7 |
@@ -750,11 +748,11 @@ Every `Mathlib/*` root directory maps to a Flow volume:
 
 ## Immediate next steps (Phase 1 sprint)
 
-1. **Complete §1–§5** — `Eq.flow`, `Bool.flow`, `Nat-mul.flow`, `Nat-order.flow` with stepped proofs.
-2. **Deepen Euclid I** — replace assume/therefore stubs in props 1–10 first (construction + SAS chain).
-3. **Regenerate book** — `./flow doc bundle` after each § lands; keep continuous numbering.
-4. **Add `tools/generate_book_manifest.py`** — drive `BOOK_PARTS` from `docs/language/mathlib-toc.yaml` (machine-readable slice of this TOC).
-5. **CI** — `flow know --lint-duplicates` + theorem count regression test per phase.
+1. **Complete §1 to §5**: `Eq.flow`, `Bool.flow`, `Nat-mul.flow`, `Nat-order.flow` with stepped proofs.
+2. **Deepen Euclid I**: replace assume/therefore stubs in props 1–10 first (construction + SAS chain).
+3. **Regenerate book**: `./flow doc bundle` after each § lands; keep continuous numbering.
+4. **Add a book manifest tool** (a Flow program under `scripts/tools/`): drive `BOOK_PARTS` from `docs/language/mathlib-toc.yaml` (machine-readable slice of this TOC).
+5. **CI**: `flow know --lint-duplicates` + theorem count regression test per phase.
 
 ---
 
@@ -773,4 +771,4 @@ Every `Mathlib/*` root directory maps to a Flow volume:
 
 ## One sentence
 
-**We build Mathlib equivalence bottom-up: finish the Peano spine and stepped Euclid I proofs first (Phase 1), then data/order, then the full Euclid corpus, then algebra → analysis → everything else — one Claim Path, one theorem number, one proof book.**
+**We build Mathlib equivalence bottom-up: finish the Peano spine and stepped Euclid I proofs first (Phase 1), then data/order, then the full Euclid corpus, then algebra → analysis → everything else, with one Claim Path, one theorem number, one proof book.**

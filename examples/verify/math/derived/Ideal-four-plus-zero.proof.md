@@ -2,9 +2,9 @@
 
 *Four plus zero is four in an ideal witness.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.1
+**Source.** dummit-foote: *Abstract Algebra*, §7.1
 
-## Derived fact 1 — 4 + 0 = 4 in an ideal
+## Derived fact 1: 4 + 0 = 4 in an ideal
 
 **Coordinate.** Ideal · addition · four plus zero in ideal · **Derived fact**
 

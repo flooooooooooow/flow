@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  True is absorbing for disjunction on the left.
-# @from   boole — https://en.wikipedia.org/wiki/Boolean_algebra
+# @from   boole: https://en.wikipedia.org/wiki/Boolean_algebra
 # @tier   derived
 
 # @means  true or a = true.

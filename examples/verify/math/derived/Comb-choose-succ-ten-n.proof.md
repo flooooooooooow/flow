@@ -2,9 +2,9 @@
 
 *Choosing ten from a successor set.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — choose(succ(n), 10) = choose(n, 9) + choose(n, 10)
+## Derived fact 1: choose(succ(n), 10) = choose(n, 9) + choose(n, 10)
 
 **Coordinate.** Comb · choose · choosing ten from a successor derived · **Derived fact**
 

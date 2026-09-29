@@ -2,9 +2,9 @@
 
 *Double reverse fixes a pair cons list.*
 
-**Source.** church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
+**Source.** church: https://en.wikipedia.org/wiki/List_(abstract_data_type)
 
-## Derived fact 1 — rev(rev(cons(x, cons(y, nil)))) = cons(x, cons(y, nil))
+## Derived fact 1: rev(rev(cons(x, cons(y, nil)))) = cons(x, cons(y, nil))
 
 **Coordinate.** List · reverse · double reverse fixes pair cons · **Derived fact**
 

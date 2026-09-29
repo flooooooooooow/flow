@@ -2,9 +2,9 @@
 
 *Equal sides imply equal base angles.*
 
-**Source.** euclid — Elements, Book I, Proposition 5
+**Source.** euclid: Elements, Book I, Proposition 5
 
-## Derived fact 1 — if side AB equals side AC then angle at B equals angle at C
+## Derived fact 1: if side AB equals side AC then angle at B equals angle at C
 
 **Coordinate.** the Euclidean plane · isosceles triangle · equal sides imply equal base angles · **Derived fact**
 

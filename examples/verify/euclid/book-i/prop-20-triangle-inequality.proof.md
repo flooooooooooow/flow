@@ -2,13 +2,13 @@
 
 *In any triangle, the sum of any two sides is greater than the remaining side.*
 
-**Source.** euclid — Elements, Book I, Proposition 20
+**Source.** euclid: Elements, Book I, Proposition 20
 
-## Derived fact 1 — In any triangle, the sum of any two sides is greater than the remaining side
+## Derived fact 1: In any triangle, the sum of any two sides is greater than the remaining side
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 20: the sum of two sides exceeds the third · **Derived fact**
 
-*Source: euclid — Elements, Book I, Proposition 20*
+*Source: euclid: Elements, Book I, Proposition 20*
 
 *Built on: proposition 19: the greater angle is opposite the greater side, for Book I of the Elements in on the Euclidean plane*
 

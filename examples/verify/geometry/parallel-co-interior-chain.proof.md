@@ -2,9 +2,9 @@
 
 *Co-interior angles chain to supplementary pairs on parallel lines.*
 
-**Source.** euclid — Elements, Book I, Proposition 29
+**Source.** euclid: Elements, Book I, Proposition 29
 
-## Derived fact 1 — co-interior alpha plus co-interior beta equals two right angles
+## Derived fact 1: co-interior alpha plus co-interior beta equals two right angles
 
 **Coordinate.** the Euclidean plane · parallel lines · co-interior chain supplementary · **Derived fact**
 

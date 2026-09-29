@@ -2,13 +2,13 @@
 
 *Multiplying on the left preserves less-or-equal order.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Monotonic_function
+**Source.** peano: https://en.wikipedia.org/wiki/Monotonic_function
 
-## Derived fact 1 — If a ≤ b then c * a ≤ c * b
+## Derived fact 1: If a ≤ b then c * a ≤ c * b
 
 **Coordinate.** the natural numbers · multiplication · multiplying on the left preserves order · **Derived fact**
 
-*Source: peano/induction — Gries & Schneider, Ch. 3*
+*Source: peano/induction: Gries & Schneider, Ch. 3*
 
 *Built on: zero is the left annihilator, for multiplication on the natural numbers, successor on the right distributes, for multiplication on the natural numbers, adding on the right preserves order, for addition on the natural numbers*
 

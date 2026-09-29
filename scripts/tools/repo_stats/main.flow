@@ -484,7 +484,7 @@ function emit_readme_block(lf: ptr<i32>, ll: ptr<i32>, af: ptr<i32>, al: ptr<i32
     out = out + "| **Verify corpus** | " + group_i32(af[5]) + " | " + group_i32(al[5]) + " |\n"
     out = out + "| **Tests (`.py` + `.flow`)** | " + group_i32(af[6]) + " | " + group_i32(al[6]) + " |\n"
     out = out + "| **Application programs** | " + group_i32(af[7]) + " | " + group_i32(al[7]) + " |\n"
-    out = out + "| **Registry packages** | " + group_i32(af[8]) + " | n/a |\n"
+    out = out + "| **Registry packages** | " + group_i32(af[8]) + " | - |\n"
     out = out + "| **Documentation pages** | " + group_i32(af[9]) + " | " + group_i32(al[9]) + " |\n"
     out = out + "\n<details>\n<summary>Tracked source by language</summary>\n\n"
     out = out + "| Language | Files | Physical lines |\n|---|---:|---:|\n"

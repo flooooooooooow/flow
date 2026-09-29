@@ -2,9 +2,9 @@
 
 *Twenty-four plus one is twenty-five.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 24 + 1 = 25
+## Derived fact 1: 24 + 1 = 25
 
 **Coordinate.** the natural numbers · addition · twenty four plus one is twenty five · **Derived fact**
 

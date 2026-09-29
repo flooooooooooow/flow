@@ -3,7 +3,7 @@
 This page maps FLOW against a fifteen-stage checklist for what an "official"
 programming language needs. It is the single source of truth for readiness:
 what is done, what is partial, and what has not started yet. The signal is
-meant to be honest, not promotional.
+meant to be honest rather than promotional.
 
 Legend: **DONE** means implemented and exercised. **PARTIAL** means it exists
 but is not complete or not fully machine-tested. **GAP** means it is not done.
@@ -12,7 +12,7 @@ but is not complete or not fully machine-tested. **GAP** means it is not done.
 
 The critical transition is showing FLOW 1.0. A language does not need ISO's
 permission to be official; Python, Rust and Go are defined primarily by their
-own stable specification, conformance suite and compatibility commitment, not
+own stable specification, conformance suite and compatibility commitment rather than
 by an international standard.
 
 Today the language has a compiler and a specification (v0.11.0), but the spec is
@@ -43,7 +43,7 @@ in stages 1 to 12 runs up to that line.
 | --- | --- |
 | x86-64 | DONE. Coveraged by CI on Linux and macOS. |
 | ARM64 (Apple Silicon) | DONE. Native and CI-covered on macOS. |
-| ARM64 (Linux) | PARTIAL. Supported in the toolchain, not systematically covered. |
+| ARM64 (Linux) | PARTIAL. Supported in the toolchain but not systematically covered. |
 
 CI builds and exercises FLOW on `ubuntu-latest`, `macos-14` and a
 `windows-latest` gfx-stub smoke job. The self-hosted `flowc` toolchain is
@@ -68,7 +68,7 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 | Semantics | PARTIAL | `docs/LANGUAGE_SPEC.md` covers it; not yet treated as frozen. |
 | Type system | DONE | Spec incl. inference, conversions, generics. |
 | Memory model | PARTIAL | Spans, `let mut`, lifetime domains; no Rust-style borrow checker. |
-| Evaluation model | PARTIAL | Documented in the spec, not fully pinned. |
+| Evaluation model | PARTIAL | Documented in the spec but not fully pinned. |
 | Error model | PARTIAL | Stable strict and lenient diagnostics exist. |
 | Concurrency model | PARTIAL | Async effects, threads documented; not fully pinned. |
 | FFI / ABI | DONE | `extern "C"` including variadic externs documented and tested. |
@@ -78,7 +78,7 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 ### 3. Specification
 | Item | Status | Note |
 | --- | --- | --- |
-| Language Specification | PARTIAL | `docs/LANGUAGE_SPEC.md` exists at 0.3, not a frozen 1.0. |
+| Language Specification | PARTIAL | `docs/LANGUAGE_SPEC.md` exists at 0.3. It is not yet a frozen 1.0. |
 | Versioning rules | PARTIAL | Semver on toolchain; spec version does not define minor/patch meanings. |
 | Compatibility policy | PARTIAL | Some backward-compat claims; no written/official policy. |
 | Feature lifecycle | PARTIAL | Experimental markers partial; no deprecation stage markers. |
@@ -110,7 +110,7 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 | Item | Status | Note |
 | --- | --- | --- |
 | Core (collections, strings, math, I/O) | DONE | `lib/stdlib` 82 modules; `lib/runtime` always-linked. |
-| Stability policy | PARTIAL | Public API versioning is implied, not an explicit archive policy. |
+| Stability policy | PARTIAL | Public API versioning is implied. There is no explicit archive policy. |
 | Documentation | DONE | `docs/library/*` reference. |
 | Tests | DONE | `tests/stdlib` has 54 `.flow` test files. |
 | Platform behaviour | PARTIAL | Cross-platform gaps noted; GPU examples require Metal/Vulkan. |
@@ -127,7 +127,7 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 | Documentation gen | DONE | `flow doc` and * wiki site builder. |
 | REPL | DONE | `flow repl`. |
 | LSP | DONE | `flow-lsp` (VS Code / Neovim intelligence). |
-| Debugger | PARTIAL | Debug plumbing, not a full source-level debugger story. |
+| Debugger | PARTIAL | Debug plumbing exists. A full source-level debugger story does not. |
 | Safety profile | DONE | `--profile safety` (`-Werror -pedantic` C flags). Literal div-by-zero and shift UB rejected at type-check time. UBSan/ASan/TSan via env vars. |
 
 ### 8. Distribution
@@ -176,7 +176,7 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 | Item | Status | Note |
 | --- | --- | --- |
 | RFC / change process | GAP | No formal RFC/design-doc directory or gate. |
-| Language team | PARTIAL | maintainership implied, not a named team model. |
+| Language team | PARTIAL | maintainership implied. There is no named team model. |
 | Contribution policy | DONE | `CONTRIBUTING.md`. |
 | Code of conduct | DONE | `CODE_OF_CONDUCT.md`. |
 | Security policy | DONE | `SECURITY.md`. |

@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Second projection retrieves the second component.
-# @from   church — https://en.wikipedia.org/wiki/Product_type
+# @from   church: https://en.wikipedia.org/wiki/Product_type
 # @tier   derived
 
 # @means  snd(pair(a, b)) = b.

@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Double reverse restores an undecuple cons list.
-# @from   church — https://en.wikipedia.org/wiki/Reverse_(list)
+# @from   church: https://en.wikipedia.org/wiki/Reverse_(list)
 # @tier   derived
 
 # @means  rev(rev(undecuple cons with tail xs)) = undecuple cons with tail xs.

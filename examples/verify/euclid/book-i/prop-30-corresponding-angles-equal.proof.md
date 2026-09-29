@@ -2,13 +2,13 @@
 
 *A transversal across parallel lines makes an exterior angle equal to the opposite interior angle.*
 
-**Source.** euclid — Elements, Book I, Proposition 30
+**Source.** euclid: Elements, Book I, Proposition 30
 
-## Derived fact 1 — A transversal across parallel lines makes an exterior angle equal to the opposite interior angle
+## Derived fact 1: A transversal across parallel lines makes an exterior angle equal to the opposite interior angle
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 30: an exterior angle equals the opposite interior angle · **Derived fact**
 
-*Source: euclid — Elements, Book I, Proposition 30*
+*Source: euclid: Elements, Book I, Proposition 30*
 
 *Built on: proposition 29: alternate angles are equal when a transversal crosses parallels, for Book I of the Elements in on the Euclidean plane, proposition 15: vertical angles are equal, for Book I of the Elements in on the Euclidean plane*
 

@@ -2,9 +2,9 @@
 
 *Join above meet in the dual order witness.*
 
-**Source.** davey-priestley — *Introduction to Lattices and Order*
+**Source.** davey-priestley: *Introduction to Lattices and Order*
 
-## Derived fact 1 — join(a, b) >= meet(b, a)
+## Derived fact 1: join(a, b) >= meet(b, a)
 
 **Coordinate.** Order · lattice · join above meet in dual order · **Derived fact**
 

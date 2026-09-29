@@ -2,9 +2,9 @@
 
 *Appending a singleton increases length by one.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len(xs ++ cons(y, nil)) = succ(len(xs))
+## Derived fact 1: len(xs ++ cons(y, nil)) = succ(len(xs))
 
 **Coordinate.** List · length · append singleton increases length by one · **Derived fact**
 

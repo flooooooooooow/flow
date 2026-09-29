@@ -20,4 +20,4 @@ cd ../../..
 ./flow run examples/packages/use_hello_lib/src/main.flow
 ```
 
-`./flow install` at the repo root installs Python tooling, not Flow packages — use `python3 -m flow.package install` inside the project directory.
+`./flow install` at the repo root installs Python tooling. It does not install Flow packages. Use `python3 -m flow.package install` inside the project directory.

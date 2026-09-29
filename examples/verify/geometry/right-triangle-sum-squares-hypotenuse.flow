@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  The sum of leg squares equals the hypotenuse square.
-# @from   euclid — Elements, Book I, Proposition 47
+# @from   euclid: Elements, Book I, Proposition 47
 # @tier   derived
 
 # @means  a squared plus b squared equals c squared.

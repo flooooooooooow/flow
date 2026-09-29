@@ -2,9 +2,9 @@
 
 *Integer addition commutes.*
 
-**Source.** landau — *Foundations of Analysis*, Ch. 1
+**Source.** landau: *Foundations of Analysis*, Ch. 1
 
-## Derived fact 1 — a + b = b + a for integers
+## Derived fact 1: a + b = b + a for integers
 
 **Coordinate.** the integers · addition · order does not matter · **Derived fact**
 

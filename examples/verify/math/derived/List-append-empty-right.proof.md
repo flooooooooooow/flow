@@ -2,9 +2,9 @@
 
 *Appending the empty list on the right changes nothing.*
 
-**Source.** church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
+**Source.** church: https://en.wikipedia.org/wiki/List_(abstract_data_type)
 
-## Derived fact 1 — xs ++ nil = xs
+## Derived fact 1: xs ++ nil = xs
 
 **Coordinate.** List · append · empty is the right identity · **Derived fact**
 

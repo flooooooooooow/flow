@@ -2,9 +2,9 @@
 
 *A two-element list has length two.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len(cons(x, cons(y, nil))) = succ(succ(0))
+## Derived fact 1: len(cons(x, cons(y, nil))) = succ(succ(0))
 
 **Coordinate.** List · length · pair list has length two · **Derived fact**
 

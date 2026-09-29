@@ -1,6 +1,6 @@
 # Declarative Ordering
 
-Sorting in FLOW is an **intent** surface, not an algorithm call.
+Sorting in FLOW is an **intent** surface rather than an algorithm call.
 
 ```flow-pseudocode
 xs |> sort
@@ -76,7 +76,7 @@ Three options were on the table.
 
 **Reject NaN at runtime.** Costs a branch per comparison and turns ordering
 into an operation that can abort. Flow's ordering is used inside dynamics and
-evolution steps where a NaN is a diagnostic, not a reason to kill the process.
+evolution steps where a NaN is a diagnostic and no reason to kill the process.
 
 **NaN-last.** Simpler to explain, and it is what several languages do. It
 still needs an invented rule for the sign of NaN and another for `-0.0`

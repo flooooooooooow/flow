@@ -2,9 +2,9 @@
 
 *Reflection across the apex median fixes the apex.*
 
-**Source.** euclid — Elements, Book I, Proposition 5
+**Source.** euclid: Elements, Book I, Proposition 5
 
-## Derived fact 1 — apex A is fixed by reflection across apex median
+## Derived fact 1: apex A is fixed by reflection across apex median
 
 **Coordinate.** the Euclidean plane · isosceles triangle · reflection fixes apex · **Derived fact**
 

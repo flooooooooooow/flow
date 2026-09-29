@@ -2,13 +2,13 @@
 
 *In a given circle to inscribe a triangle equiangular to a given triangle.*
 
-**Source.** euclid — Elements, Book IV, Proposition 2
+**Source.** euclid: Elements, Book IV, Proposition 2
 
-## Derived fact 1 — In a given circle to inscribe a triangle equiangular to a given triangle
+## Derived fact 1: In a given circle to inscribe a triangle equiangular to a given triangle
 
 **Coordinate.** the Euclidean plane · Euclid Book IV · Proposition 2: in a circle to inscribe a triangle equiangular to a given triangle · **Derived fact**
 
-*Source: euclid — Elements, Book IV, Proposition 2*
+*Source: euclid: Elements, Book IV, Proposition 2*
 
 *Built on: proposition 23: copy a given angle onto a line at a point, for Book I of the Elements in on the Euclidean plane, proposition 21: angles in the same segment are equal, for Euclid Book III on the Euclidean plane*
 

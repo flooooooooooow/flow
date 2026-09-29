@@ -2,9 +2,9 @@
 
 *Meet below join is symmetric in arguments.*
 
-**Source.** davey-priestley — *Introduction to Lattices and Order*
+**Source.** davey-priestley: *Introduction to Lattices and Order*
 
-## Derived fact 1 — meet(a, b) <= join(b, a)
+## Derived fact 1: meet(a, b) <= join(b, a)
 
 **Coordinate.** Order · lattice · meet below join symmetric · **Derived fact**
 

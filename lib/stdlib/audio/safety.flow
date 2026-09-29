@@ -477,7 +477,7 @@ export function feedback_guard(k: f32) -> f32 {
 
 # Feedback coefficient that decays 60 dB in `rt60_seconds`, for a loop whose
 # round trip is `delay_seconds`. This is how you should ask for a tail:
-# in time, not in a number between 0 and 1 that you guessed.
+# in time, rather than as a number between 0 and 1 that you guessed.
 export function rt60_to_feedback(rt60_seconds: f32, delay_seconds: f32) -> f32 {
     if rt60_seconds <= 0.0 or delay_seconds <= 0.0 {
         return 0.0

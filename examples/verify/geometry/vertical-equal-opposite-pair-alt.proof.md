@@ -2,9 +2,9 @@
 
 *Equal opposite vertical angles form supplementary adjacent pairs.*
 
-**Source.** euclid — Elements, Book I, Proposition 15
+**Source.** euclid: Elements, Book I, Proposition 15
 
-## Derived fact 1 — angle beta prime equals angle beta and sums with alpha to two right angles
+## Derived fact 1: angle beta prime equals angle beta and sums with alpha to two right angles
 
 **Coordinate.** the Euclidean plane · intersecting lines · equal opposite vertical supplement alt · **Derived fact**
 

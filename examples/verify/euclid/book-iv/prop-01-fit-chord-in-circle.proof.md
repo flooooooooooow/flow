@@ -2,13 +2,13 @@
 
 *In a given circle to place a straight line equal to a given straight line not greater than the diameter.*
 
-**Source.** euclid — Elements, Book IV, Proposition 1
+**Source.** euclid: Elements, Book IV, Proposition 1
 
-## Derived fact 1 — In a given circle to place a straight line equal to a given straight line not greater than the diameter
+## Derived fact 1: In a given circle to place a straight line equal to a given straight line not greater than the diameter
 
 **Coordinate.** the Euclidean plane · Euclid Book IV · Proposition 1: in a circle to place a straight line equal to a given line · **Derived fact**
 
-*Source: euclid — Elements, Book IV, Proposition 1*
+*Source: euclid: Elements, Book IV, Proposition 1*
 
 *Built on: proposition 1: equilateral triangle on a segment, for Book I of the Elements in on the Euclidean plane, proposition 1: equal chords subtend equal angles at the center, for Euclid Book III on the Euclidean plane*
 

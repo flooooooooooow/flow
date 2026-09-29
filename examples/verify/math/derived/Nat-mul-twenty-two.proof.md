@@ -2,9 +2,9 @@
 
 *Twenty-one times one is twenty-one.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 21 * 1 = 21
+## Derived fact 1: 21 * 1 = 21
 
 **Coordinate.** the natural numbers · multiplication · twenty one times one is twenty one · **Derived fact**
 

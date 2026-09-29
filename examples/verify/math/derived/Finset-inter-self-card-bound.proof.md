@@ -2,9 +2,9 @@
 
 *Self-intersection cardinality is bounded by the set size.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — card(s ∩ s) <= card(s)
+## Derived fact 1: card(s ∩ s) <= card(s)
 
 **Coordinate.** Finset · cardinality · self intersection size is bounded derived · **Derived fact**
 

@@ -2,9 +2,9 @@
 
 *Intersection union then empty has cardinality zero.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — card((s ∩ t) ∪ empty) = card(s ∩ t)
+## Derived fact 1: card((s ∩ t) ∪ empty) = card(s ∩ t)
 
 **Coordinate.** Finset · cardinality · inter union empty card derived · **Derived fact**
 

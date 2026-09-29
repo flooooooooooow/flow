@@ -2,13 +2,13 @@
 
 *On a given straight line to construct a segment of a circle similar to a given segment.*
 
-**Source.** euclid — Elements, Book III, Proposition 33
+**Source.** euclid: Elements, Book III, Proposition 33
 
-## Derived fact 1 — On a given straight line to construct a segment of a circle similar to a given segment
+## Derived fact 1: On a given straight line to construct a segment of a circle similar to a given segment
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 33: to construct on a given straight line a segment similar to a given segment · **Derived fact**
 
-*Source: euclid — Elements, Book III, Proposition 33*
+*Source: euclid: Elements, Book III, Proposition 33*
 
 *Built on: proposition 24: similar segments on equal straight lines are equal, for Euclid Book III on the Euclidean plane, proposition 23: copy a given angle onto a line at a point, for Book I of the Elements in on the Euclidean plane*
 

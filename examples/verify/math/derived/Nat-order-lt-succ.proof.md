@@ -2,13 +2,13 @@
 
 *Strict less-than is witnessed by adding a positive amount.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Total_order
+**Source.** peano: https://en.wikipedia.org/wiki/Total_order
 
-## Derived fact 1 — If a < b then there exists k with a + succ(k) = b
+## Derived fact 1: If a < b then there exists k with a + succ(k) = b
 
 **Coordinate.** the natural numbers · order · strictly below implies a positive right summand · **Derived fact**
 
-*Source: peano — Landau, *Foundations of Analysis**
+*Source: peano: Landau, *Foundations of Analysis**
 
 *Built on: every number is below its successor, for order on the natural numbers, adding zero on the left does not change the number*
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that strictly below implies a positive right summand for order on the natural numbers. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose a < b. |  |  |
 | ④ | Case 2 (see step 2): suppose a + succ(k)  equals  b. |  |  |
 | ⑤ | We invoke the derived fact governing order on the natural numbers: every number is below its successor, for order on the natural numbers (instantiated for a). |  |  |

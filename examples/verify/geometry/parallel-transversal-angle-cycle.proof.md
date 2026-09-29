@@ -2,9 +2,9 @@
 
 *Angle equalities cycle along a transversal of parallel lines.*
 
-**Source.** euclid — Elements, Book I, Proposition 29
+**Source.** euclid: Elements, Book I, Proposition 29
 
-## Derived fact 1 — f-angle alpha equals corresponding beta
+## Derived fact 1: f-angle alpha equals corresponding beta
 
 **Coordinate.** the Euclidean plane · parallel lines · transversal angle cycle holds · **Derived fact**
 

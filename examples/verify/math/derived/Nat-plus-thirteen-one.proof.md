@@ -2,9 +2,9 @@
 
 *Thirteen plus one is fourteen.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 13 + 1 = 14
+## Derived fact 1: 13 + 1 = 14
 
 **Coordinate.** the natural numbers · addition · thirteen plus one is fourteen · **Derived fact**
 

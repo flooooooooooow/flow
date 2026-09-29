@@ -2,9 +2,9 @@
 
 *Eleven plus zero is eleven in a monoid witness.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §1.1
+**Source.** dummit-foote: *Abstract Algebra*, §1.1
 
-## Derived fact 1 — 11 + 0 = 11
+## Derived fact 1: 11 + 0 = 11
 
 **Coordinate.** Monoid · addition · eleven plus zero is eleven · **Derived fact**
 

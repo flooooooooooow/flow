@@ -130,7 +130,7 @@ over frame numbers, where `flow_gfx_key_down` reports the key as held:
 
 That holds Right (124) for frames 24–27, Up (126) for 48–51, then Down (125) for
 70–95. A single frame can be written `40:49`. Keycodes are the macOS virtual
-keycodes the programs already use — see `lib/stdlib/gfx.flow`.
+keycodes the programs already use; see `lib/stdlib/gfx.flow`.
 
 Two things to keep in mind when writing a script:
 

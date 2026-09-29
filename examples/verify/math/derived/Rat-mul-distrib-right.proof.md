@@ -2,9 +2,9 @@
 
 *Rational multiplication distributes over addition on the right.*
 
-**Source.** landau — *Foundations of Analysis*
+**Source.** landau: *Foundations of Analysis*
 
-## Derived fact 1 — (q + r) * p = q * p + r * p
+## Derived fact 1: (q + r) * p = q * p + r * p
 
 **Coordinate.** Rat · multiplication · right distribution over addition holds · **Derived fact**
 

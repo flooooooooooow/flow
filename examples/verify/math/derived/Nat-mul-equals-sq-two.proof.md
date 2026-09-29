@@ -2,9 +2,9 @@
 
 *Multiplying two by itself equals its square.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Square_(algebra)
+**Source.** peano: https://en.wikipedia.org/wiki/Square_(algebra)
 
-## Derived fact 1 — 2 * 2 = sq(2)
+## Derived fact 1: 2 * 2 = sq(2)
 
 **Coordinate.** the natural numbers · multiplication · two times two is the square of two · **Derived fact**
 

@@ -2,13 +2,13 @@
 
 *If four magnitudes are proportional, they are also proportional by composition.*
 
-**Source.** euclid — Elements, Book V, Proposition 11
+**Source.** euclid: Elements, Book V, Proposition 11
 
-## Derived fact 1 — If four magnitudes are proportional, they are also proportional by composition
+## Derived fact 1: If four magnitudes are proportional, they are also proportional by composition
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 11: proportional magnitudes satisfy componendo · **Derived fact**
 
-*Source: euclid — Elements, Book V, Proposition 11*
+*Source: euclid: Elements, Book V, Proposition 11*
 
 *Built on: proposition 7: proportional magnitudes satisfy alternando, for Euclid Book V on the Euclidean plane*
 

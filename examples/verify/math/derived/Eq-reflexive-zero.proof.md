@@ -2,9 +2,9 @@
 
 *Zero equals itself.*
 
-**Source.** leibniz — https://en.wikipedia.org/wiki/Law_of_identity
+**Source.** leibniz: https://en.wikipedia.org/wiki/Law_of_identity
 
-## Derived fact 1 — 0 = 0
+## Derived fact 1: 0 = 0
 
 **Coordinate.** equality · equality · zero equals itself · **Derived fact**
 

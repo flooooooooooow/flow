@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Four plus one is five for natural numbers.
-# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @from   peano: https://en.wikipedia.org/wiki/Peano_axioms
 # @tier   derived
 
 # @means  4 + 1 = 5.

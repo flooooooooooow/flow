@@ -2,9 +2,9 @@
 
 *Intersection distributes over self-union.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — s ∩ (s ∪ s) = s
+## Derived fact 1: s ∩ (s ∪ s) = s
 
 **Coordinate.** Finset · intersection · intersect with self union · **Derived fact**
 

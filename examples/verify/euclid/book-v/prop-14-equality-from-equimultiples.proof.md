@@ -2,13 +2,13 @@
 
 *If four magnitudes are proportional, the sum of the first and second is to the second as the sum of the third and fourth is to the fourth.*
 
-**Source.** euclid — Elements, Book V, Proposition 14
+**Source.** euclid: Elements, Book V, Proposition 14
 
-## Derived fact 1 — If four magnitudes are proportional, the sum of the first and second is to the second as the sum of the third and fourth is to the fourth
+## Derived fact 1: If four magnitudes are proportional, the sum of the first and second is to the second as the sum of the third and fourth is to the fourth
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 14: equality of ratios follows from equality of equimultiples · **Derived fact**
 
-*Source: euclid — Elements, Book V, Proposition 14*
+*Source: euclid: Elements, Book V, Proposition 14*
 
 *Built on: proposition 4: equimultiples preserve proportion, for Euclid Book V on the Euclidean plane*
 

@@ -2,9 +2,9 @@
 
 *Zero on the left annihilates multiplication.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 0 * n = 0
+## Derived fact 1: 0 * n = 0
 
 **Coordinate.** the natural numbers · multiplication · zero on the left gives zero · **Derived fact**
 

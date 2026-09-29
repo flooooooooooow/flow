@@ -2,13 +2,13 @@
 
 *To construct an isosceles triangle having each of the angles at the base double the remaining one.*
 
-**Source.** euclid — Elements, Book IV, Proposition 10
+**Source.** euclid: Elements, Book IV, Proposition 10
 
-## Derived fact 1 — To construct an isosceles triangle having each of the angles at the base double the remaining one
+## Derived fact 1: To construct an isosceles triangle having each of the angles at the base double the remaining one
 
 **Coordinate.** the Euclidean plane · Euclid Book IV · Proposition 10: to construct an isosceles triangle with base angles double the vertex · **Derived fact**
 
-*Source: euclid — Elements, Book IV, Proposition 10*
+*Source: euclid: Elements, Book IV, Proposition 10*
 
 *Built on: proposition 4: side-angle-side congruence, for Book I of the Elements in on the Euclidean plane, proposition 32: the angle between tangent and chord equals the angle in the alternate segment, for Euclid Book III on the Euclidean plane*
 

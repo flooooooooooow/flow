@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  One is the left multiplicative identity in a ring.
-# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @from   dummit-foote: *Abstract Algebra*, §7.1
 # @tier   derived
 
 # @means  1 * x = x.

@@ -2,13 +2,13 @@
 
 *If a straight line is bisected and another straight line is added, four times the rectangle by the whole with the added line together with the square on the half equals the square on the straight line made up of the half and the added line.*
 
-**Source.** euclid — Elements, Book II, Proposition 10
+**Source.** euclid: Elements, Book II, Proposition 10
 
-## Derived fact 1 — If a straight line is bisected and another straight line is added, four times the rectangle by the whole with the added line together with the square on the half equals the square on the straight line made up of the half and the added line
+## Derived fact 1: If a straight line is bisected and another straight line is added, four times the rectangle by the whole with the added line together with the square on the half equals the square on the straight line made up of the half and the added line
 
 **Coordinate.** the Euclidean plane · Euclid Book II · Proposition 10: four times a rectangle plus the square on the half equals a square on the extended line · **Derived fact**
 
-*Source: euclid — Elements, Book II, Proposition 10*
+*Source: euclid: Elements, Book II, Proposition 10*
 
 *Built on: proposition 6: the rectangle by the whole with an added line plus the square on the half equals a square, for Euclid Book II on the Euclidean plane*
 

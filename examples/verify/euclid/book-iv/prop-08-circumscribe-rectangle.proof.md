@@ -2,13 +2,13 @@
 
 *About a given circle to circumscribe a rectangle.*
 
-**Source.** euclid — Elements, Book IV, Proposition 8
+**Source.** euclid: Elements, Book IV, Proposition 8
 
-## Derived fact 1 — About a given circle to circumscribe a rectangle
+## Derived fact 1: About a given circle to circumscribe a rectangle
 
 **Coordinate.** the Euclidean plane · Euclid Book IV · Proposition 8: about a circle to circumscribe a rectangle · **Derived fact**
 
-*Source: euclid — Elements, Book IV, Proposition 8*
+*Source: euclid: Elements, Book IV, Proposition 8*
 
 *Built on: proposition 5: about a circle to circumscribe a square, for Euclid Book IV on the Euclidean plane, proposition 7: in a circle to inscribe a rectangle, for Euclid Book IV on the Euclidean plane*
 

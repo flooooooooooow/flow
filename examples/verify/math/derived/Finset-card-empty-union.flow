@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  The empty set unioned on the left has cardinality zero.
-# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @from   graham-knuth-patashnik: *Concrete Mathematics*
 # @tier   derived
 
 # @means  card(empty ∪ s) <= card(s).

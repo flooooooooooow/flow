@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Squaring one gives one.
-# @from   peano — https://en.wikipedia.org/wiki/Square_(algebra)
+# @from   peano: https://en.wikipedia.org/wiki/Square_(algebra)
 # @tier   derived
 
 # @means  sq(1) = 1, i.e. succ(0) * succ(0) = succ(0).

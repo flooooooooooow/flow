@@ -2,13 +2,13 @@
 
 *Addition commutes: a + b = b + a.*
 
-**Source.** landau — *Foundations of Analysis*, Ch. 1
+**Source.** landau: *Foundations of Analysis*, Ch. 1
 
-## Derived fact 1 — You can swap the order of addition
+## Derived fact 1: You can swap the order of addition
 
 **Coordinate.** the natural numbers · addition · order does not matter · **Derived fact**
 
-*Source: landau — https://en.wikipedia.org/wiki/Foundations_of_analysis_(book)*
+*Source: landau: https://en.wikipedia.org/wiki/Foundations_of_analysis_(book)*
 
 *Built on: adding zero on the left does not change the number, adding zero on the right does not change the number, adding one more on the right bumps the sum by one*
 

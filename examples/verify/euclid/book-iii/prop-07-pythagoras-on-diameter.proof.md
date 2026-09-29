@@ -2,13 +2,13 @@
 
 *If on the diameter of a circle a point is taken and a perpendicular is erected, the square on the half-diameter exceeds the square on the line to the point by the square on the perpendicular.*
 
-**Source.** euclid — Elements, Book III, Proposition 7
+**Source.** euclid: Elements, Book III, Proposition 7
 
-## Derived fact 1 — If on the diameter of a circle a point is taken and a perpendicular is erected, the square on the half-diameter exceeds the square on the line to the point by the square on the perpendicular
+## Derived fact 1: If on the diameter of a circle a point is taken and a perpendicular is erected, the square on the half-diameter exceeds the square on the line to the point by the square on the perpendicular
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 7: the square on a half-diameter exceeds the square on a line to an interior point · **Derived fact**
 
-*Source: euclid — Elements, Book III, Proposition 7*
+*Source: euclid: Elements, Book III, Proposition 7*
 
 *Built on: proposition 47: square on hypotenuse equals sum of squares on legs, for Book I of the Elements in on the Euclidean plane*
 

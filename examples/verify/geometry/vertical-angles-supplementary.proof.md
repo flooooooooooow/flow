@@ -2,9 +2,9 @@
 
 *Adjacent angles on a straight line sum to two right angles.*
 
-**Source.** euclid — Elements, Book I, Proposition 13
+**Source.** euclid: Elements, Book I, Proposition 13
 
-## Derived fact 1 — angle alpha plus angle beta equals two right angles
+## Derived fact 1: angle alpha plus angle beta equals two right angles
 
 **Coordinate.** the Euclidean plane · intersecting lines · adjacent angles on a line sum to two right · **Derived fact**
 

@@ -2,13 +2,13 @@
 
 *If the sides of a triangle are cut proportionally, the join of the points of section is parallel to the remaining side.*
 
-**Source.** euclid — Elements, Book VI, Proposition 3
+**Source.** euclid: Elements, Book VI, Proposition 3
 
-## Derived fact 1 — If the sides of a triangle are cut proportionally, the join of the points of section is parallel to the remaining side
+## Derived fact 1: If the sides of a triangle are cut proportionally, the join of the points of section is parallel to the remaining side
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 3: a proportional cut implies a line parallel to the opposite side · **Derived fact**
 
-*Source: euclid — Elements, Book VI, Proposition 3*
+*Source: euclid: Elements, Book VI, Proposition 3*
 
 *Built on: proposition 2: a line parallel to a triangle side cuts the other sides proportionally, for Euclid Book VI on the Euclidean plane*
 

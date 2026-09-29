@@ -1,10 +1,10 @@
-# examples/evolution — the vision, running today
+# examples/evolution: the vision, running today
 
 Flow's founding idea ([VISION.md](../../VISION.md)) is that programs describe
-**systems that evolve through time** — state, dynamics, events, analysis, and
+**systems that evolve through time**: state, dynamics, events, analysis, and
 guarantees in one language. Prefer the declarative `flow` / `evolves as` /
 `when` / `always` / `solver` surface. Hand-rolled integrators remain only as
-pedagogical “how it lowers” companions.
+pedagogical "how it lowers" companions.
 
 Every console example is self-checking: it verifies a physical guarantee about
 its own evolution and exits nonzero if the guarantee fails.
@@ -45,7 +45,7 @@ for demos and docs.
 
 ## Quick tours
 
-### `pendulum_evolves.flow` — continuous dynamics
+### `pendulum_evolves.flow`: continuous dynamics
 
 ```
 ./flow run examples/evolution/pendulum_evolves.flow
@@ -59,19 +59,19 @@ for demos and docs.
     OK: energy decreased monotonically, pendulum settled at rest
 ```
 
-### `bouncing_ball_evolves.flow` — hybrid systems
+### `bouncing_ball_evolves.flow`: hybrid systems
 
 ```
 ./flow run examples/evolution/bouncing_ball_evolves.flow
 ```
 
-### `spring_mass_control.flow` — model, analyze, control
+### `spring_mass_control.flow`: model, analyze, control
 
 ```
 ./flow run examples/evolution/spring_mass_control.flow
 ```
 
-### `lorenz_gfx.flow` — live simulation
+### `lorenz_gfx.flow`: live simulation
 
 ```
 ./flow gfx examples/evolution/lorenz_gfx.flow

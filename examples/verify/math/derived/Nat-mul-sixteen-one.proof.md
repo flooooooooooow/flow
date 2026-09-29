@@ -2,9 +2,9 @@
 
 *Sixteen times one is sixteen.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 16 * 1 = 16
+## Derived fact 1: 16 * 1 = 16
 
 **Coordinate.** the natural numbers · multiplication · sixteen times one is sixteen · **Derived fact**
 

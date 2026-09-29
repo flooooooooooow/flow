@@ -2,9 +2,9 @@
 
 *One plus zero stays in an ideal.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.3
+**Source.** dummit-foote: *Abstract Algebra*, §7.3
 
-## Derived fact 1 — If 0 in I then 1 + 0 in I
+## Derived fact 1: If 0 in I then 1 + 0 in I
 
 **Coordinate.** Ideal · addition · one plus zero stays in the ideal · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that one plus zero stays in the ideal for addition on Ideal. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose 0 in I. |  |  |
 | ④ | We invoke the derived fact governing multiplication on Ideal: one times zero stays in the ideal, for multiplication on Ideal (instantiated for I). |  |  |
 | ⑤ | We invoke the derived fact governing membership on Ideal: ideals contain zero, for membership on Ideal (instantiated for I). |  |  |

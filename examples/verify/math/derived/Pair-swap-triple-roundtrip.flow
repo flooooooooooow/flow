@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Triple swap returns the original pair.
-# @from   church — https://en.wikipedia.org/wiki/Product_type
+# @from   church: https://en.wikipedia.org/wiki/Product_type
 # @tier   derived
 
 # @means  swap(swap(swap(pair(a, b)))) = pair(a, b).

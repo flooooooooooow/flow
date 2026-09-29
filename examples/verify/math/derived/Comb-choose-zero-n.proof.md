@@ -2,9 +2,9 @@
 
 *Choosing from zero items gives zero when k is positive.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — choose(0, k) = 0 for k > 0
+## Derived fact 1: choose(0, k) = 0 for k > 0
 
 **Coordinate.** Comb · choose · choosing from empty gives zero when k is positive · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that choosing from empty gives zero when k is positive for choose on Comb. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose k is zero. |  |  |
 | ④ | We invoke the definitional clause governing choose on Comb: choosing none gives one, for choose on Comb (instantiated for 0). |  |  |
 | ⑤ | From step 3 and step 4, this implies choose(0, k) equals 0 in this case. | ⑤ | $choose(0, k) = 0$ |

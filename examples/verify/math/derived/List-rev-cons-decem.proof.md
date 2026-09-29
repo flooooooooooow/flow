@@ -2,9 +2,9 @@
 
 *Reversing a decuple cons list.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Reverse_(list)
+**Source.** church: https://en.wikipedia.org/wiki/Reverse_(list)
 
-## Derived fact 1 — rev of ten cons ending in nil reverses element order
+## Derived fact 1: rev of ten cons ending in nil reverses element order
 
 **Coordinate.** List · reverse · reverse of decuple cons · **Derived fact**
 

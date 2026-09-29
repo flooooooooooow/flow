@@ -2,9 +2,9 @@
 
 *Real multiplication associates.*
 
-**Source.** landau — *Foundations of Analysis*
+**Source.** landau: *Foundations of Analysis*
 
-## Derived fact 1 — (x * y) * z = x * (y * z)
+## Derived fact 1: (x * y) * z = x * (y * z)
 
 **Coordinate.** the real numbers · multiplication · parentheses do not matter · **Derived fact**
 

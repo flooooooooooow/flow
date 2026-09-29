@@ -2,9 +2,9 @@
 
 *Reversing twice recovers the original list.*
 
-**Source.** church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
+**Source.** church: https://en.wikipedia.org/wiki/List_(abstract_data_type)
 
-## Derived fact 1 — rev(rev(xs)) = xs
+## Derived fact 1: rev(rev(xs)) = xs
 
 **Coordinate.** List · reverse · double reverse returns the list · **Derived fact**
 

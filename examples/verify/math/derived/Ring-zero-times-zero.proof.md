@@ -2,9 +2,9 @@
 
 *Zero times zero is zero in a ring.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.1
+**Source.** dummit-foote: *Abstract Algebra*, §7.1
 
-## Derived fact 1 — 0 * 0 = 0
+## Derived fact 1: 0 * 0 = 0
 
 **Coordinate.** Ring · multiplication · zero times zero is zero · **Derived fact**
 

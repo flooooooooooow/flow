@@ -2,9 +2,9 @@
 
 *Four plus zero is four for natural numbers.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 4 + 0 = 4
+## Derived fact 1: 4 + 0 = 4
 
 **Coordinate.** the natural numbers · addition · four plus zero is four · **Derived fact**
 

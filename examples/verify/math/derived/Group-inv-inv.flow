@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  The inverse of an inverse returns the original element.
-# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @from   dummit-foote: *Abstract Algebra*, §1.1
 # @tier   derived
 
 # @means  inv(inv(g)) = g.

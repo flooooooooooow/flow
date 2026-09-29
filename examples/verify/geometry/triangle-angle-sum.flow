@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  The interior angles of a triangle sum to two right angles.
-# @from   euclid — Elements, Book I, Proposition 32
+# @from   euclid: Elements, Book I, Proposition 32
 # @tier   derived
 # @needs  «Geometry» «parallel lines» «alternate angles are equal»
 # @diagram triangle-angle-sum

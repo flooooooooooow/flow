@@ -2,13 +2,13 @@
 
 *If a first magnitude is greater than a third, the second is greater than the fourth when the four are proportional.*
 
-**Source.** euclid — Elements, Book V, Proposition 8
+**Source.** euclid: Elements, Book V, Proposition 8
 
-## Derived fact 1 — If a first magnitude is greater than a third, the second is greater than the fourth when the four are proportional
+## Derived fact 1: If a first magnitude is greater than a third, the second is greater than the fourth when the four are proportional
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 8: if the first exceeds the third then the second exceeds the fourth · **Derived fact**
 
-*Source: euclid — Elements, Book V, Proposition 8*
+*Source: euclid: Elements, Book V, Proposition 8*
 
 *Built on: proposition 7: proportional magnitudes satisfy alternando, for Euclid Book V on the Euclidean plane*
 

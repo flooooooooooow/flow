@@ -4,7 +4,7 @@
 
 **Source.** Monoid identity left
 
-## Derived fact 1 — The monoid identity acts on the left
+## Derived fact 1: The monoid identity acts on the left
 
 **Coordinate.** Monoid · identity · left · **Derived fact**
 

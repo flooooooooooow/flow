@@ -2,13 +2,13 @@
 
 *n + 0 = n, derived by induction.*
 
-**Source.** peano/induction — Gries & Schneider, Ch. 3
+**Source.** peano/induction: Gries & Schneider, Ch. 3
 
-## Derived fact 1 — Adding zero on the right gives the same number
+## Derived fact 1: Adding zero on the right gives the same number
 
 **Coordinate.** the natural numbers · addition · zero is the right identity · **Derived fact**
 
-*Source: peano/induction — https://en.wikipedia.org/wiki/Mathematical_induction*
+*Source: peano/induction: https://en.wikipedia.org/wiki/Mathematical_induction*
 
 *Built on: adding zero on the left does not change the number, adding one more on the right bumps the sum by one*
 

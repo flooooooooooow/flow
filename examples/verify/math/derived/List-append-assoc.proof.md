@@ -2,13 +2,13 @@
 
 *List append associates.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Associative_property
+**Source.** church: https://en.wikipedia.org/wiki/Associative_property
 
-## Derived fact 1 — (xs ++ ys) ++ zs = xs ++ (ys ++ zs)
+## Derived fact 1: (xs ++ ys) ++ zs = xs ++ (ys ++ zs)
 
 **Coordinate.** List · append · parentheses do not matter · **Derived fact**
 
-*Source: church/induction — standard list induction*
+*Source: church/induction: standard list induction*
 
 *Built on: empty is the left identity, for append on List, singleton prepends the head, for append on List*
 

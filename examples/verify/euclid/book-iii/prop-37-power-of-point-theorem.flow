@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-iii
 # @means  If a point is taken outside a circle and from it two straight lines fall on the circle, one a tangent and the other a secant, the rectangle on the whole secant and the part outside equals the square on the tangent.
-# @from   euclid — Elements, Book III, Proposition 37
+# @from   euclid: Elements, Book III, Proposition 37
 # @tier   derived
 # @needs  «Geometry» «Euclid Book III» «Proposition 8: the rectangle on a secant and its exterior segment equals the square on the tangent», «Geometry» «Euclid Book III» «Proposition 9: if the rectangle equals the square then the line is a tangent»
 

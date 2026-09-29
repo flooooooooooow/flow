@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-ii
 # @means  If a straight line is bisected and a straight line is added in a straight line, the rectangle by the whole with the added line and the added line together with the square on the half equals the square on the line made of the half and the added line.
-# @from   euclid — Elements, Book II, Proposition 6
+# @from   euclid: Elements, Book II, Proposition 6
 # @tier   derived
 # @needs  «Geometry» «Euclid Book II» «Proposition 4: the square on the whole equals the squares on the parts plus twice their rectangle»
 

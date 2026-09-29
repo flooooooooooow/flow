@@ -2,13 +2,13 @@
 
 *In a circle the angle in a greater segment is less than a right angle, and in a less segment greater.*
 
-**Source.** euclid — Elements, Book III, Proposition 31
+**Source.** euclid: Elements, Book III, Proposition 31
 
-## Derived fact 1 — In a circle the angle in a greater segment is less than a right angle, and in a less segment greater
+## Derived fact 1: In a circle the angle in a greater segment is less than a right angle, and in a less segment greater
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 31: the angle in a greater segment is less than a right angle · **Derived fact**
 
-*Source: euclid — Elements, Book III, Proposition 31*
+*Source: euclid: Elements, Book III, Proposition 31*
 
 *Built on: proposition 20: the central angle is double the inscribed angle on the same arc, for Euclid Book III on the Euclidean plane, proposition 11: erect a perpendicular at a point on a line, for Book I of the Elements in on the Euclidean plane*
 

@@ -1,10 +1,10 @@
 # @module examples.verify.math.derived
 # @means  Negating twice returns the original boolean.
-# @from   boole — https://en.wikipedia.org/wiki/Involution_(mathematics)
+# @from   boole: https://en.wikipedia.org/wiki/Involution_(mathematics)
 # @tier   derived
 
 # @means  Double negation is the identity: ¬¬a = a.
-# @from   boole — https://en.wikipedia.org/wiki/Negation
+# @from   boole: https://en.wikipedia.org/wiki/Negation
 # @tier   derived
 
 theorem «Bool» «negation» «double negation returns the value» (a: bool) {

@@ -2,9 +2,9 @@
 
 *Ring multiplication distributes over addition on the right.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.1
+**Source.** dummit-foote: *Abstract Algebra*, §7.1
 
-## Derived fact 1 — (b + c) * a = b * a + c * a
+## Derived fact 1: (b + c) * a = b * a + c * a
 
 **Coordinate.** Ring · multiplication · right distribution over addition holds · **Derived fact**
 

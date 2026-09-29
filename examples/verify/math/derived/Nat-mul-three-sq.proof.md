@@ -2,9 +2,9 @@
 
 *Three times three equals its square.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Square_(algebra)
+**Source.** peano: https://en.wikipedia.org/wiki/Square_(algebra)
 
-## Derived fact 1 — 3 * 3 = sq(3)
+## Derived fact 1: 3 * 3 = sq(3)
 
 **Coordinate.** the natural numbers · multiplication · three times three is the square of three · **Derived fact**
 

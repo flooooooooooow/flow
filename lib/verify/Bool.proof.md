@@ -2,13 +2,13 @@
 
 *Boolean algebra lemmas for disjunction and conjunction.*
 
-**Source.** boole — https://en.wikipedia.org/wiki/Boolean_algebra
+**Source.** boole: https://en.wikipedia.org/wiki/Boolean_algebra
 
-## Derived fact 1 — "A or B" gives the same result as "B or A"
+## Derived fact 1: "A or B" gives the same result as "B or A"
 
 **Coordinate.** boolean truth values · disjunction · order does not matter · **Derived fact**
 
-*Source: boole — https://en.wikipedia.org/wiki/Boolean_algebra*
+*Source: boole: https://en.wikipedia.org/wiki/Boolean_algebra*
 
 > **Goal.** "A or B" gives the same result as "B or A"
 >
@@ -17,7 +17,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that order does not matter for disjunction on boolean truth values. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose a holds. |  |  |
 | ④ | From step 3, this implies the disjunction of a and b equals the disjunction of b and a in this case. | ④ | $a \lor b = b \lor a$ |
 | ⑤ | Case 2 (see step 2): suppose b holds. |  |  |
@@ -38,11 +38,11 @@
 
 `boolean truth values · disjunction · order does not matter`
 
-## Derived fact 2 — "A and B" gives the same result as "B and A"
+## Derived fact 2: "A and B" gives the same result as "B and A"
 
 **Coordinate.** boolean truth values · conjunction · order does not matter · **Derived fact**
 
-*Source: boole — https://en.wikipedia.org/wiki/Boolean_algebra*
+*Source: boole: https://en.wikipedia.org/wiki/Boolean_algebra*
 
 *Built on: order does not matter for "or"*
 
@@ -53,7 +53,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that order does not matter for conjunction on boolean truth values. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose a holds. |  |  |
 | ④ | Case 2 (see step 2): suppose b holds. |  |  |
 | ⑤ | From step 4, this implies the conjunction of a and b equals the conjunction of b and a in this case. | ⑤ | $a \land b = b \land a$ |
@@ -80,11 +80,11 @@
 
 `boolean truth values · conjunction · order does not matter`
 
-## Derived fact 3 — Or with false on the right leaves the left value unchanged
+## Derived fact 3: Or with false on the right leaves the left value unchanged
 
 **Coordinate.** boolean truth values · disjunction · false is the right identity · **Derived fact**
 
-*Source: boole — https://en.wikipedia.org/wiki/Identity_element*
+*Source: boole: https://en.wikipedia.org/wiki/Identity_element*
 
 > **Goal.** Or with false on the right leaves the left value unchanged
 >
@@ -93,7 +93,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that false is the right identity for disjunction on boolean truth values. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose a holds. |  |  |
 | ④ | From step 3, this implies the disjunction of a and false equals a in this case. | ④ | $a \lor \mathsf{false} = a$ |
 | ⑤ | Case 2 (see step 2): neither disjunct holds. |  |  |
@@ -110,11 +110,11 @@
 
 `boolean truth values · disjunction · false is the right identity`
 
-## Derived fact 4 — And with true on the right leaves the left value unchanged
+## Derived fact 4: And with true on the right leaves the left value unchanged
 
 **Coordinate.** boolean truth values · conjunction · true is the right identity · **Derived fact**
 
-*Source: boole — https://en.wikipedia.org/wiki/Identity_element*
+*Source: boole: https://en.wikipedia.org/wiki/Identity_element*
 
 > **Goal.** And with true on the right leaves the left value unchanged
 >
@@ -123,7 +123,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that true is the right identity for conjunction on boolean truth values. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose a holds. |  |  |
 | ④ | From step 3, this implies the conjunction of a and true equals a in this case. | ④ | $a \land \mathsf{true} = a$ |
 | ⑤ | Case 2 (see step 2): neither disjunct holds. |  |  |

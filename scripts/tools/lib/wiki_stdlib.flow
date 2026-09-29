@@ -10,7 +10,7 @@
 import .text { ft_out, ft_outln, ft_len, ft_eq, ft_at, ft_slice, ft_from, ft_itoa, ft_starts, ft_contains, ft_replace, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
 import .unicode { uc_decode, uc_len, uc_is_space, uc_is_word, uc_strip }
 import .proc { pr_quote, pr_mkdir_p }
-import .wiki_util { wb_new, wb_add, wb_line, wb_write, wu_read_text, wu_splitlines, wu_lstrip_set, wu_sort, wu_lines_of, wu_today, wu_dash, wu_ellipsis, WBuf }
+import .wiki_util { wb_new, wb_add, wb_line, wb_write, wu_read_text, wu_splitlines, wu_lstrip_set, wu_sort, wu_lines_of, wu_today, wu_ellipsis, WBuf }
 
 extern {
     function malloc(size: i64) -> ptr<void>
@@ -372,7 +372,8 @@ export function wsd_generate(root: string) -> i32 {
         i = i + 1
     }
     wu_sort(files, true)
-    let dash: string = wu_dash()
+    # An undocumented function gets a plain hyphen.
+    let dash: string = "-"
     let b: ptr<WBuf> = wb_new()
     wb_line(b, "# Standard Library API (generated)")
     wb_line(b, "")

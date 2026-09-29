@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  A group homomorphism sends zero plus zero to zero.
-# @from   dummit-foote — *Abstract Algebra*, §3.1
+# @from   dummit-foote: *Abstract Algebra*, §3.1
 # @tier   derived
 
 # @means  f(0 + 0) = 0.

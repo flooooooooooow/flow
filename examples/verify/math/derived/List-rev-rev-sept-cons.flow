@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Double reverse restores a septuple cons list.
-# @from   church — https://en.wikipedia.org/wiki/Reverse_(list)
+# @from   church: https://en.wikipedia.org/wiki/Reverse_(list)
 # @tier   derived
 
 # @means  rev(rev(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, xs)))))))) = cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, xs))))))).

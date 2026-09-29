@@ -67,6 +67,6 @@ The script does not open an audio device; examples are rendered twice and the ou
 
 ## Boundaries of the guarantee
 
-The library controls digital signal level, not hardware volume. It cannot protect gain inserted downstream, a wrongly selected output device, or listening fatigue from a sustained signal that remains under the peak ceiling.
+The library controls digital signal level. It does not control hardware volume. It cannot protect gain inserted downstream, a wrongly selected output device, or listening fatigue from a sustained signal that remains under the peak ceiling.
 
 See `lib/stdlib/audio/safety.flow`, `lib/stdlib/audio/verify.flow`, `tests/stdlib/audio/test_safety.flow`, [audio basics](../tutorials/audio-basics.md), and [RT safety](rt-safety.md).

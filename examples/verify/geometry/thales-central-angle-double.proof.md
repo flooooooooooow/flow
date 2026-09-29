@@ -2,9 +2,9 @@
 
 *The central angle on a diameter is two right angles.*
 
-**Source.** euclid — Elements, Book III, Proposition 31
+**Source.** euclid: Elements, Book III, Proposition 31
 
-## Derived fact 1 — angle AOB equals two right angles for diameter AB
+## Derived fact 1: angle AOB equals two right angles for diameter AB
 
 **Coordinate.** the Euclidean plane · circle · central angle on diameter is two right · **Derived fact**
 

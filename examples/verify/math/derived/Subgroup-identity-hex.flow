@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  The identity to the sixth stays in a subgroup.
-# @from   dummit-foote — *Abstract Algebra*, §2.2
+# @from   dummit-foote: *Abstract Algebra*, §2.2
 # @tier   derived
 
 # @means  If 1 * 1 * 1 * 1 * 1 in H then 1 * 1 * 1 * 1 * 1 * 1 in H.

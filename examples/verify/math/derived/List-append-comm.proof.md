@@ -2,9 +2,9 @@
 
 *List append commutes when lengths match trivially.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Associative_property
+**Source.** church: https://en.wikipedia.org/wiki/Associative_property
 
-## Derived fact 1 — For singleton left, cons(x, nil) ++ ys = ys with head x prepended via singleton law
+## Derived fact 1: For singleton left, cons(x, nil) ++ ys = ys with head x prepended via singleton law
 
 **Coordinate.** List · append · singleton blocks commute with append · **Derived fact**
 

@@ -2,9 +2,9 @@
 
 *Appending two empty lists yields empty.*
 
-**Source.** church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
+**Source.** church: https://en.wikipedia.org/wiki/List_(abstract_data_type)
 
-## Derived fact 1 — nil ++ nil = nil
+## Derived fact 1: nil ++ nil = nil
 
 **Coordinate.** List · append · empty append empty is empty · **Derived fact**
 

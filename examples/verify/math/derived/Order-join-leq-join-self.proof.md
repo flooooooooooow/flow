@@ -2,9 +2,9 @@
 
 *Join of join with self is idempotent.*
 
-**Source.** davey-priestley — *Introduction to Lattices and Order*
+**Source.** davey-priestley: *Introduction to Lattices and Order*
 
-## Derived fact 1 — join(join(a, b), join(a, b)) = join(a, b)
+## Derived fact 1: join(join(a, b), join(a, b)) = join(a, b)
 
 **Coordinate.** Order · join · join of join with self is idempotent · **Derived fact**
 

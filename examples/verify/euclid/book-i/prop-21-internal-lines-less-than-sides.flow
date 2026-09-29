@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-i
 # @means  If two lines are drawn from the ends of a side to an interior point, their sum is less than the sum of the other two sides.
-# @from   euclid — Elements, Book I, Proposition 21
+# @from   euclid: Elements, Book I, Proposition 21
 # @tier   derived
 # @needs  «Geometry» «Euclid Book I» «Proposition 20: the sum of two sides exceeds the third»
 

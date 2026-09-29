@@ -2,9 +2,9 @@
 
 *Meet of meet and join is idempotent on the left.*
 
-**Source.** davey-priestley — *Introduction to Lattices and Order*
+**Source.** davey-priestley: *Introduction to Lattices and Order*
 
-## Derived fact 1 — meet(meet(a, b), join(a, b)) = meet(a, b)
+## Derived fact 1: meet(meet(a, b), join(a, b)) = meet(a, b)
 
 **Coordinate.** Order · lattice · meet idempotent with join · **Derived fact**
 

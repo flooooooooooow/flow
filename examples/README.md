@@ -48,7 +48,7 @@ examples/
 
 > **Note:** `verify/` is a large proof / theorem corpus written ahead of the
 > verification checker. Prefer the **Canonical entrypoints** tables below for
-> “show me Flow” demos — not random files under `verify/`.
+> "show me Flow" demos over random files under `verify/`.
 
 ## Canonical entrypoints (Tier-0)
 
@@ -111,7 +111,7 @@ One tourist-facing entrypoint per domain. Prefer these when demoing or linking f
 | Interop / FFI | `examples/interop/python_embed.flow` | `./flow run examples/interop/python_embed.flow` |
 | Audio / RT | `examples/audio/lattice_allpass_phase_engine.flow` | `./flow run examples/audio/lattice_allpass_phase_engine.flow` |
 | Generics / traits | `examples/generics_traits/generics_demo.flow` | `./flow run examples/generics_traits/generics_demo.flow` |
-| Verify (repair) | `examples/verify/circuits/full_adder.flow` | proof corpus — see `full_adder.proof.md` |
+| Verify (repair) | `examples/verify/circuits/full_adder.flow` | proof corpus, see `full_adder.proof.md` |
 | HTTP slice | `apps/flow-http/http.flow` | `./flow run apps/flow-http/http.flow` |
 | Concurrency | `examples/concurrency/channels.flow` | `./flow run examples/concurrency/channels.flow` |
 
@@ -183,11 +183,11 @@ per-example table: [examples/threed/README.md](threed/README.md)):
 Registry package demos (`./flow install` then `./flow run` or `./flow run-native`):
 - Pure Flow: `json_demo`, `toml_demo`, `serde_demo`, `strings_demo`, `cli_demo`, `log_demo`, `testing_demo`, `collectionsx_demo`
 - Native: `http_get`, `sqlite_demo`, `sqlkit_demo`, `compress_demo`, `dns_demo`, `image_demo`, `ffi_demo`
-- End-to-end: `app_cache/` — cli + log + json + sqlite + sqlkit (offline; `USE_HTTP=0`)
+- End-to-end: `app_cache/`: cli + log + json + sqlite + sqlkit (offline; `USE_HTTP=0`)
 
 ### Compilers (`compilers/` + `compiler/`)
-Self-hosting bootstrap (not a full compiler yet — see [compiler/README.md](../compiler/README.md)):
-- **`compiler/` (`flowc`)** — Flow-in-Flow front-end: token + lexer + AST + subset parser (no C emitter) — `./flow run compiler/src/main.flow`
+Self-hosting bootstrap (not a full compiler yet, see [compiler/README.md](../compiler/README.md)):
+- **`compiler/` (`flowc`)**: Flow-in-Flow front-end with token + lexer + AST + subset parser (no C emitter). Run `./flow run compiler/src/main.flow`
 - `compilers/calculator.flow` - Recursive-descent expression parser
 - `compilers/flow_identifier_lexer.flow` / `flow_lexer.flow` - historical lexer seeds
 
@@ -221,14 +221,14 @@ See the walkthrough with measured timings: [docs/tutorials/ml-on-macbook.md](../
 - `tcp_echo.flow` - TCP listener shape demo (full echo loop planned)
 
 ### Evolution (`evolution/`)
-The flagship suite for Flow's founding vision — systems that evolve through time
+The flagship suite for Flow's founding vision: systems that evolve through time
 (see [evolution/README.md](evolution/README.md)). Prefer declarative files:
-- `pendulum_evolves.flow` / `pendulum_rk4.flow` / `pendulum_always.flow` — `flow` + `evolves`
-- `bouncing_ball_evolves.flow` — `when … reaches` hybrid bounce
-- `robot_connect.flow` — `connect` composition
-- `spring_mass_control.flow` — Model → analyze → control (`dsys` DSL)
-- `lorenz_gfx.flow` — `flow Lorenz` live in a window (`./flow gfx`)
-- `pendulum.flow` / `bouncing_ball.flow` — pedagogical hand integrators only
+- `pendulum_evolves.flow` / `pendulum_rk4.flow` / `pendulum_always.flow`: `flow` + `evolves`
+- `bouncing_ball_evolves.flow`: `when … reaches` hybrid bounce
+- `robot_connect.flow`: `connect` composition
+- `spring_mass_control.flow`: Model → analyze → control (`dsys` DSL)
+- `lorenz_gfx.flow`: `flow Lorenz` live in a window (`./flow gfx`)
+- `pendulum.flow` / `bouncing_ball.flow`: pedagogical hand integrators only
 
 ### Circuits (`circuits/`)
 Twelve circuit-simulation programs plus a SPICE-subset netlist front end (see
@@ -282,8 +282,8 @@ Gallery: [docs/demos/neuro.md](../docs/demos/neuro.md); regenerate with
 `python3 scripts/record_demos.py --group neuro`.
 
 ### Evolutionary biology (`evoleco/`)
-Fifteen live graphics simulations for evolutionary biologists — population
-genetics, evolutionary games, and ecology companions — the chemistry/biology
+Fifteen live graphics simulations for evolutionary biologists (population
+genetics, evolutionary games, and ecology companions), the chemistry/biology
 domain of [the Example Atlas](../docs/project/example-atlas.md) (see
 [evoleco/README.md](evoleco/README.md)). Each one gates a closed-form or
 textbook measurement before the window opens.
@@ -334,7 +334,7 @@ declarative `dsys` surface syntax (see [dynamics/README.md](dynamics/README.md))
 - `lorenz_attractor.flow` - Chaos detection via Lyapunov separation proxy
 
 ### Concurrency (`concurrency/`)
-Beat-Go track — see `docs/language/concurrency-vs-go.md`:
+Beat-Go track, see `docs/language/concurrency-vs-go.md`:
 - `channels.flow` - Real buffered channel send/recv/close
 - `select.flow` - Two-channel `select2` / `select2_try`
 - `parallel_for.flow` - Data-parallel loop (OpenMP when available)
@@ -401,7 +401,7 @@ Generic programming:
 
 ### Verify (`verify/`)
 Proof corpus for `flow-verify` (theorems, circuits, derived claims). Not the
-primary showcase — see [verify/circuits/full_adder.proof.md](verify/circuits/full_adder.proof.md).
+primary showcase. See [verify/circuits/full_adder.proof.md](verify/circuits/full_adder.proof.md).
 
 
 ### WASM (`wasm/`)

@@ -64,7 +64,7 @@ flow Decay {
 }
 ```
 
-The right-hand side is a derivative, not the next value. The compiler generates state storage, a derivative function, and `Decay_step`.
+The right-hand side is a derivative rather than the next value. The compiler generates state storage, a derivative function, and `Decay_step`.
 
 ## 7.4 Coupled state: a pendulum
 

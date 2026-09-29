@@ -2,9 +2,9 @@
 
 *The 5-12-13 triangle satisfies the Pythagorean relation.*
 
-**Source.** euclid — Elements, Book I, Proposition 47
+**Source.** euclid: Elements, Book I, Proposition 47
 
-## Derived fact 1 — 13 squared equals 5 squared plus 12 squared
+## Derived fact 1: 13 squared equals 5 squared plus 12 squared
 
 **Coordinate.** the Euclidean plane · right triangle · five twelve thirteen satisfies Pythagoras · **Derived fact**
 

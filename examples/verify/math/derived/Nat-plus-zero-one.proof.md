@@ -2,9 +2,9 @@
 
 *Zero plus one is one for natural numbers.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 0 + 1 = 1
+## Derived fact 1: 0 + 1 = 1
 
 **Coordinate.** the natural numbers · addition · zero plus one is one · **Derived fact**
 

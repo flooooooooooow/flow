@@ -2,9 +2,9 @@
 
 *Reverse preserves length of a nonuple cons list.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len(rev(nonuple cons ending in nil)) = 9
+## Derived fact 1: len(rev(nonuple cons ending in nil)) = 9
 
 **Coordinate.** List · length · reverse of nonuple cons has length nine · **Derived fact**
 

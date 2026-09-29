@@ -2,13 +2,13 @@
 
 *An inscribed angle equals half the central angle subtending the same arc.*
 
-**Source.** euclid — Elements, Book III, Proposition 20
+**Source.** euclid: Elements, Book III, Proposition 20
 
-## Derived fact 1 — An inscribed angle equals half the central angle subtending the same arc
+## Derived fact 1: An inscribed angle equals half the central angle subtending the same arc
 
 **Coordinate.** the Euclidean plane · circle · inscribed angle is half the central angle · **Derived fact**
 
-*Source: euclid — Elements, Book III, Proposition 20*
+*Source: euclid: Elements, Book III, Proposition 20*
 
 *Built on: all radii from the centre to the circumference are equal*
 

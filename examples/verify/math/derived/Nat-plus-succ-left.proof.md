@@ -2,13 +2,13 @@
 
 *Adding a successor on the left steps the sum by one.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — succ(a) + b = succ(a + b)
+## Derived fact 1: succ(a) + b = succ(a + b)
 
 **Coordinate.** the natural numbers · addition · successor on the left steps the sum · **Derived fact**
 
-*Source: peano/induction — Gries & Schneider, Ch. 3*
+*Source: peano/induction: Gries & Schneider, Ch. 3*
 
 *Built on: adding zero on the left does not change the number, adding zero on the right does not change the number, you can swap the order when you add, adding one more on the right bumps the sum by one*
 

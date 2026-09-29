@@ -2,13 +2,13 @@
 
 *In equal circles circumferences subtending equal angles at the centers or circumferences are equal.*
 
-**Source.** euclid — Elements, Book III, Proposition 27
+**Source.** euclid: Elements, Book III, Proposition 27
 
-## Derived fact 1 — In equal circles circumferences subtending equal angles at the centers or circumferences are equal
+## Derived fact 1: In equal circles circumferences subtending equal angles at the centers or circumferences are equal
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 27: in equal circles equal arcs subtend equal angles · **Derived fact**
 
-*Source: euclid — Elements, Book III, Proposition 27*
+*Source: euclid: Elements, Book III, Proposition 27*
 
 *Built on: proposition 26: in equal circles equal angles stand on equal arcs, for Euclid Book III on the Euclidean plane*
 

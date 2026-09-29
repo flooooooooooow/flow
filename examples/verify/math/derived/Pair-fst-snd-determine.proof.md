@@ -2,9 +2,9 @@
 
 *First and second projections determine the pair.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Product_type
+**Source.** church: https://en.wikipedia.org/wiki/Product_type
 
-## Derived fact 1 — fst(pair(a, b)) = a and snd(pair(a, b)) = b
+## Derived fact 1: fst(pair(a, b)) = a and snd(pair(a, b)) = b
 
 **Coordinate.** Pair · pairing · projections determine components · **Derived fact**
 

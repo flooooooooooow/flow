@@ -2,9 +2,9 @@
 
 *Each interior angle of a triangle is less than two right angles.*
 
-**Source.** euclid — Elements, Book I, Proposition 17
+**Source.** euclid: Elements, Book I, Proposition 17
 
-## Derived fact 1 — angle A is less than two right angles
+## Derived fact 1: angle A is less than two right angles
 
 **Coordinate.** the Euclidean plane · triangle · each interior angle is less than two right · **Derived fact**
 

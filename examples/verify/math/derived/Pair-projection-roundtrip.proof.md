@@ -2,9 +2,9 @@
 
 *Projecting both components recovers the original pair.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Product_type
+**Source.** church: https://en.wikipedia.org/wiki/Product_type
 
-## Derived fact 1 — pair(fst(p), snd(p)) = p for p = pair(a, b)
+## Derived fact 1: pair(fst(p), snd(p)) = p for p = pair(a, b)
 
 **Coordinate.** Pair · pairing · projections recover the pair · **Derived fact**
 

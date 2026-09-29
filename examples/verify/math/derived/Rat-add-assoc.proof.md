@@ -2,9 +2,9 @@
 
 *Rational addition associates.*
 
-**Source.** landau — *Foundations of Analysis*
+**Source.** landau: *Foundations of Analysis*
 
-## Derived fact 1 — (p + q) + r = p + (q + r)
+## Derived fact 1: (p + q) + r = p + (q + r)
 
 **Coordinate.** Rat · addition · parentheses do not matter · **Derived fact**
 

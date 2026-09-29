@@ -2,9 +2,9 @@
 
 *Choosing twenty from a successor set.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — choose(succ(n), 20) = choose(n, 19) + choose(n, 20)
+## Derived fact 1: choose(succ(n), 20) = choose(n, 19) + choose(n, 20)
 
 **Coordinate.** Comb · choose · choosing twenty from a successor derived · **Derived fact**
 

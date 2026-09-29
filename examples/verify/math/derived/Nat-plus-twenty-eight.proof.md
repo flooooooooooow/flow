@@ -2,9 +2,9 @@
 
 *Twenty-seven plus one is twenty-eight.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 27 + 1 = 28
+## Derived fact 1: 27 + 1 = 28
 
 **Coordinate.** the natural numbers · addition · twenty seven plus one is twenty eight · **Derived fact**
 

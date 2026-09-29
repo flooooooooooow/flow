@@ -277,7 +277,7 @@ the loss gate can be an assertion rather than a hope.
 
 ## Measured limits
 
-Numbers below are measured, not estimated.
+Numbers below are measured. None are estimates.
 
 | | |
 |---|---|

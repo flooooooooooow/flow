@@ -258,7 +258,7 @@ common `r <= 0.5` bound.
 FLOW_HOST=python ./flow run examples/evolution/heat_diffusion.flow
 ```
 
-Fields are numerical grids, not symbolic PDE proofs. Model validation must
+Fields are numerical grids rather than symbolic PDE proofs. Model validation must
 still cover grid resolution, boundary consistency, truncation error,
 stability, and convergence.
 

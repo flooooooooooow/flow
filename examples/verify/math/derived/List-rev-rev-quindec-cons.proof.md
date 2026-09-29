@@ -2,9 +2,9 @@
 
 *Double reverse restores a quindecuple cons list.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Reverse_(list)
+**Source.** church: https://en.wikipedia.org/wiki/Reverse_(list)
 
-## Derived fact 1 — rev(rev(quindecuple cons with tail xs)) = quindecuple cons with tail xs
+## Derived fact 1: rev(rev(quindecuple cons with tail xs)) = quindecuple cons with tail xs
 
 **Coordinate.** List · reverse · double reverse of quindecuple cons · **Derived fact**
 

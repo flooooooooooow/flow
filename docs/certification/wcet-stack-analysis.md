@@ -86,7 +86,7 @@ helper                                          3 inst  helper
 
 ## Certification notes
 
-These are static estimates, not measured values. For certification:
+These are static estimates rather than measured values. For certification:
 
 1. Run under `--profile safety` to ensure no recursion and bounded loops.
 2. Use `--budget` to enforce timing and stack limits in CI.

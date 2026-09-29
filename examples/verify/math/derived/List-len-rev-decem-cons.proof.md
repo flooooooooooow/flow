@@ -2,9 +2,9 @@
 
 *Reverse preserves length of a decuple cons list.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len(rev(decuple cons ending in nil)) = 10
+## Derived fact 1: len(rev(decuple cons ending in nil)) = 10
 
 **Coordinate.** List · length · reverse of decuple cons has length ten · **Derived fact**
 

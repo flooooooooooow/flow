@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Proportional magnitudes satisfy componendo.
-# @from   euclid — Elements, Book V, Proposition 11
+# @from   euclid: Elements, Book V, Proposition 11
 # @tier   derived
 
 # @means  a:b = c:d implies (a+b):b = (c+d):d.

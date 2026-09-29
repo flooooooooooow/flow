@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Meet below join is antisymmetric on equal bounds.
-# @from   davey-priestley — *Introduction to Lattices and Order*
+# @from   davey-priestley: *Introduction to Lattices and Order*
 # @tier   derived
 
 # @means  If meet(a, b) <= c and c <= join(a, b) then meet(a, b) <= join(a, b).

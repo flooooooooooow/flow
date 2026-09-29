@@ -2,9 +2,9 @@
 
 *Thales inscribed and central angles chain on a diameter.*
 
-**Source.** euclid — Elements, Book III, Proposition 31
+**Source.** euclid: Elements, Book III, Proposition 31
 
-## Derived fact 1 — inscribed equals half central on diameter
+## Derived fact 1: inscribed equals half central on diameter
 
 **Coordinate.** the Euclidean plane · circle · inscribed central diameter chain · **Derived fact**
 

@@ -2,9 +2,9 @@
 
 *Four vertical angles cycle through supplementary pairs.*
 
-**Source.** euclid — Elements, Book I, Proposition 15
+**Source.** euclid: Elements, Book I, Proposition 15
 
-## Derived fact 1 — angle alpha plus angle alpha prime equals two right angles
+## Derived fact 1: angle alpha plus angle alpha prime equals two right angles
 
 **Coordinate.** the Euclidean plane · intersecting lines · four vertical supplement cycle · **Derived fact**
 

@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-iv
 # @means  About a given circle to circumscribe a square.
-# @from   euclid — Elements, Book IV, Proposition 5
+# @from   euclid: Elements, Book IV, Proposition 5
 # @tier   derived
 # @needs  «Geometry» «Euclid Book IV» «Proposition 4: in a circle to inscribe a square», «Geometry» «Euclid Book III» «Proposition 35: tangents drawn from a point to a circle are equal»
 

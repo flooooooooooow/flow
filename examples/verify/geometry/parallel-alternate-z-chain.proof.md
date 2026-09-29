@@ -2,9 +2,9 @@
 
 *Alternate and Z-angle equalities chain along a transversal.*
 
-**Source.** euclid — Elements, Book I, Proposition 29
+**Source.** euclid: Elements, Book I, Proposition 29
 
-## Derived fact 1 — alternate alpha equals z-angle beta
+## Derived fact 1: alternate alpha equals z-angle beta
 
 **Coordinate.** the Euclidean plane · parallel lines · alternate and z angles chain · **Derived fact**
 

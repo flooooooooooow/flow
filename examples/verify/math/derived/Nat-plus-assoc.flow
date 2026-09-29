@@ -1,10 +1,10 @@
 # @module examples.verify.math.derived
 # @means  Addition associates: parentheses on the left can move to the right.
-# @from   landau — *Foundations of Analysis*, Ch. 1
+# @from   landau: *Foundations of Analysis*, Ch. 1
 # @tier   derived
 
 # @means  (a + b) + c = a + (b + c).
-# @from   peano/induction — Gries & Schneider, Ch. 3
+# @from   peano/induction: Gries & Schneider, Ch. 3
 # @tier   derived
 # @needs  «Nat» «addition» «zero is the left identity», «Nat» «addition» «successor on the left steps the sum»
 

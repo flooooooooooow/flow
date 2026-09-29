@@ -2,13 +2,13 @@
 
 *If a straight line is cut at random, four times the rectangle by the whole and one segment together with the square on the remaining segment equals the square on the whole and that segment as on one straight line.*
 
-**Source.** euclid — Elements, Book II, Proposition 8
+**Source.** euclid: Elements, Book II, Proposition 8
 
-## Derived fact 1 — If a straight line is cut at random, four times the rectangle by the whole and one segment together with the square on the remaining segment equals the square on the whole and that segment as on one straight line
+## Derived fact 1: If a straight line is cut at random, four times the rectangle by the whole and one segment together with the square on the remaining segment equals the square on the whole and that segment as on one straight line
 
 **Coordinate.** the Euclidean plane · Euclid Book II · Proposition 8: four times a rectangle plus the square on the remainder equals a square on one line · **Derived fact**
 
-*Source: euclid — Elements, Book II, Proposition 8*
+*Source: euclid: Elements, Book II, Proposition 8*
 
 *Built on: proposition 7: the square on the whole plus that on one segment equals twice a rectangle plus a square, for Euclid Book II on the Euclidean plane*
 

@@ -2,9 +2,9 @@
 
 *Eighteen plus zero maps to eighteen under a ring homomorphism.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.3
+**Source.** dummit-foote: *Abstract Algebra*, §7.3
 
-## Derived fact 1 — f(18 + 0) = 18
+## Derived fact 1: f(18 + 0) = 18
 
 **Coordinate.** RingHom · preservation · eighteen plus zero maps to eighteen · **Derived fact**
 

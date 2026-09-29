@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-vi
 # @means  Equiangular parallelograms in which the sides about the equal angles are reciprocally proportional are equal.
-# @from   euclid — Elements, Book VI, Proposition 15
+# @from   euclid: Elements, Book VI, Proposition 15
 # @tier   derived
 # @needs  «Geometry» «Euclid Book VI» «Proposition 14: equal equiangular parallelograms have reciprocally proportional sides»
 

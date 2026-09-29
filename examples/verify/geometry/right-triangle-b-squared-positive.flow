@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  The square on the second leg is positive.
-# @from   euclid — Elements, Book I, Proposition 47
+# @from   euclid: Elements, Book I, Proposition 47
 # @tier   derived
 
 # @means  b squared is greater than zero.

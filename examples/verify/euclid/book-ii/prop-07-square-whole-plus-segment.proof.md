@@ -2,13 +2,13 @@
 
 *If a straight line is cut at random, the square on the whole and that on one segment equal twice the rectangle by the whole and that segment together with the square on the remaining segment.*
 
-**Source.** euclid — Elements, Book II, Proposition 7
+**Source.** euclid: Elements, Book II, Proposition 7
 
-## Derived fact 1 — If a straight line is cut at random, the square on the whole and that on one segment equal twice the rectangle by the whole and that segment together with the square on the remaining segment
+## Derived fact 1: If a straight line is cut at random, the square on the whole and that on one segment equal twice the rectangle by the whole and that segment together with the square on the remaining segment
 
 **Coordinate.** the Euclidean plane · Euclid Book II · Proposition 7: the square on the whole plus that on one segment equals twice a rectangle plus a square · **Derived fact**
 
-*Source: euclid — Elements, Book II, Proposition 7*
+*Source: euclid: Elements, Book II, Proposition 7*
 
 *Built on: proposition 4: the square on the whole equals the squares on the parts plus twice their rectangle, for Euclid Book II on the Euclidean plane*
 

@@ -2,9 +2,9 @@
 
 *False is absorbing for conjunction on the right.*
 
-**Source.** boole — https://en.wikipedia.org/wiki/Boolean_algebra
+**Source.** boole: https://en.wikipedia.org/wiki/Boolean_algebra
 
-## Derived fact 1 — a and false = false
+## Derived fact 1: a and false = false
 
 **Coordinate.** boolean truth values · conjunction · false is absorbing on the right · **Derived fact**
 

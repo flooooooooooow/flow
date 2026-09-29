@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Nineteen plus zero is nineteen in an ideal witness.
-# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @from   dummit-foote: *Abstract Algebra*, §7.1
 # @tier   derived
 
 # @means  19 + 0 = 19 in an ideal.

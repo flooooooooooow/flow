@@ -2,13 +2,13 @@
 
 *To construct a triangle from three straight lines, each less than the sum of the other two.*
 
-**Source.** euclid — Elements, Book I, Proposition 22
+**Source.** euclid: Elements, Book I, Proposition 22
 
-## Derived fact 1 — To construct a triangle from three straight lines, each less than the sum of the other two
+## Derived fact 1: To construct a triangle from three straight lines, each less than the sum of the other two
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 22: construct a triangle from three lines · **Derived fact**
 
-*Source: euclid — Elements, Book I, Proposition 22*
+*Source: euclid: Elements, Book I, Proposition 22*
 
 *Built on: proposition 1: equilateral triangle on a segment, for Book I of the Elements in on the Euclidean plane, proposition 20: the sum of two sides exceeds the third, for Book I of the Elements in on the Euclidean plane*
 

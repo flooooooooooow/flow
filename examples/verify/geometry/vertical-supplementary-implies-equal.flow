@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  Supplementary adjacent angles with vertical pairs yield equal vertical angles.
-# @from   euclid — Elements, Book I, Proposition 15
+# @from   euclid: Elements, Book I, Proposition 15
 # @tier   derived
 
 # @means  angle alpha equals angle alpha prime.

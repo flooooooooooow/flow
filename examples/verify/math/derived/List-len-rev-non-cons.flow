@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Reverse preserves length of a nonuple cons list.
-# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
+# @from   church: https://en.wikipedia.org/wiki/Length_of_a_list
 # @tier   derived
 
 # @means  len(rev(nonuple cons ending in nil)) = 9.

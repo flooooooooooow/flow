@@ -2,9 +2,9 @@
 
 *One times zero is zero in an ideal witness.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.1
+**Source.** dummit-foote: *Abstract Algebra*, §7.1
 
-## Derived fact 1 — 1 * 0 = 0 in an ideal
+## Derived fact 1: 1 * 0 = 0 in an ideal
 
 **Coordinate.** Ideal · multiplication · one times zero in ideal · **Derived fact**
 

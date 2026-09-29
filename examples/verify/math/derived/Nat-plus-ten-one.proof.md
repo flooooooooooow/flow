@@ -2,9 +2,9 @@
 
 *Ten plus one is eleven.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 10 + 1 = 11
+## Derived fact 1: 10 + 1 = 11
 
 **Coordinate.** the natural numbers · addition · ten plus one is eleven · **Derived fact**
 

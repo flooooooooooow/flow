@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  An exterior angle equals remote interiors plus the adjacent interior decomposition.
-# @from   euclid — Elements, Book I, Proposition 32
+# @from   euclid: Elements, Book I, Proposition 32
 # @tier   derived
 
 # @means  exterior at C equals angle A plus angle B by remote sum.

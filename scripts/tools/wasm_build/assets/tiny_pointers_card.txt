@@ -1,6 +1,6 @@
 
 <details class="coverage">
-  <summary>Abstract-claim coverage @MDASH@ every promise in the paper's abstract, mapped to the phase that measures it</summary>
+  <summary>Abstract-claim coverage: every promise in the paper's abstract, mapped to the phase that measures it</summary>
   <p class="note">The same map prints at the top of this program's run output.
   Each row links to its section in the docs
   (<a href="../../library/tiny-pointers.md">tiny-pointers.md</a> ·

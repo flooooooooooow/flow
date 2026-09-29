@@ -2,9 +2,9 @@
 
 *Every group element has a right inverse.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §1.1
+**Source.** dummit-foote: *Abstract Algebra*, §1.1
 
-## Derived fact 1 — g * inv(g) = 1
+## Derived fact 1: g * inv(g) = 1
 
 **Coordinate.** Group · inverse · right inverse recovers the identity · **Derived fact**
 

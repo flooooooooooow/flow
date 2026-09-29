@@ -2,13 +2,13 @@
 
 *If from the center of a circle a straight line bisects a chord, it is perpendicular to the chord.*
 
-**Source.** euclid — Elements, Book III, Proposition 17
+**Source.** euclid: Elements, Book III, Proposition 17
 
-## Derived fact 1 — If from the center of a circle a straight line bisects a chord, it is perpendicular to the chord
+## Derived fact 1: If from the center of a circle a straight line bisects a chord, it is perpendicular to the chord
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 17: the bisector from the center to a chord is perpendicular · **Derived fact**
 
-*Source: euclid — Elements, Book III, Proposition 17*
+*Source: euclid: Elements, Book III, Proposition 17*
 
 *Built on: proposition 3: a central angle bisector bisects the chord, for Euclid Book III on the Euclidean plane*
 
