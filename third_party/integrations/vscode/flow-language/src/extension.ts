@@ -27,18 +27,14 @@ function resolveServerOptions(): ServerOptions {
         };
     }
 
-    const python = (config.get<string>('pythonPath') || 'python3').trim();
+    // The native server (tools/lsp/main.flow), started as `flow lsp`. The
+    // launcher builds it with the Stage-A compiler on first use.
     const repoPath = resolveRepoPath();
-    if (repoPath) {
-        const src = path.join(repoPath, 'src');
-        env.PYTHONPATH = env.PYTHONPATH ? `${src}${path.delimiter}${env.PYTHONPATH}` : src;
-    }
-
     return {
-        command: python,
-        args: ['-m', 'flow.lsp_server'],
+        command: resolveFlowBinary(repoPath),
+        args: ['lsp'],
         transport: TransportKind.stdio,
-        options: { env },
+        options: { env, cwd: repoPath || undefined },
     };
 }
 
@@ -67,7 +63,7 @@ async function startClient(): Promise<void> {
     );
     try {
         await client.start();
-        setStatus('$(check) Flow LSP', 'FLOW language server running — click to restart');
+        setStatus('$(check) Flow LSP', 'FLOW language server running. Click to restart.');
     } catch (err) {
         setStatus('$(warning) Flow LSP off', String(err));
         vscode.window.showWarningMessage(
