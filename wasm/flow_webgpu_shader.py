@@ -23,8 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from flow.shader_codegen_wgsl import compile_shader_file_wgsl
-from flow.shader_dsl import extract_shader_module
+from flow.shader_dsl import compile_shader_file, fill_names  # noqa: E402
 
 
 def parse_size(value: str) -> tuple[int, int]:
@@ -52,17 +51,17 @@ def main() -> int:
     if not source.exists():
         parser.error(f"source does not exist: {source}")
 
-    module = extract_shader_module(source.read_text(encoding="utf-8"))
-    if not module.fills:
+    names = fill_names(str(source))
+    if not names:
         parser.error("source has no shader fill blocks")
 
-    name = args.name or module.fills[0].name
-    if name not in {fill.name for fill in module.fills}:
+    name = args.name or names[0]
+    if name not in names:
         parser.error(f"shader fill '{name}' not found")
 
     out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
-    generated = compile_shader_file_wgsl(str(source), str(out), shader_name=name)
+    generated = compile_shader_file(str(source), str(out), shader_name=name, target="wgsl")
     shader_path = out / "shader.wgsl"
     if generated != shader_path:
         shutil.copyfile(generated, shader_path)

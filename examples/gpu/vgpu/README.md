@@ -22,13 +22,13 @@ A compatibility case is complete only when:
 
 ## Backend model
 
-Fullscreen FSL now has two source generators from the same parsed AST:
+Fullscreen FSL has two source generators from the same parsed AST, both in
+flowc (`compiler/src/shader_dsl.flow`):
 
 ```text
 "shader fill"
-    -> shader_dsl.py
-       -> shader_codegen.py       -> MSL / Metal
-       -> shader_codegen_wgsl.py  -> WGSL / WebGPU
+    -> flowc FLOWC_SHADER=metal  -> MSL / Metal
+    -> flowc FLOWC_SHADER=wgsl   -> WGSL / WebGPU
 ```
 
 Flow already has a separate `@gpu` compute path with Metal and WGSL backends. The
@@ -62,7 +62,7 @@ Metal uses the existing FSL command:
 WGSL emission uses:
 
 ```bash
-python3 scripts/emit_fsl_wgsl.py examples/gpu/vgpu/gradient.flow --name vgpu_gradient
+./flow shader examples/gpu/vgpu/gradient.flow --wgsl --name vgpu_gradient
 ```
 
 Build a browser runner backed by deterministic offscreen WebGPU readback:

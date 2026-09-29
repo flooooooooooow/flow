@@ -1,0 +1,12 @@
+// Host Flow around a fill: both are kept in the file.
+function helper(x: i32) -> i32 {
+    return x
+}
+
+shader fill hosted {
+    color = vec4(uv, 0.0, 1.0)
+}
+
+function main() -> i32 {
+    return helper(0)
+}

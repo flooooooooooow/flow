@@ -1,103 +1,2324 @@
 # @module flowc.shader_dsl
-# @means  Shader DSL parsing and validation (self-hosting Phase 2).
-
-import .ast { AstArena, AstNode, AST_NONE, AST_SHADER }
+# @means  Flow Shader Language (FSL) fill shaders (#683): extraction,
+#         lexing, parsing, and Metal and WGSL code generation. The whole of
+#         the former src/flow/shader_dsl.py, shader_codegen.py and
+#         shader_codegen_wgsl.py.
+#
+# Output is byte-identical to the Python it replaces, including its quirks,
+# and compiler/scripts/parity_shader_dsl.sh holds the two to that. Quirks
+# kept on purpose:
+#
+#   * Characters no token matches (`@`, `[`, `"`, a lone `&` or `|`) are
+#     skipped, as Python's `re.finditer` skipped them.
+#   * `//` lexes as two division operators, so only `#` starts a comment.
+#   * Braces count inside comments when a block is extracted.
+#   * Type inference is the Python's `guess_type`, flat per function and
+#     without scopes.
+#
+# Regex has no Stage-A equivalent. Each pattern is a hand-written scan.
+# Whitespace is Python's ASCII `str.isspace` set (9..13, 28..31, 32). A byte
+# >= 128 counts as a word character for `\b`, which approximates Python's
+# Unicode `\w` for UTF-8 identifiers.
+#
+# One deliberate difference from the Python: `flowc_shader_is_module` only
+# counts a fill head that starts a line. The Python matched one anywhere,
+# so a Flow program that mentions the syntax in a string literal (such as
+# tests/lang/test_dsl_detect.flow) was replaced by a stub.
+#
+# Leaf module: externs only, so it links into the frontend without pulling
+# anything else in. File output lives in shader_emit.flow.
 
 extern {
-    function strlen(s: ptr<u8>) -> i64
-    function strcmp(a: ptr<u8>, b: ptr<u8>) -> i32
-    function strncmp(a: ptr<u8>, b: ptr<u8>, n: i64) -> i32
+    function malloc(size: i64) -> ptr<u8>
+    function realloc(p: ptr<u8>, size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function strlen(s: string) -> i64
     function puts(s: string) -> i32
 }
 
-# Real logic for extracting shader type and validating interfaces and uniforms
-export function flowc_shader_parse_and_validate(arena: AstArena, src: string, id: i32) -> i32 {
-    if id == AST_NONE {
-        return 0
+# Targets.
+export const SH_METAL: i32 = 0
+export const SH_WGSL: i32 = 1
+
+# Token kinds, in the order of the Python _TOKEN_SPEC.
+const T_NUMBER: i32 = 1
+const T_IDENT: i32 = 2
+const T_OP: i32 = 3
+const T_COMPARE: i32 = 4
+const T_AND: i32 = 5
+const T_OR: i32 = 6
+const T_NOT: i32 = 7
+const T_ASSIGN: i32 = 8
+const T_LPAREN: i32 = 9
+const T_RPAREN: i32 = 10
+const T_LBRACE: i32 = 11
+const T_RBRACE: i32 = 12
+const T_COMMA: i32 = 13
+const T_COLON: i32 = 14
+const T_DOT: i32 = 15
+const T_SEMI: i32 = 16
+const T_NEWLINE: i32 = 17
+const T_EOF: i32 = 18
+
+# Node kinds.
+const E_NUMBER: i32 = 1
+const E_NAME: i32 = 2
+const E_UNARY: i32 = 3
+const E_BINARY: i32 = 4
+const E_CALL: i32 = 5
+const E_SWIZZLE: i32 = 6
+const E_CAST: i32 = 7
+const S_LET: i32 = 10
+const S_ASSIGN: i32 = 11
+const S_RETURN: i32 = 12
+const S_IF: i32 = 13
+const S_FOR: i32 = 14
+
+# Type handles 0..26 name the constant strings appended to the pool: the
+# FSL spelling (0..8), then Metal (9..17), then WGSL (18..26), in the order
+# f32 i32 bool vec2 vec3 vec4 mat2 mat3 mat4. Handles from 27 up are spans
+# of the source (a declared type the target maps through unchanged).
+const TY_FSL: i32 = 0
+const TY_METAL: i32 = 9
+const TY_WGSL: i32 = 18
+const TY_CONSTS: i32 = 27
+
+# Growable output buffer. `buf` always has room for a trailing NUL.
+export struct ShBuf {
+    buf: ptr<u8>,
+    cap: i32,
+    len: i32
+}
+
+export function flowc_shader_buf_new(cap: i32) -> ptr<ShBuf> {
+    let w: ptr<ShBuf> = malloc(24) as ptr<ShBuf>
+    w[0].buf = malloc((cap + 1) as i64)
+    w[0].cap = cap
+    w[0].len = 0
+    return w
+}
+
+export function flowc_shader_buf_free(w: ptr<ShBuf>) {
+    free(w[0].buf)
+    free(w as ptr<u8>)
+}
+
+function sh_putc(w: ptr<ShBuf>, c: u8) {
+    if w[0].len >= w[0].cap {
+        let ncap: i32 = w[0].cap * 2 + 64
+        w[0].buf = realloc(w[0].buf, (ncap + 1) as i64)
+        w[0].cap = ncap
     }
-    let node: AstNode = arena.nodes[id]
-    if node.kind != AST_SHADER {
-        return 0
-    }
-    
-    let src_ptr: ptr<u8> = src as ptr<u8>
-    let start: i32 = node.name_start
-    let end: i32 = node.name_end
-    
-    # 1. Parse shader declaration: `shader fill` or `shader compute`
-    let mut is_fill: i32 = 0
-    let mut is_compute: i32 = 0
-    
-    # We find the word before the name. The name_start is the start of the `shader` keyword
-    # We skip `shader`
-    let mut i: i32 = start + 6
-    while i < end and (src_ptr[i] == 32 or src_ptr[i] == 9 or src_ptr[i] == 10) { i = i + 1 }
-    
-    if i + 4 <= end and src_ptr[i] == 102 and src_ptr[i+1] == 105 and src_ptr[i+2] == 108 and src_ptr[i+3] == 108 {
-        is_fill = 1
-        i = i + 4
-    } else {
-        if i + 7 <= end and src_ptr[i] == 99 and src_ptr[i+1] == 111 and src_ptr[i+2] == 109 and src_ptr[i+3] == 112 and src_ptr[i+4] == 117 and src_ptr[i+5] == 116 and src_ptr[i+6] == 101 {
-            is_compute = 1
-            i = i + 7
-        } else {
-            puts("Shader parse error: Expected 'fill' or 'compute'")
-            return 0
-        }
-    }
-    
-    # Validation state
-    let mut has_uv: i32 = 0
-    let mut has_color: i32 = 0
-    let mut has_time: i32 = 0
-    let mut has_resolution: i32 = 0
-    
-    # Scan block for bindings and interface
-    while i < (end - 5) {
-        let c: u8 = src_ptr[i]
-        
-        # Word boundary check for 'uv' (117, 118)
-        if c == 117 and src_ptr[i+1] == 118 {
-            has_uv = 1
-        }
-        
-        # 'color' (99, 111, 108, 111, 114)
-        if c == 99 and src_ptr[i+1] == 111 and src_ptr[i+2] == 108 and src_ptr[i+3] == 111 and src_ptr[i+4] == 114 {
-            has_color = 1
-        }
-        
-        # 'time'
-        if c == 116 and src_ptr[i+1] == 105 and src_ptr[i+2] == 109 and src_ptr[i+3] == 101 {
-            has_time = 1
-        }
-        
-        # 'resolution'
-        if c == 114 and src_ptr[i+1] == 101 and src_ptr[i+2] == 115 and src_ptr[i+3] == 111 and src_ptr[i+4] == 108 and src_ptr[i+5] == 117 {
-            has_resolution = 1
-        }
-        
+    w[0].buf[w[0].len] = c
+    w[0].len = w[0].len + 1
+}
+
+export function flowc_shader_putc(w: ptr<ShBuf>, c: u8) {
+    sh_putc(w, c)
+}
+
+function sh_puts(w: ptr<ShBuf>, s: string) {
+    let p: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let mut i: i32 = 0
+    while i < n {
+        sh_putc(w, p[i])
         i = i + 1
     }
-    
-    # 2. Stage input/output interface matching
-    if is_fill == 1 {
-        if has_color == 0 {
-            puts("Shader validation error: fill shader must output 'color'")
+}
+
+function sh_line(w: ptr<ShBuf>, s: string) {
+    sh_puts(w, s)
+    sh_putc(w, 10)
+}
+
+function sh_put_span(w: ptr<ShBuf>, p: ptr<u8>, s: i32, e: i32) {
+    let mut i: i32 = s
+    while i < e {
+        sh_putc(w, p[i])
+        i = i + 1
+    }
+}
+
+# `n` box-drawing rules (U+2500) for the Metal prelude banner.
+function sh_rule(w: ptr<ShBuf>, n: i32) {
+    let mut i: i32 = 0
+    while i < n {
+        sh_putc(w, 226)
+        sh_putc(w, 148)
+        sh_putc(w, 128)
+        i = i + 1
+    }
+}
+
+# 4 spaces per level, as the Python's "    " * indent.
+function sh_pad(w: ptr<ShBuf>, indent: i32) {
+    let mut i: i32 = 0
+    while i < indent * 4 {
+        sh_putc(w, 32)
+        i = i + 1
+    }
+}
+
+# ── Context ──────────────────────────────────────────────────────
+
+export struct ShCtx {
+    p: ptr<u8>,
+    n: i32,
+    pn: i32,
+    target: i32,
+    err: i32,
+    msg: ptr<ShBuf>,
+    tk: ptr<i32>,
+    ts: ptr<i32>,
+    te: ptr<i32>,
+    ntok: i32,
+    ti: i32,
+    nk: ptr<i32>,
+    na: ptr<i32>,
+    nb: ptr<i32>,
+    nc: ptr<i32>,
+    nx: ptr<i32>,
+    s1: ptr<i32>,
+    e1: ptr<i32>,
+    nf: ptr<i32>,
+    nn: i32,
+    ys: ptr<i32>,
+    ye: ptr<i32>,
+    ny: i32,
+    ybase: i32,
+    vs: ptr<i32>,
+    ve: ptr<i32>,
+    vt: ptr<i32>,
+    nv: i32,
+    fns: ptr<i32>,
+    fne: ptr<i32>,
+    fbs: ptr<i32>,
+    fbe: ptr<i32>,
+    frt: ptr<i32>,
+    fp0: ptr<i32>,
+    fpn: ptr<i32>,
+    nfn: i32,
+    pas: ptr<i32>,
+    pae: ptr<i32>,
+    pat: ptr<i32>,
+    npa: i32,
+    fls: ptr<i32>,
+    fle: ptr<i32>,
+    flbs: ptr<i32>,
+    flbe: ptr<i32>,
+    nfl: i32
+}
+
+function sh_ints(n: i32) -> ptr<i32> {
+    return malloc(((n + 4) as i64) * 4) as ptr<i32>
+}
+
+function sh_pool_add(c: ptr<ShCtx>, s: string) {
+    let sp: ptr<u8> = s
+    let k: i32 = strlen(s) as i32
+    c[0].ys[c[0].ny] = c[0].pn
+    let mut i: i32 = 0
+    while i < k {
+        c[0].p[c[0].pn] = sp[i]
+        c[0].pn = c[0].pn + 1
+        i = i + 1
+    }
+    c[0].ye[c[0].ny] = c[0].pn
+    c[0].ny = c[0].ny + 1
+}
+
+function sh_pool_add_set(c: ptr<ShCtx>, a: string, b: string, d: string, e: string, f: string, g: string, h: string, i: string, j: string) {
+    sh_pool_add(c, a)
+    sh_pool_add(c, b)
+    sh_pool_add(c, d)
+    sh_pool_add(c, e)
+    sh_pool_add(c, f)
+    sh_pool_add(c, g)
+    sh_pool_add(c, h)
+    sh_pool_add(c, i)
+    sh_pool_add(c, j)
+}
+
+# A context over a copy of src[0..n). All tables are sized from n, which
+# bounds every count (each token, node, head and parameter spends a byte).
+export function flowc_shader_ctx_new(src: ptr<u8>, n: i32) -> ptr<ShCtx> {
+    let c: ptr<ShCtx> = malloc(512) as ptr<ShCtx>
+    let cap: i32 = n + 8
+    c[0].p = malloc((n + 512) as i64)
+    let mut i: i32 = 0
+    while i < n {
+        c[0].p[i] = src[i]
+        i = i + 1
+    }
+    c[0].p[n] = 0
+    c[0].n = n
+    c[0].pn = n + 1
+    c[0].target = SH_METAL
+    c[0].err = 0
+    c[0].msg = flowc_shader_buf_new(256)
+    c[0].tk = sh_ints(cap)
+    c[0].ts = sh_ints(cap)
+    c[0].te = sh_ints(cap)
+    c[0].ntok = 0
+    c[0].ti = 0
+    c[0].nk = sh_ints(cap * 2)
+    c[0].na = sh_ints(cap * 2)
+    c[0].nb = sh_ints(cap * 2)
+    c[0].nc = sh_ints(cap * 2)
+    c[0].nx = sh_ints(cap * 2)
+    c[0].s1 = sh_ints(cap * 2)
+    c[0].e1 = sh_ints(cap * 2)
+    c[0].nf = sh_ints(cap * 2)
+    c[0].nn = 0
+    c[0].ys = sh_ints(cap * 3 + TY_CONSTS)
+    c[0].ye = sh_ints(cap * 3 + TY_CONSTS)
+    c[0].ny = 0
+    c[0].vs = sh_ints(cap * 2)
+    c[0].ve = sh_ints(cap * 2)
+    c[0].vt = sh_ints(cap * 2)
+    c[0].nv = 0
+    c[0].fns = sh_ints(cap)
+    c[0].fne = sh_ints(cap)
+    c[0].fbs = sh_ints(cap)
+    c[0].fbe = sh_ints(cap)
+    c[0].frt = sh_ints(cap)
+    c[0].fp0 = sh_ints(cap)
+    c[0].fpn = sh_ints(cap)
+    c[0].nfn = 0
+    c[0].pas = sh_ints(cap)
+    c[0].pae = sh_ints(cap)
+    c[0].pat = sh_ints(cap)
+    c[0].npa = 0
+    c[0].fls = sh_ints(cap)
+    c[0].fle = sh_ints(cap)
+    c[0].flbs = sh_ints(cap)
+    c[0].flbe = sh_ints(cap)
+    c[0].nfl = 0
+    sh_pool_add_set(c, "f32", "i32", "bool", "vec2", "vec3", "vec4", "mat2", "mat3", "mat4")
+    sh_pool_add_set(c, "float", "int", "bool", "float2", "float3", "float4", "float2x2", "float3x3", "float4x4")
+    sh_pool_add_set(c, "f32", "i32", "bool", "vec2<f32>", "vec3<f32>", "vec4<f32>", "mat2x2<f32>", "mat3x3<f32>", "mat4x4<f32>")
+    c[0].ybase = c[0].ny
+    return c
+}
+
+export function flowc_shader_ctx_free(c: ptr<ShCtx>) {
+    free(c[0].p)
+    flowc_shader_buf_free(c[0].msg)
+    free(c[0].tk as ptr<u8>)
+    free(c[0].ts as ptr<u8>)
+    free(c[0].te as ptr<u8>)
+    free(c[0].nk as ptr<u8>)
+    free(c[0].na as ptr<u8>)
+    free(c[0].nb as ptr<u8>)
+    free(c[0].nc as ptr<u8>)
+    free(c[0].nx as ptr<u8>)
+    free(c[0].s1 as ptr<u8>)
+    free(c[0].e1 as ptr<u8>)
+    free(c[0].nf as ptr<u8>)
+    free(c[0].ys as ptr<u8>)
+    free(c[0].ye as ptr<u8>)
+    free(c[0].vs as ptr<u8>)
+    free(c[0].ve as ptr<u8>)
+    free(c[0].vt as ptr<u8>)
+    free(c[0].fns as ptr<u8>)
+    free(c[0].fne as ptr<u8>)
+    free(c[0].fbs as ptr<u8>)
+    free(c[0].fbe as ptr<u8>)
+    free(c[0].frt as ptr<u8>)
+    free(c[0].fp0 as ptr<u8>)
+    free(c[0].fpn as ptr<u8>)
+    free(c[0].pas as ptr<u8>)
+    free(c[0].pae as ptr<u8>)
+    free(c[0].pat as ptr<u8>)
+    free(c[0].fls as ptr<u8>)
+    free(c[0].fle as ptr<u8>)
+    free(c[0].flbs as ptr<u8>)
+    free(c[0].flbe as ptr<u8>)
+    free(c as ptr<u8>)
+}
+
+export function flowc_shader_ctx_err(c: ptr<ShCtx>) -> i32 {
+    return c[0].err
+}
+
+export function flowc_shader_ctx_msg(c: ptr<ShCtx>) -> ptr<ShBuf> {
+    return c[0].msg
+}
+
+export function flowc_shader_fill_count(c: ptr<ShCtx>) -> i32 {
+    return c[0].nfl
+}
+
+export function flowc_shader_put_fill_name(c: ptr<ShCtx>, w: ptr<ShBuf>, k: i32) {
+    sh_put_span(w, c[0].p, c[0].fls[k], c[0].fle[k])
+}
+
+# 1 when fill k is named p[s..e) of `name`.
+export function flowc_shader_fill_named(c: ptr<ShCtx>, k: i32, name: ptr<u8>, nlen: i32) -> i32 {
+    let s: i32 = c[0].fls[k]
+    let e: i32 = c[0].fle[k]
+    if e - s != nlen {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < nlen {
+        if c[0].p[s + i] != name[i] {
             return 0
         }
-        # vertex attribute binding (uv) is matched if used
-        if has_uv == 0 {
-            # valid, just not using uv
-        }
+        i = i + 1
     }
-    
-    # 3. Uniform buffer layout validation
-    # If time or resolution is used, they must be bound in the uniform struct layout
-    if has_time == 1 or has_resolution == 1 {
-        # Validates that uniform block is required and bound
-        # A real compiler would register these in the AST module metadata
-        # For validation, we just verify they don't conflict with vertex layouts.
-    }
-    
     return 1
 }
+
+# Opens the error message. Only the first error counts, as only the first
+# Python exception escaped; returns 1 when this caller should write it.
+function sh_err(c: ptr<ShCtx>) -> i32 {
+    if c[0].err != 0 {
+        return 0
+    }
+    c[0].err = 1
+    c[0].msg[0].len = 0
+    return 1
+}
+
+function sh_fail(c: ptr<ShCtx>, m: string) {
+    if sh_err(c) == 1 {
+        sh_puts(c[0].msg, m)
+    }
+}
+
+# ── Character classes ────────────────────────────────────────────
+
+function sh_is_space(c: u8) -> i32 {
+    if c == 32 { return 1 }
+    if c >= 9 and c <= 13 { return 1 }
+    if c >= 28 and c <= 31 { return 1 }
+    return 0
+}
+
+function sh_is_word(c: u8) -> i32 {
+    if c >= 48 and c <= 57 { return 1 }
+    if c >= 65 and c <= 90 { return 1 }
+    if c >= 97 and c <= 122 { return 1 }
+    if c == 95 { return 1 }
+    if c >= 128 { return 1 }
+    return 0
+}
+
+function sh_is_digit(c: u8) -> i32 {
+    if c >= 48 and c <= 57 { return 1 }
+    return 0
+}
+
+# [A-Za-z_]
+function sh_is_ident_start(c: u8) -> i32 {
+    if c >= 65 and c <= 90 { return 1 }
+    if c >= 97 and c <= 122 { return 1 }
+    if c == 95 { return 1 }
+    return 0
+}
+
+# [A-Za-z0-9_]
+function sh_is_ident(c: u8) -> i32 {
+    if sh_is_ident_start(c) == 1 { return 1 }
+    return sh_is_digit(c)
+}
+
+# [A-Za-z0-9_<>,\s]
+function sh_is_ret_ch(c: u8) -> i32 {
+    if sh_is_ident(c) == 1 { return 1 }
+    if c == 60 or c == 62 or c == 44 { return 1 }
+    return sh_is_space(c)
+}
+
+function sh_lit_at(p: ptr<u8>, i: i32, e: i32, lit: string) -> i32 {
+    let lp: ptr<u8> = lit
+    let n: i32 = strlen(lit) as i32
+    if i + n > e {
+        return 0
+    }
+    let mut k: i32 = 0
+    while k < n {
+        if p[i + k] != lp[k] {
+            return 0
+        }
+        k = k + 1
+    }
+    return 1
+}
+
+# 1 when p[s..e) is exactly `lit`.
+function sh_span_is(p: ptr<u8>, s: i32, e: i32, lit: string) -> i32 {
+    let n: i32 = strlen(lit) as i32
+    if e - s != n {
+        return 0
+    }
+    return sh_lit_at(p, s, e, lit)
+}
+
+function sh_span_eq(p: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i32 {
+    if a1 - a0 != b1 - b0 {
+        return 0
+    }
+    let mut k: i32 = 0
+    while k < a1 - a0 {
+        if p[a0 + k] != p[b0 + k] {
+            return 0
+        }
+        k = k + 1
+    }
+    return 1
+}
+
+function sh_skip_ws(p: ptr<u8>, i: i32, e: i32) -> i32 {
+    let mut k: i32 = i
+    while k < e and sh_is_space(p[k]) == 1 {
+        k = k + 1
+    }
+    return k
+}
+
+# ── Head scans (the Python _SHADER_HEAD and _FN_HEAD) ────────────
+
+# \bshader\s+fill\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{ at i. Returns the index
+# just past the `{`, or -1. The name span goes to out[0], out[1].
+function sh_fill_head_at(p: ptr<u8>, i: i32, n: i32, out: ptr<i32>) -> i32 {
+    if sh_lit_at(p, i, n, "shader") == 0 {
+        return 0 - 1
+    }
+    if i > 0 and sh_is_word(p[i - 1]) == 1 {
+        return 0 - 1
+    }
+    let mut j: i32 = i + 6
+    let a: i32 = sh_skip_ws(p, j, n)
+    if a == j {
+        return 0 - 1
+    }
+    if sh_lit_at(p, a, n, "fill") == 0 {
+        return 0 - 1
+    }
+    j = a + 4
+    let b: i32 = sh_skip_ws(p, j, n)
+    if b == j {
+        return 0 - 1
+    }
+    if b >= n or sh_is_ident_start(p[b]) == 0 {
+        return 0 - 1
+    }
+    let mut k: i32 = b + 1
+    while k < n and sh_is_ident(p[k]) == 1 {
+        k = k + 1
+    }
+    out[0] = b
+    out[1] = k
+    let d: i32 = sh_skip_ws(p, k, n)
+    if d >= n or p[d] != 123 {
+        return 0 - 1
+    }
+    return d + 1
+}
+
+# \bfn\s+(ident)\s*\(([^)]*)\)\s*->\s*([A-Za-z0-9_<>,\s]+)\s*\{ at i.
+# Returns the index past `{` or -1. out: name s/e, params s/e, ret s/e.
+# The return-type class holds `\s`, so group 3 is the whole class run
+# after `->`, and it must be followed by `{`.
+function sh_fn_head_at(p: ptr<u8>, i: i32, n: i32, out: ptr<i32>) -> i32 {
+    if sh_lit_at(p, i, n, "fn") == 0 {
+        return 0 - 1
+    }
+    if i > 0 and sh_is_word(p[i - 1]) == 1 {
+        return 0 - 1
+    }
+    let j: i32 = i + 2
+    let a: i32 = sh_skip_ws(p, j, n)
+    if a == j {
+        return 0 - 1
+    }
+    if a >= n or sh_is_ident_start(p[a]) == 0 {
+        return 0 - 1
+    }
+    let mut k: i32 = a + 1
+    while k < n and sh_is_ident(p[k]) == 1 {
+        k = k + 1
+    }
+    out[0] = a
+    out[1] = k
+    let lp: i32 = sh_skip_ws(p, k, n)
+    if lp >= n or p[lp] != 40 {
+        return 0 - 1
+    }
+    let mut rp: i32 = lp + 1
+    while rp < n and p[rp] != 41 {
+        rp = rp + 1
+    }
+    if rp >= n {
+        return 0 - 1
+    }
+    out[2] = lp + 1
+    out[3] = rp
+    let ar: i32 = sh_skip_ws(p, rp + 1, n)
+    if sh_lit_at(p, ar, n, "->") == 0 {
+        return 0 - 1
+    }
+    let rs: i32 = ar + 2
+    let mut re: i32 = rs
+    while re < n and sh_is_ret_ch(p[re]) == 1 {
+        re = re + 1
+    }
+    if re == rs or re >= n or p[re] != 123 {
+        return 0 - 1
+    }
+    out[4] = rs
+    out[5] = re
+    return re + 1
+}
+
+# Python str.strip() over a span, in place on s[0], s[1].
+function sh_strip(p: ptr<u8>, se: ptr<i32>) {
+    while se[0] < se[1] and sh_is_space(p[se[0]]) == 1 {
+        se[0] = se[0] + 1
+    }
+    while se[1] > se[0] and sh_is_space(p[se[1] - 1]) == 1 {
+        se[1] = se[1] - 1
+    }
+}
+
+# Type handle for the source span p[s..e), registered in the type table.
+function sh_ty_span(c: ptr<ShCtx>, s: i32, e: i32) -> i32 {
+    let h: i32 = c[0].ny
+    c[0].ys[h] = s
+    c[0].ye[h] = e
+    c[0].ny = h + 1
+    return h
+}
+
+# _extract_brace_block from the `{` at `at`. Returns the index after the
+# closing brace, or -1 (error set) when it is unclosed.
+function sh_brace_block(c: ptr<ShCtx>, at: i32) -> i32 {
+    let p: ptr<u8> = c[0].p
+    let n: i32 = c[0].n
+    let mut depth: i32 = 0
+    let mut i: i32 = at
+    while i < n {
+        if p[i] == 123 {
+            depth = depth + 1
+        } else {
+            if p[i] == 125 {
+                depth = depth - 1
+                if depth == 0 {
+                    return i + 1
+                }
+            }
+        }
+        i = i + 1
+    }
+    sh_fail(c, "Unclosed '{' in shader module")
+    return 0 - 1
+}
+
+# _parse_params over p[s..e). Returns 0, or -1 with the error set.
+function sh_parse_params(c: ptr<ShCtx>, s: i32, e: i32) -> i32 {
+    let p: ptr<u8> = c[0].p
+    let se: ptr<i32> = sh_ints(2)
+    se[0] = s
+    se[1] = e
+    sh_strip(p, se)
+    if se[0] == se[1] {
+        free(se as ptr<u8>)
+        return 0
+    }
+    let rs: i32 = se[0]
+    let rend: i32 = se[1]
+    let mut a: i32 = rs
+    let mut rc: i32 = 0
+    while a <= rend and rc == 0 {
+        let mut b: i32 = a
+        while b < rend and p[b] != 44 {
+            b = b + 1
+        }
+        se[0] = a
+        se[1] = b
+        sh_strip(p, se)
+        if se[0] < se[1] {
+            let mut colon: i32 = se[0]
+            while colon < se[1] and p[colon] != 58 {
+                colon = colon + 1
+            }
+            if colon >= se[1] {
+                if sh_err(c) == 1 {
+                    sh_puts(c[0].msg, "Shader fn param needs name: type, got '")
+                    sh_put_span(c[0].msg, p, se[0], se[1])
+                    sh_puts(c[0].msg, "'")
+                }
+                rc = 0 - 1
+            } else {
+                let ps: i32 = se[0]
+                let pe: i32 = se[1]
+                se[0] = ps
+                se[1] = colon
+                sh_strip(p, se)
+                let k: i32 = c[0].npa
+                c[0].pas[k] = se[0]
+                c[0].pae[k] = se[1]
+                se[0] = colon + 1
+                se[1] = pe
+                sh_strip(p, se)
+                c[0].pat[k] = sh_ty_span(c, se[0], se[1])
+                c[0].npa = k + 1
+            }
+        }
+        a = b + 1
+    }
+    free(se as ptr<u8>)
+    return rc
+}
+
+# extract_shader_module(): every top-level FSL `fn` helper and fill block,
+# in source order. Returns 0, or -1 with the error set.
+export function flowc_shader_extract(c: ptr<ShCtx>) -> i32 {
+    let p: ptr<u8> = c[0].p
+    let n: i32 = c[0].n
+    let hf: ptr<i32> = sh_ints(8)
+    let hs: ptr<i32> = sh_ints(8)
+    # Next match of each pattern, found the way finditer walks: a search
+    # resumes where the last match ended.
+    let mut fpos: i32 = 0
+    let mut fat: i32 = 0 - 1
+    let mut fend: i32 = 0 - 1
+    let mut spos: i32 = 0
+    let mut sat: i32 = 0 - 1
+    let mut send: i32 = 0 - 1
+    let mut occupied: i32 = 0 - 1
+    let mut rc: i32 = 0
+    let mut done: i32 = 0
+    while done == 0 {
+        if fat < 0 {
+            while fpos < n and fat < 0 {
+                let r: i32 = sh_fn_head_at(p, fpos, n, hf)
+                if r >= 0 {
+                    fat = fpos
+                    fend = r
+                } else {
+                    fpos = fpos + 1
+                }
+            }
+            if fat < 0 {
+                fat = n + 1
+            }
+        }
+        if sat < 0 {
+            while spos < n and sat < 0 {
+                let r2: i32 = sh_fill_head_at(p, spos, n, hs)
+                if r2 >= 0 {
+                    sat = spos
+                    send = r2
+                } else {
+                    spos = spos + 1
+                }
+            }
+            if sat < 0 {
+                sat = n + 1
+            }
+        }
+        if fat > n and sat > n {
+            done = 1
+        } else {
+            let mut is_fn: i32 = 0
+            let mut start: i32 = sat
+            if fat < sat {
+                is_fn = 1
+                start = fat
+            }
+            if start >= occupied {
+                # brace_at = source.find("{", m.start())
+                let mut brace: i32 = start
+                while brace < n and p[brace] != 123 {
+                    brace = brace + 1
+                }
+                let end: i32 = sh_brace_block(c, brace)
+                if end < 0 {
+                    rc = 0 - 1
+                    done = 1
+                } else {
+                    occupied = end
+                    if is_fn == 1 {
+                        let k: i32 = c[0].nfn
+                        c[0].fns[k] = hf[0]
+                        c[0].fne[k] = hf[1]
+                        c[0].fbs[k] = brace + 1
+                        c[0].fbe[k] = end - 1
+                        c[0].fp0[k] = c[0].npa
+                        if sh_parse_params(c, hf[2], hf[3]) != 0 {
+                            rc = 0 - 1
+                            done = 1
+                        } else {
+                            c[0].fpn[k] = c[0].npa - c[0].fp0[k]
+                            let rse: ptr<i32> = sh_ints(2)
+                            rse[0] = hf[4]
+                            rse[1] = hf[5]
+                            sh_strip(p, rse)
+                            c[0].frt[k] = sh_ty_span(c, rse[0], rse[1])
+                            free(rse as ptr<u8>)
+                            c[0].nfn = k + 1
+                        }
+                    } else {
+                        let k2: i32 = c[0].nfl
+                        c[0].fls[k2] = hs[0]
+                        c[0].fle[k2] = hs[1]
+                        c[0].flbs[k2] = brace + 1
+                        c[0].flbe[k2] = end - 1
+                        c[0].nfl = k2 + 1
+                    }
+                }
+            }
+            if is_fn == 1 {
+                fpos = fend
+                fat = 0 - 1
+            } else {
+                spos = send
+                sat = 0 - 1
+            }
+        }
+    }
+    free(hf as ptr<u8>)
+    free(hs as ptr<u8>)
+    c[0].ybase = c[0].ny
+    return rc
+}
+
+# ── Source-read hook (the Python module_resolver stub) ───────────
+
+# 1 when some line starts, after spaces or tabs, with a fill head.
+export function flowc_shader_is_module(p: ptr<u8>, n: i32) -> i32 {
+    let hs: ptr<i32> = sh_ints(2)
+    let mut i: i32 = 0
+    let mut found: i32 = 0
+    while i < n and found == 0 {
+        let mut k: i32 = i
+        while k < n and (p[k] == 32 or p[k] == 9) {
+            k = k + 1
+        }
+        if sh_fill_head_at(p, k, n, hs) >= 0 {
+            found = 1
+        }
+        while i < n and p[i] != 10 {
+            i = i + 1
+        }
+        i = i + 1
+    }
+    free(hs as ptr<u8>)
+    return found
+}
+
+# A fill-shader module is not host Flow. The host program for it is a stub
+# `main` that returns 0 (the shader itself is built by FLOWC_SHADER).
+# Rewrites buf[0..n) in place and returns the new length, or -1 after
+# printing `flowc shader: <message>` when the module is malformed. Other
+# source is left untouched.
+export function flowc_shader_expand_in_place(buf: ptr<u8>, n: i32, cap: i32) -> i32 {
+    if n < 0 {
+        return n
+    }
+    if flowc_shader_is_module(buf, n) == 0 {
+        return n
+    }
+    let c: ptr<ShCtx> = flowc_shader_ctx_new(buf, n)
+    let mut rc: i32 = flowc_shader_extract(c)
+    if rc == 0 and c[0].nfl == 0 {
+        sh_fail(c, "Fill-shader module has no `shader fill` blocks")
+        rc = 0 - 1
+    }
+    if rc != 0 {
+        let line: ptr<ShBuf> = flowc_shader_buf_new(256)
+        sh_puts(line, "flowc shader: ")
+        sh_put_span(line, c[0].msg[0].buf, 0, c[0].msg[0].len)
+        line[0].buf[line[0].len] = 0
+        puts(line[0].buf as string)
+        flowc_shader_buf_free(line)
+        flowc_shader_ctx_free(c)
+        return 0 - 1
+    }
+    flowc_shader_ctx_free(c)
+    let stub: string = "function main() -> i32 {\n    return 0\n}\n"
+    let sp: ptr<u8> = stub
+    let sn: i32 = strlen(stub) as i32
+    if sn >= cap {
+        puts("flowc shader: source buffer too small for the host stub")
+        return 0 - 1
+    }
+    let mut k: i32 = 0
+    while k < sn {
+        buf[k] = sp[k]
+        k = k + 1
+    }
+    buf[sn] = 0
+    return sn
+}
+
+# ── Lexer (the Python _tokenize) ─────────────────────────────────
+
+function sh_tok(c: ptr<ShCtx>, kind: i32, s: i32, e: i32) {
+    let k: i32 = c[0].ntok
+    c[0].tk[k] = kind
+    c[0].ts[k] = s
+    c[0].te[k] = e
+    c[0].ntok = k + 1
+}
+
+# Tokenize p[s..e). At each position the first alternative that matches
+# wins, and a position nothing matches is skipped.
+function sh_tokenize(c: ptr<ShCtx>, s: i32, e: i32) {
+    let p: ptr<u8> = c[0].p
+    c[0].ntok = 0
+    c[0].ti = 0
+    let mut i: i32 = s
+    while i < e {
+        let ch: u8 = p[i]
+        if sh_is_digit(ch) == 1 {
+            let mut j: i32 = i
+            while j < e and sh_is_digit(p[j]) == 1 {
+                j = j + 1
+            }
+            if j < e and p[j] == 46 {
+                j = j + 1
+                while j < e and sh_is_digit(p[j]) == 1 {
+                    j = j + 1
+                }
+            }
+            sh_tok(c, T_NUMBER, i, j)
+            i = j
+        } elif ch == 46 and i + 1 < e and sh_is_digit(p[i + 1]) == 1 {
+            let mut j2: i32 = i + 1
+            while j2 < e and sh_is_digit(p[j2]) == 1 {
+                j2 = j2 + 1
+            }
+            sh_tok(c, T_NUMBER, i, j2)
+            i = j2
+        } elif sh_is_ident_start(ch) == 1 {
+            let mut j3: i32 = i + 1
+            while j3 < e and sh_is_ident(p[j3]) == 1 {
+                j3 = j3 + 1
+            }
+            sh_tok(c, T_IDENT, i, j3)
+            i = j3
+        } elif ch == 43 or ch == 45 or ch == 42 or ch == 47 or ch == 37 {
+            sh_tok(c, T_OP, i, i + 1)
+            i = i + 1
+        } elif (ch == 60 or ch == 62 or ch == 61 or ch == 33) and i + 1 < e and p[i + 1] == 61 {
+            sh_tok(c, T_COMPARE, i, i + 2)
+            i = i + 2
+        } elif ch == 60 or ch == 62 {
+            sh_tok(c, T_COMPARE, i, i + 1)
+            i = i + 1
+        } elif ch == 38 and i + 1 < e and p[i + 1] == 38 {
+            sh_tok(c, T_AND, i, i + 2)
+            i = i + 2
+        } elif ch == 124 and i + 1 < e and p[i + 1] == 124 {
+            sh_tok(c, T_OR, i, i + 2)
+            i = i + 2
+        } elif ch == 33 {
+            sh_tok(c, T_NOT, i, i + 1)
+            i = i + 1
+        } elif ch == 61 {
+            sh_tok(c, T_ASSIGN, i, i + 1)
+            i = i + 1
+        } elif ch == 40 {
+            sh_tok(c, T_LPAREN, i, i + 1)
+            i = i + 1
+        } elif ch == 41 {
+            sh_tok(c, T_RPAREN, i, i + 1)
+            i = i + 1
+        } elif ch == 123 {
+            sh_tok(c, T_LBRACE, i, i + 1)
+            i = i + 1
+        } elif ch == 125 {
+            sh_tok(c, T_RBRACE, i, i + 1)
+            i = i + 1
+        } elif ch == 44 {
+            sh_tok(c, T_COMMA, i, i + 1)
+            i = i + 1
+        } elif ch == 58 {
+            sh_tok(c, T_COLON, i, i + 1)
+            i = i + 1
+        } elif ch == 46 {
+            sh_tok(c, T_DOT, i, i + 1)
+            i = i + 1
+        } elif ch == 59 {
+            sh_tok(c, T_SEMI, i, i + 1)
+            i = i + 1
+        } elif ch == 10 {
+            sh_tok(c, T_NEWLINE, i, i + 1)
+            i = i + 1
+        } elif ch == 35 {
+            while i < e and p[i] != 10 {
+                i = i + 1
+            }
+        } else {
+            i = i + 1
+        }
+    }
+    sh_tok(c, T_EOF, e, e)
+}
+
+function sh_kind_name(k: i32) -> string {
+    if k == T_NUMBER { return "NUMBER" }
+    if k == T_IDENT { return "IDENT" }
+    if k == T_OP { return "OP" }
+    if k == T_COMPARE { return "COMPARE" }
+    if k == T_AND { return "AND" }
+    if k == T_OR { return "OR" }
+    if k == T_NOT { return "NOT" }
+    if k == T_ASSIGN { return "ASSIGN" }
+    if k == T_LPAREN { return "LPAREN" }
+    if k == T_RPAREN { return "RPAREN" }
+    if k == T_LBRACE { return "LBRACE" }
+    if k == T_RBRACE { return "RBRACE" }
+    if k == T_COMMA { return "COMMA" }
+    if k == T_COLON { return "COLON" }
+    if k == T_DOT { return "DOT" }
+    if k == T_SEMI { return "SEMI" }
+    if k == T_NEWLINE { return "NEWLINE" }
+    return "EOF"
+}
+
+# ── Parser (the Python _Parser) ──────────────────────────────────
+
+function sh_cur(c: ptr<ShCtx>) -> i32 {
+    return c[0].tk[c[0].ti]
+}
+
+function sh_cur_is(c: ptr<ShCtx>, kind: i32, lit: string) -> i32 {
+    let t: i32 = c[0].ti
+    if c[0].tk[t] != kind {
+        return 0
+    }
+    return sh_span_is(c[0].p, c[0].ts[t], c[0].te[t], lit)
+}
+
+function sh_advance(c: ptr<ShCtx>) -> i32 {
+    let t: i32 = c[0].ti
+    if t < c[0].ntok - 1 {
+        c[0].ti = t + 1
+    }
+    return t
+}
+
+function sh_match(c: ptr<ShCtx>, kind: i32) -> i32 {
+    if sh_cur(c) != kind {
+        return 0
+    }
+    sh_advance(c)
+    return 1
+}
+
+# "<what> <KIND> '<value>'" for the current token.
+function sh_err_got(c: ptr<ShCtx>, head: string) {
+    if sh_err(c) == 1 {
+        let t: i32 = c[0].ti
+        sh_puts(c[0].msg, head)
+        sh_puts(c[0].msg, sh_kind_name(c[0].tk[t]))
+        sh_puts(c[0].msg, " '")
+        sh_put_span(c[0].msg, c[0].p, c[0].ts[t], c[0].te[t])
+        sh_puts(c[0].msg, "'")
+    }
+}
+
+# expect(kind[, value]); returns the token index, or -1 with the error set.
+function sh_expect(c: ptr<ShCtx>, kind: i32, lit: string) -> i32 {
+    let t: i32 = c[0].ti
+    let lp: ptr<u8> = lit
+    let has_lit: i32 = strlen(lit) as i32
+    let mut ok: i32 = 1
+    if c[0].tk[t] != kind {
+        ok = 0
+    } elif has_lit > 0 and sh_span_is(c[0].p, c[0].ts[t], c[0].te[t], lit) == 0 {
+        ok = 0
+    }
+    if ok == 0 {
+        if sh_err(c) == 1 {
+            sh_puts(c[0].msg, "Shader parse error: expected ")
+            sh_puts(c[0].msg, sh_kind_name(kind))
+            if has_lit > 0 {
+                sh_puts(c[0].msg, " '")
+                sh_puts(c[0].msg, lit)
+                sh_puts(c[0].msg, "'")
+            }
+            sh_puts(c[0].msg, ", got ")
+            sh_puts(c[0].msg, sh_kind_name(c[0].tk[t]))
+            sh_puts(c[0].msg, " '")
+            sh_put_span(c[0].msg, c[0].p, c[0].ts[t], c[0].te[t])
+            sh_puts(c[0].msg, "'")
+        }
+        return 0 - 1
+    }
+    return sh_advance(c)
+}
+
+function sh_skip_nl(c: ptr<ShCtx>) {
+    while sh_cur(c) == T_NEWLINE {
+        sh_advance(c)
+    }
+}
+
+function sh_node(c: ptr<ShCtx>, kind: i32) -> i32 {
+    let k: i32 = c[0].nn
+    c[0].nk[k] = kind
+    c[0].na[k] = 0 - 1
+    c[0].nb[k] = 0 - 1
+    c[0].nc[k] = 0 - 1
+    c[0].nx[k] = 0 - 1
+    c[0].s1[k] = 0
+    c[0].e1[k] = 0
+    c[0].nf[k] = 0
+    c[0].nn = k + 1
+    return k
+}
+
+function sh_node_tok(c: ptr<ShCtx>, kind: i32, t: i32) -> i32 {
+    let k: i32 = sh_node(c, kind)
+    c[0].s1[k] = c[0].ts[t]
+    c[0].e1[k] = c[0].te[t]
+    return k
+}
+
+function sh_binary(c: ptr<ShCtx>, op: i32, left: i32, right: i32) -> i32 {
+    let k: i32 = sh_node_tok(c, E_BINARY, op)
+    c[0].na[k] = left
+    c[0].nb[k] = right
+    return k
+}
+
+# Statement list up to EOF or `}`. Returns the head node or -1 (empty or
+# error; check c.err).
+function sh_parse_stmts(c: ptr<ShCtx>) -> i32 {
+    let mut head: i32 = 0 - 1
+    let mut tail: i32 = 0 - 1
+    sh_skip_nl(c)
+    while c[0].err == 0 and sh_cur(c) != T_EOF and sh_cur(c) != T_RBRACE {
+        let st: i32 = sh_parse_stmt(c)
+        if c[0].err == 0 {
+            if tail < 0 {
+                head = st
+            } else {
+                c[0].nx[tail] = st
+            }
+            tail = st
+            sh_match(c, T_SEMI)
+            sh_skip_nl(c)
+        }
+    }
+    if c[0].err != 0 {
+        return 0 - 1
+    }
+    return head
+}
+
+function sh_parse_block(c: ptr<ShCtx>) -> i32 {
+    if sh_expect(c, T_LBRACE, "") < 0 {
+        return 0 - 1
+    }
+    sh_skip_nl(c)
+    let body: i32 = sh_parse_stmts(c)
+    if c[0].err != 0 {
+        return 0 - 1
+    }
+    if sh_expect(c, T_RBRACE, "") < 0 {
+        return 0 - 1
+    }
+    return body
+}
+
+function sh_parse_stmt(c: ptr<ShCtx>) -> i32 {
+    sh_skip_nl(c)
+    if sh_cur_is(c, T_IDENT, "let") == 1 or sh_cur_is(c, T_IDENT, "var") == 1 {
+        return sh_parse_let(c)
+    }
+    if sh_cur_is(c, T_IDENT, "if") == 1 {
+        return sh_parse_if(c)
+    }
+    if sh_cur_is(c, T_IDENT, "for") == 1 {
+        return sh_parse_for(c)
+    }
+    if sh_cur_is(c, T_IDENT, "return") == 1 {
+        sh_advance(c)
+        let r: i32 = sh_node(c, S_RETURN)
+        let k: i32 = sh_cur(c)
+        if k == T_NEWLINE or k == T_SEMI or k == T_RBRACE or k == T_EOF {
+            return r
+        }
+        c[0].na[r] = sh_parse_expr(c)
+        return r
+    }
+    if sh_cur(c) == T_IDENT {
+        let name: i32 = sh_advance(c)
+        if sh_expect(c, T_ASSIGN, "") < 0 {
+            return 0 - 1
+        }
+        let a: i32 = sh_node_tok(c, S_ASSIGN, name)
+        c[0].na[a] = sh_parse_expr(c)
+        return a
+    }
+    sh_err_got(c, "Shader statement expected, got ")
+    return 0 - 1
+}
+
+function sh_parse_let(c: ptr<ShCtx>) -> i32 {
+    let mut mutable: i32 = 0
+    if sh_cur_is(c, T_IDENT, "var") == 1 {
+        mutable = 1
+    }
+    sh_advance(c)
+    let name: i32 = sh_expect(c, T_IDENT, "")
+    if name < 0 {
+        return 0 - 1
+    }
+    let st: i32 = sh_node_tok(c, S_LET, name)
+    c[0].nf[st] = mutable
+    if sh_match(c, T_COLON) == 1 {
+        let ty: i32 = sh_expect(c, T_IDENT, "")
+        if ty < 0 {
+            return 0 - 1
+        }
+        c[0].nb[st] = sh_ty_span(c, c[0].ts[ty], c[0].te[ty])
+    }
+    if sh_expect(c, T_ASSIGN, "") < 0 {
+        return 0 - 1
+    }
+    c[0].na[st] = sh_parse_expr(c)
+    return st
+}
+
+# A block, or one statement, after if / else / for.
+function sh_parse_body(c: ptr<ShCtx>) -> i32 {
+    if sh_cur(c) == T_LBRACE {
+        return sh_parse_block(c)
+    }
+    return sh_parse_stmt(c)
+}
+
+function sh_parse_if(c: ptr<ShCtx>) -> i32 {
+    if sh_expect(c, T_IDENT, "if") < 0 {
+        return 0 - 1
+    }
+    let st: i32 = sh_node(c, S_IF)
+    c[0].na[st] = sh_parse_expr(c)
+    if c[0].err != 0 {
+        return 0 - 1
+    }
+    sh_skip_nl(c)
+    c[0].nb[st] = sh_parse_body(c)
+    if c[0].err != 0 {
+        return 0 - 1
+    }
+    sh_skip_nl(c)
+    if sh_cur_is(c, T_IDENT, "else") == 1 {
+        sh_advance(c)
+        sh_skip_nl(c)
+        if sh_cur_is(c, T_IDENT, "if") == 1 {
+            c[0].nc[st] = sh_parse_if(c)
+        } else {
+            c[0].nc[st] = sh_parse_body(c)
+        }
+    }
+    return st
+}
+
+function sh_parse_for(c: ptr<ShCtx>) -> i32 {
+    if sh_expect(c, T_IDENT, "for") < 0 {
+        return 0 - 1
+    }
+    let v: i32 = sh_expect(c, T_IDENT, "")
+    if v < 0 {
+        return 0 - 1
+    }
+    let st: i32 = sh_node_tok(c, S_FOR, v)
+    if sh_cur_is(c, T_IDENT, "in") == 0 {
+        sh_fail(c, "Expected 'in' after for variable")
+        return 0 - 1
+    }
+    sh_advance(c)
+    c[0].na[st] = sh_parse_expr(c)
+    if c[0].err != 0 {
+        return 0 - 1
+    }
+    if sh_cur_is(c, T_IDENT, "to") == 0 {
+        sh_fail(c, "Expected 'to' in for-range")
+        return 0 - 1
+    }
+    sh_advance(c)
+    c[0].nb[st] = sh_parse_expr(c)
+    if c[0].err != 0 {
+        return 0 - 1
+    }
+    sh_skip_nl(c)
+    c[0].nc[st] = sh_parse_body(c)
+    return st
+}
+
+function sh_parse_expr(c: ptr<ShCtx>) -> i32 {
+    return sh_parse_or(c)
+}
+
+function sh_parse_or(c: ptr<ShCtx>) -> i32 {
+    let mut left: i32 = sh_parse_and(c)
+    while c[0].err == 0 and sh_cur(c) == T_OR {
+        let op: i32 = sh_advance(c)
+        left = sh_binary(c, op, left, sh_parse_and(c))
+    }
+    return left
+}
+
+function sh_parse_and(c: ptr<ShCtx>) -> i32 {
+    let mut left: i32 = sh_parse_compare(c)
+    while c[0].err == 0 and sh_cur(c) == T_AND {
+        let op: i32 = sh_advance(c)
+        left = sh_binary(c, op, left, sh_parse_compare(c))
+    }
+    return left
+}
+
+function sh_parse_compare(c: ptr<ShCtx>) -> i32 {
+    let mut left: i32 = sh_parse_term(c)
+    while c[0].err == 0 and sh_cur(c) == T_COMPARE {
+        let op: i32 = sh_advance(c)
+        left = sh_binary(c, op, left, sh_parse_term(c))
+    }
+    return left
+}
+
+function sh_parse_term(c: ptr<ShCtx>) -> i32 {
+    let mut left: i32 = sh_parse_factor(c)
+    while c[0].err == 0 and (sh_cur_is(c, T_OP, "+") == 1 or sh_cur_is(c, T_OP, "-") == 1) {
+        let op: i32 = sh_advance(c)
+        left = sh_binary(c, op, left, sh_parse_factor(c))
+    }
+    return left
+}
+
+function sh_parse_factor(c: ptr<ShCtx>) -> i32 {
+    let mut left: i32 = sh_parse_unary(c)
+    while c[0].err == 0 and (sh_cur_is(c, T_OP, "*") == 1 or sh_cur_is(c, T_OP, "/") == 1 or sh_cur_is(c, T_OP, "%") == 1) {
+        let op: i32 = sh_advance(c)
+        left = sh_binary(c, op, left, sh_parse_unary(c))
+    }
+    return left
+}
+
+function sh_parse_unary(c: ptr<ShCtx>) -> i32 {
+    if sh_cur_is(c, T_OP, "-") == 1 or sh_cur(c) == T_NOT {
+        let op: i32 = sh_advance(c)
+        let u: i32 = sh_node_tok(c, E_UNARY, op)
+        c[0].na[u] = sh_parse_unary(c)
+        return u
+    }
+    return sh_parse_postfix(c)
+}
+
+function sh_parse_postfix(c: ptr<ShCtx>) -> i32 {
+    let mut expr: i32 = sh_parse_primary(c)
+    while c[0].err == 0 and sh_cur(c) == T_DOT {
+        sh_advance(c)
+        let f: i32 = sh_expect(c, T_IDENT, "")
+        if f < 0 {
+            return 0 - 1
+        }
+        let sw: i32 = sh_node_tok(c, E_SWIZZLE, f)
+        c[0].na[sw] = expr
+        expr = sw
+    }
+    return expr
+}
+
+function sh_parse_primary(c: ptr<ShCtx>) -> i32 {
+    sh_skip_nl(c)
+    let t: i32 = c[0].ti
+    let kind: i32 = c[0].tk[t]
+    if kind == T_NUMBER {
+        sh_advance(c)
+        let num: i32 = sh_node_tok(c, E_NUMBER, t)
+        let mut dot: i32 = 0
+        let mut i: i32 = c[0].ts[t]
+        while i < c[0].te[t] {
+            if c[0].p[i] == 46 {
+                dot = 1
+            }
+            i = i + 1
+        }
+        if dot == 0 {
+            c[0].nf[num] = 1
+        }
+        return num
+    }
+    if kind == T_IDENT {
+        sh_advance(c)
+        if sh_match(c, T_LPAREN) == 1 {
+            let call: i32 = sh_node_tok(c, E_CALL, t)
+            let mut nargs: i32 = 0
+            let mut tail: i32 = 0 - 1
+            sh_skip_nl(c)
+            if sh_match(c, T_RPAREN) == 0 {
+                let mut more: i32 = 1
+                while more == 1 {
+                    sh_skip_nl(c)
+                    let arg: i32 = sh_parse_expr(c)
+                    if c[0].err != 0 {
+                        return 0 - 1
+                    }
+                    if tail < 0 {
+                        c[0].na[call] = arg
+                    } else {
+                        c[0].nx[tail] = arg
+                    }
+                    tail = arg
+                    nargs = nargs + 1
+                    sh_skip_nl(c)
+                    if sh_match(c, T_COMMA) == 0 {
+                        if sh_expect(c, T_RPAREN, "") < 0 {
+                            return 0 - 1
+                        }
+                        more = 0
+                    }
+                }
+            }
+            c[0].nc[call] = nargs
+            let p: ptr<u8> = c[0].p
+            let ns: i32 = c[0].ts[t]
+            let ne: i32 = c[0].te[t]
+            if nargs == 1 and (sh_span_is(p, ns, ne, "f32") == 1 or sh_span_is(p, ns, ne, "i32") == 1 or sh_span_is(p, ns, ne, "bool") == 1) {
+                c[0].nk[call] = E_CAST
+            }
+            return call
+        }
+        return sh_node_tok(c, E_NAME, t)
+    }
+    if sh_match(c, T_LPAREN) == 1 {
+        sh_skip_nl(c)
+        let inner: i32 = sh_parse_expr(c)
+        if c[0].err != 0 {
+            return 0 - 1
+        }
+        sh_skip_nl(c)
+        if sh_expect(c, T_RPAREN, "") < 0 {
+            return 0 - 1
+        }
+        return inner
+    }
+    sh_err_got(c, "Shader expression expected, got ")
+    return 0 - 1
+}
+
+# parse_shader_body over p[s..e). Returns the statement list head.
+function sh_parse_body_span(c: ptr<ShCtx>, s: i32, e: i32) -> i32 {
+    sh_tokenize(c, s, e)
+    c[0].nn = 0
+    c[0].ny = c[0].ybase
+    return sh_parse_stmts(c)
+}
+
+# ── Types and environment ────────────────────────────────────────
+
+function sh_ty_is(c: ptr<ShCtx>, h: i32, lit: string) -> i32 {
+    return sh_span_is(c[0].p, c[0].ys[h], c[0].ye[h], lit)
+}
+
+function sh_ty_eq(c: ptr<ShCtx>, a: i32, b: i32) -> i32 {
+    return sh_span_eq(c[0].p, c[0].ys[a], c[0].ye[a], c[0].ys[b], c[0].ye[b])
+}
+
+function sh_put_ty(c: ptr<ShCtx>, w: ptr<ShBuf>, h: i32) {
+    sh_put_span(w, c[0].p, c[0].ys[h], c[0].ye[h])
+}
+
+# Target spelling of FSL type index k (0 f32 .. 8 mat4).
+function sh_ty_known(c: ptr<ShCtx>, k: i32) -> i32 {
+    if c[0].target == SH_WGSL {
+        return TY_WGSL + k
+    }
+    return TY_METAL + k
+}
+
+# map_type(). -1 means no declared type. Metal maps an unknown type through
+# unchanged; WGSL raises. Returns -1 with the error set on failure.
+function sh_map_type(c: ptr<ShCtx>, h: i32) -> i32 {
+    if h < 0 or c[0].ys[h] == c[0].ye[h] {
+        return sh_ty_known(c, 0)
+    }
+    let mut k: i32 = 0
+    while k < 9 {
+        if sh_ty_eq(c, h, TY_FSL + k) == 1 {
+            return sh_ty_known(c, k)
+        }
+        k = k + 1
+    }
+    if c[0].target == SH_WGSL {
+        if sh_err(c) == 1 {
+            sh_puts(c[0].msg, "Unsupported WGSL shader type '")
+            sh_put_ty(c, c[0].msg, h)
+            sh_puts(c[0].msg, "'")
+        }
+        return 0 - 1
+    }
+    return h
+}
+
+# Type handle for a name in the FSL spelling (f32, vec2, ...).
+function sh_ty_named(c: ptr<ShCtx>, s: i32, e: i32) -> i32 {
+    let mut k: i32 = 0
+    while k < 9 {
+        if sh_span_eq(c[0].p, s, e, c[0].ys[TY_FSL + k], c[0].ye[TY_FSL + k]) == 1 {
+            return sh_ty_known(c, k)
+        }
+        k = k + 1
+    }
+    return sh_ty_known(c, 0)
+}
+
+function sh_env_set(c: ptr<ShCtx>, s: i32, e: i32, ty: i32) {
+    let mut i: i32 = 0
+    while i < c[0].nv {
+        if sh_span_eq(c[0].p, c[0].vs[i], c[0].ve[i], s, e) == 1 {
+            c[0].vt[i] = ty
+            return
+        }
+        i = i + 1
+    }
+    let k: i32 = c[0].nv
+    c[0].vs[k] = s
+    c[0].ve[k] = e
+    c[0].vt[k] = ty
+    c[0].nv = k + 1
+}
+
+function sh_env_get(c: ptr<ShCtx>, s: i32, e: i32, dflt: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < c[0].nv {
+        if sh_span_eq(c[0].p, c[0].vs[i], c[0].ve[i], s, e) == 1 {
+            return c[0].vt[i]
+        }
+        i = i + 1
+    }
+    return dflt
+}
+
+# The last user fn named p[s..e) (a dict keeps the last), or -1.
+function sh_find_fn(c: ptr<ShCtx>, s: i32, e: i32) -> i32 {
+    let mut i: i32 = c[0].nfn - 1
+    while i >= 0 {
+        if sh_span_eq(c[0].p, c[0].fns[i], c[0].fne[i], s, e) == 1 {
+            return i
+        }
+        i = i - 1
+    }
+    return 0 - 1
+}
+
+function sh_node_is(c: ptr<ShCtx>, k: i32, lit: string) -> i32 {
+    return sh_span_is(c[0].p, c[0].s1[k], c[0].e1[k], lit)
+}
+
+# Metal type rank for the promotion in guess_type.
+function sh_rank(c: ptr<ShCtx>, h: i32) -> i32 {
+    if sh_ty_is(c, h, "bool") == 1 { return 0 }
+    if c[0].target == SH_WGSL {
+        if sh_ty_is(c, h, "vec2<f32>") == 1 { return 2 }
+        if sh_ty_is(c, h, "vec3<f32>") == 1 { return 3 }
+        if sh_ty_is(c, h, "vec4<f32>") == 1 { return 4 }
+        return 1
+    }
+    if sh_ty_is(c, h, "float2") == 1 { return 2 }
+    if sh_ty_is(c, h, "float3") == 1 { return 3 }
+    if sh_ty_is(c, h, "float4") == 1 { return 4 }
+    return 1
+}
+
+function sh_is_metal_float_fn(c: ptr<ShCtx>, k: i32) -> i32 {
+    if sh_node_is(c, k, "noise") == 1 { return 1 }
+    if sh_node_is(c, k, "fbm") == 1 { return 1 }
+    if sh_node_is(c, k, "hash") == 1 { return 1 }
+    if sh_node_is(c, k, "length") == 1 { return 1 }
+    if sh_node_is(c, k, "dot") == 1 { return 1 }
+    if sh_node_is(c, k, "sin") == 1 { return 1 }
+    if sh_node_is(c, k, "cos") == 1 { return 1 }
+    if sh_node_is(c, k, "atan2") == 1 { return 1 }
+    return 0
+}
+
+function sh_is_wgsl_float_fn(c: ptr<ShCtx>, k: i32) -> i32 {
+    if sh_node_is(c, k, "noise") == 1 { return 1 }
+    if sh_node_is(c, k, "fbm") == 1 { return 1 }
+    if sh_node_is(c, k, "hash") == 1 { return 1 }
+    if sh_node_is(c, k, "length") == 1 { return 1 }
+    if sh_node_is(c, k, "distance") == 1 { return 1 }
+    if sh_node_is(c, k, "dot") == 1 { return 1 }
+    return 0
+}
+
+# guess_type(). Returns a type handle, or -1 with the error set (WGSL only).
+function sh_guess(c: ptr<ShCtx>, x: i32) -> i32 {
+    let kind: i32 = c[0].nk[x]
+    if kind == E_NUMBER {
+        return sh_ty_known(c, 0)
+    }
+    if kind == E_NAME {
+        if sh_node_is(c, x, "uv") == 1 or sh_node_is(c, x, "resolution") == 1 {
+            return sh_ty_known(c, 3)
+        }
+        if sh_node_is(c, x, "time") == 1 {
+            return sh_ty_known(c, 0)
+        }
+        if sh_node_is(c, x, "color") == 1 {
+            return sh_ty_known(c, 5)
+        }
+        return sh_env_get(c, c[0].s1[x], c[0].e1[x], sh_ty_known(c, 0))
+    }
+    if kind == E_CAST {
+        return sh_ty_named(c, c[0].s1[x], c[0].e1[x])
+    }
+    if kind == E_CALL {
+        if sh_node_is(c, x, "vec2") == 1 {
+            return sh_ty_known(c, 3)
+        }
+        if c[0].target == SH_WGSL {
+            if sh_node_is(c, x, "vec3") == 1 or sh_node_is(c, x, "palette") == 1 or sh_node_is(c, x, "cross") == 1 {
+                return sh_ty_known(c, 4)
+            }
+            if sh_node_is(c, x, "vec4") == 1 {
+                return sh_ty_known(c, 5)
+            }
+            let f: i32 = sh_find_fn(c, c[0].s1[x], c[0].e1[x])
+            if f >= 0 {
+                return sh_map_type(c, c[0].frt[f])
+            }
+            if sh_is_wgsl_float_fn(c, x) == 1 {
+                return sh_ty_known(c, 0)
+            }
+        } else {
+            if sh_node_is(c, x, "vec3") == 1 or sh_node_is(c, x, "palette") == 1 or sh_node_is(c, x, "normalize") == 1 or sh_node_is(c, x, "cross") == 1 or sh_node_is(c, x, "reflect") == 1 {
+                return sh_ty_known(c, 4)
+            }
+            if sh_node_is(c, x, "vec4") == 1 {
+                return sh_ty_known(c, 5)
+            }
+            if sh_is_metal_float_fn(c, x) == 1 {
+                return sh_ty_known(c, 0)
+            }
+            if sh_find_fn(c, c[0].s1[x], c[0].e1[x]) >= 0 {
+                return sh_ty_known(c, 0)
+            }
+        }
+        if c[0].na[x] >= 0 {
+            return sh_guess(c, c[0].na[x])
+        }
+        return sh_ty_known(c, 0)
+    }
+    if kind == E_SWIZZLE {
+        let flen: i32 = c[0].e1[x] - c[0].s1[x]
+        if flen == 2 { return sh_ty_known(c, 3) }
+        if flen == 3 { return sh_ty_known(c, 4) }
+        if flen == 4 { return sh_ty_known(c, 5) }
+        return sh_ty_known(c, 0)
+    }
+    if kind == E_UNARY {
+        if sh_node_is(c, x, "!") == 1 {
+            return sh_ty_known(c, 2)
+        }
+        return sh_guess(c, c[0].na[x])
+    }
+    if kind == E_BINARY {
+        if sh_node_is(c, x, "<") == 1 or sh_node_is(c, x, ">") == 1 or sh_node_is(c, x, "<=") == 1 or sh_node_is(c, x, ">=") == 1 or sh_node_is(c, x, "==") == 1 or sh_node_is(c, x, "!=") == 1 or sh_node_is(c, x, "&&") == 1 or sh_node_is(c, x, "||") == 1 {
+            return sh_ty_known(c, 2)
+        }
+        let lt: i32 = sh_guess(c, c[0].na[x])
+        if lt < 0 {
+            return 0 - 1
+        }
+        let rt: i32 = sh_guess(c, c[0].nb[x])
+        if rt < 0 {
+            return 0 - 1
+        }
+        if sh_rank(c, lt) >= sh_rank(c, rt) {
+            return lt
+        }
+        return rt
+    }
+    return sh_ty_known(c, 0)
+}
+
+# ── Expression emit ──────────────────────────────────────────────
+
+function sh_is_metal_builtin(c: ptr<ShCtx>, k: i32) -> i32 {
+    let p: ptr<u8> = c[0].p
+    let s: i32 = c[0].s1[k]
+    let e: i32 = c[0].e1[k]
+    if sh_span_is(p, s, e, "sin") == 1 or sh_span_is(p, s, e, "cos") == 1 or sh_span_is(p, s, e, "tan") == 1 { return 1 }
+    if sh_span_is(p, s, e, "asin") == 1 or sh_span_is(p, s, e, "acos") == 1 or sh_span_is(p, s, e, "atan") == 1 { return 1 }
+    if sh_span_is(p, s, e, "atan2") == 1 or sh_span_is(p, s, e, "abs") == 1 or sh_span_is(p, s, e, "sign") == 1 { return 1 }
+    if sh_span_is(p, s, e, "floor") == 1 or sh_span_is(p, s, e, "ceil") == 1 or sh_span_is(p, s, e, "fract") == 1 { return 1 }
+    if sh_span_is(p, s, e, "trunc") == 1 or sh_span_is(p, s, e, "sqrt") == 1 or sh_span_is(p, s, e, "rsqrt") == 1 { return 1 }
+    if sh_span_is(p, s, e, "exp") == 1 or sh_span_is(p, s, e, "exp2") == 1 or sh_span_is(p, s, e, "log") == 1 { return 1 }
+    if sh_span_is(p, s, e, "log2") == 1 or sh_span_is(p, s, e, "pow") == 1 or sh_span_is(p, s, e, "min") == 1 { return 1 }
+    if sh_span_is(p, s, e, "max") == 1 or sh_span_is(p, s, e, "clamp") == 1 or sh_span_is(p, s, e, "saturate") == 1 { return 1 }
+    if sh_span_is(p, s, e, "mix") == 1 or sh_span_is(p, s, e, "step") == 1 or sh_span_is(p, s, e, "smoothstep") == 1 { return 1 }
+    if sh_span_is(p, s, e, "length") == 1 or sh_span_is(p, s, e, "distance") == 1 or sh_span_is(p, s, e, "dot") == 1 { return 1 }
+    if sh_span_is(p, s, e, "cross") == 1 or sh_span_is(p, s, e, "normalize") == 1 or sh_span_is(p, s, e, "reflect") == 1 { return 1 }
+    if sh_span_is(p, s, e, "refract") == 1 or sh_span_is(p, s, e, "mod") == 1 or sh_span_is(p, s, e, "fmod") == 1 { return 1 }
+    return 0
+}
+
+function sh_is_wgsl_builtin(c: ptr<ShCtx>, k: i32) -> i32 {
+    let p: ptr<u8> = c[0].p
+    let s: i32 = c[0].s1[k]
+    let e: i32 = c[0].e1[k]
+    if sh_span_is(p, s, e, "sin") == 1 or sh_span_is(p, s, e, "cos") == 1 or sh_span_is(p, s, e, "tan") == 1 { return 1 }
+    if sh_span_is(p, s, e, "asin") == 1 or sh_span_is(p, s, e, "acos") == 1 or sh_span_is(p, s, e, "atan") == 1 { return 1 }
+    if sh_span_is(p, s, e, "atan2") == 1 or sh_span_is(p, s, e, "abs") == 1 or sh_span_is(p, s, e, "sign") == 1 { return 1 }
+    if sh_span_is(p, s, e, "floor") == 1 or sh_span_is(p, s, e, "ceil") == 1 or sh_span_is(p, s, e, "fract") == 1 { return 1 }
+    if sh_span_is(p, s, e, "trunc") == 1 or sh_span_is(p, s, e, "sqrt") == 1 or sh_span_is(p, s, e, "inverseSqrt") == 1 { return 1 }
+    if sh_span_is(p, s, e, "exp") == 1 or sh_span_is(p, s, e, "exp2") == 1 or sh_span_is(p, s, e, "log") == 1 { return 1 }
+    if sh_span_is(p, s, e, "log2") == 1 or sh_span_is(p, s, e, "pow") == 1 or sh_span_is(p, s, e, "min") == 1 { return 1 }
+    if sh_span_is(p, s, e, "max") == 1 or sh_span_is(p, s, e, "clamp") == 1 or sh_span_is(p, s, e, "mix") == 1 { return 1 }
+    if sh_span_is(p, s, e, "step") == 1 or sh_span_is(p, s, e, "smoothstep") == 1 or sh_span_is(p, s, e, "length") == 1 { return 1 }
+    if sh_span_is(p, s, e, "distance") == 1 or sh_span_is(p, s, e, "dot") == 1 or sh_span_is(p, s, e, "cross") == 1 { return 1 }
+    if sh_span_is(p, s, e, "normalize") == 1 or sh_span_is(p, s, e, "reflect") == 1 or sh_span_is(p, s, e, "refract") == 1 { return 1 }
+    return 0
+}
+
+function sh_put_name(c: ptr<ShCtx>, w: ptr<ShBuf>, k: i32) {
+    sh_put_span(w, c[0].p, c[0].s1[k], c[0].e1[k])
+}
+
+function sh_unknown_fn(c: ptr<ShCtx>, x: i32) {
+    if sh_err(c) == 1 {
+        sh_puts(c[0].msg, "Unknown shader function '")
+        sh_put_name(c, c[0].msg, x)
+        sh_puts(c[0].msg, "'")
+    }
+}
+
+# Emit a call. Arguments are emitted first into `args` (their errors come
+# first, as the Python built the argument strings before dispatching);
+# arg k is args[ars[k]..ae[k]).
+function sh_emit_call(c: ptr<ShCtx>, w: ptr<ShBuf>, x: i32) {
+    let nargs: i32 = c[0].nc[x]
+    let args: ptr<ShBuf> = flowc_shader_buf_new(64)
+    let ars: ptr<i32> = sh_ints(nargs)
+    let ae: ptr<i32> = sh_ints(nargs)
+    let mut a: i32 = c[0].na[x]
+    let mut k: i32 = 0
+    while a >= 0 and c[0].err == 0 {
+        if k > 0 {
+            sh_puts(args, ", ")
+        }
+        ars[k] = args[0].len
+        sh_emit_expr(c, args, a)
+        ae[k] = args[0].len
+        k = k + 1
+        a = c[0].nx[a]
+    }
+    if c[0].err == 0 {
+        let wg: i32 = c[0].target
+        let mut paren: i32 = 1
+        if sh_node_is(c, x, "vec2") == 1 {
+            sh_put_ty(c, w, sh_ty_known(c, 3))
+        } elif sh_node_is(c, x, "vec3") == 1 {
+            sh_put_ty(c, w, sh_ty_known(c, 4))
+        } elif sh_node_is(c, x, "vec4") == 1 {
+            sh_put_ty(c, w, sh_ty_known(c, 5))
+        } elif sh_node_is(c, x, "hash") == 1 {
+            if wg == SH_WGSL {
+                if nargs != 1 {
+                    sh_fail(c, "hash() expects one argument")
+                } else {
+                    let at: i32 = sh_guess(c, c[0].na[x])
+                    if at >= 0 and sh_ty_is(c, at, "vec2<f32>") == 1 {
+                        sh_puts(w, "fsl_hash21")
+                    } else {
+                        sh_puts(w, "fsl_hash11")
+                    }
+                }
+            } else {
+                if nargs == 1 {
+                    let at2: i32 = sh_guess(c, c[0].na[x])
+                    if sh_ty_is(c, at2, "float2") == 1 or sh_ty_is(c, at2, "vec2") == 1 {
+                        sh_puts(w, "fsl_hash21")
+                    } else {
+                        sh_puts(w, "fsl_hash11")
+                    }
+                } else {
+                    sh_puts(w, "fsl_hash21")
+                }
+            }
+        } elif sh_node_is(c, x, "noise") == 1 {
+            sh_puts(w, "fsl_noise")
+        } elif sh_node_is(c, x, "fbm") == 1 {
+            sh_puts(w, "fsl_fbm")
+        } elif sh_node_is(c, x, "palette") == 1 {
+            sh_puts(w, "fsl_palette")
+        } elif wg == SH_METAL and sh_node_is(c, x, "mod") == 1 {
+            sh_puts(w, "fmod")
+        } elif wg == SH_WGSL and (sh_node_is(c, x, "mod") == 1 or sh_node_is(c, x, "fmod") == 1) {
+            if nargs != 2 {
+                if sh_err(c) == 1 {
+                    sh_put_name(c, c[0].msg, x)
+                    sh_puts(c[0].msg, "() expects two arguments")
+                }
+            } else {
+                sh_putc(w, 40)
+                sh_put_span(w, args[0].buf, ars[0], ae[0])
+                sh_puts(w, " % ")
+                sh_put_span(w, args[0].buf, ars[1], ae[1])
+                sh_putc(w, 41)
+            }
+            paren = 0
+        } elif wg == SH_WGSL and sh_node_is(c, x, "saturate") == 1 {
+            if nargs != 1 {
+                sh_fail(c, "saturate() expects one argument")
+            } else {
+                sh_puts(w, "clamp(")
+                sh_put_span(w, args[0].buf, ars[0], ae[0])
+                sh_puts(w, ", 0.0, 1.0)")
+            }
+            paren = 0
+        } elif wg == SH_WGSL and sh_node_is(c, x, "rsqrt") == 1 {
+            sh_puts(w, "inverseSqrt")
+        } else {
+            let mut known: i32 = 0
+            if wg == SH_WGSL {
+                known = sh_is_wgsl_builtin(c, x)
+            } else {
+                known = sh_is_metal_builtin(c, x)
+            }
+            if known == 0 and sh_find_fn(c, c[0].s1[x], c[0].e1[x]) >= 0 {
+                known = 1
+            }
+            if known == 1 {
+                sh_put_name(c, w, x)
+            } else {
+                sh_unknown_fn(c, x)
+                paren = 0
+            }
+        }
+        if paren == 1 and c[0].err == 0 {
+            sh_putc(w, 40)
+            sh_put_span(w, args[0].buf, 0, args[0].len)
+            sh_putc(w, 41)
+        }
+    }
+    free(ars as ptr<u8>)
+    free(ae as ptr<u8>)
+    flowc_shader_buf_free(args)
+}
+
+function sh_emit_expr(c: ptr<ShCtx>, w: ptr<ShBuf>, x: i32) {
+    if c[0].err != 0 {
+        return
+    }
+    let kind: i32 = c[0].nk[x]
+    if kind == E_NUMBER {
+        sh_put_name(c, w, x)
+        if c[0].nf[x] == 1 {
+            sh_puts(w, ".0")
+        }
+        return
+    }
+    if kind == E_NAME {
+        if sh_node_is(c, x, "time") == 1 {
+            sh_puts(w, "uniforms.time")
+        } elif sh_node_is(c, x, "resolution") == 1 {
+            sh_put_ty(c, w, sh_ty_known(c, 3))
+            sh_puts(w, "(uniforms.width, uniforms.height)")
+        } else {
+            sh_put_name(c, w, x)
+        }
+        return
+    }
+    if kind == E_UNARY {
+        sh_putc(w, 40)
+        sh_put_name(c, w, x)
+        sh_emit_expr(c, w, c[0].na[x])
+        sh_putc(w, 41)
+        return
+    }
+    if kind == E_BINARY {
+        if c[0].target == SH_METAL and sh_node_is(c, x, "%") == 1 {
+            sh_puts(w, "fmod(")
+            sh_emit_expr(c, w, c[0].na[x])
+            sh_puts(w, ", ")
+            sh_emit_expr(c, w, c[0].nb[x])
+            sh_putc(w, 41)
+            return
+        }
+        sh_putc(w, 40)
+        sh_emit_expr(c, w, c[0].na[x])
+        sh_putc(w, 32)
+        sh_put_name(c, w, x)
+        sh_putc(w, 32)
+        sh_emit_expr(c, w, c[0].nb[x])
+        sh_putc(w, 41)
+        return
+    }
+    if kind == E_SWIZZLE {
+        sh_emit_expr(c, w, c[0].na[x])
+        sh_putc(w, 46)
+        sh_put_name(c, w, x)
+        return
+    }
+    if kind == E_CAST {
+        sh_put_ty(c, w, sh_ty_named(c, c[0].s1[x], c[0].e1[x]))
+        sh_putc(w, 40)
+        sh_emit_expr(c, w, c[0].na[x])
+        sh_putc(w, 41)
+        return
+    }
+    sh_emit_call(c, w, x)
+}
+
+# ── Statement emit ───────────────────────────────────────────────
+
+# emit_stmts(); returns the number of lines written.
+function sh_emit_stmts(c: ptr<ShCtx>, w: ptr<ShBuf>, head: i32, indent: i32) -> i32 {
+    let mut lines: i32 = 0
+    let mut st: i32 = head
+    while st >= 0 and c[0].err == 0 {
+        let kind: i32 = c[0].nk[st]
+        if kind == S_LET {
+            let mut ty: i32 = 0
+            if c[0].nb[st] >= 0 {
+                ty = sh_map_type(c, c[0].nb[st])
+            } else {
+                ty = sh_guess(c, c[0].na[st])
+            }
+            if c[0].err == 0 {
+                sh_env_set(c, c[0].s1[st], c[0].e1[st], ty)
+                sh_pad(w, indent)
+                if c[0].target == SH_WGSL {
+                    if c[0].nf[st] == 1 {
+                        sh_puts(w, "var ")
+                    } else {
+                        sh_puts(w, "let ")
+                    }
+                    sh_put_name(c, w, st)
+                    sh_puts(w, ": ")
+                    sh_put_ty(c, w, ty)
+                } else {
+                    sh_put_ty(c, w, ty)
+                    sh_putc(w, 32)
+                    sh_put_name(c, w, st)
+                }
+                sh_puts(w, " = ")
+                sh_emit_expr(c, w, c[0].na[st])
+                sh_line(w, ";")
+                lines = lines + 1
+            }
+        } elif kind == S_ASSIGN {
+            sh_pad(w, indent)
+            sh_put_name(c, w, st)
+            sh_puts(w, " = ")
+            sh_emit_expr(c, w, c[0].na[st])
+            sh_line(w, ";")
+            lines = lines + 1
+        } elif kind == S_RETURN {
+            sh_pad(w, indent)
+            if c[0].na[st] < 0 {
+                sh_line(w, "return;")
+            } else {
+                sh_puts(w, "return ")
+                sh_emit_expr(c, w, c[0].na[st])
+                sh_line(w, ";")
+            }
+            lines = lines + 1
+        } elif kind == S_IF {
+            sh_pad(w, indent)
+            sh_puts(w, "if (")
+            sh_emit_expr(c, w, c[0].na[st])
+            sh_line(w, ") {")
+            lines = lines + 1
+            lines = lines + sh_emit_stmts(c, w, c[0].nb[st], indent + 1)
+            if c[0].nc[st] >= 0 {
+                sh_pad(w, indent)
+                sh_line(w, "} else {")
+                lines = lines + 1
+                lines = lines + sh_emit_stmts(c, w, c[0].nc[st], indent + 1)
+            }
+            sh_pad(w, indent)
+            sh_line(w, "}")
+            lines = lines + 1
+        } else {
+            # S_FOR: the loop variable is an int, bounds are cast.
+            let wg: i32 = c[0].target
+            sh_env_set(c, c[0].s1[st], c[0].e1[st], sh_ty_known(c, 1))
+            sh_pad(w, indent)
+            if wg == SH_WGSL {
+                sh_puts(w, "for (var ")
+                sh_put_name(c, w, st)
+                sh_puts(w, ": i32 = i32(")
+            } else {
+                sh_puts(w, "for (int ")
+                sh_put_name(c, w, st)
+                sh_puts(w, " = int(")
+            }
+            sh_emit_expr(c, w, c[0].na[st])
+            sh_puts(w, "); ")
+            sh_put_name(c, w, st)
+            if wg == SH_WGSL {
+                sh_puts(w, " < i32(")
+            } else {
+                sh_puts(w, " < int(")
+            }
+            sh_emit_expr(c, w, c[0].nb[st])
+            sh_puts(w, "); ")
+            sh_put_name(c, w, st)
+            if wg == SH_WGSL {
+                sh_puts(w, " = ")
+                sh_put_name(c, w, st)
+                sh_line(w, " + 1) {")
+            } else {
+                sh_line(w, "++) {")
+            }
+            lines = lines + 1
+            lines = lines + sh_emit_stmts(c, w, c[0].nc[st], indent + 1)
+            sh_pad(w, indent)
+            sh_line(w, "}")
+            lines = lines + 1
+        }
+        st = c[0].nx[st]
+    }
+    return lines
+}
+
+function sh_has_color_assign(c: ptr<ShCtx>, head: i32) -> i32 {
+    let mut st: i32 = head
+    while st >= 0 {
+        let kind: i32 = c[0].nk[st]
+        if kind == S_ASSIGN and sh_node_is(c, st, "color") == 1 {
+            return 1
+        }
+        if kind == S_IF {
+            if sh_has_color_assign(c, c[0].nb[st]) == 1 or sh_has_color_assign(c, c[0].nc[st]) == 1 {
+                return 1
+            }
+        }
+        if kind == S_FOR and sh_has_color_assign(c, c[0].nc[st]) == 1 {
+            return 1
+        }
+        st = c[0].nx[st]
+    }
+    return 0
+}
+
+# ── Module emit ──────────────────────────────────────────────────
+
+# _emit_fn() for user fn k.
+function sh_emit_fn(c: ptr<ShCtx>, w: ptr<ShBuf>, k: i32) {
+    c[0].nv = 0
+    let wg: i32 = c[0].target
+    let mut ret: i32 = 0
+    if wg == SH_METAL {
+        ret = sh_map_type(c, c[0].frt[k])
+    }
+    let params: ptr<ShBuf> = flowc_shader_buf_new(64)
+    let mut i: i32 = 0
+    while i < c[0].fpn[k] and c[0].err == 0 {
+        let pi: i32 = c[0].fp0[k] + i
+        let mt: i32 = sh_map_type(c, c[0].pat[pi])
+        if c[0].err == 0 {
+            sh_env_set(c, c[0].pas[pi], c[0].pae[pi], mt)
+            if i > 0 {
+                sh_puts(params, ", ")
+            }
+            if wg == SH_WGSL {
+                sh_put_span(params, c[0].p, c[0].pas[pi], c[0].pae[pi])
+                sh_puts(params, ": ")
+                sh_put_ty(c, params, mt)
+            } else {
+                sh_put_ty(c, params, mt)
+                sh_putc(params, 32)
+                sh_put_span(params, c[0].p, c[0].pas[pi], c[0].pae[pi])
+            }
+        }
+        i = i + 1
+    }
+    if c[0].err != 0 {
+        flowc_shader_buf_free(params)
+        return
+    }
+    let body: ptr<ShBuf> = flowc_shader_buf_new(256)
+    let stmts: i32 = sh_parse_body_span(c, c[0].fbs[k], c[0].fbe[k])
+    let mut nl: i32 = 0
+    if c[0].err == 0 {
+        nl = sh_emit_stmts(c, body, stmts, 1)
+    }
+    if c[0].err == 0 and wg == SH_WGSL {
+        ret = sh_map_type(c, c[0].frt[k])
+    }
+    if c[0].err == 0 {
+        if wg == SH_WGSL {
+            sh_puts(w, "fn ")
+            sh_put_span(w, c[0].p, c[0].fns[k], c[0].fne[k])
+            sh_putc(w, 40)
+            sh_put_span(w, params[0].buf, 0, params[0].len)
+            sh_puts(w, ") -> ")
+            sh_put_ty(c, w, ret)
+            sh_line(w, " {")
+        } else {
+            sh_puts(w, "static inline ")
+            sh_put_ty(c, w, ret)
+            sh_putc(w, 32)
+            sh_put_span(w, c[0].p, c[0].fns[k], c[0].fne[k])
+            sh_putc(w, 40)
+            sh_put_span(w, params[0].buf, 0, params[0].len)
+            sh_line(w, ") {")
+        }
+        sh_put_span(w, body[0].buf, 0, body[0].len)
+        if nl == 0 {
+            sh_putc(w, 10)
+        }
+        sh_line(w, "}")
+    }
+    flowc_shader_buf_free(params)
+    flowc_shader_buf_free(body)
+}
+
+function sh_emit_fill(c: ptr<ShCtx>, w: ptr<ShBuf>, k: i32) {
+    let stmts: i32 = sh_parse_body_span(c, c[0].flbs[k], c[0].flbe[k])
+    if c[0].err != 0 {
+        return
+    }
+    if sh_has_color_assign(c, stmts) == 0 {
+        if sh_err(c) == 1 {
+            sh_puts(c[0].msg, "shader fill '")
+            sh_put_span(c[0].msg, c[0].p, c[0].fls[k], c[0].fle[k])
+            sh_puts(c[0].msg, "' must assign `color = ...`")
+        }
+        return
+    }
+    c[0].nv = 0
+    if c[0].target == SH_WGSL {
+        sh_line(w, "@fragment")
+        sh_puts(w, "fn ")
+        sh_put_span(w, c[0].p, c[0].fls[k], c[0].fle[k])
+        sh_line(w, "_frag(in: FlowVertexOut) -> @location(0) vec4<f32> {")
+        sh_line(w, "    let uv: vec2<f32> = in.uv;")
+        sh_line(w, "    var color: vec4<f32> = vec4<f32>(0.0, 0.0, 0.0, 1.0);")
+    } else {
+        sh_puts(w, "fragment float4 ")
+        sh_put_span(w, c[0].p, c[0].fls[k], c[0].fle[k])
+        sh_line(w, "_frag(")
+        sh_line(w, "    FlowVertexOut in [[stage_in]],")
+        sh_line(w, "    constant FlowShaderUniforms& uniforms [[buffer(0)]]")
+        sh_line(w, ") {")
+        sh_line(w, "    float2 uv = in.uv;")
+        sh_line(w, "    float4 color = float4(0.0, 0.0, 0.0, 1.0);")
+    }
+    sh_emit_stmts(c, w, stmts, 1)
+    sh_line(w, "    return color;")
+    sh_line(w, "}")
+}
+
+# generate_metal_for_module() / generate_wgsl_for_module() over the fills
+# selected by `name` (all when nlen < 0) and `only` (all when < 0). Returns
+# 0, or -1 with the error set.
+export function flowc_shader_gen(c: ptr<ShCtx>, w: ptr<ShBuf>, target: i32, name: ptr<u8>, nlen: i32, only: i32) -> i32 {
+    c[0].target = target
+    let mut nsel: i32 = 0
+    let mut k: i32 = 0
+    while k < c[0].nfl {
+        if (nlen < 0 or flowc_shader_fill_named(c, k, name, nlen) == 1) and (only < 0 or only == k) {
+            nsel = nsel + 1
+        }
+        k = k + 1
+    }
+    if nsel == 0 {
+        sh_fail(c, "No `shader fill` blocks in module")
+        return 0 - 1
+    }
+    if target == SH_WGSL {
+        sh_prelude_wgsl(w)
+    } else {
+        sh_prelude_metal(w)
+    }
+    sh_puts(w, "\n\n")
+    let mut f: i32 = 0
+    while f < c[0].nfn and c[0].err == 0 {
+        sh_emit_fn(c, w, f)
+        sh_puts(w, "\n\n")
+        f = f + 1
+    }
+    let mut seen: i32 = 0
+    k = 0
+    while k < c[0].nfl and c[0].err == 0 {
+        if (nlen < 0 or flowc_shader_fill_named(c, k, name, nlen) == 1) and (only < 0 or only == k) {
+            sh_emit_fill(c, w, k)
+            seen = seen + 1
+            if seen < nsel {
+                sh_putc(w, 10)
+            }
+        }
+        k = k + 1
+    }
+    if c[0].err != 0 {
+        return 0 - 1
+    }
+    return 0
+}
+
+# ── Preludes (the Python _PRELUDE strings) ───────────────────────
+
+function sh_prelude_metal(w: ptr<ShBuf>) {
+    sh_line(w, "")
+    sh_line(w, "#include <metal_stdlib>")
+    sh_line(w, "using namespace metal;")
+    sh_line(w, "")
+    sh_line(w, "struct FlowShaderUniforms {")
+    sh_line(w, "    float time;")
+    sh_line(w, "    float width;")
+    sh_line(w, "    float height;")
+    sh_line(w, "};")
+    sh_line(w, "")
+    sh_line(w, "struct FlowVertexOut {")
+    sh_line(w, "    float4 position [[position]];")
+    sh_line(w, "    float2 uv;")
+    sh_line(w, "};")
+    sh_line(w, "")
+    sh_line(w, "vertex FlowVertexOut flow_shader_vertex(uint vid [[vertex_id]]) {")
+    sh_line(w, "    float2 pos;")
+    sh_line(w, "    if (vid == 0) pos = float2(-1.0, -1.0);")
+    sh_line(w, "    else if (vid == 1) pos = float2( 3.0, -1.0);")
+    sh_line(w, "    else pos = float2(-1.0,  3.0);")
+    sh_line(w, "    FlowVertexOut out;")
+    sh_line(w, "    out.position = float4(pos, 0.0, 1.0);")
+    sh_line(w, "    out.uv = float2(pos.x * 0.5 + 0.5, 1.0 - (pos.y * 0.5 + 0.5));")
+    sh_line(w, "    return out;")
+    sh_line(w, "}")
+    sh_line(w, "")
+    sh_puts(w, "// ")
+    sh_rule(w, 2)
+    sh_puts(w, " FSL standard library (hash / noise / palette) ")
+    sh_rule(w, 19)
+    sh_putc(w, 10)
+    sh_line(w, "static inline float fsl_hash11(float p) {")
+    sh_line(w, "    p = fract(p * 0.1031);")
+    sh_line(w, "    p *= p + 33.33;")
+    sh_line(w, "    p *= p + p;")
+    sh_line(w, "    return fract(p);")
+    sh_line(w, "}")
+    sh_line(w, "static inline float fsl_hash21(float2 p) {")
+    sh_line(w, "    float3 p3 = fract(float3(p.xyx) * 0.1031);")
+    sh_line(w, "    p3 += dot(p3, p3.yzx + 33.33);")
+    sh_line(w, "    return fract((p3.x + p3.y) * p3.z);")
+    sh_line(w, "}")
+    sh_line(w, "static inline float2 fsl_hash22(float2 p) {")
+    sh_line(w, "    float3 p3 = fract(float3(p.xyx) * float3(0.1031, 0.1030, 0.0973));")
+    sh_line(w, "    p3 += dot(p3, p3.yzx + 33.33);")
+    sh_line(w, "    return fract((p3.xx + p3.yz) * p3.zy);")
+    sh_line(w, "}")
+    sh_line(w, "static inline float fsl_noise(float2 p) {")
+    sh_line(w, "    float2 i = floor(p);")
+    sh_line(w, "    float2 f = fract(p);")
+    sh_line(w, "    float a = fsl_hash21(i);")
+    sh_line(w, "    float b = fsl_hash21(i + float2(1.0, 0.0));")
+    sh_line(w, "    float c = fsl_hash21(i + float2(0.0, 1.0));")
+    sh_line(w, "    float d = fsl_hash21(i + float2(1.0, 1.0));")
+    sh_line(w, "    float2 u = f * f * (3.0 - 2.0 * f);")
+    sh_line(w, "    return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;")
+    sh_line(w, "}")
+    sh_line(w, "static inline float fsl_fbm(float2 p) {")
+    sh_line(w, "    float v = 0.0;")
+    sh_line(w, "    float a = 0.5;")
+    sh_line(w, "    for (int i = 0; i < 5; i++) {")
+    sh_line(w, "        v += a * fsl_noise(p);")
+    sh_line(w, "        p *= 2.0;")
+    sh_line(w, "        a *= 0.5;")
+    sh_line(w, "    }")
+    sh_line(w, "    return v;")
+    sh_line(w, "}")
+    sh_line(w, "static inline float3 fsl_palette(float t) {")
+    sh_line(w, "    float3 a = float3(0.5, 0.5, 0.5);")
+    sh_line(w, "    float3 b = float3(0.5, 0.5, 0.5);")
+    sh_line(w, "    float3 c = float3(1.0, 1.0, 1.0);")
+    sh_line(w, "    float3 d = float3(0.00, 0.33, 0.67);")
+    sh_line(w, "    return a + b * cos(6.28318 * (c * t + d));")
+    sh_line(w, "}")
+}
+
+function sh_prelude_wgsl(w: ptr<ShBuf>) {
+    sh_line(w, "")
+    sh_line(w, "struct FlowShaderUniforms {")
+    sh_line(w, "    time: f32,")
+    sh_line(w, "    width: f32,")
+    sh_line(w, "    height: f32,")
+    sh_line(w, "    _pad: f32,")
+    sh_line(w, "};")
+    sh_line(w, "")
+    sh_line(w, "@group(0) @binding(0)")
+    sh_line(w, "var<uniform> uniforms: FlowShaderUniforms;")
+    sh_line(w, "")
+    sh_line(w, "struct FlowVertexOut {")
+    sh_line(w, "    @builtin(position) position: vec4<f32>,")
+    sh_line(w, "    @location(0) uv: vec2<f32>,")
+    sh_line(w, "};")
+    sh_line(w, "")
+    sh_line(w, "@vertex")
+    sh_line(w, "fn flow_shader_vertex(@builtin(vertex_index) vid: u32) -> FlowVertexOut {")
+    sh_line(w, "    var pos: vec2<f32>;")
+    sh_line(w, "    if (vid == 0u) {")
+    sh_line(w, "        pos = vec2<f32>(-1.0, -1.0);")
+    sh_line(w, "    } else if (vid == 1u) {")
+    sh_line(w, "        pos = vec2<f32>(3.0, -1.0);")
+    sh_line(w, "    } else {")
+    sh_line(w, "        pos = vec2<f32>(-1.0, 3.0);")
+    sh_line(w, "    }")
+    sh_line(w, "")
+    sh_line(w, "    var out: FlowVertexOut;")
+    sh_line(w, "    out.position = vec4<f32>(pos, 0.0, 1.0);")
+    sh_line(w, "    out.uv = vec2<f32>(pos.x * 0.5 + 0.5, 1.0 - (pos.y * 0.5 + 0.5));")
+    sh_line(w, "    return out;")
+    sh_line(w, "}")
+    sh_line(w, "")
+    sh_line(w, "fn fsl_hash11(value: f32) -> f32 {")
+    sh_line(w, "    var p = fract(value * 0.1031);")
+    sh_line(w, "    p = p * (p + 33.33);")
+    sh_line(w, "    p = p * (p + p);")
+    sh_line(w, "    return fract(p);")
+    sh_line(w, "}")
+    sh_line(w, "")
+    sh_line(w, "fn fsl_hash21(value: vec2<f32>) -> f32 {")
+    sh_line(w, "    var p3 = fract(vec3<f32>(value.x, value.y, value.x) * vec3<f32>(0.1031));")
+    sh_line(w, "    let d = dot(p3, p3.yzx + vec3<f32>(33.33));")
+    sh_line(w, "    p3 = p3 + vec3<f32>(d);")
+    sh_line(w, "    return fract((p3.x + p3.y) * p3.z);")
+    sh_line(w, "}")
+    sh_line(w, "")
+    sh_line(w, "fn fsl_noise(p: vec2<f32>) -> f32 {")
+    sh_line(w, "    let i = floor(p);")
+    sh_line(w, "    let f = fract(p);")
+    sh_line(w, "    let a = fsl_hash21(i);")
+    sh_line(w, "    let b = fsl_hash21(i + vec2<f32>(1.0, 0.0));")
+    sh_line(w, "    let c = fsl_hash21(i + vec2<f32>(0.0, 1.0));")
+    sh_line(w, "    let d = fsl_hash21(i + vec2<f32>(1.0, 1.0));")
+    sh_line(w, "    let u = f * f * (vec2<f32>(3.0) - vec2<f32>(2.0) * f);")
+    sh_line(w, "    return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;")
+    sh_line(w, "}")
+    sh_line(w, "")
+    sh_line(w, "fn fsl_fbm(value: vec2<f32>) -> f32 {")
+    sh_line(w, "    var p = value;")
+    sh_line(w, "    var v = 0.0;")
+    sh_line(w, "    var a = 0.5;")
+    sh_line(w, "    for (var i: i32 = 0; i < 5; i = i + 1) {")
+    sh_line(w, "        v = v + a * fsl_noise(p);")
+    sh_line(w, "        p = p * vec2<f32>(2.0);")
+    sh_line(w, "        a = a * 0.5;")
+    sh_line(w, "    }")
+    sh_line(w, "    return v;")
+    sh_line(w, "}")
+    sh_line(w, "")
+    sh_line(w, "fn fsl_palette(t: f32) -> vec3<f32> {")
+    sh_line(w, "    let a = vec3<f32>(0.5, 0.5, 0.5);")
+    sh_line(w, "    let b = vec3<f32>(0.5, 0.5, 0.5);")
+    sh_line(w, "    let c = vec3<f32>(1.0, 1.0, 1.0);")
+    sh_line(w, "    let d = vec3<f32>(0.00, 0.33, 0.67);")
+    sh_line(w, "    return a + b * cos(vec3<f32>(6.28318) * (c * vec3<f32>(t) + d));")
+    sh_line(w, "}")
+}
+

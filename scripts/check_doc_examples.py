@@ -22,7 +22,7 @@ clang is trivially happy. A translation unit holding no functions, structs,
 enums, effects or capabilities is vacuous, and vacuous is not verified.
 
 The harness exists because most documented examples are fragments by design: a
-page about struct syntax shows a struct, not a program wrapped around one. The
+page about struct syntax shows a struct with no program wrapped around it. The
 checker tries a short ladder of wrappers and records which rung each block
 needed, so a block leaning on the loosest wrapper stays visible in the ledger
 rather than disappearing into a green count.
@@ -235,7 +235,7 @@ def _compile(source: str, guard_noop: bool, mode: str = "standalone") -> tuple[O
     from flow.module_resolver import resolve_modules
     from flow.monomorphize import monomorphize
     from flow.parser import parse_flow_code
-    from flow.shader_dsl import extract_shader_module, has_fill_shader_dsl
+    from flow.shader_dsl import fill_names, has_fill_shader_dsl
     from flow.type_checker import TypeChecker
 
     sink = io.StringIO()
@@ -244,8 +244,10 @@ def _compile(source: str, guard_noop: bool, mode: str = "standalone") -> tuple[O
             if has_fill_shader_dsl(source):
                 # A fill-shader module is a different language with its own
                 # validator and no host translation unit to check.
-                mod = extract_shader_module(source)
-                if not mod.fills:
+                with tempfile.TemporaryDirectory() as td:
+                    (Path(td) / "block.flow").write_text(source, encoding="utf-8")
+                    fills = fill_names(str(Path(td) / "block.flow"))
+                if not fills:
                     return None, "parse", "no `shader fill` block in a shader module"
                 return "", "shader", ""
             own = parse_flow_code(_expand(source))
@@ -456,7 +458,7 @@ def verify(block: Block, context: Optional[dict] = None) -> Result:
             detail=meaning_detail or best_noop or first[1],
             stage="types" if reached_meaning else "parse",
         )
-    # The furthest failure, not the first. `standalone` runs before the
+    # Keep the furthest failure. The first can mislead. `standalone` runs before the
     # wrappers, so a statement fragment recorded "Top-level 'let' must be
     # 'let mut'" even when stmt-wrap got to the type checker and failed for a
     # reason worth reading (#588).
@@ -508,7 +510,7 @@ def _batch_clang(results: list[Result], batch: int = 150) -> None:
                     res.detail = line.split(": error:", 1)[1].strip()[:200]
 
 
-# Death by signal, not an ordinary exit status. A doc example may return a
+# Death by signal. An ordinary exit status does not count. A doc example may return a
 # non-zero status on purpose (the book has one that returns 2 to show a failure
 # path), so only a crash or a hang is a failure here.
 _CRASH_SIGNALS = {

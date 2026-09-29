@@ -22,36 +22,9 @@ from .parser import (
     ImplDecl,
     ExportDecl,
     ModuleDecl,
-    FunctionDecl,
-    Type,
-    Block,
-    ReturnStatement,
-    Literal,
 )
 from .project_config import load_project_config
-from .shader_dsl import extract_shader_module, has_fill_shader_dsl
-
-
-def _fill_shader_host_stub() -> List[Any]:
-    """Host-Flow stub so fill-shader modules can pass the C transpile corpus.
-
-    Fill shaders are compiled by `./flow shader` / `shader_codegen`, not the
-    host C backend. Tier-2 still runs every tracked `examples/**/*.flow` through
-    `flow.transpiler --c`, so FSL modules need a harmless host entry point.
-    """
-    return [
-        FunctionDecl(
-            name="main",
-            parameters=[],
-            return_type=Type(name="i32"),
-            body=Block(
-                statements=[
-                    ReturnStatement(value=Literal(value="0", type=Type(name="i32")))
-                ]
-            ),
-            attributes=[],
-        )
-    ]
+from .shader_dsl import expand_fill_shader
 
 
 class SymbolCollisionError(ValueError):
@@ -161,26 +134,19 @@ class ModuleResolver:
                 pass
 
         if declarations is None:
-            # Fill-shader dialect (`shader fill` / FSL `fn`) is not host Flow.
-            # Validate the FSL module, then provide a stub main for C transpile.
-            if has_fill_shader_dsl(code):
-                mod = extract_shader_module(code)
-                if not mod.fills:
-                    raise SyntaxError(
-                        f"Fill-shader module has no `shader fill` blocks: {file_path}"
-                    )
-                declarations = _fill_shader_host_stub()
-            else:
-                from .field_dsl import expand_field_dsl, has_field_dsl
+            # A fill-shader (FSL) module is not host Flow; flowc gives its
+            # host program, a stub main, so the C transpile corpus passes.
+            code = expand_fill_shader(code)
+            from .field_dsl import expand_field_dsl, has_field_dsl
 
-                if has_field_dsl(code):
-                    code = expand_field_dsl(code)
-                if has_dynamics_dsl(code):
-                    code = expand_dynamics_dsl(code)
+            if has_field_dsl(code):
+                code = expand_field_dsl(code)
+            if has_dynamics_dsl(code):
+                code = expand_dynamics_dsl(code)
 
-                lexer = Lexer(code)
-                parser = Parser(lexer)
-                declarations = parser.parse()
+            lexer = Lexer(code)
+            parser = Parser(lexer)
+            declarations = parser.parse()
 
             try:
                 with open(cache_path, "wb") as f:
@@ -214,7 +180,7 @@ class ModuleResolver:
                     raise SymbolCollisionError(
                         f"Re-export collision in {file_path}: forwarding "
                         f"'{imp.path}' brings in a name that is already "
-                        f"exported elsewhere — {exc}"
+                        f"exported elsewhere: {exc}"
                     ) from exc
                 self._validate_import_symbols(
                     imp, resolved_path, import_symbols, file_path
@@ -490,9 +456,10 @@ class ModuleResolver:
         """True for flow-verify proof modules (lib/verify, examples/verify).
 
         Their `import … { facet }` brace lists are dependency citations
-        (claim facets / kebab names), not bindings into `module_info.symbols`
-        — declarations are claim-path / guillemet-named and are pulled in
-        transitively via the resolved file regardless of the brace list.
+        (claim facets / kebab names). They add nothing to
+        `module_info.symbols`: declarations are claim-path / guillemet-named
+        and are pulled in transitively via the resolved file regardless of
+        the brace list.
         """
         norm = resolved_path.replace("\\", "/")
         return "/lib/verify/" in norm or norm.endswith("/lib/verify") \
@@ -512,7 +479,7 @@ class ModuleResolver:
             return
         # Morphism imports (`verify.Nat/+ { zero-left }`) and verify-corpus
         # sibling citations (`import .Nat-plus-commutes { commutes }`) use
-        # the brace list as documentation only — never as a real binding.
+        # the brace list as documentation only. It never binds a name.
         citation_module = (
             self._is_verify_citation_module(resolved_path)
             or ("/" in (imp.path or ""))

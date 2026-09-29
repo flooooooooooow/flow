@@ -1,0 +1,91 @@
+=== ok_skipped_chars_gallery.wgsl
+
+struct FlowShaderUniforms {
+    time: f32,
+    width: f32,
+    height: f32,
+    _pad: f32,
+};
+
+@group(0) @binding(0)
+var<uniform> uniforms: FlowShaderUniforms;
+
+struct FlowVertexOut {
+    @builtin(position) position: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+};
+
+@vertex
+fn flow_shader_vertex(@builtin(vertex_index) vid: u32) -> FlowVertexOut {
+    var pos: vec2<f32>;
+    if (vid == 0u) {
+        pos = vec2<f32>(-1.0, -1.0);
+    } else if (vid == 1u) {
+        pos = vec2<f32>(3.0, -1.0);
+    } else {
+        pos = vec2<f32>(-1.0, 3.0);
+    }
+
+    var out: FlowVertexOut;
+    out.position = vec4<f32>(pos, 0.0, 1.0);
+    out.uv = vec2<f32>(pos.x * 0.5 + 0.5, 1.0 - (pos.y * 0.5 + 0.5));
+    return out;
+}
+
+fn fsl_hash11(value: f32) -> f32 {
+    var p = fract(value * 0.1031);
+    p = p * (p + 33.33);
+    p = p * (p + p);
+    return fract(p);
+}
+
+fn fsl_hash21(value: vec2<f32>) -> f32 {
+    var p3 = fract(vec3<f32>(value.x, value.y, value.x) * vec3<f32>(0.1031));
+    let d = dot(p3, p3.yzx + vec3<f32>(33.33));
+    p3 = p3 + vec3<f32>(d);
+    return fract((p3.x + p3.y) * p3.z);
+}
+
+fn fsl_noise(p: vec2<f32>) -> f32 {
+    let i = floor(p);
+    let f = fract(p);
+    let a = fsl_hash21(i);
+    let b = fsl_hash21(i + vec2<f32>(1.0, 0.0));
+    let c = fsl_hash21(i + vec2<f32>(0.0, 1.0));
+    let d = fsl_hash21(i + vec2<f32>(1.0, 1.0));
+    let u = f * f * (vec2<f32>(3.0) - vec2<f32>(2.0) * f);
+    return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+}
+
+fn fsl_fbm(value: vec2<f32>) -> f32 {
+    var p = value;
+    var v = 0.0;
+    var a = 0.5;
+    for (var i: i32 = 0; i < 5; i = i + 1) {
+        v = v + a * fsl_noise(p);
+        p = p * vec2<f32>(2.0);
+        a = a * 0.5;
+    }
+    return v;
+}
+
+fn fsl_palette(t: f32) -> vec3<f32> {
+    let a = vec3<f32>(0.5, 0.5, 0.5);
+    let b = vec3<f32>(0.5, 0.5, 0.5);
+    let c = vec3<f32>(1.0, 1.0, 1.0);
+    let d = vec3<f32>(0.00, 0.33, 0.67);
+    return a + b * cos(vec3<f32>(6.28318) * (c * vec3<f32>(t) + d));
+}
+
+
+@fragment
+fn skip_frag(in: FlowVertexOut) -> @location(0) vec4<f32> {
+    let uv: vec2<f32> = in.uv;
+    var color: vec4<f32> = vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    let a: f32 = 1.0;
+    color = vec4<f32>(a);
+    return color;
+}
+
+=== ok_skipped_chars_gallery.wgsl.entries
+skip_frag
