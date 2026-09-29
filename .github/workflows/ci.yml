@@ -375,6 +375,22 @@ jobs:
       - name: Three consecutive generation fixed-points
         run: ./compiler/scripts/self_host_full.sh
 
+      - uses: ./.github/actions/install-toolchain
+        with:
+          mlir: 'true'
+
+      # The MLIR emitter (compiler/src/mlirgen.flow) against the goldens
+      # recorded from the Python generator, with python stubbed out: the
+      # fixtures must emit the same MLIR and, lowered with mlir-opt, print
+      # the same output; recorded corpus programs must not regress.
+      - name: MLIR emitter parity against goldens (no Python)
+        run: |
+          mkdir -p /tmp/nopy-mlir
+          printf '#!/bin/sh\necho "python invoked: $0 $*" >&2\nexit 127\n' > /tmp/nopy-mlir/python3
+          cp /tmp/nopy-mlir/python3 /tmp/nopy-mlir/python
+          chmod +x /tmp/nopy-mlir/python3 /tmp/nopy-mlir/python
+          PATH="/tmp/nopy-mlir:$PATH" timeout 10m ./compiler/scripts/parity_mlir.sh
+
       - name: Compile and run a Flow program (FLOW_HOST=flowc)
         env:
           FLOW_HOST: flowc
