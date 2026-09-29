@@ -397,7 +397,6 @@ function ensure_stdlib(s: ptr<Server>) {
         return
     }
     s.stdlib_done = true
-    let dir: string = path_join(s.root, "lib/stdlib")
     # sorted(rglob): compare path parts, so a directory's files sort before
     # a sibling file that shares its name as a prefix.
     let cmd: string = t_cat3("cd ", t_shq(s.root), " && find lib/stdlib -name '*.flow' -type f 2>/dev/null | tr '/' '\\001' | LC_ALL=C sort | tr '\\001' '/'")
@@ -428,9 +427,6 @@ function ensure_stdlib(s: ptr<Server>) {
             }
         }
         i = i + 1
-    }
-    if t_len(dir) == 0 {
-        return
     }
 }
 
@@ -1770,9 +1766,6 @@ function reference_list(s: ptr<Server>, uri: string, word: string, decl: string)
             }
         }
         i = i + 1
-    }
-    if t_len(decl) == 0 and find_doc(s, uri) == null {
-        return out
     }
     return out
 }
