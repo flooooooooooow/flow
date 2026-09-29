@@ -1,10 +1,8 @@
 # `flow know` index and rendering dogfood.
 #
-# Prints one `KIND|input|result` line per case. The companion parity script
-# feeds the same inputs through src/flow/know.py and fails if the two
-# disagree:
-#
-#   python3 compiler/scripts/parity_know_index.py
+# Prints one `KIND|input|result` line per case. `flow know` itself runs on
+# flowc (compiler/src/proof_doc.flow) and is held to the former Python by
+# compiler/scripts/parity_proofs.sh.
 #
 # Run directly:  FLOW_HOST=python ./flow run examples/compilers/know_index_demo.flow
 
