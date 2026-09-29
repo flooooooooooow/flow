@@ -96,7 +96,7 @@ jobs:
               - 'src/**'
             compiler:
               - 'compiler/**'
-              - 'src/flow/c_generator.py'
+              - 'tests/cgen/**'
             tests:
               - 'tests/**'
             examples:
@@ -297,21 +297,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Gen0 still imports the Python transpiler (numpy via gpu_runtime). User
-      # compile is proven pip-free in the flowc-compile job below.
+      # roundtrip.sh still uses compiler/scripts/flowc_c_to_hdr.py for the
+      # per-module headers. The compiler host is flowc built from compiler/src
+      # by the bootstrap binary (compiler/scripts/flowc_host.sh).
       - uses: ./.github/actions/setup-python
 
       - name: Stage-A/B self-host roundtrip
-        env:
-          PYTHONPATH: src
-          FLOW_HOST: python
         run: |
           chmod +x ./flow compiler/scripts/*.sh
           # Full roundtrip: Phase-A fixtures + Phase-B bundle/topo/self-emit path.
-          # Each step transpiles main.flow on the Python host. With the proof,
-          # effects and lowering modules a step takes about 36s, so the run is
-          # about 35 minutes.
-          timeout 60m ./compiler/scripts/roundtrip.sh
+          timeout 30m ./compiler/scripts/roundtrip.sh
 
       # The proof layer runs on flowc; the gate holds it to the recorded
       # Python behaviour (accept/reject, program output). The live diff
@@ -374,6 +369,9 @@ jobs:
 
       - name: Three consecutive generation fixed-points
         run: ./compiler/scripts/self_host_full.sh
+
+      - name: C output goldens (tests/cgen)
+        run: ./tests/cgen/run.sh
 
       - uses: ./.github/actions/install-toolchain
         with:
@@ -548,7 +546,7 @@ jobs:
       - name: Arithmetic safety tests
         env:
           PYTHONPATH: src
-        run: pytest tests/unit/test_arith_safety.py tests/unit/test_safety_profile_enforcement.py tests/unit/test_export_abi.py tests/unit/test_wcet_analysis.py tests/unit/test_general_plans.py -v
+        run: pytest tests/unit/test_arith_safety.py tests/unit/test_safety_profile_enforcement.py tests/unit/test_wcet_analysis.py -v
 
   fuzz:
     name: Fuzz (parser/pipeline)
@@ -600,10 +598,6 @@ jobs:
       - uses: ./.github/actions/setup-python
 
       - name: hello_world + fibonacci
-        env:
-          PYTHONPATH: src
-          # Example smoke stays on the full-language Python host until Phase D.
-          FLOW_HOST: python
         run: |
           chmod +x ./flow
           ./flow run examples/basics/hello_world.flow
@@ -647,9 +641,6 @@ jobs:
       - uses: ./.github/actions/setup-python
 
       - name: Fibonacci benchmark
-        env:
-          PYTHONPATH: src
-          FLOW_HOST: python
         run: |
           chmod +x ./flow
           ./flow compile benchmarks/suite/flow/01_fibonacci.flow

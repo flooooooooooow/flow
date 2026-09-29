@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Corpus parity between the flowc host and the Python host on the C backend.
+# Corpus parity between flowc and the retired Python host on the C backend.
 #
 # Every tracked .flow file that defines main() is built the way `flow run`
-# builds it (`flow compile`, the dependency sync aside), once with
-# FLOW_HOST=flowc and once with FLOW_HOST=python, and both executables run
+# builds it (`flow compile`, the dependency sync aside), once with flowc and
+# once with the Python host (live from an old revision, or from the recorded
+# goldens), and both executables run
 # with a timeout from the repository root with stdin closed. A file is at
 # parity when both hosts reject it, or when both build it and the runs agree
 # on exit code and stdout.
@@ -14,9 +15,11 @@
 #   ./compiler/scripts/corpus_parity.sh
 #       flowc live, Python from the recorded goldens in
 #       compiler/corpus_parity/python_golden.tsv. Needs no Python.
-#   ./compiler/scripts/corpus_parity.sh --python
-#       also run the Python host live and compare flowc against it.
-#   ./compiler/scripts/corpus_parity.sh --python --record
+#   ./compiler/scripts/corpus_parity.sh --python REV
+#       also run the Python host live and compare flowc against it. The
+#       Python C backend is retired, so REV names a revision that still has
+#       it (flow, flow-driver, src, lib and runtime are taken from REV).
+#   ./compiler/scripts/corpus_parity.sh --python REV --record
 #       as --python, then rewrite the goldens from the live Python results.
 #   --check          fail when fewer files are at parity than the floor
 #   --update         write compiler/corpus_parity/report.txt and the floor
@@ -126,7 +129,7 @@ worker() {
     local log="$dir/build.log"
     local rc=0
     if [[ "$host" == "python" ]]; then
-        FLOW_HOST=python FLOW_BUILD_ROOT="$dir" ./flow compile "$file" > "$log" 2>&1 < /dev/null || rc=$?
+        FLOW_HOST=python FLOW_BUILD_ROOT="$dir" "$CORPUS_PYREF/flow" compile "$file" > "$log" 2>&1 < /dev/null || rc=$?
     else
         FLOW_HOST=flowc FLOWC_BIN="$FLOWC_BIN" FLOW_BUILD_ROOT="$dir" ./flow compile "$file" > "$log" 2>&1 < /dev/null || rc=$?
     fi
@@ -181,12 +184,12 @@ main() {
         worker_loop "$@"
         exit 0
     fi
-    live_python=0 record=0 check=0 update=0 failures=0 only="" save="" secs=10
+    live_python=0 pyrev="" record=0 check=0 update=0 failures=0 only="" save="" secs=10
     jobs=$(( $( (getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4) ) / 2 ))
     (( jobs < 1 )) && jobs=1
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --python) live_python=1 ;;
+            --python) live_python=1; shift; pyrev="${1:-}" ;;
             --record) record=1 ;;
             --check) check=1 ;;
             --update) update=1 ;;
@@ -200,7 +203,11 @@ main() {
         shift
     done
     if (( record && !live_python )); then
-        echo "corpus_parity: --record needs --python" >&2
+        echo "corpus_parity: --record needs --python REV" >&2
+        exit 2
+    fi
+    if (( live_python )) && [[ -z "$pyrev" ]]; then
+        echo "corpus_parity: --python needs a revision that still has the Python C host" >&2
         exit 2
     fi
 
@@ -217,6 +224,13 @@ main() {
     mkdir -p "$ROOT/build"
     work="$(mktemp -d "$ROOT/build/corpus_parity.XXXXXX")"
     trap 'rm -rf "$work"' EXIT
+    if (( live_python )); then
+        # The Python host as of $pyrev, run from its own tree.
+        mkdir -p "$work/pyref"
+        git archive "$pyrev" flow flow-driver src lib runtime compiler/scripts compiler/bootstrap \
+            | tar -x -C "$work/pyref"
+        export CORPUS_PYREF="$work/pyref"
+    fi
 
     # The corpus: tracked files with main(), as `flow run` decides it.
     git ls-files -z '*.flow' | xargs -0 grep -l -E 'function[[:space:]]+main' 2>/dev/null \

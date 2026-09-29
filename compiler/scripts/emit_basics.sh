@@ -2,16 +2,18 @@
 # Stage-A emit + cc smoke for examples/basics that use the Stage-A subset.
 #
 # Reports PASS/FAIL per file (emit → cc → run). Does not fail the script on
-# the first error — prints a summary table and exits non-zero if any failed.
+# the first error: prints a summary table and exits non-zero if any failed.
 #
 # Env:
-#   FLOWC_FORCE_HOST=1  — emit via ./flow run (latest sources) instead of driver
-#   FLOWC_EMIT_ONLY=1   — skip binary run (emit+cc only; useful under XProtect load)
+#   FLOWC_FORCE_HOST=1  emit with the flowc built from compiler/src (flowc_host.sh)
+#   FLOWC_EMIT_ONLY=1  : skip binary run (emit+cc only; useful under XProtect load)
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 mkdir -p compiler/build/basics
-export FLOW_HOST=python
+# flowc built from the current compiler/src by the checked-in bootstrap
+# (compiler/scripts/flowc_host.sh). It stands in for the retired Python host.
+FLOWC_SRC_BIN="$(./compiler/scripts/flowc_host.sh)"
 
 stage_a_emit() {
     local src="$1"
@@ -19,7 +21,7 @@ stage_a_emit() {
     if [[ "${FLOWC_FORCE_HOST:-}" == "1" ]] && [[ -f compiler/src/main.flow ]]; then
         export FLOWC_IN="$src"
         export FLOWC_OUT="$c_out"
-        ./flow run compiler/src/main.flow
+        "$FLOWC_SRC_BIN"
     elif [[ -x compiler/build/stage_a_driver_flow ]]; then
         ./compiler/build/stage_a_driver_flow "$src" "$c_out"
     elif [[ -x compiler/build/stage_a_driver ]]; then
@@ -27,7 +29,7 @@ stage_a_emit() {
     elif [[ -f compiler/src/main.flow ]]; then
         export FLOWC_IN="$src"
         export FLOWC_OUT="$c_out"
-        ./flow run compiler/src/main.flow
+        "$FLOWC_SRC_BIN"
     else
         echo "FAIL stage_a_emit: no emitter" >&2
         return 1

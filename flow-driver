@@ -58,17 +58,22 @@ resolve_llvm_path() {
 }
 
 # ---------------------------------------------------------------------------
-# Host selection (Phase C self-hosting cutover)
-#   FLOW_HOST=flowc   — Stage-A flowc driver only (default for run/compile)
-#   FLOW_HOST=python  — legacy Python transpiler
-#   FLOW_HOST=auto    — try flowc, fall back to python with a warning
+# Compiler host. flowc (compiler/src, built from the checked-in bootstrap C)
+# is the only C compiler. The Python C backend is retired: FLOW_HOST=python
+# stops with a pointer to flowc. FLOW_HOST=auto is accepted as flowc.
 # ---------------------------------------------------------------------------
 flow_host_mode() {
     local mode="${FLOW_HOST:-flowc}"
     case "$mode" in
-        flowc|python|auto) printf '%s\n' "$mode" ;;
+        flowc|auto) printf 'flowc\n' ;;
+        python)
+            print_error "FLOW_HOST=python is retired: the Python C backend was removed." >&2
+            print_info "flowc compiles every program now. Unset FLOW_HOST (or set FLOW_HOST=flowc)." >&2
+            print_info "C only: compiler/scripts/flowc_emit.sh <in.flow> <out.c>" >&2
+            exit 1
+            ;;
         *)
-            print_error "Unknown FLOW_HOST='$mode' (expected flowc|python|auto)"
+            print_error "Unknown FLOW_HOST='$mode' (expected flowc)" >&2
             exit 1
             ;;
     esac
@@ -236,42 +241,20 @@ flowc_emit_to_c() {
         return 1
     fi
     print_info "flowc emit via $driver"
-    # A program that imports modules, or uses the Field or dynamics DSL
-    # (which add imports of stdlib/dynamics/*.flow), is bundled into one C
-    # unit. flowc resolves `stdlib/...` against lib/stdlib from the working
-    # directory and path imports such as "compiler/src/fileio.flow" against
-    # FLOWC_DIR, so the bundle runs from the repository root with absolute
-    # paths. Relative `.sibling` imports still resolve next to the importing
-    # module.
-    if grep -Eq '^[[:space:]]*import[[:space:]]' "$program" || \
-        grep -Eq '^[[:space:]]*(field|boundary)[[:space:]]' "$program" || \
-        grep -Eq '^[[:space:]]*((dyn|dynamics)\.)?(dsys|horizon|sense|ga|closed|analyze|wfc|couple|guide|represent)[[:space:]]|^[[:space:]]*(dyn|dynamics)[[:space:]]*\{' "$program"; then
-        local abs_program abs_out abs_driver
-        abs_program="$(cd "$(dirname "$program")" && pwd)/$(basename "$program")"
-        abs_out="$(cd "$(dirname "$c_out")" && pwd)/$(basename "$c_out")"
-        case "$driver" in
-            /*) abs_driver="$driver" ;;
-            *)
-                if [ -x "$driver" ]; then
-                    abs_driver="$(cd "$(dirname "$driver")" && pwd)/$(basename "$driver")"
-                else
-                    abs_driver="$SCRIPT_DIR/$driver"
-                fi
-                ;;
-        esac
-        (
-            cd "$SCRIPT_DIR" &&
-            FLOWC_BUNDLE=1 FLOWC_DIR="$SCRIPT_DIR" \
-            FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" FLOWC_CHECKS="${FLOWC_CHECKS:-1}" FLOWC_LENIENT="${FLOWC_LENIENT:-1}" \
-            FLOWC_IN="$abs_program" FLOWC_OUT="$abs_out" \
-                "$abs_driver"
-        )
-        return $?
-    fi
-    # Positional argv runs the Stage-A self-test; emit needs FLOWC_IN / FLOWC_OUT.
-    FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" FLOWC_CHECKS="${FLOWC_CHECKS:-1}" FLOWC_LENIENT="${FLOWC_LENIENT:-1}" \
-    FLOWC_IN="$program" FLOWC_OUT="$c_out" \
-        "$driver"
+    # compiler/scripts/flowc_emit.sh bundles a program that imports modules,
+    # or uses the Field or dynamics DSL, into one C unit from the repository
+    # root; FLOWC_LENIENT / FLOWC_CHECKS default on, as for `flow compile`.
+    FLOWC_BIN="$driver" "$SCRIPT_DIR/compiler/scripts/flowc_emit.sh" "$program" "$c_out"
+}
+
+# Emit one lib/runtime/*.flow module as its own C unit, the way
+# flowc_runtime_archive builds the runtime objects.
+flowc_emit_runtime_module() {
+    local module="$1"
+    local c_out="$2"
+    local driver
+    driver="$(flow_resolve_flowc)" || return 1
+    env -u FLOWC_BUNDLE FLOWC_IN="$module" FLOWC_OUT="$c_out" "$driver"
 }
 
 # Host tools written in Flow (tools/<name>/main.flow: repl, lsp). Builds the
@@ -336,7 +319,7 @@ flow_clang_warning_flags() {
     # runtime needs (usleep, posix_memalign). Bare -std=c11 hides them;
     # _POSIX_C_SOURCE=200809L also hides usleep on glibc.
     # -Wno-unused-{function,variable,parameter}: generated preamble stubs,
-    # Flow `let _ = …` discard pattern, and stub ABI params — keeps -Werror
+    # Flow `let _ = …` discard pattern, and stub ABI params: keeps -Werror
     # usable under --profile safety (#269).
     FLOW_CLANG_WARN_FLAGS=(
         "-std=c11"
@@ -357,9 +340,9 @@ flow_clang_warning_flags() {
         safety|flight)
             # -Werror is the MISRA ask (#269). Suppressions cover known
             # runtime/codegen noise until follow-ups land:
-            #   strict-prototypes — hand-written runtime/*.c
-            #   c23-extensions    — Flow emits `T x = { };` empty inits
-            #   format            — int64_t vs long long on LP64
+            #   strict-prototypes: hand-written runtime/*.c
+            #   c23-extensions   : Flow emits `T x = { };` empty inits
+            #   format           : int64_t vs long long on LP64
             # Full -pedantic without these Waivers is tracked with #273.
             # #283: promote implicit-function-declaration to hard error
             # under safety (override the default-profile downgrade above).
@@ -577,7 +560,7 @@ compile_program_flowc() {
     mkdir -p "$build_dir"
     print_info "Compiling $program (host=flowc)..."
     if ! flowc_emit_to_c "$program" "$build_dir/$basename.c"; then
-        print_error "flowc emit failed (Stage-A subset?). Use FLOW_HOST=python for full language."
+        print_error "flowc could not compile $program"
         return 1
     fi
     print_success "FLOW → C: $basename.c"
@@ -786,7 +769,7 @@ show_help() {
     echo "  show-flags [--profile=safety] [--sanitize=...]  Print clang CFLAGS for current profile"
     echo "  analyze <file.c> [--standard=misra-c-2024|cert-c] [--fail-on-violation]"
     echo "                    Scan generated C for MISRA/CERT patterns (#277)"
-    echo "  Host: FLOW_HOST=flowc|python|auto (default flowc for run/compile)"
+    echo "  Compiler: flowc (compiler/src); FLOWC_BIN=<path> picks a flowc binary"
     echo "  CPU backend: FLOW_CPU_BACKEND=c|mlir or --backend= (default c; mlir needs LLVM)"
     echo "  C flags: -std=c11 -Wall -Wextra (MISRA Phase 0); FLOW_PROFILE=safety adds -Werror"
     echo "  Sanitizers: FLOW_UBSAN=1 FLOW_ASAN=1 FLOW_TSAN=1 or FLOW_SANITIZE=ub,asan,tsan"
@@ -812,16 +795,12 @@ show_help() {
     echo "  ml [run|jit|bench|test] [program]  MLIR-first ML workloads (tensors, matmul)"
     echo "  gpu <program>      Generate @gpu compute kernels as Metal sources"
     echo "  shader <program>   Run fill-shader demo (Metal; macOS)"
-    echo "  explain <program>  Print the compilation plan for every declarative"
-    echo "                    construct: implementations considered, their costs,"
-    echo "                    the choice, and what each rejected candidate failed"
-    echo "                    (same as: transpile <program> --c --strict --explain)"
-    echo "  transpile <program> [args...]  Run the FLOW transpiler (advanced flags)"
+    echo "  transpile <program> [args...]  Run the Python MLIR transpiler (advanced flags)"
     echo "  fmt [--check] <files...>  Format FLOW source files in place"
     echo "                    (--check: list files that would change, exit 1)"
     echo ""
     echo "Testing:"
-    echo "  test [flags]      Run FLOW tests (transpile + clang validate)"
+    echo "  test [flags]      Run FLOW tests (flowc + clang validate)"
     echo "                    --strict    Fail on type errors"
     echo "                    --lenient   Warnings only (default)"
     echo "                    --tier1     Transpile only (fast)"
@@ -830,7 +809,7 @@ show_help() {
     echo "                    --sanitize=ub,asan,tsan  Enable sanitizers for compile/run tests"
     echo "  test-strict       Shortcut for: test --strict"
     echo "  test-runtime      Run runtime tests (compile + execute)"
-    echo "  test-lang         Run tests/lang/ language tests (strict transpile + compile + execute)"
+    echo "  test-lang         Run tests/lang/ language tests (strict flowc + compile + execute)"
     echo "  test-mlir         Run MLIR verification (requires LLVM)"
     echo "  test-python       Run Python unit tests"
     echo "  test-interop      Run interop runtime tests"
@@ -870,7 +849,7 @@ show_help() {
     echo "  FLOW_STRICT_EFFECTS=1  Abort on unhandled effect ops (C backend)"
     echo "                         Also enables compile-time effect-row checks with --strict-effects"
     echo "  FLOW_CPU_BACKEND=c|mlir  Select CPU codegen (default c; same as --backend)"
-    echo "  FLOW_HOST=flowc|python|auto  Compiler host for the C path (default flowc)"
+    echo "  FLOWC_BIN=<path>       flowc binary for the C path (default: built from compiler/bootstrap)"
     echo ""
     echo "Examples:"
     echo "  flow run examples/fibonacci.flow"
@@ -886,28 +865,15 @@ show_help() {
 # Check dependencies
 check_deps() {
     local mode
-    mode="$(flow_host_mode)"
+    mode="$(flow_host_mode)" || exit 1
 
     if ! command -v clang &> /dev/null && ! command -v cc &> /dev/null; then
         print_error "clang or cc is required"
         exit 1
     fi
 
-    # flowc-only run/compile: Python is only needed to bootstrap Gen0 once.
-    if [[ "$mode" == "flowc" ]]; then
-        return 0
-    fi
-
-    if ! command -v python3 &> /dev/null; then
-        print_error "Python 3 is required for FLOW_HOST=$mode"
-        exit 1
-    fi
-
-    # Module import check
-    python3 -c "import $FLOWC_MODULE" 2>/dev/null || {
-        print_error "FLOW compiler module not found ($FLOWC_MODULE). Check PYTHONPATH/src layout."
-        exit 1
-    }
+    # The C path is flowc and needs no Python.
+    : "$mode"
 }
 
 check_mlir_deps() {
@@ -1020,146 +986,49 @@ flow_concurrency_flags() {
     fi
 }
 
-# Always-linked Flow runtime modules (lib/runtime/*.flow → build/runtime_flow/*.c).
-# Sets FLOW_RUNTIME_FLOW_SOURCES. Skips gpu_memory_stub.flow on Darwin (Metal provides ABI).
+# Always-linked Flow runtime modules (lib/runtime/*.flow). flowc builds them,
+# with runtime/*.c, into the runtime archive (flowc_runtime_archive), and
+# FLOW_RUNTIME_FLOW_SOURCES holds that archive for the final link, so a
+# program pulls in only the objects it uses. Honors FLOW_SKIP_AUDIO_STUB.
 flow_runtime_flow_sources() {
     FLOW_RUNTIME_FLOW_SOURCES=()
-    local rt_dir="$SCRIPT_DIR/lib/runtime"
-    local out_dir="$FLOW_BUILD_ROOT/runtime_flow"
-    mkdir -p "$out_dir"
-    if [ ! -d "$rt_dir" ]; then
-        return 0
+    local driver cc_bin=cc
+    if command -v clang > /dev/null 2>&1; then
+        cc_bin=clang
     fi
-    local f base out
-    for f in "$rt_dir"/*.flow; do
-        [ -f "$f" ] || continue
-        base=$(basename "$f" .flow)
-        # Platform GPU: Metal on Darwin, Flow stub elsewhere.
-        if [ "$base" = "gpu_memory_stub" ] && [ "$(uname -s)" = "Darwin" ]; then
-            continue
-        fi
-        # Shader host is a standalone CLI binary, not always-linked.
-        if [ "$base" = "shader_host" ]; then
-            continue
-        fi
-        # Recorder logic is linked only by `flow record` (runtime/gfx_record.c
-        # provides the gfx ABI there; real backends provide it everywhere else).
-        if [ "$base" = "gfx_record" ]; then
-            continue
-        fi
-        # Real miniaudio backend provides flow_audio_*; skip Flow stub then.
-        if [ "$base" = "audio_device_stub" ] && [ "${FLOW_SKIP_AUDIO_STUB:-}" = "1" ]; then
-            continue
-        fi
-        out="$out_dir/${base}.c"
-        if ! python3 -m "$FLOWC_MODULE" "$f" --c --library --lenient -o "$out" 2>"$build_dir/.flowc_err"; then
-            print_error "Flow runtime module failed: $base.flow"
-            cat "$build_dir/.flowc_err" >&2
-            exit 1
-        fi
-        FLOW_RUNTIME_FLOW_SOURCES+=("$out")
-    done
-}
-
-# Compile FLOW to executable
-compile_program() {
-    local program="$1"
-    local mode
-    mode="$(flow_host_mode)"
-    case "$mode" in
-        flowc)
-            compile_program_flowc "$program"
-            return $?
-            ;;
-        python)
-            compile_program_python "$program"
-            return $?
-            ;;
-        auto)
-            if compile_program_flowc "$program"; then
-                return 0
-            fi
-            print_warning "flowc failed — falling back to FLOW_HOST=python"
-            compile_program_python "$program"
-            return $?
-            ;;
-    esac
-}
-
-# Legacy Python-host compile path
-compile_program_python() {
-    local program="$1"
-    require_flow_file "$program"
-    local basename
-    basename=$(basename "$program" .flow)
-    local build_dir="$FLOW_BUILD_ROOT"
-    local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
-    local py_header_dir="$py_framework_dir/Python3.framework/Headers"
-    local py_cflags=()
-    local py_ldflags=()
-    
-    print_info "Compiling $program..."
-    
-    # Create build directory
-    mkdir -p "$build_dir"
-    
-    # FLOW to C (use --lenient for now until type checker is fully stable)
-    if ! python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$build_dir/$basename.c" 2>"$build_dir/.flowc_err"; then
-        print_error "FLOW compilation failed"
-        cat "$build_dir/.flowc_err" >&2
-        exit 1
-    fi
-    print_success "FLOW → C: $basename.c"
-
-    # C to executable
-    if [ -d "$py_header_dir" ]; then
-        py_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
-        py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
-    fi
-    # First-class GPU memory: Metal on Darwin, Flow stub elsewhere.
-    flow_gpu_link_flags
-    # else: lib/runtime/gpu_memory_stub.flow via flow_runtime_flow_sources
-    flow_concurrency_flags
-    flow_runtime_flow_sources
-    # MISRA Phase 0 (#269/#270): -std=c11 -Wall -Wextra + optional sanitizers.
-    # FLOW_CFLAGS still appends (e.g. FLOW_CFLAGS='-O2' for benches).
+    driver="$(flow_resolve_flowc)" || exit 1
     flow_collect_cflags
-    FLOW_CONC_LDFLAGS+=("${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}")
-    if ! clang "${FLOW_COLLECTED_CFLAGS[@]}" "-O${FLOW_OPT_LEVEL:-2}" "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" -I"$(dirname "$program")" "$build_dir/$basename.c" \
-        "$SCRIPT_DIR/runtime/flow_python_embed.c" \
-        "${FLOW_CONC_SOURCES[@]}" \
-        "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
-        "${FLOW_GPU_SOURCES[@]+"${FLOW_GPU_SOURCES[@]}"}" \
-        "${py_ldflags[@]}" "${FLOW_GPU_LDFLAGS[@]+"${FLOW_GPU_LDFLAGS[@]}"}" "${FLOW_CONC_LDFLAGS[@]}" -lm -o "$build_dir/$basename"; then
-        print_error "C compilation/linking failed"
+    if ! flowc_runtime_archive "$driver" "$cc_bin"; then
+        print_error "flowc could not build the Flow runtime (lib/runtime/*.flow)"
         exit 1
     fi
-    print_success "C → Executable: $basename"
-    
-    print_success "🚀 Ready to run: $build_dir/$basename"
+    FLOW_RUNTIME_FLOW_SOURCES=("$FLOWC_RT_ARCHIVE")
+}
+
+# Compile FLOW to executable (flowc).
+compile_program() {
+    flow_host_mode >/dev/null
+    compile_program_flowc "$1"
 }
 
 # MLIR CPU backend. With the default flowc host the Flow emitter
 # (compiler/src/mlirgen.flow, FLOWC_EMIT=mlir) writes the MLIR and
 # compiler/scripts/mlir_lower.sh lowers it, with no Python. A program outside
 # the emitter's slice is refused with a reason and falls back to the Python
-# generator. FLOW_HOST=python always uses the Python generator.
+# MLIR generator.
 compile_program_mlir() {
     local program="$1"
     require_flow_file "$program"
-    local host
-    host="$(flow_host_mode)"
-    if [ "$host" != "python" ]; then
-        local rc=0
-        compile_program_mlir_flowc "$program" || rc=$?
-        if [ "$rc" -eq 0 ]; then
-            return 0
-        fi
-        if [ "$rc" -ne 3 ]; then
-            exit 1
-        fi
-        print_warning "flowc MLIR emitter does not cover this program yet (${FLOW_MLIR_REFUSAL:-refused}); using the Python MLIR generator"
+    flow_host_mode >/dev/null
+    local rc=0
+    compile_program_mlir_flowc "$program" || rc=$?
+    if [ "$rc" -eq 0 ]; then
+        return 0
     fi
+    if [ "$rc" -ne 3 ]; then
+        exit 1
+    fi
+    print_warning "flowc MLIR emitter does not cover this program yet (${FLOW_MLIR_REFUSAL:-refused}); using the Python MLIR generator"
     compile_program_mlir_python "$program"
 }
 
@@ -1411,50 +1280,30 @@ debug_program() {
     local build_dir="$FLOW_BUILD_ROOT"
     local c_file="$build_dir/$basename.debug.c"
     local exe_file="$build_dir/$basename.debug"
-    local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
-    local py_header_dir="$py_framework_dir/Python3.framework/Headers"
-    local py_cflags=()
-    local py_ldflags=()
-    
+
     check_deps
     mkdir -p "$build_dir"
-    
+
     print_info "Compiling $program (debug)..."
-    
-    # FLOW to C with statement-level #line mappings (see --debug-info)
-    if ! python3 -m "$FLOWC_MODULE" "$program" --c --debug-info -o "$c_file"; then
+
+    # FLOWC_DEBUG_INFO=1: flowc writes a #line directive before every
+    # statement, so the debugger steps through the .flow source. The main
+    # file is named by its absolute path so LLDB can open it.
+    local abs_program
+    abs_program="$(cd "$(dirname "$program")" && pwd)/$(basename "$program")"
+    if ! FLOWC_DEBUG_INFO=1 FLOWC_CGEN_FILE="$abs_program" flowc_emit_to_c "$program" "$c_file"; then
         print_error "FLOW compilation failed"
         exit 1
     fi
-    print_success "FLOW → C (debug): $(basename "$c_file")"
-    
-    # C to debug executable
-    if [ -d "$py_header_dir" ]; then
-        py_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
-        py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
-    fi
-    local gpu_sources=()
-    local gpu_ldflags=()
-    if [[ "$(uname -s)" == "Darwin" ]]; then
-        gpu_sources+=("$SCRIPT_DIR/runtime/gpu_metal.m")
-        gpu_ldflags+=("-framework" "Metal" "-framework" "Foundation")
-    fi
-    flow_concurrency_flags
-    flow_runtime_flow_sources
+    print_success "FLOW to C (debug): $(basename "$c_file")"
+
     # -g3 keeps macro info; -fno-omit-frame-pointer helps backtraces.
-    # Absolute path in #line lets LLDB open the .flow file when stopped.
-    if ! clang -g3 -O0 -fno-omit-frame-pointer "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" "$c_file" \
-        "$SCRIPT_DIR/runtime/flow_python_embed.c" \
-        "${FLOW_CONC_SOURCES[@]}" \
-        "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
-        "${gpu_sources[@]}" \
-        "${py_ldflags[@]}" "${gpu_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" -o "$exe_file" -lm; then
+    if ! FLOW_OPT_LEVEL=0 FLOW_CFLAGS="${FLOW_CFLAGS:-} -g3 -fno-omit-frame-pointer" \
+        flowc_link_c "$c_file" "$exe_file" "$program"; then
         print_error "C compilation/linking failed"
         exit 1
     fi
     print_success "Built debug binary: $exe_file"
-    local abs_program
-    abs_program="$(cd "$(dirname "$program")" && pwd)/$(basename "$program")"
     print_info "Source maps: #line → $abs_program (statement-level)"
     print_info "C mapping file: $c_file"
 
@@ -1670,11 +1519,7 @@ function main() -> i32 {
     return 0
 }
 EOF
-    # Corpus patches use the full Flow language and generally do not fit the
-    # Stage-A flowc subset. Keep `flow patch` usable with the normal global
-    # flowc default while allowing callers to opt into flowc explicitly.
-    local patch_host="${FLOW_PATCH_HOST:-${FLOW_HOST:-python}}"
-    FLOW_HOST="$patch_host" run_program "$harness"
+    run_program "$harness"
 }
 
 # Compile only (honors --backend / FLOW_CPU_BACKEND)
@@ -1722,9 +1567,8 @@ compile_audio_program() {
         fi
         print_success "FLOW → MLIR → LLVM: $basename.ll"
     else
-        if ! python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$build_dir/$basename.c" 2>"$build_dir/.flowc_err"; then
+        if ! flowc_emit_to_c "$program" "$build_dir/$basename.c"; then
             print_error "FLOW compilation failed"
-            cat "$build_dir/.flowc_err" >&2
             exit 1
         fi
         print_success "FLOW → C: $basename.c"
@@ -1824,7 +1668,7 @@ run_window_program() {
     local exe_file="$build_dir/$basename.window"
     
     print_info "Compiling $program (SDL2 window)..."
-    if ! python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$c_file"; then
+    if ! flowc_emit_to_c "$program" "$c_file"; then
         print_error "FLOW compilation failed"
         exit 1
     fi
@@ -1995,7 +1839,7 @@ run_gfx_program() {
     local exe_file="$build_dir/$basename.gfx"
     
     print_info "Compiling $program (native gfx)..."
-    if ! python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$c_file"; then
+    if ! flowc_emit_to_c "$program" "$c_file"; then
         print_error "FLOW compilation failed"
         exit 1
     fi
@@ -2006,7 +1850,7 @@ run_gfx_program() {
         py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
     fi
     # The Flow runtime pack (FLOW_RUNTIME_FLOW_SOURCES) references C symbols
-    # spread across runtime/*.c — flow_rt_uname_machine in flow_rt_sysinfo.c,
+    # spread across runtime/*.c: flow_rt_uname_machine in flow_rt_sysinfo.c,
     # the TLS entry points in flow_tls.c, and so on. Linking only
     # flow_rt_support.c left those undefined, so a gfx program that touched
     # get_time(), sysinfo or crypto failed to link. FLOW_CONC_SOURCES is the
@@ -2033,9 +1877,9 @@ run_gfx_program() {
         # Windows (MSYS2/Git Bash/Cygwin shell running this script): shares
         # the exact same SDL2 implementation as Linux via
         # runtime/gfx_sdl_impl.inc, compiled through runtime/gfx_windows.c
-        # (falls back to stub if headers missing — pass -DFLOW_GFX_STUB to
+        # (falls back to stub if headers missing: pass -DFLOW_GFX_STUB to
         # force stub). Native MSVC/clang-cl builds outside this script should
-        # link runtime/gfx_windows.c directly — see its header comment for
+        # link runtime/gfx_windows.c directly: see its header comment for
         # exact commands.
         local sdl_cflags=()
         local sdl_libs=(-lSDL2)
@@ -2060,7 +1904,7 @@ run_gfx_program() {
         fi
     else
         # Linux: SDL2 backend in runtime/gfx_linux.c (falls back to stub if
-        # headers missing — pass -DFLOW_GFX_STUB to force stub).
+        # headers missing: pass -DFLOW_GFX_STUB to force stub).
         local sdl_cflags=()
         local sdl_libs=(-lSDL2)
         if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists sdl2; then
@@ -2095,7 +1939,7 @@ run_gfx_program() {
 
 # Build a gfx program against the headless recording backend and run it, so demo
 # frames come from the real program instead of a mock-up. Configured through
-# FLOW_GFX_RECORD_* — see runtime/gfx_record.c.
+# FLOW_GFX_RECORD_*: see runtime/gfx_record.c.
 # flow record <program> [--frames N] [--skip N] [--out DIR] [--gif [PATH]]
 #                       [--keys SPEC] [--mouse SPEC] [--fps N] [--stride N]
 #                       [--width PX]
@@ -2226,26 +2070,26 @@ record_gfx_program() {
     local exe_file="$build_dir/$basename.record"
 
     print_info "Compiling $program (headless recorder)..."
-    if ! python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$c_file"; then
+    if ! flowc_emit_to_c "$program" "$c_file"; then
         print_error "FLOW compilation failed"
         exit 1
     fi
     print_success "FLOW → C: $(basename "$c_file")"
 
-    # Recorder logic lives in lib/runtime/gfx_record.flow; transpile just that
-    # module. flow_runtime_flow_sources deliberately skips gfx_record, so the
-    # two compose without a duplicate definition.
+    # Recorder logic lives in lib/runtime/gfx_record.flow; compile just that
+    # module. The runtime archive deliberately skips gfx_record, so the two
+    # compose without a duplicate definition.
     local rec_logic_c="$build_dir/runtime_flow/gfx_record.c"
     mkdir -p "$build_dir/runtime_flow"
-    if ! python3 -m "$FLOWC_MODULE" "$SCRIPT_DIR/lib/runtime/gfx_record.flow" \
-        --c --library --lenient -o "$rec_logic_c" 2>/dev/null; then
+    if ! flowc_emit_runtime_module "$SCRIPT_DIR/lib/runtime/gfx_record.flow" \
+        "$rec_logic_c" >/dev/null 2>&1; then
         print_error "Flow runtime module failed: gfx_record.flow"
         exit 1
     fi
     print_success "FLOW → C: runtime_flow/gfx_record.c"
 
     # The recorder used to link only the program plus gfx_record.c. Anything
-    # backed by lib/runtime/ — get_time, audio, crypto, threads, tcp — then
+    # backed by lib/runtime/: get_time, audio, crypto, threads, tcp: then
     # compiled fine and failed at link time with an undefined symbol, which is
     # the worst possible moment: the program works under `./flow gfx` and only
     # dies when you try to record its GIF. Link the same runtime pack the
@@ -2553,7 +2397,9 @@ run_tests() {
         print_info "Running FLOW tests (Tier $tier)..."
     fi
 
-    echo "DEBUG: Starting tests, tier=$tier, strict=$strict_mode"
+    local tier_flowc
+    tier_flowc="$(flow_resolve_flowc)" || exit 1
+    echo "DEBUG: Starting tests, tier=$tier, strict=$strict_mode, flowc=$tier_flowc"
     echo "DEBUG: SCRIPT_DIR=$SCRIPT_DIR"
     echo "DEBUG: Looking for tests in tests/ and examples/"
 
@@ -2630,7 +2476,8 @@ run_tests() {
             # Tier 1: Transpile FLOW to C
             local transpile_output
             set +e  # Temporarily disable exit on error to capture failures
-            transpile_output=$(python3 -m "$FLOWC_MODULE" "$program" --c $file_mode -o "$c_file" 2>&1)
+            transpile_output=$(FLOWC_BIN="$tier_flowc" "$SCRIPT_DIR/compiler/scripts/flowc_emit.sh" \
+                "$file_mode" "$program" "$c_file" 2>&1)
             local transpile_status=$?
             set -e  # Re-enable exit on error
             
@@ -2782,11 +2629,7 @@ run_project_example() {
         exit 1
     fi
     print_info "Running project example '$name'..."
-    # Project examples may use language features not yet covered by the
-    # Stage-A flowc subset. Keep the project runner usable by default while
-    # allowing explicit FLOW_HOST=flowc|auto overrides for compiler testing.
-    local example_host="${FLOW_HOST:-python}"
-    (cd "$example_dir" && FLOW_HOST="$example_host" "$SCRIPT_DIR/flow" run "$entry")
+    (cd "$example_dir" && "$SCRIPT_DIR/flow" run "$entry")
 }
 
 # Run Python unit tests
@@ -2853,7 +2696,7 @@ run_matmul_tests() {
     }
 
     print_info "Generating assembly..."
-    python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$c_file" >/dev/null 2>&1 || {
+    flowc_emit_to_c "$program" "$c_file" >/dev/null 2>&1 || {
         print_error "C generation failed"
         exit 1
     }
@@ -2984,41 +2827,25 @@ run_runtime_tests() {
         local c_file="$build_dir/${basename}.c"
         local exe_file="$build_dir/${basename}"
         
-        # Step 1: Transpile FLOW to C
+        # Step 1: compile FLOW to C with flowc
         # || true / status vars: set -e must not abort before we record failures
         local transpile_output
         local transpile_status=0
-        transpile_output=$(python3 -m "$FLOWC_MODULE" "$program" --c --lenient -o "$c_file" 2>&1) || transpile_status=$?
+        transpile_output=$(flowc_emit_to_c "$program" "$c_file" 2>&1) || transpile_status=$?
         if [ "$transpile_status" -ne 0 ] || [ ! -f "$c_file" ]; then
-            print_error "✗ $rel_path (transpile failed)"
+            print_error "✗ $rel_path (flowc failed)"
             if [ $verbose -eq 1 ] && [ -n "$transpile_output" ]; then
                 echo "$transpile_output"
             fi
             failed=$((failed + 1))
-            failed_files="$failed_files\n  - $rel_path (transpile)"
+            failed_files="$failed_files\n  - $rel_path (flowc)"
             continue
         fi
-        
-        # Step 2: Compile C to executable
+
+        # Step 2: Compile C to executable against the runtime archive
         local clang_output
         local clang_status=0
-        local extra_cflags=()
-        local extra_ldflags=()
-        local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
-        local py_header_dir="$py_framework_dir/Python3.framework/Headers"
-        if [ -d "$py_header_dir" ]; then
-            extra_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
-            extra_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
-        fi
-        flow_concurrency_flags
-        flow_runtime_flow_sources
-        flow_collect_cflags
-        clang_output=$(clang "${FLOW_COLLECTED_CFLAGS[@]}" "${extra_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" "$c_file" \
-            "$SCRIPT_DIR/runtime/flow_python_embed.c" \
-            "${FLOW_CONC_SOURCES[@]}" \
-            "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
-            "${extra_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" \
-            "${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}" -o "$exe_file" -lm 2>&1) || clang_status=$?
+        clang_output=$(flowc_link_c "$c_file" "$exe_file" "$program" 2>&1) || clang_status=$?
         if [ "$clang_status" -ne 0 ]; then
             print_error "✗ $rel_path (clang compile failed)"
             if [ -n "$clang_output" ]; then
@@ -3034,7 +2861,7 @@ run_runtime_tests() {
             failed_files="$failed_files\n  - $rel_path (clang)"
             continue
         fi
-        
+
         # Step 3: Run the executable and check exit code
         local run_output
         local exit_code=0
@@ -3122,15 +2949,12 @@ run_lang_tests() {
     done
     mkdir -p "$build_dir"
 
-    # The Python strict transpile stays the default: on 2026-09-27 flowc
-    # passed 100 of the 126 programs and Python 123. FLOW_HOST=flowc, set
-    # explicitly, runs the suite through the Stage-A driver with no Python.
-    local lang_host="python" lang_flowc=""
-    if [ "${FLOW_HOST:-}" = "flowc" ]; then
-        lang_host="flowc"
-        lang_flowc="$(flow_resolve_flowc)" || exit 1
-        print_info "host=flowc via $lang_flowc"
-    fi
+    # flowc compiles the suite. Strict: FLOWC_LENIENT is left unset, so every
+    # type error is fatal, as the Python host's --strict was.
+    flow_host_mode >/dev/null
+    local lang_flowc
+    lang_flowc="$(flow_resolve_flowc)" || exit 1
+    print_info "flowc: $lang_flowc"
 
     if [ ! -d "$lang_dir" ]; then
         print_error "No language tests directory found at $lang_dir"
@@ -3177,17 +3001,13 @@ run_lang_tests() {
         # || true / status vars: set -e must not abort before we record failures
         local transpile_output
         local transpile_status=0
-        if [ "$lang_host" = "flowc" ]; then
-            # Bundle from the repository root, as flowc_emit_to_c does for
-            # programs with imports; FLOWC_TYPECHECK is flowc's strict mode.
-            local abs_lang_program
-            abs_lang_program="$(cd "$(dirname "$program")" && pwd)/$(basename "$program")"
-            transpile_output=$(cd "$SCRIPT_DIR" && FLOWC_BUNDLE=1 FLOWC_DIR="$SCRIPT_DIR" \
-                FLOWC_TYPECHECK=1 FLOWC_CHECKS="${FLOWC_CHECKS:-1}" FLOWC_IN="$abs_lang_program" FLOWC_OUT="$c_file" \
-                "$lang_flowc" 2>&1) || transpile_status=$?
-        else
-            transpile_output=$(python3 -m "$FLOWC_MODULE" "$program" --c --strict -o "$c_file" 2>&1) || transpile_status=$?
-        fi
+        # Bundle from the repository root, as flowc_emit_to_c does for
+        # programs with imports; FLOWC_TYPECHECK is flowc's strict mode.
+        local abs_lang_program
+        abs_lang_program="$(cd "$(dirname "$program")" && pwd)/$(basename "$program")"
+        transpile_output=$(cd "$SCRIPT_DIR" && env -u FLOWC_LENIENT FLOWC_BUNDLE=1 FLOWC_DIR="$SCRIPT_DIR" \
+            FLOWC_TYPECHECK=1 FLOWC_CHECKS="${FLOWC_CHECKS:-1}" FLOWC_IN="$abs_lang_program" FLOWC_OUT="$c_file" \
+            "$lang_flowc" 2>&1) || transpile_status=$?
         if [ "$transpile_status" -ne 0 ] || [ ! -f "$c_file" ]; then
             print_error "✗ $rel_path (strict transpile failed)"
             if [ -n "$transpile_output" ]; then
@@ -3250,7 +3070,7 @@ run_lang_tests() {
             want_exit=$(tr -d '[:space:]' < "$exitcode_file")
         fi
 
-        # Step 4: Some behaviour is only visible on a stream — print ordering,
+        # Step 4: Some behaviour is only visible on a stream: print ordering,
         # what a `defer` runs and when, which effect handler answered a call,
         # the diagnostic a failed `expect` writes. A test may put the exact
         # expected text in a sibling `.expected` (stdout) or `.expected-stderr`
@@ -3482,7 +3302,7 @@ install_deps() {
 case "${1:-help}" in
     "version"|"--version"|"-V")
         echo "Flow 2.0.0"
-        echo "host: $(flow_host_mode) (override with FLOW_HOST=flowc|python|auto)"
+        echo "host: $(flow_host_mode)"
         ;;
     "check")
         shift
@@ -3896,7 +3716,7 @@ PY
                          "$SCRIPT_DIR/examples/ml/models/mlp_xor_adam.flow"; do
                     if [ -f "$t" ]; then
                         print_info "  $t"
-                        if ! python3 -m flow.transpiler "$t" --c --lenient -o "$SCRIPT_DIR/build/$(basename "$t" .flow).c" 2>"$SCRIPT_DIR/build/.flowc_err"; then
+                        if ! flowc_emit_to_c "$t" "$SCRIPT_DIR/build/$(basename "$t" .flow).c" >/dev/null 2>"$SCRIPT_DIR/build/.flowc_err"; then
                             print_error "Failed: $t"
                             cat "$SCRIPT_DIR/build/.flowc_err" >&2
                             exit 1
@@ -3961,13 +3781,12 @@ PY
         program="${1:-}"
         require_flow_file "$program"
         shift
-        check_deps
-        explain_out="$(mktemp 2>/dev/null || mktemp -t flow_explain).c"
-        # The plan report goes to stderr; the C output is the byproduct here.
-        python3 -m "$FLOWC_MODULE" "$program" --c --strict --explain \
-            -o "$explain_out" "$@" 2>&1 >/dev/null \
-            | grep -v '^Resolving modules\|^Parsed \|^Generated C written to '
-        rm -f "$explain_out"
+        # The plan report came from the Python C backend's plan selector,
+        # which is retired. flowc lowers every declarative sort to a stable
+        # insertion sort and has no alternative plans to report yet.
+        print_error "flow explain is not available: flowc has no plan selector yet."
+        print_info "flowc lowers every |> sort to a stable insertion sort."
+        exit 1
         ;;
     "fmt")
         # flowc's formatter (compiler/src/fmt.flow). It only changes
@@ -4155,7 +3974,7 @@ PY
         fi
         require_flow_file "${1:-}"
         if ! command -v emcc >/dev/null 2>&1; then
-            print_error "emcc not on PATH — install emsdk to emit .wasm"
+            print_error "emcc not on PATH: install emsdk to emit .wasm"
             print_info "  docs: docs/language/wasm.md"
             exit 1
         fi
@@ -4219,7 +4038,7 @@ PY
         elif [ "${2:-}" = "--tools" ]; then
             install_deps
         else
-            print_info "No flow.toml here — installing compiler tools (LLVM)."
+            print_info "No flow.toml here: installing compiler tools (LLVM)."
             print_info "For package deps: cd <project> && ./flow install   or  ./flow pkg install"
             install_deps
         fi
