@@ -1,4 +1,4 @@
-total 130042
+total 128844
 benchmarks/baselines/run_baselines.py
 benchmarks/benchmark_aosoa.py
 benchmarks/benchmark_gemm_cutlass_evaluation.py
@@ -198,12 +198,10 @@ src/flow/python_generator.py
 src/flow/range_sums.py
 src/flow/recognition.py
 src/flow/registry.py
-src/flow/repl.py
 src/flow/run.py
 src/flow/shader_codegen.py
 src/flow/shader_codegen_wgsl.py
 src/flow/shader_dsl.py
-src/flow/test_runner.py
 src/flow/toml_compat.py
 src/flow/transpiler.py
 src/flow/type_checker.py
@@ -240,7 +238,6 @@ tests/integration/test_array_return.py
 tests/integration/test_cast_in_string_concat.py
 tests/integration/test_compilation_pipeline.py
 tests/integration/test_counted_loop_rotation.py
-tests/integration/test_defer_ordering.py
 tests/integration/test_flowc_span_element_type.py
 tests/integration/test_gfx_recorder.py
 tests/integration/test_gpu_codegen.py
@@ -249,7 +246,6 @@ tests/integration/test_metal.py
 tests/integration/test_mlir_math_override.py
 tests/integration/test_mlir_spirv.py
 tests/integration/test_pipeline_examples.py
-tests/integration/test_private_function_module_collision.py
 tests/integration/test_range_algebra.py
 tests/integration/test_range_sum.py
 tests/integration/test_real_end_to_end.py

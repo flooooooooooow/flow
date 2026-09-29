@@ -62,6 +62,7 @@
     "cli:init": "AI_FLOW_HANDBOOK.md",
     "cli:install": "book/appendix-c-command-reference.md",
     "cli:jit": "LANGUAGE_SPEC.md",
+    "cli:lsp": "book/appendix-c-command-reference.md",
     "cli:ml": "book/14-numerics-autodiff-and-ml.md",
     "cli:mlir": "AI_FLOW_HANDBOOK.md",
     "cli:mlir-run": "library/stdlib-api.md",
