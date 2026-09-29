@@ -1,10 +1,8 @@
 # math_prose expression → English / LaTeX dogfood.
 #
-# Prints one `KIND|expr|result` line per case. The companion parity script
-# feeds the same corpus through src/flow/math_prose.py and fails if the two
-# disagree:
-#
-#   python3 compiler/scripts/parity_math_prose_expr.py
+# Prints one `KIND|expr|result` line per case. The proof documents built
+# from these conversions are held to the former Python by
+# compiler/scripts/parity_proofs.sh.
 #
 # Run directly:  FLOW_HOST=python ./flow run examples/compilers/math_prose_expr_demo.flow
 
@@ -43,8 +41,8 @@ function main() -> i32 {
     emit_en("p and q")
     emit_en("p and q or r")
     emit_en("true or false")
-    # Chained `or`: Python leaves an unexpanded placeholder here. See
-    # KNOWN_DIVERGENCE in compiler/scripts/parity_math_prose_expr.py.
+    # Chained `or`: the former Python left an unexpanded placeholder here;
+    # the Flow port expands it.
     emit_en("a or b or c")
 
     # By-clause is dropped

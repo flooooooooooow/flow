@@ -21,6 +21,7 @@ import .effects {
     flowc_eff_diag_begin, flowc_eff_diag_s, flowc_eff_diag_span,
     flowc_eff_diag_buf, flowc_eff_diag_int, flowc_eff_diag_end
 }
+import .proof_lower { flowc_proof_erase }
 import .overload_table {
     FlowcOverloadTable,
     flowc_overload_table_init,
@@ -2059,6 +2060,7 @@ export function flowc_tc_check_program(ctx: ptr<TcCtx>, arena: AstArena, root: i
     if path_p != null and path_p[0] != 0 {
         who = ctx[0].path
     }
+    flowc_proof_erase(arena, root)
     if flowc_ast_reject_unsupported(arena, ctx[0].src, who) != 0 {
         flowc_tc_err(ctx)
         return ctx[0].err

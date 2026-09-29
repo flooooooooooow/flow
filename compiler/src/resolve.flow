@@ -35,7 +35,7 @@ extern {
     function printf(fmt: string, val: i32) -> i32
 }
 
-const FLOWC_RESOLVE_MAX_MODS: i32 = 32
+const FLOWC_RESOLVE_MAX_MODS: i32 = 64
 const FLOWC_RESOLVE_PATH_CAP: i32 = 256
 const FLOWC_RESOLVE_SRC_CAP: i32 = 1048576
 const FLOWC_RESOLVE_AST_CAP: i32 = 262144
@@ -281,6 +281,15 @@ export function flowc_resolve_sibling_path(
     return 0 - 1
 }
 
+function flowc_resolve_claim_domain_path(
+    import_span_src: ptr<u8>,
+    s: i32,
+    e: i32,
+    search_dir: string,
+    out_path: ptr<u8>,
+    out_path_cap: i32
+) -> i32
+
 # Resolve a dotted module import (e.g. stdlib.gif) to a file path.
 # Converts dots to slashes and appends .flow. Tries search_dir first, then lib/.
 export function flowc_resolve_dotted_path(
@@ -375,7 +384,54 @@ export function flowc_resolve_dotted_path(
     if flowc_io_exists(out_path as string) == 1 {
         return o
     }
-    return 0 - 1
+    return flowc_resolve_claim_domain_path(import_span_src, s, e, search_dir, out_path, out_path_cap)
+}
+
+# A claim-path segment such as `Nat/+` names a morphism of the domain module
+# `Nat`. As in the Python resolver, when no file matches the literal path,
+# drop each `/...` up to the end of its segment and try again, so
+# `verify.Nat/+` resolves to lib/verify/Nat.flow. Returns -1 if the path has
+# no `/` or the domain module does not exist either.
+function flowc_resolve_claim_domain_path(
+    import_span_src: ptr<u8>,
+    s: i32,
+    e: i32,
+    search_dir: string,
+    out_path: ptr<u8>,
+    out_path_cap: i32
+) -> i32 {
+    let n: i32 = e - s
+    let buf: ptr<u8> = malloc((n + 1) as i64)
+    if buf == null {
+        return 0 - 1
+    }
+    let mut o: i32 = 0
+    let mut skipping: i32 = 0
+    let mut had_slash: i32 = 0
+    let mut i: i32 = s
+    while i < e {
+        let c: u8 = import_span_src[i]
+        if c == 47 {
+            skipping = 1
+            had_slash = 1
+        }
+        if c == 46 {
+            skipping = 0
+        }
+        if skipping == 0 {
+            buf[o] = c
+            o = o + 1
+        }
+        i = i + 1
+    }
+    buf[o] = 0
+    if had_slash == 0 or o == 0 {
+        free(buf)
+        return 0 - 1
+    }
+    let r: i32 = flowc_resolve_dotted_path(buf, 0, o, search_dir, out_path, out_path_cap)
+    free(buf)
+    return r
 }
 
 # ---------------------------------------------------------------------------
@@ -1581,7 +1637,8 @@ export function flowc_bundle_emit(
             return 0 - 1
         }
         let mut n: i32 = flowc_resolve_emit_one(mpath, dest, rem, flags, sigs, FLOWC_RESOLVE_SIG_CAP, &siglen)
-        if n <= 0 {
+        # A module may emit no C at all (one that holds only theorems).
+        if n < 0 {
             free(fns)
             free(sigs)
             free(order_store)

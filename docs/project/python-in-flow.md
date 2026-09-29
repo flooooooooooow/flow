@@ -65,8 +65,6 @@ hatch until the Flow port for each one merges.
 | `mlir_jit.py`, `mlir_optimizer.py`, GPU/Metal **runtimes** | subprocess, ctypes, numpy |
 | `lsp_server.py`, `package.py`, `repl.py` | JSON-RPC, git/network, TTY |
 | `python_generator.py` (wheel) | setuptools/pip |
-| Full `proof_document.py` / PDF / matplotlib kernels | host tools |
-| `tools/doc/flow_doc.py`, `tools/doc/flow_know.py` | thin CLIs over `src/flow/know.py`, `proof_document.py` and `proof_kernel.py` |
 | `wasm/flow_to_wasm.py`, `wasm/flow_webgpu_shader.py`, `wasm/flow_wasm_gpu.py` | call the Python C and WGSL generators in process |
 | `benchmarks/**/python/*` baselines | the Python side of a Python-versus-Flow comparison |
 
@@ -120,9 +118,8 @@ Python and ported those tests to `tests/lang/`. See
 | Repo stats counter | [`scripts/tools/repo_stats/main.flow`](../../scripts/tools/repo_stats/main.flow) via [`scripts/update_repo_stats.sh`](../../scripts/update_repo_stats.sh) (git dump stays in shell) |
 | Claim Coordinates | [`compiler/src/claim_address.flow`](../../compiler/src/claim_address.flow) |
 | Claim path + fingerprint | [`compiler/src/claim_path.flow`](../../compiler/src/claim_path.flow) |
-| Math prose (**complete**) | [`compiler/src/math_prose.flow`](../../compiler/src/math_prose.flow): the whole of `math_prose.py`: coordinates and tier openings, plus `flowc_flow_expr_to_mathematical_english` / `flowc_flow_expr_to_latex` / `flowc_geometry_expr_to_latex` / `flowc_analysis_expr_to_latex` / `flowc_invoke_premise_mathematical`. Regex replaced by hand-written single-pass scans. Gated by [`parity_math_prose_expr.py`](../../compiler/scripts/parity_math_prose_expr.py) |
+| Math prose (**complete**) | [`compiler/src/math_prose.flow`](../../compiler/src/math_prose.flow): the whole of `math_prose.py`: coordinates and tier openings, plus `flowc_flow_expr_to_mathematical_english` / `flowc_flow_expr_to_latex` / `flowc_geometry_expr_to_latex` / `flowc_analysis_expr_to_latex` / `flowc_invoke_premise_mathematical`. Regex replaced by hand-written single-pass scans. Gated with the rest of the proof layer by [`parity_proofs.sh`](../../compiler/scripts/parity_proofs.sh) |
 | Premise instantiate | [`compiler/src/proof_sub.flow`](../../compiler/src/proof_sub.flow) |
-| `flow know` helpers + **index and rendering** | [`compiler/src/know.flow`](../../compiler/src/know.flow): normalize/qualify/match/print, plus `flowc_default_search_roots` / `flowc_claim_index_keys` / `flowc_lookup_matches` / `flowc_format_know`. The rendered entry runs the claim expression through the Flow English and LaTeX ports. Walking the search roots and reading files stay Python. Gated by [`parity_know_index.py`](../../compiler/scripts/parity_know_index.py) |
 | Require/prefer constraints | [`compiler/src/constraints.flow`](../../compiler/src/constraints.flow): `flowc_parse_require` / `flowc_parse_prefer` / tighter-value picker |
 | Convention avoid-pattern matcher | [`compiler/src/conventions.flow`](../../compiler/src/conventions.flow): `flowc_contains_ci` / `flowc_check_source` (TOML loading stays Python) |
 | MISRA/CERT C scanner | [`compiler/src/misra_scan.flow`](../../compiler/src/misra_scan.flow): `flowc_scan_c_source` flags heap/stdio/abort calls |
@@ -133,17 +130,14 @@ Python and ported those tests to `tests/lang/`. See
 | FIR-G routing decision | [`compiler/src/fir_route.flow`](../../compiler/src/fir_route.flow): `flowc_choose_analysis_backend` (calibration and timing stay Python) |
 | LSP syntax token detection | [`compiler/src/lsp_syntax.flow`](../../compiler/src/lsp_syntax.flow): `flowc_syntax_token_at_position` / `flowc_is_multi_char_op` (markdown hover stays Python) |
 | LSP receiver/field detection | [`compiler/src/lsp_intel.flow`](../../compiler/src/lsp_intel.flow): `flowc_receiver_before_dot` / `flowc_field_access_at` (URI parsing and typecheck stay Python) |
-| Geometry diagram helpers | [`compiler/src/geometry_diagram.flow`](../../compiler/src/geometry_diagram.flow): `flowc_svg_escape` / `flowc_vec2_unit` / `flowc_lerp` (full SVG rendering stays Python) |
-| Proof document formatting + **parsing** | [`compiler/src/proof_document.flow`](../../compiler/src/proof_document.flow): `flowc_circled` / `flowc_step_label_latex` / `flowc_fmt_refs` / `flowc_from_refs` / `flowc_under_refs` / `flowc_slug_label`, plus the text half of `parse_proof_file`: `flowc_proof_meta_key` / `flowc_proof_meta_value` / `flowc_extract_brace_body` / `flowc_extract_brace_end` / `flowc_proof_step_kind` / `flowc_proof_step_text` / `flowc_proof_step_detail` / `flowc_proof_claim_from_therefore` / `flowc_latex_escape` / `flowc_latex_escape_params`, and the per-item renderers `flowc_claim_path_phrase` / `flowc_natural_claim_sentence` / `flowc_facet_title` / `flowc_natural_let` / `flowc_theorem_ref_plain` / `flowc_theorem_ref_latex` / `flowc_render_math_cell_latex` / `flowc_trace_legend_row` / `flowc_diagram_markdown_embed` / `flowc_latex_preamble`. File reading, document assembly, the theorem catalogue, and PDF stay Python. Gated by [`parity_proof_parse.py`](../../compiler/scripts/parity_proof_parse.py) |
+| Proof tools (**complete**) | [`compiler/src/proof_doc.flow`](../../compiler/src/proof_doc.flow), [`geometry_diagram.flow`](../../compiler/src/geometry_diagram.flow) and [`geometry_script.flow`](../../compiler/src/geometry_script.flow): the whole of the former `proof_document.py`, `geometry_diagram.py`, `geometry_script.py`, `proof_kernel.py`, `know.py`, `claim_address.py`, `claim_path.py`, `math_prose.py` and `proof_substitution.py`. `flow doc proof`, `flow doc bundle`, `flow doc kernel` and `flow know` run on flowc, and the driver keeps only the LaTeX engine call. In programs, `theorem`, `assume`, `therefore` and claim references are erased by [`proof_lower.flow`](../../compiler/src/proof_lower.flow). Gated by [`parity_proofs.sh`](../../compiler/scripts/parity_proofs.sh): every examples/verify file against the Python at any revision, byte for byte |
 | Dynamics DSL line helpers | [`compiler/src/dynamics_dsl.flow`](../../compiler/src/dynamics_dsl.flow): `flowc_strip_comments` / `flowc_strip_dynamics_namespace` (full DSL parsing and expansion stay Python) |
 | LSP utility helpers | [`compiler/src/lsp_utils.flow`](../../compiler/src/lsp_utils.flow): `flowc_is_valid_identifier` / `flowc_word_range` / `flowc_completion_prefix` (full LSP protocol stays Python) |
 | Field DSL expansion (**complete**) | [`compiler/src/field_dsl.flow`](../../compiler/src/field_dsl.flow): the whole of the former `field_dsl.py`, covering detection, `field` / `boundary` / `evolves as laplacian` parsing, diagnostics, and `T_field_step` generation. flowc runs it on every source it reads (`main.flow`, `driver.flow`, all bundle passes in `resolve.flow`), so `./flow compile examples/evolution/heat_diffusion.flow` needs no Python. `src/flow/field_dsl.py` is now a bridge that shells out to flowc. Gated by [`parity_field_dsl.sh`](../../compiler/scripts/parity_field_dsl.sh): 21 fixtures against goldens recorded from the Python expander, 1995-file passthrough, an optional live diff against the Python at any revision, and heat_diffusion compiled and run on flowc |
 | DSL detection | [`compiler/src/dsl_detect.flow`](../../compiler/src/dsl_detect.flow): `flowc_has_field_dsl` / `flowc_has_dynamics_dsl` / `flowc_has_fill_shader_dsl` (dynamics and shader expansion stay Python) |
-| Claim lookup helpers | [`compiler/src/know.flow`](../../compiler/src/know.flow): `flowc_normalize_query` / `flowc_package_prefix` / `flowc_qualify` (filesystem scanning and claim indexing stay Python) |
 | LSP ordering hover | [`compiler/src/lsp_ordering.flow`](../../compiler/src/lsp_ordering.flow): `flowc_ordering_hover` (completion items with snippets stay Python) |
 | LSP dynamics hover | [`compiler/src/lsp_dynamics.flow`](../../compiler/src/lsp_dynamics.flow): `flowc_dynamics_hover` (completion items stay Python) |
 | WCET analysis helpers | [`compiler/src/wcet.flow`](../../compiler/src/wcet.flow): `flowc_type_size` / `flowc_stmt_cost` / `FLOWC_DEFAULT_LOOP_BOUND` (AST traversal and report formatting stay Python) |
-| Proof kernel helpers | [`compiler/src/proof_kernel.flow`](../../compiler/src/proof_kernel.flow): `flowc_node_kind` / `flowc_escape_dot` (kernel construction, JSON, and plotting stay Python) |
 | Stage-A JS / fmt | [`jsgen.flow`](../../compiler/src/jsgen.flow) / [`fmt.flow`](../../compiler/src/fmt.flow) |
 | LSP ordering gloss | [`examples/compilers/lsp_ordering_port.flow`](../../examples/compilers/lsp_ordering_port.flow) |
 | Lexer / parser / cgen / typecheck / resolve | [`compiler/src/`](../../compiler/src/): floats, `pkg_add`, `for ..` / `to`, bundles |
@@ -157,8 +151,6 @@ drops that cross-check and deletes the Python.
 | Still rewrite priority | Target |
 |---|---|
 | Grow parser/cgen | more of production C path |
-| `flow doc proof` rendering | remaining `proof_document.py`: the parse helpers have landed; document assembly, Markdown/LaTeX rendering, and PDF are next |
-| Recursive claim index over disk | the key aliases, lookup predicate, and rendering have landed; what remains is the directory walk itself (`fileio` + `popen("find")`, as `update_repo_stats.sh` does for git) |
 
 ## Porting notes
 
@@ -199,9 +191,7 @@ FLOW_HOST=python ./flow run compiler/src/main.flow
 ./compiler/scripts/roundtrip.sh
 FLOWC_EMIT_ONLY=1 ./compiler/scripts/emit_basics.sh
 ./compiler/scripts/smoke_math_prose.sh
-python3 compiler/scripts/parity_math_prose_expr.py
-python3 compiler/scripts/parity_proof_parse.py
-python3 compiler/scripts/parity_know_index.py
+./compiler/scripts/parity_proofs.sh
 ./compiler/scripts/smoke_know.sh
 ./compiler/scripts/parity_field_dsl.sh
 FLOW_HOST=python ./flow run examples/compilers/claim_address_demo.flow

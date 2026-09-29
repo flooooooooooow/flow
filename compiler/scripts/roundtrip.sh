@@ -259,11 +259,19 @@ if ! grep -Fq 'int32_t flowc_parse_expr(Parser* p);' compiler/build/parser_flowc
 fi
 echo "PASS compile_module parser greps"
 
+# Proof-layer erasure (theorem / assume / therefore / claim refs), run by
+# cgen, jsgen and the typecheck before they read the tree (#996).
+compile_module proof_lower compiler/src/proof_lower.flow \
+    compiler/build/ast_flowc.h
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/proof_lower_flowc.c compiler/build/proof_lower_flowc.h
+
 # Sixth module: cgen.flow (imports token/ast — -include their headers; extern → string.h).
 compile_module cgen compiler/src/cgen.flow \
     compiler/build/token_flowc.h \
     compiler/build/ast_flowc.h \
-    compiler/build/effects_flowc.h
+    compiler/build/effects_flowc.h \
+    compiler/build/proof_lower_flowc.h
 for needle in 'flowc_cgen_emit' 'flowc_cgen_emit_ex' 'typedef struct CgenBuf' '#include <string.h>' ' % '; do
     if ! grep -Fq "$needle" compiler/build/cgen_flowc.c; then
         echo "FAIL compile_module cgen: missing '${needle}' in emitted C" >&2
@@ -325,6 +333,7 @@ python3 compiler/scripts/flowc_c_to_hdr.py \
 compile_module typecheck compiler/src/typecheck.flow \
     compiler/build/ast_flowc.h \
     compiler/build/effects_flowc.h \
+    compiler/build/proof_lower_flowc.h \
     compiler/build/overload_table_flowc.h \
     compiler/build/overload_call_flowc.h \
     compiler/build/overload_registry_flowc.h \
@@ -373,7 +382,8 @@ echo "PASS compile_module resolve greps"
 # jsgen.flow + fmt.flow — emit→cc -c + separate relocatable link with token/ast.
 compile_module jsgen compiler/src/jsgen.flow \
     compiler/build/token_flowc.h \
-    compiler/build/ast_flowc.h
+    compiler/build/ast_flowc.h \
+    compiler/build/proof_lower_flowc.h
 for needle in 'flowc_jsgen_emit' 'typedef struct JsgenBuf'; do
     if ! grep -Fq "$needle" compiler/build/jsgen_flowc.c; then
         echo "FAIL compile_module jsgen: missing '${needle}' in emitted C" >&2
@@ -396,6 +406,7 @@ echo "PASS compile_module fmt greps"
 cc -r -o compiler/build/flowc_jsgen_fmt.o \
     compiler/build/token_flowc.o \
     compiler/build/ast_flowc.o \
+    compiler/build/proof_lower_flowc.o \
     compiler/build/jsgen_flowc.o \
     compiler/build/fmt_flowc.o
 for sym in flowc_jsgen_emit flowc_fmt_emit; do
@@ -666,6 +677,7 @@ cc -r -o compiler/build/flowc_frontend.o \
     compiler/build/flow_blocks_flowc.o \
     compiler/build/shader_dsl_flowc.o \
     compiler/build/effects_flowc.o \
+    compiler/build/proof_lower_flowc.o \
     compiler/build/cgen_flowc.o \
     compiler/build/overload_flowc.o \
     compiler/build/overload_table_flowc.o \
@@ -702,7 +714,7 @@ echo "=== stage_a_driver ==="
 cc -O0 -I compiler/build -I compiler/host \
     -o compiler/build/stage_a_driver \
     compiler/host/stage_a_driver.c \
-    compiler/build/flowc_frontend.o
+    compiler/build/flowc_frontend.o -lm
 ./compiler/build/stage_a_driver \
     compiler/fixtures/stage_a_sum.flow \
     compiler/build/driven_sum.c
@@ -744,7 +756,7 @@ if grep -Eq '^int32_t flowc_parse_program' compiler/build/driver_flowc.c; then
 fi
 cc -O0 -o compiler/build/stage_a_driver_flow \
     compiler/build/driver_flowc.o \
-    compiler/build/flowc_frontend.o
+    compiler/build/flowc_frontend.o -lm
 # CLI path (preferred).
 ./compiler/build/stage_a_driver_flow \
     compiler/fixtures/stage_a_sum.flow \

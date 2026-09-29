@@ -14,6 +14,7 @@ import .ast {
     AST_EXPORT, AST_BREAK, AST_CONTINUE, flowc_ast_reject_unsupported,
     flowc_ast_reject_effects
 }
+import .proof_lower { flowc_proof_erase }
 
 extern {
     function strlen(s: string) -> i64
@@ -373,6 +374,7 @@ export function flowc_jsgen_emit(arena: AstArena, root: i32, src: ptr<u8>, out: 
     if arena.nodes[root].kind != AST_PROGRAM {
         return 0 - 1
     }
+    flowc_proof_erase(arena, root)
     if flowc_ast_reject_unsupported(arena, src, "flowc jsgen") != 0 {
         return 0 - 1
     }

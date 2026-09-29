@@ -34,7 +34,7 @@ FLOWC="$OUT/flowc"
 CC="${CC:-cc}"
 
 if [[ ! -x "$FLOWC" || compiler/bootstrap/flowc_stage_a.c -nt "$FLOWC" ]]; then
-  "$CC" -O1 -w -o "$FLOWC" compiler/bootstrap/flowc_stage_a.c
+  "$CC" -O1 -w -o "$FLOWC" compiler/bootstrap/flowc_stage_a.c -lm
 fi
 if [[ ! -x "$BIN" || "$SRC" -nt "$BIN" || "$FLOWC" -nt "$BIN" ]]; then
   FLOWC_TYPECHECK=1 FLOWC_IN="$SRC" FLOWC_OUT="$OUT/main.c" "$FLOWC"

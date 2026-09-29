@@ -68,7 +68,7 @@ build_bootstrap() {
     echo "ensure_flowc: building flowc_bootstrap from checked-in C (cc only)..." >&2
     local tmp="$BOOT_BIN.tmp.$$"
     # shellcheck disable=SC2086
-    if "${CC:-cc}" ${CFLAGS:--O2} -o "$tmp" "$BOOT_C" 2>/dev/null; then
+    if "${CC:-cc}" ${CFLAGS:--O2} -o "$tmp" "$BOOT_C" -lm 2>/dev/null; then
         mv -f "$tmp" "$BOOT_BIN"
         return 0
     fi

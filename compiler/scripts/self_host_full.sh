@@ -106,7 +106,7 @@ check_generation() {
 # --- gen1 ------------------------------------------------------------------
 echo "=== gen1: bootstrap driver compiles all of compiler/src ==="
 emit_compiler "$BOOT" compiler/build/flowc_gen1.c
-cc -O0 -o compiler/build/flowc_gen1 compiler/build/flowc_gen1.c
+cc -O0 -o compiler/build/flowc_gen1 compiler/build/flowc_gen1.c -lm
 echo "gen1 C: $(wc -c <compiler/build/flowc_gen1.c) bytes"
 check_generation gen1
 
@@ -120,7 +120,7 @@ if ! cmp -s compiler/build/flowc_gen1.c compiler/build/flowc_gen2.c; then
     exit 1
 fi
 echo "PASS fixed point: gen1.c == gen2.c"
-cc -O0 -o compiler/build/flowc_gen2 compiler/build/flowc_gen2.c
+cc -O0 -o compiler/build/flowc_gen2 compiler/build/flowc_gen2.c -lm
 check_generation gen2
 
 # --- gen3 ------------------------------------------------------------------
@@ -131,7 +131,7 @@ if ! cmp -s compiler/build/flowc_gen2.c compiler/build/flowc_gen3.c; then
     exit 1
 fi
 echo "PASS fixed point: gen2.c == gen3.c"
-cc -O0 -o compiler/build/flowc_gen3 compiler/build/flowc_gen3.c
+cc -O0 -o compiler/build/flowc_gen3 compiler/build/flowc_gen3.c -lm
 check_generation gen3
 
 # Object bytes: linked binaries carry a build UUID, objects do not.

@@ -77,10 +77,16 @@ self_emit_module parser \
     compiler/build/self_ast.h \
     compiler/build/self_lexer.h
 
+# Proof-layer erasure, called from cgen and the typecheck (#996).
+self_emit_module proof_lower compiler/build/self_ast.h
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/self_proof_lower.c compiler/build/self_proof_lower.h
+
 self_emit_module cgen \
     compiler/build/self_token.h \
     compiler/build/self_ast.h \
-    compiler/build/self_effects.h
+    compiler/build/self_effects.h \
+    compiler/build/self_proof_lower.h
 
 # typecheck.flow resolves calls through the native overload modules, so those
 # are emitted first, in dependency order, and their headers are included below.
@@ -119,6 +125,7 @@ python3 compiler/scripts/flowc_c_to_hdr.py \
 self_emit_module typecheck \
     compiler/build/self_ast.h \
     compiler/build/self_effects.h \
+    compiler/build/self_proof_lower.h \
     compiler/build/self_overload_table.h \
     compiler/build/self_overload_call.h \
     compiler/build/self_overload_registry.h \
@@ -161,6 +168,7 @@ cc -r -o compiler/build/flowc_frontend_self.o \
     compiler/build/self_flow_blocks.o \
     compiler/build/self_shader_dsl.o \
     compiler/build/self_effects.o \
+    compiler/build/self_proof_lower.o \
     compiler/build/self_cgen.o \
     compiler/build/self_overload.o \
     compiler/build/self_overload_table.o \
@@ -224,7 +232,7 @@ cc -O0 -c \
     compiler/build/self_driver.c -o compiler/build/self_driver.o
 cc -O0 -o compiler/build/stage_a_driver_flow_self \
     compiler/build/self_driver.o \
-    compiler/build/flowc_frontend_self.o
+    compiler/build/flowc_frontend_self.o -lm
 
 echo "=== stage_a_driver_flow_self smoke (stage_a_sum → exit 45) ==="
 ./compiler/build/stage_a_driver_flow_self \

@@ -43,7 +43,7 @@ def _flowc() -> str:
         binary.parent.mkdir(parents=True, exist_ok=True)
         tmp = binary.with_name(f"flowc_bootstrap.{os.getpid()}")
         cc = os.environ.get("CC", "cc")
-        subprocess.run([cc, "-O2", "-o", str(tmp), str(boot_c)], check=True, capture_output=True)
+        subprocess.run([cc, "-O2", "-o", str(tmp), str(boot_c), "-lm"], check=True, capture_output=True)
         os.replace(tmp, binary)
     return str(binary)
 

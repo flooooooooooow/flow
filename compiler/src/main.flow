@@ -19,6 +19,7 @@ import .ast {
 import .parser { flowc_parser_new, flowc_parser_free, flowc_parse_program, flowc_parser_print_error, Parser }
 import .fileio { flowc_read_file, flowc_write_file, flowc_io_file_size }
 import .pipeline_fusion { flowc_fuse_pipelines }
+import .proof_doc { flowc_proof_doc_mode }
 import .cgen { flowc_cgen_emit }
 import .jsgen { flowc_jsgen_emit }
 import .fmt { flowc_fmt_emit }
@@ -210,8 +211,9 @@ function flowc_emit_mode() -> i32 {
         return flowc_expand_only_mode(in_path, out_path)
     }
 
-    # 1MB: parser bundle (token+ast+lexer+parser) needs headroom beyond 512K.
-    let out_cap: i32 = 1048576
+    # 4 MiB: the self-hosted compiler bundle passed 1 MiB of C once the
+    # dynamics, flow-block, shader, package, effects and proof modules joined it.
+    let out_cap: i32 = 4194304
     let out: ptr<u8> = malloc(out_cap as i64)
     if out == null {
         puts("flowc emit: malloc out failed")
@@ -2183,6 +2185,9 @@ function test_typecheck_match_catchall() -> i32 {
 }
 
 function main() -> i32 {
+    if flowc_env_set("FLOWC_PROOF_DOC") == 1 {
+        return flowc_proof_doc_mode()
+    }
     if flowc_env_set("FLOWC_IN") == 1 and flowc_env_set("FLOWC_PARSE_ONLY") == 1 {
         return flowc_parse_only_mode()
     }
