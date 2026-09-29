@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Transcript tests for the native host tools written in Flow (flow repl).
+# Transcript tests for the native host tools written in Flow (flow repl,
+# flow lsp).
 #
 # Each case is an input file fed to the tool on stdin and the exact bytes
 # the tool is expected to write back. Nothing here needs Python.
@@ -52,4 +53,13 @@ for input in tests/tools/repl/*.in; do
 done
 
 echo "tool transcripts: $pass passed, $fail failed"
-[ "$fail" -eq 0 ]
+
+# Language server sessions (flow lsp): tests/tools/lsp/run.sh.
+lsp_status=0
+if [ "$UPDATE" -eq 1 ]; then
+    tests/tools/lsp/run.sh --update || lsp_status=$?
+else
+    tests/tools/lsp/run.sh || lsp_status=$?
+fi
+
+[ "$fail" -eq 0 ] && [ "$lsp_status" -eq 0 ]
