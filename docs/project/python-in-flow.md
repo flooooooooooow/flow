@@ -54,14 +54,14 @@ hatch until the Flow port for each one merges.
 | `repl.py` | `flow repl` | A REPL written in Flow (`tools/repl/main.flow`): open PR #987 |
 | `test_runner.py` | No callers | Deleted in open PR #987 |
 | `package.py` | `flow add`, `install`, `sync`, `search`, `info`, and fetching for `flow run` | Sync decision in Flow since #960. Full package manager in Flow (`compiler/src/pkg.flow`): open PR #989 |
-| `mlir_*.py`, GPU runtimes | MLIR / Metal / numpy | None planned |
+| `mlir_*.py`, GPU runtimes | MLIR / Metal / numpy | Core-language MLIR text in flowc ([`mlirgen.flow`](../../compiler/src/mlirgen.flow), `FLOWC_EMIT=mlir`); lowering in [`mlir_lower.sh`](../../compiler/scripts/mlir_lower.sh). Plan and slice order: [MLIR in Flow](../design/mlir-in-flow.md) |
 
 ## Boundary
 
 | Stay Python / host | Why |
 |---|---|
 | `./flow` bash + Gen0 bootstrap | orchestrates flowc; Gen0 still emits via `src/flow` once |
-| `mlir_jit.py`, `mlir_optimizer.py`, GPU/Metal **runtimes** | subprocess, ctypes, numpy |
+| `mlir_jit.py` loading half, GPU/Metal **runtimes** | ctypes, numpy; planned to move to C (see [MLIR in Flow](../design/mlir-in-flow.md)) |
 | `package.py` | git and network |
 | `python_generator.py` (wheel) | setuptools/pip |
 | `wasm/flow_to_wasm.py`, `wasm/flow_webgpu_shader.py`, `wasm/flow_wasm_gpu.py` | call the Python C and WGSL generators in process |
