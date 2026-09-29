@@ -1,0 +1,113 @@
+# @module flowc.static_semantics
+# @means  Bridge from Flow's existing static semantics into the shared fact ledger.
+#
+# typecheck.flow remains the authority for well-typedness. This module exposes
+# facts that a successful static analysis can mark PROVEN. It also has a small
+# concrete collector for integer literal expression nodes, using AST node ids as
+# stable value ids inside one compiler invocation.
+
+import .ast { AstArena, AST_NONE, AST_INT }
+import .semantic_facts {
+    FlowcSemanticFact,
+    FLOWC_FACT_SOURCE_STATIC, FLOWC_FACT_STATUS_PROVEN,
+    flowc_fact_none, flowc_fact_constant, flowc_fact_range,
+    flowc_fact_unary, flowc_fact_relation
+}
+
+export function flowc_static_constant_fact(
+    value_id: i32,
+    value: i64,
+    domain_mask: i32
+) -> FlowcSemanticFact {
+    return flowc_fact_constant(
+        value_id, value,
+        FLOWC_FACT_SOURCE_STATIC,
+        FLOWC_FACT_STATUS_PROVEN,
+        domain_mask,
+        0
+    )
+}
+
+export function flowc_static_range_fact(
+    value_id: i32,
+    lo: i64,
+    hi: i64,
+    domain_mask: i32
+) -> FlowcSemanticFact {
+    return flowc_fact_range(
+        value_id, lo, hi,
+        FLOWC_FACT_SOURCE_STATIC,
+        FLOWC_FACT_STATUS_PROVEN,
+        domain_mask,
+        0
+    )
+}
+
+export function flowc_static_unary_fact(
+    kind: i32,
+    value_id: i32,
+    domain_mask: i32
+) -> FlowcSemanticFact {
+    return flowc_fact_unary(
+        kind, value_id,
+        FLOWC_FACT_SOURCE_STATIC,
+        FLOWC_FACT_STATUS_PROVEN,
+        domain_mask,
+        0
+    )
+}
+
+export function flowc_static_relation_fact(
+    kind: i32,
+    left_id: i32,
+    right_id: i32,
+    domain_mask: i32
+) -> FlowcSemanticFact {
+    return flowc_fact_relation(
+        kind, left_id, right_id,
+        FLOWC_FACT_SOURCE_STATIC,
+        FLOWC_FACT_STATUS_PROVEN,
+        domain_mask,
+        0
+    )
+}
+
+export function flowc_static_expr_fact(
+    arena: AstArena,
+    expr_id: i32,
+    domain_mask: i32
+) -> FlowcSemanticFact {
+    if expr_id == AST_NONE {
+        return flowc_fact_none()
+    }
+    if arena.nodes[expr_id].kind == AST_INT {
+        return flowc_static_constant_fact(
+            expr_id,
+            arena.nodes[expr_id].ival as i64,
+            domain_mask
+        )
+    }
+    return flowc_fact_none()
+}
+
+export function flowc_static_collect_literal_facts(
+    arena: AstArena,
+    domain_mask: i32,
+    out: ptr<FlowcSemanticFact>,
+    cap: i32
+) -> i32 {
+    let mut n: i32 = 0
+    let mut id: i32 = 0
+    while id < arena.len and n < cap {
+        if arena.nodes[id].kind == AST_INT {
+            out[n] = flowc_static_constant_fact(
+                id,
+                arena.nodes[id].ival as i64,
+                domain_mask
+            )
+            n = n + 1
+        }
+        id = id + 1
+    }
+    return n
+}
