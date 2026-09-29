@@ -29,6 +29,11 @@
 #       at <rev>. Only programs whose flowc output already equals Python's
 #       are recorded in corpus.txt.
 #
+# GPU mode: a fixture named gpu_*.flow is also emitted with FLOWC_MLIR_GPU=1
+# and compared with its `<name>.gpu.mlir` golden (Python --mlir-gpu), text
+# only. With --python, every accepted program that has an @gpu kernel is
+# compared in GPU mode as well.
+#
 # Normalization (compiler/scripts/mlir_normalize.awk): SSA values and block
 # labels are renamed in order of first appearance and indentation is
 # dropped. Python numbers a value before emitting its operands and indents
@@ -94,6 +99,14 @@ flowc_emit() {
     local in="$1" out="$2"
     rm -f "$out"
     FLOWC_EMIT=mlir FLOWC_IN="$in" FLOWC_OUT="$out" "$BIN" >"$out.log" 2>&1
+}
+
+# flowc_emit_gpu <in.flow> <out.mlir>: the same with @gpu kernels as a
+# gpu.module (Python --mlir-gpu).
+flowc_emit_gpu() {
+    local in="$1" out="$2"
+    rm -f "$out"
+    FLOWC_MLIR_GPU=1 FLOWC_EMIT=mlir FLOWC_IN="$in" FLOWC_OUT="$out" "$BIN" >"$out.log" 2>&1
 }
 
 # run_exe <tag> <src_dir> <out>: run <tag>.exe with no stdin, in a scratch
@@ -163,6 +176,10 @@ if [[ "$mode" == "--write-golden" ]]; then
         key="$(key_of "$f")"
         python_emit "$f" "$WORK/python/$key.mlir"
         awk -f "$NORM" "$WORK/python/$key.mlir" > "$base.mlir"
+        if [[ "$(basename "$f")" == gpu_* ]]; then
+            python_emit "$f" "$WORK/python/$key.gpu.mlir" --mlir-gpu
+            awk -f "$NORM" "$WORK/python/$key.gpu.mlir" > "$base.gpu.mlir"
+        fi
         if [[ "$have_mlir" -eq 1 ]]; then
             python_emit "$f" "$WORK/python/$key.ll" --llvm
             build_run "$WORK/python/$key" "$WORK/python/$key.ll" ll "$(dirname "$f")"
@@ -197,8 +214,9 @@ fi
 
 fail=0
 
-# 1. Fixtures vs goldens (text).
+# 1. Fixtures vs goldens (text); gpu_* fixtures also under FLOWC_MLIR_GPU=1.
 fx_pass=0
+gpu_pass=0
 for f in "${fixtures[@]}"; do
     base="$FIX/$(basename "$f" .flow)"
     key="$(key_of "$f")"
@@ -215,8 +233,19 @@ for f in "${fixtures[@]}"; do
         echo "FAIL $f: MLIR differs from $base.mlir" >&2
         [[ -f "$base.mlir" ]] && { diff "$base.mlir" "$WORK/flowc/$key.norm" | head -20 >&2 || true; }
     fi
+    if [[ "$(basename "$f")" == gpu_* ]]; then
+        if flowc_emit_gpu "$f" "$WORK/flowc/$key.gpu.mlir" \
+            && awk -f "$NORM" "$WORK/flowc/$key.gpu.mlir" > "$WORK/flowc/$key.gpu.norm" \
+            && cmp -s "$base.gpu.mlir" "$WORK/flowc/$key.gpu.norm"; then
+            gpu_pass=$((gpu_pass + 1))
+        else
+            fail=$((fail + 1))
+            echo "FAIL $f: GPU-mode MLIR differs from $base.gpu.mlir" >&2
+        fi
+    fi
 done
 echo "fixtures (text): pass=${fx_pass} of ${#fixtures[@]}"
+echo "fixtures (gpu text): pass=${gpu_pass}"
 
 # 2. Fixtures run (stdout + exit) vs goldens.
 if [[ "$have_mlir" -eq 1 ]]; then
@@ -275,6 +304,8 @@ if [[ "$mode" == "--python" ]]; then
     accepted=0
     text_same=0
     text_fail=0
+    gpu_same=0
+    gpu_fail=0
     py_fail=0
     run_same=0
     run_fail=0
@@ -298,6 +329,19 @@ if [[ "$mode" == "--python" ]]; then
             echo "FAIL live $f: MLIR differs from python@${rev}" >&2
             diff "$WORK/python/$key.norm" "$WORK/flowc/$key.norm" | head -10 >&2 || true
             continue
+        fi
+        # A program with @gpu kernels: the GPU dialect module as well.
+        if grep -q "^@gpu" "$f" \
+            && python_emit "$f" "$WORK/python/$key.gpu.mlir" --mlir-gpu \
+            && flowc_emit_gpu "$f" "$WORK/flowc/$key.gpu.mlir"; then
+            awk -f "$NORM" "$WORK/flowc/$key.gpu.mlir" > "$WORK/flowc/$key.gpu.norm"
+            awk -f "$NORM" "$WORK/python/$key.gpu.mlir" > "$WORK/python/$key.gpu.norm"
+            if cmp -s "$WORK/flowc/$key.gpu.norm" "$WORK/python/$key.gpu.norm"; then
+                gpu_same=$((gpu_same + 1))
+            else
+                gpu_fail=$((gpu_fail + 1))
+                echo "FAIL live $f: GPU-mode MLIR differs from python@${rev}" >&2
+            fi
         fi
         [[ "$have_mlir" -eq 1 ]] || continue
         # Run parity: both MLIR paths must build and agree, or both fail.
@@ -334,10 +378,11 @@ if [[ "$mode" == "--python" ]]; then
         rm -f "$WORK/flowc/$key.exe" "$WORK/python/$key.exe"
     done < "$WORK/all.txt"
     echo "live python@${rev}: accepted=${accepted} text_same=${text_same} text_fail=${text_fail} python_fail=${py_fail}"
+    echo "live gpu dialect: same=${gpu_same} fail=${gpu_fail}"
     if [[ "$have_mlir" -eq 1 ]]; then
         echo "live run: same=${run_same} fail=${run_fail} nondeterministic=${run_nondet} both_unbuildable=${run_skip}"
     fi
-    fail=$((fail + text_fail + run_fail))
+    fail=$((fail + text_fail + gpu_fail + run_fail))
 fi
 
 if [[ "$fail" -ne 0 ]]; then

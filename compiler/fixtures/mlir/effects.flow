@@ -1,0 +1,59 @@
+# MLIR parity fixture: algebraic effects as Python lowers them (dispatch
+# functions over a current-handler vtable, capability methods, vtables
+# filled by @_flow_effects_init, handle blocks that install and restore),
+# an unhandled operation falling back to its zero default, effect calls
+# resolved to the handling capability, C varargs externs as llvm.func, and
+# overloads Python emits side by side.
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
+    function malloc(n: i64) -> ptr<u8>
+}
+
+effect Log {
+    info(level: i32) -> void,
+    scale(x: f64) -> f64,
+}
+
+effect Clock {
+    now() -> i64,
+}
+
+capability Console {
+    effect Log,
+    function info(level: i32) -> void {
+        printf("info %d\n", level)
+    },
+    function scale(x: f64) -> f64 {
+        return x * 3.0
+    },
+}
+
+capability Fixed {
+    effect Clock, Log,
+    function now() -> i64 {
+        return 1234
+    },
+}
+
+function work(n: i32) -> f64 {
+    Log.info(n)
+    return Log.scale(n as f64)
+}
+
+function main() -> i32 {
+    printf("unhandled %f\n", work(1))
+    handle Log with Console {
+        printf("handled %f\n", work(2))
+        Log.info(7)
+    }
+    handle Clock, Log with Fixed {
+        printf("clock %d\n", Clock.now())
+        printf("partial %f\n", work(3))
+    }
+    let buf: ptr<u8> = malloc(64)
+    let n: i32 = snprintf(buf, 64, "%d-%d", 4, 5)
+    printf("%s %d\n", buf, n)
+    return 0
+}

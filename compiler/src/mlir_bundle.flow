@@ -464,10 +464,19 @@ function mb_resolve(b: ptr<MlirBundle>, arena: AstArena, src: ptr<u8>, imp: i32,
             }
         } else {
             if mb_toml_value(b, "dependencies", key, kn, val, MB_PATH) == 1 {
-                free(val)
-                free(cand)
-                return 0
-            }
+                # flow_packages/<key>/src, then flow_packages/<key>.
+                let fp: ptr<u8> = "flow_packages"
+                let pkd: ptr<u8> = malloc(MB_PATH as i64)
+                let pk: ptr<u8> = malloc(MB_PATH as i64)
+                let pks: ptr<u8> = malloc(MB_PATH as i64)
+                let sp: ptr<u8> = "src"
+                if mb_join(pkd, b[0].project_root, fp, 13) == 1 and mb_join(pk, pkd, key, kn) == 1 and mb_join(pks, pk, sp, 3) == 1 {
+                    root_a = pks
+                    root_b = pk
+                    first_b = 1
+                }
+                free(pkd)
+            } else {
             if kn == 6 and key[0] == 115 and key[1] == 116 and key[2] == 100 and key[3] == 108 and key[4] == 105 and key[5] == 98 {
                 root_a = b[0].stdlib_root
                 root_b = b[0].stdlib_root
@@ -476,6 +485,7 @@ function mb_resolve(b: ptr<MlirBundle>, arena: AstArena, src: ptr<u8>, imp: i32,
                 root_b = b[0].stdlib_root
                 root_c = b[0].project_root
                 root_a = null
+            }
             }
         }
     }

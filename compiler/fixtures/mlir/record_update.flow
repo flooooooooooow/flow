@@ -1,0 +1,29 @@
+# MLIR parity fixture: record update `Name { ..base, field: value }`, as
+# Python's generate_record_update lowers it: a copy of the base with the
+# listed fields inserted, converted to the field types.
+
+struct Point {
+    x: i32,
+    y: i32,
+    w: f64
+}
+
+function moved(p: Point, dx: i32) -> Point {
+    return Point { ..p, x: p.x + dx }
+}
+
+function make() -> Point {
+    return Point { x: 1, y: 2, w: 0.5 }
+}
+
+function main() -> i32 {
+    let p: Point = Point { x: 3, y: 4, w: 1.5 }
+    let q: Point = Point { ..p, y: 40 }
+    let r: Point = moved(q, 10)
+    let s: Point = Point { ..make(), w: 2, y: r.y + 1 }
+    println(q.x + q.y)
+    println(r.x)
+    println(s.w)
+    println(s.y)
+    return 0
+}
