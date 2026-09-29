@@ -484,6 +484,54 @@ jobs:
           chmod +x compiler/scripts/parse_coverage.sh
           ./compiler/scripts/parse_coverage.sh --check
 
+  # Non-regression gates for the Flow ports. Each runs in golden mode against
+  # outputs recorded from the Python reference, so it needs only a C
+  # compiler. parity_shader_dsl skips its xcrun metal step where there is no
+  # Metal toolchain. parse_coverage.sh --check runs in its own job above.
+  flowc-parity-gates:
+    name: flowc parity gates (golden)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: |
+      needs.changes.outputs.compiler == 'true' ||
+      needs.changes.outputs.tests == 'true' ||
+      needs.changes.outputs.examples == 'true' ||
+      needs.changes.outputs.libs == 'true' ||
+      needs.changes.outputs.workflow == 'true'
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build flowc from the bootstrap C
+        run: bash compiler/scripts/ensure_flowc.sh
+      - name: parity_lowering
+        run: timeout 20m ./compiler/scripts/parity_lowering.sh
+      - name: parity_field_dsl
+        run: timeout 10m ./compiler/scripts/parity_field_dsl.sh
+      - name: parity_shader_dsl
+        run: timeout 10m ./compiler/scripts/parity_shader_dsl.sh
+      - name: parity_dynamics_dsl
+        run: timeout 10m ./compiler/scripts/parity_dynamics_dsl.sh
+      - name: parity_flow_blocks
+        run: timeout 10m ./compiler/scripts/parity_flow_blocks.sh
+      - name: parity_effects
+        run: timeout 10m ./compiler/scripts/parity_effects.sh
+      - name: fmt_check --check
+        run: timeout 20m ./compiler/scripts/fmt_check.sh --check
+
+  # Whole-corpus parity between the flowc and Python hosts on the C backend,
+  # against recorded Python goldens (no Python). The floor is kept per OS;
+  # --check passes with a note on an OS that has none recorded yet.
+  flowc-corpus-parity:
+    name: flowc corpus parity
+    runs-on: ubuntu-latest
+    needs: changes
+    if: |
+      needs.changes.outputs.compiler == 'true' ||
+      needs.changes.outputs.workflow == 'true'
+    steps:
+      - uses: actions/checkout@v7
+      - name: corpus_parity --check
+        run: timeout 45m ./compiler/scripts/corpus_parity.sh --check
+
   # Phase D: user-facing compile must not pip-install the Python compiler.
   flowc-compile:
     name: flowc compile (no pip)

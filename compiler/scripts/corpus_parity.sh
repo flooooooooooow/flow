@@ -215,7 +215,7 @@ main() {
         mkdir -p compiler/build
         FLOWC_BIN="$ROOT/compiler/build/flowc_bootstrap"
         if [[ ! -x "$FLOWC_BIN" || compiler/bootstrap/flowc_stage_a.c -nt "$FLOWC_BIN" ]]; then
-            "${CC:-cc}" -O2 -w -o "$FLOWC_BIN" compiler/bootstrap/flowc_stage_a.c
+            "${CC:-cc}" -O2 -w -o "$FLOWC_BIN" compiler/bootstrap/flowc_stage_a.c -lm
         fi
     fi
     case "$FLOWC_BIN" in /*) ;; *) FLOWC_BIN="$ROOT/$FLOWC_BIN" ;; esac

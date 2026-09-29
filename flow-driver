@@ -2472,6 +2472,14 @@ run_tests() {
             local c_file="$test_build_dir/${safe_name}.c"
             local exe_file="$test_build_dir/${safe_name}"
             
+            # Files marked "flow:flowc-only" in their first lines test flowc
+            # behaviour the Python host does not have; flowc runs them
+            # (bootstrap suite, test-lang on flowc).
+            if head -n 3 "$program" | grep -q "flow:flowc-only"; then
+                print_warning "~ $rel_path (flowc-only, skipped on the Python host)"
+                continue
+            fi
+
             # Per-file strictness: files carrying a "flow:lenient" pragma in
             # their first lines are intentionally checked leniently even when
             # the suite runs with --strict (checker gaps documented in-file).
