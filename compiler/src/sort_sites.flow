@@ -273,6 +273,19 @@ function ss_sites(s: ptr<SortSites>, id: i32, depth: i32) {
     ss_sites_chain(s, s[0].arena.nodes[id].a, depth + 1)
     ss_sites_chain(s, s[0].arena.nodes[id].b, depth + 1)
     ss_sites_chain(s, s[0].arena.nodes[id].c, depth + 1)
+    # An `elif` is parsed as an if inside a block the parser makes for it,
+    # starting where the whole chain starts. Its condition runs before any
+    # branch body, so it sees the facts known before the `if`, as on the
+    # Python host. The branch bodies stay out of reach.
+    if k == AST_IF {
+        let eb: i32 = s[0].arena.nodes[id].c
+        if ss_valid(s, eb) == 1 and s[0].arena.nodes[eb].kind == AST_BLOCK and s[0].arena.nodes[eb].start == s[0].arena.nodes[id].start {
+            let inner: i32 = s[0].arena.nodes[eb].a
+            if ss_valid(s, inner) == 1 and s[0].arena.nodes[inner].kind == AST_IF and s[0].arena.nodes[inner].next == AST_NONE {
+                ss_sites(s, inner, depth + 1)
+            }
+        }
+    }
     if k == AST_FOR {
         let step: i32 = s[0].arena.nodes[id].ival
         if step != 0 {
