@@ -2865,6 +2865,8 @@ int32_t flowc_parse_binop_rhs(Parser* p, int32_t min_prec, int32_t lhs) {
   if (prec < min_prec) {
   return left;
 }
+  int32_t op_s = ((p[0]).cur).start;
+  int32_t op_e = ((p[0]).cur).end;
   flowc_parser_advance(p);
   int32_t right = flowc_parse_cast(p);
   while (1 == 1) {
@@ -2875,7 +2877,7 @@ int32_t flowc_parse_binop_rhs(Parser* p, int32_t min_prec, int32_t lhs) {
 }
   right = flowc_parse_binop_rhs(p, (prec + 1), right);
 }
-  int32_t node = flowc_ast_alloc((&(p[0]).arena), AST_BINOP, 0, 0);
+  int32_t node = flowc_ast_alloc((&(p[0]).arena), AST_BINOP, op_s, op_e);
   if (node == AST_NONE) {
   flowc_parser_fail(p);
   return AST_NONE;
@@ -32692,6 +32694,8 @@ int32_t flowc_cgen_scan_lambda_caps(AstArena arena, uint8_t* src, int32_t id, in
 int32_t flowc_cgen_is_captured(CgenBuf* w, uint8_t* src, int32_t ns, int32_t ne);
 int32_t flowc_cgen_is_span_var(AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_var_elem_type(AstArena arena, uint8_t* src, int32_t id);
+int32_t flowc_cgen_method_recv_needs_addr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t call, int32_t fn_id);
+int32_t flowc_cgen_fn_param_type(AstArena arena, int32_t fn_id, int32_t param_idx);
 int32_t flowc_cgen_fn_param_is_span(AstArena arena, uint8_t* src, int32_t fn_id, int32_t param_idx);
 int32_t flowc_cgen_is_array_var(AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_array_var_size(AstArena arena, uint8_t* src, int32_t id);
@@ -32758,6 +32762,7 @@ void flowc_cgen_emit_cap_bodies(CgenBuf* w, AstArena arena, uint8_t* src, int32_
 int32_t flowc_cgen_eff_call_effect(CgenBuf* w, AstArena arena, uint8_t* src, int32_t call, int32_t* out);
 void flowc_cgen_emit_eff_call(CgenBuf* w, AstArena arena, uint8_t* src, int32_t call, int32_t es, int32_t ee);
 void flowc_cgen_emit_handle(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
+int32_t flowc_cgen_lambda_has_caps(CgenBuf* w, int32_t lam_id);
 int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t* out, int32_t out_cap, int32_t flags, uint8_t* sigs, int32_t sigs_len);
 int32_t flowc_cgen_emit_ex(AstArena arena, int32_t root, uint8_t* src, uint8_t* out, int32_t out_cap, int32_t flags);
 int32_t flowc_cgen_is_type_param_name(AstArena arena, uint8_t* src, int32_t ns, int32_t ne);
@@ -34778,6 +34783,61 @@ int32_t flowc_cgen_var_elem_type(AstArena arena, uint8_t* src, int32_t id) {
   return AST_NONE;
 }
 
+int32_t flowc_cgen_method_recv_needs_addr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t call, int32_t fn_id) {
+  if (fn_id == AST_NONE) {
+  return 0;
+}
+  int32_t recv = ((arena).nodes[call]).a;
+  if (recv == AST_NONE || ((arena).nodes[recv]).kind != AST_IDENT) {
+  return 0;
+}
+  if (((arena).nodes[recv]).name_end > ((arena).nodes[call]).name_start) {
+  return 0;
+}
+  int32_t param = ((arena).nodes[fn_id]).a;
+  if (param == AST_NONE) {
+  return 0;
+}
+  int32_t pt = ((arena).nodes[param]).a;
+  if (pt == AST_NONE || ((arena).nodes[pt]).kind != AST_TYPE) {
+  return 0;
+}
+  if (flowc_cgen_span_is(src, ((arena).nodes[pt]).name_start, ((arena).nodes[pt]).name_end, "ptr") == 0) {
+  return 0;
+}
+  int32_t inner = ((arena).nodes[pt]).a;
+  if (inner == AST_NONE || ((arena).nodes[inner]).kind != AST_TYPE) {
+  return 0;
+}
+  int32_t rt = flowc_cgen_expr_type_node(w, arena, src, recv);
+  if (rt == AST_NONE || ((arena).nodes[rt]).kind != AST_TYPE || ((arena).nodes[rt]).a != AST_NONE) {
+  return 0;
+}
+  if (flowc_cgen_span_eq(src, ((arena).nodes[rt]).name_start, ((arena).nodes[rt]).name_end, ((arena).nodes[inner]).name_start, ((arena).nodes[inner]).name_end) == 0) {
+  return 0;
+}
+  if (flowc_cgen_find_struct(arena, src, ((arena).nodes[rt]).name_start, ((arena).nodes[rt]).name_end) == AST_NONE) {
+  return 0;
+}
+  return 1;
+}
+
+int32_t flowc_cgen_fn_param_type(AstArena arena, int32_t fn_id, int32_t param_idx) {
+  if (fn_id == AST_NONE) {
+  return AST_NONE;
+}
+  int32_t param = ((arena).nodes[fn_id]).a;
+  int32_t idx = 0;
+  while (param != AST_NONE) {
+  if (idx == param_idx) {
+  return ((arena).nodes[param]).a;
+}
+  idx = (idx + 1);
+  param = ((arena).nodes[param]).next;
+}
+  return AST_NONE;
+}
+
 int32_t flowc_cgen_fn_param_is_span(AstArena arena, uint8_t* src, int32_t fn_id, int32_t param_idx) {
   if (fn_id == AST_NONE) {
   return 0;
@@ -35715,7 +35775,9 @@ void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   if (fn_id != AST_NONE && flowc_cgen_fn_param_is_span(arena, src, fn_id, param_idx) == 1) {
   if (((arena).nodes[arg]).kind == AST_IDENT && flowc_cgen_is_array_var(arena, src, arg) == 1) {
   int32_t arr_size = flowc_cgen_array_var_size(arena, src, arg);
-  flowc_cgen_puts(w, "((flowc_span_int32_t){ ");
+  flowc_cgen_puts(w, "((");
+  flowc_cgen_emit_type(w, arena, src, flowc_cgen_fn_param_type(arena, fn_id, param_idx));
+  flowc_cgen_puts(w, "){ ");
   flowc_cgen_emit_expr(w, arena, src, arg);
   flowc_cgen_puts(w, ", ");
   flowc_cgen_put_i32(w, arr_size);
@@ -35724,6 +35786,9 @@ void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   param_idx = (param_idx + 1);
   continue;
 }
+}
+  if (param_idx == 0 && flowc_cgen_method_recv_needs_addr(w, arena, src, id, fn_id) == 1) {
+  flowc_cgen_putc(w, 38);
 }
   flowc_cgen_emit_expr(w, arena, src, arg);
   arg = ((arena).nodes[arg]).next;
@@ -38999,6 +39064,17 @@ void flowc_cgen_emit_handle(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id
   flowc_cgen_puts(w, "  }\n");
 }
 
+int32_t flowc_cgen_lambda_has_caps(CgenBuf* w, int32_t lam_id) {
+  int32_t ci = 0;
+  while (ci < (w[0]).lambda_cap_count) {
+  if ((w[0]).lambda_cap_lambda[ci] == lam_id) {
+  return 1;
+}
+  ci = (ci + 1);
+}
+  return 0;
+}
+
 int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t* out, int32_t out_cap, int32_t flags, uint8_t* sigs, int32_t sigs_len) {
   if (root == AST_NONE || root < 0) {
   return (0 - 1);
@@ -39316,7 +39392,14 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   if (((arena).nodes[ti]).kind == AST_TYPE) {
   int32_t tns = ((arena).nodes[ti]).name_start;
   int32_t tne = ((arena).nodes[ti]).name_end;
-  if (flowc_cgen_span_is(src, tns, tne, "span") == 1) {
+  int32_t is_span_ty = flowc_cgen_span_is(src, tns, tne, "span");
+  int32_t sl_inner = ((arena).nodes[ti]).a;
+  if (is_span_ty == 0 && sl_inner != AST_NONE && tns == 0 && tne == 0 && ((arena).nodes[ti]).ival == 0) {
+  if (((arena).nodes[sl_inner]).kind == AST_TYPE && ((arena).nodes[sl_inner]).name_start > 0) {
+  is_span_ty = 1;
+}
+}
+  if (is_span_ty == 1) {
   int32_t inner = ((arena).nodes[ti]).a;
   if (inner != AST_NONE) {
   flowc_cgen_puts((&w), "#ifndef FLOWC_SPAN_");
@@ -39524,6 +39607,12 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_putc((&w), 40);
   int32_t param = ((arena).nodes[i]).a;
   int32_t first = 1;
+  if (flowc_cgen_lambda_has_caps((&w), lam_id) == 1) {
+  flowc_cgen_puts((&w), "lambda_");
+  flowc_cgen_put_i32((&w), lam_id);
+  flowc_cgen_puts((&w), "_env* _env");
+  first = 0;
+}
   while (param != AST_NONE) {
   if (first == 0) {
   flowc_cgen_puts((&w), ", ");
@@ -39589,6 +39678,12 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_putc((&w), 40);
   int32_t param = ((arena).nodes[i]).a;
   int32_t first = 1;
+  if (flowc_cgen_lambda_has_caps((&w), lam_id) == 1) {
+  flowc_cgen_puts((&w), "lambda_");
+  flowc_cgen_put_i32((&w), lam_id);
+  flowc_cgen_puts((&w), "_env* _env");
+  first = 0;
+}
   while (param != AST_NONE) {
   if (first == 0) {
   flowc_cgen_puts((&w), ", ");
@@ -39886,6 +39981,15 @@ int32_t flowc_cgen_collect_sigs(AstArena arena, int32_t root, uint8_t* src, uint
   int32_t rt = ((arena).nodes[fn]).b;
   if (rt != AST_NONE) {
   n = flowc_cgen_sig_put(arena, src, buf, cap, n, fn, rt);
+}
+}
+  if (((arena).nodes[item]).kind == AST_EXTERN) {
+  int32_t ext = ((arena).nodes[item]).a;
+  while (ext != AST_NONE) {
+  if (((arena).nodes[ext]).kind == AST_FN && ((arena).nodes[ext]).b != AST_NONE) {
+  n = flowc_cgen_sig_put(arena, src, buf, cap, n, ext, ((arena).nodes[ext]).b);
+}
+  ext = ((arena).nodes[ext]).next;
 }
 }
   item = ((arena).nodes[item]).next;
@@ -40984,6 +41088,88 @@ typedef struct TcCtx {
   int32_t strict_effects;
 } TcCtx;
 
+typedef struct UTy {
+  int32_t tag;
+  int64_t dims;
+  int32_t prim;
+  int32_t ns;
+  int32_t ne;
+  int32_t radian;
+  int32_t node;
+} UTy;
+
+typedef struct UCtx {
+  uint8_t* src;
+  int32_t* u_ns;
+  int32_t* u_ne;
+  int64_t* u_dims;
+  int32_t* u_ok;
+  int32_t* u_rad;
+  int32_t u_len;
+  int32_t u_cap;
+  int32_t* base;
+  int32_t nbase;
+  int32_t* v_ns;
+  int32_t* v_ne;
+  UTy* v_ty;
+  int32_t v_len;
+  int32_t v_cap;
+  int32_t* marks;
+  int32_t m_len;
+  int32_t m_cap;
+  UTy* args;
+  int32_t a_len;
+  int32_t a_cap;
+  uint8_t* mb;
+  int32_t mb_len;
+  int32_t mb_cap;
+  int32_t cur_fn;
+  int32_t err;
+} UCtx;
+
+static const int32_t UT_UNKNOWN = 0;
+static const int32_t UT_NUM = 1;
+static const int32_t UT_UNIT = 2;
+static const int32_t UT_OTHER = 3;
+static const int32_t UT_STRUCT = 4;
+static const int32_t UT_SEQ = 5;
+static const int32_t UP_I8 = 1;
+static const int32_t UP_I16 = 2;
+static const int32_t UP_I32 = 3;
+static const int32_t UP_I64 = 4;
+static const int32_t UP_U8 = 5;
+static const int32_t UP_U16 = 6;
+static const int32_t UP_U32 = 7;
+static const int32_t UP_U64 = 8;
+static const int32_t UP_F32 = 9;
+static const int32_t UP_F64 = 10;
+static const int32_t UP_BOOL = 11;
+static const int32_t UP_STRING = 12;
+static const int32_t UP_I128 = 13;
+static const int32_t UP_U128 = 14;
+static const int32_t UT_TOK_EQEQ = 18;
+static const int32_t UT_TOK_NE = 19;
+static const int32_t UT_TOK_LT = 20;
+static const int32_t UT_TOK_LE = 21;
+static const int32_t UT_TOK_GT = 22;
+static const int32_t UT_TOK_GE = 23;
+static const int32_t UT_TOK_PLUS = 24;
+static const int32_t UT_TOK_MINUS = 25;
+static const int32_t UT_TOK_STAR = 26;
+static const int32_t UT_TOK_SLASH = 27;
+static const int32_t UT_TOK_AMPAMP = 28;
+static const int32_t UT_TOK_BARBAR = 29;
+static const int32_t UT_TOK_BANG = 30;
+static const int32_t UT_TOK_AMP = 32;
+static const int32_t UT_TOK_PERCENT = 33;
+static const int32_t UT_TOK_BAR = 38;
+static const int32_t UT_TOK_CARET = 39;
+static const int32_t UT_TOK_SHL = 40;
+static const int32_t UT_TOK_SHR = 41;
+static const int32_t UT_TOK_IN = 47;
+static const int32_t UT_KW_DBG = 37;
+static const int32_t UT_SLOTS = 12;
+static const int64_t UT_TY_BYTES = 64;
 int32_t flowc_tc_span_eq(uint8_t* src, int32_t a0, int32_t a1, int32_t b0, int32_t b1);
 int32_t flowc_tc_span_eq2(uint8_t* src_a, int32_t a0, int32_t a1, uint8_t* src_b, int32_t b0, int32_t b1);
 uint8_t* flowc_tc_bind_src(TcCtx ctx, int32_t i);
@@ -41002,6 +41188,8 @@ int32_t flowc_tc_find_struct(AstArena arena, uint8_t* src, int32_t ty);
 int32_t flowc_tc_find_struct_by_name(AstArena arena, uint8_t* src, int32_t ns, int32_t ne);
 int32_t flowc_tc_struct_has_field(AstArena arena, uint8_t* src, int32_t st, int32_t fs, int32_t fe);
 int32_t flowc_tc_is_complex_builtin(uint8_t* src, int32_t start, int32_t end);
+int32_t flowc_tc_span_in_words(uint8_t* src, int32_t start, int32_t end, const char* list);
+int32_t flowc_tc_is_libc_builtin(uint8_t* src, int32_t start, int32_t end);
 int32_t flowc_tc_lookup_fn(TcCtx ctx, int32_t start, int32_t end);
 int32_t flowc_tc_lookup_fn_arity(TcCtx ctx, int32_t start, int32_t end);
 int32_t flowc_tc_unwrap_fn(AstArena arena, int32_t item);
@@ -41042,6 +41230,69 @@ TcCtx flowc_tc_init(uint8_t* src);
 void flowc_tc_free(TcCtx* ctx);
 void flowc_tc_reset_module(TcCtx* ctx, uint8_t* src);
 void flowc_tc_set_path(TcCtx* ctx, const char* path);
+UTy ut_unknown();
+UTy ut_prim(int32_t p);
+UTy ut_unit_ty(int64_t dims, int32_t ns, int32_t ne, int32_t radian);
+UTy ut_node_ty(int32_t tag, int32_t node);
+int32_t ut_is_float(int32_t p);
+int32_t ut_int_rank(int32_t p);
+int32_t ut_rank_prim(int32_t r);
+int32_t ut_common(int32_t a, int32_t b);
+const char* ut_prim_name(int32_t p);
+int32_t ut_prim_of_span(uint8_t* src, int32_t s, int32_t e);
+int32_t ut_dim_get(int64_t d, int32_t k);
+int64_t ut_dim_set(int64_t d, int32_t k, int32_t v);
+int64_t ut_dim_combine(int64_t a, int64_t b, int32_t sign);
+int64_t ut_dim_scale(int64_t a, int32_t e);
+UCtx ut_init(uint8_t* src);
+void ut_free(UCtx* u);
+void ut_mb_reset(UCtx* u);
+void ut_mb_byte(UCtx* u, uint8_t c);
+void ut_mb_str(UCtx* u, const char* s);
+void ut_mb_span(UCtx* u, int32_t s, int32_t e);
+void ut_mb_int(UCtx* u, int32_t n);
+void ut_mb_emit(UCtx* u);
+int32_t ut_line_of(UCtx* u, int32_t pos);
+void ut_mb_loc(UCtx* u, int32_t pos);
+int32_t ut_find_unit(UCtx* u, int32_t s, int32_t e);
+int32_t ut_canonical(UCtx* u, int64_t dims);
+void ut_mb_ty(UCtx* u, UTy t);
+void ut_mb_base(UCtx* u, int32_t k, int32_t mag);
+int32_t ut_is_space(uint8_t c);
+int32_t ut_is_ident_start(uint8_t c);
+int32_t ut_is_ident_char(uint8_t c);
+int32_t ut_skip_ws(uint8_t* src, int32_t i, int32_t end);
+void ut_register_unit(UCtx* u, AstArena arena, int32_t d);
+int32_t ut_is_unit_decl(AstArena arena, uint8_t* src, int32_t d);
+int32_t ut_unwrap_export(AstArena arena, int32_t item);
+int32_t ut_alias_is_distinct(uint8_t* src, int32_t start);
+UTy ut_of_type_depth(UCtx* u, AstArena arena, int32_t ty, int32_t depth);
+UTy ut_of_type(UCtx* u, AstArena arena, int32_t ty);
+int32_t ut_dims_mismatch(UTy actual, UTy expected);
+void ut_push(UCtx* u);
+void ut_pop(UCtx* u);
+void ut_bind(UCtx* u, int32_t s, int32_t e, UTy t);
+UTy ut_lookup(UCtx* u, int32_t s, int32_t e);
+const char* ut_op_name(int32_t op);
+int32_t ut_is_compare(int32_t op);
+int32_t ut_is_arith(int32_t op);
+int32_t ut_op_has_line(UCtx* u, AstArena arena, int32_t id, int32_t op);
+UTy ut_result_of_dims(UCtx* u, int64_t dims);
+int32_t ut_is_scalar(UTy t);
+UTy ut_binop(UCtx* u, AstArena arena, int32_t id);
+UTy ut_cast(UCtx* u, AstArena arena, int32_t id);
+int32_t ut_is_dimensionless_math(uint8_t* src, int32_t s, int32_t e);
+UTy ut_builtin_ret(uint8_t* src, int32_t s, int32_t e);
+UTy ut_call(UCtx* u, AstArena arena, int32_t id);
+UTy ut_struct_lit(UCtx* u, AstArena arena, int32_t id);
+UTy ut_field(UCtx* u, AstArena arena, int32_t id);
+UTy ut_expr(UCtx* u, AstArena arena, int32_t id);
+void ut_block(UCtx* u, AstArena arena, int32_t id);
+void ut_bind_pattern(UCtx* u, AstArena arena, int32_t pat);
+void ut_report_coerce(UCtx* u, const char* what, int32_t ns, int32_t ne, const char* mid, UTy first, const char* tail, UTy second);
+void ut_stmt(UCtx* u, AstArena arena, int32_t id);
+void ut_check_global(UCtx* u, AstArena arena, int32_t d, const char* what);
+int32_t flowc_units_check(AstArena arena, uint8_t* src, int32_t root);
 int32_t flowc_tc_check_program(TcCtx* ctx, AstArena arena, int32_t root);
 int32_t flowc_typecheck_ex(AstArena arena, int32_t root, uint8_t* src, const char* path);
 int32_t flowc_typecheck(AstArena arena, int32_t root, uint8_t* src);
@@ -41320,6 +41571,43 @@ int32_t flowc_tc_is_complex_builtin(uint8_t* src, int32_t start, int32_t end) {
   return 0;
 }
 
+int32_t flowc_tc_span_in_words(uint8_t* src, int32_t start, int32_t end, const char* list) {
+  uint8_t* p = (uint8_t*)(list);
+  int32_t n = (int32_t)(strlen(list));
+  int32_t len = (end - start);
+  int32_t i = 0;
+  while (i < n) {
+  int32_t j = i;
+  while (j < n && p[j] != 32) {
+  j = (j + 1);
+}
+  if ((j - i) == len) {
+  int32_t k = 0;
+  while (k < len && p[(i + k)] == src[(start + k)]) {
+  k = (k + 1);
+}
+  if (k == len) {
+  return 1;
+}
+}
+  i = (j + 1);
+}
+  return 0;
+}
+
+int32_t flowc_tc_is_libc_builtin(uint8_t* src, int32_t start, int32_t end) {
+  if (flowc_tc_span_in_words(src, start, end, "printf sprintf fprintf scanf sscanf malloc calloc realloc free memcpy memset memmove memcmp strlen strcpy strcat strcmp strncpy strncmp exit abort flow_panic atexit fopen fclose fread fwrite fgets fputs putchar rand srand time clock get_current_time") == 1) {
+  return 1;
+}
+  if (flowc_tc_span_in_words(src, start, end, "sin cos tan asin acos atan atan2 sinh cosh tanh asinh acosh atanh exp exp2 expm1 log log2 log10 log1p pow sqrt cbrt hypot ceil floor round trunc fabs fmod fmin fmax fdim sigmoid") == 1) {
+  return 1;
+}
+  if (flowc_tc_span_in_words(src, start, end, "alloc dealloc array_length length array gpu_thread_id gpu_block_id gpu_sync metal_create_buffer metal_execute metal_get_result emit query insert read write") == 1) {
+  return 1;
+}
+  return 0;
+}
+
 int32_t flowc_tc_lookup_fn(TcCtx ctx, int32_t start, int32_t end) {
   if (flowc_tc_span_is((ctx).src, start, end, "println") == 1) {
   return 1;
@@ -41432,7 +41720,7 @@ int32_t flowc_tc_lookup_fn(TcCtx ctx, int32_t start, int32_t end) {
 }
 }
 }
-  return 0;
+  return flowc_tc_is_libc_builtin((ctx).src, start, end);
 }
 
 int32_t flowc_tc_lookup_fn_arity(TcCtx ctx, int32_t start, int32_t end) {
@@ -42289,6 +42577,9 @@ void flowc_tc_check_expr(TcCtx* ctx, AstArena arena, int32_t id) {
 }
 } else {
   int32_t local_candidates = flowc_overload_table_count((ctx[0]).overloads, ns, ne, nargs);
+  if (((arena).nodes[id]).b != AST_NONE) {
+  local_candidates = 0;
+}
   if (local_candidates > 0) {
   if (flowc_overload_call_prepare((&(ctx[0]).overload_scratch), nargs) >= 0) {
   int32_t typed_arg = ((arena).nodes[id]).a;
@@ -42757,6 +43048,19 @@ void flowc_tc_seed_export(TcCtx* ctx, AstArena dep_arena, int32_t dep_root, uint
   if (kind == AST_LET) {
   flowc_tc_seed_bind(ctx, dep_src, ((dep_arena).nodes[item]).name_start, ((dep_arena).nodes[item]).name_end, 0, (-1));
 }
+  if (kind == AST_EXTERN) {
+  int32_t ext = ((dep_arena).nodes[item]).a;
+  while (ext != AST_NONE) {
+  if (((dep_arena).nodes[ext]).kind == AST_FN) {
+  int32_t ens = ((dep_arena).nodes[ext]).name_start;
+  int32_t ene = ((dep_arena).nodes[ext]).name_end;
+  if (ene > ens) {
+  flowc_tc_seed_bind(ctx, dep_src, ens, ene, 1, (-1));
+}
+}
+  ext = ((dep_arena).nodes[ext]).next;
+}
+}
   if (kind == AST_EXPORT) {
   int32_t inner = ((dep_arena).nodes[item]).a;
   if (inner != AST_NONE && ((dep_arena).nodes[inner]).kind == AST_FN) {
@@ -42900,6 +43204,1541 @@ void flowc_tc_set_path(TcCtx* ctx, const char* path) {
   (ctx[0]).path = path;
 }
 
+UTy ut_unknown() {
+  return (UTy){ .tag = UT_UNKNOWN, .dims = 0, .prim = 0, .ns = 0, .ne = 0, .radian = 0, .node = AST_NONE };
+}
+
+UTy ut_prim(int32_t p) {
+  int32_t tag = UT_NUM;
+  if (p == UP_BOOL || p == UP_STRING) {
+  tag = UT_OTHER;
+}
+  return (UTy){ .tag = tag, .dims = 0, .prim = p, .ns = 0, .ne = 0, .radian = 0, .node = AST_NONE };
+}
+
+UTy ut_unit_ty(int64_t dims, int32_t ns, int32_t ne, int32_t radian) {
+  return (UTy){ .tag = UT_UNIT, .dims = dims, .prim = 0, .ns = ns, .ne = ne, .radian = radian, .node = AST_NONE };
+}
+
+UTy ut_node_ty(int32_t tag, int32_t node) {
+  return (UTy){ .tag = tag, .dims = 0, .prim = 0, .ns = 0, .ne = 0, .radian = 0, .node = node };
+}
+
+int32_t ut_is_float(int32_t p) {
+  if (p == UP_F32 || p == UP_F64) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t ut_int_rank(int32_t p) {
+  if (p == UP_I8) {
+  return 0;
+}
+  if (p == UP_U8) {
+  return 1;
+}
+  if (p == UP_I16) {
+  return 2;
+}
+  if (p == UP_U16) {
+  return 3;
+}
+  if (p == UP_I32) {
+  return 4;
+}
+  if (p == UP_U32) {
+  return 5;
+}
+  if (p == UP_I64) {
+  return 6;
+}
+  if (p == UP_U64) {
+  return 7;
+}
+  if (p == UP_I128) {
+  return 8;
+}
+  if (p == UP_U128) {
+  return 9;
+}
+  return 0;
+}
+
+int32_t ut_rank_prim(int32_t r) {
+  if (r == 0) {
+  return UP_I8;
+}
+  if (r == 1) {
+  return UP_U8;
+}
+  if (r == 2) {
+  return UP_I16;
+}
+  if (r == 3) {
+  return UP_U16;
+}
+  if (r == 4) {
+  return UP_I32;
+}
+  if (r == 5) {
+  return UP_U32;
+}
+  if (r == 6) {
+  return UP_I64;
+}
+  if (r == 7) {
+  return UP_U64;
+}
+  if (r == 8) {
+  return UP_I128;
+}
+  return UP_U128;
+}
+
+int32_t ut_common(int32_t a, int32_t b) {
+  if (ut_is_float(a) == 1 || ut_is_float(b) == 1) {
+  if (a == UP_F64 || b == UP_F64) {
+  return UP_F64;
+}
+  return UP_F32;
+}
+  int32_t ra = ut_int_rank(a);
+  int32_t rb = ut_int_rank(b);
+  if (ra > rb) {
+  return ut_rank_prim(ra);
+}
+  return ut_rank_prim(rb);
+}
+
+const char* ut_prim_name(int32_t p) {
+  if (p == UP_I8) {
+  return "i8";
+}
+  if (p == UP_I16) {
+  return "i16";
+}
+  if (p == UP_I32) {
+  return "i32";
+}
+  if (p == UP_I64) {
+  return "i64";
+}
+  if (p == UP_U8) {
+  return "u8";
+}
+  if (p == UP_U16) {
+  return "u16";
+}
+  if (p == UP_U32) {
+  return "u32";
+}
+  if (p == UP_U64) {
+  return "u64";
+}
+  if (p == UP_F32) {
+  return "f32";
+}
+  if (p == UP_F64) {
+  return "f64";
+}
+  if (p == UP_BOOL) {
+  return "bool";
+}
+  if (p == UP_STRING) {
+  return "string";
+}
+  if (p == UP_I128) {
+  return "i128";
+}
+  if (p == UP_U128) {
+  return "u128";
+}
+  return "unknown";
+}
+
+int32_t ut_prim_of_span(uint8_t* src, int32_t s, int32_t e) {
+  if (flowc_tc_span_is(src, s, e, "i8") == 1) {
+  return UP_I8;
+}
+  if (flowc_tc_span_is(src, s, e, "i16") == 1) {
+  return UP_I16;
+}
+  if (flowc_tc_span_is(src, s, e, "i32") == 1) {
+  return UP_I32;
+}
+  if (flowc_tc_span_is(src, s, e, "i64") == 1) {
+  return UP_I64;
+}
+  if (flowc_tc_span_is(src, s, e, "u8") == 1) {
+  return UP_U8;
+}
+  if (flowc_tc_span_is(src, s, e, "u16") == 1) {
+  return UP_U16;
+}
+  if (flowc_tc_span_is(src, s, e, "u32") == 1) {
+  return UP_U32;
+}
+  if (flowc_tc_span_is(src, s, e, "u64") == 1) {
+  return UP_U64;
+}
+  if (flowc_tc_span_is(src, s, e, "f32") == 1) {
+  return UP_F32;
+}
+  if (flowc_tc_span_is(src, s, e, "f64") == 1) {
+  return UP_F64;
+}
+  if (flowc_tc_span_is(src, s, e, "bool") == 1) {
+  return UP_BOOL;
+}
+  if (flowc_tc_span_is(src, s, e, "string") == 1) {
+  return UP_STRING;
+}
+  if (flowc_tc_span_is(src, s, e, "i128") == 1) {
+  return UP_I128;
+}
+  if (flowc_tc_span_is(src, s, e, "u128") == 1) {
+  return UP_U128;
+}
+  return 0;
+}
+
+int32_t ut_dim_get(int64_t d, int32_t k) {
+  int64_t sh = (int64_t)((k * 5));
+  int32_t v = (int32_t)(((d >> sh) & 31));
+  if (v >= 16) {
+  return (v - 32);
+}
+  return v;
+}
+
+int64_t ut_dim_set(int64_t d, int32_t k, int32_t v) {
+  int64_t sh = (int64_t)((k * 5));
+  int64_t mask = 31;
+  int64_t slot = (mask << sh);
+  int64_t cleared = (d - (d & slot));
+  int64_t bits = ((int64_t)((v & 31)) << sh);
+  return (cleared | bits);
+}
+
+int64_t ut_dim_combine(int64_t a, int64_t b, int32_t sign) {
+  int64_t r = 0;
+  int32_t k = 0;
+  while (k < UT_SLOTS) {
+  r = ut_dim_set(r, k, (ut_dim_get(a, k) + (sign * ut_dim_get(b, k))));
+  k = (k + 1);
+}
+  return r;
+}
+
+int64_t ut_dim_scale(int64_t a, int32_t e) {
+  int64_t r = 0;
+  int32_t k = 0;
+  while (k < UT_SLOTS) {
+  r = ut_dim_set(r, k, (ut_dim_get(a, k) * e));
+  k = (k + 1);
+}
+  return r;
+}
+
+UCtx ut_init(uint8_t* src) {
+  int32_t ucap = 256;
+  int32_t vcap = 4096;
+  int32_t acap = 1024;
+  return (UCtx){ .src = src, .u_ns = (int32_t*)(malloc(((int64_t)(ucap) * 4))), .u_ne = (int32_t*)(malloc(((int64_t)(ucap) * 4))), .u_dims = (int64_t*)(malloc(((int64_t)(ucap) * 8))), .u_ok = (int32_t*)(malloc(((int64_t)(ucap) * 4))), .u_rad = (int32_t*)(malloc(((int64_t)(ucap) * 4))), .u_len = 0, .u_cap = ucap, .base = (int32_t*)(malloc(((int64_t)(ucap) * 4))), .nbase = 0, .v_ns = (int32_t*)(malloc(((int64_t)(vcap) * 4))), .v_ne = (int32_t*)(malloc(((int64_t)(vcap) * 4))), .v_ty = (UTy*)(malloc(((int64_t)(vcap) * UT_TY_BYTES))), .v_len = 0, .v_cap = vcap, .marks = (int32_t*)(malloc((1024 * 4))), .m_len = 0, .m_cap = 1024, .args = (UTy*)(malloc(((int64_t)(acap) * UT_TY_BYTES))), .a_len = 0, .a_cap = acap, .mb = malloc(1024), .mb_len = 0, .mb_cap = 1024, .cur_fn = AST_NONE, .err = 0 };
+}
+
+void ut_free(UCtx* u) {
+  free((uint8_t*)((u[0]).u_ns));
+  free((uint8_t*)((u[0]).u_ne));
+  free((uint8_t*)((u[0]).u_dims));
+  free((uint8_t*)((u[0]).u_ok));
+  free((uint8_t*)((u[0]).u_rad));
+  free((uint8_t*)((u[0]).base));
+  free((uint8_t*)((u[0]).v_ns));
+  free((uint8_t*)((u[0]).v_ne));
+  free((uint8_t*)((u[0]).v_ty));
+  free((uint8_t*)((u[0]).marks));
+  free((uint8_t*)((u[0]).args));
+  free((u[0]).mb);
+}
+
+void ut_mb_reset(UCtx* u) {
+  (u[0]).mb_len = 0;
+  (u[0]).mb[0] = 0;
+}
+
+void ut_mb_byte(UCtx* u, uint8_t c) {
+  if (((u[0]).mb_len + 1) >= (u[0]).mb_cap) {
+  return;
+}
+  (u[0]).mb[(u[0]).mb_len] = c;
+  (u[0]).mb_len = ((u[0]).mb_len + 1);
+  (u[0]).mb[(u[0]).mb_len] = 0;
+}
+
+void ut_mb_str(UCtx* u, const char* s) {
+  uint8_t* p = (uint8_t*)(s);
+  int32_t i = 0;
+  while (p[i] != 0) {
+  ut_mb_byte(u, p[i]);
+  i = (i + 1);
+}
+}
+
+void ut_mb_span(UCtx* u, int32_t s, int32_t e) {
+  int32_t i = s;
+  while (i < e) {
+  ut_mb_byte(u, (u[0]).src[i]);
+  i = (i + 1);
+}
+}
+
+void ut_mb_int(UCtx* u, int32_t n) {
+  if (n < 0) {
+  ut_mb_byte(u, 45);
+  ut_mb_int(u, (0 - n));
+  return;
+}
+  if (n >= 10) {
+  ut_mb_int(u, (n / 10));
+}
+  ut_mb_byte(u, (uint8_t)((48 + (n % 10))));
+}
+
+void ut_mb_emit(UCtx* u) {
+  printf("%s\n", (const char*)((u[0]).mb));
+  (u[0]).err = ((u[0]).err + 1);
+}
+
+int32_t ut_line_of(UCtx* u, int32_t pos) {
+  int32_t line = 1;
+  int32_t i = 0;
+  while (i < pos && (u[0]).src[i] != 0) {
+  if ((u[0]).src[i] == 10) {
+  line = (line + 1);
+}
+  i = (i + 1);
+}
+  return line;
+}
+
+void ut_mb_loc(UCtx* u, int32_t pos) {
+  ut_mb_str(u, "line ");
+  ut_mb_int(u, ut_line_of(u, pos));
+  ut_mb_str(u, ": ");
+}
+
+int32_t ut_find_unit(UCtx* u, int32_t s, int32_t e) {
+  int32_t i = 0;
+  while (i < (u[0]).u_len) {
+  if (flowc_tc_span_eq((u[0]).src, s, e, (u[0]).u_ns[i], (u[0]).u_ne[i]) == 1) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t ut_canonical(UCtx* u, int64_t dims) {
+  if (dims == 0) {
+  return (0 - 1);
+}
+  int32_t i = 0;
+  while (i < (u[0]).u_len) {
+  if ((u[0]).u_ok[i] == 1 && (u[0]).u_dims[i] == dims) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+void ut_mb_base(UCtx* u, int32_t k, int32_t mag);
+void ut_mb_ty(UCtx* u, UTy t) {
+  if ((t).tag == UT_NUM || (t).tag == UT_OTHER) {
+  ut_mb_str(u, ut_prim_name((t).prim));
+  return;
+}
+  if ((t).tag != UT_UNIT) {
+  ut_mb_str(u, "unknown");
+  return;
+}
+  if ((t).ne > (t).ns) {
+  ut_mb_span(u, (t).ns, (t).ne);
+  return;
+}
+  int32_t c = ut_canonical(u, (t).dims);
+  if (c >= 0) {
+  ut_mb_span(u, (u[0]).u_ns[c], (u[0]).u_ne[c]);
+  return;
+}
+  int32_t any_num = 0;
+  int32_t k = 0;
+  while (k < UT_SLOTS) {
+  int32_t ex = ut_dim_get((t).dims, k);
+  if (ex > 0) {
+  if (any_num == 1) {
+  ut_mb_byte(u, 42);
+}
+  any_num = 1;
+  ut_mb_base(u, k, ex);
+}
+  k = (k + 1);
+}
+  if (any_num == 0) {
+  ut_mb_byte(u, 49);
+}
+  k = 0;
+  while (k < UT_SLOTS) {
+  int32_t ex = ut_dim_get((t).dims, k);
+  if (ex < 0) {
+  ut_mb_byte(u, 47);
+  ut_mb_base(u, k, (0 - ex));
+}
+  k = (k + 1);
+}
+}
+
+void ut_mb_base(UCtx* u, int32_t k, int32_t mag) {
+  if (k < (u[0]).nbase) {
+  int32_t b = (u[0]).base[k];
+  ut_mb_span(u, (u[0]).u_ns[b], (u[0]).u_ne[b]);
+} else {
+  ut_mb_str(u, "dim");
+  ut_mb_int(u, k);
+}
+  if (mag != 1) {
+  ut_mb_byte(u, 94);
+  ut_mb_int(u, mag);
+}
+}
+
+int32_t ut_is_space(uint8_t c) {
+  if (c == 32 || c == 9 || c == 13 || c == 10) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t ut_is_ident_start(uint8_t c) {
+  if (c >= 65 && c <= 90 || c >= 97 && c <= 122 || c == 95) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t ut_is_ident_char(uint8_t c) {
+  if (ut_is_ident_start(c) == 1 || c >= 48 && c <= 57) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t ut_skip_ws(uint8_t* src, int32_t i, int32_t end) {
+  int32_t j = i;
+  while (j < end) {
+  if (ut_is_space(src[j]) == 1) {
+  j = (j + 1);
+} else {
+  if (src[j] == 35) {
+  while (j < end && src[j] != 10) {
+  j = (j + 1);
+}
+} else {
+  return j;
+}
+}
+}
+  return j;
+}
+
+void ut_register_unit(UCtx* u, AstArena arena, int32_t d) {
+  uint8_t* src = (uint8_t*)((u[0]).src);
+  int32_t ns = ((arena).nodes[d]).name_start;
+  int32_t ne = ((arena).nodes[d]).name_end;
+  int32_t start = ((arena).nodes[d]).start;
+  int32_t end = ((arena).nodes[d]).end;
+  if (ut_find_unit(u, ns, ne) >= 0) {
+  ut_mb_reset(u);
+  ut_mb_loc(u, start);
+  ut_mb_str(u, "unit '");
+  ut_mb_span(u, ns, ne);
+  ut_mb_str(u, "' is already declared");
+  ut_mb_emit(u);
+  return;
+}
+  if ((u[0]).u_len >= (u[0]).u_cap) {
+  return;
+}
+  int64_t dims = 0;
+  int32_t ok = 1;
+  int32_t i = ut_skip_ws(src, ne, end);
+  if (i < end && src[i] == 61) {
+  i = (i + 1);
+  int32_t sign = 1;
+  int32_t more = 1;
+  while (more == 1) {
+  i = ut_skip_ws(src, i, end);
+  if (i < end && src[i] >= 48 && src[i] <= 57) {
+  while (i < end && src[i] >= 48 && src[i] <= 57) {
+  i = (i + 1);
+}
+} else {
+  if (i < end && ut_is_ident_start(src[i]) == 1) {
+  int32_t fs = i;
+  while (i < end && ut_is_ident_char(src[i]) == 1) {
+  i = (i + 1);
+}
+  int32_t fe = i;
+  int32_t ex = 1;
+  int32_t j = ut_skip_ws(src, i, end);
+  if (j < end && src[j] == 94) {
+  i = ut_skip_ws(src, (j + 1), end);
+  int32_t neg = 0;
+  if (i < end && src[i] == 45) {
+  neg = 1;
+  i = ut_skip_ws(src, (i + 1), end);
+}
+  ex = 0;
+  while (i < end && src[i] >= 48 && src[i] <= 57) {
+  ex = ((ex * 10) + (int32_t)((src[i] - 48)));
+  i = (i + 1);
+}
+  if (neg == 1) {
+  ex = (0 - ex);
+}
+}
+  int32_t fu = ut_find_unit(u, fs, fe);
+  if (fu < 0) {
+  ut_mb_reset(u);
+  ut_mb_loc(u, start);
+  ut_mb_str(u, "unknown unit '");
+  ut_mb_span(u, fs, fe);
+  ut_mb_str(u, "' in declaration of '");
+  ut_mb_span(u, ns, ne);
+  ut_mb_str(u, "' (units must be declared before use)");
+  ut_mb_emit(u);
+} else {
+  if ((u[0]).u_ok[fu] == 0) {
+  ok = 0;
+} else {
+  dims = ut_dim_combine(dims, ut_dim_scale((u[0]).u_dims[fu], (sign * ex)), 1);
+}
+}
+} else {
+  more = 0;
+}
+}
+  if (more == 1) {
+  i = ut_skip_ws(src, i, end);
+  if (i < end && src[i] == 42) {
+  sign = 1;
+  i = (i + 1);
+} else {
+  if (i < end && src[i] == 47) {
+  sign = (0 - 1);
+  i = (i + 1);
+} else {
+  more = 0;
+}
+}
+}
+}
+} else {
+  int32_t index = (u[0]).nbase;
+  if (index < (u[0]).u_cap) {
+  (u[0]).base[index] = (u[0]).u_len;
+  (u[0]).nbase = (index + 1);
+}
+  if (index < UT_SLOTS) {
+  dims = ut_dim_set(0, index, 1);
+} else {
+  ok = 0;
+}
+}
+  int32_t k = (u[0]).u_len;
+  (u[0]).u_ns[k] = ns;
+  (u[0]).u_ne[k] = ne;
+  (u[0]).u_dims[k] = dims;
+  (u[0]).u_ok[k] = ok;
+  (u[0]).u_rad[k] = flowc_tc_span_is(src, ns, ne, "Radian");
+  (u[0]).u_len = (k + 1);
+}
+
+int32_t ut_is_unit_decl(AstArena arena, uint8_t* src, int32_t d) {
+  if (d == AST_NONE || ((arena).nodes[d]).kind != AST_TYPE_ALIAS || ((arena).nodes[d]).a != AST_NONE) {
+  return 0;
+}
+  int32_t s = ((arena).nodes[d]).start;
+  return flowc_tc_span_is(src, s, (s + 4), "unit");
+}
+
+int32_t ut_unwrap_export(AstArena arena, int32_t item) {
+  if (item != AST_NONE && ((arena).nodes[item]).kind == AST_EXPORT) {
+  return ((arena).nodes[item]).a;
+}
+  return item;
+}
+
+int32_t ut_alias_is_distinct(uint8_t* src, int32_t start) {
+  int32_t i = (start - 1);
+  while (i >= 0 && ut_is_space(src[i]) == 1) {
+  i = (i - 1);
+}
+  if (i < 7) {
+  return 0;
+}
+  return flowc_tc_span_is(src, (i - 7), (i + 1), "distinct");
+}
+
+UTy ut_of_type_depth(UCtx* u, AstArena arena, int32_t ty, int32_t depth) {
+  if (ty == AST_NONE || depth > 16) {
+  return ut_unknown();
+}
+  if (((arena).nodes[ty]).kind != AST_TYPE) {
+  return ut_unknown();
+}
+  uint8_t* src = (uint8_t*)((u[0]).src);
+  int32_t ns = ((arena).nodes[ty]).name_start;
+  int32_t ne = ((arena).nodes[ty]).name_end;
+  int32_t inner = ((arena).nodes[ty]).a;
+  if (ne <= ns) {
+  if (inner != AST_NONE) {
+  return ut_node_ty(UT_SEQ, inner);
+}
+  return ut_unknown();
+}
+  if (inner != AST_NONE) {
+  if (flowc_tc_span_is(src, ns, ne, "ptr") == 1) {
+  UTy pointee = ut_of_type_depth(u, arena, inner, (depth + 1));
+  if ((pointee).tag == UT_STRUCT) {
+  return pointee;
+}
+  return ut_node_ty(UT_SEQ, inner);
+}
+  if (flowc_tc_span_is(src, ns, ne, "array") == 1 || flowc_tc_span_is(src, ns, ne, "span") == 1) {
+  return ut_node_ty(UT_SEQ, inner);
+}
+  return ut_unknown();
+}
+  int32_t p = ut_prim_of_span(src, ns, ne);
+  if (p != 0) {
+  return ut_prim(p);
+}
+  int32_t un = ut_find_unit(u, ns, ne);
+  if (un >= 0) {
+  if ((u[0]).u_ok[un] == 0) {
+  return ut_unknown();
+}
+  return ut_unit_ty((u[0]).u_dims[un], (u[0]).u_ns[un], (u[0]).u_ne[un], (u[0]).u_rad[un]);
+}
+  int32_t i = 0;
+  while (i < (arena).len) {
+  int32_t k = ((arena).nodes[i]).kind;
+  if (k == AST_TYPE_ALIAS && ((arena).nodes[i]).a != AST_NONE) {
+  if (flowc_tc_span_eq(src, ns, ne, ((arena).nodes[i]).name_start, ((arena).nodes[i]).name_end) == 1) {
+  if (ut_alias_is_distinct(src, ((arena).nodes[i]).start) == 1) {
+  return ut_unknown();
+}
+  UTy base = ut_of_type_depth(u, arena, ((arena).nodes[i]).a, (depth + 1));
+  if ((base).tag != UT_UNIT) {
+  return ut_unknown();
+}
+  return ut_unit_ty((base).dims, ((arena).nodes[i]).name_start, ((arena).nodes[i]).name_end, (base).radian);
+}
+}
+  if (k == AST_STRUCT && ((arena).nodes[i]).b == AST_NONE) {
+  if (flowc_tc_span_eq(src, ns, ne, ((arena).nodes[i]).name_start, ((arena).nodes[i]).name_end) == 1) {
+  return ut_node_ty(UT_STRUCT, i);
+}
+}
+  i = (i + 1);
+}
+  return ut_unknown();
+}
+
+UTy ut_of_type(UCtx* u, AstArena arena, int32_t ty) {
+  return ut_of_type_depth(u, arena, ty, 0);
+}
+
+int32_t ut_dims_mismatch(UTy actual, UTy expected) {
+  int32_t ad = 0;
+  if ((actual).tag == UT_UNIT) {
+  ad = 1;
+}
+  int32_t ed = 0;
+  if ((expected).tag == UT_UNIT) {
+  ed = 1;
+}
+  if (ad == 1 && ed == 1) {
+  if ((actual).dims != (expected).dims) {
+  return 1;
+}
+  return 0;
+}
+  if (ad == 1) {
+  if ((expected).tag == UT_NUM || (expected).tag == UT_OTHER) {
+  return 1;
+}
+  return 0;
+}
+  if (ed == 1) {
+  if ((actual).tag == UT_NUM || (actual).tag == UT_OTHER) {
+  return 1;
+}
+}
+  return 0;
+}
+
+void ut_push(UCtx* u) {
+  if ((u[0]).m_len < (u[0]).m_cap) {
+  (u[0]).marks[(u[0]).m_len] = (u[0]).v_len;
+  (u[0]).m_len = ((u[0]).m_len + 1);
+}
+}
+
+void ut_pop(UCtx* u) {
+  if ((u[0]).m_len > 0) {
+  (u[0]).m_len = ((u[0]).m_len - 1);
+  (u[0]).v_len = (u[0]).marks[(u[0]).m_len];
+}
+}
+
+void ut_bind(UCtx* u, int32_t s, int32_t e, UTy t) {
+  if ((u[0]).v_len >= (u[0]).v_cap) {
+  return;
+}
+  int32_t i = (u[0]).v_len;
+  (u[0]).v_ns[i] = s;
+  (u[0]).v_ne[i] = e;
+  (u[0]).v_ty[i] = t;
+  (u[0]).v_len = (i + 1);
+}
+
+UTy ut_lookup(UCtx* u, int32_t s, int32_t e) {
+  int32_t i = (u[0]).v_len;
+  while (i > 0) {
+  i = (i - 1);
+  if (flowc_tc_span_eq((u[0]).src, s, e, (u[0]).v_ns[i], (u[0]).v_ne[i]) == 1) {
+  return (u[0]).v_ty[i];
+}
+}
+  return ut_unknown();
+}
+
+UTy ut_expr(UCtx* u, AstArena arena, int32_t id);
+void ut_stmt(UCtx* u, AstArena arena, int32_t id);
+void ut_block(UCtx* u, AstArena arena, int32_t id);
+const char* ut_op_name(int32_t op) {
+  if (op == UT_TOK_PLUS) {
+  return "+";
+}
+  if (op == UT_TOK_MINUS) {
+  return "-";
+}
+  if (op == UT_TOK_STAR) {
+  return "*";
+}
+  if (op == UT_TOK_SLASH) {
+  return "/";
+}
+  if (op == UT_TOK_PERCENT) {
+  return "%";
+}
+  if (op == UT_TOK_EQEQ) {
+  return "==";
+}
+  if (op == UT_TOK_NE) {
+  return "!=";
+}
+  if (op == UT_TOK_LT) {
+  return "<";
+}
+  if (op == UT_TOK_LE) {
+  return "<=";
+}
+  if (op == UT_TOK_GT) {
+  return ">";
+}
+  if (op == UT_TOK_GE) {
+  return ">=";
+}
+  if (op == UT_TOK_IN) {
+  return "in";
+}
+  if (op == UT_TOK_AMPAMP) {
+  return "&&";
+}
+  if (op == UT_TOK_BARBAR) {
+  return "||";
+}
+  if (op == UT_TOK_AMP) {
+  return "&";
+}
+  if (op == UT_TOK_BAR) {
+  return "|";
+}
+  if (op == UT_TOK_CARET) {
+  return "^";
+}
+  if (op == UT_TOK_SHL) {
+  return "<<";
+}
+  if (op == UT_TOK_SHR) {
+  return ">>";
+}
+  return "?";
+}
+
+int32_t ut_is_compare(int32_t op) {
+  if (op == UT_TOK_EQEQ || op == UT_TOK_NE || op == UT_TOK_LT || op == UT_TOK_LE || op == UT_TOK_GT || op == UT_TOK_GE || op == UT_TOK_IN) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t ut_is_arith(int32_t op) {
+  if (op == UT_TOK_PLUS || op == UT_TOK_MINUS || op == UT_TOK_STAR || op == UT_TOK_SLASH || op == UT_TOK_PERCENT) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t ut_op_has_line(UCtx* u, AstArena arena, int32_t id, int32_t op) {
+  int32_t s = ((arena).nodes[id]).start;
+  if (((arena).nodes[id]).end <= s) {
+  return 0;
+}
+  if (ut_is_compare(op) == 1) {
+  return 1;
+}
+  if (ut_is_arith(op) == 0) {
+  return 0;
+}
+  uint8_t c = (u[0]).src[s];
+  if (c == 43 || c == 45 || c == 42 || c == 47 || c == 37) {
+  return 1;
+}
+  return 0;
+}
+
+UTy ut_result_of_dims(UCtx* u, int64_t dims) {
+  if (dims == 0) {
+  return ut_prim(UP_F64);
+}
+  int32_t c = ut_canonical(u, dims);
+  if (c >= 0) {
+  return ut_unit_ty(dims, (u[0]).u_ns[c], (u[0]).u_ne[c], (u[0]).u_rad[c]);
+}
+  return ut_unit_ty(dims, 0, 0, 0);
+}
+
+int32_t ut_is_scalar(UTy t) {
+  if ((t).tag == UT_NUM || (t).tag == UT_OTHER || (t).tag == UT_UNIT) {
+  return 1;
+}
+  return 0;
+}
+
+UTy ut_binop(UCtx* u, AstArena arena, int32_t id) {
+  UTy l = ut_expr(u, arena, ((arena).nodes[id]).a);
+  UTy r = ut_expr(u, arena, ((arena).nodes[id]).b);
+  int32_t op = ((arena).nodes[id]).ival;
+  int32_t logical = 0;
+  if (ut_is_compare(op) == 1 || op == UT_TOK_AMPAMP || op == UT_TOK_BARBAR) {
+  logical = 1;
+}
+  int32_t l_scalar = ut_is_scalar(l);
+  int32_t r_scalar = ut_is_scalar(r);
+  if (l_scalar == 0 || r_scalar == 0) {
+  if (logical == 1) {
+  return ut_prim(UP_BOOL);
+}
+  if (l_scalar == 1) {
+  return l;
+}
+  if (r_scalar == 1) {
+  return r;
+}
+  return ut_unknown();
+}
+  if (op == UT_TOK_PLUS && ((l).prim == UP_STRING || (r).prim == UP_STRING)) {
+  return ut_prim(UP_STRING);
+}
+  if ((l).tag == UT_UNIT || (r).tag == UT_UNIT) {
+  int32_t pos = ((arena).nodes[id]).start;
+  int32_t has_line = ut_op_has_line(u, arena, id, op);
+  if (op == UT_TOK_STAR || op == UT_TOK_SLASH) {
+  if ((l).tag == UT_OTHER || (r).tag == UT_OTHER) {
+  return ut_unknown();
+}
+  int32_t sign = 1;
+  if (op == UT_TOK_SLASH) {
+  sign = (0 - 1);
+}
+  return ut_result_of_dims(u, ut_dim_combine((l).dims, (r).dims, sign));
+}
+  int32_t both = 0;
+  if ((l).tag == UT_UNIT && (r).tag == UT_UNIT) {
+  both = 1;
+}
+  int32_t same = 0;
+  if (both == 1 && (l).dims == (r).dims) {
+  same = 1;
+}
+  if (op == UT_TOK_PLUS || op == UT_TOK_MINUS || op == UT_TOK_PERCENT) {
+  if (same == 0) {
+  ut_mb_reset(u);
+  if (has_line == 1) {
+  ut_mb_loc(u, pos);
+}
+  ut_mb_str(u, "dimensional error: ");
+  ut_mb_ty(u, l);
+  ut_mb_byte(u, 32);
+  ut_mb_str(u, ut_op_name(op));
+  ut_mb_byte(u, 32);
+  ut_mb_ty(u, r);
+  if (both == 0) {
+  ut_mb_str(u, " (a dimensionless value needs an explicit cast, e.g. `x as ");
+  if ((l).tag == UT_UNIT) {
+  ut_mb_ty(u, l);
+} else {
+  ut_mb_ty(u, r);
+}
+  ut_mb_str(u, "`)");
+} else {
+  ut_mb_str(u, " (operands of '");
+  ut_mb_str(u, ut_op_name(op));
+  ut_mb_str(u, "' must have the same dimension)");
+}
+  ut_mb_emit(u);
+}
+  if ((l).tag == UT_UNIT) {
+  return l;
+}
+  return r;
+}
+  if (ut_is_compare(op) == 1) {
+  if (same == 0) {
+  ut_mb_reset(u);
+  if (has_line == 1) {
+  ut_mb_loc(u, pos);
+}
+  ut_mb_str(u, "dimensional error: ");
+  ut_mb_ty(u, l);
+  ut_mb_byte(u, 32);
+  ut_mb_str(u, ut_op_name(op));
+  ut_mb_byte(u, 32);
+  ut_mb_ty(u, r);
+  ut_mb_str(u, " (comparison requires both operands to have the same dimension)");
+  ut_mb_emit(u);
+}
+  return ut_prim(UP_BOOL);
+}
+  ut_mb_reset(u);
+  if (has_line == 1) {
+  ut_mb_loc(u, pos);
+}
+  ut_mb_str(u, "dimensional error: operator '");
+  ut_mb_str(u, ut_op_name(op));
+  ut_mb_str(u, "' is not defined for unit types (");
+  ut_mb_ty(u, l);
+  ut_mb_byte(u, 32);
+  ut_mb_str(u, ut_op_name(op));
+  ut_mb_byte(u, 32);
+  ut_mb_ty(u, r);
+  ut_mb_str(u, ")");
+  ut_mb_emit(u);
+  if ((l).tag == UT_UNIT) {
+  return l;
+}
+  return r;
+}
+  if (logical == 1) {
+  return ut_prim(UP_BOOL);
+}
+  if ((l).tag == UT_NUM && (r).tag == UT_NUM) {
+  return ut_prim(ut_common((l).prim, (r).prim));
+}
+  return l;
+}
+
+UTy ut_cast(UCtx* u, AstArena arena, int32_t id) {
+  UTy s = ut_expr(u, arena, ((arena).nodes[id]).a);
+  UTy t = ut_of_type(u, arena, ((arena).nodes[id]).b);
+  int32_t bad = 0;
+  if ((s).tag == UT_UNIT && (t).tag == UT_UNIT) {
+  if ((s).dims != (t).dims) {
+  bad = 1;
+}
+} else {
+  if ((t).tag == UT_UNIT) {
+  if ((s).tag == UT_OTHER) {
+  bad = 1;
+}
+} else {
+  if ((s).tag == UT_UNIT) {
+  if ((t).tag == UT_OTHER) {
+  bad = 1;
+}
+}
+}
+}
+  if (bad == 1) {
+  ut_mb_reset(u);
+  ut_mb_str(u, "Cannot cast ");
+  ut_mb_ty(u, s);
+  ut_mb_str(u, " to ");
+  ut_mb_ty(u, t);
+  ut_mb_emit(u);
+}
+  return t;
+}
+
+int32_t ut_is_dimensionless_math(uint8_t* src, int32_t s, int32_t e) {
+  return flowc_tc_span_in_words(src, s, e, "sin cos tan asin acos atan atan2 sinh cosh tanh exp log log2 log10");
+}
+
+UTy ut_builtin_ret(uint8_t* src, int32_t s, int32_t e) {
+  if (flowc_tc_span_in_words(src, s, e, "sin cos tan asin acos atan atan2 sinh cosh tanh asinh acosh atanh exp exp2 expm1 log log2 log10 log1p pow sqrt cbrt hypot ceil floor round trunc fabs fmod fmin fmax fdim sigmoid") == 1) {
+  return ut_prim(UP_F32);
+}
+  if (flowc_tc_span_in_words(src, s, e, "printf sprintf fprintf scanf sscanf memcmp strcmp strncmp atexit fclose fread fwrite fputs putchar rand array_length length gpu_thread_id gpu_block_id") == 1) {
+  return ut_prim(UP_I32);
+}
+  if (flowc_tc_span_is(src, s, e, "strlen") == 1) {
+  return ut_prim(UP_U64);
+}
+  if (flowc_tc_span_in_words(src, s, e, "len time clock") == 1) {
+  return ut_prim(UP_I64);
+}
+  if (flowc_tc_span_in_words(src, s, e, "get_current_time creal cimag cabs carg") == 1) {
+  return ut_prim(UP_F64);
+}
+  if (flowc_tc_span_is(src, s, e, "read") == 1) {
+  return ut_prim(UP_STRING);
+}
+  return ut_unknown();
+}
+
+UTy ut_call(UCtx* u, AstArena arena, int32_t id) {
+  uint8_t* src = (uint8_t*)((u[0]).src);
+  int32_t ns = ((arena).nodes[id]).name_start;
+  int32_t ne = ((arena).nodes[id]).name_end;
+  int32_t base = (u[0]).a_len;
+  int32_t nargs = 0;
+  int32_t any_dims = 0;
+  int32_t arg = ((arena).nodes[id]).a;
+  while (arg != AST_NONE) {
+  UTy at = ut_expr(u, arena, arg);
+  if ((at).tag == UT_UNIT) {
+  any_dims = 1;
+}
+  if ((base + nargs) < (u[0]).a_cap) {
+  (u[0]).args[(base + nargs)] = at;
+}
+  nargs = (nargs + 1);
+  (u[0]).a_len = (base + nargs);
+  arg = ((arena).nodes[arg]).next;
+}
+  UTy result = ut_unknown();
+  int32_t done = 0;
+  if (nargs > 0 && any_dims == 1 && ut_is_dimensionless_math(src, ns, ne) == 1) {
+  int32_t i = 0;
+  while (i < nargs && (base + i) < (u[0]).a_cap) {
+  UTy at = (u[0]).args[(base + i)];
+  if ((at).tag == UT_UNIT && (at).radian == 0) {
+  ut_mb_reset(u);
+  ut_mb_str(u, "dimensional error: ");
+  ut_mb_span(u, ns, ne);
+  ut_mb_str(u, "() requires a dimensionless or Radian argument, got ");
+  ut_mb_ty(u, at);
+  ut_mb_emit(u);
+}
+  i = (i + 1);
+}
+  result = ut_prim(UP_F64);
+  done = 1;
+}
+  if (done == 0 && ne > ns) {
+  int32_t count = 0;
+  int32_t fn = AST_NONE;
+  int32_t i = 0;
+  while (i < (arena).len) {
+  if (((arena).nodes[i]).kind == AST_FN && ((arena).nodes[i]).name_start >= 0) {
+  if (flowc_tc_span_eq(src, ns, ne, ((arena).nodes[i]).name_start, ((arena).nodes[i]).name_end) == 1) {
+  count = (count + 1);
+  if (fn == AST_NONE) {
+  fn = i;
+}
+}
+}
+  i = (i + 1);
+}
+  if (count == 0) {
+  result = ut_builtin_ret(src, ns, ne);
+} else {
+  if (count == 1 && ((arena).nodes[fn]).ival == 0) {
+  if (((arena).nodes[fn]).c != AST_NONE && ((arena).nodes[id]).b == AST_NONE && flowc_ast_chain_len(arena, ((arena).nodes[fn]).a) == nargs) {
+  int32_t bad = 0;
+  int32_t unknown = 0;
+  int32_t param = ((arena).nodes[fn]).a;
+  int32_t k = 0;
+  while (param != AST_NONE && (base + k) < (u[0]).a_cap) {
+  UTy at = (u[0]).args[(base + k)];
+  if ((at).tag != UT_NUM && (at).tag != UT_OTHER && (at).tag != UT_UNIT) {
+  unknown = 1;
+}
+  if (ut_dims_mismatch(at, ut_of_type(u, arena, ((arena).nodes[param]).a)) == 1) {
+  bad = 1;
+}
+  param = ((arena).nodes[param]).next;
+  k = (k + 1);
+}
+  if (bad == 1 && unknown == 0) {
+  ut_mb_reset(u);
+  ut_mb_str(u, "No matching overload for function '");
+  ut_mb_span(u, ns, ne);
+  ut_mb_str(u, "' with arguments (");
+  k = 0;
+  while (k < nargs) {
+  if (k > 0) {
+  ut_mb_str(u, ", ");
+}
+  ut_mb_ty(u, (u[0]).args[(base + k)]);
+  k = (k + 1);
+}
+  ut_mb_str(u, ")");
+  ut_mb_emit(u);
+}
+}
+  result = ut_of_type(u, arena, ((arena).nodes[fn]).b);
+}
+}
+}
+  (u[0]).a_len = base;
+  return result;
+}
+
+UTy ut_struct_lit(UCtx* u, AstArena arena, int32_t id) {
+  uint8_t* src = (uint8_t*)((u[0]).src);
+  int32_t st = AST_NONE;
+  if (((arena).nodes[id]).b == AST_NONE) {
+  st = flowc_tc_find_struct_by_name(arena, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+  if (st != AST_NONE && ((arena).nodes[st]).b != AST_NONE) {
+  st = AST_NONE;
+}
+}
+  int32_t field = ((arena).nodes[id]).a;
+  while (field != AST_NONE) {
+  UTy vt = ut_expr(u, arena, ((arena).nodes[field]).a);
+  if (st != AST_NONE) {
+  int32_t f = ((arena).nodes[st]).a;
+  while (f != AST_NONE) {
+  if (flowc_tc_span_eq(src, ((arena).nodes[field]).name_start, ((arena).nodes[field]).name_end, ((arena).nodes[f]).name_start, ((arena).nodes[f]).name_end) == 1) {
+  UTy ft = ut_of_type(u, arena, ((arena).nodes[f]).a);
+  if (ut_dims_mismatch(vt, ft) == 1) {
+  ut_mb_reset(u);
+  ut_mb_str(u, "Struct '");
+  ut_mb_span(u, ((arena).nodes[st]).name_start, ((arena).nodes[st]).name_end);
+  ut_mb_str(u, "' field '");
+  ut_mb_span(u, ((arena).nodes[f]).name_start, ((arena).nodes[f]).name_end);
+  ut_mb_str(u, "' expects ");
+  ut_mb_ty(u, ft);
+  ut_mb_str(u, ", got ");
+  ut_mb_ty(u, vt);
+  ut_mb_emit(u);
+}
+}
+  f = ((arena).nodes[f]).next;
+}
+}
+  field = ((arena).nodes[field]).next;
+}
+  if (st != AST_NONE) {
+  return ut_node_ty(UT_STRUCT, st);
+}
+  return ut_unknown();
+}
+
+UTy ut_field(UCtx* u, AstArena arena, int32_t id) {
+  uint8_t* src = (uint8_t*)((u[0]).src);
+  UTy b = ut_expr(u, arena, ((arena).nodes[id]).a);
+  int32_t fs = ((arena).nodes[id]).name_start;
+  int32_t fe = ((arena).nodes[id]).name_end;
+  if ((b).tag == UT_STRUCT) {
+  int32_t f = ((arena).nodes[(b).node]).a;
+  while (f != AST_NONE) {
+  if (flowc_tc_span_eq(src, fs, fe, ((arena).nodes[f]).name_start, ((arena).nodes[f]).name_end) == 1) {
+  return ut_of_type(u, arena, ((arena).nodes[f]).a);
+}
+  f = ((arena).nodes[f]).next;
+}
+  return ut_unknown();
+}
+  if ((b).tag == UT_SEQ && flowc_tc_span_is(src, fs, fe, "len") == 1) {
+  return ut_prim(UP_I64);
+}
+  return ut_unknown();
+}
+
+UTy ut_expr(UCtx* u, AstArena arena, int32_t id) {
+  if (id == AST_NONE) {
+  return ut_unknown();
+}
+  int32_t kind = ((arena).nodes[id]).kind;
+  if (kind == AST_INT) {
+  return ut_prim(UP_I32);
+}
+  if (kind == AST_FLOAT) {
+  return ut_prim(UP_F32);
+}
+  if (kind == AST_BOOL) {
+  return ut_prim(UP_BOOL);
+}
+  if (kind == AST_STRING) {
+  return ut_prim(UP_STRING);
+}
+  if (kind == AST_IDENT) {
+  return ut_lookup(u, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+}
+  if (kind == AST_CAST) {
+  return ut_cast(u, arena, id);
+}
+  if (kind == AST_BINOP) {
+  return ut_binop(u, arena, id);
+}
+  if (kind == AST_UNARY) {
+  UTy o = ut_expr(u, arena, ((arena).nodes[id]).a);
+  int32_t op = ((arena).nodes[id]).ival;
+  if (op == UT_TOK_MINUS || op == UT_KW_DBG) {
+  return o;
+}
+  if (op == UT_TOK_BANG) {
+  return ut_prim(UP_BOOL);
+}
+  return ut_unknown();
+}
+  if (kind == AST_CALL) {
+  return ut_call(u, arena, id);
+}
+  if (kind == AST_FIELD_ACCESS) {
+  return ut_field(u, arena, id);
+}
+  if (kind == AST_INDEX) {
+  UTy b = ut_expr(u, arena, ((arena).nodes[id]).a);
+  ut_expr(u, arena, ((arena).nodes[id]).b);
+  if ((b).tag == UT_SEQ && ((arena).nodes[id]).ival == 0) {
+  return ut_of_type(u, arena, (b).node);
+}
+  return ut_unknown();
+}
+  if (kind == AST_IF_EXPR) {
+  ut_expr(u, arena, ((arena).nodes[id]).a);
+  UTy t = ut_expr(u, arena, ((arena).nodes[id]).b);
+  ut_expr(u, arena, ((arena).nodes[id]).c);
+  return t;
+}
+  if (kind == AST_STRUCT_LIT) {
+  return ut_struct_lit(u, arena, id);
+}
+  if (kind == AST_ARRAY_LIT || kind == AST_VECTOR_LIT) {
+  int32_t el = ((arena).nodes[id]).a;
+  while (el != AST_NONE) {
+  ut_expr(u, arena, el);
+  el = ((arena).nodes[el]).next;
+}
+  return ut_unknown();
+}
+  if (kind == AST_TRY) {
+  ut_expr(u, arena, ((arena).nodes[id]).a);
+  return ut_unknown();
+}
+  if (kind == AST_FN) {
+  int32_t saved = (u[0]).cur_fn;
+  (u[0]).cur_fn = id;
+  ut_push(u);
+  int32_t param = ((arena).nodes[id]).a;
+  while (param != AST_NONE) {
+  ut_bind(u, ((arena).nodes[param]).name_start, ((arena).nodes[param]).name_end, ut_of_type(u, arena, ((arena).nodes[param]).a));
+  param = ((arena).nodes[param]).next;
+}
+  ut_block(u, arena, ((arena).nodes[id]).c);
+  ut_pop(u);
+  (u[0]).cur_fn = saved;
+  return ut_unknown();
+}
+  return ut_unknown();
+}
+
+void ut_block(UCtx* u, AstArena arena, int32_t id) {
+  if (id == AST_NONE) {
+  return;
+}
+  if (((arena).nodes[id]).kind != AST_BLOCK) {
+  ut_stmt(u, arena, id);
+  return;
+}
+  ut_push(u);
+  int32_t st = ((arena).nodes[id]).a;
+  while (st != AST_NONE) {
+  ut_stmt(u, arena, st);
+  st = ((arena).nodes[st]).next;
+}
+  ut_pop(u);
+}
+
+void ut_bind_pattern(UCtx* u, AstArena arena, int32_t pat) {
+  if (pat == AST_NONE) {
+  return;
+}
+  int32_t k = ((arena).nodes[pat]).kind;
+  if (k == AST_IDENT) {
+  ut_bind(u, ((arena).nodes[pat]).name_start, ((arena).nodes[pat]).name_end, ut_unknown());
+  return;
+}
+  if (k == AST_CALL || k == AST_ARRAY_LIT) {
+  int32_t arg = ((arena).nodes[pat]).a;
+  while (arg != AST_NONE) {
+  ut_bind_pattern(u, arena, arg);
+  arg = ((arena).nodes[arg]).next;
+}
+}
+}
+
+void ut_report_coerce(UCtx* u, const char* what, int32_t ns, int32_t ne, const char* mid, UTy first, const char* tail, UTy second) {
+  ut_mb_reset(u);
+  ut_mb_str(u, what);
+  ut_mb_span(u, ns, ne);
+  ut_mb_str(u, mid);
+  ut_mb_ty(u, first);
+  ut_mb_str(u, tail);
+  ut_mb_ty(u, second);
+  ut_mb_emit(u);
+}
+
+void ut_stmt(UCtx* u, AstArena arena, int32_t id) {
+  if (id == AST_NONE) {
+  return;
+}
+  uint8_t* src = (uint8_t*)((u[0]).src);
+  int32_t kind = ((arena).nodes[id]).kind;
+  if (kind == AST_LET) {
+  UTy it = ut_expr(u, arena, ((arena).nodes[id]).b);
+  int32_t ann = ((arena).nodes[id]).a;
+  int32_t ns = ((arena).nodes[id]).name_start;
+  int32_t ne = ((arena).nodes[id]).name_end;
+  int32_t has_ann = 0;
+  if (ann != AST_NONE && ((arena).nodes[ann]).kind == AST_TYPE) {
+  has_ann = 1;
+  if (flowc_tc_span_is(src, ((arena).nodes[ann]).name_start, ((arena).nodes[ann]).name_end, "auto") == 1) {
+  has_ann = 0;
+}
+}
+  if (has_ann == 1) {
+  UTy at = ut_of_type(u, arena, ann);
+  if (((arena).nodes[id]).b != AST_NONE && ut_dims_mismatch(it, at) == 1) {
+  ut_report_coerce(u, "Variable '", ns, ne, "' initialized with ", it, " but annotated as ", at);
+}
+  ut_bind(u, ns, ne, at);
+} else {
+  ut_bind(u, ns, ne, it);
+}
+  return;
+}
+  if (kind == AST_RETURN) {
+  UTy t = ut_expr(u, arena, ((arena).nodes[id]).a);
+  int32_t fn = (u[0]).cur_fn;
+  if (((arena).nodes[id]).a != AST_NONE && fn != AST_NONE && ((arena).nodes[fn]).name_start >= 0) {
+  UTy rt = ut_of_type(u, arena, ((arena).nodes[fn]).b);
+  if (ut_dims_mismatch(t, rt) == 1) {
+  ut_report_coerce(u, "Function '", ((arena).nodes[fn]).name_start, ((arena).nodes[fn]).name_end, "' returns ", t, " but should return ", rt);
+}
+}
+  return;
+}
+  if (kind == AST_IF) {
+  ut_expr(u, arena, ((arena).nodes[id]).a);
+  ut_block(u, arena, ((arena).nodes[id]).b);
+  ut_block(u, arena, ((arena).nodes[id]).c);
+  return;
+}
+  if (kind == AST_WHILE) {
+  ut_expr(u, arena, ((arena).nodes[id]).a);
+  ut_block(u, arena, ((arena).nodes[id]).b);
+  return;
+}
+  if (kind == AST_FOR) {
+  ut_expr(u, arena, ((arena).nodes[id]).a);
+  ut_expr(u, arena, ((arena).nodes[id]).b);
+  ut_push(u);
+  UTy iv = ut_unknown();
+  if (((arena).nodes[id]).b != AST_NONE) {
+  iv = ut_prim(UP_I32);
+}
+  ut_bind(u, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end, iv);
+  ut_block(u, arena, ((arena).nodes[id]).c);
+  ut_pop(u);
+  return;
+}
+  if (kind == AST_MATCH) {
+  ut_expr(u, arena, ((arena).nodes[id]).a);
+  int32_t arm = ((arena).nodes[id]).b;
+  while (arm != AST_NONE) {
+  ut_push(u);
+  if (((arena).nodes[arm]).kind == AST_MATCH_ARM_EXT) {
+  ut_bind_pattern(u, arena, ((arena).nodes[arm]).a);
+  if (((arena).nodes[arm]).c != AST_NONE) {
+  ut_expr(u, arena, ((arena).nodes[arm]).c);
+}
+} else {
+  if (((arena).nodes[arm]).ival == 2) {
+  ut_bind(u, ((arena).nodes[arm]).name_start, ((arena).nodes[arm]).name_end, ut_unknown());
+}
+  if (((arena).nodes[arm]).ival == 5 || ((arena).nodes[arm]).ival == 6) {
+  int32_t b = ((arena).nodes[arm]).a;
+  while (b != AST_NONE) {
+  ut_bind(u, ((arena).nodes[b]).name_start, ((arena).nodes[b]).name_end, ut_unknown());
+  b = ((arena).nodes[b]).next;
+}
+}
+}
+  ut_block(u, arena, ((arena).nodes[arm]).b);
+  ut_pop(u);
+  arm = ((arena).nodes[arm]).next;
+}
+  return;
+}
+  if (kind == AST_ASSIGN) {
+  int32_t lhs = ((arena).nodes[id]).a;
+  UTy vt = ut_expr(u, arena, ((arena).nodes[id]).b);
+  if (lhs != AST_NONE && ((arena).nodes[lhs]).kind == AST_IDENT) {
+  int32_t ns = ((arena).nodes[lhs]).name_start;
+  int32_t ne = ((arena).nodes[lhs]).name_end;
+  UTy tt = ut_lookup(u, ns, ne);
+  if (ut_dims_mismatch(vt, tt) == 1) {
+  ut_mb_reset(u);
+  ut_mb_str(u, "Cannot assign ");
+  ut_mb_ty(u, vt);
+  ut_mb_str(u, " to variable '");
+  ut_mb_span(u, ns, ne);
+  ut_mb_str(u, "' of type ");
+  ut_mb_ty(u, tt);
+  ut_mb_emit(u);
+}
+} else {
+  ut_expr(u, arena, lhs);
+}
+  return;
+}
+  if (kind == AST_EXPR_STMT || kind == AST_DEFER) {
+  int32_t e = ((arena).nodes[id]).a;
+  if (e != AST_NONE && ((arena).nodes[e]).kind == AST_BLOCK) {
+  ut_block(u, arena, e);
+} else {
+  ut_expr(u, arena, e);
+}
+  return;
+}
+  if (kind == AST_IF_EXPR) {
+  ut_expr(u, arena, id);
+  return;
+}
+  if (kind == AST_LAYOUT) {
+  int32_t arg = ((arena).nodes[id]).a;
+  while (arg != AST_NONE) {
+  ut_expr(u, arena, arg);
+  arg = ((arena).nodes[arg]).next;
+}
+  ut_block(u, arena, ((arena).nodes[id]).b);
+  return;
+}
+  if (kind == AST_BLOCK) {
+  ut_block(u, arena, id);
+  return;
+}
+}
+
+void ut_check_global(UCtx* u, AstArena arena, int32_t d, const char* what) {
+  UTy at = ut_of_type(u, arena, ((arena).nodes[d]).a);
+  if (((arena).nodes[d]).b == AST_NONE || ((arena).nodes[d]).a == AST_NONE) {
+  return;
+}
+  UTy it = ut_expr(u, arena, ((arena).nodes[d]).b);
+  if (ut_dims_mismatch(it, at) == 1) {
+  ut_report_coerce(u, what, ((arena).nodes[d]).name_start, ((arena).nodes[d]).name_end, "' has type ", it, " but should be ", at);
+}
+}
+
+int32_t flowc_units_check(AstArena arena, uint8_t* src, int32_t root) {
+  if (root == AST_NONE || ((arena).nodes[root]).kind != AST_PROGRAM) {
+  return 0;
+}
+  int32_t any = 0;
+  int32_t item = ((arena).nodes[root]).a;
+  while (item != AST_NONE) {
+  if (ut_is_unit_decl(arena, src, ut_unwrap_export(arena, item)) == 1) {
+  any = 1;
+}
+  item = ((arena).nodes[item]).next;
+}
+  if (any == 0) {
+  return 0;
+}
+  UCtx u = ut_init(src);
+  if ((u).u_ns == NULL || (u).v_ty == NULL || (u).args == NULL || (u).mb == NULL) {
+  return 0;
+}
+  item = ((arena).nodes[root]).a;
+  while (item != AST_NONE) {
+  int32_t d = ut_unwrap_export(arena, item);
+  if (ut_is_unit_decl(arena, src, d) == 1) {
+  ut_register_unit((&u), arena, d);
+}
+  item = ((arena).nodes[item]).next;
+}
+  item = ((arena).nodes[root]).a;
+  while (item != AST_NONE) {
+  int32_t d = ut_unwrap_export(arena, item);
+  if (d != AST_NONE && (((arena).nodes[d]).kind == AST_CONST || ((arena).nodes[d]).kind == AST_LET)) {
+  ut_bind((&u), ((arena).nodes[d]).name_start, ((arena).nodes[d]).name_end, ut_of_type((&u), arena, ((arena).nodes[d]).a));
+}
+  item = ((arena).nodes[item]).next;
+}
+  item = ((arena).nodes[root]).a;
+  while (item != AST_NONE) {
+  int32_t d = ut_unwrap_export(arena, item);
+  if (d != AST_NONE) {
+  int32_t k = ((arena).nodes[d]).kind;
+  if (k == AST_CONST) {
+  ut_check_global((&u), arena, d, "Const '");
+} else {
+  if (k == AST_LET) {
+  ut_check_global((&u), arena, d, "Module static '");
+} else {
+  if (k == AST_FN && ((arena).nodes[d]).ival == 0 && ((arena).nodes[d]).c != AST_NONE) {
+  (u).cur_fn = d;
+  ut_push((&u));
+  int32_t param = ((arena).nodes[d]).a;
+  while (param != AST_NONE) {
+  ut_bind((&u), ((arena).nodes[param]).name_start, ((arena).nodes[param]).name_end, ut_of_type((&u), arena, ((arena).nodes[param]).a));
+  param = ((arena).nodes[param]).next;
+}
+  ut_block((&u), arena, ((arena).nodes[d]).c);
+  ut_pop((&u));
+  (u).cur_fn = AST_NONE;
+}
+}
+}
+}
+  item = ((arena).nodes[item]).next;
+}
+  int32_t errs = (u).err;
+  ut_free((&u));
+  return errs;
+}
+
 int32_t flowc_tc_check_program(TcCtx* ctx, AstArena arena, int32_t root) {
   if (root == AST_NONE || root < 0) {
   flowc_tc_err(ctx);
@@ -42927,6 +44766,7 @@ int32_t flowc_tc_check_program(TcCtx* ctx, AstArena arena, int32_t root) {
   flowc_tc_collect_globals(ctx, arena, root);
   flowc_tc_check_rows(ctx, arena, root);
   flowc_tc_check_fns(ctx, arena, root);
+  (ctx[0]).err = ((ctx[0]).err + flowc_units_check(arena, (ctx[0]).src, root));
   (ctx[0]).eff_len = (ctx[0]).eff_seed_len;
   return (ctx[0]).err;
 }
