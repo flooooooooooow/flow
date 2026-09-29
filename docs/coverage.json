@@ -33,7 +33,6 @@
     "backend:metal_codegen": "language/wasm-crossings.md",
     "backend:mlir_generator": "language/modules-namespacing.md",
     "backend:mlir_gpu_codegen": "coverage_plan.md",
-    "backend:python_generator": "language/modules-namespacing.md",
     "backend:wgsl_codegen": "language/wasm-crossings.md",
     "cli:add": "AI_FLOW_HANDBOOK.md",
     "cli:analyze": "language/dynamics-dsl.md",
