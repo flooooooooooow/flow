@@ -29,7 +29,6 @@
     "attribute:target": "LANGUAGE_SPEC.md",
     "attribute:test": "AI_FLOW_HANDBOOK.md",
     "attribute:unsafe": "language/README.md",
-    "backend:js_generator": "language/modules-namespacing.md",
     "backend:metal_codegen": "language/wasm-crossings.md",
     "backend:mlir_generator": "language/modules-namespacing.md",
     "backend:mlir_gpu_codegen": "coverage_plan.md",
@@ -247,6 +246,8 @@
     "stdlib:wfc_ga_coupling": "library/dynamics.md"
   },
   "exempt": {
+    "cli:__project-test": "internal entry the `flow` launcher uses for project-mode `flow test`, which is documented",
+    "cli:__project-test": "internal entry the `flow` launcher uses for project-mode `flow test`, which is documented",
     "cli:firg": "spelling alias for `flow fir-g`, which is documented",
     "cli:install-tools": "alias for `flow setup`, which is documented",
     "cli:ui-layout": "compatibility alias for `flow demo ...`; the documented spelling is the `demo` subcommand",
