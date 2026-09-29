@@ -153,7 +153,7 @@ function build(j: ptr<Json>, coll: i32) -> string {
     out = out + "./flow gfx examples/games/tetris_gfx.flow\n"
     out = out + "./flow record examples/morphogenesis/gray_scott.flow --frames 240 --gif out.gif\n"
     out = out + "./flow shader examples/gpu/shader_photoreal.flow --name photoreal_glass\n"
-    out = out + "python3 scripts/record_shader_gallery.py --group photoreal\n"
+    out = out + "./scripts/record_shader_gallery.sh --group photoreal\n"
     out = out + "```\n\n"
     out = out + "For problem-first code examples rather than visual output, use \n"
     out = out + "[Solve It the Flow Way](../../examples/flow_way/README.md). For interactive browser \n"

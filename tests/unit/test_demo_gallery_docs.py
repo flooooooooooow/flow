@@ -50,7 +50,7 @@ def test_photoreal_gallery_generator_tracks_all_fsl_entries():
     assert "photoreal_energy_crystal" in names
     assert "photoreal_underwater" in names
     assert page.count('<figure class="demo-tile') == 64
-    assert "record_shader_gallery.py --group photoreal" in page
+    assert "record_shader_gallery.sh --group photoreal" in page
 
 
 def test_demo_catalog_is_unique_and_covers_expected_collections():

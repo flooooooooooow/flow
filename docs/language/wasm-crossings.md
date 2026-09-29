@@ -181,9 +181,9 @@ measuring the baseline compiler.
 
 ### Mechanism
 
-Flow owns its shader codegen. `src/flow/metal_codegen.py` walks an `@gpu`
-function's AST and prints Metal Shading Language. `src/flow/wgsl_codegen.py`
-is its sibling: same AST, same walk, WGSL out. There is no LLVM, no SPIR-V and
+Flow owns its shader codegen. `tools/gpu/main.flow` walks an `@gpu`
+function's syntax tree and prints Metal Shading Language or WGSL from the
+same walk. There is no LLVM, no SPIR-V and
 no vendor compiler in between, so adding a shading language costs one file.
 
 ```
@@ -191,14 +191,14 @@ no vendor compiler in between, so adding a shading language costs one file.
 ./flow gpu lib/stdlib/gpu_kernels.flow --wgsl    # WGSL, same AST
 ```
 
-`wasm/flow_wasm_gpu.py` builds the demo. It takes one Flow file and produces
+`wasm/crossings.sh gpu` builds the demo. It takes one Flow file and produces
 two things from it:
 
 * a `.wgsl` per `@gpu` function, plus a small JSON reflection (binding indices,
   storage access modes, uniform layout, workgroup size) so the JavaScript host
   never has to re-parse Flow;
-* the same file through `src/flow/c_generator.py` into WASM, where the kernel
-  bodies become ordinary C.
+* the same file through flowc (`compiler/scripts/flowc_emit.sh`) into WASM,
+  where the kernel bodies become ordinary C.
 
 The CPU reference is not a re-implementation. Flow's C generator already emits
 a `gpu_thread_id()` stub, so `wasm/crossing_assets/gpu_thread_id_shim.c`
@@ -208,7 +208,7 @@ come from the same AST.
 
 ### Where WGSL forced a different structure from Metal
 
-Two things in `wgsl_codegen.py` are not a transliteration of the Metal backend:
+Two things in the WGSL emitter are not a transliteration of the Metal one:
 
 * **Buffers carry an access mode.** Metal binds everything as `device T*`.
   WGSL needs `var<storage, read>` or `var<storage, read_write>` declared up

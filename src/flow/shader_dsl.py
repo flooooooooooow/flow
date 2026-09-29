@@ -2,7 +2,7 @@
 
 The language is written in Flow (compiler/src/shader_dsl.flow) and flowc
 builds it to Metal or WGSL with FLOWC_SHADER=metal|wgsl. This module is the
-bridge for the Python host's module resolver and wasm/flow_webgpu_shader.py.
+bridge for the Python host's module resolver (the MLIR path).
 Parity with the retired Python backends is held by
 compiler/scripts/parity_shader_dsl.sh. See docs/language/shaders.md.
 """

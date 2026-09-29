@@ -82,10 +82,10 @@ time, so scheduling jitter cannot change the captured animation.
 
 ```bash
 # All 64 photoreal shader entries
-python3 scripts/record_shader_gallery.py --group photoreal
+./scripts/record_shader_gallery.sh --group photoreal
 
 # One material study
-python3 scripts/record_shader_gallery.py --name photoreal_gold
+./scripts/record_shader_gallery.sh --name photoreal_gold
 
 # Rebuild and validate the generated Wiki page
 python3 scripts/build_shader_gallery.py

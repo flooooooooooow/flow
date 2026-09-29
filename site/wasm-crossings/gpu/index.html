@@ -11,7 +11,7 @@
 <h1>Crossing 2 &mdash; the GPU</h1>
 <p class="lede">
 Flow compiles an <code>@gpu</code> function to Metal today. The same AST goes
-through <code>src/flow/wgsl_codegen.py</code> to WGSL, and the browser
+through <code>tools/gpu/main.flow</code> to WGSL, and the browser
 dispatches it on the real GPU through WebGPU. The reference on the right comes
 from the <em>same</em> kernel body compiled to C and run one element at a time
 inside WASM, so the two columns are the same arithmetic on two machines.
@@ -45,7 +45,7 @@ inside WASM, so the two columns are the same arithmetic on two machines.
 <pre id="out">click run</pre>
 
 <h2>Generated WGSL (first kernel)</h2>
-<pre class="source">// Generated from Flow @gpu function `gpu_vector_add` by src/flow/wgsl_codegen.py
+<pre class="source">// Generated from Flow @gpu function `gpu_vector_add` by tools/gpu/main.flow
 const WORKGROUP_SIZE: i32 = 64;
 
 @group(0) @binding(0) var&lt;storage, read&gt; a: array&lt;f32&gt;;
@@ -78,14 +78,14 @@ fn gpu_vector_add(
 <pre class="source"># One Flow kernel, two backends: WGSL on the browser&#x27;s GPU and C on the CPU.
 #
 #   ./flow gpu examples/wasm/gpu_vector_add.flow      # Metal shaders
-#   python3 wasm/flow_wasm_gpu.py                     # WGSL + WASM CPU reference
+#   wasm/crossings.sh gpu                             # WGSL + WASM CPU reference
 #
 # The @gpu bodies below are the ones from lib/stdlib/gpu_kernels.flow. Two
 # things read the same AST:
 #
-#   src/flow/wgsl_codegen.py   emits a WGSL compute shader, dispatched by the
+#   tools/gpu/main.flow        emits a WGSL compute shader, dispatched by the
 #                              browser through WebGPU
-#   src/flow/c_generator.py    emits ordinary C, compiled into the WASM module
+#   flowc                      emits ordinary C, compiled into the WASM module
 #
 # On the GPU, gpu_thread_id() is the invocation index and every element runs at
 # once. On the CPU the same call reads a variable that cpu_* advances, so the
@@ -193,14 +193,14 @@ export function fill_pattern(buf: ptr&lt;f32&gt;, n: i32, seed: i32) -&gt; void 
 }
 
 function main() -&gt; i32 {
-    println(&quot;gpu_vector_add: kernels for WGSL + CPU reference (see wasm/flow_wasm_gpu.py)&quot;)
+    println(&quot;gpu_vector_add: kernels for WGSL + CPU reference (see wasm/crossings.sh gpu)&quot;)
     return 0
 }
 </pre>
 
 <footer>
-Built by <code>wasm/flow_wasm_gpu.py</code>; WGSL from
-<code>src/flow/wgsl_codegen.py</code>. Mechanism:
+Built by <code>wasm/crossings.sh gpu</code>; WGSL from
+<code>tools/gpu/main.flow</code>. Mechanism:
 <code>docs/language/wasm-crossings.md</code>.
 </footer>
 </main>

@@ -325,7 +325,7 @@ function build_page(d: ptr<Demos>) -> string {
     out = out + "```bash\n"
     out = out + "./flow shader examples/gpu/shader_photoreal.flow\n"
     out = out + "./flow shader examples/gpu/shader_photoreal_materials.flow --name photoreal_gold\n"
-    out = out + "python3 scripts/record_shader_gallery.py --group photoreal\n"
+    out = out + "./scripts/record_shader_gallery.sh --group photoreal\n"
     out = out + "```\n\n"
     out = out + "## Scene studies\n\n"
     out = out + "The large studies exercise SDF composition, finite-difference normals, soft shadows, \n"
@@ -372,7 +372,7 @@ function build_page(d: ptr<Demos>) -> string {
         ci = ci + 1
     }
     out = out + "## Recording contract\n\n"
-    out = out + "`scripts/record_shader_gallery.py` compiles the same FSL files used by `./flow shader`, \n"
+    out = out + "`scripts/record_shader_gallery.sh` compiles the same FSL files used by `./flow shader`, \n"
     out = out + "renders them with `runtime/shader_record_metal.m`, and passes the resulting PPM frames \n"
     out = out + "through the shared GIF encoder. Capture time is `frame / fps`, so animations do not \n"
     out = out + "depend on wall-clock scheduling. The recorder requires macOS with an exposed Metal device.\n\n"
