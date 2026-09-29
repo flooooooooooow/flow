@@ -18,7 +18,7 @@ extern {
     function popen(cmd: string, mode: string) -> ptr<void>
     function pclose(fp: ptr<void>) -> i32
     function read(fd: i32, buf: ptr<u8>, n: i64) -> i64
-    function write(fd: i32, buf: ptr<u8>, n: i64) -> i64
+    function write(fd: i32, buf: string, n: i64) -> i64
     function getenv(name: string) -> string
 }
 
@@ -473,7 +473,7 @@ export function t_env(name: string, fallback: string) -> string {
 export function t_write_fd(fd: i32, data: ptr<u8>, n: i32) {
     let mut off: i32 = 0
     while off < n {
-        let w: i64 = write(fd, data + off, (n - off) as i64)
+        let w: i64 = write(fd, (data + off) as string, (n - off) as i64)
         if w <= 0 {
             return
         }

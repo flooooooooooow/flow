@@ -93,6 +93,9 @@ while read -r lang prog; do
         done
     fi
     rm -f "$out/stdout.raw" "$out/stderr.raw"
+    # An empty files/ is not kept in a golden (the repository holds no empty
+    # directories); drop it so the diff matches.
+    rmdir "$out/files" 2>/dev/null || true
     if [[ "$record" -eq 1 ]]; then
         if [[ -f "$EXP/$tag/KEEP" ]]; then
             echo "keep  $tag (known difference, golden holds the Flow text)"

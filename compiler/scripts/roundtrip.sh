@@ -249,20 +249,20 @@ compile_module effects compiler/src/effects.flow \
 # Function attribute vocabulary: parser guards, typecheck checks, cgen
 # lowering (#1028, #1029).
 compile_module attributes compiler/src/attributes.flow
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/attributes_flowc.c compiler/build/attributes_flowc.h
 # Sort and find plan selection used by cgen (#1054).
 compile_module ordering_hints compiler/src/ordering_hints.flow
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/ordering_hints_flowc.c compiler/build/ordering_hints_flowc.h
 compile_module sort_plans compiler/src/sort_plans.flow
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/sort_plans_flowc.c compiler/build/sort_plans_flowc.h
 compile_module sort_sites compiler/src/sort_sites.flow \
     compiler/build/token_flowc.h \
     compiler/build/ast_flowc.h \
     compiler/build/ordering_hints_flowc.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/sort_sites_flowc.c compiler/build/sort_sites_flowc.h
 compile_module parser compiler/src/parser.flow \
     compiler/build/token_flowc.h \

@@ -81,14 +81,14 @@ self_emit_module attributes
 self_emit_module ordering_hints
 self_emit_module sort_plans
 for m in attributes ordering_hints sort_plans; do
-    python3 compiler/scripts/flowc_c_to_hdr.py \
+    "$C_TO_HDR" \
         "compiler/build/self_${m}.c" "compiler/build/self_${m}.h"
 done
 self_emit_module sort_sites \
     compiler/build/self_token.h \
     compiler/build/self_ast.h \
     compiler/build/self_ordering_hints.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/self_sort_sites.c compiler/build/self_sort_sites.h
 
 self_emit_module parser \

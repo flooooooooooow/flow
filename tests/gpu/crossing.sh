@@ -115,6 +115,9 @@ for c in "${cases[@]}"; do
         echo "rec   $name"
         continue
     fi
+    # An empty files/ is not kept in a golden (the repository holds no empty
+    # directories); drop it so the diff matches.
+    rmdir "$got/files" 2>/dev/null || true
     if diff -r "$EXP/$name" "$got" > "$work/diff.txt" 2>&1; then
         pass=$((pass + 1))
     else

@@ -20,7 +20,7 @@ import .pkg_json { str_eq, str_len, str_starts, str_slice, str_find_byte, str_ca
 extern {
     function malloc(size: i64) -> ptr<void>
     function puts(s: string) -> i32
-    function write(fd: i32, buf: ptr<u8>, n: i64) -> i64
+    function write(fd: i32, buf: string, n: i64) -> i64
     function fflush(fp: ptr<void>) -> i32
 }
 
@@ -30,7 +30,7 @@ const ADD_USAGE: string = "usage: flow add [-h] [--version VERSION] [--git GIT] 
 function usage_error(usage: string, msg: string) -> i32 {
     let _f: i32 = fflush(null)
     let text: string = str_cat(str_cat(usage, "\nerror: "), str_cat(msg, "\n"))
-    let _w: i64 = write(2, text as ptr<u8>, str_len(text) as i64)
+    let _w: i64 = write(2, text, str_len(text) as i64)
     return 2
 }
 

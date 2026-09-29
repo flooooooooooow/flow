@@ -110,14 +110,14 @@ g2_emit_module attributes
 g2_emit_module ordering_hints
 g2_emit_module sort_plans
 for m in attributes ordering_hints sort_plans; do
-    python3 compiler/scripts/flowc_c_to_hdr.py \
+    "$C_TO_HDR" \
         "compiler/build/g2_${m}.c" "compiler/build/g2_${m}.h"
 done
 g2_emit_module sort_sites \
     compiler/build/g2_token.h \
     compiler/build/g2_ast.h \
     compiler/build/g2_ordering_hints.h
-python3 compiler/scripts/flowc_c_to_hdr.py \
+"$C_TO_HDR" \
     compiler/build/g2_sort_sites.c compiler/build/g2_sort_sites.h
 
 g2_emit_module parser \
