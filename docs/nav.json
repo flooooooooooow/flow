@@ -861,6 +861,10 @@
           "path": "project/python-in-flow.md"
         },
         {
+          "label": "MLIR in Flow",
+          "path": "design/mlir-in-flow.md"
+        },
+        {
           "label": "Tests in Flow",
           "path": "project/tests-in-flow.md"
         },
