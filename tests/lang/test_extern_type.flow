@@ -1,6 +1,6 @@
 # Test for extern type and @cInclude directives.
 # Tests that opaque types and C includes work together.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_extern_type.flow
+# Run with: ./flow run tests/lang/test_extern_type.flow
 # Exit 0 on success.
 
 @cInclude("test_extern_type_helper.h")

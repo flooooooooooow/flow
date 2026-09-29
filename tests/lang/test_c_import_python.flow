@@ -1,6 +1,6 @@
 # Test for @cImport with Python.h.
 # Imports the CPython C API and calls Py_Initialize / Py_Finalize.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_import_python.flow
+# Run with: ./flow run tests/lang/test_c_import_python.flow
 # Exit 0 on success.
 
 @cImport("Python.h")

@@ -1,0 +1,80 @@
+# Multi-effect handle blocks: one capability serving two effects, a zipped
+# handler list, handles inside loops and branches, nested handles of
+# different effects. Ported from tests/unit/test_coverage_effects.py.
+# flowc dispatches every effect call through the installed vtable. The
+# Python backend also rewrote calls inside a handle block into direct
+# capability calls; flowc does not.
+effect Log {
+    info(msg: string) -> void,
+}
+
+effect Audit {
+    record(msg: string) -> void,
+}
+
+capability Console {
+    effect Log,
+    function info(msg: string) -> void {
+        printf("[console] %s\n", msg)
+    },
+}
+
+capability Ledger {
+    effect Audit,
+    function record(msg: string) -> void {
+        printf("[ledger] %s\n", msg)
+    },
+}
+
+capability Both {
+    effect Log, Audit,
+    function info(msg: string) -> void {
+        printf("[both/i] %s\n", msg)
+    },
+    function record(msg: string) -> void {
+        printf("[both/r] %s\n", msg)
+    },
+}
+
+function main() -> i32 {
+    handle Log, Audit with Both {
+        Log.info("a")
+        Audit.record("b")
+    }
+    handle Log, Audit with Console, Ledger {
+        Log.info("x")
+        Audit.record("y")
+    }
+    for i in 0 to 2 {
+        handle Log with Console {
+            Log.info("loop")
+        }
+    }
+    if 1 == 1 {
+        handle Log with Console {
+            Log.info("then")
+        }
+    } else {
+        handle Log with Both {
+            Log.info("else")
+        }
+    }
+    handle Log with Console {
+        for i in 0 to 2 {
+            if i == 1 {
+                while i < 2 {
+                    Log.info("deep")
+                    break
+                }
+            }
+        }
+    }
+    handle Log with Console {
+        handle Audit with Ledger {
+            Log.info("both bound")
+            Audit.record("both bound")
+        }
+        Log.info("after inner")
+    }
+    return 0
+}

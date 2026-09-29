@@ -1,6 +1,6 @@
 # Test for @cEmbed directive.
 # Embeds a small C helper function and calls it from Flow.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_embed.flow
+# Run with: ./flow run tests/lang/test_c_embed.flow
 # Exit 0 on success.
 
 @cEmbed("static inline int32_t flow_c_add(int32_t a, int32_t b) { return a + b; }")

@@ -6,9 +6,7 @@ docs/language/modules.md.
 """
 
 import os
-import shutil
 import subprocess
-import sys
 import textwrap
 
 import pytest
@@ -183,32 +181,23 @@ class TestNoDuplicateEmission:
 
     def test_generated_c_defines_each_function_once(self, tmp_path):
         c_file = tmp_path / "out.c"
-        env = dict(os.environ)
-        env["PYTHONPATH"] = os.path.join(REPO_ROOT, "src") + os.pathsep + env.get(
-            "PYTHONPATH", ""
-        )
         result = subprocess.run(
             [
-                sys.executable,
-                "-m",
-                "flow.transpiler",
-                _fixture("consumer_reexport.flow"),
-                "--c",
+                os.path.join(REPO_ROOT, "compiler", "scripts", "flowc_emit.sh"),
                 "--strict",
-                "-o",
+                _fixture("consumer_reexport.flow"),
                 str(c_file),
             ],
             capture_output=True,
             text=True,
             cwd=REPO_ROOT,
-            env=env,
         )
         assert result.returncode == 0, result.stdout + result.stderr
         source = c_file.read_text(encoding="utf-8")
         for name in ("alpha_one", "alpha_two", "beta_one", "agg_own"):
             # Exactly one prototype and one definition each.
-            assert source.count(f"int32_t {name}(void);") == 1, name
-            assert source.count(f"int32_t {name}(void) {{") == 1, name
+            assert source.count(f"int32_t {name}();") == 1, name
+            assert source.count(f"int32_t {name}() {{") == 1, name
 
 
 class TestReexportCollisions:

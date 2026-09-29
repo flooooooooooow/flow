@@ -1,0 +1,6 @@
+# The helpers lower to plain realloc and malloc calls.
++ return realloc(p, new_size);
+~ void\* result = .*realloc\(p, new_size\)
+~ return malloc\(\(?elem_size \* count\)?\);
+# Four bytes of 7 survive growth, the twelve new bytes read as zero.
+exit 28

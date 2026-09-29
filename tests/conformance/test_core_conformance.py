@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.unit.compiler_helpers import compile_and_run, errors, needs_clang
+from tests.unit.compiler_helpers import errors, needs_clang
 
 
 ROOT = Path(__file__).resolve().parent
@@ -40,13 +40,8 @@ def _flowc_driver() -> Path:
 
 @needs_clang
 @pytest.mark.parametrize("fixture", POSITIVE, ids=lambda p: p.stem)
-def test_stable_positive_fixture(fixture: Path) -> None:
-    assert compile_and_run(_source(fixture)) == 42
-
-
-@needs_clang
-@pytest.mark.parametrize("fixture", POSITIVE, ids=lambda p: p.stem)
 def test_stable_positive_fixture_matches_flowc(fixture: Path) -> None:
+    _source(fixture)
     driver = _flowc_driver()
     with tempfile.TemporaryDirectory() as td:
         c_path = Path(td) / "fixture.c"

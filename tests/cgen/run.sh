@@ -12,6 +12,7 @@
 #   stdout T   ... and its stdout contains the line T (needs an exit line)
 #   reject T   flowc refuses the program and its output contains T
 #   flags F    pass F to flowc_emit.sh (--strict, --no-checks)
+#   env K=V    set K=V for flowc (FLOWC_DEBUG_INFO=1)
 #   # ...      comment
 #
 # Usage: tests/cgen/run.sh [name...]
@@ -43,16 +44,18 @@ for src in "${cases[@]}"; do
     c="$work/$name.c"
     log="$work/$name.log"
     flags=()
+    envs=()
     reject=""
     while IFS= read -r line || [[ -n "$line" ]]; do
         case "$line" in
             "flags "*) read -r -a more <<< "${line#flags }"; flags+=("${more[@]}") ;;
             "reject "*) reject="${line#reject }" ;;
+            "env "*) envs+=("${line#env }") ;;
         esac
     done < "$expect"
 
     rc=0
-    compiler/scripts/flowc_emit.sh "${flags[@]+"${flags[@]}"}" "$src" "$c" >"$log" 2>&1 || rc=$?
+    env "${envs[@]+"${envs[@]}"}" compiler/scripts/flowc_emit.sh "${flags[@]+"${flags[@]}"}" "$src" "$c" >"$log" 2>&1 || rc=$?
     bad=()
     if [[ -n "$reject" ]]; then
         if [[ "$rc" -eq 0 ]]; then

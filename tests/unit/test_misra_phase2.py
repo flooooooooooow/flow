@@ -11,24 +11,13 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from flow.parser import parse_flow_code
-from flow.c_generator import flow_to_c
 from flow.type_checker import TypeChecker
 from flow.misra_scan import scan_c_source
 
 
-def test_reproducible_c_emit():
-    code = """
-    struct Point { x: i32, y: i32 }
-    function add(a: i32, b: i32) -> i32 { return a + b }
-    function main() -> i32 {
-        let p: Point = Point { x: 1, y: 2 }
-        return add(p.x, p.y)
-    }
-    """
-    decls = parse_flow_code(code)
-    a = flow_to_c(decls)
-    b = flow_to_c(parse_flow_code(code))
-    assert a == b
+# test_reproducible_c_emit is gone with the Python C backend. flowc emit is
+# deterministic by construction: bootstrap_from_c.sh --verify checks the
+# compiler reproduces its own C byte for byte.
 
 
 def test_unsafe_required_on_extern_under_safety():

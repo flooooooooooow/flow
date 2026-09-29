@@ -1,0 +1,5 @@
+# choose picks g for Fast (5*3+1 = 16) and f for Slow (5*2 = 10).
+flags --strict
+exit 26
+stdout 16
+stdout 10

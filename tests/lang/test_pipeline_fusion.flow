@@ -1,5 +1,5 @@
 # Test for pipeline_fusion.flow port of pipeline_fusion.py.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_pipeline_fusion.flow
+# Run with: ./flow run tests/lang/test_pipeline_fusion.flow
 # Exit 0 on success.
 
 import "compiler/src/pipeline_fusion.flow"

@@ -5,7 +5,7 @@
 # name, which the generated C never declares. Any callback handed to a C
 # dispatcher failed to compile with "use of undeclared identifier".
 #
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_function_as_value.flow
+# Run with: ./flow run tests/lang/test_function_as_value.flow
 # Exit 0 on success.
 
 extern {

@@ -1,0 +1,39 @@
+# connect { a.out -> b.u }: the composite embeds both children, steps the
+# source first, copies the port, then steps the destination. The run checks
+# the order: with the copy before Ramp_step, b would see 0.0 on step one.
+flow Ramp {
+    state x : f64 = 0.0
+    output out : f64 = x
+    x evolves as 1.0
+}
+
+flow Integrator {
+    state y : f64 = 0.0
+    input u : f64
+    output total : f64 = y
+    y evolves as u
+}
+
+flow Chain {
+    a : Ramp
+    b : Integrator
+
+    connect {
+        a.out -> b.u
+    }
+}
+
+function main() -> i32 {
+    let mut c: Chain = Chain_new()
+    Chain_step(&c, 1.0)
+    if c.a.out != 1.0 {
+        return 1
+    }
+    if c.b.u != 1.0 {
+        return 2
+    }
+    if c.b.total != 1.0 {
+        return 3
+    }
+    return 0
+}

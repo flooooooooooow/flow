@@ -7,13 +7,9 @@ signals at different rates is a compile-time error.
 import os
 import tempfile
 import warnings
-import pytest
 
-from flow.parser import Lexer, Parser
 from flow.transpiler import resolve_modules
 from flow.type_checker import TypeChecker
-from flow.c_generator import flow_to_c
-from flow.monomorphize import monomorphize
 
 REPO_ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 
@@ -35,24 +31,6 @@ def _errors(source: str):
     checker = TypeChecker()
     checker.strict = True
     return checker.check(declarations).errors
-
-
-def _to_c(source: str) -> str:
-    """Transpile source to C with module resolution."""
-    cwd = os.getcwd()
-    os.chdir(REPO_ROOT)
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".flow", mode="w", delete=False) as f:
-            f.write(source)
-            path = f.name
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            declarations = resolve_modules(path)
-    finally:
-        os.chdir(cwd)
-        os.unlink(path)
-    declarations = monomorphize(declarations)
-    return flow_to_c(declarations)
 
 
 def test_iq_type_alias():
@@ -182,18 +160,4 @@ def test_iq_constructors():
     """)
 
 
-def test_rf_c_codegen():
-    c_code = _to_c("""
-    import "stdlib/rf.flow"
-    function main() -> i32 {
-        let z: IQ = iq(1.0, 2.0)
-        let s: IQSample = iq_sample(1.0, 2.0)
-        let sig: Signal<Hz1000> = signal_new<Hz1000>(8, 1000)
-        signal_free<Hz1000>(sig)
-        return 0
-    }
-    """)
-    assert "complex.h" in c_code
-    assert "float complex" in c_code
-    assert "IQ" in c_code or "IQSample" in c_code
-    assert "Signal" in c_code
+# The C lowering of these types is covered by tests/cgen/rf_types_signal.

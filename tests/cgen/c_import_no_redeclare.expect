@@ -1,0 +1,7 @@
+# Ported from tests/unit/test_c_import_no_redeclare.py. flowc emits the
+# include and nothing parsed from the header. No exit line: cc here has no
+# include path for the fixture directory.
++ #include <c_import_no_redeclare/fixture.h>
+- fixdiv_t
+- fixopaque_t
+- fixrint

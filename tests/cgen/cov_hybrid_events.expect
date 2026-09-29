@@ -1,0 +1,10 @@
+flags --strict
++ double __guard_0_prev;
++ double __guard_1_prev;
++ double __g_0 = (self->t - 1.0);
++ double __g_1 = (self->t - 1.0);
++ self->a = __reset_0_a;
++ double __reset_1_b = self->a;
+# Counter: the guard watches t, the reset writes hits.
++ self->hits = __reset_0_hits;
+exit 0

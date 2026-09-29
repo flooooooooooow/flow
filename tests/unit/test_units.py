@@ -2,13 +2,12 @@
 
 Card: flow-vision-units. Covers: unit declaration parsing, accepted and
 rejected arithmetic (every rejection asserts a located, helpful message),
-exponent composition through * and /, dimensionless interop, and erasure
-to plain f64 in the generated C.
+exponent composition through * and /, and dimensionless interop. Erasure
+to plain f64 in C is the tests/cgen/units_erasure golden.
 """
 
 import pytest
 
-from flow.c_generator import flow_to_c
 from flow.parser import FlowSyntaxError, Lexer, Parser, UnitDecl
 from flow.type_checker import TypeChecker
 
@@ -465,34 +464,3 @@ class TestDimensionlessInterop:
         """
         assert check(code) == []
 
-
-class TestErasure:
-    CODE = PRELUDE + """
-    function main() -> i32 {
-        let d: Meter = 100.0 as Meter
-        let t: Second = 8.0 as Second
-        let v: Velocity = d / t
-        let d2: Meter = v * t
-        return 0
-    }
-    """
-
-    def test_units_erase_to_f64_typedefs(self):
-        c = flow_to_c(parse(self.CODE))
-        assert "typedef double Meter;" in c
-        assert "typedef double Second;" in c
-        assert "typedef double Velocity;" in c
-
-    def test_no_unit_machinery_in_generated_c(self):
-        c = flow_to_c(parse(self.CODE))
-        # No dimension vectors, checks, or unit structs survive to C.
-        assert "dims" not in c
-        assert "dimension" not in c
-        assert "unit" not in c.lower().replace("units erased", "")
-        for unit_name in ("Meter", "Second", "Velocity"):
-            assert f"struct {unit_name}" not in c
-
-    def test_arithmetic_is_plain_c(self):
-        c = flow_to_c(parse(self.CODE))
-        assert "(d / t)" in c
-        assert "(v * t)" in c

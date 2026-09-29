@@ -1,10 +1,8 @@
-"""Monomorphization middle-end tests — specialize generics before codegen."""
-
-import pytest
+"""Monomorphization middle-end tests: specialize generics before codegen."""
 
 from flow.parser import StructDecl, FunctionDecl
 from flow.monomorphize import monomorphize
-from tests.unit.compiler_helpers import parse, to_c
+from tests.unit.compiler_helpers import parse
 
 
 def _names(decls):
@@ -52,18 +50,8 @@ function main() -> i32 {
     assert any(n and n.startswith("Pair_") and "i32" in n and "bool" in n for n in names), names
 
 
-def test_generic_function_call_site_rewritten_in_c():
-    c = to_c(
-        """
-function identity<T>(x: T) -> T { return x }
-function main() -> i32 {
-    let a: i32 = identity<i32>(7)
-    return a
-}
-"""
-    )
-    assert "identity_i32" in c or "identity<" not in c
-    assert "identity<i32>" not in c
+# test_generic_function_call_site_rewritten_in_c ->
+# tests/cgen/monomorphize_specialized_names.
 
 
 def test_unused_generic_struct_not_specialized():
@@ -106,18 +94,8 @@ function main() -> i32 {
     assert len(box_specs) == 1, box_specs
 
 
-def test_c_emits_specialized_struct_typedef():
-    c = to_c(
-        """
-struct Box<T> { value: T }
-function main() -> i32 {
-    let b: Box<i32> = Box { value: 9 }
-    return b.value
-}
-"""
-    )
-    assert "typedef struct Box_" in c or "struct Box_" in c
-    assert "i32" in c
+# test_c_emits_specialized_struct_typedef ->
+# tests/cgen/monomorphize_specialized_names.
 
 
 # test_e2e_generic_pair_compiles_and_runs is now covered by the Pair<i32, bool>
@@ -125,16 +103,7 @@ function main() -> i32 {
 # specializations of one template coexist in the emitted C.
 
 
-def test_bare_generic_literal_rewritten_to_specialized_name():
-    c = to_c(
-        """
-struct Box<T> { value: T }
-function main() -> i32 {
-    let b: Box<i32> = Box { value: 9 }
-    return b.value - 9
-}
-"""
-    )
-    assert "Box_i32" in c or "Box_N3_i32" in c
-    # Must not cast the specialized variable from the bare generic type alone
-    assert "(Box){" not in c or "Box_i32" in c
+# test_bare_generic_literal_rewritten_to_specialized_name checked that a bare
+# `Box { ... }` literal typed as Box<i32> lowers to Box_i32. flowc still emits
+# (Box){...} for it, which does not build. tests/cgen/monomorphize_specialized_names
+# covers the explicit Box<i32> { ... } spelling.

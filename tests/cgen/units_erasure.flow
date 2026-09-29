@@ -1,0 +1,15 @@
+# Units erase to plain f64 in C. Unit arithmetic is ordinary double math.
+unit Meter
+unit Second
+unit Velocity = Meter / Second
+
+function main() -> i32 {
+    let d: Meter = 100.0 as Meter
+    let t: Second = 8.0 as Second
+    let v: Velocity = d / t
+    let d2: Meter = v * t
+    if (d2 as f64) == 100.0 {
+        return 0
+    }
+    return 1
+}

@@ -5,21 +5,17 @@ tests/core/test_match_*.flow corpus with interactions those files do not
 touch: guards combined with or-patterns, 3-deep nested struct patterns,
 string-literal patterns and their strcmp lowering, exhaustiveness
 warning message text, and struct patterns mixing literals with bindings.
+The C lowering checks are the golden tests/cgen/cov_match_patterns.
 """
 
 from __future__ import annotations
 
-from flow.c_generator import flow_to_c
 from flow.parser import parse_flow_code
 from flow.type_checker import TypeChecker
 
 
 def check(source: str):
     return TypeChecker().check(parse_flow_code(source))
-
-
-def gen(source: str) -> str:
-    return flow_to_c(parse_flow_code(source))
 
 
 class TestGuardOrPatternInteraction:
@@ -66,24 +62,6 @@ class TestGuardOrPatternInteraction:
         )
         assert result.errors == []
         assert result.warnings == []
-
-    def test_guarded_or_pattern_codegen_combines_alternatives_and_guard(self):
-        c = gen(
-            """
-            function f(n: i32) -> i32 {
-                match n {
-                    1 | 2 | 3 if n == 2 => { return 100 }
-                    _ => { return 200 }
-                }
-                return -1
-            }
-            function main() -> i32 { return f(2) - 100 }
-            """
-        )
-        # The arm must test membership in the alternation AND the guard.
-        assert "(n) == 1 || (n) == 2 || (n) == 3" in c
-        assert "&& (n == 2)" in c
-
 
 class TestExhaustivenessMessageText:
     """The warning text is part of the developer contract: it must name
@@ -164,48 +142,6 @@ class TestStringLiteralPatterns:
         result = check(self.STRING_MATCH)
         assert result.errors == []
 
-    def test_string_patterns_lower_to_strcmp(self):
-        c = gen(self.STRING_MATCH)
-        # Content comparison, never pointer equality.
-        assert 'strcmp(s, "on") == 0' in c
-        assert 'strcmp(s, "off") == 0' in c
-        assert 's == "on"' not in c
-
-    def test_string_or_pattern_lowers_to_disjunction_of_strcmp(self):
-        c = gen(
-            """
-            function f(s: string) -> i32 {
-                match s {
-                    "yes" | "y" => { return 1 }
-                    _ => { return 0 }
-                }
-                return -1
-            }
-            function main() -> i32 { return f("y") - 1 }
-            """
-        )
-        assert 'strcmp(s, "yes") == 0' in c
-        assert 'strcmp(s, "y") == 0' in c
-        assert "||" in c
-
-    def test_string_pattern_with_guard_combines_strcmp_and_guard(self):
-        c = gen(
-            """
-            function f(s: string, n: i32) -> i32 {
-                match s {
-                    "go" if n > 0 => { return 1 }
-                    "go" => { return 2 }
-                    _ => { return 3 }
-                }
-                return -1
-            }
-            function main() -> i32 { return f("go", 5) - 1 }
-            """
-        )
-        first = c.index('strcmp(s, "go") == 0')
-        assert c.index('strcmp(s, "go") == 0', first + 1) > first  # both arms emit
-        assert "n > 0" in c
-
     def test_string_match_has_no_exhaustiveness_tier(self):
         # Strings are outside the documented three tiers (enum, bool,
         # integer literal), so a match without a wildcard must not warn.
@@ -248,12 +184,6 @@ class TestDeepNestedStructPatterns:
     def test_three_deep_pattern_type_checks_clean(self):
         result = check(self.THREE_DEEP)
         assert result.errors == []
-
-    def test_three_deep_pattern_generates_c(self):
-        c = gen(self.THREE_DEEP)
-        # Innermost literal is tested against the doubly nested field.
-        assert "leaf" in c and "mid" in c
-        assert "int32_t f_Top(" in c  # monomorphized over the struct arg
 
     def test_literal_and_binding_mix_binds_only_named_fields(self):
         result = check(

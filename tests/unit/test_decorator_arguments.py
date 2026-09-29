@@ -15,7 +15,6 @@ from __future__ import annotations
 import textwrap
 
 from flow.parser import Lexer, Parser
-from tests.unit.compiler_helpers import to_c
 
 
 def parse(source: str):
@@ -54,20 +53,7 @@ def test_a_string_argument_still_parses():
     assert decls, "declaration was dropped"
 
 
-def test_the_bound_survives_monomorphization_and_reaches_the_c_backend():
-    """The parser set the bound and monomorphize dropped it rebuilding the loop,
-    so the counter the safety profiles promise was never emitted."""
-    c = to_c("""
-        function main() -> i32 {
-            let mut i: i32 = 0
-            @max_iterations(1000)
-            while i < 10 { i = i + 1 }
-            return i
-        }
-    """)
-    assert "__flow_while_bound_1" in c, c[-1500:]
-    assert "while exceeded @max_iterations(1000)" in c
-
-
+# test_the_bound_survives_monomorphization_and_reaches_the_c_backend ->
+# tests/cgen/decorator_arguments_max_iterations.flow (checked against flowc).
 # test_the_counter_stops_a_loop_that_exceeds_its_bound ->
 # tests/lang/test_max_iterations_abort.flow (.exitcode 134, .expected-stderr).

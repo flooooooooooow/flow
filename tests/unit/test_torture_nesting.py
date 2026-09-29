@@ -1,14 +1,9 @@
-"""Parser / codegen torture — deep nesting and combinatorial surface stress."""
+"""Parser torture: deep nesting and combinatorial surface stress."""
 
 import pytest
 
 from flow.parser import parse_flow_code
-from tests.unit.compiler_helpers import (
-    to_c,
-    needs_clang,
-    compile_c_only,
-    errors,
-)
+from tests.unit.compiler_helpers import errors
 
 
 def _nested_ifs(depth: int) -> str:
@@ -61,12 +56,10 @@ def test_nested_while_parses(depth: int):
 
 
 @pytest.mark.parametrize("depth", [3, 6, 10])
-def test_nested_struct_parses_and_codegen(depth: int):
+def test_nested_struct_parses(depth: int):
     src = _nested_structs(depth)
     decls = parse_flow_code(src)
     assert len([d for d in decls if getattr(d, "name", "").startswith("S")]) >= depth
-    c = to_c(src)
-    assert f"S{depth}" in c
 
 
 def test_deep_expression_parens_bounded():
@@ -77,26 +70,7 @@ def test_deep_expression_parens_bounded():
     except SyntaxError:
         pass
     except RecursionError:
-        pytest.fail("RecursionError — parser depth limit missing")
-
-
-def test_many_local_variables_codegen():
-    assigns = "\n".join(f"    let v{i}: i32 = {i}" for i in range(64))
-    adds = " + ".join(f"v{i}" for i in range(64))
-    src = f"""
-function main() -> i32 {{
-{assigns}
-    let s: i32 = {adds}
-    return s - 2016
-}}
-"""
-    c = to_c(src)
-    assert "v63" in c
-
-
-@needs_clang
-def test_nested_if_compiles():
-    compile_c_only(_nested_ifs(16))
+        pytest.fail("RecursionError: parser depth limit missing")
 
 
 def test_match_bool_still_typechecks():
@@ -115,24 +89,6 @@ function main() -> i32 { return f(true) - 1 }
     assert errs == []
 
 
-def test_many_functions_codegen():
-    fns = "\n".join(
-        f"function f{i}(x: i32) -> i32 {{ return x + {i} }}" for i in range(32)
-    )
-    calls = " + ".join(f"f{i}(1)" for i in range(32))
-    # sum_{i=0..31}(1+i) = 32 + (0..31 sum) = 32 + 496 = 528
-    src = f"""
-{fns}
-function main() -> i32 {{
-    let s: i32 = {calls}
-    return s - 528
-}}
-"""
-    c = to_c(src)
-    assert "f31" in c
-
-
-# test_nested_struct_runs, test_many_locals_runs_exit_zero and
-# test_many_functions_runs compiled and ran generated stress programs.
-# All three now run as tests/lang/test_torture.flow, which additionally
-# runs a sixteen-deep nested if rather than only parsing it.
+# The compile-and-run stress cases live in tests/lang/test_torture.flow
+# (struct nest, sixty-four locals, thirty-two functions, sixteen-deep if)
+# and tests/cgen/torture_nesting_struct10 (a ten-deep struct nest).

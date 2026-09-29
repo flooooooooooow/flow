@@ -28,7 +28,7 @@ from flow.attributes import (
 )
 from flow.parser import parse_flow_code
 
-from .compiler_helpers import errors, to_c
+from .compiler_helpers import errors
 
 
 MALLOC = """
@@ -699,7 +699,7 @@ function build(a: ptr<Arena>) -> void {
         ) == []
 
 
-# --- Codegen and execution --------------------------------------------------
+# --- Accepted program --------------------------------------------------
 
 
 ACCEPTED_PROGRAM = """
@@ -738,11 +738,8 @@ function main() -> i32 {
 """
 
 
-def test_the_annotation_leaves_no_trace_in_the_generated_c():
-    c = to_c(ACCEPTED_PROGRAM)
-    assert "lifetime" not in c
-    assert "callback" not in c
-    assert "session" not in c
+# test_the_annotation_leaves_no_trace_in_the_generated_c and
+# test_every_domain_compiles_to_the_same_c -> tests/cgen/lifetime_domains_no_trace.
 
 
 def test_an_accepted_domain_program_type_checks_clean():
@@ -754,14 +751,3 @@ def test_an_accepted_domain_program_type_checks_clean():
 # shape: an application static written from a session function, a callback
 # reading a span, a frame function bumping and resetting an arena, and a
 # callback returning a view of its parameter.
-
-
-@pytest.mark.parametrize("domain", LIFETIME_DOMAINS)
-def test_every_domain_compiles_to_the_same_c(domain):
-    body = """
-function step(n: i32) -> i32 {
-    return n + 1
-}
-"""
-    annotated = f"@lifetime({domain})\n" + body.lstrip()
-    assert to_c(annotated) == to_c(body)

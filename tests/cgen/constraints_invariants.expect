@@ -1,0 +1,12 @@
+# Name_check returns the 1-based clause index, always clauses first.
++ int32_t Bound_check(Bound* self)
+# always negates the clause, parenthesized for C precedence.
++ (!(self->x < 10.0))
++ (!(self->x > (-1.0)))
+# never fires when its expression is true, with no negation.
++ if (self->x < (-0.5))
+- !(self->x < (-0.5))
++ return 3;
++ invariant violated: x < 10.0
++ int32_t __viol = Bound_check(self);
+exit 0

@@ -14,17 +14,11 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 from flow.parser import parse_flow_code
-from flow.c_generator import flow_to_c
 
 
 def _parse_stdlib_memory():
     path = ROOT / "lib" / "stdlib" / "memory.flow"
     return parse_flow_code(path.read_text())
-
-
-def _gen_c():
-    decls = _parse_stdlib_memory()
-    return flow_to_c(decls)
 
 
 def _find_func_names(decls):
@@ -83,41 +77,5 @@ def test_frame_end_exists():
     assert "frame_end" in names
 
 
-def test_arena_alloc_uses_pointer_bump():
-    """arena_alloc advances offset by aligned size."""
-    c = _gen_c()
-    lines = c.splitlines()
-    in_impl = False
-    brace_depth = 0
-    body = []
-    for line in lines:
-        if "arena_alloc_ptr" in line and "{" in line and ";" not in line.split("{")[0]:
-            in_impl = True
-        if in_impl:
-            body.append(line)
-            brace_depth += line.count("{") - line.count("}")
-            if brace_depth <= 0 and "{" in "\n".join(body):
-                break
-    body_str = "\n".join(body)
-    assert "offset" in body_str
-    assert "align" in body_str or "aligned" in body_str
-
-
-def test_arena_reset_zeros_offset():
-    """arena_reset sets offset to 0."""
-    c = _gen_c()
-    lines = c.splitlines()
-    in_impl = False
-    brace_depth = 0
-    body = []
-    for line in lines:
-        if "arena_reset" in line and "{" in line and ";" not in line.split("{")[0]:
-            in_impl = True
-        if in_impl:
-            body.append(line)
-            brace_depth += line.count("{") - line.count("}")
-            if brace_depth <= 0 and "{" in "\n".join(body):
-                break
-    body_str = "\n".join(body)
-    assert "offset" in body_str
-    assert "0" in body_str
+# The C-shape checks on arena_alloc and arena_reset are now
+# tests/cgen/arena_bump.flow, which runs the arena through flowc.

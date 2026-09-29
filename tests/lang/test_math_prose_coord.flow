@@ -1,5 +1,5 @@
 # Test for coordinate display additions to math_prose.flow.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_math_prose_coord.flow
+# Run with: ./flow run tests/lang/test_math_prose_coord.flow
 # Exit 0 on success.
 
 import "compiler/src/math_prose.flow"

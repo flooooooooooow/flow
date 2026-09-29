@@ -1,0 +1,5 @@
+# Ported from tests/unit/test_c_generator_abi.py. The adapter takes the env
+# pointer first and forwards to the named function.
++ static int32_t __flowc_fnadapt_kernel(void* _env, void* raw, Buffer input)
++ .fn = (int32_t (*)(void*, void*, Buffer))&__flowc_fnadapt_kernel, .env = NULL
+exit 0

@@ -1,0 +1,9 @@
+# An array of structs lowers to a C array of a C struct, and a field write
+# through an index lands in the right element.
+struct Point { x: i32, y: i32 }
+
+function main() -> i32 {
+    let mut pts: array<Point, 2> = [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }]
+    pts[0].x = 9
+    return pts[0].x + pts[1].y
+}

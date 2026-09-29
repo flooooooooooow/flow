@@ -1,6 +1,6 @@
 # Test for @cImport with string.h and time.h.
 # Tests strlen from string.h and time() from time.h.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_import_string_time.flow
+# Run with: ./flow run tests/lang/test_c_import_string_time.flow
 # Exit 0 on success.
 
 @cImport("string.h")

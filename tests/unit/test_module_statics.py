@@ -11,7 +11,7 @@ import pytest
 from flow.parser import parse_flow_code, StaticDecl
 from flow.mlir_generator import flow_to_mlir
 
-from .compiler_helpers import errors, to_c, typecheck
+from .compiler_helpers import errors, typecheck
 
 
 COUNTER_MODULE = """
@@ -91,28 +91,7 @@ class TestParseAndTypecheck:
         assert any("initialized to null" in e for e in errs)
 
 
-class TestCodegen:
-    def test_counter_lowers_to_c_static(self):
-        c = to_c(COUNTER_MODULE)
-        assert "static int32_t counter = 0;" in c
-
-    def test_static_is_file_scope_static_even_outside_library_mode(self):
-        c = to_c(COUNTER_MODULE, library=False)
-        assert "static int32_t counter" in c
-
-    def test_array_static_lowers_with_brace_initializer(self):
-        c = to_c("let mut table: array<i32, 4> = [1, 2, 3, 4]")
-        assert "static int32_t table[4] = { 1, 2, 3, 4 };" in c
-
-    def test_all_zero_array_static_uses_zero_fill_shorthand(self):
-        c = to_c(
-            "let mut zeros: array<f32, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]"
-        )
-        assert "static float zeros[8] = {0};" in c
-
-    def test_null_pointer_static_lowers_to_null(self):
-        c = to_c("let mut head: ptr<i32> = null")
-        assert "static int32_t* head = NULL;" in c
+# TestCodegen -> tests/cgen/module_statics_lowering.
 
 
 class TestMlirBackend:

@@ -1,0 +1,8 @@
++ typedef double Meter;
++ typedef double Second;
++ typedef double Velocity;
++ (d / t)
++ (v * t)
+- struct Meter
+- dimension
+exit 0

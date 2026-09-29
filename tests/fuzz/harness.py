@@ -8,7 +8,7 @@ Three targets (see run_fuzz.py for the CLI):
                necessarily valid) programs, with deep nesting to stress
                recursive descent.
   pipeline  -- generation of known-valid programs which are then run through
-               parse -> typecheck -> monomorphize -> C generation.
+               parse -> typecheck -> monomorphize.
 
 Contract under test: the compiler must never CRASH. A clean SyntaxError
 (including FlowSyntaxError) from parsing is expected and fine; type errors
@@ -41,13 +41,7 @@ CRASH_DIR = Path(__file__).resolve().parent / "crashes"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
-from flow.parser import (  # noqa: E402
-    ConstDecl,
-    EnumDecl,
-    FunctionDecl,
-    StructDecl,
-    parse_flow_code,
-)
+from flow.parser import parse_flow_code  # noqa: E402
 
 # Exceptions that are legitimate "clean rejection" outcomes for hostile
 # input.  FlowSyntaxError subclasses SyntaxError, and the lexer raises plain
@@ -66,7 +60,7 @@ class FuzzTimeout(BaseException):
 
 @dataclass
 class Finding:
-    stage: str  # parse | typecheck | codegen | timeout stage
+    stage: str  # parse | typecheck | monomorphize | timeout stage
     exc_type: str
     location: str  # "file.py:function" of deepest src/flow frame
     message: str
@@ -151,26 +145,21 @@ def parse_only(text: str) -> None:
 
 
 def full_pipeline(text: str) -> str:
-    """parse -> typecheck -> monomorphize -> C generation. Returns stage name
-    reached; raises with ._fuzz_stage annotation on the exception via caller.
+    """parse -> typecheck -> monomorphize. Returns the stage name reached;
+    annotates a raised exception with ._fuzz_stage.
+
+    C generation is flowc's job now, and flowc is tested by its own suites
+    (tests/cgen, tests/lang), so this target stops at the Python front end.
     """
     from flow.monomorphize import monomorphize
-    from flow.c_generator import CGenerator
     from flow.type_checker import TypeChecker
 
     decls = parse_flow_code(text)
     stage = "typecheck"
     try:
         TypeChecker().check(decls)  # reported errors (result.errors) are fine
-        stage = "codegen"
-        decls = monomorphize(decls)
-        gen = CGenerator()
-        gen.generate_translation_unit(
-            [d for d in decls if isinstance(d, ConstDecl)],
-            [d for d in decls if isinstance(d, FunctionDecl)],
-            structs=[d for d in decls if isinstance(d, StructDecl)],
-            enums=[d for d in decls if isinstance(d, EnumDecl)],
-        )
+        stage = "monomorphize"
+        monomorphize(decls)
     except Exception as e:
         e._fuzz_stage = stage  # noqa: SLF001
         raise

@@ -4,11 +4,11 @@ Extends tests/unit/test_evolves_syntax.py with cases it does not touch:
 several flow blocks in one file, a flow with no states (rejected),
 evolves expressions that reference params and inputs together, and an
 end-to-end check that two instances of the same flow step independently.
+The C-shape checks are the golden tests/cgen/cov_flow_blocks.
 """
 
 import pytest
 
-from flow.c_generator import flow_to_c
 from flow.parser import (
     FlowSyntaxError,
     FunctionDecl,
@@ -56,13 +56,6 @@ class TestMultipleFlowsInOneFile:
         result = TypeChecker().check(parse_lowered(TWO_FLOWS))
         assert result.errors == []
 
-    def test_generated_c_keeps_apis_separate(self):
-        c = flow_to_c(parse_lowered(TWO_FLOWS))
-        assert "void Decay_step(Decay* self, double dt)" in c
-        assert "void Ramp_step(Ramp* self, double dt)" in c
-        # Each derivs signature mentions only its own states.
-        assert "void Decay_derivs(Decay* self, double* d_x)" in c
-        assert "void Ramp_derivs(Ramp* self, double* d_y)" in c
 
 
 class TestStatelessFlowRejected:
@@ -95,18 +88,6 @@ flow Motor {
         result = TypeChecker().check(parse_lowered(self.MOTOR))
         assert result.errors == []
 
-    def test_derivs_reads_inputs_and_params_via_self(self):
-        c = flow_to_c(parse_lowered(self.MOTOR))
-        derivs = c.split(
-            "void Motor_derivs(Motor* self, double* d_speed) {", 1
-        )[1].split("\n}", 1)[0]
-        assert "self->gain" in derivs
-        assert "self->voltage" in derivs
-        assert "self->damping" in derivs
-        assert "self->speed" in derivs
-        # derivs never writes state.
-        assert "self->speed =" not in derivs
-        assert "self->voltage =" not in derivs
 
 
 class TestRk4SolverMethod:
@@ -124,12 +105,6 @@ flow Spring {
         result = TypeChecker().check(parse_lowered(self.RK4))
         assert result.errors == []
 
-    def test_rk4_step_emits_four_derivs_stages(self):
-        c = flow_to_c(parse_lowered(self.RK4))
-        step = c.split("void Spring_step(Spring* self, double dt) {", 1)[1]
-        step = step.split("\n}", 1)[0]
-        assert step.count("Spring_derivs(self,") == 4
-        assert "y0_x" in step and "k4_v" in step
 
 
 # TestIndependentInstances ran two instances of one flow block with

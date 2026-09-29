@@ -1,5 +1,5 @@
 # Test for fir_opts.flow port of fir_opts.py.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_fir_opts.flow
+# Run with: ./flow run tests/lang/test_fir_opts.flow
 # Exit 0 on success.
 
 import "compiler/src/fir_opts.flow"

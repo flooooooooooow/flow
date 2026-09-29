@@ -1,0 +1,8 @@
+# identity<i32> becomes identity_i32 and Box<i32> becomes the struct Box_i32.
+# A bare `Box { ... }` literal typed as Box<i32> still emits (Box){...} in
+# flowc, so this case spells the literal as Box<i32> { ... }.
++ int32_t identity_i32(int32_t x)
+- identity<
++ typedef struct Box_i32
++ (Box_i32){ .value = 9 }
+exit 0

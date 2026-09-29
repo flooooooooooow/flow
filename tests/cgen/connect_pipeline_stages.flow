@@ -1,0 +1,42 @@
+# `output result = signal |> Gain |> Limiter` synthesizes one child per
+# stage, wires source -> stage0 -> stage1, and reads the output from the
+# last stage. `Gain { k: 3.0 }` overrides a stage param after its init.
+flow Gain {
+    state y : f64 = 0.0
+    input x : f64
+    output out : f64 = y
+    param k : f64 = 2.0
+    y evolves as k * x - y
+}
+
+flow Limiter {
+    state z : f64 = 0.0
+    input w : f64
+    output out : f64 = z
+    z evolves as w - z
+}
+
+flow Chain {
+    input signal : f64
+    output result : f64 = signal |> Gain |> Limiter
+}
+
+flow Tuned {
+    input signal : f64
+    output result : f64 = signal |> Gain { k: 3.0 }
+}
+
+function main() -> i32 {
+    let mut c: Chain = Chain_new()
+    c.signal = 1.0
+    Chain_step(&c, 0.5)
+    # stage0: y = (2 * 1 - 0) * 0.5 = 1.0 when the copy runs first.
+    if c.__result_stage0.y != 1.0 {
+        return 1
+    }
+    let t: Tuned = Tuned_new()
+    if t.__result_stage0.k != 3.0 {
+        return 2
+    }
+    return 0
+}

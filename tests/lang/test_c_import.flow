@@ -1,6 +1,6 @@
 # Test for @cImport directive.
 # Imports a C header and uses functions from it.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_import.flow
+# Run with: ./flow run tests/lang/test_c_import.flow
 # Exit 0 on success.
 
 @cImport("test_extern_type_helper.h") as helper

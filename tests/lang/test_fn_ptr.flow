@@ -1,6 +1,6 @@
 # Test for function pointer types and calls.
 # Tests that Flow can call through function pointers (closures).
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_fn_ptr.flow
+# Run with: ./flow run tests/lang/test_fn_ptr.flow
 # Exit 0 on success.
 
 extern {

@@ -3,11 +3,10 @@ Regression tests for postfix expression chaining (flow-ptr-field-parse).
 
 The parser must chain index, field-access, and method-call postfix operators
 arbitrarily: ptr[0].field, a.b[0].c, f()[1].x, pts[0].method(), (p)[0].x.
-The C generator must produce valid C for the resulting AST shapes.
+The C output for these shapes is covered by tests/cgen/postfix_chaining_*.
 """
 
 from flow.parser import (
-    parse_flow_code,
     Lexer,
     Parser,
     ArrayAccess,
@@ -17,7 +16,6 @@ from flow.parser import (
     Variable,
     Assignment,
 )
-from flow.c_generator import flow_to_c
 
 
 def parse_stmt(stmt: str):
@@ -136,102 +134,5 @@ class TestPostfixChainingParser:
         assert expr.operator == "<"
 
 
-POINTER_STRUCT_PROGRAM = """
-extern {
-    function malloc(size: i64) -> ptr<Body>
-    function free(p: ptr<Body>)
-}
-
-struct Vec2 {
-    x: f32,
-    y: f32
-}
-
-struct Body {
-    pos: Vec2,
-    mass: f32,
-    id: i32
-}
-
-function get_mass(b: Body) -> f32 {
-    return b.mass
-}
-
-function main() -> i32 {
-    let bodies: ptr<Body> = malloc(64)
-    bodies[0].id = 1
-    bodies[0].mass = 2.5
-    bodies[0].pos.x = 1.5
-    bodies[0].pos.y = 0.5
-    bodies[1].id = 2
-    bodies[1].mass = 4.0
-    let total: f32 = bodies[0].mass + bodies[1].mass + bodies[0].pos.x + bodies[0].pos.y
-    let m: f32 = bodies[0].get_mass()
-    free(bodies)
-    if total == 8.5 {
-        if m == 2.5 {
-            print("PASS")
-            return 0
-        }
-    }
-    print("FAIL")
-    return 1
-}
-"""
-
-ARRAY_OF_STRUCTS_PROGRAM = """
-struct Note {
-    pitch: i32,
-    duration: i32
-}
-
-function main() -> i32 {
-    let melody: array<Note, 4> = [
-        Note { pitch: 60, duration: 1 },
-        Note { pitch: 62, duration: 2 },
-        Note { pitch: 64, duration: 3 },
-        Note { pitch: 65, duration: 4 }
-    ]
-    let mut total: i32 = 0
-    for i in 0 to 4 {
-        total = total + melody[i].duration
-    }
-    if total == 10 {
-        print("PASS")
-        return 0
-    }
-    print("FAIL")
-    return 1
-}
-"""
-
-
-def generate_c(program: str) -> str:
-    ast = parse_flow_code(program)
-    return flow_to_c(ast)
-
-
-class TestPostfixChainingCodegen:
-    """C generation for chained postfix AST shapes."""
-
-    def test_pointer_struct_element_field_c(self):
-        c_code = generate_c(POINTER_STRUCT_PROGRAM)
-        assert "bodies[0].mass" in c_code
-        assert "bodies[0].pos.x" in c_code
-        # Method call desugars to a plain call with receiver first
-        # (name may be overload-mangled, e.g. get_mass_Body)
-        assert "(bodies[0])" in c_code and "get_mass" in c_code
-        # No stray arrow on the value produced by indexing
-        assert "bodies[0]->" not in c_code
-
-    def test_array_of_structs_element_field_c(self):
-        c_code = generate_c(ARRAY_OF_STRUCTS_PROGRAM)
-        # Element access may be wrapped in a bounds-check ternary; the field
-        # access must still be applied to the element expression.
-        assert "melody[i]" in c_code
-        assert ".duration)" in c_code or "melody[i].duration" in c_code
-
-    # test_generated_c_compiles_and_passes built and ran both programs and
-    # looked for "PASS" on stdout. Both now run as one strict Flow program,
-    # tests/lang/test_pointer_structs.flow, which also checks that a write
-    # through one element leaves its neighbour alone.
+# C generation for these shapes, and the run of both programs, lives in
+# tests/cgen/postfix_chaining_ptr_struct and postfix_chaining_array_struct.

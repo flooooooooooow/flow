@@ -1,0 +1,4 @@
+# From tests/unit/test_concurrency_codegen.py::test_effect_handlers_are_thread_local
++ static _Thread_local Log_Handler* _tls_Log_handler = NULL;
++ #define _current_Log_handler
+exit 0

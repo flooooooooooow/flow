@@ -1,0 +1,4 @@
+- sin_f32(
++ = sin(
+exit 0
+stdout sin(pi/2) = 1.000000

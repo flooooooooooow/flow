@@ -24,7 +24,7 @@ mkdir -p build
 
 # Optimization flags
 C_FLAGS="-O3 -march=native -ffast-math"
-FLOW_ROOT="$(cd ../.. && pwd)"
+FLOW_ROOT="$(cd ../../.. && pwd)"
 
 run_benchmark() {
     local name=$1
@@ -43,8 +43,8 @@ run_benchmark() {
     # Compile Flow version - generate C, then compile with same flags as C benchmark
     echo -e "${GREEN}[Flow] Compiling with same flags as C...${NC}"
     cd "$FLOW_ROOT"
-    # Generate C code (use --lenient to ignore type warnings)
-    PYTHONPATH=src python3 -m flow.transpiler "tests/benchmarks/suite/flow/${num}_${name}.flow" --c --lenient -o "build/${num}_${name}.c" 2>&1 | head -5 || true
+    # Generate C code with flowc (--lenient downgrades type errors to warnings)
+    compiler/scripts/flowc_emit.sh --lenient "tests/benchmarks/suite/flow/${num}_${name}.flow" "build/${num}_${name}.c" 2>&1 | head -5 || true
     # Check if C file was created
     if [ -f "build/${num}_${name}.c" ]; then
         # Compile with optimizations

@@ -1,0 +1,13 @@
+# String `+` in its other positions (#412): two literals, a variable and a
+# literal, a three-part chain, and a concat passed straight to println.
+function main() -> i32 {
+    let s: string = "ab" + "cd"
+    println(s)
+    let prefix: string = "ab"
+    let indent: string = prefix + "cd"
+    println(indent)
+    let three: string = "a" + "b" + "c"
+    println(three)
+    println("hello" + " " + "world")
+    return 0
+}

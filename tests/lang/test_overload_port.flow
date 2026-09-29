@@ -1,5 +1,5 @@
 # Tests for compiler/src/overload.flow.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_overload_port.flow
+# Run with: ./flow run tests/lang/test_overload_port.flow
 
 import "compiler/src/overload.flow"
 

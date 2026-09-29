@@ -2,10 +2,9 @@
 
 `src |> choose selector { A => f, B => g }` selects which stage runs based on
 `selector`, lowering to a hoisted `let mut __choose_N` plus a `match` that
-assigns the chosen arm — so no value-form `match` is needed.
+assigns the chosen arm: so no value-form `match` is needed.
 """
 
-import pytest
 
 from flow.parser import (
     Lexer,
@@ -16,7 +15,6 @@ from flow.parser import (
     MatchStatement,
     FunctionDecl,
 )
-from flow.c_generator import flow_to_c
 from flow.type_checker import TypeChecker
 
 
@@ -88,8 +86,7 @@ def test_choose_with_parens_stays_a_call():
     assert len(r.initializer.arguments) == 2  # choose(5, 7)
 
 
-def test_choose_compiles_and_is_strict_clean():
+def test_choose_is_strict_clean():
+    # Runtime behaviour lives in tests/cgen/pipeline_choose.
     decls, _ = _main("    let r = 5 |> choose m.tag { Mode_Slow => f, Mode_Fast => g }")
     assert TypeChecker().check(decls).errors == []
-    c = flow_to_c(decls)
-    assert "__choose_0" in c

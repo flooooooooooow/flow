@@ -1,0 +1,8 @@
++ __flowc_str_concat
+- ("ab" +
+- ("a" +
+- ("hello" +
+exit 0
+stdout abcd
+stdout abc
+stdout hello world

@@ -6,8 +6,6 @@ import pytest
 
 from flow.transpiler import resolve_modules
 from flow.type_checker import TypeChecker
-from flow.c_generator import flow_to_c
-from flow.monomorphize import monomorphize
 
 REPO_ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 
@@ -28,23 +26,6 @@ def _errors(source: str):
     checker = TypeChecker()
     checker.strict = True
     return checker.check(decls).errors
-
-
-def _to_c(source: str) -> str:
-    cwd = os.getcwd()
-    os.chdir(REPO_ROOT)
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".flow", mode="w", delete=False) as f:
-            f.write(source)
-            path = f.name
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            decls = resolve_modules(path)
-    finally:
-        os.chdir(cwd)
-        os.unlink(path)
-    decls = monomorphize(decls)
-    return flow_to_c(decls)
 
 
 def test_map_f32_typechecks():
@@ -140,22 +121,6 @@ def test_scale_offset_clip_pipe():
         return 0
     }
     """)
-
-
-def test_dsp_c_codegen():
-    """Verify C is generated for DSP operations."""
-    c_code = _to_c("""
-    import "stdlib/dsp.flow"
-    function main() -> i32 {
-        let buf: array<f32, 4> = [1.0, 2.0, 3.0, 4.0]
-        let out: ptr<f32> = buf |> map_f32(4, |x: f32| -> f32 { return x * 2.0 })
-        let total: f32 = sum_f32(out, 4)
-        return 0
-    }
-    """)
-    assert "map_f32" in c_code
-    assert "sum_f32" in c_code
-    assert "lambda" in c_code
 
 
 def test_f64_primitives_typecheck():

@@ -1,0 +1,16 @@
+# A named function passed where a callback type is expected gets an ABI
+# adapter, so the C compiles and the call goes through.
+struct Buffer { value: i32 }
+
+function kernel(raw: ptr<void>, input: Buffer) -> i32 {
+    return input.value
+}
+
+function invoke(callback: (ptr<void>, Buffer) -> i32) -> i32 {
+    let buffer: Buffer = Buffer { value: 42 }
+    return callback(null, buffer)
+}
+
+function main() -> i32 {
+    return invoke(kernel) - 42
+}

@@ -1,4 +1,8 @@
-"""C backend vs MLIR JIT exit-code parity (differential testing)."""
+"""flowc C backend vs MLIR JIT exit-code parity (differential testing).
+
+The C side compiles each program with flowc through
+compiler/scripts/flowc_emit.sh, the one C path.
+"""
 
 from __future__ import annotations
 
@@ -12,7 +16,9 @@ import pytest
 
 from flow.mlir_jit import MLIRJIT
 from flow.jit_runner import compile_flow_to_mlir
-from tests.unit.compiler_helpers import compile_and_run, needs_clang, to_c
+from tests.unit.compiler_helpers import needs_clang
+
+REPO = Path(__file__).resolve().parents[2]
 
 
 def _mlir_toolchain() -> bool:
@@ -47,18 +53,26 @@ def _run_mlir(source: str) -> int:
 
 
 def _run_c_capture(source: str) -> tuple[int, str]:
-    """Transpile -> clang -> run; return (exit code, stdout)."""
-    c_code = to_c(source)
+    """flowc -> cc -> run; return (exit code, stdout)."""
     with tempfile.TemporaryDirectory() as td:
+        flow_path = os.path.join(td, "prog.flow")
         c_path = os.path.join(td, "prog.c")
         bin_path = os.path.join(td, "prog")
-        Path(c_path).write_text(c_code)
-        build = subprocess.run(
-            ["clang", "-w", "-O0", "-o", bin_path, c_path],
+        Path(flow_path).write_text(source)
+        emit = subprocess.run(
+            ["bash", "compiler/scripts/flowc_emit.sh", flow_path, c_path],
+            cwd=REPO,
             capture_output=True,
             text=True,
         )
-        assert build.returncode == 0, f"clang failed:\n{build.stderr}\n---\n{c_code}"
+        assert emit.returncode == 0, f"flowc failed:\n{emit.stderr}{emit.stdout}"
+        build = subprocess.run(
+            [os.environ.get("CC", "cc"), "-w", "-O0", "-I", str(REPO / "runtime"),
+             "-o", bin_path, c_path, "-lm"],
+            capture_output=True,
+            text=True,
+        )
+        assert build.returncode == 0, f"cc failed:\n{build.stderr}"
         run = subprocess.run([bin_path], capture_output=True, text=True)
         return run.returncode, run.stdout
 
@@ -721,14 +735,14 @@ function main() -> i32 {
 @pytest.mark.parametrize("name", list(PROGRAMS.keys()))
 def test_c_mlir_exit_code_parity(name: str):
     src = PROGRAMS[name]
-    c_rc = compile_and_run(src)
+    c_rc, _ = _run_c_capture(src)
     # The toolchain guard above already skipped when mlir-opt/mlir-translate
     # are missing, so any exception here is a real lowering failure.
     mlir_rc = _run_mlir(src)
     assert c_rc == mlir_rc == 0, f"{name}: C={c_rc} MLIR={mlir_rc}"
 
 
-# Programs whose observable behaviour is stdout, not just the exit code.
+# Programs whose observable behaviour includes stdout as well as the exit code.
 STDOUT_PROGRAMS = {
     "defer_lifo": """
 extern {

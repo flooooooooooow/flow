@@ -2,13 +2,10 @@
 import os
 import tempfile
 import warnings
-import pytest
 
 from flow.parser import Lexer, Parser
 from flow.type_checker import TypeChecker
 from flow.transpiler import resolve_modules
-from flow.c_generator import flow_to_c
-from flow.monomorphize import monomorphize
 
 REPO_ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
 
@@ -36,23 +33,6 @@ def _errors_with_imports(source: str):
     checker = TypeChecker()
     checker.strict = True
     return checker.check(decls).errors
-
-
-def _to_c_with_imports(source: str) -> str:
-    cwd = os.getcwd()
-    os.chdir(REPO_ROOT)
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".flow", mode="w", delete=False) as f:
-            f.write(source)
-            path = f.name
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            decls = resolve_modules(path)
-    finally:
-        os.chdir(cwd)
-        os.unlink(path)
-    decls = monomorphize(decls)
-    return flow_to_c(decls)
 
 
 PRELUDE = """
@@ -161,17 +141,8 @@ def test_quantity_literal_with_imports():
     """)
 
 
-def test_quantity_literal_c_codegen():
-    """Verify the generated C has the cast."""
-    c_code = _to_c_with_imports("""
-    import "stdlib/units_si.flow"
-    function main() -> i32 {
-        let f: Hertz = 3.14e6 Hertz
-        return 0
-    }
-    """)
-    assert "Hertz" in c_code
-    assert "3.14e6" in c_code
+# The C output and runtime value of imported quantity literals are covered by
+# tests/lang/test_quantity_literal.flow under flowc.
 
 
 def test_quantity_literal_for_loop_step_unaffected():

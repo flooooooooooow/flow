@@ -7,7 +7,6 @@ boundary, mixed unit/scalar comparisons, and the located text of the
 errors those rejections produce.
 """
 
-from flow.c_generator import flow_to_c
 from flow.parser import parse_flow_code
 from flow.type_checker import TypeChecker
 
@@ -127,21 +126,8 @@ class TestUnitsThroughStructFields:
         assert len(errors) == 1
         assert "dimensional error: Meter + Second" in errors[0]
 
-    def test_field_units_erase_to_typedefs_in_c(self):
-        code = self.JOURNEY + """
-        function main() -> i32 {
-            let j: Journey = Journey {
-                distance: 100.0 as Meter,
-                elapsed: 8.0 as Second
-            }
-            return 0
-        }
-        """
-        c = flow_to_c(parse_flow_code(code))
-        assert "typedef double Meter;" in c
-        struct_body = c.split("struct Journey {", 1)[1].split("};", 1)[0]
-        assert "Meter distance;" in struct_body
-        assert "Second elapsed;" in struct_body
+    # The C erasure check for unit fields is the golden
+    # tests/cgen/cov_units_struct_fields.
 
 
 class TestMixedComparisons:

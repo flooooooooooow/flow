@@ -3,12 +3,11 @@
 Card: connect (docs/vision/north-star.md §8).
 Covers: parse shapes, nested flow members, port checks, algebraic-loop
 rejection, lowering (topo-ordered child stepping + port copies), and
-strict type checking of the lowered AST. End-to-end native runs live in
-examples/evolution/robot_connect.flow (sandbox may block subprocess
-binaries here).
+strict type checking of the lowered AST. The generated C (port copies,
+step order, stage wiring, param overrides) is checked against flowc by
+the tests/cgen/connect_*.flow goldens.
 """
 
-from flow.c_generator import flow_to_c
 from flow.parser import (
     FlowConnection,
     FlowDecl,
@@ -243,31 +242,6 @@ class TestLowering:
         assert [f.name for f in chain.fields] == ["a", "b"]
         assert [f.type.name for f in chain.fields] == ["Ramp", "Integrator"]
 
-    def test_step_copies_then_calls_children(self):
-        decls = parse_lowered(CHAIN)
-        step = next(
-            d for d in decls
-            if isinstance(d, FunctionDecl) and d.name == "Chain_step"
-        )
-        c = flow_to_c(decls)
-        # Port copy before child step; Ramp before Integrator (decl order /
-        # state-broken edge does not constrain).
-        assert "self->b.u = self->a.out" in c
-        assert "Ramp_step((&(self->a)), dt)" in c
-        assert "Integrator_step((&(self->b)), dt)" in c
-        a_pos = c.index("Ramp_step((&(self->a)), dt)")
-        b_copy = c.index("self->b.u = self->a.out")
-        b_step = c.index("Integrator_step((&(self->b)), dt)")
-        assert b_copy < b_step
-        assert a_pos < b_step
-
-    def test_robot_feedback_order(self):
-        c = flow_to_c(parse_lowered(ROBOT))
-        assert "self->plant.voltage = self->controller.command" in c
-        assert "self->controller.feedback = self->plant.speed_out" in c
-        assert "Motor_step((&(self->plant)), dt)" in c
-        assert "Controller_step((&(self->controller)), dt)" in c
-
     def test_lowered_chain_is_strict_clean(self):
         result = TypeChecker().check(parse_lowered(CHAIN))
         assert result.errors == []
@@ -313,15 +287,6 @@ class TestParentSource:
             "", "signal", "g", "x",
         )
 
-    def test_parent_source_copies_from_self_field(self):
-        c = flow_to_c(parse_lowered(PARENT_SOURCE))
-        # Parent input is a field on self directly, copied into the child input
-        # before the child steps.
-        assert "self->g.x = self->signal" in c
-        copy = c.index("self->g.x = self->signal")
-        step = c.index("Gain_step((&(self->g)), dt)")
-        assert copy < step
-
     def test_parent_source_is_strict_clean(self):
         assert TypeChecker().check(parse_lowered(PARENT_SOURCE)).errors == []
 
@@ -360,7 +325,7 @@ flow Chain {
             assert "must be an input or state" in str(exc)
 
 
-# `output y = signal |> FlowA |> FlowB` — flows composed as pipeline stages.
+# `output y = signal |> FlowA |> FlowB`: flows composed as pipeline stages.
 STAGES = """
 flow Gain {
     state y : f64 = 0.0
@@ -385,10 +350,6 @@ flow Chain {
 
 
 class TestFlowPipelineStages:
-    def _chain(self, decls):
-        # After lowering, Chain is a struct; inspect its lowered step in C.
-        return flow_to_c(decls)
-
     def test_stages_become_children_and_wires(self):
         raw = {d.name: d for d in parse_raw(STAGES) if isinstance(d, FlowDecl)}
         # parse_raw skips flow expansion, so the sugar is still a call chain.
@@ -396,20 +357,6 @@ class TestFlowPipelineStages:
         assert chain.children == []
         # The output expr is the |>-lowered nested call Limiter(Gain(signal)).
         assert chain.outputs[0].expr.name == "Limiter"
-
-    def test_lowered_pipeline_wiring_and_order(self):
-        c = flow_to_c(parse_lowered(STAGES))
-        # Two synthesized stage children.
-        assert "Gain __result_stage0;" in c
-        assert "Limiter __result_stage1;" in c
-        # Source -> stage0 -> stage1, output reads the last stage.
-        assert "self->__result_stage0.x = self->signal" in c
-        assert "self->__result_stage1.w = self->__result_stage0.out" in c
-        assert "self->result = self->__result_stage1.out" in c
-        # Copy precedes the corresponding child step.
-        assert c.index("self->__result_stage0.x = self->signal") < c.index(
-            "Gain_step((&(self->__result_stage0)), dt)"
-        )
 
     def test_lowered_pipeline_is_strict_clean(self):
         assert TypeChecker().check(parse_lowered(STAGES)).errors == []
@@ -468,12 +415,6 @@ flow Chain {
 
 
 class TestStageParams:
-    def test_override_applied_in_init(self):
-        c = flow_to_c(parse_lowered(STAGE_PARAMS))
-        # The override lands in Chain_init, after the stage's own init.
-        assert "self->__result_stage0.k = 3.0" in c
-        assert c.index("Gain_init") < c.index("self->__result_stage0.k = 3.0")
-
     def test_stage_params_are_strict_clean(self):
         assert TypeChecker().check(parse_lowered(STAGE_PARAMS)).errors == []
 
