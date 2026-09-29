@@ -1,4 +1,4 @@
 Transpile failed:
 flowc emit: parse failed
-/Users/abhishekshivakumar/flow/.claude/worktrees/agent-a87cea4c688d3e182/tests/flow_run/progs/bad.flow:3:1: parse error: unexpected token '}' (byte 50)
+ROOT/tests/flow_run/progs/bad.flow:3:1: parse error: unexpected token '}' (byte 50)
 flowc emit: arena_len=5

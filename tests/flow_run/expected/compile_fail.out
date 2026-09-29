@@ -1,0 +1,12 @@
+{
+  "stdout": "",
+  "stderr": "",
+  "exit_code": 1,
+  "timing": {
+    "transpile_s": 0,
+    "compile_s": 0,
+    "run_s": 0,
+    "total_s": 0.0785
+  },
+  "error": "compile failed: /var/folders/6n/6ssrqqs517z9ct_hvszxp0sr0000gn/T/flow_run_k72razx4/cfail.c:194:10: error: use of undeclared identifier 'missing_name'\n  194 |   return missing_name;\n      |          ^\n1 error generated."
+}

@@ -1,0 +1,11 @@
+{
+  "stdout": "",
+  "stderr": "",
+  "exit_code": -11,
+  "timing": {
+    "transpile_s": 0.0526,
+    "compile_s": 0.0473,
+    "run_s": 0.173,
+    "total_s": 0.273
+  }
+}

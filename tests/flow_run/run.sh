@@ -5,7 +5,7 @@
 # Each line of tests/flow_run/cases.txt is `name|arguments`. The runner's
 # stdout, stderr and exit status must equal tests/flow_run/expected/name.*
 # after two normalisations: timing values read T, and the scratch directory
-# reads TMP. The goldens were recorded from the Python runner
+# reads TMP, and the repository root reads ROOT. The goldens were recorded from the Python runner
 # (python3 -m flow.run, and flow.cost_model for --predict) before it was
 # deleted. A `--keep DIR` case also checks that DIR holds the C and the
 # binary.
@@ -29,7 +29,7 @@ export PATH="$stub:$PATH"
 unset FLOW_RUN_PYTHON FLOW_RUN_DIRECT
 
 normalise() {
-    sed -E -e 's/"(transpile|compile|run|total)_s": [0-9.]+/"\1_s": T/' \
+    sed -E -e "s#$ROOT/#ROOT/#g" -e 's/"(transpile|compile|run|total)_s": [0-9.]+/"\1_s": T/' \
         -e 's#/[^ "]*/flow_run_[A-Za-z0-9_]+/#TMP/#g'
 }
 

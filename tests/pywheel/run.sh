@@ -22,8 +22,9 @@
 # step that uses Python) and then fall back to the source file, as the Python
 # generator did when the wheel build failed.
 #
-# expected/package/ holds the setup.py and pyproject.toml the tool writes for
-# the wheel build.
+# expected/package/ holds the setup.py (as setup.py.expect, so the Python
+# ratchet does not count a golden as source) and pyproject.toml the tool
+# writes for the wheel build.
 #
 # FLOW_PYWHEEL_SMOKE=1 also builds a real wheel with the system python3 and
 # setuptools, installs it into the scratch directory and calls it.
@@ -179,10 +180,11 @@ tool="$ROOT/build/tools/flow-pywheel"
 (cd tests/pywheel/cases && "$tool" mathlib.flow my_math 2.0.0 package dist "$pk" "$ROOT" >/dev/null 2>&1) || true
 if [[ "$update" -eq 1 ]]; then
     mkdir -p "$exp_root/package"
-    cp "$pk/pkg/setup.py" "$pk/pkg/pyproject.toml" "$exp_root/package/"
+    cp "$pk/pkg/setup.py" "$exp_root/package/setup.py.expect"
+    cp "$pk/pkg/pyproject.toml" "$exp_root/package/"
 else
     pbad=()
-    cmp -s "$pk/pkg/setup.py" "$exp_root/package/setup.py" || pbad+=("setup.py")
+    cmp -s "$pk/pkg/setup.py" "$exp_root/package/setup.py.expect" || pbad+=("setup.py")
     cmp -s "$pk/pkg/pyproject.toml" "$exp_root/package/pyproject.toml" || pbad+=("pyproject.toml")
     if [[ ${#pbad[@]} -eq 0 ]]; then
         pass=$((pass + 1)); echo "PASS package files"
