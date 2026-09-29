@@ -79,7 +79,8 @@ export struct Analysis {
     err_line: i32,
     err_col: i32,
     err_msg: string,
-    imports: TList
+    imports: TList,
+    raw_failed: bool
 }
 
 export function sym_new(name: string, kind: string) -> ptr<Sym> {
@@ -168,7 +169,12 @@ export function type_str(a: ptr<Analysis>, ty: i32) -> string {
     }
     let name: string = t_span(a.src, n.name_start, n.name_end)
     if t_len(name) == 0 {
-        return "unknown"
+        # Function types and other unnamed forms: the source text.
+        let text: string = t_strip(t_span(a.src, n.start, n.end))
+        if t_len(text) == 0 {
+            return "unknown"
+        }
+        return text
     }
     if n.a == AST_NONE {
         return name
@@ -728,6 +734,7 @@ export function analyze_text(text: string, exported_only: bool) -> ptr<Analysis>
     a.binds = pl_new()
     a.imports = tl_new()
     a.parsed = false
+    a.raw_failed = false
     a.root = AST_NONE
     a.err_line = 0
     a.err_col = 0
@@ -748,7 +755,7 @@ export function analyze_text(text: string, exported_only: bool) -> ptr<Analysis>
     # Declaration lines are looked up in the text as written, as in Python.
     let mut rows: TList = t_split_lines(text)
     let mut p: Parser = flowc_parser_new(buf, nsrc, nsrc + 4096)
-    let root: i32 = flowc_parse_program(&p)
+    let mut root: i32 = flowc_parse_program(&p)
     a.arena = p.arena
     if root < 0 or p.err != 0 {
         let mut t: Token = p.cur
@@ -758,10 +765,31 @@ export function analyze_text(text: string, exported_only: bool) -> ptr<Analysis>
         a.err_line = t.line - 1
         a.err_col = t.col - 1
         a.err_msg = parse_error_text(buf, t)
+        a.raw_failed = true
         flowc_parser_free(p)
-        a.arena = flowc_ast_new(1)
-        scan_symbols(a, &rows, exported_only)
-        return a
+        # Mid-edit recovery: `return p.` parses as `return p._flow_incomplete`
+        # so the rest of the buffer still yields symbols and bindings. The
+        # parse error above is still reported.
+        let fixed: string = recover_incomplete(buf as string)
+        root = -1
+        if not t_eq(fixed, buf as string) {
+            let fl: i32 = t_len(fixed)
+            let mut p2: Parser = flowc_parser_new(fixed as ptr<u8>, fl, fl + 4096)
+            let r2: i32 = flowc_parse_program(&p2)
+            if r2 >= 0 and p2.err == 0 {
+                root = r2
+                a.arena = p2.arena
+                a.src = fixed as ptr<u8>
+                a.nsrc = fl
+            } else {
+                flowc_parser_free(p2)
+            }
+        }
+        if root < 0 {
+            a.arena = flowc_ast_new(1)
+            scan_symbols(a, &rows, exported_only)
+            return a
+        }
     }
     a.parsed = true
     a.root = root
@@ -783,6 +811,45 @@ export function analyze_text(text: string, exported_only: bool) -> ptr<Analysis>
         a.syms = keep
     }
     return a
+}
+
+# Append `_flow_incomplete` to every line ending in `ident.` (Python
+# _recover_incomplete_syntax).
+function recover_incomplete(text: string) -> string {
+    let rows: TList = t_split_lines(text)
+    let mut tb: TBuf = tb_new()
+    let mut i: i32 = 0
+    while i < rows.len {
+        if i > 0 {
+            tb_putc(&tb, 10)
+        }
+        let row: string = tl_get(&rows, i)
+        let r: string = t_rstrip(row)
+        let mut hit: bool = false
+        let n: i32 = t_len(r)
+        if n >= 2 and t_at(r, n - 1) == 46 {
+            let mut k: i32 = n - 1
+            while k > 0 and t_is_space(t_at(r, k - 1)) {
+                k = k - 1
+            }
+            let st: i32 = ident_run_before(r, k, false)
+            if st < k {
+                let mut s0: i32 = st
+                while s0 < k and not t_is_ident_start(t_at(r, s0)) {
+                    s0 = s0 + 1
+                }
+                hit = s0 < k
+            }
+        }
+        if hit {
+            tb_puts(&tb, r)
+            tb_puts(&tb, "_flow_incomplete")
+        } else {
+            tb_puts(&tb, row)
+        }
+        i = i + 1
+    }
+    return tb.data as string
 }
 
 function tok_kind_name(kind: i32) -> string {

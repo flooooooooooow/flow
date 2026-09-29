@@ -13,6 +13,8 @@ import "tools/lsp/text.flow"
 import "tools/lsp/analyze.flow"
 import "tools/lsp/imports.flow"
 import "compiler/src/ast.flow"
+import "compiler/src/token.flow"
+import "compiler/src/lexer.flow"
 import "compiler/src/typecheck.flow"
 
 extern {
@@ -254,20 +256,35 @@ export function check_types(a: ptr<Analysis>, file_path: string, pr: ptr<Project
     let saved: i32 = dup(1)
     dup2(fd, 1)
 
-    let base: string = dirname(file_path)
-    let mut deps: PList = pl_new()
+    # Every module the document reaches through imports, as the bundle
+    # checker sees them: breadth first, each file once, at most 64.
+    let mut queue: TList = tl_new()
+    let mut owners: PList = pl_new()
     let mut di: i32 = 0
     while di < a.imports.len {
-        let id: i32 = atoi_s(tl_get(&a.imports, di))
-        let dep_path: string = resolve_import(a, id, base, pr)
-        if t_len(dep_path) > 0 {
-            let dep: ptr<Analysis> = analyze_text(t_read_file(dep_path), true)
-            if dep.parsed {
-                flowc_tc_seed_export(&ctx, dep.arena, dep.root, dep.src)
-                pl_push(&deps, dep as ptr<u8>)
-            }
+        let dep_path: string = resolve_import(a, atoi_s(tl_get(&a.imports, di)), dirname(file_path), pr)
+        if t_len(dep_path) > 0 and tl_index(&queue, dep_path) < 0 {
+            tl_push(&queue, dep_path)
         }
         di = di + 1
+    }
+    let mut qi: i32 = 0
+    while qi < queue.len and qi < 64 {
+        let dep_path: string = tl_get(&queue, qi)
+        let dep: ptr<Analysis> = analyze_text(t_read_file(dep_path), true)
+        if dep.parsed {
+            flowc_tc_seed_export(&ctx, dep.arena, dep.root, dep.src)
+            pl_push(&owners, dep as ptr<u8>)
+            let mut k: i32 = 0
+            while k < dep.imports.len {
+                let next: string = resolve_import(dep, atoi_s(tl_get(&dep.imports, k)), dirname(dep_path), pr)
+                if t_len(next) > 0 and tl_index(&queue, next) < 0 {
+                    tl_push(&queue, next)
+                }
+                k = k + 1
+            }
+        }
+        qi = qi + 1
     }
     flowc_tc_reset_module(&ctx, a.src)
     flowc_tc_set_path(&ctx, "")
@@ -337,6 +354,81 @@ function idiom_visit(a: ptr<Analysis>, id: i32, st: ptr<Idiom>) {
     }
 }
 
+# Names written in src[start..end): assigned (`x = ...`, `x += ...`,
+# also through `x[i]` and `x.f`) or borrowed (`&x`). Token based, so a
+# brace-skipped block (handle, flow, ...) still counts, and comments and
+# strings do not.
+function mutated_names(a: ptr<Analysis>, start: i32, end: i32, out: ptr<TList>) {
+    if end <= start {
+        return
+    }
+    let base: ptr<u8> = a.src + start
+    let n: i32 = end - start
+    let cap: i32 = n + 2
+    let kinds: ptr<i32> = calloc(cap as i64, 4) as ptr<i32>
+    let ss: ptr<i32> = calloc(cap as i64, 4) as ptr<i32>
+    let es: ptr<i32> = calloc(cap as i64, 4) as ptr<i32>
+    let mut lex: Lexer = flowc_lexer_new(base, n)
+    let mut cnt: i32 = 0
+    let mut tok: Token = flowc_lexer_next(&lex)
+    while tok.kind != TOK_EOF and cnt < cap - 1 {
+        kinds[cnt] = tok.kind
+        ss[cnt] = tok.start
+        es[cnt] = tok.end
+        cnt = cnt + 1
+        let before: i32 = lex.pos
+        tok = flowc_lexer_next(&lex)
+        if lex.pos == before and tok.kind != TOK_EOF {
+            break
+        }
+    }
+    kinds[cnt] = TOK_EOF
+    let mut i: i32 = 0
+    while i < cnt {
+        if kinds[i] == TOK_IDENT {
+            let name: string = t_span(base, ss[i], es[i])
+            let mut hit: bool = false
+            if i > 0 and kinds[i - 1] == TOK_AMP {
+                hit = true
+            }
+            let decl: bool = i > 0 and kinds[i - 1] == TOK_KEYWORD
+            let mut j: i32 = i + 1
+            let mut go: bool = true
+            while go and j < cnt {
+                if kinds[j] == TOK_LBRACK {
+                    let mut depth: i32 = 1
+                    j = j + 1
+                    while j < cnt and depth > 0 {
+                        if kinds[j] == TOK_LBRACK {
+                            depth = depth + 1
+                        } elif kinds[j] == TOK_RBRACK {
+                            depth = depth - 1
+                        }
+                        j = j + 1
+                    }
+                } elif kinds[j] == TOK_DOT and j + 1 < cnt and kinds[j + 1] == TOK_IDENT {
+                    j = j + 2
+                } else {
+                    go = false
+                }
+            }
+            if not decl and j < cnt {
+                let k: i32 = kinds[j]
+                if k == TOK_EQ or k == TOK_PLUS_EQ or k == TOK_MINUS_EQ or k == TOK_STAR_EQ or k == TOK_SLASH_EQ or k == TOK_PERCENT_EQ {
+                    hit = true
+                }
+            }
+            if hit and tl_index(out, name) < 0 {
+                tl_push(out, name)
+            }
+        }
+        i = i + 1
+    }
+    free(kinds as ptr<void>)
+    free(ss as ptr<void>)
+    free(es as ptr<void>)
+}
+
 function suppressed(rows: ptr<TList>, line: i32, rule: string) -> bool {
     let tag: string = t_cat("# flow-idiom: allow ", rule)
     if line - 1 >= 0 and t_contains(row_at(rows, line - 1), tag) {
@@ -365,6 +457,7 @@ function idiom_fn(a: ptr<Analysis>, fnid: i32, rows: ptr<TList>, out: ptr<PList>
     }
     let mut st: Idiom = Idiom { mut_names: tl_new(), mut_ids: tl_new(), mutated: tl_new(), returns: tl_new() }
     idiom_visit(a, body, &st)
+    mutated_names(a, a.arena.nodes[fnid].start, a.arena.nodes[body].end, &st.mutated)
     let mut i: i32 = 0
     while i < st.mut_names.len {
         let name: string = tl_get(&st.mut_names, i)
@@ -456,7 +549,7 @@ export function check_idioms(a: ptr<Analysis>, rows: ptr<TList>, out: ptr<PList>
 export function compute_diagnostics(a: ptr<Analysis>, text: string, file_path: string, pr: ptr<Project>) -> PList {
     let mut out: PList = pl_new()
     let mut rows: TList = t_split_lines(text)
-    if not a.parsed {
+    if not a.parsed or a.raw_failed {
         let d: ptr<Diag> = diag_new(1, "flow-parser", a.err_msg)
         let row: string = row_at(&rows, a.err_line)
         word_range(&rows, a.err_line, ucol(row, a.err_col), d)

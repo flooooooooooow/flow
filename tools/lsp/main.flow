@@ -20,6 +20,7 @@ import "tools/lsp/catalog.flow"
 import "tools/lsp/analyze.flow"
 import "tools/lsp/imports.flow"
 import "tools/lsp/diag.flow"
+import "tools/lsp/format.flow"
 import "compiler/src/ast.flow"
 import "compiler/src/token.flow"
 import "compiler/src/lexer.flow"
@@ -1947,65 +1948,21 @@ function rename_symbol(s: ptr<Server>, uri: string, line: i32, ch: i32, new_name
 
 # ── Formatting ──────────────────────────────────────────────────
 
-function has_comment(text: string) -> bool {
-    let p: ptr<u8> = text as ptr<u8>
-    let n: i32 = t_len(text)
-    let mut i: i32 = 0
-    let mut in_str: bool = false
-    while i < n {
-        let c: i32 = p[i] as i32
-        if in_str {
-            if c == 92 {
-                i = i + 1
-            } elif c == 34 {
-                in_str = false
-            }
-        } elif c == 34 {
-            in_str = true
-        } elif c == 35 {
-            return true
-        }
-        i = i + 1
-    }
-    return false
-}
-
+# One edit replacing the whole document, or [] when nothing changes.
+# Range formatting formats the whole document too, as before.
 function formatting(s: ptr<Server>, uri: string) -> string {
     let text: string = doc_text(s, uri)
     let mut w: JW = jw_new()
     jw_arr(&w)
-    let n: i32 = t_len(text)
-    if n > 0 {
-        let src: ptr<u8> = calloc((n + 1) as i64, 1) as ptr<u8>
-        let mut k: i32 = 0
-        while k < n {
-            src[k] = t_at(text, k) as u8
-            k = k + 1
-        }
-        let mut p: Parser = flowc_parser_new(src, n, n + 4096)
-        let root: i32 = flowc_parse_program(&p)
-        if root >= 0 and p.err == 0 {
-            let cap: i32 = n * 4 + 65536
-            let out: ptr<u8> = calloc((cap + 1) as i64, 1) as ptr<u8>
-            let written: i32 = quiet_fmt(p.arena, root, src, out, cap)
-            if written >= 0 {
-                out[written] = 0
-                let mut formatted: string = out as string
-                if not t_eq(formatted, text) {
-                    if written > 0 and (out[written - 1] as i32) != 10 {
-                        formatted = t_cat(formatted, "\n")
-                    }
-                    let rows: TList = t_split_lines(text)
-                    let last: i32 = rows.len - 1
-                    jw_obj(&w)
-                    jw_key(&w, "range")
-                    w_range(&w, 0, 0, last, ulen(tl_get(&rows, last)))
-                    jw_kstr(&w, "newText", formatted)
-                    jw_end(&w)
-                }
-            }
-        }
-        flowc_parser_free(p)
+    let formatted: string = format_text(text)
+    if t_len(formatted) > 0 {
+        let rows: TList = t_split_lines(text)
+        let last: i32 = rows.len - 1
+        jw_obj(&w)
+        jw_key(&w, "range")
+        w_range(&w, 0, 0, last, ulen(tl_get(&rows, last)))
+        jw_kstr(&w, "newText", formatted)
+        jw_end(&w)
     }
     jw_end(&w)
     return jw_text(&w)
@@ -2202,13 +2159,6 @@ function read_message(r: ptr<TReader>) -> TLine {
     return TLine { text: tb.data as string, ok: true }
 }
 
-
-function quiet_fmt(arena: AstArena, root: i32, src: ptr<u8>, out: ptr<u8>, cap: i32) -> i32 {
-    if flowc_ast_first_unsupported(arena) != AST_NONE {
-        return -1
-    }
-    return flowc_fmt_emit(arena, root, src, out, cap)
-}
 
 function main() -> i32 {
     let mut s: Server = Server {
