@@ -11,11 +11,3 @@ examples/demos/ui_layout_window_flow/src/main.flow	Python host cannot resolve `s
 examples/demos/vulkan_2048_flow/src/main.flow	Python host cannot resolve `stdlib/vulkan_abi_renderer.flow` from the repo root
 examples/demos/vulkan_layout_dsl_flow/src/main.flow	Python host cannot resolve `stdlib/vulkan_abi_renderer.flow` from the repo root
 examples/demos/vulkan_tetris_flow/src/main.flow	Python host cannot resolve `stdlib/vulkan_abi_renderer.flow` from the repo root
-examples/basics/match_enums.flow	flowc typecheck needs an extern for printf; the Python checker knows libc (#1006)
-examples/evolution/units_kinematics.flow	flowc typecheck needs an extern for printf; the Python checker knows libc (#1006)
-examples/generics_traits/enum_match_exhaustive.flow	flowc typecheck needs an extern for printf; the Python checker knows libc (#1006)
-tests/runtime/test_match_i32.flow	flowc typecheck needs an extern for printf; the Python checker knows libc (#1006)
-tests/runtime/test_match.flow	flowc typecheck needs an extern for printf; the Python checker knows libc (#1006)
-examples/book/08_types_patterns.flow	flowc typecheck rejects the explicit generic call identity<i32>(21) (#1007)
-lib/stdlib/audio/notation.flow	flowc passes a struct where a ptr<Struct> parameter is declared (#1007)
-lib/stdlib/sorting/core.flow	flowc does not declare span<f64> (flowc_span_double) (#1007)

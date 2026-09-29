@@ -1,0 +1,37 @@
+# Flow-native language test: explicit generic calls and capturing lambdas.
+#
+# From examples/book/08_types_patterns.flow (#1007). flowc's typecheck
+# held `identity<i32>(21)` to the template's parameter type `T` and
+# reported `no matching overload`; the Python checker instantiates first.
+# Behind that, a lambda that captures a local was emitted without the
+# environment parameter its closure passes, so its body named an
+# undeclared `_env`.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+struct Box<T> {
+    value: T
+}
+
+function identity<T>(value: T) -> T {
+    return value
+}
+
+function main() -> i32 {
+    let box: Box<i32> = Box<i32> { value: identity<i32>(21) }
+    if box.value != 21 {
+        return 1
+    }
+    let x: f64 = identity<f64>(1.5)
+    if x < 1.49 or x > 1.51 {
+        return 2
+    }
+    let offset: i32 = 21
+    let add_offset = |value: i32| -> i32 { return value + offset }
+    if add_offset(21) != 42 {
+        return 3
+    }
+    if add_offset(identity<i32>(1)) != 22 {
+        return 4
+    }
+    return 0
+}

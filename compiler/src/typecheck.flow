@@ -363,6 +363,47 @@ function flowc_tc_is_complex_builtin(src: ptr<u8>, start: i32, end: i32) -> i32 
     return 0
 }
 
+# 1 when the span equals one of the space-separated words in `list`.
+function flowc_tc_span_in_words(src: ptr<u8>, start: i32, end: i32, list: string) -> i32 {
+    let p: ptr<u8> = list
+    let n: i32 = strlen(list) as i32
+    let len: i32 = end - start
+    let mut i: i32 = 0
+    while i < n {
+        let mut j: i32 = i
+        while j < n and p[j] != 32 {
+            j = j + 1
+        }
+        if j - i == len {
+            let mut k: i32 = 0
+            while k < len and p[i + k] == src[start + k] {
+                k = k + 1
+            }
+            if k == len {
+                return 1
+            }
+        }
+        i = j + 1
+    }
+    return 0
+}
+
+# Functions the Python checker knows without a declaration
+# (TypeChecker.BUILTIN_FUNCTIONS in src/flow/type_checker.py): the C
+# library the generated C includes, libm, and the Flow runtime names (#1006).
+function flowc_tc_is_libc_builtin(src: ptr<u8>, start: i32, end: i32) -> i32 {
+    if flowc_tc_span_in_words(src, start, end, "printf sprintf fprintf scanf sscanf malloc calloc realloc free memcpy memset memmove memcmp strlen strcpy strcat strcmp strncpy strncmp exit abort flow_panic atexit fopen fclose fread fwrite fgets fputs putchar rand srand time clock get_current_time") == 1 {
+        return 1
+    }
+    if flowc_tc_span_in_words(src, start, end, "sin cos tan asin acos atan atan2 sinh cosh tanh asinh acosh atanh exp exp2 expm1 log log2 log10 log1p pow sqrt cbrt hypot ceil floor round trunc fabs fmod fmin fmax fdim sigmoid") == 1 {
+        return 1
+    }
+    if flowc_tc_span_in_words(src, start, end, "alloc dealloc array_length length array gpu_thread_id gpu_block_id gpu_sync metal_create_buffer metal_execute metal_get_result emit query insert read write") == 1 {
+        return 1
+    }
+    return 0
+}
+
 function flowc_tc_lookup_fn(ctx: TcCtx, start: i32, end: i32) -> i32 {
     # Intrinsics: println, print, puts — always available.
     if flowc_tc_span_is(ctx.src, start, end, "println") == 1 {
@@ -471,7 +512,7 @@ function flowc_tc_lookup_fn(ctx: TcCtx, start: i32, end: i32) -> i32 {
             }
         }
     }
-    return 0
+    return flowc_tc_is_libc_builtin(ctx.src, start, end)
 }
 
 # Known fn arity, or -1 if missing / imported (arity not tracked).
@@ -1293,7 +1334,15 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
                 }
             }
         } else {
-            let local_candidates: i32 = flowc_overload_table_count(ctx[0].overloads, ns, ne, nargs)
+            let mut local_candidates: i32 = flowc_overload_table_count(ctx[0].overloads, ns, ne, nargs)
+            # An explicit instantiation `f<T>(args)` names its instance; its
+            # parameters are typed by type parameters, which a concrete
+            # argument never spells. The Python checker instantiates first
+            # and checks the instance (#1007). Without type args, a generic
+            # call still reports "no matching overload" as it does there.
+            if arena.nodes[id].b != AST_NONE {
+                local_candidates = 0
+            }
             if local_candidates > 0 {
                 if flowc_overload_call_prepare(&ctx[0].overload_scratch, nargs) >= 0 {
                     let mut typed_arg: i32 = arena.nodes[id].a
