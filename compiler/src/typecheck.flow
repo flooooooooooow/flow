@@ -1878,6 +1878,23 @@ export function flowc_tc_seed_export(ctx: ptr<TcCtx>, dep_arena: AstArena, dep_r
                 -1
             )
         }
+        # A C function declared in an imported module's extern block is
+        # callable from the importer, as on the Python host, where the module
+        # resolver merges the declarations. Arity is left unchecked (-1): a
+        # variadic signature loses its `...` in the AST.
+        if kind == AST_EXTERN {
+            let mut ext: i32 = dep_arena.nodes[item].a
+            while ext != AST_NONE {
+                if dep_arena.nodes[ext].kind == AST_FN {
+                    let ens: i32 = dep_arena.nodes[ext].name_start
+                    let ene: i32 = dep_arena.nodes[ext].name_end
+                    if ene > ens {
+                        flowc_tc_seed_bind(ctx, dep_src, ens, ene, 1, -1)
+                    }
+                }
+                ext = dep_arena.nodes[ext].next
+            }
+        }
         if kind == AST_EXPORT {
             let inner: i32 = dep_arena.nodes[item].a
             if inner != AST_NONE and dep_arena.nodes[inner].kind == AST_FN {

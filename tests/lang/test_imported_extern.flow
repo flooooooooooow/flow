@@ -1,0 +1,25 @@
+# Flow-native language test: a C function declared in an imported module's
+# extern block is callable from the importer.
+#
+# stdlib/string.flow declares snprintf in an extern block. The Python host
+# merges an imported module's declarations, so the call checks and the
+# inferred `let` takes snprintf's return type. flowc's bundle typecheck did
+# not seed extern-block functions from imports (`flowc tc: unbound call`),
+# which kept lib/stdlib/ui2d.flow (SDL_Init from stdlib/sdl2.flow) and the
+# Vulkan layout demos from building.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+import "stdlib/string.flow"
+
+function main() -> i32 {
+    let buf: ptr<i8> = malloc(32) as ptr<i8>
+    let n = snprintf(buf, 32, "%d", 42)
+    if n != 2 {
+        return 1
+    }
+    if buf[0] != 52 or buf[1] != 50 {
+        return 2
+    }
+    free(buf as ptr<u8>)
+    return 0
+}
