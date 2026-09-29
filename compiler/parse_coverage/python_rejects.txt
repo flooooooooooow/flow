@@ -1,5 +1,43 @@
-docs/vision/examples/pendulum.flow
-docs/vision/examples/robot.flow
+# Tracked .flow files the Python reference parser (flow.parser.parse_flow_code)
+# rejects. compiler/scripts/parse_coverage.sh leaves them out of the flowc
+# coverage count. Each entry is classified below (#997); none is a broken
+# program. When a file starts parsing, drop it here and raise the floor.
+
+# Negative fixtures: inputs that must be rejected. The parser fuzz
+# regressions (expression nesting past the limit of 50, a float array size),
+# a reserved word as a parameter name, the Field DSL error cases, and the
+# fork and choose records whose types cannot be inferred (the Python parser
+# infers fork records, so it rejects these while parsing; flowc parses them
+# and rejects them in its typecheck).
+compiler/fixtures/choose_uninferrable.flow
+compiler/fixtures/field_dsl/err_bad_item.flow
+compiler/fixtures/field_dsl/err_boundary_first.flow
+compiler/fixtures/field_dsl/err_domain.flow
+compiler/fixtures/field_dsl/err_duplicate.flow
+compiler/fixtures/field_dsl/err_half_boundary.flow
+compiler/fixtures/field_dsl/err_missing_evolve.flow
+compiler/fixtures/field_dsl/err_size.flow
+compiler/fixtures/field_dsl/err_swallow_main.flow
+compiler/fixtures/field_dsl/err_two_mul.flow
+compiler/fixtures/field_dsl/err_wrong_name.flow
+compiler/fixtures/fork_uninferrable.flow
+compiler/fixtures/keyword_param.flow
+tests/fuzz/crashes/parse-recursionerror-parser-parse-expression-without-assign.flow
+tests/fuzz/crashes/parse-valueerror-parser-parse-type.flow
+
+# Source for a pre-parse expansion: the dynamics DSL (dsys, dynamics), the
+# Field DSL (field), flow-block representations (represent) and the Shader
+# DSL (fn). `flow run` and `flow gfx` expand these before parsing; the
+# examples build in examples/STATUS.md. Neither parser reads them raw.
+compiler/fixtures/field_dsl/ok_basic.flow
+compiler/fixtures/field_dsl/ok_block_boundary.flow
+compiler/fixtures/field_dsl/ok_boundary_swallow.flow
+compiler/fixtures/field_dsl/ok_crlf.flow
+compiler/fixtures/field_dsl/ok_export_main.flow
+compiler/fixtures/field_dsl/ok_no_fields.flow
+compiler/fixtures/field_dsl/ok_post_mul.flow
+compiler/fixtures/field_dsl/ok_two_fields_no_main.flow
+compiler/fixtures/field_dsl/ok_unknown_evolve.flow
 examples/dynamics/ga_dsys_namespaced.flow
 examples/dynamics/ga_dsys_syntax.flow
 examples/dynamics/ga_wfc_coupled.flow
@@ -9,12 +47,26 @@ examples/evolution/lorenz_gfx.flow
 examples/evolution/pendulum_represent_linear.flow
 examples/evolution/spring_mass_control.flow
 examples/evolution/spring_mass_lqr.flow
-examples/gpu/shader_photoreal_materials.flow
 examples/gpu/shader_photoreal.flow
+examples/gpu/shader_photoreal_materials.flow
 examples/gpu/shader_plasma.flow
 examples/gpu/shader_ripple.flow
 examples/gpu/shader_showcase.flow
 examples/gpu/vgpu/gradient.flow
+
+# Flow-only syntax: `\x` string escapes, which flowc passes to C and the
+# Python lexer refuses (it accepts only \n \t \r \\ \" and \0).
+tools/repl/main.flow
+
+# docs/vision: design sketches of flow-block syntax (represent, typed
+# connect arrows) that no parser implements yet.
+docs/vision/examples/pendulum.flow
+docs/vision/examples/robot.flow
+
+# The flow-verify proof corpus and its library. It is written ahead of the
+# verification-keyword parser and uses notation neither parser has: set
+# difference `\`, list append `++`, Euclidean ratios, assume and therefore
+# inside argument lists. See docs/third-party/flow-verify-parser-status.md.
 examples/verify/euclid/book-i/prop-01-equilateral-triangle.flow
 examples/verify/euclid/book-i/prop-02-copy-segment.flow
 examples/verify/euclid/book-i/prop-04-side-angle-side.flow
@@ -173,7 +225,3 @@ examples/verify/systems/ring_buffer_fifo.flow
 examples/verify/transforms/matmul_vectorize.flow
 lib/verify/Finset.flow
 lib/verify/List.flow
-scripts/tools/wasm_crossings/main.flow
-tests/fuzz/crashes/parse-recursionerror-parser-parse-expression-without-assign.flow
-tests/fuzz/crashes/parse-valueerror-parser-parse-type.flow
-tests/runtime/wip/test_short_circuit.flow

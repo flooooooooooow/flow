@@ -353,8 +353,8 @@ function cmd_threads(o: ptr<Opts>) -> i32 {
     ft_outln("Flow -> C: " + rel(program))
     let sources: ptr<StrList> = ft_list_new()
     ft_list_push(sources, flow_to_c(program, work + "/" + stem + ".c", false))
-    let module: string = path_in("lib/runtime/concurrency_parallel.flow")
-    ft_list_push(sources, flow_to_c(module, work + "/" + ft_stem(module) + ".c", true))
+    let runtime_src: string = path_in("lib/runtime/concurrency_parallel.flow")
+    ft_list_push(sources, flow_to_c(runtime_src, work + "/" + ft_stem(runtime_src) + ".c", true))
     ft_list_push(sources, path_in("runtime/flow_rt_parallel.c"))
     ft_list_push(sources, path_in("runtime/flow_rt_support.c"))
 
