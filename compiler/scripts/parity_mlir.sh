@@ -29,6 +29,11 @@
 #       at <rev>. Only programs whose flowc output already equals Python's
 #       are recorded in corpus.txt.
 #
+# GPU mode: a fixture named gpu_*.flow is also emitted with FLOWC_MLIR_GPU=1
+# and compared with its `<name>.gpu.mlir` golden (Python --mlir-gpu), text
+# only. With --python, every accepted program that has an @gpu kernel is
+# compared in GPU mode as well.
+#
 # Normalization (compiler/scripts/mlir_normalize.awk): SSA values and block
 # labels are renamed in order of first appearance and indentation is
 # dropped. Python numbers a value before emitting its operands and indents

@@ -2,10 +2,11 @@
 
 The MLIR backend is the largest block of Python between flowc and deleting
 `src/flow`. This page inventories it, sorts it into what can move to Flow now
-and what cannot, and records the order of the port. Slices 1 to 3 have
-landed, with the parts of slice 4 that Python lowers the same way today:
+and what cannot, and records the order of the port. Slices 1 to 6 have
+landed, with the GPU dialect text of slice 10:
 `compiler/src/mlirgen.flow` emits textual MLIR for the core language,
-statement forms, programs with imports and module statics, selected with
+statement forms, programs with imports and module statics, spans and
+arrays, lambdas and closures, and algebraic effects, selected with
 `FLOWC_EMIT=mlir`, and `flow run --backend=mlir` uses it.
 
 ## Inventory
@@ -277,7 +278,8 @@ nodes, and Python rejects `TheoremDecl`), structs that hold a
 Tensor-shaped field and Tensor arguments to struct-returning calls (Python's
 `_is_tensor_struct` copies those its own way), the sprintf, snprintf,
 fprintf and scanf externs (always `llvm.func` varargs in Python), list
-patterns, spans, and everything in slices 5 to 11.
+patterns, spans, and everything in slices 5 to 11. The next section lifts
+most of these.
 
 ### Numbers
 
@@ -304,6 +306,157 @@ header.
 `flow run --backend=mlir` with `python` and `python3` replaced by failing
 stubs builds and runs the fixtures, including `imports_statics.flow`.
 
+## The rest of slice 4, slices 5 and 6, and attributes
+
+### Data (rest of slice 4)
+
+* Spans are Python's `!llvm.struct<(!llvm.ptr, i64)>`, handled as a
+  struct: parameters are copied into an alloca, locals live in one, and a
+  span returned from a call is stabilized. `s.len` is `extractvalue [1]`,
+  `s[i]` reads and writes through `extractvalue [0]` and a GEP, and
+  `base[a..b]` slices a pointer, a memref or a span. An argument bound to a
+  span parameter is borrowed as `_generate_span_borrow` does: a slice, a
+  span as it is, or a memref with its static size or `memref.dim`. `&[T]`
+  is `span<T>`, and `[T; N]` is `array<T, N>`.
+* `[v; N]` is written out N times, as Python's parser expands it.
+* An array literal used as a value is a stack `memref<NxT>` typed by its
+  first element (an `!llvm.array` alloca for struct and pointer elements);
+  a memref local takes the declared element type. `array<T>(n)` is
+  `memref.alloc` and `array<T>(a, b, ...)` a stored `memref.alloca`. A
+  memref argument of another shape goes through `memref.cast`.
+* The single-statement loop `out[i] = e` over local f32 or i32 memrefs takes
+  `_try_vectorize_elementwise_for`: a `vector<4xT>` `scf.for` over the
+  bulk and a scalar remainder loop.
+* List patterns `[1, c, d]` compare literal elements and bind the others.
+* Record update `Name { ..base, f: v }` (new in the Stage-A parser, marked
+  by the parse-only `AST_RECORD_UPDATE`, which cgen and jsgen refuse) copies
+  the base and inserts the listed fields.
+* Consts take `generate_const`'s second path: cast-wrapped and negated
+  literals, integer expressions folded as `_fold_const_binary` folds them,
+  and zero for any other value. Statics fold the same way.
+* A call to a name nobody declares (`len`, `abs` on an integer) is
+  `func.call @name` typed from its arguments and returning i32, as
+  `generate_function_call` writes it.
+
+### Functions as values (slice 5)
+
+A function type `(A) -> R` is the fat closure
+`!llvm.struct<(!llvm.ptr, !llvm.ptr)>` of `mlir_closure_parity.py`. A
+lambda is lifted to `func.func private @lambda_N(%env, ...)`, written ahead
+of the declarations. Its captures are its free names, sorted, copied into a
+malloc'd environment (calloc or a declared malloc when the program has one;
+otherwise Python's own `llvm.func @malloc`), and loaded back through `%env`
+in the body; a closure capture stays a closure
+(`mlir_nested_closure_parity.py`). Calls through a closure local or
+parameter extract the code and env pointers and `llvm.call` the code. A
+named function passed to a closure parameter goes through a
+`__flow_callback_<name>` adapter, and a function name used as a value is
+`func.constant` cast to `!llvm.ptr`.
+
+### Effects (slice 6)
+
+`generate_effect`, `generate_capability`, `_generate_effects_init` and
+`generate_handle`: a `_current_E_handler` global and a NULL-checked
+dispatch function per operation, capability methods as `<Cap>_<method>`,
+one zeroed vtable per handled effect filled by `@_flow_effects_init` (which
+main calls first), and handle blocks that install the vtables and restore
+them unless the body returned. An effect call inside a matching handle
+calls the capability method directly; elsewhere it calls the dispatch
+function. Any other method call is a call with the receiver first, as
+Python desugars it.
+
+Along with effects: variadic externs and the printf and scanf families are
+`llvm.func` declarations called through `llvm.call ... vararg(...)`,
+every overload is emitted with calls resolving to the last, and calls pass
+the arguments they have against the parameter types.
+
+### Forward declarations and imports
+
+A forward declaration is emitted as Python emits it, a function with an
+empty body beside the definition. An absolute import whose first part is a
+`[dependencies]` key resolves under `flow_packages/<key>/src`, then
+`flow_packages/<key>`. The imports that still do not resolve are programs
+Python cannot build either: 17 name modules or packages missing from the
+checkout, and 18 are proof-layer claim imports whose programs Python rejects as
+`TheoremDecl`.
+
+### Attributes and the GPU dialect
+
+An `@gpu` function leaves the host module, as `generate_module` splits
+kernels off. Mode guards follow `transpiler._function_allowed` with the
+modes the MLIR backend runs under (`compile`, `mlir`). With
+`FLOWC_MLIR_GPU=1`, the counterpart of `--mlir-gpu`, the kernels become
+`gpu.module @flow_kernels` as `mlir_gpu_codegen.py` writes it. That
+generator numbers each kernel's values from `%1`, so the normalizer starts
+names over at each `gpu.func`; `parity_mlir.sh` checks `gpu_*` fixtures in
+GPU mode and, with `--python`, every accepted program that has a kernel.
+`@cInclude`, `@cEmbed` and `@cImport` stay refused: Python rejects the
+first two (`CIncludeDecl`, `CEmbedDecl`) in all 38 corpus programs that use
+them, and the third reads C headers.
+
+Type aliases lower as their base type and units as f64
+(`_resolve_type_alias`).
+
+### More Python behaviour copied, not fixed
+
+Filed as #1059 to #1063 so both generators can change together.
+
+* A forward declaration is an empty `func.func` next to the definition, and
+  every overload is a `func.func` of the same name (#1059).
+* `len(s)` on a span calls an undeclared `@len`; a parameter typed
+  `&[T; N]` or `span<T, N>` is declared `!llvm.ptr` while its body extracts
+  span fields from it (#1060).
+* In `@gpu` kernels, `-x` on an integer is `arith.subi %x, 0`, `!x` has an
+  immediate operand, and `elif` branches are dropped (#1061).
+* Lambda captures include called function names, stored as i32 through
+  `ptrtoint`; a lambda that calls `print` or `println` fails in Python and
+  is refused; `elif` conditions and slices are not searched for captures
+  (#1062).
+* A const that is not a literal, a cast or negated literal, or an integer
+  expression is zero; a record update on a base declared without a type
+  yields the base unchanged; any unknown type name, capability types
+  included, is `memref<16xi8>` (#1063).
+* `[v; N]` takes only a literal N.
+* The vectorized loop casts its bounds `: i32 to index` whatever their
+  type, and its comment says f32 for i32 loops too.
+* `array<u8>(n)` spells the element as written, `memref<?xu8>`, and the
+  call's expression type is i32.
+* `array<array<i32, 3>, 4>` is `memref<4xmemref<3xi32>>`.
+* A void lambda returns `llvm.mlir.undef : ()`, and a void callback adapter
+  binds `%result` to a `-> ()` call.
+* Arithmetic on a struct with float members (dual numbers) gets float ops
+  typed as the struct; refused, since the emitter does not reproduce it.
+
+### Numbers
+
+Same corpus and Python reference (`84806b0d`) as above. `tests/lang` now
+holds 183 programs.
+
+| After | Accepted | Text equal | Run same | Timing/address output | Builds on neither path | `tests/lang` |
+|---|---|---|---|---|---|---|
+| Slice 4 part (#1041), run again | 794 | 794 | 353 | 21 | 420 | 81 |
+| Spans, list patterns, array literals and constructors, folded consts | 829 | 828 | 367 | 21 | 440 | 91 |
+| Lambdas and closures | 844 | 843 | 372 | 21 | 450 | 93 |
+| Effects, C varargs, overloads, method calls | 920 | 919 | 397 | 21 | 501 | 106 |
+| Forward declarations, package imports | 947 | 946 | 398 | 21 | 527 | 125 |
+| `@gpu` kernels and mode guards | 955 | 953 | 404 | 21 | 528 | 125 |
+| Record update | 956 | 954 | 405 | 21 | 528 | 125 |
+| GPU dialect (`FLOWC_MLIR_GPU=1`) | 957 | 955 | 406 | 21 | 528 | 125 |
+| Type aliases and units | 968 | 966 | 413 | 21 | 532 | 126 |
+
+Text and run failures are 0 in every row; so are programs that build on
+one path only. Accepted programs beyond the text-equal ones are programs
+Python itself fails on: a parser crash, and an `@gpu` kernel with a `vec`
+type Python cannot parse. The run columns come from one run of the final
+text-equal set through both MLIR paths, counted over each commit's
+recorded corpus and fixtures, so the first row differs slightly from the
+figures above (a few large programs time out in clang under load). In GPU
+mode, 5 of 5 corpus programs with a kernel Python lowers are text-equal;
+Python fails on the other 3, and flowc refuses them.
+
+`parity_mlir.sh` golden mode: 18 fixtures (text and run, and `gpu_kernels`
+in GPU mode) and 948 recorded corpus programs.
+
 ## Slice order
 
 Each slice ends the same way: the parity gate grows, the refusal list
@@ -314,24 +467,24 @@ shrinks, and Python code is deleted only where nothing calls it any more.
    and enums (`mlir_parity.py`, `mlir_match_termination.py`), `defer`,
    address-of, `let` without an annotation, uninitialized locals and the SSA
    merges they need (scf.if yields, loop-carried block arguments).
-3. **Modules** (done except string and cast-wrapped consts): bundle mode
-   for programs with imports, module statics.
-4. **Data** (memref arrays and arrays of structs done): spans and slices,
+3. **Modules** (done): bundle mode for programs with imports, module
+   statics, consts Python folds.
+4. **Data** (done): memref arrays and arrays of structs, spans and slices,
    list patterns, the `array<T>(n)` constructors, record update.
-5. **Functions as values**: lambdas, closures, callbacks
+5. **Functions as values** (done): lambdas, closures, callbacks
    (`mlir_closure_parity.py`, `mlir_nested_closure_parity.py`).
-6. **Effects and capabilities**.
+6. **Effects and capabilities** (done).
 7. **AST rewrites**: counted-loop rotation, AoSoA layout and the
    linalg/vector rewrites of elementwise loops (`mlir_canonicalize.py` and
    the `_try_*_elementwise_for` paths). The linalg rewrite over pointers is
-   done; the vector rewrite only fires on memref arrays.
+   done, and so is the vector rewrite of single-store memref loops.
 8. **Orchestration**: the `mlir_optimizer.py` pipelines and `mlir_spirv.py`
    as bash beside `mlir_lower.sh`; `flow mlir`, `mlir-run`, wasm and BPF
    switched to flowc.
 9. **Denotational dialect**: once the lane lands, a second pass over flow
    blocks writes the `flow.*` module ahead of the operational one, under the
    same `FLOW_DENOTATIONAL=1` switch.
-10. **GPU**: `mlir_gpu_codegen.py` and `metal_codegen.py` as Flow text
-    emitters; Metal and CUDA runtimes in C.
+10. **GPU**: `mlir_gpu_codegen.py` (done, `FLOWC_MLIR_GPU=1`) and
+    `metal_codegen.py` as Flow text emitters; Metal and CUDA runtimes in C.
 11. **JIT**: `flow jit` as emit, lower, link and run; `mlir_jit.py`,
     `jit_runner.py` and the ctypes runtimes deleted.

@@ -1,15 +1,17 @@
 # @module flowc.mlirgen
 # @means  Stage-A MLIR emitter: lower the core language to textual MLIR.
 #
-# The port of src/flow/mlir_generator.py (see docs/design/mlir-in-flow.md,
-# slices 1 to 3 and part of 4). It emits the same textual MLIR as the Python
-# generator for the programs it covers: functions, scalar arithmetic, control
-# flow (if/elif/else, while, for with break/continue, match), enums, defer,
-# address-of, structs, fixed and memref arrays, pointers, casts,
-# print/println, module statics, and programs with imports (joined by
-# mlir_bundle.flow). Anything else is refused with
-# `flowc mlir: unsupported: <what> at line N`, so a caller can fall back to
-# the Python host instead of getting wrong MLIR.
+# The port of src/flow/mlir_generator.py and its patch modules (see
+# docs/design/mlir-in-flow.md, slices 1 to 6). It emits the same textual
+# MLIR as the Python generator for the programs it covers: functions,
+# scalar arithmetic, control flow (if/elif/else, while, for with
+# break/continue, match), enums, defer, address-of, structs, fixed and
+# memref arrays, spans and slices, pointers, casts, print/println, module
+# statics and consts, programs with imports (joined by mlir_bundle.flow),
+# lambdas and closures, algebraic effects, record update, and, under
+# FLOWC_MLIR_GPU=1, the GPU dialect module of mlir_gpu_codegen.py.
+# Anything else is refused with `flowc mlir: unsupported: <what> at line N`,
+# so a caller can fall back to the Python host instead of getting wrong MLIR.
 #
 # The emitter follows the Python generator's lowering decisions one for one
 # (which values live in allocas, when an `if` becomes scf.if or cf blocks,
