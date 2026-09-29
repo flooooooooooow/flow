@@ -1,0 +1,4 @@
+[0;34mℹ️  Generating GPU shaders from @ROOT@/tests/gpu/programs/wgsl_err_cast.flow (metal)...[0m
+✅ Generated Metal shader: @ROOT@/build/gpu/first_ok.metal
+✅ Generated Metal shader: @ROOT@/build/gpu/k.metal
+Generated 2 GPU shader(s)

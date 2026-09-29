@@ -1,0 +1,1193 @@
+# @module tools.gpu
+# @means  `flow gpu`: Metal and WGSL compute shaders for the @gpu functions of
+#         a program, written in Flow.
+#
+# Loads the program and its imports with the flowc front end in the Python
+# module resolver's order (tools/fir/lower.flow), picks every function marked
+# @gpu, and writes one shader per function the way src/flow/metal_codegen.py
+# and src/flow/wgsl_codegen.py did from the Python AST: the same text, the
+# same file names, the same messages and exit codes. Where the flowc tree has
+# a different shape (elif chains, compound assignment, `not`), the emitter
+# follows the Python shape so the output stays byte-identical.
+#
+#   flow-gpu --lang metal|wgsl --out DIR PROGRAM.flow
+#       What `flow gpu [--wgsl]` runs. Metal writes NAME.metal and
+#       NAME_host.m per kernel; WGSL writes NAME.wgsl.
+#   flow-gpu --crossing-manifest --out DIR PROGRAM.flow
+#       The WGSL half of the GPU crossing (scripts/tools/wasm_crossings):
+#       writes NAME.wgsl per kernel and prints the kernel manifest as JSON
+#       (json.dumps(kernels, indent=2) in wasm/flow_wasm_gpu.py).
+#
+# The launcher passes FLOW_ROOT, the repository root, which locates
+# lib/stdlib when the program has no flow.toml of its own.
+
+import "tools/hostlib/text.flow"
+import "tools/fir/lower.flow"
+import "tools/fir/mono.flow"
+import "compiler/src/ast.flow"
+import "compiler/src/token.flow"
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function exit(code: i32)
+    function getenv(name: string) -> string
+    function mkdir(path: string, mode: i32) -> i32
+    function strtoll(s: string, end: ptr<void>, base: i32) -> i64
+    function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
+}
+
+const LANG_METAL: i32 = 0
+const LANG_WGSL: i32 = 1
+
+function out(s: string) {
+    t_write_fd(1, s as ptr<u8>, t_len(s))
+}
+
+function err(s: string) {
+    t_write_fd(2, s as ptr<u8>, t_len(s))
+}
+
+# -- Generator state
+
+struct Gen {
+    m: ptr<Mod>,
+    lang: i32,
+    level: i32,
+    fail: string,
+    scalars: TList,
+    scalar_types: TList,
+    buf_names: TList,
+    buf_elems: TList,
+    buf_access: TList,
+    buf_binding: TList,
+    params_binding: i32,
+    written: TList
+}
+
+function gen_new(m: ptr<Mod>, lang: i32) -> ptr<Gen> {
+    let g: ptr<Gen> = calloc(1, 256) as ptr<Gen>
+    g.m = m
+    g.lang = lang
+    g.level = 0
+    g.fail = ""
+    g.scalars = tl_new()
+    g.scalar_types = tl_new()
+    g.buf_names = tl_new()
+    g.buf_elems = tl_new()
+    g.buf_access = tl_new()
+    g.buf_binding = tl_new()
+    g.params_binding = -1
+    g.written = tl_new()
+    return g
+}
+
+# The first WGSL construct with no equivalent stops generation, as the
+# Python WgslUnsupported exception did.
+function unsupported(g: ptr<Gen>, msg: string) {
+    if t_len(g.fail) == 0 {
+        g.fail = msg
+    }
+}
+
+function ind(g: ptr<Gen>) -> string {
+    let mut tb: TBuf = tb_new()
+    let mut i: i32 = 0
+    while i < g.level {
+        tb_puts(&tb, "    ")
+        i = i + 1
+    }
+    return tb.data as string
+}
+
+function kind_of(g: ptr<Gen>, id: i32) -> i32 {
+    return g.m.arena.nodes[id].kind
+}
+
+function node_a(g: ptr<Gen>, id: i32) -> i32 {
+    return g.m.arena.nodes[id].a
+}
+
+function node_b(g: ptr<Gen>, id: i32) -> i32 {
+    return g.m.arena.nodes[id].b
+}
+
+function node_c(g: ptr<Gen>, id: i32) -> i32 {
+    return g.m.arena.nodes[id].c
+}
+
+function node_next(g: ptr<Gen>, id: i32) -> i32 {
+    return g.m.arena.nodes[id].next
+}
+
+function name_text(g: ptr<Gen>, id: i32) -> string {
+    return t_span(g.m.src, g.m.arena.nodes[id].name_start, g.m.arena.nodes[id].name_end)
+}
+
+function span_text(g: ptr<Gen>, id: i32) -> string {
+    return t_span(g.m.src, g.m.arena.nodes[id].start, g.m.arena.nodes[id].end)
+}
+
+function type_of(g: ptr<Gen>, ty: i32) -> ptr<PType> {
+    if ty == AST_NONE {
+        return pt_new("auto")
+    }
+    return pt_from_ast(g.m.arena, g.m.src, ty)
+}
+
+# -- Types
+
+function metal_scalar(name: string) -> string {
+    if t_eq(name, "i32") { return "int" }
+    if t_eq(name, "i64") { return "long" }
+    if t_eq(name, "u32") { return "uint" }
+    if t_eq(name, "u64") { return "ulong" }
+    if t_eq(name, "f32") { return "float" }
+    if t_eq(name, "f64") { return "double" }
+    if t_eq(name, "bool") { return "bool" }
+    if t_eq(name, "void") { return "void" }
+    return name
+}
+
+# MetalCodegen.map_type. Every parsed pointer, array, span or vector type
+# carries an element type, so it becomes a device pointer.
+function metal_type(t: ptr<PType>) -> string {
+    if t.elem != null {
+        let el: ptr<PType> = t.elem
+        return t_cat3("device ", metal_scalar(el.name), "*")
+    }
+    return metal_scalar(t.name)
+}
+
+function is_buffer(t: ptr<PType>) -> bool {
+    return t.elem != null or t_starts_with(t.name, "array<") or t_starts_with(t.name, "array_") or t_starts_with(t.name, "ptr<")
+}
+
+function wgsl_scalar(g: ptr<Gen>, name: string) -> string {
+    if t_eq(name, "i64") or t_eq(name, "u64") or t_eq(name, "f64") {
+        unsupported(g, t_cat3("WGSL has no ", name, "; use f32/i32/u32 in @gpu kernels"))
+        return name
+    }
+    if t_eq(name, "i32") or t_eq(name, "u32") or t_eq(name, "f32") or t_eq(name, "bool") or t_eq(name, "void") {
+        return name
+    }
+    unsupported(g, t_cat3("no WGSL equivalent for type '", name, "'"))
+    return name
+}
+
+function wgsl_elem(g: ptr<Gen>, t: ptr<PType>) -> string {
+    if t.elem != null {
+        let el: ptr<PType> = t.elem
+        return wgsl_scalar(g, el.name)
+    }
+    if t_starts_with(t.name, "array_") {
+        return wgsl_scalar(g, t_from(t.name, 6))
+    }
+    unsupported(g, t_cat3("cannot infer element type of '", t.name, "'"))
+    return t.name
+}
+
+# WgslCodegen.RESERVED: WGSL keywords and reserved words.
+const WGSL_RESERVED: string = " alias break case const const_assert continue continuing default diagnostic discard else enable false fn for if let loop override requires return struct switch true var while NULL Self abstract active alignas alignof as asm async attribute auto await become binding_array cast catch class compile concept const_cast consteval constexpr constinit crate debugger decltype delete demote do dynamic_cast enum explicit export extends extern external fallthrough filter final finally friend from get goto groupshared highp impl implements import inline instanceof interface layout lowp macro match mediump meta mod module move mut mutable namespace new nil noexcept noinline null nullptr of operator package partition pass precise precision priv protected pub public readonly ref regardless register require resource restrict self set shared sizeof smooth snorm static std super target template this throw trait try type typedef typeid typename typeof union unless unorm unsafe unsized use using varying virtual volatile wgsl where with writeonly yield "
+
+function wgsl_ident(name: string) -> string {
+    if t_contains(WGSL_RESERVED, t_cat3(" ", name, " ")) or t_starts_with(name, "__") {
+        let mut n: i32 = t_len(name)
+        while n > 0 and t_at(name, n - 1) == 95 {
+            n = n - 1
+        }
+        return t_cat(t_sub(name, 0, n), "_")
+    }
+    return name
+}
+
+# -- Builtins
+
+function metal_builtin(name: string) -> string {
+    if t_eq(name, "gpu_thread_id") { return "tid" }
+    if t_eq(name, "gpu_thread_id_x") { return "thread_position_in_grid.x" }
+    if t_eq(name, "gpu_thread_id_y") { return "thread_position_in_grid.y" }
+    if t_eq(name, "gpu_thread_id_z") { return "thread_position_in_grid.z" }
+    if t_eq(name, "gpu_block_id") { return "threadgroup_position_in_grid" }
+    if t_eq(name, "gpu_block_id_x") { return "threadgroup_position_in_grid.x" }
+    if t_eq(name, "gpu_block_id_y") { return "threadgroup_position_in_grid.y" }
+    if t_eq(name, "gpu_block_id_z") { return "threadgroup_position_in_grid.z" }
+    if t_eq(name, "gpu_local_id") { return "thread_position_in_threadgroup" }
+    if t_eq(name, "gpu_local_id_x") { return "thread_position_in_threadgroup.x" }
+    if t_eq(name, "gpu_block_size") { return "threads_per_threadgroup" }
+    if t_eq(name, "gpu_grid_size") { return "threads_per_grid" }
+    if t_eq(name, "gpu_barrier") or t_eq(name, "gpu_sync") { return "threadgroup_barrier(mem_flags::mem_threadgroup)" }
+    return ""
+}
+
+function wgsl_builtin(name: string) -> string {
+    if t_eq(name, "gpu_thread_id") { return "tid" }
+    if t_eq(name, "gpu_thread_id_x") { return "i32(global_id.x)" }
+    if t_eq(name, "gpu_thread_id_y") { return "i32(global_id.y)" }
+    if t_eq(name, "gpu_thread_id_z") { return "i32(global_id.z)" }
+    if t_eq(name, "gpu_block_id") or t_eq(name, "gpu_block_id_x") { return "i32(group_id.x)" }
+    if t_eq(name, "gpu_block_id_y") { return "i32(group_id.y)" }
+    if t_eq(name, "gpu_block_id_z") { return "i32(group_id.z)" }
+    if t_eq(name, "gpu_local_id") or t_eq(name, "gpu_local_id_x") { return "i32(local_id.x)" }
+    if t_eq(name, "gpu_block_size") { return "WORKGROUP_SIZE" }
+    if t_eq(name, "gpu_barrier") or t_eq(name, "gpu_sync") { return "workgroupBarrier()" }
+    return ""
+}
+
+function wgsl_math(name: string) -> string {
+    if t_eq(name, "sin") or t_eq(name, "cos") or t_eq(name, "tan") or t_eq(name, "asin") or t_eq(name, "acos") or t_eq(name, "atan") { return name }
+    if t_eq(name, "sqrt") or t_eq(name, "exp") or t_eq(name, "log") or t_eq(name, "abs") or t_eq(name, "min") or t_eq(name, "max") { return name }
+    if t_eq(name, "pow") or t_eq(name, "floor") or t_eq(name, "ceil") { return name }
+    if t_eq(name, "fabs") or t_eq(name, "fabsf") { return "abs" }
+    if t_eq(name, "sqrtf") { return "sqrt" }
+    if t_eq(name, "expf") { return "exp" }
+    if t_eq(name, "logf") { return "log" }
+    if t_eq(name, "sinf") { return "sin" }
+    if t_eq(name, "cosf") { return "cos" }
+    if t_eq(name, "powf") { return "pow" }
+    if t_eq(name, "fminf") { return "min" }
+    if t_eq(name, "fmaxf") { return "max" }
+    if t_eq(name, "floorf") { return "floor" }
+    if t_eq(name, "ceilf") { return "ceil" }
+    return ""
+}
+
+# -- Expressions
+
+function binop_text(op: i32) -> string {
+    if op == TOK_BARBAR { return "||" }
+    if op == TOK_AMPAMP { return "&&" }
+    if op == TOK_BAR { return "|" }
+    if op == TOK_CARET { return "^" }
+    if op == TOK_AMP { return "&" }
+    if op == TOK_EQEQ { return "==" }
+    if op == TOK_NE { return "!=" }
+    if op == TOK_LT { return "<" }
+    if op == TOK_LE { return "<=" }
+    if op == TOK_GT { return ">" }
+    if op == TOK_GE { return ">=" }
+    if op == TOK_IN { return "in" }
+    if op == TOK_SHL { return "<<" }
+    if op == TOK_SHR { return ">>" }
+    if op == TOK_PLUS { return "+" }
+    if op == TOK_MINUS { return "-" }
+    if op == TOK_STAR { return "*" }
+    if op == TOK_SLASH { return "/" }
+    if op == TOK_PERCENT { return "%" }
+    return "?"
+}
+
+# The token text of a unary operator, as the Python parser kept it.
+function unary_text(g: ptr<Gen>, id: i32) -> string {
+    let op: i32 = g.m.arena.nodes[id].ival
+    if op == TOK_MINUS { return "-" }
+    if op == TOK_TILDE { return "~" }
+    if op == TOK_AMP { return "&" }
+    if op == TOK_STAR { return "*" }
+    if op == TOK_BANG {
+        let s: i32 = g.m.arena.nodes[id].start
+        if (g.m.src[s] as i32) == 33 {
+            return "!"
+        }
+        return "not"
+    }
+    return "?"
+}
+
+# The Python AST class a flowc expression node became, for the
+# "Unsupported" comment and error.
+function expr_class(g: ptr<Gen>, id: i32) -> string {
+    let k: i32 = kind_of(g, id)
+    if k == AST_CAST { return "CastExpression" }
+    if k == AST_STRUCT_LIT { return "StructLiteral" }
+    if k == AST_ARRAY_LIT { return "ArrayLiteral" }
+    if k == AST_IF_EXPR { return "IfExpression" }
+    if k == AST_VECTOR_LIT { return "VectorLiteral" }
+    if k == AST_TRY { return "TryExpr" }
+    if k == AST_SORT_BY { return "SortExpr" }
+    if k == AST_CALL { return "MethodCall" }
+    return "Expression"
+}
+
+function stmt_class(g: ptr<Gen>, id: i32) -> string {
+    let k: i32 = kind_of(g, id)
+    if k == AST_BREAK { return "BreakStatement" }
+    if k == AST_CONTINUE { return "ContinueStatement" }
+    if k == AST_MATCH { return "MatchStatement" }
+    if k == AST_DEFER { return "DeferStatement" }
+    if k == AST_HANDLE { return "HandleStatement" }
+    return "Statement"
+}
+
+# An integer literal's text; hex becomes decimal as in the Python parser.
+function int_text(g: ptr<Gen>, id: i32) -> string {
+    let s: string = span_text(g, id)
+    if t_starts_with(s, "0x") {
+        let v: i64 = strtoll(s, null, 16)
+        let buf: ptr<u8> = calloc(32, 1) as ptr<u8>
+        let _n: i32 = snprintf(buf, 32, "%lld", v)
+        return buf as string
+    }
+    return s
+}
+
+function float_text(g: ptr<Gen>, id: i32) -> string {
+    return name_text(g, id)
+}
+
+function bool_text(g: ptr<Gen>, id: i32) -> string {
+    return span_text(g, id)
+}
+
+function method_base(g: ptr<Gen>, call: i32) -> i32 {
+    let first: i32 = node_a(g, call)
+    if first == AST_NONE {
+        return AST_NONE
+    }
+    let ns: i32 = g.m.arena.nodes[call].name_start
+    let mut i: i32 = call - 1
+    while i >= 0 {
+        if g.m.arena.nodes[i].kind == AST_FIELD_ACCESS and g.m.arena.nodes[i].name_start == ns and g.m.arena.nodes[i].a == first {
+            return i
+        }
+        i = i - 1
+    }
+    return AST_NONE
+}
+
+function args_text(g: ptr<Gen>, first: i32) -> string {
+    let mut tb: TBuf = tb_new()
+    let mut a: i32 = first
+    let mut n: i32 = 0
+    while a != AST_NONE {
+        if n > 0 {
+            tb_puts(&tb, ", ")
+        }
+        tb_puts(&tb, expr(g, a))
+        n = n + 1
+        a = node_next(g, a)
+    }
+    if n == 0 {
+        return ""
+    }
+    return tb.data as string
+}
+
+function wgsl_name(g: ptr<Gen>, name: string) -> string {
+    let b: string = wgsl_builtin(name)
+    if t_len(b) > 0 {
+        return b
+    }
+    if tl_index(&g.scalars, name) >= 0 {
+        return t_cat("params.", wgsl_ident(name))
+    }
+    return wgsl_ident(name)
+}
+
+function expr(g: ptr<Gen>, id: i32) -> string {
+    let k: i32 = kind_of(g, id)
+    if k == AST_INT {
+        return int_text(g, id)
+    }
+    if k == AST_FLOAT {
+        return float_text(g, id)
+    }
+    if k == AST_BOOL {
+        let v: string = bool_text(g, id)
+        if g.lang == LANG_WGSL {
+            if t_eq(v, "true") or t_eq(v, "True") or t_eq(v, "1") {
+                return "true"
+            }
+            return "false"
+        }
+        return v
+    }
+    if k == AST_STRING {
+        return span_text(g, id)
+    }
+    if k == AST_IDENT {
+        let name: string = name_text(g, id)
+        if g.lang == LANG_WGSL {
+            return wgsl_name(g, name)
+        }
+        let b: string = metal_builtin(name)
+        if t_len(b) > 0 {
+            return b
+        }
+        return name
+    }
+    if k == AST_BINOP {
+        let l: string = expr(g, node_a(g, id))
+        let r: string = expr(g, node_b(g, id))
+        return t_cat3(t_cat3("(", l, " "), binop_text(g.m.arena.nodes[id].ival), t_cat3(" ", r, ")"))
+    }
+    if k == AST_UNARY {
+        let op: i32 = g.m.arena.nodes[id].ival
+        if op == KW_DBG {
+            return t_cat3("__flow_dbg(", expr(g, node_a(g, id)), ")")
+        }
+        let mut t: string = unary_text(g, id)
+        if g.lang == LANG_WGSL and (t_eq(t, "not") or t_eq(t, "!")) {
+            t = "!"
+        }
+        return t_cat3(t_cat("(", t), expr(g, node_a(g, id)), ")")
+    }
+    if k == AST_CALL {
+        if method_base(g, id) != AST_NONE {
+            return unsupported_expr(g, "MethodCall")
+        }
+        let name: string = call_name(g.m, id)
+        let args: string = args_text(g, node_a(g, id))
+        if g.lang == LANG_WGSL {
+            let b: string = wgsl_builtin(name)
+            if t_len(b) > 0 {
+                return b
+            }
+            let mf: string = wgsl_math(name)
+            if t_len(mf) > 0 {
+                return t_cat3(mf, t_cat("(", args), ")")
+            }
+            if t_eq(name, "i32") or t_eq(name, "u32") or t_eq(name, "f32") or t_eq(name, "bool") or t_eq(name, "void") {
+                return t_cat3(name, t_cat("(", args), ")")
+            }
+            unsupported(g, t_cat3("call to '", name, "' in a @gpu kernel has no WGSL equivalent"))
+            return ""
+        }
+        if t_eq(name, "gpu_thread_id") {
+            return "tid"
+        }
+        if t_eq(name, "gpu_barrier") or t_eq(name, "gpu_sync") {
+            return "threadgroup_barrier(mem_flags::mem_threadgroup)"
+        }
+        return t_cat3(name, t_cat("(", args), ")")
+    }
+    if k == AST_INDEX {
+        return t_cat3(expr(g, node_a(g, id)), t_cat("[", expr(g, node_b(g, id))), "]")
+    }
+    if k == AST_FIELD_ACCESS {
+        return t_cat3(expr(g, node_a(g, id)), ".", name_text(g, id))
+    }
+    return unsupported_expr(g, expr_class(g, id))
+}
+
+function unsupported_expr(g: ptr<Gen>, cls: string) -> string {
+    if g.lang == LANG_WGSL {
+        unsupported(g, t_cat3("expression ", cls, " in a @gpu kernel"))
+        return ""
+    }
+    return t_cat3("/* Unsupported: ", cls, " */")
+}
+
+# -- Statements
+
+# The elif that the flowc parser nests as the only statement of an else
+# block starting at the `elif` itself (tools/fir/lower.flow elif_child).
+function elif_child(g: ptr<Gen>, ifn: i32) -> i32 {
+    let eb: i32 = node_c(g, ifn)
+    if eb == AST_NONE or kind_of(g, eb) != AST_BLOCK {
+        return AST_NONE
+    }
+    if g.m.arena.nodes[eb].start != g.m.arena.nodes[ifn].start {
+        return AST_NONE
+    }
+    let inner: i32 = node_a(g, eb)
+    if inner == AST_NONE or kind_of(g, inner) != AST_IF {
+        return AST_NONE
+    }
+    if node_next(g, inner) != AST_NONE {
+        return AST_NONE
+    }
+    return inner
+}
+
+function block(g: ptr<Gen>, blk: i32, tb: ptr<TBuf>) {
+    if blk == AST_NONE {
+        return
+    }
+    let mut s: i32 = node_a(g, blk)
+    while s != AST_NONE {
+        stmt(g, s, tb)
+        s = node_next(g, s)
+    }
+}
+
+function line(g: ptr<Gen>, tb: ptr<TBuf>, text: string) {
+    tb_puts(tb, ind(g))
+    tb_puts(tb, text)
+    tb_putc(tb, 10)
+}
+
+function is_void_ident(g: ptr<Gen>, v: i32) -> bool {
+    return v != AST_NONE and kind_of(g, v) == AST_IDENT and t_eq(name_text(g, v), "void")
+}
+
+function stmt(g: ptr<Gen>, s: i32, tb: ptr<TBuf>) {
+    let k: i32 = kind_of(g, s)
+    if k == AST_LET {
+        let name: string = name_text(g, s)
+        let t: ptr<PType> = type_of(g, node_a(g, s))
+        let init: i32 = node_b(g, s)
+        if g.lang == LANG_WGSL {
+            let is_mut: bool = g.m.arena.nodes[s].ival != 0
+            let wt: string = wgsl_scalar(g, t.name)
+            let id: string = wgsl_ident(name)
+            if init != AST_NONE {
+                let mut kw: string = "let"
+                if is_mut {
+                    kw = "var"
+                }
+                line(g, tb, t_cat3(t_cat3(kw, " ", id), t_cat3(": ", wt, " = "), t_cat(expr(g, init), ";")))
+            } else {
+                line(g, tb, t_cat3(t_cat3("var ", id, ": "), wt, ";"))
+            }
+            return
+        }
+        let mt: string = metal_type(t)
+        if init != AST_NONE {
+            let v: string = expr(g, init)
+            if t_eq(mt, "int") or t_eq(mt, "uint") or t_eq(mt, "float") or t_eq(mt, "double") or t_eq(mt, "bool") {
+                line(g, tb, t_cat3(t_cat3(mt, " ", name), " = ", t_cat(v, ";")))
+            } else {
+                line(g, tb, t_cat3(t_cat3("auto ", name, " = "), v, ";"))
+            }
+        } else {
+            line(g, tb, t_cat3(mt, " ", t_cat(name, ";")))
+        }
+        return
+    }
+    if k == AST_ASSIGN {
+        let lhs: i32 = node_a(g, s)
+        let mut target: string = ""
+        if kind_of(g, lhs) == AST_IDENT {
+            target = name_text(g, lhs)
+            if g.lang == LANG_WGSL {
+                target = wgsl_name(g, target)
+            }
+        } else {
+            target = expr(g, lhs)
+        }
+        let v: string = expr(g, node_b(g, s))
+        line(g, tb, t_cat3(target, " = ", t_cat(v, ";")))
+        return
+    }
+    if k == AST_IF {
+        line(g, tb, t_cat3("if (", expr(g, node_a(g, s)), ") {"))
+        g.level = g.level + 1
+        block(g, node_b(g, s), tb)
+        g.level = g.level - 1
+        # Python kept elif branches apart from the final else.
+        let mut elifs: TList = tl_new()
+        let mut cur: i32 = s
+        let mut nx: i32 = elif_child(g, cur)
+        while nx != AST_NONE {
+            tl_push(&elifs, t_int(nx))
+            cur = nx
+            nx = elif_child(g, cur)
+        }
+        if g.lang == LANG_WGSL {
+            let mut i: i32 = 0
+            while i < elifs.len {
+                let e: i32 = strtoll(tl_get(&elifs, i), null, 10) as i32
+                line(g, tb, t_cat3("} else if (", expr(g, node_a(g, e)), ") {"))
+                g.level = g.level + 1
+                block(g, node_b(g, e), tb)
+                g.level = g.level - 1
+                i = i + 1
+            }
+        }
+        let else_blk: i32 = node_c(g, cur)
+        if else_blk != AST_NONE {
+            line(g, tb, "} else {")
+            g.level = g.level + 1
+            block(g, else_blk, tb)
+            g.level = g.level - 1
+        }
+        line(g, tb, "}")
+        return
+    }
+    if k == AST_WHILE {
+        line(g, tb, t_cat3("while (", expr(g, node_a(g, s)), ") {"))
+        g.level = g.level + 1
+        block(g, node_b(g, s), tb)
+        g.level = g.level - 1
+        line(g, tb, "}")
+        return
+    }
+    if k == AST_FOR {
+        let raw: string = name_text(g, s)
+        let lo: string = expr(g, node_a(g, s))
+        let hi: string = expr(g, node_b(g, s))
+        let step: i32 = g.m.arena.nodes[s].ival
+        if g.lang == LANG_WGSL {
+            let v: string = wgsl_ident(raw)
+            let mut st: string = "1"
+            if step > 0 {
+                st = expr(g, step)
+            }
+            let mut h: TBuf = tb_new()
+            tb_puts(&h, "for (var ")
+            tb_puts(&h, v)
+            tb_puts(&h, ": i32 = ")
+            tb_puts(&h, lo)
+            tb_puts(&h, "; ")
+            tb_puts(&h, v)
+            tb_puts(&h, " < ")
+            tb_puts(&h, hi)
+            tb_puts(&h, "; ")
+            tb_puts(&h, v)
+            tb_puts(&h, " = ")
+            tb_puts(&h, v)
+            tb_puts(&h, " + ")
+            tb_puts(&h, st)
+            tb_puts(&h, ") {")
+            line(g, tb, h.data as string)
+        } else {
+            let mut h: TBuf = tb_new()
+            tb_puts(&h, "for (int ")
+            tb_puts(&h, raw)
+            tb_puts(&h, " = ")
+            tb_puts(&h, lo)
+            tb_puts(&h, "; ")
+            tb_puts(&h, raw)
+            tb_puts(&h, " < ")
+            tb_puts(&h, hi)
+            tb_puts(&h, "; ")
+            tb_puts(&h, raw)
+            if step > 0 {
+                tb_puts(&h, " += ")
+                tb_puts(&h, expr(g, step))
+            } else {
+                tb_puts(&h, "++")
+            }
+            tb_puts(&h, ") {")
+            line(g, tb, h.data as string)
+        }
+        g.level = g.level + 1
+        block(g, node_c(g, s), tb)
+        g.level = g.level - 1
+        line(g, tb, "}")
+        return
+    }
+    if k == AST_RETURN {
+        let v: i32 = node_a(g, s)
+        if v != AST_NONE and not is_void_ident(g, v) {
+            if g.lang == LANG_WGSL {
+                unsupported(g, "a WGSL compute entry point returns nothing; write results to a buffer")
+                return
+            }
+            line(g, tb, t_cat3("return ", expr(g, v), ";"))
+        } else {
+            line(g, tb, "return;")
+        }
+        return
+    }
+    if k == AST_EXPR_STMT {
+        line(g, tb, t_cat(expr(g, node_a(g, s)), ";"))
+        return
+    }
+    if g.lang == LANG_WGSL {
+        unsupported(g, t_cat3("statement ", stmt_class(g, s), " in a @gpu kernel"))
+        return
+    }
+    line(g, tb, t_cat("// Unsupported: ", stmt_class(g, s)))
+}
+
+# -- WGSL write analysis (WgslCodegen._written_buffers)
+
+function base_name(g: ptr<Gen>, e0: i32) -> string {
+    let mut e: i32 = e0
+    while kind_of(g, e) == AST_INDEX or kind_of(g, e) == AST_FIELD_ACCESS {
+        e = node_a(g, e)
+    }
+    if kind_of(g, e) == AST_IDENT {
+        return name_text(g, e)
+    }
+    return ""
+}
+
+function walk_written(g: ptr<Gen>, blk: i32) {
+    if blk == AST_NONE {
+        return
+    }
+    let mut s: i32 = node_a(g, blk)
+    while s != AST_NONE {
+        let k: i32 = kind_of(g, s)
+        if k == AST_ASSIGN {
+            let name: string = base_name(g, node_a(g, s))
+            if tl_index(&g.buf_names, name) >= 0 and tl_index(&g.written, name) < 0 {
+                tl_push(&g.written, name)
+            }
+        } elif k == AST_IF {
+            walk_written(g, node_b(g, s))
+            let mut cur: i32 = s
+            let mut nx: i32 = elif_child(g, cur)
+            while nx != AST_NONE {
+                walk_written(g, node_b(g, nx))
+                cur = nx
+                nx = elif_child(g, cur)
+            }
+            walk_written(g, node_c(g, cur))
+        } elif k == AST_WHILE {
+            walk_written(g, node_b(g, s))
+        } elif k == AST_FOR {
+            walk_written(g, node_c(g, s))
+        }
+        s = node_next(g, s)
+    }
+}
+
+# -- Kernels
+
+function fn_params(g: ptr<Gen>, f: i32) -> i32 {
+    return node_a(g, f)
+}
+
+function fn_body(g: ptr<Gen>, f: i32) -> i32 {
+    return node_c(g, f)
+}
+
+function metal_kernel(g: ptr<Gen>, f: i32, name: string) -> string {
+    let mut tb: TBuf = tb_new()
+    tb_puts(&tb, "#include <metal_stdlib>\nusing namespace metal;\n\n")
+    tb_puts(&tb, "kernel void ")
+    tb_puts(&tb, name)
+    tb_puts(&tb, "(\n    ")
+    let mut p: i32 = fn_params(g, f)
+    let mut binding: i32 = 0
+    while p != AST_NONE {
+        let t: ptr<PType> = type_of(g, node_a(g, p))
+        let pname: string = name_text(g, p)
+        if is_buffer(t) {
+            tb_puts(&tb, metal_type(t))
+            tb_puts(&tb, " ")
+        } else {
+            tb_puts(&tb, "constant ")
+            tb_puts(&tb, metal_type(t))
+            tb_puts(&tb, "& ")
+        }
+        tb_puts(&tb, pname)
+        tb_puts(&tb, " [[buffer(")
+        tb_put_int(&tb, binding)
+        tb_puts(&tb, ")]],\n    ")
+        binding = binding + 1
+        p = node_next(g, p)
+    }
+    tb_puts(&tb, "uint tid [[thread_position_in_grid]]\n) {\n")
+    g.level = 1
+    block(g, fn_body(g, f), &tb)
+    g.level = 0
+    tb_puts(&tb, "}")
+    return tb.data as string
+}
+
+# The C type the Metal host stub used for a parameter: its checks look for
+# `array<` / `ptr<` spellings the parser never produces, so every parameter
+# takes the scalar path.
+function host_scalar(name: string) -> string {
+    if t_eq(name, "f32") { return "float" }
+    if t_eq(name, "f64") { return "double" }
+    if t_eq(name, "i32") { return "int" }
+    if t_eq(name, "u32") { return "unsigned int" }
+    if t_eq(name, "bool") { return "bool" }
+    return "int"
+}
+
+function host_elem(name: string) -> string {
+    if t_eq(name, "f32") { return "float" }
+    if t_eq(name, "f64") { return "double" }
+    if t_eq(name, "i32") { return "int" }
+    if t_eq(name, "u32") { return "unsigned int" }
+    return "float"
+}
+
+# name[6:-1] or name[4:-1] as Python slices it.
+function py_slice_inner(name: string) -> string {
+    let n: i32 = t_len(name)
+    let mut s: i32 = 4
+    if t_starts_with(name, "array<") {
+        s = 6
+    }
+    if s >= n - 1 {
+        return ""
+    }
+    return t_sub(name, s, n - 1)
+}
+
+function host_code(g: ptr<Gen>, f: i32, name: string, shader_path: string) -> string {
+    let mut tb: TBuf = tb_new()
+    tb_puts(&tb, "// Auto-generated Metal host code\n#import <Metal/Metal.h>\n#import <Foundation/Foundation.h>\n\n")
+    tb_puts(&tb, "void run_")
+    tb_puts(&tb, name)
+    tb_puts(&tb, "(\n    ")
+    let mut p: i32 = fn_params(g, f)
+    while p != AST_NONE {
+        let t: ptr<PType> = type_of(g, node_a(g, p))
+        tb_puts(&tb, host_scalar(t.name))
+        tb_puts(&tb, " ")
+        tb_puts(&tb, name_text(g, p))
+        tb_puts(&tb, ", ")
+        p = node_next(g, p)
+    }
+    tb_puts(&tb, "size_t count\n) {\n")
+    tb_puts(&tb, "    @autoreleasepool {\n")
+    tb_puts(&tb, "        // Get default Metal device\n")
+    tb_puts(&tb, "        id<MTLDevice> device = MTLCreateSystemDefaultDevice();\n")
+    tb_puts(&tb, "        if (!device) {\n")
+    tb_puts(&tb, "            NSLog(@\"Metal is not supported on this device\");\n")
+    tb_puts(&tb, "            return;\n")
+    tb_puts(&tb, "        }\n\n")
+    tb_puts(&tb, "        // Load shader library\n")
+    tb_puts(&tb, "        NSString* shaderPath = @\"")
+    tb_puts(&tb, shader_path)
+    tb_puts(&tb, "\";\n")
+    tb_puts(&tb, "        NSError* error = nil;\n")
+    tb_puts(&tb, "        NSString* shaderSource = [NSString stringWithContentsOfFile:shaderPath encoding:NSUTF8StringEncoding error:&error];\n")
+    tb_puts(&tb, "        id<MTLLibrary> library = [device newLibraryWithSource:shaderSource options:nil error:&error];\n")
+    tb_puts(&tb, "        if (!library) {\n")
+    tb_puts(&tb, "            NSLog(@\"Failed to compile shader: %@\", error);\n")
+    tb_puts(&tb, "            return;\n")
+    tb_puts(&tb, "        }\n\n")
+    tb_puts(&tb, "        id<MTLFunction> kernel = [library newFunctionWithName:@\"")
+    tb_puts(&tb, name)
+    tb_puts(&tb, "\"];\n")
+    tb_puts(&tb, "        id<MTLComputePipelineState> pipeline = [device newComputePipelineStateWithFunction:kernel error:&error];\n\n")
+    tb_puts(&tb, "        // Create command queue\n")
+    tb_puts(&tb, "        id<MTLCommandQueue> queue = [device newCommandQueue];\n")
+    tb_puts(&tb, "        id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];\n")
+    tb_puts(&tb, "        id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];\n")
+    tb_puts(&tb, "        [encoder setComputePipelineState:pipeline];\n\n")
+    let mut i: i32 = 0
+    p = fn_params(g, f)
+    while p != AST_NONE {
+        let pname: string = name_text(g, p)
+        tb_puts(&tb, "        [encoder setBytes:&")
+        tb_puts(&tb, pname)
+        tb_puts(&tb, " length:sizeof(")
+        tb_puts(&tb, pname)
+        tb_puts(&tb, ") atIndex:")
+        tb_put_int(&tb, i)
+        tb_puts(&tb, "];\n")
+        i = i + 1
+        p = node_next(g, p)
+    }
+    tb_puts(&tb, "\n        // Dispatch threads\n")
+    tb_puts(&tb, "        MTLSize gridSize = MTLSizeMake(count, 1, 1);\n")
+    tb_puts(&tb, "        NSUInteger threadGroupSize = MIN(pipeline.maxTotalThreadsPerThreadgroup, count);\n")
+    tb_puts(&tb, "        MTLSize threadgroupSize = MTLSizeMake(threadGroupSize, 1, 1);\n")
+    tb_puts(&tb, "        [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadgroupSize];\n\n")
+    tb_puts(&tb, "        [encoder endEncoding];\n")
+    tb_puts(&tb, "        [commandBuffer commit];\n")
+    tb_puts(&tb, "        [commandBuffer waitUntilCompleted];\n\n")
+    i = 0
+    p = fn_params(g, f)
+    while p != AST_NONE {
+        let pname: string = name_text(g, p)
+        let low: string = t_lower(pname)
+        if t_contains(low, "out") or t_contains(low, "result") {
+            let t: ptr<PType> = type_of(g, node_a(g, p))
+            tb_puts(&tb, "        memcpy(")
+            tb_puts(&tb, pname)
+            tb_puts(&tb, ", buffer")
+            tb_put_int(&tb, i)
+            tb_puts(&tb, ".contents, count * sizeof(")
+            tb_puts(&tb, host_elem(py_slice_inner(t.name)))
+            tb_puts(&tb, "));\n")
+        }
+        i = i + 1
+        p = node_next(g, p)
+    }
+    tb_puts(&tb, "    }\n}")
+    return tb.data as string
+}
+
+function wgsl_kernel(g: ptr<Gen>, f: i32, name: string) -> string {
+    # Buffers first, for the write analysis.
+    let mut p: i32 = fn_params(g, f)
+    while p != AST_NONE {
+        let t: ptr<PType> = type_of(g, node_a(g, p))
+        if is_buffer(t) {
+            tl_push(&g.buf_names, name_text(g, p))
+        }
+        p = node_next(g, p)
+    }
+    walk_written(g, fn_body(g, f))
+    g.buf_names = tl_new()
+
+    let mut tb: TBuf = tb_new()
+    tb_puts(&tb, "// Generated from Flow @gpu function `")
+    tb_puts(&tb, name)
+    tb_puts(&tb, "` by src/flow/wgsl_codegen.py\nconst WORKGROUP_SIZE: i32 = 64;\n\n")
+    let mut binding: i32 = 0
+    p = fn_params(g, f)
+    while p != AST_NONE {
+        let t: ptr<PType> = type_of(g, node_a(g, p))
+        let pname: string = name_text(g, p)
+        if is_buffer(t) {
+            let el: string = wgsl_elem(g, t)
+            if t_len(g.fail) > 0 {
+                return ""
+            }
+            let mut access: string = "read"
+            if tl_index(&g.written, pname) >= 0 {
+                access = "read_write"
+            }
+            tl_push(&g.buf_names, pname)
+            tl_push(&g.buf_elems, el)
+            tl_push(&g.buf_access, access)
+            tl_push(&g.buf_binding, t_int(binding))
+            tb_puts(&tb, "@group(0) @binding(")
+            tb_put_int(&tb, binding)
+            tb_puts(&tb, ") var<storage, ")
+            tb_puts(&tb, access)
+            tb_puts(&tb, "> ")
+            tb_puts(&tb, wgsl_ident(pname))
+            tb_puts(&tb, ": array<")
+            tb_puts(&tb, el)
+            tb_puts(&tb, ">;\n")
+            binding = binding + 1
+        } else {
+            let st: string = wgsl_scalar(g, t.name)
+            if t_len(g.fail) > 0 {
+                return ""
+            }
+            tl_push(&g.scalars, pname)
+            tl_push(&g.scalar_types, st)
+        }
+        p = node_next(g, p)
+    }
+    if g.scalars.len > 0 {
+        tb_puts(&tb, "\nstruct Params {\n")
+        let mut i: i32 = 0
+        while i < g.scalars.len {
+            tb_puts(&tb, "    ")
+            tb_puts(&tb, wgsl_ident(tl_get(&g.scalars, i)))
+            tb_puts(&tb, ": ")
+            tb_puts(&tb, tl_get(&g.scalar_types, i))
+            tb_puts(&tb, ",\n")
+            i = i + 1
+        }
+        let pad: i32 = (4 - g.scalars.len % 4) % 4
+        i = 0
+        while i < pad {
+            tb_puts(&tb, "    _pad")
+            tb_put_int(&tb, i)
+            tb_puts(&tb, ": u32,\n")
+            i = i + 1
+        }
+        tb_puts(&tb, "};\n@group(0) @binding(")
+        tb_put_int(&tb, binding)
+        tb_puts(&tb, ") var<uniform> params: Params;\n")
+        g.params_binding = binding
+        binding = binding + 1
+    }
+    tb_puts(&tb, "\n@compute @workgroup_size(64)\nfn ")
+    tb_puts(&tb, wgsl_ident(name))
+    tb_puts(&tb, "(\n    @builtin(global_invocation_id) global_id: vec3<u32>,\n    @builtin(workgroup_id) group_id: vec3<u32>,\n    @builtin(local_invocation_id) local_id: vec3<u32>,\n) {\n")
+    tb_puts(&tb, "    let tid: i32 = i32(global_id.x);\n")
+    g.level = 1
+    block(g, fn_body(g, f), &tb)
+    g.level = 0
+    if t_len(g.fail) > 0 {
+        return ""
+    }
+    tb_puts(&tb, "}\n")
+    return tb.data as string
+}
+
+# -- Crossing manifest (json.dumps(kernels, indent=2))
+
+function jstr(s: string) -> string {
+    return t_cat3("\"", s, "\"")
+}
+
+function layout_json(g: ptr<Gen>, name: string, tb: ptr<TBuf>) {
+    tb_puts(tb, "  {\n")
+    tb_puts(tb, t_cat3("    \"kernel\": ", jstr(name), ",\n"))
+    tb_puts(tb, t_cat3("    \"entryPoint\": ", jstr(name), ",\n"))
+    tb_puts(tb, "    \"workgroupSize\": 64,\n")
+    if g.buf_names.len == 0 {
+        tb_puts(tb, "    \"buffers\": [],\n")
+    } else {
+        tb_puts(tb, "    \"buffers\": [\n")
+        let mut i: i32 = 0
+        while i < g.buf_names.len {
+            tb_puts(tb, "      {\n")
+            tb_puts(tb, t_cat3("        \"name\": ", jstr(tl_get(&g.buf_names, i)), ",\n"))
+            tb_puts(tb, t_cat3("        \"binding\": ", tl_get(&g.buf_binding, i), ",\n"))
+            tb_puts(tb, "        \"type\": \"storage\",\n")
+            tb_puts(tb, t_cat3("        \"access\": ", jstr(tl_get(&g.buf_access, i)), ",\n"))
+            tb_puts(tb, t_cat3("        \"element\": ", jstr(tl_get(&g.buf_elems, i)), "\n"))
+            if i + 1 < g.buf_names.len {
+                tb_puts(tb, "      },\n")
+            } else {
+                tb_puts(tb, "      }\n")
+            }
+            i = i + 1
+        }
+        tb_puts(tb, "    ],\n")
+    }
+    if g.scalars.len == 0 {
+        tb_puts(tb, "    \"params\": [],\n")
+    } else {
+        tb_puts(tb, "    \"params\": [\n")
+        let mut i: i32 = 0
+        while i < g.scalars.len {
+            tb_puts(tb, "      {\n")
+            tb_puts(tb, t_cat3("        \"name\": ", jstr(tl_get(&g.scalars, i)), ",\n"))
+            tb_puts(tb, t_cat3("        \"type\": ", jstr(tl_get(&g.scalar_types, i)), "\n"))
+            if i + 1 < g.scalars.len {
+                tb_puts(tb, "      },\n")
+            } else {
+                tb_puts(tb, "      }\n")
+            }
+            i = i + 1
+        }
+        tb_puts(tb, "    ],\n")
+    }
+    if g.params_binding < 0 {
+        tb_puts(tb, "    \"paramsBinding\": null,\n")
+        tb_puts(tb, "    \"paramsBytes\": 0,\n")
+    } else {
+        tb_puts(tb, "    \"paramsBinding\": ")
+        tb_put_int(tb, g.params_binding)
+        tb_puts(tb, ",\n    \"paramsBytes\": ")
+        tb_put_int(tb, ((g.scalars.len + 3) / 4) * 16)
+        tb_puts(tb, ",\n")
+    }
+    if t_starts_with(name, "gpu_") {
+        tb_puts(tb, t_cat3("    \"cpuEntry\": ", jstr(t_cat("cpu_", t_from(name, 4))), ",\n"))
+    } else {
+        tb_puts(tb, "    \"cpuEntry\": null,\n")
+    }
+    tb_puts(tb, t_cat3("    \"file\": ", jstr(t_cat(name, ".wgsl")), "\n"))
+    tb_puts(tb, "  }")
+}
+
+# -- Driver
+
+function mkdirs(path: string) {
+    let n: i32 = t_len(path)
+    let mut i: i32 = 1
+    while i <= n {
+        if i == n or t_at(path, i) == 47 {
+            let _r: i32 = mkdir(t_sub(path, 0, i), 511)
+        }
+        i = i + 1
+    }
+}
+
+function usage() {
+    err("usage: flow-gpu (--lang metal|wgsl | --crossing-manifest) --out DIR PROGRAM.flow\n")
+    exit(2)
+}
+
+export function main(argc: i32, argp: ptr<ptr<u8>>) -> i32 {
+    let mut lang: i32 = LANG_METAL
+    let mut manifest: bool = false
+    let mut out_dir: string = ""
+    let mut program: string = ""
+    let mut i: i32 = 1
+    while i < argc {
+        let a: string = (argp[i] as string)
+        if t_eq(a, "--lang") and i + 1 < argc {
+            let v: string = (argp[i + 1] as string)
+            if t_eq(v, "wgsl") {
+                lang = LANG_WGSL
+            } elif t_eq(v, "metal") {
+                lang = LANG_METAL
+            } else {
+                usage()
+            }
+            i = i + 2
+        } elif t_eq(a, "--out") and i + 1 < argc {
+            out_dir = (argp[i + 1] as string)
+            i = i + 2
+        } elif t_eq(a, "--crossing-manifest") {
+            manifest = true
+            lang = LANG_WGSL
+            i = i + 1
+        } elif t_starts_with(a, "-") {
+            usage()
+        } else {
+            program = a
+            i = i + 1
+        }
+    }
+    if t_len(program) == 0 or t_len(out_dir) == 0 {
+        usage()
+    }
+    let root: string = t_env("FLOW_ROOT", ".")
+    let ld: ptr<Loader> = load_program(program, root)
+    if t_len(ld.err) > 0 {
+        if manifest {
+            err(t_cat(ld.err, "\n"))
+        } else {
+            out(t_cat3("Error: ", ld.err, "\n"))
+        }
+        return 1
+    }
+    # extract_gpu_functions: every @gpu function, in declaration order.
+    let mut kernels: TList = tl_new()
+    let mut d: i32 = 0
+    while d < ld.ndecls {
+        let dc: Decl = ld_decl(ld, d)
+        if dc.kind == DECL_FN and dc.gpu {
+            tl_push(&kernels, t_int(d))
+        }
+        d = d + 1
+    }
+    if kernels.len == 0 {
+        if manifest {
+            err(t_cat3("no @gpu functions in ", path_real(program), "\n"))
+            return 1
+        }
+        out("No @gpu functions found in the program.\n")
+        out("Mark GPU functions with @gpu decorator:\n\n")
+        out("@gpu\n")
+        out("function vector_add(a: array<f32>, b: array<f32>, out: array<f32>, n: i32) {\n")
+        out("    let i = gpu_thread_id()\n")
+        out("    if i < n {\n")
+        out("        out[i] = a[i] + b[i]\n")
+        out("    }\n")
+        out("}\n")
+        return 0
+    }
+    mkdirs(out_dir)
+    let mut report: TBuf = tb_new()
+    let mut mani: TBuf = tb_new()
+    let mut k: i32 = 0
+    while k < kernels.len {
+        let dc: Decl = ld_decl(ld, strtoll(tl_get(&kernels, k), null, 10) as i32)
+        let m: ptr<Mod> = ld_mod(ld, dc.m)
+        let g: ptr<Gen> = gen_new(m, lang)
+        if lang == LANG_METAL {
+            let path: string = t_cat3(out_dir, "/", t_cat(dc.name, ".metal"))
+            let _w: bool = t_write_file(path, metal_kernel(g, dc.node, dc.name))
+            let host: string = t_cat3(out_dir, "/", t_cat(dc.name, "_host.m"))
+            let _w2: bool = t_write_file(host, host_code(g, dc.node, dc.name, path))
+            out(t_cat3("✅ Generated Metal shader: ", path, "\n"))
+        } else {
+            let src: string = wgsl_kernel(g, dc.node, dc.name)
+            if t_len(g.fail) > 0 {
+                err(t_cat3("error: ", g.fail, "\n"))
+                return 1
+            }
+            let path: string = t_cat3(out_dir, "/", t_cat(dc.name, ".wgsl"))
+            let _w: bool = t_write_file(path, src)
+            tb_puts(&report, t_cat3("Generated WGSL shader: ", path, "\n"))
+            if k > 0 {
+                tb_puts(&mani, ",\n")
+            }
+            layout_json(g, dc.name, &mani)
+        }
+        k = k + 1
+    }
+    if manifest {
+        out(t_cat3("[\n", mani.data as string, "\n]\n"))
+        return 0
+    }
+    if lang == LANG_WGSL {
+        out(report.data as string)
+    }
+    out(t_cat3("Generated ", t_int(kernels.len), " GPU shader(s)\n"))
+    return 0
+}

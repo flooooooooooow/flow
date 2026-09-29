@@ -1,0 +1,5 @@
+@gpu
+function k(a: ptr<f32>) -> void {
+    let x: f64 = 1.0
+    a[0] = 1.0
+}

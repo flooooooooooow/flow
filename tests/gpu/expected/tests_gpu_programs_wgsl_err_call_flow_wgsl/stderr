@@ -1,0 +1,1 @@
+error: call to 'helper' in a @gpu kernel has no WGSL equivalent

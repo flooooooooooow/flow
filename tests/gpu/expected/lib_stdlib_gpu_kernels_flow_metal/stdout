@@ -1,0 +1,5 @@
+[0;34mℹ️  Generating GPU shaders from @ROOT@/lib/stdlib/gpu_kernels.flow (metal)...[0m
+✅ Generated Metal shader: @ROOT@/build/gpu/gpu_vector_add.metal
+✅ Generated Metal shader: @ROOT@/build/gpu/gpu_scale.metal
+✅ Generated Metal shader: @ROOT@/build/gpu/gpu_matmul_row.metal
+Generated 3 GPU shader(s)

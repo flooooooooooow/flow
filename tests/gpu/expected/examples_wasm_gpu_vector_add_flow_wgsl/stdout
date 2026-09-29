@@ -1,0 +1,6 @@
+[0;34mℹ️  Generating GPU shaders from @ROOT@/examples/wasm/gpu_vector_add.flow (wgsl)...[0m
+Generated WGSL shader: @ROOT@/build/wgsl/gpu_vector_add.wgsl
+Generated WGSL shader: @ROOT@/build/wgsl/gpu_elementwise_mul.wgsl
+Generated WGSL shader: @ROOT@/build/wgsl/gpu_saxpy.wgsl
+Generated WGSL shader: @ROOT@/build/wgsl/gpu_heavy_mix.wgsl
+Generated 4 GPU shader(s)

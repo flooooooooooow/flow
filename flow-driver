@@ -278,7 +278,7 @@ flow_native_tool() {
         mkdir -p "$cache" || return 1
     fi
     local bin="$cache/flow-$name"
-    if [ -x "$bin" ] && [ -z "$(find "$SCRIPT_DIR/tools/$name" "$SCRIPT_DIR/tools/hostlib" "$SCRIPT_DIR/tools/lsp" "$SCRIPT_DIR/scripts/tools/lib" \
+    if [ -x "$bin" ] && [ -z "$(find "$SCRIPT_DIR/tools/$name" "$SCRIPT_DIR/tools/hostlib" "$SCRIPT_DIR/tools/lsp" "$SCRIPT_DIR/tools/fir" "$SCRIPT_DIR/scripts/tools/lib" \
             "$SCRIPT_DIR/compiler/src" -name '*.flow' -newer "$bin" -print -quit 2>/dev/null)" ]; then
         printf '%s\n' "$bin"
         return 0
@@ -3633,49 +3633,15 @@ case "${1:-help}" in
         require_flow_file "${1:-}"
         check_deps
         print_info "Generating GPU shaders from ${1:-} ($gpu_lang)..."
-        python3 - "$SCRIPT_DIR" "${1:-}" "$gpu_lang" <<'PY'
-import sys
-
-script_dir = sys.argv[1]
-program = sys.argv[2]
-lang = sys.argv[3] if len(sys.argv) > 3 else "metal"
-sys.path.insert(0, f"{script_dir}/src")
-
-from flow.module_resolver import ModuleResolver
-from flow.metal_codegen import generate_metal_shaders, extract_gpu_functions
-from flow.wgsl_codegen import generate_wgsl_shaders
-
-# Resolve modules
-resolver = ModuleResolver(program)
-try:
-    declarations = resolver.resolve()
-except Exception as e:
-    print(f"Error: {e}")
-    sys.exit(1)
-
-# Check for @gpu functions
-gpu_funcs = extract_gpu_functions(declarations)
-if not gpu_funcs:
-    print("No @gpu functions found in the program.")
-    print("Mark GPU functions with @gpu decorator:")
-    print()
-    print("@gpu")
-    print("function vector_add(a: array<f32>, b: array<f32>, out: array<f32>, n: i32) {")
-    print("    let i = gpu_thread_id()")
-    print("    if i < n {")
-    print("        out[i] = a[i] + b[i]")
-    print("    }")
-    print("}")
-    sys.exit(0)
-
-if lang == "wgsl":
-    results = generate_wgsl_shaders(declarations, f"{script_dir}/build/wgsl")
-    for name, path, _layout in results:
-        print(f"Generated WGSL shader: {path}")
-else:
-    results = generate_metal_shaders(declarations, f"{script_dir}/build/gpu")
-print(f"Generated {len(results)} GPU shader(s)")
-PY
+        # tools/gpu/main.flow, built on first use, writes the shaders.
+        if ! gpu_bin="$(flow_native_tool gpu)"; then
+            exit 1
+        fi
+        gpu_out="$SCRIPT_DIR/build/gpu"
+        if [ "$gpu_lang" = "wgsl" ]; then
+            gpu_out="$SCRIPT_DIR/build/wgsl"
+        fi
+        FLOW_ROOT="$(cd "$SCRIPT_DIR" && pwd -P)" exec "$gpu_bin" --lang "$gpu_lang" --out "$gpu_out" "${1:-}"
         ;;
     "jit")
         shift

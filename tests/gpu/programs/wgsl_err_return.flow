@@ -1,0 +1,4 @@
+@gpu
+function k(a: ptr<i32>) -> i32 {
+    return a[0]
+}

@@ -1,0 +1,6 @@
+[0;34mℹ️  Generating GPU shaders from @ROOT@/tests/gpu/programs/metal_forms.flow (metal)...[0m
+✅ Generated Metal shader: @ROOT@/build/gpu/control.metal
+✅ Generated Metal shader: @ROOT@/build/gpu/exprs.metal
+✅ Generated Metal shader: @ROOT@/build/gpu/empty_kernel.metal
+✅ Generated Metal shader: @ROOT@/build/gpu/calls.metal
+Generated 4 GPU shader(s)
