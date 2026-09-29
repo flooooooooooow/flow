@@ -19,11 +19,7 @@
 48c48
 < {"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": {"uri": "file:///t/dsl.flow", "diagnostics": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 3}}, "severity": 1, "source": "flow-parser", "message": "Unexpected declaration: TokenType.IDENTIFIER"}]}}
 ---
-> {"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": {"uri": "file:///t/dsl.flow", "diagnostics": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 3}}, "severity": 1, "source": "flow-parser", "message": "parse error: unexpected identifier 'dyn'"}]}}
-56c56
-< {"jsonrpc": "2.0", "id": 43, "result": {"contents": {"kind": "markdown", "value": "```flow\nlet i: i32\n```\n\nLocal variable *(typechecked)* (for-loop variable) in `main`"}}}
----
-> {"jsonrpc": "2.0", "id": 43, "result": null}
+> {"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": {"uri": "file:///t/dsl.flow", "diagnostics": []}}
 59c59,61
 < {"jsonrpc": "2.0", "id": 47, "result": null}
 ---

@@ -1,10 +1,11 @@
 # @module tools.lsp.analyze
 # @means  Document analysis for the language server. Parses a buffer with
-#         the flowc front end (compiler/src/parser.flow, after Field DSL
-#         expansion) and indexes top-level symbols with their `#` doc
-#         comments, plus parameters, locals and loop variables, the way
-#         src/flow/lsp_server.py did with the Python parser. Files flowc
-#         cannot parse fall back to a line scan for declarations.
+#         the flowc front end (compiler/src/parser.flow, after the Field
+#         DSL, dynamics DSL and flow block expansions) and indexes
+#         top-level symbols with their `#` doc comments, plus parameters,
+#         locals and loop variables, the way src/flow/lsp_server.py did
+#         with the Python parser. Files flowc cannot parse fall back to a
+#         line scan for declarations.
 
 import "tools/hostlib/text.flow"
 import "tools/lsp/text.flow"
@@ -12,6 +13,8 @@ import "compiler/src/ast.flow"
 import "compiler/src/token.flow"
 import "compiler/src/parser.flow"
 import "compiler/src/field_dsl.flow"
+import "compiler/src/dynamics_dsl.flow"
+import "compiler/src/flow_blocks.flow"
 
 extern {
     function calloc(n: i64, size: i64) -> ptr<void>
@@ -65,7 +68,7 @@ export struct Bind {
 
 # Result of analysing one buffer.
 #   parsed   flowc parsed it (symbols come from the AST)
-#   src      the parsed text (Field DSL expanded), NUL-terminated
+#   src      the parsed text (DSLs expanded), NUL-terminated
 #   arena    the AST when parsed
 #   imports  AST_IMPORT node ids, in order
 export struct Analysis {
@@ -726,6 +729,20 @@ function scan_struct_fields(rows: ptr<TList>, start: i32, s: ptr<Sym>) {
 
 # ── Entry point ─────────────────────────────────────────────────
 
+# The expansions flowc runs before parse (flowc_expand_all_in_place in
+# compiler/src/resolve.flow): Field DSL, dynamics DSL, then flow blocks.
+# Returns the new length, or -1 when an expansion reports an error.
+function expand_dsls(buf: ptr<u8>, n: i32, cap: i32) -> i32 {
+    let mut m: i32 = flowc_field_expand_in_place(buf, n, cap)
+    if m >= 0 {
+        m = flowc_dynamics_expand_in_place(buf, m, cap)
+    }
+    if m >= 0 {
+        m = flowc_flow_blocks_expand_in_place(buf, m, cap)
+    }
+    return m
+}
+
 # Parse `text` and index it. exported_only keeps only exported
 # declarations and skips bindings (the stdlib index).
 export function analyze_text(text: string, exported_only: bool) -> ptr<Analysis> {
@@ -743,7 +760,7 @@ export function analyze_text(text: string, exported_only: bool) -> ptr<Analysis>
     let cap: i32 = n * 2 + 65536
     let buf: ptr<u8> = calloc((cap + 1) as i64, 1) as ptr<u8>
     memcpy(buf as ptr<void>, text as ptr<void>, n as i64)
-    let mut nsrc: i32 = flowc_field_expand_in_place(buf, n, cap)
+    let mut nsrc: i32 = expand_dsls(buf, n, cap)
     if nsrc < 0 {
         memcpy(buf as ptr<void>, text as ptr<void>, n as i64)
         buf[n] = 0
