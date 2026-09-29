@@ -1,0 +1,602 @@
+# @module flowc.sem_types
+# @means  Semantic types and parsed type names for the semantic type
+#         checker: a port of SemanticType, TypeKind and the parser's Type
+#         from src/flow/type_checker.py and src/flow/parser.py.
+#
+# A type is an index into the table in SemTys. -1 stands for Python's None.
+# Types are never shared or interned, as in the Python checker: equality
+# is the structural SemanticType.__eq__, and printing is __str__.
+#
+# A parsed type (PT) is the parser's `Type`: the mangled name the Python
+# parser gives a type (`ptr_u8`, `array_4_f32`, `fn_i32__i32`) plus its
+# structure. The checker resolves parsed types to semantic types
+# (_parse_type), and generic instantiation substitutes into parsed types.
+
+import .sem_util {
+    SemIntVec, SemStrVec, sem_iv_new, sem_iv_push, sem_iv_get, sem_sv_new, sem_sv_push, sem_sv_get, sem_sv_join,
+    sem_s_eq, sem_s_starts, sem_s_len, sem_s_slice, sem_s_from, sem_s_itoa, sem_s_contains, sem_s_find
+}
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function realloc(p: ptr<void>, size: i64) -> ptr<void>
+}
+
+export const TK_VOID: i32 = 1
+export const TK_BOOL: i32 = 2
+export const TK_I8: i32 = 3
+export const TK_I16: i32 = 4
+export const TK_I32: i32 = 5
+export const TK_I64: i32 = 6
+export const TK_I128: i32 = 7
+export const TK_U8: i32 = 8
+export const TK_U16: i32 = 9
+export const TK_U32: i32 = 10
+export const TK_U64: i32 = 11
+export const TK_U128: i32 = 12
+export const TK_F32: i32 = 13
+export const TK_F64: i32 = 14
+export const TK_C64: i32 = 15
+export const TK_C128: i32 = 16
+export const TK_STRING: i32 = 17
+export const TK_STRUCT: i32 = 18
+export const TK_ARRAY: i32 = 19
+export const TK_SPAN: i32 = 20
+export const TK_POINTER: i32 = 21
+export const TK_FUNCTION: i32 = 22
+export const TK_NULL: i32 = 23
+export const TK_TYPE_ALIAS: i32 = 24
+export const TK_DISTINCT: i32 = 25
+export const TK_UNKNOWN: i32 = 26
+
+# Python None for an optional integer (array size, span extent).
+export const NO_SIZE: i32 = -2147483647
+
+export struct SemTys {
+    # semantic types
+    kind: ptr<i32>,
+    name: ptr<string>,
+    elem: ptr<i32>,
+    base: ptr<i32>,
+    size: ptr<i32>,
+    ret: ptr<i32>,
+    params: ptr<ptr<SemIntVec>>,
+    effects: ptr<ptr<SemStrVec>>,
+    dims: ptr<ptr<SemIntVec>>,
+    len: i32,
+    cap: i32,
+    # parsed types
+    pt_name: ptr<string>,
+    pt_ptr: ptr<i32>,
+    pt_cap: ptr<i32>,
+    pt_cfn: ptr<i32>,
+    pt_size: ptr<i32>,
+    pt_elem: ptr<i32>,
+    pt_args: ptr<ptr<SemIntVec>>,
+    pt_effects: ptr<ptr<SemStrVec>>,
+    pt_len: i32,
+    pt_capacity: i32
+}
+
+export function sem_tys_new() -> ptr<SemTys> {
+    let t: ptr<SemTys> = malloc(256) as ptr<SemTys>
+    t.cap = 1024
+    t.len = 0
+    t.kind = malloc(4096) as ptr<i32>
+    t.name = malloc(8192) as ptr<string>
+    t.elem = malloc(4096) as ptr<i32>
+    t.base = malloc(4096) as ptr<i32>
+    t.size = malloc(4096) as ptr<i32>
+    t.ret = malloc(4096) as ptr<i32>
+    t.params = malloc(8192) as ptr<ptr<SemIntVec>>
+    t.effects = malloc(8192) as ptr<ptr<SemStrVec>>
+    t.dims = malloc(8192) as ptr<ptr<SemIntVec>>
+    t.pt_capacity = 1024
+    t.pt_len = 0
+    t.pt_name = malloc(8192) as ptr<string>
+    t.pt_ptr = malloc(4096) as ptr<i32>
+    t.pt_cap = malloc(4096) as ptr<i32>
+    t.pt_cfn = malloc(4096) as ptr<i32>
+    t.pt_size = malloc(4096) as ptr<i32>
+    t.pt_elem = malloc(4096) as ptr<i32>
+    t.pt_args = malloc(8192) as ptr<ptr<SemIntVec>>
+    t.pt_effects = malloc(8192) as ptr<ptr<SemStrVec>>
+    return t
+}
+
+function sem_ty_grow(t: ptr<SemTys>) {
+    t.cap = t.cap * 2
+    let n4: i64 = (t.cap as i64) * 4
+    let n8: i64 = (t.cap as i64) * 8
+    t.kind = realloc(t.kind as ptr<void>, n4) as ptr<i32>
+    t.name = realloc(t.name as ptr<void>, n8) as ptr<string>
+    t.elem = realloc(t.elem as ptr<void>, n4) as ptr<i32>
+    t.base = realloc(t.base as ptr<void>, n4) as ptr<i32>
+    t.size = realloc(t.size as ptr<void>, n4) as ptr<i32>
+    t.ret = realloc(t.ret as ptr<void>, n4) as ptr<i32>
+    t.params = realloc(t.params as ptr<void>, n8) as ptr<ptr<SemIntVec>>
+    t.effects = realloc(t.effects as ptr<void>, n8) as ptr<ptr<SemStrVec>>
+    t.dims = realloc(t.dims as ptr<void>, n8) as ptr<ptr<SemIntVec>>
+}
+
+# SemanticType(kind) with every other field at its default.
+export function sem_ty_mk(t: ptr<SemTys>, kind: i32) -> i32 {
+    if t.len >= t.cap {
+        sem_ty_grow(t)
+    }
+    let id: i32 = t.len
+    t.len = id + 1
+    t.kind[id] = kind
+    t.name[id] = ""
+    t.elem[id] = 0 - 1
+    t.base[id] = 0 - 1
+    t.size[id] = NO_SIZE
+    t.ret[id] = 0 - 1
+    t.params[id] = null
+    t.effects[id] = null
+    t.dims[id] = null
+    return id
+}
+
+export function sem_ty_named(t: ptr<SemTys>, kind: i32, name: string) -> i32 {
+    let id: i32 = sem_ty_mk(t, kind)
+    t.name[id] = name
+    return id
+}
+
+export function sem_ty_ptr(t: ptr<SemTys>, elem: i32) -> i32 {
+    let id: i32 = sem_ty_mk(t, TK_POINTER)
+    t.elem[id] = elem
+    return id
+}
+
+# ptr<void>, the type of malloc and friends.
+export function sem_ty_void_ptr(t: ptr<SemTys>) -> i32 {
+    return sem_ty_ptr(t, sem_ty_mk(t, TK_VOID))
+}
+
+export function sem_ty_array(t: ptr<SemTys>, elem: i32, size: i32) -> i32 {
+    let id: i32 = sem_ty_mk(t, TK_ARRAY)
+    t.elem[id] = elem
+    t.size[id] = size
+    return id
+}
+
+export function sem_ty_struct(t: ptr<SemTys>, name: string) -> i32 {
+    return sem_ty_named(t, TK_STRUCT, name)
+}
+
+export function sem_ty_unknown(t: ptr<SemTys>) -> i32 {
+    return sem_ty_mk(t, TK_UNKNOWN)
+}
+
+export function sem_ty_kind(t: ptr<SemTys>, id: i32) -> i32 {
+    if id < 0 {
+        return 0
+    }
+    return t.kind[id]
+}
+
+export function sem_ty_name(t: ptr<SemTys>, id: i32) -> string {
+    if id < 0 {
+        return ""
+    }
+    return t.name[id]
+}
+
+export function sem_ty_nparams(t: ptr<SemTys>, id: i32) -> i32 {
+    let v: ptr<SemIntVec> = t.params[id]
+    if v == null {
+        return 0
+    }
+    return v.len
+}
+
+export function sem_ty_param(t: ptr<SemTys>, id: i32, i: i32) -> i32 {
+    let v: ptr<SemIntVec> = t.params[id]
+    return v.data[i]
+}
+
+export function sem_ty_add_param(t: ptr<SemTys>, id: i32, p: i32) {
+    if t.params[id] == null {
+        t.params[id] = sem_iv_new()
+    }
+    sem_iv_push(t.params[id], p)
+}
+
+export function sem_ty_neffects(t: ptr<SemTys>, id: i32) -> i32 {
+    let v: ptr<SemStrVec> = t.effects[id]
+    if v == null {
+        return 0
+    }
+    return v.len
+}
+
+export function sem_ty_effect(t: ptr<SemTys>, id: i32, i: i32) -> string {
+    let v: ptr<SemStrVec> = t.effects[id]
+    return v.data[i]
+}
+
+export function sem_ty_add_effect(t: ptr<SemTys>, id: i32, e: string) {
+    if t.effects[id] == null {
+        t.effects[id] = sem_sv_new()
+    }
+    sem_sv_push(t.effects[id], e)
+}
+
+# ---------------------------------------------------------------------------
+# Printing (SemanticType.__str__)
+# ---------------------------------------------------------------------------
+
+function sem_tk_value(k: i32) -> string {
+    if k == TK_VOID { return "void" }
+    if k == TK_BOOL { return "bool" }
+    if k == TK_I8 { return "i8" }
+    if k == TK_I16 { return "i16" }
+    if k == TK_I32 { return "i32" }
+    if k == TK_I64 { return "i64" }
+    if k == TK_I128 { return "i128" }
+    if k == TK_U8 { return "u8" }
+    if k == TK_U16 { return "u16" }
+    if k == TK_U32 { return "u32" }
+    if k == TK_U64 { return "u64" }
+    if k == TK_U128 { return "u128" }
+    if k == TK_F32 { return "f32" }
+    if k == TK_F64 { return "f64" }
+    if k == TK_C64 { return "c64" }
+    if k == TK_C128 { return "c128" }
+    if k == TK_STRING { return "string" }
+    if k == TK_STRUCT { return "struct" }
+    if k == TK_ARRAY { return "array" }
+    if k == TK_SPAN { return "span" }
+    if k == TK_POINTER { return "pointer" }
+    if k == TK_FUNCTION { return "function" }
+    if k == TK_NULL { return "null" }
+    if k == TK_TYPE_ALIAS { return "type_alias" }
+    if k == TK_DISTINCT { return "distinct" }
+    return "unknown"
+}
+
+function sem_tk_enum_name(k: i32) -> string {
+    if k == TK_NULL { return "NULL" }
+    return "UNKNOWN"
+}
+
+# parser.py span helpers: span_const_T / span_mut_T.
+export function sem_span_is_mutable(name: string) -> bool {
+    return sem_s_starts(name, "span_mut_")
+}
+
+export function sem_is_span_type_name(name: string) -> bool {
+    return sem_s_len(name) > 0 and (sem_s_starts(name, "span_const_") or sem_s_starts(name, "span_mut_"))
+}
+
+export function sem_span_element_name(name: string) -> string {
+    if sem_s_starts(name, "span_mut_") {
+        return sem_s_from(name, 9)
+    }
+    if sem_s_starts(name, "span_const_") {
+        return sem_s_from(name, 11)
+    }
+    return name
+}
+
+export function sem_format_span_type(name: string, extent: i32) -> string {
+    let mut inner: string = sem_span_element_name(name)
+    if sem_span_is_mutable(name) {
+        inner = "mut " + inner
+    }
+    if extent != NO_SIZE {
+        inner = inner + ", " + sem_s_itoa(extent as i64)
+    }
+    return "span<" + inner + ">"
+}
+
+export function sem_ty_str(t: ptr<SemTys>, id: i32) -> string {
+    if id < 0 {
+        return "None"
+    }
+    let k: i32 = t.kind[id]
+    if k >= TK_VOID and k <= TK_STRING {
+        return sem_tk_value(k)
+    }
+    if k == TK_STRUCT or k == TK_TYPE_ALIAS or k == TK_DISTINCT {
+        return t.name[id]
+    }
+    if k == TK_ARRAY {
+        if t.size[id] != NO_SIZE {
+            return "array<" + sem_ty_str(t, t.elem[id]) + ", " + sem_s_itoa(t.size[id] as i64) + ">"
+        }
+        return "array<" + sem_ty_str(t, t.elem[id]) + ">"
+    }
+    if k == TK_SPAN {
+        return sem_format_span_type(t.name[id], t.size[id])
+    }
+    if k == TK_POINTER {
+        return "ptr<" + sem_ty_str(t, t.elem[id]) + ">"
+    }
+    if k == TK_FUNCTION {
+        let mut ps: string = ""
+        let n: i32 = sem_ty_nparams(t, id)
+        let mut i: i32 = 0
+        while i < n {
+            if i > 0 {
+                ps = ps + ", "
+            }
+            ps = ps + sem_ty_str(t, sem_ty_param(t, id, i))
+            i = i + 1
+        }
+        let b: string = "(" + ps + ") -> " + sem_ty_str(t, t.ret[id])
+        if sem_ty_neffects(t, id) > 0 {
+            return b + " with " + sem_sv_join(t.effects[id], ", ")
+        }
+        return b
+    }
+    if k == TK_UNKNOWN {
+        if sem_s_len(t.name[id]) > 0 {
+            return t.name[id]
+        }
+        return "unknown"
+    }
+    return "<unknown:TypeKind." + sem_tk_enum_name(k) + ">"
+}
+
+# ---------------------------------------------------------------------------
+# Equality (SemanticType.__eq__). -1 is None: None == None, None != a type.
+# ---------------------------------------------------------------------------
+
+export function sem_ty_eq(t: ptr<SemTys>, a: i32, b: i32) -> bool {
+    if a < 0 or b < 0 {
+        return a < 0 and b < 0
+    }
+    let ka: i32 = t.kind[a]
+    let kb: i32 = t.kind[b]
+    if ka == TK_TYPE_ALIAS and kb == TK_TYPE_ALIAS {
+        return sem_ty_eq(t, t.base[a], t.base[b])
+    }
+    if ka == TK_TYPE_ALIAS {
+        return sem_ty_eq(t, t.base[a], b)
+    }
+    if kb == TK_TYPE_ALIAS {
+        return sem_ty_eq(t, a, t.base[b])
+    }
+    if ka == TK_DISTINCT or kb == TK_DISTINCT {
+        return ka == kb and sem_s_eq(t.name[a], t.name[b])
+    }
+    if ka != kb or sem_s_eq(t.name[a], t.name[b]) == false {
+        return false
+    }
+    if sem_ty_eq(t, t.elem[a], t.elem[b]) == false {
+        return false
+    }
+    if sem_ty_eq(t, t.base[a], t.base[b]) == false {
+        return false
+    }
+    if t.size[a] != t.size[b] {
+        return false
+    }
+    let na: i32 = sem_ty_nparams(t, a)
+    if na != sem_ty_nparams(t, b) {
+        return false
+    }
+    let mut i: i32 = 0
+    while i < na {
+        if sem_ty_eq(t, sem_ty_param(t, a, i), sem_ty_param(t, b, i)) == false {
+            return false
+        }
+        i = i + 1
+    }
+    if sem_ty_eq(t, t.ret[a], t.ret[b]) == false {
+        return false
+    }
+    let ea: i32 = sem_ty_neffects(t, a)
+    if ea != sem_ty_neffects(t, b) {
+        return false
+    }
+    i = 0
+    while i < ea {
+        if sem_s_eq(sem_ty_effect(t, a, i), sem_ty_effect(t, b, i)) == false {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+# ---------------------------------------------------------------------------
+# Kind classes
+# ---------------------------------------------------------------------------
+
+export function sem_tk_is_int(k: i32) -> bool {
+    return k >= TK_I8 and k <= TK_U128
+}
+
+export function sem_tk_is_float(k: i32) -> bool {
+    return k == TK_F32 or k == TK_F64
+}
+
+export function sem_tk_is_numeric(k: i32) -> bool {
+    return k >= TK_I8 and k <= TK_C128
+}
+
+export function sem_tk_is_complex(k: i32) -> bool {
+    return k == TK_C64 or k == TK_C128
+}
+
+# ---------------------------------------------------------------------------
+# Dimension vectors (units of measure). null is None; a vector has its
+# trailing zeros stripped.
+# ---------------------------------------------------------------------------
+
+export function sem_dims_new() -> ptr<SemIntVec> {
+    return sem_iv_new()
+}
+
+export function sem_dims_normalize(d: ptr<SemIntVec>) -> ptr<SemIntVec> {
+    let out: ptr<SemIntVec> = sem_iv_new()
+    let mut n: i32 = d.len
+    while n > 0 and d.data[n - 1] == 0 {
+        n = n - 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        sem_iv_push(out, d.data[i])
+        i = i + 1
+    }
+    return out
+}
+
+# a + sign*b, padded to a common length, normalized. null counts as ().
+export function sem_dims_combine(a: ptr<SemIntVec>, b: ptr<SemIntVec>, sign: i32) -> ptr<SemIntVec> {
+    let mut na: i32 = 0
+    let mut nb: i32 = 0
+    if a != null { na = a.len }
+    if b != null { nb = b.len }
+    let mut n: i32 = na
+    if nb > n { n = nb }
+    let out: ptr<SemIntVec> = sem_iv_new()
+    let mut i: i32 = 0
+    while i < n {
+        let mut x: i32 = 0
+        let mut y: i32 = 0
+        if i < na { x = a.data[i] }
+        if i < nb { y = b.data[i] }
+        sem_iv_push(out, x + sign * y)
+        i = i + 1
+    }
+    return sem_dims_normalize(out)
+}
+
+export function sem_dims_scale(a: ptr<SemIntVec>, e: i32) -> ptr<SemIntVec> {
+    let out: ptr<SemIntVec> = sem_iv_new()
+    let mut i: i32 = 0
+    while i < a.len {
+        sem_iv_push(out, a.data[i] * e)
+        i = i + 1
+    }
+    return out
+}
+
+# Python tuple equality; null only equals null.
+export function sem_dims_eq(a: ptr<SemIntVec>, b: ptr<SemIntVec>) -> bool {
+    if a == null or b == null {
+        return a == null and b == null
+    }
+    if a.len != b.len {
+        return false
+    }
+    let mut i: i32 = 0
+    while i < a.len {
+        if a.data[i] != b.data[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+# A dims key for a SemStrMap: "1,0,-2".
+export function sem_dims_key(a: ptr<SemIntVec>) -> string {
+    let mut s: string = ""
+    let mut i: i32 = 0
+    while i < a.len {
+        if i > 0 {
+            s = s + ","
+        }
+        s = s + sem_s_itoa(a.data[i] as i64)
+        i = i + 1
+    }
+    return s
+}
+
+# ---------------------------------------------------------------------------
+# Parsed types (parser.py `Type`)
+# ---------------------------------------------------------------------------
+
+function sem_pt_grow(t: ptr<SemTys>) {
+    t.pt_capacity = t.pt_capacity * 2
+    let n4: i64 = (t.pt_capacity as i64) * 4
+    let n8: i64 = (t.pt_capacity as i64) * 8
+    t.pt_name = realloc(t.pt_name as ptr<void>, n8) as ptr<string>
+    t.pt_ptr = realloc(t.pt_ptr as ptr<void>, n4) as ptr<i32>
+    t.pt_cap = realloc(t.pt_cap as ptr<void>, n4) as ptr<i32>
+    t.pt_cfn = realloc(t.pt_cfn as ptr<void>, n4) as ptr<i32>
+    t.pt_size = realloc(t.pt_size as ptr<void>, n4) as ptr<i32>
+    t.pt_elem = realloc(t.pt_elem as ptr<void>, n4) as ptr<i32>
+    t.pt_args = realloc(t.pt_args as ptr<void>, n8) as ptr<ptr<SemIntVec>>
+    t.pt_effects = realloc(t.pt_effects as ptr<void>, n8) as ptr<ptr<SemStrVec>>
+}
+
+# Type(name) with the other fields at their defaults.
+export function sem_pt_mk(t: ptr<SemTys>, name: string) -> i32 {
+    if t.pt_len >= t.pt_capacity {
+        sem_pt_grow(t)
+    }
+    let id: i32 = t.pt_len
+    t.pt_len = id + 1
+    t.pt_name[id] = name
+    t.pt_ptr[id] = 0
+    t.pt_cap[id] = 0
+    t.pt_cfn[id] = 0
+    t.pt_size[id] = NO_SIZE
+    t.pt_elem[id] = 0 - 1
+    t.pt_args[id] = null
+    t.pt_effects[id] = null
+    return id
+}
+
+export function sem_pt_name(t: ptr<SemTys>, id: i32) -> string {
+    if id < 0 {
+        return ""
+    }
+    return t.pt_name[id]
+}
+
+export function sem_pt_nargs(t: ptr<SemTys>, id: i32) -> i32 {
+    let v: ptr<SemIntVec> = t.pt_args[id]
+    if v == null {
+        return 0
+    }
+    return v.len
+}
+
+export function sem_pt_arg(t: ptr<SemTys>, id: i32, i: i32) -> i32 {
+    let v: ptr<SemIntVec> = t.pt_args[id]
+    return v.data[i]
+}
+
+export function sem_pt_add_arg(t: ptr<SemTys>, id: i32, a: i32) {
+    if t.pt_args[id] == null {
+        t.pt_args[id] = sem_iv_new()
+    }
+    sem_iv_push(t.pt_args[id], a)
+}
+
+export function sem_pt_add_effect(t: ptr<SemTys>, id: i32, e: string) {
+    if t.pt_effects[id] == null {
+        t.pt_effects[id] = sem_sv_new()
+    }
+    sem_sv_push(t.pt_effects[id], e)
+}
+
+export function sem_pt_neffects(t: ptr<SemTys>, id: i32) -> i32 {
+    let v: ptr<SemStrVec> = t.pt_effects[id]
+    if v == null {
+        return 0
+    }
+    return v.len
+}
+
+# Copy of a parsed type with a new name (the fields of `Type(...)` that
+# _substitute_parsed_type carries over).
+export function sem_pt_copy(t: ptr<SemTys>, id: i32, name: string) -> i32 {
+    let n: i32 = sem_pt_mk(t, name)
+    t.pt_ptr[n] = t.pt_ptr[id]
+    t.pt_cap[n] = t.pt_cap[id]
+    t.pt_cfn[n] = t.pt_cfn[id]
+    t.pt_size[n] = t.pt_size[id]
+    t.pt_elem[n] = t.pt_elem[id]
+    t.pt_args[n] = t.pt_args[id]
+    t.pt_effects[n] = t.pt_effects[id]
+    return n
+}

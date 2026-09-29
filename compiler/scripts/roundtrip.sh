@@ -382,6 +382,42 @@ echo "PASS compile_module typecheck greps"
     compiler/build/cgen_flowc.c compiler/build/cgen_flowc.h
 "$C_TO_HDR" \
     compiler/build/typecheck_flowc.c compiler/build/typecheck_flowc.h
+# The type checker (sem_*, the port of the Python checker) and strutil,
+# which resolve calls.
+compile_module strutil compiler/src/strutil.flow
+compile_module sem_util compiler/src/sem_util.flow
+"$C_TO_HDR" \
+    compiler/build/strutil_flowc.c compiler/build/strutil_flowc.h
+"$C_TO_HDR" \
+    compiler/build/sem_util_flowc.c compiler/build/sem_util_flowc.h
+compile_module sem_types compiler/src/sem_types.flow \
+    compiler/build/sem_util_flowc.h
+"$C_TO_HDR" \
+    compiler/build/sem_types_flowc.c compiler/build/sem_types_flowc.h
+compile_module sem_cheader compiler/src/sem_cheader.flow \
+    compiler/build/sem_util_flowc.h
+"$C_TO_HDR" \
+    compiler/build/sem_cheader_flowc.c compiler/build/sem_cheader_flowc.h
+compile_module sem_model compiler/src/sem_model.flow \
+    compiler/build/token_flowc.h \
+    compiler/build/ast_flowc.h \
+    compiler/build/lexer_flowc.h \
+    compiler/build/sem_util_flowc.h \
+    compiler/build/sem_types_flowc.h
+"$C_TO_HDR" \
+    compiler/build/sem_model_flowc.c compiler/build/sem_model_flowc.h
+compile_module sem_check compiler/src/sem_check.flow \
+    compiler/build/token_flowc.h \
+    compiler/build/ast_flowc.h \
+    compiler/build/lexer_flowc.h \
+    compiler/build/parser_flowc.h \
+    compiler/build/sem_util_flowc.h \
+    compiler/build/sem_types_flowc.h \
+    compiler/build/sem_model_flowc.h \
+    compiler/build/sem_cheader_flowc.h
+"$C_TO_HDR" \
+    compiler/build/sem_check_flowc.c compiler/build/sem_check_flowc.h
+
 compile_module resolve compiler/src/resolve.flow \
     compiler/build/token_flowc.h \
     compiler/build/ast_flowc.h \
@@ -397,7 +433,12 @@ compile_module resolve compiler/src/resolve.flow \
     compiler/build/cgen_flowc.h \
     compiler/build/overload_table_flowc.h \
     compiler/build/overload_call_flowc.h \
-    compiler/build/typecheck_flowc.h
+    compiler/build/typecheck_flowc.h \
+    compiler/build/strutil_flowc.h \
+    compiler/build/sem_util_flowc.h \
+    compiler/build/sem_types_flowc.h \
+    compiler/build/sem_model_flowc.h \
+    compiler/build/sem_check_flowc.h
 for needle in 'flowc_bundle_emit' 'flowc_bundle_typecheck' 'flowc_resolve_sibling_path' 'flowc_resolve_dirname'; do
     if ! grep -Fq "$needle" compiler/build/resolve_flowc.c; then
         echo "FAIL compile_module resolve: missing '${needle}' in emitted C" >&2
@@ -668,13 +709,13 @@ if [[ -f compiler/build/typecheck_undef.c ]]; then
     echo "FAIL FLOWC_TYPECHECK: undef fixture should not write C" >&2
     exit 1
 fi
-if ! grep -Fq 'flowc tc: unbound ident' compiler/build/typecheck_undef.log; then
+if ! grep -Fq "error: Undefined variable 'y'" compiler/build/typecheck_undef.log; then
     echo "FAIL FLOWC_TYPECHECK: expected unbound ident diagnostic" >&2
     cat compiler/build/typecheck_undef.log >&2
     exit 1
 fi
 # `return y` is on line 5 of typecheck_undef.flow (1-based).
-if ! grep -Eq 'flowc tc: at 5:' compiler/build/typecheck_undef.log; then
+if ! grep -Fq 'typecheck_undef.flow:5:' compiler/build/typecheck_undef.log; then
     echo "FAIL FLOWC_TYPECHECK: expected location-rich diagnostic (at 5:…)" >&2
     cat compiler/build/typecheck_undef.log >&2
     exit 1
@@ -721,6 +762,12 @@ cc -r -o compiler/build/flowc_frontend.o \
     compiler/build/overload_registry_flowc.o \
     compiler/build/overload_call_flowc.o \
     compiler/build/typecheck_flowc.o \
+    compiler/build/strutil_flowc.o \
+    compiler/build/sem_util_flowc.o \
+    compiler/build/sem_types_flowc.o \
+    compiler/build/sem_cheader_flowc.o \
+    compiler/build/sem_model_flowc.o \
+    compiler/build/sem_check_flowc.o \
     compiler/build/resolve_flowc.o
 for sym in flowc_make_tok flowc_ast_new flowc_lexer_next flowc_parse_program flowc_read_file flowc_cgen_emit flowc_typecheck flowc_tc_seed_export flowc_bundle_emit flowc_bundle_typecheck flowc_resolve_sibling_path; do
     if ! nm compiler/build/flowc_frontend.o | grep "$sym" >/dev/null; then
@@ -861,8 +908,8 @@ stage_a_emit compiler/fixtures/keyword_param.flow compiler/build/keyword_param.c
 kw_rc=$?
 set -e
 test "$kw_rc" -ne 0
-if ! grep -Fq "keyword_param.flow:3:27: parse error: unexpected keyword 'to'" compiler/build/keyword_param.log \
-    || ! grep -Fq "'to' is a reserved word" compiler/build/keyword_param.log; then
+if ! grep -Fq "keyword_param.flow:4:27: parse error: unexpected keyword 'while'" compiler/build/keyword_param.log \
+    || ! grep -Fq "'while' is a reserved word" compiler/build/keyword_param.log; then
     echo "FAIL keyword_param: expected a located parse diagnostic" >&2
     cat compiler/build/keyword_param.log >&2
     exit 1

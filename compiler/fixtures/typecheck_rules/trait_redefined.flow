@@ -1,0 +1,12 @@
+# expect: Trait 'Show' already defined
+trait Show {
+    function show(self) -> string
+}
+
+trait Show {
+    function show(self) -> string
+}
+
+function main() -> i32 {
+    return 0
+}

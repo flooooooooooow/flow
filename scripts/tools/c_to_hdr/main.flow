@@ -112,25 +112,25 @@ function match_const(src: string, i: i32, end_out: ptr<i32>) -> string {
         q = q + 7
     }
     if not ft_at(src, q, "const int32_t ") {
-        return null
+        return null as string
     }
     q = q + 14
     let ne: i32 = word_end(p, q)
     if ne == q {
-        return null
+        return null as string
     }
     if not ft_at(src, ne, " = ") {
-        return null
+        return null as string
     }
     let mut v: i32 = ne + 3
     if p[v] == 0 or p[v] == 59 {
-        return null
+        return null as string
     }
     while p[v] != 0 and p[v] != 59 {
         v = v + 1
     }
     if p[v] != 59 {
-        return null
+        return null as string
     }
     end_out[0] = v + 1
     return ft_slice(src, q, ne)
@@ -230,7 +230,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         return 2
     }
     let raw: string = ft_read_file(argv[1])
-    if raw == null {
+    if raw as ptr<u8> == null {
         ft_errln("c_to_hdr: cannot read " + argv[1])
         return 1
     }
@@ -266,7 +266,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         let mut advanced: bool = false
         if at_line_start {
             let name: string = match_const(src, i, end_box)
-            if name != null {
+            if name as ptr<u8> != null {
                 ft_list_push(out, "extern const int32_t " + name + ";")
                 i = end_box[0]
                 advanced = true

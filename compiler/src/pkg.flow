@@ -84,7 +84,7 @@ function say_color(color: string, s: string) {
 
 export function pkg_env(name: string) -> string {
     let v: string = getenv(name)
-    if v == null {
+    if v as ptr<u8> == null {
         return ""
     }
     return v

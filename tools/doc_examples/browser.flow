@@ -99,7 +99,7 @@ function py_suffix(s: string, n: i32) -> string {
 
 function read0(path: string) -> string {
     let s: string = ft_read_file(path)
-    if s == null {
+    if s as ptr<u8> == null {
         return ""
     }
     return s
@@ -171,7 +171,7 @@ function jstr(j: ptr<Json>, obj: i32, name: string) -> string {
 
 function classify(j: ptr<Json>, sn: ptr<Snip>) {
     let br: i32 = sn.br
-    let native_ran: bool = sn.stage != null and ft_eq(sn.stage, "run")
+    let native_ran: bool = sn.stage as ptr<u8> != null and ft_eq(sn.stage, "run")
     if jtrue(j, br, "unsupported") {
         sn.verdict = "UNSUPPORTED"
         let c: string = jstr(j, br, "construct")
@@ -184,7 +184,7 @@ function classify(j: ptr<Json>, sn: ptr<Snip>) {
     }
     if native_ran == false {
         let mut stage: string = "missing"
-        if sn.stage != null {
+        if sn.stage as ptr<u8> != null {
             stage = sn.stage
         }
         if jtrue(j, br, "ok") {
@@ -240,7 +240,7 @@ function py_repr(s: string) -> string {
     }
     while i < n {
         let c: i32 = p[i] as i32
-        let mut esc: string = null
+        let mut esc: string = null as string
         if c == 92 {
             esc = "\\\\"
         } elif c == quote {
@@ -255,7 +255,7 @@ function py_repr(s: string) -> string {
             let hex: string = "0123456789abcdef"
             esc = "\\x" + ft_slice(hex, c / 16, c / 16 + 1) + ft_slice(hex, c % 16, c % 16 + 1)
         }
-        if esc != null {
+        if esc as ptr<u8> != null {
             out = out + ft_slice(s, start, i) + esc
             start = i + 1
         }
@@ -446,12 +446,12 @@ export function browser_main(env: ptr<Env>, lessons: ptr<BlkList>, filter: strin
         let c: i32 = ft_map_get(counts, track, 0) + 1
         ft_map_put(counts, track, c)
         let id: string = track + "-" + ft_itoa(c)
-        if filter == null or ft_contains(id, filter) {
+        if filter as ptr<u8> == null or ft_contains(id, filter) {
             let sn: ptr<Snip> = calloc(1, 128) as ptr<Snip>
             sn.id = id
             sn.track = track
             sn.title = "Exercise"
-            if b.title != null and ft_len(b.title) > 0 {
+            if b.title as ptr<u8> != null and ft_len(b.title) > 0 {
                 sn.title = b.title
             }
             sn.code = b.code
@@ -586,7 +586,7 @@ export function browser_main(env: ptr<Env>, lessons: ptr<BlkList>, filter: strin
         }
         i = i + 1
     }
-    if json_path != null {
+    if json_path as ptr<u8> != null {
         write_report(json_path, snips, n, j)
     }
     let fails: i32 = totals[4]

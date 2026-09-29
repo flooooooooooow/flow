@@ -1,0 +1,11 @@
+
+        struct MusicNote {
+            midi: i32,
+            duration: i32
+        }
+
+        function main() -> i32 {
+            let notes: array<MusicNote, 128> = []
+            return 0
+        }
+        

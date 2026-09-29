@@ -1,0 +1,17 @@
+# expect: RT-safety violation: 'process' is marked '@rt_safe' but makes an unresolved dynamic call (forbidden on an RT-safe path because its safety cannot be proven; see docs/library/rt-safety.md)
+struct Box {
+    v: i32
+}
+
+function get(b: Box) -> i32 {
+    return b.v
+}
+
+@rt_safe
+function process(b: Box) -> i32 {
+    return b.get()
+}
+
+function main() -> i32 {
+    return 0
+}

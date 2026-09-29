@@ -1502,7 +1502,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     let path: string = argv[2] as string
     let fn_name: string = argv[3] as string
     let text: string = ft_read_file(path)
-    if text == null {
+    if text as ptr<u8> == null {
         return die("cannot read " + path)
     }
     let s: ptr<Src> = parse_source(text)

@@ -1,0 +1,14 @@
+
+    struct Reader {
+        count: i32
+    }
+
+    function get_count(reader: ptr<Reader>) -> i32 {
+        return reader.count
+    }
+
+    function main() -> i32 {
+        let reader: Reader = Reader { count: 3 }
+        return reader.get_count()
+    }
+    

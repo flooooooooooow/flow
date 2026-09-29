@@ -512,7 +512,7 @@ function read_canonical(text: string) -> string {
         }
         pos = pos + 1
     }
-    return null
+    return null as string
 }
 
 # Replace the first whole canonical assignment line.
@@ -642,10 +642,10 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     let mut check: bool = false
     let mut homebrew_flag: bool = false
     let mut from_release: bool = false
-    let mut new_version: string = null
-    let mut sha256: string = null
-    let mut release_date: string = null
-    let mut prefetched: string = null
+    let mut new_version: string = null as string
+    let mut sha256: string = null as string
+    let mut release_date: string = null as string
+    let mut prefetched: string = null as string
     let unknown: ptr<StrList> = ft_list_new()
 
     let mut i: i32 = 1
@@ -658,7 +658,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         if ft_starts(arg, "--") and ft_len(arg) > 2 {
             let eqpos: i32 = ft_find_eq(arg)
             let mut name: string = arg
-            let mut inline_val: string = null
+            let mut inline_val: string = null as string
             if eqpos > 0 {
                 name = ft_slice(arg, 0, eqpos)
                 inline_val = ft_from(arg, eqpos + 1)
@@ -695,9 +695,9 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
                 i = i + 1
                 continue
             }
-            let mut value: string = null
+            let mut value: string = null as string
             if opt_takes_value(which) {
-                if inline_val != null {
+                if inline_val as ptr<u8> != null {
                     value = inline_val
                 } else {
                     if i + 1 >= argc or (ft_starts(argv[i + 1], "-") and ft_len(argv[i + 1]) > 1) {
@@ -706,7 +706,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
                     value = argv[i + 1]
                     i = i + 1
                 }
-            } elif inline_val != null {
+            } elif inline_val as ptr<u8> != null {
                 return arg_error("argument " + opt_name(which) + ": ignored explicit argument " + ft_repr(inline_val))
             }
             if which == 0 {
@@ -738,18 +738,18 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         return arg_error("unrecognized arguments: " + joined)
     }
 
-    if check and new_version != null {
+    if check and new_version as ptr<u8> != null {
         return arg_error("--check and --set are mutually exclusive")
     }
 
     let mut version: string = ""
-    if new_version != null {
+    if new_version as ptr<u8> != null {
         version = strip_leading_v(new_version)
         if is_semver(version) == false {
             return arg_error("not a semantic version: " + ft_repr(version))
         }
         let ctext: string = ft_read_file(CANONICAL)
-        if ctext == null {
+        if ctext as ptr<u8> == null {
             ft_errln("error: cannot read " + abs_canonical())
             return 1
         }
@@ -760,11 +760,11 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         ft_outln("canonical: " + CANONICAL + " -> " + version)
     } else {
         let ctext2: string = ft_read_file(CANONICAL)
-        let mut found: string = null
-        if ctext2 != null {
+        let mut found: string = null as string
+        if ctext2 as ptr<u8> != null {
             found = read_canonical(ctext2)
         }
-        if found == null {
+        if found as ptr<u8> == null {
             ft_errln("error: no __version__ assignment found in " + abs_canonical())
             return 1
         }
@@ -772,11 +772,11 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         ft_outln("canonical: " + version)
     }
 
-    let homebrew: bool = homebrew_flag or sha256 != null or from_release
-    if from_release and sha256 == null {
+    let homebrew: bool = homebrew_flag or sha256 as ptr<u8> != null or from_release
+    if from_release and sha256 as ptr<u8> == null {
         let url: string = "https://github.com/flooooooooooow/flow/releases/download/v" + version + "/flow-v" + version + ".tar.gz"
         ft_outln("fetching " + url)
-        if prefetched == null {
+        if prefetched as ptr<u8> == null {
             ft_errln("error: --sha256-from-release needs the digest; run through scripts/sync_version.sh")
             return 1
         }
@@ -812,7 +812,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
             }
             k2 = k2 + 1
         }
-        if release_date != null {
+        if release_date as ptr<u8> != null {
             let dp: ptr<Pat> = date_pattern(path)
             if dp != null {
                 let rd: ptr<SubResult> = pat_substitute(dp, text, release_date)
@@ -820,7 +820,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
                 total = total + rd[0].count
             }
         }
-        if sha256 != null and ft_ends(path, "flow.rb") {
+        if sha256 as ptr<u8> != null and ft_ends(path, "flow.rb") {
             let rs: ptr<SubResult> = pat_substitute(sha_pattern(), text, sha256)
             text = rs[0].text
             total = total + rs[0].count

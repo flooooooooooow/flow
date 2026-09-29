@@ -1,0 +1,25 @@
+
+effect Store {
+    put(v: i32) -> void,
+}
+
+capability MemStore {
+    effect Store,
+
+    function put(v: i32) -> void {
+        return
+    }
+}
+
+function stash(v: i32, store: Store) -> i32 {
+    Store.put(v)
+    return v
+}
+
+function main() -> i32 {
+    handle Store with MemStore {
+        let kept: i32 = stash(7)
+        return kept - 7
+    }
+    return 1
+}

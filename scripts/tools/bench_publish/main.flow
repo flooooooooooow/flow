@@ -52,7 +52,7 @@ struct Data {
 
 function root() -> string {
     let r: string = getenv("FLOW_REPO_ROOT")
-    if r == null or ft_len(r) == 0 {
+    if r as ptr<u8> == null or ft_len(r) == 0 {
         return "."
     }
     return r
@@ -198,7 +198,7 @@ function run_once(cmd: string, slot: ptr<f64>, result: ptr<string>) -> void {
         ft_errln("run_publish: command failed (" + bn_fixed(bn_code(r) as f64, 0) + "): " + ft_list_get(argv, 0))
         exit(1)
     }
-    if bn_result(r) == null or bn_has_seconds(r) == false {
+    if bn_result(r) as ptr<u8> == null or bn_has_seconds(r) == false {
         ft_errln("bad output from " + ft_list_get(argv, 0) + ": " + bn_out(r))
         exit(1)
     }
@@ -446,7 +446,7 @@ function write_report(d: ptr<Data>, have_rust: bool, path: string) -> void {
 
 function ft_read_file_or(path: string) -> string {
     let t: string = ft_read_file(path)
-    if t == null {
+    if t as ptr<u8> == null {
         return ""
     }
     return t

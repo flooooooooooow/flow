@@ -1,0 +1,9 @@
+# expect: Attribute '@lifetime' on 'f' takes exactly one domain: callback, frame, session, application
+@lifetime(frame, session)
+function f() -> i32 {
+    return 1
+}
+
+function main() -> i32 {
+    return f()
+}

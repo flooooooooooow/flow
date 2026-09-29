@@ -1,0 +1,16 @@
+
+unit Meter
+unit Second
+unit Kilogram
+unit Radian
+unit Velocity = Meter / Second
+unit Accel = Meter / Second^2
+
+        unit Joule = Kilogram * Meter^2 / Second^2
+        function main() -> i32 {
+            let m: Kilogram = 2.0 as Kilogram
+            let v: Velocity = 3.0 as Velocity
+            let e: Joule = m * v * v
+            return 0
+        }
+        

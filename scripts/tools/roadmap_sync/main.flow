@@ -239,10 +239,10 @@ function header_title(line: string) -> string {
         k = k + 1
     }
     if k < 2 or k > 4 {
-        return null
+        return null as string
     }
     if p[k] == 0 or uc_is_space(uc_decode(p, k)) == false {
-        return null
+        return null as string
     }
     let n: i32 = ft_len(line)
     let mut w: i32 = k
@@ -250,7 +250,7 @@ function header_title(line: string) -> string {
         w = w + uc_len(p[w] as i32)
     }
     if w >= n {
-        return null
+        return null as string
     }
     return ft_from(line, w)
 }
@@ -283,19 +283,19 @@ function is_table_sep(line: string) -> bool {
 # ^- \[ \]\s+(.+)$ ; returns the text or null.
 function checkbox_text(line: string) -> string {
     if ft_starts(line, "- [ ]") == false {
-        return null
+        return null as string
     }
     let p: ptr<u8> = line as ptr<u8>
     let n: i32 = ft_len(line)
     if n <= 5 or uc_is_space(uc_decode(p, 5)) == false {
-        return null
+        return null as string
     }
     let mut w: i32 = 5
     while w < n and uc_is_space(uc_decode(p, w)) {
         w = w + uc_len(p[w] as i32)
     }
     if w >= n {
-        return null
+        return null as string
     }
     return ft_from(line, w)
 }
@@ -313,21 +313,21 @@ function numbered_open(line: string) -> string {
         i = i + 1
     }
     if i == 0 or p[i] != 46 {
-        return null
+        return null as string
     }
     i = i + 1
     if i >= n or uc_is_space(uc_decode(p, i)) == false {
-        return null
+        return null as string
     }
     while i < n and uc_is_space(uc_decode(p, i)) {
         i = i + uc_len(p[i] as i32)
     }
     if i + 4 > n or square_at(line, i) == false {
-        return null
+        return null as string
     }
     i = i + 4
     if i >= n or uc_is_space(uc_decode(p, i)) == false {
-        return null
+        return null as string
     }
     while i < n and uc_is_space(uc_decode(p, i)) {
         i = i + uc_len(p[i] as i32)
@@ -431,7 +431,7 @@ function extract_open_items(roadmap: string) -> ptr<Items> {
         let line: string = uc_strip(ft_list_get(lines, li))
         li = li + 1
         let h: string = header_title(line)
-        if h != null {
+        if h as ptr<u8> != null {
             section = uc_strip(h)
             continue
         }
@@ -455,12 +455,12 @@ function extract_open_items(roadmap: string) -> ptr<Items> {
             continue
         }
         let cb: string = checkbox_text(line)
-        if cb != null {
+        if cb as ptr<u8> != null {
             items_add(it, cb, "", section)
             continue
         }
         let rest: string = numbered_open(line)
-        if rest != null {
+        if rest as ptr<u8> != null {
             add_numbered(it, uc_strip(rest), section)
         }
     }
@@ -613,19 +613,19 @@ function checklist_entry(line: string, out: ptr<i32>) -> string {
     let p: ptr<u8> = line as ptr<u8>
     let n: i32 = ft_len(line)
     if n < 6 or p[0] != 45 or p[1] != 32 or p[2] != 91 or p[4] != 93 {
-        return null
+        return null as string
     }
     let mark: i32 = p[3] as i32
     if mark != 32 and mark != 120 and mark != 88 {
-        return null
+        return null as string
     }
     let mut i: i32 = 5
     if i >= n or uc_is_space(uc_decode(p, i)) == false {
-        return null
+        return null as string
     }
     i = skip_space(line, i)
     if p[i] != 35 {
-        return null
+        return null as string
     }
     i = i + 1
     let ds: i32 = i
@@ -635,14 +635,14 @@ function checklist_entry(line: string, out: ptr<i32>) -> string {
         i = i + 1
     }
     if i == ds {
-        return null
+        return null as string
     }
     if i >= n or uc_is_space(uc_decode(p, i)) == false {
-        return null
+        return null as string
     }
     i = skip_space(line, i)
     if ft_at(line, i, "[roadmap:") == false {
-        return null
+        return null as string
     }
     i = i + 9
     let ss: i32 = i
@@ -650,7 +650,7 @@ function checklist_entry(line: string, out: ptr<i32>) -> string {
         i = i + 1
     }
     if i == ss or p[i] != 93 {
-        return null
+        return null as string
     }
     out[0] = 0
     if mark != 32 {
@@ -668,7 +668,7 @@ function parse_checklist(text: string) -> ptr<Records> {
     while i < ft_list_len(lines) {
         let raw: string = ft_list_get(lines, i)
         let slug: string = checklist_entry(uc_strip(raw), out)
-        if slug != null {
+        if slug as ptr<u8> != null {
             recs_put(r, slug, out[1], out[0], raw)
         }
         i = i + 1
@@ -696,16 +696,16 @@ function sync_marker(body: string) -> string {
         }
         at = ft_find(body, "ROADMAP-SYNC:", at + 1)
     }
-    return null
+    return null as string
 }
 
 function find_existing_issues(warn: bool) -> ptr<Records> {
     let r: ptr<Records> = recs_new()
     let status: string = ft_read_file(WORK + "/issues.status")
-    if status != null and ft_starts(status, "0") == false {
+    if status as ptr<u8> != null and ft_starts(status, "0") == false {
         let err: string = ft_read_file(WORK + "/issues.err")
         let mut msg: string = ""
-        if err != null {
+        if err as ptr<u8> != null {
             msg = uc_strip(err)
         }
         if warn {
@@ -714,7 +714,7 @@ function find_existing_issues(warn: bool) -> ptr<Records> {
         return r
     }
     let text: string = ft_read_file(WORK + "/issues.json")
-    if text == null {
+    if text as ptr<u8> == null {
         return r
     }
     let j: ptr<Json> = json_parse(text)
@@ -729,7 +729,7 @@ function find_existing_issues(warn: bool) -> ptr<Records> {
             body = json_str(j, body_node)
         }
         let slug: string = sync_marker(body)
-        if slug != null {
+        if slug as ptr<u8> != null {
             let title_node: i32 = json_get(j, c, "title")
             let mut title: string = ""
             if title_node >= 0 and json_kind(j, title_node) == json_kind_string() {
@@ -993,7 +993,7 @@ function parse_args(argc: i32, argv: ptr<string>, a: ptr<Args>) -> i32 {
         }
         let eq: i32 = ft_find_byte(arg, 61, 0)
         let mut name: string = arg
-        let mut inline_val: string = null
+        let mut inline_val: string = null as string
         if eq > 0 {
             name = ft_slice(arg, 0, eq)
             inline_val = ft_from(arg, eq + 1)
@@ -1034,7 +1034,7 @@ function parse_args(argc: i32, argv: ptr<string>, a: ptr<Args>) -> i32 {
             return 3
         }
         if which == 4 or which == 5 {
-            if inline_val != null {
+            if inline_val as ptr<u8> != null {
                 return arg_error("argument " + opt_name(which) + ": ignored explicit argument '" + inline_val + "'")
             }
             if which == 4 { a[0].dry_run = true }
@@ -1043,7 +1043,7 @@ function parse_args(argc: i32, argv: ptr<string>, a: ptr<Args>) -> i32 {
             continue
         }
         let mut value: string = inline_val
-        if value == null {
+        if value as ptr<u8> == null {
             if i + 1 >= argc or (ft_starts(argv[i + 1], "-") and ft_len(argv[i + 1]) > 1) {
                 return arg_error("argument " + opt_name(which) + ": expected one argument")
             }
@@ -1193,8 +1193,8 @@ function tail_slug(tail: string) -> string {
 # ^- \[([ xX])\]\s+(#\d+\s+\[roadmap:[a-z0-9-]+\].*)$ ; returns group 2 or null.
 function checklist_tail(line: string) -> string {
     let out: ptr<i32> = malloc(8) as ptr<i32>
-    if checklist_entry(line, out) == null {
-        return null
+    if checklist_entry(line, out) as ptr<u8> == null {
+        return null as string
     }
     let t: i32 = skip_space(line, 5)
     let tail: string = ft_from(line, t)
@@ -1234,7 +1234,7 @@ function phase_apply(a: ptr<Args>, repo: string) -> i32 {
     # Lines for created issues, from the shim's record of what gh returned.
     let created: ptr<StrList> = ft_list_new()
     let created_text: string = ft_read_file(WORK + "/created.txt")
-    if created_text != null {
+    if created_text as ptr<u8> != null {
         let rows: ptr<StrList> = ft_split_lines(created_text)
         let mut r: i32 = 0
         while r < ft_list_len(rows) {
@@ -1260,7 +1260,7 @@ function phase_apply(a: ptr<Args>, repo: string) -> i32 {
     while li < ft_list_len(lines) {
         let line2: string = ft_list_get(lines, li)
         let tail: string = checklist_tail(uc_strip(line2))
-        if tail != null {
+        if tail as ptr<u8> != null {
             let slug2: string = tail_slug(tail)
             let mut replaced: bool = false
             let mut k: i32 = 0

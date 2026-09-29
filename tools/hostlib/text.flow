@@ -460,7 +460,7 @@ export function t_shq(s: string) -> string {
 
 export function t_env(name: string, fallback: string) -> string {
     let v: string = getenv(name)
-    if v == null {
+    if v as ptr<u8> == null {
         return fallback
     }
     if t_len(v) == 0 {

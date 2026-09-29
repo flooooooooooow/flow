@@ -1,0 +1,6 @@
+# expect: cannot slice i32: a slice needs contiguous storage (array<T, N>, span, or ptr<T>)
+function main() -> i32 {
+    let x: i32 = 5
+    let s: span<i32> = x[0..2]
+    return 0
+}

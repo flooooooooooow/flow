@@ -1,0 +1,20 @@
+
+unit Meter
+unit Second
+unit Velocity = Meter / Second
+unit Accel = Meter / Second^2
+
+    struct Journey {
+        distance: Meter,
+        elapsed: Second,
+    }
+    
+        function main() -> i32 {
+            let j: Journey = Journey {
+                distance: 100.0 as Meter,
+                elapsed: 8.0 as Second
+            }
+            let x = j.distance + j.elapsed
+            return 0
+        }
+        

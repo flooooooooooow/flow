@@ -1,0 +1,17 @@
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function calloc(nmemb: i64, size: i64) -> ptr<void>
+    function realloc(p: ptr<void>, size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+function alloc_bytes(size: i64) -> ptr<void> {
+    return malloc(size)
+}
+
+@rt_safe
+function process(x: i32) -> i32 {
+    let p: ptr<void> = alloc_bytes(64)
+    return x
+}

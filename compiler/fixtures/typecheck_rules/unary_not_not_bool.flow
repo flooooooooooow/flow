@@ -1,0 +1,6 @@
+# expect: Unary '!' requires bool type, got i32
+function main() -> i32 {
+    let x: i32 = 1
+    let b: bool = !x
+    return 0
+}

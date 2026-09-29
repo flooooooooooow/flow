@@ -1,0 +1,10 @@
+# expect: Sorting an array of structs requires `sort by .field` (or `sortBy [.field, ...]`)
+struct P {
+    a: i32
+}
+
+function main() -> i32 {
+    let xs: array<P, 2> = [P { a: 1 }, P { a: 2 }]
+    let ys: array<P, 2> = xs |> sort
+    return 0
+}

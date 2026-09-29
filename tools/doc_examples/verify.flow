@@ -51,7 +51,13 @@ export struct Env {
     docs: string,
     work: string,
     flowc: string,
-    serial: i32
+    serial: i32,
+    # FLOW_DOC_DUMP: a directory that receives every harness rung of every
+    # block, as d<n>.flow plus d<n>.key holding `<block key>@<mode>`
+    # (compiler/scripts/parity_typecheck.sh reads them). Empty when unset.
+    dump: string,
+    # The `dump` command: write the rungs and compile nothing.
+    dump_only: bool
 }
 
 export struct Res {
@@ -199,7 +205,7 @@ export function harness(code: string, mode: string) -> string {
     let decls: string = split_decls_text(code)
     let stmts: string = split_stmts_text(code)
     if is_blank(stmts) {
-        return null
+        return null as string
     }
     let body: string = "function main() -> i32 {\n" + indent(stmts) + "\n    return 0\n}\n"
     if is_blank(decls) {
@@ -275,7 +281,7 @@ function parse_source(source: string, msg: ptr<string>) -> ptr<Tree> {
             tk = p.err_tok
         }
         let rule0: string = module_static_rule(buf, m, tk.start)
-        if rule0 != null {
+        if rule0 as ptr<u8> != null {
             msg[0] = "SyntaxError: " + rule0
             flowc_parser_free(p)
             return null
@@ -298,7 +304,7 @@ function parse_source(source: string, msg: ptr<string>) -> ptr<Tree> {
         return null
     }
     let rule: string = module_static_rule(buf, m, m)
-    if rule != null {
+    if rule as ptr<u8> != null {
         msg[0] = "SyntaxError: " + rule
         flowc_parser_free(p)
         return null
@@ -335,7 +341,7 @@ function module_static_rule(src: ptr<u8>, n: i32, stop: i32) -> string {
             }
             let t3: Token = flowc_lexer_next(&lex)
             if t3.kind != TOK_IDENT {
-                return null
+                return null as string
             }
             let t4: Token = flowc_lexer_next(&lex)
             if t4.kind != TOK_COLON {
@@ -344,7 +350,7 @@ function module_static_rule(src: ptr<u8>, n: i32, stop: i32) -> string {
         }
         tk = flowc_lexer_next(&lex)
     }
-    return null
+    return null as string
 }
 
 function first_item(t: ptr<Tree>) -> i32 {
@@ -396,27 +402,27 @@ function noop_name(k: i32) -> string {
     if k == AST_FIELD_ACCESS { return "FieldAccess" }
     if k == AST_INDEX { return "ArrayAccess" }
     if k == AST_UNARY { return "UnaryOperation" }
-    return null
+    return null as string
 }
 
 # First no-op statement at any depth of the block, or null.
 function find_noop(t: ptr<Tree>, block: i32) -> string {
     if block == AST_NONE or t.arena.nodes[block].kind != AST_BLOCK {
-        return null
+        return null as string
     }
     let mut st: i32 = t.arena.nodes[block].a
     while st != AST_NONE {
         let k: i32 = t.arena.nodes[st].kind
         if k == AST_EXPR_STMT and t.arena.nodes[st].a != AST_NONE {
             let name: string = noop_name(t.arena.nodes[t.arena.nodes[st].a].kind)
-            if name != null {
+            if name as ptr<u8> != null {
                 return name
             }
         }
-        let mut inner: string = null
+        let mut inner: string = null as string
         if k == AST_IF {
             inner = find_noop(t, t.arena.nodes[st].b)
-            if inner == null {
+            if inner as ptr<u8> == null {
                 inner = find_noop(t, t.arena.nodes[st].c)
             }
         } elif k == AST_WHILE {
@@ -428,12 +434,12 @@ function find_noop(t: ptr<Tree>, block: i32) -> string {
         } elif k == AST_HANDLE {
             inner = find_noop(t, t.arena.nodes[st].a)
         }
-        if inner != null {
+        if inner as ptr<u8> != null {
             return inner
         }
         st = t.arena.nodes[st].next
     }
-    return null
+    return null as string
 }
 
 function degenerate(t: ptr<Tree>) -> string {
@@ -442,13 +448,13 @@ function degenerate(t: ptr<Tree>) -> string {
         let d: i32 = unwrap_export(t, it)
         if t.arena.nodes[d].kind == AST_FN and ft_eq(name_of(t, d), "main") {
             let kind: string = find_noop(t, t.arena.nodes[d].c)
-            if kind != null {
+            if kind as ptr<u8> != null {
                 return "no-op " + kind + " statement; the text is not statements"
             }
         }
         it = t.arena.nodes[it].next
     }
-    return null
+    return null as string
 }
 
 # A module resolver rule the documentation states: an import path may not be
@@ -465,7 +471,7 @@ function unsafe_import(t: ptr<Tree>) -> string {
         }
         it = t.arena.nodes[it].next
     }
-    return null
+    return null as string
 }
 
 function has_import(t: ptr<Tree>) -> bool {
@@ -495,6 +501,19 @@ function substantive(t: ptr<Tree>, mode: string) -> i32 {
             }
         }
         it = t.arena.nodes[it].next
+    }
+    # The parser leaves out a function whose @only / @guard mode is off in
+    # this build (#1029); its attribute nodes stay behind, detached. The
+    # Python checker counted such a function, so a standalone block that
+    # holds only one still declares something.
+    if n == 0 and ft_eq(mode, "standalone") {
+        let mut i: i32 = 0
+        while i < t.arena.len {
+            if t.arena.nodes[i].kind == AST_ATTR and t.arena.nodes[i].b == AST_NONE {
+                return 1
+            }
+            i = i + 1
+        }
     }
     return n
 }
@@ -528,26 +547,34 @@ function nonblank_lines(text: string, strip: string) -> ptr<StrList> {
 
 function read_or_empty(path: string) -> string {
     let s: string = ft_read_file(path)
-    if s == null {
+    if s as ptr<u8> == null {
         return ""
     }
     return s
 }
 
-# Compile one translation unit with flowc (compiler/scripts/flowc_emit.sh,
-# the defaults of `flow compile`). Sets f.csource, or fails at codegen.
+# Compile one translation unit with flowc (compiler/scripts/flowc_emit.sh)
+# under the strict type check, as the Python checker ran it. Sets
+# f.csource; a type error fails at `types` with its message, anything else
+# at codegen.
 function flowc_c(env: ptr<Env>, source: string) -> ptr<Front> {
     let dir: string = next_dir(env)
     let src: string = dir + "/block.flow"
     let out: string = dir + "/block.c"
     let _w: bool = ft_write_file(src, source)
-    let cmd: string = "cd " + pr_quote(env.repo) + " && ulimit -t 60; FLOWC_BIN=" + pr_quote(env.flowc) + " " + pr_quote(env.repo + "/compiler/scripts/flowc_emit.sh") + " " + pr_quote(src) + " " + pr_quote(out) + " >" + pr_quote(dir + "/stdout") + " 2>" + pr_quote(dir + "/stderr")
+    let cmd: string = "cd " + pr_quote(env.repo) + " && ulimit -t 60; FLOWC_BIN=" + pr_quote(env.flowc) + " " + pr_quote(env.repo + "/compiler/scripts/flowc_emit.sh") + " --strict " + pr_quote(src) + " " + pr_quote(out) + " >" + pr_quote(dir + "/stdout") + " 2>" + pr_quote(dir + "/stderr")
     let rc: i32 = pr_run(cmd)
     if rc == 137 or rc == 152 {
         return front_fail("codegen", "flowc did not finish within 60s")
     }
     if rc != 0 or ft_exists(out) == false {
         let text: string = read_or_empty(dir + "/stderr") + read_or_empty(dir + "/stdout")
+        if ft_contains(text, "typecheck failed") {
+            let msg: string = first_type_error(text)
+            if ft_len(msg) > 0 {
+                return front_fail("types", msg)
+            }
+        }
         let lines: ptr<StrList> = nonblank_lines(text, dir + "/")
         let mut at: i32 = 0
         let mut i: i32 = 0
@@ -575,6 +602,21 @@ function flowc_c(env: ptr<Env>, source: string) -> ptr<Front> {
 
 # `shader fill` heads: a fill-shader module is a different language with its
 # own validator and no host translation unit to check.
+# The message of the first `<file>:<line>:<col>: error: <message>` line.
+function first_type_error(text: string) -> string {
+    let lines: ptr<StrList> = py_splitlines(text)
+    let mut i: i32 = 0
+    while i < ft_list_len(lines) {
+        let l: string = ft_list_get(lines, i)
+        let at: i32 = ft_find(l, ": error: ", 0)
+        if at >= 0 {
+            return ft_from(l, at + 9)
+        }
+        i = i + 1
+    }
+    return ""
+}
+
 function has_fill_shader(source: string) -> bool {
     let r: ptr<Regex> = rx_compile("^[ \\t]*shader\\s+fill\\s+[A-Za-z_]\\w*\\s*\\{", 8)
     return rx_search(r, source)
@@ -620,13 +662,13 @@ function compile_source(env: ptr<Env>, source: string, guard_noop: bool, mode: s
     }
     if guard_noop {
         let problem: string = degenerate(t)
-        if problem != null {
+        if problem as ptr<u8> != null {
             return front_fail("degenerate", problem)
         }
     }
     if has_import(t) {
         let bad: string = unsafe_import(t)
-        if bad != null {
+        if bad as ptr<u8> != null {
             return front_fail("imports", "FileNotFoundError: Unsafe import path: " + bad)
         }
     }
@@ -666,13 +708,13 @@ function ctx_get(c: ptr<PageCtx>, id: string) -> string {
         }
         i = i - 1
     }
-    return null
+    return null as string
 }
 
 function uses_list(b: ptr<Blk>) -> ptr<StrList> {
     let out: ptr<StrList> = ft_list_new()
     let raw: string = blk_opt(b, "uses")
-    if raw == null {
+    if raw as ptr<u8> == null {
         return out
     }
     let p: ptr<u8> = raw as ptr<u8>
@@ -707,7 +749,7 @@ function page_context(b: ptr<Blk>, ctx: ptr<PageCtx>, err: ptr<string>) -> strin
     while i < ft_list_len(uses) {
         let name: string = uc_strip(ft_list_get(uses, i))
         let body: string = ctx_get(ctx, name)
-        if body == null {
+        if body as ptr<u8> == null {
             err[0] = "uses=" + ft_repr(name) + " names no earlier block on this page; add id=" + name + " to the block it depends on"
             return ""
         }
@@ -722,27 +764,27 @@ function page_context(b: ptr<Blk>, ctx: ptr<PageCtx>, err: ptr<string>) -> strin
 
 function from_mismatch(env: ptr<Env>, b: ptr<Blk>) -> string {
     let rel: string = blk_opt(b, "from")
-    if rel == null {
-        return null
+    if rel as ptr<u8> == null {
+        return null as string
     }
     let text: string = ft_read_file(env.docs + "/" + rel)
-    if text == null {
+    if text as ptr<u8> == null {
         return "from=" + ft_repr(rel) + " does not exist"
     }
     let body: string = uc_strip(b.code)
     if ft_len(body) > 0 and ft_contains(text, body) == false {
         return "block no longer appears in " + rel + "; the page and the file have drifted, so update whichever is wrong"
     }
-    return null
+    return null as string
 }
 
 function preamble_text(env: ptr<Env>, b: ptr<Blk>, err: ptr<string>) -> string {
     let rel: string = blk_opt(b, "preamble")
-    if rel == null {
+    if rel as ptr<u8> == null {
         return ""
     }
     let text: string = ft_read_file(env.docs + "/" + rel)
-    if text == null {
+    if text as ptr<u8> == null {
         err[0] = "preamble " + ft_repr(rel) + " does not exist"
         return ""
     }
@@ -786,30 +828,49 @@ function mode_name(i: i32) -> string {
 }
 
 function or_else(a: string, b: string) -> string {
-    if a != null and ft_len(a) > 0 {
+    if a as ptr<u8> != null and ft_len(a) > 0 {
         return a
     }
     return b
 }
 
+# FLOW_DOC_DUMP: write every harness rung of the block, whatever flowc later
+# makes of it, so the set of dumped sources does not depend on the compiler.
+function dump_rungs(env: ptr<Env>, b: ptr<Blk>, pre: string, code: string, nmodes: i32) {
+    if ft_len(env.dump) == 0 {
+        return
+    }
+    let mut m: i32 = 0
+    while m < nmodes {
+        let wrapped: string = harness(code, mode_name(m))
+        if wrapped as ptr<u8> != null {
+            env.serial = env.serial + 1
+            let base: string = env.dump + "/d" + ft_itoa(env.serial)
+            let _d: bool = ft_write_file(base + ".flow", pre + wrapped)
+            let _k: bool = ft_write_file(base + ".key", b.key + "@" + mode_name(m) + "\n")
+        }
+        m = m + 1
+    }
+}
+
 export function verify(env: ptr<Env>, b: ptr<Blk>, ctx: ptr<PageCtx>) -> ptr<Res> {
     let ign: string = blk_opt(b, "ignore")
-    if ign != null {
-        return res_new(b, "ignored", null, ign, "")
+    if ign as ptr<u8> != null {
+        return res_new(b, "ignored", null as string, ign, "")
     }
     let err: ptr<string> = malloc(8) as ptr<string>
     err[0] = ""
     let page: string = page_context(b, ctx, err)
     if ft_len(err[0]) > 0 {
-        return res_new(b, "unverified", null, err[0], "uses")
+        return res_new(b, "unverified", null as string, err[0], "uses")
     }
     let drifted: string = from_mismatch(env, b)
-    if drifted != null {
-        return res_new(b, "unverified", null, drifted, "from")
+    if drifted as ptr<u8> != null {
+        return res_new(b, "unverified", null as string, drifted, "from")
     }
     let pre: string = preamble_text(env, b, err)
     if ft_len(err[0]) > 0 {
-        return res_new(b, "unverified", null, err[0], "preamble")
+        return res_new(b, "unverified", null as string, err[0], "preamble")
     }
     let code: string = join_with_context(page, b.code)
     let expects: bool = blk_flag(b, "expect-error")
@@ -823,11 +884,15 @@ export function verify(env: ptr<Env>, b: ptr<Blk>, ctx: ptr<PageCtx>) -> ptr<Res
     let mut best_noop: string = ""
     let mut reached_meaning: bool = false
     let mut meaning_detail: string = ""
+    dump_rungs(env, b, pre, code, nmodes)
+    if env.dump_only {
+        return res_new(b, "ignored", null as string, "dump", "")
+    }
     let mut m: i32 = 0
     while m < nmodes {
         let mode: string = mode_name(m)
         let wrapped: string = harness(code, mode)
-        if wrapped != null {
+        if wrapped as ptr<u8> != null {
             let f: ptr<Front> = compile_source(env, pre + wrapped, m != 0, mode)
             let st: string = f.stage
             if ft_eq(st, "types") or ft_eq(st, "vacuous") or ft_eq(st, "codegen") or ft_eq(st, "degenerate") {
@@ -860,10 +925,10 @@ export function verify(env: ptr<Env>, b: ptr<Blk>, ctx: ptr<PageCtx>) -> ptr<Res
         if reached_meaning {
             stage = "types"
         }
-        return res_new(b, "expected-error", null, or_else(meaning_detail, or_else(best_noop, first_detail)), stage)
+        return res_new(b, "expected-error", null as string, or_else(meaning_detail, or_else(best_noop, first_detail)), stage)
     }
     if ft_len(meaning_detail) > 0 {
-        return res_new(b, "unverified", null, meaning_detail, "types")
+        return res_new(b, "unverified", null as string, meaning_detail, "types")
     }
-    return res_new(b, "unverified", null, or_else(best_noop, first_detail), first_stage)
+    return res_new(b, "unverified", null as string, or_else(best_noop, first_detail), first_stage)
 }

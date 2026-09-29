@@ -43,7 +43,7 @@ extern {
 
 function root() -> string {
     let r: string = getenv("FLOW_REPO_ROOT")
-    if r == null or ft_len(r) == 0 {
+    if r as ptr<u8> == null or ft_len(r) == 0 {
         return pr_cwd()
     }
     return r
@@ -51,7 +51,7 @@ function root() -> string {
 
 function python() -> string {
     let py: string = getenv("WASM_BUILD_PYTHON")
-    if py == null or ft_len(py) == 0 {
+    if py as ptr<u8> == null or ft_len(py) == 0 {
         return "python3"
     }
     return py
@@ -59,7 +59,7 @@ function python() -> string {
 
 function asset(name: string) -> string {
     let text: string = ft_read_file(root() + "/scripts/tools/wasm_build/assets/" + name)
-    if text == null {
+    if text as ptr<u8> == null {
         ft_errln("wasm_build: missing asset " + name)
         return ""
     }
@@ -262,7 +262,7 @@ function rel_to_root(path: string) -> string {
     if ft_starts(path, r + "/") {
         return ft_from(path, ft_len(r) + 1)
     }
-    return null
+    return null as string
 }
 
 # ---------------------------------------------------------------------------
@@ -522,10 +522,10 @@ function run_capture(cmd: string, prefix_env: string) -> ptr<Proc> {
     pr[0].code = code
     pr[0].out = ft_read_file(o_path)
     pr[0].err = ft_read_file(e_path)
-    if pr[0].out == null {
+    if pr[0].out as ptr<u8> == null {
         pr[0].out = ""
     }
-    if pr[0].err == null {
+    if pr[0].err as ptr<u8> == null {
         pr[0].err = ""
     }
     let _rm: i32 = pr_run("rm -rf " + pr_quote(dir))
@@ -620,9 +620,9 @@ function fail(b: ptr<Build>, msg: string) -> bool {
 # resolve_backend(): explicit value, else FLOW_CPU_BACKEND, else "c".
 function resolve_backend(explicit: string, errs: ptr<StrList>) -> string {
     let mut mode: string = explicit
-    if mode == null or ft_len(mode) == 0 {
+    if mode as ptr<u8> == null or ft_len(mode) == 0 {
         mode = getenv("FLOW_CPU_BACKEND")
-        if mode == null or ft_len(mode) == 0 {
+        if mode as ptr<u8> == null or ft_len(mode) == 0 {
             mode = "c"
         }
     }
@@ -650,7 +650,7 @@ function flow_to_c(b: ptr<Build>, program: string, c_out: string, library: bool)
     let pr: ptr<Proc> = run_capture(cmd, "")
     if pr[0].code != 0 or ft_exists(c_out) == false {
         let _f: bool = fail(b, "flow->c: " + last_detail(pr, "flowc failed"))
-        return null
+        return null as string
     }
     return ft_read_file(c_out)
 }
@@ -659,14 +659,14 @@ function flow_to_llvm_ir(b: ptr<Build>, program: string, ll_out: string) -> stri
     let _m: bool = pr_mkdir_p(parent_dir(ll_out))
     let mut pypath: string = root() + "/src"
     let old: string = getenv("PYTHONPATH")
-    if old != null and ft_len(old) > 0 {
+    if old as ptr<u8> != null and ft_len(old) > 0 {
         pypath = pypath + ":" + old
     }
     let cmd: string = pr_quote(python()) + " -m flow.transpiler " + pr_quote(program) + " --mlir --llvm --wasm32 --lenient -o " + pr_quote(ll_out)
     let pr: ptr<Proc> = run_capture(cmd, "PYTHONPATH=" + pr_quote(pypath) + " ")
     if pr[0].code != 0 or ft_exists(ll_out) == false or file_size(ll_out) <= 0 {
         let _f: bool = fail(b, "flow->mlir->llvm: " + last_detail(pr, "transpiler failed"))
-        return null
+        return null as string
     }
     return ft_read_file(ll_out)
 }
@@ -1002,7 +1002,7 @@ function undefined_symbol(line: string) -> string {
         }
         at = ft_find(line, "undefined ", at + 1)
     }
-    return null
+    return null as string
 }
 
 function sym_char(sp: ptr<u8>, at: i32) -> i32 {
@@ -1026,7 +1026,7 @@ function first_error(text: string) -> string {
     k = 0
     while k < ft_list_len(lines) {
         let hit: string = undefined_symbol(ft_list_get(lines, k))
-        if hit != null {
+        if hit as ptr<u8> != null {
             return "undefined symbol " + lstrip_char(hit, 95)
         }
         k = k + 1
@@ -1350,7 +1350,7 @@ function build(b: ptr<Build>) -> bool {
     if is_mlir {
         let ir_file: string = out_dir + "/" + name + ".ll"
         let ir_text: string = flow_to_llvm_ir(b, program, ir_file)
-        if ir_text == null {
+        if ir_text as ptr<u8> == null {
             return false
         }
         gfx = ft_contains(ir_text, "flow_gfx_init") or uses_gfx_flow_source(flow_source)
@@ -1359,7 +1359,7 @@ function build(b: ptr<Build>) -> bool {
     } else {
         let c_file: string = out_dir + "/" + name + ".c"
         let c_raw: string = flow_to_c(b, program, c_file, false)
-        if c_raw == null {
+        if c_raw as ptr<u8> == null {
             return false
         }
         let c_source: string = append_extern_stubs(c_raw)
@@ -1369,7 +1369,7 @@ function build(b: ptr<Build>) -> bool {
         ft_list_push(artifacts, c_file)
         if b[0].threads {
             let lib_c: string = out_dir + "/" + name + "_parallel_lib.c"
-            if flow_to_c(b, root() + "/lib/runtime/concurrency_parallel.flow", lib_c, true) == null {
+            if flow_to_c(b, root() + "/lib/runtime/concurrency_parallel.flow", lib_c, true) as ptr<u8> == null {
                 return false
             }
             ft_list_push(artifacts, lib_c)
@@ -1392,7 +1392,7 @@ function build(b: ptr<Build>) -> bool {
                 mod_path = root() + "/" + mod_path
             }
             let mod_c: string = out_dir + "/" + name + "_" + path_stem(mod_path) + "_lib.c"
-            if flow_to_c(b, mod_path, mod_c, true) == null {
+            if flow_to_c(b, mod_path, mod_c, true) as ptr<u8> == null {
                 return false
             }
             ft_list_push(artifacts, mod_c)
@@ -1416,7 +1416,7 @@ function build(b: ptr<Build>) -> bool {
 
     let rel: string = rel_to_root(program)
     let mut source_url: string = program
-    if rel != null {
+    if rel as ptr<u8> != null {
         b[0].rel = rel
         source_url = "https://github.com/flooooooooooow/flow/blob/main/" + rel
     } else {
@@ -1550,7 +1550,7 @@ function build_main(argc: i32, argv: ptr<string>) -> i32 {
     ft_list_push(opts, "--json")
 
     let b: ptr<Build> = build_new()
-    let mut backend_arg: string = null
+    let mut backend_arg: string = null as string
     let mut out_arg: string = ""
     let mut json: bool = false
     let positionals: ptr<StrList> = ft_list_new()
@@ -1570,7 +1570,7 @@ function build_main(argc: i32, argv: ptr<string>) -> i32 {
             continue
         }
         let mut opt: string = arg
-        let mut value: string = null
+        let mut value: string = null as string
         if ft_starts(arg, "--") {
             let eq: i32 = ft_find(arg, "=", 0)
             if eq >= 0 {
@@ -1600,7 +1600,7 @@ function build_main(argc: i32, argv: ptr<string>) -> i32 {
         }
         let flag: bool = ft_eq(opt, "--help") or ft_eq(opt, "--threads") or ft_eq(opt, "--keep-c") or ft_eq(opt, "--json")
         if flag {
-            if value != null {
+            if value as ptr<u8> != null {
                 let mut shown: string = opt
                 if ft_eq(opt, "--help") {
                     shown = "-h/--help"
@@ -1621,7 +1621,7 @@ function build_main(argc: i32, argv: ptr<string>) -> i32 {
             i = i + 1
             continue
         }
-        if value == null {
+        if value as ptr<u8> == null {
             if i + 1 >= argc or looks_like_option(argv[i + 1]) {
                 let mut shown2: string = opt
                 if ft_eq(opt, "-O") {
@@ -1882,7 +1882,7 @@ function special_title(name: string) -> string {
         }
         k = k + 1
     }
-    return null
+    return null as string
 }
 
 # str.capitalize() for ASCII words.
@@ -1906,7 +1906,7 @@ function capitalize(word: string) -> string {
 function pretty_title(stem: string) -> string {
     let name: string = uc_strip(ft_replace(ft_replace(stem, "_gfx", ""), "_", " "))
     let special: string = special_title(name)
-    if special != null {
+    if special as ptr<u8> != null {
         return special
     }
     let tp: ptr<u8> = name as ptr<u8>
@@ -2090,12 +2090,12 @@ function rec_get(rec: ptr<StrList>, key: string) -> string {
         }
         k = k + 1
     }
-    return null
+    return null as string
 }
 
 function rec_int(rec: ptr<StrList>, key: string) -> i32 {
     let v: string = rec_get(rec, key)
-    if v == null {
+    if v as ptr<u8> == null {
         return 0
     }
     return parse_digits(v)
@@ -2248,11 +2248,11 @@ function card_html(rec: ptr<StrList>) -> string {
             kind = "canvas"
         }
         let mut tags: string = "<span class=\"tag\">" + kind + "</span>"
-        if rec_get(rec, "threads") != null {
+        if rec_get(rec, "threads") as ptr<u8> != null {
             tags = tags + " <span class=\"tag\">threads</span>"
         }
         let mut note: string = ""
-        if rec_get(rec, "note") != null {
+        if rec_get(rec, "note") as ptr<u8> != null {
             note = "<div class=\"degrade\">" + html_escape(rec_get(rec, "note")) + "</div>"
         }
         let mut c: string = "      <div class=\"card\">\n"
@@ -2312,7 +2312,7 @@ function gallery_main(argc: i32, argv: ptr<string>) -> i32 {
             continue
         }
         let mut name: string = arg
-        let mut value: string = null
+        let mut value: string = null as string
         if ft_starts(arg, "--") {
             let eq: i32 = ft_find(arg, "=", 0)
             if eq >= 0 {
@@ -2344,7 +2344,7 @@ function gallery_main(argc: i32, argv: ptr<string>) -> i32 {
             continue
         }
         if ft_eq(name, "--help") or ft_eq(name, "--list") {
-            if value != null {
+            if value as ptr<u8> != null {
                 let mut shown: string = name
                 if ft_eq(name, "--help") {
                     shown = "-h/--help"
@@ -2362,7 +2362,7 @@ function gallery_main(argc: i32, argv: ptr<string>) -> i32 {
         if ft_eq(name, "--only") {
             # nargs="*": everything up to the next option; the last use wins.
             only = ft_list_new()
-            if value != null {
+            if value as ptr<u8> != null {
                 ft_list_push(only, value)
             } else {
                 while i + 1 < argc and looks_like_option(argv[i + 1]) == false {
@@ -2373,7 +2373,7 @@ function gallery_main(argc: i32, argv: ptr<string>) -> i32 {
             i = i + 1
             continue
         }
-        if value == null {
+        if value as ptr<u8> == null {
             if i + 1 >= argc or looks_like_option(argv[i + 1]) {
                 let mut shown2: string = name
                 if ft_eq(name, "--jobs") {
@@ -2492,7 +2492,7 @@ function gallery_main(argc: i32, argv: ptr<string>) -> i32 {
     k = 0
     while k < ft_list_len(job_list) {
         let text: string = ft_read_file(ft_list_get(job_list, k) + ".rec")
-        if text != null {
+        if text as ptr<u8> != null {
             let rec: ptr<StrList> = md_splitlines(text)
             ft_list_push(sort_keys, rec_sort_key(rec) + "\t" + ft_itoa(ft_list_len(recs)))
             ft_list_push(recs, text)

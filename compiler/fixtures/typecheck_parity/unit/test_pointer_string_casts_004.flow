@@ -1,0 +1,4 @@
+
+function bad(p: ptr<i32>) -> string {
+    return p as string
+}

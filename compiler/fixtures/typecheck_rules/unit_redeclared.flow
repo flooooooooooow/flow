@@ -1,0 +1,7 @@
+# expect: line 3: unit 'Meter' is already declared
+unit Meter
+unit Meter
+
+function main() -> i32 {
+    return 0
+}

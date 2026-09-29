@@ -139,7 +139,7 @@ export struct CgenBuf {
 }
 
 function flowc_cgen_buf_init(out: ptr<u8>, cap: i32) -> CgenBuf {
-    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0, handle_ids: null, handle_len: 0 }
+    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null as string, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0, handle_ids: null, handle_len: 0 }
 }
 
 function flowc_cgen_putc(w: ptr<CgenBuf>, c: i32) {
@@ -236,7 +236,7 @@ function flowc_cgen_emit_int_literal(w: ptr<CgenBuf>, src: ptr<u8>, start: i32, 
         # lo = lo * 10 + d, carry into hi
         let new_lo: u64 = lo * 10 + d
         # Detect overflow: if lo * 10 + d < lo (unsigned wrap), carry 1
-        let carry: u64 = 0
+        let mut carry: u64 = 0
         if new_lo < lo {
             carry = 1
         }
@@ -1445,7 +1445,7 @@ function flowc_cgen_find_type_by_name(arena: AstArena, src: ptr<u8>, name: ptr<u
     let mut i: i32 = 0
     while i < arena.len {
         if arena.nodes[i].kind == AST_TYPE {
-            if flowc_cgen_span_is(src, arena.nodes[i].name_start, arena.nodes[i].name_end, name) == 1 {
+            if flowc_cgen_span_is(src, arena.nodes[i].name_start, arena.nodes[i].name_end, name as string) == 1 {
                 return i
             }
         }
@@ -2098,6 +2098,28 @@ function flowc_cgen_expr_type_node(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
         return AST_NONE
     }
     return AST_NONE
+}
+
+# The base of a field read is a pointer: what flowc_cgen_expr_is_ptr
+# resolves, plus a cast to ptr<...> and a call of a function this module
+# defines that returns ptr<...> (#1065).
+function flowc_cgen_base_is_ptr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if id != AST_NONE {
+        let k: i32 = arena.nodes[id].kind
+        let mut ty: i32 = AST_NONE
+        if k == AST_CAST {
+            ty = arena.nodes[id].b
+        } elif k == AST_CALL {
+            let fn: i32 = flowc_cgen_find_fn(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            if fn != AST_NONE {
+                ty = arena.nodes[fn].b
+            }
+        }
+        if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE {
+            return flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "ptr")
+        }
+    }
+    return flowc_cgen_expr_is_ptr(w, arena, src, id)
 }
 
 # 1 if the expression's resolved type is ptr<...>.
@@ -3357,10 +3379,10 @@ function flowc_cgen_scan_lambda_caps(
         }
         return count
     }
-    count = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].a, buf, count, param_spans, nparams)
-    count = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].b, buf, count, param_spans, nparams)
-    count = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].c, buf, count, param_spans, nparams)
-    return flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].next, buf, count, param_spans, nparams)
+    let mut acc: i32 = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].a, buf, count, param_spans, nparams)
+    acc = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].b, buf, acc, param_spans, nparams)
+    acc = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].c, buf, acc, param_spans, nparams)
+    return flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].next, buf, acc, param_spans, nparams)
 }
 
 # 1 if src[ns..ne] names an effect or capability of the effect table.
@@ -6343,10 +6365,19 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         # (base).field or base->field if base is a pointer.
         let base: i32 = arena.nodes[id].a
         # Resolved through the current function's parameters and locals
-        # and through struct fields, so `p.x` on a local ptr<P> is p->x.
-        let is_ptr: i32 = flowc_cgen_expr_is_ptr(w, arena, src, base)
+        # and through struct fields, so `p.x` on a local ptr<P> is p->x;
+        # a call or a cast returning ptr<P> reads through it too (#1065).
+        let is_ptr: i32 = flowc_cgen_base_is_ptr(w, arena, src, base)
         if is_ptr == 1 {
+            # A cast binds looser than `->` in C: ((P*)(x))->f.
+            let wrap: bool = base != AST_NONE and arena.nodes[base].kind == AST_CAST
+            if wrap {
+                flowc_cgen_putc(w, 40)
+            }
             flowc_cgen_emit_expr(w, arena, src, base)
+            if wrap {
+                flowc_cgen_putc(w, 41)
+            }
             flowc_cgen_puts(w, "->")
             flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         } else {
@@ -7378,7 +7409,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
     if id == AST_NONE or w[0].err != 0 {
         return
     }
-    if w[0].dbg_file != null {
+    if w[0].dbg_file as ptr<u8> != null {
         flowc_cgen_line_directive(w, src, arena.nodes[id].start)
     }
     let kind: i32 = arena.nodes[id].kind
@@ -8320,6 +8351,10 @@ function flowc_cgen_is_libc_fn(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     let ns: i32 = arena.nodes[id].name_start
     let ne: i32 = arena.nodes[id].name_end
     if flowc_cgen_span_is(src, ns, ne, "fopen") == 1 { return 1 }
+    # POSIX names stdio.h and stdlib.h declare (#1067).
+    if flowc_cgen_span_is(src, ns, ne, "fdopen") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "fileno") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "realpath") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "fclose") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "fread") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "fwrite") == 1 { return 1 }

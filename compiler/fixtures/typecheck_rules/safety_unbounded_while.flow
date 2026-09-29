@@ -1,0 +1,9 @@
+# expect: safety profile requires @max_iterations(N) on while loops (MISRA 17.4); use a bounded for-loop or annotate the while
+# env: FLOW_PROFILE=safety
+function main() -> i32 {
+    let mut i: i32 = 0
+    while i < 10 {
+        i = i + 1
+    }
+    return 0
+}

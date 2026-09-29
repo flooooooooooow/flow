@@ -1,0 +1,10 @@
+# expect: cannot borrow `samples` mutably; it is declared with `let`
+function fill(xs: span<mut i32>) {
+    xs[0] = 1
+}
+
+function main() -> i32 {
+    let samples: array<i32, 4> = [0, 0, 0, 0]
+    fill(samples)
+    return 0
+}

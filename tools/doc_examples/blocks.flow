@@ -91,7 +91,7 @@ export function blk_opt(b: ptr<Blk>, name: string) -> string {
         }
         i = i - 1
     }
-    return null
+    return null as string
 }
 
 export function blk_flag(b: ptr<Blk>, name: string) -> bool {
@@ -381,7 +381,7 @@ function parse_info(b: ptr<Blk>, err: ptr<InfoErr>) -> bool {
         i = i + 1
     }
     let ign: string = blk_opt(b, "ignore")
-    if ign != null and ft_len(uc_strip(ign)) == 0 {
+    if ign as ptr<u8> != null and ft_len(uc_strip(ign)) == 0 {
         err.msg = "ignore= needs a written reason in " + ft_repr(info)
         return false
     }
@@ -428,8 +428,8 @@ function match_fence(line: string, f: ptr<Fence>) -> bool {
 export function iter_blocks(text: string, path: string, out: ptr<BlkList>, err: ptr<InfoErr>) -> bool {
     let lines: ptr<StrList> = py_splitlines(text)
     let n: i32 = ft_list_len(lines)
-    let mut section: string = null
-    let mut title: string = null
+    let mut section: string = null as string
+    let mut title: string = null as string
     let seen: ptr<StrMap> = ft_map_new()
     let f: ptr<Fence> = calloc(1, 24) as ptr<Fence>
     let g: ptr<Fence> = calloc(1, 24) as ptr<Fence>
@@ -439,7 +439,7 @@ export function iter_blocks(text: string, path: string, out: ptr<BlkList>, err: 
         if match_fence(line, f) == false {
             if ft_starts(line, "## ") {
                 section = uc_strip(ft_from(line, 3))
-                title = null
+                title = null as string
             } elif ft_starts(line, "### ") {
                 title = uc_strip(ft_from(line, 4))
             }
@@ -491,7 +491,7 @@ export function collect(paths: ptr<StrList>, root: string, lang: string, err: pt
     while i < ft_list_len(paths) {
         let rel: string = ft_list_get(paths, i)
         let mut text: string = ft_read_file(root + "/" + rel)
-        if text == null {
+        if text as ptr<u8> == null {
             text = ""
         }
         let file_blocks: ptr<BlkList> = bl_new()
@@ -501,7 +501,7 @@ export function collect(paths: ptr<StrList>, root: string, lang: string, err: pt
         let mut k: i32 = 0
         while k < file_blocks.len {
             let b: ptr<Blk> = bl_get(file_blocks, k)
-            if ft_len(uc_strip(b.code)) > 0 and (lang == null or ft_eq(b.lang, lang)) {
+            if ft_len(uc_strip(b.code)) > 0 and (lang as ptr<u8> == null or ft_eq(b.lang, lang)) {
                 bl_push(all, b)
             }
             k = k + 1

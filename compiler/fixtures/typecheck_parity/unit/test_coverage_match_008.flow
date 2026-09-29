@@ -1,0 +1,8 @@
+
+            function f(s: string) -> i32 {
+                match s {
+                    "a" => { return 1 }
+                }
+                return -1
+            }
+            

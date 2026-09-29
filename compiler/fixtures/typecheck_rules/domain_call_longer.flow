@@ -1,0 +1,14 @@
+# expect: lifetime domain violation: 'tick' is in the `callback` domain but calls 'setup', which is in the `session` domain (a shorter-lived domain may not call into a longer-lived one; see docs/language/lifetime-domains.md)
+@lifetime(session)
+function setup() -> i32 {
+    return 1
+}
+
+@lifetime(callback)
+function tick() -> i32 {
+    return setup()
+}
+
+function main() -> i32 {
+    return tick()
+}

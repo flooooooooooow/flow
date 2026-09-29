@@ -20,6 +20,9 @@
 #       Reject Flow-looking code hidden in `text` or untagged fences.
 #   blocks FILE...
 #       Print the fenced blocks of FILEs as JSON (for other tools).
+#   dump
+#       Write every harness rung of every block to FLOW_DOC_DUMP=<dir> and
+#       compile nothing (the input set of compiler/scripts/parity_typecheck.sh).
 #   lessons
 #       Print the tutorial lessons (docs/tutorials/*.md except README, flow
 #       blocks with a `function main`) as JSON.
@@ -131,7 +134,7 @@ function pct(n: i32, total: i32) -> string {
 }
 
 function head_line(detail: string) -> string {
-    if detail == null {
+    if detail as ptr<u8> == null {
         return ""
     }
     let lines: ptr<StrList> = py_splitlines(detail)
@@ -177,7 +180,7 @@ function row_after(a: ptr<Res>, b: ptr<Res>) -> bool {
 }
 
 function or_empty(s: string) -> string {
-    if s == null {
+    if s as ptr<u8> == null {
         return ""
     }
     return s
@@ -211,7 +214,7 @@ function batch_clang(env: ptr<Env>, results: ptr<ResList>) {
     let mut i: i32 = 0
     while i < results.len {
         let r: ptr<Res> = rl_get(results, i)
-        if ft_eq(r.status, "verified") and r.csource != null and ft_len(r.csource) > 0 {
+        if ft_eq(r.status, "verified") and r.csource as ptr<u8> != null and ft_len(r.csource) > 0 {
             rl_push(pending, r)
         }
         i = i + 1
@@ -296,7 +299,7 @@ function batch_execute(env: ptr<Env>, results: ptr<ResList>) -> i32 {
     let mut i: i32 = 0
     while i < results.len {
         let r: ptr<Res> = rl_get(results, i)
-        if ft_eq(r.status, "verified") and r.csource != null and ft_contains(r.csource, "int32_t main(") {
+        if ft_eq(r.status, "verified") and r.csource as ptr<u8> != null and ft_contains(r.csource, "int32_t main(") {
             let base: string = dir + "/r" + pad4(n)
             n = n + 1
             let _w: bool = ft_write_file(base + ".c", r.csource)
@@ -370,7 +373,7 @@ function run_all(env: ptr<Env>, blocks: ptr<BlkList>, use_clang: bool, execute: 
         }
         rl_push(results, verify(env, b, ctxs[pi]))
         let bid: string = blk_opt(b, "id")
-        if bid != null {
+        if bid as ptr<u8> != null {
             ctx_put(ctxs[pi], bid, b.code)
         }
         i = i + 1
@@ -502,17 +505,17 @@ function row_json(r: ptr<Res>) -> string {
     out = out + "      \"path\": " + json_quote(b.path) + ",\n"
     out = out + "      \"line\": " + ft_itoa(b.line) + ",\n"
     out = out + "      \"status\": " + json_quote(r.status)
-    if r.mode != null and ft_len(r.mode) > 0 {
+    if r.mode as ptr<u8> != null and ft_len(r.mode) > 0 {
         out = out + ",\n      \"mode\": " + json_quote(r.mode)
     }
-    if r.stage != null and ft_len(r.stage) > 0 {
+    if r.stage as ptr<u8> != null and ft_len(r.stage) > 0 {
         out = out + ",\n      \"stage\": " + json_quote(r.stage)
     }
-    if r.detail != null and ft_len(r.detail) > 0 {
+    if r.detail as ptr<u8> != null and ft_len(r.detail) > 0 {
         out = out + ",\n      \"detail\": " + json_quote(py_prefix(r.detail, 300))
     }
     let ign: string = blk_opt(b, "ignore")
-    if ign != null and ft_len(ign) > 0 {
+    if ign as ptr<u8> != null and ft_len(ign) > 0 {
         out = out + ",\n      \"reason\": " + json_quote(ign)
     }
     return out + "\n    }"
@@ -618,7 +621,7 @@ function join_with(l: ptr<StrList>, sep: string) -> string {
 # hash of its own text: edit the block and the exemption evaporates.
 function check_ledger(o: ptr<Opts>, results: ptr<ResList>) -> i32 {
     let text: string = ft_read_file(o.ledger)
-    if text == null {
+    if text as ptr<u8> == null {
         ft_errln("no ledger at " + o.ledger_rel + "; run --write-ledger")
         return 1
     }
@@ -762,7 +765,7 @@ function looks_like_flow(l: ptr<Looks>, code: string) -> bool {
 }
 
 function snippets(env: ptr<Env>, o: ptr<Opts>) -> i32 {
-    let all: ptr<BlkList> = load_blocks(o, null)
+    let all: ptr<BlkList> = load_blocks(o, null as string)
     if all == null {
         # The Python check stopped with an uncaught error here (exit 1).
         return 1
@@ -831,7 +834,7 @@ function snippets(env: ptr<Env>, o: ptr<Opts>) -> i32 {
 # ---------------------------------------------------------------------------
 
 function null_or_quote(s: string) -> string {
-    if s == null {
+    if s as ptr<u8> == null {
         return "null"
     }
     return json_quote(s)
@@ -905,7 +908,7 @@ function lessons(o: ptr<Opts>) -> i32 {
 # ---------------------------------------------------------------------------
 
 function usage() -> string {
-    return "usage: check_doc_examples.sh [check|strict|snippets|blocks FILE...|lessons|browser] [--report] [--verbose] [--run] [--no-clang] [--write-ledger] [--fail-on-unverified] [--check-ledger] [--root DIR] [--ledger PATH]"
+    return "usage: check_doc_examples.sh [check|strict|snippets|blocks FILE...|lessons|dump|browser] [--report] [--verbose] [--run] [--no-clang] [--write-ledger] [--fail-on-unverified] [--check-ledger] [--root DIR] [--ledger PATH]"
 }
 
 # A long option, or an unambiguous prefix of one, as argparse allows.
@@ -944,11 +947,12 @@ function flag_is(arg: string, name: string) -> bool {
 
 function main(argc: i32, argv: ptr<string>) -> i32 {
     let o: ptr<Opts> = calloc(1, 32) as ptr<Opts>
-    let env: ptr<Env> = calloc(1, 48) as ptr<Env>
+    let env: ptr<Env> = calloc(1, 64) as ptr<Env>
     env.repo = or_empty(getenv("FLOW_DOC_REPO"))
     env.flowc = or_empty(getenv("FLOW_DOC_FLOWC"))
     env.work = or_empty(getenv("FLOW_DOC_WORK"))
     env.serial = 0
+    env.dump = or_empty(getenv("FLOW_DOC_DUMP"))
     o.root = env.repo
     o.listing = or_empty(getenv("FLOW_DOC_LISTING"))
     let mut cmd: string = "check"
@@ -959,15 +963,15 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     let mut write_f: bool = false
     let mut fail_f: bool = false
     let mut check_f: bool = false
-    let mut ledger_arg: string = null
-    let mut filter: string = null
-    let mut json_out: string = null
+    let mut ledger_arg: string = null as string
+    let mut filter: string = null as string
+    let mut json_out: string = null as string
     let mut keep_f: bool = false
     let files: ptr<StrList> = ft_list_new()
     let mut i: i32 = 1
     while i < argc {
         let a: string = argv[i]
-        if i == 1 and (ft_eq(a, "check") or ft_eq(a, "strict") or ft_eq(a, "snippets") or ft_eq(a, "blocks") or ft_eq(a, "lessons") or ft_eq(a, "verdicts") or ft_eq(a, "browser")) {
+        if i == 1 and (ft_eq(a, "check") or ft_eq(a, "strict") or ft_eq(a, "snippets") or ft_eq(a, "blocks") or ft_eq(a, "lessons") or ft_eq(a, "verdicts") or ft_eq(a, "dump") or ft_eq(a, "browser")) {
             cmd = a
         } elif ft_eq(a, "--root") and i + 1 < argc {
             o.root = argv[i + 1]
@@ -1012,7 +1016,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         i = i + 1
     }
     env.docs = o.root
-    if ledger_arg != null {
+    if ledger_arg as ptr<u8> != null {
         o.ledger = ledger_arg
         o.ledger_rel = pr_relative(ledger_arg, o.root)
     } else {
@@ -1027,7 +1031,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         while k < ft_list_len(files) {
             let path: string = ft_list_get(files, k)
             let text: string = ft_read_file(path)
-            if text == null {
+            if text as ptr<u8> == null {
                 ft_errln("error: cannot read " + path)
                 return 2
             }
@@ -1056,6 +1060,17 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     let blocks: ptr<BlkList> = load_blocks(o, "flow")
     if blocks == null {
         return 2
+    }
+    if ft_eq(cmd, "dump") {
+        # Write the harness rungs of every block to FLOW_DOC_DUMP, compile
+        # nothing (compiler/scripts/parity_typecheck.sh).
+        if ft_len(env.dump) == 0 {
+            ft_errln("error: dump needs FLOW_DOC_DUMP=<dir>")
+            return 2
+        }
+        env.dump_only = true
+        let _dr: ptr<ResList> = run_all(env, blocks, false, false)
+        return 0
     }
     if ft_eq(cmd, "verdicts") {
         let vr: ptr<ResList> = run_all(env, blocks, no_clang == false, run_f)

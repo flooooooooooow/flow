@@ -1,0 +1,7 @@
+# expect: Cannot find in array of ptr<i32> (need numeric or string elements)
+function main() -> i32 {
+    let a: ptr<i32> = null
+    let xs: array<ptr<i32>, 1> = [a]
+    let i: i32 = xs |> find(a)
+    return 0
+}

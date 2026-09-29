@@ -1,0 +1,17 @@
+
+        struct Box<T> {
+            value: T,
+            has_value: bool
+        }
+
+        struct Pair<A, B> {
+            first: A,
+            second: B
+        }
+
+        function main() -> i32 {
+            let box: Box<i32> = Box<i32> { value: 42, has_value: true }
+            let pair: Pair<i32, f32> = Pair<i32, f32> { first: box.value, second: 2.5 }
+            return pair.first
+        }
+        

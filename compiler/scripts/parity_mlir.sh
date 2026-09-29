@@ -94,11 +94,12 @@ digest() {
     fi
 }
 
-# flowc_emit <in.flow> <out.mlir>: 0 when flowc accepts the program.
+# flowc_emit <in.flow> <out.mlir>: 0 when flowc accepts the program. The
+# type check is lenient, as `flow compile --mlir` ran it on the Python host.
 flowc_emit() {
     local in="$1" out="$2"
     rm -f "$out"
-    FLOWC_EMIT=mlir FLOWC_IN="$in" FLOWC_OUT="$out" "$BIN" >"$out.log" 2>&1
+    FLOWC_LENIENT=1 FLOWC_EMIT=mlir FLOWC_IN="$in" FLOWC_OUT="$out" "$BIN" >"$out.log" 2>&1
 }
 
 # flowc_emit_gpu <in.flow> <out.mlir>: the same with @gpu kernels as a
@@ -106,7 +107,7 @@ flowc_emit() {
 flowc_emit_gpu() {
     local in="$1" out="$2"
     rm -f "$out"
-    FLOWC_MLIR_GPU=1 FLOWC_EMIT=mlir FLOWC_IN="$in" FLOWC_OUT="$out" "$BIN" >"$out.log" 2>&1
+    FLOWC_LENIENT=1 FLOWC_MLIR_GPU=1 FLOWC_EMIT=mlir FLOWC_IN="$in" FLOWC_OUT="$out" "$BIN" >"$out.log" 2>&1
 }
 
 # run_exe <tag> <src_dir> <out>: run <tag>.exe with no stdin, in a scratch

@@ -1,0 +1,16 @@
+
+enum Color {
+    Red,
+    Green,
+    Blue
+}
+
+function classify(c: Color) -> i32 {
+    match c.tag {
+        
+        Color_Red => { return 1 }
+        Color_Green => { return 2 }
+        
+    }
+    return -1
+}

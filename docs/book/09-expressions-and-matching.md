@@ -226,18 +226,12 @@ values |> sort unique
 let position: i32 = values |> find(target)
 ```
 
-The source states the required result. The compiler chooses among registered
-plans using applicability constraints, ordering hints, scratch-space
-requirements, and a cost model. Hints can permit a no-op, reversal, counting
-sort, or binary search. `stable` and `unstable` parse, but current plans are all stable.
-GPU, SIMD, entropy, and compact ordering modifiers parse without specialised
-implementations.
-
-Inspect a decision:
-
-```bash
-./flow explain examples/basics/declarative_sort.flow
-```
+The source states the required result. flowc lowers every `sort` to a stable
+insertion sort. The retired Python C backend chose among registered plans with
+a cost model and ordering hints, and `flow explain` printed that choice.
+flowc has no plan selector yet, so `flow explain` stops with an error.
+`stable`, `unstable`, and the GPU, SIMD, entropy, and compact ordering
+modifiers parse without specialised implementations.
 
 ## 9.10 Fork and choose pipelines
 

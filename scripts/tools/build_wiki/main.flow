@@ -1422,11 +1422,11 @@ function build_tutorial_exercises(today: string) -> bool {
             let x: i32 = order[r]
             let track2: string = ft_list_get(tracks, x)
             let mut section: string = wk_section(bl, x)
-            if section == null or ft_len(section) == 0 {
+            if section as ptr<u8> == null or ft_len(section) == 0 {
                 section = wu_title(track2)
             }
             let mut title: string = wk_title(bl, x)
-            if title == null or ft_len(title) == 0 {
+            if title as ptr<u8> == null or ft_len(title) == 0 {
                 title = "Exercise"
             }
             if r > 0 {
@@ -1471,14 +1471,14 @@ function write_llms_txt(manifest: ptr<Json>) -> void {
     wb_line(b, "> https://abhishek-shivakumar.com/transpile/")
     wb_line(b, "")
     let tabs: i32 = json_get(manifest, 0, "tabs")
-    let mut current_tab: string = null
+    let mut current_tab: string = null as string
     let sections: i32 = json_get(manifest, 0, "sections")
     let mut s: i32 = json_first(manifest, sections)
     while s >= 0 {
         let items: i32 = json_get(manifest, s, "items")
         if wu_truthy(manifest, items) {
             let tab: string = jtext(manifest, json_get(manifest, s, "tab"))
-            if current_tab == null or ft_eq(tab, current_tab) == false {
+            if current_tab as ptr<u8> == null or ft_eq(tab, current_tab) == false {
                 current_tab = tab
                 let mut label: string = tab
                 let mut t: i32 = json_first(manifest, tabs)
@@ -1548,7 +1548,7 @@ function ensure_node(g: ptr<Graph>, id: string, label: string, group: string, pa
     }
     let plist: ptr<StrList> = g[0].paths
     let paths: ptr<string> = plist[0].items
-    if path != null and paths[at] == null {
+    if path as ptr<u8> != null and paths[at] as ptr<u8> == null {
         paths[at] = path
     }
 }
@@ -1560,7 +1560,7 @@ function proof_doc_path(prefix: string, rel: string) -> string {
         src_root = "examples/verify"
     }
     if ft_exists(src_root + "/" + proof_rel) == false {
-        return null
+        return null as string
     }
     return "third-party/flow-verify/proofs/" + prefix + "/" + proof_rel
 }
@@ -1654,7 +1654,7 @@ function graph_file(g: ptr<Graph>, root: string, id_prefix: string, group: strin
                     if ft_starts(token, "\"") {
                         let raw: string = wu_strip_set(token, "\"")
                         let tid: string = "external." + raw
-                        ensure_node(g, tid, name_stem(path_name(raw)), "external", null)
+                        ensure_node(g, tid, name_stem(path_name(raw)), "external", null as string)
                         add_edge(g, node_id, tid)
                     } elif ft_starts(token, ".") {
                         let after: string = ft_from(token, 1)
@@ -1687,7 +1687,7 @@ function graph_file(g: ptr<Graph>, root: string, id_prefix: string, group: strin
                             let brel: string = ft_replace(ft_from(base, 7), ".", "/") + ".flow"
                             ensure_node(g, base, blabel, "lib", proof_doc_path("lib", brel))
                         } else {
-                            ensure_node(g, base, blabel, "external", null)
+                            ensure_node(g, base, blabel, "external", null as string)
                         }
                         add_edge(g, node_id, base)
                     }
@@ -1794,7 +1794,7 @@ function write_proof_graph(counts: ptr<i32>) -> void {
             wb_add(b, ",\n      \"label\": " + json_quote(ft_list_get(g[0].labels, x)))
             wb_add(b, ",\n      \"group\": " + json_quote(ft_list_get(g[0].groups, x)))
             let path: string = ft_list_get(g[0].paths, x)
-            if path != null {
+            if path as ptr<u8> != null {
                 wb_add(b, ",\n      \"path\": " + json_quote(path))
             }
             wb_add(b, "\n    }")
@@ -1830,7 +1830,7 @@ function write_proof_graph(counts: ptr<i32>) -> void {
 
 function run_pagefind(root_abs: string) -> void {
     let skip: string = getenv("FLOW_WIKI_SKIP_PAGEFIND")
-    if skip != null and ft_len(skip) > 0 {
+    if skip as ptr<u8> != null and ft_len(skip) > 0 {
         ft_outln("Pagefind skipped: FLOW_WIKI_SKIP_PAGEFIND set")
         return
     }
@@ -1859,7 +1859,7 @@ function html_escape(s: string) -> string {
     let mut i: i32 = 0
     while p[i] != 0 {
         let c: i32 = p[i] as i32
-        let mut rep: string = null
+        let mut rep: string = null as string
         if c == 38 {
             rep = "&amp;"
         } elif c == 60 {
@@ -1871,7 +1871,7 @@ function html_escape(s: string) -> string {
         } elif c == 39 {
             rep = "&#x27;"
         }
-        if rep != null {
+        if rep as ptr<u8> != null {
             wb_add(b, ft_slice(s, start, i))
             wb_add(b, rep)
             start = i + 1
@@ -1893,7 +1893,7 @@ function sget(j: ptr<Json>, obj: i32, key: string) -> string {
 # The HTML stubs Pagefind indexes, one per search-index.json entry.
 function pagefind_stage(index_path: string, src: string) -> i32 {
     let text: string = wu_read_text(index_path)
-    if text == null {
+    if text as ptr<u8> == null {
         ft_errln("build_wiki: cannot read " + index_path)
         return 1
     }

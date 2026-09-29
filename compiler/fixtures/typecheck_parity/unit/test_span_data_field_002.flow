@@ -1,0 +1,14 @@
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function printf(fmt: string, a: f64) -> i32
+}
+
+function main() -> i32 {
+    let raw: ptr<f64> = malloc(24)
+    let view: span<mut f64> = raw[0..3]
+    view[0] = 7.0
+    let back: ptr<f64> = view.capacity
+    printf("%.1f\n", back[0])
+    return 0
+}

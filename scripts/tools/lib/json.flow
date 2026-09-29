@@ -141,7 +141,7 @@ function json_parse_str(j: ptr<Json>) -> string {
         if p[end] == 0 {
             j[0].pos = end
             let _f: i32 = json_fail(j, "unterminated string")
-            return null
+            return null as string
         }
         if p[end] == 92 {
             end = end + 1
@@ -178,7 +178,7 @@ function json_parse_str(j: ptr<Json>) -> string {
                 if cp < 0 {
                     j[0].pos = i
                     let _f2: i32 = json_fail(j, "bad \\u escape")
-                    return null
+                    return null as string
                 }
                 i = i + 4
                 if cp >= 55296 and cp < 56320 and p[i + 2] == 92 and p[i + 3] == 117 {
@@ -220,7 +220,7 @@ function json_parse_value(j: ptr<Json>) -> i32 {
                 return json_fail(j, "expected object key")
             }
             let k: string = json_parse_str(j)
-            if k == null {
+            if k as ptr<u8> == null {
                 return -1
             }
             json_ws(j)
@@ -288,7 +288,7 @@ function json_parse_value(j: ptr<Json>) -> i32 {
     }
     if c == 34 {
         let s: string = json_parse_str(j)
-        if s == null {
+        if s as ptr<u8> == null {
             return -1
         }
         let sid: i32 = json_alloc(j, JSON_STRING)

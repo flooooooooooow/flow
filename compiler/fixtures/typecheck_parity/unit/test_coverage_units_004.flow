@@ -1,0 +1,10 @@
+
+unit Meter
+unit Second
+unit Velocity = Meter / Second
+unit Accel = Meter / Second^2
+
+        function bad(d: Meter, t: Second) -> Accel {
+            return d / t
+        }
+        

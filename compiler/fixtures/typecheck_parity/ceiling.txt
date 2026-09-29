@@ -1,0 +1,17 @@
+# Ceilings for compiler/scripts/parity_typecheck.sh --check, per OS
+# (`uname -s`): OS class strict lenient. Lower them as differences close;
+# never raise them. Every remaining difference is intended:
+#
+#   py-only 5: flowc features the Python checker never typed.
+#     chained assignment (#1036): tests/lang/test_chained_assign.flow,
+#       tests/cgen/chained_assign.flow
+#     generic struct literal inference: tests/lang/test_generic_struct_infer.flow,
+#       tests/cgen/generic_struct_infer.flow
+#     a module alias used as a value: tests/lang/test_import_alias.flow
+#   agree-diff 1: compiler/fixtures/typecheck_rules/chained_assign_mismatch.flow,
+#     where Python typed the inner assignment unknown.
+#   flowc-only 1: the modules-namespacing.md block that defines `gain` twice.
+#     Python kept both as overloads and clang rejected the redefinition.
+Darwin py-only 5 0
+Darwin agree-diff 1 0
+Darwin flowc-only 1 0

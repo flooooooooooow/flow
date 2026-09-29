@@ -1,0 +1,6 @@
+
+struct Parser { x: i32 }
+function callee(p: ptr<Parser>) -> i32 { return 0 }
+function caller(p: ptr<Parser>) -> i32 {
+    return callee(&p)
+}

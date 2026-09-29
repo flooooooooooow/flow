@@ -1,0 +1,4 @@
+
+        function bad(values: span<i32>) { values[0] = 1 }
+        function main() -> i32 { return 0 }
+        

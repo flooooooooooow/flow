@@ -1,0 +1,9 @@
+# expect: Unknown struct in match pattern: Ghost
+function main() -> i32 {
+    let x: i32 = 1
+    match x {
+        Ghost(a) => { return a }
+        _ => { return 0 }
+    }
+    return 0
+}

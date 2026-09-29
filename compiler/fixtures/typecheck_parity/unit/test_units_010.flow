@@ -1,0 +1,15 @@
+
+unit Meter
+unit Second
+unit Kilogram
+unit Radian
+unit Velocity = Meter / Second
+unit Accel = Meter / Second^2
+
+        function main() -> i32 {
+            let d: Meter = 1.0 as Meter
+            let v: Velocity = 2.0 as Velocity
+            let x = d - v
+            return 0
+        }
+        

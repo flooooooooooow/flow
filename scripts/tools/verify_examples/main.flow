@@ -89,10 +89,10 @@ function check_one(root: string, tmp: string, rel: string, timeout: i32, run_cla
     if rc != 0 or ft_exists(c_file) == false {
         let mut so: string = ft_read_file(out_path)
         let mut se: string = ft_read_file(err_path)
-        if so == null {
+        if so as ptr<u8> == null {
             so = ""
         }
-        if se == null {
+        if se as ptr<u8> == null {
             se = ""
         }
         return "fail\n" + categorize(se + "\n" + so)
@@ -104,7 +104,7 @@ function check_one(root: string, tmp: string, rel: string, timeout: i32, run_cla
         }
         if crc != 0 {
             let mut cerr: string = ft_read_file(err_path)
-            if cerr == null {
+            if cerr as ptr<u8> == null {
                 cerr = ""
             }
             let clines: ptr<StrList> = md_splitlines(cerr)
@@ -157,7 +157,7 @@ function compiler_version() -> string {
     let commit: string = uc_strip(pr_capture("git rev-parse --short HEAD 2>/dev/null"))
     let mut version: string = "unknown"
     let text: string = ft_read_file("pyproject.toml")
-    if text != null {
+    if text as ptr<u8> != null {
         # re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
         let lines: ptr<StrList> = ft_split_lines(text)
         let mut i: i32 = 0
@@ -374,7 +374,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     let mut timeout: i32 = 30
     let mut jobs: i32 = vr_cpu_count()
     let mut no_clang: bool = false
-    let mut json_arg: string = null
+    let mut json_arg: string = null as string
     let mut no_write: bool = false
     let extras: ptr<StrList> = ft_list_new()
     let ok: ptr<i32> = malloc(4) as ptr<i32>
@@ -389,7 +389,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         if ft_starts(arg, "--") and ft_len(arg) > 2 {
             let eq: i32 = ft_find(arg, "=", 0)
             let mut name: string = arg
-            let mut value: string = null
+            let mut value: string = null as string
             if eq >= 0 {
                 name = ft_slice(arg, 0, eq)
                 value = ft_from(arg, eq + 1)
@@ -404,7 +404,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
                 continue
             }
             if ft_eq(full, "--help") or ft_eq(full, "--no-clang") or ft_eq(full, "--no-write") {
-                if value != null {
+                if value as ptr<u8> != null {
                     return vr_usage_error(usage_text(), PROG, "argument " + full + ": ignored explicit argument " + ft_repr(value))
                 }
                 if ft_eq(full, "--help") {
@@ -421,7 +421,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
             }
             if ft_eq(full, "--roots") {
                 let got: ptr<StrList> = ft_list_new()
-                if value != null {
+                if value as ptr<u8> != null {
                     ft_list_push(got, value)
                 } else {
                     while i + 1 < argc and vr_is_optlike(argv[i + 1]) == false {
@@ -436,7 +436,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
                 i = i + 1
                 continue
             }
-            if value == null {
+            if value as ptr<u8> == null {
                 if i + 1 >= argc or vr_is_optlike(argv[i + 1]) {
                     return vr_usage_error(usage_text(), PROG, "argument " + full + ": expected one argument")
                 }
@@ -471,8 +471,8 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         return vr_usage_error(usage_text(), PROG, msg)
     }
 
-    let mut json_path: string = null
-    if json_arg != null {
+    let mut json_path: string = null as string
+    if json_arg as ptr<u8> != null {
         json_path = pr_resolve(json_arg)
     }
     let root: string = vr_env("VERIFY_ROOT")
@@ -519,7 +519,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         let mut st: string = "fail"
         let mut cat: string = "internal error"
         let mut why: string = "worker produced no result"
-        if res != null {
+        if res as ptr<u8> != null {
             let parts: ptr<StrList> = ft_split_lines(res)
             st = ft_list_get(parts, 0)
             cat = ""
@@ -545,7 +545,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     let _rm: i32 = pr_run("rm -rf " + pr_quote(tmp))
 
     ft_outln("\n" + ft_itoa(npass) + " pass / " + ft_itoa(total - npass) + " fail out of " + ft_itoa(total))
-    if json_path != null {
+    if json_path as ptr<u8> != null {
         let _wj: bool = ft_write_file(json_path, json_results(files, status, cats, reasons))
         ft_outln("JSON written to " + json_arg)
     }

@@ -21,7 +21,7 @@ export function dg_html_escape(s: string) -> string {
     let mut i: i32 = 0
     while i < n {
         let c: i32 = p[i] as i32
-        let mut rep: string = null
+        let mut rep: string = null as string
         if c == 38 {
             rep = "&amp;"
         } elif c == 60 {
@@ -33,7 +33,7 @@ export function dg_html_escape(s: string) -> string {
         } elif c == 39 {
             rep = "&#x27;"
         }
-        if rep == null {
+        if rep as ptr<u8> == null {
             buf[o] = c as u8
             o = o + 1
         } else {
@@ -68,7 +68,7 @@ export function dg_flags(argc: i32, argv: ptr<string>, names: ptr<StrList>, on: 
         if ft_starts(arg, "--") and ft_len(arg) > 2 {
             let eqat: i32 = ft_find(arg, "=", 0)
             let mut opt: string = arg
-            let mut explicit: string = null
+            let mut explicit: string = null as string
             if eqat >= 0 {
                 opt = ft_slice(arg, 0, eqat)
                 explicit = ft_from(arg, eqat + 1)
@@ -123,7 +123,7 @@ export function dg_flags(argc: i32, argv: ptr<string>, names: ptr<StrList>, on: 
                 if exact >= 0 {
                     full = ft_list_get(names, exact)
                 }
-                if explicit != null {
+                if explicit as ptr<u8> != null {
                     ft_err(usage + prog + ": error: argument " + dg_flag_label(full) + ": ignored explicit argument " + ft_repr(explicit) + "\n")
                     return 2
                 }

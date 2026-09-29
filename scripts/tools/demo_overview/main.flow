@@ -66,7 +66,7 @@ function card_missing(j: ptr<Json>, item: i32) -> string {
         }
         ki = ki + 1
     }
-    return null
+    return null as string
 }
 
 function card(j: ptr<Json>, item: i32, featured: bool) -> string {
@@ -180,7 +180,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     }
 
     let text: string = ft_read_file(CATALOG)
-    if text == null {
+    if text as ptr<u8> == null {
         ft_errln("FileNotFoundError: [Errno 2] No such file or directory: " + ft_repr(CATALOG))
         return 1
     }
@@ -254,7 +254,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     while c >= 0 {
         if dg_truthy(j, json_get(j, c, "featured")) {
             let miss: string = card_missing(j, c)
-            if miss != null {
+            if miss as ptr<u8> != null {
                 return key_error(miss)
             }
         }
@@ -263,7 +263,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     c = json_first(j, coll)
     while c >= 0 {
         let miss2: string = card_missing(j, c)
-        if miss2 != null {
+        if miss2 as ptr<u8> != null {
             return key_error(miss2)
         }
         c = json_next(j, c)
@@ -272,7 +272,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     let generated: string = build(j, coll)
     if on[0] == 1 {
         let mut current: string = ft_read_file(OUTPUT)
-        if current == null {
+        if current as ptr<u8> == null {
             current = ""
         }
         if ft_eq(current, generated) == false {

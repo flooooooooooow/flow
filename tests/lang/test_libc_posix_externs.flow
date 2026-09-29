@@ -1,0 +1,27 @@
+# Flow-native language test: an extern block may declare the POSIX
+# functions stdio.h and stdlib.h already declare (fdopen, fileno,
+# realpath) without a conflicting C prototype (#1067).
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+@unsafe extern {
+    function fdopen(fd: i32, mode: string) -> ptr<void>
+    function fileno(fp: ptr<void>) -> i32
+    function realpath(path: string, resolved: ptr<u8>) -> ptr<u8>
+    function malloc(size: i64) -> ptr<u8>
+}
+
+function main() -> i32 {
+    let out: ptr<void> = fdopen(1, "w")
+    if out == null {
+        return 1
+    }
+    if fileno(out) != 1 {
+        return 2
+    }
+    let buf: ptr<u8> = malloc(4096)
+    let resolved: ptr<u8> = realpath(".", buf)
+    if resolved == null {
+        return 3
+    }
+    return 0
+}

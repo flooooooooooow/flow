@@ -1,0 +1,8 @@
+# expect: While condition must be bool, got i32
+function main() -> i32 {
+    let mut x: i32 = 1
+    while x {
+        x = 0
+    }
+    return 0
+}

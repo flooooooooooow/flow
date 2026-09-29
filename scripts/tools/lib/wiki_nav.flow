@@ -25,7 +25,7 @@ function wn_build_generated(path: string) -> bool {
 # Parse the manifest. Returns null and prints to stderr when it is unusable.
 export function wn_load(path: string) -> ptr<Json> {
     let text: string = ft_read_file(path)
-    if text == null {
+    if text as ptr<u8> == null {
         return null
     }
     let j: ptr<Json> = json_parse(text)
@@ -258,7 +258,7 @@ export function wn_dump_sections(b: ptr<WBuf>, j: ptr<Json>, level: i32, euclid:
         first = false
         wu_pad(b, level + 1)
         let gen: i32 = json_get(j, s, "generated")
-        let mut filled: string = null
+        let mut filled: string = null as string
         if gen >= 0 {
             let which: string = wn_text(j, gen)
             if ft_eq(which, "euclid") {
@@ -283,7 +283,7 @@ export function wn_dump_sections(b: ptr<WBuf>, j: ptr<Json>, level: i32, euclid:
                 wb_add(b, "\n")
                 wu_pad(b, level + 2)
                 wb_add(b, json_quote(key) + ": ")
-                if ft_eq(key, "items") and filled != null {
+                if ft_eq(key, "items") and filled as ptr<u8> != null {
                     wb_add(b, filled)
                     has_items = true
                 } else {
@@ -292,7 +292,7 @@ export function wn_dump_sections(b: ptr<WBuf>, j: ptr<Json>, level: i32, euclid:
             }
             m = json_next(j, m)
         }
-        if filled != null and has_items == false {
+        if filled as ptr<u8> != null and has_items == false {
             if any {
                 wb_add(b, ",")
             }

@@ -1,0 +1,7 @@
+
+struct Parser { x: i32 }
+function callee(p: ptr<Parser>) -> i32 { return 0 }
+function caller() -> i32 {
+    let s: Parser = Parser { x: 0 }
+    return callee(&s)
+}

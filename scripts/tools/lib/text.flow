@@ -297,14 +297,14 @@ export function ft_repr(s: string) -> string {
 export function ft_read_file(path: string) -> string {
     let fp: ptr<void> = fopen(path, "rb")
     if fp == null {
-        return null
+        return null as string
     }
     let _s: i32 = fseek(fp, 0, 2)
     let size: i64 = ftell(fp)
     let _r: i32 = fseek(fp, 0, 0)
     if size < 0 {
         let _c0: i32 = fclose(fp)
-        return null
+        return null as string
     }
     # A directory opened as a file reads nothing. Its ftell is small on macOS
     # and LONG_MAX on Linux, where size + 1 overflows; read it as empty on both.
@@ -320,7 +320,7 @@ export function ft_read_file(path: string) -> string {
     let got: i64 = fread(buf, 1, want, fp)
     let _c: i32 = fclose(fp)
     if got < 0 {
-        return null
+        return null as string
     }
     buf[got as i32] = 0
     return buf as string
@@ -509,7 +509,7 @@ export function ft_set_new() -> ptr<StrSet> {
 
 function ft_set_slot(keys: ptr<string>, cap: i32, s: string) -> i32 {
     let mut idx: i32 = (ft_hash(s) % (cap as i64)) as i32
-    while keys[idx] != null {
+    while keys[idx] as ptr<u8> != null {
         if strcmp(keys[idx], s) == 0 {
             return idx
         }
@@ -524,7 +524,7 @@ function ft_set_slot(keys: ptr<string>, cap: i32, s: string) -> i32 {
 export function ft_set_has(st: ptr<StrSet>, s: string) -> bool {
     let keys: ptr<string> = st[0].keys
     let idx: i32 = ft_set_slot(keys, st[0].cap, s)
-    return keys[idx] != null
+    return keys[idx] as ptr<u8> != null
 }
 
 export function ft_set_add(st: ptr<StrSet>, s: string) -> void {
@@ -540,7 +540,7 @@ export function ft_set_add(st: ptr<StrSet>, s: string) -> void {
         }
         i = 0
         while i < oldcap {
-            if old[i] != null {
+            if old[i] as ptr<u8> != null {
                 nk[ft_set_slot(nk, nc, old[i])] = old[i]
             }
             i = i + 1
@@ -550,7 +550,7 @@ export function ft_set_add(st: ptr<StrSet>, s: string) -> void {
     }
     let keys: ptr<string> = st[0].keys
     let idx: i32 = ft_set_slot(keys, st[0].cap, s)
-    if keys[idx] == null {
+    if keys[idx] as ptr<u8> == null {
         keys[idx] = s
         st[0].count = st[0].count + 1
     }
@@ -586,7 +586,7 @@ export function ft_map_new() -> ptr<StrMap> {
 export function ft_map_get(mp: ptr<StrMap>, s: string, missing: i32) -> i32 {
     let keys: ptr<string> = mp[0].keys
     let idx: i32 = ft_set_slot(keys, mp[0].cap, s)
-    if keys[idx] == null {
+    if keys[idx] as ptr<u8> == null {
         return missing
     }
     let vals: ptr<i32> = mp[0].vals
@@ -608,7 +608,7 @@ export function ft_map_put(mp: ptr<StrMap>, s: string, v: i32) -> void {
         }
         i = 0
         while i < oldcap {
-            if old[i] != null {
+            if old[i] as ptr<u8> != null {
                 let slot: i32 = ft_set_slot(nk, nc, old[i])
                 nk[slot] = old[i]
                 nv[slot] = oldv[i]
@@ -622,7 +622,7 @@ export function ft_map_put(mp: ptr<StrMap>, s: string, v: i32) -> void {
     let keys: ptr<string> = mp[0].keys
     let vals: ptr<i32> = mp[0].vals
     let idx: i32 = ft_set_slot(keys, mp[0].cap, s)
-    if keys[idx] == null {
+    if keys[idx] as ptr<u8> == null {
         keys[idx] = s
         mp[0].count = mp[0].count + 1
     }
