@@ -568,8 +568,13 @@ function flowc_fmt_layout(w: ptr<FmtBuf>, src: ptr<u8>, els: ptr<i32>, count: i3
         }
         k = k + 1
     }
+    # An unterminated string runs to the end of the file as one token and
+    # already carries the file's last newline.
     if count > 0 {
-        flowc_fmt_putc(w, 10)
+        let last_end: i32 = els[(count - 1) * FMT_REC + FMT_END]
+        if last_end <= 0 or src[last_end - 1] != 10 {
+            flowc_fmt_putc(w, 10)
+        }
     }
 }
 
