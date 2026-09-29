@@ -3790,7 +3790,8 @@ function flowc_cgen_put_env_init(w: ptr<CgenBuf>, src: ptr<u8>, lam_id: i32) {
 
 # A closure over lambda `lam_id` whose environment is `env_expr_kind`:
 # 0 builds it from the enclosing scope, 1 copies `.env` of the local `var`.
-function flowc_cgen_emit_heap_closure(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, lam_id: i32, fty: i32, var: i32) {
+# `fname` is the closure typedef and `fcast` the cast of its fn slot.
+function flowc_cgen_emit_heap_closure(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, lam_id: i32, fname: string, fcast: string, var: i32) {
     flowc_cgen_puts(w, "(__extension__ ({ lambda_")
     flowc_cgen_put_i32(w, lam_id)
     flowc_cgen_puts(w, "_env* __flowc_fe = (lambda_")
@@ -3809,20 +3810,20 @@ function flowc_cgen_emit_heap_closure(w: ptr<CgenBuf>, arena: AstArena, src: ptr
         flowc_cgen_puts(w, ".env")
     }
     flowc_cgen_puts(w, "; (")
-    flowc_cgen_put_fat_name(w, arena, src, fty)
+    flowc_cgen_puts(w, fname)
     flowc_cgen_puts(w, "){ .fn = ")
-    flowc_cgen_put_fat_fn_cast(w, arena, src, fty)
+    flowc_cgen_puts(w, fcast)
     flowc_cgen_puts(w, "&__flowc_lambda_")
     flowc_cgen_put_i32(w, lam_id)
     flowc_cgen_puts(w, ", .env = __flowc_fe }; }))")
 }
 
 # `((fn_X){ .fn = <cast>&name, .env = NULL })` for an env-less function.
-function flowc_cgen_emit_null_env_closure(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, fty: i32, prefix: string, s: i32, e: i32, suffix: string) {
+function flowc_cgen_emit_null_env_closure(w: ptr<CgenBuf>, src: ptr<u8>, fname: string, fcast: string, prefix: string, s: i32, e: i32, suffix: string) {
     flowc_cgen_puts(w, "((")
-    flowc_cgen_put_fat_name(w, arena, src, fty)
+    flowc_cgen_puts(w, fname)
     flowc_cgen_puts(w, "){ .fn = ")
-    flowc_cgen_put_fat_fn_cast(w, arena, src, fty)
+    flowc_cgen_puts(w, fcast)
     flowc_cgen_puts(w, "&")
     flowc_cgen_puts(w, prefix)
     if e > s {
@@ -3834,15 +3835,17 @@ function flowc_cgen_emit_null_env_closure(w: ptr<CgenBuf>, arena: AstArena, src:
     flowc_cgen_puts(w, ", .env = NULL })")
 }
 
-# Emit `expr` as a value of function type `fty`.
-function flowc_cgen_emit_as_fat(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, expr: i32, fty: i32) {
+# Emit `expr` as a closure value of the typedef `fname`, whose fn slot takes
+# the cast `fcast`: a lambda, a named function or a local bound to a lambda
+# becomes a closure; anything else is emitted as it is.
+function flowc_cgen_emit_as_fat_named(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, expr: i32, fname: string, fcast: string) {
     let k: i32 = arena.nodes[expr].kind
     if k == AST_FN and arena.nodes[expr].name_start < 0 {
         let lam_id: i32 = 0 - arena.nodes[expr].name_start
         if flowc_cgen_lam_caps(w, lam_id) == 1 {
-            flowc_cgen_emit_heap_closure(w, arena, src, lam_id, fty, AST_NONE)
+            flowc_cgen_emit_heap_closure(w, arena, src, lam_id, fname, fcast, AST_NONE)
         } else {
-            flowc_cgen_emit_null_env_closure(w, arena, src, fty, "__flowc_lambda_", lam_id, lam_id, "_bridge")
+            flowc_cgen_emit_null_env_closure(w, src, fname, fcast, "__flowc_lambda_", lam_id, lam_id, "_bridge")
         }
         return
     }
@@ -3851,7 +3854,7 @@ function flowc_cgen_emit_as_fat(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
         if decl == AST_NONE {
             let f: i32 = flowc_cgen_find_fn(arena, src, arena.nodes[expr].name_start, arena.nodes[expr].name_end)
             if f != AST_NONE and arena.nodes[f].name_start >= 0 {
-                flowc_cgen_emit_null_env_closure(w, arena, src, fty, "__flowc_fnadapt_", arena.nodes[expr].name_start, arena.nodes[expr].name_end, "")
+                flowc_cgen_emit_null_env_closure(w, src, fname, fcast, "__flowc_fnadapt_", arena.nodes[expr].name_start, arena.nodes[expr].name_end, "")
                 return
             }
         } else {
@@ -3860,9 +3863,9 @@ function flowc_cgen_emit_as_fat(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
                 if li != AST_NONE and arena.nodes[li].kind == AST_FN and arena.nodes[li].name_start < 0 {
                     let lam_id: i32 = 0 - arena.nodes[li].name_start
                     if flowc_cgen_lam_caps(w, lam_id) == 1 {
-                        flowc_cgen_emit_heap_closure(w, arena, src, lam_id, fty, expr)
+                        flowc_cgen_emit_heap_closure(w, arena, src, lam_id, fname, fcast, expr)
                     } else {
-                        flowc_cgen_emit_null_env_closure(w, arena, src, fty, "__flowc_lambda_", lam_id, lam_id, "_bridge")
+                        flowc_cgen_emit_null_env_closure(w, src, fname, fcast, "__flowc_lambda_", lam_id, lam_id, "_bridge")
                     }
                     return
                 }
@@ -3872,11 +3875,182 @@ function flowc_cgen_emit_as_fat(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
     flowc_cgen_emit_expr(w, arena, src, expr)
 }
 
+# Emit `expr` as a value of function type `fty`.
+function flowc_cgen_emit_as_fat(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, expr: i32, fty: i32) {
+    let fname: array<u8, 256> = []
+    let mut nw: CgenBuf = flowc_cgen_buf_init(&fname[0], 255)
+    flowc_cgen_put_fat_name(&nw, arena, src, fty)
+    fname[nw.len] = 0
+    let fcast: array<u8, 512> = []
+    let mut cw: CgenBuf = flowc_cgen_buf_init(&fcast[0], 511)
+    flowc_cgen_put_fat_fn_cast(&cw, arena, src, fty)
+    fcast[cw.len] = 0
+    flowc_cgen_emit_as_fat_named(w, arena, src, expr, &fname[0] as string, &fcast[0] as string)
+}
+
+# For a function with function-typed parameters, add
+# `^name\0F0|C0;F1|C1;...\0` where Fi is the closure typedef of parameter i
+# and Ci the cast of its fn slot, both empty for another parameter. A call
+# from a later module of the bundle reads it to pass a lambda or a function
+# as a closure, as a call within the module does (#1043).
+function flowc_cgen_sig_put_fats(
+    arena: AstArena,
+    src: ptr<u8>,
+    buf: ptr<u8>,
+    cap: i32,
+    len: i32,
+    fn: i32
+) -> i32 {
+    let mut any: i32 = 0
+    let mut prm: i32 = arena.nodes[fn].a
+    while prm != AST_NONE {
+        if flowc_cgen_is_fat_ty(arena, arena.nodes[prm].a) == 1 {
+            any = 1
+        }
+        prm = arena.nodes[prm].next
+    }
+    if any == 0 {
+        return len
+    }
+    let ns: i32 = arena.nodes[fn].name_start
+    let ne: i32 = arena.nodes[fn].name_end
+    let nlen: i32 = ne - ns
+    if nlen <= 0 or len + nlen + 4 > cap {
+        return len
+    }
+    buf[len] = 94
+    let mut i: i32 = 0
+    while i < nlen {
+        buf[len + 1 + i] = src[ns + i]
+        i = i + 1
+    }
+    let mut n: i32 = len + 1 + nlen
+    buf[n] = 0
+    n = n + 1
+    let dest: ptr<u8> = buf + n
+    let mut tw: CgenBuf = flowc_cgen_buf_init(dest, cap - n - 1)
+    let mut idx: i32 = 0
+    prm = arena.nodes[fn].a
+    while prm != AST_NONE {
+        if idx > 0 {
+            flowc_cgen_putc(&tw, 59)
+        }
+        let pt: i32 = arena.nodes[prm].a
+        if flowc_cgen_is_fat_ty(arena, pt) == 1 {
+            flowc_cgen_put_fat_name(&tw, arena, src, pt)
+            flowc_cgen_putc(&tw, 124)
+            flowc_cgen_put_fat_fn_cast(&tw, arena, src, pt)
+        }
+        idx = idx + 1
+        prm = arena.nodes[prm].next
+    }
+    if tw.err != 0 {
+        return len
+    }
+    n = n + tw.len
+    buf[n] = 0
+    return n + 1
+}
+
+# Copy the closure typedef and fn-slot cast recorded by
+# flowc_cgen_sig_put_fats for parameter `param_idx` of the function named
+# [call_ns, call_ne) into fname and fcast (NUL-terminated). 1 if found.
+function flowc_cgen_sig_fat_param(w: ptr<CgenBuf>, src: ptr<u8>, call_ns: i32, call_ne: i32, param_idx: i32, fname: ptr<u8>, fname_cap: i32, fcast: ptr<u8>, fcast_cap: i32) -> i32 {
+    let buf: ptr<u8> = w[0].sigs
+    let blen: i32 = w[0].sigs_len
+    if buf == null or blen <= 0 {
+        return 0
+    }
+    let nlen: i32 = call_ne - call_ns
+    let mut p: i32 = 0
+    while p < blen {
+        let mut k: i32 = 0
+        while p + k < blen and buf[p + k] != 0 {
+            k = k + 1
+        }
+        let vpos: i32 = p + k + 1
+        if vpos >= blen {
+            return 0
+        }
+        let mut hit: i32 = 0
+        if k == nlen + 1 and buf[p] == 94 {
+            hit = 1
+            let mut j: i32 = 0
+            while j < nlen {
+                if buf[p + 1 + j] != src[call_ns + j] {
+                    hit = 0
+                }
+                j = j + 1
+            }
+        }
+        let mut v: i32 = vpos
+        if hit == 1 {
+            let mut idx: i32 = 0
+            while v < blen and buf[v] != 0 and idx < param_idx {
+                if buf[v] == 59 {
+                    idx = idx + 1
+                }
+                v = v + 1
+            }
+            if idx != param_idx {
+                return 0
+            }
+            let mut a: i32 = 0
+            while v < blen and buf[v] != 0 and buf[v] != 59 and buf[v] != 124 and a < fname_cap - 1 {
+                fname[a] = buf[v]
+                a = a + 1
+                v = v + 1
+            }
+            fname[a] = 0
+            if a == 0 or v >= blen or buf[v] != 124 {
+                return 0
+            }
+            v = v + 1
+            let mut c: i32 = 0
+            while v < blen and buf[v] != 0 and buf[v] != 59 and c < fcast_cap - 1 {
+                fcast[c] = buf[v]
+                c = c + 1
+                v = v + 1
+            }
+            fcast[c] = 0
+            return 1
+        }
+        while v < blen and buf[v] != 0 {
+            v = v + 1
+        }
+        p = v + 1
+    }
+    return 0
+}
+
+# 1 when an earlier module of the bundle recorded a function-typed
+# parameter (flowc_cgen_sig_put_fats), so this module may pass closures.
+function flowc_cgen_sigs_have_fat(w: ptr<CgenBuf>) -> i32 {
+    let buf: ptr<u8> = w[0].sigs
+    let blen: i32 = w[0].sigs_len
+    if buf == null or blen <= 0 {
+        return 0
+    }
+    let mut p: i32 = 0
+    let mut field: i32 = 0
+    while p < blen {
+        if field == 0 and buf[p] == 94 {
+            return 1
+        }
+        while p < blen and buf[p] != 0 {
+            p = p + 1
+        }
+        p = p + 1
+        field = 1 - field
+    }
+    return 0
+}
+
 # Bridges and adapters: env-dropping entry points for lambdas and named
 # functions used as closures. Only programs that name a function type get
 # them. `which` 0 emits the lambda bridges, 1 the named-function adapters.
 function flowc_cgen_emit_fat_thunks(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, root: i32, which: i32) {
-    if flowc_cgen_uses_fat(arena) == 0 {
+    if flowc_cgen_uses_fat(arena) == 0 and flowc_cgen_sigs_have_fat(w) == 0 {
         return
     }
     let mut i: i32 = 0
@@ -5139,6 +5313,18 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                 let fat_pty: i32 = flowc_cgen_fn_param_type(arena, fn_id, param_idx)
                 if flowc_cgen_is_fat_ty(arena, fat_pty) == 1 {
                     flowc_cgen_emit_as_fat(w, arena, src, arg, fat_pty)
+                    arg = arena.nodes[arg].next
+                    param_idx = param_idx + 1
+                    continue
+                }
+            }
+            # The callee lives in another module of the bundle: a
+            # function-typed parameter recorded there takes a closure (#1043).
+            if fn_id == AST_NONE {
+                let xfname: array<u8, 256> = []
+                let xfcast: array<u8, 512> = []
+                if flowc_cgen_sig_fat_param(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end, param_idx, &xfname[0], 256, &xfcast[0], 512) == 1 {
+                    flowc_cgen_emit_as_fat_named(w, arena, src, arg, &xfname[0] as string, &xfcast[0] as string)
                     arg = arena.nodes[arg].next
                     param_idx = param_idx + 1
                     continue
@@ -9349,6 +9535,7 @@ export function flowc_cgen_collect_sigs(
             }
             n = flowc_cgen_sig_put_spans(arena, src, buf, cap, n, fn)
             n = flowc_cgen_sig_put_overload(arena, src, buf, cap, n, fn)
+            n = flowc_cgen_sig_put_fats(arena, src, buf, cap, n, fn)
             n = flowc_cgen_sig_put_recv(arena, src, buf, cap, n, fn)
             n = flowc_cgen_sig_put_user_libc(arena, src, buf, cap, n, fn)
         }
