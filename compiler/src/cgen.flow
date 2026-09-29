@@ -2797,6 +2797,11 @@ function flowc_cgen_emit_print_one(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
     flowc_cgen_putc(w, 41)
 }
 
+# Names a lambda binds itself (parameters, nested lambda parameters, `let`
+# and `for` variables) that the capture scans track; the buffer in pass 0.4
+# holds this many spans.
+const FLOWC_CGEN_LAMBDA_LOCALS: i32 = 64
+
 # Scan an AST subtree for AST_IDENT nodes that aren't in the param_spans list.
 # Add them to the captured variables buffer on the writer.
 function flowc_cgen_scan_captures(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32, param_spans: ptr<i32>, nparams: i32) {
@@ -2811,13 +2816,35 @@ function flowc_cgen_scan_captures(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
     if kind == AST_FN {
         let mut nparams2: i32 = nparams
         let mut param: i32 = arena.nodes[id].a
-        while param != AST_NONE and nparams2 < 16 {
+        while param != AST_NONE and nparams2 < FLOWC_CGEN_LAMBDA_LOCALS {
             param_spans[nparams2 * 2] = arena.nodes[param].name_start
             param_spans[nparams2 * 2 + 1] = arena.nodes[param].name_end
             nparams2 = nparams2 + 1
             param = arena.nodes[param].next
         }
         flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].c, param_spans, nparams2)
+        return
+    }
+    # A `let` inside the lambda binds a local for the statements after it,
+    # and a `for` binds its variable in its body: neither is a capture
+    # (#1040).
+    if kind == AST_LET and nparams < FLOWC_CGEN_LAMBDA_LOCALS {
+        flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].b, param_spans, nparams)
+        param_spans[nparams * 2] = arena.nodes[id].name_start
+        param_spans[nparams * 2 + 1] = arena.nodes[id].name_end
+        flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].next, param_spans, nparams + 1)
+        return
+    }
+    if kind == AST_FOR and nparams < FLOWC_CGEN_LAMBDA_LOCALS {
+        flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].a, param_spans, nparams)
+        flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].b, param_spans, nparams)
+        if arena.nodes[id].ival > 0 {
+            flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].ival, param_spans, nparams)
+        }
+        param_spans[nparams * 2] = arena.nodes[id].name_start
+        param_spans[nparams * 2 + 1] = arena.nodes[id].name_end
+        flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].c, param_spans, nparams + 1)
+        flowc_cgen_scan_captures(w, arena, src, arena.nodes[id].next, param_spans, nparams)
         return
     }
     if kind == AST_IDENT {
@@ -2874,13 +2901,32 @@ function flowc_cgen_scan_lambda_caps(
         # Nested lambda: add its params and recurse into its body.
         let mut nparams2: i32 = nparams
         let mut param: i32 = arena.nodes[id].a
-        while param != AST_NONE and nparams2 < 16 {
+        while param != AST_NONE and nparams2 < FLOWC_CGEN_LAMBDA_LOCALS {
             param_spans[nparams2 * 2] = arena.nodes[param].name_start
             param_spans[nparams2 * 2 + 1] = arena.nodes[param].name_end
             nparams2 = nparams2 + 1
             param = arena.nodes[param].next
         }
         return flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].c, buf, count, param_spans, nparams2)
+    }
+    # Lambda-local `let` and `for` names are not captures (#1040); see
+    # flowc_cgen_scan_captures.
+    if kind == AST_LET and nparams < FLOWC_CGEN_LAMBDA_LOCALS {
+        let c1: i32 = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].b, buf, count, param_spans, nparams)
+        param_spans[nparams * 2] = arena.nodes[id].name_start
+        param_spans[nparams * 2 + 1] = arena.nodes[id].name_end
+        return flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].next, buf, c1, param_spans, nparams + 1)
+    }
+    if kind == AST_FOR and nparams < FLOWC_CGEN_LAMBDA_LOCALS {
+        let mut c2: i32 = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].a, buf, count, param_spans, nparams)
+        c2 = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].b, buf, c2, param_spans, nparams)
+        if arena.nodes[id].ival > 0 {
+            c2 = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].ival, buf, c2, param_spans, nparams)
+        }
+        param_spans[nparams * 2] = arena.nodes[id].name_start
+        param_spans[nparams * 2 + 1] = arena.nodes[id].name_end
+        c2 = flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].c, buf, c2, param_spans, nparams + 1)
+        return flowc_cgen_scan_lambda_caps(arena, src, arena.nodes[id].next, buf, c2, param_spans, nparams)
     }
     if kind == AST_IDENT {
         let ns: i32 = arena.nodes[id].name_start
@@ -8072,7 +8118,7 @@ export function flowc_cgen_emit_sigs(
     # For each lambda FN (negative name_start), collect identifiers in the
     # body that aren't parameters. These will be hoisted to static globals.
     # Also record per-lambda captures for snapshot emission.
-    let param_span_buf: array<i32, 32> = []
+    let param_span_buf: array<i32, 128> = []
     let per_lam_buf: array<i32, 32> = []
     let mut li: i32 = 0
     while li < arena.len {
