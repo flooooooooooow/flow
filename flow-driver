@@ -1059,14 +1059,33 @@ compile_program_mlir() {
     compile_program_mlir_python "$program"
 }
 
+# The MLIR emitter lives in the main.flow build of flowc (the checked-in
+# bootstrap C), not in the driver.flow builds ensure_flowc may prefer.
+# FLOWC_BIN overrides; otherwise compiler/build/flowc_bootstrap is built
+# from compiler/bootstrap/flowc_stage_a.c with cc when missing or stale.
+flow_resolve_flowc_mlir() {
+    if [[ -n "${FLOWC_BIN:-}" && -x "${FLOWC_BIN}" ]]; then
+        printf '%s\n' "$FLOWC_BIN"
+        return 0
+    fi
+    local boot_c="$SCRIPT_DIR/compiler/bootstrap/flowc_stage_a.c"
+    local boot="$SCRIPT_DIR/compiler/build/flowc_bootstrap"
+    if [[ ! -x "$boot" || "$boot_c" -nt "$boot" ]]; then
+        mkdir -p "$SCRIPT_DIR/compiler/build"
+        "${CC:-cc}" -O2 -w -o "$boot.tmp.$$" "$boot_c" >/dev/null 2>&1 || return 1
+        mv -f "$boot.tmp.$$" "$boot"
+    fi
+    printf '%s\n' "$boot"
+}
+
 # Flow MLIR emitter path. Returns 3 when flowc refuses the program (the
 # reason is left in FLOW_MLIR_REFUSAL), 1 on a lowering or link failure.
 compile_program_mlir_flowc() {
     local program="$1"
     check_mlir_deps
     local driver
-    if ! driver="$(flow_resolve_flowc)"; then
-        FLOW_MLIR_REFUSAL="no Stage-A flowc driver"
+    if ! driver="$(flow_resolve_flowc_mlir)"; then
+        FLOW_MLIR_REFUSAL="no flowc built from compiler/bootstrap"
         return 3
     fi
     local basename
@@ -1078,6 +1097,10 @@ compile_program_mlir_flowc() {
         FLOWC_IN="$program" FLOWC_OUT="$build_dir/$basename.mlir" \
         "$driver" >"$build_dir/.flowc_mlir_log" 2>&1; then
         FLOW_MLIR_REFUSAL="$(grep -m1 'flowc' "$build_dir/.flowc_mlir_log" || true)"
+        return 3
+    fi
+    if ! head -1 "$build_dir/$basename.mlir" | grep -q '^module'; then
+        FLOW_MLIR_REFUSAL="$driver does not know FLOWC_EMIT=mlir"
         return 3
     fi
     print_success "FLOW → MLIR (flowc): $basename.mlir"

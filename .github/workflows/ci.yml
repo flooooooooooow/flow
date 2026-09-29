@@ -390,6 +390,9 @@ jobs:
           cp /tmp/nopy-mlir/python3 /tmp/nopy-mlir/python
           chmod +x /tmp/nopy-mlir/python3 /tmp/nopy-mlir/python
           PATH="/tmp/nopy-mlir:$PATH" timeout 10m ./compiler/scripts/parity_mlir.sh
+          # --backend=mlir on the flowc host needs no Python either.
+          PATH="/tmp/nopy-mlir:$PATH" FLOW_HOST=flowc \
+            ./flow run --backend=mlir compiler/fixtures/mlir/control.flow
 
       - name: Compile and run a Flow program (FLOW_HOST=flowc)
         env:
