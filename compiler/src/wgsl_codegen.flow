@@ -201,7 +201,10 @@ function flowc_wgsl_emit_expr(w: ptr<WgslGenBuf>, arena: AstArena, src: ptr<u8>,
         elif op == TOK_TILDE { flowc_wgsl_puts(w, "~") }
         elif op == TOK_AMP { flowc_wgsl_puts(w, "&") }
         elif op == TOK_STAR { flowc_wgsl_puts(w, "*") }
+        # The operand gets its own parentheses (#1017): `-(-x)` is not `--x`.
+        flowc_wgsl_puts(w, "(")
         flowc_wgsl_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_wgsl_puts(w, ")")
     } elif kind == AST_CALL {
         let name_start: i32 = arena.nodes[id].name_start
         let name_end: i32 = arena.nodes[id].name_end

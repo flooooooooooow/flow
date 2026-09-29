@@ -1,0 +1,43 @@
+# Flow-native language test: a `for` range without a step runs toward its end.
+# `for r in 5 to 0` counts 5, 4, 3, 2, 1, as on the Python host; flowc used
+# to run no iterations. An explicit step keeps its meaning.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+function main() -> i32 {
+    let mut up: i32 = 0
+    for i in 0 to 5 {
+        up = up * 10 + i
+    }
+    if up != 1234 {
+        return 1
+    }
+    let mut down: i32 = 0
+    for r in 5 to 0 {
+        down = down * 10 + r
+    }
+    if down != 54321 {
+        return 2
+    }
+    let mut empty: i32 = 0
+    for e in 3 to 3 {
+        empty = empty + 1
+    }
+    if empty != 0 {
+        return 3
+    }
+    let mut stepped: i32 = 0
+    for s in 10 to 0 step -2 {
+        stepped = stepped + s
+    }
+    if stepped != 30 {
+        return 4
+    }
+    let mut excl: i32 = 0
+    for x in 4..1 {
+        excl = excl * 10 + x
+    }
+    if excl != 432 {
+        return 5
+    }
+    return 0
+}

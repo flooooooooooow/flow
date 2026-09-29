@@ -4,7 +4,7 @@
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_BANG,
-    TOK_AMPAMP, TOK_BARBAR
+    TOK_AMPAMP, TOK_BARBAR, TOK_TILDE
 }
 import .ast {
     AstArena, AST_NONE,
@@ -182,9 +182,17 @@ function flowc_jsgen_emit_expr(w: ptr<JsgenBuf>, arena: AstArena, src: ptr<u8>, 
         } else {
             if arena.nodes[id].ival == TOK_BANG {
                 flowc_jsgen_putc(w, 33)
+            } else {
+                # `~x` printed only its operand (#1017).
+                if arena.nodes[id].ival == TOK_TILDE {
+                    flowc_jsgen_putc(w, 126)
+                }
             }
         }
+        # The operand gets its own parentheses (#1017): `-(-x)` is not `--x`.
+        flowc_jsgen_putc(w, 40)
         flowc_jsgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        flowc_jsgen_putc(w, 41)
         flowc_jsgen_putc(w, 41)
         return
     }

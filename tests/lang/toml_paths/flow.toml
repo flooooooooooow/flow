@@ -1,0 +1,9 @@
+[package]
+name = "toml_paths"
+version = "0.1.0"
+description = "Fixture for tests/lang/toml_paths/test_toml_paths.flow: [paths] import roots"
+entry = "test_toml_paths.flow"
+
+# `import shapes.geom.area` resolves to ../../fixtures/toml_paths_lib/geom/area.flow
+[paths]
+shapes = "../../fixtures/toml_paths_lib"

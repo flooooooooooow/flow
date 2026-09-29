@@ -1,0 +1,10 @@
+# Library module for tests/lang/toml_paths/test_toml_paths.flow, reached
+# through that project's flow.toml [paths] entry.
+
+export function rect_area(w: i32, h: i32) -> i32 {
+    return w * h
+}
+
+export function square_area(s: i32) -> i32 {
+    return rect_area(s, s)
+}

@@ -86,7 +86,10 @@ static int flow_py_load() {
         NULL
     };
 
-    for (int i = 0; candidates[i]; i++) {
+    /* The first entry is FLOW_PYTHON_LIB and is usually unset (NULL), so
+       the loop runs over the whole array rather than up to the first NULL. */
+    const int n_candidates = (int)(sizeof(candidates) / sizeof(candidates[0]));
+    for (int i = 0; i < n_candidates; i++) {
         if (!candidates[i] || !candidates[i][0]) continue;
         g_py_lib = dlopen(candidates[i], RTLD_NOW | RTLD_GLOBAL);
         if (g_py_lib) break;

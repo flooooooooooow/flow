@@ -534,6 +534,45 @@ function flowc_parse_match_arm_ext(p: ptr<Parser>) -> i32
 function flowc_parser_at_unit_decl(p: Parser) -> i32
 function flowc_parse_unit_decl(p: ptr<Parser>) -> i32
 
+# Quantity literal: a number followed on the same line by an identifier
+# that starts with an uppercase letter (`1000.0 Hertz`, `100 Meter`) is the
+# number cast to that unit, as on the Python host (parser.py). `lit` is the
+# number node, `lit_end` where its token ended.
+function flowc_parse_quantity(p: ptr<Parser>, lit: i32, lit_end: i32) -> i32 {
+    if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+        return lit
+    }
+    let us: i32 = p[0].cur.start
+    let ue: i32 = p[0].cur.end
+    let inp: ptr<u8> = p[0].lex.input
+    if inp[us] < 65 or inp[us] > 90 {
+        return lit
+    }
+    let mut k: i32 = lit_end
+    while k < us {
+        if inp[k] == 10 {
+            return lit
+        }
+        k = k + 1
+    }
+    let ty: i32 = flowc_ast_alloc(&p[0].arena, AST_TYPE, us, ue)
+    if ty == AST_NONE {
+        flowc_parser_fail(p)
+        return AST_NONE
+    }
+    p[0].arena.nodes[ty].name_start = us
+    p[0].arena.nodes[ty].name_end = ue
+    flowc_parser_advance(p)
+    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_CAST, 0, 0)
+    if id == AST_NONE {
+        flowc_parser_fail(p)
+        return AST_NONE
+    }
+    p[0].arena.nodes[id].a = lit
+    p[0].arena.nodes[id].b = ty
+    return id
+}
+
 function flowc_parse_atom(p: ptr<Parser>) -> i32 {
     let tok: Token = p[0].cur
     if tok.kind == TOK_INT {
@@ -546,7 +585,7 @@ function flowc_parse_atom(p: ptr<Parser>) -> i32 {
         p[0].arena.nodes[id].name_end = tok.end
         p[0].arena.nodes[id].ival = flowc_parse_int_span(p[0].lex.input, tok.start, tok.end)
         flowc_parser_advance(p)
-        return id
+        return flowc_parse_quantity(p, id, tok.end)
     }
     if tok.kind == TOK_FLOAT {
         let id: i32 = flowc_ast_alloc(&p[0].arena, AST_FLOAT, tok.start, tok.end)
@@ -557,7 +596,7 @@ function flowc_parse_atom(p: ptr<Parser>) -> i32 {
         p[0].arena.nodes[id].name_start = tok.start
         p[0].arena.nodes[id].name_end = tok.end
         flowc_parser_advance(p)
-        return id
+        return flowc_parse_quantity(p, id, tok.end)
     }
     if tok.kind == TOK_STRING {
         let id: i32 = flowc_ast_alloc(&p[0].arena, AST_STRING, tok.start, tok.end)
@@ -853,6 +892,9 @@ function flowc_parse_atom(p: ptr<Parser>) -> i32 {
                 }
                 p[0].arena.nodes[param].name_start = pname_s
                 p[0].arena.nodes[param].name_end = pname_e
+                # The type sits in `a`, as on a function's parameters (the
+                # C prototype reads it there), and in `b` for older readers.
+                p[0].arena.nodes[param].a = pty
                 p[0].arena.nodes[param].b = pty
                 params = flowc_ast_chain_push(&p[0].arena, params, param)
                 if flowc_parser_check(p[0], TOK_COMMA) == 1 {

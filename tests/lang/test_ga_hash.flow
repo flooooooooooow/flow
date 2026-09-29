@@ -1,0 +1,27 @@
+# Flow-native language test: the GA hash is deterministic.
+# lib/stdlib/dynamics/ga.flow's ga_hash is a 32-bit LCG step. It used i32
+# arithmetic, whose overflow is undefined in C, so the GA dynamics examples
+# printed different numbers per host and compiler. It now wraps as u32;
+# these values are ((seed mod 2^32) * 1103515245 + 12345) mod 2^32,
+# shifted right 16, mod 1000, over 1000.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+import "stdlib/dynamics/ga.flow"
+
+function near(x: f64, want: f64) -> bool {
+    let d: f64 = x - want
+    return d < 0.0000001 and d > 0.0 - 0.0000001
+}
+
+function main() -> i32 {
+    if !near(ga_hash(123456), 0.565) {
+        return 1
+    }
+    if !near(ga_hash(0 - 7), 0.204) {
+        return 2
+    }
+    if !near(ga_hash(2147483647), 0.929) {
+        return 3
+    }
+    return 0
+}
