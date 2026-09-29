@@ -192,11 +192,8 @@ jobs:
       needs.changes.outputs.docs == 'true'
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup-python
       - name: Compile every ```flow block in the documentation
-        env:
-          PYTHONPATH: src
-        run: python3 scripts/check_doc_examples.py --check-ledger
+        run: scripts/check_doc_examples.sh --check-ledger
 
   doc-examples-run:
     name: Doc examples (run)
@@ -207,15 +204,12 @@ jobs:
       needs.changes.outputs.docs == 'true'
     steps:
       - uses: actions/checkout@v7
-      - uses: ./.github/actions/setup-python
       # Separate from the compile gate because it takes about two minutes,
       # and because it answers a different question: compiling proves an
       # example is well-formed, running proves it works. A `defer` freeing
       # memory before the return value was read compiled cleanly (#594).
       - name: Run every complete program in the documentation
-        env:
-          PYTHONPATH: src
-        run: python3 scripts/check_doc_examples.py --run --check-ledger
+        run: scripts/check_doc_examples.sh --run --check-ledger
 
   lint:
     name: Lint

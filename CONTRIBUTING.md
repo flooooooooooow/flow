@@ -124,7 +124,7 @@ Should compile to C switch statements where possible."
 ### Code Blocks in Documentation
 
 CI compiles every ` ```flow ` block in every tracked markdown file with flowc
-(`scripts/check_doc_examples.py`). A block that neither compiles nor carries a
+(`scripts/check_doc_examples.sh`). A block that neither compiles nor carries a
 reason is a build failure, and the unverified count can only go down.
 
 A block does not need a `main`. The checker wraps a bare fragment in one and

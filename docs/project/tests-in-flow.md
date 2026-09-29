@@ -124,7 +124,7 @@ tests of a Python pass that the transpiler does not call
 (test_pipeline_fusion.py fusion correctness, the rotation-equivalence tests
 in test_counted_loop_rotation.py), comparisons against a Python reference
 (test_time_blocks.py rk4), and tool tests (test_gfx_recorder.py,
-test_gif_flow_encoder.py, test_flow_run.py).
+test_gif_flow_encoder.py; test_flow_run.py is now tests/flow_run/run.sh).
 
 ## Inventory: tests/unit/ (165 test files)
 
@@ -156,7 +156,6 @@ test_gif_flow_encoder.py, test_flow_run.py).
 | test_const_folding.py | b | MLIR constant folding text |
 | test_constraints.py | c | TypeChecker diagnostics |
 | test_conventions.py | c | project convention checks |
-| test_cost_model.py | c | cost model internals |
 | test_coverage_effects.py | c | effect typechecking diagnostics |
 | test_coverage_flow_blocks.py | c | flow-block validation diagnostics; one run-based check migratable later |
 | test_coverage_hybrid_events.py | c | hybrid-event validation diagnostics; one run-based check migratable later |
@@ -169,8 +168,6 @@ test_gif_flow_encoder.py, test_flow_run.py).
 | test_demo_gallery_docs.py | c | docs tooling |
 | test_doc_anchors.py | c | docs tooling |
 | test_doc_coverage.py | c | docs tooling |
-| test_doc_example_run_stage.py | c | docs tooling |
-| test_docs_blocks.py | c | docs tooling |
 | test_dsp_pipeline.py | c | DSP pipeline lowering internals |
 | test_dual_ops.py | b | operator rewrite asserted on generated text |
 | test_dynamics_dsl.py | c | dynamics DSL parse and lowering internals |
@@ -182,7 +179,6 @@ test_gif_flow_encoder.py, test_flow_run.py).
 | test_export_abi.py | b | --export ABI shape in generated C |
 | test_field_dsl.py | c | field DSL through the flowc expander; parity lives in `compiler/scripts/parity_field_dsl.sh` |
 | test_flow_dimensioned_state.py | a | parse and validation; one integration run blocked on flow blocks in Stage-A (#681) |
-| test_flow_run.py | c | `flow run` CLI runner |
 | test_frontend_cache.py | c | frontend cache internals |
 | test_fuzz_crash_pins.py | c | parser crash regression pins |
 | test_general_plans.py | c | plan selection internals |

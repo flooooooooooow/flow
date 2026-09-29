@@ -64,7 +64,7 @@ jobs:
 
       - name: Require zero ordinary documentation debt for 1.x
         if: startsWith(steps.tag.outputs.name, 'v1.')
-        run: python3 scripts/check_doc_examples_strict.py
+        run: scripts/check_doc_examples.sh strict
 
       - name: Run permanent Stable conformance corpus
         run: python3 -m pytest tests/conformance -q

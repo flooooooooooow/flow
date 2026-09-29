@@ -1,11 +1,11 @@
 # @module tools.wiki_blocks
 # @means  Fenced code blocks in the tutorials, extracted the way
-#         scripts/docs_blocks.py does for the interactive lessons.
+#         tools/doc_examples/blocks.flow does for the interactive lessons.
 #
 # Lines are walked with the CommonMark rule: a fence opened with N backticks
 # (or tildes) closes on the next line of N or more of the same character
 # with an empty info string. The info string is split like shlex.split and
-# validated against the words docs_blocks.py knows.
+# validated against the words tools/doc_examples/blocks.flow knows.
 
 import .text { ft_eq, ft_len, ft_starts, ft_contains, ft_find_byte, ft_slice, ft_from, ft_repr, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
 import .unicode { uc_decode, uc_len, uc_is_space, uc_strip, uc_lower_str }

@@ -94,7 +94,7 @@ flow Model {
 ./flow test
 
 ./flow run full_language_program.flow
-python3 -m flow.run program.flow --json
+./flow run program.flow --json
 ```
 
 ## References

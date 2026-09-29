@@ -235,7 +235,7 @@ def discover_suites(smoke=False):
             flow_files = list(d.glob("*.flow"))
             if flow_files:
                 if suite == "cold" or suite == "compiler":
-                    flow_cmd = [sys.executable, "-m", "flow.run", str(flow_files[0])]
+                    flow_cmd = [str(ROOT / "flow"), "run", "--json", str(flow_files[0])]
                 else:
                     bin_path = build_dir / workload_id
                     if compile_flow(flow_files[0], bin_path):

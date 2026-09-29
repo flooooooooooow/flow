@@ -15,7 +15,6 @@ import json
 import re
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
@@ -56,15 +55,15 @@ def gallery_programs() -> list[str]:
     """Use the repository's own extractor.
 
     A regex over fences mispairs a closing fence with the next opening one,
-    which is why scripts/docs_blocks.py exists.
+    which is why tools/doc_examples/blocks.flow exists.
     """
-    sys.path.insert(0, str(ROOT / "scripts"))
-    from docs_blocks import iter_blocks
-
+    shim = ROOT / "scripts" / "check_doc_examples.sh"
+    out = subprocess.run([str(shim), "blocks", str(GALLERY)], capture_output=True,
+                         text=True, check=True).stdout
     return [
-        b.code
-        for b in iter_blocks(GALLERY.read_text(), str(GALLERY))
-        if b.lang == "flow" and re.search(r"function\s+main\s*\(", b.code)
+        b["code"]
+        for b in json.loads(out)
+        if b["lang"] == "flow" and re.search(r"function\s+main\s*\(", b["code"])
     ]
 
 
@@ -75,8 +74,8 @@ def test_the_gallery_has_the_programs_this_asserts_about():
 
 @pytest.mark.parametrize("index", range(5))
 def test_every_gallery_program_runs_and_exits_zero(index):
-    """Each gallery program returns 1 on a failed assertion, so exit 0 is the
-    program checking itself, not merely reaching the end."""
+    """Each gallery program returns 1 on a failed assertion, so exit 0 means
+    the program checked itself and passed."""
     program = gallery_programs()[index]
     result = run_in_browser_engine(program)
     assert result["ok"], result["detail"][:200]
