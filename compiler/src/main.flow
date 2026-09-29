@@ -22,7 +22,7 @@ import .pipeline_fusion { flowc_fuse_pipelines }
 import .proof_doc { flowc_proof_doc_mode }
 import .cgen { flowc_cgen_emit }
 import .jsgen { flowc_jsgen_emit }
-import .fmt { flowc_fmt_emit }
+import .fmt { flowc_fmt_emit, flowc_fmt_source, flowc_fmt_token_dump }
 import .wasm_gen { flowc_wasm_gen_compile }
 import .bpf_gen { flowc_bpf_gen_compile }
 import .shader_emit { flowc_shader_mode }
@@ -179,7 +179,8 @@ function flowc_expand_only_mode(in_path: string, out_path: string) -> i32 {
 }
 
 # FLOWC_IN / FLOWC_OUT emit path: read .flow, Stage-A emit, write (or stdout).
-# FLOWC_BACKEND=js → flowc_jsgen_emit; =fmt → flowc_fmt_emit; else cgen (C).
+# FLOWC_BACKEND=js → flowc_jsgen_emit; =fmt or =tokens → flowc_fmt_mode;
+# else cgen (C).
 # FLOWC_BUNDLE=1 → flowc_bundle_emit (entry + relative imports, one C TU).
 # Returns 0 on success, 1 on failure. Does not run self-tests.
 function flowc_emit_mode() -> i32 {
@@ -209,6 +210,13 @@ function flowc_emit_mode() -> i32 {
 
     if flowc_env_set("FLOWC_EXPAND_ONLY") == 1 {
         return flowc_expand_only_mode(in_path, out_path)
+    }
+
+    if flowc_env_eq("FLOWC_BACKEND", "fmt") == 1 {
+        return flowc_fmt_mode(in_path, 0)
+    }
+    if flowc_env_eq("FLOWC_BACKEND", "tokens") == 1 {
+        return flowc_fmt_mode(in_path, 1)
     }
 
     # 4 MiB: the self-hosted compiler bundle passed 1 MiB of C once the
@@ -287,15 +295,12 @@ function flowc_emit_mode() -> i32 {
         }
         src[nsrc] = 0
 
-        # DSLs expand before parse, as the Python host does. The formatter
-        # sees the source as written.
-        if flowc_env_eq("FLOWC_BACKEND", "fmt") == 0 {
-            nsrc = flowc_expand_all_in_place(src, nsrc, src_cap)
-            if nsrc < 0 {
-                free(src)
-                free(out)
-                return 1
-            }
+        # DSLs expand before parse, as the Python host does.
+        nsrc = flowc_expand_all_in_place(src, nsrc, src_cap)
+        if nsrc < 0 {
+            free(src)
+            free(out)
+            return 1
         }
 
         # Modules like ast.flow need a large arena (nested index/field assigns).
@@ -336,24 +341,13 @@ function flowc_emit_mode() -> i32 {
                 return 1
             }
         } else {
-            if flowc_env_eq("FLOWC_BACKEND", "fmt") == 1 {
-                nout = flowc_fmt_emit(p.arena, root, src, out, out_cap)
-                if nout <= 0 {
-                    puts("flowc emit: fmt failed")
-                    free(out)
-                    flowc_parser_free(p)
-                    free(src)
-                    return 1
-                }
-            } else {
-                nout = flowc_cgen_emit(p.arena, root, src, out, out_cap)
-                if nout <= 0 {
-                    puts("flowc emit: cgen failed")
-                    free(out)
-                    flowc_parser_free(p)
-                    free(src)
-                    return 1
-                }
+            nout = flowc_cgen_emit(p.arena, root, src, out, out_cap)
+            if nout <= 0 {
+                puts("flowc emit: cgen failed")
+                free(out)
+                flowc_parser_free(p)
+                free(src)
+                return 1
             }
         }
         flowc_parser_free(p)
@@ -374,6 +368,69 @@ function flowc_emit_mode() -> i32 {
         puts(out)
     }
 
+    free(out)
+    return rc
+}
+
+# FLOWC_BACKEND=fmt: format FLOWC_IN as written (no DSL expansion, no
+# typecheck) and write it to FLOWC_OUT, or stdout. The source must parse;
+# a file flowc cannot parse is left alone and the mode returns 1.
+# FLOWC_BACKEND=tokens (`dump` = 1): write the token and comment stream the
+# formatter keeps instead, without parsing (compiler/scripts/fmt_check.sh).
+function flowc_fmt_mode(in_path: string, dump: i32) -> i32 {
+    let src_cap: i32 = 8388608
+    let src: ptr<u8> = malloc(src_cap as i64)
+    if src == null {
+        puts("flowc fmt: malloc src failed")
+        return 1
+    }
+    let nsrc: i32 = flowc_read_file(in_path, src, src_cap - 1)
+    if nsrc < 0 {
+        puts("flowc fmt: read FLOWC_IN failed")
+        free(src)
+        return 1
+    }
+    src[nsrc] = 0
+    if dump == 0 {
+        let mut p: Parser = flowc_parser_new(src, nsrc, nsrc + 4096)
+        let root: i32 = flowc_parse_program(&p)
+        if root < 0 or p.err != 0 {
+            flowc_parser_print_error(p, in_path)
+            flowc_parser_free(p)
+            free(src)
+            return 1
+        }
+        flowc_parser_free(p)
+    }
+    # Indentation can grow a line; every token keeps its bytes.
+    let out_cap: i32 = nsrc * 4 + 65536
+    let out: ptr<u8> = malloc(out_cap as i64)
+    if out == null {
+        puts("flowc fmt: malloc out failed")
+        free(src)
+        return 1
+    }
+    let mut nout: i32 = 0
+    if dump == 1 {
+        nout = flowc_fmt_token_dump(src, nsrc, out, out_cap)
+    } else {
+        nout = flowc_fmt_source(src, nsrc, out, out_cap)
+    }
+    free(src)
+    if nout < 0 {
+        puts("flowc fmt: output overflow")
+        free(out)
+        return 1
+    }
+    let mut rc: i32 = 0
+    let mut dest: string = "/dev/stdout"
+    if flowc_env_set("FLOWC_OUT") == 1 {
+        dest = getenv("FLOWC_OUT")
+    }
+    if flowc_write_file(dest, out, nout) != 0 {
+        puts("flowc fmt: write failed")
+        rc = 1
+    }
     free(out)
     return rc
 }

@@ -1,4 +1,4 @@
-total 92899
+total 89302
 benchmarks/cross_harness/cold/cli_oneshot/oneshot.py
 benchmarks/cross_harness/cold/file_transform/transform.py
 benchmarks/cross_harness/cold/hello/hello.py
@@ -61,7 +61,6 @@ scripts/wiki_verify.py
 scripts/ws_echo_relay.py
 site/wasm-crossings/python/flow_demo.py
 src/flow/__init__.py
-src/flow/_dynamics_dsl_fixes.py
 src/flow/attributes.py
 src/flow/bpf_target.py
 src/flow/c_generator.py
@@ -84,7 +83,6 @@ src/flow/fir_opts.py
 src/flow/fir_route.py
 src/flow/flow_blocks.py
 src/flow/fork_records.py
-src/flow/formatter.py
 src/flow/general_plans.py
 src/flow/geometry_diagram.py
 src/flow/geometry_script.py

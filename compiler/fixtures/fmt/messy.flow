@@ -1,0 +1,39 @@
+
+
+
+export import .alpha
+export import .beta { beta_one }
+import "stdlib/math.flow"
+import .token {
+  TOK_A,
+      TOK_B
+}
+extern {
+function  puts(s:string)->i32   # C stdio
+}
+
+
+
+# Add two numbers.
+function   add(a:i32,b:i32)->i32{
+return (a+b)*2   # keep the parens
+}
+function wrapped(a: i32,
+                 b: i32) -> i32 {
+    return a
+        + b
+}
+function main() -> i32 {
+  let x = -1
+  let y: i32 = add(x,  3)
+  let z: array<i32, 3> = [1,2,3]
+  if x<y and y>=0 {
+
+          return z[0]
+
+  }
+  let t: i32 = if y > 0 { y } else { 0 - y }
+
+
+  return 1
+}

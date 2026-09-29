@@ -284,16 +284,7 @@ class TestReexportCollisions:
 # forwarded symbols reach the declaring file.
 
 
-class TestFormatterRoundTrip:
-    def test_formatter_keeps_the_export_prefix(self):
-        from flow.formatter import Formatter
-
-        source = (
-            "export import .alpha\n"
-            "export import .beta { beta_one }\n"
-            "import verify.nat as nat\n"
-        )
-        out = Formatter().format_file(source)
-        assert "export import .alpha" in out
-        assert "export import .beta { beta_one }" in out
-        assert "import verify.nat as nat" in out
+# TestFormatterRoundTrip moved with the formatter to flowc: the golden
+# fixture compiler/fixtures/fmt/messy.flow keeps `export import .alpha`
+# and `export import .beta { beta_one }`, and
+# compiler/scripts/fmt_check.sh checks it.
