@@ -220,7 +220,7 @@ flow_flowc_main() {
     local bin="$SCRIPT_DIR/compiler/build/flowc_bootstrap"
     if [[ ! -x "$bin" || "$boot_c" -nt "$bin" ]]; then
         mkdir -p "$SCRIPT_DIR/compiler/build"
-        if ! "${CC:-cc}" -O2 -o "$bin" "$boot_c" 2>/dev/null; then
+        if ! "${CC:-cc}" -O2 -o "$bin" "$boot_c" -lm 2>/dev/null; then
             print_error "Cannot build flowc from $boot_c"
             return 1
         fi

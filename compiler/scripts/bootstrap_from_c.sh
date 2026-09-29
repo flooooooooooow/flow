@@ -26,7 +26,7 @@ if [[ ! -f "$BOOT_C" ]]; then
 fi
 
 echo "=== cc ${BOOT_C} -> ${BOOT_BIN} ==="
-$CC $CFLAGS -o "$BOOT_BIN" "$BOOT_C"
+$CC $CFLAGS -o "$BOOT_BIN" "$BOOT_C" -lm
 
 # Smoke: the bootstrap compiler compiles an ordinary Stage-A program.
 # Positional argv runs the self-test suite; emit needs FLOWC_IN / FLOWC_OUT.

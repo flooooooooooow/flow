@@ -68,7 +68,7 @@ cat >"$STAGE/build.sh" <<'BUILD'
 set -e
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 CC_BIN="${CC:-cc}"
-"$CC_BIN" ${CFLAGS:--O2} -o "$ROOT/bin/flowc-core" "$ROOT/bootstrap/flowc_stage_a.c"
+"$CC_BIN" ${CFLAGS:--O2} -o "$ROOT/bin/flowc-core" "$ROOT/bootstrap/flowc_stage_a.c" -lm
 cat >"$ROOT/bin/flowc" <<'WRAPPER'
 #!/usr/bin/env sh
 set -e

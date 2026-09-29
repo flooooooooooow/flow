@@ -47,7 +47,7 @@ if [[ -n "${FLOWC_BIN:-}" ]]; then
     BIN="$FLOWC_BIN"
 else
     BIN=compiler/build/flowc_bootstrap
-    "${CC:-cc}" -O2 -w -o "$BIN" compiler/bootstrap/flowc_stage_a.c
+    "${CC:-cc}" -O2 -w -o "$BIN" compiler/bootstrap/flowc_stage_a.c -lm
 fi
 echo "=== parity_lowering: flowc = ${BIN} ==="
 

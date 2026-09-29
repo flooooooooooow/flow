@@ -34,7 +34,7 @@ fi
 mkdir -p "$OUT_DIR"
 
 if [[ ! -x "$FLOWC" || "$BOOT_C" -nt "$FLOWC" ]]; then
-  "$CC" -O1 -w -o "$FLOWC" "$BOOT_C"
+  "$CC" -O1 -w -o "$FLOWC" "$BOOT_C" -lm
 fi
 
 stale=0
