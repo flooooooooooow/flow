@@ -72,7 +72,7 @@ are semantic audit metadata, not proof objects.
 
 `compiler/src/recognition.flow` reads the domains declared by:
 
-```flow
+```flow-pseudocode
 recognize {
     numerical
     realtime
