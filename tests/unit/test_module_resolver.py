@@ -434,3 +434,48 @@ function video() -> i32 {
 
         assert len(decls) == 2
         assert [getattr(d, "name", None) for d in decls] == ["gain", "video"]
+
+
+# Manifest reading, moved from the deleted test_package_manager.py.
+from flow.toml_compat import _fallback_loads  # noqa: E402
+
+
+def test_toml_fallback_reads_inline_path_dependencies():
+    data = _fallback_loads(
+        '[package]\nname = "app"\n\n[dependencies]\n'
+        'flow_audio = { path = "../flow-audio" }\n'
+    )
+
+    assert data["dependencies"]["flow_audio"] == {"path": "../flow-audio"}
+
+
+def test_dot_import_resolves_installed_path_dependency(tmp_path):
+    app = tmp_path / "app"
+    package_src = app / "flow_packages" / "mathkit" / "src"
+    package_src.mkdir(parents=True)
+    (app / "flow.toml").write_text(
+        '[package]\nname = "app"\nversion = "0.1.0"\n\n'
+        "[dependencies]\n"
+        'mathkit = { path = "../mathkit" }\n',
+        encoding="utf-8",
+    )
+    (package_src / "ops.flow").write_text(
+        "export function add_one(x: i32) -> i32 {\n"
+        "    return x + 1\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    main = app / "main.flow"
+    main.write_text(
+        "import mathkit.ops { add_one }\n\n"
+        "function main() -> i32 {\n"
+        "    return add_one(0)\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    cfg = load_project_config(str(main))
+    resolver = get_module_resolver(str(main))
+
+    assert "mathkit" in cfg.dependencies
+    assert "add_one" in resolver.symbol_table
