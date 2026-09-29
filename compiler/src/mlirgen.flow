@@ -29,6 +29,8 @@ import .ast {
     AST_FIELD, AST_EXTERN, AST_EXPORT, AST_FIELD_ACCESS, AST_INDEX,
     AST_STRUCT_LIT, AST_BREAK, AST_CONTINUE, AST_STRING, AST_CAST,
     AST_ARRAY_LIT, AST_FLOAT, AST_IF_EXPR, AST_IMPORT, AST_CONST, AST_ENUM,
+    AST_MATCH, AST_DEFER, AST_HANDLE, AST_TYPE_ALIAS, AST_EXTERN_TYPE,
+    AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_EFFECT, AST_CAPABILITY,
     flowc_ast_reject_unsupported
 }
 
@@ -140,7 +142,10 @@ export struct Mlg {
     nlp: i32,
     # the per-array-SSA !llvm.array tag (Python _llvm_array_types)
     v_llarr: ptr<i32>,
-    a_llarr: ptr<i32>
+    a_llarr: ptr<i32>,
+    # module consts (AST_CONST nodes)
+    c_node: ptr<i32>,
+    nconst: i32
 }
 
 function mlg_alloc_i32(n: i32) -> ptr<i32> {
@@ -217,7 +222,11 @@ function mlg_span(m: ptr<Mlg>, start: i32, end: i32) {
 }
 
 function mlg_i(m: ptr<Mlg>, val: i32) {
-    let mut v: i64 = val as i64
+    mlg_i64(m, val as i64)
+}
+
+function mlg_i64(m: ptr<Mlg>, val: i64) {
+    let mut v: i64 = val
     if v < 0 {
         mlg_putc(m, 45)
         v = 0 - v
@@ -1090,6 +1099,28 @@ function mlg_find_fn(m: ptr<Mlg>, ns: i32, ne: i32) -> i32 {
     return 0 - 1
 }
 
+function mlg_find_const(m: ptr<Mlg>, ns: i32, ne: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < m[0].nconst {
+        let c: i32 = m[0].c_node[i]
+        if mlg_span_eq(m, ns, ne, mlg_ns(m, c), mlg_ne(m, c)) == 1 {
+            return i
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+# MLIR type of module const k as Python records it (string consts are
+# addressable globals, used through their address).
+function mlg_const_mt(m: ptr<Mlg>, k: i32) -> i32 {
+    let c: i32 = m[0].c_node[k]
+    if mlg_kind(m, m[0].arena.nodes[c].b) == AST_STRING {
+        return MT_PTR
+    }
+    return mlg_ft_to_mt(m, m[0].arena.nodes[c].a, c)
+}
+
 # Return type of function k (void when omitted).
 function mlg_fn_ret_mt(m: ptr<Mlg>, k: i32) -> i32 {
     let f: i32 = m[0].fn_node[k]
@@ -1133,6 +1164,10 @@ function mlg_expr_ft(m: ptr<Mlg>, e: i32) -> i32 {
         let l: i32 = mlg_find_local(m, mlg_ns(m, e), mlg_ne(m, e))
         if l >= 0 {
             return m[0].l_ft[l]
+        }
+        let ck: i32 = mlg_find_const(m, mlg_ns(m, e), mlg_ne(m, e))
+        if ck >= 0 {
+            return m[0].arena.nodes[m[0].c_node[ck]].a
         }
         return FT_NONE
     }
@@ -1219,6 +1254,10 @@ function mlg_expr_mt(m: ptr<Mlg>, e: i32) -> i32 {
         let l: i32 = mlg_find_local(m, mlg_ns(m, e), mlg_ne(m, e))
         if l >= 0 {
             return m[0].l_mt[l]
+        }
+        let ck: i32 = mlg_find_const(m, mlg_ns(m, e), mlg_ne(m, e))
+        if ck >= 0 {
+            return mlg_const_mt(m, ck)
         }
         return MT_I32
     }
@@ -1517,13 +1556,14 @@ function mlg_stabilize(m: ptr<Mlg>, v: i32, t: i32) -> i32 {
 # ---------------------------------------------------------------------------
 # Expressions
 # ---------------------------------------------------------------------------
-# Integer literal text, with Python's i32 wrap for values above 2^31-1.
-function mlg_emit_int_lit(m: ptr<Mlg>, e: i32) -> i32 {
+# Value of an integer literal (decimal, 0x, 0b, underscores); sets *ok.
+function mlg_int_value(m: ptr<Mlg>, e: i32, ok: ptr<i32>) -> i64 {
     let s: i32 = mlg_ns(m, e)
     let t: i32 = mlg_ne(m, e)
     let mut val: i64 = 0
     let mut i: i32 = s
     let mut base: i64 = 10
+    ok[0] = 1
     if t - s > 2 and m[0].src[s] == 48 and (m[0].src[s + 1] == 120 or m[0].src[s + 1] == 88) {
         base = 16
         i = s + 2
@@ -1541,16 +1581,27 @@ function mlg_emit_int_lit(m: ptr<Mlg>, e: i32) -> i32 {
         if c >= 65 and c <= 70 { d = (c - 55) as i64 }
         if c != 95 {
             if d < 0 or d >= base {
-                mlg_refuse(m, e, "integer literal form")
-                return mlg_const_int(m, 0, MT_I32)
+                ok[0] = 0
+                return 0
             }
             val = val * base + d
-            if val > 4294967295 {
-                mlg_refuse(m, e, "integer literal wider than 32 bits")
-                return mlg_const_int(m, 0, MT_I32)
+            if val > 4611686018427387903 {
+                ok[0] = 0
+                return 0
             }
         }
         i = i + 1
+    }
+    return val
+}
+
+# Integer literal text, with Python's i32 wrap for values above 2^31-1.
+function mlg_emit_int_lit(m: ptr<Mlg>, e: i32) -> i32 {
+    let mut ok: i32 = 1
+    let mut val: i64 = mlg_int_value(m, e, &ok)
+    if ok == 0 or val > 4294967295 {
+        mlg_refuse(m, e, "integer literal wider than 32 bits")
+        return mlg_const_int(m, 0, MT_I32)
     }
     if val > 2147483647 {
         val = val - 4294967296
@@ -1558,18 +1609,14 @@ function mlg_emit_int_lit(m: ptr<Mlg>, e: i32) -> i32 {
     return mlg_const_int(m, val as i32, MT_I32)
 }
 
-# Float literal: the source text, or Python's fixed-point rewrite of an
-# exponent form (format(x, ".10f") with trailing zeros stripped).
-function mlg_emit_float_lit(m: ptr<Mlg>, e: i32) -> i32 {
+# Float literal text as Python writes it: the source spelling, or for an
+# exponent form format(x, ".10f") (".17f" for f64) with zeros stripped.
+function mlg_put_float_text(m: ptr<Mlg>, e: i32, t: i32, neg: i32) {
     let s: i32 = mlg_ns(m, e)
-    let t: i32 = mlg_ne(m, e)
-    let v: i32 = mlg_new_val(m, MT_F32)
-    mlg_line(m)
-    mlg_v(m, v)
-    mlg_s(m, " = arith.constant ")
+    let end0: i32 = mlg_ne(m, e)
     let mut has_e: i32 = 0
     let mut i: i32 = s
-    while i < t {
+    while i < end0 {
         if m[0].src[i] == 101 or m[0].src[i] == 69 {
             has_e = 1
         }
@@ -1578,36 +1625,59 @@ function mlg_emit_float_lit(m: ptr<Mlg>, e: i32) -> i32 {
         }
         i = i + 1
     }
-    if has_e == 0 {
-        mlg_span(m, s, t)
-    } else {
-        let tmp: ptr<u8> = malloc(128)
-        let mut j: i32 = 0
-        while j < t - s and j < 100 {
-            tmp[j] = m[0].src[s + j]
-            j = j + 1
+    if has_e == 0 or (t != MT_F32 and t != MT_F64) {
+        if neg == 1 {
+            mlg_s(m, "-")
         }
-        tmp[j] = 0
-        let x: f64 = strtod(tmp, null)
-        let n: i32 = snprintf(tmp, 128, "%.10f", x)
-        let mut end: i32 = n
-        while end > 0 and tmp[end - 1] == 48 {
-            end = end - 1
-        }
-        if end > 0 and tmp[end - 1] == 46 {
-            end = end - 1
-        }
-        if end == 0 {
-            mlg_s(m, "0.0")
-        } else {
-            let mut q: i32 = 0
-            while q < end {
-                mlg_putc(m, tmp[q])
-                q = q + 1
-            }
-        }
-        free(tmp)
+        mlg_span(m, s, end0)
+        return
     }
+    let tmp: ptr<u8> = malloc(128)
+    let mut j: i32 = 0
+    if neg == 1 {
+        tmp[0] = 45
+        j = 1
+    }
+    let mut q0: i32 = 0
+    while q0 < end0 - s and j < 100 {
+        tmp[j] = m[0].src[s + q0]
+        j = j + 1
+        q0 = q0 + 1
+    }
+    tmp[j] = 0
+    let x: f64 = strtod(tmp, null)
+    let mut n: i32 = 0
+    if t == MT_F32 {
+        n = snprintf(tmp, 128, "%.10f", x)
+    } else {
+        n = snprintf(tmp, 128, "%.17f", x)
+    }
+    let mut end: i32 = n
+    while end > 0 and tmp[end - 1] == 48 {
+        end = end - 1
+    }
+    if end > 0 and tmp[end - 1] == 46 {
+        end = end - 1
+    }
+    if end == 0 {
+        mlg_s(m, "0.0")
+    } else {
+        let mut q: i32 = 0
+        while q < end {
+            mlg_putc(m, tmp[q])
+            q = q + 1
+        }
+    }
+    free(tmp)
+}
+
+# Float literal: Python types it f32.
+function mlg_emit_float_lit(m: ptr<Mlg>, e: i32) -> i32 {
+    let v: i32 = mlg_new_val(m, MT_F32)
+    mlg_line(m)
+    mlg_v(m, v)
+    mlg_s(m, " = arith.constant ")
+    mlg_put_float_text(m, e, MT_F32, 0)
     mlg_s(m, " : f32")
     mlg_nl(m)
     return v
@@ -1686,6 +1756,12 @@ function mlg_emit_print(m: ptr<Mlg>, e: i32, nl: i32) -> i32 {
             let l: i32 = mlg_find_local(m, mlg_ns(m, arg), mlg_ne(m, arg))
             if l >= 0 and mlg_ft_name_is(m, m[0].l_ft[l], "string") == 1 {
                 is_str_var = 1
+            }
+            if l < 0 {
+                let ck: i32 = mlg_find_const(m, mlg_ns(m, arg), mlg_ne(m, arg))
+                if ck >= 0 and mlg_ft_name_is(m, m[0].arena.nodes[m[0].c_node[ck]].a, "string") == 1 {
+                    is_str_var = 1
+                }
             }
         }
         if ak == AST_STRING {
@@ -1871,6 +1947,12 @@ function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
         return V_NONE
     }
     let fnode: i32 = m[0].fn_node[k]
+    if m[0].fn_ext[k] == 0 and m[0].arena.nodes[e].a == AST_NONE {
+        let acc: i32 = mlg_accessor_const(m, fnode)
+        if acc >= 0 {
+            return mlg_load_const(m, acc)
+        }
+    }
     let ret: i32 = mlg_fn_ret_mt(m, k)
     let composite: i32 = mlg_is_struct_mt(ret)
     let args: i32 = m[0].arena.nodes[e].a
@@ -2689,8 +2771,12 @@ function mlg_emit_binop(m: ptr<Mlg>, e: i32) -> i32 {
 function mlg_emit_unary(m: ptr<Mlg>, e: i32) -> i32 {
     let op: i32 = m[0].arena.nodes[e].ival
     let a: i32 = m[0].arena.nodes[e].a
+    if op == TOK_AMP {
+        mlg_refuse(m, e, "address-of")
+        return V_NONE
+    }
     if op != TOK_MINUS and op != TOK_BANG and op != TOK_TILDE {
-        mlg_refuse(m, e, "unary operator (address-of, dbg or expect)")
+        mlg_refuse(m, e, "dbg or expect")
         return V_NONE
     }
     let av: i32 = mlg_emit_expr(m, a)
@@ -2797,6 +2883,57 @@ function mlg_emit_cast_expr(m: ptr<Mlg>, e: i32) -> i32 {
         mlg_set_vuns(m, c, 1)
     }
     return c
+}
+
+# Python _load_module_global for a const.
+function mlg_load_const(m: ptr<Mlg>, k: i32) -> i32 {
+    let c: i32 = m[0].c_node[k]
+    let p: i32 = mlg_new_val(m, MT_PTR)
+    mlg_line(m)
+    mlg_v(m, p)
+    mlg_s(m, " = llvm.mlir.addressof @")
+    mlg_span(m, mlg_ns(m, c), mlg_ne(m, c))
+    mlg_s(m, " : !llvm.ptr")
+    mlg_nl(m)
+    if mlg_kind(m, m[0].arena.nodes[c].b) == AST_STRING {
+        return p
+    }
+    let t: i32 = mlg_const_mt(m, k)
+    let v: i32 = mlg_load(m, p, t)
+    if mlg_ft_unsigned(m, m[0].arena.nodes[c].a) == 1 {
+        mlg_set_vuns(m, v, 1)
+    }
+    return v
+}
+
+# Python _inline_trivial_accessor: a parameterless function whose whole
+# body is `return C` for a module const C is replaced by the load of C.
+function mlg_accessor_const(m: ptr<Mlg>, fnode: i32) -> i32 {
+    if m[0].arena.nodes[fnode].a != AST_NONE {
+        return 0 - 1
+    }
+    let body: i32 = m[0].arena.nodes[fnode].c
+    if body == AST_NONE {
+        return 0 - 1
+    }
+    let st: i32 = m[0].arena.nodes[body].a
+    if st == AST_NONE or m[0].arena.nodes[st].next != AST_NONE {
+        return 0 - 1
+    }
+    if mlg_kind(m, st) != AST_RETURN {
+        return 0 - 1
+    }
+    let v: i32 = m[0].arena.nodes[st].a
+    if mlg_kind(m, v) != AST_IDENT {
+        return 0 - 1
+    }
+    if mlg_span_eq(m, mlg_ns(m, v), mlg_ne(m, v), mlg_ns(m, fnode), mlg_ne(m, fnode)) == 1 {
+        return 0 - 1
+    }
+    if mlg_find_local(m, mlg_ns(m, v), mlg_ne(m, v)) >= 0 {
+        return 0 - 1
+    }
+    return mlg_find_const(m, mlg_ns(m, v), mlg_ne(m, v))
 }
 
 # Python generate_if_expression.
@@ -2906,7 +3043,11 @@ function mlg_emit_expr(m: ptr<Mlg>, e: i32) -> i32 {
         }
         let l: i32 = mlg_find_local(m, mlg_ns(m, e), mlg_ne(m, e))
         if l < 0 {
-            mlg_refuse(m, e, "name that is not a local (global, const or function value)")
+            let ck: i32 = mlg_find_const(m, mlg_ns(m, e), mlg_ne(m, e))
+            if ck >= 0 {
+                return mlg_load_const(m, ck)
+            }
+            mlg_refuse(m, e, "name that is not a local or const (static or function value)")
             return V_NONE
         }
         if m[0].l_alloca[l] != V_NONE {
@@ -3914,7 +4055,10 @@ function mlg_emit_for(m: ptr<Mlg>, st: i32) {
         mlg_refuse(m, st, "elementwise pointer loop (Python vectorizes it)")
         return
     }
-    if mlg_find_local(m, mlg_ns(m, st), mlg_ne(m, st)) >= 0 {
+    # Reusing an earlier loop's variable is fine (Python rebinds it); a loop
+    # variable that shadows a let or parameter is left to Python.
+    let prev: i32 = mlg_find_local(m, mlg_ns(m, st), mlg_ne(m, st))
+    if prev >= 0 and m[0].l_ft[prev] != FT_NONE {
         mlg_refuse(m, st, "loop variable that shadows a local")
         return
     }
@@ -4033,6 +4177,18 @@ function mlg_emit_stmt(m: ptr<Mlg>, st: i32) {
     }
     if k == AST_BLOCK {
         mlg_refuse(m, st, "bare block statement")
+        return
+    }
+    if k == AST_MATCH {
+        mlg_refuse(m, st, "match statement")
+        return
+    }
+    if k == AST_DEFER {
+        mlg_refuse(m, st, "defer")
+        return
+    }
+    if k == AST_HANDLE {
+        mlg_refuse(m, st, "effect handler")
         return
     }
     mlg_refuse(m, st, "statement form")
@@ -4231,6 +4387,81 @@ function mlg_emit_struct(m: ptr<Mlg>, s: i32) {
     }
 }
 
+# Python generate_const for literal values.
+function mlg_emit_const(m: ptr<Mlg>, c: i32) {
+    let ty: i32 = m[0].arena.nodes[c].a
+    let v: i32 = m[0].arena.nodes[c].b
+    let ns: i32 = mlg_ns(m, c)
+    let ne: i32 = mlg_ne(m, c)
+    mlg_line(m)
+    mlg_s(m, "// Constant: ")
+    mlg_span(m, ns, ne)
+    mlg_nl(m)
+    let t: i32 = mlg_ft_to_mt(m, ty, c)
+    if t == MT_NONE or mlg_is_memref_mt(t) == 1 or mlg_is_struct_mt(t) == 1 or t == MT_VOID {
+        mlg_refuse(m, c, "const type")
+        return
+    }
+    let vk: i32 = mlg_kind(m, v)
+    mlg_line(m)
+    mlg_s(m, "llvm.mlir.global internal constant @")
+    mlg_span(m, ns, ne)
+    if vk == AST_STRING {
+        let s0: i32 = m[0].arena.nodes[v].start + 1
+        let s1: i32 = m[0].arena.nodes[v].end - 1
+        mlg_s(m, "(\"")
+        mlg_span(m, s0, s1)
+        mlg_s(m, "\\00\") {addr_space = 0 : i32} : !llvm.array<")
+        mlg_i(m, mlg_escaped_len(m[0].src + s0, s1 - s0) + 1)
+        mlg_s(m, " x i8>")
+        mlg_nl(m)
+        return
+    }
+    if t == MT_PTR or mlg_is_null(m, v) == 1 {
+        mlg_s(m, "() : !llvm.ptr")
+        mlg_nl(m)
+        return
+    }
+    mlg_s(m, "(")
+    let mut lit: i32 = v
+    let mut neg: i32 = 0
+    if vk == AST_UNARY {
+        lit = m[0].arena.nodes[v].a
+        neg = 1
+    }
+    let lk: i32 = mlg_kind(m, lit)
+    if lk == AST_BOOL {
+        if m[0].arena.nodes[lit].ival != 0 {
+            mlg_s(m, "true")
+        } else {
+            mlg_s(m, "false")
+        }
+    }
+    if lk == AST_FLOAT {
+        mlg_put_float_text(m, lit, t, neg)
+    }
+    if lk == AST_INT {
+        let mut ok: i32 = 1
+        let mut n: i64 = mlg_int_value(m, lit, &ok)
+        if ok == 0 {
+            mlg_refuse(m, c, "const integer literal form")
+            return
+        }
+        if neg == 1 {
+            n = 0 - n
+        }
+        if t == MT_I32 and n > 2147483647 {
+            n = n - 4294967296
+        }
+        mlg_i64(m, n)
+    }
+    mlg_s(m, " : ")
+    mlg_put_type(m, t)
+    mlg_s(m, ") : ")
+    mlg_put_type(m, t)
+    mlg_nl(m)
+}
+
 function mlg_unwrap(m: ptr<Mlg>, item: i32) -> i32 {
     if mlg_kind(m, item) == AST_EXPORT {
         return m[0].arena.nodes[item].a
@@ -4271,9 +4502,8 @@ function mlg_is_name_char(c: i32) -> i32 {
     return 0
 }
 
-# The parser drops top-level `@attr` lines. Python acts on some of them
-# (@gpu kernels leave the CPU module, mode guards filter functions), so any
-# attribute outside a short list of inert ones is refused.
+# The parser drops top-level `@attr` lines. Python acts on some of them, so
+# those are refused; the rest (@inline, @lifetime, ...) do not change MLIR.
 function mlg_check_attrs(m: ptr<Mlg>, from: i32, to_pos: i32, item: i32) {
     let mut i: i32 = from
     while i < to_pos {
@@ -4289,15 +4519,21 @@ function mlg_check_attrs(m: ptr<Mlg>, from: i32, to_pos: i32, item: i32) {
                 while j < to_pos and mlg_is_name_char(m[0].src[j] as i32) == 1 {
                     j = j + 1
                 }
-                let mut ok: i32 = 0
-                if mlg_span_is(m, ns, j, "flow_api") == 1 { ok = 1 }
-                if mlg_span_is(m, ns, j, "inline") == 1 { ok = 1 }
-                if mlg_span_is(m, ns, j, "noinline") == 1 { ok = 1 }
-                if mlg_span_is(m, ns, j, "pure") == 1 { ok = 1 }
-                if mlg_span_is(m, ns, j, "compile") == 1 { ok = 1 }
-                if mlg_span_is(m, ns, j, "mlir") == 1 { ok = 1 }
+                # Python acts on these: @gpu kernels leave the CPU module,
+                # mode guards filter functions, C interop adds declarations.
+                let mut ok: i32 = 1
+                if mlg_span_is(m, ns, j, "gpu") == 1 { ok = 0 }
+                if mlg_span_is(m, ns, j, "only") == 1 { ok = 0 }
+                if mlg_span_is(m, ns, j, "guard") == 1 { ok = 0 }
+                if mlg_span_is(m, ns, j, "hot") == 1 { ok = 0 }
+                if mlg_span_is(m, ns, j, "jit") == 1 { ok = 0 }
+                if mlg_span_is(m, ns, j, "interp") == 1 { ok = 0 }
+                if mlg_span_is(m, ns, j, "c") == 1 { ok = 0 }
+                if mlg_span_is(m, ns, j, "cInclude") == 1 { ok = 0 }
+                if mlg_span_is(m, ns, j, "cImport") == 1 { ok = 0 }
+                if mlg_span_is(m, ns, j, "cEmbed") == 1 { ok = 0 }
                 if ok == 0 {
-                    mlg_refuse(m, item, "function attribute (@gpu, mode guard or other)")
+                    mlg_refuse(m, item, "@gpu, mode-guard or C interop attribute")
                     return
                 }
                 i = j
@@ -4306,6 +4542,57 @@ function mlg_check_attrs(m: ptr<Mlg>, from: i32, to_pos: i32, item: i32) {
             }
         }
     }
+}
+
+# Module consts with a literal value (Python generate_const's literal cases).
+function mlg_const_lit_ok(m: ptr<Mlg>, v: i32) -> i32 {
+    let k: i32 = mlg_kind(m, v)
+    if k == AST_INT or k == AST_FLOAT or k == AST_BOOL or k == AST_STRING {
+        return 1
+    }
+    if mlg_is_null(m, v) == 1 {
+        return 1
+    }
+    if k == AST_UNARY and m[0].arena.nodes[v].ival == TOK_MINUS {
+        let inner: i32 = mlg_kind(m, m[0].arena.nodes[v].a)
+        if inner == AST_INT or inner == AST_FLOAT {
+            return 1
+        }
+    }
+    return 0
+}
+
+function mlg_decl_label(k: i32) -> string {
+    if k == AST_TYPE_ALIAS {
+        return "type alias"
+    }
+    if k == AST_EXTERN_TYPE {
+        return "extern type"
+    }
+    if k == AST_C_INCLUDE or k == AST_C_EMBED or k == AST_C_IMPORT {
+        return "C interop declaration"
+    }
+    if k == AST_EFFECT or k == AST_CAPABILITY {
+        return "effect or capability"
+    }
+    return "top-level declaration (trait, impl, test, export list or other)"
+}
+
+function mlg_add_const(m: ptr<Mlg>, d: i32) {
+    if m[0].nconst >= MLG_MAX_FNS {
+        mlg_refuse(m, d, "too many consts")
+        return
+    }
+    if m[0].arena.nodes[d].a == AST_NONE {
+        mlg_refuse(m, d, "const without a type")
+        return
+    }
+    if mlg_const_lit_ok(m, m[0].arena.nodes[d].b) == 0 {
+        mlg_refuse(m, d, "const whose value is not a literal")
+        return
+    }
+    m[0].c_node[m[0].nconst] = d
+    m[0].nconst = m[0].nconst + 1
 }
 
 # First pass: collect structs and function signatures, refusing any
@@ -4361,16 +4648,18 @@ function mlg_collect(m: ptr<Mlg>, root: i32) {
                         mlg_refuse(m, d, "import")
                     } else {
                         if k == AST_CONST {
-                            mlg_refuse(m, d, "module const")
+                            mlg_add_const(m, d)
                         } else {
                             if k == AST_ENUM {
                                 mlg_refuse(m, d, "enum")
                             } else {
-                                mlg_refuse(m, d, "top-level declaration (alias, effect, trait, test or other)")
+                                mlg_refuse(m, d, mlg_decl_label(k))
                             }
                         }
                     }
-                    return
+                    if m[0].err != 0 {
+                        return
+                    }
                 }
             }
         }
@@ -4396,6 +4685,9 @@ function mlg_emit_decls(m: ptr<Mlg>, root: i32) {
             if fk >= 0 and m[0].fn_node[fk] == d {
                 mlg_emit_function(m, d)
             }
+        }
+        if k == AST_CONST {
+            mlg_emit_const(m, d)
         }
         if k == AST_EXTERN {
             let mut ef: i32 = m[0].arena.nodes[d].a
@@ -4490,7 +4782,8 @@ export function flowc_mlirgen_emit(arena: AstArena, root: i32, src: ptr<u8>, out
         lp_region: mlg_alloc_i32(MLG_MAX_LOOPS), lp_header: mlg_alloc_i32(MLG_MAX_LOOPS),
         lp_end: mlg_alloc_i32(MLG_MAX_LOOPS), lp_iv: mlg_alloc_i32(MLG_MAX_LOOPS),
         lp_step: mlg_alloc_i32(MLG_MAX_LOOPS), nlp: 0,
-        v_llarr: mlg_alloc_i32(MLG_VAL_CAP), a_llarr: mlg_alloc_i32(MLG_MAX_ARGS)
+        v_llarr: mlg_alloc_i32(MLG_VAL_CAP), a_llarr: mlg_alloc_i32(MLG_MAX_ARGS),
+        c_node: mlg_alloc_i32(MLG_MAX_FNS), nconst: 0
     }
     let m: ptr<Mlg> = &mg
     mlg_collect(m, root)
