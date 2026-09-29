@@ -51,7 +51,6 @@ hatch until the Flow port for each one merges.
 | `dynamics_dsl.py` / `flow_blocks.py` | Dynamics DSL and `flow` block lowering | Line helpers in [`dynamics_dsl.flow`](../../compiler/src/dynamics_dsl.flow). Full expansion in flowc: open PR #999 |
 | `shader_dsl.py` / `shader_codegen.py` / `shader_codegen_wgsl.py` | Shader DSL (FSL) and its Metal and WGSL backends | Parsing and validation in [`shader_dsl.flow`](../../compiler/src/shader_dsl.flow). Both backends in flowc: open PR #998 |
 | Verify / proof modules | `proof_*.py`, math prose host path | Helpers landed (see below); document assembly and PDF stay Python |
-| `lsp_server.py` | The only language server. The `./flow-lsp` launcher runs it | None. Only helper functions are ported (see below). Open PR #987 keeps the Python server |
 | `repl.py` | `flow repl` | A REPL written in Flow (`tools/repl/main.flow`): open PR #987 |
 | `test_runner.py` | No callers | Deleted in open PR #987 |
 | `package.py` | `flow add`, `install`, `sync`, `search`, `info`, and fetching for `flow run` | Sync decision in Flow since #960. Full package manager in Flow (`compiler/src/pkg.flow`): open PR #989 |
@@ -63,7 +62,7 @@ hatch until the Flow port for each one merges.
 |---|---|
 | `./flow` bash + Gen0 bootstrap | orchestrates flowc; Gen0 still emits via `src/flow` once |
 | `mlir_jit.py`, `mlir_optimizer.py`, GPU/Metal **runtimes** | subprocess, ctypes, numpy |
-| `lsp_server.py`, `package.py`, `repl.py` | JSON-RPC, git/network, TTY |
+| `package.py` | git and network |
 | `python_generator.py` (wheel) | setuptools/pip |
 | `wasm/flow_to_wasm.py`, `wasm/flow_webgpu_shader.py`, `wasm/flow_wasm_gpu.py` | call the Python C and WGSL generators in process |
 | `benchmarks/**/python/*` baselines | the Python side of a Python-versus-Flow comparison |
@@ -108,6 +107,7 @@ Python and ported those tests to `tests/lang/`. See
 | #998 | Shader DSL and both backends in flowc; `shader_codegen*.py` deleted |
 | #999 | Dynamics DSL and `flow` block lowering in flowc |
 | #987 | REPL in Flow; `repl.py` and `test_runner.py` deleted; LSP stays Python |
+| #693 | Language server in Flow (`tools/lsp/main.flow`); `lsp_server.py`, `lsp_intel.py`, `lsp_syntax.py`, `lsp_dynamics.py` and `lsp_ordering.py` deleted |
 | #989 | Package manager in Flow |
 | #1001 | flowc parses every `.flow` file the Python parser accepts |
 
@@ -128,15 +128,16 @@ Python and ported those tests to `tests/lang/`. See
 | FIR-G effect propagation | [`compiler/src/fir_analysis.flow`](../../compiler/src/fir_analysis.flow): `flowc_propagate_effects` / `flowc_reachable_functions` / `flowc_is_pure` (CSR graph, fixpoint OR) |
 | FIR-G opt candidate scoring | [`compiler/src/fir_opts.flow`](../../compiler/src/fir_opts.flow): `flowc_score_inline` / `flowc_score_dead_elim` / `flowc_compare_candidates` |
 | FIR-G routing decision | [`compiler/src/fir_route.flow`](../../compiler/src/fir_route.flow): `flowc_choose_analysis_backend` (calibration and timing stay Python) |
-| LSP syntax token detection | [`compiler/src/lsp_syntax.flow`](../../compiler/src/lsp_syntax.flow): `flowc_syntax_token_at_position` / `flowc_is_multi_char_op` (markdown hover stays Python) |
-| LSP receiver/field detection | [`compiler/src/lsp_intel.flow`](../../compiler/src/lsp_intel.flow): `flowc_receiver_before_dot` / `flowc_field_access_at` (URI parsing and typecheck stay Python) |
+| Language server (**complete**) | [`tools/lsp/main.flow`](../../tools/lsp/main.flow): JSON-RPC over stdio, diagnostics from the flowc parser and Stage-A checker in process, hover, completion, definition, references, highlight, rename, document symbols, formatting through [`fmt.flow`](../../compiler/src/fmt.flow) and idiom code actions. `./flow lsp` and `./flow-lsp` run it. Gated by [`tests/tools/lsp/run.sh`](../../tests/tools/lsp/run.sh): recorded sessions diffed against the retired Python server, with the accepted differences listed in [`ACCEPTED.md`](../../tests/tools/lsp/ACCEPTED.md) |
+| LSP syntax token detection | [`compiler/src/lsp_syntax.flow`](../../compiler/src/lsp_syntax.flow): `flowc_syntax_token_at_position` / `flowc_is_multi_char_op` |
+| LSP receiver/field detection | [`compiler/src/lsp_intel.flow`](../../compiler/src/lsp_intel.flow): `flowc_receiver_before_dot` / `flowc_field_access_at` |
 | Proof tools (**complete**) | [`compiler/src/proof_doc.flow`](../../compiler/src/proof_doc.flow), [`geometry_diagram.flow`](../../compiler/src/geometry_diagram.flow) and [`geometry_script.flow`](../../compiler/src/geometry_script.flow): the whole of the former `proof_document.py`, `geometry_diagram.py`, `geometry_script.py`, `proof_kernel.py`, `know.py`, `claim_address.py`, `claim_path.py`, `math_prose.py` and `proof_substitution.py`. `flow doc proof`, `flow doc bundle`, `flow doc kernel` and `flow know` run on flowc, and the driver keeps only the LaTeX engine call. In programs, `theorem`, `assume`, `therefore` and claim references are erased by [`proof_lower.flow`](../../compiler/src/proof_lower.flow). Gated by [`parity_proofs.sh`](../../compiler/scripts/parity_proofs.sh): every examples/verify file against the Python at any revision, byte for byte |
 | Dynamics DSL line helpers | [`compiler/src/dynamics_dsl.flow`](../../compiler/src/dynamics_dsl.flow): `flowc_strip_comments` / `flowc_strip_dynamics_namespace` (full DSL parsing and expansion stay Python) |
-| LSP utility helpers | [`compiler/src/lsp_utils.flow`](../../compiler/src/lsp_utils.flow): `flowc_is_valid_identifier` / `flowc_word_range` / `flowc_completion_prefix` (full LSP protocol stays Python) |
+| LSP utility helpers | [`compiler/src/lsp_utils.flow`](../../compiler/src/lsp_utils.flow): `flowc_is_valid_identifier` / `flowc_word_range` / `flowc_completion_prefix` |
 | Field DSL expansion (**complete**) | [`compiler/src/field_dsl.flow`](../../compiler/src/field_dsl.flow): the whole of the former `field_dsl.py`, covering detection, `field` / `boundary` / `evolves as laplacian` parsing, diagnostics, and `T_field_step` generation. flowc runs it on every source it reads (`main.flow`, `driver.flow`, all bundle passes in `resolve.flow`), so `./flow compile examples/evolution/heat_diffusion.flow` needs no Python. `src/flow/field_dsl.py` is now a bridge that shells out to flowc. Gated by [`parity_field_dsl.sh`](../../compiler/scripts/parity_field_dsl.sh): 21 fixtures against goldens recorded from the Python expander, 1995-file passthrough, an optional live diff against the Python at any revision, and heat_diffusion compiled and run on flowc |
 | DSL detection | [`compiler/src/dsl_detect.flow`](../../compiler/src/dsl_detect.flow): `flowc_has_field_dsl` / `flowc_has_dynamics_dsl` / `flowc_has_fill_shader_dsl` (dynamics and shader expansion stay Python) |
-| LSP ordering hover | [`compiler/src/lsp_ordering.flow`](../../compiler/src/lsp_ordering.flow): `flowc_ordering_hover` (completion items with snippets stay Python) |
-| LSP dynamics hover | [`compiler/src/lsp_dynamics.flow`](../../compiler/src/lsp_dynamics.flow): `flowc_dynamics_hover` (completion items stay Python) |
+| LSP ordering hover | [`compiler/src/lsp_ordering.flow`](../../compiler/src/lsp_ordering.flow): `flowc_ordering_hover` |
+| LSP dynamics hover | [`compiler/src/lsp_dynamics.flow`](../../compiler/src/lsp_dynamics.flow): `flowc_dynamics_hover` |
 | WCET analysis helpers | [`compiler/src/wcet.flow`](../../compiler/src/wcet.flow): `flowc_type_size` / `flowc_stmt_cost` / `FLOWC_DEFAULT_LOOP_BOUND` (AST traversal and report formatting stay Python) |
 | Stage-A JS / fmt | [`jsgen.flow`](../../compiler/src/jsgen.flow) / [`fmt.flow`](../../compiler/src/fmt.flow) |
 | LSP ordering gloss | [`examples/compilers/lsp_ordering_port.flow`](../../examples/compilers/lsp_ordering_port.flow) |
