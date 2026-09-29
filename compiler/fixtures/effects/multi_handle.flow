@@ -1,5 +1,5 @@
-# Effects parity fixture: one capability handling two effects, a capability
-# parameter, and `handle A, B with X, Y`.
+# Effects parity fixture: one capability handling two effects, an
+# effect-typed parameter the handler fills in, and `handle A, B with X, Y`.
 
 effect Counter {
     bump(by: i32) -> i32,
@@ -33,14 +33,14 @@ capability Other {
     },
 }
 
-function show(c: capability Counter) -> i32 {
+function show(c: Counter) -> i32 {
     return c.bump(4)
 }
 
 function main() -> i32 {
     handle Counter, Name with Both {
         printf("%d %s\n", Counter.bump(1), Name.get())
-        printf("cap=%d\n", show(0))
+        printf("cap=%d\n", show())
     }
     handle Counter, Name with Tens, Other {
         printf("%d %s\n", Counter.bump(2), Name.get())

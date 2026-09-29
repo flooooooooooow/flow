@@ -627,6 +627,33 @@ function flowc_cgen_emit_ret_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
 
 # Stage-A type → C: ptr<T> → T*, u8 → uint8_t, i64 → int64_t, structs by name.
 # Unknown named types (imported structs) are emitted as-is for multi-module dogfood.
+# C type for a primitive type name span; other names are written as is.
+function flowc_cgen_prim_span_ctype(src: ptr<u8>, s: i32, e: i32) -> string {
+    if flowc_cgen_span_is(src, s, e, "i8") == 1 { return "int8_t" }
+    if flowc_cgen_span_is(src, s, e, "i16") == 1 { return "int16_t" }
+    if flowc_cgen_span_is(src, s, e, "i32") == 1 { return "int32_t" }
+    if flowc_cgen_span_is(src, s, e, "i64") == 1 { return "int64_t" }
+    if flowc_cgen_span_is(src, s, e, "u8") == 1 { return "uint8_t" }
+    if flowc_cgen_span_is(src, s, e, "u16") == 1 { return "uint16_t" }
+    if flowc_cgen_span_is(src, s, e, "u32") == 1 { return "uint32_t" }
+    if flowc_cgen_span_is(src, s, e, "u64") == 1 { return "uint64_t" }
+    if flowc_cgen_span_is(src, s, e, "f32") == 1 { return "float" }
+    if flowc_cgen_span_is(src, s, e, "f64") == 1 { return "double" }
+    if flowc_cgen_span_is(src, s, e, "bool") == 1 { return "bool" }
+    if flowc_cgen_span_is(src, s, e, "string") == 1 { return "const char*" }
+    return ""
+}
+
+function flowc_cgen_emit_prim_span(w: ptr<CgenBuf>, src: ptr<u8>, s: i32, e: i32) {
+    let ct: string = flowc_cgen_prim_span_ctype(src, s, e)
+    let cp: ptr<u8> = ct as ptr<u8>
+    if cp[0] != 0 {
+        flowc_cgen_puts(w, ct)
+    } else {
+        flowc_cgen_put_span(w, src, s, e)
+    }
+}
+
 function flowc_cgen_emit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty: i32) {
     if ty == AST_NONE or arena.nodes[ty].kind != AST_TYPE {
         flowc_cgen_puts(w, "int32_t")
@@ -635,6 +662,15 @@ function flowc_cgen_emit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty
     # `capability E`: an opaque handle; dispatch goes through E's handler slot.
     if arena.nodes[ty].c == AST_TYPE_CAPABILITY {
         flowc_cgen_puts(w, "void*")
+        return
+    }
+    # Legacy `array_f32` spelling (effect signatures in the examples): a
+    # pointer to the element, as on the Python host.
+    let ans: i32 = arena.nodes[ty].name_start
+    let ane: i32 = arena.nodes[ty].name_end
+    if arena.nodes[ty].a == AST_NONE and ane - ans > 6 and flowc_cgen_span_is(src, ans, ans + 6, "array_") == 1 {
+        flowc_cgen_emit_prim_span(w, src, ans + 6, ane)
+        flowc_cgen_putc(w, 42)
         return
     }
     # Monomorphization substitution: check if type name matches a type param.
@@ -4730,6 +4766,9 @@ function flowc_cgen_is_libc_fn(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     if flowc_cgen_span_is(src, ns, ne, "rand") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "srand") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "getenv") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "putenv") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "setenv") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "unsetenv") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "system") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "abs") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "atoi") == 1 { return 1 }
