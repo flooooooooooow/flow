@@ -1956,6 +1956,15 @@ function flowc_resolve_emit_renames(buf: ptr<u8>, len: i32, mi: i32, undef: i32,
 # Gather BFS (entry first); check deps-first with a growing seed of exports
 # from already-checked modules. Returns total error count (0 = ok), or 1 on I/O/parse fail.
 export function flowc_bundle_typecheck(entry_path: string, search_dir: string) -> i32 {
+    let fatal: array<i32, 1> = [0]
+    return flowc_bundle_typecheck_fatal(entry_path, search_dir, &fatal[0] as ptr<i32>)
+}
+
+# As flowc_bundle_typecheck; also writes the count of errors that stay
+# errors under lenient checking (TcCtx.fatal, or a module that does not
+# read or parse) to fatal_out[0].
+export function flowc_bundle_typecheck_fatal(entry_path: string, search_dir: string, fatal_out: ptr<i32>) -> i32 {
+    fatal_out[0] = 1
     let path_store: ptr<u8> = malloc((FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP) as i64)
     if path_store == null {
         return 1
@@ -2015,6 +2024,7 @@ export function flowc_bundle_typecheck(entry_path: string, search_dir: string) -
     }
 
     let mut total_err: i32 = 0
+    let mut ctx_fatal: i32 = 0
     # Deps-first topo order (shared imports before dependents).
     let mut mi: i32 = 0
     while mi < norder {
@@ -2066,10 +2076,12 @@ export function flowc_bundle_typecheck(entry_path: string, search_dir: string) -
         mi = mi + 1
     }
 
+    ctx_fatal = ctx.fatal
     free(src)
     flowc_tc_free(&ctx)
     free(order_store)
     free(path_store)
+    fatal_out[0] = ctx_fatal
     return total_err
 }
 

@@ -262,14 +262,14 @@ flowc_emit_to_c() {
         (
             cd "$SCRIPT_DIR" &&
             FLOWC_BUNDLE=1 FLOWC_DIR="$SCRIPT_DIR" \
-            FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" FLOWC_CHECKS="${FLOWC_CHECKS:-1}" \
+            FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" FLOWC_CHECKS="${FLOWC_CHECKS:-1}" FLOWC_LENIENT="${FLOWC_LENIENT:-1}" \
             FLOWC_IN="$abs_program" FLOWC_OUT="$abs_out" \
                 "$abs_driver"
         )
         return $?
     fi
     # Positional argv runs the Stage-A self-test; emit needs FLOWC_IN / FLOWC_OUT.
-    FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" FLOWC_CHECKS="${FLOWC_CHECKS:-1}" \
+    FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" FLOWC_CHECKS="${FLOWC_CHECKS:-1}" FLOWC_LENIENT="${FLOWC_LENIENT:-1}" \
     FLOWC_IN="$program" FLOWC_OUT="$c_out" \
         "$driver"
 }

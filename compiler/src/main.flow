@@ -27,9 +27,9 @@ import .fmt { flowc_fmt_emit, flowc_fmt_source, flowc_fmt_token_dump }
 import .wasm_gen { flowc_wasm_gen_compile }
 import .bpf_gen { flowc_bpf_gen_compile }
 import .shader_emit { flowc_shader_mode }
-import .typecheck { flowc_typecheck }
+import .typecheck { flowc_typecheck, flowc_typecheck_fatal }
 import .resolve {
-    flowc_resolve_sibling_path, flowc_bundle_emit, flowc_bundle_typecheck,
+    flowc_resolve_sibling_path, flowc_bundle_emit, flowc_bundle_typecheck, flowc_bundle_typecheck_fatal,
     flowc_resolve_dirname, flowc_expand_all_in_place, flowc_expand_stages_in_place
 }
 
@@ -96,6 +96,19 @@ function flowc_want_typecheck() -> i32 {
     if flowc_env_is_zero("FLOWC_TYPECHECK") == 1 {
         return 0
     }
+    return 1
+}
+
+# FLOWC_LENIENT=1 is the Python host's `--lenient`, which `flow compile`
+# uses: type errors are printed as warnings and the program is emitted
+# anyway, except the errors that stay fatal there too (a capability used as
+# a value, a construct Stage-A cannot lower). Returns 1 when emission may
+# go on despite `errs` type errors, `fatal` of them fatal.
+function flowc_tc_lenient_ok(errs: i32, fatal: i32) -> i32 {
+    if flowc_env_eq("FLOWC_LENIENT", "1") == 0 or fatal > 0 {
+        return 0
+    }
+    printf("flowc: %d type warning(s) (lenient mode)\n", errs)
     return 1
 }
 
@@ -275,8 +288,9 @@ function flowc_emit_mode() -> i32 {
         }
         # Bundle typecheck (deps-first + export seed) when typecheck wanted.
         if flowc_want_typecheck() == 1 {
-            let tc_errs: i32 = flowc_bundle_typecheck(in_path, search_dir)
-            if tc_errs > 0 {
+            let bfatal: array<i32, 1> = [0]
+            let tc_errs: i32 = flowc_bundle_typecheck_fatal(in_path, search_dir, &bfatal[0] as ptr<i32>)
+            if tc_errs > 0 and flowc_tc_lenient_ok(tc_errs, bfatal[0]) == 0 {
                 puts("flowc emit: bundle typecheck failed")
                 printf("flowc emit: tc_errs=%d\n", tc_errs)
                 free(dir_buf)
@@ -338,8 +352,9 @@ function flowc_emit_mode() -> i32 {
         # FLOWC_TYPECHECK=0 or FLOWC_NO_TYPECHECK=1.
         if flowc_want_typecheck() == 1 {
             flowc_fuse_pipelines(&p.arena, src)
-            let tc_errs: i32 = flowc_typecheck(p.arena, root, src)
-            if tc_errs > 0 {
+            let sfatal: array<i32, 1> = [0]
+            let tc_errs: i32 = flowc_typecheck_fatal(p.arena, root, src, getenv("FLOWC_IN"), &sfatal[0] as ptr<i32>)
+            if tc_errs > 0 and flowc_tc_lenient_ok(tc_errs, sfatal[0]) == 0 {
                 puts("flowc emit: typecheck failed")
                 printf("flowc emit: tc_errs=%d\n", tc_errs)
                 flowc_parser_free(p)
