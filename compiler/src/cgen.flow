@@ -266,6 +266,27 @@ function flowc_cgen_ty_is_array(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
     return flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "array")
 }
 
+# 1 for libc names the preamble's headers declare that a Flow program may
+# define with its own signature.
+function flowc_cgen_is_libc_clash(src: ptr<u8>, s: i32, e: i32) -> i32 {
+    if flowc_cgen_span_is(src, s, e, "heapsort") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "mergesort") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "radixsort") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "index") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "rindex") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "random") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "srandom") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "bcopy") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "bzero") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "gamma") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "y0") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "y1") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "j0") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "j1") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "abs") == 1 { return 1 }
+    return 0
+}
+
 # 1 when the expression tree at `id` calls a function named src[ns..ne].
 function flowc_cgen_calls_name(arena: AstArena, src: ptr<u8>, id: i32, ns: i32, ne: i32) -> i32 {
     if id == AST_NONE or id < 0 {
@@ -701,6 +722,7 @@ function flowc_cgen_prim_span_ctype(src: ptr<u8>, s: i32, e: i32) -> string {
     if flowc_cgen_span_is(src, s, e, "f64") == 1 { return "double" }
     if flowc_cgen_span_is(src, s, e, "bool") == 1 { return "bool" }
     if flowc_cgen_span_is(src, s, e, "string") == 1 { return "const char*" }
+    if flowc_cgen_span_is(src, s, e, "str") == 1 { return "const char*" }
     return ""
 }
 
@@ -928,7 +950,8 @@ function flowc_cgen_emit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty
         flowc_cgen_puts(w, "bool")
         return
     }
-    if flowc_cgen_span_is(src, ns, ne, "string") == 1 {
+    # `str` is the Python host's other spelling of string.
+    if flowc_cgen_span_is(src, ns, ne, "string") == 1 or flowc_cgen_span_is(src, ns, ne, "str") == 1 {
         # libc / Stage-A: string params/lets are C string pointers.
         flowc_cgen_puts(w, "const char*")
         return
@@ -1247,6 +1270,9 @@ function flowc_cgen_type_is_string(arena: AstArena, src: ptr<u8>, ty: i32) -> i3
     }
     if arena.nodes[ty].a != AST_NONE {
         return 0
+    }
+    if flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "str") == 1 {
+        return 1
     }
     return flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "string")
 }
@@ -1615,7 +1641,7 @@ function flowc_cgen_prim_of_type(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 
     }
     let s: i32 = arena.nodes[ty].name_start
     let e: i32 = arena.nodes[ty].name_end
-    if flowc_cgen_span_is(src, s, e, "string") == 1 {
+    if flowc_cgen_span_is(src, s, e, "string") == 1 or flowc_cgen_span_is(src, s, e, "str") == 1 {
         return FLOWC_PRIM_STRING
     }
     if flowc_cgen_span_is(src, s, e, "f64") == 1 or flowc_cgen_span_is(src, s, e, "f32") == 1 {
@@ -7020,6 +7046,25 @@ export function flowc_cgen_emit_sigs(
             flowc_cgen_putc(&w, 32)
             flowc_cgen_put_span(&w, src, arena.nodes[item].name_start, arena.nodes[item].name_end)
             flowc_cgen_puts(&w, ";\n")
+        }
+        item = arena.nodes[item].next
+    }
+
+    # Pass 0.8: a Flow function named like a libc function the preamble's
+    # headers declare with another signature (heapsort on macOS, index,
+    # random, abs) is renamed for the whole unit. The Python host mangles
+    # every function by its parameter types, so it never clashes.
+    item = arena.nodes[root].a
+    while item != AST_NONE {
+        let cfn: i32 = flowc_cgen_unwrap(arena, item, AST_FN)
+        if cfn != AST_NONE and arena.nodes[cfn].c != AST_NONE {
+            if flowc_cgen_is_libc_clash(src, arena.nodes[cfn].name_start, arena.nodes[cfn].name_end) == 1 {
+                flowc_cgen_puts(&w, "#define ")
+                flowc_cgen_put_span(&w, src, arena.nodes[cfn].name_start, arena.nodes[cfn].name_end)
+                flowc_cgen_puts(&w, " __flowc_libc_")
+                flowc_cgen_put_span(&w, src, arena.nodes[cfn].name_start, arena.nodes[cfn].name_end)
+                flowc_cgen_putc(&w, 10)
+            }
         }
         item = arena.nodes[item].next
     }
