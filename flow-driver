@@ -278,7 +278,7 @@ flow_native_tool() {
         mkdir -p "$cache" || return 1
     fi
     local bin="$cache/flow-$name"
-    if [ -x "$bin" ] && [ -z "$(find "$SCRIPT_DIR/tools/$name" "$SCRIPT_DIR/tools/hostlib" "$SCRIPT_DIR/tools/lsp" \
+    if [ -x "$bin" ] && [ -z "$(find "$SCRIPT_DIR/tools/$name" "$SCRIPT_DIR/tools/hostlib" "$SCRIPT_DIR/tools/lsp" "$SCRIPT_DIR/scripts/tools/lib" \
             "$SCRIPT_DIR/compiler/src" -name '*.flow' -newer "$bin" -print -quit 2>/dev/null)" ]; then
         printf '%s\n' "$bin"
         return 0
@@ -3292,8 +3292,17 @@ case "${1:-help}" in
         echo "host: $(flow_host_mode)"
         ;;
     "check")
+        # Conventions and idiom lint (tools/check/main.flow, built on first
+        # use). `--build` builds it and prints the binary's path.
         shift
-        PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.check "$@"
+        if ! check_bin="$(flow_native_tool check)"; then
+            exit 1
+        fi
+        if [ "${1:-}" = "--build" ]; then
+            printf '%s\n' "$check_bin"
+            exit 0
+        fi
+        exec "$check_bin" "$@"
         ;;
     "run")
         check_deps

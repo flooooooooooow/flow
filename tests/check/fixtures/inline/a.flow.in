@@ -1,0 +1,4 @@
+function f() -> i32 {
+    let abc: i32 = 1
+    return abc
+}

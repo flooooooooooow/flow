@@ -199,7 +199,7 @@ flow blocks and the shader DSL, and it is now the only C compiler.
 | Thing | Why |
 |-------|-----|
 | MLIR generator fallback (`--backend=mlir`) | the Flow MLIR emitter runs first; the Python generator covers what it cannot |
-| `flow check`, `flow python`, package publish and build, wcet and MISRA scanners, fir tools, DAP server, project test runner | tooling with no Flow port yet |
+| `flow python`, package publish and build, wcet and MISRA scanners, fir tools, DAP server, project test runner | tooling with no Flow port yet |
 | Scripts under `scripts/` not yet ported | tooling outside the compile path |
 
 ### Phase E: Packaging & polish  *(in progress)*

@@ -1,0 +1,22 @@
+src/idioms_basic.flow:9:4: hint: [FIDIOM002] Redundant return shape - Returning a struct literal identical to `p`. Return `p` directly.
+  Suggested fix: return p;
+src/idioms_basic.flow:21:4: hint: [FIDIOM001] Unnecessary 'mut' declaration - Variable 'unused' is declared 'mut' but is never reassigned. Remove 'mut' to make it immutable.
+  Suggested fix: let unused
+src/idioms_basic.flow:26:8: hint: [FIDIOM001] Unnecessary 'mut' declaration - Variable 'inner' is declared 'mut' but is never reassigned. Remove 'mut' to make it immutable.
+  Suggested fix: let inner
+src/idioms_basic.flow:31:8: hint: [FIDIOM001] Unnecessary 'mut' declaration - Variable 'deep' is declared 'mut' but is never reassigned. Remove 'mut' to make it immutable.
+  Suggested fix: let deep
+src/idioms_basic.flow:41:4: hint: [FIDIOM001] Unnecessary 'mut' declaration - Variable 'a' is declared 'mut' but is never reassigned. Remove 'mut' to make it immutable.
+  Suggested fix: let a
+src/idioms_basic.flow:46:36: hint: [FIDIOM001] Unnecessary 'mut' declaration - Variable 'after_unicode' is declared 'mut' but is never reassigned. Remove 'mut' to make it immutable.
+  Suggested fix: let after_unicode
+src/idioms_basic.flow:48:4: hint: [FIDIOM001] Unnecessary 'mut' declaration - Variable 'after_blank_spaces' is declared 'mut' but is never reassigned. Remove 'mut' to make it immutable.
+  Suggested fix: let after_blank_spaces
+src/idioms_basic.flow:49:4: hint: [FIDIOM001] Unnecessary 'mut' declaration - Variable 'tabbed' is declared 'mut' but is never reassigned. Remove 'mut' to make it immutable.
+  Suggested fix: let tabbed
+src/idioms_basic.flow:51:4: hint: [FIDIOM001] Unnecessary 'mut' declaration - Variable 'after_string' is declared 'mut' but is never reassigned. Remove 'mut' to make it immutable.
+  Suggested fix: let after_string
+src/idioms_basic.flow:56:4: hint: [FIDIOM001] Unnecessary 'mut' declaration - Variable 'arr' is declared 'mut' but is never reassigned. Remove 'mut' to make it immutable.
+  Suggested fix: let arr
+src/idioms_basic.flow:58:4: hint: [FIDIOM001] Unnecessary 'mut' declaration - Variable 'pt' is declared 'mut' but is never reassigned. Remove 'mut' to make it immutable.
+  Suggested fix: let pt

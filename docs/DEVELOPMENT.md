@@ -193,6 +193,11 @@ Files under `build/` and `.freebuff/` are skipped. With no `avoid` patterns
 declared it prints that and exits 0, so it is safe to run in any project. The
 exit code is non-zero when a file matches, which makes it usable as a gate.
 
+`--idioms` adds the idiom hints (FIDIOM001, a `let mut` never reassigned;
+FIDIOM002, a return that rebuilds one value field by field), and
+`--format=json` prints them as JSON. The command is the Flow program
+`tools/check/main.flow`; `tests/check/run.sh` holds its goldens.
+
 ### Debugging Tips
 
 #### Parser Issues

@@ -97,6 +97,9 @@ jobs:
             compiler:
               - 'compiler/**'
               - 'tests/cgen/**'
+              - 'tests/check/**'
+              - 'tests/c_to_hdr/**'
+              - 'tools/check/**'
             tests:
               - 'tests/**'
             examples:
@@ -375,6 +378,11 @@ jobs:
 
       - name: C output goldens (tests/cgen)
         run: ./tests/cgen/run.sh
+
+      - name: flow check goldens (tests/check)
+        run: |
+          chmod +x ./flow-driver tests/check/run.sh
+          ./tests/check/run.sh
 
       - uses: ./.github/actions/install-toolchain
         with:
