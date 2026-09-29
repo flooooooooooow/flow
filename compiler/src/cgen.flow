@@ -6749,7 +6749,8 @@ function flowc_cgen_is_libc_fn(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
 # Lower function attributes to C declaration specifiers (#1028). Port of
 # `_c_attribute_prefix` in the Python C generator:
 #   @inline         static inline (extern inline when the symbol keeps
-#                   external linkage: main, exported or @flow_api)
+#                   external linkage: main, exported, @flow_api or any
+#                   function of a library unit, FLOWC_LIBRARY=1)
 #   @always_inline  __attribute__((always_inline)) plus that inline specifier
 #   @noinline       __attribute__((noinline))
 #   @target("...")  __attribute__((target("..."))), only when the spec
@@ -6799,6 +6800,10 @@ function flowc_cgen_emit_attr_prefix(w: ptr<CgenBuf>, arena: AstArena, src: ptr<
         return
     }
     if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "main") == 1 {
+        external = 1
+    }
+    # Every function of a library unit keeps external linkage (#1030).
+    if flowc_cgen_library_mode() == 1 {
         external = 1
     }
     if want_noinline == 1 {
