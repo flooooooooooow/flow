@@ -1,0 +1,635 @@
+# @module tools.lsp.json
+# @means  JSON for the language server: a small parser that indexes a
+#         message into a node table (values stay as spans of the input),
+#         and a writer whose output matches Python's json.dumps defaults
+#         (", " and ": " separators, non-ASCII escaped as \uXXXX), so the
+#         native server's bytes can be diffed against the Python server's.
+
+import "tools/hostlib/text.flow"
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function realloc(p: ptr<void>, size: i64) -> ptr<void>
+    function strtod(s: string, end: ptr<void>) -> f64
+}
+
+export const J_NONE: i32 = -1
+export const J_OBJ: i32 = 1
+export const J_ARR: i32 = 2
+export const J_STR: i32 = 3
+export const J_NUM: i32 = 4
+export const J_TRUE: i32 = 5
+export const J_FALSE: i32 = 6
+export const J_NULL: i32 = 7
+
+# One value. start/end span the value's text (strings keep their quotes).
+# child = first member / element, next = next sibling. Object members carry
+# their key span (quotes excluded) in key_start/key_end.
+export struct JNode {
+    kind: i32,
+    start: i32,
+    end: i32,
+    child: i32,
+    next: i32,
+    key_start: i32,
+    key_end: i32
+}
+
+export struct JDoc {
+    src: ptr<u8>,
+    len: i32,
+    nodes: ptr<JNode>,
+    n: i32,
+    cap: i32,
+    pos: i32,
+    err: i32,
+    root: i32
+}
+
+function jd_alloc(d: ptr<JDoc>, kind: i32, start: i32) -> i32 {
+    if d.n >= d.cap {
+        let nc: i32 = d.cap * 2
+        d.nodes = realloc(d.nodes as ptr<void>, (nc as i64) * 64) as ptr<JNode>
+        d.cap = nc
+    }
+    let id: i32 = d.n
+    d.n = d.n + 1
+    d.nodes[id].kind = kind
+    d.nodes[id].start = start
+    d.nodes[id].end = start
+    d.nodes[id].child = J_NONE
+    d.nodes[id].next = J_NONE
+    d.nodes[id].key_start = 0
+    d.nodes[id].key_end = 0
+    return id
+}
+
+function jd_ws(d: ptr<JDoc>) {
+    while d.pos < d.len {
+        let c: i32 = d.src[d.pos] as i32
+        if c == 32 or c == 9 or c == 10 or c == 13 {
+            d.pos = d.pos + 1
+        } else {
+            return
+        }
+    }
+}
+
+# Skip a string starting at the opening quote; pos ends after the closing one.
+function jd_skip_string(d: ptr<JDoc>) -> bool {
+    d.pos = d.pos + 1
+    while d.pos < d.len {
+        let c: i32 = d.src[d.pos] as i32
+        if c == 92 {
+            d.pos = d.pos + 2
+        } else {
+            d.pos = d.pos + 1
+            if c == 34 {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+function jd_lit(d: ptr<JDoc>, word: string) -> bool {
+    let n: i32 = t_len(word)
+    if d.pos + n > d.len {
+        return false
+    }
+    let mut i: i32 = 0
+    while i < n {
+        if (d.src[d.pos + i] as i32) != t_at(word, i) {
+            return false
+        }
+        i = i + 1
+    }
+    d.pos = d.pos + n
+    return true
+}
+
+function jd_value(d: ptr<JDoc>, depth: i32) -> i32 {
+    jd_ws(d)
+    if d.pos >= d.len or depth > 200 {
+        d.err = 1
+        return J_NONE
+    }
+    let c: i32 = d.src[d.pos] as i32
+    let start: i32 = d.pos
+    if c == 123 {
+        let id: i32 = jd_alloc(d, J_OBJ, start)
+        d.pos = d.pos + 1
+        jd_ws(d)
+        let mut last: i32 = J_NONE
+        if d.pos < d.len and (d.src[d.pos] as i32) == 125 {
+            d.pos = d.pos + 1
+            d.nodes[id].end = d.pos
+            return id
+        }
+        while d.err == 0 {
+            jd_ws(d)
+            if d.pos >= d.len or (d.src[d.pos] as i32) != 34 {
+                d.err = 1
+                return J_NONE
+            }
+            let ks: i32 = d.pos + 1
+            if not jd_skip_string(d) {
+                d.err = 1
+                return J_NONE
+            }
+            let ke: i32 = d.pos - 1
+            jd_ws(d)
+            if d.pos >= d.len or (d.src[d.pos] as i32) != 58 {
+                d.err = 1
+                return J_NONE
+            }
+            d.pos = d.pos + 1
+            let v: i32 = jd_value(d, depth + 1)
+            if v == J_NONE {
+                return J_NONE
+            }
+            d.nodes[v].key_start = ks
+            d.nodes[v].key_end = ke
+            if last == J_NONE {
+                d.nodes[id].child = v
+            } else {
+                d.nodes[last].next = v
+            }
+            last = v
+            jd_ws(d)
+            if d.pos < d.len and (d.src[d.pos] as i32) == 44 {
+                d.pos = d.pos + 1
+            } else {
+                if d.pos < d.len and (d.src[d.pos] as i32) == 125 {
+                    d.pos = d.pos + 1
+                    d.nodes[id].end = d.pos
+                    return id
+                }
+                d.err = 1
+                return J_NONE
+            }
+        }
+        return J_NONE
+    }
+    if c == 91 {
+        let id: i32 = jd_alloc(d, J_ARR, start)
+        d.pos = d.pos + 1
+        jd_ws(d)
+        let mut last: i32 = J_NONE
+        if d.pos < d.len and (d.src[d.pos] as i32) == 93 {
+            d.pos = d.pos + 1
+            d.nodes[id].end = d.pos
+            return id
+        }
+        while d.err == 0 {
+            let v: i32 = jd_value(d, depth + 1)
+            if v == J_NONE {
+                return J_NONE
+            }
+            if last == J_NONE {
+                d.nodes[id].child = v
+            } else {
+                d.nodes[last].next = v
+            }
+            last = v
+            jd_ws(d)
+            if d.pos < d.len and (d.src[d.pos] as i32) == 44 {
+                d.pos = d.pos + 1
+            } else {
+                if d.pos < d.len and (d.src[d.pos] as i32) == 93 {
+                    d.pos = d.pos + 1
+                    d.nodes[id].end = d.pos
+                    return id
+                }
+                d.err = 1
+                return J_NONE
+            }
+        }
+        return J_NONE
+    }
+    if c == 34 {
+        let id: i32 = jd_alloc(d, J_STR, start)
+        if not jd_skip_string(d) {
+            d.err = 1
+            return J_NONE
+        }
+        d.nodes[id].end = d.pos
+        return id
+    }
+    if jd_lit(d, "true") {
+        let id: i32 = jd_alloc(d, J_TRUE, start)
+        d.nodes[id].end = d.pos
+        return id
+    }
+    if jd_lit(d, "false") {
+        let id: i32 = jd_alloc(d, J_FALSE, start)
+        d.nodes[id].end = d.pos
+        return id
+    }
+    if jd_lit(d, "null") {
+        let id: i32 = jd_alloc(d, J_NULL, start)
+        d.nodes[id].end = d.pos
+        return id
+    }
+    if c == 45 or t_is_digit(c) {
+        let id: i32 = jd_alloc(d, J_NUM, start)
+        d.pos = d.pos + 1
+        while d.pos < d.len {
+            let k: i32 = d.src[d.pos] as i32
+            if t_is_digit(k) or k == 46 or k == 101 or k == 69 or k == 43 or k == 45 {
+                d.pos = d.pos + 1
+            } else {
+                d.nodes[id].end = d.pos
+                return id
+            }
+        }
+        d.nodes[id].end = d.pos
+        return id
+    }
+    d.err = 1
+    return J_NONE
+}
+
+# Parse `len` bytes at `src`. doc.err != 0 when the text is not JSON.
+export function json_parse(src: ptr<u8>, len: i32) -> JDoc {
+    let cap: i32 = 64
+    let mut d: JDoc = JDoc {
+        src: src,
+        len: len,
+        nodes: calloc(cap as i64, 64) as ptr<JNode>,
+        n: 0,
+        cap: cap,
+        pos: 0,
+        err: 0,
+        root: J_NONE
+    }
+    d.root = jd_value(&d, 0)
+    if d.err == 0 {
+        jd_ws(&d)
+        if d.pos != d.len {
+            d.err = 1
+        }
+    }
+    return d
+}
+
+export function json_free(d: ptr<JDoc>) {
+    free(d.nodes as ptr<void>)
+}
+
+export function jkind(d: ptr<JDoc>, id: i32) -> i32 {
+    if id == J_NONE {
+        return J_NONE
+    }
+    return d.nodes[id].kind
+}
+
+# Member `key` of object `id`, or J_NONE.
+export function jget(d: ptr<JDoc>, id: i32, key: string) -> i32 {
+    if id == J_NONE {
+        return J_NONE
+    }
+    if d.nodes[id].kind != J_OBJ {
+        return J_NONE
+    }
+    let kl: i32 = t_len(key)
+    let mut c: i32 = d.nodes[id].child
+    while c != J_NONE {
+        let ks: i32 = d.nodes[c].key_start
+        let ke: i32 = d.nodes[c].key_end
+        if ke - ks == kl {
+            let mut i: i32 = 0
+            while i < kl and (d.src[ks + i] as i32) == t_at(key, i) {
+                i = i + 1
+            }
+            if i == kl {
+                return c
+            }
+        }
+        c = d.nodes[c].next
+    }
+    return J_NONE
+}
+
+export function jget2(d: ptr<JDoc>, id: i32, k1: string, k2: string) -> i32 {
+    return jget(d, jget(d, id, k1), k2)
+}
+
+# Raw JSON text of a value.
+export function jraw(d: ptr<JDoc>, id: i32) -> string {
+    if id == J_NONE {
+        return "null"
+    }
+    return t_span(d.src, d.nodes[id].start, d.nodes[id].end)
+}
+
+export function jhas(d: ptr<JDoc>, id: i32) -> bool {
+    return id != J_NONE
+}
+
+function hexval(c: i32) -> i32 {
+    if c >= 48 and c <= 57 {
+        return c - 48
+    }
+    if c >= 97 and c <= 102 {
+        return c - 87
+    }
+    if c >= 65 and c <= 70 {
+        return c - 55
+    }
+    return 0
+}
+
+function hex4(src: ptr<u8>, at: i32) -> i32 {
+    let mut v: i32 = 0
+    let mut i: i32 = 0
+    while i < 4 {
+        v = v * 16 + hexval(src[at + i] as i32)
+        i = i + 1
+    }
+    return v
+}
+
+export function tb_put_utf8(b: ptr<TBuf>, cp: i32) {
+    if cp < 128 {
+        tb_putc(b, cp)
+        return
+    }
+    if cp < 2048 {
+        tb_putc(b, 192 + cp / 64)
+        tb_putc(b, 128 + cp % 64)
+        return
+    }
+    if cp < 65536 {
+        tb_putc(b, 224 + cp / 4096)
+        tb_putc(b, 128 + (cp / 64) % 64)
+        tb_putc(b, 128 + cp % 64)
+        return
+    }
+    tb_putc(b, 240 + cp / 262144)
+    tb_putc(b, 128 + (cp / 4096) % 64)
+    tb_putc(b, 128 + (cp / 64) % 64)
+    tb_putc(b, 128 + cp % 64)
+}
+
+# Decoded contents of a string value ("" for any other kind).
+export function jstr(d: ptr<JDoc>, id: i32) -> string {
+    if id == J_NONE {
+        return ""
+    }
+    if d.nodes[id].kind != J_STR {
+        return ""
+    }
+    let mut tb: TBuf = tb_new()
+    let src: ptr<u8> = d.src
+    let mut i: i32 = d.nodes[id].start + 1
+    let e: i32 = d.nodes[id].end - 1
+    while i < e {
+        let c: i32 = src[i] as i32
+        if c != 92 {
+            tb_putc(&tb, c)
+            i = i + 1
+        } else {
+            let k: i32 = src[i + 1] as i32
+            i = i + 2
+            if k == 110 {
+                tb_putc(&tb, 10)
+            } elif k == 116 {
+                tb_putc(&tb, 9)
+            } elif k == 114 {
+                tb_putc(&tb, 13)
+            } elif k == 98 {
+                tb_putc(&tb, 8)
+            } elif k == 102 {
+                tb_putc(&tb, 12)
+            } elif k == 117 {
+                let mut cp: i32 = hex4(src, i)
+                i = i + 4
+                if cp >= 55296 and cp < 56320 and i + 6 <= e and (src[i] as i32) == 92 and (src[i + 1] as i32) == 117 {
+                    let lo: i32 = hex4(src, i + 2)
+                    if lo >= 56320 and lo < 57344 {
+                        cp = 65536 + (cp - 55296) * 1024 + (lo - 56320)
+                        i = i + 6
+                    }
+                }
+                tb_put_utf8(&tb, cp)
+            } else {
+                tb_putc(&tb, k)
+            }
+        }
+    }
+    return tb.data as string
+}
+
+export function jint(d: ptr<JDoc>, id: i32, fallback: i32) -> i32 {
+    if id == J_NONE {
+        return fallback
+    }
+    if d.nodes[id].kind != J_NUM {
+        return fallback
+    }
+    let s: string = jraw(d, id)
+    return strtod(s, null) as i32
+}
+
+export function jbool(d: ptr<JDoc>, id: i32, fallback: bool) -> bool {
+    if id == J_NONE {
+        return fallback
+    }
+    if d.nodes[id].kind == J_TRUE {
+        return true
+    }
+    if d.nodes[id].kind == J_FALSE {
+        return false
+    }
+    return fallback
+}
+
+# ── Writer ──────────────────────────────────────────────────────
+
+# kinds[depth] is 1 for an object and 2 for an array; first[depth] is 1
+# until the first member or element is written.
+export struct JW {
+    b: TBuf,
+    kinds: ptr<i32>,
+    first: ptr<i32>,
+    depth: i32
+}
+
+export function jw_new() -> JW {
+    return JW {
+        b: tb_new(),
+        kinds: calloc(256, 4) as ptr<i32>,
+        first: calloc(256, 4) as ptr<i32>,
+        depth: 0
+    }
+}
+
+function jw_prefix(w: ptr<JW>) {
+    if w.depth == 0 {
+        return
+    }
+    let d: i32 = w.depth
+    if w.kinds[d] == 2 {
+        if w.first[d] == 0 {
+            tb_puts(&w.b, ", ")
+        }
+        w.first[d] = 0
+    }
+}
+
+export function jw_obj(w: ptr<JW>) {
+    jw_prefix(w)
+    tb_putc(&w.b, 123)
+    w.depth = w.depth + 1
+    w.kinds[w.depth] = 1
+    w.first[w.depth] = 1
+}
+
+export function jw_arr(w: ptr<JW>) {
+    jw_prefix(w)
+    tb_putc(&w.b, 91)
+    w.depth = w.depth + 1
+    w.kinds[w.depth] = 2
+    w.first[w.depth] = 1
+}
+
+export function jw_end(w: ptr<JW>) {
+    if w.kinds[w.depth] == 1 {
+        tb_putc(&w.b, 125)
+    } else {
+        tb_putc(&w.b, 93)
+    }
+    w.depth = w.depth - 1
+}
+
+export function jw_key(w: ptr<JW>, k: string) {
+    let d: i32 = w.depth
+    if w.first[d] == 0 {
+        tb_puts(&w.b, ", ")
+    }
+    w.first[d] = 0
+    jw_escape(&w.b, k)
+    tb_puts(&w.b, ": ")
+}
+
+function hexdigit(v: i32) -> i32 {
+    if v < 10 {
+        return 48 + v
+    }
+    return 87 + v
+}
+
+function put_u16(b: ptr<TBuf>, v: i32) {
+    tb_puts(b, "\\u")
+    tb_putc(b, hexdigit((v / 4096) % 16))
+    tb_putc(b, hexdigit((v / 256) % 16))
+    tb_putc(b, hexdigit((v / 16) % 16))
+    tb_putc(b, hexdigit(v % 16))
+}
+
+# A quoted JSON string with Python's ensure_ascii escaping.
+export function jw_escape(b: ptr<TBuf>, s: string) {
+    tb_putc(b, 34)
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = t_len(s)
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = p[i] as i32
+        if c == 34 {
+            tb_puts(b, "\\\"")
+            i = i + 1
+        } elif c == 92 {
+            tb_puts(b, "\\\\")
+            i = i + 1
+        } elif c == 10 {
+            tb_puts(b, "\\n")
+            i = i + 1
+        } elif c == 13 {
+            tb_puts(b, "\\r")
+            i = i + 1
+        } elif c == 9 {
+            tb_puts(b, "\\t")
+            i = i + 1
+        } elif c == 8 {
+            tb_puts(b, "\\b")
+            i = i + 1
+        } elif c == 12 {
+            tb_puts(b, "\\f")
+            i = i + 1
+        } elif c < 32 {
+            put_u16(b, c)
+            i = i + 1
+        } elif c < 128 {
+            tb_putc(b, c)
+            i = i + 1
+        } else {
+            # Decode one UTF-8 sequence; a stray byte becomes U+FFFD.
+            let mut cp: i32 = 65533
+            let mut used: i32 = 1
+            if c >= 240 and i + 3 < n {
+                cp = (c % 8) * 262144 + ((p[i + 1] as i32) % 64) * 4096 + ((p[i + 2] as i32) % 64) * 64 + (p[i + 3] as i32) % 64
+                used = 4
+            } elif c >= 224 and i + 2 < n {
+                cp = (c % 16) * 4096 + ((p[i + 1] as i32) % 64) * 64 + (p[i + 2] as i32) % 64
+                used = 3
+            } elif c >= 192 and i + 1 < n {
+                cp = (c % 32) * 64 + (p[i + 1] as i32) % 64
+                used = 2
+            }
+            if cp >= 65536 {
+                let v: i32 = cp - 65536
+                put_u16(b, 55296 + v / 1024)
+                put_u16(b, 56320 + v % 1024)
+            } else {
+                put_u16(b, cp)
+            }
+            i = i + used
+        }
+    }
+    tb_putc(b, 34)
+}
+
+export function jw_str(w: ptr<JW>, s: string) {
+    jw_prefix(w)
+    jw_escape(&w.b, s)
+}
+
+export function jw_int(w: ptr<JW>, v: i32) {
+    jw_prefix(w)
+    tb_put_int(&w.b, v)
+}
+
+export function jw_bool(w: ptr<JW>, v: bool) {
+    jw_prefix(w)
+    if v {
+        tb_puts(&w.b, "true")
+    } else {
+        tb_puts(&w.b, "false")
+    }
+}
+
+export function jw_null(w: ptr<JW>) {
+    jw_prefix(w)
+    tb_puts(&w.b, "null")
+}
+
+# Already-serialized JSON.
+export function jw_raw(w: ptr<JW>, json: string) {
+    jw_prefix(w)
+    tb_puts(&w.b, json)
+}
+
+export function jw_kstr(w: ptr<JW>, k: string, v: string) {
+    jw_key(w, k)
+    jw_str(w, v)
+}
+
+export function jw_kint(w: ptr<JW>, k: string, v: i32) {
+    jw_key(w, k)
+    jw_int(w, v)
+}
+
+export function jw_text(w: ptr<JW>) -> string {
+    return w.b.data as string
+}

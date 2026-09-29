@@ -1,0 +1,626 @@
+# @module tools.lsp.imports
+# @means  Import resolution and the import index for the language server:
+#         the rules of src/flow/module_resolver.py (relative `.mod`,
+#         dotted `std.x` / package / project paths, legacy string paths,
+#         flow.toml [paths] and [dependencies]) and the depth-1 export
+#         index of src/flow/lsp_intel.py, including `export import`
+#         forwards.
+
+import "tools/hostlib/text.flow"
+import "tools/lsp/text.flow"
+import "tools/lsp/analyze.flow"
+import "compiler/src/ast.flow"
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+}
+
+# ── Paths and URIs ──────────────────────────────────────────────
+
+export function dirname(p: string) -> string {
+    let n: i32 = t_len(p)
+    let mut i: i32 = n - 1
+    while i > 0 and t_at(p, i) != 47 {
+        i = i - 1
+    }
+    if i <= 0 {
+        if n > 0 and t_at(p, 0) == 47 {
+            return "/"
+        }
+        return "."
+    }
+    return t_sub(p, 0, i)
+}
+
+export function basename(p: string) -> string {
+    let n: i32 = t_len(p)
+    let mut i: i32 = n - 1
+    while i >= 0 and t_at(p, i) != 47 {
+        i = i - 1
+    }
+    return t_from(p, i + 1)
+}
+
+export function path_join(a: string, b: string) -> string {
+    if t_len(a) == 0 {
+        return b
+    }
+    if t_ends_with(a, "/") {
+        return t_cat(a, b)
+    }
+    return t_cat3(a, "/", b)
+}
+
+# Absolute form of p with `.` segments and `x/..` pairs folded away
+# (os.path.abspath). Relative paths are taken from $PWD.
+export function real(p: string) -> string {
+    let mut full: string = p
+    if not t_starts_with(p, "/") {
+        full = path_join(t_env("PWD", "."), p)
+    }
+    let mut parts: TList = tl_new()
+    let n: i32 = t_len(full)
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i <= n {
+        if i == n or t_at(full, i) == 47 {
+            let seg: string = t_sub(full, start, i)
+            if t_eq(seg, "..") {
+                if parts.len > 0 {
+                    parts.len = parts.len - 1
+                }
+            } elif t_len(seg) > 0 and not t_eq(seg, ".") {
+                tl_push(&parts, seg)
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    let mut tb: TBuf = tb_new()
+    let mut k: i32 = 0
+    while k < parts.len {
+        tb_putc(&tb, 47)
+        tb_puts(&tb, tl_get(&parts, k))
+        k = k + 1
+    }
+    if parts.len == 0 {
+        return "/"
+    }
+    return tb.data as string
+}
+
+export function is_file(p: string) -> bool {
+    return t_file_exists(p)
+}
+
+function hexv(c: i32) -> i32 {
+    if c >= 48 and c <= 57 {
+        return c - 48
+    }
+    if c >= 97 and c <= 102 {
+        return c - 87
+    }
+    if c >= 65 and c <= 70 {
+        return c - 55
+    }
+    return -1
+}
+
+# file:///a%20b -> /a b; "" for untitled: and other schemes.
+export function uri_to_path(uri: string) -> string {
+    if not t_starts_with(uri, "file://") {
+        if t_starts_with(uri, "untitled:") {
+            return ""
+        }
+        if is_file(uri) {
+            return uri
+        }
+        return ""
+    }
+    let mut rest: string = t_from(uri, 7)
+    # file://host/path: drop the authority.
+    let slash: i32 = t_find_char(rest, 47)
+    if slash > 0 {
+        rest = t_from(rest, slash)
+    }
+    let mut tb: TBuf = tb_new()
+    let n: i32 = t_len(rest)
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = t_at(rest, i)
+        if c == 37 and i + 2 < n and hexv(t_at(rest, i + 1)) >= 0 and hexv(t_at(rest, i + 2)) >= 0 {
+            tb_putc(&tb, hexv(t_at(rest, i + 1)) * 16 + hexv(t_at(rest, i + 2)))
+            i = i + 3
+        } else {
+            tb_putc(&tb, c)
+            i = i + 1
+        }
+    }
+    return tb.data as string
+}
+
+# Path.as_uri(): percent-encode everything outside [A-Za-z0-9_.~/-].
+export function path_to_uri(path: string) -> string {
+    let mut tb: TBuf = tb_new()
+    tb_puts(&tb, "file://")
+    let n: i32 = t_len(path)
+    let hex: string = "0123456789ABCDEF"
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = t_at(path, i)
+        if is_word(c) or c == 46 or c == 126 or c == 47 or c == 45 {
+            tb_putc(&tb, c)
+        } else {
+            tb_putc(&tb, 37)
+            tb_putc(&tb, t_at(hex, c / 16))
+            tb_putc(&tb, t_at(hex, c % 16))
+        }
+        i = i + 1
+    }
+    return tb.data as string
+}
+
+# ── Project config (flow.toml) ──────────────────────────────────
+
+export struct Project {
+    root: string,
+    path_keys: TList,
+    path_vals: TList,
+    deps: TList,
+    stdlib: string
+}
+
+function toml_key(line: string) -> string {
+    let s: string = t_strip(line)
+    let mut e: i32 = 0
+    let n: i32 = t_len(s)
+    while e < n and (is_word(t_at(s, e)) or t_at(s, e) == 45) {
+        e = e + 1
+    }
+    return t_sub(s, 0, e)
+}
+
+function toml_string_value(line: string) -> string {
+    let eq: i32 = t_find_char(line, 61)
+    if eq < 0 {
+        return ""
+    }
+    let v: string = t_strip(t_from(line, eq + 1))
+    if t_len(v) >= 2 and t_at(v, 0) == 34 {
+        let close: i32 = t_find_from(v, "\"", 1)
+        if close > 0 {
+            return t_sub(v, 1, close)
+        }
+    }
+    return ""
+}
+
+export function load_project(file_path: string, repo_root: string) -> Project {
+    let mut pr: Project = Project {
+        root: repo_root,
+        path_keys: tl_new(),
+        path_vals: tl_new(),
+        deps: tl_new(),
+        stdlib: ""
+    }
+    let mut dir: string = dirname(real(file_path))
+    let mut found: string = ""
+    while true {
+        let cand: string = path_join(dir, "flow.toml")
+        if is_file(cand) {
+            found = cand
+            break
+        }
+        if t_eq(dir, "/") or t_eq(dir, ".") or t_len(dir) == 0 {
+            break
+        }
+        dir = dirname(dir)
+    }
+    if t_len(found) > 0 {
+        pr.root = dirname(found)
+        let rows: TList = t_split_lines(t_read_file(found))
+        let mut section: string = ""
+        let mut i: i32 = 0
+        while i < rows.len {
+            let row: string = t_strip(tl_get(&rows, i))
+            if t_starts_with(row, "[") {
+                section = row
+            } elif t_len(row) > 0 and t_at(row, 0) != 35 and t_find_char(row, 61) > 0 {
+                let key: string = toml_key(row)
+                if t_eq(section, "[paths]") {
+                    let v: string = toml_string_value(row)
+                    if t_len(v) > 0 {
+                        tl_push(&pr.path_keys, key)
+                        tl_push(&pr.path_vals, v)
+                    }
+                } elif t_eq(section, "[dependencies]") {
+                    tl_push(&pr.deps, key)
+                }
+            }
+            i = i + 1
+        }
+    }
+    let si: i32 = tl_index(&pr.path_keys, "stdlib")
+    let mut cand: string = path_join(pr.root, "lib/stdlib")
+    if si >= 0 {
+        cand = path_join(pr.root, tl_get(&pr.path_vals, si))
+    }
+    if is_file(path_join(cand, "math.flow")) or is_file(cand) {
+        pr.stdlib = cand
+    } else {
+        pr.stdlib = path_join(repo_root, "lib/stdlib")
+    }
+    return pr
+}
+
+# ── Resolution ──────────────────────────────────────────────────
+
+# Candidate files for module path parts under root: each part may map to
+# itself or, for a claim path `Nat/+`, to its domain `Nat`.
+function try_parts(root: string, parts: ptr<TList>, upto: i32) -> string {
+    # Literal stems first.
+    let mut tb: TBuf = tb_new()
+    tb_puts(&tb, root)
+    let mut i: i32 = 0
+    while i < upto {
+        tb_putc(&tb, 47)
+        tb_puts(&tb, tl_get(parts, i))
+        i = i + 1
+    }
+    let mut cand: string = tb.data as string
+    if not t_ends_with(cand, ".flow") {
+        cand = t_cat(cand, ".flow")
+    }
+    if is_file(cand) {
+        return real(cand)
+    }
+    # Domain fallback for the last part.
+    let last: string = tl_get(parts, upto - 1)
+    let sl: i32 = t_find_char(last, 47)
+    if sl > 0 {
+        let mut tb2: TBuf = tb_new()
+        tb_puts(&tb2, root)
+        let mut k: i32 = 0
+        while k < upto - 1 {
+            tb_putc(&tb2, 47)
+            tb_puts(&tb2, tl_get(parts, k))
+            k = k + 1
+        }
+        tb_putc(&tb2, 47)
+        tb_puts(&tb2, t_sub(last, 0, sl))
+        tb_puts(&tb2, ".flow")
+        let c2: string = tb2.data as string
+        if is_file(c2) {
+            return real(c2)
+        }
+    }
+    return ""
+}
+
+function split_dots(s: string) -> TList {
+    let mut l: TList = tl_new()
+    let n: i32 = t_len(s)
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if t_at(s, i) == 46 {
+            tl_push(&l, t_sub(s, start, i))
+            start = i + 1
+        }
+        i = i + 1
+    }
+    tl_push(&l, t_sub(s, start, n))
+    return l
+}
+
+function try_root(root: string, parts: ptr<TList>, from: i32) -> string {
+    let n: i32 = parts.len - from
+    if n <= 0 {
+        return ""
+    }
+    let mut rest: TList = tl_new()
+    let mut i: i32 = from
+    while i < parts.len {
+        tl_push(&rest, tl_get(parts, i))
+        i = i + 1
+    }
+    let mut k: i32 = rest.len
+    while k > 0 {
+        let r: string = try_parts(root, &rest, k)
+        if t_len(r) > 0 {
+            return r
+        }
+        k = k - 1
+    }
+    return ""
+}
+
+# Resolve the import at AST node `id` of analysis `a` for the file at
+# base_dir. "" when it cannot be resolved.
+export function resolve_import(a: ptr<Analysis>, id: i32, base_dir: string, pr: ptr<Project>) -> string {
+    let form: i32 = a.arena.nodes[id].ival
+    let raw: string = name_of(a, id)
+    if form == 2 {
+        # Legacy string path.
+        let path: string = t_sub(raw, 1, t_len(raw) - 1)
+        if t_starts_with(path, "/") or t_starts_with(path, "~") or t_contains(path, "..") {
+            return ""
+        }
+        let mut file: string = path
+        if not t_ends_with(file, ".flow") {
+            file = t_cat(file, ".flow")
+        }
+        let mut cands: TList = tl_new()
+        tl_push(&cands, path_join(base_dir, file))
+        if t_starts_with(path, "stdlib/") {
+            let mut stripped: string = t_from(path, 7)
+            if not t_ends_with(stripped, ".flow") {
+                stripped = t_cat(stripped, ".flow")
+            }
+            tl_push(&cands, path_join(pr.stdlib, stripped))
+        }
+        tl_push(&cands, path_join(pr.stdlib, file))
+        tl_push(&cands, path_join(pr.root, file))
+        let mut i: i32 = 0
+        while i < cands.len {
+            if is_file(tl_get(&cands, i)) {
+                return real(tl_get(&cands, i))
+            }
+            i = i + 1
+        }
+        return ""
+    }
+    if form == 1 {
+        let parts: TList = split_dots(t_from(raw, 1))
+        if parts.len == 0 or t_len(tl_get(&parts, 0)) == 0 {
+            return ""
+        }
+        return try_root(base_dir, &parts, 0)
+    }
+    let parts: TList = split_dots(raw)
+    if parts.len == 0 {
+        return ""
+    }
+    let head: string = tl_get(&parts, 0)
+    if t_eq(head, "std") {
+        return try_root(pr.stdlib, &parts, 1)
+    }
+    let pi: i32 = tl_index(&pr.path_keys, head)
+    if pi >= 0 {
+        return try_root(path_join(pr.root, tl_get(&pr.path_vals, pi)), &parts, 1)
+    }
+    if tl_index(&pr.deps, head) >= 0 {
+        let pkg: string = path_join(path_join(pr.root, "flow_packages"), head)
+        let r: string = try_root(path_join(pkg, "src"), &parts, 1)
+        if t_len(r) > 0 {
+            return r
+        }
+        return try_root(pkg, &parts, 1)
+    }
+    if t_eq(head, "stdlib") {
+        let r: string = try_root(pr.stdlib, &parts, 1)
+        if t_len(r) > 0 {
+            return r
+        }
+    }
+    let r2: string = try_root(pr.stdlib, &parts, 0)
+    if t_len(r2) > 0 {
+        return r2
+    }
+    return try_root(pr.root, &parts, 0)
+}
+
+# Names listed in the import's braces, or none (import everything).
+export function import_wanted(a: ptr<Analysis>, id: i32) -> TList {
+    let mut l: TList = tl_new()
+    let mut c: i32 = a.arena.nodes[id].a
+    while c != AST_NONE {
+        tl_push(&l, name_of(a, c))
+        c = a.arena.nodes[c].next
+    }
+    return l
+}
+
+export function import_is_reexport(a: ptr<Analysis>, id: i32) -> bool {
+    let start: i32 = a.arena.nodes[id].start
+    let mut i: i32 = start - 1
+    while i >= 0 and ((a.src[i] as i32) == 32 or (a.src[i] as i32) == 9) {
+        i = i - 1
+    }
+    if i < 5 {
+        return false
+    }
+    return t_eq(t_span(a.src, i - 5, i + 1), "export")
+}
+
+# ── Export index ────────────────────────────────────────────────
+
+# Bare type name, as lsp_intel read it (getattr(type, 'name')): ptr<T>
+# gives T's name, array<T, N> gives `array`.
+function bare_type(a: ptr<Analysis>, ty: i32) -> string {
+    if ty == AST_NONE or ty < 0 {
+        return "unknown"
+    }
+    let name: string = t_span(a.src, a.arena.nodes[ty].name_start, a.arena.nodes[ty].name_end)
+    if t_eq(name, "ptr") and a.arena.nodes[ty].a != AST_NONE {
+        return bare_type(a, a.arena.nodes[ty].a)
+    }
+    if t_len(name) == 0 {
+        return "unknown"
+    }
+    return name
+}
+
+# Import-style symbol for a declaration of a dependency (no doc; types as
+# bare names), located the way refine_import_symbol_location did.
+function import_sym(dep: ptr<Analysis>, local: ptr<Sym>, def_text: string, def_path: string) -> ptr<Sym> {
+    let s: ptr<Sym> = sym_copy(local)
+    s.doc = ""
+    s.imported = true
+    s.uri = path_to_uri(def_path)
+    let mut keyword: string = s.kind
+    if t_eq(keyword, "theorem") or t_eq(keyword, "capability") {
+        return null
+    }
+    let rows: TList = t_split_lines(def_text)
+    let mut line: i32 = -1
+    let mut i: i32 = 0
+    while i < rows.len and line < 0 {
+        if match_decl(tl_get(&rows, i), keyword, s.name) >= 0 {
+            line = i
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < rows.len and line < 0 {
+        let row: string = tl_get(&rows, i)
+        let at: i32 = find_word(row, keyword)
+        if at >= 0 {
+            let j: i32 = skip_ws(row, at + t_len(keyword))
+            if j > at + t_len(keyword) and word_at(row, j, s.name) {
+                line = i
+            }
+        }
+        i = i + 1
+    }
+    if line < 0 {
+        line = 0
+    }
+    let row: string = row_at(&rows, line)
+    let mut col: i32 = t_find(row, s.name)
+    if col < 0 {
+        col = 0
+    }
+    s.line = line
+    s.column = ucol(row, col)
+    s.end_column = s.column + ulen(s.name)
+    s.end_line = line
+    s.has_end = true
+    return s
+}
+
+# Rewrite the parameter / field / return types of a symbol taken from
+# dep's AST as bare names.
+function bare_types(dep: ptr<Analysis>, s: ptr<Sym>) {
+    let mut item: i32 = dep.arena.nodes[dep.root].a
+    while item != AST_NONE {
+        let mut it: i32 = item
+        if dep.arena.nodes[it].kind == AST_EXPORT and dep.arena.nodes[it].ival == 0 and dep.arena.nodes[it].a != AST_NONE {
+            it = dep.arena.nodes[it].a
+        }
+        let k: i32 = dep.arena.nodes[it].kind
+        if (k == AST_FN or k == AST_STRUCT or k == AST_CONST or k == AST_TYPE_ALIAS) and t_eq(name_of(dep, it), s.name) {
+            if k == AST_FN {
+                s.ptypes = tl_new()
+                let mut p: i32 = dep.arena.nodes[it].a
+                while p != AST_NONE {
+                    tl_push(&s.ptypes, bare_type(dep, dep.arena.nodes[p].a))
+                    p = dep.arena.nodes[p].next
+                }
+                if dep.arena.nodes[it].b != AST_NONE {
+                    s.ret = bare_type(dep, dep.arena.nodes[it].b)
+                } else {
+                    s.ret = "void"
+                }
+            } elif k == AST_STRUCT {
+                s.ftypes = tl_new()
+                let mut f: i32 = dep.arena.nodes[it].a
+                while f != AST_NONE {
+                    if dep.arena.nodes[f].kind == AST_FIELD {
+                        tl_push(&s.ftypes, bare_type(dep, dep.arena.nodes[f].a))
+                    }
+                    f = dep.arena.nodes[f].next
+                }
+            } else {
+                s.tstr = bare_type(dep, dep.arena.nodes[it].a)
+            }
+            return
+        }
+        item = dep.arena.nodes[item].next
+    }
+}
+
+# Names in `export a, b` lists of a module.
+function export_list(dep: ptr<Analysis>) -> TList {
+    let mut l: TList = tl_new()
+    if not dep.parsed {
+        return l
+    }
+    let mut item: i32 = dep.arena.nodes[dep.root].a
+    while item != AST_NONE {
+        if dep.arena.nodes[item].kind == AST_EXPORT and dep.arena.nodes[item].ival == 1 {
+            let mut c: i32 = dep.arena.nodes[item].a
+            while c != AST_NONE {
+                tl_push(&l, name_of(dep, c))
+                c = dep.arena.nodes[c].next
+            }
+        }
+        item = dep.arena.nodes[item].next
+    }
+    return l
+}
+
+# Everything dep_path exports (following `export import`), appended to
+# out as import symbols. seen holds the files on the current chain.
+export function module_exports(dep_path: string, pr: ptr<Project>, out: ptr<PList>, seen: ptr<TList>, depth: i32) {
+    if depth > 8 or tl_index(seen, dep_path) >= 0 {
+        return
+    }
+    let text: string = t_read_file(dep_path)
+    if t_len(text) == 0 {
+        return
+    }
+    tl_push(seen, dep_path)
+    let dep: ptr<Analysis> = analyze_text(text, false)
+    if not dep.parsed {
+        seen.len = seen.len - 1
+        return
+    }
+    let listed: TList = export_list(dep)
+    let base: string = dirname(dep_path)
+    let mut ii: i32 = 0
+    while ii < dep.imports.len {
+        let id: i32 = atoi_s(tl_get(&dep.imports, ii))
+        if import_is_reexport(dep, id) {
+            let fwd: string = resolve_import(dep, id, base, pr)
+            if t_len(fwd) > 0 {
+                let wanted: TList = import_wanted(dep, id)
+                let mut sub: PList = pl_new()
+                module_exports(fwd, pr, &sub, seen, depth + 1)
+                let mut k: i32 = 0
+                while k < sub.len {
+                    let s: ptr<Sym> = sym_at(&sub, k)
+                    if (wanted.len == 0 or tl_index(&wanted, s.name) >= 0) and sym_find(out, s.name) == null {
+                        pl_push(out, s as ptr<u8>)
+                    }
+                    k = k + 1
+                }
+            }
+        }
+        ii = ii + 1
+    }
+    let mut i: i32 = 0
+    while i < dep.syms.len {
+        let s: ptr<Sym> = sym_at(&dep.syms, i)
+        if s.exported or tl_index(&listed, s.name) >= 0 {
+            let is: ptr<Sym> = import_sym(dep, s, text, dep_path)
+            if is != null {
+                bare_types(dep, is)
+                sym_put(out, is)
+            }
+        }
+        i = i + 1
+    }
+    seen.len = seen.len - 1
+}
+
+export function atoi_s(s: string) -> i32 {
+    let mut v: i32 = 0
+    let n: i32 = t_len(s)
+    let mut i: i32 = 0
+    while i < n {
+        v = v * 10 + (t_at(s, i) - 48)
+        i = i + 1
+    }
+    return v
+}

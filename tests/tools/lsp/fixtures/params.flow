@@ -1,0 +1,5 @@
+function add(a: i32, b: i32) -> i32 {
+    let mut total: i32 = a
+    total = total + b
+    return total
+}
