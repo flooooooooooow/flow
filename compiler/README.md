@@ -66,7 +66,7 @@ When `FLOWC_IN` is set to a non-empty path, `main` skips self-tests and instead:
 
 1. Reads that `.flow` source
 2. Parses (+ Stage-A `flowc_typecheck` **on by default**)
-3. Stage-A emit: `flowc_cgen_emit` by default; `FLOWC_BACKEND=js` → `flowc_jsgen_emit`; `FLOWC_BACKEND=fmt` → `flowc_fmt_emit`
+3. Stage-A emit: `flowc_cgen_emit` by default; `FLOWC_BACKEND=js` → `flowc_jsgen_emit`; `FLOWC_BACKEND=fmt` → `flowc_fmt_source` (the formatter), `FLOWC_BACKEND=tokens` → the token and comment stream `compiler/scripts/fmt_check.sh` compares
 4. Writes output to `FLOWC_OUT` if set, otherwise prints the buffer to stdout
 
 Typecheck is **on by default** for fixture/app emits (`driver.flow`, C
@@ -198,8 +198,8 @@ Package metadata: [`flow.toml`](flow.toml) (`name = "flowc"`, entry
 | `jsgen` | [`src/jsgen.flow`](src/jsgen.flow) | Stage-A AST→JS buffer emitter (`flowc_jsgen_emit`; self-tested) |
 | `typecheck` | [`src/typecheck.flow`](src/typecheck.flow) | Stage-A name resolution / lightweight checks (`flowc_typecheck`, `flowc_tc_seed_export`; self-tested) |
 | `resolve` | [`src/resolve.flow`](src/resolve.flow) | Multi-file import resolve + `flowc_bundle_emit` / `flowc_bundle_typecheck` |
-| `fmt` | [`src/fmt.flow`](src/fmt.flow) | Stage-A AST→Flow pretty-printer (`flowc_fmt_emit`; self-tested) |
-| (tests / emit) | [`src/main.flow`](src/main.flow) | Smoke tests; env-gated Stage-A emit (`FLOWC_IN` / `FLOWC_OUT` / `FLOWC_BUNDLE`); `FLOWC_BACKEND=js|fmt` (else C); typecheck default on (`FLOWC_TYPECHECK=0` / `FLOWC_NO_TYPECHECK=1` opt-out) |
+| `fmt` | [`src/fmt.flow`](src/fmt.flow) | Token-stream formatter behind `flow fmt` and the language server: rewrites whitespace only (`flowc_fmt_source`; gate `scripts/fmt_check.sh`) |
+| (tests / emit) | [`src/main.flow`](src/main.flow) | Smoke tests; env-gated Stage-A emit (`FLOWC_IN` / `FLOWC_OUT` / `FLOWC_BUNDLE`); `FLOWC_BACKEND=js|fmt|tokens` (else C); typecheck default on (`FLOWC_TYPECHECK=0` / `FLOWC_NO_TYPECHECK=1` opt-out) |
 | `driver` | [`src/driver.flow`](src/driver.flow) | Flow Stage-A driver (CLI argv + getenv + optional `FLOWC_BUNDLE`); emit alone, link `flowc_frontend.o` / `_self.o` / `_g2.o` |
 | `claim_address` | [`src/claim_address.flow`](src/claim_address.flow) | Claim Coordinates (`flowc_claim_*`; Python port; `./flow run` demo) |
 | Stage-A host | [`host/stage_a_driver.c`](host/stage_a_driver.c) | Tiny C `main` linking `flowc_frontend.o` (CLI argv fallback; kept) |

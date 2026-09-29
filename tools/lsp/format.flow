@@ -1,104 +1,20 @@
 # @module tools.lsp.format
 # @means  Document formatting for the language server.
 #
-# First choice is the flowc pretty-printer (compiler/src/fmt.flow). Its
-# output is used only when it keeps every token and every comment of the
-# source: fmt.flow rebuilds text from the AST, so it drops comments and
-# the declarations it has no printer for. When it would lose anything,
-# the server falls back to a layout pass that only touches whitespace:
-# indentation by bracket depth, trailing blanks, runs of blank lines and
-# the final newline.
+# The server formats with flowc's formatter (compiler/src/fmt.flow), the
+# same pass as `flow fmt`. It rewrites whitespace only and keeps every
+# token and comment; compiler/scripts/fmt_check.sh checks that, and that
+# the result is a fixed point, over every tracked .flow file. A document
+# flowc cannot parse gets no edit.
 
 import "tools/hostlib/text.flow"
 import "tools/lsp/text.flow"
-import "compiler/src/ast.flow"
 import "compiler/src/parser.flow"
 import "compiler/src/fmt.flow"
 
 extern {
     function calloc(n: i64, size: i64) -> ptr<void>
     function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
-}
-
-function is_punct(c: i32) -> bool {
-    return not (is_word(c) or t_is_space(c) or c == 34 or c == 35 or c == 0)
-}
-
-# Length of the operator at p[i]: a two- or three-character operator when
-# one starts here, else 1.
-function op_len(p: ptr<u8>, i: i32, n: i32) -> i32 {
-    let ops: array<string, 20> = ["<<=", ">>=", "|>", "->", "=>", "==", "!=", "<=", ">=", "&&", "||", "..", "<<", ">>", "+=", "-=", "*=", "/=", "%=", "::"]
-    let mut k: i32 = 0
-    while k < 20 {
-        let op: string = ops[k]
-        let m: i32 = t_len(op)
-        if i + m <= n {
-            let mut j: i32 = 0
-            while j < m and (p[i + j] as i32) == t_at(op, j) {
-                j = j + 1
-            }
-            if j == m {
-                return m
-            }
-        }
-        k = k + 1
-    }
-    return 1
-}
-
-# Whitespace-free token stream (comments included, trailing blanks cut),
-# joined with \001. Operators are matched longest first, so `= =`
-# against `==` still counts as a change.
-export function token_key(text: string) -> string {
-    let p: ptr<u8> = text as ptr<u8>
-    let n: i32 = t_len(text)
-    let mut tb: TBuf = tb_new()
-    let mut i: i32 = 0
-    while i < n {
-        let c: i32 = p[i] as i32
-        if t_is_space(c) {
-            i = i + 1
-        } else {
-            let st: i32 = i
-            if c == 35 {
-                while i < n and (p[i] as i32) != 10 {
-                    i = i + 1
-                }
-                let mut e: i32 = i
-                while e > st and t_is_space(p[e - 1] as i32) {
-                    e = e - 1
-                }
-                tb_put_span(&tb, p, st, e)
-            } elif c == 34 {
-                i = i + 1
-                while i < n and (p[i] as i32) != 34 and (p[i] as i32) != 10 {
-                    if (p[i] as i32) == 92 {
-                        i = i + 1
-                    }
-                    i = i + 1
-                }
-                if i < n and (p[i] as i32) == 34 {
-                    i = i + 1
-                }
-                tb_put_span(&tb, p, st, i)
-            } elif is_word(c) {
-                while i < n and is_word(p[i] as i32) {
-                    i = i + 1
-                }
-                tb_put_span(&tb, p, st, i)
-            } elif c == 44 or c == 59 {
-                # `,` between struct fields and a trailing `;` are optional;
-                # fmt.flow writes neither.
-                i = i + 1
-                continue
-            } else {
-                i = i + op_len(p, i, n)
-                tb_put_span(&tb, p, st, i)
-            }
-            tb_putc(&tb, 1)
-        }
-    }
-    return tb.data as string
 }
 
 # fmt.flow output, or "" when flowc cannot parse or print the text.
@@ -109,10 +25,10 @@ function flowc_format(text: string) -> string {
     let mut p: Parser = flowc_parser_new(src, n, n + 4096)
     let root: i32 = flowc_parse_program(&p)
     let mut result: string = ""
-    if root >= 0 and p.err == 0 and flowc_ast_first_unsupported(p.arena) == AST_NONE {
+    if root >= 0 and p.err == 0 {
         let cap: i32 = n * 4 + 65536
         let out: ptr<u8> = calloc((cap + 1) as i64, 1) as ptr<u8>
-        let written: i32 = flowc_fmt_emit(p.arena, root, src, out, cap)
+        let written: i32 = flowc_fmt_source(src, n, out, cap)
         if written > 0 {
             out[written] = 0
             result = out as string
@@ -122,100 +38,13 @@ function flowc_format(text: string) -> string {
     return result
 }
 
-# Layout pass. "" when the text has a string literal that runs past the
-# end of its line (re-indenting would change it).
-function layout(text: string) -> string {
-    let rows: TList = t_split_lines(text)
-    let mut tb: TBuf = tb_new()
-    let mut depth: i32 = 0
-    let mut blank_run: i32 = 0
-    let mut wrote_any: bool = false
-    let mut r: i32 = 0
-    # A trailing "\n" gives an empty last row; it is not a blank line.
-    let mut last: i32 = rows.len
-    if last > 0 and t_len(tl_get(&rows, last - 1)) == 0 {
-        last = last - 1
-    }
-    while r < last {
-        let body: string = t_strip(tl_get(&rows, r))
-        if t_len(body) == 0 {
-            blank_run = blank_run + 1
-        } else {
-            if blank_run > 0 and wrote_any {
-                tb_putc(&tb, 10)
-            }
-            blank_run = 0
-            # Leading closers dedent this line.
-            let mut lead: i32 = 0
-            let bn: i32 = t_len(body)
-            while lead < bn and (t_at(body, lead) == 125 or t_at(body, lead) == 41 or t_at(body, lead) == 93) {
-                lead = lead + 1
-            }
-            let mut ind: i32 = depth - lead
-            if ind < 0 {
-                ind = 0
-            }
-            let mut k: i32 = 0
-            while k < ind {
-                tb_puts(&tb, "    ")
-                k = k + 1
-            }
-            tb_puts(&tb, body)
-            tb_putc(&tb, 10)
-            wrote_any = true
-            # Depth after this line, outside strings and comments.
-            let mut i: i32 = 0
-            while i < bn {
-                let c: i32 = t_at(body, i)
-                if c == 35 {
-                    i = bn
-                } elif c == 34 {
-                    i = i + 1
-                    while i < bn and t_at(body, i) != 34 {
-                        if t_at(body, i) == 92 {
-                            i = i + 1
-                        }
-                        i = i + 1
-                    }
-                    if i >= bn {
-                        return ""
-                    }
-                    i = i + 1
-                } else {
-                    if c == 123 or c == 40 or c == 91 {
-                        depth = depth + 1
-                    } elif c == 125 or c == 41 or c == 93 {
-                        depth = depth - 1
-                        if depth < 0 {
-                            depth = 0
-                        }
-                    }
-                    i = i + 1
-                }
-            }
-        }
-        r = r + 1
-    }
-    return tb.data as string
-}
-
 # Formatted text, or "" when there is nothing to change.
 export function format_text(text: string) -> string {
     if t_len(text) == 0 {
         return ""
     }
-    let key: string = token_key(text)
-    let mut out: string = flowc_format(text)
-    if t_len(out) == 0 or not t_eq(token_key(out), key) {
-        out = layout(text)
-        if t_len(out) == 0 or not t_eq(token_key(out), key) {
-            return ""
-        }
-    }
-    if not t_ends_with(out, "\n") {
-        out = t_cat(out, "\n")
-    }
-    if t_eq(out, text) {
+    let out: string = flowc_format(text)
+    if t_len(out) == 0 or t_eq(out, text) {
         return ""
     }
     return out

@@ -10,6 +10,13 @@ All notable changes to FLOW will be documented in this file.
 - The Python server (`src/flow/lsp_server.py` and its `lsp_intel`, `lsp_syntax`, `lsp_dynamics` and `lsp_ordering` helpers) is deleted. `tests/tools/lsp/run.sh` replays recorded sessions against the native server and checks it differs from the Python server's recorded answers only in the ways listed in `tests/tools/lsp/ACCEPTED.md`.
 - Documents with non-ASCII text are framed by bytes. The Python server lost the message after any such document.
 
+### Formatter
+
+- `flow fmt` runs flowc's formatter (`compiler/src/fmt.flow`) and no longer needs Python. It works on the token stream and changes whitespace only: indentation, spacing between tokens, trailing blanks and runs of blank lines. Comments, imports, extern blocks, parentheses, untyped `let`s and commas are kept as written. `flow fmt --check` lists files that would change.
+- `compiler/scripts/fmt_check.sh` checks, for every tracked `.flow` file flowc parses, that the token and comment stream is unchanged, that formatting is idempotent, and that files which compile emit the same C after formatting.
+- The language server formats with the same pass and no longer falls back to re-indenting.
+- The Python formatter (`src/flow/formatter.py`) is deleted.
+
 ## [2.0.0] - 2026-09-27
 
 Flow 2.0.0 changes the license and marks a new major version.
