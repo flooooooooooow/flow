@@ -136,6 +136,11 @@ export const AST_TYPE_SPAN_MUTABLE: i32 = 1
 # the other modifier words stay ordinary names everywhere else (#968, #994).
 export const AST_IDENT_SORT_MOD: i32 = 1
 
+# AST_IDENT.ival marker for the piped value inside a pipeline fork branch or
+# choose arm (Python ForkSource). It has an empty name span, and its `end`
+# holds the enclosing AST_PIPE_BLOCK's id + 1, which names the hoisted source.
+export const AST_IDENT_FORK_SRC: i32 = 2
+
 # a/b/c = children; next = sibling chain; ival = int literal or binop token kind;
 # name_start/name_end = identifier/type span into source.
 # AST_TYPE: plain name, or ptr/array/span — a = inner type, ival = array size
@@ -320,7 +325,7 @@ export function flowc_ast_unsupported_label(kind: i32) -> string {
     if kind == AST_CLAIM_REF { return "claim reference" }
     if kind == AST_FLOW_DECL or kind == AST_FLOW_ITEM { return "flow block" }
     if kind == AST_LAYOUT { return "ui layout block" }
-    if kind == AST_PIPE_BLOCK { return "pipeline fork/choose block" }
+    if kind == AST_PIPE_BLOCK { return "flow stage parameters `Name { p: v }`" }
     if kind == AST_EFFECT_ROW { return "effect row (with ...)" }
     if kind == AST_MATCH_ARM_EXT { return "match arm with an or-pattern, guard or nested pattern" }
     if kind == AST_FIXED_ARRAY_TYPE { return "array type [T; N]" }
@@ -335,9 +340,13 @@ export function flowc_ast_unsupported_label(kind: i32) -> string {
 }
 
 # 1 for a kind in the parse-only range that Stage-A now lowers (#996).
-export function flowc_ast_parse_only_lowered(k: i32) -> i32 {
+export function flowc_ast_parse_only_lowered(arena: AstArena, i: i32) -> i32 {
+    let k: i32 = arena.nodes[i].kind
     if k == AST_MATCH_ARM_EXT { return 1 }
     if k == AST_LAYOUT { return 1 }
+    # Fork and choose blocks lower; flow stage parameters belong to flow
+    # blocks.
+    if k == AST_PIPE_BLOCK and arena.nodes[i].ival != PIPE_BLOCK_STAGE { return 1 }
     return 0
 }
 
@@ -347,7 +356,7 @@ export function flowc_ast_first_unsupported(arena: AstArena) -> i32 {
     while i < arena.len {
         let k: i32 = arena.nodes[i].kind
         if (k >= AST_THEOREM and k <= AST_PARSE_ONLY_LAST) or k == AST_HANDLE {
-            if flowc_ast_parse_only_lowered(k) == 0 {
+            if flowc_ast_parse_only_lowered(arena, i) == 0 {
                 return i
             }
         }

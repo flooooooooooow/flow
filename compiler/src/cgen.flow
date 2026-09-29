@@ -16,7 +16,8 @@ import .ast {
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS,
     AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_ENUM,
     AST_DEFER, AST_IF_EXPR, AST_IDENT_SORT_MOD, AST_FIELD, flowc_ast_reject_unsupported,
-    AST_MATCH_ARM_EXT, AST_LAYOUT, flowc_ast_enum_of_const
+    AST_MATCH_ARM_EXT, AST_LAYOUT, AST_PIPE_BLOCK, PIPE_BLOCK_CHOOSE, AST_IDENT_FORK_SRC,
+    flowc_ast_enum_of_const
 }
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
@@ -201,6 +202,7 @@ function flowc_cgen_emit_int_literal(w: ptr<CgenBuf>, src: ptr<u8>, start: i32, 
 function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32)
 function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32)
 function flowc_cgen_emit_block(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32)
+function flowc_cgen_mp_arm_cond(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, pats: i32, path: ptr<i32>, tagsel: i32)
 function flowc_cgen_expr_is_string(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32
 function flowc_cgen_ident_is_string(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32
 
@@ -1039,6 +1041,16 @@ function flowc_cgen_write_lit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
         flowc_cgen_put_span(w, src, arena.nodes[init].name_start, arena.nodes[init].name_end)
         return 1
     }
+    if kind == AST_PIPE_BLOCK {
+        # A named fork builds its record; anonymous forks and choose
+        # results take the statement expression's own type.
+        if arena.nodes[init].ival != PIPE_BLOCK_CHOOSE and arena.nodes[init].name_end > arena.nodes[init].name_start {
+            flowc_cgen_put_span(w, src, arena.nodes[init].name_start, arena.nodes[init].name_end)
+        } else {
+            flowc_cgen_puts(w, "__auto_type")
+        }
+        return 1
+    }
     if kind == AST_BINOP {
         # `let s = "a" + b` — string concatenation, not an int.
         if flowc_cgen_expr_is_string(w, arena, src, init) == 1 {
@@ -1234,6 +1246,9 @@ function flowc_cgen_decl_type(arena: AstArena, decl: i32) -> i32 {
         return arena.nodes[init].b
     }
     if arena.nodes[init].kind == AST_STRUCT_LIT {
+        return init
+    }
+    if arena.nodes[init].kind == AST_PIPE_BLOCK and arena.nodes[init].ival != PIPE_BLOCK_CHOOSE and arena.nodes[init].name_end > arena.nodes[init].name_start {
         return init
     }
     return AST_NONE
@@ -2213,11 +2228,108 @@ function flowc_cgen_find_enum_variant(arena: AstArena, src: ptr<u8>, ns: i32, ne
     return AST_NONE
 }
 
+# --- pipeline fork / choose blocks ----------------------------------------
+# Lowered the way src/flow/fork_records.py desugars them, as one GNU
+# statement expression so no statement-level hoisting is needed. The piped
+# source is bound once to __flowc_fork_src_<block id>; branch templates name
+# it through AST_IDENT_FORK_SRC placeholders.
+#   named fork:  ({ src_tmp = source; (Record){ .a = f(src_tmp), ... }; })
+#   anonymous:   the same with an inline struct typed from each branch
+#   choose:      ({ src_tmp = source; T r; <match sel, r = arm(src_tmp)>; r; })
+
+function flowc_cgen_emit_fork_src(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    flowc_cgen_puts(w, "({ __typeof__(")
+    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+    flowc_cgen_puts(w, ") __flowc_fork_src_")
+    flowc_cgen_put_i32(w, id)
+    flowc_cgen_puts(w, " = ")
+    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+    flowc_cgen_puts(w, "; ")
+}
+
+function flowc_cgen_emit_pipe_block(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    flowc_cgen_emit_fork_src(w, arena, src, id)
+    let items: i32 = arena.nodes[id].b
+    if arena.nodes[id].ival == PIPE_BLOCK_CHOOSE {
+        flowc_cgen_puts(w, "__typeof__(")
+        flowc_cgen_emit_expr(w, arena, src, arena.nodes[items].b)
+        flowc_cgen_puts(w, ") __flowc_choose_")
+        flowc_cgen_put_i32(w, id)
+        flowc_cgen_puts(w, "; { __typeof__(")
+        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].c)
+        flowc_cgen_puts(w, ") __flowc_match = ")
+        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].c)
+        flowc_cgen_puts(w, "; ")
+        let mut path_buf: array<i32, 16> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        let path: ptr<i32> = &path_buf[0]
+        let mut arm: i32 = items
+        let mut first: i32 = 1
+        while arm != AST_NONE {
+            if first == 0 {
+                flowc_cgen_puts(w, " else ")
+            }
+            first = 0
+            flowc_cgen_puts(w, "if (")
+            flowc_cgen_mp_arm_cond(w, arena, src, arena.nodes[arm].a, path, 0)
+            flowc_cgen_puts(w, ") { __flowc_choose_")
+            flowc_cgen_put_i32(w, id)
+            flowc_cgen_puts(w, " = ")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[arm].b)
+            flowc_cgen_puts(w, "; }")
+            arm = arena.nodes[arm].next
+        }
+        flowc_cgen_puts(w, " } __flowc_choose_")
+        flowc_cgen_put_i32(w, id)
+        flowc_cgen_puts(w, "; })")
+        return
+    }
+    let named: i32 = arena.nodes[id].name_end - arena.nodes[id].name_start
+    if named > 0 {
+        flowc_cgen_puts(w, "(")
+        flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        flowc_cgen_puts(w, "){ ")
+    } else {
+        flowc_cgen_puts(w, "struct { ")
+        let mut f: i32 = items
+        while f != AST_NONE {
+            flowc_cgen_puts(w, "__typeof__(")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[f].a)
+            flowc_cgen_puts(w, ") ")
+            flowc_cgen_put_span(w, src, arena.nodes[f].name_start, arena.nodes[f].name_end)
+            flowc_cgen_puts(w, "; ")
+            f = arena.nodes[f].next
+        }
+        flowc_cgen_puts(w, "} __flowc_fork_rec_")
+        flowc_cgen_put_i32(w, id)
+        flowc_cgen_puts(w, " = { ")
+    }
+    let mut f2: i32 = items
+    while f2 != AST_NONE {
+        flowc_cgen_puts(w, ".")
+        flowc_cgen_put_span(w, src, arena.nodes[f2].name_start, arena.nodes[f2].name_end)
+        flowc_cgen_puts(w, " = ")
+        flowc_cgen_emit_expr(w, arena, src, arena.nodes[f2].a)
+        flowc_cgen_puts(w, ", ")
+        f2 = arena.nodes[f2].next
+    }
+    if named > 0 {
+        flowc_cgen_puts(w, "}; })")
+    } else {
+        flowc_cgen_puts(w, "}; __flowc_fork_rec_")
+        flowc_cgen_put_i32(w, id)
+        flowc_cgen_puts(w, "; })")
+    }
+}
+
 function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     if id == AST_NONE or w[0].err != 0 {
         return
     }
     let kind: i32 = arena.nodes[id].kind
+    if kind == AST_PIPE_BLOCK {
+        flowc_cgen_emit_pipe_block(w, arena, src, id)
+        return
+    }
     if kind == AST_INT {
         flowc_cgen_emit_int_literal(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         return
@@ -2232,6 +2344,12 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         return
     }
     if kind == AST_IDENT {
+        # The piped value inside a fork branch or choose arm.
+        if arena.nodes[id].ival == AST_IDENT_FORK_SRC {
+            flowc_cgen_puts(w, "__flowc_fork_src_")
+            flowc_cgen_put_i32(w, arena.nodes[id].end - 1)
+            return
+        }
         if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "null") == 1 {
             flowc_cgen_puts(w, "NULL")
             return

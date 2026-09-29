@@ -27,7 +27,7 @@ import .ast {
     AST_TYPE, AST_ASSIGN, AST_EXPR_STMT, AST_BOOL, AST_ERROR,
     AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS,
     AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_DEFER,
-    AST_ENUM, AST_ENUM_VARIANT, AST_IF_EXPR, AST_IDENT_SORT_MOD,
+    AST_ENUM, AST_ENUM_VARIANT, AST_IF_EXPR, AST_IDENT_SORT_MOD, AST_IDENT_FORK_SRC,
     AST_THEOREM, AST_ASSUME, AST_THEREFORE, AST_CLAIM_REF,
     AST_FLOW_DECL, AST_FLOW_ITEM, AST_LAYOUT, AST_PIPE_BLOCK, AST_HANDLE, AST_EFFECT_ROW, AST_MATCH_ARM_EXT,
     AST_FIXED_ARRAY_TYPE, AST_CAPABILITY_TYPE, AST_TRY, AST_VECTOR_LIT,
@@ -508,6 +508,9 @@ function flowc_parse_expr(p: ptr<Parser>) -> i32
 function flowc_parser_peek(p: Parser, n: i32) -> Token
 function flowc_parser_at_pipe_block(p: Parser) -> i32
 function flowc_parse_pipe_block(p: ptr<Parser>, source: i32) -> i32
+function flowc_parse_pipe_chain(p: ptr<Parser>, first: i32) -> i32
+function flowc_parse_fork_branch(p: ptr<Parser>) -> i32
+function flowc_parse_apply_pipe(p: ptr<Parser>, left: i32, right: i32) -> i32
 function flowc_parser_at_layout(p: Parser) -> i32
 function flowc_parse_layout(p: ptr<Parser>) -> i32
 function flowc_parse_handle(p: ptr<Parser>) -> i32
@@ -1516,10 +1519,43 @@ function flowc_parse_expr(p: ptr<Parser>) -> i32 {
     if lhs == AST_NONE {
         return AST_NONE
     }
-    let mut result: i32 = flowc_parse_binop_rhs(p, 1, lhs)
-    # Pipeline: x |> f(args) → f(x, args)
-    # For sort/sortBy, trailing identifiers (descending, adaptive, etc.) are
-    # sort DSL modifiers, not separate statements. Consume them as extra args.
+    let result: i32 = flowc_parse_binop_rhs(p, 1, lhs)
+    if result == AST_NONE {
+        return AST_NONE
+    }
+    return flowc_parse_pipe_chain(p, result)
+}
+
+# One fork branch or choose arm: the pipeline `<source> |> stage...` over a
+# placeholder AST_IDENT (ival = AST_IDENT_FORK_SRC) that cgen names as the
+# enclosing block's hoisted source.
+function flowc_parse_fork_branch(p: ptr<Parser>) -> i32 {
+    let hole: i32 = flowc_ast_alloc(&p[0].arena, AST_IDENT, p[0].cur.start, p[0].cur.start)
+    if hole == AST_NONE {
+        flowc_parser_fail(p)
+        return AST_NONE
+    }
+    p[0].arena.nodes[hole].ival = AST_IDENT_FORK_SRC
+    let lhs: i32 = flowc_parse_cast(p)
+    if lhs == AST_NONE {
+        return AST_NONE
+    }
+    let rhs: i32 = flowc_parse_binop_rhs(p, 1, lhs)
+    if rhs == AST_NONE {
+        return AST_NONE
+    }
+    let head: i32 = flowc_parse_apply_pipe(p, hole, rhs)
+    if head == AST_NONE {
+        return AST_NONE
+    }
+    return flowc_parse_pipe_chain(p, head)
+}
+
+# Pipeline: x |> f(args) → f(x, args)
+# For sort/sortBy, trailing identifiers (descending, adaptive, etc.) are
+# sort DSL modifiers, not separate statements. Consume them as extra args.
+function flowc_parse_pipe_chain(p: ptr<Parser>, first: i32) -> i32 {
+    let mut result: i32 = first
     while flowc_parser_check(p[0], TOK_PIPELINE) == 1 {
         flowc_parser_advance(p)
         if flowc_parser_at_pipe_block(p[0]) == 1 {
@@ -1729,6 +1765,26 @@ function flowc_parse_sort_by(p: ptr<Parser>, source: i32) -> i32 {
 # the sole argument. Otherwise, leave it as a binop-like call.
 function flowc_parse_apply_pipe(p: ptr<Parser>, left: i32, right: i32) -> i32 {
     if p[0].arena.nodes[right].kind == AST_CALL {
+        # A bare `_` argument marks the slot for the piped value:
+        # `x |> clamp(0, _, 1)` → clamp(0, x, 1). Otherwise prepend.
+        let mut prev: i32 = AST_NONE
+        let mut arg: i32 = p[0].arena.nodes[right].a
+        while arg != AST_NONE {
+            if p[0].arena.nodes[arg].kind == AST_IDENT and p[0].arena.nodes[arg].ival == 0 {
+                let hs: i32 = p[0].arena.nodes[arg].name_start
+                if p[0].arena.nodes[arg].name_end - hs == 1 and p[0].lex.input[hs] == 95 {
+                    p[0].arena.nodes[left].next = p[0].arena.nodes[arg].next
+                    if prev == AST_NONE {
+                        p[0].arena.nodes[right].a = left
+                    } else {
+                        p[0].arena.nodes[prev].next = left
+                    }
+                    return right
+                }
+            }
+            prev = arg
+            arg = p[0].arena.nodes[arg].next
+        }
         # Prepend left to the argument chain (stored in .a for calls).
         p[0].arena.nodes[right].a = flowc_ast_chain_push(&p[0].arena, left, p[0].arena.nodes[right].a)
         return right
@@ -3635,7 +3691,12 @@ function flowc_parse_pipe_field(p: ptr<Parser>, sep: i32) -> i32 {
     if flowc_parser_eat(p, sep) == 0 {
         return AST_NONE
     }
-    let val: i32 = flowc_parse_expr(p)
+    let mut val: i32 = AST_NONE
+    if sep == TOK_EQ {
+        val = flowc_parse_fork_branch(p)
+    } else {
+        val = flowc_parse_expr(p)
+    }
     if val == AST_NONE {
         return AST_NONE
     }
@@ -3653,6 +3714,7 @@ function flowc_parse_pipe_field(p: ptr<Parser>, sep: i32) -> i32 {
 # Parse the block after `|>` (see flowc_parser_at_pipe_block). Parse-only.
 function flowc_parse_pipe_block(p: ptr<Parser>, source: i32) -> i32 {
     let start: i32 = p[0].cur.start
+    let first_node: i32 = p[0].arena.len
     let mut kind: i32 = PIPE_BLOCK_FORK
     let mut selector: i32 = AST_NONE
     let mut ns: i32 = 0
@@ -3699,7 +3761,7 @@ function flowc_parse_pipe_block(p: ptr<Parser>, source: i32) -> i32 {
             if flowc_parser_eat(p, TOK_FATARROW) == 0 {
                 return AST_NONE
             }
-            let stage: i32 = flowc_parse_expr(p)
+            let stage: i32 = flowc_parse_fork_branch(p)
             if stage == AST_NONE {
                 return AST_NONE
             }
@@ -3762,6 +3824,15 @@ function flowc_parse_pipe_block(p: ptr<Parser>, source: i32) -> i32 {
     p[0].arena.nodes[id].c = selector
     p[0].arena.nodes[id].name_start = ns
     p[0].arena.nodes[id].name_end = ne
+    # Placeholders parsed for this block (not yet claimed by a nested one)
+    # name its source.
+    let mut hi: i32 = first_node
+    while hi < id {
+        if p[0].arena.nodes[hi].kind == AST_IDENT and p[0].arena.nodes[hi].ival == AST_IDENT_FORK_SRC and p[0].arena.nodes[hi].end == p[0].arena.nodes[hi].start {
+            p[0].arena.nodes[hi].end = id + 1
+        }
+        hi = hi + 1
+    }
     return id
 }
 

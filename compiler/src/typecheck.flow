@@ -9,7 +9,7 @@ import .ast {
     AST_FIELD_ACCESS, AST_INDEX, AST_STRUCT_LIT, AST_CAST, AST_ARRAY_LIT,
     AST_CONST, AST_EXPORT, AST_IMPORT, AST_EXTERN, AST_TYPE, AST_STRUCT, AST_FIELD,
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM,
-    AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_SHADER, AST_IDENT_SORT_MOD, AST_MATCH_ARM_EXT, AST_LAYOUT,
+    AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_SHADER, AST_IDENT_SORT_MOD, AST_MATCH_ARM_EXT, AST_LAYOUT, AST_PIPE_BLOCK, PIPE_BLOCK_CHOOSE, AST_IDENT_FORK_SRC,
     flowc_ast_chain_len, flowc_ast_reject_unsupported, flowc_ast_enum_of_const
 }
 import .overload_table {
@@ -40,7 +40,7 @@ extern {
     function free(p: ptr<u8>) -> void
     function strlen(s: string) -> i64
     function puts(s: string) -> i32
-    function printf(fmt: string, val: i32) -> i32
+    function printf(fmt: string, ...) -> i32
     function getenv(name: string) -> string
 }
 
@@ -566,6 +566,73 @@ function flowc_tc_bind_pattern(ctx: ptr<TcCtx>, arena: AstArena, pat: i32, top: 
     }
 }
 
+# 1 when `v` is a call to a function of this program with a declared return
+# type, the only fork value whose type fork_records._infer_field_type knows.
+function flowc_tc_fork_type_known(ctx: ptr<TcCtx>, arena: AstArena, v: i32) -> i32 {
+    if v == AST_NONE or arena.nodes[v].kind != AST_CALL {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_FN and arena.nodes[i].b != AST_NONE {
+            if flowc_tc_span_eq(ctx[0].src, arena.nodes[i].name_start, arena.nodes[i].name_end, arena.nodes[v].name_start, arena.nodes[v].name_end) == 1 {
+                return 1
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# Line of byte offset `pos` in the module source.
+function flowc_tc_line_of(ctx: ptr<TcCtx>, pos: i32) -> i32 {
+    let mut line: i32 = 1
+    let mut i: i32 = 0
+    while i < pos and ctx[0].src[i] != 0 {
+        if ctx[0].src[i] == 10 {
+            line = line + 1
+        }
+        i = i + 1
+    }
+    return line
+}
+
+# Fork / choose block (#996). Rejects what src/flow/fork_records.py rejects,
+# with its messages: an anonymous record field or a choose whose type is
+# not a known call's return type.
+function flowc_tc_check_pipe_block(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
+    flowc_tc_check_expr(ctx, arena, arena.nodes[id].a)
+    let items: i32 = arena.nodes[id].b
+    if arena.nodes[id].ival == PIPE_BLOCK_CHOOSE {
+        flowc_tc_check_expr(ctx, arena, arena.nodes[id].c)
+        let mut known: i32 = 0
+        let mut arm: i32 = items
+        while arm != AST_NONE {
+            flowc_tc_check_expr(ctx, arena, arena.nodes[arm].b)
+            known = known + flowc_tc_fork_type_known(ctx, arena, arena.nodes[arm].b)
+            arm = arena.nodes[arm].next
+        }
+        if known == 0 {
+            printf("cannot infer the result type of the `choose` at line %d: its arms must end in a function whose return type is known\n", flowc_tc_line_of(ctx, arena.nodes[id].start))
+            flowc_tc_err(ctx)
+        }
+        return
+    }
+    let mut anon: i32 = 0
+    if arena.nodes[id].name_end == arena.nodes[id].name_start {
+        anon = 1
+    }
+    let mut f: i32 = items
+    while f != AST_NONE {
+        flowc_tc_check_expr(ctx, arena, arena.nodes[f].a)
+        if anon == 1 and flowc_tc_fork_type_known(ctx, arena, arena.nodes[f].a) == 0 {
+            printf("cannot infer the type of fork field '%.*s' (line %d): an anonymous fork record's fields must end in a function whose return type is known. Name the record instead: `source |> RecordName { ... }`\n", arena.nodes[f].name_end - arena.nodes[f].name_start, ctx[0].src + arena.nodes[f].name_start, flowc_tc_line_of(ctx, arena.nodes[id].start))
+            flowc_tc_err(ctx)
+        }
+        f = arena.nodes[f].next
+    }
+}
+
 function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
     if id == AST_NONE {
         return
@@ -586,9 +653,15 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         flowc_tc_pop_mark(ctx)
         return
     }
+    if kind == AST_PIPE_BLOCK {
+        flowc_tc_check_pipe_block(ctx, arena, id)
+        return
+    }
     if kind == AST_IDENT {
         let ns: i32 = arena.nodes[id].name_start
         let ne: i32 = arena.nodes[id].name_end
+        # The piped value in a fork branch or choose arm.
+        if arena.nodes[id].ival == AST_IDENT_FORK_SRC { return }
         # Sort DSL modifiers used as identifiers in pipe expressions.
         if arena.nodes[id].ival == AST_IDENT_SORT_MOD { return }
         # The implicit UI layout state pointer is a builtin global.
