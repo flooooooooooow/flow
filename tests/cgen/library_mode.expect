@@ -1,0 +1,10 @@
+flags --library --export half
++ int32_t half(int32_t a, int32_t b) {
+- static int32_t half(
++ return ((a / b) << 1);
+- FLOW_CHECKED_DIV
+- FLOW_CHECKED_SHL
+- flow_fault_handler
+- __flow_main_body
+- flow_fiber_run_main
++ int32_t flow_export_half(int32_t a, int32_t b) { return half(a, b); }
