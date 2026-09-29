@@ -284,6 +284,69 @@ function flowc_cgen_is_libc_clash(src: ptr<u8>, s: i32, e: i32) -> i32 {
     if flowc_cgen_span_is(src, s, e, "j0") == 1 { return 1 }
     if flowc_cgen_span_is(src, s, e, "j1") == 1 { return 1 }
     if flowc_cgen_span_is(src, s, e, "abs") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "div") == 1 { return 1 }
+    return 0
+}
+
+# Number of functions with a body named `lit` in this module.
+function flowc_cgen_count_fn_named(arena: AstArena, src: ptr<u8>, lit: string) -> i32 {
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_FN and arena.nodes[i].c != AST_NONE {
+            if flowc_cgen_span_is(src, arena.nodes[i].name_start, arena.nodes[i].name_end, lit) == 1 {
+                n = n + 1
+            }
+        }
+        i = i + 1
+    }
+    return n
+}
+
+# 1 when expression `id` is a Dual (stdlib/autodiff): a Dual-typed value,
+# or + - * / and unary minus with a Dual operand.
+function flowc_cgen_expr_is_dual(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if id == AST_NONE or id < 0 {
+        return 0
+    }
+    let k: i32 = arena.nodes[id].kind
+    if k == AST_BINOP {
+        let op: i32 = arena.nodes[id].ival
+        if op == TOK_PLUS or op == TOK_MINUS or op == TOK_STAR or op == TOK_SLASH {
+            if flowc_cgen_expr_is_dual(w, arena, src, arena.nodes[id].a) == 1 {
+                return 1
+            }
+            return flowc_cgen_expr_is_dual(w, arena, src, arena.nodes[id].b)
+        }
+        return 0
+    }
+    if k == AST_UNARY {
+        if arena.nodes[id].ival == TOK_MINUS {
+            return flowc_cgen_expr_is_dual(w, arena, src, arena.nodes[id].a)
+        }
+        return 0
+    }
+    if k == AST_CALL {
+        let fn: i32 = flowc_cgen_find_fn(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        if fn != AST_NONE {
+            let rt: i32 = arena.nodes[fn].b
+            if rt != AST_NONE and arena.nodes[rt].kind == AST_TYPE and arena.nodes[rt].a == AST_NONE {
+                return flowc_cgen_span_is(src, arena.nodes[rt].name_start, arena.nodes[rt].name_end, "Dual")
+            }
+            return 0
+        }
+        let off: i32 = flowc_cgen_sig_find(w[0].sigs, w[0].sigs_len, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        if off >= 0 {
+            return flowc_cgen_sig_ctype_is(w, off, "Dual")
+        }
+        return 0
+    }
+    if k == AST_IDENT or k == AST_FIELD_ACCESS or k == AST_INDEX {
+        let ty: i32 = flowc_cgen_expr_type_node(w, arena, src, id)
+        if ty != AST_NONE and ty >= 0 and arena.nodes[ty].kind == AST_TYPE and arena.nodes[ty].a == AST_NONE {
+            return flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "Dual")
+        }
+    }
     return 0
 }
 
@@ -3096,6 +3159,37 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             }
             return
         }
+        # Dual operator sugar (#161), as on the Python host: a + b, a - b,
+        # a * b and a / b with a Dual operand call add/sub/mul/div, whose
+        # overloads (Dual, Dual), (Dual, f32) and (f32, Dual) are mangled by
+        # parameter type.
+        if op == TOK_PLUS or op == TOK_MINUS or op == TOK_STAR or op == TOK_SLASH {
+            let ld: i32 = flowc_cgen_expr_is_dual(w, arena, src, arena.nodes[id].a)
+            let rd: i32 = flowc_cgen_expr_is_dual(w, arena, src, arena.nodes[id].b)
+            if ld == 1 or rd == 1 {
+                let mut opname: string = "add"
+                if op == TOK_MINUS { opname = "sub" }
+                if op == TOK_STAR { opname = "mul" }
+                if op == TOK_SLASH { opname = "div" }
+                flowc_cgen_puts(w, opname)
+                # A single definition in this module keeps its plain name.
+                if flowc_cgen_count_fn_named(arena, src, opname) == 1 {
+                    flowc_cgen_putc(w, 40)
+                } else {
+                    if ld == 1 { flowc_cgen_puts(w, "_Dual") } else { flowc_cgen_puts(w, "_f32") }
+                    if rd == 1 { flowc_cgen_puts(w, "_Dual(") } else { flowc_cgen_puts(w, "_f32(") }
+                }
+                if ld == 0 { flowc_cgen_puts(w, "(float)(") }
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                if ld == 0 { flowc_cgen_putc(w, 41) }
+                flowc_cgen_puts(w, ", ")
+                if rd == 0 { flowc_cgen_puts(w, "(float)(") }
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+                if rd == 0 { flowc_cgen_putc(w, 41) }
+                flowc_cgen_putc(w, 41)
+                return
+            }
+        }
         # `i % x` with an integer left side and a float right side: C has no
         # such `%`; the Python host casts the right side to the left's type.
         if op == TOK_PERCENT {
@@ -3137,6 +3231,13 @@ function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             flowc_cgen_puts(w, "do { if (!(")
             flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
             flowc_cgen_puts(w, ")) { fprintf(stderr, \"expectation failed\\n\"); abort(); } } while(0)")
+            return
+        }
+        # -x on a Dual is neg(x), the Python host's operator sugar (#161).
+        if arena.nodes[id].ival == TOK_MINUS and flowc_cgen_expr_is_dual(w, arena, src, arena.nodes[id].a) == 1 {
+            flowc_cgen_puts(w, "neg(")
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_putc(w, 41)
             return
         }
         flowc_cgen_putc(w, 40)
