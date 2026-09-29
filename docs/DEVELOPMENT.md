@@ -254,7 +254,7 @@ middle-end specialization, C ABI contracts, backend parity, executable pins.
 | Nesting torture | `tests/unit/test_torture_nesting.py` | `pytest` |
 | Pipeline smoke | `tests/unit/test_compiler_pipeline.py` | `pytest` |
 | Runtime exit-code | `tests/runtime/test_*_ops.flow` etc. | `./flow test-runtime` |
-| LSP JSON-RPC | `tests/integration/test_lsp_server.py` | `pytest` (wraps `scripts/test_lsp_server.py`) |
+| LSP JSON-RPC | `tests/tools/lsp/sessions/*.lsp` | `tests/tools/lsp/run.sh` (native server, no Python) |
 | Fuzz | `tests/fuzz/` | `python3 tests/fuzz/run_fuzz.py` |
 | Tier-2 transpile | git-tracked `tests/**/*.flow` | `./flow test --tier2` |
 

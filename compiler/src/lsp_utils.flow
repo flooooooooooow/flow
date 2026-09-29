@@ -1,9 +1,9 @@
 # @module flowc.lsp_utils
 # @means  LSP utility functions: identifier validation, word range,
 #         and completion prefix extraction. Port of helper methods
-#         from src/flow/lsp_server.py. The Python original is a full
-#         JSON-RPC server; this port exposes the pure string helpers.
-#         Full LSP protocol handling stays in Python.
+#         from the retired src/flow/lsp_server.py. The language server
+#         is tools/lsp/main.flow; this module keeps the pure string
+#         helpers.
 
 extern {
     function strcmp(a: string, b: string) -> i32

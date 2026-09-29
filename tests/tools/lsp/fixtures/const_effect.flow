@@ -1,0 +1,10 @@
+# Gravity
+export const G: f64 = 9.81
+
+effect State {
+    get() -> i32
+}
+
+function main() -> f64 {
+    return G
+}

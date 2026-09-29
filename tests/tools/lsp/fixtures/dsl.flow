@@ -1,0 +1,13 @@
+dyn.dsys plant {
+    discrete
+    dt 0.1
+}
+
+function main() -> i32 {
+    let xs: array<i32, 3> = [3, 1, 2]
+    xs |> sortBy [desc .score]
+    for i in 0 to 3 step 1 {
+        print(i)
+    }
+    return 0
+}
