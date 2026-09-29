@@ -99,11 +99,17 @@ export struct CgenBuf {
     checks: i32,
     # Nonzero while an lvalue (an assignment target, the operand of &) is
     # emitted: a checked read is an rvalue, so it is left out there.
-    lval: i32
+    lval: i32,
+    # FLOWC_DEBUG_INFO=1: the .flow path each statement's #line names (null
+    # when off), and the last offset and line counted in the source, so
+    # counting lines stays linear over a function body.
+    dbg_file: string,
+    dbg_pos: i32,
+    dbg_line: i32
 }
 
 function flowc_cgen_buf_init(out: ptr<u8>, cap: i32) -> CgenBuf {
-    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0 }
+    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null, dbg_pos: 0, dbg_line: 1 }
 }
 
 function flowc_cgen_putc(w: ptr<CgenBuf>, c: i32) {
@@ -277,6 +283,7 @@ function flowc_cgen_ty_is_array(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
 # define with its own signature.
 function flowc_cgen_is_libc_clash(src: ptr<u8>, s: i32, e: i32) -> i32 {
     if flowc_cgen_span_is(src, s, e, "heapsort") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "alloca") == 1 { return 1 }
     if flowc_cgen_span_is(src, s, e, "mergesort") == 1 { return 1 }
     if flowc_cgen_span_is(src, s, e, "radixsort") == 1 { return 1 }
     if flowc_cgen_span_is(src, s, e, "index") == 1 { return 1 }
@@ -1461,7 +1468,7 @@ function flowc_cgen_write_lit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
         return 1
     }
     if kind == AST_BINOP {
-        # `let s = "a" + b` — string concatenation, not an int.
+        # `let s = "a" + b`: string concatenation. The type is a string.
         if flowc_cgen_expr_is_string(w, arena, src, init) == 1 {
             flowc_cgen_puts(w, "const char*")
             return 1
@@ -1481,7 +1488,7 @@ function flowc_cgen_write_lit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
 # already contains one, a cast to `string`, or a call to a function declared
 # `-> string` (this module's arena first, then the bundle signature table).
 # Two string values with no literal and no call between them are still emitted
-# as `+` and rejected by the C compiler — a loud failure, never wrong output.
+# as `+` and rejected by the C compiler: a loud failure, never wrong output.
 
 # 1 if `ty` is the AST_TYPE node for `string`.
 function flowc_cgen_type_is_string(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
@@ -4089,7 +4096,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                 return
             }
         }
-        # `x in arr` — linear scan; `ch in s` — strchr
+        # `x in arr`: linear scan; `ch in s`: strchr
         if op == TOK_IN {
             # Check if right side is a string
             if flowc_cgen_expr_is_string(w, arena, src, arena.nodes[id].b) == 1 {
@@ -4658,7 +4665,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             flowc_cgen_puts(w, ")")
             return
         }
-        # Generic call: name<TypeArgs>(args) — emit mangled name name_type1_type2
+        # Generic call: name<TypeArgs>(args): emit mangled name name_type1_type2
         # sizeof<T>() is ((int64_t)sizeof(T)) (#952).
         if arena.nodes[id].b != AST_NONE and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "sizeof") == 1 {
             flowc_cgen_puts(w, "((int64_t)sizeof(")
@@ -5660,9 +5667,37 @@ function flowc_cgen_uses_ui_state(arena: AstArena, src: ptr<u8>) -> i32 {
     return 0
 }
 
+# `#line N "file"` before a statement (FLOWC_DEBUG_INFO=1), so a debugger
+# maps the C back to the .flow source, as the Python host's --debug-info
+# did. The directive starts on a fresh line wherever the statement lands.
+function flowc_cgen_line_directive(w: ptr<CgenBuf>, src: ptr<u8>, pos: i32) {
+    let mut i: i32 = 0
+    let mut line: i32 = 1
+    if pos >= w[0].dbg_pos {
+        i = w[0].dbg_pos
+        line = w[0].dbg_line
+    }
+    while i < pos and src[i] != 0 {
+        if src[i] == 10 {
+            line = line + 1
+        }
+        i = i + 1
+    }
+    w[0].dbg_pos = i
+    w[0].dbg_line = line
+    flowc_cgen_puts(w, "\n#line ")
+    flowc_cgen_put_i32(w, line)
+    flowc_cgen_puts(w, " \"")
+    flowc_cgen_puts(w, w[0].dbg_file)
+    flowc_cgen_puts(w, "\"\n")
+}
+
 function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     if id == AST_NONE or w[0].err != 0 {
         return
+    }
+    if w[0].dbg_file != null {
+        flowc_cgen_line_directive(w, src, arena.nodes[id].start)
     }
     let kind: i32 = arena.nodes[id].kind
     if kind == AST_LET {
@@ -7221,7 +7256,7 @@ function flowc_cgen_unwrap(arena: AstArena, item: i32, want: i32) -> i32 {
 # Returns bytes written, or -1 on overflow / bad root.
 # `src` is the original Flow source (name spans index into it).
 # Order: structs, then consts, then functions.
-# `export struct` / `export function` are AST_EXPORT wrappers — unwrap for emit.
+# `export struct` / `export function` are AST_EXPORT wrappers: unwrap for emit.
 # Bare `export a, b` and import/extern are skipped.
 # flags: bit0 (1) = skip #include preamble (for multi-file bundle TUs).
 # `sigs` / `sigs_len` are an optional cross-module return-type table
@@ -7816,13 +7851,27 @@ export function flowc_cgen_emit_sigs(
             w.checks = 1
         }
     }
+    # FLOWC_DEBUG_INFO=1: #line directives name this module's file. A bundle
+    # sets FLOWC_CGEN_FILE per module (resolve.flow); one file is FLOWC_IN.
+    let dbg_env: ptr<u8> = getenv("FLOWC_DEBUG_INFO") as ptr<u8>
+    if dbg_env != null {
+        if dbg_env[0] == 49 and dbg_env[1] == 0 {
+            let mut dfile: ptr<u8> = getenv("FLOWC_CGEN_FILE") as ptr<u8>
+            if dfile == null {
+                dfile = getenv("FLOWC_IN") as ptr<u8>
+            }
+            if dfile != null {
+                w.dbg_file = dfile as string
+            }
+        }
+    }
     # bit0 without requiring Stage-A bitwise operators during self-parse.
     if (flags % 2) == 0 {
         flowc_cgen_puts(&w, "#include <stdint.h>\n")
         flowc_cgen_puts(&w, "#include <stdbool.h>\n")
         flowc_cgen_puts(&w, "#include <stdlib.h>\n")
         # AST_EXTERN bodies are brace-skipped (no prototypes), and in bundle
-        # TUs only the first module emits the preamble — later modules may
+        # TUs only the first module emits the preamble: later modules may
         # declare externs (e.g. parser diagnostics call puts). Always include
         # the libc headers used by Stage-A externs (FILE*/strlen/puts).
         flowc_cgen_puts(&w, "#include <stdio.h>\n")
@@ -8097,6 +8146,10 @@ export function flowc_cgen_emit_sigs(
         let cfn: i32 = flowc_cgen_unwrap(arena, item, AST_FN)
         if cfn != AST_NONE and arena.nodes[cfn].c != AST_NONE {
             if flowc_cgen_is_libc_clash(src, arena.nodes[cfn].name_start, arena.nodes[cfn].name_end) == 1 {
+                # alloca is a macro in <alloca.h>; drop it before the rename.
+                flowc_cgen_puts(&w, "#undef ")
+                flowc_cgen_put_span(&w, src, arena.nodes[cfn].name_start, arena.nodes[cfn].name_end)
+                flowc_cgen_putc(&w, 10)
                 flowc_cgen_puts(&w, "#define ")
                 flowc_cgen_put_span(&w, src, arena.nodes[cfn].name_start, arena.nodes[cfn].name_end)
                 flowc_cgen_puts(&w, " __flowc_libc_")
@@ -8249,7 +8302,7 @@ export function flowc_cgen_emit_sigs(
         ti = ti + 1
     }
 
-    # Pass 1.6: monomorphization — emit specialized generic structs and functions.
+    # Pass 1.6: monomorphization: emit specialized generic structs and functions.
     # Scan all AST nodes for type-arg instantiations and emit specialized C.
     flowc_cgen_emit_mono(&w, arena, src, root)
 
@@ -8526,7 +8579,7 @@ export function flowc_cgen_emit_sigs(
     while item != AST_NONE {
         let fn: i32 = flowc_cgen_unwrap(arena, item, AST_FN)
         if fn != AST_NONE {
-            # Skip generic functions (ival == 1) — they need monomorphization.
+            # Skip generic functions (ival == 1): they need monomorphization.
             if arena.nodes[fn].ival == 0 {
                 if flowc_cgen_is_libc_fn(arena, src, fn) == 0 {
                     flowc_cgen_emit_fn(&w, arena, src, fn)

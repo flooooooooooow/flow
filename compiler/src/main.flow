@@ -319,7 +319,8 @@ function flowc_emit_mode() -> i32 {
             zi = zi + 1
         }
         let nsrc: i32 = flowc_read_file(in_path, src, src_cap - 1)
-        if nsrc <= 0 {
+        # An empty file is an empty program, as on the Python host.
+        if nsrc < 0 {
             puts("flowc emit: read FLOWC_IN failed")
             free(src)
             free(out)

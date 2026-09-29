@@ -33,6 +33,7 @@ extern {
     function strlen(s: string) -> i64
     function puts(s: string) -> i32
     function printf(fmt: string, val: i32) -> i32
+    function setenv(name: string, value: string, overwrite: i32) -> i32
     function putchar(c: i32) -> i32
 }
 
@@ -1749,6 +1750,8 @@ function flowc_resolve_emit_one(
     if tpl != null {
         tpl_len[0] = flowc_resolve_add_templates(p.arena, root, src, own, tpl, tpl_cap, tpl_len[0])
     }
+    # The file this module's #line directives name (FLOWC_DEBUG_INFO=1).
+    let _setf: i32 = setenv("FLOWC_CGEN_FILE", path, 1)
     let mut n: i32 = flowc_cgen_emit_sigs(p.arena, root, src, out, out_cap, flags, sigs, siglen[0])
     if sigs != null {
         siglen[0] = flowc_cgen_collect_sigs(p.arena, root, src, sigs, sigcap, siglen[0])
