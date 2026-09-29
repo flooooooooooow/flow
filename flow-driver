@@ -278,7 +278,7 @@ flow_native_tool() {
         mkdir -p "$cache" || return 1
     fi
     local bin="$cache/flow-$name"
-    if [ -x "$bin" ] && [ -z "$(find "$SCRIPT_DIR/tools/$name" "$SCRIPT_DIR/tools/hostlib" \
+    if [ -x "$bin" ] && [ -z "$(find "$SCRIPT_DIR/tools/$name" "$SCRIPT_DIR/tools/hostlib" "$SCRIPT_DIR/tools/lsp" \
             "$SCRIPT_DIR/compiler/src" -name '*.flow' -newer "$bin" -print -quit 2>/dev/null)" ]; then
         printf '%s\n' "$bin"
         return 0
@@ -3899,16 +3899,50 @@ PY
         done
         
         print_info "Generating Python package from $program..."
-        
-        py_args=(--python --python-version "$py_version")
-        if [ "$py_source_only" -eq 1 ]; then
-            py_args+=(--python-source-only)
-        fi
-        if [ -n "$py_name" ]; then
-            py_args+=(--python-name "$py_name")
-        fi
 
-        python3 -m "$FLOWC_MODULE" "$program" "${py_args[@]}"
+        # The generator is the Flow tool tools/pywheel: export inference,
+        # diagnostics and the CPython extension source, with the program's C
+        # from flowc. Only the wheel build itself runs Python: `pip wheel`
+        # on the generated package, which needs setuptools. That step builds
+        # a Python artifact; it does not run Flow's compiler in Python.
+        # --source never runs Python.
+        if ! pywheel_bin="$(flow_native_tool pywheel)"; then
+            exit 1
+        fi
+        py_out="dist"
+        py_work="$(mktemp -d "${TMPDIR:-/tmp}/flow-pywheel.XXXXXX")"
+        trap 'rm -rf "$py_work"' EXIT
+        py_mode="package"
+        if [ "$py_source_only" -eq 1 ]; then
+            py_mode="source"
+        fi
+        "$pywheel_bin" "$program" "$py_name" "$py_version" "$py_mode" \
+            "$py_out" "$py_work" "$SCRIPT_DIR" || exit $?
+        if [ "$py_mode" = "source" ]; then
+            exit 0
+        fi
+        py_ext="$(cd "$py_work/pkg" && ls -- *_ext.c)"
+        py_module="${py_ext%_ext.c}"
+        mkdir -p "$py_out"
+        py_out_abs="$(cd "$py_out" && pwd)"
+        py_wheel=""
+        if (cd "$py_work/pkg" && "${FLOW_PYTHON:-python3}" -m pip wheel . -w "$py_out_abs" \
+                >/dev/null 2>"$py_work/pip.log"); then
+            py_wheel="$(ls -- "$py_out/$py_module"*.whl 2>/dev/null | head -1)"
+            if [ -n "$py_wheel" ]; then
+                echo "✅ Built wheel: $py_wheel"
+                echo "   Install with: pip install $py_wheel"
+                exit 0
+            fi
+            echo "⚠️  Wheel build failed: No wheel file produced"
+        else
+            echo "⚠️  Wheel build failed: Wheel build failed:"
+            cat "$py_work/pip.log"
+            echo
+        fi
+        echo "   Falling back to source-only output..."
+        cp "$py_work/pkg/$py_ext" "$py_out/$py_ext"
+        echo "   Generated: $py_out/$py_ext"
         ;;
     "bpf")
         # scripts/tools/llvm_target (Flow): Flow or LLVM IR to an eBPF object.

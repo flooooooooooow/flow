@@ -1,0 +1,30 @@
+# Externs, enums, generics and exported functions alongside plain ones.
+
+extern {
+    function abs(x: i32) -> i32
+}
+
+enum Color {
+    Red,
+    Green
+}
+
+function identity<T>(x: T) -> T {
+    return x
+}
+
+export function exported_abs(x: i32) -> i32 {
+    return abs(x) + identity<i32>(0)
+}
+
+function inlined(x: i64) -> i64 {
+    return x
+}
+
+function color_code(c: Color) -> i32 {
+    return 1
+}
+
+function main() -> i32 {
+    return exported_abs(-1)
+}

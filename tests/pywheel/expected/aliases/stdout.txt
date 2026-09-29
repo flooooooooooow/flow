@@ -1,0 +1,14 @@
+[0;34mℹ️  Generating Python package from aliases.flow...[0m
+
+============================================================
+Python Export Analysis: aliases
+============================================================
+
+✅ Exported (2 symbols):
+   scale: Public function with ABI-compatible signature
+   plain: Public function with ABI-compatible signature
+
+⚠️  Excluded (1 symbols):
+   main: Entry point 'main' not exported
+
+✅ Generated: dist/aliases_ext.c
