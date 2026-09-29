@@ -1,0 +1,775 @@
+# @module flowc.mlir_bundle
+# @means  Programs with imports for the MLIR emitter, in Python's module order.
+#
+# The Python MLIR generator sees one flat declaration list built by
+# src/flow/module_resolver.py: a depth-first walk from the entry file where
+# each module's imports are loaded (in order) before its own declarations,
+# a module already loaded is skipped, imports and `export a, b` lists are
+# dropped, and an imported module's `main` is left out. This module rebuilds
+# that order with the same path rules, joins the modules' expanded sources
+# into one buffer in that order, parses it once and hands it to the emitter
+# with the module table, so every lowering decision stays in mlirgen.flow.
+
+import .ast { AstArena, AST_NONE, AST_IMPORT, AST_PROGRAM }
+import .parser {
+    flowc_parser_new, flowc_parser_free, flowc_parse_program, flowc_parser_print_error, Parser
+}
+import .fileio { flowc_read_file, flowc_io_exists }
+import .resolve {
+    flowc_expand_all_in_place, flowc_resolve_project_root, flowc_resolve_dirname
+}
+import .typecheck {
+    TcCtx,
+    flowc_tc_init, flowc_tc_free, flowc_tc_reset_module,
+    flowc_tc_set_path, flowc_tc_seed_export, flowc_tc_check_program
+}
+import .pipeline_fusion { flowc_fuse_pipelines }
+import .mlirgen { flowc_mlirgen_emit_modules }
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function strlen(s: string) -> i64
+    function puts(s: string) -> i32
+    function printf(fmt: string, ...) -> i32
+    function getenv(name: string) -> string
+}
+
+const MB_MAX_MODS: i32 = 256
+const MB_PATH: i32 = 1024
+const MB_SRC_CAP: i32 = 1048576
+# The joined program, with room for the emitter's synthesized names.
+const MB_ALL_CAP: i32 = 8388608
+const MB_AST_CAP: i32 = 1048576
+
+struct MlirBundle {
+    # module paths (realpath), MB_PATH bytes each, in discovery order
+    paths: ptr<u8>,
+    n: i32,
+    state: ptr<i32>,
+    # 0 unseen, 1 on the walk's stack, 2 loaded
+    all: ptr<u8>,
+    all_len: i32,
+    # emission order: module index and its start in `all`
+    order: ptr<i32>,
+    starts: ptr<i32>,
+    norder: i32,
+    project_root: ptr<u8>,
+    stdlib_root: ptr<u8>,
+    compiler_root: ptr<u8>,
+    toml: ptr<u8>,
+    toml_len: i32,
+    err: i32
+}
+
+function mb_alloc_i32(n: i32) -> ptr<i32> {
+    let raw: ptr<u8> = malloc((n as i64) * 4)
+    let p: ptr<i32> = raw
+    let mut i: i32 = 0
+    while i < n {
+        p[i] = 0
+        i = i + 1
+    }
+    return p
+}
+
+function mb_zero(p: ptr<u8>, n: i32) {
+    let mut i: i32 = 0
+    while i < n {
+        p[i] = 0
+        i = i + 1
+    }
+}
+
+# Append n bytes of s to dst (NUL kept after). Returns the new length, or
+# -1 when it does not fit.
+function mb_put(dst: ptr<u8>, o: i32, cap: i32, s: ptr<u8>, n: i32) -> i32 {
+    if o < 0 or o + n + 1 > cap {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        dst[o + i] = s[i]
+        i = i + 1
+    }
+    dst[o + n] = 0
+    return o + n
+}
+
+function mb_puts(dst: ptr<u8>, o: i32, cap: i32, s: string) -> i32 {
+    let p: ptr<u8> = s
+    return mb_put(dst, o, cap, p, strlen(s) as i32)
+}
+
+function mb_cstr_len(p: ptr<u8>) -> i32 {
+    let s: string = p
+    return strlen(s) as i32
+}
+
+function mb_cstr_eq(a: ptr<u8>, b: ptr<u8>) -> i32 {
+    let mut i: i32 = 0
+    while a[i] != 0 and a[i] == b[i] {
+        i = i + 1
+    }
+    if a[i] == b[i] {
+        return 1
+    }
+    return 0
+}
+
+# Index of the module at canonical path p, adding it when new.
+function mb_module(b: ptr<MlirBundle>, p: ptr<u8>) -> i32 {
+    let mut i: i32 = 0
+    while i < b[0].n {
+        if mb_cstr_eq(b[0].paths + i * MB_PATH, p) == 1 {
+            return i
+        }
+        i = i + 1
+    }
+    if b[0].n >= MB_MAX_MODS {
+        puts("flowc mlir: unsupported: more than 256 modules at line 0")
+        b[0].err = 1
+        return 0 - 1
+    }
+    let k: i32 = b[0].n
+    mb_put(b[0].paths + k * MB_PATH, 0, MB_PATH, p, mb_cstr_len(p))
+    b[0].n = k + 1
+    return k
+}
+
+# Python os.path.abspath of p into out (MB_PATH bytes): the working
+# directory in front of a relative path, then `.`, `..` and repeated
+# slashes folded. 1 on success.
+function mb_realpath(p: string, out: ptr<u8>) -> i32 {
+    let raw: ptr<u8> = malloc((MB_PATH * 2) as i64)
+    mb_zero(raw, MB_PATH * 2)
+    let pp: ptr<u8> = p
+    let mut o: i32 = 0
+    if pp[0] != 47 {
+        # The shell's working directory. getcwd() would pull unistd.h into
+        # the C the Python host builds for flowc, whose `write` extern
+        # (proof_doc.flow) then clashes with it.
+        let cwd: string = getenv("PWD")
+        let cp: ptr<u8> = cwd
+        if cp == null or cp[0] != 47 {
+            free(raw)
+            return 0
+        }
+        o = mb_put(raw, 0, MB_PATH * 2, cp, mb_cstr_len(cp))
+        o = mb_puts(raw, o, MB_PATH * 2, "/")
+    }
+    o = mb_put(raw, o, MB_PATH * 2, pp, mb_cstr_len(pp))
+    if o < 0 {
+        free(raw)
+        return 0
+    }
+    # Fold segments into out.
+    let mut w: i32 = 0
+    let mut i: i32 = 0
+    while i < o {
+        while i < o and raw[i] == 47 {
+            i = i + 1
+        }
+        let s: i32 = i
+        while i < o and raw[i] != 47 {
+            i = i + 1
+        }
+        let n: i32 = i - s
+        if n == 1 and raw[s] == 46 {
+            n = 0
+        }
+        if n == 2 and raw[s] == 46 and raw[s + 1] == 46 {
+            while w > 0 and out[w - 1] != 47 {
+                w = w - 1
+            }
+            if w > 0 {
+                w = w - 1
+            }
+        } else {
+            if n > 0 {
+                if w + n + 2 >= MB_PATH {
+                    free(raw)
+                    return 0
+                }
+                out[w] = 47
+                w = w + 1
+                let mut q: i32 = 0
+                while q < n {
+                    out[w] = raw[s + q]
+                    w = w + 1
+                    q = q + 1
+                }
+            }
+        }
+    }
+    if w == 0 {
+        out[0] = 47
+        w = 1
+    }
+    out[w] = 0
+    free(raw)
+    return 1
+}
+
+# When cand names an existing file, write its canonical path to out and
+# return 1.
+function mb_try(cand: ptr<u8>, out: ptr<u8>) -> i32 {
+    let s: string = cand
+    if flowc_io_exists(s) == 0 {
+        return 0
+    }
+    if mb_realpath(s, out) == 0 {
+        return 0
+    }
+    return 1
+}
+
+# dir + "/" + rel into buf; returns 1 on success.
+function mb_join(buf: ptr<u8>, dir: ptr<u8>, rel: ptr<u8>, rn: i32) -> i32 {
+    let mut o: i32 = mb_put(buf, 0, MB_PATH, dir, mb_cstr_len(dir))
+    o = mb_puts(buf, o, MB_PATH, "/")
+    o = mb_put(buf, o, MB_PATH, rel, rn)
+    if o < 0 {
+        return 0
+    }
+    return 1
+}
+
+# The value of `key = "value"` under [table] in flow.toml, into out.
+function mb_toml_value(b: ptr<MlirBundle>, table: string, key: ptr<u8>, kn: i32, out: ptr<u8>, cap: i32) -> i32 {
+    let t: ptr<u8> = b[0].toml
+    let n: i32 = b[0].toml_len
+    let tp: ptr<u8> = table
+    let tn: i32 = strlen(table) as i32
+    let mut in_table: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        # one line [i, e)
+        let mut e: i32 = i
+        while e < n and t[e] != 10 {
+            e = e + 1
+        }
+        let mut s: i32 = i
+        while s < e and (t[s] == 32 or t[s] == 9) {
+            s = s + 1
+        }
+        if s < e and t[s] == 91 {
+            in_table = 0
+            if s + tn + 2 <= e and t[s + tn + 1] == 93 {
+                let mut same: i32 = 1
+                let mut q: i32 = 0
+                while q < tn {
+                    if t[s + 1 + q] != tp[q] {
+                        same = 0
+                    }
+                    q = q + 1
+                }
+                in_table = same
+            }
+        } else {
+            if in_table == 1 and s + kn < e {
+                let mut same2: i32 = 1
+                let mut q2: i32 = 0
+                while q2 < kn {
+                    if t[s + q2] != key[q2] {
+                        same2 = 0
+                    }
+                    q2 = q2 + 1
+                }
+                let mut j: i32 = s + kn
+                while j < e and (t[j] == 32 or t[j] == 9) {
+                    j = j + 1
+                }
+                if same2 == 1 and j < e and t[j] == 61 {
+                    j = j + 1
+                    while j < e and (t[j] == 32 or t[j] == 9) {
+                        j = j + 1
+                    }
+                    if j < e and t[j] == 34 {
+                        let vs: i32 = j + 1
+                        let mut ve: i32 = vs
+                        while ve < e and t[ve] != 34 {
+                            ve = ve + 1
+                        }
+                        if mb_put(out, 0, cap, t + vs, ve - vs) < 0 {
+                            return 0
+                        }
+                        return 1
+                    }
+                    # a table value (dependency spec) still declares the key
+                    out[0] = 0
+                    return 1
+                }
+            }
+        }
+        i = e + 1
+    }
+    return 0
+}
+
+# Python _iter_flow_candidates for root and parts[0..np) of the dotted
+# path src[s..e): root/p0/p1.flow. Parts are split at dots.
+function mb_try_parts(root: ptr<u8>, src: ptr<u8>, ps: ptr<i32>, pe: ptr<i32>, first: i32, np: i32, out: ptr<u8>) -> i32 {
+    let cand: ptr<u8> = malloc(MB_PATH as i64)
+    let mut o: i32 = mb_put(cand, 0, MB_PATH, root, mb_cstr_len(root))
+    let mut i: i32 = first
+    while i < first + np {
+        o = mb_puts(cand, o, MB_PATH, "/")
+        o = mb_put(cand, o, MB_PATH, src + ps[i], pe[i] - ps[i])
+        i = i + 1
+    }
+    let mut ok: i32 = 0
+    if o >= 0 {
+        # A trailing ".flow" is part of the name already.
+        let mut has_ext: i32 = 0
+        if o >= 5 and cand[o - 5] == 46 and cand[o - 4] == 102 and cand[o - 3] == 108 and cand[o - 2] == 111 and cand[o - 1] == 119 {
+            has_ext = 1
+        }
+        if has_ext == 0 {
+            o = mb_puts(cand, o, MB_PATH, ".flow")
+        }
+        if o >= 0 {
+            ok = mb_try(cand, out)
+        }
+    }
+    free(cand)
+    return ok
+}
+
+# Python _resolve_import for the import node imp of a module in base_dir.
+# Writes the canonical path to out; 0 when it does not resolve.
+function mb_resolve(b: ptr<MlirBundle>, arena: AstArena, src: ptr<u8>, imp: i32, base_dir: ptr<u8>, out: ptr<u8>) -> i32 {
+    let form: i32 = arena.nodes[imp].ival
+    let mut s: i32 = arena.nodes[imp].name_start
+    let mut e: i32 = arena.nodes[imp].name_end
+    if arena.nodes[imp].b != AST_NONE {
+        return 0
+    }
+    let cand: ptr<u8> = malloc(MB_PATH as i64)
+    let mut ok: i32 = 0
+    if form == 2 {
+        # Legacy string import: base_dir, stdlib (stdlib/ stripped), the
+        # compiler's packages, the project root.
+        s = s + 1
+        e = e - 1
+        let mut bad: i32 = 0
+        if e <= s or src[s] == 47 or src[s] == 126 {
+            bad = 1
+        }
+        let mut q: i32 = s
+        while q + 1 < e {
+            if src[q] == 46 and src[q + 1] == 46 and (q == s or src[q - 1] == 47) and (q + 2 == e or src[q + 2] == 47) {
+                bad = 1
+            }
+            q = q + 1
+        }
+        if bad == 0 {
+            let file: ptr<u8> = malloc(MB_PATH as i64)
+            let mut fo: i32 = mb_put(file, 0, MB_PATH, src + s, e - s)
+            let mut has_ext: i32 = 0
+            if fo >= 5 and file[fo - 5] == 46 and file[fo - 4] == 102 and file[fo - 3] == 108 and file[fo - 2] == 111 and file[fo - 1] == 119 {
+                has_ext = 1
+            }
+            if has_ext == 0 {
+                fo = mb_puts(file, fo, MB_PATH, ".flow")
+            }
+            if fo > 0 {
+                if mb_join(cand, base_dir, file, fo) == 1 and mb_try(cand, out) == 1 {
+                    ok = 1
+                }
+                if ok == 0 and fo > 7 and file[0] == 115 and file[1] == 116 and file[2] == 100 and file[3] == 108 and file[4] == 105 and file[5] == 98 and file[6] == 47 {
+                    if mb_join(cand, b[0].stdlib_root, file + 7, fo - 7) == 1 and mb_try(cand, out) == 1 {
+                        ok = 1
+                    }
+                }
+                if ok == 0 and mb_join(cand, b[0].stdlib_root, file, fo) == 1 and mb_try(cand, out) == 1 {
+                    ok = 1
+                }
+                if ok == 0 {
+                    let pk: ptr<u8> = malloc(MB_PATH as i64)
+                    let po: i32 = mb_put(pk, 0, MB_PATH, b[0].compiler_root, mb_cstr_len(b[0].compiler_root))
+                    mb_puts(pk, po, MB_PATH, "/packages")
+                    if mb_join(cand, pk, file, fo) == 1 and mb_try(cand, out) == 1 {
+                        ok = 1
+                    }
+                    free(pk)
+                }
+                if ok == 0 and mb_join(cand, b[0].project_root, file, fo) == 1 and mb_try(cand, out) == 1 {
+                    ok = 1
+                }
+            }
+            free(file)
+        }
+        free(cand)
+        return ok
+    }
+    # Dotted paths: split into parts at dots.
+    let ps: ptr<i32> = mb_alloc_i32(64)
+    let pe: ptr<i32> = mb_alloc_i32(64)
+    let mut np: i32 = 0
+    let mut i: i32 = s
+    if form == 1 {
+        i = s + 1
+    }
+    let mut ps0: i32 = i
+    while i <= e and np < 64 {
+        if i == e or src[i] == 46 {
+            ps[np] = ps0
+            pe[np] = i
+            np = np + 1
+            ps0 = i + 1
+        }
+        i = i + 1
+    }
+    let mut j: i32 = 0
+    while j < np {
+        if pe[j] <= ps[j] or (pe[j] - ps[j] == 2 and src[ps[j]] == 46) {
+            np = 0
+        }
+        j = j + 1
+    }
+    if np == 0 {
+        free(cand)
+        return 0
+    }
+    if form == 1 {
+        # Relative: base_dir, longest module prefix first.
+        let mut k: i32 = np
+        while k > 0 and ok == 0 {
+            ok = mb_try_parts(base_dir, src, ps, pe, 0, k, out)
+            k = k - 1
+        }
+        free(cand)
+        return ok
+    }
+    # Absolute: std -> stdlib; a [paths] key -> that directory; a
+    # [dependencies] key -> flow_packages (left to Python); else stdlib, then
+    # the project root.
+    let key: ptr<u8> = src + ps[0]
+    let kn: i32 = pe[0] - ps[0]
+    let val: ptr<u8> = malloc(MB_PATH as i64)
+    let mut root_a: ptr<u8> = null
+    let mut first_a: i32 = 1
+    let mut root_b: ptr<u8> = null
+    let mut first_b: i32 = 0
+    let mut root_c: ptr<u8> = null
+    let mut first_c: i32 = 0
+    if kn == 3 and key[0] == 115 and key[1] == 116 and key[2] == 100 {
+        root_a = b[0].stdlib_root
+    } else {
+        if mb_toml_value(b, "paths", key, kn, val, MB_PATH) == 1 {
+            let pv: ptr<u8> = malloc(MB_PATH as i64)
+            if mb_join(pv, b[0].project_root, val, mb_cstr_len(val)) == 1 {
+                root_a = pv
+            }
+        } else {
+            if mb_toml_value(b, "dependencies", key, kn, val, MB_PATH) == 1 {
+                free(val)
+                free(cand)
+                return 0
+            }
+            if kn == 6 and key[0] == 115 and key[1] == 116 and key[2] == 100 and key[3] == 108 and key[4] == 105 and key[5] == 98 {
+                root_a = b[0].stdlib_root
+                root_b = b[0].stdlib_root
+                root_c = b[0].project_root
+            } else {
+                root_b = b[0].stdlib_root
+                root_c = b[0].project_root
+                root_a = null
+            }
+        }
+    }
+    let mut k2: i32 = np - first_a
+    while root_a != null and k2 > 0 and ok == 0 {
+        ok = mb_try_parts(root_a, src, ps, pe, first_a, k2, out)
+        k2 = k2 - 1
+    }
+    let mut k3: i32 = np - first_b
+    while root_b != null and k3 > 0 and ok == 0 {
+        ok = mb_try_parts(root_b, src, ps, pe, first_b, k3, out)
+        k3 = k3 - 1
+    }
+    let mut k4: i32 = np - first_c
+    while root_c != null and k4 > 0 and ok == 0 {
+        ok = mb_try_parts(root_c, src, ps, pe, first_c, k4, out)
+        k4 = k4 - 1
+    }
+    free(val)
+    free(cand)
+    return ok
+}
+
+# Python _resolve_recursive: imports first (in order), then the module.
+function mb_visit(b: ptr<MlirBundle>, k: i32) {
+    if b[0].err != 0 or b[0].state[k] != 0 {
+        return
+    }
+    b[0].state[k] = 1
+    let path: string = b[0].paths + k * MB_PATH
+    let src: ptr<u8> = malloc(MB_SRC_CAP as i64)
+    mb_zero(src, MB_SRC_CAP)
+    let mut n: i32 = flowc_read_file(path, src, MB_SRC_CAP - 1)
+    if n <= 0 {
+        printf("flowc mlir: cannot read %s\n", path)
+        b[0].err = 1
+        free(src)
+        return
+    }
+    src[n] = 0
+    n = flowc_expand_all_in_place(src, n, MB_SRC_CAP)
+    if n < 0 {
+        b[0].err = 1
+        free(src)
+        return
+    }
+    let mut p: Parser = flowc_parser_new(src, n, MB_AST_CAP)
+    let root: i32 = flowc_parse_program(&p)
+    if root < 0 or p.err != 0 {
+        puts("flowc emit: parse failed")
+        flowc_parser_print_error(p, path)
+        flowc_parser_free(p)
+        b[0].err = 1
+        free(src)
+        return
+    }
+    let dir: ptr<u8> = malloc(MB_PATH as i64)
+    mb_zero(dir, MB_PATH)
+    flowc_resolve_dirname(path, dir, MB_PATH)
+    let dep: ptr<u8> = malloc(MB_PATH as i64)
+    let mut item: i32 = p.arena.nodes[root].a
+    while item != AST_NONE and b[0].err == 0 {
+        if p.arena.nodes[item].kind == AST_IMPORT {
+            mb_zero(dep, MB_PATH)
+            if mb_resolve(b, p.arena, src, item, dir, dep) == 0 {
+                # Report the import as Python would refuse it.
+                let mut line: i32 = 1
+                let mut q: i32 = 0
+                while q < p.arena.nodes[item].start {
+                    if src[q] == 10 {
+                        line = line + 1
+                    }
+                    q = q + 1
+                }
+                printf("flowc mlir: unsupported: import that does not resolve at line %d\n", line)
+                b[0].err = 1
+            } else {
+                let d: i32 = mb_module(b, dep)
+                if d >= 0 {
+                    mb_visit(b, d)
+                }
+            }
+        }
+        item = p.arena.nodes[item].next
+    }
+    free(dep)
+    free(dir)
+    flowc_parser_free(p)
+    if b[0].err == 0 {
+        if b[0].norder >= MB_MAX_MODS {
+            b[0].err = 1
+        } else {
+            b[0].order[b[0].norder] = k
+            b[0].starts[b[0].norder] = b[0].all_len
+            b[0].norder = b[0].norder + 1
+            let o: i32 = mb_put(b[0].all, b[0].all_len, MB_ALL_CAP - 65536, src, n)
+            let o2: i32 = mb_puts(b[0].all, o, MB_ALL_CAP - 65536, "\n")
+            if o2 < 0 {
+                puts("flowc mlir: unsupported: program larger than 8 MB at line 0")
+                b[0].err = 1
+            } else {
+                b[0].all_len = o2
+            }
+        }
+    }
+    free(src)
+    b[0].state[k] = 2
+}
+
+# 1 when the program at in_path has a top-level import (0 when it does not
+# read or parse; the single-file path reports that).
+export function flowc_mlir_wants_modules(in_path: string) -> i32 {
+    let src: ptr<u8> = malloc(MB_SRC_CAP as i64)
+    mb_zero(src, MB_SRC_CAP)
+    let mut n: i32 = flowc_read_file(in_path, src, MB_SRC_CAP - 1)
+    if n <= 0 {
+        free(src)
+        return 0
+    }
+    src[n] = 0
+    n = flowc_expand_all_in_place(src, n, MB_SRC_CAP)
+    if n < 0 {
+        free(src)
+        return 0
+    }
+    let mut p: Parser = flowc_parser_new(src, n, MB_AST_CAP)
+    let root: i32 = flowc_parse_program(&p)
+    let mut found: i32 = 0
+    if root >= 0 and p.err == 0 {
+        let mut item: i32 = p.arena.nodes[root].a
+        while item != AST_NONE {
+            if p.arena.nodes[item].kind == AST_IMPORT {
+                found = 1
+            }
+            item = p.arena.nodes[item].next
+        }
+    }
+    flowc_parser_free(p)
+    free(src)
+    return found
+}
+
+# The Stage-A typecheck of each module in order, dependencies first, with
+# the exports of the modules before it in scope (flowc_bundle_typecheck's
+# rules over this module list). Returns the error count.
+function mb_typecheck(b: ptr<MlirBundle>) -> i32 {
+    let no_src: ptr<u8> = null
+    let mut ctx: TcCtx = flowc_tc_init(no_src)
+    ctx.lenient = 1
+    if ctx.ns == null {
+        return 1
+    }
+    let src: ptr<u8> = malloc(MB_SRC_CAP as i64)
+    let mut total: i32 = 0
+    let mut i: i32 = 0
+    while i < b[0].norder {
+        let s: i32 = b[0].starts[i]
+        let n: i32 = b[0].starts[i + 1] - s
+        mb_zero(src, MB_SRC_CAP)
+        mb_put(src, 0, MB_SRC_CAP, b[0].all + s, n)
+        let mpath: string = b[0].paths + b[0].order[i] * MB_PATH
+        let mut p: Parser = flowc_parser_new(src, n, MB_AST_CAP)
+        let root: i32 = flowc_parse_program(&p)
+        if root < 0 or p.err != 0 {
+            flowc_parser_print_error(p, mpath)
+            flowc_parser_free(p)
+            free(src)
+            flowc_tc_free(&ctx)
+            return 1
+        }
+        flowc_tc_reset_module(&ctx, src)
+        flowc_tc_set_path(&ctx, mpath)
+        total = total + flowc_tc_check_program(&ctx, p.arena, root)
+        ctx.nlen = ctx.seed_nlen
+        flowc_tc_seed_export(&ctx, p.arena, root, src)
+        flowc_parser_free(p)
+        i = i + 1
+    }
+    free(src)
+    flowc_tc_free(&ctx)
+    return total
+}
+
+# Emit MLIR for the program at in_path and every module it imports. Returns
+# the bytes written to out, or -1 after printing why.
+export function flowc_mlir_emit_program(in_path: string, out: ptr<u8>, out_cap: i32, typecheck: i32) -> i32 {
+    let mut mb: MlirBundle = MlirBundle {
+        paths: malloc((MB_MAX_MODS * MB_PATH) as i64), n: 0,
+        state: mb_alloc_i32(MB_MAX_MODS),
+        all: malloc(MB_ALL_CAP as i64), all_len: 0,
+        order: mb_alloc_i32(MB_MAX_MODS), starts: mb_alloc_i32(MB_MAX_MODS + 1), norder: 0,
+        project_root: malloc(MB_PATH as i64), stdlib_root: malloc(MB_PATH as i64),
+        compiler_root: malloc(MB_PATH as i64),
+        toml: malloc(MB_SRC_CAP as i64), toml_len: 0, err: 0
+    }
+    let b: ptr<MlirBundle> = &mb
+    mb_zero(mb.all, MB_ALL_CAP)
+    mb_zero(mb.project_root, MB_PATH)
+    mb_zero(mb.stdlib_root, MB_PATH)
+    mb_zero(mb.compiler_root, MB_PATH)
+    mb_zero(mb.toml, MB_SRC_CAP)
+    # The compiler root holds packages/ and the fallback lib/stdlib.
+    let croot: string = getenv("FLOWC_ROOT")
+    let crp: ptr<u8> = croot
+    if crp == null or crp[0] == 0 {
+        croot = "."
+    }
+    if mb_realpath(croot, mb.compiler_root) == 0 {
+        mb_puts(mb.compiler_root, 0, MB_PATH, croot)
+    }
+    let pr: ptr<u8> = malloc(MB_PATH as i64)
+    mb_zero(pr, MB_PATH)
+    if flowc_resolve_project_root(in_path, pr, MB_PATH) <= 0 {
+        puts("flowc mlir: unsupported: imports without a flow.toml above the program at line 0")
+        return 0 - 1
+    }
+    let prs: string = pr
+    if mb_realpath(prs, mb.project_root) == 0 {
+        mb_put(mb.project_root, 0, MB_PATH, pr, mb_cstr_len(pr))
+    }
+    free(pr)
+    let tp: ptr<u8> = malloc(MB_PATH as i64)
+    let tpo: i32 = mb_put(tp, 0, MB_PATH, mb.project_root, mb_cstr_len(mb.project_root))
+    mb_puts(tp, tpo, MB_PATH, "/flow.toml")
+    let tps: string = tp
+    let tn: i32 = flowc_read_file(tps, mb.toml, MB_SRC_CAP - 1)
+    free(tp)
+    if tn > 0 {
+        mb.toml_len = tn
+    }
+    # Python ProjectConfig.stdlib_root.
+    let sv: ptr<u8> = malloc(MB_PATH as i64)
+    let stdlib_key: ptr<u8> = "stdlib"
+    let cand: ptr<u8> = malloc(MB_PATH as i64)
+    let mut have: i32 = 0
+    if mb_toml_value(b, "paths", stdlib_key, 6, sv, MB_PATH) == 1 {
+        have = mb_join(cand, mb.project_root, sv, mb_cstr_len(sv))
+    } else {
+        let libs: ptr<u8> = "lib/stdlib"
+        have = mb_join(cand, mb.project_root, libs, 10)
+    }
+    let cs: string = cand
+    if have == 1 and flowc_io_exists(cs) == 1 {
+        mb_put(mb.stdlib_root, 0, MB_PATH, cand, mb_cstr_len(cand))
+    } else {
+        let libs2: ptr<u8> = "lib/stdlib"
+        mb_join(mb.stdlib_root, mb.compiler_root, libs2, 10)
+    }
+    free(cand)
+    free(sv)
+    # The walk.
+    let rootp: ptr<u8> = malloc(MB_PATH as i64)
+    mb_zero(rootp, MB_PATH)
+    if mb_realpath(in_path, rootp) == 0 {
+        puts("flowc emit: read FLOWC_IN failed")
+        return 0 - 1
+    }
+    let rk: i32 = mb_module(b, rootp)
+    free(rootp)
+    mb_visit(b, rk)
+    if mb.err != 0 {
+        return 0 - 1
+    }
+    mb.starts[mb.norder] = mb.all_len
+    if typecheck == 1 {
+        let tc_errs: i32 = mb_typecheck(b)
+        if tc_errs > 0 {
+            puts("flowc emit: bundle typecheck failed")
+            printf("flowc emit: tc_errs=%d\n", tc_errs)
+            return 0 - 1
+        }
+    }
+    let mut p: Parser = flowc_parser_new(mb.all, mb.all_len, MB_AST_CAP * 4)
+    let root: i32 = flowc_parse_program(&p)
+    if root < 0 or p.err != 0 {
+        puts("flowc emit: parse failed")
+        flowc_parser_print_error(p, in_path)
+        flowc_parser_free(p)
+        return 0 - 1
+    }
+    if typecheck == 1 {
+        flowc_fuse_pipelines(&p.arena, mb.all)
+    }
+    mb.starts[mb.norder] = mb.all_len
+    # Module names for refusals, in emission order.
+    let names: ptr<u8> = malloc((MB_MAX_MODS * MB_PATH) as i64)
+    let mut i: i32 = 0
+    while i < mb.norder {
+        let src_name: ptr<u8> = mb.paths + mb.order[i] * MB_PATH
+        mb_put(names + i * MB_PATH, 0, MB_PATH, src_name, mb_cstr_len(src_name))
+        i = i + 1
+    }
+    let n: i32 = flowc_mlirgen_emit_modules(p.arena, root, mb.all, mb.all_len, MB_ALL_CAP, mb.starts, mb.norder, names, MB_PATH, out, out_cap)
+    flowc_parser_free(p)
+    free(names)
+    return n
+}

@@ -23,6 +23,7 @@ import .proof_doc { flowc_proof_doc_mode }
 import .cgen { flowc_cgen_emit }
 import .jsgen { flowc_jsgen_emit }
 import .mlirgen { flowc_mlirgen_emit }
+import .mlir_bundle { flowc_mlir_emit_program, flowc_mlir_wants_modules }
 import .fmt { flowc_fmt_emit, flowc_fmt_source, flowc_fmt_token_dump }
 import .wasm_gen { flowc_wasm_gen_compile }
 import .bpf_gen { flowc_bpf_gen_compile }
@@ -260,11 +261,20 @@ function flowc_emit_mode() -> i32 {
 
     let mut nout: i32 = 0
     let want_mlir: i32 = flowc_want_mlir()
-    if want_mlir == 1 and flowc_env_set("FLOWC_BUNDLE") == 1 {
-        puts("flowc mlir: unsupported: imports (bundle mode) at line 0")
-        free(out)
-        return 1
+    # A program with imports takes Python's module order (mlir_bundle.flow).
+    let mut mlir_modules: i32 = 0
+    if want_mlir == 1 {
+        if flowc_env_set("FLOWC_BUNDLE") == 1 or flowc_mlir_wants_modules(in_path) == 1 {
+            mlir_modules = 1
+        }
     }
+    if mlir_modules == 1 {
+        nout = flowc_mlir_emit_program(in_path, out, out_cap, flowc_want_typecheck())
+        if nout <= 0 {
+            free(out)
+            return 1
+        }
+    } else {
     if flowc_env_set("FLOWC_BUNDLE") == 1 {
         let mut search_dir: string = "compiler/src"
         let dir_buf: ptr<u8> = malloc(256)
@@ -365,7 +375,7 @@ function flowc_emit_mode() -> i32 {
         }
 
         if want_mlir == 1 {
-            nout = flowc_mlirgen_emit(p.arena, root, src, out, out_cap)
+            nout = flowc_mlirgen_emit(p.arena, root, src, nsrc, src_cap, out, out_cap)
             if nout <= 0 {
                 free(out)
                 flowc_parser_free(p)
@@ -395,6 +405,7 @@ function flowc_emit_mode() -> i32 {
         }
         flowc_parser_free(p)
         free(src)
+    }
     }
 
     let mut rc: i32 = 0

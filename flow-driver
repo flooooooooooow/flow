@@ -1197,7 +1197,9 @@ compile_program_mlir_flowc() {
     local build_dir="$FLOW_BUILD_ROOT"
     mkdir -p "$build_dir"
     print_info "Compiling $program (CPU backend=mlir, host=flowc)..."
+    # FLOWC_ROOT: where imports find packages/ and the fallback lib/stdlib.
     if ! FLOWC_EMIT=mlir FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" \
+        FLOWC_ROOT="$SCRIPT_DIR" \
         FLOWC_IN="$program" FLOWC_OUT="$build_dir/$basename.mlir" \
         "$driver" >"$build_dir/.flowc_mlir_log" 2>&1; then
         FLOW_MLIR_REFUSAL="$(grep -m1 'flowc' "$build_dir/.flowc_mlir_log" || true)"
