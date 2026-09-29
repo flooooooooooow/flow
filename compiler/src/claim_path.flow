@@ -81,16 +81,27 @@ export function flowc_claim_path_parse(text: string) -> FlowcClaimPath {
     }
 }
 
-export function flowc_claim_path_normalize_tier(tier: string) -> string {
-    if strcmp(tier, "definition") == 0 {
-        return "definition"
+# tier.strip().lower(), then the definitions-only aliases.
+export function flowc_claim_path_normalize_tier(raw: string) -> string {
+    let n: i32 = strlen(raw) as i32
+    let p: ptr<u8> = raw
+    let mut a: i32 = 0
+    while a < n and (p[a] == 32 or p[a] == 9 or p[a] == 10 or p[a] == 13) { a = a + 1 }
+    let mut b: i32 = n
+    while b > a and (p[b - 1] == 32 or p[b - 1] == 9 or p[b - 1] == 10 or p[b - 1] == 13) { b = b - 1 }
+    let buf: ptr<u8> = malloc((b - a + 1) as i64)
+    let mut i: i32 = 0
+    while a + i < b {
+        let c: u8 = p[a + i]
+        if c >= 65 and c <= 90 {
+            buf[i] = c + 32
+        } else {
+            buf[i] = c
+        }
+        i = i + 1
     }
-    if strcmp(tier, "axiom") == 0 {
-        return "axiom"
-    }
-    if strcmp(tier, "derived") == 0 {
-        return "derived"
-    }
+    buf[i] = 0
+    let tier: string = buf as string
     if strcmp(tier, "definitions-only") == 0 {
         return "definition"
     }

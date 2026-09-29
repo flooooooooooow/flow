@@ -1,0 +1,1512 @@
+# @module flowc.geometry_script
+# @means  The geometry diagram language (.geom): variables, functions,
+#         loops, conditionals and sampled curves, run to a FlowcGeomDiagram.
+#         Port of src/flow/geometry_script.py, including its quirks: a
+#         binary `a - b` evaluates to `-a`, a `fill ... to <hi>` bound is
+#         the first character of <hi>, and trailing tokens after an
+#         expression are ignored. Changing any of these changes the figures
+#         the proof corpus was published with.
+#
+# Also chooses the figure for a theorem (diagram_for_theorem).
+
+import .geometry_diagram {
+    FlowcGeomDiagram,
+    FlowcGeomCurve,
+    FlowcGeomFill,
+    FlowcGeomLabel,
+    flowc_geom_new,
+    flowc_geom_none,
+    flowc_geom_template,
+    flowc_geom_infer_id
+}
+import .fileio { flowc_read_file, flowc_io_file_size, flowc_io_exists }
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+    function malloc(size: i64) -> ptr<u8>
+    function memcpy(dst: ptr<u8>, src: ptr<u8>, n: i64) -> ptr<u8>
+    function strtod(s: string, end: ptr<ptr<u8>>) -> f64
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function tan(x: f64) -> f64
+    function exp(x: f64) -> f64
+    function log(x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function pow(x: f64, y: f64) -> f64
+    function rint(x: f64) -> f64
+    function printf(fmt: string, ...) -> i32
+}
+
+const GS_NUM: i32 = 0
+const GS_FN: i32 = 1
+const GS_BUILTIN: i32 = 2
+const GS_STR: i32 = 3
+
+export struct GsVal {
+    kind: i32,
+    num: f64,
+    idx: i32,
+    s: string
+}
+
+export struct GsEnv {
+    names: ptr<string>,
+    vals: ptr<GsVal>,
+    n: i32,
+    cap: i32
+}
+
+export struct GsFn {
+    params: ptr<string>,
+    nparams: i32,
+    body: ptr<string>,
+    nbody: i32,
+    closure: GsEnv
+}
+
+# Expression tree node. kind: 1 number, 2 var, 3 call, 4 negate, 5 binary.
+export struct GsNode {
+    kind: i32,
+    num: f64,
+    name: string,
+    a: i32,
+    b: i32,
+    args: ptr<i32>,
+    nargs: i32
+}
+
+export struct GsCtx {
+    g: ptr<FlowcGeomDiagram>,
+    fns: ptr<GsFn>,
+    nfn: i32,
+    capfn: i32,
+    nodes: ptr<GsNode>,
+    nnode: i32,
+    capnode: i32,
+    cache_keys: ptr<string>,
+    cache_vals: ptr<i32>,
+    ncache: i32,
+    capcache: i32,
+    err: i32,
+    toks_kind: ptr<i32>,
+    toks_num: ptr<f64>,
+    toks_text: ptr<string>,
+    ntok: i32,
+    tpos: i32
+}
+
+# Token kinds
+const GT_NUM: i32 = 1
+const GT_IDENT: i32 = 2
+const GT_STR: i32 = 3
+const GT_OP: i32 = 4
+
+# ── Strings ──────────────────────────────────────────────────────
+
+function gs_lower(s: string) -> string
+
+# An indexed string as a plain value, so `+` sees a string operand.
+function gs_sidx(s: string) -> string {
+    return s
+}
+
+function gs_len(s: string) -> i32 {
+    return strlen(s) as i32
+}
+
+function gs_eq(a: string, b: string) -> i32 {
+    if strcmp(a, b) == 0 { return 1 }
+    return 0
+}
+
+function gs_sub(s: string, a: i32, b: i32) -> string {
+    let mut lo: i32 = a
+    let mut hi: i32 = b
+    let n: i32 = gs_len(s)
+    if lo < 0 { lo = 0 }
+    if hi > n { hi = n }
+    if hi <= lo { return "" }
+    let buf: ptr<u8> = malloc((hi - lo + 1) as i64)
+    let p: ptr<u8> = s
+    memcpy(buf, p + lo, (hi - lo) as i64)
+    buf[hi - lo] = 0
+    return buf as string
+}
+
+function gs_ws(c: i32) -> i32 {
+    if c == 32 or c == 9 or c == 10 or c == 13 or c == 11 or c == 12 { return 1 }
+    return 0
+}
+
+function gs_strip(s: string) -> string {
+    let n: i32 = gs_len(s)
+    let p: ptr<u8> = s
+    let mut a: i32 = 0
+    while a < n and gs_ws(p[a]) == 1 { a = a + 1 }
+    let mut b: i32 = n
+    while b > a and gs_ws(p[b - 1]) == 1 { b = b - 1 }
+    return gs_sub(s, a, b)
+}
+
+function gs_starts(s: string, lit: string) -> i32 {
+    let n: i32 = gs_len(s)
+    let m: i32 = gs_len(lit)
+    if m > n { return 0 }
+    let p: ptr<u8> = s
+    let q: ptr<u8> = lit
+    let mut i: i32 = 0
+    while i < m {
+        if p[i] != q[i] { return 0 }
+        i = i + 1
+    }
+    return 1
+}
+
+function gs_find(s: string, needle: string, from: i32) -> i32 {
+    let n: i32 = gs_len(s)
+    let m: i32 = gs_len(needle)
+    let p: ptr<u8> = s
+    let q: ptr<u8> = needle
+    let mut i: i32 = from
+    while i + m <= n {
+        let mut j: i32 = 0
+        while j < m and p[i + j] == q[j] { j = j + 1 }
+        if j == m { return i }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+function gs_lower_eq_at(s: string, i: i32, lit: string) -> i32 {
+    let n: i32 = gs_len(s)
+    let m: i32 = gs_len(lit)
+    if i < 0 or i + m > n { return 0 }
+    let p: ptr<u8> = s
+    let q: ptr<u8> = lit
+    let mut k: i32 = 0
+    while k < m {
+        let mut c: i32 = p[i + k]
+        if c >= 65 and c <= 90 { c = c + 32 }
+        if c != q[k] { return 0 }
+        k = k + 1
+    }
+    return 1
+}
+
+function gs_ends_with_char(s: string, c: i32) -> i32 {
+    let n: i32 = gs_len(s)
+    let p: ptr<u8> = s
+    if n > 0 and p[n - 1] == c { return 1 }
+    return 0
+}
+
+function gs_count_char(s: string, c: i32) -> i32 {
+    let n: i32 = gs_len(s)
+    let p: ptr<u8> = s
+    let mut k: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == c { k = k + 1 }
+        i = i + 1
+    }
+    return k
+}
+
+function gs_float(s: string) -> f64 {
+    return strtod(gs_strip(s), null)
+}
+
+# Whitespace split: fills out[] and returns the count.
+function gs_split_ws(s: string, out: ptr<string>, cap: i32) -> i32 {
+    let n: i32 = gs_len(s)
+    let p: ptr<u8> = s
+    let mut c: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        while i < n and gs_ws(p[i]) == 1 { i = i + 1 }
+        if i < n {
+            let st: i32 = i
+            while i < n and gs_ws(p[i]) == 0 { i = i + 1 }
+            if c < cap { out[c] = gs_sub(s, st, i) }
+            c = c + 1
+        }
+    }
+    return c
+}
+
+# ── Values and environments ──────────────────────────────────────
+
+function gs_num(v: f64) -> GsVal {
+    return GsVal { kind: GS_NUM, num: v, idx: 0, s: "" }
+}
+
+function gs_env_new(cap: i32) -> GsEnv {
+    return GsEnv {
+        names: malloc((cap as i64) * 8) as ptr<string>,
+        vals: malloc((cap as i64) * 32) as ptr<GsVal>,
+        n: 0,
+        cap: cap
+    }
+}
+
+function gs_env_copy(e: ptr<GsEnv>) -> GsEnv {
+    let mut c: GsEnv = gs_env_new(e[0].cap)
+    let mut i: i32 = 0
+    while i < e[0].n {
+        c.names[i] = e[0].names[i]
+        c.vals[i] = e[0].vals[i]
+        i = i + 1
+    }
+    c.n = e[0].n
+    return c
+}
+
+function gs_env_find(e: ptr<GsEnv>, name: string) -> i32 {
+    let mut i: i32 = 0
+    while i < e[0].n {
+        if gs_eq(e[0].names[i], name) == 1 { return i }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+function gs_env_set(e: ptr<GsEnv>, name: string, v: GsVal) -> void {
+    let at: i32 = gs_env_find(e, name)
+    if at >= 0 {
+        e[0].vals[at] = v
+        return
+    }
+    if e[0].n >= e[0].cap {
+        let ncap: i32 = e[0].cap * 2 + 8
+        let nn: ptr<string> = malloc((ncap as i64) * 8) as ptr<string>
+        let nv: ptr<GsVal> = malloc((ncap as i64) * 32) as ptr<GsVal>
+        let mut i: i32 = 0
+        while i < e[0].n {
+            nn[i] = e[0].names[i]
+            nv[i] = e[0].vals[i]
+            i = i + 1
+        }
+        e[0].names = nn
+        e[0].vals = nv
+        e[0].cap = ncap
+    }
+    e[0].names[e[0].n] = name
+    e[0].vals[e[0].n] = v
+    e[0].n = e[0].n + 1
+}
+
+function gs_builtin(id: i32) -> GsVal {
+    return GsVal { kind: GS_BUILTIN, num: 0.0, idx: id, s: "" }
+}
+
+# _default_env
+function gs_default_env() -> GsEnv {
+    let mut e: GsEnv = gs_env_new(32)
+    gs_env_set(&e, "pi", gs_num(3.141592653589793))
+    gs_env_set(&e, "e", gs_num(2.718281828459045))
+    gs_env_set(&e, "sin", gs_builtin(1))
+    gs_env_set(&e, "cos", gs_builtin(2))
+    gs_env_set(&e, "tan", gs_builtin(3))
+    gs_env_set(&e, "exp", gs_builtin(4))
+    gs_env_set(&e, "log", gs_builtin(5))
+    gs_env_set(&e, "sqrt", gs_builtin(6))
+    gs_env_set(&e, "abs", gs_builtin(7))
+    gs_env_set(&e, "pow", gs_builtin(8))
+    gs_env_set(&e, "min", gs_builtin(9))
+    gs_env_set(&e, "max", gs_builtin(10))
+    gs_env_set(&e, "fact", gs_builtin(11))
+    gs_env_set(&e, "palette", gs_builtin(12))
+    gs_env_set(&e, "taylor_sin", gs_builtin(13))
+    gs_env_set(&e, "taylor_exp", gs_builtin(14))
+    gs_env_set(&e, "x", gs_num(0.0))
+    return e
+}
+
+function gs_fail(c: ptr<GsCtx>, msg: string) -> void {
+    if c[0].err == 0 {
+        printf("flowc geom: %s\n", msg)
+    }
+    c[0].err = 1
+}
+
+# ── Tokenizer ────────────────────────────────────────────────────
+
+function gs_is_digit(c: i32) -> i32 {
+    if c >= 48 and c <= 57 { return 1 }
+    return 0
+}
+
+function gs_is_alpha(c: i32) -> i32 {
+    if (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c >= 128 { return 1 }
+    return 0
+}
+
+function gs_push_tok(c: ptr<GsCtx>, kind: i32, num: f64, text: string) -> void {
+    let k: i32 = c[0].ntok
+    c[0].toks_kind[k] = kind
+    c[0].toks_num[k] = num
+    c[0].toks_text[k] = text
+    c[0].ntok = k + 1
+}
+
+function gs_tokenize(c: ptr<GsCtx>, text: string) -> void {
+    let n: i32 = gs_len(text)
+    let cap: i32 = n + 4
+    c[0].toks_kind = malloc((cap as i64) * 4) as ptr<i32>
+    c[0].toks_num = malloc((cap as i64) * 8) as ptr<f64>
+    c[0].toks_text = malloc((cap as i64) * 8) as ptr<string>
+    c[0].ntok = 0
+    c[0].tpos = 0
+    let p: ptr<u8> = text
+    let mut i: i32 = 0
+    while i < n and c[0].err == 0 {
+        let ch: i32 = p[i]
+        if gs_ws(ch) == 1 {
+            i = i + 1
+        } else {
+            if ch == 40 or ch == 41 or ch == 123 or ch == 125 or ch == 91 or ch == 93 or ch == 44 or ch == 58 or ch == 59 or ch == 43 or ch == 45 or ch == 42 or ch == 47 or ch == 94 or ch == 60 or ch == 62 or ch == 61 or ch == 33 {
+                let two: string = gs_sub(text, i, i + 2)
+                if gs_eq(two, "..") == 1 or gs_eq(two, "<=") == 1 or gs_eq(two, ">=") == 1 or gs_eq(two, "==") == 1 or gs_eq(two, "!=") == 1 {
+                    gs_push_tok(c, GT_OP, 0.0, two)
+                    i = i + 2
+                } else {
+                    gs_push_tok(c, GT_OP, 0.0, gs_sub(text, i, i + 1))
+                    i = i + 1
+                }
+            } else {
+                if ch == 34 or ch == 39 {
+                    i = i + 1
+                    let st: i32 = i
+                    while i < n and p[i] != ch { i = i + 1 }
+                    gs_push_tok(c, GT_STR, 0.0, gs_sub(text, st, i))
+                    i = i + 1
+                } else {
+                    if ch == 35 {
+                        while i < n and p[i] != 10 { i = i + 1 }
+                    } else {
+                        if gs_is_digit(ch) == 1 or (ch == 46 and i + 1 < n and gs_is_digit(p[i + 1]) == 1) {
+                            let st: i32 = i
+                            while i < n and (gs_is_digit(p[i]) == 1 or p[i] == 46) { i = i + 1 }
+                            gs_push_tok(c, GT_NUM, gs_float(gs_sub(text, st, i)), "")
+                        } else {
+                            if gs_is_alpha(ch) == 1 or ch == 95 {
+                                let st: i32 = i
+                                while i < n and (gs_is_alpha(p[i]) == 1 or gs_is_digit(p[i]) == 1 or p[i] == 95) { i = i + 1 }
+                                let word: string = gs_sub(text, st, i)
+                                if gs_eq(word, "true") == 1 {
+                                    gs_push_tok(c, GT_NUM, 1.0, "")
+                                } else {
+                                    if gs_eq(word, "false") == 1 {
+                                        gs_push_tok(c, GT_NUM, 0.0, "")
+                                    } else {
+                                        gs_push_tok(c, GT_IDENT, 0.0, word)
+                                    }
+                                }
+                            } else {
+                                gs_fail(c, "unexpected character")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+# ── Parser ───────────────────────────────────────────────────────
+
+function gs_node(c: ptr<GsCtx>, kind: i32) -> i32 {
+    if c[0].nnode >= c[0].capnode {
+        let ncap: i32 = c[0].capnode * 2 + 64
+        let nb: ptr<GsNode> = malloc((ncap as i64) * 56) as ptr<GsNode>
+        let mut i: i32 = 0
+        while i < c[0].nnode {
+            nb[i] = c[0].nodes[i]
+            i = i + 1
+        }
+        c[0].nodes = nb
+        c[0].capnode = ncap
+    }
+    let k: i32 = c[0].nnode
+    c[0].nodes[k].kind = kind
+    c[0].nodes[k].num = 0.0
+    c[0].nodes[k].name = ""
+    c[0].nodes[k].a = 0 - 1
+    c[0].nodes[k].b = 0 - 1
+    c[0].nodes[k].args = null
+    c[0].nodes[k].nargs = 0
+    c[0].nnode = k + 1
+    return k
+}
+
+# The operator text of the current token, or "" (also at EOF).
+function gs_peek_op(c: ptr<GsCtx>) -> string {
+    if c[0].tpos >= c[0].ntok { return "" }
+    if c[0].toks_kind[c[0].tpos] != GT_OP { return "" }
+    return c[0].toks_text[c[0].tpos]
+}
+
+function gs_peek_kind(c: ptr<GsCtx>) -> i32 {
+    if c[0].tpos >= c[0].ntok { return 0 }
+    return c[0].toks_kind[c[0].tpos]
+}
+
+function gs_bin(c: ptr<GsCtx>, op: string, l: i32, r: i32) -> i32 {
+    let k: i32 = gs_node(c, 5)
+    c[0].nodes[k].name = op
+    c[0].nodes[k].a = l
+    c[0].nodes[k].b = r
+    return k
+}
+
+function gs_parse_expr(c: ptr<GsCtx>) -> i32
+
+function gs_parse_atom(c: ptr<GsCtx>) -> i32 {
+    let kind: i32 = gs_peek_kind(c)
+    if kind == GT_NUM {
+        let k: i32 = gs_node(c, 1)
+        c[0].nodes[k].num = c[0].toks_num[c[0].tpos]
+        c[0].tpos = c[0].tpos + 1
+        return k
+    }
+    if kind == GT_IDENT {
+        let name: string = c[0].toks_text[c[0].tpos]
+        c[0].tpos = c[0].tpos + 1
+        if gs_eq(gs_peek_op(c), "(") == 1 {
+            c[0].tpos = c[0].tpos + 1
+            let args: ptr<i32> = malloc(((c[0].ntok + 1) as i64) * 4) as ptr<i32>
+            let mut na: i32 = 0
+            if gs_eq(gs_peek_op(c), ")") == 0 {
+                args[na] = gs_parse_expr(c)
+                na = na + 1
+                while gs_eq(gs_peek_op(c), ",") == 1 and c[0].err == 0 {
+                    c[0].tpos = c[0].tpos + 1
+                    args[na] = gs_parse_expr(c)
+                    na = na + 1
+                }
+            }
+            if gs_eq(gs_peek_op(c), ")") == 0 {
+                gs_fail(c, "expected )")
+                return 0 - 1
+            }
+            c[0].tpos = c[0].tpos + 1
+            let k: i32 = gs_node(c, 3)
+            c[0].nodes[k].name = name
+            c[0].nodes[k].args = args
+            c[0].nodes[k].nargs = na
+            return k
+        }
+        let k: i32 = gs_node(c, 2)
+        c[0].nodes[k].name = name
+        return k
+    }
+    if gs_eq(gs_peek_op(c), "(") == 1 {
+        c[0].tpos = c[0].tpos + 1
+        let e: i32 = gs_parse_expr(c)
+        if gs_eq(gs_peek_op(c), ")") == 0 {
+            gs_fail(c, "expected )")
+            return 0 - 1
+        }
+        c[0].tpos = c[0].tpos + 1
+        return e
+    }
+    gs_fail(c, "unexpected token")
+    return 0 - 1
+}
+
+function gs_parse_unary(c: ptr<GsCtx>) -> i32 {
+    if gs_eq(gs_peek_op(c), "-") == 1 {
+        c[0].tpos = c[0].tpos + 1
+        let k: i32 = gs_node(c, 4)
+        c[0].nodes[k].a = gs_parse_unary(c)
+        return k
+    }
+    if gs_eq(gs_peek_op(c), "+") == 1 {
+        c[0].tpos = c[0].tpos + 1
+        return gs_parse_unary(c)
+    }
+    return gs_parse_atom(c)
+}
+
+function gs_parse_pow(c: ptr<GsCtx>) -> i32 {
+    let left: i32 = gs_parse_unary(c)
+    if gs_eq(gs_peek_op(c), "^") == 1 {
+        c[0].tpos = c[0].tpos + 1
+        let right: i32 = gs_parse_pow(c)
+        return gs_bin(c, "^", left, right)
+    }
+    return left
+}
+
+function gs_parse_mul(c: ptr<GsCtx>) -> i32 {
+    let mut left: i32 = gs_parse_pow(c)
+    let mut op: string = gs_peek_op(c)
+    while (gs_eq(op, "*") == 1 or gs_eq(op, "/") == 1) and c[0].err == 0 {
+        c[0].tpos = c[0].tpos + 1
+        let right: i32 = gs_parse_pow(c)
+        left = gs_bin(c, op, left, right)
+        op = gs_peek_op(c)
+    }
+    return left
+}
+
+function gs_parse_add(c: ptr<GsCtx>) -> i32 {
+    let mut left: i32 = gs_parse_mul(c)
+    let mut op: string = gs_peek_op(c)
+    while (gs_eq(op, "+") == 1 or gs_eq(op, "-") == 1) and c[0].err == 0 {
+        c[0].tpos = c[0].tpos + 1
+        let right: i32 = gs_parse_mul(c)
+        left = gs_bin(c, op, left, right)
+        op = gs_peek_op(c)
+    }
+    return left
+}
+
+function gs_is_cmp(op: string) -> i32 {
+    if gs_eq(op, "<") == 1 or gs_eq(op, ">") == 1 or gs_eq(op, "<=") == 1 or gs_eq(op, ">=") == 1 or gs_eq(op, "==") == 1 or gs_eq(op, "!=") == 1 {
+        return 1
+    }
+    return 0
+}
+
+function gs_parse_compare(c: ptr<GsCtx>) -> i32 {
+    let mut left: i32 = gs_parse_add(c)
+    let mut op: string = gs_peek_op(c)
+    while gs_is_cmp(op) == 1 and c[0].err == 0 {
+        c[0].tpos = c[0].tpos + 1
+        let right: i32 = gs_parse_add(c)
+        left = gs_bin(c, op, left, right)
+        op = gs_peek_op(c)
+    }
+    return left
+}
+
+# `||` / `&&` cannot be tokenized, so _parse_or / _parse_and reduce to this.
+function gs_parse_expr(c: ptr<GsCtx>) -> i32 {
+    return gs_parse_compare(c)
+}
+
+# Parse `text` (cached by its text). Returns the root node, or -1.
+function gs_parse(c: ptr<GsCtx>, text: string) -> i32 {
+    let mut i: i32 = 0
+    while i < c[0].ncache {
+        if gs_eq(c[0].cache_keys[i], text) == 1 { return c[0].cache_vals[i] }
+        i = i + 1
+    }
+    gs_tokenize(c, text)
+    if c[0].err != 0 { return 0 - 1 }
+    let root: i32 = gs_parse_expr(c)
+    if c[0].err != 0 { return 0 - 1 }
+    if c[0].ncache >= c[0].capcache {
+        let ncap: i32 = c[0].capcache * 2 + 32
+        let nk: ptr<string> = malloc((ncap as i64) * 8) as ptr<string>
+        let nv: ptr<i32> = malloc((ncap as i64) * 4) as ptr<i32>
+        let mut j: i32 = 0
+        while j < c[0].ncache {
+            nk[j] = c[0].cache_keys[j]
+            nv[j] = c[0].cache_vals[j]
+            j = j + 1
+        }
+        c[0].cache_keys = nk
+        c[0].cache_vals = nv
+        c[0].capcache = ncap
+    }
+    c[0].cache_keys[c[0].ncache] = text
+    c[0].cache_vals[c[0].ncache] = root
+    c[0].ncache = c[0].ncache + 1
+    return root
+}
+
+# ── Evaluation ───────────────────────────────────────────────────
+
+function gs_truthy(v: GsVal) -> i32 {
+    if v.kind == GS_NUM {
+        if v.num != 0.0 { return 1 }
+        return 0
+    }
+    if v.kind == GS_STR {
+        if gs_len(v.s) > 0 { return 1 }
+        return 0
+    }
+    return 1
+}
+
+function gs_bool(b: i32) -> GsVal {
+    if b == 1 { return gs_num(1.0) }
+    return gs_num(0.0)
+}
+
+# math.factorial(p) as a float.
+function gs_factorial(p: i32) -> f64 {
+    let mut out: i64 = 1
+    let mut i: i32 = 2
+    while i <= p and i <= 20 {
+        out = out * (i as i64)
+        i = i + 1
+    }
+    let mut f: f64 = out as f64
+    while i <= p {
+        f = f * (i as f64)
+        i = i + 1
+    }
+    return f
+}
+
+function gs_run_lines(c: ptr<GsCtx>, env: ptr<GsEnv>, lines: ptr<string>, n: i32) -> void
+
+function gs_call_builtin(c: ptr<GsCtx>, id: i32, v: ptr<GsVal>, n: i32) -> GsVal {
+    let mut a: f64 = 0.0
+    let mut b: f64 = 0.0
+    if n > 0 { a = v[0].num }
+    if n > 1 { b = v[1].num }
+    if id == 1 { return gs_num(sin(a)) }
+    if id == 2 { return gs_num(cos(a)) }
+    if id == 3 { return gs_num(tan(a)) }
+    if id == 4 { return gs_num(exp(a)) }
+    if id == 5 { return gs_num(log(a)) }
+    if id == 6 { return gs_num(sqrt(a)) }
+    if id == 7 { return gs_num(fabs(a)) }
+    if id == 8 { return gs_num(pow(a, b)) }
+    if id == 9 or id == 10 {
+        let mut best: f64 = a
+        let mut i: i32 = 1
+        while i < n {
+            if id == 9 and v[i].num < best { best = v[i].num }
+            if id == 10 and v[i].num > best { best = v[i].num }
+            i = i + 1
+        }
+        return gs_num(best)
+    }
+    if id == 11 {
+        let k: i32 = rint(a) as i32
+        let mut out: f64 = 1.0
+        let mut i: i32 = 2
+        while i <= k {
+            out = out * (i as f64)
+            i = i + 1
+        }
+        return gs_num(out)
+    }
+    if id == 12 {
+        let mut idx: i32 = (rint(a) as i32) % 6
+        if idx < 0 { idx = idx + 6 }
+        let mut s: string = "#2c3e50"
+        if idx == 1 { s = "#c0392b" }
+        if idx == 2 { s = "#2980b9" }
+        if idx == 3 { s = "#27ae60" }
+        if idx == 4 { s = "#8e44ad" }
+        if idx == 5 { s = "#d35400" }
+        return GsVal { kind: GS_STR, num: 0.0, idx: 0, s: s }
+    }
+    if id == 13 {
+        let k: i32 = rint(b) as i32
+        let mut total: f64 = 0.0
+        let mut i: i32 = 0
+        while i <= k {
+            let p: i32 = 2 * i + 1
+            total = total + pow(0.0 - 1.0, i as f64) * pow(a, p as f64) / gs_factorial(p)
+            i = i + 1
+        }
+        return gs_num(total)
+    }
+    if id == 14 {
+        let k: i32 = rint(b) as i32
+        let mut total: f64 = 0.0
+        let mut i: i32 = 0
+        while i <= k {
+            total = total + pow(a, i as f64) / gs_factorial(i)
+            i = i + 1
+        }
+        return gs_num(total)
+    }
+    gs_fail(c, "unknown builtin")
+    return gs_num(0.0)
+}
+
+function gs_eval(c: ptr<GsCtx>, env: ptr<GsEnv>, id: i32) -> GsVal {
+    if c[0].err != 0 or id < 0 { return gs_num(0.0) }
+    let node: GsNode = c[0].nodes[id]
+    if node.kind == 1 { return gs_num(node.num) }
+    if node.kind == 2 {
+        let at: i32 = gs_env_find(env, node.name)
+        if at < 0 {
+            gs_fail(c, "undefined variable")
+            return gs_num(0.0)
+        }
+        return env[0].vals[at]
+    }
+    if node.kind == 3 {
+        let vals: ptr<GsVal> = malloc(((node.nargs + 1) as i64) * 32) as ptr<GsVal>
+        let mut i: i32 = 0
+        while i < node.nargs {
+            vals[i] = gs_eval(c, env, node.args[i])
+            i = i + 1
+        }
+        let at: i32 = gs_env_find(env, node.name)
+        if at < 0 {
+            gs_fail(c, "undefined function")
+            return gs_num(0.0)
+        }
+        let f: GsVal = env[0].vals[at]
+        if f.kind == GS_FN {
+            let fnd: GsFn = c[0].fns[f.idx]
+            let mut local: GsEnv = gs_env_copy(&fnd.closure)
+            let mut k: i32 = 0
+            while k < fnd.nparams and k < node.nargs {
+                gs_env_set(&local, fnd.params[k], vals[k])
+                k = k + 1
+            }
+            gs_run_lines(c, &local, fnd.body, fnd.nbody)
+            let r: i32 = gs_env_find(&local, "_return")
+            if r >= 0 { return local.vals[r] }
+            return gs_num(0.0)
+        }
+        if f.kind == GS_BUILTIN {
+            return gs_call_builtin(c, f.idx, vals, node.nargs)
+        }
+        gs_fail(c, "not callable")
+        return gs_num(0.0)
+    }
+    if node.kind == 4 {
+        let v: GsVal = gs_eval(c, env, node.a)
+        return gs_num(0.0 - v.num)
+    }
+    # Binary. `a - b` hits the unary branch first in the Python: -a.
+    let op: string = node.name
+    if gs_eq(op, "-") == 1 {
+        let v: GsVal = gs_eval(c, env, node.a)
+        return gs_num(0.0 - v.num)
+    }
+    let l: GsVal = gs_eval(c, env, node.a)
+    let r: GsVal = gs_eval(c, env, node.b)
+    if gs_eq(op, "+") == 1 { return gs_num(l.num + r.num) }
+    if gs_eq(op, "*") == 1 { return gs_num(l.num * r.num) }
+    if gs_eq(op, "/") == 1 { return gs_num(l.num / r.num) }
+    if gs_eq(op, "^") == 1 { return gs_num(pow(l.num, r.num)) }
+    if gs_eq(op, "<") == 1 { return gs_bool(l.num < r.num) }
+    if gs_eq(op, ">") == 1 { return gs_bool(l.num > r.num) }
+    if gs_eq(op, "<=") == 1 { return gs_bool(l.num <= r.num) }
+    if gs_eq(op, ">=") == 1 { return gs_bool(l.num >= r.num) }
+    if gs_eq(op, "==") == 1 { return gs_bool(l.num == r.num) }
+    if gs_eq(op, "!=") == 1 { return gs_bool(l.num != r.num) }
+    gs_fail(c, "bad operator")
+    return gs_num(0.0)
+}
+
+function gs_eval_text(c: ptr<GsCtx>, env: ptr<GsEnv>, text: string) -> GsVal {
+    let root: i32 = gs_parse(c, text)
+    return gs_eval(c, env, root)
+}
+
+# ── Statements ───────────────────────────────────────────────────
+
+function gs_string_arg(text: string) -> string {
+    let t: string = gs_strip(text)
+    let n: i32 = gs_len(t)
+    let p: ptr<u8> = t
+    if n >= 2 and ((p[0] == 34 and p[n - 1] == 34) or (p[0] == 39 and p[n - 1] == 39)) {
+        return gs_sub(t, 1, n - 1)
+    }
+    if n == 1 and (p[0] == 34 or p[0] == 39) {
+        return ""
+    }
+    return t
+}
+
+function gs_math_to_pixel(c: ptr<GsCtx>, xs: ptr<f64>, ys: ptr<f64>, n: i32) -> void {
+    let g: ptr<FlowcGeomDiagram> = c[0].g
+    if g[0].has_axes == 0 {
+        gs_fail(c, "plot/fill requires axes")
+        return
+    }
+    let mut i: i32 = 0
+    while i < n {
+        xs[i] = g[0].ax_ox + xs[i] * g[0].ax_scale
+        ys[i] = g[0].ax_oy - ys[i] * g[0].ax_scale
+        i = i + 1
+    }
+}
+
+function gs_sample(c: ptr<GsCtx>, env: ptr<GsEnv>, root: i32, lo: f64, hi: f64, samples_in: i32, xs: ptr<f64>, ys: ptr<f64>) -> i32 {
+    let mut samples: i32 = samples_in
+    if samples < 2 { samples = 2 }
+    let mut i: i32 = 0
+    while i < samples and c[0].err == 0 {
+        let t: f64 = lo + (hi - lo) * (i as f64) / ((samples - 1) as f64)
+        gs_env_set(env, "x", gs_num(t))
+        let y: GsVal = gs_eval(c, env, root)
+        xs[i] = t
+        ys[i] = y.num
+        i = i + 1
+    }
+    return samples
+}
+
+# re.search(rf"\b{key}\s+(\S+)", text): start of the match or -1; value and
+# match end through the out pointers.
+function gs_opt_search(text: string, key: string, vs: ptr<i32>, ve: ptr<i32>) -> i32 {
+    let n: i32 = gs_len(text)
+    let p: ptr<u8> = text
+    let m: i32 = gs_len(key)
+    let mut i: i32 = gs_find(text, key, 0)
+    while i >= 0 {
+        let mut boundary: i32 = 1
+        if i > 0 {
+            let pc: i32 = p[i - 1]
+            if gs_is_alpha(pc) == 1 or gs_is_digit(pc) == 1 or pc == 95 { boundary = 0 }
+        }
+        if boundary == 1 {
+            let mut j: i32 = i + m
+            if j < n and gs_ws(p[j]) == 1 {
+                while j < n and gs_ws(p[j]) == 1 { j = j + 1 }
+                if j < n {
+                    let s: i32 = j
+                    while j < n and gs_ws(p[j]) == 0 { j = j + 1 }
+                    vs[0] = s
+                    ve[0] = j
+                    return i
+                }
+            }
+        }
+        i = gs_find(text, key, i + 1)
+    }
+    return 0 - 1
+}
+
+# \bdash\b present? Removes every such occurrence through `out`.
+function gs_take_dash(text: string, out: ptr<string>) -> i32 {
+    let n: i32 = gs_len(text)
+    let p: ptr<u8> = text
+    let mut found: i32 = 0
+    let mut res: string = ""
+    let mut pos: i32 = 0
+    let mut i: i32 = gs_find(text, "dash", 0)
+    while i >= 0 {
+        let mut ok: i32 = 1
+        if i > 0 {
+            let pc: i32 = p[i - 1]
+            if gs_is_alpha(pc) == 1 or gs_is_digit(pc) == 1 or pc == 95 { ok = 0 }
+        }
+        if i + 4 < n {
+            let nc: i32 = p[i + 4]
+            if gs_is_alpha(nc) == 1 or gs_is_digit(nc) == 1 or nc == 95 { ok = 0 }
+        }
+        if ok == 1 {
+            found = 1
+            res = res + gs_sub(text, pos, i)
+            pos = i + 4
+            i = gs_find(text, "dash", i + 4)
+        } else {
+            i = gs_find(text, "dash", i + 1)
+        }
+    }
+    out[0] = res + gs_sub(text, pos, n)
+    return found
+}
+
+function gs_replace_all(s: string, needle: string, repl: string) -> string {
+    let m: i32 = gs_len(needle)
+    if m == 0 { return s }
+    let mut out: string = ""
+    let mut pos: i32 = 0
+    let mut i: i32 = gs_find(s, needle, 0)
+    while i >= 0 {
+        out = out + gs_sub(s, pos, i) + repl
+        pos = i + m
+        i = gs_find(s, needle, pos)
+    }
+    return out + gs_sub(s, pos, gs_len(s))
+}
+
+function gs_cmd_plot(c: ptr<GsCtx>, env: ptr<GsEnv>, text_in: string) -> void {
+    let mut text: string = text_in
+    let mut color: string = "#2980b9"
+    let mut width: f64 = 2.2
+    let mut dash: i32 = 0
+    let mut label: string = ""
+    let mut samples: f64 = 160.0
+    let mut expr_src: string = text
+    let mut lo: f64 = 0.0 - 3.14
+    let mut hi: f64 = 3.14
+    let fr: i32 = gs_find(text, " from ", 0)
+    if fr >= 0 {
+        expr_src = gs_sub(text, 0, fr)
+        let range: string = gs_sub(text, fr + 6, gs_len(text))
+        let to_at: i32 = gs_find(range, " to ", 0)
+        if to_at < 0 {
+            gs_fail(c, "plot range needs 'to'")
+            return
+        }
+        let lo_s: string = gs_sub(range, 0, to_at)
+        let rest: string = gs_sub(range, to_at + 4, gs_len(range))
+        let parts: ptr<string> = malloc(((gs_len(rest) + 2) as i64) * 8) as ptr<string>
+        let np: i32 = gs_split_ws(rest, parts, gs_len(rest) + 1)
+        let mut hi_s: string = ""
+        if np > 0 { hi_s = parts[0] }
+        lo = gs_eval_text(c, env, gs_strip(lo_s)).num
+        hi = gs_eval_text(c, env, gs_strip(hi_s)).num
+        text = ""
+        let mut k: i32 = 1
+        while k < np {
+            if k > 1 { text = text + " " }
+            text = text + gs_sidx(parts[k])
+            k = k + 1
+        }
+    }
+    let vs: ptr<i32> = malloc(8) as ptr<i32>
+    let ve: ptr<i32> = malloc(8) as ptr<i32>
+    let mut ki: i32 = 0
+    while ki < 4 {
+        let mut key: string = "color"
+        if ki == 1 { key = "width" }
+        if ki == 2 { key = "label" }
+        if ki == 3 { key = "samples" }
+        let at: i32 = gs_opt_search(text, key, vs, ve)
+        if at >= 0 {
+            let val: string = gs_sub(text, vs[0], ve[0])
+            let whole: string = gs_sub(text, at, ve[0])
+            if ki == 0 { color = val }
+            if ki == 1 { width = gs_float(val) }
+            if ki == 2 { label = val }
+            if ki == 3 { samples = gs_float(val) }
+            text = gs_replace_all(text, whole, "")
+        }
+        ki = ki + 1
+    }
+    let rest2: ptr<string> = malloc(8) as ptr<string>
+    if gs_take_dash(text, rest2) == 1 {
+        dash = 1
+        text = rest2[0]
+    }
+    let root: i32 = gs_parse(c, gs_strip(expr_src))
+    if c[0].err != 0 { return }
+    let ns: i32 = samples as i32
+    let cap: i32 = ns + 2
+    let xs: ptr<f64> = malloc((cap as i64) * 8) as ptr<f64>
+    let ys: ptr<f64> = malloc((cap as i64) * 8) as ptr<f64>
+    let n: i32 = gs_sample(c, env, root, lo, hi, ns, xs, ys)
+    gs_math_to_pixel(c, xs, ys, n)
+    if c[0].err != 0 { return }
+    let g: ptr<FlowcGeomDiagram> = c[0].g
+    let k: i32 = g[0].ncurve
+    g[0].curves[k].xs = xs
+    g[0].curves[k].ys = ys
+    g[0].curves[k].n = n
+    g[0].curves[k].stroke = color
+    g[0].curves[k].width = width
+    g[0].curves[k].dashed = dash
+    g[0].curves[k].label = label
+    g[0].ncurve = k + 1
+}
+
+# `\s+<kw>\s+` at i (keyword case-insensitive). Returns the index after the
+# trailing whitespace, or -1.
+function gs_kw_at(t: string, i: i32, kw: string) -> i32 {
+    let n: i32 = gs_len(t)
+    let p: ptr<u8> = t
+    if i >= n or gs_ws(p[i]) == 0 { return 0 - 1 }
+    let mut j: i32 = i
+    while j < n and gs_ws(p[j]) == 1 { j = j + 1 }
+    if gs_lower_eq_at(t, j, kw) == 0 { return 0 - 1 }
+    j = j + gs_len(kw)
+    if j >= n or gs_ws(p[j]) == 0 { return 0 - 1 }
+    while j < n and gs_ws(p[j]) == 1 { j = j + 1 }
+    return j
+}
+
+function gs_cmd_fill(c: ptr<GsCtx>, env: ptr<GsEnv>, text: string) -> void {
+    # between\s+(.+?)\s+and\s+(.+?)\s+from\s+(.+?)\s+to\s+(.+?)(?:\s+color\s+(\S+))?
+    let n: i32 = gs_len(text)
+    let p: ptr<u8> = text
+    let mut ok: i32 = 0
+    let mut e1s: i32 = 0
+    let mut e1e: i32 = 0
+    let mut e2s: i32 = 0
+    let mut e2e: i32 = 0
+    let mut los: i32 = 0
+    let mut loe: i32 = 0
+    let mut his: i32 = 0
+    let mut color: string = ""
+    if gs_lower_eq_at(text, 0, "between") == 1 and n > 7 and gs_ws(p[7]) == 1 {
+        let mut a1: i32 = 7
+        while a1 < n and gs_ws(p[a1]) == 1 { a1 = a1 + 1 }
+        let mut x1: i32 = a1 + 1
+        while x1 < n and ok == 0 {
+            let a2: i32 = gs_kw_at(text, x1, "and")
+            if a2 >= 0 {
+                let mut x2: i32 = a2 + 1
+                while x2 < n and ok == 0 {
+                    let a3: i32 = gs_kw_at(text, x2, "from")
+                    if a3 >= 0 {
+                        let mut x3: i32 = a3 + 1
+                        while x3 < n and ok == 0 {
+                            let a4: i32 = gs_kw_at(text, x3, "to")
+                            if a4 >= 0 and a4 < n {
+                                ok = 1
+                                e1s = a1
+                                e1e = x1
+                                e2s = a2
+                                e2e = x2
+                                los = a3
+                                loe = x3
+                                his = a4
+                                let a5: i32 = gs_kw_at(text, a4 + 1, "color")
+                                if a5 >= 0 and a5 < n {
+                                    let mut j: i32 = a5
+                                    while j < n and gs_ws(p[j]) == 0 { j = j + 1 }
+                                    color = gs_sub(text, a5, j)
+                                }
+                            }
+                            x3 = x3 + 1
+                        }
+                    }
+                    x2 = x2 + 1
+                }
+            }
+            x1 = x1 + 1
+        }
+    }
+    if ok == 0 {
+        gs_fail(c, "fill syntax: between f and g from a to b [color #hex@alpha]")
+        return
+    }
+    let lo: f64 = gs_eval_text(c, env, gs_strip(gs_sub(text, los, loe))).num
+    let hi: f64 = gs_eval_text(c, env, gs_strip(gs_sub(text, his, his + 1))).num
+    let r1: i32 = gs_parse(c, gs_strip(gs_sub(text, e1s, e1e)))
+    let r2: i32 = gs_parse(c, gs_strip(gs_sub(text, e2s, e2e)))
+    if c[0].err != 0 { return }
+    let xs1: ptr<f64> = malloc(82 * 8) as ptr<f64>
+    let ys1: ptr<f64> = malloc(82 * 8) as ptr<f64>
+    let xs2: ptr<f64> = malloc(82 * 8) as ptr<f64>
+    let ys2: ptr<f64> = malloc(82 * 8) as ptr<f64>
+    let n1: i32 = gs_sample(c, env, r1, lo, hi, 80, xs1, ys1)
+    gs_math_to_pixel(c, xs1, ys1, n1)
+    let n2: i32 = gs_sample(c, env, r2, lo, hi, 80, xs2, ys2)
+    gs_math_to_pixel(c, xs2, ys2, n2)
+    if c[0].err != 0 { return }
+    # fill_between_curves
+    let mut spec: string = color
+    if gs_len(spec) == 0 { spec = "#f39c12@25" }
+    let mut fill: string = spec
+    let mut opacity: f64 = 0.25
+    let sp: ptr<u8> = spec
+    let mut at: i32 = 0 - 1
+    let mut q: i32 = 0
+    while q < gs_len(spec) {
+        if sp[q] == 64 { at = q }
+        q = q + 1
+    }
+    if at >= 0 {
+        fill = gs_sub(spec, 0, at)
+        let alpha: string = gs_sub(spec, at + 1, gs_len(spec))
+        let ap: ptr<u8> = alpha
+        let al: i32 = gs_len(alpha)
+        let mut good: i32 = 0
+        let mut v: i32 = 0
+        let mut z: i32 = 0
+        while z < al {
+            if gs_is_digit(ap[z]) == 1 {
+                v = v * 10 + (ap[z] - 48)
+                good = 1
+            } else {
+                good = 0
+                z = al
+            }
+            z = z + 1
+        }
+        if good == 1 {
+            opacity = (v as f64) / 100.0
+        }
+    }
+    let xs: ptr<f64> = malloc(((n1 + n2 + 1) as i64) * 8) as ptr<f64>
+    let ys: ptr<f64> = malloc(((n1 + n2 + 1) as i64) * 8) as ptr<f64>
+    let mut k: i32 = 0
+    while k < n1 {
+        xs[k] = xs1[k]
+        ys[k] = ys1[k]
+        k = k + 1
+    }
+    let mut r: i32 = n2 - 1
+    while r >= 0 {
+        xs[k] = xs2[r]
+        ys[k] = ys2[r]
+        k = k + 1
+        r = r - 1
+    }
+    let g: ptr<FlowcGeomDiagram> = c[0].g
+    let fi: i32 = g[0].nfill
+    g[0].fills[fi].xs = xs
+    g[0].fills[fi].ys = ys
+    g[0].fills[fi].n = k
+    g[0].fills[fi].fill = fill
+    g[0].fills[fi].opacity = opacity
+    g[0].nfill = fi + 1
+}
+
+function gs_cmd_text(c: ptr<GsCtx>, text: string) -> void {
+    # text.split(None, 2)
+    let n: i32 = gs_len(text)
+    let p: ptr<u8> = text
+    let mut i: i32 = 0
+    while i < n and gs_ws(p[i]) == 1 { i = i + 1 }
+    let xs: i32 = i
+    while i < n and gs_ws(p[i]) == 0 { i = i + 1 }
+    let xe: i32 = i
+    while i < n and gs_ws(p[i]) == 1 { i = i + 1 }
+    let ys: i32 = i
+    while i < n and gs_ws(p[i]) == 0 { i = i + 1 }
+    let ye: i32 = i
+    while i < n and gs_ws(p[i]) == 1 { i = i + 1 }
+    if xe == xs or ye == ys or i >= n {
+        gs_fail(c, "text x y \"label\"")
+        return
+    }
+    let x: f64 = gs_float(gs_sub(text, xs, xe))
+    let y: f64 = gs_float(gs_sub(text, ys, ye))
+    let label: string = gs_string_arg(gs_sub(text, i, n))
+    let g: ptr<FlowcGeomDiagram> = c[0].g
+    let mut px: f64 = x
+    let mut py: f64 = y
+    if g[0].has_axes == 1 {
+        px = g[0].ax_ox + x * g[0].ax_scale
+        py = g[0].ax_oy - y * g[0].ax_scale
+    }
+    let k: i32 = g[0].nlabel
+    g[0].labels[k].x = px
+    g[0].labels[k].y = py
+    g[0].labels[k].text = label
+    g[0].labels[k].size = 14
+    g[0].nlabel = k + 1
+}
+
+function gs_exec_line(c: ptr<GsCtx>, env: ptr<GsEnv>, line: string) -> void {
+    let g: ptr<FlowcGeomDiagram> = c[0].g
+    let n: i32 = gs_len(line)
+    if gs_starts(line, "return ") == 1 {
+        let v: GsVal = gs_eval_text(c, env, gs_strip(gs_sub(line, 7, n)))
+        gs_env_set(env, "_return", v)
+        return
+    }
+    if gs_starts(line, "let ") == 1 {
+        let rest: string = gs_strip(gs_sub(line, 4, n))
+        let eq: i32 = gs_find(rest, "=", 0)
+        if eq < 0 {
+            gs_fail(c, "invalid let")
+            return
+        }
+        let name: string = gs_strip(gs_sub(rest, 0, eq))
+        let v: GsVal = gs_eval_text(c, env, gs_strip(gs_sub(rest, eq + 1, gs_len(rest))))
+        gs_env_set(env, name, v)
+        return
+    }
+    if gs_starts(line, "title ") == 1 {
+        g[0].title = gs_string_arg(gs_sub(line, 6, n))
+        return
+    }
+    if gs_starts(line, "caption ") == 1 {
+        g[0].caption = gs_string_arg(gs_sub(line, 8, n))
+        return
+    }
+    if gs_starts(line, "size ") == 1 {
+        let parts: ptr<string> = malloc(((n + 2) as i64) * 8) as ptr<string>
+        let np: i32 = gs_split_ws(gs_sub(line, 5, n), parts, n + 1)
+        if np < 2 {
+            gs_fail(c, "size w h")
+            return
+        }
+        g[0].width = gs_float(parts[0]) as i32
+        g[0].height = gs_float(parts[1]) as i32
+        return
+    }
+    if gs_starts(line, "axes ") == 1 {
+        let parts: ptr<string> = malloc(((n + 2) as i64) * 8) as ptr<string>
+        let np: i32 = gs_split_ws(gs_sub(line, 5, n), parts, n + 1)
+        if np < 7 {
+            gs_fail(c, "axes ox oy scale xmin xmax ymin ymax")
+            return
+        }
+        g[0].has_axes = 1
+        g[0].ax_ox = gs_float(parts[0])
+        g[0].ax_oy = gs_float(parts[1])
+        g[0].ax_scale = gs_float(parts[2])
+        g[0].ax_xmin = gs_float(parts[3])
+        g[0].ax_xmax = gs_float(parts[4])
+        g[0].ax_ymin = gs_float(parts[5])
+        g[0].ax_ymax = gs_float(parts[6])
+        return
+    }
+    if gs_starts(line, "plot ") == 1 {
+        gs_cmd_plot(c, env, gs_sub(line, 5, n))
+        return
+    }
+    if gs_starts(line, "fill ") == 1 {
+        gs_cmd_fill(c, env, gs_sub(line, 5, n))
+        return
+    }
+    if gs_starts(line, "text ") == 1 {
+        gs_cmd_text(c, gs_sub(line, 5, n))
+        return
+    }
+    gs_fail(c, "unknown statement")
+}
+
+function gs_exec_block(c: ptr<GsCtx>, env: ptr<GsEnv>, header: string, body: ptr<string>, nbody: i32) -> void {
+    let hn: i32 = gs_len(header)
+    if gs_starts(header, "def ") == 1 {
+        let rest: string = gs_strip(gs_sub(header, 4, hn))
+        let lp: i32 = gs_find(rest, "(", 0)
+        if lp < 0 {
+            gs_fail(c, "invalid def")
+            return
+        }
+        let name: string = gs_strip(gs_sub(rest, 0, lp))
+        let after: string = gs_sub(rest, lp + 1, gs_len(rest))
+        let ap: ptr<u8> = after
+        let mut rp: i32 = gs_len(after) - 1
+        while rp >= 0 and ap[rp] != 41 { rp = rp - 1 }
+        let mut plist: string = after
+        if rp >= 0 { plist = gs_sub(after, 0, rp) }
+        let params: ptr<string> = malloc(((gs_len(plist) + 2) as i64) * 8) as ptr<string>
+        let mut np: i32 = 0
+        let pn: i32 = gs_len(plist)
+        let pp: ptr<u8> = plist
+        let mut s: i32 = 0
+        let mut i: i32 = 0
+        while i <= pn {
+            if i == pn or pp[i] == 44 {
+                let part: string = gs_strip(gs_sub(plist, s, i))
+                if gs_len(part) > 0 {
+                    params[np] = part
+                    np = np + 1
+                }
+                s = i + 1
+            }
+            i = i + 1
+        }
+        if c[0].nfn >= c[0].capfn {
+            let ncap: i32 = c[0].capfn * 2 + 8
+            let nb: ptr<GsFn> = malloc((ncap as i64) * 64) as ptr<GsFn>
+            let mut j: i32 = 0
+            while j < c[0].nfn {
+                nb[j] = c[0].fns[j]
+                j = j + 1
+            }
+            c[0].fns = nb
+            c[0].capfn = ncap
+        }
+        let k: i32 = c[0].nfn
+        c[0].fns[k].params = params
+        c[0].fns[k].nparams = np
+        c[0].fns[k].body = body
+        c[0].fns[k].nbody = nbody
+        c[0].fns[k].closure = gs_env_copy(env)
+        c[0].nfn = k + 1
+        gs_env_set(env, name, GsVal { kind: GS_FN, num: 0.0, idx: k, s: "" })
+        return
+    }
+    if gs_starts(header, "if ") == 1 {
+        let v: GsVal = gs_eval_text(c, env, gs_strip(gs_sub(header, 3, hn)))
+        if gs_truthy(v) == 1 {
+            gs_run_lines(c, env, body, nbody)
+        }
+        return
+    }
+    if gs_starts(header, "while ") == 1 {
+        let cond: string = gs_strip(gs_sub(header, 6, hn))
+        let mut guard: i32 = 0
+        while guard < 100000 and c[0].err == 0 and gs_truthy(gs_eval_text(c, env, cond)) == 1 {
+            gs_run_lines(c, env, body, nbody)
+            guard = guard + 1
+        }
+        if guard >= 100000 {
+            gs_fail(c, "while loop exceeded 100000 iterations")
+        }
+        return
+    }
+    if gs_starts(header, "for ") == 1 {
+        let rest: string = gs_strip(gs_sub(header, 4, hn))
+        let inn: i32 = gs_find(rest, " in ", 0)
+        if inn < 0 {
+            gs_fail(c, "invalid for")
+            return
+        }
+        let var: string = gs_strip(gs_sub(rest, 0, inn))
+        let rng: string = gs_strip(gs_sub(rest, inn + 4, gs_len(rest)))
+        let dd: i32 = gs_find(rng, "..", 0)
+        if dd < 0 {
+            gs_fail(c, "expected range with ..")
+            return
+        }
+        let lo: i32 = gs_eval_text(c, env, gs_strip(gs_sub(rng, 0, dd))).num as i32
+        let hi: i32 = gs_eval_text(c, env, gs_strip(gs_sub(rng, dd + 2, gs_len(rng)))).num as i32
+        let mut v: i32 = lo
+        while v <= hi and c[0].err == 0 {
+            gs_env_set(env, var, gs_num(v as f64))
+            gs_run_lines(c, env, body, nbody)
+            v = v + 1
+        }
+        return
+    }
+    gs_fail(c, "unknown block")
+}
+
+# GeometryScriptEngine.run over lines[0..n).
+function gs_run_lines(c: ptr<GsCtx>, env: ptr<GsEnv>, lines: ptr<string>, n: i32) -> void {
+    let mut i: i32 = 0
+    while i < n and c[0].err == 0 {
+        let raw: string = gs_strip(lines[i])
+        i = i + 1
+        let rp: ptr<u8> = raw
+        if gs_len(raw) > 0 and rp[0] != 35 {
+            if gs_ends_with_char(raw, 123) == 1 {
+                let header: string = gs_strip(gs_sub(raw, 0, gs_len(raw) - 1))
+                let body: ptr<string> = malloc(((n - i + 1) as i64) * 8) as ptr<string>
+                let mut nb: i32 = 0
+                let mut depth: i32 = 1
+                while i < n and depth > 0 {
+                    let line: string = lines[i]
+                    i = i + 1
+                    let st: string = gs_strip(line)
+                    depth = depth + gs_count_char(st, 123) - gs_count_char(st, 125)
+                    if depth > 0 {
+                        body[nb] = line
+                        nb = nb + 1
+                    }
+                }
+                gs_exec_block(c, env, header, body, nb)
+            } else {
+                gs_exec_line(c, env, raw)
+            }
+        }
+    }
+}
+
+# Split text into lines (str.splitlines).
+function gs_lines(text: string, out_n: ptr<i32>) -> ptr<string> {
+    let n: i32 = gs_len(text)
+    let p: ptr<u8> = text
+    let lines: ptr<string> = malloc(((n + 2) as i64) * 8) as ptr<string>
+    let mut c: i32 = 0
+    let mut s: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 10 or p[i] == 13 {
+            lines[c] = gs_sub(text, s, i)
+            c = c + 1
+            if p[i] == 13 and i + 1 < n and p[i + 1] == 10 { i = i + 1 }
+            s = i + 1
+        }
+        i = i + 1
+    }
+    if s < n {
+        lines[c] = gs_sub(text, s, n)
+        c = c + 1
+    }
+    out_n[0] = c
+    return lines
+}
+
+# run_geometry_script
+export function flowc_geom_run_script(source: string) -> FlowcGeomDiagram {
+    let mut g: FlowcGeomDiagram = flowc_geom_new("Scripted figure")
+    let mut c: GsCtx = GsCtx {
+        g: &g,
+        fns: malloc(8 * 64) as ptr<GsFn>,
+        nfn: 0,
+        capfn: 8,
+        nodes: malloc(256 * 56) as ptr<GsNode>,
+        nnode: 0,
+        capnode: 256,
+        cache_keys: malloc(64 * 8) as ptr<string>,
+        cache_vals: malloc(64 * 4) as ptr<i32>,
+        ncache: 0,
+        capcache: 64,
+        err: 0,
+        toks_kind: null,
+        toks_num: null,
+        toks_text: null,
+        ntok: 0,
+        tpos: 0
+    }
+    let mut env: GsEnv = gs_default_env()
+    let cnt: ptr<i32> = malloc(8) as ptr<i32>
+    let lines: ptr<string> = gs_lines(source, cnt)
+    gs_run_lines(&c, &env, lines, cnt[0])
+    if c.err != 0 {
+        g.ok = 0 - 1
+    }
+    return g
+}
+
+function gs_read(path: string) -> string {
+    let size: i64 = flowc_io_file_size(path)
+    if size < 0 { return "" }
+    let cap: i32 = (size as i32) + 1
+    let buf: ptr<u8> = malloc((cap + 1) as i64)
+    let mut n: i32 = flowc_read_file(path, buf, cap)
+    if n < 0 { n = 0 }
+    buf[n] = 0
+    return buf as string
+}
+
+# load_script_for_theorem
+function gs_load_script(meta: string, flow_dir: string, root: string) -> FlowcGeomDiagram {
+    let src: string = gs_strip(meta)
+    if gs_len(src) == 0 { return flowc_geom_none() }
+    if gs_find(src, "\n", 0) >= 0 or gs_starts(src, "title ") == 1 or gs_starts(src, "axes ") == 1 or gs_starts(src, "plot ") == 1 or gs_starts(src, "let ") == 1 or gs_starts(src, "def ") == 1 {
+        return flowc_geom_run_script(src)
+    }
+    let sp: ptr<u8> = src
+    let mut path: string = src
+    if sp[0] != 47 and gs_len(flow_dir) > 0 {
+        path = flow_dir + "/" + src
+    }
+    if flowc_io_exists(path) == 1 {
+        return flowc_geom_run_script(gs_read(path))
+    }
+    let alt: string = root + "/examples/verify/geometry/scripts/" + src
+    if flowc_io_exists(alt) == 1 {
+        return flowc_geom_run_script(gs_read(alt))
+    }
+    return flowc_geom_none()
+}
+
+# diagram_for_theorem
+export function flowc_geom_for_theorem(claim_path: string, diagram: string, diagram_script: string, flow_dir: string, root: string) -> FlowcGeomDiagram {
+    if gs_len(gs_strip(diagram_script)) > 0 {
+        return gs_load_script(diagram_script, flow_dir, root)
+    }
+    if gs_len(diagram) > 0 {
+        let t: FlowcGeomDiagram = flowc_geom_template(diagram)
+        if t.ok == 1 { return t }
+    }
+    let inferred: string = flowc_geom_infer_id(claim_path)
+    if gs_len(inferred) > 0 {
+        return flowc_geom_template(inferred)
+    }
+    let low: string = gs_lower(claim_path)
+    if gs_find(low, "taylor", 0) >= 0 or gs_find(low, "maclaurin", 0) >= 0 {
+        return gs_load_script("taylor-sin.geom", flow_dir, root)
+    }
+    return flowc_geom_none()
+}
+
+function gs_lower(s: string) -> string {
+    let n: i32 = gs_len(s)
+    let p: ptr<u8> = s
+    let buf: ptr<u8> = malloc((n + 1) as i64)
+    let mut i: i32 = 0
+    while i < n {
+        let ch: u8 = p[i]
+        if ch >= 65 and ch <= 90 {
+            buf[i] = ch + 32
+        } else {
+            buf[i] = ch
+        }
+        i = i + 1
+    }
+    buf[n] = 0
+    return buf as string
+}
