@@ -1243,6 +1243,11 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         flowc_tc_check_expr(ctx, arena, arena.nodes[id].a)
         return
     }
+    # Inner link of a chained assignment `a = b = 1` (#1036).
+    if kind == AST_ASSIGN {
+        flowc_tc_check_stmt(ctx, arena, id)
+        return
+    }
     if kind == AST_VECTOR_LIT {
         let mut el: i32 = arena.nodes[id].a
         while el != AST_NONE {
@@ -3361,6 +3366,12 @@ function ut_expr(u: ptr<UCtx>, arena: AstArena, id: i32) -> UTy {
     }
     if kind == AST_IDENT {
         return ut_lookup(u, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    }
+    # Inner link of a chained assignment `a = b = 1` (#1036): the value is
+    # the one stored in the target.
+    if kind == AST_ASSIGN {
+        ut_stmt(u, arena, id)
+        return ut_expr(u, arena, arena.nodes[id].a)
     }
     if kind == AST_CAST {
         return ut_cast(u, arena, id)

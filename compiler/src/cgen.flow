@@ -3938,6 +3938,19 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         flowc_cgen_emit_sort_by(w, arena, src, id)
         return
     }
+    # The inner link of a chained assignment `a = b = 1` (#1036): a C
+    # assignment expression, as the Python host emitted `a = (b = 1)`.
+    if kind == AST_ASSIGN {
+        flowc_cgen_putc(w, 40)
+        let lv0: i32 = w[0].lval
+        w[0].lval = 1
+        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+        w[0].lval = lv0
+        flowc_cgen_puts(w, " = ")
+        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+        flowc_cgen_putc(w, 41)
+        return
+    }
     # expr? on a Result struct: return it from the function unless is_ok,
     # else yield .value (c_generator TryExpr). Pending defers run first.
     if kind == AST_TRY {
