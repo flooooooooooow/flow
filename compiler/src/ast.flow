@@ -102,8 +102,9 @@ export const AST_CAPABILITY_TYPE: i32 = 91
 # AST_VECTOR_LIT: `<a, b, c>` SIMD vector literal. a = element chain.
 export const AST_TRY: i32 = 92
 export const AST_VECTOR_LIT: i32 = 93
-# AST_SORT_BY: `|> sort by keys` / `with entropy` / `|> order`. a = source,
-#   b = key chain (AST_IDENT field, ival = 1 when descending).
+# AST_SORT_BY: any `|> sort`, `|> sortBy` or `|> order`. a = source,
+#   b = key chain (AST_IDENT field, ival = 1 when descending), ival = 1 for a
+#   global `descending` plus 2 for `unique`.
 # AST_MODULE: `module Name { ... }`. name_* = name, a = item chain.
 export const AST_SORT_BY: i32 = 94
 export const AST_MODULE: i32 = 95
@@ -130,11 +131,19 @@ export const FLOW_ITEM_BECOMES: i32 = 11
 # 40 bytes. The flag is meaningful only for a `span` AST_TYPE; other types keep
 # c = AST_NONE as initialized by flowc_ast_alloc.
 export const AST_TYPE_SPAN_MUTABLE: i32 = 1
+# AST_TYPE.c for the `[T; N]` fixed-array form: an array<T, N> (a = T,
+# ival = N) with no `array` name span in the source.
+export const AST_TYPE_FIXED_ARRAY: i32 = 2
 
 # AST_IDENT.ival marker for a sort DSL modifier (`xs |> sort descending`).
 # Only the pipeline lowering sets it, so `descending`, `desc`, `unique` and
 # the other modifier words stay ordinary names everywhere else (#968, #994).
 export const AST_IDENT_SORT_MOD: i32 = 1
+
+# AST_IDENT.ival marker for the piped value inside a pipeline fork branch or
+# choose arm (Python ForkSource). It has an empty name span, and its `end`
+# holds the enclosing AST_PIPE_BLOCK's id + 1, which names the hoisted source.
+export const AST_IDENT_FORK_SRC: i32 = 2
 
 # a/b/c = children; next = sibling chain; ival = int literal or binop token kind;
 # name_start/name_end = identifier/type span into source.
@@ -266,6 +275,52 @@ export function flowc_ast_count_kind(arena: AstArena, kind: i32) -> i32 {
     return n
 }
 
+# The AST_ENUM whose variant constant `<Enum>_<Variant>` is spelled by
+# src[ns..ne], or AST_NONE. Match patterns use it to tell a value pattern
+# (`Color_Red => ...`) from a binding (`c => ...`).
+export function flowc_ast_enum_of_const(arena: AstArena, src: ptr<u8>, ns: i32, ne: i32) -> i32 {
+    let mut j: i32 = 0
+    while j < arena.len {
+        if arena.nodes[j].kind == AST_ENUM {
+            let es: i32 = arena.nodes[j].name_start
+            let el: i32 = arena.nodes[j].name_end - es
+            if ne - ns > el + 1 and src[ns + el] == 95 {
+                let mut same: i32 = 1
+                let mut i: i32 = 0
+                while i < el and same == 1 {
+                    if src[ns + i] != src[es + i] {
+                        same = 0
+                    }
+                    i = i + 1
+                }
+                if same == 1 {
+                    let mut v: i32 = arena.nodes[j].a
+                    while v != AST_NONE {
+                        let vs: i32 = arena.nodes[v].name_start
+                        let vl: i32 = arena.nodes[v].name_end - vs
+                        if ne - ns == el + 1 + vl {
+                            let mut k: i32 = 0
+                            let mut vsame: i32 = 1
+                            while k < vl and vsame == 1 {
+                                if src[ns + el + 1 + k] != src[vs + k] {
+                                    vsame = 0
+                                }
+                                k = k + 1
+                            }
+                            if vsame == 1 {
+                                return j
+                            }
+                        }
+                        v = arena.nodes[v].next
+                    }
+                }
+            }
+        }
+        j = j + 1
+    }
+    return AST_NONE
+}
+
 # Source-facing name of a parse-only kind, or "" for kinds backends lower.
 export function flowc_ast_unsupported_label(kind: i32) -> string {
     if kind == AST_THEOREM { return "theorem" }
@@ -274,7 +329,7 @@ export function flowc_ast_unsupported_label(kind: i32) -> string {
     if kind == AST_CLAIM_REF { return "claim reference" }
     if kind == AST_FLOW_DECL or kind == AST_FLOW_ITEM { return "flow block" }
     if kind == AST_LAYOUT { return "ui layout block" }
-    if kind == AST_PIPE_BLOCK { return "pipeline fork/choose block" }
+    if kind == AST_PIPE_BLOCK { return "flow stage parameters `Name { p: v }`" }
     if kind == AST_EFFECT_ROW { return "effect row (with ...)" }
     if kind == AST_MATCH_ARM_EXT { return "match arm with an or-pattern, guard or nested pattern" }
     if kind == AST_FIXED_ARRAY_TYPE { return "array type [T; N]" }
@@ -288,13 +343,31 @@ export function flowc_ast_unsupported_label(kind: i32) -> string {
     return ""
 }
 
+# 1 for a kind in the parse-only range that Stage-A now lowers (#996).
+export function flowc_ast_parse_only_lowered(arena: AstArena, i: i32) -> i32 {
+    let k: i32 = arena.nodes[i].kind
+    if k == AST_MATCH_ARM_EXT { return 1 }
+    if k == AST_LAYOUT { return 1 }
+    if k == AST_SORT_BY { return 1 }
+    if k == AST_FIXED_ARRAY_TYPE { return 1 }
+    if k == AST_TRY { return 1 }
+    if k == AST_VECTOR_LIT { return 1 }
+    if k == AST_MODULE { return 1 }
+    # Fork and choose blocks lower; flow stage parameters belong to flow
+    # blocks.
+    if k == AST_PIPE_BLOCK and arena.nodes[i].ival != PIPE_BLOCK_STAGE { return 1 }
+    return 0
+}
+
 # First node in the arena whose kind no Stage-A backend lowers, or AST_NONE.
 export function flowc_ast_first_unsupported(arena: AstArena) -> i32 {
     let mut i: i32 = 0
     while i < arena.len {
         let k: i32 = arena.nodes[i].kind
         if (k >= AST_THEOREM and k <= AST_PARSE_ONLY_LAST) or k == AST_HANDLE {
-            return i
+            if flowc_ast_parse_only_lowered(arena, i) == 0 {
+                return i
+            }
         }
         i = i + 1
     }

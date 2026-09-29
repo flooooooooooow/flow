@@ -130,7 +130,7 @@ function flowc_driver_run(in_path: string, out_path: string) -> i32 {
         return 0
     }
 
-    let src_cap: i32 = 262144
+    let src_cap: i32 = 1048576
     let src: ptr<u8> = malloc(src_cap as i64)
     if src == null {
         puts("stage_a_driver_flow: malloc src failed")
