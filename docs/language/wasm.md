@@ -5,7 +5,7 @@ self-hosted Flow-in-WASM compiler.
 
 There are two routes to a `.wasm`, and they are for different jobs. `./flow
 wasm` goes through Emscripten and gives you a whole page: libc, a filesystem, a
-canvas, JS glue. `python -m flow.wasm_compiler` goes through MLIR and LLVM
+canvas, JS glue. `./flow wasm32` goes through MLIR and LLVM
 straight to a freestanding module with no libc and no glue, for embedding in a
 host that already has its own runtime. The Emscripten route is the rest of this
 page; the direct one is [its own section](#direct-wasm32-no-emscripten).
@@ -141,15 +141,17 @@ See also older helpers under `scripts/build_wasm.sh`, `wasm/flow_to_wasm.py`
 
 ## Direct wasm32 (no Emscripten)
 
-`src/flow/wasm_compiler.py` compiles a Flow file to a freestanding wasm32
-module without going near the C backend or Emscripten:
+`./flow wasm32` (`scripts/wasm32_target.sh`, the Flow program in
+`scripts/tools/llvm_target`) compiles a Flow file, or LLVM IR in a `.ll` file,
+to a freestanding wasm32 module without going near the C backend or
+Emscripten:
 
 ```text
 Flow source  →  MLIR  →  LLVM IR (wasm32)  →  clang --target=wasm32-unknown-unknown  →  .wasm
 ```
 
 ```bash
-PYTHONPATH=src python3 -m flow.wasm_compiler tests/fixtures/wasm/main_42.flow \
+./flow wasm32 tests/fixtures/wasm/main_42.flow \
   -o build/main_42.wasm --export answer -O O2
 ```
 
@@ -162,6 +164,12 @@ PYTHONPATH=src python3 -m flow.wasm_compiler tests/fixtures/wasm/main_42.flow \
 Names passed to `--export` are checked against the symbols actually defined in
 the generated LLVM IR before clang runs, so a typo fails with the list of
 symbols that do exist rather than with a linker error.
+
+A Flow source reaches LLVM IR through `compiler/scripts/flow_to_llvm.sh
+--wasm32`: the flowc MLIR emitter and `mlir_lower.sh`. The emitter has no
+ILP32 `size_t` option, so a program that declares external functions, or one
+the emitter does not cover yet (such as `alloc_sum.flow` with its unsized
+array), is lowered by the Python MLIR generator instead.
 
 The module is linked `-nostdlib --no-entry --allow-undefined --export-memory`.
 Linear memory is exported, so a host reads and writes arguments through it:
@@ -226,14 +234,15 @@ just building it:
 | `main_42.flow` | Node instantiates the module and `answer()` returns 42 |
 | `sum_pair.flow` | Two `f32` values written into exported linear memory sum to 3.75 |
 | `alloc_sum.flow` | Imports exactly `env.malloc`; 32 calls each return 3.75 and linear memory grows |
-| `alloc_sum.flow` | `tests/wasm/compare_native_wasm.py` compares the wasm result against the same function compiled natively through MLIR |
+| `alloc_sum.flow` | `tests/wasm/compare_native_wasm.sh` compares the wasm result against the same function compiled natively through MLIR |
 
-Unit coverage for the export validation and the clang command lives in
-`tests/unit/test_wasm_compiler.py`.
+`compiler/scripts/parity_targets.sh wasm32` covers the export validation
+(quoted symbol names included), the clang command and the usage errors against
+the goldens in `tests/targets`.
 
 ## What works today
 
-- ✅ Direct wasm32 modules with no Emscripten and no libc, executed under Node in CI (`python -m flow.wasm_compiler`)
+- ✅ Direct wasm32 modules with no Emscripten and no libc, executed under Node in CI (`./flow wasm32`)
 - ✅ C backend output is valid input for `emcc` for small programs (`main` returning `i32`, stdio)
 - ✅ Checked-in harness + optional script for a hello artifact (`wasm/hello_harness.c`)
 - ✅ Playground **Run (native local)**: loopback API that runs real Flow→C on the machine ([#132](https://github.com/flooooooooooow/flow/issues/132))

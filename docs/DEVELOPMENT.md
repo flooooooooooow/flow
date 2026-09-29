@@ -29,7 +29,7 @@ FLOW Source → Parser → AST → C Backend → C Code → clang → Executable
 - **Type Mapping**: Converts FLOW types to MLIR types
 - **SSA Form**: Generates proper MLIR SSA values
 
-#### WebAssembly Target (`src/flow/wasm_compiler.py`)
+#### WebAssembly Target (`flow wasm32`, `scripts/tools/llvm_target`)
 - **Freestanding wasm32**: Lowers MLIR to LLVM IR and links it with
   `clang --target=wasm32-unknown-unknown`, skipping the C backend and Emscripten
 - **Export Validation**: Checks requested exports against the symbols defined in

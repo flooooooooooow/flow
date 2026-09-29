@@ -18,9 +18,25 @@
 # Needs clang with the BPF and WebAssembly targets, wasm-ld, mlir-opt and
 # mlir-translate (Homebrew llvm on macOS; LLVM_PATH or PATH elsewhere).
 #
-#   compiler/scripts/parity_targets.sh
+#   compiler/scripts/parity_targets.sh [bpf|wasm32] [--portable]
+#
+# A tool name runs only that tool's cases. --portable is for a toolchain
+# other than the one the goldens came from (Homebrew LLVM 22 on macOS): it
+# skips the object checksums and compares only the first line of stderr, so
+# the exit statuses and messages are still checked but not the bytes clang
+# writes or the text of its diagnostics.
 
 set -uo pipefail
+
+only=""
+portable=0
+for arg in "$@"; do
+    case "$arg" in
+        bpf|wasm32) only="$arg" ;;
+        --portable) portable=1 ;;
+        *) echo "usage: $0 [bpf|wasm32] [--portable]" >&2; exit 2 ;;
+    esac
+done
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd -P)"
 cd "$ROOT" || exit 1
@@ -61,6 +77,8 @@ while IFS='|' read -r name tool cmp args; do
     tool="$(echo "$tool" | tr -d '[:space:]')"
     cmp="$(echo "$cmp" | tr -d '[:space:]')"
     [[ -z "$name" || "$name" == \#* ]] && continue
+    [[ -n "$only" && "$tool" != "$only" ]] && continue
+    [[ "$portable" -eq 1 ]] && cmp=first
     out="$work/out/$name.out"
     argv=()
     for a in $args; do
@@ -86,7 +104,15 @@ while IFS='|' read -r name tool cmp args; do
     [[ -f "$out" ]] && sha="$(shasum -a 256 "$out" | cut -d' ' -f1)"
     problems=""
     [[ "$rc" == "$(cat "$exp/$name.rc")" ]] || problems+=" exit $rc (want $(cat "$exp/$name.rc"))"
-    [[ "$sha" == "$(cat "$exp/$name.sha")" ]] || problems+=" output sha differs"
+    want_sha="$(cat "$exp/$name.sha")"
+    if [[ "$portable" -eq 1 ]]; then
+        # Only whether an object was written.
+        [[ "$sha" == none ]] && got=none || got=written
+        [[ "$want_sha" == none ]] && want=none || want=written
+        [[ "$got" == "$want" ]] || problems+=" output $got (want $want)"
+    else
+        [[ "$sha" == "$want_sha" ]] || problems+=" output sha differs"
+    fi
     cmp -s "$work/$name.err" "$expected_err" || problems+=" stderr differs"
     if [[ -z "$problems" ]]; then
         pass=$((pass + 1))

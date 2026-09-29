@@ -845,6 +845,10 @@ show_help() {
     echo "  wasm <program> [--backend=c|mlir] [--preload DIR@/MOUNT] [--link PATH]"
     echo "                    [--threads] [--fs memfs|idbfs] [--out DIR]"
     echo "                    Compile to WebAssembly + a runnable page"
+    echo "  wasm32 <in.flow|in.ll> -o OUT.wasm [--export NAME] [-O O0..Oz]"
+    echo "                    Freestanding wasm32 module through MLIR (no libc)"
+    echo "  bpf <in.flow|in.ll> -o OUT.o [--entry NAME --section SEC] [-O 0..3]"
+    echo "                    eBPF ELF object (bpfel) through MLIR"
     echo "  repl              Start interactive REPL"
     echo "  lsp               Start the language server on stdio"
     echo "  examples          List project examples (or compiler examples outside a project)"
@@ -3888,6 +3892,16 @@ PY
         fi
 
         python3 -m "$FLOWC_MODULE" "$program" "${py_args[@]}"
+        ;;
+    "bpf")
+        # scripts/tools/llvm_target (Flow): Flow or LLVM IR to an eBPF object.
+        shift
+        exec "$SCRIPT_DIR/scripts/bpf_target.sh" "$@"
+        ;;
+    "wasm32")
+        # scripts/tools/llvm_target (Flow): Flow or LLVM IR to a wasm32 module.
+        shift
+        exec "$SCRIPT_DIR/scripts/wasm32_target.sh" "$@"
         ;;
     "wasm")
         shift
