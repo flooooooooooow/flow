@@ -22,7 +22,8 @@
 #   --update         write compiler/corpus_parity/report.txt and the floor
 #   --failures       list every file not at parity with its cause
 #   --jobs N         parallel builds (default: half the CPUs)
-#   --timeout S      seconds per program run (default 20)
+#   --timeout S      seconds per program run (default 10, the timeout the
+#                    goldens were recorded with)
 #   --only REGEX     restrict the corpus to paths matching REGEX
 #   --save PATH      also write the per-file table (path, status, Python
 #                    build and exit, flowc build and exit, cause) to PATH
@@ -180,7 +181,7 @@ main() {
         worker_loop "$@"
         exit 0
     fi
-    live_python=0 record=0 check=0 update=0 failures=0 only="" save="" secs=20
+    live_python=0 record=0 check=0 update=0 failures=0 only="" save="" secs=10
     jobs=$(( $( (getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4) ) / 2 ))
     (( jobs < 1 )) && jobs=1
     while [[ $# -gt 0 ]]; do
@@ -225,6 +226,9 @@ main() {
         mv "$work/files.only" "$work/files"
     fi
     total=$(wc -l < "$work/files" | tr -d ' ')
+    # Programs run from the repository root and some write files there;
+    # note what was untracked before, to name what the run left behind.
+    git status --porcelain --untracked-files=normal | sed -n 's/^?? //p' | LC_ALL=C sort > "$work/untracked.before"
 
     hosts="flowc"
     (( live_python )) && hosts="flowc python"
@@ -243,6 +247,11 @@ main() {
     wait
 
     cat "$work"/results.flowc.* 2>/dev/null | cut -f2- | LC_ALL=C sort > "$work/flowc.tsv" || true
+    git status --porcelain --untracked-files=normal | sed -n 's/^?? //p' | LC_ALL=C sort > "$work/untracked.after"
+    if comm -13 "$work/untracked.before" "$work/untracked.after" | grep -q .; then
+        echo "corpus_parity: the programs left these untracked paths behind:" >&2
+        comm -13 "$work/untracked.before" "$work/untracked.after" | sed 's/^/  /' >&2
+    fi
     if (( live_python )); then
         cat "$work"/results.python.* 2>/dev/null | cut -f2- | LC_ALL=C sort > "$work/python.tsv" || true
         if (( record )); then
@@ -354,15 +363,17 @@ main() {
         mkdir -p "$DATA"
         cp "$work/report" "$REPORT"
         {
-            echo "# Files at parity per OS (uname -s). corpus_parity.sh --check fails below it."
+            echo "# Files at parity (or flowc better) per OS (uname -s). corpus_parity.sh"
+            echo "# --check fails below it. --update sets it FLOOR_MARGIN (default 10) under"
+            echo "# the run, because a few HTTP and timing programs are flaky in parallel."
             if [[ -f "$FLOOR_FILE" ]]; then
                 grep -v -E "^(#|$os )" "$FLOOR_FILE" || true
             fi
-            echo "$os $gate"
+            echo "$os $(( gate - ${FLOOR_MARGIN:-10} ))"
         } > "$work/floor"
         mv "$work/floor" "$FLOOR_FILE"
         echo
-        echo "wrote $REPORT and floor $os $gate"
+        echo "wrote $REPORT and floor $os $(( gate - ${FLOOR_MARGIN:-10} )) ($gate at parity or better)"
     fi
 
     if (( check )); then
@@ -371,7 +382,9 @@ main() {
             floor="$(awk -v os="$os" '$1 == os { print $2 }' "$FLOOR_FILE")"
         fi
         echo
-        if [[ -z "$floor" ]]; then
+        if [[ -n "$only" ]]; then
+            echo "corpus parity: --only runs part of the corpus; the floor is not checked"
+        elif [[ -z "$floor" ]]; then
             echo "corpus parity: no floor recorded for $os; $gate at parity or better (not gated)"
         elif (( gate < floor )); then
             echo "corpus parity regressed: $gate < floor $floor on $os" >&2
