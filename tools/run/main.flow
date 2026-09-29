@@ -404,7 +404,11 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
             return 1
         }
         t2 = now_us()
-        rc = run_status("exec 2>/dev/null; " + pr_quote(exe) + " >" + pr_quote(outf) + " 2>" + pr_quote(errf) + "; exit $?")
+        # The program runs in its own subshell. dash applies a command's
+        # redirections in the shell itself, so its "Segmentation fault"
+        # report would land in the captured stderr; this way it goes to the
+        # outer shell's stderr, which is /dev/null.
+        rc = run_status("exec 2>/dev/null; (exec " + pr_quote(exe) + " >" + pr_quote(outf) + " 2>" + pr_quote(errf) + "); exit $?")
     } else {
         # The MLIR JIT compiles and runs in one step.
         t1 = now_us()
