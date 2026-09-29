@@ -297,7 +297,7 @@ examples/verify/geometry/
   thales-right-angle.flow
 ```
 
-**Diagram registry** (`src/flow/geometry_diagram.py`): `parallel-lines-alternate`, `triangle-congruence-sas`, `vertical-angles`, `isosceles-base-angles`, `triangle-angle-sum`, `right-triangle-pythagoras`, `thales-right-angle`, `inscribed-angle-half-central`.
+**Diagram registry** (`compiler/src/geometry_diagram.flow`): `parallel-lines-alternate`, `triangle-congruence-sas`, `vertical-angles`, `isosceles-base-angles`, `triangle-angle-sum`, `right-triangle-pythagoras`, `thales-right-angle`, `inscribed-angle-half-central`.
 
 ---
 
