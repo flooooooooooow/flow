@@ -446,6 +446,7 @@ def main():
                 module_name=module_name,
                 version=args.python_version,
                 verbose=True,
+                source_path=args.input,
             )
 
             # Print export analysis

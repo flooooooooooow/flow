@@ -5,7 +5,7 @@ from pathlib import Path
 # Add src to PYTHONPATH
 sys.path.append(str(Path(os.getcwd()) / "src"))
 
-from flow.transpiler import flow_to_mlir
+from flow.mlir_generator import flow_to_mlir
 from flow.parser import Parser
 from flow.mlir_jit import MLIRJIT, FlowJITRuntime
 import ctypes

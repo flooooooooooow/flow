@@ -23,8 +23,8 @@ run_benchmark() {
     
     # Compile Flow to C, then to binary
     cd "$FLOW_ROOT"
-    PYTHONPATH=src python3 -m flow.transpiler "$flow_file" --c --lenient -o "$BUILD_DIR/${name}.c" 2>/dev/null
-    clang $C_FLAGS -lm "$BUILD_DIR/${name}.c" -o "$BUILD_DIR/${name}" 2>/dev/null
+    compiler/scripts/flowc_emit.sh --lenient "$flow_file" "$BUILD_DIR/${name}.c" 2>/dev/null
+    clang $C_FLAGS -D_DEFAULT_SOURCE -Iruntime -lm "$BUILD_DIR/${name}.c" -o "$BUILD_DIR/${name}" 2>/dev/null
     
     # Run multiple times and collect timings
     local total=0

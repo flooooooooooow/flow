@@ -14,8 +14,8 @@
 # The GPU crossing stays in wasm/flow_wasm_gpu.py because its WGSL comes
 # from src/flow's code generator; `all` runs it through python3.
 #
-# Flow sources go to C through the Python-hosted compiler (flow.transpiler),
-# the same compiler the pages were built with. Page text lives in
+# Flow sources go to C through flowc (compiler/scripts/flowc_emit.sh), the
+# compiler `flow compile` runs. Page text lives in
 # wasm/crossing_assets/pages/*.html with @@field@@ slots.
 
 import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_read_file, ft_write_file, ft_exists, ft_starts, ft_ends, ft_find, ft_slice, ft_from, ft_basename, ft_stem, ft_dirname, ft_join, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
@@ -238,33 +238,27 @@ function run(argv: ptr<StrList>, quiet: bool, env_prefix: string) -> void {
 }
 
 function flow_to_c_available() -> bool {
-    return ft_exists(path_in("src/flow/transpiler.py"))
+    return ft_exists(path_in("compiler/scripts/flowc_emit.sh"))
 }
 
-# Compile a .flow source to C with the Python-hosted Flow compiler.
+# Compile a .flow source to C with flowc. flowc has no --library flag: a
+# runtime module without main compiles to its own C unit as is, with its
+# helpers static, so it links next to the program's C. Library modules
+# compile lenient and programs strict, as before.
 function flow_to_c(flow_file: string, out_c: string, library: bool) -> string {
     let _m: bool = pr_mkdir_p(ft_dirname(out_c))
-    let mut pp: string = getenv("PYTHONPATH")
-    if pp == null {
-        pp = ""
-    }
     let argv: ptr<StrList> = ft_list_new()
-    ft_list_push(argv, "python3")
-    ft_list_push(argv, "-m")
-    ft_list_push(argv, "flow.transpiler")
-    ft_list_push(argv, flow_file)
-    ft_list_push(argv, "--c")
+    ft_list_push(argv, path_in("compiler/scripts/flowc_emit.sh"))
     if library {
-        ft_list_push(argv, "--library")
         ft_list_push(argv, "--lenient")
     } else {
         ft_list_push(argv, "--strict")
     }
-    ft_list_push(argv, "-o")
+    ft_list_push(argv, flow_file)
     ft_list_push(argv, out_c)
-    run(argv, true, "PYTHONPATH=" + pr_quote(path_in("src") + ":" + pp) + " ")
+    run(argv, true, "")
     if ft_exists(out_c) == false {
-        die("Flow compiler produced no C for " + flow_file)
+        die("flowc produced no C for " + flow_file)
     }
     return out_c
 }
@@ -338,7 +332,7 @@ function cmd_threads(o: ptr<Opts>) -> i32 {
     }
     let program: string = resolve_program(arg)
     if flow_to_c_available() == false {
-        die("Flow compiler not importable; run from the project root.")
+        die("flowc not found (compiler/scripts/flowc_emit.sh); run from the project root.")
     }
     let mut out_arg: string = o[0].out
     if out_arg == null {

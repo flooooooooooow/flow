@@ -18,6 +18,7 @@ fi
 
 export FLOW_REPO_ROOT="$ROOT"
 export WASM_BUILD_BIN
-# The transpiler still runs under Python (python3 -m flow.transpiler).
+# The C backend is flowc. The MLIR backend (--backend mlir) still runs the
+# Python-hosted transpiler (python3 -m flow.transpiler --mlir).
 WASM_BUILD_PYTHON="$(command -v python3 || echo python3)"
 export WASM_BUILD_PYTHON

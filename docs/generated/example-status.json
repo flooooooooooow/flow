@@ -1,14 +1,16 @@
 {
-  "generated": "2026-08-21",
+  "generated": "2026-09-29",
   "totals": {
-    "verified": 594,
-    "expected-error": 9
+    "verified": 603,
+    "expected-error": 9,
+    "unverified": 21,
+    "ignored": 2
   },
   "blocks": [
     {
       "key": "README.md#4cdecf27f98e",
       "path": "README.md",
-      "line": 51,
+      "line": 53,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -16,7 +18,7 @@
     {
       "key": "README.md#7dbb128f9b73",
       "path": "README.md",
-      "line": 76,
+      "line": 78,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -24,7 +26,7 @@
     {
       "key": "README.md#caf06a8aad02",
       "path": "README.md",
-      "line": 238,
+      "line": 239,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -32,7 +34,7 @@
     {
       "key": "README.md#1fa4df611254",
       "path": "README.md",
-      "line": 259,
+      "line": 260,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -49,9 +51,10 @@
       "key": "ROADMAP.md#cd3e425c1c9b",
       "path": "ROADMAP.md",
       "line": 459,
-      "status": "verified",
+      "status": "unverified",
       "mode": "standalone",
-      "stage": "codegen"
+      "stage": "clang",
+      "detail": "type name requires a specifier or qualifier"
     },
     {
       "key": "demos/vulkan_scene/flow_style.md#a7af92438b2b",
@@ -241,9 +244,9 @@
       "key": "docs/LANGUAGE_SPEC.md#70806f82a0e2",
       "path": "docs/LANGUAGE_SPEC.md",
       "line": 1037,
-      "status": "verified",
-      "mode": "stmt-wrap",
-      "stage": "codegen"
+      "status": "unverified",
+      "stage": "types",
+      "detail": "flowc: block.flow:4:20: parse error: unexpected token '*' (byte 108)"
     },
     {
       "key": "docs/blas-bindings.md#4bd5e7f4fa12",
@@ -840,7 +843,7 @@
     {
       "key": "docs/book/09-expressions-and-matching.md#745e13ba5903",
       "path": "docs/book/09-expressions-and-matching.md",
-      "line": 247,
+      "line": 241,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -848,7 +851,7 @@
     {
       "key": "docs/book/09-expressions-and-matching.md#6b49c0dd6ec2",
       "path": "docs/book/09-expressions-and-matching.md",
-      "line": 266,
+      "line": 260,
       "status": "verified",
       "mode": "split-wrap",
       "stage": "codegen"
@@ -856,7 +859,7 @@
     {
       "key": "docs/book/09-expressions-and-matching.md#5f51b5b0f742",
       "path": "docs/book/09-expressions-and-matching.md",
-      "line": 277,
+      "line": 271,
       "status": "verified",
       "mode": "split-wrap",
       "stage": "codegen"
@@ -873,9 +876,9 @@
       "key": "docs/book/10-memory-and-lifetimes.md#b09842aa30f5",
       "path": "docs/book/10-memory-and-lifetimes.md",
       "line": 27,
-      "status": "verified",
-      "mode": "standalone",
-      "stage": "codegen"
+      "status": "unverified",
+      "stage": "types",
+      "detail": "flowc: block.flow:5:12: parse error: unexpected token '*' (byte 127)"
     },
     {
       "key": "docs/book/10-memory-and-lifetimes.md#8549768ad56a",
@@ -1080,7 +1083,7 @@
     {
       "key": "docs/book/16-targets-and-distribution.md#eb44a7f5ff5d",
       "path": "docs/book/16-targets-and-distribution.md",
-      "line": 56,
+      "line": 58,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1158,6 +1161,166 @@
       "stage": "codegen"
     },
     {
+      "key": "docs/book/appendix-c-command-reference.md#6ba6505fb8e0",
+      "path": "docs/book/appendix-c-command-reference.md",
+      "line": 87,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/community/rosetta-code.md#4cdecf27f98e",
+      "path": "docs/community/rosetta-code.md",
+      "line": 37,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/community/rosetta-code.md#e34ae7326b0e",
+      "path": "docs/community/rosetta-code.md",
+      "line": 52,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/community/rosetta-code.md#1ebffe7ae46f",
+      "path": "docs/community/rosetta-code.md",
+      "line": 73,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/community/rosetta-code.md#97d46498f0a8",
+      "path": "docs/community/rosetta-code.md",
+      "line": 92,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/community/rosetta-code.md#f03fdcbaecf3",
+      "path": "docs/community/rosetta-code.md",
+      "line": 109,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/community/rosetta-code.md#6944202ebfe3",
+      "path": "docs/community/rosetta-code.md",
+      "line": 129,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/community/rosetta-code.md#6b860cead7c6",
+      "path": "docs/community/rosetta-code.md",
+      "line": 151,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparison.md#e8787bc6437d",
+      "path": "docs/comparison.md",
+      "line": 44,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/c.md#e8787bc6437d",
+      "path": "docs/comparisons/c.md",
+      "line": 23,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/c.md#0d5d264a32b1",
+      "path": "docs/comparisons/c.md",
+      "line": 83,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/cpp.md#e8787bc6437d",
+      "path": "docs/comparisons/cpp.md",
+      "line": 17,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/cpp.md#0d5d264a32b1",
+      "path": "docs/comparisons/cpp.md",
+      "line": 70,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/go.md#e8787bc6437d",
+      "path": "docs/comparisons/go.md",
+      "line": 13,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/julia.md#e8787bc6437d",
+      "path": "docs/comparisons/julia.md",
+      "line": 13,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/mojo.md#e8787bc6437d",
+      "path": "docs/comparisons/mojo.md",
+      "line": 17,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/python.md#e8787bc6437d",
+      "path": "docs/comparisons/python.md",
+      "line": 13,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/rust.md#e8787bc6437d",
+      "path": "docs/comparisons/rust.md",
+      "line": 17,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/rust.md#0d5d264a32b1",
+      "path": "docs/comparisons/rust.md",
+      "line": 65,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/comparisons/zig.md#e8787bc6437d",
+      "path": "docs/comparisons/zig.md",
+      "line": 13,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
       "key": "docs/demos/evolution.md#7dbb128f9b73",
       "path": "docs/demos/evolution.md",
       "line": 7,
@@ -1217,17 +1380,18 @@
       "key": "docs/effects-showcase.md#7a6734106f57",
       "path": "docs/effects-showcase.md",
       "line": 137,
-      "status": "verified",
+      "status": "unverified",
       "mode": "stmt-wrap",
-      "stage": "codegen"
+      "stage": "clang",
+      "detail": "redefinition of 'main'"
     },
     {
       "key": "docs/effects-showcase.md#5190313dfb63",
       "path": "docs/effects-showcase.md",
       "line": 155,
-      "status": "verified",
-      "mode": "stmt-wrap",
-      "stage": "codegen"
+      "status": "unverified",
+      "stage": "types",
+      "detail": "flowc: block.flow:241:5: parse error: unexpected keyword 'capability' (byte 4856)"
     },
     {
       "key": "docs/effects-showcase.md#ad12bd3952c2",
@@ -1249,9 +1413,10 @@
       "key": "docs/effects-showcase.md#55c7b5e0d8d6",
       "path": "docs/effects-showcase.md",
       "line": 209,
-      "status": "verified",
+      "status": "unverified",
       "mode": "stmt-wrap",
-      "stage": "codegen"
+      "stage": "clang",
+      "detail": "redefinition of 'main'"
     },
     {
       "key": "docs/effects-showcase.md#cc380f5766c9",
@@ -1273,9 +1438,10 @@
       "key": "docs/effects-showcase.md#3634a12147df",
       "path": "docs/effects-showcase.md",
       "line": 253,
-      "status": "verified",
+      "status": "unverified",
       "mode": "standalone",
-      "stage": "codegen"
+      "stage": "clang",
+      "detail": "redefinition of 'main'"
     },
     {
       "key": "docs/effects-showcase.md#93cc8b826921",
@@ -1297,9 +1463,10 @@
       "key": "docs/effects-showcase.md#0e0af157b81b",
       "path": "docs/effects-showcase.md",
       "line": 312,
-      "status": "verified",
+      "status": "unverified",
       "mode": "stmt-wrap",
-      "stage": "codegen"
+      "stage": "clang",
+      "detail": "redefinition of 'main'"
     },
     {
       "key": "docs/effects-showcase.md#0e1bb2d5dbbb",
@@ -1313,9 +1480,9 @@
       "key": "docs/effects-showcase.md#9a48adee0be9",
       "path": "docs/effects-showcase.md",
       "line": 363,
-      "status": "verified",
-      "mode": "stmt-wrap",
-      "stage": "codegen"
+      "status": "unverified",
+      "stage": "types",
+      "detail": "flowc: block.flow:241:5: parse error: unexpected keyword 'capability' (byte 4856)"
     },
     {
       "key": "docs/effects-showcase.md#6c16fa2854db",
@@ -1329,9 +1496,10 @@
       "key": "docs/effects-showcase.md#b5cd304c99fc",
       "path": "docs/effects-showcase.md",
       "line": 416,
-      "status": "verified",
+      "status": "unverified",
       "mode": "stmt-wrap",
-      "stage": "codegen"
+      "stage": "clang",
+      "detail": "redefinition of 'main'"
     },
     {
       "key": "docs/effects-showcase.md#bd29de113a2e",
@@ -1392,7 +1560,7 @@
     {
       "key": "docs/getting-started.md#4cdecf27f98e",
       "path": "docs/getting-started.md",
-      "line": 31,
+      "line": 42,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1400,7 +1568,7 @@
     {
       "key": "docs/getting-started.md#b211e45ec479",
       "path": "docs/getting-started.md",
-      "line": 50,
+      "line": 61,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1408,7 +1576,7 @@
     {
       "key": "docs/getting-started.md#890b21936236",
       "path": "docs/getting-started.md",
-      "line": 83,
+      "line": 94,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1416,7 +1584,7 @@
     {
       "key": "docs/getting-started.md#e8787bc6437d",
       "path": "docs/getting-started.md",
-      "line": 108,
+      "line": 119,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1424,7 +1592,7 @@
     {
       "key": "docs/language/README.md#450e3b0a9a1d",
       "path": "docs/language/README.md",
-      "line": 38,
+      "line": 39,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
@@ -1432,7 +1600,7 @@
     {
       "key": "docs/language/README.md#2e465ad3d003",
       "path": "docs/language/README.md",
-      "line": 44,
+      "line": 45,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -1440,7 +1608,7 @@
     {
       "key": "docs/language/README.md#c83e3fc38802",
       "path": "docs/language/README.md",
-      "line": 51,
+      "line": 52,
       "status": "verified",
       "mode": "split-wrap",
       "stage": "codegen"
@@ -1681,9 +1849,10 @@
       "key": "docs/language/lifetime-domains.md#71e63214c2ab",
       "path": "docs/language/lifetime-domains.md",
       "line": 62,
-      "status": "verified",
+      "status": "unverified",
       "mode": "standalone",
-      "stage": "codegen"
+      "stage": "clang",
+      "detail": "initializing 'flowc_span_float' with an expression of incompatible type 'void *'"
     },
     {
       "key": "docs/language/lifetime-domains.md#c84c5f8180fe",
@@ -1737,9 +1906,9 @@
       "key": "docs/language/modules-namespacing.md#7336d9635cd6",
       "path": "docs/language/modules-namespacing.md",
       "line": 120,
-      "status": "verified",
-      "mode": "standalone",
-      "stage": "codegen"
+      "status": "unverified",
+      "stage": "types",
+      "detail": "flowc: flowc gather: block.flow: cannot resolve import .alpha"
     },
     {
       "key": "docs/language/modules.md#3c178c94a485",
@@ -1822,9 +1991,17 @@
       "stage": "codegen"
     },
     {
+      "key": "docs/language/recognition-semantics.md#4109d10387b0",
+      "path": "docs/language/recognition-semantics.md",
+      "line": 28,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
       "key": "docs/language/shaders.md#226fbe4da600",
       "path": "docs/language/shaders.md",
-      "line": 13,
+      "line": 17,
       "status": "verified",
       "mode": "standalone",
       "stage": "shader"
@@ -1833,9 +2010,10 @@
       "key": "docs/language/spans.md#3ae148c11ab1",
       "path": "docs/language/spans.md",
       "line": 19,
-      "status": "verified",
+      "status": "unverified",
       "mode": "standalone",
-      "stage": "codegen"
+      "stage": "clang",
+      "detail": "conflicting types for 'analyse'"
     },
     {
       "key": "docs/language/spans.md#ad33eb3de2cd",
@@ -1905,17 +2083,51 @@
       "key": "docs/language/syntax.md#262453d93453",
       "path": "docs/language/syntax.md",
       "line": 156,
-      "status": "verified",
+      "status": "unverified",
       "mode": "stmt-wrap",
-      "stage": "codegen"
+      "stage": "clang",
+      "detail": "use of undeclared identifier 'Point'"
     },
     {
       "key": "docs/language/syntax.md#0c049903ce23",
       "path": "docs/language/syntax.md",
       "line": 161,
-      "status": "verified",
+      "status": "unverified",
       "mode": "stmt-wrap",
+      "stage": "clang",
+      "detail": "expected ';' after expression"
+    },
+    {
+      "key": "docs/language/testing.md#f591c841dd97",
+      "path": "docs/language/testing.md",
+      "line": 11,
+      "status": "verified",
+      "mode": "standalone",
       "stage": "codegen"
+    },
+    {
+      "key": "docs/language/testing.md#76ba94580623",
+      "path": "docs/language/testing.md",
+      "line": 65,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/language/testing.md#90120f93fd6f",
+      "path": "docs/language/testing.md",
+      "line": 157,
+      "status": "ignored",
+      "detail": "illustrative placeholder syntax",
+      "reason": "illustrative placeholder syntax"
+    },
+    {
+      "key": "docs/language/testing.md#a2186bce2c34",
+      "path": "docs/language/testing.md",
+      "line": 203,
+      "status": "ignored",
+      "detail": "illustrative placeholder syntax",
+      "reason": "illustrative placeholder syntax"
     },
     {
       "key": "docs/language/types.md#4d2e7427008d",
@@ -2400,7 +2612,7 @@
     {
       "key": "docs/project/CHANGELOG.md#d40e0f3ed5e8",
       "path": "docs/project/CHANGELOG.md",
-      "line": 22,
+      "line": 132,
       "status": "verified",
       "mode": "stmt-wrap",
       "stage": "codegen"
@@ -2417,9 +2629,10 @@
       "key": "docs/project/example-atlas.md#6c906f94dff6",
       "path": "docs/project/example-atlas.md",
       "line": 16,
-      "status": "verified",
+      "status": "unverified",
       "mode": "standalone",
-      "stage": "codegen"
+      "stage": "clang",
+      "detail": "expected member name or ';' after declaration specifiers"
     },
     {
       "key": "docs/project/pattern-adoption.md#13f6b9dee704",
@@ -2433,6 +2646,14 @@
       "key": "docs/python-target.md#1eb8a4795a0a",
       "path": "docs/python-target.md",
       "line": 96,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/python-target.md#20ad9038df40",
+      "path": "docs/python-target.md",
+      "line": 158,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -2529,9 +2750,10 @@
       "key": "docs/tutorials/algorithms.md#fa113546a761",
       "path": "docs/tutorials/algorithms.md",
       "line": 10,
-      "status": "verified",
+      "status": "unverified",
       "mode": "standalone",
-      "stage": "codegen"
+      "stage": "clang",
+      "detail": "too few arguments to function call, expected 5, have 3"
     },
     {
       "key": "docs/tutorials/algorithms.md#15e4a88571bc",
@@ -3185,17 +3407,18 @@
       "key": "docs/tutorials/effects-basics.md#ae55d95de4b4",
       "path": "docs/tutorials/effects-basics.md",
       "line": 138,
-      "status": "verified",
+      "status": "unverified",
       "mode": "standalone",
-      "stage": "codegen"
+      "stage": "clang",
+      "detail": "redefinition of 'main'"
     },
     {
       "key": "docs/tutorials/effects-basics.md#fb86da4cc165",
       "path": "docs/tutorials/effects-basics.md",
       "line": 149,
-      "status": "verified",
-      "mode": "stmt-wrap",
-      "stage": "codegen"
+      "status": "unverified",
+      "stage": "types",
+      "detail": "flowc: block.flow:100:5: parse error: unexpected keyword 'capability' (byte 2164)"
     },
     {
       "key": "docs/tutorials/effects-basics.md#cd46eac448e0",
@@ -3398,6 +3621,54 @@
       "stage": "codegen"
     },
     {
+      "key": "docs/tutorials/flow-in-one-hour.md#4cdecf27f98e",
+      "path": "docs/tutorials/flow-in-one-hour.md",
+      "line": 27,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/flow-in-one-hour.md#091acd86faff",
+      "path": "docs/tutorials/flow-in-one-hour.md",
+      "line": 44,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/flow-in-one-hour.md#5fe5c28a3384",
+      "path": "docs/tutorials/flow-in-one-hour.md",
+      "line": 61,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/flow-in-one-hour.md#6944202ebfe3",
+      "path": "docs/tutorials/flow-in-one-hour.md",
+      "line": 89,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/flow-in-one-hour.md#0f1e1821f376",
+      "path": "docs/tutorials/flow-in-one-hour.md",
+      "line": 111,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
+      "key": "docs/tutorials/flow-in-one-hour.md#7dbb128f9b73",
+      "path": "docs/tutorials/flow-in-one-hour.md",
+      "line": 134,
+      "status": "verified",
+      "mode": "standalone",
+      "stage": "codegen"
+    },
+    {
       "key": "docs/tutorials/functions.md#300a5cb849ef",
       "path": "docs/tutorials/functions.md",
       "line": 10,
@@ -3593,17 +3864,19 @@
       "key": "docs/tutorials/intermediate.md#8a0c10805627",
       "path": "docs/tutorials/intermediate.md",
       "line": 9,
-      "status": "verified",
+      "status": "unverified",
       "mode": "standalone",
-      "stage": "codegen"
+      "stage": "clang",
+      "detail": "use of undeclared identifier 'T'"
     },
     {
       "key": "docs/tutorials/intermediate.md#3e2a4de1f9a3",
       "path": "docs/tutorials/intermediate.md",
       "line": 32,
-      "status": "verified",
+      "status": "unverified",
       "mode": "standalone",
-      "stage": "codegen"
+      "stage": "clang",
+      "detail": "use of undeclared identifier 'Box'"
     },
     {
       "key": "docs/tutorials/intermediate.md#e016a40dd513",
@@ -3920,7 +4193,7 @@
     {
       "key": "docs/tutorials/ml-on-macbook.md#02cf9c614b7a",
       "path": "docs/tutorials/ml-on-macbook.md",
-      "line": 48,
+      "line": 47,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -3928,7 +4201,7 @@
     {
       "key": "docs/tutorials/ml-on-macbook.md#3c848638c9be",
       "path": "docs/tutorials/ml-on-macbook.md",
-      "line": 69,
+      "line": 68,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -3936,7 +4209,7 @@
     {
       "key": "docs/tutorials/ml-on-macbook.md#64772dbb5db2",
       "path": "docs/tutorials/ml-on-macbook.md",
-      "line": 245,
+      "line": 244,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -3944,7 +4217,7 @@
     {
       "key": "docs/tutorials/ml-on-macbook.md#549c4db8dc6a",
       "path": "docs/tutorials/ml-on-macbook.md",
-      "line": 262,
+      "line": 261,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -3952,7 +4225,7 @@
     {
       "key": "docs/tutorials/ml-on-macbook.md#b4234c5d9975",
       "path": "docs/tutorials/ml-on-macbook.md",
-      "line": 280,
+      "line": 279,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -3960,7 +4233,7 @@
     {
       "key": "docs/tutorials/ml-on-macbook.md#02d5408bd370",
       "path": "docs/tutorials/ml-on-macbook.md",
-      "line": 297,
+      "line": 296,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -3968,7 +4241,7 @@
     {
       "key": "docs/tutorials/ml-on-macbook.md#5d20ad5b0985",
       "path": "docs/tutorials/ml-on-macbook.md",
-      "line": 315,
+      "line": 314,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"
@@ -3976,7 +4249,7 @@
     {
       "key": "docs/tutorials/ml-on-macbook.md#9c032d8c4432",
       "path": "docs/tutorials/ml-on-macbook.md",
-      "line": 331,
+      "line": 330,
       "status": "verified",
       "mode": "standalone",
       "stage": "codegen"

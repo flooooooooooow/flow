@@ -5,7 +5,7 @@ A "crossing" is one thing people assume cannot reach WebAssembly: OS threads,
 the GPU, sockets, an embedded CPython. wasm/crossings.sh (a Flow program)
 builds four of them. The GPU crossing, wasm/flow_wasm_gpu.py, stays in Python
 because its WGSL comes from src/flow's code generator, and this module holds
-what it needs: locating the tree, driving the Flow compiler, and setting up
+what it needs: locating the tree, driving flowc, and setting up
 Homebrew's Emscripten so emcc actually finds a wasm backend.
 """
 
@@ -67,22 +67,28 @@ def run(cmd, env=None, cwd=None, quiet=False) -> subprocess.CompletedProcess:
     return proc
 
 
+FLOWC_EMIT = PROJECT_ROOT / "compiler" / "scripts" / "flowc_emit.sh"
+
+
 def flow_to_c_available() -> bool:
-    """True when the Python-hosted Flow compiler can be imported from src/."""
-    return (SRC_DIR / "flow" / "transpiler.py").exists()
+    """True when the flowc emit script is in the tree."""
+    return FLOWC_EMIT.exists()
 
 
 def flow_to_c(flow_file: Path, out_c: Path, library: bool = False) -> Path:
-    """Compile a .flow source to C with the Python-hosted Flow compiler."""
+    """Compile a .flow source to C with flowc (compiler/scripts/flowc_emit.sh).
+
+    flowc has no --library flag. A runtime module without `main` compiles to
+    its own C unit as is, the way `flow compile` builds lib/runtime/*.flow
+    into the runtime archive. flowc keeps its helpers static, so that unit
+    links next to the program's C. Library modules compile lenient, programs
+    strict, as before.
+    """
     out_c.parent.mkdir(parents=True, exist_ok=True)
-    env = dict(os.environ)
-    env["PYTHONPATH"] = str(SRC_DIR) + os.pathsep + env.get("PYTHONPATH", "")
-    cmd = [sys.executable, "-m", "flow.transpiler", str(flow_file), "--c"]
-    cmd += ["--library", "--lenient"] if library else ["--strict"]
-    cmd += ["-o", str(out_c)]
-    run(cmd, env=env, quiet=True)
+    mode = "--lenient" if library else "--strict"
+    run([FLOWC_EMIT, mode, flow_file, out_c], quiet=True)
     if not out_c.exists():
-        sys.exit(f"Flow compiler produced no C for {flow_file}")
+        sys.exit(f"flowc produced no C for {flow_file}")
     return out_c
 
 

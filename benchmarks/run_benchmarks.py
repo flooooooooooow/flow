@@ -188,12 +188,10 @@ def get_harness_dir():
     return ROOT / "benchmarks" / "cross_harness"
 
 def compile_flow(flow_path, bin_path):
-    env = dict(os.environ)
-    if "PYTHONPATH" not in env:
-        env["PYTHONPATH"] = str(ROOT / "src")
-        
+    # Flow to C goes through flowc, the way `flow compile` runs it.
     gen_c = bin_path.with_suffix(".c")
-    proc = subprocess.run([sys.executable, "-m", "flow.transpiler", str(flow_path), "--c", "--lenient", "-o", str(gen_c)], env=env, capture_output=True, text=True)
+    emit = ROOT / "compiler" / "scripts" / "flowc_emit.sh"
+    proc = subprocess.run([str(emit), "--lenient", str(flow_path), str(gen_c)], capture_output=True, text=True)
     if proc.returncode != 0:
         print(f"Compilation to C failed for {flow_path}:\n{proc.stdout}\n{proc.stderr}")
         return False

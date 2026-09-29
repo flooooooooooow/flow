@@ -66,18 +66,15 @@ function compile_all() -> void {
     let base: string = ft_join(root(), "benchmarks/baselines")
     let build: string = base + "/build"
     let _m: bool = pr_mkdir_p(build)
-    let mut pp: string = getenv("PYTHONPATH")
-    if pp == null {
-        pp = ft_join(root(), "src")
-    }
+    let emit: string = ft_join(root(), "compiler/scripts/flowc_emit.sh")
     let mut i: i32 = 0
     while i < 3 {
         let b: string = bench_name(i)
         let src: string = base + "/" + b + ".flow"
         let gen_c: string = build + "/" + b + ".c"
         let exe: string = build + "/" + b
-        sh("python3 -m flow.transpiler " + src + " --c --lenient -o " + gen_c,
-           "cd " + pr_quote(root()) + " && PYTHONPATH=" + pr_quote(pp) + " python3 -m flow.transpiler " + pr_quote(src) + " --c --lenient -o " + pr_quote(gen_c))
+        sh("flowc_emit.sh --lenient " + src + " " + gen_c,
+           "cd " + pr_quote(root()) + " && " + pr_quote(emit) + " --lenient " + pr_quote(src) + " " + pr_quote(gen_c))
         sh("clang " + CLANG_FLAGS + " " + gen_c + " -o " + exe,
            "cd " + pr_quote(root()) + " && clang " + CLANG_FLAGS + " " + pr_quote(gen_c) + " -o " + pr_quote(exe))
         i = i + 1
