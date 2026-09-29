@@ -196,9 +196,6 @@ test_gif_flow_encoder.py, test_flow_run.py).
 | test_inline_exp_nested.py | b | MLIR inline exp text |
 | test_know.py | c | flow know lookup tool |
 | test_lifetime_domains.py | c | lifetime-domain diagnostics |
-| test_lsp_hover.py | c | LSP internals |
-| test_lsp_idioms.py | c | LSP internals |
-| test_lsp_intel.py | c | LSP internals |
 | test_match_exhaustive_returns.py | a | one run test blocked on Stage-A (#941); -Werror=return-type check is (b) |
 | test_match_exhaustiveness.py | c | exhaustiveness diagnostics |
 | test_math_prose.py | c | math prose rendering internals |
@@ -302,7 +299,6 @@ Support modules (not tests): \_\_init\_\_.py, compiler_helpers.py.
 | test_defer_ordering.py | a | three tests blocked on Stage-A (#947) |
 | test_gfx_recorder.py | c | `flow record` tool reads back a frame |
 | test_gpu_codegen.py | b | checks artifacts emitted by flow gpu |
-| test_lsp_server.py | c | LSP server internals |
 | test_metal.py | c | script-style Metal runtime availability probe |
 | test_mlir_math_override.py | b | MLIR math lowering |
 | test_mlir_spirv.py | b | MLIR to SPIR-V output text |
@@ -323,8 +319,8 @@ Support modules (not tests): \_\_init\_\_.py, compiler_helpers.py.
 |---|---|---|---|
 | (a) behavioral | 7 | 6 | 13 |
 | (b) output-shape | 50 | 5 | 55 |
-| (c) compiler-internal | 112 | 10 | 122 |
-| total | 169 | 21 | 190 |
+| (c) compiler-internal | 109 | 9 | 118 |
+| total | 166 | 20 | 186 |
 
 ## Next batches
 

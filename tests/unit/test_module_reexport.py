@@ -206,7 +206,7 @@ class TestNoDuplicateEmission:
         assert result.returncode == 0, result.stdout + result.stderr
         source = c_file.read_text(encoding="utf-8")
         for name in ("alpha_one", "alpha_two", "beta_one", "agg_own"):
-            # One prototype, one definition — never two of either.
+            # Exactly one prototype and one definition each.
             assert source.count(f"int32_t {name}(void);") == 1, name
             assert source.count(f"int32_t {name}(void) {{") == 1, name
 
@@ -255,7 +255,7 @@ class TestReexportCollisions:
 
     def test_diamond_reexport_is_not_a_collision(self, tmp_path):
         # Two aggregators forward the same declaration; a third forwards both.
-        # Same source file on both paths, so this is one symbol, not a clash.
+        # Same source file on both paths, so this is one symbol.
         root = _write_package(
             str(tmp_path),
             {
@@ -279,18 +279,9 @@ class TestReexportCollisions:
 # the six-submodule flowlm aggregator.
 
 
-class TestLspFollowsReexports:
-    def test_import_index_sees_forwarded_symbols(self):
-        from flow.lsp_intel import index_imports, parse_source
-
-        path = _fixture("consumer_reexport.flow")
-        with open(path, encoding="utf-8") as f:
-            declarations = parse_source(f.read())
-        symbols, _ = index_imports(path, declarations)
-        assert "alpha_one" in symbols
-        assert "beta_one" in symbols
-        # Definition location points at the declaring file, not the aggregator.
-        assert symbols["alpha_one"]["uri"].endswith("alpha.flow")
+# TestLspFollowsReexports moved to the language server transcript test:
+# tests/tools/lsp/sessions/imports.lsp checks that hover and definition on
+# forwarded symbols reach the declaring file.
 
 
 class TestFormatterRoundTrip:
