@@ -106,10 +106,16 @@ g2_emit_module parser \
     compiler/build/g2_ast.h \
     compiler/build/g2_lexer.h
 
+# Proof-layer erasure, called from cgen and the typecheck (#996).
+g2_emit_module proof_lower compiler/build/g2_ast.h
+python3 compiler/scripts/flowc_c_to_hdr.py \
+    compiler/build/g2_proof_lower.c compiler/build/g2_proof_lower.h
+
 g2_emit_module cgen \
     compiler/build/g2_token.h \
     compiler/build/g2_ast.h \
-    compiler/build/g2_effects.h
+    compiler/build/g2_effects.h \
+    compiler/build/g2_proof_lower.h
 
 # typecheck.flow resolves calls through the native overload modules, so those
 # are emitted first, in dependency order, and their headers are included below.
@@ -148,6 +154,7 @@ python3 compiler/scripts/flowc_c_to_hdr.py \
 g2_emit_module typecheck \
     compiler/build/g2_ast.h \
     compiler/build/g2_effects.h \
+    compiler/build/g2_proof_lower.h \
     compiler/build/g2_overload_table.h \
     compiler/build/g2_overload_call.h \
     compiler/build/g2_overload_registry.h \
@@ -190,6 +197,7 @@ cc -r -o compiler/build/flowc_frontend_g2.o \
     compiler/build/g2_flow_blocks.o \
     compiler/build/g2_shader_dsl.o \
     compiler/build/g2_effects.o \
+    compiler/build/g2_proof_lower.o \
     compiler/build/g2_cgen.o \
     compiler/build/g2_overload.o \
     compiler/build/g2_overload_table.o \
@@ -215,7 +223,7 @@ wc -c compiler/build/flowc_frontend_self.o compiler/build/flowc_frontend_g2.o
 # objects can differ from include-path / toolchain metadata while C matches.
 echo "=== fixed-point cmp self_*.c vs g2_*.c ==="
 fp_fail=0
-for mod in token ast lexer fileio field_dsl dynamics_dsl flow_blocks shader_dsl effects parser cgen typecheck resolve; do
+for mod in token ast lexer fileio field_dsl dynamics_dsl flow_blocks shader_dsl effects parser proof_lower cgen typecheck resolve; do
     if ! cmp -s "compiler/build/self_${mod}.c" "compiler/build/g2_${mod}.c"; then
         echo "FAIL C drift: ${mod}" >&2
         diff -u "compiler/build/self_${mod}.c" "compiler/build/g2_${mod}.c" | head -80 >&2 || true
