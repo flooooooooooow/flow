@@ -231,8 +231,8 @@ The compiler sources are under `compiler/src/`:
 | MLIR output | `mlirgen.flow` | MLIR text (`FLOWC_EMIT=mlir`) |
 
 The Python modules under `src/flow/` still hold the MLIR generator fallback
-(`mlir_generator.py`), `flow check` (`type_checker.py`), wheel generation
-(`python_generator.py`) and the GPU and WGSL generators.
+(`mlir_generator.py`), `flow check` (`type_checker.py`) and the GPU and WGSL
+generators. `flow python` is the Flow tool `tools/pywheel`.
 
 ### 2.5 Higher-level forms use two implementation channels
 

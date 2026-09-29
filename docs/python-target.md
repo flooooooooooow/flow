@@ -15,16 +15,16 @@ python -c "import mylib; print(mylib.add(1, 2))"
 
 ## How It Works
 
-```
-Flow Source → Parse → Type Check → C Generator → Python Bindings → Wheel
-                                         ↓
-                              CPython Extension Module
-```
-
-1. Flow compiles to C (via existing C backend)
-2. Python bindings are generated automatically
-3. A standard CPython extension module is produced
-4. Package is built as a pip-installable wheel
+1. `flow python` runs the Flow tool `tools/pywheel`. It parses the program and
+   its imports with the flowc front end and decides what to export.
+2. flowc compiles the program to C (`compiler/scripts/flowc_emit.sh --strict`).
+   A type error stops here.
+3. The tool writes a CPython extension source around that C, plus
+   `setup.py` and `pyproject.toml`.
+4. `python3 -m pip wheel` builds the wheel into `dist/`. This is the only
+   step that runs Python, because building a wheel needs setuptools. Set
+   `FLOW_PYTHON` to use another interpreter. `--source` skips it and runs no
+   Python at all.
 
 ## Export Rules
 
@@ -36,12 +36,6 @@ Public symbols with ABI-compatible types are exported automatically:
 # EXPORTED: Public function with compatible types
 function add(a: i32, b: i32) -> i32 {
     return a + b
-}
-
-# EXPORTED: Public struct with compatible fields
-struct Point {
-    x: f64,
-    y: f64
 }
 
 # NOT EXPORTED: Private (starts with underscore)
@@ -61,16 +55,18 @@ function main() -> i32 { return 0 }
 | `bool` | `bool` | |
 | `string` | `str` | UTF-8 |
 | `void` | `None` | Return only |
-| `ptr<T>` | `capsule` | Opaque handle |
-| Struct types | `dict` | Field access |
+
+Type aliases resolve to their base type for this check.
 
 ### Incompatible Types
 
 Types that cannot cross the Python boundary are excluded with diagnostics:
 
-- Raw pointers without struct context
-- Function pointers
-- Complex nested generics
+- Pointers, arrays, spans and function types
+- Enums and generic types
+- Structs. A public struct with fields stops generation with exit status 1,
+  naming the struct. Private structs (leading underscore) and empty structs
+  do not.
 
 ## CLI Options
 
@@ -106,15 +102,6 @@ function factorial(n: i32) -> i32 {
     }
     return n * factorial(n - 1)
 }
-
-struct Vec2 {
-    x: f64,
-    y: f64
-}
-
-function vec2_length(v: Vec2) -> f64 {
-    return sqrt(v.x * v.x + v.y * v.y)
-}
 ```
 
 Compile and use:
@@ -141,10 +128,9 @@ The compiler shows which symbols are exported/excluded:
 Python Export Analysis: mathlib
 ============================================================
 
-✅ Exported (3 symbols):
+✅ Exported (2 symbols):
    square: Public function with ABI-compatible signature
    factorial: Public function with ABI-compatible signature
-   Vec2: Public struct with ABI-compatible fields
 
 ⚠️  Excluded (2 symbols):
    main: Entry point 'main' not exported
@@ -189,7 +175,7 @@ function dont_export() -> void { }
 
 ## Limitations
 
-- Struct methods not yet supported
+- Structs, pointers and arrays do not cross the boundary yet
 - Async effects don't map to Python async
 - No NumPy array integration (future)
 - macOS/Linux only (Windows future)

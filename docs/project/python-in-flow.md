@@ -66,7 +66,7 @@ the Flow port of each one. The table records where each port stands.
 | `flow check`, wcet and MISRA scanners, fir tools, the DAP server, the project test runner | not ported yet |
 | `mlir_jit.py` loading half, GPU/Metal **runtimes** | ctypes, numpy; planned to move to C (see [MLIR in Flow](../design/mlir-in-flow.md)) |
 | `package.py` (publish, build, fetch) | git and network |
-| `python_generator.py` (wheel) | setuptools/pip. It takes its C from flowc |
+| `pip wheel` in `flow python` | building the wheel needs setuptools. The generator is the Flow tool `tools/pywheel` |
 | `wasm/flow_to_wasm.py`, `wasm/flow_webgpu_shader.py`, `wasm/flow_wasm_gpu.py` | `flow_to_wasm.py` takes its C from `compiler/scripts/flowc_emit.sh`; the other two call the Python WGSL and shader generators in process |
 | `benchmarks/**/python/*` baselines | the Python side of a Python-versus-Flow comparison |
 
