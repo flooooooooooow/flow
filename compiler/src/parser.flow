@@ -27,7 +27,7 @@ import .ast {
     AST_TYPE, AST_ASSIGN, AST_EXPR_STMT, AST_BOOL, AST_ERROR,
     AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS,
     AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_DEFER,
-    AST_ENUM, AST_ENUM_VARIANT, AST_IF_EXPR, AST_IDENT_SORT_MOD, AST_IDENT_FORK_SRC,
+    AST_ENUM, AST_ENUM_VARIANT, AST_IF_EXPR, AST_IDENT_SORT_MOD, AST_IDENT_FORK_SRC, AST_TYPE_FIXED_ARRAY,
     AST_THEOREM, AST_ASSUME, AST_THEREFORE, AST_CLAIM_REF,
     AST_FLOW_DECL, AST_FLOW_ITEM, AST_LAYOUT, AST_PIPE_BLOCK, AST_HANDLE, AST_EFFECT_ROW, AST_MATCH_ARM_EXT,
     AST_FIXED_ARRAY_TYPE, AST_CAPABILITY_TYPE, AST_TRY, AST_VECTOR_LIT,
@@ -320,6 +320,7 @@ function flowc_parse_type(p: ptr<Parser>) -> i32 {
         p[0].arena.nodes[id].a = inner
         if size >= 0 {
             p[0].arena.nodes[id].ival = size
+            p[0].arena.nodes[id].c = AST_TYPE_FIXED_ARRAY
             let mark: i32 = flowc_ast_alloc(&p[0].arena, AST_FIXED_ARRAY_TYPE, start, p[0].cur.start)
             if mark == AST_NONE {
                 flowc_parser_fail(p)

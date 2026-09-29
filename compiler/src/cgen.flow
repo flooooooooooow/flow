@@ -16,7 +16,7 @@ import .ast {
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS,
     AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_ENUM,
     AST_DEFER, AST_IF_EXPR, AST_IDENT_SORT_MOD, AST_FIELD, flowc_ast_reject_unsupported,
-    AST_MATCH_ARM_EXT, AST_LAYOUT, AST_PIPE_BLOCK, PIPE_BLOCK_CHOOSE, AST_IDENT_FORK_SRC, AST_SORT_BY,
+    AST_MATCH_ARM_EXT, AST_LAYOUT, AST_PIPE_BLOCK, PIPE_BLOCK_CHOOSE, AST_IDENT_FORK_SRC, AST_SORT_BY, AST_TYPE_FIXED_ARRAY,
     flowc_ast_enum_of_const
 }
 import .token {
@@ -239,6 +239,18 @@ function flowc_cgen_span_is(src: ptr<u8>, start: i32, end: i32, lit: string) -> 
     return 1
 }
 
+# 1 for an `array<T[, N]>` type node, or the `[T; N]` form (no name span,
+# AST_TYPE_FIXED_ARRAY in c).
+function flowc_cgen_ty_is_array(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    if ty == AST_NONE {
+        return 0
+    }
+    if arena.nodes[ty].kind == AST_TYPE and arena.nodes[ty].c == AST_TYPE_FIXED_ARRAY {
+        return 1
+    }
+    return flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "array")
+}
+
 # Check if a source span is a C reserved word. If so, emit the mangled
 # name (_flow_<word>) instead. Returns 1 if mangled, 0 if not.
 function flowc_cgen_put_ident(w: ptr<CgenBuf>, src: ptr<u8>, start: i32, end: i32) {
@@ -421,7 +433,7 @@ function flowc_cgen_is_sized_array(arena: AstArena, src: ptr<u8>, ty: i32) -> i3
     if arena.nodes[ty].a == AST_NONE or arena.nodes[ty].ival <= 0 {
         return 0
     }
-    return flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "array")
+    return flowc_cgen_ty_is_array(arena, src, ty)
 }
 
 # Innermost element type below every sized-array level.
@@ -687,14 +699,14 @@ function flowc_cgen_emit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ty
         return
     }
     # array<T> (no size, ival == 0) → T* (pointer to element type).
-    if inner != AST_NONE and flowc_cgen_span_is(src, ns, ne, "array") == 1 and arena.nodes[ty].ival == 0 {
+    if inner != AST_NONE and flowc_cgen_ty_is_array(arena, src, ty) == 1 and arena.nodes[ty].ival == 0 {
         flowc_cgen_emit_type(w, arena, src, inner)
         flowc_cgen_putc(w, 42)
         return
     }
     # array<T, N> (with size, ival > 0) in a generic type context → T*
     # (struct fields and top-level lets handle the [N] suffix separately).
-    if inner != AST_NONE and flowc_cgen_span_is(src, ns, ne, "array") == 1 and arena.nodes[ty].ival > 0 {
+    if inner != AST_NONE and flowc_cgen_ty_is_array(arena, src, ty) == 1 and arena.nodes[ty].ival > 0 {
         flowc_cgen_emit_type(w, arena, src, inner)
         flowc_cgen_putc(w, 42)
         return
@@ -2084,7 +2096,7 @@ function flowc_cgen_is_span_var(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
                     }
                     # &[T] or &mut [T] sugar: nameless type with inner type
                     let inner: i32 = arena.nodes[ty].a
-                    if inner != AST_NONE and tns == 0 and tne == 0 {
+                    if inner != AST_NONE and tns == 0 and tne == 0 and arena.nodes[ty].c != AST_TYPE_FIXED_ARRAY {
                         return 1
                     }
                 }
@@ -2122,7 +2134,7 @@ function flowc_cgen_var_elem_type(arena: AstArena, src: ptr<u8>, id: i32) -> i32
                         if flowc_cgen_span_is(src, tns, tne, "span") == 1 {
                             return inner
                         }
-                        if flowc_cgen_span_is(src, tns, tne, "array") == 1 {
+                        if flowc_cgen_ty_is_array(arena, src, ty) == 1 {
                             return inner
                         }
                         # &[T] and &mut [T] sugar: no name, inner type only.
@@ -2156,7 +2168,7 @@ function flowc_cgen_fn_param_is_span(arena: AstArena, src: ptr<u8>, fn_id: i32, 
                     return 1
                 }
                 let inner: i32 = arena.nodes[ty].a
-                if inner != AST_NONE and tns == 0 and tne == 0 {
+                if inner != AST_NONE and tns == 0 and tne == 0 and arena.nodes[ty].c != AST_TYPE_FIXED_ARRAY {
                     return 1
                 }
             }
@@ -2406,7 +2418,7 @@ function flowc_cgen_emit_sort_by(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>,
     let ty: i32 = flowc_cgen_expr_type_node(w, arena, src, arr)
     let mut n: i32 = 0
     if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE and arena.nodes[ty].ival > 0 {
-        if flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "array") == 1 {
+        if flowc_cgen_ty_is_array(arena, src, ty) == 1 {
             n = arena.nodes[ty].ival
         }
     }
@@ -3730,7 +3742,7 @@ function flowc_cgen_layout_explicit(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
     if flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "ptr") == 1 {
         return 1
     }
-    if flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "array") == 1 {
+    if flowc_cgen_ty_is_array(arena, src, ty) == 1 {
         return 1
     }
     return 0
@@ -3818,7 +3830,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         let mut arr_inner: i32 = AST_NONE
         if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE {
             if arena.nodes[ty].a != AST_NONE and arena.nodes[ty].ival > 0 {
-                if flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "array") == 1 {
+                if flowc_cgen_ty_is_array(arena, src, ty) == 1 {
                     arr_n = arena.nodes[ty].ival
                     arr_inner = arena.nodes[ty].a
                 }
@@ -4977,7 +4989,7 @@ function flowc_cgen_emit_struct_mono(w: ptr<CgenBuf>, arena: AstArena, src: ptr<
         let mut arr_inner: i32 = AST_NONE
         if fty != AST_NONE and arena.nodes[fty].kind == AST_TYPE {
             if arena.nodes[fty].a != AST_NONE and arena.nodes[fty].ival > 0 {
-                if flowc_cgen_span_is(src, arena.nodes[fty].name_start, arena.nodes[fty].name_end, "array") == 1 {
+                if flowc_cgen_ty_is_array(arena, src, fty) == 1 {
                     arr_n = arena.nodes[fty].ival
                     arr_inner = arena.nodes[fty].a
                 }
@@ -5024,7 +5036,7 @@ function flowc_cgen_emit_struct(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
         let mut arr_inner: i32 = AST_NONE
         if fty != AST_NONE and arena.nodes[fty].kind == AST_TYPE {
             if arena.nodes[fty].a != AST_NONE and arena.nodes[fty].ival > 0 {
-                if flowc_cgen_span_is(src, arena.nodes[fty].name_start, arena.nodes[fty].name_end, "array") == 1 {
+                if flowc_cgen_ty_is_array(arena, src, fty) == 1 {
                     arr_n = arena.nodes[fty].ival
                     arr_inner = arena.nodes[fty].a
                 }
@@ -6065,7 +6077,7 @@ export function flowc_cgen_emit_sigs(
             let mut arr_inner: i32 = AST_NONE
             if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE {
                 if arena.nodes[ty].a != AST_NONE and arena.nodes[ty].ival > 0 {
-                    if flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "array") == 1 {
+                    if flowc_cgen_ty_is_array(arena, src, ty) == 1 {
                         arr_n = arena.nodes[ty].ival
                         arr_inner = arena.nodes[ty].a
                     }

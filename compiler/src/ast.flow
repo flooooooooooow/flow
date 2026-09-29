@@ -131,6 +131,9 @@ export const FLOW_ITEM_BECOMES: i32 = 11
 # 40 bytes. The flag is meaningful only for a `span` AST_TYPE; other types keep
 # c = AST_NONE as initialized by flowc_ast_alloc.
 export const AST_TYPE_SPAN_MUTABLE: i32 = 1
+# AST_TYPE.c for the `[T; N]` fixed-array form: an array<T, N> (a = T,
+# ival = N) with no `array` name span in the source.
+export const AST_TYPE_FIXED_ARRAY: i32 = 2
 
 # AST_IDENT.ival marker for a sort DSL modifier (`xs |> sort descending`).
 # Only the pipeline lowering sets it, so `descending`, `desc`, `unique` and
@@ -346,6 +349,7 @@ export function flowc_ast_parse_only_lowered(arena: AstArena, i: i32) -> i32 {
     if k == AST_MATCH_ARM_EXT { return 1 }
     if k == AST_LAYOUT { return 1 }
     if k == AST_SORT_BY { return 1 }
+    if k == AST_FIXED_ARRAY_TYPE { return 1 }
     # Fork and choose blocks lower; flow stage parameters belong to flow
     # blocks.
     if k == AST_PIPE_BLOCK and arena.nodes[i].ival != PIPE_BLOCK_STAGE { return 1 }
