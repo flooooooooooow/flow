@@ -5937,6 +5937,18 @@ export function flowc_cgen_emit_sigs(
         item = arena.nodes[item].next
     }
 
+    # Pass 0.9: `unit Name` declarations are f64 at run time; struct fields
+    # may use them, so they come first.
+    item = arena.nodes[root].a
+    while item != AST_NONE {
+        if arena.nodes[item].kind == AST_TYPE_ALIAS and arena.nodes[item].a == AST_NONE {
+            flowc_cgen_puts(&w, "typedef double ")
+            flowc_cgen_put_span(&w, src, arena.nodes[item].name_start, arena.nodes[item].name_end)
+            flowc_cgen_puts(&w, ";\n")
+        }
+        item = arena.nodes[item].next
+    }
+
     # Pass 1: struct typedefs (including export struct)
     # Skip generic structs (b != AST_NONE means type params present).
     item = arena.nodes[root].a
@@ -5985,7 +5997,7 @@ export function flowc_cgen_emit_sigs(
     # Pass 1.5: type aliases → typedef BaseType Name;
     item = arena.nodes[root].a
     while item != AST_NONE {
-        if arena.nodes[item].kind == AST_TYPE_ALIAS {
+        if arena.nodes[item].kind == AST_TYPE_ALIAS and arena.nodes[item].a != AST_NONE {
             flowc_cgen_puts(&w, "typedef ")
             flowc_cgen_emit_type(&w, arena, src, arena.nodes[item].a)
             flowc_cgen_putc(&w, 32)

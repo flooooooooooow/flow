@@ -3894,10 +3894,12 @@ function flowc_parse_unit_factor(p: ptr<Parser>) -> i32 {
 }
 
 # unit Name [= factor ((* | /) factor)*] [;]. Units are f64 dimensions that
-# Stage-A does not check, so the declaration lowers to a no-op statement.
+# Stage-A does not check, so the declaration lowers to `typedef double Name`.
 function flowc_parse_unit_decl(p: ptr<Parser>) -> i32 {
     let start: i32 = p[0].cur.start
     flowc_parser_advance(p)
+    let ns: i32 = p[0].cur.start
+    let ne: i32 = p[0].cur.end
     flowc_parser_advance(p)
     if flowc_parser_check(p[0], TOK_EQ) == 1 {
         flowc_parser_advance(p)
@@ -3914,10 +3916,16 @@ function flowc_parse_unit_decl(p: ptr<Parser>) -> i32 {
     if flowc_parser_check(p[0], TOK_SEMI) == 1 {
         flowc_parser_advance(p)
     }
-    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_EXPR_STMT, start, p[0].cur.start)
+    # A unit is an f64 at run time (the Python checker alone tracks the
+    # dimension), so it lowers to a type alias with no base type (a =
+    # AST_NONE), which cgen emits as `typedef double Name;`.
+    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_TYPE_ALIAS, start, p[0].cur.start)
     if id == AST_NONE {
         flowc_parser_fail(p)
+        return AST_NONE
     }
+    p[0].arena.nodes[id].name_start = ns
+    p[0].arena.nodes[id].name_end = ne
     return id
 }
 

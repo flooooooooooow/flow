@@ -546,6 +546,12 @@ function flowc_fmt_emit_enum(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: 
 }
 
 function flowc_fmt_emit_type_alias(w: ptr<FmtBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    # A `unit` declaration (no base type) keeps its source text.
+    if arena.nodes[id].a == AST_NONE {
+        flowc_fmt_put_span(w, src, arena.nodes[id].start, arena.nodes[id].end)
+        flowc_fmt_putc(w, 10)
+        return
+    }
     flowc_fmt_puts(w, "type ")
     flowc_fmt_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
     flowc_fmt_puts(w, " = ")
