@@ -1,0 +1,21 @@
+# Effects parity fixture: too few and too many arguments to an operation.
+
+effect Log {
+    info(msg: string) -> void,
+    metric(name: string, value: i32) -> i32,
+}
+
+capability Console {
+    effect Log,
+    function info(msg: string) -> void {
+        printf("[console] %s\n", msg)
+    },
+}
+
+function main() -> i32 {
+    handle Log with Console {
+        Log.info()
+        let v: i32 = Log.metric("a", 1, 2)
+    }
+    return 0
+}

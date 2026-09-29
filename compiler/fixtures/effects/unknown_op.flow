@@ -1,0 +1,19 @@
+# Effects parity fixture: an operation the effect does not declare.
+
+effect Log {
+    info(msg: string) -> void,
+}
+
+capability Console {
+    effect Log,
+    function info(msg: string) -> void {
+        printf("[console] %s\n", msg)
+    },
+}
+
+function main() -> i32 {
+    handle Log with Console {
+        Log.nope("x")
+    }
+    return 0
+}

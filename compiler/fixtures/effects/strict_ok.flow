@@ -1,0 +1,36 @@
+# Effects parity fixture: rows and handlers that cover every perform, under
+# strict effects. Runs.
+# effects-mode: strict
+
+effect Log {
+    info(msg: string) -> void,
+    metric(name: string, value: i32) -> i32,
+}
+
+capability Console {
+    effect Log,
+    function info(msg: string) -> void {
+        printf("[console] %s\n", msg)
+    },
+    function metric(name: string, value: i32) -> i32 {
+        printf("[metric] %s %d\n", name, value)
+        return value * 2
+    },
+}
+
+function greet(name: string) -> void with Log {
+    Log.info(name)
+}
+
+function shout() -> void with Log {
+    greet("world")
+    let v: i32 = Log.metric("calls", 2)
+    printf("v=%d\n", v)
+}
+
+function main() -> i32 {
+    handle Log with Console {
+        shout()
+    }
+    return 0
+}

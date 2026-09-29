@@ -1,0 +1,23 @@
+# Effects parity fixture: a `with` row names an effect that does not exist.
+
+effect Log {
+    info(msg: string) -> void,
+}
+
+capability Console {
+    effect Log,
+    function info(msg: string) -> void {
+        printf("[console] %s\n", msg)
+    },
+}
+
+function greet() -> void with Log, Nope {
+    Log.info("hi")
+}
+
+function main() -> i32 {
+    handle Log with Console {
+        greet()
+    }
+    return 0
+}

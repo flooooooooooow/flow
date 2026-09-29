@@ -10,7 +10,16 @@ import .ast {
     AST_CONST, AST_EXPORT, AST_IMPORT, AST_EXTERN, AST_TYPE, AST_STRUCT, AST_FIELD,
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM,
     AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_SHADER, AST_IDENT_SORT_MOD, AST_MATCH_ARM_EXT, AST_LAYOUT, AST_PIPE_BLOCK, PIPE_BLOCK_CHOOSE, AST_IDENT_FORK_SRC, AST_SORT_BY, AST_TRY, AST_VECTOR_LIT,
+    AST_HANDLE, AST_CAPABILITY, AST_CAP_METHOD, AST_TYPE_CAPABILITY,
     flowc_ast_chain_len, flowc_ast_reject_unsupported, flowc_ast_enum_of_const
+}
+import .effects {
+    FLOWC_EFF_EFFECT, FLOWC_EFF_CAP, FLOWC_EFF_ROW,
+    flowc_eff_collect, flowc_eff_find, flowc_eff_field_int, flowc_eff_item,
+    flowc_eff_item_len, flowc_eff_item_is, flowc_eff_item_is_lit,
+    flowc_eff_is_effect, flowc_eff_is_cap, flowc_eff_row_of,
+    flowc_eff_diag_begin, flowc_eff_diag_s, flowc_eff_diag_span,
+    flowc_eff_diag_buf, flowc_eff_diag_int, flowc_eff_diag_end
 }
 import .overload_table {
     FlowcOverloadTable,
@@ -73,7 +82,23 @@ export struct TcCtx {
     overloads: FlowcOverloadTable,
     overload_scratch: FlowcOverloadCallScratch,
     # Optional source path for diagnostics (may be empty).
-    path: string
+    path: string,
+    # Effect table (see effects.flow): dependency entries in [0, eff_seed_len),
+    # the module being checked after them.
+    eff: ptr<u8>,
+    eff_len: i32,
+    eff_cap: i32,
+    eff_seed_len: i32,
+    # Effects handled at the current point: the enclosing function's `with`
+    # row, then one entry per effect of each enclosing `handle`. Name spans in src.
+    hs_s: ptr<i32>,
+    hs_e: ptr<i32>,
+    hlen: i32,
+    hcap: i32,
+    # Function or capability method being checked, else AST_NONE.
+    cur_fn: i32,
+    # FLOWC_STRICT_EFFECTS=1: effect rows are checked (Python --strict-effects).
+    strict_effects: i32
 }
 
 function flowc_tc_span_eq(src: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i32 {
@@ -352,6 +377,12 @@ function flowc_tc_lookup_fn(ctx: TcCtx, start: i32, end: i32) -> i32 {
     if flowc_tc_span_is(ctx.src, start, end, "flow_panic") == 1 {
         return 1
     }
+    # C formatted I/O, builtins on the Python host too (its BUILTIN_FUNCTIONS).
+    if flowc_tc_span_is(ctx.src, start, end, "printf") == 1 { return 1 }
+    if flowc_tc_span_is(ctx.src, start, end, "fprintf") == 1 { return 1 }
+    if flowc_tc_span_is(ctx.src, start, end, "sprintf") == 1 { return 1 }
+    if flowc_tc_span_is(ctx.src, start, end, "scanf") == 1 { return 1 }
+    if flowc_tc_span_is(ctx.src, start, end, "sscanf") == 1 { return 1 }
     if flowc_tc_span_is(ctx.src, start, end, "sort") == 1 {
         return 1
     }
@@ -633,6 +664,512 @@ function flowc_tc_check_pipe_block(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
     }
 }
 
+# --- algebraic effects (#675) ------------------------------------------------
+# The effect checks of the Python host's type checker, with its messages.
+
+# Start an effect diagnostic at source offset `pos`; count the error.
+function flowc_tc_eff_begin(ctx: ptr<TcCtx>, pos: i32) {
+    flowc_tc_err(ctx)
+    flowc_eff_diag_begin(ctx[0].path, ctx[0].src, pos)
+}
+
+# 1 if effect src[s..e] is handled here (enclosing handle or `with` row).
+function flowc_tc_eff_active(ctx: TcCtx, s: i32, e: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < ctx.hlen {
+        if flowc_tc_span_eq(ctx.src, s, e, ctx.hs_s[i], ctx.hs_e[i]) == 1 {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+function flowc_tc_eff_push(ctx: ptr<TcCtx>, s: i32, e: i32) {
+    if ctx[0].hlen < ctx[0].hcap {
+        ctx[0].hs_s[ctx[0].hlen] = s
+        ctx[0].hs_e[ctx[0].hlen] = e
+        ctx[0].hlen = ctx[0].hlen + 1
+    }
+}
+
+# Name of the function being checked, printed as ` in 'f'` (or ` from 'f'`).
+function flowc_tc_eff_where(ctx: ptr<TcCtx>, arena: AstArena, word: string) {
+    let fn: i32 = ctx[0].cur_fn
+    if fn == AST_NONE {
+        return
+    }
+    if arena.nodes[fn].name_end <= arena.nodes[fn].name_start {
+        return
+    }
+    flowc_eff_diag_s(" ")
+    flowc_eff_diag_s(word)
+    flowc_eff_diag_s(" '")
+    flowc_eff_diag_span(ctx[0].src, arena.nodes[fn].name_start, arena.nodes[fn].name_end)
+    flowc_eff_diag_s("'")
+}
+
+# Python type name of a literal argument, or "" when not a literal.
+function flowc_tc_eff_lit_type(arena: AstArena, id: i32) -> string {
+    let k: i32 = arena.nodes[id].kind
+    if k == AST_STRING { return "string" }
+    if k == AST_INT { return "i32" }
+    if k == AST_FLOAT { return "f64" }
+    if k == AST_BOOL { return "bool" }
+    return ""
+}
+
+# 0 string, 1 number, 2 bool, -1 other, for a type spelled in the table.
+function flowc_tc_eff_type_class(buf: ptr<u8>, p: i32) -> i32 {
+    if flowc_eff_item_is_lit(buf, p, "string") == 1 { return 0 }
+    if flowc_eff_item_is_lit(buf, p, "bool") == 1 { return 2 }
+    if flowc_eff_item_is_lit(buf, p, "i8") == 1 { return 1 }
+    if flowc_eff_item_is_lit(buf, p, "i16") == 1 { return 1 }
+    if flowc_eff_item_is_lit(buf, p, "i32") == 1 { return 1 }
+    if flowc_eff_item_is_lit(buf, p, "i64") == 1 { return 1 }
+    if flowc_eff_item_is_lit(buf, p, "u8") == 1 { return 1 }
+    if flowc_eff_item_is_lit(buf, p, "u16") == 1 { return 1 }
+    if flowc_eff_item_is_lit(buf, p, "u32") == 1 { return 1 }
+    if flowc_eff_item_is_lit(buf, p, "u64") == 1 { return 1 }
+    if flowc_eff_item_is_lit(buf, p, "f32") == 1 { return 1 }
+    if flowc_eff_item_is_lit(buf, p, "f64") == 1 { return 1 }
+    return 0 - 1
+}
+
+function flowc_tc_eff_lit_class(t: string) -> i32 {
+    let p: ptr<u8> = t as ptr<u8>
+    if p[0] == 115 { return 0 }
+    if p[0] == 98 { return 2 }
+    if p[0] == 0 { return 0 - 1 }
+    return 1
+}
+
+# Effect named by the receiver of `recv.op(...)`, as a span in out[0..1].
+# The receiver is an effect, or a value typed `capability E` or `E`.
+function flowc_tc_eff_receiver(ctx: ptr<TcCtx>, arena: AstArena, call: i32, out: ptr<i32>) -> i32 {
+    let recv: i32 = arena.nodes[call].a
+    if recv == AST_NONE {
+        return 0
+    }
+    if arena.nodes[recv].kind != AST_IDENT {
+        return 0
+    }
+    let rs: i32 = arena.nodes[recv].name_start
+    let re: i32 = arena.nodes[recv].name_end
+    if ctx[0].src[re] != 46 {
+        return 0
+    }
+    if flowc_eff_is_effect(ctx[0].eff, ctx[0].eff_len, ctx[0].src, rs, re) == 1 {
+        out[0] = rs
+        out[1] = re
+        return 1
+    }
+    let ty: i32 = flowc_tc_lookup_val_type(ctx[0], rs, re)
+    if ty == AST_NONE or ty < 0 {
+        return 0
+    }
+    if arena.nodes[ty].kind != AST_TYPE {
+        return 0
+    }
+    let ts: i32 = arena.nodes[ty].name_start
+    let te: i32 = arena.nodes[ty].name_end
+    if arena.nodes[ty].c == AST_TYPE_CAPABILITY or flowc_eff_is_effect(ctx[0].eff, ctx[0].eff_len, ctx[0].src, ts, te) == 1 {
+        out[0] = ts
+        out[1] = te
+        return 1
+    }
+    return 0
+}
+
+# `E.op(args)`: the operation exists, arity and literal argument types
+# match, and under FLOWC_STRICT_EFFECTS=1 some handler covers E.
+function flowc_tc_eff_check_call(ctx: ptr<TcCtx>, arena: AstArena, call: i32, es: i32, ee: i32) {
+    let src: ptr<u8> = ctx[0].src
+    let os: i32 = arena.nodes[call].name_start
+    let oe: i32 = arena.nodes[call].name_end
+    let first_arg: i32 = arena.nodes[arena.nodes[call].a].next
+    let nargs: i32 = flowc_ast_chain_len(arena, first_arg)
+    let mut arg: i32 = first_arg
+    while arg != AST_NONE {
+        flowc_tc_check_expr(ctx, arena, arg)
+        arg = arena.nodes[arg].next
+    }
+    if flowc_eff_is_effect(ctx[0].eff, ctx[0].eff_len, src, es, ee) == 0 {
+        flowc_tc_eff_begin(ctx, os)
+        flowc_eff_diag_s("Unknown effect '")
+        flowc_eff_diag_span(src, es, ee)
+        flowc_eff_diag_s("'")
+        flowc_eff_diag_end()
+        return
+    }
+    let off: i32 = flowc_eff_find(ctx[0].eff, ctx[0].eff_len, FLOWC_EFF_EFFECT, src, es, ee, os, oe)
+    if off < 0 {
+        flowc_tc_eff_begin(ctx, os)
+        flowc_eff_diag_s("Effect '")
+        flowc_eff_diag_span(src, es, ee)
+        flowc_eff_diag_s("' has no operation '")
+        flowc_eff_diag_span(src, os, oe)
+        flowc_eff_diag_s("'")
+        flowc_eff_diag_end()
+        return
+    }
+    let arity: i32 = flowc_eff_field_int(ctx[0].eff, off, 0)
+    if arity != nargs {
+        flowc_tc_eff_begin(ctx, os)
+        flowc_eff_diag_s("Effect operation '")
+        flowc_eff_diag_span(src, es, ee)
+        flowc_eff_diag_s(".")
+        flowc_eff_diag_span(src, os, oe)
+        flowc_eff_diag_s("' expects ")
+        flowc_eff_diag_int(arity)
+        flowc_eff_diag_s(" argument(s), got ")
+        flowc_eff_diag_int(nargs)
+        flowc_eff_diag_end()
+        return
+    }
+    let mut idx: i32 = 0
+    arg = first_arg
+    while arg != AST_NONE {
+        let got: string = flowc_tc_eff_lit_type(arena, arg)
+        let pt: i32 = flowc_eff_item(ctx[0].eff, off, 2, idx)
+        if pt >= 0 {
+            let want: i32 = flowc_tc_eff_type_class(ctx[0].eff, pt)
+            let have: i32 = flowc_tc_eff_lit_class(got)
+            if want >= 0 and have >= 0 and want != have {
+                flowc_tc_eff_begin(ctx, arena.nodes[arg].start)
+                flowc_eff_diag_s("Effect operation '")
+                flowc_eff_diag_span(src, es, ee)
+                flowc_eff_diag_s(".")
+                flowc_eff_diag_span(src, os, oe)
+                flowc_eff_diag_s("' argument ")
+                flowc_eff_diag_int(idx + 1)
+                flowc_eff_diag_s(" expects ")
+                flowc_eff_diag_buf(ctx[0].eff, pt, flowc_eff_item_len(ctx[0].eff, pt))
+                flowc_eff_diag_s(", got ")
+                flowc_eff_diag_s(got)
+                flowc_eff_diag_end()
+            }
+        }
+        idx = idx + 1
+        arg = arena.nodes[arg].next
+    }
+    if ctx[0].strict_effects == 1 and flowc_tc_eff_active(ctx[0], es, ee) == 0 {
+        flowc_tc_eff_begin(ctx, os)
+        flowc_eff_diag_s("Unhandled effect '")
+        flowc_eff_diag_span(src, es, ee)
+        flowc_eff_diag_s(".")
+        flowc_eff_diag_span(src, os, oe)
+        flowc_eff_diag_s("'")
+        flowc_tc_eff_where(ctx, arena, "in")
+        flowc_eff_diag_s(": wrap in `handle ")
+        flowc_eff_diag_span(src, es, ee)
+        flowc_eff_diag_s(" with ...`, declare `with ")
+        flowc_eff_diag_span(src, es, ee)
+        flowc_eff_diag_s("` on the function, or omit --strict-effects to allow zero defaults")
+        flowc_eff_diag_end()
+    }
+}
+
+# A call to an unknown name that is an operation of a handled effect:
+# the Python host asks for the qualified form. 1 if reported.
+function flowc_tc_eff_unqualified(ctx: ptr<TcCtx>, arena: AstArena, call: i32) -> i32 {
+    let src: ptr<u8> = ctx[0].src
+    let ns: i32 = arena.nodes[call].name_start
+    let ne: i32 = arena.nodes[call].name_end
+    let mut i: i32 = 0
+    while i < ctx[0].hlen {
+        let es: i32 = ctx[0].hs_s[i]
+        let ee: i32 = ctx[0].hs_e[i]
+        if flowc_eff_find(ctx[0].eff, ctx[0].eff_len, FLOWC_EFF_EFFECT, src, es, ee, ns, ne) >= 0 {
+            flowc_tc_eff_begin(ctx, ns)
+            flowc_eff_diag_s("effect operation '")
+            flowc_eff_diag_span(src, ns, ne)
+            flowc_eff_diag_s("' must be called as '")
+            flowc_eff_diag_span(src, es, ee)
+            flowc_eff_diag_s(".")
+            flowc_eff_diag_span(src, ns, ne)
+            flowc_eff_diag_s("'")
+            flowc_eff_diag_end()
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# Under FLOWC_STRICT_EFFECTS=1, a call to a function (or a value of function
+# type) with a `with` row needs every effect of the row handled here.
+function flowc_tc_eff_check_row_call(ctx: ptr<TcCtx>, arena: AstArena, call: i32) {
+    if ctx[0].strict_effects == 0 {
+        return
+    }
+    let src: ptr<u8> = ctx[0].src
+    let ns: i32 = arena.nodes[call].name_start
+    let ne: i32 = arena.nodes[call].name_end
+    # Missing effect names, NUL-separated, then printed in sorted order.
+    let names: array<u8, 1024> = []
+    let mut nlen: i32 = 0
+    let mut count: i32 = 0
+    let off: i32 = flowc_eff_find(ctx[0].eff, ctx[0].eff_len, FLOWC_EFF_ROW, src, ns, ne, 0 - 1, 0 - 1)
+    if off >= 0 {
+        let mut idx: i32 = 0
+        let mut p: i32 = flowc_eff_item(ctx[0].eff, off, 0, 0)
+        while p >= 0 {
+            let plen: i32 = flowc_eff_item_len(ctx[0].eff, p)
+            # Handled? Compare against the handler stack spans.
+            let mut handled: i32 = 0
+            let mut h: i32 = 0
+            while h < ctx[0].hlen {
+                if flowc_eff_item_is(ctx[0].eff, p, src, ctx[0].hs_s[h], ctx[0].hs_e[h]) == 1 {
+                    handled = 1
+                }
+                h = h + 1
+            }
+            if handled == 0 and nlen + plen + 1 < 1024 {
+                let mut j: i32 = 0
+                while j < plen {
+                    names[nlen + j] = ctx[0].eff[p + j]
+                    j = j + 1
+                }
+                names[nlen + plen] = 0
+                nlen = nlen + plen + 1
+                count = count + 1
+            }
+            idx = idx + 1
+            p = flowc_eff_item(ctx[0].eff, off, 0, idx)
+        }
+    }
+    # A local value of function type carries the row on its type.
+    let vty: i32 = flowc_tc_lookup_val_type(ctx[0], ns, ne)
+    if vty != AST_NONE and vty >= 0 {
+        let row: i32 = flowc_eff_row_of(arena, vty)
+        if row != AST_NONE {
+            let mut en: i32 = arena.nodes[row].a
+            while en != AST_NONE {
+                let es: i32 = arena.nodes[en].name_start
+                let ee: i32 = arena.nodes[en].name_end
+                if flowc_tc_eff_active(ctx[0], es, ee) == 0 and nlen + (ee - es) + 1 < 1024 {
+                    let mut j: i32 = 0
+                    while j < ee - es {
+                        names[nlen + j] = src[es + j]
+                        j = j + 1
+                    }
+                    names[nlen + ee - es] = 0
+                    nlen = nlen + (ee - es) + 1
+                    count = count + 1
+                }
+                en = arena.nodes[en].next
+            }
+        }
+    }
+    if count == 0 {
+        return
+    }
+    flowc_tc_eff_begin(ctx, ns)
+    flowc_eff_diag_s("Call to '")
+    flowc_eff_diag_span(src, ns, ne)
+    flowc_eff_diag_s("'")
+    flowc_tc_eff_where(ctx, arena, "from")
+    flowc_eff_diag_s(" requires effect(s) ")
+    flowc_tc_eff_print_sorted(&names[0], nlen)
+    flowc_eff_diag_s(": handle them or declare `with ")
+    flowc_tc_eff_print_sorted(&names[0], nlen)
+    flowc_eff_diag_s("` on the caller")
+    flowc_eff_diag_end()
+}
+
+# Byte-wise compare of NUL-terminated names at a and b: <0, 0, >0.
+function flowc_tc_eff_cmp(names: ptr<u8>, a: i32, b: i32) -> i32 {
+    let mut i: i32 = 0
+    while names[a + i] != 0 and names[a + i] == names[b + i] {
+        i = i + 1
+    }
+    let ca: i32 = names[a + i]
+    let cb: i32 = names[b + i]
+    return ca - cb
+}
+
+# Print the distinct NUL-separated names in [0, nlen) sorted, ", "-joined.
+function flowc_tc_eff_print_sorted(names: ptr<u8>, nlen: i32) {
+    let mut last: i32 = 0 - 1
+    let mut first: i32 = 1
+    let mut more: i32 = 1
+    while more == 1 {
+        # Smallest name greater than the last one printed.
+        let mut best: i32 = 0 - 1
+        let mut p: i32 = 0
+        while p < nlen {
+            let mut bigger: i32 = 1
+            if last >= 0 {
+                if flowc_tc_eff_cmp(names, p, last) <= 0 {
+                    bigger = 0
+                }
+            }
+            if bigger == 1 {
+                if best < 0 {
+                    best = p
+                } elif flowc_tc_eff_cmp(names, p, best) < 0 {
+                    best = p
+                }
+            }
+            while names[p] != 0 {
+                p = p + 1
+            }
+            p = p + 1
+        }
+        if best < 0 {
+            more = 0
+        } else {
+            if first == 0 {
+                flowc_eff_diag_s(", ")
+            }
+            first = 0
+            let mut k: i32 = 0
+            while names[best + k] != 0 {
+                k = k + 1
+            }
+            flowc_eff_diag_buf(names, best, k)
+            last = best
+        }
+    }
+}
+
+# `handle E1, E2 with H1, H2 { body }`.
+function flowc_tc_eff_check_handle(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
+    let src: ptr<u8> = ctx[0].src
+    let ne: i32 = flowc_ast_chain_len(arena, arena.nodes[id].b)
+    let nh: i32 = flowc_ast_chain_len(arena, arena.nodes[id].c)
+    if nh != 1 and nh != ne {
+        flowc_tc_eff_begin(ctx, arena.nodes[id].start)
+        flowc_eff_diag_s("handle expects 1 handler or the same count as effects; got ")
+        flowc_eff_diag_int(ne)
+        flowc_eff_diag_s(" effects and ")
+        flowc_eff_diag_int(nh)
+        flowc_eff_diag_s(" handlers")
+        flowc_eff_diag_end()
+    }
+    let saved: i32 = ctx[0].hlen
+    let mut en: i32 = arena.nodes[id].b
+    while en != AST_NONE {
+        let es: i32 = arena.nodes[en].name_start
+        let ee: i32 = arena.nodes[en].name_end
+        if flowc_eff_is_effect(ctx[0].eff, ctx[0].eff_len, src, es, ee) == 0 {
+            flowc_tc_eff_begin(ctx, es)
+            flowc_eff_diag_s("Unknown effect '")
+            flowc_eff_diag_span(src, es, ee)
+            flowc_eff_diag_s("' in handle statement")
+            flowc_eff_diag_end()
+        } else {
+            flowc_tc_eff_push(ctx, es, ee)
+        }
+        en = arena.nodes[en].next
+    }
+    flowc_tc_check_block(ctx, arena, arena.nodes[id].a)
+    ctx[0].hlen = saved
+}
+
+# Every effect in a top-level function's `with` row must exist.
+function flowc_tc_check_rows(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
+    let src: ptr<u8> = ctx[0].src
+    let mut item: i32 = arena.nodes[root].a
+    while item != AST_NONE {
+        let fn: i32 = flowc_tc_unwrap_fn(arena, item)
+        if fn != AST_NONE {
+            let row: i32 = flowc_eff_row_of(arena, fn)
+            if row != AST_NONE {
+                let mut en: i32 = arena.nodes[row].a
+                while en != AST_NONE {
+                    let es: i32 = arena.nodes[en].name_start
+                    let ee: i32 = arena.nodes[en].name_end
+                    if flowc_eff_is_effect(ctx[0].eff, ctx[0].eff_len, src, es, ee) == 0 {
+                        flowc_tc_eff_begin(ctx, es)
+                        flowc_eff_diag_s("Function '")
+                        flowc_eff_diag_span(src, arena.nodes[fn].name_start, arena.nodes[fn].name_end)
+                        flowc_eff_diag_s("' declares unknown effect '")
+                        flowc_eff_diag_span(src, es, ee)
+                        flowc_eff_diag_s("' in its `with` row")
+                        flowc_eff_diag_end()
+                    }
+                    en = arena.nodes[en].next
+                }
+            }
+        }
+        item = arena.nodes[item].next
+    }
+}
+
+# `f(x)` for `f(x, gpu: GPU, fft: capability FFT)` inside a handle of GPU and
+# FFT: the trailing capability parameters come from the handlers.
+function flowc_tc_eff_implicit_ok(ctx: ptr<TcCtx>, arena: AstArena, call: i32, nargs: i32) -> i32 {
+    let src: ptr<u8> = ctx[0].src
+    let ns: i32 = arena.nodes[call].name_start
+    let ne: i32 = arena.nodes[call].name_end
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_FN and flowc_tc_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+            let mut prm: i32 = arena.nodes[i].a
+            let mut k: i32 = 0
+            while k < nargs and prm != AST_NONE {
+                prm = arena.nodes[prm].next
+                k = k + 1
+            }
+            if prm == AST_NONE {
+                return 0
+            }
+            while prm != AST_NONE {
+                let ty: i32 = arena.nodes[prm].a
+                if ty == AST_NONE or arena.nodes[ty].kind != AST_TYPE {
+                    return 0
+                }
+                let ts: i32 = arena.nodes[ty].name_start
+                let te: i32 = arena.nodes[ty].name_end
+                if flowc_eff_is_effect(ctx[0].eff, ctx[0].eff_len, src, ts, te) == 0 {
+                    return 0
+                }
+                if flowc_tc_eff_active(ctx[0], ts, te) == 0 {
+                    return 0
+                }
+                prm = arena.nodes[prm].next
+            }
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# Check one function-shaped body (a function or a capability method): bind
+# its parameters, seed the handled set with its `with` row, check the block.
+function flowc_tc_check_body(ctx: ptr<TcCtx>, arena: AstArena, fn: i32) {
+    let body: i32 = arena.nodes[fn].c
+    if body == AST_NONE {
+        return
+    }
+    flowc_tc_push_mark(ctx)
+    let mut param: i32 = arena.nodes[fn].a
+    while param != AST_NONE {
+        let pty: i32 = arena.nodes[param].a
+        flowc_tc_bind_value(ctx, arena.nodes[param].name_start, arena.nodes[param].name_end, pty)
+        param = arena.nodes[param].next
+    }
+    ctx[0].cur_fn = fn
+    ctx[0].hlen = 0
+    let row: i32 = flowc_eff_row_of(arena, fn)
+    if row != AST_NONE {
+        let mut en: i32 = arena.nodes[row].a
+        while en != AST_NONE {
+            flowc_tc_eff_push(ctx, arena.nodes[en].name_start, arena.nodes[en].name_end)
+            en = arena.nodes[en].next
+        }
+    }
+    ctx[0].cur_ret = arena.nodes[fn].b
+    flowc_tc_check_block(ctx, arena, body)
+    ctx[0].cur_ret = AST_NONE
+    ctx[0].cur_fn = AST_NONE
+    ctx[0].hlen = 0
+    flowc_tc_pop_mark(ctx)
+}
+
 function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
     if id == AST_NONE {
         return
@@ -684,6 +1221,18 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         # The implicit UI layout state pointer is a builtin global.
         if flowc_tc_span_is(ctx[0].src, ns, ne, "_ui_state") == 1 { return }
         if flowc_tc_lookup(ctx[0], ns, ne) == 0 {
+            # A capability is a handler, not a value (fatal on the Python
+            # host too, lenient or not).
+            if flowc_eff_is_cap(ctx[0].eff, ctx[0].eff_len, ctx[0].src, ns, ne) == 1 {
+                flowc_tc_eff_begin(ctx, ns)
+                flowc_eff_diag_s("Capability '")
+                flowc_eff_diag_span(ctx[0].src, ns, ne)
+                flowc_eff_diag_s("' is not a value and cannot be passed as an argument. Install it for the call instead: handle <Effect> with ")
+                flowc_eff_diag_span(ctx[0].src, ns, ne)
+                flowc_eff_diag_s(" { ... }")
+                flowc_eff_diag_end()
+                return
+            }
             # extern { ... } bodies are brace-skipped — allow unknown idents
             # (e.g. function pointers declared in extern blocks).
             if ctx[0].has_extern == 0 {
@@ -697,6 +1246,23 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         let ns: i32 = arena.nodes[id].name_start
         let ne: i32 = arena.nodes[id].name_end
         let nargs: i32 = flowc_ast_chain_len(arena, arena.nodes[id].a)
+        # `E.op(args)` on an effect or a capability-typed value.
+        let espan: array<i32, 2> = []
+        if flowc_tc_eff_receiver(ctx, arena, id, &espan[0]) == 1 {
+            flowc_tc_eff_check_call(ctx, arena, id, espan[0], espan[1])
+            return
+        }
+        flowc_tc_eff_check_row_call(ctx, arena, id)
+        if flowc_tc_lookup_fn(ctx[0], ns, ne) == 0 and flowc_tc_lookup(ctx[0], ns, ne) == 0 {
+            if flowc_tc_eff_unqualified(ctx, arena, id) == 1 {
+                let mut uarg: i32 = arena.nodes[id].a
+                while uarg != AST_NONE {
+                    flowc_tc_check_expr(ctx, arena, uarg)
+                    uarg = arena.nodes[uarg].next
+                }
+                return
+            }
+        }
         if flowc_tc_lookup_fn(ctx[0], ns, ne) == 0 {
             # GPU built-ins
             let mut is_gpu_builtin: i32 = 0
@@ -766,7 +1332,9 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
             } else {
                 let arity: i32 = flowc_tc_lookup_fn_arity(ctx[0], ns, ne)
                 if arity >= 0 {
-                    if nargs != arity {
+                    if nargs < arity and flowc_tc_eff_implicit_ok(ctx, arena, id, nargs) == 1 {
+                        let unused_implicit: i32 = 0
+                    } elif nargs != arity {
                         flowc_tc_note(ctx, "flowc tc: arity mismatch", ns, ne)
                         flowc_tc_err(ctx)
                     }
@@ -1021,6 +1589,10 @@ function flowc_tc_check_stmt(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         flowc_tc_check_block(ctx, arena, id)
         return
     }
+    if kind == AST_HANDLE {
+        flowc_tc_eff_check_handle(ctx, arena, id)
+        return
+    }
 }
 
 function flowc_tc_collect_globals(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
@@ -1098,19 +1670,18 @@ function flowc_tc_check_fns(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
     while item != AST_NONE {
         let fn: i32 = flowc_tc_unwrap_fn(arena, item)
         if fn != AST_NONE and arena.nodes[fn].ival == 0 {
-            let body: i32 = arena.nodes[fn].c
-            if body != AST_NONE {
-                flowc_tc_push_mark(ctx)
-                let mut param: i32 = arena.nodes[fn].a
-                while param != AST_NONE {
-                    let pty: i32 = arena.nodes[param].a
-                    flowc_tc_bind_value(ctx, arena.nodes[param].name_start, arena.nodes[param].name_end, pty)
-                    param = arena.nodes[param].next
-                }
-                ctx[0].cur_ret = arena.nodes[fn].b
-                flowc_tc_check_block(ctx, arena, body)
-                ctx[0].cur_ret = AST_NONE
-                flowc_tc_pop_mark(ctx)
+            flowc_tc_check_body(ctx, arena, fn)
+        }
+        # Capability methods are checked like functions.
+        let mut cp: i32 = item
+        if arena.nodes[cp].kind == AST_EXPORT {
+            cp = arena.nodes[cp].a
+        }
+        if cp != AST_NONE and arena.nodes[cp].kind == AST_CAPABILITY {
+            let mut m: i32 = arena.nodes[cp].b
+            while m != AST_NONE {
+                flowc_tc_check_body(ctx, arena, m)
+                m = arena.nodes[m].next
             }
         }
         # Const init may reference other consts / fns.
@@ -1219,6 +1790,10 @@ export function flowc_tc_seed_export(ctx: ptr<TcCtx>, dep_arena: AstArena, dep_r
     if dep_arena.nodes[dep_root].kind != AST_PROGRAM {
         return
     }
+    # Effects, capabilities and `with` rows travel in the effect table.
+    ctx[0].eff_len = ctx[0].eff_seed_len
+    ctx[0].eff_len = flowc_eff_collect(dep_arena, dep_root, dep_src, ctx[0].eff, ctx[0].eff_cap, ctx[0].eff_len)
+    ctx[0].eff_seed_len = ctx[0].eff_len
     let mut item: i32 = dep_arena.nodes[dep_root].a
     while item != AST_NONE {
         let kind: i32 = dep_arena.nodes[item].kind
@@ -1283,7 +1858,12 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
     let raw_na: ptr<u8> = malloc((ncap as i64) * 4)
     let raw_mk: ptr<u8> = malloc((mcap as i64) * 4)
     let raw_seed: ptr<u8> = malloc(seed_cap as i64)
-    if raw_ns == null or raw_ne == null or raw_nk == null or raw_na == null or raw_mk == null or raw_seed == null or overloads.err != 0 or overload_scratch.err != 0 {
+    let eff_cap: i32 = 262144
+    let hcap: i32 = 256
+    let raw_eff: ptr<u8> = malloc(eff_cap as i64)
+    let raw_hs: ptr<u8> = malloc((hcap as i64) * 4)
+    let raw_he: ptr<u8> = malloc((hcap as i64) * 4)
+    if raw_ns == null or raw_ne == null or raw_nk == null or raw_na == null or raw_mk == null or raw_seed == null or raw_eff == null or raw_hs == null or raw_he == null or overloads.err != 0 or overload_scratch.err != 0 {
         if raw_ns != null {
             free(raw_ns)
         }
@@ -1301,6 +1881,15 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
         }
         if raw_seed != null {
             free(raw_seed)
+        }
+        if raw_eff != null {
+            free(raw_eff)
+        }
+        if raw_hs != null {
+            free(raw_hs)
+        }
+        if raw_he != null {
+            free(raw_he)
         }
         flowc_overload_table_free(&overloads)
         flowc_overload_call_scratch_free(&overload_scratch)
@@ -1326,7 +1915,17 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
             seed_nlen: 0,
             overloads: overloads,
             overload_scratch: overload_scratch,
-            path: ""
+            path: "",
+            eff: null,
+            eff_len: 0,
+            eff_cap: 0,
+            eff_seed_len: 0,
+            hs_s: null,
+            hs_e: null,
+            hlen: 0,
+            hcap: 0,
+            cur_fn: AST_NONE,
+            strict_effects: 0
         }
     }
     let mut zi: i32 = 0
@@ -1339,6 +1938,14 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
     let nk: ptr<i32> = raw_nk
     let na: ptr<i32> = raw_na
     let marks: ptr<i32> = raw_mk
+    let hs_s: ptr<i32> = raw_hs
+    let hs_e: ptr<i32> = raw_he
+    let mut strict_effects: i32 = 0
+    let se: string = getenv("FLOWC_STRICT_EFFECTS")
+    let sep: ptr<u8> = se as ptr<u8>
+    if sep != null and sep[0] == 49 {
+        strict_effects = 1
+    }
     return TcCtx {
         src: src,
         ns: ns,
@@ -1361,7 +1968,17 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
         seed_nlen: 0,
         overloads: overloads,
         overload_scratch: overload_scratch,
-        path: ""
+        path: "",
+        eff: raw_eff,
+        eff_len: 0,
+        eff_cap: eff_cap,
+        eff_seed_len: 0,
+        hs_s: hs_s,
+        hs_e: hs_e,
+        hlen: 0,
+        hcap: hcap,
+        cur_fn: AST_NONE,
+        strict_effects: strict_effects
     }
 }
 
@@ -1390,6 +2007,18 @@ export function flowc_tc_free(ctx: ptr<TcCtx>) {
         free(ctx[0].seed_buf)
         ctx[0].seed_buf = null
     }
+    if ctx[0].eff != null {
+        free(ctx[0].eff)
+        ctx[0].eff = null
+    }
+    if ctx[0].hs_s != null {
+        free(ctx[0].hs_s)
+        ctx[0].hs_s = null
+    }
+    if ctx[0].hs_e != null {
+        free(ctx[0].hs_e)
+        ctx[0].hs_e = null
+    }
     flowc_overload_table_free(&ctx[0].overloads)
     flowc_overload_call_scratch_free(&ctx[0].overload_scratch)
 }
@@ -1403,6 +2032,9 @@ export function flowc_tc_reset_module(ctx: ptr<TcCtx>, src: ptr<u8>) {
     ctx[0].cur_ret = AST_NONE
     ctx[0].loop_depth = 0
     ctx[0].has_extern = 0
+    ctx[0].eff_len = ctx[0].eff_seed_len
+    ctx[0].hlen = 0
+    ctx[0].cur_fn = AST_NONE
     flowc_overload_registry_reset(&ctx[0].overloads, src)
 }
 
@@ -1435,8 +2067,12 @@ export function flowc_tc_check_program(ctx: ptr<TcCtx>, arena: AstArena, root: i
     if flowc_overload_registry_collect(&ctx[0].overloads, arena, root) < 0 {
         flowc_tc_err(ctx)
     }
+    # This module's own effects join the table for the duration of the check.
+    ctx[0].eff_len = flowc_eff_collect(arena, root, ctx[0].src, ctx[0].eff, ctx[0].eff_cap, ctx[0].eff_seed_len)
     flowc_tc_collect_globals(ctx, arena, root)
+    flowc_tc_check_rows(ctx, arena, root)
     flowc_tc_check_fns(ctx, arena, root)
+    ctx[0].eff_len = ctx[0].eff_seed_len
     return ctx[0].err
 }
 

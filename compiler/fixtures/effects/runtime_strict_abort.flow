@@ -1,0 +1,14 @@
+# Effects parity fixture: with FLOW_STRICT_EFFECTS=1 in the environment an
+# unhandled operation aborts with a message on stderr.
+# effects-mode: runtime-strict
+
+effect Log {
+    info(msg: string) -> void,
+}
+
+function main() -> i32 {
+    printf("before\n")
+    Log.info("no handler")
+    printf("after\n")
+    return 0
+}

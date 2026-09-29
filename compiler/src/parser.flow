@@ -32,6 +32,7 @@ import .ast {
     AST_FLOW_DECL, AST_FLOW_ITEM, AST_LAYOUT, AST_PIPE_BLOCK, AST_HANDLE, AST_EFFECT_ROW, AST_MATCH_ARM_EXT,
     AST_FIXED_ARRAY_TYPE, AST_CAPABILITY_TYPE, AST_TRY, AST_VECTOR_LIT,
     AST_SORT_BY, AST_MODULE,
+    AST_EFFECT, AST_CAPABILITY, AST_EFFECT_OP, AST_CAP_METHOD, AST_TYPE_CAPABILITY,
     PIPE_BLOCK_FORK, PIPE_BLOCK_STAGE, PIPE_BLOCK_CHOOSE,
     FLOW_ITEM_MEMBER, FLOW_ITEM_EVOLVES, FLOW_ITEM_WHEN, FLOW_ITEM_EVERY,
     FLOW_ITEM_SOLVER, FLOW_ITEM_ALWAYS, FLOW_ITEM_NEVER, FLOW_ITEM_RECOGNIZE,
@@ -330,8 +331,8 @@ function flowc_parse_type(p: ptr<Parser>) -> i32 {
         }
         return id
     }
-    # capability E — a capability-typed parameter. Parse-only: an AST_TYPE
-    # named E plus an AST_CAPABILITY_TYPE marker.
+    # capability E: a capability-typed parameter. An AST_TYPE named E with
+    # c = AST_TYPE_CAPABILITY, plus an AST_CAPABILITY_TYPE marker.
     if flowc_parser_check_kw(p[0], KW_CAPABILITY) == 1 {
         let cstart: i32 = p[0].cur.start
         flowc_parser_advance(p)
@@ -347,6 +348,7 @@ function flowc_parse_type(p: ptr<Parser>) -> i32 {
         }
         p[0].arena.nodes[cid].name_start = p[0].cur.start
         p[0].arena.nodes[cid].name_end = p[0].cur.end
+        p[0].arena.nodes[cid].c = AST_TYPE_CAPABILITY
         p[0].arena.nodes[cmark].b = cid
         flowc_parser_advance(p)
         return cid
@@ -515,6 +517,9 @@ function flowc_parse_apply_pipe(p: ptr<Parser>, left: i32, right: i32) -> i32
 function flowc_parser_at_layout(p: Parser) -> i32
 function flowc_parse_layout(p: ptr<Parser>) -> i32
 function flowc_parse_handle(p: ptr<Parser>) -> i32
+function flowc_parse_effect(p: ptr<Parser>, is_capability: i32) -> i32
+function flowc_parse_capability_decl(p: ptr<Parser>) -> i32
+function flowc_parse_function(p: ptr<Parser>) -> i32
 function flowc_parse_effect_row(p: ptr<Parser>) -> i32
 function flowc_parse_ident_list(p: ptr<Parser>) -> i32
 function flowc_parse_arm_is_simple(p: Parser) -> i32
@@ -3442,14 +3447,24 @@ function flowc_parse_export(p: ptr<Parser>) -> i32 {
     if flowc_parser_check_kw(p[0], KW_CONST) == 1 {
         return flowc_parse_const(p, 1)
     }
-    # export effect/capability Name { ... } — skip the block
+    # export effect/capability Name { ... }
     if flowc_parser_check_kw(p[0], KW_EFFECT) == 1 or flowc_parser_check_kw(p[0], KW_CAPABILITY) == 1 {
-        flowc_parser_advance(p)
-        if flowc_parser_check(p[0], TOK_IDENT) == 1 {
-            flowc_parser_advance(p)
+        let mut decl: i32 = AST_NONE
+        if flowc_parser_check_kw(p[0], KW_EFFECT) == 1 {
+            decl = flowc_parse_effect(p, 0)
+        } else {
+            decl = flowc_parse_capability_decl(p)
         }
-        flowc_parser_skip_brace_block(p)
-        return flowc_ast_alloc(&p[0].arena, AST_EXPR_STMT, start, p[0].cur.start)
+        if decl == AST_NONE {
+            return AST_NONE
+        }
+        let eid: i32 = flowc_ast_alloc(&p[0].arena, AST_EXPORT, start, p[0].cur.start)
+        if eid == AST_NONE {
+            flowc_parser_fail(p)
+            return AST_NONE
+        }
+        p[0].arena.nodes[eid].a = decl
+        return eid
     }
     # export [distinct] type Name = BaseType — skip distinct, parse as type alias
     if flowc_parser_check_kw(p[0], KW_TYPE) == 1 {
@@ -3521,6 +3536,10 @@ export function flowc_parse_effect(p: ptr<Parser>, is_capability: i32) -> i32 {
     flowc_parser_advance(p)
     let mut ops: i32 = AST_NONE
     while flowc_parser_check(p[0], TOK_RBRACE) == 0 and flowc_parser_check(p[0], TOK_EOF) == 0 {
+        # `function` before an operation is optional, as in the Python parser.
+        if flowc_parser_check_kw(p[0], KW_FUNCTION) == 1 {
+            flowc_parser_advance(p)
+        }
         if flowc_parser_check(p[0], TOK_IDENT) == 0 {
             flowc_parser_fail(p)
             return AST_NONE
@@ -3597,8 +3616,80 @@ export function flowc_parse_effect(p: ptr<Parser>, is_capability: i32) -> i32 {
     return id
 }
 
-export function flowc_parse_capability(p: ptr<Parser>, x: i32) -> i32 {
-    return flowc_parse_effect(p, 1)
+# capability C { effect E1, E2, function m(params) -> T { body }, ... }
+# AST_CAPABILITY: name_* = C, a = AST_IDENT chain of effects, b = AST_CAP_METHOD
+# chain. Commas between entries are optional, as in the Python parser.
+export function flowc_parse_capability_decl(p: ptr<Parser>) -> i32 {
+    let start: i32 = p[0].cur.start
+    flowc_parser_advance(p)
+    if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+        flowc_parser_fail(p)
+        return AST_NONE
+    }
+    let name_start: i32 = p[0].cur.start
+    let name_end: i32 = p[0].cur.end
+    flowc_parser_advance(p)
+    if flowc_parser_eat(p, TOK_LBRACE) == 0 {
+        return AST_NONE
+    }
+    let mut effects: i32 = AST_NONE
+    let mut methods: i32 = AST_NONE
+    while flowc_parser_check(p[0], TOK_RBRACE) == 0 {
+        if flowc_parser_check(p[0], TOK_EOF) == 1 {
+            flowc_parser_fail(p)
+            return AST_NONE
+        }
+        if flowc_parser_check_kw(p[0], KW_EFFECT) == 1 {
+            flowc_parser_advance(p)
+            let mut more: i32 = 1
+            while more == 1 {
+                if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+                    flowc_parser_fail(p)
+                    return AST_NONE
+                }
+                let en: i32 = flowc_ast_alloc(&p[0].arena, AST_IDENT, p[0].cur.start, p[0].cur.end)
+                if en == AST_NONE {
+                    flowc_parser_fail(p)
+                    return AST_NONE
+                }
+                p[0].arena.nodes[en].name_start = p[0].cur.start
+                p[0].arena.nodes[en].name_end = p[0].cur.end
+                effects = flowc_ast_chain_push(&p[0].arena, effects, en)
+                flowc_parser_advance(p)
+                more = 0
+                if flowc_parser_check(p[0], TOK_COMMA) == 1 {
+                    flowc_parser_advance(p)
+                    if flowc_parser_check(p[0], TOK_IDENT) == 1 {
+                        more = 1
+                    }
+                }
+            }
+        } elif flowc_parser_check_kw(p[0], KW_FUNCTION) == 1 {
+            let m: i32 = flowc_parse_function(p)
+            if m == AST_NONE {
+                return AST_NONE
+            }
+            p[0].arena.nodes[m].kind = AST_CAP_METHOD
+            methods = flowc_ast_chain_push(&p[0].arena, methods, m)
+            if flowc_parser_check(p[0], TOK_COMMA) == 1 {
+                flowc_parser_advance(p)
+            }
+        } else {
+            flowc_parser_fail(p)
+            return AST_NONE
+        }
+    }
+    flowc_parser_advance(p)
+    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_CAPABILITY, start, p[0].cur.start)
+    if id == AST_NONE {
+        flowc_parser_fail(p)
+        return AST_NONE
+    }
+    p[0].arena.nodes[id].name_start = name_start
+    p[0].arena.nodes[id].name_end = name_end
+    p[0].arena.nodes[id].a = effects
+    p[0].arena.nodes[id].b = methods
+    return id
 }
 
 function flowc_parser_at_layout(p: Parser) -> i32 {
@@ -4050,7 +4141,7 @@ function flowc_parse_ident_list(p: ptr<Parser>) -> i32 {
     return names
 }
 
-# handle E1, E2 with H1, H2 { body }. Parse-only: AST_HANDLE with
+# handle E1, E2 with H1, H2 { body }. AST_HANDLE with
 # a = body block, b = effect name chain, c = handler name chain.
 export function flowc_parse_handle(p: ptr<Parser>) -> i32 {
     let start: i32 = p[0].cur.start
@@ -4834,14 +4925,10 @@ export function flowc_parse_program(p: ptr<Parser>) -> i32 {
                                     if flowc_parser_at_unit_decl(p[0]) == 1 {
                                         item = flowc_parse_unit_decl(p)
                                     } else {
-                                        if flowc_parser_check_kw(p[0], KW_EFFECT) == 1 or flowc_parser_check_kw(p[0], KW_CAPABILITY) == 1 {
-                                            let eff_start: i32 = p[0].cur.start
-                                            flowc_parser_advance(p)
-                                            if flowc_parser_check(p[0], TOK_IDENT) == 1 {
-                                                flowc_parser_advance(p)
-                                            }
-                                            flowc_parser_skip_brace_block(p)
-                                            item = flowc_ast_alloc(&p[0].arena, AST_EXPR_STMT, eff_start, p[0].cur.start)
+                                        if flowc_parser_check_kw(p[0], KW_EFFECT) == 1 {
+                                            item = flowc_parse_effect(p, 0)
+                                        } elif flowc_parser_check_kw(p[0], KW_CAPABILITY) == 1 {
+                                            item = flowc_parse_capability_decl(p)
                                         } else {
                                             if flowc_parser_check_kw(p[0], KW_TRAIT) == 1 or flowc_parser_check_kw(p[0], KW_IMPL) == 1 or flowc_parser_check_kw(p[0], KW_TEST) == 1 {
                                                 # Skip trait/impl/test blocks: the Python compiler
