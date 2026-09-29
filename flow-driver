@@ -3354,17 +3354,18 @@ case "${1:-help}" in
             print_info "                  [--wcet] [--stack-depth] [--budget N] [--fail-on-violation]"
             exit 1
         fi
-        # Route .flow files to WCET/stack analysis, .c files to MISRA scan.
+        # tools/analyze/main.flow, built on first use. .flow files (or the
+        # --wcet / --stack-depth flags first) go to WCET and stack-depth
+        # analysis, anything else to the MISRA/CERT scan over C.
+        if ! analyze_bin="$(flow_native_tool analyze)"; then
+            exit 1
+        fi
         case "${1:-}" in
-            *.flow)
-                PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.wcet_analysis "$@"
-                ;;
-            --wcet|--stack-depth)
-                # Flags before the file: still WCET analysis on a .flow file.
-                PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.wcet_analysis "$@"
+            *.flow|--wcet|--stack-depth)
+                exec "$analyze_bin" wcet "$@"
                 ;;
             *)
-                PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" python3 -m flow.misra_scan "$@"
+                exec "$analyze_bin" misra "$@"
                 ;;
         esac
         ;;

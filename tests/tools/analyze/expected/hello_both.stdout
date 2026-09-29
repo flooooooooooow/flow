@@ -1,0 +1,12 @@
+Stack depth analysis: examples/basics/hello_world.flow
+============================================================
+Function                                  Max depth Chain
+------------------------------------------------------------
+main                                            0 bytes  main
+
+WCET analysis: examples/basics/hello_world.flow
+============================================================
+Function                                   Max cost Chain
+------------------------------------------------------------
+main                                            2 inst  main
+

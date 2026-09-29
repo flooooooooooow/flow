@@ -1,0 +1,8 @@
+WCET analysis: examples/basics/pipeline_placeholder.flow
+============================================================
+Function                                   Max cost Chain
+------------------------------------------------------------
+main                                          165 inst  main → printf (extern)
+printf                                        100 inst  printf (extern)
+clamp                                          12 inst  clamp
+

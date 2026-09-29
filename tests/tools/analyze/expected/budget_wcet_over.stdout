@@ -1,0 +1,8 @@
+WCET analysis: examples/basics/loops.flow
+============================================================
+Function                                   Max cost Chain
+------------------------------------------------------------
+main                                         5032 inst  main → sum_range
+sum_range                                    5008 inst  sum_range
+factorial                                    5008 inst  factorial
+

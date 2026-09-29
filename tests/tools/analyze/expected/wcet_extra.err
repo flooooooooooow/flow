@@ -1,0 +1,2 @@
+usage: flow-analyze-wcet [-h] [--wcet] [--stack-depth] [--budget BUDGET] input
+flow-analyze-wcet: error: unrecognized arguments: extra.flow

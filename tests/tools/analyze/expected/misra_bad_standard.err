@@ -1,0 +1,4 @@
+usage: flow-analyze [-h] [--standard {misra-c-2024,cert-c}]
+                    [--fail-on-violation]
+                    input
+flow-analyze: error: argument --standard: invalid choice: 'foo' (choose from misra-c-2024, cert-c)

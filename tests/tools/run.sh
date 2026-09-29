@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Transcript tests for the native host tools written in Flow (flow repl,
-# flow lsp).
+# flow lsp, flow analyze).
 #
 # Each case is an input file fed to the tool on stdin and the exact bytes
 # the tool is expected to write back. Nothing here needs Python.
@@ -62,4 +62,12 @@ else
     tests/tools/lsp/run.sh || lsp_status=$?
 fi
 
-[ "$fail" -eq 0 ] && [ "$lsp_status" -eq 0 ]
+# flow analyze (WCET, stack depth, MISRA scan): tests/tools/analyze/run.sh.
+analyze_status=0
+if [ "$UPDATE" -eq 1 ]; then
+    tests/tools/analyze/run.sh --update || analyze_status=$?
+else
+    tests/tools/analyze/run.sh || analyze_status=$?
+fi
+
+[ "$fail" -eq 0 ] && [ "$lsp_status" -eq 0 ] && [ "$analyze_status" -eq 0 ]

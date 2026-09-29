@@ -1,0 +1,24 @@
+Stack depth analysis: examples/basics/bigint_smoke.flow
+============================================================
+Function                                  Max depth Chain
+------------------------------------------------------------
+main                                          128 bytes  main → bigint_from_i64 → bigint_new → calloc
+bigint_from_i64                               108 bytes  bigint_from_i64 → bigint_new → calloc
+bigint_new                                     76 bytes  bigint_new → calloc
+calloc                                         64 bytes  calloc
+free                                           64 bytes  free
+bigint_free                                    64 bytes  bigint_free → free
+bigint_mod_u32                                 12 bytes  bigint_mod_u32
+
+WCET analysis: examples/basics/bigint_smoke.flow
+============================================================
+Function                                   Max cost Chain
+------------------------------------------------------------
+main                                          511 inst  main → bigint_from_i64 → bigint_new → calloc (extern)
+bigint_from_i64                               477 inst  bigint_from_i64 → bigint_new → calloc (extern)
+bigint_mod_u32                                333 inst  bigint_mod_u32
+bigint_new                                    119 inst  bigint_new → calloc (extern)
+bigint_free                                   113 inst  bigint_free → free (extern)
+calloc                                        100 inst  calloc (extern)
+free                                          100 inst  free (extern)
+
