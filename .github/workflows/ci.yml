@@ -308,9 +308,10 @@ jobs:
         run: |
           chmod +x ./flow compiler/scripts/*.sh
           # Full roundtrip: Phase-A fixtures + Phase-B bundle/topo/self-emit path.
-          # Each step transpiles main.flow on the Python host; with the dynamics
-          # and flow-block modules a step takes about 23s, so the run is ~21m.
-          timeout 30m ./compiler/scripts/roundtrip.sh
+          # Each step transpiles main.flow on the Python host. With the proof,
+          # effects and lowering modules a step takes about 36s, so the run is
+          # about 35 minutes.
+          timeout 60m ./compiler/scripts/roundtrip.sh
 
       # The proof layer runs on flowc; the gate holds it to the recorded
       # Python behaviour (accept/reject, program output). The live diff
