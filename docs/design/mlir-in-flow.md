@@ -163,10 +163,10 @@ slice landed), on macOS with Homebrew LLVM 22:
 |---|---|
 | Fixtures, MLIR text | 7 of 7 equal |
 | Fixtures, run output | 7 of 7 equal |
-| Repository programs flowc accepts (of 2,369 `.flow` files) | 258 |
-| Of those, MLIR text equal to Python after normalization | 257; the other one crashes the Python parser |
-| Built through both MLIR paths and run | 151 same output, 16 print timings or addresses (differ from run to run on either path), 90 build on neither path (they need the Flow runtime or a C header) |
-| `tests/lang` programs covered | 16 of 165 |
+| Repository programs flowc accepts (of 2,400 `.flow` files) | 291 |
+| Of those, MLIR text equal to Python after normalization | 290; the other one crashes the Python parser |
+| Built through both MLIR paths and run | 184 same output, 16 print timings or addresses (differ from run to run on either path), 90 build on neither path (they need the Flow runtime or a C header) |
+| `tests/lang` programs covered | 16 of 166 |
 
 The refusals are led by imports (455 programs), `@gpu`/mode/C-interop
 attributes, elementwise pointer loops that Python vectorizes, `match`,
