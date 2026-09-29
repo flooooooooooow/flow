@@ -30,7 +30,6 @@
     "attribute:test": "AI_FLOW_HANDBOOK.md",
     "attribute:unsafe": "language/README.md",
     "backend:bpf_target": "language/bpf.md",
-    "backend:c_generator": "vision/north-star.md",
     "backend:js_generator": "language/modules-namespacing.md",
     "backend:metal_codegen": "language/wasm-crossings.md",
     "backend:mlir_generator": "language/modules-namespacing.md",
