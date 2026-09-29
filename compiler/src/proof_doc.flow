@@ -2381,7 +2381,7 @@ export function flowc_proof_write_artifacts(path: string, out_dir: string, start
 
 function pdg_env(name: string) -> string {
     let v: string = getenv(name)
-    if v == null { return "" }
+    if (v as ptr<u8>) == null { return "" }
     return v
 }
 

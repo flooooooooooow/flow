@@ -11,7 +11,7 @@ extern {
 }
 
 function has(text: string, needle: string) -> i32 {
-    if strstr(text, needle) == null {
+    if (strstr(text, needle) as ptr<u8>) == null {
         printf("missing: %s\n", needle)
         return 0
     }

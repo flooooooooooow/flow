@@ -633,8 +633,8 @@ function gs_truthy(v: GsVal) -> i32 {
     return 1
 }
 
-function gs_bool(b: i32) -> GsVal {
-    if b == 1 { return gs_num(1.0) }
+function gs_bool(b: bool) -> GsVal {
+    if b { return gs_num(1.0) }
     return gs_num(0.0)
 }
 
