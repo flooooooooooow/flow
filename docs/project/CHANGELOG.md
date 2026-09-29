@@ -4,6 +4,12 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+### Language server
+
+- `flow lsp` and `./flow-lsp` run a language server written in Flow (`tools/lsp/main.flow`), built with the Stage-A compiler on first use. Diagnostics come from the flowc parser and Stage-A type checker in process. It serves hover, completion, definition, references, highlight, rename, document symbols, formatting and idiom quick fixes. The VS Code extension starts it by default.
+- The Python server (`src/flow/lsp_server.py` and its `lsp_intel`, `lsp_syntax`, `lsp_dynamics` and `lsp_ordering` helpers) is deleted. `tests/tools/lsp/run.sh` replays recorded sessions against the native server and checks it differs from the Python server's recorded answers only in the ways listed in `tests/tools/lsp/ACCEPTED.md`.
+- Documents with non-ASCII text are framed by bytes. The Python server lost the message after any such document.
+
 ## [2.0.0] - 2026-09-27
 
 Flow 2.0.0 changes the license and marks a new major version.
