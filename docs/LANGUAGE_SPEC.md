@@ -627,20 +627,20 @@ let zs = xs |> sortBy [asc .key, desc .tie]
 let i  = xs |> find(target)     # index of the first match, or -1
 ```
 
-These name an intent. The retired Python C backend picked the implementation
-from a registry of lowerings with cost models. flowc has no plan selector yet:
-it lowers every sort to a stable insertion sort.
+These name an intent. The compiler picks the implementation from a registry
+of lowerings with cost models and applicability predicates
+(`compiler/src/sort_plans.flow`).
 
 | Surface | Meaning | Status |
 |---------|---------|--------|
 | `\|> sort`, `sort by`, `sortBy`, `descending`, `unique` | Order, in place, on `array<T, N>` | ✅ |
 | `\|> find(t)` | First index equal to `t` under the same total order, else `-1` | ✅ |
-| Plan selection (6 sort plans, 2 search plans) | Cheapest applicable, with a scratch budget | Planned (flowc: insertion sort) |
-| Ordering hints (sortedness, integer range) through straight-line code | Skip-sort, reverse-only, counting sort, binary search | Planned |
-| `adaptive`, `general` | Shift the run estimate; pin the general plan | ⚠️ parsed |
-| `stable` / `unstable` | Parsed; the one plan is stable, so `unstable` buys nothing | ⚠️ |
+| Plan selection (6 sort plans, 2 search plans) | Cheapest applicable, with a scratch budget | ✅ |
+| Ordering hints (sortedness, integer range) through straight-line code | Skip-sort, reverse-only, counting sort, binary search | ✅ |
+| `adaptive`, `general` | Shift the run estimate; pin the general plan | ✅ |
+| `stable` / `unstable` | Parsed; every plan is stable today, so `unstable` buys nothing | ⚠️ |
 | `with entropy`, `parallel`, `gpu`, `simd`, `compact`, … | Parsed, no specialization | ⚠️ |
-| `--explain` / `flow explain` | Print the plan, the costs, and every failed constraint | Retired with the Python C backend |
+| `flow explain` (`FLOWC_EXPLAIN=1`) | Print the plan, the costs, and every failed constraint | ✅ |
 
 ### 4.6 If-expressions
 

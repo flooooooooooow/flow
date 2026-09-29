@@ -446,8 +446,8 @@ is a table in its final report or a temporary note during work.
 | Documentation is current | link and command check | pass/fail |
 
 The AI MUST distinguish estimated values from measured values. This is already
-a Flow design principle. For example, a cost model estimates element
-operations for a plan; benchmark documents contain measurements.
+a Flow design principle. For example, `flow explain` prints estimated element
+operations for selection plans; benchmark documents contain measurements.
 The AI MUST NOT describe a compiler cost estimate as a timing measurement.
 
 ### 6.1 Prefer invariants over attractive output
@@ -1038,15 +1038,15 @@ Performance claims MUST have:
 - separation of compile time and run time;
 - a correctness check before timing.
 
-When a declarative selection is unexpectedly slow, read the generated C:
+Use `flow explain` when a declarative selection is unexpectedly slow:
 
 ```bash
-compiler/scripts/flowc_emit.sh program.flow build/program.c
+./flow explain program.flow
 ```
 
-`flow explain` printed the plan choice of the retired Python C backend. flowc
-has no plan selector yet: it lowers every `|> sort` to a stable insertion
-sort, and `flow explain` stops with an error.
+The report shows candidate implementations, applicability, estimated cost,
+scratch use, rejection reasons, and the chosen plan. It explains a decision;
+it does not replace measurement.
 
 ---
 
@@ -1068,7 +1068,7 @@ Use this slice checklist:
 7. **Checker:** Enforce type, ownership, effect, and context rules.
 8. **Lowering:** Convert the feature to the simplest stable internal form.
 9. **Backends:** Implement or explicitly reject each affected backend.
-10. **Tools:** Update formatter, LSP, or debug data when relevant.
+10. **Tools:** Update formatter, LSP, debug data, or explain output when relevant.
 11. **Tests:** Add positive, negative, edge, and regression coverage.
 12. **Example:** Add one canonical use that checks a real result.
 13. **Documentation:** State behavior and limits without future-tense ambiguity.
@@ -1344,10 +1344,9 @@ be rediscovered and may be reversed accidentally.
 ## 25. Use explainability as a feature
 
 Declarative source lets the compiler choose an implementation. That choice
-must remain inspectable. The plan selector of the retired Python C backend
-recorded each candidate, its constraints, estimated cost, scratch use,
-rejection reason, and winner. flowc has no plan selector yet; when it gains
-one, it should keep that record.
+must remain inspectable. Flow's plan selector (`compiler/src/sort_plans.flow`)
+records each candidate, its constraints, estimated cost, scratch use,
+rejection reason, and winner.
 
 Use the same principle for new adaptive systems:
 
@@ -1522,8 +1521,8 @@ discovery.
 ## 39. Procedure: improve performance
 
 1. Prove correctness before timing.
-2. Inspect generated C or MLIR, including the lowering of declarative selection sites.
-3. Check the lowering choices in the generated code.
+2. Run `flow explain` for declarative selection sites.
+3. Inspect generated C or MLIR.
 4. Measure the current version with a written method.
 5. Form one performance hypothesis.
 6. Change one relevant factor.
@@ -1644,6 +1643,7 @@ Run the documentation link or example checks relevant to the edited files.
 | Use MLIR CPU | `./flow run file.flow --backend=mlir` |
 | Emit MLIR | `./flow mlir file.flow` |
 | JIT | `./flow jit file.flow` |
+| Explain a plan | `./flow explain file.flow` |
 | Format | `./flow fmt file.flow` |
 | Debug | `./flow debug file.flow` |
 | Run graphics | `./flow gfx file.flow` |
@@ -2261,7 +2261,7 @@ families in the current driver.
 | `ml` | Run, JIT, benchmark, or test MLIR-first ML workloads. |
 | `gpu` | Generate GPU compute kernels, especially Metal sources. |
 | `fir-g` | Dump/analyze the FIR-G program graph; calibrate routes or list opt candidates. |
-| `explain` | Unavailable: flowc has no plan selector yet, so it stops with an error. |
+| `explain` | Print declarative implementation selection records. |
 | `transpile` | Run the Python MLIR transpiler directly (advanced flags); its `--c` is retired. |
 | `fmt` | Format Flow files. |
 | `test` | Tiered Flow transpile/native validation. |
@@ -2385,11 +2385,10 @@ different shapes, and aliasing-sensitive operations remain separate.
 
 ### 57.6 Declarative selection optimisation
 
-The retired Python C backend chose sort, search, matmul, and reduce
-implementations from a registry with applicability predicates, scratch claims,
-and static cost models, and `flow explain` reported the choice. flowc has the
-cost models (`general_plans.flow`) but no plan selector yet: it lowers every
-`|> sort` to a stable insertion sort.
+Sort and search use registered implementations, applicability predicates,
+scratch claims, and static cost models (`compiler/src/sort_plans.flow`).
+`flow explain` is the audit surface. Matmul and reduce have cost models
+(`compiler/src/general_plans.flow`) that no lowering consults yet.
 
 Optimisation facts include element count, element kind/size, key range,
 ordering provenance, direction, keys, stability, expected runs, policies, and
@@ -2434,7 +2433,7 @@ Additional optimisation routes include:
 1. Define the metric and correctness invariant.
 2. Select the exact host, backend, target, and build flags.
 3. Capture the baseline output and measurement distribution.
-4. Run pass reports, FIR-G, or generated-target inspection as
+4. Run `explain`, pass reports, FIR-G, or generated-target inspection as
    appropriate.
 5. Form one falsifiable bottleneck hypothesis.
 6. Change one optimisation layer.

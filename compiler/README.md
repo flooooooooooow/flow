@@ -284,8 +284,6 @@ Lexer also tokenizes floats, string literals, brackets, `.`, etc.
   under `FLOWC_DIR` and `flowc_bundle_emit` concatenates C (deps then entry);
   dotted `pkg.mod` still skipped; `flowc_bundle_typecheck` seeds dep exports
   across modules (Stage-A; not full cross-file typing)
-- A plan selector for `|> sort`: flowc lowers every `sort` to a stable
-  insertion sort, so `flow explain` has no report to print
 - `jsgen` does not lower `AST_MATCH`
 - Note: Stage-A already round-trips `examples/basics/fibonacci.flow` twin
   (`compiler/fixtures/stage_a_fib.flow` -> exit 55) via `./compiler/scripts/roundtrip.sh`

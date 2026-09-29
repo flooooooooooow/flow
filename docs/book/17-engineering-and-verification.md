@@ -138,16 +138,15 @@ corresponding language tests.
 
 ## 17.10 Explainable compilation
 
-Declarative constructs can have several valid implementations. The retired
-Python C backend chose among them with a plan selector, and `flow explain`
-printed the candidates, costs, constraints, and the selected plan. flowc has
-no plan selector yet: it lowers every `sort` to a stable insertion sort, and
-`flow explain` stops with an error. To see what flowc chose, read the
-generated C:
+Declarative constructs can have several valid implementations. Inspect the
+selection:
 
 ```bash
-compiler/scripts/flowc_emit.sh examples/basics/declarative_sort.flow build/sort.c
+./flow explain examples/basics/declarative_sort.flow
 ```
+
+The report lists candidate plans, applicability failures, costs, constraints,
+and the selected implementation. It covers sorting and search today.
 
 ## 17.11 FIR-G
 

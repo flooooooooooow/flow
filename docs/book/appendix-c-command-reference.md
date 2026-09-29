@@ -66,7 +66,7 @@ Historical Vulkan and UI command aliases remain accepted.
 | `flow lsp` | language server on stdio, for editors |
 | `flow debug FILE` | debug build and LLDB/GDB launch |
 | `flow dap FILE` | Debug Adapter Protocol server |
-| `flow explain FILE` | unavailable: flowc has no plan selector yet |
+| `flow explain FILE` | show declarative candidate plans and selection |
 | `flow fir-g FILE` | dump FIR-G and analyses |
 | `flow show-flags` | print C flags for profile/sanitizer settings |
 | `flow analyze FILE.c` | scan C for MISRA or CERT patterns |

@@ -117,7 +117,7 @@ means that the syntax or design is not implemented.
 | `sort`, descending, unique | Full with C backend | Chapter 9 |
 | `sortBy` field ordering | Full with C backend | Chapter 9 |
 | `find` | Full with C backend | Chapter 9 |
-| sort/search plan selection | Planned: flowc lowers every `sort` to a stable insertion sort | Chapters 9, 17 |
+| sort/search plan selection | Full | Chapters 9, 17 |
 | ordering hints and cost constraints | Full | Chapters 9, 17 |
 | stable/unstable modifier distinction | Partial; all plans currently stable | Chapter 9 |
 | GPU/SIMD/entropy/compact sort modifiers | Parsed without special plans | Chapter 9 |
@@ -238,7 +238,7 @@ means that the syntax or design is not implemented.
 | safety profile | Full C profile | Chapter 17 |
 | MISRA/CERT scans | Modelled-rule scanners | Chapter 17 |
 | WCET/stack analysis | Partial static analysis | Chapter 17 |
-| explainable plan selection | Planned: flowc has no plan selector yet | Chapter 17 |
+| explainable plan selection | Full for sort and search | Chapter 17 |
 | FIR-G graph and analyses | Compiler tool | Chapter 17 |
 | reproducible-build guidance | Process/tooling | Chapter 17 |
 | theorem and claim syntax | Partial | Chapter 17 |

@@ -9,7 +9,7 @@ All notable changes to FLOW will be documented in this file.
 - flowc is the only C compiler. `flow run`, `compile`, `test`, `test-lang`, `test-runtime`, `gfx`, `record`, `window`, `audio`, `debug`, `patch` and `ml test` all build through it. On the corpus it matches the Python host on 1037 of 1053 programs with `main()` and builds 6 the Python host could not (`compiler/corpus_parity/report.txt`).
 - The Python C backend is deleted: `src/flow/c_generator.py` and the modules only it used (`overload.py`, `ordering_plans.py`, `plan_selector.py`, `general_plans.py`, `constraints.py`). `FLOW_HOST=python` stops with a pointer to flowc, and `python3 -m flow.transpiler --c` exits with the same pointer. `compiler/scripts/flowc_emit.sh IN.flow OUT.c` is the C-only command for scripts and tools.
 - `flow debug` keeps its source mapping: with `FLOWC_DEBUG_INFO=1` flowc writes a `#line` directive before every statement.
-- `flow explain` is gone with the plan selector. flowc lowers every `|> sort` to a stable insertion sort.
+- flowc selects sort and find plans by cost, as the Python host did (`compiler/src/sort_plans.flow`, #1054), and `flow explain` prints the same report from flowc (#1055).
 - The bootstrap C regenerates without Python. `compiler/scripts/bootstrap_from_c.sh --regen` self-emits from the previous bootstrap until the C reaches a fixed point, and `compiler/scripts/flowc_host.sh` builds a flowc from the current `compiler/src` for `roundtrip.sh` and `ensure_flowc.sh`.
 - C output goldens live in `tests/cgen` (`tests/cgen/run.sh`). They replace the pytest tests that asserted on the Python backend's C.
 
