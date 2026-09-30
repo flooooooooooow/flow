@@ -1,18 +1,18 @@
 # Repository statistics counter, written in Flow.
 #
-# Reads the tracked-file list and commit metadata that
-# scripts/update_repo_stats.sh dumps into build/repo-stats/, counts
+# Asks git for the tracked-file list and the commit to credit, counts
 # physical lines per language and per project area, then rewrites the
 # stats block in README.md and docs/generated/repository-stats.json.
+# With --check it only reports whether they are stale.
 #
-# Flow has no process-spawning story yet, so the shell shim runs git and
-# leaves the output in files this program can read. Everything after that
-# Parsing, counting, JSON and Markdown emission all happen here.
+# git runs through std.process. scripts/update_repo_stats.sh only builds
+# this program and runs it under a time limit.
 #
 # It replaced scripts/update_repo_stats.py and matches its output byte for
 # byte, messages included.
 
 import .text { ft_outln, ft_errln }
+import std.process { ProcCmd, ProcResult, proc_cmd, proc_arg, proc_timeout_ms, proc_run, proc_argc, proc_argv }
 
 extern {
     function malloc(size: i64) -> ptr<void>
@@ -539,6 +539,54 @@ function emit_readme_block(lf: ptr<i32>, ll: ptr<i32>, af: ptr<i32>, al: ptr<i32
     return out
 }
 
+# stdout of `git a1 a2 a3 a4` ("" arguments are left out) without
+# trailing newlines, or "" when git fails.
+function git_out(a1: string, a2: string, a3: string, a4: string) -> string {
+    let c: ptr<ProcCmd> = proc_cmd("git")
+    proc_arg(c, a1)
+    if strlen(a2) > 0 {
+        proc_arg(c, a2)
+    }
+    if strlen(a3) > 0 {
+        proc_arg(c, a3)
+    }
+    if strlen(a4) > 0 {
+        proc_arg(c, a4)
+    }
+    proc_timeout_ms(c, 60000)
+    let r: ptr<ProcResult> = proc_run(c)
+    if r.exit_code != 0 {
+        return ""
+    }
+    let p: ptr<u8> = r.stdout as ptr<u8>
+    let mut n: i32 = strlen(r.stdout) as i32
+    while n > 0 and p[n - 1] == 10 {
+        n = n - 1
+    }
+    return slice_str(r.stdout, 0, n)
+}
+
+const STATS_SUBJECT: string = "docs: refresh repository statistics [skip ci]"
+
+# The commit the stats describe: the last one that changed the tree rather
+# than this job's own stats commit. Bounded so a shallow clone, or a run of
+# stats-only commits, cannot walk past the grafted root.
+function stats_rev() -> string {
+    let mut rev: string = "HEAD"
+    let mut i: i32 = 0
+    while i < 5 {
+        if str_eq(git_out("show", "-s", "--format=%s", rev), STATS_SUBJECT) == false {
+            break
+        }
+        if strlen(git_out("rev-parse", "--verify", "--quiet", rev + "^")) == 0 {
+            break
+        }
+        rev = rev + "^"
+        i = i + 1
+    }
+    return rev
+}
+
 function main() -> i32 {
     let lf: ptr<i32> = malloc((LANG_N as i64) * 4) as ptr<i32>
     let ll: ptr<i32> = malloc((LANG_N as i64) * 4) as ptr<i32>
@@ -557,12 +605,13 @@ function main() -> i32 {
         zi = zi + 1
     }
 
-    let list_text: string = read_whole_file("build/repo-stats/files.txt", READ_CAP)
-    let meta_text: string = read_whole_file("build/repo-stats/meta.txt", 4096)
-    if strlen(list_text) == 0 {
-        ft_errln("repo_stats: missing build/repo-stats/files.txt")
+    let list_text: string = git_out("ls-files", "", "", "") + "\n"
+    if strlen(list_text) == 1 {
+        ft_errln("repo_stats: git ls-files listed nothing")
         return 1
     }
+    let rev: string = stats_rev()
+    let meta_text: string = "commit=" + git_out("rev-parse", "--short=12", rev, "") + "\ngenerated_at=" + git_out("show", "-s", "--format=%cI", rev) + "\n"
 
     let mut commit: string = "unknown"
     let mut generated_at: string = "unknown"
@@ -642,9 +691,8 @@ function main() -> i32 {
     let block: string = emit_readme_block(lf, ll, af, al, shell_files, shell_lines, source_files, source_lines, proofs, commit)
 
     let _mk: i32 = mkdir("docs/generated", 493)
-    let flag: string = read_whole_file("build/repo-stats/mode.txt", 64)
     let mut check_mode: i32 = 0
-    if starts_with(flag, "check") {
+    if proc_argc() > 1 and str_eq(proc_argv(1), "--check") {
         check_mode = 1
     }
 

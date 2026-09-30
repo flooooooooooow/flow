@@ -34,9 +34,10 @@ tools, scripts, CI checks, parity gates and tests. Python is legacy that
 is being ported away.
 
 - Do not add a `.py` file. Write the program in Flow. When Flow needs an
-  external command (git, find, clang), use a thin bash shim that runs the
-  command and leaves its output in `build/` for the Flow program to read.
-  `scripts/tools/repo_stats/` and `tools/python_ratchet/` show the pattern.
+  external command (git, find, clang), run it with `std.process`
+  (docs/library/process.md); `std.regex` covers Python-style regular
+  expressions. `scripts/tools/repo_stats/` and `tools/python_ratchet/`
+  show the pattern: the shell script only builds the program.
 - Do not grow existing Python. The Python compiler (`src/flow/`) is
   deleted; compiler features belong in `compiler/src/`.
 - New tests are `.flow` programs under `tests/lang/`. `main()` returns 0 on
