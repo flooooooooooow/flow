@@ -28,10 +28,10 @@ On macOS (LLVM 22), 2026-09-30:
 
 | | when parity with Python was the contract | now |
 |---|---|---|
-| programs with `main` | 1465 | 1466 |
-| the C backend builds | 1130 | 1131 |
-| the MLIR backend builds too | 759 (67.2%) | 1078 (95.3%) |
-| same exit code and stdout | 629 (55.7%) | 1002 (88.6%) |
+| programs with `main` | 1465 | 1496 |
+| the C backend builds | 1130 | 1156 |
+| the MLIR backend builds too | 759 (67.2%) | 1090 (94.3%) |
+| same exit code and stdout | 629 (55.7%) | 1018 (88.1%) |
 
 The floor is 5 under the last recorded run, since a few timing programs
 flap when the corpus runs in parallel.
