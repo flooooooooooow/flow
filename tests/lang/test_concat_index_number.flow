@@ -1,0 +1,26 @@
+# A numeric or bool array element as a string `+` operand is formatted as
+# its element type (#1009). flowc passed the number through to
+# __flowc_str_concat, which C rejects.
+
+function first_f(xs: ptr<f32>) -> string {
+    return "f=" + xs[0]
+}
+
+function first_i(xs: ptr<i64>) -> string {
+    return "i=" + xs[1]
+}
+
+function main() -> i32 {
+    let fs: [f32; 2] = [1.5, 2.5]
+    let is: [i64; 2] = [3, 42]
+    let bs: [bool; 2] = [true, false]
+    let us: array<u32, 2> = [7, 9]
+    if strcmp(first_f(fs), "f=1.500000") != 0 { return 1 }
+    if strcmp(first_i(is), "i=42") != 0 { return 2 }
+    let s: string = "b=" + bs[1] + " u=" + us[0] + " " + fs[1]
+    if strcmp(s, "b=false u=7 2.500000") != 0 {
+        print(s)
+        return 3
+    }
+    return 0
+}
