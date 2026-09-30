@@ -1,0 +1,12 @@
+# warn: Non-exhaustive match: integer literal patterns do not cover all values; gaps in [0, 3]: 2; values outside that span also uncovered (add `_` or `default`)
+function f(x: i32) -> i32 {
+    match x {
+        0 => { return 10 }
+        1 | 3 => { return 11 }
+    }
+    return 12
+}
+
+function main() -> i32 {
+    return f(0) - 10
+}

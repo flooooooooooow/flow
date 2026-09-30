@@ -1,0 +1,11 @@
+# warn: Handle handler 'Missing' is not a known capability
+effect Log {
+    info(msg: string) -> void
+}
+
+function main() -> i32 {
+    handle Log with Missing {
+        let x: i32 = 1
+    }
+    return 0
+}

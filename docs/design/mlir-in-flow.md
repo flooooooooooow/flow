@@ -96,9 +96,35 @@ checker to flowc (`compiler/src/sem_check.flow`, #1071) closed most of them:
   ported rule, and `compiler/scripts/parity_typecheck.sh --check` holds
   flowc to the Python checker's recorded diagnostics.
 
-A probe of the remaining items on the old list found three that
-`flowc --strict` still accepts: an invalid `\x` escape in a string, a
-`for` range with `step 0`, and `import "../x.flow"` path traversal.
+The last items on the old list are closed too, each with a negative program
+in `compiler/fixtures/typecheck_rules/`:
+
+* An invalid escape in a string (`"\x1b"`) is `Invalid escape sequence: \x`,
+  the Python lexer's error, fatal in both modes (`escape_invalid`).
+* `import "../x.flow"`, an absolute path or a `~` path is `Unsafe import
+  path: ../x.flow`, the Python module resolver's error (`import_traversal`).
+  The tracked imports that climbed out of their directory now name the
+  sibling file (`scripts/tools/lattice_allpass`, `discord_welcome`) or drop
+  a duplicate of `stdlib/vulkan_abi_renderer.flow` (`demos/vulkan_*_flow`).
+* A literal `step 0` in a `for` range is `for range step must not be zero`
+  (`for_step_zero`). This one is new: the Python checker had no rule and the
+  loop spun at run time. The words follow range_sums.py, which rejected
+  `sum(a..b step 0)`; flowc's closed form gives that sum 0 instead.
+* Flow-stage parameters `x |> Stage { k: v }` outside a flow `output` get
+  fork_records.py's error: they "are only valid for a flow used as a
+  pipeline stage inside a flow output" (`flow_stage_outside_output`).
+* Literal division by zero and shifts, the `FLOW_PROFILE` safety rules,
+  `@rt_safe`, and the span and lifetime-domain checks were ported in #1071
+  (`divide_by_zero`, `shift_*`, `safety_*`, `rt_safe_*`, `span_*`,
+  `domain_*`).
+* Match exhaustiveness and the checker's other warnings print as
+  `FILE:LINE:COL: warning: ...` (#678), which the Python host never did.
+  `flowc_emit.sh --no-warnings` (`FLOWC_WARNINGS=0`) silences them and
+  `--Werror` (`FLOWC_WERROR=1`) makes them errors. Warnings inside
+  `lib/stdlib` and `lib/runtime` are shown only with `FLOWC_WARNINGS=all`.
+  `parity_typecheck.sh --check` holds them to the Python checker's list in
+  `compiler/fixtures/typecheck_parity/warnings.txt` (`warn_*`,
+  `werror_match`).
 
 ## Inventory
 
@@ -420,7 +446,8 @@ stubs builds and runs the fixtures, including `imports_statics.flow`.
   bulk and a scalar remainder loop.
 * List patterns `[1, c, d]` compare literal elements and bind the others.
 * Record update `Name { ..base, f: v }` (new in the Stage-A parser, marked
-  by the parse-only `AST_RECORD_UPDATE`, which cgen and jsgen refuse) copies
+  by the parse-only `AST_RECORD_UPDATE`, which jsgen refuses; cgen lowers it
+  too, as `({ Name t = base; t.f = v; t; })`, since #996) copies
   the base and inserts the listed fields.
 * Consts take `generate_const`'s second path: cast-wrapped and negated
   literals, integer expressions folded as `_fold_const_binary` folds them,

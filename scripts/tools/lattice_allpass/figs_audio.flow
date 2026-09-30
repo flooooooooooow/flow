@@ -3,8 +3,8 @@
 #         impulse and step response, waveforms, RMS envelope,
 #         spectrograms, modulation proof and phase difference.
 
-import "../lattice_allpass/dsp.flow"
-import "../lattice_allpass/svg.flow"
+import "dsp.flow"
+import "svg.flow"
 
 extern {
     function malloc(size: i64) -> ptr<void>

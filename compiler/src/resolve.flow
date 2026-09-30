@@ -78,6 +78,73 @@ function flowc_resolve_import_error(mpath: string, src: ptr<u8>, s: i32, e: i32)
     putchar(10)
 }
 
+function flowc_resolve_putstr(s: string) {
+    let p: ptr<u8> = s
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        putchar(p[i] as i32)
+        i = i + 1
+    }
+}
+
+# ModuleResolver._resolve_legacy_import_path: a string import may not be an
+# absolute path, start with `~`, or hold a `..` component. The Python host
+# refused it before looking for the file. `s`/`e` span the quoted path.
+function flowc_resolve_unsafe_import(src: ptr<u8>, s0: i32, e0: i32) -> i32 {
+    let mut s: i32 = s0
+    let mut e: i32 = e0
+    if s < e and src[s] == 34 {
+        s = s + 1
+    }
+    if e > s and src[e - 1] == 34 {
+        e = e - 1
+    }
+    if e <= s {
+        return 0
+    }
+    if src[s] == 47 or src[s] == 126 {
+        return 1
+    }
+    let mut seg: i32 = s
+    let mut i: i32 = s
+    while i <= e {
+        if i == e or src[i] == 47 {
+            if i - seg == 2 and src[seg] == 46 and src[seg + 1] == 46 {
+                return 1
+            }
+            seg = i + 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# `<module>:<line>:<col>: error: Unsafe import path: <path>`, the Python
+# host's message, at the quoted path.
+function flowc_resolve_unsafe_import_error(mpath: string, src: ptr<u8>, s: i32, e: i32) {
+    let mut line: i32 = 1
+    let mut col: i32 = 1
+    let mut i: i32 = 0
+    while i < s and src[i] != 0 {
+        if src[i] == 10 {
+            line = line + 1
+            col = 1
+        } else {
+            col = col + 1
+        }
+        i = i + 1
+    }
+    flowc_resolve_putstr(mpath)
+    printf(":%d", line)
+    printf(":%d: error: Unsafe import path: ", col)
+    i = s + 1
+    while i < e - 1 {
+        putchar(src[i] as i32)
+        i = i + 1
+    }
+    putchar(10)
+}
+
 const FLOWC_RESOLVE_MAX_MODS: i32 = 128
 const FLOWC_RESOLVE_PATH_CAP: i32 = 256
 const FLOWC_RESOLVE_SRC_CAP: i32 = 1048576
@@ -2105,6 +2172,14 @@ function flowc_resolve_gather(
         let mut ii: i32 = 0
         while ii < p.arena.len {
             if p.arena.nodes[ii].kind == AST_IMPORT {
+                if p.arena.nodes[ii].ival == 2 and flowc_resolve_unsafe_import(src, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end) == 1 {
+                    flowc_resolve_unsafe_import_error(mpath, src, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end)
+                    flowc_parser_free(p)
+                    free(mod_dir)
+                    free(imp_path)
+                    free(src)
+                    return 0 - 1
+                }
                 let plen: i32 = flowc_resolve_import_at(src, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end, p.arena.nodes[ii].ival, mod_search, search_dir, project_root, imp_path)
                 if plen != 0 - 3 {
                     if plen < 0 {

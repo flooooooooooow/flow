@@ -25,9 +25,10 @@ import .ast {
     AST_MATCH_ARM, AST_TYPE_ALIAS, AST_EXTERN_TYPE, AST_DEFER, AST_ENUM, AST_ENUM_VARIANT,
     AST_IF_EXPR, AST_EFFECT, AST_CAPABILITY, AST_HANDLE, AST_EFFECT_OP, AST_CAP_METHOD,
     AST_MATCH_ARM_EXT, AST_LAYOUT, AST_TRY, AST_VECTOR_LIT, AST_SORT_BY, AST_PIPE_BLOCK,
-    AST_IDENT_FORK_SRC, AST_IDENT_SORT_MOD, AST_C_IMPORT, PIPE_BLOCK_FORK, PIPE_BLOCK_CHOOSE
+    AST_IDENT_FORK_SRC, AST_IDENT_SORT_MOD, AST_C_IMPORT, PIPE_BLOCK_FORK, PIPE_BLOCK_CHOOSE, PIPE_BLOCK_STAGE
 }
-import .token { TOK_EOF }
+import .token { TOK_EOF, TOK_STRING, Lexer, Token }
+import .lexer { flowc_lexer_new, flowc_lexer_next }
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_LE, TOK_GT, TOK_GE, TOK_PLUS, TOK_MINUS, TOK_STAR,
     TOK_SLASH, TOK_AMPAMP, TOK_BARBAR, TOK_BANG, TOK_AMP, TOK_PERCENT, TOK_TILDE,
@@ -60,7 +61,7 @@ import .sem_model {
     DK_EFFECT, DK_CAPABILITY, DK_TRAIT, DK_IMPL, DK_CONST, DK_STATIC,
     SE_STRUCT, SE_ALIAS, SE_DISTINCT, SK_FUNCTION, SK_VARIABLE, SK_CONST, SK_TYPE,
     sem_new, sem_add_module, sem_set_mod, sem_nk, sem_na, sem_nb, sem_ncc, sem_nnext, sem_nival, sem_nstart, sem_nend,
-    sem_nname, sem_nname_is, sem_nlen, sem_row_of, sem_line_of, sem_col_of, sem_py_pos, sem_err, sem_warn, sem_err_truncate,
+    sem_nname, sem_nname_is, sem_nlen, sem_row_of, sem_line_of, sem_col_of, sem_py_pos, sem_err, sem_warn, sem_err_truncate, sem_warn_truncate,
     sem_sym_new, sem_scope_define_global, sem_push_scope, sem_pop_scope, sem_scope_define, sem_define_var, sem_lookup,
     sem_sym_type, sem_sym_kind, sem_decl_add, sem_fi_new, sem_fi_add_param, sem_fi_param_name, sem_fi_param_type,
     sem_fi_nparams, sem_fi_attr, sem_fi_nattrs, sem_fi_has_attr, sem_fi_effect, sem_fi_neffects, sem_fi_ntparams,
@@ -1272,7 +1273,7 @@ function sem_infer_type_quiet(c: ptr<Sem>, e: i32) -> i32 {
     let saved_pos: i32 = c.pos
     let t: i32 = sem_check_expression(c, e)
     sem_err_truncate(c, ne)
-    sem_sv_setlen(c.warnings, nw)
+    sem_warn_truncate(c, nw)
     c.pos = saved_pos
     return t
 }
@@ -3154,6 +3155,16 @@ function sem_fork_field_type(c: ptr<Sem>, v: i32) -> i32 {
 # hoisted match assigns, typed by the first arm that ends in a known call.
 function sem_check_pipe_block(c: ptr<Sem>, e: i32) -> i32 {
     let kind: i32 = sem_nival(c, e)
+    if kind == PIPE_BLOCK_STAGE {
+        # Flow-stage parameters mean something only in a flow `output`
+        # pipeline, where the flow-block expansion consumes them. One left
+        # over here is fork_records.py's ForkRecordError, in its words.
+        sem_check_expression(c, sem_na(c, e))
+        let msg: string = "flow stage params `" + sem_nname(c, e) + " { ... }` (line " + sem_s_itoa(sem_py_pos(c, c.cm, sem_nstart(c, e), false) as i64) + ") are only valid for a flow used as a pipeline stage inside a flow `output`"
+        sem_err(c, msg)
+        sem_sv_push(c.fatal, msg)
+        return sem_tmk(c, TK_UNKNOWN)
+    }
     let st: i32 = sem_check_expression(c, sem_na(c, e))
     sem_sm_put(c.fork_src, sem_node_key(c, e), st)
     if kind == PIPE_BLOCK_CHOOSE {
@@ -3445,6 +3456,14 @@ function sem_check_for_stmt(c: ptr<Sem>, s: i32) -> i32 {
     let step: i32 = sem_nival(c, s)
     if step > 0 {
         sem_check_expression(c, step)
+        # A literal zero step never reaches the end of the range. The Python
+        # checker had no rule for it (the loop spun at run time); the words
+        # follow its range_sums.py, "sum(range) step must not be zero".
+        let ok: array<i32, 1> = [0]
+        let v: i64 = sem_literal_int(c, step, true, &ok[0] as ptr<i32>)
+        if ok[0] == 1 and v == 0 {
+            sem_err(c, "for range step must not be zero")
+        }
     }
     sem_push_scope(c)
     sem_define_var(c, sem_nname(c, s), sem_tmk(c, TK_I32), true)
@@ -4072,7 +4091,11 @@ function sem_check_match_stmt(c: ptr<Sem>, s: i32) -> i32 {
             result = dt
         }
     }
+    # The warning points at the `match` itself, not the last arm checked.
+    let saved_pos: i32 = c.pos
+    sem_set_pos(c, s)
     sem_warn_match_exhaustiveness(c, s, vt)
+    c.pos = saved_pos
     return result
 }
 
@@ -4757,8 +4780,107 @@ function sem_cimport_knows(c: ptr<Sem>, name: string) -> bool {
     return sem_sm_has(c.cimport_names, name)
 }
 
+function sem_is_hex(ch: i32) -> bool {
+    return (ch >= 48 and ch <= 57) or (ch >= 65 and ch <= 70) or (ch >= 97 and ch <= 102)
+}
+
+# Bytes after the backslash of a C escape starting at src[i] (i < end), or 0:
+# \a \b \f \v \' \?, octal \1 to \377, \x with at least one hex digit, \u
+# with four and \U with eight.
+function sem_c_escape_len(src: ptr<u8>, i: i32, end: i32) -> i32 {
+    let e: i32 = src[i] as i32
+    if e == 97 or e == 98 or e == 102 or e == 118 or e == 39 or e == 63 {
+        return 1
+    }
+    if e >= 49 and e <= 55 {
+        let mut n: i32 = 1
+        while n < 3 and i + n < end and src[i + n] >= 48 and src[i + n] <= 55 {
+            n = n + 1
+        }
+        return n
+    }
+    let mut want: i32 = 0
+    if e == 120 {
+        want = 0 - 1
+    } elif e == 117 {
+        want = 4
+    } elif e == 85 {
+        want = 8
+    } else {
+        return 0
+    }
+    let mut n: i32 = 0
+    while i + 1 + n < end and sem_is_hex(src[i + 1 + n] as i32) and (want < 0 or n < want) {
+        n = n + 1
+    }
+    if n == 0 or (want > 0 and n < want) {
+        return 0
+    }
+    return 1 + n
+}
+
+# Lexer._validate_string_literal: a backslash in a string literal escapes one
+# of n t r \ " 0. The Python lexer raised a SyntaxError on the first other
+# escape, whatever the mode, so the error is fatal here too. Every string
+# token of every module is checked, as that lexer checked them.
+#
+# Intentional difference: flowc writes a string into C as it is spelled, and
+# flowc's own sources use C's escapes (`"\x01"`, `"\033"`), so an escape C
+# defines is accepted (sem_c_escape_len). What is left is an escape C has no
+# meaning for: `\x` with no hex digit after it, `\q`, a short `\u`.
+function sem_check_string_escapes(c: ptr<Sem>) {
+    let saved: i32 = c.cm
+    let mut m: i32 = 0
+    while m < c.nm {
+        let src: ptr<u8> = c.m_src[m]
+        let mut n: i32 = 0
+        while src[n] != 0 {
+            n = n + 1
+        }
+        let mut lex: Lexer = flowc_lexer_new(src, n)
+        let mut t: Token = flowc_lexer_next(&lex)
+        let mut found: bool = false
+        while t.kind != TOK_EOF and found == false and lex.pos < n + 1 {
+            if t.kind == TOK_STRING {
+                let mut i: i32 = t.start + 1
+                while i < t.end - 1 and found == false {
+                    if src[i] == 92 {
+                        let e: i32 = src[i + 1] as i32
+                        let used: i32 = sem_c_escape_len(src, i + 1, t.end - 1)
+                        if e == 110 or e == 116 or e == 114 or e == 92 or e == 34 or e == 48 {
+                            i = i + 2
+                        } elif used > 0 {
+                            i = i + 1 + used
+                        } else {
+                            sem_set_mod(c, m)
+                            c.pos = t.start
+                            let msg: string = "Invalid escape sequence: \\" + sem_s_span(src, i + 1, i + 2)
+                            sem_err(c, msg)
+                            sem_sv_push(c.fatal, msg)
+                            found = true
+                        }
+                    } else {
+                        i = i + 1
+                    }
+                }
+            }
+            let before: i32 = lex.pos
+            t = flowc_lexer_next(&lex)
+            if lex.pos == before and t.kind != TOK_EOF {
+                # A lexer that stops advancing: nothing more to read.
+                found = true
+            }
+        }
+        m = m + 1
+    }
+    if saved >= 0 {
+        sem_set_mod(c, saved)
+    }
+}
+
 export function sem_check_program(c: ptr<Sem>) {
     sem_read_cimports(c)
+    sem_check_string_escapes(c)
     sem_collect_types(c)
     sem_collect_symbols(c)
     sem_collect_lifetime_domains(c)
@@ -4780,38 +4902,118 @@ export function sem_check_program(c: ptr<Sem>) {
 # fatal. Lenient: the fatal ones are errors, the rest warnings (the first
 # five, as `flow compile --lenient` printed them). Returns the number of
 # errors that stop the compile.
+#
+# Then the checker's own warnings (TypeCheckResult.warnings: non-exhaustive
+# match, the address of a pointer, an unknown handle handler), one
+# `file:line:col: warning: message` per line, in both modes. The Python host
+# collected them and never printed them (#678). FLOWC_WARNINGS=0 silences
+# them; FLOWC_WERROR=1 prints them as errors that stop the compile
+# (compiler/scripts/flowc_emit.sh --no-warnings and --Werror).
 export function sem_report(c: ptr<Sem>) -> i32 {
     let mut i: i32 = 0
+    let mut stop: i32 = 0
     if c.strict {
         while i < sem_sv_len(c.errors) {
             sem_print_diag(c, i, "error")
             i = i + 1
         }
-        return sem_sv_len(c.errors)
+        stop = sem_sv_len(c.errors)
+    } else {
+        let mut shown: i32 = 0
+        let mut hidden: i32 = 0
+        while i < sem_sv_len(c.errors) {
+            let msg: string = sem_sv_get(c.errors, i)
+            if sem_sv_has(c.fatal, msg) {
+                sem_print_diag(c, i, "error")
+            } elif shown < 5 {
+                sem_print_diag(c, i, "warning")
+                shown = shown + 1
+            } else {
+                hidden = hidden + 1
+            }
+            i = i + 1
+        }
+        if hidden > 0 {
+            printf("flowc: ... and %d more type warning(s)\n", hidden)
+        }
+        stop = sem_sv_len(c.fatal)
     }
-    let mut shown: i32 = 0
-    let mut hidden: i32 = 0
-    while i < sem_sv_len(c.errors) {
-        let msg: string = sem_sv_get(c.errors, i)
-        if sem_sv_has(c.fatal, msg) {
-            sem_print_diag(c, i, "error")
-        } elif shown < 5 {
-            sem_print_diag(c, i, "warning")
-            shown = shown + 1
-        } else {
-            hidden = hidden + 1
+    sem_report_warnings(c)
+    return stop + sem_werror_count(c)
+}
+
+# getenv(name) is the one byte `want` ("0" is 48, "1" is 49).
+function sem_env_is(name: string, want: i32) -> bool {
+    let v: string = getenv(name)
+    if v as ptr<u8> == null {
+        return false
+    }
+    let p: ptr<u8> = v as ptr<u8>
+    return p[0] as i32 == want and p[1] == 0
+}
+
+# FLOWC_WERROR=1: every checker warning is an error that stops the compile.
+function sem_werror() -> bool {
+    return sem_env_is("FLOWC_WERROR", 49)
+}
+
+# A warning inside the standard library (lib/stdlib, lib/runtime) is not
+# the program's to fix, so it is not shown, as a C compiler keeps quiet about
+# system headers. FLOWC_WARNINGS=all shows those too.
+function sem_warning_shown(c: ptr<Sem>, i: i32) -> bool {
+    let m: i32 = sem_iv_get(c.warn_mod, i)
+    if m < 0 {
+        return true
+    }
+    let v: string = getenv("FLOWC_WARNINGS")
+    if v as ptr<u8> != null and sem_s_eq(v, "all") {
+        return true
+    }
+    let p: string = c.m_path[m]
+    if sem_s_starts(p, "lib/stdlib/") or sem_s_starts(p, "lib/runtime/") {
+        return false
+    }
+    return sem_s_contains(p, "/lib/stdlib/") == false and sem_s_contains(p, "/lib/runtime/") == false
+}
+
+function sem_werror_count(c: ptr<Sem>) -> i32 {
+    if sem_werror() == false {
+        return 0
+    }
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < sem_sv_len(c.warnings) {
+        if sem_warning_shown(c, i) {
+            n = n + 1
         }
         i = i + 1
     }
-    if hidden > 0 {
-        printf("flowc: ... and %d more type warning(s)\n", hidden)
+    return n
+}
+
+function sem_report_warnings(c: ptr<Sem>) {
+    let elevate: bool = sem_werror()
+    if elevate == false and sem_env_is("FLOWC_WARNINGS", 48) {
+        return
     }
-    return sem_sv_len(c.fatal)
+    let mut what: string = "warning"
+    if elevate {
+        what = "error"
+    }
+    let mut i: i32 = 0
+    while i < sem_sv_len(c.warnings) {
+        if sem_warning_shown(c, i) {
+            sem_print_at(c, sem_iv_get(c.warn_mod, i), sem_iv_get(c.warn_pos, i), what, sem_sv_get(c.warnings, i))
+        }
+        i = i + 1
+    }
 }
 
 function sem_print_diag(c: ptr<Sem>, i: i32, what: string) {
-    let m: i32 = sem_iv_get(c.err_mod, i)
-    let pos: i32 = sem_iv_get(c.err_pos, i)
+    sem_print_at(c, sem_iv_get(c.err_mod, i), sem_iv_get(c.err_pos, i), what, sem_sv_get(c.errors, i))
+}
+
+function sem_print_at(c: ptr<Sem>, m: i32, pos: i32, what: string, msg: string) {
     let mut path: string = "<input>"
     let mut ln: i32 = 1
     let mut col: i32 = 1
@@ -4820,20 +5022,20 @@ function sem_print_diag(c: ptr<Sem>, i: i32, what: string) {
         ln = sem_line_of(c, m, pos)
         col = sem_col_of(c, m, pos)
     }
-    printf("%s:%d:%d: %s: %s\n", path, ln, col, what, sem_sv_get(c.errors, i))
+    printf("%s:%d:%d: %s: %s\n", path, ln, col, what, msg)
 }
 
 export function sem_error_count(c: ptr<Sem>) -> i32 {
-    return sem_sv_len(c.errors)
+    return sem_sv_len(c.errors) + sem_werror_count(c)
 }
 
 # The errors that stop a compile: all of them in strict mode, the fatal
-# ones under FLOWC_LENIENT=1.
+# ones under FLOWC_LENIENT=1, and every warning under FLOWC_WERROR=1.
 export function sem_fatal_count(c: ptr<Sem>) -> i32 {
     if c.strict {
-        return sem_sv_len(c.errors)
+        return sem_sv_len(c.errors) + sem_werror_count(c)
     }
-    return sem_sv_len(c.fatal)
+    return sem_sv_len(c.fatal) + sem_werror_count(c)
 }
 
 # The semantic check of one module compiled on its own (no bundle).
