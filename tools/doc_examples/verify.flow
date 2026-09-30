@@ -25,7 +25,7 @@
 import "scripts/tools/lib/text.flow"
 import "scripts/tools/lib/unicode.flow"
 import "scripts/tools/lib/proc.flow"
-import "scripts/tools/lib/regex.flow"
+import "stdlib/regex.flow"
 import "tools/doc_examples/blocks.flow"
 import "compiler/src/ast.flow"
 import "compiler/src/token.flow"
@@ -619,7 +619,7 @@ function first_type_error(text: string) -> string {
 
 function has_fill_shader(source: string) -> bool {
     let r: ptr<Regex> = rx_compile("^[ \\t]*shader\\s+fill\\s+[A-Za-z_]\\w*\\s*\\{", 8)
-    return rx_search(r, source)
+    return rx_test(r, source)
 }
 
 function shader_check(env: ptr<Env>, source: string) -> ptr<Front> {

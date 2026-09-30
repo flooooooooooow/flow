@@ -35,7 +35,7 @@ import "scripts/tools/lib/text.flow"
 import "scripts/tools/lib/unicode.flow"
 import "scripts/tools/lib/proc.flow"
 import "scripts/tools/lib/json.flow"
-import "scripts/tools/lib/regex.flow"
+import "stdlib/regex.flow"
 import "tools/doc_examples/blocks.flow"
 import "tools/doc_examples/verify.flow"
 import "tools/doc_examples/browser.flow"
@@ -755,10 +755,10 @@ function looks_new() -> ptr<Looks> {
 }
 
 function looks_like_flow(l: ptr<Looks>, code: string) -> bool {
-    if rx_search(l.strong, code) or rx_search(l.control, code) {
+    if rx_test(l.strong, code) or rx_test(l.control, code) {
         return true
     }
-    if rx_search(l.ret, code) and rx_search(l.types, code) {
+    if rx_test(l.ret, code) and rx_test(l.types, code) {
         return true
     }
     return false

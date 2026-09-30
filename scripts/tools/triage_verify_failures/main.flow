@@ -20,7 +20,7 @@
 import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_starts, ft_find, ft_contains, ft_slice, ft_from, ft_replace, ft_repr, ft_itoa, ft_read_file, ft_write_file, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_map_new, ft_map_get, ft_map_put, StrList, StrMap }
 import .unicode { uc_strip }
 import .json { json_quote }
-import .regex { rx_compile, rx_search_cps, rx_decode, rx_is_word, rx_is_space, Regex }
+import std.regex { rx_compile, rx_test_cps, rx_decode, rx_is_word, rx_is_space, Regex }
 import .proc { pr_quote, pr_run, pr_capture, pr_resolve }
 import .verify_run { vr_env, vr_parse_int, vr_cpu_count, vr_discover, vr_shorten, vr_pick_line, vr_run_stage, vr_transpile_cmd, vr_c_name, vr_fan_out, vr_usage_error, vr_resolve_opt, vr_is_optlike }
 
@@ -327,7 +327,7 @@ function tag_features(path: string) -> string {
             hit = has_nonascii_ident(cps, n)
         } else {
             let rx: ptr<Regex> = rx_compile(check_pattern(k, flags), flags[0])
-            hit = rx_search_cps(rx, cps, n)
+            hit = rx_test_cps(rx, cps, n)
         }
         if hit {
             tags = tags + check_name(k) + "\n"
