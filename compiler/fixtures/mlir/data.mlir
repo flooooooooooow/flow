@@ -159,7 +159,7 @@ llvm.store %v106, %v108 : !llvm.struct<(!llvm.array<4 x i32>, i32)>, !llvm.ptr
 %v122 = llvm.mlir.addressof @str_0 : !llvm.ptr
 %v123 = llvm.call @printf(%v122, %v121) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
 %v124 = arith.constant 0 : i32
-%v125 = memref.alloca() {type = memref<8xi32>} : memref<8xi32>
+%v125 = memref.alloca() : memref<8xi32>
 %v126 = arith.constant 0 : i32
 %v127 = arith.constant 8 : i32
 %v128 = arith.index_cast %v126 : i32 to index

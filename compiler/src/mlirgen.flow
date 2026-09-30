@@ -1892,6 +1892,7 @@ const HP_STR_F64: i32 = 16
 const HP_STRLEN: i32 = 32
 const HP_FAULT: i32 = 64
 const HP_PANIC: i32 = 128
+const HP_UISTATE: i32 = 256
 
 function mlg_lc_use(m: ptr<Mlg>, b: i32) {
     m[0].lc_need = m[0].lc_need | b
@@ -1932,6 +1933,41 @@ function mlg_hp_use(m: ptr<Mlg>, b: i32) {
         mlg_lc_use(m, LC_MALLOC | LC_SNPRINTF)
         mlg_intern_lit(m, "\"%f\"")
     }
+}
+
+# 1 when ident e is the implicit UI layout state `_ui_state` (not a local).
+function mlg_is_ui_state(m: ptr<Mlg>, e: i32) -> i32 {
+    if mlg_span_is(m, mlg_ns(m, e), mlg_ne(m, e), "_ui_state") == 0 {
+        return 0
+    }
+    if mlg_find_local(m, mlg_ns(m, e), mlg_ne(m, e)) >= 0 {
+        return 0
+    }
+    return 1
+}
+
+# The module global `_ui_state` (a pointer, null at start), as the C
+# backend declares it for layout blocks and ui_layout_bind.
+function mlg_ui_state_addr(m: ptr<Mlg>) -> i32 {
+    m[0].hp_need = m[0].hp_need | HP_UISTATE
+    let p: i32 = mlg_new_val(m, MT_PTR)
+    mlg_line(m)
+    mlg_v(m, p)
+    mlg_s(m, " = llvm.mlir.addressof @_ui_state : !llvm.ptr")
+    mlg_nl(m)
+    return p
+}
+
+function mlg_load_ui_state(m: ptr<Mlg>) -> i32 {
+    let p: i32 = mlg_ui_state_addr(m)
+    let v: i32 = mlg_new_val(m, MT_PTR)
+    mlg_line(m)
+    mlg_v(m, v)
+    mlg_s(m, " = llvm.load ")
+    mlg_v(m, p)
+    mlg_s(m, " : !llvm.ptr -> !llvm.ptr")
+    mlg_nl(m)
+    return v
 }
 
 # 1 when the C backend's runtime checks are on (FLOWC_CHECKS=1, which
@@ -2599,6 +2635,9 @@ function mlg_expr_mt(m: ptr<Mlg>, e: i32) -> i32 {
     if kind == AST_STRING { return MT_PTR }
     if kind == AST_IDENT {
         if mlg_is_null(m, e) == 1 {
+            return MT_PTR
+        }
+        if mlg_is_ui_state(m, e) == 1 {
             return MT_PTR
         }
         let l: i32 = mlg_find_local(m, mlg_ns(m, e), mlg_ne(m, e))
@@ -4576,6 +4615,15 @@ function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
         # The C backend's intrinsic, declared or not: (float)x.
         let iv: i32 = mlg_emit_expr(m, m[0].arena.nodes[e].a)
         return mlg_cast(m, iv, mlg_val_mt(m, iv, m[0].arena.nodes[e].a), MT_F32)
+    }
+    if mlg_span_is(m, ns, ne, "ui_layout_bind") == 1 and mlg_chain_len(m, m[0].arena.nodes[e].a) == 1 and (k < 0 or m[0].fn_ext[k] == 1) {
+        # Binds the implicit layout state, as the C backend does.
+        let ba: i32 = m[0].arena.nodes[e].a
+        let bv: i32 = mlg_emit_expr(m, ba)
+        let bp: i32 = mlg_cast(m, bv, mlg_val_mt(m, bv, ba), MT_PTR)
+        let ga: i32 = mlg_ui_state_addr(m)
+        mlg_store(m, bp, ga, MT_PTR)
+        return bp
     }
     if mlg_call_is_libc(m, e, k) == 1 {
         # A Flow declaration of a libc function: C's signature wins.
@@ -7866,6 +7914,9 @@ function mlg_emit_expr(m: ptr<Mlg>, e: i32) -> i32 {
             mlg_refuse(m, e, "pipeline or sort name")
             return V_NONE
         }
+        if mlg_is_ui_state(m, e) == 1 {
+            return mlg_load_ui_state(m)
+        }
         if mlg_is_null(m, e) == 1 {
             let z: i32 = mlg_new_val(m, MT_PTR)
             mlg_line(m)
@@ -8372,29 +8423,94 @@ function mlg_emit_array_lit(m: ptr<Mlg>, e: i32, la: i32) -> i32 {
     return p
 }
 
+function mlg_synth_named(m: ptr<Mlg>, kind: i32, text: ptr<u8>, n: i32) -> i32
+
+# A call node to `<name>_<suffix>` with argument chain args, synthesized.
+function mlg_synth_call(m: ptr<Mlg>, ns: i32, ne: i32, suffix: string, args: i32) -> i32 {
+    let sl: i32 = strlen(suffix) as i32
+    let buf: ptr<u8> = malloc(((ne - ns) + sl + 2) as i64)
+    let mut n: i32 = 0
+    while n < ne - ns {
+        buf[n] = m[0].src[ns + n]
+        n = n + 1
+    }
+    let sp: ptr<u8> = suffix
+    let mut j: i32 = 0
+    while j < sl {
+        buf[n] = sp[j]
+        n = n + 1
+        j = j + 1
+    }
+    let c: i32 = mlg_synth_named(m, AST_CALL, buf, n)
+    free(buf)
+    if c == AST_NONE {
+        return AST_NONE
+    }
+    m[0].arena.nodes[c].start = m[0].arena.nodes[c].name_start
+    m[0].arena.nodes[c].a = args
+    return c
+}
+
+# A `ui_row(args) { body }` layout block, as the C backend lowers it:
+# ui_row_begin(state, args...), the body, then ui_row_end(state). The state
+# is the implicit `_ui_state` unless the first argument is a pointer or
+# array variable, which then stands for it.
+function mlg_emit_layout(m: ptr<Mlg>, st: i32) {
+    let ns: i32 = mlg_ns(m, st)
+    let ne: i32 = mlg_ne(m, st)
+    let args: i32 = m[0].arena.nodes[st].a
+    let mut explicit: i32 = 0
+    if args != AST_NONE and mlg_kind(m, args) == AST_IDENT {
+        let aft: i32 = mlg_expr_ft(m, args)
+        if mlg_ft_is_pointer(m, aft) == 1 or mlg_ft_is_array(m, aft) == 1 {
+            explicit = 1
+        }
+    }
+    let us: ptr<u8> = "_ui_state"
+    let mut bargs: i32 = args
+    if explicit == 0 {
+        let s0: i32 = mlg_synth_named(m, AST_IDENT, us, 9)
+        if s0 == AST_NONE {
+            return
+        }
+        m[0].arena.nodes[s0].next = args
+        bargs = s0
+    }
+    let bc: i32 = mlg_synth_call(m, ns, ne, "_begin", bargs)
+    if bc == AST_NONE {
+        return
+    }
+    mlg_emit_call(m, bc, 0)
+    mlg_emit_block(m, m[0].arena.nodes[st].b)
+    let mut earg: i32 = AST_NONE
+    if explicit == 0 {
+        earg = mlg_synth_named(m, AST_IDENT, us, 9)
+    } else {
+        earg = mlg_synth_named(m, AST_IDENT, m[0].src + mlg_ns(m, args), mlg_ne(m, args) - mlg_ns(m, args))
+    }
+    if earg == AST_NONE {
+        return
+    }
+    let ec: i32 = mlg_synth_call(m, ns, ne, "_end", earg)
+    if ec == AST_NONE {
+        return
+    }
+    mlg_emit_call(m, ec, 0)
+}
+
 # Python generate_var_decl without an initializer: an undefined SSA value,
 # never an alloca (even for `let mut`), so assignments rebind it.
 function mlg_emit_let_uninit(m: ptr<Mlg>, st: i32, ty: i32) {
     if mlg_ft_is_array(m, ty) == 1 {
-        # Python: a stack memref, typed from the array type but spelled with
-        # the element's own name (`memref<16xu8>` for array<u8, 16>).
+        # A memref of the array type (Python spelled the element by its Flow
+        # name, `memref<16xu8>`, which is no MLIR type).
         let amt: i32 = mlg_ft_to_mt(m, ty, st)
         let et: i32 = m[0].arena.nodes[ty].a
         if mlg_is_memref_mt(amt) == 0 or mlg_kind(m, et) != AST_TYPE or m[0].arena.nodes[et].a != AST_NONE {
             mlg_refuse(m, st, "uninitialized array local of this element type")
             return
         }
-        let av: i32 = mlg_new_val(m, amt)
-        mlg_line(m)
-        mlg_v(m, av)
-        mlg_s(m, " = memref.alloca() {type = ")
-        mlg_put_type(m, amt)
-        mlg_s(m, "} : memref<")
-        mlg_i(m, m[0].arena.nodes[ty].ival)
-        mlg_s(m, "x")
-        mlg_span(m, mlg_ns(m, et), mlg_ne(m, et))
-        mlg_s(m, ">")
-        mlg_nl(m)
+        let av: i32 = mlg_emit_memref_buf(m, amt, m[0].arena.nodes[ty].ival, 0)
         mlg_add_local(m, mlg_ns(m, st), mlg_ne(m, st), amt, ty, av)
         return
     }
@@ -11441,8 +11557,7 @@ function mlg_emit_stmt(m: ptr<Mlg>, st: i32) {
         return
     }
     if k == AST_LAYOUT {
-        # Python: a ui_* layout block is its body; the arguments are dropped.
-        mlg_emit_block(m, m[0].arena.nodes[st].b)
+        mlg_emit_layout(m, st)
         return
     }
     if k == AST_BREAK {
@@ -18061,6 +18176,12 @@ function mlg_put_helpers(m: ptr<Mlg>) {
         }
         mlg_s(m, "    }\n")
         mlg_s(m, "    func.return %r : i32\n")
+        mlg_s(m, "  }\n")
+    }
+    if (m[0].hp_need & HP_UISTATE) != 0 {
+        mlg_s(m, "  llvm.mlir.global internal @_ui_state() {addr_space = 0 : i32} : !llvm.ptr {\n")
+        mlg_s(m, "    %z = llvm.mlir.zero : !llvm.ptr\n")
+        mlg_s(m, "    llvm.return %z : !llvm.ptr\n")
         mlg_s(m, "  }\n")
     }
     if (m[0].hp_need & HP_PANIC) != 0 {
