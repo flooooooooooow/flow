@@ -73,7 +73,7 @@ Installed packages land in `flow_packages/<name>/` and are pinned in `flow.lock`
 Every package command is written in Flow: `add`, `sync` (and its alias
 `install`), `search`, `info`, `init`, `publish`, `build`, `build-native`,
 `run-native`, `clean` and the install step of `flow run`. The code is
-[`compiler/src/pkg.flow`](../../compiler/src/pkg.flow), built by `flow-driver`
+[`compiler/src/pkg.flow`](../../compiler/src/pkg.flow), built by the `flow` command line
 with the Stage-A compiler. They need no Python. git and curl run through
 [`scripts/tools/pkg_fetch.sh`](../../scripts/tools/pkg_fetch.sh); builds run
 flowc and clang. `scripts/check_pkg_parity.sh` compares `flow.lock` and

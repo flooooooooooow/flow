@@ -251,9 +251,9 @@ in `compiler/fixtures/typecheck_rules/`:
 
 | Command or job | What it runs today |
 |---|---|
-| `flow run <p> --backend=mlir`, `flow compile <p> --backend=mlir`, `FLOW_CPU_BACKEND=mlir` | `compile_program_mlir` in `flow-driver`. Since slice 1: flowc emitter plus `mlir_lower.sh` when the program is in the slice, else `python -m flow.transpiler --mlir --llvm`, then clang with the Flow runtime |
+| `flow run <p> --backend=mlir`, `flow compile <p> --backend=mlir`, `FLOW_CPU_BACKEND=mlir` | `compile_program_mlir` in the driver (now [`tools/flow_cli/toolchain.flow`](../../tools/flow_cli/toolchain.flow)). Since slice 1: flowc emitter plus `mlir_lower.sh` when the program is in the slice, else `python -m flow.transpiler --mlir --llvm`, then clang with the Flow runtime |
 | `flow mlir <p> [--optimize ...]` | `python -m flow.transpiler --mlir`; `--optimize` runs `MLIROptimizer` (mlir-opt pass pipelines) |
-| `flow mlir-run <p>` | `flow mlir`, then `mlir_lower_and_link` in bash (mlir-opt, mlir-translate, llc, clang) |
+| `flow mlir-run <p>` | `flow mlir`, then `mlir_lower_and_link` (mlir-opt, mlir-translate, llc, clang), now in [`tools/flow_cli/build.flow`](../../tools/flow_cli/build.flow) |
 | `flow audio --mlir`, `flow compile-audio --mlir` | transpiler `--mlir --llvm`, linked with the audio runtime |
 | `flow jit <p>` | `jit_runner.py`: `flow_to_mlir`, then `MLIRJIT` builds a shared object and calls it through ctypes |
 | `flow ml [run\|jit\|bench\|test]`, `flow test-matmul` | the ML and matmul demos through the same MLIR generator, JIT and optimizer |
@@ -354,7 +354,7 @@ quirks, because parity was the gate. Those quirks are fixed now; see
 
 ### `--backend=mlir` on the flowc host
 
-`compile_program_mlir` in `flow-driver` tries flowc first: `FLOWC_EMIT=mlir`, then `compiler/scripts/mlir_lower.sh`,
+`compile_program_mlir` in the driver (now [`tools/flow_cli/toolchain.flow`](../../tools/flow_cli/toolchain.flow)) tries flowc first: `FLOWC_EMIT=mlir`, then `compiler/scripts/mlir_lower.sh`,
 then clang on the `.ll`. No Python runs. When flowc refuses the program the
 driver prints
 

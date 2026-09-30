@@ -240,6 +240,11 @@ from the Python version it replaced.
 - **Done:** [`flowc-release.yml`](../../.github/workflows/flowc-release.yml) on
   `flowc-v*` tags: linux + macos, self-compile audit, fixed point, package,
   unpack and use the archive as a user would, publish with checksums.
+- **Done (#695):** the `flow` command is a Flow program,
+  [`tools/flow_cli`](../../tools/flow_cli/main.flow). `./flow` is a POSIX sh
+  stub that builds it from the bootstrap C with `cc` on first use and execs
+  it. The 4,311-line bash `flow-driver` is deleted; `tests/cli/run.sh` holds
+  the CLI to goldens recorded from it.
 - **Remaining:** Homebrew formula; a published release to point people at;
   optional MLIR/GPU as separate tracks.
 
@@ -252,7 +257,7 @@ from the Python version it replaced.
 | Lexer / parser / AST | `compiler/src/{token,lexer,parser,ast}.flow` |
 | Typecheck / resolve | `compiler/src/{typecheck,resolve}.flow` |
 | C emit | `compiler/src/cgen.flow` |
-| Driver / CLI | `compiler/src/{main,driver}.flow` + tiny C host until argv is pure Flow |
+| Driver / CLI | `compiler/src/{main,driver}.flow` (flowc) and `tools/flow_cli` (the `flow` command) |
 | Host escape / FFI | `compiler/host/` shrink over time |
 | Python parity tests | `tests/` + `compiler/scripts/roundtrip.sh` |
 

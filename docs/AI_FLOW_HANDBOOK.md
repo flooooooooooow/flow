@@ -1721,7 +1721,7 @@ This part is the coverage ledger for the handbook. "Every feature" means every
 user-facing feature family that can be found in these sources
 at this edition's repository baseline:
 
-- executable `./flow help` and the command dispatch in `flow`;
+- executable `./flow help` and the command table in `tools/flow_cli/main.flow`;
 - the language specification and its implementation matrix;
 - focused language and library documents;
 - the standard-library module tree;
