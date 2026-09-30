@@ -677,6 +677,22 @@
           "path": "library/stdlib-api.md"
         },
         {
+          "label": "Processes",
+          "path": "library/process.md"
+        },
+        {
+          "label": "Regular Expressions",
+          "path": "library/regex.md"
+        },
+        {
+          "label": "errno and Signals",
+          "path": "library/os.md"
+        },
+        {
+          "label": "Byte Buffer",
+          "path": "library/bytebuf.md"
+        },
+        {
           "label": "Memory",
           "path": "library/memory.md"
         },
