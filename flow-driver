@@ -2951,6 +2951,7 @@ run_lang_tests() {
     local total=0
     local passed=0
     local failed=0
+    local helpers=0
     local failed_files=""
 
     # Bash 3.2 + set -u: empty "${arr[@]}" is an unbound-variable error.
@@ -2977,6 +2978,14 @@ run_lang_tests() {
 
     while IFS= read -r program; do
         if [ -z "$program" ]; then continue; fi
+        # A language test is a program: it defines main() and its exit code is
+        # the result. Files under tests/lang/ that only export items are the
+        # helper modules those tests import, and linking one on its own fails
+        # for want of main. Count them apart.
+        if ! grep -qE '^[[:space:]]*(export[[:space:]]+)?function[[:space:]]+main[[:space:]]*\(' "$program" 2>/dev/null; then
+            helpers=$((helpers + 1))
+            continue
+        fi
         total=$((total + 1))
         local rel_path=${program#$SCRIPT_DIR/}
         local basename
@@ -3116,6 +3125,9 @@ run_lang_tests() {
     rm -rf "$build_dir"
 
     echo "----------------------------------------"
+    if [ "$helpers" -gt 0 ]; then
+        print_info "$helpers helper module(s) with no main() were not run"
+    fi
     if [ $failed -eq 0 ]; then
         print_success "All $total language tests passed!"
     else
