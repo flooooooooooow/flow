@@ -1774,6 +1774,16 @@ function flowc_tc_collect_globals(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
         if kind == AST_EXTERN or kind == AST_C_IMPORT {
             ctx[0].has_extern = 1
         }
+        # extern const NAME: T (#1075) binds a typed C constant.
+        if kind == AST_EXTERN {
+            let mut xc: i32 = arena.nodes[item].a
+            while xc != AST_NONE {
+                if arena.nodes[xc].kind == AST_CONST {
+                    flowc_tc_bind_value(ctx, arena.nodes[xc].name_start, arena.nodes[xc].name_end, arena.nodes[xc].a)
+                }
+                xc = arena.nodes[xc].next
+            }
+        }
         if kind == AST_CONST {
             let ty: i32 = arena.nodes[item].a
             flowc_tc_bind_value(ctx, arena.nodes[item].name_start, arena.nodes[item].name_end, ty)
@@ -2019,6 +2029,9 @@ export function flowc_tc_seed_export(ctx: ptr<TcCtx>, dep_arena: AstArena, dep_r
                     if ene > ens {
                         flowc_tc_seed_bind(ctx, dep_src, ens, ene, 1, -1)
                     }
+                }
+                if dep_arena.nodes[ext].kind == AST_CONST {
+                    flowc_tc_seed_bind(ctx, dep_src, dep_arena.nodes[ext].name_start, dep_arena.nodes[ext].name_end, 0, -1)
                 }
                 ext = dep_arena.nodes[ext].next
             }

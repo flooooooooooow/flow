@@ -11393,6 +11393,19 @@ export function flowc_cgen_emit_sigs(
                         }
                     }
                 }
+                # extern const NAME: T = "C expression" (#1075): the C
+                # compiler evaluates the expression. The bare form names a
+                # header macro or constant and emits nothing.
+                if arena.nodes[ef].kind == AST_CONST and arena.nodes[ef].b != AST_NONE {
+                    let cx: i32 = arena.nodes[ef].b
+                    flowc_cgen_puts(&w, "static const ")
+                    flowc_cgen_emit_type(&w, arena, src, arena.nodes[ef].a)
+                    flowc_cgen_putc(&w, 32)
+                    flowc_cgen_put_span(&w, src, arena.nodes[ef].name_start, arena.nodes[ef].name_end)
+                    flowc_cgen_puts(&w, " = (")
+                    flowc_cgen_put_span(&w, src, arena.nodes[cx].name_start + 1, arena.nodes[cx].name_end - 1)
+                    flowc_cgen_puts(&w, ");\n")
+                }
                 ef = arena.nodes[ef].next
             }
         }

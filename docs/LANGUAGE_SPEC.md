@@ -442,7 +442,10 @@ struct Rectangle {
 
 **Grammar:**
 ```
-extern_decl := 'extern' STRING? '{' function_signature* '}'
+extern_decl := 'extern' STRING? '{' extern_item* '}'
+           | 'extern' 'const' extern_const
+extern_item := function_signature | 'type' IDENTIFIER | 'const' extern_const
+extern_const := IDENTIFIER ':' type ('=' STRING)?
 function_signature := 'function' IDENTIFIER '(' parameters? ')' ('->' type)?
 ```
 
@@ -455,6 +458,31 @@ extern "C" {
     function free(ptr: ptr<void>) -> void
 }
 ```
+
+**C constants.** `const NAME: T` in an extern block declares a C macro or
+constant with a Flow type. It emits nothing: the name reaches the C
+compiler as written, so its value is the one in this platform's headers
+(`SIGCHLD` is 20 on macOS and 17 on Linux). `const NAME: T = "expr"` binds
+`NAME` to a C expression the C compiler evaluates, which is how a program
+reads struct sizes and field offsets. The header must be included, through
+`@cImport`, `@cInclude`, `@cEmbed` or a module such as `std.os`.
+
+```flow-pseudocode
+@cEmbed("#include <stddef.h>
+#include <netinet/in.h>")
+
+extern {
+    const SIGINT: i32
+    const SOCKADDR_IN_SIZE: i64 = "(int64_t)sizeof(struct sockaddr_in)"
+    const SIN_PORT_OFFSET: i64 = "(int64_t)offsetof(struct sockaddr_in, sin_port)"
+}
+
+extern const EAGAIN: i32
+```
+
+`std.os` declares the common signal and errno constants this way, and
+reads `errno` and installs signal handlers through a small runtime shim.
+See [library/os.md](library/os.md).
 
 ### 3.6 Attributes
 
