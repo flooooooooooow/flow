@@ -1535,6 +1535,9 @@ compile_audio_program() {
             audio_ldflags+=("-framework" "CoreAudio" "-framework" "AudioToolbox" "-framework" "AudioUnit" "-framework" "Metal" "-framework" "Foundation")
             ;;
         Linux)
+            # Outside __APPLE__ the Metal file is only its C fallback
+            # (flow_audio_metal_available returns 0), which lib/stdlib/audio/gpu.flow calls.
+            audio_sources+=("$SCRIPT_DIR/runtime/audio_gpu_metal.m")
             audio_ldflags+=("-ldl" "-pthread" "-lm")
             ;;
     esac
