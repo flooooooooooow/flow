@@ -1,4 +1,4 @@
-# Imported by tests/lang/test_import_dot_paths.flow and by ../m/a.flow,
+# Imported by tests/lang/test_import_dot_paths.flow and by m/a.flow,
 # through two spellings of one path.
 
 const C_BASE: i32 = 7

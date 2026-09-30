@@ -1218,7 +1218,7 @@ S reject
 S reject
 @ compiler/fixtures/typecheck_rules/effect_unqualified.flow	45a075ba766598d15f54aa3bf50b5180fdede7cc
 S reject
-@ compiler/fixtures/typecheck_rules/escape_invalid.flow	a8c422ed8e88843300cb2592ccd35e3a1e32ffa2
+@ compiler/fixtures/typecheck_rules/escape_invalid.flow	9e381220fea6f310dbf0dd3e9cbb33b4a9192cdc
 S frontend
 @ compiler/fixtures/typecheck_rules/expect_not_bool.flow	ace81aad145288af2a25864b29f53e325495335e
 S reject
@@ -1234,6 +1234,8 @@ S reject
 S reject
 @ compiler/fixtures/typecheck_rules/find_target_type.flow	a33217d98384f8946679b79c54a68daba134b8be
 S reject
+@ compiler/fixtures/typecheck_rules/flow_stage_outside_output.flow	1b4cdf4c1fa59b6c35501e81f295ed3a8f02b107
+S frontend
 @ compiler/fixtures/typecheck_rules/for_step_zero.flow	1c316721fdf4680e098b402a80aaf8869be76e0b
 S accept
 @ compiler/fixtures/typecheck_rules/handle_unknown_effect.flow	17a25e7b2eebea70f47a08d43cebcb1fb2d67821
@@ -1404,7 +1406,7 @@ S reject
 S reject
 @ compiler/fixtures/units_unknown_factor.flow	f681afe6ad91ce670a098163508c3fa751eea5c3
 S reject
-@ compiler/src/ast.flow	9b360520ce14625ab728cba9333012e650d334ab
+@ compiler/src/ast.flow	9172cfc7917987d22e8bc25dc62fe0fd2cc9d858
 S accept
 @ compiler/src/ast_names.flow	5560036609008f3f21c23fa151b6b322854f55ab
 S accept
@@ -1416,7 +1418,7 @@ S accept
 S accept
 @ compiler/src/c_parser.flow	a3de3bce8e24e0731681a2fd9dd5d35b2d0d5537
 S accept
-@ compiler/src/cgen.flow	44c8876bee98d9de8b4e0d6df9dc5d2f90dacb50
+@ compiler/src/cgen.flow	65b4f7a9ca4adece733017dc5d3f4453edad3bcc
 S accept
 @ compiler/src/claim_address.flow	d807546af8d01757bf2bf4db8fbc8b7b44bde6ed
 S accept
@@ -1450,7 +1452,7 @@ S accept
 S accept
 @ compiler/src/flow_blocks.flow	f1848bf93c0f8a68b900abe96a0f794740dec7d6
 S accept
-@ compiler/src/fmt.flow	ec0719a34a1cfc06f250838da3d6836e5bbdb037
+@ compiler/src/fmt.flow	f91ae708c325e4e81262dfe0b79b11a7f55861b8
 S accept
 @ compiler/src/general_plans.flow	60ef963af94f916546298088c15a2a1862cff53d
 S accept
@@ -1474,7 +1476,7 @@ S accept
 S accept
 @ compiler/src/lsp_utils.flow	3373a4d2c2cee22700e83904a0274007b5fb462f
 S accept
-@ compiler/src/main.flow	af70538091e4e219f791e70a0bac2efc9e908b32
+@ compiler/src/main.flow	5e01f6bdd8b2faf8ec9692979ff5c9b0fa99fdaa
 S frontend
 @ compiler/src/math_prose.flow	dc8643e1d1f0cc6e3e2643f7924f7442e98c0c3b
 S accept
@@ -1526,7 +1528,7 @@ S accept
 S accept
 @ compiler/src/overload_table.flow	8757f2aca8bf8c42495870fb543750a2361c5fad
 S accept
-@ compiler/src/parser.flow	de256bf445c837e9740cf2a58e62c8cbd4375c32
+@ compiler/src/parser.flow	5cb0618e2cd218b05a2aa02b42a9fc59ddbff80e
 S accept
 @ compiler/src/physics_dsl.flow	580e20e6ac292a166e015fd07f5afe140c79aff3
 S accept
@@ -1550,11 +1552,11 @@ S accept
 S accept
 @ compiler/src/range_sums.flow	345312b8fce03b4b03d7f135cb81e393830d5de6
 S accept
-@ compiler/src/resolve.flow	aa982d24363cc3b03bc9c975889861b878f5c75b
+@ compiler/src/resolve.flow	a0108374c187d207e61456917d9cc290ea07fc2f
 S frontend
 @ compiler/src/sem_cheader.flow	438760aed9ea99b658fac1ec596936be5b89b72f
 S accept
-@ compiler/src/sem_check.flow	da53d67ef27219a8feb969609290e81ab53cbc07
+@ compiler/src/sem_check.flow	62888bafa36482f71058949f5ffb5c087bccc780
 S frontend
 @ compiler/src/sem_model.flow	6f8f6edd9a85f7ee673b035e202b9997ed04ba68
 S accept
@@ -5094,6 +5096,8 @@ S frontend
 S frontend
 @ scripts/tools/llvm_target/main.flow	23c7af8e5aa0aa1029c642acd6ac067801787665
 S frontend
+@ scripts/tools/makefile_contract/main.flow	9780e8b33d9dcd3ca7c934d0a7ed78b8c8ef9fe2
+S frontend
 @ scripts/tools/measure_size/main.flow	23a491c31d12db69df801b94b98e3fa6ca30c5ed
 S frontend
 @ scripts/tools/mlir_pipeline/main.flow	5930f33ba5bc05ae02d30ba9dcf3b5139eb5a94e
@@ -5103,6 +5107,8 @@ S accept
 @ scripts/tools/playground_server/main.flow	0ddb5c3c5d213f8d9d22cbd43a9c9738712d97ad
 S frontend
 @ scripts/tools/prepare_release/main.flow	9f30f83de3a643b7308df595acd798de9ff03a1b
+S frontend
+@ scripts/tools/project_state/main.flow	f14ec4dfb5f6e8cfdd17f8545686cf6fe202507d
 S frontend
 @ scripts/tools/record_demos/main.flow	1cc5c88f88210d674e88514c04afcb1f304c0319
 S frontend
@@ -5260,6 +5266,8 @@ S accept
 S accept
 @ tests/cgen/dual_ops_sugar.flow	0c3bbd7b893808390b7ddce8f31970c7353efa5e
 S accept
+@ tests/cgen/else_if_hint.flow	9ebf3f7732acce72d990f49b826cec6d1e75a46a
+S frontend
 @ tests/cgen/escaped_strings_quotes.flow	337d506786208d06865a07465dc9687825dd3c25
 S accept
 @ tests/cgen/escaping_closures_fn_type.flow	f9fbb273366f8cec30a3d302011d90424d9a5ded
@@ -5281,6 +5289,8 @@ S accept
 @ tests/cgen/flow_dimensioned_state_pendulum.flow	79cd4be9d0c3af7bb552cd12340aba403792258c
 S frontend
 @ tests/cgen/for_negative_step.flow	94c64d385258765aaa6ba684c31417d009a6bc41
+S accept
+@ tests/cgen/for_range_affine.flow	40a3b86b13609d8da96e51b253fd9949bc418e32
 S accept
 @ tests/cgen/for_variable_step.flow	625986d2687e9ab97a14ffa64e24357758287fc6
 S accept
@@ -5345,6 +5355,8 @@ S accept
 S accept
 @ tests/cgen/range_sum_closed_form.flow	2e7fc18461493a60b5143e7868473259acefc32d
 S accept
+@ tests/cgen/record_update.flow	5f6dfcf01d74d74fe4bbc127172398ebb5003b43
+S accept
 @ tests/cgen/rf_types_signal.flow	6206bb694625a2189933ad76f80fcb803be89513
 S accept
 @ tests/cgen/sort_expr_float_key.flow	cfbeb62619d28ec516bb6cad87450950b3bb079b
@@ -5376,6 +5388,8 @@ S accept
 @ tests/cgen/string_concat_forms.flow	1cf570308f9a81136417a522e34bafebcb8c95a5
 S accept
 @ tests/cgen/string_eq_len.flow	194b27711ec5fb9aeb78e02931eede91c4312f8c
+S accept
+@ tests/cgen/struct_for_ptr_param.flow	2f3cd67fb2685f223493762d411cb8a552995be8
 S accept
 @ tests/cgen/tc_reject_arity.flow	a6191e47de3ed88393a4748e2779d409f9194b15
 S reject
@@ -5579,6 +5593,10 @@ S accept
 S accept
 @ tests/fixtures/modules/consumer_sibling.flow	f0bdac97f6084b55189cb68d7b10d72dbbfdbdef
 S accept
+@ tests/fixtures/modules/dotpath/m/a.flow	51538a0252f25747b5b6fa6487fe89729e4bfaee
+S frontend
+@ tests/fixtures/modules/dotpath/x/c.flow	0d39c34a25c125f8f61686362eb8db023eb669a6
+S accept
 @ tests/fixtures/modules/testlib/agg.flow	5c0f32b620d6be0bb5ff06bac9e44278d8777951
 S accept
 @ tests/fixtures/modules/testlib/agg_chain.flow	15f47f78a1258cc029cf306c8ec110624536eaea
@@ -5588,6 +5606,8 @@ S accept
 @ tests/fixtures/modules/testlib/beta.flow	95b69c317fdb3367c8deca171aa8d96d7b83824b
 S accept
 @ tests/fixtures/modules/testlib/greeter.flow	ded8e8618da7873d731047fb97962e3907c1f9ba
+S accept
+@ tests/fixtures/modules/testlib/lattice.flow	492065fd25d5f5fc4f1df786708768d1107cfc41
 S accept
 @ tests/fixtures/modules/testlib/spans.flow	46f81e4857082f829a7827cb16f239f567c6fecd
 S accept
@@ -5657,6 +5677,8 @@ S accept
 S accept
 @ tests/gpu/programs/wgsl_ok.flow	f8624699cc81df32587eb44e2a2b138d353c02bf
 S reject
+@ tests/lang/test_addr_of_call.flow	f53450f1f2858abc0564f5c6bdf127ff6b7cd1b7
+S accept
 @ tests/lang/test_arithmetic.flow	63862b41260a5db92e85b17147cbbe40fd72b320
 S accept
 @ tests/lang/test_array_ctor.flow	106676b3367a9bec51bd3ee7a3509f27d7fdacc5
@@ -5730,6 +5752,8 @@ S accept
 @ tests/lang/test_closures.flow	f9596552c3a830198c21c936a0e0e91d6e13e5a4
 S accept
 @ tests/lang/test_complex_builtins.flow	93711ec3a689f688ad9752e531f5f1e631d0af32
+S accept
+@ tests/lang/test_concat_index_number.flow	e61f111af02419688595dd1f7a7b57b2b15a839d
 S accept
 @ tests/lang/test_concurrent_link.flow	9a004e6b35aa203ff5c2a93d0dc2e1e0a5d3ee78
 S accept
@@ -5825,6 +5849,8 @@ S frontend
 S accept
 @ tests/lang/test_import_alias.flow	ccb5ae27c77c0f71aaa7e4017924249a28397d20
 S reject
+@ tests/lang/test_import_dot_paths.flow	b5db81eb476339d4aa40322ef9282b2e51bc3a2f
+S accept
 @ tests/lang/test_import_module_with_main.flow	50ae7fae2757a55aa863cdad7c91ee3b13806f51
 S accept
 @ tests/lang/test_import_path_forms.flow	20f1f67d4668af8e4d6264c9de8bd13d99b7b6cb
@@ -5833,6 +5859,8 @@ S accept
 S accept
 @ tests/lang/test_import_stdlib_bare.flow	3383d512e98eafd8fb313743f51e08a60927560c
 S frontend
+@ tests/lang/test_import_struct_array_field.flow	0a75e3bde0621a007c2f2c35ad17d8ec10f8d535
+S accept
 @ tests/lang/test_imported_extern.flow	15a4b49b018531f3b15d1fc12270a8e55f6d19e1
 S accept
 @ tests/lang/test_in_operator.flow	4a8090164090708629b3c0b67a2e37a6d40da30a
@@ -5892,6 +5920,8 @@ S accept
 @ tests/lang/test_memref_param.flow	d332683532cd340afaa0d7e75d3a7046a0ecaebc
 S accept
 @ tests/lang/test_method_ptr_receiver.flow	d22e897a338b06a450983be2c2970650a8e479a1
+S accept
+@ tests/lang/test_method_receiver_address.flow	a5398c3d491ce389315e11843865cce7de76e92e
 S accept
 @ tests/lang/test_method_recv_import.flow	0dd0daf43334103fdd761de53b250c4256f59218
 S accept
@@ -5972,7 +6002,9 @@ S accept
 S accept
 @ tests/lang/test_pointer_structs.flow	33a0bdb331b58d5372a5742190c3be0648e49e57
 S accept
-@ tests/lang/test_prefix_deref.flow	b84af3bc9a23bb99b03e4b4493d3aa3f4b756c69
+@ tests/lang/test_posix_named_functions.flow	4a8e4eabe5d6950603f70bb999c7cee148fe7296
+S accept
+@ tests/lang/test_prefix_deref.flow	9a55abe16082f97c02da14be192772864da4e60c
 S frontend
 @ tests/lang/test_print.flow	15b91b8e3ac56d1b3c2fb5ef0482a5455ae07c62
 S accept
@@ -6016,6 +6048,8 @@ S accept
 S accept
 @ tests/lang/test_shader_dsl_port.flow	5c0a83f85ed1bed8fdd0b51cbb5456fc242d9a11
 S accept
+@ tests/lang/test_sizeof_generic.flow	a40b906a17ba240e7b82b1bfe33dc006db887032
+S reject
 @ tests/lang/test_slice_f64_param.flow	ad5929965ee9fe685a374f9d76bce83dc41c7cac
 S accept
 @ tests/lang/test_sort.flow	c5bae0d8066736140d34243749e922da803fd994
@@ -6039,6 +6073,8 @@ S accept
 @ tests/lang/test_span_slice_f64.flow	22f54f9fed1572b03d66b368bdbc673d03f5a07b
 S accept
 @ tests/lang/test_spans.flow	399d46e9cda3c7c1b77ec1a7cc2fcca104f80c92
+S accept
+@ tests/lang/test_static_ptr_field.flow	dc301ac15bd2762f60da244b402fffdc1dbdd5ec
 S accept
 @ tests/lang/test_stdlib_math_import.flow	e4289d1c566e57ee0ffccfb5217a7428372510ed
 S accept
