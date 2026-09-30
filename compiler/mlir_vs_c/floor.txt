@@ -1,0 +1,4 @@
+# Programs built by both backends with the same run, per OS (uname -s).
+# mlir_vs_c.sh --check fails below it. --update sets it FLOOR_MARGIN
+# (default 5) under the run, for timing programs that are flaky in parallel.
+Darwin 624
