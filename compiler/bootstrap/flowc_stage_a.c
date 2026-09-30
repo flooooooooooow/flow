@@ -53100,6 +53100,9 @@ int32_t flowc_cgen_sl_needs_array_copy(CgenBuf* w, AstArena arena, uint8_t* src,
 }
   int32_t dty = flowc_cgen_sl_dest_field_ty(arena, src, lit, field);
   if (dty == AST_NONE) {
+  if (vk == AST_IDENT && flowc_cgen_scoped_decl(w, arena, src, v) == AST_NONE) {
+  return 0;
+}
   return 1;
 }
   if (flowc_cgen_ty_is_array(arena, src, dty) == 1) {
@@ -54609,6 +54612,31 @@ int32_t flowc_cgen_expr_type_node(CgenBuf* w, AstArena arena, uint8_t* src, int3
 }
   return AST_NONE;
 }
+  if (kind == AST_INDEX) {
+  int32_t bt = flowc_cgen_expr_type_node(w, arena, src, ((arena).nodes[id]).a);
+  if (bt == AST_NONE || ((arena).nodes[bt]).kind != AST_TYPE) {
+  return AST_NONE;
+}
+  if (((arena).nodes[bt]).a == AST_NONE) {
+  return AST_NONE;
+}
+  if (flowc_cgen_span_is(src, ((arena).nodes[bt]).name_start, ((arena).nodes[bt]).name_end, "ptr") == 1) {
+  return ((arena).nodes[bt]).a;
+}
+  if (flowc_cgen_span_is(src, ((arena).nodes[bt]).name_start, ((arena).nodes[bt]).name_end, "array") == 1) {
+  return ((arena).nodes[bt]).a;
+}
+  if (flowc_cgen_span_is(src, ((arena).nodes[bt]).name_start, ((arena).nodes[bt]).name_end, "span") == 1) {
+  return ((arena).nodes[bt]).a;
+}
+  if (((arena).nodes[bt]).c == AST_TYPE_FIXED_ARRAY) {
+  return ((arena).nodes[bt]).a;
+}
+  if (((arena).nodes[bt]).name_start == 0 && ((arena).nodes[bt]).name_end == 0) {
+  return ((arena).nodes[bt]).a;
+}
+  return AST_NONE;
+}
   return AST_NONE;
 }
 
@@ -54870,6 +54898,9 @@ int32_t flowc_cgen_expr_prim(CgenBuf* w, AstArena arena, uint8_t* src, int32_t i
   return flowc_cgen_ident_prim(w, arena, src, id);
 }
   if (kind == AST_FIELD_ACCESS) {
+  return flowc_cgen_prim_of_type(arena, src, flowc_cgen_expr_type_node(w, arena, src, id));
+}
+  if (kind == AST_INDEX) {
   return flowc_cgen_prim_of_type(arena, src, flowc_cgen_expr_type_node(w, arena, src, id));
 }
   if (kind == AST_UNARY) {
@@ -56598,7 +56629,7 @@ void flowc_cgen_plan_put_policies(PlanText* t, AstArena arena, uint8_t* src, int
 PlanFacts flowc_cgen_plan_facts(CgenBuf* w, AstArena arena, uint8_t* src, int32_t site, int32_t elem, int32_t n, int32_t search) {
   int32_t es = ((arena).nodes[elem]).name_start;
   int32_t ee = ((arena).nodes[elem]).name_end;
-  PlanFacts f = ({ __auto_type __flowc_sl18858 = (PlanFacts){ .elem = flowc_cgen_plan_span_str(src, es, ee), .elem_kind = flowc_cgen_plan_elem_kind(src, es, ee), .elem_bytes = flowc_cgen_plan_elem_bytes(arena, src, es, ee), .keys = 0, .stable = 1, .unique = 0, .desc = 0, .order = 0, .has_range = 0, .lo = 0, .hi = 0, .hi_u64max = 0, .adaptive = 0, .general = 0 }; memcpy(&__flowc_sl18858.search, &(search), sizeof(__flowc_sl18858.search)); memcpy(&__flowc_sl18858.n, &(n), sizeof(__flowc_sl18858.n)); __flowc_sl18858; });
+  PlanFacts f = ({ __auto_type __flowc_sl19038 = (PlanFacts){ .elem = flowc_cgen_plan_span_str(src, es, ee), .elem_kind = flowc_cgen_plan_elem_kind(src, es, ee), .elem_bytes = flowc_cgen_plan_elem_bytes(arena, src, es, ee), .keys = 0, .stable = 1, .unique = 0, .desc = 0, .order = 0, .has_range = 0, .lo = 0, .hi = 0, .hi_u64max = 0, .adaptive = 0, .general = 0 }; memcpy(&__flowc_sl19038.search, &(search), sizeof(__flowc_sl19038.search)); memcpy(&__flowc_sl19038.n, &(n), sizeof(__flowc_sl19038.n)); __flowc_sl19038; });
   if ((w[0]).plan_order != NULL) {
   (f).order = (w[0]).plan_order[site];
 }
@@ -56713,7 +56744,7 @@ PlanChoice flowc_cgen_plan_choose(CgenBuf* w, AstArena arena, uint8_t* src, int3
   flowc_plan_puts((&et), "\n");
   int64_t _we = write(2, (const char*)((et).buf), (int64_t)((et).len));
   (w[0]).err = 1;
-  return ({ __auto_type __flowc_sl19481 = (PlanChoice){  }; memcpy(&__flowc_sl19481.plan, &(FLOWC_PLAN_INSERTION), sizeof(__flowc_sl19481.plan)); memcpy(&__flowc_sl19481.reason, &((choice).reason), sizeof(__flowc_sl19481.reason)); __flowc_sl19481; });
+  return ({ __auto_type __flowc_sl19661 = (PlanChoice){ .plan = FLOWC_PLAN_INSERTION }; memcpy(&__flowc_sl19661.reason, &((choice).reason), sizeof(__flowc_sl19661.reason)); __flowc_sl19661; });
 }
   if (report != NULL) {
   int64_t _wr = write(2, (const char*)((rep).buf), (int64_t)((rep).len));
@@ -58900,9 +58931,25 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   int32_t fv = ((arena).nodes[field]).a;
   flowc_cgen_puts(w, "memcpy(&");
   flowc_cgen_emit_sl_member(w, arena, src, id, field);
-  flowc_cgen_puts(w, ", &(");
+  flowc_cgen_puts(w, ", ");
+  if (flowc_cgen_sl_array_copy(w, arena, src, fv) == 1) {
+  flowc_cgen_puts(w, "__builtin_choose_expr(__builtin_types_compatible_p(__typeof__(");
+  flowc_cgen_emit_sl_member(w, arena, src, id, field);
+  flowc_cgen_puts(w, "), __typeof__(&");
+  flowc_cgen_emit_sl_member(w, arena, src, id, field);
+  flowc_cgen_puts(w, "[0])), (void*)&(__typeof__(&(");
   flowc_cgen_emit_expr(w, arena, src, fv);
-  flowc_cgen_puts(w, "), sizeof(");
+  flowc_cgen_puts(w, ")[0])){ (");
+  flowc_cgen_emit_expr(w, arena, src, fv);
+  flowc_cgen_puts(w, ") }, (void*)(");
+  flowc_cgen_emit_expr(w, arena, src, fv);
+  flowc_cgen_puts(w, "))");
+} else {
+  flowc_cgen_puts(w, "&(");
+  flowc_cgen_emit_expr(w, arena, src, fv);
+  flowc_cgen_putc(w, 41);
+}
+  flowc_cgen_puts(w, ", sizeof(");
   flowc_cgen_emit_sl_member(w, arena, src, id, field);
   flowc_cgen_puts(w, ")); ");
 }
@@ -63938,6 +63985,7 @@ int32_t sem_match_implicit_effect_overload(Sem* c, SemIntVec* cands, SemIntVec* 
 int32_t sem_static_length(Sem* c, int32_t e);
 int32_t sem_borrow_source_mutable(Sem* c, int32_t e);
 bool sem_check_span_arguments(Sem* c, const char* name, SemIntVec* args, int32_t sig);
+bool sem_recv_struct_to_ptr(Sem* c, int32_t actual, int32_t expected);
 int32_t sem_check_function_call(Sem* c, const char* name, SemIntVec* args, int32_t node, int32_t stmt);
 const char* sem_effect_name_for_receiver(Sem* c, int32_t recv);
 const char* sem_impl_method_for_receiver(Sem* c, int32_t recv_type, const char* method);
@@ -66155,6 +66203,24 @@ bool sem_check_span_arguments(Sem* c, const char* name, SemIntVec* args, int32_t
   return sem_sv_len(c->errors) > before;
 }
 
+bool sem_recv_struct_to_ptr(Sem* c, int32_t actual, int32_t expected) {
+  if (sem_tkind(c, actual) != TK_STRUCT || sem_tkind(c, expected) != TK_POINTER) {
+  return 0;
+}
+  int32_t el = sem_telem(c, expected);
+  if (el < 0) {
+  return 1;
+}
+  int32_t ek = sem_tkind(c, el);
+  if (ek == TK_VOID) {
+  return 1;
+}
+  if (ek != TK_STRUCT) {
+  return 0;
+}
+  return sem_s_eq(sem_tname(c, actual), sem_tname(c, el));
+}
+
 int32_t sem_check_function_call(Sem* c, const char* name, SemIntVec* args, int32_t node, int32_t stmt) {
   SemTys* tys = (SemTys*)(c->t);
   sem_resolved_calls_add(c, name);
@@ -66305,6 +66371,10 @@ int32_t sem_check_function_call(Sem* c, const char* name, SemIntVec* args, int32
   variadic = 1;
 }
   int32_t matching = (0 - 1);
+  bool recv_ptr = 0;
+  if (node >= 0 && sem_is_method_call(c, node)) {
+  recv_ptr = 1;
+}
   int32_t pass = 0;
   while (pass < 2 && matching < 0) {
   c->relax_c_strings = pass == 1;
@@ -66325,7 +66395,12 @@ int32_t sem_check_function_call(Sem* c, const char* name, SemIntVec* args, int32
   if (fits) {
   int32_t j = 0;
   while (j < np && j < arg_types->len && fits) {
-  if (sem_is_compatible(c, arg_types->data[j], sem_ty_param(c->t, cand, j)) == 0) {
+  int32_t pty = sem_ty_param(c->t, cand, j);
+  bool ok = sem_is_compatible(c, arg_types->data[j], pty);
+  if (ok == 0 && j == 0 && recv_ptr) {
+  ok = sem_recv_struct_to_ptr(c, arg_types->data[j], pty);
+}
+  if (ok == 0) {
   fits = 0;
 }
   j = (j + 1);
@@ -72953,6 +73028,7 @@ int32_t flowc_resolve_copy_cstr(const char* s, uint8_t* dst, int32_t cap);
 int32_t flowc_resolve_cstr_eq(uint8_t* a, uint8_t* b);
 int32_t flowc_resolve_find_path(uint8_t* store, int32_t n, int32_t row_cap, uint8_t* path);
 int32_t flowc_resolve_norm_path(const char* path, uint8_t* out, int32_t cap);
+int32_t flowc_resolve_norm_in_place(uint8_t* buf, int32_t cap, int32_t len);
 int32_t flowc_resolve_append_path(uint8_t* store, int32_t n, const char* path);
 int32_t flowc_expand_stages_in_place(uint8_t* src, int32_t n, int32_t cap, int32_t stages);
 int32_t flowc_expand_all_in_place(uint8_t* src, int32_t n, int32_t cap);
@@ -73196,6 +73272,28 @@ int32_t flowc_resolve_norm_path(const char* path, uint8_t* out, int32_t cap) {
   free((uint8_t*)(starts));
   free((uint8_t*)(ends));
   return w;
+}
+
+int32_t flowc_resolve_norm_in_place(uint8_t* buf, int32_t cap, int32_t len) {
+  if (buf == NULL || len <= 0) {
+  return len;
+}
+  uint8_t* tmp = (uint8_t*)(malloc((int64_t)(cap)));
+  if (tmp == NULL) {
+  return len;
+}
+  int32_t nl = flowc_resolve_norm_path((const char*)(buf), tmp, cap);
+  if (nl < 0) {
+  free(tmp);
+  return len;
+}
+  int32_t i = 0;
+  while (i <= nl) {
+  buf[i] = tmp[i];
+  i = (i + 1);
+}
+  free(tmp);
+  return nl;
 }
 
 int32_t flowc_resolve_append_path(uint8_t* store, int32_t n, const char* path) {
@@ -74734,14 +74832,17 @@ int32_t flowc_resolve_import_at(uint8_t* src, int32_t s, int32_t e, int32_t form
   if (plen < 0) {
   return (0 - 1);
 }
-  return plen;
+  return flowc_resolve_norm_in_place(imp_path, FLOWC_RESOLVE_PATH_CAP, plen);
 }
   if (form == 0) {
   int32_t plen2 = flowc_resolve_package_path(src, s, e, project_root, imp_path, FLOWC_RESOLVE_PATH_CAP);
   if (plen2 == (0 - 1)) {
   plen2 = flowc_resolve_dotted_any(src, s, e, mod_search, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP);
 }
+  if (plen2 < 0) {
   return plen2;
+}
+  return flowc_resolve_norm_in_place(imp_path, FLOWC_RESOLVE_PATH_CAP, plen2);
 }
   return (0 - 3);
 }
