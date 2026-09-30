@@ -1,0 +1,25 @@
+# A struct literal that fills a pointer field from an array stores the
+# array's address, not the array's first bytes (#1074). The field is declared
+# in another module, so this module cannot see whether it is an array or a
+# pointer and the emitted C has to let cc decide. Copying the array's own
+# bytes into a pointer field made the field a wild address and the program
+# faulted on the first read.
+import "ptrf/mat.flow"
+
+function main() -> i32 {
+    let rows: array<f64, 3> = [1.5, 2.5, 3.5]
+    let m: PtrfMat = PtrfMat { data: rows, n: 3 }
+    if m.n != 3 {
+        return 1
+    }
+    if m.data[0] != 1.5 {
+        return 2
+    }
+    if m.data[2] != 3.5 {
+        return 3
+    }
+    if ptrf_first(m) != 1.5 {
+        return 4
+    }
+    return 0
+}

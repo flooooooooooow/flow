@@ -1,0 +1,8 @@
+export struct PtrfMat {
+    data: ptr<f64>
+    n: i32
+}
+
+export function ptrf_first(m: PtrfMat) -> f64 {
+    return m.data[0]
+}

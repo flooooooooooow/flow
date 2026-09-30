@@ -6787,9 +6787,33 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                     let fv: i32 = arena.nodes[field].a
                     flowc_cgen_puts(w, "memcpy(&")
                     flowc_cgen_emit_sl_member(w, arena, src, id, field)
-                    flowc_cgen_puts(w, ", &(")
-                    flowc_cgen_emit_expr(w, arena, src, fv)
-                    flowc_cgen_puts(w, "), sizeof(")
+                    flowc_cgen_puts(w, ", ")
+                    if flowc_cgen_sl_array_copy(w, arena, src, fv) == 1 {
+                        # An array source with a field that may be declared in
+                        # another module: C decides. A pointer field (typeof(f)
+                        # == typeof(&f[0])) takes the decayed array, an array
+                        # field its elements. Copying the array's bytes into a
+                        # pointer field would store data as an address.
+                        flowc_cgen_puts(w, "__builtin_choose_expr(__builtin_types_compatible_p(__typeof__(")
+                        flowc_cgen_emit_sl_member(w, arena, src, id, field)
+                        flowc_cgen_puts(w, "), __typeof__(&")
+                        flowc_cgen_emit_sl_member(w, arena, src, id, field)
+                        flowc_cgen_puts(w, "[0])), (void*)&(__typeof__(&(")
+                        flowc_cgen_emit_expr(w, arena, src, fv)
+                        flowc_cgen_puts(w, ")[0])){ (")
+                        flowc_cgen_emit_expr(w, arena, src, fv)
+                        flowc_cgen_puts(w, ") }, (void*)(")
+                        flowc_cgen_emit_expr(w, arena, src, fv)
+                        flowc_cgen_puts(w, "))")
+                    } else {
+                        # The value is a plain lvalue whose type this module
+                        # cannot see (#1074). Its own address is the source,
+                        # and sizeof picks the width.
+                        flowc_cgen_puts(w, "&(")
+                        flowc_cgen_emit_expr(w, arena, src, fv)
+                        flowc_cgen_putc(w, 41)
+                    }
+                    flowc_cgen_puts(w, ", sizeof(")
                     flowc_cgen_emit_sl_member(w, arena, src, id, field)
                     flowc_cgen_puts(w, ")); ")
                 }
