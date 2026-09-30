@@ -16,6 +16,8 @@
 #     (`import json.lib`) and has nothing installed yet, so `flow run` must
 #     install it, write flow.lock and resolve the import; then the same
 #     project again, already installed;
+#   - examples/ecosystem sqlite_demo and app_cache, whose registry packages
+#     carry [native] C sources that `flow run` must compile, cache and link;
 #   - `flow sync`, `flow add`, `flow pkg install`, `flow search`, `flow info`;
 #   - `flow init`, `flow build`, `flow build-native`, `flow run-native`,
 #     `flow publish --dry-run` and `flow clean` in a new project;
@@ -186,6 +188,45 @@ fi
 # Second run: everything is installed and locked, so nothing is fetched.
 expect_exit 3 "run the same project again (already installed)" \
     ./flow run "$proj/src/main.flow"
+
+# Registry packages with [native] C sources (#991): sqlite links
+# native/flow_sqlite.c and -lsqlite3, http links native/flow_http.c and
+# -lcurl. `flow run` has to compile those sources and link them. The demos
+# are copied without flow.lock, so the run also installs the packages.
+have_native_libs=1
+for hdr in sqlite3.h curl/curl.h; do
+    if ! printf '#include <%s>\nint main(void){return 0;}\n' "$hdr" \
+            | "${CC:-cc}" -x c -fsyntax-only - >/dev/null 2>&1; then
+        have_native_libs=0
+        echo "SKIP [native] package demos: <$hdr> not found (install libsqlite3-dev and libcurl4-openssl-dev)"
+    fi
+done
+if [[ "$have_native_libs" -eq 1 ]]; then
+    for demo in sqlite_demo app_cache; do
+        cp -R "$ROOT/examples/ecosystem/$demo" "$work/$demo"
+        rm -rf "$work/$demo/flow.lock" "$work/$demo/flow_packages" "$work/$demo/build"
+    done
+    expect_exit 0 "run examples/ecosystem/sqlite_demo ([native] sqlite)" \
+        ./flow run "$work/sqlite_demo/src/main.flow"
+    sqlite_out="$(cat "$work/out.txt")"
+    expect_exit 0 "run sqlite_demo again (cached native object)" \
+        ./flow run "$work/sqlite_demo/src/main.flow"
+    sqlite_again="$(cat "$work/out.txt")"
+    expect_exit 0 "run examples/ecosystem/app_cache ([native] sqlite and http)" \
+        ./flow run "$work/app_cache/src/main.flow"
+    app_out="$(cat "$work/out.txt")"
+    if grep -q '^sum=42$' <<< "$sqlite_out" \
+            && grep -q 'Compiling native source .*/flow_sqlite.c' <<< "$sqlite_out" \
+            && grep -q '^sum=42$' <<< "$sqlite_again" \
+            && ! grep -q 'Compiling native source' <<< "$sqlite_again" \
+            && grep -q '^sum=84$' <<< "$app_out" && grep -q '^ok=1$' <<< "$app_out"; then
+        echo "PASS [native] sources compiled once, cached and linked"
+        pass=$((pass + 1))
+    else
+        echo "FAIL [native] package demos did not print the expected output"
+        fail=$((fail + 1))
+    fi
+fi
 
 # The package commands themselves.
 proj2="$work/pkg_cmds"

@@ -11,7 +11,9 @@
 #       flowc alone: accept/reject matches compiler/parity_proofs/
 #       python_rejects.txt, programs with a main() print what
 #       compiler/parity_proofs/run/*.expected records, and the proof documents
-#       flowc writes are compared with the checked-in ones (reported).
+#       flowc writes must match the checked-in ones byte for byte. To
+#       refresh a document after a source or renderer change, run
+#       `./flow doc proof <file>.flow` and commit the result.
 #
 #   ./compiler/scripts/parity_proofs.sh --python <rev>
 #       also run the Python host from git revision <rev> and require the
@@ -117,14 +119,21 @@ FLOWC_PROOF_DOC=1 FLOWC_PROOF_ROOT="$ROOT" FLOWC_PROOF_LIST="$WORK/files.txt" \
     FLOWC_PROOF_OUT="$WORK/docs_fc" FLOWC_PROOF_MIRROR=1 FLOWC_PROOF_QUIET=1 "$BIN"
 docs_same=0
 docs_n=0
+docs_bad=0
 while IFS= read -r f; do
     d="$(dirname "$f")"; s="$(basename "$f" .flow)"
     for ext in proof.md proof.tex; do
         docs_n=$((docs_n + 1))
-        if cmp -s "$WORK/docs_fc/$d/$s.$ext" "$d/$s.$ext"; then docs_same=$((docs_same + 1)); fi
+        if cmp -s "$WORK/docs_fc/$d/$s.$ext" "$d/$s.$ext"; then
+            docs_same=$((docs_same + 1))
+        else
+            docs_bad=$((docs_bad + 1))
+            echo "FAIL doc $d/$s.$ext differs from what flowc writes (regenerate: ./flow doc proof $f)" >&2
+        fi
     done
 done < "$WORK/files.txt"
-echo "docs: ${docs_same}/${docs_n} match the checked-in .proof.md/.proof.tex (report only)"
+echo "docs: ${docs_same}/${docs_n} match the checked-in .proof.md/.proof.tex"
+fail=$((fail + docs_bad))
 
 if [[ "$mode" != "--python" ]]; then
     if [[ "$fail" -ne 0 ]]; then
