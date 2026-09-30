@@ -1611,12 +1611,72 @@ function flowc_parse_binop_prec(op: i32) -> i32 {
     return 0 - 1
 }
 
+# 1 when only blanks lie between `pos` and the start of its line, so a token
+# there opens a line rather than continuing one.
+function flowc_parser_line_leading(p: Parser, pos: i32) -> i32 {
+    let mut i: i32 = pos - 1
+    while i >= 0 {
+        if p.lex.input[i] == 10 {
+            return 1
+        }
+        if p.lex.input[i] != 32 and p.lex.input[i] != 9 and p.lex.input[i] != 13 {
+            return 0
+        }
+        i = i - 1
+    }
+    return 1
+}
+
+# 1 when the `*` under the cursor opens a `*p = v` store statement rather than
+# continuing the previous expression as a multiplication (#1046). It must open
+# its line and an assignment operator must follow on that line outside every
+# bracket. A continuation line that starts with `* (…)` keeps its meaning.
+function flowc_parser_at_deref_store(p: Parser) -> i32 {
+    if p.cur.kind != TOK_STAR {
+        return 0
+    }
+    if flowc_parser_line_leading(p, p.cur.start) == 0 {
+        return 0
+    }
+    let line: i32 = p.cur.line
+    let mut depth: i32 = 0
+    let mut n: i32 = 1
+    while n < 64 {
+        let t: Token = flowc_parser_peek(p, n)
+        if t.kind == TOK_EOF or t.line != line {
+            return 0
+        }
+        if t.kind == TOK_LPAREN or t.kind == TOK_LBRACK {
+            depth = depth + 1
+        } elif t.kind == TOK_RPAREN or t.kind == TOK_RBRACK {
+            depth = depth - 1
+            if depth < 0 {
+                return 0
+            }
+        } elif t.kind == TOK_LBRACE or t.kind == TOK_RBRACE or t.kind == TOK_SEMI {
+            return 0
+        } elif depth == 0 {
+            if t.kind == TOK_EQ or t.kind == TOK_PLUS_EQ or t.kind == TOK_MINUS_EQ {
+                return 1
+            }
+            if t.kind == TOK_STAR_EQ or t.kind == TOK_SLASH_EQ or t.kind == TOK_PERCENT_EQ {
+                return 1
+            }
+        }
+        n = n + 1
+    }
+    return 0
+}
+
 function flowc_parse_binop_rhs(p: ptr<Parser>, min_prec: i32, lhs: i32) -> i32 {
     let mut left: i32 = lhs
     while 1 == 1 {
         let op: i32 = flowc_parse_binop_kind(p[0])
         let prec: i32 = flowc_parse_binop_prec(op)
         if prec < min_prec {
+            return left
+        }
+        if op == TOK_STAR and flowc_parser_at_deref_store(p[0]) == 1 {
             return left
         }
         # The node spans the operator token, so a diagnostic can name its
@@ -1629,6 +1689,9 @@ function flowc_parse_binop_rhs(p: ptr<Parser>, min_prec: i32, lhs: i32) -> i32 {
             let next: i32 = flowc_parse_binop_kind(p[0])
             let next_prec: i32 = flowc_parse_binop_prec(next)
             if next_prec <= prec {
+                break
+            }
+            if next == TOK_STAR and flowc_parser_at_deref_store(p[0]) == 1 {
                 break
             }
             right = flowc_parse_binop_rhs(p, prec + 1, right)

@@ -1,0 +1,65 @@
+# A `*p = v` store opens its own statement (#1046). The previous statement's
+# expression used to swallow the `*` as a multiplication over the line break,
+# so the repro in the issue stopped at "unexpected token '='".
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+struct Pair {
+    a: i32,
+    b: i32
+}
+
+function main() -> i32 {
+    let mut x: i32 = 42
+    let p: ptr<i32> = &x
+    *p = 7
+    if x != 7 {
+        return 1
+    }
+    if *p != 7 {
+        return 2
+    }
+    # A store right after an index store and after a plain assignment.
+    let mut ys: array<i32, 2> = [0, 0]
+    ys[0] = 3
+    *p = 8
+    if x != 8 {
+        return 3
+    }
+    x = 9
+    *p = 10
+    if x != 10 {
+        return 4
+    }
+    # Compound stores through the pointer.
+    *p += 5
+    if x != 15 {
+        return 5
+    }
+    *p -= 5
+    if x != 10 {
+        return 6
+    }
+    *p *= 3
+    if x != 30 {
+        return 7
+    }
+    # A store through a pointer to a struct field.
+    let mut pair: Pair = Pair { a: 1, b: 2 }
+    let q: ptr<Pair> = &pair
+    let r: ptr<i32> = &pair.a
+    *r = 11
+    if pair.a != 11 {
+        return 8
+    }
+    if q.b != 2 {
+        return 9
+    }
+    # A continuation line that opens with `*` is still a multiplication: no
+    # assignment follows it on that line.
+    let w: i32 = ys[0]
+        * (x - 20)
+    if w != 30 {
+        return 10
+    }
+    return 0
+}

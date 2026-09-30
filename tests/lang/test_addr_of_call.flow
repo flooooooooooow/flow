@@ -1,0 +1,50 @@
+# `&f()` has no lvalue to address, so the call result spills to a temporary
+# whose lifetime is the enclosing block and the address is that temporary's
+# (#1066). flowc used to emit `&f()`, which C rejects.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+struct Pair {
+    a: i32,
+    b: i32
+}
+
+function seven() -> i32 {
+    return 7
+}
+
+function make_pair(a: i32, b: i32) -> Pair {
+    return Pair { a: a, b: b }
+}
+
+function load(p: ptr<i32>) -> i32 {
+    return p[0]
+}
+
+function bump(p: ptr<i32>) {
+    p[0] = p[0] + 1
+}
+
+function main() -> i32 {
+    let p: ptr<i32> = &seven()
+    if p[0] != 7 {
+        return 1
+    }
+    if load(&seven()) != 7 {
+        return 2
+    }
+    # The temporary is writable and outlives the statement that made it.
+    let q: ptr<i32> = &seven()
+    bump(q)
+    if q[0] != 8 {
+        return 3
+    }
+    # A call returning a struct spills the same way.
+    let r: ptr<Pair> = &make_pair(4, 5)
+    if r.a != 4 {
+        return 4
+    }
+    if r.b != 5 {
+        return 5
+    }
+    return 0
+}

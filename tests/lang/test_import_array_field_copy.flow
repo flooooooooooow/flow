@@ -1,0 +1,17 @@
+# #1074 companion: copy array field across import
+import .lat_array_field { Lat, lat_new }
+
+function main() -> i32 {
+    let a: Lat = lat_new()
+    let b: Lat = Lat { k: a.k, n: a.n }
+    if b.n != 2 {
+        return 1
+    }
+    if b.k[0] != 0.5 {
+        return 2
+    }
+    if b.k[1] != 0.25 {
+        return 3
+    }
+    return 0
+}

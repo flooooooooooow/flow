@@ -44,6 +44,7 @@ import .token {
 }
 
 extern {
+    function printf(fmt: string, ...) -> i32
     function strlen(s: string) -> i64
     function popen(cmd: string, mode: string) -> ptr<void>
     function pclose(fp: ptr<void>) -> i32
@@ -135,11 +136,14 @@ export struct CgenBuf {
     # operation calls the handler's method directly (#1056). handle_len can
     # pass FLOWC_HANDLE_MAX; deeper blocks then keep the vtable dispatch.
     handle_ids: ptr<i32>,
-    handle_len: i32
+    handle_len: i32,
+    # The AST_PROGRAM being emitted, so a name that is neither a local nor a
+    # parameter can be looked up among the module's statics (#1078).
+    mod_root: i32
 }
 
 function flowc_cgen_buf_init(out: ptr<u8>, cap: i32) -> CgenBuf {
-    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null as string, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0, handle_ids: null, handle_len: 0 }
+    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null as string, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0, handle_ids: null, handle_len: 0, mod_root: AST_NONE }
 }
 
 function flowc_cgen_putc(w: ptr<CgenBuf>, c: i32) {
@@ -541,6 +545,65 @@ function flowc_cgen_sl_array_copy(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
         return 0
     }
     return flowc_cgen_ty_is_array(arena, src, ty)
+}
+
+# Destination field type of a struct literal member (by field name on the
+# struct being constructed). Used when the value's type is not resolved —
+# e.g. copying `a.k` of an imported struct's array field (#1074).
+function flowc_cgen_sl_dest_field_ty(arena: AstArena, src: ptr<u8>, lit: i32, field: i32) -> i32 {
+    if lit == AST_NONE or field == AST_NONE {
+        return AST_NONE
+    }
+    let st: i32 = flowc_cgen_find_struct(arena, src, arena.nodes[lit].name_start, arena.nodes[lit].name_end)
+    if st == AST_NONE {
+        return AST_NONE
+    }
+    let mut f: i32 = arena.nodes[st].a
+    while f != AST_NONE {
+        if arena.nodes[f].kind == AST_FIELD {
+            if flowc_cgen_span_eq(src, arena.nodes[field].name_start, arena.nodes[field].name_end, arena.nodes[f].name_start, arena.nodes[f].name_end) == 1 {
+                return arena.nodes[f].a
+            }
+        }
+        f = arena.nodes[f].next
+    }
+    return AST_NONE
+}
+
+# 1 when this struct-literal field must be memcpy'd rather than `{ .f = v }`
+# initialized: the value types as an array, the destination field is an
+# array, or the value is an lvalue whose type is unknown because the struct
+# lives in another bundle module (#1074). `memcpy(&dst, &src, sizeof(dst))`
+# is valid for both array and scalar fields, so the unknown case is safe.
+function flowc_cgen_sl_needs_array_copy(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, lit: i32, field: i32) -> i32 {
+    let v: i32 = arena.nodes[field].a
+    if flowc_cgen_sl_array_copy(w, arena, src, v) == 1 {
+        return 1
+    }
+    if v == AST_NONE {
+        return 0
+    }
+    let vk: i32 = arena.nodes[v].kind
+    if vk != AST_IDENT and vk != AST_FIELD_ACCESS and vk != AST_INDEX {
+        return 0
+    }
+    let dty: i32 = flowc_cgen_sl_dest_field_ty(arena, src, lit, field)
+    if dty == AST_NONE {
+        # Imported struct: the definition is not in this module's arena, so
+        # an lvalue field value may be an array. Copy; sizeof picks the width.
+        return 1
+    }
+    if flowc_cgen_ty_is_array(arena, src, dty) == 1 {
+        return 1
+    }
+    # `[T; N]` sometimes arrives with a positive ival and no FIXED_ARRAY tag
+    # after cross-module import; treat sized AST_TYPE as an array too.
+    if arena.nodes[dty].kind == AST_TYPE and arena.nodes[dty].ival > 0 {
+        if arena.nodes[dty].a != AST_NONE {
+            return 1
+        }
+    }
+    return 0
 }
 
 # `__flowc_sl<id>.<field>` for the struct literal copy above.
@@ -1832,6 +1895,40 @@ function flowc_cgen_write_lit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
     return 0
 }
 
+# `&f()` in C would address an rvalue. The call result spills into a
+# one-element compound literal instead, which lives as long as the enclosing
+# block, and its array-to-pointer decay is the temporary's address (#1066).
+# The temporary is an array of one because a braced initialiser cannot hold a
+# struct value, while an array element initialiser can. Returns 1 when the
+# return type is known and the address was written, else 0.
+function flowc_cgen_emit_addr_of_call(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, call: i32) -> i32 {
+    let fn: i32 = flowc_cgen_find_fn(arena, src, arena.nodes[call].name_start, arena.nodes[call].name_end)
+    let mut rt: i32 = AST_NONE
+    if fn != AST_NONE and arena.nodes[call].b == AST_NONE and flowc_cgen_fn_returns_array(arena, src, fn) == 0 {
+        rt = arena.nodes[fn].b
+    }
+    if rt == AST_NONE {
+        # A callee in another bundle module: the signature table has its type.
+        let off: i32 = flowc_cgen_sig_find(
+            w[0].sigs, w[0].sigs_len, src,
+            arena.nodes[call].name_start, arena.nodes[call].name_end
+        )
+        if off < 0 {
+            return 0
+        }
+    }
+    flowc_cgen_puts(w, "((")
+    if rt != AST_NONE {
+        flowc_cgen_emit_type(w, arena, src, rt)
+    } else {
+        flowc_cgen_write_sig_type(w, arena, src, call)
+    }
+    flowc_cgen_puts(w, "[1]){ ")
+    flowc_cgen_emit_expr(w, arena, src, call)
+    flowc_cgen_puts(w, " })")
+    return 1
+}
+
 # --- string concatenation -------------------------------------------------
 # `a + b` is C addition unless an operand is a string, in which case Stage-A
 # lowers it to __flowc_str_concat (emitted in the preamble). Detection is
@@ -1840,6 +1937,22 @@ function flowc_cgen_write_lit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
 # `-> string` (this module's arena first, then the bundle signature table).
 # Two string values with no literal and no call between them are still emitted
 # as `+` and rejected by the C compiler: a loud failure, never wrong output.
+
+# 1 when `ty` is a span: `span<T>`, or the nameless `&[T]` / `&mut [T]` the
+# parser records as an element type with no name. A span is a struct in C, so
+# `null` there is the empty span, never a pointer (#1048).
+function flowc_cgen_type_is_span(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    if ty == AST_NONE or arena.nodes[ty].kind != AST_TYPE {
+        return 0
+    }
+    if flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "span") == 1 {
+        return 1
+    }
+    if arena.nodes[ty].a != AST_NONE and arena.nodes[ty].name_start == 0 and arena.nodes[ty].name_end == 0 and arena.nodes[ty].c != AST_TYPE_FIXED_ARRAY {
+        return 1
+    }
+    return 0
+}
 
 # 1 if `ty` is the AST_TYPE node for `string`.
 function flowc_cgen_type_is_string(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
@@ -1986,6 +2099,31 @@ function flowc_cgen_scoped_decl(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
     return flowc_cgen_scoped_decl_of(w, arena, src, id, AST_IDENT)
 }
 
+# The module static (a top-level `let`) an identifier names, else AST_NONE.
+# Only the program's own items are walked, so a function's local of the same
+# name is never mistaken for one.
+function flowc_cgen_find_module_let(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    let root: i32 = w[0].mod_root
+    if root == AST_NONE or root < 0 or id == AST_NONE {
+        return AST_NONE
+    }
+    let ns: i32 = arena.nodes[id].name_start
+    let ne: i32 = arena.nodes[id].name_end
+    if ne <= ns {
+        return AST_NONE
+    }
+    let mut item: i32 = arena.nodes[root].a
+    while item != AST_NONE {
+        if arena.nodes[item].kind == AST_LET {
+            if flowc_cgen_span_eq(src, ns, ne, arena.nodes[item].name_start, arena.nodes[item].name_end) == 1 {
+                return item
+            }
+        }
+        item = arena.nodes[item].next
+    }
+    return AST_NONE
+}
+
 # Module-level `const` with this identifier's name, else AST_NONE.
 function flowc_cgen_find_const(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     let ns: i32 = arena.nodes[id].name_start
@@ -2065,7 +2203,9 @@ function flowc_cgen_expr_type_node(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
         if c != AST_NONE {
             return arena.nodes[c].a
         }
-        return AST_NONE
+        # A module static: `tab.len` where `tab: ptr<Table>` is one reads
+        # through the pointer, as a local of that type does (#1078).
+        return flowc_cgen_decl_type(arena, flowc_cgen_find_module_let(w, arena, src, id))
     }
     if kind == AST_FIELD_ACCESS {
         let mut bt: i32 = flowc_cgen_expr_type_node(w, arena, src, arena.nodes[id].a)
@@ -5195,14 +5335,7 @@ function flowc_cgen_checked_is_span(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
     if decl == AST_NONE {
         return 0
     }
-    let ty: i32 = arena.nodes[decl].a
-    if ty == AST_NONE or arena.nodes[ty].kind != AST_TYPE {
-        return 0
-    }
-    if flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "span") == 1 {
-        return 1
-    }
-    if arena.nodes[ty].a != AST_NONE and arena.nodes[ty].name_start == 0 and arena.nodes[ty].name_end == 0 and arena.nodes[ty].c != AST_TYPE_FIXED_ARRAY {
+    if flowc_cgen_type_is_span(arena, src, arena.nodes[decl].a) == 1 {
         return 1
     }
     return 0
@@ -5246,6 +5379,154 @@ function flowc_cgen_emit_checked_index(w: ptr<CgenBuf>, arena: AstArena, src: pt
     flowc_cgen_puts(w, ").len), flow_fault_handler(\"span index out of bounds\"), (")
     flowc_cgen_emit_expr(w, arena, src, base)
     flowc_cgen_puts(w, ").data[0]))")
+}
+
+# --- array literals in a value position -----------------------------------
+# `{ 1, 2, 3 }` is a C initializer list, not an expression: it is legal after
+# `=` in a declaration and nested in another list, nowhere else. Where an
+# array literal is used as a value (indexed, cast, measured) it needs the
+# type of a compound literal, `(int32_t[]){ 1, 2, 3 }` (#1050).
+
+# The C type name for a primitive kind, or "" when there is none.
+function flowc_cgen_prim_ctype(p: i32) -> string {
+    if p == FLOWC_PRIM_STRING {
+        return "const char*"
+    }
+    if p == FLOWC_PRIM_F64 {
+        return "double"
+    }
+    if p == FLOWC_PRIM_I64 {
+        return "int64_t"
+    }
+    if p == FLOWC_PRIM_U64 {
+        return "uint64_t"
+    }
+    if p == FLOWC_PRIM_U32 {
+        return "uint32_t"
+    }
+    if p == FLOWC_PRIM_I32 {
+        return "int32_t"
+    }
+    if p == FLOWC_PRIM_BOOL {
+        return "bool"
+    }
+    return ""
+}
+
+# Element count of an array literal: the length of its element chain, or the
+# repeat count of `[v; N]` when that is an integer literal. 0 when unknown.
+function flowc_cgen_array_lit_len(arena: AstArena, id: i32) -> i32 {
+    if id == AST_NONE or id < 0 or arena.nodes[id].kind != AST_ARRAY_LIT {
+        return 0
+    }
+    if arena.nodes[id].b != AST_NONE {
+        if arena.nodes[arena.nodes[id].b].kind == AST_INT {
+            return arena.nodes[arena.nodes[id].b].ival
+        }
+        return 0
+    }
+    return flowc_ast_chain_len(arena, arena.nodes[id].a)
+}
+
+# The row length of `[[1, 2], [3, 4]]`, 0 for a flat literal or a repeat.
+function flowc_cgen_array_lit_rows(arena: AstArena, id: i32) -> i32 {
+    if id == AST_NONE or id < 0 or arena.nodes[id].kind != AST_ARRAY_LIT {
+        return 0
+    }
+    if arena.nodes[id].b != AST_NONE {
+        return 0
+    }
+    let first: i32 = arena.nodes[id].a
+    if first == AST_NONE or arena.nodes[first].kind != AST_ARRAY_LIT {
+        return 0
+    }
+    return flowc_cgen_array_lit_len(arena, first)
+}
+
+# The element whose type is the literal's element type: its first element,
+# or the first element of its first row. AST_NONE when the literal is empty
+# or nests deeper than one row.
+function flowc_cgen_array_lit_elem(arena: AstArena, id: i32) -> i32 {
+    if id == AST_NONE or id < 0 or arena.nodes[id].kind != AST_ARRAY_LIT {
+        return AST_NONE
+    }
+    let first: i32 = arena.nodes[id].a
+    if first == AST_NONE {
+        return AST_NONE
+    }
+    if arena.nodes[first].kind != AST_ARRAY_LIT {
+        return first
+    }
+    if arena.nodes[id].b != AST_NONE or arena.nodes[first].b != AST_NONE {
+        return AST_NONE
+    }
+    let inner: i32 = arena.nodes[first].a
+    if inner == AST_NONE or arena.nodes[inner].kind == AST_ARRAY_LIT {
+        return AST_NONE
+    }
+    return inner
+}
+
+# Write the C element type of an array literal. 1 when written, 0 when the
+# elements do not name one and nothing was written.
+function flowc_cgen_emit_array_lit_elem_ctype(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    let elem: i32 = flowc_cgen_array_lit_elem(arena, id)
+    if elem == AST_NONE {
+        return 0
+    }
+    let cty: string = flowc_cgen_prim_ctype(flowc_cgen_expr_prim(w, arena, src, elem))
+    let cp: ptr<u8> = cty
+    if cp[0] == 0 {
+        return 0
+    }
+    flowc_cgen_puts(w, cty)
+    return 1
+}
+
+# Write the compound-literal type of an array literal: `(int32_t[])`, or
+# `(int32_t[][2])` for rows of two. 1 when written, else 0 and nothing
+# written, which leaves the bare list for a caller that can take it.
+function flowc_cgen_emit_array_lit_ctype(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if flowc_cgen_array_lit_elem(arena, id) == AST_NONE {
+        return 0
+    }
+    flowc_cgen_putc(w, 40)
+    if flowc_cgen_emit_array_lit_elem_ctype(w, arena, src, id) == 0 {
+        # The `(` is already out; a cast to nothing would not parse, so name
+        # the widest integer the elements can be and let C convert.
+        flowc_cgen_puts(w, "int32_t")
+    }
+    flowc_cgen_puts(w, "[]")
+    let rows: i32 = flowc_cgen_array_lit_rows(arena, id)
+    if rows > 0 {
+        flowc_cgen_putc(w, 91)
+        flowc_cgen_put_i32(w, rows)
+        flowc_cgen_putc(w, 93)
+    }
+    flowc_cgen_putc(w, 41)
+    return 1
+}
+
+# Evaluate an array literal statement's elements for their effects. A bare
+# list is not a C expression and neither is a nested one, so rows are walked
+# element by element (#1050).
+function flowc_cgen_emit_array_lit_effects(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    let mut el: i32 = arena.nodes[id].a
+    while el != AST_NONE {
+        if arena.nodes[el].kind == AST_ARRAY_LIT {
+            flowc_cgen_emit_array_lit_effects(w, arena, src, el)
+        } else {
+            flowc_cgen_puts(w, "  (void)(")
+            flowc_cgen_emit_expr(w, arena, src, el)
+            flowc_cgen_puts(w, ");\n")
+        }
+        el = arena.nodes[el].next
+    }
+    if arena.nodes[id].b != AST_NONE {
+        flowc_cgen_puts(w, "  (void)(")
+        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+        flowc_cgen_puts(w, ");\n")
+    }
 }
 
 # Expressions are emitted through this wrapper so that an lvalue context
@@ -5653,6 +5934,16 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             flowc_cgen_putc(w, 41)
             return
         }
+        # `&f()` has no lvalue to address, so the result spills first (#1066).
+        if arena.nodes[id].ival == TOK_AMP and arena.nodes[arena.nodes[id].a].kind == AST_CALL {
+            if flowc_cgen_emit_addr_of_call(w, arena, src, arena.nodes[id].a) == 1 {
+                return
+            }
+            printf(
+                "flowc cgen: line %d: cannot take the address of a call result (return type unknown)\n",
+                flowc_cgen_line_of(src, arena.nodes[id].start)
+            )
+        }
         flowc_cgen_putc(w, 40)
         if arena.nodes[id].ival == TOK_MINUS {
             flowc_cgen_putc(w, 45)
@@ -5704,6 +5995,14 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         flowc_cgen_putc(w, 40)
         flowc_cgen_emit_type(w, arena, src, arena.nodes[id].b)
         flowc_cgen_puts(w, ")(")
+        # `[1, 2, 3] as ptr<i32>` casts a value, so the literal needs a
+        # compound literal's type. The cast's own element type names it best
+        # (#1050).
+        if arena.nodes[id].a != AST_NONE and arena.nodes[arena.nodes[id].a].kind == AST_ARRAY_LIT {
+            if flowc_cgen_emit_elem_compound(w, arena, src, arena.nodes[id].b) == 0 {
+                flowc_cgen_emit_array_lit_ctype(w, arena, src, arena.nodes[id].a)
+            }
+        }
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
         flowc_cgen_putc(w, 41)
         return
@@ -5820,6 +6119,11 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             flowc_cgen_putc(w, 40)
             flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
             flowc_cgen_putc(w, 41)
+        } elif arena.nodes[arena.nodes[id].a].kind == AST_ARRAY_LIT {
+            # `[10, 20, 30][i]` indexes a value, so the literal needs the
+            # type of a compound literal (#1050).
+            flowc_cgen_emit_array_lit_ctype(w, arena, src, arena.nodes[id].a)
+            flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
         } else {
             flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
         }
@@ -5920,6 +6224,17 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "len") == 1 {
             # len(sized array) is its element count, as on the Python host.
             let larg: i32 = arena.nodes[id].a
+            # len([1, 2, 3]) is the literal's own count: a literal has no C
+            # object to read a length from (#1050).
+            if larg != AST_NONE and arena.nodes[larg].kind == AST_ARRAY_LIT {
+                let alen: i32 = flowc_cgen_array_lit_len(arena, larg)
+                if alen > 0 {
+                    flowc_cgen_puts(w, "((int32_t)")
+                    flowc_cgen_put_i32(w, alen)
+                    flowc_cgen_putc(w, 41)
+                    return
+                }
+            }
             if larg != AST_NONE {
                 let lty: i32 = flowc_cgen_expr_type_node(w, arena, src, larg)
                 if lty != AST_NONE and lty >= 0 and flowc_cgen_is_sized_array(arena, src, lty) == 1 {
@@ -6396,7 +6711,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         let mut copies: i32 = 0
         let mut fscan: i32 = arena.nodes[id].a
         while fscan != AST_NONE {
-            copies = copies + flowc_cgen_sl_array_copy(w, arena, src, arena.nodes[fscan].a)
+            copies = copies + flowc_cgen_sl_needs_array_copy(w, arena, src, id, fscan)
             fscan = arena.nodes[fscan].next
         }
         if copies > 0 {
@@ -6410,7 +6725,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         let mut field: i32 = arena.nodes[id].a
         let mut first: i32 = 1
         while field != AST_NONE {
-            if flowc_cgen_sl_array_copy(w, arena, src, arena.nodes[field].a) == 0 {
+            if flowc_cgen_sl_needs_array_copy(w, arena, src, id, field) == 0 {
                 if first == 0 {
                     flowc_cgen_puts(w, ", ")
                 }
@@ -6425,28 +6740,19 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         flowc_cgen_puts(w, " }")
         if copies > 0 {
             # C cannot initialize an array member from an array lvalue; copy
-            # it in after, as the Python host does with memcpy.
+            # it in after. `memcpy(&dst, &src, sizeof(dst))` is correct for
+            # both arrays and scalars, which matters when the field type is
+            # only known in another bundle module (#1074).
             flowc_cgen_puts(w, "; ")
             field = arena.nodes[id].a
             while field != AST_NONE {
-                if flowc_cgen_sl_array_copy(w, arena, src, arena.nodes[field].a) == 1 {
-                    # The field may be declared in another module, so C
-                    # decides: a pointer field (typeof(f) == typeof(&f[0]))
-                    # takes the decayed array, an array field its elements.
+                if flowc_cgen_sl_needs_array_copy(w, arena, src, id, field) == 1 {
                     let fv: i32 = arena.nodes[field].a
                     flowc_cgen_puts(w, "memcpy(&")
                     flowc_cgen_emit_sl_member(w, arena, src, id, field)
-                    flowc_cgen_puts(w, ", __builtin_choose_expr(__builtin_types_compatible_p(__typeof__(")
-                    flowc_cgen_emit_sl_member(w, arena, src, id, field)
-                    flowc_cgen_puts(w, "), __typeof__(&")
-                    flowc_cgen_emit_sl_member(w, arena, src, id, field)
-                    flowc_cgen_puts(w, "[0])), (void*)&(__typeof__(&(")
+                    flowc_cgen_puts(w, ", &(")
                     flowc_cgen_emit_expr(w, arena, src, fv)
-                    flowc_cgen_puts(w, ")[0])){ (")
-                    flowc_cgen_emit_expr(w, arena, src, fv)
-                    flowc_cgen_puts(w, ") }, (void*)(")
-                    flowc_cgen_emit_expr(w, arena, src, fv)
-                    flowc_cgen_puts(w, ")), sizeof(")
+                    flowc_cgen_puts(w, "), sizeof(")
                     flowc_cgen_emit_sl_member(w, arena, src, id, field)
                     flowc_cgen_puts(w, ")); ")
                 }
@@ -7457,6 +7763,29 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             }
         }
         flowc_cgen_puts(w, "  ")
+        # `let a = [1, 2, 3]` has no annotation to take dimensions from, and
+        # a bare list is not a scalar initializer: the element type and the
+        # dimensions come from the literal itself (#1050).
+        if ty == AST_NONE and init != AST_NONE and arena.nodes[init].kind == AST_ARRAY_LIT {
+            let lit_n: i32 = flowc_cgen_array_lit_len(arena, init)
+            if lit_n > 0 and flowc_cgen_emit_array_lit_elem_ctype(w, arena, src, init) == 1 {
+                flowc_cgen_putc(w, 32)
+                flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+                flowc_cgen_putc(w, 91)
+                flowc_cgen_put_i32(w, lit_n)
+                flowc_cgen_putc(w, 93)
+                let lit_rows: i32 = flowc_cgen_array_lit_rows(arena, init)
+                if lit_rows > 0 {
+                    flowc_cgen_putc(w, 91)
+                    flowc_cgen_put_i32(w, lit_rows)
+                    flowc_cgen_putc(w, 93)
+                }
+                flowc_cgen_puts(w, " = ")
+                flowc_cgen_emit_expr(w, arena, src, init)
+                flowc_cgen_puts(w, ";\n")
+                return
+            }
+        }
         if arr_n > 0 {
             flowc_cgen_emit_type(w, arena, src, flowc_cgen_array_base(arena, src, ty))
             flowc_cgen_putc(w, 32)
@@ -8259,18 +8588,7 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         # expression. Evaluate each element for its effects instead.
         let e: i32 = arena.nodes[id].a
         if e != AST_NONE and arena.nodes[e].kind == AST_ARRAY_LIT {
-            let mut el: i32 = arena.nodes[e].a
-            while el != AST_NONE {
-                flowc_cgen_puts(w, "  (void)(")
-                flowc_cgen_emit_expr(w, arena, src, el)
-                flowc_cgen_puts(w, ");\n")
-                el = arena.nodes[el].next
-            }
-            if arena.nodes[e].b != AST_NONE {
-                flowc_cgen_puts(w, "  (void)(")
-                flowc_cgen_emit_expr(w, arena, src, arena.nodes[e].b)
-                flowc_cgen_puts(w, ");\n")
-            }
+            flowc_cgen_emit_array_lit_effects(w, arena, src, e)
             return
         }
         flowc_cgen_puts(w, "  ")
@@ -10089,6 +10407,7 @@ export function flowc_cgen_emit_sigs(
     let mut w: CgenBuf = flowc_cgen_buf_init(out, out_cap)
     w.sigs = sigs
     w.sigs_len = sigs_len
+    w.mod_root = root
     # Effect table: effects of earlier bundle modules ride in the signature
     # table; this module's own are appended.
     let eff_cap: i32 = 262144
@@ -10757,7 +11076,7 @@ export function flowc_cgen_emit_sigs(
             # A span is a struct, so `null` there is the empty span.
             let mut span_null: i32 = 0
             if init != AST_NONE and ty != AST_NONE and arena.nodes[init].kind == AST_IDENT and flowc_cgen_span_is(src, arena.nodes[init].name_start, arena.nodes[init].name_end, "null") == 1 {
-                if arena.nodes[ty].kind == AST_TYPE and arena.nodes[ty].a != AST_NONE and flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "span") == 1 {
+                if flowc_cgen_type_is_span(arena, src, ty) == 1 {
                     span_null = 1
                 }
             }

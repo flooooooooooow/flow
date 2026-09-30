@@ -1,0 +1,24 @@
+# #1078 field access through a module-level ptr<T>
+struct Table {
+    len: i32
+    cap: i32
+}
+
+extern {
+    function malloc(n: i64) -> ptr<void>
+}
+
+let mut tab: ptr<Table> = null
+
+function main() -> i32 {
+    tab = malloc(16) as ptr<Table>
+    tab.len = 3
+    tab.cap = 8
+    if tab.len != 3 {
+        return 1
+    }
+    if tab.cap != 8 {
+        return 2
+    }
+    return 0
+}

@@ -1,0 +1,10 @@
+# #1074 struct literal copying an array field of an imported struct
+export struct Lat {
+    k: [f32; 4]
+    n: i32
+}
+
+export function lat_new() -> Lat {
+    let mut l: Lat = Lat { k: [0.5, 0.25, 0.0, 0.0], n: 2 }
+    return l
+}

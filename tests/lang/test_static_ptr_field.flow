@@ -1,0 +1,55 @@
+# A field read or store through a module-level `ptr<T>` goes through the
+# pointer (#1078). flowc resolved only locals and parameters, so a static
+# emitted `(tab).len`, which C rejects for a pointer.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+struct Table {
+    len: i32,
+    cap: i32
+}
+
+let mut tab: ptr<Table> = null
+let mut spare: ptr<Table> = null
+
+function fill() {
+    tab.len = 3
+    tab.cap = 16
+}
+
+function total() -> i32 {
+    return tab.len + tab.cap
+}
+
+function main() -> i32 {
+    tab = malloc(8) as ptr<Table>
+    fill()
+    if tab.len != 3 {
+        return 1
+    }
+    if tab.cap != 16 {
+        return 2
+    }
+    if total() != 19 {
+        return 3
+    }
+    tab.len = tab.len + 1
+    if tab.len != 4 {
+        return 4
+    }
+    # A local of the same type still reads through the pointer.
+    let local: ptr<Table> = tab
+    if local.len != 4 {
+        return 5
+    }
+    # A local shadowing the static keeps its own type.
+    spare = malloc(8) as ptr<Table>
+    spare.len = 9
+    if spare.len != 9 {
+        return 6
+    }
+    return 0
+}
