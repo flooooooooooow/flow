@@ -26,6 +26,8 @@ import "compiler/src/ast.flow"
 import "compiler/src/token.flow"
 import "compiler/src/lexer.flow"
 
+# `system` runs the shell: the checker requires it under `@unsafe extern`.
+@unsafe
 extern {
     function calloc(n: i64, size: i64) -> ptr<void>
     function system(cmd: string) -> i32

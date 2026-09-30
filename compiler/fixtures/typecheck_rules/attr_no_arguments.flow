@@ -1,0 +1,9 @@
+# expect: Attribute '@inline' on function 'f' takes no arguments
+@inline(always)
+function f() -> i32 {
+    return 1
+}
+
+function main() -> i32 {
+    return f()
+}

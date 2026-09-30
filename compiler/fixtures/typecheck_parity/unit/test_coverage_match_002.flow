@@ -1,0 +1,9 @@
+
+            function f(x: i32) -> i32 {
+                match x {
+                    1 | 2 | 3 if x == 2 => { return 100 }
+                    _ => { return 200 }
+                }
+                return -1
+            }
+            

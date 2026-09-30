@@ -14659,7 +14659,7 @@ int32_t flowc_mlirgen_emit_modules(AstArena arena, int32_t root, uint8_t* src, i
   mi = mlg_module_of(m, (((mg).arena).nodes[(mg).why_node]).start);
 }
   if (nmods > 0 && mi != (nmods - 1)) {
-  const char* mname = (mod_names + (mi * mod_stride));
+  const char* mname = (const char*)((mod_names + (mi * mod_stride)));
   printf("flowc mlir: unsupported: %s at line %d of %s\n", (mg).why, mlg_node_line(m, (mg).why_node), mname);
 } else {
   printf("flowc mlir: unsupported: %s at line %d\n", (mg).why, mlg_node_line(m, (mg).why_node));
@@ -24852,6 +24852,3568 @@ int32_t flowc_overload_registry_collect(FlowcOverloadTable* table, AstArena aren
   item = ((arena).nodes[item]).next;
 }
   return ((table[0]).len - before);
+}
+
+
+typedef struct SemIntVec {
+  int32_t* data;
+  int32_t len;
+  int32_t cap;
+} SemIntVec;
+
+typedef struct SemStrVec {
+  const char** data;
+  int32_t len;
+  int32_t cap;
+} SemStrVec;
+
+typedef struct SemStrMap {
+  const char** keys;
+  int32_t* vals;
+  int32_t cap;
+  int32_t count;
+} SemStrMap;
+
+typedef struct SemPtrVec {
+  void** data;
+  int32_t len;
+  int32_t cap;
+} SemPtrVec;
+
+int32_t sem_s_len(const char* s);
+bool sem_s_eq(const char* a, const char* b);
+bool sem_s_starts(const char* s, const char* prefix);
+bool sem_s_ends(const char* s, const char* suffix);
+int32_t sem_s_byte(const char* s, int32_t i);
+const char* sem_s_slice(const char* s, int32_t start, int32_t end);
+const char* sem_s_from(const char* s, int32_t start);
+const char* sem_s_span(uint8_t* src, int32_t start, int32_t end);
+bool sem_s_span_is(uint8_t* src, int32_t start, int32_t end, const char* lit);
+int32_t sem_s_find(const char* s, const char* sub, int32_t from);
+bool sem_s_contains(const char* s, const char* sub);
+int32_t sem_s_index_byte(const char* s, int32_t c);
+const char* sem_s_itoa(int64_t v);
+bool sem_s_is_digit(int32_t c);
+bool sem_s_is_alpha(int32_t c);
+bool sem_s_is_space(int32_t c);
+const char* sem_s_strip(const char* s);
+SemIntVec* sem_iv_new();
+void sem_iv_push(SemIntVec* v, int32_t x);
+int32_t sem_iv_get(SemIntVec* v, int32_t i);
+bool sem_iv_has(SemIntVec* v, int32_t x);
+SemStrVec* sem_sv_new();
+void sem_sv_push(SemStrVec* v, const char* s);
+const char* sem_sv_get(SemStrVec* v, int32_t i);
+bool sem_sv_has(SemStrVec* v, const char* s);
+void sem_sv_add(SemStrVec* v, const char* s);
+void sem_sv_sort(SemStrVec* v);
+const char* sem_sv_join(SemStrVec* v, const char* sep);
+SemStrVec* sem_s_split(const char* s, int32_t sep);
+SemStrMap* sem_sm_new();
+int32_t sem_sm_hash(const char* s);
+int32_t sem_sm_slot(SemStrMap* m, const char* key);
+void sem_sm_grow(SemStrMap* m);
+int32_t sem_sm_get(SemStrMap* m, const char* key);
+bool sem_sm_has(SemStrMap* m, const char* key);
+void sem_sm_put(SemStrMap* m, const char* key, int32_t val);
+SemPtrVec* sem_pv_new();
+void sem_pv_push(SemPtrVec* v, void* x);
+void* sem_pv_get(SemPtrVec* v, int32_t i);
+void sem_pv_set(SemPtrVec* v, int32_t i, void* x);
+void sem_iv_set(SemIntVec* v, int32_t i, int32_t x);
+int32_t sem_iv_len(SemIntVec* v);
+void sem_iv_setlen(SemIntVec* v, int32_t n);
+int32_t sem_sv_len(SemStrVec* v);
+void sem_sv_setlen(SemStrVec* v, int32_t n);
+void sem_sv_set(SemStrVec* v, int32_t i, const char* s);
+int32_t sem_pv_len(SemPtrVec* v);
+void sem_pv_setlen(SemPtrVec* v, int32_t n);
+int32_t sem_s_len(const char* s) {
+  return (int32_t)(strlen(s));
+}
+
+bool sem_s_eq(const char* a, const char* b) {
+  return strcmp(a, b) == 0;
+}
+
+bool sem_s_starts(const char* s, const char* prefix) {
+  return strncmp(s, prefix, strlen(prefix)) == 0;
+}
+
+bool sem_s_ends(const char* s, const char* suffix) {
+  int32_t n = sem_s_len(s);
+  int32_t m = sem_s_len(suffix);
+  if (m > n) {
+  return 0;
+}
+  uint8_t* p = (uint8_t*)((uint8_t*)(s));
+  uint8_t* q = (uint8_t*)((uint8_t*)(suffix));
+  int32_t i = 0;
+  while (i < m) {
+  if (p[((n - m) + i)] != q[i]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+int32_t sem_s_byte(const char* s, int32_t i) {
+  uint8_t* p = (uint8_t*)((uint8_t*)(s));
+  return (int32_t)(p[i]);
+}
+
+const char* sem_s_slice(const char* s, int32_t start, int32_t end) {
+  int32_t n = (end - start);
+  if (n < 0) {
+  n = 0;
+}
+  uint8_t* out = (uint8_t*)((uint8_t*)(malloc((int64_t)((n + 1)))));
+  uint8_t* p = (uint8_t*)((uint8_t*)(s));
+  int32_t i = 0;
+  while (i < n) {
+  out[i] = p[(start + i)];
+  i = (i + 1);
+}
+  out[n] = 0;
+  return (const char*)(out);
+}
+
+const char* sem_s_from(const char* s, int32_t start) {
+  return sem_s_slice(s, start, sem_s_len(s));
+}
+
+const char* sem_s_span(uint8_t* src, int32_t start, int32_t end) {
+  return sem_s_slice((const char*)(src), start, end);
+}
+
+bool sem_s_span_is(uint8_t* src, int32_t start, int32_t end, const char* lit) {
+  int32_t n = sem_s_len(lit);
+  if ((end - start) != n) {
+  return 0;
+}
+  uint8_t* q = (uint8_t*)((uint8_t*)(lit));
+  int32_t i = 0;
+  while (i < n) {
+  if (src[(start + i)] != q[i]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+int32_t sem_s_find(const char* s, const char* sub, int32_t from) {
+  int32_t n = sem_s_len(s);
+  int32_t m = sem_s_len(sub);
+  uint8_t* p = (uint8_t*)((uint8_t*)(s));
+  uint8_t* q = (uint8_t*)((uint8_t*)(sub));
+  int32_t i = from;
+  while ((i + m) <= n) {
+  int32_t j = 0;
+  while (j < m && p[(i + j)] == q[j]) {
+  j = (j + 1);
+}
+  if (j == m) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+bool sem_s_contains(const char* s, const char* sub) {
+  return sem_s_find(s, sub, 0) >= 0;
+}
+
+int32_t sem_s_index_byte(const char* s, int32_t c) {
+  uint8_t* p = (uint8_t*)((uint8_t*)(s));
+  int32_t i = 0;
+  while (p[i] != 0) {
+  if ((int32_t)(p[i]) == c) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+const char* sem_s_itoa(int64_t v) {
+  if (v == 0) {
+  return "0";
+}
+  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc(24)));
+  int64_t n = v;
+  bool neg = 0;
+  if (n < 0) {
+  neg = 1;
+  n = (0 - n);
+}
+  uint8_t tmp[24] = { [0 ... (24) - 1] = (0) };
+  int32_t k = 0;
+  while (n > 0) {
+  tmp[k] = (uint8_t)((48 + (n % 10)));
+  n = (n / 10);
+  k = (k + 1);
+}
+  int32_t o = 0;
+  if (neg) {
+  buf[0] = 45;
+  o = 1;
+}
+  while (k > 0) {
+  k = (k - 1);
+  buf[o] = tmp[k];
+  o = (o + 1);
+}
+  buf[o] = 0;
+  return (const char*)(buf);
+}
+
+bool sem_s_is_digit(int32_t c) {
+  return c >= 48 && c <= 57;
+}
+
+bool sem_s_is_alpha(int32_t c) {
+  return c >= 97 && c <= 122 || c >= 65 && c <= 90 || c == 95;
+}
+
+bool sem_s_is_space(int32_t c) {
+  return c == 32 || c == 9 || c == 10 || c == 13;
+}
+
+const char* sem_s_strip(const char* s) {
+  int32_t n = sem_s_len(s);
+  int32_t a = 0;
+  while (a < n && sem_s_is_space(sem_s_byte(s, a))) {
+  a = (a + 1);
+}
+  int32_t b = n;
+  while (b > a && sem_s_is_space(sem_s_byte(s, (b - 1)))) {
+  b = (b - 1);
+}
+  return sem_s_slice(s, a, b);
+}
+
+SemIntVec* sem_iv_new() {
+  SemIntVec* v = (SemIntVec*)((SemIntVec*)(malloc(16)));
+  v->cap = 8;
+  v->len = 0;
+  v->data = (int32_t*)(malloc(32));
+  return v;
+}
+
+void sem_iv_push(SemIntVec* v, int32_t x) {
+  if (v->len >= v->cap) {
+  v->cap = (v->cap * 2);
+  v->data = (int32_t*)(realloc((void*)(v->data), ((int64_t)(v->cap) * 4)));
+}
+  v->data[v->len] = x;
+  v->len = (v->len + 1);
+}
+
+int32_t sem_iv_get(SemIntVec* v, int32_t i) {
+  return v->data[i];
+}
+
+bool sem_iv_has(SemIntVec* v, int32_t x) {
+  int32_t i = 0;
+  while (i < v->len) {
+  if (v->data[i] == x) {
+  return 1;
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+SemStrVec* sem_sv_new() {
+  SemStrVec* v = (SemStrVec*)((SemStrVec*)(malloc(16)));
+  v->cap = 8;
+  v->len = 0;
+  v->data = (const char**)(malloc(64));
+  return v;
+}
+
+void sem_sv_push(SemStrVec* v, const char* s) {
+  if (v->len >= v->cap) {
+  v->cap = (v->cap * 2);
+  v->data = (const char**)(realloc((void*)(v->data), ((int64_t)(v->cap) * 8)));
+}
+  v->data[v->len] = s;
+  v->len = (v->len + 1);
+}
+
+const char* sem_sv_get(SemStrVec* v, int32_t i) {
+  return v->data[i];
+}
+
+bool sem_sv_has(SemStrVec* v, const char* s) {
+  int32_t i = 0;
+  while (i < v->len) {
+  if (sem_s_eq(v->data[i], s)) {
+  return 1;
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+void sem_sv_add(SemStrVec* v, const char* s) {
+  if (sem_sv_has(v, s) == 0) {
+  sem_sv_push(v, s);
+}
+}
+
+void sem_sv_sort(SemStrVec* v) {
+  int32_t i = 1;
+  while (i < v->len) {
+  const char* cur = v->data[i];
+  int32_t j = (i - 1);
+  while (j >= 0 && strcmp(v->data[j], cur) > 0) {
+  v->data[(j + 1)] = v->data[j];
+  j = (j - 1);
+}
+  v->data[(j + 1)] = cur;
+  i = (i + 1);
+}
+}
+
+const char* sem_sv_join(SemStrVec* v, const char* sep) {
+  const char* out = "";
+  int32_t i = 0;
+  while (i < v->len) {
+  if (i > 0) {
+  out = __flowc_str_concat(out, sep);
+}
+  out = __flowc_str_concat(out, v->data[i]);
+  i = (i + 1);
+}
+  return out;
+}
+
+SemStrVec* sem_s_split(const char* s, int32_t sep) {
+  SemStrVec* out = (SemStrVec*)(sem_sv_new());
+  int32_t n = sem_s_len(s);
+  int32_t start = 0;
+  int32_t i = 0;
+  while (i <= n) {
+  if (i == n || sem_s_byte(s, i) == sep) {
+  sem_sv_push(out, sem_s_slice(s, start, i));
+  start = (i + 1);
+}
+  i = (i + 1);
+}
+  return out;
+}
+
+SemStrMap* sem_sm_new() {
+  SemStrMap* m = (SemStrMap*)((SemStrMap*)(malloc(24)));
+  m->cap = 64;
+  m->count = 0;
+  m->keys = (const char**)(malloc((64 * 8)));
+  m->vals = (int32_t*)(malloc((64 * 4)));
+  int32_t i = 0;
+  while (i < 64) {
+  m->keys[i] = NULL;
+  i = (i + 1);
+}
+  return m;
+}
+
+int32_t sem_sm_hash(const char* s) {
+  uint8_t* p = (uint8_t*)((uint8_t*)(s));
+  int64_t h = 5381;
+  int32_t i = 0;
+  while (p[i] != 0) {
+  h = (((h * 33) + (int64_t)(p[i])) % 1000000007);
+  i = (i + 1);
+}
+  return (int32_t)(h);
+}
+
+int32_t sem_sm_slot(SemStrMap* m, const char* key) {
+  int32_t i = (sem_sm_hash(key) % m->cap);
+  while ((uint8_t*)(m->keys[i]) != NULL) {
+  if (sem_s_eq(m->keys[i], key)) {
+  return i;
+}
+  i = ((i + 1) % m->cap);
+}
+  return i;
+}
+
+void sem_sm_grow(SemStrMap* m) {
+  const char** old_keys = (const char**)(m->keys);
+  int32_t* old_vals = (int32_t*)(m->vals);
+  int32_t old_cap = m->cap;
+  m->cap = (old_cap * 2);
+  m->keys = (const char**)(malloc(((int64_t)(m->cap) * 8)));
+  m->vals = (int32_t*)(malloc(((int64_t)(m->cap) * 4)));
+  int32_t i = 0;
+  while (i < m->cap) {
+  m->keys[i] = NULL;
+  i = (i + 1);
+}
+  i = 0;
+  while (i < old_cap) {
+  if ((uint8_t*)(old_keys[i]) != NULL) {
+  int32_t s = sem_sm_slot(m, old_keys[i]);
+  m->keys[s] = old_keys[i];
+  m->vals[s] = old_vals[i];
+}
+  i = (i + 1);
+}
+}
+
+int32_t sem_sm_get(SemStrMap* m, const char* key) {
+  int32_t s = sem_sm_slot(m, key);
+  if ((uint8_t*)(m->keys[s]) == NULL) {
+  return (0 - 1);
+}
+  return m->vals[s];
+}
+
+bool sem_sm_has(SemStrMap* m, const char* key) {
+  int32_t s = sem_sm_slot(m, key);
+  return (uint8_t*)(m->keys[s]) != NULL;
+}
+
+void sem_sm_put(SemStrMap* m, const char* key, int32_t val) {
+  if (((m->count + 1) * 2) > m->cap) {
+  sem_sm_grow(m);
+}
+  int32_t s = sem_sm_slot(m, key);
+  if ((uint8_t*)(m->keys[s]) == NULL) {
+  m->keys[s] = key;
+  m->count = (m->count + 1);
+}
+  m->vals[s] = val;
+}
+
+SemPtrVec* sem_pv_new() {
+  SemPtrVec* v = (SemPtrVec*)((SemPtrVec*)(malloc(16)));
+  v->cap = 8;
+  v->len = 0;
+  v->data = (void**)(malloc(64));
+  return v;
+}
+
+void sem_pv_push(SemPtrVec* v, void* x) {
+  if (v->len >= v->cap) {
+  v->cap = (v->cap * 2);
+  v->data = (void**)(realloc((void*)(v->data), ((int64_t)(v->cap) * 8)));
+}
+  v->data[v->len] = x;
+  v->len = (v->len + 1);
+}
+
+void* sem_pv_get(SemPtrVec* v, int32_t i) {
+  return v->data[i];
+}
+
+void sem_pv_set(SemPtrVec* v, int32_t i, void* x) {
+  v->data[i] = x;
+}
+
+void sem_iv_set(SemIntVec* v, int32_t i, int32_t x) {
+  v->data[i] = x;
+}
+
+int32_t sem_iv_len(SemIntVec* v) {
+  return v->len;
+}
+
+void sem_iv_setlen(SemIntVec* v, int32_t n) {
+  v->len = n;
+}
+
+int32_t sem_sv_len(SemStrVec* v) {
+  return v->len;
+}
+
+void sem_sv_setlen(SemStrVec* v, int32_t n) {
+  v->len = n;
+}
+
+void sem_sv_set(SemStrVec* v, int32_t i, const char* s) {
+  v->data[i] = s;
+}
+
+int32_t sem_pv_len(SemPtrVec* v) {
+  return v->len;
+}
+
+void sem_pv_setlen(SemPtrVec* v, int32_t n) {
+  v->len = n;
+}
+
+
+typedef struct SemTys {
+  int32_t* kind;
+  const char** name;
+  int32_t* elem;
+  int32_t* base;
+  int32_t* size;
+  int32_t* ret;
+  SemIntVec** params;
+  SemStrVec** effects;
+  SemIntVec** dims;
+  int32_t len;
+  int32_t cap;
+  const char** pt_name;
+  int32_t* pt_ptr;
+  int32_t* pt_cap;
+  int32_t* pt_cfn;
+  int32_t* pt_size;
+  int32_t* pt_elem;
+  SemIntVec** pt_args;
+  SemStrVec** pt_effects;
+  int32_t pt_len;
+  int32_t pt_capacity;
+} SemTys;
+
+#undef TK_VOID
+const int32_t TK_VOID = 1;
+#undef TK_BOOL
+const int32_t TK_BOOL = 2;
+#undef TK_I8
+const int32_t TK_I8 = 3;
+#undef TK_I16
+const int32_t TK_I16 = 4;
+#undef TK_I32
+const int32_t TK_I32 = 5;
+#undef TK_I64
+const int32_t TK_I64 = 6;
+#undef TK_I128
+const int32_t TK_I128 = 7;
+#undef TK_U8
+const int32_t TK_U8 = 8;
+#undef TK_U16
+const int32_t TK_U16 = 9;
+#undef TK_U32
+const int32_t TK_U32 = 10;
+#undef TK_U64
+const int32_t TK_U64 = 11;
+#undef TK_U128
+const int32_t TK_U128 = 12;
+#undef TK_F32
+const int32_t TK_F32 = 13;
+#undef TK_F64
+const int32_t TK_F64 = 14;
+#undef TK_C64
+const int32_t TK_C64 = 15;
+#undef TK_C128
+const int32_t TK_C128 = 16;
+#undef TK_STRING
+const int32_t TK_STRING = 17;
+#undef TK_STRUCT
+const int32_t TK_STRUCT = 18;
+#undef TK_ARRAY
+const int32_t TK_ARRAY = 19;
+#undef TK_SPAN
+const int32_t TK_SPAN = 20;
+#undef TK_POINTER
+const int32_t TK_POINTER = 21;
+#undef TK_FUNCTION
+const int32_t TK_FUNCTION = 22;
+#undef TK_NULL
+const int32_t TK_NULL = 23;
+#undef TK_TYPE_ALIAS
+const int32_t TK_TYPE_ALIAS = 24;
+#undef TK_DISTINCT
+const int32_t TK_DISTINCT = 25;
+#undef TK_UNKNOWN
+const int32_t TK_UNKNOWN = 26;
+#undef NO_SIZE
+const int32_t NO_SIZE = (-2147483647);
+SemTys* sem_tys_new();
+void sem_ty_grow(SemTys* t);
+int32_t sem_ty_mk(SemTys* t, int32_t kind);
+int32_t sem_ty_named(SemTys* t, int32_t kind, const char* name);
+int32_t sem_ty_ptr(SemTys* t, int32_t elem);
+int32_t sem_ty_void_ptr(SemTys* t);
+int32_t sem_ty_array(SemTys* t, int32_t elem, int32_t size);
+int32_t sem_ty_struct(SemTys* t, const char* name);
+int32_t sem_ty_unknown(SemTys* t);
+int32_t sem_ty_kind(SemTys* t, int32_t id);
+const char* sem_ty_name(SemTys* t, int32_t id);
+int32_t sem_ty_nparams(SemTys* t, int32_t id);
+int32_t sem_ty_param(SemTys* t, int32_t id, int32_t i);
+void sem_ty_add_param(SemTys* t, int32_t id, int32_t p);
+int32_t sem_ty_neffects(SemTys* t, int32_t id);
+const char* sem_ty_effect(SemTys* t, int32_t id, int32_t i);
+void sem_ty_add_effect(SemTys* t, int32_t id, const char* e);
+const char* sem_tk_value(int32_t k);
+const char* sem_tk_enum_name(int32_t k);
+bool sem_span_is_mutable(const char* name);
+bool sem_is_span_type_name(const char* name);
+const char* sem_span_element_name(const char* name);
+const char* sem_format_span_type(const char* name, int32_t extent);
+const char* sem_ty_str(SemTys* t, int32_t id);
+bool sem_ty_eq(SemTys* t, int32_t a, int32_t b);
+bool sem_tk_is_int(int32_t k);
+bool sem_tk_is_float(int32_t k);
+bool sem_tk_is_numeric(int32_t k);
+bool sem_tk_is_complex(int32_t k);
+SemIntVec* sem_dims_new();
+SemIntVec* sem_dims_normalize(SemIntVec* d);
+SemIntVec* sem_dims_combine(SemIntVec* a, SemIntVec* b, int32_t sign);
+SemIntVec* sem_dims_scale(SemIntVec* a, int32_t e);
+bool sem_dims_eq(SemIntVec* a, SemIntVec* b);
+const char* sem_dims_key(SemIntVec* a);
+void sem_pt_grow(SemTys* t);
+int32_t sem_pt_mk(SemTys* t, const char* name);
+const char* sem_pt_name(SemTys* t, int32_t id);
+int32_t sem_pt_nargs(SemTys* t, int32_t id);
+int32_t sem_pt_arg(SemTys* t, int32_t id, int32_t i);
+void sem_pt_add_arg(SemTys* t, int32_t id, int32_t a);
+void sem_pt_add_effect(SemTys* t, int32_t id, const char* e);
+int32_t sem_pt_neffects(SemTys* t, int32_t id);
+int32_t sem_pt_copy(SemTys* t, int32_t id, const char* name);
+SemTys* sem_tys_new() {
+  SemTys* t = (SemTys*)((SemTys*)(malloc(256)));
+  t->cap = 1024;
+  t->len = 0;
+  t->kind = (int32_t*)(malloc(4096));
+  t->name = (const char**)(malloc(8192));
+  t->elem = (int32_t*)(malloc(4096));
+  t->base = (int32_t*)(malloc(4096));
+  t->size = (int32_t*)(malloc(4096));
+  t->ret = (int32_t*)(malloc(4096));
+  t->params = (SemIntVec**)(malloc(8192));
+  t->effects = (SemStrVec**)(malloc(8192));
+  t->dims = (SemIntVec**)(malloc(8192));
+  t->pt_capacity = 1024;
+  t->pt_len = 0;
+  t->pt_name = (const char**)(malloc(8192));
+  t->pt_ptr = (int32_t*)(malloc(4096));
+  t->pt_cap = (int32_t*)(malloc(4096));
+  t->pt_cfn = (int32_t*)(malloc(4096));
+  t->pt_size = (int32_t*)(malloc(4096));
+  t->pt_elem = (int32_t*)(malloc(4096));
+  t->pt_args = (SemIntVec**)(malloc(8192));
+  t->pt_effects = (SemStrVec**)(malloc(8192));
+  return t;
+}
+
+void sem_ty_grow(SemTys* t) {
+  t->cap = (t->cap * 2);
+  int64_t n4 = ((int64_t)(t->cap) * 4);
+  int64_t n8 = ((int64_t)(t->cap) * 8);
+  t->kind = (int32_t*)(realloc((void*)(t->kind), n4));
+  t->name = (const char**)(realloc((void*)(t->name), n8));
+  t->elem = (int32_t*)(realloc((void*)(t->elem), n4));
+  t->base = (int32_t*)(realloc((void*)(t->base), n4));
+  t->size = (int32_t*)(realloc((void*)(t->size), n4));
+  t->ret = (int32_t*)(realloc((void*)(t->ret), n4));
+  t->params = (SemIntVec**)(realloc((void*)(t->params), n8));
+  t->effects = (SemStrVec**)(realloc((void*)(t->effects), n8));
+  t->dims = (SemIntVec**)(realloc((void*)(t->dims), n8));
+}
+
+int32_t sem_ty_mk(SemTys* t, int32_t kind) {
+  if (t->len >= t->cap) {
+  sem_ty_grow(t);
+}
+  int32_t id = t->len;
+  t->len = (id + 1);
+  t->kind[id] = kind;
+  t->name[id] = "";
+  t->elem[id] = (0 - 1);
+  t->base[id] = (0 - 1);
+  t->size[id] = NO_SIZE;
+  t->ret[id] = (0 - 1);
+  t->params[id] = NULL;
+  t->effects[id] = NULL;
+  t->dims[id] = NULL;
+  return id;
+}
+
+int32_t sem_ty_named(SemTys* t, int32_t kind, const char* name) {
+  int32_t id = sem_ty_mk(t, kind);
+  t->name[id] = name;
+  return id;
+}
+
+int32_t sem_ty_ptr(SemTys* t, int32_t elem) {
+  int32_t id = sem_ty_mk(t, TK_POINTER);
+  t->elem[id] = elem;
+  return id;
+}
+
+int32_t sem_ty_void_ptr(SemTys* t) {
+  return sem_ty_ptr(t, sem_ty_mk(t, TK_VOID));
+}
+
+int32_t sem_ty_array(SemTys* t, int32_t elem, int32_t size) {
+  int32_t id = sem_ty_mk(t, TK_ARRAY);
+  t->elem[id] = elem;
+  t->size[id] = size;
+  return id;
+}
+
+int32_t sem_ty_struct(SemTys* t, const char* name) {
+  return sem_ty_named(t, TK_STRUCT, name);
+}
+
+int32_t sem_ty_unknown(SemTys* t) {
+  return sem_ty_mk(t, TK_UNKNOWN);
+}
+
+int32_t sem_ty_kind(SemTys* t, int32_t id) {
+  if (id < 0) {
+  return 0;
+}
+  return t->kind[id];
+}
+
+const char* sem_ty_name(SemTys* t, int32_t id) {
+  if (id < 0) {
+  return "";
+}
+  return t->name[id];
+}
+
+int32_t sem_ty_nparams(SemTys* t, int32_t id) {
+  SemIntVec* v = (SemIntVec*)(t->params[id]);
+  if (v == NULL) {
+  return 0;
+}
+  return v->len;
+}
+
+int32_t sem_ty_param(SemTys* t, int32_t id, int32_t i) {
+  SemIntVec* v = (SemIntVec*)(t->params[id]);
+  return v->data[i];
+}
+
+void sem_ty_add_param(SemTys* t, int32_t id, int32_t p) {
+  if (t->params[id] == NULL) {
+  t->params[id] = sem_iv_new();
+}
+  sem_iv_push(t->params[id], p);
+}
+
+int32_t sem_ty_neffects(SemTys* t, int32_t id) {
+  SemStrVec* v = (SemStrVec*)(t->effects[id]);
+  if (v == NULL) {
+  return 0;
+}
+  return v->len;
+}
+
+const char* sem_ty_effect(SemTys* t, int32_t id, int32_t i) {
+  SemStrVec* v = (SemStrVec*)(t->effects[id]);
+  return v->data[i];
+}
+
+void sem_ty_add_effect(SemTys* t, int32_t id, const char* e) {
+  if (t->effects[id] == NULL) {
+  t->effects[id] = sem_sv_new();
+}
+  sem_sv_push(t->effects[id], e);
+}
+
+const char* sem_tk_value(int32_t k) {
+  if (k == TK_VOID) {
+  return "void";
+}
+  if (k == TK_BOOL) {
+  return "bool";
+}
+  if (k == TK_I8) {
+  return "i8";
+}
+  if (k == TK_I16) {
+  return "i16";
+}
+  if (k == TK_I32) {
+  return "i32";
+}
+  if (k == TK_I64) {
+  return "i64";
+}
+  if (k == TK_I128) {
+  return "i128";
+}
+  if (k == TK_U8) {
+  return "u8";
+}
+  if (k == TK_U16) {
+  return "u16";
+}
+  if (k == TK_U32) {
+  return "u32";
+}
+  if (k == TK_U64) {
+  return "u64";
+}
+  if (k == TK_U128) {
+  return "u128";
+}
+  if (k == TK_F32) {
+  return "f32";
+}
+  if (k == TK_F64) {
+  return "f64";
+}
+  if (k == TK_C64) {
+  return "c64";
+}
+  if (k == TK_C128) {
+  return "c128";
+}
+  if (k == TK_STRING) {
+  return "string";
+}
+  if (k == TK_STRUCT) {
+  return "struct";
+}
+  if (k == TK_ARRAY) {
+  return "array";
+}
+  if (k == TK_SPAN) {
+  return "span";
+}
+  if (k == TK_POINTER) {
+  return "pointer";
+}
+  if (k == TK_FUNCTION) {
+  return "function";
+}
+  if (k == TK_NULL) {
+  return "null";
+}
+  if (k == TK_TYPE_ALIAS) {
+  return "type_alias";
+}
+  if (k == TK_DISTINCT) {
+  return "distinct";
+}
+  return "unknown";
+}
+
+const char* sem_tk_enum_name(int32_t k) {
+  if (k == TK_NULL) {
+  return "NULL";
+}
+  return "UNKNOWN";
+}
+
+bool sem_span_is_mutable(const char* name) {
+  return sem_s_starts(name, "span_mut_");
+}
+
+bool sem_is_span_type_name(const char* name) {
+  return sem_s_len(name) > 0 && (sem_s_starts(name, "span_const_") || sem_s_starts(name, "span_mut_"));
+}
+
+const char* sem_span_element_name(const char* name) {
+  if (sem_s_starts(name, "span_mut_")) {
+  return sem_s_from(name, 9);
+}
+  if (sem_s_starts(name, "span_const_")) {
+  return sem_s_from(name, 11);
+}
+  return name;
+}
+
+const char* sem_format_span_type(const char* name, int32_t extent) {
+  const char* inner = sem_span_element_name(name);
+  if (sem_span_is_mutable(name)) {
+  inner = __flowc_str_concat("mut ", inner);
+}
+  if (extent != NO_SIZE) {
+  inner = __flowc_str_concat(__flowc_str_concat(inner, ", "), sem_s_itoa((int64_t)(extent)));
+}
+  return __flowc_str_concat(__flowc_str_concat("span<", inner), ">");
+}
+
+const char* sem_ty_str(SemTys* t, int32_t id) {
+  if (id < 0) {
+  return "None";
+}
+  int32_t k = t->kind[id];
+  if (k >= TK_VOID && k <= TK_STRING) {
+  return sem_tk_value(k);
+}
+  if (k == TK_STRUCT || k == TK_TYPE_ALIAS || k == TK_DISTINCT) {
+  return t->name[id];
+}
+  if (k == TK_ARRAY) {
+  if (t->size[id] != NO_SIZE) {
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("array<", sem_ty_str(t, t->elem[id])), ", "), sem_s_itoa((int64_t)(t->size[id]))), ">");
+}
+  return __flowc_str_concat(__flowc_str_concat("array<", sem_ty_str(t, t->elem[id])), ">");
+}
+  if (k == TK_SPAN) {
+  return sem_format_span_type(t->name[id], t->size[id]);
+}
+  if (k == TK_POINTER) {
+  return __flowc_str_concat(__flowc_str_concat("ptr<", sem_ty_str(t, t->elem[id])), ">");
+}
+  if (k == TK_FUNCTION) {
+  const char* ps = "";
+  int32_t n = sem_ty_nparams(t, id);
+  int32_t i = 0;
+  while (i < n) {
+  if (i > 0) {
+  ps = __flowc_str_concat(ps, ", ");
+}
+  ps = __flowc_str_concat(ps, sem_ty_str(t, sem_ty_param(t, id, i)));
+  i = (i + 1);
+}
+  const char* b = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("(", ps), ") -> "), sem_ty_str(t, t->ret[id]));
+  if (sem_ty_neffects(t, id) > 0) {
+  return __flowc_str_concat(__flowc_str_concat(b, " with "), sem_sv_join(t->effects[id], ", "));
+}
+  return b;
+}
+  if (k == TK_UNKNOWN) {
+  if (sem_s_len(t->name[id]) > 0) {
+  return t->name[id];
+}
+  return "unknown";
+}
+  return __flowc_str_concat(__flowc_str_concat("<unknown:TypeKind.", sem_tk_enum_name(k)), ">");
+}
+
+bool sem_ty_eq(SemTys* t, int32_t a, int32_t b) {
+  __flowc_tail: ;
+  if (a < 0 || b < 0) {
+  return a < 0 && b < 0;
+}
+  int32_t ka = t->kind[a];
+  int32_t kb = t->kind[b];
+  if (ka == TK_TYPE_ALIAS && kb == TK_TYPE_ALIAS) {
+  {
+  __auto_type __flowc_targ0 = t;
+  __auto_type __flowc_targ1 = t->base[a];
+  __auto_type __flowc_targ2 = t->base[b];
+  t = __flowc_targ0;
+  a = __flowc_targ1;
+  b = __flowc_targ2;
+  goto __flowc_tail;
+  }
+}
+  if (ka == TK_TYPE_ALIAS) {
+  {
+  __auto_type __flowc_targ0 = t;
+  __auto_type __flowc_targ1 = t->base[a];
+  __auto_type __flowc_targ2 = b;
+  t = __flowc_targ0;
+  a = __flowc_targ1;
+  b = __flowc_targ2;
+  goto __flowc_tail;
+  }
+}
+  if (kb == TK_TYPE_ALIAS) {
+  {
+  __auto_type __flowc_targ0 = t;
+  __auto_type __flowc_targ1 = a;
+  __auto_type __flowc_targ2 = t->base[b];
+  t = __flowc_targ0;
+  a = __flowc_targ1;
+  b = __flowc_targ2;
+  goto __flowc_tail;
+  }
+}
+  if (ka == TK_DISTINCT || kb == TK_DISTINCT) {
+  return ka == kb && sem_s_eq(t->name[a], t->name[b]);
+}
+  if (ka != kb || sem_s_eq(t->name[a], t->name[b]) == 0) {
+  return 0;
+}
+  if (sem_ty_eq(t, t->elem[a], t->elem[b]) == 0) {
+  return 0;
+}
+  if (sem_ty_eq(t, t->base[a], t->base[b]) == 0) {
+  return 0;
+}
+  if (t->size[a] != t->size[b]) {
+  return 0;
+}
+  int32_t na = sem_ty_nparams(t, a);
+  if (na != sem_ty_nparams(t, b)) {
+  return 0;
+}
+  int32_t i = 0;
+  while (i < na) {
+  if (sem_ty_eq(t, sem_ty_param(t, a, i), sem_ty_param(t, b, i)) == 0) {
+  return 0;
+}
+  i = (i + 1);
+}
+  if (sem_ty_eq(t, t->ret[a], t->ret[b]) == 0) {
+  return 0;
+}
+  int32_t ea = sem_ty_neffects(t, a);
+  if (ea != sem_ty_neffects(t, b)) {
+  return 0;
+}
+  i = 0;
+  while (i < ea) {
+  if (sem_s_eq(sem_ty_effect(t, a, i), sem_ty_effect(t, b, i)) == 0) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+bool sem_tk_is_int(int32_t k) {
+  return k >= TK_I8 && k <= TK_U128;
+}
+
+bool sem_tk_is_float(int32_t k) {
+  return k == TK_F32 || k == TK_F64;
+}
+
+bool sem_tk_is_numeric(int32_t k) {
+  return k >= TK_I8 && k <= TK_C128;
+}
+
+bool sem_tk_is_complex(int32_t k) {
+  return k == TK_C64 || k == TK_C128;
+}
+
+SemIntVec* sem_dims_new() {
+  return sem_iv_new();
+}
+
+SemIntVec* sem_dims_normalize(SemIntVec* d) {
+  SemIntVec* out = (SemIntVec*)(sem_iv_new());
+  int32_t n = d->len;
+  while (n > 0 && d->data[(n - 1)] == 0) {
+  n = (n - 1);
+}
+  int32_t i = 0;
+  while (i < n) {
+  sem_iv_push(out, d->data[i]);
+  i = (i + 1);
+}
+  return out;
+}
+
+SemIntVec* sem_dims_combine(SemIntVec* a, SemIntVec* b, int32_t sign) {
+  int32_t na = 0;
+  int32_t nb = 0;
+  if (a != NULL) {
+  na = a->len;
+}
+  if (b != NULL) {
+  nb = b->len;
+}
+  int32_t n = na;
+  if (nb > n) {
+  n = nb;
+}
+  SemIntVec* out = (SemIntVec*)(sem_iv_new());
+  int32_t i = 0;
+  while (i < n) {
+  int32_t x = 0;
+  int32_t y = 0;
+  if (i < na) {
+  x = a->data[i];
+}
+  if (i < nb) {
+  y = b->data[i];
+}
+  sem_iv_push(out, (x + (sign * y)));
+  i = (i + 1);
+}
+  return sem_dims_normalize(out);
+}
+
+SemIntVec* sem_dims_scale(SemIntVec* a, int32_t e) {
+  SemIntVec* out = (SemIntVec*)(sem_iv_new());
+  int32_t i = 0;
+  while (i < a->len) {
+  sem_iv_push(out, (a->data[i] * e));
+  i = (i + 1);
+}
+  return out;
+}
+
+bool sem_dims_eq(SemIntVec* a, SemIntVec* b) {
+  if (a == NULL || b == NULL) {
+  return a == NULL && b == NULL;
+}
+  if (a->len != b->len) {
+  return 0;
+}
+  int32_t i = 0;
+  while (i < a->len) {
+  if (a->data[i] != b->data[i]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+const char* sem_dims_key(SemIntVec* a) {
+  const char* s = "";
+  int32_t i = 0;
+  while (i < a->len) {
+  if (i > 0) {
+  s = __flowc_str_concat(s, ",");
+}
+  s = __flowc_str_concat(s, sem_s_itoa((int64_t)(a->data[i])));
+  i = (i + 1);
+}
+  return s;
+}
+
+void sem_pt_grow(SemTys* t) {
+  t->pt_capacity = (t->pt_capacity * 2);
+  int64_t n4 = ((int64_t)(t->pt_capacity) * 4);
+  int64_t n8 = ((int64_t)(t->pt_capacity) * 8);
+  t->pt_name = (const char**)(realloc((void*)(t->pt_name), n8));
+  t->pt_ptr = (int32_t*)(realloc((void*)(t->pt_ptr), n4));
+  t->pt_cap = (int32_t*)(realloc((void*)(t->pt_cap), n4));
+  t->pt_cfn = (int32_t*)(realloc((void*)(t->pt_cfn), n4));
+  t->pt_size = (int32_t*)(realloc((void*)(t->pt_size), n4));
+  t->pt_elem = (int32_t*)(realloc((void*)(t->pt_elem), n4));
+  t->pt_args = (SemIntVec**)(realloc((void*)(t->pt_args), n8));
+  t->pt_effects = (SemStrVec**)(realloc((void*)(t->pt_effects), n8));
+}
+
+int32_t sem_pt_mk(SemTys* t, const char* name) {
+  if (t->pt_len >= t->pt_capacity) {
+  sem_pt_grow(t);
+}
+  int32_t id = t->pt_len;
+  t->pt_len = (id + 1);
+  t->pt_name[id] = name;
+  t->pt_ptr[id] = 0;
+  t->pt_cap[id] = 0;
+  t->pt_cfn[id] = 0;
+  t->pt_size[id] = NO_SIZE;
+  t->pt_elem[id] = (0 - 1);
+  t->pt_args[id] = NULL;
+  t->pt_effects[id] = NULL;
+  return id;
+}
+
+const char* sem_pt_name(SemTys* t, int32_t id) {
+  if (id < 0) {
+  return "";
+}
+  return t->pt_name[id];
+}
+
+int32_t sem_pt_nargs(SemTys* t, int32_t id) {
+  SemIntVec* v = (SemIntVec*)(t->pt_args[id]);
+  if (v == NULL) {
+  return 0;
+}
+  return v->len;
+}
+
+int32_t sem_pt_arg(SemTys* t, int32_t id, int32_t i) {
+  SemIntVec* v = (SemIntVec*)(t->pt_args[id]);
+  return v->data[i];
+}
+
+void sem_pt_add_arg(SemTys* t, int32_t id, int32_t a) {
+  if (t->pt_args[id] == NULL) {
+  t->pt_args[id] = sem_iv_new();
+}
+  sem_iv_push(t->pt_args[id], a);
+}
+
+void sem_pt_add_effect(SemTys* t, int32_t id, const char* e) {
+  if (t->pt_effects[id] == NULL) {
+  t->pt_effects[id] = sem_sv_new();
+}
+  sem_sv_push(t->pt_effects[id], e);
+}
+
+int32_t sem_pt_neffects(SemTys* t, int32_t id) {
+  SemStrVec* v = (SemStrVec*)(t->pt_effects[id]);
+  if (v == NULL) {
+  return 0;
+}
+  return v->len;
+}
+
+int32_t sem_pt_copy(SemTys* t, int32_t id, const char* name) {
+  int32_t n = sem_pt_mk(t, name);
+  t->pt_ptr[n] = t->pt_ptr[id];
+  t->pt_cap[n] = t->pt_cap[id];
+  t->pt_cfn[n] = t->pt_cfn[id];
+  t->pt_size[n] = t->pt_size[id];
+  t->pt_elem[n] = t->pt_elem[id];
+  t->pt_args[n] = t->pt_args[id];
+  t->pt_effects[n] = t->pt_effects[id];
+  return n;
+}
+
+
+typedef struct Sem {
+  SemTys* t;
+  bool strict;
+  bool check_effect_rows;
+  bool safety_profile;
+  int32_t nm;
+  AstArena* m_ar;
+  int32_t* m_root;
+  uint8_t** m_src;
+  const char** m_path;
+  SemPtrVec* m_lines;
+  SemPtrVec* m_rows;
+  int32_t cm;
+  AstArena ar;
+  uint8_t* src;
+  int32_t pos;
+  SemIntVec* d_kind;
+  SemIntVec* d_mod;
+  SemIntVec* d_node;
+  SemStrVec* d_name;
+  SemIntVec* d_info;
+  SemIntVec* d_astart;
+  SemIntVec* d_alen;
+  SemStrVec* attr_pool;
+  SemStrVec* fi_name;
+  SemStrVec* fi_mangled;
+  SemIntVec* fi_mod;
+  SemIntVec* fi_node;
+  SemIntVec* fi_pstart;
+  SemIntVec* fi_plen;
+  SemIntVec* fi_ret;
+  SemIntVec* fi_astart;
+  SemIntVec* fi_alen;
+  SemIntVec* fi_extern;
+  SemIntVec* fi_variadic;
+  SemIntVec* fi_tpstart;
+  SemIntVec* fi_tplen;
+  SemIntVec* fi_estart;
+  SemIntVec* fi_elen;
+  SemIntVec* fi_body;
+  SemIntVec* fi_has_self;
+  SemStrVec* fp_names;
+  SemIntVec* fp_types;
+  SemStrVec* tp_names;
+  SemStrVec* tp_bounds;
+  SemStrVec* ef_pool;
+  SemStrVec* im_type;
+  SemStrVec* im_trait;
+  SemPtrVec* im_methods;
+  SemStrVec* se_name;
+  SemIntVec* se_kind;
+  SemIntVec* se_fstart;
+  SemIntVec* se_flen;
+  SemIntVec* se_base;
+  SemIntVec* se_tpstart;
+  SemIntVec* se_tplen;
+  SemIntVec* se_decl;
+  SemStrVec* sf_names;
+  SemIntVec* sf_types;
+  SemStrMap* struct_types;
+  SemStrMap* generic_struct_types;
+  SemStrMap* opaque_c_types;
+  SemStrMap* generic_function_decls;
+  SemStrVec* active_type_params;
+  SemStrMap* effect_types;
+  SemStrMap* capability_types;
+  SemStrMap* enum_decls;
+  SemStrMap* enum_variant_owner;
+  SemStrMap* trait_types;
+  SemStrMap* impl_pairs;
+  SemStrMap* impl_methods;
+  SemPtrVec* impl_method_lists;
+  SemStrVec* unit_base_order;
+  SemStrMap* unit_dims;
+  SemPtrVec* unit_dim_list;
+  SemStrMap* unit_canonical;
+  SemStrVec* unit_canonical_names;
+  SemStrVec* sy_name;
+  SemIntVec* sy_type;
+  SemIntVec* sy_kind;
+  SemIntVec* sy_mut;
+  SemIntVec* sy_def;
+  SemPtrVec* sy_over;
+  SemStrMap* g_scope;
+  SemStrVec* ls_name;
+  SemIntVec* ls_sym;
+  SemIntVec* frames;
+  SemStrVec* errors;
+  SemIntVec* err_mod;
+  SemIntVec* err_pos;
+  SemStrVec* fatal;
+  SemStrVec* warnings;
+  bool relax_c_strings;
+  SemIntVec* return_sink;
+  SemStrVec* reason_pool;
+  SemStrMap* rt_unsafe_reason;
+  SemStrMap* heap_unsafe_reason;
+  const char* current_rt_safe_fn;
+  const char* current_safe_fn;
+  bool rt_safe_from_domain;
+  SemPtrVec* handler_stack;
+  const char* current_function_name;
+  SemStrMap* function_effects;
+  SemPtrVec* function_effect_lists;
+  SemStrMap* function_decls;
+  SemStrMap* static_names;
+  SemStrVec* local_storage;
+  SemStrMap* span_origin;
+  SemStrVec* origin_pool;
+  int32_t current_return_type;
+  SemStrMap* function_domains;
+  SemStrMap* static_domains;
+  int32_t current_domain;
+  SemStrVec* rdc_names;
+  SemStrMap* rdc_index;
+  SemPtrVec* rdc_sets;
+  SemStrMap* domain_reported;
+  SemStrVec* rt_site_fn;
+  SemStrVec* rt_site_name;
+  SemIntVec* rt_site_dom;
+  SemStrVec* dom_site_fn;
+  SemStrVec* dom_site_name;
+  SemStrMap* esc_static;
+  SemStrMap* esc_return;
+  SemStrVec* prop_keys;
+  SemStrMap* prop_index;
+  SemPtrVec* prop_sets;
+  SemStrMap* ref_seen;
+  SemStrVec* ref_key;
+  SemStrVec* ref_caller;
+  SemStrVec* ref_callee;
+  SemIntVec* ref_idx;
+  SemStrVec* ref_origin;
+  SemStrVec* ref_loc;
+  int32_t stmt_node;
+  bool has_cimport;
+  SemStrMap* fork_src;
+  SemStrMap* fork_sigs;
+  int32_t fork_count;
+  bool pos_lock;
+  SemStrVec* cimport_headers;
+  SemStrMap* cimport_names;
+  bool cimport_unknown;
+  int32_t root_mod;
+} Sem;
+
+#undef DK_FUNC
+const int32_t DK_FUNC = 1;
+#undef DK_STRUCT
+const int32_t DK_STRUCT = 2;
+#undef DK_ENUM
+const int32_t DK_ENUM = 3;
+#undef DK_ALIAS
+const int32_t DK_ALIAS = 4;
+#undef DK_DISTINCT
+const int32_t DK_DISTINCT = 5;
+#undef DK_UNIT
+const int32_t DK_UNIT = 6;
+#undef DK_EXTERN_TYPE
+const int32_t DK_EXTERN_TYPE = 7;
+#undef DK_EFFECT
+const int32_t DK_EFFECT = 8;
+#undef DK_CAPABILITY
+const int32_t DK_CAPABILITY = 9;
+#undef DK_TRAIT
+const int32_t DK_TRAIT = 10;
+#undef DK_IMPL
+const int32_t DK_IMPL = 11;
+#undef DK_CONST
+const int32_t DK_CONST = 12;
+#undef DK_STATIC
+const int32_t DK_STATIC = 13;
+#undef SE_STRUCT
+const int32_t SE_STRUCT = 1;
+#undef SE_ALIAS
+const int32_t SE_ALIAS = 2;
+#undef SE_DISTINCT
+const int32_t SE_DISTINCT = 3;
+#undef SK_FUNCTION
+const int32_t SK_FUNCTION = 1;
+#undef SK_VARIABLE
+const int32_t SK_VARIABLE = 2;
+#undef SK_CONST
+const int32_t SK_CONST = 3;
+#undef SK_TYPE
+const int32_t SK_TYPE = 4;
+Sem* sem_new(bool strict);
+int32_t sem_add_module(Sem* c, AstArena arena, int32_t root, uint8_t* src, const char* path);
+void sem_set_mod(Sem* c, int32_t m);
+int32_t sem_nk(Sem* c, int32_t id);
+int32_t sem_na(Sem* c, int32_t id);
+int32_t sem_nb(Sem* c, int32_t id);
+int32_t sem_ncc(Sem* c, int32_t id);
+int32_t sem_nnext(Sem* c, int32_t id);
+int32_t sem_nival(Sem* c, int32_t id);
+int32_t sem_nstart(Sem* c, int32_t id);
+int32_t sem_nend(Sem* c, int32_t id);
+const char* sem_nname(Sem* c, int32_t id);
+bool sem_nname_is(Sem* c, int32_t id, const char* lit);
+int32_t sem_nlen(Sem* c, int32_t first);
+int32_t sem_row_of(Sem* c, int32_t owner);
+SemIntVec* sem_line_starts(Sem* c, int32_t m);
+int32_t sem_line_of(Sem* c, int32_t m, int32_t pos);
+int32_t sem_col_of(Sem* c, int32_t m, int32_t pos);
+int32_t sem_py_pos(Sem* c, int32_t m, int32_t pos, bool want_col);
+void sem_err(Sem* c, const char* msg);
+void sem_warn(Sem* c, const char* msg);
+void sem_err_truncate(Sem* c, int32_t n);
+int32_t sem_sym_new(Sem* c, const char* name, int32_t ty, int32_t kind);
+void sem_scope_define_global(Sem* c, int32_t sym);
+void sem_push_scope(Sem* c);
+void sem_pop_scope(Sem* c);
+void sem_scope_define(Sem* c, int32_t sym);
+int32_t sem_define_var(Sem* c, const char* name, int32_t ty, bool mutable);
+int32_t sem_lookup(Sem* c, const char* name);
+int32_t sem_sym_type(Sem* c, int32_t s);
+int32_t sem_sym_kind(Sem* c, int32_t s);
+int32_t sem_decl_add(Sem* c, int32_t kind, int32_t m, int32_t node, const char* name, int32_t info);
+int32_t sem_fi_new(Sem* c, const char* name, int32_t m, int32_t node);
+void sem_fi_add_param(Sem* c, int32_t fi, const char* name, int32_t pt);
+const char* sem_fi_param_name(Sem* c, int32_t fi, int32_t i);
+int32_t sem_fi_param_type(Sem* c, int32_t fi, int32_t i);
+int32_t sem_fi_nparams(Sem* c, int32_t fi);
+const char* sem_fi_attr(Sem* c, int32_t fi, int32_t i);
+int32_t sem_fi_nattrs(Sem* c, int32_t fi);
+bool sem_fi_has_attr(Sem* c, int32_t fi, const char* name);
+const char* sem_fi_effect(Sem* c, int32_t fi, int32_t i);
+int32_t sem_fi_neffects(Sem* c, int32_t fi);
+int32_t sem_fi_ntparams(Sem* c, int32_t fi);
+const char* sem_fi_tparam(Sem* c, int32_t fi, int32_t i);
+const char* sem_fi_tbound(Sem* c, int32_t fi, int32_t i);
+int32_t sem_se_new(Sem* c, const char* name, int32_t kind, int32_t decl);
+void sem_se_add_field(Sem* c, int32_t se, const char* name, int32_t pt);
+int32_t sem_se_nfields(Sem* c, int32_t se);
+const char* sem_se_field_name(Sem* c, int32_t se, int32_t i);
+int32_t sem_se_field_type(Sem* c, int32_t se, int32_t i);
+int32_t sem_struct_entry(Sem* c, const char* name);
+const char* sem_pt_join_names(Sem* c, SemIntVec* args);
+int32_t sem_pt_of_ast(Sem* c, int32_t ty);
+int32_t sem_parse_named_scalar(Sem* c, const char* name);
+const char* sem_rewrite_mangled(Sem* c, const char* name, SemStrVec* map_names, SemIntVec* map_types);
+int32_t sem_map_index(SemStrVec* names, const char* key);
+int32_t sem_substitute_pt(Sem* c, int32_t pt, SemStrVec* map_names, SemIntVec* map_types);
+bool sem_generic_args_from_name(Sem* c, const char* name, SemStrVec* out_base, SemIntVec* out_args);
+bool sem_ensure_generic_struct_instance(Sem* c, const char* name, SemIntVec* type_args);
+int32_t sem_parse_type(Sem* c, int32_t pt);
+int32_t sem_parse_type_name(Sem* c, const char* name);
+SemIntVec* sem_unit_dims_of_name(Sem* c, const char* name);
+void sem_set_unit_dims(Sem* c, const char* name, SemIntVec* d);
+SemIntVec* sem_dims_of(Sem* c, int32_t ty);
+bool sem_is_radian(Sem* c, int32_t ty);
+const char* sem_format_dims(Sem* c, SemIntVec* d);
+int32_t sem_unit_result_type(Sem* c, SemIntVec* dims);
+bool sem_is_numeric(Sem* c, int32_t ty);
+bool sem_is_integer(Sem* c, int32_t ty);
+bool sem_is_float(Sem* c, int32_t ty);
+bool sem_is_complex(Sem* c, int32_t ty);
+bool sem_is_span(Sem* c, int32_t ty);
+int32_t sem_tkind(Sem* c, int32_t ty);
+const char* sem_tstr(Sem* c, int32_t ty);
+bool sem_is_dual(Sem* c, int32_t ty);
+bool sem_is_tensor(Sem* c, int32_t ty);
+int32_t sem_integer_bit_width(Sem* c, int32_t ty);
+int32_t sem_int_order(int32_t k);
+int32_t sem_int_by_order(int32_t i);
+int32_t sem_numeric_common_type(Sem* c, int32_t a, int32_t b);
+bool sem_is_type_param(Sem* c, int32_t ty);
+bool sem_span_elements_match(Sem* c, int32_t a, int32_t e);
+bool sem_borrow_compatible(Sem* c, int32_t actual, int32_t expected);
+bool sem_fn_to_void_ptr(Sem* c, int32_t actual, int32_t expected);
+bool sem_effects_subset(Sem* c, int32_t a, int32_t e);
+bool sem_can_coerce(Sem* c, int32_t actual, int32_t expected);
+bool sem_is_c_string_pair(Sem* c, int32_t actual, int32_t expected);
+bool sem_is_compatible(Sem* c, int32_t actual, int32_t expected);
+bool sem_is_byte_pointer(Sem* c, int32_t ty);
+bool sem_is_byte_array(Sem* c, int32_t ty);
+bool sem_can_cast(Sem* c, int32_t actual, int32_t target);
+const char* sem_undeclared_type_name(Sem* c, int32_t a, int32_t b);
+int32_t sem_scan_attributes(Sem* c, int32_t lo, int32_t hi);
+const char* sem_strip_quotes(const char* s);
+const char* sem_parse_attribute(const char* attr, SemStrVec* args);
+int32_t sem_lifetime_index(const char* d);
+const char* sem_domain_name(int32_t i);
+int32_t sem_lifetime_domain(Sem* c, int32_t start, int32_t n);
+bool sem_is_known_attribute(const char* n);
+SemStrVec* sem_known_attributes();
+bool sem_takes_args(const char* n);
+bool sem_target_item_ok(const char* item);
+const char* sem_validate_target_spec(const char* spec);
+void sem_attribute_errors(Sem* c, const char* fn_name, int32_t start, int32_t n);
+Sem* sem_new(bool strict) {
+  Sem* c = (Sem*)((Sem*)(malloc(8192)));
+  c->t = sem_tys_new();
+  c->strict = strict;
+  c->check_effect_rows = 0;
+  c->safety_profile = 0;
+  const char* prof = getenv("FLOW_PROFILE");
+  if ((uint8_t*)(prof) != NULL) {
+  if (sem_s_eq(prof, "safety") || sem_s_eq(prof, "flight")) {
+  c->safety_profile = 1;
+}
+}
+  const char* se = getenv("FLOWC_STRICT_EFFECTS");
+  if ((uint8_t*)(se) != NULL) {
+  if (sem_s_eq(se, "1")) {
+  c->check_effect_rows = 1;
+}
+}
+  c->nm = 0;
+  c->m_ar = (AstArena*)(malloc((64 * 24)));
+  c->m_root = (int32_t*)(malloc((64 * 4)));
+  c->m_src = (uint8_t**)(malloc((64 * 8)));
+  c->m_path = (const char**)(malloc((64 * 8)));
+  c->m_lines = sem_pv_new();
+  c->m_rows = sem_pv_new();
+  c->cm = (0 - 1);
+  c->src = NULL;
+  c->pos = 0;
+  c->d_kind = sem_iv_new();
+  c->d_mod = sem_iv_new();
+  c->d_node = sem_iv_new();
+  c->d_name = sem_sv_new();
+  c->d_info = sem_iv_new();
+  c->d_astart = sem_iv_new();
+  c->d_alen = sem_iv_new();
+  c->attr_pool = sem_sv_new();
+  c->fi_name = sem_sv_new();
+  c->fi_mangled = sem_sv_new();
+  c->fi_mod = sem_iv_new();
+  c->fi_node = sem_iv_new();
+  c->fi_pstart = sem_iv_new();
+  c->fi_plen = sem_iv_new();
+  c->fi_ret = sem_iv_new();
+  c->fi_astart = sem_iv_new();
+  c->fi_alen = sem_iv_new();
+  c->fi_extern = sem_iv_new();
+  c->fi_variadic = sem_iv_new();
+  c->fi_tpstart = sem_iv_new();
+  c->fi_tplen = sem_iv_new();
+  c->fi_estart = sem_iv_new();
+  c->fi_elen = sem_iv_new();
+  c->fi_body = sem_iv_new();
+  c->fi_has_self = sem_iv_new();
+  c->fp_names = sem_sv_new();
+  c->fp_types = sem_iv_new();
+  c->tp_names = sem_sv_new();
+  c->tp_bounds = sem_sv_new();
+  c->ef_pool = sem_sv_new();
+  c->im_type = sem_sv_new();
+  c->im_trait = sem_sv_new();
+  c->im_methods = sem_pv_new();
+  c->se_name = sem_sv_new();
+  c->se_kind = sem_iv_new();
+  c->se_fstart = sem_iv_new();
+  c->se_flen = sem_iv_new();
+  c->se_base = sem_iv_new();
+  c->se_tpstart = sem_iv_new();
+  c->se_tplen = sem_iv_new();
+  c->se_decl = sem_iv_new();
+  c->sf_names = sem_sv_new();
+  c->sf_types = sem_iv_new();
+  c->struct_types = sem_sm_new();
+  c->generic_struct_types = sem_sm_new();
+  c->opaque_c_types = sem_sm_new();
+  c->generic_function_decls = sem_sm_new();
+  c->active_type_params = sem_sv_new();
+  c->effect_types = sem_sm_new();
+  c->capability_types = sem_sm_new();
+  c->enum_decls = sem_sm_new();
+  c->enum_variant_owner = sem_sm_new();
+  c->trait_types = sem_sm_new();
+  c->impl_pairs = sem_sm_new();
+  c->impl_methods = sem_sm_new();
+  c->impl_method_lists = sem_pv_new();
+  c->unit_base_order = sem_sv_new();
+  c->unit_dims = sem_sm_new();
+  c->unit_dim_list = sem_pv_new();
+  c->unit_canonical = sem_sm_new();
+  c->unit_canonical_names = sem_sv_new();
+  c->sy_name = sem_sv_new();
+  c->sy_type = sem_iv_new();
+  c->sy_kind = sem_iv_new();
+  c->sy_mut = sem_iv_new();
+  c->sy_def = sem_iv_new();
+  c->sy_over = sem_pv_new();
+  c->g_scope = sem_sm_new();
+  c->ls_name = sem_sv_new();
+  c->ls_sym = sem_iv_new();
+  c->frames = sem_iv_new();
+  c->errors = sem_sv_new();
+  c->err_mod = sem_iv_new();
+  c->err_pos = sem_iv_new();
+  c->fatal = sem_sv_new();
+  c->warnings = sem_sv_new();
+  c->relax_c_strings = 0;
+  c->return_sink = NULL;
+  c->reason_pool = sem_sv_new();
+  c->rt_unsafe_reason = sem_sm_new();
+  c->heap_unsafe_reason = sem_sm_new();
+  c->current_rt_safe_fn = NULL;
+  c->current_safe_fn = NULL;
+  c->rt_safe_from_domain = 0;
+  c->handler_stack = sem_pv_new();
+  sem_pv_push(c->handler_stack, (void*)(sem_sv_new()));
+  c->current_function_name = NULL;
+  c->function_effects = sem_sm_new();
+  c->function_effect_lists = sem_pv_new();
+  c->function_decls = sem_sm_new();
+  c->static_names = sem_sm_new();
+  c->local_storage = sem_sv_new();
+  c->span_origin = sem_sm_new();
+  c->origin_pool = sem_sv_new();
+  c->current_return_type = (0 - 1);
+  c->function_domains = sem_sm_new();
+  c->static_domains = sem_sm_new();
+  c->current_domain = (0 - 1);
+  c->rdc_names = sem_sv_new();
+  c->rdc_index = sem_sm_new();
+  c->rdc_sets = sem_pv_new();
+  c->domain_reported = sem_sm_new();
+  c->rt_site_fn = sem_sv_new();
+  c->rt_site_name = sem_sv_new();
+  c->rt_site_dom = sem_iv_new();
+  c->dom_site_fn = sem_sv_new();
+  c->dom_site_name = sem_sv_new();
+  c->esc_static = sem_sm_new();
+  c->esc_return = sem_sm_new();
+  c->prop_keys = sem_sv_new();
+  c->prop_index = sem_sm_new();
+  c->prop_sets = sem_pv_new();
+  c->ref_seen = sem_sm_new();
+  c->ref_key = sem_sv_new();
+  c->ref_caller = sem_sv_new();
+  c->ref_callee = sem_sv_new();
+  c->ref_idx = sem_iv_new();
+  c->ref_origin = sem_sv_new();
+  c->ref_loc = sem_sv_new();
+  c->stmt_node = (0 - 1);
+  c->has_cimport = 0;
+  c->fork_src = sem_sm_new();
+  c->fork_sigs = sem_sm_new();
+  c->fork_count = 0;
+  c->pos_lock = 0;
+  c->cimport_headers = sem_sv_new();
+  c->cimport_names = sem_sm_new();
+  c->cimport_unknown = 0;
+  c->root_mod = (0 - 1);
+  int32_t ui = sem_sym_new(c, "_ui_state", sem_ty_ptr(c->t, sem_ty_mk(c->t, TK_VOID)), SK_VARIABLE);
+  sem_iv_set(c->sy_mut, ui, 1);
+  sem_scope_define_global(c, ui);
+  return c;
+}
+
+int32_t sem_add_module(Sem* c, AstArena arena, int32_t root, uint8_t* src, const char* path) {
+  int32_t m = c->nm;
+  c->m_ar[m] = arena;
+  c->m_root[m] = root;
+  c->m_src[m] = src;
+  c->m_path[m] = path;
+  sem_pv_push(c->m_lines, NULL);
+  SemIntVec* rows = (SemIntVec*)(sem_iv_new());
+  int32_t i = 0;
+  while (i < (arena).len) {
+  sem_iv_push(rows, (0 - 1));
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (arena).len) {
+  if (((arena).nodes[i]).kind == AST_EFFECT_ROW) {
+  int32_t owner = ((arena).nodes[i]).b;
+  if (owner >= 0 && owner < (arena).len) {
+  rows->data[owner] = i;
+}
+}
+  i = (i + 1);
+}
+  sem_pv_push(c->m_rows, (void*)(rows));
+  c->nm = (m + 1);
+  return m;
+}
+
+void sem_set_mod(Sem* c, int32_t m) {
+  c->cm = m;
+  c->ar = c->m_ar[m];
+  c->src = c->m_src[m];
+}
+
+int32_t sem_nk(Sem* c, int32_t id) {
+  if (id < 0) {
+  return 0;
+}
+  return ((c->ar).nodes[id]).kind;
+}
+
+int32_t sem_na(Sem* c, int32_t id) {
+  return ((c->ar).nodes[id]).a;
+}
+
+int32_t sem_nb(Sem* c, int32_t id) {
+  return ((c->ar).nodes[id]).b;
+}
+
+int32_t sem_ncc(Sem* c, int32_t id) {
+  return ((c->ar).nodes[id]).c;
+}
+
+int32_t sem_nnext(Sem* c, int32_t id) {
+  return ((c->ar).nodes[id]).next;
+}
+
+int32_t sem_nival(Sem* c, int32_t id) {
+  return ((c->ar).nodes[id]).ival;
+}
+
+int32_t sem_nstart(Sem* c, int32_t id) {
+  return ((c->ar).nodes[id]).start;
+}
+
+int32_t sem_nend(Sem* c, int32_t id) {
+  return ((c->ar).nodes[id]).end;
+}
+
+const char* sem_nname(Sem* c, int32_t id) {
+  return sem_s_span(c->src, ((c->ar).nodes[id]).name_start, ((c->ar).nodes[id]).name_end);
+}
+
+bool sem_nname_is(Sem* c, int32_t id, const char* lit) {
+  return sem_s_span_is(c->src, ((c->ar).nodes[id]).name_start, ((c->ar).nodes[id]).name_end, lit);
+}
+
+int32_t sem_nlen(Sem* c, int32_t first) {
+  int32_t n = 0;
+  int32_t k = first;
+  while (k != AST_NONE) {
+  n = (n + 1);
+  k = ((c->ar).nodes[k]).next;
+}
+  return n;
+}
+
+int32_t sem_row_of(Sem* c, int32_t owner) {
+  SemIntVec* rows = (SemIntVec*)((SemIntVec*)(sem_pv_get(c->m_rows, c->cm)));
+  if (owner < 0 || owner >= rows->len) {
+  return (0 - 1);
+}
+  return rows->data[owner];
+}
+
+SemIntVec* sem_line_starts(Sem* c, int32_t m) {
+  SemIntVec* cached = (SemIntVec*)((SemIntVec*)(sem_pv_get(c->m_lines, m)));
+  if (cached != NULL) {
+  return cached;
+}
+  SemIntVec* v = (SemIntVec*)(sem_iv_new());
+  sem_iv_push(v, 0);
+  uint8_t* src = (uint8_t*)(c->m_src[m]);
+  int32_t i = 0;
+  while (src[i] != 0) {
+  if (src[i] == 10) {
+  sem_iv_push(v, (i + 1));
+}
+  i = (i + 1);
+}
+  sem_pv_set(c->m_lines, m, (void*)(v));
+  return v;
+}
+
+int32_t sem_line_of(Sem* c, int32_t m, int32_t pos) {
+  SemIntVec* v = (SemIntVec*)(sem_line_starts(c, m));
+  int32_t lo = 0;
+  int32_t hi = (v->len - 1);
+  while (lo < hi) {
+  int32_t mid = (((lo + hi) + 1) / 2);
+  if (v->data[mid] <= pos) {
+  lo = mid;
+} else {
+  hi = (mid - 1);
+}
+}
+  return (lo + 1);
+}
+
+int32_t sem_col_of(Sem* c, int32_t m, int32_t pos) {
+  SemIntVec* v = (SemIntVec*)(sem_line_starts(c, m));
+  int32_t ln = sem_line_of(c, m, pos);
+  return ((pos - v->data[(ln - 1)]) + 1);
+}
+
+int32_t sem_py_pos(Sem* c, int32_t m, int32_t pos, bool want_col) {
+  uint8_t* src = (uint8_t*)(c->m_src[m]);
+  int32_t line = 1;
+  int32_t col = 1;
+  int32_t i = 0;
+  while (i < pos && src[i] != 0) {
+  int32_t ch = (int32_t)(src[i]);
+  if (ch == 35) {
+  int32_t k = 0;
+  while (src[i] != 0 && src[i] != 10) {
+  if (src[i] == 9) {
+  k = ((k + 4) - (k % 4));
+} else {
+  k = (k + 1);
+}
+  i = (i + 1);
+}
+  col = (col + k);
+} else {
+  if (ch == 10) {
+  line = (line + 1);
+  col = 1;
+  i = (i + 1);
+} else {
+  if (ch == 32 || ch == 9 || ch == 13 || ch == 12 || ch == 11) {
+  int32_t k2 = 0;
+  int32_t kc = 0;
+  while (src[i] == 32 || src[i] == 9 || src[i] == 13 || src[i] == 12 || src[i] == 11 || src[i] == 10) {
+  if (src[i] == 9) {
+  int32_t add = (4 - (kc % 4));
+  k2 = (k2 + add);
+  kc = (kc + add);
+} else {
+  if (src[i] == 10 || src[i] == 13) {
+  k2 = (k2 + 1);
+  kc = 0;
+} else {
+  k2 = (k2 + 1);
+  kc = (kc + 1);
+}
+}
+  i = (i + 1);
+}
+  col = (col + k2);
+} else {
+  if (ch == 34) {
+  col = (col + 1);
+  i = (i + 1);
+  while (src[i] != 0 && src[i] != 34) {
+  if (src[i] == 92 && src[(i + 1)] != 0) {
+  col = (col + 1);
+  i = (i + 1);
+}
+  col = (col + 1);
+  i = (i + 1);
+}
+  if (src[i] == 34) {
+  col = (col + 1);
+  i = (i + 1);
+}
+} else {
+  col = (col + 1);
+  i = (i + 1);
+}
+}
+}
+}
+}
+  if (want_col) {
+  return col;
+}
+  return line;
+}
+
+void sem_err(Sem* c, const char* msg) {
+  sem_sv_push(c->errors, msg);
+  sem_iv_push(c->err_mod, c->cm);
+  sem_iv_push(c->err_pos, c->pos);
+}
+
+void sem_warn(Sem* c, const char* msg) {
+  sem_sv_push(c->warnings, msg);
+}
+
+void sem_err_truncate(Sem* c, int32_t n) {
+  sem_sv_setlen(c->errors, n);
+  sem_iv_setlen(c->err_mod, n);
+  sem_iv_setlen(c->err_pos, n);
+}
+
+int32_t sem_sym_new(Sem* c, const char* name, int32_t ty, int32_t kind) {
+  int32_t id = sem_sv_len(c->sy_name);
+  sem_sv_push(c->sy_name, name);
+  sem_iv_push(c->sy_type, ty);
+  sem_iv_push(c->sy_kind, kind);
+  sem_iv_push(c->sy_mut, 0);
+  sem_iv_push(c->sy_def, (0 - 1));
+  sem_pv_push(c->sy_over, NULL);
+  return id;
+}
+
+void sem_scope_define_global(Sem* c, int32_t sym) {
+  const char* name = sem_sv_get(c->sy_name, sym);
+  int32_t old = sem_sm_get(c->g_scope, name);
+  if (old >= 0 && sem_iv_get(c->sy_kind, sym) == SK_FUNCTION && sem_iv_get(c->sy_kind, old) == SK_FUNCTION) {
+  SemIntVec* ov = (SemIntVec*)((SemIntVec*)(sem_pv_get(c->sy_over, old)));
+  if (ov == NULL) {
+  ov = sem_iv_new();
+  sem_iv_push(ov, sem_iv_get(c->sy_type, old));
+  sem_pv_set(c->sy_over, old, (void*)(ov));
+}
+  sem_iv_push(ov, sem_iv_get(c->sy_type, sym));
+  return;
+}
+  sem_sm_put(c->g_scope, name, sym);
+}
+
+void sem_push_scope(Sem* c) {
+  sem_iv_push(c->frames, sem_sv_len(c->ls_name));
+}
+
+void sem_pop_scope(Sem* c) {
+  int32_t mark = sem_iv_get(c->frames, (sem_iv_len(c->frames) - 1));
+  sem_iv_setlen(c->frames, (sem_iv_len(c->frames) - 1));
+  sem_sv_setlen(c->ls_name, mark);
+  sem_iv_setlen(c->ls_sym, mark);
+}
+
+void sem_scope_define(Sem* c, int32_t sym) {
+  if (sem_iv_len(c->frames) == 0) {
+  sem_scope_define_global(c, sym);
+  return;
+}
+  sem_sv_push(c->ls_name, sem_sv_get(c->sy_name, sym));
+  sem_iv_push(c->ls_sym, sym);
+}
+
+int32_t sem_define_var(Sem* c, const char* name, int32_t ty, bool mutable) {
+  int32_t s = sem_sym_new(c, name, ty, SK_VARIABLE);
+  if (mutable) {
+  sem_iv_set(c->sy_mut, s, 1);
+}
+  sem_scope_define(c, s);
+  return s;
+}
+
+int32_t sem_lookup(Sem* c, const char* name) {
+  int32_t i = (sem_sv_len(c->ls_name) - 1);
+  while (i >= 0) {
+  if (sem_s_eq(sem_sv_get(c->ls_name, i), name)) {
+  return sem_iv_get(c->ls_sym, i);
+}
+  i = (i - 1);
+}
+  return sem_sm_get(c->g_scope, name);
+}
+
+int32_t sem_sym_type(Sem* c, int32_t s) {
+  return sem_iv_get(c->sy_type, s);
+}
+
+int32_t sem_sym_kind(Sem* c, int32_t s) {
+  return sem_iv_get(c->sy_kind, s);
+}
+
+int32_t sem_decl_add(Sem* c, int32_t kind, int32_t m, int32_t node, const char* name, int32_t info) {
+  int32_t id = sem_iv_len(c->d_kind);
+  sem_iv_push(c->d_kind, kind);
+  sem_iv_push(c->d_mod, m);
+  sem_iv_push(c->d_node, node);
+  sem_sv_push(c->d_name, name);
+  sem_iv_push(c->d_info, info);
+  sem_iv_push(c->d_astart, sem_sv_len(c->attr_pool));
+  sem_iv_push(c->d_alen, 0);
+  return id;
+}
+
+int32_t sem_fi_new(Sem* c, const char* name, int32_t m, int32_t node) {
+  int32_t id = sem_sv_len(c->fi_name);
+  sem_sv_push(c->fi_name, name);
+  sem_sv_push(c->fi_mangled, name);
+  sem_iv_push(c->fi_mod, m);
+  sem_iv_push(c->fi_node, node);
+  sem_iv_push(c->fi_pstart, sem_sv_len(c->fp_names));
+  sem_iv_push(c->fi_plen, 0);
+  sem_iv_push(c->fi_ret, (0 - 1));
+  sem_iv_push(c->fi_astart, sem_sv_len(c->attr_pool));
+  sem_iv_push(c->fi_alen, 0);
+  sem_iv_push(c->fi_extern, 0);
+  sem_iv_push(c->fi_variadic, 0);
+  sem_iv_push(c->fi_tpstart, sem_sv_len(c->tp_names));
+  sem_iv_push(c->fi_tplen, 0);
+  sem_iv_push(c->fi_estart, sem_sv_len(c->ef_pool));
+  sem_iv_push(c->fi_elen, 0);
+  sem_iv_push(c->fi_body, (0 - 1));
+  sem_iv_push(c->fi_has_self, 0);
+  return id;
+}
+
+void sem_fi_add_param(Sem* c, int32_t fi, const char* name, int32_t pt) {
+  sem_sv_push(c->fp_names, name);
+  sem_iv_push(c->fp_types, pt);
+  sem_iv_set(c->fi_plen, fi, (sem_iv_get(c->fi_plen, fi) + 1));
+}
+
+const char* sem_fi_param_name(Sem* c, int32_t fi, int32_t i) {
+  return sem_sv_get(c->fp_names, (sem_iv_get(c->fi_pstart, fi) + i));
+}
+
+int32_t sem_fi_param_type(Sem* c, int32_t fi, int32_t i) {
+  return sem_iv_get(c->fp_types, (sem_iv_get(c->fi_pstart, fi) + i));
+}
+
+int32_t sem_fi_nparams(Sem* c, int32_t fi) {
+  return sem_iv_get(c->fi_plen, fi);
+}
+
+const char* sem_fi_attr(Sem* c, int32_t fi, int32_t i) {
+  return sem_sv_get(c->attr_pool, (sem_iv_get(c->fi_astart, fi) + i));
+}
+
+int32_t sem_fi_nattrs(Sem* c, int32_t fi) {
+  return sem_iv_get(c->fi_alen, fi);
+}
+
+bool sem_fi_has_attr(Sem* c, int32_t fi, const char* name) {
+  int32_t i = 0;
+  while (i < sem_fi_nattrs(c, fi)) {
+  if (sem_s_eq(sem_fi_attr(c, fi, i), name)) {
+  return 1;
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+const char* sem_fi_effect(Sem* c, int32_t fi, int32_t i) {
+  return sem_sv_get(c->ef_pool, (sem_iv_get(c->fi_estart, fi) + i));
+}
+
+int32_t sem_fi_neffects(Sem* c, int32_t fi) {
+  return sem_iv_get(c->fi_elen, fi);
+}
+
+int32_t sem_fi_ntparams(Sem* c, int32_t fi) {
+  return sem_iv_get(c->fi_tplen, fi);
+}
+
+const char* sem_fi_tparam(Sem* c, int32_t fi, int32_t i) {
+  return sem_sv_get(c->tp_names, (sem_iv_get(c->fi_tpstart, fi) + i));
+}
+
+const char* sem_fi_tbound(Sem* c, int32_t fi, int32_t i) {
+  return sem_sv_get(c->tp_bounds, (sem_iv_get(c->fi_tpstart, fi) + i));
+}
+
+int32_t sem_se_new(Sem* c, const char* name, int32_t kind, int32_t decl) {
+  int32_t id = sem_sv_len(c->se_name);
+  sem_sv_push(c->se_name, name);
+  sem_iv_push(c->se_kind, kind);
+  sem_iv_push(c->se_fstart, sem_sv_len(c->sf_names));
+  sem_iv_push(c->se_flen, 0);
+  sem_iv_push(c->se_base, (0 - 1));
+  sem_iv_push(c->se_tpstart, sem_sv_len(c->tp_names));
+  sem_iv_push(c->se_tplen, 0);
+  sem_iv_push(c->se_decl, decl);
+  return id;
+}
+
+void sem_se_add_field(Sem* c, int32_t se, const char* name, int32_t pt) {
+  sem_sv_push(c->sf_names, name);
+  sem_iv_push(c->sf_types, pt);
+  sem_iv_set(c->se_flen, se, (sem_iv_get(c->se_flen, se) + 1));
+}
+
+int32_t sem_se_nfields(Sem* c, int32_t se) {
+  return sem_iv_get(c->se_flen, se);
+}
+
+const char* sem_se_field_name(Sem* c, int32_t se, int32_t i) {
+  return sem_sv_get(c->sf_names, (sem_iv_get(c->se_fstart, se) + i));
+}
+
+int32_t sem_se_field_type(Sem* c, int32_t se, int32_t i) {
+  return sem_iv_get(c->sf_types, (sem_iv_get(c->se_fstart, se) + i));
+}
+
+int32_t sem_struct_entry(Sem* c, const char* name) {
+  return sem_sm_get(c->struct_types, name);
+}
+
+const char* sem_pt_join_names(Sem* c, SemIntVec* args) {
+  const char* s = "";
+  int32_t i = 0;
+  while (i < args->len) {
+  if (i > 0) {
+  s = __flowc_str_concat(s, "_");
+}
+  s = __flowc_str_concat(s, sem_pt_name(c->t, args->data[i]));
+  i = (i + 1);
+}
+  return s;
+}
+
+int32_t sem_pt_of_ast(Sem* c, int32_t ty) {
+  if (ty < 0) {
+  return (0 - 1);
+}
+  SemTys* t = (SemTys*)(c->t);
+  int32_t ns = ((c->ar).nodes[ty]).name_start;
+  int32_t ne = ((c->ar).nodes[ty]).name_end;
+  int32_t iv = ((c->ar).nodes[ty]).ival;
+  int32_t inner = ((c->ar).nodes[ty]).a;
+  int32_t cc = ((c->ar).nodes[ty]).c;
+  if (iv == (0 - 1)) {
+  SemIntVec* args = (SemIntVec*)(sem_iv_new());
+  int32_t p = inner;
+  while (p != AST_NONE) {
+  sem_iv_push(args, sem_pt_of_ast(c, p));
+  p = ((c->ar).nodes[p]).next;
+}
+  int32_t ret = sem_pt_of_ast(c, ((c->ar).nodes[ty]).b);
+  const char* key = "void";
+  if (args->len > 0) {
+  key = sem_pt_join_names(c, args);
+}
+  int32_t id = sem_pt_mk(t, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("fn_", key), "__"), sem_pt_name(t, ret)));
+  t->pt_args[id] = args;
+  t->pt_elem[id] = ret;
+  int32_t row = sem_row_of(c, ty);
+  if (row >= 0) {
+  int32_t e = ((c->ar).nodes[row]).a;
+  while (e != AST_NONE) {
+  sem_pt_add_effect(t, id, sem_nname(c, e));
+  e = ((c->ar).nodes[e]).next;
+}
+}
+  return id;
+}
+  if (iv == (0 - 2)) {
+  SemIntVec* args = (SemIntVec*)(sem_iv_new());
+  int32_t p = inner;
+  while (p != AST_NONE) {
+  sem_iv_push(args, sem_pt_of_ast(c, p));
+  p = ((c->ar).nodes[p]).next;
+}
+  int32_t ret = sem_pt_of_ast(c, ((c->ar).nodes[ty]).b);
+  const char* key = "void";
+  if (args->len > 0) {
+  key = sem_pt_join_names(c, args);
+}
+  int32_t id = sem_pt_mk(t, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("cfn_", key), "__"), sem_pt_name(t, ret)));
+  t->pt_args[id] = args;
+  t->pt_elem[id] = ret;
+  t->pt_cfn[id] = 1;
+  return id;
+}
+  if (cc == AST_TYPE_CAPABILITY) {
+  int32_t id = sem_pt_mk(t, __flowc_str_concat("capability_", sem_s_span(c->src, ns, ne)));
+  t->pt_cap[id] = 1;
+  return id;
+}
+  if (cc == AST_TYPE_FIXED_ARRAY) {
+  int32_t el = sem_pt_of_ast(c, inner);
+  int32_t id = sem_pt_mk(t, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("array_", sem_s_itoa((int64_t)(iv))), "_"), sem_pt_name(t, el)));
+  t->pt_size[id] = iv;
+  t->pt_elem[id] = el;
+  return id;
+}
+  if (ns == ne && inner != AST_NONE) {
+  int32_t el = sem_pt_of_ast(c, inner);
+  const char* prefix = "span_const_";
+  if (cc == AST_TYPE_SPAN_MUTABLE) {
+  prefix = "span_mut_";
+}
+  int32_t id = sem_pt_mk(t, __flowc_str_concat(prefix, sem_pt_name(t, el)));
+  t->pt_elem[id] = el;
+  if (iv > 0) {
+  t->pt_size[id] = iv;
+}
+  return id;
+}
+  const char* name = sem_s_span(c->src, ns, ne);
+  if (inner == AST_NONE) {
+  return sem_pt_mk(t, name);
+}
+  if (sem_s_eq(name, "span")) {
+  int32_t el = sem_pt_of_ast(c, inner);
+  const char* prefix = "span_const_";
+  if (cc == AST_TYPE_SPAN_MUTABLE) {
+  prefix = "span_mut_";
+}
+  int32_t id = sem_pt_mk(t, __flowc_str_concat(prefix, sem_pt_name(t, el)));
+  t->pt_elem[id] = el;
+  if (iv > 0) {
+  t->pt_size[id] = iv;
+}
+  return id;
+}
+  if (sem_s_eq(name, "array")) {
+  int32_t el = sem_pt_of_ast(c, inner);
+  if (iv > 0) {
+  int32_t id = sem_pt_mk(t, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("array_", sem_s_itoa((int64_t)(iv))), "_"), sem_pt_name(t, el)));
+  t->pt_size[id] = iv;
+  t->pt_elem[id] = el;
+  return id;
+}
+  int32_t id2 = sem_pt_mk(t, __flowc_str_concat("array_", sem_pt_name(t, el)));
+  t->pt_elem[id2] = el;
+  return id2;
+}
+  if (sem_s_eq(name, "ptr")) {
+  int32_t el = sem_pt_of_ast(c, inner);
+  int32_t id = sem_pt_mk(t, __flowc_str_concat("ptr_", sem_pt_name(t, el)));
+  t->pt_ptr[id] = 1;
+  t->pt_elem[id] = el;
+  return id;
+}
+  if (sem_s_starts(name, "vec") && sem_s_len(name) > 3 && sem_s_is_digit(sem_s_byte(name, 3))) {
+  int32_t el = sem_pt_of_ast(c, inner);
+  int32_t id = sem_pt_mk(t, __flowc_str_concat(__flowc_str_concat(name, "_"), sem_pt_name(t, el)));
+  int32_t k = 3;
+  int32_t n = 0;
+  while (k < sem_s_len(name) && sem_s_is_digit(sem_s_byte(name, k))) {
+  n = (((n * 10) + sem_s_byte(name, k)) - 48);
+  k = (k + 1);
+}
+  t->pt_size[id] = n;
+  t->pt_elem[id] = el;
+  return id;
+}
+  SemIntVec* args = (SemIntVec*)(sem_iv_new());
+  int32_t p = inner;
+  while (p != AST_NONE) {
+  sem_iv_push(args, sem_pt_of_ast(c, p));
+  p = ((c->ar).nodes[p]).next;
+}
+  int32_t id = sem_pt_mk(t, __flowc_str_concat(__flowc_str_concat(name, "_"), sem_pt_join_names(c, args)));
+  t->pt_args[id] = args;
+  return id;
+}
+
+int32_t sem_parse_named_scalar(Sem* c, const char* name) {
+  SemTys* t = (SemTys*)(c->t);
+  if (sem_s_eq(name, "void")) {
+  return sem_ty_mk(t, TK_VOID);
+}
+  if (sem_s_eq(name, "bool")) {
+  return sem_ty_mk(t, TK_BOOL);
+}
+  if (sem_s_eq(name, "i8")) {
+  return sem_ty_mk(t, TK_I8);
+}
+  if (sem_s_eq(name, "i16")) {
+  return sem_ty_mk(t, TK_I16);
+}
+  if (sem_s_eq(name, "i32")) {
+  return sem_ty_mk(t, TK_I32);
+}
+  if (sem_s_eq(name, "i64")) {
+  return sem_ty_mk(t, TK_I64);
+}
+  if (sem_s_eq(name, "i128")) {
+  return sem_ty_mk(t, TK_I128);
+}
+  if (sem_s_eq(name, "u8")) {
+  return sem_ty_mk(t, TK_U8);
+}
+  if (sem_s_eq(name, "u16")) {
+  return sem_ty_mk(t, TK_U16);
+}
+  if (sem_s_eq(name, "u32")) {
+  return sem_ty_mk(t, TK_U32);
+}
+  if (sem_s_eq(name, "u64")) {
+  return sem_ty_mk(t, TK_U64);
+}
+  if (sem_s_eq(name, "u128")) {
+  return sem_ty_mk(t, TK_U128);
+}
+  if (sem_s_eq(name, "f32")) {
+  return sem_ty_mk(t, TK_F32);
+}
+  if (sem_s_eq(name, "f64")) {
+  return sem_ty_mk(t, TK_F64);
+}
+  if (sem_s_eq(name, "c64")) {
+  return sem_ty_mk(t, TK_C64);
+}
+  if (sem_s_eq(name, "c128")) {
+  return sem_ty_mk(t, TK_C128);
+}
+  if (sem_s_eq(name, "string")) {
+  return sem_ty_mk(t, TK_STRING);
+}
+  return (0 - 1);
+}
+
+const char* sem_rewrite_mangled(Sem* c, const char* name, SemStrVec* map_names, SemIntVec* map_types) {
+  if (sem_s_len(name) == 0 || map_names->len == 0) {
+  return name;
+}
+  SemStrVec* parts = (SemStrVec*)(sem_s_split(name, 95));
+  const char* out = "";
+  int32_t i = 0;
+  while (i < parts->len) {
+  if (i > 0) {
+  out = __flowc_str_concat(out, "_");
+}
+  const char* seg = sem_sv_get(parts, i);
+  int32_t k = sem_map_index(map_names, seg);
+  if (k >= 0) {
+  const char* rn = sem_pt_name(c->t, map_types->data[k]);
+  if (sem_s_len(rn) > 0) {
+  out = __flowc_str_concat(out, rn);
+} else {
+  out = __flowc_str_concat(out, "void");
+}
+} else {
+  out = __flowc_str_concat(out, seg);
+}
+  i = (i + 1);
+}
+  return out;
+}
+
+int32_t sem_map_index(SemStrVec* names, const char* key) {
+  int32_t i = 0;
+  while (i < names->len) {
+  if (sem_s_eq(names->data[i], key)) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t sem_substitute_pt(Sem* c, int32_t pt, SemStrVec* map_names, SemIntVec* map_types) {
+  SemTys* t = (SemTys*)(c->t);
+  if (pt < 0) {
+  return pt;
+}
+  int32_t k = sem_map_index(map_names, sem_pt_name(t, pt));
+  if (k >= 0 && sem_pt_nargs(t, pt) == 0) {
+  int32_t rep = map_types->data[k];
+  int32_t id = sem_pt_mk(t, sem_pt_name(t, rep));
+  t->pt_ptr[id] = t->pt_ptr[rep];
+  t->pt_cap[id] = t->pt_cap[rep];
+  t->pt_size[id] = t->pt_size[rep];
+  t->pt_elem[id] = t->pt_elem[rep];
+  t->pt_args[id] = t->pt_args[rep];
+  return id;
+}
+  int32_t elem = (0 - 1);
+  if (t->pt_elem[pt] >= 0) {
+  elem = sem_substitute_pt(c, t->pt_elem[pt], map_names, map_types);
+}
+  int32_t id2 = sem_pt_mk(t, sem_rewrite_mangled(c, sem_pt_name(t, pt), map_names, map_types));
+  t->pt_ptr[id2] = t->pt_ptr[pt];
+  t->pt_cap[id2] = t->pt_cap[pt];
+  t->pt_size[id2] = t->pt_size[pt];
+  t->pt_elem[id2] = elem;
+  if (sem_pt_nargs(t, pt) > 0) {
+  int32_t i = 0;
+  while (i < sem_pt_nargs(t, pt)) {
+  sem_pt_add_arg(t, id2, sem_substitute_pt(c, sem_pt_arg(t, pt, i), map_names, map_types));
+  i = (i + 1);
+}
+}
+  return id2;
+}
+
+bool sem_generic_args_from_name(Sem* c, const char* name, SemStrVec* out_base, SemIntVec* out_args) {
+  int32_t us = sem_s_index_byte(name, 95);
+  if (us < 0) {
+  return 0;
+}
+  const char* base = sem_s_slice(name, 0, us);
+  int32_t g = sem_sm_get(c->generic_struct_types, base);
+  if (g < 0) {
+  return 0;
+}
+  SemStrVec* parts = (SemStrVec*)(sem_s_split(sem_s_from(name, (us + 1)), 95));
+  int32_t n = sem_iv_get(c->se_tplen, g);
+  if (parts->len < n) {
+  return 0;
+}
+  sem_sv_push(out_base, base);
+  int32_t i = 0;
+  while (i < n) {
+  sem_iv_push(out_args, sem_pt_mk(c->t, sem_sv_get(parts, i)));
+  i = (i + 1);
+}
+  return 1;
+}
+
+bool sem_ensure_generic_struct_instance(Sem* c, const char* name, SemIntVec* type_args) {
+  if (sem_sm_has(c->struct_types, name)) {
+  return 1;
+}
+  int32_t us = sem_s_index_byte(name, 95);
+  const char* base_name = name;
+  if (us >= 0) {
+  base_name = sem_s_slice(name, 0, us);
+}
+  int32_t g = sem_sm_get(c->generic_struct_types, base_name);
+  SemIntVec* args = (SemIntVec*)(type_args);
+  if (g < 0) {
+  SemStrVec* ob = (SemStrVec*)(sem_sv_new());
+  SemIntVec* oa = (SemIntVec*)(sem_iv_new());
+  if (sem_generic_args_from_name(c, name, ob, oa) == 0) {
+  return 0;
+}
+  base_name = sem_sv_get(ob, 0);
+  args = oa;
+  g = sem_sm_get(c->generic_struct_types, base_name);
+} else {
+  if (args == NULL) {
+  SemStrVec* ob2 = (SemStrVec*)(sem_sv_new());
+  SemIntVec* oa2 = (SemIntVec*)(sem_iv_new());
+  if (sem_generic_args_from_name(c, name, ob2, oa2) == 0) {
+  return 0;
+}
+  args = oa2;
+}
+}
+  if (args == NULL || args->len == 0 || args->len != sem_iv_get(c->se_tplen, g)) {
+  return 0;
+}
+  SemStrVec* map_names = (SemStrVec*)(sem_sv_new());
+  SemIntVec* map_types = (SemIntVec*)(sem_iv_new());
+  int32_t i = 0;
+  while (i < args->len) {
+  sem_sv_push(map_names, sem_sv_get(c->tp_names, (sem_iv_get(c->se_tpstart, g) + i)));
+  sem_iv_push(map_types, args->data[i]);
+  i = (i + 1);
+}
+  int32_t se = sem_se_new(c, name, SE_STRUCT, sem_iv_get(c->se_decl, g));
+  i = 0;
+  while (i < sem_se_nfields(c, g)) {
+  sem_se_add_field(c, se, sem_se_field_name(c, g, i), sem_substitute_pt(c, sem_se_field_type(c, g, i), map_names, map_types));
+  i = (i + 1);
+}
+  sem_sm_put(c->struct_types, name, se);
+  return 1;
+}
+
+int32_t sem_parse_type(Sem* c, int32_t pt) {
+  SemTys* t = (SemTys*)(c->t);
+  if (pt < 0) {
+  return sem_ty_mk(t, TK_VOID);
+}
+  const char* name = sem_pt_name(t, pt);
+  if (sem_s_eq(name, "auto")) {
+  return sem_ty_named(t, TK_UNKNOWN, "auto");
+}
+  if ((sem_s_starts(name, "fn_") || sem_s_starts(name, "cfn_")) && sem_s_contains(name, "__")) {
+  int32_t f = sem_ty_named(t, TK_FUNCTION, name);
+  int32_t i = 0;
+  while (i < sem_pt_nargs(t, pt)) {
+  sem_ty_add_param(t, f, sem_parse_type(c, sem_pt_arg(t, pt, i)));
+  i = (i + 1);
+}
+  if (t->pt_elem[pt] >= 0) {
+  int32_t new_ret_1 = sem_parse_type(c, t->pt_elem[pt]);
+  t->ret[f] = new_ret_1;
+} else {
+  int32_t new_ret_2 = sem_ty_mk(t, TK_VOID);
+  t->ret[f] = new_ret_2;
+}
+  if (sem_s_starts(name, "fn_")) {
+  int32_t e = 0;
+  while (e < sem_pt_neffects(t, pt)) {
+  SemStrVec* ev = (SemStrVec*)(t->pt_effects[pt]);
+  sem_ty_add_effect(t, f, sem_sv_get(ev, e));
+  e = (e + 1);
+}
+}
+  return f;
+}
+  if (sem_is_span_type_name(name)) {
+  int32_t elem = (0 - 1);
+  if (t->pt_elem[pt] >= 0) {
+  elem = sem_parse_type(c, t->pt_elem[pt]);
+} else {
+  elem = sem_parse_named_scalar(c, sem_span_element_name(name));
+  if (elem < 0) {
+  elem = sem_ty_named(t, TK_UNKNOWN, sem_span_element_name(name));
+}
+}
+  int32_t sp = sem_ty_named(t, TK_SPAN, name);
+  t->elem[sp] = elem;
+  t->size[sp] = t->pt_size[pt];
+  return sp;
+}
+  if (sem_pt_nargs(t, pt) > 0) {
+  int32_t us = sem_s_index_byte(name, 95);
+  const char* base = name;
+  if (us >= 0) {
+  base = sem_s_slice(name, 0, us);
+}
+  if (sem_sm_has(c->generic_struct_types, base)) {
+  sem_ensure_generic_struct_instance(c, name, t->pt_args[pt]);
+  return sem_ty_struct(t, name);
+}
+}
+  if (sem_sm_has(c->struct_types, name) == 0) {
+  if (sem_ensure_generic_struct_instance(c, name, NULL)) {
+  return sem_ty_struct(t, name);
+}
+}
+  if (sem_s_starts(name, "memref_")) {
+  int32_t el = sem_parse_named_scalar(c, sem_s_from(name, 7));
+  if (el >= 0) {
+  return sem_ty_ptr(t, el);
+}
+}
+  int32_t scalar = sem_parse_named_scalar(c, name);
+  if (scalar >= 0) {
+  return scalar;
+}
+  if (sem_s_starts(name, "capability_")) {
+  return sem_ty_struct(t, name);
+}
+  if (t->pt_ptr[pt] == 1 && t->pt_elem[pt] >= 0) {
+  return sem_ty_ptr(t, sem_parse_type(c, t->pt_elem[pt]));
+}
+  if (sem_s_starts(name, "array_") && t->pt_elem[pt] >= 0) {
+  return sem_ty_array(t, sem_parse_type(c, t->pt_elem[pt]), t->pt_size[pt]);
+}
+  if (sem_s_starts(name, "array_")) {
+  int32_t el2 = sem_parse_named_scalar(c, sem_s_from(name, 6));
+  if (el2 >= 0) {
+  return sem_ty_array(t, el2, t->pt_size[pt]);
+}
+  return (0 - 1);
+}
+  if (sem_s_starts(name, "memref_")) {
+  return sem_ty_ptr(t, sem_parse_type(c, sem_pt_mk(t, sem_s_from(name, 7))));
+}
+  int32_t se = sem_struct_entry(c, name);
+  if (se >= 0) {
+  int32_t k = sem_iv_get(c->se_kind, se);
+  if (k == SE_ALIAS) {
+  int32_t al = sem_ty_named(t, TK_TYPE_ALIAS, name);
+  int32_t new_base_3 = sem_parse_type(c, sem_iv_get(c->se_base, se));
+  t->base[al] = new_base_3;
+  return al;
+}
+  if (k == SE_DISTINCT) {
+  int32_t di = sem_ty_named(t, TK_DISTINCT, name);
+  int32_t new_base_4 = sem_parse_type(c, sem_iv_get(c->se_base, se));
+  t->base[di] = new_base_4;
+  SemIntVec* new_dims_5 = (SemIntVec*)(sem_unit_dims_of_name(c, name));
+  t->dims[di] = new_dims_5;
+  return di;
+}
+  return sem_ty_struct(t, name);
+}
+  return sem_ty_named(t, TK_UNKNOWN, name);
+}
+
+int32_t sem_parse_type_name(Sem* c, const char* name) {
+  return sem_parse_type(c, sem_pt_mk(c->t, name));
+}
+
+SemIntVec* sem_unit_dims_of_name(Sem* c, const char* name) {
+  int32_t k = sem_sm_get(c->unit_dims, name);
+  if (k < 0) {
+  return NULL;
+}
+  return (SemIntVec*)(sem_pv_get(c->unit_dim_list, k));
+}
+
+void sem_set_unit_dims(Sem* c, const char* name, SemIntVec* d) {
+  sem_sm_put(c->unit_dims, name, sem_pv_len(c->unit_dim_list));
+  sem_pv_push(c->unit_dim_list, (void*)(d));
+}
+
+SemIntVec* sem_dims_of(Sem* c, int32_t ty) {
+  __flowc_tail: ;
+  SemTys* tys = (SemTys*)(c->t);
+  if (ty < 0) {
+  return NULL;
+}
+  int32_t k = tys->kind[ty];
+  if (k == TK_TYPE_ALIAS && tys->base[ty] >= 0) {
+  {
+  __auto_type __flowc_targ0 = c;
+  __auto_type __flowc_targ1 = tys->base[ty];
+  c = __flowc_targ0;
+  ty = __flowc_targ1;
+  goto __flowc_tail;
+  }
+}
+  if (k == TK_DISTINCT) {
+  return tys->dims[ty];
+}
+  return NULL;
+}
+
+bool sem_is_radian(Sem* c, int32_t ty) {
+  SemTys* tys = (SemTys*)(c->t);
+  int32_t x = ty;
+  while (x >= 0) {
+  if (sem_s_eq(tys->name[x], "Radian")) {
+  return 1;
+}
+  if (tys->kind[x] != TK_TYPE_ALIAS) {
+  return 0;
+}
+  x = tys->base[x];
+}
+  return 0;
+}
+
+const char* sem_format_dims(Sem* c, SemIntVec* d) {
+  SemStrVec* num = (SemStrVec*)(sem_sv_new());
+  SemStrVec* den = (SemStrVec*)(sem_sv_new());
+  int32_t i = 0;
+  while (i < d->len) {
+  int32_t e = d->data[i];
+  if (e != 0) {
+  const char* base = __flowc_str_concat("dim", sem_s_itoa((int64_t)(i)));
+  if (i < sem_sv_len(c->unit_base_order)) {
+  base = sem_sv_get(c->unit_base_order, i);
+}
+  int32_t mag = e;
+  if (mag < 0) {
+  mag = (0 - mag);
+}
+  const char* part = base;
+  if (mag != 1) {
+  part = __flowc_str_concat(__flowc_str_concat(base, "^"), sem_s_itoa((int64_t)(mag)));
+}
+  if (e > 0) {
+  sem_sv_push(num, part);
+} else {
+  sem_sv_push(den, part);
+}
+}
+  i = (i + 1);
+}
+  const char* text = "1";
+  if (num->len > 0) {
+  text = sem_sv_join(num, "*");
+}
+  i = 0;
+  while (i < den->len) {
+  text = __flowc_str_concat(__flowc_str_concat(text, "/"), sem_sv_get(den, i));
+  i = (i + 1);
+}
+  return text;
+}
+
+int32_t sem_unit_result_type(Sem* c, SemIntVec* dims) {
+  SemTys* tys = (SemTys*)(c->t);
+  SemIntVec* d = (SemIntVec*)(sem_dims_normalize(dims));
+  if (d->len == 0) {
+  return sem_ty_mk(c->t, TK_F64);
+}
+  const char* key = sem_dims_key(d);
+  int32_t k = sem_sm_get(c->unit_canonical, key);
+  const char* name = "";
+  if (k >= 0) {
+  name = sem_sv_get(c->unit_canonical_names, k);
+} else {
+  name = sem_format_dims(c, d);
+}
+  int32_t id = sem_ty_named(c->t, TK_DISTINCT, name);
+  int32_t new_base_6 = sem_ty_mk(c->t, TK_F64);
+  tys->base[id] = new_base_6;
+  tys->dims[id] = d;
+  return id;
+}
+
+bool sem_is_numeric(Sem* c, int32_t ty) {
+  SemTys* tys = (SemTys*)(c->t);
+  return ty >= 0 && sem_tk_is_numeric(tys->kind[ty]);
+}
+
+bool sem_is_integer(Sem* c, int32_t ty) {
+  SemTys* tys = (SemTys*)(c->t);
+  return ty >= 0 && sem_tk_is_int(tys->kind[ty]);
+}
+
+bool sem_is_float(Sem* c, int32_t ty) {
+  SemTys* tys = (SemTys*)(c->t);
+  return ty >= 0 && sem_tk_is_float(tys->kind[ty]);
+}
+
+bool sem_is_complex(Sem* c, int32_t ty) {
+  SemTys* tys = (SemTys*)(c->t);
+  return ty >= 0 && sem_tk_is_complex(tys->kind[ty]);
+}
+
+bool sem_is_span(Sem* c, int32_t ty) {
+  SemTys* tys = (SemTys*)(c->t);
+  return ty >= 0 && tys->kind[ty] == TK_SPAN;
+}
+
+int32_t sem_tkind(Sem* c, int32_t ty) {
+  return sem_ty_kind(c->t, ty);
+}
+
+const char* sem_tstr(Sem* c, int32_t ty) {
+  return sem_ty_str(c->t, ty);
+}
+
+bool sem_is_dual(Sem* c, int32_t ty) {
+  SemTys* tys = (SemTys*)(c->t);
+  return sem_tkind(c, ty) == TK_STRUCT && sem_s_eq(tys->name[ty], "Dual");
+}
+
+bool sem_is_tensor(Sem* c, int32_t ty) {
+  SemTys* tys = (SemTys*)(c->t);
+  return sem_tkind(c, ty) == TK_STRUCT && sem_s_eq(tys->name[ty], "Tensor");
+}
+
+int32_t sem_integer_bit_width(Sem* c, int32_t ty) {
+  int32_t k = sem_tkind(c, ty);
+  if (k == TK_I8 || k == TK_U8 || k == TK_BOOL) {
+  return 8;
+}
+  if (k == TK_I16 || k == TK_U16) {
+  return 16;
+}
+  if (k == TK_I32 || k == TK_U32) {
+  return 32;
+}
+  if (k == TK_I64 || k == TK_U64) {
+  return 64;
+}
+  if (k == TK_I128 || k == TK_U128) {
+  return 128;
+}
+  return 0;
+}
+
+int32_t sem_int_order(int32_t k) {
+  if (k == TK_I8) {
+  return 0;
+}
+  if (k == TK_U8) {
+  return 1;
+}
+  if (k == TK_I16) {
+  return 2;
+}
+  if (k == TK_U16) {
+  return 3;
+}
+  if (k == TK_I32) {
+  return 4;
+}
+  if (k == TK_U32) {
+  return 5;
+}
+  if (k == TK_I64) {
+  return 6;
+}
+  if (k == TK_U64) {
+  return 7;
+}
+  if (k == TK_I128) {
+  return 8;
+}
+  if (k == TK_U128) {
+  return 9;
+}
+  return 0;
+}
+
+int32_t sem_int_by_order(int32_t i) {
+  if (i == 0) {
+  return TK_I8;
+}
+  if (i == 1) {
+  return TK_U8;
+}
+  if (i == 2) {
+  return TK_I16;
+}
+  if (i == 3) {
+  return TK_U16;
+}
+  if (i == 4) {
+  return TK_I32;
+}
+  if (i == 5) {
+  return TK_U32;
+}
+  if (i == 6) {
+  return TK_I64;
+}
+  if (i == 7) {
+  return TK_U64;
+}
+  if (i == 8) {
+  return TK_I128;
+}
+  return TK_U128;
+}
+
+int32_t sem_numeric_common_type(Sem* c, int32_t a, int32_t b) {
+  int32_t ka = sem_tkind(c, a);
+  int32_t kb = sem_tkind(c, b);
+  if (sem_tk_is_complex(ka) || sem_tk_is_complex(kb)) {
+  if (ka == TK_C128 || kb == TK_C128) {
+  return sem_ty_mk(c->t, TK_C128);
+}
+  if (ka == TK_C64 || kb == TK_C64) {
+  if (ka == TK_F64 || kb == TK_F64) {
+  return sem_ty_mk(c->t, TK_C128);
+}
+  return sem_ty_mk(c->t, TK_C64);
+}
+}
+  if (sem_tk_is_float(ka) || sem_tk_is_float(kb)) {
+  if (ka == TK_F64 || kb == TK_F64) {
+  return sem_ty_mk(c->t, TK_F64);
+}
+  return sem_ty_mk(c->t, TK_F32);
+}
+  int32_t ia = sem_int_order(ka);
+  int32_t ib = sem_int_order(kb);
+  if (ia > ib) {
+  return sem_ty_mk(c->t, sem_int_by_order(ia));
+}
+  return sem_ty_mk(c->t, sem_int_by_order(ib));
+}
+
+bool sem_is_type_param(Sem* c, int32_t ty) {
+  SemTys* tys = (SemTys*)(c->t);
+  if (ty < 0 || sem_sv_len(c->active_type_params) == 0) {
+  return 0;
+}
+  const char* nm = tys->name[ty];
+  if (tys->kind[ty] == TK_UNKNOWN && sem_sv_has(c->active_type_params, nm)) {
+  return 1;
+}
+  if (sem_s_len(nm) > 0) {
+  SemStrVec* parts = (SemStrVec*)(sem_s_split(nm, 95));
+  int32_t i = 0;
+  while (i < parts->len) {
+  if (sem_sv_has(c->active_type_params, sem_sv_get(parts, i))) {
+  return 1;
+}
+  i = (i + 1);
+}
+}
+  if (tys->elem[ty] >= 0 && sem_is_type_param(c, tys->elem[ty])) {
+  return 1;
+}
+  return 0;
+}
+
+bool sem_span_elements_match(Sem* c, int32_t a, int32_t e) {
+  if (a < 0 || e < 0) {
+  return 1;
+}
+  return sem_ty_eq(c->t, a, e);
+}
+
+bool sem_borrow_compatible(Sem* c, int32_t actual, int32_t expected) {
+  SemTys* tys = (SemTys*)(c->t);
+  if (sem_is_span(c, expected) == 0) {
+  return 0;
+}
+  int32_t ka = sem_tkind(c, actual);
+  if (ka == TK_POINTER) {
+  return 0;
+}
+  if (ka == TK_ARRAY) {
+  return sem_span_elements_match(c, tys->elem[actual], tys->elem[expected]);
+}
+  if (sem_is_span(c, actual)) {
+  if (sem_span_elements_match(c, tys->elem[actual], tys->elem[expected]) == 0) {
+  return 0;
+}
+  return sem_span_is_mutable(tys->name[actual]) || sem_span_is_mutable(tys->name[expected]) == 0;
+}
+  return 0;
+}
+
+bool sem_fn_to_void_ptr(Sem* c, int32_t actual, int32_t expected) {
+  SemTys* tys = (SemTys*)(c->t);
+  if (sem_tkind(c, actual) != TK_FUNCTION || sem_tkind(c, expected) != TK_POINTER) {
+  return 0;
+}
+  int32_t el = tys->elem[expected];
+  return el < 0 || tys->kind[el] == TK_VOID;
+}
+
+bool sem_effects_subset(Sem* c, int32_t a, int32_t e) {
+  int32_t i = 0;
+  while (i < sem_ty_neffects(c->t, a)) {
+  const char* x = sem_ty_effect(c->t, a, i);
+  bool found = 0;
+  int32_t j = 0;
+  while (j < sem_ty_neffects(c->t, e)) {
+  if (sem_s_eq(sem_ty_effect(c->t, e, j), x)) {
+  found = 1;
+}
+  j = (j + 1);
+}
+  if (found == 0) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+bool sem_can_coerce(Sem* c, int32_t actual, int32_t expected) {
+  __flowc_tail: ;
+  SemTys* tys = (SemTys*)(c->t);
+  if (actual < 0 || expected < 0) {
+  return 1;
+}
+  if (sem_is_type_param(c, actual) || sem_is_type_param(c, expected)) {
+  return 1;
+}
+  int32_t ka = sem_tkind(c, actual);
+  int32_t ke = sem_tkind(c, expected);
+  if (c->strict == 0 && (ka == TK_VOID || ka == TK_UNKNOWN || ke == TK_VOID || ke == TK_UNKNOWN)) {
+  return 1;
+}
+  if (sem_is_span(c, expected) || sem_is_span(c, actual)) {
+  return sem_borrow_compatible(c, actual, expected);
+}
+  if (sem_ty_eq(c->t, actual, expected)) {
+  return 1;
+}
+  SemIntVec* ad = (SemIntVec*)(sem_dims_of(c, actual));
+  SemIntVec* ed = (SemIntVec*)(sem_dims_of(c, expected));
+  if (ad != NULL && ed != NULL) {
+  return sem_dims_eq(ad, ed);
+}
+  if (ad != NULL || ed != NULL) {
+  return 0;
+}
+  if (sem_tk_is_numeric(ka) && sem_tk_is_numeric(ke)) {
+  return 1;
+}
+  if (ka == TK_POINTER && ke == TK_POINTER) {
+  return 1;
+}
+  if (ka == TK_STRING && ke == TK_POINTER) {
+  return 1;
+}
+  if (sem_fn_to_void_ptr(c, actual, expected)) {
+  return 1;
+}
+  if (ka == TK_STRUCT && ke == TK_POINTER) {
+  return 1;
+}
+  if (sem_tk_is_numeric(ka) && ke == TK_POINTER) {
+  return 1;
+}
+  if (ka == TK_POINTER && sem_tk_is_numeric(ke)) {
+  return 1;
+}
+  if (ka == TK_ARRAY && ke == TK_POINTER) {
+  return 1;
+}
+  if (ka == TK_ARRAY && ke == TK_ARRAY) {
+  if (tys->size[actual] == 0) {
+  return 1;
+}
+  if (tys->elem[actual] >= 0 && tys->elem[expected] >= 0) {
+  {
+  __auto_type __flowc_targ0 = c;
+  __auto_type __flowc_targ1 = tys->elem[actual];
+  __auto_type __flowc_targ2 = tys->elem[expected];
+  c = __flowc_targ0;
+  actual = __flowc_targ1;
+  expected = __flowc_targ2;
+  goto __flowc_tail;
+  }
+}
+  return 1;
+}
+  if (ka == TK_NULL && ke == TK_POINTER) {
+  return 1;
+}
+  if (ka == TK_BOOL && sem_tk_is_numeric(ke)) {
+  return c->strict == 0;
+}
+  if (ke == TK_BOOL && sem_tk_is_numeric(ka)) {
+  return c->strict == 0;
+}
+  if (ka == TK_FUNCTION && ke == TK_FUNCTION) {
+  int32_t n = sem_ty_nparams(c->t, actual);
+  if (n != sem_ty_nparams(c->t, expected)) {
+  return 0;
+}
+  int32_t i = 0;
+  while (i < n) {
+  if (sem_can_coerce(c, sem_ty_param(c->t, actual, i), sem_ty_param(c->t, expected, i)) == 0) {
+  return 0;
+}
+  i = (i + 1);
+}
+  int32_t ar = tys->ret[actual];
+  if (ar < 0) {
+  ar = sem_ty_mk(c->t, TK_VOID);
+}
+  int32_t er = tys->ret[expected];
+  if (er < 0) {
+  er = sem_ty_mk(c->t, TK_VOID);
+}
+  if (sem_can_coerce(c, ar, er) == 0) {
+  return 0;
+}
+  return sem_effects_subset(c, actual, expected);
+}
+  if (c->strict == 0 && (ka == TK_STRUCT || ke == TK_STRUCT)) {
+  return 1;
+}
+  return 0;
+}
+
+bool sem_is_c_string_pair(Sem* c, int32_t actual, int32_t expected) {
+  bool sa = sem_tkind(c, actual) == TK_STRING || sem_s_eq(sem_ty_name(c->t, actual), "string");
+  bool se = sem_tkind(c, expected) == TK_STRING || sem_s_eq(sem_ty_name(c->t, expected), "string");
+  bool pa = sem_s_eq(sem_ty_name(c->t, actual), "ptr<i8>") || sem_s_eq(sem_ty_name(c->t, actual), "ptr<u8>") || sem_s_eq(sem_ty_name(c->t, actual), "ptr<char>");
+  bool pe = sem_s_eq(sem_ty_name(c->t, expected), "ptr<i8>") || sem_s_eq(sem_ty_name(c->t, expected), "ptr<u8>") || sem_s_eq(sem_ty_name(c->t, expected), "ptr<char>");
+  return sa && pe || pa && se;
+}
+
+bool sem_is_compatible(Sem* c, int32_t actual, int32_t expected) {
+  __flowc_tail: ;
+  if (actual < 0 || expected < 0) {
+  return 1;
+}
+  SemTys* tys = (SemTys*)(c->t);
+  if (sem_ty_eq(c->t, actual, expected)) {
+  return 1;
+}
+  if (sem_is_type_param(c, actual) || sem_is_type_param(c, expected)) {
+  return 1;
+}
+  if (c->relax_c_strings && sem_is_c_string_pair(c, actual, expected)) {
+  return 1;
+}
+  int32_t ka = sem_tkind(c, actual);
+  int32_t ke = sem_tkind(c, expected);
+  if (ka == TK_FUNCTION && ke == TK_FUNCTION) {
+  int32_t n = sem_ty_nparams(c->t, actual);
+  if (n != sem_ty_nparams(c->t, expected)) {
+  return 0;
+}
+  int32_t i = 0;
+  while (i < n) {
+  if (sem_is_compatible(c, sem_ty_param(c->t, actual, i), sem_ty_param(c->t, expected, i)) == 0) {
+  return 0;
+}
+  i = (i + 1);
+}
+  int32_t ar = tys->ret[actual];
+  if (ar < 0) {
+  ar = sem_ty_mk(c->t, TK_VOID);
+}
+  int32_t er = tys->ret[expected];
+  if (er < 0) {
+  er = sem_ty_mk(c->t, TK_VOID);
+}
+  {
+  __auto_type __flowc_targ0 = c;
+  __auto_type __flowc_targ1 = ar;
+  __auto_type __flowc_targ2 = er;
+  c = __flowc_targ0;
+  actual = __flowc_targ1;
+  expected = __flowc_targ2;
+  goto __flowc_tail;
+  }
+}
+  if (sem_is_span(c, expected) || sem_is_span(c, actual)) {
+  return sem_borrow_compatible(c, actual, expected);
+}
+  SemIntVec* ad = (SemIntVec*)(sem_dims_of(c, actual));
+  SemIntVec* ed = (SemIntVec*)(sem_dims_of(c, expected));
+  if (ad != NULL && ed != NULL) {
+  return sem_dims_eq(ad, ed);
+}
+  if (ad != NULL || ed != NULL) {
+  return 0;
+}
+  if (ke == TK_STRUCT && sem_s_starts(tys->name[expected], "capability_")) {
+  if (ka == TK_STRUCT) {
+  return 1;
+}
+}
+  if (ke == TK_POINTER && ka == TK_I32) {
+  return 1;
+}
+  if (ka == TK_POINTER && ke == TK_POINTER) {
+  int32_t ae = tys->elem[actual];
+  int32_t ee = tys->elem[expected];
+  if (ae >= 0 && tys->kind[ae] == TK_VOID) {
+  return 1;
+}
+  if (ee >= 0 && tys->kind[ee] == TK_VOID) {
+  return 1;
+}
+  if (ae >= 0 && (tys->kind[ae] == TK_U8 || tys->kind[ae] == TK_I8)) {
+  return 1;
+}
+  if (ee >= 0 && (tys->kind[ee] == TK_U8 || tys->kind[ee] == TK_I8)) {
+  return 1;
+}
+}
+  if (ka == TK_STRUCT && ke == TK_POINTER) {
+  return 1;
+}
+  if (ka == TK_STRING && ke == TK_POINTER) {
+  int32_t ee2 = tys->elem[expected];
+  if (ee2 >= 0) {
+  int32_t k2 = tys->kind[ee2];
+  if (k2 == TK_U8 || k2 == TK_I8 || k2 == TK_VOID) {
+  return 1;
+}
+}
+}
+  if (sem_fn_to_void_ptr(c, actual, expected)) {
+  return 1;
+}
+  if (ka == TK_ARRAY && ke == TK_POINTER) {
+  int32_t ee3 = tys->elem[expected];
+  if (ee3 >= 0 && tys->kind[ee3] == TK_VOID) {
+  return 1;
+}
+  if (sem_ty_eq(c->t, tys->elem[actual], ee3)) {
+  return 1;
+}
+  if (tys->elem[actual] >= 0 && ee3 >= 0 && sem_is_compatible(c, tys->elem[actual], ee3)) {
+  return 1;
+}
+}
+  if (ka == TK_ARRAY && ke == TK_ARRAY) {
+  if (sem_ty_eq(c->t, tys->elem[actual], tys->elem[expected])) {
+  return 1;
+}
+  if (tys->elem[actual] >= 0 && tys->elem[expected] >= 0 && sem_is_compatible(c, tys->elem[actual], tys->elem[expected])) {
+  return 1;
+}
+}
+  if (sem_tk_is_int(ka) && sem_tk_is_int(ke)) {
+  return 1;
+}
+  if (sem_tk_is_float(ka) && sem_tk_is_float(ke)) {
+  return 1;
+}
+  if (sem_tk_is_int(ka) && sem_tk_is_float(ke)) {
+  return 1;
+}
+  return 0;
+}
+
+bool sem_is_byte_pointer(Sem* c, int32_t ty) {
+  SemTys* tys = (SemTys*)(c->t);
+  if (sem_tkind(c, ty) != TK_POINTER) {
+  return 0;
+}
+  int32_t el = tys->elem[ty];
+  if (el < 0) {
+  return 1;
+}
+  int32_t k = tys->kind[el];
+  return k == TK_I8 || k == TK_U8 || k == TK_VOID;
+}
+
+bool sem_is_byte_array(Sem* c, int32_t ty) {
+  SemTys* tys = (SemTys*)(c->t);
+  if (sem_tkind(c, ty) != TK_ARRAY) {
+  return 0;
+}
+  int32_t el = tys->elem[ty];
+  return el >= 0 && (tys->kind[el] == TK_I8 || tys->kind[el] == TK_U8);
+}
+
+bool sem_can_cast(Sem* c, int32_t actual, int32_t target) {
+  if (actual < 0 || target < 0) {
+  return 1;
+}
+  SemTys* tys = (SemTys*)(c->t);
+  if (sem_ty_eq(c->t, actual, target)) {
+  return 1;
+}
+  SemIntVec* ad = (SemIntVec*)(sem_dims_of(c, actual));
+  SemIntVec* td = (SemIntVec*)(sem_dims_of(c, target));
+  if (ad != NULL && td != NULL) {
+  return sem_dims_eq(ad, td);
+}
+  if (td != NULL) {
+  return sem_is_numeric(c, actual);
+}
+  if (ad != NULL) {
+  return sem_is_numeric(c, target);
+}
+  int32_t ka = sem_tkind(c, actual);
+  int32_t kt = sem_tkind(c, target);
+  if (kt == TK_DISTINCT && tys->base[target] >= 0) {
+  return sem_ty_eq(c->t, actual, tys->base[target]);
+}
+  if (ka == TK_DISTINCT && tys->base[actual] >= 0) {
+  return sem_ty_eq(c->t, target, tys->base[actual]);
+}
+  bool na_ = sem_tk_is_int(ka) || sem_tk_is_float(ka) || ka == TK_BOOL;
+  bool nt_ = sem_tk_is_int(kt) || sem_tk_is_float(kt) || kt == TK_BOOL;
+  if (na_ && nt_) {
+  return 1;
+}
+  if (ka == TK_POINTER && kt == TK_POINTER) {
+  return 1;
+}
+  if (ka == TK_POINTER && sem_tk_is_int(kt)) {
+  return 1;
+}
+  if (kt == TK_POINTER && sem_tk_is_int(ka)) {
+  return 1;
+}
+  if (ka == TK_POINTER && kt == TK_FUNCTION) {
+  return 1;
+}
+  if (kt == TK_POINTER && ka == TK_FUNCTION) {
+  return 1;
+}
+  if (ka == TK_ARRAY && kt == TK_POINTER) {
+  int32_t te = tys->elem[target];
+  if (te < 0 || tys->kind[te] == TK_VOID) {
+  return 1;
+}
+  if (sem_ty_eq(c->t, tys->elem[actual], te)) {
+  return 1;
+}
+}
+  if (sem_is_byte_pointer(c, actual) && kt == TK_STRING) {
+  return 1;
+}
+  if (ka == TK_STRING && sem_is_byte_pointer(c, target)) {
+  return 1;
+}
+  if (sem_is_byte_array(c, actual) && kt == TK_STRING) {
+  return 1;
+}
+  if (ka == TK_STRING && sem_is_byte_array(c, target)) {
+  return 1;
+}
+  return 0;
+}
+
+const char* sem_undeclared_type_name(Sem* c, int32_t a, int32_t b) {
+  SemTys* tys = (SemTys*)(c->t);
+  if (a >= 0 && tys->kind[a] == TK_UNKNOWN && sem_s_len(tys->name[a]) > 0) {
+  return tys->name[a];
+}
+  if (b >= 0 && tys->kind[b] == TK_UNKNOWN && sem_s_len(tys->name[b]) > 0) {
+  return tys->name[b];
+}
+  return "";
+}
+
+int32_t sem_scan_attributes(Sem* c, int32_t lo, int32_t hi) {
+  Lexer lx = flowc_lexer_new(c->src, hi);
+  (lx).pos = lo;
+  int32_t n = 0;
+  Token tk = flowc_lexer_next((&lx));
+  while ((tk).kind != TOK_EOF) {
+  if ((tk).kind == TOK_AT) {
+  Token nt = flowc_lexer_next((&lx));
+  if ((nt).kind != TOK_IDENT && (nt).kind != TOK_KEYWORD) {
+  tk = nt;
+  continue;
+}
+  const char* name = sem_s_span(c->src, (nt).start, (nt).end);
+  Lexer save = lx;
+  Token pk = flowc_lexer_next((&lx));
+  if ((pk).kind == TOK_LPAREN) {
+  const char* args = "";
+  int32_t nargs = 0;
+  const char* cur = "";
+  bool have = 0;
+  Token a = flowc_lexer_next((&lx));
+  while ((a).kind != TOK_EOF && (a).kind != TOK_RPAREN) {
+  if ((a).kind == TOK_COMMA) {
+  if (nargs > 0) {
+  args = __flowc_str_concat(args, ",");
+}
+  args = __flowc_str_concat(args, cur);
+  nargs = (nargs + 1);
+  cur = "";
+  have = 0;
+} else {
+  if ((a).kind == TOK_EQ) {
+  cur = __flowc_str_concat(cur, "=");
+} else {
+  if ((a).kind == TOK_STRING) {
+  cur = __flowc_str_concat(cur, sem_strip_quotes(sem_s_span(c->src, (a).start, (a).end)));
+  have = 1;
+} else {
+  cur = __flowc_str_concat(cur, sem_s_span(c->src, (a).start, (a).end));
+  have = 1;
+}
+}
+}
+  a = flowc_lexer_next((&lx));
+}
+  if (have || sem_s_len(cur) > 0) {
+  if (nargs > 0) {
+  args = __flowc_str_concat(args, ",");
+}
+  args = __flowc_str_concat(args, cur);
+}
+  if (sem_s_eq(name, "cInclude") == 0 && sem_s_eq(name, "cImport") == 0 && sem_s_eq(name, "cEmbed") == 0) {
+  sem_sv_push(c->attr_pool, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(name, "("), args), ")"));
+  n = (n + 1);
+}
+} else {
+  lx = save;
+  sem_sv_push(c->attr_pool, name);
+  n = (n + 1);
+}
+}
+  tk = flowc_lexer_next((&lx));
+}
+  return n;
+}
+
+const char* sem_strip_quotes(const char* s) {
+  int32_t a = 0;
+  int32_t b = sem_s_len(s);
+  while (a < b && sem_s_byte(s, a) == 34) {
+  a = (a + 1);
+}
+  while (b > a && sem_s_byte(s, (b - 1)) == 34) {
+  b = (b - 1);
+}
+  while (a < b && sem_s_byte(s, a) == 39) {
+  a = (a + 1);
+}
+  while (b > a && sem_s_byte(s, (b - 1)) == 39) {
+  b = (b - 1);
+}
+  return sem_s_slice(s, a, b);
+}
+
+const char* sem_parse_attribute(const char* attr, SemStrVec* args) {
+  int32_t lp = sem_s_index_byte(attr, 40);
+  if (lp >= 0 && sem_s_ends(attr, ")")) {
+  const char* name = sem_s_strip(sem_s_slice(attr, 0, lp));
+  const char* rest = sem_s_slice(attr, (lp + 1), (sem_s_len(attr) - 1));
+  SemStrVec* parts = (SemStrVec*)(sem_s_split(rest, 44));
+  int32_t i = 0;
+  while (i < parts->len) {
+  const char* a = sem_s_strip(sem_sv_get(parts, i));
+  if (sem_s_len(a) > 0) {
+  sem_sv_push(args, a);
+}
+  i = (i + 1);
+}
+  return name;
+}
+  return sem_s_strip(attr);
+}
+
+int32_t sem_lifetime_index(const char* d) {
+  if (sem_s_eq(d, "callback")) {
+  return 0;
+}
+  if (sem_s_eq(d, "frame")) {
+  return 1;
+}
+  if (sem_s_eq(d, "session")) {
+  return 2;
+}
+  if (sem_s_eq(d, "application")) {
+  return 3;
+}
+  return (0 - 1);
+}
+
+const char* sem_domain_name(int32_t i) {
+  if (i == 0) {
+  return "callback";
+}
+  if (i == 1) {
+  return "frame";
+}
+  if (i == 2) {
+  return "session";
+}
+  return "application";
+}
+
+int32_t sem_lifetime_domain(Sem* c, int32_t start, int32_t n) {
+  int32_t i = 0;
+  while (i < n) {
+  SemStrVec* args = (SemStrVec*)(sem_sv_new());
+  const char* name = sem_parse_attribute(sem_sv_get(c->attr_pool, (start + i)), args);
+  if (sem_s_eq(name, "lifetime") && args->len == 1 && sem_lifetime_index(sem_sv_get(args, 0)) >= 0) {
+  return sem_lifetime_index(sem_sv_get(args, 0));
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+bool sem_is_known_attribute(const char* n) {
+  return sem_sv_has(sem_known_attributes(), n);
+}
+
+SemStrVec* sem_known_attributes() {
+  SemStrVec* v = (SemStrVec*)(sem_sv_new());
+  sem_sv_push(v, "always_inline");
+  sem_sv_push(v, "c");
+  sem_sv_push(v, "compile");
+  sem_sv_push(v, "flow_api");
+  sem_sv_push(v, "gpu");
+  sem_sv_push(v, "guard");
+  sem_sv_push(v, "hot");
+  sem_sv_push(v, "inline");
+  sem_sv_push(v, "interp");
+  sem_sv_push(v, "jit");
+  sem_sv_push(v, "libm");
+  sem_sv_push(v, "lifetime");
+  sem_sv_push(v, "mlir");
+  sem_sv_push(v, "monomorphized");
+  sem_sv_push(v, "noinline");
+  sem_sv_push(v, "only");
+  sem_sv_push(v, "python");
+  sem_sv_push(v, "rt_safe");
+  sem_sv_push(v, "safe");
+  sem_sv_push(v, "target");
+  sem_sv_push(v, "test");
+  sem_sv_push(v, "unsafe");
+  return v;
+}
+
+bool sem_takes_args(const char* n) {
+  return sem_s_eq(n, "only") || sem_s_eq(n, "guard") || sem_s_eq(n, "target") || sem_s_eq(n, "lifetime") || sem_s_eq(n, "python");
+}
+
+bool sem_target_item_ok(const char* item) {
+  int32_t n = sem_s_len(item);
+  int32_t i = 0;
+  if (i < n && (sem_s_byte(item, i) == 43 || sem_s_byte(item, i) == 45)) {
+  i = (i + 1);
+}
+  int32_t phase = 0;
+  int32_t seg = 0;
+  while (i < n) {
+  int32_t ch = sem_s_byte(item, i);
+  bool word = sem_s_is_alpha(ch) || sem_s_is_digit(ch) || ch == 46;
+  if (phase == 0) {
+  if (word) {
+  seg = (seg + 1);
+} else {
+  if (ch == 45) {
+  if (seg == 0) {
+  return 0;
+}
+  seg = 0;
+} else {
+  if (ch == 61) {
+  if (seg == 0) {
+  return 0;
+}
+  phase = 1;
+  seg = 0;
+} else {
+  return 0;
+}
+}
+}
+} else {
+  if (word || ch == 43) {
+  seg = (seg + 1);
+} else {
+  if (ch == 45) {
+  if (seg == 0) {
+  return 0;
+}
+  seg = 0;
+} else {
+  return 0;
+}
+}
+}
+  i = (i + 1);
+}
+  return seg > 0;
+}
+
+const char* sem_validate_target_spec(const char* spec) {
+  if (sem_s_len(spec) == 0) {
+  return "@target(...) requires a non-empty target string";
+}
+  SemStrVec* items = (SemStrVec*)(sem_s_split(spec, 44));
+  int32_t i = 0;
+  while (i < items->len) {
+  const char* item = sem_s_strip(sem_sv_get(items, i));
+  if (sem_s_len(item) == 0) {
+  return __flowc_str_concat(__flowc_str_concat("@target(\"", spec), "\") has an empty component");
+}
+  if (sem_target_item_ok(item) == 0) {
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("@target(\"", spec), "\") component '"), item), "' is not a valid target feature; expected forms are 'avx2', '+avx2', '-sse', 'no-sse', 'arch=haswell' or 'tune=native'");
+}
+  i = (i + 1);
+}
+  return "";
+}
+
+void sem_attribute_errors(Sem* c, const char* fn_name, int32_t start, int32_t n) {
+  SemStrVec* seen = (SemStrVec*)(sem_sv_new());
+  bool lifetime_seen = 0;
+  int32_t i = 0;
+  while (i < n) {
+  SemStrVec* args = (SemStrVec*)(sem_sv_new());
+  const char* name = sem_parse_attribute(sem_sv_get(c->attr_pool, (start + i)), args);
+  if (sem_is_known_attribute(name) == 0) {
+  SemStrVec* known = (SemStrVec*)(sem_known_attributes());
+  const char* ks = "";
+  int32_t k = 0;
+  while (k < known->len) {
+  if (k > 0) {
+  ks = __flowc_str_concat(ks, ", ");
+}
+  ks = __flowc_str_concat(__flowc_str_concat(ks, "@"), sem_sv_get(known, k));
+  k = (k + 1);
+}
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Unknown attribute '@", name), "' on function '"), fn_name), "'. Known attributes: "), ks));
+} else {
+  sem_sv_add(seen, name);
+  if (args->len > 0 && sem_takes_args(name) == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Attribute '@", name), "' on function '"), fn_name), "' takes no arguments"));
+} else {
+  if (sem_s_eq(name, "lifetime")) {
+  const char* known2 = "callback, frame, session, application";
+  if (lifetime_seen) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("'", fn_name), "' declares more than one '@lifetime' domain; a declaration lives in exactly one domain"));
+} else {
+  lifetime_seen = 1;
+  if (args->len != 1) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Attribute '@lifetime' on '", fn_name), "' takes exactly one domain: "), known2));
+} else {
+  if (sem_lifetime_index(sem_sv_get(args, 0)) < 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Unknown lifetime domain '", sem_sv_get(args, 0)), "' on '"), fn_name), "'. Known domains: "), known2), " (see docs/language/lifetime-domains.md)"));
+}
+}
+}
+} else {
+  if (sem_s_eq(name, "target")) {
+  if (args->len == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Attribute '@target' on function '", fn_name), "' requires a target string, e.g. @target(\"avx2\")"));
+} else {
+  const char* problem = sem_validate_target_spec(sem_sv_join(args, ","));
+  if (sem_s_len(problem) > 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(problem, " (on function '"), fn_name), "')"));
+}
+}
+}
+}
+}
+}
+  i = (i + 1);
+}
+  if (sem_sv_has(seen, "noinline") && (sem_sv_has(seen, "inline") || sem_sv_has(seen, "always_inline"))) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Function '", fn_name), "' cannot be both '@noinline' and '@inline'/'@always_inline'"));
+}
+  if (sem_sv_has(seen, "safe") && sem_sv_has(seen, "unsafe")) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Function '", fn_name), "' cannot be both '@safe' and '@unsafe'"));
+}
 }
 
 
@@ -38434,7 +41996,7 @@ int32_t flowc_parser_is_name(Parser p) {
   if (((p).cur).kind == TOK_IDENT) {
   return 1;
 }
-  return ((flowc_token_is_kw((p).cur, KW_AND) + flowc_token_is_kw((p).cur, KW_OR)) + flowc_token_is_kw((p).cur, KW_TEST));
+  return (((flowc_token_is_kw((p).cur, KW_AND) + flowc_token_is_kw((p).cur, KW_OR)) + flowc_token_is_kw((p).cur, KW_TEST)) + flowc_token_is_kw((p).cur, KW_TO));
 }
 
 int32_t flowc_parser_ident_is(Parser p, const char* lit) {
@@ -38888,7 +42450,7 @@ int32_t flowc_parse_atom(Parser* p) {
   flowc_parser_advance(p);
   return id;
 }
-  if ((tok).kind == TOK_IDENT || flowc_token_is_kw(tok, KW_AND) == 1 || flowc_token_is_kw(tok, KW_OR) == 1) {
+  if ((tok).kind == TOK_IDENT || flowc_token_is_kw(tok, KW_AND) == 1 || flowc_token_is_kw(tok, KW_OR) == 1 || flowc_token_is_kw(tok, KW_TO) == 1) {
   int32_t name_s = (tok).start;
   int32_t name_e = (tok).end;
   flowc_parser_advance(p);
@@ -40321,6 +43883,9 @@ int32_t flowc_parse_stmt_inner(Parser* p) {
   is_expr = 1;
 }
   if (flowc_token_is_kw((p[0]).cur, KW_NOT) == 1 || flowc_token_is_kw((p[0]).cur, KW_DBG) == 1) {
+  is_expr = 1;
+}
+  if (flowc_token_is_kw((p[0]).cur, KW_TO) == 1) {
   is_expr = 1;
 }
   if (is_expr == 1) {
@@ -48497,6 +52062,102 @@ int32_t flowc_overload_select_decl(FlowcOverloadTable table, AstArena arena, uin
 }
 
 
+bool ch_is_ident_start(int32_t c);
+bool ch_is_ident(int32_t c);
+const char* ch_include_line(const char* header);
+const char* ch_command(const char* pre, const char* header, const char* dir);
+int32_t ch_scan(const char* cmd, SemStrMap* names, bool defines);
+bool sem_header_names(const char* header, const char* dir, SemStrMap* names);
+bool ch_is_ident_start(int32_t c) {
+  return c >= 97 && c <= 122 || c >= 65 && c <= 90 || c == 95;
+}
+
+bool ch_is_ident(int32_t c) {
+  return ch_is_ident_start(c) || c >= 48 && c <= 57;
+}
+
+const char* ch_include_line(const char* header) {
+  if (sem_s_starts(header, "\"") || sem_s_starts(header, "<")) {
+  return __flowc_str_concat("#include ", header);
+}
+  if (sem_s_starts(header, "/") || sem_s_starts(header, "./") || sem_s_starts(header, "../")) {
+  return __flowc_str_concat(__flowc_str_concat("#include \"", header), "\"");
+}
+  return __flowc_str_concat(__flowc_str_concat("#include <", header), ">");
+}
+
+const char* ch_command(const char* pre, const char* header, const char* dir) {
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("printf '%s\\n' '", ch_include_line(header)), "' | "), pre), " -I '"), dir), "' -I /usr/include -I /usr/local/include - 2>/dev/null");
+}
+
+int32_t ch_scan(const char* cmd, SemStrMap* names, bool defines) {
+  void* fp = (void*)(popen(cmd, "r"));
+  if (fp == NULL) {
+  return 0;
+}
+  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc(8192)));
+  int32_t total = 0;
+  while (fgets(buf, 8192, fp) != NULL) {
+  int32_t n = sem_s_len((const char*)(buf));
+  total = (total + n);
+  if (defines) {
+  if (sem_s_starts((const char*)(buf), "#define ")) {
+  int32_t k = 8;
+  int32_t s = k;
+  while (k < n && ch_is_ident((int32_t)(buf[k]))) {
+  k = (k + 1);
+}
+  if (k > s && k < n && buf[k] == 32) {
+  sem_sm_put(names, sem_s_span(buf, s, k), 1);
+}
+}
+} else {
+  int32_t i = 0;
+  while (i < n) {
+  if (ch_is_ident_start((int32_t)(buf[i]))) {
+  int32_t s2 = i;
+  while (i < n && ch_is_ident((int32_t)(buf[i]))) {
+  i = (i + 1);
+}
+  sem_sm_put(names, sem_s_span(buf, s2, i), 1);
+} else {
+  if (buf[i] >= 48 && buf[i] <= 57) {
+  while (i < n && ch_is_ident((int32_t)(buf[i]))) {
+  i = (i + 1);
+}
+} else {
+  i = (i + 1);
+}
+}
+}
+}
+}
+  pclose(fp);
+  return total;
+}
+
+bool sem_header_names(const char* header, const char* dir, SemStrMap* names) {
+  int32_t got = ch_scan(ch_command("cpp -P", header, dir), names, 0);
+  if (got == 0) {
+  got = ch_scan(ch_command("clang -E -P", header, dir), names, 0);
+}
+  if (got == 0) {
+  got = ch_scan(ch_command("gcc -E -P", header, dir), names, 0);
+}
+  if (got == 0) {
+  return 0;
+}
+  int32_t m = ch_scan(ch_command("cpp -dM", header, dir), names, 1);
+  if (m == 0) {
+  m = ch_scan(ch_command("clang -E -dM", header, dir), names, 1);
+}
+  if (m == 0) {
+  m = ch_scan(ch_command("gcc -E -dM", header, dir), names, 1);
+}
+  return 1;
+}
+
+
 static const int32_t FLOWC_OVERLOAD_ARG_TYPE_CAP = 128;
 int32_t flowc_overload_classify_args(AstArena arena, uint8_t* src, int32_t first_arg, int32_t* ident_type_nodes, int32_t arg_count, uint8_t* rows, int32_t* known, int32_t* literal_flags, int32_t row_cap);
 int32_t flowc_overload_classify_args(AstArena arena, uint8_t* src, int32_t first_arg, int32_t* ident_type_nodes, int32_t arg_count, uint8_t* rows, int32_t* known, int32_t* literal_flags, int32_t row_cap) {
@@ -48671,6 +52332,7 @@ int32_t flowc_cgen_find_const(AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_decl_type(AstArena arena, int32_t decl);
 int32_t flowc_cgen_find_struct(AstArena arena, uint8_t* src, int32_t start, int32_t end);
 int32_t flowc_cgen_expr_type_node(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
+int32_t flowc_cgen_base_is_ptr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_expr_is_ptr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_expr_is_string(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_ident_is_string(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
@@ -48855,7 +52517,7 @@ void flowc_cgen_emit_mono(CgenBuf* w, AstArena arena, uint8_t* src, int32_t root
 int32_t flowc_cgen_emit(AstArena arena, int32_t root, uint8_t* src, uint8_t* out, int32_t out_cap);
 int32_t flowc_cgen_collect_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t* buf, int32_t cap, int32_t len);
 CgenBuf flowc_cgen_buf_init(uint8_t* out, int32_t cap) {
-  return (CgenBuf){ .out = out, .cap = cap, .len = 0, .err = 0, .sigs = NULL, .sigs_len = 0, .cembed_names = NULL, .cembed_offs = NULL, .cembed_lens = NULL, .cembed_count = 0, .cap_starts = NULL, .cap_ends = NULL, .cap_count = 0, .in_lambda = 0, .lambda_cap_lambda = NULL, .lambda_cap_start = NULL, .lambda_cap_end = NULL, .lambda_cap_count = 0, .mono_tp_starts = NULL, .mono_tp_ends = NULL, .mono_tp_concrete = NULL, .mono_ntp = 0, .cur_fn = AST_NONE, .defer_ids = NULL, .defer_len = 0, .loop_defer_base = 0, .tail_fn = AST_NONE, .eff = NULL, .eff_len = 0, .fiber_main = 0, .checks = 0, .lval = 0, .dbg_file = NULL, .dbg_pos = 0, .dbg_line = 1, .plan_order = NULL, .plan_has = NULL, .plan_lo = NULL, .plan_hi = NULL, .plan_seen = NULL, .explain = 0, .handle_ids = NULL, .handle_len = 0 };
+  return (CgenBuf){ .out = out, .cap = cap, .len = 0, .err = 0, .sigs = NULL, .sigs_len = 0, .cembed_names = NULL, .cembed_offs = NULL, .cembed_lens = NULL, .cembed_count = 0, .cap_starts = NULL, .cap_ends = NULL, .cap_count = 0, .in_lambda = 0, .lambda_cap_lambda = NULL, .lambda_cap_start = NULL, .lambda_cap_end = NULL, .lambda_cap_count = 0, .mono_tp_starts = NULL, .mono_tp_ends = NULL, .mono_tp_concrete = NULL, .mono_ntp = 0, .cur_fn = AST_NONE, .defer_ids = NULL, .defer_len = 0, .loop_defer_base = 0, .tail_fn = AST_NONE, .eff = NULL, .eff_len = 0, .fiber_main = 0, .checks = 0, .lval = 0, .dbg_file = (const char*)(NULL), .dbg_pos = 0, .dbg_line = 1, .plan_order = NULL, .plan_has = NULL, .plan_lo = NULL, .plan_hi = NULL, .plan_seen = NULL, .explain = 0, .handle_ids = NULL, .handle_len = 0 };
 }
 
 void flowc_cgen_putc(CgenBuf* w, int32_t c) {
@@ -50156,7 +53818,7 @@ int32_t flowc_cgen_find_type_by_name(AstArena arena, uint8_t* src, uint8_t* name
   int32_t i = 0;
   while (i < (arena).len) {
   if (((arena).nodes[i]).kind == AST_TYPE) {
-  if (flowc_cgen_span_is(src, ((arena).nodes[i]).name_start, ((arena).nodes[i]).name_end, name) == 1) {
+  if (flowc_cgen_span_is(src, ((arena).nodes[i]).name_start, ((arena).nodes[i]).name_end, (const char*)(name)) == 1) {
   return i;
 }
 }
@@ -50750,6 +54412,27 @@ int32_t flowc_cgen_expr_type_node(CgenBuf* w, AstArena arena, uint8_t* src, int3
   return AST_NONE;
 }
   return AST_NONE;
+}
+
+int32_t flowc_cgen_base_is_ptr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
+  if (id != AST_NONE) {
+  int32_t k = ((arena).nodes[id]).kind;
+  int32_t ty = AST_NONE;
+  if (k == AST_CAST) {
+  ty = ((arena).nodes[id]).b;
+} else {
+  if (k == AST_CALL) {
+  int32_t fn = flowc_cgen_find_fn(arena, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+  if (fn != AST_NONE) {
+  ty = ((arena).nodes[fn]).b;
+}
+}
+}
+  if (ty != AST_NONE && ((arena).nodes[ty]).kind == AST_TYPE) {
+  return flowc_cgen_span_is(src, ((arena).nodes[ty]).name_start, ((arena).nodes[ty]).name_end, "ptr");
+}
+}
+  return flowc_cgen_expr_is_ptr(w, arena, src, id);
 }
 
 int32_t flowc_cgen_expr_is_ptr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
@@ -52047,15 +55730,15 @@ int32_t flowc_cgen_scan_lambda_caps(AstArena arena, uint8_t* src, int32_t id, in
 }
   return count;
 }
-  count = flowc_cgen_scan_lambda_caps(arena, src, ((arena).nodes[id]).a, buf, count, param_spans, nparams);
-  count = flowc_cgen_scan_lambda_caps(arena, src, ((arena).nodes[id]).b, buf, count, param_spans, nparams);
-  count = flowc_cgen_scan_lambda_caps(arena, src, ((arena).nodes[id]).c, buf, count, param_spans, nparams);
+  int32_t acc = flowc_cgen_scan_lambda_caps(arena, src, ((arena).nodes[id]).a, buf, count, param_spans, nparams);
+  acc = flowc_cgen_scan_lambda_caps(arena, src, ((arena).nodes[id]).b, buf, acc, param_spans, nparams);
+  acc = flowc_cgen_scan_lambda_caps(arena, src, ((arena).nodes[id]).c, buf, acc, param_spans, nparams);
   {
   __auto_type __flowc_targ0 = arena;
   __auto_type __flowc_targ1 = src;
   __auto_type __flowc_targ2 = ((arena).nodes[id]).next;
   __auto_type __flowc_targ3 = buf;
-  __auto_type __flowc_targ4 = count;
+  __auto_type __flowc_targ4 = acc;
   __auto_type __flowc_targ5 = param_spans;
   __auto_type __flowc_targ6 = nparams;
   arena = __flowc_targ0;
@@ -54816,9 +58499,16 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
 }
   if (kind == AST_FIELD_ACCESS) {
   int32_t base = ((arena).nodes[id]).a;
-  int32_t is_ptr = flowc_cgen_expr_is_ptr(w, arena, src, base);
+  int32_t is_ptr = flowc_cgen_base_is_ptr(w, arena, src, base);
   if (is_ptr == 1) {
+  bool wrap = base != AST_NONE && ((arena).nodes[base]).kind == AST_CAST;
+  if (wrap) {
+  flowc_cgen_putc(w, 40);
+}
   flowc_cgen_emit_expr(w, arena, src, base);
+  if (wrap) {
+  flowc_cgen_putc(w, 41);
+}
   flowc_cgen_puts(w, "->");
   flowc_cgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
 } else {
@@ -55791,7 +59481,7 @@ void flowc_cgen_emit_stmt(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   if (id == AST_NONE || (w[0]).err != 0) {
   return;
 }
-  if ((w[0]).dbg_file != NULL) {
+  if ((uint8_t*)((w[0]).dbg_file) != NULL) {
   flowc_cgen_line_directive(w, src, ((arena).nodes[id]).start);
 }
   int32_t kind = ((arena).nodes[id]).kind;
@@ -56669,6 +60359,15 @@ int32_t flowc_cgen_is_libc_fn(AstArena arena, uint8_t* src, int32_t id) {
   int32_t ns = ((arena).nodes[id]).name_start;
   int32_t ne = ((arena).nodes[id]).name_end;
   if (flowc_cgen_span_is(src, ns, ne, "fopen") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "fdopen") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "fileno") == 1) {
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "realpath") == 1) {
   return 1;
 }
   if (flowc_cgen_span_is(src, ns, ne, "fclose") == 1) {
@@ -59805,6 +63504,5053 @@ int32_t flowc_cgen_collect_sigs(AstArena arena, int32_t root, uint8_t* src, uint
 }
 
 
+#undef PAT_LITERAL
+static const int32_t PAT_LITERAL = 1;
+#undef PAT_WILDCARD
+static const int32_t PAT_WILDCARD = 2;
+#undef PAT_VARIABLE
+static const int32_t PAT_VARIABLE = 3;
+#undef PAT_STRUCT
+static const int32_t PAT_STRUCT = 4;
+#undef PAT_LIST
+static const int32_t PAT_LIST = 5;
+#undef PAT_OR
+static const int32_t PAT_OR = 6;
+#undef PAT_OTHER
+static const int32_t PAT_OTHER = 7;
+int32_t sem_tmk(Sem* c, int32_t k);
+const char* sem_tname(Sem* c, int32_t ty);
+int32_t sem_telem(Sem* c, int32_t ty);
+int32_t sem_tsize(Sem* c, int32_t ty);
+const char* sem_q(const char* s);
+const char* sem_location_suffix(Sem* c, int32_t node);
+void sem_set_pos(Sem* c, int32_t node);
+void sem_impl_markers(Sem* c, SemIntVec* offs, SemStrVec* traits, SemStrVec* types);
+void sem_scan_type_params(Sem* c, int32_t after);
+bool sem_extern_is_variadic(Sem* c, int32_t fnode);
+int32_t sem_build_function(Sem* c, int32_t fnode, const char* name, int32_t attr_start, int32_t attr_n, bool is_extern);
+bool sem_alias_is_distinct(Sem* c, int32_t start);
+bool sem_is_unit_alias(Sem* c, int32_t d);
+void sem_build_module(Sem* c, int32_t m, bool is_root);
+int32_t sem_decl_kind(Sem* c, int32_t i);
+const char* sem_decl_name(Sem* c, int32_t i);
+int32_t sem_decl_node(Sem* c, int32_t i);
+void sem_decl_enter(Sem* c, int32_t i);
+SemIntVec* sem_register_unit(Sem* c, int32_t d);
+void sem_struct_fields_from_ast(Sem* c, int32_t se, int32_t node);
+void sem_collect_types(Sem* c);
+void sem_define_function(Sem* c, const char* name, int32_t fi);
+SemStrVec* sem_function_effect_row(Sem* c, const char* name);
+void sem_collect_symbols(Sem* c);
+void sem_collect_lifetime_domains(Sem* c);
+int32_t sem_static_domain(Sem* c, const char* name);
+int32_t sem_match_generic_function(Sem* c, const char* call_name, SemIntVec* args);
+bool sem_ensure_generic_function_instance(Sem* c, const char* call_name);
+bool sem_is_slice(Sem* c, int32_t e);
+bool sem_is_unary_op(Sem* c, int32_t e, int32_t op);
+bool sem_is_variable(Sem* c, int32_t e);
+bool sem_is_method_call(Sem* c, int32_t e);
+bool sem_is_function_call(Sem* c, int32_t e);
+const char* sem_borrow_root_name(Sem* c, int32_t e);
+const char* sem_call_name(Sem* c, int32_t e);
+const char* sem_span_origin_get(Sem* c, const char* name);
+const char* sem_local_borrow_origin(Sem* c, int32_t e);
+const char* sem_domain_borrow_root(Sem* c, int32_t e);
+bool sem_is_reference_type(Sem* c, int32_t ty);
+int32_t sem_root_parameter_index(Sem* c, int32_t e);
+const char* sem_node_key(Sem* c, int32_t node);
+bool sem_domain_escape_to_static(Sem* c, int32_t stmt, int32_t value, const char* target, int32_t target_type);
+bool sem_domain_escape_by_return(Sem* c, int32_t stmt, int32_t value);
+void sem_resolved_calls_add(Sem* c, const char* callee);
+void sem_check_rt_safe_call(Sem* c, const char* name);
+bool sem_is_dangerous_extern(const char* name);
+void sem_check_safe_call(Sem* c, const char* name);
+void sem_check_domain_call(Sem* c, const char* name);
+int32_t sem_infer_type_quiet(Sem* c, int32_t e);
+bool sem_string_has_interp(Sem* c, int32_t e);
+int32_t sem_check_literal(Sem* c, int32_t e);
+bool sem_is_literal(Sem* c, int32_t e);
+int64_t sem_literal_int(Sem* c, int32_t e, bool via_const, int32_t* ok);
+int64_t sem_int_text(const char* txt);
+int32_t sem_lookup_const_symbol(Sem* c, const char* name);
+int32_t sem_check_variable(Sem* c, int32_t e);
+const char* sem_binop_name(Sem* c, int32_t e);
+bool sem_binop_has_line(const char* op);
+bool sem_is_compare_op(const char* op);
+int32_t sem_check_dimensioned_op(Sem* c, int32_t e, const char* op, int32_t lt, int32_t rt, SemIntVec* ld, SemIntVec* rd);
+int32_t sem_check_binary_op(Sem* c, int32_t e);
+int32_t sem_binary_types(Sem* c, int32_t e, const char* op, int32_t lt, int32_t rt);
+const char* sem_unary_op_name(Sem* c, int32_t e);
+int32_t sem_check_unary_op(Sem* c, int32_t e);
+int32_t sem_builtin_kind(const char* name);
+int32_t sem_builtin_type(Sem* c, const char* name);
+bool sem_is_dimensionless_math(const char* name);
+SemStrVec* sem_active_handlers(Sem* c);
+int32_t sem_effect_op(Sem* c, int32_t effect_decl, const char* op);
+int32_t sem_effect_op_sig(Sem* c, int32_t effect_decl, int32_t opnode, SemIntVec* params);
+int32_t sem_check_effect_call(Sem* c, const char* eff, const char* op, SemIntVec* args);
+SemIntVec* sem_candidates_of(Sem* c, int32_t s);
+const char* sem_effect_name_of_param(Sem* c, int32_t p);
+int32_t sem_match_implicit_effect_overload(Sem* c, SemIntVec* cands, SemIntVec* arg_types);
+int32_t sem_static_length(Sem* c, int32_t e);
+int32_t sem_borrow_source_mutable(Sem* c, int32_t e);
+bool sem_check_span_arguments(Sem* c, const char* name, SemIntVec* args, int32_t sig);
+int32_t sem_check_function_call(Sem* c, const char* name, SemIntVec* args, int32_t node, int32_t stmt);
+const char* sem_effect_name_for_receiver(Sem* c, int32_t recv);
+const char* sem_impl_method_for_receiver(Sem* c, int32_t recv_type, const char* method);
+SemIntVec* sem_call_args(Sem* c, int32_t first);
+int32_t sem_check_method_call(Sem* c, int32_t e, int32_t stmt);
+int32_t sem_check_range_sum(Sem* c, int32_t e);
+bool sem_is_pipe_find(Sem* c, int32_t e);
+int32_t sem_check_call(Sem* c, int32_t e, int32_t stmt);
+const char* sem_struct_lit_name(Sem* c, int32_t e);
+int32_t sem_check_struct_literal(Sem* c, int32_t e);
+int32_t sem_check_record_update(Sem* c, int32_t e);
+int32_t sem_check_struct_fields(Sem* c, const char* name, int32_t first);
+int32_t sem_check_field_access(Sem* c, int32_t e);
+bool sem_sortable_kind(int32_t k);
+int32_t sem_check_sort_expr(Sem* c, int32_t e);
+int32_t sem_check_find_expr(Sem* c, int32_t arr, int32_t target);
+int32_t sem_array_lit_len(Sem* c, int32_t e);
+int32_t sem_check_slice_expr(Sem* c, int32_t e);
+int32_t sem_check_cast(Sem* c, int32_t e);
+int32_t sem_check_if_expr(Sem* c, int32_t e);
+int32_t sem_check_try(Sem* c, int32_t e);
+int32_t sem_check_lambda(Sem* c, int32_t e);
+int32_t sem_check_array_literal(Sem* c, int32_t e);
+int32_t sem_check_vector_literal(Sem* c, int32_t e);
+int32_t sem_check_interpolation(Sem* c, int32_t e);
+bool sem_interp_parts_ok(Sem* c, int32_t s, int32_t t);
+int32_t sem_check_embedded_expr(Sem* c, int32_t a, int32_t b);
+int32_t sem_check_expression_stmt(Sem* c, int32_t e, int32_t stmt);
+int32_t sem_fork_field_type(Sem* c, int32_t v);
+int32_t sem_check_pipe_block(Sem* c, int32_t e);
+int32_t sem_check_expression(Sem* c, int32_t e);
+int32_t sem_check_block(Sem* c, int32_t b);
+int32_t sem_check_var_decl(Sem* c, int32_t s);
+void sem_local_storage_discard(Sem* c, const char* name);
+int32_t sem_check_return_stmt(Sem* c, int32_t s);
+int32_t sem_check_assignment(Sem* c, int32_t s);
+void sem_check_condition(Sem* c, int32_t cond, const char* what);
+int32_t sem_check_if_stmt(Sem* c, int32_t s);
+int32_t sem_check_while_stmt(Sem* c, int32_t s);
+int32_t sem_check_for_stmt(Sem* c, int32_t s);
+int32_t sem_check_handle_stmt(Sem* c, int32_t s);
+int32_t sem_expr_pattern_kind(Sem* c, int32_t e);
+bool sem_struct_pattern_ok(Sem* c, int32_t e);
+void sem_bind_struct_pattern(Sem* c, int32_t pat);
+void sem_bind_simple_struct(Sem* c, int32_t arm);
+void sem_literal_pattern_check(Sem* c, int32_t lit, int32_t value_type);
+void sem_list_pattern_check(Sem* c, int32_t first, int32_t value_type);
+const char* sem_list_pattern_repr(Sem* c, int32_t first);
+void sem_variable_pattern(Sem* c, const char* name, int32_t value_type);
+int32_t sem_arm_pattern_kind(Sem* c, int32_t arm);
+bool sem_arm_is_negative(Sem* c, int32_t arm);
+bool sem_is_default_arm(Sem* c, int32_t arm);
+int32_t sem_arm_body(Sem* c, int32_t arm);
+int32_t sem_arm_guard(Sem* c, int32_t arm);
+const char* sem_arm_var_name(Sem* c, int32_t arm);
+void sem_bind_arm(Sem* c, int32_t arm, int32_t value_type);
+bool sem_arm_literal_values(Sem* c, int32_t arm, SemIntVec* ints, SemIntVec* bools, int32_t want);
+bool sem_literal_value_of(Sem* c, int32_t lit, SemIntVec* ints, SemIntVec* bools, int32_t want);
+const char* sem_format_int_gaps(SemIntVec* covered, int32_t lo, int32_t hi);
+const char* sem_match_enum_target(Sem* c, int32_t s, int32_t value_type);
+void sem_warn_enum_exhaustiveness(Sem* c, int32_t s, const char* enum_name);
+void sem_warn_match_exhaustiveness(Sem* c, int32_t s, int32_t value_type);
+int32_t sem_check_match_stmt(Sem* c, int32_t s);
+int32_t sem_check_statement(Sem* c, int32_t s);
+void sem_check_trait_bounds(Sem* c, int32_t fi);
+void sem_check_function(Sem* c, int32_t fi);
+void sem_check_const(Sem* c, int32_t d);
+bool sem_is_static_primitive(const char* n);
+bool sem_is_const_scalar(Sem* c, int32_t e);
+void sem_check_static(Sem* c, int32_t d);
+void sem_check_declarations(Sem* c);
+void sem_compute_parameter_escapes(Sem* c);
+void sem_verify_parameter_escapes(Sem* c);
+bool sem_is_rt_heap_name(const char* n);
+bool sem_is_rt_other_name(const char* n);
+bool sem_is_frame_unsafe(const char* n);
+void sem_compute_unsafe(Sem* c, bool frame, SemStrMap* out);
+const char* sem_unsafe_reason(Sem* c, bool frame, SemStrMap* m, const char* name);
+void sem_verify_rt_safe_calls(Sem* c);
+void sem_verify_domain_calls(Sem* c);
+void sem_collect_call_names(Sem* c, int32_t node, SemStrVec* out);
+void sem_scan_while_loops(Sem* c, int32_t node, const char* fn_name);
+void sem_check_recursion(Sem* c);
+int32_t sem_index_of_name(SemStrVec* names, const char* n);
+void sem_recursion_dfs(Sem* c, const char* name, SemStrVec* names, SemPtrVec* calls, SemStrVec* visited, SemStrVec* on_stack, SemStrVec* recursive);
+void sem_check_unbounded_loops(Sem* c);
+void sem_read_cimports(Sem* c);
+bool sem_cimport_knows(Sem* c, const char* name);
+void sem_check_program(Sem* c);
+int32_t sem_report(Sem* c);
+void sem_print_diag(Sem* c, int32_t i, const char* what);
+int32_t sem_error_count(Sem* c);
+int32_t sem_fatal_count(Sem* c);
+void flowc_semcheck_single(AstArena arena, int32_t root, uint8_t* src, const char* path, int32_t* counts);
+void sem_iv_set_raw(int32_t* p, int32_t i, int32_t v);
+int32_t sem_tmk(Sem* c, int32_t k) {
+  return sem_ty_mk(c->t, k);
+}
+
+const char* sem_tname(Sem* c, int32_t ty) {
+  return sem_ty_name(c->t, ty);
+}
+
+int32_t sem_telem(Sem* c, int32_t ty) {
+  SemTys* tys = (SemTys*)(c->t);
+  if (ty < 0) {
+  return (0 - 1);
+}
+  return tys->elem[ty];
+}
+
+int32_t sem_tsize(Sem* c, int32_t ty) {
+  SemTys* tys = (SemTys*)(c->t);
+  if (ty < 0) {
+  return NO_SIZE;
+}
+  return tys->size[ty];
+}
+
+const char* sem_q(const char* s) {
+  return __flowc_str_concat(__flowc_str_concat("'", s), "'");
+}
+
+const char* sem_location_suffix(Sem* c, int32_t node) {
+  if (node < 0) {
+  return "";
+}
+  int32_t p = sem_nstart(c, node);
+  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(" at line ", sem_s_itoa((int64_t)(sem_py_pos(c, c->cm, p, 0)))), ", column "), sem_s_itoa((int64_t)(sem_py_pos(c, c->cm, p, 1))));
+}
+
+void sem_set_pos(Sem* c, int32_t node) {
+  if (c->pos_lock) {
+  return;
+}
+  if (node >= 0) {
+  int32_t p = sem_nstart(c, node);
+  if (p > 0) {
+  c->pos = p;
+} else {
+  if (((c->ar).nodes[node]).name_start > 0) {
+  c->pos = ((c->ar).nodes[node]).name_start;
+}
+}
+}
+}
+
+void sem_impl_markers(Sem* c, SemIntVec* offs, SemStrVec* traits, SemStrVec* types) {
+  uint8_t* src = (uint8_t*)(c->src);
+  int32_t i = 0;
+  bool bol = 1;
+  while (src[i] != 0) {
+  if (bol && src[i] == 35 && src[(i + 1)] == 109 && src[(i + 2)] == 112 && src[(i + 3)] == 108 && src[(i + 4)] == 32) {
+  int32_t k = (i + 5);
+  int32_t ts = k;
+  while (sem_s_is_alpha((int32_t)(src[k])) || sem_s_is_digit((int32_t)(src[k]))) {
+  k = (k + 1);
+}
+  int32_t te = k;
+  while (src[k] == 32) {
+  k = (k + 1);
+}
+  if (src[k] == 102 && src[(k + 1)] == 111 && src[(k + 2)] == 114) {
+  k = (k + 3);
+  while (src[k] == 32) {
+  k = (k + 1);
+}
+  int32_t ys = k;
+  while (sem_s_is_alpha((int32_t)(src[k])) || sem_s_is_digit((int32_t)(src[k]))) {
+  k = (k + 1);
+}
+  sem_iv_push(offs, i);
+  sem_sv_push(traits, sem_s_span(src, ts, te));
+  sem_sv_push(types, sem_s_span(src, ys, k));
+}
+}
+  if (src[i] == 10) {
+  bol = 1;
+} else {
+  if (src[i] != 32 && src[i] != 9) {
+  bol = 0;
+}
+}
+  i = (i + 1);
+}
+}
+
+void sem_scan_type_params(Sem* c, int32_t after) {
+  uint8_t* src = (uint8_t*)(c->src);
+  int32_t k = after;
+  while (sem_s_is_space((int32_t)(src[k]))) {
+  k = (k + 1);
+}
+  if (src[k] != 60) {
+  return;
+}
+  k = (k + 1);
+  int32_t depth = 1;
+  while (src[k] != 0 && depth > 0) {
+  while (sem_s_is_space((int32_t)(src[k])) || src[k] == 44) {
+  k = (k + 1);
+}
+  if (src[k] == 62) {
+  depth = (depth - 1);
+  k = (k + 1);
+} else {
+  if (sem_s_is_alpha((int32_t)(src[k]))) {
+  int32_t ns = k;
+  while (sem_s_is_alpha((int32_t)(src[k])) || sem_s_is_digit((int32_t)(src[k]))) {
+  k = (k + 1);
+}
+  sem_sv_push(c->tp_names, sem_s_span(src, ns, k));
+  while (sem_s_is_space((int32_t)(src[k]))) {
+  k = (k + 1);
+}
+  if (src[k] == 58) {
+  k = (k + 1);
+  while (sem_s_is_space((int32_t)(src[k]))) {
+  k = (k + 1);
+}
+  int32_t bs = k;
+  while (sem_s_is_alpha((int32_t)(src[k])) || sem_s_is_digit((int32_t)(src[k]))) {
+  k = (k + 1);
+}
+  sem_sv_push(c->tp_bounds, sem_s_span(src, bs, k));
+} else {
+  sem_sv_push(c->tp_bounds, "");
+}
+} else {
+  k = (k + 1);
+}
+}
+}
+}
+
+bool sem_extern_is_variadic(Sem* c, int32_t fnode) {
+  uint8_t* src = (uint8_t*)(c->src);
+  int32_t k = ((c->ar).nodes[fnode]).name_end;
+  while (src[k] != 0 && src[k] != 40) {
+  k = (k + 1);
+}
+  int32_t depth = 0;
+  while (src[k] != 0) {
+  if (src[k] == 40) {
+  depth = (depth + 1);
+}
+  if (src[k] == 41) {
+  depth = (depth - 1);
+  if (depth == 0) {
+  return 0;
+}
+}
+  if (src[k] == 46 && src[(k + 1)] == 46 && src[(k + 2)] == 46) {
+  return 1;
+}
+  k = (k + 1);
+}
+  return 0;
+}
+
+int32_t sem_build_function(Sem* c, int32_t fnode, const char* name, int32_t attr_start, int32_t attr_n, bool is_extern) {
+  int32_t fi = sem_fi_new(c, name, c->cm, fnode);
+  sem_iv_set(c->fi_astart, fi, attr_start);
+  sem_iv_set(c->fi_alen, fi, attr_n);
+  sem_iv_set(c->fi_pstart, fi, sem_sv_len(c->fp_names));
+  int32_t p = sem_na(c, fnode);
+  while (p != AST_NONE) {
+  const char* pn = sem_nname(c, p);
+  sem_fi_add_param(c, fi, pn, sem_pt_of_ast(c, sem_na(c, p)));
+  p = sem_nnext(c, p);
+}
+  int32_t rt = sem_nb(c, fnode);
+  if (rt == AST_NONE) {
+  sem_iv_set(c->fi_ret, fi, sem_pt_mk(c->t, "void"));
+} else {
+  sem_iv_set(c->fi_ret, fi, sem_pt_of_ast(c, rt));
+}
+  sem_iv_set(c->fi_estart, fi, sem_sv_len(c->ef_pool));
+  int32_t row = sem_row_of(c, fnode);
+  if (row >= 0) {
+  int32_t e = sem_na(c, row);
+  while (e != AST_NONE) {
+  sem_sv_push(c->ef_pool, sem_nname(c, e));
+  sem_iv_set(c->fi_elen, fi, (sem_iv_get(c->fi_elen, fi) + 1));
+  e = sem_nnext(c, e);
+}
+}
+  sem_iv_set(c->fi_tpstart, fi, sem_sv_len(c->tp_names));
+  if (sem_nival(c, fnode) > 0 && is_extern == 0) {
+  int32_t before = sem_sv_len(c->tp_names);
+  sem_scan_type_params(c, ((c->ar).nodes[fnode]).name_end);
+  sem_iv_set(c->fi_tplen, fi, (sem_sv_len(c->tp_names) - before));
+}
+  if (is_extern) {
+  sem_iv_set(c->fi_extern, fi, 1);
+  if (sem_extern_is_variadic(c, fnode)) {
+  sem_iv_set(c->fi_variadic, fi, 1);
+}
+} else {
+  sem_iv_set(c->fi_body, fi, sem_ncc(c, fnode));
+}
+  return fi;
+}
+
+bool sem_alias_is_distinct(Sem* c, int32_t start) {
+  int32_t i = (start - 1);
+  while (i >= 0 && sem_s_is_space((int32_t)(c->src[i]))) {
+  i = (i - 1);
+}
+  if (i < 7) {
+  return 0;
+}
+  return sem_s_span_is(c->src, (i - 7), (i + 1), "distinct");
+}
+
+bool sem_is_unit_alias(Sem* c, int32_t d) {
+  if (sem_na(c, d) != AST_NONE) {
+  return 0;
+}
+  int32_t s = sem_nstart(c, d);
+  return sem_s_span_is(c->src, s, (s + 4), "unit");
+}
+
+void sem_build_module(Sem* c, int32_t m, bool is_root) {
+  sem_set_mod(c, m);
+  if (is_root) {
+  c->root_mod = m;
+}
+  int32_t root = c->m_root[m];
+  if (root < 0 || sem_nk(c, root) != AST_PROGRAM) {
+  return;
+}
+  SemIntVec* moffs = (SemIntVec*)(sem_iv_new());
+  SemStrVec* mtraits = (SemStrVec*)(sem_sv_new());
+  SemStrVec* mtypes = (SemStrVec*)(sem_sv_new());
+  sem_impl_markers(c, moffs, mtraits, mtypes);
+  int32_t cur_impl = (0 - 1);
+  int32_t cur_marker = (0 - 1);
+  int32_t prev_end = 0;
+  int32_t item = sem_na(c, root);
+  while (item != AST_NONE) {
+  int32_t d = item;
+  if (sem_nk(c, d) == AST_EXPORT) {
+  if (sem_nival(c, d) == 1) {
+  prev_end = sem_nend(c, item);
+  item = sem_nnext(c, item);
+  continue;
+}
+  d = sem_na(c, d);
+}
+  int32_t k = sem_nk(c, d);
+  int32_t astart = sem_sv_len(c->attr_pool);
+  int32_t an = 0;
+  if (k == AST_FN || k == AST_LET || k == AST_EXTERN) {
+  an = sem_scan_attributes(c, prev_end, sem_nstart(c, item));
+}
+  if (k == AST_FN) {
+  const char* name = sem_nname(c, d);
+  int32_t mk = (0 - 1);
+  int32_t j = 0;
+  while (j < moffs->len) {
+  if (moffs->data[j] < sem_nstart(c, d)) {
+  mk = j;
+}
+  j = (j + 1);
+}
+  bool in_impl = 0;
+  if (mk >= 0) {
+  const char* prefix = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(sem_sv_get(mtypes, mk), "_"), sem_sv_get(mtraits, mk)), "_");
+  if (sem_s_starts(name, prefix)) {
+  in_impl = 1;
+  if (cur_marker != mk) {
+  int32_t im = sem_sv_len(c->im_type);
+  sem_sv_push(c->im_type, sem_sv_get(mtypes, mk));
+  sem_sv_push(c->im_trait, sem_sv_get(mtraits, mk));
+  sem_pv_push(c->im_methods, (void*)(sem_iv_new()));
+  cur_impl = sem_decl_add(c, DK_IMPL, m, d, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(sem_sv_get(mtypes, mk), "_"), sem_sv_get(mtraits, mk)), "_impl"), im);
+  cur_marker = mk;
+}
+  int32_t fi = sem_build_function(c, d, sem_s_from(name, sem_s_len(prefix)), astart, an, 0);
+  sem_sv_set(c->fi_mangled, fi, name);
+  sem_iv_set(c->fi_has_self, fi, 1);
+  SemIntVec* ml = (SemIntVec*)((SemIntVec*)(sem_pv_get(c->im_methods, sem_iv_get(c->d_info, cur_impl))));
+  sem_iv_push(ml, fi);
+}
+}
+  if (in_impl == 0) {
+  cur_marker = (0 - 1);
+  if (sem_s_eq(name, "main") == 0 || is_root) {
+  int32_t fi2 = sem_build_function(c, d, name, astart, an, 0);
+  sem_decl_add(c, DK_FUNC, m, d, name, fi2);
+}
+}
+} else {
+  if (k == AST_EXTERN) {
+  int32_t f = sem_na(c, d);
+  while (f != AST_NONE) {
+  if (sem_nk(c, f) == AST_FN) {
+  int32_t fi3 = sem_build_function(c, f, sem_nname(c, f), astart, an, 1);
+  sem_decl_add(c, DK_FUNC, m, f, sem_nname(c, f), fi3);
+} else {
+  if (sem_nk(c, f) == AST_EXTERN_TYPE) {
+  sem_decl_add(c, DK_EXTERN_TYPE, m, f, sem_nname(c, f), (0 - 1));
+}
+}
+  f = sem_nnext(c, f);
+}
+} else {
+  if (k == AST_EXTERN_TYPE) {
+  sem_decl_add(c, DK_EXTERN_TYPE, m, d, sem_nname(c, d), (0 - 1));
+} else {
+  if (k == AST_C_IMPORT) {
+  c->has_cimport = 1;
+  int32_t hs = ((c->ar).nodes[d]).name_start;
+  int32_t he = ((c->ar).nodes[d]).name_end;
+  sem_sv_push(c->cimport_headers, sem_s_span(c->src, (hs + 1), (he - 1)));
+} else {
+  if (k == AST_STRUCT) {
+  sem_decl_add(c, DK_STRUCT, m, d, sem_nname(c, d), (0 - 1));
+} else {
+  if (k == AST_ENUM) {
+  sem_decl_add(c, DK_ENUM, m, d, sem_nname(c, d), (0 - 1));
+} else {
+  if (k == AST_TYPE_ALIAS) {
+  if (sem_is_unit_alias(c, d)) {
+  sem_decl_add(c, DK_UNIT, m, d, sem_nname(c, d), (0 - 1));
+} else {
+  if (sem_alias_is_distinct(c, sem_nstart(c, d))) {
+  sem_decl_add(c, DK_DISTINCT, m, d, sem_nname(c, d), (0 - 1));
+} else {
+  sem_decl_add(c, DK_ALIAS, m, d, sem_nname(c, d), (0 - 1));
+}
+}
+} else {
+  if (k == AST_CONST) {
+  sem_decl_add(c, DK_CONST, m, d, sem_nname(c, d), (0 - 1));
+} else {
+  if (k == AST_LET) {
+  int32_t di = sem_decl_add(c, DK_STATIC, m, d, sem_nname(c, d), (0 - 1));
+  sem_iv_set(c->d_astart, di, astart);
+  sem_iv_set(c->d_alen, di, an);
+} else {
+  if (k == AST_EFFECT) {
+  sem_decl_add(c, DK_EFFECT, m, d, sem_nname(c, d), (0 - 1));
+} else {
+  if (k == AST_CAPABILITY) {
+  sem_decl_add(c, DK_CAPABILITY, m, d, sem_nname(c, d), (0 - 1));
+} else {
+  if (k == AST_EXPR_STMT) {
+  int32_t s = sem_nstart(c, d);
+  if (sem_s_span_is(c->src, s, (s + 5), "trait")) {
+  int32_t q2 = (s + 5);
+  while (sem_s_is_space((int32_t)(c->src[q2]))) {
+  q2 = (q2 + 1);
+}
+  int32_t ts = q2;
+  while (sem_s_is_alpha((int32_t)(c->src[q2])) || sem_s_is_digit((int32_t)(c->src[q2]))) {
+  q2 = (q2 + 1);
+}
+  sem_decl_add(c, DK_TRAIT, m, d, sem_s_span(c->src, ts, q2), (0 - 1));
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+  if (k != AST_FN) {
+  cur_marker = (0 - 1);
+}
+  prev_end = sem_nend(c, item);
+  item = sem_nnext(c, item);
+}
+}
+
+int32_t sem_decl_kind(Sem* c, int32_t i) {
+  return sem_iv_get(c->d_kind, i);
+}
+
+const char* sem_decl_name(Sem* c, int32_t i) {
+  return sem_sv_get(c->d_name, i);
+}
+
+int32_t sem_decl_node(Sem* c, int32_t i) {
+  return sem_iv_get(c->d_node, i);
+}
+
+void sem_decl_enter(Sem* c, int32_t i) {
+  sem_set_mod(c, sem_iv_get(c->d_mod, i));
+  sem_set_pos(c, sem_iv_get(c->d_node, i));
+}
+
+SemIntVec* sem_register_unit(Sem* c, int32_t d) {
+  int32_t node = sem_decl_node(c, d);
+  const char* name = sem_decl_name(c, d);
+  int32_t line = sem_py_pos(c, c->cm, sem_nstart(c, node), 0);
+  const char* loc = __flowc_str_concat(__flowc_str_concat("line ", sem_s_itoa((int64_t)(line))), ": ");
+  SemIntVec* existing = (SemIntVec*)(sem_unit_dims_of_name(c, name));
+  if (existing != NULL) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(loc, "unit '"), name), "' is already declared"));
+  return existing;
+}
+  uint8_t* src = (uint8_t*)(c->src);
+  int32_t end = sem_nend(c, node);
+  int32_t i = ((c->ar).nodes[node]).name_end;
+  while (i < end && sem_s_is_space((int32_t)(src[i]))) {
+  i = (i + 1);
+}
+  SemIntVec* dims = (SemIntVec*)(NULL);
+  if (i < end && src[i] == 61) {
+  i = (i + 1);
+  SemIntVec* acc = (SemIntVec*)(sem_iv_new());
+  int32_t sign = 1;
+  bool more = 1;
+  while (more) {
+  while (i < end && sem_s_is_space((int32_t)(src[i]))) {
+  i = (i + 1);
+}
+  if (i < end && sem_s_is_digit((int32_t)(src[i]))) {
+  while (i < end && sem_s_is_digit((int32_t)(src[i]))) {
+  i = (i + 1);
+}
+} else {
+  if (i < end && sem_s_is_alpha((int32_t)(src[i]))) {
+  int32_t fs = i;
+  while (i < end && (sem_s_is_alpha((int32_t)(src[i])) || sem_s_is_digit((int32_t)(src[i])))) {
+  i = (i + 1);
+}
+  const char* fname = sem_s_span(src, fs, i);
+  int32_t ex = 1;
+  int32_t j = i;
+  while (j < end && sem_s_is_space((int32_t)(src[j]))) {
+  j = (j + 1);
+}
+  if (j < end && src[j] == 94) {
+  j = (j + 1);
+  while (j < end && sem_s_is_space((int32_t)(src[j]))) {
+  j = (j + 1);
+}
+  bool neg = 0;
+  if (j < end && src[j] == 45) {
+  neg = 1;
+  j = (j + 1);
+}
+  ex = 0;
+  while (j < end && sem_s_is_digit((int32_t)(src[j]))) {
+  ex = (((ex * 10) + (int32_t)(src[j])) - 48);
+  j = (j + 1);
+}
+  if (neg) {
+  ex = (0 - ex);
+}
+  i = j;
+}
+  SemIntVec* fd = (SemIntVec*)(sem_unit_dims_of_name(c, fname));
+  if (fd == NULL) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(loc, "unknown unit '"), fname), "' in declaration of '"), name), "' (units must be declared before use)"));
+} else {
+  acc = sem_dims_combine(acc, sem_dims_scale(fd, (sign * ex)), 1);
+}
+} else {
+  more = 0;
+}
+}
+  if (more) {
+  while (i < end && sem_s_is_space((int32_t)(src[i]))) {
+  i = (i + 1);
+}
+  if (i < end && src[i] == 42) {
+  sign = 1;
+  i = (i + 1);
+} else {
+  if (i < end && src[i] == 47) {
+  sign = (0 - 1);
+  i = (i + 1);
+} else {
+  more = 0;
+}
+}
+}
+}
+  dims = acc;
+} else {
+  int32_t index = sem_sv_len(c->unit_base_order);
+  sem_sv_push(c->unit_base_order, name);
+  dims = sem_iv_new();
+  int32_t z = 0;
+  while (z < index) {
+  sem_iv_push(dims, 0);
+  z = (z + 1);
+}
+  sem_iv_push(dims, 1);
+}
+  sem_set_unit_dims(c, name, dims);
+  if (dims->len > 0) {
+  const char* key = sem_dims_key(dims);
+  if (sem_sm_has(c->unit_canonical, key) == 0) {
+  sem_sm_put(c->unit_canonical, key, sem_sv_len(c->unit_canonical_names));
+  sem_sv_push(c->unit_canonical_names, name);
+}
+}
+  return dims;
+}
+
+void sem_struct_fields_from_ast(Sem* c, int32_t se, int32_t node) {
+  sem_iv_set(c->se_fstart, se, sem_sv_len(c->sf_names));
+  int32_t f = sem_na(c, node);
+  while (f != AST_NONE) {
+  sem_se_add_field(c, se, sem_nname(c, f), sem_pt_of_ast(c, sem_na(c, f)));
+  f = sem_nnext(c, f);
+}
+}
+
+void sem_collect_types(Sem* c) {
+  SemTys* tys = (SemTys*)(c->t);
+  int32_t i = 0;
+  while (i < sem_iv_len(c->d_kind)) {
+  sem_decl_enter(c, i);
+  int32_t k = sem_decl_kind(c, i);
+  const char* name = sem_decl_name(c, i);
+  int32_t node = sem_decl_node(c, i);
+  if (k == DK_STRUCT) {
+  if (sem_sm_has(c->struct_types, name)) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Struct '", name), "' already defined"));
+} else {
+  int32_t se = sem_se_new(c, name, SE_STRUCT, i);
+  sem_struct_fields_from_ast(c, se, node);
+  sem_iv_set(c->se_tpstart, se, sem_sv_len(c->tp_names));
+  int32_t tp = sem_nb(c, node);
+  while (tp != AST_NONE) {
+  sem_sv_push(c->tp_names, sem_nname(c, tp));
+  sem_sv_push(c->tp_bounds, "");
+  sem_iv_set(c->se_tplen, se, (sem_iv_get(c->se_tplen, se) + 1));
+  tp = sem_nnext(c, tp);
+}
+  sem_sm_put(c->struct_types, name, se);
+  if (sem_iv_get(c->se_tplen, se) > 0) {
+  sem_sm_put(c->generic_struct_types, name, se);
+}
+}
+} else {
+  if (k == DK_ENUM) {
+  int32_t se2 = sem_se_new(c, name, SE_STRUCT, i);
+  sem_iv_set(c->se_fstart, se2, sem_sv_len(c->sf_names));
+  sem_se_add_field(c, se2, "tag", sem_pt_mk(c->t, "i32"));
+  sem_sm_put(c->struct_types, name, se2);
+  sem_sm_put(c->enum_decls, name, i);
+  int32_t v = sem_na(c, node);
+  while (v != AST_NONE) {
+  const char* vname = __flowc_str_concat(__flowc_str_concat(name, "_"), sem_nname(c, v));
+  int32_t s = sem_sym_new(c, vname, sem_tmk(c, TK_I32), SK_CONST);
+  sem_scope_define_global(c, s);
+  sem_sm_put(c->enum_variant_owner, vname, i);
+  v = sem_nnext(c, v);
+}
+} else {
+  if (k == DK_ALIAS) {
+  int32_t base_pt = sem_pt_of_ast(c, sem_na(c, node));
+  int32_t alias_t = sem_ty_named(c->t, TK_TYPE_ALIAS, name);
+  int32_t new_base_1 = sem_parse_type(c, base_pt);
+  tys->base[alias_t] = new_base_1;
+  int32_t s2 = sem_sym_new(c, name, alias_t, SK_TYPE);
+  sem_scope_define_global(c, s2);
+  int32_t se3 = sem_se_new(c, name, SE_ALIAS, i);
+  sem_iv_set(c->se_base, se3, base_pt);
+  sem_sm_put(c->struct_types, name, se3);
+} else {
+  if (k == DK_EXTERN_TYPE) {
+  int32_t se4 = sem_se_new(c, name, SE_STRUCT, i);
+  sem_sm_put(c->struct_types, name, se4);
+  sem_sm_put(c->opaque_c_types, name, 1);
+} else {
+  if (k == DK_DISTINCT || k == DK_UNIT) {
+  int32_t base_pt2 = (0 - 1);
+  if (k == DK_UNIT) {
+  base_pt2 = sem_pt_mk(c->t, "f64");
+} else {
+  base_pt2 = sem_pt_of_ast(c, sem_na(c, node));
+}
+  int32_t base_t = sem_parse_type(c, base_pt2);
+  SemIntVec* dims = (SemIntVec*)(NULL);
+  if (k == DK_UNIT) {
+  dims = sem_register_unit(c, i);
+}
+  int32_t dt = sem_ty_named(c->t, TK_DISTINCT, name);
+  tys->base[dt] = base_t;
+  tys->dims[dt] = dims;
+  int32_t s3 = sem_sym_new(c, name, dt, SK_TYPE);
+  sem_scope_define_global(c, s3);
+  int32_t se5 = sem_se_new(c, name, SE_DISTINCT, i);
+  sem_iv_set(c->se_base, se5, base_pt2);
+  sem_sm_put(c->struct_types, name, se5);
+} else {
+  if (k == DK_EFFECT) {
+  if (sem_sm_has(c->effect_types, name)) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Effect '", name), "' already defined"));
+} else {
+  sem_sm_put(c->effect_types, name, i);
+}
+} else {
+  if (k == DK_CAPABILITY) {
+  if (sem_sm_has(c->capability_types, name)) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Capability '", name), "' already defined"));
+} else {
+  sem_sm_put(c->capability_types, name, i);
+}
+} else {
+  if (k == DK_TRAIT) {
+  if (sem_sm_has(c->trait_types, name)) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Trait '", name), "' already defined"));
+} else {
+  sem_sm_put(c->trait_types, name, i);
+}
+} else {
+  if (k == DK_IMPL) {
+  int32_t im = sem_iv_get(c->d_info, i);
+  const char* ty = sem_sv_get(c->im_type, im);
+  const char* tr = sem_sv_get(c->im_trait, im);
+  sem_sm_put(c->impl_pairs, __flowc_str_concat(__flowc_str_concat(ty, "\x01"), tr), 1);
+  SemIntVec* ml = (SemIntVec*)((SemIntVec*)(sem_pv_get(c->im_methods, im)));
+  int32_t j = 0;
+  while (j < ml->len) {
+  int32_t fi = ml->data[j];
+  const char* key = __flowc_str_concat(__flowc_str_concat(ty, "\x01"), sem_sv_get(c->fi_name, fi));
+  int32_t li = sem_sm_get(c->impl_methods, key);
+  if (li < 0) {
+  li = sem_pv_len(c->impl_method_lists);
+  sem_pv_push(c->impl_method_lists, (void*)(sem_sv_new()));
+  sem_sm_put(c->impl_methods, key, li);
+}
+  SemStrVec* lst = (SemStrVec*)((SemStrVec*)(sem_pv_get(c->impl_method_lists, li)));
+  sem_sv_push(lst, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(ty, "_"), tr), "_"), sem_sv_get(c->fi_name, fi)));
+  j = (j + 1);
+}
+}
+}
+}
+}
+}
+}
+}
+}
+}
+  i = (i + 1);
+}
+}
+
+void sem_define_function(Sem* c, const char* name, int32_t fi) {
+  SemTys* tys = (SemTys*)(c->t);
+  int32_t f = sem_ty_mk(c->t, TK_FUNCTION);
+  int32_t i = 0;
+  while (i < sem_fi_nparams(c, fi)) {
+  sem_ty_add_param(c->t, f, sem_parse_type(c, sem_fi_param_type(c, fi, i)));
+  i = (i + 1);
+}
+  int32_t new_ret_2 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi));
+  tys->ret[f] = new_ret_2;
+  i = 0;
+  while (i < sem_fi_neffects(c, fi)) {
+  sem_ty_add_effect(c->t, f, sem_fi_effect(c, fi, i));
+  i = (i + 1);
+}
+  int32_t s = sem_sym_new(c, name, f, SK_FUNCTION);
+  sem_iv_set(c->sy_def, s, fi);
+  sem_scope_define_global(c, s);
+  SemStrVec* row = (SemStrVec*)(sem_sv_new());
+  i = 0;
+  while (i < sem_fi_neffects(c, fi)) {
+  sem_sv_push(row, sem_fi_effect(c, fi, i));
+  i = (i + 1);
+}
+  sem_sm_put(c->function_effects, name, sem_pv_len(c->function_effect_lists));
+  sem_pv_push(c->function_effect_lists, (void*)(row));
+  sem_sm_put(c->function_decls, name, fi);
+  i = 0;
+  while (i < row->len) {
+  const char* en = sem_sv_get(row, i);
+  if (sem_sm_has(c->effect_types, en) == 0 && c->strict) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Function '", name), "' declares unknown effect '"), en), "' in its `with` row"));
+}
+  i = (i + 1);
+}
+}
+
+SemStrVec* sem_function_effect_row(Sem* c, const char* name) {
+  int32_t k = sem_sm_get(c->function_effects, name);
+  if (k < 0) {
+  return NULL;
+}
+  return (SemStrVec*)(sem_pv_get(c->function_effect_lists, k));
+}
+
+void sem_collect_symbols(Sem* c) {
+  int32_t i = 0;
+  while (i < sem_iv_len(c->d_kind)) {
+  sem_decl_enter(c, i);
+  int32_t k = sem_decl_kind(c, i);
+  int32_t node = sem_decl_node(c, i);
+  if (k == DK_FUNC) {
+  int32_t fi = sem_iv_get(c->d_info, i);
+  if (sem_fi_ntparams(c, fi) > 0) {
+  sem_sm_put(c->generic_function_decls, sem_sv_get(c->fi_name, fi), fi);
+}
+  sem_define_function(c, sem_sv_get(c->fi_name, fi), fi);
+} else {
+  if (k == DK_IMPL) {
+  SemIntVec* ml = (SemIntVec*)((SemIntVec*)(sem_pv_get(c->im_methods, sem_iv_get(c->d_info, i))));
+  int32_t j = 0;
+  while (j < ml->len) {
+  int32_t fi2 = ml->data[j];
+  sem_set_mod(c, sem_iv_get(c->fi_mod, fi2));
+  sem_define_function(c, sem_sv_get(c->fi_mangled, fi2), fi2);
+  j = (j + 1);
+}
+} else {
+  if (k == DK_CONST) {
+  int32_t ct = sem_parse_type(c, sem_pt_of_ast(c, sem_na(c, node)));
+  int32_t s = sem_sym_new(c, sem_decl_name(c, i), ct, SK_CONST);
+  sem_iv_set(c->sy_def, s, i);
+  sem_scope_define_global(c, s);
+} else {
+  if (k == DK_STATIC) {
+  int32_t st = sem_parse_type(c, sem_pt_of_ast(c, sem_na(c, node)));
+  int32_t s2 = sem_sym_new(c, sem_decl_name(c, i), st, SK_VARIABLE);
+  sem_iv_set(c->sy_mut, s2, 1);
+  sem_iv_set(c->sy_def, s2, i);
+  sem_scope_define_global(c, s2);
+  sem_sm_put(c->static_names, sem_decl_name(c, i), 1);
+}
+}
+}
+}
+  i = (i + 1);
+}
+}
+
+void sem_collect_lifetime_domains(Sem* c) {
+  int32_t i = 0;
+  while (i < sem_iv_len(c->d_kind)) {
+  int32_t k = sem_decl_kind(c, i);
+  if (k == DK_FUNC) {
+  int32_t fi = sem_iv_get(c->d_info, i);
+  int32_t d = sem_lifetime_domain(c, sem_iv_get(c->fi_astart, fi), sem_iv_get(c->fi_alen, fi));
+  if (d >= 0) {
+  sem_sm_put(c->function_domains, sem_sv_get(c->fi_name, fi), d);
+}
+} else {
+  if (k == DK_IMPL) {
+  SemIntVec* ml = (SemIntVec*)((SemIntVec*)(sem_pv_get(c->im_methods, sem_iv_get(c->d_info, i))));
+  int32_t j = 0;
+  while (j < ml->len) {
+  int32_t fi2 = ml->data[j];
+  int32_t d2 = sem_lifetime_domain(c, sem_iv_get(c->fi_astart, fi2), sem_iv_get(c->fi_alen, fi2));
+  if (d2 >= 0) {
+  sem_sm_put(c->function_domains, sem_sv_get(c->fi_mangled, fi2), d2);
+}
+  j = (j + 1);
+}
+} else {
+  if (k == DK_STATIC) {
+  int32_t d3 = sem_lifetime_domain(c, sem_iv_get(c->d_astart, i), sem_iv_get(c->d_alen, i));
+  if (d3 < 0) {
+  d3 = 3;
+}
+  sem_sm_put(c->static_domains, sem_decl_name(c, i), d3);
+}
+}
+}
+  i = (i + 1);
+}
+}
+
+int32_t sem_static_domain(Sem* c, const char* name) {
+  int32_t d = sem_sm_get(c->static_domains, name);
+  if (d < 0) {
+  return 3;
+}
+  return d;
+}
+
+int32_t sem_match_generic_function(Sem* c, const char* call_name, SemIntVec* args) {
+  if (sem_s_index_byte(call_name, 95) < 0) {
+  return (0 - 1);
+}
+  int32_t best = (0 - 1);
+  int32_t best_len = (0 - 1);
+  SemIntVec* best_args = (SemIntVec*)(NULL);
+  int32_t i = 0;
+  while (i < sem_sv_len(c->fi_name)) {
+  const char* name = sem_sv_get(c->fi_name, i);
+  if (sem_fi_ntparams(c, i) > 0 && sem_sm_get(c->generic_function_decls, name) == i) {
+  const char* prefix = __flowc_str_concat(name, "_");
+  if (sem_s_starts(call_name, prefix) && sem_s_len(name) > best_len) {
+  const char* suffix = sem_s_from(call_name, sem_s_len(prefix));
+  if (sem_s_len(suffix) > 0) {
+  int32_t np = sem_fi_ntparams(c, i);
+  if (np == 1) {
+  best = i;
+  best_len = sem_s_len(name);
+  best_args = sem_iv_new();
+  sem_iv_push(best_args, sem_pt_mk(c->t, suffix));
+} else {
+  SemStrVec* parts = (SemStrVec*)(sem_s_split(suffix, 95));
+  if (parts->len == np) {
+  best = i;
+  best_len = sem_s_len(name);
+  best_args = sem_iv_new();
+  int32_t j = 0;
+  while (j < parts->len) {
+  sem_iv_push(best_args, sem_pt_mk(c->t, sem_sv_get(parts, j)));
+  j = (j + 1);
+}
+}
+}
+}
+}
+}
+  i = (i + 1);
+}
+  if (best >= 0) {
+  int32_t j2 = 0;
+  while (j2 < best_args->len) {
+  sem_iv_push(args, best_args->data[j2]);
+  j2 = (j2 + 1);
+}
+}
+  return best;
+}
+
+bool sem_ensure_generic_function_instance(Sem* c, const char* call_name) {
+  if (sem_lookup(c, call_name) >= 0) {
+  return 1;
+}
+  SemIntVec* targs = (SemIntVec*)(sem_iv_new());
+  int32_t tpl = sem_match_generic_function(c, call_name, targs);
+  if (tpl < 0) {
+  return 0;
+}
+  SemStrVec* mnames = (SemStrVec*)(sem_sv_new());
+  SemIntVec* mtypes = (SemIntVec*)(sem_iv_new());
+  int32_t i = 0;
+  while (i < sem_fi_ntparams(c, tpl) && i < targs->len) {
+  sem_sv_push(mnames, sem_fi_tparam(c, tpl, i));
+  sem_iv_push(mtypes, targs->data[i]);
+  i = (i + 1);
+}
+  int32_t fi = sem_fi_new(c, call_name, sem_iv_get(c->fi_mod, tpl), sem_iv_get(c->fi_node, tpl));
+  sem_iv_set(c->fi_pstart, fi, sem_sv_len(c->fp_names));
+  i = 0;
+  while (i < sem_fi_nparams(c, tpl)) {
+  sem_fi_add_param(c, fi, sem_fi_param_name(c, tpl, i), sem_substitute_pt(c, sem_fi_param_type(c, tpl, i), mnames, mtypes));
+  i = (i + 1);
+}
+  sem_iv_set(c->fi_ret, fi, sem_substitute_pt(c, sem_iv_get(c->fi_ret, tpl), mnames, mtypes));
+  sem_iv_set(c->fi_astart, fi, sem_iv_get(c->fi_astart, tpl));
+  sem_iv_set(c->fi_alen, fi, sem_iv_get(c->fi_alen, tpl));
+  sem_iv_set(c->fi_extern, fi, sem_iv_get(c->fi_extern, tpl));
+  sem_iv_set(c->fi_estart, fi, sem_iv_get(c->fi_estart, tpl));
+  sem_iv_set(c->fi_elen, fi, sem_iv_get(c->fi_elen, tpl));
+  sem_iv_set(c->fi_body, fi, sem_iv_get(c->fi_body, tpl));
+  sem_define_function(c, call_name, fi);
+  return 1;
+}
+
+bool sem_is_slice(Sem* c, int32_t e) {
+  return sem_nk(c, e) == AST_INDEX && sem_nival(c, e) == 1;
+}
+
+bool sem_is_unary_op(Sem* c, int32_t e, int32_t op) {
+  return sem_nk(c, e) == AST_UNARY && sem_nival(c, e) == op;
+}
+
+bool sem_is_variable(Sem* c, int32_t e) {
+  if (sem_nk(c, e) != AST_IDENT) {
+  return 0;
+}
+  if (sem_nival(c, e) == AST_IDENT_FORK_SRC || sem_nival(c, e) == AST_IDENT_SORT_MOD) {
+  return 0;
+}
+  return sem_nname_is(c, e, "null") == 0;
+}
+
+bool sem_is_method_call(Sem* c, int32_t e) {
+  if (sem_nk(c, e) != AST_CALL) {
+  return 0;
+}
+  return ((c->ar).nodes[e]).start > ((c->ar).nodes[e]).name_start && sem_na(c, e) != AST_NONE;
+}
+
+bool sem_is_function_call(Sem* c, int32_t e) {
+  return sem_nk(c, e) == AST_CALL && sem_is_method_call(c, e) == 0;
+}
+
+const char* sem_borrow_root_name(Sem* c, int32_t e) {
+  __flowc_tail: ;
+  if (e < 0) {
+  return (const char*)(NULL);
+}
+  if (sem_is_variable(c, e)) {
+  return sem_nname(c, e);
+}
+  if (sem_nk(c, e) == AST_INDEX) {
+  {
+  __auto_type __flowc_targ0 = c;
+  __auto_type __flowc_targ1 = sem_na(c, e);
+  c = __flowc_targ0;
+  e = __flowc_targ1;
+  goto __flowc_tail;
+  }
+}
+  if (sem_nk(c, e) == AST_FIELD_ACCESS) {
+  {
+  __auto_type __flowc_targ0 = c;
+  __auto_type __flowc_targ1 = sem_na(c, e);
+  c = __flowc_targ0;
+  e = __flowc_targ1;
+  goto __flowc_tail;
+  }
+}
+  return (const char*)(NULL);
+}
+
+const char* sem_call_name(Sem* c, int32_t e) {
+  const char* nm = sem_nname(c, e);
+  int32_t targs = sem_nb(c, e);
+  if (targs != AST_NONE) {
+  int32_t t = targs;
+  while (t != AST_NONE) {
+  nm = __flowc_str_concat(__flowc_str_concat(nm, "_"), sem_pt_name(c->t, sem_pt_of_ast(c, t)));
+  t = sem_nnext(c, t);
+}
+}
+  return nm;
+}
+
+const char* sem_span_origin_get(Sem* c, const char* name) {
+  int32_t k = sem_sm_get(c->span_origin, name);
+  if (k < 0) {
+  return (const char*)(NULL);
+}
+  return sem_sv_get(c->origin_pool, k);
+}
+
+const char* sem_local_borrow_origin(Sem* c, int32_t e) {
+  __flowc_tail: ;
+  if (e < 0) {
+  return (const char*)(NULL);
+}
+  if (sem_is_function_call(c, e)) {
+  const char* nm = sem_nname(c, e);
+  if (sem_s_starts(nm, "arena_alloc") || sem_s_starts(nm, "frame_alloc")) {
+  if (sem_na(c, e) != AST_NONE) {
+  return sem_borrow_root_name(c, sem_na(c, e));
+}
+  return (const char*)(NULL);
+}
+  return (const char*)(NULL);
+}
+  if (sem_is_slice(c, e)) {
+  {
+  __auto_type __flowc_targ0 = c;
+  __auto_type __flowc_targ1 = sem_na(c, e);
+  c = __flowc_targ0;
+  e = __flowc_targ1;
+  goto __flowc_tail;
+  }
+}
+  if (sem_is_unary_op(c, e, TOK_AMP)) {
+  {
+  __auto_type __flowc_targ0 = c;
+  __auto_type __flowc_targ1 = sem_na(c, e);
+  c = __flowc_targ0;
+  e = __flowc_targ1;
+  goto __flowc_tail;
+  }
+}
+  if (sem_nk(c, e) == AST_INDEX || sem_nk(c, e) == AST_FIELD_ACCESS) {
+  {
+  __auto_type __flowc_targ0 = c;
+  __auto_type __flowc_targ1 = sem_na(c, e);
+  c = __flowc_targ0;
+  e = __flowc_targ1;
+  goto __flowc_tail;
+  }
+}
+  if (sem_is_variable(c, e)) {
+  const char* nm2 = sem_nname(c, e);
+  if (sem_sv_has(c->local_storage, nm2)) {
+  return nm2;
+}
+  return sem_span_origin_get(c, nm2);
+}
+  return (const char*)(NULL);
+}
+
+const char* sem_domain_borrow_root(Sem* c, int32_t e) {
+  __flowc_tail: ;
+  if (e < 0) {
+  return (const char*)(NULL);
+}
+  if (sem_is_function_call(c, e)) {
+  const char* nm = sem_nname(c, e);
+  if (sem_s_starts(nm, "arena_alloc") || sem_s_starts(nm, "frame_alloc")) {
+  if (sem_na(c, e) != AST_NONE) {
+  return sem_borrow_root_name(c, sem_na(c, e));
+}
+  return (const char*)(NULL);
+}
+  return (const char*)(NULL);
+}
+  if (sem_is_slice(c, e)) {
+  {
+  __auto_type __flowc_targ0 = c;
+  __auto_type __flowc_targ1 = sem_na(c, e);
+  c = __flowc_targ0;
+  e = __flowc_targ1;
+  goto __flowc_tail;
+  }
+}
+  if (sem_is_unary_op(c, e, TOK_AMP)) {
+  const char* root = sem_borrow_root_name(c, sem_na(c, e));
+  if ((uint8_t*)(root) != NULL && sem_sv_has(c->local_storage, root)) {
+  return root;
+}
+  return (const char*)(NULL);
+}
+  if (sem_is_variable(c, e)) {
+  const char* nm2 = sem_nname(c, e);
+  const char* origin = sem_span_origin_get(c, nm2);
+  if ((uint8_t*)(origin) != NULL) {
+  return origin;
+}
+  if (sem_sv_has(c->local_storage, nm2)) {
+  int32_t s = sem_lookup(c, nm2);
+  if (s >= 0) {
+  int32_t k = sem_tkind(c, sem_sym_type(c, s));
+  if (k == TK_ARRAY || k == TK_SPAN) {
+  return nm2;
+}
+}
+}
+  return (const char*)(NULL);
+}
+  return (const char*)(NULL);
+}
+
+bool sem_is_reference_type(Sem* c, int32_t ty) {
+  int32_t k = sem_tkind(c, ty);
+  return ty >= 0 && (k == TK_POINTER || k == TK_SPAN || k == TK_ARRAY);
+}
+
+int32_t sem_root_parameter_index(Sem* c, int32_t e) {
+  __flowc_tail: ;
+  if (e < 0) {
+  return (0 - 1);
+}
+  if (sem_is_variable(c, e)) {
+  if ((uint8_t*)(c->current_function_name) == NULL) {
+  return (0 - 1);
+}
+  int32_t fi = sem_sm_get(c->function_decls, c->current_function_name);
+  if (fi < 0) {
+  return (0 - 1);
+}
+  const char* nm = sem_nname(c, e);
+  int32_t i = 0;
+  while (i < sem_fi_nparams(c, fi)) {
+  if (sem_s_eq(sem_fi_param_name(c, fi, i), nm)) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+  if (sem_is_unary_op(c, e, TOK_AMP)) {
+  {
+  __auto_type __flowc_targ0 = c;
+  __auto_type __flowc_targ1 = sem_na(c, e);
+  c = __flowc_targ0;
+  e = __flowc_targ1;
+  goto __flowc_tail;
+  }
+}
+  if (sem_nk(c, e) == AST_INDEX || sem_nk(c, e) == AST_FIELD_ACCESS) {
+  {
+  __auto_type __flowc_targ0 = c;
+  __auto_type __flowc_targ1 = sem_na(c, e);
+  c = __flowc_targ0;
+  e = __flowc_targ1;
+  goto __flowc_tail;
+  }
+}
+  return (0 - 1);
+}
+
+const char* sem_node_key(Sem* c, int32_t node) {
+  return __flowc_str_concat(__flowc_str_concat(sem_s_itoa((int64_t)(c->cm)), ":"), sem_s_itoa((int64_t)(node)));
+}
+
+bool sem_domain_escape_to_static(Sem* c, int32_t stmt, int32_t value, const char* target, int32_t target_type) {
+  if (sem_sm_has(c->static_names, target) && sem_is_reference_type(c, target_type)) {
+  int32_t pi = sem_root_parameter_index(c, value);
+  if (pi >= 0 && (uint8_t*)(c->current_function_name) != NULL) {
+  sem_sm_put(c->esc_static, __flowc_str_concat(__flowc_str_concat(c->current_function_name, "\x01"), sem_s_itoa((int64_t)(pi))), 1);
+}
+}
+  if (c->current_domain < 0 || sem_sm_has(c->static_names, target) == 0) {
+  return 0;
+}
+  if (sem_is_reference_type(c, target_type) == 0) {
+  return 0;
+}
+  int32_t td = sem_static_domain(c, target);
+  if (td <= c->current_domain) {
+  return 0;
+}
+  const char* origin = sem_domain_borrow_root(c, value);
+  if ((uint8_t*)(origin) == NULL) {
+  return 0;
+}
+  sem_sm_put(c->domain_reported, sem_node_key(c, stmt), 1);
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("lifetime domain escape: `", origin), "` lives in the `"), sem_domain_name(c->current_domain)), "` domain but is stored in `"), target), "`, which lives in the `"), sem_domain_name(td)), "` domain (a longer-lived domain may not hold a reference to a shorter-lived one)"), sem_location_suffix(c, stmt)));
+  return 1;
+}
+
+bool sem_domain_escape_by_return(Sem* c, int32_t stmt, int32_t value) {
+  if ((uint8_t*)(c->current_function_name) != NULL && sem_is_reference_type(c, c->current_return_type)) {
+  int32_t pi = sem_root_parameter_index(c, value);
+  if (pi >= 0) {
+  sem_sm_put(c->esc_return, __flowc_str_concat(__flowc_str_concat(c->current_function_name, "\x01"), sem_s_itoa((int64_t)(pi))), 1);
+}
+}
+  if (c->current_domain < 0 || value < 0) {
+  return 0;
+}
+  if (sem_is_reference_type(c, c->current_return_type) == 0) {
+  return 0;
+}
+  const char* origin = sem_domain_borrow_root(c, value);
+  if ((uint8_t*)(origin) == NULL) {
+  return 0;
+}
+  sem_sm_put(c->domain_reported, sem_node_key(c, stmt), 1);
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("lifetime domain escape: `", origin), "` lives in the `"), sem_domain_name(c->current_domain)), "` domain but is returned from '"), c->current_function_name), "', which outlives it (a returned reference may not point into the frame that produced it)"), sem_location_suffix(c, stmt)));
+  return 1;
+}
+
+void sem_resolved_calls_add(Sem* c, const char* callee) {
+  if ((uint8_t*)(c->current_function_name) == NULL) {
+  return;
+}
+  int32_t k = sem_sm_get(c->rdc_index, c->current_function_name);
+  if (k < 0) {
+  k = sem_sv_len(c->rdc_names);
+  sem_sv_push(c->rdc_names, c->current_function_name);
+  sem_pv_push(c->rdc_sets, (void*)(sem_sv_new()));
+  sem_sm_put(c->rdc_index, c->current_function_name, k);
+}
+  sem_sv_add((SemStrVec*)(sem_pv_get(c->rdc_sets, k)), callee);
+}
+
+void sem_check_rt_safe_call(Sem* c, const char* name) {
+  if ((uint8_t*)(c->current_rt_safe_fn) == NULL) {
+  return;
+}
+  sem_sv_push(c->rt_site_fn, c->current_rt_safe_fn);
+  sem_sv_push(c->rt_site_name, name);
+  if (c->rt_safe_from_domain) {
+  sem_iv_push(c->rt_site_dom, 1);
+} else {
+  sem_iv_push(c->rt_site_dom, 0);
+}
+}
+
+bool sem_is_dangerous_extern(const char* name) {
+  return sem_s_eq(name, "system") || sem_s_eq(name, "gets") || sem_s_eq(name, "strcpy") || sem_s_eq(name, "strcat") || sem_s_eq(name, "sprintf") || sem_s_eq(name, "vsprintf") || sem_s_eq(name, "scanf") || sem_s_eq(name, "sscanf") || sem_s_eq(name, "realpath") || sem_s_eq(name, "getwd");
+}
+
+void sem_check_safe_call(Sem* c, const char* name) {
+  if ((uint8_t*)(c->current_safe_fn) == NULL) {
+  return;
+}
+  int32_t fi = sem_sm_get(c->function_decls, name);
+  bool bad = 0;
+  if (fi >= 0) {
+  if (sem_fi_has_attr(c, fi, "unsafe") || sem_iv_get(c->fi_extern, fi) == 1) {
+  bad = 1;
+}
+}
+  if (bad) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Safety boundary violation: '", c->current_safe_fn), "' is marked '@safe' but calls '"), name), "', which is '@unsafe' or an extern declaration (see docs/language/safety-profiles.md)"));
+  return;
+}
+  if (sem_is_dangerous_extern(name)) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Safety boundary violation: '", c->current_safe_fn), "' is marked '@safe' but calls dangerous FFI '"), name), "'"));
+}
+}
+
+void sem_check_domain_call(Sem* c, const char* name) {
+  int32_t caller = c->current_domain;
+  if (caller < 0) {
+  return;
+}
+  int32_t callee = sem_sm_get(c->function_domains, name);
+  if (callee >= 0 && callee > caller) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("lifetime domain violation: '", c->current_function_name), "' is in the `"), sem_domain_name(caller)), "` domain but calls '"), name), "', which is in the `"), sem_domain_name(callee)), "` domain (a shorter-lived domain may not call into a longer-lived one; see docs/language/lifetime-domains.md)"));
+  return;
+}
+  if (caller != 1) {
+  return;
+}
+  sem_sv_push(c->dom_site_fn, c->current_function_name);
+  sem_sv_push(c->dom_site_name, name);
+}
+
+int32_t sem_check_expression(Sem* c, int32_t e);
+int32_t sem_check_statement(Sem* c, int32_t s);
+int32_t sem_check_block(Sem* c, int32_t b);
+int32_t sem_infer_type_quiet(Sem* c, int32_t e) {
+  int32_t ne = sem_sv_len(c->errors);
+  int32_t nw = sem_sv_len(c->warnings);
+  int32_t saved_pos = c->pos;
+  int32_t t = sem_check_expression(c, e);
+  sem_err_truncate(c, ne);
+  sem_sv_setlen(c->warnings, nw);
+  c->pos = saved_pos;
+  return t;
+}
+
+bool sem_string_has_interp(Sem* c, int32_t e) {
+  int32_t s = ((c->ar).nodes[e]).name_start;
+  int32_t t = ((c->ar).nodes[e]).name_end;
+  int32_t i = s;
+  while ((i + 1) < t) {
+  if (c->src[i] == 36 && c->src[(i + 1)] == 123) {
+  return 1;
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+int32_t sem_check_literal(Sem* c, int32_t e) {
+  int32_t k = sem_nk(c, e);
+  if (k == AST_STRING) {
+  return sem_tmk(c, TK_STRING);
+}
+  if (k == AST_FLOAT) {
+  return sem_tmk(c, TK_F32);
+}
+  if (k == AST_BOOL) {
+  return sem_tmk(c, TK_BOOL);
+}
+  if (k == AST_IDENT && sem_nname_is(c, e, "null")) {
+  return sem_ty_ptr(c->t, sem_tmk(c, TK_VOID));
+}
+  return sem_tmk(c, TK_I32);
+}
+
+bool sem_is_literal(Sem* c, int32_t e) {
+  int32_t k = sem_nk(c, e);
+  if (k == AST_INT || k == AST_FLOAT || k == AST_BOOL) {
+  return 1;
+}
+  if (k == AST_STRING) {
+  return sem_string_has_interp(c, e) == 0;
+}
+  return k == AST_IDENT && sem_nname_is(c, e, "null");
+}
+
+int64_t sem_literal_int(Sem* c, int32_t e, bool via_const, int32_t* ok) {
+  ok[0] = 0;
+  if (e < 0) {
+  return 0;
+}
+  int32_t k = sem_nk(c, e);
+  if (k == AST_INT) {
+  ok[0] = 1;
+  const char* txt = sem_s_span(c->src, ((c->ar).nodes[e]).name_start, ((c->ar).nodes[e]).name_end);
+  if (sem_s_len(txt) == 0) {
+  return (int64_t)(sem_nival(c, e));
+}
+  return sem_int_text(txt);
+}
+  if (k == AST_BOOL && via_const == 0) {
+  return 0;
+}
+  if (sem_is_unary_op(c, e, TOK_MINUS)) {
+  int64_t inner = sem_literal_int(c, sem_na(c, e), via_const, ok);
+  if (ok[0] == 1) {
+  return (0 - inner);
+}
+  return 0;
+}
+  if (via_const && sem_is_variable(c, e)) {
+  int32_t s = sem_lookup_const_symbol(c, sem_nname(c, e));
+  if (s >= 0) {
+  int32_t d = sem_iv_get(c->sy_def, s);
+  if (d >= 0 && sem_decl_kind(c, d) == DK_CONST) {
+  int32_t saved = c->cm;
+  sem_set_mod(c, sem_iv_get(c->d_mod, d));
+  int64_t v = sem_literal_int(c, sem_nb(c, sem_decl_node(c, d)), 1, ok);
+  sem_set_mod(c, saved);
+  return v;
+}
+}
+}
+  return 0;
+}
+
+int64_t sem_int_text(const char* txt) {
+  const char* s = "";
+  int32_t i = 0;
+  while (i < sem_s_len(txt)) {
+  if (sem_s_byte(txt, i) != 95) {
+  s = __flowc_str_concat(s, sem_s_slice(txt, i, (i + 1)));
+}
+  i = (i + 1);
+}
+  if (sem_s_starts(s, "0x") || sem_s_starts(s, "0X")) {
+  return strtol(sem_s_from(s, 2), NULL, 16);
+}
+  if (sem_s_starts(s, "0b") || sem_s_starts(s, "0B")) {
+  return strtol(sem_s_from(s, 2), NULL, 2);
+}
+  return strtol(s, NULL, 10);
+}
+
+int32_t sem_lookup_const_symbol(Sem* c, const char* name) {
+  if (sem_s_eq(name, "_")) {
+  return (0 - 1);
+}
+  int32_t s = sem_lookup(c, name);
+  if (s >= 0 && sem_sym_kind(c, s) == SK_CONST) {
+  return s;
+}
+  return (0 - 1);
+}
+
+int32_t sem_check_variable(Sem* c, int32_t e) {
+  const char* name = sem_nname(c, e);
+  int32_t s = sem_lookup(c, name);
+  if (s < 0) {
+  if (sem_sm_has(c->capability_types, name)) {
+  const char* msg = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Capability '", name), "' is not a value and cannot be passed as an argument. Install it for the call instead: handle <Effect> with "), name), " { ... }");
+  sem_err(c, msg);
+  sem_sv_push(c->fatal, msg);
+} else {
+  if (sem_cimport_knows(c, name)) {
+  return (0 - 1);
+} else {
+  if (c->strict) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Undefined variable '", name), "'"));
+}
+}
+}
+  return sem_tmk(c, TK_I32);
+}
+  return sem_sym_type(c, s);
+}
+
+const char* sem_binop_name(Sem* c, int32_t e) {
+  int32_t op = sem_nival(c, e);
+  if (op == TOK_PLUS) {
+  return "+";
+}
+  if (op == TOK_MINUS) {
+  return "-";
+}
+  if (op == TOK_STAR) {
+  return "*";
+}
+  if (op == TOK_SLASH) {
+  return "/";
+}
+  if (op == TOK_PERCENT) {
+  return "%";
+}
+  if (op == TOK_EQEQ) {
+  return "==";
+}
+  if (op == TOK_NE) {
+  return "!=";
+}
+  if (op == TOK_LT) {
+  return "<";
+}
+  if (op == TOK_LE) {
+  return "<=";
+}
+  if (op == TOK_GT) {
+  return ">";
+}
+  if (op == TOK_GE) {
+  return ">=";
+}
+  if (op == TOK_AMPAMP) {
+  return "&&";
+}
+  if (op == TOK_BARBAR) {
+  return "||";
+}
+  if (op == TOK_AMP) {
+  return "&";
+}
+  if (op == TOK_BAR) {
+  return "|";
+}
+  if (op == TOK_CARET) {
+  return "^";
+}
+  if (op == TOK_SHL) {
+  return "<<";
+}
+  if (op == TOK_SHR) {
+  return ">>";
+}
+  if (op == TOK_IN) {
+  return "in";
+}
+  return "?";
+}
+
+bool sem_binop_has_line(const char* op) {
+  return sem_s_eq(op, "==") || sem_s_eq(op, "!=") || sem_s_eq(op, "<") || sem_s_eq(op, ">") || sem_s_eq(op, "<=") || sem_s_eq(op, ">=") || sem_s_eq(op, "in") || sem_s_eq(op, "+") || sem_s_eq(op, "-") || sem_s_eq(op, "*") || sem_s_eq(op, "/") || sem_s_eq(op, "%");
+}
+
+bool sem_is_compare_op(const char* op) {
+  return sem_s_eq(op, "==") || sem_s_eq(op, "!=") || sem_s_eq(op, "<") || sem_s_eq(op, ">") || sem_s_eq(op, "<=") || sem_s_eq(op, ">=");
+}
+
+int32_t sem_check_dimensioned_op(Sem* c, int32_t e, const char* op, int32_t lt, int32_t rt, SemIntVec* ld, SemIntVec* rd) {
+  const char* loc = "";
+  if (e >= 0 && sem_binop_has_line(op)) {
+  loc = __flowc_str_concat(__flowc_str_concat("line ", sem_s_itoa((int64_t)(sem_py_pos(c, c->cm, sem_nstart(c, e), 0)))), ": ");
+}
+  if (sem_s_eq(op, "*") || sem_s_eq(op, "/")) {
+  if (ld == NULL && sem_is_numeric(c, lt) == 0) {
+  return (0 - 1);
+}
+  if (rd == NULL && sem_is_numeric(c, rt) == 0) {
+  return (0 - 1);
+}
+  int32_t sign = 1;
+  if (sem_s_eq(op, "/")) {
+  sign = (0 - 1);
+}
+  return sem_unit_result_type(c, sem_dims_combine(ld, rd, sign));
+}
+  if (sem_s_eq(op, "+") || sem_s_eq(op, "-") || sem_s_eq(op, "%")) {
+  if (ld == NULL || rd == NULL || sem_dims_eq(ld, rd) == 0) {
+  const char* hint = "";
+  if (ld == NULL || rd == NULL) {
+  int32_t shown = rt;
+  if (ld != NULL) {
+  shown = lt;
+}
+  hint = __flowc_str_concat(__flowc_str_concat("a dimensionless value needs an explicit cast, e.g. `x as ", sem_tstr(c, shown)), "`");
+} else {
+  hint = __flowc_str_concat(__flowc_str_concat("operands of '", op), "' must have the same dimension");
+}
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(loc, "dimensional error: "), sem_tstr(c, lt)), " "), op), " "), sem_tstr(c, rt)), " ("), hint), ")"));
+}
+  if (ld != NULL) {
+  return lt;
+}
+  return rt;
+}
+  if (sem_is_compare_op(op) || sem_s_eq(op, "in")) {
+  if (ld == NULL || rd == NULL || sem_dims_eq(ld, rd) == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(loc, "dimensional error: "), sem_tstr(c, lt)), " "), op), " "), sem_tstr(c, rt)), " (comparison requires both operands to have the same dimension)"));
+}
+  return sem_tmk(c, TK_BOOL);
+}
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(loc, "dimensional error: operator '"), op), "' is not defined for unit types ("), sem_tstr(c, lt)), " "), op), " "), sem_tstr(c, rt)), ")"));
+  if (ld != NULL) {
+  return lt;
+}
+  return rt;
+}
+
+int32_t sem_check_binary_op(Sem* c, int32_t e) {
+  const char* op = sem_binop_name(c, e);
+  int32_t lt = sem_check_expression(c, sem_na(c, e));
+  int32_t rt = sem_check_expression(c, sem_nb(c, e));
+  return sem_binary_types(c, e, op, lt, rt);
+}
+
+int32_t sem_binary_types(Sem* c, int32_t e, const char* op, int32_t lt, int32_t rt) {
+  if (e >= 0) {
+  sem_set_pos(c, e);
+}
+  if (lt < 0 || rt < 0) {
+  if (sem_is_compare_op(op) || sem_s_eq(op, "&&") || sem_s_eq(op, "||") || sem_s_eq(op, "in")) {
+  return sem_tmk(c, TK_BOOL);
+}
+  if (lt >= 0) {
+  return lt;
+}
+  if (rt >= 0) {
+  return rt;
+}
+  return sem_tmk(c, TK_UNKNOWN);
+}
+  int32_t lk = sem_tkind(c, lt);
+  int32_t rk = sem_tkind(c, rt);
+  if (lk == TK_UNKNOWN || rk == TK_UNKNOWN) {
+  if (sem_is_compare_op(op) || sem_s_eq(op, "&&") || sem_s_eq(op, "||") || sem_s_eq(op, "in")) {
+  return sem_tmk(c, TK_BOOL);
+}
+  if (lk != TK_UNKNOWN) {
+  return lt;
+}
+  return rt;
+}
+  if (lk == TK_VOID) {
+  return rt;
+}
+  if (rk == TK_VOID) {
+  return lt;
+}
+  if (sem_s_eq(op, "+") && (lk == TK_STRING || rk == TK_STRING)) {
+  return sem_tmk(c, TK_STRING);
+}
+  if (lk == TK_POINTER || rk == TK_POINTER) {
+  if (sem_s_eq(op, "+") || sem_s_eq(op, "-")) {
+  if (lk == TK_POINTER && sem_is_numeric(c, rt)) {
+  return lt;
+}
+  if (rk == TK_POINTER && sem_is_numeric(c, lt)) {
+  return rt;
+}
+  if (lk == TK_POINTER && rk == TK_POINTER && sem_s_eq(op, "-")) {
+  return sem_tmk(c, TK_I64);
+}
+}
+  if (sem_is_compare_op(op)) {
+  if (lk == TK_POINTER && rk == TK_POINTER) {
+  return sem_tmk(c, TK_BOOL);
+}
+  if (lk == TK_POINTER && sem_is_numeric(c, rt) || rk == TK_POINTER && sem_is_numeric(c, lt)) {
+  return sem_tmk(c, TK_BOOL);
+}
+}
+}
+  SemIntVec* ld = (SemIntVec*)(sem_dims_of(c, lt));
+  SemIntVec* rd = (SemIntVec*)(sem_dims_of(c, rt));
+  if (ld != NULL || rd != NULL) {
+  int32_t r = sem_check_dimensioned_op(c, e, op, lt, rt, ld, rd);
+  if (r >= 0) {
+  return r;
+}
+}
+  if (sem_is_dual(c, lt) || sem_is_dual(c, rt)) {
+  if (sem_s_eq(op, "+") || sem_s_eq(op, "-") || sem_s_eq(op, "*") || sem_s_eq(op, "/")) {
+  if (sem_is_dual(c, lt) || sem_is_numeric(c, lt)) {
+  if (sem_is_dual(c, rt) || sem_is_numeric(c, rt)) {
+  return sem_ty_struct(c->t, "Dual");
+}
+}
+}
+  if (sem_is_compare_op(op)) {
+  return sem_tmk(c, TK_BOOL);
+}
+}
+  if (sem_is_tensor(c, lt) || sem_is_tensor(c, rt)) {
+  if (sem_s_eq(op, "+") || sem_s_eq(op, "-") || sem_s_eq(op, "*") || sem_s_eq(op, "/")) {
+  if (sem_is_tensor(c, lt) && sem_is_tensor(c, rt)) {
+  return sem_ty_struct(c->t, "Tensor");
+}
+  if (sem_s_eq(op, "*") || sem_s_eq(op, "+")) {
+  if (sem_is_tensor(c, lt) && sem_is_numeric(c, rt) || sem_is_numeric(c, lt) && sem_is_tensor(c, rt)) {
+  return sem_ty_struct(c->t, "Tensor");
+}
+}
+}
+}
+  if (sem_s_eq(op, "in")) {
+  return sem_tmk(c, TK_BOOL);
+}
+  int32_t common = lt;
+  if (sem_is_numeric(c, lt) && sem_is_numeric(c, rt)) {
+  common = sem_numeric_common_type(c, lt, rt);
+} else {
+  if (sem_ty_eq(c->t, lt, rt) == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Binary operator '", op), "' requires matching types, got "), sem_tstr(c, lt)), " and "), sem_tstr(c, rt)));
+}
+}
+  if (e >= 0 && (sem_s_eq(op, "/") || sem_s_eq(op, "%"))) {
+  int32_t ok[1] = { 0 };
+  int64_t v = sem_literal_int(c, sem_nb(c, e), 0, (int32_t*)((&ok[0])));
+  if (ok[0] == 1 && v == 0 && sem_is_float(c, lt) == 0) {
+  sem_err(c, "Division/modulo by zero is undefined (MISRA Rule 12.5 / CERT INT33-C)");
+}
+}
+  if (e >= 0 && (sem_s_eq(op, "<<") || sem_s_eq(op, ">>"))) {
+  int32_t ok2[1] = { 0 };
+  int64_t amount = sem_literal_int(c, sem_nb(c, e), 0, (int32_t*)((&ok2[0])));
+  int32_t width = sem_integer_bit_width(c, lt);
+  if (width > 0 && width < 32) {
+  width = 32;
+}
+  if (ok2[0] == 1) {
+  if (amount < 0 || width > 0 && amount >= (int64_t)(width)) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Shift amount ", sem_s_itoa(amount)), " out of range for "), sem_tstr(c, lt)), " (MISRA Rule 12.2 / CERT INT34-C)"));
+}
+}
+  if (sem_s_eq(op, "<<")) {
+  int32_t ok3[1] = { 0 };
+  int64_t lhs = sem_literal_int(c, sem_na(c, e), 0, (int32_t*)((&ok3[0])));
+  if (ok3[0] == 1 && lhs < 0) {
+  sem_err(c, "Left shift of a negative value is undefined (MISRA Rule 12.2 / CERT INT34-C)");
+}
+}
+}
+  if (sem_is_compare_op(op) || sem_s_eq(op, "&&") || sem_s_eq(op, "||")) {
+  return sem_tmk(c, TK_BOOL);
+}
+  return common;
+}
+
+const char* sem_unary_op_name(Sem* c, int32_t e) {
+  int32_t op = sem_nival(c, e);
+  if (op == TOK_MINUS) {
+  return "-";
+}
+  if (op == TOK_BANG) {
+  int32_t s = sem_nstart(c, e);
+  if (sem_s_span_is(c->src, s, (s + 3), "not")) {
+  return "not";
+}
+  return "!";
+}
+  if (op == TOK_AMP) {
+  return "&";
+}
+  if (op == TOK_TILDE) {
+  return "~";
+}
+  return "?";
+}
+
+int32_t sem_check_unary_op(Sem* c, int32_t e) {
+  const char* op = sem_unary_op_name(c, e);
+  int32_t ot = sem_check_expression(c, sem_na(c, e));
+  if (ot < 0) {
+  return ot;
+}
+  int32_t ok = sem_tkind(c, ot);
+  if (ok == TK_UNKNOWN) {
+  if (sem_s_eq(op, "!")) {
+  return sem_tmk(c, TK_BOOL);
+}
+  if (sem_s_eq(op, "&")) {
+  return sem_ty_ptr(c->t, ot);
+}
+  return ot;
+}
+  if (sem_s_eq(op, "-")) {
+  if (sem_dims_of(c, ot) != NULL) {
+  return ot;
+}
+  if (sem_is_dual(c, ot)) {
+  return ot;
+}
+  bool numeric = ok == TK_I8 || ok == TK_I16 || ok == TK_I32 || ok == TK_I64 || ok == TK_U8 || ok == TK_U16 || ok == TK_U32 || ok == TK_U64 || ok == TK_F32 || ok == TK_F64;
+  if (numeric == 0) {
+  sem_err(c, __flowc_str_concat("Unary '-' requires numeric type, got ", sem_tstr(c, ot)));
+}
+  return ot;
+}
+  if (sem_s_eq(op, "!")) {
+  if (ok != TK_BOOL) {
+  sem_err(c, __flowc_str_concat("Unary '!' requires bool type, got ", sem_tstr(c, ot)));
+}
+  return sem_tmk(c, TK_BOOL);
+}
+  if (sem_s_eq(op, "&")) {
+  if (ok == TK_POINTER) {
+  sem_warn(c, __flowc_str_concat(__flowc_str_concat("Taking the address of a pointer (got ", sem_tstr(c, ot)), "); this produces ptr<ptr<T>> - ensure the callee expects a pointer-to-pointer"));
+}
+  return sem_ty_ptr(c->t, ot);
+}
+  return ot;
+}
+
+int32_t sem_builtin_kind(const char* name) {
+  if (sem_s_eq(name, "printf") || sem_s_eq(name, "sprintf") || sem_s_eq(name, "fprintf") || sem_s_eq(name, "scanf") || sem_s_eq(name, "sscanf")) {
+  return TK_I32;
+}
+  if (sem_s_eq(name, "print") || sem_s_eq(name, "println")) {
+  return TK_VOID;
+}
+  if (sem_s_eq(name, "malloc") || sem_s_eq(name, "calloc") || sem_s_eq(name, "realloc")) {
+  return TK_POINTER;
+}
+  if (sem_s_eq(name, "free")) {
+  return TK_VOID;
+}
+  if (sem_s_eq(name, "memcpy") || sem_s_eq(name, "memset") || sem_s_eq(name, "memmove")) {
+  return TK_POINTER;
+}
+  if (sem_s_eq(name, "memcmp")) {
+  return TK_I32;
+}
+  if (sem_s_eq(name, "strlen")) {
+  return TK_U64;
+}
+  if (sem_s_eq(name, "len")) {
+  return TK_I64;
+}
+  if (sem_s_eq(name, "strcpy") || sem_s_eq(name, "strcat") || sem_s_eq(name, "strncpy")) {
+  return TK_POINTER;
+}
+  if (sem_s_eq(name, "strcmp") || sem_s_eq(name, "strncmp")) {
+  return TK_I32;
+}
+  if (sem_s_eq(name, "exit") || sem_s_eq(name, "abort") || sem_s_eq(name, "flow_panic")) {
+  return TK_VOID;
+}
+  if (sem_s_eq(name, "atexit")) {
+  return TK_I32;
+}
+  if (sem_s_eq(name, "fopen")) {
+  return TK_POINTER;
+}
+  if (sem_s_eq(name, "fclose") || sem_s_eq(name, "fread") || sem_s_eq(name, "fwrite")) {
+  return TK_I32;
+}
+  if (sem_s_eq(name, "fgets")) {
+  return TK_POINTER;
+}
+  if (sem_s_eq(name, "fputs") || sem_s_eq(name, "putchar") || sem_s_eq(name, "rand")) {
+  return TK_I32;
+}
+  if (sem_s_eq(name, "srand")) {
+  return TK_VOID;
+}
+  if (sem_s_eq(name, "time") || sem_s_eq(name, "clock")) {
+  return TK_I64;
+}
+  if (sem_s_eq(name, "get_current_time")) {
+  return TK_F64;
+}
+  if (sem_s_eq(name, "sin") || sem_s_eq(name, "cos") || sem_s_eq(name, "tan") || sem_s_eq(name, "asin") || sem_s_eq(name, "acos") || sem_s_eq(name, "atan") || sem_s_eq(name, "atan2")) {
+  return TK_F32;
+}
+  if (sem_s_eq(name, "sinh") || sem_s_eq(name, "cosh") || sem_s_eq(name, "tanh") || sem_s_eq(name, "asinh") || sem_s_eq(name, "acosh") || sem_s_eq(name, "atanh")) {
+  return TK_F32;
+}
+  if (sem_s_eq(name, "exp") || sem_s_eq(name, "exp2") || sem_s_eq(name, "expm1") || sem_s_eq(name, "log") || sem_s_eq(name, "log2") || sem_s_eq(name, "log10") || sem_s_eq(name, "log1p")) {
+  return TK_F32;
+}
+  if (sem_s_eq(name, "pow") || sem_s_eq(name, "sqrt") || sem_s_eq(name, "cbrt") || sem_s_eq(name, "hypot") || sem_s_eq(name, "ceil") || sem_s_eq(name, "floor") || sem_s_eq(name, "round") || sem_s_eq(name, "trunc")) {
+  return TK_F32;
+}
+  if (sem_s_eq(name, "fabs") || sem_s_eq(name, "fmod") || sem_s_eq(name, "fmin") || sem_s_eq(name, "fmax") || sem_s_eq(name, "fdim") || sem_s_eq(name, "sigmoid")) {
+  return TK_F32;
+}
+  if (sem_s_eq(name, "c64")) {
+  return TK_C64;
+}
+  if (sem_s_eq(name, "c128")) {
+  return TK_C128;
+}
+  if (sem_s_eq(name, "creal") || sem_s_eq(name, "cimag") || sem_s_eq(name, "cabs") || sem_s_eq(name, "carg")) {
+  return TK_F64;
+}
+  if (sem_s_eq(name, "conj") || sem_s_eq(name, "cexp") || sem_s_eq(name, "clog") || sem_s_eq(name, "csqrt") || sem_s_eq(name, "cpow")) {
+  return TK_C128;
+}
+  if (sem_s_eq(name, "alloc")) {
+  return TK_POINTER;
+}
+  if (sem_s_eq(name, "dealloc")) {
+  return TK_VOID;
+}
+  if (sem_s_eq(name, "array_length") || sem_s_eq(name, "length")) {
+  return TK_I32;
+}
+  if (sem_s_eq(name, "array")) {
+  return TK_ARRAY;
+}
+  if (sem_s_eq(name, "gpu_thread_id") || sem_s_eq(name, "gpu_block_id")) {
+  return TK_I32;
+}
+  if (sem_s_eq(name, "gpu_sync")) {
+  return TK_VOID;
+}
+  if (sem_s_eq(name, "metal_create_buffer")) {
+  return TK_POINTER;
+}
+  if (sem_s_eq(name, "metal_execute")) {
+  return TK_VOID;
+}
+  if (sem_s_eq(name, "metal_get_result")) {
+  return TK_POINTER;
+}
+  if (sem_s_eq(name, "emit") || sem_s_eq(name, "query") || sem_s_eq(name, "insert") || sem_s_eq(name, "write")) {
+  return TK_VOID;
+}
+  if (sem_s_eq(name, "read")) {
+  return TK_STRING;
+}
+  return 0;
+}
+
+int32_t sem_builtin_type(Sem* c, const char* name) {
+  int32_t k = sem_builtin_kind(name);
+  if (k == TK_POINTER) {
+  return sem_ty_ptr(c->t, sem_tmk(c, TK_VOID));
+}
+  if (k == TK_ARRAY) {
+  return sem_ty_array(c->t, sem_tmk(c, TK_I32), NO_SIZE);
+}
+  return sem_tmk(c, k);
+}
+
+bool sem_is_dimensionless_math(const char* name) {
+  return sem_s_eq(name, "sin") || sem_s_eq(name, "cos") || sem_s_eq(name, "tan") || sem_s_eq(name, "asin") || sem_s_eq(name, "acos") || sem_s_eq(name, "atan") || sem_s_eq(name, "atan2") || sem_s_eq(name, "sinh") || sem_s_eq(name, "cosh") || sem_s_eq(name, "tanh") || sem_s_eq(name, "exp") || sem_s_eq(name, "log") || sem_s_eq(name, "log2") || sem_s_eq(name, "log10");
+}
+
+SemStrVec* sem_active_handlers(Sem* c) {
+  SemStrVec* out = (SemStrVec*)(sem_sv_new());
+  int32_t i = 0;
+  while (i < sem_pv_len(c->handler_stack)) {
+  SemStrVec* fr = (SemStrVec*)((SemStrVec*)(sem_pv_get(c->handler_stack, i)));
+  int32_t j = 0;
+  while (j < fr->len) {
+  sem_sv_add(out, sem_sv_get(fr, j));
+  j = (j + 1);
+}
+  i = (i + 1);
+}
+  return out;
+}
+
+int32_t sem_effect_op(Sem* c, int32_t effect_decl, const char* op) {
+  int32_t saved = c->cm;
+  sem_set_mod(c, sem_iv_get(c->d_mod, effect_decl));
+  int32_t o = sem_na(c, sem_decl_node(c, effect_decl));
+  while (o != AST_NONE) {
+  if (sem_nname_is(c, o, op)) {
+  sem_set_mod(c, saved);
+  return o;
+}
+  o = sem_nnext(c, o);
+}
+  sem_set_mod(c, saved);
+  return (0 - 1);
+}
+
+int32_t sem_effect_op_sig(Sem* c, int32_t effect_decl, int32_t opnode, SemIntVec* params) {
+  int32_t saved = c->cm;
+  sem_set_mod(c, sem_iv_get(c->d_mod, effect_decl));
+  int32_t p = sem_na(c, opnode);
+  while (p != AST_NONE) {
+  sem_iv_push(params, sem_pt_of_ast(c, sem_na(c, p)));
+  p = sem_nnext(c, p);
+}
+  int32_t ret = (0 - 1);
+  if (sem_nb(c, opnode) != AST_NONE) {
+  ret = sem_pt_of_ast(c, sem_nb(c, opnode));
+} else {
+  ret = sem_pt_mk(c->t, "void");
+}
+  sem_set_mod(c, saved);
+  return ret;
+}
+
+int32_t sem_check_effect_call(Sem* c, const char* eff, const char* op, SemIntVec* args) {
+  int32_t ed = sem_sm_get(c->effect_types, eff);
+  if (ed < 0) {
+  int32_t i = 0;
+  while (i < args->len) {
+  sem_check_expression(c, args->data[i]);
+  i = (i + 1);
+}
+  if (c->strict) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Unknown effect '", eff), "'"));
+}
+  return sem_tmk(c, TK_UNKNOWN);
+}
+  int32_t opn = sem_effect_op(c, ed, op);
+  if (opn < 0) {
+  int32_t i2 = 0;
+  while (i2 < args->len) {
+  sem_check_expression(c, args->data[i2]);
+  i2 = (i2 + 1);
+}
+  if (c->strict) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Effect '", eff), "' has no operation '"), op), "'"));
+}
+  return sem_tmk(c, TK_UNKNOWN);
+}
+  SemIntVec* arg_types = (SemIntVec*)(sem_iv_new());
+  int32_t j = 0;
+  while (j < args->len) {
+  sem_iv_push(arg_types, sem_check_expression(c, args->data[j]));
+  j = (j + 1);
+}
+  SemIntVec* ppts = (SemIntVec*)(sem_iv_new());
+  int32_t ret_pt = sem_effect_op_sig(c, ed, opn, ppts);
+  SemIntVec* ptys = (SemIntVec*)(sem_iv_new());
+  j = 0;
+  while (j < ppts->len) {
+  sem_iv_push(ptys, sem_parse_type(c, ppts->data[j]));
+  j = (j + 1);
+}
+  if (arg_types->len != ptys->len) {
+  if (c->strict) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Effect operation '", eff), "."), op), "' expects "), sem_s_itoa((int64_t)(ptys->len))), " argument(s), got "), sem_s_itoa((int64_t)(arg_types->len))));
+}
+  return sem_parse_type(c, ret_pt);
+}
+  j = 0;
+  while (j < arg_types->len) {
+  if (sem_can_coerce(c, arg_types->data[j], ptys->data[j]) == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Effect operation '", eff), "."), op), "' argument "), sem_s_itoa((int64_t)((j + 1)))), " expects "), sem_tstr(c, ptys->data[j])), ", got "), sem_tstr(c, arg_types->data[j])));
+}
+  j = (j + 1);
+}
+  if (c->check_effect_rows && sem_sv_has(sem_active_handlers(c), eff) == 0) {
+  const char* whr = "";
+  if ((uint8_t*)(c->current_function_name) != NULL) {
+  whr = __flowc_str_concat(__flowc_str_concat(" in '", c->current_function_name), "'");
+}
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Unhandled effect '", eff), "."), op), "'"), whr), ": wrap in `handle "), eff), " with ...`, declare `with "), eff), "` on the function, or omit --strict-effects to allow zero defaults"));
+}
+  return sem_parse_type(c, ret_pt);
+}
+
+SemIntVec* sem_candidates_of(Sem* c, int32_t s) {
+  SemIntVec* ov = (SemIntVec*)((SemIntVec*)(sem_pv_get(c->sy_over, s)));
+  if (ov != NULL && ov->len > 0) {
+  return ov;
+}
+  SemIntVec* one = (SemIntVec*)(sem_iv_new());
+  sem_iv_push(one, sem_sym_type(c, s));
+  return one;
+}
+
+const char* sem_effect_name_of_param(Sem* c, int32_t p) {
+  const char* nm = sem_tname(c, p);
+  if (sem_s_starts(nm, "capability_")) {
+  nm = sem_s_from(nm, 11);
+}
+  if (sem_sm_has(c->effect_types, nm)) {
+  return nm;
+}
+  return (const char*)(NULL);
+}
+
+int32_t sem_match_implicit_effect_overload(Sem* c, SemIntVec* cands, SemIntVec* arg_types) {
+  SemStrVec* active = (SemStrVec*)(sem_active_handlers(c));
+  if (active->len == 0) {
+  return (0 - 1);
+}
+  int32_t found = (0 - 1);
+  int32_t count = 0;
+  int32_t i = 0;
+  while (i < cands->len) {
+  int32_t cand = cands->data[i];
+  int32_t np = sem_ty_nparams(c->t, cand);
+  if (np > arg_types->len) {
+  bool ok = 1;
+  int32_t j = 0;
+  while (j < arg_types->len) {
+  if (sem_is_compatible(c, arg_types->data[j], sem_ty_param(c->t, cand, j)) == 0) {
+  ok = 0;
+}
+  j = (j + 1);
+}
+  if (ok) {
+  j = arg_types->len;
+  while (j < np) {
+  const char* en = sem_effect_name_of_param(c, sem_ty_param(c->t, cand, j));
+  if ((uint8_t*)(en) == NULL || sem_sv_has(active, en) == 0) {
+  ok = 0;
+}
+  j = (j + 1);
+}
+}
+  if (ok) {
+  if (count == 0) {
+  found = cand;
+}
+  count = (count + 1);
+}
+}
+  i = (i + 1);
+}
+  if (count == 1) {
+  return found;
+}
+  return (0 - 1);
+}
+
+int32_t sem_static_length(Sem* c, int32_t e) {
+  if (sem_nk(c, e) == AST_ARRAY_LIT) {
+  return sem_array_lit_len(c, e);
+}
+  if (sem_is_slice(c, e)) {
+  int32_t ok[1] = { 0 };
+  int32_t ok2[1] = { 0 };
+  int64_t lo = sem_literal_int(c, sem_nb(c, e), 1, (int32_t*)((&ok[0])));
+  int64_t hi = sem_literal_int(c, sem_ncc(c, e), 1, (int32_t*)((&ok2[0])));
+  if (ok[0] == 0 || ok2[0] == 0) {
+  return NO_SIZE;
+}
+  if ((hi - lo) < 0) {
+  return 0;
+}
+  return (int32_t)((hi - lo));
+}
+  if (sem_is_variable(c, e)) {
+  int32_t s = sem_lookup(c, sem_nname(c, e));
+  if (s < 0) {
+  return NO_SIZE;
+}
+  int32_t k = sem_tkind(c, sem_sym_type(c, s));
+  if (k == TK_ARRAY || k == TK_SPAN) {
+  return sem_tsize(c, sem_sym_type(c, s));
+}
+}
+  return NO_SIZE;
+}
+
+int32_t sem_borrow_source_mutable(Sem* c, int32_t e) {
+  __flowc_tail: ;
+  if (sem_is_slice(c, e)) {
+  {
+  __auto_type __flowc_targ0 = c;
+  __auto_type __flowc_targ1 = sem_na(c, e);
+  c = __flowc_targ0;
+  e = __flowc_targ1;
+  goto __flowc_tail;
+  }
+}
+  if (sem_is_variable(c, e)) {
+  int32_t s = sem_lookup(c, sem_nname(c, e));
+  if (s < 0) {
+  return (0 - 1);
+}
+  int32_t ty = sem_sym_type(c, s);
+  if (sem_tkind(c, ty) == TK_SPAN) {
+  if (sem_span_is_mutable(sem_tname(c, ty))) {
+  return 1;
+}
+  return 0;
+}
+  if (sem_tkind(c, ty) == TK_POINTER) {
+  return 1;
+}
+  return sem_iv_get(c->sy_mut, s);
+}
+  return (0 - 1);
+}
+
+bool sem_check_span_arguments(Sem* c, const char* name, SemIntVec* args, int32_t sig) {
+  int32_t before = sem_sv_len(c->errors);
+  int32_t fi = sem_sm_get(c->function_decls, name);
+  int32_t i = 0;
+  while (i < sem_ty_nparams(c->t, sig)) {
+  int32_t expected = sem_ty_param(c->t, sig, i);
+  if (sem_is_span(c, expected) && i < args->len) {
+  int32_t arg = args->data[i];
+  const char* pname = __flowc_str_concat("#", sem_s_itoa((int64_t)((i + 1))));
+  if (fi >= 0 && i < sem_fi_nparams(c, fi)) {
+  pname = sem_fi_param_name(c, fi, i);
+}
+  int32_t actual = sem_infer_type_quiet(c, arg);
+  if (sem_tkind(c, actual) == TK_POINTER) {
+  const char* root = sem_borrow_root_name(c, arg);
+  if ((uint8_t*)(root) == NULL) {
+  root = "p";
+}
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("cannot borrow ", sem_tstr(c, actual)), " into "), sem_tstr(c, expected)), " for parameter '"), pname), "' of '"), name), "': a pointer has no length. Slice it instead, e.g. `"), root), "[0..n]`"));
+} else {
+  bool skip = 0;
+  if (sem_span_is_mutable(sem_tname(c, expected))) {
+  int32_t mutable = sem_borrow_source_mutable(c, arg);
+  if (mutable == 0) {
+  const char* binding = sem_borrow_root_name(c, arg);
+  if ((uint8_t*)(binding) == NULL) {
+  binding = pname;
+}
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("cannot borrow `", binding), "` mutably; it is declared with `let`"));
+  skip = 1;
+}
+}
+  if (skip == 0 && sem_tsize(c, expected) != NO_SIZE) {
+  int32_t length = sem_static_length(c, arg);
+  if (length == NO_SIZE) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("static extent mismatch: parameter '", pname), "' of '"), name), "' expects "), sem_tstr(c, expected)), ", but the argument length is not known at compile time; a static-extent span cannot be formed from a dynamic length"));
+} else {
+  if (length != sem_tsize(c, expected)) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("static extent mismatch: parameter '", pname), "' of '"), name), "' expects "), sem_tstr(c, expected)), " but the argument has length "), sem_s_itoa((int64_t)(length))), " (expected "), sem_s_itoa((int64_t)(sem_tsize(c, expected)))), ", got "), sem_s_itoa((int64_t)(length))), ")"));
+}
+}
+}
+}
+}
+  i = (i + 1);
+}
+  return sem_sv_len(c->errors) > before;
+}
+
+int32_t sem_check_function_call(Sem* c, const char* name, SemIntVec* args, int32_t node, int32_t stmt) {
+  SemTys* tys = (SemTys*)(c->t);
+  sem_resolved_calls_add(c, name);
+  sem_check_rt_safe_call(c, name);
+  sem_check_safe_call(c, name);
+  sem_check_domain_call(c, name);
+  if (sem_s_eq(name, "__flow_dbg")) {
+  if (args->len != 1) {
+  if (c->strict) {
+  sem_err(c, "dbg requires exactly one argument");
+}
+  return sem_tmk(c, TK_VOID);
+}
+  return sem_check_expression(c, args->data[0]);
+}
+  if (sem_is_dimensionless_math(name) && args->len > 0) {
+  SemIntVec* ats = (SemIntVec*)(sem_iv_new());
+  int32_t i = 0;
+  bool any_dims = 0;
+  while (i < args->len) {
+  int32_t at = sem_check_expression(c, args->data[i]);
+  sem_iv_push(ats, at);
+  if (sem_dims_of(c, at) != NULL) {
+  any_dims = 1;
+}
+  i = (i + 1);
+}
+  if (any_dims) {
+  i = 0;
+  while (i < ats->len) {
+  int32_t at2 = ats->data[i];
+  if (sem_dims_of(c, at2) != NULL && sem_is_radian(c, at2) == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("dimensional error: ", name), "() requires a dimensionless or Radian argument, got "), sem_tstr(c, at2)));
+}
+  i = (i + 1);
+}
+  return sem_tmk(c, TK_F64);
+}
+}
+  if (sem_s_starts(name, "array_")) {
+  int32_t el = sem_parse_named_scalar(c, sem_s_from(name, 6));
+  if (el >= 0) {
+  return sem_ty_array(c->t, el, NO_SIZE);
+}
+}
+  int32_t s = sem_lookup(c, name);
+  if (s < 0 && sem_ensure_generic_function_instance(c, name)) {
+  s = sem_lookup(c, name);
+}
+  if (s < 0) {
+  if (sem_builtin_kind(name) != 0) {
+  int32_t i2 = 0;
+  while (i2 < args->len) {
+  sem_check_expression(c, args->data[i2]);
+  i2 = (i2 + 1);
+}
+  return sem_builtin_type(c, name);
+}
+  SemStrVec* active = (SemStrVec*)(sem_active_handlers(c));
+  if ((uint8_t*)(c->current_function_name) != NULL) {
+  SemStrVec* row = (SemStrVec*)(sem_function_effect_row(c, c->current_function_name));
+  if (row != NULL) {
+  int32_t r = 0;
+  while (r < row->len) {
+  sem_sv_add(active, sem_sv_get(row, r));
+  r = (r + 1);
+}
+}
+}
+  const char* found = (const char*)(NULL);
+  int32_t ai = 0;
+  while (ai < active->len && (uint8_t*)(found) == NULL) {
+  const char* en = sem_sv_get(active, ai);
+  int32_t ed = sem_sm_get(c->effect_types, en);
+  if (ed >= 0 && sem_effect_op(c, ed, name) >= 0) {
+  found = en;
+}
+  ai = (ai + 1);
+}
+  if ((uint8_t*)(found) != NULL) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("effect operation '", name), "' must be called as '"), found), "."), name), "'"));
+} else {
+  if (sem_cimport_knows(c, name)) {
+  int32_t i3 = 0;
+  while (i3 < args->len) {
+  sem_check_expression(c, args->data[i3]);
+  i3 = (i3 + 1);
+}
+  return (0 - 1);
+} else {
+  if (c->strict) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Undefined function '", name), "'"));
+}
+}
+}
+  return sem_tmk(c, TK_VOID);
+}
+  int32_t sty = sem_sym_type(c, s);
+  if (sem_tkind(c, sty) != TK_FUNCTION) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("'", name), "' is not a function"));
+  return sem_tmk(c, TK_VOID);
+}
+  if (c->check_effect_rows) {
+  SemStrVec* needed = (SemStrVec*)(sem_sv_new());
+  SemStrVec* frow = (SemStrVec*)(sem_function_effect_row(c, name));
+  if (frow != NULL) {
+  int32_t r2 = 0;
+  while (r2 < frow->len) {
+  sem_sv_add(needed, sem_sv_get(frow, r2));
+  r2 = (r2 + 1);
+}
+}
+  int32_t r3 = 0;
+  while (r3 < sem_ty_neffects(c->t, sty)) {
+  sem_sv_add(needed, sem_ty_effect(c->t, sty, r3));
+  r3 = (r3 + 1);
+}
+  if (needed->len > 0) {
+  SemStrVec* act = (SemStrVec*)(sem_active_handlers(c));
+  SemStrVec* missing = (SemStrVec*)(sem_sv_new());
+  int32_t r4 = 0;
+  while (r4 < needed->len) {
+  if (sem_sv_has(act, sem_sv_get(needed, r4)) == 0) {
+  sem_sv_push(missing, sem_sv_get(needed, r4));
+}
+  r4 = (r4 + 1);
+}
+  sem_sv_sort(missing);
+  if (missing->len > 0) {
+  const char* whr = "";
+  if ((uint8_t*)(c->current_function_name) != NULL) {
+  whr = __flowc_str_concat(__flowc_str_concat(" from '", c->current_function_name), "'");
+}
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Call to '", name), "'"), whr), " requires effect(s) "), sem_sv_join(missing, ", ")), ": handle them or declare `with "), sem_sv_join(missing, ", ")), "` on the caller"));
+}
+}
+}
+  SemIntVec* cands = (SemIntVec*)(sem_candidates_of(c, s));
+  SemIntVec* arg_types = (SemIntVec*)(sem_iv_new());
+  int32_t k = 0;
+  while (k < args->len) {
+  sem_iv_push(arg_types, sem_check_expression(c, args->data[k]));
+  k = (k + 1);
+}
+  int32_t vfi = sem_sm_get(c->function_decls, name);
+  bool variadic = 0;
+  if (vfi >= 0 && sem_iv_get(c->fi_variadic, vfi) == 1) {
+  variadic = 1;
+}
+  int32_t matching = (0 - 1);
+  int32_t pass = 0;
+  while (pass < 2 && matching < 0) {
+  c->relax_c_strings = pass == 1;
+  int32_t ci = 0;
+  while (ci < cands->len && matching < 0) {
+  int32_t cand = cands->data[ci];
+  int32_t np = sem_ty_nparams(c->t, cand);
+  bool fits = 1;
+  if (variadic) {
+  if (arg_types->len < np) {
+  fits = 0;
+}
+} else {
+  if (np != arg_types->len) {
+  fits = 0;
+}
+}
+  if (fits) {
+  int32_t j = 0;
+  while (j < np && j < arg_types->len && fits) {
+  if (sem_is_compatible(c, arg_types->data[j], sem_ty_param(c->t, cand, j)) == 0) {
+  fits = 0;
+}
+  j = (j + 1);
+}
+  if (fits) {
+  matching = cand;
+}
+}
+  ci = (ci + 1);
+}
+  pass = (pass + 1);
+}
+  c->relax_c_strings = 0;
+  if (matching >= 0) {
+  sem_check_span_arguments(c, name, args, matching);
+  if ((uint8_t*)(c->current_function_name) != NULL) {
+  int32_t idx = 0;
+  while (idx < args->len && idx < sem_ty_nparams(c->t, matching)) {
+  if (sem_is_reference_type(c, sem_ty_param(c->t, matching, idx))) {
+  int32_t arg = args->data[idx];
+  int32_t pi = sem_root_parameter_index(c, arg);
+  if (pi >= 0) {
+  const char* ck = __flowc_str_concat(__flowc_str_concat(name, "\x01"), sem_s_itoa((int64_t)(idx)));
+  int32_t pk = sem_sm_get(c->prop_index, ck);
+  if (pk < 0) {
+  pk = sem_sv_len(c->prop_keys);
+  sem_sv_push(c->prop_keys, ck);
+  sem_pv_push(c->prop_sets, (void*)(sem_sv_new()));
+  sem_sm_put(c->prop_index, ck, pk);
+}
+  sem_sv_add((SemStrVec*)(sem_pv_get(c->prop_sets, pk)), __flowc_str_concat(__flowc_str_concat(c->current_function_name, "\x01"), sem_s_itoa((int64_t)(pi))));
+}
+  const char* origin = sem_local_borrow_origin(c, arg);
+  if ((uint8_t*)(origin) != NULL && sem_sv_has(c->local_storage, origin)) {
+  const char* rk = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(sem_node_key(c, node), "\x01"), c->current_function_name), "\x01"), name), "\x01"), sem_s_itoa((int64_t)(idx))), "\x01"), origin);
+  if (sem_sm_has(c->ref_seen, rk) == 0) {
+  sem_sm_put(c->ref_seen, rk, 1);
+  sem_sv_push(c->ref_key, sem_node_key(c, node));
+  sem_sv_push(c->ref_caller, c->current_function_name);
+  sem_sv_push(c->ref_callee, name);
+  sem_iv_push(c->ref_idx, idx);
+  sem_sv_push(c->ref_origin, origin);
+  sem_sv_push(c->ref_loc, sem_location_suffix(c, stmt));
+}
+}
+}
+  idx = (idx + 1);
+}
+}
+  return tys->ret[matching];
+}
+  int32_t implicit = sem_match_implicit_effect_overload(c, cands, arg_types);
+  if (implicit >= 0) {
+  return tys->ret[implicit];
+}
+  if (sem_builtin_kind(name) != 0) {
+  return sem_builtin_type(c, name);
+}
+  int32_t ci2 = 0;
+  while (ci2 < cands->len) {
+  int32_t cand2 = cands->data[ci2];
+  if (sem_ty_nparams(c->t, cand2) == arg_types->len) {
+  bool has_span = 0;
+  int32_t j2 = 0;
+  while (j2 < sem_ty_nparams(c->t, cand2)) {
+  if (sem_is_span(c, sem_ty_param(c->t, cand2, j2))) {
+  has_span = 1;
+}
+  j2 = (j2 + 1);
+}
+  if (has_span) {
+  if (sem_check_span_arguments(c, name, args, cand2)) {
+  return tys->ret[cand2];
+}
+}
+}
+  ci2 = (ci2 + 1);
+}
+  const char* shown = "";
+  int32_t a2 = 0;
+  while (a2 < arg_types->len) {
+  if (a2 > 0) {
+  shown = __flowc_str_concat(shown, ", ");
+}
+  shown = __flowc_str_concat(shown, sem_tstr(c, arg_types->data[a2]));
+  a2 = (a2 + 1);
+}
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("No matching overload for function '", name), "' with arguments ("), shown), ")"));
+  return tys->ret[cands->data[0]];
+}
+
+const char* sem_effect_name_for_receiver(Sem* c, int32_t recv) {
+  if (sem_is_variable(c, recv) == 0) {
+  return (const char*)(NULL);
+}
+  const char* nm = sem_nname(c, recv);
+  if (sem_sm_has(c->effect_types, nm)) {
+  return nm;
+}
+  int32_t s = sem_lookup(c, nm);
+  if (s >= 0) {
+  const char* tn = sem_tname(c, sem_sym_type(c, s));
+  if (sem_s_starts(tn, "capability_")) {
+  return sem_s_from(tn, 11);
+}
+  if (sem_sm_has(c->effect_types, tn)) {
+  return tn;
+}
+}
+  return (const char*)(NULL);
+}
+
+const char* sem_impl_method_for_receiver(Sem* c, int32_t recv_type, const char* method) {
+  const char* sname = (const char*)(NULL);
+  if (sem_tkind(c, recv_type) == TK_STRUCT) {
+  sname = sem_tname(c, recv_type);
+} else {
+  if (sem_tkind(c, recv_type) == TK_POINTER && sem_telem(c, recv_type) >= 0) {
+  if (sem_tkind(c, sem_telem(c, recv_type)) == TK_STRUCT) {
+  sname = sem_tname(c, sem_telem(c, recv_type));
+}
+}
+}
+  if ((uint8_t*)(sname) == NULL || sem_s_len(sname) == 0) {
+  return (const char*)(NULL);
+}
+  int32_t li = sem_sm_get(c->impl_methods, __flowc_str_concat(__flowc_str_concat(sname, "\x01"), method));
+  if (li < 0) {
+  return (const char*)(NULL);
+}
+  SemStrVec* lst = (SemStrVec*)((SemStrVec*)(sem_pv_get(c->impl_method_lists, li)));
+  if (lst->len == 1) {
+  return sem_sv_get(lst, 0);
+}
+  if (lst->len > 1) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Ambiguous method '", method), "' for type '"), sname), "' ("), sem_sv_join(lst, ", ")), ")"));
+}
+  return (const char*)(NULL);
+}
+
+SemIntVec* sem_call_args(Sem* c, int32_t first) {
+  SemIntVec* v = (SemIntVec*)(sem_iv_new());
+  int32_t a = first;
+  while (a != AST_NONE) {
+  sem_iv_push(v, a);
+  a = sem_nnext(c, a);
+}
+  return v;
+}
+
+int32_t sem_check_method_call(Sem* c, int32_t e, int32_t stmt) {
+  int32_t recv = sem_na(c, e);
+  const char* method = sem_nname(c, e);
+  SemIntVec* rest = (SemIntVec*)(sem_call_args(c, sem_nnext(c, recv)));
+  const char* en = sem_effect_name_for_receiver(c, recv);
+  if ((uint8_t*)(en) != NULL) {
+  return sem_check_effect_call(c, en, method, rest);
+}
+  int32_t recv_type = sem_check_expression(c, recv);
+  SemIntVec* all = (SemIntVec*)(sem_call_args(c, recv));
+  const char* im = sem_impl_method_for_receiver(c, recv_type, method);
+  if ((uint8_t*)(im) != NULL) {
+  sem_resolved_calls_add(c, im);
+  return sem_check_function_call(c, im, all, e, stmt);
+}
+  sem_resolved_calls_add(c, "__unresolved_dynamic_call");
+  sem_check_rt_safe_call(c, "__unresolved_dynamic_call");
+  return sem_check_function_call(c, method, all, e, stmt);
+}
+
+int32_t sem_check_range_sum(Sem* c, int32_t e) {
+  int32_t a = sem_na(c, e);
+  while (a != AST_NONE) {
+  sem_check_expression(c, a);
+  a = sem_nnext(c, a);
+}
+  return sem_tmk(c, TK_I32);
+}
+
+bool sem_is_pipe_find(Sem* c, int32_t e) {
+  if (sem_nname_is(c, e, "find") == 0 || sem_nlen(c, sem_na(c, e)) != 2) {
+  return 0;
+}
+  int32_t i = (((c->ar).nodes[e]).name_start - 1);
+  while (i > 0 && sem_s_is_space((int32_t)(c->src[i]))) {
+  i = (i - 1);
+}
+  return i > 0 && c->src[i] == 62 && c->src[(i - 1)] == 124;
+}
+
+int32_t sem_check_call(Sem* c, int32_t e, int32_t stmt) {
+  int32_t iv = sem_nival(c, e);
+  if (iv >= 2 && iv <= 4 && sem_nname_is(c, e, "sum")) {
+  return sem_check_range_sum(c, e);
+}
+  if (sem_is_method_call(c, e)) {
+  return sem_check_method_call(c, e, stmt);
+}
+  if (sem_is_pipe_find(c, e)) {
+  return sem_check_find_expr(c, sem_na(c, e), sem_nnext(c, sem_na(c, e)));
+}
+  return sem_check_function_call(c, sem_call_name(c, e), sem_call_args(c, sem_na(c, e)), e, stmt);
+}
+
+const char* sem_struct_lit_name(Sem* c, int32_t e) {
+  const char* nm = sem_nname(c, e);
+  int32_t t = sem_nb(c, e);
+  while (t != AST_NONE) {
+  nm = __flowc_str_concat(__flowc_str_concat(nm, "_"), sem_pt_name(c->t, sem_pt_of_ast(c, t)));
+  t = sem_nnext(c, t);
+}
+  return nm;
+}
+
+int32_t sem_check_struct_literal(Sem* c, int32_t e) {
+  if (sem_ncc(c, e) != AST_NONE) {
+  return sem_check_record_update(c, e);
+}
+  return sem_check_struct_fields(c, sem_struct_lit_name(c, e), sem_na(c, e));
+}
+
+int32_t sem_check_record_update(Sem* c, int32_t e) {
+  int32_t bt = sem_check_expression(c, sem_ncc(c, e));
+  const char* sname = "";
+  if (bt >= 0) {
+  const char* tn = sem_tname(c, bt);
+  if ((uint8_t*)(tn) != NULL) {
+  sname = tn;
+}
+}
+  int32_t se = sem_struct_entry(c, sname);
+  if (sem_s_len(sname) == 0 || se < 0) {
+  if (c->strict) {
+  const char* shown = sname;
+  if (sem_s_len(shown) == 0) {
+  shown = sem_tstr(c, bt);
+}
+  sem_err(c, __flowc_str_concat("record update base must be a struct, got ", shown));
+}
+  return sem_ty_struct(c->t, sname);
+}
+  int32_t n = sem_se_nfields(c, se);
+  int32_t f = sem_na(c, e);
+  while (f != AST_NONE) {
+  const char* fname = sem_nname(c, f);
+  int32_t last = (0 - 1);
+  int32_t j = 0;
+  while (j < n) {
+  if (sem_s_eq(sem_se_field_name(c, se, j), fname)) {
+  last = j;
+}
+  j = (j + 1);
+}
+  int32_t expected = sem_tmk(c, TK_UNKNOWN);
+  if (last < 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("record update: struct '", sname), "' has no field '"), fname), "'"));
+} else {
+  expected = sem_parse_type(c, sem_se_field_type(c, se, last));
+}
+  int32_t actual = sem_check_expression(c, sem_na(c, f));
+  if (sem_can_coerce(c, actual, expected) == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("record update: field '", fname), "' expects "), sem_tstr(c, expected)), ", got "), sem_tstr(c, actual)));
+}
+  f = sem_nnext(c, f);
+}
+  return sem_ty_struct(c->t, sname);
+}
+
+int32_t sem_check_struct_fields(Sem* c, const char* name, int32_t first) {
+  sem_ensure_generic_struct_instance(c, name, NULL);
+  int32_t se = sem_struct_entry(c, name);
+  if (se < 0) {
+  return sem_ty_struct(c->t, name);
+}
+  SemStrVec* pnames = (SemStrVec*)(sem_sv_new());
+  SemIntVec* ptypes = (SemIntVec*)(sem_iv_new());
+  int32_t f = first;
+  while (f != AST_NONE) {
+  const char* fname = sem_nname(c, f);
+  int32_t ft = sem_check_expression(c, sem_na(c, f));
+  int32_t k = 0;
+  int32_t found = (0 - 1);
+  while (k < pnames->len) {
+  if (sem_s_eq(sem_sv_get(pnames, k), fname)) {
+  found = k;
+}
+  k = (k + 1);
+}
+  if (found >= 0) {
+  ptypes->data[found] = ft;
+} else {
+  sem_sv_push(pnames, fname);
+  sem_iv_push(ptypes, ft);
+}
+  f = sem_nnext(c, f);
+}
+  int32_t i = 0;
+  int32_t n = sem_se_nfields(c, se);
+  while (i < n) {
+  const char* fname2 = sem_se_field_name(c, se, i);
+  int32_t last = i;
+  int32_t j = (i + 1);
+  while (j < n) {
+  if (sem_s_eq(sem_se_field_name(c, se, j), fname2)) {
+  last = j;
+}
+  j = (j + 1);
+}
+  bool first = 1;
+  j = 0;
+  while (j < i) {
+  if (sem_s_eq(sem_se_field_name(c, se, j), fname2)) {
+  first = 0;
+}
+  j = (j + 1);
+}
+  if (first) {
+  int32_t expected = sem_parse_type(c, sem_se_field_type(c, se, last));
+  int32_t pi = (0 - 1);
+  int32_t k2 = 0;
+  while (k2 < pnames->len) {
+  if (sem_s_eq(sem_sv_get(pnames, k2), fname2)) {
+  pi = k2;
+}
+  k2 = (k2 + 1);
+}
+  if (pi < 0) {
+  const char* declared = sem_pt_name(c->t, sem_se_field_type(c, se, last));
+  bool from_header = sem_tkind(c, expected) == TK_UNKNOWN && sem_cimport_knows(c, declared);
+  if (sem_sm_has(c->opaque_c_types, declared) == 0 && from_header == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Struct '", name), "' missing field '"), fname2), "'"));
+}
+} else {
+  if (sem_can_coerce(c, ptypes->data[pi], expected) == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Struct '", name), "' field '"), fname2), "' expects "), sem_tstr(c, expected)), ", got "), sem_tstr(c, ptypes->data[pi])));
+}
+}
+}
+  i = (i + 1);
+}
+  return sem_ty_struct(c->t, name);
+}
+
+int32_t sem_check_field_access(Sem* c, int32_t e) {
+  int32_t ot = sem_check_expression(c, sem_na(c, e));
+  const char* field = sem_nname(c, e);
+  if (ot < 0) {
+  return ot;
+}
+  if (sem_tkind(c, ot) == TK_SPAN) {
+  if (sem_s_eq(field, "len")) {
+  return sem_tmk(c, TK_I64);
+}
+  if (sem_s_eq(field, "data")) {
+  return sem_ty_ptr(c->t, sem_telem(c, ot));
+}
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("span has no field '", field), "'; a span exposes `.len`, `.data` and element access `[i]`"));
+  return sem_tmk(c, TK_UNKNOWN);
+}
+  const char* sname = (const char*)(NULL);
+  if (sem_tkind(c, ot) == TK_STRUCT) {
+  sname = sem_tname(c, ot);
+} else {
+  if (sem_tkind(c, ot) == TK_POINTER && sem_telem(c, ot) >= 0) {
+  if (sem_tkind(c, sem_telem(c, ot)) == TK_STRUCT) {
+  sname = sem_tname(c, sem_telem(c, ot));
+}
+}
+}
+  if ((uint8_t*)(sname) != NULL && sem_s_len(sname) > 0) {
+  int32_t se = sem_struct_entry(c, sname);
+  if (se >= 0 && sem_iv_get(c->se_kind, se) == SE_STRUCT) {
+  int32_t i = 0;
+  while (i < sem_se_nfields(c, se)) {
+  if (sem_s_eq(sem_se_field_name(c, se, i), field)) {
+  return sem_parse_type(c, sem_se_field_type(c, se, i));
+}
+  i = (i + 1);
+}
+}
+}
+  if (c->strict) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Field '", field), "' not found on type "), sem_tstr(c, ot)));
+}
+  return sem_tmk(c, TK_UNKNOWN);
+}
+
+bool sem_sortable_kind(int32_t k) {
+  return k == TK_I8 || k == TK_I16 || k == TK_I32 || k == TK_I64 || k == TK_U8 || k == TK_U16 || k == TK_U32 || k == TK_U64 || k == TK_F32 || k == TK_F64 || k == TK_BOOL;
+}
+
+int32_t sem_check_sort_expr(Sem* c, int32_t e) {
+  int32_t at = sem_check_expression(c, sem_na(c, e));
+  if (sem_tkind(c, at) != TK_ARRAY) {
+  sem_err(c, __flowc_str_concat("Declarative sort requires a sized array, got ", sem_tstr(c, at)));
+  return at;
+}
+  if (sem_tsize(c, at) == NO_SIZE) {
+  sem_err(c, "Declarative sort requires a fixed-size array (array<T, N>)");
+}
+  int32_t el = sem_telem(c, at);
+  if (el < 0) {
+  sem_err(c, "Declarative sort could not determine element type");
+  return at;
+}
+  int32_t keys = sem_nb(c, e);
+  if (keys != AST_NONE) {
+  if (sem_tkind(c, el) != TK_STRUCT || sem_s_len(sem_tname(c, el)) == 0) {
+  sem_err(c, "sort by .field requires an array of structs");
+  return at;
+}
+  int32_t se = sem_struct_entry(c, sem_tname(c, el));
+  if (se < 0) {
+  if (c->strict) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Unknown struct type '", sem_tname(c, el)), "' in sort"));
+}
+  return at;
+}
+  int32_t k = keys;
+  while (k != AST_NONE) {
+  const char* kf = sem_nname(c, k);
+  int32_t fi = (0 - 1);
+  int32_t i = 0;
+  while (i < sem_se_nfields(c, se)) {
+  if (sem_s_eq(sem_se_field_name(c, se, i), kf)) {
+  fi = i;
+}
+  i = (i + 1);
+}
+  if (sem_s_len(kf) == 0 || fi < 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Sort key '.", kf), "' is not a field of "), sem_tname(c, el)));
+} else {
+  int32_t ft = sem_parse_type(c, sem_se_field_type(c, se, fi));
+  if (sem_sortable_kind(sem_tkind(c, ft)) == 0 && sem_tkind(c, ft) != TK_STRING) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Sort key '.", kf), "' has unsupported type "), sem_tstr(c, ft)), " (need numeric or string)"));
+}
+}
+  k = sem_nnext(c, k);
+}
+} else {
+  if (sem_tkind(c, el) == TK_STRUCT) {
+  sem_err(c, "Sorting an array of structs requires `sort by .field` (or `sortBy [.field, ...]`)");
+} else {
+  if (sem_sortable_kind(sem_tkind(c, el)) == 0 && sem_tkind(c, el) != TK_STRING) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Cannot sort array of ", sem_tstr(c, el)), " (need numeric or string elements)"));
+}
+}
+}
+  return at;
+}
+
+int32_t sem_check_find_expr(Sem* c, int32_t arr, int32_t target) {
+  int32_t at = sem_check_expression(c, arr);
+  int32_t tt = sem_check_expression(c, target);
+  if (sem_tkind(c, at) != TK_ARRAY) {
+  sem_err(c, __flowc_str_concat("Declarative find requires a sized array, got ", sem_tstr(c, at)));
+  return sem_tmk(c, TK_I32);
+}
+  if (sem_tsize(c, at) == NO_SIZE) {
+  sem_err(c, "Declarative find requires a fixed-size array (array<T, N>)");
+}
+  int32_t el = sem_telem(c, at);
+  if (el < 0) {
+  sem_err(c, "Declarative find could not determine element type");
+  return sem_tmk(c, TK_I32);
+}
+  if (sem_sortable_kind(sem_tkind(c, el)) == 0 && sem_tkind(c, el) != TK_STRING) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Cannot find in array of ", sem_tstr(c, el)), " (need numeric or string elements)"));
+  return sem_tmk(c, TK_I32);
+}
+  if (sem_tkind(c, tt) != TK_UNKNOWN && sem_tkind(c, tt) != sem_tkind(c, el) && (sem_is_numeric(c, tt) && sem_is_numeric(c, el)) == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("find target has type ", sem_tstr(c, tt)), " but the array holds "), sem_tstr(c, el)));
+}
+  return sem_tmk(c, TK_I32);
+}
+
+int32_t sem_array_lit_len(Sem* c, int32_t e) {
+  int32_t rep = sem_nb(c, e);
+  if (rep != AST_NONE) {
+  int32_t ok[1] = { 0 };
+  int64_t n = sem_literal_int(c, rep, 1, (int32_t*)((&ok[0])));
+  if (ok[0] == 1) {
+  return (int32_t)(n);
+}
+  return 1;
+}
+  return sem_nlen(c, sem_na(c, e));
+}
+
+int32_t sem_check_slice_expr(Sem* c, int32_t e) {
+  SemTys* tys = (SemTys*)(c->t);
+  int32_t bt = sem_check_expression(c, sem_na(c, e));
+  if (bt < 0) {
+  return bt;
+}
+  int32_t which = 0;
+  while (which < 2) {
+  int32_t bound = sem_nb(c, e);
+  const char* what = "start";
+  if (which == 1) {
+  bound = sem_ncc(c, e);
+  what = "end";
+}
+  if (bound != AST_NONE) {
+  int32_t bty = sem_check_expression(c, bound);
+  int32_t bk = sem_tkind(c, bty);
+  if (bk != TK_UNKNOWN && bk != TK_VOID && sem_is_integer(c, bty) == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("slice ", what), " bound must be an integer, got "), sem_tstr(c, bty)));
+}
+}
+  which = (which + 1);
+}
+  int32_t bk2 = sem_tkind(c, bt);
+  if (bk2 != TK_ARRAY && bk2 != TK_SPAN && bk2 != TK_POINTER) {
+  if (c->strict) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("cannot slice ", sem_tstr(c, bt)), ": a slice needs contiguous storage (array<T, N>, span, or ptr<T>)"));
+}
+  return sem_tmk(c, TK_UNKNOWN);
+}
+  int32_t el = sem_telem(c, bt);
+  if (el < 0) {
+  el = sem_tmk(c, TK_UNKNOWN);
+}
+  int32_t mutable = sem_borrow_source_mutable(c, sem_na(c, e));
+  const char* prefix = "span_const_";
+  if (mutable != 0) {
+  prefix = "span_mut_";
+}
+  int32_t sp = sem_ty_named(c->t, TK_SPAN, __flowc_str_concat(prefix, sem_tstr(c, el)));
+  tys->elem[sp] = el;
+  int32_t new_size_3 = sem_static_length(c, e);
+  tys->size[sp] = new_size_3;
+  return sp;
+}
+
+int32_t sem_check_cast(Sem* c, int32_t e) {
+  int32_t st = sem_check_expression(c, sem_na(c, e));
+  int32_t tt = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e)));
+  if (sem_can_cast(c, st, tt) == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Cannot cast ", sem_tstr(c, st)), " to "), sem_tstr(c, tt)));
+}
+  return tt;
+}
+
+int32_t sem_check_if_expr(Sem* c, int32_t e) {
+  int32_t ct = sem_check_expression(c, sem_na(c, e));
+  if (ct >= 0 && sem_tkind(c, ct) != TK_BOOL) {
+  if (c->strict || sem_is_numeric(c, ct) == 0) {
+  sem_err(c, __flowc_str_concat("If condition must be bool, got ", sem_tstr(c, ct)));
+}
+}
+  int32_t tt = sem_check_expression(c, sem_nb(c, e));
+  int32_t et = sem_check_expression(c, sem_ncc(c, e));
+  if (tt < 0 || et < 0) {
+  return tt;
+}
+  int32_t tk = sem_tkind(c, tt);
+  int32_t ek = sem_tkind(c, et);
+  if (tk != ek && tk != TK_UNKNOWN && ek != TK_UNKNOWN) {
+  if ((sem_is_numeric(c, tt) && sem_is_numeric(c, et)) == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("if-expression branches must have the same type, got ", sem_tstr(c, tt)), " and "), sem_tstr(c, et)));
+}
+}
+  return tt;
+}
+
+int32_t sem_check_try(Sem* c, int32_t e) {
+  int32_t ot = sem_check_expression(c, sem_na(c, e));
+  if (ot < 0) {
+  return ot;
+}
+  if (sem_tkind(c, ot) == TK_STRUCT && sem_s_starts(sem_tname(c, ot), "Result_")) {
+  SemStrVec* parts = (SemStrVec*)(sem_s_split(sem_tname(c, ot), 95));
+  if (parts->len >= 2) {
+  int32_t sc = sem_parse_named_scalar(c, sem_sv_get(parts, 1));
+  if (sc >= 0) {
+  return sc;
+}
+  return sem_tmk(c, TK_I32);
+}
+}
+  if (c->strict) {
+  sem_err(c, __flowc_str_concat("Try operator '?' requires Result type, got ", sem_tstr(c, ot)));
+}
+  return sem_tmk(c, TK_VOID);
+}
+
+int32_t sem_check_lambda(Sem* c, int32_t e) {
+  SemTys* tys = (SemTys*)(c->t);
+  sem_push_scope(c);
+  int32_t f = sem_ty_mk(c->t, TK_FUNCTION);
+  int32_t p = sem_na(c, e);
+  while (p != AST_NONE) {
+  int32_t pt = sem_pt_of_ast(c, sem_na(c, p));
+  int32_t ptype = (0 - 1);
+  if (pt >= 0 && sem_s_eq(sem_pt_name(c->t, pt), "auto") == 0) {
+  ptype = sem_parse_type(c, pt);
+} else {
+  ptype = sem_tmk(c, TK_UNKNOWN);
+}
+  sem_ty_add_param(c->t, f, ptype);
+  sem_define_var(c, sem_nname(c, p), ptype, 1);
+  p = sem_nnext(c, p);
+}
+  SemIntVec* saved_sink = (SemIntVec*)(c->return_sink);
+  c->return_sink = sem_iv_new();
+  sem_check_block(c, sem_ncc(c, e));
+  c->return_sink = saved_sink;
+  sem_pop_scope(c);
+  if (sem_nb(c, e) != AST_NONE) {
+  int32_t new_ret_4 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e)));
+  tys->ret[f] = new_ret_4;
+} else {
+  int32_t new_ret_5 = sem_tmk(c, TK_VOID);
+  tys->ret[f] = new_ret_5;
+}
+  return f;
+}
+
+int32_t sem_check_array_literal(Sem* c, int32_t e) {
+  int32_t first = sem_na(c, e);
+  int32_t el = (0 - 1);
+  if (first != AST_NONE) {
+  el = sem_check_expression(c, first);
+} else {
+  el = sem_tmk(c, TK_I32);
+}
+  return sem_ty_array(c->t, el, sem_array_lit_len(c, e));
+}
+
+int32_t sem_check_vector_literal(Sem* c, int32_t e) {
+  bool any_float = 0;
+  int32_t n = 0;
+  int32_t x = sem_na(c, e);
+  while (x != AST_NONE) {
+  int32_t t = sem_check_expression(c, x);
+  if (sem_tkind(c, t) == TK_F32 || sem_tkind(c, t) == TK_F64) {
+  any_float = 1;
+}
+  n = (n + 1);
+  x = sem_nnext(c, x);
+}
+  const char* el = "i32";
+  if (any_float) {
+  el = "f32";
+}
+  return sem_ty_named(c->t, TK_UNKNOWN, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("vec", sem_s_itoa((int64_t)(n))), "_"), el));
+}
+
+int32_t sem_check_interpolation(Sem* c, int32_t e) {
+  int32_t s = (((c->ar).nodes[e]).name_start + 1);
+  int32_t t = (((c->ar).nodes[e]).name_end - 1);
+  if (sem_interp_parts_ok(c, s, t) == 0) {
+  return sem_tmk(c, TK_STRING);
+}
+  int32_t result = (0 - 1);
+  bool have = 0;
+  int32_t cursor = s;
+  int32_t i = s;
+  while (i < t) {
+  if (c->src[i] == 36 && (i + 1) < t && c->src[(i + 1)] == 123) {
+  if (i > cursor) {
+  int32_t lit = sem_tmk(c, TK_STRING);
+  if (have) {
+  result = sem_binary_types(c, (0 - 1), "+", result, lit);
+} else {
+  result = lit;
+  have = 1;
+}
+}
+  int32_t j = (i + 2);
+  while (j < t && c->src[j] != 125) {
+  j = (j + 1);
+}
+  int32_t part = sem_check_embedded_expr(c, (i + 2), j);
+  if (have) {
+  result = sem_binary_types(c, (0 - 1), "+", result, part);
+} else {
+  result = part;
+  have = 1;
+}
+  cursor = (j + 1);
+  i = (j + 1);
+} else {
+  i = (i + 1);
+}
+}
+  if (cursor < t) {
+  int32_t lit2 = sem_tmk(c, TK_STRING);
+  if (have) {
+  result = sem_binary_types(c, (0 - 1), "+", result, lit2);
+} else {
+  result = lit2;
+  have = 1;
+}
+}
+  if (have == 0) {
+  return sem_tmk(c, TK_STRING);
+}
+  return result;
+}
+
+bool sem_interp_parts_ok(Sem* c, int32_t s, int32_t t) {
+  int32_t i = s;
+  while (i < t) {
+  if (c->src[i] == 36 && (i + 1) < t && c->src[(i + 1)] == 123) {
+  int32_t j = (i + 2);
+  while (j < t && c->src[j] != 125) {
+  j = (j + 1);
+}
+  if (j >= t || j == (i + 2)) {
+  return 0;
+}
+  uint8_t* text = (uint8_t*)((c->src + (i + 2)));
+  Parser p = flowc_parser_new(text, ((j - i) - 2), 4096);
+  int32_t root = flowc_parse_expr((&p));
+  if (root < 0 || (p).err != 0 || ((p).cur).kind != TOK_EOF) {
+  return 0;
+}
+  i = (j + 1);
+} else {
+  i = (i + 1);
+}
+}
+  return 1;
+}
+
+int32_t sem_check_embedded_expr(Sem* c, int32_t a, int32_t b) {
+  AstArena saved_ar = c->ar;
+  uint8_t* saved_src = (uint8_t*)(c->src);
+  int32_t saved_pos = c->pos;
+  uint8_t* text = (uint8_t*)((c->src + a));
+  Parser p = flowc_parser_new(text, (b - a), 4096);
+  int32_t root = flowc_parse_expr((&p));
+  if (root < 0 || (p).err != 0) {
+  return sem_tmk(c, TK_UNKNOWN);
+}
+  bool saved_lock = c->pos_lock;
+  c->pos_lock = 1;
+  c->ar = (p).arena;
+  c->src = text;
+  int32_t t = sem_check_expression(c, root);
+  c->ar = saved_ar;
+  c->src = saved_src;
+  c->pos = saved_pos;
+  c->pos_lock = saved_lock;
+  return t;
+}
+
+int32_t sem_check_expression_stmt(Sem* c, int32_t e, int32_t stmt) {
+  if (e < 0) {
+  return sem_tmk(c, TK_UNKNOWN);
+}
+  sem_set_pos(c, e);
+  int32_t k = sem_nk(c, e);
+  if (k == AST_INT || k == AST_FLOAT || k == AST_BOOL) {
+  return sem_check_literal(c, e);
+}
+  if (k == AST_STRING) {
+  if (sem_string_has_interp(c, e)) {
+  return sem_check_interpolation(c, e);
+}
+  return sem_check_literal(c, e);
+}
+  if (k == AST_IDENT) {
+  if (sem_nname_is(c, e, "null")) {
+  return sem_check_literal(c, e);
+}
+  if (sem_nival(c, e) == AST_IDENT_FORK_SRC) {
+  int32_t ft = sem_sm_get(c->fork_src, sem_node_key(c, (sem_nend(c, e) - 1)));
+  if (ft >= 0) {
+  return ft;
+}
+  return sem_tmk(c, TK_UNKNOWN);
+}
+  if (sem_nival(c, e) == AST_IDENT_SORT_MOD) {
+  return sem_tmk(c, TK_UNKNOWN);
+}
+  return sem_check_variable(c, e);
+}
+  if (k == AST_BINOP) {
+  return sem_check_binary_op(c, e);
+}
+  if (k == AST_UNARY) {
+  if (sem_nival(c, e) == KW_DBG) {
+  SemIntVec* one = (SemIntVec*)(sem_iv_new());
+  sem_iv_push(one, sem_na(c, e));
+  return sem_check_function_call(c, "__flow_dbg", one, e, stmt);
+}
+  return sem_check_unary_op(c, e);
+}
+  if (k == AST_CALL) {
+  return sem_check_call(c, e, stmt);
+}
+  if (k == AST_STRUCT_LIT) {
+  return sem_check_struct_literal(c, e);
+}
+  if (k == AST_ARRAY_LIT) {
+  return sem_check_array_literal(c, e);
+}
+  if (k == AST_VECTOR_LIT) {
+  return sem_check_vector_literal(c, e);
+}
+  if (k == AST_INDEX) {
+  if (sem_nival(c, e) == 1) {
+  return sem_check_slice_expr(c, e);
+}
+  int32_t bt = sem_check_expression(c, sem_na(c, e));
+  if (bt < 0) {
+  return bt;
+}
+  int32_t bk = sem_tkind(c, bt);
+  if (bk == TK_ARRAY || bk == TK_POINTER || bk == TK_SPAN) {
+  int32_t el = sem_telem(c, bt);
+  if (el >= 0) {
+  return el;
+}
+  return sem_tmk(c, TK_VOID);
+}
+  return sem_tmk(c, TK_VOID);
+}
+  if (k == AST_CAST) {
+  return sem_check_cast(c, e);
+}
+  if (k == AST_IF_EXPR) {
+  return sem_check_if_expr(c, e);
+}
+  if (k == AST_FIELD_ACCESS) {
+  return sem_check_field_access(c, e);
+}
+  if (k == AST_TRY) {
+  return sem_check_try(c, e);
+}
+  if (k == AST_FN) {
+  return sem_check_lambda(c, e);
+}
+  if (k == AST_SORT_BY) {
+  return sem_check_sort_expr(c, e);
+}
+  if (k == AST_PIPE_BLOCK) {
+  return sem_check_pipe_block(c, e);
+}
+  return sem_tmk(c, TK_UNKNOWN);
+}
+
+int32_t sem_fork_field_type(Sem* c, int32_t v) {
+  if (sem_is_function_call(c, v) == 0) {
+  return (0 - 1);
+}
+  const char* name = sem_nname(c, v);
+  int32_t i = 0;
+  while (i < sem_iv_len(c->d_kind)) {
+  if (sem_iv_get(c->d_kind, i) == DK_FUNC && sem_iv_get(c->d_mod, i) == c->cm) {
+  int32_t fi = sem_iv_get(c->d_info, i);
+  if (sem_s_eq(sem_sv_get(c->fi_name, fi), name)) {
+  return sem_iv_get(c->fi_ret, fi);
+}
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t sem_check_pipe_block(Sem* c, int32_t e) {
+  int32_t kind = sem_nival(c, e);
+  int32_t st = sem_check_expression(c, sem_na(c, e));
+  sem_sm_put(c->fork_src, sem_node_key(c, e), st);
+  if (kind == PIPE_BLOCK_CHOOSE) {
+  sem_check_expression(c, sem_ncc(c, e));
+  int32_t result = (0 - 1);
+  int32_t arm = sem_nb(c, e);
+  while (arm != AST_NONE) {
+  int32_t v = sem_nb(c, arm);
+  sem_check_expression(c, v);
+  if (result < 0) {
+  int32_t rt = sem_fork_field_type(c, v);
+  if (rt >= 0) {
+  result = sem_parse_type(c, rt);
+}
+}
+  arm = sem_nnext(c, arm);
+}
+  if (result < 0) {
+  return sem_tmk(c, TK_UNKNOWN);
+}
+  return result;
+}
+  if (kind != PIPE_BLOCK_FORK) {
+  return sem_tmk(c, TK_UNKNOWN);
+}
+  int32_t first = sem_nb(c, e);
+  if (((c->ar).nodes[e]).name_end > ((c->ar).nodes[e]).name_start) {
+  return sem_check_struct_fields(c, sem_nname(c, e), first);
+}
+  const char* sig = "";
+  int32_t f = first;
+  while (f != AST_NONE) {
+  int32_t pt = sem_fork_field_type(c, sem_na(c, f));
+  if (pt < 0) {
+  return sem_tmk(c, TK_UNKNOWN);
+}
+  sig = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(sig, sem_nname(c, f)), ":"), sem_pt_name(c->t, pt)), ";");
+  f = sem_nnext(c, f);
+}
+  const char* key = __flowc_str_concat(__flowc_str_concat(sem_s_itoa((int64_t)(c->cm)), "|"), sig);
+  int32_t idx = sem_sm_get(c->fork_sigs, key);
+  if (idx < 0) {
+  const char* ck = __flowc_str_concat(sem_s_itoa((int64_t)(c->cm)), "#count");
+  idx = sem_sm_get(c->fork_sigs, ck);
+  if (idx < 0) {
+  idx = 0;
+}
+  sem_sm_put(c->fork_sigs, ck, (idx + 1));
+  sem_sm_put(c->fork_sigs, key, idx);
+  const char* rname = __flowc_str_concat("__ForkRecord_", sem_s_itoa((int64_t)(idx)));
+  int32_t se = sem_se_new(c, rname, SE_STRUCT, (0 - 1));
+  sem_iv_set(c->se_fstart, se, sem_sv_len(c->sf_names));
+  f = first;
+  while (f != AST_NONE) {
+  sem_se_add_field(c, se, sem_nname(c, f), sem_fork_field_type(c, sem_na(c, f)));
+  f = sem_nnext(c, f);
+}
+  sem_sm_put(c->struct_types, rname, se);
+}
+  return sem_check_struct_fields(c, __flowc_str_concat("__ForkRecord_", sem_s_itoa((int64_t)(idx))), first);
+}
+
+int32_t sem_check_expression(Sem* c, int32_t e) {
+  if (e >= 0 && sem_nk(c, e) == AST_ASSIGN) {
+  return sem_check_assignment(c, e);
+}
+  return sem_check_expression_stmt(c, e, (0 - 1));
+}
+
+int32_t sem_check_block(Sem* c, int32_t b) {
+  int32_t result = sem_tmk(c, TK_VOID);
+  if (b < 0) {
+  return result;
+}
+  int32_t s = sem_na(c, b);
+  while (s != AST_NONE) {
+  result = sem_check_statement(c, s);
+  s = sem_nnext(c, s);
+}
+  return result;
+}
+
+int32_t sem_check_var_decl(Sem* c, int32_t s) {
+  const char* name = sem_nname(c, s);
+  bool is_mut = sem_nival(c, s) == 1;
+  int32_t tnode = sem_na(c, s);
+  int32_t init = sem_nb(c, s);
+  int32_t ann = (0 - 1);
+  if (tnode != AST_NONE) {
+  ann = sem_pt_of_ast(c, tnode);
+}
+  bool has_ann = ann >= 0 && sem_s_eq(sem_pt_name(c->t, ann), "auto") == 0;
+  if (init == AST_NONE) {
+  int32_t expected = (0 - 1);
+  if (has_ann) {
+  expected = sem_parse_type(c, ann);
+} else {
+  expected = sem_tmk(c, TK_UNKNOWN);
+}
+  if (sem_tkind(c, expected) != TK_SPAN && (uint8_t*)(c->current_function_name) != NULL) {
+  sem_sv_add(c->local_storage, name);
+}
+  sem_define_var(c, name, expected, is_mut);
+  return expected;
+}
+  int32_t et = sem_check_expression(c, init);
+  int32_t expected2 = et;
+  if (has_ann) {
+  expected2 = sem_parse_type(c, ann);
+  if (sem_can_coerce(c, et, expected2) == 0) {
+  const char* und = sem_undeclared_type_name(c, expected2, et);
+  if (sem_s_len(und) > 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Variable '", name), "' is annotated with unknown type '"), und), "', which is not declared in this scope"));
+} else {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Variable '", name), "' initialized with "), sem_tstr(c, et)), " but annotated as "), sem_tstr(c, expected2)));
+}
+}
+}
+  int32_t ek = sem_tkind(c, expected2);
+  if (ek == TK_SPAN || ek == TK_POINTER) {
+  const char* origin = sem_local_borrow_origin(c, init);
+  if ((uint8_t*)(origin) != NULL) {
+  sem_sm_put(c->span_origin, name, sem_sv_len(c->origin_pool));
+  sem_sv_push(c->origin_pool, origin);
+  if (ek == TK_POINTER && (uint8_t*)(c->current_function_name) != NULL) {
+  sem_sv_add(c->local_storage, name);
+}
+} else {
+  if (sem_sm_has(c->span_origin, name)) {
+  sem_sm_put(c->span_origin, name, (0 - 1));
+}
+  sem_local_storage_discard(c, name);
+}
+} else {
+  if ((uint8_t*)(c->current_function_name) != NULL) {
+  sem_sv_add(c->local_storage, name);
+}
+}
+  sem_define_var(c, name, expected2, is_mut);
+  return expected2;
+}
+
+void sem_local_storage_discard(Sem* c, const char* name) {
+  SemStrVec* v = (SemStrVec*)(c->local_storage);
+  int32_t i = 0;
+  while (i < v->len) {
+  if (sem_s_eq(v->data[i], name)) {
+  int32_t j = i;
+  while ((j + 1) < v->len) {
+  v->data[j] = v->data[(j + 1)];
+  j = (j + 1);
+}
+  v->len = (v->len - 1);
+  return;
+}
+  i = (i + 1);
+}
+}
+
+int32_t sem_check_return_stmt(Sem* c, int32_t s) {
+  int32_t v = sem_na(c, s);
+  if (v != AST_NONE && sem_nk(c, v) == AST_IDENT && sem_nname_is(c, v, "void")) {
+  v = AST_NONE;
+}
+  int32_t rt = (0 - 1);
+  if (v != AST_NONE) {
+  rt = sem_check_expression(c, v);
+  bool reported = sem_domain_escape_by_return(c, s, v);
+  if (reported == 0 && sem_is_span(c, c->current_return_type)) {
+  const char* origin = sem_local_borrow_origin(c, v);
+  if ((uint8_t*)(origin) != NULL) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("span outlives borrowed storage `", origin), "`"), sem_location_suffix(c, s)));
+}
+}
+} else {
+  rt = sem_tmk(c, TK_VOID);
+}
+  if (c->return_sink != NULL) {
+  sem_iv_push(c->return_sink, rt);
+}
+  return rt;
+}
+
+int32_t sem_check_assignment(Sem* c, int32_t s) {
+  int32_t lhs = sem_na(c, s);
+  int32_t value = sem_nb(c, s);
+  if (sem_is_variable(c, lhs) == 0) {
+  if (sem_nk(c, lhs) == AST_INDEX && sem_nival(c, lhs) != 1) {
+  int32_t bt = sem_infer_type_quiet(c, sem_na(c, lhs));
+  if (sem_is_span(c, bt) && sem_span_is_mutable(sem_tname(c, bt)) == 0) {
+  const char* binding = sem_borrow_root_name(c, lhs);
+  if ((uint8_t*)(binding) == NULL) {
+  binding = "span";
+}
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("cannot write through `", binding), "`: "), sem_tstr(c, bt)), " is an immutable view (declare it "), sem_format_span_type(__flowc_str_concat("span_mut_", sem_span_element_name(sem_tname(c, bt))), NO_SIZE)), ")"));
+}
+}
+  int32_t et = sem_check_expression(c, value);
+  int32_t tt = sem_infer_type_quiet(c, lhs);
+  if (tt >= 0) {
+  const char* base = sem_borrow_root_name(c, lhs);
+  if ((uint8_t*)(base) != NULL && sem_sm_has(c->static_names, base)) {
+  bool reported = sem_domain_escape_to_static(c, s, value, base, tt);
+  if (reported == 0 && sem_is_reference_type(c, tt)) {
+  const char* origin = sem_local_borrow_origin(c, value);
+  if ((uint8_t*)(origin) != NULL) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("span outlives borrowed storage `", origin), "`"), sem_location_suffix(c, s)));
+}
+}
+}
+}
+  return et;
+}
+  const char* target = sem_nname(c, lhs);
+  int32_t sym = sem_lookup(c, target);
+  if (sym < 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Undefined variable '", target), "'"));
+  return sem_tmk(c, TK_VOID);
+}
+  if (sem_iv_get(c->sy_mut, sym) == 0) {
+  if (c->strict) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Cannot assign to immutable variable '", target), "' (use 'let mut')"));
+  return sem_tmk(c, TK_VOID);
+}
+  sem_iv_set(c->sy_mut, sym, 1);
+}
+  int32_t et2 = sem_check_expression(c, value);
+  int32_t st = sem_sym_type(c, sym);
+  bool reported2 = sem_domain_escape_to_static(c, s, value, target, st);
+  if (reported2 == 0 && sem_is_reference_type(c, st) && sem_sm_has(c->static_names, target)) {
+  const char* origin2 = sem_local_borrow_origin(c, value);
+  if ((uint8_t*)(origin2) != NULL) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("span outlives borrowed storage `", origin2), "`"), sem_location_suffix(c, s)));
+}
+}
+  if (sem_can_coerce(c, et2, st) == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Cannot assign ", sem_tstr(c, et2)), " to variable '"), target), "' of type "), sem_tstr(c, st)));
+}
+  return et2;
+}
+
+void sem_check_condition(Sem* c, int32_t cond, const char* what) {
+  int32_t ct = sem_check_expression(c, cond);
+  if (ct >= 0 && sem_tkind(c, ct) != TK_BOOL) {
+  if (c->strict || sem_is_numeric(c, ct) == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(what, " condition must be bool, got "), sem_tstr(c, ct)));
+}
+}
+}
+
+int32_t sem_check_if_stmt(Sem* c, int32_t s) {
+  sem_check_condition(c, sem_na(c, s), "If");
+  int32_t then_t = sem_check_block(c, sem_nb(c, s));
+  int32_t els = sem_ncc(c, s);
+  if (els != AST_NONE) {
+  sem_check_block(c, els);
+  return then_t;
+}
+  return sem_tmk(c, TK_VOID);
+}
+
+int32_t sem_check_while_stmt(Sem* c, int32_t s) {
+  sem_check_condition(c, sem_na(c, s), "While");
+  if (c->safety_profile) {
+  int32_t bound = sem_nival(c, s);
+  if (bound == 0) {
+  sem_err(c, "safety profile requires @max_iterations(N) on while loops (MISRA 17.4); use a bounded for-loop or annotate the while");
+} else {
+  if (bound < 0) {
+  sem_err(c, "@max_iterations requires a positive bound");
+}
+}
+}
+  sem_check_block(c, sem_nb(c, s));
+  return sem_tmk(c, TK_VOID);
+}
+
+int32_t sem_check_for_stmt(Sem* c, int32_t s) {
+  sem_check_expression(c, sem_na(c, s));
+  sem_check_expression(c, sem_nb(c, s));
+  int32_t step = sem_nival(c, s);
+  if (step > 0) {
+  sem_check_expression(c, step);
+}
+  sem_push_scope(c);
+  sem_define_var(c, sem_nname(c, s), sem_tmk(c, TK_I32), 1);
+  sem_check_block(c, sem_ncc(c, s));
+  sem_pop_scope(c);
+  return sem_tmk(c, TK_VOID);
+}
+
+int32_t sem_check_handle_stmt(Sem* c, int32_t s) {
+  SemStrVec* installed = (SemStrVec*)(sem_sv_new());
+  int32_t e = sem_nb(c, s);
+  while (e != AST_NONE) {
+  const char* en = sem_nname(c, e);
+  if (sem_sm_has(c->effect_types, en) == 0) {
+  if (c->strict) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Unknown effect '", en), "' in handle statement"));
+}
+} else {
+  sem_sv_add(installed, en);
+}
+  e = sem_nnext(c, e);
+}
+  int32_t h = sem_ncc(c, s);
+  while (h != AST_NONE) {
+  const char* hn = sem_nname(c, h);
+  if (sem_sm_has(c->capability_types, hn) == 0 && sem_lookup(c, hn) < 0 && c->strict) {
+  sem_warn(c, __flowc_str_concat(__flowc_str_concat("Handle handler '", hn), "' is not a known capability"));
+}
+  h = sem_nnext(c, h);
+}
+  sem_pv_push(c->handler_stack, (void*)(installed));
+  int32_t r = sem_check_block(c, sem_na(c, s));
+  sem_pv_setlen(c->handler_stack, (sem_pv_len(c->handler_stack) - 1));
+  return r;
+}
+
+int32_t sem_expr_pattern_kind(Sem* c, int32_t e) {
+  if (sem_is_literal(c, e)) {
+  return PAT_LITERAL;
+}
+  if (sem_is_variable(c, e)) {
+  if (sem_nname_is(c, e, "_")) {
+  return PAT_WILDCARD;
+}
+  return PAT_VARIABLE;
+}
+  if (sem_nk(c, e) == AST_ARRAY_LIT && sem_nb(c, e) == AST_NONE) {
+  int32_t x = sem_na(c, e);
+  while (x != AST_NONE) {
+  if (sem_is_variable(c, x) == 0 && sem_is_literal(c, x) == 0) {
+  return PAT_OTHER;
+}
+  x = sem_nnext(c, x);
+}
+  return PAT_LIST;
+}
+  if (sem_is_function_call(c, e) && sem_struct_pattern_ok(c, e)) {
+  return PAT_STRUCT;
+}
+  return PAT_OTHER;
+}
+
+bool sem_struct_pattern_ok(Sem* c, int32_t e) {
+  int32_t a = sem_na(c, e);
+  while (a != AST_NONE) {
+  if (sem_is_variable(c, a) == 0 && sem_is_literal(c, a) == 0) {
+  if (sem_is_function_call(c, a) == 0 || sem_struct_pattern_ok(c, a) == 0) {
+  return 0;
+}
+}
+  a = sem_nnext(c, a);
+}
+  return 1;
+}
+
+void sem_bind_struct_pattern(Sem* c, int32_t pat) {
+  const char* sname = sem_call_name(c, pat);
+  int32_t se = sem_struct_entry(c, sname);
+  if (se < 0) {
+  sem_err(c, __flowc_str_concat("Unknown struct in match pattern: ", sname));
+  return;
+}
+  int32_t nf = sem_se_nfields(c, se);
+  int32_t i = 0;
+  int32_t a = sem_na(c, pat);
+  while (a != AST_NONE) {
+  if (sem_is_function_call(c, a)) {
+  sem_bind_struct_pattern(c, a);
+} else {
+  if (sem_is_literal(c, a)) {
+  if (i < nf) {
+  int32_t ft = sem_parse_type(c, sem_se_field_type(c, se, i));
+  int32_t lt = sem_check_literal(c, a);
+  if (sem_can_coerce(c, ft, lt) == 0 && sem_can_coerce(c, lt, ft) == 0) {
+  if (c->strict) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Match pattern field ", sem_s_itoa((int64_t)(i))), " of "), sname), " expects "), sem_tstr(c, ft)), ", got literal "), sem_tstr(c, lt)));
+}
+}
+}
+} else {
+  if (sem_nname_is(c, a, "_") == 0) {
+  int32_t bt = (0 - 1);
+  if (i < nf) {
+  bt = sem_parse_type(c, sem_se_field_type(c, se, i));
+} else {
+  bt = sem_tmk(c, TK_UNKNOWN);
+}
+  sem_define_var(c, sem_nname(c, a), bt, 0);
+}
+}
+}
+  i = (i + 1);
+  a = sem_nnext(c, a);
+}
+}
+
+void sem_bind_simple_struct(Sem* c, int32_t arm) {
+  const char* sname = sem_nname(c, arm);
+  int32_t se = sem_struct_entry(c, sname);
+  if (se < 0) {
+  sem_err(c, __flowc_str_concat("Unknown struct in match pattern: ", sname));
+  return;
+}
+  int32_t nf = sem_se_nfields(c, se);
+  int32_t i = 0;
+  int32_t a = sem_na(c, arm);
+  while (a != AST_NONE) {
+  if (sem_nname_is(c, a, "_") == 0) {
+  int32_t bt = (0 - 1);
+  if (i < nf) {
+  bt = sem_parse_type(c, sem_se_field_type(c, se, i));
+} else {
+  bt = sem_tmk(c, TK_UNKNOWN);
+}
+  sem_define_var(c, sem_nname(c, a), bt, 0);
+}
+  i = (i + 1);
+  a = sem_nnext(c, a);
+}
+}
+
+void sem_literal_pattern_check(Sem* c, int32_t lit, int32_t value_type) {
+  int32_t pt = sem_check_literal(c, lit);
+  if (sem_can_coerce(c, value_type, pt) == 0 && sem_can_coerce(c, pt, value_type) == 0) {
+  if (c->strict) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Match pattern ", sem_tstr(c, pt)), " incompatible with value type "), sem_tstr(c, value_type)));
+}
+}
+}
+
+void sem_list_pattern_check(Sem* c, int32_t first, int32_t value_type) {
+  if (sem_tkind(c, value_type) != TK_ARRAY) {
+  if (c->strict) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("List pattern ", sem_list_pattern_repr(c, first)), " requires an array value, got "), sem_tstr(c, value_type)));
+}
+  return;
+}
+  int32_t el = sem_telem(c, value_type);
+  if (el < 0) {
+  el = sem_tmk(c, TK_I32);
+}
+  int32_t x = first;
+  while (x != AST_NONE) {
+  if (sem_is_variable(c, x) && sem_nname_is(c, x, "_") == 0) {
+  sem_define_var(c, sem_nname(c, x), el, 0);
+} else {
+  if (sem_is_literal(c, x)) {
+  int32_t lt = sem_check_literal(c, x);
+  if (sem_can_coerce(c, lt, el) == 0 && sem_can_coerce(c, el, lt) == 0) {
+  if (c->strict) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("List pattern element ", sem_tstr(c, lt)), " incompatible with array element type "), sem_tstr(c, el)));
+}
+}
+}
+}
+  x = sem_nnext(c, x);
+}
+}
+
+const char* sem_list_pattern_repr(Sem* c, int32_t first) {
+  const char* s = "ListPattern(elements=[";
+  int32_t x = first;
+  int32_t i = 0;
+  while (x != AST_NONE) {
+  if (i > 0) {
+  s = __flowc_str_concat(s, ", ");
+}
+  if (sem_is_variable(c, x)) {
+  s = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(s, "Variable(name='"), sem_nname(c, x)), "')");
+} else {
+  const char* lit = sem_s_span(c->src, ((c->ar).nodes[x]).name_start, ((c->ar).nodes[x]).name_end);
+  s = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(s, "Literal(value='"), lit), "', type=Type(name='i32', is_pointer=False, is_reference=False, is_capability=False, size=None, element_type=None, type_args=None, effects=[], is_cfn=False))");
+}
+  i = (i + 1);
+  x = sem_nnext(c, x);
+}
+  return __flowc_str_concat(s, "])");
+}
+
+void sem_variable_pattern(Sem* c, const char* name, int32_t value_type) {
+  int32_t cs = sem_lookup_const_symbol(c, name);
+  if (cs >= 0) {
+  int32_t compare = value_type;
+  if (sem_tkind(c, value_type) == TK_STRUCT && sem_sm_has(c->enum_decls, sem_tname(c, value_type))) {
+  compare = sem_tmk(c, TK_I32);
+}
+  int32_t pt = sem_sym_type(c, cs);
+  if (sem_can_coerce(c, compare, pt) == 0 && sem_can_coerce(c, pt, compare) == 0) {
+  if (c->strict) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Match pattern '", name), "' has type "), sem_tstr(c, pt)), " incompatible with value type "), sem_tstr(c, value_type)));
+}
+}
+} else {
+  if (sem_s_eq(name, "_") == 0) {
+  sem_define_var(c, name, value_type, 0);
+}
+}
+}
+
+int32_t sem_arm_pattern_kind(Sem* c, int32_t arm) {
+  if (sem_nk(c, arm) == AST_MATCH_ARM) {
+  int32_t pk = sem_nival(c, arm);
+  int32_t pat = sem_na(c, arm);
+  if (pk == 0) {
+  if (pat != AST_NONE && sem_nk(c, pat) == AST_IDENT) {
+  return PAT_VARIABLE;
+}
+  if (sem_arm_is_negative(c, arm)) {
+  return PAT_OTHER;
+}
+  return PAT_LITERAL;
+}
+  if (pk == 1) {
+  return PAT_WILDCARD;
+}
+  if (pk == 2) {
+  return PAT_VARIABLE;
+}
+  if (pk == 3 || pk == 4) {
+  return PAT_LITERAL;
+}
+  if (pk == 5) {
+  return PAT_STRUCT;
+}
+  if (pk == 6) {
+  return PAT_LIST;
+}
+  return PAT_OTHER;
+}
+  int32_t pats = sem_na(c, arm);
+  if (sem_nnext(c, pats) != AST_NONE) {
+  return PAT_OR;
+}
+  return sem_expr_pattern_kind(c, pats);
+}
+
+bool sem_arm_is_negative(Sem* c, int32_t arm) {
+  int32_t pat = sem_na(c, arm);
+  if (pat == AST_NONE) {
+  return 0;
+}
+  return sem_nstart(c, arm) < sem_nstart(c, pat) && c->src[sem_nstart(c, arm)] == 45;
+}
+
+bool sem_is_default_arm(Sem* c, int32_t arm) {
+  return sem_nk(c, arm) == AST_MATCH_ARM && sem_nival(c, arm) == 1 && ((c->ar).nodes[arm]).name_start == ((c->ar).nodes[arm]).name_end;
+}
+
+int32_t sem_arm_body(Sem* c, int32_t arm) {
+  return sem_nb(c, arm);
+}
+
+int32_t sem_arm_guard(Sem* c, int32_t arm) {
+  if (sem_nk(c, arm) == AST_MATCH_ARM_EXT) {
+  return sem_ncc(c, arm);
+}
+  return (0 - 1);
+}
+
+const char* sem_arm_var_name(Sem* c, int32_t arm) {
+  if (sem_nk(c, arm) == AST_MATCH_ARM) {
+  if (sem_nival(c, arm) == 0) {
+  return sem_nname(c, sem_na(c, arm));
+}
+  return sem_nname(c, arm);
+}
+  return sem_nname(c, sem_na(c, arm));
+}
+
+void sem_bind_arm(Sem* c, int32_t arm, int32_t value_type) {
+  int32_t pk = sem_arm_pattern_kind(c, arm);
+  if (sem_nk(c, arm) == AST_MATCH_ARM) {
+  int32_t pat = sem_na(c, arm);
+  int32_t kind = sem_nival(c, arm);
+  if (pk == PAT_LITERAL) {
+  sem_literal_pattern_check(c, pat, value_type);
+} else {
+  if (pk == PAT_STRUCT) {
+  sem_bind_simple_struct(c, arm);
+} else {
+  if (pk == PAT_LIST) {
+  sem_list_pattern_check(c, pat, value_type);
+} else {
+  if (pk == PAT_VARIABLE) {
+  sem_variable_pattern(c, sem_arm_var_name(c, arm), value_type);
+} else {
+  if (pk == PAT_WILDCARD && kind == 1) {
+}
+}
+}
+}
+}
+  return;
+}
+  int32_t pats = sem_na(c, arm);
+  if (pk == PAT_OR) {
+  int32_t x = pats;
+  while (x != AST_NONE) {
+  if (sem_is_literal(c, x)) {
+  sem_literal_pattern_check(c, x, value_type);
+}
+  x = sem_nnext(c, x);
+}
+  if (sem_is_function_call(c, pats) && sem_struct_pattern_ok(c, pats)) {
+  sem_bind_struct_pattern(c, pats);
+}
+  return;
+}
+  if (pk == PAT_LITERAL) {
+  sem_literal_pattern_check(c, pats, value_type);
+} else {
+  if (pk == PAT_STRUCT) {
+  sem_bind_struct_pattern(c, pats);
+} else {
+  if (pk == PAT_LIST) {
+  sem_list_pattern_check(c, sem_na(c, pats), value_type);
+} else {
+  if (pk == PAT_VARIABLE) {
+  sem_variable_pattern(c, sem_nname(c, pats), value_type);
+}
+}
+}
+}
+}
+
+bool sem_arm_literal_values(Sem* c, int32_t arm, SemIntVec* ints, SemIntVec* bools, int32_t want) {
+  int32_t pk = sem_arm_pattern_kind(c, arm);
+  if (sem_nk(c, arm) == AST_MATCH_ARM) {
+  if (pk != PAT_LITERAL) {
+  return 0;
+}
+  int32_t pat = sem_na(c, arm);
+  return sem_literal_value_of(c, pat, ints, bools, want);
+}
+  int32_t x = sem_na(c, arm);
+  if (pk != PAT_OR && pk != PAT_LITERAL) {
+  return 0;
+}
+  bool all = 1;
+  bool any = 0;
+  while (x != AST_NONE) {
+  if (sem_is_literal(c, x) == 0) {
+  all = 0;
+} else {
+  if (sem_literal_value_of(c, x, ints, bools, want) == 0) {
+  all = 0;
+} else {
+  any = 1;
+}
+}
+  x = sem_nnext(c, x);
+}
+  return all && any;
+}
+
+bool sem_literal_value_of(Sem* c, int32_t lit, SemIntVec* ints, SemIntVec* bools, int32_t want) {
+  int32_t lt = sem_check_literal(c, lit);
+  if (want == 1) {
+  if (sem_is_integer(c, lt) == 0) {
+  return 0;
+}
+  if (sem_nk(c, lit) == AST_INT) {
+  int32_t ok[1] = { 0 };
+  int64_t v = sem_literal_int(c, lit, 0, (int32_t*)((&ok[0])));
+  if (ok[0] == 1 && ints != NULL) {
+  sem_iv_push(ints, (int32_t)(v));
+}
+}
+  return 1;
+}
+  if (sem_tkind(c, lt) != TK_BOOL) {
+  return 0;
+}
+  if (bools != NULL) {
+  sem_iv_push(bools, sem_nival(c, lit));
+}
+  return 1;
+}
+
+const char* sem_format_int_gaps(SemIntVec* covered, int32_t lo, int32_t hi) {
+  SemStrVec* gaps = (SemStrVec*)(sem_sv_new());
+  int32_t x = lo;
+  while (x <= hi && gaps->len < 8) {
+  if (sem_iv_has(covered, x)) {
+  x = (x + 1);
+  continue;
+}
+  int32_t start = x;
+  while (x <= hi && sem_iv_has(covered, x) == 0) {
+  x = (x + 1);
+}
+  int32_t end = (x - 1);
+  if (start == end) {
+  sem_sv_push(gaps, sem_s_itoa((int64_t)(start)));
+} else {
+  sem_sv_push(gaps, __flowc_str_concat(__flowc_str_concat(sem_s_itoa((int64_t)(start)), ".."), sem_s_itoa((int64_t)(end))));
+}
+}
+  int32_t remaining = 0;
+  while (x <= hi) {
+  if (sem_iv_has(covered, x) == 0) {
+  remaining = (remaining + 1);
+}
+  x = (x + 1);
+}
+  if (remaining > 0) {
+  sem_sv_push(gaps, __flowc_str_concat(__flowc_str_concat("+", sem_s_itoa((int64_t)(remaining))), " more"));
+}
+  return sem_sv_join(gaps, ", ");
+}
+
+const char* sem_match_enum_target(Sem* c, int32_t s, int32_t value_type) {
+  if (sem_tkind(c, value_type) == TK_STRUCT && sem_sm_has(c->enum_decls, sem_tname(c, value_type))) {
+  return sem_tname(c, value_type);
+}
+  int32_t v = sem_na(c, s);
+  if (sem_nk(c, v) == AST_FIELD_ACCESS && sem_nname_is(c, v, "tag")) {
+  int32_t ot = sem_infer_type_quiet(c, sem_na(c, v));
+  if (sem_tkind(c, ot) == TK_STRUCT && sem_sm_has(c->enum_decls, sem_tname(c, ot))) {
+  return sem_tname(c, ot);
+}
+}
+  return (const char*)(NULL);
+}
+
+void sem_warn_enum_exhaustiveness(Sem* c, int32_t s, const char* enum_name) {
+  int32_t arm = sem_nb(c, s);
+  while (arm != AST_NONE) {
+  if (sem_is_default_arm(c, arm)) {
+  return;
+}
+  arm = sem_nnext(c, arm);
+}
+  int32_t ed = sem_sm_get(c->enum_decls, enum_name);
+  SemStrVec* all = (SemStrVec*)(sem_sv_new());
+  int32_t saved = c->cm;
+  sem_set_mod(c, sem_iv_get(c->d_mod, ed));
+  int32_t v = sem_na(c, sem_decl_node(c, ed));
+  while (v != AST_NONE) {
+  sem_sv_add(all, sem_nname(c, v));
+  v = sem_nnext(c, v);
+}
+  sem_set_mod(c, saved);
+  SemStrVec* covered = (SemStrVec*)(sem_sv_new());
+  arm = sem_nb(c, s);
+  while (arm != AST_NONE) {
+  int32_t pk = sem_arm_pattern_kind(c, arm);
+  if (pk == PAT_WILDCARD) {
+  return;
+}
+  if (pk != PAT_VARIABLE) {
+  return;
+}
+  const char* pn = sem_arm_var_name(c, arm);
+  int32_t owner = sem_sm_get(c->enum_variant_owner, pn);
+  if (owner < 0 || sem_s_eq(sem_decl_name(c, owner), enum_name) == 0 || sem_lookup_const_symbol(c, pn) < 0) {
+  return;
+}
+  if (sem_arm_guard(c, arm) < 0) {
+  sem_sv_add(covered, sem_s_from(pn, (sem_s_len(enum_name) + 1)));
+}
+  arm = sem_nnext(c, arm);
+}
+  SemStrVec* missing = (SemStrVec*)(sem_sv_new());
+  int32_t i = 0;
+  while (i < all->len) {
+  if (sem_sv_has(covered, sem_sv_get(all, i)) == 0) {
+  sem_sv_push(missing, sem_sv_get(all, i));
+}
+  i = (i + 1);
+}
+  sem_sv_sort(missing);
+  if (missing->len > 0) {
+  sem_warn(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Non-exhaustive match: enum '", enum_name), "' patterns do not cover variant(s) "), sem_sv_join(missing, ", ")), " (add the missing variant(s) or `_`/`default`)"));
+}
+}
+
+void sem_warn_match_exhaustiveness(Sem* c, int32_t s, int32_t value_type) {
+  const char* en = sem_match_enum_target(c, s, value_type);
+  if ((uint8_t*)(en) != NULL) {
+  sem_warn_enum_exhaustiveness(c, s, en);
+  return;
+}
+  int32_t arm = sem_nb(c, s);
+  while (arm != AST_NONE) {
+  if (sem_is_default_arm(c, arm)) {
+  return;
+}
+  arm = sem_nnext(c, arm);
+}
+  bool has_wildcard = 0;
+  bool all_int = 1;
+  bool saw_int = 0;
+  bool all_bool = 1;
+  bool saw_bool = 0;
+  SemIntVec* cov_ints = (SemIntVec*)(sem_iv_new());
+  SemIntVec* cov_bools = (SemIntVec*)(sem_iv_new());
+  arm = sem_nb(c, s);
+  while (arm != AST_NONE) {
+  if (sem_arm_pattern_kind(c, arm) == PAT_WILDCARD && sem_is_default_arm(c, arm) == 0) {
+  has_wildcard = 1;
+} else {
+  bool guarded = sem_arm_guard(c, arm) >= 0;
+  if (sem_arm_literal_values(c, arm, NULL, NULL, 1)) {
+  saw_int = 1;
+  if (guarded == 0) {
+  sem_arm_literal_values(c, arm, cov_ints, NULL, 1);
+}
+} else {
+  all_int = 0;
+}
+  if (sem_arm_literal_values(c, arm, NULL, NULL, 2)) {
+  saw_bool = 1;
+  if (guarded == 0) {
+  sem_arm_literal_values(c, arm, NULL, cov_bools, 2);
+}
+} else {
+  all_bool = 0;
+}
+}
+  arm = sem_nnext(c, arm);
+}
+  if (has_wildcard) {
+  return;
+}
+  if (all_bool && saw_bool) {
+  if ((sem_iv_has(cov_bools, 0) && sem_iv_has(cov_bools, 1)) == 0) {
+  sem_warn(c, "Non-exhaustive match: bool patterns do not cover both `true` and `false` (add the missing value or `_`/`default`)");
+}
+  return;
+}
+  if (all_int && saw_int) {
+  SemIntVec* uniq = (SemIntVec*)(sem_iv_new());
+  int32_t i = 0;
+  while (i < cov_ints->len) {
+  if (sem_iv_has(uniq, cov_ints->data[i]) == 0) {
+  sem_iv_push(uniq, cov_ints->data[i]);
+}
+  i = (i + 1);
+}
+  if (uniq->len == 0) {
+  sem_warn(c, "Non-exhaustive match: integer patterns are all guarded or empty; add `_` or `default` for the remaining values");
+  return;
+}
+  int32_t lo = uniq->data[0];
+  int32_t hi = uniq->data[0];
+  i = 0;
+  while (i < uniq->len) {
+  if (uniq->data[i] < lo) {
+  lo = uniq->data[i];
+}
+  if (uniq->data[i] > hi) {
+  hi = uniq->data[i];
+}
+  i = (i + 1);
+}
+  int32_t span = ((hi - lo) + 1);
+  const char* msg = "Non-exhaustive match: integer literal patterns do not cover all values";
+  if ((span - uniq->len) > 0) {
+  msg = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(msg, "; gaps in ["), sem_s_itoa((int64_t)(lo))), ", "), sem_s_itoa((int64_t)(hi))), "]: "), sem_format_int_gaps(uniq, lo, hi));
+} else {
+  msg = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(msg, "; contiguous cover ["), sem_s_itoa((int64_t)(lo))), ", "), sem_s_itoa((int64_t)(hi))), "]");
+}
+  sem_warn(c, __flowc_str_concat(msg, "; values outside that span also uncovered (add `_` or `default`)"));
+}
+}
+
+int32_t sem_check_match_stmt(Sem* c, int32_t s) {
+  int32_t vt = sem_check_expression(c, sem_na(c, s));
+  int32_t result = sem_tmk(c, TK_VOID);
+  int32_t default_arm = (0 - 1);
+  int32_t arm = sem_nb(c, s);
+  while (arm != AST_NONE) {
+  if (sem_is_default_arm(c, arm)) {
+  default_arm = arm;
+} else {
+  sem_push_scope(c);
+  sem_bind_arm(c, arm, vt);
+  int32_t g = sem_arm_guard(c, arm);
+  if (g >= 0) {
+  int32_t gt = sem_check_expression(c, g);
+  if (gt >= 0 && sem_tkind(c, gt) != TK_BOOL && c->strict) {
+  sem_err(c, __flowc_str_concat("Match guard must be bool, got ", sem_tstr(c, gt)));
+}
+}
+  int32_t ct = sem_check_block(c, sem_arm_body(c, arm));
+  sem_pop_scope(c);
+  if (sem_tkind(c, ct) != TK_VOID) {
+  result = ct;
+}
+}
+  arm = sem_nnext(c, arm);
+}
+  if (default_arm >= 0) {
+  int32_t dt = sem_check_block(c, sem_arm_body(c, default_arm));
+  if (sem_tkind(c, dt) != TK_VOID) {
+  result = dt;
+}
+}
+  sem_warn_match_exhaustiveness(c, s, vt);
+  return result;
+}
+
+int32_t sem_check_statement(Sem* c, int32_t s) {
+  sem_set_pos(c, s);
+  int32_t k = sem_nk(c, s);
+  if (k == AST_LET) {
+  return sem_check_var_decl(c, s);
+}
+  if (k == AST_RETURN) {
+  return sem_check_return_stmt(c, s);
+}
+  if (k == AST_ASSIGN) {
+  return sem_check_assignment(c, s);
+}
+  if (k == AST_IF) {
+  return sem_check_if_stmt(c, s);
+}
+  if (k == AST_WHILE) {
+  return sem_check_while_stmt(c, s);
+}
+  if (k == AST_FOR) {
+  return sem_check_for_stmt(c, s);
+}
+  if (k == AST_EXPR_STMT) {
+  int32_t e = sem_na(c, s);
+  if (sem_nk(c, e) == AST_CALL) {
+  if (sem_nk(c, e) == AST_CALL && sem_is_pipe_find(c, e)) {
+  return sem_tmk(c, TK_VOID);
+}
+  return sem_check_expression_stmt(c, e, s);
+}
+  if (sem_nk(c, e) == AST_UNARY && sem_nival(c, e) == KW_DBG) {
+  return sem_check_expression_stmt(c, e, s);
+}
+  return sem_tmk(c, TK_VOID);
+}
+  if (k == AST_LAYOUT) {
+  int32_t a = sem_na(c, s);
+  while (a != AST_NONE) {
+  sem_check_expression(c, a);
+  a = sem_nnext(c, a);
+}
+  return sem_check_block(c, sem_nb(c, s));
+}
+  if (k == AST_MATCH) {
+  return sem_check_match_stmt(c, s);
+}
+  if (k == AST_DEFER) {
+  sem_check_expression(c, sem_na(c, s));
+  return sem_tmk(c, TK_VOID);
+}
+  if (k == AST_UNARY && sem_nival(c, s) == KW_EXPECT) {
+  int32_t ct = sem_check_expression(c, sem_na(c, s));
+  if (ct >= 0 && sem_tkind(c, ct) != TK_BOOL) {
+  sem_err(c, __flowc_str_concat("expect condition must be a bool, got ", sem_tstr(c, ct)));
+}
+  return sem_tmk(c, TK_VOID);
+}
+  if (k == AST_HANDLE) {
+  return sem_check_handle_stmt(c, s);
+}
+  if (k == AST_BLOCK) {
+  return sem_check_block(c, s);
+}
+  return sem_tmk(c, TK_VOID);
+}
+
+void sem_check_trait_bounds(Sem* c, int32_t fi) {
+  int32_t i = 0;
+  while (i < sem_fi_ntparams(c, fi)) {
+  const char* b = sem_fi_tbound(c, fi, i);
+  if (sem_s_len(b) > 0 && c->strict) {
+  if (sem_sm_has(c->trait_types, b) == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Unknown trait bound '", b), "' on type parameter '"), sem_fi_tparam(c, fi, i)), "'"));
+}
+}
+  i = (i + 1);
+}
+}
+
+void sem_check_function(Sem* c, int32_t fi) {
+  sem_set_mod(c, sem_iv_get(c->fi_mod, fi));
+  sem_set_pos(c, sem_iv_get(c->fi_node, fi));
+  const char* fname = sem_sv_get(c->fi_name, fi);
+  sem_attribute_errors(c, fname, sem_iv_get(c->fi_astart, fi), sem_iv_get(c->fi_alen, fi));
+  if (sem_iv_get(c->fi_extern, fi) == 1) {
+  if (c->safety_profile && sem_fi_has_attr(c, fi, "unsafe") == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("safety profile requires '@unsafe' on extern declaration '", fname), "' (MISRA/CERT FFI boundary; see docs/language/safety-profiles.md)"));
+}
+  if (sem_is_dangerous_extern(fname) && sem_fi_has_attr(c, fi, "unsafe") == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Dangerous FFI '", fname), "' must be declared under '@unsafe extern' (CERT / #276)"));
+}
+  return;
+}
+  sem_check_trait_bounds(c, fi);
+  sem_push_scope(c);
+  const char* prev_rt = c->current_rt_safe_fn;
+  const char* prev_safe = c->current_safe_fn;
+  const char* prev_name = c->current_function_name;
+  SemStrVec* prev_tparams = (SemStrVec*)(c->active_type_params);
+  SemStrVec* tps = (SemStrVec*)(sem_sv_new());
+  int32_t i = 0;
+  while (i < sem_fi_ntparams(c, fi)) {
+  sem_sv_add(tps, sem_fi_tparam(c, fi, i));
+  i = (i + 1);
+}
+  c->active_type_params = tps;
+  int32_t domain = sem_lifetime_domain(c, sem_iv_get(c->fi_astart, fi), sem_iv_get(c->fi_alen, fi));
+  int32_t prev_domain = c->current_domain;
+  bool prev_rt_dom = c->rt_safe_from_domain;
+  c->current_domain = domain;
+  const char* actual = sem_sv_get(c->fi_mangled, fi);
+  if (sem_fi_has_attr(c, fi, "rt_safe")) {
+  c->current_rt_safe_fn = actual;
+  c->rt_safe_from_domain = 0;
+} else {
+  if (domain == 0) {
+  c->current_rt_safe_fn = actual;
+  c->rt_safe_from_domain = 1;
+} else {
+  c->current_rt_safe_fn = NULL;
+  c->rt_safe_from_domain = 0;
+}
+}
+  if (sem_fi_has_attr(c, fi, "safe")) {
+  c->current_safe_fn = actual;
+} else {
+  c->current_safe_fn = NULL;
+}
+  c->current_function_name = actual;
+  SemStrVec* row = (SemStrVec*)(sem_sv_new());
+  i = 0;
+  while (i < sem_fi_neffects(c, fi)) {
+  sem_sv_add(row, sem_fi_effect(c, fi, i));
+  i = (i + 1);
+}
+  sem_pv_push(c->handler_stack, (void*)(row));
+  SemStrVec* prev_storage = (SemStrVec*)(c->local_storage);
+  SemStrMap* prev_origin = (SemStrMap*)(c->span_origin);
+  int32_t prev_ret = c->current_return_type;
+  c->local_storage = sem_sv_new();
+  c->span_origin = sem_sm_new();
+  c->current_return_type = sem_parse_type(c, sem_iv_get(c->fi_ret, fi));
+  i = 0;
+  while (i < sem_fi_nparams(c, fi)) {
+  int32_t pt = sem_parse_type(c, sem_fi_param_type(c, fi, i));
+  sem_define_var(c, sem_fi_param_name(c, fi, i), pt, 0);
+  i = (i + 1);
+}
+  SemIntVec* prev_sink = (SemIntVec*)(c->return_sink);
+  c->return_sink = sem_iv_new();
+  sem_check_block(c, sem_iv_get(c->fi_body, fi));
+  SemIntVec* returns = (SemIntVec*)(c->return_sink);
+  c->return_sink = prev_sink;
+  int32_t expected = sem_parse_type(c, sem_iv_get(c->fi_ret, fi));
+  sem_set_pos(c, sem_iv_get(c->fi_node, fi));
+  i = 0;
+  while (i < returns->len) {
+  int32_t rt = returns->data[i];
+  if (sem_can_coerce(c, rt, expected) == 0) {
+  const char* und = sem_undeclared_type_name(c, expected, rt);
+  if (sem_s_len(und) > 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Function '", fname), "' is declared to return unknown type '"), und), "', which is not declared in this scope"));
+} else {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Function '", fname), "' returns "), sem_tstr(c, rt)), " but should return "), sem_tstr(c, expected)));
+}
+}
+  i = (i + 1);
+}
+  sem_pv_setlen(c->handler_stack, (sem_pv_len(c->handler_stack) - 1));
+  sem_pop_scope(c);
+  c->current_rt_safe_fn = prev_rt;
+  c->current_safe_fn = prev_safe;
+  c->current_domain = prev_domain;
+  c->rt_safe_from_domain = prev_rt_dom;
+  c->current_function_name = prev_name;
+  c->local_storage = prev_storage;
+  c->span_origin = prev_origin;
+  c->current_return_type = prev_ret;
+  c->active_type_params = prev_tparams;
+}
+
+void sem_check_const(Sem* c, int32_t d) {
+  int32_t node = sem_decl_node(c, d);
+  int32_t et = sem_check_expression(c, sem_nb(c, node));
+  int32_t xt = sem_parse_type(c, sem_pt_of_ast(c, sem_na(c, node)));
+  if (sem_can_coerce(c, et, xt) == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Const '", sem_decl_name(c, d)), "' has type "), sem_tstr(c, et)), " but should be "), sem_tstr(c, xt)));
+}
+}
+
+bool sem_is_static_primitive(const char* n) {
+  return sem_s_eq(n, "i32") || sem_s_eq(n, "i64") || sem_s_eq(n, "u8") || sem_s_eq(n, "u32") || sem_s_eq(n, "f32") || sem_s_eq(n, "f64") || sem_s_eq(n, "c64") || sem_s_eq(n, "c128") || sem_s_eq(n, "bool");
+}
+
+bool sem_is_const_scalar(Sem* c, int32_t e) {
+  if (sem_is_literal(c, e)) {
+  return sem_nk(c, e) != AST_STRING;
+}
+  if (sem_is_unary_op(c, e, TOK_MINUS)) {
+  return sem_is_literal(c, sem_na(c, e));
+}
+  return 0;
+}
+
+void sem_check_static(Sem* c, int32_t d) {
+  SemTys* tys = (SemTys*)(c->t);
+  int32_t node = sem_decl_node(c, d);
+  const char* name = sem_decl_name(c, d);
+  int32_t astart = sem_iv_get(c->d_astart, d);
+  int32_t an = sem_iv_get(c->d_alen, d);
+  if (an > 0) {
+  sem_attribute_errors(c, name, astart, an);
+  int32_t i = 0;
+  while (i < an) {
+  SemStrVec* args = (SemStrVec*)(sem_sv_new());
+  const char* full = sem_sv_get(c->attr_pool, (astart + i));
+  int32_t lp = sem_s_index_byte(full, 40);
+  const char* aname = sem_s_strip(full);
+  if (lp >= 0) {
+  aname = sem_s_strip(sem_s_slice(full, 0, lp));
+}
+  if (sem_s_eq(aname, "lifetime") == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Attribute '@", aname), "' is not allowed on module static '"), name), "'; only '@lifetime(...)' is"));
+}
+  i = (i + 1);
+}
+}
+  int32_t pt = sem_pt_of_ast(c, sem_na(c, node));
+  int32_t value = sem_nb(c, node);
+  const char* tn = sem_pt_name(c->t, pt);
+  bool is_pointer = tys->pt_ptr[pt] == 1 || sem_s_starts(tn, "ptr_");
+  bool is_fixed = sem_s_starts(tn, "array_") && tys->pt_size[pt] != NO_SIZE && tys->pt_size[pt] != 0 && tys->pt_elem[pt] >= 0;
+  bool value_is_null = sem_nk(c, value) == AST_IDENT && sem_nname_is(c, value, "null");
+  if (sem_is_span_type_name(tn)) {
+  if (value_is_null == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Module static '", name), "' of span type must be initialized to null"));
+}
+  return;
+}
+  if (is_pointer) {
+  if (value_is_null == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Module static '", name), "' of pointer type must be initialized to null"));
+}
+  return;
+}
+  if (is_fixed) {
+  const char* en = sem_pt_name(c->t, tys->pt_elem[pt]);
+  if (sem_is_static_primitive(en) == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Module static '", name), "' has unsupported array element type '"), en), "': static arrays may only hold primitives (i32/i64/u8/u32/f32/f64/c64/c128/bool)"));
+  return;
+}
+  if (sem_nk(c, value) != AST_ARRAY_LIT) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Module static '", name), "' initializer must be a full array literal of compile-time constants"));
+  return;
+}
+  int32_t n = sem_array_lit_len(c, value);
+  if (n > tys->pt_size[pt]) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Module static '", name), "' array initializer has "), sem_s_itoa((int64_t)(n))), " elements but the type declares "), sem_s_itoa((int64_t)(tys->pt_size[pt]))));
+  return;
+}
+  int32_t x = sem_na(c, value);
+  while (x != AST_NONE) {
+  if (sem_is_const_scalar(c, x) == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Module static '", name), "' array initializer must contain only compile-time constant literals"));
+  return;
+}
+  x = sem_nnext(c, x);
+}
+} else {
+  if (sem_is_static_primitive(tn)) {
+  if (sem_is_const_scalar(c, value) == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("Module static '", name), "' initializer must be a compile-time constant literal"));
+  return;
+}
+} else {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Module static '", name), "' has unsupported type '"), tn), "': module statics must be a primitive (i32/i64/u8/u32/f32/f64/c64/c128/bool), a fixed array of primitives, or ptr<T>"));
+  return;
+}
+}
+  int32_t et = sem_check_expression(c, value);
+  int32_t xt = sem_parse_type(c, pt);
+  if (sem_can_coerce(c, et, xt) == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Module static '", name), "' has type "), sem_tstr(c, et)), " but should be "), sem_tstr(c, xt)));
+}
+}
+
+void sem_check_declarations(Sem* c) {
+  int32_t i = 0;
+  while (i < sem_iv_len(c->d_kind)) {
+  int32_t k = sem_decl_kind(c, i);
+  sem_decl_enter(c, i);
+  if (k == DK_FUNC) {
+  sem_check_function(c, sem_iv_get(c->d_info, i));
+} else {
+  if (k == DK_IMPL) {
+  SemIntVec* ml = (SemIntVec*)((SemIntVec*)(sem_pv_get(c->im_methods, sem_iv_get(c->d_info, i))));
+  int32_t j = 0;
+  while (j < ml->len) {
+  sem_check_function(c, ml->data[j]);
+  j = (j + 1);
+}
+} else {
+  if (k == DK_CONST) {
+  sem_check_const(c, i);
+} else {
+  if (k == DK_STATIC) {
+  sem_check_static(c, i);
+}
+}
+}
+}
+  i = (i + 1);
+}
+}
+
+void sem_compute_parameter_escapes(Sem* c) {
+  int32_t which = 0;
+  while (which < 2) {
+  SemStrMap* target = (SemStrMap*)(c->esc_static);
+  if (which == 1) {
+  target = c->esc_return;
+}
+  bool changed = 1;
+  while (changed) {
+  changed = 0;
+  int32_t i = 0;
+  while (i < sem_sv_len(c->prop_keys)) {
+  if (sem_sm_has(target, sem_sv_get(c->prop_keys, i))) {
+  SemStrVec* callers = (SemStrVec*)((SemStrVec*)(sem_pv_get(c->prop_sets, i)));
+  int32_t j = 0;
+  while (j < callers->len) {
+  if (sem_sm_has(target, sem_sv_get(callers, j)) == 0) {
+  sem_sm_put(target, sem_sv_get(callers, j), 1);
+  changed = 1;
+}
+  j = (j + 1);
+}
+}
+  i = (i + 1);
+}
+}
+  which = (which + 1);
+}
+}
+
+void sem_verify_parameter_escapes(Sem* c) {
+  int32_t i = 0;
+  while (i < sem_sv_len(c->ref_key)) {
+  const char* key = __flowc_str_concat(__flowc_str_concat(sem_sv_get(c->ref_callee, i), "\x01"), sem_s_itoa((int64_t)(sem_iv_get(c->ref_idx, i))));
+  if (sem_sm_has(c->esc_static, key)) {
+  const char* ck = sem_sv_get(c->ref_key, i);
+  if (sem_sm_has(c->domain_reported, ck) == 0) {
+  sem_sm_put(c->domain_reported, ck, 1);
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("lifetime domain escape: local `", sem_sv_get(c->ref_origin, i)), "` is passed to parameter of '"), sem_sv_get(c->ref_callee, i)), "', which escapes to a static/global scope"), sem_sv_get(c->ref_loc, i)));
+}
+}
+  i = (i + 1);
+}
+}
+
+bool sem_is_rt_heap_name(const char* n) {
+  return sem_s_eq(n, "malloc") || sem_s_eq(n, "calloc") || sem_s_eq(n, "realloc") || sem_s_eq(n, "free") || sem_s_eq(n, "alloc") || sem_s_eq(n, "dealloc") || sem_s_eq(n, "alloc_bytes") || sem_s_eq(n, "alloc_zeroed") || sem_s_eq(n, "alloc_i32") || sem_s_eq(n, "alloc_f32") || sem_s_eq(n, "alloc_f64") || sem_s_eq(n, "arena_create") || sem_s_eq(n, "arena_destroy") || sem_s_eq(n, "frame_arena_create") || sem_s_eq(n, "frame_arena_destroy");
+}
+
+bool sem_is_rt_other_name(const char* n) {
+  if (sem_s_eq(n, "audio_device_open") || sem_s_eq(n, "audio_device_start") || sem_s_eq(n, "audio_device_stop") || sem_s_eq(n, "audio_device_close")) {
+  return 1;
+}
+  if (sem_s_eq(n, "flow_audio_open") || sem_s_eq(n, "flow_audio_start") || sem_s_eq(n, "flow_audio_stop") || sem_s_eq(n, "flow_audio_close")) {
+  return 1;
+}
+  if (sem_s_eq(n, "audio_probe_devices") || sem_s_eq(n, "flow_audio_probe_devices") || sem_s_eq(n, "audio_buffer_alloc_f32") || sem_s_eq(n, "audio_buffer_free_f32") || sem_s_eq(n, "delay_line_new")) {
+  return 1;
+}
+  if (sem_s_eq(n, "file_open") || sem_s_eq(n, "file_close") || sem_s_eq(n, "fopen") || sem_s_eq(n, "fread") || sem_s_eq(n, "fwrite") || sem_s_eq(n, "fclose")) {
+  return 1;
+}
+  if (sem_s_eq(n, "flow_gpu_alloc") || sem_s_eq(n, "flow_gpu_free") || sem_s_eq(n, "flow_gpu_copy_h2d") || sem_s_eq(n, "flow_gpu_copy_d2h") || sem_s_eq(n, "flow_gpu_copy_d2d") || sem_s_eq(n, "flow_gpu_sync")) {
+  return 1;
+}
+  if (sem_s_eq(n, "gpu_alloc_flags") || sem_s_eq(n, "gpu_alloc") || sem_s_eq(n, "gpu_alloc_unified") || sem_s_eq(n, "gpu_alloc_private") || sem_s_eq(n, "gpu_alloc_f32") || sem_s_eq(n, "gpu_alloc_f64") || sem_s_eq(n, "gpu_alloc_i32") || sem_s_eq(n, "gpu_allocate") || sem_s_eq(n, "gpu_free")) {
+  return 1;
+}
+  if (sem_s_eq(n, "gpu_copy_h2d") || sem_s_eq(n, "gpu_copy_d2h") || sem_s_eq(n, "gpu_copy_d2d") || sem_s_eq(n, "gpu_copy_h2d_i32") || sem_s_eq(n, "gpu_copy_d2h_i32") || sem_s_eq(n, "gpu_copy_h2d_f32") || sem_s_eq(n, "gpu_copy_d2h_f32")) {
+  return 1;
+}
+  if (sem_s_eq(n, "gpu_copy_to_device") || sem_s_eq(n, "gpu_copy_from_device") || sem_s_eq(n, "gpu_copy_device_to_device") || sem_s_eq(n, "gpu_sync") || sem_s_eq(n, "metal_create_buffer")) {
+  return 1;
+}
+  if (sem_s_eq(n, "mutex_new") || sem_s_eq(n, "mutex_bind") || sem_s_eq(n, "mutex_lock") || sem_s_eq(n, "mutex_unlock") || sem_s_eq(n, "mutex_trylock") || sem_s_eq(n, "mutex_destroy")) {
+  return 1;
+}
+  if (sem_s_eq(n, "pthread_mutex_init") || sem_s_eq(n, "pthread_mutex_lock") || sem_s_eq(n, "pthread_mutex_unlock") || sem_s_eq(n, "pthread_mutex_trylock") || sem_s_eq(n, "pthread_mutex_destroy")) {
+  return 1;
+}
+  if (sem_s_eq(n, "pthread_create") || sem_s_eq(n, "pthread_join") || sem_s_eq(n, "flow_thread_spawn") || sem_s_eq(n, "flow_thread_join") || sem_s_eq(n, "flow_race_mutex_lock") || sem_s_eq(n, "flow_race_mutex_unlock") || sem_s_eq(n, "pthread_cond_wait")) {
+  return 1;
+}
+  if (sem_s_eq(n, "pthread_cond_timedwait") || sem_s_eq(n, "pthread_rwlock_rdlock") || sem_s_eq(n, "pthread_rwlock_wrlock") || sem_s_eq(n, "condvar_wait") || sem_s_eq(n, "rwlock_rdlock") || sem_s_eq(n, "rwlock_wrlock")) {
+  return 1;
+}
+  if (sem_s_eq(n, "rwlock_read_lock") || sem_s_eq(n, "rwlock_write_lock") || sem_s_eq(n, "sem_wait") || sem_s_eq(n, "semaphore_wait")) {
+  return 1;
+}
+  return 0;
+}
+
+bool sem_is_frame_unsafe(const char* n) {
+  if (sem_is_rt_heap_name(n)) {
+  return 1;
+}
+  return sem_s_eq(n, "audio_buffer_alloc_f32") || sem_s_eq(n, "audio_buffer_free_f32") || sem_s_eq(n, "delay_line_new") || sem_s_eq(n, "flow_gpu_alloc") || sem_s_eq(n, "flow_gpu_free") || sem_s_eq(n, "gpu_alloc_flags") || sem_s_eq(n, "gpu_alloc") || sem_s_eq(n, "gpu_alloc_unified") || sem_s_eq(n, "gpu_alloc_private") || sem_s_eq(n, "gpu_alloc_f32") || sem_s_eq(n, "gpu_alloc_f64") || sem_s_eq(n, "gpu_alloc_i32") || sem_s_eq(n, "gpu_allocate") || sem_s_eq(n, "gpu_free") || sem_s_eq(n, "metal_create_buffer");
+}
+
+void sem_compute_unsafe(Sem* c, bool frame, SemStrMap* out) {
+  bool changed = 1;
+  while (changed) {
+  changed = 0;
+  int32_t i = 0;
+  while (i < sem_sv_len(c->rdc_names)) {
+  const char* name = sem_sv_get(c->rdc_names, i);
+  if ((uint8_t*)(sem_unsafe_reason(c, frame, out, name)) == NULL) {
+  SemStrVec* callees = (SemStrVec*)((SemStrVec*)(sem_pv_get(c->rdc_sets, i)));
+  int32_t j = 0;
+  bool done = 0;
+  while (j < callees->len && done == 0) {
+  const char* r = sem_unsafe_reason(c, frame, out, sem_sv_get(callees, j));
+  if ((uint8_t*)(r) != NULL) {
+  sem_sm_put(out, name, sem_sv_len(c->reason_pool));
+  sem_sv_push(c->reason_pool, sem_sv_get(callees, j));
+  changed = 1;
+  done = 1;
+}
+  j = (j + 1);
+}
+}
+  i = (i + 1);
+}
+}
+}
+
+const char* sem_unsafe_reason(Sem* c, bool frame, SemStrMap* m, const char* name) {
+  if (sem_s_eq(name, "__unresolved_dynamic_call")) {
+  return name;
+}
+  if (frame) {
+  if (sem_is_frame_unsafe(name)) {
+  return name;
+}
+} else {
+  if (sem_is_rt_heap_name(name) || sem_is_rt_other_name(name)) {
+  return name;
+}
+}
+  int32_t k = sem_sm_get(m, name);
+  if (k < 0) {
+  return (const char*)(NULL);
+}
+  return sem_sv_get(c->reason_pool, k);
+}
+
+void sem_verify_rt_safe_calls(Sem* c) {
+  int32_t i = 0;
+  while (i < sem_sv_len(c->rt_site_fn)) {
+  const char* fnm = sem_sv_get(c->rt_site_fn, i);
+  const char* name = sem_sv_get(c->rt_site_name, i);
+  const char* reason = sem_unsafe_reason(c, 0, c->rt_unsafe_reason, name);
+  if ((uint8_t*)(reason) != NULL) {
+  const char* marked = "is marked '@rt_safe'";
+  const char* doc = "docs/library/rt-safety.md";
+  if (sem_iv_get(c->rt_site_dom, i) == 1) {
+  marked = "is in the `callback` lifetime domain, which forbids allocation,";
+  doc = "docs/language/lifetime-domains.md";
+}
+  if (sem_s_eq(reason, "__unresolved_dynamic_call")) {
+  if (sem_s_eq(reason, name)) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("RT-safety violation: '", fnm), "' "), marked), " but makes an unresolved dynamic call (forbidden on an RT-safe path because its safety cannot be proven; see "), doc), ")"));
+} else {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("RT-safety violation: '", fnm), "' "), marked), " but calls '"), name), "', which makes an unresolved dynamic call (forbidden on an RT-safe path; see "), doc), ")"));
+}
+} else {
+  if (sem_s_eq(reason, name)) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("RT-safety violation: '", fnm), "' "), marked), " but calls '"), name), "', which is forbidden on an RT-safe path (heap, device/file I/O, GPU, or blocking lock; see "), doc), ")"));
+} else {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("RT-safety violation: '", fnm), "' "), marked), " but calls '"), name), "', which is not RT-safe because it calls '"), reason), "' (forbidden on an RT-safe path; see "), doc), ")"));
+}
+}
+}
+  i = (i + 1);
+}
+}
+
+void sem_verify_domain_calls(Sem* c) {
+  int32_t i = 0;
+  while (i < sem_sv_len(c->dom_site_fn)) {
+  const char* fnm = sem_sv_get(c->dom_site_fn, i);
+  const char* name = sem_sv_get(c->dom_site_name, i);
+  const char* reason = sem_unsafe_reason(c, 1, c->heap_unsafe_reason, name);
+  if ((uint8_t*)(reason) != NULL) {
+  if (sem_s_eq(reason, name)) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("lifetime domain violation: '", fnm), "' is in the `frame` domain but calls '"), name), "', which allocates or frees heap memory. Frame-domain code allocates by bumping a frame arena (frame_alloc_*); see docs/language/lifetime-domains.md"));
+} else {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("lifetime domain violation: '", fnm), "' is in the `frame` domain but calls '"), name), "', which allocates or frees heap memory because it calls '"), reason), "'. Frame-domain code allocates by bumping a frame arena (frame_alloc_*); see docs/language/lifetime-domains.md"));
+}
+}
+  i = (i + 1);
+}
+}
+
+void sem_collect_call_names(Sem* c, int32_t node, SemStrVec* out) {
+  if (node < 0) {
+  return;
+}
+  int32_t k = sem_nk(c, node);
+  if (k == AST_CALL) {
+  sem_sv_add(out, sem_nname(c, node));
+}
+  if (k == AST_UNARY && sem_nival(c, node) == KW_DBG) {
+  sem_sv_add(out, "__flow_dbg");
+}
+  if (k == AST_FOR && sem_nival(c, node) > 0) {
+  sem_collect_call_names(c, sem_nival(c, node), out);
+}
+  sem_collect_call_names(c, sem_na(c, node), out);
+  sem_collect_call_names(c, sem_nb(c, node), out);
+  sem_collect_call_names(c, sem_ncc(c, node), out);
+  if (k != AST_FN) {
+  sem_collect_call_names(c, sem_nnext(c, node), out);
+}
+}
+
+void sem_scan_while_loops(Sem* c, int32_t node, const char* fn_name) {
+  if (node < 0) {
+  return;
+}
+  if (sem_nk(c, node) == AST_WHILE && sem_nival(c, node) == 0) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("--profile safety rejects unbounded 'while' loop (MISRA 17.4): use '@max_iterations(N)' or a counted 'for' loop in '", fn_name), "'"));
+}
+  sem_scan_while_loops(c, sem_na(c, node), fn_name);
+  sem_scan_while_loops(c, sem_nb(c, node), fn_name);
+  sem_scan_while_loops(c, sem_ncc(c, node), fn_name);
+  sem_scan_while_loops(c, sem_nnext(c, node), fn_name);
+}
+
+void sem_check_recursion(Sem* c) {
+  SemStrVec* names = (SemStrVec*)(sem_sv_new());
+  SemPtrVec* calls = (SemPtrVec*)(sem_pv_new());
+  int32_t i = 0;
+  while (i < sem_iv_len(c->d_kind)) {
+  int32_t k = sem_decl_kind(c, i);
+  if (k == DK_FUNC) {
+  int32_t fi = sem_iv_get(c->d_info, i);
+  if (sem_iv_get(c->fi_extern, fi) == 0) {
+  sem_set_mod(c, sem_iv_get(c->fi_mod, fi));
+  SemStrVec* out = (SemStrVec*)(sem_sv_new());
+  int32_t b = sem_iv_get(c->fi_body, fi);
+  if (b >= 0) {
+  sem_collect_call_names(c, sem_na(c, b), out);
+}
+  sem_sv_push(names, sem_sv_get(c->fi_name, fi));
+  sem_pv_push(calls, (void*)(out));
+}
+} else {
+  if (k == DK_IMPL) {
+  SemIntVec* ml = (SemIntVec*)((SemIntVec*)(sem_pv_get(c->im_methods, sem_iv_get(c->d_info, i))));
+  int32_t j = 0;
+  while (j < ml->len) {
+  int32_t fi2 = ml->data[j];
+  sem_set_mod(c, sem_iv_get(c->fi_mod, fi2));
+  SemStrVec* out2 = (SemStrVec*)(sem_sv_new());
+  int32_t b2 = sem_iv_get(c->fi_body, fi2);
+  if (b2 >= 0) {
+  sem_collect_call_names(c, sem_na(c, b2), out2);
+}
+  sem_sv_push(names, sem_sv_get(c->fi_mangled, fi2));
+  sem_pv_push(calls, (void*)(out2));
+  j = (j + 1);
+}
+}
+}
+  i = (i + 1);
+}
+  SemStrVec* visited = (SemStrVec*)(sem_sv_new());
+  SemStrVec* on_stack = (SemStrVec*)(sem_sv_new());
+  SemStrVec* recursive = (SemStrVec*)(sem_sv_new());
+  i = 0;
+  while (i < names->len) {
+  if (sem_sv_has(visited, sem_sv_get(names, i)) == 0) {
+  sem_recursion_dfs(c, sem_sv_get(names, i), names, calls, visited, on_stack, recursive);
+}
+  i = (i + 1);
+}
+  sem_sv_sort(recursive);
+  i = 0;
+  while (i < recursive->len) {
+  sem_err(c, __flowc_str_concat(__flowc_str_concat("--profile safety rejects unbounded recursion (MISRA 17.2): '", sem_sv_get(recursive, i)), "' is recursive"));
+  i = (i + 1);
+}
+}
+
+int32_t sem_index_of_name(SemStrVec* names, const char* n) {
+  int32_t i = (names->len - 1);
+  while (i >= 0) {
+  if (sem_s_eq(names->data[i], n)) {
+  return i;
+}
+  i = (i - 1);
+}
+  return (0 - 1);
+}
+
+void sem_recursion_dfs(Sem* c, const char* name, SemStrVec* names, SemPtrVec* calls, SemStrVec* visited, SemStrVec* on_stack, SemStrVec* recursive) {
+  if (sem_sv_has(visited, name)) {
+  return;
+}
+  sem_sv_push(visited, name);
+  sem_sv_push(on_stack, name);
+  int32_t idx = sem_index_of_name(names, name);
+  if (idx >= 0) {
+  SemStrVec* callees = (SemStrVec*)((SemStrVec*)(sem_pv_get(calls, idx)));
+  int32_t i = 0;
+  while (i < callees->len) {
+  const char* callee = sem_sv_get(callees, i);
+  if (sem_sv_has(on_stack, callee)) {
+  sem_sv_add(recursive, callee);
+  sem_sv_add(recursive, name);
+} else {
+  if (sem_sv_has(visited, callee) == 0 && sem_index_of_name(names, callee) >= 0) {
+  sem_recursion_dfs(c, callee, names, calls, visited, on_stack, recursive);
+  if (sem_sv_has(recursive, callee)) {
+  sem_sv_add(recursive, name);
+}
+}
+}
+  i = (i + 1);
+}
+}
+  int32_t k = 0;
+  while (k < on_stack->len) {
+  if (sem_s_eq(on_stack->data[k], name)) {
+  int32_t j = k;
+  while ((j + 1) < on_stack->len) {
+  on_stack->data[j] = on_stack->data[(j + 1)];
+  j = (j + 1);
+}
+  on_stack->len = (on_stack->len - 1);
+  return;
+}
+  k = (k + 1);
+}
+}
+
+void sem_check_unbounded_loops(Sem* c) {
+  int32_t i = 0;
+  while (i < sem_iv_len(c->d_kind)) {
+  if (sem_decl_kind(c, i) == DK_FUNC) {
+  int32_t fi = sem_iv_get(c->d_info, i);
+  if (sem_iv_get(c->fi_extern, fi) == 0 && sem_iv_get(c->fi_body, fi) >= 0) {
+  sem_set_mod(c, sem_iv_get(c->fi_mod, fi));
+  sem_scan_while_loops(c, sem_na(c, sem_iv_get(c->fi_body, fi)), sem_sv_get(c->fi_name, fi));
+}
+}
+  i = (i + 1);
+}
+}
+
+void sem_read_cimports(Sem* c) {
+  if (c->has_cimport == 0) {
+  return;
+}
+  const char* dir = ".";
+  if (c->root_mod >= 0) {
+  const char* p = c->m_path[c->root_mod];
+  int32_t k = (sem_s_len(p) - 1);
+  while (k >= 0 && sem_s_byte(p, k) != 47) {
+  k = (k - 1);
+}
+  if (k > 0) {
+  dir = sem_s_slice(p, 0, k);
+}
+}
+  int32_t i = 0;
+  while (i < sem_sv_len(c->cimport_headers)) {
+  if (sem_header_names(sem_sv_get(c->cimport_headers, i), dir, c->cimport_names) == 0) {
+  c->cimport_unknown = 1;
+}
+  i = (i + 1);
+}
+}
+
+bool sem_cimport_knows(Sem* c, const char* name) {
+  if (c->has_cimport == 0) {
+  return 0;
+}
+  if (c->cimport_unknown) {
+  return 1;
+}
+  return sem_sm_has(c->cimport_names, name);
+}
+
+void sem_check_program(Sem* c) {
+  sem_read_cimports(c);
+  sem_collect_types(c);
+  sem_collect_symbols(c);
+  sem_collect_lifetime_domains(c);
+  sem_check_declarations(c);
+  sem_compute_parameter_escapes(c);
+  sem_verify_parameter_escapes(c);
+  sem_compute_unsafe(c, 0, c->rt_unsafe_reason);
+  sem_compute_unsafe(c, 1, c->heap_unsafe_reason);
+  sem_verify_rt_safe_calls(c);
+  sem_verify_domain_calls(c);
+  if (c->safety_profile) {
+  sem_check_recursion(c);
+  sem_check_unbounded_loops(c);
+}
+}
+
+int32_t sem_report(Sem* c) {
+  int32_t i = 0;
+  if (c->strict) {
+  while (i < sem_sv_len(c->errors)) {
+  sem_print_diag(c, i, "error");
+  i = (i + 1);
+}
+  return sem_sv_len(c->errors);
+}
+  int32_t shown = 0;
+  int32_t hidden = 0;
+  while (i < sem_sv_len(c->errors)) {
+  const char* msg = sem_sv_get(c->errors, i);
+  if (sem_sv_has(c->fatal, msg)) {
+  sem_print_diag(c, i, "error");
+} else {
+  if (shown < 5) {
+  sem_print_diag(c, i, "warning");
+  shown = (shown + 1);
+} else {
+  hidden = (hidden + 1);
+}
+}
+  i = (i + 1);
+}
+  if (hidden > 0) {
+  printf("flowc: ... and %d more type warning(s)\n", hidden);
+}
+  return sem_sv_len(c->fatal);
+}
+
+void sem_print_diag(Sem* c, int32_t i, const char* what) {
+  int32_t m = sem_iv_get(c->err_mod, i);
+  int32_t pos = sem_iv_get(c->err_pos, i);
+  const char* path = "<input>";
+  int32_t ln = 1;
+  int32_t col = 1;
+  if (m >= 0) {
+  path = c->m_path[m];
+  ln = sem_line_of(c, m, pos);
+  col = sem_col_of(c, m, pos);
+}
+  printf("%s:%d:%d: %s: %s\n", path, ln, col, what, sem_sv_get(c->errors, i));
+}
+
+int32_t sem_error_count(Sem* c) {
+  return sem_sv_len(c->errors);
+}
+
+int32_t sem_fatal_count(Sem* c) {
+  if (c->strict) {
+  return sem_sv_len(c->errors);
+}
+  return sem_sv_len(c->fatal);
+}
+
+void flowc_semcheck_single(AstArena arena, int32_t root, uint8_t* src, const char* path, int32_t* counts) {
+  bool strict = 1;
+  const char* v = getenv("FLOWC_LENIENT");
+  if ((uint8_t*)(v) != NULL) {
+  uint8_t* p = (uint8_t*)((uint8_t*)(v));
+  if (p[0] == 49 && p[1] == 0) {
+  strict = 0;
+}
+}
+  Sem* c = (Sem*)(sem_new(strict));
+  const char* name = path;
+  if ((uint8_t*)(name) == NULL) {
+  name = "<input>";
+}
+  int32_t m = sem_add_module(c, arena, root, src, name);
+  sem_build_module(c, m, 1);
+  sem_check_program(c);
+  sem_report(c);
+  sem_iv_set_raw(counts, 0, sem_error_count(c));
+  sem_iv_set_raw(counts, 1, sem_fatal_count(c));
+}
+
+void sem_iv_set_raw(int32_t* p, int32_t i, int32_t v) {
+  p[i] = v;
+}
+
+
 typedef struct FlowcOverloadCallScratch {
   uint8_t* rows;
   int32_t* ident_types;
@@ -59936,6 +68682,7 @@ typedef struct TcCtx {
   int32_t hcap;
   int32_t cur_fn;
   int32_t strict_effects;
+  int32_t sem_on;
 } TcCtx;
 
 typedef struct UTy {
@@ -60192,6 +68939,7 @@ int32_t flowc_units_check(AstArena arena, uint8_t* src, int32_t root);
 int32_t flowc_tc_check_program(TcCtx* ctx, AstArena arena, int32_t root);
 int32_t flowc_typecheck_ex(AstArena arena, int32_t root, uint8_t* src, const char* path);
 int32_t flowc_typecheck_fatal(AstArena arena, int32_t root, uint8_t* src, const char* path, int32_t* fatal_out);
+int32_t flowc_typecheck_fatal_sem(AstArena arena, int32_t root, uint8_t* src, const char* path, int32_t* fatal_out, int32_t sem_on);
 int32_t flowc_typecheck(AstArena arena, int32_t root, uint8_t* src);
 int32_t flowc_tc_span_eq(uint8_t* src, int32_t a0, int32_t a1, int32_t b0, int32_t b1) {
   if ((a1 - a0) != (b1 - b0)) {
@@ -61447,6 +70195,9 @@ void flowc_tc_check_expr(TcCtx* ctx, AstArena arena, int32_t id) {
   if (flowc_tc_span_is((ctx[0]).src, ns, ne, "void") == 1) {
   return;
 }
+  if ((ctx[0]).sem_on == 1) {
+  return;
+}
   if (flowc_tc_lookup(ctx[0], ns, ne) == 0) {
   if (flowc_eff_is_cap((ctx[0]).eff, (ctx[0]).eff_len, (ctx[0]).src, ns, ne) == 1) {
   flowc_tc_eff_begin(ctx, ns);
@@ -61471,6 +70222,14 @@ void flowc_tc_check_expr(TcCtx* ctx, AstArena arena, int32_t id) {
   int32_t ne = ((arena).nodes[id]).name_end;
   int32_t nargs = flowc_ast_chain_len(arena, ((arena).nodes[id]).a);
   int32_t espan[2] = {  };
+  if ((ctx[0]).sem_on == 1) {
+  int32_t sarg = ((arena).nodes[id]).a;
+  while (sarg != AST_NONE) {
+  flowc_tc_check_expr(ctx, arena, sarg);
+  sarg = ((arena).nodes[sarg]).next;
+}
+  return;
+}
   if (flowc_tc_eff_receiver(ctx, arena, id, (&espan[0])) == 1) {
   flowc_tc_eff_check_call(ctx, arena, id, espan[0], espan[1]);
   return;
@@ -61616,7 +70375,7 @@ void flowc_tc_check_expr(TcCtx* ctx, AstArena arena, int32_t id) {
   if (kind == AST_FIELD_ACCESS) {
   int32_t base = ((arena).nodes[id]).a;
   flowc_tc_check_expr(ctx, arena, base);
-  if (base != AST_NONE && ((arena).nodes[base]).kind == AST_IDENT) {
+  if ((ctx[0]).sem_on == 0 && base != AST_NONE && ((arena).nodes[base]).kind == AST_IDENT) {
   int32_t ty = flowc_tc_lookup_val_type(ctx[0], ((arena).nodes[base]).name_start, ((arena).nodes[base]).name_end);
   int32_t st = flowc_tc_find_struct(arena, (ctx[0]).src, ty);
   if (st != AST_NONE) {
@@ -61705,6 +70464,9 @@ void flowc_tc_check_stmt(TcCtx* ctx, AstArena arena, int32_t id) {
   bare = 1;
 }
 }
+  if ((ctx[0]).sem_on == 1) {
+  flowc_tc_check_expr(ctx, arena, val);
+} else {
   if (bare == 1) {
   if (is_void == 0) {
   flowc_tc_note(ctx, "flowc tc: return without a value in a function that returns one", ((arena).nodes[id]).start, ((arena).nodes[id]).start);
@@ -61720,6 +70482,7 @@ void flowc_tc_check_stmt(TcCtx* ctx, AstArena arena, int32_t id) {
   if (flowc_tc_obvious_non_i32(arena, val) == 1) {
   flowc_tc_note(ctx, "flowc tc: returns a non-i32 value from an i32 function", ((arena).nodes[id]).start, ((arena).nodes[id]).start);
   flowc_tc_err(ctx);
+}
 }
 }
 }
@@ -61809,7 +70572,7 @@ void flowc_tc_check_stmt(TcCtx* ctx, AstArena arena, int32_t id) {
   if (lhs != AST_NONE && ((arena).nodes[lhs]).kind == AST_IDENT) {
   int32_t ns = ((arena).nodes[lhs]).name_start;
   int32_t ne = ((arena).nodes[lhs]).name_end;
-  if (flowc_tc_lookup(ctx[0], ns, ne) == 0) {
+  if ((ctx[0]).sem_on == 0 && flowc_tc_lookup(ctx[0], ns, ne) == 0) {
   flowc_tc_err(ctx);
 }
 } else {
@@ -61843,6 +70606,10 @@ void flowc_tc_check_stmt(TcCtx* ctx, AstArena arena, int32_t id) {
   return;
 }
   if (kind == AST_HANDLE) {
+  if ((ctx[0]).sem_on == 1) {
+  flowc_tc_check_block(ctx, arena, ((arena).nodes[id]).a);
+  return;
+}
   flowc_tc_eff_check_handle(ctx, arena, id);
   return;
 }
@@ -61894,8 +70661,11 @@ void flowc_tc_collect_globals(TcCtx* ctx, AstArena arena, int32_t root) {
   if (flowc_tc_span_eq((ctx[0]).src, ns, ne, ((arena).nodes[pfn]).name_start, ((arena).nodes[pfn]).name_end) == 1) {
   int32_t params_same = flowc_tc_params_eq(arena, (ctx[0]).src, fn, pfn);
   if (params_same == 1) {
-  flowc_tc_note(ctx, "flowc tc: duplicate function with same signature", ns, ne);
-  flowc_tc_err(ctx);
+  flowc_tc_eff_begin(ctx, ns);
+  flowc_eff_diag_s("function '");
+  flowc_eff_diag_span((ctx[0]).src, ns, ne);
+  flowc_eff_diag_s("' is defined twice with the same parameter types");
+  flowc_eff_diag_end();
 }
 }
 }
@@ -62111,7 +70881,7 @@ TcCtx flowc_tc_init(uint8_t* src) {
 }
   flowc_overload_table_free((&overloads));
   flowc_overload_call_scratch_free((&overload_scratch));
-  return (TcCtx){ .src = src, .ns = NULL, .ne = NULL, .nk = NULL, .na = NULL, .nlen = 0, .ncap = 0, .marks = NULL, .mlen = 0, .mcap = 0, .err = 1, .cur_ret = AST_NONE, .loop_depth = 0, .has_extern = 0, .lenient = 0, .fatal = 0, .seed_buf = NULL, .seed_cap = 0, .seed_len = 0, .seed_nlen = 0, .overloads = overloads, .overload_scratch = overload_scratch, .path = "", .eff = NULL, .eff_len = 0, .eff_cap = 0, .eff_seed_len = 0, .hs_s = NULL, .hs_e = NULL, .hlen = 0, .hcap = 0, .cur_fn = AST_NONE, .strict_effects = 0 };
+  return (TcCtx){ .src = src, .ns = NULL, .ne = NULL, .nk = NULL, .na = NULL, .nlen = 0, .ncap = 0, .marks = NULL, .mlen = 0, .mcap = 0, .err = 1, .cur_ret = AST_NONE, .loop_depth = 0, .has_extern = 0, .lenient = 0, .fatal = 0, .seed_buf = NULL, .seed_cap = 0, .seed_len = 0, .seed_nlen = 0, .overloads = overloads, .overload_scratch = overload_scratch, .path = "", .eff = NULL, .eff_len = 0, .eff_cap = 0, .eff_seed_len = 0, .hs_s = NULL, .hs_e = NULL, .hlen = 0, .hcap = 0, .cur_fn = AST_NONE, .strict_effects = 0, .sem_on = 0 };
 }
   int32_t zi = 0;
   while (zi < seed_cap) {
@@ -62131,7 +70901,7 @@ TcCtx flowc_tc_init(uint8_t* src) {
   if (sep != NULL && sep[0] == 49) {
   strict_effects = 1;
 }
-  return (TcCtx){ .src = src, .ns = ns, .ne = ne, .nk = nk, .na = na, .nlen = 0, .ncap = ncap, .marks = marks, .mlen = 0, .mcap = mcap, .err = 0, .cur_ret = AST_NONE, .loop_depth = 0, .has_extern = 0, .lenient = 0, .fatal = 0, .seed_buf = raw_seed, .seed_cap = seed_cap, .seed_len = 0, .seed_nlen = 0, .overloads = overloads, .overload_scratch = overload_scratch, .path = "", .eff = raw_eff, .eff_len = 0, .eff_cap = eff_cap, .eff_seed_len = 0, .hs_s = hs_s, .hs_e = hs_e, .hlen = 0, .hcap = hcap, .cur_fn = AST_NONE, .strict_effects = strict_effects };
+  return (TcCtx){ .src = src, .ns = ns, .ne = ne, .nk = nk, .na = na, .nlen = 0, .ncap = ncap, .marks = marks, .mlen = 0, .mcap = mcap, .err = 0, .cur_ret = AST_NONE, .loop_depth = 0, .has_extern = 0, .lenient = 0, .fatal = 0, .seed_buf = raw_seed, .seed_cap = seed_cap, .seed_len = 0, .seed_nlen = 0, .overloads = overloads, .overload_scratch = overload_scratch, .path = "", .eff = raw_eff, .eff_len = 0, .eff_cap = eff_cap, .eff_seed_len = 0, .hs_s = hs_s, .hs_e = hs_e, .hlen = 0, .hcap = hcap, .cur_fn = AST_NONE, .strict_effects = strict_effects, .sem_on = 0 };
 }
 
 void flowc_tc_free(TcCtx* ctx) {
@@ -63770,10 +72540,16 @@ int32_t flowc_tc_check_program(TcCtx* ctx, AstArena arena, int32_t root) {
 }
   (ctx[0]).eff_len = flowc_eff_collect(arena, root, (ctx[0]).src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_seed_len);
   flowc_tc_collect_globals(ctx, arena, root);
+  if ((ctx[0]).sem_on == 0) {
   flowc_tc_check_rows(ctx, arena, root);
+}
+  if ((ctx[0]).sem_on == 0) {
   flowc_tc_check_attrs(ctx, arena);
+}
   flowc_tc_check_fns(ctx, arena, root);
+  if ((ctx[0]).sem_on == 0) {
   (ctx[0]).err = ((ctx[0]).err + flowc_units_check(arena, (ctx[0]).src, root));
+}
   (ctx[0]).eff_len = (ctx[0]).eff_seed_len;
   return (ctx[0]).err;
 }
@@ -63784,6 +72560,10 @@ int32_t flowc_typecheck_ex(AstArena arena, int32_t root, uint8_t* src, const cha
 }
 
 int32_t flowc_typecheck_fatal(AstArena arena, int32_t root, uint8_t* src, const char* path, int32_t* fatal_out) {
+  return flowc_typecheck_fatal_sem(arena, root, src, path, fatal_out, 0);
+}
+
+int32_t flowc_typecheck_fatal_sem(AstArena arena, int32_t root, uint8_t* src, const char* path, int32_t* fatal_out, int32_t sem_on) {
   fatal_out[0] = 1;
   if (root == AST_NONE || root < 0) {
   return 1;
@@ -63798,6 +72578,7 @@ int32_t flowc_typecheck_fatal(AstArena arena, int32_t root, uint8_t* src, const 
   if ((uint8_t*)(path) != NULL) {
   (ctx).path = path;
 }
+  (ctx).sem_on = sem_on;
   flowc_tc_check_program((&ctx), arena, root);
   int32_t errs = (ctx).err;
   fatal_out[0] = (ctx).fatal;
@@ -63863,6 +72644,7 @@ int32_t flowc_resolve_toml_string_value(uint8_t* toml, int32_t n, const char* ta
 int32_t flowc_resolve_try_under(const char* root, uint8_t* src, int32_t s, int32_t e, uint8_t* out, int32_t cap);
 int32_t flowc_resolve_package_path(uint8_t* src, int32_t name_start, int32_t name_end, const char* project_root, uint8_t* out_path, int32_t out_path_cap);
 int32_t flowc_resolve_dirname(const char* path, uint8_t* out, int32_t out_cap);
+int32_t flowc_resolve_import_at(uint8_t* src, int32_t s, int32_t e, int32_t form, const char* mod_search, const char* search_dir, const char* project_root, uint8_t* imp_path);
 int32_t flowc_resolve_append_path(uint8_t* store, int32_t n, const char* path);
 int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, const char* project_root, uint8_t* path_store);
 int32_t flowc_resolve_deps_ready(const char* path, const char* search_dir, const char* project_root, uint8_t* all_store, int32_t all_n, uint8_t* out_store, int32_t out_n, uint8_t* src, uint8_t* imp_path);
@@ -63874,8 +72656,12 @@ int32_t flowc_resolve_name_eq(uint8_t* buf, int32_t a, int32_t b);
 int32_t flowc_resolve_next_entry(uint8_t* buf, int32_t e);
 int32_t flowc_resolve_needs_rename(uint8_t* buf, int32_t len, int32_t e);
 int32_t flowc_resolve_emit_renames(uint8_t* buf, int32_t len, int32_t mi, int32_t undef, uint8_t* out, int32_t cap);
+int32_t flowc_semcheck_visit(int32_t i, int32_t* deps, int32_t* ndeps, int32_t max_deps, int32_t* state, int32_t* order, int32_t norder);
+int32_t flowc_bundle_semcheck(uint8_t* all_store, int32_t all_n, const char* search_dir, const char* project_root, int32_t* counts);
+bool flowc_resolve_strict();
 int32_t flowc_bundle_typecheck(const char* entry_path, const char* search_dir);
 int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_dir, int32_t* fatal_out);
+int32_t flowc_semcheck_imports(const char* entry_path, int32_t* counts);
 int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_t* out, int32_t out_cap);
 void flowc_resolve_import_error(const char* mpath, uint8_t* src, int32_t s, int32_t e) {
   uint8_t* mp = (uint8_t*)(mpath);
@@ -64100,12 +72886,28 @@ int32_t flowc_impl_expand_in_place(uint8_t* src, int32_t n, int32_t cap) {
   int32_t ye = flowc_impl_ident_end(src, ys, n);
   int32_t lb = flowc_impl_skip_ws(src, ye, n);
   if (ye > ys && lb < n && src[lb] == 123) {
+  int32_t one_line = 1;
   int32_t h = i;
+  while (h <= lb) {
+  if (src[h] == 10) {
+  one_line = 0;
+}
+  h = (h + 1);
+}
+  h = i;
   while (h <= lb) {
   if (src[h] == 10) {
   o = flowc_impl_put(out, o, cap, 10);
 } else {
+  if (one_line == 1 && h == i) {
+  o = flowc_impl_put(out, o, cap, 35);
+} else {
+  if (one_line == 1) {
+  o = flowc_impl_put(out, o, cap, src[h]);
+} else {
   o = flowc_impl_put(out, o, cap, 32);
+}
+}
 }
   h = (h + 1);
 }
@@ -65429,6 +74231,30 @@ int32_t flowc_resolve_dirname(const char* path, uint8_t* out, int32_t out_cap) {
   return last_slash;
 }
 
+int32_t flowc_resolve_import_at(uint8_t* src, int32_t s, int32_t e, int32_t form, const char* mod_search, const char* search_dir, const char* project_root, uint8_t* imp_path) {
+  if (form == 1 || form == 2) {
+  int32_t plen = flowc_resolve_sibling_path(src, s, e, mod_search, imp_path, FLOWC_RESOLVE_PATH_CAP);
+  if (plen < 0 && (!__flowc_str_eq(mod_search, search_dir))) {
+  plen = flowc_resolve_sibling_path(src, s, e, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP);
+}
+  if (plen < 0) {
+  plen = flowc_resolve_sibling_path(src, s, e, "lib/stdlib", imp_path, FLOWC_RESOLVE_PATH_CAP);
+}
+  if (plen < 0) {
+  return (0 - 1);
+}
+  return plen;
+}
+  if (form == 0) {
+  int32_t plen2 = flowc_resolve_package_path(src, s, e, project_root, imp_path, FLOWC_RESOLVE_PATH_CAP);
+  if (plen2 == (0 - 1)) {
+  plen2 = flowc_resolve_dotted_any(src, s, e, mod_search, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP);
+}
+  return plen2;
+}
+  return (0 - 3);
+}
+
 int32_t flowc_resolve_append_path(uint8_t* store, int32_t n, const char* path) {
   uint8_t* path_p = (uint8_t*)(path);
   if (flowc_resolve_find_path(store, n, FLOWC_RESOLVE_PATH_CAP, path_p) >= 0) {
@@ -65468,7 +74294,7 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, con
   int32_t qi = 0;
   while (qi < n) {
   uint8_t* slot = (uint8_t*)((path_store + (qi * FLOWC_RESOLVE_PATH_CAP)));
-  const char* mpath = slot;
+  const char* mpath = (const char*)(slot);
   int32_t zi = 0;
   while (zi < FLOWC_RESOLVE_SRC_CAP) {
   src[zi] = 0;
@@ -65501,39 +74327,8 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, con
   int32_t ii = 0;
   while (ii < ((p).arena).len) {
   if ((((p).arena).nodes[ii]).kind == AST_IMPORT) {
-  int32_t form = (((p).arena).nodes[ii]).ival;
-  if (form == 1 || form == 2) {
-  int32_t plen = flowc_resolve_sibling_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, mod_search, imp_path, FLOWC_RESOLVE_PATH_CAP);
-  if (plen < 0 && (!__flowc_str_eq(mod_search, search_dir))) {
-  plen = flowc_resolve_sibling_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP);
-}
-  if (plen < 0) {
-  plen = flowc_resolve_sibling_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, "lib/stdlib", imp_path, FLOWC_RESOLVE_PATH_CAP);
-}
-  if (plen < 0) {
-  flowc_resolve_import_error(mpath, src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end);
-  flowc_parser_free(p);
-  free(mod_dir);
-  free(imp_path);
-  free(src);
-  return (0 - 1);
-}
-  const char* dep = imp_path;
-  int32_t n2 = flowc_resolve_append_path(path_store, n, dep);
-  if (n2 < 0) {
-  flowc_parser_free(p);
-  free(mod_dir);
-  free(imp_path);
-  free(src);
-  return (0 - 1);
-}
-  n = n2;
-}
-  if (form == 0) {
-  int32_t plen = flowc_resolve_package_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, project_root, imp_path, FLOWC_RESOLVE_PATH_CAP);
-  if (plen == (0 - 1)) {
-  plen = flowc_resolve_dotted_any(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, mod_search, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP);
-}
+  int32_t plen = flowc_resolve_import_at(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, (((p).arena).nodes[ii]).ival, mod_search, search_dir, project_root, imp_path);
+  if (plen != (0 - 3)) {
   if (plen < 0) {
   if (plen == (0 - 1)) {
   flowc_resolve_import_error(mpath, src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end);
@@ -65544,7 +74339,7 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, con
   free(src);
   return (0 - 1);
 }
-  const char* dep = imp_path;
+  const char* dep = (const char*)(imp_path);
   int32_t n2 = flowc_resolve_append_path(path_store, n, dep);
   if (n2 < 0) {
   flowc_parser_free(p);
@@ -65593,31 +74388,8 @@ int32_t flowc_resolve_deps_ready(const char* path, const char* search_dir, const
   int32_t ii = 0;
   while (ii < ((p).arena).len) {
   if ((((p).arena).nodes[ii]).kind == AST_IMPORT) {
-  int32_t form = (((p).arena).nodes[ii]).ival;
-  if (form == 1 || form == 2) {
-  int32_t plen = flowc_resolve_sibling_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, mod_search, imp_path, FLOWC_RESOLVE_PATH_CAP);
-  if (plen < 0 && (!__flowc_str_eq(mod_search, search_dir))) {
-  plen = flowc_resolve_sibling_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP);
-}
-  if (plen < 0) {
-  plen = flowc_resolve_sibling_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, "lib/stdlib", imp_path, FLOWC_RESOLVE_PATH_CAP);
-}
-  if (plen < 0) {
-  flowc_parser_free(p);
-  return 0;
-}
-  if (flowc_resolve_find_path(all_store, all_n, FLOWC_RESOLVE_PATH_CAP, imp_path) >= 0) {
-  if (flowc_resolve_find_path(out_store, out_n, FLOWC_RESOLVE_PATH_CAP, imp_path) < 0) {
-  flowc_parser_free(p);
-  return 0;
-}
-}
-}
-  if (form == 0) {
-  int32_t plen = flowc_resolve_package_path(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, project_root, imp_path, FLOWC_RESOLVE_PATH_CAP);
-  if (plen == (0 - 1)) {
-  plen = flowc_resolve_dotted_any(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, mod_search, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP);
-}
+  int32_t plen = flowc_resolve_import_at(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, (((p).arena).nodes[ii]).ival, mod_search, search_dir, project_root, imp_path);
+  if (plen != (0 - 3)) {
   if (plen < 0) {
   flowc_parser_free(p);
   return 0;
@@ -65664,7 +74436,7 @@ int32_t flowc_resolve_topo(uint8_t* all_store, int32_t all_n, const char* search
   while (i < all_n) {
   if (placed[i] == 0) {
   uint8_t* slot = (uint8_t*)((all_store + (i * FLOWC_RESOLVE_PATH_CAP)));
-  const char* mpath = slot;
+  const char* mpath = (const char*)(slot);
   if (flowc_resolve_deps_ready(mpath, search_dir, project_root, all_store, all_n, out_store, out_n, src, imp_path) == 1) {
   int32_t n2 = flowc_resolve_append_path(out_store, out_n, mpath);
   if (n2 < 0) {
@@ -65949,6 +74721,116 @@ int32_t flowc_resolve_emit_renames(uint8_t* buf, int32_t len, int32_t mi, int32_
   return n;
 }
 
+int32_t flowc_semcheck_visit(int32_t i, int32_t* deps, int32_t* ndeps, int32_t max_deps, int32_t* state, int32_t* order, int32_t norder) {
+  state[i] = 1;
+  int32_t n = norder;
+  int32_t k = 0;
+  while (k < ndeps[i]) {
+  int32_t d = deps[((i * max_deps) + k)];
+  if (state[d] == 0) {
+  n = flowc_semcheck_visit(d, deps, ndeps, max_deps, state, order, n);
+}
+  k = (k + 1);
+}
+  state[i] = 2;
+  order[n] = i;
+  return (n + 1);
+}
+
+int32_t flowc_bundle_semcheck(uint8_t* all_store, int32_t all_n, const char* search_dir, const char* project_root, int32_t* counts) {
+  counts[0] = 0;
+  counts[1] = 0;
+  int32_t max_deps = 64;
+  uint8_t** srcs = (uint8_t**)((uint8_t**)(malloc((int64_t)((all_n * 8)))));
+  AstArena* arenas = (AstArena*)((AstArena*)(malloc((int64_t)((all_n * 24)))));
+  int32_t* roots = (int32_t*)((int32_t*)(malloc((int64_t)((all_n * 4)))));
+  int32_t* deps = (int32_t*)((int32_t*)(malloc((int64_t)(((all_n * max_deps) * 4)))));
+  int32_t* ndeps = (int32_t*)((int32_t*)(malloc((int64_t)((all_n * 4)))));
+  int32_t* state = (int32_t*)((int32_t*)(malloc((int64_t)((all_n * 4)))));
+  int32_t* order = (int32_t*)((int32_t*)(malloc((int64_t)((all_n * 4)))));
+  uint8_t* tmp = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_SRC_CAP)));
+  uint8_t* imp_path = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  uint8_t* mod_dir = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  int32_t i = 0;
+  while (i < all_n) {
+  const char* mpath = (const char*)((all_store + (i * FLOWC_RESOLVE_PATH_CAP)));
+  int32_t zi = 0;
+  while (zi < FLOWC_RESOLVE_SRC_CAP) {
+  tmp[zi] = 0;
+  zi = (zi + 1);
+}
+  int32_t nsrc = flowc_resolve_read_source(mpath, tmp, (FLOWC_RESOLVE_SRC_CAP - 1));
+  if (nsrc < 0) {
+  return 1;
+}
+  uint8_t* own = (uint8_t*)(malloc((int64_t)((nsrc + 1))));
+  zi = 0;
+  while (zi < nsrc) {
+  own[zi] = tmp[zi];
+  zi = (zi + 1);
+}
+  own[nsrc] = 0;
+  srcs[i] = own;
+  int32_t cap = (nsrc + 4096);
+  Parser p = flowc_parser_new(own, nsrc, cap);
+  int32_t root = flowc_parse_program((&p));
+  if (root < 0 || (p).err != 0) {
+  return 1;
+}
+  arenas[i] = (p).arena;
+  roots[i] = root;
+  ndeps[i] = 0;
+  state[i] = 0;
+  int32_t mod_dlen = flowc_resolve_dirname(mpath, mod_dir, FLOWC_RESOLVE_PATH_CAP);
+  const char* mod_search = search_dir;
+  if (mod_dlen > 0) {
+  mod_search = (const char*)(mod_dir);
+}
+  int32_t ii = 0;
+  while (ii < ((p).arena).len) {
+  if ((((p).arena).nodes[ii]).kind == AST_IMPORT) {
+  int32_t plen = flowc_resolve_import_at(own, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, (((p).arena).nodes[ii]).ival, mod_search, search_dir, project_root, imp_path);
+  if (plen >= 0) {
+  int32_t d = flowc_resolve_find_path(all_store, all_n, FLOWC_RESOLVE_PATH_CAP, imp_path);
+  if (d >= 0 && ndeps[i] < max_deps) {
+  deps[((i * max_deps) + ndeps[i])] = d;
+  ndeps[i] = (ndeps[i] + 1);
+}
+}
+}
+  ii = (ii + 1);
+}
+  i = (i + 1);
+}
+  int32_t norder = flowc_semcheck_visit(0, deps, ndeps, max_deps, state, order, 0);
+  Sem* c = (Sem*)(sem_new(flowc_resolve_strict()));
+  i = 0;
+  while (i < norder) {
+  int32_t k = order[i];
+  const char* mpath2 = (const char*)((all_store + (k * FLOWC_RESOLVE_PATH_CAP)));
+  int32_t m = sem_add_module(c, arenas[k], roots[k], srcs[k], flowc_strdup(mpath2));
+  sem_build_module(c, m, k == 0);
+  i = (i + 1);
+}
+  sem_check_program(c);
+  sem_report(c);
+  counts[0] = sem_error_count(c);
+  counts[1] = sem_fatal_count(c);
+  return 0;
+}
+
+bool flowc_resolve_strict() {
+  const char* v = getenv("FLOWC_LENIENT");
+  if ((uint8_t*)(v) == NULL) {
+  return 1;
+}
+  uint8_t* p = (uint8_t*)((uint8_t*)(v));
+  if (p[0] == 49 && p[1] == 0) {
+  return 0;
+}
+  return 1;
+}
+
 int32_t flowc_bundle_typecheck(const char* entry_path, const char* search_dir) {
   int32_t fatal[1] = { 0 };
   return flowc_bundle_typecheck_fatal(entry_path, search_dir, (int32_t*)((&fatal[0])));
@@ -65995,6 +74877,7 @@ int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_
   uint8_t* no_src = (uint8_t*)(NULL);
   TcCtx ctx = flowc_tc_init(no_src);
   (ctx).lenient = 1;
+  (ctx).sem_on = 1;
   if ((ctx).ns == NULL) {
   free(order_store);
   free(path_store);
@@ -66012,7 +74895,7 @@ int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_
   int32_t mi = 0;
   while (mi < norder) {
   uint8_t* slot = (uint8_t*)((order_store + (mi * FLOWC_RESOLVE_PATH_CAP)));
-  const char* mpath = slot;
+  const char* mpath = (const char*)(slot);
   zi = 0;
   while (zi < FLOWC_RESOLVE_SRC_CAP) {
   src[zi] = 0;
@@ -66053,12 +74936,49 @@ int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_
   mi = (mi + 1);
 }
   ctx_fatal = (ctx).fatal;
+  int32_t sc[2] = { 0, 0 };
+  if (flowc_bundle_semcheck(path_store, nmods, search_dir, project_root, (int32_t*)((&sc[0]))) != 0) {
+  ctx_fatal = (ctx_fatal + 1);
+  total_err = (total_err + 1);
+}
+  total_err = (total_err + sc[0]);
+  ctx_fatal = (ctx_fatal + sc[1]);
   free(src);
   flowc_tc_free((&ctx));
   free(order_store);
   free(path_store);
   fatal_out[0] = ctx_fatal;
   return total_err;
+}
+
+int32_t flowc_semcheck_imports(const char* entry_path, int32_t* counts) {
+  int32_t psz = (FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP);
+  uint8_t* path_store = (uint8_t*)(calloc((int64_t)(psz), 1));
+  uint8_t* dir_buf = (uint8_t*)(calloc((int64_t)(FLOWC_RESOLVE_PATH_CAP), 1));
+  uint8_t* proj_buf = (uint8_t*)(calloc((int64_t)(FLOWC_RESOLVE_PATH_CAP), 1));
+  if (path_store == NULL || dir_buf == NULL || proj_buf == NULL) {
+  return 1;
+}
+  const char* search_dir = ".";
+  const char* fd = getenv("FLOWC_DIR");
+  if ((uint8_t*)(fd) != NULL) {
+  search_dir = fd;
+} else {
+  if (flowc_resolve_dirname(entry_path, dir_buf, FLOWC_RESOLVE_PATH_CAP) > 0) {
+  search_dir = (const char*)(dir_buf);
+}
+}
+  int32_t _proj_len = flowc_resolve_project_root(entry_path, proj_buf, FLOWC_RESOLVE_PATH_CAP);
+  const char* project_root = (const char*)(proj_buf);
+  int32_t nmods = flowc_resolve_gather(entry_path, search_dir, project_root, path_store);
+  int32_t rc = 1;
+  if (nmods > 0) {
+  rc = flowc_bundle_semcheck(path_store, nmods, search_dir, project_root, counts);
+}
+  free(proj_buf);
+  free(dir_buf);
+  free(path_store);
+  return rc;
 }
 
 int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_t* out, int32_t out_cap) {
@@ -66119,7 +75039,7 @@ int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_
   int32_t li = 0;
   while (li < norder) {
   uint8_t* lslot = (uint8_t*)((order_store + (li * FLOWC_RESOLVE_PATH_CAP)));
-  const char* lpath = lslot;
+  const char* lpath = (const char*)(lslot);
   int32_t nl = flowc_resolve_list_fns(lpath, li, fns, FLOWC_RESOLVE_FNS_CAP, fnlen);
   if (nl >= 0) {
   fnlen = nl;
@@ -66136,7 +75056,7 @@ int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_
   int32_t first = 1;
   while (mi < norder) {
   uint8_t* slot = (uint8_t*)((order_store + (mi * FLOWC_RESOLVE_PATH_CAP)));
-  const char* mpath = slot;
+  const char* mpath = (const char*)(slot);
   int32_t flags = 0;
   if (first == 0) {
   flags = 1;
@@ -66281,7 +75201,7 @@ int32_t mb_puts(uint8_t* dst, int32_t o, int32_t cap, const char* s) {
 }
 
 int32_t mb_cstr_len(uint8_t* p) {
-  const char* s = p;
+  const char* s = (const char*)(p);
   return (int32_t)(strlen(s));
 }
 
@@ -66383,7 +75303,7 @@ int32_t mb_realpath(const char* p, uint8_t* out) {
 }
 
 int32_t mb_try(uint8_t* cand, uint8_t* out) {
-  const char* s = cand;
+  const char* s = (const char*)(cand);
   if (flowc_io_exists(s) == 0) {
   return 0;
 }
@@ -66666,7 +75586,7 @@ void mb_visit(MlirBundle* b, int32_t k) {
   return;
 }
   (b[0]).state[k] = 1;
-  const char* path = ((b[0]).paths + (k * MB_PATH));
+  const char* path = (const char*)(((b[0]).paths + (k * MB_PATH)));
   uint8_t* src = (uint8_t*)(malloc((int64_t)(MB_SRC_CAP)));
   mb_zero(src, MB_SRC_CAP);
   int32_t n = flowc_read_file(path, src, (MB_SRC_CAP - 1));
@@ -66791,7 +75711,7 @@ int32_t mb_typecheck(MlirBundle* b) {
   int32_t n = ((b[0]).starts[(i + 1)] - s);
   mb_zero(src, MB_SRC_CAP);
   mb_put(src, 0, MB_SRC_CAP, ((b[0]).all + s), n);
-  const char* mpath = ((b[0]).paths + ((b[0]).order[i] * MB_PATH));
+  const char* mpath = (const char*)(((b[0]).paths + ((b[0]).order[i] * MB_PATH)));
   Parser p = flowc_parser_new(src, n, MB_AST_CAP);
   int32_t root = flowc_parse_program((&p));
   if (root < 0 || (p).err != 0) {
@@ -66836,7 +75756,7 @@ int32_t flowc_mlir_emit_program(const char* in_path, uint8_t* out, int32_t out_c
   puts("flowc mlir: unsupported: imports without a flow.toml above the program at line 0");
   return (0 - 1);
 }
-  const char* prs = pr;
+  const char* prs = (const char*)(pr);
   if (mb_realpath(prs, (mb).project_root) == 0) {
   mb_put((mb).project_root, 0, MB_PATH, pr, mb_cstr_len(pr));
 }
@@ -66844,7 +75764,7 @@ int32_t flowc_mlir_emit_program(const char* in_path, uint8_t* out, int32_t out_c
   uint8_t* tp = (uint8_t*)(malloc((int64_t)(MB_PATH)));
   int32_t tpo = mb_put(tp, 0, MB_PATH, (mb).project_root, mb_cstr_len((mb).project_root));
   mb_puts(tp, tpo, MB_PATH, "/flow.toml");
-  const char* tps = tp;
+  const char* tps = (const char*)(tp);
   int32_t tn = flowc_read_file(tps, (mb).toml, (MB_SRC_CAP - 1));
   free(tp);
   if (tn > 0) {
@@ -66860,7 +75780,7 @@ int32_t flowc_mlir_emit_program(const char* in_path, uint8_t* out, int32_t out_c
   uint8_t* libs = (uint8_t*)("lib/stdlib");
   have = mb_join(cand, (mb).project_root, libs, 10);
 }
-  const char* cs = cand;
+  const char* cs = (const char*)(cand);
   if (have == 1 && flowc_io_exists(cs) == 1) {
   mb_put((mb).stdlib_root, 0, MB_PATH, cand, mb_cstr_len(cand));
 } else {
@@ -67034,7 +75954,7 @@ int32_t flowc_tc_lenient_ok(int32_t errs, int32_t fatal) {
 
 int32_t flowc_expand_only_stages() {
   const char* v = getenv("FLOWC_EXPAND_ONLY");
-  if (v == NULL) {
+  if ((uint8_t*)(v) == NULL) {
   return 7;
 }
   uint8_t* vp = (uint8_t*)((uint8_t*)(v));
@@ -67123,7 +76043,7 @@ void flowc_explain_begin() {
   if (flowc_env_set("FLOWC_EXPLAIN_SOURCE") == 1) {
   source = getenv("FLOWC_EXPLAIN_SOURCE");
 }
-  if (source == NULL) {
+  if ((uint8_t*)(source) == NULL) {
   source = "";
 }
   PlanText t = flowc_plan_text_new();
@@ -67148,7 +76068,7 @@ int32_t flowc_emit_mode() {
   const char* in_path = getenv("FLOWC_IN");
   const char* out_path = getenv("FLOWC_OUT");
   if (flowc_env_eq("FLOWC_BACKEND", "wasm") == 1) {
-  if (out_path == NULL) {
+  if ((uint8_t*)(out_path) == NULL) {
   puts("flowc emit: wasm requires FLOWC_OUT");
   return 1;
 }
@@ -67158,7 +76078,7 @@ int32_t flowc_emit_mode() {
   return flowc_shader_mode(getenv("FLOWC_SHADER"), in_path, out_path, getenv("FLOWC_SHADER_NAME"));
 }
   if (flowc_env_eq("FLOWC_BACKEND", "bpf") == 1) {
-  if (out_path == NULL) {
+  if ((uint8_t*)(out_path) == NULL) {
   puts("flowc emit: bpf requires FLOWC_OUT");
   return 1;
 }
@@ -67223,7 +76143,7 @@ int32_t flowc_emit_mode() {
 } else {
   int32_t dlen = flowc_resolve_dirname(in_path, dir_buf, 256);
   if (dlen > 0) {
-  search_dir = dir_buf;
+  search_dir = (const char*)(dir_buf);
 }
 }
   if (flowc_want_typecheck() == 1) {
@@ -67236,6 +76156,12 @@ int32_t flowc_emit_mode() {
   free(out);
   return 1;
 }
+}
+  if (flowc_env_eq("FLOWC_CHECK_ONLY", "1") == 1) {
+  puts("flowc: type check passed");
+  free(dir_buf);
+  free(out);
+  return 0;
 }
   nout = flowc_bundle_emit(in_path, search_dir, out, out_cap);
   free(dir_buf);
@@ -67283,9 +76209,20 @@ int32_t flowc_emit_mode() {
   return 1;
 }
   if (flowc_want_typecheck() == 1) {
+  int32_t sem[2] = { 0, 0 };
+  bool sem_done = 0;
+  if (flowc_ast_count_kind((p).arena, AST_IMPORT) > 0) {
+  sem_done = flowc_semcheck_imports(getenv("FLOWC_IN"), (int32_t*)((&sem[0]))) == 0;
+}
+  if (sem_done == 0) {
+  sem[0] = 0;
+  sem[1] = 0;
+  flowc_semcheck_single((p).arena, root, src, getenv("FLOWC_IN"), (int32_t*)((&sem[0])));
+}
   flowc_fuse_pipelines((&(p).arena), src);
   int32_t sfatal[1] = { 0 };
-  int32_t tc_errs = flowc_typecheck_fatal((p).arena, root, src, getenv("FLOWC_IN"), (int32_t*)((&sfatal[0])));
+  int32_t tc_errs = (flowc_typecheck_fatal_sem((p).arena, root, src, getenv("FLOWC_IN"), (int32_t*)((&sfatal[0])), 1) + sem[0]);
+  sfatal[0] = (sfatal[0] + sem[1]);
   if (tc_errs > 0 && flowc_tc_lenient_ok(tc_errs, sfatal[0]) == 0) {
   puts("flowc emit: typecheck failed");
   printf("flowc emit: tc_errs=%d\n", tc_errs);
@@ -67293,6 +76230,13 @@ int32_t flowc_emit_mode() {
   free(src);
   free(out);
   return 1;
+}
+  if (flowc_env_eq("FLOWC_CHECK_ONLY", "1") == 1) {
+  puts("flowc: type check passed");
+  flowc_parser_free(p);
+  free(src);
+  free(out);
+  return 0;
 }
 }
   if (want_mlir == 1) {
@@ -67342,7 +76286,7 @@ int32_t flowc_emit_mode() {
   if (nout < out_cap) {
   out[nout] = 0;
 }
-  puts(out);
+  puts((const char*)(out));
 }
   free(out);
   return rc;
@@ -67938,7 +76882,7 @@ int32_t test_cgen_emit() {
   if (n > 0 && n < cap) {
   bp[n] = 0;
   puts("--- cgen output ---");
-  puts(bp);
+  puts((const char*)(bp));
   puts("--- end cgen ---");
 }
   free(bp);
@@ -68548,7 +77492,7 @@ int32_t test_jsgen_emit() {
   if (n > 0 && n < cap) {
   bp[n] = 0;
   puts("--- jsgen output ---");
-  puts(bp);
+  puts((const char*)(bp));
   puts("--- end jsgen ---");
 }
   free(bp);

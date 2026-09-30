@@ -12,11 +12,10 @@ Flow examples in documentation: 39
 
   unverified stops at:
     parse             7
-    clang             2
+    types             3
     from              2
     uses              2
     vacuous           1
-    types             1
     preamble          1
 
   unverified concentrates in:
@@ -28,7 +27,7 @@ Flow examples in documentation: 39
   docs.md:49 [parse] no-op BinaryOperation statement; the text is not statements
   docs.md:53 [parse] no-op Variable statement; the text is not statements
   docs.md:60 [vacuous] declares nothing; the block is only comments
-  docs.md:64 [clang] use of undeclared identifier 'undefined_thing'
+  docs.md:64 [types] Undefined variable 'undefined_thing'
   docs.md:90 [types] tagged expect-error but compiles under standalone
   docs.md:100 [parse] block.flow:2:1: parse error: unexpected identifier 'n' (byte 19)
   docs.md:141 [parse] block.flow:1:13: parse error: unexpected token '->' (byte 12)
@@ -36,5 +35,5 @@ Flow examples in documentation: 39
   docs.md:159 [from] from='nope.flow' does not exist
   docs.md:175 [preamble] preamble 'nope.flow' does not exist
   docs.md:183 [uses] uses='later' names no earlier block on this page; add id=later to the block it depends on
-  docs.md:211 [clang] unknown type name 'A'
+  docs.md:211 [types] Function 'make_a' is declared to return unknown type 'A', which is not declared in this scope
   docs.md:220 [uses] uses='gone' names no earlier block on this page; add id=gone to the block it depends on

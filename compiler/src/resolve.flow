@@ -25,6 +25,9 @@ import .flow_blocks { flowc_flow_blocks_expand_in_place }
 import .shader_dsl { flowc_shader_expand_in_place }
 import .cgen { flowc_cgen_emit_sigs, flowc_cgen_collect_sigs, flowc_cgen_export_missing }
 import .effects { flowc_eff_collect }
+import .strutil { flowc_strdup }
+import .sem_model { Sem, sem_new, sem_add_module }
+import .sem_check { sem_build_module, sem_check_program, sem_report, sem_error_count, sem_fatal_count }
 import .typecheck {
     TcCtx,
     flowc_tc_init, flowc_tc_free, flowc_tc_reset_module,
@@ -33,12 +36,14 @@ import .typecheck {
 
 extern {
     function malloc(size: i64) -> ptr<u8>
+    function calloc(n: i64, size: i64) -> ptr<u8>
     function free(p: ptr<u8>) -> void
     function strlen(s: string) -> i64
     function puts(s: string) -> i32
     function printf(fmt: string, val: i32) -> i32
     function setenv(name: string, value: string, overwrite: i32) -> i32
     function putchar(c: i32) -> i32
+    function getenv(name: string) -> string
 }
 
 # `flowc gather: <module>: cannot resolve import <text>`: an import no search
@@ -296,11 +301,27 @@ export function flowc_impl_expand_in_place(src: ptr<u8>, n: i32, cap: i32) -> i3
                 let ye: i32 = flowc_impl_ident_end(src, ys, n)
                 let lb: i32 = flowc_impl_skip_ws(src, ye, n)
                 if ye > ys and lb < n and src[lb] == 123 {
-                    # Blank the header, keeping its newlines.
+                    # A one-line header becomes the comment `#mpl Trait for
+                    # Type {`, same length, which the semantic checker
+                    # (sem_check.flow) reads back to know the methods below
+                    # it came from an impl. A header over several lines is
+                    # blanked, keeping its newlines.
+                    let mut one_line: i32 = 1
                     let mut h: i32 = i
                     while h <= lb {
                         if src[h] == 10 {
+                            one_line = 0
+                        }
+                        h = h + 1
+                    }
+                    h = i
+                    while h <= lb {
+                        if src[h] == 10 {
                             o = flowc_impl_put(out, o, cap, 10)
+                        } elif one_line == 1 and h == i {
+                            o = flowc_impl_put(out, o, cap, 35)
+                        } elif one_line == 1 {
+                            o = flowc_impl_put(out, o, cap, src[h])
                         } else {
                             o = flowc_impl_put(out, o, cap, 32)
                         }
@@ -1758,6 +1779,46 @@ export function flowc_resolve_dirname(path: string, out: ptr<u8>, out_cap: i32) 
 }
 
 # Append unique path to store. Returns new length, or -1 on overflow / copy fail.
+# The file an AST_IMPORT of form `form` (0 dotted/package, 1 `.sibling`,
+# 2 "path") spelled by src[s..e) names, written to imp_path. Returns the
+# path length, -1 when no search path finds it, another negative value on
+# any other failure, and -3 for a form that names no file.
+function flowc_resolve_import_at(
+    src: ptr<u8>,
+    s: i32,
+    e: i32,
+    form: i32,
+    mod_search: string,
+    search_dir: string,
+    project_root: string,
+    imp_path: ptr<u8>
+) -> i32 {
+    if form == 1 or form == 2 {
+        let mut plen: i32 = flowc_resolve_sibling_path(src, s, e, mod_search, imp_path, FLOWC_RESOLVE_PATH_CAP)
+        if plen < 0 and mod_search != search_dir {
+            plen = flowc_resolve_sibling_path(src, s, e, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP)
+        }
+        # A bare stdlib module name (`import "io.flow"`,
+        # `import "lib/stdlib/nn.flow"`) resolves in lib/stdlib, as on the
+        # Python host.
+        if plen < 0 {
+            plen = flowc_resolve_sibling_path(src, s, e, "lib/stdlib", imp_path, FLOWC_RESOLVE_PATH_CAP)
+        }
+        if plen < 0 {
+            return 0 - 1
+        }
+        return plen
+    }
+    if form == 0 {
+        let mut plen2: i32 = flowc_resolve_package_path(src, s, e, project_root, imp_path, FLOWC_RESOLVE_PATH_CAP)
+        if plen2 == 0 - 1 {
+            plen2 = flowc_resolve_dotted_any(src, s, e, mod_search, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP)
+        }
+        return plen2
+    }
+    return 0 - 3
+}
+
 function flowc_resolve_append_path(store: ptr<u8>, n: i32, path: string) -> i32 {
     let path_p: ptr<u8> = path
     if flowc_resolve_find_path(store, n, FLOWC_RESOLVE_PATH_CAP, path_p) >= 0 {
@@ -1806,7 +1867,7 @@ function flowc_resolve_gather(
     let mut qi: i32 = 0
     while qi < n {
         let slot: ptr<u8> = path_store + (qi * FLOWC_RESOLVE_PATH_CAP)
-        let mpath: string = slot
+        let mpath: string = slot as string
 
         let mut zi: i32 = 0
         while zi < FLOWC_RESOLVE_SRC_CAP {
@@ -1824,7 +1885,7 @@ function flowc_resolve_gather(
         src[nsrc] = 0
 
         let mod_dlen: i32 = flowc_resolve_dirname(mpath, mod_dir, FLOWC_RESOLVE_PATH_CAP)
-        let mod_search: string = search_dir
+        let mut mod_search: string = search_dir
         if mod_dlen > 0 {
             mod_search = mod_dir as string
         }
@@ -1843,71 +1904,8 @@ function flowc_resolve_gather(
         let mut ii: i32 = 0
         while ii < p.arena.len {
             if p.arena.nodes[ii].kind == AST_IMPORT {
-                let form: i32 = p.arena.nodes[ii].ival
-                if form == 1 or form == 2 {
-                    let mut plen: i32 = flowc_resolve_sibling_path(
-                        src,
-                        p.arena.nodes[ii].name_start,
-                        p.arena.nodes[ii].name_end,
-                        mod_search,
-                        imp_path,
-                        FLOWC_RESOLVE_PATH_CAP
-                    )
-                    if plen < 0 and mod_search != search_dir {
-                        plen = flowc_resolve_sibling_path(
-                            src,
-                            p.arena.nodes[ii].name_start,
-                            p.arena.nodes[ii].name_end,
-                            search_dir,
-                            imp_path,
-                            FLOWC_RESOLVE_PATH_CAP
-                        )
-                    }
-                    # A bare stdlib module name (`import "io.flow"`,
-                    # `import "lib/stdlib/nn.flow"`) resolves in lib/stdlib,
-                    # as on the Python host.
-                    if plen < 0 {
-                        plen = flowc_resolve_sibling_path(src, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end, "lib/stdlib", imp_path, FLOWC_RESOLVE_PATH_CAP)
-                    }
-                    if plen < 0 {
-                        flowc_resolve_import_error(mpath, src, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end)
-                        flowc_parser_free(p)
-                        free(mod_dir)
-                        free(imp_path)
-                        free(src)
-                        return 0 - 1
-                    }
-                    let dep: string = imp_path
-                    let n2: i32 = flowc_resolve_append_path(path_store, n, dep)
-                    if n2 < 0 {
-                        flowc_parser_free(p)
-                        free(mod_dir)
-                        free(imp_path)
-                        free(src)
-                        return 0 - 1
-                    }
-                    n = n2
-                }
-                if form == 0 {
-                    let mut plen: i32 = flowc_resolve_package_path(
-                        src,
-                        p.arena.nodes[ii].name_start,
-                        p.arena.nodes[ii].name_end,
-                        project_root,
-                        imp_path,
-                        FLOWC_RESOLVE_PATH_CAP
-                    )
-                    if plen == 0 - 1 {
-                        plen = flowc_resolve_dotted_any(
-                            src,
-                            p.arena.nodes[ii].name_start,
-                            p.arena.nodes[ii].name_end,
-                            mod_search,
-                            search_dir,
-                            imp_path,
-                            FLOWC_RESOLVE_PATH_CAP
-                        )
-                    }
+                let plen: i32 = flowc_resolve_import_at(src, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end, p.arena.nodes[ii].ival, mod_search, search_dir, project_root, imp_path)
+                if plen != 0 - 3 {
                     if plen < 0 {
                         if plen == 0 - 1 {
                             flowc_resolve_import_error(mpath, src, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end)
@@ -1918,7 +1916,7 @@ function flowc_resolve_gather(
                         free(src)
                         return 0 - 1
                     }
-                    let dep: string = imp_path
+                    let dep: string = imp_path as string
                     let n2: i32 = flowc_resolve_append_path(path_store, n, dep)
                     if n2 < 0 {
                         flowc_parser_free(p)
@@ -1969,7 +1967,7 @@ function flowc_resolve_deps_ready(
 
     let mod_dir_buf: array<u8, 1024> = [0]
     let mod_dlen: i32 = flowc_resolve_dirname(path, &mod_dir_buf[0] as ptr<u8>, 1024)
-    let mod_search: string = search_dir
+    let mut mod_search: string = search_dir
     if mod_dlen > 0 {
         mod_search = &mod_dir_buf[0] as string
     }
@@ -1983,65 +1981,13 @@ function flowc_resolve_deps_ready(
     let mut ii: i32 = 0
     while ii < p.arena.len {
         if p.arena.nodes[ii].kind == AST_IMPORT {
-            let form: i32 = p.arena.nodes[ii].ival
-            if form == 1 or form == 2 {
-                let mut plen: i32 = flowc_resolve_sibling_path(
-                    src,
-                    p.arena.nodes[ii].name_start,
-                    p.arena.nodes[ii].name_end,
-                    mod_search,
-                    imp_path,
-                    FLOWC_RESOLVE_PATH_CAP
-                )
-                if plen < 0 and mod_search != search_dir {
-                    plen = flowc_resolve_sibling_path(
-                        src,
-                        p.arena.nodes[ii].name_start,
-                        p.arena.nodes[ii].name_end,
-                        search_dir,
-                        imp_path,
-                        FLOWC_RESOLVE_PATH_CAP
-                    )
-                }
-                if plen < 0 {
-                    plen = flowc_resolve_sibling_path(src, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end, "lib/stdlib", imp_path, FLOWC_RESOLVE_PATH_CAP)
-                }
+            let plen: i32 = flowc_resolve_import_at(src, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end, p.arena.nodes[ii].ival, mod_search, search_dir, project_root, imp_path)
+            if plen != 0 - 3 {
                 if plen < 0 {
                     flowc_parser_free(p)
                     return 0
                 }
                 # Only care about deps that are part of this bundle.
-                if flowc_resolve_find_path(all_store, all_n, FLOWC_RESOLVE_PATH_CAP, imp_path) >= 0 {
-                    if flowc_resolve_find_path(out_store, out_n, FLOWC_RESOLVE_PATH_CAP, imp_path) < 0 {
-                        flowc_parser_free(p)
-                        return 0
-                    }
-                }
-            }
-            if form == 0 {
-                let mut plen: i32 = flowc_resolve_package_path(
-                    src,
-                    p.arena.nodes[ii].name_start,
-                    p.arena.nodes[ii].name_end,
-                    project_root,
-                    imp_path,
-                    FLOWC_RESOLVE_PATH_CAP
-                )
-                if plen == 0 - 1 {
-                    plen = flowc_resolve_dotted_any(
-                        src,
-                        p.arena.nodes[ii].name_start,
-                        p.arena.nodes[ii].name_end,
-                        mod_search,
-                        search_dir,
-                        imp_path,
-                        FLOWC_RESOLVE_PATH_CAP
-                    )
-                }
-                if plen < 0 {
-                    flowc_parser_free(p)
-                    return 0
-                }
                 if flowc_resolve_find_path(all_store, all_n, FLOWC_RESOLVE_PATH_CAP, imp_path) >= 0 {
                     if flowc_resolve_find_path(out_store, out_n, FLOWC_RESOLVE_PATH_CAP, imp_path) < 0 {
                         flowc_parser_free(p)
@@ -2092,7 +2038,7 @@ function flowc_resolve_topo(
         while i < all_n {
             if placed[i] == 0 {
                 let slot: ptr<u8> = all_store + (i * FLOWC_RESOLVE_PATH_CAP)
-                let mpath: string = slot
+                let mpath: string = slot as string
                 if flowc_resolve_deps_ready(
                     mpath, search_dir, project_root, all_store, all_n, out_store, out_n, src, imp_path
                 ) == 1 {
@@ -2430,6 +2376,139 @@ function flowc_resolve_emit_renames(buf: ptr<u8>, len: i32, mi: i32, undef: i32,
 # Cross-file Stage-A typecheck for a bundle.
 # Gather BFS (entry first); check deps-first with a growing seed of exports
 # from already-checked modules. Returns total error count (0 = ok), or 1 on I/O/parse fail.
+# ---------------------------------------------------------------------------
+# The semantic check of a bundle (sem_check.flow): the modules the Python
+# host's ModuleResolver would load, in its order (each module after the
+# modules it imports, visited in import order), checked as one program.
+# counts[0] gets the error count, counts[1] the errors that stay fatal
+# under FLOWC_LENIENT=1.
+# ---------------------------------------------------------------------------
+
+function flowc_semcheck_visit(
+    i: i32,
+    deps: ptr<i32>,
+    ndeps: ptr<i32>,
+    max_deps: i32,
+    state: ptr<i32>,
+    order: ptr<i32>,
+    norder: i32
+) -> i32 {
+    state[i] = 1
+    let mut n: i32 = norder
+    let mut k: i32 = 0
+    while k < ndeps[i] {
+        let d: i32 = deps[i * max_deps + k]
+        if state[d] == 0 {
+            n = flowc_semcheck_visit(d, deps, ndeps, max_deps, state, order, n)
+        }
+        k = k + 1
+    }
+    state[i] = 2
+    order[n] = i
+    return n + 1
+}
+
+function flowc_bundle_semcheck(
+    all_store: ptr<u8>,
+    all_n: i32,
+    search_dir: string,
+    project_root: string,
+    counts: ptr<i32>
+) -> i32 {
+    counts[0] = 0
+    counts[1] = 0
+    let max_deps: i32 = 64
+    let srcs: ptr<ptr<u8>> = malloc((all_n * 8) as i64) as ptr<ptr<u8>>
+    let arenas: ptr<AstArena> = malloc((all_n * 24) as i64) as ptr<AstArena>
+    let roots: ptr<i32> = malloc((all_n * 4) as i64) as ptr<i32>
+    let deps: ptr<i32> = malloc((all_n * max_deps * 4) as i64) as ptr<i32>
+    let ndeps: ptr<i32> = malloc((all_n * 4) as i64) as ptr<i32>
+    let state: ptr<i32> = malloc((all_n * 4) as i64) as ptr<i32>
+    let order: ptr<i32> = malloc((all_n * 4) as i64) as ptr<i32>
+    let tmp: ptr<u8> = malloc(FLOWC_RESOLVE_SRC_CAP as i64)
+    let imp_path: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
+    let mod_dir: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
+    let mut i: i32 = 0
+    while i < all_n {
+        let mpath: string = (all_store + (i * FLOWC_RESOLVE_PATH_CAP)) as string
+        let mut zi: i32 = 0
+        while zi < FLOWC_RESOLVE_SRC_CAP {
+            tmp[zi] = 0
+            zi = zi + 1
+        }
+        let nsrc: i32 = flowc_resolve_read_source(mpath, tmp, FLOWC_RESOLVE_SRC_CAP - 1)
+        if nsrc < 0 {
+            return 1
+        }
+        let own: ptr<u8> = malloc((nsrc + 1) as i64)
+        zi = 0
+        while zi < nsrc {
+            own[zi] = tmp[zi]
+            zi = zi + 1
+        }
+        own[nsrc] = 0
+        srcs[i] = own
+        let mut cap: i32 = nsrc + 4096
+        let mut p: Parser = flowc_parser_new(own, nsrc, cap)
+        let root: i32 = flowc_parse_program(&p)
+        if root < 0 or p.err != 0 {
+            return 1
+        }
+        arenas[i] = p.arena
+        roots[i] = root
+        ndeps[i] = 0
+        state[i] = 0
+        let mod_dlen: i32 = flowc_resolve_dirname(mpath, mod_dir, FLOWC_RESOLVE_PATH_CAP)
+        let mut mod_search: string = search_dir
+        if mod_dlen > 0 {
+            mod_search = mod_dir as string
+        }
+        let mut ii: i32 = 0
+        while ii < p.arena.len {
+            if p.arena.nodes[ii].kind == AST_IMPORT {
+                let plen: i32 = flowc_resolve_import_at(own, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end, p.arena.nodes[ii].ival, mod_search, search_dir, project_root, imp_path)
+                if plen >= 0 {
+                    let d: i32 = flowc_resolve_find_path(all_store, all_n, FLOWC_RESOLVE_PATH_CAP, imp_path)
+                    if d >= 0 and ndeps[i] < max_deps {
+                        deps[i * max_deps + ndeps[i]] = d
+                        ndeps[i] = ndeps[i] + 1
+                    }
+                }
+            }
+            ii = ii + 1
+        }
+        i = i + 1
+    }
+    let norder: i32 = flowc_semcheck_visit(0, deps, ndeps, max_deps, state, order, 0)
+    let c: ptr<Sem> = sem_new(flowc_resolve_strict())
+    i = 0
+    while i < norder {
+        let k: i32 = order[i]
+        let mpath2: string = (all_store + (k * FLOWC_RESOLVE_PATH_CAP)) as string
+        let m: i32 = sem_add_module(c, arenas[k], roots[k], srcs[k], flowc_strdup(mpath2))
+        sem_build_module(c, m, k == 0)
+        i = i + 1
+    }
+    sem_check_program(c)
+    sem_report(c)
+    counts[0] = sem_error_count(c)
+    counts[1] = sem_fatal_count(c)
+    return 0
+}
+
+# Strict checking unless FLOWC_LENIENT=1 (the Python host's --lenient).
+function flowc_resolve_strict() -> bool {
+    let v: string = getenv("FLOWC_LENIENT")
+    if v as ptr<u8> == null {
+        return true
+    }
+    let p: ptr<u8> = v as ptr<u8>
+    if p[0] == 49 and p[1] == 0 {
+        return false
+    }
+    return true
+}
+
 export function flowc_bundle_typecheck(entry_path: string, search_dir: string) -> i32 {
     let fatal: array<i32, 1> = [0]
     return flowc_bundle_typecheck_fatal(entry_path, search_dir, &fatal[0] as ptr<i32>)
@@ -2484,6 +2563,7 @@ export function flowc_bundle_typecheck_fatal(entry_path: string, search_dir: str
     let no_src: ptr<u8> = null
     let mut ctx: TcCtx = flowc_tc_init(no_src)
     ctx.lenient = 1
+    ctx.sem_on = 1
     if ctx.ns == null {
         free(order_store)
         free(path_store)
@@ -2504,7 +2584,7 @@ export function flowc_bundle_typecheck_fatal(entry_path: string, search_dir: str
     let mut mi: i32 = 0
     while mi < norder {
         let slot: ptr<u8> = order_store + (mi * FLOWC_RESOLVE_PATH_CAP)
-        let mpath: string = slot
+        let mpath: string = slot as string
 
         zi = 0
         while zi < FLOWC_RESOLVE_SRC_CAP {
@@ -2552,12 +2632,54 @@ export function flowc_bundle_typecheck_fatal(entry_path: string, search_dir: str
     }
 
     ctx_fatal = ctx.fatal
+    # The semantic check (the Python host's type checker) over the bundle.
+    let sc: array<i32, 2> = [0, 0]
+    if flowc_bundle_semcheck(path_store, nmods, search_dir, project_root, &sc[0] as ptr<i32>) != 0 {
+        ctx_fatal = ctx_fatal + 1
+        total_err = total_err + 1
+    }
+    total_err = total_err + sc[0]
+    ctx_fatal = ctx_fatal + sc[1]
     free(src)
     flowc_tc_free(&ctx)
     free(order_store)
     free(path_store)
     fatal_out[0] = ctx_fatal
     return total_err
+}
+
+# The semantic check of a module compiled on its own whose imports the
+# emitter leaves out (roundtrip.sh builds the compiler one object per
+# module this way). The imports resolve as in bundle mode, so imported
+# names are known, as they were on the Python host. counts[0] = errors,
+# counts[1] = the errors that stop the compile. Returns 1 when the imports
+# do not resolve; the caller then checks the module alone.
+export function flowc_semcheck_imports(entry_path: string, counts: ptr<i32>) -> i32 {
+    let psz: i32 = FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP
+    let path_store: ptr<u8> = calloc(psz as i64, 1)
+    let dir_buf: ptr<u8> = calloc(FLOWC_RESOLVE_PATH_CAP as i64, 1)
+    let proj_buf: ptr<u8> = calloc(FLOWC_RESOLVE_PATH_CAP as i64, 1)
+    if path_store == null or dir_buf == null or proj_buf == null {
+        return 1
+    }
+    let mut search_dir: string = "."
+    let fd: string = getenv("FLOWC_DIR")
+    if fd as ptr<u8> != null {
+        search_dir = fd
+    } elif flowc_resolve_dirname(entry_path, dir_buf, FLOWC_RESOLVE_PATH_CAP) > 0 {
+        search_dir = dir_buf as string
+    }
+    let _proj_len: i32 = flowc_resolve_project_root(entry_path, proj_buf, FLOWC_RESOLVE_PATH_CAP)
+    let project_root: string = proj_buf as string
+    let nmods: i32 = flowc_resolve_gather(entry_path, search_dir, project_root, path_store)
+    let mut rc: i32 = 1
+    if nmods > 0 {
+        rc = flowc_bundle_semcheck(path_store, nmods, search_dir, project_root, counts)
+    }
+    free(proj_buf)
+    free(dir_buf)
+    free(path_store)
+    return rc
 }
 
 # Resolve entry + relative/string imports, emit concatenated C (deps then entry).
@@ -2633,7 +2755,7 @@ export function flowc_bundle_emit(
     let mut li: i32 = 0
     while li < norder {
         let lslot: ptr<u8> = order_store + (li * FLOWC_RESOLVE_PATH_CAP)
-        let lpath: string = lslot
+        let lpath: string = lslot as string
         let nl: i32 = flowc_resolve_list_fns(lpath, li, fns, FLOWC_RESOLVE_FNS_CAP, fnlen)
         if nl >= 0 {
             fnlen = nl
@@ -2653,7 +2775,7 @@ export function flowc_bundle_emit(
     let mut first: i32 = 1
     while mi < norder {
         let slot: ptr<u8> = order_store + (mi * FLOWC_RESOLVE_PATH_CAP)
-        let mpath: string = slot
+        let mpath: string = slot as string
         let mut flags: i32 = 0
         if first == 0 {
             flags = 1

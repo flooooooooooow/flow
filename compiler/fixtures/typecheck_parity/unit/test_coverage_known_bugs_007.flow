@@ -1,0 +1,17 @@
+
+effect Scale {
+    apply(x: i32) -> i32,
+}
+
+capability Doubler {
+    effect Scale,
+    function apply(x: i32) -> i32 {
+        return x * 2
+    },
+}
+
+        function main() -> i32 {
+            let a: i32 = Scale.apply()
+            return a
+        }
+        

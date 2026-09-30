@@ -1,0 +1,12 @@
+
+unit Meter
+unit Second
+unit Velocity = Meter / Second
+unit Accel = Meter / Second^2
+
+        function main() -> i32 {
+            let d: Meter = 1.0 as Meter
+            let b: bool = d > 1.0
+            return 0
+        }
+        

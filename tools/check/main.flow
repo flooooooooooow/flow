@@ -131,13 +131,13 @@ function valid_utf8(p: ptr<u8>, n: i32) -> bool {
 # it cannot be read or decoded. Embedded NUL bytes end the text.
 function read_text(path: string) -> string {
     let raw: string = ft_read_file(path)
-    if raw == null {
-        return null
+    if raw as ptr<u8> == null {
+        return null as string
     }
     let p: ptr<u8> = raw as ptr<u8>
     let n: i32 = ft_len(raw)
     if not valid_utf8(p, n) {
-        return null
+        return null as string
     }
     let buf: ptr<u8> = malloc((n as i64) + 1) as ptr<u8>
     let mut i: i32 = 0
@@ -354,7 +354,7 @@ function find_flow_toml() -> string {
             return cand
         }
         if ft_eq(cur, "/") {
-            return null
+            return null as string
         }
         let slash: i32 = ft_rfind_byte(cur, 47)
         if slash <= 0 {
@@ -363,7 +363,7 @@ function find_flow_toml() -> string {
             cur = ft_slice(cur, 0, slash)
         }
     }
-    return null
+    return null as string
 }
 
 # item.get(key, "") rendered the way an f-string renders it.
@@ -384,11 +384,11 @@ function load_avoid(count: ptr<i32>) -> ptr<Avoid> {
     count[0] = 0
     let out: ptr<Avoid> = malloc(24 * 256) as ptr<Avoid>
     let path: string = find_flow_toml()
-    if path == null {
+    if path as ptr<u8> == null {
         return out
     }
     let raw: string = ft_read_file(path)
-    if raw == null {
+    if raw as ptr<u8> == null {
         return out
     }
     if not valid_utf8(raw as ptr<u8>, ft_len(raw)) {
@@ -450,7 +450,7 @@ function check_file(path: string, avoid: ptr<Avoid>, n: i32) -> ptr<StrList> {
         return out
     }
     let source: string = read_text(path)
-    if source == null {
+    if source as ptr<u8> == null {
         return out
     }
     let mut i: i32 = 0
@@ -711,30 +711,30 @@ function add_finding(out: ptr<Finding>, n: ptr<i32>, rule: string, w: ptr<Walk>,
 function redundant_base(w: ptr<Walk>, ret: i32) -> string {
     let v: i32 = w[0].arena.nodes[ret].a
     if v == AST_NONE or w[0].arena.nodes[v].kind != AST_STRUCT_LIT {
-        return null
+        return null as string
     }
     let mut f: i32 = w[0].arena.nodes[v].a
     if f == AST_NONE {
-        return null
+        return null as string
     }
-    let mut base: string = null
+    let mut base: string = null as string
     while f != AST_NONE {
         let fv: i32 = w[0].arena.nodes[f].a
         if fv == AST_NONE or w[0].arena.nodes[fv].kind != AST_FIELD_ACCESS {
-            return null
+            return null as string
         }
         let obj: i32 = w[0].arena.nodes[fv].a
         if obj == AST_NONE or w[0].arena.nodes[obj].kind != AST_IDENT {
-            return null
+            return null as string
         }
         if not ft_eq(node_name(w, fv), node_name(w, f)) {
-            return null
+            return null as string
         }
         let on: string = node_name(w, obj)
-        if base == null {
+        if base as ptr<u8> == null {
             base = on
         } elif not ft_eq(base, on) {
-            return null
+            return null as string
         }
         f = w[0].arena.nodes[f].next
     }
@@ -768,7 +768,7 @@ function analyze_fn(w: ptr<Walk>, fnid: i32, out: ptr<Finding>, n: ptr<i32>) -> 
     let mut r: i32 = 0
     while r < w[0].nreturns {
         let base: string = redundant_base(w, w[0].returns[r])
-        if base != null and n[0] < 4096 {
+        if base as ptr<u8> != null and n[0] < 4096 {
             add_finding(out, n, "FIDIOM002", w, w[0].returns[r], "Redundant return shape",
                 "Returning a struct literal identical to `" + base + "`. Return `" + base + "` directly.",
                 "return " + base + ";", 6)
@@ -975,7 +975,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         }
         if check_idioms {
             let code: string = read_text(f)
-            if code != null {
+            if code as ptr<u8> != null {
                 let nf: i32 = idiom_findings(code, found)
                 if nf > 0 {
                     let lines: ptr<StrList> = split_nl(code)

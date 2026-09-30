@@ -66,10 +66,12 @@ EOF
 chmod +x "$FAKE"
 
 # ---------------------------------------------------------------- fixtures
+# A program that does not build. A parse error stops flowc under the
+# lenient checking `flow debug` uses; an unbound name is only a C error there.
 BROKEN="$WORK/broken.flow"
 cat > "$BROKEN" <<'EOF'
 function main() -> i32 {
-    let x: i32 = no_such_name
+    let x: i32 = 1 +
     return x
 }
 EOF

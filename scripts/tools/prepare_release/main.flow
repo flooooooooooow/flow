@@ -115,7 +115,7 @@ function read_notes(path: string) -> ptr<Notes> {
     nt[0].body = null
     nt[0].error = null
     let raw: string = ft_read_file(path)
-    if raw == null {
+    if raw as ptr<u8> == null {
         nt[0].error = "[Errno 2] No such file or directory: " + ft_repr(path)
         return nt
     }
@@ -219,7 +219,7 @@ function expand_template(t: string) -> string {
     while i < n {
         if p[i] == 92 and i + 1 < n {
             let c: i32 = p[i + 1] as i32
-            let mut rep: string = null
+            let mut rep: string = null as string
             if c == 92 {
                 rep = "\\"
             } elif c == 110 {
@@ -229,7 +229,7 @@ function expand_template(t: string) -> string {
             } elif c == 114 {
                 rep = "\r"
             }
-            if rep != null {
+            if rep as ptr<u8> != null {
                 out = out + ft_slice(t, start, i) + rep
                 i = i + 2
                 start = i
@@ -250,7 +250,7 @@ function run_in(root: string, cmd: string) -> i32 {
 function update_detailed_changelog(root: string, version: string, date: string, body: string) -> i32 {
     let path: string = root + "/docs/project/CHANGELOG.md"
     let text: string = ft_read_file(path)
-    if text == null {
+    if text as ptr<u8> == null {
         return fail("[Errno 2] No such file or directory: " + ft_repr(path))
     }
     let heading: string = "## [" + version + "] - " + date
@@ -322,7 +322,7 @@ function find_history_row(text: string) -> i32 {
 function update_root_changelog(root: string, version: string, date: string, headline: string) -> i32 {
     let path: string = root + "/CHANGELOG.md"
     let mut text: string = ft_read_file(path)
-    if text == null {
+    if text as ptr<u8> == null {
         return fail("[Errno 2] No such file or directory: " + ft_repr(path))
     }
     let head: string = rstrip_char(headline, 46)
@@ -400,9 +400,9 @@ function resolve_opt(name: string) -> string {
 }
 
 function main(argc: i32, argv: ptr<string>) -> i32 {
-    let mut version_arg: string = null
-    let mut date: string = null
-    let mut notes_arg: string = null
+    let mut version_arg: string = null as string
+    let mut date: string = null as string
+    let mut notes_arg: string = null as string
     let mut root_arg: string = getenv("PREPARE_RELEASE_ROOT")
     let extras: ptr<StrList> = ft_list_new()
     let mut i: i32 = 1
@@ -415,7 +415,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         if ft_starts(arg, "--") and ft_len(arg) > 2 {
             let eq: i32 = ft_find(arg, "=", 0)
             let mut name: string = arg
-            let mut value: string = null
+            let mut value: string = null as string
             if eq >= 0 {
                 name = ft_slice(arg, 0, eq)
                 value = ft_from(arg, eq + 1)
@@ -433,7 +433,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
                 i = i + 1
                 continue
             }
-            if value == null {
+            if value as ptr<u8> == null {
                 if i + 1 >= argc or (ft_starts(argv[i + 1], "-") and ft_len(argv[i + 1]) > 1) {
                     return usage_error("argument " + full + ": expected one argument")
                 }
@@ -455,13 +455,13 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         i = i + 1
     }
     let missing: ptr<StrList> = ft_list_new()
-    if version_arg == null {
+    if version_arg as ptr<u8> == null {
         ft_list_push(missing, "--version")
     }
-    if date == null {
+    if date as ptr<u8> == null {
         ft_list_push(missing, "--release-date")
     }
-    if notes_arg == null {
+    if notes_arg as ptr<u8> == null {
         ft_list_push(missing, "--notes")
     }
     if ft_list_len(missing) > 0 {
@@ -501,7 +501,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         notes = root + "/" + notes_arg
     }
     let nt: ptr<Notes> = read_notes(notes)
-    if nt[0].error != null {
+    if nt[0].error as ptr<u8> != null {
         return fail(nt[0].error)
     }
 
@@ -525,7 +525,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         return called_process_error("check_changelog.sh", rc3)
     }
     let vtext: string = ft_read_file(root + "/src/flow/version.py")
-    if vtext == null or ft_contains(vtext, "__version__ = \"" + version + "\"") == false {
+    if vtext as ptr<u8> == null or ft_contains(vtext, "__version__ = \"" + version + "\"") == false {
         return fail("canonical version did not update")
     }
     ft_outln("prepared Flow " + version + " (" + date + ")")

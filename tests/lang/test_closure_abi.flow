@@ -1,4 +1,3 @@
-# flow:flowc-only (the Python host keeps a separate function-pointer ABI)
 # Flow-native language test: one closure representation for function types.
 # A value of type `(A) -> R` is the same fat closure wherever it lives: a
 # parameter, a local, a return value. Capturing lambdas, non-capturing

@@ -29,10 +29,12 @@ import .fmt { flowc_fmt_emit, flowc_fmt_source, flowc_fmt_token_dump }
 import .wasm_gen { flowc_wasm_gen_compile }
 import .bpf_gen { flowc_bpf_gen_compile }
 import .shader_emit { flowc_shader_mode }
-import .typecheck { flowc_typecheck, flowc_typecheck_fatal }
+import .typecheck { flowc_typecheck, flowc_typecheck_fatal, flowc_typecheck_fatal_sem }
+import .sem_check { flowc_semcheck_single }
 import .resolve {
     flowc_resolve_sibling_path, flowc_bundle_emit, flowc_bundle_typecheck, flowc_bundle_typecheck_fatal,
-    flowc_resolve_dirname, flowc_expand_all_in_place, flowc_expand_stages_in_place
+    flowc_resolve_dirname, flowc_expand_all_in_place, flowc_expand_stages_in_place,
+    flowc_semcheck_imports
 }
 
 extern {
@@ -124,7 +126,7 @@ function flowc_tc_lenient_ok(errs: i32, fatal: i32) -> i32 {
 # through src/flow/field_dsl.py, dynamics_dsl.py and flow_blocks.py.
 function flowc_expand_only_stages() -> i32 {
     let v: string = getenv("FLOWC_EXPAND_ONLY")
-    if v == null {
+    if v as ptr<u8> == null {
         return 7
     }
     let vp: ptr<u8> = v as ptr<u8>
@@ -220,7 +222,7 @@ function flowc_explain_begin() {
     if flowc_env_set("FLOWC_EXPLAIN_SOURCE") == 1 {
         source = getenv("FLOWC_EXPLAIN_SOURCE")
     }
-    if source == null {
+    if source as ptr<u8> == null {
         source = ""
     }
     let mut t: PlanText = flowc_plan_text_new()
@@ -251,7 +253,7 @@ function flowc_emit_mode() -> i32 {
     let out_path: string = getenv("FLOWC_OUT")
 
     if flowc_env_eq("FLOWC_BACKEND", "wasm") == 1 {
-        if out_path == null {
+        if out_path as ptr<u8> == null {
             puts("flowc emit: wasm requires FLOWC_OUT")
             return 1
         }
@@ -264,7 +266,7 @@ function flowc_emit_mode() -> i32 {
     }
 
     if flowc_env_eq("FLOWC_BACKEND", "bpf") == 1 {
-        if out_path == null {
+        if out_path as ptr<u8> == null {
             puts("flowc emit: bpf requires FLOWC_OUT")
             return 1
         }
@@ -337,7 +339,7 @@ function flowc_emit_mode() -> i32 {
         } else {
             let dlen: i32 = flowc_resolve_dirname(in_path, dir_buf, 256)
             if dlen > 0 {
-                search_dir = dir_buf
+                search_dir = dir_buf as string
             }
         }
         # Bundle typecheck (deps-first + export seed) when typecheck wanted.
@@ -351,6 +353,13 @@ function flowc_emit_mode() -> i32 {
                 free(out)
                 return 1
             }
+        }
+        # FLOWC_CHECK_ONLY=1: stop after the type check (the parity gates).
+        if flowc_env_eq("FLOWC_CHECK_ONLY", "1") == 1 {
+            puts("flowc: type check passed")
+            free(dir_buf)
+            free(out)
+            return 0
         }
         nout = flowc_bundle_emit(in_path, search_dir, out, out_cap)
         free(dir_buf)
@@ -372,7 +381,7 @@ function flowc_emit_mode() -> i32 {
             src[zi] = 0
             zi = zi + 1
         }
-        let nsrc: i32 = flowc_read_file(in_path, src, src_cap - 1)
+        let mut nsrc: i32 = flowc_read_file(in_path, src, src_cap - 1)
         # An empty file is an empty program, as on the Python host.
         if nsrc < 0 {
             puts("flowc emit: read FLOWC_IN failed")
@@ -406,9 +415,23 @@ function flowc_emit_mode() -> i32 {
         # Stage-A typecheck ON by default. Opt-out for intentional bad fixtures:
         # FLOWC_TYPECHECK=0 or FLOWC_NO_TYPECHECK=1.
         if flowc_want_typecheck() == 1 {
+            # The semantic check (the Python host's type checker) sees the
+            # program before pipeline fusion rewrites it.
+            let sem: array<i32, 2> = [0, 0]
+            # A module with imports is checked with them resolved.
+            let mut sem_done: bool = false
+            if flowc_ast_count_kind(p.arena, AST_IMPORT) > 0 {
+                sem_done = flowc_semcheck_imports(getenv("FLOWC_IN"), &sem[0] as ptr<i32>) == 0
+            }
+            if sem_done == false {
+                sem[0] = 0
+                sem[1] = 0
+                flowc_semcheck_single(p.arena, root, src, getenv("FLOWC_IN"), &sem[0] as ptr<i32>)
+            }
             flowc_fuse_pipelines(&p.arena, src)
             let sfatal: array<i32, 1> = [0]
-            let tc_errs: i32 = flowc_typecheck_fatal(p.arena, root, src, getenv("FLOWC_IN"), &sfatal[0] as ptr<i32>)
+            let tc_errs: i32 = flowc_typecheck_fatal_sem(p.arena, root, src, getenv("FLOWC_IN"), &sfatal[0] as ptr<i32>, 1) + sem[0]
+            sfatal[0] = sfatal[0] + sem[1]
             if tc_errs > 0 and flowc_tc_lenient_ok(tc_errs, sfatal[0]) == 0 {
                 puts("flowc emit: typecheck failed")
                 printf("flowc emit: tc_errs=%d\n", tc_errs)
@@ -416,6 +439,13 @@ function flowc_emit_mode() -> i32 {
                 free(src)
                 free(out)
                 return 1
+            }
+            if flowc_env_eq("FLOWC_CHECK_ONLY", "1") == 1 {
+                puts("flowc: type check passed")
+                flowc_parser_free(p)
+                free(src)
+                free(out)
+                return 0
             }
         }
 
@@ -467,7 +497,7 @@ function flowc_emit_mode() -> i32 {
         if nout < out_cap {
             out[nout] = 0
         }
-        puts(out)
+        puts(out as string)
     }
 
     free(out)
@@ -1099,7 +1129,7 @@ function test_cgen_emit() -> i32 {
     if n > 0 and n < cap {
         bp[n] = 0
         puts("--- cgen output ---")
-        puts(bp)
+        puts(bp as string)
         puts("--- end cgen ---")
     }
 
@@ -1745,7 +1775,7 @@ function test_jsgen_emit() -> i32 {
     if n > 0 and n < cap {
         bp[n] = 0
         puts("--- jsgen output ---")
-        puts(bp)
+        puts(bp as string)
         puts("--- end jsgen ---")
     }
 

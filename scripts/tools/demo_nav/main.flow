@@ -43,7 +43,7 @@ function label_for(id: string) -> string {
     if ft_eq(id, "numerical") { return "Numerical Methods" }
     if ft_eq(id, "evolution") { return "Evolution Suite" }
     if ft_eq(id, "wasm") { return "WebAssembly" }
-    return null
+    return null as string
 }
 
 # Render an object from parallel lists of keys and already-encoded values.
@@ -110,7 +110,7 @@ function dump_override(j: ptr<Json>, id: i32, level: i32, okeys: ptr<StrList>, o
     let mut c: i32 = json_first(j, id)
     while c >= 0 {
         let k: string = json_key(j, c)
-        let mut v: string = null
+        let mut v: string = null as string
         u = 0
         while u < ft_list_len(okeys) {
             if ft_eq(ft_list_get(okeys, u), k) {
@@ -119,7 +119,7 @@ function dump_override(j: ptr<Json>, id: i32, level: i32, okeys: ptr<StrList>, o
             }
             u = u + 1
         }
-        if v == null {
+        if v as ptr<u8> == null {
             v = dg_json_dump(j, c, level + 1)
         }
         ft_list_push(keys, k)
@@ -173,25 +173,25 @@ function nav_item(cat: ptr<Catalog>, id: string, level: i32) -> string {
     }
     if node < 0 {
         cat[0].err = key_error(id)
-        return null
+        return null as string
     }
     let nodes: ptr<i32> = cat[0].nodes
     let nid: i32 = nodes[node]
     let title: i32 = json_get(cj, nid, "title")
     if title < 0 {
         cat[0].err = key_error("title")
-        return null
+        return null as string
     }
     let page: i32 = json_get(cj, nid, "page")
     if page < 0 {
         cat[0].err = key_error("page")
-        return null
+        return null as string
     }
     let keys: ptr<StrList> = ft_list_new()
     let vals: ptr<StrList> = ft_list_new()
     ft_list_push(keys, "label")
     let lab: string = label_for(id)
-    if lab != null {
+    if lab as ptr<u8> != null {
         ft_list_push(vals, dg_json_quote(lab))
     } else {
         ft_list_push(vals, dg_json_dump(cj, title, level + 1))
@@ -207,13 +207,13 @@ function catalog_section(cat: ptr<Catalog>, sid: string, title: string, ids: ptr
     let mut i: i32 = 0
     while i < ft_list_len(ids) {
         let it: string = nav_item(cat, ft_list_get(ids, i), level + 2)
-        if it == null {
-            return null
+        if it as ptr<u8> == null {
+            return null as string
         }
         ft_list_push(items, it)
         i = i + 1
     }
-    if extra != null {
+    if extra as ptr<u8> != null {
         ft_list_push(items, extra)
     }
     let keys: ptr<StrList> = ft_list_new()
@@ -252,8 +252,8 @@ function build_sections(cat: ptr<Catalog>, level: i32) -> ptr<StrList> {
     ft_list_push(r, "threed")
     ft_list_push(r, "planet")
     ft_list_push(r, "procgen")
-    let s1: string = catalog_section(cat, "gallery-rendering", "Rendering & generation", r, null, level)
-    if s1 == null {
+    let s1: string = catalog_section(cat, "gallery-rendering", "Rendering & generation", r, null as string, level)
+    if s1 as ptr<u8> == null {
         return null
     }
     ft_list_push(out, s1)
@@ -265,8 +265,8 @@ function build_sections(cat: ptr<Catalog>, level: i32) -> ptr<StrList> {
     ft_list_push(sy, "evoleco")
     ft_list_push(sy, "evolution")
     ft_list_push(sy, "numerical")
-    let s2: string = catalog_section(cat, "gallery-systems", "Systems through time", sy, null, level)
-    if s2 == null {
+    let s2: string = catalog_section(cat, "gallery-systems", "Systems through time", sy, null as string, level)
+    if s2 as ptr<u8> == null {
         return null
     }
     ft_list_push(out, s2)
@@ -276,7 +276,7 @@ function build_sections(cat: ptr<Catalog>, level: i32) -> ptr<StrList> {
     ft_list_push(ia, "wasm")
     let live: string = link("Live WASM demos", "wasm/index.html", true, level + 2)
     let s3: string = catalog_section(cat, "gallery-interactive", "Interactive", ia, live, level)
-    if s3 == null {
+    if s3 as ptr<u8> == null {
         return null
     }
     ft_list_push(out, s3)
@@ -353,7 +353,7 @@ function render_sections(j: ptr<Json>, sections: i32, cat: ptr<Catalog>) -> stri
     }
     let built: ptr<StrList> = build_sections(cat, 2)
     if built == null {
-        return null
+        return null as string
     }
     let all: ptr<StrList> = ft_list_new()
     let mut i: i32 = 0
@@ -382,7 +382,7 @@ function render_sections(j: ptr<Json>, sections: i32, cat: ptr<Catalog>) -> stri
 
 function load(path: string) -> ptr<Json> {
     let text: string = ft_read_file(path)
-    if text == null {
+    if text as ptr<u8> == null {
         ft_errln("FileNotFoundError: [Errno 2] No such file or directory: " + ft_repr(path))
         return null
     }
@@ -398,21 +398,21 @@ function load(path: string) -> ptr<Json> {
 function rendered() -> string {
     let j: ptr<Json> = load(NAV)
     if j == null {
-        return null
+        return null as string
     }
     let cj: ptr<Json> = load(CATALOG)
     if cj == null {
-        return null
+        return null as string
     }
     let sections: i32 = json_get(j, 0, "sections")
     if sections < 0 {
         ft_errln(key_error("sections"))
-        return null
+        return null as string
     }
     let coll: i32 = json_get(cj, 0, "collections")
     if coll < 0 {
         ft_errln(key_error("collections"))
-        return null
+        return null as string
     }
     let cat: ptr<Catalog> = malloc(32) as ptr<Catalog>
     cat[0].cj = cj
@@ -425,7 +425,7 @@ function rendered() -> string {
         let idn: i32 = json_get(cj, c, "id")
         if idn < 0 {
             ft_errln(key_error("id"))
-            return null
+            return null as string
         }
         ft_list_push(cat[0].ids, json_str(cj, idn))
         nodes[ft_list_len(cat[0].ids) - 1] = c
@@ -442,9 +442,9 @@ function rendered() -> string {
             ft_list_push(vals, render_tabs(j, m))
         } elif m == sections {
             let sv: string = render_sections(j, m, cat)
-            if sv == null {
+            if sv as ptr<u8> == null {
                 ft_errln(cat[0].err)
-                return null
+                return null as string
             }
             ft_list_push(vals, sv)
         } else {
@@ -465,12 +465,12 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         return rc
     }
     let expected: string = rendered()
-    if expected == null {
+    if expected as ptr<u8> == null {
         return 1
     }
     if on[0] == 1 {
         let current: string = ft_read_file(NAV)
-        if current == null or ft_eq(current, expected) == false {
+        if current as ptr<u8> == null or ft_eq(current, expected) == false {
             ft_errln("docs/nav.json demo sections are stale; run scripts/sync_demo_nav.sh")
             return 1
         }

@@ -229,7 +229,7 @@ function anchors_slot(c: ptr<AnchorCache>, rel: string) -> i32 {
         return hit
     }
     let mut text: string = ft_read_file(rel)
-    if text == null {
+    if text as ptr<u8> == null {
         text = ""
     }
     text = md_sanitize(text)
@@ -259,7 +259,7 @@ function anchors_slot(c: ptr<AnchorCache>, rel: string) -> i32 {
     let idkeys: ptr<string> = ids[0].keys
     let mut k: i32 = 0
     while k < ids[0].cap {
-        if idkeys[k] != null and ft_set_has(slugs, idkeys[k]) == false {
+        if idkeys[k] as ptr<u8> != null and ft_set_has(slugs, idkeys[k]) == false {
             ft_set_add(slugs, idkeys[k])
             ft_list_push(order, idkeys[k])
         }
@@ -389,7 +389,7 @@ function matching_total(a: ptr<i32>, b: ptr<i32>, alo: i32, ahi: i32, blo: i32, 
 function closest(word: string, candidates: ptr<StrList>) -> string {
     let bw: ptr<i32> = malloc(((ft_len(word) + 1) as i64) * 4) as ptr<i32>
     let lb: i32 = uc_to_cps(word, bw)
-    let mut best: string = null
+    let mut best: string = null as string
     let mut best_m: i32 = 0
     let mut best_t: i32 = 1
     let mut i: i32 = 0
@@ -412,7 +412,7 @@ function closest(word: string, candidates: ptr<StrList>) -> string {
         if rm * 10 >= rt * 6 {
             let lhs: i64 = (rm as i64) * (best_t as i64)
             let rhs: i64 = (best_m as i64) * (rt as i64)
-            if best == null or lhs > rhs or (lhs == rhs and ft_cmp_str(x, best) > 0) {
+            if best as ptr<u8> == null or lhs > rhs or (lhs == rhs and ft_cmp_str(x, best) > 0) {
                 best = x
                 best_m = rm
                 best_t = rt
@@ -521,7 +521,7 @@ function help_text() -> string {
 function run_check(list_ok: bool) -> i32 {
     let tracked_text: string = ft_read_file(TRACKED)
     let md_text: string = ft_read_file(MARKDOWN)
-    if tracked_text == null or md_text == null {
+    if tracked_text as ptr<u8> == null or md_text as ptr<u8> == null {
         ft_errln(PROG + ": missing " + TRACKED + "; run scripts/check_doc_links.sh")
         return 1
     }
@@ -549,7 +549,7 @@ function run_check(list_ok: bool) -> i32 {
     while si < ft_list_len(sources) {
         let rel: string = ft_list_get(sources, si)
         let raw: string = ft_read_file(rel)
-        if raw == null {
+        if raw as ptr<u8> == null {
             si = si + 1
             continue
         }
@@ -649,7 +649,7 @@ function run_check(list_ok: bool) -> i32 {
             let fragment2: string = ft_from(target2, ft_find_byte(target2, 35, 0) + 1)
             let near: string = closest(fragment2, anchor_list(cache, ft_list_get(bad_rel, a)))
             let mut hint: string = ""
-            if near != null {
+            if near as ptr<u8> != null {
                 hint = "   (closest heading: #" + near + ")"
             }
             ft_outln("    " + ft_list_get(bad_src, a) + ": " + target2 + hint)

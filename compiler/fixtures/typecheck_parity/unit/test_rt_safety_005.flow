@@ -1,0 +1,25 @@
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function calloc(nmemb: i64, size: i64) -> ptr<void>
+    function realloc(p: ptr<void>, size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+struct Arena {
+    buffer: ptr<i8>,
+    capacity: i64,
+    offset: i64
+}
+
+function arena_create(capacity: i64) -> Arena {
+    let raw: ptr<void> = malloc(capacity)
+    let buf: ptr<i8> = raw
+    return Arena { buffer: buf, capacity: capacity, offset: 0 }
+}
+
+@rt_safe
+function process(capacity: i64) -> i32 {
+    let a: Arena = arena_create(capacity)
+    return 0
+}

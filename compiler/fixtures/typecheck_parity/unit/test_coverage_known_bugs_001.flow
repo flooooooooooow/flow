@@ -1,0 +1,9 @@
+
+        function f(b: bool) -> i32 {
+            match b {
+                true if 1 == 2 => { return 1 }
+                false => { return 0 }
+            }
+            return -1
+        }
+        

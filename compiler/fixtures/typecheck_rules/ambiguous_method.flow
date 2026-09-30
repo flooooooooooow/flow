@@ -1,0 +1,29 @@
+# expect: Ambiguous method 'm' for type 'T' (T_A_m, T_B_m)
+struct T {
+    v: i32
+}
+
+trait A {
+    function m(self) -> i32
+}
+
+trait B {
+    function m(self) -> i32
+}
+
+impl A for T {
+    function m(self) -> i32 {
+        return 1
+    }
+}
+
+impl B for T {
+    function m(self) -> i32 {
+        return 2
+    }
+}
+
+function main() -> i32 {
+    let t: T = T { v: 0 }
+    return t.m()
+}

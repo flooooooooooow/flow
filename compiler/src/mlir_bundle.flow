@@ -102,7 +102,7 @@ function mb_puts(dst: ptr<u8>, o: i32, cap: i32, s: string) -> i32 {
 }
 
 function mb_cstr_len(p: ptr<u8>) -> i32 {
-    let s: string = p
+    let s: string = p as string
     return strlen(s) as i32
 }
 
@@ -174,7 +174,7 @@ function mb_realpath(p: string, out: ptr<u8>) -> i32 {
         while i < o and raw[i] != 47 {
             i = i + 1
         }
-        let n: i32 = i - s
+        let mut n: i32 = i - s
         if n == 1 and raw[s] == 46 {
             n = 0
         }
@@ -214,7 +214,7 @@ function mb_realpath(p: string, out: ptr<u8>) -> i32 {
 # When cand names an existing file, write its canonical path to out and
 # return 1.
 function mb_try(cand: ptr<u8>, out: ptr<u8>) -> i32 {
-    let s: string = cand
+    let s: string = cand as string
     if flowc_io_exists(s) == 0 {
         return 0
     }
@@ -515,7 +515,7 @@ function mb_visit(b: ptr<MlirBundle>, k: i32) {
         return
     }
     b[0].state[k] = 1
-    let path: string = b[0].paths + k * MB_PATH
+    let path: string = (b[0].paths + k * MB_PATH) as string
     let src: ptr<u8> = malloc(MB_SRC_CAP as i64)
     mb_zero(src, MB_SRC_CAP)
     let mut n: i32 = flowc_read_file(path, src, MB_SRC_CAP - 1)
@@ -646,7 +646,7 @@ function mb_typecheck(b: ptr<MlirBundle>) -> i32 {
         let n: i32 = b[0].starts[i + 1] - s
         mb_zero(src, MB_SRC_CAP)
         mb_put(src, 0, MB_SRC_CAP, b[0].all + s, n)
-        let mpath: string = b[0].paths + b[0].order[i] * MB_PATH
+        let mpath: string = (b[0].paths + b[0].order[i] * MB_PATH) as string
         let mut p: Parser = flowc_parser_new(src, n, MB_AST_CAP)
         let root: i32 = flowc_parse_program(&p)
         if root < 0 or p.err != 0 {
@@ -688,7 +688,7 @@ export function flowc_mlir_emit_program(in_path: string, out: ptr<u8>, out_cap: 
     mb_zero(mb.compiler_root, MB_PATH)
     mb_zero(mb.toml, MB_SRC_CAP)
     # The compiler root holds packages/ and the fallback lib/stdlib.
-    let croot: string = getenv("FLOWC_ROOT")
+    let mut croot: string = getenv("FLOWC_ROOT")
     let crp: ptr<u8> = croot
     if crp == null or crp[0] == 0 {
         croot = "."
@@ -702,7 +702,7 @@ export function flowc_mlir_emit_program(in_path: string, out: ptr<u8>, out_cap: 
         puts("flowc mlir: unsupported: imports without a flow.toml above the program at line 0")
         return 0 - 1
     }
-    let prs: string = pr
+    let prs: string = pr as string
     if mb_realpath(prs, mb.project_root) == 0 {
         mb_put(mb.project_root, 0, MB_PATH, pr, mb_cstr_len(pr))
     }
@@ -710,7 +710,7 @@ export function flowc_mlir_emit_program(in_path: string, out: ptr<u8>, out_cap: 
     let tp: ptr<u8> = malloc(MB_PATH as i64)
     let tpo: i32 = mb_put(tp, 0, MB_PATH, mb.project_root, mb_cstr_len(mb.project_root))
     mb_puts(tp, tpo, MB_PATH, "/flow.toml")
-    let tps: string = tp
+    let tps: string = tp as string
     let tn: i32 = flowc_read_file(tps, mb.toml, MB_SRC_CAP - 1)
     free(tp)
     if tn > 0 {
@@ -727,7 +727,7 @@ export function flowc_mlir_emit_program(in_path: string, out: ptr<u8>, out_cap: 
         let libs: ptr<u8> = "lib/stdlib"
         have = mb_join(cand, mb.project_root, libs, 10)
     }
-    let cs: string = cand
+    let cs: string = cand as string
     if have == 1 and flowc_io_exists(cs) == 1 {
         mb_put(mb.stdlib_root, 0, MB_PATH, cand, mb_cstr_len(cand))
     } else {

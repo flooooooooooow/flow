@@ -1,0 +1,11 @@
+# expect: record update: struct 'Point' has no field 'z'
+struct Point {
+    x: i32,
+    y: i32
+}
+
+function main() -> i32 {
+    let p: Point = Point { x: 1, y: 2 }
+    let q: Point = Point { ..p, z: 3 }
+    return q.x
+}

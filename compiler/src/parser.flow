@@ -188,7 +188,8 @@ function flowc_parser_is_name(p: Parser) -> i32 {
     if p.cur.kind == TOK_IDENT {
         return 1
     }
-    return flowc_token_is_kw(p.cur, KW_AND) + flowc_token_is_kw(p.cur, KW_OR) + flowc_token_is_kw(p.cur, KW_TEST)
+    # `to` only means something inside `for i in a to b` (#1068).
+    return flowc_token_is_kw(p.cur, KW_AND) + flowc_token_is_kw(p.cur, KW_OR) + flowc_token_is_kw(p.cur, KW_TEST) + flowc_token_is_kw(p.cur, KW_TO)
 }
 
 # Current token is the identifier `lit` (a contextual keyword).
@@ -663,8 +664,9 @@ function flowc_parse_atom(p: ptr<Parser>) -> i32 {
         return id
     }
     # `and` / `or` in primary position are names (bit-op helpers such as
-    # `and(a, b)`), as in the Python parser.
-    if tok.kind == TOK_IDENT or flowc_token_is_kw(tok, KW_AND) == 1 or flowc_token_is_kw(tok, KW_OR) == 1 {
+    # `and(a, b)`), as in the Python parser; so is `to`, a keyword only in a
+    # `for` range (#1068).
+    if tok.kind == TOK_IDENT or flowc_token_is_kw(tok, KW_AND) == 1 or flowc_token_is_kw(tok, KW_OR) == 1 or flowc_token_is_kw(tok, KW_TO) == 1 {
         let name_s: i32 = tok.start
         let name_e: i32 = tok.end
         flowc_parser_advance(p)
@@ -1644,7 +1646,7 @@ function flowc_parse_binop_rhs(p: ptr<Parser>, min_prec: i32, lhs: i32) -> i32 {
     return left
 }
 
-function flowc_parse_expr(p: ptr<Parser>) -> i32 {
+export function flowc_parse_expr(p: ptr<Parser>) -> i32 {
     let lhs: i32 = flowc_parse_cast(p)
     if lhs == AST_NONE {
         return AST_NONE
@@ -2126,6 +2128,10 @@ function flowc_parse_stmt_inner(p: ptr<Parser>) -> i32 {
         }
         # Prefix keyword operators: `return not (a or b)` (#963).
         if flowc_token_is_kw(p[0].cur, KW_NOT) == 1 or flowc_token_is_kw(p[0].cur, KW_DBG) == 1 {
+            is_expr = 1
+        }
+        # `to` names a value outside a `for` range: `return to - from` (#1068).
+        if flowc_token_is_kw(p[0].cur, KW_TO) == 1 {
             is_expr = 1
         }
         if is_expr == 1 {

@@ -1,0 +1,8 @@
+
+        let mut cached: span<i32> = null
+        function stash() {
+            let local: array<i32, 3> = [1, 2, 3]
+            cached = local[0..3]
+        }
+        function main() -> i32 { return 0 }
+        

@@ -1,0 +1,10 @@
+
+extern {
+    function malloc(n: i64) -> ptr<u8>
+}
+
+function main() -> i32 {
+    let buf: ptr<u8> = malloc(8)
+    let s: string = buf
+    return 0
+}

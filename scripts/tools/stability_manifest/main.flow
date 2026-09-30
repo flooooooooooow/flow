@@ -79,7 +79,7 @@ function classes_match(j: ptr<Json>, id: i32) -> bool {
 
 function validate(require_complete: bool) -> i32 {
     let text: string = ft_read_file(MANIFEST)
-    if text == null {
+    if text as ptr<u8> == null {
         ft_errln("stability manifest: cannot read " + MANIFEST)
         return 1
     }

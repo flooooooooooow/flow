@@ -127,7 +127,7 @@ function ensure_gfx_deps() -> i32 {
         ok("macOS gfx uses Cocoa (no SDL2 required)")
         return 0
     }
-    let rc: i32 = 0
+    let mut rc: i32 = 0
     if ensure("pkg-config", "pkg-config", false) != 0 {
         rc = 1
     }
@@ -139,7 +139,7 @@ function ensure_gfx_deps() -> i32 {
         }
     }
     info("SDL2 missing — installing (needed for gfx / window on this OS)")
-    let code: i32 = 1
+    let mut code: i32 = 1
     let pm: string = pkg_manager()
     if str_eq(pm, "brew") {
         code = install_pkg("sdl2")

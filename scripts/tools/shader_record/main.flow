@@ -30,7 +30,7 @@ const USAGE: string = "usage: record_shader_gallery.sh [-h] [--group {photoreal,
 
 function root() -> string {
     let r: string = getenv("FLOW_REPO_ROOT")
-    if r == null or ft_len(r) == 0 {
+    if r as ptr<u8> == null or ft_len(r) == 0 {
         return pr_resolve(".")
     }
     return r
@@ -123,12 +123,12 @@ function sorted_copy(l: ptr<StrList>) -> ptr<StrList> {
     let mut used: ptr<StrList> = ft_list_new()
     let mut k: i32 = 0
     while k < n {
-        let mut best: string = null
+        let mut best: string = null as string
         let mut i: i32 = 0
         while i < n {
             let s: string = ft_list_get(l, i)
             if ft_list_has(used, ft_itoa(i)) == false {
-                if best == null or strcmp(s, best) < 0 {
+                if best as ptr<u8> == null or strcmp(s, best) < 0 {
                     best = s
                 }
             }
@@ -189,7 +189,7 @@ function compile_gallery(fc: string, source: string, build_dir: string, entries:
 
 function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     let mut group: string = "photoreal"
-    let mut name: string = null
+    let mut name: string = null as string
     let mut out_arg: string = path_in("docs/demos/shaders")
     let mut build_arg: string = path_in("build/shader-gallery")
     let mut width: i32 = 640
@@ -281,7 +281,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
                 die("RuntimeError: duplicate FSL entry: " + pn)
             }
             ft_list_push(all_names, pn)
-            if name == null or ft_eq(pn, name) {
+            if name as ptr<u8> == null or ft_eq(pn, name) {
                 ft_list_push(sel_src, src)
                 ft_list_push(sel_metal, metal)
                 ft_list_push(sel_entry, entry)
@@ -290,7 +290,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         }
         s = s + 1
     }
-    if name != null and ft_list_len(sel_entry) == 0 {
+    if name as ptr<u8> != null and ft_list_len(sel_entry) == 0 {
         let sorted: ptr<StrList> = sorted_copy(all_names)
         let mut choices: string = ""
         let mut k: i32 = 0

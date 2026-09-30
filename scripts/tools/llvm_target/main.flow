@@ -38,7 +38,7 @@ extern {
 
 function root() -> string {
     let r: string = getenv("FLOW_REPO_ROOT")
-    if r == null or ft_len(r) == 0 {
+    if r as ptr<u8> == null or ft_len(r) == 0 {
         return pr_cwd()
     }
     return r
@@ -46,7 +46,7 @@ function root() -> string {
 
 function env_or_empty(name: string) -> string {
     let v: string = getenv(name)
-    if v == null {
+    if v as ptr<u8> == null {
         return ""
     }
     return v
@@ -74,7 +74,7 @@ function remove_tree(path: string) -> void {
 # The file's text, or "" when it is missing.
 function read_or_empty(path: string) -> string {
     let t: string = ft_read_file(path)
-    if t == null {
+    if t as ptr<u8> == null {
         return ""
     }
     return t
@@ -279,7 +279,7 @@ function bpf_dynamic_alloca(ir: string) -> string {
     while pos < n {
         let at: i32 = ft_find(ir, "alloca", pos)
         if at < 0 {
-            return null
+            return null as string
         }
         pos = at + 1
         if at > 0 and is_word(ft_byte(ir, at - 1)) {
@@ -351,7 +351,7 @@ function bpf_dynamic_alloca(ir: string) -> string {
         }
         pos = i
     }
-    return null
+    return null as string
 }
 
 # validate_bpf_llvm_ir: "" when the IR is acceptable, else the message.
@@ -365,7 +365,7 @@ function bpf_validate(ir: string) -> string {
         return "bpfel cannot depend on userspace runtime symbol '" + sym + "'"
     }
     let count: string = bpf_dynamic_alloca(ir)
-    if count != null {
+    if count as ptr<u8> != null {
         return "bpfel requires statically bounded stack allocation; found dynamic alloca count '" + count + "'"
     }
     return ""
@@ -433,12 +433,12 @@ function bpf_program_metadata(ir: string, a: ptr<Args>) -> string {
         if ft_len(symbol) > 0 and ft_starts(line, "define ") and ft_contains(line, symbol) {
             if found {
                 a.error = "duplicate exported BPF entry '" + a.entry + "'"
-                return null
+                return null as string
             }
             let brace: i32 = ft_find(line, "{", 0)
             if brace < 0 {
                 a.error = "cannot decorate multiline definition for BPF entry '" + a.entry + "'"
-                return null
+                return null as string
             }
             line = rstrip(ft_slice(line, 0, brace)) + " section \"" + a.section + "\" " + ft_from(line, brace)
             found = true
@@ -448,7 +448,7 @@ function bpf_program_metadata(ir: string, a: ptr<Args>) -> string {
     }
     if found == false {
         a.error = "exported BPF entry '" + a.entry + "' not found; looked for @flow_export_" + a.entry + " or @" + a.entry
-        return null
+        return null as string
     }
     let size: i32 = ft_len(a.license) + 1
     ft_list_push(out, "@_flow_bpf_license = dso_local constant [" + ft_itoa(size) + " x i8] c\"" + llvm_c_string(a.license) + "\", section \"license\", align 1")
@@ -469,7 +469,7 @@ function bpf_emit_object(ir: string, a: ptr<Args>, work: string) -> string {
     let mut targeted: string = bpf_target_header(ir)
     if ft_len(a.entry) > 0 {
         targeted = bpf_program_metadata(targeted, a)
-        if targeted == null {
+        if targeted as ptr<u8> == null {
             return a.error
         }
     }
@@ -537,7 +537,7 @@ function bpf_run(a: ptr<Args>) -> string {
         return "[Errno 21] Is a directory: " + ft_repr(a.input)
     }
     let ir: string = ft_read_file(a.input)
-    if ir == null {
+    if ir as ptr<u8> == null {
         return "[Errno 13] Permission denied: " + ft_repr(a.input)
     }
     let work: string = make_temp_dir("flow-bpf-")
@@ -571,7 +571,7 @@ function wasm_defined_functions(ir: string) -> ptr<StrList> {
         while i < n and is_space(ft_byte(ir, i)) {
             i = i + 1
         }
-        let mut name: string = null
+        let mut name: string = null as string
         if ft_find(ir, "define", i) == i and (i + 6 >= n or is_word(ft_byte(ir, i + 6)) == false) {
             let at: i32 = ft_find(ir, "@", i + 6)
             if at >= 0 {
@@ -589,17 +589,17 @@ function wasm_defined_functions(ir: string) -> ptr<StrList> {
                     }
                     name = ft_slice(ir, s0, j)
                 }
-                if name != null {
+                if name as ptr<u8> != null {
                     while j < n and is_space(ft_byte(ir, j)) {
                         j = j + 1
                     }
                     if j >= n or ft_byte(ir, j) != 40 {
-                        name = null
+                        name = null as string
                     }
                 }
             }
         }
-        if name != null and ft_set_has(seen, name) == false {
+        if name as ptr<u8> != null and ft_set_has(seen, name) == false {
             ft_set_add(seen, name)
             ft_list_push(out, name)
         }
@@ -880,7 +880,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             which_opt = 7
         }
         if matched {
-            if v.value == null {
+            if v.value as ptr<u8> == null {
                 return usage_error(a, usage, "argument " + label + ": expected one argument")
             }
             if which_opt == 1 {
@@ -917,7 +917,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         }
         if ft_starts(arg, "-") and ft_len(arg) > 1 {
             ft_list_push(extras, arg)
-        } elif a.input == null {
+        } elif a.input as ptr<u8> == null {
             a.input = arg
         } else {
             ft_list_push(extras, arg)
@@ -925,10 +925,10 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         i = i + 1
     }
     let mut required: string = ""
-    if a.input == null {
+    if a.input as ptr<u8> == null {
         required = "input"
     }
-    if a.output == null {
+    if a.output as ptr<u8> == null {
         if ft_len(required) > 0 {
             required = required + ", "
         }

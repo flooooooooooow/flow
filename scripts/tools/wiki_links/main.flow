@@ -284,7 +284,7 @@ function main() -> i32 {
     }
     let entries_text: string = ft_read_file(ENTRIES)
     let dirs_text: string = ft_read_file(DIRS)
-    if entries_text == null or dirs_text == null {
+    if entries_text as ptr<u8> == null or dirs_text as ptr<u8> == null {
         ft_errln("check_wiki_links: missing " + ENTRIES + "; run scripts/check_wiki_links.sh")
         return 1
     }
@@ -316,7 +316,7 @@ function main() -> i32 {
             continue
         }
         let text: string = ft_read_file(full)
-        if text != null {
+        if text as ptr<u8> != null {
             let links: ptr<StrList> = find_links(text)
             let mut li: i32 = 0
             while li < ft_list_len(links) {

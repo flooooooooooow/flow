@@ -20,7 +20,7 @@ const CLANG_FLAGS: string = "-O3 -march=native -lm"
 
 function root() -> string {
     let r: string = getenv("FLOW_REPO_ROOT")
-    if r == null or ft_len(r) == 0 {
+    if r as ptr<u8> == null or ft_len(r) == 0 {
         return "."
     }
     return r
@@ -47,12 +47,12 @@ function sh(display: string, cmd: string) -> void {
         ft_outln("Command failed: " + display)
         let o: string = ft_read_file(out_f)
         let e: string = ft_read_file(err_f)
-        if o != null {
+        if o as ptr<u8> != null {
             ft_outln(o)
         } else {
             ft_outln("")
         }
-        if e != null {
+        if e as ptr<u8> != null {
             ft_outln(e)
         } else {
             ft_outln("")
@@ -89,7 +89,7 @@ function one_run(exe: string) -> ptr<BenchRun> {
         ft_errln("run_baselines: " + exe + " exited with a failure")
         exit(1)
     }
-    if bn_result(r) == null {
+    if bn_result(r) as ptr<u8> == null {
         ft_errln("bad output from " + exe + ": " + bn_out(r))
         exit(1)
     }
@@ -98,7 +98,7 @@ function one_run(exe: string) -> ptr<BenchRun> {
 
 function version() -> string {
     let text: string = ft_read_file(ft_join(root(), "src/flow/version.py"))
-    if text == null {
+    if text as ptr<u8> == null {
         return "unknown"
     }
     let lines: ptr<StrList> = ft_split_lines(text)
@@ -127,15 +127,15 @@ function git_sha() -> string {
 
 function contract_limit(contracts: ptr<Json>, b: string) -> string {
     if contracts == null {
-        return null
+        return null as string
     }
     let item: i32 = json_get(contracts, 0, b)
     if item < 0 {
-        return null
+        return null as string
     }
     let lim: i32 = json_get(contracts, item, "max_median_s")
     if lim < 0 {
-        return null
+        return null as string
     }
     return json_str(contracts, lim)
 }
@@ -197,7 +197,7 @@ function main() -> i32 {
 
     let mut contracts: ptr<Json> = null
     let ctext: string = ft_read_file(base + "/contracts.json")
-    if ctext != null {
+    if ctext as ptr<u8> != null {
         contracts = json_parse(ctext)
         if ft_len(json_error(contracts)) > 0 {
             ft_errln("run_baselines: contracts.json: " + json_error(contracts))
@@ -235,7 +235,7 @@ function main() -> i32 {
             js = js + "    }\n"
         }
         let limit: string = contract_limit(contracts, b)
-        if limit != null and med > bn_parse_float(limit) {
+        if limit as ptr<u8> != null and med > bn_parse_float(limit) {
             ft_outln("ERROR: " + b + " median " + bn_fixed(med, 6) + "s exceeds contract " + bn_py_repr(bn_parse_float(limit)) + "s")
             failed = true
         }

@@ -1,0 +1,11 @@
+# expect: static extent mismatch: parameter 'xs' of 'sum4' expects span<f32, 4>, but the argument length is not known at compile time; a static-extent span cannot be formed from a dynamic length
+function sum4(xs: span<f32, 4>) -> f32 {
+    return 0.0
+}
+
+function main() -> i32 {
+    let mut xs: array<f32, 8> = [0.0; 8]
+    let n: i32 = 4
+    let t: f32 = sum4(xs[0..n])
+    return 0
+}

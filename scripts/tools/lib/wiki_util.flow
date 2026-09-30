@@ -226,8 +226,8 @@ export function wu_clean_text(raw: string) -> string {
 # Path.read_text(encoding="utf-8", errors="replace"); null when unreadable.
 export function wu_read_text(path: string) -> string {
     let raw: string = ft_read_file(path)
-    if raw == null {
-        return null
+    if raw as ptr<u8> == null {
+        return null as string
     }
     return wu_clean_text(raw)
 }

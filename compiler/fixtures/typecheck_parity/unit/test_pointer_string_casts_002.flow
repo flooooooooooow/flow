@@ -1,0 +1,5 @@
+
+function first_byte(s: string) -> i32 {
+    let bytes: ptr<u8> = s as ptr<u8>
+    return bytes[0] as i32
+}

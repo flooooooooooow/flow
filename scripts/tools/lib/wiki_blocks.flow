@@ -177,13 +177,13 @@ function wk_parse_info(bl: ptr<WkBlocks>, info: string) -> string {
     let words: ptr<StrList> = wk_shlex(info, err)
     if words == null {
         bl[0].error = "InfoStringError: cannot parse info string " + ft_repr(info) + ": " + err[0]
-        return null
+        return null as string
     }
     if ft_list_len(words) == 0 {
         return ""
     }
     let lang: string = uc_lower_str(ft_list_get(words, 0))
-    let mut ignore_reason: string = null
+    let mut ignore_reason: string = null as string
     let mut w: i32 = 1
     while w < ft_list_len(words) {
         let word: string = ft_list_get(words, w)
@@ -193,24 +193,24 @@ function wk_parse_info(bl: ptr<WkBlocks>, info: string) -> string {
             let value: string = ft_from(word, eq + 1)
             if wk_known_key(key) == false {
                 bl[0].error = "InfoStringError: unknown option " + ft_repr(key) + " in " + ft_repr(info)
-                return null
+                return null as string
             }
             if ft_len(value) == 0 {
                 bl[0].error = "InfoStringError: option " + ft_repr(key) + " needs a value in " + ft_repr(info)
-                return null
+                return null as string
             }
             if ft_eq(key, "ignore") {
                 ignore_reason = value
             }
         } elif wk_known_flag(uc_lower_str(word)) == false {
             bl[0].error = "InfoStringError: unknown flag " + ft_repr(word) + " in " + ft_repr(info)
-            return null
+            return null as string
         }
         w = w + 1
     }
-    if ignore_reason != null and ft_len(uc_strip(ignore_reason)) == 0 {
+    if ignore_reason as ptr<u8> != null and ft_len(uc_strip(ignore_reason)) == 0 {
         bl[0].error = "InfoStringError: ignore= needs a written reason in " + ft_repr(info)
-        return null
+        return null as string
     }
     return lang
 }
@@ -222,15 +222,15 @@ export function wk_collect_file(bl: ptr<WkBlocks>, path: string, text: string, w
     let nl: i32 = ft_list_len(lines)
     let fm: ptr<i32> = malloc(12) as ptr<i32>
     let cm: ptr<i32> = malloc(12) as ptr<i32>
-    let mut section: string = null
-    let mut title: string = null
+    let mut section: string = null as string
+    let mut title: string = null as string
     let mut i: i32 = 0
     while i < nl {
         let line: string = ft_list_get(lines, i)
         if wk_fence(line, fm) == false {
             if ft_starts(line, "## ") {
                 section = uc_strip(ft_from(line, 3))
-                title = null
+                title = null as string
             } elif ft_starts(line, "### ") {
                 title = uc_strip(ft_from(line, 4))
             }
@@ -261,7 +261,7 @@ export function wk_collect_file(bl: ptr<WkBlocks>, path: string, text: string, w
         }
         i = i + 1
         let lang: string = wk_parse_info(bl, info)
-        if lang == null {
+        if lang as ptr<u8> == null {
             return false
         }
         let code: string = wu_strip_set(wb_str(body), "\n")

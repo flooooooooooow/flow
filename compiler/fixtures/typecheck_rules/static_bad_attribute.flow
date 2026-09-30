@@ -1,0 +1,7 @@
+# expect: Attribute '@inline' is not allowed on module static 'counter'; only '@lifetime(...)' is
+@inline
+let mut counter: i32 = 0
+
+function main() -> i32 {
+    return 0
+}

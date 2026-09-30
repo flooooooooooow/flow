@@ -1,0 +1,9 @@
+# expect: Effect operation 'Log.info' argument 1 expects string, got i32
+effect Log {
+    info(msg: string) -> void
+}
+
+function main() -> i32 {
+    Log.info(42)
+    return 0
+}

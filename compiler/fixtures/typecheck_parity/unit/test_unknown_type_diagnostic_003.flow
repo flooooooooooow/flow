@@ -1,0 +1,2 @@
+struct P { x: i32 }
+function f() -> P { return 5 }

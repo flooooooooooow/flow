@@ -10,6 +10,8 @@
 
 import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_starts, ft_basename, ft_replace, ft_write_file, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_is_ascii_space, StrList }
 
+# sprintf and system: the checker requires them under `@unsafe extern`.
+@unsafe
 extern {
     function malloc(size: i64) -> ptr<void>
     function getenv(name: string) -> string
@@ -110,7 +112,7 @@ function pct_str(stripped: i64) -> string {
 }
 
 function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
-    let mut out_file: string = null
+    let mut out_file: string = null as string
     let programs: ptr<StrList> = ft_list_new()
     let mut i: i32 = 1
     while i < argc {
@@ -140,7 +142,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     }
 
     let mut host: string = getenv("FLOW_HOST")
-    if host == null or ft_len(host) == 0 {
+    if host as ptr<u8> == null or ft_len(host) == 0 {
         host = "flowc"
     }
 
@@ -176,7 +178,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     report = report + "|---------|---------|---------|--------|------------|----------|-------------|\n"
     report = report + rows
     ft_out(report + "\n")
-    if out_file != null {
+    if out_file as ptr<u8> != null {
         if ft_write_file(out_file, report) == false {
             ft_errln("measure_size: cannot write " + out_file)
             return 1

@@ -107,7 +107,11 @@ export struct TcCtx {
     # Function or capability method being checked, else AST_NONE.
     cur_fn: i32,
     # FLOWC_STRICT_EFFECTS=1: effect rows are checked (Python --strict-effects).
-    strict_effects: i32
+    strict_effects: i32,
+    # 1 when the semantic checker (sem_check.flow) ran on this program: the
+    # checks it makes with the Python host's rules and messages are left to
+    # it, and this pass keeps only what C generation needs on top of them.
+    sem_on: i32
 }
 
 function flowc_tc_span_eq(src: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i32 {
@@ -1349,6 +1353,7 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         if flowc_tc_span_is(ctx[0].src, ns, ne, "_ui_state") == 1 { return }
         # `return void` in a void function (cgen emits a bare return).
         if flowc_tc_span_is(ctx[0].src, ns, ne, "void") == 1 { return }
+        if ctx[0].sem_on == 1 { return }
         if flowc_tc_lookup(ctx[0], ns, ne) == 0 {
             # A capability is a handler, not a value (fatal on the Python
             # host too, lenient or not).
@@ -1378,6 +1383,14 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         let nargs: i32 = flowc_ast_chain_len(arena, arena.nodes[id].a)
         # `E.op(args)` on an effect or a capability-typed value.
         let espan: array<i32, 2> = []
+        if ctx[0].sem_on == 1 {
+            let mut sarg: i32 = arena.nodes[id].a
+            while sarg != AST_NONE {
+                flowc_tc_check_expr(ctx, arena, sarg)
+                sarg = arena.nodes[sarg].next
+            }
+            return
+        }
         if flowc_tc_eff_receiver(ctx, arena, id, &espan[0]) == 1 {
             flowc_tc_eff_check_call(ctx, arena, id, espan[0], espan[1])
             return
@@ -1501,7 +1514,7 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         let base: i32 = arena.nodes[id].a
         flowc_tc_check_expr(ctx, arena, base)
         # Optional: known struct type + unknown field name.
-        if base != AST_NONE and arena.nodes[base].kind == AST_IDENT {
+        if ctx[0].sem_on == 0 and base != AST_NONE and arena.nodes[base].kind == AST_IDENT {
             let ty: i32 = flowc_tc_lookup_val_type(ctx[0], arena.nodes[base].name_start, arena.nodes[base].name_end)
             let st: i32 = flowc_tc_find_struct(arena, ctx[0].src, ty)
             if st != AST_NONE {
@@ -1590,7 +1603,9 @@ function flowc_tc_check_stmt(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         } elif arena.nodes[val].kind == AST_IDENT and flowc_tc_span_is(ctx[0].src, arena.nodes[val].name_start, arena.nodes[val].name_end, "void") == 1 {
             bare = 1
         }
-        if bare == 1 {
+        if ctx[0].sem_on == 1 {
+            flowc_tc_check_expr(ctx, arena, val)
+        } elif bare == 1 {
             # Bare `return` only ok in void / omitted-return functions.
             if is_void == 0 {
                 flowc_tc_note(ctx, "flowc tc: return without a value in a function that returns one", arena.nodes[id].start, arena.nodes[id].start)
@@ -1706,7 +1721,7 @@ function flowc_tc_check_stmt(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         if lhs != AST_NONE and arena.nodes[lhs].kind == AST_IDENT {
             let ns: i32 = arena.nodes[lhs].name_start
             let ne: i32 = arena.nodes[lhs].name_end
-            if flowc_tc_lookup(ctx[0], ns, ne) == 0 {
+            if ctx[0].sem_on == 0 and flowc_tc_lookup(ctx[0], ns, ne) == 0 {
                 flowc_tc_err(ctx)
             }
         } else {
@@ -1740,6 +1755,10 @@ function flowc_tc_check_stmt(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         return
     }
     if kind == AST_HANDLE {
+        if ctx[0].sem_on == 1 {
+            flowc_tc_check_block(ctx, arena, arena.nodes[id].a)
+            return
+        }
         flowc_tc_eff_check_handle(ctx, arena, id)
         return
     }
@@ -1803,8 +1822,14 @@ function flowc_tc_collect_globals(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
                             # If parameter types are identical, it's a real error.
                             let params_same: i32 = flowc_tc_params_eq(arena, ctx[0].src, fn, pfn)
                             if params_same == 1 {
-                                flowc_tc_note(ctx, "flowc tc: duplicate function with same signature", ns, ne)
-                                flowc_tc_err(ctx)
+                                # Two C definitions of one symbol. The Python
+                                # checker kept both as overloads and clang
+                                # then rejected the redefinition.
+                                flowc_tc_eff_begin(ctx, ns)
+                                flowc_eff_diag_s("function '")
+                                flowc_eff_diag_span(ctx[0].src, ns, ne)
+                                flowc_eff_diag_s("' is defined twice with the same parameter types")
+                                flowc_eff_diag_end()
                             }
                         }
                     }
@@ -2096,7 +2121,8 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
             hlen: 0,
             hcap: 0,
             cur_fn: AST_NONE,
-            strict_effects: 0
+            strict_effects: 0,
+            sem_on: 0
         }
     }
     let mut zi: i32 = 0
@@ -2150,7 +2176,8 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
         hlen: 0,
         hcap: hcap,
         cur_fn: AST_NONE,
-        strict_effects: strict_effects
+        strict_effects: strict_effects,
+        sem_on: 0
     }
 }
 
@@ -3826,10 +3853,16 @@ export function flowc_tc_check_program(ctx: ptr<TcCtx>, arena: AstArena, root: i
     # This module's own effects join the table for the duration of the check.
     ctx[0].eff_len = flowc_eff_collect(arena, root, ctx[0].src, ctx[0].eff, ctx[0].eff_cap, ctx[0].eff_seed_len)
     flowc_tc_collect_globals(ctx, arena, root)
-    flowc_tc_check_rows(ctx, arena, root)
-    flowc_tc_check_attrs(ctx, arena)
+    if ctx[0].sem_on == 0 {
+        flowc_tc_check_rows(ctx, arena, root)
+    }
+    if ctx[0].sem_on == 0 {
+        flowc_tc_check_attrs(ctx, arena)
+    }
     flowc_tc_check_fns(ctx, arena, root)
-    ctx[0].err = ctx[0].err + flowc_units_check(arena, ctx[0].src, root)
+    if ctx[0].sem_on == 0 {
+        ctx[0].err = ctx[0].err + flowc_units_check(arena, ctx[0].src, root)
+    }
     ctx[0].eff_len = ctx[0].eff_seed_len
     return ctx[0].err
 }
@@ -3845,6 +3878,12 @@ export function flowc_typecheck_ex(arena: AstArena, root: i32, src: ptr<u8>, pat
 # As flowc_typecheck_ex; also writes the count of errors that stay errors
 # under lenient checking (see TcCtx.fatal) to fatal_out[0].
 export function flowc_typecheck_fatal(arena: AstArena, root: i32, src: ptr<u8>, path: string, fatal_out: ptr<i32>) -> i32 {
+    return flowc_typecheck_fatal_sem(arena, root, src, path, fatal_out, 0)
+}
+
+# As flowc_typecheck_fatal; sem_on = 1 when the semantic checker already
+# checked the program (see TcCtx.sem_on).
+export function flowc_typecheck_fatal_sem(arena: AstArena, root: i32, src: ptr<u8>, path: string, fatal_out: ptr<i32>, sem_on: i32) -> i32 {
     fatal_out[0] = 1
     if root == AST_NONE or root < 0 {
         return 1
@@ -3860,6 +3899,7 @@ export function flowc_typecheck_fatal(arena: AstArena, root: i32, src: ptr<u8>, 
     if path as ptr<u8> != null {
         ctx.path = path
     }
+    ctx.sem_on = sem_on
 
     flowc_tc_check_program(&ctx, arena, root)
 

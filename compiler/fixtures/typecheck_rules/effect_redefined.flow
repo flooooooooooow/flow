@@ -1,0 +1,12 @@
+# expect: Effect 'Log' already defined
+effect Log {
+    info(msg: string) -> void
+}
+
+effect Log {
+    warn(msg: string) -> void
+}
+
+function main() -> i32 {
+    return 0
+}

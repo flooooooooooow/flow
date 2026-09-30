@@ -1,0 +1,6 @@
+
+function main() -> i32 {
+    let f = |x: i32| -> i32 { return x }
+    let r: i32 = f(1, 2)
+    return r
+}

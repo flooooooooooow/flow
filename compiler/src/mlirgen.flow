@@ -12088,7 +12088,7 @@ export function flowc_mlirgen_emit_modules(arena: AstArena, root: i32, src: ptr<
             mi = mlg_module_of(m, mg.arena.nodes[mg.why_node].start)
         }
         if nmods > 0 and mi != nmods - 1 {
-            let mname: string = mod_names + mi * mod_stride
+            let mname: string = (mod_names + mi * mod_stride) as string
             printf("flowc mlir: unsupported: %s at line %d of %s\n", mg.why, mlg_node_line(m, mg.why_node), mname)
         } else {
             printf("flowc mlir: unsupported: %s at line %d\n", mg.why, mlg_node_line(m, mg.why_node))

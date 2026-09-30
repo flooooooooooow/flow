@@ -193,6 +193,42 @@ g2_emit_module typecheck \
 "$C_TO_HDR" \
     compiler/build/g2_typecheck.c compiler/build/g2_typecheck.h
 
+# The type checker (sem_*, the port of the Python checker) and strutil,
+# which resolve calls.
+g2_emit_module strutil
+g2_emit_module sem_util
+"$C_TO_HDR" \
+    compiler/build/g2_strutil.c compiler/build/g2_strutil.h
+"$C_TO_HDR" \
+    compiler/build/g2_sem_util.c compiler/build/g2_sem_util.h
+g2_emit_module sem_types \
+    compiler/build/g2_sem_util.h
+"$C_TO_HDR" \
+    compiler/build/g2_sem_types.c compiler/build/g2_sem_types.h
+g2_emit_module sem_cheader \
+    compiler/build/g2_sem_util.h
+"$C_TO_HDR" \
+    compiler/build/g2_sem_cheader.c compiler/build/g2_sem_cheader.h
+g2_emit_module sem_model \
+    compiler/build/g2_token.h \
+    compiler/build/g2_ast.h \
+    compiler/build/g2_lexer.h \
+    compiler/build/g2_sem_util.h \
+    compiler/build/g2_sem_types.h
+"$C_TO_HDR" \
+    compiler/build/g2_sem_model.c compiler/build/g2_sem_model.h
+g2_emit_module sem_check \
+    compiler/build/g2_token.h \
+    compiler/build/g2_ast.h \
+    compiler/build/g2_lexer.h \
+    compiler/build/g2_parser.h \
+    compiler/build/g2_sem_util.h \
+    compiler/build/g2_sem_types.h \
+    compiler/build/g2_sem_model.h \
+    compiler/build/g2_sem_cheader.h
+"$C_TO_HDR" \
+    compiler/build/g2_sem_check.c compiler/build/g2_sem_check.h
+
 g2_emit_module resolve \
     compiler/build/g2_token.h \
     compiler/build/g2_ast.h \
@@ -208,7 +244,12 @@ g2_emit_module resolve \
     compiler/build/g2_cgen.h \
     compiler/build/g2_overload_table.h \
     compiler/build/g2_overload_call.h \
-    compiler/build/g2_typecheck.h
+    compiler/build/g2_typecheck.h \
+    compiler/build/g2_strutil.h \
+    compiler/build/g2_sem_util.h \
+    compiler/build/g2_sem_types.h \
+    compiler/build/g2_sem_model.h \
+    compiler/build/g2_sem_check.h
 
 # Relocatable link: proves driver_self-emitted frontend objects resolve together.
 cc -r -o compiler/build/flowc_frontend_g2.o \
@@ -237,6 +278,12 @@ cc -r -o compiler/build/flowc_frontend_g2.o \
     compiler/build/g2_overload_registry.o \
     compiler/build/g2_overload_call.o \
     compiler/build/g2_typecheck.o \
+    compiler/build/g2_strutil.o \
+    compiler/build/g2_sem_util.o \
+    compiler/build/g2_sem_types.o \
+    compiler/build/g2_sem_cheader.o \
+    compiler/build/g2_sem_model.o \
+    compiler/build/g2_sem_check.o \
     compiler/build/g2_resolve.o
 for sym in flowc_make_tok flowc_ast_new flowc_lexer_next flowc_parse_program flowc_read_file flowc_cgen_emit flowc_typecheck flowc_tc_seed_export flowc_bundle_emit flowc_bundle_typecheck flowc_resolve_sibling_path; do
     if ! nm compiler/build/flowc_frontend_g2.o | grep "$sym" >/dev/null; then
@@ -252,7 +299,7 @@ wc -c compiler/build/flowc_frontend_self.o compiler/build/flowc_frontend_g2.o
 # objects can differ from include-path / toolchain metadata while C matches.
 echo "=== fixed-point cmp self_*.c vs g2_*.c ==="
 fp_fail=0
-for mod in token ast lexer fileio field_dsl dynamics_dsl flow_blocks shader_dsl effects attributes ordering_hints sort_plans sort_sites parser proof_lower cgen typecheck resolve; do
+for mod in token ast lexer fileio field_dsl dynamics_dsl flow_blocks shader_dsl effects attributes ordering_hints sort_plans sort_sites parser proof_lower cgen typecheck strutil sem_util sem_types sem_cheader sem_model sem_check resolve; do
     if ! cmp -s "compiler/build/self_${mod}.c" "compiler/build/g2_${mod}.c"; then
         echo "FAIL C drift: ${mod}" >&2
         diff -u "compiler/build/self_${mod}.c" "compiler/build/g2_${mod}.c" | head -80 >&2 || true

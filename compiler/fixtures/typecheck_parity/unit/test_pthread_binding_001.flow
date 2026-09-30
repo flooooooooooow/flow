@@ -1,0 +1,18 @@
+
+@cImport("pthread.h")
+
+struct Lock {
+    inner: pthread_mutex_t,
+    held: bool
+}
+
+function make() -> Lock {
+    return Lock { held: false }
+}
+
+function main() -> i32 {
+    let mut l: Lock = make()
+    pthread_mutex_init(&l.inner, null)
+    pthread_mutex_destroy(&l.inner)
+    return 0
+}

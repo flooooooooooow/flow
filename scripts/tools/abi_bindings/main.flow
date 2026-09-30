@@ -358,8 +358,8 @@ function long_opt(name: string) -> string {
 }
 
 function main(argc: i32, argv: ptr<string>) -> i32 {
-    let mut abi_arg: string = null
-    let mut out_arg: string = null
+    let mut abi_arg: string = null as string
+    let mut out_arg: string = null as string
     let extras: ptr<StrList> = ft_list_new()
     let mut only_pos: bool = false
     let mut i: i32 = 1
@@ -373,7 +373,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         } elif only_pos == false and ft_starts(arg, "--") {
             let eq: i32 = ft_find(arg, "=", 0)
             let mut name: string = arg
-            let mut value: string = null
+            let mut value: string = null as string
             if eq >= 0 {
                 name = ft_slice(arg, 0, eq)
                 value = ft_from(arg, eq + 1)
@@ -383,14 +383,14 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
                 return usage_error("ambiguous option: " + name + " could match --help, --out-dir")
             }
             if ft_eq(full, "--help") {
-                if value != null {
+                if value as ptr<u8> != null {
                     return usage_error("argument -h/--help: ignored explicit argument '" + value + "'")
                 }
                 ft_out(help_text())
                 return 0
             }
             if ft_eq(full, "--out-dir") {
-                if value == null {
+                if value as ptr<u8> == null {
                     if i + 1 >= argc or (ft_starts(argv[i + 1], "-") and ft_len(argv[i + 1]) > 1) {
                         return usage_error("argument --out-dir: expected one argument")
                     }
@@ -403,14 +403,14 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
             }
         } elif only_pos == false and ft_starts(arg, "-") and ft_len(arg) > 1 {
             ft_list_push(extras, arg)
-        } elif abi_arg == null {
+        } elif abi_arg as ptr<u8> == null {
             abi_arg = arg
         } else {
             ft_list_push(extras, arg)
         }
         i = i + 1
     }
-    if abi_arg == null {
+    if abi_arg as ptr<u8> == null {
         return usage_error("the following arguments are required: abi_file")
     }
     if ft_list_len(extras) > 0 {
@@ -429,7 +429,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         return 1
     }
     let mut out_dir: string = path_parent(abi_path)
-    if out_arg != null and ft_len(out_arg) > 0 {
+    if out_arg as ptr<u8> != null and ft_len(out_arg) > 0 {
         out_dir = path_str(out_arg)
     }
     if pr_is_dir(out_dir) == false {
@@ -440,7 +440,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     }
 
     let text: string = ft_read_file(abi_path)
-    if text == null or pr_is_dir(abi_path) {
+    if text as ptr<u8> == null or pr_is_dir(abi_path) {
         ft_errln("IsADirectoryError: [Errno 21] Is a directory: '" + abi_path + "'")
         return 1
     }
@@ -457,7 +457,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
                 ft_errln("Invalid ABI line: " + raw)
                 return 1
             }
-            if sg[0].error != null {
+            if sg[0].error as ptr<u8> != null {
                 ft_errln("ValueError: " + sg[0].error)
                 return 1
             }

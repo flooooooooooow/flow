@@ -1,0 +1,18 @@
+# expect: Capability 'Console' is not a value and cannot be passed as an argument. Install it for the call instead: handle <Effect> with Console { ... }
+effect Log {
+    info(msg: string) -> void
+}
+
+capability Console {
+    effect Log
+    function info(msg: string) -> void {
+    }
+}
+
+function run(c: i32) -> i32 {
+    return 0
+}
+
+function main() -> i32 {
+    return run(Console)
+}

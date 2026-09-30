@@ -89,7 +89,7 @@ function is_lower_ident(c: i32) -> bool {
 # ['"]([a-z_]+)['"]\s*: over the block.
 function keywords(out: ptr<StrList>) -> bool {
     let src: string = ft_read_file("src/flow/parser.py")
-    if src == null {
+    if src as ptr<u8> == null {
         return false
     }
     let text: string = md_sanitize(src)
@@ -195,7 +195,7 @@ function ft_byte_at(s: string, i: i32) -> i32 {
 # KNOWN_ATTRIBUTES = A | B | C, each a frozenset literal in the same module.
 function attributes(out: ptr<StrList>) -> bool {
     let text: string = ft_read_file("src/flow/attributes.py")
-    if text == null {
+    if text as ptr<u8> == null {
         return false
     }
     let head: string = "\nKNOWN_ATTRIBUTES = "
@@ -232,7 +232,7 @@ function attributes(out: ptr<StrList>) -> bool {
 # ^\s{4}((?:"[^"]+"\|?)+)\)\s*$ over the body, then "([^"]+)" per arm.
 function cli_commands(out: ptr<StrList>) -> i32 {
     let text: string = ft_read_file("flow-driver")
-    if text == null {
+    if text as ptr<u8> == null {
         return 1
     }
     let start: i32 = ft_find(text, "case \"${1:-help}\" in", 0)
@@ -327,7 +327,7 @@ function cli_arm_at(body: string, pos: i32, out: ptr<StrList>) -> i32 {
 
 function stdlib_modules(out: ptr<StrList>) -> bool {
     let text: string = ft_read_file(STDLIB_LIST)
-    if text == null {
+    if text as ptr<u8> == null {
         return false
     }
     let lines: ptr<StrList> = ft_split_lines(text)
@@ -355,7 +355,7 @@ function is_backend(stem: string) -> bool {
 
 function backends(out: ptr<StrList>) -> bool {
     let text: string = ft_read_file(BACKEND_LIST)
-    if text == null {
+    if text as ptr<u8> == null {
         return false
     }
     let lines: ptr<StrList> = ft_split_lines(text)
@@ -493,7 +493,7 @@ function doc_text(docs: string, rel: string) -> string {
         path = docs + "/" + rel
     }
     let t: string = ft_read_file(path)
-    if t == null {
+    if t as ptr<u8> == null {
         return ""
     }
     return md_sanitize(t)
@@ -587,7 +587,7 @@ function ft_cmp_bytes(a: string, b: string) -> i32 {
 
 function load_map(path: string) -> ptr<Json> {
     let text: string = ft_read_file(path)
-    if text == null {
+    if text as ptr<u8> == null {
         return json_parse("{\"covered\": {}, \"exempt\": {}}")
     }
     return json_parse(text)
@@ -717,7 +717,7 @@ function run_check(inv: ptr<ptr<StrList>>, map_path: string, docs: string) -> i3
 function doc_pages() -> ptr<StrList> {
     let out: ptr<StrList> = ft_list_new()
     let text: string = ft_read_file(DOC_PAGES)
-    if text == null {
+    if text as ptr<u8> == null {
         return out
     }
     let lines: ptr<StrList> = ft_split_lines(text)
@@ -739,7 +739,7 @@ function doc_pages() -> ptr<StrList> {
 
 # The best page for a feature: highest (score, page), or null.
 function propose(cat: string, feature: string, pages: ptr<StrList>, texts: ptr<string>) -> string {
-    let mut best: string = null
+    let mut best: string = null as string
     let mut best_score: i32 = -1
     let mut i: i32 = 0
     while i < ft_list_len(pages) {
@@ -835,7 +835,7 @@ function run_propose(inv: ptr<ptr<StrList>>, write: bool, map_path: string, docs
         while ni < ft_list_len(names) {
             let key: string = category(ci) + ":" + ft_list_get(names, ni)
             let best: string = propose(category(ci), ft_list_get(names, ni), pages, texts)
-            if best != null {
+            if best as ptr<u8> != null {
                 ft_list_push(cov_keys, key)
                 ft_list_push(cov_pages, best)
             } else {
@@ -967,7 +967,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         } elif ft_eq(arg, "--mentions") and i + 3 < argc {
             let text: string = ft_read_file(argv[i + 3])
             let mut body: string = ""
-            if text != null {
+            if text as ptr<u8> != null {
                 body = md_sanitize(text)
             }
             print_bool(mentions_text(body, argv[i + 1], argv[i + 2]))

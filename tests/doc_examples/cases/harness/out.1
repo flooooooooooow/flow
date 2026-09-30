@@ -8,7 +8,7 @@ docs.md#afd5d5b775d1	docs.md:44	unverified		parse	no-op Variable statement; the 
 docs.md#bfc1a670e02e	docs.md:49	unverified		parse	no-op BinaryOperation statement; the text is not statements
 docs.md#cc707c0b6fe2	docs.md:53	unverified		parse	no-op Variable statement; the text is not statements
 docs.md#841f0b606fb4	docs.md:60	unverified		vacuous	declares nothing; the block is only comments
-docs.md#d7a17d8a639a	docs.md:64	unverified	standalone	clang	use of undeclared identifier 'undefined_thing'
+docs.md#d7a17d8a639a	docs.md:64	unverified		types	Undefined variable 'undefined_thing'
 docs.md#9980c40557bf	docs.md:72	verified	standalone	codegen	
 docs.md#14e433b2255f	docs.md:82	ignored			vision sketch
 docs.md#4da88fddc095	docs.md:86	expected-error		parse	SyntaxError: Top-level 'let' at line 1 must be 'let mut' (module static); use 'const' for immutable module-level values
@@ -34,6 +34,6 @@ docs.md#6e2a81075601	docs.md:195	verified	standalone	codegen
 docs.md#feba62c0033b	docs.md:199	verified	stmt-wrap	codegen	
 docs.md#37d33a416ef9	docs.md:203	verified	stmt-wrap	codegen	
 docs.md#6c8e1fa54a55	docs.md:207	verified	standalone	codegen	
-docs.md#a91bc49ac690	docs.md:211	unverified	standalone	clang	unknown type name 'A'
+docs.md#a91bc49ac690	docs.md:211	unverified		types	Function 'make_a' is declared to return unknown type 'A', which is not declared in this scope
 docs.md#37cafa544660	docs.md:215	verified	split-wrap	codegen	
 docs.md#e6651edaf0f2	docs.md:220	unverified		uses	uses='gone' names no earlier block on this page; add id=gone to the block it depends on

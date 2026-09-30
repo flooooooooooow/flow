@@ -307,7 +307,7 @@ function has_unbalanced_parens(cps: ptr<i32>, n: i32) -> bool {
 # Path.read_text(errors="replace"): universal newlines. Tags, one per line.
 function tag_features(path: string) -> string {
     let raw: string = ft_read_file(path)
-    if raw == null {
+    if raw as ptr<u8> == null {
         return ""
     }
     let text: string = ft_replace(ft_replace(raw, "\r\n", "\n"), "\r", "\n")
@@ -356,10 +356,10 @@ function check_one(root: string, tmp: string, rel: string, timeout: i32) -> stri
     if rc != 0 or ft_exists_c(c_file) == false {
         let mut so: string = ft_read_file(out_path)
         let mut se: string = ft_read_file(err_path)
-        if so == null {
+        if so as ptr<u8> == null {
             so = ""
         }
-        if se == null {
+        if se as ptr<u8> == null {
             se = ""
         }
         let tb: ptr<i32> = malloc(4) as ptr<i32>
@@ -563,7 +563,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     let mut timeout: i32 = 20
     let mut jobs: i32 = vr_cpu_count()
     let mut sample: i32 = 3
-    let mut json_arg: string = null
+    let mut json_arg: string = null as string
     let extras: ptr<StrList> = ft_list_new()
     let ok: ptr<i32> = malloc(4) as ptr<i32>
 
@@ -577,7 +577,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         if ft_starts(arg, "--") and ft_len(arg) > 2 {
             let eq: i32 = ft_find(arg, "=", 0)
             let mut name: string = arg
-            let mut value: string = null
+            let mut value: string = null as string
             if eq >= 0 {
                 name = ft_slice(arg, 0, eq)
                 value = ft_from(arg, eq + 1)
@@ -592,7 +592,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
                 continue
             }
             if ft_eq(full, "--help") {
-                if value != null {
+                if value as ptr<u8> != null {
                     return vr_usage_error(usage_text(), PROG, "argument --help: ignored explicit argument " + ft_repr(value))
                 }
                 ft_out(usage_text() + help_text())
@@ -600,7 +600,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
             }
             if ft_eq(full, "--roots") {
                 let got: ptr<StrList> = ft_list_new()
-                if value != null {
+                if value as ptr<u8> != null {
                     ft_list_push(got, value)
                 } else {
                     while i + 1 < argc and vr_is_optlike(argv[i + 1]) == false {
@@ -615,7 +615,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
                 i = i + 1
                 continue
             }
-            if value == null {
+            if value as ptr<u8> == null {
                 if i + 1 >= argc or vr_is_optlike(argv[i + 1]) {
                     return vr_usage_error(usage_text(), PROG, "argument " + full + ": expected one argument")
                 }
@@ -652,8 +652,8 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         return vr_usage_error(usage_text(), PROG, msg)
     }
 
-    let mut json_path: string = null
-    if json_arg != null {
+    let mut json_path: string = null as string
+    if json_arg as ptr<u8> != null {
         json_path = pr_resolve(json_arg)
     }
     let root: string = vr_env("VERIFY_ROOT")
@@ -705,7 +705,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         let mut st: string = "fail"
         let mut why: string = "worker produced no result"
         let mut tags: string = ""
-        if res != null {
+        if res as ptr<u8> != null {
             let nl1: i32 = ft_find(res, "\n", 0)
             let nl2: i32 = ft_find(res, "\n", nl1 + 1)
             st = ft_slice(res, 0, nl1)
@@ -849,7 +849,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     ft_outln(rule())
     ft_outln(summary_text(nfail))
 
-    if json_path != null {
+    if json_path as ptr<u8> != null {
         let _wj: bool = ft_write_file(json_path, json_results(files, status, reasons, tagsets))
         ft_outln("\nJSON written to " + json_arg)
     }

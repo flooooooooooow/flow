@@ -10,9 +10,9 @@ Content-Length: 114
 
 {"type": "response", "request_seq": 3, "success": false, "command": "launch", "message": "missing flowFile/program"}Content-Length: 116
 
-{"type": "response", "request_seq": 4, "success": false, "command": "launch", "message": "missing flowFile/program"}Content-Length: 640
+{"type": "response", "request_seq": 4, "success": false, "command": "launch", "message": "missing flowFile/program"}Content-Length: 636
 
-{"type": "response", "request_seq": 5, "success": false, "command": "launch", "message": "flow debug --no-launch failed:\n\u001b[0;34m\u2139\ufe0f  Compiling <WORK>/broken.flow (debug)...\u001b[0m\n\u001b[0;34m\u2139\ufe0f  flowc emit via <ROOT>/compiler/build/flowc_bootstrap\u001b[0m\nflowc tc: unbound ident\nflowc tc: file\n<WORK>/broken.flow\nflowc tc: at 2:18\nno_such_name\nflowc: "}Content-Length: 224
+{"type": "response", "request_seq": 5, "success": false, "command": "launch", "message": "flow debug --no-launch failed:\n\u001b[0;34m\u2139\ufe0f  Compiling <WORK>/broken.flow (debug)...\u001b[0m\n\u001b[0;34m\u2139\ufe0f  flowc emit via <ROOT>/compiler/build/flowc_bootstrap\u001b[0m\nflowc emit: parse failed\n<WORK>/broken.flow:3:5: parse error: unexpected keyword 'return' (byte "}Content-Length: 224
 
 {"seq": 4, "type": "response", "success": true, "body": {"text": "caf\u00e9 \u00e9 \ud83d\ude00 tab\t", "nums": [1, 2.5, 0, 1e+20, 1.5e-07, 300.0, 0.0001, 123456789012345678], "ok": false, "none": null, "nested": {"a": []}}}Content-Length: 274
 

@@ -1,0 +1,4836 @@
+# @module flowc.sem_check
+# @means  The semantic type checker: src/flow/type_checker.py's
+#         TypeChecker.check over flowc's AST, with its messages.
+#
+# The checker sees the program the way the Python checker saw it: every
+# module of a bundle, dependencies first in import order (as
+# ModuleResolver.resolve lists them), flattened into one declaration list.
+# It then runs the Python phases in order: collect types, collect symbols,
+# collect lifetime domains, check every declaration, and the whole-program
+# passes (parameter escapes, RT-safety, lifetime-domain calls, the safety
+# profile). Strict mode (the Python default) makes every error fatal;
+# lenient mode (--lenient, FLOWC_LENIENT=1) keeps only the errors the
+# Python checker never downgraded (a capability used as a value).
+#
+# The walk mirrors the Python methods one for one, named after them, so a
+# difference against compiler/scripts/parity_typecheck.sh points at one
+# function on each side.
+
+import .ast {
+    AstArena, AST_NONE, AST_PROGRAM, AST_FN, AST_PARAM, AST_BLOCK, AST_LET, AST_RETURN,
+    AST_IF, AST_WHILE, AST_FOR, AST_BINOP, AST_UNARY, AST_CALL, AST_IDENT, AST_INT,
+    AST_BOOL, AST_STRING, AST_FLOAT, AST_ASSIGN, AST_EXPR_STMT, AST_FIELD_ACCESS,
+    AST_INDEX, AST_STRUCT_LIT, AST_CAST, AST_ARRAY_LIT, AST_CONST, AST_EXPORT, AST_IMPORT,
+    AST_EXTERN, AST_TYPE, AST_STRUCT, AST_FIELD, AST_BREAK, AST_CONTINUE, AST_MATCH,
+    AST_MATCH_ARM, AST_TYPE_ALIAS, AST_EXTERN_TYPE, AST_DEFER, AST_ENUM, AST_ENUM_VARIANT,
+    AST_IF_EXPR, AST_EFFECT, AST_CAPABILITY, AST_HANDLE, AST_EFFECT_OP, AST_CAP_METHOD,
+    AST_MATCH_ARM_EXT, AST_LAYOUT, AST_TRY, AST_VECTOR_LIT, AST_SORT_BY, AST_PIPE_BLOCK,
+    AST_IDENT_FORK_SRC, AST_IDENT_SORT_MOD, AST_C_IMPORT, PIPE_BLOCK_FORK, PIPE_BLOCK_CHOOSE
+}
+import .token { TOK_EOF }
+import .token {
+    TOK_EQEQ, TOK_NE, TOK_LT, TOK_LE, TOK_GT, TOK_GE, TOK_PLUS, TOK_MINUS, TOK_STAR,
+    TOK_SLASH, TOK_AMPAMP, TOK_BARBAR, TOK_BANG, TOK_AMP, TOK_PERCENT, TOK_TILDE,
+    TOK_BAR, TOK_CARET, TOK_SHL, TOK_SHR, TOK_IN, KW_DBG, KW_EXPECT
+}
+import .parser { Parser, flowc_parser_new, flowc_parse_expr }
+import .sem_cheader { sem_header_names }
+import .sem_util {
+    SemIntVec, SemStrVec, SemStrMap, SemPtrVec,
+    sem_s_len, sem_s_eq, sem_s_starts, sem_s_ends, sem_s_byte, sem_s_slice, sem_s_from, sem_s_span, sem_s_span_is,
+    sem_s_find, sem_s_contains, sem_s_index_byte, sem_s_itoa, sem_s_is_digit, sem_s_is_alpha, sem_s_is_space, sem_s_strip, sem_s_split,
+    sem_iv_new, sem_iv_push, sem_iv_get, sem_iv_has, sem_sv_new, sem_sv_push, sem_sv_get, sem_sv_has, sem_sv_add, sem_sv_sort, sem_sv_join,
+    sem_sm_new, sem_sm_get, sem_sm_has, sem_sm_put, sem_pv_new, sem_pv_push, sem_pv_get, sem_pv_set,
+    sem_iv_set, sem_iv_len, sem_iv_setlen, sem_sv_len, sem_sv_setlen, sem_sv_set, sem_pv_len, sem_pv_setlen
+}
+import .sem_types {
+    SemTys, NO_SIZE,
+    TK_VOID, TK_BOOL, TK_I8, TK_I16, TK_I32, TK_I64, TK_I128, TK_U8, TK_U16, TK_U32,
+    TK_U64, TK_U128, TK_F32, TK_F64, TK_C64, TK_C128, TK_STRING, TK_STRUCT, TK_ARRAY,
+    TK_SPAN, TK_POINTER, TK_FUNCTION, TK_NULL, TK_TYPE_ALIAS, TK_DISTINCT, TK_UNKNOWN,
+    sem_ty_mk, sem_ty_named, sem_ty_ptr, sem_ty_array, sem_ty_struct, sem_ty_unknown, sem_ty_kind, sem_ty_name,
+    sem_ty_nparams, sem_ty_param, sem_ty_add_param, sem_ty_neffects, sem_ty_effect, sem_ty_add_effect, sem_ty_str, sem_ty_eq,
+    sem_tk_is_int, sem_tk_is_float, sem_tk_is_numeric,
+    sem_span_is_mutable, sem_is_span_type_name, sem_span_element_name, sem_format_span_type,
+    sem_dims_new, sem_dims_combine, sem_dims_scale, sem_dims_eq, sem_dims_key,
+    sem_pt_mk, sem_pt_name, sem_pt_nargs, sem_pt_arg, sem_pt_add_arg
+}
+import .sem_model {
+    Sem, DK_FUNC, DK_STRUCT, DK_ENUM, DK_ALIAS, DK_DISTINCT, DK_UNIT, DK_EXTERN_TYPE,
+    DK_EFFECT, DK_CAPABILITY, DK_TRAIT, DK_IMPL, DK_CONST, DK_STATIC,
+    SE_STRUCT, SE_ALIAS, SE_DISTINCT, SK_FUNCTION, SK_VARIABLE, SK_CONST, SK_TYPE,
+    sem_new, sem_add_module, sem_set_mod, sem_nk, sem_na, sem_nb, sem_ncc, sem_nnext, sem_nival, sem_nstart, sem_nend,
+    sem_nname, sem_nname_is, sem_nlen, sem_row_of, sem_line_of, sem_col_of, sem_py_pos, sem_err, sem_warn, sem_err_truncate,
+    sem_sym_new, sem_scope_define_global, sem_push_scope, sem_pop_scope, sem_scope_define, sem_define_var, sem_lookup,
+    sem_sym_type, sem_sym_kind, sem_decl_add, sem_fi_new, sem_fi_add_param, sem_fi_param_name, sem_fi_param_type,
+    sem_fi_nparams, sem_fi_attr, sem_fi_nattrs, sem_fi_has_attr, sem_fi_effect, sem_fi_neffects, sem_fi_ntparams,
+    sem_fi_tparam, sem_fi_tbound, sem_se_new, sem_se_add_field, sem_se_nfields, sem_se_field_name, sem_se_field_type,
+    sem_struct_entry, sem_pt_of_ast, sem_parse_named_scalar, sem_substitute_pt, sem_ensure_generic_struct_instance,
+    sem_parse_type, sem_parse_type_name, sem_unit_dims_of_name, sem_set_unit_dims, sem_dims_of, sem_is_radian,
+    sem_unit_result_type, sem_is_numeric, sem_is_integer, sem_is_float, sem_is_span, sem_tkind, sem_tstr, sem_is_dual,
+    sem_is_tensor, sem_integer_bit_width, sem_numeric_common_type, sem_is_type_param, sem_borrow_compatible,
+    sem_can_coerce, sem_is_compatible, sem_can_cast, sem_undeclared_type_name, sem_scan_attributes,
+    sem_parse_attribute, sem_domain_name, sem_lifetime_domain, sem_attribute_errors
+}
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function printf(fmt: string, ...) -> i32
+    function atoi(s: string) -> i32
+    function strtol(s: string, end: ptr<void>, base: i32) -> i64
+    function getenv(name: string) -> string
+}
+
+# ---------------------------------------------------------------------------
+# Small helpers
+# ---------------------------------------------------------------------------
+
+function sem_tmk(c: ptr<Sem>, k: i32) -> i32 {
+    return sem_ty_mk(c.t, k)
+}
+
+function sem_tname(c: ptr<Sem>, ty: i32) -> string {
+    return sem_ty_name(c.t, ty)
+}
+
+function sem_telem(c: ptr<Sem>, ty: i32) -> i32 {
+    let tys: ptr<SemTys> = c.t
+    if ty < 0 {
+        return 0 - 1
+    }
+    return tys.elem[ty]
+}
+
+function sem_tsize(c: ptr<Sem>, ty: i32) -> i32 {
+    let tys: ptr<SemTys> = c.t
+    if ty < 0 {
+        return NO_SIZE
+    }
+    return tys.size[ty]
+}
+
+function sem_q(s: string) -> string {
+    return "'" + s + "'"
+}
+
+# " at line N, column M" for a statement node (Python _location_suffix;
+# only statements carry a location).
+function sem_location_suffix(c: ptr<Sem>, node: i32) -> string {
+    if node < 0 {
+        return ""
+    }
+    let p: i32 = sem_nstart(c, node)
+    return " at line " + sem_s_itoa(sem_py_pos(c, c.cm, p, false) as i64) + ", column " + sem_s_itoa(sem_py_pos(c, c.cm, p, true) as i64)
+}
+
+function sem_set_pos(c: ptr<Sem>, node: i32) {
+    if c.pos_lock {
+        return
+    }
+    if node >= 0 {
+        let p: i32 = sem_nstart(c, node)
+        if p > 0 {
+            c.pos = p
+        } elif c.ar.nodes[node].name_start > 0 {
+            c.pos = c.ar.nodes[node].name_start
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Building the declaration list
+# ---------------------------------------------------------------------------
+
+# The `#mpl Trait for Type {` markers resolve.flow's impl expansion leaves in
+# place of each `impl` header, as (offset, trait, type).
+function sem_impl_markers(c: ptr<Sem>, offs: ptr<SemIntVec>, traits: ptr<SemStrVec>, types: ptr<SemStrVec>) {
+    let src: ptr<u8> = c.src
+    let mut i: i32 = 0
+    let mut bol: bool = true
+    while src[i] != 0 {
+        if bol and src[i] == 35 and src[i + 1] == 109 and src[i + 2] == 112 and src[i + 3] == 108 and src[i + 4] == 32 {
+            # #mpl Trait for Type {
+            let mut k: i32 = i + 5
+            let ts: i32 = k
+            while sem_s_is_alpha(src[k] as i32) or sem_s_is_digit(src[k] as i32) {
+                k = k + 1
+            }
+            let te: i32 = k
+            while src[k] == 32 {
+                k = k + 1
+            }
+            if src[k] == 102 and src[k + 1] == 111 and src[k + 2] == 114 {
+                k = k + 3
+                while src[k] == 32 {
+                    k = k + 1
+                }
+                let ys: i32 = k
+                while sem_s_is_alpha(src[k] as i32) or sem_s_is_digit(src[k] as i32) {
+                    k = k + 1
+                }
+                sem_iv_push(offs, i)
+                sem_sv_push(traits, sem_s_span(src, ts, te))
+                sem_sv_push(types, sem_s_span(src, ys, k))
+            }
+        }
+        if src[i] == 10 {
+            bol = true
+        } elif src[i] != 32 and src[i] != 9 {
+            bol = false
+        }
+        i = i + 1
+    }
+}
+
+# Generic type parameters written after a function or struct name:
+# `<T, U: Trait>`, read from the source (flowc keeps only their count).
+function sem_scan_type_params(c: ptr<Sem>, after: i32) {
+    let src: ptr<u8> = c.src
+    let mut k: i32 = after
+    while sem_s_is_space(src[k] as i32) {
+        k = k + 1
+    }
+    if src[k] != 60 {
+        return
+    }
+    k = k + 1
+    let mut depth: i32 = 1
+    while src[k] != 0 and depth > 0 {
+        while sem_s_is_space(src[k] as i32) or src[k] == 44 {
+            k = k + 1
+        }
+        if src[k] == 62 {
+            depth = depth - 1
+            k = k + 1
+        } elif sem_s_is_alpha(src[k] as i32) {
+            let ns: i32 = k
+            while sem_s_is_alpha(src[k] as i32) or sem_s_is_digit(src[k] as i32) {
+                k = k + 1
+            }
+            sem_sv_push(c.tp_names, sem_s_span(src, ns, k))
+            while sem_s_is_space(src[k] as i32) {
+                k = k + 1
+            }
+            if src[k] == 58 {
+                k = k + 1
+                while sem_s_is_space(src[k] as i32) {
+                    k = k + 1
+                }
+                let bs: i32 = k
+                while sem_s_is_alpha(src[k] as i32) or sem_s_is_digit(src[k] as i32) {
+                    k = k + 1
+                }
+                sem_sv_push(c.tp_bounds, sem_s_span(src, bs, k))
+            } else {
+                sem_sv_push(c.tp_bounds, "")
+            }
+        } else {
+            k = k + 1
+        }
+    }
+}
+
+# `...` in an extern's parameter list (flowc drops it from the AST).
+function sem_extern_is_variadic(c: ptr<Sem>, fnode: i32) -> bool {
+    let src: ptr<u8> = c.src
+    let mut k: i32 = c.ar.nodes[fnode].name_end
+    while src[k] != 0 and src[k] != 40 {
+        k = k + 1
+    }
+    let mut depth: i32 = 0
+    while src[k] != 0 {
+        if src[k] == 40 {
+            depth = depth + 1
+        }
+        if src[k] == 41 {
+            depth = depth - 1
+            if depth == 0 {
+                return false
+            }
+        }
+        if src[k] == 46 and src[k + 1] == 46 and src[k + 2] == 46 {
+            return true
+        }
+        k = k + 1
+    }
+    return false
+}
+
+# A FunctionDecl from an AST_FN of the current module.
+function sem_build_function(c: ptr<Sem>, fnode: i32, name: string, attr_start: i32, attr_n: i32, is_extern: bool) -> i32 {
+    let fi: i32 = sem_fi_new(c, name, c.cm, fnode)
+    sem_iv_set(c.fi_astart, fi, attr_start)
+    sem_iv_set(c.fi_alen, fi, attr_n)
+    sem_iv_set(c.fi_pstart, fi, sem_sv_len(c.fp_names))
+    let mut p: i32 = sem_na(c, fnode)
+    while p != AST_NONE {
+        let pn: string = sem_nname(c, p)
+        sem_fi_add_param(c, fi, pn, sem_pt_of_ast(c, sem_na(c, p)))
+        p = sem_nnext(c, p)
+    }
+    let rt: i32 = sem_nb(c, fnode)
+    if rt == AST_NONE {
+        sem_iv_set(c.fi_ret, fi, sem_pt_mk(c.t, "void"))
+    } else {
+        sem_iv_set(c.fi_ret, fi, sem_pt_of_ast(c, rt))
+    }
+    sem_iv_set(c.fi_estart, fi, sem_sv_len(c.ef_pool))
+    let row: i32 = sem_row_of(c, fnode)
+    if row >= 0 {
+        let mut e: i32 = sem_na(c, row)
+        while e != AST_NONE {
+            sem_sv_push(c.ef_pool, sem_nname(c, e))
+            sem_iv_set(c.fi_elen, fi, sem_iv_get(c.fi_elen, fi) + 1)
+            e = sem_nnext(c, e)
+        }
+    }
+    sem_iv_set(c.fi_tpstart, fi, sem_sv_len(c.tp_names))
+    if sem_nival(c, fnode) > 0 and is_extern == false {
+        let before: i32 = sem_sv_len(c.tp_names)
+        sem_scan_type_params(c, c.ar.nodes[fnode].name_end)
+        sem_iv_set(c.fi_tplen, fi, sem_sv_len(c.tp_names) - before)
+    }
+    if is_extern {
+        sem_iv_set(c.fi_extern, fi, 1)
+        if sem_extern_is_variadic(c, fnode) {
+            sem_iv_set(c.fi_variadic, fi, 1)
+        }
+    } else {
+        sem_iv_set(c.fi_body, fi, sem_ncc(c, fnode))
+    }
+    return fi
+}
+
+# `distinct type X = T` parses as a type alias whose node starts at `type`.
+function sem_alias_is_distinct(c: ptr<Sem>, start: i32) -> bool {
+    let mut i: i32 = start - 1
+    while i >= 0 and sem_s_is_space(c.src[i] as i32) {
+        i = i - 1
+    }
+    if i < 7 {
+        return false
+    }
+    return sem_s_span_is(c.src, i - 7, i + 1, "distinct")
+}
+
+function sem_is_unit_alias(c: ptr<Sem>, d: i32) -> bool {
+    if sem_na(c, d) != AST_NONE {
+        return false
+    }
+    let s: i32 = sem_nstart(c, d)
+    return sem_s_span_is(c.src, s, s + 4, "unit")
+}
+
+# Flatten module m's declarations into the list (ModuleResolver order:
+# the caller visits modules dependencies first).
+export function sem_build_module(c: ptr<Sem>, m: i32, is_root: bool) {
+    sem_set_mod(c, m)
+    if is_root {
+        c.root_mod = m
+    }
+    let root: i32 = c.m_root[m]
+    if root < 0 or sem_nk(c, root) != AST_PROGRAM {
+        return
+    }
+    let moffs: ptr<SemIntVec> = sem_iv_new()
+    let mtraits: ptr<SemStrVec> = sem_sv_new()
+    let mtypes: ptr<SemStrVec> = sem_sv_new()
+    sem_impl_markers(c, moffs, mtraits, mtypes)
+    let mut cur_impl: i32 = 0 - 1
+    let mut cur_marker: i32 = 0 - 1
+    let mut prev_end: i32 = 0
+    let mut item: i32 = sem_na(c, root)
+    while item != AST_NONE {
+        let mut d: i32 = item
+        if sem_nk(c, d) == AST_EXPORT {
+            if sem_nival(c, d) == 1 {
+                prev_end = sem_nend(c, item)
+                item = sem_nnext(c, item)
+                continue
+            }
+            d = sem_na(c, d)
+        }
+        let k: i32 = sem_nk(c, d)
+        let astart: i32 = sem_sv_len(c.attr_pool)
+        let mut an: i32 = 0
+        if k == AST_FN or k == AST_LET or k == AST_EXTERN {
+            an = sem_scan_attributes(c, prev_end, sem_nstart(c, item))
+        }
+        if k == AST_FN {
+            let name: string = sem_nname(c, d)
+            # impl method: the latest marker before it names its prefix.
+            let mut mk: i32 = 0 - 1
+            let mut j: i32 = 0
+            while j < moffs.len {
+                if moffs.data[j] < sem_nstart(c, d) {
+                    mk = j
+                }
+                j = j + 1
+            }
+            let mut in_impl: bool = false
+            if mk >= 0 {
+                let prefix: string = sem_sv_get(mtypes, mk) + "_" + sem_sv_get(mtraits, mk) + "_"
+                if sem_s_starts(name, prefix) {
+                    in_impl = true
+                    if cur_marker != mk {
+                        let im: i32 = sem_sv_len(c.im_type)
+                        sem_sv_push(c.im_type, sem_sv_get(mtypes, mk))
+                        sem_sv_push(c.im_trait, sem_sv_get(mtraits, mk))
+                        sem_pv_push(c.im_methods, sem_iv_new() as ptr<void>)
+                        cur_impl = sem_decl_add(c, DK_IMPL, m, d, sem_sv_get(mtypes, mk) + "_" + sem_sv_get(mtraits, mk) + "_impl", im)
+                        cur_marker = mk
+                    }
+                    let fi: i32 = sem_build_function(c, d, sem_s_from(name, sem_s_len(prefix)), astart, an, false)
+                    sem_sv_set(c.fi_mangled, fi, name)
+                    sem_iv_set(c.fi_has_self, fi, 1)
+                    let ml: ptr<SemIntVec> = sem_pv_get(c.im_methods, sem_iv_get(c.d_info, cur_impl)) as ptr<SemIntVec>
+                    sem_iv_push(ml, fi)
+                }
+            }
+            if in_impl == false {
+                cur_marker = 0 - 1
+                if sem_s_eq(name, "main") == false or is_root {
+                    let fi2: i32 = sem_build_function(c, d, name, astart, an, false)
+                    sem_decl_add(c, DK_FUNC, m, d, name, fi2)
+                }
+            }
+        } elif k == AST_EXTERN {
+            let mut f: i32 = sem_na(c, d)
+            while f != AST_NONE {
+                if sem_nk(c, f) == AST_FN {
+                    let fi3: i32 = sem_build_function(c, f, sem_nname(c, f), astart, an, true)
+                    sem_decl_add(c, DK_FUNC, m, f, sem_nname(c, f), fi3)
+                } elif sem_nk(c, f) == AST_EXTERN_TYPE {
+                    sem_decl_add(c, DK_EXTERN_TYPE, m, f, sem_nname(c, f), 0 - 1)
+                }
+                f = sem_nnext(c, f)
+            }
+        } elif k == AST_EXTERN_TYPE {
+            sem_decl_add(c, DK_EXTERN_TYPE, m, d, sem_nname(c, d), 0 - 1)
+        } elif k == AST_C_IMPORT {
+            c.has_cimport = true
+            let hs: i32 = c.ar.nodes[d].name_start
+            let he: i32 = c.ar.nodes[d].name_end
+            sem_sv_push(c.cimport_headers, sem_s_span(c.src, hs + 1, he - 1))
+        } elif k == AST_STRUCT {
+            sem_decl_add(c, DK_STRUCT, m, d, sem_nname(c, d), 0 - 1)
+        } elif k == AST_ENUM {
+            sem_decl_add(c, DK_ENUM, m, d, sem_nname(c, d), 0 - 1)
+        } elif k == AST_TYPE_ALIAS {
+            if sem_is_unit_alias(c, d) {
+                sem_decl_add(c, DK_UNIT, m, d, sem_nname(c, d), 0 - 1)
+            } elif sem_alias_is_distinct(c, sem_nstart(c, d)) {
+                sem_decl_add(c, DK_DISTINCT, m, d, sem_nname(c, d), 0 - 1)
+            } else {
+                sem_decl_add(c, DK_ALIAS, m, d, sem_nname(c, d), 0 - 1)
+            }
+        } elif k == AST_CONST {
+            sem_decl_add(c, DK_CONST, m, d, sem_nname(c, d), 0 - 1)
+        } elif k == AST_LET {
+            let di: i32 = sem_decl_add(c, DK_STATIC, m, d, sem_nname(c, d), 0 - 1)
+            sem_iv_set(c.d_astart, di, astart)
+            sem_iv_set(c.d_alen, di, an)
+        } elif k == AST_EFFECT {
+            sem_decl_add(c, DK_EFFECT, m, d, sem_nname(c, d), 0 - 1)
+        } elif k == AST_CAPABILITY {
+            sem_decl_add(c, DK_CAPABILITY, m, d, sem_nname(c, d), 0 - 1)
+        } elif k == AST_EXPR_STMT {
+            # A skipped `trait Name { ... }` block.
+            let s: i32 = sem_nstart(c, d)
+            if sem_s_span_is(c.src, s, s + 5, "trait") {
+                let mut q2: i32 = s + 5
+                while sem_s_is_space(c.src[q2] as i32) {
+                    q2 = q2 + 1
+                }
+                let ts: i32 = q2
+                while sem_s_is_alpha(c.src[q2] as i32) or sem_s_is_digit(c.src[q2] as i32) {
+                    q2 = q2 + 1
+                }
+                sem_decl_add(c, DK_TRAIT, m, d, sem_s_span(c.src, ts, q2), 0 - 1)
+            }
+        }
+        if k != AST_FN {
+            cur_marker = 0 - 1
+        }
+        prev_end = sem_nend(c, item)
+        item = sem_nnext(c, item)
+    }
+}
+
+function sem_decl_kind(c: ptr<Sem>, i: i32) -> i32 {
+    return sem_iv_get(c.d_kind, i)
+}
+
+function sem_decl_name(c: ptr<Sem>, i: i32) -> string {
+    return sem_sv_get(c.d_name, i)
+}
+
+function sem_decl_node(c: ptr<Sem>, i: i32) -> i32 {
+    return sem_iv_get(c.d_node, i)
+}
+
+function sem_decl_enter(c: ptr<Sem>, i: i32) {
+    sem_set_mod(c, sem_iv_get(c.d_mod, i))
+    sem_set_pos(c, sem_iv_get(c.d_node, i))
+}
+
+# ---------------------------------------------------------------------------
+# Units
+# ---------------------------------------------------------------------------
+
+# _register_unit: parse `unit Name [= factor ((*|/) factor)*]` from source.
+function sem_register_unit(c: ptr<Sem>, d: i32) -> ptr<SemIntVec> {
+    let node: i32 = sem_decl_node(c, d)
+    let name: string = sem_decl_name(c, d)
+    let line: i32 = sem_py_pos(c, c.cm, sem_nstart(c, node), false)
+    let loc: string = "line " + sem_s_itoa(line as i64) + ": "
+    let existing: ptr<SemIntVec> = sem_unit_dims_of_name(c, name)
+    if existing != null {
+        sem_err(c, loc + "unit '" + name + "' is already declared")
+        return existing
+    }
+    let src: ptr<u8> = c.src
+    let end: i32 = sem_nend(c, node)
+    let mut i: i32 = c.ar.nodes[node].name_end
+    while i < end and sem_s_is_space(src[i] as i32) {
+        i = i + 1
+    }
+    let mut dims: ptr<SemIntVec> = null
+    if i < end and src[i] == 61 {
+        i = i + 1
+        let mut acc: ptr<SemIntVec> = sem_iv_new()
+        let mut sign: i32 = 1
+        let mut more: bool = true
+        while more {
+            while i < end and sem_s_is_space(src[i] as i32) {
+                i = i + 1
+            }
+            if i < end and sem_s_is_digit(src[i] as i32) {
+                while i < end and sem_s_is_digit(src[i] as i32) {
+                    i = i + 1
+                }
+            } elif i < end and sem_s_is_alpha(src[i] as i32) {
+                let fs: i32 = i
+                while i < end and (sem_s_is_alpha(src[i] as i32) or sem_s_is_digit(src[i] as i32)) {
+                    i = i + 1
+                }
+                let fname: string = sem_s_span(src, fs, i)
+                let mut ex: i32 = 1
+                let mut j: i32 = i
+                while j < end and sem_s_is_space(src[j] as i32) {
+                    j = j + 1
+                }
+                if j < end and src[j] == 94 {
+                    j = j + 1
+                    while j < end and sem_s_is_space(src[j] as i32) {
+                        j = j + 1
+                    }
+                    let mut neg: bool = false
+                    if j < end and src[j] == 45 {
+                        neg = true
+                        j = j + 1
+                    }
+                    ex = 0
+                    while j < end and sem_s_is_digit(src[j] as i32) {
+                        ex = ex * 10 + (src[j] as i32) - 48
+                        j = j + 1
+                    }
+                    if neg {
+                        ex = 0 - ex
+                    }
+                    i = j
+                }
+                let fd: ptr<SemIntVec> = sem_unit_dims_of_name(c, fname)
+                if fd == null {
+                    sem_err(c, loc + "unknown unit '" + fname + "' in declaration of '" + name + "' (units must be declared before use)")
+                } else {
+                    acc = sem_dims_combine(acc, sem_dims_scale(fd, sign * ex), 1)
+                }
+            } else {
+                more = false
+            }
+            if more {
+                while i < end and sem_s_is_space(src[i] as i32) {
+                    i = i + 1
+                }
+                if i < end and src[i] == 42 {
+                    sign = 1
+                    i = i + 1
+                } elif i < end and src[i] == 47 {
+                    sign = 0 - 1
+                    i = i + 1
+                } else {
+                    more = false
+                }
+            }
+        }
+        dims = acc
+    } else {
+        let index: i32 = sem_sv_len(c.unit_base_order)
+        sem_sv_push(c.unit_base_order, name)
+        dims = sem_iv_new()
+        let mut z: i32 = 0
+        while z < index {
+            sem_iv_push(dims, 0)
+            z = z + 1
+        }
+        sem_iv_push(dims, 1)
+    }
+    sem_set_unit_dims(c, name, dims)
+    if dims.len > 0 {
+        let key: string = sem_dims_key(dims)
+        if sem_sm_has(c.unit_canonical, key) == false {
+            sem_sm_put(c.unit_canonical, key, sem_sv_len(c.unit_canonical_names))
+            sem_sv_push(c.unit_canonical_names, name)
+        }
+    }
+    return dims
+}
+
+# ---------------------------------------------------------------------------
+# Phase 1: _collect_types
+# ---------------------------------------------------------------------------
+
+function sem_struct_fields_from_ast(c: ptr<Sem>, se: i32, node: i32) {
+    sem_iv_set(c.se_fstart, se, sem_sv_len(c.sf_names))
+    let mut f: i32 = sem_na(c, node)
+    while f != AST_NONE {
+        sem_se_add_field(c, se, sem_nname(c, f), sem_pt_of_ast(c, sem_na(c, f)))
+        f = sem_nnext(c, f)
+    }
+}
+
+function sem_collect_types(c: ptr<Sem>) {
+    let tys: ptr<SemTys> = c.t
+    let mut i: i32 = 0
+    while i < sem_iv_len(c.d_kind) {
+        sem_decl_enter(c, i)
+        let k: i32 = sem_decl_kind(c, i)
+        let name: string = sem_decl_name(c, i)
+        let node: i32 = sem_decl_node(c, i)
+        if k == DK_STRUCT {
+            if sem_sm_has(c.struct_types, name) {
+                sem_err(c, "Struct '" + name + "' already defined")
+            } else {
+                let se: i32 = sem_se_new(c, name, SE_STRUCT, i)
+                sem_struct_fields_from_ast(c, se, node)
+                sem_iv_set(c.se_tpstart, se, sem_sv_len(c.tp_names))
+                let mut tp: i32 = sem_nb(c, node)
+                while tp != AST_NONE {
+                    sem_sv_push(c.tp_names, sem_nname(c, tp))
+                    sem_sv_push(c.tp_bounds, "")
+                    sem_iv_set(c.se_tplen, se, sem_iv_get(c.se_tplen, se) + 1)
+                    tp = sem_nnext(c, tp)
+                }
+                sem_sm_put(c.struct_types, name, se)
+                if sem_iv_get(c.se_tplen, se) > 0 {
+                    sem_sm_put(c.generic_struct_types, name, se)
+                }
+            }
+        } elif k == DK_ENUM {
+            let se2: i32 = sem_se_new(c, name, SE_STRUCT, i)
+            sem_iv_set(c.se_fstart, se2, sem_sv_len(c.sf_names))
+            sem_se_add_field(c, se2, "tag", sem_pt_mk(c.t, "i32"))
+            sem_sm_put(c.struct_types, name, se2)
+            sem_sm_put(c.enum_decls, name, i)
+            let mut v: i32 = sem_na(c, node)
+            while v != AST_NONE {
+                let vname: string = name + "_" + sem_nname(c, v)
+                let s: i32 = sem_sym_new(c, vname, sem_tmk(c, TK_I32), SK_CONST)
+                sem_scope_define_global(c, s)
+                sem_sm_put(c.enum_variant_owner, vname, i)
+                v = sem_nnext(c, v)
+            }
+        } elif k == DK_ALIAS {
+            let base_pt: i32 = sem_pt_of_ast(c, sem_na(c, node))
+            let alias_t: i32 = sem_ty_named(c.t, TK_TYPE_ALIAS, name)
+            let new_base_1: i32 = sem_parse_type(c, base_pt)
+            tys.base[alias_t] = new_base_1
+            let s2: i32 = sem_sym_new(c, name, alias_t, SK_TYPE)
+            sem_scope_define_global(c, s2)
+            let se3: i32 = sem_se_new(c, name, SE_ALIAS, i)
+            sem_iv_set(c.se_base, se3, base_pt)
+            sem_sm_put(c.struct_types, name, se3)
+        } elif k == DK_EXTERN_TYPE {
+            let se4: i32 = sem_se_new(c, name, SE_STRUCT, i)
+            sem_sm_put(c.struct_types, name, se4)
+            sem_sm_put(c.opaque_c_types, name, 1)
+        } elif k == DK_DISTINCT or k == DK_UNIT {
+            let mut base_pt2: i32 = 0 - 1
+            if k == DK_UNIT {
+                base_pt2 = sem_pt_mk(c.t, "f64")
+            } else {
+                base_pt2 = sem_pt_of_ast(c, sem_na(c, node))
+            }
+            let base_t: i32 = sem_parse_type(c, base_pt2)
+            let mut dims: ptr<SemIntVec> = null
+            if k == DK_UNIT {
+                dims = sem_register_unit(c, i)
+            }
+            let dt: i32 = sem_ty_named(c.t, TK_DISTINCT, name)
+            tys.base[dt] = base_t
+            tys.dims[dt] = dims
+            let s3: i32 = sem_sym_new(c, name, dt, SK_TYPE)
+            sem_scope_define_global(c, s3)
+            let se5: i32 = sem_se_new(c, name, SE_DISTINCT, i)
+            sem_iv_set(c.se_base, se5, base_pt2)
+            sem_sm_put(c.struct_types, name, se5)
+        } elif k == DK_EFFECT {
+            if sem_sm_has(c.effect_types, name) {
+                sem_err(c, "Effect '" + name + "' already defined")
+            } else {
+                sem_sm_put(c.effect_types, name, i)
+            }
+        } elif k == DK_CAPABILITY {
+            if sem_sm_has(c.capability_types, name) {
+                sem_err(c, "Capability '" + name + "' already defined")
+            } else {
+                sem_sm_put(c.capability_types, name, i)
+            }
+        } elif k == DK_TRAIT {
+            if sem_sm_has(c.trait_types, name) {
+                sem_err(c, "Trait '" + name + "' already defined")
+            } else {
+                sem_sm_put(c.trait_types, name, i)
+            }
+        } elif k == DK_IMPL {
+            let im: i32 = sem_iv_get(c.d_info, i)
+            let ty: string = sem_sv_get(c.im_type, im)
+            let tr: string = sem_sv_get(c.im_trait, im)
+            sem_sm_put(c.impl_pairs, ty + "\x01" + tr, 1)
+            let ml: ptr<SemIntVec> = sem_pv_get(c.im_methods, im) as ptr<SemIntVec>
+            let mut j: i32 = 0
+            while j < ml.len {
+                let fi: i32 = ml.data[j]
+                let key: string = ty + "\x01" + sem_sv_get(c.fi_name, fi)
+                let mut li: i32 = sem_sm_get(c.impl_methods, key)
+                if li < 0 {
+                    li = sem_pv_len(c.impl_method_lists)
+                    sem_pv_push(c.impl_method_lists, sem_sv_new() as ptr<void>)
+                    sem_sm_put(c.impl_methods, key, li)
+                }
+                let lst: ptr<SemStrVec> = sem_pv_get(c.impl_method_lists, li) as ptr<SemStrVec>
+                sem_sv_push(lst, ty + "_" + tr + "_" + sem_sv_get(c.fi_name, fi))
+                j = j + 1
+            }
+        }
+        i = i + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Phase 2: _collect_symbols
+# ---------------------------------------------------------------------------
+
+# _define_function(name, decl)
+function sem_define_function(c: ptr<Sem>, name: string, fi: i32) {
+    let tys: ptr<SemTys> = c.t
+    let f: i32 = sem_ty_mk(c.t, TK_FUNCTION)
+    let mut i: i32 = 0
+    while i < sem_fi_nparams(c, fi) {
+        sem_ty_add_param(c.t, f, sem_parse_type(c, sem_fi_param_type(c, fi, i)))
+        i = i + 1
+    }
+    # The value goes into a local first: a call that makes a type can grow
+    # the table and move the array, and C may read the array before the call.
+    let new_ret_2: i32 = sem_parse_type(c, sem_iv_get(c.fi_ret, fi))
+    tys.ret[f] = new_ret_2
+    i = 0
+    while i < sem_fi_neffects(c, fi) {
+        sem_ty_add_effect(c.t, f, sem_fi_effect(c, fi, i))
+        i = i + 1
+    }
+    let s: i32 = sem_sym_new(c, name, f, SK_FUNCTION)
+    sem_iv_set(c.sy_def, s, fi)
+    sem_scope_define_global(c, s)
+    let row: ptr<SemStrVec> = sem_sv_new()
+    i = 0
+    while i < sem_fi_neffects(c, fi) {
+        sem_sv_push(row, sem_fi_effect(c, fi, i))
+        i = i + 1
+    }
+    sem_sm_put(c.function_effects, name, sem_pv_len(c.function_effect_lists))
+    sem_pv_push(c.function_effect_lists, row as ptr<void>)
+    sem_sm_put(c.function_decls, name, fi)
+    i = 0
+    while i < row.len {
+        let en: string = sem_sv_get(row, i)
+        if sem_sm_has(c.effect_types, en) == false and c.strict {
+            sem_err(c, "Function '" + name + "' declares unknown effect '" + en + "' in its `with` row")
+        }
+        i = i + 1
+    }
+}
+
+function sem_function_effect_row(c: ptr<Sem>, name: string) -> ptr<SemStrVec> {
+    let k: i32 = sem_sm_get(c.function_effects, name)
+    if k < 0 {
+        return null
+    }
+    return sem_pv_get(c.function_effect_lists, k) as ptr<SemStrVec>
+}
+
+function sem_collect_symbols(c: ptr<Sem>) {
+    let mut i: i32 = 0
+    while i < sem_iv_len(c.d_kind) {
+        sem_decl_enter(c, i)
+        let k: i32 = sem_decl_kind(c, i)
+        let node: i32 = sem_decl_node(c, i)
+        if k == DK_FUNC {
+            let fi: i32 = sem_iv_get(c.d_info, i)
+            if sem_fi_ntparams(c, fi) > 0 {
+                sem_sm_put(c.generic_function_decls, sem_sv_get(c.fi_name, fi), fi)
+            }
+            sem_define_function(c, sem_sv_get(c.fi_name, fi), fi)
+        } elif k == DK_IMPL {
+            let ml: ptr<SemIntVec> = sem_pv_get(c.im_methods, sem_iv_get(c.d_info, i)) as ptr<SemIntVec>
+            let mut j: i32 = 0
+            while j < ml.len {
+                let fi2: i32 = ml.data[j]
+                sem_set_mod(c, sem_iv_get(c.fi_mod, fi2))
+                sem_define_function(c, sem_sv_get(c.fi_mangled, fi2), fi2)
+                j = j + 1
+            }
+        } elif k == DK_CONST {
+            let ct: i32 = sem_parse_type(c, sem_pt_of_ast(c, sem_na(c, node)))
+            let s: i32 = sem_sym_new(c, sem_decl_name(c, i), ct, SK_CONST)
+            sem_iv_set(c.sy_def, s, i)
+            sem_scope_define_global(c, s)
+        } elif k == DK_STATIC {
+            let st: i32 = sem_parse_type(c, sem_pt_of_ast(c, sem_na(c, node)))
+            let s2: i32 = sem_sym_new(c, sem_decl_name(c, i), st, SK_VARIABLE)
+            sem_iv_set(c.sy_mut, s2, 1)
+            sem_iv_set(c.sy_def, s2, i)
+            sem_scope_define_global(c, s2)
+            sem_sm_put(c.static_names, sem_decl_name(c, i), 1)
+        }
+        i = i + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Phase 2.6: _collect_lifetime_domains
+# ---------------------------------------------------------------------------
+
+function sem_collect_lifetime_domains(c: ptr<Sem>) {
+    let mut i: i32 = 0
+    while i < sem_iv_len(c.d_kind) {
+        let k: i32 = sem_decl_kind(c, i)
+        if k == DK_FUNC {
+            let fi: i32 = sem_iv_get(c.d_info, i)
+            let d: i32 = sem_lifetime_domain(c, sem_iv_get(c.fi_astart, fi), sem_iv_get(c.fi_alen, fi))
+            if d >= 0 {
+                sem_sm_put(c.function_domains, sem_sv_get(c.fi_name, fi), d)
+            }
+        } elif k == DK_IMPL {
+            let ml: ptr<SemIntVec> = sem_pv_get(c.im_methods, sem_iv_get(c.d_info, i)) as ptr<SemIntVec>
+            let mut j: i32 = 0
+            while j < ml.len {
+                let fi2: i32 = ml.data[j]
+                let d2: i32 = sem_lifetime_domain(c, sem_iv_get(c.fi_astart, fi2), sem_iv_get(c.fi_alen, fi2))
+                if d2 >= 0 {
+                    sem_sm_put(c.function_domains, sem_sv_get(c.fi_mangled, fi2), d2)
+                }
+                j = j + 1
+            }
+        } elif k == DK_STATIC {
+            let mut d3: i32 = sem_lifetime_domain(c, sem_iv_get(c.d_astart, i), sem_iv_get(c.d_alen, i))
+            if d3 < 0 {
+                d3 = 3
+            }
+            sem_sm_put(c.static_domains, sem_decl_name(c, i), d3)
+        }
+        i = i + 1
+    }
+}
+
+function sem_static_domain(c: ptr<Sem>, name: string) -> i32 {
+    let d: i32 = sem_sm_get(c.static_domains, name)
+    if d < 0 {
+        return 3
+    }
+    return d
+}
+
+# ---------------------------------------------------------------------------
+# Generic function instances
+# ---------------------------------------------------------------------------
+
+# _match_generic_function: the template, with its type args in `args`.
+function sem_match_generic_function(c: ptr<Sem>, call_name: string, args: ptr<SemIntVec>) -> i32 {
+    if sem_s_index_byte(call_name, 95) < 0 {
+        return 0 - 1
+    }
+    let mut best: i32 = 0 - 1
+    let mut best_len: i32 = 0 - 1
+    let mut best_args: ptr<SemIntVec> = null
+    let mut i: i32 = 0
+    while i < sem_sv_len(c.fi_name) {
+        let name: string = sem_sv_get(c.fi_name, i)
+        if sem_fi_ntparams(c, i) > 0 and sem_sm_get(c.generic_function_decls, name) == i {
+            let prefix: string = name + "_"
+            if sem_s_starts(call_name, prefix) and sem_s_len(name) > best_len {
+                let suffix: string = sem_s_from(call_name, sem_s_len(prefix))
+                if sem_s_len(suffix) > 0 {
+                    let np: i32 = sem_fi_ntparams(c, i)
+                    if np == 1 {
+                        best = i
+                        best_len = sem_s_len(name)
+                        best_args = sem_iv_new()
+                        sem_iv_push(best_args, sem_pt_mk(c.t, suffix))
+                    } else {
+                        let parts: ptr<SemStrVec> = sem_s_split(suffix, 95)
+                        if parts.len == np {
+                            best = i
+                            best_len = sem_s_len(name)
+                            best_args = sem_iv_new()
+                            let mut j: i32 = 0
+                            while j < parts.len {
+                                sem_iv_push(best_args, sem_pt_mk(c.t, sem_sv_get(parts, j)))
+                                j = j + 1
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    if best >= 0 {
+        let mut j2: i32 = 0
+        while j2 < best_args.len {
+            sem_iv_push(args, best_args.data[j2])
+            j2 = j2 + 1
+        }
+    }
+    return best
+}
+
+# _ensure_generic_function_instance
+function sem_ensure_generic_function_instance(c: ptr<Sem>, call_name: string) -> bool {
+    if sem_lookup(c, call_name) >= 0 {
+        return true
+    }
+    let targs: ptr<SemIntVec> = sem_iv_new()
+    let tpl: i32 = sem_match_generic_function(c, call_name, targs)
+    if tpl < 0 {
+        return false
+    }
+    let mnames: ptr<SemStrVec> = sem_sv_new()
+    let mtypes: ptr<SemIntVec> = sem_iv_new()
+    let mut i: i32 = 0
+    while i < sem_fi_ntparams(c, tpl) and i < targs.len {
+        sem_sv_push(mnames, sem_fi_tparam(c, tpl, i))
+        sem_iv_push(mtypes, targs.data[i])
+        i = i + 1
+    }
+    let fi: i32 = sem_fi_new(c, call_name, sem_iv_get(c.fi_mod, tpl), sem_iv_get(c.fi_node, tpl))
+    sem_iv_set(c.fi_pstart, fi, sem_sv_len(c.fp_names))
+    i = 0
+    while i < sem_fi_nparams(c, tpl) {
+        sem_fi_add_param(c, fi, sem_fi_param_name(c, tpl, i), sem_substitute_pt(c, sem_fi_param_type(c, tpl, i), mnames, mtypes))
+        i = i + 1
+    }
+    sem_iv_set(c.fi_ret, fi, sem_substitute_pt(c, sem_iv_get(c.fi_ret, tpl), mnames, mtypes))
+    sem_iv_set(c.fi_astart, fi, sem_iv_get(c.fi_astart, tpl))
+    sem_iv_set(c.fi_alen, fi, sem_iv_get(c.fi_alen, tpl))
+    sem_iv_set(c.fi_extern, fi, sem_iv_get(c.fi_extern, tpl))
+    sem_iv_set(c.fi_estart, fi, sem_iv_get(c.fi_estart, tpl))
+    sem_iv_set(c.fi_elen, fi, sem_iv_get(c.fi_elen, tpl))
+    sem_iv_set(c.fi_body, fi, sem_iv_get(c.fi_body, tpl))
+    sem_define_function(c, call_name, fi)
+    return true
+}
+
+# ---------------------------------------------------------------------------
+# Spans and lifetime domains: borrow roots and origins
+# ---------------------------------------------------------------------------
+
+function sem_is_slice(c: ptr<Sem>, e: i32) -> bool {
+    return sem_nk(c, e) == AST_INDEX and sem_nival(c, e) == 1
+}
+
+function sem_is_unary_op(c: ptr<Sem>, e: i32, op: i32) -> bool {
+    return sem_nk(c, e) == AST_UNARY and sem_nival(c, e) == op
+}
+
+function sem_is_variable(c: ptr<Sem>, e: i32) -> bool {
+    if sem_nk(c, e) != AST_IDENT {
+        return false
+    }
+    if sem_nival(c, e) == AST_IDENT_FORK_SRC or sem_nival(c, e) == AST_IDENT_SORT_MOD {
+        return false
+    }
+    return sem_nname_is(c, e, "null") == false
+}
+
+# A method call `recv.m(args)`: flowc keeps the receiver as the first
+# argument; the call node starts at `(`, after the method name.
+function sem_is_method_call(c: ptr<Sem>, e: i32) -> bool {
+    if sem_nk(c, e) != AST_CALL {
+        return false
+    }
+    return c.ar.nodes[e].start > c.ar.nodes[e].name_start and sem_na(c, e) != AST_NONE
+}
+
+# A plain FunctionCall (not a method call).
+function sem_is_function_call(c: ptr<Sem>, e: i32) -> bool {
+    return sem_nk(c, e) == AST_CALL and sem_is_method_call(c, e) == false
+}
+
+# _borrow_root_name
+function sem_borrow_root_name(c: ptr<Sem>, e: i32) -> string {
+    if e < 0 {
+        return null as string
+    }
+    if sem_is_variable(c, e) {
+        return sem_nname(c, e)
+    }
+    if sem_nk(c, e) == AST_INDEX {
+        return sem_borrow_root_name(c, sem_na(c, e))
+    }
+    if sem_nk(c, e) == AST_FIELD_ACCESS {
+        return sem_borrow_root_name(c, sem_na(c, e))
+    }
+    return null as string
+}
+
+function sem_call_name(c: ptr<Sem>, e: i32) -> string {
+    let mut nm: string = sem_nname(c, e)
+    let targs: i32 = sem_nb(c, e)
+    if targs != AST_NONE {
+        let mut t: i32 = targs
+        while t != AST_NONE {
+            nm = nm + "_" + sem_pt_name(c.t, sem_pt_of_ast(c, t))
+            t = sem_nnext(c, t)
+        }
+    }
+    return nm
+}
+
+function sem_span_origin_get(c: ptr<Sem>, name: string) -> string {
+    let k: i32 = sem_sm_get(c.span_origin, name)
+    if k < 0 {
+        return null as string
+    }
+    return sem_sv_get(c.origin_pool, k)
+}
+
+# _local_borrow_origin
+function sem_local_borrow_origin(c: ptr<Sem>, e: i32) -> string {
+    if e < 0 {
+        return null as string
+    }
+    if sem_is_function_call(c, e) {
+        let nm: string = sem_nname(c, e)
+        if sem_s_starts(nm, "arena_alloc") or sem_s_starts(nm, "frame_alloc") {
+            if sem_na(c, e) != AST_NONE {
+                return sem_borrow_root_name(c, sem_na(c, e))
+            }
+            return null as string
+        }
+        return null as string
+    }
+    if sem_is_slice(c, e) {
+        return sem_local_borrow_origin(c, sem_na(c, e))
+    }
+    if sem_is_unary_op(c, e, TOK_AMP) {
+        return sem_local_borrow_origin(c, sem_na(c, e))
+    }
+    if sem_nk(c, e) == AST_INDEX or sem_nk(c, e) == AST_FIELD_ACCESS {
+        return sem_local_borrow_origin(c, sem_na(c, e))
+    }
+    if sem_is_variable(c, e) {
+        let nm2: string = sem_nname(c, e)
+        if sem_sv_has(c.local_storage, nm2) {
+            return nm2
+        }
+        return sem_span_origin_get(c, nm2)
+    }
+    return null as string
+}
+
+# _domain_borrow_root
+function sem_domain_borrow_root(c: ptr<Sem>, e: i32) -> string {
+    if e < 0 {
+        return null as string
+    }
+    if sem_is_function_call(c, e) {
+        let nm: string = sem_nname(c, e)
+        if sem_s_starts(nm, "arena_alloc") or sem_s_starts(nm, "frame_alloc") {
+            if sem_na(c, e) != AST_NONE {
+                return sem_borrow_root_name(c, sem_na(c, e))
+            }
+            return null as string
+        }
+        return null as string
+    }
+    if sem_is_slice(c, e) {
+        return sem_domain_borrow_root(c, sem_na(c, e))
+    }
+    if sem_is_unary_op(c, e, TOK_AMP) {
+        let root: string = sem_borrow_root_name(c, sem_na(c, e))
+        if root as ptr<u8> != null and sem_sv_has(c.local_storage, root) {
+            return root
+        }
+        return null as string
+    }
+    if sem_is_variable(c, e) {
+        let nm2: string = sem_nname(c, e)
+        let origin: string = sem_span_origin_get(c, nm2)
+        if origin as ptr<u8> != null {
+            return origin
+        }
+        if sem_sv_has(c.local_storage, nm2) {
+            let s: i32 = sem_lookup(c, nm2)
+            if s >= 0 {
+                let k: i32 = sem_tkind(c, sem_sym_type(c, s))
+                if k == TK_ARRAY or k == TK_SPAN {
+                    return nm2
+                }
+            }
+        }
+        return null as string
+    }
+    return null as string
+}
+
+function sem_is_reference_type(c: ptr<Sem>, ty: i32) -> bool {
+    let k: i32 = sem_tkind(c, ty)
+    return ty >= 0 and (k == TK_POINTER or k == TK_SPAN or k == TK_ARRAY)
+}
+
+# _get_root_parameter_index
+function sem_root_parameter_index(c: ptr<Sem>, e: i32) -> i32 {
+    if e < 0 {
+        return 0 - 1
+    }
+    if sem_is_variable(c, e) {
+        if c.current_function_name as ptr<u8> == null {
+            return 0 - 1
+        }
+        let fi: i32 = sem_sm_get(c.function_decls, c.current_function_name)
+        if fi < 0 {
+            return 0 - 1
+        }
+        let nm: string = sem_nname(c, e)
+        let mut i: i32 = 0
+        while i < sem_fi_nparams(c, fi) {
+            if sem_s_eq(sem_fi_param_name(c, fi, i), nm) {
+                return i
+            }
+            i = i + 1
+        }
+        return 0 - 1
+    }
+    if sem_is_unary_op(c, e, TOK_AMP) {
+        return sem_root_parameter_index(c, sem_na(c, e))
+    }
+    if sem_nk(c, e) == AST_INDEX or sem_nk(c, e) == AST_FIELD_ACCESS {
+        return sem_root_parameter_index(c, sem_na(c, e))
+    }
+    return 0 - 1
+}
+
+function sem_node_key(c: ptr<Sem>, node: i32) -> string {
+    return sem_s_itoa(c.cm as i64) + ":" + sem_s_itoa(node as i64)
+}
+
+# _check_domain_escape_to_static
+function sem_domain_escape_to_static(c: ptr<Sem>, stmt: i32, value: i32, target: string, target_type: i32) -> bool {
+    if sem_sm_has(c.static_names, target) and sem_is_reference_type(c, target_type) {
+        let pi: i32 = sem_root_parameter_index(c, value)
+        if pi >= 0 and c.current_function_name as ptr<u8> != null {
+            sem_sm_put(c.esc_static, c.current_function_name + "\x01" + sem_s_itoa(pi as i64), 1)
+        }
+    }
+    if c.current_domain < 0 or sem_sm_has(c.static_names, target) == false {
+        return false
+    }
+    if sem_is_reference_type(c, target_type) == false {
+        return false
+    }
+    let td: i32 = sem_static_domain(c, target)
+    if td <= c.current_domain {
+        return false
+    }
+    let origin: string = sem_domain_borrow_root(c, value)
+    if origin as ptr<u8> == null {
+        return false
+    }
+    sem_sm_put(c.domain_reported, sem_node_key(c, stmt), 1)
+    sem_err(c, "lifetime domain escape: `" + origin + "` lives in the `" + sem_domain_name(c.current_domain) + "` domain but is stored in `" + target + "`, which lives in the `" + sem_domain_name(td) + "` domain (a longer-lived domain may not hold a reference to a shorter-lived one)" + sem_location_suffix(c, stmt))
+    return true
+}
+
+# _check_domain_escape_by_return
+function sem_domain_escape_by_return(c: ptr<Sem>, stmt: i32, value: i32) -> bool {
+    if c.current_function_name as ptr<u8> != null and sem_is_reference_type(c, c.current_return_type) {
+        let pi: i32 = sem_root_parameter_index(c, value)
+        if pi >= 0 {
+            sem_sm_put(c.esc_return, c.current_function_name + "\x01" + sem_s_itoa(pi as i64), 1)
+        }
+    }
+    if c.current_domain < 0 or value < 0 {
+        return false
+    }
+    if sem_is_reference_type(c, c.current_return_type) == false {
+        return false
+    }
+    let origin: string = sem_domain_borrow_root(c, value)
+    if origin as ptr<u8> == null {
+        return false
+    }
+    sem_sm_put(c.domain_reported, sem_node_key(c, stmt), 1)
+    sem_err(c, "lifetime domain escape: `" + origin + "` lives in the `" + sem_domain_name(c.current_domain) + "` domain but is returned from '" + c.current_function_name + "', which outlives it (a returned reference may not point into the frame that produced it)" + sem_location_suffix(c, stmt))
+    return true
+}
+
+# ---------------------------------------------------------------------------
+# Call-site records: RT-safety, @safe, lifetime domains, the call graph
+# ---------------------------------------------------------------------------
+
+function sem_resolved_calls_add(c: ptr<Sem>, callee: string) {
+    if c.current_function_name as ptr<u8> == null {
+        return
+    }
+    let mut k: i32 = sem_sm_get(c.rdc_index, c.current_function_name)
+    if k < 0 {
+        k = sem_sv_len(c.rdc_names)
+        sem_sv_push(c.rdc_names, c.current_function_name)
+        sem_pv_push(c.rdc_sets, sem_sv_new() as ptr<void>)
+        sem_sm_put(c.rdc_index, c.current_function_name, k)
+    }
+    sem_sv_add(sem_pv_get(c.rdc_sets, k) as ptr<SemStrVec>, callee)
+}
+
+function sem_check_rt_safe_call(c: ptr<Sem>, name: string) {
+    if c.current_rt_safe_fn as ptr<u8> == null {
+        return
+    }
+    sem_sv_push(c.rt_site_fn, c.current_rt_safe_fn)
+    sem_sv_push(c.rt_site_name, name)
+    if c.rt_safe_from_domain {
+        sem_iv_push(c.rt_site_dom, 1)
+    } else {
+        sem_iv_push(c.rt_site_dom, 0)
+    }
+}
+
+function sem_is_dangerous_extern(name: string) -> bool {
+    return sem_s_eq(name, "system") or sem_s_eq(name, "gets") or sem_s_eq(name, "strcpy") or sem_s_eq(name, "strcat") or sem_s_eq(name, "sprintf") or sem_s_eq(name, "vsprintf") or sem_s_eq(name, "scanf") or sem_s_eq(name, "sscanf") or sem_s_eq(name, "realpath") or sem_s_eq(name, "getwd")
+}
+
+function sem_check_safe_call(c: ptr<Sem>, name: string) {
+    if c.current_safe_fn as ptr<u8> == null {
+        return
+    }
+    let fi: i32 = sem_sm_get(c.function_decls, name)
+    let mut bad: bool = false
+    if fi >= 0 {
+        if sem_fi_has_attr(c, fi, "unsafe") or sem_iv_get(c.fi_extern, fi) == 1 {
+            bad = true
+        }
+    }
+    if bad {
+        sem_err(c, "Safety boundary violation: '" + c.current_safe_fn + "' is marked '@safe' but calls '" + name + "', which is '@unsafe' or an extern declaration (see docs/language/safety-profiles.md)")
+        return
+    }
+    if sem_is_dangerous_extern(name) {
+        sem_err(c, "Safety boundary violation: '" + c.current_safe_fn + "' is marked '@safe' but calls dangerous FFI '" + name + "'")
+    }
+}
+
+function sem_check_domain_call(c: ptr<Sem>, name: string) {
+    let caller: i32 = c.current_domain
+    if caller < 0 {
+        return
+    }
+    let callee: i32 = sem_sm_get(c.function_domains, name)
+    if callee >= 0 and callee > caller {
+        sem_err(c, "lifetime domain violation: '" + c.current_function_name + "' is in the `" + sem_domain_name(caller) + "` domain but calls '" + name + "', which is in the `" + sem_domain_name(callee) + "` domain (a shorter-lived domain may not call into a longer-lived one; see docs/language/lifetime-domains.md)")
+        return
+    }
+    if caller != 1 {
+        return
+    }
+    sem_sv_push(c.dom_site_fn, c.current_function_name)
+    sem_sv_push(c.dom_site_name, name)
+}
+
+# ---------------------------------------------------------------------------
+# Forward declarations for the mutually recursive walk
+# ---------------------------------------------------------------------------
+
+function sem_check_expression(c: ptr<Sem>, e: i32) -> i32
+function sem_check_statement(c: ptr<Sem>, s: i32) -> i32
+function sem_check_block(c: ptr<Sem>, b: i32) -> i32
+
+# _infer_type_quiet
+function sem_infer_type_quiet(c: ptr<Sem>, e: i32) -> i32 {
+    let ne: i32 = sem_sv_len(c.errors)
+    let nw: i32 = sem_sv_len(c.warnings)
+    let saved_pos: i32 = c.pos
+    let t: i32 = sem_check_expression(c, e)
+    sem_err_truncate(c, ne)
+    sem_sv_setlen(c.warnings, nw)
+    c.pos = saved_pos
+    return t
+}
+
+# ---------------------------------------------------------------------------
+# Literals and variables
+# ---------------------------------------------------------------------------
+
+function sem_string_has_interp(c: ptr<Sem>, e: i32) -> bool {
+    let s: i32 = c.ar.nodes[e].name_start
+    let t: i32 = c.ar.nodes[e].name_end
+    let mut i: i32 = s
+    while i + 1 < t {
+        if c.src[i] == 36 and c.src[i + 1] == 123 {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# _check_literal for a flowc literal node.
+function sem_check_literal(c: ptr<Sem>, e: i32) -> i32 {
+    let k: i32 = sem_nk(c, e)
+    if k == AST_STRING {
+        return sem_tmk(c, TK_STRING)
+    }
+    if k == AST_FLOAT {
+        return sem_tmk(c, TK_F32)
+    }
+    if k == AST_BOOL {
+        return sem_tmk(c, TK_BOOL)
+    }
+    if k == AST_IDENT and sem_nname_is(c, e, "null") {
+        return sem_ty_ptr(c.t, sem_tmk(c, TK_VOID))
+    }
+    return sem_tmk(c, TK_I32)
+}
+
+function sem_is_literal(c: ptr<Sem>, e: i32) -> bool {
+    let k: i32 = sem_nk(c, e)
+    if k == AST_INT or k == AST_FLOAT or k == AST_BOOL {
+        return true
+    }
+    if k == AST_STRING {
+        return sem_string_has_interp(c, e) == false
+    }
+    return k == AST_IDENT and sem_nname_is(c, e, "null")
+}
+
+# _literal_int_value / _literal_int: the integer a literal spells, through
+# unary minus (and, for _literal_int, a const). ok[0] = 0 when there is none.
+function sem_literal_int(c: ptr<Sem>, e: i32, via_const: bool, ok: ptr<i32>) -> i64 {
+    ok[0] = 0
+    if e < 0 {
+        return 0
+    }
+    let k: i32 = sem_nk(c, e)
+    if k == AST_INT {
+        ok[0] = 1
+        let txt: string = sem_s_span(c.src, c.ar.nodes[e].name_start, c.ar.nodes[e].name_end)
+        if sem_s_len(txt) == 0 {
+            return sem_nival(c, e) as i64
+        }
+        return sem_int_text(txt)
+    }
+    if k == AST_BOOL and via_const == false {
+        # int("true") fails: None.
+        return 0
+    }
+    if sem_is_unary_op(c, e, TOK_MINUS) {
+        let inner: i64 = sem_literal_int(c, sem_na(c, e), via_const, ok)
+        if ok[0] == 1 {
+            return 0 - inner
+        }
+        return 0
+    }
+    if via_const and sem_is_variable(c, e) {
+        let s: i32 = sem_lookup_const_symbol(c, sem_nname(c, e))
+        if s >= 0 {
+            let d: i32 = sem_iv_get(c.sy_def, s)
+            if d >= 0 and sem_decl_kind(c, d) == DK_CONST {
+                let saved: i32 = c.cm
+                sem_set_mod(c, sem_iv_get(c.d_mod, d))
+                let v: i64 = sem_literal_int(c, sem_nb(c, sem_decl_node(c, d)), true, ok)
+                sem_set_mod(c, saved)
+                return v
+            }
+        }
+    }
+    return 0
+}
+
+function sem_int_text(txt: string) -> i64 {
+    let mut s: string = ""
+    let mut i: i32 = 0
+    while i < sem_s_len(txt) {
+        if sem_s_byte(txt, i) != 95 {
+            s = s + sem_s_slice(txt, i, i + 1)
+        }
+        i = i + 1
+    }
+    if sem_s_starts(s, "0x") or sem_s_starts(s, "0X") {
+        return strtol(sem_s_from(s, 2), null, 16)
+    }
+    if sem_s_starts(s, "0b") or sem_s_starts(s, "0B") {
+        return strtol(sem_s_from(s, 2), null, 2)
+    }
+    return strtol(s, null, 10)
+}
+
+function sem_lookup_const_symbol(c: ptr<Sem>, name: string) -> i32 {
+    if sem_s_eq(name, "_") {
+        return 0 - 1
+    }
+    let s: i32 = sem_lookup(c, name)
+    if s >= 0 and sem_sym_kind(c, s) == SK_CONST {
+        return s
+    }
+    return 0 - 1
+}
+
+# _check_variable
+function sem_check_variable(c: ptr<Sem>, e: i32) -> i32 {
+    let name: string = sem_nname(c, e)
+    let s: i32 = sem_lookup(c, name)
+    if s < 0 {
+        if sem_sm_has(c.capability_types, name) {
+            let msg: string = "Capability '" + name + "' is not a value and cannot be passed as an argument. Install it for the call instead: handle <Effect> with " + name + " { ... }"
+            sem_err(c, msg)
+            sem_sv_push(c.fatal, msg)
+        } elif sem_cimport_knows(c, name) {
+            return 0 - 1
+        } elif c.strict {
+            sem_err(c, "Undefined variable '" + name + "'")
+        }
+        return sem_tmk(c, TK_I32)
+    }
+    return sem_sym_type(c, s)
+}
+
+# ---------------------------------------------------------------------------
+# Binary and unary operators
+# ---------------------------------------------------------------------------
+
+function sem_binop_name(c: ptr<Sem>, e: i32) -> string {
+    let op: i32 = sem_nival(c, e)
+    if op == TOK_PLUS { return "+" }
+    if op == TOK_MINUS { return "-" }
+    if op == TOK_STAR { return "*" }
+    if op == TOK_SLASH { return "/" }
+    if op == TOK_PERCENT { return "%" }
+    if op == TOK_EQEQ { return "==" }
+    if op == TOK_NE { return "!=" }
+    if op == TOK_LT { return "<" }
+    if op == TOK_LE { return "<=" }
+    if op == TOK_GT { return ">" }
+    if op == TOK_GE { return ">=" }
+    if op == TOK_AMPAMP { return "&&" }
+    if op == TOK_BARBAR { return "||" }
+    if op == TOK_AMP { return "&" }
+    if op == TOK_BAR { return "|" }
+    if op == TOK_CARET { return "^" }
+    if op == TOK_SHL { return "<<" }
+    if op == TOK_SHR { return ">>" }
+    if op == TOK_IN { return "in" }
+    return "?"
+}
+
+# The parser gives these operators a line (op.line), which the dimensional
+# errors print; shifts and the bitwise and logical operators have none.
+function sem_binop_has_line(op: string) -> bool {
+    return sem_s_eq(op, "==") or sem_s_eq(op, "!=") or sem_s_eq(op, "<") or sem_s_eq(op, ">") or sem_s_eq(op, "<=") or sem_s_eq(op, ">=") or sem_s_eq(op, "in") or sem_s_eq(op, "+") or sem_s_eq(op, "-") or sem_s_eq(op, "*") or sem_s_eq(op, "/") or sem_s_eq(op, "%")
+}
+
+function sem_is_compare_op(op: string) -> bool {
+    return sem_s_eq(op, "==") or sem_s_eq(op, "!=") or sem_s_eq(op, "<") or sem_s_eq(op, ">") or sem_s_eq(op, "<=") or sem_s_eq(op, ">=")
+}
+
+# _check_dimensioned_op; -1 falls through to the ordinary path.
+function sem_check_dimensioned_op(c: ptr<Sem>, e: i32, op: string, lt: i32, rt: i32, ld: ptr<SemIntVec>, rd: ptr<SemIntVec>) -> i32 {
+    let mut loc: string = ""
+    if e >= 0 and sem_binop_has_line(op) {
+        loc = "line " + sem_s_itoa(sem_py_pos(c, c.cm, sem_nstart(c, e), false) as i64) + ": "
+    }
+    if sem_s_eq(op, "*") or sem_s_eq(op, "/") {
+        if ld == null and sem_is_numeric(c, lt) == false {
+            return 0 - 1
+        }
+        if rd == null and sem_is_numeric(c, rt) == false {
+            return 0 - 1
+        }
+        let mut sign: i32 = 1
+        if sem_s_eq(op, "/") {
+            sign = 0 - 1
+        }
+        return sem_unit_result_type(c, sem_dims_combine(ld, rd, sign))
+    }
+    if sem_s_eq(op, "+") or sem_s_eq(op, "-") or sem_s_eq(op, "%") {
+        if ld == null or rd == null or sem_dims_eq(ld, rd) == false {
+            let mut hint: string = ""
+            if ld == null or rd == null {
+                let mut shown: i32 = rt
+                if ld != null {
+                    shown = lt
+                }
+                hint = "a dimensionless value needs an explicit cast, e.g. `x as " + sem_tstr(c, shown) + "`"
+            } else {
+                hint = "operands of '" + op + "' must have the same dimension"
+            }
+            sem_err(c, loc + "dimensional error: " + sem_tstr(c, lt) + " " + op + " " + sem_tstr(c, rt) + " (" + hint + ")")
+        }
+        if ld != null {
+            return lt
+        }
+        return rt
+    }
+    if sem_is_compare_op(op) or sem_s_eq(op, "in") {
+        if ld == null or rd == null or sem_dims_eq(ld, rd) == false {
+            sem_err(c, loc + "dimensional error: " + sem_tstr(c, lt) + " " + op + " " + sem_tstr(c, rt) + " (comparison requires both operands to have the same dimension)")
+        }
+        return sem_tmk(c, TK_BOOL)
+    }
+    sem_err(c, loc + "dimensional error: operator '" + op + "' is not defined for unit types (" + sem_tstr(c, lt) + " " + op + " " + sem_tstr(c, rt) + ")")
+    if ld != null {
+        return lt
+    }
+    return rt
+}
+
+# _check_binary_op
+function sem_check_binary_op(c: ptr<Sem>, e: i32) -> i32 {
+    let op: string = sem_binop_name(c, e)
+    let lt: i32 = sem_check_expression(c, sem_na(c, e))
+    let rt: i32 = sem_check_expression(c, sem_nb(c, e))
+    return sem_binary_types(c, e, op, lt, rt)
+}
+
+# The rest of _check_binary_op, on the operand types. `e` is the operator
+# node, or -1 for a BinaryOperation the parser synthesized (string
+# interpolation), which has no line and no literal operands to inspect.
+function sem_binary_types(c: ptr<Sem>, e: i32, op: string, lt: i32, rt: i32) -> i32 {
+    if e >= 0 {
+        sem_set_pos(c, e)
+    }
+    if lt < 0 or rt < 0 {
+        # A None operand only comes from a name an @cImport header declares
+        # (the Python host knew its real type): a comparison is still a bool.
+        if sem_is_compare_op(op) or sem_s_eq(op, "&&") or sem_s_eq(op, "||") or sem_s_eq(op, "in") {
+            return sem_tmk(c, TK_BOOL)
+        }
+        if lt >= 0 {
+            return lt
+        }
+        if rt >= 0 {
+            return rt
+        }
+        return sem_tmk(c, TK_UNKNOWN)
+    }
+    let lk: i32 = sem_tkind(c, lt)
+    let rk: i32 = sem_tkind(c, rt)
+    if lk == TK_UNKNOWN or rk == TK_UNKNOWN {
+        if sem_is_compare_op(op) or sem_s_eq(op, "&&") or sem_s_eq(op, "||") or sem_s_eq(op, "in") {
+            return sem_tmk(c, TK_BOOL)
+        }
+        if lk != TK_UNKNOWN {
+            return lt
+        }
+        return rt
+    }
+    if lk == TK_VOID {
+        return rt
+    }
+    if rk == TK_VOID {
+        return lt
+    }
+    if sem_s_eq(op, "+") and (lk == TK_STRING or rk == TK_STRING) {
+        return sem_tmk(c, TK_STRING)
+    }
+    if lk == TK_POINTER or rk == TK_POINTER {
+        if sem_s_eq(op, "+") or sem_s_eq(op, "-") {
+            if lk == TK_POINTER and sem_is_numeric(c, rt) {
+                return lt
+            }
+            if rk == TK_POINTER and sem_is_numeric(c, lt) {
+                return rt
+            }
+            if lk == TK_POINTER and rk == TK_POINTER and sem_s_eq(op, "-") {
+                return sem_tmk(c, TK_I64)
+            }
+        }
+        if sem_is_compare_op(op) {
+            if lk == TK_POINTER and rk == TK_POINTER {
+                return sem_tmk(c, TK_BOOL)
+            }
+            if (lk == TK_POINTER and sem_is_numeric(c, rt)) or (rk == TK_POINTER and sem_is_numeric(c, lt)) {
+                return sem_tmk(c, TK_BOOL)
+            }
+        }
+    }
+    let ld: ptr<SemIntVec> = sem_dims_of(c, lt)
+    let rd: ptr<SemIntVec> = sem_dims_of(c, rt)
+    if ld != null or rd != null {
+        let r: i32 = sem_check_dimensioned_op(c, e, op, lt, rt, ld, rd)
+        if r >= 0 {
+            return r
+        }
+    }
+    if sem_is_dual(c, lt) or sem_is_dual(c, rt) {
+        if sem_s_eq(op, "+") or sem_s_eq(op, "-") or sem_s_eq(op, "*") or sem_s_eq(op, "/") {
+            if sem_is_dual(c, lt) or sem_is_numeric(c, lt) {
+                if sem_is_dual(c, rt) or sem_is_numeric(c, rt) {
+                    return sem_ty_struct(c.t, "Dual")
+                }
+            }
+        }
+        if sem_is_compare_op(op) {
+            return sem_tmk(c, TK_BOOL)
+        }
+    }
+    if sem_is_tensor(c, lt) or sem_is_tensor(c, rt) {
+        if sem_s_eq(op, "+") or sem_s_eq(op, "-") or sem_s_eq(op, "*") or sem_s_eq(op, "/") {
+            if sem_is_tensor(c, lt) and sem_is_tensor(c, rt) {
+                return sem_ty_struct(c.t, "Tensor")
+            }
+            if sem_s_eq(op, "*") or sem_s_eq(op, "+") {
+                if (sem_is_tensor(c, lt) and sem_is_numeric(c, rt)) or (sem_is_numeric(c, lt) and sem_is_tensor(c, rt)) {
+                    return sem_ty_struct(c.t, "Tensor")
+                }
+            }
+        }
+    }
+    if sem_s_eq(op, "in") {
+        return sem_tmk(c, TK_BOOL)
+    }
+    let mut common: i32 = lt
+    if sem_is_numeric(c, lt) and sem_is_numeric(c, rt) {
+        common = sem_numeric_common_type(c, lt, rt)
+    } elif sem_ty_eq(c.t, lt, rt) == false {
+        sem_err(c, "Binary operator '" + op + "' requires matching types, got " + sem_tstr(c, lt) + " and " + sem_tstr(c, rt))
+    }
+    if e >= 0 and (sem_s_eq(op, "/") or sem_s_eq(op, "%")) {
+        let ok: array<i32, 1> = [0]
+        let v: i64 = sem_literal_int(c, sem_nb(c, e), false, &ok[0] as ptr<i32>)
+        if ok[0] == 1 and v == 0 and sem_is_float(c, lt) == false {
+            sem_err(c, "Division/modulo by zero is undefined (MISRA Rule 12.5 / CERT INT33-C)")
+        }
+    }
+    if e >= 0 and (sem_s_eq(op, "<<") or sem_s_eq(op, ">>")) {
+        let ok2: array<i32, 1> = [0]
+        let amount: i64 = sem_literal_int(c, sem_nb(c, e), false, &ok2[0] as ptr<i32>)
+        let mut width: i32 = sem_integer_bit_width(c, lt)
+        if width > 0 and width < 32 {
+            width = 32
+        }
+        if ok2[0] == 1 {
+            if amount < 0 or (width > 0 and amount >= (width as i64)) {
+                sem_err(c, "Shift amount " + sem_s_itoa(amount) + " out of range for " + sem_tstr(c, lt) + " (MISRA Rule 12.2 / CERT INT34-C)")
+            }
+        }
+        if sem_s_eq(op, "<<") {
+            let ok3: array<i32, 1> = [0]
+            let lhs: i64 = sem_literal_int(c, sem_na(c, e), false, &ok3[0] as ptr<i32>)
+            if ok3[0] == 1 and lhs < 0 {
+                sem_err(c, "Left shift of a negative value is undefined (MISRA Rule 12.2 / CERT INT34-C)")
+            }
+        }
+    }
+    if sem_is_compare_op(op) or sem_s_eq(op, "&&") or sem_s_eq(op, "||") {
+        return sem_tmk(c, TK_BOOL)
+    }
+    return common
+}
+
+# The Python operator string of a unary node: `not x` keeps "not".
+function sem_unary_op_name(c: ptr<Sem>, e: i32) -> string {
+    let op: i32 = sem_nival(c, e)
+    if op == TOK_MINUS { return "-" }
+    if op == TOK_BANG {
+        let s: i32 = sem_nstart(c, e)
+        if sem_s_span_is(c.src, s, s + 3, "not") {
+            return "not"
+        }
+        return "!"
+    }
+    if op == TOK_AMP { return "&" }
+    if op == TOK_TILDE { return "~" }
+    return "?"
+}
+
+# _check_unary_op
+function sem_check_unary_op(c: ptr<Sem>, e: i32) -> i32 {
+    let op: string = sem_unary_op_name(c, e)
+    let ot: i32 = sem_check_expression(c, sem_na(c, e))
+    if ot < 0 {
+        return ot
+    }
+    let ok: i32 = sem_tkind(c, ot)
+    if ok == TK_UNKNOWN {
+        if sem_s_eq(op, "!") {
+            return sem_tmk(c, TK_BOOL)
+        }
+        if sem_s_eq(op, "&") {
+            return sem_ty_ptr(c.t, ot)
+        }
+        return ot
+    }
+    if sem_s_eq(op, "-") {
+        if sem_dims_of(c, ot) != null {
+            return ot
+        }
+        if sem_is_dual(c, ot) {
+            return ot
+        }
+        let numeric: bool = ok == TK_I8 or ok == TK_I16 or ok == TK_I32 or ok == TK_I64 or ok == TK_U8 or ok == TK_U16 or ok == TK_U32 or ok == TK_U64 or ok == TK_F32 or ok == TK_F64
+        if numeric == false {
+            sem_err(c, "Unary '-' requires numeric type, got " + sem_tstr(c, ot))
+        }
+        return ot
+    }
+    if sem_s_eq(op, "!") {
+        if ok != TK_BOOL {
+            sem_err(c, "Unary '!' requires bool type, got " + sem_tstr(c, ot))
+        }
+        return sem_tmk(c, TK_BOOL)
+    }
+    if sem_s_eq(op, "&") {
+        if ok == TK_POINTER {
+            sem_warn(c, "Taking the address of a pointer (got " + sem_tstr(c, ot) + "); this produces ptr<ptr<T>> - ensure the callee expects a pointer-to-pointer")
+        }
+        return sem_ty_ptr(c.t, ot)
+    }
+    return ot
+}
+
+# ---------------------------------------------------------------------------
+# Calls
+# ---------------------------------------------------------------------------
+
+function sem_builtin_kind(name: string) -> i32 {
+    if sem_s_eq(name, "printf") or sem_s_eq(name, "sprintf") or sem_s_eq(name, "fprintf") or sem_s_eq(name, "scanf") or sem_s_eq(name, "sscanf") { return TK_I32 }
+    if sem_s_eq(name, "print") or sem_s_eq(name, "println") { return TK_VOID }
+    if sem_s_eq(name, "malloc") or sem_s_eq(name, "calloc") or sem_s_eq(name, "realloc") { return TK_POINTER }
+    if sem_s_eq(name, "free") { return TK_VOID }
+    if sem_s_eq(name, "memcpy") or sem_s_eq(name, "memset") or sem_s_eq(name, "memmove") { return TK_POINTER }
+    if sem_s_eq(name, "memcmp") { return TK_I32 }
+    if sem_s_eq(name, "strlen") { return TK_U64 }
+    if sem_s_eq(name, "len") { return TK_I64 }
+    if sem_s_eq(name, "strcpy") or sem_s_eq(name, "strcat") or sem_s_eq(name, "strncpy") { return TK_POINTER }
+    if sem_s_eq(name, "strcmp") or sem_s_eq(name, "strncmp") { return TK_I32 }
+    if sem_s_eq(name, "exit") or sem_s_eq(name, "abort") or sem_s_eq(name, "flow_panic") { return TK_VOID }
+    if sem_s_eq(name, "atexit") { return TK_I32 }
+    if sem_s_eq(name, "fopen") { return TK_POINTER }
+    if sem_s_eq(name, "fclose") or sem_s_eq(name, "fread") or sem_s_eq(name, "fwrite") { return TK_I32 }
+    if sem_s_eq(name, "fgets") { return TK_POINTER }
+    if sem_s_eq(name, "fputs") or sem_s_eq(name, "putchar") or sem_s_eq(name, "rand") { return TK_I32 }
+    if sem_s_eq(name, "srand") { return TK_VOID }
+    if sem_s_eq(name, "time") or sem_s_eq(name, "clock") { return TK_I64 }
+    if sem_s_eq(name, "get_current_time") { return TK_F64 }
+    if sem_s_eq(name, "sin") or sem_s_eq(name, "cos") or sem_s_eq(name, "tan") or sem_s_eq(name, "asin") or sem_s_eq(name, "acos") or sem_s_eq(name, "atan") or sem_s_eq(name, "atan2") { return TK_F32 }
+    if sem_s_eq(name, "sinh") or sem_s_eq(name, "cosh") or sem_s_eq(name, "tanh") or sem_s_eq(name, "asinh") or sem_s_eq(name, "acosh") or sem_s_eq(name, "atanh") { return TK_F32 }
+    if sem_s_eq(name, "exp") or sem_s_eq(name, "exp2") or sem_s_eq(name, "expm1") or sem_s_eq(name, "log") or sem_s_eq(name, "log2") or sem_s_eq(name, "log10") or sem_s_eq(name, "log1p") { return TK_F32 }
+    if sem_s_eq(name, "pow") or sem_s_eq(name, "sqrt") or sem_s_eq(name, "cbrt") or sem_s_eq(name, "hypot") or sem_s_eq(name, "ceil") or sem_s_eq(name, "floor") or sem_s_eq(name, "round") or sem_s_eq(name, "trunc") { return TK_F32 }
+    if sem_s_eq(name, "fabs") or sem_s_eq(name, "fmod") or sem_s_eq(name, "fmin") or sem_s_eq(name, "fmax") or sem_s_eq(name, "fdim") or sem_s_eq(name, "sigmoid") { return TK_F32 }
+    if sem_s_eq(name, "c64") { return TK_C64 }
+    if sem_s_eq(name, "c128") { return TK_C128 }
+    if sem_s_eq(name, "creal") or sem_s_eq(name, "cimag") or sem_s_eq(name, "cabs") or sem_s_eq(name, "carg") { return TK_F64 }
+    if sem_s_eq(name, "conj") or sem_s_eq(name, "cexp") or sem_s_eq(name, "clog") or sem_s_eq(name, "csqrt") or sem_s_eq(name, "cpow") { return TK_C128 }
+    if sem_s_eq(name, "alloc") { return TK_POINTER }
+    if sem_s_eq(name, "dealloc") { return TK_VOID }
+    if sem_s_eq(name, "array_length") or sem_s_eq(name, "length") { return TK_I32 }
+    if sem_s_eq(name, "array") { return TK_ARRAY }
+    if sem_s_eq(name, "gpu_thread_id") or sem_s_eq(name, "gpu_block_id") { return TK_I32 }
+    if sem_s_eq(name, "gpu_sync") { return TK_VOID }
+    if sem_s_eq(name, "metal_create_buffer") { return TK_POINTER }
+    if sem_s_eq(name, "metal_execute") { return TK_VOID }
+    if sem_s_eq(name, "metal_get_result") { return TK_POINTER }
+    if sem_s_eq(name, "emit") or sem_s_eq(name, "query") or sem_s_eq(name, "insert") or sem_s_eq(name, "write") { return TK_VOID }
+    if sem_s_eq(name, "read") { return TK_STRING }
+    return 0
+}
+
+function sem_builtin_type(c: ptr<Sem>, name: string) -> i32 {
+    let k: i32 = sem_builtin_kind(name)
+    if k == TK_POINTER {
+        return sem_ty_ptr(c.t, sem_tmk(c, TK_VOID))
+    }
+    if k == TK_ARRAY {
+        return sem_ty_array(c.t, sem_tmk(c, TK_I32), NO_SIZE)
+    }
+    return sem_tmk(c, k)
+}
+
+function sem_is_dimensionless_math(name: string) -> bool {
+    return sem_s_eq(name, "sin") or sem_s_eq(name, "cos") or sem_s_eq(name, "tan") or sem_s_eq(name, "asin") or sem_s_eq(name, "acos") or sem_s_eq(name, "atan") or sem_s_eq(name, "atan2") or sem_s_eq(name, "sinh") or sem_s_eq(name, "cosh") or sem_s_eq(name, "tanh") or sem_s_eq(name, "exp") or sem_s_eq(name, "log") or sem_s_eq(name, "log2") or sem_s_eq(name, "log10")
+}
+
+# The effects with a handler installed in any outer scope.
+function sem_active_handlers(c: ptr<Sem>) -> ptr<SemStrVec> {
+    let out: ptr<SemStrVec> = sem_sv_new()
+    let mut i: i32 = 0
+    while i < sem_pv_len(c.handler_stack) {
+        let fr: ptr<SemStrVec> = sem_pv_get(c.handler_stack, i) as ptr<SemStrVec>
+        let mut j: i32 = 0
+        while j < fr.len {
+            sem_sv_add(out, sem_sv_get(fr, j))
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return out
+}
+
+function sem_effect_op(c: ptr<Sem>, effect_decl: i32, op: string) -> i32 {
+    let saved: i32 = c.cm
+    sem_set_mod(c, sem_iv_get(c.d_mod, effect_decl))
+    let mut o: i32 = sem_na(c, sem_decl_node(c, effect_decl))
+    while o != AST_NONE {
+        if sem_nname_is(c, o, op) {
+            sem_set_mod(c, saved)
+            return o
+        }
+        o = sem_nnext(c, o)
+    }
+    sem_set_mod(c, saved)
+    return 0 - 1
+}
+
+# The parameter parsed types and return parsed type of an effect operation.
+function sem_effect_op_sig(c: ptr<Sem>, effect_decl: i32, opnode: i32, params: ptr<SemIntVec>) -> i32 {
+    let saved: i32 = c.cm
+    sem_set_mod(c, sem_iv_get(c.d_mod, effect_decl))
+    let mut p: i32 = sem_na(c, opnode)
+    while p != AST_NONE {
+        sem_iv_push(params, sem_pt_of_ast(c, sem_na(c, p)))
+        p = sem_nnext(c, p)
+    }
+    let mut ret: i32 = 0 - 1
+    if sem_nb(c, opnode) != AST_NONE {
+        ret = sem_pt_of_ast(c, sem_nb(c, opnode))
+    } else {
+        ret = sem_pt_mk(c.t, "void")
+    }
+    sem_set_mod(c, saved)
+    return ret
+}
+
+# _check_effect_call(EffectCall(effect, op, args)). args: expression nodes.
+function sem_check_effect_call(c: ptr<Sem>, eff: string, op: string, args: ptr<SemIntVec>) -> i32 {
+    let ed: i32 = sem_sm_get(c.effect_types, eff)
+    if ed < 0 {
+        let mut i: i32 = 0
+        while i < args.len {
+            sem_check_expression(c, args.data[i])
+            i = i + 1
+        }
+        if c.strict {
+            sem_err(c, "Unknown effect '" + eff + "'")
+        }
+        return sem_tmk(c, TK_UNKNOWN)
+    }
+    let opn: i32 = sem_effect_op(c, ed, op)
+    if opn < 0 {
+        let mut i2: i32 = 0
+        while i2 < args.len {
+            sem_check_expression(c, args.data[i2])
+            i2 = i2 + 1
+        }
+        if c.strict {
+            sem_err(c, "Effect '" + eff + "' has no operation '" + op + "'")
+        }
+        return sem_tmk(c, TK_UNKNOWN)
+    }
+    let arg_types: ptr<SemIntVec> = sem_iv_new()
+    let mut j: i32 = 0
+    while j < args.len {
+        sem_iv_push(arg_types, sem_check_expression(c, args.data[j]))
+        j = j + 1
+    }
+    let ppts: ptr<SemIntVec> = sem_iv_new()
+    let ret_pt: i32 = sem_effect_op_sig(c, ed, opn, ppts)
+    let ptys: ptr<SemIntVec> = sem_iv_new()
+    j = 0
+    while j < ppts.len {
+        sem_iv_push(ptys, sem_parse_type(c, ppts.data[j]))
+        j = j + 1
+    }
+    if arg_types.len != ptys.len {
+        if c.strict {
+            sem_err(c, "Effect operation '" + eff + "." + op + "' expects " + sem_s_itoa(ptys.len as i64) + " argument(s), got " + sem_s_itoa(arg_types.len as i64))
+        }
+        return sem_parse_type(c, ret_pt)
+    }
+    j = 0
+    while j < arg_types.len {
+        if sem_can_coerce(c, arg_types.data[j], ptys.data[j]) == false {
+            sem_err(c, "Effect operation '" + eff + "." + op + "' argument " + sem_s_itoa((j + 1) as i64) + " expects " + sem_tstr(c, ptys.data[j]) + ", got " + sem_tstr(c, arg_types.data[j]))
+        }
+        j = j + 1
+    }
+    if c.check_effect_rows and sem_sv_has(sem_active_handlers(c), eff) == false {
+        let mut whr: string = ""
+        if c.current_function_name as ptr<u8> != null {
+            whr = " in '" + c.current_function_name + "'"
+        }
+        sem_err(c, "Unhandled effect '" + eff + "." + op + "'" + whr + ": wrap in `handle " + eff + " with ...`, declare `with " + eff + "` on the function, or omit --strict-effects to allow zero defaults")
+    }
+    return sem_parse_type(c, ret_pt)
+}
+
+# The overload candidates of a function symbol.
+function sem_candidates_of(c: ptr<Sem>, s: i32) -> ptr<SemIntVec> {
+    let ov: ptr<SemIntVec> = sem_pv_get(c.sy_over, s) as ptr<SemIntVec>
+    if ov != null and ov.len > 0 {
+        return ov
+    }
+    let one: ptr<SemIntVec> = sem_iv_new()
+    sem_iv_push(one, sem_sym_type(c, s))
+    return one
+}
+
+# _effect_name_of_param
+function sem_effect_name_of_param(c: ptr<Sem>, p: i32) -> string {
+    let mut nm: string = sem_tname(c, p)
+    if sem_s_starts(nm, "capability_") {
+        nm = sem_s_from(nm, 11)
+    }
+    if sem_sm_has(c.effect_types, nm) {
+        return nm
+    }
+    return null as string
+}
+
+# _match_implicit_effect_overload
+function sem_match_implicit_effect_overload(c: ptr<Sem>, cands: ptr<SemIntVec>, arg_types: ptr<SemIntVec>) -> i32 {
+    let active: ptr<SemStrVec> = sem_active_handlers(c)
+    if active.len == 0 {
+        return 0 - 1
+    }
+    let mut found: i32 = 0 - 1
+    let mut count: i32 = 0
+    let mut i: i32 = 0
+    while i < cands.len {
+        let cand: i32 = cands.data[i]
+        let np: i32 = sem_ty_nparams(c.t, cand)
+        if np > arg_types.len {
+            let mut ok: bool = true
+            let mut j: i32 = 0
+            while j < arg_types.len {
+                if sem_is_compatible(c, arg_types.data[j], sem_ty_param(c.t, cand, j)) == false {
+                    ok = false
+                }
+                j = j + 1
+            }
+            if ok {
+                j = arg_types.len
+                while j < np {
+                    let en: string = sem_effect_name_of_param(c, sem_ty_param(c.t, cand, j))
+                    if en as ptr<u8> == null or sem_sv_has(active, en) == false {
+                        ok = false
+                    }
+                    j = j + 1
+                }
+            }
+            if ok {
+                if count == 0 {
+                    found = cand
+                }
+                count = count + 1
+            }
+        }
+        i = i + 1
+    }
+    if count == 1 {
+        return found
+    }
+    return 0 - 1
+}
+
+# _static_length
+function sem_static_length(c: ptr<Sem>, e: i32) -> i32 {
+    if sem_nk(c, e) == AST_ARRAY_LIT {
+        return sem_array_lit_len(c, e)
+    }
+    if sem_is_slice(c, e) {
+        let ok: array<i32, 1> = [0]
+        let ok2: array<i32, 1> = [0]
+        let lo: i64 = sem_literal_int(c, sem_nb(c, e), true, &ok[0] as ptr<i32>)
+        let hi: i64 = sem_literal_int(c, sem_ncc(c, e), true, &ok2[0] as ptr<i32>)
+        if ok[0] == 0 or ok2[0] == 0 {
+            return NO_SIZE
+        }
+        if hi - lo < 0 {
+            return 0
+        }
+        return (hi - lo) as i32
+    }
+    if sem_is_variable(c, e) {
+        let s: i32 = sem_lookup(c, sem_nname(c, e))
+        if s < 0 {
+            return NO_SIZE
+        }
+        let k: i32 = sem_tkind(c, sem_sym_type(c, s))
+        if k == TK_ARRAY or k == TK_SPAN {
+            return sem_tsize(c, sem_sym_type(c, s))
+        }
+    }
+    return NO_SIZE
+}
+
+# _borrow_source_is_mutable_storage: 1 true, 0 false, -1 None.
+function sem_borrow_source_mutable(c: ptr<Sem>, e: i32) -> i32 {
+    if sem_is_slice(c, e) {
+        return sem_borrow_source_mutable(c, sem_na(c, e))
+    }
+    if sem_is_variable(c, e) {
+        let s: i32 = sem_lookup(c, sem_nname(c, e))
+        if s < 0 {
+            return 0 - 1
+        }
+        let ty: i32 = sem_sym_type(c, s)
+        if sem_tkind(c, ty) == TK_SPAN {
+            if sem_span_is_mutable(sem_tname(c, ty)) {
+                return 1
+            }
+            return 0
+        }
+        if sem_tkind(c, ty) == TK_POINTER {
+            return 1
+        }
+        return sem_iv_get(c.sy_mut, s)
+    }
+    return 0 - 1
+}
+
+# _check_span_arguments. Returns true if it reported anything.
+function sem_check_span_arguments(c: ptr<Sem>, name: string, args: ptr<SemIntVec>, sig: i32) -> bool {
+    let before: i32 = sem_sv_len(c.errors)
+    let fi: i32 = sem_sm_get(c.function_decls, name)
+    let mut i: i32 = 0
+    while i < sem_ty_nparams(c.t, sig) {
+        let expected: i32 = sem_ty_param(c.t, sig, i)
+        if sem_is_span(c, expected) and i < args.len {
+            let arg: i32 = args.data[i]
+            let mut pname: string = "#" + sem_s_itoa((i + 1) as i64)
+            if fi >= 0 and i < sem_fi_nparams(c, fi) {
+                pname = sem_fi_param_name(c, fi, i)
+            }
+            let actual: i32 = sem_infer_type_quiet(c, arg)
+            if sem_tkind(c, actual) == TK_POINTER {
+                let mut root: string = sem_borrow_root_name(c, arg)
+                if root as ptr<u8> == null {
+                    root = "p"
+                }
+                sem_err(c, "cannot borrow " + sem_tstr(c, actual) + " into " + sem_tstr(c, expected) + " for parameter '" + pname + "' of '" + name + "': a pointer has no length. Slice it instead, e.g. `" + root + "[0..n]`")
+            } else {
+                let mut skip: bool = false
+                if sem_span_is_mutable(sem_tname(c, expected)) {
+                    let mutable: i32 = sem_borrow_source_mutable(c, arg)
+                    if mutable == 0 {
+                        let mut binding: string = sem_borrow_root_name(c, arg)
+                        if binding as ptr<u8> == null {
+                            binding = pname
+                        }
+                        sem_err(c, "cannot borrow `" + binding + "` mutably; it is declared with `let`")
+                        skip = true
+                    }
+                }
+                if skip == false and sem_tsize(c, expected) != NO_SIZE {
+                    let length: i32 = sem_static_length(c, arg)
+                    if length == NO_SIZE {
+                        sem_err(c, "static extent mismatch: parameter '" + pname + "' of '" + name + "' expects " + sem_tstr(c, expected) + ", but the argument length is not known at compile time; a static-extent span cannot be formed from a dynamic length")
+                    } elif length != sem_tsize(c, expected) {
+                        sem_err(c, "static extent mismatch: parameter '" + pname + "' of '" + name + "' expects " + sem_tstr(c, expected) + " but the argument has length " + sem_s_itoa(length as i64) + " (expected " + sem_s_itoa(sem_tsize(c, expected) as i64) + ", got " + sem_s_itoa(length as i64) + ")")
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return sem_sv_len(c.errors) > before
+}
+
+# _check_function_call(FunctionCall(name, args)). `node` is the call node
+# (for location suffixes), `stmt` the statement it forms, or -1.
+function sem_check_function_call(c: ptr<Sem>, name: string, args: ptr<SemIntVec>, node: i32, stmt: i32) -> i32 {
+    let tys: ptr<SemTys> = c.t
+    sem_resolved_calls_add(c, name)
+    sem_check_rt_safe_call(c, name)
+    sem_check_safe_call(c, name)
+    sem_check_domain_call(c, name)
+    if sem_s_eq(name, "__flow_dbg") {
+        if args.len != 1 {
+            if c.strict {
+                sem_err(c, "dbg requires exactly one argument")
+            }
+            return sem_tmk(c, TK_VOID)
+        }
+        return sem_check_expression(c, args.data[0])
+    }
+    if sem_is_dimensionless_math(name) and args.len > 0 {
+        let ats: ptr<SemIntVec> = sem_iv_new()
+        let mut i: i32 = 0
+        let mut any_dims: bool = false
+        while i < args.len {
+            let at: i32 = sem_check_expression(c, args.data[i])
+            sem_iv_push(ats, at)
+            if sem_dims_of(c, at) != null {
+                any_dims = true
+            }
+            i = i + 1
+        }
+        if any_dims {
+            i = 0
+            while i < ats.len {
+                let at2: i32 = ats.data[i]
+                if sem_dims_of(c, at2) != null and sem_is_radian(c, at2) == false {
+                    sem_err(c, "dimensional error: " + name + "() requires a dimensionless or Radian argument, got " + sem_tstr(c, at2))
+                }
+                i = i + 1
+            }
+            return sem_tmk(c, TK_F64)
+        }
+    }
+    if sem_s_starts(name, "array_") {
+        let el: i32 = sem_parse_named_scalar(c, sem_s_from(name, 6))
+        if el >= 0 {
+            return sem_ty_array(c.t, el, NO_SIZE)
+        }
+    }
+    let mut s: i32 = sem_lookup(c, name)
+    if s < 0 and sem_ensure_generic_function_instance(c, name) {
+        s = sem_lookup(c, name)
+    }
+    if s < 0 {
+        if sem_builtin_kind(name) != 0 {
+            let mut i2: i32 = 0
+            while i2 < args.len {
+                sem_check_expression(c, args.data[i2])
+                i2 = i2 + 1
+            }
+            return sem_builtin_type(c, name)
+        }
+        let active: ptr<SemStrVec> = sem_active_handlers(c)
+        if c.current_function_name as ptr<u8> != null {
+            let row: ptr<SemStrVec> = sem_function_effect_row(c, c.current_function_name)
+            if row != null {
+                let mut r: i32 = 0
+                while r < row.len {
+                    sem_sv_add(active, sem_sv_get(row, r))
+                    r = r + 1
+                }
+            }
+        }
+        let mut found: string = null as string
+        let mut ai: i32 = 0
+        while ai < active.len and found as ptr<u8> == null {
+            let en: string = sem_sv_get(active, ai)
+            let ed: i32 = sem_sm_get(c.effect_types, en)
+            if ed >= 0 and sem_effect_op(c, ed, name) >= 0 {
+                found = en
+            }
+            ai = ai + 1
+        }
+        if found as ptr<u8> != null {
+            sem_err(c, "effect operation '" + name + "' must be called as '" + found + "." + name + "'")
+        } elif sem_cimport_knows(c, name) {
+            # Declared by an @cImport header: unchecked, any type.
+            let mut i3: i32 = 0
+            while i3 < args.len {
+                sem_check_expression(c, args.data[i3])
+                i3 = i3 + 1
+            }
+            return 0 - 1
+        } elif c.strict {
+            sem_err(c, "Undefined function '" + name + "'")
+        }
+        return sem_tmk(c, TK_VOID)
+    }
+    let sty: i32 = sem_sym_type(c, s)
+    if sem_tkind(c, sty) != TK_FUNCTION {
+        sem_err(c, "'" + name + "' is not a function")
+        return sem_tmk(c, TK_VOID)
+    }
+    if c.check_effect_rows {
+        let needed: ptr<SemStrVec> = sem_sv_new()
+        let frow: ptr<SemStrVec> = sem_function_effect_row(c, name)
+        if frow != null {
+            let mut r2: i32 = 0
+            while r2 < frow.len {
+                sem_sv_add(needed, sem_sv_get(frow, r2))
+                r2 = r2 + 1
+            }
+        }
+        let mut r3: i32 = 0
+        while r3 < sem_ty_neffects(c.t, sty) {
+            sem_sv_add(needed, sem_ty_effect(c.t, sty, r3))
+            r3 = r3 + 1
+        }
+        if needed.len > 0 {
+            let act: ptr<SemStrVec> = sem_active_handlers(c)
+            let missing: ptr<SemStrVec> = sem_sv_new()
+            let mut r4: i32 = 0
+            while r4 < needed.len {
+                if sem_sv_has(act, sem_sv_get(needed, r4)) == false {
+                    sem_sv_push(missing, sem_sv_get(needed, r4))
+                }
+                r4 = r4 + 1
+            }
+            sem_sv_sort(missing)
+            if missing.len > 0 {
+                let mut whr: string = ""
+                if c.current_function_name as ptr<u8> != null {
+                    whr = " from '" + c.current_function_name + "'"
+                }
+                sem_err(c, "Call to '" + name + "'" + whr + " requires effect(s) " + sem_sv_join(missing, ", ") + ": handle them or declare `with " + sem_sv_join(missing, ", ") + "` on the caller")
+            }
+        }
+    }
+    let cands: ptr<SemIntVec> = sem_candidates_of(c, s)
+    let arg_types: ptr<SemIntVec> = sem_iv_new()
+    let mut k: i32 = 0
+    while k < args.len {
+        sem_iv_push(arg_types, sem_check_expression(c, args.data[k]))
+        k = k + 1
+    }
+    let vfi: i32 = sem_sm_get(c.function_decls, name)
+    let mut variadic: bool = false
+    if vfi >= 0 and sem_iv_get(c.fi_variadic, vfi) == 1 {
+        variadic = true
+    }
+    let mut matching: i32 = 0 - 1
+    let mut pass: i32 = 0
+    while pass < 2 and matching < 0 {
+        c.relax_c_strings = pass == 1
+        let mut ci: i32 = 0
+        while ci < cands.len and matching < 0 {
+            let cand: i32 = cands.data[ci]
+            let np: i32 = sem_ty_nparams(c.t, cand)
+            let mut fits: bool = true
+            if variadic {
+                if arg_types.len < np {
+                    fits = false
+                }
+            } elif np != arg_types.len {
+                fits = false
+            }
+            if fits {
+                let mut j: i32 = 0
+                while j < np and j < arg_types.len and fits {
+                    if sem_is_compatible(c, arg_types.data[j], sem_ty_param(c.t, cand, j)) == false {
+                        fits = false
+                    }
+                    j = j + 1
+                }
+                if fits {
+                    matching = cand
+                }
+            }
+            ci = ci + 1
+        }
+        pass = pass + 1
+    }
+    c.relax_c_strings = false
+    if matching >= 0 {
+        sem_check_span_arguments(c, name, args, matching)
+        if c.current_function_name as ptr<u8> != null {
+            let mut idx: i32 = 0
+            while idx < args.len and idx < sem_ty_nparams(c.t, matching) {
+                if sem_is_reference_type(c, sem_ty_param(c.t, matching, idx)) {
+                    let arg: i32 = args.data[idx]
+                    let pi: i32 = sem_root_parameter_index(c, arg)
+                    if pi >= 0 {
+                        let ck: string = name + "\x01" + sem_s_itoa(idx as i64)
+                        let mut pk: i32 = sem_sm_get(c.prop_index, ck)
+                        if pk < 0 {
+                            pk = sem_sv_len(c.prop_keys)
+                            sem_sv_push(c.prop_keys, ck)
+                            sem_pv_push(c.prop_sets, sem_sv_new() as ptr<void>)
+                            sem_sm_put(c.prop_index, ck, pk)
+                        }
+                        sem_sv_add(sem_pv_get(c.prop_sets, pk) as ptr<SemStrVec>, c.current_function_name + "\x01" + sem_s_itoa(pi as i64))
+                    }
+                    let origin: string = sem_local_borrow_origin(c, arg)
+                    if origin as ptr<u8> != null and sem_sv_has(c.local_storage, origin) {
+                        let rk: string = sem_node_key(c, node) + "\x01" + c.current_function_name + "\x01" + name + "\x01" + sem_s_itoa(idx as i64) + "\x01" + origin
+                        if sem_sm_has(c.ref_seen, rk) == false {
+                            sem_sm_put(c.ref_seen, rk, 1)
+                            sem_sv_push(c.ref_key, sem_node_key(c, node))
+                            sem_sv_push(c.ref_caller, c.current_function_name)
+                            sem_sv_push(c.ref_callee, name)
+                            sem_iv_push(c.ref_idx, idx)
+                            sem_sv_push(c.ref_origin, origin)
+                            sem_sv_push(c.ref_loc, sem_location_suffix(c, stmt))
+                        }
+                    }
+                }
+                idx = idx + 1
+            }
+        }
+        return tys.ret[matching]
+    }
+    let implicit: i32 = sem_match_implicit_effect_overload(c, cands, arg_types)
+    if implicit >= 0 {
+        return tys.ret[implicit]
+    }
+    if sem_builtin_kind(name) != 0 {
+        return sem_builtin_type(c, name)
+    }
+    let mut ci2: i32 = 0
+    while ci2 < cands.len {
+        let cand2: i32 = cands.data[ci2]
+        if sem_ty_nparams(c.t, cand2) == arg_types.len {
+            let mut has_span: bool = false
+            let mut j2: i32 = 0
+            while j2 < sem_ty_nparams(c.t, cand2) {
+                if sem_is_span(c, sem_ty_param(c.t, cand2, j2)) {
+                    has_span = true
+                }
+                j2 = j2 + 1
+            }
+            if has_span {
+                if sem_check_span_arguments(c, name, args, cand2) {
+                    return tys.ret[cand2]
+                }
+            }
+        }
+        ci2 = ci2 + 1
+    }
+    let mut shown: string = ""
+    let mut a2: i32 = 0
+    while a2 < arg_types.len {
+        if a2 > 0 {
+            shown = shown + ", "
+        }
+        shown = shown + sem_tstr(c, arg_types.data[a2])
+        a2 = a2 + 1
+    }
+    sem_err(c, "No matching overload for function '" + name + "' with arguments (" + shown + ")")
+    return tys.ret[cands.data[0]]
+}
+
+# _effect_name_for_method_receiver
+function sem_effect_name_for_receiver(c: ptr<Sem>, recv: i32) -> string {
+    if sem_is_variable(c, recv) == false {
+        return null as string
+    }
+    let nm: string = sem_nname(c, recv)
+    if sem_sm_has(c.effect_types, nm) {
+        return nm
+    }
+    let s: i32 = sem_lookup(c, nm)
+    if s >= 0 {
+        let tn: string = sem_tname(c, sem_sym_type(c, s))
+        if sem_s_starts(tn, "capability_") {
+            return sem_s_from(tn, 11)
+        }
+        if sem_sm_has(c.effect_types, tn) {
+            return tn
+        }
+    }
+    return null as string
+}
+
+# _impl_method_for_receiver
+function sem_impl_method_for_receiver(c: ptr<Sem>, recv_type: i32, method: string) -> string {
+    let mut sname: string = null as string
+    if sem_tkind(c, recv_type) == TK_STRUCT {
+        sname = sem_tname(c, recv_type)
+    } elif sem_tkind(c, recv_type) == TK_POINTER and sem_telem(c, recv_type) >= 0 {
+        if sem_tkind(c, sem_telem(c, recv_type)) == TK_STRUCT {
+            sname = sem_tname(c, sem_telem(c, recv_type))
+        }
+    }
+    if sname as ptr<u8> == null or sem_s_len(sname) == 0 {
+        return null as string
+    }
+    let li: i32 = sem_sm_get(c.impl_methods, sname + "\x01" + method)
+    if li < 0 {
+        return null as string
+    }
+    let lst: ptr<SemStrVec> = sem_pv_get(c.impl_method_lists, li) as ptr<SemStrVec>
+    if lst.len == 1 {
+        return sem_sv_get(lst, 0)
+    }
+    if lst.len > 1 {
+        sem_err(c, "Ambiguous method '" + method + "' for type '" + sname + "' (" + sem_sv_join(lst, ", ") + ")")
+    }
+    return null as string
+}
+
+function sem_call_args(c: ptr<Sem>, first: i32) -> ptr<SemIntVec> {
+    let v: ptr<SemIntVec> = sem_iv_new()
+    let mut a: i32 = first
+    while a != AST_NONE {
+        sem_iv_push(v, a)
+        a = sem_nnext(c, a)
+    }
+    return v
+}
+
+# A MethodCall: receiver = the first argument.
+function sem_check_method_call(c: ptr<Sem>, e: i32, stmt: i32) -> i32 {
+    let recv: i32 = sem_na(c, e)
+    let method: string = sem_nname(c, e)
+    let rest: ptr<SemIntVec> = sem_call_args(c, sem_nnext(c, recv))
+    let en: string = sem_effect_name_for_receiver(c, recv)
+    if en as ptr<u8> != null {
+        return sem_check_effect_call(c, en, method, rest)
+    }
+    let recv_type: i32 = sem_check_expression(c, recv)
+    let all: ptr<SemIntVec> = sem_call_args(c, recv)
+    let im: string = sem_impl_method_for_receiver(c, recv_type, method)
+    if im as ptr<u8> != null {
+        sem_resolved_calls_add(c, im)
+        return sem_check_function_call(c, im, all, e, stmt)
+    }
+    sem_resolved_calls_add(c, "__unresolved_dynamic_call")
+    sem_check_rt_safe_call(c, "__unresolved_dynamic_call")
+    return sem_check_function_call(c, method, all, e, stmt)
+}
+
+# A range sum `sum(a..b step s)` lowers to a call of a generated helper.
+function sem_check_range_sum(c: ptr<Sem>, e: i32) -> i32 {
+    let mut a: i32 = sem_na(c, e)
+    while a != AST_NONE {
+        sem_check_expression(c, a)
+        a = sem_nnext(c, a)
+    }
+    return sem_tmk(c, TK_I32)
+}
+
+# `xs |> find(target)`: the call sits right after a pipeline operator.
+function sem_is_pipe_find(c: ptr<Sem>, e: i32) -> bool {
+    if sem_nname_is(c, e, "find") == false or sem_nlen(c, sem_na(c, e)) != 2 {
+        return false
+    }
+    let mut i: i32 = c.ar.nodes[e].name_start - 1
+    while i > 0 and sem_s_is_space(c.src[i] as i32) {
+        i = i - 1
+    }
+    return i > 0 and c.src[i] == 62 and c.src[i - 1] == 124
+}
+
+function sem_check_call(c: ptr<Sem>, e: i32, stmt: i32) -> i32 {
+    let iv: i32 = sem_nival(c, e)
+    if iv >= 2 and iv <= 4 and sem_nname_is(c, e, "sum") {
+        return sem_check_range_sum(c, e)
+    }
+    if sem_is_method_call(c, e) {
+        return sem_check_method_call(c, e, stmt)
+    }
+    if sem_is_pipe_find(c, e) {
+        return sem_check_find_expr(c, sem_na(c, e), sem_nnext(c, sem_na(c, e)))
+    }
+    return sem_check_function_call(c, sem_call_name(c, e), sem_call_args(c, sem_na(c, e)), e, stmt)
+}
+
+# ---------------------------------------------------------------------------
+# Struct literals, field access, sort and find
+# ---------------------------------------------------------------------------
+
+function sem_struct_lit_name(c: ptr<Sem>, e: i32) -> string {
+    let mut nm: string = sem_nname(c, e)
+    let mut t: i32 = sem_nb(c, e)
+    while t != AST_NONE {
+        nm = nm + "_" + sem_pt_name(c.t, sem_pt_of_ast(c, t))
+        t = sem_nnext(c, t)
+    }
+    return nm
+}
+
+# _check_struct_literal
+function sem_check_struct_literal(c: ptr<Sem>, e: i32) -> i32 {
+    if sem_ncc(c, e) != AST_NONE {
+        return sem_check_record_update(c, e)
+    }
+    return sem_check_struct_fields(c, sem_struct_lit_name(c, e), sem_na(c, e))
+}
+
+# _check_record_update: `Point { ..p, x: 3 }` (the literal's c is the base).
+# The result is the base's struct; each listed field must exist on it and
+# take the value's type.
+function sem_check_record_update(c: ptr<Sem>, e: i32) -> i32 {
+    let bt: i32 = sem_check_expression(c, sem_ncc(c, e))
+    let mut sname: string = ""
+    if bt >= 0 {
+        let tn: string = sem_tname(c, bt)
+        if tn as ptr<u8> != null {
+            sname = tn
+        }
+    }
+    let se: i32 = sem_struct_entry(c, sname)
+    if sem_s_len(sname) == 0 or se < 0 {
+        if c.strict {
+            let mut shown: string = sname
+            if sem_s_len(shown) == 0 {
+                shown = sem_tstr(c, bt)
+            }
+            sem_err(c, "record update base must be a struct, got " + shown)
+        }
+        return sem_ty_struct(c.t, sname)
+    }
+    let n: i32 = sem_se_nfields(c, se)
+    let mut f: i32 = sem_na(c, e)
+    while f != AST_NONE {
+        let fname: string = sem_nname(c, f)
+        let mut last: i32 = 0 - 1
+        let mut j: i32 = 0
+        while j < n {
+            if sem_s_eq(sem_se_field_name(c, se, j), fname) {
+                last = j
+            }
+            j = j + 1
+        }
+        let mut expected: i32 = sem_tmk(c, TK_UNKNOWN)
+        if last < 0 {
+            sem_err(c, "record update: struct '" + sname + "' has no field '" + fname + "'")
+        } else {
+            expected = sem_parse_type(c, sem_se_field_type(c, se, last))
+        }
+        let actual: i32 = sem_check_expression(c, sem_na(c, f))
+        if sem_can_coerce(c, actual, expected) == false {
+            sem_err(c, "record update: field '" + fname + "' expects " + sem_tstr(c, expected) + ", got " + sem_tstr(c, actual))
+        }
+        f = sem_nnext(c, f)
+    }
+    return sem_ty_struct(c.t, sname)
+}
+
+# _check_struct_literal for StructLiteral(name, fields): `first` is the
+# AST_FIELD chain (a = the value).
+function sem_check_struct_fields(c: ptr<Sem>, name: string, first: i32) -> i32 {
+    sem_ensure_generic_struct_instance(c, name, null)
+    let se: i32 = sem_struct_entry(c, name)
+    if se < 0 {
+        return sem_ty_struct(c.t, name)
+    }
+    let pnames: ptr<SemStrVec> = sem_sv_new()
+    let ptypes: ptr<SemIntVec> = sem_iv_new()
+    let mut f: i32 = first
+    while f != AST_NONE {
+        let fname: string = sem_nname(c, f)
+        let ft: i32 = sem_check_expression(c, sem_na(c, f))
+        let mut k: i32 = 0
+        let mut found: i32 = 0 - 1
+        while k < pnames.len {
+            if sem_s_eq(sem_sv_get(pnames, k), fname) {
+                found = k
+            }
+            k = k + 1
+        }
+        if found >= 0 {
+            ptypes.data[found] = ft
+        } else {
+            sem_sv_push(pnames, fname)
+            sem_iv_push(ptypes, ft)
+        }
+        f = sem_nnext(c, f)
+    }
+    let mut i: i32 = 0
+    let n: i32 = sem_se_nfields(c, se)
+    while i < n {
+        let fname2: string = sem_se_field_name(c, se, i)
+        # expected_fields is a dict: a later field of the same name wins.
+        let mut last: i32 = i
+        let mut j: i32 = i + 1
+        while j < n {
+            if sem_s_eq(sem_se_field_name(c, se, j), fname2) {
+                last = j
+            }
+            j = j + 1
+        }
+        let mut first: bool = true
+        j = 0
+        while j < i {
+            if sem_s_eq(sem_se_field_name(c, se, j), fname2) {
+                first = false
+            }
+            j = j + 1
+        }
+        if first {
+            let expected: i32 = sem_parse_type(c, sem_se_field_type(c, se, last))
+            let mut pi: i32 = 0 - 1
+            let mut k2: i32 = 0
+            while k2 < pnames.len {
+                if sem_s_eq(sem_sv_get(pnames, k2), fname2) {
+                    pi = k2
+                }
+                k2 = k2 + 1
+            }
+            if pi < 0 {
+                let declared: string = sem_pt_name(c.t, sem_se_field_type(c, se, last))
+                # A type an @cImport header declares is opaque to Python;
+                # flowc reads no header, so any undeclared name may be one.
+                let from_header: bool = sem_tkind(c, expected) == TK_UNKNOWN and sem_cimport_knows(c, declared)
+                if sem_sm_has(c.opaque_c_types, declared) == false and from_header == false {
+                    sem_err(c, "Struct '" + name + "' missing field '" + fname2 + "'")
+                }
+            } elif sem_can_coerce(c, ptypes.data[pi], expected) == false {
+                sem_err(c, "Struct '" + name + "' field '" + fname2 + "' expects " + sem_tstr(c, expected) + ", got " + sem_tstr(c, ptypes.data[pi]))
+            }
+        }
+        i = i + 1
+    }
+    return sem_ty_struct(c.t, name)
+}
+
+function sem_check_field_access(c: ptr<Sem>, e: i32) -> i32 {
+    let ot: i32 = sem_check_expression(c, sem_na(c, e))
+    let field: string = sem_nname(c, e)
+    if ot < 0 {
+        return ot
+    }
+    if sem_tkind(c, ot) == TK_SPAN {
+        if sem_s_eq(field, "len") {
+            return sem_tmk(c, TK_I64)
+        }
+        if sem_s_eq(field, "data") {
+            return sem_ty_ptr(c.t, sem_telem(c, ot))
+        }
+        sem_err(c, "span has no field '" + field + "'; a span exposes `.len`, `.data` and element access `[i]`")
+        return sem_tmk(c, TK_UNKNOWN)
+    }
+    let mut sname: string = null as string
+    if sem_tkind(c, ot) == TK_STRUCT {
+        sname = sem_tname(c, ot)
+    } elif sem_tkind(c, ot) == TK_POINTER and sem_telem(c, ot) >= 0 {
+        if sem_tkind(c, sem_telem(c, ot)) == TK_STRUCT {
+            sname = sem_tname(c, sem_telem(c, ot))
+        }
+    }
+    if sname as ptr<u8> != null and sem_s_len(sname) > 0 {
+        let se: i32 = sem_struct_entry(c, sname)
+        if se >= 0 and sem_iv_get(c.se_kind, se) == SE_STRUCT {
+            let mut i: i32 = 0
+            while i < sem_se_nfields(c, se) {
+                if sem_s_eq(sem_se_field_name(c, se, i), field) {
+                    return sem_parse_type(c, sem_se_field_type(c, se, i))
+                }
+                i = i + 1
+            }
+        }
+    }
+    if c.strict {
+        sem_err(c, "Field '" + field + "' not found on type " + sem_tstr(c, ot))
+    }
+    return sem_tmk(c, TK_UNKNOWN)
+}
+
+function sem_sortable_kind(k: i32) -> bool {
+    return k == TK_I8 or k == TK_I16 or k == TK_I32 or k == TK_I64 or k == TK_U8 or k == TK_U16 or k == TK_U32 or k == TK_U64 or k == TK_F32 or k == TK_F64 or k == TK_BOOL
+}
+
+# _check_sort_expr
+function sem_check_sort_expr(c: ptr<Sem>, e: i32) -> i32 {
+    let at: i32 = sem_check_expression(c, sem_na(c, e))
+    if sem_tkind(c, at) != TK_ARRAY {
+        sem_err(c, "Declarative sort requires a sized array, got " + sem_tstr(c, at))
+        return at
+    }
+    if sem_tsize(c, at) == NO_SIZE {
+        sem_err(c, "Declarative sort requires a fixed-size array (array<T, N>)")
+    }
+    let el: i32 = sem_telem(c, at)
+    if el < 0 {
+        sem_err(c, "Declarative sort could not determine element type")
+        return at
+    }
+    let keys: i32 = sem_nb(c, e)
+    if keys != AST_NONE {
+        if sem_tkind(c, el) != TK_STRUCT or sem_s_len(sem_tname(c, el)) == 0 {
+            sem_err(c, "sort by .field requires an array of structs")
+            return at
+        }
+        let se: i32 = sem_struct_entry(c, sem_tname(c, el))
+        if se < 0 {
+            if c.strict {
+                sem_err(c, "Unknown struct type '" + sem_tname(c, el) + "' in sort")
+            }
+            return at
+        }
+        let mut k: i32 = keys
+        while k != AST_NONE {
+            let kf: string = sem_nname(c, k)
+            let mut fi: i32 = 0 - 1
+            let mut i: i32 = 0
+            while i < sem_se_nfields(c, se) {
+                if sem_s_eq(sem_se_field_name(c, se, i), kf) {
+                    fi = i
+                }
+                i = i + 1
+            }
+            if sem_s_len(kf) == 0 or fi < 0 {
+                sem_err(c, "Sort key '." + kf + "' is not a field of " + sem_tname(c, el))
+            } else {
+                let ft: i32 = sem_parse_type(c, sem_se_field_type(c, se, fi))
+                if sem_sortable_kind(sem_tkind(c, ft)) == false and sem_tkind(c, ft) != TK_STRING {
+                    sem_err(c, "Sort key '." + kf + "' has unsupported type " + sem_tstr(c, ft) + " (need numeric or string)")
+                }
+            }
+            k = sem_nnext(c, k)
+        }
+    } else {
+        if sem_tkind(c, el) == TK_STRUCT {
+            sem_err(c, "Sorting an array of structs requires `sort by .field` (or `sortBy [.field, ...]`)")
+        } elif sem_sortable_kind(sem_tkind(c, el)) == false and sem_tkind(c, el) != TK_STRING {
+            sem_err(c, "Cannot sort array of " + sem_tstr(c, el) + " (need numeric or string elements)")
+        }
+    }
+    return at
+}
+
+# _check_find_expr
+function sem_check_find_expr(c: ptr<Sem>, arr: i32, target: i32) -> i32 {
+    let at: i32 = sem_check_expression(c, arr)
+    let tt: i32 = sem_check_expression(c, target)
+    if sem_tkind(c, at) != TK_ARRAY {
+        sem_err(c, "Declarative find requires a sized array, got " + sem_tstr(c, at))
+        return sem_tmk(c, TK_I32)
+    }
+    if sem_tsize(c, at) == NO_SIZE {
+        sem_err(c, "Declarative find requires a fixed-size array (array<T, N>)")
+    }
+    let el: i32 = sem_telem(c, at)
+    if el < 0 {
+        sem_err(c, "Declarative find could not determine element type")
+        return sem_tmk(c, TK_I32)
+    }
+    if sem_sortable_kind(sem_tkind(c, el)) == false and sem_tkind(c, el) != TK_STRING {
+        sem_err(c, "Cannot find in array of " + sem_tstr(c, el) + " (need numeric or string elements)")
+        return sem_tmk(c, TK_I32)
+    }
+    if sem_tkind(c, tt) != TK_UNKNOWN and sem_tkind(c, tt) != sem_tkind(c, el) and (sem_is_numeric(c, tt) and sem_is_numeric(c, el)) == false {
+        sem_err(c, "find target has type " + sem_tstr(c, tt) + " but the array holds " + sem_tstr(c, el))
+    }
+    return sem_tmk(c, TK_I32)
+}
+
+# ---------------------------------------------------------------------------
+# Slices, arrays, casts, if-expressions, try, lambdas
+# ---------------------------------------------------------------------------
+
+function sem_array_lit_len(c: ptr<Sem>, e: i32) -> i32 {
+    let rep: i32 = sem_nb(c, e)
+    if rep != AST_NONE {
+        let ok: array<i32, 1> = [0]
+        let n: i64 = sem_literal_int(c, rep, true, &ok[0] as ptr<i32>)
+        if ok[0] == 1 {
+            return n as i32
+        }
+        return 1
+    }
+    return sem_nlen(c, sem_na(c, e))
+}
+
+# _check_slice_expr
+function sem_check_slice_expr(c: ptr<Sem>, e: i32) -> i32 {
+    let tys: ptr<SemTys> = c.t
+    let bt: i32 = sem_check_expression(c, sem_na(c, e))
+    if bt < 0 {
+        return bt
+    }
+    let mut which: i32 = 0
+    while which < 2 {
+        let mut bound: i32 = sem_nb(c, e)
+        let mut what: string = "start"
+        if which == 1 {
+            bound = sem_ncc(c, e)
+            what = "end"
+        }
+        if bound != AST_NONE {
+            let bty: i32 = sem_check_expression(c, bound)
+            let bk: i32 = sem_tkind(c, bty)
+            if bk != TK_UNKNOWN and bk != TK_VOID and sem_is_integer(c, bty) == false {
+                sem_err(c, "slice " + what + " bound must be an integer, got " + sem_tstr(c, bty))
+            }
+        }
+        which = which + 1
+    }
+    let bk2: i32 = sem_tkind(c, bt)
+    if bk2 != TK_ARRAY and bk2 != TK_SPAN and bk2 != TK_POINTER {
+        if c.strict {
+            sem_err(c, "cannot slice " + sem_tstr(c, bt) + ": a slice needs contiguous storage (array<T, N>, span, or ptr<T>)")
+        }
+        return sem_tmk(c, TK_UNKNOWN)
+    }
+    let mut el: i32 = sem_telem(c, bt)
+    if el < 0 {
+        el = sem_tmk(c, TK_UNKNOWN)
+    }
+    let mutable: i32 = sem_borrow_source_mutable(c, sem_na(c, e))
+    let mut prefix: string = "span_const_"
+    if mutable != 0 {
+        prefix = "span_mut_"
+    }
+    let sp: i32 = sem_ty_named(c.t, TK_SPAN, prefix + sem_tstr(c, el))
+    tys.elem[sp] = el
+    let new_size_3: i32 = sem_static_length(c, e)
+    tys.size[sp] = new_size_3
+    return sp
+}
+
+function sem_check_cast(c: ptr<Sem>, e: i32) -> i32 {
+    let st: i32 = sem_check_expression(c, sem_na(c, e))
+    let tt: i32 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e)))
+    if sem_can_cast(c, st, tt) == false {
+        sem_err(c, "Cannot cast " + sem_tstr(c, st) + " to " + sem_tstr(c, tt))
+    }
+    return tt
+}
+
+function sem_check_if_expr(c: ptr<Sem>, e: i32) -> i32 {
+    let ct: i32 = sem_check_expression(c, sem_na(c, e))
+    if ct >= 0 and sem_tkind(c, ct) != TK_BOOL {
+        if c.strict or sem_is_numeric(c, ct) == false {
+            sem_err(c, "If condition must be bool, got " + sem_tstr(c, ct))
+        }
+    }
+    let tt: i32 = sem_check_expression(c, sem_nb(c, e))
+    let et: i32 = sem_check_expression(c, sem_ncc(c, e))
+    if tt < 0 or et < 0 {
+        return tt
+    }
+    let tk: i32 = sem_tkind(c, tt)
+    let ek: i32 = sem_tkind(c, et)
+    if tk != ek and tk != TK_UNKNOWN and ek != TK_UNKNOWN {
+        if (sem_is_numeric(c, tt) and sem_is_numeric(c, et)) == false {
+            sem_err(c, "if-expression branches must have the same type, got " + sem_tstr(c, tt) + " and " + sem_tstr(c, et))
+        }
+    }
+    return tt
+}
+
+function sem_check_try(c: ptr<Sem>, e: i32) -> i32 {
+    let ot: i32 = sem_check_expression(c, sem_na(c, e))
+    if ot < 0 {
+        return ot
+    }
+    if sem_tkind(c, ot) == TK_STRUCT and sem_s_starts(sem_tname(c, ot), "Result_") {
+        let parts: ptr<SemStrVec> = sem_s_split(sem_tname(c, ot), 95)
+        if parts.len >= 2 {
+            let sc: i32 = sem_parse_named_scalar(c, sem_sv_get(parts, 1))
+            if sc >= 0 {
+                return sc
+            }
+            return sem_tmk(c, TK_I32)
+        }
+    }
+    if c.strict {
+        sem_err(c, "Try operator '?' requires Result type, got " + sem_tstr(c, ot))
+    }
+    return sem_tmk(c, TK_VOID)
+}
+
+function sem_check_lambda(c: ptr<Sem>, e: i32) -> i32 {
+    let tys: ptr<SemTys> = c.t
+    sem_push_scope(c)
+    let f: i32 = sem_ty_mk(c.t, TK_FUNCTION)
+    let mut p: i32 = sem_na(c, e)
+    while p != AST_NONE {
+        let pt: i32 = sem_pt_of_ast(c, sem_na(c, p))
+        let mut ptype: i32 = 0 - 1
+        if pt >= 0 and sem_s_eq(sem_pt_name(c.t, pt), "auto") == false {
+            ptype = sem_parse_type(c, pt)
+        } else {
+            ptype = sem_tmk(c, TK_UNKNOWN)
+        }
+        sem_ty_add_param(c.t, f, ptype)
+        sem_define_var(c, sem_nname(c, p), ptype, true)
+        p = sem_nnext(c, p)
+    }
+    let saved_sink: ptr<SemIntVec> = c.return_sink
+    c.return_sink = sem_iv_new()
+    sem_check_block(c, sem_ncc(c, e))
+    c.return_sink = saved_sink
+    sem_pop_scope(c)
+    if sem_nb(c, e) != AST_NONE {
+        let new_ret_4: i32 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e)))
+        tys.ret[f] = new_ret_4
+    } else {
+        let new_ret_5: i32 = sem_tmk(c, TK_VOID)
+        tys.ret[f] = new_ret_5
+    }
+    return f
+}
+
+function sem_check_array_literal(c: ptr<Sem>, e: i32) -> i32 {
+    let first: i32 = sem_na(c, e)
+    let mut el: i32 = 0 - 1
+    if first != AST_NONE {
+        el = sem_check_expression(c, first)
+    } else {
+        el = sem_tmk(c, TK_I32)
+    }
+    return sem_ty_array(c.t, el, sem_array_lit_len(c, e))
+}
+
+function sem_check_vector_literal(c: ptr<Sem>, e: i32) -> i32 {
+    let mut any_float: bool = false
+    let mut n: i32 = 0
+    let mut x: i32 = sem_na(c, e)
+    while x != AST_NONE {
+        let t: i32 = sem_check_expression(c, x)
+        if sem_tkind(c, t) == TK_F32 or sem_tkind(c, t) == TK_F64 {
+            any_float = true
+        }
+        n = n + 1
+        x = sem_nnext(c, x)
+    }
+    let mut el: string = "i32"
+    if any_float {
+        el = "f32"
+    }
+    return sem_ty_named(c.t, TK_UNKNOWN, "vec" + sem_s_itoa(n as i64) + "_" + el)
+}
+
+# `"a ${b} c"` is the parser's `"a " + b + " c"` (_parse_interpolated_string):
+# each `${...}` is parsed as an expression and checked, and the parts are
+# combined left to right with `+`.
+function sem_check_interpolation(c: ptr<Sem>, e: i32) -> i32 {
+    let s: i32 = c.ar.nodes[e].name_start + 1
+    let t: i32 = c.ar.nodes[e].name_end - 1
+    if sem_interp_parts_ok(c, s, t) == false {
+        return sem_tmk(c, TK_STRING)
+    }
+    let mut result: i32 = 0 - 1
+    let mut have: bool = false
+    let mut cursor: i32 = s
+    let mut i: i32 = s
+    while i < t {
+        if c.src[i] == 36 and i + 1 < t and c.src[i + 1] == 123 {
+            if i > cursor {
+                let lit: i32 = sem_tmk(c, TK_STRING)
+                if have {
+                    result = sem_binary_types(c, 0 - 1, "+", result, lit)
+                } else {
+                    result = lit
+                    have = true
+                }
+            }
+            let mut j: i32 = i + 2
+            while j < t and c.src[j] != 125 {
+                j = j + 1
+            }
+            let part: i32 = sem_check_embedded_expr(c, i + 2, j)
+            if have {
+                result = sem_binary_types(c, 0 - 1, "+", result, part)
+            } else {
+                result = part
+                have = true
+            }
+            cursor = j + 1
+            i = j + 1
+        } else {
+            i = i + 1
+        }
+    }
+    if cursor < t {
+        let lit2: i32 = sem_tmk(c, TK_STRING)
+        if have {
+            result = sem_binary_types(c, 0 - 1, "+", result, lit2)
+        } else {
+            result = lit2
+            have = true
+        }
+    }
+    if have == false {
+        return sem_tmk(c, TK_STRING)
+    }
+    return result
+}
+
+# flowc does not interpolate strings: `${...}` is text to it. The Python
+# parser read each `${...}` as an expression, and rejected the file when one
+# did not parse or had no closing brace. The checker follows the Python
+# reading only when every part is one complete expression; otherwise (shell
+# text such as `${TMPDIR:-/tmp}`, editor snippets such as `${1:name}`) the
+# string is plain text.
+function sem_interp_parts_ok(c: ptr<Sem>, s: i32, t: i32) -> bool {
+    let mut i: i32 = s
+    while i < t {
+        if c.src[i] == 36 and i + 1 < t and c.src[i + 1] == 123 {
+            let mut j: i32 = i + 2
+            while j < t and c.src[j] != 125 {
+                j = j + 1
+            }
+            if j >= t or j == i + 2 {
+                return false
+            }
+            let text: ptr<u8> = c.src + (i + 2)
+            let mut p: Parser = flowc_parser_new(text, j - i - 2, 4096)
+            let root: i32 = flowc_parse_expr(&p)
+            if root < 0 or p.err != 0 or p.cur.kind != TOK_EOF {
+                return false
+            }
+            i = j + 1
+        } else {
+            i = i + 1
+        }
+    }
+    return true
+}
+
+# Parse and check the expression at src[a..b) of the current module (an
+# interpolation). Its nodes live in their own arena; spans are relative to
+# the start of the expression.
+function sem_check_embedded_expr(c: ptr<Sem>, a: i32, b: i32) -> i32 {
+    let saved_ar: AstArena = c.ar
+    let saved_src: ptr<u8> = c.src
+    let saved_pos: i32 = c.pos
+    let text: ptr<u8> = c.src + a
+    let mut p: Parser = flowc_parser_new(text, b - a, 4096)
+    let root: i32 = flowc_parse_expr(&p)
+    if root < 0 or p.err != 0 {
+        return sem_tmk(c, TK_UNKNOWN)
+    }
+    let saved_lock: bool = c.pos_lock
+    c.pos_lock = true
+    c.ar = p.arena
+    c.src = text
+    let t: i32 = sem_check_expression(c, root)
+    c.ar = saved_ar
+    c.src = saved_src
+    c.pos = saved_pos
+    c.pos_lock = saved_lock
+    return t
+}
+
+# ---------------------------------------------------------------------------
+# Expressions
+# ---------------------------------------------------------------------------
+
+function sem_check_expression_stmt(c: ptr<Sem>, e: i32, stmt: i32) -> i32 {
+    if e < 0 {
+        return sem_tmk(c, TK_UNKNOWN)
+    }
+    sem_set_pos(c, e)
+    let k: i32 = sem_nk(c, e)
+    if k == AST_INT or k == AST_FLOAT or k == AST_BOOL {
+        return sem_check_literal(c, e)
+    }
+    if k == AST_STRING {
+        if sem_string_has_interp(c, e) {
+            return sem_check_interpolation(c, e)
+        }
+        return sem_check_literal(c, e)
+    }
+    if k == AST_IDENT {
+        if sem_nname_is(c, e, "null") {
+            return sem_check_literal(c, e)
+        }
+        if sem_nival(c, e) == AST_IDENT_FORK_SRC {
+            let ft: i32 = sem_sm_get(c.fork_src, sem_node_key(c, sem_nend(c, e) - 1))
+            if ft >= 0 {
+                return ft
+            }
+            return sem_tmk(c, TK_UNKNOWN)
+        }
+        if sem_nival(c, e) == AST_IDENT_SORT_MOD {
+            return sem_tmk(c, TK_UNKNOWN)
+        }
+        return sem_check_variable(c, e)
+    }
+    if k == AST_BINOP {
+        return sem_check_binary_op(c, e)
+    }
+    if k == AST_UNARY {
+        if sem_nival(c, e) == KW_DBG {
+            let one: ptr<SemIntVec> = sem_iv_new()
+            sem_iv_push(one, sem_na(c, e))
+            return sem_check_function_call(c, "__flow_dbg", one, e, stmt)
+        }
+        return sem_check_unary_op(c, e)
+    }
+    if k == AST_CALL {
+        return sem_check_call(c, e, stmt)
+    }
+    if k == AST_STRUCT_LIT {
+        return sem_check_struct_literal(c, e)
+    }
+    if k == AST_ARRAY_LIT {
+        return sem_check_array_literal(c, e)
+    }
+    if k == AST_VECTOR_LIT {
+        return sem_check_vector_literal(c, e)
+    }
+    if k == AST_INDEX {
+        if sem_nival(c, e) == 1 {
+            return sem_check_slice_expr(c, e)
+        }
+        let bt: i32 = sem_check_expression(c, sem_na(c, e))
+        if bt < 0 {
+            return bt
+        }
+        let bk: i32 = sem_tkind(c, bt)
+        if bk == TK_ARRAY or bk == TK_POINTER or bk == TK_SPAN {
+            let el: i32 = sem_telem(c, bt)
+            if el >= 0 {
+                return el
+            }
+            return sem_tmk(c, TK_VOID)
+        }
+        return sem_tmk(c, TK_VOID)
+    }
+    if k == AST_CAST {
+        return sem_check_cast(c, e)
+    }
+    if k == AST_IF_EXPR {
+        return sem_check_if_expr(c, e)
+    }
+    if k == AST_FIELD_ACCESS {
+        return sem_check_field_access(c, e)
+    }
+    if k == AST_TRY {
+        return sem_check_try(c, e)
+    }
+    if k == AST_FN {
+        return sem_check_lambda(c, e)
+    }
+    if k == AST_SORT_BY {
+        return sem_check_sort_expr(c, e)
+    }
+    if k == AST_PIPE_BLOCK {
+        return sem_check_pipe_block(c, e)
+    }
+    return sem_tmk(c, TK_UNKNOWN)
+}
+
+# The return type (parsed) of the outermost call of a fork branch, from the
+# module's own functions (fork_records._return_type_map), or -1.
+function sem_fork_field_type(c: ptr<Sem>, v: i32) -> i32 {
+    if sem_is_function_call(c, v) == false {
+        return 0 - 1
+    }
+    let name: string = sem_nname(c, v)
+    let mut i: i32 = 0
+    while i < sem_iv_len(c.d_kind) {
+        if sem_iv_get(c.d_kind, i) == DK_FUNC and sem_iv_get(c.d_mod, i) == c.cm {
+            let fi: i32 = sem_iv_get(c.d_info, i)
+            if sem_s_eq(sem_sv_get(c.fi_name, fi), name) {
+                return sem_iv_get(c.fi_ret, fi)
+            }
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+# A fork (`src |> Record { a = f, ... }`) is the struct literal
+# fork_records.desugar_forks makes of it; an anonymous one gets a
+# synthesized `__ForkRecord_N` struct. A choose block is the temp its
+# hoisted match assigns, typed by the first arm that ends in a known call.
+function sem_check_pipe_block(c: ptr<Sem>, e: i32) -> i32 {
+    let kind: i32 = sem_nival(c, e)
+    let st: i32 = sem_check_expression(c, sem_na(c, e))
+    sem_sm_put(c.fork_src, sem_node_key(c, e), st)
+    if kind == PIPE_BLOCK_CHOOSE {
+        sem_check_expression(c, sem_ncc(c, e))
+        let mut result: i32 = 0 - 1
+        let mut arm: i32 = sem_nb(c, e)
+        while arm != AST_NONE {
+            let v: i32 = sem_nb(c, arm)
+            sem_check_expression(c, v)
+            if result < 0 {
+                let rt: i32 = sem_fork_field_type(c, v)
+                if rt >= 0 {
+                    result = sem_parse_type(c, rt)
+                }
+            }
+            arm = sem_nnext(c, arm)
+        }
+        if result < 0 {
+            return sem_tmk(c, TK_UNKNOWN)
+        }
+        return result
+    }
+    if kind != PIPE_BLOCK_FORK {
+        return sem_tmk(c, TK_UNKNOWN)
+    }
+    let first: i32 = sem_nb(c, e)
+    if c.ar.nodes[e].name_end > c.ar.nodes[e].name_start {
+        return sem_check_struct_fields(c, sem_nname(c, e), first)
+    }
+    let mut sig: string = ""
+    let mut f: i32 = first
+    while f != AST_NONE {
+        let pt: i32 = sem_fork_field_type(c, sem_na(c, f))
+        if pt < 0 {
+            return sem_tmk(c, TK_UNKNOWN)
+        }
+        sig = sig + sem_nname(c, f) + ":" + sem_pt_name(c.t, pt) + ";"
+        f = sem_nnext(c, f)
+    }
+    let key: string = sem_s_itoa(c.cm as i64) + "|" + sig
+    let mut idx: i32 = sem_sm_get(c.fork_sigs, key)
+    if idx < 0 {
+        let ck: string = sem_s_itoa(c.cm as i64) + "#count"
+        idx = sem_sm_get(c.fork_sigs, ck)
+        if idx < 0 {
+            idx = 0
+        }
+        sem_sm_put(c.fork_sigs, ck, idx + 1)
+        sem_sm_put(c.fork_sigs, key, idx)
+        let rname: string = "__ForkRecord_" + sem_s_itoa(idx as i64)
+        let se: i32 = sem_se_new(c, rname, SE_STRUCT, 0 - 1)
+        sem_iv_set(c.se_fstart, se, sem_sv_len(c.sf_names))
+        f = first
+        while f != AST_NONE {
+            sem_se_add_field(c, se, sem_nname(c, f), sem_fork_field_type(c, sem_na(c, f)))
+            f = sem_nnext(c, f)
+        }
+        sem_sm_put(c.struct_types, rname, se)
+    }
+    return sem_check_struct_fields(c, "__ForkRecord_" + sem_s_itoa(idx as i64), first)
+}
+
+function sem_check_expression(c: ptr<Sem>, e: i32) -> i32 {
+    # `a = b = v` (#1036): the inner assignment is checked as one and has
+    # the type of v. The Python checker typed it unknown and so rejected
+    # every chained assignment; the language has it since flowc lowered it.
+    if e >= 0 and sem_nk(c, e) == AST_ASSIGN {
+        return sem_check_assignment(c, e)
+    }
+    return sem_check_expression_stmt(c, e, 0 - 1)
+}
+
+# ---------------------------------------------------------------------------
+# Statements
+# ---------------------------------------------------------------------------
+
+function sem_check_block(c: ptr<Sem>, b: i32) -> i32 {
+    let mut result: i32 = sem_tmk(c, TK_VOID)
+    if b < 0 {
+        return result
+    }
+    let mut s: i32 = sem_na(c, b)
+    while s != AST_NONE {
+        result = sem_check_statement(c, s)
+        s = sem_nnext(c, s)
+    }
+    return result
+}
+
+# _check_var_decl
+function sem_check_var_decl(c: ptr<Sem>, s: i32) -> i32 {
+    let name: string = sem_nname(c, s)
+    let is_mut: bool = sem_nival(c, s) == 1
+    let tnode: i32 = sem_na(c, s)
+    let init: i32 = sem_nb(c, s)
+    let mut ann: i32 = 0 - 1
+    if tnode != AST_NONE {
+        ann = sem_pt_of_ast(c, tnode)
+    }
+    let has_ann: bool = ann >= 0 and sem_s_eq(sem_pt_name(c.t, ann), "auto") == false
+    if init == AST_NONE {
+        let mut expected: i32 = 0 - 1
+        if has_ann {
+            expected = sem_parse_type(c, ann)
+        } else {
+            expected = sem_tmk(c, TK_UNKNOWN)
+        }
+        if sem_tkind(c, expected) != TK_SPAN and c.current_function_name as ptr<u8> != null {
+            sem_sv_add(c.local_storage, name)
+        }
+        sem_define_var(c, name, expected, is_mut)
+        return expected
+    }
+    let et: i32 = sem_check_expression(c, init)
+    let mut expected2: i32 = et
+    if has_ann {
+        expected2 = sem_parse_type(c, ann)
+        if sem_can_coerce(c, et, expected2) == false {
+            let und: string = sem_undeclared_type_name(c, expected2, et)
+            if sem_s_len(und) > 0 {
+                sem_err(c, "Variable '" + name + "' is annotated with unknown type '" + und + "', which is not declared in this scope")
+            } else {
+                sem_err(c, "Variable '" + name + "' initialized with " + sem_tstr(c, et) + " but annotated as " + sem_tstr(c, expected2))
+            }
+        }
+    }
+    let ek: i32 = sem_tkind(c, expected2)
+    if ek == TK_SPAN or ek == TK_POINTER {
+        let origin: string = sem_local_borrow_origin(c, init)
+        if origin as ptr<u8> != null {
+            sem_sm_put(c.span_origin, name, sem_sv_len(c.origin_pool))
+            sem_sv_push(c.origin_pool, origin)
+            if ek == TK_POINTER and c.current_function_name as ptr<u8> != null {
+                sem_sv_add(c.local_storage, name)
+            }
+        } else {
+            if sem_sm_has(c.span_origin, name) {
+                sem_sm_put(c.span_origin, name, 0 - 1)
+            }
+            sem_local_storage_discard(c, name)
+        }
+    } elif c.current_function_name as ptr<u8> != null {
+        sem_sv_add(c.local_storage, name)
+    }
+    sem_define_var(c, name, expected2, is_mut)
+    return expected2
+}
+
+function sem_local_storage_discard(c: ptr<Sem>, name: string) {
+    let v: ptr<SemStrVec> = c.local_storage
+    let mut i: i32 = 0
+    while i < v.len {
+        if sem_s_eq(v.data[i], name) {
+            let mut j: i32 = i
+            while j + 1 < v.len {
+                v.data[j] = v.data[j + 1]
+                j = j + 1
+            }
+            v.len = v.len - 1
+            return
+        }
+        i = i + 1
+    }
+}
+
+# _check_return_stmt
+function sem_check_return_stmt(c: ptr<Sem>, s: i32) -> i32 {
+    let mut v: i32 = sem_na(c, s)
+    # `return void` is a bare return to the Python parser.
+    if v != AST_NONE and sem_nk(c, v) == AST_IDENT and sem_nname_is(c, v, "void") {
+        v = AST_NONE
+    }
+    let mut rt: i32 = 0 - 1
+    if v != AST_NONE {
+        rt = sem_check_expression(c, v)
+        let reported: bool = sem_domain_escape_by_return(c, s, v)
+        if reported == false and sem_is_span(c, c.current_return_type) {
+            let origin: string = sem_local_borrow_origin(c, v)
+            if origin as ptr<u8> != null {
+                sem_err(c, "span outlives borrowed storage `" + origin + "`" + sem_location_suffix(c, s))
+            }
+        }
+    } else {
+        rt = sem_tmk(c, TK_VOID)
+    }
+    if c.return_sink != null {
+        sem_iv_push(c.return_sink, rt)
+    }
+    return rt
+}
+
+# _check_assignment
+function sem_check_assignment(c: ptr<Sem>, s: i32) -> i32 {
+    let lhs: i32 = sem_na(c, s)
+    let value: i32 = sem_nb(c, s)
+    if sem_is_variable(c, lhs) == false {
+        if sem_nk(c, lhs) == AST_INDEX and sem_nival(c, lhs) != 1 {
+            let bt: i32 = sem_infer_type_quiet(c, sem_na(c, lhs))
+            if sem_is_span(c, bt) and sem_span_is_mutable(sem_tname(c, bt)) == false {
+                let mut binding: string = sem_borrow_root_name(c, lhs)
+                if binding as ptr<u8> == null {
+                    binding = "span"
+                }
+                sem_err(c, "cannot write through `" + binding + "`: " + sem_tstr(c, bt) + " is an immutable view (declare it " + sem_format_span_type("span_mut_" + sem_span_element_name(sem_tname(c, bt)), NO_SIZE) + ")")
+            }
+        }
+        let et: i32 = sem_check_expression(c, value)
+        let tt: i32 = sem_infer_type_quiet(c, lhs)
+        if tt >= 0 {
+            let base: string = sem_borrow_root_name(c, lhs)
+            if base as ptr<u8> != null and sem_sm_has(c.static_names, base) {
+                let reported: bool = sem_domain_escape_to_static(c, s, value, base, tt)
+                if reported == false and sem_is_reference_type(c, tt) {
+                    let origin: string = sem_local_borrow_origin(c, value)
+                    if origin as ptr<u8> != null {
+                        sem_err(c, "span outlives borrowed storage `" + origin + "`" + sem_location_suffix(c, s))
+                    }
+                }
+            }
+        }
+        return et
+    }
+    let target: string = sem_nname(c, lhs)
+    let sym: i32 = sem_lookup(c, target)
+    if sym < 0 {
+        sem_err(c, "Undefined variable '" + target + "'")
+        return sem_tmk(c, TK_VOID)
+    }
+    if sem_iv_get(c.sy_mut, sym) == 0 {
+        if c.strict {
+            sem_err(c, "Cannot assign to immutable variable '" + target + "' (use 'let mut')")
+            return sem_tmk(c, TK_VOID)
+        }
+        sem_iv_set(c.sy_mut, sym, 1)
+    }
+    let et2: i32 = sem_check_expression(c, value)
+    let st: i32 = sem_sym_type(c, sym)
+    let reported2: bool = sem_domain_escape_to_static(c, s, value, target, st)
+    if reported2 == false and sem_is_reference_type(c, st) and sem_sm_has(c.static_names, target) {
+        let origin2: string = sem_local_borrow_origin(c, value)
+        if origin2 as ptr<u8> != null {
+            sem_err(c, "span outlives borrowed storage `" + origin2 + "`" + sem_location_suffix(c, s))
+        }
+    }
+    if sem_can_coerce(c, et2, st) == false {
+        sem_err(c, "Cannot assign " + sem_tstr(c, et2) + " to variable '" + target + "' of type " + sem_tstr(c, st))
+    }
+    return et2
+}
+
+function sem_check_condition(c: ptr<Sem>, cond: i32, what: string) {
+    let ct: i32 = sem_check_expression(c, cond)
+    if ct >= 0 and sem_tkind(c, ct) != TK_BOOL {
+        if c.strict or sem_is_numeric(c, ct) == false {
+            sem_err(c, what + " condition must be bool, got " + sem_tstr(c, ct))
+        }
+    }
+}
+
+# _check_if_stmt. flowc nests `elif` as an if inside an else block.
+function sem_check_if_stmt(c: ptr<Sem>, s: i32) -> i32 {
+    sem_check_condition(c, sem_na(c, s), "If")
+    let then_t: i32 = sem_check_block(c, sem_nb(c, s))
+    let els: i32 = sem_ncc(c, s)
+    if els != AST_NONE {
+        sem_check_block(c, els)
+        return then_t
+    }
+    return sem_tmk(c, TK_VOID)
+}
+
+function sem_check_while_stmt(c: ptr<Sem>, s: i32) -> i32 {
+    sem_check_condition(c, sem_na(c, s), "While")
+    if c.safety_profile {
+        let bound: i32 = sem_nival(c, s)
+        if bound == 0 {
+            sem_err(c, "safety profile requires @max_iterations(N) on while loops (MISRA 17.4); use a bounded for-loop or annotate the while")
+        } elif bound < 0 {
+            sem_err(c, "@max_iterations requires a positive bound")
+        }
+    }
+    sem_check_block(c, sem_nb(c, s))
+    return sem_tmk(c, TK_VOID)
+}
+
+function sem_check_for_stmt(c: ptr<Sem>, s: i32) -> i32 {
+    sem_check_expression(c, sem_na(c, s))
+    sem_check_expression(c, sem_nb(c, s))
+    let step: i32 = sem_nival(c, s)
+    if step > 0 {
+        sem_check_expression(c, step)
+    }
+    sem_push_scope(c)
+    sem_define_var(c, sem_nname(c, s), sem_tmk(c, TK_I32), true)
+    sem_check_block(c, sem_ncc(c, s))
+    sem_pop_scope(c)
+    return sem_tmk(c, TK_VOID)
+}
+
+function sem_check_handle_stmt(c: ptr<Sem>, s: i32) -> i32 {
+    let installed: ptr<SemStrVec> = sem_sv_new()
+    let mut e: i32 = sem_nb(c, s)
+    while e != AST_NONE {
+        let en: string = sem_nname(c, e)
+        if sem_sm_has(c.effect_types, en) == false {
+            if c.strict {
+                sem_err(c, "Unknown effect '" + en + "' in handle statement")
+            }
+        } else {
+            sem_sv_add(installed, en)
+        }
+        e = sem_nnext(c, e)
+    }
+    let mut h: i32 = sem_ncc(c, s)
+    while h != AST_NONE {
+        let hn: string = sem_nname(c, h)
+        if sem_sm_has(c.capability_types, hn) == false and sem_lookup(c, hn) < 0 and c.strict {
+            sem_warn(c, "Handle handler '" + hn + "' is not a known capability")
+        }
+        h = sem_nnext(c, h)
+    }
+    sem_pv_push(c.handler_stack, installed as ptr<void>)
+    let r: i32 = sem_check_block(c, sem_na(c, s))
+    sem_pv_setlen(c.handler_stack, sem_pv_len(c.handler_stack) - 1)
+    return r
+}
+
+# ---------------------------------------------------------------------------
+# match
+# ---------------------------------------------------------------------------
+
+# A pattern's shape, from a flowc match arm.
+const PAT_LITERAL: i32 = 1
+const PAT_WILDCARD: i32 = 2
+const PAT_VARIABLE: i32 = 3
+const PAT_STRUCT: i32 = 4
+const PAT_LIST: i32 = 5
+const PAT_OR: i32 = 6
+const PAT_OTHER: i32 = 7
+
+# The Python pattern class of an expression used as a pattern (the
+# `match_arm_ext` alternatives, parsed as expressions).
+function sem_expr_pattern_kind(c: ptr<Sem>, e: i32) -> i32 {
+    if sem_is_literal(c, e) {
+        return PAT_LITERAL
+    }
+    if sem_is_variable(c, e) {
+        if sem_nname_is(c, e, "_") {
+            return PAT_WILDCARD
+        }
+        return PAT_VARIABLE
+    }
+    if sem_nk(c, e) == AST_ARRAY_LIT and sem_nb(c, e) == AST_NONE {
+        let mut x: i32 = sem_na(c, e)
+        while x != AST_NONE {
+            if sem_is_variable(c, x) == false and sem_is_literal(c, x) == false {
+                return PAT_OTHER
+            }
+            x = sem_nnext(c, x)
+        }
+        return PAT_LIST
+    }
+    if sem_is_function_call(c, e) and sem_struct_pattern_ok(c, e) {
+        return PAT_STRUCT
+    }
+    return PAT_OTHER
+}
+
+# _finalize_pattern_atom: a call whose arguments are variables, literals or
+# struct patterns.
+function sem_struct_pattern_ok(c: ptr<Sem>, e: i32) -> bool {
+    let mut a: i32 = sem_na(c, e)
+    while a != AST_NONE {
+        if sem_is_variable(c, a) == false and sem_is_literal(c, a) == false {
+            if sem_is_function_call(c, a) == false or sem_struct_pattern_ok(c, a) == false {
+                return false
+            }
+        }
+        a = sem_nnext(c, a)
+    }
+    return true
+}
+
+# _bind_struct_pattern (pattern = a call node).
+function sem_bind_struct_pattern(c: ptr<Sem>, pat: i32) {
+    let sname: string = sem_call_name(c, pat)
+    let se: i32 = sem_struct_entry(c, sname)
+    if se < 0 {
+        sem_err(c, "Unknown struct in match pattern: " + sname)
+        return
+    }
+    let nf: i32 = sem_se_nfields(c, se)
+    let mut i: i32 = 0
+    let mut a: i32 = sem_na(c, pat)
+    while a != AST_NONE {
+        if sem_is_function_call(c, a) {
+            sem_bind_struct_pattern(c, a)
+        } elif sem_is_literal(c, a) {
+            if i < nf {
+                let ft: i32 = sem_parse_type(c, sem_se_field_type(c, se, i))
+                let lt: i32 = sem_check_literal(c, a)
+                if sem_can_coerce(c, ft, lt) == false and sem_can_coerce(c, lt, ft) == false {
+                    if c.strict {
+                        sem_err(c, "Match pattern field " + sem_s_itoa(i as i64) + " of " + sname + " expects " + sem_tstr(c, ft) + ", got literal " + sem_tstr(c, lt))
+                    }
+                }
+            }
+        } elif sem_nname_is(c, a, "_") == false {
+            let mut bt: i32 = 0 - 1
+            if i < nf {
+                bt = sem_parse_type(c, sem_se_field_type(c, se, i))
+            } else {
+                bt = sem_tmk(c, TK_UNKNOWN)
+            }
+            sem_define_var(c, sem_nname(c, a), bt, false)
+        }
+        i = i + 1
+        a = sem_nnext(c, a)
+    }
+}
+
+# A simple arm's `P(a, b)` binding list (kind 5): all plain names.
+function sem_bind_simple_struct(c: ptr<Sem>, arm: i32) {
+    let sname: string = sem_nname(c, arm)
+    let se: i32 = sem_struct_entry(c, sname)
+    if se < 0 {
+        sem_err(c, "Unknown struct in match pattern: " + sname)
+        return
+    }
+    let nf: i32 = sem_se_nfields(c, se)
+    let mut i: i32 = 0
+    let mut a: i32 = sem_na(c, arm)
+    while a != AST_NONE {
+        if sem_nname_is(c, a, "_") == false {
+            let mut bt: i32 = 0 - 1
+            if i < nf {
+                bt = sem_parse_type(c, sem_se_field_type(c, se, i))
+            } else {
+                bt = sem_tmk(c, TK_UNKNOWN)
+            }
+            sem_define_var(c, sem_nname(c, a), bt, false)
+        }
+        i = i + 1
+        a = sem_nnext(c, a)
+    }
+}
+
+function sem_literal_pattern_check(c: ptr<Sem>, lit: i32, value_type: i32) {
+    let pt: i32 = sem_check_literal(c, lit)
+    if sem_can_coerce(c, value_type, pt) == false and sem_can_coerce(c, pt, value_type) == false {
+        if c.strict {
+            sem_err(c, "Match pattern " + sem_tstr(c, pt) + " incompatible with value type " + sem_tstr(c, value_type))
+        }
+    }
+}
+
+function sem_list_pattern_check(c: ptr<Sem>, first: i32, value_type: i32) {
+    if sem_tkind(c, value_type) != TK_ARRAY {
+        if c.strict {
+            sem_err(c, "List pattern " + sem_list_pattern_repr(c, first) + " requires an array value, got " + sem_tstr(c, value_type))
+        }
+        return
+    }
+    let mut el: i32 = sem_telem(c, value_type)
+    if el < 0 {
+        el = sem_tmk(c, TK_I32)
+    }
+    let mut x: i32 = first
+    while x != AST_NONE {
+        if sem_is_variable(c, x) and sem_nname_is(c, x, "_") == false {
+            sem_define_var(c, sem_nname(c, x), el, false)
+        } elif sem_is_literal(c, x) {
+            let lt: i32 = sem_check_literal(c, x)
+            if sem_can_coerce(c, lt, el) == false and sem_can_coerce(c, el, lt) == false {
+                if c.strict {
+                    sem_err(c, "List pattern element " + sem_tstr(c, lt) + " incompatible with array element type " + sem_tstr(c, el))
+                }
+            }
+        }
+        x = sem_nnext(c, x)
+    }
+}
+
+# repr(ListPattern) is a dataclass repr; only its prefix is stable enough to
+# print, so print it the way Python would for literals and names.
+function sem_list_pattern_repr(c: ptr<Sem>, first: i32) -> string {
+    let mut s: string = "ListPattern(elements=["
+    let mut x: i32 = first
+    let mut i: i32 = 0
+    while x != AST_NONE {
+        if i > 0 {
+            s = s + ", "
+        }
+        if sem_is_variable(c, x) {
+            s = s + "Variable(name='" + sem_nname(c, x) + "')"
+        } else {
+            let lit: string = sem_s_span(c.src, c.ar.nodes[x].name_start, c.ar.nodes[x].name_end)
+            s = s + "Literal(value='" + lit + "', type=Type(name='i32', is_pointer=False, is_reference=False, is_capability=False, size=None, element_type=None, type_args=None, effects=[], is_cfn=False))"
+        }
+        i = i + 1
+        x = sem_nnext(c, x)
+    }
+    return s + "])"
+}
+
+# The variable pattern (or path/const pattern) of an identifier.
+function sem_variable_pattern(c: ptr<Sem>, name: string, value_type: i32) {
+    let cs: i32 = sem_lookup_const_symbol(c, name)
+    if cs >= 0 {
+        let mut compare: i32 = value_type
+        if sem_tkind(c, value_type) == TK_STRUCT and sem_sm_has(c.enum_decls, sem_tname(c, value_type)) {
+            compare = sem_tmk(c, TK_I32)
+        }
+        let pt: i32 = sem_sym_type(c, cs)
+        if sem_can_coerce(c, compare, pt) == false and sem_can_coerce(c, pt, compare) == false {
+            if c.strict {
+                sem_err(c, "Match pattern '" + name + "' has type " + sem_tstr(c, pt) + " incompatible with value type " + sem_tstr(c, value_type))
+            }
+        }
+    } elif sem_s_eq(name, "_") == false {
+        sem_define_var(c, name, value_type, false)
+    }
+}
+
+# One arm: the Python MatchCase. Fills pattern-kind info for exhaustiveness.
+function sem_arm_pattern_kind(c: ptr<Sem>, arm: i32) -> i32 {
+    if sem_nk(c, arm) == AST_MATCH_ARM {
+        let pk: i32 = sem_nival(c, arm)
+        let pat: i32 = sem_na(c, arm)
+        if pk == 0 {
+            if pat != AST_NONE and sem_nk(c, pat) == AST_IDENT {
+                return PAT_VARIABLE
+            }
+            if sem_arm_is_negative(c, arm) {
+                return PAT_OTHER
+            }
+            return PAT_LITERAL
+        }
+        if pk == 1 {
+            return PAT_WILDCARD
+        }
+        if pk == 2 {
+            return PAT_VARIABLE
+        }
+        if pk == 3 or pk == 4 {
+            return PAT_LITERAL
+        }
+        if pk == 5 {
+            return PAT_STRUCT
+        }
+        if pk == 6 {
+            return PAT_LIST
+        }
+        return PAT_OTHER
+    }
+    let pats: i32 = sem_na(c, arm)
+    if sem_nnext(c, pats) != AST_NONE {
+        return PAT_OR
+    }
+    return sem_expr_pattern_kind(c, pats)
+}
+
+# `-1 => ...`: flowc folds the sign into the literal; the arm starts at `-`.
+function sem_arm_is_negative(c: ptr<Sem>, arm: i32) -> bool {
+    let pat: i32 = sem_na(c, arm)
+    if pat == AST_NONE {
+        return false
+    }
+    return sem_nstart(c, arm) < sem_nstart(c, pat) and c.src[sem_nstart(c, arm)] == 45
+}
+
+function sem_is_default_arm(c: ptr<Sem>, arm: i32) -> bool {
+    return sem_nk(c, arm) == AST_MATCH_ARM and sem_nival(c, arm) == 1 and c.ar.nodes[arm].name_start == c.ar.nodes[arm].name_end
+}
+
+function sem_arm_body(c: ptr<Sem>, arm: i32) -> i32 {
+    return sem_nb(c, arm)
+}
+
+function sem_arm_guard(c: ptr<Sem>, arm: i32) -> i32 {
+    if sem_nk(c, arm) == AST_MATCH_ARM_EXT {
+        return sem_ncc(c, arm)
+    }
+    return 0 - 1
+}
+
+# The name of a variable pattern arm.
+function sem_arm_var_name(c: ptr<Sem>, arm: i32) -> string {
+    if sem_nk(c, arm) == AST_MATCH_ARM {
+        if sem_nival(c, arm) == 0 {
+            return sem_nname(c, sem_na(c, arm))
+        }
+        return sem_nname(c, arm)
+    }
+    return sem_nname(c, sem_na(c, arm))
+}
+
+# Bind an arm's pattern into the case scope (the body of _check_match_stmt's
+# loop before the guard).
+function sem_bind_arm(c: ptr<Sem>, arm: i32, value_type: i32) {
+    let pk: i32 = sem_arm_pattern_kind(c, arm)
+    if sem_nk(c, arm) == AST_MATCH_ARM {
+        let pat: i32 = sem_na(c, arm)
+        let kind: i32 = sem_nival(c, arm)
+        if pk == PAT_LITERAL {
+            sem_literal_pattern_check(c, pat, value_type)
+        } elif pk == PAT_STRUCT {
+            sem_bind_simple_struct(c, arm)
+        } elif pk == PAT_LIST {
+            sem_list_pattern_check(c, pat, value_type)
+        } elif pk == PAT_VARIABLE {
+            sem_variable_pattern(c, sem_arm_var_name(c, arm), value_type)
+        } elif pk == PAT_WILDCARD and kind == 1 {
+            # `_`: a Variable pattern named "_": nothing to bind.
+        }
+        return
+    }
+    let pats: i32 = sem_na(c, arm)
+    if pk == PAT_OR {
+        let mut x: i32 = pats
+        while x != AST_NONE {
+            if sem_is_literal(c, x) {
+                sem_literal_pattern_check(c, x, value_type)
+            }
+            x = sem_nnext(c, x)
+        }
+        if sem_is_function_call(c, pats) and sem_struct_pattern_ok(c, pats) {
+            sem_bind_struct_pattern(c, pats)
+        }
+        return
+    }
+    if pk == PAT_LITERAL {
+        sem_literal_pattern_check(c, pats, value_type)
+    } elif pk == PAT_STRUCT {
+        sem_bind_struct_pattern(c, pats)
+    } elif pk == PAT_LIST {
+        sem_list_pattern_check(c, sem_na(c, pats), value_type)
+    } elif pk == PAT_VARIABLE {
+        sem_variable_pattern(c, sem_nname(c, pats), value_type)
+    }
+}
+
+# Integer / bool literal values an arm covers (for exhaustiveness).
+function sem_arm_literal_values(c: ptr<Sem>, arm: i32, ints: ptr<SemIntVec>, bools: ptr<SemIntVec>, want: i32) -> bool {
+    # want: 1 integers, 2 bools. Returns whether the arm is all such literals.
+    let pk: i32 = sem_arm_pattern_kind(c, arm)
+    if sem_nk(c, arm) == AST_MATCH_ARM {
+        if pk != PAT_LITERAL {
+            return false
+        }
+        let pat: i32 = sem_na(c, arm)
+        return sem_literal_value_of(c, pat, ints, bools, want)
+    }
+    let mut x: i32 = sem_na(c, arm)
+    if pk != PAT_OR and pk != PAT_LITERAL {
+        return false
+    }
+    let mut all: bool = true
+    let mut any: bool = false
+    while x != AST_NONE {
+        if sem_is_literal(c, x) == false {
+            all = false
+        } elif sem_literal_value_of(c, x, ints, bools, want) == false {
+            all = false
+        } else {
+            any = true
+        }
+        x = sem_nnext(c, x)
+    }
+    return all and any
+}
+
+function sem_literal_value_of(c: ptr<Sem>, lit: i32, ints: ptr<SemIntVec>, bools: ptr<SemIntVec>, want: i32) -> bool {
+    let lt: i32 = sem_check_literal(c, lit)
+    if want == 1 {
+        if sem_is_integer(c, lt) == false {
+            return false
+        }
+        if sem_nk(c, lit) == AST_INT {
+            let ok: array<i32, 1> = [0]
+            let v: i64 = sem_literal_int(c, lit, false, &ok[0] as ptr<i32>)
+            if ok[0] == 1 and ints != null {
+                sem_iv_push(ints, v as i32)
+            }
+        }
+        return true
+    }
+    if sem_tkind(c, lt) != TK_BOOL {
+        return false
+    }
+    if bools != null {
+        sem_iv_push(bools, sem_nival(c, lit))
+    }
+    return true
+}
+
+function sem_format_int_gaps(covered: ptr<SemIntVec>, lo: i32, hi: i32) -> string {
+    let gaps: ptr<SemStrVec> = sem_sv_new()
+    let mut x: i32 = lo
+    while x <= hi and gaps.len < 8 {
+        if sem_iv_has(covered, x) {
+            x = x + 1
+            continue
+        }
+        let start: i32 = x
+        while x <= hi and sem_iv_has(covered, x) == false {
+            x = x + 1
+        }
+        let end: i32 = x - 1
+        if start == end {
+            sem_sv_push(gaps, sem_s_itoa(start as i64))
+        } else {
+            sem_sv_push(gaps, sem_s_itoa(start as i64) + ".." + sem_s_itoa(end as i64))
+        }
+    }
+    let mut remaining: i32 = 0
+    while x <= hi {
+        if sem_iv_has(covered, x) == false {
+            remaining = remaining + 1
+        }
+        x = x + 1
+    }
+    if remaining > 0 {
+        sem_sv_push(gaps, "+" + sem_s_itoa(remaining as i64) + " more")
+    }
+    return sem_sv_join(gaps, ", ")
+}
+
+# _match_enum_target
+function sem_match_enum_target(c: ptr<Sem>, s: i32, value_type: i32) -> string {
+    if sem_tkind(c, value_type) == TK_STRUCT and sem_sm_has(c.enum_decls, sem_tname(c, value_type)) {
+        return sem_tname(c, value_type)
+    }
+    let v: i32 = sem_na(c, s)
+    if sem_nk(c, v) == AST_FIELD_ACCESS and sem_nname_is(c, v, "tag") {
+        let ot: i32 = sem_infer_type_quiet(c, sem_na(c, v))
+        if sem_tkind(c, ot) == TK_STRUCT and sem_sm_has(c.enum_decls, sem_tname(c, ot)) {
+            return sem_tname(c, ot)
+        }
+    }
+    return null as string
+}
+
+function sem_warn_enum_exhaustiveness(c: ptr<Sem>, s: i32, enum_name: string) {
+    let mut arm: i32 = sem_nb(c, s)
+    while arm != AST_NONE {
+        if sem_is_default_arm(c, arm) {
+            return
+        }
+        arm = sem_nnext(c, arm)
+    }
+    let ed: i32 = sem_sm_get(c.enum_decls, enum_name)
+    let all: ptr<SemStrVec> = sem_sv_new()
+    let saved: i32 = c.cm
+    sem_set_mod(c, sem_iv_get(c.d_mod, ed))
+    let mut v: i32 = sem_na(c, sem_decl_node(c, ed))
+    while v != AST_NONE {
+        sem_sv_add(all, sem_nname(c, v))
+        v = sem_nnext(c, v)
+    }
+    sem_set_mod(c, saved)
+    let covered: ptr<SemStrVec> = sem_sv_new()
+    arm = sem_nb(c, s)
+    while arm != AST_NONE {
+        let pk: i32 = sem_arm_pattern_kind(c, arm)
+        if pk == PAT_WILDCARD {
+            return
+        }
+        if pk != PAT_VARIABLE {
+            return
+        }
+        let pn: string = sem_arm_var_name(c, arm)
+        let owner: i32 = sem_sm_get(c.enum_variant_owner, pn)
+        if owner < 0 or sem_s_eq(sem_decl_name(c, owner), enum_name) == false or sem_lookup_const_symbol(c, pn) < 0 {
+            return
+        }
+        if sem_arm_guard(c, arm) < 0 {
+            sem_sv_add(covered, sem_s_from(pn, sem_s_len(enum_name) + 1))
+        }
+        arm = sem_nnext(c, arm)
+    }
+    let missing: ptr<SemStrVec> = sem_sv_new()
+    let mut i: i32 = 0
+    while i < all.len {
+        if sem_sv_has(covered, sem_sv_get(all, i)) == false {
+            sem_sv_push(missing, sem_sv_get(all, i))
+        }
+        i = i + 1
+    }
+    sem_sv_sort(missing)
+    if missing.len > 0 {
+        sem_warn(c, "Non-exhaustive match: enum '" + enum_name + "' patterns do not cover variant(s) " + sem_sv_join(missing, ", ") + " (add the missing variant(s) or `_`/`default`)")
+    }
+}
+
+function sem_warn_match_exhaustiveness(c: ptr<Sem>, s: i32, value_type: i32) {
+    let en: string = sem_match_enum_target(c, s, value_type)
+    if en as ptr<u8> != null {
+        sem_warn_enum_exhaustiveness(c, s, en)
+        return
+    }
+    let mut arm: i32 = sem_nb(c, s)
+    while arm != AST_NONE {
+        if sem_is_default_arm(c, arm) {
+            return
+        }
+        arm = sem_nnext(c, arm)
+    }
+    let mut has_wildcard: bool = false
+    let mut all_int: bool = true
+    let mut saw_int: bool = false
+    let mut all_bool: bool = true
+    let mut saw_bool: bool = false
+    let cov_ints: ptr<SemIntVec> = sem_iv_new()
+    let cov_bools: ptr<SemIntVec> = sem_iv_new()
+    arm = sem_nb(c, s)
+    while arm != AST_NONE {
+        if sem_arm_pattern_kind(c, arm) == PAT_WILDCARD and sem_is_default_arm(c, arm) == false {
+            has_wildcard = true
+        } else {
+            let guarded: bool = sem_arm_guard(c, arm) >= 0
+            if sem_arm_literal_values(c, arm, null, null, 1) {
+                saw_int = true
+                if guarded == false {
+                    sem_arm_literal_values(c, arm, cov_ints, null, 1)
+                }
+            } else {
+                all_int = false
+            }
+            if sem_arm_literal_values(c, arm, null, null, 2) {
+                saw_bool = true
+                if guarded == false {
+                    sem_arm_literal_values(c, arm, null, cov_bools, 2)
+                }
+            } else {
+                all_bool = false
+            }
+        }
+        arm = sem_nnext(c, arm)
+    }
+    if has_wildcard {
+        return
+    }
+    if all_bool and saw_bool {
+        if (sem_iv_has(cov_bools, 0) and sem_iv_has(cov_bools, 1)) == false {
+            sem_warn(c, "Non-exhaustive match: bool patterns do not cover both `true` and `false` (add the missing value or `_`/`default`)")
+        }
+        return
+    }
+    if all_int and saw_int {
+        let uniq: ptr<SemIntVec> = sem_iv_new()
+        let mut i: i32 = 0
+        while i < cov_ints.len {
+            if sem_iv_has(uniq, cov_ints.data[i]) == false {
+                sem_iv_push(uniq, cov_ints.data[i])
+            }
+            i = i + 1
+        }
+        if uniq.len == 0 {
+            sem_warn(c, "Non-exhaustive match: integer patterns are all guarded or empty; add `_` or `default` for the remaining values")
+            return
+        }
+        let mut lo: i32 = uniq.data[0]
+        let mut hi: i32 = uniq.data[0]
+        i = 0
+        while i < uniq.len {
+            if uniq.data[i] < lo {
+                lo = uniq.data[i]
+            }
+            if uniq.data[i] > hi {
+                hi = uniq.data[i]
+            }
+            i = i + 1
+        }
+        let span: i32 = hi - lo + 1
+        let mut msg: string = "Non-exhaustive match: integer literal patterns do not cover all values"
+        if span - uniq.len > 0 {
+            msg = msg + "; gaps in [" + sem_s_itoa(lo as i64) + ", " + sem_s_itoa(hi as i64) + "]: " + sem_format_int_gaps(uniq, lo, hi)
+        } else {
+            msg = msg + "; contiguous cover [" + sem_s_itoa(lo as i64) + ", " + sem_s_itoa(hi as i64) + "]"
+        }
+        sem_warn(c, msg + "; values outside that span also uncovered (add `_` or `default`)")
+    }
+}
+
+# _check_match_stmt
+function sem_check_match_stmt(c: ptr<Sem>, s: i32) -> i32 {
+    let vt: i32 = sem_check_expression(c, sem_na(c, s))
+    let mut result: i32 = sem_tmk(c, TK_VOID)
+    let mut default_arm: i32 = 0 - 1
+    let mut arm: i32 = sem_nb(c, s)
+    while arm != AST_NONE {
+        if sem_is_default_arm(c, arm) {
+            default_arm = arm
+        } else {
+            sem_push_scope(c)
+            sem_bind_arm(c, arm, vt)
+            let g: i32 = sem_arm_guard(c, arm)
+            if g >= 0 {
+                let gt: i32 = sem_check_expression(c, g)
+                if gt >= 0 and sem_tkind(c, gt) != TK_BOOL and c.strict {
+                    sem_err(c, "Match guard must be bool, got " + sem_tstr(c, gt))
+                }
+            }
+            let ct: i32 = sem_check_block(c, sem_arm_body(c, arm))
+            sem_pop_scope(c)
+            if sem_tkind(c, ct) != TK_VOID {
+                result = ct
+            }
+        }
+        arm = sem_nnext(c, arm)
+    }
+    if default_arm >= 0 {
+        let dt: i32 = sem_check_block(c, sem_arm_body(c, default_arm))
+        if sem_tkind(c, dt) != TK_VOID {
+            result = dt
+        }
+    }
+    sem_warn_match_exhaustiveness(c, s, vt)
+    return result
+}
+
+# _check_statement
+function sem_check_statement(c: ptr<Sem>, s: i32) -> i32 {
+    sem_set_pos(c, s)
+    let k: i32 = sem_nk(c, s)
+    if k == AST_LET {
+        return sem_check_var_decl(c, s)
+    }
+    if k == AST_RETURN {
+        return sem_check_return_stmt(c, s)
+    }
+    if k == AST_ASSIGN {
+        return sem_check_assignment(c, s)
+    }
+    if k == AST_IF {
+        return sem_check_if_stmt(c, s)
+    }
+    if k == AST_WHILE {
+        return sem_check_while_stmt(c, s)
+    }
+    if k == AST_FOR {
+        return sem_check_for_stmt(c, s)
+    }
+    if k == AST_EXPR_STMT {
+        let e: i32 = sem_na(c, s)
+        if sem_nk(c, e) == AST_CALL {
+            if sem_nk(c, e) == AST_CALL and sem_is_pipe_find(c, e) {
+                return sem_tmk(c, TK_VOID)
+            }
+            return sem_check_expression_stmt(c, e, s)
+        }
+        if sem_nk(c, e) == AST_UNARY and sem_nival(c, e) == KW_DBG {
+            return sem_check_expression_stmt(c, e, s)
+        }
+        return sem_tmk(c, TK_VOID)
+    }
+    if k == AST_LAYOUT {
+        let mut a: i32 = sem_na(c, s)
+        while a != AST_NONE {
+            sem_check_expression(c, a)
+            a = sem_nnext(c, a)
+        }
+        return sem_check_block(c, sem_nb(c, s))
+    }
+    if k == AST_MATCH {
+        return sem_check_match_stmt(c, s)
+    }
+    if k == AST_DEFER {
+        sem_check_expression(c, sem_na(c, s))
+        return sem_tmk(c, TK_VOID)
+    }
+    if k == AST_UNARY and sem_nival(c, s) == KW_EXPECT {
+        let ct: i32 = sem_check_expression(c, sem_na(c, s))
+        if ct >= 0 and sem_tkind(c, ct) != TK_BOOL {
+            sem_err(c, "expect condition must be a bool, got " + sem_tstr(c, ct))
+        }
+        return sem_tmk(c, TK_VOID)
+    }
+    if k == AST_HANDLE {
+        return sem_check_handle_stmt(c, s)
+    }
+    if k == AST_BLOCK {
+        return sem_check_block(c, s)
+    }
+    return sem_tmk(c, TK_VOID)
+}
+
+# ---------------------------------------------------------------------------
+# Declarations
+# ---------------------------------------------------------------------------
+
+function sem_check_trait_bounds(c: ptr<Sem>, fi: i32) {
+    let mut i: i32 = 0
+    while i < sem_fi_ntparams(c, fi) {
+        let b: string = sem_fi_tbound(c, fi, i)
+        if sem_s_len(b) > 0 and c.strict {
+            if sem_sm_has(c.trait_types, b) == false {
+                sem_err(c, "Unknown trait bound '" + b + "' on type parameter '" + sem_fi_tparam(c, fi, i) + "'")
+            }
+        }
+        i = i + 1
+    }
+}
+
+# _check_function
+function sem_check_function(c: ptr<Sem>, fi: i32) {
+    sem_set_mod(c, sem_iv_get(c.fi_mod, fi))
+    sem_set_pos(c, sem_iv_get(c.fi_node, fi))
+    let fname: string = sem_sv_get(c.fi_name, fi)
+    sem_attribute_errors(c, fname, sem_iv_get(c.fi_astart, fi), sem_iv_get(c.fi_alen, fi))
+    if sem_iv_get(c.fi_extern, fi) == 1 {
+        if c.safety_profile and sem_fi_has_attr(c, fi, "unsafe") == false {
+            sem_err(c, "safety profile requires '@unsafe' on extern declaration '" + fname + "' (MISRA/CERT FFI boundary; see docs/language/safety-profiles.md)")
+        }
+        if sem_is_dangerous_extern(fname) and sem_fi_has_attr(c, fi, "unsafe") == false {
+            sem_err(c, "Dangerous FFI '" + fname + "' must be declared under '@unsafe extern' (CERT / #276)")
+        }
+        return
+    }
+    sem_check_trait_bounds(c, fi)
+    sem_push_scope(c)
+    let prev_rt: string = c.current_rt_safe_fn
+    let prev_safe: string = c.current_safe_fn
+    let prev_name: string = c.current_function_name
+    let prev_tparams: ptr<SemStrVec> = c.active_type_params
+    let tps: ptr<SemStrVec> = sem_sv_new()
+    let mut i: i32 = 0
+    while i < sem_fi_ntparams(c, fi) {
+        sem_sv_add(tps, sem_fi_tparam(c, fi, i))
+        i = i + 1
+    }
+    c.active_type_params = tps
+    let domain: i32 = sem_lifetime_domain(c, sem_iv_get(c.fi_astart, fi), sem_iv_get(c.fi_alen, fi))
+    let prev_domain: i32 = c.current_domain
+    let prev_rt_dom: bool = c.rt_safe_from_domain
+    c.current_domain = domain
+    let actual: string = sem_sv_get(c.fi_mangled, fi)
+    if sem_fi_has_attr(c, fi, "rt_safe") {
+        c.current_rt_safe_fn = actual
+        c.rt_safe_from_domain = false
+    } elif domain == 0 {
+        c.current_rt_safe_fn = actual
+        c.rt_safe_from_domain = true
+    } else {
+        c.current_rt_safe_fn = null
+        c.rt_safe_from_domain = false
+    }
+    if sem_fi_has_attr(c, fi, "safe") {
+        c.current_safe_fn = actual
+    } else {
+        c.current_safe_fn = null
+    }
+    c.current_function_name = actual
+    let row: ptr<SemStrVec> = sem_sv_new()
+    i = 0
+    while i < sem_fi_neffects(c, fi) {
+        sem_sv_add(row, sem_fi_effect(c, fi, i))
+        i = i + 1
+    }
+    sem_pv_push(c.handler_stack, row as ptr<void>)
+    let prev_storage: ptr<SemStrVec> = c.local_storage
+    let prev_origin: ptr<SemStrMap> = c.span_origin
+    let prev_ret: i32 = c.current_return_type
+    c.local_storage = sem_sv_new()
+    c.span_origin = sem_sm_new()
+    c.current_return_type = sem_parse_type(c, sem_iv_get(c.fi_ret, fi))
+    i = 0
+    while i < sem_fi_nparams(c, fi) {
+        let pt: i32 = sem_parse_type(c, sem_fi_param_type(c, fi, i))
+        sem_define_var(c, sem_fi_param_name(c, fi, i), pt, false)
+        i = i + 1
+    }
+    let prev_sink: ptr<SemIntVec> = c.return_sink
+    c.return_sink = sem_iv_new()
+    sem_check_block(c, sem_iv_get(c.fi_body, fi))
+    let returns: ptr<SemIntVec> = c.return_sink
+    c.return_sink = prev_sink
+    let expected: i32 = sem_parse_type(c, sem_iv_get(c.fi_ret, fi))
+    sem_set_pos(c, sem_iv_get(c.fi_node, fi))
+    i = 0
+    while i < returns.len {
+        let rt: i32 = returns.data[i]
+        if sem_can_coerce(c, rt, expected) == false {
+            let und: string = sem_undeclared_type_name(c, expected, rt)
+            if sem_s_len(und) > 0 {
+                sem_err(c, "Function '" + fname + "' is declared to return unknown type '" + und + "', which is not declared in this scope")
+            } else {
+                sem_err(c, "Function '" + fname + "' returns " + sem_tstr(c, rt) + " but should return " + sem_tstr(c, expected))
+            }
+        }
+        i = i + 1
+    }
+    sem_pv_setlen(c.handler_stack, sem_pv_len(c.handler_stack) - 1)
+    sem_pop_scope(c)
+    c.current_rt_safe_fn = prev_rt
+    c.current_safe_fn = prev_safe
+    c.current_domain = prev_domain
+    c.rt_safe_from_domain = prev_rt_dom
+    c.current_function_name = prev_name
+    c.local_storage = prev_storage
+    c.span_origin = prev_origin
+    c.current_return_type = prev_ret
+    c.active_type_params = prev_tparams
+}
+
+function sem_check_const(c: ptr<Sem>, d: i32) {
+    let node: i32 = sem_decl_node(c, d)
+    let et: i32 = sem_check_expression(c, sem_nb(c, node))
+    let xt: i32 = sem_parse_type(c, sem_pt_of_ast(c, sem_na(c, node)))
+    if sem_can_coerce(c, et, xt) == false {
+        sem_err(c, "Const '" + sem_decl_name(c, d) + "' has type " + sem_tstr(c, et) + " but should be " + sem_tstr(c, xt))
+    }
+}
+
+function sem_is_static_primitive(n: string) -> bool {
+    return sem_s_eq(n, "i32") or sem_s_eq(n, "i64") or sem_s_eq(n, "u8") or sem_s_eq(n, "u32") or sem_s_eq(n, "f32") or sem_s_eq(n, "f64") or sem_s_eq(n, "c64") or sem_s_eq(n, "c128") or sem_s_eq(n, "bool")
+}
+
+# _is_const_scalar
+function sem_is_const_scalar(c: ptr<Sem>, e: i32) -> bool {
+    if sem_is_literal(c, e) {
+        return sem_nk(c, e) != AST_STRING
+    }
+    if sem_is_unary_op(c, e, TOK_MINUS) {
+        return sem_is_literal(c, sem_na(c, e))
+    }
+    return false
+}
+
+# _check_static
+function sem_check_static(c: ptr<Sem>, d: i32) {
+    let tys: ptr<SemTys> = c.t
+    let node: i32 = sem_decl_node(c, d)
+    let name: string = sem_decl_name(c, d)
+    let astart: i32 = sem_iv_get(c.d_astart, d)
+    let an: i32 = sem_iv_get(c.d_alen, d)
+    if an > 0 {
+        sem_attribute_errors(c, name, astart, an)
+        let mut i: i32 = 0
+        while i < an {
+            let args: ptr<SemStrVec> = sem_sv_new()
+            let full: string = sem_sv_get(c.attr_pool, astart + i)
+            let lp: i32 = sem_s_index_byte(full, 40)
+            let mut aname: string = sem_s_strip(full)
+            if lp >= 0 {
+                aname = sem_s_strip(sem_s_slice(full, 0, lp))
+            }
+            if sem_s_eq(aname, "lifetime") == false {
+                sem_err(c, "Attribute '@" + aname + "' is not allowed on module static '" + name + "'; only '@lifetime(...)' is")
+            }
+            i = i + 1
+        }
+    }
+    let pt: i32 = sem_pt_of_ast(c, sem_na(c, node))
+    let value: i32 = sem_nb(c, node)
+    let tn: string = sem_pt_name(c.t, pt)
+    let is_pointer: bool = tys.pt_ptr[pt] == 1 or sem_s_starts(tn, "ptr_")
+    let is_fixed: bool = sem_s_starts(tn, "array_") and tys.pt_size[pt] != NO_SIZE and tys.pt_size[pt] != 0 and tys.pt_elem[pt] >= 0
+    let value_is_null: bool = sem_nk(c, value) == AST_IDENT and sem_nname_is(c, value, "null")
+    if sem_is_span_type_name(tn) {
+        if value_is_null == false {
+            sem_err(c, "Module static '" + name + "' of span type must be initialized to null")
+        }
+        return
+    }
+    if is_pointer {
+        if value_is_null == false {
+            sem_err(c, "Module static '" + name + "' of pointer type must be initialized to null")
+        }
+        return
+    }
+    if is_fixed {
+        let en: string = sem_pt_name(c.t, tys.pt_elem[pt])
+        if sem_is_static_primitive(en) == false {
+            sem_err(c, "Module static '" + name + "' has unsupported array element type '" + en + "': static arrays may only hold primitives (i32/i64/u8/u32/f32/f64/c64/c128/bool)")
+            return
+        }
+        if sem_nk(c, value) != AST_ARRAY_LIT {
+            sem_err(c, "Module static '" + name + "' initializer must be a full array literal of compile-time constants")
+            return
+        }
+        let n: i32 = sem_array_lit_len(c, value)
+        if n > tys.pt_size[pt] {
+            sem_err(c, "Module static '" + name + "' array initializer has " + sem_s_itoa(n as i64) + " elements but the type declares " + sem_s_itoa(tys.pt_size[pt] as i64))
+            return
+        }
+        let mut x: i32 = sem_na(c, value)
+        while x != AST_NONE {
+            if sem_is_const_scalar(c, x) == false {
+                sem_err(c, "Module static '" + name + "' array initializer must contain only compile-time constant literals")
+                return
+            }
+            x = sem_nnext(c, x)
+        }
+    } elif sem_is_static_primitive(tn) {
+        if sem_is_const_scalar(c, value) == false {
+            sem_err(c, "Module static '" + name + "' initializer must be a compile-time constant literal")
+            return
+        }
+    } else {
+        sem_err(c, "Module static '" + name + "' has unsupported type '" + tn + "': module statics must be a primitive (i32/i64/u8/u32/f32/f64/c64/c128/bool), a fixed array of primitives, or ptr<T>")
+        return
+    }
+    let et: i32 = sem_check_expression(c, value)
+    let xt: i32 = sem_parse_type(c, pt)
+    if sem_can_coerce(c, et, xt) == false {
+        sem_err(c, "Module static '" + name + "' has type " + sem_tstr(c, et) + " but should be " + sem_tstr(c, xt))
+    }
+}
+
+function sem_check_declarations(c: ptr<Sem>) {
+    let mut i: i32 = 0
+    while i < sem_iv_len(c.d_kind) {
+        let k: i32 = sem_decl_kind(c, i)
+        sem_decl_enter(c, i)
+        if k == DK_FUNC {
+            sem_check_function(c, sem_iv_get(c.d_info, i))
+        } elif k == DK_IMPL {
+            let ml: ptr<SemIntVec> = sem_pv_get(c.im_methods, sem_iv_get(c.d_info, i)) as ptr<SemIntVec>
+            let mut j: i32 = 0
+            while j < ml.len {
+                sem_check_function(c, ml.data[j])
+                j = j + 1
+            }
+        } elif k == DK_CONST {
+            sem_check_const(c, i)
+        } elif k == DK_STATIC {
+            sem_check_static(c, i)
+        }
+        i = i + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Whole-program passes
+# ---------------------------------------------------------------------------
+
+function sem_compute_parameter_escapes(c: ptr<Sem>) {
+    let mut which: i32 = 0
+    while which < 2 {
+        let mut target: ptr<SemStrMap> = c.esc_static
+        if which == 1 {
+            target = c.esc_return
+        }
+        let mut changed: bool = true
+        while changed {
+            changed = false
+            let mut i: i32 = 0
+            while i < sem_sv_len(c.prop_keys) {
+                if sem_sm_has(target, sem_sv_get(c.prop_keys, i)) {
+                    let callers: ptr<SemStrVec> = sem_pv_get(c.prop_sets, i) as ptr<SemStrVec>
+                    let mut j: i32 = 0
+                    while j < callers.len {
+                        if sem_sm_has(target, sem_sv_get(callers, j)) == false {
+                            sem_sm_put(target, sem_sv_get(callers, j), 1)
+                            changed = true
+                        }
+                        j = j + 1
+                    }
+                }
+                i = i + 1
+            }
+        }
+        which = which + 1
+    }
+}
+
+function sem_verify_parameter_escapes(c: ptr<Sem>) {
+    let mut i: i32 = 0
+    while i < sem_sv_len(c.ref_key) {
+        let key: string = sem_sv_get(c.ref_callee, i) + "\x01" + sem_s_itoa(sem_iv_get(c.ref_idx, i) as i64)
+        if sem_sm_has(c.esc_static, key) {
+            let ck: string = sem_sv_get(c.ref_key, i)
+            if sem_sm_has(c.domain_reported, ck) == false {
+                sem_sm_put(c.domain_reported, ck, 1)
+                sem_err(c, "lifetime domain escape: local `" + sem_sv_get(c.ref_origin, i) + "` is passed to parameter of '" + sem_sv_get(c.ref_callee, i) + "', which escapes to a static/global scope" + sem_sv_get(c.ref_loc, i))
+            }
+        }
+        i = i + 1
+    }
+}
+
+function sem_is_rt_heap_name(n: string) -> bool {
+    return sem_s_eq(n, "malloc") or sem_s_eq(n, "calloc") or sem_s_eq(n, "realloc") or sem_s_eq(n, "free") or sem_s_eq(n, "alloc") or sem_s_eq(n, "dealloc") or sem_s_eq(n, "alloc_bytes") or sem_s_eq(n, "alloc_zeroed") or sem_s_eq(n, "alloc_i32") or sem_s_eq(n, "alloc_f32") or sem_s_eq(n, "alloc_f64") or sem_s_eq(n, "arena_create") or sem_s_eq(n, "arena_destroy") or sem_s_eq(n, "frame_arena_create") or sem_s_eq(n, "frame_arena_destroy")
+}
+
+function sem_is_rt_other_name(n: string) -> bool {
+    if sem_s_eq(n, "audio_device_open") or sem_s_eq(n, "audio_device_start") or sem_s_eq(n, "audio_device_stop") or sem_s_eq(n, "audio_device_close") { return true }
+    if sem_s_eq(n, "flow_audio_open") or sem_s_eq(n, "flow_audio_start") or sem_s_eq(n, "flow_audio_stop") or sem_s_eq(n, "flow_audio_close") { return true }
+    if sem_s_eq(n, "audio_probe_devices") or sem_s_eq(n, "flow_audio_probe_devices") or sem_s_eq(n, "audio_buffer_alloc_f32") or sem_s_eq(n, "audio_buffer_free_f32") or sem_s_eq(n, "delay_line_new") { return true }
+    if sem_s_eq(n, "file_open") or sem_s_eq(n, "file_close") or sem_s_eq(n, "fopen") or sem_s_eq(n, "fread") or sem_s_eq(n, "fwrite") or sem_s_eq(n, "fclose") { return true }
+    if sem_s_eq(n, "flow_gpu_alloc") or sem_s_eq(n, "flow_gpu_free") or sem_s_eq(n, "flow_gpu_copy_h2d") or sem_s_eq(n, "flow_gpu_copy_d2h") or sem_s_eq(n, "flow_gpu_copy_d2d") or sem_s_eq(n, "flow_gpu_sync") { return true }
+    if sem_s_eq(n, "gpu_alloc_flags") or sem_s_eq(n, "gpu_alloc") or sem_s_eq(n, "gpu_alloc_unified") or sem_s_eq(n, "gpu_alloc_private") or sem_s_eq(n, "gpu_alloc_f32") or sem_s_eq(n, "gpu_alloc_f64") or sem_s_eq(n, "gpu_alloc_i32") or sem_s_eq(n, "gpu_allocate") or sem_s_eq(n, "gpu_free") { return true }
+    if sem_s_eq(n, "gpu_copy_h2d") or sem_s_eq(n, "gpu_copy_d2h") or sem_s_eq(n, "gpu_copy_d2d") or sem_s_eq(n, "gpu_copy_h2d_i32") or sem_s_eq(n, "gpu_copy_d2h_i32") or sem_s_eq(n, "gpu_copy_h2d_f32") or sem_s_eq(n, "gpu_copy_d2h_f32") { return true }
+    if sem_s_eq(n, "gpu_copy_to_device") or sem_s_eq(n, "gpu_copy_from_device") or sem_s_eq(n, "gpu_copy_device_to_device") or sem_s_eq(n, "gpu_sync") or sem_s_eq(n, "metal_create_buffer") { return true }
+    if sem_s_eq(n, "mutex_new") or sem_s_eq(n, "mutex_bind") or sem_s_eq(n, "mutex_lock") or sem_s_eq(n, "mutex_unlock") or sem_s_eq(n, "mutex_trylock") or sem_s_eq(n, "mutex_destroy") { return true }
+    if sem_s_eq(n, "pthread_mutex_init") or sem_s_eq(n, "pthread_mutex_lock") or sem_s_eq(n, "pthread_mutex_unlock") or sem_s_eq(n, "pthread_mutex_trylock") or sem_s_eq(n, "pthread_mutex_destroy") { return true }
+    if sem_s_eq(n, "pthread_create") or sem_s_eq(n, "pthread_join") or sem_s_eq(n, "flow_thread_spawn") or sem_s_eq(n, "flow_thread_join") or sem_s_eq(n, "flow_race_mutex_lock") or sem_s_eq(n, "flow_race_mutex_unlock") or sem_s_eq(n, "pthread_cond_wait") { return true }
+    if sem_s_eq(n, "pthread_cond_timedwait") or sem_s_eq(n, "pthread_rwlock_rdlock") or sem_s_eq(n, "pthread_rwlock_wrlock") or sem_s_eq(n, "condvar_wait") or sem_s_eq(n, "rwlock_rdlock") or sem_s_eq(n, "rwlock_wrlock") { return true }
+    if sem_s_eq(n, "rwlock_read_lock") or sem_s_eq(n, "rwlock_write_lock") or sem_s_eq(n, "sem_wait") or sem_s_eq(n, "semaphore_wait") { return true }
+    return false
+}
+
+function sem_is_frame_unsafe(n: string) -> bool {
+    if sem_is_rt_heap_name(n) { return true }
+    return sem_s_eq(n, "audio_buffer_alloc_f32") or sem_s_eq(n, "audio_buffer_free_f32") or sem_s_eq(n, "delay_line_new") or sem_s_eq(n, "flow_gpu_alloc") or sem_s_eq(n, "flow_gpu_free") or sem_s_eq(n, "gpu_alloc_flags") or sem_s_eq(n, "gpu_alloc") or sem_s_eq(n, "gpu_alloc_unified") or sem_s_eq(n, "gpu_alloc_private") or sem_s_eq(n, "gpu_alloc_f32") or sem_s_eq(n, "gpu_alloc_f64") or sem_s_eq(n, "gpu_alloc_i32") or sem_s_eq(n, "gpu_allocate") or sem_s_eq(n, "gpu_free") or sem_s_eq(n, "metal_create_buffer")
+}
+
+# _compute_rt_unsafe_functions: name -> the closest banned name it reaches.
+function sem_compute_unsafe(c: ptr<Sem>, frame: bool, out: ptr<SemStrMap>) {
+    let mut changed: bool = true
+    while changed {
+        changed = false
+        let mut i: i32 = 0
+        while i < sem_sv_len(c.rdc_names) {
+            let name: string = sem_sv_get(c.rdc_names, i)
+            if sem_unsafe_reason(c, frame, out, name) as ptr<u8> == null {
+                let callees: ptr<SemStrVec> = sem_pv_get(c.rdc_sets, i) as ptr<SemStrVec>
+                let mut j: i32 = 0
+                let mut done: bool = false
+                while j < callees.len and done == false {
+                    let r: string = sem_unsafe_reason(c, frame, out, sem_sv_get(callees, j))
+                    if r as ptr<u8> != null {
+                        sem_sm_put(out, name, sem_sv_len(c.reason_pool))
+                        sem_sv_push(c.reason_pool, sem_sv_get(callees, j))
+                        changed = true
+                        done = true
+                    }
+                    j = j + 1
+                }
+            }
+            i = i + 1
+        }
+    }
+}
+
+function sem_unsafe_reason(c: ptr<Sem>, frame: bool, m: ptr<SemStrMap>, name: string) -> string {
+    if sem_s_eq(name, "__unresolved_dynamic_call") {
+        return name
+    }
+    if frame {
+        if sem_is_frame_unsafe(name) {
+            return name
+        }
+    } elif sem_is_rt_heap_name(name) or sem_is_rt_other_name(name) {
+        return name
+    }
+    let k: i32 = sem_sm_get(m, name)
+    if k < 0 {
+        return null as string
+    }
+    return sem_sv_get(c.reason_pool, k)
+}
+
+function sem_verify_rt_safe_calls(c: ptr<Sem>) {
+    let mut i: i32 = 0
+    while i < sem_sv_len(c.rt_site_fn) {
+        let fnm: string = sem_sv_get(c.rt_site_fn, i)
+        let name: string = sem_sv_get(c.rt_site_name, i)
+        let reason: string = sem_unsafe_reason(c, false, c.rt_unsafe_reason, name)
+        if reason as ptr<u8> != null {
+            let mut marked: string = "is marked '@rt_safe'"
+            let mut doc: string = "docs/library/rt-safety.md"
+            if sem_iv_get(c.rt_site_dom, i) == 1 {
+                marked = "is in the `callback` lifetime domain, which forbids allocation,"
+                doc = "docs/language/lifetime-domains.md"
+            }
+            if sem_s_eq(reason, "__unresolved_dynamic_call") {
+                if sem_s_eq(reason, name) {
+                    sem_err(c, "RT-safety violation: '" + fnm + "' " + marked + " but makes an unresolved dynamic call (forbidden on an RT-safe path because its safety cannot be proven; see " + doc + ")")
+                } else {
+                    sem_err(c, "RT-safety violation: '" + fnm + "' " + marked + " but calls '" + name + "', which makes an unresolved dynamic call (forbidden on an RT-safe path; see " + doc + ")")
+                }
+            } elif sem_s_eq(reason, name) {
+                sem_err(c, "RT-safety violation: '" + fnm + "' " + marked + " but calls '" + name + "', which is forbidden on an RT-safe path (heap, device/file I/O, GPU, or blocking lock; see " + doc + ")")
+            } else {
+                sem_err(c, "RT-safety violation: '" + fnm + "' " + marked + " but calls '" + name + "', which is not RT-safe because it calls '" + reason + "' (forbidden on an RT-safe path; see " + doc + ")")
+            }
+        }
+        i = i + 1
+    }
+}
+
+function sem_verify_domain_calls(c: ptr<Sem>) {
+    let mut i: i32 = 0
+    while i < sem_sv_len(c.dom_site_fn) {
+        let fnm: string = sem_sv_get(c.dom_site_fn, i)
+        let name: string = sem_sv_get(c.dom_site_name, i)
+        let reason: string = sem_unsafe_reason(c, true, c.heap_unsafe_reason, name)
+        if reason as ptr<u8> != null {
+            if sem_s_eq(reason, name) {
+                sem_err(c, "lifetime domain violation: '" + fnm + "' is in the `frame` domain but calls '" + name + "', which allocates or frees heap memory. Frame-domain code allocates by bumping a frame arena (frame_alloc_*); see docs/language/lifetime-domains.md")
+            } else {
+                sem_err(c, "lifetime domain violation: '" + fnm + "' is in the `frame` domain but calls '" + name + "', which allocates or frees heap memory because it calls '" + reason + "'. Frame-domain code allocates by bumping a frame arena (frame_alloc_*); see docs/language/lifetime-domains.md")
+            }
+        }
+        i = i + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Safety profile: recursion and unbounded loops (MISRA 17.2 / 17.4)
+# ---------------------------------------------------------------------------
+
+function sem_collect_call_names(c: ptr<Sem>, node: i32, out: ptr<SemStrVec>) {
+    if node < 0 {
+        return
+    }
+    let k: i32 = sem_nk(c, node)
+    if k == AST_CALL {
+        sem_sv_add(out, sem_nname(c, node))
+    }
+    if k == AST_UNARY and sem_nival(c, node) == KW_DBG {
+        sem_sv_add(out, "__flow_dbg")
+    }
+    if k == AST_FOR and sem_nival(c, node) > 0 {
+        sem_collect_call_names(c, sem_nival(c, node), out)
+    }
+    sem_collect_call_names(c, sem_na(c, node), out)
+    sem_collect_call_names(c, sem_nb(c, node), out)
+    sem_collect_call_names(c, sem_ncc(c, node), out)
+    if k != AST_FN {
+        sem_collect_call_names(c, sem_nnext(c, node), out)
+    }
+}
+
+function sem_scan_while_loops(c: ptr<Sem>, node: i32, fn_name: string) {
+    if node < 0 {
+        return
+    }
+    if sem_nk(c, node) == AST_WHILE and sem_nival(c, node) == 0 {
+        sem_err(c, "--profile safety rejects unbounded 'while' loop (MISRA 17.4): use '@max_iterations(N)' or a counted 'for' loop in '" + fn_name + "'")
+    }
+    sem_scan_while_loops(c, sem_na(c, node), fn_name)
+    sem_scan_while_loops(c, sem_nb(c, node), fn_name)
+    sem_scan_while_loops(c, sem_ncc(c, node), fn_name)
+    sem_scan_while_loops(c, sem_nnext(c, node), fn_name)
+}
+
+function sem_check_recursion(c: ptr<Sem>) {
+    let names: ptr<SemStrVec> = sem_sv_new()
+    let calls: ptr<SemPtrVec> = sem_pv_new()
+    let mut i: i32 = 0
+    while i < sem_iv_len(c.d_kind) {
+        let k: i32 = sem_decl_kind(c, i)
+        if k == DK_FUNC {
+            let fi: i32 = sem_iv_get(c.d_info, i)
+            if sem_iv_get(c.fi_extern, fi) == 0 {
+                sem_set_mod(c, sem_iv_get(c.fi_mod, fi))
+                let out: ptr<SemStrVec> = sem_sv_new()
+                let b: i32 = sem_iv_get(c.fi_body, fi)
+                if b >= 0 {
+                    sem_collect_call_names(c, sem_na(c, b), out)
+                }
+                sem_sv_push(names, sem_sv_get(c.fi_name, fi))
+                sem_pv_push(calls, out as ptr<void>)
+            }
+        } elif k == DK_IMPL {
+            let ml: ptr<SemIntVec> = sem_pv_get(c.im_methods, sem_iv_get(c.d_info, i)) as ptr<SemIntVec>
+            let mut j: i32 = 0
+            while j < ml.len {
+                let fi2: i32 = ml.data[j]
+                sem_set_mod(c, sem_iv_get(c.fi_mod, fi2))
+                let out2: ptr<SemStrVec> = sem_sv_new()
+                let b2: i32 = sem_iv_get(c.fi_body, fi2)
+                if b2 >= 0 {
+                    sem_collect_call_names(c, sem_na(c, b2), out2)
+                }
+                sem_sv_push(names, sem_sv_get(c.fi_mangled, fi2))
+                sem_pv_push(calls, out2 as ptr<void>)
+                j = j + 1
+            }
+        }
+        i = i + 1
+    }
+    let visited: ptr<SemStrVec> = sem_sv_new()
+    let on_stack: ptr<SemStrVec> = sem_sv_new()
+    let recursive: ptr<SemStrVec> = sem_sv_new()
+    i = 0
+    while i < names.len {
+        if sem_sv_has(visited, sem_sv_get(names, i)) == false {
+            sem_recursion_dfs(c, sem_sv_get(names, i), names, calls, visited, on_stack, recursive)
+        }
+        i = i + 1
+    }
+    sem_sv_sort(recursive)
+    i = 0
+    while i < recursive.len {
+        sem_err(c, "--profile safety rejects unbounded recursion (MISRA 17.2): '" + sem_sv_get(recursive, i) + "' is recursive")
+        i = i + 1
+    }
+}
+
+function sem_index_of_name(names: ptr<SemStrVec>, n: string) -> i32 {
+    let mut i: i32 = names.len - 1
+    while i >= 0 {
+        if sem_s_eq(names.data[i], n) {
+            return i
+        }
+        i = i - 1
+    }
+    return 0 - 1
+}
+
+function sem_recursion_dfs(c: ptr<Sem>, name: string, names: ptr<SemStrVec>, calls: ptr<SemPtrVec>, visited: ptr<SemStrVec>, on_stack: ptr<SemStrVec>, recursive: ptr<SemStrVec>) {
+    if sem_sv_has(visited, name) {
+        return
+    }
+    sem_sv_push(visited, name)
+    sem_sv_push(on_stack, name)
+    let idx: i32 = sem_index_of_name(names, name)
+    if idx >= 0 {
+        let callees: ptr<SemStrVec> = sem_pv_get(calls, idx) as ptr<SemStrVec>
+        let mut i: i32 = 0
+        while i < callees.len {
+            let callee: string = sem_sv_get(callees, i)
+            if sem_sv_has(on_stack, callee) {
+                sem_sv_add(recursive, callee)
+                sem_sv_add(recursive, name)
+            } elif sem_sv_has(visited, callee) == false and sem_index_of_name(names, callee) >= 0 {
+                sem_recursion_dfs(c, callee, names, calls, visited, on_stack, recursive)
+                if sem_sv_has(recursive, callee) {
+                    sem_sv_add(recursive, name)
+                }
+            }
+            i = i + 1
+        }
+    }
+    let mut k: i32 = 0
+    while k < on_stack.len {
+        if sem_s_eq(on_stack.data[k], name) {
+            let mut j: i32 = k
+            while j + 1 < on_stack.len {
+                on_stack.data[j] = on_stack.data[j + 1]
+                j = j + 1
+            }
+            on_stack.len = on_stack.len - 1
+            return
+        }
+        k = k + 1
+    }
+}
+
+function sem_check_unbounded_loops(c: ptr<Sem>) {
+    let mut i: i32 = 0
+    while i < sem_iv_len(c.d_kind) {
+        if sem_decl_kind(c, i) == DK_FUNC {
+            let fi: i32 = sem_iv_get(c.d_info, i)
+            if sem_iv_get(c.fi_extern, fi) == 0 and sem_iv_get(c.fi_body, fi) >= 0 {
+                sem_set_mod(c, sem_iv_get(c.fi_mod, fi))
+                sem_scan_while_loops(c, sem_na(c, sem_iv_get(c.fi_body, fi)), sem_sv_get(c.fi_name, fi))
+            }
+        }
+        i = i + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# TypeChecker.check
+# ---------------------------------------------------------------------------
+
+# Read every @cImport header once (sem_cheader.flow), from the directory of
+# the program being compiled, as the Python host's resolve_c_imports did.
+function sem_read_cimports(c: ptr<Sem>) {
+    if c.has_cimport == false {
+        return
+    }
+    let mut dir: string = "."
+    if c.root_mod >= 0 {
+        let p: string = c.m_path[c.root_mod]
+        let mut k: i32 = sem_s_len(p) - 1
+        while k >= 0 and sem_s_byte(p, k) != 47 {
+            k = k - 1
+        }
+        if k > 0 {
+            dir = sem_s_slice(p, 0, k)
+        }
+    }
+    let mut i: i32 = 0
+    while i < sem_sv_len(c.cimport_headers) {
+        if sem_header_names(sem_sv_get(c.cimport_headers, i), dir, c.cimport_names) == false {
+            c.cimport_unknown = true
+        }
+        i = i + 1
+    }
+}
+
+# A name an @cImport header may declare: left unchecked (see sem_cheader).
+function sem_cimport_knows(c: ptr<Sem>, name: string) -> bool {
+    if c.has_cimport == false {
+        return false
+    }
+    if c.cimport_unknown {
+        return true
+    }
+    return sem_sm_has(c.cimport_names, name)
+}
+
+export function sem_check_program(c: ptr<Sem>) {
+    sem_read_cimports(c)
+    sem_collect_types(c)
+    sem_collect_symbols(c)
+    sem_collect_lifetime_domains(c)
+    sem_check_declarations(c)
+    sem_compute_parameter_escapes(c)
+    sem_verify_parameter_escapes(c)
+    sem_compute_unsafe(c, false, c.rt_unsafe_reason)
+    sem_compute_unsafe(c, true, c.heap_unsafe_reason)
+    sem_verify_rt_safe_calls(c)
+    sem_verify_domain_calls(c)
+    if c.safety_profile {
+        sem_check_recursion(c)
+        sem_check_unbounded_loops(c)
+    }
+}
+
+# Print the diagnostics the way the Python host printed its type errors,
+# one `file:line:col: error: message` per line. Strict: every error is
+# fatal. Lenient: the fatal ones are errors, the rest warnings (the first
+# five, as `flow compile --lenient` printed them). Returns the number of
+# errors that stop the compile.
+export function sem_report(c: ptr<Sem>) -> i32 {
+    let mut i: i32 = 0
+    if c.strict {
+        while i < sem_sv_len(c.errors) {
+            sem_print_diag(c, i, "error")
+            i = i + 1
+        }
+        return sem_sv_len(c.errors)
+    }
+    let mut shown: i32 = 0
+    let mut hidden: i32 = 0
+    while i < sem_sv_len(c.errors) {
+        let msg: string = sem_sv_get(c.errors, i)
+        if sem_sv_has(c.fatal, msg) {
+            sem_print_diag(c, i, "error")
+        } elif shown < 5 {
+            sem_print_diag(c, i, "warning")
+            shown = shown + 1
+        } else {
+            hidden = hidden + 1
+        }
+        i = i + 1
+    }
+    if hidden > 0 {
+        printf("flowc: ... and %d more type warning(s)\n", hidden)
+    }
+    return sem_sv_len(c.fatal)
+}
+
+function sem_print_diag(c: ptr<Sem>, i: i32, what: string) {
+    let m: i32 = sem_iv_get(c.err_mod, i)
+    let pos: i32 = sem_iv_get(c.err_pos, i)
+    let mut path: string = "<input>"
+    let mut ln: i32 = 1
+    let mut col: i32 = 1
+    if m >= 0 {
+        path = c.m_path[m]
+        ln = sem_line_of(c, m, pos)
+        col = sem_col_of(c, m, pos)
+    }
+    printf("%s:%d:%d: %s: %s\n", path, ln, col, what, sem_sv_get(c.errors, i))
+}
+
+export function sem_error_count(c: ptr<Sem>) -> i32 {
+    return sem_sv_len(c.errors)
+}
+
+# The errors that stop a compile: all of them in strict mode, the fatal
+# ones under FLOWC_LENIENT=1.
+export function sem_fatal_count(c: ptr<Sem>) -> i32 {
+    if c.strict {
+        return sem_sv_len(c.errors)
+    }
+    return sem_sv_len(c.fatal)
+}
+
+# The semantic check of one module compiled on its own (no bundle).
+# counts[0] = errors, counts[1] = the errors that stop the compile.
+export function flowc_semcheck_single(arena: AstArena, root: i32, src: ptr<u8>, path: string, counts: ptr<i32>) {
+    let mut strict: bool = true
+    let v: string = getenv("FLOWC_LENIENT")
+    if v as ptr<u8> != null {
+        let p: ptr<u8> = v as ptr<u8>
+        if p[0] == 49 and p[1] == 0 {
+            strict = false
+        }
+    }
+    let c: ptr<Sem> = sem_new(strict)
+    let mut name: string = path
+    if name as ptr<u8> == null {
+        name = "<input>"
+    }
+    let m: i32 = sem_add_module(c, arena, root, src, name)
+    sem_build_module(c, m, true)
+    sem_check_program(c)
+    sem_report(c)
+    sem_iv_set_raw(counts, 0, sem_error_count(c))
+    sem_iv_set_raw(counts, 1, sem_fatal_count(c))
+}
+
+function sem_iv_set_raw(p: ptr<i32>, i: i32, v: i32) {
+    p[i] = v
+}

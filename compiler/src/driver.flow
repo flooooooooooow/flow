@@ -100,7 +100,7 @@ function flowc_driver_run(in_path: string, out_path: string) -> i32 {
         } else {
             let dlen: i32 = flowc_resolve_dirname(in_path, dir_buf, 256)
             if dlen > 0 {
-                search_dir = dir_buf
+                search_dir = dir_buf as string
             }
         }
         # Bundle typecheck (deps-first + export seed) when typecheck wanted.

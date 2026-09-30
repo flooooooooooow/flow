@@ -1,0 +1,8 @@
+
+        function total(values: span<f64>) -> f64 { return values[0] }
+        function main() -> i32 {
+            let xs: array<f32, 2> = [1.0, 2.0]
+            let t: f64 = total(xs)
+            return 0
+        }
+        

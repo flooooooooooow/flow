@@ -1,0 +1,10 @@
+# expect: Sort key '.p' has unsupported type ptr<i32> (need numeric or string)
+struct P {
+    p: ptr<i32>
+}
+
+function main() -> i32 {
+    let xs: array<P, 1> = [P { p: null }]
+    let ys: array<P, 1> = xs |> sort by .p
+    return 0
+}

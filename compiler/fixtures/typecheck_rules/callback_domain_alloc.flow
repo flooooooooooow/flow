@@ -1,0 +1,10 @@
+# expect: RT-safety violation: 'tick' is in the `callback` lifetime domain, which forbids allocation, but calls 'malloc', which is forbidden on an RT-safe path (heap, device/file I/O, GPU, or blocking lock; see docs/language/lifetime-domains.md)
+@lifetime(callback)
+function tick(n: i32) -> i32 {
+    let p: ptr<void> = malloc(8)
+    return n
+}
+
+function main() -> i32 {
+    return tick(1)
+}

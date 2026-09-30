@@ -49,7 +49,7 @@ struct Catalog {
 
 function repo_root() -> string {
     let r: string = getenv("FLOW_REPO_ROOT")
-    if r == null or ft_len(r) == 0 {
+    if r as ptr<u8> == null or ft_len(r) == 0 {
         return "."
     }
     return r
@@ -192,7 +192,7 @@ function strip_flow_comments(source: string) -> string {
 function load_catalog() -> ptr<Catalog> {
     let path: string = ft_join(repo_root(), CATALOG_REL)
     let text: string = ft_read_file(path)
-    if text == null {
+    if text as ptr<u8> == null {
         ft_errln(PROG + ": cannot read " + path)
         return null
     }
@@ -528,8 +528,8 @@ function is_digits(s: string) -> bool {
 function cmd_check(cat: ptr<Catalog>, argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     let mut syntax_only: bool = false
     let mut timeout: i32 = 60
-    let mut challenge_arg: string = null
-    let mut submission_arg: string = null
+    let mut challenge_arg: string = null as string
+    let mut submission_arg: string = null as string
     let mut i: i32 = 2
     while i < argc {
         let a: string = argv[i] as string
@@ -557,19 +557,19 @@ function cmd_check(cat: ptr<Catalog>, argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             timeout = atoi(v2)
         } elif ft_starts(a, "-") and ft_len(a) > 1 and not is_digits(a) {
             return usage_error("unrecognized arguments: " + a)
-        } elif challenge_arg == null {
+        } elif challenge_arg as ptr<u8> == null {
             challenge_arg = a
-        } elif submission_arg == null {
+        } elif submission_arg as ptr<u8> == null {
             submission_arg = a
         } else {
             return usage_error("unrecognized arguments: " + a)
         }
         i = i + 1
     }
-    if challenge_arg == null {
+    if challenge_arg as ptr<u8> == null {
         return check_usage_error("the following arguments are required: challenge_id, submission")
     }
-    if submission_arg == null {
+    if submission_arg as ptr<u8> == null {
         return check_usage_error("the following arguments are required: submission")
     }
 
@@ -624,7 +624,7 @@ function cmd_scan(cat: ptr<Catalog>, argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     while i < argc {
         let path: string = argv[i] as string
         let source: string = ft_read_file(path)
-        if source == null {
+        if source as ptr<u8> == null {
             ft_errln(PROG + ": cannot read " + path)
             return 1
         }
@@ -688,7 +688,7 @@ function cmd_self_test() -> i32 {
 
     let path: string = ft_join(repo_root(), "scripts/tools/challenge_check/regex_cases.json")
     let text: string = ft_read_file(path)
-    if text == null {
+    if text as ptr<u8> == null {
         ft_errln("self-test FAIL: cannot read " + path)
         return 1
     }

@@ -58,7 +58,7 @@ struct Opts {
 
 function root() -> string {
     let r: string = getenv("FLOW_REPO_ROOT")
-    if r == null or ft_len(r) == 0 {
+    if r as ptr<u8> == null or ft_len(r) == 0 {
         return pr_resolve(".")
     }
     return r
@@ -92,7 +92,7 @@ function die(msg: string) -> void {
 
 function read_or_die(path: string) -> string {
     let text: string = ft_read_file(path)
-    if text == null {
+    if text as ptr<u8> == null {
         die("cannot read " + path)
     }
     return text
@@ -123,7 +123,7 @@ function html_escape(s: string) -> string {
     let mut i: i32 = 0
     while i < n {
         let c: i32 = p[i] as i32
-        let mut rep: string = null
+        let mut rep: string = null as string
         if c == 38 {
             rep = "&amp;"
         } elif c == 60 {
@@ -135,7 +135,7 @@ function html_escape(s: string) -> string {
         } elif c == 39 {
             rep = "&#x27;"
         }
-        if rep == null {
+        if rep as ptr<u8> == null {
             out[o] = c as u8
             o = o + 1
         } else {
@@ -234,10 +234,10 @@ function run(argv: ptr<StrList>, quiet: bool, env_prefix: string) -> void {
     if rc != 0 {
         let o: string = ft_read_file(out_f)
         let e: string = ft_read_file(err_f)
-        if o != null {
+        if o as ptr<u8> != null {
             ft_out(o)
         }
-        if e != null {
+        if e as ptr<u8> != null {
             ft_err(e)
         }
         die("command failed (" + ft_itoa(rc) + "): " + ft_list_get(argv, 0))
@@ -282,7 +282,7 @@ function require_emcc() -> string {
 # unless the caller already has.
 function default_env(name: string, value: string) -> void {
     let cur: string = getenv(name)
-    if (cur == null or ft_len(cur) == 0) and ft_exists(value) {
+    if (cur as ptr<u8> == null or ft_len(cur) == 0) and ft_exists(value) {
         let _s: i32 = setenv(name, value, 1)
     }
 }
@@ -333,7 +333,7 @@ function threads_page(stem: string, program: string, workers: i32) -> string {
 
 function cmd_threads(o: ptr<Opts>) -> i32 {
     let mut arg: string = o[0].program
-    if arg == null {
+    if arg as ptr<u8> == null {
         arg = path_in("examples/wasm/parallel_sum.flow")
     }
     let program: string = resolve_program(arg)
@@ -341,7 +341,7 @@ function cmd_threads(o: ptr<Opts>) -> i32 {
         die("flowc not found (compiler/scripts/flowc_emit.sh); run from the project root.")
     }
     let mut out_arg: string = o[0].out
-    if out_arg == null {
+    if out_arg as ptr<u8> == null {
         out_arg = site_dir() + "/threads"
     }
     let out_dir: string = pr_resolve(out_arg)
@@ -424,12 +424,12 @@ function sockets_page(stem: string, program: string, port: i32) -> string {
 
 function cmd_sockets(o: ptr<Opts>) -> i32 {
     let mut arg: string = o[0].program
-    if arg == null {
+    if arg as ptr<u8> == null {
         arg = path_in("examples/wasm/tcp_echo.flow")
     }
     let program: string = resolve_program(arg)
     let mut out_arg: string = o[0].out
-    if out_arg == null {
+    if out_arg as ptr<u8> == null {
         out_arg = site_dir() + "/sockets"
     }
     let out_dir: string = pr_resolve(out_arg)
@@ -493,12 +493,12 @@ function python_page(stem: string, program: string) -> string {
 
 function cmd_python(o: ptr<Opts>) -> i32 {
     let mut arg: string = o[0].program
-    if arg == null {
+    if arg as ptr<u8> == null {
         arg = path_in("examples/wasm/python_embed.flow")
     }
     let program: string = resolve_program(arg)
     let mut out_arg: string = o[0].out
-    if out_arg == null {
+    if out_arg as ptr<u8> == null {
         out_arg = site_dir() + "/python"
     }
     let out_dir: string = pr_resolve(out_arg)
@@ -627,9 +627,9 @@ function fs_page() -> string {
 }
 
 function cmd_fs(o: ptr<Opts>) -> i32 {
-    if o[0].program != null {
+    if o[0].program as ptr<u8> != null {
         let mut out_s: string = build_dir() + "/fs-out"
-        if o[0].out != null {
+        if o[0].out as ptr<u8> != null {
             out_s = pr_resolve(o[0].out)
         }
         let program: string = resolve_program(o[0].program)
@@ -639,7 +639,7 @@ function cmd_fs(o: ptr<Opts>) -> i32 {
         return 0
     }
     let mut out_arg: string = o[0].out
-    if out_arg == null {
+    if out_arg as ptr<u8> == null {
         out_arg = site_dir() + "/fs"
     }
     let out_dir: string = pr_resolve(out_arg)
@@ -734,12 +734,12 @@ function gpu_page(program: string, manifest: string, count: i32, out_dir: string
 # element at a time as the CPU reference.
 function cmd_gpu(o: ptr<Opts>) -> i32 {
     let mut arg: string = o[0].program
-    if arg == null {
+    if arg as ptr<u8> == null {
         arg = path_in("examples/wasm/gpu_vector_add.flow")
     }
     let program: string = resolve_program(arg)
     let mut out_arg: string = o[0].out
-    if out_arg == null {
+    if out_arg as ptr<u8> == null {
         out_arg = site_dir() + "/gpu"
     }
     let out_dir: string = pr_resolve(out_arg)
@@ -758,7 +758,7 @@ function cmd_gpu(o: ptr<Opts>) -> i32 {
     if rc != 0 {
         # On a failing kernel the tool lists the shaders it wrote before it.
         let done: string = ft_read_file(mani_f)
-        if done != null {
+        if done as ptr<u8> != null {
             let mut pos: i32 = 0
             while pos < ft_len(done) {
                 let nl: i32 = ft_find(done, "\n", pos)
@@ -770,7 +770,7 @@ function cmd_gpu(o: ptr<Opts>) -> i32 {
             }
         }
         let e: string = ft_read_file(err_f)
-        if e != null {
+        if e as ptr<u8> != null {
             ft_err(e)
         }
         exit(1)
@@ -916,10 +916,10 @@ function flowc_shader(mode: string, source: string, out_dir: string, name: strin
     let _m: bool = pr_mkdir_p(bd)
     let out_f: string = bd + "/.shader.out"
     let mut cmd: string = "env -u FLOWC_BUNDLE -u FLOWC_OUT -u FLOWC_SHADER_NAME FLOWC_SHADER=" + mode + " FLOWC_IN=" + pr_quote(source)
-    if out_dir != null {
+    if out_dir as ptr<u8> != null {
         cmd = cmd + " FLOWC_OUT=" + pr_quote(out_dir)
     }
-    if name != null {
+    if name as ptr<u8> != null {
         cmd = cmd + " FLOWC_SHADER_NAME=" + pr_quote(name)
     }
     let rc: i32 = pr_run(cmd + " " + pr_quote(exe) + " >" + pr_quote(out_f) + " 2>&1")
@@ -937,7 +937,7 @@ function flowc_shader(mode: string, source: string, out_dir: string, name: strin
 }
 
 function cmd_shader(o: ptr<Opts>) -> i32 {
-    if o[0].program == null {
+    if o[0].program as ptr<u8> == null {
         arg_error("the following arguments are required: source")
     }
     # --size WxH, both positive.
@@ -963,7 +963,7 @@ function cmd_shader(o: ptr<Opts>) -> i32 {
     if ft_exists(source) == false {
         arg_error("source does not exist: " + source)
     }
-    let names_text: string = flowc_shader("list", source, null, null)
+    let names_text: string = flowc_shader("list", source, null as string, null as string)
     let names: ptr<StrList> = ft_list_new()
     let mut pos: i32 = 0
     while pos < ft_len(names_text) {
@@ -981,14 +981,14 @@ function cmd_shader(o: ptr<Opts>) -> i32 {
         arg_error("source has no shader fill blocks")
     }
     let mut name: string = ft_list_get(names, 0)
-    if o[0].shader_name != null {
+    if o[0].shader_name as ptr<u8> != null {
         name = o[0].shader_name
     }
     if ft_list_has(names, name) == false {
         arg_error("shader fill '" + name + "' not found")
     }
     let mut out_arg: string = o[0].out
-    if out_arg == null {
+    if out_arg as ptr<u8> == null {
         out_arg = path_in("build/webgpu-shader")
     }
     let out_dir: string = pr_resolve(out_arg)
@@ -1042,7 +1042,7 @@ function fresh_opts() -> ptr<Opts> {
 
 function cmd_all(o: ptr<Opts>) -> i32 {
     let mut out_arg: string = o[0].out
-    if out_arg == null {
+    if out_arg as ptr<u8> == null {
         out_arg = site_dir()
     }
     let out_dir: string = pr_resolve(out_arg)
@@ -1065,7 +1065,7 @@ function cmd_all(o: ptr<Opts>) -> i32 {
 
 function cmd_index(o: ptr<Opts>) -> i32 {
     let mut out_arg: string = o[0].out
-    if out_arg == null {
+    if out_arg as ptr<u8> == null {
         out_arg = site_dir()
     }
     let out_dir: string = pr_resolve(out_arg)
@@ -1168,7 +1168,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         } elif ft_starts(a, "-") {
             ft_errln("crossings.sh: error: unrecognized arguments: " + a)
             return 2
-        } elif o[0].program == null {
+        } elif o[0].program as ptr<u8> == null {
             o[0].program = a
         } else {
             ft_errln("crossings.sh: error: unrecognized arguments: " + a)

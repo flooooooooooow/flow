@@ -1,0 +1,8 @@
+# expect: Function 'f' declares unknown effect 'Nope' in its `with` row
+function f() -> i32 with Nope {
+    return 1
+}
+
+function main() -> i32 {
+    return 0
+}

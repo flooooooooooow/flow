@@ -1,0 +1,9 @@
+
+            function matrix4(values: span<f32, 4>) { }
+            function main() -> i32 {
+                let xs: array<f32, 4> = [1.0, 2.0, 3.0, 4.0]
+                matrix4(xs)
+                matrix4(xs[0..4])
+                return 0
+            }
+            

@@ -10,8 +10,10 @@ below. Every exit status is the same as Python's.
 
 The Python checker parsed and type-checked each block with the Python front
 end, then compiled it with flowc. The Flow checker parses with the flowc
-parser and leaves the type check to flowc (`compiler/scripts/flowc_emit.sh`,
-the defaults of `flow compile`).
+parser and compiles with `compiler/scripts/flowc_emit.sh --strict`, whose
+type check is the port of the Python one (compiler/src/sem_check.flow). A
+type error stops the block at stage `types` with the checker's first
+message, as it did in Python.
 
 1. Parse error text. A block that does not parse reports flowc's message,
    `block.flow:1:13: parse error: unexpected token '->' (byte 12)`, where the
@@ -19,47 +21,27 @@ the defaults of `flow compile`).
    (`parse`) are the same. Cases: harness.1 to .5 (docs.md:100, docs.md:141),
    ledger_new.1, ledger_edited.1.
 
-2. Names the Python type checker rejected and flowc leaves to clang. An
-   undefined variable and an undeclared return type were `unverified` at
-   stage `types`; they are still `unverified`, now at stage `clang` with
-   clang's message. Cases: harness.1 to .6 (docs.md:64, docs.md:211). With
-   `--no-clang` (harness.6) the two blocks verify, since nothing after flowc
-   looks at them.
-
-3. Module statics. The Python parser required a top-level `let` to be
+2. Module statics. The Python parser required a top-level `let` to be
    `let mut` with a type. flowc accepts both forms and writes C that does not
    compile, so the Flow checker applies the rule itself, in token order up to
    where flowc stopped parsing, with the Python message. No golden changed.
 
 ## Command line
 
-4. `snippets` on a bad info string printed a Python traceback and exited 1.
+3. `snippets` on a bad info string printed a Python traceback and exited 1.
    It now prints `error: <message>` and still exits 1. Cases: badinfo_*.2.
 
-5. The hint after paid-off debt names `./scripts/check_doc_examples.sh
+4. The hint after paid-off debt names `./scripts/check_doc_examples.sh
    --write-ledger` in place of `python3 scripts/check_doc_examples.py
    --write-ledger`. Case: ledger_paid.1.
 
 ## The repository's own documentation
 
-Over the whole tree (635 blocks on 2026-09-29), 622 ledger rows are
-byte-identical. The other 13 differ for the reasons above:
-
-- Eight blocks tagged `expect-error` are rejected only by checks the
-  Python type checker had and flowc does not: a string initialising an
-  `i32` (ROADMAP.md), assignment to an immutable `let`
-  (docs/book/02-values-and-types.md), lifetime domain escapes and
-  violations and the RT-safety rule (four in
-  docs/language/lifetime-domains.md), a span outliving its storage
-  (docs/language/spans.md) and a call to an undefined function, which
-  flowc reports as a warning (docs/language/modules-namespacing.md).
-  They are now `unverified` ("tagged expect-error but compiles") and sit
-  in the ledger until flowc gains those checks.
-- Two blocks the Python parser accepted and flowc's parser does not
-  (docs/LANGUAGE_SPEC.md, docs/book/10-memory-and-lifetimes.md): still
-  `unverified`, now at stage `parse`.
-- Three blocks that define a capability twice once split into
-  declarations and statements (two in docs/effects-showcase.md, one in
-  docs/tutorials/effects-basics.md): the Python type checker rejected the
-  duplicate, flowc accepts it and clang reports the redefinition. Still
-  `unverified`, now at stage `clang`.
+Over the whole tree (635 blocks on 2026-09-29) every status and stage in
+docs/generated/example-status.json is the Python checker's. One detail
+differs. The `expect-error` block in docs/language/modules-namespacing.md
+has two modules that both define `gain`. The Python host kept both
+definitions as overloads, and its checker failed a later harness rung
+with "Undefined function 'gain'". flowc stops at the first rung with
+"function 'gain' is defined twice with the same parameter types", the
+error the block is about.

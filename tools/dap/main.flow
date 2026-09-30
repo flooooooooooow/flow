@@ -336,7 +336,7 @@ function which(name: string) -> string {
 
 function find_lldb_dap() -> string {
     let forced: string = getenv("FLOW_LLDB_DAP")
-    if forced != null {
+    if forced as ptr<u8> != null {
         if t_eq(forced, "-") {
             return ""
         }

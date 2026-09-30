@@ -1,0 +1,6 @@
+# expect: Module static 'head' of pointer type must be initialized to null
+let mut head: ptr<i32> = 0
+
+function main() -> i32 {
+    return 0
+}

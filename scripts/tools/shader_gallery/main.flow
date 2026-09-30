@@ -77,17 +77,17 @@ function fill_name(line: string) -> string {
     let p: ptr<u8> = line as ptr<u8>
     let mut q: i32 = skip_ws(p, 0)
     if ft_at(line, q, "shader") == false {
-        return null
+        return null as string
     }
     let a: i32 = q + 6
     q = skip_ws(p, a)
     if q == a or ft_at(line, q, "fill") == false {
-        return null
+        return null as string
     }
     let b: i32 = q + 4
     q = skip_ws(p, b)
     if q == b or ft_at(line, q, "photoreal_") == false {
-        return null
+        return null as string
     }
     let start: i32 = q
     let mut e: i32 = q + 10
@@ -95,11 +95,11 @@ function fill_name(line: string) -> string {
         e = e + 1
     }
     if e == q + 10 {
-        return null
+        return null as string
     }
     let after: i32 = skip_ws(p, e)
     if p[after] != 123 {
-        return null
+        return null as string
     }
     return ft_slice(line, start, e)
 }
@@ -112,15 +112,15 @@ function is_head_char(c: i32) -> bool {
 function heading(line: string) -> string {
     let p: ptr<u8> = line as ptr<u8>
     if p[0] != 35 {
-        return null
+        return null as string
     }
     let w1: i32 = skip_ws(p, 1)
     if w1 == 1 {
-        return null
+        return null as string
     }
     let cap: i32 = p[w1] as i32
     if cap < 65 or cap > 90 {
-        return null
+        return null as string
     }
     let t: i32 = w1 + 1
     # k: run of class characters after the capital; m: end of the last
@@ -151,7 +151,7 @@ function heading(line: string) -> string {
         lo = 1
     }
     if m > k or lo > hi {
-        return null
+        return null as string
     }
     return ft_slice(line, w1, t + m)
 }
@@ -208,7 +208,7 @@ function add_demo(d: ptr<Demos>, name: string, cat: string, file: string) -> voi
 
 function parse_file(d: ptr<Demos>, path: string, headings: bool) -> bool {
     let text: string = ft_read_file(path)
-    if text == null {
+    if text as ptr<u8> == null {
         return false
     }
     let lines: ptr<StrList> = md_splitlines(text)
@@ -222,14 +222,14 @@ function parse_file(d: ptr<Demos>, path: string, headings: bool) -> bool {
         let mut handled: bool = false
         if headings {
             let hd: string = heading(line)
-            if hd != null {
+            if hd as ptr<u8> != null {
                 category = hd
                 handled = true
             }
         }
         if handled == false {
             let nm: string = fill_name(line)
-            if nm != null {
+            if nm as ptr<u8> != null {
                 add_demo(d, nm, category, ft_from(path, 13))
             }
         }
@@ -444,7 +444,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     let generated: string = build_page(d)
     if on[0] == 1 {
         let mut current: string = ft_read_file(OUTPUT)
-        if current == null {
+        if current as ptr<u8> == null {
             current = ""
         }
         if ft_eq(current, generated) == false {

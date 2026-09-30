@@ -1,0 +1,14 @@
+
+extern {
+    function run_body(start: i32, body: ptr<void>, ctx: ptr<void>) -> void
+}
+
+@flow_api
+function shard_body(s: i32, ctx: ptr<void>) -> void {
+    return
+}
+
+function main() -> i32 {
+    run_body(0, shard_body, null)
+    return 0
+}

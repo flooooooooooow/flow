@@ -1,0 +1,119 @@
+# @module flowc.sem_cheader
+# @means  The names an @cImport header declares, for the semantic checker.
+#
+# The Python host read each @cImport header (src/flow/c_header_parser.py):
+# it ran the C preprocessor (`cpp -P`, then `clang -E -P`, then
+# `gcc -E -P`, on `#include <header>` piped to stdin, with -I for the
+# program's directory, /usr/include and /usr/local/include), parsed the
+# prototypes, typedefs and enum constants out of the result, and read the
+# integer `#define`s from `cpp -dM`. The checker then knew those names and
+# their types.
+#
+# flowc does not parse the declarations. It collects a superset of the names
+# instead: every identifier in the preprocessed text, and the name of every
+# object-like `#define` (a function-like macro such as macOS's `htons` is
+# not a declaration, and the Python host did not know it either). A name in
+# the set is left unchecked; a name outside it is an ordinary undefined
+# name, as it was for the Python checker.
+
+import .sem_util { SemStrMap, sem_sm_put, sem_s_len, sem_s_starts, sem_s_span }
+
+extern {
+    function popen(cmd: string, mode: string) -> ptr<void>
+    function pclose(fp: ptr<void>) -> i32
+    function fgets(buf: ptr<u8>, n: i32, fp: ptr<void>) -> ptr<u8>
+    function malloc(n: i64) -> ptr<void>
+}
+
+function ch_is_ident_start(c: i32) -> bool {
+    return (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or c == 95
+}
+
+function ch_is_ident(c: i32) -> bool {
+    return ch_is_ident_start(c) or (c >= 48 and c <= 57)
+}
+
+# The #include line the preprocessor reads (c_header_parser._include_line).
+function ch_include_line(header: string) -> string {
+    if sem_s_starts(header, "\"") or sem_s_starts(header, "<") {
+        return "#include " + header
+    }
+    if sem_s_starts(header, "/") or sem_s_starts(header, "./") or sem_s_starts(header, "../") {
+        return "#include \"" + header + "\""
+    }
+    return "#include <" + header + ">"
+}
+
+function ch_command(pre: string, header: string, dir: string) -> string {
+    return "printf '%s\\n' '" + ch_include_line(header) + "' | " + pre + " -I '" + dir + "' -I /usr/include -I /usr/local/include - 2>/dev/null"
+}
+
+# Add every identifier of `cmd`'s output to `names`; with `defines`, only
+# the names of object-like `#define` lines. Returns the bytes read.
+function ch_scan(cmd: string, names: ptr<SemStrMap>, defines: bool) -> i32 {
+    let fp: ptr<void> = popen(cmd, "r")
+    if fp == null {
+        return 0
+    }
+    let buf: ptr<u8> = malloc(8192) as ptr<u8>
+    let mut total: i32 = 0
+    while fgets(buf, 8192, fp) != null {
+        let n: i32 = sem_s_len(buf as string)
+        total = total + n
+        if defines {
+            # `#define NAME value`: NAME followed by a space, not `(`.
+            if sem_s_starts(buf as string, "#define ") {
+                let mut k: i32 = 8
+                let s: i32 = k
+                while k < n and ch_is_ident(buf[k] as i32) {
+                    k = k + 1
+                }
+                if k > s and k < n and buf[k] == 32 {
+                    sem_sm_put(names, sem_s_span(buf, s, k), 1)
+                }
+            }
+        } else {
+            let mut i: i32 = 0
+            while i < n {
+                if ch_is_ident_start(buf[i] as i32) {
+                    let s2: i32 = i
+                    while i < n and ch_is_ident(buf[i] as i32) {
+                        i = i + 1
+                    }
+                    sem_sm_put(names, sem_s_span(buf, s2, i), 1)
+                } elif buf[i] >= 48 and buf[i] <= 57 {
+                    while i < n and ch_is_ident(buf[i] as i32) {
+                        i = i + 1
+                    }
+                } else {
+                    i = i + 1
+                }
+            }
+        }
+    }
+    pclose(fp)
+    return total
+}
+
+# Collect the names `header` may declare into `names`. Returns false when
+# no preprocessor produced anything (then nothing is known about it).
+export function sem_header_names(header: string, dir: string, names: ptr<SemStrMap>) -> bool {
+    let mut got: i32 = ch_scan(ch_command("cpp -P", header, dir), names, false)
+    if got == 0 {
+        got = ch_scan(ch_command("clang -E -P", header, dir), names, false)
+    }
+    if got == 0 {
+        got = ch_scan(ch_command("gcc -E -P", header, dir), names, false)
+    }
+    if got == 0 {
+        return false
+    }
+    let mut m: i32 = ch_scan(ch_command("cpp -dM", header, dir), names, true)
+    if m == 0 {
+        m = ch_scan(ch_command("clang -E -dM", header, dir), names, true)
+    }
+    if m == 0 {
+        m = ch_scan(ch_command("gcc -E -dM", header, dir), names, true)
+    }
+    return true
+}

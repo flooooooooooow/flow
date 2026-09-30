@@ -9,6 +9,8 @@
 
 import .text { ft_len, ft_eq, ft_starts, ft_replace, ft_exists, ft_rfind_byte, ft_slice, ft_from, ft_normpath, ft_list_len, ft_list_get, StrList }
 
+# `system` runs the shell: the checker requires it under `@unsafe extern`.
+@unsafe
 extern {
     function malloc(size: i64) -> ptr<void>
     function system(cmd: string) -> i32

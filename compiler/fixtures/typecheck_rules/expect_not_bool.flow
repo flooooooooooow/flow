@@ -1,0 +1,5 @@
+# expect: expect condition must be a bool, got i32
+function main() -> i32 {
+    expect 1
+    return 0
+}

@@ -1,0 +1,14 @@
+
+unit Meter
+unit Second
+unit Hertz = Second^-1
+unit Velocity = Meter / Second
+unit Accel = Meter / Second^2
+
+    function main() -> i32 {
+        let f: Hertz = 1.0e6 Hertz
+        let d: Meter = 100.0 Meter
+        let t: Second = 2.5 Second
+        return 0
+    }
+    

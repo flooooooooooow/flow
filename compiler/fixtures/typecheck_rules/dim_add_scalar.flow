@@ -1,0 +1,8 @@
+# expect: line 6: dimensional error: Meter + f32 (a dimensionless value needs an explicit cast, e.g. `x as Meter`)
+unit Meter
+
+function main() -> i32 {
+    let a: Meter = 1.0 as Meter
+    let c: Meter = a + 2.0
+    return 0
+}

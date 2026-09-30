@@ -1,0 +1,16 @@
+
+unit Meter
+unit Second
+unit Kilogram
+unit Radian
+unit Velocity = Meter / Second
+unit Accel = Meter / Second^2
+
+        function main() -> i32 {
+            let a: Meter = 2.0 as Meter
+            let b: Meter = 4.0 as Meter
+            let ratio: f64 = b / a
+            let scaled: f64 = ratio * 2.0
+            return 0
+        }
+        

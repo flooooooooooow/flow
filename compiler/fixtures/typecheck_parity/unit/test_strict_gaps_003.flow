@@ -1,0 +1,1062 @@
+# FLOW Concurrency Standard Library
+# Threads, mutexes, channels, atomics. Real pthread/atomic backends.
+# See docs/language/concurrency-vs-go.md
+#
+# The pthread types come from <pthread.h> rather than being modelled by hand.
+# The hand-written model guessed at all four, and two of the guesses were
+# wrong on this machine:
+#
+#   pthread_t         guessed i64      real 8 bytes   ok by luck
+#   pthread_mutex_t   guessed 64 bytes real 64        ok by luck
+#   pthread_cond_t    guessed 64 bytes real 48        16 bytes wasted
+#   pthread_rwlock_t  guessed 128      real 200       72-byte overflow
+#
+# pthread_rwlock_init writes 200 bytes into a 128-byte field, past the end of
+# the struct. The sizes also differ per platform (glibc x86_64 has a 40-byte
+# mutex and a 56-byte rwlock), so no single set of numbers is right. Naming
+# the real types lets the C compiler size and align them for the target.
+#
+# pthread_t is opaque. POSIX only guarantees it can be compared with
+# pthread_equal, and it has no reserved "no thread" value, so the owner field
+# is paired with has_owner instead of being cleared to zero.
+
+@cImport("pthread.h")
+
+extern {
+    function flow_thread_spawn(start: ptr<i8>, arg: ptr<i8>) -> i64
+    function flow_thread_join(tid: i64) -> i32
+    function flow_thread_yield() -> void
+    function flow_async_spawn(task_id: i32, arg: i32) -> void
+    function flow_async_join(task_id: i32) -> i32
+    function flow_async_delay(ms: i32) -> void
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function flow_atomic_load_i32(ptr: ptr<i32>, memorder: i32) -> i32
+    function flow_atomic_store_i32(ptr: ptr<i32>, val: i32, memorder: i32) -> void
+    function flow_atomic_fetch_add_i32(ptr: ptr<i32>, val: i32, memorder: i32) -> i32
+    function flow_atomic_fetch_sub_i32(ptr: ptr<i32>, val: i32, memorder: i32) -> i32
+    function flow_atomic_cas_i32(ptr: ptr<i32>, expected: ptr<i32>, desired: i32, weak: bool, success_memorder: i32, failure_memorder: i32) -> bool
+    function flow_race_mutex_lock(mu: ptr<void>) -> void
+    function flow_race_mutex_unlock(mu: ptr<void>) -> void
+    function flow_race_read(addr: ptr<void>, size: i32) -> void
+    function flow_race_write(addr: ptr<void>, size: i32) -> void
+    function __atomic_load_n_i64(ptr: ptr<i64>, memorder: i32) -> i64
+    function __atomic_store_n_i64(ptr: ptr<i64>, val: i64, memorder: i32) -> void
+    function __atomic_fetch_add_i64(ptr: ptr<i64>, val: i64, memorder: i32) -> i64
+    function __atomic_fetch_sub_i64(ptr: ptr<i64>, val: i64, memorder: i32) -> i64
+    function __atomic_compare_exchange_n_i64(ptr: ptr<i64>, expected: ptr<i64>, desired: i64, weak: bool, success_memorder: i32, failure_memorder: i32) -> bool
+    function __atomic_load_n_bool(ptr: ptr<bool>, memorder: i32) -> bool
+    function __atomic_store_n_bool(ptr: ptr<bool>, val: bool, memorder: i32) -> void
+    function __atomic_compare_exchange_n_bool(ptr: ptr<bool>, expected: ptr<bool>, desired: bool, weak: bool, success_memorder: i32, failure_memorder: i32) -> bool
+}
+
+# =============================================================================
+# Runtime helpers (runtime/flow_concurrency.c)
+# =============================================================================
+
+# =============================================================================
+# Thread
+# =============================================================================
+
+struct Thread {
+    id: i64,
+    running: bool
+}
+
+# Low-level pthread functions
+
+function thread_new() -> Thread {
+    return Thread { id: 0, running: false }
+}
+
+function thread_is_running(t: Thread) -> bool {
+    return t.running
+}
+
+# Spawn via runtime trampoline. `start` is a C function pointer
+# (void (*)(void*)) cast to ptr<i8>; prefer native helpers for workers.
+function thread_spawn(start: ptr<i8>, arg: ptr<i8>) -> Thread {
+    let id: i64 = flow_thread_spawn(start, arg)
+    let ok: bool = id >= 0
+    return Thread { id: id, running: ok }
+}
+
+function thread_join(t: ptr<Thread>) -> i32 {
+    let rc: i32 = flow_thread_join(t.id)
+    t.running = false
+    return rc
+}
+
+# =============================================================================
+# Mutex (Mutual Exclusion Lock)
+# =============================================================================
+
+struct Mutex {
+    inner: pthread_mutex_t,
+    # Valid only while has_owner is true. pthread_t has no "no thread" value.
+    owner: pthread_t,
+    has_owner: bool,
+    locked: bool,
+    _bound: bool
+}
+
+function mutex_new() -> Mutex {
+    # inner and owner are elided, so they start zeroed. pthread_mutex_init
+    # overwrites inner; owner is not read until has_owner is set.
+    return Mutex { has_owner: false, locked: false, _bound: false }
+}
+
+function mutex_bind(m: ptr<Mutex>) -> void {
+    if m._bound {
+        return
+    }
+    pthread_mutex_init(&m.inner, null)
+    m._bound = true
+}
+
+function mutex_lock(m: ptr<Mutex>) -> void {
+    mutex_bind(m)
+    flow_race_mutex_lock(&m.inner as ptr<void>)
+    pthread_mutex_lock(&m.inner)
+    m.locked = true
+    m.owner = pthread_self()
+    m.has_owner = true
+}
+
+function mutex_unlock(m: ptr<Mutex>) -> void {
+    m.locked = false
+    m.has_owner = false
+    pthread_mutex_unlock(&m.inner)
+    flow_race_mutex_unlock(&m.inner as ptr<void>)
+}
+
+function mutex_trylock(m: ptr<Mutex>) -> bool {
+    mutex_bind(m)
+    let result: i32 = pthread_mutex_trylock(&m.inner)
+    if result == 0 {
+        m.locked = true
+        m.owner = pthread_self()
+        m.has_owner = true
+        return true
+    }
+    return false
+}
+
+function mutex_destroy(m: ptr<Mutex>) -> void {
+    if m._bound {
+        pthread_mutex_destroy(&m.inner)
+        m._bound = false
+    }
+}
+
+function mutex_is_locked(m: Mutex) -> bool {
+    return m.locked
+}
+
+# =============================================================================
+# Condition Variable
+# =============================================================================
+
+struct CondVar {
+    inner: pthread_cond_t,
+    initialized: bool,
+    _bound: bool
+}
+
+function condvar_new() -> CondVar {
+    return CondVar { initialized: false, _bound: false }
+}
+
+function condvar_bind(c: ptr<CondVar>) -> void {
+    if c._bound {
+        return
+    }
+    pthread_cond_init(&c.inner, null)
+    c.initialized = true
+    c._bound = true
+}
+
+function condvar_wait(c: ptr<CondVar>, m: ptr<Mutex>) -> void {
+    condvar_bind(c)
+    mutex_bind(m)
+    pthread_cond_wait(&c.inner, &m.inner)
+}
+
+function condvar_signal(c: ptr<CondVar>) -> void {
+    condvar_bind(c)
+    pthread_cond_signal(&c.inner)
+}
+
+function condvar_broadcast(c: ptr<CondVar>) -> void {
+    condvar_bind(c)
+    pthread_cond_broadcast(&c.inner)
+}
+
+function condvar_destroy(c: ptr<CondVar>) -> void {
+    if c._bound {
+        pthread_cond_destroy(&c.inner)
+        c._bound = false
+    }
+}
+
+# =============================================================================
+# Read-Write Lock
+# =============================================================================
+
+struct RwLock {
+    inner: pthread_rwlock_t,
+    readers: i32,
+    writer: bool,
+    _bound: bool
+}
+
+function rwlock_new() -> RwLock {
+    return RwLock { readers: 0, writer: false, _bound: false }
+}
+
+function rwlock_bind(rw: ptr<RwLock>) -> void {
+    if rw._bound {
+        return
+    }
+    pthread_rwlock_init(&rw.inner, null)
+    rw._bound = true
+}
+
+function rwlock_rdlock(rw: ptr<RwLock>) -> void {
+    rwlock_bind(rw)
+    pthread_rwlock_rdlock(&rw.inner)
+    rw.readers = rw.readers + 1
+}
+
+function rwlock_wrlock(rw: ptr<RwLock>) -> void {
+    rwlock_bind(rw)
+    pthread_rwlock_wrlock(&rw.inner)
+    rw.writer = true
+}
+
+function rwlock_unlock(rw: ptr<RwLock>) -> void {
+    if rw.writer {
+        rw.writer = false
+    } else {
+        rw.readers = rw.readers - 1
+    }
+    pthread_rwlock_unlock(&rw.inner)
+}
+
+function rwlock_destroy(rw: ptr<RwLock>) -> void {
+    if rw._bound {
+        pthread_rwlock_destroy(&rw.inner)
+        rw._bound = false
+    }
+}
+
+# =============================================================================
+# Semaphore (mutex + condvar)
+# =============================================================================
+
+struct Semaphore {
+    _align: i64,
+    _lock: array<u8, 64>,
+    _cond: array<u8, 64>,
+    count: i32,
+    _bound: bool
+}
+
+function semaphore_new(initial: i32) -> Semaphore {
+    return Semaphore { _align: 0, _lock: [], _cond: [], count: initial, _bound: false }
+}
+
+function semaphore_bind(s: ptr<Semaphore>) -> void {
+    if s._bound {
+        return
+    }
+    pthread_mutex_init(&s._lock as ptr<void>, null)
+    pthread_cond_init(&s._cond as ptr<void>, null)
+    s._bound = true
+}
+
+function semaphore_wait(s: ptr<Semaphore>) -> void {
+    semaphore_bind(s)
+    pthread_mutex_lock(&s._lock as ptr<void>)
+    while s.count <= 0 {
+        pthread_cond_wait(&s._cond as ptr<void>, &s._lock as ptr<void>)
+    }
+    s.count = s.count - 1
+    pthread_mutex_unlock(&s._lock as ptr<void>)
+}
+
+function semaphore_post(s: ptr<Semaphore>) -> void {
+    semaphore_bind(s)
+    pthread_mutex_lock(&s._lock as ptr<void>)
+    s.count = s.count + 1
+    pthread_cond_signal(&s._cond as ptr<void>)
+    pthread_mutex_unlock(&s._lock as ptr<void>)
+}
+
+function semaphore_count(s: Semaphore) -> i32 {
+    return s.count
+}
+
+# =============================================================================
+# Channel (Go-style buffered communication)
+# =============================================================================
+
+# Generic Chan<T> — monomorphized to Chan_i32 / Chan_Point / etc.
+# (Named Chan to avoid clashing with hand-specialized Channel_i32.) / Channel_Point / etc.
+# Prefer this for new code. Channel_i32 / Channel_i64 remain as aliases.
+function sizeof<T>() -> i64 {
+    return 0
+}
+
+struct Chan<T> {
+    buffer: ptr<T>,
+    _lock: array<u8, 64>,
+    _not_empty: array<u8, 64>,
+    _not_full: array<u8, 64>,
+    capacity: i32,
+    size: i32,
+    head: i32,
+    tail: i32,
+    closed: bool,
+    _bound: bool
+}
+
+function channel_new<T>(cap: i32) -> Chan<T> {
+    let mut n: i32 = cap
+    if n < 1 {
+        n = 1
+    }
+    let es: i64 = sizeof<T>()
+    let buf: ptr<T> = malloc(n as i64 * es) as ptr<T>
+    return Chan<T> {
+        buffer: buf,
+        _lock: [],
+        _not_empty: [],
+        _not_full: [],
+        capacity: n,
+        size: 0,
+        head: 0,
+        tail: 0,
+        closed: false,
+        _bound: false
+    }
+}
+
+function channel_bind<T>(ch: ptr<Chan<T> >) -> void {
+    if ch._bound {
+        return
+    }
+    pthread_mutex_init(&ch._lock as ptr<void>, null)
+    pthread_cond_init(&ch._not_empty as ptr<void>, null)
+    pthread_cond_init(&ch._not_full as ptr<void>, null)
+    ch._bound = true
+}
+
+function channel_try_send<T>(ch: ptr<Chan<T> >, val: T) -> bool {
+    channel_bind<T>(ch)
+    pthread_mutex_lock(&ch._lock as ptr<void>)
+    if ch.closed or ch.size >= ch.capacity {
+        pthread_mutex_unlock(&ch._lock as ptr<void>)
+        return false
+    }
+    flow_race_write(ch.buffer as ptr<void>, ch.size)
+    ch.buffer[ch.tail] = val
+    ch.tail = (ch.tail + 1) % ch.capacity
+    ch.size = ch.size + 1
+    pthread_cond_signal(&ch._not_empty as ptr<void>)
+    pthread_mutex_unlock(&ch._lock as ptr<void>)
+    return true
+}
+
+function channel_send<T>(ch: ptr<Chan<T> >, val: T) -> bool {
+    channel_bind<T>(ch)
+    pthread_mutex_lock(&ch._lock as ptr<void>)
+    while ch.size >= ch.capacity and !ch.closed {
+        pthread_cond_wait(&ch._not_full as ptr<void>, &ch._lock as ptr<void>)
+    }
+    if ch.closed {
+        pthread_mutex_unlock(&ch._lock as ptr<void>)
+        return false
+    }
+    ch.buffer[ch.tail] = val
+    ch.tail = (ch.tail + 1) % ch.capacity
+    ch.size = ch.size + 1
+    pthread_cond_signal(&ch._not_empty as ptr<void>)
+    pthread_mutex_unlock(&ch._lock as ptr<void>)
+    return true
+}
+
+function channel_try_recv<T>(ch: ptr<Chan<T> >, out: ptr<T>) -> bool {
+    channel_bind<T>(ch)
+    pthread_mutex_lock(&ch._lock as ptr<void>)
+    if ch.size == 0 {
+        pthread_mutex_unlock(&ch._lock as ptr<void>)
+        return false
+    }
+    out[0] = ch.buffer[ch.head]
+    ch.head = (ch.head + 1) % ch.capacity
+    ch.size = ch.size - 1
+    pthread_cond_signal(&ch._not_full as ptr<void>)
+    pthread_mutex_unlock(&ch._lock as ptr<void>)
+    return true
+}
+
+function channel_recv<T>(ch: ptr<Chan<T> >, out: ptr<T>) -> bool {
+    channel_bind<T>(ch)
+    pthread_mutex_lock(&ch._lock as ptr<void>)
+    while ch.size == 0 and !ch.closed {
+        pthread_cond_wait(&ch._not_empty as ptr<void>, &ch._lock as ptr<void>)
+    }
+    if ch.size == 0 {
+        pthread_mutex_unlock(&ch._lock as ptr<void>)
+        return false
+    }
+    out[0] = ch.buffer[ch.head]
+    ch.head = (ch.head + 1) % ch.capacity
+    ch.size = ch.size - 1
+    pthread_cond_signal(&ch._not_full as ptr<void>)
+    pthread_mutex_unlock(&ch._lock as ptr<void>)
+    return true
+}
+
+function channel_close<T>(ch: ptr<Chan<T> >) -> void {
+    channel_bind<T>(ch)
+    pthread_mutex_lock(&ch._lock as ptr<void>)
+    ch.closed = true
+    pthread_cond_broadcast(&ch._not_empty as ptr<void>)
+    pthread_cond_broadcast(&ch._not_full as ptr<void>)
+    pthread_mutex_unlock(&ch._lock as ptr<void>)
+}
+
+function channel_destroy<T>(ch: ptr<Chan<T> >) -> void {
+    if ch._bound {
+        pthread_mutex_destroy(&ch._lock as ptr<void>)
+        pthread_cond_destroy(&ch._not_empty as ptr<void>)
+        pthread_cond_destroy(&ch._not_full as ptr<void>)
+        ch._bound = false
+    }
+    free(ch.buffer as ptr<void>)
+}
+
+function channel_select2_try<T>(
+    a: ptr<Chan<T> >, a_out: ptr<T>,
+    b: ptr<Chan<T> >, b_out: ptr<T>
+) -> i32 {
+    if channel_try_recv<T>(a, a_out) {
+        return 0
+    }
+    if channel_try_recv<T>(b, b_out) {
+        return 1
+    }
+    return -1
+}
+
+# Hand-specialized Channel_i32 (kept for existing call sites)
+struct Channel_i32 {
+    # ptr first → struct align 8; sync arrays follow at aligned offsets.
+    buffer: ptr<i32>,
+    _lock: array<u8, 64>,
+    _not_empty: array<u8, 64>,
+    _not_full: array<u8, 64>,
+    capacity: i32,
+    size: i32,
+    head: i32,
+    tail: i32,
+    closed: bool,
+    _bound: bool
+}
+
+# Build an unbound channel value. Sync primitives are initialized on the
+# *final* storage by channel_i32_bind / first send-recv (never copy a live mutex).
+function channel_i32_new(cap: i32) -> Channel_i32 {
+    let mut n: i32 = cap
+    if n < 1 {
+        n = 1
+    }
+    let buf: ptr<i32> = malloc(n * 4) as ptr<i32>
+    return Channel_i32 {
+        buffer: buf,
+        _lock: [],
+        _not_empty: [],
+        _not_full: [],
+        capacity: n,
+        size: 0,
+        head: 0,
+        tail: 0,
+        closed: false,
+        _bound: false
+    }
+}
+
+function channel_i32_bind(ch: ptr<Channel_i32>) -> void {
+    if ch._bound {
+        return
+    }
+    pthread_mutex_init(&ch._lock as ptr<void>, null)
+    pthread_cond_init(&ch._not_empty as ptr<void>, null)
+    pthread_cond_init(&ch._not_full as ptr<void>, null)
+    ch._bound = true
+}
+
+function channel_i32_is_empty(ch: Channel_i32) -> bool {
+    return ch.size == 0
+}
+
+function channel_i32_is_full(ch: Channel_i32) -> bool {
+    return ch.size >= ch.capacity
+}
+
+function channel_i32_is_closed(ch: Channel_i32) -> bool {
+    return ch.closed
+}
+
+function channel_i32_len(ch: Channel_i32) -> i32 {
+    return ch.size
+}
+
+# Non-blocking send. Returns false if full or closed.
+function channel_i32_try_send(ch: ptr<Channel_i32>, val: i32) -> bool {
+    channel_i32_bind(ch)
+    pthread_mutex_lock(&ch._lock as ptr<void>)
+    if ch.closed {
+        pthread_mutex_unlock(&ch._lock as ptr<void>)
+        return false
+    }
+    if ch.size >= ch.capacity {
+        pthread_mutex_unlock(&ch._lock as ptr<void>)
+        return false
+    }
+    ch.buffer[ch.tail] = val
+    ch.tail = (ch.tail + 1) % ch.capacity
+    ch.size = ch.size + 1
+    pthread_cond_signal(&ch._not_empty as ptr<void>)
+    pthread_mutex_unlock(&ch._lock as ptr<void>)
+    return true
+}
+
+# Blocking send. Returns false if channel is closed.
+function channel_i32_send(ch: ptr<Channel_i32>, val: i32) -> bool {
+    channel_i32_bind(ch)
+    pthread_mutex_lock(&ch._lock as ptr<void>)
+    while ch.size >= ch.capacity and !ch.closed {
+        pthread_cond_wait(&ch._not_full as ptr<void>, &ch._lock as ptr<void>)
+    }
+    if ch.closed {
+        pthread_mutex_unlock(&ch._lock as ptr<void>)
+        return false
+    }
+    ch.buffer[ch.tail] = val
+    ch.tail = (ch.tail + 1) % ch.capacity
+    ch.size = ch.size + 1
+    pthread_cond_signal(&ch._not_empty as ptr<void>)
+    pthread_mutex_unlock(&ch._lock as ptr<void>)
+    return true
+}
+
+# Non-blocking recv. Writes to out; returns false if empty or (empty and closed).
+function channel_i32_try_recv(ch: ptr<Channel_i32>, out: ptr<i32>) -> bool {
+    channel_i32_bind(ch)
+    pthread_mutex_lock(&ch._lock as ptr<void>)
+    if ch.size == 0 {
+        pthread_mutex_unlock(&ch._lock as ptr<void>)
+        return false
+    }
+    out[0] = ch.buffer[ch.head]
+    ch.head = (ch.head + 1) % ch.capacity
+    ch.size = ch.size - 1
+    pthread_cond_signal(&ch._not_full as ptr<void>)
+    pthread_mutex_unlock(&ch._lock as ptr<void>)
+    return true
+}
+
+# Blocking recv. Returns false when closed and drained.
+function channel_i32_recv(ch: ptr<Channel_i32>, out: ptr<i32>) -> bool {
+    channel_i32_bind(ch)
+    pthread_mutex_lock(&ch._lock as ptr<void>)
+    while ch.size == 0 and !ch.closed {
+        pthread_cond_wait(&ch._not_empty as ptr<void>, &ch._lock as ptr<void>)
+    }
+    if ch.size == 0 {
+        pthread_mutex_unlock(&ch._lock as ptr<void>)
+        return false
+    }
+    out[0] = ch.buffer[ch.head]
+    ch.head = (ch.head + 1) % ch.capacity
+    ch.size = ch.size - 1
+    pthread_cond_signal(&ch._not_full as ptr<void>)
+    pthread_mutex_unlock(&ch._lock as ptr<void>)
+    return true
+}
+
+function channel_i32_close(ch: ptr<Channel_i32>) -> void {
+    channel_i32_bind(ch)
+    pthread_mutex_lock(&ch._lock as ptr<void>)
+    ch.closed = true
+    pthread_cond_broadcast(&ch._not_empty as ptr<void>)
+    pthread_cond_broadcast(&ch._not_full as ptr<void>)
+    pthread_mutex_unlock(&ch._lock as ptr<void>)
+}
+
+function channel_i32_destroy(ch: ptr<Channel_i32>) -> void {
+    if ch._bound {
+        pthread_mutex_destroy(&ch._lock as ptr<void>)
+        pthread_cond_destroy(&ch._not_empty as ptr<void>)
+        pthread_cond_destroy(&ch._not_full as ptr<void>)
+        ch._bound = false
+    }
+    free(ch.buffer as ptr<void>)
+}
+
+# Non-blocking select over two recv sides.
+# Returns 0 if `a` received, 1 if `b` received, -1 if neither ready.
+function channel_i32_select2_try(
+    a: ptr<Channel_i32>, a_out: ptr<i32>,
+    b: ptr<Channel_i32>, b_out: ptr<i32>
+) -> i32 {
+    if channel_i32_try_recv(a, a_out) {
+        return 0
+    }
+    if channel_i32_try_recv(b, b_out) {
+        return 1
+    }
+    return -1
+}
+
+# Blocking select over two recv sides (fairness: alternate which channel
+# is tried first). Returns 0 or 1. Returns -1 only if both are closed+empty.
+function channel_i32_select2(
+    a: ptr<Channel_i32>, a_out: ptr<i32>,
+    b: ptr<Channel_i32>, b_out: ptr<i32>
+) -> i32 {
+    let mut flip: i32 = 0
+    while true {
+        if flip == 0 {
+            let r: i32 = channel_i32_select2_try(a, a_out, b, b_out)
+            if r >= 0 {
+                return r
+            }
+        } else {
+            let r2: i32 = channel_i32_select2_try(b, b_out, a, a_out)
+            if r2 == 0 {
+                return 1
+            }
+            if r2 == 1 {
+                return 0
+            }
+        }
+        if a.closed and a.size == 0 and b.closed and b.size == 0 {
+            return -1
+        }
+        flip = 1 - flip
+        flow_thread_yield()
+    }
+    return -1
+}
+
+# Non-blocking select over up to 4 recv sides.
+# Returns channel index 0..3, or -1 if none ready (Go `select { default }`).
+function channel_i32_select4_try(
+    a: ptr<Channel_i32>, a_out: ptr<i32>,
+    b: ptr<Channel_i32>, b_out: ptr<i32>,
+    c: ptr<Channel_i32>, c_out: ptr<i32>,
+    d: ptr<Channel_i32>, d_out: ptr<i32>
+) -> i32 {
+    if channel_i32_try_recv(a, a_out) {
+        return 0
+    }
+    if channel_i32_try_recv(b, b_out) {
+        return 1
+    }
+    if channel_i32_try_recv(c, c_out) {
+        return 2
+    }
+    if channel_i32_try_recv(d, d_out) {
+        return 3
+    }
+    return -1
+}
+
+# Blocking select over 4 channels. Returns index 0..3, or -1 if all
+# closed+empty. For fewer channels, pass closed empty dummies for unused slots.
+# Non-blocking / default: use channel_i32_select4_try (returns -1 immediately).
+function channel_i32_select4(
+    a: ptr<Channel_i32>, a_out: ptr<i32>,
+    b: ptr<Channel_i32>, b_out: ptr<i32>,
+    c: ptr<Channel_i32>, c_out: ptr<i32>,
+    d: ptr<Channel_i32>, d_out: ptr<i32>
+) -> i32 {
+    while true {
+        let r: i32 = channel_i32_select4_try(a, a_out, b, b_out, c, c_out, d, d_out)
+        if r >= 0 {
+            return r
+        }
+        if a.closed and a.size == 0 and b.closed and b.size == 0 and c.closed and c.size == 0 and d.closed and d.size == 0 {
+            return -1
+        }
+        flow_thread_yield()
+    }
+    return -1
+}
+
+# =============================================================================
+# Channel_i64 — same API as Channel_i32 for 64-bit payloads
+# (Full generics deferred; use this for pointers-as-i64 / large IDs.)
+# =============================================================================
+
+struct Channel_i64 {
+    buffer: ptr<i64>,
+    _lock: array<u8, 64>,
+    _not_empty: array<u8, 64>,
+    _not_full: array<u8, 64>,
+    capacity: i32,
+    size: i32,
+    head: i32,
+    tail: i32,
+    closed: bool,
+    _bound: bool
+}
+
+function channel_i64_new(cap: i32) -> Channel_i64 {
+    let mut n: i32 = cap
+    if n < 1 {
+        n = 1
+    }
+    let buf: ptr<i64> = malloc(n * 8) as ptr<i64>
+    return Channel_i64 {
+        buffer: buf,
+        _lock: [],
+        _not_empty: [],
+        _not_full: [],
+        capacity: n,
+        size: 0,
+        head: 0,
+        tail: 0,
+        closed: false,
+        _bound: false
+    }
+}
+
+function channel_i64_bind(ch: ptr<Channel_i64>) -> void {
+    if ch._bound {
+        return
+    }
+    pthread_mutex_init(&ch._lock as ptr<void>, null)
+    pthread_cond_init(&ch._not_empty as ptr<void>, null)
+    pthread_cond_init(&ch._not_full as ptr<void>, null)
+    ch._bound = true
+}
+
+function channel_i64_try_send(ch: ptr<Channel_i64>, val: i64) -> bool {
+    channel_i64_bind(ch)
+    pthread_mutex_lock(&ch._lock as ptr<void>)
+    if ch.closed or ch.size >= ch.capacity {
+        pthread_mutex_unlock(&ch._lock as ptr<void>)
+        return false
+    }
+    ch.buffer[ch.tail] = val
+    ch.tail = (ch.tail + 1) % ch.capacity
+    ch.size = ch.size + 1
+    pthread_cond_signal(&ch._not_empty as ptr<void>)
+    pthread_mutex_unlock(&ch._lock as ptr<void>)
+    return true
+}
+
+function channel_i64_send(ch: ptr<Channel_i64>, val: i64) -> bool {
+    channel_i64_bind(ch)
+    pthread_mutex_lock(&ch._lock as ptr<void>)
+    while ch.size >= ch.capacity and !ch.closed {
+        pthread_cond_wait(&ch._not_full as ptr<void>, &ch._lock as ptr<void>)
+    }
+    if ch.closed {
+        pthread_mutex_unlock(&ch._lock as ptr<void>)
+        return false
+    }
+    ch.buffer[ch.tail] = val
+    ch.tail = (ch.tail + 1) % ch.capacity
+    ch.size = ch.size + 1
+    pthread_cond_signal(&ch._not_empty as ptr<void>)
+    pthread_mutex_unlock(&ch._lock as ptr<void>)
+    return true
+}
+
+function channel_i64_try_recv(ch: ptr<Channel_i64>, out: ptr<i64>) -> bool {
+    channel_i64_bind(ch)
+    pthread_mutex_lock(&ch._lock as ptr<void>)
+    if ch.size == 0 {
+        pthread_mutex_unlock(&ch._lock as ptr<void>)
+        return false
+    }
+    out[0] = ch.buffer[ch.head]
+    ch.head = (ch.head + 1) % ch.capacity
+    ch.size = ch.size - 1
+    pthread_cond_signal(&ch._not_full as ptr<void>)
+    pthread_mutex_unlock(&ch._lock as ptr<void>)
+    return true
+}
+
+function channel_i64_recv(ch: ptr<Channel_i64>, out: ptr<i64>) -> bool {
+    channel_i64_bind(ch)
+    pthread_mutex_lock(&ch._lock as ptr<void>)
+    while ch.size == 0 and !ch.closed {
+        pthread_cond_wait(&ch._not_empty as ptr<void>, &ch._lock as ptr<void>)
+    }
+    if ch.size == 0 {
+        pthread_mutex_unlock(&ch._lock as ptr<void>)
+        return false
+    }
+    out[0] = ch.buffer[ch.head]
+    ch.head = (ch.head + 1) % ch.capacity
+    ch.size = ch.size - 1
+    pthread_cond_signal(&ch._not_full as ptr<void>)
+    pthread_mutex_unlock(&ch._lock as ptr<void>)
+    return true
+}
+
+function channel_i64_close(ch: ptr<Channel_i64>) -> void {
+    channel_i64_bind(ch)
+    pthread_mutex_lock(&ch._lock as ptr<void>)
+    ch.closed = true
+    pthread_cond_broadcast(&ch._not_empty as ptr<void>)
+    pthread_cond_broadcast(&ch._not_full as ptr<void>)
+    pthread_mutex_unlock(&ch._lock as ptr<void>)
+}
+
+function channel_i64_destroy(ch: ptr<Channel_i64>) -> void {
+    if ch._bound {
+        pthread_mutex_destroy(&ch._lock as ptr<void>)
+        pthread_cond_destroy(&ch._not_empty as ptr<void>)
+        pthread_cond_destroy(&ch._not_full as ptr<void>)
+        ch._bound = false
+    }
+    free(ch.buffer as ptr<void>)
+}
+
+function channel_i64_select2_try(
+    a: ptr<Channel_i64>, a_out: ptr<i64>,
+    b: ptr<Channel_i64>, b_out: ptr<i64>
+) -> i32 {
+    if channel_i64_try_recv(a, a_out) {
+        return 0
+    }
+    if channel_i64_try_recv(b, b_out) {
+        return 1
+    }
+    return -1
+}
+
+function channel_i64_select2(
+    a: ptr<Channel_i64>, a_out: ptr<i64>,
+    b: ptr<Channel_i64>, b_out: ptr<i64>
+) -> i32 {
+    while true {
+        let r: i32 = channel_i64_select2_try(a, a_out, b, b_out)
+        if r >= 0 {
+            return r
+        }
+        if a.closed and a.size == 0 and b.closed and b.size == 0 {
+            return -1
+        }
+        flow_thread_yield()
+    }
+    return -1
+}
+
+# =============================================================================
+# Atomic Operations
+# =============================================================================
+
+struct AtomicI32 {
+    value: i32
+}
+
+struct AtomicI64 {
+    value: i64
+}
+
+struct AtomicBool {
+    value: bool
+}
+
+function atomic_i32_new(val: i32) -> AtomicI32 {
+    return AtomicI32 { value: val }
+}
+
+function atomic_i64_new(val: i64) -> AtomicI64 {
+    return AtomicI64 { value: val }
+}
+
+function atomic_bool_new(val: bool) -> AtomicBool {
+    return AtomicBool { value: val }
+}
+
+# Atomic load/store (map to __atomic builtins / runtime wrappers)
+
+# 64-bit atomics (runtime/flow_concurrency.c)
+
+# Bool atomics
+
+function atomic_i32_load(a: ptr<AtomicI32>, memorder: i32) -> i32 {
+    return flow_atomic_load_i32(&a.value, memorder)
+}
+
+function atomic_i32_store(a: ptr<AtomicI32>, val: i32, memorder: i32) -> void {
+    flow_atomic_store_i32(&a.value, val, memorder)
+}
+
+function atomic_i64_load(a: ptr<AtomicI64>, memorder: i32) -> i64 {
+    return __atomic_load_n_i64(&a.value, memorder)
+}
+
+function atomic_i64_store(a: ptr<AtomicI64>, val: i64, memorder: i32) -> void {
+    __atomic_store_n_i64(&a.value, val, memorder)
+}
+
+function atomic_bool_load(a: ptr<AtomicBool>, memorder: i32) -> bool {
+    return __atomic_load_n_bool(&a.value, memorder)
+}
+
+function atomic_bool_store(a: ptr<AtomicBool>, val: bool, memorder: i32) -> void {
+    __atomic_store_n_bool(&a.value, val, memorder)
+}
+
+# Memory ordering
+const MEMORY_ORDER_RELAXED: i32 = 0
+const MEMORY_ORDER_CONSUME: i32 = 1
+const MEMORY_ORDER_ACQUIRE: i32 = 2
+const MEMORY_ORDER_RELEASE: i32 = 3
+const MEMORY_ORDER_ACQ_REL: i32 = 4
+const MEMORY_ORDER_SEQ_CST: i32 = 5
+
+# =============================================================================
+# SpinLock (busy-wait lock)
+# =============================================================================
+
+struct SpinLock {
+    _flag: AtomicBool
+}
+
+function spinlock_new() -> SpinLock {
+    return SpinLock { _flag: atomic_bool_new(false) }
+}
+
+function spinlock_lock(sl: ptr<SpinLock>) -> void {
+    let mut expected: bool = false
+    while !__atomic_compare_exchange_n_bool(&sl._flag.value, &expected, true, false, MEMORY_ORDER_ACQUIRE, MEMORY_ORDER_RELAXED) {
+        expected = false
+    }
+}
+
+function spinlock_unlock(sl: ptr<SpinLock>) -> void {
+    __atomic_store_n_bool(&sl._flag.value, false, MEMORY_ORDER_RELEASE)
+}
+
+function spinlock_is_locked(sl: ptr<SpinLock>) -> bool {
+    return __atomic_load_n_bool(&sl._flag.value, MEMORY_ORDER_ACQUIRE)
+}
+
+# =============================================================================
+# Once (run-once initialization)
+# =============================================================================
+
+struct Once {
+    _align: i64,
+    _lock: array<u8, 64>,
+    _done: AtomicBool,
+    _bound: bool
+}
+
+function once_new() -> Once {
+    return Once { _align: 0, _lock: [], _done: atomic_bool_new(false), _bound: false }
+}
+
+function once_bind(o: ptr<Once>) -> void {
+    if o._bound {
+        return
+    }
+    pthread_mutex_init(&o._lock as ptr<void>, null)
+    o._bound = true
+}
+
+function once_is_done(o: ptr<Once>) -> bool {
+    return __atomic_load_n_bool(&o._done.value, MEMORY_ORDER_ACQUIRE)
+}
+
+# Begin a once-section. Returns true if the caller should run init, then
+# must call once_call_end. Returns false if already done.
+function once_call_begin(o: ptr<Once>) -> bool {
+    if __atomic_load_n_bool(&o._done.value, MEMORY_ORDER_ACQUIRE) {
+        return false
+    }
+    once_bind(o)
+    pthread_mutex_lock(&o._lock as ptr<void>)
+    if __atomic_load_n_bool(&o._done.value, MEMORY_ORDER_ACQUIRE) {
+        pthread_mutex_unlock(&o._lock as ptr<void>)
+        return false
+    }
+    return true
+}
+
+function once_call_end(o: ptr<Once>) -> void {
+    __atomic_store_n_bool(&o._done.value, true, MEMORY_ORDER_RELEASE)
+    pthread_mutex_unlock(&o._lock as ptr<void>)
+}
+
+# =============================================================================
+# WaitGroup (barrier synchronization — mutex + condvar, no spin)
+# =============================================================================
+
+struct WaitGroup {
+    _align: i64,
+    _lock: array<u8, 64>,
+    _cond: array<u8, 64>,
+    _count: i32,
+    _bound: bool
+}
+
+function waitgroup_new() -> WaitGroup {
+    return WaitGroup { _align: 0, _lock: [], _cond: [], _count: 0, _bound: false }
+}
+
+function waitgroup_bind(wg: ptr<WaitGroup>) -> void {
+    if wg._bound {
+        return
+    }
+    pthread_mutex_init(&wg._lock as ptr<void>, null)
+    pthread_cond_init(&wg._cond as ptr<void>, null)
+    wg._bound = true
+}
+
+function waitgroup_add(wg: ptr<WaitGroup>, delta: i32) -> void {
+    waitgroup_bind(wg)
+    pthread_mutex_lock(&wg._lock as ptr<void>)
+    wg._count = wg._count + delta
+    pthread_mutex_unlock(&wg._lock as ptr<void>)
+}
+
+function waitgroup_done(wg: ptr<WaitGroup>) -> void {
+    waitgroup_bind(wg)
+    pthread_mutex_lock(&wg._lock as ptr<void>)
+    wg._count = wg._count - 1
+    if wg._count <= 0 {
+        wg._count = 0
+        pthread_cond_broadcast(&wg._cond as ptr<void>)
+    }
+    pthread_mutex_unlock(&wg._lock as ptr<void>)
+}
+
+function waitgroup_count(wg: ptr<WaitGroup>) -> i32 {
+    waitgroup_bind(wg)
+    pthread_mutex_lock(&wg._lock as ptr<void>)
+    let c: i32 = wg._count
+    pthread_mutex_unlock(&wg._lock as ptr<void>)
+    return c
+}
+
+function waitgroup_wait(wg: ptr<WaitGroup>) -> void {
+    waitgroup_bind(wg)
+    pthread_mutex_lock(&wg._lock as ptr<void>)
+    while wg._count > 0 {
+        pthread_cond_wait(&wg._cond as ptr<void>, &wg._lock as ptr<void>)
+    }
+    pthread_mutex_unlock(&wg._lock as ptr<void>)
+}

@@ -1,0 +1,6 @@
+# expect: Module static 's' has unsupported type 'string': module statics must be a primitive (i32/i64/u8/u32/f32/f64/c64/c128/bool), a fixed array of primitives, or ptr<T>
+let mut s: string = "x"
+
+function main() -> i32 {
+    return 0
+}

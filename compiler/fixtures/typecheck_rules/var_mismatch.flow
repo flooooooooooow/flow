@@ -1,0 +1,5 @@
+# expect: Variable 'x' initialized with string but annotated as i32
+function main() -> i32 {
+    let x: i32 = "hello"
+    return x
+}

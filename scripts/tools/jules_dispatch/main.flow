@@ -185,10 +185,10 @@ function load_state() -> ptr<State> {
     st[0].failed = obj_new()
     let text: string = ft_read_file(STATE_PATH)
     let mut j: ptr<Json> = null
-    if text != null {
+    if text as ptr<u8> != null {
         j = json_parse(text)
     }
-    if text == null or ft_len(json_error(j)) > 0 or json_kind(j, 0) != json_kind_object() {
+    if text as ptr<u8> == null or ft_len(json_error(j)) > 0 or json_kind(j, 0) != json_kind_object() {
         obj_set(st[0].top, "dispatched", "")
         obj_set(st[0].top, "failed", "")
         return st
@@ -232,7 +232,7 @@ function tmp_path(tag: string) -> string {
 function slurp_and_remove(path: string) -> string {
     let s: string = ft_read_file(path)
     let _u: i32 = unlink(path)
-    if s == null {
+    if s as ptr<u8> == null {
         return ""
     }
     return s
@@ -240,7 +240,7 @@ function slurp_and_remove(path: string) -> string {
 
 function nap(secs: i32) -> void {
     let skip: string = getenv("JULES_DISPATCH_NO_SLEEP")
-    if skip != null and ft_eq(skip, "1") {
+    if skip as ptr<u8> != null and ft_eq(skip, "1") {
         return
     }
     let _s: u32 = sleep(secs as u32)
@@ -317,7 +317,7 @@ function list_has(l: ptr<StrList>, s: string) -> bool {
 
 function env_int(name: string, fallback: i32) -> i32 {
     let raw: string = getenv(name)
-    if raw == null or ft_len(raw) == 0 {
+    if raw as ptr<u8> == null or ft_len(raw) == 0 {
         return fallback
     }
     let p: ptr<u8> = raw as ptr<u8>
@@ -407,7 +407,7 @@ function title_overlap(a: string, b: string) -> bool {
 }
 
 function contains_issue_ref(text: string, number: string) -> bool {
-    if text == null {
+    if text as ptr<u8> == null {
         return false
     }
     let needle: string = "#" + number
@@ -437,7 +437,7 @@ struct Issue {
 
 function task_text(arr: ptr<Issue>, k: i32) -> string {
     let mut body: string = arr[k].body
-    if body == null or ft_len(body) == 0 {
+    if body as ptr<u8> == null or ft_len(body) == 0 {
         body = "(no description)"
     }
     return "Work on issue #" + i64_str(arr[k].number) + ": " + arr[k].title + "\n\nLabels: " + arr[k].labels + "\n\n## Issue\n" + body + "\n\n## How this repository expects work to be done\n- Follow Flow's own idioms. Read neighbouring code before adding a pattern.\n- Anything under compiler/src changes the self-hosted compiler. The generated\n  bootstrap C must be regenerated so it matches, and the three self-host\n  scripts have to stay green: bootstrap_from_c.sh, selfcompile_audit.sh and\n  roundtrip.sh.\n- Run the suites that cover what you touched. `python3 -m pytest tests/unit`\n  for the Python host, `./flow test --tier2 --strict` for the language.\n- A test that cannot fail proves nothing. Where you add one, check it fails\n  without your change.\n- If the issue turns out to be already fixed, say so and show what proves it\n  rather than inventing a change.\n"
@@ -610,7 +610,7 @@ function main_ci_failed() -> bool {
         pr_quote(outp) + " 2>/dev/null"
     let rc: i32 = pr_run(cmd)
     let text: string = slurp_and_remove(outp)
-    if rc != 0 or text == null or ft_len(text) == 0 {
+    if rc != 0 or text as ptr<u8> == null or ft_len(text) == 0 {
         return false
     }
     let j: ptr<Json> = json_parse(text)
@@ -781,7 +781,7 @@ function find_field(s: string, label: string, digits: bool) -> string {
         }
         at = ft_find(s, label, at + 1)
     }
-    return null
+    return null as string
 }
 
 # Returns the session id (detail in out[0]) or null with the reason in out[0].
@@ -796,12 +796,12 @@ function create_session(arr: ptr<Issue>, k: i32, out: ptr<string>) -> string {
     let stderr: string = slurp_and_remove(errp)
     if rc == 124 or rc == 137 {
         out[0] = "timeout"
-        return null
+        return null as string
     }
     let session: string = find_field(stdout, "ID:", true)
-    if session != null {
+    if session as ptr<u8> != null {
         let url: string = find_field(stdout, "URL:", false)
-        if url == null {
+        if url as ptr<u8> == null {
             out[0] = ""
         } else {
             out[0] = url
@@ -813,7 +813,7 @@ function create_session(arr: ptr<Issue>, k: i32, out: ptr<string>) -> string {
         src = stdout
     }
     out[0] = cp_prefix(uc_strip(src), 200)
-    return null
+    return null as string
 }
 
 function main(argc: i32, argv: ptr<string>) -> i32 {
@@ -946,7 +946,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         let number: string = i64_str(issues[k].number)
         detail[0] = ""
         let session: string = create_session(issues, k, detail)
-        if session != null {
+        if session as ptr<u8> != null {
             let entry: ptr<Obj> = obj_new()
             obj_set(entry, "issue", number)
             obj_set(entry, "title", json_quote(issues[k].title))

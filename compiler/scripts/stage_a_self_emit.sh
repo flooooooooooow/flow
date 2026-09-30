@@ -164,6 +164,42 @@ self_emit_module typecheck \
 "$C_TO_HDR" \
     compiler/build/self_typecheck.c compiler/build/self_typecheck.h
 
+# The type checker (sem_*, the port of the Python checker) and strutil,
+# which resolve calls.
+self_emit_module strutil
+self_emit_module sem_util
+"$C_TO_HDR" \
+    compiler/build/self_strutil.c compiler/build/self_strutil.h
+"$C_TO_HDR" \
+    compiler/build/self_sem_util.c compiler/build/self_sem_util.h
+self_emit_module sem_types \
+    compiler/build/self_sem_util.h
+"$C_TO_HDR" \
+    compiler/build/self_sem_types.c compiler/build/self_sem_types.h
+self_emit_module sem_cheader \
+    compiler/build/self_sem_util.h
+"$C_TO_HDR" \
+    compiler/build/self_sem_cheader.c compiler/build/self_sem_cheader.h
+self_emit_module sem_model \
+    compiler/build/self_token.h \
+    compiler/build/self_ast.h \
+    compiler/build/self_lexer.h \
+    compiler/build/self_sem_util.h \
+    compiler/build/self_sem_types.h
+"$C_TO_HDR" \
+    compiler/build/self_sem_model.c compiler/build/self_sem_model.h
+self_emit_module sem_check \
+    compiler/build/self_token.h \
+    compiler/build/self_ast.h \
+    compiler/build/self_lexer.h \
+    compiler/build/self_parser.h \
+    compiler/build/self_sem_util.h \
+    compiler/build/self_sem_types.h \
+    compiler/build/self_sem_model.h \
+    compiler/build/self_sem_cheader.h
+"$C_TO_HDR" \
+    compiler/build/self_sem_check.c compiler/build/self_sem_check.h
+
 self_emit_module resolve \
     compiler/build/self_token.h \
     compiler/build/self_ast.h \
@@ -179,7 +215,12 @@ self_emit_module resolve \
     compiler/build/self_cgen.h \
     compiler/build/self_overload_table.h \
     compiler/build/self_overload_call.h \
-    compiler/build/self_typecheck.h
+    compiler/build/self_typecheck.h \
+    compiler/build/self_strutil.h \
+    compiler/build/self_sem_util.h \
+    compiler/build/self_sem_types.h \
+    compiler/build/self_sem_model.h \
+    compiler/build/self_sem_check.h
 
 # Relocatable link: proves driver-emitted frontend objects resolve together.
 cc -r -o compiler/build/flowc_frontend_self.o \
@@ -208,6 +249,12 @@ cc -r -o compiler/build/flowc_frontend_self.o \
     compiler/build/self_overload_registry.o \
     compiler/build/self_overload_call.o \
     compiler/build/self_typecheck.o \
+    compiler/build/self_strutil.o \
+    compiler/build/self_sem_util.o \
+    compiler/build/self_sem_types.o \
+    compiler/build/self_sem_cheader.o \
+    compiler/build/self_sem_model.o \
+    compiler/build/self_sem_check.o \
     compiler/build/self_resolve.o
 for sym in flowc_make_tok flowc_ast_new flowc_lexer_next flowc_parse_program flowc_read_file flowc_cgen_emit flowc_typecheck flowc_tc_seed_export flowc_bundle_emit flowc_bundle_typecheck flowc_resolve_sibling_path; do
     if ! nm compiler/build/flowc_frontend_self.o | grep "$sym" >/dev/null; then

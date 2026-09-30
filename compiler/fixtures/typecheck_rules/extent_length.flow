@@ -1,0 +1,10 @@
+# expect: static extent mismatch: parameter 'xs' of 'sum4' expects span<f32, 4> but the argument has length 3 (expected 4, got 3)
+function sum4(xs: span<f32, 4>) -> f32 {
+    return 0.0
+}
+
+function main() -> i32 {
+    let xs: array<f32, 3> = [1.0, 2.0, 3.0]
+    let t: f32 = sum4(xs)
+    return 0
+}
