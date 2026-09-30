@@ -11,6 +11,120 @@ Format:
 
 ## Open Questions
 
+### 2026-08-06: Lifetime domains: annotation-only or `domain` blocks in v0?
+
+**Context:** Issue #148 asks for `callback` / `frame` / `session` /
+`application` as a first-class memory model, and leaves the v0 surface open:
+annotations on declarations, or a `domain frame { … }` block that implies an
+arena reset at the block's end.
+([lifetime-domains.md](../language/lifetime-domains.md))
+
+**Options:**
+1. Annotation-only: `@lifetime(D)` on a function and on a module static.
+   Reuses the existing decorator grammar, no parser work beyond a new
+   attribute name, and a value takes its domain from its allocation site.
+2. `domain frame { … }` blocks: nicer at the frame boundary because the
+   reset is implicit, but it needs new grammar, a new scope kind, and a
+   decision about what a domain block means when nested or when it contains
+   a `return`.
+3. Both.
+
+**Recommendation:** Option 1 for v0, shipped. `@lifetime(...)` parses on
+functions and statics; the four rules (LD1 escape to a longer-lived static,
+LD2 escape by return, LD3 allocation discipline, LD4 call ordering) are
+enforced by the type checker. Block sugar is listed under Future work with
+`frame_begin` / `frame_end` as the explicit form it would expand to.
+
+**Status:** ✅ Resolved for v0 (annotation-only, 2026-08-06)
+
+---
+
+### 2026-08-05: `gfx_run`: callback vs block sugar?
+
+**Context:** Pattern adoption ([pattern-adoption.md](pattern-adoption.md)) wants
+to kill the repeated poll/esc/clear/present loop in every gfx demo. Two sketches:
+
+**Options:**
+1. Stdlib/runtime callback: `flow_gfx_run` + user `flow_gfx_frame(g, frame) -> i32`
+   (works today; slightly awkward naming).
+2. Block sugar: `gfx_run(g, max_frames: N) { … }` (nicer; needs parser/lowering).
+3. Both: A now, B later when frame blocks exist.
+
+**Recommendation:** Option 3 (shipped MVP): `gfx_frame_pump` for inline loops;
+`flow_gfx_run` / `gfx_run` calling weak-overridable `flow_gfx_frame`. Block sugar deferred.
+
+**Status:** ✅ Resolved (Option 3 MVP 2026-08-05)
+
+---
+
+### 2026-08-05: `represent phase_portrait`: language form or stdlib trail helper?
+
+**Context:** Lorenz north-star wants `represent phase_portrait(x, z) { trail … }`
+inside a `flow`. We already have `represent linear`.
+
+**Options:**
+1. Full `represent phase_portrait` lowering (ring buffer + window + maps).
+2. Stdlib-only `portrait_trail_*` helpers; keep `represent` for linear/analysis.
+3. Hybrid: stdlib trail now; grammar sugar later that expands to helpers.
+
+**Recommendation:** Option 3. Lorenz now uses `flow` + trail in `main`; grammar sugar later.
+
+**Status:** ✅ Resolved for MVP (stdlib trail helpers / grammar still open as follow-on)
+
+---
+
+### 2026-08-05: LQR n>2: stdlib first or extend `dsys`?
+
+**Context:** Cartpole control reimplements 4×4 Riccati because dynamics DSL is n=2.
+
+**Options:**
+1. Stdlib `lqr`/`dare` over LAPACK/Accelerate; DSL stays n=2 until matrix literals mature.
+2. Extend `dsys`/`analyze`/`lqr` to arbitrary n in the DSL immediately.
+3. Codegen-only for fixed n=4 cartpole (one-off).
+
+**Recommendation:** Option 1: general, dogfoods BLAS, unblocks cartpole without
+rushing DSL matrix codegen.
+
+**Status:** 🔲 Pending
+
+---
+
+### 2026-08-05: Field / laplacian: stdlib MVP or grammar card?
+
+**Context:** `heat_diffusion.flow` is nested Euler; vision wants
+`T evolves as alpha * laplacian(T)`.
+
+**Options:**
+1. Stdlib `laplacian_1d` + ordinary `flow` over array-backed state (no new keywords).
+2. Full `field` / `boundary` grammar from north-star.
+3. Defer until after Lorenz/`gfx_run` land.
+
+**Recommendation:** Option 1 for P2 MVP; grammar as follow-on card.
+
+**Status:** 🔲 Pending
+
+---
+
+
+### 2026-08-05: Self-hosting cutover: when does `./flow` drop Python?
+
+**Context:** Plan in `docs/project/self-hosting.md`. Stage-A `flowc` exists
+as a bootstrap; production is still `src/flow/*.py`.
+
+**Options:**
+1. Hard cutover after Phase C parity suite green (recommended).
+2. Soft forever dual-host (`FLOW_HOST=python|flowc`) with no deadline.
+3. Freeze Python features and only grow `flowc` (slow user-facing velocity).
+
+**Recommendation:** (1) with a published parity checklist; keep (2) as escape
+hatch for one release after cutover.
+
+**Resolution (2026-08-05):** Soft dual-host now: `./flow run|compile`
+defaults to `FLOW_HOST=flowc` (Stage-A); escape hatch `FLOW_HOST=python`.
+Hard drop of Python from the compile path is Phase D (#153).
+
+**Status:** ✅ Resolved (soft cutover; Phase D retires Python)
+
 ### 2026-08-07: Heterogeneous FIR-G compiler architecture
 
 **Context:** Design for FIR-S → FIR-G → FIR-M with GPU/MLX analysis and learned
