@@ -1,0 +1,22 @@
+# A struct literal copying an array field of a struct another module
+# declares (#1074). flowc took the field as a scalar and emitted
+# `.k = a.k`, which C rejects for an array member.
+
+import tests.fixtures.modules.testlib.lattice { Lat, lat_new }
+
+function copy_lat(a: Lat) -> Lat {
+    return Lat { k: a.k, n: a.n + 1 }
+}
+
+function main() -> i32 {
+    let a: Lat = lat_new()
+    let b: Lat = Lat { k: a.k, n: a.n }
+    if b.k[1] != 0.25 { return 1 }
+    if b.n != 2 { return 2 }
+    let p: ptr<Lat> = &a
+    let c: Lat = Lat { k: p.k, n: 0 }
+    if c.k[0] != 0.5 { return 3 }
+    let d: Lat = copy_lat(b)
+    if d.k[1] != 0.25 or d.n != 3 { return 4 }
+    return 0
+}

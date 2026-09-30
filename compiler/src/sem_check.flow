@@ -2201,6 +2201,12 @@ function sem_check_function_call(c: ptr<Sem>, name: string, args: ptr<SemIntVec>
     if vfi >= 0 and sem_iv_get(c.fi_variadic, vfi) == 1 {
         variadic = true
     }
+    # A struct value fits a ptr<T> parameter only as a method receiver,
+    # where cgen takes its address (#1009); elsewhere C rejects it (#1080).
+    let mut recv_call: bool = false
+    if node >= 0 and sem_nk(c, node) == AST_CALL and sem_is_method_call(c, node) {
+        recv_call = true
+    }
     let mut matching: i32 = 0 - 1
     let mut pass: i32 = 0
     while pass < 2 and matching < 0 {
@@ -2221,6 +2227,8 @@ function sem_check_function_call(c: ptr<Sem>, name: string, args: ptr<SemIntVec>
                 let mut j: i32 = 0
                 while j < np and j < arg_types.len and fits {
                     if sem_is_compatible(c, arg_types.data[j], sem_ty_param(c.t, cand, j)) == false {
+                        fits = false
+                    } elif (j > 0 or recv_call == false) and sem_struct_for_pointer(c, arg_types.data[j], sem_ty_param(c.t, cand, j)) {
                         fits = false
                     }
                     j = j + 1
@@ -2371,6 +2379,22 @@ function sem_call_args(c: ptr<Sem>, first: i32) -> ptr<SemIntVec> {
     return v
 }
 
+# True when a struct value (not a capability token) meets a ptr<T>
+# parameter. sem_is_compatible allows it for method receivers.
+function sem_struct_for_pointer(c: ptr<Sem>, actual: i32, expected: i32) -> bool {
+    if actual < 0 or expected < 0 {
+        return false
+    }
+    if sem_tkind(c, actual) != TK_STRUCT or sem_tkind(c, expected) != TK_POINTER {
+        return false
+    }
+    let tys: ptr<SemTys> = c.t
+    if sem_s_starts(tys.name[actual], "capability_") {
+        return false
+    }
+    return true
+}
+
 # A MethodCall: receiver = the first argument.
 function sem_check_method_call(c: ptr<Sem>, e: i32, stmt: i32) -> i32 {
     let recv: i32 = sem_na(c, e)
@@ -2424,6 +2448,11 @@ function sem_check_call(c: ptr<Sem>, e: i32, stmt: i32) -> i32 {
     }
     if sem_is_pipe_find(c, e) {
         return sem_check_find_expr(c, sem_na(c, e), sem_nnext(c, sem_na(c, e)))
+    }
+    # sizeof<T>() is the byte size of T as an i64, as cgen emits it (#952).
+    # With no user function of that name it is not a generic instance.
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "sizeof") and sem_lookup(c, "sizeof") < 0 {
+        return sem_tmk(c, TK_I64)
     }
     return sem_check_function_call(c, sem_call_name(c, e), sem_call_args(c, sem_na(c, e)), e, stmt)
 }

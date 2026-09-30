@@ -1,0 +1,19 @@
+# A struct receiver of a method whose first parameter is ptr<T> is passed
+# by address (#1009), and the strict checker accepts it (#1080 keeps it).
+
+struct Counter {
+    n: i32
+}
+
+function bump(c: ptr<Counter>, by: i32) -> i32 {
+    c.n = c.n + by
+    return c.n
+}
+
+function main() -> i32 {
+    let mut c: Counter = Counter { n: 1 }
+    if c.bump(2) != 3 { return 1 }
+    if bump(&c, 4) != 7 { return 2 }
+    if c.n != 7 { return 3 }
+    return 0
+}

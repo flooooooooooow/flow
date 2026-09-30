@@ -1852,6 +1852,93 @@ export function flowc_resolve_dirname(path: string, out: ptr<u8>, out_cap: i32) 
 # 2 "path") spelled by src[s..e) names, written to imp_path. Returns the
 # path length, -1 when no search path finds it, another negative value on
 # any other failure, and -3 for a form that names no file.
+# Collapse `seg/..` and interior `/./` in a path of length n, in place.
+# Returns the new length. A path with neither is left byte for byte, and a
+# leading `./` or `../` stays, so only paths that step back change.
+function flowc_resolve_normalize_dots(path: ptr<u8>, n: i32) -> i32 {
+    let mut has: i32 = 0
+    let mut i: i32 = 0
+    while i + 2 < n and has == 0 {
+        if path[i] == 47 and path[i + 1] == 46 and (path[i + 2] == 47 or (path[i + 2] == 46 and (i + 3 >= n or path[i + 3] == 47))) {
+            has = 1
+        }
+        i = i + 1
+    }
+    if has == 0 {
+        return n
+    }
+    let starts: array<i32, 256> = [0]
+    let ends: array<i32, 256> = [0]
+    let mut ns: i32 = 0
+    let mut s: i32 = 0
+    i = 0
+    while i <= n {
+        if i == n or path[i] == 47 {
+            let len: i32 = i - s
+            let is_dot: bool = len == 1 and path[s] == 46
+            let is_up: bool = len == 2 and path[s] == 46 and path[s + 1] == 46
+            if is_dot and ns > 0 {
+                # drop an interior `.`
+            } elif is_up and ns > 0 {
+                let ts: i32 = starts[ns - 1]
+                let tl: i32 = ends[ns - 1] - ts
+                let top_dot: bool = tl == 1 and path[ts] == 46
+                let top_up: bool = tl == 2 and path[ts] == 46 and path[ts + 1] == 46
+                if top_up or tl == 0 {
+                    if ns >= 256 {
+                        return n
+                    }
+                    starts[ns] = s
+                    ends[ns] = i
+                    ns = ns + 1
+                } elif top_dot {
+                    # `./..` is `..`
+                    starts[ns - 1] = s
+                    ends[ns - 1] = i
+                } else {
+                    ns = ns - 1
+                }
+            } else {
+                if ns >= 256 {
+                    return n
+                }
+                starts[ns] = s
+                ends[ns] = i
+                ns = ns + 1
+            }
+            s = i + 1
+        }
+        i = i + 1
+    }
+    let tmp: ptr<u8> = malloc((n + 1) as i64)
+    if tmp == null {
+        return n
+    }
+    let mut o: i32 = 0
+    let mut k: i32 = 0
+    while k < ns {
+        if k > 0 {
+            tmp[o] = 47
+            o = o + 1
+        }
+        let mut j: i32 = starts[k]
+        while j < ends[k] {
+            tmp[o] = path[j]
+            o = o + 1
+            j = j + 1
+        }
+        k = k + 1
+    }
+    k = 0
+    while k < o {
+        path[k] = tmp[k]
+        k = k + 1
+    }
+    path[o] = 0
+    free(tmp)
+    return o
+}
+
 function flowc_resolve_import_at(
     src: ptr<u8>,
     s: i32,
@@ -1876,7 +1963,9 @@ function flowc_resolve_import_at(
         if plen < 0 {
             return 0 - 1
         }
-        return plen
+        # `m/../x/c.flow` and `x/c.flow` are one module: compare them in
+        # one spelling, or the bundle takes the file twice (#1073).
+        return flowc_resolve_normalize_dots(imp_path, plen)
     }
     if form == 0 {
         let mut plen2: i32 = flowc_resolve_package_path(src, s, e, project_root, imp_path, FLOWC_RESOLVE_PATH_CAP)
