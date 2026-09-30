@@ -1,5 +1,32 @@
 # Agent Coordination Notes
 
+## Operating contract
+
+The full loop (intake, triage, claim, verify, review, merge, learn) is in
+`docs/project/agentic-loop.md`. Placement rules are in
+`docs/project/repository-structure.md`. GitHub issues, pull requests, CI and
+`ROADMAP.md` are the live sources of truth.
+
+Before work, read the issue, recent commits and open pull requests, then the
+neighbouring code and tests. Do not start a second implementation of work a
+live session or open pull request already covers. If the request is already
+fixed, prove that and stop.
+
+Scoped work whose intended behaviour is clear may proceed autonomously. New
+syntax or semantics, compatibility breaks, public API contracts,
+ownership and lifetime rules, effect semantics, release policy and security
+policy need an explicit design decision first. Record open ones in
+`docs/project/Questions.md`.
+
+Keep one semantic purpose per pull request. Establish the baseline before
+blaming a failure on your change, run the narrow proof for what you changed,
+then the gate for the touched surface. A new regression test must fail on
+the old behaviour. The pull request records the baseline, the proof, the
+gates run, any generated state and the risk.
+
+When a failure mode repeats, fix the loop with a test, CI rule, template or
+repository invariant.
+
 ## Flow first
 
 New code in this repository is written in Flow. This covers features,
