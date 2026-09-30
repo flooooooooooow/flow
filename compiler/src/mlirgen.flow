@@ -8313,6 +8313,10 @@ function mlg_emit_memref_lit(m: ptr<Mlg>, e: i32, hint: i32) -> i32 {
     }
     # A literal shorter than the declared length fills the front of a
     # zeroed array of that length, as C initializes `int a[N] = {...}`.
+    if want >= 0 and n > want {
+        # Excess initializers are dropped, as in C.
+        n = want
+    }
     let mut cap: i32 = n
     let mut zero: i32 = 0
     if want > n {
@@ -8374,6 +8378,11 @@ function mlg_emit_array_lit(m: ptr<Mlg>, e: i32, la: i32) -> i32 {
     let k: i32 = la - MT_LLARR
     let store_t: i32 = m[0].la_elem[k]
     let p: i32 = mlg_emit_llarr_buf(m, la)
+    if n > m[0].la_n[k] {
+        # Initializers past the array's length are dropped, as C drops
+        # excess initializers (storing them wrote past the alloca).
+        n = m[0].la_n[k]
+    }
     let z: i32 = mlg_new_val(m, la)
     mlg_line(m)
     mlg_v(m, z)
