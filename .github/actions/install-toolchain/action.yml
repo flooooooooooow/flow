@@ -20,7 +20,7 @@ runs:
       with:
         path: |
           ~/flow-apt-cache
-        key: ${{ runner.os }}-flow-apt-v3-llvm22-${{ inputs.mlir }}-${{ inputs.shellcheck }}
+        key: ${{ runner.os }}-flow-apt-v4-llvm22-${{ inputs.mlir }}-${{ inputs.shellcheck }}
 
     - name: Install packages
       shell: bash
@@ -33,9 +33,14 @@ runs:
         if [ "${{ inputs.mlir }}" = "true" ]; then
           # LLVM/MLIR 22 from apt.llvm.org: the MLIR goldens were recorded
           # with LLVM 22, and the IR it writes needs a clang of the same major.
-          curl -fsSL -o /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-          sudo bash /tmp/llvm.sh 22
-          packages+=(mlir-22-tools libmlir-22-dev)
+          # The repository is added directly: llvm.sh also installs lldb,
+          # whose python3-lldb dependency does not resolve on the runner.
+          codename="$(lsb_release -cs)"
+          curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key \
+            | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
+          echo "deb http://apt.llvm.org/${codename}/ llvm-toolchain-${codename}-22 main" \
+            | sudo tee /etc/apt/sources.list.d/llvm-22.list > /dev/null
+          packages+=(clang-22 llvm-22 mlir-22-tools libmlir-22-dev)
         fi
         if [ "${{ inputs.shellcheck }}" = "true" ]; then
           packages+=(shellcheck)
