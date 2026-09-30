@@ -591,6 +591,12 @@ function flowc_cgen_sl_needs_array_copy(w: ptr<CgenBuf>, arena: AstArena, src: p
     if dty == AST_NONE {
         # Imported struct: the definition is not in this module's arena, so
         # an lvalue field value may be an array. Copy; sizeof picks the width.
+        # A plain name has to be a variable to have an address: `Kind { tag:
+        # Kind_A }` names an enum constant, whose type is known to be scalar
+        # and which C will not let &-take.
+        if vk == AST_IDENT and flowc_cgen_scoped_decl(w, arena, src, v) == AST_NONE {
+            return 0
+        }
         return 1
     }
     if flowc_cgen_ty_is_array(arena, src, dty) == 1 {
