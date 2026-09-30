@@ -14,11 +14,11 @@ source_filename = "LLVMDialectModule"
 @_Fixed_Clock_vtable = internal global [1 x ptr] zeroinitializer
 @_Fixed_Log_vtable = internal global [2 x ptr] zeroinitializer
 
+declare ptr @malloc(i64)
+
 declare i32 @printf(ptr, ...)
 
 declare i32 @snprintf(ptr, i64, ptr, ...)
-
-declare ptr @malloc(i64)
 
 define void @Log_info(i32 %0) {
   %2 = load ptr, ptr @_current_Log_handler, align 8

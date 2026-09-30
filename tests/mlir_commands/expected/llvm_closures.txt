@@ -21,13 +21,12 @@ define i32 @lambda_1(ptr %0, i32 %1) {
 }
 
 define i32 @lambda_2(ptr %0, i32 %1) {
-  %3 = getelementptr { i32, i32 }, ptr %0, i32 0, i32 0
-  %4 = getelementptr { i32, i32 }, ptr %0, i32 0, i32 1
-  %5 = load i32, ptr %4, align 4
-  %6 = add i32 %1, %5
-  %7 = load i32, ptr %3, align 4
-  %8 = add i32 %6, %7
-  ret i32 %8
+  %3 = getelementptr { i32 }, ptr %0, i32 0, i32 0
+  %4 = load i32, ptr %3, align 4
+  %5 = add i32 %1, %4
+  %6 = load i32, ptr @BIAS, align 4
+  %7 = add i32 %5, %6
+  ret i32 %7
 }
 
 define i32 @lambda_3(ptr %0, i32 %1) {
@@ -45,9 +44,8 @@ define i32 @lambda_3(ptr %0, i32 %1) {
 }
 
 define double @lambda_4(ptr %0, double %1, double %2) {
-  %4 = fmul double %2, 5.000000e-01
-  %5 = fadd double %1, %4
-  ret double %5
+  %4 = call double @llvm.fma.f64(double %2, double 5.000000e-01, double %1)
+  ret double %4
 }
 
 define i32 @apply({ ptr, ptr } %0, i32 %1) {
@@ -135,35 +133,37 @@ define void @note(i32 %0) {
 define i32 @main() {
   %1 = alloca i32, i64 1, align 4
   store i32 10, ptr %1, align 4
-  %2 = call ptr @malloc(i64 8)
-  %3 = load i32, ptr @BIAS, align 4
-  %4 = getelementptr { i32, i32 }, ptr %2, i32 0, i32 0
+  %2 = call ptr @malloc(i64 4)
+  %3 = load i32, ptr %1, align 4
+  %4 = getelementptr { i32 }, ptr %2, i32 0, i32 0
   store i32 %3, ptr %4, align 4
-  %5 = load i32, ptr %1, align 4
-  %6 = getelementptr { i32, i32 }, ptr %2, i32 0, i32 1
-  store i32 %5, ptr %6, align 4
-  %7 = insertvalue { ptr, ptr } { ptr @lambda_2, ptr undef }, ptr %2, 1
+  %5 = insertvalue { ptr, ptr } { ptr @lambda_2, ptr undef }, ptr %2, 1
   store i32 100, ptr %1, align 4
-  %8 = call ptr @malloc(i64 32)
-  %9 = getelementptr { { ptr, ptr }, { ptr, ptr } }, ptr %8, i32 0, i32 0
-  store { ptr, ptr } %7, ptr %9, align 8
-  %10 = getelementptr { { ptr, ptr }, { ptr, ptr } }, ptr %8, i32 0, i32 1
-  store { ptr, ptr } { ptr @lambda_1, ptr null }, ptr %10, align 8
-  %11 = call i32 @apply({ ptr, ptr } { ptr @lambda_1, ptr null }, i32 21)
+  %6 = call ptr @malloc(i64 32)
+  %7 = getelementptr { { ptr, ptr }, { ptr, ptr } }, ptr %6, i32 0, i32 0
+  store { ptr, ptr } %5, ptr %7, align 8
+  %8 = getelementptr { { ptr, ptr }, { ptr, ptr } }, ptr %6, i32 0, i32 1
+  store { ptr, ptr } { ptr @lambda_1, ptr null }, ptr %8, align 8
+  %9 = call i32 @apply({ ptr, ptr } { ptr @lambda_1, ptr null }, i32 21)
+  %10 = call i32 (ptr, ...) @printf(ptr @str_1, i32 %9)
+  %11 = call i32 @apply({ ptr, ptr } %5, i32 5)
   %12 = call i32 (ptr, ...) @printf(ptr @str_1, i32 %11)
-  %13 = call i32 @apply({ ptr, ptr } %7, i32 5)
+  %13 = call i32 @lambda_3(ptr %6, i32 4)
   %14 = call i32 (ptr, ...) @printf(ptr @str_1, i32 %13)
-  %15 = call i32 @lambda_3(ptr %8, i32 4)
+  %15 = call i32 @twice({ ptr, ptr } { ptr @lambda_1, ptr null }, i32 3)
   %16 = call i32 (ptr, ...) @printf(ptr @str_1, i32 %15)
-  %17 = call i32 @twice({ ptr, ptr } { ptr @lambda_1, ptr null }, i32 3)
+  %17 = call i32 @apply({ ptr, ptr } { ptr @__flow_callback_square, ptr null }, i32 7)
   %18 = call i32 (ptr, ...) @printf(ptr @str_1, i32 %17)
-  %19 = call i32 @apply({ ptr, ptr } { ptr @__flow_callback_square, ptr null }, i32 7)
-  %20 = call i32 (ptr, ...) @printf(ptr @str_1, i32 %19)
-  %21 = call double @fold({ ptr, ptr } { ptr @lambda_4, ptr null }, i32 5)
-  %22 = call i32 (ptr, ...) @printf(ptr @str_2, double %21)
+  %19 = call double @fold({ ptr, ptr } { ptr @lambda_4, ptr null }, i32 5)
+  %20 = call i32 (ptr, ...) @printf(ptr @str_2, double %19)
   call void @note(i32 3)
   ret i32 0
 }
+
+; Function Attrs: nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none)
+declare double @llvm.fma.f64(double, double, double) #0
+
+attributes #0 = { nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none) }
 
 !llvm.module.flags = !{!0}
 

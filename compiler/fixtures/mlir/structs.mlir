@@ -102,7 +102,7 @@ llvm.store %v62, %v64 : !llvm.struct<(f64, f64)>, !llvm.ptr
 %v75 = llvm.getelementptr %v64[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(f64, f64)>
 %v76 = llvm.load %v75 : !llvm.ptr -> f64
 %v77 = arith.mulf %v73, %v76 : f64
-%v78 = math.fma %v67, %v70, %v77 : f64
+%v78 = llvm.intr.fma(%v67, %v70, %v77) : (f64, f64, f64) -> f64
 func.return %v78 : f64
 }
 func.func @step(%arg0: !llvm.struct<(!llvm.struct<(f64, f64)>, !llvm.struct<(f64, f64)>, f64, i32)>, %arg1: f64) -> !llvm.struct<(!llvm.struct<(f64, f64)>, !llvm.struct<(f64, f64)>, f64, i32)> {
@@ -134,7 +134,7 @@ llvm.store %v90, %v92 : !llvm.struct<(!llvm.struct<(f64, f64)>, !llvm.struct<(f6
 %v102 = llvm.getelementptr %v89[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(!llvm.struct<(f64, f64)>, !llvm.struct<(f64, f64)>, f64, i32)>
 %v103 = llvm.getelementptr %v102[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(f64, f64)>
 %v104 = llvm.load %v103 : !llvm.ptr -> f64
-%v105 = math.fma %v104, %arg1, %v98 : f64
+%v105 = llvm.intr.fma(%v104, %arg1, %v98) : (f64, f64, f64) -> f64
 %v106 = llvm.getelementptr %v92[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(!llvm.struct<(f64, f64)>, !llvm.struct<(f64, f64)>, f64, i32)>
 %v107 = llvm.getelementptr %v106[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(f64, f64)>
 llvm.store %v105, %v107 : f64, !llvm.ptr
@@ -150,7 +150,7 @@ llvm.store %v105, %v107 : f64, !llvm.ptr
 %v117 = llvm.getelementptr %v89[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(!llvm.struct<(f64, f64)>, !llvm.struct<(f64, f64)>, f64, i32)>
 %v118 = llvm.getelementptr %v117[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(f64, f64)>
 %v119 = llvm.load %v118 : !llvm.ptr -> f64
-%v120 = math.fma %v119, %arg1, %v113 : f64
+%v120 = llvm.intr.fma(%v119, %arg1, %v113) : (f64, f64, f64) -> f64
 %v121 = llvm.getelementptr %v92[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(!llvm.struct<(f64, f64)>, !llvm.struct<(f64, f64)>, f64, i32)>
 %v122 = llvm.getelementptr %v121[0, 1] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(f64, f64)>
 llvm.store %v120, %v122 : f64, !llvm.ptr

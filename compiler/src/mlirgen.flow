@@ -5978,13 +5978,21 @@ function mlg_try_fma(m: ptr<Mlg>, e: i32) -> i32 {
     let res: i32 = mlg_new_val(m, t)
     mlg_line(m)
     mlg_v(m, res)
-    mlg_s(m, " = math.fma ")
+    # llvm.intr.fma rather than math.fma: every lowering pipeline the
+    # commands run keeps the LLVM dialect, not all convert math.
+    mlg_s(m, " = llvm.intr.fma(")
     mlg_v(m, av)
     mlg_s(m, ", ")
     mlg_v(m, bv)
     mlg_s(m, ", ")
     mlg_v(m, cv)
-    mlg_s(m, " : ")
+    mlg_s(m, ") : (")
+    mlg_put_type(m, t)
+    mlg_s(m, ", ")
+    mlg_put_type(m, t)
+    mlg_s(m, ", ")
+    mlg_put_type(m, t)
+    mlg_s(m, ") -> ")
     mlg_put_type(m, t)
     mlg_nl(m)
     return res

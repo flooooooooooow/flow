@@ -210,7 +210,7 @@ cf.cond_br %v146, ^b8(%v143 : index), ^b9(%v143 : index)
 %v148 = llvm.load %v135 : !llvm.ptr -> f32
 %v149 = memref.load %arg0[%v147] : memref<?xf32>
 %v150 = memref.load %arg1[%v147] : memref<?xf32>
-%v151 = math.fma %v149, %v150, %v148 : f32
+%v151 = llvm.intr.fma(%v149, %v150, %v148) : (f32, f32, f32) -> f32
 llvm.store %v151, %v135 : f32, !llvm.ptr
 %v152 = arith.addi %v147, %v142 : index
 cf.br ^b7(%v152 : index)

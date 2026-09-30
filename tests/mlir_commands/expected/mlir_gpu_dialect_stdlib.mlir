@@ -1,6 +1,6 @@
 module {
 llvm.func @printf(!llvm.ptr, ...) -> i32
-llvm.mlir.global internal constant @str_0("gpu_kernels: use `flow gpu lib/stdlib/gpu_kernels.flow` to emit shaders\n\00") {addr_space = 0 : i32} : !llvm.array<73 x i8>
+llvm.mlir.global internal constant @str_0("gpu_kernels: use `flow gpu lib/stdlib/gpu_kernels.flow` to emit shaders\0A\00") {addr_space = 0 : i32} : !llvm.array<73 x i8>
 func.func @main() -> i32 {
 %v1 = llvm.mlir.addressof @str_0 : !llvm.ptr
 %v2 = llvm.call @printf(%v1) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr) -> i32

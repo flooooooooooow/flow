@@ -40,7 +40,7 @@ func.return %v21 : i32
 }
 func.func private @lambda_4(%env: !llvm.ptr, %arg0: f64, %arg1: f64) -> f64 {
 %v22 = arith.constant 0.5 : f64
-%v23 = math.fma %arg1, %v22, %arg0 : f64
+%v23 = llvm.intr.fma(%arg1, %v22, %arg0) : (f64, f64, f64) -> f64
 func.return %v23 : f64
 }
 // Constant: BIAS
