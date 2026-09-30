@@ -581,6 +581,14 @@
           "path": "language/recognition-semantics.md"
         },
         {
+          "label": "Semantic Stack",
+          "path": "language/semantic-stack.md"
+        },
+        {
+          "label": "Dynamic Invariant Discovery",
+          "path": "language/dynamic-invariants.md"
+        },
+        {
           "label": "Design Notes",
           "path": "language/language_design.md"
         }
