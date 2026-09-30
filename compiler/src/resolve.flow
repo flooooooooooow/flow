@@ -129,7 +129,63 @@ function flowc_resolve_find_path(store: ptr<u8>, n: i32, row_cap: i32, path: ptr
         }
         i = i + 1
     }
+    # One file may be spelled absolute in one import and relative in
+    # another (a program given by absolute path importing a stdlib module
+    # that imports a compiler module). Compare them as absolute paths.
+    let abs: ptr<u8> = flowc_resolve_abspath(path)
+    if abs == null {
+        return 0 - 1
+    }
+    i = 0
+    while i < n {
+        let other: ptr<u8> = flowc_resolve_abspath(store + (i * row_cap))
+        if other != null {
+            let same: i32 = flowc_resolve_cstr_eq(other, abs)
+            free(other)
+            if same == 1 {
+                free(abs)
+                return i
+            }
+        }
+        i = i + 1
+    }
+    free(abs)
     return 0 - 1
+}
+
+# `path` made absolute against $PWD, the working directory the shell gave
+# flowc (getcwd would pull unistd.h into the C, as mlir_bundle notes), then
+# normalized. A fresh buffer, or null when PWD is unusable.
+function flowc_resolve_abspath(path: ptr<u8>) -> ptr<u8> {
+    let n: i32 = strlen(path as string) as i32
+    let mut pre: i32 = 0
+    let mut cp: ptr<u8> = null
+    if n == 0 or path[0] != 47 {
+        let cwd: string = getenv("PWD")
+        cp = cwd
+        if cp == null or cp[0] != 47 {
+            return null
+        }
+        pre = (strlen(cwd) as i32) + 1
+    }
+    let out: ptr<u8> = malloc((pre + n + 1) as i64)
+    let mut o: i32 = 0
+    if pre > 0 {
+        while o < pre - 1 {
+            out[o] = cp[o]
+            o = o + 1
+        }
+        out[o] = 47
+        o = o + 1
+    }
+    let mut k: i32 = 0
+    while k < n {
+        out[o + k] = path[k]
+        k = k + 1
+    }
+    out[o + n] = 0
+    let _l: i32 = flowc_resolve_normalize(out, o + n)
+    return out
 }
 
 # The source expansions flowc runs before parse, in the Python host's
@@ -1852,94 +1908,81 @@ export function flowc_resolve_dirname(path: string, out: ptr<u8>, out_cap: i32) 
 # 2 "path") spelled by src[s..e) names, written to imp_path. Returns the
 # path length, -1 when no search path finds it, another negative value on
 # any other failure, and -3 for a form that names no file.
-# Collapse `seg/..` and interior `/./` in a path of length n, in place.
-# Returns the new length. A path with neither is left byte for byte, and a
-# leading `./` or `../` stays, so only paths that step back change.
-function flowc_resolve_normalize_dots(path: ptr<u8>, n: i32) -> i32 {
-    let mut has: i32 = 0
-    let mut i: i32 = 0
-    while i + 2 < n and has == 0 {
-        if path[i] == 47 and path[i + 1] == 46 and (path[i + 2] == 47 or (path[i + 2] == 46 and (i + 3 >= n or path[i + 3] == 47))) {
-            has = 1
-        }
-        i = i + 1
-    }
-    if has == 0 {
-        return n
-    }
-    let starts: array<i32, 256> = [0]
-    let ends: array<i32, 256> = [0]
-    let mut ns: i32 = 0
-    let mut s: i32 = 0
-    i = 0
-    while i <= n {
-        if i == n or path[i] == 47 {
-            let len: i32 = i - s
-            let is_dot: bool = len == 1 and path[s] == 46
-            let is_up: bool = len == 2 and path[s] == 46 and path[s + 1] == 46
-            if is_dot and ns > 0 {
-                # drop an interior `.`
-            } elif is_up and ns > 0 {
-                let ts: i32 = starts[ns - 1]
-                let tl: i32 = ends[ns - 1] - ts
-                let top_dot: bool = tl == 1 and path[ts] == 46
-                let top_up: bool = tl == 2 and path[ts] == 46 and path[ts + 1] == 46
-                if top_up or tl == 0 {
-                    if ns >= 256 {
-                        return n
-                    }
-                    starts[ns] = s
-                    ends[ns] = i
-                    ns = ns + 1
-                } elif top_dot {
-                    # `./..` is `..`
-                    starts[ns - 1] = s
-                    ends[ns - 1] = i
-                } else {
-                    ns = ns - 1
-                }
-            } else {
-                if ns >= 256 {
-                    return n
-                }
-                starts[ns] = s
-                ends[ns] = i
-                ns = ns + 1
-            }
-            s = i + 1
-        }
-        i = i + 1
-    }
-    let tmp: ptr<u8> = malloc((n + 1) as i64)
-    if tmp == null {
-        return n
-    }
+# Drop `.` segments and fold `name/..` pairs in the NUL-terminated path
+# p[0 .. n), in place; returns the new length. A leading `..` and the
+# leading `/` of an absolute path stay. One file then has one spelling, so
+# `lib/stdlib/../../compiler/src/bytebuf.flow` and
+# `compiler/src/bytebuf.flow` load as one module.
+function flowc_resolve_normalize(p: ptr<u8>, n: i32) -> i32 {
+    # For each kept segment: the output length before it (its separator
+    # excluded), and whether it is itself `..`.
+    let pre: ptr<i32> = malloc(((n + 2) as i64) * 4) as ptr<i32>
+    let dots: ptr<i32> = malloc(((n + 2) as i64) * 4) as ptr<i32>
+    let mut nseg: i32 = 0
     let mut o: i32 = 0
-    let mut k: i32 = 0
-    while k < ns {
-        if k > 0 {
-            tmp[o] = 47
-            o = o + 1
-        }
-        let mut j: i32 = starts[k]
-        while j < ends[k] {
-            tmp[o] = path[j]
-            o = o + 1
+    let mut i: i32 = 0
+    if n > 0 and p[0] == 47 {
+        o = 1
+        i = 1
+    }
+    let root: i32 = o
+    while i < n {
+        let mut j: i32 = i
+        while j < n and p[j] != 47 {
             j = j + 1
         }
-        k = k + 1
+        let len: i32 = j - i
+        let is_dotdot: bool = len == 2 and p[i] == 46 and p[i + 1] == 46
+        if len == 0 or (len == 1 and p[i] == 46) {
+            # empty or `.`: drop
+        } elif is_dotdot and nseg > 0 and dots[nseg - 1] == 0 {
+            # `name/..`: remove the previous segment.
+            nseg = nseg - 1
+            o = pre[nseg]
+        } else {
+            pre[nseg] = o
+            dots[nseg] = 0
+            if is_dotdot {
+                dots[nseg] = 1
+            }
+            nseg = nseg + 1
+            if o > root {
+                p[o] = 47
+                o = o + 1
+            }
+            let mut k: i32 = 0
+            while k < len {
+                p[o + k] = p[i + k]
+                k = k + 1
+            }
+            o = o + len
+        }
+        i = j + 1
     }
-    k = 0
-    while k < o {
-        path[k] = tmp[k]
-        k = k + 1
-    }
-    path[o] = 0
-    free(tmp)
+    p[o] = 0
+    free(pre as ptr<u8>)
+    free(dots as ptr<u8>)
     return o
 }
 
 function flowc_resolve_import_at(
+    src: ptr<u8>,
+    s: i32,
+    e: i32,
+    form: i32,
+    mod_search: string,
+    search_dir: string,
+    project_root: string,
+    imp_path: ptr<u8>
+) -> i32 {
+    let plen: i32 = flowc_resolve_import_at_raw(src, s, e, form, mod_search, search_dir, project_root, imp_path)
+    if plen > 0 {
+        return flowc_resolve_normalize(imp_path, plen)
+    }
+    return plen
+}
+
+function flowc_resolve_import_at_raw(
     src: ptr<u8>,
     s: i32,
     e: i32,
@@ -1963,9 +2006,9 @@ function flowc_resolve_import_at(
         if plen < 0 {
             return 0 - 1
         }
-        # `m/../x/c.flow` and `x/c.flow` are one module: compare them in
-        # one spelling, or the bundle takes the file twice (#1073).
-        return flowc_resolve_normalize_dots(imp_path, plen)
+        # flowc_resolve_import_at normalizes the path, so `m/../x/c.flow` and
+        # `x/c.flow` are one module (#1073).
+        return plen
     }
     if form == 0 {
         let mut plen2: i32 = flowc_resolve_package_path(src, s, e, project_root, imp_path, FLOWC_RESOLVE_PATH_CAP)
