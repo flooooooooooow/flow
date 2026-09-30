@@ -1,5 +1,4 @@
 import "./game.flow"
-import "../../vulkan_abi/renderer.flow"
 import "stdlib/vulkan_abi_renderer.flow"
 
 extern {

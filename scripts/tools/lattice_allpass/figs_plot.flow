@@ -3,7 +3,7 @@
 #         dashboard (schur_lattice_allpass_overview), plus the parser for
 #         the CSV lines printed by examples/audio/lattice_allpass_demo.flow.
 
-import "../lattice_allpass/figs_audio.flow"
+import "figs_audio.flow"
 import .text { ft_len, ft_starts, ft_itoa, ft_split_lines, ft_list_len, ft_list_get, StrList }
 
 extern {

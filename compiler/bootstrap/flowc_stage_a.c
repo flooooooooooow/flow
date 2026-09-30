@@ -1504,6 +1504,11 @@ int32_t flowc_ast_reject_unsupported_but(AstArena arena, uint8_t* src, const cha
 }
   i = (i + 1);
 }
+  if (((arena).nodes[bad]).kind == AST_PIPE_BLOCK) {
+  int32_t ns = ((arena).nodes[bad]).name_start;
+  printf("%s: line %d: flow stage params `%.*s { ... }` (line %d) are only valid for a flow used as a pipeline stage inside a flow `output`\n", who, line, (((arena).nodes[bad]).name_end - ns), (src + ns), line);
+  return 1;
+}
   printf("%s: line %d: unsupported in Stage-A: %s\n", who, line, flowc_ast_unsupported_label(((arena).nodes[bad]).kind));
   return 1;
 }
@@ -30702,6 +30707,8 @@ typedef struct Sem {
   SemIntVec* err_pos;
   SemStrVec* fatal;
   SemStrVec* warnings;
+  SemIntVec* warn_mod;
+  SemIntVec* warn_pos;
   bool relax_c_strings;
   SemIntVec* return_sink;
   SemStrVec* reason_pool;
@@ -30817,6 +30824,7 @@ int32_t sem_col_of(Sem* c, int32_t m, int32_t pos);
 int32_t sem_py_pos(Sem* c, int32_t m, int32_t pos, bool want_col);
 void sem_err(Sem* c, const char* msg);
 void sem_warn(Sem* c, const char* msg);
+void sem_warn_truncate(Sem* c, int32_t n);
 void sem_err_truncate(Sem* c, int32_t n);
 int32_t sem_sym_new(Sem* c, const char* name, int32_t ty, int32_t kind);
 void sem_scope_define_global(Sem* c, int32_t sym);
@@ -30902,7 +30910,7 @@ const char* sem_validate_target_spec(const char* spec);
 void sem_attribute_errors(Sem* c, const char* fn_name, int32_t start, int32_t n);
 Sem* sem_new(bool strict) {
   Sem* c = (Sem*)((Sem*)(malloc(8192)));
-  { __typeof__(c->t) __flowc_st647 = sem_tys_new(); c->t = __flowc_st647; }
+  { __typeof__(c->t) __flowc_st653 = sem_tys_new(); c->t = __flowc_st653; }
   c->strict = strict;
   c->check_effect_rows = 0;
   c->safety_profile = 0;
@@ -30919,142 +30927,144 @@ Sem* sem_new(bool strict) {
 }
 }
   c->nm = 0;
-  { __typeof__(c->m_ar) __flowc_st719 = (AstArena*)(malloc((64 * 24))); c->m_ar = __flowc_st719; }
-  { __typeof__(c->m_root) __flowc_st729 = (int32_t*)(malloc((64 * 4))); c->m_root = __flowc_st729; }
-  { __typeof__(c->m_src) __flowc_st740 = (uint8_t**)(malloc((64 * 8))); c->m_src = __flowc_st740; }
-  { __typeof__(c->m_path) __flowc_st750 = (const char**)(malloc((64 * 8))); c->m_path = __flowc_st750; }
-  { __typeof__(c->m_lines) __flowc_st754 = sem_pv_new(); c->m_lines = __flowc_st754; }
-  { __typeof__(c->m_rows) __flowc_st758 = sem_pv_new(); c->m_rows = __flowc_st758; }
+  { __typeof__(c->m_ar) __flowc_st725 = (AstArena*)(malloc((64 * 24))); c->m_ar = __flowc_st725; }
+  { __typeof__(c->m_root) __flowc_st735 = (int32_t*)(malloc((64 * 4))); c->m_root = __flowc_st735; }
+  { __typeof__(c->m_src) __flowc_st746 = (uint8_t**)(malloc((64 * 8))); c->m_src = __flowc_st746; }
+  { __typeof__(c->m_path) __flowc_st756 = (const char**)(malloc((64 * 8))); c->m_path = __flowc_st756; }
+  { __typeof__(c->m_lines) __flowc_st760 = sem_pv_new(); c->m_lines = __flowc_st760; }
+  { __typeof__(c->m_rows) __flowc_st764 = sem_pv_new(); c->m_rows = __flowc_st764; }
   c->cm = (0 - 1);
   c->src = NULL;
   c->pos = 0;
-  { __typeof__(c->d_kind) __flowc_st776 = sem_iv_new(); c->d_kind = __flowc_st776; }
-  { __typeof__(c->d_mod) __flowc_st780 = sem_iv_new(); c->d_mod = __flowc_st780; }
-  { __typeof__(c->d_node) __flowc_st784 = sem_iv_new(); c->d_node = __flowc_st784; }
-  { __typeof__(c->d_name) __flowc_st788 = sem_sv_new(); c->d_name = __flowc_st788; }
-  { __typeof__(c->d_info) __flowc_st792 = sem_iv_new(); c->d_info = __flowc_st792; }
-  { __typeof__(c->d_astart) __flowc_st796 = sem_iv_new(); c->d_astart = __flowc_st796; }
-  { __typeof__(c->d_alen) __flowc_st800 = sem_iv_new(); c->d_alen = __flowc_st800; }
-  { __typeof__(c->attr_pool) __flowc_st804 = sem_sv_new(); c->attr_pool = __flowc_st804; }
-  { __typeof__(c->fi_name) __flowc_st808 = sem_sv_new(); c->fi_name = __flowc_st808; }
-  { __typeof__(c->fi_mangled) __flowc_st812 = sem_sv_new(); c->fi_mangled = __flowc_st812; }
-  { __typeof__(c->fi_mod) __flowc_st816 = sem_iv_new(); c->fi_mod = __flowc_st816; }
-  { __typeof__(c->fi_node) __flowc_st820 = sem_iv_new(); c->fi_node = __flowc_st820; }
-  { __typeof__(c->fi_pstart) __flowc_st824 = sem_iv_new(); c->fi_pstart = __flowc_st824; }
-  { __typeof__(c->fi_plen) __flowc_st828 = sem_iv_new(); c->fi_plen = __flowc_st828; }
-  { __typeof__(c->fi_ret) __flowc_st832 = sem_iv_new(); c->fi_ret = __flowc_st832; }
-  { __typeof__(c->fi_astart) __flowc_st836 = sem_iv_new(); c->fi_astart = __flowc_st836; }
-  { __typeof__(c->fi_alen) __flowc_st840 = sem_iv_new(); c->fi_alen = __flowc_st840; }
-  { __typeof__(c->fi_extern) __flowc_st844 = sem_iv_new(); c->fi_extern = __flowc_st844; }
-  { __typeof__(c->fi_variadic) __flowc_st848 = sem_iv_new(); c->fi_variadic = __flowc_st848; }
-  { __typeof__(c->fi_tpstart) __flowc_st852 = sem_iv_new(); c->fi_tpstart = __flowc_st852; }
-  { __typeof__(c->fi_tplen) __flowc_st856 = sem_iv_new(); c->fi_tplen = __flowc_st856; }
-  { __typeof__(c->fi_estart) __flowc_st860 = sem_iv_new(); c->fi_estart = __flowc_st860; }
-  { __typeof__(c->fi_elen) __flowc_st864 = sem_iv_new(); c->fi_elen = __flowc_st864; }
-  { __typeof__(c->fi_body) __flowc_st868 = sem_iv_new(); c->fi_body = __flowc_st868; }
-  { __typeof__(c->fi_has_self) __flowc_st872 = sem_iv_new(); c->fi_has_self = __flowc_st872; }
-  { __typeof__(c->fp_names) __flowc_st876 = sem_sv_new(); c->fp_names = __flowc_st876; }
-  { __typeof__(c->fp_types) __flowc_st880 = sem_iv_new(); c->fp_types = __flowc_st880; }
-  { __typeof__(c->tp_names) __flowc_st884 = sem_sv_new(); c->tp_names = __flowc_st884; }
-  { __typeof__(c->tp_bounds) __flowc_st888 = sem_sv_new(); c->tp_bounds = __flowc_st888; }
-  { __typeof__(c->ef_pool) __flowc_st892 = sem_sv_new(); c->ef_pool = __flowc_st892; }
-  { __typeof__(c->im_type) __flowc_st896 = sem_sv_new(); c->im_type = __flowc_st896; }
-  { __typeof__(c->im_trait) __flowc_st900 = sem_sv_new(); c->im_trait = __flowc_st900; }
-  { __typeof__(c->im_methods) __flowc_st904 = sem_pv_new(); c->im_methods = __flowc_st904; }
-  { __typeof__(c->se_name) __flowc_st908 = sem_sv_new(); c->se_name = __flowc_st908; }
-  { __typeof__(c->se_kind) __flowc_st912 = sem_iv_new(); c->se_kind = __flowc_st912; }
-  { __typeof__(c->se_fstart) __flowc_st916 = sem_iv_new(); c->se_fstart = __flowc_st916; }
-  { __typeof__(c->se_flen) __flowc_st920 = sem_iv_new(); c->se_flen = __flowc_st920; }
-  { __typeof__(c->se_base) __flowc_st924 = sem_iv_new(); c->se_base = __flowc_st924; }
-  { __typeof__(c->se_tpstart) __flowc_st928 = sem_iv_new(); c->se_tpstart = __flowc_st928; }
-  { __typeof__(c->se_tplen) __flowc_st932 = sem_iv_new(); c->se_tplen = __flowc_st932; }
-  { __typeof__(c->se_decl) __flowc_st936 = sem_iv_new(); c->se_decl = __flowc_st936; }
-  { __typeof__(c->sf_names) __flowc_st940 = sem_sv_new(); c->sf_names = __flowc_st940; }
-  { __typeof__(c->sf_types) __flowc_st944 = sem_iv_new(); c->sf_types = __flowc_st944; }
-  { __typeof__(c->struct_types) __flowc_st948 = sem_sm_new(); c->struct_types = __flowc_st948; }
-  { __typeof__(c->generic_struct_types) __flowc_st952 = sem_sm_new(); c->generic_struct_types = __flowc_st952; }
-  { __typeof__(c->opaque_c_types) __flowc_st956 = sem_sm_new(); c->opaque_c_types = __flowc_st956; }
-  { __typeof__(c->generic_function_decls) __flowc_st960 = sem_sm_new(); c->generic_function_decls = __flowc_st960; }
-  { __typeof__(c->active_type_params) __flowc_st964 = sem_sv_new(); c->active_type_params = __flowc_st964; }
-  { __typeof__(c->effect_types) __flowc_st968 = sem_sm_new(); c->effect_types = __flowc_st968; }
-  { __typeof__(c->capability_types) __flowc_st972 = sem_sm_new(); c->capability_types = __flowc_st972; }
-  { __typeof__(c->enum_decls) __flowc_st976 = sem_sm_new(); c->enum_decls = __flowc_st976; }
-  { __typeof__(c->enum_variant_owner) __flowc_st980 = sem_sm_new(); c->enum_variant_owner = __flowc_st980; }
-  { __typeof__(c->trait_types) __flowc_st984 = sem_sm_new(); c->trait_types = __flowc_st984; }
-  { __typeof__(c->impl_pairs) __flowc_st988 = sem_sm_new(); c->impl_pairs = __flowc_st988; }
-  { __typeof__(c->impl_methods) __flowc_st992 = sem_sm_new(); c->impl_methods = __flowc_st992; }
-  { __typeof__(c->impl_method_lists) __flowc_st996 = sem_pv_new(); c->impl_method_lists = __flowc_st996; }
-  { __typeof__(c->unit_base_order) __flowc_st1000 = sem_sv_new(); c->unit_base_order = __flowc_st1000; }
-  { __typeof__(c->unit_dims) __flowc_st1004 = sem_sm_new(); c->unit_dims = __flowc_st1004; }
-  { __typeof__(c->unit_dim_list) __flowc_st1008 = sem_pv_new(); c->unit_dim_list = __flowc_st1008; }
-  { __typeof__(c->unit_canonical) __flowc_st1012 = sem_sm_new(); c->unit_canonical = __flowc_st1012; }
-  { __typeof__(c->unit_canonical_names) __flowc_st1016 = sem_sv_new(); c->unit_canonical_names = __flowc_st1016; }
-  { __typeof__(c->sy_name) __flowc_st1020 = sem_sv_new(); c->sy_name = __flowc_st1020; }
-  { __typeof__(c->sy_type) __flowc_st1024 = sem_iv_new(); c->sy_type = __flowc_st1024; }
-  { __typeof__(c->sy_kind) __flowc_st1028 = sem_iv_new(); c->sy_kind = __flowc_st1028; }
-  { __typeof__(c->sy_mut) __flowc_st1032 = sem_iv_new(); c->sy_mut = __flowc_st1032; }
-  { __typeof__(c->sy_def) __flowc_st1036 = sem_iv_new(); c->sy_def = __flowc_st1036; }
-  { __typeof__(c->sy_over) __flowc_st1040 = sem_pv_new(); c->sy_over = __flowc_st1040; }
-  { __typeof__(c->g_scope) __flowc_st1044 = sem_sm_new(); c->g_scope = __flowc_st1044; }
-  { __typeof__(c->ls_name) __flowc_st1048 = sem_sv_new(); c->ls_name = __flowc_st1048; }
-  { __typeof__(c->ls_sym) __flowc_st1052 = sem_iv_new(); c->ls_sym = __flowc_st1052; }
-  { __typeof__(c->frames) __flowc_st1056 = sem_iv_new(); c->frames = __flowc_st1056; }
-  { __typeof__(c->errors) __flowc_st1060 = sem_sv_new(); c->errors = __flowc_st1060; }
-  { __typeof__(c->err_mod) __flowc_st1064 = sem_iv_new(); c->err_mod = __flowc_st1064; }
-  { __typeof__(c->err_pos) __flowc_st1068 = sem_iv_new(); c->err_pos = __flowc_st1068; }
-  { __typeof__(c->fatal) __flowc_st1072 = sem_sv_new(); c->fatal = __flowc_st1072; }
-  { __typeof__(c->warnings) __flowc_st1076 = sem_sv_new(); c->warnings = __flowc_st1076; }
+  { __typeof__(c->d_kind) __flowc_st782 = sem_iv_new(); c->d_kind = __flowc_st782; }
+  { __typeof__(c->d_mod) __flowc_st786 = sem_iv_new(); c->d_mod = __flowc_st786; }
+  { __typeof__(c->d_node) __flowc_st790 = sem_iv_new(); c->d_node = __flowc_st790; }
+  { __typeof__(c->d_name) __flowc_st794 = sem_sv_new(); c->d_name = __flowc_st794; }
+  { __typeof__(c->d_info) __flowc_st798 = sem_iv_new(); c->d_info = __flowc_st798; }
+  { __typeof__(c->d_astart) __flowc_st802 = sem_iv_new(); c->d_astart = __flowc_st802; }
+  { __typeof__(c->d_alen) __flowc_st806 = sem_iv_new(); c->d_alen = __flowc_st806; }
+  { __typeof__(c->attr_pool) __flowc_st810 = sem_sv_new(); c->attr_pool = __flowc_st810; }
+  { __typeof__(c->fi_name) __flowc_st814 = sem_sv_new(); c->fi_name = __flowc_st814; }
+  { __typeof__(c->fi_mangled) __flowc_st818 = sem_sv_new(); c->fi_mangled = __flowc_st818; }
+  { __typeof__(c->fi_mod) __flowc_st822 = sem_iv_new(); c->fi_mod = __flowc_st822; }
+  { __typeof__(c->fi_node) __flowc_st826 = sem_iv_new(); c->fi_node = __flowc_st826; }
+  { __typeof__(c->fi_pstart) __flowc_st830 = sem_iv_new(); c->fi_pstart = __flowc_st830; }
+  { __typeof__(c->fi_plen) __flowc_st834 = sem_iv_new(); c->fi_plen = __flowc_st834; }
+  { __typeof__(c->fi_ret) __flowc_st838 = sem_iv_new(); c->fi_ret = __flowc_st838; }
+  { __typeof__(c->fi_astart) __flowc_st842 = sem_iv_new(); c->fi_astart = __flowc_st842; }
+  { __typeof__(c->fi_alen) __flowc_st846 = sem_iv_new(); c->fi_alen = __flowc_st846; }
+  { __typeof__(c->fi_extern) __flowc_st850 = sem_iv_new(); c->fi_extern = __flowc_st850; }
+  { __typeof__(c->fi_variadic) __flowc_st854 = sem_iv_new(); c->fi_variadic = __flowc_st854; }
+  { __typeof__(c->fi_tpstart) __flowc_st858 = sem_iv_new(); c->fi_tpstart = __flowc_st858; }
+  { __typeof__(c->fi_tplen) __flowc_st862 = sem_iv_new(); c->fi_tplen = __flowc_st862; }
+  { __typeof__(c->fi_estart) __flowc_st866 = sem_iv_new(); c->fi_estart = __flowc_st866; }
+  { __typeof__(c->fi_elen) __flowc_st870 = sem_iv_new(); c->fi_elen = __flowc_st870; }
+  { __typeof__(c->fi_body) __flowc_st874 = sem_iv_new(); c->fi_body = __flowc_st874; }
+  { __typeof__(c->fi_has_self) __flowc_st878 = sem_iv_new(); c->fi_has_self = __flowc_st878; }
+  { __typeof__(c->fp_names) __flowc_st882 = sem_sv_new(); c->fp_names = __flowc_st882; }
+  { __typeof__(c->fp_types) __flowc_st886 = sem_iv_new(); c->fp_types = __flowc_st886; }
+  { __typeof__(c->tp_names) __flowc_st890 = sem_sv_new(); c->tp_names = __flowc_st890; }
+  { __typeof__(c->tp_bounds) __flowc_st894 = sem_sv_new(); c->tp_bounds = __flowc_st894; }
+  { __typeof__(c->ef_pool) __flowc_st898 = sem_sv_new(); c->ef_pool = __flowc_st898; }
+  { __typeof__(c->im_type) __flowc_st902 = sem_sv_new(); c->im_type = __flowc_st902; }
+  { __typeof__(c->im_trait) __flowc_st906 = sem_sv_new(); c->im_trait = __flowc_st906; }
+  { __typeof__(c->im_methods) __flowc_st910 = sem_pv_new(); c->im_methods = __flowc_st910; }
+  { __typeof__(c->se_name) __flowc_st914 = sem_sv_new(); c->se_name = __flowc_st914; }
+  { __typeof__(c->se_kind) __flowc_st918 = sem_iv_new(); c->se_kind = __flowc_st918; }
+  { __typeof__(c->se_fstart) __flowc_st922 = sem_iv_new(); c->se_fstart = __flowc_st922; }
+  { __typeof__(c->se_flen) __flowc_st926 = sem_iv_new(); c->se_flen = __flowc_st926; }
+  { __typeof__(c->se_base) __flowc_st930 = sem_iv_new(); c->se_base = __flowc_st930; }
+  { __typeof__(c->se_tpstart) __flowc_st934 = sem_iv_new(); c->se_tpstart = __flowc_st934; }
+  { __typeof__(c->se_tplen) __flowc_st938 = sem_iv_new(); c->se_tplen = __flowc_st938; }
+  { __typeof__(c->se_decl) __flowc_st942 = sem_iv_new(); c->se_decl = __flowc_st942; }
+  { __typeof__(c->sf_names) __flowc_st946 = sem_sv_new(); c->sf_names = __flowc_st946; }
+  { __typeof__(c->sf_types) __flowc_st950 = sem_iv_new(); c->sf_types = __flowc_st950; }
+  { __typeof__(c->struct_types) __flowc_st954 = sem_sm_new(); c->struct_types = __flowc_st954; }
+  { __typeof__(c->generic_struct_types) __flowc_st958 = sem_sm_new(); c->generic_struct_types = __flowc_st958; }
+  { __typeof__(c->opaque_c_types) __flowc_st962 = sem_sm_new(); c->opaque_c_types = __flowc_st962; }
+  { __typeof__(c->generic_function_decls) __flowc_st966 = sem_sm_new(); c->generic_function_decls = __flowc_st966; }
+  { __typeof__(c->active_type_params) __flowc_st970 = sem_sv_new(); c->active_type_params = __flowc_st970; }
+  { __typeof__(c->effect_types) __flowc_st974 = sem_sm_new(); c->effect_types = __flowc_st974; }
+  { __typeof__(c->capability_types) __flowc_st978 = sem_sm_new(); c->capability_types = __flowc_st978; }
+  { __typeof__(c->enum_decls) __flowc_st982 = sem_sm_new(); c->enum_decls = __flowc_st982; }
+  { __typeof__(c->enum_variant_owner) __flowc_st986 = sem_sm_new(); c->enum_variant_owner = __flowc_st986; }
+  { __typeof__(c->trait_types) __flowc_st990 = sem_sm_new(); c->trait_types = __flowc_st990; }
+  { __typeof__(c->impl_pairs) __flowc_st994 = sem_sm_new(); c->impl_pairs = __flowc_st994; }
+  { __typeof__(c->impl_methods) __flowc_st998 = sem_sm_new(); c->impl_methods = __flowc_st998; }
+  { __typeof__(c->impl_method_lists) __flowc_st1002 = sem_pv_new(); c->impl_method_lists = __flowc_st1002; }
+  { __typeof__(c->unit_base_order) __flowc_st1006 = sem_sv_new(); c->unit_base_order = __flowc_st1006; }
+  { __typeof__(c->unit_dims) __flowc_st1010 = sem_sm_new(); c->unit_dims = __flowc_st1010; }
+  { __typeof__(c->unit_dim_list) __flowc_st1014 = sem_pv_new(); c->unit_dim_list = __flowc_st1014; }
+  { __typeof__(c->unit_canonical) __flowc_st1018 = sem_sm_new(); c->unit_canonical = __flowc_st1018; }
+  { __typeof__(c->unit_canonical_names) __flowc_st1022 = sem_sv_new(); c->unit_canonical_names = __flowc_st1022; }
+  { __typeof__(c->sy_name) __flowc_st1026 = sem_sv_new(); c->sy_name = __flowc_st1026; }
+  { __typeof__(c->sy_type) __flowc_st1030 = sem_iv_new(); c->sy_type = __flowc_st1030; }
+  { __typeof__(c->sy_kind) __flowc_st1034 = sem_iv_new(); c->sy_kind = __flowc_st1034; }
+  { __typeof__(c->sy_mut) __flowc_st1038 = sem_iv_new(); c->sy_mut = __flowc_st1038; }
+  { __typeof__(c->sy_def) __flowc_st1042 = sem_iv_new(); c->sy_def = __flowc_st1042; }
+  { __typeof__(c->sy_over) __flowc_st1046 = sem_pv_new(); c->sy_over = __flowc_st1046; }
+  { __typeof__(c->g_scope) __flowc_st1050 = sem_sm_new(); c->g_scope = __flowc_st1050; }
+  { __typeof__(c->ls_name) __flowc_st1054 = sem_sv_new(); c->ls_name = __flowc_st1054; }
+  { __typeof__(c->ls_sym) __flowc_st1058 = sem_iv_new(); c->ls_sym = __flowc_st1058; }
+  { __typeof__(c->frames) __flowc_st1062 = sem_iv_new(); c->frames = __flowc_st1062; }
+  { __typeof__(c->errors) __flowc_st1066 = sem_sv_new(); c->errors = __flowc_st1066; }
+  { __typeof__(c->err_mod) __flowc_st1070 = sem_iv_new(); c->err_mod = __flowc_st1070; }
+  { __typeof__(c->err_pos) __flowc_st1074 = sem_iv_new(); c->err_pos = __flowc_st1074; }
+  { __typeof__(c->fatal) __flowc_st1078 = sem_sv_new(); c->fatal = __flowc_st1078; }
+  { __typeof__(c->warnings) __flowc_st1082 = sem_sv_new(); c->warnings = __flowc_st1082; }
+  { __typeof__(c->warn_mod) __flowc_st1086 = sem_iv_new(); c->warn_mod = __flowc_st1086; }
+  { __typeof__(c->warn_pos) __flowc_st1090 = sem_iv_new(); c->warn_pos = __flowc_st1090; }
   c->relax_c_strings = 0;
   c->return_sink = NULL;
-  { __typeof__(c->reason_pool) __flowc_st1088 = sem_sv_new(); c->reason_pool = __flowc_st1088; }
-  { __typeof__(c->rt_unsafe_reason) __flowc_st1092 = sem_sm_new(); c->rt_unsafe_reason = __flowc_st1092; }
-  { __typeof__(c->heap_unsafe_reason) __flowc_st1096 = sem_sm_new(); c->heap_unsafe_reason = __flowc_st1096; }
+  { __typeof__(c->reason_pool) __flowc_st1102 = sem_sv_new(); c->reason_pool = __flowc_st1102; }
+  { __typeof__(c->rt_unsafe_reason) __flowc_st1106 = sem_sm_new(); c->rt_unsafe_reason = __flowc_st1106; }
+  { __typeof__(c->heap_unsafe_reason) __flowc_st1110 = sem_sm_new(); c->heap_unsafe_reason = __flowc_st1110; }
   c->current_rt_safe_fn = NULL;
   c->current_safe_fn = NULL;
   c->rt_safe_from_domain = 0;
-  { __typeof__(c->handler_stack) __flowc_st1112 = sem_pv_new(); c->handler_stack = __flowc_st1112; }
+  { __typeof__(c->handler_stack) __flowc_st1126 = sem_pv_new(); c->handler_stack = __flowc_st1126; }
   sem_pv_push(c->handler_stack, (void*)(sem_sv_new()));
   c->current_function_name = NULL;
-  { __typeof__(c->function_effects) __flowc_st1128 = sem_sm_new(); c->function_effects = __flowc_st1128; }
-  { __typeof__(c->function_effect_lists) __flowc_st1132 = sem_pv_new(); c->function_effect_lists = __flowc_st1132; }
-  { __typeof__(c->function_decls) __flowc_st1136 = sem_sm_new(); c->function_decls = __flowc_st1136; }
-  { __typeof__(c->static_names) __flowc_st1140 = sem_sm_new(); c->static_names = __flowc_st1140; }
-  { __typeof__(c->local_storage) __flowc_st1144 = sem_sv_new(); c->local_storage = __flowc_st1144; }
-  { __typeof__(c->span_origin) __flowc_st1148 = sem_sm_new(); c->span_origin = __flowc_st1148; }
-  { __typeof__(c->origin_pool) __flowc_st1152 = sem_sv_new(); c->origin_pool = __flowc_st1152; }
+  { __typeof__(c->function_effects) __flowc_st1142 = sem_sm_new(); c->function_effects = __flowc_st1142; }
+  { __typeof__(c->function_effect_lists) __flowc_st1146 = sem_pv_new(); c->function_effect_lists = __flowc_st1146; }
+  { __typeof__(c->function_decls) __flowc_st1150 = sem_sm_new(); c->function_decls = __flowc_st1150; }
+  { __typeof__(c->static_names) __flowc_st1154 = sem_sm_new(); c->static_names = __flowc_st1154; }
+  { __typeof__(c->local_storage) __flowc_st1158 = sem_sv_new(); c->local_storage = __flowc_st1158; }
+  { __typeof__(c->span_origin) __flowc_st1162 = sem_sm_new(); c->span_origin = __flowc_st1162; }
+  { __typeof__(c->origin_pool) __flowc_st1166 = sem_sv_new(); c->origin_pool = __flowc_st1166; }
   c->current_return_type = (0 - 1);
-  { __typeof__(c->function_domains) __flowc_st1162 = sem_sm_new(); c->function_domains = __flowc_st1162; }
-  { __typeof__(c->static_domains) __flowc_st1166 = sem_sm_new(); c->static_domains = __flowc_st1166; }
+  { __typeof__(c->function_domains) __flowc_st1176 = sem_sm_new(); c->function_domains = __flowc_st1176; }
+  { __typeof__(c->static_domains) __flowc_st1180 = sem_sm_new(); c->static_domains = __flowc_st1180; }
   c->current_domain = (0 - 1);
-  { __typeof__(c->rdc_names) __flowc_st1176 = sem_sv_new(); c->rdc_names = __flowc_st1176; }
-  { __typeof__(c->rdc_index) __flowc_st1180 = sem_sm_new(); c->rdc_index = __flowc_st1180; }
-  { __typeof__(c->rdc_sets) __flowc_st1184 = sem_pv_new(); c->rdc_sets = __flowc_st1184; }
-  { __typeof__(c->domain_reported) __flowc_st1188 = sem_sm_new(); c->domain_reported = __flowc_st1188; }
-  { __typeof__(c->rt_site_fn) __flowc_st1192 = sem_sv_new(); c->rt_site_fn = __flowc_st1192; }
-  { __typeof__(c->rt_site_name) __flowc_st1196 = sem_sv_new(); c->rt_site_name = __flowc_st1196; }
-  { __typeof__(c->rt_site_dom) __flowc_st1200 = sem_iv_new(); c->rt_site_dom = __flowc_st1200; }
-  { __typeof__(c->dom_site_fn) __flowc_st1204 = sem_sv_new(); c->dom_site_fn = __flowc_st1204; }
-  { __typeof__(c->dom_site_name) __flowc_st1208 = sem_sv_new(); c->dom_site_name = __flowc_st1208; }
-  { __typeof__(c->esc_static) __flowc_st1212 = sem_sm_new(); c->esc_static = __flowc_st1212; }
-  { __typeof__(c->esc_return) __flowc_st1216 = sem_sm_new(); c->esc_return = __flowc_st1216; }
-  { __typeof__(c->prop_keys) __flowc_st1220 = sem_sv_new(); c->prop_keys = __flowc_st1220; }
-  { __typeof__(c->prop_index) __flowc_st1224 = sem_sm_new(); c->prop_index = __flowc_st1224; }
-  { __typeof__(c->prop_sets) __flowc_st1228 = sem_pv_new(); c->prop_sets = __flowc_st1228; }
-  { __typeof__(c->ref_seen) __flowc_st1232 = sem_sm_new(); c->ref_seen = __flowc_st1232; }
-  { __typeof__(c->ref_key) __flowc_st1236 = sem_sv_new(); c->ref_key = __flowc_st1236; }
-  { __typeof__(c->ref_caller) __flowc_st1240 = sem_sv_new(); c->ref_caller = __flowc_st1240; }
-  { __typeof__(c->ref_callee) __flowc_st1244 = sem_sv_new(); c->ref_callee = __flowc_st1244; }
-  { __typeof__(c->ref_idx) __flowc_st1248 = sem_iv_new(); c->ref_idx = __flowc_st1248; }
-  { __typeof__(c->ref_origin) __flowc_st1252 = sem_sv_new(); c->ref_origin = __flowc_st1252; }
-  { __typeof__(c->ref_loc) __flowc_st1256 = sem_sv_new(); c->ref_loc = __flowc_st1256; }
+  { __typeof__(c->rdc_names) __flowc_st1190 = sem_sv_new(); c->rdc_names = __flowc_st1190; }
+  { __typeof__(c->rdc_index) __flowc_st1194 = sem_sm_new(); c->rdc_index = __flowc_st1194; }
+  { __typeof__(c->rdc_sets) __flowc_st1198 = sem_pv_new(); c->rdc_sets = __flowc_st1198; }
+  { __typeof__(c->domain_reported) __flowc_st1202 = sem_sm_new(); c->domain_reported = __flowc_st1202; }
+  { __typeof__(c->rt_site_fn) __flowc_st1206 = sem_sv_new(); c->rt_site_fn = __flowc_st1206; }
+  { __typeof__(c->rt_site_name) __flowc_st1210 = sem_sv_new(); c->rt_site_name = __flowc_st1210; }
+  { __typeof__(c->rt_site_dom) __flowc_st1214 = sem_iv_new(); c->rt_site_dom = __flowc_st1214; }
+  { __typeof__(c->dom_site_fn) __flowc_st1218 = sem_sv_new(); c->dom_site_fn = __flowc_st1218; }
+  { __typeof__(c->dom_site_name) __flowc_st1222 = sem_sv_new(); c->dom_site_name = __flowc_st1222; }
+  { __typeof__(c->esc_static) __flowc_st1226 = sem_sm_new(); c->esc_static = __flowc_st1226; }
+  { __typeof__(c->esc_return) __flowc_st1230 = sem_sm_new(); c->esc_return = __flowc_st1230; }
+  { __typeof__(c->prop_keys) __flowc_st1234 = sem_sv_new(); c->prop_keys = __flowc_st1234; }
+  { __typeof__(c->prop_index) __flowc_st1238 = sem_sm_new(); c->prop_index = __flowc_st1238; }
+  { __typeof__(c->prop_sets) __flowc_st1242 = sem_pv_new(); c->prop_sets = __flowc_st1242; }
+  { __typeof__(c->ref_seen) __flowc_st1246 = sem_sm_new(); c->ref_seen = __flowc_st1246; }
+  { __typeof__(c->ref_key) __flowc_st1250 = sem_sv_new(); c->ref_key = __flowc_st1250; }
+  { __typeof__(c->ref_caller) __flowc_st1254 = sem_sv_new(); c->ref_caller = __flowc_st1254; }
+  { __typeof__(c->ref_callee) __flowc_st1258 = sem_sv_new(); c->ref_callee = __flowc_st1258; }
+  { __typeof__(c->ref_idx) __flowc_st1262 = sem_iv_new(); c->ref_idx = __flowc_st1262; }
+  { __typeof__(c->ref_origin) __flowc_st1266 = sem_sv_new(); c->ref_origin = __flowc_st1266; }
+  { __typeof__(c->ref_loc) __flowc_st1270 = sem_sv_new(); c->ref_loc = __flowc_st1270; }
   c->stmt_node = (0 - 1);
   c->has_cimport = 0;
-  { __typeof__(c->fork_src) __flowc_st1270 = sem_sm_new(); c->fork_src = __flowc_st1270; }
-  { __typeof__(c->fork_sigs) __flowc_st1274 = sem_sm_new(); c->fork_sigs = __flowc_st1274; }
+  { __typeof__(c->fork_src) __flowc_st1284 = sem_sm_new(); c->fork_src = __flowc_st1284; }
+  { __typeof__(c->fork_sigs) __flowc_st1288 = sem_sm_new(); c->fork_sigs = __flowc_st1288; }
   c->fork_count = 0;
   c->pos_lock = 0;
-  { __typeof__(c->cimport_headers) __flowc_st1286 = sem_sv_new(); c->cimport_headers = __flowc_st1286; }
-  { __typeof__(c->cimport_names) __flowc_st1290 = sem_sm_new(); c->cimport_names = __flowc_st1290; }
+  { __typeof__(c->cimport_headers) __flowc_st1300 = sem_sv_new(); c->cimport_headers = __flowc_st1300; }
+  { __typeof__(c->cimport_names) __flowc_st1304 = sem_sm_new(); c->cimport_names = __flowc_st1304; }
   c->cimport_unknown = 0;
   c->root_mod = (0 - 1);
   int32_t ui = sem_sym_new(c, "_ui_state", sem_ty_ptr(c->t, sem_ty_mk(c->t, TK_VOID)), SK_VARIABLE);
@@ -31280,6 +31290,14 @@ void sem_err(Sem* c, const char* msg) {
 
 void sem_warn(Sem* c, const char* msg) {
   sem_sv_push(c->warnings, msg);
+  sem_iv_push(c->warn_mod, c->cm);
+  sem_iv_push(c->warn_pos, c->pos);
+}
+
+void sem_warn_truncate(Sem* c, int32_t n) {
+  sem_sv_setlen(c->warnings, n);
+  sem_iv_setlen(c->warn_mod, n);
+  sem_iv_setlen(c->warn_pos, n);
 }
 
 void sem_err_truncate(Sem* c, int32_t n) {
@@ -31862,9 +31880,9 @@ int32_t sem_parse_type(Sem* c, int32_t pt) {
   i = (i + 1);
 }
   if (t->pt_elem[pt] >= 0) {
-  { __typeof__(t->ret[f]) __flowc_st4972 = sem_parse_type(c, t->pt_elem[pt]); t->ret[f] = __flowc_st4972; }
+  { __typeof__(t->ret[f]) __flowc_st5021 = sem_parse_type(c, t->pt_elem[pt]); t->ret[f] = __flowc_st5021; }
 } else {
-  { __typeof__(t->ret[f]) __flowc_st4981 = sem_ty_mk(t, TK_VOID); t->ret[f] = __flowc_st4981; }
+  { __typeof__(t->ret[f]) __flowc_st5030 = sem_ty_mk(t, TK_VOID); t->ret[f] = __flowc_st5030; }
 }
   if (sem_s_starts(name, "fn_")) {
   int32_t e = 0;
@@ -31941,13 +31959,13 @@ int32_t sem_parse_type(Sem* c, int32_t pt) {
   int32_t k = sem_iv_get(c->se_kind, se);
   if (k == SE_ALIAS) {
   int32_t al = sem_ty_named(t, TK_TYPE_ALIAS, name);
-  { __typeof__(t->base[al]) __flowc_st5321 = sem_parse_type(c, sem_iv_get(c->se_base, se)); t->base[al] = __flowc_st5321; }
+  { __typeof__(t->base[al]) __flowc_st5370 = sem_parse_type(c, sem_iv_get(c->se_base, se)); t->base[al] = __flowc_st5370; }
   return al;
 }
   if (k == SE_DISTINCT) {
   int32_t di = sem_ty_named(t, TK_DISTINCT, name);
-  { __typeof__(t->base[di]) __flowc_st5345 = sem_parse_type(c, sem_iv_get(c->se_base, se)); t->base[di] = __flowc_st5345; }
-  { __typeof__(t->dims[di]) __flowc_st5353 = sem_unit_dims_of_name(c, name); t->dims[di] = __flowc_st5353; }
+  { __typeof__(t->base[di]) __flowc_st5394 = sem_parse_type(c, sem_iv_get(c->se_base, se)); t->base[di] = __flowc_st5394; }
+  { __typeof__(t->dims[di]) __flowc_st5402 = sem_unit_dims_of_name(c, name); t->dims[di] = __flowc_st5402; }
   return di;
 }
   return sem_ty_struct(t, name);
@@ -32063,7 +32081,7 @@ int32_t sem_unit_result_type(Sem* c, SemIntVec* dims) {
   name = sem_format_dims(c, d);
 }
   int32_t id = sem_ty_named(c->t, TK_DISTINCT, name);
-  { __typeof__(tys->base[id]) __flowc_st5786 = sem_ty_mk(c->t, TK_F64); tys->base[id] = __flowc_st5786; }
+  { __typeof__(tys->base[id]) __flowc_st5835 = sem_ty_mk(c->t, TK_F64); tys->base[id] = __flowc_st5835; }
   tys->dims[id] = d;
   return id;
 }
@@ -61166,11 +61184,11 @@ void flowc_cgen_plan_init(CgenBuf* w, AstArena arena, uint8_t* src) {
   return;
 }
   int32_t n = (arena).len;
-  { __typeof__((w[0]).plan_order) __flowc_st18594 = (int32_t*)(malloc((n * 4))); (w[0]).plan_order = __flowc_st18594; }
-  { __typeof__((w[0]).plan_has) __flowc_st18606 = (int32_t*)(malloc((n * 4))); (w[0]).plan_has = __flowc_st18606; }
-  { __typeof__((w[0]).plan_seen) __flowc_st18618 = (int32_t*)(malloc((n * 4))); (w[0]).plan_seen = __flowc_st18618; }
-  { __typeof__((w[0]).plan_lo) __flowc_st18630 = (int64_t*)(malloc((n * 8))); (w[0]).plan_lo = __flowc_st18630; }
-  { __typeof__((w[0]).plan_hi) __flowc_st18642 = (int64_t*)(malloc((n * 8))); (w[0]).plan_hi = __flowc_st18642; }
+  { __typeof__((w[0]).plan_order) __flowc_st18595 = (int32_t*)(malloc((n * 4))); (w[0]).plan_order = __flowc_st18595; }
+  { __typeof__((w[0]).plan_has) __flowc_st18607 = (int32_t*)(malloc((n * 4))); (w[0]).plan_has = __flowc_st18607; }
+  { __typeof__((w[0]).plan_seen) __flowc_st18619 = (int32_t*)(malloc((n * 4))); (w[0]).plan_seen = __flowc_st18619; }
+  { __typeof__((w[0]).plan_lo) __flowc_st18631 = (int64_t*)(malloc((n * 8))); (w[0]).plan_lo = __flowc_st18631; }
+  { __typeof__((w[0]).plan_hi) __flowc_st18643 = (int64_t*)(malloc((n * 8))); (w[0]).plan_hi = __flowc_st18643; }
   if ((w[0]).plan_order == NULL || (w[0]).plan_has == NULL || (w[0]).plan_seen == NULL || (w[0]).plan_lo == NULL || (w[0]).plan_hi == NULL) {
   (w[0]).plan_order = NULL;
   (w[0]).plan_has = NULL;
@@ -63696,6 +63714,46 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   flowc_cgen_putc(w, 46);
   flowc_cgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
 }
+  return;
+}
+  if (kind == AST_STRUCT_LIT && ((arena).nodes[id]).c != AST_NONE) {
+  flowc_cgen_puts(w, "({ ");
+  flowc_cgen_put_struct_lit_name(w, arena, src, id);
+  flowc_cgen_puts(w, " __flowc_sl");
+  flowc_cgen_put_i32(w, id);
+  flowc_cgen_puts(w, " = (");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).c);
+  flowc_cgen_puts(w, "); ");
+  int32_t uf = ((arena).nodes[id]).a;
+  while (uf != AST_NONE) {
+  int32_t uv = ((arena).nodes[uf]).a;
+  if (flowc_cgen_sl_array_copy(w, arena, src, uv) == 1) {
+  flowc_cgen_puts(w, "memcpy(&");
+  flowc_cgen_emit_sl_member(w, arena, src, id, uf);
+  flowc_cgen_puts(w, ", __builtin_choose_expr(__builtin_types_compatible_p(__typeof__(");
+  flowc_cgen_emit_sl_member(w, arena, src, id, uf);
+  flowc_cgen_puts(w, "), __typeof__(&");
+  flowc_cgen_emit_sl_member(w, arena, src, id, uf);
+  flowc_cgen_puts(w, "[0])), (void*)&(__typeof__(&(");
+  flowc_cgen_emit_expr(w, arena, src, uv);
+  flowc_cgen_puts(w, ")[0])){ (");
+  flowc_cgen_emit_expr(w, arena, src, uv);
+  flowc_cgen_puts(w, ") }, (void*)(");
+  flowc_cgen_emit_expr(w, arena, src, uv);
+  flowc_cgen_puts(w, ")), sizeof(");
+  flowc_cgen_emit_sl_member(w, arena, src, id, uf);
+  flowc_cgen_puts(w, ")); ");
+} else {
+  flowc_cgen_emit_sl_member(w, arena, src, id, uf);
+  flowc_cgen_puts(w, " = ");
+  flowc_cgen_emit_expr(w, arena, src, uv);
+  flowc_cgen_puts(w, "; ");
+}
+  uf = ((arena).nodes[uf]).next;
+}
+  flowc_cgen_puts(w, "__flowc_sl");
+  flowc_cgen_put_i32(w, id);
+  flowc_cgen_puts(w, "; })");
   return;
 }
   if (kind == AST_STRUCT_LIT) {
@@ -67551,7 +67609,7 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   return (0 - 1);
 }
   flowc_proof_erase(arena, root);
-  if (flowc_ast_reject_unsupported(arena, src, "flowc cgen") != 0) {
+  if (flowc_ast_reject_unsupported_but(arena, src, "flowc cgen", AST_RECORD_UPDATE) != 0) {
   return (0 - 1);
 }
   CgenBuf w = flowc_cgen_buf_init(out, out_cap);
@@ -68942,9 +69000,18 @@ void sem_recursion_dfs(Sem* c, const char* name, SemStrVec* names, SemPtrVec* ca
 void sem_check_unbounded_loops(Sem* c);
 void sem_read_cimports(Sem* c);
 bool sem_cimport_knows(Sem* c, const char* name);
+bool sem_is_hex(int32_t ch);
+int32_t sem_c_escape_len(uint8_t* src, int32_t i, int32_t end);
+void sem_check_string_escapes(Sem* c);
 void sem_check_program(Sem* c);
 int32_t sem_report(Sem* c);
+bool sem_env_is(const char* name, int32_t want);
+bool sem_werror();
+bool sem_warning_shown(Sem* c, int32_t i);
+int32_t sem_werror_count(Sem* c);
+void sem_report_warnings(Sem* c);
 void sem_print_diag(Sem* c, int32_t i, const char* what);
+void sem_print_at(Sem* c, int32_t m, int32_t pos, const char* what, const char* msg);
 int32_t sem_error_count(Sem* c);
 int32_t sem_fatal_count(Sem* c);
 void flowc_semcheck_single(AstArena arena, int32_t root, uint8_t* src, const char* path, int32_t* counts);
@@ -69523,7 +69590,7 @@ void sem_collect_types(Sem* c) {
   if (k == DK_ALIAS) {
   int32_t base_pt = sem_pt_of_ast(c, sem_na(c, node));
   int32_t alias_t = sem_ty_named(c->t, TK_TYPE_ALIAS, name);
-  { __typeof__(tys->base[alias_t]) __flowc_st3056 = sem_parse_type(c, base_pt); tys->base[alias_t] = __flowc_st3056; }
+  { __typeof__(tys->base[alias_t]) __flowc_st3064 = sem_parse_type(c, base_pt); tys->base[alias_t] = __flowc_st3064; }
   int32_t s2 = sem_sym_new(c, name, alias_t, SK_TYPE);
   sem_scope_define_global(c, s2);
   int32_t se3 = sem_se_new(c, name, SE_ALIAS, i);
@@ -69618,7 +69685,7 @@ void sem_define_function(Sem* c, const char* name, int32_t fi) {
   sem_ty_add_param(c->t, f, sem_parse_type(c, sem_fi_param_type(c, fi, i)));
   i = (i + 1);
 }
-  { __typeof__(tys->ret[f]) __flowc_st3499 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); tys->ret[f] = __flowc_st3499; }
+  { __typeof__(tys->ret[f]) __flowc_st3507 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); tys->ret[f] = __flowc_st3507; }
   i = 0;
   while (i < sem_fi_neffects(c, fi)) {
   sem_ty_add_effect(c->t, f, sem_fi_effect(c, fi, i));
@@ -70186,7 +70253,7 @@ int32_t sem_infer_type_quiet(Sem* c, int32_t e) {
   int32_t saved_pos = c->pos;
   int32_t t = sem_check_expression(c, e);
   sem_err_truncate(c, ne);
-  sem_sv_setlen(c->warnings, nw);
+  sem_warn_truncate(c, nw);
   c->pos = saved_pos;
   return t;
 }
@@ -71796,7 +71863,7 @@ int32_t sem_check_slice_expr(Sem* c, int32_t e) {
 }
   int32_t sp = sem_ty_named(c->t, TK_SPAN, __flowc_str_concat(prefix, sem_tstr(c, el)));
   tys->elem[sp] = el;
-  { __typeof__(tys->size[sp]) __flowc_st13235 = sem_static_length(c, e); tys->size[sp] = __flowc_st13235; }
+  { __typeof__(tys->size[sp]) __flowc_st13242 = sem_static_length(c, e); tys->size[sp] = __flowc_st13242; }
   return sp;
 }
 
@@ -71870,14 +71937,14 @@ int32_t sem_check_lambda(Sem* c, int32_t e) {
   p = sem_nnext(c, p);
 }
   SemIntVec* saved_sink = (SemIntVec*)(c->return_sink);
-  { __typeof__(c->return_sink) __flowc_st13584 = sem_iv_new(); c->return_sink = __flowc_st13584; }
+  { __typeof__(c->return_sink) __flowc_st13591 = sem_iv_new(); c->return_sink = __flowc_st13591; }
   sem_check_block(c, sem_ncc(c, e));
   c->return_sink = saved_sink;
   sem_pop_scope(c);
   if (sem_nb(c, e) != AST_NONE) {
-  { __typeof__(tys->ret[f]) __flowc_st13614 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e))); tys->ret[f] = __flowc_st13614; }
+  { __typeof__(tys->ret[f]) __flowc_st13621 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e))); tys->ret[f] = __flowc_st13621; }
 } else {
-  { __typeof__(tys->ret[f]) __flowc_st13623 = sem_tmk(c, TK_VOID); tys->ret[f] = __flowc_st13623; }
+  { __typeof__(tys->ret[f]) __flowc_st13630 = sem_tmk(c, TK_VOID); tys->ret[f] = __flowc_st13630; }
 }
   return f;
 }
@@ -72128,6 +72195,13 @@ int32_t sem_fork_field_type(Sem* c, int32_t v) {
 
 int32_t sem_check_pipe_block(Sem* c, int32_t e) {
   int32_t kind = sem_nival(c, e);
+  if (kind == PIPE_BLOCK_STAGE) {
+  sem_check_expression(c, sem_na(c, e));
+  const char* msg = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("flow stage params `", sem_nname(c, e)), " { ... }` (line "), sem_s_itoa((int64_t)(sem_py_pos(c, c->cm, sem_nstart(c, e), 0)))), ") are only valid for a flow used as a pipeline stage inside a flow `output`");
+  sem_err(c, msg);
+  sem_sv_push(c->fatal, msg);
+  return sem_tmk(c, TK_UNKNOWN);
+}
   int32_t st = sem_check_expression(c, sem_na(c, e));
   sem_sm_put(c->fork_src, sem_node_key(c, e), st);
   if (kind == PIPE_BLOCK_CHOOSE) {
@@ -72411,6 +72485,11 @@ int32_t sem_check_for_stmt(Sem* c, int32_t s) {
   int32_t step = sem_nival(c, s);
   if (step > 0) {
   sem_check_expression(c, step);
+  int32_t ok[1] = { 0 };
+  int64_t v = sem_literal_int(c, step, 1, (int32_t*)((&ok[0])));
+  if (ok[0] == 1 && v == 0) {
+  sem_err(c, "for range step must not be zero");
+}
 }
   sem_push_scope(c);
   sem_define_var(c, sem_nname(c, s), sem_tmk(c, TK_I32), 1);
@@ -73030,7 +73109,10 @@ int32_t sem_check_match_stmt(Sem* c, int32_t s) {
   result = dt;
 }
 }
+  int32_t saved_pos = c->pos;
+  sem_set_pos(c, s);
   sem_warn_match_exhaustiveness(c, s, vt);
+  c->pos = saved_pos;
   return result;
 }
 
@@ -73172,9 +73254,9 @@ void sem_check_function(Sem* c, int32_t fi) {
   SemStrVec* prev_storage = (SemStrVec*)(c->local_storage);
   SemStrMap* prev_origin = (SemStrMap*)(c->span_origin);
   int32_t prev_ret = c->current_return_type;
-  { __typeof__(c->local_storage) __flowc_st19086 = sem_sv_new(); c->local_storage = __flowc_st19086; }
-  { __typeof__(c->span_origin) __flowc_st19090 = sem_sm_new(); c->span_origin = __flowc_st19090; }
-  { __typeof__(c->current_return_type) __flowc_st19099 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); c->current_return_type = __flowc_st19099; }
+  { __typeof__(c->local_storage) __flowc_st19185 = sem_sv_new(); c->local_storage = __flowc_st19185; }
+  { __typeof__(c->span_origin) __flowc_st19189 = sem_sm_new(); c->span_origin = __flowc_st19189; }
+  { __typeof__(c->current_return_type) __flowc_st19198 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); c->current_return_type = __flowc_st19198; }
   i = 0;
   while (i < sem_fi_nparams(c, fi)) {
   int32_t pt = sem_parse_type(c, sem_fi_param_type(c, fi, i));
@@ -73182,7 +73264,7 @@ void sem_check_function(Sem* c, int32_t fi) {
   i = (i + 1);
 }
   SemIntVec* prev_sink = (SemIntVec*)(c->return_sink);
-  { __typeof__(c->return_sink) __flowc_st19142 = sem_iv_new(); c->return_sink = __flowc_st19142; }
+  { __typeof__(c->return_sink) __flowc_st19241 = sem_iv_new(); c->return_sink = __flowc_st19241; }
   sem_check_block(c, sem_iv_get(c->fi_body, fi));
   SemIntVec* returns = (SemIntVec*)(c->return_sink);
   c->return_sink = prev_sink;
@@ -73736,8 +73818,100 @@ bool sem_cimport_knows(Sem* c, const char* name) {
   return sem_sm_has(c->cimport_names, name);
 }
 
+bool sem_is_hex(int32_t ch) {
+  return ch >= 48 && ch <= 57 || ch >= 65 && ch <= 70 || ch >= 97 && ch <= 102;
+}
+
+int32_t sem_c_escape_len(uint8_t* src, int32_t i, int32_t end) {
+  int32_t e = (int32_t)(src[i]);
+  if (e == 97 || e == 98 || e == 102 || e == 118 || e == 39 || e == 63) {
+  return 1;
+}
+  if (e >= 49 && e <= 55) {
+  int32_t n = 1;
+  while (n < 3 && (i + n) < end && src[(i + n)] >= 48 && src[(i + n)] <= 55) {
+  n = (n + 1);
+}
+  return n;
+}
+  int32_t want = 0;
+  if (e == 120) {
+  want = (0 - 1);
+} else {
+  if (e == 117) {
+  want = 4;
+} else {
+  if (e == 85) {
+  want = 8;
+} else {
+  return 0;
+}
+}
+}
+  int32_t n = 0;
+  while (((i + 1) + n) < end && sem_is_hex((int32_t)(src[((i + 1) + n)])) && (want < 0 || n < want)) {
+  n = (n + 1);
+}
+  if (n == 0 || want > 0 && n < want) {
+  return 0;
+}
+  return (1 + n);
+}
+
+void sem_check_string_escapes(Sem* c) {
+  int32_t saved = c->cm;
+  int32_t m = 0;
+  while (m < c->nm) {
+  uint8_t* src = (uint8_t*)(c->m_src[m]);
+  int32_t n = 0;
+  while (src[n] != 0) {
+  n = (n + 1);
+}
+  Lexer lex = flowc_lexer_new(src, n);
+  Token t = flowc_lexer_next((&lex));
+  bool found = 0;
+  while ((t).kind != TOK_EOF && found == 0 && (lex).pos < (n + 1)) {
+  if ((t).kind == TOK_STRING) {
+  int32_t i = ((t).start + 1);
+  while (i < ((t).end - 1) && found == 0) {
+  if (src[i] == 92) {
+  int32_t e = (int32_t)(src[(i + 1)]);
+  int32_t used = sem_c_escape_len(src, (i + 1), ((t).end - 1));
+  if (e == 110 || e == 116 || e == 114 || e == 92 || e == 34 || e == 48) {
+  i = (i + 2);
+} else {
+  if (used > 0) {
+  i = ((i + 1) + used);
+} else {
+  sem_set_mod(c, m);
+  c->pos = (t).start;
+  const char* msg = __flowc_str_concat("Invalid escape sequence: \\", sem_s_span(src, (i + 1), (i + 2)));
+  sem_err(c, msg);
+  sem_sv_push(c->fatal, msg);
+  found = 1;
+}
+}
+} else {
+  i = (i + 1);
+}
+}
+}
+  int32_t before = (lex).pos;
+  t = flowc_lexer_next((&lex));
+  if ((lex).pos == before && (t).kind != TOK_EOF) {
+  found = 1;
+}
+}
+  m = (m + 1);
+}
+  if (saved >= 0) {
+  sem_set_mod(c, saved);
+}
+}
+
 void sem_check_program(Sem* c) {
   sem_read_cimports(c);
+  sem_check_string_escapes(c);
   sem_collect_types(c);
   sem_collect_symbols(c);
   sem_collect_lifetime_domains(c);
@@ -73756,13 +73930,14 @@ void sem_check_program(Sem* c) {
 
 int32_t sem_report(Sem* c) {
   int32_t i = 0;
+  int32_t stop = 0;
   if (c->strict) {
   while (i < sem_sv_len(c->errors)) {
   sem_print_diag(c, i, "error");
   i = (i + 1);
 }
-  return sem_sv_len(c->errors);
-}
+  stop = sem_sv_len(c->errors);
+} else {
   int32_t shown = 0;
   int32_t hidden = 0;
   while (i < sem_sv_len(c->errors)) {
@@ -73782,12 +73957,79 @@ int32_t sem_report(Sem* c) {
   if (hidden > 0) {
   printf("flowc: ... and %d more type warning(s)\n", hidden);
 }
-  return sem_sv_len(c->fatal);
+  stop = sem_sv_len(c->fatal);
+}
+  sem_report_warnings(c);
+  return (stop + sem_werror_count(c));
+}
+
+bool sem_env_is(const char* name, int32_t want) {
+  const char* v = getenv(name);
+  if ((uint8_t*)(v) == NULL) {
+  return 0;
+}
+  uint8_t* p = (uint8_t*)((uint8_t*)(v));
+  return (int32_t)(p[0]) == want && p[1] == 0;
+}
+
+bool sem_werror() {
+  return sem_env_is("FLOWC_WERROR", 49);
+}
+
+bool sem_warning_shown(Sem* c, int32_t i) {
+  int32_t m = sem_iv_get(c->warn_mod, i);
+  if (m < 0) {
+  return 1;
+}
+  const char* v = getenv("FLOWC_WARNINGS");
+  if ((uint8_t*)(v) != NULL && sem_s_eq(v, "all")) {
+  return 1;
+}
+  const char* p = c->m_path[m];
+  if (sem_s_starts(p, "lib/stdlib/") || sem_s_starts(p, "lib/runtime/")) {
+  return 0;
+}
+  return sem_s_contains(p, "/lib/stdlib/") == 0 && sem_s_contains(p, "/lib/runtime/") == 0;
+}
+
+int32_t sem_werror_count(Sem* c) {
+  if (sem_werror() == 0) {
+  return 0;
+}
+  int32_t n = 0;
+  int32_t i = 0;
+  while (i < sem_sv_len(c->warnings)) {
+  if (sem_warning_shown(c, i)) {
+  n = (n + 1);
+}
+  i = (i + 1);
+}
+  return n;
+}
+
+void sem_report_warnings(Sem* c) {
+  bool elevate = sem_werror();
+  if (elevate == 0 && sem_env_is("FLOWC_WARNINGS", 48)) {
+  return;
+}
+  const char* what = "warning";
+  if (elevate) {
+  what = "error";
+}
+  int32_t i = 0;
+  while (i < sem_sv_len(c->warnings)) {
+  if (sem_warning_shown(c, i)) {
+  sem_print_at(c, sem_iv_get(c->warn_mod, i), sem_iv_get(c->warn_pos, i), what, sem_sv_get(c->warnings, i));
+}
+  i = (i + 1);
+}
 }
 
 void sem_print_diag(Sem* c, int32_t i, const char* what) {
-  int32_t m = sem_iv_get(c->err_mod, i);
-  int32_t pos = sem_iv_get(c->err_pos, i);
+  sem_print_at(c, sem_iv_get(c->err_mod, i), sem_iv_get(c->err_pos, i), what, sem_sv_get(c->errors, i));
+}
+
+void sem_print_at(Sem* c, int32_t m, int32_t pos, const char* what, const char* msg) {
   const char* path = "<input>";
   int32_t ln = 1;
   int32_t col = 1;
@@ -73796,18 +74038,18 @@ void sem_print_diag(Sem* c, int32_t i, const char* what) {
   ln = sem_line_of(c, m, pos);
   col = sem_col_of(c, m, pos);
 }
-  printf("%s:%d:%d: %s: %s\n", path, ln, col, what, sem_sv_get(c->errors, i));
+  printf("%s:%d:%d: %s: %s\n", path, ln, col, what, msg);
 }
 
 int32_t sem_error_count(Sem* c) {
-  return sem_sv_len(c->errors);
+  return (sem_sv_len(c->errors) + sem_werror_count(c));
 }
 
 int32_t sem_fatal_count(Sem* c) {
   if (c->strict) {
-  return sem_sv_len(c->errors);
+  return (sem_sv_len(c->errors) + sem_werror_count(c));
 }
-  return sem_sv_len(c->fatal);
+  return (sem_sv_len(c->fatal) + sem_werror_count(c));
 }
 
 void flowc_semcheck_single(AstArena arena, int32_t root, uint8_t* src, const char* path, int32_t* counts) {
@@ -77902,6 +78144,10 @@ static const int32_t MLI_MAX_EDITS = 1024;
 #undef MLI_POOL_CAP
 static const int32_t MLI_POOL_CAP = 65536;
 void flowc_resolve_import_error(const char* mpath, uint8_t* src, int32_t s, int32_t e);
+void flowc_resolve_putstr(const char* s);
+int32_t flowc_resolve_is_dist_dir(const char* d);
+int32_t flowc_resolve_unsafe_import(uint8_t* src, int32_t s0, int32_t e0, const char* mod_dir);
+void flowc_resolve_unsafe_import_error(const char* mpath, uint8_t* src, int32_t s, int32_t e);
 int32_t flowc_resolve_copy_cstr(const char* s, uint8_t* dst, int32_t cap);
 int32_t flowc_resolve_cstr_eq(uint8_t* a, uint8_t* b);
 int32_t flowc_resolve_find_path(uint8_t* store, int32_t n, int32_t row_cap, uint8_t* path);
@@ -77992,6 +78238,102 @@ void flowc_resolve_import_error(const char* mpath, uint8_t* src, int32_t s, int3
 }
   i = s;
   while (i < e) {
+  putchar((int32_t)(src[i]));
+  i = (i + 1);
+}
+  putchar(10);
+}
+
+void flowc_resolve_putstr(const char* s) {
+  uint8_t* p = (uint8_t*)(s);
+  int32_t i = 0;
+  while (p[i] != 0) {
+  putchar((int32_t)(p[i]));
+  i = (i + 1);
+}
+}
+
+int32_t flowc_resolve_is_dist_dir(const char* d) {
+  uint8_t* p = (uint8_t*)((uint8_t*)(d));
+  if (p == NULL) {
+  return 0;
+}
+  int32_t n = (int32_t)(strlen(d));
+  int32_t i = 0;
+  while ((i + 10) <= n) {
+  if (i == 0 || p[(i - 1)] == 47) {
+  if (p[i] == 108 && p[(i + 1)] == 105 && p[(i + 2)] == 98 && p[(i + 3)] == 47) {
+  int32_t k = (i + 4);
+  int32_t ok = 0;
+  if ((k + 6) <= n && p[k] == 115 && p[(k + 1)] == 116 && p[(k + 2)] == 100 && p[(k + 3)] == 108 && p[(k + 4)] == 105 && p[(k + 5)] == 98) {
+  k = (k + 6);
+  ok = 1;
+} else {
+  if ((k + 7) <= n && p[k] == 114 && p[(k + 1)] == 117 && p[(k + 2)] == 110 && p[(k + 3)] == 116 && p[(k + 4)] == 105 && p[(k + 5)] == 109 && p[(k + 6)] == 101) {
+  k = (k + 7);
+  ok = 1;
+}
+}
+  if (ok == 1 && (k == n || p[k] == 47)) {
+  return 1;
+}
+}
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+int32_t flowc_resolve_unsafe_import(uint8_t* src, int32_t s0, int32_t e0, const char* mod_dir) {
+  int32_t s = s0;
+  int32_t e = e0;
+  if (s < e && src[s] == 34) {
+  s = (s + 1);
+}
+  if (e > s && src[(e - 1)] == 34) {
+  e = (e - 1);
+}
+  if (e <= s) {
+  return 0;
+}
+  if (src[s] == 47 || src[s] == 126) {
+  return 1;
+}
+  if (flowc_resolve_is_dist_dir(mod_dir) == 1) {
+  return 0;
+}
+  int32_t seg = s;
+  int32_t i = s;
+  while (i <= e) {
+  if (i == e || src[i] == 47) {
+  if ((i - seg) == 2 && src[seg] == 46 && src[(seg + 1)] == 46) {
+  return 1;
+}
+  seg = (i + 1);
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+void flowc_resolve_unsafe_import_error(const char* mpath, uint8_t* src, int32_t s, int32_t e) {
+  int32_t line = 1;
+  int32_t col = 1;
+  int32_t i = 0;
+  while (i < s && src[i] != 0) {
+  if (src[i] == 10) {
+  line = (line + 1);
+  col = 1;
+} else {
+  col = (col + 1);
+}
+  i = (i + 1);
+}
+  flowc_resolve_putstr(mpath);
+  printf(":%d", line);
+  printf(":%d: error: Unsafe import path: ", col);
+  i = (s + 1);
+  while (i < (e - 1)) {
   putchar((int32_t)(src[i]));
   i = (i + 1);
 }
@@ -79802,6 +80144,14 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, con
   int32_t ii = 0;
   while (ii < ((p).arena).len) {
   if ((((p).arena).nodes[ii]).kind == AST_IMPORT) {
+  if ((((p).arena).nodes[ii]).ival == 2 && flowc_resolve_unsafe_import(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, mod_search) == 1) {
+  flowc_resolve_unsafe_import_error(mpath, src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end);
+  flowc_parser_free(p);
+  free(mod_dir);
+  free(imp_path);
+  free(src);
+  return (0 - 1);
+}
   int32_t plen = flowc_resolve_import_at(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, (((p).arena).nodes[ii]).ival, mod_search, search_dir, project_root, imp_path);
   if (plen != (0 - 3)) {
   if (plen < 0) {
@@ -80009,13 +80359,13 @@ int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, 
   return (0 - 1);
 }
   if (tpl != NULL) {
-  { __typeof__(tpl_len[0]) __flowc_st10157 = flowc_resolve_add_templates((p).arena, root, src, own, tpl, tpl_cap, tpl_len[0]); tpl_len[0] = __flowc_st10157; }
+  { __typeof__(tpl_len[0]) __flowc_st10729 = flowc_resolve_add_templates((p).arena, root, src, own, tpl, tpl_cap, tpl_len[0]); tpl_len[0] = __flowc_st10729; }
 }
   int32_t _setf = setenv("FLOWC_CGEN_FILE", path, 1);
   int32_t n = flowc_cgen_emit_sigs((p).arena, root, src, out, out_cap, flags, sigs, siglen[0]);
   if (sigs != NULL) {
-  { __typeof__(siglen[0]) __flowc_st10196 = flowc_cgen_collect_sigs((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st10196; }
-  { __typeof__(siglen[0]) __flowc_st10210 = flowc_eff_collect((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st10210; }
+  { __typeof__(siglen[0]) __flowc_st10768 = flowc_cgen_collect_sigs((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st10768; }
+  { __typeof__(siglen[0]) __flowc_st10782 = flowc_eff_collect((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st10782; }
 }
   flowc_parser_free(p);
   free(src);
@@ -80289,8 +80639,8 @@ int32_t flowc_bundle_semcheck(uint8_t* all_store, int32_t all_n, const char* sea
 }
   sem_check_program(c);
   sem_report(c);
-  { __typeof__(counts[0]) __flowc_st11645 = sem_error_count(c); counts[0] = __flowc_st11645; }
-  { __typeof__(counts[1]) __flowc_st11651 = sem_fatal_count(c); counts[1] = __flowc_st11651; }
+  { __typeof__(counts[0]) __flowc_st12217 = sem_error_count(c); counts[0] = __flowc_st12217; }
+  { __typeof__(counts[1]) __flowc_st12223 = sem_fatal_count(c); counts[1] = __flowc_st12223; }
   return 0;
 }
 

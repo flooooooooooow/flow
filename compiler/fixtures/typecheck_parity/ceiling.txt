@@ -16,3 +16,8 @@
 Darwin py-only 6 0
 Darwin agree-diff 1 0
 Darwin flowc-only 1 0
+#   warnings (#678): flowc prints the checker's warnings; none differ from
+#     the Python checker's (warnings.txt).
+Darwin warn-diff 0 0
+Darwin warn-py-only 0 0
+Darwin warn-flowc-only 0 0

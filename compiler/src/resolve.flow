@@ -78,6 +78,113 @@ function flowc_resolve_import_error(mpath: string, src: ptr<u8>, s: i32, e: i32)
     putchar(10)
 }
 
+function flowc_resolve_putstr(s: string) {
+    let p: ptr<u8> = s
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        putchar(p[i] as i32)
+        i = i + 1
+    }
+}
+
+# 1 when the directory `d` is a module directory of the Flow distribution:
+# lib/stdlib or lib/runtime, spelled relative or absolute.
+function flowc_resolve_is_dist_dir(d: string) -> i32 {
+    let p: ptr<u8> = d as ptr<u8>
+    if p == null {
+        return 0
+    }
+    let n: i32 = strlen(d) as i32
+    let mut i: i32 = 0
+    while i + 10 <= n {
+        if i == 0 or p[i - 1] == 47 {
+            if p[i] == 108 and p[i + 1] == 105 and p[i + 2] == 98 and p[i + 3] == 47 {
+                # "lib/" then "stdlib" or "runtime", then the end or a `/`.
+                let mut k: i32 = i + 4
+                let mut ok: i32 = 0
+                if k + 6 <= n and p[k] == 115 and p[k + 1] == 116 and p[k + 2] == 100 and p[k + 3] == 108 and p[k + 4] == 105 and p[k + 5] == 98 {
+                    k = k + 6
+                    ok = 1
+                } elif k + 7 <= n and p[k] == 114 and p[k + 1] == 117 and p[k + 2] == 110 and p[k + 3] == 116 and p[k + 4] == 105 and p[k + 5] == 109 and p[k + 6] == 101 {
+                    k = k + 7
+                    ok = 1
+                }
+                if ok == 1 and (k == n or p[k] == 47) {
+                    return 1
+                }
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# ModuleResolver._resolve_legacy_import_path: a string import may not be an
+# absolute path, start with `~`, or hold a `..` component. The Python host
+# refused it before looking for the file. `s`/`e` span the quoted path.
+# Modules of the Flow distribution itself (lib/stdlib, lib/runtime) may use
+# `..`: std.bytebuf reaches the compiler's byte buffer as
+# ../../compiler/src/bytebuf.flow, and the resolver folds the path to one
+# spelling (flowc_resolve_normalize). `mod_dir` is the importing module's
+# directory.
+function flowc_resolve_unsafe_import(src: ptr<u8>, s0: i32, e0: i32, mod_dir: string) -> i32 {
+    let mut s: i32 = s0
+    let mut e: i32 = e0
+    if s < e and src[s] == 34 {
+        s = s + 1
+    }
+    if e > s and src[e - 1] == 34 {
+        e = e - 1
+    }
+    if e <= s {
+        return 0
+    }
+    if src[s] == 47 or src[s] == 126 {
+        return 1
+    }
+    if flowc_resolve_is_dist_dir(mod_dir) == 1 {
+        return 0
+    }
+    let mut seg: i32 = s
+    let mut i: i32 = s
+    while i <= e {
+        if i == e or src[i] == 47 {
+            if i - seg == 2 and src[seg] == 46 and src[seg + 1] == 46 {
+                return 1
+            }
+            seg = i + 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# `<module>:<line>:<col>: error: Unsafe import path: <path>`, the Python
+# host's message, at the quoted path.
+function flowc_resolve_unsafe_import_error(mpath: string, src: ptr<u8>, s: i32, e: i32) {
+    let mut line: i32 = 1
+    let mut col: i32 = 1
+    let mut i: i32 = 0
+    while i < s and src[i] != 0 {
+        if src[i] == 10 {
+            line = line + 1
+            col = 1
+        } else {
+            col = col + 1
+        }
+        i = i + 1
+    }
+    flowc_resolve_putstr(mpath)
+    printf(":%d", line)
+    printf(":%d: error: Unsafe import path: ", col)
+    i = s + 1
+    while i < e - 1 {
+        putchar(src[i] as i32)
+        i = i + 1
+    }
+    putchar(10)
+}
+
 const FLOWC_RESOLVE_MAX_MODS: i32 = 128
 const FLOWC_RESOLVE_PATH_CAP: i32 = 256
 const FLOWC_RESOLVE_SRC_CAP: i32 = 1048576
@@ -2105,6 +2212,14 @@ function flowc_resolve_gather(
         let mut ii: i32 = 0
         while ii < p.arena.len {
             if p.arena.nodes[ii].kind == AST_IMPORT {
+                if p.arena.nodes[ii].ival == 2 and flowc_resolve_unsafe_import(src, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end, mod_search) == 1 {
+                    flowc_resolve_unsafe_import_error(mpath, src, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end)
+                    flowc_parser_free(p)
+                    free(mod_dir)
+                    free(imp_path)
+                    free(src)
+                    return 0 - 1
+                }
                 let plen: i32 = flowc_resolve_import_at(src, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end, p.arena.nodes[ii].ival, mod_search, search_dir, project_root, imp_path)
                 if plen != 0 - 3 {
                     if plen < 0 {

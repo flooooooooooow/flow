@@ -1,0 +1,15 @@
+# expect: flow stage params `Gain { ... }` (line 13) are only valid for a flow used as a pipeline stage inside a flow `output`
+flow Gain {
+    input x : f64
+    state z : f64 = 0.0
+    param k : f64 = 2.0
+    output y : f64 = x * k
+    z evolves as 0.0
+}
+
+function main() -> i32 {
+    let s: f64 = 1.0
+    # Only a flow `output` pipeline gives `Gain { k: ... }` a meaning.
+    let r: f64 = s |> Gain { k: 3.0 }
+    return 0
+}

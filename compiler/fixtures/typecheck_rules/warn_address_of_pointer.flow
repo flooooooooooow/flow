@@ -1,0 +1,14 @@
+# warn: Taking the address of a pointer (got ptr<Node>); this produces ptr<ptr<T>> - ensure the callee expects a pointer-to-pointer
+struct Node { x: i32 }
+
+function callee(pp: ptr<ptr<Node>>) -> i32 {
+    return 0
+}
+
+function caller(p: ptr<Node>) -> i32 {
+    return callee(&p)
+}
+
+function main() -> i32 {
+    return 0
+}
