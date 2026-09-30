@@ -511,6 +511,62 @@ flowc_runtime_archive() {
     [ -f "$FLOWC_RT_ARCHIVE" ]
 }
 
+# The [native] C sources of the program's project and of the packages it has
+# installed (sqlite, http, ...). The package manager compiles each source into
+# a cached object under <project>/build/flow_native/ with the flags that
+# build-native uses, and names the objects and link flags. Sets
+# FLOW_PKG_NATIVE_ARGS. A project whose flow.toml files declare no [native]
+# table skips the package manager.
+flow_pkg_native_link_args() {
+    local program="$1"
+    local cc_bin="$2"
+    FLOW_PKG_NATIVE_ARGS=()
+    [ -n "$program" ] || return 0
+    local dir
+    dir="$(cd "$(dirname "$program")" 2>/dev/null && pwd -P)" || return 0
+    while [ ! -f "$dir/flow.toml" ]; do
+        [ "$dir" = "/" ] && return 0
+        dir="$(dirname "$dir")"
+    done
+    local -a tomls=("$dir/flow.toml")
+    local t
+    for t in "$dir"/flow_packages/*/flow.toml; do
+        [ -f "$t" ] && tomls+=("$t")
+    done
+    if ! grep -qs '^[[:space:]]*\[native\]' "${tomls[@]}"; then
+        return 0
+    fi
+    local cxx=c++
+    if [ "$cc_bin" = clang ] && command -v clang++ > /dev/null 2>&1; then
+        cxx=clang++
+    fi
+    local out
+    out="$(mktemp "${TMPDIR:-/tmp}/flow-native-link.XXXXXX")" || return 1
+    local abs_program
+    abs_program="$(cd "$(dirname "$program")" && pwd -P)/$(basename "$program")"
+    if ! flow_pkg_native native-link --program "$abs_program" --out "$out" \
+            --cc "$cc_bin" --cxx "$cxx" --opt "-O${FLOW_OPT_LEVEL:-2}" >&2; then
+        rm -f "$out"
+        print_error "Could not build the [native] sources of $dir"
+        return 1
+    fi
+    local line
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        if [ "$line" = "@cxx" ]; then
+            if [ "$(uname -s)" = "Darwin" ]; then
+                FLOW_PKG_NATIVE_ARGS+=("-lc++")
+            else
+                FLOW_PKG_NATIVE_ARGS+=("-lstdc++")
+            fi
+        else
+            FLOW_PKG_NATIVE_ARGS+=("$line")
+        fi
+    done < "$out"
+    rm -f "$out"
+    return 0
+}
+
 flowc_link_c() {
     local c_file="$1"
     local exe_file="$2"
@@ -524,6 +580,10 @@ flowc_link_c() {
     if [ -n "$program" ]; then
         inc+=("-I$(dirname "$program")")
     fi
+    if ! flow_pkg_native_link_args "$program" "$cc_bin"; then
+        print_error "C compilation/linking failed (flowc host)"
+        return 1
+    fi
     # FLOWC_NO_RUNTIME=1 links the program alone, as before the runtime
     # archive existed.
     if [ "${FLOWC_NO_RUNTIME:-}" = "1" ]; then
@@ -531,7 +591,8 @@ flowc_link_c() {
         if ! "$cc_bin" "${FLOW_COLLECTED_CFLAGS[@]}" "-O${FLOW_OPT_LEVEL:-2}" \
             "${inc[@]+"${inc[@]}"}" \
             "${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}" \
-            -o "$exe_file" "$c_file" -lm; then
+            -o "$exe_file" "$c_file" \
+            "${FLOW_PKG_NATIVE_ARGS[@]+"${FLOW_PKG_NATIVE_ARGS[@]}"}" -lm; then
             print_error "C compilation/linking failed (flowc host)"
             return 1
         fi
@@ -545,7 +606,8 @@ flowc_link_c() {
     fi
     if ! "$cc_bin" "${FLOW_COLLECTED_CFLAGS[@]}" "-O${FLOW_OPT_LEVEL:-2}" \
         "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" "${inc[@]+"${inc[@]}"}" \
-        -o "$exe_file" "$c_file" "$FLOWC_RT_ARCHIVE" \
+        -o "$exe_file" "$c_file" \
+        "${FLOW_PKG_NATIVE_ARGS[@]+"${FLOW_PKG_NATIVE_ARGS[@]}"}" "$FLOWC_RT_ARCHIVE" \
         "${FLOW_GPU_LDFLAGS[@]+"${FLOW_GPU_LDFLAGS[@]}"}" "${FLOW_CONC_LDFLAGS[@]}" \
         "${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}" -lm; then
         print_error "C compilation/linking failed (flowc host)"

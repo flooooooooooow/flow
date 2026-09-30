@@ -1,0 +1,24 @@
+# Every span spelling zero-initialises a module static from `null`, not just
+# `span<T>` (#1048). A span is a struct in C, so `&[T]` and `&mut [T]` statics
+# emitted `= NULL` and C rejected them.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+let mut reads: &[f32] = null
+
+let mut writes: &mut [i32] = null
+
+@lifetime(application)
+let mut cache: span<f32> = null
+
+function main() -> i32 {
+    if reads.len != 0 {
+        return 1
+    }
+    if writes.len != 0 {
+        return 2
+    }
+    if cache.len != 0 {
+        return 3
+    }
+    return 0
+}

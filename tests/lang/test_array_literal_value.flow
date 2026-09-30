@@ -1,0 +1,43 @@
+# An array literal is a C initializer list, which is not an expression: it
+# is legal after `=` in a declaration and nested in another list, nowhere
+# else. Used as a value it needs the type of a compound literal (#1050).
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+let mut hits: i32 = 0
+
+function bump() -> i32 {
+    hits = hits + 1
+    return hits
+}
+
+function main() -> i32 {
+    # A literal as a statement evaluates its elements, rows included.
+    [bump(), bump()]
+    if hits != 2 { return 1 }
+    [[bump(), bump()], [bump()]]
+    if hits != 5 { return 2 }
+    [1, 2, 3, 4, 5]
+
+    # Indexed where it is written.
+    if [10, 20, 30][1] != 20 { return 3 }
+    if [10, 20, 30][0] + [4, 5][1] != 15 { return 4 }
+    if [[1, 2], [3, 4]][1][0] != 3 { return 5 }
+
+    # len of a literal is its own element count.
+    if len([1, 2, 3]) != 3 { return 6 }
+
+    # Cast to a pointer: the cast's element type names the literal.
+    let p: ptr<i32> = [7, 8, 9] as ptr<i32>
+    if p[2] != 9 { return 7 }
+
+    # With no annotation the element type and the size come from the literal.
+    let a = [1, 2, 3]
+    if a[2] != 3 { return 8 }
+    let rows = [[1, 2], [3, 4]]
+    if rows[1][1] != 4 { return 9 }
+
+    # Elements that are not i32 keep their own type.
+    if [1.5, 2.5][1] != 2.5 { return 10 }
+    if [true, false][0] != true { return 11 }
+    return 0
+}

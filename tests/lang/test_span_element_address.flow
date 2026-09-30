@@ -1,0 +1,31 @@
+# `&xs[i]` and `&xs.data[i]` on a span must address the span's own storage,
+# so a callee writing through the pointer updates the span (#908).
+
+function put(p: ptr<f64>, v: f64) -> void {
+    p[0] = v
+}
+
+function via_index(s: span<mut f64>, n: i32) -> void {
+    for i in 0 to n {
+        put(&s[i], (i as f64) + 0.5)
+    }
+}
+
+function via_data(s: span<mut f64>, n: i32) -> void {
+    for i in 0 to n {
+        put(&s.data[i], (i as f64) * 2.0)
+    }
+}
+
+function main() -> i32 {
+    let mut a: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    via_index(a, 4)
+    if a[3] != 3.5 {
+        return 1
+    }
+    via_data(a, 4)
+    if a[3] != 6.0 or a[1] != 2.0 {
+        return 2
+    }
+    return 0
+}

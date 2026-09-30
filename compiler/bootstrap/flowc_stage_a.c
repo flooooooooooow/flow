@@ -8272,6 +8272,29 @@ int32_t mlg_addr_lvalue(Mlg* m, int32_t e) {
   int32_t arr = (((m[0]).arena).nodes[e]).a;
   int32_t ie = (((m[0]).arena).nodes[e]).b;
   int32_t arr_ft = mlg_expr_ft(m, arr);
+  int32_t span_e = AST_NONE;
+  int32_t span_ft = FT_NONE;
+  if (mlg_ft_is_span(m, arr_ft) == 1) {
+  span_e = arr;
+  span_ft = arr_ft;
+} else {
+  if (mlg_kind(m, arr) == AST_FIELD_ACCESS && mlg_span_is(m, mlg_ns(m, arr), mlg_ne(m, arr), "data") == 1) {
+  int32_t obj = (((m[0]).arena).nodes[arr]).a;
+  int32_t oft = mlg_expr_ft(m, obj);
+  if (mlg_ft_is_span(m, oft) == 1) {
+  span_e = obj;
+  span_ft = oft;
+}
+}
+}
+  if (span_e != AST_NONE) {
+  int32_t sv = mlg_emit_expr(m, span_e);
+  int32_t siv = mlg_emit_expr(m, ie);
+  int32_t sit = mlg_index_type(m, ie, siv);
+  int32_t set = mlg_ft_to_mt(m, (((m[0]).arena).nodes[span_ft]).a, e);
+  int32_t sdp = mlg_span_data(m, sv, e);
+  return mlg_ptr_gep(m, sdp, siv, sit, set);
+}
   if (mlg_ft_is_pointer(m, arr_ft) == 1) {
   int32_t av = mlg_emit_expr(m, arr);
   int32_t iv = mlg_emit_expr(m, ie);
@@ -8792,19 +8815,19 @@ int32_t mlg_capture_info(Mlg* m, int32_t ns, int32_t ne, int32_t* mt, int32_t* f
   mt[0] = (m[0]).l_mt[l];
   ft[0] = (m[0]).l_ft[l];
   if (mlg_ft_is_fn(m, ft[0]) == 1) {
-  { __typeof__(mt[0]) __flowc_st26201 = mlg_clo_mt(m, AST_NONE); mt[0] = __flowc_st26201; }
+  { __typeof__(mt[0]) __flowc_st26315 = mlg_clo_mt(m, AST_NONE); mt[0] = __flowc_st26315; }
 }
   return 1;
 }
   int32_t ck = mlg_find_const(m, ns, ne);
   if (ck >= 0) {
-  { __typeof__(mt[0]) __flowc_st26223 = mlg_const_mt(m, ck); mt[0] = __flowc_st26223; }
+  { __typeof__(mt[0]) __flowc_st26337 = mlg_const_mt(m, ck); mt[0] = __flowc_st26337; }
   ft[0] = (((m[0]).arena).nodes[(m[0]).c_node[ck]]).a;
   return 1;
 }
   int32_t sk = mlg_find_static(m, ns, ne);
   if (sk >= 0) {
-  { __typeof__(mt[0]) __flowc_st26260 = mlg_static_mt(m, sk); mt[0] = __flowc_st26260; }
+  { __typeof__(mt[0]) __flowc_st26374 = mlg_static_mt(m, sk); mt[0] = __flowc_st26374; }
   if (mlg_static_llarr(m, sk) != MT_NONE) {
   mt[0] = MT_PTR;
 }
@@ -9338,7 +9361,7 @@ int32_t mlg_emit_lambda(Mlg* m, int32_t f) {
   int32_t p = params;
   i = 0;
   while (p != AST_NONE) {
-  { __typeof__(pts[i]) __flowc_st28742 = mlg_lam_param_mt(m, p); pts[i] = __flowc_st28742; }
+  { __typeof__(pts[i]) __flowc_st28856 = mlg_lam_param_mt(m, p); pts[i] = __flowc_st28856; }
   if (pts[i] == MT_NONE) {
   return V_NONE;
 }
@@ -9380,7 +9403,7 @@ int32_t mlg_emit_lambda(Mlg* m, int32_t f) {
   (m[0]).inside_scf_for = 0;
   (m[0]).ret_mt = rt;
   (m[0]).ret_ft = (((m[0]).arena).nodes[f]).b;
-  { __typeof__((m[0]).env_val) __flowc_st28983 = mlg_new_val(m, MT_PTR); (m[0]).env_val = __flowc_st28983; }
+  { __typeof__((m[0]).env_val) __flowc_st29097 = mlg_new_val(m, MT_PTR); (m[0]).env_val = __flowc_st29097; }
   mlg_line(m);
   mlg_s(m, "func.func private @lambda_");
   mlg_i(m, lam_id);
@@ -9419,7 +9442,7 @@ int32_t mlg_emit_lambda(Mlg* m, int32_t f) {
   i = 0;
   while (p != AST_NONE) {
   (m[0]).at[i] = pts[i];
-  { __typeof__((m[0]).au[i]) __flowc_st29179 = mlg_ft_unsigned(m, (((m[0]).arena).nodes[p]).b); (m[0]).au[i] = __flowc_st29179; }
+  { __typeof__((m[0]).au[i]) __flowc_st29293 = mlg_ft_unsigned(m, (((m[0]).arena).nodes[p]).b); (m[0]).au[i] = __flowc_st29293; }
   (m[0]).a_llarr[i] = 0;
   mlg_add_local(m, mlg_ns(m, p), mlg_ne(m, p), pts[i], (((m[0]).arena).nodes[p]).b, ((0 - 1) - i));
   i = (i + 1);
@@ -9729,7 +9752,7 @@ int32_t mlg_emit_memref_lit(Mlg* m, int32_t e, int32_t hint) {
   int32_t n = 0;
   int32_t el = (((m[0]).arena).nodes[e]).a;
   while (n < total && (m[0]).err == 0) {
-  { __typeof__(vals[n]) __flowc_st30678 = mlg_emit_expr(m, el); vals[n] = __flowc_st30678; }
+  { __typeof__(vals[n]) __flowc_st30792 = mlg_emit_expr(m, el); vals[n] = __flowc_st30792; }
   n = (n + 1);
   if (rep < 0) {
   el = (((m[0]).arena).nodes[el]).next;
@@ -9749,7 +9772,7 @@ int32_t mlg_emit_memref_lit(Mlg* m, int32_t e, int32_t hint) {
   while (i < n) {
   int32_t st = mlg_val_mt(m, vals[i], el);
   if (st != hint) {
-  { __typeof__(vals[i]) __flowc_st30773 = mlg_cast(m, vals[i], st, hint); vals[i] = __flowc_st30773; }
+  { __typeof__(vals[i]) __flowc_st30887 = mlg_cast(m, vals[i], st, hint); vals[i] = __flowc_st30887; }
 }
   i = (i + 1);
   if (rep < 0) {
@@ -9847,7 +9870,7 @@ int32_t mlg_emit_array_lit(Mlg* m, int32_t e, int32_t la) {
   int32_t n = 0;
   int32_t el = (((m[0]).arena).nodes[e]).a;
   while (n < total && (m[0]).err == 0) {
-  { __typeof__(vals[n]) __flowc_st31182 = mlg_emit_expr(m, el); vals[n] = __flowc_st31182; }
+  { __typeof__(vals[n]) __flowc_st31296 = mlg_emit_expr(m, el); vals[n] = __flowc_st31296; }
   n = (n + 1);
   if (rep < 0) {
   el = (((m[0]).arena).nodes[el]).next;
@@ -9885,7 +9908,7 @@ int32_t mlg_emit_array_lit(Mlg* m, int32_t e, int32_t la) {
   st = mlg_expr_mt(m, el);
 }
   if (st != store_t) {
-  { __typeof__(vals[i]) __flowc_st31357 = mlg_cast(m, vals[i], st, store_t); vals[i] = __flowc_st31357; }
+  { __typeof__(vals[i]) __flowc_st31471 = mlg_cast(m, vals[i], st, store_t); vals[i] = __flowc_st31471; }
 }
   i = (i + 1);
   if (rep < 0) {
@@ -10028,7 +10051,7 @@ void mlg_emit_let(Mlg* m, int32_t st) {
   int32_t l = mlg_add_local(m, mlg_ns(m, st), mlg_ne(m, st), vt, ty, v);
   int32_t is_mut = (((m[0]).arena).nodes[st]).ival;
   if (mlg_is_struct_mt(mt) == 1 && mlg_st32(m) == 0 || is_mut == 1 && mlg_is_memref_mt(mt) == 0) {
-  { __typeof__((m[0]).l_alloca[l]) __flowc_st32014 = mlg_alloca_store(m, v, mt); (m[0]).l_alloca[l] = __flowc_st32014; }
+  { __typeof__((m[0]).l_alloca[l]) __flowc_st32128 = mlg_alloca_store(m, v, mt); (m[0]).l_alloca[l] = __flowc_st32128; }
 }
   int32_t tag = mlg_vllarr(m, v);
   if (tag != 0) {
@@ -10950,7 +10973,7 @@ void mlg_emit_scf_if_yield(Mlg* m, int32_t st, int32_t cv, int32_t* locs, int32_
   mlg_line(m);
   int32_t i = 0;
   while (i < nm) {
-  { __typeof__(res[i]) __flowc_st36211 = mlg_new_val(m, (m[0]).l_mt[locs[i]]); res[i] = __flowc_st36211; }
+  { __typeof__(res[i]) __flowc_st36325 = mlg_new_val(m, (m[0]).l_mt[locs[i]]); res[i] = __flowc_st36325; }
   if (i > 0) {
   mlg_s(m, ", ");
 }
@@ -11233,8 +11256,8 @@ int32_t mlg_pat_shape(Mlg* m, int32_t arm, int32_t p, int32_t* ns, int32_t* ne) 
   return MP_WILD;
 }
   if (pk == 2) {
-  { __typeof__(ns[0]) __flowc_st37553 = mlg_ns(m, arm); ns[0] = __flowc_st37553; }
-  { __typeof__(ne[0]) __flowc_st37560 = mlg_ne(m, arm); ne[0] = __flowc_st37560; }
+  { __typeof__(ns[0]) __flowc_st37667 = mlg_ns(m, arm); ns[0] = __flowc_st37667; }
+  { __typeof__(ne[0]) __flowc_st37674 = mlg_ne(m, arm); ne[0] = __flowc_st37674; }
   if (mlg_enum_tag(m, ns[0], ne[0], (&vi)) >= 0) {
   return MP_CMP;
 }
@@ -11243,14 +11266,14 @@ int32_t mlg_pat_shape(Mlg* m, int32_t arm, int32_t p, int32_t* ns, int32_t* ne) 
   if (pk == 0 || pk == 3 || pk == 4) {
   int32_t lit = (((m[0]).arena).nodes[arm]).a;
   if (mlg_kind(m, lit) == AST_IDENT) {
-  { __typeof__(ns[0]) __flowc_st37613 = mlg_ns(m, lit); ns[0] = __flowc_st37613; }
-  { __typeof__(ne[0]) __flowc_st37620 = mlg_ne(m, lit); ne[0] = __flowc_st37620; }
+  { __typeof__(ns[0]) __flowc_st37727 = mlg_ns(m, lit); ns[0] = __flowc_st37727; }
+  { __typeof__(ne[0]) __flowc_st37734 = mlg_ne(m, lit); ne[0] = __flowc_st37734; }
 }
   return MP_CMP;
 }
   if (pk == 5) {
-  { __typeof__(ns[0]) __flowc_st37636 = mlg_ns(m, arm); ns[0] = __flowc_st37636; }
-  { __typeof__(ne[0]) __flowc_st37643 = mlg_ne(m, arm); ne[0] = __flowc_st37643; }
+  { __typeof__(ns[0]) __flowc_st37750 = mlg_ns(m, arm); ns[0] = __flowc_st37750; }
+  { __typeof__(ne[0]) __flowc_st37757 = mlg_ne(m, arm); ne[0] = __flowc_st37757; }
   return MP_STRUCT;
 }
   if (pk == 6) {
@@ -11261,8 +11284,8 @@ int32_t mlg_pat_shape(Mlg* m, int32_t arm, int32_t p, int32_t* ns, int32_t* ne) 
 }
   int32_t k = mlg_kind(m, p);
   if (k == AST_IDENT) {
-  { __typeof__(ns[0]) __flowc_st37678 = mlg_ns(m, p); ns[0] = __flowc_st37678; }
-  { __typeof__(ne[0]) __flowc_st37685 = mlg_ne(m, p); ne[0] = __flowc_st37685; }
+  { __typeof__(ns[0]) __flowc_st37792 = mlg_ns(m, p); ns[0] = __flowc_st37792; }
+  { __typeof__(ne[0]) __flowc_st37799 = mlg_ne(m, p); ne[0] = __flowc_st37799; }
   if ((ne[0] - ns[0]) == 1 && (m[0]).src[ns[0]] == 95) {
   return MP_WILD;
 }
@@ -11275,8 +11298,8 @@ int32_t mlg_pat_shape(Mlg* m, int32_t arm, int32_t p, int32_t* ns, int32_t* ne) 
   return MP_CMP;
 }
   if (k == AST_CALL && mlg_struct_pat_ok(m, p) == 1) {
-  { __typeof__(ns[0]) __flowc_st37764 = mlg_ns(m, p); ns[0] = __flowc_st37764; }
-  { __typeof__(ne[0]) __flowc_st37771 = mlg_ne(m, p); ne[0] = __flowc_st37771; }
+  { __typeof__(ns[0]) __flowc_st37878 = mlg_ns(m, p); ns[0] = __flowc_st37878; }
+  { __typeof__(ne[0]) __flowc_st37885 = mlg_ne(m, p); ne[0] = __flowc_st37885; }
   return MP_STRUCT;
 }
   if (k == AST_UNARY && (((m[0]).arena).nodes[p]).ival == TOK_MINUS) {
@@ -11380,7 +11403,7 @@ int32_t mlg_emit_list_pattern(Mlg* m, int32_t arm, int32_t scrut, int32_t val, i
   return V_NONE;
 }
   int32_t l = mlg_add_local(m, mlg_ns(m, tmp), mlg_ne(m, tmp), val_t, mlg_expr_ft(m, scrut), val);
-  { __typeof__((m[0]).l_llarr[l]) __flowc_st38260 = mlg_vllarr(m, val); (m[0]).l_llarr[l] = __flowc_st38260; }
+  { __typeof__((m[0]).l_llarr[l]) __flowc_st38374 = mlg_vllarr(m, val); (m[0]).l_llarr[l] = __flowc_st38374; }
   uint8_t* digits = (uint8_t*)(malloc(16));
   int32_t* conds = (int32_t*)(mlg_alloc_i32(64));
   int32_t nconds = 0;
@@ -11514,8 +11537,8 @@ void mlg_emit_match(Mlg* m, int32_t st) {
   int32_t* next_l = (int32_t*)(mlg_alloc_i32(nc));
   int32_t i = 0;
   while (i < nc) {
-  { __typeof__(case_l[i]) __flowc_st38864 = mlg_new_label(m); case_l[i] = __flowc_st38864; }
-  { __typeof__(next_l[i]) __flowc_st38870 = mlg_new_label(m); next_l[i] = __flowc_st38870; }
+  { __typeof__(case_l[i]) __flowc_st38978 = mlg_new_label(m); case_l[i] = __flowc_st38978; }
+  { __typeof__(next_l[i]) __flowc_st38984 = mlg_new_label(m); next_l[i] = __flowc_st38984; }
   i = (i + 1);
 }
   int32_t end_l = mlg_new_label(m);
@@ -11919,12 +11942,12 @@ void mlg_emit_scf_for(Mlg* m, int32_t st, int32_t step_val) {
   mlg_line(m);
   int32_t i = 0;
   while (i < nc) {
-  { __typeof__(its[i]) __flowc_st40751 = mlg_new_val(m, (m[0]).l_mt[locs[i]]); its[i] = __flowc_st40751; }
+  { __typeof__(its[i]) __flowc_st40865 = mlg_new_val(m, (m[0]).l_mt[locs[i]]); its[i] = __flowc_st40865; }
   i = (i + 1);
 }
   i = 0;
   while (i < nc) {
-  { __typeof__(res[i]) __flowc_st40780 = mlg_new_val(m, (m[0]).l_mt[locs[i]]); res[i] = __flowc_st40780; }
+  { __typeof__(res[i]) __flowc_st40894 = mlg_new_val(m, (m[0]).l_mt[locs[i]]); res[i] = __flowc_st40894; }
   if (i > 0) {
   mlg_s(m, ", ");
 }
@@ -13308,7 +13331,7 @@ void mlg_emit_function(Mlg* m, int32_t f) {
   mlg_s(m, ": ");
   mlg_put_type(m, pt);
   (m[0]).at[i] = pt;
-  { __typeof__((m[0]).au[i]) __flowc_st47210 = mlg_ft_unsigned(m, (((m[0]).arena).nodes[p]).a); (m[0]).au[i] = __flowc_st47210; }
+  { __typeof__((m[0]).au[i]) __flowc_st47324 = mlg_ft_unsigned(m, (((m[0]).arena).nodes[p]).a); (m[0]).au[i] = __flowc_st47324; }
   (m[0]).a_llarr[i] = 0;
   int32_t la = mlg_llarr_from_ft(m, (((m[0]).arena).nodes[p]).a, p);
   if (la != MT_NONE) {
@@ -13331,7 +13354,7 @@ void mlg_emit_function(Mlg* m, int32_t f) {
   int32_t c = mlg_materialize(m, ((0 - 1) - i), pt2);
   (m[0]).l_ssa[l] = c;
   if (mlg_st32(m) == 0) {
-  { __typeof__((m[0]).l_alloca[l]) __flowc_st47365 = mlg_alloca_store(m, c, pt2); (m[0]).l_alloca[l] = __flowc_st47365; }
+  { __typeof__((m[0]).l_alloca[l]) __flowc_st47479 = mlg_alloca_store(m, c, pt2); (m[0]).l_alloca[l] = __flowc_st47479; }
 }
 }
   i = (i + 1);
@@ -13973,8 +13996,8 @@ void mlg_add_enum(Mlg* m, int32_t d) {
   if (s == AST_NONE) {
   return;
 }
-  { __typeof__((((m[0]).arena).nodes[s]).name_start) __flowc_st50398 = mlg_ns(m, d); (((m[0]).arena).nodes[s]).name_start = __flowc_st50398; }
-  { __typeof__((((m[0]).arena).nodes[s]).name_end) __flowc_st50410 = mlg_ne(m, d); (((m[0]).arena).nodes[s]).name_end = __flowc_st50410; }
+  { __typeof__((((m[0]).arena).nodes[s]).name_start) __flowc_st50512 = mlg_ns(m, d); (((m[0]).arena).nodes[s]).name_start = __flowc_st50512; }
+  { __typeof__((((m[0]).arena).nodes[s]).name_end) __flowc_st50524 = mlg_ne(m, d); (((m[0]).arena).nodes[s]).name_end = __flowc_st50524; }
   uint8_t* tag_s = (uint8_t*)("tag");
   uint8_t* i32_s = (uint8_t*)("i32");
   int32_t tagn = mlg_xput(m, tag_s, 3);
@@ -15524,7 +15547,7 @@ int32_t mn_split_flat(Mlg* m, uint8_t* buf, int32_t n, int32_t* out, int32_t cap
   while (i <= n) {
   if (i == n || buf[i] == 95) {
   if (k < cap) {
-  { __typeof__(out[k]) __flowc_st57775 = mn_flat_buf(m, (buf + s), (i - s)); out[k] = __flowc_st57775; }
+  { __typeof__(out[k]) __flowc_st57889 = mn_flat_buf(m, (buf + s), (i - s)); out[k] = __flowc_st57889; }
 }
   k = (k + 1);
   s = (i + 1);
@@ -15661,7 +15684,7 @@ void mn_request_call(Mlg* m, Mono* mo, int32_t e) {
   int32_t np = (mo[0]).gf_ntp[i];
   int32_t sfx = ((s + gl) + 1);
   if (np == 1) {
-  { __typeof__(targs[0]) __flowc_st58476 = mn_flat(m, sfx, t); targs[0] = __flowc_st58476; }
+  { __typeof__(targs[0]) __flowc_st58590 = mn_flat(m, sfx, t); targs[0] = __flowc_st58590; }
   nt = 1;
   g = i;
   best_len = gl;
@@ -15766,7 +15789,7 @@ void mn_scan_expr(Mlg* m, Mono* mo, int32_t e) {
   if (parts >= np) {
   int32_t _r = mn_request(m, mo, 0, g, tmp, np);
 } else {
-  { __typeof__(tmp[0]) __flowc_st59012 = mn_flat(m, (us + 1), t); tmp[0] = __flowc_st59012; }
+  { __typeof__(tmp[0]) __flowc_st59126 = mn_flat(m, (us + 1), t); tmp[0] = __flowc_st59126; }
   int32_t _r2 = mn_request(m, mo, 0, g, tmp, 1);
 }
   mlg_free_i32(tmp);
@@ -16114,7 +16137,7 @@ int32_t mn_subst_expr(Mlg* m, Mono* mo, int32_t e, int32_t* tps, int32_t ntp, in
   return e;
 }
   int32_t c = mn_copy(m, e);
-  { __typeof__((((m[0]).arena).nodes[c]).a) __flowc_st60695 = mn_subst_expr_chain(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs); (((m[0]).arena).nodes[c]).a = __flowc_st60695; }
+  { __typeof__((((m[0]).arena).nodes[c]).a) __flowc_st60809 = mn_subst_expr_chain(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs); (((m[0]).arena).nodes[c]).a = __flowc_st60809; }
   int32_t s = mlg_ns(m, e);
   int32_t t = mlg_ne(m, e);
   int32_t* used = (int32_t*)(mlg_alloc_i32(16));
@@ -16166,7 +16189,7 @@ int32_t mn_subst_expr(Mlg* m, Mono* mo, int32_t e, int32_t* tps, int32_t ntp, in
   int32_t f = (((m[0]).arena).nodes[e]).a;
   while (f != AST_NONE) {
   int32_t fc = mn_copy(m, f);
-  { __typeof__((((m[0]).arena).nodes[fc]).a) __flowc_st61021 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[f]).a, tps, ntp, targs); (((m[0]).arena).nodes[fc]).a = __flowc_st61021; }
+  { __typeof__((((m[0]).arena).nodes[fc]).a) __flowc_st61135 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[f]).a, tps, ntp, targs); (((m[0]).arena).nodes[fc]).a = __flowc_st61135; }
   if (head == AST_NONE) {
   head = fc;
 } else {
@@ -16177,34 +16200,34 @@ int32_t mn_subst_expr(Mlg* m, Mono* mo, int32_t e, int32_t* tps, int32_t ntp, in
 }
   (((m[0]).arena).nodes[c2]).a = head;
   if ((((m[0]).arena).nodes[e]).c != AST_NONE) {
-  { __typeof__((((m[0]).arena).nodes[c2]).c) __flowc_st61098 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).c, tps, ntp, targs); (((m[0]).arena).nodes[c2]).c = __flowc_st61098; }
+  { __typeof__((((m[0]).arena).nodes[c2]).c) __flowc_st61212 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).c, tps, ntp, targs); (((m[0]).arena).nodes[c2]).c = __flowc_st61212; }
 }
   mn_resolve_lit_name(m, mo, c2, tps, ntp, targs);
   return c2;
 }
   if (k == AST_BINOP || k == AST_INDEX) {
   int32_t c3 = mn_copy(m, e);
-  { __typeof__((((m[0]).arena).nodes[c3]).a) __flowc_st61147 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs); (((m[0]).arena).nodes[c3]).a = __flowc_st61147; }
-  { __typeof__((((m[0]).arena).nodes[c3]).b) __flowc_st61170 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).b, tps, ntp, targs); (((m[0]).arena).nodes[c3]).b = __flowc_st61170; }
+  { __typeof__((((m[0]).arena).nodes[c3]).a) __flowc_st61261 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs); (((m[0]).arena).nodes[c3]).a = __flowc_st61261; }
+  { __typeof__((((m[0]).arena).nodes[c3]).b) __flowc_st61284 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).b, tps, ntp, targs); (((m[0]).arena).nodes[c3]).b = __flowc_st61284; }
   if (k == AST_INDEX && (((m[0]).arena).nodes[e]).ival != 0) {
-  { __typeof__((((m[0]).arena).nodes[c3]).c) __flowc_st61207 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).c, tps, ntp, targs); (((m[0]).arena).nodes[c3]).c = __flowc_st61207; }
+  { __typeof__((((m[0]).arena).nodes[c3]).c) __flowc_st61321 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).c, tps, ntp, targs); (((m[0]).arena).nodes[c3]).c = __flowc_st61321; }
 }
   return c3;
 }
   if (k == AST_UNARY || k == AST_FIELD_ACCESS) {
   int32_t c4 = mn_copy(m, e);
-  { __typeof__((((m[0]).arena).nodes[c4]).a) __flowc_st61248 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs); (((m[0]).arena).nodes[c4]).a = __flowc_st61248; }
+  { __typeof__((((m[0]).arena).nodes[c4]).a) __flowc_st61362 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs); (((m[0]).arena).nodes[c4]).a = __flowc_st61362; }
   return c4;
 }
   if (k == AST_ARRAY_LIT) {
   int32_t c5 = mn_copy(m, e);
-  { __typeof__((((m[0]).arena).nodes[c5]).a) __flowc_st61283 = mn_subst_expr_chain(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs); (((m[0]).arena).nodes[c5]).a = __flowc_st61283; }
+  { __typeof__((((m[0]).arena).nodes[c5]).a) __flowc_st61397 = mn_subst_expr_chain(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs); (((m[0]).arena).nodes[c5]).a = __flowc_st61397; }
   return c5;
 }
   if (k == AST_CAST) {
   int32_t c6 = mn_copy(m, e);
-  { __typeof__((((m[0]).arena).nodes[c6]).a) __flowc_st61318 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs); (((m[0]).arena).nodes[c6]).a = __flowc_st61318; }
-  { __typeof__((((m[0]).arena).nodes[c6]).b) __flowc_st61341 = mn_subst_type(m, mo, (((m[0]).arena).nodes[e]).b, tps, ntp, targs); (((m[0]).arena).nodes[c6]).b = __flowc_st61341; }
+  { __typeof__((((m[0]).arena).nodes[c6]).a) __flowc_st61432 = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs); (((m[0]).arena).nodes[c6]).a = __flowc_st61432; }
+  { __typeof__((((m[0]).arena).nodes[c6]).b) __flowc_st61455 = mn_subst_type(m, mo, (((m[0]).arena).nodes[e]).b, tps, ntp, targs); (((m[0]).arena).nodes[c6]).b = __flowc_st61455; }
   return c6;
 }
   return e;
@@ -16249,7 +16272,7 @@ void mn_resolve_lit_name(Mlg* m, Mono* mo, int32_t lit, int32_t* tps, int32_t nt
   int32_t n = np;
   int32_t parts = mn_split_flat(m, (((m[0]).src + us) + 1), ((t - us) - 1), tmp, 16);
   if (parts < np) {
-  { __typeof__(tmp[0]) __flowc_st61552 = mn_flat(m, (us + 1), t); tmp[0] = __flowc_st61552; }
+  { __typeof__(tmp[0]) __flowc_st61666 = mn_flat(m, (us + 1), t); tmp[0] = __flowc_st61666; }
   n = 1;
 }
   if (ntp > 0) {
@@ -16302,8 +16325,8 @@ int32_t mn_subst_stmt(Mlg* m, Mono* mo, int32_t st, int32_t* tps, int32_t ntp, i
   int32_t c = (((m[0]).arena).nodes[st]).c;
   if (k == AST_LET) {
   int32_t n = mn_copy(m, st);
-  { __typeof__((((m[0]).arena).nodes[n]).a) __flowc_st61848 = mn_subst_type(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n]).a = __flowc_st61848; }
-  { __typeof__((((m[0]).arena).nodes[n]).b) __flowc_st61864 = mn_subst_expr(m, mo, b, tps, ntp, targs); (((m[0]).arena).nodes[n]).b = __flowc_st61864; }
+  { __typeof__((((m[0]).arena).nodes[n]).a) __flowc_st61962 = mn_subst_type(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n]).a = __flowc_st61962; }
+  { __typeof__((((m[0]).arena).nodes[n]).b) __flowc_st61978 = mn_subst_expr(m, mo, b, tps, ntp, targs); (((m[0]).arena).nodes[n]).b = __flowc_st61978; }
   return n;
 }
   if (k == AST_RETURN || k == AST_EXPR_STMT) {
@@ -16314,40 +16337,40 @@ int32_t mn_subst_stmt(Mlg* m, Mono* mo, int32_t st, int32_t* tps, int32_t ntp, i
 }
 }
   int32_t n2 = mn_copy(m, st);
-  { __typeof__((((m[0]).arena).nodes[n2]).a) __flowc_st61957 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n2]).a = __flowc_st61957; }
+  { __typeof__((((m[0]).arena).nodes[n2]).a) __flowc_st62071 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n2]).a = __flowc_st62071; }
   return n2;
 }
   if (k == AST_ASSIGN) {
   int32_t n3 = mn_copy(m, st);
-  { __typeof__((((m[0]).arena).nodes[n3]).b) __flowc_st61985 = mn_subst_expr(m, mo, b, tps, ntp, targs); (((m[0]).arena).nodes[n3]).b = __flowc_st61985; }
+  { __typeof__((((m[0]).arena).nodes[n3]).b) __flowc_st62099 = mn_subst_expr(m, mo, b, tps, ntp, targs); (((m[0]).arena).nodes[n3]).b = __flowc_st62099; }
   if (mlg_kind(m, a) != AST_IDENT) {
-  { __typeof__((((m[0]).arena).nodes[n3]).a) __flowc_st62006 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n3]).a = __flowc_st62006; }
+  { __typeof__((((m[0]).arena).nodes[n3]).a) __flowc_st62120 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n3]).a = __flowc_st62120; }
 }
   return n3;
 }
   if (k == AST_IF) {
   int32_t n4 = mn_copy(m, st);
-  { __typeof__((((m[0]).arena).nodes[n4]).a) __flowc_st62036 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n4]).a = __flowc_st62036; }
-  { __typeof__((((m[0]).arena).nodes[n4]).b) __flowc_st62052 = mn_subst_block(m, mo, b, tps, ntp, targs); (((m[0]).arena).nodes[n4]).b = __flowc_st62052; }
-  { __typeof__((((m[0]).arena).nodes[n4]).c) __flowc_st62068 = mn_subst_block(m, mo, c, tps, ntp, targs); (((m[0]).arena).nodes[n4]).c = __flowc_st62068; }
+  { __typeof__((((m[0]).arena).nodes[n4]).a) __flowc_st62150 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n4]).a = __flowc_st62150; }
+  { __typeof__((((m[0]).arena).nodes[n4]).b) __flowc_st62166 = mn_subst_block(m, mo, b, tps, ntp, targs); (((m[0]).arena).nodes[n4]).b = __flowc_st62166; }
+  { __typeof__((((m[0]).arena).nodes[n4]).c) __flowc_st62182 = mn_subst_block(m, mo, c, tps, ntp, targs); (((m[0]).arena).nodes[n4]).c = __flowc_st62182; }
   return n4;
 }
   if (k == AST_WHILE) {
   int32_t n5 = mn_copy(m, st);
-  { __typeof__((((m[0]).arena).nodes[n5]).a) __flowc_st62096 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n5]).a = __flowc_st62096; }
-  { __typeof__((((m[0]).arena).nodes[n5]).b) __flowc_st62112 = mn_subst_block(m, mo, b, tps, ntp, targs); (((m[0]).arena).nodes[n5]).b = __flowc_st62112; }
+  { __typeof__((((m[0]).arena).nodes[n5]).a) __flowc_st62210 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n5]).a = __flowc_st62210; }
+  { __typeof__((((m[0]).arena).nodes[n5]).b) __flowc_st62226 = mn_subst_block(m, mo, b, tps, ntp, targs); (((m[0]).arena).nodes[n5]).b = __flowc_st62226; }
   return n5;
 }
   if (k == AST_FOR) {
   int32_t n6 = mn_copy(m, st);
-  { __typeof__((((m[0]).arena).nodes[n6]).a) __flowc_st62140 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n6]).a = __flowc_st62140; }
-  { __typeof__((((m[0]).arena).nodes[n6]).b) __flowc_st62156 = mn_subst_expr(m, mo, b, tps, ntp, targs); (((m[0]).arena).nodes[n6]).b = __flowc_st62156; }
-  { __typeof__((((m[0]).arena).nodes[n6]).c) __flowc_st62172 = mn_subst_block(m, mo, c, tps, ntp, targs); (((m[0]).arena).nodes[n6]).c = __flowc_st62172; }
+  { __typeof__((((m[0]).arena).nodes[n6]).a) __flowc_st62254 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n6]).a = __flowc_st62254; }
+  { __typeof__((((m[0]).arena).nodes[n6]).b) __flowc_st62270 = mn_subst_expr(m, mo, b, tps, ntp, targs); (((m[0]).arena).nodes[n6]).b = __flowc_st62270; }
+  { __typeof__((((m[0]).arena).nodes[n6]).c) __flowc_st62286 = mn_subst_block(m, mo, c, tps, ntp, targs); (((m[0]).arena).nodes[n6]).c = __flowc_st62286; }
   return n6;
 }
   if (k == AST_UNARY && (((m[0]).arena).nodes[st]).ival == KW_EXPECT) {
   int32_t n7 = mn_copy(m, st);
-  { __typeof__((((m[0]).arena).nodes[n7]).a) __flowc_st62211 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n7]).a = __flowc_st62211; }
+  { __typeof__((((m[0]).arena).nodes[n7]).a) __flowc_st62325 = mn_subst_expr(m, mo, a, tps, ntp, targs); (((m[0]).arena).nodes[n7]).a = __flowc_st62325; }
   return n7;
 }
   if (k == AST_BLOCK) {
@@ -16363,8 +16386,8 @@ void mn_gen_struct(Mlg* m, Mono* mo, int32_t r) {
   int32_t ntp = 0;
   int32_t x = (((m[0]).arena).nodes[d]).b;
   while (x != AST_NONE && ntp < 16) {
-  { __typeof__(tps[(2 * ntp)]) __flowc_st62290 = mlg_ns(m, x); tps[(2 * ntp)] = __flowc_st62290; }
-  { __typeof__(tps[((2 * ntp) + 1)]) __flowc_st62301 = mlg_ne(m, x); tps[((2 * ntp) + 1)] = __flowc_st62301; }
+  { __typeof__(tps[(2 * ntp)]) __flowc_st62404 = mlg_ns(m, x); tps[(2 * ntp)] = __flowc_st62404; }
+  { __typeof__(tps[((2 * ntp) + 1)]) __flowc_st62415 = mlg_ne(m, x); tps[((2 * ntp) + 1)] = __flowc_st62415; }
   ntp = (ntp + 1);
   x = (((m[0]).arena).nodes[x]).next;
 }
@@ -16378,7 +16401,7 @@ void mn_gen_struct(Mlg* m, Mono* mo, int32_t r) {
   int32_t f = (((m[0]).arena).nodes[d]).a;
   while (f != AST_NONE) {
   int32_t fc = mn_copy(m, f);
-  { __typeof__((((m[0]).arena).nodes[fc]).a) __flowc_st62424 = mn_subst_type(m, mo, (((m[0]).arena).nodes[f]).a, tps, ntp, targs); (((m[0]).arena).nodes[fc]).a = __flowc_st62424; }
+  { __typeof__((((m[0]).arena).nodes[fc]).a) __flowc_st62538 = mn_subst_type(m, mo, (((m[0]).arena).nodes[f]).a, tps, ntp, targs); (((m[0]).arena).nodes[fc]).a = __flowc_st62538; }
   if (head == AST_NONE) {
   head = fc;
 } else {
@@ -16429,7 +16452,7 @@ void mn_gen_fn(Mlg* m, Mono* mo, int32_t r) {
   int32_t p = (((m[0]).arena).nodes[d]).a;
   while (p != AST_NONE) {
   int32_t pc = mn_copy(m, p);
-  { __typeof__((((m[0]).arena).nodes[pc]).a) __flowc_st62759 = mn_subst_type(m, mo, (((m[0]).arena).nodes[p]).a, tps, ntp, targs); (((m[0]).arena).nodes[pc]).a = __flowc_st62759; }
+  { __typeof__((((m[0]).arena).nodes[pc]).a) __flowc_st62873 = mn_subst_type(m, mo, (((m[0]).arena).nodes[p]).a, tps, ntp, targs); (((m[0]).arena).nodes[pc]).a = __flowc_st62873; }
   if (head == AST_NONE) {
   head = pc;
 } else {
@@ -16439,8 +16462,8 @@ void mn_gen_fn(Mlg* m, Mono* mo, int32_t r) {
   p = (((m[0]).arena).nodes[p]).next;
 }
   (((m[0]).arena).nodes[nd]).a = head;
-  { __typeof__((((m[0]).arena).nodes[nd]).b) __flowc_st62826 = mn_subst_type(m, mo, (((m[0]).arena).nodes[d]).b, tps, ntp, targs); (((m[0]).arena).nodes[nd]).b = __flowc_st62826; }
-  { __typeof__((((m[0]).arena).nodes[nd]).c) __flowc_st62849 = mn_subst_block(m, mo, (((m[0]).arena).nodes[d]).c, tps, ntp, targs); (((m[0]).arena).nodes[nd]).c = __flowc_st62849; }
+  { __typeof__((((m[0]).arena).nodes[nd]).b) __flowc_st62940 = mn_subst_type(m, mo, (((m[0]).arena).nodes[d]).b, tps, ntp, targs); (((m[0]).arena).nodes[nd]).b = __flowc_st62940; }
+  { __typeof__((((m[0]).arena).nodes[nd]).c) __flowc_st62963 = mn_subst_block(m, mo, (((m[0]).arena).nodes[d]).c, tps, ntp, targs); (((m[0]).arena).nodes[nd]).c = __flowc_st62963; }
   if ((mo[0]).ngenf < MN_MAX) {
   (mo[0]).genf[(mo[0]).ngenf] = nd;
   (mo[0]).genf_req[(mo[0]).ngenf] = r;
@@ -16690,10 +16713,10 @@ void mn_rewrite_stmt(Mlg* m, Mono* mo, int32_t st) {
 void mn_rewrite_fn(Mlg* m, Mono* mo, int32_t d) {
   int32_t p = (((m[0]).arena).nodes[d]).a;
   while (p != AST_NONE) {
-  { __typeof__((((m[0]).arena).nodes[p]).a) __flowc_st64184 = mn_rewrite_type(m, mo, (((m[0]).arena).nodes[p]).a); (((m[0]).arena).nodes[p]).a = __flowc_st64184; }
+  { __typeof__((((m[0]).arena).nodes[p]).a) __flowc_st64298 = mn_rewrite_type(m, mo, (((m[0]).arena).nodes[p]).a); (((m[0]).arena).nodes[p]).a = __flowc_st64298; }
   p = (((m[0]).arena).nodes[p]).next;
 }
-  { __typeof__((((m[0]).arena).nodes[d]).b) __flowc_st64216 = mn_rewrite_type(m, mo, (((m[0]).arena).nodes[d]).b); (((m[0]).arena).nodes[d]).b = __flowc_st64216; }
+  { __typeof__((((m[0]).arena).nodes[d]).b) __flowc_st64330 = mn_rewrite_type(m, mo, (((m[0]).arena).nodes[d]).b); (((m[0]).arena).nodes[d]).b = __flowc_st64330; }
   mn_rewrite_block(m, mo, (((m[0]).arena).nodes[d]).c);
 }
 
@@ -16799,7 +16822,7 @@ int32_t mlg_mono(Mlg* m, int32_t root) {
 }
   if (k == AST_FN) {
   if ((((m[0]).arena).nodes[d]).ival > 0 && (mo).ngf < MN_MAX) {
-  { __typeof__((mo).gf_ntp[(mo).ngf]) __flowc_st64906 = mn_read_fn_tps(m, d, ((mo).gf_tp + ((mo).ngf * 16))); (mo).gf_ntp[(mo).ngf] = __flowc_st64906; }
+  { __typeof__((mo).gf_ntp[(mo).ngf]) __flowc_st65020 = mn_read_fn_tps(m, d, ((mo).gf_tp + ((mo).ngf * 16))); (mo).gf_ntp[(mo).ngf] = __flowc_st65020; }
   (mo).gf[(mo).ngf] = d;
   (mo).ngf = ((mo).ngf + 1);
 } else {
@@ -16895,7 +16918,7 @@ int32_t mlg_mono(Mlg* m, int32_t root) {
   if (k4 == AST_STRUCT) {
   int32_t f2 = (((m[0]).arena).nodes[d4]).a;
   while (f2 != AST_NONE) {
-  { __typeof__((((m[0]).arena).nodes[f2]).a) __flowc_st65536 = mn_rewrite_type(m, mo_p, (((m[0]).arena).nodes[f2]).a); (((m[0]).arena).nodes[f2]).a = __flowc_st65536; }
+  { __typeof__((((m[0]).arena).nodes[f2]).a) __flowc_st65650 = mn_rewrite_type(m, mo_p, (((m[0]).arena).nodes[f2]).a); (((m[0]).arena).nodes[f2]).a = __flowc_st65650; }
   f2 = (((m[0]).arena).nodes[f2]).next;
 }
 }
@@ -16973,12 +16996,12 @@ int32_t mfk_subst(Mlg* m, int32_t e, int32_t blk, int32_t repl) {
   if (k == AST_TYPE) {
   return e;
 }
-  { __typeof__((((m[0]).arena).nodes[e]).a) __flowc_st65919 = mfk_subst_chain(m, (((m[0]).arena).nodes[e]).a, blk, repl); (((m[0]).arena).nodes[e]).a = __flowc_st65919; }
+  { __typeof__((((m[0]).arena).nodes[e]).a) __flowc_st66033 = mfk_subst_chain(m, (((m[0]).arena).nodes[e]).a, blk, repl); (((m[0]).arena).nodes[e]).a = __flowc_st66033; }
   if (k != AST_CALL && k != AST_CAST && k != AST_LET) {
-  { __typeof__((((m[0]).arena).nodes[e]).b) __flowc_st65951 = mfk_subst_chain(m, (((m[0]).arena).nodes[e]).b, blk, repl); (((m[0]).arena).nodes[e]).b = __flowc_st65951; }
+  { __typeof__((((m[0]).arena).nodes[e]).b) __flowc_st66065 = mfk_subst_chain(m, (((m[0]).arena).nodes[e]).b, blk, repl); (((m[0]).arena).nodes[e]).b = __flowc_st66065; }
 }
   if (k == AST_INDEX || k == AST_IF_EXPR || k == AST_STRUCT_LIT) {
-  { __typeof__((((m[0]).arena).nodes[e]).c) __flowc_st65985 = mfk_subst(m, (((m[0]).arena).nodes[e]).c, blk, repl); (((m[0]).arena).nodes[e]).c = __flowc_st65985; }
+  { __typeof__((((m[0]).arena).nodes[e]).c) __flowc_st66099 = mfk_subst(m, (((m[0]).arena).nodes[e]).c, blk, repl); (((m[0]).arena).nodes[e]).c = __flowc_st66099; }
 }
   return e;
 }
@@ -16989,7 +17012,7 @@ int32_t mfk_subst_chain(Mlg* m, int32_t head, int32_t blk, int32_t repl) {
 }
   int32_t nx = (((m[0]).arena).nodes[head]).next;
   int32_t h2 = mfk_subst(m, head, blk, repl);
-  { __typeof__((((m[0]).arena).nodes[h2]).next) __flowc_st66043 = mfk_subst_chain(m, nx, blk, repl); (((m[0]).arena).nodes[h2]).next = __flowc_st66043; }
+  { __typeof__((((m[0]).arena).nodes[h2]).next) __flowc_st66157 = mfk_subst_chain(m, nx, blk, repl); (((m[0]).arena).nodes[h2]).next = __flowc_st66157; }
   return h2;
 }
 
@@ -17024,7 +17047,7 @@ int32_t mfk_resolve_chain(Mlg* m, Fork* fk, int32_t head, int32_t can_hoist) {
 }
   int32_t nx = (((m[0]).arena).nodes[head]).next;
   int32_t h2 = mfk_resolve(m, fk, head, can_hoist);
-  { __typeof__((((m[0]).arena).nodes[h2]).next) __flowc_st66283 = mfk_resolve_chain(m, fk, nx, can_hoist); (((m[0]).arena).nodes[h2]).next = __flowc_st66283; }
+  { __typeof__((((m[0]).arena).nodes[h2]).next) __flowc_st66397 = mfk_resolve_chain(m, fk, nx, can_hoist); (((m[0]).arena).nodes[h2]).next = __flowc_st66397; }
   return h2;
 }
 
@@ -17054,7 +17077,7 @@ int32_t mfk_lower_fork(Mlg* m, Fork* fk, int32_t id, int32_t source) {
   while (f != AST_NONE) {
   int32_t nf = mn_copy(m, f);
   (((m[0]).arena).nodes[nf]).kind = AST_FIELD;
-  { __typeof__((((m[0]).arena).nodes[nf]).a) __flowc_st66502 = mfk_subst(m, (((m[0]).arena).nodes[f]).a, id, source); (((m[0]).arena).nodes[nf]).a = __flowc_st66502; }
+  { __typeof__((((m[0]).arena).nodes[nf]).a) __flowc_st66616 = mfk_subst(m, (((m[0]).arena).nodes[f]).a, id, source); (((m[0]).arena).nodes[nf]).a = __flowc_st66616; }
   if (head == AST_NONE) {
   head = nf;
 } else {
@@ -17173,7 +17196,7 @@ int32_t mfk_lower_choose(Mlg* m, Fork* fk, int32_t id, int32_t can_hoist) {
   int32_t a2 = (((m[0]).arena).nodes[id]).b;
   while (a2 != AST_NONE) {
   int32_t asg = mlg_new_node(m, AST_ASSIGN, (((m[0]).arena).nodes[a2]).start);
-  { __typeof__((((m[0]).arena).nodes[asg]).a) __flowc_st67313 = mfk_ident(m, tns, tne); (((m[0]).arena).nodes[asg]).a = __flowc_st67313; }
+  { __typeof__((((m[0]).arena).nodes[asg]).a) __flowc_st67427 = mfk_ident(m, tns, tne); (((m[0]).arena).nodes[asg]).a = __flowc_st67427; }
   (((m[0]).arena).nodes[asg]).b = (((m[0]).arena).nodes[a2]).b;
   int32_t blk = mlg_new_node(m, AST_BLOCK, (((m[0]).arena).nodes[a2]).start);
   (((m[0]).arena).nodes[blk]).a = asg;
@@ -17209,7 +17232,7 @@ int32_t mfk_resolve(Mlg* m, Fork* fk, int32_t e, int32_t can_hoist) {
   int32_t src0 = mfk_resolve(m, fk, (((m[0]).arena).nodes[e]).a, can_hoist);
   int32_t f = (((m[0]).arena).nodes[e]).b;
   while (f != AST_NONE) {
-  { __typeof__((((m[0]).arena).nodes[f]).a) __flowc_st67571 = mfk_resolve(m, fk, (((m[0]).arena).nodes[f]).a, can_hoist); (((m[0]).arena).nodes[f]).a = __flowc_st67571; }
+  { __typeof__((((m[0]).arena).nodes[f]).a) __flowc_st67685 = mfk_resolve(m, fk, (((m[0]).arena).nodes[f]).a, can_hoist); (((m[0]).arena).nodes[f]).a = __flowc_st67685; }
   f = (((m[0]).arena).nodes[f]).next;
 }
   int32_t src = mfk_source(m, fk, src0, can_hoist);
@@ -17222,12 +17245,12 @@ int32_t mfk_resolve(Mlg* m, Fork* fk, int32_t e, int32_t can_hoist) {
   return e;
 }
   if (k == AST_CALL || k == AST_BINOP || k == AST_UNARY || k == AST_FIELD_ACCESS || k == AST_INDEX || k == AST_CAST || k == AST_STRUCT_LIT || k == AST_ARRAY_LIT || k == AST_IF_EXPR || k == AST_FIELD) {
-  { __typeof__((((m[0]).arena).nodes[e]).a) __flowc_st67690 = mfk_resolve_chain(m, fk, (((m[0]).arena).nodes[e]).a, can_hoist); (((m[0]).arena).nodes[e]).a = __flowc_st67690; }
+  { __typeof__((((m[0]).arena).nodes[e]).a) __flowc_st67804 = mfk_resolve_chain(m, fk, (((m[0]).arena).nodes[e]).a, can_hoist); (((m[0]).arena).nodes[e]).a = __flowc_st67804; }
   if (k == AST_BINOP || k == AST_INDEX || k == AST_IF_EXPR) {
-  { __typeof__((((m[0]).arena).nodes[e]).b) __flowc_st67722 = mfk_resolve(m, fk, (((m[0]).arena).nodes[e]).b, can_hoist); (((m[0]).arena).nodes[e]).b = __flowc_st67722; }
+  { __typeof__((((m[0]).arena).nodes[e]).b) __flowc_st67836 = mfk_resolve(m, fk, (((m[0]).arena).nodes[e]).b, can_hoist); (((m[0]).arena).nodes[e]).b = __flowc_st67836; }
 }
   if (k == AST_INDEX || k == AST_IF_EXPR || k == AST_STRUCT_LIT) {
-  { __typeof__((((m[0]).arena).nodes[e]).c) __flowc_st67756 = mfk_resolve(m, fk, (((m[0]).arena).nodes[e]).c, can_hoist); (((m[0]).arena).nodes[e]).c = __flowc_st67756; }
+  { __typeof__((((m[0]).arena).nodes[e]).c) __flowc_st67870 = mfk_resolve(m, fk, (((m[0]).arena).nodes[e]).c, can_hoist); (((m[0]).arena).nodes[e]).c = __flowc_st67870; }
 }
   return e;
 }
@@ -17265,19 +17288,19 @@ void mfk_block(Mlg* m, Fork* fk, int32_t blk) {
 void mfk_stmt(Mlg* m, Fork* fk, int32_t st) {
   int32_t k = mlg_kind(m, st);
   if (k == AST_LET) {
-  { __typeof__((((m[0]).arena).nodes[st]).b) __flowc_st67952 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).b, 1); (((m[0]).arena).nodes[st]).b = __flowc_st67952; }
+  { __typeof__((((m[0]).arena).nodes[st]).b) __flowc_st68066 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).b, 1); (((m[0]).arena).nodes[st]).b = __flowc_st68066; }
   return;
 }
   if (k == AST_RETURN || k == AST_EXPR_STMT || k == AST_DEFER) {
-  { __typeof__((((m[0]).arena).nodes[st]).a) __flowc_st67987 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).a, 1); (((m[0]).arena).nodes[st]).a = __flowc_st67987; }
+  { __typeof__((((m[0]).arena).nodes[st]).a) __flowc_st68101 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).a, 1); (((m[0]).arena).nodes[st]).a = __flowc_st68101; }
   return;
 }
   if (k == AST_ASSIGN) {
-  { __typeof__((((m[0]).arena).nodes[st]).b) __flowc_st68014 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).b, 1); (((m[0]).arena).nodes[st]).b = __flowc_st68014; }
+  { __typeof__((((m[0]).arena).nodes[st]).b) __flowc_st68128 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).b, 1); (((m[0]).arena).nodes[st]).b = __flowc_st68128; }
   return;
 }
   if (k == AST_IF || k == AST_WHILE) {
-  { __typeof__((((m[0]).arena).nodes[st]).a) __flowc_st68045 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).a, 1); (((m[0]).arena).nodes[st]).a = __flowc_st68045; }
+  { __typeof__((((m[0]).arena).nodes[st]).a) __flowc_st68159 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).a, 1); (((m[0]).arena).nodes[st]).a = __flowc_st68159; }
   mfk_block(m, fk, (((m[0]).arena).nodes[st]).b);
   if (k == AST_IF) {
   mfk_block(m, fk, (((m[0]).arena).nodes[st]).c);
@@ -17285,13 +17308,13 @@ void mfk_stmt(Mlg* m, Fork* fk, int32_t st) {
   return;
 }
   if (k == AST_FOR) {
-  { __typeof__((((m[0]).arena).nodes[st]).a) __flowc_st68101 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).a, 1); (((m[0]).arena).nodes[st]).a = __flowc_st68101; }
-  { __typeof__((((m[0]).arena).nodes[st]).b) __flowc_st68122 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).b, 1); (((m[0]).arena).nodes[st]).b = __flowc_st68122; }
+  { __typeof__((((m[0]).arena).nodes[st]).a) __flowc_st68215 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).a, 1); (((m[0]).arena).nodes[st]).a = __flowc_st68215; }
+  { __typeof__((((m[0]).arena).nodes[st]).b) __flowc_st68236 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).b, 1); (((m[0]).arena).nodes[st]).b = __flowc_st68236; }
   mfk_block(m, fk, (((m[0]).arena).nodes[st]).c);
   return;
 }
   if (k == AST_MATCH) {
-  { __typeof__((((m[0]).arena).nodes[st]).a) __flowc_st68161 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).a, 1); (((m[0]).arena).nodes[st]).a = __flowc_st68161; }
+  { __typeof__((((m[0]).arena).nodes[st]).a) __flowc_st68275 = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).a, 1); (((m[0]).arena).nodes[st]).a = __flowc_st68275; }
   int32_t arm = (((m[0]).arena).nodes[st]).b;
   while (arm != AST_NONE) {
   mfk_block(m, fk, (((m[0]).arena).nodes[arm]).b);
@@ -17493,7 +17516,7 @@ void mrs_intersect(int64_t* a, int64_t* b, int64_t* out) {
   return;
 }
   out[0] = value;
-  { __typeof__(out[1]) __flowc_st69175 = (mrs_floordiv((high - value), step) + 1); out[1] = __flowc_st69175; }
+  { __typeof__(out[1]) __flowc_st69289 = (mrs_floordiv((high - value), step) + 1); out[1] = __flowc_st69289; }
   out[2] = step;
 }
 
@@ -17511,7 +17534,7 @@ int64_t mrs_fold(Mlg* m, int32_t e, int32_t* ok) {
   int32_t n = 0;
   int32_t x = a;
   while (x != AST_NONE && n < 6) {
-  { __typeof__(vals[n]) __flowc_st69277 = mrs_lit(m, x, ok); vals[n] = __flowc_st69277; }
+  { __typeof__(vals[n]) __flowc_st69391 = mrs_lit(m, x, ok); vals[n] = __flowc_st69391; }
   n = (n + 1);
   x = (((m[0]).arena).nodes[x]).next;
 }
@@ -17700,17 +17723,17 @@ int32_t mao_expr(Mlg* m, int32_t e, int32_t st, int32_t* vars, int32_t nv) {
   (((m[0]).arena).nodes[fa]).name_end = (((m[0]).arena).nodes[e]).name_end;
   int32_t ix = mlg_new_node(m, AST_INDEX, (((m[0]).arena).nodes[o]).start);
   (((m[0]).arena).nodes[ix]).a = fa;
-  { __typeof__((((m[0]).arena).nodes[ix]).b) __flowc_st70410 = mao_expr(m, (((m[0]).arena).nodes[o]).b, st, vars, nv); (((m[0]).arena).nodes[ix]).b = __flowc_st70410; }
+  { __typeof__((((m[0]).arena).nodes[ix]).b) __flowc_st70524 = mao_expr(m, (((m[0]).arena).nodes[o]).b, st, vars, nv); (((m[0]).arena).nodes[ix]).b = __flowc_st70524; }
   return ix;
 }
 }
 }
-  { __typeof__((((m[0]).arena).nodes[e]).a) __flowc_st70440 = mao_chain(m, (((m[0]).arena).nodes[e]).a, st, vars, nv); (((m[0]).arena).nodes[e]).a = __flowc_st70440; }
+  { __typeof__((((m[0]).arena).nodes[e]).a) __flowc_st70554 = mao_chain(m, (((m[0]).arena).nodes[e]).a, st, vars, nv); (((m[0]).arena).nodes[e]).a = __flowc_st70554; }
   if (k != AST_CALL && k != AST_CAST && k != AST_LET) {
-  { __typeof__((((m[0]).arena).nodes[e]).b) __flowc_st70473 = mao_chain(m, (((m[0]).arena).nodes[e]).b, st, vars, nv); (((m[0]).arena).nodes[e]).b = __flowc_st70473; }
+  { __typeof__((((m[0]).arena).nodes[e]).b) __flowc_st70587 = mao_chain(m, (((m[0]).arena).nodes[e]).b, st, vars, nv); (((m[0]).arena).nodes[e]).b = __flowc_st70587; }
 }
   if (k == AST_INDEX || k == AST_IF_EXPR) {
-  { __typeof__((((m[0]).arena).nodes[e]).c) __flowc_st70504 = mao_expr(m, (((m[0]).arena).nodes[e]).c, st, vars, nv); (((m[0]).arena).nodes[e]).c = __flowc_st70504; }
+  { __typeof__((((m[0]).arena).nodes[e]).c) __flowc_st70618 = mao_expr(m, (((m[0]).arena).nodes[e]).c, st, vars, nv); (((m[0]).arena).nodes[e]).c = __flowc_st70618; }
 }
   return e;
 }
@@ -17721,7 +17744,7 @@ int32_t mao_chain(Mlg* m, int32_t head, int32_t st, int32_t* vars, int32_t nv) {
 }
   int32_t nx = (((m[0]).arena).nodes[head]).next;
   int32_t h2 = mao_expr(m, head, st, vars, nv);
-  { __typeof__((((m[0]).arena).nodes[h2]).next) __flowc_st70567 = mao_chain(m, nx, st, vars, nv); (((m[0]).arena).nodes[h2]).next = __flowc_st70567; }
+  { __typeof__((((m[0]).arena).nodes[h2]).next) __flowc_st70681 = mao_chain(m, nx, st, vars, nv); (((m[0]).arena).nodes[h2]).next = __flowc_st70681; }
   return h2;
 }
 
@@ -17789,15 +17812,15 @@ void mao_block(Mlg* m, int32_t blk, int32_t st, int32_t* vars, int32_t* nv, int3
 } else {
   if (k == AST_IF || k == AST_WHILE || k == AST_FOR || k == AST_BLOCK || k == AST_HANDLE || k == AST_MATCH) {
   if (k == AST_IF || k == AST_WHILE) {
-  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st71049 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, vars, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st71049; }
+  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st71163 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, vars, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st71163; }
   mao_block(m, (((m[0]).arena).nodes[s]).b, st, vars, nv, made, nmade);
   if (k == AST_IF) {
   mao_block(m, (((m[0]).arena).nodes[s]).c, st, vars, nv, made, nmade);
 }
 }
   if (k == AST_FOR) {
-  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st71115 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, vars, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st71115; }
-  { __typeof__((((m[0]).arena).nodes[s]).b) __flowc_st71139 = mao_expr(m, (((m[0]).arena).nodes[s]).b, st, vars, nv[0]); (((m[0]).arena).nodes[s]).b = __flowc_st71139; }
+  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st71229 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, vars, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st71229; }
+  { __typeof__((((m[0]).arena).nodes[s]).b) __flowc_st71253 = mao_expr(m, (((m[0]).arena).nodes[s]).b, st, vars, nv[0]); (((m[0]).arena).nodes[s]).b = __flowc_st71253; }
   mao_block(m, (((m[0]).arena).nodes[s]).c, st, vars, nv, made, nmade);
 }
   if (k == AST_BLOCK) {
@@ -17807,15 +17830,15 @@ void mao_block(Mlg* m, int32_t blk, int32_t st, int32_t* vars, int32_t* nv, int3
   mao_block(m, (((m[0]).arena).nodes[s]).a, st, vars, nv, made, nmade);
 }
   if (k == AST_MATCH) {
-  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st71219 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, vars, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st71219; }
+  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st71333 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, vars, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st71333; }
 }
 } else {
   if (k == AST_LET) {
-  { __typeof__((((m[0]).arena).nodes[s]).b) __flowc_st71249 = mao_expr(m, (((m[0]).arena).nodes[s]).b, st, vars, nv[0]); (((m[0]).arena).nodes[s]).b = __flowc_st71249; }
+  { __typeof__((((m[0]).arena).nodes[s]).b) __flowc_st71363 = mao_expr(m, (((m[0]).arena).nodes[s]).b, st, vars, nv[0]); (((m[0]).arena).nodes[s]).b = __flowc_st71363; }
 } else {
-  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st71274 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, vars, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st71274; }
+  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st71388 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, vars, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st71388; }
   if (k == AST_ASSIGN) {
-  { __typeof__((((m[0]).arena).nodes[s]).b) __flowc_st71301 = mao_expr(m, (((m[0]).arena).nodes[s]).b, st, vars, nv[0]); (((m[0]).arena).nodes[s]).b = __flowc_st71301; }
+  { __typeof__((((m[0]).arena).nodes[s]).b) __flowc_st71415 = mao_expr(m, (((m[0]).arena).nodes[s]).b, st, vars, nv[0]); (((m[0]).arena).nodes[s]).b = __flowc_st71415; }
 }
 }
 }
@@ -17891,7 +17914,7 @@ void mlg_collect(Mlg* m, int32_t root) {
   (m[0]).ndropf = ((m[0]).ndropf + 1);
 }
   if (off_cpu == 2 && (m[0]).ngpuf < MLG_MAX_FNS) {
-  { __typeof__((m[0]).gpuf[(m[0]).ngpuf]) __flowc_st71725 = mlg_unwrap(m, item); (m[0]).gpuf[(m[0]).ngpuf] = __flowc_st71725; }
+  { __typeof__((m[0]).gpuf[(m[0]).ngpuf]) __flowc_st71839 = mlg_unwrap(m, item); (m[0]).gpuf[(m[0]).ngpuf] = __flowc_st71839; }
   (m[0]).ngpuf = ((m[0]).ngpuf + 1);
 }
   item = (((m[0]).arena).nodes[item]).next;
@@ -18322,7 +18345,7 @@ int32_t mlg_gpu_expr(Mlg* m, int32_t e, int32_t* t) {
   mlg_s(m, "] : ");
   mlg_gpu_put_type(m, at);
   mlg_nl(m);
-  { __typeof__(t[0]) __flowc_st73575 = mlg_gpu_elem(m, at); t[0] = __flowc_st73575; }
+  { __typeof__(t[0]) __flowc_st73689 = mlg_gpu_elem(m, at); t[0] = __flowc_st73689; }
   return s3;
 }
   if (k == AST_BINOP) {
@@ -18533,12 +18556,12 @@ void mlg_gpu_for(Mlg* m, int32_t st) {
   int32_t* res = (int32_t*)(mlg_alloc_i32((nc + 1)));
   int32_t i = 0;
   while (i < nc) {
-  { __typeof__(its[i]) __flowc_st74512 = mlg_gpu_new(m); its[i] = __flowc_st74512; }
+  { __typeof__(its[i]) __flowc_st74626 = mlg_gpu_new(m); its[i] = __flowc_st74626; }
   i = (i + 1);
 }
   i = 0;
   while (i < nc) {
-  { __typeof__(res[i]) __flowc_st74533 = mlg_gpu_new(m); res[i] = __flowc_st74533; }
+  { __typeof__(res[i]) __flowc_st74647 = mlg_gpu_new(m); res[i] = __flowc_st74647; }
   i = (i + 1);
 }
   mlg_line(m);
@@ -56831,6 +56854,7 @@ int32_t flowc_cgen_sig_find(uint8_t* buf, int32_t blen, uint8_t* src, int32_t st
 int32_t flowc_cgen_write_sig_type(CgenBuf* w, AstArena arena, uint8_t* src, int32_t call);
 void flowc_cgen_put_struct_lit_name(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_write_lit_type(CgenBuf* w, AstArena arena, uint8_t* src, int32_t init);
+int32_t flowc_cgen_type_is_span(AstArena arena, uint8_t* src, int32_t ty);
 int32_t flowc_cgen_type_is_string(AstArena arena, uint8_t* src, int32_t ty);
 int32_t flowc_cgen_sig_is_string(CgenBuf* w, AstArena arena, uint8_t* src, int32_t call);
 int32_t flowc_cgen_find_let(AstArena arena, uint8_t* src, int32_t node, int32_t use_id, int32_t best, int32_t depth);
@@ -56939,6 +56963,13 @@ int32_t flowc_cgen_div_is_checked(CgenBuf* w, AstArena arena, uint8_t* src, int3
 int32_t flowc_cgen_checked_array_size(CgenBuf* w, AstArena arena, uint8_t* src, int32_t base);
 int32_t flowc_cgen_checked_is_span(CgenBuf* w, AstArena arena, uint8_t* src, int32_t base);
 void flowc_cgen_emit_checked_index(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id, int32_t size);
+const char* flowc_cgen_prim_ctype(int32_t p);
+int32_t flowc_cgen_array_lit_len(AstArena arena, int32_t id);
+int32_t flowc_cgen_array_lit_rows(AstArena arena, int32_t id);
+int32_t flowc_cgen_array_lit_elem(AstArena arena, int32_t id);
+int32_t flowc_cgen_emit_array_lit_elem_ctype(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
+int32_t flowc_cgen_emit_array_lit_ctype(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
+void flowc_cgen_emit_array_lit_effects(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 void flowc_cgen_emit_defers_to(CgenBuf* w, AstArena arena, uint8_t* src, int32_t base);
@@ -58832,6 +58863,19 @@ int32_t flowc_cgen_write_lit_type(CgenBuf* w, AstArena arena, uint8_t* src, int3
   return 1;
 }
   return flowc_cgen_write_sig_type(w, arena, src, init);
+}
+  return 0;
+}
+
+int32_t flowc_cgen_type_is_span(AstArena arena, uint8_t* src, int32_t ty) {
+  if (ty == AST_NONE || ((arena).nodes[ty]).kind != AST_TYPE) {
+  return 0;
+}
+  if (flowc_cgen_span_is(src, ((arena).nodes[ty]).name_start, ((arena).nodes[ty]).name_end, "span") == 1) {
+  return 1;
+}
+  if (((arena).nodes[ty]).a != AST_NONE && ((arena).nodes[ty]).name_start == 0 && ((arena).nodes[ty]).name_end == 0 && ((arena).nodes[ty]).c != AST_TYPE_FIXED_ARRAY) {
+  return 1;
 }
   return 0;
 }
@@ -61012,11 +61056,11 @@ void flowc_cgen_plan_init(CgenBuf* w, AstArena arena, uint8_t* src) {
   return;
 }
   int32_t n = (arena).len;
-  { __typeof__((w[0]).plan_order) __flowc_st18513 = (int32_t*)(malloc((n * 4))); (w[0]).plan_order = __flowc_st18513; }
-  { __typeof__((w[0]).plan_has) __flowc_st18525 = (int32_t*)(malloc((n * 4))); (w[0]).plan_has = __flowc_st18525; }
-  { __typeof__((w[0]).plan_seen) __flowc_st18537 = (int32_t*)(malloc((n * 4))); (w[0]).plan_seen = __flowc_st18537; }
-  { __typeof__((w[0]).plan_lo) __flowc_st18549 = (int64_t*)(malloc((n * 8))); (w[0]).plan_lo = __flowc_st18549; }
-  { __typeof__((w[0]).plan_hi) __flowc_st18561 = (int64_t*)(malloc((n * 8))); (w[0]).plan_hi = __flowc_st18561; }
+  { __typeof__((w[0]).plan_order) __flowc_st18594 = (int32_t*)(malloc((n * 4))); (w[0]).plan_order = __flowc_st18594; }
+  { __typeof__((w[0]).plan_has) __flowc_st18606 = (int32_t*)(malloc((n * 4))); (w[0]).plan_has = __flowc_st18606; }
+  { __typeof__((w[0]).plan_seen) __flowc_st18618 = (int32_t*)(malloc((n * 4))); (w[0]).plan_seen = __flowc_st18618; }
+  { __typeof__((w[0]).plan_lo) __flowc_st18630 = (int64_t*)(malloc((n * 8))); (w[0]).plan_lo = __flowc_st18630; }
+  { __typeof__((w[0]).plan_hi) __flowc_st18642 = (int64_t*)(malloc((n * 8))); (w[0]).plan_hi = __flowc_st18642; }
   if ((w[0]).plan_order == NULL || (w[0]).plan_has == NULL || (w[0]).plan_seen == NULL || (w[0]).plan_lo == NULL || (w[0]).plan_hi == NULL) {
   (w[0]).plan_order = NULL;
   (w[0]).plan_has = NULL;
@@ -62286,14 +62330,7 @@ int32_t flowc_cgen_checked_is_span(CgenBuf* w, AstArena arena, uint8_t* src, int
   if (decl == AST_NONE) {
   return 0;
 }
-  int32_t ty = ((arena).nodes[decl]).a;
-  if (ty == AST_NONE || ((arena).nodes[ty]).kind != AST_TYPE) {
-  return 0;
-}
-  if (flowc_cgen_span_is(src, ((arena).nodes[ty]).name_start, ((arena).nodes[ty]).name_end, "span") == 1) {
-  return 1;
-}
-  if (((arena).nodes[ty]).a != AST_NONE && ((arena).nodes[ty]).name_start == 0 && ((arena).nodes[ty]).name_end == 0 && ((arena).nodes[ty]).c != AST_TYPE_FIXED_ARRAY) {
+  if (flowc_cgen_type_is_span(arena, src, ((arena).nodes[decl]).a) == 1) {
   return 1;
 }
   return 0;
@@ -62335,6 +62372,131 @@ void flowc_cgen_emit_checked_index(CgenBuf* w, AstArena arena, uint8_t* src, int
   flowc_cgen_puts(w, ").len), flow_fault_handler(\"span index out of bounds\"), (");
   flowc_cgen_emit_expr(w, arena, src, base);
   flowc_cgen_puts(w, ").data[0]))");
+}
+
+const char* flowc_cgen_prim_ctype(int32_t p) {
+  if (p == FLOWC_PRIM_STRING) {
+  return "const char*";
+}
+  if (p == FLOWC_PRIM_F64) {
+  return "double";
+}
+  if (p == FLOWC_PRIM_I64) {
+  return "int64_t";
+}
+  if (p == FLOWC_PRIM_U64) {
+  return "uint64_t";
+}
+  if (p == FLOWC_PRIM_U32) {
+  return "uint32_t";
+}
+  if (p == FLOWC_PRIM_I32) {
+  return "int32_t";
+}
+  if (p == FLOWC_PRIM_BOOL) {
+  return "bool";
+}
+  return "";
+}
+
+int32_t flowc_cgen_array_lit_len(AstArena arena, int32_t id) {
+  if (id == AST_NONE || id < 0 || ((arena).nodes[id]).kind != AST_ARRAY_LIT) {
+  return 0;
+}
+  if (((arena).nodes[id]).b != AST_NONE) {
+  if (((arena).nodes[((arena).nodes[id]).b]).kind == AST_INT) {
+  return ((arena).nodes[((arena).nodes[id]).b]).ival;
+}
+  return 0;
+}
+  return flowc_ast_chain_len(arena, ((arena).nodes[id]).a);
+}
+
+int32_t flowc_cgen_array_lit_rows(AstArena arena, int32_t id) {
+  if (id == AST_NONE || id < 0 || ((arena).nodes[id]).kind != AST_ARRAY_LIT) {
+  return 0;
+}
+  if (((arena).nodes[id]).b != AST_NONE) {
+  return 0;
+}
+  int32_t first = ((arena).nodes[id]).a;
+  if (first == AST_NONE || ((arena).nodes[first]).kind != AST_ARRAY_LIT) {
+  return 0;
+}
+  return flowc_cgen_array_lit_len(arena, first);
+}
+
+int32_t flowc_cgen_array_lit_elem(AstArena arena, int32_t id) {
+  if (id == AST_NONE || id < 0 || ((arena).nodes[id]).kind != AST_ARRAY_LIT) {
+  return AST_NONE;
+}
+  int32_t first = ((arena).nodes[id]).a;
+  if (first == AST_NONE) {
+  return AST_NONE;
+}
+  if (((arena).nodes[first]).kind != AST_ARRAY_LIT) {
+  return first;
+}
+  if (((arena).nodes[id]).b != AST_NONE || ((arena).nodes[first]).b != AST_NONE) {
+  return AST_NONE;
+}
+  int32_t inner = ((arena).nodes[first]).a;
+  if (inner == AST_NONE || ((arena).nodes[inner]).kind == AST_ARRAY_LIT) {
+  return AST_NONE;
+}
+  return inner;
+}
+
+int32_t flowc_cgen_emit_array_lit_elem_ctype(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
+  int32_t elem = flowc_cgen_array_lit_elem(arena, id);
+  if (elem == AST_NONE) {
+  return 0;
+}
+  const char* cty = flowc_cgen_prim_ctype(flowc_cgen_expr_prim(w, arena, src, elem));
+  uint8_t* cp = (uint8_t*)((uint8_t*)(cty));
+  if (cp[0] == 0) {
+  return 0;
+}
+  flowc_cgen_puts(w, cty);
+  return 1;
+}
+
+int32_t flowc_cgen_emit_array_lit_ctype(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
+  if (flowc_cgen_array_lit_elem(arena, id) == AST_NONE) {
+  return 0;
+}
+  flowc_cgen_putc(w, 40);
+  if (flowc_cgen_emit_array_lit_elem_ctype(w, arena, src, id) == 0) {
+  flowc_cgen_puts(w, "int32_t");
+}
+  flowc_cgen_puts(w, "[]");
+  int32_t rows = flowc_cgen_array_lit_rows(arena, id);
+  if (rows > 0) {
+  flowc_cgen_putc(w, 91);
+  flowc_cgen_put_i32(w, rows);
+  flowc_cgen_putc(w, 93);
+}
+  flowc_cgen_putc(w, 41);
+  return 1;
+}
+
+void flowc_cgen_emit_array_lit_effects(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
+  int32_t el = ((arena).nodes[id]).a;
+  while (el != AST_NONE) {
+  if (((arena).nodes[el]).kind == AST_ARRAY_LIT) {
+  flowc_cgen_emit_array_lit_effects(w, arena, src, el);
+} else {
+  flowc_cgen_puts(w, "  (void)(");
+  flowc_cgen_emit_expr(w, arena, src, el);
+  flowc_cgen_puts(w, ");\n");
+}
+  el = ((arena).nodes[el]).next;
+}
+  if (((arena).nodes[id]).b != AST_NONE) {
+  flowc_cgen_puts(w, "  (void)(");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).b);
+  flowc_cgen_puts(w, ");\n");
+}
 }
 
 void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
@@ -62789,6 +62951,11 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   flowc_cgen_putc(w, 40);
   flowc_cgen_emit_type(w, arena, src, ((arena).nodes[id]).b);
   flowc_cgen_puts(w, ")(");
+  if (((arena).nodes[id]).a != AST_NONE && ((arena).nodes[((arena).nodes[id]).a]).kind == AST_ARRAY_LIT) {
+  if (flowc_cgen_emit_elem_compound(w, arena, src, ((arena).nodes[id]).b) == 0) {
+  flowc_cgen_emit_array_lit_ctype(w, arena, src, ((arena).nodes[id]).a);
+}
+}
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
   flowc_cgen_putc(w, 41);
   return;
@@ -62893,7 +63060,12 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
   flowc_cgen_putc(w, 41);
 } else {
+  if (((arena).nodes[((arena).nodes[id]).a]).kind == AST_ARRAY_LIT) {
+  flowc_cgen_emit_array_lit_ctype(w, arena, src, ((arena).nodes[id]).a);
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+} else {
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+}
 }
   flowc_cgen_putc(w, 91);
   (w[0]).lval = 0;
@@ -62977,6 +63149,15 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
 }
   if (flowc_cgen_span_is(src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end, "len") == 1) {
   int32_t larg = ((arena).nodes[id]).a;
+  if (larg != AST_NONE && ((arena).nodes[larg]).kind == AST_ARRAY_LIT) {
+  int32_t alen = flowc_cgen_array_lit_len(arena, larg);
+  if (alen > 0) {
+  flowc_cgen_puts(w, "((int32_t)");
+  flowc_cgen_put_i32(w, alen);
+  flowc_cgen_putc(w, 41);
+  return;
+}
+}
   if (larg != AST_NONE) {
   int32_t lty = flowc_cgen_expr_type_node(w, arena, src, larg);
   if (lty != AST_NONE && lty >= 0 && flowc_cgen_is_sized_array(arena, src, lty) == 1) {
@@ -64460,6 +64641,26 @@ void flowc_cgen_emit_stmt(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
 }
 }
   flowc_cgen_puts(w, "  ");
+  if (ty == AST_NONE && init != AST_NONE && ((arena).nodes[init]).kind == AST_ARRAY_LIT) {
+  int32_t lit_n = flowc_cgen_array_lit_len(arena, init);
+  if (lit_n > 0 && flowc_cgen_emit_array_lit_elem_ctype(w, arena, src, init) == 1) {
+  flowc_cgen_putc(w, 32);
+  flowc_cgen_put_ident(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+  flowc_cgen_putc(w, 91);
+  flowc_cgen_put_i32(w, lit_n);
+  flowc_cgen_putc(w, 93);
+  int32_t lit_rows = flowc_cgen_array_lit_rows(arena, init);
+  if (lit_rows > 0) {
+  flowc_cgen_putc(w, 91);
+  flowc_cgen_put_i32(w, lit_rows);
+  flowc_cgen_putc(w, 93);
+}
+  flowc_cgen_puts(w, " = ");
+  flowc_cgen_emit_expr(w, arena, src, init);
+  flowc_cgen_puts(w, ";\n");
+  return;
+}
+}
   if (arr_n > 0) {
   flowc_cgen_emit_type(w, arena, src, flowc_cgen_array_base(arena, src, ty));
   flowc_cgen_putc(w, 32);
@@ -65217,18 +65418,7 @@ void flowc_cgen_emit_stmt(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   if (kind == AST_EXPR_STMT) {
   int32_t e = ((arena).nodes[id]).a;
   if (e != AST_NONE && ((arena).nodes[e]).kind == AST_ARRAY_LIT) {
-  int32_t el = ((arena).nodes[e]).a;
-  while (el != AST_NONE) {
-  flowc_cgen_puts(w, "  (void)(");
-  flowc_cgen_emit_expr(w, arena, src, el);
-  flowc_cgen_puts(w, ");\n");
-  el = ((arena).nodes[el]).next;
-}
-  if (((arena).nodes[e]).b != AST_NONE) {
-  flowc_cgen_puts(w, "  (void)(");
-  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[e]).b);
-  flowc_cgen_puts(w, ");\n");
-}
+  flowc_cgen_emit_array_lit_effects(w, arena, src, e);
   return;
 }
   flowc_cgen_puts(w, "  ");
@@ -67813,7 +68003,7 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
 }
   int32_t span_null = 0;
   if (init != AST_NONE && ty != AST_NONE && ((arena).nodes[init]).kind == AST_IDENT && flowc_cgen_span_is(src, ((arena).nodes[init]).name_start, ((arena).nodes[init]).name_end, "null") == 1) {
-  if (((arena).nodes[ty]).kind == AST_TYPE && ((arena).nodes[ty]).a != AST_NONE && flowc_cgen_span_is(src, ((arena).nodes[ty]).name_start, ((arena).nodes[ty]).name_end, "span") == 1) {
+  if (flowc_cgen_type_is_span(arena, src, ty) == 1) {
   span_null = 1;
 }
 }
