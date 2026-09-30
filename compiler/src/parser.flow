@@ -98,9 +98,44 @@ export function flowc_parser_report(p: Parser, path: string) {
         return
     }
     printf("%s:%d:%d: parse error at '%.*s'\n", path, p.cur.line, p.cur.col, n, text)
-    if p.cur.kind == TOK_KEYWORD {
-        printf("%s:%d:%d: note: '%.*s' is a reserved word and cannot be used as a name\n", path, p.cur.line, p.cur.col, n, text)
+    flowc_parser_keyword_note(p, p.cur, path, n, text)
+}
+
+# 1 when token t is the keyword `if` written straight after `else`.
+function flowc_parser_is_else_if(p: Parser, t: Token) -> i32 {
+    if t.kind != TOK_KEYWORD or t.kw != KW_IF {
+        return 0
     }
+    let mut i: i32 = t.start - 1
+    while i >= 0 and (p.lex.input[i] == 32 or p.lex.input[i] == 9 or p.lex.input[i] == 10 or p.lex.input[i] == 13) {
+        i = i - 1
+    }
+    if i < 3 {
+        return 0
+    }
+    if p.lex.input[i - 3] != 101 or p.lex.input[i - 2] != 108 or p.lex.input[i - 1] != 115 or p.lex.input[i] != 101 {
+        return 0
+    }
+    if i >= 4 {
+        let c: u8 = p.lex.input[i - 4]
+        if (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or (c >= 48 and c <= 57) or c == 95 {
+            return 0
+        }
+    }
+    return 1
+}
+
+# The note after a parse error at a keyword: `else if` is spelled `elif`
+# (#986); any other keyword is often a reserved word used as a name (#970).
+function flowc_parser_keyword_note(p: Parser, t: Token, prefix: string, n: i32, text: ptr<u8>) {
+    if t.kind != TOK_KEYWORD {
+        return
+    }
+    if flowc_parser_is_else_if(p, t) == 1 {
+        printf("%s:%d:%d: note: Flow spells `else if` as `elif`\n", prefix, t.line, t.col)
+        return
+    }
+    printf("%s:%d:%d: note: '%.*s' is a reserved word and cannot be used as a name\n", prefix, t.line, t.col, n, text)
 }
 
 export function flowc_parser_new(input: ptr<u8>, len: i32, ast_cap: i32) -> Parser {
@@ -166,10 +201,7 @@ export function flowc_parser_print_error(p: Parser, prefix: string) {
     }
     let text: ptr<u8> = p.lex.input + t.start
     printf("%s:%d:%d: parse error: unexpected %s '%.*s' (byte %d)\n", prefix, t.line, t.col, flowc_parser_tok_kind_name(t.kind), n, text, t.start)
-    # A keyword here is often a reserved word used as a name (#970).
-    if t.kind == TOK_KEYWORD {
-        printf("%s:%d:%d: note: '%.*s' is a reserved word and cannot be used as a name\n", prefix, t.line, t.col, n, text)
-    }
+    flowc_parser_keyword_note(p, t, prefix, n, text)
 }
 
 export function flowc_parser_free(p: Parser) -> void {
@@ -1634,6 +1666,34 @@ function flowc_parse_range_tail(p: ptr<Parser>, args: i32) -> i32 {
     return out
 }
 
+# A `*` that is the first token on its line and touches its operand (`*p`)
+# is a prefix dereference opening the next statement, so the expression
+# before it ends there. Without this, `let p: ptr<i32> = &x` followed by
+# `*p = 7` on the next line parsed as `&x * p = 7` (#1046). A continued
+# product keeps a space after the operator (`    * b`), so it is unaffected.
+function flowc_parser_star_opens_stmt(p: Parser) -> i32 {
+    let s: i32 = p.cur.start
+    if s + 1 >= p.lex.len {
+        return 0
+    }
+    let after: u8 = p.lex.input[s + 1]
+    if after == 32 or after == 9 or after == 10 or after == 13 {
+        return 0
+    }
+    let mut i: i32 = s - 1
+    while i >= 0 {
+        let c: u8 = p.lex.input[i]
+        if c == 10 {
+            return 1
+        }
+        if c != 32 and c != 9 and c != 13 {
+            return 0
+        }
+        i = i - 1
+    }
+    return 0
+}
+
 # Map current token to a binop token kind (&&/||/…); keyword and/or → AMPAMP/BARBAR.
 # Returns -1 if not a binary operator.
 function flowc_parse_binop_kind(p: Parser) -> i32 {
@@ -1653,7 +1713,10 @@ function flowc_parse_binop_kind(p: Parser) -> i32 {
     if op == TOK_GE { return TOK_GE }
     if op == TOK_PLUS { return TOK_PLUS }
     if op == TOK_MINUS { return TOK_MINUS }
-    if op == TOK_STAR { return TOK_STAR }
+    if op == TOK_STAR {
+        if flowc_parser_star_opens_stmt(p) == 1 { return 0 - 1 }
+        return TOK_STAR
+    }
     if op == TOK_SLASH { return TOK_SLASH }
     if op == TOK_PERCENT { return TOK_PERCENT }
     if op == TOK_KEYWORD {

@@ -644,8 +644,7 @@ function sem_collect_types(c: ptr<Sem>) {
         } elif k == DK_ALIAS {
             let base_pt: i32 = sem_pt_of_ast(c, sem_na(c, node))
             let alias_t: i32 = sem_ty_named(c.t, TK_TYPE_ALIAS, name)
-            let new_base_1: i32 = sem_parse_type(c, base_pt)
-            tys.base[alias_t] = new_base_1
+            tys.base[alias_t] = sem_parse_type(c, base_pt)
             let s2: i32 = sem_sym_new(c, name, alias_t, SK_TYPE)
             sem_scope_define_global(c, s2)
             let se3: i32 = sem_se_new(c, name, SE_ALIAS, i)
@@ -731,10 +730,7 @@ function sem_define_function(c: ptr<Sem>, name: string, fi: i32) {
         sem_ty_add_param(c.t, f, sem_parse_type(c, sem_fi_param_type(c, fi, i)))
         i = i + 1
     }
-    # The value goes into a local first: a call that makes a type can grow
-    # the table and move the array, and C may read the array before the call.
-    let new_ret_2: i32 = sem_parse_type(c, sem_iv_get(c.fi_ret, fi))
-    tys.ret[f] = new_ret_2
+    tys.ret[f] = sem_parse_type(c, sem_iv_get(c.fi_ret, fi))
     i = 0
     while i < sem_fi_neffects(c, fi) {
         sem_ty_add_effect(c.t, f, sem_fi_effect(c, fi, i))
@@ -2205,6 +2201,12 @@ function sem_check_function_call(c: ptr<Sem>, name: string, args: ptr<SemIntVec>
     if vfi >= 0 and sem_iv_get(c.fi_variadic, vfi) == 1 {
         variadic = true
     }
+    # A struct value fits a ptr<T> parameter only as a method receiver,
+    # where cgen takes its address (#1009); elsewhere C rejects it (#1080).
+    let mut recv_call: bool = false
+    if node >= 0 and sem_nk(c, node) == AST_CALL and sem_is_method_call(c, node) {
+        recv_call = true
+    }
     let mut matching: i32 = 0 - 1
     let mut pass: i32 = 0
     while pass < 2 and matching < 0 {
@@ -2225,6 +2227,8 @@ function sem_check_function_call(c: ptr<Sem>, name: string, args: ptr<SemIntVec>
                 let mut j: i32 = 0
                 while j < np and j < arg_types.len and fits {
                     if sem_is_compatible(c, arg_types.data[j], sem_ty_param(c.t, cand, j)) == false {
+                        fits = false
+                    } elif (j > 0 or recv_call == false) and sem_struct_for_pointer(c, arg_types.data[j], sem_ty_param(c.t, cand, j)) {
                         fits = false
                     }
                     j = j + 1
@@ -2375,6 +2379,22 @@ function sem_call_args(c: ptr<Sem>, first: i32) -> ptr<SemIntVec> {
     return v
 }
 
+# True when a struct value (not a capability token) meets a ptr<T>
+# parameter. sem_is_compatible allows it for method receivers.
+function sem_struct_for_pointer(c: ptr<Sem>, actual: i32, expected: i32) -> bool {
+    if actual < 0 or expected < 0 {
+        return false
+    }
+    if sem_tkind(c, actual) != TK_STRUCT or sem_tkind(c, expected) != TK_POINTER {
+        return false
+    }
+    let tys: ptr<SemTys> = c.t
+    if sem_s_starts(tys.name[actual], "capability_") {
+        return false
+    }
+    return true
+}
+
 # A MethodCall: receiver = the first argument.
 function sem_check_method_call(c: ptr<Sem>, e: i32, stmt: i32) -> i32 {
     let recv: i32 = sem_na(c, e)
@@ -2428,6 +2448,11 @@ function sem_check_call(c: ptr<Sem>, e: i32, stmt: i32) -> i32 {
     }
     if sem_is_pipe_find(c, e) {
         return sem_check_find_expr(c, sem_na(c, e), sem_nnext(c, sem_na(c, e)))
+    }
+    # sizeof<T>() is the byte size of T as an i64, as cgen emits it (#952).
+    # With no user function of that name it is not a generic instance.
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "sizeof") and sem_lookup(c, "sizeof") < 0 {
+        return sem_tmk(c, TK_I64)
     }
     return sem_check_function_call(c, sem_call_name(c, e), sem_call_args(c, sem_na(c, e)), e, stmt)
 }
@@ -2772,8 +2797,7 @@ function sem_check_slice_expr(c: ptr<Sem>, e: i32) -> i32 {
     }
     let sp: i32 = sem_ty_named(c.t, TK_SPAN, prefix + sem_tstr(c, el))
     tys.elem[sp] = el
-    let new_size_3: i32 = sem_static_length(c, e)
-    tys.size[sp] = new_size_3
+    tys.size[sp] = sem_static_length(c, e)
     return sp
 }
 
@@ -2852,11 +2876,9 @@ function sem_check_lambda(c: ptr<Sem>, e: i32) -> i32 {
     c.return_sink = saved_sink
     sem_pop_scope(c)
     if sem_nb(c, e) != AST_NONE {
-        let new_ret_4: i32 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e)))
-        tys.ret[f] = new_ret_4
+        tys.ret[f] = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e)))
     } else {
-        let new_ret_5: i32 = sem_tmk(c, TK_VOID)
-        tys.ret[f] = new_ret_5
+        tys.ret[f] = sem_tmk(c, TK_VOID)
     }
     return f
 }

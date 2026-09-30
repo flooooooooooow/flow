@@ -1,0 +1,33 @@
+{
+  "grammars": [
+    {
+      "name": "flow",
+      "camelcase": "Flow",
+      "scope": "source.flow",
+      "path": ".",
+      "file-types": ["flow"],
+      "injection-regex": "^flow$"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "Tree-sitter grammar for Flow",
+    "authors": [
+      {
+        "name": "Flow contributors"
+      }
+    ],
+    "links": {
+      "repository": "https://github.com/flooooooooooow/flow"
+    }
+  },
+  "bindings": {
+    "c": true,
+    "node": true,
+    "python": false,
+    "rust": false,
+    "swift": false,
+    "zig": false
+  }
+}

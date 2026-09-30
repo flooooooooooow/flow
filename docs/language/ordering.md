@@ -170,4 +170,4 @@ the counting plan on `u8`.
 
 GPU / SIMD / distributed backends, entropy as a first-class effect, `order { }`
 blocks, composable primitives (`split` / `partition` / `merge`), latency and
-memory objectives (`sort under 2ms`). Tracked in `Questions.md`.
+memory objectives (`sort under 2ms`). Tracked in [project Questions](../project/Questions.md).

@@ -14,7 +14,7 @@ body:
     id: proposal
     attributes:
       label: Proposal
-      description: Sketch syntax, semantics, or API. Link ROADMAP / Questions.md if relevant.
+      description: Sketch syntax, semantics, or API. Link ROADMAP.md / docs/project/Questions.md if relevant.
     validations:
       required: true
   - type: textarea

@@ -841,6 +841,14 @@
           "path": "project/architecture-writeup.md"
         },
         {
+          "label": "Agentic Loop",
+          "path": "project/agentic-loop.md"
+        },
+        {
+          "label": "Repository Structure",
+          "path": "project/repository-structure.md"
+        },
+        {
           "label": "Maturity",
           "path": "project/maturity.md"
         },
@@ -881,6 +889,10 @@
           "path": "project/runtime-in-flow.md"
         },
         {
+          "label": "Ecosystem Recognition",
+          "path": "project/ecosystem-recognition.md"
+        },
+        {
           "label": "Linguist Registration",
           "path": "project/linguist.md"
         }
@@ -898,6 +910,10 @@
         {
           "label": "Independent Tutorial Author Kit",
           "path": "community/tutorial-author-kit.md"
+        },
+        {
+          "label": "Community Projects",
+          "path": "community/projects.md"
         }
       ]
     },
@@ -1032,6 +1048,8 @@
     "project/MLIR_AUTOTUNING.md": "report on the MLIR transform-dialect auto-tuner and what remains (Issue #668)",
     "research/cutlass_evaluation.md": "internal evaluation of CUTLASS, kept for the record rather than as a guide",
     "project/roadmap-2.0.md": "design tracker for Epic #679, tracked internally in ROADMAP.md",
-    "research/rfc_effects_continuations.md": "rfc doc for effects continuations"
+    "research/rfc_effects_continuations.md": "rfc doc for effects continuations",
+    "project/archive/ROADMAP-1.0.md": "archived Flow 1.0 stabilisation roadmap; preserved for history",
+    "project/archive/RELEASE-1.0.md": "archived Flow 1.0 release-cut checklist; preserved for history"
   }
 }
