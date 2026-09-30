@@ -30,11 +30,12 @@ export struct Toolchain {
     rt_archive: string
 }
 
-# Module statics hold primitives and pointers only, so the strings live here.
+# Module statics hold primitives and pointers only (#1086), so the strings
+# live here.
 let mut T: ptr<Toolchain> = null
 
-# A module static read through `.` compiles to C `.` on a pointer, so the
-# fields are reached through this accessor.
+# A field read straight off a module-static pointer compiles to C `.` (#1078),
+# so the fields are reached through this accessor.
 function tc() -> ptr<Toolchain> {
     return T
 }
@@ -901,7 +902,6 @@ export function flowc_runtime_archive(driver: string, cc_bin: string) -> bool {
         cmd_env(fc, "FLOWC_IN", f)
         cmd_env(fc, "FLOWC_OUT", tmp + "/rt_" + base + ".c")
         proc_stdout_capture_merged(fc)
-        let saved: ptr<ProcStrs> = sl_new()
         let rc: i32 = run_without_env_capture(fc, sl_of2("FLOWC_BUNDLE", "FLOWC_EXPORT"), tmp + "/rt_" + base + ".log")
         if rc != 0 {
             error("flowc could not build runtime module " + base + ".flow")

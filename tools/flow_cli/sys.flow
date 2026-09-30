@@ -9,7 +9,8 @@
 # drops trailing newlines as `$(...)` does, and exit statuses are the
 # shell's (128 + N for a child killed by signal N).
 #
-# The shim includes the POSIX headers itself. Nothing in this program may
+# The shim includes the POSIX headers itself. It spells C strings as char
+# arrays because @cEmbed text cannot hold a double quote (#1089). Nothing in this program may
 # declare a POSIX function through `extern` with Flow types, or the C
 # prototypes would clash; that is why this module does not import
 # scripts/tools/lib/text.flow, whose `write` does.
@@ -613,6 +614,8 @@ export struct Sink {
 }
 
 let mut SINK: ptr<Sink> = null
+
+# Fields of SINK are read through a local copy of the pointer (#1078).
 
 # Start a redirection. Pop it with sink_pop, which returns what stdout
 # captured (sink_err holds a separate stderr capture).
