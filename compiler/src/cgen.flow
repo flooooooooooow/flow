@@ -332,6 +332,16 @@ function flowc_cgen_is_libc_clash(src: ptr<u8>, s: i32, e: i32) -> i32 {
     if flowc_cgen_span_is(src, s, e, "j1") == 1 { return 1 }
     if flowc_cgen_span_is(src, s, e, "abs") == 1 { return 1 }
     if flowc_cgen_span_is(src, s, e, "div") == 1 { return 1 }
+    # POSIX functions <stdlib.h>, <stdio.h> and <sys/stat.h>
+    # declare on macOS and glibc (#1045): `function wait(...)` clashed
+    # with <sys/wait.h>, which <stdlib.h> pulls in.
+    if flowc_cgen_span_is(src, s, e, "wait") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "waitpid") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "wait3") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "wait4") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "chmod") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "umask") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "getline") == 1 { return 1 }
     return 0
 }
 
