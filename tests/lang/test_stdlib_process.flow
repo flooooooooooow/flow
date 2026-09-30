@@ -1,0 +1,157 @@
+# std.process: run programs with an argument vector, capture stdout and
+# stderr, read exit status, time out, override environment and working
+# directory, and read this program's own argv and environment (issue #961).
+# Exit 0 on success; a nonzero exit names the failing check.
+
+import std.process {
+    ProcCmd, ProcResult, ProcStrs, proc_cmd, proc_sh, proc_arg, proc_env,
+    proc_env_clear, proc_cwd, proc_timeout_ms, proc_input, proc_stdout,
+    proc_stderr, proc_run, proc_status, proc_output, proc_ok, proc_argc,
+    proc_argv, proc_args, proc_strs_len, proc_getenv, proc_has_env,
+    proc_setenv, proc_unsetenv, proc_getcwd, proc_which, proc_pid,
+    proc_now_ms, PROC_NULL, PROC_MERGE
+}
+
+# Programs declare libc through extern with Flow types, which clash with
+# the headers' prototypes (ssize_t read, char *getcwd). std.process must
+# not bring those prototypes in, so these declarations still compile.
+extern {
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+    function strstr(h: string, n: string) -> string
+    function malloc(size: i64) -> ptr<void>
+    function read(fd: i32, buf: ptr<u8>, n: i64) -> i64
+    function write(fd: i32, buf: string, n: i64) -> i64
+    function pipe(fds: ptr<i32>) -> i32
+    function close(fd: i32) -> i32
+    function access(path: string, mode: i32) -> i32
+    function getcwd(buf: ptr<u8>, size: i64) -> ptr<u8>
+    function execvp(file: string, argv: ptr<string>) -> i32
+    function fork() -> i32
+    function dup2(a: i32, b: i32) -> i32
+    function waitpid(pid: i32, status: ptr<i32>, options: i32) -> i32
+    function kill(pid: i32, sig: i32) -> i32
+    function poll(fds: ptr<u8>, n: i64, timeout: i32) -> i32
+}
+
+function eq(a: string, b: string) -> bool {
+    return strcmp(a, b) == 0
+}
+
+function main() -> i32 {
+    # argv with a space and a quote reaches the child untouched: no shell.
+    let c1: ptr<ProcCmd> = proc_cmd("echo")
+    proc_arg(c1, "hello world")
+    proc_arg(c1, "it's")
+    let r1: ptr<ProcResult> = proc_run(c1)
+    if r1.exit_code != 0 or proc_ok(r1) == false { return 1 }
+    if eq(r1.stdout, "hello world it's\n") == false { return 2 }
+    if eq(r1.stderr, "") == false or r1.timed_out { return 3 }
+
+    # Exit status.
+    let r2: ptr<ProcResult> = proc_run(proc_sh("exit 3"))
+    if r2.exit_code != 3 or proc_ok(r2) { return 4 }
+
+    # stderr is captured apart from stdout.
+    let r3: ptr<ProcResult> = proc_run(proc_sh("echo out; echo err 1>&2; exit 1"))
+    if eq(r3.stdout, "out\n") == false or eq(r3.stderr, "err\n") == false { return 5 }
+    if r3.exit_code != 1 { return 6 }
+
+    # stderr can join stdout, or be dropped.
+    let c4: ptr<ProcCmd> = proc_sh("echo a; echo b 1>&2")
+    proc_stderr(c4, PROC_MERGE)
+    let r4: ptr<ProcResult> = proc_run(c4)
+    if eq(r4.stdout, "a\nb\n") == false or eq(r4.stderr, "") == false { return 7 }
+    let c5: ptr<ProcCmd> = proc_sh("echo a; echo b 1>&2")
+    proc_stderr(c5, PROC_NULL)
+    proc_stdout(c5, PROC_NULL)
+    let r5: ptr<ProcResult> = proc_run(c5)
+    if eq(r5.stdout, "") == false or eq(r5.stderr, "") == false or r5.exit_code != 0 { return 8 }
+
+    # A timeout kills the child with SIGKILL, long before it would finish.
+    let c6: ptr<ProcCmd> = proc_cmd("sleep")
+    proc_arg(c6, "5")
+    proc_timeout_ms(c6, 200)
+    let t0: i64 = proc_now_ms()
+    let r6: ptr<ProcResult> = proc_run(c6)
+    let took: i64 = proc_now_ms() - t0
+    if r6.timed_out == false { return 9 }
+    if r6.exit_code != 0 - 9 { return 10 }
+    if took > 3000 or r6.elapsed_ms < 150 { return 11 }
+
+    # A command that finishes inside its limit is not marked.
+    let c7: ptr<ProcCmd> = proc_cmd("true")
+    proc_timeout_ms(c7, 5000)
+    let r7: ptr<ProcResult> = proc_run(c7)
+    if r7.timed_out or r7.exit_code != 0 { return 12 }
+
+    # Signals come back negative, as in Python's subprocess.
+    let r8: ptr<ProcResult> = proc_run(proc_sh("kill -TERM $$"))
+    if r8.exit_code != 0 - 15 { return 13 }
+
+    # A program that does not exist.
+    let r9: ptr<ProcResult> = proc_run(proc_cmd("flow-no-such-program-961"))
+    if r9.exit_code != 127 or strlen(r9.error) == 0 or proc_ok(r9) { return 14 }
+
+    # Environment overrides sit on top of this program's environment.
+    let _s: bool = proc_setenv("FLOW_PROC_TEST_KEEP", "kept")
+    let c10: ptr<ProcCmd> = proc_sh("printf '%s|%s' \"$FLOW_PROC_TEST_NEW\" \"$FLOW_PROC_TEST_KEEP\"")
+    proc_env(c10, "FLOW_PROC_TEST_NEW", "a b=c")
+    let r10: ptr<ProcResult> = proc_run(c10)
+    if eq(r10.stdout, "a b=c|kept") == false { return 15 }
+    # An override replaces the inherited value.
+    let c11: ptr<ProcCmd> = proc_sh("printf '%s' \"$FLOW_PROC_TEST_KEEP\"")
+    proc_env(c11, "FLOW_PROC_TEST_KEEP", "replaced")
+    let r11: ptr<ProcResult> = proc_run(c11)
+    if eq(r11.stdout, "replaced") == false { return 16 }
+    # A cleared environment holds only the overrides.
+    let c12: ptr<ProcCmd> = proc_cmd("/usr/bin/env")
+    proc_env_clear(c12)
+    proc_env(c12, "ONLY", "1")
+    let r12: ptr<ProcResult> = proc_run(c12)
+    if eq(r12.stdout, "ONLY=1\n") == false { return 17 }
+
+    # Working directory.
+    let c13: ptr<ProcCmd> = proc_cmd("pwd")
+    proc_cwd(c13, "/")
+    let r13: ptr<ProcResult> = proc_run(c13)
+    if eq(r13.stdout, "/\n") == false { return 18 }
+
+    # stdin text, larger than a pipe buffer, comes back through cat.
+    let mut big: string = ""
+    let mut i: i32 = 0
+    while i < 2000 {
+        big = big + "line of input text\n"
+        i = i + 1
+    }
+    let c14: ptr<ProcCmd> = proc_cmd("cat")
+    proc_input(c14, big)
+    let r14: ptr<ProcResult> = proc_run(c14)
+    if eq(r14.stdout, big) == false or r14.exit_code != 0 { return 19 }
+    # And output larger than a pipe buffer is read while the child runs.
+    let r15: ptr<ProcResult> = proc_run(proc_sh("i=0; while [ $i -lt 3000 ]; do echo line $i; i=$((i+1)); done"))
+    if strlen(r15.stdout) != 28890 { return 20 }
+
+    # proc_status passes output through and returns the code.
+    if proc_status(proc_sh("exit 0")) != 0 { return 21 }
+    if eq(proc_output(proc_sh("printf x")), "x") == false { return 22 }
+
+    # This program's own arguments and environment.
+    if proc_argc() < 1 or strlen(proc_argv(0)) == 0 { return 23 }
+    if eq(proc_argv(proc_argc()), "") == false { return 24 }
+    if proc_strs_len(proc_args()) != proc_argc() - 1 { return 25 }
+    if eq(proc_getenv("FLOW_PROC_TEST_KEEP"), "kept") == false { return 26 }
+    let _u: bool = proc_unsetenv("FLOW_PROC_TEST_KEEP")
+    if proc_has_env("FLOW_PROC_TEST_KEEP") or eq(proc_getenv("FLOW_PROC_TEST_KEEP"), "") == false { return 27 }
+    if strlen(proc_getcwd()) == 0 or proc_pid() <= 0 { return 28 }
+    let cwd_buf: ptr<u8> = malloc(4096) as ptr<u8>
+    let _g: ptr<u8> = getcwd(cwd_buf, 4096)
+    if eq(cwd_buf as string, proc_getcwd()) == false { return 32 }
+
+    # PATH lookup.
+    let sh: string = proc_which("sh")
+    if strlen(sh) == 0 or (strstr(sh, "/sh") as ptr<u8>) == null { return 29 }
+    if eq(proc_which("flow-no-such-program-961"), "") == false { return 30 }
+    if eq(proc_which("/bin/sh"), "/bin/sh") == false { return 31 }
+    return 0
+}
