@@ -958,6 +958,10 @@
           "path": "research/flow_compiler_architecture/README.md"
         },
         {
+          "label": "Recognition-Indexed SSA",
+          "path": "research/recognition-ssa.md"
+        },
+        {
           "label": "Schur Lattice Allpass",
           "path": "research/schur_lattice_allpass/README.md"
         }
