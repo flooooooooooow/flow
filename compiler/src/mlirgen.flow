@@ -5352,6 +5352,32 @@ function mlg_addr_lvalue(m: ptr<Mlg>, e: i32) -> i32 {
         let arr: i32 = m[0].arena.nodes[e].a
         let ie: i32 = m[0].arena.nodes[e].b
         let arr_ft: i32 = mlg_expr_ft(m, arr)
+        # `&xs[i]` and `&xs.data[i]` on a span: the pair's data pointer
+        # advanced by i at the span's own element type. Both used to reach
+        # the spill fallback, so a callee writing through the pointer wrote
+        # a copy and the span kept its old contents (#908). The span type
+        # decides, so a struct that has a `data` field is unaffected.
+        let mut span_e: i32 = AST_NONE
+        let mut span_ft: i32 = FT_NONE
+        if mlg_ft_is_span(m, arr_ft) == 1 {
+            span_e = arr
+            span_ft = arr_ft
+        } elif mlg_kind(m, arr) == AST_FIELD_ACCESS and mlg_span_is(m, mlg_ns(m, arr), mlg_ne(m, arr), "data") == 1 {
+            let obj: i32 = m[0].arena.nodes[arr].a
+            let oft: i32 = mlg_expr_ft(m, obj)
+            if mlg_ft_is_span(m, oft) == 1 {
+                span_e = obj
+                span_ft = oft
+            }
+        }
+        if span_e != AST_NONE {
+            let sv: i32 = mlg_emit_expr(m, span_e)
+            let siv: i32 = mlg_emit_expr(m, ie)
+            let sit: i32 = mlg_index_type(m, ie, siv)
+            let set: i32 = mlg_ft_to_mt(m, m[0].arena.nodes[span_ft].a, e)
+            let sdp: i32 = mlg_span_data(m, sv, e)
+            return mlg_ptr_gep(m, sdp, siv, sit, set)
+        }
         if mlg_ft_is_pointer(m, arr_ft) == 1 {
             let av: i32 = mlg_emit_expr(m, arr)
             let iv: i32 = mlg_emit_expr(m, ie)
