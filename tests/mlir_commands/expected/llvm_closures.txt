@@ -44,7 +44,7 @@ define i32 @lambda_3(ptr %0, i32 %1) {
 }
 
 define double @lambda_4(ptr %0, double %1, double %2) {
-  %4 = call double @llvm.fma.f64(double %2, double 5.000000e-01, double %1)
+  %4 = call double @llvm.fmuladd.f64(double %2, double 5.000000e-01, double %1)
   ret double %4
 }
 
@@ -161,7 +161,7 @@ define i32 @main() {
 }
 
 ; Function Attrs: nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none)
-declare double @llvm.fma.f64(double, double, double) #0
+declare double @llvm.fmuladd.f64(double, double, double) #0
 
 attributes #0 = { nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none) }
 

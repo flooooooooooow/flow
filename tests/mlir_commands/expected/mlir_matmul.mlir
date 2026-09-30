@@ -98,7 +98,7 @@ func.call @__flow_fault(%v63) : (!llvm.ptr) -> ()
 %v64 = arith.extsi %v60 : i32 to i64
 %v65 = llvm.getelementptr %arg2[0, %v64] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<4 x f32>
 %v66 = llvm.load %v65 : !llvm.ptr -> f32
-%v67 = llvm.intr.fma(%v55, %v66, %v44) : (f32, f32, f32) -> f32
+%v67 = llvm.intr.fmuladd(%v55, %v66, %v44) : (f32, f32, f32) -> f32
 llvm.store %v67, %v30 : f32, !llvm.ptr
 %v68 = arith.addi %v43, %v38 : index
 cf.br ^b7(%v68 : index)

@@ -68,7 +68,7 @@ define double @dot({ double, double } %0, { double, double } %1) {
   %19 = getelementptr { double, double }, ptr %12, i32 0, i32 1
   %20 = load double, ptr %19, align 8
   %21 = fmul double %18, %20
-  %22 = call double @llvm.fma.f64(double %14, double %16, double %21)
+  %22 = call double @llvm.fmuladd.f64(double %14, double %16, double %21)
   ret double %22
 }
 
@@ -92,7 +92,7 @@ define { { double, double }, { double, double }, double, i32 } @step({ { double,
   %17 = getelementptr { { double, double }, { double, double }, double, i32 }, ptr %11, i32 0, i32 1
   %18 = getelementptr { double, double }, ptr %17, i32 0, i32 0
   %19 = load double, ptr %18, align 8
-  %20 = call double @llvm.fma.f64(double %19, double %1, double %16)
+  %20 = call double @llvm.fmuladd.f64(double %19, double %1, double %16)
   %21 = getelementptr { { double, double }, { double, double }, double, i32 }, ptr %13, i32 0, i32 0
   %22 = getelementptr { double, double }, ptr %21, i32 0, i32 0
   store double %20, ptr %22, align 8
@@ -102,7 +102,7 @@ define { { double, double }, { double, double }, double, i32 } @step({ { double,
   %26 = getelementptr { { double, double }, { double, double }, double, i32 }, ptr %11, i32 0, i32 1
   %27 = getelementptr { double, double }, ptr %26, i32 0, i32 1
   %28 = load double, ptr %27, align 8
-  %29 = call double @llvm.fma.f64(double %28, double %1, double %25)
+  %29 = call double @llvm.fmuladd.f64(double %28, double %1, double %25)
   %30 = getelementptr { { double, double }, { double, double }, double, i32 }, ptr %13, i32 0, i32 0
   %31 = getelementptr { double, double }, ptr %30, i32 0, i32 1
   store double %29, ptr %31, align 8
@@ -250,7 +250,7 @@ define i32 @main() {
 }
 
 ; Function Attrs: nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none)
-declare double @llvm.fma.f64(double, double, double) #0
+declare double @llvm.fmuladd.f64(double, double, double) #0
 
 attributes #0 = { nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none) }
 

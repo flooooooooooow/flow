@@ -272,7 +272,7 @@ define float @dot(ptr %0, ptr %1, i64 %2, i64 %3, i64 %4, ptr %5, ptr %6, i64 %7
   %36 = extractvalue { ptr, ptr, i64, [1 x i64], [1 x i64] } %16, 1
   %37 = getelementptr inbounds nuw float, ptr %36, i64 %27
   %38 = load float, ptr %37, align 4
-  %39 = call float @llvm.fma.f32(float %35, float %38, float %32)
+  %39 = call float @llvm.fmuladd.f32(float %35, float %38, float %32)
   store float %39, ptr %22, align 4
   %40 = add i64 %27, %25
   br label %26
@@ -563,7 +563,7 @@ define i32 @main() {
 }
 
 ; Function Attrs: nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none)
-declare float @llvm.fma.f32(float, float, float) #0
+declare float @llvm.fmuladd.f32(float, float, float) #0
 
 attributes #0 = { nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none) }
 

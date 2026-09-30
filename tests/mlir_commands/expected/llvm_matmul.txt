@@ -78,7 +78,7 @@ define i32 @matmul_naive(ptr %0, ptr %1, ptr %2) {
   %35 = sext i32 %31 to i64
   %36 = getelementptr [4 x float], ptr %2, i32 0, i64 %35
   %37 = load float, ptr %36, align 4
-  %38 = call float @llvm.fma.f32(float %27, float %37, float %17)
+  %38 = call float @llvm.fmuladd.f32(float %27, float %37, float %17)
   store float %38, ptr %12, align 4
   %39 = add i64 %14, 1
   br label %13
@@ -108,7 +108,7 @@ define i32 @main() {
 }
 
 ; Function Attrs: nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none)
-declare float @llvm.fma.f32(float, float, float) #0
+declare float @llvm.fmuladd.f32(float, float, float) #0
 
 attributes #0 = { nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none) }
 

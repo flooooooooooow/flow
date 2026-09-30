@@ -59,7 +59,7 @@ cf.cond_br %v33, ^b5(%v30 : index), ^b6(%v30 : index)
 %v36 = arith.index_cast %v34 : index to i64
 %v37 = llvm.getelementptr %arg0[%v36] : (!llvm.ptr, i64) -> !llvm.ptr, f64
 %v38 = llvm.load %v37 : !llvm.ptr -> f64
-%v39 = llvm.intr.fma(%v38, %arg2, %v35) : (f64, f64, f64) -> f64
+%v39 = llvm.intr.fmuladd(%v38, %arg2, %v35) : (f64, f64, f64) -> f64
 llvm.store %v39, %v22 : f64, !llvm.ptr
 %v40 = arith.addi %v34, %v29 : index
 cf.br ^b4(%v40 : index)

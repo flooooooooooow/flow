@@ -251,7 +251,7 @@ cf.cond_br %v158, ^b8(%v155 : index), ^b9(%v155 : index)
 %v160 = llvm.load %v147 : !llvm.ptr -> f32
 %v161 = memref.load %arg0[%v159] : memref<?xf32>
 %v162 = memref.load %arg1[%v159] : memref<?xf32>
-%v163 = llvm.intr.fma(%v161, %v162, %v160) : (f32, f32, f32) -> f32
+%v163 = llvm.intr.fmuladd(%v161, %v162, %v160) : (f32, f32, f32) -> f32
 llvm.store %v163, %v147 : f32, !llvm.ptr
 %v164 = arith.addi %v159, %v154 : index
 cf.br ^b7(%v164 : index)

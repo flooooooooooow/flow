@@ -98,8 +98,8 @@ const MLG_MAX_FNS: i32 = 8192
 const MLG_MAX_LOCALS: i32 = 4096
 const MLG_MAX_ARGS: i32 = 64
 const MLG_MAX_LOOPS: i32 = 64
-const MLG_MAX_STRS: i32 = 4096
-const MLG_POOL_CAP: i32 = 262144
+const MLG_MAX_STRS: i32 = 16384
+const MLG_POOL_CAP: i32 = 1048576
 const MLG_VAL_CAP: i32 = 8388608
 const MLG_MAX_MERGE: i32 = 128
 const MLG_MAX_DEFERS: i32 = 1024
@@ -3100,7 +3100,12 @@ function mlg_cast(m: ptr<Mlg>, v: i32, from_in: i32, dst: i32) -> i32 {
                     }
                 } else {
                     if mlg_starts_i(from) == 1 and mlg_is_float_mt(dst) == 1 {
-                        op = "arith.sitofp"
+                        # An unsigned value converts as unsigned, as in C.
+                        if mlg_vuns(m, v) == 1 or from == MT_I1 {
+                            op = "arith.uitofp"
+                        } else {
+                            op = "arith.sitofp"
+                        }
                     } else {
                         if mlg_is_float_mt(from) == 1 and mlg_starts_i(dst) == 1 {
                             op = "arith.fptosi"
@@ -6971,7 +6976,7 @@ function mlg_emit_negf(m: ptr<Mlg>, v: i32, t: i32) -> i32 {
     return r
 }
 
-# a * b + c and its mirror images as one fused multiply-add, the way clang
+# a * b + c and its mirror images as one multiply-add, the way clang
 # contracts them within a C expression (-ffp-contract=on, llvm.fmuladd), so
 # float results agree with the C backend to the last bit. The left operand
 # is tried first, as clang does; a - b * c negates the product's first
@@ -7035,9 +7040,11 @@ function mlg_try_fma(m: ptr<Mlg>, e: i32) -> i32 {
     let res: i32 = mlg_new_val(m, t)
     mlg_line(m)
     mlg_v(m, res)
-    # llvm.intr.fma rather than math.fma: every lowering pipeline the
-    # commands run keeps the LLVM dialect, not all convert math.
-    mlg_s(m, " = llvm.intr.fma(")
+    # llvm.intr.fmuladd, the intrinsic clang emits: LLVM then fuses or
+    # splits it as it does for the C build (the loop vectorizer splits it
+    # in an in-order reduction). It is in the LLVM dialect, which every
+    # lowering pipeline the commands run keeps; not all convert math.
+    mlg_s(m, " = llvm.intr.fmuladd(")
     mlg_v(m, av)
     mlg_s(m, ", ")
     mlg_v(m, bv)
@@ -7664,6 +7671,21 @@ function mlg_emit_cast_expr(m: ptr<Mlg>, e: i32) -> i32 {
             mlg_set_vuns(m, v, 1)
         }
         return v
+    }
+    if tu == 1 and mlg_is_float_mt(from_eff) == 1 and mlg_starts_i(dst) == 1 {
+        # A float to an unsigned type converts as unsigned, as in C.
+        let cu: i32 = mlg_new_val(m, dst)
+        mlg_line(m)
+        mlg_v(m, cu)
+        mlg_s(m, " = arith.fptoui ")
+        mlg_v(m, v)
+        mlg_s(m, " : ")
+        mlg_put_type(m, from_eff)
+        mlg_s(m, " to ")
+        mlg_put_type(m, dst)
+        mlg_nl(m)
+        mlg_set_vuns(m, cu, 1)
+        return cu
     }
     let c: i32 = mlg_cast(m, v, from, dst)
     if tu == 1 {

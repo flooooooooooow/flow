@@ -96,7 +96,7 @@ func.return %v39 : i32
 func.func @fmix(%arg0: f64, %arg1: f32) -> f64 {
 %v40 = arith.constant 2.5 : f64
 %v41 = arith.extf %arg1 : f32 to f64
-%v42 = llvm.intr.fma(%arg0, %v40, %v41) : (f64, f64, f64) -> f64
+%v42 = llvm.intr.fmuladd(%arg0, %v40, %v41) : (f64, f64, f64) -> f64
 %v43 = arith.constant 0.25 : f64
 %v44 = arith.subf %v42, %v43 : f64
 func.return %v44 : f64

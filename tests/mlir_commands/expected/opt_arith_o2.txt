@@ -94,7 +94,7 @@ module {
     %cst = arith.constant 2.500000e+00 : f64
     %cst_0 = arith.constant 2.500000e-01 : f64
     %0 = arith.extf %arg1 : f32 to f64
-    %1 = llvm.intr.fma(%arg0, %cst, %0) : (f64, f64, f64) -> f64
+    %1 = llvm.intr.fmuladd(%arg0, %cst, %0) : (f64, f64, f64) -> f64
     %2 = arith.subf %1, %cst_0 : f64
     return %2 : f64
   }
@@ -129,7 +129,7 @@ module {
     %11 = llvm.call @printf(%0, %c45_i32) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
     %12 = llvm.call @printf(%1, %c250000000_i64) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
     %13 = llvm.call @printf(%1, %c300000_i64) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
-    %14 = llvm.intr.fma(%cst, %cst_2, %cst_3) : (f64, f64, f64) -> f64
+    %14 = llvm.intr.fmuladd(%cst, %cst_2, %cst_3) : (f64, f64, f64) -> f64
     %15 = arith.subf %14, %cst_1 : f64
     %16 = llvm.call @printf(%2, %15) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, f64) -> i32
     %17 = llvm.call @printf(%2, %cst_0) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, f64) -> i32

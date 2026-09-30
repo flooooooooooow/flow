@@ -459,7 +459,7 @@ func.call @__flow_fault(%v321) : (!llvm.ptr) -> ()
 %v327 = arith.constant 2.0 : f64
 %v328 = func.call @log(%v300) : (f64) -> f64
 %v329 = arith.negf %v327 : f64
-%v330 = llvm.intr.fma(%v329, %v328, %v326) : (f64, f64, f64) -> f64
+%v330 = llvm.intr.fmuladd(%v329, %v328, %v326) : (f64, f64, f64) -> f64
 %v331 = func.call @sqrt(%v330) : (f64) -> f64
 %v332 = arith.constant 0.5 : f64
 %v333 = arith.mulf %v331, %v332 : f64
@@ -3157,7 +3157,7 @@ cf.cond_br %v2699, ^b107(%v2696 : index), ^b108(%v2696 : index)
 %v2719 = arith.extsi %v2718 : i32 to i64
 %v2720 = llvm.getelementptr %v2714[%v2719] : (!llvm.ptr, i64) -> !llvm.ptr, f32
 %v2721 = llvm.load %v2720 : !llvm.ptr -> f32
-%v2722 = llvm.intr.fma(%v2711, %v2721, %v2701) : (f32, f32, f32) -> f32
+%v2722 = llvm.intr.fmuladd(%v2711, %v2721, %v2701) : (f32, f32, f32) -> f32
 llvm.store %v2722, %v2688 : f32, !llvm.ptr
 %v2723 = arith.addi %v2700, %v2695 : index
 cf.br ^b106(%v2723 : index)
@@ -3348,7 +3348,7 @@ cf.cond_br %v2869, ^b116(%v2866 : index), ^b117(%v2866 : index)
 %v2889 = arith.extsi %v2888 : i32 to i64
 %v2890 = llvm.getelementptr %v2884[%v2889] : (!llvm.ptr, i64) -> !llvm.ptr, f32
 %v2891 = llvm.load %v2890 : !llvm.ptr -> f32
-%v2892 = llvm.intr.fma(%v2881, %v2891, %v2871) : (f32, f32, f32) -> f32
+%v2892 = llvm.intr.fmuladd(%v2881, %v2891, %v2871) : (f32, f32, f32) -> f32
 llvm.store %v2892, %v2858 : f32, !llvm.ptr
 %v2893 = arith.addi %v2870, %v2865 : index
 cf.br ^b115(%v2893 : index)
@@ -3539,7 +3539,7 @@ cf.cond_br %v3039, ^b125(%v3036 : index), ^b126(%v3036 : index)
 %v3059 = arith.extsi %v3058 : i32 to i64
 %v3060 = llvm.getelementptr %v3054[%v3059] : (!llvm.ptr, i64) -> !llvm.ptr, f32
 %v3061 = llvm.load %v3060 : !llvm.ptr -> f32
-%v3062 = llvm.intr.fma(%v3051, %v3061, %v3041) : (f32, f32, f32) -> f32
+%v3062 = llvm.intr.fmuladd(%v3051, %v3061, %v3041) : (f32, f32, f32) -> f32
 llvm.store %v3062, %v3028 : f32, !llvm.ptr
 %v3063 = arith.addi %v3040, %v3035 : index
 cf.br ^b124(%v3063 : index)
