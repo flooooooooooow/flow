@@ -2201,6 +2201,12 @@ function sem_check_function_call(c: ptr<Sem>, name: string, args: ptr<SemIntVec>
     if vfi >= 0 and sem_iv_get(c.fi_variadic, vfi) == 1 {
         variadic = true
     }
+    # A struct value fits a ptr<T> parameter only as a method receiver,
+    # where cgen takes its address (#1009); elsewhere C rejects it (#1080).
+    let mut recv_call: bool = false
+    if node >= 0 and sem_nk(c, node) == AST_CALL and sem_is_method_call(c, node) {
+        recv_call = true
+    }
     let mut matching: i32 = 0 - 1
     let mut pass: i32 = 0
     while pass < 2 and matching < 0 {
@@ -2221,6 +2227,8 @@ function sem_check_function_call(c: ptr<Sem>, name: string, args: ptr<SemIntVec>
                 let mut j: i32 = 0
                 while j < np and j < arg_types.len and fits {
                     if sem_is_compatible(c, arg_types.data[j], sem_ty_param(c.t, cand, j)) == false {
+                        fits = false
+                    } elif (j > 0 or recv_call == false) and sem_struct_for_pointer(c, arg_types.data[j], sem_ty_param(c.t, cand, j)) {
                         fits = false
                     }
                     j = j + 1
@@ -2369,6 +2377,22 @@ function sem_call_args(c: ptr<Sem>, first: i32) -> ptr<SemIntVec> {
         a = sem_nnext(c, a)
     }
     return v
+}
+
+# True when a struct value (not a capability token) meets a ptr<T>
+# parameter. sem_is_compatible allows it for method receivers.
+function sem_struct_for_pointer(c: ptr<Sem>, actual: i32, expected: i32) -> bool {
+    if actual < 0 or expected < 0 {
+        return false
+    }
+    if sem_tkind(c, actual) != TK_STRUCT or sem_tkind(c, expected) != TK_POINTER {
+        return false
+    }
+    let tys: ptr<SemTys> = c.t
+    if sem_s_starts(tys.name[actual], "capability_") {
+        return false
+    }
+    return true
 }
 
 # A MethodCall: receiver = the first argument.
