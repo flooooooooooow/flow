@@ -157,6 +157,20 @@ function starts_with(s: string, prefix: string) -> bool {
     return true
 }
 
+# A heap copy of `s`: split_lines writes into its argument, and a string
+# literal (an empty list) is read-only.
+function writable(s: string) -> string {
+    let n: i32 = strlen(s) as i32
+    let out: ptr<u8> = malloc((n + 1) as i64) as ptr<u8>
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    while i <= n {
+        out[i] = p[i]
+        i = i + 1
+    }
+    return out as string
+}
+
 # Tracked .py files, one per line, sorted by bytes as LC_ALL=C sort does.
 # "" when git fails. Excluded, and nothing else may be:
 #   third_party/, .lake/          vendored trees, which other projects own.
@@ -182,7 +196,7 @@ function tracked_python() -> string {
     let r: ptr<ProcResult> = proc_run(c)
     if r.exit_code != 0 {
         println("python-ratchet: git ls-files failed: " + r.stderr + r.error)
-        return ""
+        return writable("")
     }
     let starts: ptr<i32> = malloc((MAX_LINES * 4) as i64) as ptr<i32>
     let n: i32 = split_lines(r.stdout, starts)
@@ -211,7 +225,7 @@ function tracked_python() -> string {
         out = out + names[i] + "\n"
         i = i + 1
     }
-    return out
+    return writable(out)
 }
 
 function main() -> i32 {

@@ -605,13 +605,46 @@ function main() -> i32 {
         zi = zi + 1
     }
 
-    let list_text: string = git_out("ls-files", "", "", "") + "\n"
-    if strlen(list_text) == 1 {
-        ft_errln("repo_stats: git ls-files listed nothing")
-        return 1
+    # Arguments: --check, and --inputs DIR, which reads the file list, the
+    # commit metadata and the mode from DIR/files.txt, meta.txt and
+    # mode.txt instead of asking git (the tests use it).
+    let mut check_mode: i32 = 0
+    let mut inputs: string = ""
+    let mut ai: i32 = 1
+    while ai < proc_argc() {
+        if str_eq(proc_argv(ai), "--check") {
+            check_mode = 1
+        } elif str_eq(proc_argv(ai), "--inputs") and ai + 1 < proc_argc() {
+            inputs = proc_argv(ai + 1)
+            ai = ai + 1
+        } else {
+            ft_errln("usage: repo_stats [--check] [--inputs DIR]")
+            return 2
+        }
+        ai = ai + 1
     }
-    let rev: string = stats_rev()
-    let meta_text: string = "commit=" + git_out("rev-parse", "--short=12", rev, "") + "\ngenerated_at=" + git_out("show", "-s", "--format=%cI", rev) + "\n"
+
+    let mut list_text: string = ""
+    let mut meta_text: string = ""
+    if strlen(inputs) > 0 {
+        list_text = read_whole_file(inputs + "/files.txt", READ_CAP)
+        meta_text = read_whole_file(inputs + "/meta.txt", 4096)
+        if starts_with(read_whole_file(inputs + "/mode.txt", 64), "check") {
+            check_mode = 1
+        }
+        if strlen(list_text) == 0 {
+            ft_errln("repo_stats: missing " + inputs + "/files.txt")
+            return 1
+        }
+    } else {
+        list_text = git_out("ls-files", "", "", "") + "\n"
+        if strlen(list_text) == 1 {
+            ft_errln("repo_stats: git ls-files listed nothing")
+            return 1
+        }
+        let rev: string = stats_rev()
+        meta_text = "commit=" + git_out("rev-parse", "--short=12", rev, "") + "\ngenerated_at=" + git_out("show", "-s", "--format=%cI", rev) + "\n"
+    }
 
     let mut commit: string = "unknown"
     let mut generated_at: string = "unknown"
@@ -691,10 +724,6 @@ function main() -> i32 {
     let block: string = emit_readme_block(lf, ll, af, al, shell_files, shell_lines, source_files, source_lines, proofs, commit)
 
     let _mk: i32 = mkdir("docs/generated", 493)
-    let mut check_mode: i32 = 0
-    if proc_argc() > 1 and str_eq(proc_argv(1), "--check") {
-        check_mode = 1
-    }
 
     if check_mode == 1 {
         let old_json: string = read_whole_file("docs/generated/repository-stats.json", READ_CAP)
