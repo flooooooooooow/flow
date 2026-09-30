@@ -1,15 +1,16 @@
 module {
 llvm.func @printf(!llvm.ptr, ...) -> i32
 llvm.mlir.global internal constant @str_0("no newline, \00") {addr_space = 0 : i32} : !llvm.array<13 x i8>
-llvm.mlir.global internal constant @str_1("with newline\n\00") {addr_space = 0 : i32} : !llvm.array<14 x i8>
-llvm.mlir.global internal constant @str_2("tab\tquote\" backslash\5C end\n\00") {addr_space = 0 : i32} : !llvm.array<27 x i8>
+llvm.mlir.global internal constant @str_1("with newline\0A\00") {addr_space = 0 : i32} : !llvm.array<14 x i8>
+llvm.mlir.global internal constant @str_2("tab\09quote\22 backslash\5C end\0A\00") {addr_space = 0 : i32} : !llvm.array<27 x i8>
 llvm.mlir.global internal constant @str_3("flow\00") {addr_space = 0 : i32} : !llvm.array<5 x i8>
-llvm.mlir.global internal constant @str_4("%s has %d letters and pi is %.3f\n\00") {addr_space = 0 : i32} : !llvm.array<34 x i8>
-llvm.mlir.global internal constant @str_5("plain\n\00") {addr_space = 0 : i32} : !llvm.array<7 x i8>
-llvm.mlir.global internal constant @str_6("%d\n\00") {addr_space = 0 : i32} : !llvm.array<4 x i8>
-llvm.mlir.global internal constant @str_7("even and big\n\00") {addr_space = 0 : i32} : !llvm.array<14 x i8>
-llvm.mlir.global internal constant @str_8("odd or six\n\00") {addr_space = 0 : i32} : !llvm.array<12 x i8>
-llvm.mlir.global internal constant @str_9("non-negative\n\00") {addr_space = 0 : i32} : !llvm.array<14 x i8>
+llvm.mlir.global internal constant @str_4("%s\0A\00") {addr_space = 0 : i32} : !llvm.array<4 x i8>
+llvm.mlir.global internal constant @str_5("%s has %d letters and pi is %.3f\0A\00") {addr_space = 0 : i32} : !llvm.array<34 x i8>
+llvm.mlir.global internal constant @str_6("plain\0A\00") {addr_space = 0 : i32} : !llvm.array<7 x i8>
+llvm.mlir.global internal constant @str_7("%d\0A\00") {addr_space = 0 : i32} : !llvm.array<4 x i8>
+llvm.mlir.global internal constant @str_8("even and big\0A\00") {addr_space = 0 : i32} : !llvm.array<14 x i8>
+llvm.mlir.global internal constant @str_9("odd or six\0A\00") {addr_space = 0 : i32} : !llvm.array<12 x i8>
+llvm.mlir.global internal constant @str_10("non-negative\0A\00") {addr_space = 0 : i32} : !llvm.array<14 x i8>
 func.func @is_even(%arg0: i32) -> i1 {
 %v1 = arith.constant 2 : i32
 %v2 = arith.remsi %arg0, %v1 : i32
@@ -36,19 +37,19 @@ func.func @main() -> i32 {
 %v13 = llvm.call @printf(%v12) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr) -> i32
 %v14 = arith.constant 0 : i32
 %v15 = llvm.mlir.addressof @str_3 : !llvm.ptr
-%v16 = llvm.call @printf(%v15) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr) -> i32
-%v17 = arith.constant 0 : i32
-%v18 = llvm.mlir.addressof @str_4 : !llvm.ptr
-%v19 = arith.constant 4 : i32
-%v20 = arith.constant 3.14159 : f32
-%v21 = arith.extf %v20 : f32 to f64
-%v22 = llvm.call @printf(%v18, %v15, %v19, %v21) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, !llvm.ptr, i32, f64) -> i32
-%v23 = llvm.mlir.addressof @str_5 : !llvm.ptr
+%v16 = llvm.mlir.addressof @str_4 : !llvm.ptr
+%v17 = llvm.call @printf(%v16, %v15) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, !llvm.ptr) -> i32
+%v18 = arith.constant 0 : i32
+%v19 = llvm.mlir.addressof @str_5 : !llvm.ptr
+%v20 = arith.constant 4 : i32
+%v21 = arith.constant 3.14159 : f64
+%v22 = llvm.call @printf(%v19, %v15, %v20, %v21) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, !llvm.ptr, i32, f64) -> i32
+%v23 = llvm.mlir.addressof @str_6 : !llvm.ptr
 %v24 = llvm.call @printf(%v23) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr) -> i32
 %v25 = arith.constant 1 : i1
-%v26 = llvm.mlir.addressof @str_6 : !llvm.ptr
-%v27 = arith.extui %v25 : i1 to i32
-%v28 = llvm.call @printf(%v26, %v27) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+%v26 = arith.extui %v25 : i1 to i32
+%v27 = llvm.mlir.addressof @str_7 : !llvm.ptr
+%v28 = llvm.call @printf(%v27, %v26) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
 %v29 = arith.constant 0 : i32
 %v30 = arith.constant 6 : i32
 %v31 = func.call @is_even(%v30) : (i32) -> i1
@@ -62,7 +63,7 @@ scf.yield %v35 : i1
 }
 cf.cond_br %v32, ^b1, ^b2
 ^b1:
-%v36 = llvm.mlir.addressof @str_7 : !llvm.ptr
+%v36 = llvm.mlir.addressof @str_8 : !llvm.ptr
 %v37 = llvm.call @printf(%v36) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr) -> i32
 %v38 = arith.constant 0 : i32
 cf.br ^b3
@@ -82,7 +83,7 @@ scf.yield %v45 : i1
 }
 cf.cond_br %v42, ^b4, ^b5
 ^b4:
-%v46 = llvm.mlir.addressof @str_8 : !llvm.ptr
+%v46 = llvm.mlir.addressof @str_9 : !llvm.ptr
 %v47 = llvm.call @printf(%v46) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr) -> i32
 %v48 = arith.constant 0 : i32
 cf.br ^b6
@@ -95,7 +96,7 @@ cf.br ^b6
 %v52 = arith.xori %v50, %v51 : i1
 cf.cond_br %v52, ^b7, ^b8
 ^b7:
-%v53 = llvm.mlir.addressof @str_9 : !llvm.ptr
+%v53 = llvm.mlir.addressof @str_10 : !llvm.ptr
 %v54 = llvm.call @printf(%v53) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr) -> i32
 %v55 = arith.constant 0 : i32
 cf.br ^b9
@@ -107,7 +108,7 @@ cf.br ^b9
 %v58 = arith.constant 10 : i32
 %v59 = arith.constant 20 : i32
 %v60 = func.call @pick(%v57, %v58, %v59) : (i1, i32, i32) -> i32
-%v61 = llvm.mlir.addressof @str_6 : !llvm.ptr
+%v61 = llvm.mlir.addressof @str_7 : !llvm.ptr
 %v62 = llvm.call @printf(%v61, %v60) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
 %v63 = arith.constant 0 : i32
 %v64 = arith.constant 7 : i32
@@ -115,7 +116,7 @@ cf.br ^b9
 %v66 = arith.constant 10 : i32
 %v67 = arith.constant 20 : i32
 %v68 = func.call @pick(%v65, %v66, %v67) : (i1, i32, i32) -> i32
-%v69 = llvm.mlir.addressof @str_6 : !llvm.ptr
+%v69 = llvm.mlir.addressof @str_7 : !llvm.ptr
 %v70 = llvm.call @printf(%v69, %v68) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
 %v71 = arith.constant 0 : i32
 %v72 = arith.constant 2 : i32
@@ -128,9 +129,9 @@ scf.yield %v76 : i1
 %v77 = arith.constant false
 scf.yield %v77 : i1
 }
-%v78 = llvm.mlir.addressof @str_6 : !llvm.ptr
-%v79 = arith.extui %v74 : i1 to i32
-%v80 = llvm.call @printf(%v78, %v79) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+%v78 = arith.extui %v74 : i1 to i32
+%v79 = llvm.mlir.addressof @str_7 : !llvm.ptr
+%v80 = llvm.call @printf(%v79, %v78) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
 %v81 = arith.constant 0 : i32
 %v82 = arith.constant 0 : i32
 func.return %v82 : i32

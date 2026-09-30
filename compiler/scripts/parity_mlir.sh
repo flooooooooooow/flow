@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # Parity gate for the Flow MLIR emitter (compiler/src/mlirgen.flow).
 #
-# The emitter replaces the core of src/flow/mlir_generator.py for the
-# programs it covers and refuses the rest (see docs/design/mlir-in-flow.md).
-# This gate holds it to the Python generator in two ways: the MLIR text, and
-# the output of the programs built from it.
+# A regression gate on the MLIR text the emitter writes and on the output of
+# the programs built from it. The goldens began as the retired Python
+# generator's output; since the emitter stopped copying that generator's
+# bugs (docs/design/mlir-in-flow.md) they are recorded from flowc with
+# --record, each change tied to the fix that caused it. Correctness against
+# the C backend is compiler/scripts/mlir_vs_c.sh.
 #
 #   ./compiler/scripts/parity_mlir.sh
 #       Golden mode, no Python. Each fixture in compiler/fixtures/mlir/ must
@@ -29,6 +31,11 @@
 #       at <rev>. Only programs whose flowc output already equals Python's
 #       are recorded in corpus.txt.
 #
+#   ./compiler/scripts/parity_mlir.sh --record
+#       Rewrite the goldens from flowc: fixture text (GPU and wasm32 text
+#       too), run output where mlir-opt is installed, and the digest of every
+#       corpus program flowc accepts. Review the diff before committing it.
+#
 # GPU mode: a fixture named gpu_*.flow is also emitted with FLOWC_MLIR_GPU=1
 # and compared with its `<name>.gpu.mlir` golden (Python --mlir-gpu), text
 # only. With --python, every accepted program that has an @gpu kernel is
@@ -48,8 +55,8 @@
 # flowc runs with FLOWC_LENIENT=1, as Python ran with --lenient: type errors
 # that are not fatal are warnings on both sides.
 #
-# Goldens were recorded from bb23f19f (origin/main after #1027; the Python
-# MLIR generator is unchanged since eec7463f).
+# Goldens were first recorded from Python at bb23f19f, then from flowc with
+# --record as the emitter's bug fixes changed its output.
 #
 # Env: FLOWC_BIN=<path> tests that binary instead of building
 # compiler/build/flowc_bootstrap from the checked-in bootstrap C.
@@ -65,10 +72,10 @@ LOWER=compiler/scripts/mlir_lower.sh
 mode="${1:-}"
 rev="${2:-}"
 case "$mode" in
-    ""|--python|--write-golden) ;;
-    *) echo "usage: $0 [--python <rev> | --write-golden <rev>]" >&2; exit 2 ;;
+    ""|--python|--write-golden|--record) ;;
+    *) echo "usage: $0 [--python <rev> | --write-golden <rev> | --record]" >&2; exit 2 ;;
 esac
-if [[ -n "$mode" && -z "$rev" ]]; then
+if [[ -n "$mode" && "$mode" != "--record" && -z "$rev" ]]; then
     echo "usage: $0 $mode <rev>" >&2
     exit 2
 fi
@@ -86,6 +93,13 @@ echo "=== parity_mlir: flowc = ${BIN} ==="
 have_mlir=0
 if "$LOWER" --tools >/dev/null 2>&1; then
     have_mlir=1
+fi
+# Link the lowered IR with the clang of the same LLVM as mlir-translate:
+# an older clang (Xcode's) cannot read the IR attributes a newer LLVM writes.
+MLIR_CC=clang
+if [[ "$have_mlir" -eq 1 ]]; then
+    llvm_bin="$(dirname "$("$LOWER" --tools | sed -n 's/^mlir-translate=//p')")"
+    [[ -x "$llvm_bin/clang" ]] && MLIR_CC="$llvm_bin/clang"
 fi
 
 key_of() {
@@ -152,7 +166,7 @@ build_run() {
     else
         ll="$in"
     fi
-    if ! timeout 120 "${CC:-clang}" -w -O1 "$ll" -lm -o "$tag.exe" >"$tag.link.log" 2>&1; then
+    if ! timeout 120 "${CC:-$MLIR_CC}" -w -O1 "$ll" -lm -o "$tag.exe" >"$tag.link.log" 2>&1; then
         return 2
     fi
     run_exe "$tag" "$src_dir" "$tag.out"
@@ -229,6 +243,57 @@ if [[ "$mode" == "--write-golden" ]]; then
         cat "$WORK/corpus.txt"
     } > "$FIX/corpus.txt"
     echo "wrote goldens for ${#fixtures[@]} fixtures and ${n} corpus programs from ${rev}"
+    exit 0
+fi
+
+if [[ "$mode" == "--record" ]]; then
+    # The goldens from flowc itself: normalized text (and GPU and wasm32
+    # text), run output where mlir-opt is installed, and a digest of every
+    # program under the corpus directories flowc accepts.
+    for f in "${fixtures[@]}"; do
+        base="$FIX/$(basename "$f" .flow)"
+        key="$(key_of "$f")"
+        if ! flowc_emit "$f" "$WORK/flowc/$key.mlir"; then
+            echo "record: flowc refused fixture $f: $(head -1 "$WORK/flowc/$key.mlir.log")" >&2
+            exit 1
+        fi
+        awk -f "$NORM" "$WORK/flowc/$key.mlir" > "$base.mlir"
+        if [[ "$(basename "$f")" == gpu_* ]]; then
+            flowc_emit_gpu "$f" "$WORK/flowc/$key.gpu.mlir"
+            awk -f "$NORM" "$WORK/flowc/$key.gpu.mlir" > "$base.gpu.mlir"
+        fi
+        if [[ "$(basename "$f")" == wasm_* ]]; then
+            flowc_emit_w32 "$f" "$WORK/flowc/$key.w32.mlir"
+            awk -f "$NORM" "$WORK/flowc/$key.w32.mlir" > "$base.w32.mlir"
+        fi
+        if [[ "$have_mlir" -eq 1 ]]; then
+            if build_run "$WORK/flowc/$key" "$WORK/flowc/$key.mlir" mlir "$(dirname "$f")"; then
+                cp "$WORK/flowc/$key.out" "$base.out"
+                rm -f "$WORK/flowc/$key.exe"
+            else
+                echo "record: fixture $f does not build" >&2
+                exit 1
+            fi
+        fi
+    done
+    find examples tests lib benchmarks compiler/fixtures -name '*.flow' -type f \
+        | LC_ALL=C sort > "$WORK/all.txt"
+    : > "$WORK/corpus.txt"
+    n=0
+    while IFS= read -r f; do
+        [[ "$f" == "$FIX"/* ]] && continue
+        key="$(key_of "$f")"
+        flowc_emit "$f" "$WORK/flowc/$key.mlir" || continue
+        awk -f "$NORM" "$WORK/flowc/$key.mlir" > "$WORK/flowc/$key.norm"
+        printf '%s %s\n' "$(digest "$WORK/flowc/$key.norm")" "$f" >> "$WORK/corpus.txt"
+        n=$((n + 1))
+    done < "$WORK/all.txt"
+    {
+        echo "# Corpus programs the Flow MLIR emitter accepts, with the digest of"
+        echo "# their normalized MLIR. Written by parity_mlir.sh --record."
+        cat "$WORK/corpus.txt"
+    } > "$FIX/corpus.txt"
+    echo "recorded goldens for ${#fixtures[@]} fixtures and ${n} corpus programs from flowc"
     exit 0
 fi
 

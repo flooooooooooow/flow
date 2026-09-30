@@ -1,4 +1,7 @@
 module {
+func.func private @malloc(i64) -> !llvm.ptr
+func.func private @memset(!llvm.ptr, i32, i64) -> !llvm.ptr
+func.func private @strlen(!llvm.ptr) -> i64
 llvm.mlir.global internal constant @str_0("hello\00") {addr_space = 0 : i32} : !llvm.array<6 x i8>
 func.func private @lambda_1(%env: !llvm.ptr, %arg0: i32) -> i32 {
 %v1 = llvm.getelementptr %env[0, 0] : (!llvm.ptr) -> !llvm.ptr, !llvm.struct<(i32)>
@@ -7,9 +10,6 @@ func.func private @lambda_1(%env: !llvm.ptr, %arg0: i32) -> i32 {
 %v4 = arith.addi %arg0, %v3 : i32
 func.return %v4 : i32
 }
-func.func private @malloc(i64) -> !llvm.ptr
-func.func private @strlen(!llvm.ptr) -> i64
-func.func private @memset(!llvm.ptr, i32, i64) -> !llvm.ptr
 // Struct: Point
 // Fields:
 //   x: i32
@@ -89,24 +89,24 @@ func.func @main() -> i32 {
 %v66 = llvm.mlir.addressof @str_0 : !llvm.ptr
 %v67 = func.call @strlen(%v66) : (!llvm.ptr) -> i64
 %v68 = llvm.mlir.undef : !llvm.struct<(i32, i32)>
-%v69 = arith.constant 4 : i32
+%v69 = arith.constant 0 : i32
 %v70 = llvm.insertvalue %v69, %v68[0] : !llvm.struct<(i32, i32)>
-%v71 = arith.constant 6 : i32
+%v71 = arith.constant 0 : i32
 %v72 = llvm.insertvalue %v71, %v70[1] : !llvm.struct<(i32, i32)>
 %v73 = llvm.mlir.undef : !llvm.struct<(i32, i32)>
-%v74 = arith.constant 0 : i32
+%v74 = arith.constant 4 : i32
 %v75 = llvm.insertvalue %v74, %v73[0] : !llvm.struct<(i32, i32)>
-%v76 = arith.constant 0 : i32
+%v76 = arith.constant 6 : i32
 %v77 = llvm.insertvalue %v76, %v75[1] : !llvm.struct<(i32, i32)>
 %v78 = llvm.mlir.undef : !llvm.struct<(i32, i32)>
-%v79 = llvm.extractvalue %v77[0] : !llvm.struct<(i32, i32)>
+%v79 = llvm.extractvalue %v72[0] : !llvm.struct<(i32, i32)>
 %v80 = llvm.insertvalue %v79, %v78[0] : !llvm.struct<(i32, i32)>
-%v81 = llvm.extractvalue %v77[1] : !llvm.struct<(i32, i32)>
+%v81 = llvm.extractvalue %v72[1] : !llvm.struct<(i32, i32)>
 %v82 = llvm.insertvalue %v81, %v80[1] : !llvm.struct<(i32, i32)>
 %v83 = llvm.mlir.undef : !llvm.struct<(i32, i32)>
-%v84 = llvm.extractvalue %v72[0] : !llvm.struct<(i32, i32)>
+%v84 = llvm.extractvalue %v77[0] : !llvm.struct<(i32, i32)>
 %v85 = llvm.insertvalue %v84, %v83[0] : !llvm.struct<(i32, i32)>
-%v86 = llvm.extractvalue %v72[1] : !llvm.struct<(i32, i32)>
+%v86 = llvm.extractvalue %v77[1] : !llvm.struct<(i32, i32)>
 %v87 = llvm.insertvalue %v86, %v85[1] : !llvm.struct<(i32, i32)>
 %v88 = func.call @mid(%v82, %v87) : (!llvm.struct<(i32, i32)>, !llvm.struct<(i32, i32)>) -> !llvm.struct<(i32, i32)>
 %v89 = llvm.mlir.undef : !llvm.struct<(i32, i32)>

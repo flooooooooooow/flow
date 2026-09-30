@@ -1,6 +1,6 @@
 module {
 llvm.func @printf(!llvm.ptr, ...) -> i32
-llvm.mlir.global internal constant @str_0("%d\n\00") {addr_space = 0 : i32} : !llvm.array<4 x i8>
+llvm.mlir.global internal constant @str_0("%d\0A\00") {addr_space = 0 : i32} : !llvm.array<4 x i8>
 // Module static: dep_calls
 llvm.mlir.global internal @dep_calls(0 : i32) : i32
 func.func @dep_scale(%arg0: i32) -> i32 {

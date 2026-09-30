@@ -1109,7 +1109,7 @@ compile_program_mlir() {
         exit 1
     fi
     print_success "MLIR → LLVM: $basename.ll"
-    if ! flow_link_mlir_ll "$build_dir/$basename.ll" "$build_dir/$basename"; then
+    if ! flow_link_mlir_ll "$build_dir/$basename.ll" "$build_dir/$basename" "$build_dir/$basename.mlir.c"; then
         print_error "MLIR/LLVM compilation/linking failed"
         exit 1
     fi
@@ -1123,11 +1123,16 @@ flow_emit_mlir() {
     "$SCRIPT_DIR/compiler/scripts/flow_to_mlir.sh" "$@"
 }
 
-# flow_link_mlir_ll IN.ll OUT: link lowered MLIR with the Flow runtime, as
+# flow_link_mlir_ll IN.ll OUT [EMBED.c]: link lowered MLIR with the Flow
+# runtime (and the program's @cEmbed C when EMBED.c exists), as
 # the Python MLIR path always did (clang -O2, the concurrency runtime, the
 # lib/runtime archive, the GPU runtime where there is one).
 flow_link_mlir_ll() {
     local ll="$1" exe="$2"
+    local embed=()
+    if [ -n "${3:-}" ] && [ -f "$3" ]; then
+        embed=("$3")
+    fi
     local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
     local py_header_dir="$py_framework_dir/Python3.framework/Headers"
     local py_cflags=()
@@ -1144,7 +1149,7 @@ flow_link_mlir_ll() {
     clang "${FLOW_COLLECTED_CFLAGS[@]}" -O2 -fno-omit-frame-pointer \
         -Wno-override-module \
         "${py_cflags[@]+"${py_cflags[@]}"}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" \
-        "$ll" \
+        "$ll" ${embed[@]+"${embed[@]}"} \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "${FLOW_CONC_SOURCES[@]}" \
         "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
