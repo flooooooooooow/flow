@@ -2,7 +2,8 @@
 # @means  Flow package manager: registry index, version selection,
 #         install into flow_packages/, flow.lock, `add`, `sync`, `search`,
 #         `info`, `init`, `publish`, `build`, `run`, `build-native`,
-#         `run-native` and `clean`.
+#         `run-native`, `clean`, and `native-link` (the [native] sources
+#         that `flow run` links).
 #
 # This is the package manager that src/flow/package.py and registry.py used
 # to be, ported rule for rule so that flow.lock and flow_packages/ come out
@@ -24,7 +25,7 @@ import .pkg_json {
     jd_parse_json, jd_parse_toml, jd_dump_json
 }
 import .semver { Semver, flowc_semver_parse, flowc_semver_cmp, flowc_semver_matches }
-import .fileio { flowc_read_file, flowc_write_file, flowc_io_system, flowc_io_popen_read, flowc_io_mkdir }
+import .fileio { flowc_read_file, flowc_write_file, flowc_io_system, flowc_io_popen_read, flowc_io_mkdir, flowc_io_remove }
 
 extern {
     function malloc(size: i64) -> ptr<void>
@@ -40,6 +41,7 @@ extern {
     function exit(code: i32) -> void
     function strcmp(a: string, b: string) -> i32
     function getpid() -> i32
+    function rename(src: string, dst: string) -> i32
 }
 
 const GREEN: string = "\x1b[92m"
@@ -2299,4 +2301,167 @@ export function pm_run_native(pm: ptr<Pm>, entry_arg: string) -> bool {
     let name: string = config_name(pm, cfg)
     say_color(BLUE, str_cat3("Running ", name, "..."))
     return run_argv(pm, args1(pm, path_join(build_dir(pm), name)), "") == 0
+}
+
+# ---------------------------------------------------------------------------
+# native-link: the [native] sources of a program's project and packages
+# ---------------------------------------------------------------------------
+
+# Fold s into a two-part content key. Each part stays below 2^31, so no
+# product overflows an i64.
+function key_mix(h: ptr<i64>, s: string) {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut a: i64 = h[0]
+    let mut b: i64 = h[1]
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        let c: i64 = (p[i] as i64) + 1
+        a = (a * 131 + c) % 2147483647
+        b = (b * 257 + c) % 1000000007
+        i = i + 1
+    }
+    h[0] = (a * 131) % 2147483647
+    h[1] = (b * 257) % 1000000007
+}
+
+# Compile one native source into the object cache unless an object for the
+# same compiler, flags, path and contents is already there. Returns the
+# object path, or "" when the compiler failed.
+function native_object(pm: ptr<Pm>, obj_dir: string, compiler: string, flags: i32, src: string) -> string {
+    let d: ptr<JDoc> = pm[0].d
+    let h: ptr<i64> = malloc(16) as ptr<i64>
+    h[0] = 17
+    h[1] = 31
+    key_mix(h, compiler)
+    let mut c: i32 = jd_first(d, flags)
+    while c >= 0 {
+        key_mix(h, jd_sval(d, c))
+        c = jd_next(d, c)
+    }
+    key_mix(h, src)
+    key_mix(h, read_text(src))
+    let nb: ptr<SBuf> = sb_new()
+    sb_puts(nb, path_stem(src))
+    sb_putc(nb, 45)
+    sb_put_int(nb, h[0])
+    sb_putc(nb, 45)
+    sb_put_int(nb, h[1])
+    let obj: string = path_join(obj_dir, str_cat(sb_str(nb), ".o"))
+    if path_exists(obj) {
+        return obj
+    }
+    let tb: ptr<SBuf> = sb_new()
+    sb_puts(tb, obj)
+    sb_puts(tb, ".tmp.")
+    sb_put_int(tb, getpid() as i64)
+    let tmp: string = sb_str(tb)
+    let argv: i32 = args1(pm, compiler)
+    arr_extend_str(pm, argv, flags)
+    args_push(pm, argv, "-c")
+    args_push(pm, argv, src)
+    args_push(pm, argv, "-o")
+    args_push(pm, argv, tmp)
+    say_color(BLUE, str_cat("Compiling native source ", src))
+    if run_or_report(pm, argv, "Native compilation failed:") == false {
+        let _r: i32 = flowc_io_remove(tmp)
+        return ""
+    }
+    # Publish atomically; a concurrent build of the same key may have won.
+    if rename(tmp, obj) != 0 {
+        let _r2: i32 = flowc_io_remove(tmp)
+    }
+    return obj
+}
+
+# For `flow run` and `flow compile` on the flowc host: find the project that
+# holds program, compile the [native] sources of its installed dependencies
+# and its own (the sources, cflags, frameworks, libs and ldflags that
+# build-native uses) into cached objects under build/flow_native/, and write
+# the link arguments to out, one per line: the objects, then -framework and
+# -l pairs, then ldflags. A line "@cxx" means a C++ source was compiled and
+# the link needs the C++ standard library. No flow.toml writes nothing.
+export function pm_native_link(program: string, out: string, cc: string, cxx: string, opt: string) -> bool {
+    let toml: string = find_flow_toml(program)
+    if str_len(toml) == 0 {
+        return write_text(out, "")
+    }
+    let pm: ptr<Pm> = pm_new(path_parent(toml))
+    let d: ptr<JDoc> = pm[0].d
+    let cfg: i32 = pm_load_config(pm)
+    if cfg < 0 {
+        return false
+    }
+    let sources: i32 = jd_arr(d)
+    let frameworks: i32 = jd_arr(d)
+    let libs: i32 = jd_arr(d)
+    let cflags: i32 = jd_arr(d)
+    let ldflags: i32 = jd_arr(d)
+    collect_dependency_native(pm, cfg, sources, frameworks, libs, cflags, ldflags)
+    let native: i32 = pkg_table(pm, cfg, "native")
+    let own: i32 = cfg_list(pm, native, "sources")
+    let mut c: i32 = jd_first(d, own)
+    while c >= 0 {
+        let rel: string = jd_py_str_s(d, c)
+        let native_path: string = path_resolve(path_join(pm[0].project_dir, rel))
+        if arr_has_str(pm, sources, native_path) == false {
+            if path_exists(native_path) {
+                args_push(pm, sources, native_path)
+            } else {
+                say_color(YELLOW, str_cat("Warning: native source not found: ", rel))
+            }
+        }
+        c = jd_next(d, c)
+    }
+
+    let flags: i32 = args1(pm, opt)
+    arr_extend_str(pm, flags, cflags)
+    arr_extend_str(pm, flags, cfg_list(pm, native, "cflags"))
+    # The C compiler takes no -std=c++ flag meant for the C++ sources.
+    let c_only: i32 = jd_arr(d)
+    c = jd_first(d, flags)
+    while c >= 0 {
+        if str_starts(jd_sval(d, c), "-std=c++") == false {
+            args_push(pm, c_only, jd_sval(d, c))
+        }
+        c = jd_next(d, c)
+    }
+
+    let lines: ptr<SBuf> = sb_new()
+    let mut uses_cxx: bool = false
+    if jd_count(d, sources) > 0 {
+        let obj_dir: string = path_join(build_dir(pm), "flow_native")
+        mkdirs(obj_dir)
+        c = jd_first(d, sources)
+        while c >= 0 {
+            let src: string = jd_sval(d, c)
+            let mut obj: string = ""
+            if is_cxx_source(src) {
+                uses_cxx = true
+                obj = native_object(pm, obj_dir, cxx, flags, src)
+            } else {
+                obj = native_object(pm, obj_dir, cc, c_only, src)
+            }
+            if str_len(obj) == 0 {
+                return false
+            }
+            sb_puts(lines, obj)
+            sb_putc(lines, 10)
+            c = jd_next(d, c)
+        }
+    }
+    let link: i32 = jd_arr(d)
+    push_flag_pairs(pm, link, "-framework", frameworks, cfg_list(pm, native, "frameworks"))
+    push_flag_pairs(pm, link, "-l", libs, cfg_list(pm, native, "libs"))
+    arr_extend_str(pm, link, ldflags)
+    arr_extend_str(pm, link, cfg_list(pm, native, "ldflags"))
+    c = jd_first(d, link)
+    while c >= 0 {
+        sb_puts(lines, jd_sval(d, c))
+        sb_putc(lines, 10)
+        c = jd_next(d, c)
+    }
+    if uses_cxx {
+        sb_puts(lines, "@cxx\n")
+    }
+    return write_text(out, sb_str(lines))
 }

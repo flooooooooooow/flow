@@ -1,6 +1,6 @@
 # @module flowc.pkg_main
 # @means  `flow pkg` command line: add, install, sync, search, info, init,
-#         publish, build, run, build-native, run-native, clean.
+#         publish, build, run, build-native, run-native, clean, native-link.
 #
 # Built by flow-driver with the Stage-A compiler and run with FLOW_REPO_ROOT
 # set to the repository root (registry/index.json, lib/stdlib and the fetch
@@ -13,6 +13,7 @@ import .pkg {
     Pm, AddOpts,
     pm_new, pm_install, pm_sync_for_program, pm_add, pm_search, pm_info,
     pm_init, pm_publish, pm_build, pm_run, pm_build_native, pm_run_native, pm_clean,
+    pm_native_link,
     looks_like_git_url, infer_git_name
 }
 import .pkg_json { str_eq, str_len, str_starts, str_slice, str_find_byte, str_cat }
@@ -325,6 +326,60 @@ function cmd_project(argc: i32, argv: ptr<ptr<u8>>, cmd: string) -> i32 {
     return 0
 }
 
+const NATIVE_LINK_USAGE: string = "usage: flow pkg native-link --program PROGRAM --out FILE [--cc CC] [--cxx CXX] [--opt FLAG]"
+
+# native-link, for flow-driver's link step: compile the [native] sources of
+# the program's project and installed packages, write the link arguments to
+# FILE. Exits 1 when a source does not compile.
+function cmd_native_link(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
+    let mut program: string = ""
+    let mut out: string = ""
+    let mut cc: string = "cc"
+    let mut cxx: string = "c++"
+    let mut opt: string = "-O2"
+    let mut i: i32 = 2
+    while i < argc {
+        let a: string = argv[i] as string
+        if str_eq(a, "-h") or str_eq(a, "--help") {
+            puts(NATIVE_LINK_USAGE)
+            return 0
+        }
+        if i + 1 >= argc {
+            return usage_error(NATIVE_LINK_USAGE, str_cat("expected a value after ", a))
+        }
+        let v: string = argv[i + 1] as string
+        if str_eq(a, "--program") {
+            program = v
+        } else {
+            if str_eq(a, "--out") {
+                out = v
+            } else {
+                if str_eq(a, "--cc") {
+                    cc = v
+                } else {
+                    if str_eq(a, "--cxx") {
+                        cxx = v
+                    } else {
+                        if str_eq(a, "--opt") {
+                            opt = v
+                        } else {
+                            return usage_error(NATIVE_LINK_USAGE, str_cat("unrecognized arguments: ", a))
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 2
+    }
+    if str_len(program) == 0 or str_len(out) == 0 {
+        return usage_error(NATIVE_LINK_USAGE, "--program and --out are required")
+    }
+    if pm_native_link(program, out, cc, cxx, opt) {
+        return 0
+    }
+    return 1
+}
+
 function is_project_cmd(cmd: string) -> bool {
     return str_eq(cmd, "init") or str_eq(cmd, "publish") or str_eq(cmd, "build") or str_eq(cmd, "build-native") or str_eq(cmd, "run") or str_eq(cmd, "run-native") or str_eq(cmd, "clean")
 }
@@ -375,6 +430,9 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             return 0
         }
         return 1
+    }
+    if str_eq(cmd, "native-link") {
+        return cmd_native_link(argc, argv)
     }
     if str_eq(cmd, "search") {
         let mut query: string = ""
