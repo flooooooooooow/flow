@@ -30,6 +30,7 @@ Compatibility, performance, security, lifetime, backend, or release implications
 - [ ] No unresolved language/API design decision is being implemented implicitly.
 - [ ] No unrelated generated artifacts or local state are included.
 - [ ] Docs changed when user-visible behaviour or syntax changed.
+- [ ] `docs/project/Questions.md` updated if this needs a language-design decision.
 
 ## Compatibility
 
