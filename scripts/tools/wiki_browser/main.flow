@@ -1,0 +1,578 @@
+# Browser checks for the built wiki, spoken over the Chrome DevTools
+# Protocol, plus a static server to preview it.
+#
+#   scripts/wiki_contrast.sh     WCAG AA contrast audit of the rendered wiki
+#   scripts/wiki_verify.sh       smoke test of the wiki shell
+#   scripts/wiki_serve.sh [DIR] [PORT]
+#                                serve DIR (build/wiki) on PORT (8899)
+#
+# The shims pass the mode as the first argument: `contrast`, `verify` or
+# `serve`. The checks expect the wiki at http://localhost:8899/ (override
+# with FLOW_WIKI_BASE) and launch headless Chrome themselves (set CHROME to
+# pick the executable). The contrast audit script is contrast_audit.js next
+# to this file.
+
+import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_read_file, ft_rjust, ft_slice, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
+import .proc { pr_cwd }
+import .json { json_parse, json_error, json_get, json_kind, json_str, json_first, json_next, json_kind_string, json_kind_true, json_kind_number, Json }
+import .bench { bn_fixed, bn_parse_float }
+import .net
+import .ws
+import .cdp
+import .serve
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function getenv(name: string) -> string
+    function pow(x: f64, y: f64) -> f64
+    function atoi(s: string) -> i32
+}
+
+function root() -> string {
+    let r: string = getenv("FLOW_REPO_ROOT")
+    if r as ptr<u8> == null or ft_len(r) == 0 {
+        return pr_cwd()
+    }
+    return r
+}
+
+function base_url() -> string {
+    let b: string = getenv("FLOW_WIKI_BASE")
+    if b as ptr<u8> == null or ft_len(b) == 0 {
+        return "http://localhost:8899/"
+    }
+    return b
+}
+
+function mdash() -> string {
+    let buf: ptr<u8> = malloc(4) as ptr<u8>
+    buf[0] = 226
+    buf[1] = 128
+    buf[2] = 148
+    buf[3] = 0
+    return buf as string
+}
+
+# ---------------------------------------------------------------------------
+# Python-compatible formatting
+# ---------------------------------------------------------------------------
+
+function hex_digits(v: i32, width: i32) -> string {
+    let digits: ptr<u8> = "0123456789abcdef" as ptr<u8>
+    let buf: ptr<u8> = malloc((width + 1) as i64) as ptr<u8>
+    let mut i: i32 = width - 1
+    let mut x: i32 = v
+    while i >= 0 {
+        buf[i] = digits[x & 15]
+        x = x >> 4
+        i = i - 1
+    }
+    buf[width] = 0
+    return buf as string
+}
+
+# Code points that str.isprintable() rejects outside the ASCII range:
+# separators and the common format characters.
+function py_unprintable(cp: i32) -> bool {
+    if cp < 32 or cp == 127 { return true }
+    if cp >= 128 and cp < 160 { return true }
+    if cp == 160 or cp == 173 or cp == 5760 { return true }
+    if cp >= 8192 and cp <= 8207 { return true }
+    if cp >= 8232 and cp <= 8239 { return true }
+    if cp >= 8287 and cp <= 8292 { return true }
+    if cp >= 8294 and cp <= 8303 { return true }
+    if cp == 12288 or cp == 65279 { return true }
+    if cp >= 55296 and cp <= 57343 { return true }
+    return false
+}
+
+# Python repr() of a str.
+function py_repr(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = ft_len(s)
+    let mut has_sq: bool = false
+    let mut has_dq: bool = false
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 39 { has_sq = true }
+        if p[i] == 34 { has_dq = true }
+        i = i + 1
+    }
+    let mut quote: string = "'"
+    if has_sq and has_dq == false {
+        quote = "\""
+    }
+    let mut out: string = quote
+    i = 0
+    while i < n {
+        let c: i32 = p[i] as i32
+        let mut cp: i32 = c
+        let mut adv: i32 = 1
+        if c >= 240 and i + 3 < n + 1 {
+            cp = ((c & 7) << 18) | (((p[i + 1] as i32) & 63) << 12) | (((p[i + 2] as i32) & 63) << 6) | ((p[i + 3] as i32) & 63)
+            adv = 4
+        } elif c >= 224 {
+            cp = ((c & 15) << 12) | (((p[i + 1] as i32) & 63) << 6) | ((p[i + 2] as i32) & 63)
+            adv = 3
+        } elif c >= 192 {
+            cp = ((c & 31) << 6) | ((p[i + 1] as i32) & 63)
+            adv = 2
+        }
+        if cp == 92 {
+            out = out + "\\\\"
+        } elif cp == 10 {
+            out = out + "\\n"
+        } elif cp == 13 {
+            out = out + "\\r"
+        } elif cp == 9 {
+            out = out + "\\t"
+        } elif adv == 1 and ft_eq(quote, "'") and cp == 39 {
+            out = out + "\\'"
+        } elif py_unprintable(cp) {
+            if cp < 256 {
+                out = out + "\\x" + hex_digits(cp, 2)
+            } else {
+                out = out + "\\u" + hex_digits(cp, 4)
+            }
+        } else {
+            out = out + ft_slice(s, i, i + adv)
+        }
+        i = i + adv
+    }
+    return out + quote
+}
+
+# s[:limit] counted in code points.
+function cp_prefix(s: string, limit: i32) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    let mut count: i32 = 0
+    while p[i] != 0 {
+        let c: i32 = p[i] as i32
+        if (c & 192) != 128 {
+            if count == limit {
+                return ft_slice(s, 0, i)
+            }
+            count = count + 1
+        }
+        i = i + 1
+    }
+    return s
+}
+
+function py_list_repr(l: ptr<StrList>, limit: i32) -> string {
+    let mut out: string = "["
+    let mut i: i32 = 0
+    while i < ft_list_len(l) and i < limit {
+        if i > 0 {
+            out = out + ", "
+        }
+        out = out + py_repr(ft_list_get(l, i))
+        i = i + 1
+    }
+    return out + "]"
+}
+
+# ---------------------------------------------------------------------------
+# Page helpers
+# ---------------------------------------------------------------------------
+
+# Evaluate and return the reply; exit-worthy failures come back as null
+# after the error is printed.
+function eval_ok(c: ptr<Cdp>, expr: string, tag: string) -> ptr<Json> {
+    let j: ptr<Json> = cdp_eval(c, expr)
+    let err: string = cdp_eval_error(j)
+    if ft_len(err) > 0 {
+        ft_errln(tag + ": evaluate failed: " + err)
+        return null
+    }
+    return j
+}
+
+function eval_str(c: ptr<Cdp>, expr: string, tag: string) -> string {
+    let j: ptr<Json> = eval_ok(c, expr, tag)
+    if j == null {
+        return null as string
+    }
+    let v: i32 = cdp_value(j)
+    if v < 0 or json_kind(j, v) != json_kind_string() {
+        return null as string
+    }
+    return json_str(j, v)
+}
+
+# 1 for true, 0 for false, -1 when the evaluation failed.
+function eval_bool(c: ptr<Cdp>, expr: string, tag: string) -> i32 {
+    let j: ptr<Json> = eval_ok(c, expr, tag)
+    if j == null {
+        return -1
+    }
+    let v: i32 = cdp_value(j)
+    if v >= 0 and json_kind(j, v) == json_kind_true() {
+        return 1
+    }
+    return 0
+}
+
+function eval_int(c: ptr<Cdp>, expr: string, tag: string) -> i32 {
+    let j: ptr<Json> = eval_ok(c, expr, tag)
+    if j == null {
+        return -1
+    }
+    let v: i32 = cdp_value(j)
+    if v < 0 or json_kind(j, v) != json_kind_number() {
+        return -1
+    }
+    return atoi(json_str(j, v))
+}
+
+function count_expr(sel: string) -> string {
+    return "document.querySelectorAll('" + sel + "').length"
+}
+
+# ---------------------------------------------------------------------------
+# contrast
+# ---------------------------------------------------------------------------
+
+function jnum_text(j: ptr<Json>, obj: i32, name: string) -> string {
+    return json_str(j, json_get(j, obj, name))
+}
+
+function run_contrast() -> i32 {
+    let tag: string = "wiki_contrast"
+    let audit: string = ft_read_file(root() + "/scripts/tools/wiki_browser/contrast_audit.js")
+    if audit as ptr<u8> == null {
+        ft_errln(tag + ": missing scripts/tools/wiki_browser/contrast_audit.js")
+        return 2
+    }
+    let base: string = base_url()
+    let names: ptr<StrList> = ft_list_new()
+    let urls: ptr<StrList> = ft_list_new()
+    ft_list_push(names, "docs-home")
+    ft_list_push(urls, base)
+    ft_list_push(names, "docs-spec")
+    ft_list_push(urls, base + "#LANGUAGE_SPEC.md")
+    ft_list_push(names, "tutorials")
+    ft_list_push(urls, base + "tutorials/")
+    ft_list_push(names, "tut-doc")
+    ft_list_push(urls, base + "#tutorials/effects-basics.md")
+    let themes: ptr<StrList> = ft_list_new()
+    ft_list_push(themes, "dark")
+    ft_list_push(themes, "light")
+
+    let c: ptr<Cdp> = cdp_start(tag)
+    if c == null {
+        return 1
+    }
+    let mut total: i32 = 0
+    let mut t: i32 = 0
+    while t < ft_list_len(themes) {
+        let theme: string = ft_list_get(themes, t)
+        let mut k: i32 = 0
+        while k < ft_list_len(names) {
+            let name: string = ft_list_get(names, k)
+            if cdp_new_page(c) == false {
+                ft_errln(tag + ": could not open a page")
+                cdp_stop(c)
+                return 1
+            }
+            let mut err: string = cdp_goto(c, base, false)
+            if ft_len(err) == 0 {
+                if eval_ok(c, "localStorage.setItem('flow-wiki-theme','" + theme + "')", tag) == null {
+                    err = "could not set the theme"
+                }
+            }
+            if ft_len(err) == 0 {
+                err = cdp_goto(c, ft_list_get(urls, k), false)
+            }
+            if ft_len(err) == 0 {
+                err = cdp_reload(c, true)
+            }
+            if ft_len(err) > 0 {
+                ft_errln(tag + ": " + err)
+                cdp_stop(c)
+                return 1
+            }
+            cdp_sleep(c, 1400)
+            let text: string = eval_str(c, "JSON.stringify((" + audit + ")())", tag)
+            if text as ptr<u8> == null {
+                cdp_stop(c)
+                return 1
+            }
+            let j: ptr<Json> = json_parse(text)
+            let n: i32 = json_len_top(j)
+            if n > 0 {
+                ft_outln("\n=== " + theme + " / " + name + " " + mdash() + " " + ft_itoa(n) + " low-contrast")
+                let mut item: i32 = json_first(j, 0)
+                let mut shown: i32 = 0
+                while item >= 0 and shown < 14 {
+                    ft_outln("  " + ft_rjust(jnum_text(j, item, "ratio"), 5) + " (need " + jnum_text(j, item, "need") + ") " + cp_prefix(json_str(j, json_get(j, item, "sel")), 64))
+                    ft_outln("        text=" + py_repr(json_str(j, json_get(j, item, "text"))) + " color=" + json_str(j, json_get(j, item, "color")))
+                    shown = shown + 1
+                    item = json_next(j, item)
+                }
+            }
+            total = total + n
+            cdp_close_page(c)
+            k = k + 1
+        }
+        t = t + 1
+    }
+    cdp_stop(c)
+    ft_outln("\nTotal low-contrast elements: " + ft_itoa(total))
+    if total > 0 {
+        return 1
+    }
+    return 0
+}
+
+function json_len_top(j: ptr<Json>) -> i32 {
+    let mut n: i32 = 0
+    let mut c: i32 = json_first(j, 0)
+    while c >= 0 {
+        n = n + 1
+        c = json_next(j, c)
+    }
+    return n
+}
+
+# ---------------------------------------------------------------------------
+# verify
+# ---------------------------------------------------------------------------
+
+function chan(v: i32) -> f64 {
+    let c: f64 = (v as f64) / 255.0
+    if c <= 0.03928 {
+        return c / 12.92
+    }
+    return pow((c + 0.055) / 1.055, 2.4)
+}
+
+function luminance(r: i32, g: i32, b: i32) -> f64 {
+    return 0.2126 * chan(r) + 0.7152 * chan(g) + 0.0722 * chan(b)
+}
+
+# parse_rgb: the first three numbers inside the parentheses, truncated.
+# Returns r*65536 + g*256 + b, or -1 when there are no parentheses.
+function parse_rgb(value: string) -> i32 {
+    if value as ptr<u8> == null {
+        return -1
+    }
+    let p: ptr<u8> = value as ptr<u8>
+    let mut i: i32 = 0
+    while p[i] != 0 and p[i] != 40 {
+        i = i + 1
+    }
+    if p[i] == 0 {
+        return -1
+    }
+    i = i + 1
+    let mut out: i32 = 0
+    let mut k: i32 = 0
+    while k < 3 {
+        let start: i32 = i
+        while p[i] != 0 and p[i] != 44 and p[i] != 41 {
+            i = i + 1
+        }
+        let n: i32 = bn_parse_float(ft_slice(value, start, i)) as i32
+        out = out * 256 + n
+        if p[i] == 44 {
+            i = i + 1
+        }
+        k = k + 1
+    }
+    return out
+}
+
+function contrast(a: i32, b: i32) -> f64 {
+    let la: f64 = luminance((a >> 16) & 255, (a >> 8) & 255, a & 255)
+    let lb: f64 = luminance((b >> 16) & 255, (b >> 8) & 255, b & 255)
+    let mut hi: f64 = la
+    let mut lo: f64 = lb
+    if lb > la {
+        hi = lb
+        lo = la
+    }
+    return (hi + 0.05) / (lo + 0.05)
+}
+
+function check(failures: ptr<StrList>, theme: string, name: string, ok: bool, detail: string) -> void {
+    if ok == false {
+        let mut line: string = "[" + theme + "] " + name
+        if ft_len(detail) > 0 {
+            line = line + " " + detail
+        }
+        ft_list_push(failures, line)
+    }
+}
+
+function visible_expr(sel: string) -> string {
+    return "(() => {const e=document.querySelector('" + sel + "'); if (!e) return false; const r=e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== 'hidden';})()"
+}
+
+function first_expr(sel: string, fn: string) -> string {
+    return "(" + fn + ")(document.querySelector('" + sel + "'))"
+}
+
+function run_verify() -> i32 {
+    let tag: string = "wiki_verify"
+    let base: string = base_url()
+    let failures: ptr<StrList> = ft_list_new()
+    let themes: ptr<StrList> = ft_list_new()
+    ft_list_push(themes, "dark")
+    ft_list_push(themes, "light")
+    let c: ptr<Cdp> = cdp_start(tag)
+    if c == null {
+        return 1
+    }
+    let mut t: i32 = 0
+    while t < ft_list_len(themes) {
+        let theme: string = ft_list_get(themes, t)
+        if cdp_new_page(c) == false {
+            ft_errln(tag + ": could not open a page")
+            cdp_stop(c)
+            return 1
+        }
+        let mut err: string = cdp_goto(c, base, true)
+        if ft_len(err) == 0 and eval_ok(c, "localStorage.setItem('flow-wiki-theme','" + theme + "')", tag) == null {
+            err = "could not set the theme"
+        }
+        if ft_len(err) == 0 {
+            err = cdp_reload(c, true)
+        }
+        if ft_len(err) > 0 {
+            ft_errln(tag + ": " + err)
+            cdp_stop(c)
+            return 1
+        }
+        cdp_sleep(c, 900)
+
+        let errors: ptr<StrList> = cdp_errors(c)
+        check(failures, theme, "no console errors", ft_list_len(errors) == 0, py_list_repr(errors, 3))
+
+        # Hero headline must survive the H1 promotion logic.
+        check(failures, theme, "hero title visible", eval_bool(c, visible_expr(".wiki-hero-title"), tag) == 1, "")
+
+        # Primary CTA must not be accent-on-accent.
+        if eval_int(c, count_expr(".wiki-cta-primary"), tag) < 1 {
+            ft_errln(tag + ": no .wiki-cta-primary element on " + base)
+            cdp_stop(c)
+            return 1
+        }
+        let fg: i32 = parse_rgb(eval_str(c, first_expr(".wiki-cta-primary", "e => getComputedStyle(e).color"), tag))
+        let bg: i32 = parse_rgb(eval_str(c, first_expr(".wiki-cta-primary", "e => getComputedStyle(e).backgroundColor"), tag))
+        let ratio: f64 = contrast(fg, bg)
+        check(failures, theme, "CTA contrast >= 4.5", ratio >= 4.5, "got " + bn_fixed(ratio, 2))
+
+        # Body text contrast against the page canvas.
+        let body_fg: i32 = parse_rgb(eval_str(c, "getComputedStyle(document.body).color", tag))
+        let body_bg: i32 = parse_rgb(eval_str(c, "getComputedStyle(document.body).backgroundColor", tag))
+        let body_ratio: f64 = contrast(body_fg, body_bg)
+        check(failures, theme, "body contrast >= 7", body_ratio >= 7.0, "got " + bn_fixed(body_ratio, 2))
+
+        # Flow syntax highlighting actually produced tokens.
+        let tokens: i32 = eval_int(c, count_expr(".wiki-hero-code .hljs-built_in"), tag)
+        check(failures, theme, "flow syntax tokens", tokens > 0, "got " + ft_itoa(tokens))
+
+        # Callouts converted, no raw [!tip] left in the text.
+        let raw: i32 = eval_bool(c, "document.getElementById('markdownContent').innerText.includes('[!')", tag)
+        check(failures, theme, "no raw admonition markers", raw == 0, "")
+
+        # The empty warning bar bug.
+        let banner: i32 = eval_bool(c, "getComputedStyle(document.getElementById('versionBanner')).display !== 'none'", tag)
+        check(failures, theme, "version banner hidden on latest", banner == 0, "")
+
+        # Code blocks get a header + working copy button.
+        check(failures, theme, "code block chrome", eval_int(c, count_expr(".code-block .code-copy"), tag) > 0, "")
+
+        # Callouts render as styled blocks, asserted on a page that has one.
+        err = cdp_goto(c, base + "#library/tiny-pointers.md", true)
+        if ft_len(err) > 0 {
+            ft_errln(tag + ": " + err)
+            cdp_stop(c)
+            return 1
+        }
+        cdp_sleep(c, 900)
+        check(failures, theme, "admonition rendered", eval_int(c, count_expr(".admonition"), tag) >= 1, "")
+        check(failures, theme, "no raw admonition markers (callout page)", eval_bool(c, "document.getElementById('markdownContent').innerText.includes('[!')", tag) == 0, "")
+
+        err = cdp_goto(c, base + "#LANGUAGE_SPEC.md", true)
+        if ft_len(err) > 0 {
+            ft_errln(tag + ": " + err)
+            cdp_stop(c)
+            return 1
+        }
+        cdp_sleep(c, 900)
+        check(failures, theme, "no duplicate lead", eval_bool(c,
+            "(() => {const l=document.getElementById('docLead');" +
+            "const f=document.querySelector('#markdownContent > *:not(h1)');" +
+            "return !l || l.hidden || !f || f.textContent.trim() !== l.textContent.trim();})()", tag) == 1, "")
+        # Scroll over the article, not the sidebar, so the page scrolls.
+        cdp_mouse(c, "mouseMoved", 700, 500, 0)
+        let mut w: i32 = 0
+        while w < 6 {
+            cdp_mouse(c, "mouseWheel", 700, 500, 400)
+            cdp_sleep(c, 120)
+            w = w + 1
+        }
+        cdp_sleep(c, 700)
+        let active: i32 = eval_int(c, count_expr("#pageToc a.active"), tag)
+        check(failures, theme, "toc scroll-spy active", active == 1, "got " + ft_itoa(active))
+        let progress: string = eval_str(c, "getComputedStyle(document.getElementById('readProgress')).transform", tag)
+        let mut prog: string = progress
+        if prog as ptr<u8> == null {
+            prog = ""
+        }
+        check(failures, theme, "read progress advances", progress as ptr<u8> != null and ft_eq(prog, "none") == false and ft_eq(prog, "matrix(0, 0, 0, 1, 0, 0)") == false, prog)
+
+        cdp_close_page(c)
+        t = t + 1
+    }
+    cdp_stop(c)
+
+    if ft_list_len(failures) > 0 {
+        ft_outln("FAIL")
+        let mut i: i32 = 0
+        while i < ft_list_len(failures) {
+            ft_outln("  - " + ft_list_get(failures, i))
+            i = i + 1
+        }
+        return 1
+    }
+    ft_outln("All wiki checks passed")
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# main
+# ---------------------------------------------------------------------------
+
+function usage() -> i32 {
+    ft_errln("usage: wiki_browser contrast | verify | serve [DIR] [PORT]")
+    return 2
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    if argc < 2 {
+        return usage()
+    }
+    let mode: string = argv[1]
+    if ft_eq(mode, "contrast") and argc == 2 {
+        return run_contrast()
+    }
+    if ft_eq(mode, "verify") and argc == 2 {
+        return run_verify()
+    }
+    if ft_eq(mode, "serve") and argc <= 4 {
+        let mut dir: string = root() + "/build/wiki"
+        let mut port: i32 = 8899
+        if argc >= 3 {
+            dir = argv[2]
+        }
+        if argc >= 4 {
+            port = atoi(argv[3])
+        }
+        return serve_dir(dir, port)
+    }
+    return usage()
+}

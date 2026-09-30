@@ -1638,6 +1638,8 @@ GIF89a animated encoder, pure Flow. Writes an infinite-loop animation with a fix
 | `gif_map_rgb` | `(r: i32, g: i32, b: i32) -> i32` | Nearest palette index for a 24-bit color, integer math only: quantize to the cube, then let one of the 4 grays win when it is strictly closer. |
 | `gif_begin` | `(path: string, width: i32, height: i32, delay_cs: i32) -> i32` | Opens `path` and writes the GIF89a header, logical screen descriptor, global color table, and a NETSCAPE2.0 infinite-loop extension. `delay_cs` is the per-frame delay in centiseconds. Returns 0 on success. |
 | `gif_add_frame_rgb` | `(pixels: ptr<u8>, width: i32, height: i32) -> i32` | Adds one full frame. `pixels` is RGB24, row-major, width*height*3 bytes. Dimensions must match gif_begin. Returns 0 on success. |
+| `gif_begin_palette` | `(path: string, width: i32, height: i32, pal: ptr<u8>, ncolors: i32) -> i32` | Opens `path` and writes the header, a global colour table from `pal` (`ncolors` RGB triples, 1..256, padded with black to a power of two) and a NETSCAPE2.0 infinite-loop extension. Frames then go through gif_add_frame_indexed. Returns 0 on success. |
+| `gif_add_frame_indexed` | `(idx: ptr<u8>, width: i32, height: i32, x: i32, y: i32, fw: i32, fh: i32, delay_cs: i32, disposal: i32, transparent: i32) -> i32` | Adds one frame from `idx`: palette indices for the whole canvas, row-major. Only the fw x fh rectangle at (x, y) is stored. Delay in centiseconds; disposal is the GIF method (0..3); `transparent` is an index or -1. Returns 0 on success. |
 | `gif_end` | `() -> i32` | Writes the trailer and closes the file. Returns 0 on success. |
 
 ### `gpu_gradients.flow`

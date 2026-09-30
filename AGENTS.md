@@ -134,8 +134,8 @@ deleted, so the lane now lands as a pass in `compiler/src/mlirgen.flow`
 under the same `FLOW_DENOTATIONAL=1` switch (docs/design/mlir-in-flow.md).
 
 The Python compiler is deleted: flowc is the only compiler for C and MLIR.
-The pytest files that remain drive `./flow` and the scripts as subprocesses
-(`pytest tests/ -m "not slow"`). Front-end crashes are `tests/fuzz/run.sh`
+The shell tests in `tests/scripts/` drive `./flow` and the scripts as
+subprocesses (`./flow test-scripts`); no pytest is left. Front-end crashes are `tests/fuzz/run.sh`
 and the Stable corpus is `tests/conformance/run.sh`.
 
 ### Bootstrap suite

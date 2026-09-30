@@ -106,7 +106,7 @@ test "answer" {
 | `flow test-runtime` | legacy compiler-repository runtime corpus |
 | `flow test-lang` | legacy strict language regression programs |
 | `flow test-mlir` | compiler-repository MLIR verification |
-| `flow test-python` | compiler Python unit tests |
+| `flow test-scripts` | shell tests that drive `flow` and the repository scripts |
 | `flow test-interop` | compiler interoperation runtime tests |
 | `flow test-gpu` | compiler GPU feature/code-generation tests |
 | `flow test-matmul` | matrix optimisation and assembly demonstration |

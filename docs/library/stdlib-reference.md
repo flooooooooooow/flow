@@ -534,5 +534,9 @@ one file can be open at a time. See spec section 10.7.
 | `gif_add_frame_rgb` | `(ptr<u8>, i32, i32) -> i32` | Add one RGB24 row-major frame (dims must match `gif_begin`) |
 | `gif_end` | `() -> i32` | Write trailer, close file |
 | `gif_map_rgb` | `(i32, i32, i32) -> i32` | Nearest palette index for a 24-bit color |
+| `gif_begin_palette` | `(string, i32, i32, ptr<u8>, i32) -> i32` | Open path with your own palette of 1..256 RGB triples; LZW code size follows the palette size |
+| `gif_add_frame_indexed` | `(ptr<u8>, i32, i32, i32, i32, i32, i32, i32, i32, i32) -> i32` | Add a frame of palette indices: canvas w, h; stored rectangle x, y, w, h; delay (cs); disposal; transparent index or -1 |
 
 All functions return 0 on success. Example: `examples/graphics/gif_writer.flow`.
+`scripts/tools/lib/gifclip.flow` uses the indexed calls to turn recorded
+frames into a GIF (median-cut palette, optional Floyd-Steinberg dither).

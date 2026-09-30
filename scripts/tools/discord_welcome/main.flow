@@ -1,0 +1,877 @@
+# Flow Discord welcome bot.
+#
+# Greets every member who joins a server the bot is in with a rotating
+# message from messages.json, posted to the configured welcome channel.
+#
+#   DISCORD_TOKEN=... WELCOME_CHANNEL_ID=... discord-welcome [--messages FILE]
+#   discord-welcome --replay FILE [--seed N]   offline: feed recorded gateway
+#                                              payloads, print what it sends
+#   discord-welcome --check-tls [HOST PATH]    GET over HTTPS and print it
+#   discord-welcome --render USER GUILD [--seed N]  print one welcome
+#   discord-welcome --render-all USER GUILD    print every template filled in
+#
+# --skip-login-check goes straight to the gateway instead of first checking
+# the token with GET /users/@me.
+#
+# The gateway client speaks Discord Gateway v10 over
+# wss://gateway.discord.gg/?v=10&encoding=json: HELLO, a jittered heartbeat
+# with ACK tracking, IDENTIFY with intents GUILDS | GUILD_MEMBERS, RESUME
+# after op 7, op 9 and dropped connections. Messages go out through
+# POST /api/v10/channels/{id}/messages.
+#
+# Exit codes: 0 on a clean stop, 1 for a missing or invalid environment
+# variable, an unreadable messages file, or a rejected token.
+
+import "../discord_welcome/welcome.flow"
+import "../discord_welcome/net.flow"
+import .text { ft_eq, ft_len, ft_itoa, ft_starts, ft_repr, ft_read_file, ft_split_lines, ft_replace, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
+import .json { json_parse, json_error, json_get, json_kind, json_str, json_int, json_first, json_next, json_quote, json_kind_null, json_kind_true, json_kind_array, json_kind_object, Json }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function getenv(name: string) -> string
+    function strtol(s: string, end: ptr<void>, base: i32) -> i64
+    function time(t: ptr<i64>) -> i64
+    function localtime(t: ptr<i64>) -> ptr<u8>
+    function strftime(buf: ptr<u8>, n: i64, fmt: string, tm: ptr<u8>) -> i64
+    function write(fd: i32, buf: string, n: i64) -> i64
+    function usleep(usec: u32) -> i32
+    function access(path: string, mode: i32) -> i32
+}
+
+const GATEWAY_HOST: string = "gateway.discord.gg"
+
+# ---- logging (logging.basicConfig format) ----
+
+function log_line(level: string, name: string, msg: string) -> void {
+    let now: i64 = net_now_ms()
+    let secs: ptr<i64> = calloc(1, 8) as ptr<i64>
+    secs[0] = now / 1000
+    let buf: ptr<u8> = calloc(64, 1) as ptr<u8>
+    let _n: i64 = strftime(buf, 64, "%Y-%m-%d %H:%M:%S", localtime(secs))
+    let ms: i64 = now % 1000
+    let mut mss: string = ft_itoa(ms as i32)
+    while ft_len(mss) < 3 {
+        mss = "0" + mss
+    }
+    let line: string = (buf as string) + "," + mss + " " + level + " " + name + ": " + msg + "\n"
+    let _w: i64 = write(2, line, ft_len(line) as i64)
+}
+
+function info(msg: string) -> void {
+    log_line("INFO", "discord-welcome", msg)
+}
+
+function warn(msg: string) -> void {
+    log_line("WARNING", "discord-welcome", msg)
+}
+
+function error(msg: string) -> void {
+    log_line("ERROR", "discord-welcome", msg)
+}
+
+# ---- state ----
+
+struct Bot {
+    token: string
+    channel_id: string
+    templates: ptr<StrList>
+    rng: ptr<WlRng>
+    replay: bool
+    conn: ptr<Conn>
+    frag: ptr<Bytes>
+    seq: string
+    session_id: string
+    resume_host: string
+    hb_interval: i64
+    next_hb: i64
+    acked: bool
+    user_str: string
+    user_id: string
+    guild_ids: ptr<StrList>
+    guild_names: ptr<StrList>
+    pending: ptr<StrList>
+    ready_logged: bool
+    ready_deadline: i64
+    channels: ptr<StrList>
+    # 0 keep going, 1 reconnect and resume, 2 reconnect and identify,
+    # 3 stop with exit_code
+    action: i32
+    exit_code: i32
+}
+
+function list_index(l: ptr<StrList>, s: string) -> i32 {
+    let mut i: i32 = 0
+    while i < ft_list_len(l) {
+        if ft_eq(ft_list_get(l, i), s) {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+function list_remove(l: ptr<StrList>, s: string) -> void {
+    let i: i32 = list_index(l, s)
+    if i >= 0 {
+        let items: ptr<string> = l[0].items
+        items[i] = ""
+    }
+}
+
+function guild_name(b: ptr<Bot>, id: string) -> string {
+    let i: i32 = list_index(b[0].guild_ids, id)
+    if i < 0 {
+        return id
+    }
+    return ft_list_get(b[0].guild_names, i)
+}
+
+# str(discord.User): the username, with #discriminator for legacy names.
+function user_str(j: ptr<Json>, u: i32) -> string {
+    let name: string = json_str(j, json_get(j, u, "username"))
+    let dn: i32 = json_get(j, u, "discriminator")
+    if dn >= 0 {
+        let d: string = json_str(j, dn)
+        if ft_len(d) > 0 and ft_eq(d, "0") == false {
+            return name + "#" + d
+        }
+    }
+    return name
+}
+
+function field_str(j: ptr<Json>, obj: i32, name: string) -> string {
+    let id: i32 = json_get(j, obj, name)
+    if id < 0 {
+        return ""
+    }
+    return json_str(j, id)
+}
+
+# ---- sending ----
+
+function redact(b: ptr<Bot>, s: string) -> string {
+    if ft_len(b[0].token) == 0 {
+        return s
+    }
+    return ft_replace(s, b[0].token, "<token>")
+}
+
+function gw_send(b: ptr<Bot>, payload: string) -> void {
+    if b[0].replay {
+        let line: string = "GATEWAY SEND " + redact(b, payload) + "\n"
+        let _w: i64 = write(1, line, ft_len(line) as i64)
+        return
+    }
+    if ws_send_text(b[0].conn, payload) == false {
+        warn("Gateway write failed; reconnecting")
+        b[0].action = 1
+    }
+}
+
+function send_heartbeat(b: ptr<Bot>) -> void {
+    let mut s: string = "null"
+    if ft_len(b[0].seq) > 0 {
+        s = b[0].seq
+    }
+    gw_send(b, "{\"op\":1,\"d\":" + s + "}")
+    b[0].acked = false
+}
+
+function send_identify(b: ptr<Bot>) -> void {
+    gw_send(b, "{\"op\":2,\"d\":{\"token\":" + json_quote(b[0].token) + ",\"intents\":3,\"properties\":{\"os\":\"linux\",\"browser\":\"flow-discord-welcome\",\"device\":\"flow-discord-welcome\"}}}")
+}
+
+function send_resume(b: ptr<Bot>) -> void {
+    gw_send(b, "{\"op\":6,\"d\":{\"token\":" + json_quote(b[0].token) + ",\"session_id\":" + json_quote(b[0].session_id) + ",\"seq\":" + b[0].seq + "}}")
+}
+
+function reason_phrase(head: string) -> string {
+    let p: ptr<u8> = head as ptr<u8>
+    let mut e: i32 = 0
+    while p[e] != 0 and p[e] != 13 and p[e] != 10 {
+        e = e + 1
+    }
+    if e <= 13 {
+        return ""
+    }
+    let o: ptr<u8> = calloc((e - 12) as i64, 1) as ptr<u8>
+    let mut i: i32 = 13
+    while i < e {
+        o[i - 13] = p[i]
+        i = i + 1
+    }
+    return o as string
+}
+
+# discord.HTTPException's text: "{status} {reason} (error code: {code}): {message}".
+function http_error_text(r: HttpResp) -> string {
+    if r.status == 0 {
+        return r.err
+    }
+    let mut out: string = ft_itoa(r.status) + " " + reason_phrase(r.head)
+    let j: ptr<Json> = json_parse(r.body)
+    if ft_len(json_error(j)) == 0 {
+        let code: i32 = json_get(j, 0, "code")
+        let msg: i32 = json_get(j, 0, "message")
+        if code >= 0 {
+            out = out + " (error code: " + json_str(j, code) + ")"
+        }
+        if msg >= 0 {
+            out = out + ": " + json_str(j, msg)
+        }
+    } elif ft_len(r.body) > 0 {
+        out = out + ": " + r.body
+    }
+    return out
+}
+
+function auth_headers(b: ptr<Bot>) -> string {
+    return "Authorization: Bot " + b[0].token + "\r\nUser-Agent: DiscordBot (https://github.com/flooooooooooow/flow, 1.0)\r\nContent-Type: application/json\r\n"
+}
+
+# POST the message; returns "" on success or the error text.
+function post_message(b: ptr<Bot>, text: string) -> string {
+    let path: string = "/api/v10/channels/" + b[0].channel_id + "/messages"
+    let body: string = "{\"content\":" + json_quote(text) + "}"
+    if b[0].replay {
+        let line: string = "REST POST " + path + " " + body + "\n"
+        let _w: i64 = write(1, line, ft_len(line) as i64)
+        return ""
+    }
+    let mut tries: i32 = 0
+    while tries < 3 {
+        let r: HttpResp = https_request("discord.com", "POST", path, auth_headers(b), body, 20000)
+        if r.status >= 200 and r.status < 300 {
+            return ""
+        }
+        if r.status != 429 {
+            return http_error_text(r)
+        }
+        # Rate limited: wait retry_after seconds and try again.
+        let j: ptr<Json> = json_parse(r.body)
+        let mut wait_ms: i64 = 1000
+        let ra: i32 = json_get(j, 0, "retry_after")
+        if ft_len(json_error(j)) == 0 and ra >= 0 {
+            wait_ms = (strtod_ms(json_str(j, ra))) + 50
+        }
+        let _s: i32 = usleep((wait_ms * 1000) as u32)
+        tries = tries + 1
+    }
+    return "429 Too Many Requests"
+}
+
+function strtod_ms(s: string) -> i64 {
+    # retry_after is seconds, possibly fractional.
+    let p: ptr<u8> = s as ptr<u8>
+    let mut whole: i64 = 0
+    let mut i: i32 = 0
+    while p[i] >= 48 and p[i] <= 57 {
+        whole = whole * 10 + ((p[i] - 48) as i64)
+        i = i + 1
+    }
+    let mut ms: i64 = whole * 1000
+    if p[i] == 46 {
+        let mut scale: i64 = 100
+        i = i + 1
+        while p[i] >= 48 and p[i] <= 57 and scale > 0 {
+            ms = ms + ((p[i] - 48) as i64) * scale
+            scale = scale / 10
+            i = i + 1
+        }
+    }
+    return ms
+}
+
+# ---- events ----
+
+function log_ready(b: ptr<Bot>) -> void {
+    if b[0].ready_logged {
+        return
+    }
+    b[0].ready_logged = true
+    info("Logged in as " + b[0].user_str + " (id=" + b[0].user_id + ")")
+    let mut names: string = "["
+    let mut first: bool = true
+    let mut i: i32 = 0
+    while i < ft_list_len(b[0].guild_ids) {
+        if ft_len(ft_list_get(b[0].guild_ids, i)) > 0 {
+            if first == false {
+                names = names + ", "
+            }
+            names = names + ft_repr(ft_list_get(b[0].guild_names, i))
+            first = false
+        }
+        i = i + 1
+    }
+    info("Watching guilds: " + names + "]")
+    info("Welcome channel id: " + b[0].channel_id)
+}
+
+function pending_left(b: ptr<Bot>) -> i32 {
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < ft_list_len(b[0].pending) {
+        if ft_len(ft_list_get(b[0].pending, i)) > 0 {
+            n = n + 1
+        }
+        i = i + 1
+    }
+    return n
+}
+
+function on_guild_create(b: ptr<Bot>, j: ptr<Json>, d: i32) -> void {
+    let id: string = field_str(j, d, "id")
+    let name: string = field_str(j, d, "name")
+    let at: i32 = list_index(b[0].guild_ids, id)
+    if at >= 0 {
+        let gl: ptr<StrList> = b[0].guild_names
+        let names: ptr<string> = gl[0].items
+        names[at] = name
+    } else {
+        ft_list_push(b[0].guild_ids, id)
+        ft_list_push(b[0].guild_names, name)
+    }
+    let chans: i32 = json_get(j, d, "channels")
+    if chans >= 0 {
+        let mut c: i32 = json_first(j, chans)
+        while c >= 0 {
+            let cid: string = field_str(j, c, "id")
+            if list_index(b[0].channels, cid) < 0 {
+                ft_list_push(b[0].channels, cid)
+            }
+            c = json_next(j, c)
+        }
+    }
+    list_remove(b[0].pending, id)
+    if pending_left(b) == 0 {
+        log_ready(b)
+    }
+}
+
+function on_member_join(b: ptr<Bot>, j: ptr<Json>, d: i32) -> void {
+    let u: i32 = json_get(j, d, "user")
+    let member: string = user_str(j, u)
+    let gname: string = guild_name(b, field_str(j, d, "guild_id"))
+    if list_index(b[0].channels, b[0].channel_id) < 0 {
+        warn("Welcome channel " + b[0].channel_id + " not visible to the bot; skipping greet for " + member)
+        return
+    }
+    let mention: string = "<@" + field_str(j, u, "id") + ">"
+    let ok: ptr<i32> = calloc(1, 4) as ptr<i32>
+    let text: string = wl_pick(b[0].rng, b[0].templates, mention, gname, ok)
+    if ok[0] == 0 {
+        error("Failed to send welcome message for " + member + ": bad template in messages.json")
+        return
+    }
+    let err: string = post_message(b, text)
+    if ft_len(err) > 0 {
+        error("Failed to send welcome message for " + member + ": " + err)
+    } else {
+        info("Welcomed " + member + " in " + gname)
+    }
+}
+
+function host_of(url: string) -> string {
+    let mut s: string = url
+    if ft_starts(s, "wss://") {
+        s = ft_replace(s, "wss://", "")
+    }
+    let p: ptr<u8> = s as ptr<u8>
+    let mut e: i32 = 0
+    while p[e] != 0 and p[e] != 47 and p[e] != 63 and p[e] != 58 {
+        e = e + 1
+    }
+    p[e] = 0
+    return s
+}
+
+function handle(b: ptr<Bot>, text: string) -> void {
+    let j: ptr<Json> = json_parse(text)
+    if ft_len(json_error(j)) > 0 {
+        warn("Ignoring undecodable gateway payload: " + json_error(j))
+        return
+    }
+    let op: i64 = json_int(j, json_get(j, 0, "op"))
+    let s: i32 = json_get(j, 0, "s")
+    if s >= 0 and json_kind(j, s) != json_kind_null() {
+        b[0].seq = json_str(j, s)
+    }
+    let d: i32 = json_get(j, 0, "d")
+    if op == 10 {
+        b[0].hb_interval = json_int(j, json_get(j, d, "heartbeat_interval"))
+        let jitter: f64 = (net_random_u32() as f64) / 4294967296.0
+        b[0].next_hb = net_now_ms() + ((b[0].hb_interval as f64) * jitter) as i64
+        b[0].acked = true
+        if b[0].replay {
+            let line: string = "HEARTBEAT every " + ft_itoa(b[0].hb_interval as i32) + " ms\n"
+            let _w: i64 = write(1, line, ft_len(line) as i64)
+        }
+        if ft_len(b[0].session_id) > 0 and ft_len(b[0].seq) > 0 {
+            send_resume(b)
+        } else {
+            send_identify(b)
+        }
+    } elif op == 11 {
+        b[0].acked = true
+    } elif op == 1 {
+        send_heartbeat(b)
+    } elif op == 7 {
+        info("Gateway asked for a reconnect")
+        b[0].action = 1
+    } elif op == 9 {
+        let resumable: bool = d >= 0 and json_kind(j, d) == json_kind_true()
+        if resumable == false {
+            b[0].session_id = ""
+            b[0].seq = ""
+        }
+        warn("Gateway session invalidated; reconnecting")
+        b[0].action = 2
+        if resumable {
+            b[0].action = 1
+        }
+    } elif op == 0 {
+        let t: string = field_str(j, 0, "t")
+        if ft_eq(t, "READY") {
+            b[0].session_id = field_str(j, d, "session_id")
+            b[0].resume_host = host_of(field_str(j, d, "resume_gateway_url"))
+            let u: i32 = json_get(j, d, "user")
+            b[0].user_str = user_str(j, u)
+            b[0].user_id = field_str(j, u, "id")
+            log_line("INFO", "discord.gateway", "Shard ID None has connected to Gateway (Session ID: " + b[0].session_id + ").")
+            let gl: i32 = json_get(j, d, "guilds")
+            if gl >= 0 {
+                let mut g: i32 = json_first(j, gl)
+                while g >= 0 {
+                    ft_list_push(b[0].pending, field_str(j, g, "id"))
+                    g = json_next(j, g)
+                }
+            }
+            b[0].ready_deadline = net_now_ms() + 2000
+            if pending_left(b) == 0 {
+                log_ready(b)
+            }
+        } elif ft_eq(t, "RESUMED") {
+            log_line("INFO", "discord.gateway", "Shard ID None has successfully RESUMED session " + b[0].session_id + ".")
+        } elif ft_eq(t, "GUILD_CREATE") or ft_eq(t, "GUILD_UPDATE") {
+            on_guild_create(b, j, d)
+        } elif ft_eq(t, "GUILD_DELETE") {
+            let gid: string = field_str(j, d, "id")
+            list_remove(b[0].pending, gid)
+            let unavailable: i32 = json_get(j, d, "unavailable")
+            if unavailable < 0 or json_kind(j, unavailable) != json_kind_true() {
+                list_remove(b[0].guild_ids, gid)
+            }
+        } elif ft_eq(t, "CHANNEL_CREATE") {
+            let cid: string = field_str(j, d, "id")
+            if list_index(b[0].channels, cid) < 0 {
+                ft_list_push(b[0].channels, cid)
+            }
+        } elif ft_eq(t, "CHANNEL_DELETE") {
+            list_remove(b[0].channels, field_str(j, d, "id"))
+        } elif ft_eq(t, "GUILD_MEMBER_ADD") {
+            on_member_join(b, j, d)
+        }
+    }
+}
+
+# ---- live loop ----
+
+function sleep_ms(ms: i64) -> void {
+    let _s: i32 = usleep((ms * 1000) as u32)
+}
+
+# Close codes after which Discord will not accept this bot again as is.
+function fatal_close(b: ptr<Bot>, code: i32) -> bool {
+    if code == 4004 {
+        error("Improper token has been passed.")
+        return true
+    }
+    if code == 4014 {
+        error("Shard ID None is requesting privileged intents that have not been explicitly enabled in the developer portal. Enable the Server Members Intent for this application.")
+        return true
+    }
+    if code == 4010 or code == 4011 or code == 4012 or code == 4013 {
+        error("Gateway closed with code " + ft_itoa(code) + "; not reconnecting")
+        return true
+    }
+    return false
+}
+
+function run_gateway(b: ptr<Bot>) -> i32 {
+    let mut backoff: i64 = 1000
+    let mut resume: bool = false
+    while true {
+        let mut host: string = GATEWAY_HOST
+        if resume and ft_len(b[0].resume_host) > 0 and ft_len(b[0].session_id) > 0 {
+            host = b[0].resume_host
+        } else {
+            b[0].session_id = ""
+            b[0].seq = ""
+        }
+        b[0].conn = ws_connect(host, "/?v=10&encoding=json")
+        if conn_ok(b[0].conn) == false {
+            let bc: ptr<Conn> = b[0].conn
+            warn("Gateway connection failed: " + bc[0].err + "; retrying in " + ft_itoa((backoff / 1000) as i32) + "s")
+            sleep_ms(backoff)
+            if backoff < 60000 {
+                backoff = backoff * 2
+            }
+            continue
+        }
+        b[0].hb_interval = 0
+        b[0].action = 0
+        let mut lost: bool = false
+        let mut close_code: i32 = 0
+        while b[0].action == 0 and lost == false {
+            let now: i64 = net_now_ms()
+            let mut wait: i64 = 1000
+            if b[0].hb_interval > 0 {
+                wait = b[0].next_hb - now
+            }
+            if wait < 0 {
+                wait = 0
+            }
+            if wait > 5000 {
+                wait = 5000
+            }
+            let m: WsMsg = ws_recv(b[0].conn, wait as i32, b[0].frag)
+            if m.kind == 1 {
+                handle(b, m.text)
+                backoff = 1000
+            } elif m.kind == -2 {
+                close_code = m.close_code
+                lost = true
+            } elif m.kind == -1 {
+                lost = true
+            }
+            if b[0].ready_logged == false and b[0].ready_deadline > 0 and net_now_ms() >= b[0].ready_deadline {
+                log_ready(b)
+            }
+            if lost == false and b[0].hb_interval > 0 and net_now_ms() >= b[0].next_hb {
+                if b[0].acked == false {
+                    warn("Heartbeat was not acknowledged; reconnecting")
+                    b[0].action = 1
+                } else {
+                    send_heartbeat(b)
+                    b[0].next_hb = b[0].next_hb + b[0].hb_interval
+                }
+            }
+        }
+        if lost {
+            if fatal_close(b, close_code) {
+                conn_close(b[0].conn)
+                return 1
+            }
+            warn("Gateway connection closed (code " + ft_itoa(close_code) + "); reconnecting")
+            conn_close(b[0].conn)
+            resume = close_code != 1000 and close_code != 4007 and close_code != 4009
+        } else {
+            ws_close(b[0].conn, 4000)
+            resume = b[0].action == 1
+            if b[0].action == 2 {
+                # discord.py waits 1-5 s before identifying again.
+                sleep_ms(1000 + ((net_random_u32() % 4000) as i64))
+            }
+        }
+        sleep_ms(250)
+    }
+    return 0
+}
+
+# ---- entry ----
+
+function required_env(name: string) -> string {
+    let v: string = getenv(name)
+    if v as ptr<u8> == null {
+        return ""
+    }
+    return strip(v)
+}
+
+function strip(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut a: i32 = 0
+    let mut e: i32 = ft_len(s)
+    while a < e and (p[a] == 32 or p[a] == 9 or p[a] == 10 or p[a] == 13 or p[a] == 11 or p[a] == 12) {
+        a = a + 1
+    }
+    while e > a and (p[e - 1] == 32 or p[e - 1] == 9 or p[e - 1] == 10 or p[e - 1] == 13 or p[e - 1] == 11 or p[e - 1] == 12) {
+        e = e - 1
+    }
+    let o: ptr<u8> = calloc((e - a + 1) as i64, 1) as ptr<u8>
+    let mut i: i32 = a
+    while i < e {
+        o[i - a] = p[i]
+        i = i + 1
+    }
+    return o as string
+}
+
+# int(s) as Python parses it: optional sign, digits with single
+# underscores between them. Returns the canonical decimal, or "".
+function parse_int(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = ft_len(s)
+    let mut i: i32 = 0
+    let mut neg: bool = false
+    if n > 0 and (p[0] == 43 or p[0] == 45) {
+        neg = p[0] == 45
+        i = 1
+    }
+    let o: ptr<u8> = calloc((n + 2) as i64, 1) as ptr<u8>
+    let mut k: i32 = 0
+    let mut prev_digit: bool = false
+    while i < n {
+        let c: i32 = p[i] as i32
+        if c >= 48 and c <= 57 {
+            o[k] = c as u8
+            k = k + 1
+            prev_digit = true
+        } elif c == 95 and prev_digit and i + 1 < n {
+            prev_digit = false
+        } else {
+            return ""
+        }
+        i = i + 1
+    }
+    if k == 0 or prev_digit == false {
+        return ""
+    }
+    # Drop leading zeros ("007" is 7).
+    let mut z: i32 = 0
+    while z < k - 1 and o[z] == 48 {
+        z = z + 1
+    }
+    let digits: string = (&o[z]) as string
+    if neg and ft_eq(digits, "0") == false {
+        return "-" + digits
+    }
+    return digits
+}
+
+# messages.json beside the executable (the installed layout), else
+# tools/discord-welcome/messages.json relative to the working directory.
+function default_messages(argv0: string) -> string {
+    let n: i32 = ft_len(argv0)
+    let buf: ptr<u8> = calloc((n + 16) as i64, 1) as ptr<u8>
+    let src: ptr<u8> = argv0 as ptr<u8>
+    let mut e: i32 = n
+    while e > 0 and src[e - 1] != 47 {
+        e = e - 1
+    }
+    if e > 0 {
+        let mut i: i32 = 0
+        while i < e {
+            buf[i] = src[i]
+            i = i + 1
+        }
+        let beside: string = (buf as string) + "messages.json"
+        if access(beside, 4) == 0 {
+            return beside
+        }
+    }
+    return "tools/discord-welcome/messages.json"
+}
+
+function check_tls(host: string, path: string) -> i32 {
+    let r: HttpResp = https_request(host, "GET", path, "User-Agent: flow-discord-welcome\r\nAccept: application/json\r\n", "", 20000)
+    if r.status == 0 {
+        let line: string = "TLS/HTTP error: " + r.err + "\n"
+        let _w: i64 = write(1, line, ft_len(line) as i64)
+        return 1
+    }
+    let out: string = "HTTP " + ft_itoa(r.status) + "\n" + r.body + "\n"
+    let _w2: i64 = write(1, out, ft_len(out) as i64)
+    if r.status >= 200 and r.status < 300 {
+        return 0
+    }
+    return 1
+}
+
+# --render USER GUILD: one pick_welcome() result (seeded by --seed).
+# --render-all USER GUILD: every template formatted, one per line.
+function render(path0: string, argv0: string, mode: i32, user: string, guild: string, seed_s: string) -> i32 {
+    let mut path: string = path0
+    if ft_len(path) == 0 {
+        path = default_messages(argv0)
+    }
+    let t: Templates = wl_load(path)
+    if t.err != wl_ok() {
+        error(t.msg)
+        return 1
+    }
+    let ok: ptr<i32> = calloc(1, 4) as ptr<i32>
+    if mode == 1 {
+        let mut seed: u64 = ((net_random_u32() as u64) << 32) | (net_random_u32() as u64)
+        if ft_len(seed_s) > 0 {
+            seed = strtol(seed_s, null, 10) as u64
+        }
+        let out: string = wl_pick(wl_rng(seed), t.list, user, guild, ok) + "\n"
+        if ok[0] == 0 {
+            error("bad template in " + path)
+            return 1
+        }
+        let _w: i64 = write(1, out, ft_len(out) as i64)
+        return 0
+    }
+    let mut k: i32 = 0
+    while k < ft_list_len(t.list) {
+        let line: string = wl_format(ft_list_get(t.list, k), user, guild, ok) + "\n"
+        if ok[0] == 0 {
+            error("bad template in " + path + ": " + ft_repr(ft_list_get(t.list, k)))
+            return 1
+        }
+        let _w2: i64 = write(1, line, ft_len(line) as i64)
+        k = k + 1
+    }
+    return 0
+}
+
+function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
+    let mut replay_file: string = ""
+    let mut seed_s: string = ""
+    let mut messages_path: string = ""
+    let mut login_check: bool = true
+    let mut render_mode: i32 = 0
+    let mut render_user: string = ""
+    let mut render_guild: string = ""
+    let mut i: i32 = 1
+    while i < argc {
+        let a: string = argv[i] as string
+        if ft_eq(a, "--replay") and i + 1 < argc {
+            replay_file = argv[i + 1] as string
+            i = i + 1
+        } elif ft_eq(a, "--seed") and i + 1 < argc {
+            seed_s = argv[i + 1] as string
+            i = i + 1
+        } elif ft_eq(a, "--messages") and i + 1 < argc {
+            messages_path = argv[i + 1] as string
+            i = i + 1
+        } elif (ft_eq(a, "--render") or ft_eq(a, "--render-all")) and i + 2 < argc {
+            render_mode = 1
+            if ft_eq(a, "--render-all") {
+                render_mode = 2
+            }
+            render_user = argv[i + 1] as string
+            render_guild = argv[i + 2] as string
+            i = i + 2
+        } elif ft_eq(a, "--skip-login-check") {
+            login_check = false
+        } elif ft_eq(a, "--check-tls") {
+            let mut host: string = "discord.com"
+            let mut path: string = "/api/v10/gateway"
+            if i + 2 < argc {
+                host = argv[i + 1] as string
+                path = argv[i + 2] as string
+            }
+            return check_tls(host, path)
+        } elif ft_eq(a, "-h") or ft_eq(a, "--help") {
+            let u: string = "usage: discord-welcome [--messages FILE] [--replay FILE] [--seed N] [--skip-login-check] [--render[-all] USER GUILD] [--check-tls [HOST PATH]]\n"
+            let _w: i64 = write(1, u, ft_len(u) as i64)
+            return 0
+        } else {
+            error("Unknown argument: " + a)
+            return 2
+        }
+        i = i + 1
+    }
+
+    if render_mode > 0 {
+        return render(messages_path, argv[0] as string, render_mode, render_user, render_guild, seed_s)
+    }
+
+    let token: string = required_env("DISCORD_TOKEN")
+    if ft_len(token) == 0 {
+        error("Missing required env var DISCORD_TOKEN")
+        return 1
+    }
+    let raw_channel: string = required_env("WELCOME_CHANNEL_ID")
+    if ft_len(raw_channel) == 0 {
+        error("Missing required env var WELCOME_CHANNEL_ID")
+        return 1
+    }
+    let channel: string = parse_int(raw_channel)
+    if ft_len(channel) == 0 {
+        error("WELCOME_CHANNEL_ID must be an integer, got " + ft_repr(raw_channel))
+        return 1
+    }
+
+    if ft_len(messages_path) == 0 {
+        messages_path = default_messages(argv[0] as string)
+    }
+    let t: Templates = wl_load(messages_path)
+    if t.err != wl_ok() {
+        error(t.msg)
+        return 1
+    }
+
+    let b: ptr<Bot> = calloc(1, 512) as ptr<Bot>
+    b[0].token = token
+    b[0].channel_id = channel
+    b[0].templates = t.list
+    let mut seed: u64 = ((net_random_u32() as u64) << 32) | (net_random_u32() as u64)
+    if ft_len(seed_s) > 0 {
+        seed = strtol(seed_s, null, 10) as u64
+    }
+    b[0].rng = wl_rng(seed)
+    b[0].replay = ft_len(replay_file) > 0
+    b[0].frag = bytes_new()
+    b[0].seq = ""
+    b[0].session_id = ""
+    b[0].resume_host = ""
+    b[0].user_str = ""
+    b[0].user_id = ""
+    b[0].guild_ids = ft_list_new()
+    b[0].guild_names = ft_list_new()
+    b[0].pending = ft_list_new()
+    b[0].channels = ft_list_new()
+    b[0].ready_logged = false
+    b[0].ready_deadline = 0
+
+    log_line("INFO", "discord.client", "logging in using static token")
+    if b[0].replay {
+        let text: string = ft_read_file(replay_file)
+        if text as ptr<u8> == null {
+            error("Cannot read replay file " + replay_file)
+            return 1
+        }
+        let lines: ptr<StrList> = ft_split_lines(text)
+        let mut k: i32 = 0
+        while k < ft_list_len(lines) {
+            let line: string = strip(ft_list_get(lines, k))
+            if ft_len(line) > 0 and ft_starts(line, "#") == false {
+                handle(b, line)
+                if b[0].action == 1 {
+                    let o: string = "RECONNECT resume\n"
+                    let _w: i64 = write(1, o, ft_len(o) as i64)
+                    b[0].action = 0
+                } elif b[0].action == 2 {
+                    let o2: string = "RECONNECT identify\n"
+                    let _w2: i64 = write(1, o2, ft_len(o2) as i64)
+                    b[0].action = 0
+                }
+            }
+            k = k + 1
+        }
+        # The guild_ready_timeout would have fired by now.
+        if b[0].ready_deadline > 0 {
+            log_ready(b)
+        }
+        return 0
+    }
+
+    # static_login: GET /users/@me rejects a bad token before the gateway.
+    if login_check {
+        let me: HttpResp = https_request("discord.com", "GET", "/api/v10/users/@me", auth_headers(b), "", 20000)
+        if me.status == 401 {
+            error("Improper token has been passed.")
+            return 1
+        }
+        if me.status == 0 {
+            warn("Could not reach discord.com: " + me.err)
+        }
+    }
+    return run_gateway(b)
+}

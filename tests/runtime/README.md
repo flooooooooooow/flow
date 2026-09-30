@@ -44,16 +44,6 @@ Also present:
 - `test_generics.flow`: monomorphization correctness (concrete stand-ins)
 - `test_effects*.flow` / concurrency / async / fiber / netpoll: feature areas
 
-Unit-level compiler harness (parse → typecheck → mono → C → clang, plus
-C↔MLIR parity and nesting torture) lives under `tests/unit/`:
-
-```bash
-./flow test-python
-# or
-PYTHONPATH=src pytest tests/unit/test_type_checker.py \
-  tests/unit/test_monomorphize.py \
-  tests/unit/test_c_generator_abi.py \
-  tests/unit/test_backend_parity.py \
-  tests/unit/test_torture_nesting.py \
-  tests/unit/test_compiler_pipeline.py -v
-```
+Compiler unit checks live in flowc itself (its self-tests run in
+`compiler/scripts/self_host_full.sh`) and in `tests/lang/`, run by
+`./flow test-lang`. Tool and script behaviour is covered by `./flow test-scripts`.

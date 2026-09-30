@@ -26,7 +26,7 @@ Companion noise / WFC demos: [`examples/procgen/`](../procgen/README.md).
 ```bash
 ./flow gfx examples/planet/planet_evidence.flow
 ./flow record examples/planet/planet_evidence.flow --frames 4 --out /tmp/pl
-python3 scripts/record_demos.py --group planet
+scripts/record_demos.sh --group planet
 ```
 
 Generation at `PLANET_FACE_N = 96` (55296 cells) with 24 erosion iterations is

@@ -1,6 +1,6 @@
 # A TCP round trip from inside a browser tab.
 #
-#   python3 scripts/ws_echo_relay.py --port 9505 --tcp-port 9506 &
+#   scripts/ws_echo_relay.sh --port 9505 --tcp-port 9506 &
 #   ./flow run examples/wasm/tcp_echo.flow          # native, plain TCP
 #   wasm/crossings.sh sockets                       # browser, over WebSocket
 #

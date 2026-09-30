@@ -1,0 +1,652 @@
+# @module tools.discord_welcome.net
+# @means  TLS client sockets, HTTPS requests and RFC 6455 WebSocket frames.
+#
+# DNS is getaddrinfo(3). TLS is OpenSSL (libssl, libcrypto) called through
+# extern: SNI via SSL_set_tlsext_host_name, peer verification against the
+# default trust store (SSL_CTX_set_default_verify_paths, which also honours
+# SSL_CERT_FILE / SSL_CERT_DIR) and host-name checking via SSL_set1_host.
+# After the handshake the socket is non-blocking and reads wait in poll(2),
+# so the gateway loop can keep its heartbeat schedule.
+
+import .text { ft_len, ft_itoa, ft_eq, ft_starts, ft_ascii_lower }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function realloc(p: ptr<void>, size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function memcpy(dst: ptr<u8>, src: ptr<u8>, n: i64) -> ptr<u8>
+    function memmove(dst: ptr<u8>, src: ptr<u8>, n: i64) -> ptr<u8>
+    function strlen(s: string) -> i64
+    function strtol(s: string, end: ptr<void>, base: i32) -> i64
+    function uname(buf: ptr<u8>) -> i32
+    function getaddrinfo(node: string, service: string, hints: ptr<u8>, res: ptr<ptr<u8>>) -> i32
+    function freeaddrinfo(res: ptr<u8>) -> void
+    function gai_strerror(code: i32) -> string
+    function socket(domain: i32, kind: i32, protocol: i32) -> i32
+    function connect(fd: i32, addr: ptr<u8>, len: u32) -> i32
+    function close(fd: i32) -> i32
+    function fcntl(fd: i32, cmd: i32, arg: i32) -> i32
+    function poll(fds: ptr<u8>, n: u32, timeout: i32) -> i32
+    function gettimeofday(tv: ptr<i64>, tz: ptr<void>) -> i32
+    function OPENSSL_init_ssl(opts: u64, settings: ptr<void>) -> i32
+    function TLS_client_method() -> ptr<void>
+    function SSL_CTX_new(method: ptr<void>) -> ptr<void>
+    function SSL_CTX_free(ctx: ptr<void>) -> void
+    function SSL_CTX_set_default_verify_paths(ctx: ptr<void>) -> i32
+    function SSL_CTX_set_verify(ctx: ptr<void>, mode: i32, cb: ptr<void>) -> void
+    function SSL_new(ctx: ptr<void>) -> ptr<void>
+    function SSL_free(ssl: ptr<void>) -> void
+    function SSL_set_fd(ssl: ptr<void>, fd: i32) -> i32
+    function SSL_ctrl(ssl: ptr<void>, cmd: i32, larg: i64, parg: string) -> i64
+    function SSL_set1_host(ssl: ptr<void>, host: string) -> i32
+    function SSL_connect(ssl: ptr<void>) -> i32
+    function SSL_get_verify_result(ssl: ptr<void>) -> i64
+    function X509_verify_cert_error_string(code: i64) -> string
+    function SSL_read(ssl: ptr<void>, buf: ptr<u8>, n: i32) -> i32
+    function SSL_write(ssl: ptr<void>, buf: ptr<u8>, n: i32) -> i32
+    function SSL_pending(ssl: ptr<void>) -> i32
+    function SSL_get_error(ssl: ptr<void>, ret: i32) -> i32
+    function SSL_shutdown(ssl: ptr<void>) -> i32
+    function SHA1(d: ptr<u8>, n: i64, md: ptr<u8>) -> ptr<u8>
+    function RAND_bytes(buf: ptr<u8>, n: i32) -> i32
+}
+
+# ---- platform ----
+
+# Linux and macOS lay out struct addrinfo and O_NONBLOCK differently.
+export function net_is_linux() -> bool {
+    let buf: ptr<u8> = calloc(8192, 1) as ptr<u8>
+    let _u: i32 = uname(buf)
+    let s: string = buf as string
+    return ft_starts(s, "Linux")
+}
+
+# Wall clock in milliseconds.
+export function net_now_ms() -> i64 {
+    let tv: ptr<i64> = calloc(2, 8) as ptr<i64>
+    let _g: i32 = gettimeofday(tv, null)
+    let usec: ptr<i32> = tv as ptr<i32>
+    return tv[0] * 1000 + ((usec[2] as i64) / 1000)
+}
+
+export function net_random_u32() -> u32 {
+    let b: ptr<u8> = calloc(4, 1) as ptr<u8>
+    let _r: i32 = RAND_bytes(b, 4)
+    return (b[0] as u32) | ((b[1] as u32) << 8) | ((b[2] as u32) << 16) | ((b[3] as u32) << 24)
+}
+
+# ---- byte buffer ----
+
+export struct Bytes {
+    data: ptr<u8>
+    len: i32
+    cap: i32
+}
+
+export function bytes_new() -> ptr<Bytes> {
+    let b: ptr<Bytes> = malloc(16) as ptr<Bytes>
+    b[0].cap = 16384
+    b[0].len = 0
+    b[0].data = malloc(16384) as ptr<u8>
+    return b
+}
+
+export function bytes_add(b: ptr<Bytes>, src: ptr<u8>, n: i32) -> void {
+    if b[0].len + n + 1 > b[0].cap {
+        let mut nc: i32 = b[0].cap * 2
+        while b[0].len + n + 1 > nc {
+            nc = nc * 2
+        }
+        b[0].data = realloc(b[0].data as ptr<void>, nc as i64) as ptr<u8>
+        b[0].cap = nc
+    }
+    let d: ptr<u8> = b[0].data
+    if n > 0 {
+        let _m: ptr<u8> = memcpy(&d[b[0].len] as ptr<u8>, src, n as i64)
+    }
+    b[0].len = b[0].len + n
+    d[b[0].len] = 0
+}
+
+export function bytes_str(b: ptr<Bytes>, s: string) -> void {
+    bytes_add(b, s as ptr<u8>, strlen(s) as i32)
+}
+
+# Drop the first n bytes.
+export function bytes_consume(b: ptr<Bytes>, n: i32) -> void {
+    let d: ptr<u8> = b[0].data
+    let rest: i32 = b[0].len - n
+    if rest > 0 {
+        let _m: ptr<u8> = memmove(d, &d[n] as ptr<u8>, rest as i64)
+    }
+    b[0].len = rest
+    d[rest] = 0
+}
+
+# ---- base64 ----
+
+export function b64(d: ptr<u8>, n: i32) -> string {
+    let alpha: ptr<u8> = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/" as ptr<u8>
+    let o: ptr<u8> = malloc((((n + 2) / 3) * 4 + 1) as i64) as ptr<u8>
+    let mut i: i32 = 0
+    let mut at: i32 = 0
+    while i < n {
+        let b0: i32 = d[i] as i32
+        let mut b1: i32 = 0
+        let mut b2: i32 = 0
+        if i + 1 < n {
+            b1 = d[i + 1] as i32
+        }
+        if i + 2 < n {
+            b2 = d[i + 2] as i32
+        }
+        o[at] = alpha[b0 >> 2]
+        o[at + 1] = alpha[((b0 & 3) << 4) | (b1 >> 4)]
+        o[at + 2] = 61
+        o[at + 3] = 61
+        if i + 1 < n {
+            o[at + 2] = alpha[((b1 & 15) << 2) | (b2 >> 6)]
+        }
+        if i + 2 < n {
+            o[at + 3] = alpha[b2 & 63]
+        }
+        at = at + 4
+        i = i + 3
+    }
+    o[at] = 0
+    return o as string
+}
+
+# ---- TLS connection ----
+
+export struct Conn {
+    fd: i32
+    ssl: ptr<void>
+    ctx: ptr<void>
+    rbuf: ptr<Bytes>
+    err: string
+    eof: bool
+}
+
+function conn_fail(msg: string) -> ptr<Conn> {
+    let c: ptr<Conn> = calloc(1, 64) as ptr<Conn>
+    c[0].fd = -1
+    c[0].err = msg
+    return c
+}
+
+# Resolve, connect over TCP, then TLS with SNI and verification.
+export function tls_connect(host: string, port: string) -> ptr<Conn> {
+    let hints: ptr<u8> = calloc(64, 1) as ptr<u8>
+    let hi: ptr<i32> = hints as ptr<i32>
+    hi[1] = 0
+    hi[2] = 1
+    let res: ptr<ptr<u8>> = calloc(1, 8) as ptr<ptr<u8>>
+    let rc: i32 = getaddrinfo(host, port, hints, res)
+    if rc != 0 {
+        return conn_fail("getaddrinfo " + host + ": " + gai_strerror(rc))
+    }
+    let on_linux: bool = net_is_linux()
+    let mut ai: ptr<u8> = res[0]
+    let mut fd: i32 = -1
+    while ai != null and fd < 0 {
+        let f: ptr<i32> = ai as ptr<i32>
+        let ptrs: ptr<ptr<u8>> = ai as ptr<ptr<u8>>
+        let mut addr: ptr<u8> = ptrs[4]
+        if on_linux {
+            addr = ptrs[3]
+        }
+        let s: i32 = socket(f[1], f[2], f[3])
+        if s >= 0 {
+            if connect(s, addr, f[4] as u32) == 0 {
+                fd = s
+            } else {
+                let _c: i32 = close(s)
+            }
+        }
+        ai = ptrs[5]
+    }
+    freeaddrinfo(res[0])
+    if fd < 0 {
+        return conn_fail("could not connect to " + host + ":" + port)
+    }
+
+    let _i: i32 = OPENSSL_init_ssl(0, null)
+    let ctx: ptr<void> = SSL_CTX_new(TLS_client_method())
+    if ctx == null {
+        let _c1: i32 = close(fd)
+        return conn_fail("SSL_CTX_new failed")
+    }
+    let _v: i32 = SSL_CTX_set_default_verify_paths(ctx)
+    SSL_CTX_set_verify(ctx, 1, null)
+    let ssl: ptr<void> = SSL_new(ctx)
+    let _f: i32 = SSL_set_fd(ssl, fd)
+    # SSL_set_tlsext_host_name: SSL_CTRL_SET_TLSEXT_HOSTNAME, host_name type.
+    let _s: i64 = SSL_ctrl(ssl, 55, 0, host)
+    let _h: i32 = SSL_set1_host(ssl, host)
+    if SSL_connect(ssl) != 1 {
+        let vr: i64 = SSL_get_verify_result(ssl)
+        let mut why: string = "TLS handshake with " + host + " failed"
+        if vr != 0 {
+            why = why + ": certificate verify failed: " + X509_verify_cert_error_string(vr)
+        }
+        SSL_free(ssl)
+        SSL_CTX_free(ctx)
+        let _c2: i32 = close(fd)
+        return conn_fail(why)
+    }
+    if SSL_get_verify_result(ssl) != 0 {
+        SSL_free(ssl)
+        SSL_CTX_free(ctx)
+        let _c3: i32 = close(fd)
+        return conn_fail("certificate verify failed for " + host)
+    }
+    let mut nonblock: i32 = 4
+    if on_linux {
+        nonblock = 2048
+    }
+    let fl: i32 = fcntl(fd, 3, 0)
+    let _n: i32 = fcntl(fd, 4, fl | nonblock)
+    let c: ptr<Conn> = calloc(1, 64) as ptr<Conn>
+    c[0].fd = fd
+    c[0].ssl = ssl
+    c[0].ctx = ctx
+    c[0].rbuf = bytes_new()
+    c[0].err = ""
+    c[0].eof = false
+    return c
+}
+
+export function conn_ok(c: ptr<Conn>) -> bool {
+    return c[0].fd >= 0
+}
+
+export function conn_close(c: ptr<Conn>) -> void {
+    if c[0].fd < 0 {
+        return
+    }
+    let _s: i32 = SSL_shutdown(c[0].ssl)
+    SSL_free(c[0].ssl)
+    SSL_CTX_free(c[0].ctx)
+    let _c: i32 = close(c[0].fd)
+    c[0].fd = -1
+}
+
+function wait_fd(fd: i32, events: i32, timeout_ms: i32) -> i32 {
+    let pfd: ptr<u8> = calloc(8, 1) as ptr<u8>
+    let pi: ptr<i32> = pfd as ptr<i32>
+    pi[0] = fd
+    pfd[4] = events as u8
+    return poll(pfd, 1, timeout_ms)
+}
+
+# Read whatever arrives within timeout_ms into the buffer. Returns bytes
+# read, 0 on timeout, -1 on EOF or error.
+export function conn_fill(c: ptr<Conn>, timeout_ms: i32) -> i32 {
+    let tmp: ptr<u8> = malloc(16384) as ptr<u8>
+    let deadline: i64 = net_now_ms() + (timeout_ms as i64)
+    while true {
+        let n: i32 = SSL_read(c[0].ssl, tmp, 16384)
+        if n > 0 {
+            bytes_add(c[0].rbuf, tmp, n)
+            free(tmp as ptr<void>)
+            return n
+        }
+        let e: i32 = SSL_get_error(c[0].ssl, n)
+        if e == 2 or e == 3 {
+            let left: i64 = deadline - net_now_ms()
+            if left <= 0 {
+                free(tmp as ptr<void>)
+                return 0
+            }
+            let mut ev: i32 = 1
+            if e == 3 {
+                ev = 4
+            }
+            let _w: i32 = wait_fd(c[0].fd, ev, left as i32)
+        } else {
+            c[0].eof = true
+            free(tmp as ptr<void>)
+            return -1
+        }
+    }
+    return -1
+}
+
+export function conn_write(c: ptr<Conn>, d: ptr<u8>, n: i32) -> bool {
+    let mut off: i32 = 0
+    while off < n {
+        let w: i32 = SSL_write(c[0].ssl, &d[off] as ptr<u8>, n - off)
+        if w > 0 {
+            off = off + w
+        } else {
+            let e: i32 = SSL_get_error(c[0].ssl, w)
+            if e == 2 {
+                let _a: i32 = wait_fd(c[0].fd, 1, 1000)
+            } elif e == 3 {
+                let _b: i32 = wait_fd(c[0].fd, 4, 1000)
+            } else {
+                return false
+            }
+        }
+    }
+    return true
+}
+
+# Index of "\r\n\r\n" in the read buffer, or -1.
+function header_end(b: ptr<Bytes>) -> i32 {
+    let d: ptr<u8> = b[0].data
+    let mut i: i32 = 0
+    while i + 3 < b[0].len {
+        if d[i] == 13 and d[i + 1] == 10 and d[i + 2] == 13 and d[i + 3] == 10 {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+function sub(d: ptr<u8>, a: i32, b: i32) -> string {
+    let o: ptr<u8> = malloc((b - a + 1) as i64) as ptr<u8>
+    let mut i: i32 = a
+    while i < b {
+        o[i - a] = d[i]
+        i = i + 1
+    }
+    o[b - a] = 0
+    return o as string
+}
+
+# Value of header `name` (lower case) in a raw header block, or "".
+export function header_value(head: string, name: string) -> string {
+    let d: ptr<u8> = head as ptr<u8>
+    let n: i32 = ft_len(head)
+    let mut i: i32 = 0
+    while i < n {
+        let mut e: i32 = i
+        while e < n and d[e] != 13 and d[e] != 10 {
+            e = e + 1
+        }
+        let mut colon: i32 = i
+        while colon < e and d[colon] != 58 {
+            colon = colon + 1
+        }
+        if colon < e and ft_eq(ft_ascii_lower(sub(d, i, colon)), name) {
+            let mut v: i32 = colon + 1
+            while v < e and d[v] == 32 {
+                v = v + 1
+            }
+            return sub(d, v, e)
+        }
+        i = e
+        while i < n and (d[i] == 13 or d[i] == 10) {
+            i = i + 1
+        }
+    }
+    return ""
+}
+
+# ---- HTTPS ----
+
+export struct HttpResp {
+    status: i32
+    head: string
+    body: string
+    err: string
+}
+
+function dechunk(d: ptr<u8>, n: i32) -> string {
+    let out: ptr<Bytes> = bytes_new()
+    let mut i: i32 = 0
+    while i < n {
+        let mut e: i32 = i
+        while e + 1 < n and (d[e] != 13 or d[e + 1] != 10) {
+            e = e + 1
+        }
+        let size: i32 = strtol(sub(d, i, e), null, 16) as i32
+        if size <= 0 {
+            return out[0].data as string
+        }
+        let start: i32 = e + 2
+        let mut take: i32 = size
+        if start + take > n {
+            take = n - start
+        }
+        bytes_add(out, &d[start] as ptr<u8>, take)
+        i = start + size + 2
+    }
+    return out[0].data as string
+}
+
+# One request over a fresh connection (Connection: close); the whole body
+# is read. `headers` is extra header lines, each ending in \r\n.
+export function https_request(host: string, method: string, path: string, headers: string, body: string, timeout_ms: i32) -> HttpResp {
+    let c: ptr<Conn> = tls_connect(host, "443")
+    if conn_ok(c) == false {
+        return HttpResp { status: 0, head: "", body: "", err: c[0].err }
+    }
+    let req: ptr<Bytes> = bytes_new()
+    bytes_str(req, method + " " + path + " HTTP/1.1\r\nHost: " + host + "\r\nConnection: close\r\n" + headers)
+    bytes_str(req, "Content-Length: " + ft_itoa(ft_len(body)) + "\r\n\r\n")
+    bytes_str(req, body)
+    if conn_write(c, req[0].data, req[0].len) == false {
+        conn_close(c)
+        return HttpResp { status: 0, head: "", body: "", err: "write failed" }
+    }
+    let deadline: i64 = net_now_ms() + (timeout_ms as i64)
+    while c[0].eof == false {
+        let left: i64 = deadline - net_now_ms()
+        if left <= 0 {
+            conn_close(c)
+            return HttpResp { status: 0, head: "", body: "", err: "timed out" }
+        }
+        let _r: i32 = conn_fill(c, left as i32)
+        # Stop once a Content-Length body is complete.
+        let rb0: ptr<Bytes> = c[0].rbuf
+        let he: i32 = header_end(rb0)
+        if he >= 0 {
+            let head0: string = sub(rb0[0].data, 0, he)
+            let cl: string = header_value(head0, "content-length")
+            if ft_len(cl) > 0 and rb0[0].len >= he + 4 + (strtol(cl, null, 10) as i32) {
+                c[0].eof = true
+            }
+        }
+    }
+    let rb: ptr<Bytes> = c[0].rbuf
+    conn_close(c)
+    let he2: i32 = header_end(rb)
+    if he2 < 0 {
+        return HttpResp { status: 0, head: "", body: "", err: "malformed HTTP response" }
+    }
+    let d: ptr<u8> = rb[0].data
+    let head: string = sub(d, 0, he2)
+    let status: i32 = strtol(sub(d, 9, 12), null, 10) as i32
+    let mut bodys: string = sub(d, he2 + 4, rb[0].len)
+    if ft_eq(ft_ascii_lower(header_value(head, "transfer-encoding")), "chunked") {
+        bodys = dechunk(&d[he2 + 4] as ptr<u8>, rb[0].len - he2 - 4)
+    }
+    return HttpResp { status: status, head: head, body: bodys, err: "" }
+}
+
+# ---- WebSocket (RFC 6455, client side) ----
+
+# Open a wss:// connection and complete the upgrade handshake.
+export function ws_connect(host: string, path: string) -> ptr<Conn> {
+    let c: ptr<Conn> = tls_connect(host, "443")
+    if conn_ok(c) == false {
+        return c
+    }
+    let nonce: ptr<u8> = calloc(16, 1) as ptr<u8>
+    let _r: i32 = RAND_bytes(nonce, 16)
+    let key: string = b64(nonce, 16)
+    let req: string = "GET " + path + " HTTP/1.1\r\nHost: " + host + "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: " + key + "\r\nSec-WebSocket-Version: 13\r\nUser-Agent: flow-discord-welcome\r\n\r\n"
+    if conn_write(c, req as ptr<u8>, ft_len(req)) == false {
+        conn_close(c)
+        return conn_fail("websocket handshake write failed")
+    }
+    let deadline: i64 = net_now_ms() + 15000
+    while header_end(c[0].rbuf) < 0 {
+        let left: i64 = deadline - net_now_ms()
+        if left <= 0 or c[0].eof {
+            conn_close(c)
+            return conn_fail("websocket handshake: no response")
+        }
+        let _f: i32 = conn_fill(c, left as i32)
+    }
+    let rb: ptr<Bytes> = c[0].rbuf
+    let he: i32 = header_end(rb)
+    let d: ptr<u8> = rb[0].data
+    let head: string = sub(d, 0, he)
+    let status: i32 = strtol(sub(d, 9, 12), null, 10) as i32
+    if status != 101 {
+        conn_close(c)
+        return conn_fail("websocket handshake: HTTP " + ft_itoa(status))
+    }
+    # Sec-WebSocket-Accept = base64(SHA-1(key + GUID)).
+    let joined: string = key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+    let md: ptr<u8> = calloc(20, 1) as ptr<u8>
+    let _h: ptr<u8> = SHA1(joined as ptr<u8>, strlen(joined), md)
+    if ft_eq(header_value(head, "sec-websocket-accept"), b64(md, 20)) == false {
+        conn_close(c)
+        return conn_fail("websocket handshake: bad Sec-WebSocket-Accept")
+    }
+    bytes_consume(c[0].rbuf, he + 4)
+    return c
+}
+
+# Send one masked frame.
+export function ws_send(c: ptr<Conn>, opcode: i32, payload: ptr<u8>, n: i32) -> bool {
+    let f: ptr<u8> = malloc((n + 14) as i64) as ptr<u8>
+    f[0] = (128 | opcode) as u8
+    let mut at: i32 = 2
+    if n < 126 {
+        f[1] = (128 | n) as u8
+    } elif n < 65536 {
+        f[1] = 254
+        f[2] = ((n >> 8) & 255) as u8
+        f[3] = (n & 255) as u8
+        at = 4
+    } else {
+        f[1] = 255
+        let mut k: i32 = 0
+        while k < 8 {
+            let sh: i32 = 8 * (7 - k)
+            if sh < 32 {
+                f[2 + k] = ((n >> sh) & 255) as u8
+            } else {
+                f[2 + k] = 0
+            }
+            k = k + 1
+        }
+        at = 10
+    }
+    let mask: ptr<u8> = &f[at] as ptr<u8>
+    let _r: i32 = RAND_bytes(mask, 4)
+    at = at + 4
+    let mut i: i32 = 0
+    while i < n {
+        f[at + i] = payload[i] ^ mask[i % 4]
+        i = i + 1
+    }
+    let ok: bool = conn_write(c, f, at + n)
+    free(f as ptr<void>)
+    return ok
+}
+
+export function ws_send_text(c: ptr<Conn>, s: string) -> bool {
+    return ws_send(c, 1, s as ptr<u8>, ft_len(s))
+}
+
+export struct WsMsg {
+    # 1: text message, 0: timeout, -1: connection lost, -2: close frame
+    kind: i32
+    text: string
+    close_code: i32
+}
+
+# Wait up to timeout_ms for the next complete text message. Pings are
+# answered, fragments joined, binary frames ignored.
+export function ws_recv(c: ptr<Conn>, timeout_ms: i32, frag: ptr<Bytes>) -> WsMsg {
+    let deadline: i64 = net_now_ms() + (timeout_ms as i64)
+    while true {
+        let b: ptr<Bytes> = c[0].rbuf
+        let d: ptr<u8> = b[0].data
+        if b[0].len >= 2 {
+            let op: i32 = (d[0] & 15) as i32
+            let fin: bool = (d[0] & 128) != 0
+            let mut len: i32 = (d[1] & 127) as i32
+            let mut hl: i32 = 2
+            if len == 126 {
+                hl = 4
+            } elif len == 127 {
+                hl = 10
+            }
+            if (d[1] & 128) != 0 {
+                hl = hl + 4
+            }
+            if b[0].len >= hl {
+                if len == 126 {
+                    len = ((d[2] as i32) << 8) | (d[3] as i32)
+                } elif len == 127 {
+                    len = ((d[6] as i32) << 24) | ((d[7] as i32) << 16) | ((d[8] as i32) << 8) | (d[9] as i32)
+                }
+                if b[0].len >= hl + len {
+                    let payload: ptr<u8> = &d[hl] as ptr<u8>
+                    if (d[1] & 128) != 0 {
+                        let m: ptr<u8> = &d[hl - 4] as ptr<u8>
+                        let mut i: i32 = 0
+                        while i < len {
+                            payload[i] = payload[i] ^ m[i % 4]
+                            i = i + 1
+                        }
+                    }
+                    if op == 9 {
+                        let _p: bool = ws_send(c, 10, payload, len)
+                    } elif op == 8 {
+                        let mut code: i32 = 1005
+                        if len >= 2 {
+                            code = ((payload[0] as i32) << 8) | (payload[1] as i32)
+                        }
+                        bytes_consume(b, hl + len)
+                        return WsMsg { kind: -2, text: "", close_code: code }
+                    } elif op == 0 or op == 1 {
+                        bytes_add(frag, payload, len)
+                        if fin {
+                            let t: string = sub(frag[0].data, 0, frag[0].len)
+                            frag[0].len = 0
+                            bytes_consume(b, hl + len)
+                            return WsMsg { kind: 1, text: t, close_code: 0 }
+                        }
+                    }
+                    bytes_consume(b, hl + len)
+                    continue
+                }
+            }
+        }
+        if c[0].eof {
+            return WsMsg { kind: -1, text: "", close_code: 0 }
+        }
+        let left: i64 = deadline - net_now_ms()
+        if left <= 0 {
+            return WsMsg { kind: 0, text: "", close_code: 0 }
+        }
+        let r: i32 = conn_fill(c, left as i32)
+        if r < 0 {
+            return WsMsg { kind: -1, text: "", close_code: 0 }
+        }
+    }
+    return WsMsg { kind: -1, text: "", close_code: 0 }
+}
+
+# Send a close frame with `code` and drop the connection.
+export function ws_close(c: ptr<Conn>, code: i32) -> void {
+    if conn_ok(c) == false {
+        return
+    }
+    let p: ptr<u8> = calloc(2, 1) as ptr<u8>
+    p[0] = ((code >> 8) & 255) as u8
+    p[1] = (code & 255) as u8
+    let _s: bool = ws_send(c, 8, p, 2)
+    conn_close(c)
+}

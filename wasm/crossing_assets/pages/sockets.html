@@ -19,7 +19,7 @@ calling the ordinary socket API round-trips bytes from inside this tab.
 The far end has to speak WebSocket, because a browser cannot open a raw TCP
 socket to an arbitrary host and port. That is a browser security rule.
 Start the relay first:
-<code>python3 scripts/ws_echo_relay.py --port @@port@@</code>
+<code>scripts/ws_echo_relay.sh --port @@port@@</code>
 </p>
 
 <div class="facts">
@@ -53,7 +53,7 @@ Start the relay first:
 <h2>Flow source</h2>
 <pre class="source">@@source@@</pre>
 
-<h2>The relay (head of scripts/ws_echo_relay.py)</h2>
+<h2>The relay (head of scripts/tools/ws_echo_relay/main.flow)</h2>
 <pre class="source">@@relay@@</pre>
 
 <footer>
@@ -89,7 +89,7 @@ function probe() {
       if (settled) return;   // onopen and the timeout can both fire
       settled = true;
       setFact("f-relay", ok ? "reachable" : "not running", ok ? "ok" : "bad");
-      if (!ok) log("relay not reachable: start it with  python3 scripts/ws_echo_relay.py --port @@port@@");
+      if (!ok) log("relay not reachable: start it with  scripts/ws_echo_relay.sh --port @@port@@");
       try { ws.close(); } catch (e) { /* already closed */ }
       resolve(ok);
     };

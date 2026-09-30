@@ -26,6 +26,34 @@ mkdir -p build
 C_FLAGS="-O3 -march=native -ffast-math"
 FLOW_ROOT="$(cd ../../.. && pwd)"
 
+# CPython subjects live in benchmarks/baselines/python/suite. They run when
+# python3 works, and the NumPy variant runs too when NumPy is installed.
+PY_SUBJECTS="$FLOW_ROOT/benchmarks/baselines/python/suite"
+if python3 --version >/dev/null 2>&1; then HAVE_PY=1; else HAVE_PY=0; fi
+
+run_python() {
+    local stem=$1
+    local plain="$PY_SUBJECTS/${stem}.py"
+    local numpy="$PY_SUBJECTS/${stem}_numpy.py"
+    echo -e "${BLUE}────────────────────────────────────────${NC}"
+    echo -e "${BLUE}  Python 3${NC}"
+    echo -e "${BLUE}────────────────────────────────────────${NC}"
+    if [ "$HAVE_PY" -ne 1 ]; then
+        echo "python3 not found; skipping the Python subject"
+        return 0
+    fi
+    if [ ! -f "$plain" ]; then
+        echo "no Python subject for ${stem}"
+        return 0
+    fi
+    python3 "$plain"
+    if [ -f "$numpy" ] && python3 -c "import numpy" >/dev/null 2>&1; then
+        echo ""
+        echo -e "${BLUE}  Python 3 + NumPy${NC}"
+        python3 "$numpy"
+    fi
+}
+
 run_benchmark() {
     local name=$1
     local num=$2
@@ -73,11 +101,8 @@ run_benchmark() {
     ./build/${num}_${name}_flow
     echo ""
     
-    # Run Python version
-    echo -e "${BLUE}────────────────────────────────────────${NC}"
-    echo -e "${BLUE}  Python 3${NC}"
-    echo -e "${BLUE}────────────────────────────────────────${NC}"
-    python3 "$SCRIPT_DIR/../../../benchmarks/suite/python/${num}_${name}.py"
+    # Run the CPython subjects (benchmarks/baselines/python/suite)
+    run_python "${num}_${name}"
     echo ""
 }
 

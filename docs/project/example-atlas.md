@@ -98,7 +98,7 @@ naming the first check that failed. Because they all draw, the gating run is
 against the headless recorder and passes the program's exit status through.
 Recorded clips for all fifteen live in the
 [neuron gallery](../demos/neuro.md); regenerate with
-`python3 scripts/record_demos.py --group neuro`.
+`scripts/record_demos.sh --group neuro`.
 
 ### 3. Circuit simulation: 12 shipped
 

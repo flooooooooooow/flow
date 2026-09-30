@@ -16,7 +16,7 @@
 | Third-party `flow-verify` section (1000+ proofs) | ✅ |
 | Euclid book index pages (auto-generated) | ✅ |
 | Build script (`scripts/build_wiki.py`) | ✅ |
-| Deploy script (`scripts/deploy_wiki.py`) | ✅ build-only (VPS behind `FLOW_WIKI_VPS=1`) |
+| Deploy script (`scripts/deploy_wiki.sh`) | ✅ build-only (VPS behind `FLOW_WIKI_VPS=1`) |
 | Version dropdown + changelog | ✅ |
 | GitHub Pages deploy (`wiki.yml`) | ✅ |
 | VPS live deploy (`/flow/` + `/transpile/`) | ❌ disabled |
@@ -56,7 +56,7 @@
 | Task | Notes |
 |------|-------|
 | Pagefind wiki search | ✅ | `scripts/build_pagefind.sh` after wiki build when node/npx present; ⌘K uses Pagefind with `search-index.json` fallback |
-| Playground: compile via WASM or API | partial ✅ | browser interpreter + **Run (native local)** via `scripts/playground_compile_server.py` (#132); next: emscripten hello artifact (`scripts/build_wasm_hello.sh`, [language/wasm.md](language/wasm.md)); in-browser Flow compiler still deferred (#121) |
+| Playground: compile via WASM or API | partial ✅ | browser interpreter + **Run (native local)** via `scripts/playground_compile_server.sh` (#132); next: emscripten hello artifact (`scripts/build_wasm_hello.sh`, [language/wasm.md](language/wasm.md)); in-browser Flow compiler still deferred (#121) |
 | Proof graph visualization | ✅ partial: module-level `import` graph (`third-party/proof-graph.md`, `scripts/build_wiki.py::build_proof_graph`); per-theorem Claim Path edges still open |
 | Dark/light theme toggle | ✅ Header **Theme** button; `localStorage` key `flow-wiki-theme` |
 
@@ -104,8 +104,8 @@ The **language** roadmap (`ROADMAP.md`) tracks compiler features. The **wiki** r
 2. Run `python3 scripts/gen_stdlib_docs.py` (if touching stdlib)
 3. Run `python3 scripts/build_wiki.py` (also runs Pagefind if `node`/`npx` are available)
 4. Optional re-index only: `./scripts/build_pagefind.sh`
-5. Preview: `cd build/wiki && python3 -m http.server 8777`
-6. Preview: `cd build/wiki && python3 -m http.server 8777`. Production deploys from `main` via GitHub Pages
+5. Preview: `scripts/wiki_serve.sh build/wiki 8777`
+6. Browser checks: serve on port 8899 (`scripts/wiki_serve.sh`), then run `scripts/wiki_verify.sh` and `scripts/wiki_contrast.sh`. Production deploys from `main` via GitHub Pages
 
 ### Releases / changelog
 

@@ -301,7 +301,7 @@ subprotocol, and every `send`/`recv` becomes a binary WebSocket frame. Flow's
 this maps onto.
 
 ```
-python3 scripts/ws_echo_relay.py --port 9505 --tcp-port 9506
+scripts/ws_echo_relay.sh --port 9505 --tcp-port 9506
 wasm/crossings.sh sockets
 ```
 
@@ -313,10 +313,12 @@ speak arbitrary TCP could port-scan your intranet. Whatever is on the far end
 has to speak WebSocket. This is a browser security rule and it is not a Flow
 limitation; the same wall stops every language.
 
-`scripts/ws_echo_relay.py` is the far end, written against the Python standard
-library so the demo has no dependencies: an HTTP upgrade handshake, a frame
-codec, and an echo. It also serves plain TCP on a second port so the identical
-Flow program can be run natively for comparison.
+`scripts/ws_echo_relay.sh` is the far end. It runs the Flow program in
+`scripts/tools/ws_echo_relay`, written on libc sockets so the demo has no
+dependencies: an HTTP upgrade handshake (SHA-1 and base64 from
+`scripts/tools/lib/digest.flow`), a frame codec, and an echo. It also serves
+plain TCP on a second port so the identical Flow program can be run natively
+for comparison.
 
 **Nothing may block.** Emscripten's `connect()` cannot wait for the handshake,
 so it returns success immediately and finishes later; `recv()` reports EAGAIN
@@ -517,14 +519,16 @@ Two smaller ones. An Emscripten JS library only gets the runtime helpers it
 declares, so `python_last_error` has to name `$stringToNewUTF8` and `free` in
 its `__deps` or it fails at the first error with `stringToNewUTF8 is not
 defined`. And Pyodide's Python needs the module to exist in *its* filesystem,
-so the page writes `flow_demo.py` into `/home/pyodide/python/` before the run;
+so the page writes `flow_demo.py` into `/home/pyodide/python/` before the run,
+taking the text from the listing it already shows (no second copy is served);
 `python_add_to_path("python")` then appends to the real `sys.path` inside
-Pyodide.
+Pyodide. The program's second path, `../interop/python`, is where a native
+run from `examples/wasm` finds the same file.
 
 ### Measured, in Chrome
 
 `examples/wasm/python_embed.flow` against
-`examples/wasm/python/flow_demo.py`, both unchanged between the native and
+`examples/interop/python/flow_demo.py`, both unchanged between the native and
 browser builds. Pyodide 0.27.2 from jsDelivr, reporting **CPython 3.12.7**,
 `sys.platform` `emscripten`, loaded in 597 ms (cached).
 

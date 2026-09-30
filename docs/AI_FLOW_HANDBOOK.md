@@ -858,7 +858,7 @@ noise and makes the first failure easier to understand.
 ./flow test --tier1
 ./flow test --strict --verbose
 ./flow test-runtime
-./flow test-python
+./flow test-scripts
 ./flow test-mlir
 ./flow test-gpu
 ./flow test-all
@@ -868,7 +868,7 @@ Use a focused path when supported:
 
 ```bash
 ./flow test-runtime tests/runtime/test_arithmetic.flow
-PYTHONPATH=src pytest tests/unit/test_parser.py -q
+./tests/scripts/run.sh doc_anchors
 ```
 
 The AI MUST report what it actually ran. It MUST NOT say "all tests pass" when
@@ -1652,7 +1652,7 @@ Run the documentation link or example checks relevant to the edited files.
 | Build WASM | `./flow wasm file.flow --backend=c --out build/wasm` |
 | Focused Flow tests | `./flow test --strict --verbose` |
 | Runtime tests | `./flow test-runtime` |
-| Python unit tests | `./flow test-python` |
+| Shell tests (tools and scripts) | `./flow test-scripts` |
 | MLIR tests | `./flow test-mlir` |
 | GPU tests | `./flow test-gpu` |
 | All main tests | `./flow test-all` |
@@ -2268,7 +2268,7 @@ families in the current driver.
 | `test-strict` | Strict test shortcut. |
 | `test-runtime` | Compile and execute runtime tests. |
 | `test-lang` | Strict language tests that compile and run. |
-| `test-python` | Python compiler/tool unit tests. |
+| `test-scripts` | Shell tests that drive `./flow` and the scripts (`tests/scripts`). |
 | `test-interop` | Native interoperability tests. |
 | `test-gpu` | GPU feature and code-generation tests. |
 | `test-mlir` | MLIR verification tests. |

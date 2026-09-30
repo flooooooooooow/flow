@@ -416,7 +416,7 @@ function sockets_page(stem: string, program: string, port: i32) -> string {
     let keys: ptr<StrList> = ft_list_new()
     let vals: ptr<StrList> = ft_list_new()
     push2(keys, vals, "source", html_escape(read_or_die(program)))
-    push2(keys, vals, "relay", html_escape(head_chars(read_or_die(path_in("scripts/ws_echo_relay.py")), 1400)))
+    push2(keys, vals, "relay", html_escape(head_chars(read_or_die(path_in("scripts/tools/ws_echo_relay/main.flow")), 1400)))
     push2(keys, vals, "stem", stem)
     push2(keys, vals, "port", ft_itoa(port))
     return fill(read_asset("pages/sockets.html"), keys, vals)
@@ -469,7 +469,7 @@ function cmd_sockets(o: ptr<Opts>) -> i32 {
 
     write_out(out_dir + "/crossing.css", read_asset("crossing.css"))
     write_out(out_dir + "/index.html", sockets_page(stem, program, port))
-    ft_outln("\nStart the relay: python3 scripts/ws_echo_relay.py --port " + ft_itoa(port))
+    ft_outln("\nStart the relay: scripts/ws_echo_relay.sh --port " + ft_itoa(port))
     ft_outln("Serve it:        python3 -m http.server -d site 8000")
     ft_outln("Then open:       http://127.0.0.1:8000/wasm-crossings/sockets/")
     return 0
@@ -483,7 +483,7 @@ function python_page(stem: string, program: string) -> string {
     let keys: ptr<StrList> = ft_list_new()
     let vals: ptr<StrList> = ft_list_new()
     push2(keys, vals, "flow_src", html_escape(read_or_die(program)))
-    push2(keys, vals, "py_src", html_escape(read_or_die(path_in("examples/wasm/python/flow_demo.py"))))
+    push2(keys, vals, "py_src", html_escape(read_or_die(path_in("examples/interop/python/flow_demo.py"))))
     push2(keys, vals, "bridge_src", html_escape(head_chars(read_asset("pyodide_bridge.js"), 2600)))
     push2(keys, vals, "stem", stem)
     push2(keys, vals, "PYODIDE_VERSION", PYODIDE_VERSION)
@@ -554,7 +554,6 @@ function cmd_python(o: ptr<Opts>) -> i32 {
         emcc_run(a)
     }
 
-    write_out(out_dir + "/flow_demo.py", read_or_die(path_in("examples/wasm/python/flow_demo.py")))
     write_out(out_dir + "/crossing.css", read_asset("crossing.css"))
     write_out(out_dir + "/index.html", python_page(stem, program))
     ft_outln(SERVE)

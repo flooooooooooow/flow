@@ -854,7 +854,7 @@ function write_releases_index(v: ptr<Versions>) -> void {
     wb_line(b, "")
     wb_line(b, "1. Edit `docs/project/CHANGELOG.md` (add a `## [X.Y.Z] - YYYY-MM-DD` section).")
     wb_line(b, "2. Run `./scripts/build_wiki.sh` " + dash + " copies the changelog and regenerates `versions.json` + this index.")
-    wb_line(b, "3. Deploy with `python3 scripts/deploy_wiki.py` when ready to publish.")
+    wb_line(b, "3. Deploy with `scripts/deploy_wiki.sh` when ready to publish.")
     wb_line(b, "")
     wb_line(b, "See the [full changelog](project/CHANGELOG.md) for detailed release notes, security audits, and migration guides.")
     wb_line(b, "")

@@ -13,7 +13,8 @@ for Flow-generated C and hand-written C. Regenerate it with:
 ```
 
 The sources for those runs live in `publish/` with one directory per
-language.
+language. The CPython sources live in `baselines/python/publish/`, with
+the other Python benchmark subjects (see `baselines/python/README.md`).
 
 ## Structure
 
@@ -22,9 +23,10 @@ benchmarks/
 ├── publish/                  # Published cross-language comparison
 │   ├── flow/                # Flow sources
 │   ├── c/                   # Hand-written C equivalents
-│   ├── rust/                # Rust equivalents
-│   └── python/              # Plain CPython equivalents
+│   └── rust/                # Rust equivalents
+├── baselines/python/        # CPython and NumPy subjects for every comparison
 ├── run_publish.sh           # Runs the harness (scripts/tools/bench_publish)
+├── run_benchmarks.sh        # Cross-harness runner (scripts/tools/bench_harness)
 ├── micro/                    # Micro-benchmarks
 │   ├── fft_benchmark.flow   # Fast Fourier Transform
 │   ├── mandelbrot_benchmark.flow  # Fractal computation

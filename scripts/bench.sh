@@ -23,9 +23,8 @@ check_deps() {
         exit 1
     fi
     
-    if ! command -v python3 &> /dev/null; then
-        echo "❌ python3 not found. Please install Python 3."
-        exit 1
+    if ! python3 --version &> /dev/null; then
+        echo "python3 not found: the Python comparison subjects will be skipped."
     fi
     
     echo "✅ Dependencies OK"
@@ -63,7 +62,7 @@ run_flow() {
 run_comparison() {
     echo "🎯 Running full benchmark comparison..."
     cd benchmarks
-    python3 run_benchmarks.py --cleanup
+    ./run_benchmarks.sh --cleanup
     cd ..
 }
 

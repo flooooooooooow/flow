@@ -46,7 +46,7 @@ in a real browser.
 open http://127.0.0.1:8000/wasm-crossings/
 
 # crossing 3 needs the echo relay running first
-python3 scripts/ws_echo_relay.py --port 9505
+scripts/ws_echo_relay.sh --port 9505
 
 # rebuilding
 ./flow wasm examples/wasm/parallel_sum.flow --threads --workers 8

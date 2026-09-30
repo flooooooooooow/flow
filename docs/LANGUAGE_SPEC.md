@@ -1253,8 +1253,9 @@ function main() -> i32 {
 ```
 
 - Example: `examples/graphics/gif_writer.flow` (24-frame animation)
-- Tests: `tests/lang/test_gif_encoder.flow`, `tests/unit/test_gif_flow_encoder.py`
-  (Pillow decodes the output as ground truth)
+- Tests: `tests/lang/test_gif_encoder.flow`, `tests/scripts/gif_flow_encoder.sh`
+  (`scripts/tools/gif_check`, a GIF89a reader in Flow, decodes the output as
+  ground truth)
 
 ---
 

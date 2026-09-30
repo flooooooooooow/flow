@@ -46,8 +46,8 @@ Pyodide.
 <h2>Flow source</h2>
 <pre class="source">@@flow_src@@</pre>
 
-<h2>Python module (examples/wasm/python/flow_demo.py)</h2>
-<pre class="source">@@py_src@@</pre>
+<h2>Python module (examples/interop/python/flow_demo.py)</h2>
+<pre class="source" id="py-src">@@py_src@@</pre>
 
 <h2>The bridge (head of wasm/crossing_assets/pyodide_bridge.js)</h2>
 <pre class="source">@@bridge_src@@</pre>
@@ -90,7 +90,8 @@ function addRow(call, route, observed, ok) {
 
   // Give the Flow program something to import. It asks for sys.path entry
   // "python", so the module goes there inside Pyodide's own filesystem.
-  const source = await (await fetch("flow_demo.py")).text();
+  // The module text is the listing above; textContent undoes the HTML escaping.
+  const source = document.getElementById("py-src").textContent;
   pyodide.FS.mkdir("/home/pyodide/python");
   pyodide.FS.writeFile("/home/pyodide/python/flow_demo.py", source);
 

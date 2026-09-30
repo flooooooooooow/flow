@@ -1,0 +1,523 @@
+# GIF89a reader for tests. Decodes a GIF with no outside library and prints
+# what a test needs to assert about it.
+#
+#   gif_check FILE X Y
+#
+# Parses the header, the logical screen descriptor, the global and local
+# colour tables, the NETSCAPE2.0 loop extension, graphic control extensions
+# (delay, disposal, transparency) and the LZW image data of every frame.
+# Frames are composited onto a canvas the way Pillow's convert("RGB") sees
+# them: each frame draws over the canvas left by the previous one, skipping
+# transparent pixels, and disposal 2 (restore to background) and 3 (restore
+# to previous) are applied before the next frame.
+#
+# Output, one key=value per line:
+#   format=GIF            signature (GIF87a or GIF89a)
+#   version=89a
+#   width=W  height=H     logical screen size
+#   frames=N              image descriptors seen
+#   decoded=N             frames whose LZW data produced exactly w*h indices
+#   loop=L                NETSCAPE2.0 loop count, or "none"
+#   delay_cs=D            delay of the first frame, centiseconds
+#   disposal=M            disposal method of the first frame
+#   first_last_diff=K     composited pixels that differ, frame 0 vs last
+#   pixel=R,G,B           composited frame 0 at (X, Y)
+#   frame=I delay_cs=D disposal=M first=R,G,B last=R,G,B
+#                         one line per frame, printed as it is decoded:
+#                         the composited first and last pixel before disposal
+#
+# Exit status 0 when the file parses to the trailer, 1 otherwise.
+
+import .text { ft_out, ft_outln, ft_errln, ft_itoa }
+
+extern {
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fread(buf: ptr<u8>, size: i64, count: i64, fp: ptr<void>) -> i64
+    function fseek(fp: ptr<void>, offset: i64, whence: i32) -> i32
+    function ftell(fp: ptr<void>) -> i64
+    function fclose(fp: ptr<void>) -> i32
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
+    function atoi(s: string) -> i32
+}
+
+# --- input cursor ---
+
+let mut g_data: ptr<u8> = null
+let mut g_len: i64 = 0
+let mut g_pos: i64 = 0
+let mut g_bad: bool = false
+
+function rd_u8() -> i32 {
+    if g_pos >= g_len {
+        g_bad = true
+        return 0
+    }
+    let v: i32 = g_data[g_pos] as i32
+    g_pos = g_pos + 1
+    return v
+}
+
+function rd_u16() -> i32 {
+    let lo: i32 = rd_u8()
+    let hi: i32 = rd_u8()
+    return lo | (hi << 8)
+}
+
+# Skip a chain of data sub-blocks up to and including the zero terminator.
+function skip_sub_blocks() -> void {
+    let mut n: i32 = rd_u8()
+    while n != 0 and not g_bad {
+        g_pos = g_pos + (n as i64)
+        n = rd_u8()
+    }
+}
+
+function load_file(path: string) -> bool {
+    let fp: ptr<void> = fopen(path, "rb")
+    if fp == null {
+        return false
+    }
+    let _s: i32 = fseek(fp, 0, 2)
+    let n: i64 = ftell(fp)
+    let _r: i32 = fseek(fp, 0, 0)
+    let buf: ptr<u8> = malloc(n + 1) as ptr<u8>
+    let got: i64 = fread(buf, 1, n, fp)
+    let _c: i32 = fclose(fp)
+    if got != n {
+        return false
+    }
+    g_data = buf
+    g_len = n
+    g_pos = 0
+    return true
+}
+
+# --- LZW ---
+# Decodes the image data at the cursor into `out` (npix indices). Returns
+# the number of indices produced, or -1 when the stream is malformed. The
+# cursor ends after the block terminator either way when the blocks parse.
+
+let mut lz_prefix: ptr<i32> = null
+let mut lz_suffix: ptr<u8> = null
+let mut lz_first: ptr<u8> = null
+let mut lz_stack: ptr<u8> = null
+
+function lzw_decode(out: ptr<u8>, npix: i64) -> i64 {
+    let min_size: i32 = rd_u8()
+    if min_size < 2 or min_size > 8 {
+        g_bad = true
+        return 0 - 1
+    }
+    # Concatenate the sub-blocks first; the codes run across block edges.
+    let start: i64 = g_pos
+    let mut total: i64 = 0
+    let mut n: i32 = rd_u8()
+    while n != 0 and not g_bad {
+        total = total + (n as i64)
+        g_pos = g_pos + (n as i64)
+        n = rd_u8()
+    }
+    if g_bad or g_pos > g_len {
+        g_bad = true
+        return 0 - 1
+    }
+    let data: ptr<u8> = malloc(total + 1) as ptr<u8>
+    let mut p: i64 = start
+    let mut w: i64 = 0
+    let mut bn: i32 = g_data[p] as i32
+    while bn != 0 {
+        let _m: ptr<void> = memcpy((data as i64 + w) as ptr<void>, (g_data as i64 + p + 1) as ptr<void>, bn as i64)
+        w = w + (bn as i64)
+        p = p + 1 + (bn as i64)
+        bn = g_data[p] as i32
+    }
+
+    let clear: i32 = 1 << min_size
+    let eoi: i32 = clear + 1
+    let mut next: i32 = clear + 2
+    let mut width: i32 = min_size + 1
+    let mut prev: i32 = 0 - 1
+    let mut acc: i64 = 0
+    let mut bits: i32 = 0
+    let mut rp: i64 = 0
+    let mut produced: i64 = 0
+    let mut ok: bool = true
+    let mut ended: bool = false
+
+    let mut k: i32 = 0
+    while k < clear {
+        lz_prefix[k] = 0 - 1
+        lz_suffix[k] = k as u8
+        lz_first[k] = k as u8
+        k = k + 1
+    }
+
+    while ok and not ended {
+        while bits < width and rp < total {
+            acc = acc | ((data[rp] as i64) << (bits as i64))
+            bits = bits + 8
+            rp = rp + 1
+        }
+        if bits < width {
+            # Out of data without an end-of-information code. Pillow accepts
+            # this when every pixel has arrived.
+            break
+        }
+        let code: i32 = (acc & ((1 << width) - 1) as i64) as i32
+        acc = acc >> (width as i64)
+        bits = bits - width
+
+        if code == clear {
+            next = clear + 2
+            width = min_size + 1
+            prev = 0 - 1
+            continue
+        }
+        if code == eoi {
+            ended = true
+            break
+        }
+        if prev == 0 - 1 {
+            if code >= clear {
+                ok = false
+                break
+            }
+            if produced < npix {
+                out[produced] = code as u8
+            }
+            produced = produced + 1
+            prev = code
+            continue
+        }
+
+        let mut cur: i32 = code
+        let mut depth: i32 = 0
+        let mut first_of_code: i32 = 0
+        if code < next {
+            first_of_code = lz_first[code] as i32
+        } elif code == next {
+            # KwKwK: the code being defined right now.
+            first_of_code = lz_first[prev] as i32
+            lz_stack[depth] = first_of_code as u8
+            depth = depth + 1
+            cur = prev
+        } else {
+            ok = false
+            break
+        }
+        while cur != 0 - 1 {
+            lz_stack[depth] = lz_suffix[cur]
+            depth = depth + 1
+            cur = lz_prefix[cur]
+        }
+        while depth > 0 {
+            depth = depth - 1
+            if produced < npix {
+                out[produced] = lz_stack[depth]
+            }
+            produced = produced + 1
+        }
+        if next < 4096 {
+            lz_prefix[next] = prev
+            lz_suffix[next] = first_of_code as u8
+            lz_first[next] = lz_first[prev]
+            next = next + 1
+            if next == (1 << width) and width < 12 {
+                width = width + 1
+            }
+        }
+        prev = code
+    }
+    free(data as ptr<void>)
+    if not ok {
+        return 0 - 1
+    }
+    return produced
+}
+
+# --- colour tables and canvas ---
+
+function read_table(size: i32) -> ptr<u8> {
+    let t: ptr<u8> = malloc(768) as ptr<u8>
+    let mut i: i32 = 0
+    while i < 768 {
+        t[i] = 0 as u8
+        i = i + 1
+    }
+    i = 0
+    while i < size * 3 {
+        t[i] = rd_u8() as u8
+        i = i + 1
+    }
+    return t
+}
+
+function fill_rect(canvas: ptr<u8>, cw: i32, x0: i32, y0: i32, w: i32, h: i32, ch: i32, r: i32, g: i32, b: i32) -> void {
+    let mut y: i32 = y0
+    while y < y0 + h and y < ch {
+        let mut x: i32 = x0
+        while x < x0 + w and x < cw {
+            let j: i64 = ((y as i64) * (cw as i64) + (x as i64)) * 3
+            canvas[j] = r as u8
+            canvas[j + 1] = g as u8
+            canvas[j + 2] = b as u8
+            x = x + 1
+        }
+        y = y + 1
+    }
+}
+
+# Row order of an interlaced image: pass starts and steps.
+function interlace_row(i: i32, h: i32) -> i32 {
+    let p1: i32 = (h + 7) / 8
+    let p2: i32 = (h + 3) / 8
+    let p3: i32 = (h + 1) / 4
+    if i < p1 {
+        return i * 8
+    }
+    if i < p1 + p2 {
+        return (i - p1) * 8 + 4
+    }
+    if i < p1 + p2 + p3 {
+        return (i - p1 - p2) * 4 + 2
+    }
+    return (i - p1 - p2 - p3) * 2 + 1
+}
+
+function out_kv(key: string, value: string) -> void {
+    ft_out(key)
+    ft_out("=")
+    ft_outln(value)
+}
+
+function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
+    if argc != 4 {
+        ft_errln("usage: gif_check FILE X Y")
+        return 2
+    }
+    let path: string = argv[1] as string
+    let px: i32 = atoi(argv[2] as string)
+    let py: i32 = atoi(argv[3] as string)
+    if not load_file(path) {
+        ft_errln("gif_check: cannot read " + path)
+        return 1
+    }
+
+    lz_prefix = malloc(4096 * 4) as ptr<i32>
+    lz_suffix = malloc(4096) as ptr<u8>
+    lz_first = malloc(4096) as ptr<u8>
+    lz_stack = malloc(4097) as ptr<u8>
+
+    # Header.
+    if g_len < 13 or g_data[0] != 71 or g_data[1] != 73 or g_data[2] != 70 {
+        out_kv("format", "unknown")
+        return 1
+    }
+    let mut version: string = "87a"
+    if g_data[4] == 57 {
+        version = "89a"
+    }
+    g_pos = 6
+    out_kv("format", "GIF")
+    out_kv("version", version)
+
+    # Logical screen descriptor.
+    let sw: i32 = rd_u16()
+    let sh: i32 = rd_u16()
+    let packed: i32 = rd_u8()
+    let bg_index: i32 = rd_u8()
+    let _aspect: i32 = rd_u8()
+    let mut gct: ptr<u8> = null
+    if (packed & 128) != 0 {
+        gct = read_table(1 << ((packed & 7) + 1))
+    }
+    out_kv("width", ft_itoa(sw))
+    out_kv("height", ft_itoa(sh))
+
+    let npix: i64 = (sw as i64) * (sh as i64)
+    let canvas: ptr<u8> = malloc(npix * 3 + 3) as ptr<u8>
+    let saved: ptr<u8> = malloc(npix * 3 + 3) as ptr<u8>
+    let first: ptr<u8> = malloc(npix * 3 + 3) as ptr<u8>
+    let last: ptr<u8> = malloc(npix * 3 + 3) as ptr<u8>
+    let mut bg_r: i32 = 0
+    let mut bg_g: i32 = 0
+    let mut bg_b: i32 = 0
+    if gct != null {
+        bg_r = gct[bg_index * 3] as i32
+        bg_g = gct[bg_index * 3 + 1] as i32
+        bg_b = gct[bg_index * 3 + 2] as i32
+    }
+    fill_rect(canvas, sw, 0, 0, sw, sh, sh, bg_r, bg_g, bg_b)
+
+    let mut loop_text: string = "none"
+    let mut frames: i32 = 0
+    let mut decoded: i32 = 0
+    let mut first_delay: i32 = 0 - 1
+    let mut first_disposal: i32 = 0 - 1
+    # Pending graphic control extension, consumed by the next image.
+    let mut gce_delay: i32 = 0
+    let mut gce_disposal: i32 = 0
+    let mut gce_transparent: i32 = 0 - 1
+    let mut trailer: bool = false
+
+    while not g_bad and not trailer {
+        let intro: i32 = rd_u8()
+        if g_bad {
+            break
+        }
+        if intro == 59 {
+            trailer = true
+        } elif intro == 33 {
+            let label: i32 = rd_u8()
+            if label == 249 {
+                let n: i32 = rd_u8()
+                let flags: i32 = rd_u8()
+                gce_delay = rd_u16()
+                let tindex: i32 = rd_u8()
+                g_pos = g_pos + ((n - 4) as i64)
+                gce_disposal = (flags >> 2) & 7
+                gce_transparent = 0 - 1
+                if (flags & 1) != 0 {
+                    gce_transparent = tindex
+                }
+                skip_sub_blocks()
+            } elif label == 255 {
+                let n: i32 = rd_u8()
+                let id_at: i64 = g_pos
+                g_pos = g_pos + (n as i64)
+                let mut netscape: bool = n == 11 and id_at + 11 <= g_len
+                if netscape {
+                    let want: string = "NETSCAPE2.0"
+                    let wp: ptr<u8> = want as ptr<u8>
+                    let mut i: i32 = 0
+                    while i < 11 {
+                        if g_data[id_at + (i as i64)] != wp[i] {
+                            netscape = false
+                        }
+                        i = i + 1
+                    }
+                }
+                let mut sub: i32 = rd_u8()
+                while sub != 0 and not g_bad {
+                    let sub_at: i64 = g_pos
+                    if netscape and sub >= 3 and g_data[sub_at] == 1 {
+                        let count: i32 = (g_data[sub_at + 1] as i32) | ((g_data[sub_at + 2] as i32) << 8)
+                        loop_text = ft_itoa(count)
+                    }
+                    g_pos = g_pos + (sub as i64)
+                    sub = rd_u8()
+                }
+            } else {
+                skip_sub_blocks()
+            }
+        } elif intro == 44 {
+            let fx: i32 = rd_u16()
+            let fy: i32 = rd_u16()
+            let fw: i32 = rd_u16()
+            let fh: i32 = rd_u16()
+            let fpacked: i32 = rd_u8()
+            let mut table: ptr<u8> = gct
+            let mut local_table: ptr<u8> = null
+            if (fpacked & 128) != 0 {
+                local_table = read_table(1 << ((fpacked & 7) + 1))
+                table = local_table
+            }
+            let interlaced: bool = (fpacked & 64) != 0
+            let fpix: i64 = (fw as i64) * (fh as i64)
+            let idx: ptr<u8> = malloc(fpix + 1) as ptr<u8>
+            let got: i64 = lzw_decode(idx, fpix)
+            if g_bad {
+                break
+            }
+            if frames == 0 {
+                first_delay = gce_delay
+                first_disposal = gce_disposal
+            }
+            if got == fpix and table != null {
+                decoded = decoded + 1
+            }
+            if gce_disposal == 3 {
+                let _m: ptr<void> = memcpy(saved as ptr<void>, canvas as ptr<void>, npix * 3)
+            }
+            if table != null and got >= 0 {
+                let mut i: i64 = 0
+                while i < fpix and i < got {
+                    let c: i32 = idx[i] as i32
+                    if c != gce_transparent {
+                        let row: i32 = (i / (fw as i64)) as i32
+                        let col: i32 = (i % (fw as i64)) as i32
+                        let mut y: i32 = fy + row
+                        if interlaced {
+                            y = fy + interlace_row(row, fh)
+                        }
+                        let x: i32 = fx + col
+                        if x < sw and y < sh {
+                            let j: i64 = ((y as i64) * (sw as i64) + (x as i64)) * 3
+                            canvas[j] = table[c * 3]
+                            canvas[j + 1] = table[c * 3 + 1]
+                            canvas[j + 2] = table[c * 3 + 2]
+                        }
+                    }
+                    i = i + 1
+                }
+            }
+            free(idx as ptr<void>)
+            if frames == 0 {
+                let _m: ptr<void> = memcpy(first as ptr<void>, canvas as ptr<void>, npix * 3)
+            }
+            let _l: ptr<void> = memcpy(last as ptr<void>, canvas as ptr<void>, npix * 3)
+            # One line per frame: its delay and disposal, and the composited
+            # canvas at the first and last pixel before disposal.
+            let e: i64 = (npix - 1) * 3
+            ft_outln("frame=" + ft_itoa(frames) + " delay_cs=" + ft_itoa(gce_delay) + " disposal=" + ft_itoa(gce_disposal) + " first=" + ft_itoa(canvas[0] as i32) + "," + ft_itoa(canvas[1] as i32) + "," + ft_itoa(canvas[2] as i32) + " last=" + ft_itoa(canvas[e] as i32) + "," + ft_itoa(canvas[e + 1] as i32) + "," + ft_itoa(canvas[e + 2] as i32))
+            frames = frames + 1
+            # Disposal applies to the canvas the next frame draws on.
+            if gce_disposal == 2 {
+                fill_rect(canvas, sw, fx, fy, fw, fh, sh, bg_r, bg_g, bg_b)
+            } elif gce_disposal == 3 {
+                let _m: ptr<void> = memcpy(canvas as ptr<void>, saved as ptr<void>, npix * 3)
+            }
+            gce_delay = 0
+            gce_disposal = 0
+            gce_transparent = 0 - 1
+            if local_table != null {
+                free(local_table as ptr<void>)
+            }
+        } else {
+            g_bad = true
+        }
+    }
+
+    out_kv("frames", ft_itoa(frames))
+    out_kv("decoded", ft_itoa(decoded))
+    out_kv("loop", loop_text)
+    out_kv("delay_cs", ft_itoa(first_delay))
+    out_kv("disposal", ft_itoa(first_disposal))
+
+    # Composited frame 0 against the composited last frame, before disposal.
+    let mut diff: i64 = 0
+    let mut p: i64 = 0
+    while p < npix {
+        let j: i64 = p * 3
+        if last[j] != first[j] or last[j + 1] != first[j + 1] or last[j + 2] != first[j + 2] {
+            diff = diff + 1
+        }
+        p = p + 1
+    }
+    out_kv("first_last_diff", ft_itoa(diff as i32))
+
+    if px >= 0 and py >= 0 and px < sw and py < sh {
+        let j: i64 = ((py as i64) * (sw as i64) + (px as i64)) * 3
+        out_kv("pixel", ft_itoa(first[j] as i32) + "," + ft_itoa(first[j + 1] as i32) + "," + ft_itoa(first[j + 2] as i32))
+    } else {
+        out_kv("pixel", "out-of-range")
+    }
+
+    if g_bad or not trailer {
+        ft_errln("gif_check: truncated or malformed GIF")
+        return 1
+    }
+    return 0
+}

@@ -35,7 +35,7 @@ Record one headlessly, no display needed:
 Regenerate every GIF on this page:
 
 ```bash
-python3 scripts/record_demos.py --group neuro
+scripts/record_demos.sh --group neuro
 ```
 
 `./flow run` does not link a graphics backend, so it cannot build these; use
@@ -74,7 +74,7 @@ recorded.
 
 `runtime/gfx_record.c` plus `lib/runtime/gfx_record.flow` implement the same API
 as the windowed backends, drawing into an off-screen buffer and writing each
-presented frame as a PPM. `scripts/record_demos.py` then assembles the frames
+presented frame as a PPM. `scripts/record_demos.sh` then assembles the frames
 into the GIFs on this page with nearest-neighbour downscaling and a shared
 palette, the same path used for the morphogenesis gallery.
 

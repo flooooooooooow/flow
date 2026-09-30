@@ -1,0 +1,807 @@
+# @module tools.lattice_allpass.figs_plot
+# @means  The hero figure (schur_lattice_novel_demo) and the verification
+#         dashboard (schur_lattice_allpass_overview), plus the parser for
+#         the CSV lines printed by examples/audio/lattice_allpass_demo.flow.
+
+import "../lattice_allpass/figs_audio.flow"
+import .text { ft_len, ft_starts, ft_itoa, ft_split_lines, ft_list_len, ft_list_get, StrList }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function sin(x: f64) -> f64
+    function cos(x: f64) -> f64
+    function atan2(y: f64, x: f64) -> f64
+    function sqrt(x: f64) -> f64
+    function log10(x: f64) -> f64
+    function pow(x: f64, y: f64) -> f64
+    function fabs(x: f64) -> f64
+    function strtod(s: string, end: ptr<void>) -> f64
+}
+
+# ---- Flow demo output ----
+
+export struct FlowDemo {
+    order: i32
+    k: ptr<f64>
+    nk: i32
+    mag_f: ptr<f64>
+    mag_m: ptr<f64>
+    nmag: i32
+    has_dev: bool
+    max_dev: f64
+}
+
+export function flow_demo_new() -> ptr<FlowDemo> {
+    let d: ptr<FlowDemo> = calloc(1, 64) as ptr<FlowDemo>
+    d[0].k = calloc(64, 8) as ptr<f64>
+    d[0].mag_f = calloc(256, 8) as ptr<f64>
+    d[0].mag_m = calloc(256, 8) as ptr<f64>
+    d[0].nk = 0
+    d[0].nmag = 0
+    d[0].has_dev = false
+    return d
+}
+
+# Pointer just past the first comma after `start`.
+function after_comma(s: string, start: i32) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = start
+    while p[i] != 0 and p[i] != 44 {
+        i = i + 1
+    }
+    if p[i] == 44 {
+        i = i + 1
+    }
+    return (&p[i]) as string
+}
+
+export function parse_flow_demo(text: string, d: ptr<FlowDemo>) -> void {
+    let lines: ptr<StrList> = ft_split_lines(text)
+    let mut i: i32 = 0
+    while i < ft_list_len(lines) {
+        let line: string = ft_list_get(lines, i)
+        if ft_starts(line, "order,") {
+            d[0].order = strtod(after_comma(line, 0), null) as i32
+        } elif ft_starts(line, "k,") and d[0].nk < 64 {
+            let k: ptr<f64> = d[0].k
+            k[d[0].nk] = strtod(after_comma(line, 0), null)
+            d[0].nk = d[0].nk + 1
+        } elif ft_starts(line, "mag,") and d[0].nmag < 256 {
+            let f1: string = after_comma(line, 0)
+            let f2: string = after_comma(f1, 0)
+            let mf: ptr<f64> = d[0].mag_f
+            let mm: ptr<f64> = d[0].mag_m
+            mf[d[0].nmag] = strtod(f1, null)
+            mm[d[0].nmag] = strtod(f2, null)
+            d[0].nmag = d[0].nmag + 1
+        } elif ft_starts(line, "max_mag_dev,") {
+            d[0].max_dev = strtod(after_comma(line, 0), null)
+            d[0].has_dev = true
+        }
+        i = i + 1
+    }
+}
+
+# ---- numerics shared by the figures ----
+
+# Steady-state RMS gain of the lattice at one frequency.
+export function measure_gain(k: ptr<f64>, order: i32, freq: f64) -> f64 {
+    let settle: i32 = 4096
+    let measure: i32 = 2048
+    let omega: f64 = 2.0 * la_pi() * freq / la_fs()
+    let mut ap: LatticeAllpass = lattice_from_k(k, order)
+    let mut n: i32 = 0
+    while n < settle {
+        ap = lattice_step(ap, sin(omega * (n as f64)))
+        n = n + 1
+    }
+    let mut in_e: f64 = 0.0
+    let mut out_e: f64 = 0.0
+    n = 0
+    while n < measure {
+        let x: f64 = sin(omega * ((settle + n) as f64))
+        ap = lattice_step(ap, x)
+        let y: f64 = lattice_out(ap)
+        in_e = in_e + x * x
+        out_e = out_e + y * y
+        n = n + 1
+    }
+    if in_e > 1e-12 {
+        return sqrt(out_e / in_e)
+    }
+    return 0.0
+}
+
+# poly_roots_inside_disk(a): the reference passed the coefficients of
+# 1 + a1 z^-1 + ... reversed to numpy.roots, so it tests the polynomial
+# a_n z^n + ... + a_1 z + 1. All its roots lie inside the unit disk iff the
+# Schur-Cohn step-down of its monic form has every |k| < 1.
+function reversed_roots_inside_disk(a: ptr<f64>, n: i32) -> bool {
+    # c[0] is the leading coefficient; numpy.roots strips leading zeros.
+    let c: ptr<f64> = calloc(32, 8) as ptr<f64>
+    let mut i: i32 = 0
+    while i < n {
+        c[i] = a[n - 1 - i]
+        i = i + 1
+    }
+    c[n] = 1.0
+    let mut lead: i32 = 0
+    while lead < n and c[lead] == 0.0 {
+        lead = lead + 1
+    }
+    let deg: i32 = n - lead
+    if deg == 0 {
+        return true
+    }
+    let w: ptr<f64> = calloc(32, 8) as ptr<f64>
+    i = 0
+    while i < deg {
+        w[i] = c[lead + 1 + i] / c[lead]
+        i = i + 1
+    }
+    let mut stage: i32 = deg
+    while stage > 0 {
+        let kn: f64 = w[stage - 1]
+        if fabs(kn) >= 1.0 {
+            return false
+        }
+        let den: f64 = 1.0 - kn * kn
+        let tmp: ptr<f64> = calloc(32, 8) as ptr<f64>
+        let mut m: i32 = 0
+        while m < stage - 1 {
+            tmp[m] = (w[m] - kn * w[stage - 2 - m]) / den
+            m = m + 1
+        }
+        m = 0
+        while m < stage - 1 {
+            w[m] = tmp[m]
+            m = m + 1
+        }
+        stage = stage - 1
+    }
+    return true
+}
+
+# simulate_modulated_block(): per-sample retuning at `rate_hz`, returning
+# the block gains (window 256) in gains[] and the unstable sample count.
+# mode 0: lattice k LFO; mode 1: naive wobble of the denominator a.
+function simulate_block(k_base: ptr<f64>, order: i32, a_base: ptr<f64>, n_samples: i32, test_freq: f64, depth: f64, rate_hz: f64, mode: i32, gains: ptr<f64>, ngains: ptr<i32>) -> i32 {
+    let window: i32 = 256
+    let phases_k: Vec = linspace(0.31, 4.65, order)
+    let phases_a: Vec = linspace(0.0, 2.5, order)
+    let pk: ptr<f64> = phases_k.data
+    let pa: ptr<f64> = phases_a.data
+    let k_t: ptr<f64> = calloc(32, 8) as ptr<f64>
+    let a_t: ptr<f64> = calloc(32, 8) as ptr<f64>
+    let x_ring: ptr<f64> = calloc(window as i64, 8) as ptr<f64>
+    let y_ring: ptr<f64> = calloc(window as i64, 8) as ptr<f64>
+    let omega: f64 = 2.0 * la_pi() * test_freq / la_fs()
+    let w: f64 = 2.0 * la_pi() * rate_hz
+    let mut ap: LatticeAllpass = lattice_from_k(k_base, order)
+    let mut unstable: i32 = 0
+    let mut ng: i32 = 0
+    let mut i: i32 = 0
+    while i < n_samples {
+        let t: f64 = (i as f64) / la_fs()
+        if mode == 0 {
+            lfo_k(k_base, order, pk, depth, rate_hz, t, k_t)
+        } else {
+            let mut j: i32 = 0
+            while j < order {
+                a_t[j] = a_base[j] + depth * sin(w * t + pa[j])
+                j = j + 1
+            }
+            if reversed_roots_inside_disk(a_t, order) == false {
+                unstable = unstable + 1
+            }
+            step_down(a_t, order, k_t)
+        }
+        let x: f64 = sin(omega * (i as f64))
+        ap = lattice_retune(ap, k_t)
+        ap = lattice_step(ap, x)
+        let y: f64 = lattice_out(ap)
+        let slot: i32 = i % window
+        x_ring[slot] = x
+        y_ring[slot] = y
+        if i >= window and slot == window - 1 {
+            let mut sx: f64 = 0.0
+            let mut sy: f64 = 0.0
+            let mut j: i32 = 0
+            while j < window {
+                sx = sx + x_ring[j] * x_ring[j]
+                sy = sy + y_ring[j] * y_ring[j]
+                j = j + 1
+            }
+            let in_rms: f64 = sqrt(sx / (window as f64))
+            let out_rms: f64 = sqrt(sy / (window as f64))
+            if in_rms > 1e-12 {
+                gains[ng] = out_rms / in_rms
+            } else {
+                gains[ng] = 0.0
+            }
+            ng = ng + 1
+        }
+        i = i + 1
+    }
+    if ng == 0 {
+        gains[0] = 1.0
+        ng = 1
+    }
+    ngains[0] = ng
+    return unstable
+}
+
+# Population std of 20*log10(clip(g, 1e-6)).
+function gain_jitter_db(g: ptr<f64>, n: i32) -> f64 {
+    let db: ptr<f64> = calloc(n as i64, 8) as ptr<f64>
+    let mut mean: f64 = 0.0
+    let mut i: i32 = 0
+    while i < n {
+        let mut v: f64 = g[i]
+        if v < 1e-6 {
+            v = 1e-6
+        }
+        db[i] = 20.0 * log10(v)
+        mean = mean + db[i]
+        i = i + 1
+    }
+    mean = mean / (n as f64)
+    let mut var: f64 = 0.0
+    i = 0
+    while i < n {
+        var = var + (db[i] - mean) * (db[i] - mean)
+        i = i + 1
+    }
+    return sqrt(var / (n as f64))
+}
+
+# Cumulative per-sample phase increment (degrees) at three frequencies
+# under an 8 Hz reflection LFO; rows x n_samples.
+function phase_track(k: ptr<f64>, order: i32, n_samples: i32, depth: f64, rate_hz: f64, freqs: ptr<f64>, nf: i32) -> ptr<f64> {
+    let out: ptr<f64> = calloc((nf * n_samples) as i64, 8) as ptr<f64>
+    let ph: Vec = linspace(0.31, 4.65, order)
+    let k_t: ptr<f64> = calloc(32, 8) as ptr<f64>
+    let xp: ptr<f64> = calloc(8, 8) as ptr<f64>
+    let yp: ptr<f64> = calloc(8, 8) as ptr<f64>
+    let mut ap: LatticeAllpass = lattice_from_k(k, order)
+    let mut i: i32 = 0
+    while i < n_samples {
+        lfo_k(k, order, ph.data, depth, rate_hz, (i as f64) / la_fs(), k_t)
+        ap = lattice_retune(ap, k_t)
+        let mut fi: i32 = 0
+        while fi < nf {
+            let omega: f64 = 2.0 * la_pi() * freqs[fi] / la_fs()
+            let x: f64 = sin(omega * (i as f64))
+            let probe: LatticeAllpass = lattice_step(ap, x)
+            let y: f64 = lattice_out(probe)
+            let cross: f64 = x * yp[fi] - y * xp[fi]
+            let dot: f64 = x * xp[fi] + y * yp[fi]
+            let d: f64 = atan2(cross, dot) * 180.0 / la_pi()
+            if i == 0 {
+                out[fi * n_samples + i] = d
+            } else {
+                out[fi * n_samples + i] = out[fi * n_samples + i - 1] + d
+            }
+            xp[fi] = x
+            yp[fi] = y
+            fi = fi + 1
+        }
+        ap = lattice_step(ap, 0.0)
+        i = i + 1
+    }
+    return out
+}
+
+# ||A^T A - I||_F and det(A) for the stdlib's Givens colligation.
+function givens_check(k: ptr<f64>, order: i32, err: ptr<f64>, det: ptr<f64>) -> void {
+    let n: i32 = order
+    let a_buf: ptr<f64> = calloc((n * n) as i64, 8) as ptr<f64>
+    let _m: Matrix = compose_orthogonal_colligation(k, order, a_buf)
+    let mut s: f64 = 0.0
+    let mut i: i32 = 0
+    while i < n {
+        let mut j: i32 = 0
+        while j < n {
+            let mut acc: f64 = 0.0
+            let mut r: i32 = 0
+            while r < n {
+                acc = acc + a_buf[r * n + i] * a_buf[r * n + j]
+                r = r + 1
+            }
+            if i == j {
+                acc = acc - 1.0
+            }
+            s = s + acc * acc
+            j = j + 1
+        }
+        i = i + 1
+    }
+    err[0] = sqrt(s)
+    # det by Gaussian elimination with partial pivoting.
+    let m: ptr<f64> = calloc((n * n) as i64, 8) as ptr<f64>
+    i = 0
+    while i < n * n {
+        m[i] = a_buf[i]
+        i = i + 1
+    }
+    let mut d: f64 = 1.0
+    let mut c: i32 = 0
+    while c < n {
+        let mut piv: i32 = c
+        let mut r: i32 = c + 1
+        while r < n {
+            if fabs(m[r * n + c]) > fabs(m[piv * n + c]) {
+                piv = r
+            }
+            r = r + 1
+        }
+        if piv != c {
+            let mut q: i32 = 0
+            while q < n {
+                let t: f64 = m[c * n + q]
+                m[c * n + q] = m[piv * n + q]
+                m[piv * n + q] = t
+                q = q + 1
+            }
+            d = 0.0 - d
+        }
+        let p: f64 = m[c * n + c]
+        d = d * p
+        if p != 0.0 {
+            r = c + 1
+            while r < n {
+                let fct: f64 = m[r * n + c] / p
+                let mut q: i32 = c
+                while q < n {
+                    m[r * n + q] = m[r * n + q] - fct * m[c * n + q]
+                    q = q + 1
+                }
+                r = r + 1
+            }
+        }
+        c = c + 1
+    }
+    det[0] = d
+}
+
+# ---- hero figure ----
+
+# Cell of a gridspec with height ratios, in points.
+function gs_cell(f: ptr<Fig>, row: i32, col: i32, colspan: i32, left: f64, right: f64, top: f64, bottom: f64, wspace: f64, hspace: f64, ratios: ptr<f64>) -> ptr<Ax> {
+    let cols: i32 = 3
+    let rows: i32 = 3
+    let avail_w: f64 = f[0].w - left - right
+    let avail_h: f64 = f[0].h - top - bottom
+    # matplotlib: cell = avail / (n + space * (n - 1)), gap = space * cell.
+    let cw: f64 = avail_w / ((cols as f64) + wspace * ((cols - 1) as f64))
+    let gw: f64 = wspace * cw
+    let mut rsum: f64 = 0.0
+    let mut i: i32 = 0
+    while i < rows {
+        rsum = rsum + ratios[i]
+        i = i + 1
+    }
+    let mean_h: f64 = avail_h / ((rows as f64) + hspace * ((rows - 1) as f64))
+    let gh: f64 = hspace * mean_h
+    let tot_h: f64 = mean_h * (rows as f64)
+    let mut y: f64 = top
+    i = 0
+    while i < row {
+        y = y + tot_h * ratios[i] / rsum + gh
+        i = i + 1
+    }
+    let h: f64 = tot_h * ratios[row] / rsum
+    let x: f64 = left + (col as f64) * (cw + gw)
+    let w: f64 = cw * (colspan as f64) + gw * ((colspan - 1) as f64)
+    return ax_new(f, x, y, w, h)
+}
+
+function hz_label(r: f64) -> string {
+    return ft_itoa(r as i32) + " Hz"
+}
+
+export function fig_novel_demo(k: ptr<f64>, order: i32, a: ptr<f64>, a_order: i32, path: string) -> bool {
+    let f: ptr<Fig> = fig_new(16.0, 11.0, "#fafafa")
+    let ratios: ptr<f64> = calloc(3, 8) as ptr<f64>
+    ratios[0] = 1.0
+    ratios[1] = 1.15
+    ratios[2] = 1.0
+    let ml: f64 = 64.0
+    let mr: f64 = 80.0
+    let mt: f64 = 96.0
+    let mb: f64 = 58.0
+    let wsp: f64 = 0.32
+    let hsp: f64 = 0.38
+
+    fig_text_at(f, f[0].w / 2.0, 0.02 * f[0].h + 17.0, "Schur-Lattice Colligations: Per-Sample Many-Pole Phase Engines", 17.0, "middle", "#000000", "bold", "", 0.0)
+    fig_text(f, 0.5, 0.935, "Finite-horizon synthesis  →  O(n) reflection retuning  →  |H|≡1 while geometry moves", 11.0, "#444444", "", "italic")
+
+    # Pipeline schematic.
+    let ax0: ptr<Ax> = gs_cell(f, 0, 0, 3, ml, mr, mt, mb, wsp, hsp, ratios)
+    ax_lim(ax0, 0.0, 10.0, 0.0, 1.0)
+    let labels: array<string, 5> = ["Stable D(z)", "Schur step-down", "Givens colligation A", "Finite C observer map", "Lattice kᵢ(t)"]
+    let colors: array<string, 5> = ["#4daf4a", "#377eb8", "#984ea3", "#ff7f00", "#1b9e77"]
+    let mut i: i32 = 0
+    while i < 5 {
+        let x: f64 = 0.4 + (i as f64) * 1.9
+        ax_rbox(ax0, x, 0.35, 1.5, 0.35, colors[i], 0.92, 6.0)
+        ax_text(ax0, x + 0.75, 0.52, labels[i], 9.0, "middle", "#ffffff", "bold")
+        if i < 4 {
+            ax_arrow(ax0, x + 1.55, 0.52, x + 1.65, 0.52, "#333333", 2.0, 8.0)
+        }
+        i = i + 1
+    }
+    ax_text(ax0, 5.0, 0.12, "No infinite Gramian  ·  Mathlib stability lemmas  ·  Flow + Lean verified", 9.0, "middle", "#555555", "")
+
+    # Lattice vs naive modulation.
+    let depth: f64 = 0.28
+    let rates: array<f64, 8> = [1.0, 3.0, 10.0, 30.0, 60.0, 120.0, 240.0, 480.0]
+    let lat_dev: ptr<f64> = calloc(8, 8) as ptr<f64>
+    let naive_dev: ptr<f64> = calloc(8, 8) as ptr<f64>
+    let naive_unstable: ptr<f64> = calloc(8, 8) as ptr<f64>
+    let gains: ptr<f64> = calloc(64, 8) as ptr<f64>
+    let ng: ptr<i32> = calloc(1, 4) as ptr<i32>
+    let n_sim: i32 = 12000
+    i = 0
+    while i < 8 {
+        let _u0: i32 = simulate_block(k, order, a, n_sim, 1000.0, depth, rates[i], 0, gains, ng)
+        lat_dev[i] = gain_jitter_db(gains, ng[0])
+        let un: i32 = simulate_block(k, order, a, n_sim, 1000.0, depth, rates[i], 1, gains, ng)
+        naive_dev[i] = gain_jitter_db(gains, ng[0])
+        naive_unstable[i] = 100.0 * ((un as f64) / (n_sim as f64))
+        i = i + 1
+    }
+    let ax1: ptr<Ax> = gs_cell(f, 1, 0, 1, ml, mr, mt, mb, wsp, hsp, ratios)
+    let top1: f64 = arr_max(lat_dev, 8)
+    let top2: f64 = arr_max(naive_dev, 8)
+    let mut ytop: f64 = top1
+    if top2 > ytop {
+        ytop = top2
+    }
+    ax_lim(ax1, pad_lo(-0.35, 7.35, false), pad_hi(-0.35, 7.35, false), 0.0, ytop * 1.05)
+    let tpos: ptr<f64> = calloc(8, 8) as ptr<f64>
+    let tlab: ptr<string> = malloc(64) as ptr<string>
+    i = 0
+    while i < 8 {
+        tpos[i] = i as f64
+        tlab[i] = hz_label(rates[i])
+        i = i + 1
+    }
+    ax_xticks(ax1, 8, tpos, tlab, 35.0)
+    ax_axes(ax1, 3, 0.3, false, "#ffffff")
+    i = 0
+    while i < 8 {
+        ax_bar(ax1, (i as f64) - 0.175, 0.35, lat_dev[i], "#1b9e77", "#ffffff")
+        ax_bar(ax1, (i as f64) + 0.175, 0.35, naive_dev[i], "#d95f02", "#ffffff")
+        i = i + 1
+    }
+    ax_leg_add(ax1, "Lattice kᵢ(t) clip", "#1b9e77", 1, "", 1.0)
+    ax_leg_add(ax1, "Naive coeff wobble", "#d95f02", 1, "", 1.0)
+    ax_legend(ax1, 1, 8.0, 86.0)
+    ax_frame(ax1)
+    ax_ylabel(ax1, "Gain jitter (dB std)", 40.0)
+    ax_title(ax1, "Novel: fast modulation without magnitude blow-up", true)
+
+    # Stability certificate.
+    let ax2: ptr<Ax> = gs_cell(f, 1, 1, 1, ml, mr, mt, mb, wsp, hsp, ratios)
+    ax_xlog(ax2)
+    let mut ymax2: f64 = arr_max(naive_unstable, 8)
+    let mut ymin2: f64 = arr_min(naive_unstable, 8)
+    if ymin2 > 0.0 {
+        ymin2 = 0.0
+    }
+    if ymax2 < 0.0 {
+        ymax2 = 0.0
+    }
+    let rx: ptr<f64> = calloc(8, 8) as ptr<f64>
+    i = 0
+    while i < 8 {
+        rx[i] = rates[i]
+        i = i + 1
+    }
+    ax_autoscale(ax2, 1.0, 480.0, ymin2, ymax2)
+    ax_axes(ax2, 1, 0.3, false, "#ffffff")
+    ax_plot(ax2, rx, naive_unstable, 8, "#d95f02", 2.5, "-", 1.0)
+    ax_markers(ax2, rx, naive_unstable, 8, 0, 7.0, "#d95f02")
+    ax_hline(ax2, 0.0, "#1b9e77", 2.0, "--", 1.0)
+    ax_leg_add(ax2, "Naive unstable samples %", "#d95f02", 2, "-", 1.0)
+    ax_leg_add(ax2, "Lattice: 0% (|kᵢ|<1)", "#1b9e77", 0, "--", 1.0)
+    ax_legend(ax2, 4, 8.0, 104.0)
+    ax_frame(ax2)
+    ax_xlabel(ax2, "Modulation rate")
+    ax_ylabel(ax2, "% samples outside Schur disk", 40.0)
+    ax_title(ax2, "Local stability certificate |kᵢ|<1", true)
+
+    # Phase sculpting waterfall.
+    let cell3: ptr<Ax> = gs_cell(f, 1, 2, 1, ml, mr, mt, mb, wsp, hsp, ratios)
+    let cb_w: f64 = 0.046 * cell3[0].w
+    let cb_pad: f64 = 0.04 * cell3[0].w
+    let ax3: ptr<Ax> = ax_new(f, cell3[0].x, cell3[0].y, cell3[0].w - cb_w - cb_pad - 8.0, cell3[0].h)
+    let freqs_track: ptr<f64> = calloc(3, 8) as ptr<f64>
+    freqs_track[0] = 250.0
+    freqs_track[1] = 1000.0
+    freqs_track[2] = 4000.0
+    let n_phase: i32 = 2400
+    let track: ptr<f64> = phase_track(k, order, n_phase, 0.18, 8.0, freqs_track, 3)
+    let t_end: f64 = ((n_phase - 1) as f64) / la_fs() * 1000.0
+    ax_lim(ax3, 0.0, t_end, 250.0, 4000.0)
+    ax_axes(ax3, 0, 0.3, false, "#ffffff")
+    let tw: Cmap = cmap_named("twilight_shifted")
+    ax_image(ax3, heat_uri(track, 3, n_phase, tw, -180.0, 180.0, 1, 0.0), 0.0, t_end, 250.0, 4000.0)
+    ax_frame(ax3)
+    ax_xlabel(ax3, "Time (ms)")
+    ax_ylabel(ax3, "Frequency (Hz)", 40.0)
+    ax_title(ax3, "Phase geometry engine (8 Hz kᵢ LFO)", true)
+    colorbar(f, ax3[0].x + ax3[0].w + cb_pad, cell3[0].y, cb_w, cell3[0].h, tw, -180.0, 180.0, "Δphase (deg/sample)")
+
+    # Many-pole scaling.
+    let ax4: ptr<Ax> = gs_cell(f, 2, 0, 1, ml, mr, mt, mb, wsp, hsp, ratios)
+    let ops: ptr<f64> = calloc(4, 8) as ptr<f64>
+    let devs: ptr<f64> = calloc(4, 8) as ptr<f64>
+    let orders: ptr<i32> = calloc(4, 4) as ptr<i32>
+    let sizes: array<i32, 4> = [4, 8, 12, 16]
+    let mut s: i32 = 0
+    while s < 4 {
+        let poles: ptr<f64> = calloc(32, 8) as ptr<f64>
+        let np: i32 = sizes[s]
+        if s == 0 {
+            poles[0] = 0.5
+            poles[1] = 0.4
+            poles[2] = 0.3
+            poles[3] = 0.2
+        } elif s == 1 {
+            let p8: array<f64, 8> = [0.55, 0.48, 0.41, 0.34, 0.27, 0.20, 0.13, 0.06]
+            let mut q: i32 = 0
+            while q < 8 {
+                poles[q] = p8[q]
+                q = q + 1
+            }
+        } elif s == 2 {
+            let lp: Vec = linspace(0.58, 0.05, 12)
+            let lpd: ptr<f64> = lp.data
+            let mut q: i32 = 0
+            while q < 12 {
+                poles[q] = lpd[q]
+                q = q + 1
+            }
+        } else {
+            let lp: Vec = linspace(0.62, 0.03, 16)
+            let lpd: ptr<f64> = lp.data
+            let mut q: i32 = 0
+            while q < 16 {
+                poles[q] = lpd[q]
+                q = q + 1
+            }
+        }
+        let aa: ptr<f64> = calloc(32, 8) as ptr<f64>
+        let kk: ptr<f64> = calloc(32, 8) as ptr<f64>
+        let o: i32 = denom_from_poles(poles, np, aa)
+        step_down(aa, o, kk)
+        let fr: array<f64, 3> = [500.0, 2000.0, 8000.0]
+        let mut worst: f64 = 0.0
+        let mut q: i32 = 0
+        while q < 3 {
+            let dv: f64 = fabs(measure_gain(kk, o, fr[q]) - 1.0)
+            if dv > worst {
+                worst = dv
+            }
+            q = q + 1
+        }
+        orders[s] = o
+        ops[s] = (2 * o) as f64
+        devs[s] = worst
+        s = s + 1
+    }
+    ax_lim(ax4, pad_lo(-0.4, 3.4, false), pad_hi(-0.4, 3.4, false), 0.0, ops[3] * 1.05)
+    let opos: ptr<f64> = calloc(4, 8) as ptr<f64>
+    let olab: ptr<string> = malloc(32) as ptr<string>
+    s = 0
+    while s < 4 {
+        opos[s] = s as f64
+        olab[s] = ft_itoa(orders[s])
+        s = s + 1
+    }
+    ax_xticks(ax4, 4, opos, olab, 0.0)
+    ax_axes(ax4, 3, 0.3, false, "#ffffff")
+    let vir: Cmap = cmap_named("viridis")
+    let vpos: Vec = linspace(0.25, 0.9, 4)
+    let vd: ptr<f64> = vpos.data
+    s = 0
+    while s < 4 {
+        ax_bar(ax4, s as f64, 0.8, ops[s], cmap_color(vir, vd[s]), "#ffffff")
+        ax_text(ax4, s as f64, ops[s] + 0.4, "|H| err " + fmtf("%.4f", devs[s]), 8.0, "middle", "#000000", "")
+        s = s + 1
+    }
+    ax_frame(ax4)
+    ax_xlabel(ax4, "Filter order")
+    ax_ylabel(ax4, "MACs / sample (2n)", 40.0)
+    ax_title(ax4, "Many-pole: O(n) retuning, still all-pass", true)
+
+    # Orthogonal colligation.
+    let err: ptr<f64> = calloc(1, 8) as ptr<f64>
+    let det: ptr<f64> = calloc(1, 8) as ptr<f64>
+    givens_check(k, order, err, det)
+    let cell5: ptr<Ax> = gs_cell(f, 2, 1, 1, ml, mr, mt, mb, wsp, hsp, ratios)
+    let mut side: f64 = cell5[0].w
+    if cell5[0].h < side {
+        side = cell5[0].h
+    }
+    let ax5: ptr<Ax> = ax_new(f, cell5[0].x + (cell5[0].w - side) / 2.0, cell5[0].y + (cell5[0].h - side) / 2.0, side, side)
+    ax_lim(ax5, -1.2, 1.2, -1.2, 1.2)
+    ax_axes(ax5, 1, 0.3, false, "#ffffff")
+    let th: Vec = linspace(0.0, 2.0 * la_pi(), 200)
+    let thd: ptr<f64> = th.data
+    let ccx: ptr<f64> = calloc(200, 8) as ptr<f64>
+    let ccy: ptr<f64> = calloc(200, 8) as ptr<f64>
+    i = 0
+    while i < 200 {
+        ccx[i] = cos(thd[i])
+        ccy[i] = sin(thd[i])
+        i = i + 1
+    }
+    ax_plot(ax5, ccx, ccy, 200, "#000000", 1.0, "--", 0.25)
+    let pl: Cmap = cmap_named("plasma")
+    let mut denom_c: i32 = order - 1
+    if denom_c < 1 {
+        denom_c = 1
+    }
+    i = 0
+    while i < order {
+        let c: f64 = sqrt(1.0 - k[i] * k[i])
+        let col: string = cmap_color(pl, (i as f64) / (denom_c as f64))
+        ax_arrow(ax5, 0.0, 0.0, c, k[i], col, 2.0, 7.0)
+        ax_text(ax5, c * 1.08, k[i] * 1.08, "G" + ft_itoa(i + 1), 8.0, "start", "#000000", "")
+        i = i + 1
+    }
+    ax_frame(ax5)
+    ax_text_frac(ax5, 0.02, 0.98, "det(A)=" + fmtf("%.4f", det[0]), 9.0)
+    ax_xlabel(ax5, "Givens plane")
+    ax_title(ax5, "Lossless colligation  ‖AᵀA−I‖=" + fmtf("%.2e", err[0]), true)
+
+    # Per-sample k heatmap.
+    let cell6: ptr<Ax> = gs_cell(f, 2, 2, 1, ml, mr, mt, mb, wsp, hsp, ratios)
+    let cb6_w: f64 = 0.046 * cell6[0].w
+    let cb6_pad: f64 = 0.04 * cell6[0].w
+    let ax6: ptr<Ax> = ax_new(f, cell6[0].x, cell6[0].y, cell6[0].w - cb6_w - cb6_pad - 8.0, cell6[0].h)
+    let n_tr: i32 = 4800
+    let traj: ptr<f64> = calloc((order * n_tr) as i64, 8) as ptr<f64>
+    let ph6: Vec = linspace(0.31, 4.65, order)
+    let kt6: ptr<f64> = calloc(32, 8) as ptr<f64>
+    i = 0
+    while i < n_tr {
+        lfo_k(k, order, ph6.data, 0.25, 60.0, (i as f64) / la_fs(), kt6)
+        let mut r: i32 = 0
+        while r < order {
+            traj[r * n_tr + i] = kt6[r]
+            r = r + 1
+        }
+        i = i + 1
+    }
+    let t6: f64 = ((n_tr - 1) as f64) / la_fs() * 1000.0
+    ax_lim(ax6, 0.0, t6, 1.0, order as f64)
+    ax_axes(ax6, 0, 0.3, false, "#ffffff")
+    let rb: Cmap = cmap_named("RdYlBu_r")
+    ax_image(ax6, heat_uri(traj, order, n_tr, rb, -1.0, 1.0, 0, 0.0), 0.0, t6, 1.0, order as f64)
+    let mut yl: f64 = 1.5
+    while yl < (order as f64) + 0.5 {
+        ax_hline(ax6, yl, "#ffffff", 0.4, "-", 0.5)
+        yl = yl + 1.0
+    }
+    ax_frame(ax6)
+    ax_xlabel(ax6, "Time (ms)")
+    ax_ylabel(ax6, "Section i", 40.0)
+    ax_title(ax6, "60 Hz retune of all kᵢ, every sample", true)
+    colorbar(f, ax6[0].x + ax6[0].w + cb6_pad, cell6[0].y, cb6_w, cell6[0].h, rb, -1.0, 1.0, "kᵢ(t)")
+    return fig_save(f, path)
+}
+
+# ---- verification dashboard ----
+
+export function fig_overview(k: ptr<f64>, order: i32, fd: ptr<FlowDemo>, lean_ok: bool, lean_skipped: bool, verify_ok: bool, demo_ok: bool, path: string) -> bool {
+    let nfreq: i32 = 256
+    let lf: Vec = linspace(log10(20.0), log10(la_fs() / 2.0 - 1.0), nfreq)
+    let lfd: ptr<f64> = lf.data
+    let freqs: ptr<f64> = calloc(nfreq as i64, 8) as ptr<f64>
+    let mdb: ptr<f64> = calloc(nfreq as i64, 8) as ptr<f64>
+    let mut i: i32 = 0
+    while i < nfreq {
+        freqs[i] = pow(10.0, lfd[i])
+        mdb[i] = 20.0 * log10(measure_gain(k, order, freqs[i]))
+        i = i + 1
+    }
+    let f: ptr<Fig> = fig_new(12.0, 9.0, "#ffffff")
+    fig_suptitle(f, "All-Pass Verification Dashboard", 14.0)
+    let ml: f64 = 60.0
+    let mr: f64 = 20.0
+    let mt: f64 = 58.0
+    let mb: f64 = 48.0
+
+    let a0: ptr<Ax> = grid_ax(f, 2, 2, 0, 0, ml, mr, mt, mb, 70.0, 70.0)
+    ax_lim(a0, pad_lo(0.6, 4.4, false), pad_hi(0.6, 4.4, false), -1.05, 1.05)
+    ax_axes(a0, 1, 0.3, false, "#ffffff")
+    i = 0
+    while i < order {
+        ax_bar(a0, (i + 1) as f64, 0.8, k[i], "#2c7bb6", "")
+        i = i + 1
+    }
+    ax_hline(a0, 1.0, "#ff0000", 1.5, "--", 0.4)
+    ax_hline(a0, -1.0, "#ff0000", 1.5, "--", 0.4)
+    ax_frame(a0)
+    ax_title(a0, "Schur reflections", false)
+
+    let a1: ptr<Ax> = grid_ax(f, 2, 2, 0, 1, ml, mr, mt, mb, 70.0, 70.0)
+    ax_xlog(a1)
+    ax_autoscale(a1, freqs[0], freqs[nfreq - 1], -0.15, 0.15)
+    a1[0].y0 = -0.15
+    a1[0].y1 = 0.15
+    ax_axes(a1, 1, 0.3, false, "#ffffff")
+    ax_plot(a1, freqs, mdb, nfreq, "#d7191c", 1.5, "-", 1.0)
+    ax_hline(a1, 0.0, "#000000", 1.5, "--", 0.5)
+    ax_frame(a1)
+    ax_title(a1, "|H(f)| ≡ 1 (formal + runtime)", false)
+
+    let a2: ptr<Ax> = grid_ax(f, 2, 2, 1, 0, ml, mr, mt, mb, 70.0, 70.0)
+    ax_xlog(a2)
+    if fd[0].nmag > 0 {
+        let mf: ptr<f64> = fd[0].mag_f
+        let mm: ptr<f64> = fd[0].mag_m
+        let mut lo: f64 = arr_min(mm, fd[0].nmag)
+        let mut hi: f64 = arr_max(mm, fd[0].nmag)
+        if lo > 1.0 {
+            lo = 1.0
+        }
+        if hi < 1.0 {
+            hi = 1.0
+        }
+        ax_autoscale(a2, arr_min(mf, fd[0].nmag), arr_max(mf, fd[0].nmag), lo, hi)
+        ax_axes(a2, 1, 0.3, false, "#ffffff")
+        ax_plot(a2, mf, mm, fd[0].nmag, "#1f77b4", 2.0, "-", 1.0)
+        ax_markers(a2, mf, mm, fd[0].nmag, 0, 6.0, "#1f77b4")
+        ax_hline(a2, 1.0, "#000000", 1.5, ":", 1.0)
+        ax_leg_add(a2, "Flow", "#1f77b4", 2, "-", 1.0)
+        ax_legend(a2, 0, 10.0, 30.0)
+    } else {
+        ax_lim(a2, 1.0, 10.0, 0.0, 1.0)
+        ax_axes(a2, 1, 0.3, false, "#ffffff")
+    }
+    ax_frame(a2)
+    ax_title(a2, "Flow runtime magnitude check", false)
+
+    let a3: ptr<Ax> = grid_ax(f, 2, 2, 1, 1, ml, mr, mt, mb, 70.0, 70.0)
+    let mut lean_s: string = pass_fail(lean_ok)
+    if lean_skipped {
+        lean_s = "SKIP"
+    }
+    let mut status: string = "Lean: " + lean_s + "   Verify: " + pass_fail(verify_ok) + "   Demo: " + pass_fail(demo_ok)
+    let mut face: string = "#fdecea"
+    if demo_ok {
+        face = "#eef8ee"
+    }
+    let mut lines: i32 = 1
+    let mut second: string = ""
+    if fd[0].has_dev {
+        second = "max |H| dev = " + fmtf("%.4f", fd[0].max_dev)
+        lines = 2
+    }
+    let cx: f64 = a3[0].x + a3[0].w / 2.0
+    let cy: f64 = a3[0].y + a3[0].h * 0.45
+    let bw: f64 = 13.0 * 0.6 * (ft_len(status) as f64) + 20.0
+    let bh: f64 = 13.0 * 1.3 * (lines as f64) + 14.0
+    fig_add(f, "<rect x=\"" + sv_num(cx - bw / 2.0) + "\" y=\"" + sv_num(cy - bh / 2.0) + "\" width=\"" + sv_num(bw) + "\" height=\"" + sv_num(bh) + "\" rx=\"6\" fill=\"" + face + "\" stroke=\"#cccccc\"/>\n")
+    let mut ty: f64 = cy - bh / 2.0 + 7.0 + 13.0
+    fig_add(f, "<text x=\"" + sv_num(cx) + "\" y=\"" + sv_num(ty) + "\" font-size=\"13\" font-family=\"DejaVu Sans Mono, Menlo, monospace\" text-anchor=\"middle\" xml:space=\"preserve\">" + sv_esc(status) + "</text>\n")
+    if lines == 2 {
+        ty = ty + 13.0 * 1.3
+        fig_add(f, "<text x=\"" + sv_num(cx) + "\" y=\"" + sv_num(ty) + "\" font-size=\"13\" font-family=\"DejaVu Sans Mono, Menlo, monospace\" text-anchor=\"middle\" xml:space=\"preserve\">" + sv_esc(second) + "</text>\n")
+    }
+    ax_title(a3, "Proof + implementation status", false)
+    return fig_save(f, path)
+}
+
+function pass_fail(ok: bool) -> string {
+    if ok {
+        return "PASS"
+    }
+    return "FAIL"
+}

@@ -45,7 +45,7 @@ into `games/` as well so the games directory covers every game.
 The eight software-3D examples in `examples/threed/` have clips at
 `docs/demos/threed/<name>.gif`. Those are recorded directly with
 `./flow record <program> --frames 90 --gif <path> --width 360 --keys <script>`
-rather than through `record_demos.py`; the key script for each is in the table
+rather than through `record_demos.sh`; the key script for each is in the table
 in [examples/threed/README.md](../../examples/threed/README.md).
 
 ## Two real recording paths
@@ -61,15 +61,15 @@ SSH and in CI.
 Regenerate the CPU galleries with:
 
 ```bash
-python3 scripts/record_demos.py                       # all registered gfx demos
-python3 scripts/record_demos.py frogger               # just one
-python3 scripts/record_demos.py --group morphogenesis # one gallery
-python3 scripts/record_demos.py --group neuro         # neuron atlas
-python3 scripts/record_demos.py --group evoleco       # evolution / ecology
-python3 scripts/record_demos.py --group planet        # cubesphere planet
-python3 scripts/record_demos.py --group procgen       # procedural generation
-python3 scripts/record_demos.py --group numerical     # FMM and friends
-python3 scripts/record_demos.py --check               # missing GIFs + sizes
+scripts/record_demos.sh                       # all registered gfx demos
+scripts/record_demos.sh frogger               # just one
+scripts/record_demos.sh --group morphogenesis # one gallery
+scripts/record_demos.sh --group neuro         # neuron atlas
+scripts/record_demos.sh --group evoleco       # evolution / ecology
+scripts/record_demos.sh --group planet        # cubesphere planet
+scripts/record_demos.sh --group procgen       # procedural generation
+scripts/record_demos.sh --group numerical     # FMM and friends
+scripts/record_demos.sh --check               # missing GIFs + sizes
 ```
 
 ### FSL / Metal recordings
@@ -141,7 +141,7 @@ Two things to keep in mind when writing a script:
 
 ## Adding a demo or gallery
 
-For a CPU demo, add an entry to `DEMOS` in `scripts/record_demos.py` with the
+For a CPU demo, add an entry to `build_table` in `scripts/tools/record_demos/main.flow` with the
 program path, frame budget and, if interactive, a key script. Frame count,
 `skip`, duration and scale should keep the clip readable without turning the
 Wiki into an asset dump.

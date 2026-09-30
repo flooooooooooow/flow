@@ -1,0 +1,923 @@
+# @module tools.gifclip
+# @means  Recorded PPM frames to an animated GIF, for the recording tools.
+#
+# The pieces are the ones the recording scripts took from Pillow, written
+# out in Flow:
+#
+#   gc_read_ppm       binary P6 (and P5) frames as written by runtime/gfx_record.c
+#   gc_crop           a sub-rectangle
+#   gc_resize_nearest nearest-neighbour resize, Pillow's pixel-centre rule
+#   gc_resize_lanczos Lanczos-3 resize, Pillow's separable fixed-point filter
+#   gc_median_cut     one palette for a strip of sample frames (median cut,
+#                     boxes split by pixel count along their longest axis)
+#   gc_quantize       palette indices, plain or Floyd-Steinberg dithered
+#   gc_write_gif      looping GIF89a through lib/stdlib/gif.flow
+#
+# gc_write_gif merges a frame that repeats the previous one into it (the
+# delays add up), as Pillow's writer does. With disposal 1 (leave in place)
+# it also stores only the rectangle that changed and marks the unchanged
+# pixels inside it transparent, which is what keeps a GIF of a mostly
+# static window small. Frames are RGB24, row-major.
+
+import stdlib.gif { gif_begin_palette, gif_add_frame_indexed, gif_end }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function realloc(p: ptr<void>, size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fclose(fp: ptr<void>) -> i32
+    function fread(buf: ptr<u8>, size: i64, count: i64, fp: ptr<void>) -> i64
+    function memcpy(dst: ptr<u8>, src: ptr<u8>, n: i64) -> ptr<u8>
+    function memcmp(a: ptr<u8>, b: ptr<u8>, n: i64) -> i32
+}
+
+# A growable list of frames that share one size.
+export struct GcFrames {
+    data: ptr<ptr<u8>>
+    len: i32
+    cap: i32
+    w: i32
+    h: i32
+}
+
+export function gc_frames_new() -> ptr<GcFrames> {
+    let f: ptr<GcFrames> = malloc(32) as ptr<GcFrames>
+    f[0].data = malloc(8 * 16) as ptr<ptr<u8>>
+    f[0].len = 0
+    f[0].cap = 16
+    f[0].w = 0
+    f[0].h = 0
+    return f
+}
+
+export function gc_frames_push(f: ptr<GcFrames>, px: ptr<u8>) -> void {
+    if f[0].len == f[0].cap {
+        let nc: i32 = f[0].cap * 2
+        f[0].data = realloc(f[0].data as ptr<void>, (nc as i64) * 8) as ptr<ptr<u8>>
+        f[0].cap = nc
+    }
+    let d: ptr<ptr<u8>> = f[0].data
+    d[f[0].len] = px
+    f[0].len = f[0].len + 1
+}
+
+export function gc_frames_get(f: ptr<GcFrames>, i: i32) -> ptr<u8> {
+    let d: ptr<ptr<u8>> = f[0].data
+    return d[i]
+}
+
+# ---------------------------------------------------------------------------
+# PPM input
+# ---------------------------------------------------------------------------
+
+function gc_is_space(c: i32) -> bool {
+    return c == 32 or c == 9 or c == 10 or c == 13 or c == 11 or c == 12
+}
+
+# Skips whitespace and # comments, then reads a decimal number. Returns -1
+# when there is none. `pos` is advanced.
+function gc_header_int(buf: ptr<u8>, n: i64, pos: ptr<i64>) -> i32 {
+    let mut p: i64 = pos[0]
+    while p < n {
+        let c: i32 = buf[p] as i32
+        if c == 35 {
+            while p < n and buf[p] != 10 {
+                p = p + 1
+            }
+        } elif gc_is_space(c) {
+            p = p + 1
+        } else {
+            break
+        }
+    }
+    if p >= n or buf[p] < 48 or buf[p] > 57 {
+        pos[0] = p
+        return 0 - 1
+    }
+    let mut v: i32 = 0
+    while p < n and buf[p] >= 48 and buf[p] <= 57 {
+        if v < 100000000 {
+            v = v * 10 + ((buf[p] as i32) - 48)
+        }
+        p = p + 1
+    }
+    pos[0] = p
+    return v
+}
+
+# Reads a binary PPM (P6) or PGM (P5) with maxval 255 as RGB24. Stores the
+# size in wh[0], wh[1]. Returns null when the file is missing or not a frame
+# this reader understands.
+export function gc_read_ppm(path: string, wh: ptr<i32>) -> ptr<u8> {
+    let fp: ptr<void> = fopen(path, "rb")
+    if fp == null {
+        return null
+    }
+    let mut cap: i64 = 1048576
+    let mut buf: ptr<u8> = malloc(cap) as ptr<u8>
+    let mut n: i64 = 0
+    let mut done: bool = false
+    while done == false {
+        if n == cap {
+            cap = cap * 2
+            buf = realloc(buf as ptr<void>, cap) as ptr<u8>
+        }
+        let got: i64 = fread(buf + n, 1, cap - n, fp)
+        if got <= 0 {
+            done = true
+        } else {
+            n = n + got
+        }
+    }
+    fclose(fp)
+    if n < 3 or buf[0] != 80 or (buf[1] != 54 and buf[1] != 53) {
+        free(buf as ptr<void>)
+        return null
+    }
+    let gray: bool = buf[1] == 53
+    let pos: ptr<i64> = malloc(8) as ptr<i64>
+    pos[0] = 2
+    let w: i32 = gc_header_int(buf, n, pos)
+    let h: i32 = gc_header_int(buf, n, pos)
+    let maxval: i32 = gc_header_int(buf, n, pos)
+    let mut p: i64 = pos[0]
+    free(pos as ptr<void>)
+    if w <= 0 or h <= 0 or maxval != 255 or p >= n or gc_is_space(buf[p] as i32) == false {
+        free(buf as ptr<void>)
+        return null
+    }
+    p = p + 1
+    let count: i64 = (w as i64) * (h as i64)
+    let mut chans: i64 = 3
+    if gray {
+        chans = 1
+    }
+    if n - p < count * chans {
+        free(buf as ptr<void>)
+        return null
+    }
+    let out: ptr<u8> = malloc(count * 3) as ptr<u8>
+    if gray {
+        let mut i: i64 = 0
+        while i < count {
+            let v: u8 = buf[p + i]
+            out[i * 3] = v
+            out[i * 3 + 1] = v
+            out[i * 3 + 2] = v
+            i = i + 1
+        }
+    } else {
+        memcpy(out, buf + p, count * 3)
+    }
+    free(buf as ptr<void>)
+    wh[0] = w
+    wh[1] = h
+    return out
+}
+
+# ---------------------------------------------------------------------------
+# Geometry
+# ---------------------------------------------------------------------------
+
+# The rectangle [x0, x1) x [y0, y1) of an RGB24 image `w` pixels wide.
+export function gc_crop(src: ptr<u8>, w: i32, x0: i32, y0: i32, x1: i32, y1: i32) -> ptr<u8> {
+    let cw: i32 = x1 - x0
+    let ch: i32 = y1 - y0
+    let out: ptr<u8> = malloc((cw as i64) * (ch as i64) * 3) as ptr<u8>
+    let mut y: i32 = 0
+    while y < ch {
+        let s: i64 = (((y0 + y) as i64) * (w as i64) + (x0 as i64)) * 3
+        let d: i64 = (y as i64) * (cw as i64) * 3
+        memcpy(out + d, src + s, (cw as i64) * 3)
+        y = y + 1
+    }
+    return out
+}
+
+# Nearest neighbour: output pixel x samples source floor((x + 0.5) * w / nw),
+# the pixel-centre rule Pillow's NEAREST resize uses.
+export function gc_resize_nearest(src: ptr<u8>, w: i32, h: i32, nw: i32, nh: i32) -> ptr<u8> {
+    let out: ptr<u8> = malloc((nw as i64) * (nh as i64) * 3) as ptr<u8>
+    let xs: ptr<i32> = malloc((nw as i64) * 4) as ptr<i32>
+    let mut x: i32 = 0
+    while x < nw {
+        let mut sx: i64 = ((2 * (x as i64) + 1) * (w as i64)) / (2 * (nw as i64))
+        if sx >= (w as i64) {
+            sx = (w as i64) - 1
+        }
+        xs[x] = sx as i32
+        x = x + 1
+    }
+    let mut y: i32 = 0
+    while y < nh {
+        let mut sy: i64 = ((2 * (y as i64) + 1) * (h as i64)) / (2 * (nh as i64))
+        if sy >= (h as i64) {
+            sy = (h as i64) - 1
+        }
+        let srow: i64 = sy * (w as i64) * 3
+        let drow: i64 = (y as i64) * (nw as i64) * 3
+        x = 0
+        while x < nw {
+            let s: i64 = srow + (xs[x] as i64) * 3
+            let d: i64 = drow + (x as i64) * 3
+            out[d] = src[s]
+            out[d + 1] = src[s + 1]
+            out[d + 2] = src[s + 2]
+            x = x + 1
+        }
+        y = y + 1
+    }
+    free(xs as ptr<void>)
+    return out
+}
+
+const GC_PI: f64 = 3.141592653589793
+
+# sin(x) for the Lanczos kernel: reduce to [-pi, pi], then a Taylor series
+# that is exact to double precision there. Keeps the tools off libm.
+function gc_sin(x: f64) -> f64 {
+    let two_pi: f64 = 2.0 * GC_PI
+    let k: f64 = ((x / two_pi) + 0.5) as i64 as f64
+    let mut r: f64 = x - k * two_pi
+    if r > GC_PI {
+        r = r - two_pi
+    }
+    if r < 0.0 - GC_PI {
+        r = r + two_pi
+    }
+    let r2: f64 = r * r
+    let mut term: f64 = r
+    let mut sum: f64 = r
+    let mut i: i32 = 1
+    while i < 24 {
+        let a: f64 = (2 * i) as f64
+        term = (0.0 - term) * r2 / (a * (a + 1.0))
+        sum = sum + term
+        i = i + 1
+    }
+    return sum
+}
+
+function gc_sinc(x: f64) -> f64 {
+    if x == 0.0 {
+        return 1.0
+    }
+    let px: f64 = x * GC_PI
+    return gc_sin(px) / px
+}
+
+function gc_lanczos(x: f64) -> f64 {
+    if x > -3.0 and x < 3.0 {
+        return gc_sinc(x) * gc_sinc(x / 3.0)
+    }
+    return 0.0
+}
+
+const GC_PRECISION_BITS: i32 = 22
+
+# Fixed-point Lanczos-3 coefficients for resampling `insize` to `outsize`,
+# laid out as Pillow's precompute_coeffs: `bounds` holds (first, count) per
+# output pixel and `kk` holds `ksize` coefficients per output pixel. Returns
+# ksize.
+function gc_coeffs(insize: i32, outsize: i32, bounds: ptr<ptr<i32>>, kk: ptr<ptr<i32>>) -> i32 {
+    let scale: f64 = (insize as f64) / (outsize as f64)
+    let mut filterscale: f64 = scale
+    if filterscale < 1.0 {
+        filterscale = 1.0
+    }
+    let support: f64 = 3.0 * filterscale
+    let ksize: i32 = (support as i32) + 1 + (support as i32) + 1 + 1
+    let b: ptr<i32> = malloc((outsize as i64) * 8) as ptr<i32>
+    let k: ptr<i32> = malloc((outsize as i64) * (ksize as i64) * 4) as ptr<i32>
+    let w: ptr<f64> = malloc((ksize as i64) * 8) as ptr<f64>
+    let ss: f64 = 1.0 / filterscale
+    let mut xx: i32 = 0
+    while xx < outsize {
+        let center: f64 = ((xx as f64) + 0.5) * scale
+        let mut xmin: i32 = (center - support + 0.5) as i32
+        if center - support + 0.5 < 0.0 {
+            xmin = 0
+        }
+        let mut xmax: i32 = (center + support + 0.5) as i32
+        if xmax > insize {
+            xmax = insize
+        }
+        xmax = xmax - xmin
+        if xmax > ksize {
+            xmax = ksize
+        }
+        let mut ww: f64 = 0.0
+        let mut x: i32 = 0
+        while x < xmax {
+            let v: f64 = gc_lanczos((((x + xmin) as f64) - center + 0.5) * ss)
+            w[x] = v
+            ww = ww + v
+            x = x + 1
+        }
+        x = 0
+        while x < ksize {
+            let mut v: f64 = 0.0
+            if x < xmax and ww != 0.0 {
+                v = w[x] / ww
+            }
+            # Round half away from zero, as Pillow's fixed-point conversion.
+            let scaled: f64 = v * ((1 << GC_PRECISION_BITS) as f64)
+            if scaled < 0.0 {
+                k[xx * ksize + x] = (scaled - 0.5) as i32
+            } else {
+                k[xx * ksize + x] = (scaled + 0.5) as i32
+            }
+            x = x + 1
+        }
+        b[xx * 2] = xmin
+        b[xx * 2 + 1] = xmax
+        xx = xx + 1
+    }
+    free(w as ptr<void>)
+    bounds[0] = b
+    kk[0] = k
+    return ksize
+}
+
+function gc_clip8(v: i64) -> u8 {
+    let s: i64 = v >> (GC_PRECISION_BITS as i64)
+    if s < 0 {
+        return 0 as u8
+    }
+    if s > 255 {
+        return 255 as u8
+    }
+    return s as u8
+}
+
+# Lanczos-3 resize, horizontal pass then vertical, each clipped to 8 bits
+# in between, as Pillow's LANCZOS resize does.
+export function gc_resize_lanczos(src: ptr<u8>, w: i32, h: i32, nw: i32, nh: i32) -> ptr<u8> {
+    let bh: ptr<ptr<i32>> = malloc(8) as ptr<ptr<i32>>
+    let kh: ptr<ptr<i32>> = malloc(8) as ptr<ptr<i32>>
+    let ksh: i32 = gc_coeffs(w, nw, bh, kh)
+    let bxs: ptr<i32> = bh[0]
+    let kxs: ptr<i32> = kh[0]
+    let tmp: ptr<u8> = malloc((nw as i64) * (h as i64) * 3) as ptr<u8>
+    let half: i64 = (1 as i64) << ((GC_PRECISION_BITS - 1) as i64)
+    let mut y: i32 = 0
+    while y < h {
+        let mut xx: i32 = 0
+        while xx < nw {
+            let xmin: i32 = bxs[xx * 2]
+            let xmax: i32 = bxs[xx * 2 + 1]
+            let mut s0: i64 = half
+            let mut s1: i64 = half
+            let mut s2: i64 = half
+            let mut x: i32 = 0
+            while x < xmax {
+                let c: i64 = kxs[xx * ksh + x] as i64
+                let p: i64 = ((y as i64) * (w as i64) + ((x + xmin) as i64)) * 3
+                s0 = s0 + (src[p] as i64) * c
+                s1 = s1 + (src[p + 1] as i64) * c
+                s2 = s2 + (src[p + 2] as i64) * c
+                x = x + 1
+            }
+            let d: i64 = ((y as i64) * (nw as i64) + (xx as i64)) * 3
+            tmp[d] = gc_clip8(s0)
+            tmp[d + 1] = gc_clip8(s1)
+            tmp[d + 2] = gc_clip8(s2)
+            xx = xx + 1
+        }
+        y = y + 1
+    }
+    let ksv: i32 = gc_coeffs(h, nh, bh, kh)
+    let bys: ptr<i32> = bh[0]
+    let kys: ptr<i32> = kh[0]
+    let out: ptr<u8> = malloc((nw as i64) * (nh as i64) * 3) as ptr<u8>
+    let mut yy: i32 = 0
+    while yy < nh {
+        let ymin: i32 = bys[yy * 2]
+        let ymax: i32 = bys[yy * 2 + 1]
+        let mut xx2: i32 = 0
+        while xx2 < nw {
+            let mut s0: i64 = half
+            let mut s1: i64 = half
+            let mut s2: i64 = half
+            let mut yk: i32 = 0
+            while yk < ymax {
+                let c: i64 = kys[yy * ksv + yk] as i64
+                let p: i64 = (((yk + ymin) as i64) * (nw as i64) + (xx2 as i64)) * 3
+                s0 = s0 + (tmp[p] as i64) * c
+                s1 = s1 + (tmp[p + 1] as i64) * c
+                s2 = s2 + (tmp[p + 2] as i64) * c
+                yk = yk + 1
+            }
+            let d: i64 = ((yy as i64) * (nw as i64) + (xx2 as i64)) * 3
+            out[d] = gc_clip8(s0)
+            out[d + 1] = gc_clip8(s1)
+            out[d + 2] = gc_clip8(s2)
+            xx2 = xx2 + 1
+        }
+        yy = yy + 1
+    }
+    free(tmp as ptr<void>)
+    free(bxs as ptr<void>)
+    free(kxs as ptr<void>)
+    free(bys as ptr<void>)
+    free(kys as ptr<void>)
+    free(bh as ptr<void>)
+    free(kh as ptr<void>)
+    return out
+}
+
+# ---------------------------------------------------------------------------
+# Palette: median cut
+# ---------------------------------------------------------------------------
+
+function gc_chan(c: i32, axis: i32) -> i32 {
+    return (c >> (16 - axis * 8)) & 255
+}
+
+# Stable counting sort of cols/cnts[start, end) by channel `axis`.
+function gc_sort_axis(cols: ptr<i32>, cnts: ptr<i32>, tc: ptr<i32>, tn: ptr<i32>, start: i32, end: i32, axis: i32) -> void {
+    let bucket: ptr<i32> = calloc(257, 4) as ptr<i32>
+    let mut i: i32 = start
+    while i < end {
+        let v: i32 = gc_chan(cols[i], axis)
+        bucket[v + 1] = bucket[v + 1] + 1
+        i = i + 1
+    }
+    let mut b: i32 = 1
+    while b < 257 {
+        bucket[b] = bucket[b] + bucket[b - 1]
+        b = b + 1
+    }
+    i = start
+    while i < end {
+        let v: i32 = gc_chan(cols[i], axis)
+        let at: i32 = bucket[v]
+        tc[at] = cols[i]
+        tn[at] = cnts[i]
+        bucket[v] = at + 1
+        i = i + 1
+    }
+    i = start
+    while i < end {
+        cols[i] = tc[i - start]
+        cnts[i] = tn[i - start]
+        i = i + 1
+    }
+    free(bucket as ptr<void>)
+}
+
+# Builds a palette of at most `colors` entries for `n` RGB24 pixels.
+# Writes RGB triples to `pal` (room for 256) and returns the entry count.
+# Every distinct colour starts in one box; the box holding the most pixels
+# is split at its pixel median along its longest axis until there are
+# `colors` boxes or no box can be split. Each entry is its box's
+# pixel-weighted mean.
+export function gc_median_cut(px: ptr<u8>, n: i64, colors: i32, pal: ptr<u8>) -> i32 {
+    let hist: ptr<i32> = calloc(16777216, 4) as ptr<i32>
+    let mut i: i64 = 0
+    while i < n {
+        let c: i32 = ((px[i * 3] as i32) << 16) | ((px[i * 3 + 1] as i32) << 8) | (px[i * 3 + 2] as i32)
+        hist[c] = hist[c] + 1
+        i = i + 1
+    }
+    let mut uniq: i32 = 0
+    let mut c: i32 = 0
+    while c < 16777216 {
+        if hist[c] != 0 {
+            uniq = uniq + 1
+        }
+        c = c + 1
+    }
+    let cols: ptr<i32> = malloc((uniq as i64) * 4 + 4) as ptr<i32>
+    let cnts: ptr<i32> = malloc((uniq as i64) * 4 + 4) as ptr<i32>
+    let tc: ptr<i32> = malloc((uniq as i64) * 4 + 4) as ptr<i32>
+    let tn: ptr<i32> = malloc((uniq as i64) * 4 + 4) as ptr<i32>
+    let mut k: i32 = 0
+    c = 0
+    while c < 16777216 {
+        if hist[c] != 0 {
+            cols[k] = c
+            cnts[k] = hist[c]
+            k = k + 1
+        }
+        c = c + 1
+    }
+    free(hist as ptr<void>)
+
+    let bstart: ptr<i32> = malloc(256 * 4) as ptr<i32>
+    let bend: ptr<i32> = malloc(256 * 4) as ptr<i32>
+    let bpop: ptr<i64> = malloc(256 * 8) as ptr<i64>
+    let mut nbox: i32 = 1
+    bstart[0] = 0
+    bend[0] = uniq
+    bpop[0] = n
+    let mut want: i32 = colors
+    if want > 256 {
+        want = 256
+    }
+    if want < 1 {
+        want = 1
+    }
+    while nbox < want {
+        # The splittable box with the most pixels.
+        let mut best: i32 = 0 - 1
+        let mut b: i32 = 0
+        while b < nbox {
+            if bend[b] - bstart[b] > 1 {
+                if best < 0 or bpop[b] > bpop[best] {
+                    best = b
+                }
+            }
+            b = b + 1
+        }
+        if best < 0 {
+            break
+        }
+        let s: i32 = bstart[best]
+        let e: i32 = bend[best]
+        # Longest axis by value range.
+        let mut axis: i32 = 0
+        let mut span: i32 = 0 - 1
+        let mut a: i32 = 0
+        while a < 3 {
+            let mut lo: i32 = 255
+            let mut hi: i32 = 0
+            let mut j: i32 = s
+            while j < e {
+                let v: i32 = gc_chan(cols[j], a)
+                if v < lo {
+                    lo = v
+                }
+                if v > hi {
+                    hi = v
+                }
+                j = j + 1
+            }
+            if hi - lo > span {
+                span = hi - lo
+                axis = a
+            }
+            a = a + 1
+        }
+        gc_sort_axis(cols, cnts, tc, tn, s, e, axis)
+        # Split where the running pixel count first reaches half.
+        let half: i64 = (bpop[best] + 1) / 2
+        let mut acc: i64 = 0
+        let mut cut: i32 = s + 1
+        let mut j2: i32 = s
+        while j2 < e {
+            acc = acc + (cnts[j2] as i64)
+            if acc >= half {
+                cut = j2 + 1
+                break
+            }
+            j2 = j2 + 1
+        }
+        if cut >= e {
+            cut = e - 1
+        }
+        if cut <= s {
+            cut = s + 1
+        }
+        let mut lpop: i64 = 0
+        let mut j3: i32 = s
+        while j3 < cut {
+            lpop = lpop + (cnts[j3] as i64)
+            j3 = j3 + 1
+        }
+        bstart[nbox] = cut
+        bend[nbox] = e
+        bpop[nbox] = bpop[best] - lpop
+        bend[best] = cut
+        bpop[best] = lpop
+        nbox = nbox + 1
+    }
+
+    let mut bi: i32 = 0
+    while bi < nbox {
+        let mut sr: i64 = 0
+        let mut sg: i64 = 0
+        let mut sb: i64 = 0
+        let mut tot: i64 = 0
+        let mut j: i32 = bstart[bi]
+        while j < bend[bi] {
+            let w: i64 = cnts[j] as i64
+            sr = sr + (gc_chan(cols[j], 0) as i64) * w
+            sg = sg + (gc_chan(cols[j], 1) as i64) * w
+            sb = sb + (gc_chan(cols[j], 2) as i64) * w
+            tot = tot + w
+            j = j + 1
+        }
+        if tot == 0 {
+            tot = 1
+        }
+        pal[bi * 3] = ((sr + tot / 2) / tot) as u8
+        pal[bi * 3 + 1] = ((sg + tot / 2) / tot) as u8
+        pal[bi * 3 + 2] = ((sb + tot / 2) / tot) as u8
+        bi = bi + 1
+    }
+    free(cols as ptr<void>)
+    free(cnts as ptr<void>)
+    free(tc as ptr<void>)
+    free(tn as ptr<void>)
+    free(bstart as ptr<void>)
+    free(bend as ptr<void>)
+    free(bpop as ptr<void>)
+    return nbox
+}
+
+# ---------------------------------------------------------------------------
+# Mapping to the palette
+# ---------------------------------------------------------------------------
+
+# A nearest-entry lookup for one palette: a lazily filled table over every
+# 24-bit colour (index + 1, 0 = not computed yet).
+export struct GcMap {
+    pal: ptr<u8>
+    n: i32
+    cache: ptr<u16>
+}
+
+export function gc_map_new(pal: ptr<u8>, n: i32) -> ptr<GcMap> {
+    let m: ptr<GcMap> = malloc(24) as ptr<GcMap>
+    m[0].pal = pal
+    m[0].n = n
+    m[0].cache = calloc(16777216, 2) as ptr<u16>
+    return m
+}
+
+export function gc_map_free(m: ptr<GcMap>) -> void {
+    free(m[0].cache as ptr<void>)
+    free(m as ptr<void>)
+}
+
+# Nearest palette entry by squared RGB distance; the lower index wins ties.
+export function gc_nearest(m: ptr<GcMap>, r: i32, g: i32, b: i32) -> i32 {
+    let key: i32 = (r << 16) | (g << 8) | b
+    let cache: ptr<u16> = m[0].cache
+    let hit: i32 = cache[key] as i32
+    if hit != 0 {
+        return hit - 1
+    }
+    let pal: ptr<u8> = m[0].pal
+    let mut best: i32 = 0
+    let mut best_d: i32 = 2147483647
+    let mut i: i32 = 0
+    while i < m[0].n {
+        let dr: i32 = r - (pal[i * 3] as i32)
+        let dg: i32 = g - (pal[i * 3 + 1] as i32)
+        let db: i32 = b - (pal[i * 3 + 2] as i32)
+        let d: i32 = dr * dr + dg * dg + db * db
+        if d < best_d {
+            best_d = d
+            best = i
+        }
+        i = i + 1
+    }
+    cache[key] = (best + 1) as u16
+    return best
+}
+
+function gc_clamp255(v: i32) -> i32 {
+    if v < 0 {
+        return 0
+    }
+    if v > 255 {
+        return 255
+    }
+    return v
+}
+
+# Palette indices for one w x h RGB24 frame into `out`. With `dither`, the
+# quantisation error diffuses Floyd-Steinberg style (7/16 right, 3/16 below
+# left, 5/16 below, 1/16 below right), scanning left to right.
+export function gc_quantize(m: ptr<GcMap>, px: ptr<u8>, w: i32, h: i32, dither: bool, out: ptr<u8>) -> void {
+    let pal: ptr<u8> = m[0].pal
+    if dither == false {
+        let n: i64 = (w as i64) * (h as i64)
+        let mut i: i64 = 0
+        while i < n {
+            out[i] = gc_nearest(m, px[i * 3] as i32, px[i * 3 + 1] as i32, px[i * 3 + 2] as i32) as u8
+            i = i + 1
+        }
+        return
+    }
+    # Error rows in sixteenths, one pixel of padding on each side.
+    let rowlen: i64 = ((w + 2) as i64) * 3
+    let mut cur: ptr<i32> = calloc(rowlen, 4) as ptr<i32>
+    let mut nxt: ptr<i32> = calloc(rowlen, 4) as ptr<i32>
+    let mut y: i32 = 0
+    while y < h {
+        let mut x: i32 = 0
+        while x < w {
+            let p: i64 = ((y as i64) * (w as i64) + (x as i64)) * 3
+            let e: i64 = ((x + 1) as i64) * 3
+            let r: i32 = gc_clamp255((px[p] as i32) + gc_div16(cur[e]))
+            let g: i32 = gc_clamp255((px[p + 1] as i32) + gc_div16(cur[e + 1]))
+            let b: i32 = gc_clamp255((px[p + 2] as i32) + gc_div16(cur[e + 2]))
+            let idx: i32 = gc_nearest(m, r, g, b)
+            out[(y as i64) * (w as i64) + (x as i64)] = idx as u8
+            let er: i32 = r - (pal[idx * 3] as i32)
+            let eg: i32 = g - (pal[idx * 3 + 1] as i32)
+            let eb: i32 = b - (pal[idx * 3 + 2] as i32)
+            cur[e + 3] = cur[e + 3] + er * 7
+            cur[e + 4] = cur[e + 4] + eg * 7
+            cur[e + 5] = cur[e + 5] + eb * 7
+            nxt[e - 3] = nxt[e - 3] + er * 3
+            nxt[e - 2] = nxt[e - 2] + eg * 3
+            nxt[e - 1] = nxt[e - 1] + eb * 3
+            nxt[e] = nxt[e] + er * 5
+            nxt[e + 1] = nxt[e + 1] + eg * 5
+            nxt[e + 2] = nxt[e + 2] + eb * 5
+            nxt[e + 3] = nxt[e + 3] + er
+            nxt[e + 4] = nxt[e + 4] + eg
+            nxt[e + 5] = nxt[e + 5] + eb
+            x = x + 1
+        }
+        let t: ptr<i32> = cur
+        cur = nxt
+        nxt = t
+        let mut z: i64 = 0
+        while z < rowlen {
+            nxt[z] = 0
+            z = z + 1
+        }
+        y = y + 1
+    }
+    free(cur as ptr<void>)
+    free(nxt as ptr<void>)
+}
+
+# Division by 16 rounding to nearest, halves away from zero.
+function gc_div16(v: i32) -> i32 {
+    if v >= 0 {
+        return (v + 8) / 16
+    }
+    return 0 - ((8 - v) / 16)
+}
+
+# ---------------------------------------------------------------------------
+# Whole clips
+# ---------------------------------------------------------------------------
+
+# One palette for a clip: every `step`-th frame (step = max(1, len / 8)) is
+# stacked into a strip and median-cut to `colors` entries. Returns the entry
+# count; `pal` needs room for 256 triples.
+export function gc_clip_palette(frames: ptr<GcFrames>, colors: i32, pal: ptr<u8>) -> i32 {
+    let n: i32 = frames[0].len
+    let mut step: i32 = n / 8
+    if step < 1 {
+        step = 1
+    }
+    let fsize: i64 = (frames[0].w as i64) * (frames[0].h as i64) * 3
+    let mut rows: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        rows = rows + 1
+        i = i + step
+    }
+    let strip: ptr<u8> = malloc(fsize * (rows as i64)) as ptr<u8>
+    let mut r: i32 = 0
+    i = 0
+    while i < n {
+        memcpy(strip + fsize * (r as i64), gc_frames_get(frames, i), fsize)
+        r = r + 1
+        i = i + step
+    }
+    let got: i32 = gc_median_cut(strip, fsize / 3 * (rows as i64), colors, pal)
+    free(strip as ptr<void>)
+    return got
+}
+
+# Quantizes every frame against one palette and writes a looping GIF.
+# `delay_ms` is the per-frame duration; it is stored in centiseconds
+# (ms / 10, rounded down), and a frame identical to the one before it is
+# folded into that frame's duration. `disposal` is the GIF disposal method
+# for every frame. Returns 0 on success, nonzero when the file cannot be
+# written.
+export function gc_write_gif(path: string, frames: ptr<GcFrames>, pal: ptr<u8>, ncolors: i32, dither: bool, delay_ms: i32, disposal: i32) -> i32 {
+    let w: i32 = frames[0].w
+    let h: i32 = frames[0].h
+    let n: i64 = (w as i64) * (h as i64)
+    # Disposal 1 frames mark unchanged pixels with a spare palette slot.
+    let mut trans: i32 = 0 - 1
+    let mut table: i32 = ncolors
+    if disposal == 1 and ncolors < 256 {
+        trans = ncolors
+        table = ncolors + 1
+    }
+    let full_pal: ptr<u8> = calloc(256 * 3, 1) as ptr<u8>
+    memcpy(full_pal, pal, (ncolors as i64) * 3)
+    if gif_begin_palette(path, w, h, full_pal, table) != 0 {
+        free(full_pal as ptr<void>)
+        return 1
+    }
+    let m: ptr<GcMap> = gc_map_new(pal, ncolors)
+    let mut prev: ptr<u8> = malloc(n) as ptr<u8>
+    let mut cur: ptr<u8> = malloc(n) as ptr<u8>
+    # The frame waiting to be written: its rectangle and duration.
+    let mut have_pending: bool = false
+    let mut pend_ms: i32 = 0
+    let mut px0: i32 = 0
+    let mut py0: i32 = 0
+    let mut px1: i32 = w
+    let mut py1: i32 = h
+    let mut pend_trans: bool = false
+    let pend: ptr<u8> = malloc(n) as ptr<u8>
+    let mut rc: i32 = 0
+    let mut f: i32 = 0
+    while f < frames[0].len {
+        gc_quantize(m, gc_frames_get(frames, f), w, h, dither, cur)
+        let mut x0: i32 = 0
+        let mut y0: i32 = 0
+        let mut x1: i32 = w
+        let mut y1: i32 = h
+        let mut use_trans: bool = false
+        if f > 0 {
+            if memcmp(prev, cur, n) == 0 {
+                pend_ms = pend_ms + delay_ms
+                f = f + 1
+                continue
+            }
+            if disposal != 2 {
+                # Bounding box of the change.
+                x0 = w
+                y0 = h
+                x1 = 0
+                y1 = 0
+                let mut yy: i32 = 0
+                while yy < h {
+                    let base: i64 = (yy as i64) * (w as i64)
+                    let mut xx: i32 = 0
+                    while xx < w {
+                        if prev[base + (xx as i64)] != cur[base + (xx as i64)] {
+                            if xx < x0 {
+                                x0 = xx
+                            }
+                            if xx >= x1 {
+                                x1 = xx + 1
+                            }
+                            if yy < y0 {
+                                y0 = yy
+                            }
+                            y1 = yy + 1
+                        }
+                        xx = xx + 1
+                    }
+                    yy = yy + 1
+                }
+                use_trans = trans >= 0
+            }
+        }
+        if have_pending {
+            let mut t: i32 = 0 - 1
+            if pend_trans {
+                t = trans
+            }
+            if gif_add_frame_indexed(pend, w, h, px0, py0, px1 - px0, py1 - py0, pend_ms / 10, disposal, t) != 0 {
+                rc = 2
+            }
+        }
+        # The frame as stored: unchanged pixels become transparent.
+        let mut i: i64 = 0
+        while i < n {
+            if use_trans and prev[i] == cur[i] {
+                pend[i] = trans as u8
+            } else {
+                pend[i] = cur[i]
+            }
+            i = i + 1
+        }
+        have_pending = true
+        pend_ms = delay_ms
+        px0 = x0
+        py0 = y0
+        px1 = x1
+        py1 = y1
+        pend_trans = use_trans
+        let t2: ptr<u8> = prev
+        prev = cur
+        cur = t2
+        f = f + 1
+    }
+    if have_pending {
+        let mut t3: i32 = 0 - 1
+        if pend_trans {
+            t3 = trans
+        }
+        if gif_add_frame_indexed(pend, w, h, px0, py0, px1 - px0, py1 - py0, pend_ms / 10, disposal, t3) != 0 {
+            rc = 2
+        }
+    }
+    if gif_end() != 0 {
+        rc = 3
+    }
+    free(pend as ptr<void>)
+    free(prev as ptr<void>)
+    free(cur as ptr<void>)
+    free(full_pal as ptr<void>)
+    gc_map_free(m)
+    return rc
+}

@@ -135,7 +135,7 @@ emcc build/hello_world.c -o build/wasm_hello/hello.js \
   -s EXPORTED_RUNTIME_METHODS="['ccall','cwrap']"
 ```
 
-See also older helpers under `scripts/build_wasm.sh`, `wasm/flow_to_wasm.py`
+See also older helpers under `scripts/build_wasm.sh`, `scripts/flow_to_wasm.sh`
 (`./flow wasm --legacy`), and `wasm/wasm_examples/`. Those are the browser gallery;
 `build_wasm_hello.sh` is the documented minimal path for issue #121.
 
