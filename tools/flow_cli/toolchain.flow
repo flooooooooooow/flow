@@ -996,6 +996,109 @@ export function cc_bin() -> string {
     return "cc"
 }
 
+# True when a line of `text` is `[native]` after leading blanks
+# (grep '^[[:space:]]*\[native\]').
+function declares_native(text: string) -> bool {
+    let lines: ptr<ProcStrs> = s_lines(text)
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let l: string = sl_get(lines, i)
+        let mut j: i32 = 0
+        while j < s_len(l) and s_is_space(s_byte(l, j)) {
+            j = j + 1
+        }
+        if s_starts(s_from(l, j), "[native]") {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# The [native] C sources of the program's project and of its installed
+# packages: the package manager compiles each into a cached object under
+# <project>/build/flow_native/ and names the objects and link flags (#1085).
+# An empty list when no flow.toml declares a [native] table; null after
+# printing why when the sources do not build.
+export function flow_pkg_native_link_args(program: string, cc: string) -> ptr<ProcStrs> {
+    let args: ptr<ProcStrs> = sl_new()
+    if s_len(program) == 0 {
+        return args
+    }
+    let mut dir: string = abs_dir_physical(path_dirname(program))
+    if s_len(dir) == 0 {
+        return args
+    }
+    while not is_file(dir + "/flow.toml") {
+        if s_eq(dir, "/") {
+            return args
+        }
+        dir = path_dirname(dir)
+    }
+    let mut any: bool = declares_native(read_text(dir + "/flow.toml"))
+    let pkgs: ptr<ProcStrs> = list_dir(dir + "/flow_packages")
+    sl_sort(pkgs, false)
+    let mut i: i32 = 0
+    while i < sl_len(pkgs) and not any {
+        let t: string = dir + "/flow_packages/" + sl_get(pkgs, i) + "/flow.toml"
+        if is_file(t) and declares_native(read_text(t)) {
+            any = true
+        }
+        i = i + 1
+    }
+    if not any {
+        return args
+    }
+    let mut cxx: string = "c++"
+    if s_eq(cc, "clang") and have("clang++") {
+        cxx = "clang++"
+    }
+    let out_file: string = mktemp_file(tmp_base() + "/flow-native-link.XXXXXX")
+    if s_len(out_file) == 0 {
+        return null
+    }
+    let tool: string = flow_pkg_tool()
+    let mut rc: i32 = 1
+    if s_len(tool) == 0 {
+        errln(C_RED + "❌ Could not build the package manager (compiler/src/pkg_main.flow)." + C_NC)
+    } else {
+        let a: ptr<ProcStrs> = sl_of3(tool, "native-link", "--program")
+        sl_push(a, abs_file_physical(program))
+        sl_push2(a, "--out", out_file)
+        sl_push2(a, "--cc", cc)
+        sl_push2(a, "--cxx", cxx)
+        sl_push2(a, "--opt", "-O" + env_or("FLOW_OPT_LEVEL", "2"))
+        let c: ptr<ProcCmd> = cmd(a)
+        cmd_env(c, "FLOW_REPO_ROOT", tc().root)
+        rc = run_out_to_err(c)
+    }
+    if rc != 0 {
+        rm_f(out_file)
+        error("Could not build the [native] sources of " + dir)
+        return null
+    }
+    let lines: ptr<ProcStrs> = s_lines(read_text(out_file))
+    rm_f(out_file)
+    let mut k: i32 = 0
+    while k < sl_len(lines) {
+        let line: string = sl_get(lines, k)
+        k = k + 1
+        if s_len(line) == 0 {
+            continue
+        }
+        if s_eq(line, "@cxx") {
+            if s_eq(uname_s(), "Darwin") {
+                sl_push(args, "-lc++")
+            } else {
+                sl_push(args, "-lstdc++")
+            }
+        } else {
+            sl_push(args, line)
+        }
+    }
+    return args
+}
+
 # Link generated C with the runtime archive. Status.
 export function flowc_link_c(c_file: string, exe_file: string, program: string) -> i32 {
     collect_cflags()
@@ -1003,6 +1106,11 @@ export function flowc_link_c(c_file: string, exe_file: string, program: string) 
     let inc: ptr<ProcStrs> = sl_new()
     if s_len(program) > 0 {
         sl_push(inc, "-I" + path_dirname(program))
+    }
+    let native: ptr<ProcStrs> = flow_pkg_native_link_args(program, cc)
+    if native == null {
+        error("C compilation/linking failed (flowc host)")
+        return 1
     }
     let opt: string = "-O" + env_or("FLOW_OPT_LEVEL", "2")
     if s_eq(env("FLOWC_NO_RUNTIME"), "1") {
@@ -1012,7 +1120,9 @@ export function flowc_link_c(c_file: string, exe_file: string, program: string) 
         sl_extend(a, inc)
         sl_extend(a, COLLECTED_LDFLAGS)
         sl_push2(a, "-o", exe_file)
-        sl_push2(a, c_file, "-lm")
+        sl_push(a, c_file)
+        sl_extend(a, native)
+        sl_push(a, "-lm")
         if run_argv(a) != 0 {
             error("C compilation/linking failed (flowc host)")
             return 1
@@ -1034,7 +1144,9 @@ export function flowc_link_c(c_file: string, exe_file: string, program: string) 
     sl_push(a, "-I" + tc().root + "/runtime")
     sl_extend(a, inc)
     sl_push2(a, "-o", exe_file)
-    sl_push2(a, c_file, tc().rt_archive)
+    sl_push(a, c_file)
+    sl_extend(a, native)
+    sl_push(a, tc().rt_archive)
     sl_extend(a, GPU_LDFLAGS)
     sl_extend(a, CONC_LDFLAGS)
     sl_extend(a, COLLECTED_LDFLAGS)
