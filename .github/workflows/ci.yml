@@ -11,7 +11,6 @@ on:
       - 'lib/**'
       - 'runtime/**'
       - 'flow'
-      - 'flow-driver'
       - 'Makefile'
       - 'tools/**'
       - 'flow.toml'
@@ -40,7 +39,6 @@ on:
       - 'lib/**'
       - 'runtime/**'
       - 'flow'
-      - 'flow-driver'
       - 'Makefile'
       - 'tools/**'
       - 'flow.toml'
@@ -111,7 +109,6 @@ jobs:
             workflow:
               - '.github/**'
               - 'flow'
-              - 'flow-driver'
               - 'Makefile'
               - 'scripts/**'
             plugins:
@@ -119,9 +116,10 @@ jobs:
             tools:
               - 'tools/**'
               - 'tests/tools/**'
+              - 'tests/cli/**'
               - 'compiler/src/wcet.flow'
               - 'compiler/src/misra_scan.flow'
-              - 'flow-driver'
+              - 'flow'
             docs:
               - 'docs/**'
               - '**.md'
@@ -364,7 +362,7 @@ jobs:
 
       - name: flow check goldens (tests/check)
         run: |
-          chmod +x ./flow-driver tests/check/run.sh
+          chmod +x ./flow tests/check/run.sh
           ./tests/check/run.sh
 
       - name: flow python generator goldens (tests/pywheel)
@@ -488,7 +486,7 @@ jobs:
           cp /tmp/nopy/python3 /tmp/nopy/python
           chmod +x /tmp/nopy/python3 /tmp/nopy/python
           export PATH="/tmp/nopy:$PATH"
-          chmod +x ./flow ./flow-driver compiler/scripts/*.sh tests/tools/run.sh tests/tools/audio/run.sh tools/audio/*.sh tests/tools/discord_welcome/run.sh tools/discord-welcome/build.sh
+          chmod +x ./flow compiler/scripts/*.sh tests/tools/run.sh tests/tools/audio/run.sh tools/audio/*.sh tests/tools/discord_welcome/run.sh tools/discord-welcome/build.sh
           ./compiler/scripts/bootstrap_from_c.sh
           ./tests/tools/run.sh
 
@@ -496,13 +494,19 @@ jobs:
       # tests/scripts/run.sh stubs python and python3 itself.
       - name: Shell tests (tests/scripts)
         run: |
-          chmod +x ./flow ./flow-driver tests/scripts/*.sh
+          chmod +x ./flow tests/scripts/*.sh
           ./tests/scripts/run.sh
 
       # The benchmark publisher's harness builds and runs each published
       # program and checks its result (scripts/tools/bench_publish).
       - name: Benchmark publisher check
         run: ./scripts/check_bench_publish.sh
+
+      # The flow command line (tools/flow_cli, built by the ./flow stub)
+      # against goldens recorded from the bash driver it replaced: stdout,
+      # stderr, exit code and files written for every subcommand, per OS.
+      - name: CLI goldens (tests/cli)
+        run: ./tests/cli/run.sh
 
   # flowc must keep parsing every .flow file the Python parser accepts. The
   # count of files that parse may not fall below compiler/parse_coverage/

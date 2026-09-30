@@ -53,6 +53,7 @@ normalize() {
         -e 's#build/run\.[A-Za-z0-9]\{6\}#build/run.XXXXXX#g' \
         -e 's#<TMP>/[A-Za-z_.-]*[.]\([A-Za-z0-9]\{6,\}\)#<TMP>/MKTEMP#g' \
         -e 's#<TMP>/tmp\.[A-Za-z0-9]*#<TMP>/MKTEMP#g' \
+        -e 's#<TMP>/\([A-Za-z0-9_]*\)-[0-9a-f]\{6\}\.o#<TMP>/\1-XXXXXX.o#g' \
         -e 's#flowc_runtime/[0-9]*-[0-9]*#flowc_runtime/KEY#g' \
         -e 's#\("[a-z_]*_s": \)[0-9.]*#\1N#g'
 }
