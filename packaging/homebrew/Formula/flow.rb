@@ -12,10 +12,12 @@ class Flow < Formula
   depends_on "python@3.12"
 
   def install
-    # Keep the repo layout intact — the public `flow` dispatcher and its
-    # internal `flow-driver` resolve SCRIPT_DIR and expect VERSION, lib/,
-    # runtime/ and compiler/ next to themselves.
-    libexec.install "flow", "flow-driver", "flow-lsp", "VERSION"
+    # Keep the repo layout intact. `flow` is a sh stub that builds the
+    # command line (tools/flow_cli, a Flow program) from the bootstrap C in
+    # compiler/ and expects VERSION, lib/, runtime/ and tools/ next to it.
+    libexec.install "flow", "flow-lsp", "VERSION"
+    # Releases before the Flow CLI shipped a bash driver beside the stub.
+    libexec.install "flow-driver" if (buildpath/"flow-driver").exist?
     libexec.install "lib", "runtime", "compiler"
     libexec.install "tools" if (buildpath/"tools").exist?
     libexec.install "wasm" if (buildpath/"wasm").exist?
@@ -24,8 +26,10 @@ class Flow < Formula
     libexec.install "requirements.txt" if (buildpath/"requirements.txt").exist?
 
     chmod 0755, libexec/"flow"
-    chmod 0755, libexec/"flow-driver"
     chmod 0755, libexec/"flow-lsp" if (libexec/"flow-lsp").exist?
+    chmod 0755, libexec/"flow-driver" if (libexec/"flow-driver").exist?
+    # Build the command line now, so the first `flow` does not have to.
+    system libexec/"flow", "version"
 
     python = Formula["python@3.12"].opt_bin/"python3.12"
     venv = virtualenv_create(libexec/"venv", python)

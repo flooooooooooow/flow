@@ -6,7 +6,7 @@
 # Stage-A flowc driver and the C compiler, and run. The printed result
 # is read back and remembered for later lines.
 #
-# The launcher (flow-driver) passes:
+# The launcher (the flow CLI, tools/flow_cli) passes:
 #   FLOW_ROOT      repository root
 #   FLOW_REPL_DIR  scratch directory for snippets (default FLOW_ROOT/build/repl)
 #   FLOWC_BIN      flowc driver used to compile each snippet

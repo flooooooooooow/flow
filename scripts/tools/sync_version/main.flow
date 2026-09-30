@@ -328,7 +328,7 @@ function mirror_path(m: i32) -> string {
     if m == 2 { return "README.md" }
     if m == 3 { return "docs/wiki-home.md" }
     if m == 4 { return "docs/LANGUAGE_SPEC.md" }
-    if m == 5 { return "flow-driver" }
+    if m == 5 { return "tools/flow_cli/help.flow" }
     return "packaging/homebrew/Formula/flow.rb"
 }
 
@@ -396,23 +396,23 @@ function mirror_pattern(m: i32, k: i32) -> ptr<Pat> {
     }
     if m == 5 {
         if k == 0 {
-            let pt8: ptr<Pat> = pat_new("^    echo \"Flow Programming Language v(?P<version>[^\"]+)\"$")
-            pat_lit(pt8, "    echo \"Flow Programming Language v")
+            let pt8: ptr<Pat> = pat_new("^    outln\\(\"Flow Programming Language v(?P<version>[^\"]+)\"\\)$")
+            pat_lit(pt8, "    outln(\"Flow Programming Language v")
             pat_run(pt8, CLS_NOT_QUOTE, 1, -1, 1)
-            pat_lit(pt8, "\"")
+            pat_lit(pt8, "\")")
             pat_eol(pt8)
             return pt8
         }
         if k == 1 {
-            let pt9: ptr<Pat> = pat_new("^    echo \"  version           Print Flow version \\((?P<version>[^)]+)\\)\"$")
-            pat_lit(pt9, "    echo \"  version           Print Flow version (")
+            let pt9: ptr<Pat> = pat_new("^    outln\\(\"  version           Print Flow version \\((?P<version>[^)]+)\\)\"\\)$")
+            pat_lit(pt9, "    outln(\"  version           Print Flow version (")
             pat_run(pt9, CLS_NOT_RPAREN, 1, -1, 1)
-            pat_lit(pt9, ")\"")
+            pat_lit(pt9, ")\")")
             pat_eol(pt9)
             return pt9
         }
-        let pt10: ptr<Pat> = pat_new("^        echo \"Flow (?P<version>[^\"]+)\"$")
-        pat_lit(pt10, "        echo \"Flow ")
+        let pt10: ptr<Pat> = pat_new("^export const FLOW_VERSION_LINE: string = \"Flow (?P<version>[^\"]+)\"$")
+        pat_lit(pt10, "export const FLOW_VERSION_LINE: string = \"Flow ")
         pat_run(pt10, CLS_NOT_QUOTE, 1, -1, 1)
         pat_lit(pt10, "\"")
         pat_eol(pt10)

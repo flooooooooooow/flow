@@ -44,6 +44,7 @@ const BACKEND_LIST: string = "build/doc-coverage/backends.txt"
 const DOC_PAGES: string = "build/doc-coverage/doc-pages.txt"
 const KEYWORD_SOURCE: string = "tools/lsp/catalog.flow"
 const ATTR_SOURCE: string = "compiler/src/attributes.flow"
+const CLI_SOURCE: string = "tools/flow_cli/main.flow"
 const CAT_N: i32 = 5
 
 # Categories in sorted order, as Python iterates sorted(inventory.items()).
@@ -199,102 +200,39 @@ function attributes(out: ptr<StrList>) -> bool {
     return any
 }
 
-# Subcommands the driver dispatches on, read from the `case` arms of the
-# top-level dispatch rather than the help text:
-# ^\s{4}((?:"[^"]+"\|?)+)\)\s*$ over the body, then "([^"]+)" per arm.
+# Subcommands the CLI dispatches on, read from the command table in
+# tools/flow_cli/main.flow rather than the help text: every `is(c, "NAME")`
+# test in the body of `function dispatch`. Names starting with "-" are
+# flags, not commands.
 function cli_commands(out: ptr<StrList>) -> i32 {
-    let text: string = ft_read_file("flow-driver")
+    let text: string = ft_read_file(CLI_SOURCE)
     if text as ptr<u8> == null {
         return 1
     }
-    let start: i32 = ft_find(text, "case \"${1:-help}\" in", 0)
+    let start: i32 = ft_find(text, "\nfunction dispatch(", 0)
     if start < 0 {
         return 2
     }
-    let end: i32 = ft_find(text, "\nesac", start)
+    let end: i32 = ft_find(text, "\n}\n", start)
     if end < 0 {
         return 3
     }
     let body: string = ft_slice(text, start, end)
-    let p: ptr<u8> = body as ptr<u8>
-    let n: i32 = ft_len(body)
-    let mut pos: i32 = 0
-    while pos < n {
-        if pos == 0 or p[pos - 1] == 10 {
-            let matched: i32 = cli_arm_at(body, pos, out)
-            if matched > pos {
-                pos = matched
-                continue
-            }
+    let needle: string = "is(c, \""
+    let mut pos: i32 = ft_find(body, needle, 0)
+    while pos >= 0 {
+        let name_start: i32 = pos + ft_len(needle)
+        let close: i32 = ft_find_byte(body, 34, name_start)
+        if close < 0 {
+            return 4
         }
-        pos = pos + 1
-    }
-    return 0
-}
-
-# Try one arm at line start `pos`. Returns the match end, or -1.
-function cli_arm_at(body: string, pos: i32, out: ptr<StrList>) -> i32 {
-    let p: ptr<u8> = body as ptr<u8>
-    let n: i32 = ft_len(body)
-    # \s{4}: exactly four whitespace characters.
-    let mut i: i32 = pos
-    let mut k: i32 = 0
-    while k < 4 {
-        if i >= n or uc_is_space(uc_decode(p, i)) == false {
-            return -1
-        }
-        i = i + uc_len(p[i] as i32)
-        k = k + 1
-    }
-    # (?:"[^"]+"\|?)+
-    let names: ptr<StrList> = ft_list_new()
-    let mut items: i32 = 0
-    while p[i] == 34 {
-        let close: i32 = ft_find_byte(body, 34, i + 1)
-        if close < 0 or close == i + 1 {
-            break
-        }
-        ft_list_push(names, ft_slice(body, i + 1, close))
-        items = items + 1
-        i = close + 1
-        if p[i] == 124 {
-            i = i + 1
-        }
-    }
-    if items == 0 or p[i] != 41 {
-        return -1
-    }
-    i = i + 1
-    # \s*$ : trailing whitespace up to the end of some line.
-    let ws_start: i32 = i
-    let mut j: i32 = i
-    while j < n and uc_is_space(uc_decode(p, j)) {
-        j = j + uc_len(p[j] as i32)
-    }
-    let mut end: i32 = -1
-    if j == n {
-        end = n
-    } else {
-        let mut q: i32 = j
-        while q > ws_start and end < 0 {
-            q = uc_prev(p, q)
-            if p[q] == 10 {
-                end = q
-            }
-        }
-    }
-    if end < 0 {
-        return -1
-    }
-    let mut m: i32 = 0
-    while m < ft_list_len(names) {
-        let name: string = ft_list_get(names, m)
-        if ft_starts(name, "-") == false and ft_find_byte(name, 42, 0) < 0 {
+        let name: string = ft_slice(body, name_start, close)
+        if ft_len(name) > 0 and ft_starts(name, "-") == false {
             ft_list_push(out, name)
         }
-        m = m + 1
+        pos = ft_find(body, needle, close)
     }
-    return end
+    return 0
 }
 
 function stdlib_modules(out: ptr<StrList>) -> bool {
@@ -359,7 +297,7 @@ function inventory() -> ptr<ptr<StrList>> {
     let raw_cli: ptr<StrList> = ft_list_new()
     let cli_rc: i32 = cli_commands(raw_cli)
     if cli_rc != 0 {
-        ft_errln("could not read the dispatch table from flow-driver")
+        ft_errln("could not read the dispatch table from " + CLI_SOURCE + "")
         return null
     }
     let raw_std: ptr<StrList> = ft_list_new()

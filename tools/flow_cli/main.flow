@@ -125,7 +125,7 @@ function cmd_show_flags(args: ptr<ProcStrs>) -> i32 {
 }
 
 function cmd_version() -> i32 {
-    outln("Flow 2.0.0")
+    outln(FLOW_VERSION_LINE)
     outln("host: " + flow_host_mode_sub())
     return 0
 }
@@ -407,6 +407,9 @@ function dispatch(c: string, args: ptr<ProcStrs>) -> i32 {
         return flow_know(args)
     } elif is(c, "doc") {
         return cmd_doc(args)
+    } elif is(c, "help") {
+        show_help()
+        return 0
     }
     show_help()
     return 0

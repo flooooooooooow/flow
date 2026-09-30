@@ -148,3 +148,33 @@ t wasm_fs_mlir -- wasm $F/hello.flow --fs memfs --backend=mlir
 t wasm_threads_mlir -- wasm $F/hello.flow --threads --backend mlir
 t wasm32_noargs -- wasm32
 t bpf_noargs -- bpf
+
+# Heavier paths: the MLIR pipeline, proofs, shaders, the recorder, tools
+t mlir_optimize -- mlir $F/hello.flow --optimize --opt-report
+t mlir_llvm_out files=build/cli_golden/hello.ll -- mlir $F/hello.flow --llvm -o build/cli_golden/hello.ll
+t mlir_run_hello -- mlir-run $F/hello.flow
+t jit_raw_exit3 env=FLOW_JIT_RAW=1 -- jit $F/exit3.flow
+t test_mlir -- test-mlir
+t compile_no_runtime env=FLOWC_NO_RUNTIME=1 files=build/hello -- compile $F/hello.flow
+t compile_audio_hello -- compile-audio $F/hello.flow
+t run_sanitize_ub -- run --sanitize=ub $F/hello.flow
+t debug_break_word -- debug $F/hello.flow --break nowhere
+t patch_lib cwd=proj files=build/patches/patchlib_smoke.flow -- patch patchlib.flow
+t doc_proof_file -- doc proof examples/verify/math/derived/Nat-plus-zero-right.flow
+t doc_kernel_dot cwd=empty files=zero.dot,kernel.json -- doc kernel @ROOT/examples/verify/math/derived/Nat-plus-zero-right.flow --param n=0 --plot zero.dot -o kernel.json
+t know_lint -- know --lint-duplicates
+t shader_emit_only -- shader examples/gpu/shader_plasma.flow --emit-only
+t shader_wgsl -- shader examples/gpu/shader_plasma.flow --wgsl
+t gpu_wgsl files=build/wgsl -- gpu examples/gpu/vector_add_gpu.flow --wgsl
+t record_two_frames cwd=empty files=frames -- record @ROOT/examples/basics/mouse_probe.flow --frames 2 --out frames
+t analyze_c -- analyze $F/sample.c --standard=cert-c
+t fir_hello -- fir-g $F/hello.flow
+t check_idioms -- check --idioms $F/badfmt.flow
+t repl_session stdin=tests/tools/repl/session.in -- repl
+t install_tools -- install --tools
+t search_none -- search zzzz_no_such_package
+t info_hello_lib -- info hello_lib
+t run_native_proj cwd=proj -- run-native
+t pkg_install_proj cwd=proj files=flow.lock -- pkg install
+t test_gpu -- test-gpu
+t test_interop -- test-interop

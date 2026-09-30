@@ -312,7 +312,7 @@ run_case() {
     set -f
     # shellcheck disable=SC2086
     if [[ -n "$pysrc" ]]; then
-        (cd "$WORK/$proj" && FLOW_TEST_DRIVER="$ROOT/flow-driver" \
+        (cd "$WORK/$proj" && FLOW_TEST_DRIVER="$ROOT/flow" \
             FLOW_TEST_BUILD_DIR="$ROOT/build" PYTHONPATH="$pysrc/src" \
             python3 -m flow.project_test_runner $args \
             >"$out/stdout" 2>"$out/stderr") || rc=$?
@@ -339,7 +339,7 @@ run_case() {
 
 # Build flowc (and the runner tool) outside the cases, so no case sees the
 # one-time build messages.
-"$ROOT/flow-driver" compile "$WORK/p_main/tests/prog.flow" >/dev/null 2>&1 || true
+"$ROOT/flow" compile "$WORK/p_main/tests/prog.flow" >/dev/null 2>&1 || true
 if [[ -z "$pysrc" ]]; then
     (cd "$WORK/p_empty" && PATH="$stub_dir:$PATH" "$ROOT/flow" test --list >/dev/null 2>&1) || true
 fi

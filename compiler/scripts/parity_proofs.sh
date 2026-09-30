@@ -56,7 +56,7 @@ echo "=== parity_proofs: flowc = ${BIN} ==="
 git ls-files 'examples/verify/*.flow' | LC_ALL=C sort > "$WORK/files.txt"
 total=$(wc -l < "$WORK/files.txt" | tr -d ' ')
 
-# 1. Emit every file on flowc the way flow-driver does (bundle mode when
+# 1. Emit every file on flowc the way the flow CLI does (bundle mode when
 #    the file imports), keeping the exit code and log.
 cat > "$WORK/emit_one.sh" <<'SH'
 #!/usr/bin/env bash

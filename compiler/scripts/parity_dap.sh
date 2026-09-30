@@ -149,7 +149,7 @@ normalise() {
 
 # What the comparison ignores: Content-Length values (they count the real
 # paths, so they depend on where the checkout lives) and the build log a
-# failed `flow debug` launch carries (flow-driver's messages, which differ
+# failed `flow debug` launch carries (the flow CLI's messages, which differ
 # by host and by flowc version). The message itself must still be there.
 canon() {
     sed -E -e 's/Content-Length: [0-9]+/Content-Length: N/g' \

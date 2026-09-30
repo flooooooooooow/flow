@@ -16,7 +16,7 @@
 # runs directly, so compiler chatter never reaches the goldens. The runner
 # forks and execs each step itself, with a timeout.
 #
-# The launcher passes FLOW_TEST_DRIVER (flow-driver) and FLOW_TEST_BUILD_DIR
+# The launcher passes FLOW_TEST_DRIVER (the flow command) and FLOW_TEST_BUILD_DIR
 # (where `flow compile` leaves binaries).
 
 import "tools/hostlib/text.flow"
@@ -1493,7 +1493,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     if flow_mkdtemp(sbuf) == null {
         return fatal("cannot create a scratch directory")
     }
-    let mut ctx: Ctx = Ctx { driver: resolve(t_env("FLOW_TEST_DRIVER", "flow-driver")), build_dir: resolve(t_env("FLOW_TEST_BUILD_DIR", "build")), scratch: sbuf as string }
+    let mut ctx: Ctx = Ctx { driver: resolve(t_env("FLOW_TEST_DRIVER", "flow")), build_dir: resolve(t_env("FLOW_TEST_BUILD_DIR", "build")), scratch: sbuf as string }
 
     let mut failures: i32 = 0
     let mut passed: i32 = 0

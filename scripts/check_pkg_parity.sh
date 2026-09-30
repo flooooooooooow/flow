@@ -37,7 +37,7 @@ ln -s "$ROOT/registry" "$ref/registry"
 
 # --- native: the Flow package manager ------------------------------------
 # Any package command builds the tool (build/tools/flow_pkg/flow_pkg).
-(cd "$work" && bash "$ROOT/flow-driver" info hello_lib >/dev/null 2>&1)
+(cd "$work" && "$ROOT/flow" info hello_lib >/dev/null 2>&1)
 tool="$ROOT/build/tools/flow_pkg/flow_pkg"
 if [ ! -x "$tool" ]; then
     echo "check_pkg_parity: could not build the Flow package tool"

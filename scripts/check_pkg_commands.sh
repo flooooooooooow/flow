@@ -65,15 +65,15 @@ else
     done
     export PATH="$stub_dir:$PATH"
     # Build the package manager once, outside the timed cases.
-    (cd "$out_dir" && bash "$ROOT/flow-driver" info hello_lib >/dev/null 2>&1)
+    (cd "$out_dir" && "$ROOT/flow" info hello_lib >/dev/null 2>&1)
 fi
 
 # flow <command> [args...], run in the current directory by the side under
-# test. On the Python side each command is invoked as flow-driver invoked it.
+# test. On the Python side each command is invoked as the bash driver invoked it.
 flowcmd() {
     if [[ "$mode" == check ]]; then
         if [[ "$1" == demo-run-native ]]; then
-            # flow-driver's demo launchers: cd DIR, then run-native ENTRY.
+            # The demo launchers: cd DIR, then run-native ENTRY.
             cd "$2" && bash "$ROOT/flow" run-native "$3"
             return $?
         fi
@@ -100,7 +100,7 @@ from pkgref.package import FlowPackageManager
 FlowPackageManager().clean()
 " ;;
         demo-run-native)
-            # flow-driver's demo launchers: FlowPackageManager(DIR).run_native(ENTRY)
+            # The demo launchers: FlowPackageManager(DIR).run_native(ENTRY)
             "${py[@]}" -c "
 import sys
 from pkgref.package import FlowPackageManager

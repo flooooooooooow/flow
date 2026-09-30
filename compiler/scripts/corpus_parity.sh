@@ -88,7 +88,7 @@ normalize_cause() {
         | cut -c1-160
 }
 
-# Pick the line that says why a build failed. flow-driver's own messages are
+# Pick the line that says why a build failed. The driver's own messages are
 # colored and start with an escape; generic flowc summaries come last.
 pick_cause() {
     local log="$1" host="$2" kind="$3" line=""

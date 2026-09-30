@@ -13,7 +13,7 @@
 # Without lldb-dap, initialize is answered (with an initialized event) and
 # launch fails with a pointer to `flow debug`; the server then exits 2.
 #
-# Env: FLOW_ROOT (repository root, set by flow-driver). FLOW_LLDB_DAP names
+# Env: FLOW_ROOT (repository root, set by the flow CLI). FLOW_LLDB_DAP names
 # the lldb-dap to run instead of searching; "-" means none (for tests).
 
 import "tools/hostlib/text.flow"

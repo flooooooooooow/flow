@@ -12,7 +12,7 @@
 # available" / "MLX not available", `--bench` reports bulk=n/a, and
 # `--calibrate` records that bulk never wins (auto stays on cpu).
 #
-# The launcher (flow-driver) passes FLOW_ROOT, the repository root, which
+# The launcher (the flow CLI, tools/flow_cli) passes FLOW_ROOT, the repository root, which
 # locates lib/stdlib when the program has no flow.toml of its own.
 
 import "tools/hostlib/text.flow"
