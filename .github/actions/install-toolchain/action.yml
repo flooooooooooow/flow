@@ -40,7 +40,8 @@ runs:
             | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
           echo "deb http://apt.llvm.org/${codename}/ llvm-toolchain-${codename}-22 main" \
             | sudo tee /etc/apt/sources.list.d/llvm-22.list > /dev/null
-          packages+=(clang-22 llvm-22 mlir-22-tools libmlir-22-dev)
+          # lld-22 provides wasm-ld for the wasm32 target.
+          packages+=(clang-22 lld-22 llvm-22 mlir-22-tools libmlir-22-dev)
         fi
         if [ "${{ inputs.shellcheck }}" = "true" ]; then
           packages+=(shellcheck)

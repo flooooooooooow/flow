@@ -1926,7 +1926,7 @@ mlir_lower_and_link() {
         --finalize-memref-to-llvm \
         --reconcile-unrealized-casts | \
         "$LLVM_PATH"/mlir-translate --mlir-to-llvmir | \
-        "$LLVM_PATH"/llc "-O${opt_level}" -filetype=obj -o "$obj_file"; then
+        "$LLVM_PATH"/llc "-O${opt_level}" -relocation-model=pic -filetype=obj -o "$obj_file"; then
         print_error "MLIR to LLVM lowering failed"
         return 1
     fi
