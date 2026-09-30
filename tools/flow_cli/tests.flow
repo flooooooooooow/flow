@@ -40,7 +40,7 @@ function list_suite_flow_files(suite: string) -> ptr<ProcStrs> {
     }
     let f: ptr<ProcStrs> = sl_of3("find", root() + "/" + suite, "-name")
     sl_push(f, "*.flow")
-    let excl: ptr<ProcStrs> = s_words("*/wip/* */fuzz/crashes/* */tests/tools/*/fixtures/* */tests/cgen/* */tests/c_to_hdr/* */tests/check/* */tests/dap/* */tests/doc_examples/* */tests/fir/* */tests/flow_run/* */tests/gpu/* */tests/pkg_commands/* */tests/project_test/* */tests/pywheel/* */tests/targets/* */examples/ecosystem/* */examples/demos/*")
+    let excl: ptr<ProcStrs> = s_words("*/wip/* */fuzz/crashes/* */tests/tools/*/fixtures/* */tests/cgen/* */tests/c_to_hdr/* */tests/check/* */tests/cli/* */tests/dap/* */tests/doc_examples/* */tests/fir/* */tests/flow_run/* */tests/gpu/* */tests/pkg_commands/* */tests/project_test/* */tests/pywheel/* */tests/targets/* */examples/ecosystem/* */examples/demos/*")
     let mut k: i32 = 0
     while k < sl_len(excl) {
         sl_push2(f, "-not", "-path")
@@ -57,7 +57,8 @@ function proc_arg2(c: ptr<ProcCmd>, a: string, b: string) {
     proc_arg(c, b)
 }
 
-# The grep chain over `git ls-files`.
+# The grep chain over the tracked files. tests/cli/ holds CLI fixtures, one
+# of them broken on purpose; tests/cli/run.sh checks them.
 function suite_keeps(rel: string) -> bool {
     if not s_ends(rel, ".flow") {
         return false
@@ -75,7 +76,7 @@ function suite_keeps(rel: string) -> bool {
             return false
         }
     }
-    let gated: ptr<ProcStrs> = s_words("cgen c_to_hdr check dap doc_examples fir flow_run gpu pkg_commands project_test pywheel targets")
+    let gated: ptr<ProcStrs> = s_words("cgen c_to_hdr check cli dap doc_examples fir flow_run gpu pkg_commands project_test pywheel targets")
     let mut i: i32 = 0
     while i < sl_len(gated) {
         if s_starts(rel, "tests/" + sl_get(gated, i) + "/") {
