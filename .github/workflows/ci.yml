@@ -12,6 +12,7 @@ on:
       - 'runtime/**'
       - 'flow'
       - 'flow-driver'
+      - 'Makefile'
       - 'tools/**'
       - 'flow.toml'
       - '.gitignore'
@@ -40,6 +41,7 @@ on:
       - 'runtime/**'
       - 'flow'
       - 'flow-driver'
+      - 'Makefile'
       - 'tools/**'
       - 'flow.toml'
       - '.gitignore'
@@ -110,6 +112,7 @@ jobs:
               - '.github/**'
               - 'flow'
               - 'flow-driver'
+              - 'Makefile'
               - 'scripts/**'
             plugins:
               - 'plugins/**'
@@ -162,6 +165,8 @@ jobs:
       - uses: actions/checkout@v7
       - run: scripts/check_doc_links.sh
       - run: scripts/check_tool_layout.sh
+      - run: scripts/check_makefile_contract.sh
+      - run: scripts/check_project_state_sources.sh
       - name: Jules dispatch backpressure tests
         run: scripts/tools/jules_dispatch/test.sh
       - name: Benchmark harness tests (no Python)

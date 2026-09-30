@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flow-pygments"
+version = "0.1.0"
+description = "Pygments lexer for the Flow programming language"
+requires-python = ">=3.9"
+dependencies = ["Pygments>=2.16"]
+license = { text = "MIT" }
+
+[project.entry-points."pygments.lexers"]
+flow = "flow_pygments.lexer:FlowLexer"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["flow_pygments*"]

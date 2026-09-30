@@ -3,7 +3,7 @@
 ## A formal operating handbook for building, testing, and extending Flow programs
 
 **Edition:** 1.0  
-**Repository baseline:** Flow 0.11.1, August 2026  
+**Repository baseline:** live repository; verify the current version and CI before acting  
 **Language:** simplified technical English
 
 ---
@@ -28,6 +28,11 @@ The book is based on the present construction of Flow:
 
 Flow changes quickly. This book shows how to check the current repository. The
 repository is the final source for current behavior.
+
+The canonical repository-agent contract is `AGENTS.md` plus
+`docs/project/agentic-loop.md`. Repository placement rules are in
+`docs/project/repository-structure.md`. This handbook explains techniques; it
+must not override those live operating contracts.
 
 ### Intended reader
 
@@ -356,7 +361,7 @@ Use these files for different questions:
 | Why does Flow exist? | `VISION.md` |
 | What is presented to users? | `README.md` |
 | What is planned? | `ROADMAP.md` and `docs/NEXT.md` |
-| What needs a human decision? | `Questions.md` |
+| What needs a human decision? | `docs/project/Questions.md` |
 | What is the formal language surface? | `docs/LANGUAGE_SPEC.md` |
 | How do the compiler paths fit? | `docs/project/architecture-writeup.md` |
 | What does flowc support? | `compiler/README.md` |
@@ -1721,7 +1726,7 @@ at this edition's repository baseline:
 - focused language and library documents;
 - the standard-library module tree;
 - compiler, runtime, example, test, and tool directories;
-- `VISION.md`, `ROADMAP.md`, `docs/NEXT.md`, and `Questions.md`;
+- `VISION.md`, `ROADMAP.md`, `docs/NEXT.md`, and `docs/project/Questions.md`;
 - the AI collaboration rules in `CONTRIBUTING.md`.
 
 This definition does not mean that every standard-library function receives a
@@ -1755,7 +1760,7 @@ rg -n '^#{1,4} ' docs/LANGUAGE_SPEC.md docs/language docs/library
 find lib/stdlib -type f -name '*.flow' | sort
 find examples -type f -name '*.flow' | sort
 find tests -type f | sort
-rg -n '🔲|partial|^- \[ \]' ROADMAP.md docs/NEXT.md Questions.md
+rg -n '🔲|partial|^- \[ \]' ROADMAP.md docs/NEXT.md docs/project/Questions.md
 ```
 
 Any new command, module, status row, or open decision must either be added to
@@ -2650,7 +2655,7 @@ checkboxes.
 | Module blocks | Currently flattened; real namespace semantics require a separate approved design. |
 | Multi-implementation constraints | Programmatic selector exists; user attribute syntax and real-unit cost IR remain open. |
 
-Some entries in `Questions.md` still say pending even where later pattern
+Some entries in `docs/project/Questions.md` still say pending even where later pattern
 adoption documents report an MVP as shipped. The AI MUST reconcile by running
 the named example and test, then update stale status in a dedicated task.
 

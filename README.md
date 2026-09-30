@@ -359,6 +359,16 @@ scripts/verify_examples.sh
 
 Extension source: `third_party/integrations/vscode/flow-language/`.
 
+Other editor/tooling integrations:
+
+- Vim / Neovim filetype, syntax and `flow lsp` bootstrap: `third_party/integrations/vim-flow/`
+- Helix language-server configuration: `third_party/integrations/helix/`
+- Zed integration handoff: `third_party/integrations/zed/`
+- Tree-sitter grammar and highlight queries: `third_party/integrations/tree-sitter-flow/`
+- Pygments lexer plugin: `third_party/integrations/pygments-flow/`
+
+External recognition status and upstream acceptance criteria: [docs/project/ecosystem-recognition.md](docs/project/ecosystem-recognition.md).
+
 ### Python wheels from Flow
 
 ```bash
@@ -423,7 +433,7 @@ Counted from tracked files by CI so the numbers match the tree.
 
 ## Contributing
 
-Flow is built with humans directing design and agents writing a lot of the code. See [CONTRIBUTING.md](CONTRIBUTING.md) for decision authority and how to land changes.
+Flow is built with humans directing design and agents writing a lot of the code. See [CONTRIBUTING.md](CONTRIBUTING.md) for decision authority, the [agentic loop](docs/project/agentic-loop.md) for how autonomous work moves through the repo, and the [repository structure contract](docs/project/repository-structure.md) for canonical ownership.
 
 Priorities: [ROADMAP.md](ROADMAP.md) · [docs/NEXT.md](docs/NEXT.md).
 
