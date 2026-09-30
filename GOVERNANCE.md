@@ -14,7 +14,7 @@ the MIT License ([LICENSE-1.x-MIT](LICENSE-1.x-MIT)).
 | Releases & version tags | Maintainer |
 
 Design questions that need a human call are logged in
-[`Questions.md`](Questions.md).
+[`docs/project/Questions.md`](docs/project/Questions.md).
 
 ## Roadmap
 
