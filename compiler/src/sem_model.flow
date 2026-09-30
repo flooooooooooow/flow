@@ -1676,9 +1676,8 @@ export function sem_can_coerce(c: ptr<Sem>, actual: i32, expected: i32) -> bool 
     if sem_fn_to_void_ptr(c, actual, expected) {
         return true
     }
-    if ka == TK_STRUCT and ke == TK_POINTER {
-        return true
-    }
+    # A struct value is not a pointer. Method receivers that need `ptr<T>`
+    # are a separate case (#1009); a plain call must take `&m` or error (#1080).
     if sem_tk_is_numeric(ka) and ke == TK_POINTER {
         return true
     }
@@ -1821,9 +1820,9 @@ export function sem_is_compatible(c: ptr<Sem>, actual: i32, expected: i32) -> bo
             return true
         }
     }
-    if ka == TK_STRUCT and ke == TK_POINTER {
-        return true
-    }
+    # Struct → ptr was previously accepted so `take(m)` with `m: M` and
+    # `take(m: ptr<M>)` type-checked, but C still needed `&m` (#1080). Reject
+    # it; method receivers that want a pointer are #1009.
     if ka == TK_STRING and ke == TK_POINTER {
         let ee2: i32 = tys.elem[expected]
         if ee2 >= 0 {

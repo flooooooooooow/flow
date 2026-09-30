@@ -1,0 +1,8 @@
+# Bundle mode must treat string-import path spellings that resolve to the
+# same file as one module (#1073).
+import "bpn_x/c.flow"
+import "bpn_m/a.flow"
+
+function main() -> i32 {
+    return a_val() + c_val() - 14
+}

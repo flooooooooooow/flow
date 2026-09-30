@@ -1,0 +1,16 @@
+# Passing a struct value where ptr<T> is expected is a type error (#1080).
+# This file is the negative case companion: it must fail under --strict.
+# The positive form takes an explicit address.
+
+struct M {
+    n: i32
+}
+
+function take(m: ptr<M>) -> i32 {
+    return m.n
+}
+
+function main() -> i32 {
+    let m: M = M { n: 1 }
+    return take(&m) - 1
+}

@@ -1746,6 +1746,8 @@ function sem_builtin_kind(name: string) -> i32 {
     if sem_s_eq(name, "dealloc") { return TK_VOID }
     if sem_s_eq(name, "array_length") or sem_s_eq(name, "length") { return TK_I32 }
     if sem_s_eq(name, "array") { return TK_ARRAY }
+    # sizeof<T>() is mangled to sizeof_T by sem_call_name (#952).
+    if sem_s_eq(name, "sizeof") or sem_s_starts(name, "sizeof_") { return TK_I64 }
     if sem_s_eq(name, "gpu_thread_id") or sem_s_eq(name, "gpu_block_id") { return TK_I32 }
     if sem_s_eq(name, "gpu_sync") { return TK_VOID }
     if sem_s_eq(name, "metal_create_buffer") { return TK_POINTER }

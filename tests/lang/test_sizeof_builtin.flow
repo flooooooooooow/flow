@@ -1,0 +1,13 @@
+# sizeof<T>() is a builtin; the semantic checker must not treat the mangled
+# name sizeof_T as an unbound call (#952).
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+function main() -> i32 {
+    if sizeof<i64>() != 8 {
+        return 1
+    }
+    if sizeof<i32>() != 4 {
+        return 2
+    }
+    return 0
+}

@@ -1,0 +1,4 @@
+import "../bpn_x/c.flow"
+export function a_val() -> i32 {
+    return c_val()
+}

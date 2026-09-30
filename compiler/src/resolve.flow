@@ -132,6 +132,150 @@ function flowc_resolve_find_path(store: ptr<u8>, n: i32, row_cap: i32, path: ptr
     return 0 - 1
 }
 
+# Fold `.` and `..` (and repeated `/`) in a path into `out`. Relative paths
+# stay relative. Returns the new length, or -1 when out is too small.
+# Used so `x/c.flow` and `m/../x/c.flow` count as one module (#1073).
+function flowc_resolve_norm_path(path: string, out: ptr<u8>, cap: i32) -> i32 {
+    let pp: ptr<u8> = path
+    let plen: i32 = strlen(path) as i32
+    if plen <= 0 or cap <= 1 {
+        return 0 - 1
+    }
+    let mut abs: i32 = 0
+    if pp[0] == 47 {
+        abs = 1
+    }
+    # Segment starts in a scratch buffer of offsets into `path`.
+    let starts: ptr<i32> = malloc((FLOWC_RESOLVE_PATH_CAP as i64) * 4) as ptr<i32>
+    let ends: ptr<i32> = malloc((FLOWC_RESOLVE_PATH_CAP as i64) * 4) as ptr<i32>
+    if starts == null or ends == null {
+        if starts != null {
+            free(starts as ptr<u8>)
+        }
+        if ends != null {
+            free(ends as ptr<u8>)
+        }
+        return 0 - 1
+    }
+    let mut nseg: i32 = 0
+    let mut i: i32 = 0
+    while i < plen {
+        while i < plen and pp[i] == 47 {
+            i = i + 1
+        }
+        let s: i32 = i
+        while i < plen and pp[i] != 47 {
+            i = i + 1
+        }
+        let n: i32 = i - s
+        if n == 0 {
+            # empty
+        } elif n == 1 and pp[s] == 46 {
+            # "."
+        } elif n == 2 and pp[s] == 46 and pp[s + 1] == 46 {
+            if nseg > 0 {
+                # Pop unless the top is an unresolved leading `..`
+                let ts: i32 = starts[nseg - 1]
+                let te: i32 = ends[nseg - 1]
+                if abs == 0 and te - ts == 2 and pp[ts] == 46 and pp[ts + 1] == 46 {
+                    if nseg < FLOWC_RESOLVE_PATH_CAP {
+                        starts[nseg] = s
+                        ends[nseg] = i
+                        nseg = nseg + 1
+                    }
+                } else {
+                    nseg = nseg - 1
+                }
+            } else {
+                if abs == 0 and nseg < FLOWC_RESOLVE_PATH_CAP {
+                    starts[nseg] = s
+                    ends[nseg] = i
+                    nseg = nseg + 1
+                }
+            }
+        } else {
+            if nseg < FLOWC_RESOLVE_PATH_CAP {
+                starts[nseg] = s
+                ends[nseg] = i
+                nseg = nseg + 1
+            }
+        }
+    }
+    let mut w: i32 = 0
+    if abs == 1 {
+        out[0] = 47
+        w = 1
+    }
+    let mut si: i32 = 0
+    while si < nseg {
+        let a: i32 = starts[si]
+        let b: i32 = ends[si]
+        if w + (b - a) + 2 >= cap {
+            free(starts as ptr<u8>)
+            free(ends as ptr<u8>)
+            return 0 - 1
+        }
+        if w > 0 and (abs == 0 or w > 1) {
+            out[w] = 47
+            w = w + 1
+        } elif abs == 1 and w == 1 {
+            # leading slash already written
+        } elif w > 0 {
+            out[w] = 47
+            w = w + 1
+        }
+        let mut q: i32 = a
+        while q < b {
+            out[w] = pp[q]
+            w = w + 1
+            q = q + 1
+        }
+        si = si + 1
+    }
+    if w == 0 {
+        if abs == 1 {
+            out[0] = 47
+            w = 1
+        } else {
+            out[0] = 46
+            w = 1
+        }
+    }
+    out[w] = 0
+    free(starts as ptr<u8>)
+    free(ends as ptr<u8>)
+    return w
+}
+
+function flowc_resolve_append_path(store: ptr<u8>, n: i32, path: string) -> i32 {
+    let norm: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
+    if norm == null {
+        return 0 - 1
+    }
+    let nl: i32 = flowc_resolve_norm_path(path, norm, FLOWC_RESOLVE_PATH_CAP)
+    if nl < 0 {
+        free(norm)
+        return 0 - 1
+    }
+    if flowc_resolve_find_path(store, n, FLOWC_RESOLVE_PATH_CAP, norm) >= 0 {
+        free(norm)
+        return n
+    }
+    if n >= FLOWC_RESOLVE_MAX_MODS {
+        puts("flowc gather: MAX_MODS exceeded")
+        free(norm)
+        return 0 - 1
+    }
+    let slot: ptr<u8> = store + (n * FLOWC_RESOLVE_PATH_CAP)
+    let mut k: i32 = 0
+    while k <= nl {
+        slot[k] = norm[k]
+        k = k + 1
+    }
+    free(norm)
+    return n + 1
+}
+
 # The source expansions flowc runs before parse, in the Python host's
 # order: a fill-shader (FSL) module becomes its host stub, then the Field
 # DSL, then the dynamics DSL (module_resolver.py), then `flow` blocks
@@ -1817,22 +1961,6 @@ function flowc_resolve_import_at(
         return plen2
     }
     return 0 - 3
-}
-
-function flowc_resolve_append_path(store: ptr<u8>, n: i32, path: string) -> i32 {
-    let path_p: ptr<u8> = path
-    if flowc_resolve_find_path(store, n, FLOWC_RESOLVE_PATH_CAP, path_p) >= 0 {
-        return n
-    }
-    if n >= FLOWC_RESOLVE_MAX_MODS {
-        puts("flowc gather: MAX_MODS exceeded")
-        return 0 - 1
-    }
-    let slot: ptr<u8> = store + (n * FLOWC_RESOLVE_PATH_CAP)
-    if flowc_resolve_copy_cstr(path, slot, FLOWC_RESOLVE_PATH_CAP) < 0 {
-        return 0 - 1
-    }
-    return n + 1
 }
 
 # BFS-gather entry + relative/string imports into path_store (entry first).
