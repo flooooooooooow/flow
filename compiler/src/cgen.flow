@@ -2134,6 +2134,105 @@ function flowc_cgen_expr_is_ptr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
     return flowc_cgen_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "ptr")
 }
 
+# 1 when evaluating the expression may call a function. Literals, names,
+# operators, casts, field reads, indexing and aggregate literals of those
+# do not; every other form is taken to call.
+function flowc_cgen_may_call(arena: AstArena, id: i32) -> i32 {
+    if id == AST_NONE or id < 0 {
+        return 0
+    }
+    let k: i32 = arena.nodes[id].kind
+    if k == AST_INT or k == AST_FLOAT or k == AST_BOOL or k == AST_STRING or k == AST_IDENT {
+        return 0
+    }
+    if k == AST_UNARY or k == AST_CAST or k == AST_FIELD_ACCESS {
+        return flowc_cgen_may_call(arena, arena.nodes[id].a)
+    }
+    if k == AST_BINOP or k == AST_INDEX {
+        if flowc_cgen_may_call(arena, arena.nodes[id].a) == 1 { return 1 }
+        if flowc_cgen_may_call(arena, arena.nodes[id].b) == 1 { return 1 }
+        if k == AST_INDEX {
+            return flowc_cgen_may_call(arena, arena.nodes[id].c)
+        }
+        return 0
+    }
+    if k == AST_STRUCT_LIT or k == AST_ARRAY_LIT {
+        let mut el: i32 = arena.nodes[id].a
+        while el != AST_NONE {
+            let mut e: i32 = el
+            if k == AST_STRUCT_LIT {
+                e = arena.nodes[el].a
+            }
+            if flowc_cgen_may_call(arena, e) == 1 { return 1 }
+            el = arena.nodes[el].next
+        }
+        if k == AST_ARRAY_LIT {
+            return flowc_cgen_may_call(arena, arena.nodes[id].b)
+        }
+        return flowc_cgen_may_call(arena, arena.nodes[id].c)
+    }
+    return 1
+}
+
+# 1 when the assignment target is reached through a pointer: an index into
+# anything but a sized array, or a field read through a ptr<...>. A call can
+# move that storage (realloc), and C does not order the call before the
+# read of the pointer in `a[i] = f()`.
+function flowc_cgen_lval_through_ptr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if id == AST_NONE {
+        return 0
+    }
+    let k: i32 = arena.nodes[id].kind
+    if k == AST_IDENT {
+        return 0
+    }
+    let base: i32 = arena.nodes[id].a
+    if k == AST_FIELD_ACCESS {
+        if flowc_cgen_base_is_ptr(w, arena, src, base) == 1 {
+            return 1
+        }
+        return flowc_cgen_lval_through_ptr(w, arena, src, base)
+    }
+    if k == AST_INDEX {
+        let bt: i32 = flowc_cgen_expr_type_node(w, arena, src, base)
+        if bt != AST_NONE and flowc_cgen_is_sized_array(arena, src, bt) == 1 {
+            return flowc_cgen_lval_through_ptr(w, arena, src, base)
+        }
+        return 1
+    }
+    return 1
+}
+
+# 1 when `lhs = rhs` must evaluate rhs into a temporary before the store.
+function flowc_cgen_store_needs_temp(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, lhs: i32, rhs: i32) -> i32 {
+    if flowc_cgen_may_call(arena, rhs) == 0 {
+        return 0
+    }
+    return flowc_cgen_lval_through_ptr(w, arena, src, lhs)
+}
+
+# `__typeof__(lhs) __flowc_stN = rhs; lhs = __flowc_stN;` so the call in
+# rhs runs before the target's pointer is read.
+function flowc_cgen_emit_store_via_temp(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    let lhs: i32 = arena.nodes[id].a
+    let lv0: i32 = w[0].lval
+    flowc_cgen_puts(w, "__typeof__(")
+    w[0].lval = 1
+    flowc_cgen_emit_expr(w, arena, src, lhs)
+    w[0].lval = lv0
+    flowc_cgen_puts(w, ") __flowc_st")
+    flowc_cgen_put_i32(w, id)
+    flowc_cgen_puts(w, " = ")
+    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+    flowc_cgen_puts(w, "; ")
+    w[0].lval = 1
+    flowc_cgen_emit_expr(w, arena, src, lhs)
+    w[0].lval = lv0
+    flowc_cgen_puts(w, " = __flowc_st")
+    flowc_cgen_put_i32(w, id)
+    flowc_cgen_puts(w, ";")
+}
+
 function flowc_cgen_expr_is_string(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     if id == AST_NONE {
         return 0
@@ -5281,6 +5380,15 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
     # The inner link of a chained assignment `a = b = 1` (#1036): a C
     # assignment expression, as the Python host emitted `a = (b = 1)`.
     if kind == AST_ASSIGN {
+        # As the statement form: a call on the right runs before the store.
+        if flowc_cgen_store_needs_temp(w, arena, src, arena.nodes[id].a, arena.nodes[id].b) == 1 {
+            flowc_cgen_puts(w, "({ ")
+            flowc_cgen_emit_store_via_temp(w, arena, src, id)
+            flowc_cgen_puts(w, " __flowc_st")
+            flowc_cgen_put_i32(w, id)
+            flowc_cgen_puts(w, "; })")
+            return
+        }
         flowc_cgen_putc(w, 40)
         let lv0: i32 = w[0].lval
         w[0].lval = 1
@@ -8241,6 +8349,14 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 flowc_cgen_puts(w, "));\n")
                 return
             }
+        }
+        # A call on the right can move the storage the target points into:
+        # evaluate it first, then store.
+        if flowc_cgen_store_needs_temp(w, arena, src, lhs, arena.nodes[id].b) == 1 {
+            flowc_cgen_puts(w, "{ ")
+            flowc_cgen_emit_store_via_temp(w, arena, src, id)
+            flowc_cgen_puts(w, " }\n")
+            return
         }
         w[0].lval = 1
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
