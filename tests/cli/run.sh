@@ -17,7 +17,9 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 ROOT_P="$(cd "$ROOT" && pwd -P)"
 cd "$ROOT"
-GOLD="$ROOT/tests/cli/goldens"
+# Goldens are per OS (clang, ld and the tools on PATH differ): goldens/<os>.
+OS="$(uname -s | tr "[:upper:]" "[:lower:]")"
+GOLD="$ROOT/tests/cli/goldens/$OS"
 FIX="$ROOT/tests/cli/fixtures"
 FLOW="${FLOW_CLI:-$ROOT/flow}"
 
@@ -27,6 +29,12 @@ if [ "${1:-}" = "--update" ]; then
     shift
 fi
 ONLY=" $* "
+
+if [ "$UPDATE" -eq 0 ] && [ ! -d "$GOLD" ]; then
+    echo "tests/cli: no goldens for $OS (tests/cli/goldens/$OS); record them with --update"
+    exit 1
+fi
+mkdir -p "$GOLD"
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/flow-cli-tests.XXXXXX")"
 work_p="$(cd "$work" && pwd -P)"

@@ -15,16 +15,16 @@ cache=$root/build
 bin=$cache/cli/flow
 boot=$root/compiler/build/flowc_bootstrap
 [ -w "$root" ] || boot=$cache/flowc_bootstrap
-if [ ! -x "$bin" ] || [ -n "$(find "$root/tools/flow_cli" "$root/lib/stdlib/process.flow" "$root/lib/stdlib/os.flow" "$root/compiler/src/bytebuf.flow" "$root/compiler/bootstrap/flowc_stage_a.c" -newer "$bin" 2>/dev/null | head -n 1)" ]; then
+if [ ! -x "$bin" ] || [ -n "$(find "$root/tools/flow_cli" "$root/lib/stdlib/process.flow" "$root/lib/stdlib/os.flow" "$root/lib/stdlib/bytebuf.flow" "$root/compiler/src/bytebuf.flow" "$root/compiler/bootstrap/flowc_stage_a.c" -newer "$bin" 2>/dev/null | head -n 1)" ]; then
     mkdir -p "$cache/cli" "$(dirname "$boot")"
     if [ ! -x "$boot" ] || [ -n "$(find "$root/compiler/bootstrap/flowc_stage_a.c" -newer "$boot")" ]; then
         echo "flow: building flowc from compiler/bootstrap/flowc_stage_a.c..." >&2
-        ${CC:-cc} -O2 -w -o "$boot.tmp.$$" "$root/compiler/bootstrap/flowc_stage_a.c" -lm
+        "${CC:-cc}" -O2 -w -o "$boot.tmp.$$" "$root/compiler/bootstrap/flowc_stage_a.c" -lm
         mv -f "$boot.tmp.$$" "$boot"
     fi
     (cd "$root" && FLOWC_BUNDLE=1 FLOWC_DIR=. FLOWC_TYPECHECK=1 FLOWC_IN=tools/flow_cli/main.flow \
         FLOWC_OUT="$bin.tmp.$$.c" "$boot" >/dev/null)
-    ${CC:-cc} -O1 -w -o "$bin.tmp.$$" "$bin.tmp.$$.c" -lm
+    "${CC:-cc}" -O1 -w -o "$bin.tmp.$$" "$bin.tmp.$$.c" -lm
     rm -f "$bin.tmp.$$.c"
     mv -f "$bin.tmp.$$" "$bin"
 fi
