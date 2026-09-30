@@ -499,6 +499,11 @@ jobs:
           chmod +x ./flow ./flow-driver tests/scripts/*.sh
           ./tests/scripts/run.sh
 
+      # The benchmark publisher's harness builds and runs each published
+      # program and checks its result (scripts/tools/bench_publish).
+      - name: Benchmark publisher check
+        run: ./scripts/check_bench_publish.sh
+
   # flowc must keep parsing every .flow file the Python parser accepts. The
   # count of files that parse may not fall below compiler/parse_coverage/
   # floor.txt. Needs only cc: the reference list of files the Python parser
