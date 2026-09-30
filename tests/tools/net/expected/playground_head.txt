@@ -1,0 +1,4 @@
+HTTP/1.0 501 Unsupported method ('HEAD')
+Connection: close
+Content-Type: text/html;charset=utf-8
+

@@ -9,6 +9,14 @@
 #
 # Palette: a 6x7x6 RGB cube (252 entries) plus 4 grays. gif_map_rgb maps
 # any 24-bit color to its nearest entry with integer math.
+#
+# For a palette of your own (a quantized clip), use the indexed API:
+#   gif_begin_palette("out.gif", w, h, pal, ncolors)   pal: ncolors RGB triples
+#   gif_add_frame_indexed(idx, w, h, x, y, fw, fh, delay_cs, disposal, transparent)
+#   gif_end()
+# A frame there can be a sub-rectangle of the canvas, the LZW code size
+# follows the palette size, and each frame carries its own delay, disposal
+# method and optional transparent index.
 
 extern {
     function fopen(path: string, mode: string) -> ptr<void>
@@ -25,6 +33,8 @@ let mut gif_file: ptr<void> = null
 let mut gif_width: i32 = 0
 let mut gif_height: i32 = 0
 let mut gif_delay_cs: i32 = 0
+# Bits per entry index of the global colour table (table size 2^bits).
+let mut gif_table_bits: i32 = 8
 
 # LZW output: current 255-byte sub-block and the LSB-first bit accumulator.
 let mut gif_block: ptr<u8> = null
@@ -131,6 +141,12 @@ function gif_lzw_hash_reset(hkey: ptr<i32>) -> void {
 }
 
 function gif_lzw_encode(idx: ptr<u8>, n: i64) -> i32 {
+    return gif_lzw_encode_bits(idx, n, 8)
+}
+
+# LZW with minimum code size `min_bits` (2..8): clear = 1 << min_bits,
+# end-of-information = clear + 1, codes start min_bits + 1 bits wide.
+function gif_lzw_encode_bits(idx: ptr<u8>, n: i64, min_bits: i32) -> i32 {
     let hkey: ptr<i32> = malloc(8192 * 4) as ptr<i32>
     let hcode: ptr<i32> = malloc(8192 * 4) as ptr<i32>
     if hkey == null or hcode == null {
@@ -144,16 +160,17 @@ function gif_lzw_encode(idx: ptr<u8>, n: i64) -> i32 {
     }
     gif_lzw_hash_reset(hkey)
 
-    let clear_code: i32 = 256
-    let eoi_code: i32 = 257
-    let mut next_code: i32 = 258
-    let mut width: i32 = 9
+    let clear_code: i32 = 1 << min_bits
+    let eoi_code: i32 = clear_code + 1
+    let first_code: i32 = clear_code + 2
+    let mut next_code: i32 = first_code
+    let mut width: i32 = min_bits + 1
 
     gif_bit_acc = 0
     gif_bit_cnt = 0
     gif_block_len = 0
 
-    fputc(8, gif_file)
+    fputc(min_bits, gif_file)
     gif_out_code(clear_code, width)
 
     let mut prefix: i32 = idx[0] as i32
@@ -187,8 +204,8 @@ function gif_lzw_encode(idx: ptr<u8>, n: i64) -> i32 {
                 # Table full: clear (at 12 bits) and start over.
                 gif_out_code(clear_code, width)
                 gif_lzw_hash_reset(hkey)
-                next_code = 258
-                width = 9
+                next_code = first_code
+                width = min_bits + 1
             }
             prefix = c
         }
@@ -240,6 +257,7 @@ export function gif_begin(path: string, width: i32, height: i32, delay_cs: i32) 
     gif_width = width
     gif_height = height
     gif_delay_cs = delay_cs
+    gif_table_bits = 8
     gif_block_len = 0
     gif_bit_acc = 0
     gif_bit_cnt = 0
@@ -337,6 +355,160 @@ export function gif_add_frame_rgb(pixels: ptr<u8>, width: i32, height: i32) -> i
     return rc
 }
 
+# --- indexed API: the caller's palette, partial frames ---
+
+# Opens `path` and writes the header, a global colour table from `pal`
+# (`ncolors` RGB triples, 1..256, padded with black to a power of two) and
+# a NETSCAPE2.0 infinite-loop extension. Frames then go through
+# gif_add_frame_indexed. Returns 0 on success.
+export function gif_begin_palette(path: string, width: i32, height: i32, pal: ptr<u8>, ncolors: i32) -> i32 {
+    if gif_file != null {
+        return 1
+    }
+    if width <= 0 or height <= 0 or width > 65535 or height > 65535 {
+        return 2
+    }
+    if ncolors < 1 or ncolors > 256 {
+        return 2
+    }
+    let f: ptr<void> = fopen(path, "wb")
+    if f == null {
+        return 3
+    }
+    let blk: ptr<u8> = malloc(255) as ptr<u8>
+    if blk == null {
+        fclose(f)
+        return 4
+    }
+    let mut bits: i32 = 1
+    while (1 << bits) < ncolors {
+        bits = bits + 1
+    }
+    gif_file = f
+    gif_block = blk
+    gif_width = width
+    gif_height = height
+    gif_delay_cs = 0
+    gif_table_bits = bits
+    gif_block_len = 0
+    gif_bit_acc = 0
+    gif_bit_cnt = 0
+
+    # Header: "GIF89a"
+    fputc(71, gif_file)
+    fputc(73, gif_file)
+    fputc(70, gif_file)
+    fputc(56, gif_file)
+    fputc(57, gif_file)
+    fputc(97, gif_file)
+
+    # Logical screen descriptor: a global table of 2^bits entries.
+    gif_w16(width)
+    gif_w16(height)
+    fputc(128 | ((bits - 1) << 4) | (bits - 1), gif_file)
+    fputc(0, gif_file)
+    fputc(0, gif_file)
+
+    let size: i32 = 1 << bits
+    let mut i: i32 = 0
+    while i < size {
+        if i < ncolors {
+            fputc(pal[i * 3] as i32, gif_file)
+            fputc(pal[i * 3 + 1] as i32, gif_file)
+            fputc(pal[i * 3 + 2] as i32, gif_file)
+        } else {
+            fputc(0, gif_file)
+            fputc(0, gif_file)
+            fputc(0, gif_file)
+        }
+        i = i + 1
+    }
+
+    # NETSCAPE2.0 application extension: loop forever.
+    fputc(33, gif_file)
+    fputc(255, gif_file)
+    fputc(11, gif_file)
+    fputc(78, gif_file)   # N
+    fputc(69, gif_file)   # E
+    fputc(84, gif_file)   # T
+    fputc(83, gif_file)   # S
+    fputc(67, gif_file)   # C
+    fputc(65, gif_file)   # A
+    fputc(80, gif_file)   # P
+    fputc(69, gif_file)   # E
+    fputc(50, gif_file)   # 2
+    fputc(46, gif_file)   # .
+    fputc(48, gif_file)   # 0
+    fputc(3, gif_file)
+    fputc(1, gif_file)
+    gif_w16(0)            # loop count 0 = forever
+    fputc(0, gif_file)
+    return 0
+}
+
+# Adds one frame from `idx`: palette indices for the whole canvas, row-major.
+# Only the fw x fh rectangle at (x, y) is stored. Delay in centiseconds;
+# disposal is the GIF method (0..3); `transparent` is an index or -1.
+# Returns 0 on success.
+export function gif_add_frame_indexed(idx: ptr<u8>, width: i32, height: i32, x: i32, y: i32, fw: i32, fh: i32, delay_cs: i32, disposal: i32, transparent: i32) -> i32 {
+    if gif_file == null {
+        return 1
+    }
+    if width != gif_width or height != gif_height {
+        return 2
+    }
+    if fw <= 0 or fh <= 0 or x < 0 or y < 0 or x + fw > width or y + fh > height {
+        return 2
+    }
+    let n: i64 = (fw as i64) * (fh as i64)
+    let sub: ptr<u8> = malloc(n) as ptr<u8>
+    if sub == null {
+        return 3
+    }
+    let mut row: i32 = 0
+    while row < fh {
+        let src: i64 = ((y + row) as i64) * (width as i64) + (x as i64)
+        let dst: i64 = (row as i64) * (fw as i64)
+        let mut col: i32 = 0
+        while col < fw {
+            sub[dst + (col as i64)] = idx[src + (col as i64)]
+            col = col + 1
+        }
+        row = row + 1
+    }
+
+    # Graphic control extension: disposal, transparency flag, delay.
+    let mut packed: i32 = (disposal & 7) << 2
+    let mut tindex: i32 = 0
+    if transparent >= 0 {
+        packed = packed | 1
+        tindex = transparent
+    }
+    fputc(33, gif_file)
+    fputc(249, gif_file)
+    fputc(4, gif_file)
+    fputc(packed, gif_file)
+    gif_w16(delay_cs)
+    fputc(tindex & 255, gif_file)
+    fputc(0, gif_file)
+
+    # Image descriptor: the rectangle, global palette, no interlace.
+    fputc(44, gif_file)
+    gif_w16(x)
+    gif_w16(y)
+    gif_w16(fw)
+    gif_w16(fh)
+    fputc(0, gif_file)
+
+    let mut min_bits: i32 = gif_table_bits
+    if min_bits < 2 {
+        min_bits = 2
+    }
+    let rc: i32 = gif_lzw_encode_bits(sub, n, min_bits)
+    free(sub as ptr<void>)
+    return rc
+}
+
 # Writes the trailer and closes the file. Returns 0 on success.
 export function gif_end() -> i32 {
     if gif_file == null {
@@ -350,6 +522,7 @@ export function gif_end() -> i32 {
     gif_width = 0
     gif_height = 0
     gif_delay_cs = 0
+    gif_table_bits = 8
     gif_block_len = 0
     gif_bit_acc = 0
     gif_bit_cnt = 0

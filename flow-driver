@@ -818,7 +818,7 @@ show_help() {
     echo "  test-runtime      Run runtime tests (compile + execute)"
     echo "  test-lang         Run tests/lang/ language tests (strict flowc + compile + execute)"
     echo "  test-mlir         Run MLIR verification (requires LLVM)"
-    echo "  test-python       Run Python unit tests"
+    echo "  test-scripts      Run the shell tests in tests/scripts"
     echo "  test-interop      Run interop runtime tests"
     echo "  test-gpu          Run GPU feature + codegen tests"
     echo "  test-matmul       Run matmul optimization demo + print assembly"
@@ -2088,7 +2088,7 @@ run_gfx_program() {
 #                       [--width PX]
 #
 # --frames/--skip/--out/--keys/--mouse shape the capture; --fps/--stride/--width
-# shape the GIF and are handed to scripts/frames_to_gif.py.
+# shape the GIF and are handed to scripts/frames_to_gif.sh.
 #
 # --mouse drives a scripted pointer so mouse-driven demos still record. Its
 # spec is ';'-separated segments of
@@ -2274,7 +2274,7 @@ record_gfx_program() {
         [ -n "$gif_fps" ] && gif_args+=(--fps "$gif_fps")
         [ -n "$gif_stride" ] && gif_args+=(--stride "$gif_stride")
         [ -n "$gif_width" ] && gif_args+=(--width "$gif_width")
-        if python3 "$SCRIPT_DIR/scripts/frames_to_gif.py" "${rec_dir:-frames}" "$rec_gif" \
+        if "$SCRIPT_DIR/scripts/frames_to_gif.sh" "${rec_dir:-frames}" "$rec_gif" \
             "${gif_args[@]+"${gif_args[@]}"}"; then
             print_success "GIF: $rec_gif"
         else
@@ -2752,25 +2752,10 @@ run_project_example() {
     (cd "$example_dir" && "$SCRIPT_DIR/flow" run "$entry")
 }
 
-# Run Python unit tests
-run_python_tests() {
-    if command -v pytest &> /dev/null; then
-        print_info "Running Python unit tests..."
-        cd "$SCRIPT_DIR"
-        pytest tests/unit/ tests/integration/ -v --tb=short
-        local status=$?
-        if [ $status -eq 0 ]; then
-            print_success "✅ All Python tests passed!"
-        else
-            print_error "❌ Python tests failed"
-            exit 1
-        fi
-    else
-        print_warning "pytest not found. Install test dependencies with:"
-        print_info "  pip install -e .[test]"
-        print_info "  or: pip install pytest pytest-cov pytest-mock"
-        exit 1
-    fi
+# Run the shell tests in tests/scripts. They drive ./flow and the scripts
+# as subprocesses and replaced the last pytest files.
+run_script_tests() {
+    "$SCRIPT_DIR/tests/scripts/run.sh" "$@"
 }
 
 # Run interop tests (Python embedding)
@@ -3422,15 +3407,6 @@ install_deps() {
         fi
     fi
     
-    # Optionally install test dependencies
-    if command -v pip3 &> /dev/null; then
-        print_info "Installing test dependencies (optional)..."
-        pip3 install -e .[test] 2>/dev/null || {
-            print_warning "Failed to install test dependencies. Install manually with:"
-            print_info "  pip install pytest pytest-cov pytest-mock"
-        }
-    fi
-    
     print_success "Dependencies installed!"
 }
 
@@ -3990,8 +3966,9 @@ case "${1:-help}" in
         check_deps
         run_mlir_tests
         ;;
-    "test-python")
-        run_python_tests
+    "test-scripts")
+        shift
+        run_script_tests "$@"
         ;;
     "test-interop")
         run_interop_tests
@@ -4156,7 +4133,7 @@ case "${1:-help}" in
         if [ "${1:-}" = "--legacy" ]; then
             shift
             require_flow_file "${1:-}"
-            python3 "$SCRIPT_DIR/wasm/flow_to_wasm.py" "$@"
+            "$SCRIPT_DIR/scripts/flow_to_wasm.sh" "$@"
             exit $?
         fi
         require_flow_file "${1:-}"
@@ -4213,7 +4190,7 @@ case "${1:-help}" in
         if command -v open >/dev/null 2>&1; then
             open "$SCRIPT_DIR/docs/playground/index.html" 2>/dev/null || true
         fi
-        python3 "$SCRIPT_DIR/scripts/playground_compile_server.py" --port "$pg_port"
+        "$SCRIPT_DIR/scripts/playground_compile_server.sh" --port "$pg_port"
         ;;
     "setup"|"install-tools")
         install_deps

@@ -25,4 +25,4 @@ Plugins install to:
 
 Each section: \(H_i(z)=(k_i+z^{-1})/(1+k_i z^{-1})\). Design via Schur step-down on pole product; runtime modulates \(k_i\) with clip \(|k_i|<1\).
 
-Matches `lib/stdlib/audio/lattice_allpass.flow` / `tools/audio/lattice_allpass_audio_demo.py`.
+Matches `lib/stdlib/audio/lattice_allpass.flow` / `tools/audio/lattice_allpass_audio_demo.sh`.

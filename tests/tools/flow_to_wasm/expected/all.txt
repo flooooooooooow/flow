@@ -1,0 +1,25 @@
+🔨 Converting fibonacci.flow to WebAssembly...
+📝 Generated: WORK/root/wasm/wasm_examples/fibonacci.c
+🔧 Compiling to WebAssembly...
+🎯 Generated: WORK/root/wasm/wasm_examples/fibonacci.wasm
+📄 Generated: WORK/root/wasm/wasm_examples/fibonacci.html
+✅ Successfully converted fibonacci.flow
+🔨 Converting gcd.flow to WebAssembly...
+📝 Generated: WORK/root/wasm/wasm_examples/gcd.c
+🔧 Compiling to WebAssembly...
+🎯 Generated: WORK/root/wasm/wasm_examples/gcd.wasm
+📄 Generated: WORK/root/wasm/wasm_examples/gcd.html
+✅ Successfully converted gcd.flow
+🔨 Converting simple_search.flow to WebAssembly...
+Error compiling FLOW to C: fake flowc: parse error in simple_search.flow
+
+==================================================
+✅ Converted: 2
+❌ Failed: 1
+📄 Generated: WORK/root/wasm/wasm_examples/index.html
+--- exit 0
+--- emcc
+argv: [--version]
+argv: [WORK/root/wasm/wasm_examples/fibonacci.c] [-o] [WORK/root/wasm/wasm_examples/fibonacci.js] [-s] [WASM=1] [-s] [EXPORTED_FUNCTIONS=['_main']] [-s] [EXPORTED_RUNTIME_METHODS=['ccall','cwrap']] [-s] [ALLOW_MEMORY_GROWTH=1] [-O3]
+argv: [--version]
+argv: [WORK/root/wasm/wasm_examples/gcd.c] [-o] [WORK/root/wasm/wasm_examples/gcd.js] [-s] [WASM=1] [-s] [EXPORTED_FUNCTIONS=['_main']] [-s] [EXPORTED_RUNTIME_METHODS=['ccall','cwrap']] [-s] [ALLOW_MEMORY_GROWTH=1] [-O3]

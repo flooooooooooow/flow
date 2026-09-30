@@ -67,7 +67,7 @@ The repository includes VS Code language, theme, and extension packaging under
 ./flow test-runtime              # compile and execute runtime tests
 ./flow test-lang                 # strict language programs
 ./flow test-mlir
-./flow test-python
+./flow test-scripts
 ./flow test-interop
 ./flow test-gpu
 ./flow test-matmul

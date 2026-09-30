@@ -132,7 +132,7 @@ Staged gfx demos that gate these measurements live under
 ```bash
 ./flow gfx examples/planet/planet_evidence.flow
 ./flow record examples/planet/planet_evidence.flow --frames 4 --out /tmp/pl
-python3 scripts/record_demos.py --group planet
+scripts/record_demos.sh --group planet
 ```
 
 At `PLANET_FACE_N = 96`, a full generate with 24 erosion iterations is about

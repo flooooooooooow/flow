@@ -1,0 +1,46 @@
+handshake1:
+HTTP/1.1 101 Switching Protocols\r\n
+Upgrade: websocket\r\n
+Connection: Upgrade\r\n
+Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n
+Sec-WebSocket-Protocol: binary\r\n
+\r\n
+
+text: hdr=810b op=1 fin=1 masked=0 len=11 sha1=72eb2e3e7b15581e head="hello relay"
+binary: hdr=8207 op=2 fin=1 masked=0 len=7 sha1=38d9ae6e384ae792 head="\u0000\u0001\u0002ÿþ\n\r"
+empty-binary: hdr=8200 op=2 fin=1 masked=0 len=0 sha1=da39a3ee5e6b4b0d head=""
+len125: hdr=827d op=2 fin=1 masked=0 len=125 sha1=9d3953e922387b19 head="AAAAAAAAAAAAAAAAAAAAAAAA"
+len126: hdr=817e007e op=1 fin=1 masked=0 len=126 sha1=b243e522797268d1 head="BBBBBBBBBBBBBBBBBBBBBBBB"
+len65535: hdr=827effff op=2 fin=1 masked=0 len=65535 sha1=03f4023e02eaad6a head="\u0000\u0001\u0002\u0003\u0004\u0005\u0006\u0007\b\t\n\u000b\f\r\u000e\u000f\u0010\u0011\u0012\u0013\u0014\u0015\u0016\u0017"
+len70000: hdr=827f0000000000011170 op=2 fin=1 masked=0 len=70000 sha1=cf07bb80deafc0f9 head="\u0000\u0007\u000e\u0015\u001c#*18?FMT[bipw~¡"
+ping: hdr=8a0d op=10 fin=1 masked=0 len=13 sha1=0d1bb8798ab23731 head="are you there"
+continuation: hdr=8204 op=2 fin=1 masked=0 len=4 sha1=72e9a547fbb17beb head="cont"
+after-pong: hdr=810a op=1 fin=1 masked=0 len=10 sha1=df3b491b374bfe98 head="after pong"
+split: hdr=810b op=1 fin=1 masked=0 len=11 sha1=150fa25aa99aaaed head="split frame"
+close: hdr=8800 op=8 fin=1 masked=0 len=0 sha1=da39a3ee5e6b4b0d head=""
+after-close: EOF
+handshake2:
+HTTP/1.1 101 Switching Protocols\r\n
+Upgrade: websocket\r\n
+Connection: Upgrade\r\n
+Sec-WebSocket-Accept: ICX+Yqv66kxgM0FcWaLWlFLwTAI=\r\n
+Sec-WebSocket-Protocol: chat\r\n
+\r\n
+
+handshake3:
+HTTP/1.1 101 Switching Protocols\r\n
+Upgrade: websocket\r\n
+Connection: Upgrade\r\n
+Sec-WebSocket-Accept: HSmrc0sMlYUkAGmm5OPpG2HaGWk=\r\n
+\r\n
+
+handshake4:
+HTTP/1.1 400 Bad Request\r\n
+\r\n
+
+handshake4-rest: ""
+concurrent-b: hdr=8106 op=1 fin=1 masked=0 len=6 sha1=6866447306f334e4 head="from b"
+concurrent-a: hdr=8106 op=1 fin=1 masked=0 len=6 sha1=aea1ebf62c32c9d5 head="from a"
+tcp1: "tcp hello\n"
+tcp2: len=200000 equal=true
+tcp-eof: 0

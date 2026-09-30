@@ -6,8 +6,8 @@
 #   ./scripts/record_shader_gallery.sh --group classic --frames 30 --fps 15
 #
 # The recorder is the Flow program in scripts/tools/shader_record, built with
-# the Stage-A compiler on first use. It runs scripts/frames_to_gif.py, which
-# needs python3 with Pillow, to encode each GIF.
+# the Stage-A compiler on first use. It runs scripts/frames_to_gif.sh, also a
+# Flow program, to encode each GIF.
 
 set -euo pipefail
 

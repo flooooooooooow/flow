@@ -470,7 +470,7 @@
         <strong>Check Syntax</strong> is editor lint only.
         <strong>Run (browser)</strong> uses the tutorial interpreter (<code>flow-compile.js</code>) rather than native code.
         <strong>Run (native local)</strong> talks to a loopback compile API
-        (<code>python3 scripts/playground_compile_server.py</code>) that uses the real Flow→C toolchain (#132).
+        (<code>scripts/playground_compile_server.sh</code>, or <code>./flow playground</code>) that uses the real Flow→C toolchain (#132).
         <strong>WASM hello</strong> loads a local emscripten artifact when present
         (<code>./flow wasm</code> / <code>scripts/build_wasm_hello.sh</code> →
         <code>build/wasm_hello/hello.html</code>). Full in-browser Flow compiler remains deferred (#121).
@@ -1257,9 +1257,9 @@ function main() -> i32 {
                 outputEl.textContent =
                     'Native compile API not reachable on 127.0.0.1:8765.\n\n' +
                     'Start it from the repo root:\n' +
-                    '  python3 scripts/playground_compile_server.py\n\n' +
+                    '  scripts/playground_compile_server.sh\n\n' +
                     'It binds loopback only, caps source size, and times out subprocesses.\n' +
-                    'See scripts/playground_compile_server.py for security notes.';
+                    'See scripts/tools/playground_server/main.flow for security notes.';
                 statusDot.className = 'status-dot error';
                 statusText.textContent = 'No compile API';
                 return;
@@ -1304,7 +1304,7 @@ function main() -> i32 {
                 outputEl.className = 'output-content error';
                 outputEl.textContent =
                     'Native compile request failed: ' + (e && e.message ? e.message : e) +
-                    '\n\nIs python3 scripts/playground_compile_server.py still running?';
+                    '\n\nIs scripts/playground_compile_server.sh still running?';
                 statusDot.className = 'status-dot error';
                 statusText.textContent = 'Native error';
             }

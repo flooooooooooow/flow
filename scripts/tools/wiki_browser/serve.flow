@@ -1,0 +1,220 @@
+# @module tools.wiki_browser.serve
+# @means  A small static file server for previewing the built wiki.
+#
+# Listens on 127.0.0.1 only. Each connection is handled in a forked child,
+# so a browser's idle preconnects never block the next request. GET and
+# HEAD; directories serve index.html; paths with ".." are refused.
+
+import .text { ft_len, ft_eq, ft_find, ft_slice, ft_from, ft_itoa, ft_ends, ft_starts, ft_contains, ft_rfind_byte, ft_ascii_lower, ft_out, ft_outln, ft_errln }
+import .proc { pr_is_dir, pr_resolve }
+import .net
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fclose(fp: ptr<void>) -> i32
+    function fseek(fp: ptr<void>, offset: i64, whence: i32) -> i32
+    function ftell(fp: ptr<void>) -> i64
+    function fread(buf: ptr<u8>, size: i64, count: i64, fp: ptr<void>) -> i64
+    function fork() -> i32
+    function _exit(code: i32) -> void
+    function waitpid(pid: i32, status: ptr<i32>, options: i32) -> i32
+    function fflush(fp: ptr<void>) -> i32
+}
+
+function content_type(path: string) -> string {
+    let dot: i32 = ft_rfind_byte(path, 46)
+    if dot < 0 {
+        return "application/octet-stream"
+    }
+    let ext: string = ft_ascii_lower(ft_from(path, dot + 1))
+    if ft_eq(ext, "html") or ft_eq(ext, "htm") { return "text/html; charset=utf-8" }
+    if ft_eq(ext, "css") { return "text/css; charset=utf-8" }
+    if ft_eq(ext, "js") or ft_eq(ext, "mjs") { return "text/javascript; charset=utf-8" }
+    if ft_eq(ext, "json") or ft_eq(ext, "map") { return "application/json" }
+    if ft_eq(ext, "md") { return "text/markdown; charset=utf-8" }
+    if ft_eq(ext, "txt") or ft_eq(ext, "flow") { return "text/plain; charset=utf-8" }
+    if ft_eq(ext, "xml") { return "application/xml" }
+    if ft_eq(ext, "svg") { return "image/svg+xml" }
+    if ft_eq(ext, "png") { return "image/png" }
+    if ft_eq(ext, "jpg") or ft_eq(ext, "jpeg") { return "image/jpeg" }
+    if ft_eq(ext, "gif") { return "image/gif" }
+    if ft_eq(ext, "webp") { return "image/webp" }
+    if ft_eq(ext, "ico") { return "image/x-icon" }
+    if ft_eq(ext, "woff") { return "font/woff" }
+    if ft_eq(ext, "woff2") { return "font/woff2" }
+    if ft_eq(ext, "ttf") { return "font/ttf" }
+    if ft_eq(ext, "wasm") { return "application/wasm" }
+    if ft_eq(ext, "pdf") { return "application/pdf" }
+    if ft_eq(ext, "pf_meta") or ft_eq(ext, "pf_index") or ft_eq(ext, "pf_fragment") or ft_eq(ext, "pagefind") { return "application/octet-stream" }
+    return "application/octet-stream"
+}
+
+function hexval(c: i32) -> i32 {
+    if c >= 48 and c <= 57 { return c - 48 }
+    if c >= 97 and c <= 102 { return c - 87 }
+    if c >= 65 and c <= 70 { return c - 55 }
+    return -1
+}
+
+# Percent-decode a URL path.
+function url_decode(s: string) -> string {
+    let n: i32 = ft_len(s)
+    let p: ptr<u8> = s as ptr<u8>
+    let out: ptr<u8> = malloc((n + 1) as i64) as ptr<u8>
+    let mut i: i32 = 0
+    let mut o: i32 = 0
+    while i < n {
+        let c: i32 = p[i] as i32
+        if c == 37 and i + 2 < n and hexval(p[i + 1] as i32) >= 0 and hexval(p[i + 2] as i32) >= 0 {
+            out[o] = (hexval(p[i + 1] as i32) * 16 + hexval(p[i + 2] as i32)) as u8
+            i = i + 3
+        } else {
+            out[o] = c as u8
+            i = i + 1
+        }
+        o = o + 1
+    }
+    out[o] = 0
+    return out as string
+}
+
+function respond(fd: i32, status: string, ctype: string, body: ptr<u8>, n: i64, head_only: bool, extra: string) -> void {
+    let head: string = "HTTP/1.0 " + status + "\r\n" +
+        "Server: flow-wiki-serve\r\n" +
+        "Content-Type: " + ctype + "\r\n" +
+        "Content-Length: " + ft_itoa(n as i32) + "\r\n" +
+        extra +
+        "Connection: close\r\n\r\n"
+    if nt_send_str(fd, head, ft_len(head)) and head_only == false and n > 0 {
+        let _b: bool = nt_send_all(fd, body, n)
+    }
+}
+
+function respond_text(fd: i32, status: string, text: string, head_only: bool, extra: string) -> void {
+    respond(fd, status, "text/plain; charset=utf-8", text as ptr<u8>, ft_len(text) as i64, head_only, extra)
+}
+
+function handle(fd: i32, root: string) -> void {
+    let cap: i32 = 65536
+    let buf: ptr<u8> = malloc((cap + 1) as i64) as ptr<u8>
+    let mut len: i32 = 0
+    let mut he: i32 = -1
+    let deadline: i64 = nt_now_ms() + 15000
+    while he < 0 and len < cap {
+        let left: i64 = deadline - nt_now_ms()
+        if left <= 0 or nt_readable(fd, left as i32) == false {
+            return
+        }
+        let got: i64 = nt_recv(fd, &buf[len], (cap - len) as i64)
+        if got <= 0 {
+            return
+        }
+        len = len + (got as i32)
+        buf[len] = 0
+        he = ft_find(buf as string, "\r\n\r\n", 0)
+    }
+    if he < 0 {
+        respond_text(fd, "431 Request Header Fields Too Large", "request too large\n", false, "")
+        return
+    }
+    let line_end: i32 = ft_find(buf as string, "\r\n", 0)
+    let line: string = ft_slice(buf as string, 0, line_end)
+    let sp1: i32 = ft_find(line, " ", 0)
+    let sp2: i32 = ft_find(line, " ", sp1 + 1)
+    if sp1 < 0 or sp2 < 0 {
+        respond_text(fd, "400 Bad Request", "bad request\n", false, "")
+        return
+    }
+    let method: string = ft_slice(line, 0, sp1)
+    let mut target: string = ft_slice(line, sp1 + 1, sp2)
+    let head_only: bool = ft_eq(method, "HEAD")
+    if ft_eq(method, "GET") == false and head_only == false {
+        respond_text(fd, "501 Not Implemented", "only GET and HEAD\n", false, "")
+        return
+    }
+    let q: i32 = ft_find(target, "?", 0)
+    if q >= 0 {
+        target = ft_slice(target, 0, q)
+    }
+    let h: i32 = ft_find(target, "#", 0)
+    if h >= 0 {
+        target = ft_slice(target, 0, h)
+    }
+    let path: string = url_decode(target)
+    let mut status: string = "200 OK"
+    if ft_starts(path, "/") == false or ft_contains(path, "/../") or ft_ends(path, "/..") or ft_contains(path, "\\") {
+        status = "404 Not Found"
+        respond_text(fd, status, "not found\n", head_only, "")
+        log_line(method, target, status)
+        return
+    }
+    let mut file: string = root + path
+    if pr_is_dir(file) {
+        if ft_ends(path, "/") == false {
+            status = "301 Moved Permanently"
+            respond_text(fd, status, "", head_only, "Location: " + target + "/\r\n")
+            log_line(method, target, status)
+            return
+        }
+        file = file + "index.html"
+    }
+    let fp: ptr<void> = fopen(file, "rb")
+    if fp == null or pr_is_dir(file) {
+        if fp != null {
+            let _c0: i32 = fclose(fp)
+        }
+        status = "404 Not Found"
+        respond_text(fd, status, "not found\n", head_only, "")
+        log_line(method, target, status)
+        return
+    }
+    let _s: i32 = fseek(fp, 0, 2)
+    let size: i64 = ftell(fp)
+    let _s2: i32 = fseek(fp, 0, 0)
+    let data: ptr<u8> = malloc(size + 1) as ptr<u8>
+    let got2: i64 = fread(data, 1, size, fp)
+    let _c: i32 = fclose(fp)
+    respond(fd, status, content_type(file), data, got2, head_only, "")
+    log_line(method, target, status)
+}
+
+function log_line(method: string, target: string, status: string) -> void {
+    ft_errln(method + " " + target + " " + ft_slice(status, 0, 3))
+}
+
+# Serve `dir` on 127.0.0.1:`port` until killed. Returns 1 when the port
+# cannot be bound.
+export function serve_dir(dir: string, port: i32) -> i32 {
+    if pr_is_dir(dir) == false {
+        ft_errln("serve: no such directory: " + dir)
+        return 2
+    }
+    let root: string = pr_resolve(dir)
+    let lfd: i32 = nt_listen_local(port)
+    if lfd < 0 {
+        ft_errln("serve: cannot listen on 127.0.0.1:" + ft_itoa(port))
+        return 1
+    }
+    ft_outln("Serving " + root + " at http://localhost:" + ft_itoa(nt_local_port(lfd)) + "/ (Ctrl-C to stop)")
+    let _f: i32 = fflush(null)
+    while true {
+        let fd: i32 = nt_accept(lfd)
+        if fd >= 0 {
+            let pid: i32 = fork()
+            if pid == 0 {
+                nt_close(lfd)
+                handle(fd, root)
+                nt_close(fd)
+                let _f2: i32 = fflush(null)
+                _exit(0)
+            }
+            nt_close(fd)
+        }
+        # Reap finished children without blocking.
+        while waitpid(-1, null, 1) > 0 {
+            let _r: i32 = 0
+        }
+    }
+    return 0
+}

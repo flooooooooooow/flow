@@ -1,0 +1,25 @@
+<script src="@NAME@.js"></script>
+    <script>
+        var Module = {
+            onRuntimeInitialized: function() {
+                document.getElementById('status').textContent = '✅ WebAssembly loaded!';
+                document.getElementById('runBtn').disabled = false;
+            },
+            print: function(text) {
+                document.getElementById('output').textContent += text + '\n';
+            },
+            printErr: function(text) {
+                document.getElementById('output').textContent += 'ERROR: ' + text + '\n';
+            }
+        };
+        
+        function runCode() {
+            document.getElementById('output').textContent = '';
+            try {
+                var result = Module._main();
+                document.getElementById('output').textContent += '\n✅ Exit code: ' + result;
+            } catch(e) {
+                document.getElementById('output').textContent += '\n❌ Error: ' + e;
+            }
+        }
+    </script>

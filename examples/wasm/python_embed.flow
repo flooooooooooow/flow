@@ -1,7 +1,7 @@
 # Flow calling Python, in a browser.
 #
-#   ./flow run examples/wasm/python_embed.flow      # native, libpython
-#   wasm/crossings.sh python                        # browser, Pyodide
+#   cd examples/wasm && ../../flow run python_embed.flow   # native, libpython
+#   wasm/crossings.sh python                               # browser, Pyodide
 #
 # Nothing below is browser-aware. It is the ordinary embedding surface from
 # lib/stdlib/python_embed.flow: init, extend sys.path, import a module, call
@@ -9,7 +9,11 @@
 # drives libpython through the CPython C API. Under WASM they land in
 # wasm/crossing_assets/pyodide_bridge.js, which drives Pyodide.
 #
-# The Python module (examples/wasm/python/flow_demo.py) is also unchanged.
+# The Python module (examples/interop/python/flow_demo.py) is also unchanged.
+#
+# sys.path gets two entries, both relative to the working directory:
+# "python", where the browser page writes the module inside Pyodide's
+# filesystem, and "../interop/python" for a native run from examples/wasm.
 
 import "stdlib/python_embed.flow"
 
@@ -20,7 +24,7 @@ extern {
 function main() -> i32 {
     print_line("python_embed: Flow calling CPython")
 
-    let ctx0: PythonContext = python_begin(".", "python")
+    let ctx0: PythonContext = python_begin("python", "../interop/python")
     if !ctx0.ok {
         print_line(python_last_error())
         return ctx0.error

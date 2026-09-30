@@ -17,13 +17,20 @@ joining member by name needs an inbound event, which is why this bot exists.
   posts it to the configured welcome channel.
 - Logs every greet and every failure.
 
+The bot is a Flow program, `scripts/tools/discord_welcome`. It speaks the
+Discord Gateway v10 itself over `wss://gateway.discord.gg/?v=10&encoding=json`
+(heartbeats with jitter and ACK tracking, `IDENTIFY` with the `GUILDS` and
+`GUILD_MEMBERS` intents, `RESUME` after a reconnect request or a dropped
+connection) and sends each welcome with
+`POST /api/v10/channels/{id}/messages`. TLS is OpenSSL, with SNI and
+certificate verification against the system trust store.
+
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `bot.py` | The bot itself. |
+| `build.sh` | Builds the bot (`scripts/tools/discord_welcome`) and prints the binary path. |
 | `messages.json` | Welcome message templates. Edit to change the copy. |
-| `requirements.txt` | Pins `discord.py`. |
 | `.env.example` | Template for the env file the bot reads. |
 | `systemd/discord-welcome.service` | systemd unit for the VPS host. |
 
@@ -44,21 +51,50 @@ joining member by name needs an inbound event, which is why this bot exists.
 In Discord, Settings -> Advanced -> Developer Mode on. Right-click the
 `#welcome` channel -> Copy ID. This is `WELCOME_CHANNEL_ID`.
 
-## Run locally
+## Build
+
+Needs a C compiler and OpenSSL 3 (`brew install openssl@3` on macOS,
+`apt install libssl-dev` on Debian and Ubuntu). No Python.
 
 ```bash
-cd tools/discord-welcome
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -r requirements.txt
+tools/discord-welcome/build.sh                        # prints build/flow-tools/discord_welcome
+tools/discord-welcome/build.sh /tmp/discord-welcome   # or builds to a chosen path
+```
 
-cp .env.example .env
+## Run locally
+
+From the repository root:
+
+```bash
+BIN="$(tools/discord-welcome/build.sh)"
+cp tools/discord-welcome/.env.example tools/discord-welcome/.env
 # fill in DISCORD_TOKEN and WELCOME_CHANNEL_ID
-python3 bot.py
+set -a; . tools/discord-welcome/.env; set +a
+"$BIN"
 ```
 
 The bot logs `Logged in as ...` and `Watching guilds: [...]`. Join the server
 with a test account to confirm a welcome message lands in `#welcome`.
+
+It reads `messages.json` from beside the executable, else from
+`tools/discord-welcome/messages.json` under the working directory.
+`--messages FILE` picks another file. A missing variable, a non-integer
+channel id, an unreadable `messages.json` or a rejected token exits with
+status 1.
+
+Offline checks, with no token and no network:
+
+```bash
+"$BIN" --render-all @tester Flow        # every template filled in
+DISCORD_TOKEN=x WELCOME_CHANNEL_ID=555 "$BIN" \
+  --replay tests/tools/discord_welcome/gateway.replay --seed 7
+"$BIN" --check-tls                      # GET https://discord.com/api/v10/gateway
+tests/tools/discord_welcome/run.sh
+```
+
+`--replay FILE` feeds recorded gateway payloads, one JSON object per line,
+through the same event handling. It prints the gateway frames and REST
+requests the bot would send, with the token redacted.
 
 ## Host on the VPS
 
@@ -67,15 +103,14 @@ secrets from `/etc/discord-welcome.env`.
 
 ```bash
 # on the VPS, as root
+apt install -y libssl3
 useradd --system --home /opt/discord-welcome --shell /usr/sbin/nologin discord-welcome
 mkdir -p /opt/discord-welcome
-chown discord-welcome:discord-welcome /opt/discord-welcome
 
-# copy these files to /opt/discord-welcome
-cd /opt/discord-welcome
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -r requirements.txt
+# from a checkout of the repository (needs cc and libssl-dev)
+tools/discord-welcome/build.sh /opt/discord-welcome/discord-welcome
+cp tools/discord-welcome/messages.json /opt/discord-welcome/
+chown -R discord-welcome:discord-welcome /opt/discord-welcome
 
 cat > /etc/discord-welcome.env <<'EOF'
 DISCORD_TOKEN=...
@@ -84,7 +119,7 @@ EOF
 chmod 600 /etc/discord-welcome.env
 chown root:discord-welcome /etc/discord-welcome.env
 
-cp systemd/discord-welcome.service /etc/systemd/system/
+cp tools/discord-welcome/systemd/discord-welcome.service /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now discord-welcome
 journalctl -u discord-welcome -f

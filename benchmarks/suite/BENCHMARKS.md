@@ -105,7 +105,8 @@ On a typical modern machine (M1/M2 Mac, Intel i7, AMD Ryzen):
 
 ## Adding New Benchmarks
 
-1. Create implementations in `flow/`, `c/`, `python/`
+1. Create implementations in `flow/` and `c/`, and the CPython subject in
+   `benchmarks/baselines/python/suite/`
 2. Follow naming: `NN_name.{flow,c,py}`
 3. Include timing and result verification
 4. Update `run_benchmarks.sh`

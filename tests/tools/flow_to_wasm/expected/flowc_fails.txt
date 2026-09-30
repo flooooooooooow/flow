@@ -1,0 +1,4 @@
+🔨 Converting broken.flow to WebAssembly...
+Error compiling FLOW to C: fake flowc: parse error in broken.flow
+--- exit 1
+--- emcc

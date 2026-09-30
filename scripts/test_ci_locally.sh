@@ -28,10 +28,6 @@ echo -e "${BLUE}Checking clang...${NC}"
 clang --version | head -3
 
 
-# Install Python dependencies (if needed)
-echo -e "${BLUE}Installing dependencies...${NC}"
-pip3 install pytest --quiet || echo "pytest already installed"
-
 echo ""
 echo -e "${BLUE}=== Running Tier 1 tests (transpile only) ===${NC}"
 ./flow test --tier 1
@@ -41,8 +37,8 @@ echo -e "${BLUE}=== Running Tier 2 tests (transpile + compile) ===${NC}"
 ./flow test --tier 2
 
 echo ""
-echo -e "${BLUE}=== Running Python unit tests ===${NC}"
-pytest tests/ -v --tb=short || echo "No Python unit tests or pytest not configured"
+echo -e "${BLUE}=== Running the shell tests (tests/scripts) ===${NC}"
+./tests/scripts/run.sh
 
 echo ""
 echo -e "${BLUE}=== Running example programs ===${NC}"

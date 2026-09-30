@@ -110,7 +110,7 @@ void *flow_gfx_init(int32_t w, int32_t h, const char *title_utf8) {
                                             rec->m_btn, rec->m_whl,
                                             FLOW_GFX_MAX_KEY_WINDOWS);
 
-    fprintf(stderr, "[gfx-record] %s — %dx%d, up to %d frames → %s\n",
+    fprintf(stderr, "[gfx-record] %s — %dx%d, up to %d frames → %s\n", /* slop-ok: output format */
             title_utf8 ? title_utf8 : "(untitled)", w, h, rec->max_frames,
             (const char *)rec->dir);
     return rec;
@@ -143,7 +143,7 @@ void flow_gfx_poll(void *handle) {
  * against gfx_time_ms gets identical output on every run and every host.
  *
  * This is simulated time, distinct from GIF playback rate, which
- * scripts/frames_to_gif.py sets separately with --fps/--stride. */
+ * scripts/frames_to_gif.sh sets separately with --fps/--stride. */
 double flow_gfx_time_ms(void *handle) {
     FlowGfxRecorder *rec = (FlowGfxRecorder *)handle;
     if (!rec) return 0.0;

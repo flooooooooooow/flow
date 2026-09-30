@@ -28,7 +28,7 @@ Record one headlessly, no display needed:
 Regenerate every GIF on this page:
 
 ```bash
-python3 scripts/record_demos.py --group evoleco
+scripts/record_demos.sh --group evoleco
 ```
 
 `./flow run` does not link a graphics backend, so it cannot build these; use

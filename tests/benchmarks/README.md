@@ -22,8 +22,8 @@ tests/benchmarks/
 ├── publish/                  # Published cross-language comparison
 │   ├── flow/                # Flow sources
 │   ├── c/                   # Hand-written C equivalents
-│   ├── rust/                # Rust equivalents
-│   └── python/              # Plain CPython equivalents
+│   └── rust/                # Rust equivalents
+├── baselines/python/        # CPython and NumPy subjects for every comparison
 ├── run_publish.sh           # Runs the harness (scripts/tools/bench_publish)
 ├── micro/                    # Micro-benchmarks
 │   ├── fft_benchmark.flow   # Fast Fourier Transform

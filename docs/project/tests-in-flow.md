@@ -123,8 +123,10 @@ check, test_attributes.py -O2 and nm checks, test_time_header_externs.py),
 tests of a Python pass that the transpiler does not call
 (test_pipeline_fusion.py fusion correctness, the rotation-equivalence tests
 in test_counted_loop_rotation.py), comparisons against a Python reference
-(test_time_blocks.py rk4), and tool tests (test_gfx_recorder.py,
-test_gif_flow_encoder.py; test_flow_run.py is now tests/flow_run/run.sh).
+(test_time_blocks.py rk4), and tool tests. The tool tests have since left
+Python: test_flow_run.py is now tests/flow_run/run.sh, and the gfx recorder,
+GIF encoder and other subprocess-only files are shell tests under
+tests/scripts, run by tests/scripts/run.sh.
 
 ## Inventory: tests/unit/ (165 test files)
 
@@ -137,9 +139,9 @@ test_gif_flow_encoder.py; test_flow_run.py is now tests/flow_run/run.sh).
 | test_backend_parity.py | b | C runs moved to tests/lang; MLIR JIT parity stays host-side |
 | test_backend_parity_extended.py | b | C versus MLIR differential parity |
 | test_basic.py | c | pytest infrastructure smoke |
-| test_benchmarks.py | c | benchmark harness tooling |
+| test_benchmarks.py | c | benchmark harness tooling; now tests/bench_harness/run.sh |
 | test_bpf_target.py | c | eBPF target checks |
-| test_browser_interpreter_gallery.py | c | browser interpreter tooling |
+| tests/scripts/browser_interpreter_gallery.sh | c | browser interpreter tooling; now a shell test |
 | test_bundle_symbol_closure.py | c | bundle symbol closure internals |
 | test_c_generator_abi.py | a | substring goldens on generated C; one run test blocked (#954) |
 | test_c_generator_assignments.py | b | assignment lowering in generated C |
@@ -165,9 +167,9 @@ test_gif_flow_encoder.py; test_flow_run.py is now tests/flow_run/run.sh).
 | test_coverage_units.py | c | units checker diagnostics |
 | test_debug_info.py | b | #line directive shape in generated C |
 | test_decorator_arguments.py | c | decorator argument parsing |
-| test_demo_gallery_docs.py | c | docs tooling |
-| test_doc_anchors.py | c | docs tooling |
-| test_doc_coverage.py | c | docs tooling |
+| tests/scripts/demo_gallery_docs.sh | c | docs tooling; now a shell test |
+| tests/scripts/doc_anchors.sh | c | docs tooling; now a shell test |
+| tests/scripts/doc_coverage.sh | c | docs tooling; now a shell test |
 | test_dsp_pipeline.py | c | DSP pipeline lowering internals |
 | test_dual_ops.py | b | operator rewrite asserted on generated text |
 | test_dynamics_dsl.py | c | dynamics DSL parse and lowering internals |
@@ -185,7 +187,7 @@ test_gif_flow_encoder.py; test_flow_run.py is now tests/flow_run/run.sh).
 | test_geometry_diagram.py | c | proof diagram tooling |
 | test_geometry_proof.py | c | proof tooling |
 | test_geometry_script.py | c | proof tooling |
-| test_gif_flow_encoder.py | b | GIF bytes decoded by Pillow |
+| tests/scripts/gif_flow_encoder.sh | b | GIF bytes decoded by scripts/tools/gif_check, a Flow GIF reader; now a shell test |
 | test_gpu_runtime.py | c | GPU runtime probes |
 | test_grow_helpers.py | b | growth helpers in generated C |
 | test_hybrid_events.py | c | parse, validation, and C-structure checks; e2e bouncing-ball runs migratable later |
@@ -248,7 +250,7 @@ test_gif_flow_encoder.py; test_flow_run.py is now tests/flow_run/run.sh).
 | test_range_algebra.py | c | range algebra folding internals |
 | test_recognition_semantics.py | c | denotational semantics internals |
 | test_registry.py | c | registry internals |
-| test_repo_stats.py | c | repo stats tooling |
+| tests/scripts/repo_stats.sh | c | repo stats tooling; now a shell test |
 | test_rf_types.py | c | RF type checking |
 | test_rt_safety.py | c | rt_safe no-alloc diagnostics |
 | test_safety_profile_enforcement.py | c | safety profile diagnostics |
@@ -257,7 +259,7 @@ test_gif_flow_encoder.py; test_flow_run.py is now tests/flow_run/run.sh).
 | test_shader_codegen_wgsl.py | b | WGSL source text |
 | test_shader_dsl.py | b | Metal source generated from the shader DSL |
 | test_shape_specialization.py | c | shape specialization internals |
-| test_size_regression.py | c | binary size check |
+| tests/scripts/size_regression.sh | c | binary size check; now a shell test |
 | test_sort_expr.py | b | sort lowering asserted on generated C |
 | test_span_data_field.py | c | span typechecking |
 | test_spans.py | c | span typechecking and lowering |
@@ -280,12 +282,12 @@ test_gif_flow_encoder.py; test_flow_run.py is now tests/flow_run/run.sh).
 | test_version.py | c | version string |
 | test_wasm_compiler.py | c | WASM toolchain probes |
 | test_wcet_analysis.py | c | WCET analysis internals; deleted with wcet_analysis.py, see tests/tools/analyze/run.sh |
-| test_wiki_nav.py | c | docs tooling |
+| tests/scripts/wiki_nav.sh | c | docs tooling; now a shell test |
 | test_working_mlir.py | b | MLIR text goldens |
 | test_working_parser.py | c | parser AST internals |
 | test_zero_cost_effects.py | b | direct-call substitution in generated C |
 
-Support modules (not tests): \_\_init\_\_.py, compiler_helpers.py.
+Support modules (not tests): the package \_\_init\_\_.py files and compiler_helpers.py, all since deleted.
 
 ## Inventory: tests/integration/ (21 test files)
 
@@ -296,20 +298,20 @@ Support modules (not tests): \_\_init\_\_.py, compiler_helpers.py.
 | test_compilation_pipeline.py | c | drives the Python Transpiler API and asserts success flags |
 | test_counted_loop_rotation.py | c | rotation equivalence calls the transform directly; MLIR fixture check |
 | test_defer_ordering.py | a | three tests blocked on Stage-A (#947) |
-| test_gfx_recorder.py | c | `flow record` tool reads back a frame |
+| tests/scripts/gfx_recorder.sh | c | `flow record` tool reads back a frame; now a shell test |
 | test_gpu_codegen.py | b | checks artifacts emitted by flow gpu |
 | test_metal.py | c | script-style Metal runtime availability probe |
-| test_mlir_math_override.py | b | MLIR math lowering |
+| tests/scripts/mlir_math_override.sh | b | MLIR math lowering; now a shell test |
 | test_mlir_spirv.py | b | MLIR to SPIR-V output text |
 | test_pipeline_examples.py | c | CLI transpile smoke over example programs; the tier sweeps cover this shape |
 | test_private_function_module_collision.py | a | blocked on Stage-A (#950) |
 | test_range_algebra.py | a | run tests blocked on Stage-A (#949); one C-text check |
 | test_range_sum.py | a | run tests blocked on Stage-A (#949); parse checks are (c) |
 | test_real_end_to_end.py | c | transpile and CLI smoke over examples; no program run asserts |
-| test_run_build_isolation.py | c | concurrent `flow run` isolation |
+| tests/scripts/run_build_isolation.sh | c | concurrent `flow run` isolation; now a shell test |
 | test_stdlib_c_declarations.py | b | libm naming and include-once checks on generated C |
 | test_time_header_externs.py | b | -Werror compile and C-text check |
-| test_wasm_backends.py | c | WASM page builder |
+| tests/scripts/wasm_backends.sh | c | WASM page builder; now a shell test |
 | test_working.py | c | transpiler CLI smoke |
 
 ## Counts

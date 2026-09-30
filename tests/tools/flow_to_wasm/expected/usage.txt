@@ -1,0 +1,8 @@
+Usage:
+  scripts/flow_to_wasm.sh <flow_file>     # Convert single file
+  scripts/flow_to_wasm.sh --all           # Convert all examples
+
+Example:
+  scripts/flow_to_wasm.sh examples/basics/fibonacci.flow
+--- exit 1
+--- emcc

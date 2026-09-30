@@ -14,6 +14,38 @@ mkdir -p "$BUILD_DIR"
 
 C_FLAGS="-O3 -march=native -ffast-math"
 
+# Microsecond wall clock without Python: the Flow benchmark harness prints it.
+TIMER="$FLOW_ROOT/$("$FLOW_ROOT/scripts/tools/build_tool.sh" bench_harness)"
+now_us() {
+    "$TIMER" --now-us
+}
+
+# The NumPy subject in benchmarks/baselines/python/standardized reports its
+# own time. It is skipped when python3 or NumPy is missing.
+run_python_subject() {
+    local subject=$1
+    local iterations=${2:-10}
+    echo -n "  python numpy    "
+    if ! python3 --version >/dev/null 2>&1; then
+        echo "skipped (python3 not found)"
+        return 0
+    fi
+    local total=0
+    local out result mean
+    for i in $(seq 1 $iterations); do
+        if ! out=$(python3 "$subject" 2>/dev/null); then
+            echo "skipped (the subject did not run; is NumPy installed?)"
+            return 0
+        fi
+        result=$(printf '%s\n' "$out" | grep -oE '^[0-9.]+' | head -1)
+        if [ -n "$result" ]; then
+            total=$(echo "$total + $result" | bc)
+        fi
+    done
+    mean=$(echo "scale=1; $total / $iterations" | bc)
+    echo "mean ${mean} µs"
+}
+
 run_benchmark() {
     local name=$1
     local flow_file=$2
@@ -41,11 +73,11 @@ run_benchmark() {
         echo "mean ${mean} µs"
     else
         # For minimal, use external timing
-        local start=$(python3 -c "import time; print(int(time.time() * 1000000))")
+        local start=$(now_us)
         for i in $(seq 1 $iterations); do
             "$BUILD_DIR/${name}" >/dev/null 2>&1
         done
-        local end=$(python3 -c "import time; print(int(time.time() * 1000000))")
+        local end=$(now_us)
         mean=$(echo "scale=1; ($end - $start) / $iterations" | bc)
         echo "mean ${mean} µs"
     fi
@@ -60,6 +92,7 @@ run_benchmark "minimal" "$SCRIPT_DIR/minimal/minimal.flow"
 
 echo "record"
 run_benchmark "record" "$SCRIPT_DIR/record/record.flow"
+run_python_subject "$FLOW_ROOT/benchmarks/baselines/python/standardized/record_numpy.py"
 
 echo "json"
 run_benchmark "json" "$SCRIPT_DIR/json/json.flow"

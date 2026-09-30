@@ -41,12 +41,23 @@ stale=0
 if [[ ! -x "$BIN" || "$FLOWC" -nt "$BIN" || "$SRC" -nt "$BIN" ]]; then
   stale=1
 else
-  for f in "$LIB"/*.flow; do
+  # The shared helpers, and any sibling modules the tool imports by path.
+  for f in "$LIB"/*.flow "scripts/tools/$NAME"/*.flow; do
     if [[ "$f" -nt "$BIN" ]]; then
       stale=1
       break
     fi
   done
+  # Standard-library modules the tool or its helpers import
+  # (`import stdlib.gif { ... }` is lib/stdlib/gif.flow).
+  if [[ "$stale" -eq 0 ]]; then
+    for mod in $(sed -n 's/^[[:space:]]*import[[:space:]][[:space:]]*stdlib\.\([A-Za-z0-9_.]*\).*/\1/p' "$SRC" "$LIB"/*.flow | sort -u); do
+      if [[ "lib/stdlib/${mod//.//}.flow" -nt "$BIN" ]]; then
+        stale=1
+        break
+      fi
+    done
+  fi
 fi
 
 if [[ "$stale" -eq 1 ]]; then
@@ -56,7 +67,7 @@ if [[ "$stale" -eq 1 ]]; then
     echo "build_tool: flowc could not compile $SRC" >&2
     exit 1
   fi
-  "$CC" -O2 -w -o "$BIN" "$C_OUT"
+  "$CC" -O2 -w -o "$BIN" "$C_OUT" -lm
 fi
 
 printf '%s\n' "$BIN"

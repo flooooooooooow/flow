@@ -1,0 +1,1580 @@
+# Record docs/demos/*.gif by running the real Flow programs headlessly.
+#
+# Run through scripts/record_demos.sh from anywhere:
+#
+#   scripts/record_demos.sh            # all demos
+#   scripts/record_demos.sh lorenz     # one demo
+#   scripts/record_demos.sh --group morphogenesis
+#   scripts/record_demos.sh --group neuro
+#   scripts/record_demos.sh --group evoleco
+#   scripts/record_demos.sh --group planet
+#   scripts/record_demos.sh --group procgen
+#   scripts/record_demos.sh --group numerical
+#   scripts/record_demos.sh --check    # list every GIF, fail if one is missing
+#
+# Each demo is compiled with `./flow record`, which links the program against
+# runtime/gfx_record.c instead of a windowing backend. The program then draws
+# into an off-screen buffer and writes every presented frame as a PPM, so the
+# resulting GIF is genuine output from the compiled Flow program rather than a
+# re-creation of it. No display is required, which means this also works in
+# CI.
+#
+# Naming contract: every game in examples/games/ has a GIF at
+# docs/demos/games/<name>.gif, every example in examples/morphogenesis/ has
+# one at docs/demos/morphogenesis/<name>.gif, every example in
+# examples/neuro/ has one at docs/demos/neuro/<name>.gif, every example in
+# examples/evoleco/ has one at docs/demos/evoleco/<name>.gif, every example
+# in examples/planet/ has one at docs/demos/planet/<name>.gif, every example
+# in examples/procgen/ has one at docs/demos/procgen/<name>.gif, and
+# numerical clips live at docs/demos/numerical/<name>.gif. The three
+# original demos (lorenz, tetris, 2048) also keep their GIFs directly in
+# docs/demos/; tetris.gif and 2048.gif are copied into docs/demos/games/ so
+# the games directory is complete.
+#
+# Interactive demos are driven by `flow record --keys`, a list of
+# `first-last:keycode` windows over frame numbers (see runtime/gfx_record.c).
+# Because the recorder and every game are fully deterministic (fixed RNG
+# seeds, frame-counted input), several of the longer scripts below were
+# derived by simulating the game's exact integer logic offline and searching
+# for input that plays well; the frame windows encode that play.
+#
+# The GIF side is scripts/tools/lib/gifclip.flow: optional crop to the drawn
+# area, Lanczos or nearest-neighbour scaling, one median-cut palette for the
+# whole clip, no dithering, disposal 1 so only changed pixels are stored.
+
+import .text { ft_out, ft_outln, ft_errln, ft_err, ft_eq, ft_len, ft_itoa, ft_repr, ft_starts, ft_ends, ft_slice, ft_from, ft_byte, ft_find_byte, ft_rjust, ft_ljust, ft_read_file, ft_exists, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_has, ft_list_sort, ft_list_sorted_unique, StrList }
+import .proc { pr_quote, pr_run, pr_capture, pr_chomp, pr_resolve, pr_mkdir_p }
+import .gifclip { gc_frames_new, gc_frames_push, gc_frames_get, gc_read_ppm, gc_crop, gc_resize_nearest, gc_resize_lanczos, gc_clip_palette, gc_write_gif, GcFrames }
+
+extern {
+    function getenv(name: string) -> string
+    function exit(code: i32) -> void
+    function malloc(size: i64) -> ptr<void>
+    function realloc(p: ptr<void>, size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function atoi(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fseek(fp: ptr<void>, offset: i64, whence: i32) -> i32
+    function ftell(fp: ptr<void>) -> i64
+    function fclose(fp: ptr<void>) -> i32
+}
+
+# macOS virtual keycodes, matching lib/stdlib/gfx.flow.
+const KEY_LEFT: i32 = 123
+const KEY_RIGHT: i32 = 124
+const KEY_DOWN: i32 = 125
+const KEY_UP: i32 = 126
+const KEY_SPACE: i32 = 49
+const KEY_F: i32 = 3       # minesweeper: flag
+const KEY_N: i32 = 45      # chetris: skip chess move
+
+# ---------------------------------------------------------------------------
+# Input scripts
+# ---------------------------------------------------------------------------
+
+# A key held from `frame` for `length` frames.
+function hold(frame: i32, key: i32, length: i32) -> string {
+    return ft_itoa(frame) + "-" + ft_itoa(frame + length - 1) + ":" + ft_itoa(key)
+}
+
+function span(a: i32, b: i32, key: i32) -> string {
+    return ft_itoa(a) + "-" + ft_itoa(b) + ":" + ft_itoa(key)
+}
+
+function join(parts: ptr<StrList>) -> string {
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < ft_list_len(parts) {
+        if i > 0 {
+            out = out + ","
+        }
+        out = out + ft_list_get(parts, i)
+        i = i + 1
+    }
+    return out
+}
+
+# Builds an edge-press schedule while tracking the current frame. Games do
+# edge detection, so each press is its own 2-frame window with a gap before
+# the next one.
+struct Tapper {
+    frame: i32
+    gap: i32
+    presses: ptr<StrList>
+}
+
+function tapper(frame: i32, gap: i32) -> ptr<Tapper> {
+    let t: ptr<Tapper> = malloc(24) as ptr<Tapper>
+    t[0].frame = frame
+    t[0].gap = gap
+    t[0].presses = ft_list_new()
+    return t
+}
+
+# The key a letter names: L R D U for the arrows, S for space, N for the
+# chetris skip key.
+function key_of(c: i32) -> i32 {
+    if c == 76 {
+        return KEY_LEFT
+    }
+    if c == 82 {
+        return KEY_RIGHT
+    }
+    if c == 68 {
+        return KEY_DOWN
+    }
+    if c == 85 {
+        return KEY_UP
+    }
+    if c == 78 {
+        return KEY_N
+    }
+    return KEY_SPACE
+}
+
+# One press per letter of `keys`, `gap` frames apart.
+function tap(t: ptr<Tapper>, keys: string) -> void {
+    let mut i: i32 = 0
+    while i < ft_len(keys) {
+        ft_list_push(t[0].presses, hold(t[0].frame, key_of(ft_byte(keys, i)), 2))
+        t[0].frame = t[0].frame + t[0].gap
+        i = i + 1
+    }
+}
+
+function tap_wait(t: ptr<Tapper>, frames: i32) -> void {
+    t[0].frame = t[0].frame + frames
+}
+
+function tapper_keys(t: ptr<Tapper>) -> string {
+    return join(t[0].presses)
+}
+
+# `s` repeated `n` times.
+function times(s: string, n: i32) -> string {
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        out = out + s
+        i = i + 1
+    }
+    return out
+}
+
+# A scripted playthrough: nudge sideways, rotate, then hard-drop.
+#
+# The natural fall delay is 48 frames per cell, far too slow to watch, so the
+# demo leans on hard drops to keep pieces landing every couple of seconds.
+function tetris_script() -> string {
+    # (key, repeats) per piece, then a hard drop.
+    let moves: string = "L2U1R3U1L3R1U2L4R2U1L1"
+    let parts: ptr<StrList> = ft_list_new()
+    let mut frame: i32 = 12
+    let mut i: i32 = 0
+    while i < ft_len(moves) {
+        let key: i32 = key_of(ft_byte(moves, i))
+        let repeats: i32 = ft_byte(moves, i + 1) - 48
+        let mut r: i32 = 0
+        while r < repeats {
+            ft_list_push(parts, hold(frame, key, 3))
+            frame = frame + 7  # gap so the game's edge detection sees a fresh press
+            r = r + 1
+        }
+        ft_list_push(parts, hold(frame, KEY_SPACE, 3))
+        frame = frame + 12
+        i = i + 2
+    }
+    return join(parts)
+}
+
+function g2048_script() -> string {
+    let keys: string = "LDRDLURDLDRULDRD"
+    let parts: ptr<StrList> = ft_list_new()
+    let mut frame: i32 = 10
+    let mut i: i32 = 0
+    while i < ft_len(keys) {
+        ft_list_push(parts, hold(frame, key_of(ft_byte(keys, i)), 3))
+        frame = frame + 14
+        i = i + 1
+    }
+    return join(parts)
+}
+
+# ---------------------------------------------------------------------------
+# Scripts derived by simulating the game's exact deterministic logic offline
+# (same RNG constants, same integer math, same frame ordering). Each string
+# is a fixed flight plan the real game then follows on record.
+# ---------------------------------------------------------------------------
+
+# Snake: start, then steer along greedily planned paths that eat 5 foods.
+const SNAKE_KEYS: string = "8-9:49,12-14:126,21-23:123,66-68:126,111-113:124,237-239:125,273-275:124,291-293:126,335-337:123,415-417:125,447-449:123,463-465:125,519-521:124"
+
+# Flappy: flap timings that thread the bird through the first pipes.
+const FLAPPY_KEYS: string = "8:49,19:49,30:49,41:49,52:49,79:49,106:49,133:49,160:49,187:49,214:49,241:49,291:49,317:49,344:49,385:49,411:49,438:49,465:49,476:49,487:49,498:49,509:49,520:49,531:49,555:49"
+
+# Pong: paddle holds that return every serve; the whole clip is one rally.
+const PONG_KEYS: string = "8:49,184-187:126,249-250:126,300-301:126,351-352:126,376-385:125,559-585:126,595-597:125,605-607:125,615-617:125"
+
+# Breakout: the paddle shadows the ball; no life is lost in the clip.
+const BREAKOUT_KEYS: string = "8:49,81-82:123,95-96:123,109-110:123,123-124:123,137-138:123,151-152:123,166-167:123,180-181:123,194-195:123,208-209:123,222-223:123,236-237:123,251-252:123,265-266:123,449-450:123"
+
+# Frogger: a searched hop plan that crosses road and river into a home slot
+# twice, riding logs on the way.
+const FROGGER_KEYS: string = "8-9:49,36-37:126,44-45:123,52-53:126,60-61:126,68-69:123,76-77:126,84-85:124,92-93:126,100-101:126,108-109:124,116-117:124,124-125:124,132-133:124,140-141:126,148-149:126,156-157:126,164-165:123,172-173:126,180-181:126,188-189:126,196-197:124,204-205:126,212-213:124,220-221:123,228-229:126,236-237:126,244-245:126,252-253:124,260-261:126,268-269:126,276-277:126,284-285:126,292-293:123,300-301:124,308-309:123,316-317:126,324-325:123,332-333:124,340-341:126,348-349:126,356-357:126"
+
+# Jumper: steering holds from a bounce-by-bounce search; climbs the tower
+# without ever falling off the bottom.
+const JUMPER_KEYS: string = "8:49,8-22:124,28-40:123,42-71:124,76-108:123,113-126:124,256-269:123,274-287:124,302-340:123,345-359:124,369-372:123,386-421:124,424-457:123,462-479:123,485-496:124,500-518:123,522-568:124,573-578:124,583-596:123"
+
+# Icy Tower: build speed on the full-width ground floor, bounce off the right
+# wall, keep the speed by switching to left, then jump on frame 34. That jump
+# leaves at max horizontal speed and clears six floors, which opens the combo.
+const ICY_TOWER_KEYS: string = "2:49,4-31:124,32-90:123,34:49"
+
+# Lane racer: lane changes that dodge every car (with a few scenic weaves).
+const LANE_RACER_KEYS: string = "8-9:49,70-71:124,150-151:124,208-209:123,314-315:124,394-395:123,402-403:123,482-483:124,490-491:124,547-548:123"
+
+# Simon: watches each playback, then echoes the pad sequence for 5 rounds
+# (the sequence is fixed by the game's RNG seed).
+const SIMON_KEYS: string = "89:123,204:123,213:125,354:123,363:125,372:124,535:123,544:125,553:124,562:126,743:123,752:125,761:124,770:126,779:123"
+
+# Othello: six human moves placed on legal cells, timed around the flip
+# animations and the AI's replies.
+const OTHELLO_KEYS: string = "6-7:49,80-81:126,85-86:126,90-91:49,164-165:123,169-170:123,174-175:125,179-180:125,184-185:49,268-269:124,273-274:124,278-279:124,283-284:124,288-289:124,293-294:49,372-373:125,377-378:125,382-383:49,471-472:123,476-477:123,481-482:49"
+
+# Match-3: seven valid swaps (cursor, select, swap) with cascade timing.
+const MATCH3_KEYS: string = "8-9:125,13-14:49,18-19:124,50-51:123,55-56:125,60-61:49,65-66:124,97-98:49,102-103:125,134-135:126,139-140:126,144-145:49,149-150:125,181-182:123,186-187:49,191-192:125,223-224:126,228-229:49,233-234:124,265-266:126,270-271:126,275-276:49,280-281:125"
+
+# Minesweeper: opening click floods a large region, then flags three known
+# mines (key 3 is F), reveals eight safe cells, and ends on a deliberate
+# wrong click so the lose state (all mines shown) plays out.
+const MINESWEEPER_KEYS: string = "9-10:123,15-16:125,21-22:124,27-28:126,33-34:49,47-48:123,53-54:123,59-60:125,65-66:3,77-78:124,83-84:126,89-90:126,95-96:126,101-102:126,107-108:3,119-120:123,125-126:125,131-132:3,143-144:126,149-150:49,161-162:126,167-168:49,179-180:123,185-186:126,191-192:49,203-204:126,209-210:49,221-222:126,227-228:49,239-240:126,245-246:49,257-258:123,263-264:49,275-276:123,281-282:49,293-294:123,299-300:125,315-316:49"
+
+# ---------------------------------------------------------------------------
+# Hand-built scripts for turn-based games (no timers to race against).
+# ---------------------------------------------------------------------------
+
+# Seven-move opening for both hotseat players with three forced jumps.
+#
+# Cursor starts on red's man at (2,5); every move is `navigate, select,
+# navigate, place`. The jumps arise naturally from the forced-capture rule.
+function checkers_script() -> string {
+    let t: ptr<Tapper> = tapper(12, 7)
+    # (nav to piece, nav to target) per move
+    let piece: ptr<StrList> = ft_list_new()
+    let target: ptr<StrList> = ft_list_new()
+    ft_list_push(piece, "")
+    ft_list_push(target, "RU")      # red  (2,5) -> (3,4)
+    ft_list_push(piece, "RRUU")
+    ft_list_push(target, "LD")      # slate (5,2) -> (4,3)
+    ft_list_push(piece, "LD")
+    ft_list_push(target, "RRUU")    # red  (3,4) x (4,3) -> (5,2)
+    ft_list_push(piece, "LU")
+    ft_list_push(target, "RRDD")    # slate (4,1) x (5,2) -> (6,3)
+    ft_list_push(piece, "DD")
+    ft_list_push(target, "LU")      # red  (6,5) -> (5,4)
+    ft_list_push(piece, "LLUU")
+    ft_list_push(target, "RD")      # slate (3,2) -> (4,3)
+    ft_list_push(piece, "RD")
+    ft_list_push(target, "LLUU")    # red  (5,4) x (4,3) -> (3,2)
+    let mut i: i32 = 0
+    while i < ft_list_len(piece) {
+        tap(t, ft_list_get(piece, i))
+        tap(t, "S")
+        tap(t, ft_list_get(target, i))
+        tap(t, "S")
+        tap_wait(t, 10)
+        i = i + 1
+    }
+    return tapper_keys(t)
+}
+
+# Pushes every box home across all five levels, ending on the victory
+# screen. Between levels the game shows a 60-frame LEVEL DONE banner.
+function sokoban_script() -> string {
+    let levels: ptr<StrList> = ft_list_new()
+    ft_list_push(levels, "RR")          # L1: one straight push
+    ft_list_push(levels, "LRDL")        # L2: two boxes left
+    ft_list_push(levels, "RRR")         # L3: through the gap
+    ft_list_push(levels, "UDRRR")       # L4: one up, one right
+    ft_list_push(levels, "UDLUDRRU")    # L5: three boxes up
+    let t: ptr<Tapper> = tapper(12, 9)
+    let mut i: i32 = 0
+    while i < ft_list_len(levels) {
+        tap(t, ft_list_get(levels, i))
+        if i < ft_list_len(levels) - 1 {
+            tap_wait(t, 66)  # LEVEL DONE banner, then the next level loads
+        }
+        i = i + 1
+    }
+    return tapper_keys(t)
+}
+
+# Selects 3 disks on the title screen and plays the optimal 7-move solve.
+# Each drop runs a 14-frame animation before input resumes.
+function hanoi_script() -> string {
+    # (src, dst) pegs per move
+    let solve: string = "02012102101202"
+    let t: ptr<Tapper> = tapper(10, 7)
+    tap(t, "L")     # 4 -> 3 disks
+    tap(t, "S")     # start
+    tap_wait(t, 6)
+    let mut cursor: i32 = 0
+    let mut i: i32 = 0
+    while i < ft_len(solve) {
+        let src: i32 = ft_byte(solve, i) - 48
+        let dst: i32 = ft_byte(solve, i + 1) - 48
+        while cursor != src {
+            if src > cursor {
+                tap(t, "R")
+                cursor = cursor + 1
+            } else {
+                tap(t, "L")
+                cursor = cursor - 1
+            }
+        }
+        tap(t, "S")   # pick up
+        while cursor != dst {
+            if dst > cursor {
+                tap(t, "R")
+                cursor = cursor + 1
+            } else {
+                tap(t, "L")
+                cursor = cursor - 1
+            }
+        }
+        tap(t, "S")   # drop
+        tap_wait(t, 22)   # drop animation + a beat
+        i = i + 2
+    }
+    return tapper_keys(t)
+}
+
+# Chess + Tetris turns for both players: place a tetromino (soft drops,
+# Space locks), then move that player's king, four times over.
+function chetris_script() -> string {
+    let t: ptr<Tapper> = tapper(12, 6)
+    # (tetromino moves, chess cursor to piece, chess cursor to target);
+    # "N" as the piece move skips the chess move.
+    let tetro: ptr<StrList> = ft_list_new()
+    let piece: ptr<StrList> = ft_list_new()
+    let target: ptr<StrList> = ft_list_new()
+    ft_list_push(tetro, "LLU" + times("D", 6))
+    ft_list_push(piece, "DDD")
+    ft_list_push(target, "U")       # white: king e1 up
+    ft_list_push(tetro, "RR" + times("D", 6))
+    ft_list_push(piece, "UUUU")
+    ft_list_push(target, "D")       # black: king e8 down
+    ft_list_push(tetro, "L" + times("D", 6))
+    ft_list_push(piece, "DD")
+    ft_list_push(target, "L")       # white: king sidesteps
+    ft_list_push(tetro, "RRR" + times("D", 6))
+    ft_list_push(piece, "N")
+    ft_list_push(target, "")        # black: skips chess (N)
+    let mut i: i32 = 0
+    while i < ft_list_len(tetro) {
+        tap(t, ft_list_get(tetro, i))
+        tap(t, "S")     # lock the tetromino -> chess phase
+        tap_wait(t, 8)
+        if ft_eq(ft_list_get(piece, i), "N") {
+            tap(t, "N")
+        } else {
+            tap(t, ft_list_get(piece, i))
+            tap(t, "S")   # select
+            tap(t, ft_list_get(target, i))
+            tap(t, "S")   # move
+        }
+        tap_wait(t, 10)
+        i = i + 1
+    }
+    return tapper_keys(t)
+}
+
+# Cursor walk pressing cells; every press toggles a plus-shape.
+function lightsout_script() -> string {
+    let t: ptr<Tapper> = tapper(14, 8)
+    let plan: ptr<StrList> = ft_list_new()
+    ft_list_push(plan, "")
+    ft_list_push(plan, "L")
+    ft_list_push(plan, "U")
+    ft_list_push(plan, "RR")
+    ft_list_push(plan, "DD")
+    ft_list_push(plan, "LL")
+    ft_list_push(plan, "UR")
+    ft_list_push(plan, "RD")
+    let mut i: i32 = 0
+    while i < ft_list_len(plan) {
+        tap(t, ft_list_get(plan, i))
+        tap(t, "S")
+        tap_wait(t, 18)
+        i = i + 1
+    }
+    return tapper_keys(t)
+}
+
+# Six human drops with pauses for the falling-disc animation and the AI's
+# reply (the AI thinks for 24 frames, then its disc falls).
+function connect4_script() -> string {
+    let t: ptr<Tapper> = tapper(12, 7)
+    let drops: ptr<StrList> = ft_list_new()
+    ft_list_push(drops, "")
+    ft_list_push(drops, "L")
+    ft_list_push(drops, "RR")
+    ft_list_push(drops, "")
+    ft_list_push(drops, "L")
+    ft_list_push(drops, "R")
+    let mut i: i32 = 0
+    while i < ft_list_len(drops) {
+        tap(t, ft_list_get(drops, i))
+        tap(t, "S")
+        tap_wait(t, 80)  # our disc falls, AI thinks, AI disc falls
+        i = i + 1
+    }
+    return tapper_keys(t)
+}
+
+# Held-key steering through the maze: bottom corridor to the power pellet,
+# up the left wall to the second pellet, then across the top. Direction
+# changes overlap on purpose; a wanted turn only happens where the maze
+# opens, so early presses are safe.
+function maze_chase_script() -> string {
+    let parts: ptr<StrList> = ft_list_new()
+    ft_list_push(parts, hold(8, KEY_SPACE, 2))
+    ft_list_push(parts, "10-95:123")    # left along the bottom row to the power pellet
+    ft_list_push(parts, "96-190:126")   # up the left corridor, eating the corner pellet
+    ft_list_push(parts, "187-236:124")  # right along the top row
+    ft_list_push(parts, "237-254:125")  # down the col-8 alley
+    ft_list_push(parts, "255-345:124")  # right along row 3
+    return join(parts)
+}
+
+# Strafe under the alien grid, firing whenever the last shot lands.
+function invaders_script() -> string {
+    let parts: ptr<StrList> = ft_list_new()
+    ft_list_push(parts, hold(8, KEY_SPACE, 2))
+    # movement: sweep left, right, left, right, left
+    ft_list_push(parts, span(24, 78, KEY_LEFT))
+    ft_list_push(parts, span(100, 168, KEY_RIGHT))
+    ft_list_push(parts, span(190, 248, KEY_LEFT))
+    ft_list_push(parts, span(270, 338, KEY_RIGHT))
+    ft_list_push(parts, span(360, 420, KEY_LEFT))
+    ft_list_push(parts, span(440, 480, KEY_RIGHT))
+    # fire: one bullet may be alive at a time; tap steadily
+    let mut f: i32 = 18
+    while f < 500 {
+        ft_list_push(parts, hold(f, KEY_SPACE, 2))
+        f = f + 26
+    }
+    return join(parts)
+}
+
+# Rotate-thrust-fire loops. Space is held for long stretches; the game
+# autofires on a cooldown while it is down.
+function asteroids_script() -> string {
+    let parts: ptr<StrList> = ft_list_new()
+    ft_list_push(parts, hold(8, KEY_SPACE, 2))
+    ft_list_push(parts, "20-200:49")
+    ft_list_push(parts, "230-430:49")
+    ft_list_push(parts, "460-520:49")
+    ft_list_push(parts, span(24, 48, KEY_LEFT))
+    ft_list_push(parts, span(56, 72, KEY_UP))
+    ft_list_push(parts, span(90, 112, KEY_LEFT))
+    ft_list_push(parts, span(120, 136, KEY_UP))
+    ft_list_push(parts, span(160, 186, KEY_RIGHT))
+    ft_list_push(parts, span(194, 210, KEY_UP))
+    ft_list_push(parts, span(240, 268, KEY_LEFT))
+    ft_list_push(parts, span(276, 292, KEY_UP))
+    ft_list_push(parts, span(320, 348, KEY_RIGHT))
+    ft_list_push(parts, span(356, 372, KEY_UP))
+    ft_list_push(parts, span(400, 428, KEY_LEFT))
+    ft_list_push(parts, span(436, 452, KEY_UP))
+    ft_list_push(parts, span(470, 500, KEY_RIGHT))
+    return join(parts)
+}
+
+# Sweeps the crosshair across the sky, firing interceptors that blossom into
+# blast rings over the incoming missiles.
+function missile_script() -> string {
+    let parts: ptr<StrList> = ft_list_new()
+    ft_list_push(parts, hold(8, KEY_SPACE, 2))
+    ft_list_push(parts, span(20, 52, KEY_LEFT))
+    ft_list_push(parts, span(20, 52, KEY_UP))
+    ft_list_push(parts, hold(66, KEY_SPACE, 2))
+    ft_list_push(parts, span(90, 140, KEY_RIGHT))
+    ft_list_push(parts, hold(150, KEY_SPACE, 2))
+    ft_list_push(parts, span(170, 210, KEY_LEFT))
+    ft_list_push(parts, span(170, 210, KEY_DOWN))
+    ft_list_push(parts, hold(220, KEY_SPACE, 2))
+    ft_list_push(parts, span(240, 280, KEY_RIGHT))
+    ft_list_push(parts, span(240, 280, KEY_UP))
+    ft_list_push(parts, hold(290, KEY_SPACE, 2))
+    ft_list_push(parts, span(310, 350, KEY_LEFT))
+    ft_list_push(parts, hold(356, KEY_SPACE, 2))
+    ft_list_push(parts, span(380, 410, KEY_RIGHT))
+    ft_list_push(parts, span(380, 410, KEY_DOWN))
+    ft_list_push(parts, hold(416, KEY_SPACE, 2))
+    return join(parts)
+}
+
+# Draws with the keyboard pen. Sand first, then the pen walks down into the
+# oil pool, the brush is widened twice, and fire is laid into the oil; once
+# it has taken hold the pen climbs back up and pours water on it.
+#
+# The pen accelerates while a direction is held (2 px/frame for six frames,
+# then 4, then 6), so the two travel windows below are sized to land on the
+# oil pool at y=132 and to climb back to y=98.
+function falling_sand_script() -> string {
+    let parts: ptr<StrList> = ft_list_new()
+    ft_list_push(parts, "2-18:49")      # paint sand from the start position
+    ft_list_push(parts, "8-18:124")     # sweep the stroke right
+    ft_list_push(parts, "22-23:23")     # 5 -> fire
+    ft_list_push(parts, "24-45:125")    # walk the pen down into the oil pool
+    ft_list_push(parts, "47:30")        # ] widen the brush
+    ft_list_push(parts, "50:30")        # ] again, radius 8
+    ft_list_push(parts, "52-70:49")     # light the oil
+    ft_list_push(parts, "74-75:20")     # 3 -> water
+    ft_list_push(parts, "76-86:126")    # climb back above the fire
+    ft_list_push(parts, "88-104:49")    # pour water onto it: steam
+    return join(parts)
+}
+
+# ---------------------------------------------------------------------------
+# The demo table
+# ---------------------------------------------------------------------------
+
+struct Demo {
+    name: string
+    program: string
+    caption: string
+    frames: i32
+    skip: i32
+    duration_ms: i32
+    scale: f64
+    keys: string
+    trim_leading: i32
+    # Crop away margins the program never draws into, so the subject fills
+    # the clip. Simulations in particular tend to use a fraction of their
+    # window.
+    crop: bool
+    colors: i32
+    # Lanczos suits the games, whose art is drawn at window resolution. A
+    # simulation drawn as a grid of N x N pixel blocks is better off with
+    # nearest neighbour: interpolation smears every block edge into a
+    # gradient, which both softens the picture and roughly doubles the
+    # encoded size, because the GIF can no longer reuse runs of identical
+    # pixels.
+    nearest: bool
+    # Extra environment for the recording, as NAME=value words.
+    env: string
+    # Where the GIF goes, relative to docs/demos/.
+    subdir: string
+    # Legacy demos keep a copy at docs/demos/<name>.gif too.
+    also_root: bool
+}
+
+struct Table {
+    items: ptr<ptr<Demo>>
+    len: i32
+    cap: i32
+}
+
+let mut demos: ptr<Table> = null
+
+function add(d: ptr<Demo>) -> ptr<Demo> {
+    if demos[0].len == demos[0].cap {
+        let nc: i32 = demos[0].cap * 2
+        demos[0].items = realloc(demos[0].items as ptr<void>, (nc as i64) * 8) as ptr<ptr<Demo>>
+        demos[0].cap = nc
+    }
+    let items: ptr<ptr<Demo>> = demos[0].items
+    items[demos[0].len] = d
+    demos[0].len = demos[0].len + 1
+    return d
+}
+
+function demo_at(i: i32) -> ptr<Demo> {
+    let items: ptr<ptr<Demo>> = demos[0].items
+    return items[i]
+}
+
+# Demo(name, program, caption) with the dataclass defaults.
+function demo(name: string, program: string, caption: string) -> ptr<Demo> {
+    let d: ptr<Demo> = malloc(256) as ptr<Demo>
+    d[0].name = name
+    d[0].program = program
+    d[0].caption = caption
+    d[0].frames = 240
+    d[0].skip = 1
+    d[0].duration_ms = 60
+    d[0].scale = 1.0
+    d[0].keys = ""
+    d[0].trim_leading = 0
+    d[0].crop = false
+    d[0].colors = 64
+    d[0].nearest = false
+    d[0].env = ""
+    d[0].subdir = "games"
+    d[0].also_root = false
+    return add(d)
+}
+
+function game(name: string, keys: string, frames: i32, caption: string, scale: f64, skip: i32, duration_ms: i32, colors: i32) -> ptr<Demo> {
+    let d: ptr<Demo> = demo(name, "examples/games/" + name + "_gfx.flow", caption)
+    d[0].frames = frames
+    d[0].skip = skip
+    d[0].duration_ms = duration_ms
+    d[0].scale = scale
+    d[0].keys = keys
+    d[0].colors = colors
+    return d
+}
+
+# A clip that takes no input, recorded from examples/<dir>/<name>.flow into
+# docs/demos/<dir>/ with nearest-neighbour scaling.
+function sim(dir: string, name: string, frames: i32, skip: i32, caption: string, duration_ms: i32, colors: i32, scale: f64) -> ptr<Demo> {
+    let d: ptr<Demo> = demo(name, "examples/" + dir + "/" + name + ".flow", caption)
+    d[0].frames = frames
+    d[0].skip = skip
+    d[0].duration_ms = duration_ms
+    d[0].scale = scale
+    d[0].colors = colors
+    d[0].subdir = dir
+    d[0].nearest = true
+    return d
+}
+
+# A morphogenesis clip: no input, one full formation, then loop.
+#
+# Every example draws into the same 512x592 window, so one scale suits all
+# of them (0.86 -> 440 px wide). `frames` and `skip` are the two knobs that
+# matter: the product has to cover the whole of the formation and stop
+# before an example that restarts itself begins its second run.
+function morph(name: string, frames: i32, skip: i32, caption: string, duration_ms: i32, colors: i32) -> ptr<Demo> {
+    return sim("morphogenesis", name, frames, skip, caption, duration_ms, colors, 0.86)
+}
+
+# A neuro-atlas clip: evidence panels that animate themselves.
+#
+# Every example draws into a ~900x660 HUD window and auto-cycles its
+# presets, so no input script is required. Scale 0.55 lands near 500 px
+# wide, matching the morphogenesis gallery cards.
+function neuro(name: string, frames: i32, skip: i32, caption: string, duration_ms: i32, colors: i32) -> ptr<Demo> {
+    return sim("neuro", name, frames, skip, caption, duration_ms, colors, 0.55)
+}
+
+# An evolutionary-biology / ecology clip. Same 512x592 window as
+# morphogenesis. Measurements gate before the window opens.
+function evoeco(name: string, frames: i32, skip: i32, caption: string, duration_ms: i32, colors: i32) -> ptr<Demo> {
+    return sim("evoleco", name, frames, skip, caption, duration_ms, colors, 0.55)
+}
+
+# A cubesphere planet pipeline clip. Same 512x592 window as morphogenesis /
+# evoleco. Measurements gate before the window opens.
+function planet(name: string, frames: i32, skip: i32, caption: string, duration_ms: i32, colors: i32) -> ptr<Demo> {
+    return sim("planet", name, frames, skip, caption, duration_ms, colors, 0.55)
+}
+
+# A procedural-generation clip. Same 512x592 window as morphogenesis /
+# evoleco. Measurements gate before the window opens.
+function procgen(name: string, frames: i32, skip: i32, caption: string, duration_ms: i32, colors: i32) -> ptr<Demo> {
+    return sim("procgen", name, frames, skip, caption, duration_ms, colors, 0.55)
+}
+
+# A numerical-methods clip (FMM and friends). Same 512x592 window as
+# morphogenesis / procgen. Measurements gate before the window opens.
+function numerical(name: string, frames: i32, skip: i32, caption: string, duration_ms: i32, colors: i32) -> ptr<Demo> {
+    return sim("numerical", name, frames, skip, caption, duration_ms, colors, 0.86)
+}
+
+function build_table() -> void {
+    demos = malloc(16) as ptr<Table>
+    demos[0].items = malloc(8 * 128) as ptr<ptr<Demo>>
+    demos[0].len = 0
+    demos[0].cap = 128
+
+    let lorenz: ptr<Demo> = demo("lorenz", "examples/evolution/lorenz_gfx.flow", "Lorenz attractor: `flow` block with an RK4 solver, stepped per frame")
+    # The trajectory needs ~30 time units to visit both lobes, and the demo
+    # advances 0.015 per frame, so a short recording only ever shows one wing.
+    lorenz[0].frames = 2000
+    lorenz[0].skip = 10
+    lorenz[0].duration_ms = 55
+    lorenz[0].scale = 0.65
+    lorenz[0].crop = true
+    lorenz[0].colors = 32
+    lorenz[0].subdir = ""
+
+    let tetris: ptr<Demo> = demo("tetris", "examples/games/tetris_gfx.flow", "Tetris: full game loop, scripted input, native gfx backend")
+    tetris[0].frames = 320
+    tetris[0].skip = 3
+    tetris[0].duration_ms = 80
+    tetris[0].scale = 0.6
+    tetris[0].keys = tetris_script()
+    tetris[0].subdir = ""
+    tetris[0].also_root = true
+
+    let g2048: ptr<Demo> = demo("2048", "examples/games/2048_gfx.flow", "2048: grid logic and tile merging")
+    g2048[0].frames = 260
+    g2048[0].skip = 3
+    g2048[0].duration_ms = 90
+    g2048[0].scale = 0.65
+    g2048[0].keys = g2048_script()
+    g2048[0].subdir = ""
+    g2048[0].also_root = true
+
+    # ---- action ----  game(name, keys, frames, caption, scale, skip, duration_ms, colors)
+    game("snake", SNAKE_KEYS, 560, "Snake: planned path eats five foods", 0.6, 2, 33, 64)
+    game("pong", PONG_KEYS, 620, "Pong: one long rally against the tracking AI", 0.6, 2, 33, 64)
+    game("breakout", BREAKOUT_KEYS, 640, "Breakout: the paddle shadows the ball through the brick wall", 0.68, 2, 33, 64)
+    game("asteroids", asteroids_script(), 540, "Asteroids: rotate, thrust, autofire through the first wave", 0.5, 3, 50, 32)
+    game("invaders", invaders_script(), 500, "Space Invaders: strafing under the marching grid", 0.58, 3, 45, 32)
+    game("flappy", FLAPPY_KEYS, 560, "Flappy: flap timings that thread the pipes", 0.67, 4, 65, 32)
+    game("frogger", FROGGER_KEYS, 430, "Frogger: road, river, and two home slots", 0.63, 4, 65, 40)
+    game("missile", missile_script(), 460, "Missile Command: interceptors and blast rings", 0.65, 2, 33, 64)
+    game("maze_chase", maze_chase_script(), 400, "Maze Chase: pellet run past three ghost AIs", 0.68, 2, 33, 64)
+    game("lane_racer", LANE_RACER_KEYS, 560, "Lane Racer: weaving through traffic without a scratch", 0.67, 4, 60, 40)
+    game("jumper", JUMPER_KEYS, 620, "Jumper: searched steering climbs the platform tower", 0.75, 2, 33, 64)
+    game("icy_tower", ICY_TOWER_KEYS, 90, "Icy Tower: speed built on the ground floor, a wall bounce, then a six-floor leap into a combo", 0.715, 2, 50, 48)
+    # ---- puzzle ----
+    game("minesweeper", MINESWEEPER_KEYS, 400, "Minesweeper: flood reveal, flags, and one fatal click", 0.68, 2, 33, 64)
+    game("sokoban", sokoban_script(), 540, "Sokoban: all five levels solved", 0.75, 2, 33, 64)
+    game("match3", MATCH3_KEYS, 380, "Match-3: seven swaps with cascade chains", 0.8, 2, 33, 64)
+    game("lightsout", lightsout_script(), 300, "Lights Out: plus-shaped toggles chasing the dark", 0.72, 2, 33, 64)
+    game("hanoi", hanoi_script(), 440, "Tower of Hanoi: the optimal 7-move solve on 3 disks", 0.65, 2, 33, 64)
+    game("simon", SIMON_KEYS, 800, "Simon: five echoed rounds, straight from the seeded sequence", 0.6, 3, 45, 64)
+    # ---- board ----
+    game("connect4", connect4_script(), 520, "Connect Four: six drops against the blocking AI", 0.7, 2, 33, 64)
+    game("othello", OTHELLO_KEYS, 660, "Othello: legal placements and flip animations against the AI", 0.6, 2, 33, 64)
+    game("checkers", checkers_script(), 460, "Checkers: hotseat opening with three forced jumps", 0.6, 2, 33, 64)
+    game("chetris", chetris_script(), 560, "Chetris: tetromino locks and king moves, turn by turn", 0.6, 2, 33, 64)
+    # ---- sandbox ----
+    let sand: ptr<Demo> = demo("falling_sand", "examples/games/falling_sand_gfx.flow", "The Falling Sand Game: a sand stroke, then oil set alight and doused with water")
+    sand[0].frames = 120
+    sand[0].skip = 1
+    sand[0].duration_ms = 55
+    sand[0].scale = 1.0
+    sand[0].keys = falling_sand_script()
+    sand[0].colors = 40
+    # One simulated cell per pixel: interpolating would smear the grain.
+    sand[0].nearest = true
+
+    # -----------------------------------------------------------------------
+    # Morphogenesis. These take no input at all, so the tuning is entirely in
+    # the frame budget: the clip has to start before the pattern exists and
+    # end after it does. Several examples finish, hold, and then reseed
+    # themselves; for those the budget stops inside the hold so the loop
+    # point is the finished form rather than a restart mid-clip. The per-clip
+    # numbers below were read off a change-over-time curve of the recorded
+    # frames (mean absolute pixel difference against frame 0 and against the
+    # previous frame).
+    #
+    # morph(name, frames, skip, caption, duration_ms, colors)
+    # -----------------------------------------------------------------------
+
+    # ---- reaction-diffusion and continuous fields ----
+    # Every cell of the field changes every frame in this group, so the GIF
+    # cannot reuse anything between frames: the budget is roughly 14 KB per
+    # kept frame at 16 colours. Hence ~50 kept frames, held longer on screen.
+    morph("gray_scott", 240, 4, "Gray-Scott: a seeded blob divides into a field of solitons", 80, 12)
+    morph("brusselator", 152, 4, "Brusselator: noise becomes a hexagonal lattice at the predicted lambda", 100, 12)
+    morph("turing_spots", 200, 4, "Turing spots: noise resolves into a hexagonal lattice of peaks", 80, 24)
+    morph("turing_stripes", 240, 4, "Turing stripes: the same system, saturated, so ridges form", 80, 12)
+    morph("belousov", 320, 10, "Belousov-Zhabotinsky: four broken waves wind into spirals", 120, 10)
+    morph("swift_hohenberg", 400, 8, "Swift-Hohenberg: one wavelength survives and anneals into rolls", 80, 12)
+    morph("cahn_hilliard", 800, 20, "Cahn-Hilliard: a quenched mixture unmixes and coarsens", 95, 12)
+    # heat_morph rethrows its noise every 200 steps; stop inside the first.
+    morph("heat_morph", 200, 4, "Perona-Malik diffusion: noise dissolves, boundaries sharpen", 80, 24)
+    # ---- growth and aggregation ----
+    # This group only redraws near the growth front, so the encoder stores a
+    # few hundred changed pixels per frame and the clips can run long.
+    # dla finishes near frame 140 and holds 120 frames before reseeding.
+    morph("dla", 180, 2, "Diffusion-limited aggregation: a dendrite grows from one seed", 55, 48)
+    # eden fills the dish by frame ~180, then holds.
+    morph("eden_growth", 200, 3, "Eden growth: a compact colony with a rough KPZ front", 65, 24)
+    # The midrib is up by frame ~80; the rest of the budget is the crown
+    # filling in with higher-order veins, which is the half worth watching.
+    morph("branching_vessels", 330, 3, "Space colonization: a midrib forks into leaf venation", 55, 48)
+    # the plant is fully revealed by frame ~104 and restarts at ~240.
+    morph("lsystem_plant", 130, 1, "L-system plant: a turtle walks a longer prefix each frame", 50, 48)
+    # the tree finishes growing around frame 56 and then only the wind moves,
+    # which redraws every branch, so this one is priced like a field.
+    morph("lsystem_tree", 200, 5, "L-system tree: seven levels of 3D branching, then wind", 90, 16)
+    # coral tops out near frame 76 and restarts at ~180.
+    morph("coral_ballistic", 110, 1, "Ballistic deposition: shadowing grows porous coral columns", 50, 32)
+    # ---- cellular and discrete ----
+    morph("cyclic_ca", 210, 7, "Cyclic CA: noise, then debris, then a tiling of spiral cores", 120, 10)
+    morph("life_variants", 400, 12, "Life variants: a soup thins into gliders and still lifes", 110, 12)
+    # the crystal stops growing near frame 60 and restarts at ~168.
+    morph("hexagonal_ca", 110, 1, "Reiter snowflake: six-fold dendrites off one frozen cell", 50, 48)
+    # wfc completes near frame 100 and restarts at ~240.
+    morph("wfc_growth", 130, 1, "Wave function collapse: a circuit resolves out of possibility", 50, 48)
+    # ---- biological pattern ----
+    morph("slime_mold", 500, 12, "Physarum agents: a trail map becomes a transport network", 100, 12)
+    morph("cell_sorting", 600, 8, "Differential adhesion: a 50/50 mixture sorts into layers", 70, 16)
+    # one full head-to-tail axis; the embryo restarts around frame 200.
+    morph("somite_clock", 180, 2, "Clock and wavefront: equal somites laid down one at a time", 60, 48)
+    # ---- wave-2 continuous / discrete / agent ----
+    morph("gierer_meinhardt", 160, 4, "Gierer-Meinhardt: activator-inhibitor spots at the predicted wavelength", 100, 12)
+    morph("schnakenberg", 160, 4, "Schnakenberg: cubic autocatalysis selecting a Turing wavelength", 100, 12)
+    morph("fitzhugh_waves", 160, 4, "FitzHugh waves: broken fronts wind into rotating spiral tips", 100, 12)
+    morph("kuramoto_sivashinsky", 160, 4, "Kuramoto-Sivashinsky: 1D spatiotemporal chaos as a space-time plot", 80, 16)
+    morph("allen_cahn", 160, 4, "Allen-Cahn: a circular droplet shrinks under mean-curvature flow", 100, 12)
+    morph("mycelium", 160, 2, "Mycelium: hyphal length grows under nutrient depletion", 60, 24)
+    morph("phase_field_dendrite", 160, 3, "Phase-field dendrite: six-fold anisotropy selects primary arms", 80, 16)
+    morph("bz_3d_slice", 160, 3, "BZ 3D slice: a scroll wave revealed as a marching z-cut", 80, 12)
+    morph("laplacian_growth", 160, 2, "Laplacian growth: dielectric breakdown with D from Rg scaling", 55, 32)
+    morph("viscous_fingering", 160, 2, "Viscous fingering: a Saffman-Taylor finger at half the channel", 55, 24)
+    morph("bone_remodelling", 200, 4, "Bone remodelling: trabeculae align with load (Wolff)", 70, 24)
+    morph("turing_hex_ca", 160, 2, "Turing hex CA: Young activator-inhibitor on a triangular lattice", 70, 16)
+    morph("flocking_patterns", 120, 5, "Vicsek flocking: order parameter collapses with noise", 80, 8)
+    morph("sandpile", 120, 4, "Abelian sandpile: avalanche sizes on a power law", 70, 12)
+    morph("schelling_segregation", 200, 4, "Schelling: mild preference produces strong segregation", 70, 16)
+    morph("voronoi_growth", 160, 4, "Johnson-Mehl: nucleation and growth with an Avrami exponent", 70, 16)
+    morph("ant_pheromone", 200, 4, "Ant pheromone: the short bridge wins by stigmergy", 70, 24)
+    morph("crack_propagation", 200, 4, "Random fuse crack: disorder lengthens the failure path", 70, 24)
+    morph("river_erosion", 160, 8, "Stream-power rivers: drainage basins obey Hack's law", 90, 12)
+
+    # -----------------------------------------------------------------------
+    # Neuron and network atlas. Measurements gate the exit code before the
+    # window opens; the clip itself is the live HUD the program draws after
+    # that pass. Frame budgets are short because most examples auto-advance
+    # a preset every few dozen frames: long enough to see the dynamics, short
+    # enough that the headless verification still dominates the wall time.
+    # -----------------------------------------------------------------------
+
+    # ---- single-cell dynamics ----
+    neuro("hodgkin_huxley", 120, 2, "Hodgkin-Huxley: spike shape and type-II onset vs the 1952 paper", 70, 40)
+    # Auto-advances the highlight across all 20 panels every 4 frames; two
+    # full tours so the highlight motion is obvious in the GIF.
+    neuro("izhikevich_zoo", 180, 1, "Izhikevich zoo: twenty firing regimes from one pair of equations", 55, 40)
+    let lif: ptr<Demo> = neuro("lif_fi_curve", 100, 2, "Leaky integrate-and-fire: measured F-I curve against its closed form", 70, 32)
+    lif[0].scale = 0.6
+    neuro("fitzhugh_nagumo", 180, 2, "FitzHugh-Nagumo: nullclines, Hopf window, and the limit cycle", 60, 40)
+    neuro("morris_lecar", 200, 2, "Morris-Lecar: Hopf and fold currents found by bisection on tr J", 60, 40)
+    # ---- cable and compartments ----
+    neuro("cable_equation", 200, 2, "Cable equation: attenuation vs the analytic length constant", 60, 40)
+    neuro("multicompartment", 200, 2, "Multicompartment: a backpropagating action potential along a dendrite", 60, 40)
+    # ---- synapses and networks ----
+    neuro("stdp_window", 180, 2, "STDP: the canonical asymmetric pairing window, parts in 1e14", 70, 32)
+    neuro("balanced_network", 90, 2, "Balanced E/I: 12500 LIF neurons in the asynchronous irregular state", 80, 32)
+    neuro("ring_attractor", 160, 2, "Ring attractor: a bump that remembers and tracks a moving cue", 60, 40)
+    # Hopfield auto-advances a retrieval demo every 30 frames; keep enough of
+    # the sequence that the pattern visibly settles.
+    neuro("hopfield", 280, 2, "Hopfield: capacity against the 0.138 N bound, energy never rises", 55, 32)
+    neuro("wta_circuit", 240, 2, "Winner-take-all: selection latency vs contrast, R^2 near 1", 55, 40)
+    neuro("cpg_gait", 120, 2, "CPG gait: four quadruped gaits phase-locked from coupled oscillators", 70, 40)
+    neuro("orientation_tuning", 100, 2, "Retina to V1: orientation tuning from untuned inputs", 70, 40)
+    neuro("reservoir", 100, 2, "Reservoir: echo-state memory capacity against Jaeger's bound N", 70, 40)
+
+    # -----------------------------------------------------------------------
+    # Evolutionary biology and ecology. Population-genetics programs measure
+    # closed forms before the window opens; evolutionary games and ecology
+    # companions do the same, then draw the live lattice or phase portrait.
+    # -----------------------------------------------------------------------
+
+    # ---- population genetics ----
+    evoeco("wright_fisher", 120, 2, "Wright-Fisher: H_t = H_0 (1-1/(2N))^t and absorption at 4 N ln 2", 70, 24)
+    evoeco("hardy_weinberg", 200, 1, "Hardy-Weinberg: genotype frequencies recover p^2 : 2pq : q^2", 55, 32)
+    evoeco("selection_locus", 140, 2, "Viability selection: allele frequency follows the discrete logistic", 70, 24)
+    evoeco("mutation_selection", 140, 2, "Mutation-selection balance: equilibrium at p* = u/s", 70, 24)
+    evoeco("bottleneck", 140, 2, "Bottleneck: heterozygosity loss matches the product over Nt", 70, 24)
+    evoeco("island_migration", 160, 2, "Island model: Fst settles near 1/(1 + 4 N m K/(K-1))", 70, 24)
+    evoeco("moran_process", 120, 2, "Moran process: neutral fixation probability is 1/N; selective rho gated", 70, 24)
+    # ---- evolutionary dynamics and games ----
+    evoeco("fitness_landscape", 120, 2, "NK fitness landscape: adaptive walks climb to a local peak", 70, 24)
+    evoeco("quasispecies", 240, 1, "Quasispecies: master sequence collapses past the error threshold", 55, 32)
+    evoeco("hawk_dove", 140, 2, "Hawk-Dove: mixed ESS at V/C with an invader assay", 70, 24)
+    evoeco("spatial_pd", 160, 2, "Spatial PD: cooperation persists where mean-field dies", 60, 16)
+    evoeco("rock_paper_scissors", 160, 2, "Spatial RPS: cyclic chasing; coexistence against well-mixed death", 60, 16)
+    evoeco("replicator_dynamics", 140, 2, "Replicator dynamics: simplex trajectory to the Nash rest point", 70, 24)
+    # ---- ecology (visual companions) ----
+    evoeco("lotka_volterra_gfx", 160, 2, "Lotka-Volterra: orbits and a conserved first integral", 55, 16)
+    evoeco("sir_spatial", 160, 2, "Spatial SIR: lattice attack rate vs final-size at R0_eff", 60, 16)
+    # ---- extended evolutionary genetics / eco-evo ----
+    evoeco("mullers_ratchet", 180, 2, "Muller ratchet: irreversible deleterious clicks vs Haigh scale", 70, 24)
+    evoeco("clonal_interference", 180, 2, "Clonal interference: competing beneficials; weaker clone suppressed", 70, 24)
+    evoeco("hitchhiking", 180, 2, "Hitchhiking: selective sweep carves a diversity trough", 70, 24)
+    evoeco("breeders_equation", 160, 2, "Breeder equation: response R = h^2 S under truncation", 65, 24)
+    evoeco("allee_effect", 180, 1, "Allee effect: extinction below threshold A, growth to K above", 55, 24)
+    evoeco("hamilton_rule", 180, 2, "Hamilton rule: spatial relatedness sustains cooperation when rB > C", 60, 16)
+    evoeco("red_queen", 180, 2, "Red Queen: matching-alleles host-parasite oscillations", 55, 24)
+    evoeco("metapopulation", 180, 2, "Metapopulation: Levins occupancy at p* = 1 - e/c", 70, 24)
+    evoeco("competitive_lv", 180, 2, "Competitive LV: coexistence vs R* exclusion by mutual invasibility", 55, 24)
+    evoeco("runaway_selection", 160, 2, "Runaway selection: Lande-Kirkpatrick trait-preference coevolution", 65, 24)
+
+    # -----------------------------------------------------------------------
+    # Cubesphere planet pipeline. Each program gates a stage measurement
+    # before opening the window, then draws an equirect map or shaded globe.
+    # -----------------------------------------------------------------------
+    planet("planet_evidence", 210, 1, "Planet evidence: solid angle, distortion, land, Hack, rain shadow", 55, 48)
+    planet("planet_tectonics", 80, 2, "Planet tectonics: Euler-pole plates and boundary classes", 70, 40)
+    planet("planet_elevation", 220, 2, "Planet elevation: hypsometric curve and land-fraction sea cut", 55, 40)
+    planet("planet_erosion", 100, 2, "Planet erosion: stream power and Hack's law on drainage", 60, 40)
+    planet("planet_climate", 80, 2, "Planet climate: temp/precip maps and orographic rain shadow", 70, 40)
+    planet("planet_biomes", 60, 2, "Planet biomes: Whittaker classification on the cubesphere", 80, 32)
+    planet("planet_spin", 90, 3, "Planet spin: shaded globe; regenerate(seed) elev checksum", 70, 48)
+
+    # -----------------------------------------------------------------------
+    # Procedural generation. Noise atlas through tile maps; each program
+    # gates a measurement before the window opens, then draws the live field.
+    # -----------------------------------------------------------------------
+    procgen("noise_atlas", 80, 3, "Noise atlas: value / gradient / fBm / ridged / warped side by side", 70, 16)
+    procgen("heightmap_fbm", 200, 1, "Heightmap fBm: fractal height with sea cut and contours", 55, 32)
+    procgen("domain_warp", 200, 1, "Domain warp: plain vs warped; deterministic + field-diff gate", 55, 24)
+    procgen("cave_worms", 90, 3, "Cave worms: 3D density slices with porosity in band", 60, 16)
+    procgen("wfc_dungeon", 200, 2, "WFC dungeon: 16-tile pipe corridors; full collapse, sockets agree", 55, 16)
+    procgen("voronoi_sites", 200, 1, "Voronoi sites: Worley regions; mean sites per region = 1", 55, 40)
+    procgen("island_mask", 200, 1, "Island mask: radial falloff * fBm; single landmass", 55, 24)
+    procgen("tile_map", 200, 1, "Tile map: height + moisture biomes; fractions sum to 1", 55, 24)
+
+    numerical("fmm_adaptive", 180, 2, "Adaptive FMM: Carrier-Greengard-Rokhlin 1988; gated vs direct", 70, 32)
+}
+
+# ---------------------------------------------------------------------------
+# Paths and formatting
+# ---------------------------------------------------------------------------
+
+# Module statics cannot be strings, so the cached root is a byte pointer.
+let mut root_dir: ptr<u8> = null
+
+function root() -> string {
+    if root_dir == null {
+        let r: string = getenv("FLOW_REPO_ROOT")
+        if r as ptr<u8> == null or ft_len(r) == 0 {
+            root_dir = pr_resolve(".") as ptr<u8>
+        } else {
+            root_dir = r as ptr<u8>
+        }
+    }
+    return root_dir as string
+}
+
+# docs/demos/[<subdir>/]<name>.gif, relative to the repository root.
+function out_rel(d: ptr<Demo>) -> string {
+    if ft_len(d[0].subdir) > 0 {
+        return "docs/demos/" + d[0].subdir + "/" + d[0].name + ".gif"
+    }
+    return "docs/demos/" + d[0].name + ".gif"
+}
+
+function games_copy_rel(d: ptr<Demo>) -> string {
+    return "docs/demos/games/" + d[0].name + ".gif"
+}
+
+function file_size(path: string) -> i64 {
+    let fp: ptr<void> = fopen(path, "rb")
+    if fp == null {
+        return 0 - 1
+    }
+    let _s: i32 = fseek(fp, 0, 2)
+    let v: i64 = ftell(fp)
+    fclose(fp)
+    return v
+}
+
+# f"{bytes / 1024:.0f}": the quotient is exact, so a tie rounds to even.
+function kb_round(bytes: i64) -> i64 {
+    let mut q: i64 = bytes / 1024
+    let r: i64 = bytes % 1024
+    if r > 512 or (r == 512 and (q % 2) != 0) {
+        q = q + 1
+    }
+    return q
+}
+
+function i64_text(v: i64) -> string {
+    return ft_itoa(v as i32)
+}
+
+# Python's repr() of a list of str.
+function list_repr(l: ptr<StrList>) -> string {
+    let mut out: string = "["
+    let mut i: i32 = 0
+    while i < ft_list_len(l) {
+        if i > 0 {
+            out = out + ", "
+        }
+        out = out + ft_repr(ft_list_get(l, i))
+        i = i + 1
+    }
+    return out + "]"
+}
+
+# Path order: component by component, which is string order with "/" below
+# every other byte.
+function path_less(a: string, b: string) -> bool {
+    let n: i32 = ft_len(a)
+    let m: i32 = ft_len(b)
+    let mut i: i32 = 0
+    while i < n and i < m {
+        let mut ca: i32 = ft_byte(a, i)
+        let mut cb: i32 = ft_byte(b, i)
+        if ca == 47 {
+            ca = 0
+        }
+        if cb == 47 {
+            cb = 0
+        }
+        if ca != cb {
+            return ca < cb
+        }
+        i = i + 1
+    }
+    return n < m
+}
+
+function sort_paths(l: ptr<StrList>) -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    let mut i: i32 = 0
+    while i < ft_list_len(l) {
+        ft_list_push(out, ft_list_get(l, i))
+        let mut j: i32 = ft_list_len(out) - 1
+        let items: ptr<string> = out[0].items
+        while j > 0 and path_less(items[j], items[j - 1]) {
+            let t: string = items[j]
+            items[j] = items[j - 1]
+            items[j - 1] = t
+            j = j - 1
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# ---------------------------------------------------------------------------
+# --check
+# ---------------------------------------------------------------------------
+
+function all_outputs() -> ptr<StrList> {
+    let paths: ptr<StrList> = ft_list_new()
+    let mut i: i32 = 0
+    while i < demos[0].len {
+        ft_list_push(paths, out_rel(demo_at(i)))
+        i = i + 1
+    }
+    i = 0
+    while i < demos[0].len {
+        if demo_at(i)[0].also_root {
+            ft_list_push(paths, games_copy_rel(demo_at(i)))
+        }
+        i = i + 1
+    }
+    return paths
+}
+
+function check() -> i32 {
+    let paths: ptr<StrList> = sort_paths(all_outputs())
+    let mut missing: i32 = 0
+    let mut i: i32 = 0
+    while i < ft_list_len(paths) {
+        let rel: string = ft_list_get(paths, i)
+        let sz: i64 = file_size(root() + "/" + rel)
+        if sz >= 0 {
+            ft_outln("  ok       " + rel + " (" + i64_text(kb_round(sz)) + " KB)")
+        } else {
+            ft_outln("  MISSING  " + rel)
+            missing = missing + 1
+        }
+        i = i + 1
+    }
+    if missing > 0 {
+        return 1
+    }
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# Recording and encoding
+# ---------------------------------------------------------------------------
+
+function last_scripted_frame(keys: string) -> i32 {
+    if ft_len(keys) == 0 {
+        return 0
+    }
+    let mut best: i32 = 0
+    let mut start: i32 = 0
+    let n: i32 = ft_len(keys)
+    let mut i: i32 = 0
+    while i <= n {
+        if i == n or ft_byte(keys, i) == 44 {
+            # "first-last:key" or "first:key": the number before the colon,
+            # after the last dash.
+            let w: string = ft_slice(keys, start, i)
+            let mut colon: i32 = ft_find_byte(w, 58, 0)
+            if colon < 0 {
+                colon = ft_len(w)
+            }
+            let head: string = ft_slice(w, 0, colon)
+            let mut dash: i32 = 0 - 1
+            let mut k: i32 = 0
+            while k < ft_len(head) {
+                if ft_byte(head, k) == 45 {
+                    dash = k
+                }
+                k = k + 1
+            }
+            let v: i32 = atoi(ft_from(head, dash + 1))
+            if v > best {
+                best = v
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    return best
+}
+
+# The frame budget and the input script have to line up or the clip drags.
+function warn_about_pacing(d: ptr<Demo>) -> void {
+    let end: i32 = last_scripted_frame(d[0].keys)
+    if end == 0 {
+        return
+    }
+    if end > d[0].frames {
+        ft_outln("  ! input script runs to frame " + ft_itoa(end) + " but the budget stops at " + ft_itoa(d[0].frames) + "; the last moves will never be played")
+    } elif ((d[0].frames - end) as f64) > (d[0].frames as f64) * 0.35 {
+        ft_outln("  ! input script ends at frame " + ft_itoa(end) + " of " + ft_itoa(d[0].frames) + "; the clip will sit idle for the remainder")
+    }
+}
+
+# The last `n` bytes of `s`.
+function tail(s: string, n: i32) -> string {
+    if s as ptr<u8> == null {
+        return ""
+    }
+    if ft_len(s) <= n {
+        return s
+    }
+    return ft_from(s, ft_len(s) - n)
+}
+
+function remove_tree(dir: string) -> void {
+    let _r: i32 = pr_run("rm -rf " + pr_quote(dir))
+}
+
+# Runs `./flow record` into `frame_dir`; returns the number of frames.
+function record(d: ptr<Demo>, frame_dir: string, logs: string) -> i32 {
+    let mut cmd: string = "cd " + pr_quote(root()) + " && "
+    if ft_len(d[0].env) > 0 {
+        cmd = cmd + "env " + d[0].env + " "
+    }
+    cmd = cmd + "./flow record " + pr_quote(d[0].program) + " --frames " + ft_itoa(d[0].frames) + " --skip " + ft_itoa(d[0].skip) + " --out " + pr_quote(frame_dir)
+    if ft_len(d[0].keys) > 0 {
+        cmd = cmd + " --keys " + pr_quote(d[0].keys)
+    }
+    ft_outln("  running " + d[0].program + " …")
+    let rc: i32 = pr_run(cmd + " </dev/null >" + pr_quote(logs + "/stdout") + " 2>" + pr_quote(logs + "/stderr"))
+    let err_text: string = ft_read_file(logs + "/stderr")
+    if rc != 0 {
+        ft_err(tail(ft_read_file(logs + "/stdout"), 2000))
+        ft_err(tail(err_text, 2000))
+        remove_tree(frame_dir)
+        remove_tree(logs)
+        ft_errln("recording failed for " + d[0].name)
+        exit(1)
+    }
+    if err_text as ptr<u8> != null {
+        let lines: ptr<StrList> = ft_split_lines(err_text)
+        let mut i: i32 = 0
+        while i < ft_list_len(lines) {
+            let line: string = ft_list_get(lines, i)
+            if ft_starts(line, "[gfx-record]") {
+                ft_outln("  " + line)
+            }
+            i = i + 1
+        }
+    }
+    let count: string = pr_chomp(pr_capture("find " + pr_quote(frame_dir + "/") + " -mindepth 1 -maxdepth 1 -name '*.ppm' 2>/dev/null | wc -l"))
+    return atoi(count)
+}
+
+# frame_*.ppm in `dir`, sorted by name.
+function list_frames(dir: string) -> ptr<StrList> {
+    let listing: string = pr_capture("find " + pr_quote(dir + "/") + " -mindepth 1 -maxdepth 1 -name 'frame_*.ppm' 2>/dev/null")
+    let lines: ptr<StrList> = ft_split_lines(listing)
+    let names: ptr<StrList> = ft_list_new()
+    let mut i: i32 = 0
+    while i < ft_list_len(lines) {
+        let line: string = ft_list_get(lines, i)
+        let slash: i32 = last_slash(line)
+        if ft_len(line) > 0 {
+            ft_list_push(names, ft_from(line, slash + 1))
+        }
+        i = i + 1
+    }
+    ft_list_sort(names)
+    let out: ptr<StrList> = ft_list_new()
+    let mut k: i32 = 0
+    while k < ft_list_len(names) {
+        ft_list_push(out, dir + "/" + ft_list_get(names, k))
+        k = k + 1
+    }
+    return out
+}
+
+function last_slash(s: string) -> i32 {
+    let mut at: i32 = 0 - 1
+    let mut i: i32 = 0
+    while i < ft_len(s) {
+        if ft_byte(s, i) == 47 {
+            at = i
+        }
+        i = i + 1
+    }
+    return at
+}
+
+function load(path: string, wh: ptr<i32>) -> ptr<u8> {
+    let px: ptr<u8> = gc_read_ppm(path, wh)
+    if px == null {
+        ft_errln("record_demos: cannot read " + path + " as a binary PPM")
+        exit(1)
+    }
+    return px
+}
+
+# Union of the drawn area across every frame, padded by 12 pixels and
+# clamped, into box (x0, y0, x1, y1). The background colour is each frame's
+# corner pixel, which the demos never draw over. Returns false when every
+# frame is uniform.
+function content_box(paths: ptr<StrList>, first: i32, box: ptr<i32>) -> bool {
+    let wh: ptr<i32> = malloc(8) as ptr<i32>
+    let mut have: bool = false
+    let mut bx0: i32 = 0
+    let mut by0: i32 = 0
+    let mut bx1: i32 = 0
+    let mut by1: i32 = 0
+    let mut width: i32 = 0
+    let mut height: i32 = 0
+    let mut i: i32 = first
+    while i < ft_list_len(paths) {
+        let px: ptr<u8> = load(ft_list_get(paths, i), wh)
+        let w: i32 = wh[0]
+        let h: i32 = wh[1]
+        width = w
+        height = h
+        let r0: u8 = px[0]
+        let g0: u8 = px[1]
+        let b0: u8 = px[2]
+        let mut x0: i32 = w
+        let mut y0: i32 = h
+        let mut x1: i32 = 0
+        let mut y1: i32 = 0
+        let mut y: i32 = 0
+        while y < h {
+            let mut x: i32 = 0
+            while x < w {
+                let p: i64 = ((y as i64) * (w as i64) + (x as i64)) * 3
+                if px[p] != r0 or px[p + 1] != g0 or px[p + 2] != b0 {
+                    if x < x0 {
+                        x0 = x
+                    }
+                    if x >= x1 {
+                        x1 = x + 1
+                    }
+                    if y < y0 {
+                        y0 = y
+                    }
+                    y1 = y + 1
+                }
+                x = x + 1
+            }
+            y = y + 1
+        }
+        free(px as ptr<void>)
+        if x1 > x0 {
+            if have == false {
+                bx0 = x0
+                by0 = y0
+                bx1 = x1
+                by1 = y1
+                have = true
+            } else {
+                if x0 < bx0 {
+                    bx0 = x0
+                }
+                if y0 < by0 {
+                    by0 = y0
+                }
+                if x1 > bx1 {
+                    bx1 = x1
+                }
+                if y1 > by1 {
+                    by1 = y1
+                }
+            }
+        }
+        i = i + 1
+    }
+    if have == false {
+        return false
+    }
+    box[0] = max_i(0, bx0 - 12)
+    box[1] = max_i(0, by0 - 12)
+    box[2] = min_i(width, bx1 + 12)
+    box[3] = min_i(height, by1 + 12)
+    return true
+}
+
+function max_i(a: i32, b: i32) -> i32 {
+    if a > b {
+        return a
+    }
+    return b
+}
+
+function min_i(a: i32, b: i32) -> i32 {
+    if a < b {
+        return a
+    }
+    return b
+}
+
+# Writes the GIF for `d` from the frames in `frame_dir`; returns its path
+# relative to the repository root.
+function encode(d: ptr<Demo>, frame_dir: string) -> string {
+    let paths: ptr<StrList> = list_frames(frame_dir)
+    let first: i32 = d[0].trim_leading
+    if ft_list_len(paths) <= first {
+        ft_errln("no frames captured for " + d[0].name)
+        exit(1)
+    }
+    let box: ptr<i32> = malloc(16) as ptr<i32>
+    let mut cropped: bool = false
+    if d[0].crop {
+        cropped = content_box(paths, first, box)
+    }
+    if cropped {
+        ft_outln("  cropping to drawn area " + ft_itoa(box[2] - box[0]) + "x" + ft_itoa(box[3] - box[1]))
+    }
+
+    let frames: ptr<GcFrames> = gc_frames_new()
+    let wh: ptr<i32> = malloc(8) as ptr<i32>
+    let mut i: i32 = first
+    while i < ft_list_len(paths) {
+        let mut img: ptr<u8> = load(ft_list_get(paths, i), wh)
+        let mut w: i32 = wh[0]
+        let mut h: i32 = wh[1]
+        if cropped {
+            let c: ptr<u8> = gc_crop(img, w, box[0], box[1], box[2], box[3])
+            free(img as ptr<void>)
+            img = c
+            w = box[2] - box[0]
+            h = box[3] - box[1]
+        }
+        if d[0].scale != 1.0 {
+            let nw: i32 = max_i(1, ((w as f64) * d[0].scale) as i32)
+            let nh: i32 = max_i(1, ((h as f64) * d[0].scale) as i32)
+            let mut s: ptr<u8> = null
+            if d[0].nearest {
+                s = gc_resize_nearest(img, w, h, nw, nh)
+            } else {
+                s = gc_resize_lanczos(img, w, h, nw, nh)
+            }
+            free(img as ptr<void>)
+            img = s
+            w = nw
+            h = nh
+        }
+        if frames[0].len == 0 {
+            frames[0].w = w
+            frames[0].h = h
+        } elif w != frames[0].w or h != frames[0].h {
+            ft_errln("record_demos: " + ft_list_get(paths, i) + " does not match the size of the first frame")
+            exit(1)
+        }
+        gc_frames_push(frames, img)
+        i = i + 1
+    }
+
+    # One global palette for the whole clip. Quantizing frames independently
+    # gives each its own palette, which forces full-frame rewrites and
+    # balloons the file; a shared palette lets the encoder store only the
+    # pixels that actually changed.
+    let pal: ptr<u8> = malloc(768) as ptr<u8>
+    let ncolors: i32 = gc_clip_palette(frames, d[0].colors, pal)
+
+    let rel: string = out_rel(d)
+    let out: string = root() + "/" + rel
+    let _m: bool = pr_mkdir_p(ft_slice(out, 0, last_slash(out)))
+    # Disposal 1 leaves each frame in place, so only the pixels that changed
+    # are stored. Safe here because every demo redraws its whole window each
+    # frame, so nothing ghosts.
+    if gc_write_gif(out, frames, pal, ncolors, false, d[0].duration_ms, 1) != 0 {
+        ft_errln("record_demos: cannot write " + out)
+        exit(1)
+    }
+    let mut k: i32 = 0
+    while k < frames[0].len {
+        free(gc_frames_get(frames, k) as ptr<void>)
+        k = k + 1
+    }
+    if d[0].also_root {
+        # tetris/2048 live at docs/demos/ for the README, and the games dir
+        # carries a copy so docs/demos/games/ covers every game.
+        let copy: string = root() + "/" + games_copy_rel(d)
+        let _m2: bool = pr_mkdir_p(root() + "/docs/demos/games")
+        if pr_run("cp " + pr_quote(out) + " " + pr_quote(copy)) != 0 {
+            ft_errln("record_demos: cannot copy to " + copy)
+            exit(1)
+        }
+    }
+    return rel
+}
+
+# ---------------------------------------------------------------------------
+# main
+# ---------------------------------------------------------------------------
+
+function subdir_or_root(d: ptr<Demo>) -> string {
+    if ft_len(d[0].subdir) > 0 {
+        return d[0].subdir
+    }
+    return "root"
+}
+
+function temp_dir(name: string) -> string {
+    let mut base: string = getenv("TMPDIR")
+    if base as ptr<u8> == null or ft_len(base) == 0 {
+        base = "/tmp"
+    }
+    while ft_len(base) > 1 and ft_ends(base, "/") {
+        base = ft_slice(base, 0, ft_len(base) - 1)
+    }
+    let dir: string = pr_chomp(pr_capture("mktemp -d " + pr_quote(base + "/flow-frames-" + name + "-XXXXXXXX")))
+    if ft_len(dir) == 0 {
+        ft_errln("record_demos: cannot create a temporary directory")
+        exit(1)
+    }
+    return dir
+}
+
+function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
+    build_table()
+    let args: ptr<StrList> = ft_list_new()
+    let mut i: i32 = 1
+    while i < argc {
+        ft_list_push(args, argv[i] as string)
+        i = i + 1
+    }
+    if ft_list_has(args, "--check") {
+        return check()
+    }
+
+    let mut gi: i32 = 0 - 1
+    i = 0
+    while i < ft_list_len(args) {
+        if gi < 0 and ft_eq(ft_list_get(args, i), "--group") {
+            gi = i
+        }
+        i = i + 1
+    }
+    let mut names: ptr<StrList> = args
+    if gi >= 0 {
+        let mut group: string = ""
+        if gi + 1 < ft_list_len(args) {
+            group = ft_list_get(args, gi + 1)
+        }
+        names = ft_list_new()
+        i = 0
+        while i < ft_list_len(args) {
+            if i != gi and i != gi + 1 {
+                ft_list_push(names, ft_list_get(args, i))
+            }
+            i = i + 1
+        }
+        i = 0
+        while i < demos[0].len {
+            if ft_eq(demo_at(i)[0].subdir, group) {
+                ft_list_push(names, demo_at(i)[0].name)
+            }
+            i = i + 1
+        }
+        if ft_list_len(names) == 0 {
+            let groups: ptr<StrList> = ft_list_new()
+            i = 0
+            while i < demos[0].len {
+                ft_list_push(groups, subdir_or_root(demo_at(i)))
+                i = i + 1
+            }
+            ft_errln("no demo in group " + ft_repr(group) + "; have " + list_repr(ft_list_sorted_unique(groups)))
+            return 1
+        }
+    }
+
+    let selected: ptr<StrList> = ft_list_new()
+    i = 0
+    while i < demos[0].len {
+        if ft_list_len(names) == 0 or ft_list_has(names, demo_at(i)[0].name) {
+            ft_list_push(selected, ft_itoa(i))
+        }
+        i = i + 1
+    }
+    if ft_list_len(selected) == 0 {
+        let all: ptr<StrList> = ft_list_new()
+        i = 0
+        while i < demos[0].len {
+            ft_list_push(all, demo_at(i)[0].name)
+            i = i + 1
+        }
+        ft_errln("no demo matches " + list_repr(ft_list_sorted_unique(names)) + "; have " + list_repr(all))
+        return 1
+    }
+
+    let size_names: ptr<StrList> = ft_list_new()
+    let sizes: ptr<i64> = malloc(8 * 256) as ptr<i64>
+    let mut nsizes: i32 = 0
+    let mut s: i32 = 0
+    while s < ft_list_len(selected) {
+        let d: ptr<Demo> = demo_at(atoi(ft_list_get(selected, s)))
+        ft_outln("[" + d[0].name + "] " + d[0].caption)
+        warn_about_pacing(d)
+        let tmp: string = temp_dir(d[0].name)
+        let logs: string = temp_dir(d[0].name + "log")
+        let captured: i32 = record(d, tmp, logs)
+        ft_outln("  captured " + ft_itoa(captured) + " frame(s)")
+        let rel: string = encode(d, tmp)
+        let bytes: i64 = file_size(root() + "/" + rel)
+        ft_list_push(size_names, d[0].name)
+        sizes[nsizes] = bytes
+        nsizes = nsizes + 1
+        ft_outln("  wrote " + rel + " (" + i64_text(kb_round(bytes)) + " KB)\n")
+        remove_tree(tmp)
+        remove_tree(logs)
+        s = s + 1
+    }
+
+    if nsizes > 1 {
+        ft_outln("size table:")
+        # Largest first; equal sizes keep their recording order.
+        let order: ptr<i32> = malloc((nsizes as i64) * 4) as ptr<i32>
+        let mut k: i32 = 0
+        while k < nsizes {
+            order[k] = k
+            let mut j: i32 = k
+            while j > 0 and sizes[order[j]] > sizes[order[j - 1]] {
+                let t: i32 = order[j]
+                order[j] = order[j - 1]
+                order[j - 1] = t
+                j = j - 1
+            }
+            k = k + 1
+        }
+        let mut total: i64 = 0
+        k = 0
+        while k < nsizes {
+            let b: i64 = sizes[order[k]]
+            total = total + b
+            let mut flag: string = ""
+            if b > 1024 * 1024 {
+                flag = "  OVER 1MB"
+            } elif b > 500 * 1024 {
+                flag = "  over 500KB"
+            }
+            ft_outln("  " + ft_ljust(ft_list_get(size_names, order[k]), 12) + " " + ft_rjust(i64_text(kb_round(b)), 7) + " KB" + flag)
+            k = k + 1
+        }
+        ft_outln("  " + ft_ljust("total", 12) + " " + ft_rjust(i64_text(kb_round(total)), 7) + " KB")
+    }
+    return 0
+}

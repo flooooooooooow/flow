@@ -1,0 +1,157 @@
+# @module tools.discord_welcome.welcome
+# @means  Welcome-message templates: loading messages.json and picking one.
+#
+# Templates are format strings that may use {user} (the joining member's
+# mention) and {guild} (the server name); {{ and }} are literal braces, as
+# in Python's str.format.
+
+import .text { ft_len, ft_itoa, ft_read_file, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
+import .json { json_parse, json_error, json_kind, json_get, json_first, json_next, json_str, json_kind_object, json_kind_array, json_kind_string, Json }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+# Error kinds from wl_load, matching the exceptions welcome.py raised.
+export function wl_ok() -> i32 { return 0 }
+export function wl_not_found() -> i32 { return 1 }
+export function wl_bad_json() -> i32 { return 2 }
+export function wl_no_messages() -> i32 { return 3 }
+
+export struct Templates {
+    list: ptr<StrList>
+    err: i32
+    msg: string
+}
+
+# load_messages(path): the "messages" list, or an error kind and message:
+# not found (FileNotFoundError), bad JSON (JSONDecodeError), or no usable
+# entries (ValueError).
+export function wl_load(path: string) -> Templates {
+    let text: string = ft_read_file(path)
+    if text as ptr<u8> == null {
+        return Templates { list: ft_list_new(), err: wl_not_found(), msg: "No such file or directory: '" + path + "'" }
+    }
+    let j: ptr<Json> = json_parse(text)
+    if ft_len(json_error(j)) > 0 {
+        return Templates { list: ft_list_new(), err: wl_bad_json(), msg: path + ": invalid JSON: " + json_error(j) }
+    }
+    let out: ptr<StrList> = ft_list_new()
+    let arr: i32 = json_get(j, 0, "messages")
+    if arr >= 0 and json_kind(j, arr) == json_kind_array() {
+        let mut c: i32 = json_first(j, arr)
+        while c >= 0 {
+            if json_kind(j, c) == json_kind_string() {
+                ft_list_push(out, json_str(j, c))
+            }
+            c = json_next(j, c)
+        }
+    }
+    if ft_list_len(out) == 0 {
+        return Templates { list: out, err: wl_no_messages(), msg: path + " contains no 'messages' entries" }
+    }
+    return Templates { list: out, err: wl_ok(), msg: "" }
+}
+
+# template.format(user=..., guild=...). ok[0] is 0 when the template names
+# another field or has an unmatched brace (KeyError / ValueError in Python).
+export function wl_format(template: string, user: string, guild: string, ok: ptr<i32>) -> string {
+    ok[0] = 1
+    let p: ptr<u8> = template as ptr<u8>
+    let n: i32 = ft_len(template)
+    let mut out: string = ""
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = p[i] as i32
+        if c == 123 or c == 125 {
+            out = out + slice(template, start, i)
+            if i + 1 < n and (p[i + 1] as i32) == c {
+                if c == 123 {
+                    out = out + "{"
+                } else {
+                    out = out + "}"
+                }
+                i = i + 2
+                start = i
+            } elif c == 125 {
+                ok[0] = 0
+                return ""
+            } else {
+                let mut e: i32 = i + 1
+                while e < n and p[e] != 125 {
+                    e = e + 1
+                }
+                if e >= n {
+                    ok[0] = 0
+                    return ""
+                }
+                let name: string = slice(template, i + 1, e)
+                if streq(name, "user") {
+                    out = out + user
+                } elif streq(name, "guild") {
+                    out = out + guild
+                } else {
+                    ok[0] = 0
+                    return ""
+                }
+                i = e + 1
+                start = i
+            }
+        } else {
+            i = i + 1
+        }
+    }
+    return out + slice(template, start, n)
+}
+
+function slice(s: string, a: i32, b: i32) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let o: ptr<u8> = malloc((b - a + 1) as i64) as ptr<u8>
+    let mut i: i32 = a
+    while i < b {
+        o[i - a] = p[i]
+        i = i + 1
+    }
+    o[b - a] = 0
+    return o as string
+}
+
+function streq(a: string, b: string) -> bool {
+    let pa: ptr<u8> = a as ptr<u8>
+    let pb: ptr<u8> = b as ptr<u8>
+    let mut i: i32 = 0
+    while pa[i] != 0 and pa[i] == pb[i] {
+        i = i + 1
+    }
+    return pa[i] == pb[i]
+}
+
+# ---- choice ----
+
+# splitmix64: a small seedable generator for the template choice.
+export struct WlRng {
+    state: u64
+}
+
+export function wl_rng(seed: u64) -> ptr<WlRng> {
+    let r: ptr<WlRng> = malloc(8) as ptr<WlRng>
+    r[0].state = seed
+    return r
+}
+
+export function wl_next(r: ptr<WlRng>) -> u64 {
+    r[0].state = r[0].state + 0x9E3779B97F4A7C15
+    let mut z: u64 = r[0].state
+    z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9
+    z = (z ^ (z >> 27)) * 0x94D049BB133111EB
+    return z ^ (z >> 31)
+}
+
+# pick_welcome(member_name, guild_name, templates, rng): a uniformly chosen
+# template with {user} and {guild} filled in. ok[0] as for wl_format.
+export function wl_pick(r: ptr<WlRng>, templates: ptr<StrList>, user: string, guild: string, ok: ptr<i32>) -> string {
+    let n: i32 = ft_list_len(templates)
+    let idx: i32 = (wl_next(r) % (n as u64)) as i32
+    return wl_format(ft_list_get(templates, idx), user, guild, ok)
+}

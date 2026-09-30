@@ -67,8 +67,8 @@ the Flow port of each one. The table records where each port stands.
 |---|---|
 | `./flow` bash | orchestrates flowc. The bootstrap needs no Python: flowc is built from `compiler/bootstrap/flowc_stage_a.c` with `cc` |
 | `pip wheel` in `flow python` | building the wheel needs setuptools. The generator is the Flow tool `tools/pywheel` |
-| `wasm/flow_to_wasm.py` | takes its C from `compiler/scripts/flowc_emit.sh`. The GPU crossing and the WebGPU shader page moved to `wasm/crossings.sh gpu` and `wasm/crossings.sh shader` |
-| `benchmarks/**/python/*` baselines | the Python side of a Python-versus-Flow comparison |
+| `benchmarks/baselines/python/` | benchmark subjects: the Python side of a Python-versus-Flow comparison. The harnesses that run them are Flow and bash |
+| `examples/interop/python/*.py` | the modules Flow programs import through `lib/stdlib/python_embed.flow` (libpython natively, Pyodide in the browser). The browser page hands Pyodide the listing it embeds, so no copy is served |
 
 ## Scripts and tools ported to Flow
 
@@ -91,6 +91,17 @@ need no Python. The Python original was deleted in the same pull request.
 | `wasm/flow_wasm_{threads,sockets,python,fs,crossings}.py` | [`wasm/crossings.sh`](../../wasm/crossings.sh) → `scripts/tools/wasm_crossings` | #965 |
 | `benchmarks/baselines/run_baselines.py` | [`benchmarks/baselines/run_baselines.sh`](../../benchmarks/baselines/run_baselines.sh) → `scripts/tools/bench_baselines` | #965 |
 | `benchmarks/run_publish.py` | [`benchmarks/run_publish.sh`](../../benchmarks/run_publish.sh) → `scripts/tools/bench_publish` | #965 |
+| `wasm/flow_to_wasm.py` | [`scripts/flow_to_wasm.sh`](../../scripts/flow_to_wasm.sh) → `scripts/tools/flow_to_wasm`, the `./flow wasm --legacy` converter | #1076 |
+| `benchmarks/run_benchmarks.py` | [`benchmarks/run_benchmarks.sh`](../../benchmarks/run_benchmarks.sh) → `scripts/tools/bench_harness` | #1076 |
+| `scripts/frames_to_gif.py` | [`scripts/frames_to_gif.sh`](../../scripts/frames_to_gif.sh) → `scripts/tools/frames_to_gif` (GIF encoding in `scripts/tools/lib/gifclip.flow` and `lib/stdlib/gif.flow`) | #1076 |
+| `scripts/record_demos.py` | [`scripts/record_demos.sh`](../../scripts/record_demos.sh) → `scripts/tools/record_demos` | #1076 |
+| `scripts/playground_compile_server.py` | [`scripts/playground_compile_server.sh`](../../scripts/playground_compile_server.sh) → `scripts/tools/playground_server` | #1076 |
+| `scripts/ws_echo_relay.py` | [`scripts/ws_echo_relay.sh`](../../scripts/ws_echo_relay.sh) → `scripts/tools/ws_echo_relay` | #1076 |
+| `scripts/wiki_contrast.py`, `scripts/wiki_verify.py` | [`scripts/wiki_contrast.sh`](../../scripts/wiki_contrast.sh), [`scripts/wiki_verify.sh`](../../scripts/wiki_verify.sh) → `scripts/tools/wiki_browser` (Chrome DevTools Protocol from Flow) | #1076 |
+| `scripts/deploy_wiki.py` | [`scripts/deploy_wiki.sh`](../../scripts/deploy_wiki.sh) | #1076 |
+| `tools/audio/lattice_allpass_audio_demo.py`, `plot_lattice_allpass.py` | `tools/audio/*.sh` → `scripts/tools/lattice_allpass` (WAV and SVG from Flow) | #1076 |
+| `tools/discord-welcome/bot.py`, `welcome.py` | `tools/discord-welcome/build.sh` → `scripts/tools/discord_welcome` (Gateway over TLS through OpenSSL) | #1076 |
+| The last pytest files (`tests/unit`, `tests/integration`) | Shell tests in [`tests/scripts/`](../../tests/scripts/run.sh), `./flow test-scripts` | #1076 |
 | None (new) | [`scripts/python_ratchet.sh`](../../scripts/python_ratchet.sh) → `tools/python_ratchet/main.flow` | #981 |
 
 #965 also deleted Python with no port: the Euclid book generators, the backlog

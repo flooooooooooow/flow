@@ -86,7 +86,7 @@
     "cli:test-lang": "project/tests-in-flow.md",
     "cli:test-matmul": "book/appendix-c-command-reference.md",
     "cli:test-mlir": "AI_FLOW_HANDBOOK.md",
-    "cli:test-python": "AI_FLOW_HANDBOOK.md",
+    "cli:test-scripts": "AI_FLOW_HANDBOOK.md",
     "cli:test-runtime": "DEVELOPMENT.md",
     "cli:test-strict": "tutorials/advanced.md",
     "cli:transpile": "book/appendix-c-command-reference.md",

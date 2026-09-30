@@ -1,0 +1,17 @@
+HTTP/1.0 501 Unsupported method ('PUT')
+Connection: close
+Content-Type: text/html;charset=utf-8
+
+<!DOCTYPE HTML>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>Error response</title>
+    </head>
+    <body>
+        <h1>Error response</h1>
+        <p>Error code: 501</p>
+        <p>Message: Unsupported method ('PUT').</p>
+        <p>Error code explanation: 501 - Server does not support this operation.</p>
+    </body>
+</html>

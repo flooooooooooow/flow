@@ -251,7 +251,7 @@ The Lorenz demo draws an `(x, z)` trail each frame:
 Regenerate demos headlessly:
 
 ```bash
-python3 scripts/record_demos.py lorenz
+scripts/record_demos.sh lorenz
 ```
 
 See also [gfx-basics.md](gfx-basics.md).

@@ -18,8 +18,19 @@ cd "$ROOT"
 OUT=build/python-ratchet
 mkdir -p "$OUT"
 
-# Vendored trees are not ours to port.
+# Excluded, and nothing else may be:
+#   third_party/, .lake/          vendored trees, which other projects own.
+#   benchmarks/baselines/python/  benchmark subjects. They exist to measure
+#                                 CPython and NumPy as a comparison baseline,
+#                                 so they have to be Python. The harnesses
+#                                 that run them are Flow and bash; no tooling
+#                                 lives here.
+#   examples/interop/python/      the Python side of Flow calling Python
+#                                 (lib/stdlib/python_embed.flow, natively and
+#                                 in Pyodide). The demo's subject is Python.
+# Any other .py is a failure: the baseline lists no files and total 0.
 git ls-files -- '*.py' ':!:third_party/**' ':!:**/.lake/**' \
+  ':!:benchmarks/baselines/python/**' ':!:examples/interop/python/**' \
   | LC_ALL=C sort > "$OUT/current.txt"
 
 if [[ "${1:-}" == "--update" ]]; then

@@ -213,13 +213,12 @@ flow blocks and the shader DSL, and it is now the only C compiler.
 
 | Thing | Why |
 |-------|-----|
-| MLIR generator fallback (`--backend=mlir`) | the Flow MLIR emitter runs first; the Python generator covers what it cannot |
-| MLIR JIT (`flow run --backend=mlir`, `--jit`) and the MLIR GPU and SPIR-V lowering | part of the MLIR backend |
 | `flow python` wheel build | the Flow tool writes the extension source, `setup.py` and `pyproject.toml`; `pip wheel` with setuptools builds the Python artifact |
-| wasm32 CI job | `alloc_sum.flow` uses an unsized array, which the Flow MLIR emitter refuses, so it takes the Python generator fallback |
-| `frames_to_gif.py`, `record_demos.py` | Pillow quantisation for byte-identical GIFs |
-| `playground_compile_server.py`, `ws_echo_relay.py`, `wiki_contrast.py`, `wiki_verify.py`, `deploy_wiki.py` | sockets, threads, Playwright or the aissh library |
-| Benchmark drivers that call the MLIR JIT or numpy | part of the MLIR backend or the Python baselines |
+| `benchmarks/baselines/python/` | benchmark subjects that measure CPython and NumPy; Flow and bash harnesses run them and skip them when there is no python3 |
+| `examples/interop/python/` | the Python modules Flow programs call through `lib/stdlib/python_embed.flow` |
+
+No other tracked `.py` file exists. `scripts/python_ratchet.sh` excludes only
+those two directories (and vendored trees) and fails on any other `.py`.
 
 `flow check`, `flow analyze`, `flow fir-g`, `flow gpu`, `flow dap`, `flow bpf`,
 `flow wasm32`, project-mode `flow test`, `flow run --json`, the package

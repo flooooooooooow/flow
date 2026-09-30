@@ -66,7 +66,7 @@ Recorded clips live in the
 ```bash
 ./flow gfx examples/evoleco/wright_fisher.flow
 ./flow record examples/evoleco/wright_fisher.flow --frames 90 --gif docs/demos/evoleco/wright_fisher.gif
-python3 scripts/record_demos.py --group evoleco
+scripts/record_demos.sh --group evoleco
 ```
 
 Every example labels itself on screen (title, parameters, live measurement).

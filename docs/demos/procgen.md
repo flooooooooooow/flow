@@ -27,7 +27,7 @@ Record one headlessly, no display needed:
 Regenerate every GIF on this page:
 
 ```bash
-python3 scripts/record_demos.py --group procgen
+scripts/record_demos.sh --group procgen
 ```
 
 `./flow run` does not link a graphics backend, so it cannot build these; use

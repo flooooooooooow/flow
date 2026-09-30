@@ -32,7 +32,7 @@ The same lattice all-pass appears in four places, all derived from one design:
 | Research | `docs/research/schur_lattice_allpass/` | arXiv paper, perturbation framing |
 | Proof | `formal/SchurLatticeAllpass/` | Lean 4 proofs (Schur recursion, Givens, colligation) |
 | Flow stdlib | `lib/stdlib/audio/lattice_allpass.flow`, `lib/stdlib/dynamics/schur_lattice.flow` | the language's own implementation |
-| Reference | `tools/audio/lattice_allpass_audio_demo.py` | Python verification + WAV output |
+| Reference | `tools/audio/lattice_allpass_audio_demo.sh` | Flow verification + WAV output (`scripts/tools/lattice_allpass`) |
 | **Native** | `plugins/` (this tree) | JUCE VST3/AU/Standalone |
 
 The plugin DSP is a port of the Flow stdlib design into C++. `SchurLatticeDSP.cpp` carries the math; the plugins add the DAW plumbing (parameters, presets, UI).
