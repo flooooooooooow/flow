@@ -2550,7 +2550,62 @@ typedef struct Mlg {
   int32_t* al_node;
   int32_t nal;
   int32_t al_depth;
+  int32_t* vraw;
+  uint8_t* rawbuf;
+  int32_t rawlen;
+  int32_t* vtx;
+  int32_t* vtxi;
+  int32_t* vc_elem;
+  int32_t* vc_n;
+  int32_t nvc;
+  int32_t fk_root;
+  int32_t fk_mod;
 } Mlg;
+
+typedef struct Mono {
+  int32_t* gs;
+  int32_t ngs;
+  int32_t* gf;
+  int32_t ngf;
+  int32_t* gf_tp;
+  int32_t* gf_ntp;
+  int32_t* cf;
+  int32_t ncf;
+  int32_t* sr_gen;
+  int32_t* sr_ns;
+  int32_t* sr_ne;
+  int32_t* sr_arg;
+  int32_t* sr_nargs;
+  int32_t nsr;
+  int32_t* fr_gen;
+  int32_t* fr_ns;
+  int32_t* fr_ne;
+  int32_t* fr_arg;
+  int32_t* fr_nargs;
+  int32_t nfr;
+  int32_t* args;
+  int32_t nargs;
+  int32_t* gens;
+  int32_t ngens;
+  int32_t* genf;
+  int32_t ngenf;
+  int32_t* genf_req;
+  int32_t* resolved;
+  int32_t nresolved;
+  int32_t depth;
+} Mono;
+
+typedef struct Fork {
+  int32_t* tmp;
+  int32_t* chs;
+  int32_t* nrec;
+  int32_t* rec_node;
+  int32_t* rec_mod;
+  int32_t nrecs;
+  int32_t mod_cur;
+  int32_t* hoist;
+  int32_t nhoist;
+} Fork;
 
 #undef MT_NONE
 static const int32_t MT_NONE = 0;
@@ -2574,12 +2629,18 @@ static const int32_t MT_INDEX = 8;
 static const int32_t MT_PTR = 9;
 #undef MT_VOID
 static const int32_t MT_VOID = 10;
+#undef MT_I128
+static const int32_t MT_I128 = 11;
 #undef MT_STRUCT
 static const int32_t MT_STRUCT = 100;
 #undef MT_LLARR
 static const int32_t MT_LLARR = 1000;
 #undef MT_MEMREF
 static const int32_t MT_MEMREF = 2000;
+#undef MT_VECTOR
+static const int32_t MT_VECTOR = 3000;
+#undef MT_TENSOR
+static const int32_t MT_TENSOR = 4000;
 #undef FT_NONE
 static const int32_t FT_NONE = (-1);
 #undef FT_STRUCT
@@ -2605,7 +2666,7 @@ static const int32_t MLG_MAX_STRS = 4096;
 #undef MLG_POOL_CAP
 static const int32_t MLG_POOL_CAP = 262144;
 #undef MLG_VAL_CAP
-static const int32_t MLG_VAL_CAP = 1048576;
+static const int32_t MLG_VAL_CAP = 8388608;
 #undef MLG_MAX_MERGE
 static const int32_t MLG_MAX_MERGE = 128;
 #undef MLG_MAX_DEFERS
@@ -2616,6 +2677,10 @@ static const int32_t MLG_MAX_ENUMS = 256;
 static const int32_t MLG_XSRC_CAP = 65536;
 #undef MLG_SIDE_CAP
 static const int32_t MLG_SIDE_CAP = 4194304;
+#undef MLG_RAW_CAP
+static const int32_t MLG_RAW_CAP = 1048576;
+#undef MLG_K_INTERP
+static const int32_t MLG_K_INTERP = 200;
 #undef MLG_FV_CAP
 static const int32_t MLG_FV_CAP = 1024;
 #undef MP_WILD
@@ -2628,6 +2693,12 @@ static const int32_t MP_CMP = 3;
 static const int32_t MP_STRUCT = 4;
 #undef MP_LIST
 static const int32_t MP_LIST = 5;
+#undef MN_MAX
+static const int32_t MN_MAX = 512;
+#undef MN_ARGS
+static const int32_t MN_ARGS = 4096;
+#undef MN_NAME
+static const int32_t MN_NAME = 1024;
 #undef GT_I32
 static const int32_t GT_I32 = 1;
 #undef GT_I64
@@ -2648,6 +2719,8 @@ static const int32_t GT_INDEX = 8;
 static const int32_t GT_MEM = 100000;
 int32_t* mlg_alloc_i32(int32_t n);
 void mlg_refuse(Mlg* m, int32_t node, const char* why);
+int32_t mlg_st32(Mlg* m);
+int32_t mlg_ptr_bytes(Mlg* m);
 int32_t mlg_module_of(Mlg* m, int32_t pos);
 int32_t mlg_node_line(Mlg* m, int32_t node);
 void mlg_putc(Mlg* m, int32_t c);
@@ -2663,6 +2736,7 @@ int32_t mlg_new_label(Mlg* m);
 int32_t mlg_starts(Mlg* m, int32_t pos, const char* lit);
 int32_t mlg_has_terminator(Mlg* m, int32_t mark);
 int32_t mlg_new_val(Mlg* m, int32_t t);
+int32_t mlg_raw_val(Mlg* m, const char* prefix, int32_t ns, int32_t ne, int32_t t);
 int32_t mlg_vty(Mlg* m, int32_t v);
 void mlg_set_vty(Mlg* m, int32_t v, int32_t t);
 int32_t mlg_vuns(Mlg* m, int32_t v);
@@ -2677,12 +2751,15 @@ int32_t mlg_kind(Mlg* m, int32_t id);
 int32_t mlg_is_struct_mt(int32_t t);
 int32_t mlg_is_llarr_mt(int32_t t);
 int32_t mlg_is_memref_mt(int32_t t);
+int32_t mlg_is_vector_mt(int32_t t);
+int32_t mlg_is_tensor_type_mt(int32_t t);
 int32_t mlg_is_float_mt(int32_t t);
 int32_t mlg_starts_i(int32_t t);
 int32_t mlg_is_int_mt(int32_t t);
 int32_t mlg_width(int32_t t);
 int32_t mlg_llarr_of(Mlg* m, int32_t elem, int32_t n);
 int32_t mlg_memref_of(Mlg* m, int32_t elem, int32_t n);
+int32_t mlg_vector_of(Mlg* m, int32_t elem, int32_t n);
 void mlg_put_type(Mlg* m, int32_t t);
 int32_t mlg_struct_index(Mlg* m, int32_t ns, int32_t ne);
 int32_t mlg_ft_name_is(Mlg* m, int32_t ft, const char* lit);
@@ -2726,6 +2803,9 @@ int32_t mlg_static_mt(Mlg* m, int32_t k);
 int32_t mlg_load_static(Mlg* m, int32_t k);
 int32_t mlg_enum_tag(Mlg* m, int32_t ns, int32_t ne, int32_t* vi);
 int32_t mlg_const_mt(Mlg* m, int32_t k);
+int32_t mlg_libc_abi_bits(Mlg* m, int32_t f);
+int32_t mlg_abi_narrow(Mlg* m, int32_t f, int32_t bit, int32_t ty);
+int32_t mlg_fn_param_mt(Mlg* m, int32_t k, int32_t i, int32_t p);
 int32_t mlg_fn_ret_mt(Mlg* m, int32_t k);
 int32_t mlg_is_null(Mlg* m, int32_t e);
 int32_t mlg_field_of(Mlg* m, int32_t e, int32_t* idx, int32_t* sk);
@@ -2734,6 +2814,16 @@ int32_t mlg_is_span_len(Mlg* m, int32_t e);
 int32_t mlg_expr_ft(Mlg* m, int32_t e);
 int32_t mlg_resolve_operand(int32_t l, int32_t r);
 int32_t mlg_is_cmp_op(int32_t op);
+int32_t mlg_emit_vector_lit(Mlg* m, int32_t e);
+void mlg_name_tests(Mlg* m, int32_t root);
+int32_t mlg_has_interp(Mlg* m, int32_t e);
+void mlg_mark_interp(Mlg* m);
+int32_t mlg_interp_parts(Mlg* m, int32_t e, int32_t* ps, int32_t* pe, int32_t* pk, int32_t cap);
+int32_t mlg_interp_expr_node(Mlg* m, int32_t s0, int32_t e0);
+int32_t mlg_interp_part_mt(Mlg* m, int32_t s, int32_t t, int32_t k, int32_t at);
+int32_t mlg_interp_chain_mt(Mlg* m, int32_t* ps, int32_t* pe, int32_t* pk, int32_t upto, int32_t at);
+int32_t mlg_interp_mt(Mlg* m, int32_t e);
+int32_t mlg_emit_interp(Mlg* m, int32_t e);
 int32_t mlg_expr_mt(Mlg* m, int32_t e);
 int32_t mlg_const_int(Mlg* m, int32_t n, int32_t t);
 int32_t mlg_cast(Mlg* m, int32_t v, int32_t from_in, int32_t dst);
@@ -2741,8 +2831,10 @@ int32_t mlg_alloca_store(Mlg* m, int32_t v, int32_t t);
 int32_t mlg_load(Mlg* m, int32_t p, int32_t t);
 void mlg_store(Mlg* m, int32_t v, int32_t p, int32_t t);
 int32_t mlg_materialize(Mlg* m, int32_t v, int32_t t);
+int32_t mlg_materialize_n(Mlg* m, int32_t v, int32_t t, int32_t nmax);
 int32_t mlg_stabilize(Mlg* m, int32_t v, int32_t t);
 int64_t mlg_int_value(Mlg* m, int32_t e, int32_t* ok);
+int32_t mlg_emit_wide_int_lit(Mlg* m, int32_t e);
 int32_t mlg_emit_int_lit(Mlg* m, int32_t e);
 void mlg_put_float_text(Mlg* m, int32_t e, int32_t t, int32_t neg);
 int32_t mlg_emit_float_lit(Mlg* m, int32_t e);
@@ -2761,7 +2853,9 @@ int32_t mlg_span_is_join(Mlg* m, int32_t ns, int32_t ne, int32_t a0, int32_t a1,
 int32_t mlg_find_fn_join(Mlg* m, int32_t a0, int32_t a1, int32_t b0, int32_t b1);
 int32_t mlg_effect_receiver(Mlg* m, int32_t r, int32_t* ok);
 int32_t mlg_method_call_node(Mlg* m, int32_t e);
+int32_t mlg_is_import_alias(Mlg* m, int32_t ns, int32_t ne);
 int32_t mlg_method_call_node0(Mlg* m, int32_t e);
+int32_t mlg_emit_tensor_add(Mlg* m, int32_t e);
 int32_t mlg_emit_call(Mlg* m, int32_t e, int32_t want_value);
 int32_t mlg_struct_addr(Mlg* m, int32_t e, int32_t* sk);
 int32_t mlg_struct_addr0(Mlg* m, int32_t e, int32_t* sk);
@@ -2791,6 +2885,8 @@ int32_t mlg_as_i1(Mlg* m, int32_t v, int32_t t);
 int32_t mlg_emit_logic(Mlg* m, int32_t e, int32_t is_or);
 int32_t mlg_is_unsigned_expr(Mlg* m, int32_t e, int32_t v);
 int32_t mlg_struct_text_has_f(Mlg* m, int32_t t, int32_t depth);
+int32_t mlg_text_has_i1(Mlg* m, int32_t t, int32_t depth);
+int32_t mlg_text_has_f3264(Mlg* m, int32_t t, int32_t depth);
 int32_t mlg_emit_binop(Mlg* m, int32_t e);
 int32_t mlg_emit_unary(Mlg* m, int32_t e);
 int32_t mlg_addr_lvalue(Mlg* m, int32_t e);
@@ -2888,6 +2984,7 @@ int32_t mlg_vec_rhs(Mlg* m, int32_t e, int32_t st, int32_t elem, int32_t* bad);
 int32_t mlg_vec_splat(Mlg* m, int32_t s, int32_t elem);
 int32_t mlg_vec_emit(Mlg* m, int32_t e, int32_t ivv, int32_t elem);
 int32_t mlg_try_vectorize(Mlg* m, int32_t st);
+void mlg_emit_scf_parallel(Mlg* m, int32_t st, int32_t step_val);
 void mlg_emit_for(Mlg* m, int32_t st);
 void mlg_emit_jump(Mlg* m, int32_t st, int32_t is_break);
 void mlg_emit_handle(Mlg* m, int32_t st);
@@ -2896,11 +2993,21 @@ void mlg_emit_block(Mlg* m, int32_t b);
 void mlg_emit_defers(Mlg* m, int32_t lo, int32_t hi);
 void mlg_capture_return_defers(Mlg* m);
 void mlg_paste_return_defers(Mlg* m);
+int32_t mlg_canon_child(Mlg* m, int32_t st, int32_t which);
+int32_t mlg_canon_zero(Mlg* m, int32_t e);
+int32_t mlg_canon_break_counter(Mlg* m, int32_t st, int32_t* zero);
+int32_t mlg_canon_is_ctr_assign(Mlg* m, int32_t st, int32_t ctr);
+int32_t mlg_canon_is_decrement(Mlg* m, int32_t st, int32_t ctr);
+void mlg_canon_scan(Mlg* m, int32_t first, int32_t ok_break, int32_t ctr, int32_t dec, int32_t* out);
+int32_t mlg_canon_copy_stmt(Mlg* m, int32_t st);
+int32_t mlg_canon_try_rotate(Mlg* m, int32_t blk, int32_t prev, int32_t loop);
+void mlg_canon_block(Mlg* m, int32_t blk);
 void mlg_emit_function(Mlg* m, int32_t f);
 int32_t mlg_fn_is_variadic(Mlg* m, int32_t f);
 int32_t mlg_fn_variadic(Mlg* m, int32_t k);
 void mlg_put_llvm_fn_part(Mlg* m, int32_t t);
-void mlg_emit_extern_fn(Mlg* m, int32_t f);
+int32_t mlg_ext_param_mt(Mlg* m, int32_t f, int32_t i, int32_t p);
+void mlg_emit_extern_fn(Mlg* m, int32_t f0);
 void mlg_emit_struct(Mlg* m, int32_t s);
 int64_t mlg_fold_operand(Mlg* m, int32_t e, int32_t* ok);
 int64_t mlg_fold_binop(Mlg* m, int32_t e, int32_t* ok);
@@ -2908,7 +3015,8 @@ void mlg_emit_const(Mlg* m, int32_t c);
 int32_t mlg_unwrap(Mlg* m, int32_t item);
 void mlg_add_fn(Mlg* m, int32_t f, int32_t ext);
 int32_t mlg_is_name_char(int32_t c);
-int32_t mlg_check_attrs(Mlg* m, int32_t from, int32_t to_pos, int32_t item);
+int32_t* mlg_gpu_fns(Mlg* m, int32_t* count);
+int32_t mlg_check_attrs(Mlg* m, int32_t* gpu_fns, int32_t ngpu, int32_t item);
 int32_t mlg_const_lit_ok(Mlg* m, int32_t v);
 const char* mlg_decl_label(int32_t k);
 int32_t mlg_new_node(Mlg* m, int32_t kind, int32_t start);
@@ -2937,6 +3045,95 @@ int32_t mlg_ret_of(Mlg* m, int32_t rnode, int32_t at);
 void mlg_emit_effect(Mlg* m, int32_t d);
 void mlg_emit_capability(Mlg* m, int32_t c);
 void mlg_emit_effects_init(Mlg* m);
+void mn_put(uint8_t* buf, int32_t* len, int32_t c);
+void mn_puts(uint8_t* buf, int32_t* len, const char* s);
+void mn_put_span(Mlg* m, uint8_t* buf, int32_t* len, int32_t s, int32_t e);
+void mn_put_int(uint8_t* buf, int32_t* len, int32_t v);
+int32_t mn_intern(Mlg* m, uint8_t* buf, int32_t n, int32_t* s);
+int32_t mn_span_is_buf(Mlg* m, int32_t s, int32_t e, uint8_t* buf, int32_t n);
+int32_t mn_flat(Mlg* m, int32_t s, int32_t e);
+int32_t mn_flat_buf(Mlg* m, uint8_t* buf, int32_t n);
+int32_t mn_is_ptr(Mlg* m, int32_t t);
+int32_t mn_is_arr(Mlg* m, int32_t t);
+int32_t mn_is_vec(Mlg* m, int32_t t);
+int32_t mn_is_span(Mlg* m, int32_t t);
+int32_t mn_is_app(Mlg* m, int32_t t);
+void mn_py_name(Mlg* m, int32_t t, uint8_t* buf, int32_t* len);
+void mn_type_str(Mlg* m, int32_t t, uint8_t* buf, int32_t* len);
+int32_t mn_is_fn_tp(Mlg* m, Mono* mo, int32_t g, int32_t s, int32_t e);
+int32_t mn_find_gs(Mlg* m, Mono* mo, int32_t s, int32_t e);
+int32_t mn_find_gf(Mlg* m, Mono* mo, int32_t s, int32_t e);
+int32_t mn_gs_of_base(Mlg* m, Mono* mo, uint8_t* buf, int32_t n);
+int32_t mn_gs_ntp(Mlg* m, Mono* mo, int32_t g);
+int32_t mn_request(Mlg* m, Mono* mo, int32_t kind, int32_t g, int32_t* targs, int32_t n);
+int32_t mn_split_flat(Mlg* m, uint8_t* buf, int32_t n, int32_t* out, int32_t cap);
+int32_t mn_is_tp(Mlg* m, Mono* mo, int32_t fg, int32_t sg, int32_t t);
+void mn_scan_type(Mlg* m, Mono* mo, int32_t t, int32_t fg, int32_t sg);
+void mn_call_name(Mlg* m, int32_t e, uint8_t* buf, int32_t* len);
+int32_t mn_expr_type(Mlg* m, int32_t e);
+void mn_request_call(Mlg* m, Mono* mo, int32_t e);
+void mn_scan_expr(Mlg* m, Mono* mo, int32_t e);
+void mn_scan_block(Mlg* m, Mono* mo, int32_t blk);
+void mn_scan_stmt(Mlg* m, Mono* mo, int32_t st);
+int32_t mn_map_get(Mlg* m, int32_t* tps, int32_t ntp, int32_t* targs, int32_t s, int32_t e);
+int32_t mn_rewrite_mangled(Mlg* m, int32_t* tps, int32_t ntp, int32_t* targs, uint8_t* buf, int32_t n, uint8_t* out, int32_t* olen);
+int32_t mn_type_like(Mlg* m, int32_t t, int32_t a);
+int32_t mn_subst_type(Mlg* m, Mono* mo, int32_t t, int32_t* tps, int32_t ntp, int32_t* targs);
+int32_t mn_subst_chain(Mlg* m, Mono* mo, int32_t a, int32_t* tps, int32_t ntp, int32_t* targs);
+int32_t mn_copy(Mlg* m, int32_t n);
+int32_t mn_subst_expr(Mlg* m, Mono* mo, int32_t e, int32_t* tps, int32_t ntp, int32_t* targs);
+int32_t mn_subst_expr_chain(Mlg* m, Mono* mo, int32_t a, int32_t* tps, int32_t ntp, int32_t* targs);
+void mn_resolve_lit_name(Mlg* m, Mono* mo, int32_t lit, int32_t* tps, int32_t ntp, int32_t* targs);
+int32_t mn_subst_block(Mlg* m, Mono* mo, int32_t blk, int32_t* tps, int32_t ntp, int32_t* targs);
+int32_t mn_subst_stmt(Mlg* m, Mono* mo, int32_t st, int32_t* tps, int32_t ntp, int32_t* targs);
+void mn_gen_struct(Mlg* m, Mono* mo, int32_t r);
+int32_t mn_is_concrete_name(Mlg* m, Mono* mo, int32_t s, int32_t e);
+void mn_gen_fn(Mlg* m, Mono* mo, int32_t r);
+int32_t mn_generated_struct(Mlg* m, Mono* mo, int32_t r);
+int32_t mn_generated_fn(Mlg* m, Mono* mo, int32_t r);
+void mn_generate(Mlg* m, Mono* mo);
+int32_t mn_rewrite_type(Mlg* m, Mono* mo, int32_t t);
+void mn_rewrite_expr(Mlg* m, Mono* mo, int32_t e);
+void mn_rewrite_block(Mlg* m, Mono* mo, int32_t blk);
+void mn_rewrite_stmt(Mlg* m, Mono* mo, int32_t st);
+void mn_rewrite_fn(Mlg* m, Mono* mo, int32_t d);
+void mn_parser_names(Mlg* m);
+int32_t mn_read_fn_tps(Mlg* m, int32_t d, int32_t* out);
+int32_t mlg_mono(Mlg* m, int32_t root);
+int32_t mfk_xname(Mlg* m, const char* prefix, int32_t n, int32_t* out_e);
+int32_t mfk_ident(Mlg* m, int32_t s, int32_t e);
+int32_t mfk_trivial(Mlg* m, int32_t e);
+int32_t mfk_subst(Mlg* m, int32_t e, int32_t blk, int32_t repl);
+int32_t mfk_subst_chain(Mlg* m, int32_t head, int32_t blk, int32_t repl);
+void mfk_push_hoist(Mlg* m, Fork* fk, int32_t st);
+int32_t mfk_call_ret(Mlg* m, int32_t v);
+int32_t mfk_resolve_chain(Mlg* m, Fork* fk, int32_t head, int32_t can_hoist);
+int32_t mfk_source(Mlg* m, Fork* fk, int32_t src, int32_t can_hoist);
+int32_t mfk_lower_fork(Mlg* m, Fork* fk, int32_t id, int32_t source);
+int32_t mfk_lower_choose(Mlg* m, Fork* fk, int32_t id, int32_t can_hoist);
+int32_t mfk_resolve(Mlg* m, Fork* fk, int32_t e, int32_t can_hoist);
+void mfk_block(Mlg* m, Fork* fk, int32_t blk);
+void mfk_stmt(Mlg* m, Fork* fk, int32_t st);
+void mlg_desugar_forks(Mlg* m, int32_t root);
+int64_t mrs_lit(Mlg* m, int32_t e, int32_t* ok);
+int64_t mrs_floordiv(int64_t a, int64_t b);
+int64_t mrs_mod(int64_t a, int64_t b);
+int64_t mrs_gcd(int64_t a0, int64_t b0);
+int64_t mrs_modinv(int64_t a0, int64_t m);
+void mrs_normalize(int64_t start, int64_t end, int64_t step, int64_t* p);
+void mrs_intersect(int64_t* a, int64_t* b, int64_t* out);
+int64_t mrs_psum(int64_t* p);
+int64_t mrs_fold(Mlg* m, int32_t e, int32_t* ok);
+int32_t mrs_is_range_sum(Mlg* m, int32_t e);
+int32_t mrs_emit(Mlg* m, int32_t e, int32_t want_value);
+void mrs_prune_helpers(Mlg* m, int32_t root);
+int32_t mao_is_target(Mlg* m, int32_t t);
+int32_t mao_is_var(Mlg* m, int32_t* vars, int32_t nv, int32_t e);
+int32_t mao_expr(Mlg* m, int32_t e, int32_t st, int32_t* vars, int32_t nv);
+int32_t mao_chain(Mlg* m, int32_t head, int32_t st, int32_t* vars, int32_t nv);
+int32_t mao_soa(Mlg* m, int32_t st, int32_t n, int32_t* made, int32_t* nmade);
+void mao_block(Mlg* m, int32_t blk, int32_t st, int32_t* vars, int32_t* nv, int32_t* made, int32_t* nmade);
+void mlg_aosoa(Mlg* m, int32_t root);
 int32_t mlg_item_dropped(Mlg* m, int32_t item);
 void mlg_collect(Mlg* m, int32_t root);
 int32_t mlg_gpu_type_of(Mlg* m, int32_t ft);
@@ -2978,6 +3175,25 @@ void mlg_refuse(Mlg* m, int32_t node, const char* why) {
   (m[0]).why = why;
   (m[0]).why_node = node;
 }
+}
+
+int32_t mlg_st32(Mlg* m) {
+  const char* v = getenv("FLOWC_MLIR_SIZE_T");
+  uint8_t* p = (uint8_t*)(v);
+  if (p == NULL) {
+  return 0;
+}
+  if (p[0] == 51 && p[1] == 50 && p[2] == 0) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t mlg_ptr_bytes(Mlg* m) {
+  if (mlg_st32(m) == 1) {
+  return 4;
+}
+  return 8;
 }
 
 int32_t mlg_module_of(Mlg* m, int32_t pos) {
@@ -3084,6 +3300,14 @@ void mlg_nl(Mlg* m) {
 }
 
 void mlg_v(Mlg* m, int32_t v) {
+  if (v >= 0 && (m[0]).vraw[v] > 0) {
+  int32_t i = ((m[0]).vraw[v] - 1);
+  while ((m[0]).rawbuf[i] != 0) {
+  mlg_putc(m, (m[0]).rawbuf[i]);
+  i = (i + 1);
+}
+  return;
+}
   if (v >= 0 && v == (m[0]).env_val) {
   mlg_s(m, "%env");
   return;
@@ -3162,7 +3386,36 @@ int32_t mlg_new_val(Mlg* m, int32_t t) {
   (m[0]).nval = (v + 1);
   (m[0]).vt[v] = t;
   (m[0]).vu[v] = 0;
+  (m[0]).vraw[v] = 0;
+  (m[0]).vtx[v] = 0;
   (m[0]).v_llarr[v] = 0;
+  return v;
+}
+
+int32_t mlg_raw_val(Mlg* m, const char* prefix, int32_t ns, int32_t ne, int32_t t) {
+  int32_t v = mlg_new_val(m, t);
+  int32_t pl = (int32_t)(strlen(prefix));
+  if (((((m[0]).rawlen + pl) + (ne - ns)) + 1) >= MLG_RAW_CAP) {
+  mlg_refuse(m, AST_NONE, "too many placeholder values");
+  return v;
+}
+  int32_t start = (m[0]).rawlen;
+  uint8_t* pp = (uint8_t*)(prefix);
+  int32_t i = 0;
+  while (i < pl) {
+  (m[0]).rawbuf[(m[0]).rawlen] = pp[i];
+  (m[0]).rawlen = ((m[0]).rawlen + 1);
+  i = (i + 1);
+}
+  i = ns;
+  while (i < ne) {
+  (m[0]).rawbuf[(m[0]).rawlen] = (m[0]).src[i];
+  (m[0]).rawlen = ((m[0]).rawlen + 1);
+  i = (i + 1);
+}
+  (m[0]).rawbuf[(m[0]).rawlen] = 0;
+  (m[0]).rawlen = ((m[0]).rawlen + 1);
+  (m[0]).vraw[v] = (start + 1);
   return v;
 }
 
@@ -3292,7 +3545,21 @@ int32_t mlg_is_llarr_mt(int32_t t) {
 }
 
 int32_t mlg_is_memref_mt(int32_t t) {
-  if (t >= MT_MEMREF) {
+  if (t >= MT_MEMREF && t < MT_VECTOR) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t mlg_is_vector_mt(int32_t t) {
+  if (t >= MT_VECTOR && t < MT_TENSOR) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t mlg_is_tensor_type_mt(int32_t t) {
+  if (t >= MT_TENSOR) {
   return 1;
 }
   return 0;
@@ -3306,7 +3573,7 @@ int32_t mlg_is_float_mt(int32_t t) {
 }
 
 int32_t mlg_starts_i(int32_t t) {
-  if (t >= MT_I1 && t <= MT_I64) {
+  if (t >= MT_I1 && t <= MT_I64 || t == MT_I128) {
   return 1;
 }
   if (t == MT_INDEX) {
@@ -3316,7 +3583,7 @@ int32_t mlg_starts_i(int32_t t) {
 }
 
 int32_t mlg_is_int_mt(int32_t t) {
-  if (t >= MT_I1 && t <= MT_I64) {
+  if (t >= MT_I1 && t <= MT_I64 || t == MT_I128) {
   return 1;
 }
   return 0;
@@ -3337,6 +3604,9 @@ int32_t mlg_width(int32_t t) {
 }
   if (t == MT_I64) {
   return 64;
+}
+  if (t == MT_I128) {
+  return 128;
 }
   if (t == MT_F32) {
   return 32;
@@ -3387,6 +3657,25 @@ int32_t mlg_memref_of(Mlg* m, int32_t elem, int32_t n) {
 
 void mlg_put_type(Mlg* m, int32_t t);
 void mlg_put_struct_type(Mlg* m, int32_t k);
+int32_t mlg_vector_of(Mlg* m, int32_t elem, int32_t n) {
+  int32_t i = 0;
+  while (i < (m[0]).nvc) {
+  if ((m[0]).vc_elem[i] == elem && (m[0]).vc_n[i] == n) {
+  return (MT_VECTOR + i);
+}
+  i = (i + 1);
+}
+  if ((m[0]).nvc >= MLG_MAX_ARRS) {
+  mlg_refuse(m, AST_NONE, "too many vector types");
+  return MT_NONE;
+}
+  int32_t k = (m[0]).nvc;
+  (m[0]).vc_elem[k] = elem;
+  (m[0]).vc_n[k] = n;
+  (m[0]).nvc = (k + 1);
+  return (MT_VECTOR + k);
+}
+
 void mlg_put_type(Mlg* m, int32_t t) {
   if (t == MT_I1) {
   mlg_s(m, "i1");
@@ -3406,6 +3695,10 @@ void mlg_put_type(Mlg* m, int32_t t) {
 }
   if (t == MT_I64) {
   mlg_s(m, "i64");
+  return;
+}
+  if (t == MT_I128) {
+  mlg_s(m, "i128");
   return;
 }
   if (t == MT_F32) {
@@ -3442,6 +3735,21 @@ void mlg_put_type(Mlg* m, int32_t t) {
 } else {
   mlg_put_type(m, (m[0]).la_elem[k]);
 }
+  mlg_s(m, ">");
+  return;
+}
+  if (mlg_is_tensor_type_mt(t) == 1) {
+  mlg_s(m, "tensor<?x");
+  mlg_put_type(m, (t - MT_TENSOR));
+  mlg_s(m, ">");
+  return;
+}
+  if (mlg_is_vector_mt(t) == 1) {
+  int32_t kv = (t - MT_VECTOR);
+  mlg_s(m, "vector<");
+  mlg_i(m, (m[0]).vc_n[kv]);
+  mlg_s(m, "x");
+  mlg_put_type(m, (m[0]).vc_elem[kv]);
   mlg_s(m, ">");
   return;
 }
@@ -3789,18 +4097,6 @@ void mlg_check_struct(Mlg* m, int32_t k, int32_t depth) {
   mlg_refuse(m, s, "generic struct");
   return;
 }
-  int32_t tf = (((m[0]).arena).nodes[s]).a;
-  while (tf != AST_NONE) {
-  int32_t tft = (((m[0]).arena).nodes[tf]).a;
-  if (mlg_ft_is_array(m, tft) == 0) {
-  int32_t inner = mlg_ft_struct(m, tft);
-  if (inner >= 0 && inner != k && mlg_is_tensor_struct(m, inner) == 1) {
-  mlg_refuse(m, tf, "struct holding a Tensor-shaped field");
-  return;
-}
-}
-  tf = (((m[0]).arena).nodes[tf]).next;
-}
   int32_t f = (((m[0]).arena).nodes[s]).a;
   while (f != AST_NONE) {
   int32_t fty = (((m[0]).arena).nodes[f]).a;
@@ -3871,6 +4167,9 @@ int32_t mlg_ft_to_mt(Mlg* m, int32_t ft, int32_t at) {
   if (mlg_span_is(m, ns, ne, "u64") == 1 || mlg_span_is(m, ns, ne, "i64") == 1) {
   return MT_I64;
 }
+  if (mlg_span_is(m, ns, ne, "u128") == 1 || mlg_span_is(m, ns, ne, "i128") == 1) {
+  return MT_I128;
+}
   if (mlg_span_is(m, ns, ne, "f32") == 1) {
   return MT_F32;
 }
@@ -3915,9 +4214,99 @@ int32_t mlg_ft_to_mt(Mlg* m, int32_t ft, int32_t at) {
 }
   return mlg_memref_of(m, e, ival);
 }
+  if ((((m[0]).arena).nodes[ft]).a != AST_NONE && (ne - ns) > 3 && mlg_span_prefix(m, ns, ne, "vec") == 1) {
+  int32_t vn = 0;
+  int32_t vq = (ns + 3);
+  int32_t vok = 1;
+  while (vq < ne) {
+  if ((m[0]).src[vq] < 48 || (m[0]).src[vq] > 57) {
+  vok = 0;
+} else {
+  vn = ((vn * 10) + ((m[0]).src[vq] - 48));
+}
+  vq = (vq + 1);
+}
+  int32_t vin = (((m[0]).arena).nodes[ft]).a;
+  if (vok == 1 && vn > 0 && mlg_kind(m, vin) == AST_TYPE && (((m[0]).arena).nodes[vin]).a == AST_NONE) {
+  int32_t vs = mlg_ns(m, vin);
+  int32_t ve = mlg_ne(m, vin);
+  int32_t vel = MT_NONE;
+  if (mlg_span_is(m, vs, ve, "f32") == 1) {
+  vel = MT_F32;
+}
+  if (mlg_span_is(m, vs, ve, "f64") == 1) {
+  vel = MT_F64;
+}
+  if (mlg_span_is(m, vs, ve, "i8") == 1) {
+  vel = MT_I8;
+}
+  if (mlg_span_is(m, vs, ve, "i16") == 1) {
+  vel = MT_I16;
+}
+  if (mlg_span_is(m, vs, ve, "i32") == 1) {
+  vel = MT_I32;
+}
+  if (mlg_span_is(m, vs, ve, "i64") == 1) {
+  vel = MT_I64;
+}
+  if (vel != MT_NONE) {
+  return mlg_vector_of(m, vel, vn);
+}
+}
+}
   if ((((m[0]).arena).nodes[ft]).a != AST_NONE) {
   mlg_refuse(m, at, "generic type");
   return MT_NONE;
+}
+  if (mlg_span_prefix(m, ns, ne, "memref_") == 1) {
+  int32_t es = (ns + 7);
+  int32_t me = MT_NONE;
+  if (mlg_span_is(m, es, ne, "f32") == 1) {
+  me = MT_F32;
+}
+  if (mlg_span_is(m, es, ne, "f64") == 1) {
+  me = MT_F64;
+}
+  if (mlg_span_is(m, es, ne, "i8") == 1) {
+  me = MT_I8;
+}
+  if (mlg_span_is(m, es, ne, "i16") == 1) {
+  me = MT_I16;
+}
+  if (mlg_span_is(m, es, ne, "i32") == 1) {
+  me = MT_I32;
+}
+  if (mlg_span_is(m, es, ne, "i64") == 1) {
+  me = MT_I64;
+}
+  if (me != MT_NONE) {
+  return mlg_memref_of(m, me, (0 - 1));
+}
+}
+  if (mlg_span_prefix(m, ns, ne, "tensor_") == 1) {
+  int32_t ts = (ns + 7);
+  int32_t te = MT_NONE;
+  if (mlg_span_is(m, ts, ne, "f32") == 1) {
+  te = MT_F32;
+}
+  if (mlg_span_is(m, ts, ne, "f64") == 1) {
+  te = MT_F64;
+}
+  if (mlg_span_is(m, ts, ne, "i32") == 1) {
+  te = MT_I32;
+}
+  if (mlg_span_is(m, ts, ne, "i64") == 1) {
+  te = MT_I64;
+}
+  if (te != MT_NONE) {
+  return (MT_TENSOR + te);
+}
+}
+  if (mlg_span_prefix(m, ns, ne, "array_") == 1) {
+  return mlg_memref_of(m, MT_I32, (0 - 1));
+}
+  if (mlg_span_prefix(m, ns, ne, "ptr_") == 1) {
+  return MT_PTR;
 }
   if (mlg_span_prefix(m, ns, ne, "vec") == 1 || mlg_span_prefix(m, ns, ne, "tensor") == 1 || mlg_span_prefix(m, ns, ne, "memref_") == 1 || mlg_span_prefix(m, ns, ne, "struct_") == 1 || mlg_span_prefix(m, ns, ne, "array") == 1 || mlg_span_prefix(m, ns, ne, "ptr_") == 1) {
   mlg_refuse(m, at, "tensor, vector or memref type");
@@ -4285,11 +4674,77 @@ int32_t mlg_const_mt(Mlg* m, int32_t k) {
   return mlg_ft_to_mt(m, (((m[0]).arena).nodes[c]).a, c);
 }
 
+int32_t mlg_libc_abi_bits(Mlg* m, int32_t f) {
+  int32_t s = mlg_ns(m, f);
+  int32_t e = mlg_ne(m, f);
+  if (mlg_span_is(m, s, e, "malloc") == 1) {
+  return 1;
+}
+  if (mlg_span_is(m, s, e, "calloc") == 1) {
+  return 3;
+}
+  if (mlg_span_is(m, s, e, "realloc") == 1) {
+  return 2;
+}
+  if (mlg_span_is(m, s, e, "memcpy") == 1 || mlg_span_is(m, s, e, "memmove") == 1 || mlg_span_is(m, s, e, "memset") == 1 || mlg_span_is(m, s, e, "memcmp") == 1) {
+  return 4;
+}
+  if (mlg_span_is(m, s, e, "strlen") == 1) {
+  return 256;
+}
+  if (mlg_span_is(m, s, e, "strnlen") == 1) {
+  return 258;
+}
+  if (mlg_span_is(m, s, e, "fread") == 1 || mlg_span_is(m, s, e, "fwrite") == 1) {
+  return 262;
+}
+  if (mlg_span_is(m, s, e, "snprintf") == 1 || mlg_span_is(m, s, e, "vsnprintf") == 1) {
+  return 2;
+}
+  if (mlg_span_is(m, s, e, "fseek") == 1) {
+  return 2;
+}
+  if (mlg_span_is(m, s, e, "ftell") == 1) {
+  return 256;
+}
+  return 0;
+}
+
+int32_t mlg_abi_narrow(Mlg* m, int32_t f, int32_t bit, int32_t ty) {
+  if (mlg_st32(m) == 0 || ty == AST_NONE || ty < 0) {
+  return 0;
+}
+  if ((mlg_libc_abi_bits(m, f) & bit) == 0) {
+  return 0;
+}
+  if (mlg_kind(m, ty) == AST_TYPE && (((m[0]).arena).nodes[ty]).a == AST_NONE && mlg_span_is(m, mlg_ns(m, ty), mlg_ne(m, ty), "i64") == 1) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t mlg_fn_param_mt(Mlg* m, int32_t k, int32_t i, int32_t p) {
+  int32_t f = (m[0]).fn_node[k];
+  int32_t bit = 1;
+  int32_t j = 0;
+  while (j < i) {
+  bit = (bit * 2);
+  j = (j + 1);
+}
+  if (i < 8 && mlg_abi_narrow(m, f, bit, (((m[0]).arena).nodes[p]).a) == 1) {
+  return MT_I32;
+}
+  return mlg_param_mt(m, (((m[0]).arena).nodes[p]).a, p);
+}
+
 int32_t mlg_fn_ret_mt(Mlg* m, int32_t k) {
   int32_t f = (m[0]).fn_node[k];
   int32_t rt = (((m[0]).arena).nodes[f]).b;
   if (rt == AST_NONE) {
   return MT_VOID;
+}
+  if (mlg_abi_narrow(m, f, 256, rt) == 1) {
+  return MT_I32;
 }
   return mlg_ft_to_mt(m, rt, f);
 }
@@ -4462,9 +4917,304 @@ int32_t mlg_is_cmp_op(int32_t op) {
   return 0;
 }
 
+int32_t mlg_emit_vector_lit(Mlg* m, int32_t e) {
+  int32_t n = mlg_chain_len(m, (((m[0]).arena).nodes[e]).a);
+  if (n == 0) {
+  mlg_refuse(m, e, "empty vector literal");
+  return V_NONE;
+}
+  int32_t* vals = (int32_t*)(mlg_alloc_i32((n + 1)));
+  int32_t x = (((m[0]).arena).nodes[e]).a;
+  int32_t i = 0;
+  while (x != AST_NONE) {
+  vals[i] = mlg_emit_expr(m, x);
+  i = (i + 1);
+  x = (((m[0]).arena).nodes[x]).next;
+}
+  int32_t et = mlg_expr_mt(m, (((m[0]).arena).nodes[e]).a);
+  int32_t vt = mlg_vector_of(m, et, n);
+  int32_t cur = mlg_new_val(m, vt);
+  mlg_line(m);
+  mlg_v(m, cur);
+  mlg_s(m, " = vector.undef : ");
+  mlg_put_type(m, vt);
+  mlg_nl(m);
+  i = 0;
+  while (i < n) {
+  int32_t ix = mlg_emit_idx_const(m, i);
+  int32_t nx = mlg_new_val(m, vt);
+  mlg_line(m);
+  mlg_v(m, nx);
+  mlg_s(m, " = vector.insertelement ");
+  mlg_v(m, vals[i]);
+  mlg_s(m, ", ");
+  mlg_v(m, cur);
+  mlg_s(m, "[");
+  mlg_v(m, ix);
+  mlg_s(m, "] : ");
+  mlg_put_type(m, vt);
+  mlg_nl(m);
+  cur = nx;
+  i = (i + 1);
+}
+  int32_t r = mlg_new_val(m, MT_NONE);
+  mlg_line(m);
+  mlg_v(m, r);
+  mlg_s(m, " = ");
+  mlg_v(m, cur);
+  mlg_s(m, " : ");
+  mlg_put_type(m, vt);
+  mlg_nl(m);
+  mlg_free_i32(vals);
+  return r;
+}
+
+void mlg_name_tests(Mlg* m, int32_t root) {
+  int32_t item = (((m[0]).arena).nodes[root]).a;
+  while (item != AST_NONE) {
+  int32_t d = mlg_unwrap(m, item);
+  if (mlg_kind(m, d) == AST_FN && (m[0]).src[mlg_ns(m, d)] == 34) {
+  int32_t s = (mlg_ns(m, d) + 1);
+  int32_t t = (mlg_ne(m, d) - 1);
+  uint8_t* buf = (uint8_t*)(malloc(1024));
+  int32_t n = 0;
+  uint8_t* pre = (uint8_t*)("test_");
+  while (n < 5) {
+  buf[n] = pre[n];
+  n = (n + 1);
+}
+  int32_t i = s;
+  while (i < t && n < 1000) {
+  int32_t c = (int32_t)((m[0]).src[i]);
+  if (mlg_is_name_char(c) == 1) {
+  buf[n] = c;
+} else {
+  buf[n] = 95;
+}
+  n = (n + 1);
+  i = (i + 1);
+}
+  if (n == 5) {
+  uint8_t* cs = (uint8_t*)("case");
+  while (n < 9) {
+  buf[n] = cs[(n - 5)];
+  n = (n + 1);
+}
+}
+  int32_t ns = mlg_xput(m, buf, n);
+  free(buf);
+  uint8_t* bt = (uint8_t*)("bool");
+  int32_t bs = mlg_xput(m, bt, 4);
+  if (ns >= 0 && bs >= 0) {
+  (((m[0]).arena).nodes[d]).name_start = ns;
+  (((m[0]).arena).nodes[d]).name_end = (ns + n);
+  int32_t ty = mlg_new_node(m, AST_TYPE, bs);
+  if (ty != AST_NONE) {
+  (((m[0]).arena).nodes[ty]).end = (bs + 4);
+  (((m[0]).arena).nodes[ty]).name_start = bs;
+  (((m[0]).arena).nodes[ty]).name_end = (bs + 4);
+  (((m[0]).arena).nodes[d]).b = ty;
+}
+}
+}
+  item = (((m[0]).arena).nodes[item]).next;
+}
+}
+
+int32_t mlg_has_interp(Mlg* m, int32_t e) {
+  int32_t s = mlg_ns(m, e);
+  int32_t t = mlg_ne(m, e);
+  int32_t i = s;
+  while ((i + 1) < t) {
+  if ((m[0]).src[i] == 36 && (m[0]).src[(i + 1)] == 123) {
+  return 1;
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+void mlg_mark_interp(Mlg* m) {
+  int32_t i = 0;
+  while (i < ((m[0]).arena).len) {
+  if ((((m[0]).arena).nodes[i]).kind == AST_STRING && mlg_has_interp(m, i) == 1) {
+  (((m[0]).arena).nodes[i]).kind = MLG_K_INTERP;
+}
+  if ((((m[0]).arena).nodes[i]).kind == AST_CALL && (((m[0]).arena).nodes[i]).start == 0 && (((m[0]).arena).nodes[i]).name_start > 0 && (((m[0]).arena).nodes[i]).name_end > (((m[0]).arena).nodes[i]).name_start && (m[0]).src[((((m[0]).arena).nodes[i]).name_start - 1)] != 46) {
+  (((m[0]).arena).nodes[i]).start = (((m[0]).arena).nodes[i]).name_start;
+}
+  i = (i + 1);
+}
+}
+
+int32_t mlg_interp_parts(Mlg* m, int32_t e, int32_t* ps, int32_t* pe, int32_t* pk, int32_t cap) {
+  int32_t s = (mlg_ns(m, e) + 1);
+  int32_t t = (mlg_ne(m, e) - 1);
+  int32_t n = 0;
+  int32_t cursor = s;
+  int32_t i = s;
+  while (i < t) {
+  if ((i + 1) < t && (m[0]).src[i] == 36 && (m[0]).src[(i + 1)] == 123) {
+  if (i > cursor && n < cap) {
+  ps[n] = cursor;
+  pe[n] = i;
+  pk[n] = 0;
+  n = (n + 1);
+}
+  int32_t j = (i + 2);
+  while (j < t && (m[0]).src[j] != 125) {
+  j = (j + 1);
+}
+  if (n < cap) {
+  ps[n] = (i + 2);
+  pe[n] = j;
+  pk[n] = 1;
+  n = (n + 1);
+}
+  cursor = (j + 1);
+  i = (j + 1);
+} else {
+  i = (i + 1);
+}
+}
+  if (cursor < t && n < cap) {
+  ps[n] = cursor;
+  pe[n] = t;
+  pk[n] = 0;
+  n = (n + 1);
+}
+  return n;
+}
+
+int32_t mlg_interp_expr_node(Mlg* m, int32_t s0, int32_t e0) {
+  int32_t s = s0;
+  int32_t t = e0;
+  while (s < t && (m[0]).src[s] == 32) {
+  s = (s + 1);
+}
+  while (t > s && (m[0]).src[(t - 1)] == 32) {
+  t = (t - 1);
+}
+  int32_t j = s;
+  while (j < t && mlg_is_name_char((int32_t)((m[0]).src[j])) == 1) {
+  j = (j + 1);
+}
+  if (j == s) {
+  return AST_NONE;
+}
+  int32_t node = mlg_new_node(m, AST_IDENT, s);
+  if (node == AST_NONE) {
+  return AST_NONE;
+}
+  (((m[0]).arena).nodes[node]).end = j;
+  (((m[0]).arena).nodes[node]).name_start = s;
+  (((m[0]).arena).nodes[node]).name_end = j;
+  while (j < t) {
+  if ((m[0]).src[j] != 46) {
+  return AST_NONE;
+}
+  int32_t fs = (j + 1);
+  int32_t fe = fs;
+  while (fe < t && mlg_is_name_char((int32_t)((m[0]).src[fe])) == 1) {
+  fe = (fe + 1);
+}
+  if (fe == fs) {
+  return AST_NONE;
+}
+  int32_t fa = mlg_new_node(m, AST_FIELD_ACCESS, s);
+  if (fa == AST_NONE) {
+  return AST_NONE;
+}
+  (((m[0]).arena).nodes[fa]).a = node;
+  (((m[0]).arena).nodes[fa]).name_start = fs;
+  (((m[0]).arena).nodes[fa]).name_end = fe;
+  node = fa;
+  j = fe;
+}
+  return node;
+}
+
+int32_t mlg_interp_part_mt(Mlg* m, int32_t s, int32_t t, int32_t k, int32_t at) {
+  if (k == 0) {
+  return MT_PTR;
+}
+  int32_t n = mlg_interp_expr_node(m, s, t);
+  if (n == AST_NONE) {
+  mlg_refuse(m, at, "string interpolation of this expression form");
+  return MT_I32;
+}
+  return mlg_expr_mt(m, n);
+}
+
+int32_t mlg_interp_chain_mt(Mlg* m, int32_t* ps, int32_t* pe, int32_t* pk, int32_t upto, int32_t at) {
+  if (upto <= 0) {
+  return MT_PTR;
+}
+  int32_t acc = mlg_interp_part_mt(m, ps[0], pe[0], pk[0], at);
+  int32_t i = 1;
+  while (i < upto) {
+  int32_t t = mlg_interp_part_mt(m, ps[i], pe[i], pk[i], at);
+  if (acc == MT_PTR || t == MT_PTR) {
+  acc = MT_PTR;
+} else {
+  acc = mlg_resolve_operand(acc, t);
+}
+  i = (i + 1);
+}
+  return acc;
+}
+
+int32_t mlg_interp_mt(Mlg* m, int32_t e) {
+  int32_t* ps = (int32_t*)(mlg_alloc_i32(64));
+  int32_t* pe = (int32_t*)(mlg_alloc_i32(64));
+  int32_t* pk = (int32_t*)(mlg_alloc_i32(64));
+  int32_t n = mlg_interp_parts(m, e, ps, pe, pk, 64);
+  int32_t r = mlg_interp_chain_mt(m, ps, pe, pk, n, e);
+  mlg_free_i32(ps);
+  mlg_free_i32(pe);
+  mlg_free_i32(pk);
+  return r;
+}
+
+int32_t mlg_emit_interp(Mlg* m, int32_t e) {
+  int32_t* ps = (int32_t*)(mlg_alloc_i32(64));
+  int32_t* pe = (int32_t*)(mlg_alloc_i32(64));
+  int32_t* pk = (int32_t*)(mlg_alloc_i32(64));
+  int32_t n = mlg_interp_parts(m, e, ps, pe, pk, 64);
+  int32_t r = V_NONE;
+  if (n == 1) {
+  int32_t node = mlg_interp_expr_node(m, ps[0], pe[0]);
+  if (node == AST_NONE) {
+  mlg_refuse(m, e, "string interpolation of this expression form");
+} else {
+  r = mlg_emit_expr(m, node);
+}
+} else {
+  int32_t lt = mlg_interp_chain_mt(m, ps, pe, pk, (n - 1), e);
+  int32_t rt = mlg_interp_part_mt(m, ps[(n - 1)], pe[(n - 1)], pk[(n - 1)], e);
+  r = mlg_new_val(m, MT_NONE);
+  mlg_line(m);
+  mlg_s(m, "# String concatenation: ");
+  mlg_put_type(m, lt);
+  mlg_s(m, " + ");
+  mlg_put_type(m, rt);
+  mlg_nl(m);
+}
+  mlg_free_i32(ps);
+  mlg_free_i32(pe);
+  mlg_free_i32(pk);
+  return r;
+}
+
 int32_t mlg_expr_mt(Mlg* m, int32_t e) {
   __flowc_tail: ;
   int32_t kind = mlg_kind(m, e);
+  if (kind == MLG_K_INTERP) {
+  return mlg_interp_mt(m, e);
+}
+  if (kind == AST_VECTOR_LIT) {
+  return MT_I32;
+}
   if (kind == AST_INT) {
   return MT_I32;
 }
@@ -4812,7 +5562,12 @@ void mlg_store(Mlg* m, int32_t v, int32_t p, int32_t t) {
   mlg_nl(m);
 }
 
+int32_t mlg_materialize_n(Mlg* m, int32_t v, int32_t t, int32_t nmax);
 int32_t mlg_materialize(Mlg* m, int32_t v, int32_t t) {
+  return mlg_materialize_n(m, v, t, 1000000);
+}
+
+int32_t mlg_materialize_n(Mlg* m, int32_t v, int32_t t, int32_t nmax) {
   if (mlg_is_struct_mt(t) == 0) {
   return v;
 }
@@ -4824,6 +5579,9 @@ int32_t mlg_materialize(Mlg* m, int32_t v, int32_t t) {
   mlg_put_type(m, t);
   mlg_nl(m);
   int32_t n = mlg_struct_nfields(m, k);
+  if (nmax < n) {
+  n = nmax;
+}
   int32_t i = 0;
   while (i < n) {
   int32_t ft = mlg_field_member_mt(m, mlg_struct_field_at(m, k, i));
@@ -4837,6 +5595,9 @@ int32_t mlg_materialize(Mlg* m, int32_t v, int32_t t) {
   mlg_s(m, "] : ");
   mlg_put_type(m, t);
   mlg_nl(m);
+  if (mlg_is_tensor_mt(m, t) == 0 && mlg_is_tensor_mt(m, ft) == 1) {
+  fv = mlg_materialize(m, fv, ft);
+}
   int32_t nx = mlg_new_val(m, t);
   mlg_line(m);
   mlg_v(m, nx);
@@ -4860,6 +5621,9 @@ int32_t mlg_stabilize(Mlg* m, int32_t v, int32_t t) {
   return v;
 }
   int32_t c = mlg_materialize(m, v, t);
+  if (mlg_st32(m) == 1) {
+  return c;
+}
   int32_t p = mlg_alloca_store(m, c, t);
   return mlg_load(m, p, t);
 }
@@ -4908,10 +5672,93 @@ int64_t mlg_int_value(Mlg* m, int32_t e, int32_t* ok) {
   return val;
 }
 
+int32_t mlg_emit_wide_int_lit(Mlg* m, int32_t e) {
+  int32_t s = mlg_ns(m, e);
+  int32_t t = mlg_ne(m, e);
+  int32_t base = 10;
+  int32_t i = s;
+  if ((t - s) > 2 && (m[0]).src[s] == 48 && (m[0]).src[(s + 1)] == 120) {
+  base = 16;
+  i = (s + 2);
+}
+  int32_t cap = 256;
+  int32_t* d = (int32_t*)(mlg_alloc_i32(cap));
+  int32_t nd = 1;
+  while (i < t) {
+  int32_t c = (int32_t)((m[0]).src[i]);
+  int32_t x = (0 - 1);
+  if (c >= 48 && c <= 57) {
+  x = (c - 48);
+}
+  if (base == 16 && c >= 97 && c <= 102) {
+  x = (c - 87);
+}
+  if (base == 16 && c >= 65 && c <= 70) {
+  x = (c - 55);
+}
+  if (x < 0) {
+  mlg_free_i32(d);
+  return V_NONE;
+}
+  int32_t carry = x;
+  int32_t k = 0;
+  while (k < nd) {
+  int32_t y = ((d[k] * base) + carry);
+  d[k] = (y % 10);
+  carry = (y / 10);
+  k = (k + 1);
+}
+  while (carry > 0 && nd < cap) {
+  d[nd] = (carry % 10);
+  carry = (carry / 10);
+  nd = (nd + 1);
+}
+  i = (i + 1);
+}
+  const char* sub = "6927694924";
+  uint8_t* sp = (uint8_t*)(sub);
+  int32_t borrow = 0;
+  int32_t k = 0;
+  while (k < nd) {
+  int32_t y = (d[k] - borrow);
+  if (k < 10) {
+  y = (y - ((int32_t)(sp[k]) - 48));
+}
+  if (y < 0) {
+  y = (y + 10);
+  borrow = 1;
+} else {
+  borrow = 0;
+}
+  d[k] = y;
+  k = (k + 1);
+}
+  while (nd > 1 && d[(nd - 1)] == 0) {
+  nd = (nd - 1);
+}
+  int32_t v = mlg_new_val(m, MT_I32);
+  mlg_line(m);
+  mlg_v(m, v);
+  mlg_s(m, " = arith.constant ");
+  k = (nd - 1);
+  while (k >= 0) {
+  mlg_putc(m, (d[k] + 48));
+  k = (k - 1);
+}
+  mlg_s(m, " : i32");
+  mlg_nl(m);
+  mlg_free_i32(d);
+  return v;
+}
+
 int32_t mlg_emit_int_lit(Mlg* m, int32_t e) {
   int32_t ok = 1;
   int64_t val = mlg_int_value(m, e, (&ok));
   if (ok == 0 || val > 4294967295) {
+  int32_t w = mlg_emit_wide_int_lit(m, e);
+  if (w != V_NONE) {
+  return w;
+}
   mlg_refuse(m, e, "integer literal wider than 32 bits");
   return mlg_const_int(m, 0, MT_I32);
 }
@@ -5546,6 +6393,34 @@ int32_t mlg_method_call_node(Mlg* m, int32_t e) {
   return t;
 }
 
+int32_t mlg_is_import_alias(Mlg* m, int32_t ns, int32_t ne) {
+  int32_t i = 0;
+  while (i < ((m[0]).arena).len) {
+  if ((((m[0]).arena).nodes[i]).kind == AST_IMPORT) {
+  int32_t s0 = (((m[0]).arena).nodes[i]).start;
+  int32_t q = (((m[0]).arena).nodes[i]).end;
+  while (q > s0 && mlg_is_name_char((int32_t)((m[0]).src[(q - 1)])) == 0) {
+  q = (q - 1);
+}
+  int32_t w1 = q;
+  while (q > s0 && mlg_is_name_char((int32_t)((m[0]).src[(q - 1)])) == 1) {
+  q = (q - 1);
+}
+  int32_t w0 = q;
+  while (q > s0 && ((m[0]).src[(q - 1)] == 32 || (m[0]).src[(q - 1)] == 9)) {
+  q = (q - 1);
+}
+  if (w0 < w1 && q >= (s0 + 2) && q < w0 && mlg_span_is(m, (q - 2), q, "as") == 1) {
+  if (mlg_span_eq(m, w0, w1, ns, ne) == 1) {
+  return 1;
+}
+}
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
 int32_t mlg_method_call_node0(Mlg* m, int32_t e) {
   int32_t ns = mlg_ns(m, e);
   int32_t ne = mlg_ne(m, e);
@@ -5553,8 +6428,20 @@ int32_t mlg_method_call_node0(Mlg* m, int32_t e) {
   return AST_NONE;
 }
   int32_t recv = (((m[0]).arena).nodes[e]).a;
-  if (recv == AST_NONE) {
+  int32_t as0 = (ns - 1);
+  while (as0 > 0 && mlg_is_name_char((int32_t)((m[0]).src[(as0 - 1)])) == 1) {
+  as0 = (as0 - 1);
+}
+  if (as0 < (ns - 1) && mlg_is_import_alias(m, as0, (ns - 1)) == 1) {
+  int32_t al = mlg_new_node(m, AST_IDENT, as0);
+  if (al == AST_NONE) {
   return AST_NONE;
+}
+  (((m[0]).arena).nodes[al]).end = (ns - 1);
+  (((m[0]).arena).nodes[al]).name_start = as0;
+  (((m[0]).arena).nodes[al]).name_end = (ns - 1);
+  (((m[0]).arena).nodes[al]).next = recv;
+  recv = al;
 }
   int32_t t = mlg_new_node(m, AST_CALL, ns);
   if (t == AST_NONE) {
@@ -5604,10 +6491,62 @@ int32_t mlg_method_call_node0(Mlg* m, int32_t e) {
   return t;
 }
 
+int32_t mlg_emit_tensor_add(Mlg* m, int32_t e) {
+  int32_t a0 = (((m[0]).arena).nodes[e]).a;
+  int32_t a1 = (((m[0]).arena).nodes[a0]).next;
+  int32_t v0 = mlg_emit_expr(m, a0);
+  int32_t v1 = mlg_emit_expr(m, a1);
+  int32_t t0 = mlg_val_mt(m, v0, a0);
+  int32_t r = mlg_new_val(m, t0);
+  mlg_line(m);
+  mlg_v(m, r);
+  mlg_s(m, " = linalg.generic {");
+  mlg_nl(m);
+  mlg_line(m);
+  mlg_s(m, "  indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>],");
+  mlg_nl(m);
+  mlg_line(m);
+  mlg_s(m, "  iterator_types = [\"parallel\"]");
+  mlg_nl(m);
+  mlg_line(m);
+  mlg_s(m, "} ins(");
+  mlg_v(m, v1);
+  mlg_s(m, " : ");
+  mlg_put_type(m, t0);
+  mlg_s(m, ") outs(");
+  mlg_v(m, v0);
+  mlg_s(m, " : ");
+  mlg_put_type(m, t0);
+  mlg_s(m, ") {");
+  mlg_nl(m);
+  mlg_line(m);
+  mlg_s(m, "^bb0(%in: f32, %out: f32):");
+  mlg_nl(m);
+  int32_t s = mlg_new_val(m, MT_F32);
+  mlg_line(m);
+  mlg_s(m, "  ");
+  mlg_v(m, s);
+  mlg_s(m, " = arith.addf %in, %out : f32");
+  mlg_nl(m);
+  mlg_line(m);
+  mlg_s(m, "  linalg.yield ");
+  mlg_v(m, s);
+  mlg_s(m, " : f32");
+  mlg_nl(m);
+  mlg_line(m);
+  mlg_s(m, "} -> ");
+  mlg_put_type(m, t0);
+  mlg_nl(m);
+  return r;
+}
+
 int32_t mlg_emit_call(Mlg* m, int32_t e, int32_t want_value) {
   __flowc_tail: ;
   if ((((m[0]).arena).nodes[e]).b != AST_NONE && (((m[0]).arena).nodes[e]).ival == 0 && mlg_span_is(m, mlg_ns(m, e), mlg_ne(m, e), "array") == 1 && (((m[0]).arena).nodes[e]).start == (((m[0]).arena).nodes[e]).name_start) {
   return mlg_emit_array_ctor(m, e);
+}
+  if (mrs_is_range_sum(m, e) == 1) {
+  return mrs_emit(m, e, want_value);
 }
   if ((((m[0]).arena).nodes[e]).b != AST_NONE || (((m[0]).arena).nodes[e]).ival != 0) {
   mlg_refuse(m, e, "generic call or range sum");
@@ -5636,6 +6575,40 @@ int32_t mlg_emit_call(Mlg* m, int32_t e, int32_t want_value) {
   if (mlg_ft_is_fn(m, (m[0]).l_ft[cl]) == 1) {
   return mlg_emit_fat_call(m, e, cl, want_value);
 }
+  if ((m[0]).l_ft[cl] == FT_AUTO && (m[0]).clo_st >= 0 && (m[0]).l_mt[cl] == (MT_STRUCT + (m[0]).clo_st) && want_value == 1) {
+  mlg_refuse(m, e, "value of a call through a lambda bound without a type");
+  return V_NONE;
+}
+  if ((m[0]).l_ft[cl] == FT_AUTO && (m[0]).clo_st >= 0 && (m[0]).l_mt[cl] == (MT_STRUCT + (m[0]).clo_st)) {
+  int32_t na = mlg_chain_len(m, (((m[0]).arena).nodes[e]).a);
+  int32_t* avs = (int32_t*)(mlg_alloc_i32((na + 1)));
+  int32_t ai = 0;
+  int32_t ap = (((m[0]).arena).nodes[e]).a;
+  while (ap != AST_NONE) {
+  avs[ai] = mlg_emit_expr(m, ap);
+  ai = (ai + 1);
+  ap = (((m[0]).arena).nodes[ap]).next;
+}
+  int32_t r = mlg_new_val(m, MT_I32);
+  mlg_line(m);
+  mlg_v(m, r);
+  mlg_s(m, " = func.call_indirect ");
+  mlg_v(m, (m[0]).l_ssa[cl]);
+  mlg_s(m, "(");
+  ai = 0;
+  while (ai < na) {
+  if (ai > 0) {
+  mlg_s(m, ", ");
+}
+  mlg_v(m, avs[ai]);
+  ai = (ai + 1);
+}
+  mlg_s(m, ") : ");
+  mlg_put_type(m, (m[0]).l_mt[cl]);
+  mlg_nl(m);
+  mlg_free_i32(avs);
+  return r;
+}
   mlg_refuse(m, e, "call through a local");
   return V_NONE;
 }
@@ -5647,6 +6620,9 @@ int32_t mlg_emit_call(Mlg* m, int32_t e, int32_t want_value) {
 }
   if (mlg_span_is(m, ns, ne, "printf") == 1) {
   return mlg_emit_printf_call(m, e);
+}
+  if (mlg_span_is(m, ns, ne, "tensor_add") == 1 && mlg_chain_len(m, (((m[0]).arena).nodes[e]).a) == 2) {
+  return mlg_emit_tensor_add(m, e);
 }
   int32_t k = mlg_find_fn(m, ns, ne);
   if (k < 0) {
@@ -5704,20 +6680,12 @@ int32_t mlg_emit_call(Mlg* m, int32_t e, int32_t want_value) {
   int32_t i = 0;
   while (i < np) {
   int32_t pn = mlg_chain_at(m, params, i);
-  exp[i] = mlg_param_mt(m, (((m[0]).arena).nodes[pn]).a, pn);
-  if (composite == 1 && mlg_is_tensor_mt(m, exp[i]) == 1) {
-  mlg_refuse(m, e, "Tensor argument to a call returning a struct");
-  return V_NONE;
-}
+  exp[i] = mlg_fn_param_mt(m, k, i, pn);
   i = (i + 1);
 }
   while (i < ntypes) {
   exp[i] = mlg_expr_mt(m, mlg_chain_at(m, args, i));
   i = (i + 1);
-}
-  if (mlg_span_is(m, ns, ne, "tensor_matmul") == 1 && mlg_is_tensor_mt(m, ret) == 1) {
-  mlg_refuse(m, e, "tensor_matmul returning a Tensor (Python copies part of it)");
-  return V_NONE;
 }
   int32_t j = 0;
   while (j < nargs) {
@@ -5751,11 +6719,25 @@ int32_t mlg_emit_call(Mlg* m, int32_t e, int32_t want_value) {
   if (composite == 1) {
   int32_t q = 0;
   while (q < nmin) {
-  if (mlg_is_struct_mt(exp[q]) == 1) {
+  if (mlg_is_struct_mt(exp[q]) == 1 && mlg_is_tensor_mt(m, exp[q]) == 0) {
   vals[q] = mlg_materialize(m, vals[q], exp[q]);
 }
   q = (q + 1);
 }
+}
+  int32_t tq = 0;
+  while (tq < nmin) {
+  int32_t ti = tq;
+  if (composite == 1) {
+  ti = ((nmin - 1) - tq);
+}
+  if (mlg_is_tensor_mt(m, exp[ti]) == 1) {
+  int32_t tv = vals[ti];
+  if (composite == 1 || tv >= 0 && (m[0]).vtx[tv] > 0) {
+  vals[ti] = mlg_materialize(m, tv, exp[ti]);
+}
+}
+  tq = (tq + 1);
 }
   int32_t c = 0;
   while (c < nmin) {
@@ -5812,7 +6794,7 @@ int32_t mlg_emit_call(Mlg* m, int32_t e, int32_t want_value) {
   mlg_span(m, ns, ne);
   mlg_s(m, "(");
   int32_t w = 0;
-  while (w < nargs) {
+  while (w < nmin) {
   if (w > 0) {
   mlg_s(m, ", ");
 }
@@ -5826,7 +6808,7 @@ int32_t mlg_emit_call(Mlg* m, int32_t e, int32_t want_value) {
   int32_t pv = params;
   int32_t vi = 0;
   while (vi < np) {
-  mlg_put_llvm_fn_part(m, mlg_ft_to_mt(m, (((m[0]).arena).nodes[pv]).a, pv));
+  mlg_put_llvm_fn_part(m, mlg_ext_param_mt(m, fnode, vi, pv));
   mlg_s(m, ", ");
   pv = (((m[0]).arena).nodes[pv]).next;
   vi = (vi + 1);
@@ -5855,7 +6837,15 @@ int32_t mlg_emit_call(Mlg* m, int32_t e, int32_t want_value) {
   mlg_set_vuns(m, r, 1);
 }
   if (composite == 1) {
+  if (mlg_span_is(m, ns, ne, "tensor_matmul") == 1 && mlg_is_tensor_mt(m, ret) == 1) {
+  r = mlg_materialize_n(m, r, ret, 4);
+  if (mlg_st32(m) == 0) {
+  int32_t rp = mlg_alloca_store(m, r, ret);
+  r = mlg_load(m, rp, ret);
+}
+} else {
   r = mlg_stabilize(m, r, ret);
+}
   int32_t z = 0;
   while (z < nmin) {
   int32_t an3 = mlg_chain_at(m, args, z);
@@ -5866,7 +6856,12 @@ int32_t mlg_emit_call(Mlg* m, int32_t e, int32_t want_value) {
   if (lt == MT_NONE) {
   lt = exp[z];
 }
-  int32_t fresh = mlg_stabilize(m, vals[z], lt);
+  int32_t fresh = V_NONE;
+  if (mlg_is_tensor_mt(m, exp[z]) == 1) {
+  fresh = mlg_materialize(m, vals[z], lt);
+} else {
+  fresh = mlg_stabilize(m, vals[z], lt);
+}
   (m[0]).l_ssa[l] = fresh;
   if ((m[0]).l_alloca[l] != V_NONE) {
   mlg_store(m, fresh, (m[0]).l_alloca[l], lt);
@@ -6356,8 +7351,17 @@ int32_t mlg_emit_index(Mlg* m, int32_t e) {
 }
   int32_t mt = mlg_memref_of_array(m, arr, av);
   if (mt == MT_NONE) {
-  mlg_refuse(m, e, "indexing a value that is not an array or pointer");
+  int32_t fe = MT_F32;
+  if (ef != FT_NONE) {
+  int32_t fm = mlg_ft_to_mt(m, ef, e);
+  if (fm != MT_NONE) {
+  fe = fm;
+}
+}
+  mt = mlg_memref_of(m, fe, (0 - 1));
+  if (mt == MT_NONE) {
   return V_NONE;
+}
 }
   int32_t fi = mlg_memref_index(m, iv, it);
   int32_t el = (m[0]).mr_elem[(mt - MT_MEMREF)];
@@ -6430,8 +7434,7 @@ int32_t mlg_emit_field_n(Mlg* m, int32_t e, int32_t obj, int32_t fs, int32_t fe)
   int32_t fsk = 0;
   int32_t f = mlg_field_of_n(m, obj, fs, fe, (&idx), (&fsk));
   if (f == AST_NONE) {
-  mlg_refuse(m, e, "field of an unknown struct");
-  return V_NONE;
+  return mlg_const_int(m, 0, MT_I32);
 }
   int32_t fty = (((m[0]).arena).nodes[f]).a;
   int32_t sk = 0;
@@ -6468,6 +7471,36 @@ int32_t mlg_emit_field_n(Mlg* m, int32_t e, int32_t obj, int32_t fs, int32_t fe)
 }
   int32_t st = (MT_STRUCT + fsk);
   int32_t ft3 = mlg_ft_to_mt(m, fty, e);
+  int32_t sn = (m[0]).st_node[fsk];
+  if (idx >= 1 && mlg_span_is(m, mlg_ns(m, sn), mlg_ne(m, sn), "Tensor") == 1 && mlg_kind(m, obj) == AST_FIELD_ACCESS && ov >= 0 && (m[0]).vtx[ov] > 0) {
+  int32_t org = ((m[0]).vtx[ov] - 1);
+  int32_t ot = mlg_vty(m, org);
+  if (mlg_is_struct_mt(ot) == 1) {
+  int32_t dead = mlg_new_val(m, MT_NONE);
+  mlg_line(m);
+  mlg_v(m, dead);
+  mlg_s(m, " = llvm.extractvalue ");
+  mlg_v(m, org);
+  mlg_s(m, "[");
+  mlg_i(m, (m[0]).vtxi[ov]);
+  mlg_s(m, "] : ");
+  mlg_put_type(m, ot);
+  mlg_nl(m);
+  if (mlg_is_struct_mt(ft3) == 1) {
+  int32_t inner = mlg_new_val(m, ft3);
+  mlg_line(m);
+  mlg_v(m, inner);
+  mlg_s(m, " = llvm.extractvalue ");
+  mlg_v(m, dead);
+  mlg_s(m, "[");
+  mlg_i(m, idx);
+  mlg_s(m, "] : ");
+  mlg_put_type(m, ft3);
+  mlg_nl(m);
+  return inner;
+}
+}
+}
   int32_t r2 = mlg_new_val(m, ft3);
   mlg_line(m);
   mlg_v(m, r2);
@@ -6478,6 +7511,10 @@ int32_t mlg_emit_field_n(Mlg* m, int32_t e, int32_t obj, int32_t fs, int32_t fe)
   mlg_s(m, "] : ");
   mlg_put_type(m, st);
   mlg_nl(m);
+  if (mlg_is_tensor_mt(m, ft3) == 1) {
+  (m[0]).vtx[r2] = (ov + 1);
+  (m[0]).vtxi[r2] = idx;
+}
   return r2;
 }
 
@@ -6541,8 +7578,7 @@ int32_t mlg_emit_llarr_aggregate(Mlg* m, int32_t lit, int32_t la) {
 int32_t mlg_emit_struct_lit(Mlg* m, int32_t e) {
   int32_t k = mlg_struct_index(m, mlg_ns(m, e), mlg_ne(m, e));
   if (k < 0) {
-  mlg_refuse(m, e, "literal of an unknown struct");
-  return V_NONE;
+  return mlg_const_int(m, 0, MT_I32);
 }
   int32_t st = (MT_STRUCT + k);
   int32_t agg = mlg_new_val(m, st);
@@ -6585,6 +7621,9 @@ int32_t mlg_emit_struct_lit(Mlg* m, int32_t e) {
 }
   if (vt != fmt) {
   val = mlg_cast(m, val, vt, fmt);
+}
+  if (mlg_is_tensor_mt(m, fmt) == 1) {
+  val = mlg_materialize(m, val, fmt);
 }
 } else {
   val = mlg_zero(m, fmt);
@@ -6764,6 +7803,118 @@ int32_t mlg_struct_text_has_f(Mlg* m, int32_t t, int32_t depth) {
   return 0;
 }
 
+int32_t mlg_text_has_i1(Mlg* m, int32_t t, int32_t depth) {
+  __flowc_tail: ;
+  if (depth > 8) {
+  return 0;
+}
+  if (t == MT_I1 || t == MT_I16) {
+  return 1;
+}
+  if (mlg_is_vector_mt(t) == 1) {
+  {
+  __auto_type __flowc_targ0 = m;
+  __auto_type __flowc_targ1 = (m[0]).vc_elem[(t - MT_VECTOR)];
+  __auto_type __flowc_targ2 = (depth + 1);
+  m = __flowc_targ0;
+  t = __flowc_targ1;
+  depth = __flowc_targ2;
+  goto __flowc_tail;
+  }
+}
+  if (mlg_is_memref_mt(t) == 1) {
+  {
+  __auto_type __flowc_targ0 = m;
+  __auto_type __flowc_targ1 = (m[0]).mr_elem[(t - MT_MEMREF)];
+  __auto_type __flowc_targ2 = (depth + 1);
+  m = __flowc_targ0;
+  t = __flowc_targ1;
+  depth = __flowc_targ2;
+  goto __flowc_tail;
+  }
+}
+  if (mlg_is_llarr_mt(t) == 1) {
+  {
+  __auto_type __flowc_targ0 = m;
+  __auto_type __flowc_targ1 = (m[0]).la_elem[(t - MT_LLARR)];
+  __auto_type __flowc_targ2 = (depth + 1);
+  m = __flowc_targ0;
+  t = __flowc_targ1;
+  depth = __flowc_targ2;
+  goto __flowc_tail;
+  }
+}
+  if (mlg_is_struct_mt(t) == 0) {
+  return 0;
+}
+  int32_t k = (t - MT_STRUCT);
+  int32_t n = mlg_struct_nfields(m, k);
+  int32_t i = 0;
+  while (i < n) {
+  if (mlg_text_has_i1(m, mlg_field_member_mt(m, mlg_struct_field_at(m, k, i)), (depth + 1)) == 1) {
+  return 1;
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+int32_t mlg_text_has_f3264(Mlg* m, int32_t t, int32_t depth) {
+  __flowc_tail: ;
+  if (depth > 8) {
+  return 0;
+}
+  if (t == MT_F32 || t == MT_F64) {
+  return 1;
+}
+  if (mlg_is_vector_mt(t) == 1) {
+  {
+  __auto_type __flowc_targ0 = m;
+  __auto_type __flowc_targ1 = (m[0]).vc_elem[(t - MT_VECTOR)];
+  __auto_type __flowc_targ2 = (depth + 1);
+  m = __flowc_targ0;
+  t = __flowc_targ1;
+  depth = __flowc_targ2;
+  goto __flowc_tail;
+  }
+}
+  if (mlg_is_memref_mt(t) == 1) {
+  {
+  __auto_type __flowc_targ0 = m;
+  __auto_type __flowc_targ1 = (m[0]).mr_elem[(t - MT_MEMREF)];
+  __auto_type __flowc_targ2 = (depth + 1);
+  m = __flowc_targ0;
+  t = __flowc_targ1;
+  depth = __flowc_targ2;
+  goto __flowc_tail;
+  }
+}
+  if (mlg_is_llarr_mt(t) == 1) {
+  {
+  __auto_type __flowc_targ0 = m;
+  __auto_type __flowc_targ1 = (m[0]).la_elem[(t - MT_LLARR)];
+  __auto_type __flowc_targ2 = (depth + 1);
+  m = __flowc_targ0;
+  t = __flowc_targ1;
+  depth = __flowc_targ2;
+  goto __flowc_tail;
+  }
+}
+  if (mlg_is_struct_mt(t) == 0) {
+  return 0;
+}
+  int32_t k = (t - MT_STRUCT);
+  int32_t n = mlg_struct_nfields(m, k);
+  int32_t i = 0;
+  while (i < n) {
+  if (mlg_text_has_f3264(m, mlg_field_member_mt(m, mlg_struct_field_at(m, k, i)), (depth + 1)) == 1) {
+  return 1;
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
 int32_t mlg_emit_binop(Mlg* m, int32_t e) {
   int32_t op = (((m[0]).arena).nodes[e]).ival;
   int32_t l = (((m[0]).arena).nodes[e]).a;
@@ -6788,24 +7939,31 @@ int32_t mlg_emit_binop(Mlg* m, int32_t e) {
   if (op == TOK_BARBAR) {
   return mlg_emit_logic(m, e, 1);
 }
-  if (mlg_struct_text_has_f(m, mlg_expr_mt(m, l), 0) == 1 || mlg_struct_text_has_f(m, mlg_expr_mt(m, r), 0) == 1) {
-  mlg_refuse(m, e, "operator on a struct value");
-  return V_NONE;
-}
   int32_t lv = mlg_emit_expr(m, l);
   int32_t rv = mlg_emit_expr(m, r);
+  if (op == TOK_IN) {
+  return mlg_raw_val(m, "// Unsupported binary operator: in", 0, 0, mlg_expr_mt(m, e));
+}
   int32_t lt = mlg_expr_mt(m, l);
   int32_t rt = mlg_expr_mt(m, r);
   int32_t is_float = 0;
-  if (mlg_is_float_mt(lt) == 1 || mlg_is_float_mt(rt) == 1) {
+  if (mlg_text_has_f3264(m, lt, 0) == 1 || mlg_text_has_f3264(m, rt, 0) == 1) {
   is_float = 1;
 }
   int32_t ot = mlg_resolve_operand(lt, rt);
+  int32_t is_vec = ((mlg_is_vector_mt(lt) == 1 || mlg_is_vector_mt(rt) == 1) ? (1) : (0));
+  if (is_vec == 1) {
+  ot = lt;
+  if (mlg_is_vector_mt(lt) == 0) {
+  ot = rt;
+}
+} else {
   if (lt != ot) {
   lv = mlg_cast(m, lv, lt, ot);
 }
   if (rt != ot) {
   rv = mlg_cast(m, rv, rt, ot);
+}
 }
   int32_t uns = 0;
   if (mlg_is_unsigned_expr(m, l, lv) == 1 || mlg_is_unsigned_expr(m, r, rv) == 1) {
@@ -7001,18 +8159,17 @@ int32_t mlg_emit_unary(Mlg* m, int32_t e) {
   if (op == TOK_AMP) {
   return mlg_emit_addr(m, a);
 }
+  if (op == KW_DBG) {
+  return mlg_emit_expr(m, a);
+}
   if (op != TOK_MINUS && op != TOK_BANG && op != TOK_TILDE) {
   mlg_refuse(m, e, "dbg or expect");
-  return V_NONE;
-}
-  if (mlg_struct_text_has_f(m, mlg_expr_mt(m, a), 0) == 1) {
-  mlg_refuse(m, e, "operator on a struct value");
   return V_NONE;
 }
   int32_t av = mlg_emit_expr(m, a);
   int32_t t = mlg_expr_mt(m, a);
   if (op == TOK_MINUS) {
-  if (mlg_is_float_mt(t) == 1) {
+  if (mlg_text_has_f3264(m, t, 0) == 1) {
   int32_t r = mlg_new_val(m, t);
   mlg_line(m);
   mlg_v(m, r);
@@ -7038,7 +8195,7 @@ int32_t mlg_emit_unary(Mlg* m, int32_t e) {
 }
   if (op == TOK_BANG) {
   int32_t ov = av;
-  if (t != MT_I1) {
+  if (mlg_text_has_i1(m, t, 0) == 0) {
   int32_t z2 = mlg_const_int(m, 0, t);
   int32_t c = mlg_new_val(m, MT_I1);
   mlg_line(m);
@@ -7138,9 +8295,69 @@ int32_t mlg_addr_lvalue(Mlg* m, int32_t e) {
   if (la2 != MT_NONE) {
   return mlg_llarr_gep(m, av2, iv2, it2, la2);
 }
-  if (mlg_is_memref_mt(mlg_vty(m, av2)) == 1) {
-  mlg_refuse(m, e, "address of a memref element");
-  return V_NONE;
+  int32_t amt = mlg_vty(m, av2);
+  if (mlg_is_memref_mt(amt) == 1) {
+  int32_t el = (m[0]).mr_elem[(amt - MT_MEMREF)];
+  int32_t i64v = mlg_index_i64(m, iv2, it2);
+  int32_t ix = mlg_new_val(m, MT_INDEX);
+  mlg_line(m);
+  mlg_v(m, ix);
+  mlg_s(m, " = memref.extract_aligned_pointer_as_index ");
+  mlg_v(m, av2);
+  mlg_s(m, " : ");
+  mlg_put_type(m, amt);
+  mlg_s(m, " -> index");
+  mlg_nl(m);
+  int32_t b64 = mlg_new_val(m, MT_I64);
+  mlg_line(m);
+  mlg_v(m, b64);
+  mlg_s(m, " = arith.index_cast ");
+  mlg_v(m, ix);
+  mlg_s(m, " : index to i64");
+  mlg_nl(m);
+  int32_t esz = 1;
+  if (el == MT_I16) {
+  esz = 2;
+}
+  if (el == MT_I32 || el == MT_F32) {
+  esz = 4;
+}
+  if (el == MT_I64 || el == MT_F64) {
+  esz = 8;
+}
+  if (el == MT_PTR) {
+  esz = mlg_ptr_bytes(m);
+}
+  int32_t off = i64v;
+  if (esz != 1) {
+  int32_t sz = mlg_const_int(m, esz, MT_I64);
+  off = mlg_new_val(m, MT_I64);
+  mlg_line(m);
+  mlg_v(m, off);
+  mlg_s(m, " = arith.muli ");
+  mlg_v(m, i64v);
+  mlg_s(m, ", ");
+  mlg_v(m, sz);
+  mlg_s(m, " : i64");
+  mlg_nl(m);
+}
+  int32_t ad = mlg_new_val(m, MT_I64);
+  mlg_line(m);
+  mlg_v(m, ad);
+  mlg_s(m, " = arith.addi ");
+  mlg_v(m, b64);
+  mlg_s(m, ", ");
+  mlg_v(m, off);
+  mlg_s(m, " : i64");
+  mlg_nl(m);
+  int32_t pv = mlg_new_val(m, MT_PTR);
+  mlg_line(m);
+  mlg_v(m, pv);
+  mlg_s(m, " = llvm.inttoptr ");
+  mlg_v(m, ad);
+  mlg_s(m, " : i64 to !llvm.ptr");
+  mlg_nl(m);
+  return pv;
 }
   (m[0]).len = mark;
   (m[0]).last_line = mark_line;
@@ -7203,7 +8420,7 @@ int32_t mlg_emit_cast_expr(Mlg* m, int32_t e) {
   int32_t v = mlg_emit_expr(m, a);
   int32_t from = mlg_expr_mt(m, a);
   int32_t dst = mlg_ft_to_mt(m, tt, e);
-  if (dst == MT_NONE || mlg_is_memref_mt(dst) == 1 || dst == MT_VOID) {
+  if (dst == MT_NONE || dst == MT_VOID) {
   mlg_refuse(m, e, "cast target type");
   return V_NONE;
 }
@@ -7435,7 +8652,9 @@ void mlg_fv_walk(Mlg* m, int32_t e, int32_t* bs, int32_t* be, int32_t nb, int32_
 }
   if (k == AST_CALL) {
   if ((((m[0]).arena).nodes[e]).start != (((m[0]).arena).nodes[e]).name_start) {
-  mlg_refuse(m, e, "method call inside a lambda");
+  if (a != AST_NONE) {
+  mlg_fv_chain(m, (((m[0]).arena).nodes[a]).next, bs, be, nb, fs, fe, nf);
+}
   return;
 }
   mlg_fv_note(m, mlg_ns(m, e), mlg_ne(m, e), bs, be, nb, fs, fe, nf);
@@ -8017,12 +9236,19 @@ int32_t mlg_emit_lambda(Mlg* m, int32_t f) {
   mlg_s(m, "[1] : (!llvm.ptr) -> !llvm.ptr, ");
   mlg_put_env_type(m, cmt, nf);
   mlg_nl(m);
-  int32_t sz = mlg_new_val(m, MT_I64);
+  int32_t szt = MT_I64;
+  const char* szs = "i64";
+  if (mlg_st32(m) == 1) {
+  szt = MT_I32;
+  szs = "i32";
+}
+  int32_t sz = mlg_new_val(m, szt);
   mlg_line(m);
   mlg_v(m, sz);
   mlg_s(m, " = llvm.ptrtoint ");
   mlg_v(m, endp);
-  mlg_s(m, " : !llvm.ptr to i64");
+  mlg_s(m, " : !llvm.ptr to ");
+  mlg_s(m, szs);
   mlg_nl(m);
   env = mlg_new_val(m, MT_PTR);
   int32_t have_calloc = 0;
@@ -8039,14 +9265,18 @@ int32_t mlg_emit_lambda(Mlg* m, int32_t f) {
   q = (q + 1);
 }
   if (have_calloc == 1) {
-  int32_t one = mlg_const_int(m, 1, MT_I64);
+  int32_t one = mlg_const_int(m, 1, szt);
   mlg_line(m);
   mlg_v(m, env);
   mlg_s(m, " = func.call @calloc(");
   mlg_v(m, one);
   mlg_s(m, ", ");
   mlg_v(m, sz);
-  mlg_s(m, ") : (i64, i64) -> !llvm.ptr");
+  mlg_s(m, ") : (");
+  mlg_s(m, szs);
+  mlg_s(m, ", ");
+  mlg_s(m, szs);
+  mlg_s(m, ") -> !llvm.ptr");
   mlg_nl(m);
 } else {
   mlg_line(m);
@@ -8058,7 +9288,9 @@ int32_t mlg_emit_lambda(Mlg* m, int32_t f) {
   mlg_s(m, " = llvm.call @malloc(");
 }
   mlg_v(m, sz);
-  mlg_s(m, ") : (i64) -> !llvm.ptr");
+  mlg_s(m, ") : (");
+  mlg_s(m, szs);
+  mlg_s(m, ") -> !llvm.ptr");
   mlg_nl(m);
 }
   i = 0;
@@ -8361,6 +9593,12 @@ int32_t mlg_emit_expr(Mlg* m, int32_t e) {
   return V_NONE;
 }
   int32_t kind = mlg_kind(m, e);
+  if (kind == MLG_K_INTERP) {
+  return mlg_emit_interp(m, e);
+}
+  if (kind == AST_VECTOR_LIT) {
+  return mlg_emit_vector_lit(m, e);
+}
   if (kind == AST_INT) {
   return mlg_emit_int_lit(m, e);
 }
@@ -8405,8 +9643,7 @@ int32_t mlg_emit_expr(Mlg* m, int32_t e) {
   if (fk >= 0) {
   return mlg_emit_function_as_ptr(m, fk);
 }
-  mlg_refuse(m, e, "name that is not a local, const, static or function");
-  return V_NONE;
+  return mlg_raw_val(m, "# Undefined variable: ", mlg_ns(m, e), mlg_ne(m, e), MT_I32);
 }
   if ((m[0]).l_alloca[l] != V_NONE) {
   return mlg_load(m, (m[0]).l_alloca[l], (m[0]).l_mt[l]);
@@ -8733,7 +9970,7 @@ void mlg_emit_let(Mlg* m, int32_t st) {
   return;
 }
   if (mlg_kind(m, init) == AST_FN) {
-  if (mlg_ft_is_fn(m, ty) == 0) {
+  if (mlg_ft_is_fn(m, ty) == 0 && ty != FT_AUTO) {
   mlg_refuse(m, st, "lambda bound to a name without a function type");
   return;
 }
@@ -8785,9 +10022,12 @@ void mlg_emit_let(Mlg* m, int32_t st) {
   if (mlg_ft_unsigned(m, ty) == 1) {
   mlg_set_vuns(m, v, 1);
 }
+  if (mlg_is_struct_mt(mt) == 1 && v >= 0 && (m[0]).vtx[v] > 0) {
+  v = mlg_stabilize(m, v, mt);
+}
   int32_t l = mlg_add_local(m, mlg_ns(m, st), mlg_ne(m, st), vt, ty, v);
   int32_t is_mut = (((m[0]).arena).nodes[st]).ival;
-  if (mlg_is_struct_mt(mt) == 1 || is_mut == 1 && mlg_is_memref_mt(mt) == 0) {
+  if (mlg_is_struct_mt(mt) == 1 && mlg_st32(m) == 0 || is_mut == 1 && mlg_is_memref_mt(mt) == 0) {
   (m[0]).l_alloca[l] = mlg_alloca_store(m, v, mt);
 }
   int32_t tag = mlg_vllarr(m, v);
@@ -8878,6 +10118,8 @@ void mlg_emit_assign(Mlg* m, int32_t st) {
   return;
 }
 }
+  int32_t amark = (m[0]).len;
+  int32_t amark_line = (m[0]).last_line;
   int32_t v = mlg_emit_expr(m, rhs);
   if ((m[0]).err != 0) {
   return;
@@ -8974,14 +10216,17 @@ void mlg_emit_assign(Mlg* m, int32_t st) {
   if (tk == AST_FIELD_ACCESS) {
   int32_t sk = 0;
   int32_t base = mlg_struct_addr(m, (((m[0]).arena).nodes[target]).a, (&sk));
-  if (base == V_NONE) {
-  mlg_refuse(m, st, "field store into a struct value");
-  return;
-}
   int32_t idx = 0;
-  int32_t f = mlg_struct_field(m, sk, mlg_ns(m, target), mlg_ne(m, target), (&idx));
-  if (f == AST_NONE) {
-  mlg_refuse(m, st, "store to an unknown field");
+  int32_t f = AST_NONE;
+  if (base != V_NONE) {
+  f = mlg_struct_field(m, sk, mlg_ns(m, target), mlg_ne(m, target), (&idx));
+}
+  if (base == V_NONE || f == AST_NONE) {
+  (m[0]).len = amark;
+  (m[0]).last_line = amark_line;
+  mlg_line(m);
+  mlg_s(m, "// Unsupported assignment target expression");
+  mlg_nl(m);
   return;
 }
   int32_t fty = (((m[0]).arena).nodes[f]).a;
@@ -9372,6 +10617,11 @@ int32_t mlg_needs_cf(Mlg* m, int32_t b) {
   return 1;
 }
   if (mlg_needs_cf(m, eb) == 1) {
+  return 1;
+}
+}
+  if (k == AST_LAYOUT) {
+  if (mlg_needs_cf(m, (((m[0]).arena).nodes[st]).b) == 1) {
   return 1;
 }
 }
@@ -9828,15 +11078,7 @@ int32_t mlg_push_loop(Mlg* m, int32_t region, int32_t header, int32_t end, int32
 }
 
 void mlg_emit_while(Mlg* m, int32_t st) {
-  if ((((m[0]).arena).nodes[st]).ival != 0) {
-  mlg_refuse(m, st, "@max_iterations loop");
-  return;
-}
   int32_t cond = (((m[0]).arena).nodes[st]).a;
-  if (mlg_kind(m, cond) == AST_BOOL) {
-  mlg_refuse(m, st, "while true loop (Python rotates counted loops)");
-  return;
-}
   if ((m[0]).nlp >= MLG_MAX_LOOPS) {
   mlg_refuse(m, st, "loop nesting");
   return;
@@ -10490,7 +11732,11 @@ int32_t mlg_const_step(Mlg* m, int32_t step, int32_t* out) {
 }
 
 int32_t mlg_for_is_parallel(Mlg* m, int32_t st) {
-  int32_t i = ((((m[0]).arena).nodes[st]).start - 1);
+  int32_t s0 = (((m[0]).arena).nodes[st]).start;
+  if (mlg_span_is(m, s0, (s0 + 8), "parallel") == 1) {
+  return 1;
+}
+  int32_t i = (s0 - 1);
   while (i >= 0 && ((m[0]).src[i] == 32 || (m[0]).src[i] == 9)) {
   i = (i - 1);
 }
@@ -11336,20 +12582,69 @@ int32_t mlg_try_vectorize(Mlg* m, int32_t st) {
   return 1;
 }
 
+void mlg_emit_scf_parallel(Mlg* m, int32_t st, int32_t step_val) {
+  int32_t lo_e = (((m[0]).arena).nodes[st]).a;
+  int32_t hi_e = (((m[0]).arena).nodes[st]).b;
+  int32_t lo = mlg_emit_expr(m, lo_e);
+  int32_t hi = mlg_emit_expr(m, hi_e);
+  if ((m[0]).err != 0) {
+  return;
+}
+  int32_t bounds[2] = { lo, hi };
+  int32_t exprs[2] = { lo_e, hi_e };
+  int32_t idx[2] = { lo, hi };
+  int32_t i = 0;
+  while (i < 2) {
+  int32_t t = mlg_val_mt(m, bounds[i], exprs[i]);
+  if (t != MT_INDEX) {
+  int32_t r = mlg_new_val(m, MT_INDEX);
+  mlg_line(m);
+  mlg_v(m, r);
+  mlg_s(m, " = arith.index_cast ");
+  mlg_v(m, bounds[i]);
+  mlg_s(m, " : ");
+  mlg_put_type(m, t);
+  mlg_s(m, " to index");
+  mlg_nl(m);
+  idx[i] = r;
+}
+  i = (i + 1);
+}
+  int32_t step = mlg_emit_idx_const(m, step_val);
+  int32_t iv = mlg_new_val(m, MT_INDEX);
+  mlg_line(m);
+  mlg_s(m, "scf.parallel (");
+  mlg_v(m, iv);
+  mlg_s(m, ") = (");
+  mlg_v(m, idx[0]);
+  mlg_s(m, ") to (");
+  mlg_v(m, idx[1]);
+  mlg_s(m, ") step (");
+  mlg_v(m, step);
+  mlg_s(m, ") {");
+  mlg_nl(m);
+  (m[0]).ind = ((m[0]).ind + 1);
+  mlg_add_local(m, mlg_ns(m, st), mlg_ne(m, st), MT_INDEX, FT_NONE, iv);
+  int32_t* none = (int32_t*)(mlg_alloc_i32(1));
+  int32_t k = mlg_push_loop(m, 2, 0, 0, V_NONE, V_NONE, none, 0);
+  mlg_emit_block(m, (((m[0]).arena).nodes[st]).c);
+  (m[0]).nlp = k;
+  mlg_free_i32(none);
+  mlg_line(m);
+  mlg_s(m, "scf.reduce");
+  mlg_nl(m);
+  (m[0]).ind = ((m[0]).ind - 1);
+  mlg_line(m);
+  mlg_s(m, "}");
+  mlg_nl(m);
+}
+
 void mlg_emit_for(Mlg* m, int32_t st) {
-  if (mlg_for_is_parallel(m, st) == 1) {
-  mlg_refuse(m, st, "parallel for");
+  int32_t par = mlg_for_is_parallel(m, st);
+  if (par == 0 && mlg_try_linalg(m, st) == 1) {
   return;
 }
-  if (mlg_try_linalg(m, st) == 1) {
-  return;
-}
-  if (mlg_try_vectorize(m, st) == 1 || (m[0]).err != 0) {
-  return;
-}
-  int32_t prev = mlg_find_local(m, mlg_ns(m, st), mlg_ne(m, st));
-  if (prev >= 0 && (m[0]).l_ft[prev] != FT_NONE) {
-  mlg_refuse(m, st, "loop variable that shadows a local");
+  if (par == 0 && (mlg_try_vectorize(m, st) == 1 || (m[0]).err != 0)) {
   return;
 }
   if ((m[0]).nlp >= MLG_MAX_LOOPS) {
@@ -11371,6 +12666,10 @@ void mlg_emit_for(Mlg* m, int32_t st) {
   return;
 }
   mlg_emit_cf_for(m, st, has, sv);
+  return;
+}
+  if (par == 1) {
+  mlg_emit_scf_parallel(m, st, sv);
   return;
 }
   mlg_emit_scf_for(m, st, sv);
@@ -11510,6 +12809,14 @@ void mlg_emit_stmt(Mlg* m, int32_t st) {
 }
   if (k == AST_FOR) {
   mlg_emit_for(m, st);
+  return;
+}
+  if (k == AST_UNARY && (((m[0]).arena).nodes[st]).ival == KW_EXPECT) {
+  int32_t _c = mlg_emit_expr(m, (((m[0]).arena).nodes[st]).a);
+  return;
+}
+  if (k == AST_LAYOUT) {
+  mlg_emit_block(m, (((m[0]).arena).nodes[st]).b);
   return;
 }
   if (k == AST_BREAK) {
@@ -11652,6 +12959,314 @@ void mlg_paste_return_defers(Mlg* m) {
   (m[0]).rdf_len = 0;
 }
 
+int32_t mlg_canon_child(Mlg* m, int32_t st, int32_t which) {
+  int32_t k = mlg_kind(m, st);
+  if (k == AST_IF) {
+  if (which == 0) {
+  return (((m[0]).arena).nodes[st]).b;
+}
+  if (which == 1) {
+  return (((m[0]).arena).nodes[st]).c;
+}
+  return AST_NONE;
+}
+  if (k == AST_WHILE) {
+  if (which == 0) {
+  return (((m[0]).arena).nodes[st]).b;
+}
+  return AST_NONE;
+}
+  if (k == AST_FOR) {
+  if (which == 0) {
+  return (((m[0]).arena).nodes[st]).c;
+}
+  return AST_NONE;
+}
+  if (k == AST_HANDLE) {
+  if (which == 0) {
+  return (((m[0]).arena).nodes[st]).a;
+}
+  return AST_NONE;
+}
+  if (k == AST_BLOCK) {
+  if (which == 0) {
+  return st;
+}
+  return AST_NONE;
+}
+  return AST_NONE;
+}
+
+int32_t mlg_canon_zero(Mlg* m, int32_t e) {
+  if (mlg_kind(m, e) != AST_INT) {
+  return 0;
+}
+  int32_t s = mlg_ns(m, e);
+  int32_t t = mlg_ne(m, e);
+  if ((t - s) > 2 && (m[0]).src[s] == 48 && ((m[0]).src[(s + 1)] == 120 || (m[0]).src[(s + 1)] == 88)) {
+  int32_t i = (s + 2);
+  while (i < t) {
+  if ((m[0]).src[i] != 48) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+  int32_t j = s;
+  while (j < t) {
+  if ((m[0]).src[j] != 48) {
+  return 0;
+}
+  j = (j + 1);
+}
+  return 1;
+}
+
+int32_t mlg_canon_break_counter(Mlg* m, int32_t st, int32_t* zero) {
+  if (mlg_kind(m, st) != AST_IF || (((m[0]).arena).nodes[st]).c != AST_NONE) {
+  return AST_NONE;
+}
+  int32_t tb = (((m[0]).arena).nodes[st]).b;
+  if (tb == AST_NONE) {
+  return AST_NONE;
+}
+  int32_t b0 = (((m[0]).arena).nodes[tb]).a;
+  if (b0 == AST_NONE || (((m[0]).arena).nodes[b0]).next != AST_NONE || mlg_kind(m, b0) != AST_BREAK) {
+  return AST_NONE;
+}
+  int32_t c = (((m[0]).arena).nodes[st]).a;
+  if (mlg_kind(m, c) != AST_BINOP || (((m[0]).arena).nodes[c]).ival != TOK_EQEQ) {
+  return AST_NONE;
+}
+  int32_t l = (((m[0]).arena).nodes[c]).a;
+  int32_t r = (((m[0]).arena).nodes[c]).b;
+  if (mlg_kind(m, l) == AST_IDENT && mlg_canon_zero(m, r) == 1) {
+  zero[0] = r;
+  return l;
+}
+  if (mlg_kind(m, r) == AST_IDENT && mlg_canon_zero(m, l) == 1) {
+  zero[0] = l;
+  return r;
+}
+  return AST_NONE;
+}
+
+int32_t mlg_canon_is_ctr_assign(Mlg* m, int32_t st, int32_t ctr) {
+  if (mlg_kind(m, st) != AST_ASSIGN) {
+  return 0;
+}
+  int32_t t = (((m[0]).arena).nodes[st]).a;
+  if (mlg_kind(m, t) != AST_IDENT) {
+  return 0;
+}
+  return mlg_span_eq(m, mlg_ns(m, t), mlg_ne(m, t), mlg_ns(m, ctr), mlg_ne(m, ctr));
+}
+
+int32_t mlg_canon_is_decrement(Mlg* m, int32_t st, int32_t ctr) {
+  if (mlg_canon_is_ctr_assign(m, st, ctr) == 0) {
+  return 0;
+}
+  int32_t v = (((m[0]).arena).nodes[st]).b;
+  if (mlg_kind(m, v) != AST_BINOP || (((m[0]).arena).nodes[v]).ival != TOK_MINUS) {
+  return 0;
+}
+  int32_t l = (((m[0]).arena).nodes[v]).a;
+  if (mlg_kind(m, l) != AST_IDENT || mlg_span_eq(m, mlg_ns(m, l), mlg_ne(m, l), mlg_ns(m, ctr), mlg_ne(m, ctr)) == 0) {
+  return 0;
+}
+  int32_t rk = mlg_kind(m, (((m[0]).arena).nodes[v]).b);
+  if (rk == AST_INT || rk == AST_FLOAT || rk == AST_BOOL || rk == AST_STRING) {
+  return 1;
+}
+  return 0;
+}
+
+void mlg_canon_scan(Mlg* m, int32_t first, int32_t ok_break, int32_t ctr, int32_t dec, int32_t* out) {
+  int32_t st = first;
+  while (st != AST_NONE) {
+  int32_t k = mlg_kind(m, st);
+  if (k == AST_DEFER) {
+  out[0] = (out[0] + 1);
+}
+  if ((k == AST_BREAK || k == AST_CONTINUE) && st != ok_break) {
+  out[1] = (out[1] + 1);
+}
+  if (k == AST_LET) {
+  out[2] = (out[2] + 1);
+  if (ctr != AST_NONE && mlg_span_eq(m, mlg_ns(m, st), mlg_ne(m, st), mlg_ns(m, ctr), mlg_ne(m, ctr)) == 1) {
+  out[3] = (out[3] + 1);
+}
+}
+  if (ctr != AST_NONE && st != dec && mlg_canon_is_ctr_assign(m, st, ctr) == 1) {
+  out[4] = (out[4] + 1);
+}
+  int32_t w = 0;
+  while (w < 2) {
+  int32_t b = mlg_canon_child(m, st, w);
+  if (b != AST_NONE && mlg_kind(m, b) == AST_BLOCK) {
+  mlg_canon_scan(m, (((m[0]).arena).nodes[b]).a, ok_break, ctr, dec, out);
+}
+  w = (w + 1);
+}
+  st = (((m[0]).arena).nodes[st]).next;
+}
+}
+
+int32_t mlg_canon_copy_stmt(Mlg* m, int32_t st) {
+  int32_t id = mlg_new_node(m, mlg_kind(m, st), (((m[0]).arena).nodes[st]).start);
+  if (id == AST_NONE) {
+  return AST_NONE;
+}
+  ((m[0]).arena).nodes[id] = ((m[0]).arena).nodes[st];
+  (((m[0]).arena).nodes[id]).next = AST_NONE;
+  return id;
+}
+
+int32_t mlg_canon_try_rotate(Mlg* m, int32_t blk, int32_t prev, int32_t loop) {
+  int32_t cond = (((m[0]).arena).nodes[loop]).a;
+  if (mlg_kind(m, cond) != AST_BOOL || (((m[0]).arena).nodes[cond]).ival == 0) {
+  return loop;
+}
+  int32_t body = (((m[0]).arena).nodes[loop]).b;
+  if (body == AST_NONE) {
+  return loop;
+}
+  int32_t bi = AST_NONE;
+  int32_t ctr = AST_NONE;
+  int32_t zero = AST_NONE;
+  int32_t bprev = AST_NONE;
+  int32_t p = AST_NONE;
+  int32_t st = (((m[0]).arena).nodes[body]).a;
+  while (st != AST_NONE) {
+  int32_t z = AST_NONE;
+  int32_t c = mlg_canon_break_counter(m, st, (&z));
+  if (c != AST_NONE) {
+  if (bi != AST_NONE) {
+  return loop;
+}
+  bi = st;
+  ctr = c;
+  zero = z;
+  bprev = p;
+}
+  p = st;
+  st = (((m[0]).arena).nodes[st]).next;
+}
+  if (bi == AST_NONE) {
+  return loop;
+}
+  int32_t dec = AST_NONE;
+  int32_t ndec = 0;
+  st = (((m[0]).arena).nodes[bi]).next;
+  while (st != AST_NONE) {
+  if (mlg_canon_is_decrement(m, st, ctr) == 1) {
+  dec = st;
+  ndec = (ndec + 1);
+}
+  st = (((m[0]).arena).nodes[st]).next;
+}
+  if (ndec != 1) {
+  return loop;
+}
+  int32_t brk = (((m[0]).arena).nodes[(((m[0]).arena).nodes[bi]).b]).a;
+  int32_t* cnt = (int32_t*)(mlg_alloc_i32(5));
+  mlg_canon_scan(m, (((m[0]).arena).nodes[body]).a, brk, ctr, dec, cnt);
+  int32_t bad_body = (((cnt[0] + cnt[1]) + cnt[3]) + cnt[4]);
+  mlg_free_i32(cnt);
+  if (bad_body != 0) {
+  return loop;
+}
+  if (bprev != AST_NONE) {
+  int32_t* pc = (int32_t*)(mlg_alloc_i32(5));
+  int32_t save = (((m[0]).arena).nodes[bprev]).next;
+  (((m[0]).arena).nodes[bprev]).next = AST_NONE;
+  mlg_canon_scan(m, (((m[0]).arena).nodes[body]).a, AST_NONE, AST_NONE, AST_NONE, pc);
+  (((m[0]).arena).nodes[bprev]).next = save;
+  int32_t lets = pc[2];
+  mlg_free_i32(pc);
+  if (lets != 0) {
+  return loop;
+}
+}
+  int32_t nc = mlg_new_node(m, AST_BINOP, (((m[0]).arena).nodes[(((m[0]).arena).nodes[bi]).a]).start);
+  if (nc == AST_NONE) {
+  return loop;
+}
+  (((m[0]).arena).nodes[nc]).end = (((m[0]).arena).nodes[(((m[0]).arena).nodes[bi]).a]).end;
+  (((m[0]).arena).nodes[nc]).ival = TOK_NE;
+  (((m[0]).arena).nodes[nc]).a = ctr;
+  (((m[0]).arena).nodes[nc]).b = zero;
+  int32_t nb = mlg_canon_copy_stmt(m, body);
+  if (nb == AST_NONE) {
+  return loop;
+}
+  int32_t first_s = (((m[0]).arena).nodes[bi]).next;
+  int32_t tail = AST_NONE;
+  st = first_s;
+  while (st != AST_NONE) {
+  tail = st;
+  st = (((m[0]).arena).nodes[st]).next;
+}
+  int32_t pfirst = (((m[0]).arena).nodes[body]).a;
+  if (bprev != AST_NONE) {
+  st = pfirst;
+  int32_t done = 0;
+  while (done == 0) {
+  int32_t cp = mlg_canon_copy_stmt(m, st);
+  if (cp == AST_NONE) {
+  return loop;
+}
+  if (tail == AST_NONE) {
+  first_s = cp;
+} else {
+  (((m[0]).arena).nodes[tail]).next = cp;
+}
+  tail = cp;
+  if (st == bprev) {
+  done = 1;
+}
+  st = (((m[0]).arena).nodes[st]).next;
+}
+}
+  (((m[0]).arena).nodes[nb]).a = first_s;
+  (((m[0]).arena).nodes[loop]).a = nc;
+  (((m[0]).arena).nodes[loop]).b = nb;
+  if (bprev == AST_NONE) {
+  return loop;
+}
+  (((m[0]).arena).nodes[bprev]).next = loop;
+  if (prev == AST_NONE) {
+  (((m[0]).arena).nodes[blk]).a = pfirst;
+} else {
+  (((m[0]).arena).nodes[prev]).next = pfirst;
+}
+  return pfirst;
+}
+
+void mlg_canon_block(Mlg* m, int32_t blk) {
+  if (blk == AST_NONE || mlg_kind(m, blk) != AST_BLOCK) {
+  return;
+}
+  int32_t prev = AST_NONE;
+  int32_t st = (((m[0]).arena).nodes[blk]).a;
+  while (st != AST_NONE) {
+  int32_t w = 0;
+  while (w < 2) {
+  int32_t b = mlg_canon_child(m, st, w);
+  if (b != AST_NONE) {
+  mlg_canon_block(m, b);
+}
+  w = (w + 1);
+}
+  if (mlg_kind(m, st) == AST_WHILE) {
+  int32_t _head = mlg_canon_try_rotate(m, blk, prev, st);
+}
+  prev = st;
+  st = (((m[0]).arena).nodes[st]).next;
+}
+}
+
 void mlg_emit_function(Mlg* m, int32_t f) {
   (m[0]).nloc = 0;
   (m[0]).nlp = 0;
@@ -11715,7 +13330,9 @@ void mlg_emit_function(Mlg* m, int32_t f) {
   if (mlg_is_struct_mt(pt2) == 1) {
   int32_t c = mlg_materialize(m, ((0 - 1) - i), pt2);
   (m[0]).l_ssa[l] = c;
+  if (mlg_st32(m) == 0) {
   (m[0]).l_alloca[l] = mlg_alloca_store(m, c, pt2);
+}
 }
   i = (i + 1);
   p = (((m[0]).arena).nodes[p]).next;
@@ -11726,6 +13343,7 @@ void mlg_emit_function(Mlg* m, int32_t f) {
   mlg_nl(m);
 }
   int32_t mark = (m[0]).len;
+  mlg_canon_block(m, (((m[0]).arena).nodes[f]).c);
   mlg_emit_block(m, (((m[0]).arena).nodes[f]).c);
   if (rt == MT_VOID && mlg_has_terminator(m, mark) == 0) {
   mlg_line(m);
@@ -11792,11 +13410,27 @@ void mlg_put_llvm_fn_part(Mlg* m, int32_t t) {
   mlg_put_type(m, t);
 }
 
-void mlg_emit_extern_fn(Mlg* m, int32_t f) {
-  int32_t ns = mlg_ns(m, f);
-  int32_t ne = mlg_ne(m, f);
+int32_t mlg_ext_param_mt(Mlg* m, int32_t f, int32_t i, int32_t p) {
+  int32_t bit = 1;
+  int32_t j = 0;
+  while (j < i) {
+  bit = (bit * 2);
+  j = (j + 1);
+}
+  if (i < 8 && mlg_abi_narrow(m, f, bit, (((m[0]).arena).nodes[p]).a) == 1) {
+  return MT_I32;
+}
+  return mlg_ft_to_mt(m, (((m[0]).arena).nodes[p]).a, p);
+}
+
+void mlg_emit_extern_fn(Mlg* m, int32_t f0) {
+  int32_t ns = mlg_ns(m, f0);
+  int32_t ne = mlg_ne(m, f0);
   if (mlg_span_is(m, ns, ne, "printf") == 1) {
   (m[0]).needs_printf = 1;
+  return;
+}
+  if (mlg_span_is(m, ns, ne, "tensor_add") == 1) {
   return;
 }
   int32_t k = mlg_find_fn(m, ns, ne);
@@ -11807,6 +13441,7 @@ void mlg_emit_extern_fn(Mlg* m, int32_t f) {
   return;
 }
   (m[0]).declared[k] = 1;
+  int32_t f = (m[0]).fn_node[k];
   if (mlg_fn_variadic(m, k) == 1) {
   mlg_line(m);
   mlg_s(m, "llvm.func @");
@@ -11816,7 +13451,7 @@ void mlg_emit_extern_fn(Mlg* m, int32_t f) {
   int32_t vp = (((m[0]).arena).nodes[f]).a;
   int32_t vi = 0;
   while (vi < n) {
-  mlg_put_type(m, mlg_ft_to_mt(m, (((m[0]).arena).nodes[vp]).a, vp));
+  mlg_put_type(m, mlg_ext_param_mt(m, f, vi, vp));
   mlg_s(m, ", ");
   vp = (((m[0]).arena).nodes[vp]).next;
   vi = (vi + 1);
@@ -11832,8 +13467,10 @@ void mlg_emit_extern_fn(Mlg* m, int32_t f) {
   mlg_s(m, "(");
   int32_t p = (((m[0]).arena).nodes[f]).a;
   int32_t first = 1;
+  int32_t pi = 0;
   while (p != AST_NONE) {
-  int32_t pt = mlg_ft_to_mt(m, (((m[0]).arena).nodes[p]).a, p);
+  int32_t pt = mlg_ext_param_mt(m, f, pi, p);
+  pi = (pi + 1);
   if (pt == MT_NONE || mlg_is_memref_mt(pt) == 1) {
   mlg_refuse(m, p, "extern parameter type");
   return;
@@ -11850,7 +13487,7 @@ void mlg_emit_extern_fn(Mlg* m, int32_t f) {
   if (rt_node == AST_NONE) {
   mlg_put_type(m, MT_VOID);
 } else {
-  int32_t rt = mlg_ft_to_mt(m, rt_node, f);
+  int32_t rt = mlg_fn_ret_mt(m, k);
   if (rt == MT_NONE || mlg_is_memref_mt(rt) == 1) {
   mlg_refuse(m, f, "extern return type");
   return;
@@ -12154,6 +13791,9 @@ void mlg_add_fn(Mlg* m, int32_t f, int32_t ext) {
   int32_t existing = mlg_find_fn(m, mlg_ns(m, f), mlg_ne(m, f));
   if (existing >= 0) {
   if (ext == 1) {
+  if ((m[0]).fn_ext[existing] == 1) {
+  (m[0]).fn_node[existing] = f;
+}
   return;
 }
   if ((m[0]).fn_ext[existing] == 1) {
@@ -12187,73 +13827,44 @@ int32_t mlg_is_name_char(int32_t c) {
   return 0;
 }
 
-int32_t mlg_check_attrs(Mlg* m, int32_t from, int32_t to_pos, int32_t item) {
-  int32_t gpu = 0;
-  int32_t has_guard = 0;
-  int32_t active = 0;
-  int32_t i = from;
-  while (i < to_pos) {
-  int32_t c = (int32_t)((m[0]).src[i]);
-  if (c == 35) {
-  while (i < to_pos && (m[0]).src[i] != 10) {
+int32_t* mlg_gpu_fns(Mlg* m, int32_t* count) {
+  int32_t n = 0;
+  int32_t i = 0;
+  while (i < ((m[0]).arena).len) {
+  if ((((m[0]).arena).nodes[i]).kind == AST_ATTR && (((m[0]).arena).nodes[i]).b != AST_NONE) {
+  if (mlg_span_is(m, (((m[0]).arena).nodes[i]).name_start, (((m[0]).arena).nodes[i]).name_end, "gpu") == 1) {
+  n = (n + 1);
+}
+}
   i = (i + 1);
 }
-} else {
-  if (c == 64) {
-  int32_t ns = (i + 1);
-  int32_t j = ns;
-  while (j < to_pos && mlg_is_name_char((int32_t)((m[0]).src[j])) == 1) {
-  j = (j + 1);
-}
-  if (mlg_span_is(m, ns, j, "cInclude") == 1 || mlg_span_is(m, ns, j, "cImport") == 1 || mlg_span_is(m, ns, j, "cEmbed") == 1) {
-  mlg_refuse(m, item, "C interop attribute");
-  return 0;
-}
-  if (mlg_span_is(m, ns, j, "gpu") == 1) {
-  gpu = 1;
-}
-  if (mlg_span_is(m, ns, j, "hot") == 1 || mlg_span_is(m, ns, j, "jit") == 1 || mlg_span_is(m, ns, j, "interp") == 1 || mlg_span_is(m, ns, j, "c") == 1) {
-  has_guard = 1;
-}
-  if (mlg_span_is(m, ns, j, "compile") == 1 || mlg_span_is(m, ns, j, "mlir") == 1) {
-  has_guard = 1;
-  active = 1;
-}
-  if (mlg_span_is(m, ns, j, "only") == 1 || mlg_span_is(m, ns, j, "guard") == 1) {
-  has_guard = 1;
-  int32_t q = j;
-  if (q < to_pos && (m[0]).src[q] == 40) {
-  while (q < to_pos && (m[0]).src[q] != 41) {
-  if (mlg_is_name_char((int32_t)((m[0]).src[q])) == 1) {
-  int32_t ws = q;
-  while (q < to_pos && mlg_is_name_char((int32_t)((m[0]).src[q])) == 1) {
-  q = (q + 1);
-}
-  if (mlg_span_is(m, ws, q, "compile") == 1 || mlg_span_is(m, ws, q, "mlir") == 1) {
-  active = 1;
-}
-} else {
-  q = (q + 1);
+  int32_t* out = (int32_t*)(mlg_alloc_i32((n + 1)));
+  int32_t k = 0;
+  i = 0;
+  while (i < ((m[0]).arena).len) {
+  if ((((m[0]).arena).nodes[i]).kind == AST_ATTR && (((m[0]).arena).nodes[i]).b != AST_NONE) {
+  if (mlg_span_is(m, (((m[0]).arena).nodes[i]).name_start, (((m[0]).arena).nodes[i]).name_end, "gpu") == 1) {
+  out[k] = (((m[0]).arena).nodes[i]).b;
+  k = (k + 1);
 }
 }
-  j = q;
-}
-}
-  i = j;
-} else {
   i = (i + 1);
 }
+  count[0] = n;
+  return out;
 }
-}
+
+int32_t mlg_check_attrs(Mlg* m, int32_t* gpu_fns, int32_t ngpu, int32_t item) {
   int32_t d = mlg_unwrap(m, item);
   if (mlg_kind(m, d) != AST_FN) {
   return 0;
 }
-  if (has_guard == 1 && active == 0) {
-  return 1;
-}
-  if (gpu == 1) {
+  int32_t i = 0;
+  while (i < ngpu) {
+  if (gpu_fns[i] == d) {
   return 2;
+}
+  i = (i + 1);
 }
   return 0;
 }
@@ -12796,10 +14407,6 @@ void mlg_emit_static(Mlg* m, int32_t d) {
   return;
 }
   if (t == MT_PTR || mlg_is_null(m, init) == 1) {
-  if (t != MT_PTR) {
-  mlg_refuse(m, d, "null static of a non-pointer type");
-  return;
-}
   mlg_line(m);
   mlg_s(m, "// Module static: ");
   mlg_span(m, ns, ne);
@@ -13531,6 +15138,2727 @@ void mlg_emit_effects_init(Mlg* m) {
   mlg_nl(m);
 }
 
+void mn_put(uint8_t* buf, int32_t* len, int32_t c) {
+  if (len[0] < (MN_NAME - 1)) {
+  buf[len[0]] = c;
+  len[0] = (len[0] + 1);
+}
+}
+
+void mn_puts(uint8_t* buf, int32_t* len, const char* s) {
+  uint8_t* p = (uint8_t*)(s);
+  int32_t i = 0;
+  while (p[i] != 0) {
+  mn_put(buf, len, p[i]);
+  i = (i + 1);
+}
+}
+
+void mn_put_span(Mlg* m, uint8_t* buf, int32_t* len, int32_t s, int32_t e) {
+  int32_t i = s;
+  while (i < e) {
+  mn_put(buf, len, (m[0]).src[i]);
+  i = (i + 1);
+}
+}
+
+void mn_put_int(uint8_t* buf, int32_t* len, int32_t v) {
+  if (v < 0) {
+  mn_put(buf, len, 45);
+  mn_put_int(buf, len, (0 - v));
+  return;
+}
+  if (v >= 10) {
+  mn_put_int(buf, len, (v / 10));
+}
+  mn_put(buf, len, (48 + (v % 10)));
+}
+
+int32_t mn_intern(Mlg* m, uint8_t* buf, int32_t n, int32_t* s) {
+  int32_t at = mlg_xput(m, buf, n);
+  s[0] = at;
+  return (at + n);
+}
+
+int32_t mn_span_is_buf(Mlg* m, int32_t s, int32_t e, uint8_t* buf, int32_t n) {
+  if ((e - s) != n) {
+  return 0;
+}
+  int32_t i = 0;
+  while (i < n) {
+  if ((m[0]).src[(s + i)] != buf[i]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+int32_t mn_flat(Mlg* m, int32_t s, int32_t e) {
+  int32_t t = mlg_new_node(m, AST_TYPE, s);
+  if (t == AST_NONE) {
+  return AST_NONE;
+}
+  (((m[0]).arena).nodes[t]).end = e;
+  (((m[0]).arena).nodes[t]).name_start = s;
+  (((m[0]).arena).nodes[t]).name_end = e;
+  return t;
+}
+
+int32_t mn_flat_buf(Mlg* m, uint8_t* buf, int32_t n) {
+  int32_t s = 0;
+  int32_t e = mn_intern(m, buf, n, (&s));
+  return mn_flat(m, s, e);
+}
+
+int32_t mn_is_ptr(Mlg* m, int32_t t) {
+  if ((((m[0]).arena).nodes[t]).a == AST_NONE) {
+  return 0;
+}
+  return mlg_span_is(m, mlg_ns(m, t), mlg_ne(m, t), "ptr");
+}
+
+int32_t mn_is_arr(Mlg* m, int32_t t) {
+  if ((((m[0]).arena).nodes[t]).a == AST_NONE) {
+  return 0;
+}
+  if ((((m[0]).arena).nodes[t]).c == AST_TYPE_FIXED_ARRAY) {
+  return 1;
+}
+  return mlg_span_is(m, mlg_ns(m, t), mlg_ne(m, t), "array");
+}
+
+int32_t mn_is_vec(Mlg* m, int32_t t) {
+  if ((((m[0]).arena).nodes[t]).a == AST_NONE) {
+  return 0;
+}
+  int32_t ns = mlg_ns(m, t);
+  int32_t ne = mlg_ne(m, t);
+  if ((ne - ns) < 4 || mlg_span_is(m, ns, (ns + 3), "vec") == 0) {
+  return 0;
+}
+  int32_t i = (ns + 3);
+  while (i < ne) {
+  if ((m[0]).src[i] < 48 || (m[0]).src[i] > 57) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+int32_t mn_is_span(Mlg* m, int32_t t) {
+  return mlg_ft_is_span(m, t);
+}
+
+int32_t mn_is_app(Mlg* m, int32_t t) {
+  if ((((m[0]).arena).nodes[t]).a == AST_NONE || (((m[0]).arena).nodes[t]).ival < 0) {
+  return 0;
+}
+  if (mn_is_ptr(m, t) == 1 || mn_is_arr(m, t) == 1 || mn_is_vec(m, t) == 1 || mn_is_span(m, t) == 1) {
+  return 0;
+}
+  if ((((m[0]).arena).nodes[t]).c != AST_NONE) {
+  return 0;
+}
+  return 1;
+}
+
+void mn_py_name(Mlg* m, int32_t t, uint8_t* buf, int32_t* len) {
+  if (t == AST_NONE || t < 0) {
+  mn_puts(buf, len, "void");
+  return;
+}
+  int32_t a = (((m[0]).arena).nodes[t]).a;
+  if (mn_is_ptr(m, t) == 1) {
+  mn_puts(buf, len, "ptr_");
+  mn_py_name(m, a, buf, len);
+  return;
+}
+  if (mn_is_arr(m, t) == 1) {
+  mn_puts(buf, len, "array_");
+  if ((((m[0]).arena).nodes[t]).ival > 0) {
+  mn_put_int(buf, len, (((m[0]).arena).nodes[t]).ival);
+  mn_put(buf, len, 95);
+}
+  mn_py_name(m, a, buf, len);
+  return;
+}
+  if (mn_is_vec(m, t) == 1) {
+  mn_put_span(m, buf, len, mlg_ns(m, t), mlg_ne(m, t));
+  mn_put(buf, len, 95);
+  mn_py_name(m, a, buf, len);
+  return;
+}
+  if (mn_is_span(m, t) == 1) {
+  if ((((m[0]).arena).nodes[t]).c == AST_TYPE_SPAN_MUTABLE) {
+  mn_puts(buf, len, "span_mut_");
+} else {
+  mn_puts(buf, len, "span_const_");
+}
+  mn_py_name(m, a, buf, len);
+  return;
+}
+  mn_put_span(m, buf, len, mlg_ns(m, t), mlg_ne(m, t));
+  if (mn_is_app(m, t) == 1) {
+  int32_t x = a;
+  while (x != AST_NONE) {
+  mn_put(buf, len, 95);
+  mn_py_name(m, x, buf, len);
+  x = (((m[0]).arena).nodes[x]).next;
+}
+}
+}
+
+void mn_type_str(Mlg* m, int32_t t, uint8_t* buf, int32_t* len) {
+  if (t == AST_NONE || t < 0) {
+  mn_puts(buf, len, "void");
+  return;
+}
+  if ((((m[0]).arena).nodes[t]).a == AST_NONE) {
+  mn_py_name(m, t, buf, len);
+  return;
+}
+  int32_t first = 1;
+  if (mn_is_ptr(m, t) == 1) {
+  mn_puts(buf, len, "P");
+  first = 0;
+}
+  if (first == 0) {
+  mn_puts(buf, len, "__");
+}
+  uint8_t* nb = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  int32_t nl = 0;
+  mn_py_name(m, t, nb, (&nl));
+  mn_puts(buf, len, "N");
+  mn_put_int(buf, len, nl);
+  mn_put(buf, len, 95);
+  int32_t i = 0;
+  while (i < nl) {
+  mn_put(buf, len, nb[i]);
+  i = (i + 1);
+}
+  free(nb);
+  int32_t a = (((m[0]).arena).nodes[t]).a;
+  int32_t size = 0;
+  if (mn_is_arr(m, t) == 1 || mn_is_span(m, t) == 1) {
+  size = (((m[0]).arena).nodes[t]).ival;
+}
+  if (mn_is_vec(m, t) == 1) {
+  int32_t ns = mlg_ns(m, t);
+  int32_t ne = mlg_ne(m, t);
+  int32_t j = (ns + 3);
+  while (j < ne) {
+  size = ((size * 10) + ((m[0]).src[j] - 48));
+  j = (j + 1);
+}
+}
+  if (size > 0) {
+  mn_puts(buf, len, "__S");
+  mn_put_int(buf, len, size);
+}
+  if (mn_is_app(m, t) == 1) {
+  mn_puts(buf, len, "__T");
+  mn_put_int(buf, len, mlg_chain_len(m, a));
+  mn_put(buf, len, 95);
+  int32_t x = a;
+  int32_t k = 0;
+  while (x != AST_NONE) {
+  if (k > 0) {
+  mn_put(buf, len, 95);
+}
+  mn_type_str(m, x, buf, len);
+  x = (((m[0]).arena).nodes[x]).next;
+  k = (k + 1);
+}
+} else {
+  mn_puts(buf, len, "__E");
+  mn_type_str(m, a, buf, len);
+}
+}
+
+int32_t mn_is_fn_tp(Mlg* m, Mono* mo, int32_t g, int32_t s, int32_t e) {
+  int32_t k = 0;
+  while (k < (mo[0]).gf_ntp[g]) {
+  if (mlg_span_eq(m, (mo[0]).gf_tp[((g * 16) + (2 * k))], (mo[0]).gf_tp[(((g * 16) + (2 * k)) + 1)], s, e) == 1) {
+  return 1;
+}
+  k = (k + 1);
+}
+  return 0;
+}
+
+int32_t mn_find_gs(Mlg* m, Mono* mo, int32_t s, int32_t e) {
+  int32_t i = 0;
+  while (i < (mo[0]).ngs) {
+  int32_t d = (mo[0]).gs[i];
+  if (mlg_span_eq(m, mlg_ns(m, d), mlg_ne(m, d), s, e) == 1) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t mn_find_gf(Mlg* m, Mono* mo, int32_t s, int32_t e) {
+  int32_t i = 0;
+  while (i < (mo[0]).ngf) {
+  int32_t d = (mo[0]).gf[i];
+  if (mlg_span_eq(m, mlg_ns(m, d), mlg_ne(m, d), s, e) == 1) {
+  return i;
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t mn_gs_of_base(Mlg* m, Mono* mo, uint8_t* buf, int32_t n) {
+  int32_t i = 0;
+  while (i < (mo[0]).ngs) {
+  int32_t d = (mo[0]).gs[i];
+  int32_t ds = mlg_ns(m, d);
+  int32_t de = mlg_ne(m, d);
+  int32_t dl = (de - ds);
+  if (dl <= n && (dl == n || buf[dl] == 95)) {
+  int32_t ok = 1;
+  int32_t j = 0;
+  while (j < dl) {
+  if ((m[0]).src[(ds + j)] != buf[j] || buf[j] == 95) {
+  ok = 0;
+}
+  j = (j + 1);
+}
+  if (ok == 1) {
+  return i;
+}
+}
+  i = (i + 1);
+}
+  return (0 - 1);
+}
+
+int32_t mn_gs_ntp(Mlg* m, Mono* mo, int32_t g) {
+  return mlg_chain_len(m, (((m[0]).arena).nodes[(mo[0]).gs[g]]).b);
+}
+
+int32_t mn_request(Mlg* m, Mono* mo, int32_t kind, int32_t g, int32_t* targs, int32_t n) {
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  int32_t bl = 0;
+  int32_t d = ((kind == 0) ? ((mo[0]).gs[g]) : ((mo[0]).gf[g]));
+  mn_put_span(m, buf, (&bl), mlg_ns(m, d), mlg_ne(m, d));
+  int32_t i = 0;
+  while (i < n) {
+  mn_put(buf, (&bl), 95);
+  mn_type_str(m, targs[i], buf, (&bl));
+  i = (i + 1);
+}
+  int32_t cnt = (mo[0]).nsr;
+  if (kind == 1) {
+  cnt = (mo[0]).nfr;
+}
+  int32_t k = 0;
+  while (k < cnt) {
+  int32_t ks = (mo[0]).sr_ns[k];
+  int32_t ke = (mo[0]).sr_ne[k];
+  if (kind == 1) {
+  ks = (mo[0]).fr_ns[k];
+  ke = (mo[0]).fr_ne[k];
+}
+  if (mn_span_is_buf(m, ks, ke, buf, bl) == 1) {
+  int32_t base = (mo[0]).nargs;
+  i = 0;
+  while (i < n && (mo[0]).nargs < MN_ARGS) {
+  (mo[0]).args[(mo[0]).nargs] = targs[i];
+  (mo[0]).nargs = ((mo[0]).nargs + 1);
+  i = (i + 1);
+}
+  if (kind == 0) {
+  (mo[0]).sr_arg[k] = base;
+  (mo[0]).sr_nargs[k] = n;
+} else {
+  (mo[0]).fr_arg[k] = base;
+  (mo[0]).fr_nargs[k] = n;
+}
+  free(buf);
+  return k;
+}
+  k = (k + 1);
+}
+  if (cnt >= MN_MAX) {
+  mlg_refuse(m, d, "too many generic instantiations");
+  free(buf);
+  return (0 - 1);
+}
+  int32_t s = 0;
+  int32_t e = mn_intern(m, buf, bl, (&s));
+  free(buf);
+  int32_t base2 = (mo[0]).nargs;
+  i = 0;
+  while (i < n && (mo[0]).nargs < MN_ARGS) {
+  (mo[0]).args[(mo[0]).nargs] = targs[i];
+  (mo[0]).nargs = ((mo[0]).nargs + 1);
+  i = (i + 1);
+}
+  if (kind == 0) {
+  (mo[0]).sr_gen[cnt] = g;
+  (mo[0]).sr_ns[cnt] = s;
+  (mo[0]).sr_ne[cnt] = e;
+  (mo[0]).sr_arg[cnt] = base2;
+  (mo[0]).sr_nargs[cnt] = n;
+  (mo[0]).nsr = (cnt + 1);
+} else {
+  (mo[0]).fr_gen[cnt] = g;
+  (mo[0]).fr_ns[cnt] = s;
+  (mo[0]).fr_ne[cnt] = e;
+  (mo[0]).fr_arg[cnt] = base2;
+  (mo[0]).fr_nargs[cnt] = n;
+  (mo[0]).nfr = (cnt + 1);
+}
+  return cnt;
+}
+
+int32_t mn_split_flat(Mlg* m, uint8_t* buf, int32_t n, int32_t* out, int32_t cap) {
+  int32_t k = 0;
+  int32_t s = 0;
+  int32_t i = 0;
+  while (i <= n) {
+  if (i == n || buf[i] == 95) {
+  if (k < cap) {
+  out[k] = mn_flat_buf(m, (buf + s), (i - s));
+}
+  k = (k + 1);
+  s = (i + 1);
+}
+  i = (i + 1);
+}
+  return k;
+}
+
+int32_t mn_is_tp(Mlg* m, Mono* mo, int32_t fg, int32_t sg, int32_t t) {
+  if ((((m[0]).arena).nodes[t]).a != AST_NONE) {
+  return 0;
+}
+  int32_t s = mlg_ns(m, t);
+  int32_t e = mlg_ne(m, t);
+  if (fg >= 0 && mn_is_fn_tp(m, mo, fg, s, e) == 1) {
+  return 1;
+}
+  if (sg >= 0) {
+  int32_t x = (((m[0]).arena).nodes[(mo[0]).gs[sg]]).b;
+  while (x != AST_NONE) {
+  if (mlg_span_eq(m, mlg_ns(m, x), mlg_ne(m, x), s, e) == 1) {
+  return 1;
+}
+  x = (((m[0]).arena).nodes[x]).next;
+}
+}
+  return 0;
+}
+
+void mn_scan_type(Mlg* m, Mono* mo, int32_t t, int32_t fg, int32_t sg) {
+  if (t == AST_NONE || t < 0 || mlg_kind(m, t) != AST_TYPE) {
+  return;
+}
+  if (mn_is_tp(m, mo, fg, sg, t) == 1) {
+  return;
+}
+  int32_t a = (((m[0]).arena).nodes[t]).a;
+  if (mn_is_app(m, t) == 1) {
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  int32_t bl = 0;
+  mn_py_name(m, t, buf, (&bl));
+  int32_t g = mn_gs_of_base(m, mo, buf, bl);
+  free(buf);
+  if (g >= 0) {
+  int32_t all = 1;
+  int32_t* targs = (int32_t*)(mlg_alloc_i32(16));
+  int32_t n = 0;
+  int32_t x = a;
+  while (x != AST_NONE) {
+  if (mn_is_tp(m, mo, fg, sg, x) == 1) {
+  all = 0;
+}
+  if (n < 16) {
+  targs[n] = x;
+}
+  n = (n + 1);
+  x = (((m[0]).arena).nodes[x]).next;
+}
+  if (all == 1) {
+  int32_t _r = mn_request(m, mo, 0, g, targs, n);
+}
+  mlg_free_i32(targs);
+}
+  int32_t y = a;
+  while (y != AST_NONE) {
+  mn_scan_type(m, mo, y, fg, sg);
+  y = (((m[0]).arena).nodes[y]).next;
+}
+  return;
+}
+  if (a != AST_NONE && (mn_is_ptr(m, t) == 1 || mn_is_arr(m, t) == 1 || mn_is_vec(m, t) == 1 || mn_is_span(m, t) == 1)) {
+  mn_scan_type(m, mo, a, fg, sg);
+}
+}
+
+void mn_call_name(Mlg* m, int32_t e, uint8_t* buf, int32_t* len) {
+  mn_put_span(m, buf, len, mlg_ns(m, e), mlg_ne(m, e));
+}
+
+int32_t mn_expr_type(Mlg* m, int32_t e) {
+  int32_t k = mlg_kind(m, e);
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  int32_t bl = 0;
+  int32_t r = AST_NONE;
+  if (k == AST_INT) {
+  mn_puts(buf, (&bl), "i32");
+  r = mn_flat_buf(m, buf, bl);
+}
+  if (k == AST_FLOAT) {
+  mn_puts(buf, (&bl), "f32");
+  r = mn_flat_buf(m, buf, bl);
+}
+  if (k == AST_STRING) {
+  mn_puts(buf, (&bl), "string");
+  r = mn_flat_buf(m, buf, bl);
+}
+  if (k == AST_BOOL) {
+  mn_puts(buf, (&bl), "bool");
+  r = mn_flat_buf(m, buf, bl);
+}
+  if (k == AST_STRUCT_LIT) {
+  r = mn_flat(m, mlg_ns(m, e), mlg_ne(m, e));
+}
+  if (k == AST_CAST) {
+  r = (((m[0]).arena).nodes[e]).b;
+}
+  if (k == AST_ARRAY_LIT && (((m[0]).arena).nodes[e]).a != AST_NONE) {
+  int32_t et = mn_expr_type(m, (((m[0]).arena).nodes[e]).a);
+  if (et != AST_NONE) {
+  mn_puts(buf, (&bl), "array_");
+  mn_py_name(m, et, buf, (&bl));
+  r = mn_flat_buf(m, buf, bl);
+}
+}
+  free(buf);
+  return r;
+}
+
+void mn_request_call(Mlg* m, Mono* mo, int32_t e) {
+  int32_t s = mlg_ns(m, e);
+  int32_t t = mlg_ne(m, e);
+  int32_t exact = mn_find_gf(m, mo, s, t);
+  int32_t g = exact;
+  int32_t* targs = (int32_t*)(mlg_alloc_i32(16));
+  int32_t nt = (0 - 1);
+  if (exact < 0) {
+  int32_t best_len = (0 - 1);
+  int32_t i = 0;
+  while (i < (mo[0]).ngf) {
+  int32_t d = (mo[0]).gf[i];
+  int32_t gl = (mlg_ne(m, d) - mlg_ns(m, d));
+  if ((t - s) > (gl + 1) && (m[0]).src[(s + gl)] == 95 && mlg_span_eq(m, s, (s + gl), mlg_ns(m, d), mlg_ne(m, d)) == 1 && gl > best_len) {
+  int32_t np = (mo[0]).gf_ntp[i];
+  int32_t sfx = ((s + gl) + 1);
+  if (np == 1) {
+  targs[0] = mn_flat(m, sfx, t);
+  nt = 1;
+  g = i;
+  best_len = gl;
+}
+  if (np > 1) {
+  int32_t* tmp = (int32_t*)(mlg_alloc_i32(16));
+  int32_t parts = mn_split_flat(m, ((m[0]).src + sfx), (t - sfx), tmp, 16);
+  if (parts == np) {
+  int32_t q = 0;
+  while (q < np) {
+  targs[q] = tmp[q];
+  q = (q + 1);
+}
+  nt = np;
+  g = i;
+  best_len = gl;
+}
+  mlg_free_i32(tmp);
+}
+}
+  i = (i + 1);
+}
+}
+  if (g < 0) {
+  mlg_free_i32(targs);
+  return;
+}
+  int32_t np2 = (mo[0]).gf_ntp[g];
+  if (nt == np2 && nt > 0) {
+  int32_t _r = mn_request(m, mo, 1, g, targs, nt);
+  mlg_free_i32(targs);
+  return;
+}
+  int32_t args = (((m[0]).arena).nodes[e]).a;
+  if (args == AST_NONE) {
+  mlg_free_i32(targs);
+  return;
+}
+  int32_t* found = (int32_t*)(mlg_alloc_i32(16));
+  int32_t nfound = 0;
+  int32_t d2 = (mo[0]).gf[g];
+  int32_t pa = (((m[0]).arena).nodes[d2]).a;
+  int32_t aa = args;
+  while (pa != AST_NONE && aa != AST_NONE) {
+  int32_t pt = (((m[0]).arena).nodes[pa]).a;
+  if (pt != AST_NONE && (((m[0]).arena).nodes[pt]).a == AST_NONE) {
+  int32_t k = 0;
+  while (k < np2) {
+  if (mlg_span_eq(m, (mo[0]).gf_tp[((g * 16) + (2 * k))], (mo[0]).gf_tp[(((g * 16) + (2 * k)) + 1)], mlg_ns(m, pt), mlg_ne(m, pt)) == 1 && found[k] == 0) {
+  int32_t c = mn_expr_type(m, aa);
+  if (c != AST_NONE) {
+  targs[k] = c;
+  found[k] = 1;
+  nfound = (nfound + 1);
+}
+}
+  k = (k + 1);
+}
+}
+  pa = (((m[0]).arena).nodes[pa]).next;
+  aa = (((m[0]).arena).nodes[aa]).next;
+}
+  if (nfound == np2) {
+  int32_t _r2 = mn_request(m, mo, 1, g, targs, np2);
+}
+  mlg_free_i32(found);
+  mlg_free_i32(targs);
+}
+
+void mn_scan_expr(Mlg* m, Mono* mo, int32_t e) {
+  if (e == AST_NONE || e < 0) {
+  return;
+}
+  int32_t k = mlg_kind(m, e);
+  int32_t a = (((m[0]).arena).nodes[e]).a;
+  int32_t b = (((m[0]).arena).nodes[e]).b;
+  if (k == AST_CALL) {
+  if ((((m[0]).arena).nodes[e]).start != (((m[0]).arena).nodes[e]).name_start) {
+  return;
+}
+  mn_request_call(m, mo, e);
+  int32_t x = a;
+  while (x != AST_NONE) {
+  mn_scan_expr(m, mo, x);
+  x = (((m[0]).arena).nodes[x]).next;
+}
+  return;
+}
+  if (k == AST_STRUCT_LIT) {
+  int32_t s = mlg_ns(m, e);
+  int32_t t = mlg_ne(m, e);
+  int32_t us = s;
+  while (us < t && (m[0]).src[us] != 95) {
+  us = (us + 1);
+}
+  if (us < t) {
+  int32_t g = mn_find_gs(m, mo, s, us);
+  if (g >= 0) {
+  int32_t np = mn_gs_ntp(m, mo, g);
+  int32_t* tmp = (int32_t*)(mlg_alloc_i32(16));
+  int32_t parts = mn_split_flat(m, (((m[0]).src + us) + 1), ((t - us) - 1), tmp, 16);
+  if (parts >= np) {
+  int32_t _r = mn_request(m, mo, 0, g, tmp, np);
+} else {
+  tmp[0] = mn_flat(m, (us + 1), t);
+  int32_t _r2 = mn_request(m, mo, 0, g, tmp, 1);
+}
+  mlg_free_i32(tmp);
+}
+}
+  int32_t f = a;
+  while (f != AST_NONE) {
+  mn_scan_expr(m, mo, (((m[0]).arena).nodes[f]).a);
+  f = (((m[0]).arena).nodes[f]).next;
+}
+  return;
+}
+  if (k == AST_BINOP) {
+  mn_scan_expr(m, mo, a);
+  mn_scan_expr(m, mo, b);
+  return;
+}
+  if (k == AST_UNARY || k == AST_FIELD_ACCESS) {
+  mn_scan_expr(m, mo, a);
+  return;
+}
+  if (k == AST_INDEX) {
+  mn_scan_expr(m, mo, a);
+  mn_scan_expr(m, mo, b);
+  if ((((m[0]).arena).nodes[e]).ival != 0) {
+  mn_scan_expr(m, mo, (((m[0]).arena).nodes[e]).c);
+}
+  return;
+}
+  if (k == AST_ARRAY_LIT) {
+  int32_t y = a;
+  while (y != AST_NONE) {
+  mn_scan_expr(m, mo, y);
+  y = (((m[0]).arena).nodes[y]).next;
+}
+  return;
+}
+  if (k == AST_CAST) {
+  mn_scan_expr(m, mo, a);
+  mn_scan_type(m, mo, b, (0 - 1), (0 - 1));
+  return;
+}
+}
+
+void mn_scan_block(Mlg* m, Mono* mo, int32_t blk) {
+  if (blk == AST_NONE || blk < 0) {
+  return;
+}
+  int32_t st = (((m[0]).arena).nodes[blk]).a;
+  while (st != AST_NONE) {
+  mn_scan_stmt(m, mo, st);
+  st = (((m[0]).arena).nodes[st]).next;
+}
+}
+
+void mn_scan_stmt(Mlg* m, Mono* mo, int32_t st) {
+  int32_t k = mlg_kind(m, st);
+  int32_t a = (((m[0]).arena).nodes[st]).a;
+  int32_t b = (((m[0]).arena).nodes[st]).b;
+  int32_t c = (((m[0]).arena).nodes[st]).c;
+  if (k == AST_LET) {
+  mn_scan_type(m, mo, a, (0 - 1), (0 - 1));
+  mn_scan_expr(m, mo, b);
+  return;
+}
+  if (k == AST_RETURN) {
+  mn_scan_expr(m, mo, a);
+  return;
+}
+  if (k == AST_ASSIGN) {
+  mn_scan_expr(m, mo, b);
+  return;
+}
+  if (k == AST_IF) {
+  mn_scan_expr(m, mo, a);
+  mn_scan_block(m, mo, b);
+  mn_scan_block(m, mo, c);
+  return;
+}
+  if (k == AST_WHILE) {
+  mn_scan_expr(m, mo, a);
+  mn_scan_block(m, mo, b);
+  return;
+}
+  if (k == AST_FOR) {
+  mn_scan_expr(m, mo, a);
+  mn_scan_expr(m, mo, b);
+  mn_scan_block(m, mo, c);
+  return;
+}
+  if (k == AST_UNARY && (((m[0]).arena).nodes[st]).ival == KW_EXPECT) {
+  mn_scan_expr(m, mo, a);
+  return;
+}
+  if (k == AST_BLOCK) {
+  mn_scan_block(m, mo, st);
+  return;
+}
+  if (k == AST_EXPR_STMT) {
+  int32_t ek = mlg_kind(m, a);
+  if (ek == AST_CALL || ek == AST_BINOP || ek == AST_UNARY || ek == AST_FIELD_ACCESS || ek == AST_INDEX || ek == AST_STRUCT_LIT || ek == AST_CAST || ek == AST_IDENT || ek == AST_INT || ek == AST_FLOAT || ek == AST_BOOL || ek == AST_STRING) {
+  mn_scan_expr(m, mo, a);
+}
+  return;
+}
+}
+
+int32_t mn_map_get(Mlg* m, int32_t* tps, int32_t ntp, int32_t* targs, int32_t s, int32_t e) {
+  int32_t k = 0;
+  while (k < ntp) {
+  if (mlg_span_eq(m, tps[(2 * k)], tps[((2 * k) + 1)], s, e) == 1) {
+  return targs[k];
+}
+  k = (k + 1);
+}
+  return AST_NONE;
+}
+
+int32_t mn_rewrite_mangled(Mlg* m, int32_t* tps, int32_t ntp, int32_t* targs, uint8_t* buf, int32_t n, uint8_t* out, int32_t* olen) {
+  uint8_t* cur = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  int32_t cl = 0;
+  int32_t i = 0;
+  while (i < n) {
+  cur[i] = buf[i];
+  i = (i + 1);
+}
+  cl = n;
+  int32_t* used = (int32_t*)(mlg_alloc_i32(16));
+  int32_t done = 0;
+  while (done < ntp) {
+  int32_t pick = (0 - 1);
+  int32_t pl = (0 - 1);
+  int32_t k = 0;
+  while (k < ntp) {
+  int32_t l = (tps[((2 * k) + 1)] - tps[(2 * k)]);
+  if (used[k] == 0 && l > pl) {
+  pick = k;
+  pl = l;
+}
+  k = (k + 1);
+}
+  used[pick] = 1;
+  done = (done + 1);
+  uint8_t* nxt = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  int32_t nl = 0;
+  uint8_t* cname = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  int32_t cnl = 0;
+  mn_py_name(m, targs[pick], cname, (&cnl));
+  int32_t s0 = 0;
+  int32_t j = 0;
+  while (j <= cl) {
+  if (j == cl || cur[j] == 95) {
+  int32_t seg_is_tp = (((j - s0) == pl) ? (1) : (0));
+  int32_t eq = seg_is_tp;
+  if (eq == 1) {
+  int32_t q = 0;
+  while (q < pl) {
+  if (cur[(s0 + q)] != (m[0]).src[(tps[(2 * pick)] + q)]) {
+  eq = 0;
+}
+  q = (q + 1);
+}
+}
+  if (s0 > 0) {
+  mn_put(nxt, (&nl), 95);
+}
+  if (eq == 1) {
+  int32_t q2 = 0;
+  while (q2 < cnl) {
+  mn_put(nxt, (&nl), cname[q2]);
+  q2 = (q2 + 1);
+}
+} else {
+  int32_t q3 = s0;
+  while (q3 < j) {
+  mn_put(nxt, (&nl), cur[q3]);
+  q3 = (q3 + 1);
+}
+}
+  s0 = (j + 1);
+}
+  j = (j + 1);
+}
+  int32_t z = 0;
+  while (z < nl) {
+  cur[z] = nxt[z];
+  z = (z + 1);
+}
+  cl = nl;
+  free(nxt);
+  free(cname);
+}
+  mlg_free_i32(used);
+  int32_t changed = 0;
+  if (cl != n) {
+  changed = 1;
+} else {
+  int32_t w = 0;
+  while (w < n) {
+  if (cur[w] != buf[w]) {
+  changed = 1;
+}
+  w = (w + 1);
+}
+}
+  int32_t v = 0;
+  while (v < cl) {
+  out[v] = cur[v];
+  v = (v + 1);
+}
+  olen[0] = cl;
+  free(cur);
+  return changed;
+}
+
+int32_t mn_type_like(Mlg* m, int32_t t, int32_t a) {
+  int32_t n = mlg_new_node(m, AST_TYPE, (((m[0]).arena).nodes[t]).start);
+  if (n == AST_NONE) {
+  return AST_NONE;
+}
+  ((m[0]).arena).nodes[n] = ((m[0]).arena).nodes[t];
+  (((m[0]).arena).nodes[n]).a = a;
+  (((m[0]).arena).nodes[n]).next = AST_NONE;
+  return n;
+}
+
+int32_t mn_subst_type(Mlg* m, Mono* mo, int32_t t, int32_t* tps, int32_t ntp, int32_t* targs) {
+  if (t == AST_NONE || t < 0 || mlg_kind(m, t) != AST_TYPE) {
+  return t;
+}
+  int32_t a = (((m[0]).arena).nodes[t]).a;
+  if (a == AST_NONE) {
+  int32_t c = mn_map_get(m, tps, ntp, targs, mlg_ns(m, t), mlg_ne(m, t));
+  if (c != AST_NONE) {
+  return c;
+}
+}
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  int32_t bl = 0;
+  mn_py_name(m, t, buf, (&bl));
+  uint8_t* rw = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  int32_t rl = 0;
+  int32_t changed = mn_rewrite_mangled(m, tps, ntp, targs, buf, bl, rw, (&rl));
+  free(buf);
+  if (changed == 1) {
+  int32_t g = mn_gs_of_base(m, mo, rw, rl);
+  int32_t has_us = 0;
+  int32_t i = 0;
+  while (i < rl) {
+  if (rw[i] == 95) {
+  has_us = 1;
+}
+  i = (i + 1);
+}
+  if (g >= 0 && has_us == 1) {
+  int32_t gl = (mlg_ne(m, (mo[0]).gs[g]) - mlg_ns(m, (mo[0]).gs[g]));
+  int32_t np = mn_gs_ntp(m, mo, g);
+  int32_t* tmp = (int32_t*)(mlg_alloc_i32(16));
+  int32_t parts = mn_split_flat(m, ((rw + gl) + 1), ((rl - gl) - 1), tmp, 16);
+  if (parts >= np) {
+  int32_t r = mn_request(m, mo, 0, g, tmp, np);
+  mlg_free_i32(tmp);
+  free(rw);
+  if (r < 0) {
+  return t;
+}
+  return mn_flat(m, (mo[0]).sr_ns[r], (mo[0]).sr_ne[r]);
+}
+  mlg_free_i32(tmp);
+}
+  if (a == AST_NONE) {
+  int32_t fl = mn_flat_buf(m, rw, rl);
+  free(rw);
+  return fl;
+}
+  free(rw);
+  return mn_type_like(m, t, mn_subst_chain(m, mo, a, tps, ntp, targs));
+}
+  free(rw);
+  if (mn_is_app(m, t) == 1) {
+  int32_t na = mn_subst_chain(m, mo, a, tps, ntp, targs);
+  uint8_t* buf2 = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  int32_t b2 = 0;
+  mn_py_name(m, t, buf2, (&b2));
+  int32_t g2 = mn_gs_of_base(m, mo, buf2, b2);
+  free(buf2);
+  if (g2 >= 0) {
+  int32_t* targs2 = (int32_t*)(mlg_alloc_i32(16));
+  int32_t n2 = 0;
+  int32_t x = na;
+  while (x != AST_NONE && n2 < 16) {
+  targs2[n2] = x;
+  n2 = (n2 + 1);
+  x = (((m[0]).arena).nodes[x]).next;
+}
+  int32_t r2 = mn_request(m, mo, 0, g2, targs2, n2);
+  mlg_free_i32(targs2);
+  if (r2 >= 0) {
+  return mn_flat(m, (mo[0]).sr_ns[r2], (mo[0]).sr_ne[r2]);
+}
+}
+  return mn_type_like(m, t, na);
+}
+  if (a != AST_NONE) {
+  return mn_type_like(m, t, mn_subst_type(m, mo, a, tps, ntp, targs));
+}
+  return t;
+}
+
+int32_t mn_subst_chain(Mlg* m, Mono* mo, int32_t a, int32_t* tps, int32_t ntp, int32_t* targs) {
+  int32_t head = AST_NONE;
+  int32_t tail = AST_NONE;
+  int32_t x = a;
+  while (x != AST_NONE) {
+  int32_t s = mn_subst_type(m, mo, x, tps, ntp, targs);
+  int32_t c = mn_type_like(m, s, (((m[0]).arena).nodes[s]).a);
+  if (head == AST_NONE) {
+  head = c;
+} else {
+  (((m[0]).arena).nodes[tail]).next = c;
+}
+  tail = c;
+  x = (((m[0]).arena).nodes[x]).next;
+}
+  return head;
+}
+
+int32_t mn_copy(Mlg* m, int32_t n) {
+  int32_t c = mlg_new_node(m, mlg_kind(m, n), (((m[0]).arena).nodes[n]).start);
+  if (c == AST_NONE) {
+  return AST_NONE;
+}
+  ((m[0]).arena).nodes[c] = ((m[0]).arena).nodes[n];
+  (((m[0]).arena).nodes[c]).next = AST_NONE;
+  return c;
+}
+
+int32_t mn_subst_expr(Mlg* m, Mono* mo, int32_t e, int32_t* tps, int32_t ntp, int32_t* targs) {
+  if (e == AST_NONE || e < 0) {
+  return e;
+}
+  int32_t k = mlg_kind(m, e);
+  if (k == AST_CALL) {
+  if ((((m[0]).arena).nodes[e]).start != (((m[0]).arena).nodes[e]).name_start) {
+  return e;
+}
+  int32_t c = mn_copy(m, e);
+  (((m[0]).arena).nodes[c]).a = mn_subst_expr_chain(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs);
+  int32_t s = mlg_ns(m, e);
+  int32_t t = mlg_ne(m, e);
+  int32_t* used = (int32_t*)(mlg_alloc_i32(16));
+  int32_t done = 0;
+  int32_t hit = 0;
+  while (done < ntp && hit == 0) {
+  int32_t pick = (0 - 1);
+  int32_t pl = (0 - 1);
+  int32_t q = 0;
+  while (q < ntp) {
+  int32_t l = (tps[((2 * q) + 1)] - tps[(2 * q)]);
+  if (used[q] == 0 && l > pl) {
+  pick = q;
+  pl = l;
+}
+  q = (q + 1);
+}
+  used[pick] = 1;
+  done = (done + 1);
+  if ((t - s) > pl && (m[0]).src[((t - pl) - 1)] == 95 && mlg_span_eq(m, (t - pl), t, tps[(2 * pick)], tps[((2 * pick) + 1)]) == 1) {
+  hit = 1;
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  int32_t bl = 0;
+  mn_put_span(m, buf, (&bl), s, ((t - pl) - 1));
+  mn_put(buf, (&bl), 95);
+  mn_py_name(m, targs[pick], buf, (&bl));
+  int32_t ns = 0;
+  int32_t ne = mn_intern(m, buf, bl, (&ns));
+  free(buf);
+  (((m[0]).arena).nodes[c]).name_start = ns;
+  (((m[0]).arena).nodes[c]).name_end = ne;
+  (((m[0]).arena).nodes[c]).start = ns;
+  int32_t g = mn_find_gf(m, mo, s, ((t - pl) - 1));
+  if (g >= 0) {
+  int32_t* one = (int32_t*)(mlg_alloc_i32(1));
+  one[0] = targs[pick];
+  int32_t _r = mn_request(m, mo, 1, g, one, 1);
+  mlg_free_i32(one);
+}
+}
+}
+  mlg_free_i32(used);
+  return c;
+}
+  if (k == AST_STRUCT_LIT) {
+  int32_t c2 = mn_copy(m, e);
+  int32_t head = AST_NONE;
+  int32_t tail = AST_NONE;
+  int32_t f = (((m[0]).arena).nodes[e]).a;
+  while (f != AST_NONE) {
+  int32_t fc = mn_copy(m, f);
+  (((m[0]).arena).nodes[fc]).a = mn_subst_expr(m, mo, (((m[0]).arena).nodes[f]).a, tps, ntp, targs);
+  if (head == AST_NONE) {
+  head = fc;
+} else {
+  (((m[0]).arena).nodes[tail]).next = fc;
+}
+  tail = fc;
+  f = (((m[0]).arena).nodes[f]).next;
+}
+  (((m[0]).arena).nodes[c2]).a = head;
+  if ((((m[0]).arena).nodes[e]).c != AST_NONE) {
+  (((m[0]).arena).nodes[c2]).c = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).c, tps, ntp, targs);
+}
+  mn_resolve_lit_name(m, mo, c2, tps, ntp, targs);
+  return c2;
+}
+  if (k == AST_BINOP || k == AST_INDEX) {
+  int32_t c3 = mn_copy(m, e);
+  (((m[0]).arena).nodes[c3]).a = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs);
+  (((m[0]).arena).nodes[c3]).b = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).b, tps, ntp, targs);
+  if (k == AST_INDEX && (((m[0]).arena).nodes[e]).ival != 0) {
+  (((m[0]).arena).nodes[c3]).c = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).c, tps, ntp, targs);
+}
+  return c3;
+}
+  if (k == AST_UNARY || k == AST_FIELD_ACCESS) {
+  int32_t c4 = mn_copy(m, e);
+  (((m[0]).arena).nodes[c4]).a = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs);
+  return c4;
+}
+  if (k == AST_ARRAY_LIT) {
+  int32_t c5 = mn_copy(m, e);
+  (((m[0]).arena).nodes[c5]).a = mn_subst_expr_chain(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs);
+  return c5;
+}
+  if (k == AST_CAST) {
+  int32_t c6 = mn_copy(m, e);
+  (((m[0]).arena).nodes[c6]).a = mn_subst_expr(m, mo, (((m[0]).arena).nodes[e]).a, tps, ntp, targs);
+  (((m[0]).arena).nodes[c6]).b = mn_subst_type(m, mo, (((m[0]).arena).nodes[e]).b, tps, ntp, targs);
+  return c6;
+}
+  return e;
+}
+
+int32_t mn_subst_expr_chain(Mlg* m, Mono* mo, int32_t a, int32_t* tps, int32_t ntp, int32_t* targs) {
+  int32_t head = AST_NONE;
+  int32_t tail = AST_NONE;
+  int32_t x = a;
+  while (x != AST_NONE) {
+  int32_t c = mn_subst_expr(m, mo, x, tps, ntp, targs);
+  if (c == x) {
+  c = mn_copy(m, x);
+}
+  if (head == AST_NONE) {
+  head = c;
+} else {
+  (((m[0]).arena).nodes[tail]).next = c;
+}
+  tail = c;
+  x = (((m[0]).arena).nodes[x]).next;
+}
+  return head;
+}
+
+void mn_resolve_lit_name(Mlg* m, Mono* mo, int32_t lit, int32_t* tps, int32_t ntp, int32_t* targs) {
+  int32_t s = mlg_ns(m, lit);
+  int32_t t = mlg_ne(m, lit);
+  int32_t us = s;
+  while (us < t && (m[0]).src[us] != 95) {
+  us = (us + 1);
+}
+  if (us >= t) {
+  return;
+}
+  int32_t g = mn_find_gs(m, mo, s, us);
+  if (g < 0) {
+  return;
+}
+  int32_t np = mn_gs_ntp(m, mo, g);
+  int32_t* tmp = (int32_t*)(mlg_alloc_i32(16));
+  int32_t n = np;
+  int32_t parts = mn_split_flat(m, (((m[0]).src + us) + 1), ((t - us) - 1), tmp, 16);
+  if (parts < np) {
+  tmp[0] = mn_flat(m, (us + 1), t);
+  n = 1;
+}
+  if (ntp > 0) {
+  int32_t i = 0;
+  while (i < n) {
+  int32_t c = mn_map_get(m, tps, ntp, targs, mlg_ns(m, tmp[i]), mlg_ne(m, tmp[i]));
+  if (c != AST_NONE) {
+  tmp[i] = c;
+}
+  i = (i + 1);
+}
+}
+  int32_t r = mn_request(m, mo, 0, g, tmp, n);
+  mlg_free_i32(tmp);
+  if (r >= 0) {
+  (((m[0]).arena).nodes[lit]).name_start = (mo[0]).sr_ns[r];
+  (((m[0]).arena).nodes[lit]).name_end = (mo[0]).sr_ne[r];
+}
+}
+
+int32_t mn_subst_block(Mlg* m, Mono* mo, int32_t blk, int32_t* tps, int32_t ntp, int32_t* targs) {
+  if (blk == AST_NONE || blk < 0) {
+  return blk;
+}
+  int32_t nb = mn_copy(m, blk);
+  int32_t head = AST_NONE;
+  int32_t tail = AST_NONE;
+  int32_t st = (((m[0]).arena).nodes[blk]).a;
+  while (st != AST_NONE) {
+  int32_t c = mn_subst_stmt(m, mo, st, tps, ntp, targs);
+  if (c == st) {
+  c = mn_copy(m, st);
+}
+  if (head == AST_NONE) {
+  head = c;
+} else {
+  (((m[0]).arena).nodes[tail]).next = c;
+}
+  tail = c;
+  st = (((m[0]).arena).nodes[st]).next;
+}
+  (((m[0]).arena).nodes[nb]).a = head;
+  return nb;
+}
+
+int32_t mn_subst_stmt(Mlg* m, Mono* mo, int32_t st, int32_t* tps, int32_t ntp, int32_t* targs) {
+  int32_t k = mlg_kind(m, st);
+  int32_t a = (((m[0]).arena).nodes[st]).a;
+  int32_t b = (((m[0]).arena).nodes[st]).b;
+  int32_t c = (((m[0]).arena).nodes[st]).c;
+  if (k == AST_LET) {
+  int32_t n = mn_copy(m, st);
+  (((m[0]).arena).nodes[n]).a = mn_subst_type(m, mo, a, tps, ntp, targs);
+  (((m[0]).arena).nodes[n]).b = mn_subst_expr(m, mo, b, tps, ntp, targs);
+  return n;
+}
+  if (k == AST_RETURN || k == AST_EXPR_STMT) {
+  if (k == AST_EXPR_STMT) {
+  int32_t ek = mlg_kind(m, a);
+  if (ek != AST_CALL && ek != AST_BINOP && ek != AST_UNARY && ek != AST_FIELD_ACCESS && ek != AST_INDEX && ek != AST_STRUCT_LIT && ek != AST_CAST && ek != AST_IDENT && ek != AST_INT && ek != AST_FLOAT && ek != AST_BOOL && ek != AST_STRING) {
+  return st;
+}
+}
+  int32_t n2 = mn_copy(m, st);
+  (((m[0]).arena).nodes[n2]).a = mn_subst_expr(m, mo, a, tps, ntp, targs);
+  return n2;
+}
+  if (k == AST_ASSIGN) {
+  int32_t n3 = mn_copy(m, st);
+  (((m[0]).arena).nodes[n3]).b = mn_subst_expr(m, mo, b, tps, ntp, targs);
+  if (mlg_kind(m, a) != AST_IDENT) {
+  (((m[0]).arena).nodes[n3]).a = mn_subst_expr(m, mo, a, tps, ntp, targs);
+}
+  return n3;
+}
+  if (k == AST_IF) {
+  int32_t n4 = mn_copy(m, st);
+  (((m[0]).arena).nodes[n4]).a = mn_subst_expr(m, mo, a, tps, ntp, targs);
+  (((m[0]).arena).nodes[n4]).b = mn_subst_block(m, mo, b, tps, ntp, targs);
+  (((m[0]).arena).nodes[n4]).c = mn_subst_block(m, mo, c, tps, ntp, targs);
+  return n4;
+}
+  if (k == AST_WHILE) {
+  int32_t n5 = mn_copy(m, st);
+  (((m[0]).arena).nodes[n5]).a = mn_subst_expr(m, mo, a, tps, ntp, targs);
+  (((m[0]).arena).nodes[n5]).b = mn_subst_block(m, mo, b, tps, ntp, targs);
+  return n5;
+}
+  if (k == AST_FOR) {
+  int32_t n6 = mn_copy(m, st);
+  (((m[0]).arena).nodes[n6]).a = mn_subst_expr(m, mo, a, tps, ntp, targs);
+  (((m[0]).arena).nodes[n6]).b = mn_subst_expr(m, mo, b, tps, ntp, targs);
+  (((m[0]).arena).nodes[n6]).c = mn_subst_block(m, mo, c, tps, ntp, targs);
+  return n6;
+}
+  if (k == AST_UNARY && (((m[0]).arena).nodes[st]).ival == KW_EXPECT) {
+  int32_t n7 = mn_copy(m, st);
+  (((m[0]).arena).nodes[n7]).a = mn_subst_expr(m, mo, a, tps, ntp, targs);
+  return n7;
+}
+  if (k == AST_BLOCK) {
+  return mn_subst_block(m, mo, st, tps, ntp, targs);
+}
+  return st;
+}
+
+void mn_gen_struct(Mlg* m, Mono* mo, int32_t r) {
+  int32_t g = (mo[0]).sr_gen[r];
+  int32_t d = (mo[0]).gs[g];
+  int32_t* tps = (int32_t*)(mlg_alloc_i32(32));
+  int32_t ntp = 0;
+  int32_t x = (((m[0]).arena).nodes[d]).b;
+  while (x != AST_NONE && ntp < 16) {
+  tps[(2 * ntp)] = mlg_ns(m, x);
+  tps[((2 * ntp) + 1)] = mlg_ne(m, x);
+  ntp = (ntp + 1);
+  x = (((m[0]).arena).nodes[x]).next;
+}
+  int32_t* targs = (int32_t*)(((mo[0]).args + (mo[0]).sr_arg[r]));
+  int32_t nd = mn_copy(m, d);
+  (((m[0]).arena).nodes[nd]).name_start = (mo[0]).sr_ns[r];
+  (((m[0]).arena).nodes[nd]).name_end = (mo[0]).sr_ne[r];
+  (((m[0]).arena).nodes[nd]).b = AST_NONE;
+  int32_t head = AST_NONE;
+  int32_t tail = AST_NONE;
+  int32_t f = (((m[0]).arena).nodes[d]).a;
+  while (f != AST_NONE) {
+  int32_t fc = mn_copy(m, f);
+  (((m[0]).arena).nodes[fc]).a = mn_subst_type(m, mo, (((m[0]).arena).nodes[f]).a, tps, ntp, targs);
+  if (head == AST_NONE) {
+  head = fc;
+} else {
+  (((m[0]).arena).nodes[tail]).next = fc;
+}
+  tail = fc;
+  f = (((m[0]).arena).nodes[f]).next;
+}
+  (((m[0]).arena).nodes[nd]).a = head;
+  mlg_free_i32(tps);
+  if ((mo[0]).ngens < MN_MAX) {
+  (mo[0]).gens[(mo[0]).ngens] = nd;
+  (mo[0]).ngens = ((mo[0]).ngens + 1);
+}
+}
+
+int32_t mn_is_concrete_name(Mlg* m, Mono* mo, int32_t s, int32_t e) {
+  int32_t i = 0;
+  while (i < (mo[0]).ncf) {
+  int32_t d = (mo[0]).cf[i];
+  if (mlg_span_eq(m, mlg_ns(m, d), mlg_ne(m, d), s, e) == 1) {
+  return 1;
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+void mn_gen_fn(Mlg* m, Mono* mo, int32_t r) {
+  if (mn_is_concrete_name(m, mo, (mo[0]).fr_ns[r], (mo[0]).fr_ne[r]) == 1) {
+  if ((mo[0]).nresolved < MN_MAX) {
+  (mo[0]).resolved[(mo[0]).nresolved] = r;
+  (mo[0]).nresolved = ((mo[0]).nresolved + 1);
+}
+  return;
+}
+  int32_t g = (mo[0]).fr_gen[r];
+  int32_t d = (mo[0]).gf[g];
+  int32_t* tps = (int32_t*)(((mo[0]).gf_tp + (g * 16)));
+  int32_t ntp = (mo[0]).gf_ntp[g];
+  int32_t* targs = (int32_t*)(((mo[0]).args + (mo[0]).fr_arg[r]));
+  int32_t nd = mn_copy(m, d);
+  (((m[0]).arena).nodes[nd]).name_start = (mo[0]).fr_ns[r];
+  (((m[0]).arena).nodes[nd]).name_end = (mo[0]).fr_ne[r];
+  (((m[0]).arena).nodes[nd]).ival = 0;
+  int32_t head = AST_NONE;
+  int32_t tail = AST_NONE;
+  int32_t p = (((m[0]).arena).nodes[d]).a;
+  while (p != AST_NONE) {
+  int32_t pc = mn_copy(m, p);
+  (((m[0]).arena).nodes[pc]).a = mn_subst_type(m, mo, (((m[0]).arena).nodes[p]).a, tps, ntp, targs);
+  if (head == AST_NONE) {
+  head = pc;
+} else {
+  (((m[0]).arena).nodes[tail]).next = pc;
+}
+  tail = pc;
+  p = (((m[0]).arena).nodes[p]).next;
+}
+  (((m[0]).arena).nodes[nd]).a = head;
+  (((m[0]).arena).nodes[nd]).b = mn_subst_type(m, mo, (((m[0]).arena).nodes[d]).b, tps, ntp, targs);
+  (((m[0]).arena).nodes[nd]).c = mn_subst_block(m, mo, (((m[0]).arena).nodes[d]).c, tps, ntp, targs);
+  if ((mo[0]).ngenf < MN_MAX) {
+  (mo[0]).genf[(mo[0]).ngenf] = nd;
+  (mo[0]).genf_req[(mo[0]).ngenf] = r;
+  (mo[0]).ngenf = ((mo[0]).ngenf + 1);
+}
+}
+
+int32_t mn_generated_struct(Mlg* m, Mono* mo, int32_t r) {
+  int32_t i = 0;
+  while (i < (mo[0]).ngens) {
+  int32_t d = (mo[0]).gens[i];
+  if (mlg_span_eq(m, mlg_ns(m, d), mlg_ne(m, d), (mo[0]).sr_ns[r], (mo[0]).sr_ne[r]) == 1) {
+  return 1;
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+int32_t mn_generated_fn(Mlg* m, Mono* mo, int32_t r) {
+  int32_t i = 0;
+  while (i < (mo[0]).ngenf) {
+  int32_t d = (mo[0]).genf[i];
+  if (mlg_span_eq(m, mlg_ns(m, d), mlg_ne(m, d), (mo[0]).fr_ns[r], (mo[0]).fr_ne[r]) == 1) {
+  return 1;
+}
+  i = (i + 1);
+}
+  i = 0;
+  while (i < (mo[0]).nresolved) {
+  int32_t q = (mo[0]).resolved[i];
+  if (mlg_span_eq(m, (mo[0]).fr_ns[q], (mo[0]).fr_ne[q], (mo[0]).fr_ns[r], (mo[0]).fr_ne[r]) == 1) {
+  return 1;
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+void mn_generate(Mlg* m, Mono* mo) {
+  int32_t* pend = (int32_t*)(mlg_alloc_i32((MN_MAX * 8)));
+  int32_t np = 0;
+  int32_t i = 0;
+  while (i < (mo[0]).nsr) {
+  pend[np] = i;
+  np = (np + 1);
+  i = (i + 1);
+}
+  while (np > 0 && (m[0]).err == 0) {
+  np = (np - 1);
+  int32_t r = pend[np];
+  if (mn_generated_struct(m, mo, r) == 0) {
+  int32_t before = (mo[0]).nsr;
+  mn_gen_struct(m, mo, r);
+  int32_t k = before;
+  while (k < (mo[0]).nsr && np < (MN_MAX * 8)) {
+  pend[np] = k;
+  np = (np + 1);
+  k = (k + 1);
+}
+}
+}
+  np = 0;
+  i = 0;
+  while (i < (mo[0]).nfr) {
+  pend[np] = i;
+  np = (np + 1);
+  i = (i + 1);
+}
+  while (np > 0 && (m[0]).err == 0) {
+  np = (np - 1);
+  int32_t r2 = pend[np];
+  if (mn_generated_fn(m, mo, r2) == 0) {
+  int32_t before2 = (mo[0]).nfr;
+  (mo[0]).depth = ((mo[0]).depth + 1);
+  mn_gen_fn(m, mo, r2);
+  (mo[0]).depth = ((mo[0]).depth - 1);
+  int32_t k2 = before2;
+  while (k2 < (mo[0]).nfr && np < (MN_MAX * 8)) {
+  pend[np] = k2;
+  np = (np + 1);
+  k2 = (k2 + 1);
+}
+}
+}
+  mlg_free_i32(pend);
+}
+
+int32_t mn_rewrite_type(Mlg* m, Mono* mo, int32_t t) {
+  if (t == AST_NONE || t < 0 || mlg_kind(m, t) != AST_TYPE) {
+  return t;
+}
+  int32_t a = (((m[0]).arena).nodes[t]).a;
+  if (mn_is_app(m, t) == 1) {
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  int32_t bl = 0;
+  mn_py_name(m, t, buf, (&bl));
+  int32_t g = mn_gs_of_base(m, mo, buf, bl);
+  if (g >= 0) {
+  int32_t nl = 0;
+  int32_t d = (mo[0]).gs[g];
+  mn_put_span(m, buf, (&nl), mlg_ns(m, d), mlg_ne(m, d));
+  int32_t x = a;
+  while (x != AST_NONE) {
+  mn_put(buf, (&nl), 95);
+  mn_type_str(m, x, buf, (&nl));
+  x = (((m[0]).arena).nodes[x]).next;
+}
+  int32_t r = mn_flat_buf(m, buf, nl);
+  free(buf);
+  return r;
+}
+  free(buf);
+}
+  if (a != AST_NONE && (mn_is_ptr(m, t) == 1 || mn_is_arr(m, t) == 1 || mn_is_vec(m, t) == 1 || mn_is_span(m, t) == 1)) {
+  int32_t na = mn_rewrite_type(m, mo, a);
+  if (na != a) {
+  return mn_type_like(m, t, na);
+}
+}
+  return t;
+}
+
+void mn_rewrite_expr(Mlg* m, Mono* mo, int32_t e) {
+  if (e == AST_NONE || e < 0) {
+  return;
+}
+  int32_t k = mlg_kind(m, e);
+  int32_t a = (((m[0]).arena).nodes[e]).a;
+  if (k == AST_CALL) {
+  if ((((m[0]).arena).nodes[e]).start != (((m[0]).arena).nodes[e]).name_start) {
+  return;
+}
+  int32_t x = a;
+  while (x != AST_NONE) {
+  mn_rewrite_expr(m, mo, x);
+  x = (((m[0]).arena).nodes[x]).next;
+}
+  return;
+}
+  if (k == AST_STRUCT_LIT) {
+  int32_t f = a;
+  while (f != AST_NONE) {
+  mn_rewrite_expr(m, mo, (((m[0]).arena).nodes[f]).a);
+  f = (((m[0]).arena).nodes[f]).next;
+}
+  if ((((m[0]).arena).nodes[e]).c != AST_NONE) {
+  mn_rewrite_expr(m, mo, (((m[0]).arena).nodes[e]).c);
+}
+  int32_t* none = (int32_t*)(mlg_alloc_i32(1));
+  mn_resolve_lit_name(m, mo, e, none, 0, none);
+  mlg_free_i32(none);
+  return;
+}
+  if (k == AST_BINOP || k == AST_INDEX) {
+  mn_rewrite_expr(m, mo, a);
+  mn_rewrite_expr(m, mo, (((m[0]).arena).nodes[e]).b);
+  if (k == AST_INDEX && (((m[0]).arena).nodes[e]).ival != 0) {
+  mn_rewrite_expr(m, mo, (((m[0]).arena).nodes[e]).c);
+}
+  return;
+}
+  if (k == AST_UNARY || k == AST_FIELD_ACCESS || k == AST_CAST) {
+  mn_rewrite_expr(m, mo, a);
+  return;
+}
+  if (k == AST_ARRAY_LIT) {
+  int32_t y = a;
+  while (y != AST_NONE) {
+  mn_rewrite_expr(m, mo, y);
+  y = (((m[0]).arena).nodes[y]).next;
+}
+  return;
+}
+}
+
+void mn_rewrite_block(Mlg* m, Mono* mo, int32_t blk) {
+  if (blk == AST_NONE || blk < 0) {
+  return;
+}
+  int32_t st = (((m[0]).arena).nodes[blk]).a;
+  while (st != AST_NONE) {
+  mn_rewrite_stmt(m, mo, st);
+  st = (((m[0]).arena).nodes[st]).next;
+}
+}
+
+void mn_rewrite_stmt(Mlg* m, Mono* mo, int32_t st) {
+  int32_t k = mlg_kind(m, st);
+  int32_t a = (((m[0]).arena).nodes[st]).a;
+  int32_t b = (((m[0]).arena).nodes[st]).b;
+  int32_t c = (((m[0]).arena).nodes[st]).c;
+  if (k == AST_LET) {
+  int32_t nt = mn_rewrite_type(m, mo, a);
+  (((m[0]).arena).nodes[st]).a = nt;
+  mn_rewrite_expr(m, mo, b);
+  if (b != AST_NONE && mlg_kind(m, b) == AST_STRUCT_LIT && nt != AST_NONE && nt != a) {
+  int32_t g = mn_find_gs(m, mo, mlg_ns(m, b), mlg_ne(m, b));
+  int32_t ts = mlg_ns(m, nt);
+  int32_t te = mlg_ne(m, nt);
+  int32_t ll = (mlg_ne(m, b) - mlg_ns(m, b));
+  if (g >= 0 && (te - ts) > (ll + 1) && (m[0]).src[(ts + ll)] == 95 && mlg_span_eq(m, ts, (ts + ll), mlg_ns(m, b), mlg_ne(m, b)) == 1) {
+  (((m[0]).arena).nodes[b]).name_start = ts;
+  (((m[0]).arena).nodes[b]).name_end = te;
+}
+}
+  return;
+}
+  if (k == AST_RETURN) {
+  mn_rewrite_expr(m, mo, a);
+  return;
+}
+  if (k == AST_ASSIGN) {
+  mn_rewrite_expr(m, mo, b);
+  if (mlg_kind(m, a) != AST_IDENT) {
+  mn_rewrite_expr(m, mo, a);
+}
+  return;
+}
+  if (k == AST_IF) {
+  mn_rewrite_expr(m, mo, a);
+  mn_rewrite_block(m, mo, b);
+  mn_rewrite_block(m, mo, c);
+  return;
+}
+  if (k == AST_WHILE) {
+  mn_rewrite_expr(m, mo, a);
+  mn_rewrite_block(m, mo, b);
+  return;
+}
+  if (k == AST_FOR) {
+  mn_rewrite_expr(m, mo, a);
+  mn_rewrite_expr(m, mo, b);
+  mn_rewrite_block(m, mo, c);
+  return;
+}
+  if (k == AST_UNARY && (((m[0]).arena).nodes[st]).ival == KW_EXPECT) {
+  mn_rewrite_expr(m, mo, a);
+  return;
+}
+  if (k == AST_BLOCK) {
+  mn_rewrite_block(m, mo, st);
+  return;
+}
+}
+
+void mn_rewrite_fn(Mlg* m, Mono* mo, int32_t d) {
+  int32_t p = (((m[0]).arena).nodes[d]).a;
+  while (p != AST_NONE) {
+  (((m[0]).arena).nodes[p]).a = mn_rewrite_type(m, mo, (((m[0]).arena).nodes[p]).a);
+  p = (((m[0]).arena).nodes[p]).next;
+}
+  (((m[0]).arena).nodes[d]).b = mn_rewrite_type(m, mo, (((m[0]).arena).nodes[d]).b);
+  mn_rewrite_block(m, mo, (((m[0]).arena).nodes[d]).c);
+}
+
+void mn_parser_names(Mlg* m) {
+  int32_t i = 0;
+  int32_t n0 = ((m[0]).arena).len;
+  while (i < n0) {
+  int32_t k = (((m[0]).arena).nodes[i]).kind;
+  int32_t b = (((m[0]).arena).nodes[i]).b;
+  if ((k == AST_CALL || k == AST_STRUCT_LIT) && b != AST_NONE && b >= 0 && mlg_kind(m, b) == AST_TYPE) {
+  int32_t s = (((m[0]).arena).nodes[i]).name_start;
+  int32_t e = (((m[0]).arena).nodes[i]).name_end;
+  int32_t is_ctor = ((k == AST_CALL && mlg_span_is(m, s, e, "array") == 1) ? (1) : (0));
+  if (is_ctor == 0 && (k == AST_STRUCT_LIT || (((m[0]).arena).nodes[i]).ival == 0)) {
+  uint8_t* buf = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  int32_t bl = 0;
+  mn_put_span(m, buf, (&bl), s, e);
+  int32_t x = b;
+  while (x != AST_NONE) {
+  mn_put(buf, (&bl), 95);
+  mn_py_name(m, x, buf, (&bl));
+  x = (((m[0]).arena).nodes[x]).next;
+}
+  int32_t ns = 0;
+  int32_t ne = mn_intern(m, buf, bl, (&ns));
+  free(buf);
+  int32_t was_start = (((((m[0]).arena).nodes[i]).start == s) ? (1) : (0));
+  (((m[0]).arena).nodes[i]).name_start = ns;
+  (((m[0]).arena).nodes[i]).name_end = ne;
+  if (k == AST_CALL && was_start == 1) {
+  (((m[0]).arena).nodes[i]).start = ns;
+}
+  (((m[0]).arena).nodes[i]).b = AST_NONE;
+}
+}
+  i = (i + 1);
+}
+}
+
+int32_t mn_read_fn_tps(Mlg* m, int32_t d, int32_t* out) {
+  int32_t i = mlg_ne(m, d);
+  while ((m[0]).src[i] == 32 || (m[0]).src[i] == 9) {
+  i = (i + 1);
+}
+  if ((m[0]).src[i] != 60) {
+  return 0;
+}
+  i = (i + 1);
+  int32_t n = 0;
+  int32_t depth = 1;
+  int32_t want = 1;
+  while (depth > 0 && (m[0]).src[i] != 0) {
+  int32_t c = (int32_t)((m[0]).src[i]);
+  if (c == 60) {
+  depth = (depth + 1);
+  i = (i + 1);
+} else {
+  if (c == 62) {
+  depth = (depth - 1);
+  i = (i + 1);
+} else {
+  if (c == 44 && depth == 1) {
+  want = 1;
+  i = (i + 1);
+} else {
+  if (c == 58 && depth == 1) {
+  want = 0;
+  i = (i + 1);
+} else {
+  if (mlg_is_name_char(c) == 1) {
+  int32_t s = i;
+  while (mlg_is_name_char((int32_t)((m[0]).src[i])) == 1) {
+  i = (i + 1);
+}
+  if (want == 1 && depth == 1 && n < 8) {
+  out[(2 * n)] = s;
+  out[((2 * n) + 1)] = i;
+  n = (n + 1);
+  want = 0;
+}
+} else {
+  i = (i + 1);
+}
+}
+}
+}
+}
+}
+  return n;
+}
+
+int32_t mlg_mono(Mlg* m, int32_t root) {
+  mn_parser_names(m);
+  Mono mo = (Mono){ .gs = mlg_alloc_i32(MN_MAX), .ngs = 0, .gf = mlg_alloc_i32(MN_MAX), .ngf = 0, .gf_tp = mlg_alloc_i32((MN_MAX * 16)), .gf_ntp = mlg_alloc_i32(MN_MAX), .cf = mlg_alloc_i32((MLG_MAX_FNS * 4)), .ncf = 0, .sr_gen = mlg_alloc_i32(MN_MAX), .sr_ns = mlg_alloc_i32(MN_MAX), .sr_ne = mlg_alloc_i32(MN_MAX), .sr_arg = mlg_alloc_i32(MN_MAX), .sr_nargs = mlg_alloc_i32(MN_MAX), .nsr = 0, .fr_gen = mlg_alloc_i32(MN_MAX), .fr_ns = mlg_alloc_i32(MN_MAX), .fr_ne = mlg_alloc_i32(MN_MAX), .fr_arg = mlg_alloc_i32(MN_MAX), .fr_nargs = mlg_alloc_i32(MN_MAX), .nfr = 0, .args = mlg_alloc_i32(MN_ARGS), .nargs = 0, .gens = mlg_alloc_i32(MN_MAX), .ngens = 0, .genf = mlg_alloc_i32(MN_MAX), .ngenf = 0, .genf_req = mlg_alloc_i32(MN_MAX), .resolved = mlg_alloc_i32(MN_MAX), .nresolved = 0, .depth = 0 };
+  Mono* mo_p = (Mono*)((&mo));
+  int32_t item = (((m[0]).arena).nodes[root]).a;
+  while (item != AST_NONE) {
+  int32_t d = mlg_unwrap(m, item);
+  int32_t k = mlg_kind(m, d);
+  if (k == AST_STRUCT && (((m[0]).arena).nodes[d]).b != AST_NONE && (mo).ngs < MN_MAX) {
+  (mo).gs[(mo).ngs] = d;
+  (mo).ngs = ((mo).ngs + 1);
+}
+  if (k == AST_FN) {
+  if ((((m[0]).arena).nodes[d]).ival > 0 && (mo).ngf < MN_MAX) {
+  (mo).gf_ntp[(mo).ngf] = mn_read_fn_tps(m, d, ((mo).gf_tp + ((mo).ngf * 16)));
+  (mo).gf[(mo).ngf] = d;
+  (mo).ngf = ((mo).ngf + 1);
+} else {
+  if ((mo).ncf < (MLG_MAX_FNS * 4)) {
+  (mo).cf[(mo).ncf] = d;
+  (mo).ncf = ((mo).ncf + 1);
+}
+}
+}
+  if (k == AST_EXTERN) {
+  int32_t ef = (((m[0]).arena).nodes[d]).a;
+  while (ef != AST_NONE) {
+  if (mlg_kind(m, ef) == AST_FN && (mo).ncf < (MLG_MAX_FNS * 4)) {
+  (mo).cf[(mo).ncf] = ef;
+  (mo).ncf = ((mo).ncf + 1);
+}
+  ef = (((m[0]).arena).nodes[ef]).next;
+}
+}
+  item = (((m[0]).arena).nodes[item]).next;
+}
+  if ((mo).ngs == 0 && (mo).ngf == 0) {
+  return 0;
+}
+  item = (((m[0]).arena).nodes[root]).a;
+  while (item != AST_NONE) {
+  int32_t d2 = mlg_unwrap(m, item);
+  int32_t k2 = mlg_kind(m, d2);
+  if (k2 == AST_FN) {
+  int32_t fg = (((((m[0]).arena).nodes[d2]).ival > 0) ? (mn_find_gf(m, mo_p, mlg_ns(m, d2), mlg_ne(m, d2))) : ((0 - 1)));
+  mn_scan_type(m, mo_p, (((m[0]).arena).nodes[d2]).b, fg, (0 - 1));
+  int32_t p = (((m[0]).arena).nodes[d2]).a;
+  while (p != AST_NONE) {
+  mn_scan_type(m, mo_p, (((m[0]).arena).nodes[p]).a, fg, (0 - 1));
+  p = (((m[0]).arena).nodes[p]).next;
+}
+  if (fg < 0) {
+  mn_scan_block(m, mo_p, (((m[0]).arena).nodes[d2]).c);
+}
+}
+  if (k2 == AST_EXTERN) {
+  int32_t ef2 = (((m[0]).arena).nodes[d2]).a;
+  while (ef2 != AST_NONE) {
+  if (mlg_kind(m, ef2) == AST_FN) {
+  mn_scan_type(m, mo_p, (((m[0]).arena).nodes[ef2]).b, (0 - 1), (0 - 1));
+  int32_t ep = (((m[0]).arena).nodes[ef2]).a;
+  while (ep != AST_NONE) {
+  mn_scan_type(m, mo_p, (((m[0]).arena).nodes[ep]).a, (0 - 1), (0 - 1));
+  ep = (((m[0]).arena).nodes[ep]).next;
+}
+}
+  ef2 = (((m[0]).arena).nodes[ef2]).next;
+}
+}
+  if (k2 == AST_STRUCT) {
+  int32_t sg = (((((m[0]).arena).nodes[d2]).b != AST_NONE) ? (mn_find_gs(m, mo_p, mlg_ns(m, d2), mlg_ne(m, d2))) : ((0 - 1)));
+  int32_t f = (((m[0]).arena).nodes[d2]).a;
+  while (f != AST_NONE) {
+  mn_scan_type(m, mo_p, (((m[0]).arena).nodes[f]).a, (0 - 1), sg);
+  f = (((m[0]).arena).nodes[f]).next;
+}
+}
+  item = (((m[0]).arena).nodes[item]).next;
+}
+  mn_generate(m, mo_p);
+  int32_t head = AST_NONE;
+  int32_t tail = AST_NONE;
+  int32_t i = 0;
+  while (i < ((mo).ngens + (mo).ngenf)) {
+  int32_t d3 = ((i < (mo).ngens) ? ((mo).gens[i]) : ((mo).genf[(i - (mo).ngens)]));
+  if (head == AST_NONE) {
+  head = d3;
+} else {
+  (((m[0]).arena).nodes[tail]).next = d3;
+}
+  tail = d3;
+  (((m[0]).arena).nodes[d3]).next = AST_NONE;
+  i = (i + 1);
+}
+  item = (((m[0]).arena).nodes[root]).a;
+  while (item != AST_NONE) {
+  int32_t nx = (((m[0]).arena).nodes[item]).next;
+  int32_t d4 = mlg_unwrap(m, item);
+  int32_t k4 = mlg_kind(m, d4);
+  int32_t keep = 1;
+  if (k4 == AST_STRUCT && (((m[0]).arena).nodes[d4]).b != AST_NONE) {
+  keep = 0;
+}
+  if (k4 == AST_FN && (((m[0]).arena).nodes[d4]).ival > 0) {
+  keep = 0;
+}
+  if (keep == 1) {
+  if (k4 == AST_STRUCT) {
+  int32_t f2 = (((m[0]).arena).nodes[d4]).a;
+  while (f2 != AST_NONE) {
+  (((m[0]).arena).nodes[f2]).a = mn_rewrite_type(m, mo_p, (((m[0]).arena).nodes[f2]).a);
+  f2 = (((m[0]).arena).nodes[f2]).next;
+}
+}
+  if (k4 == AST_FN) {
+  mn_rewrite_fn(m, mo_p, d4);
+}
+  if (head == AST_NONE) {
+  head = item;
+} else {
+  (((m[0]).arena).nodes[tail]).next = item;
+}
+  tail = item;
+  (((m[0]).arena).nodes[item]).next = AST_NONE;
+}
+  item = nx;
+}
+  (((m[0]).arena).nodes[root]).a = head;
+  return 1;
+}
+
+int32_t mfk_xname(Mlg* m, const char* prefix, int32_t n, int32_t* out_e) {
+  uint8_t* buf = (uint8_t*)(malloc(64));
+  uint8_t* pp = (uint8_t*)(prefix);
+  int32_t k = 0;
+  while (pp[k] != 0) {
+  buf[k] = pp[k];
+  k = (k + 1);
+}
+  int32_t len[1] = { k };
+  mn_put_int(buf, (int32_t*)((&len[0])), n);
+  int32_t s = mlg_xput(m, buf, len[0]);
+  out_e[0] = (s + len[0]);
+  free(buf);
+  return s;
+}
+
+int32_t mfk_ident(Mlg* m, int32_t s, int32_t e) {
+  int32_t id = mlg_new_node(m, AST_IDENT, s);
+  if (id == AST_NONE) {
+  return AST_NONE;
+}
+  (((m[0]).arena).nodes[id]).end = e;
+  (((m[0]).arena).nodes[id]).name_start = s;
+  (((m[0]).arena).nodes[id]).name_end = e;
+  return id;
+}
+
+int32_t mfk_trivial(Mlg* m, int32_t e) {
+  __flowc_tail: ;
+  int32_t k = mlg_kind(m, e);
+  if (k == AST_IDENT || k == AST_INT || k == AST_FLOAT || k == AST_BOOL || k == AST_STRING) {
+  return 1;
+}
+  if (k == AST_FIELD_ACCESS) {
+  {
+  __auto_type __flowc_targ0 = m;
+  __auto_type __flowc_targ1 = (((m[0]).arena).nodes[e]).a;
+  m = __flowc_targ0;
+  e = __flowc_targ1;
+  goto __flowc_tail;
+  }
+}
+  return 0;
+}
+
+int32_t mfk_subst(Mlg* m, int32_t e, int32_t blk, int32_t repl) {
+  if (e == AST_NONE || e < 0) {
+  return e;
+}
+  int32_t k = mlg_kind(m, e);
+  if (k == AST_IDENT && (((m[0]).arena).nodes[e]).ival == AST_IDENT_FORK_SRC && (((m[0]).arena).nodes[e]).end == (blk + 1)) {
+  int32_t c = mn_copy(m, repl);
+  return c;
+}
+  if (k == AST_TYPE) {
+  return e;
+}
+  (((m[0]).arena).nodes[e]).a = mfk_subst_chain(m, (((m[0]).arena).nodes[e]).a, blk, repl);
+  if (k != AST_CALL && k != AST_CAST && k != AST_LET) {
+  (((m[0]).arena).nodes[e]).b = mfk_subst_chain(m, (((m[0]).arena).nodes[e]).b, blk, repl);
+}
+  if (k == AST_INDEX || k == AST_IF_EXPR || k == AST_STRUCT_LIT) {
+  (((m[0]).arena).nodes[e]).c = mfk_subst(m, (((m[0]).arena).nodes[e]).c, blk, repl);
+}
+  return e;
+}
+
+int32_t mfk_subst_chain(Mlg* m, int32_t head, int32_t blk, int32_t repl) {
+  if (head == AST_NONE || head < 0) {
+  return head;
+}
+  int32_t nx = (((m[0]).arena).nodes[head]).next;
+  int32_t h2 = mfk_subst(m, head, blk, repl);
+  (((m[0]).arena).nodes[h2]).next = mfk_subst_chain(m, nx, blk, repl);
+  return h2;
+}
+
+void mfk_push_hoist(Mlg* m, Fork* fk, int32_t st) {
+  if ((fk[0]).nhoist < 256) {
+  (fk[0]).hoist[(fk[0]).nhoist] = st;
+  (fk[0]).nhoist = ((fk[0]).nhoist + 1);
+}
+}
+
+int32_t mfk_call_ret(Mlg* m, int32_t v) {
+  if (mlg_kind(m, v) != AST_CALL || (((m[0]).arena).nodes[v]).start != (((m[0]).arena).nodes[v]).name_start) {
+  return AST_NONE;
+}
+  int32_t item = (((m[0]).arena).nodes[(m[0]).fk_root]).a;
+  while (item != AST_NONE) {
+  int32_t d = mlg_unwrap(m, item);
+  if (mlg_kind(m, d) == AST_FN && mlg_module_of(m, (((m[0]).arena).nodes[item]).start) == (m[0]).fk_mod && mlg_span_eq(m, mlg_ns(m, d), mlg_ne(m, d), mlg_ns(m, v), mlg_ne(m, v)) == 1) {
+  if ((((m[0]).arena).nodes[d]).b != AST_NONE) {
+  return (((m[0]).arena).nodes[d]).b;
+}
+}
+  item = (((m[0]).arena).nodes[item]).next;
+}
+  return AST_NONE;
+}
+
+int32_t mfk_resolve(Mlg* m, Fork* fk, int32_t e, int32_t can_hoist);
+int32_t mfk_resolve_chain(Mlg* m, Fork* fk, int32_t head, int32_t can_hoist) {
+  if (head == AST_NONE || head < 0) {
+  return head;
+}
+  int32_t nx = (((m[0]).arena).nodes[head]).next;
+  int32_t h2 = mfk_resolve(m, fk, head, can_hoist);
+  (((m[0]).arena).nodes[h2]).next = mfk_resolve_chain(m, fk, nx, can_hoist);
+  return h2;
+}
+
+int32_t mfk_source(Mlg* m, Fork* fk, int32_t src, int32_t can_hoist) {
+  if (can_hoist == 0 || mfk_trivial(m, src) == 1) {
+  return src;
+}
+  int32_t mi = (fk[0]).mod_cur;
+  int32_t ne = 0;
+  int32_t ns = mfk_xname(m, "__fork_src_", (fk[0]).tmp[mi], (&ne));
+  (fk[0]).tmp[mi] = ((fk[0]).tmp[mi] + 1);
+  int32_t lt = mlg_new_node(m, AST_LET, (((m[0]).arena).nodes[src]).start);
+  (((m[0]).arena).nodes[lt]).name_start = ns;
+  (((m[0]).arena).nodes[lt]).name_end = ne;
+  (((m[0]).arena).nodes[lt]).b = src;
+  mfk_push_hoist(m, fk, lt);
+  return mfk_ident(m, ns, ne);
+}
+
+int32_t mfk_lower_fork(Mlg* m, Fork* fk, int32_t id, int32_t source) {
+  int32_t name_s = (((m[0]).arena).nodes[id]).name_start;
+  int32_t name_e = (((m[0]).arena).nodes[id]).name_end;
+  int32_t lit = mlg_new_node(m, AST_STRUCT_LIT, (((m[0]).arena).nodes[id]).start);
+  int32_t head = AST_NONE;
+  int32_t tail = AST_NONE;
+  int32_t f = (((m[0]).arena).nodes[id]).b;
+  while (f != AST_NONE) {
+  int32_t nf = mn_copy(m, f);
+  (((m[0]).arena).nodes[nf]).kind = AST_FIELD;
+  (((m[0]).arena).nodes[nf]).a = mfk_subst(m, (((m[0]).arena).nodes[f]).a, id, source);
+  if (head == AST_NONE) {
+  head = nf;
+} else {
+  (((m[0]).arena).nodes[tail]).next = nf;
+}
+  tail = nf;
+  f = (((m[0]).arena).nodes[f]).next;
+}
+  (((m[0]).arena).nodes[lit]).a = head;
+  if ((name_e - name_s) == 0) {
+  int32_t mi = (fk[0]).mod_cur;
+  int32_t r = 0;
+  int32_t found = AST_NONE;
+  while (r < (fk[0]).nrecs && found == AST_NONE) {
+  if ((fk[0]).rec_mod[r] == mi) {
+  int32_t sd = (fk[0]).rec_node[r];
+  int32_t a1 = (((m[0]).arena).nodes[sd]).a;
+  int32_t a2 = head;
+  int32_t same = 1;
+  while (a1 != AST_NONE && a2 != AST_NONE) {
+  int32_t t1 = (((m[0]).arena).nodes[a1]).a;
+  int32_t t2 = mfk_call_ret(m, (((m[0]).arena).nodes[a2]).a);
+  if (mlg_span_eq(m, mlg_ns(m, a1), mlg_ne(m, a1), mlg_ns(m, a2), mlg_ne(m, a2)) == 0 || t2 == AST_NONE || mlg_span_eq(m, mlg_ns(m, t1), mlg_ne(m, t1), mlg_ns(m, t2), mlg_ne(m, t2)) == 0) {
+  same = 0;
+}
+  a1 = (((m[0]).arena).nodes[a1]).next;
+  a2 = (((m[0]).arena).nodes[a2]).next;
+}
+  if (same == 1 && a1 == AST_NONE && a2 == AST_NONE) {
+  found = sd;
+}
+}
+  r = (r + 1);
+}
+  if (found == AST_NONE) {
+  int32_t rne = 0;
+  int32_t rns = mfk_xname(m, "__ForkRecord_", (fk[0]).nrec[mi], (&rne));
+  (fk[0]).nrec[mi] = ((fk[0]).nrec[mi] + 1);
+  int32_t sd2 = mlg_new_node(m, AST_STRUCT, (((m[0]).arena).nodes[id]).start);
+  (((m[0]).arena).nodes[sd2]).name_start = rns;
+  (((m[0]).arena).nodes[sd2]).name_end = rne;
+  int32_t fh = AST_NONE;
+  int32_t ft = AST_NONE;
+  int32_t v = head;
+  while (v != AST_NONE) {
+  int32_t ty = mfk_call_ret(m, (((m[0]).arena).nodes[v]).a);
+  if (ty == AST_NONE) {
+  mlg_refuse(m, id, "fork field whose type Python cannot infer");
+  return lit;
+}
+  int32_t fd = mlg_new_node(m, AST_FIELD, (((m[0]).arena).nodes[v]).start);
+  (((m[0]).arena).nodes[fd]).name_start = (((m[0]).arena).nodes[v]).name_start;
+  (((m[0]).arena).nodes[fd]).name_end = (((m[0]).arena).nodes[v]).name_end;
+  (((m[0]).arena).nodes[fd]).a = ty;
+  if (fh == AST_NONE) {
+  fh = fd;
+} else {
+  (((m[0]).arena).nodes[ft]).next = fd;
+}
+  ft = fd;
+  v = (((m[0]).arena).nodes[v]).next;
+}
+  (((m[0]).arena).nodes[sd2]).a = fh;
+  if ((fk[0]).nrecs < 256) {
+  (fk[0]).rec_node[(fk[0]).nrecs] = sd2;
+  (fk[0]).rec_mod[(fk[0]).nrecs] = mi;
+  (fk[0]).nrecs = ((fk[0]).nrecs + 1);
+}
+  found = sd2;
+}
+  name_s = mlg_ns(m, found);
+  name_e = mlg_ne(m, found);
+}
+  (((m[0]).arena).nodes[lit]).name_start = name_s;
+  (((m[0]).arena).nodes[lit]).name_end = name_e;
+  return lit;
+}
+
+int32_t mfk_lower_choose(Mlg* m, Fork* fk, int32_t id, int32_t can_hoist) {
+  if (can_hoist == 0) {
+  mlg_refuse(m, id, "choose pipeline outside a statement");
+  return id;
+}
+  int32_t selector = mfk_resolve(m, fk, (((m[0]).arena).nodes[id]).c, 1);
+  int32_t source0 = mfk_resolve(m, fk, (((m[0]).arena).nodes[id]).a, 1);
+  int32_t source = mfk_source(m, fk, source0, 1);
+  int32_t rt = AST_NONE;
+  int32_t arm = (((m[0]).arena).nodes[id]).b;
+  while (arm != AST_NONE) {
+  int32_t v0 = mfk_resolve(m, fk, (((m[0]).arena).nodes[arm]).b, 1);
+  int32_t v = mfk_subst(m, v0, id, source);
+  (((m[0]).arena).nodes[arm]).b = v;
+  if (rt == AST_NONE) {
+  rt = mfk_call_ret(m, v);
+}
+  arm = (((m[0]).arena).nodes[arm]).next;
+}
+  if (rt == AST_NONE) {
+  mlg_refuse(m, id, "choose whose result type Python cannot infer");
+  return id;
+}
+  int32_t mi = (fk[0]).mod_cur;
+  int32_t tne = 0;
+  int32_t tns = mfk_xname(m, "__choose_", (fk[0]).chs[mi], (&tne));
+  (fk[0]).chs[mi] = ((fk[0]).chs[mi] + 1);
+  int32_t lt = mlg_new_node(m, AST_LET, (((m[0]).arena).nodes[id]).start);
+  (((m[0]).arena).nodes[lt]).name_start = tns;
+  (((m[0]).arena).nodes[lt]).name_end = tne;
+  (((m[0]).arena).nodes[lt]).a = rt;
+  (((m[0]).arena).nodes[lt]).ival = 1;
+  mfk_push_hoist(m, fk, lt);
+  int32_t ms = mlg_new_node(m, AST_MATCH, (((m[0]).arena).nodes[id]).start);
+  (((m[0]).arena).nodes[ms]).a = selector;
+  int32_t ah = AST_NONE;
+  int32_t at = AST_NONE;
+  int32_t a2 = (((m[0]).arena).nodes[id]).b;
+  while (a2 != AST_NONE) {
+  int32_t asg = mlg_new_node(m, AST_ASSIGN, (((m[0]).arena).nodes[a2]).start);
+  (((m[0]).arena).nodes[asg]).a = mfk_ident(m, tns, tne);
+  (((m[0]).arena).nodes[asg]).b = (((m[0]).arena).nodes[a2]).b;
+  int32_t blk = mlg_new_node(m, AST_BLOCK, (((m[0]).arena).nodes[a2]).start);
+  (((m[0]).arena).nodes[blk]).a = asg;
+  int32_t na = mlg_new_node(m, AST_MATCH_ARM_EXT, (((m[0]).arena).nodes[a2]).start);
+  (((m[0]).arena).nodes[na]).a = (((m[0]).arena).nodes[a2]).a;
+  (((m[0]).arena).nodes[na]).b = blk;
+  if (ah == AST_NONE) {
+  ah = na;
+} else {
+  (((m[0]).arena).nodes[at]).next = na;
+}
+  at = na;
+  a2 = (((m[0]).arena).nodes[a2]).next;
+}
+  (((m[0]).arena).nodes[ms]).b = ah;
+  mfk_push_hoist(m, fk, ms);
+  return mfk_ident(m, tns, tne);
+}
+
+int32_t mfk_resolve(Mlg* m, Fork* fk, int32_t e, int32_t can_hoist) {
+  if (e == AST_NONE || e < 0 || (m[0]).err != 0) {
+  return e;
+}
+  int32_t k = mlg_kind(m, e);
+  if (k == AST_PIPE_BLOCK) {
+  if ((((m[0]).arena).nodes[e]).ival == PIPE_BLOCK_CHOOSE) {
+  return mfk_lower_choose(m, fk, e, can_hoist);
+}
+  if ((((m[0]).arena).nodes[e]).ival != PIPE_BLOCK_FORK) {
+  mlg_refuse(m, e, "flow stage parameters outside a flow output");
+  return e;
+}
+  int32_t src0 = mfk_resolve(m, fk, (((m[0]).arena).nodes[e]).a, can_hoist);
+  int32_t f = (((m[0]).arena).nodes[e]).b;
+  while (f != AST_NONE) {
+  (((m[0]).arena).nodes[f]).a = mfk_resolve(m, fk, (((m[0]).arena).nodes[f]).a, can_hoist);
+  f = (((m[0]).arena).nodes[f]).next;
+}
+  int32_t src = mfk_source(m, fk, src0, can_hoist);
+  return mfk_lower_fork(m, fk, e, src);
+}
+  if (k == AST_BLOCK || k == AST_TYPE || k == AST_FN) {
+  if (k == AST_FN) {
+  mfk_block(m, fk, (((m[0]).arena).nodes[e]).c);
+}
+  return e;
+}
+  if (k == AST_CALL || k == AST_BINOP || k == AST_UNARY || k == AST_FIELD_ACCESS || k == AST_INDEX || k == AST_CAST || k == AST_STRUCT_LIT || k == AST_ARRAY_LIT || k == AST_IF_EXPR || k == AST_FIELD) {
+  (((m[0]).arena).nodes[e]).a = mfk_resolve_chain(m, fk, (((m[0]).arena).nodes[e]).a, can_hoist);
+  if (k == AST_BINOP || k == AST_INDEX || k == AST_IF_EXPR) {
+  (((m[0]).arena).nodes[e]).b = mfk_resolve(m, fk, (((m[0]).arena).nodes[e]).b, can_hoist);
+}
+  if (k == AST_INDEX || k == AST_IF_EXPR || k == AST_STRUCT_LIT) {
+  (((m[0]).arena).nodes[e]).c = mfk_resolve(m, fk, (((m[0]).arena).nodes[e]).c, can_hoist);
+}
+  return e;
+}
+  return e;
+}
+
+void mfk_block(Mlg* m, Fork* fk, int32_t blk) {
+  if (blk == AST_NONE || blk < 0 || mlg_kind(m, blk) != AST_BLOCK) {
+  return;
+}
+  int32_t prev = AST_NONE;
+  int32_t st = (((m[0]).arena).nodes[blk]).a;
+  while (st != AST_NONE && (m[0]).err == 0) {
+  int32_t nx = (((m[0]).arena).nodes[st]).next;
+  int32_t saved = (fk[0]).nhoist;
+  mfk_stmt(m, fk, st);
+  int32_t i = saved;
+  while (i < (fk[0]).nhoist) {
+  int32_t h = (fk[0]).hoist[i];
+  if (prev == AST_NONE) {
+  (((m[0]).arena).nodes[blk]).a = h;
+} else {
+  (((m[0]).arena).nodes[prev]).next = h;
+}
+  (((m[0]).arena).nodes[h]).next = st;
+  prev = h;
+  i = (i + 1);
+}
+  (fk[0]).nhoist = saved;
+  prev = st;
+  st = nx;
+}
+}
+
+void mfk_stmt(Mlg* m, Fork* fk, int32_t st) {
+  int32_t k = mlg_kind(m, st);
+  if (k == AST_LET) {
+  (((m[0]).arena).nodes[st]).b = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).b, 1);
+  return;
+}
+  if (k == AST_RETURN || k == AST_EXPR_STMT || k == AST_DEFER) {
+  (((m[0]).arena).nodes[st]).a = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).a, 1);
+  return;
+}
+  if (k == AST_ASSIGN) {
+  (((m[0]).arena).nodes[st]).b = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).b, 1);
+  return;
+}
+  if (k == AST_IF || k == AST_WHILE) {
+  (((m[0]).arena).nodes[st]).a = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).a, 1);
+  mfk_block(m, fk, (((m[0]).arena).nodes[st]).b);
+  if (k == AST_IF) {
+  mfk_block(m, fk, (((m[0]).arena).nodes[st]).c);
+}
+  return;
+}
+  if (k == AST_FOR) {
+  (((m[0]).arena).nodes[st]).a = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).a, 1);
+  (((m[0]).arena).nodes[st]).b = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).b, 1);
+  mfk_block(m, fk, (((m[0]).arena).nodes[st]).c);
+  return;
+}
+  if (k == AST_MATCH) {
+  (((m[0]).arena).nodes[st]).a = mfk_resolve(m, fk, (((m[0]).arena).nodes[st]).a, 1);
+  int32_t arm = (((m[0]).arena).nodes[st]).b;
+  while (arm != AST_NONE) {
+  mfk_block(m, fk, (((m[0]).arena).nodes[arm]).b);
+  arm = (((m[0]).arena).nodes[arm]).next;
+}
+  return;
+}
+  if (k == AST_BLOCK) {
+  mfk_block(m, fk, st);
+  return;
+}
+  if (k == AST_HANDLE) {
+  mfk_block(m, fk, (((m[0]).arena).nodes[st]).a);
+  return;
+}
+}
+
+void mlg_desugar_forks(Mlg* m, int32_t root) {
+  int32_t any = 0;
+  int32_t i = 0;
+  while (i < ((m[0]).arena).len) {
+  if ((((m[0]).arena).nodes[i]).kind == AST_PIPE_BLOCK) {
+  any = 1;
+}
+  i = (i + 1);
+}
+  if (any == 0) {
+  return;
+}
+  int32_t nm = (((m[0]).nmods > 0) ? ((m[0]).nmods) : (1));
+  Fork fk = (Fork){ .tmp = mlg_alloc_i32(nm), .chs = mlg_alloc_i32(nm), .nrec = mlg_alloc_i32(nm), .rec_node = mlg_alloc_i32(256), .rec_mod = mlg_alloc_i32(256), .nrecs = 0, .mod_cur = 0, .hoist = mlg_alloc_i32(256), .nhoist = 0 };
+  Fork* fkp = (Fork*)((&fk));
+  (m[0]).fk_root = root;
+  int32_t item = (((m[0]).arena).nodes[root]).a;
+  while (item != AST_NONE && (m[0]).err == 0) {
+  int32_t d = mlg_unwrap(m, item);
+  (fk).mod_cur = mlg_module_of(m, (((m[0]).arena).nodes[item]).start);
+  (m[0]).fk_mod = (fk).mod_cur;
+  if (mlg_kind(m, d) == AST_FN) {
+  mfk_block(m, fkp, (((m[0]).arena).nodes[d]).c);
+}
+  item = (((m[0]).arena).nodes[item]).next;
+}
+  int32_t r = 0;
+  while (r < (fk).nrecs) {
+  int32_t mi = (fk).rec_mod[r];
+  int32_t prev = AST_NONE;
+  int32_t it = (((m[0]).arena).nodes[root]).a;
+  while (it != AST_NONE && mlg_module_of(m, (((m[0]).arena).nodes[it]).start) != mi) {
+  prev = it;
+  it = (((m[0]).arena).nodes[it]).next;
+}
+  while (it != AST_NONE && mlg_kind(m, it) == AST_STRUCT && mlg_span_prefix(m, mlg_ns(m, it), mlg_ne(m, it), "__ForkRecord_") == 1) {
+  prev = it;
+  it = (((m[0]).arena).nodes[it]).next;
+}
+  int32_t sd = (fk).rec_node[r];
+  (((m[0]).arena).nodes[sd]).next = it;
+  if (prev == AST_NONE) {
+  (((m[0]).arena).nodes[root]).a = sd;
+} else {
+  (((m[0]).arena).nodes[prev]).next = sd;
+}
+  r = (r + 1);
+}
+}
+
+int64_t mrs_lit(Mlg* m, int32_t e, int32_t* ok) {
+  int32_t k = mlg_kind(m, e);
+  if (k == AST_UNARY && (((m[0]).arena).nodes[e]).ival == TOK_MINUS) {
+  int64_t v = mrs_lit(m, (((m[0]).arena).nodes[e]).a, ok);
+  return (0 - v);
+}
+  if (k != AST_INT) {
+  ok[0] = 0;
+  return 0;
+}
+  if (mlg_ns(m, e) == mlg_ne(m, e)) {
+  return (int64_t)((((m[0]).arena).nodes[e]).ival);
+}
+  int32_t ok2 = 1;
+  int64_t v2 = mlg_int_value(m, e, (&ok2));
+  if (ok2 == 0) {
+  ok[0] = 0;
+}
+  return v2;
+}
+
+int64_t mrs_floordiv(int64_t a, int64_t b) {
+  int64_t q = (a / b);
+  if ((a % b) != 0 && a < 0 != b < 0) {
+  return (q - 1);
+}
+  return q;
+}
+
+int64_t mrs_mod(int64_t a, int64_t b) {
+  int64_t r = (a % b);
+  if (r != 0 && r < 0 != b < 0) {
+  return (r + b);
+}
+  return r;
+}
+
+int64_t mrs_gcd(int64_t a0, int64_t b0) {
+  int64_t a = a0;
+  int64_t b = b0;
+  if (a < 0) {
+  a = (0 - a);
+}
+  if (b < 0) {
+  b = (0 - b);
+}
+  while (b != 0) {
+  int64_t t = (a % b);
+  a = b;
+  b = t;
+}
+  return a;
+}
+
+int64_t mrs_modinv(int64_t a0, int64_t m) {
+  int64_t old_r = mrs_mod(a0, m);
+  int64_t r = m;
+  int64_t old_s = 1;
+  int64_t s = 0;
+  while (r != 0) {
+  int64_t q = mrs_floordiv(old_r, r);
+  int64_t nr = (old_r - (q * r));
+  old_r = r;
+  r = nr;
+  int64_t ns = (old_s - (q * s));
+  old_s = s;
+  s = ns;
+}
+  return mrs_mod(old_s, m);
+}
+
+void mrs_normalize(int64_t start, int64_t end, int64_t step, int64_t* p) {
+  if (step > 0) {
+  if (start >= end) {
+  p[0] = 0;
+  p[1] = 0;
+  p[2] = 1;
+  return;
+}
+  int64_t c = mrs_floordiv((((end - start) + step) - 1), step);
+  p[0] = start;
+  p[1] = c;
+  p[2] = step;
+  return;
+}
+  int64_t mag = (0 - step);
+  if (start <= end) {
+  p[0] = 0;
+  p[1] = 0;
+  p[2] = 1;
+  return;
+}
+  int64_t c2 = mrs_floordiv((((start - end) + mag) - 1), mag);
+  p[0] = (start + ((c2 - 1) * step));
+  p[1] = c2;
+  p[2] = mag;
+}
+
+void mrs_intersect(int64_t* a, int64_t* b, int64_t* out) {
+  out[0] = 0;
+  out[1] = 0;
+  out[2] = 1;
+  if (a[1] <= 0 || b[1] <= 0) {
+  return;
+}
+  int64_t common = mrs_gcd(a[2], b[2]);
+  int64_t offset = (b[0] - a[0]);
+  if (mrs_mod(offset, common) != 0) {
+  return;
+}
+  int64_t modulus = mrs_floordiv(b[2], common);
+  int64_t step = (a[2] * modulus);
+  int64_t index = 0;
+  if (modulus > 1) {
+  int64_t inv = mrs_modinv(mrs_mod(mrs_floordiv(a[2], common), modulus), modulus);
+  index = mrs_mod((mrs_mod(mrs_floordiv(offset, common), modulus) * inv), modulus);
+}
+  int64_t value = (a[0] + (index * a[2]));
+  int64_t low = a[0];
+  if (b[0] > low) {
+  low = b[0];
+}
+  int64_t high = (a[0] + ((a[1] - 1) * a[2]));
+  int64_t hb = (b[0] + ((b[1] - 1) * b[2]));
+  if (hb < high) {
+  high = hb;
+}
+  if (value < low) {
+  value = (value + ((0 - mrs_floordiv((value - low), step)) * step));
+}
+  if (value > high) {
+  return;
+}
+  out[0] = value;
+  out[1] = (mrs_floordiv((high - value), step) + 1);
+  out[2] = step;
+}
+
+int64_t mrs_psum(int64_t* p) {
+  if (p[1] <= 0) {
+  return 0;
+}
+  return mrs_floordiv((p[1] * ((2 * p[0]) + ((p[1] - 1) * p[2]))), 2);
+}
+
+int64_t mrs_fold(Mlg* m, int32_t e, int32_t* ok) {
+  int32_t kind = (((m[0]).arena).nodes[e]).ival;
+  int32_t a = (((m[0]).arena).nodes[e]).a;
+  int64_t* vals = (int64_t*)((int64_t*)(malloc(64)));
+  int32_t n = 0;
+  int32_t x = a;
+  while (x != AST_NONE && n < 6) {
+  vals[n] = mrs_lit(m, x, ok);
+  n = (n + 1);
+  x = (((m[0]).arena).nodes[x]).next;
+}
+  int64_t* pa = (int64_t*)((int64_t*)(malloc(24)));
+  int64_t* pb = (int64_t*)((int64_t*)(malloc(24)));
+  int64_t* pc = (int64_t*)((int64_t*)(malloc(24)));
+  int64_t total = 0;
+  if (ok[0] == 1) {
+  mrs_normalize(vals[0], vals[1], vals[2], pa);
+  if (kind == 2) {
+  total = mrs_psum(pa);
+} else {
+  mrs_normalize(vals[3], vals[4], vals[5], pb);
+  if (kind == 4) {
+  mrs_intersect(pa, pb, pc);
+  total = mrs_psum(pc);
+} else {
+  int32_t la = ((pa[1] > 0) ? (1) : (0));
+  int32_t lb = ((pb[1] > 0) ? (1) : (0));
+  if (la == 1) {
+  total = (total + mrs_psum(pa));
+}
+  if (lb == 1) {
+  total = (total + mrs_psum(pb));
+}
+  if (la == 1 && lb == 1) {
+  mrs_intersect(pa, pb, pc);
+  total = (total - mrs_psum(pc));
+}
+}
+}
+}
+  free((uint8_t*)(vals));
+  free((uint8_t*)(pa));
+  free((uint8_t*)(pb));
+  free((uint8_t*)(pc));
+  return total;
+}
+
+int32_t mrs_is_range_sum(Mlg* m, int32_t e) {
+  if (mlg_kind(m, e) != AST_CALL) {
+  return 0;
+}
+  int32_t k = (((m[0]).arena).nodes[e]).ival;
+  if (k >= 2 && k <= 4 && mlg_span_is(m, mlg_ns(m, e), mlg_ne(m, e), "sum") == 1) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t mrs_emit(Mlg* m, int32_t e, int32_t want_value) {
+  int32_t ok = 1;
+  int64_t total = mrs_fold(m, e, (&ok));
+  if (ok == 1) {
+  int64_t t2 = total;
+  if (t2 > 2147483647) {
+  t2 = (t2 - 4294967296);
+}
+  int32_t v = mlg_new_val(m, MT_I32);
+  mlg_line(m);
+  mlg_v(m, v);
+  mlg_s(m, " = arith.constant ");
+  mlg_i64(m, t2);
+  mlg_s(m, " : i32");
+  mlg_nl(m);
+  return v;
+}
+  int32_t kind = (((m[0]).arena).nodes[e]).ival;
+  const char* nm = "__flow_sum_range";
+  if (kind == 3) {
+  nm = "__flow_sum_range_union";
+}
+  if (kind == 4) {
+  nm = "__flow_sum_range_isect";
+}
+  uint8_t* np = (uint8_t*)(nm);
+  int32_t l = 0;
+  while (np[l] != 0) {
+  l = (l + 1);
+}
+  int32_t s = mlg_xput(m, np, l);
+  (((m[0]).arena).nodes[e]).name_start = s;
+  (((m[0]).arena).nodes[e]).name_end = (s + l);
+  (((m[0]).arena).nodes[e]).start = s;
+  (((m[0]).arena).nodes[e]).ival = 0;
+  return mlg_emit_call(m, e, want_value);
+}
+
+void mrs_prune_helpers(Mlg* m, int32_t root) {
+  int32_t nm = (((m[0]).nmods > 0) ? ((m[0]).nmods) : (1));
+  int32_t* need = (int32_t*)(mlg_alloc_i32(nm));
+  int32_t i = 0;
+  int32_t any = 0;
+  while (i < ((m[0]).arena).len) {
+  if ((((m[0]).arena).nodes[i]).kind == AST_CALL && mrs_is_range_sum(m, i) == 1) {
+  any = 1;
+  int32_t ok = 1;
+  int64_t _t = mrs_fold(m, i, (&ok));
+  if (ok == 0) {
+  int32_t mi = mlg_module_of(m, (((m[0]).arena).nodes[i]).name_start);
+  if ((((m[0]).arena).nodes[i]).ival == 2) {
+  need[mi] = (need[mi] | 1);
+} else {
+  need[mi] = (need[mi] | 2);
+}
+}
+}
+  i = (i + 1);
+}
+  int32_t prev = AST_NONE;
+  int32_t item = (((m[0]).arena).nodes[root]).a;
+  while (item != AST_NONE) {
+  int32_t nx = (((m[0]).arena).nodes[item]).next;
+  int32_t d = mlg_unwrap(m, item);
+  int32_t drop = 0;
+  if (mlg_kind(m, d) == AST_FN && mlg_span_prefix(m, mlg_ns(m, d), mlg_ne(m, d), "__flow_") == 1) {
+  int32_t mi2 = mlg_module_of(m, (((m[0]).arena).nodes[item]).start);
+  int32_t is_sum = mlg_span_is(m, mlg_ns(m, d), mlg_ne(m, d), "__flow_sum_range");
+  int32_t is_set = ((mlg_span_is(m, mlg_ns(m, d), mlg_ne(m, d), "__flow_range_gcd") == 1 || mlg_span_is(m, mlg_ns(m, d), mlg_ne(m, d), "__flow_range_modinv") == 1 || mlg_span_is(m, mlg_ns(m, d), mlg_ne(m, d), "__flow_range_count") == 1 || mlg_span_is(m, mlg_ns(m, d), mlg_ne(m, d), "__flow_progression_sum") == 1 || mlg_span_is(m, mlg_ns(m, d), mlg_ne(m, d), "__flow_sum_range_isect") == 1 || mlg_span_is(m, mlg_ns(m, d), mlg_ne(m, d), "__flow_sum_range_union") == 1) ? (1) : (0));
+  if (is_sum == 1 && need[mi2] == 0) {
+  drop = 1;
+}
+  if (is_set == 1 && (need[mi2] & 2) == 0) {
+  drop = 1;
+}
+}
+  if (drop == 1) {
+  if (prev == AST_NONE) {
+  (((m[0]).arena).nodes[root]).a = nx;
+} else {
+  (((m[0]).arena).nodes[prev]).next = nx;
+}
+} else {
+  prev = item;
+}
+  item = nx;
+}
+  mlg_free_i32(need);
+  int32_t _a = any;
+}
+
+int32_t mao_is_target(Mlg* m, int32_t t) {
+  if (t == AST_NONE || t < 0 || mlg_kind(m, t) != AST_TYPE) {
+  return 0;
+}
+  int32_t inner = (((m[0]).arena).nodes[t]).a;
+  if (inner == AST_NONE || (((m[0]).arena).nodes[t]).ival <= 0) {
+  return 0;
+}
+  if ((((m[0]).arena).nodes[t]).c != AST_TYPE_FIXED_ARRAY && mlg_span_is(m, mlg_ns(m, t), mlg_ne(m, t), "array") == 0) {
+  return 0;
+}
+  return mlg_span_is(m, mlg_ns(m, inner), mlg_ne(m, inner), "Particle");
+}
+
+int32_t mao_is_var(Mlg* m, int32_t* vars, int32_t nv, int32_t e) {
+  if (mlg_kind(m, e) != AST_IDENT) {
+  return 0;
+}
+  int32_t i = 0;
+  while (i < nv) {
+  int32_t d = vars[i];
+  if (mlg_span_eq(m, mlg_ns(m, d), mlg_ne(m, d), mlg_ns(m, e), mlg_ne(m, e)) == 1) {
+  return 1;
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+int32_t mao_expr(Mlg* m, int32_t e, int32_t st, int32_t* vars, int32_t nv) {
+  if (e == AST_NONE || e < 0) {
+  return e;
+}
+  int32_t k = mlg_kind(m, e);
+  if (k == AST_TYPE || k == AST_BLOCK || k == AST_FN) {
+  return e;
+}
+  if (k == AST_FIELD_ACCESS) {
+  int32_t o = (((m[0]).arena).nodes[e]).a;
+  if (mlg_kind(m, o) == AST_INDEX && (((m[0]).arena).nodes[o]).ival == 0 && mao_is_var(m, vars, nv, (((m[0]).arena).nodes[o]).a) == 1) {
+  if (mlg_chain_named(m, (((m[0]).arena).nodes[st]).a, mlg_ns(m, e), mlg_ne(m, e)) != AST_NONE) {
+  int32_t fa = mlg_new_node(m, AST_FIELD_ACCESS, (((m[0]).arena).nodes[e]).start);
+  (((m[0]).arena).nodes[fa]).a = (((m[0]).arena).nodes[o]).a;
+  (((m[0]).arena).nodes[fa]).name_start = (((m[0]).arena).nodes[e]).name_start;
+  (((m[0]).arena).nodes[fa]).name_end = (((m[0]).arena).nodes[e]).name_end;
+  int32_t ix = mlg_new_node(m, AST_INDEX, (((m[0]).arena).nodes[o]).start);
+  (((m[0]).arena).nodes[ix]).a = fa;
+  (((m[0]).arena).nodes[ix]).b = mao_expr(m, (((m[0]).arena).nodes[o]).b, st, vars, nv);
+  return ix;
+}
+}
+}
+  (((m[0]).arena).nodes[e]).a = mao_chain(m, (((m[0]).arena).nodes[e]).a, st, vars, nv);
+  if (k != AST_CALL && k != AST_CAST && k != AST_LET) {
+  (((m[0]).arena).nodes[e]).b = mao_chain(m, (((m[0]).arena).nodes[e]).b, st, vars, nv);
+}
+  if (k == AST_INDEX || k == AST_IF_EXPR) {
+  (((m[0]).arena).nodes[e]).c = mao_expr(m, (((m[0]).arena).nodes[e]).c, st, vars, nv);
+}
+  return e;
+}
+
+int32_t mao_chain(Mlg* m, int32_t head, int32_t st, int32_t* vars, int32_t nv) {
+  if (head == AST_NONE || head < 0) {
+  return head;
+}
+  int32_t nx = (((m[0]).arena).nodes[head]).next;
+  int32_t h2 = mao_expr(m, head, st, vars, nv);
+  (((m[0]).arena).nodes[h2]).next = mao_chain(m, nx, st, vars, nv);
+  return h2;
+}
+
+int32_t mao_soa(Mlg* m, int32_t st, int32_t n, int32_t* made, int32_t* nmade) {
+  int32_t i = 0;
+  while (i < nmade[0]) {
+  int32_t s = made[i];
+  if ((((m[0]).arena).nodes[s]).ival == n) {
+  return s;
+}
+  i = (i + 1);
+}
+  int32_t ne = 0;
+  int32_t ns = mfk_xname(m, "Particle_SoA_", n, (&ne));
+  int32_t sd = mlg_new_node(m, AST_STRUCT, (((m[0]).arena).nodes[st]).start);
+  (((m[0]).arena).nodes[sd]).name_start = ns;
+  (((m[0]).arena).nodes[sd]).name_end = ne;
+  (((m[0]).arena).nodes[sd]).ival = n;
+  uint8_t* arr_lit = (uint8_t*)("array");
+  int32_t arr_s = mlg_xput(m, arr_lit, 5);
+  int32_t fh = AST_NONE;
+  int32_t ft = AST_NONE;
+  int32_t f = (((m[0]).arena).nodes[st]).a;
+  while (f != AST_NONE) {
+  int32_t at = mlg_new_node(m, AST_TYPE, arr_s);
+  (((m[0]).arena).nodes[at]).end = (arr_s + 5);
+  (((m[0]).arena).nodes[at]).name_start = arr_s;
+  (((m[0]).arena).nodes[at]).name_end = (arr_s + 5);
+  (((m[0]).arena).nodes[at]).a = (((m[0]).arena).nodes[f]).a;
+  (((m[0]).arena).nodes[at]).ival = n;
+  int32_t fd = mn_copy(m, f);
+  (((m[0]).arena).nodes[fd]).a = at;
+  if (fh == AST_NONE) {
+  fh = fd;
+} else {
+  (((m[0]).arena).nodes[ft]).next = fd;
+}
+  ft = fd;
+  f = (((m[0]).arena).nodes[f]).next;
+}
+  (((m[0]).arena).nodes[sd]).a = fh;
+  if (nmade[0] < 64) {
+  made[nmade[0]] = sd;
+  nmade[0] = (nmade[0] + 1);
+}
+  return sd;
+}
+
+void mao_block(Mlg* m, int32_t blk, int32_t st, int32_t* vars, int32_t* nv, int32_t* made, int32_t* nmade) {
+  if (blk == AST_NONE || blk < 0 || mlg_kind(m, blk) != AST_BLOCK) {
+  return;
+}
+  int32_t s = (((m[0]).arena).nodes[blk]).a;
+  while (s != AST_NONE) {
+  int32_t k = mlg_kind(m, s);
+  if (k == AST_LET && mao_is_target(m, (((m[0]).arena).nodes[s]).a) == 1) {
+  int32_t n = (((m[0]).arena).nodes[(((m[0]).arena).nodes[s]).a]).ival;
+  int32_t sd = mao_soa(m, st, n, made, nmade);
+  int32_t ty = mn_flat(m, mlg_ns(m, sd), mlg_ne(m, sd));
+  (((m[0]).arena).nodes[s]).a = ty;
+  if (nv[0] < 64) {
+  vars[nv[0]] = s;
+  nv[0] = (nv[0] + 1);
+}
+} else {
+  if (k == AST_IF || k == AST_WHILE || k == AST_FOR || k == AST_BLOCK || k == AST_HANDLE || k == AST_MATCH) {
+  if (k == AST_IF || k == AST_WHILE) {
+  (((m[0]).arena).nodes[s]).a = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, vars, nv[0]);
+  mao_block(m, (((m[0]).arena).nodes[s]).b, st, vars, nv, made, nmade);
+  if (k == AST_IF) {
+  mao_block(m, (((m[0]).arena).nodes[s]).c, st, vars, nv, made, nmade);
+}
+}
+  if (k == AST_FOR) {
+  (((m[0]).arena).nodes[s]).a = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, vars, nv[0]);
+  (((m[0]).arena).nodes[s]).b = mao_expr(m, (((m[0]).arena).nodes[s]).b, st, vars, nv[0]);
+  mao_block(m, (((m[0]).arena).nodes[s]).c, st, vars, nv, made, nmade);
+}
+  if (k == AST_BLOCK) {
+  mao_block(m, s, st, vars, nv, made, nmade);
+}
+  if (k == AST_HANDLE) {
+  mao_block(m, (((m[0]).arena).nodes[s]).a, st, vars, nv, made, nmade);
+}
+  if (k == AST_MATCH) {
+  (((m[0]).arena).nodes[s]).a = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, vars, nv[0]);
+}
+} else {
+  if (k == AST_LET) {
+  (((m[0]).arena).nodes[s]).b = mao_expr(m, (((m[0]).arena).nodes[s]).b, st, vars, nv[0]);
+} else {
+  (((m[0]).arena).nodes[s]).a = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, vars, nv[0]);
+  if (k == AST_ASSIGN) {
+  (((m[0]).arena).nodes[s]).b = mao_expr(m, (((m[0]).arena).nodes[s]).b, st, vars, nv[0]);
+}
+}
+}
+}
+  s = (((m[0]).arena).nodes[s]).next;
+}
+}
+
+void mlg_aosoa(Mlg* m, int32_t root) {
+  int32_t st = AST_NONE;
+  int32_t item = (((m[0]).arena).nodes[root]).a;
+  while (item != AST_NONE && st == AST_NONE) {
+  int32_t d = mlg_unwrap(m, item);
+  if (mlg_kind(m, d) == AST_STRUCT && mlg_span_is(m, mlg_ns(m, d), mlg_ne(m, d), "Particle") == 1) {
+  st = d;
+}
+  item = (((m[0]).arena).nodes[item]).next;
+}
+  if (st == AST_NONE) {
+  return;
+}
+  int32_t* vars = (int32_t*)(mlg_alloc_i32(64));
+  int32_t nv[1] = { 0 };
+  int32_t* made = (int32_t*)(mlg_alloc_i32(64));
+  int32_t nmade[1] = { 0 };
+  item = (((m[0]).arena).nodes[root]).a;
+  while (item != AST_NONE) {
+  int32_t d2 = mlg_unwrap(m, item);
+  if (mlg_kind(m, d2) == AST_FN) {
+  mao_block(m, (((m[0]).arena).nodes[d2]).c, st, vars, (int32_t*)((&nv[0])), made, (int32_t*)((&nmade[0])));
+}
+  item = (((m[0]).arena).nodes[item]).next;
+}
+  int32_t i = 0;
+  while (i < nmade[0]) {
+  int32_t sd = made[i];
+  (((m[0]).arena).nodes[sd]).ival = 0;
+  (((m[0]).arena).nodes[sd]).next = (((m[0]).arena).nodes[root]).a;
+  (((m[0]).arena).nodes[root]).a = sd;
+  i = (i + 1);
+}
+}
+
 int32_t mlg_item_dropped(Mlg* m, int32_t item) {
   int32_t k = mlg_kind(m, item);
   if (k == AST_EXPORT && (((m[0]).arena).nodes[item]).ival == 1) {
@@ -13553,15 +17881,10 @@ int32_t mlg_item_dropped(Mlg* m, int32_t item) {
 
 void mlg_collect(Mlg* m, int32_t root) {
   int32_t item = (((m[0]).arena).nodes[root]).a;
-  int32_t prev_end = 0;
+  int32_t ngpu = 0;
+  int32_t* gpu_fns = (int32_t*)(mlg_gpu_fns(m, (&ngpu)));
   while (item != AST_NONE) {
-  int32_t off_cpu = mlg_check_attrs(m, prev_end, (((m[0]).arena).nodes[item]).start, item);
-  if ((m[0]).err != 0) {
-  return;
-}
-  if ((((m[0]).arena).nodes[item]).end > prev_end) {
-  prev_end = (((m[0]).arena).nodes[item]).end;
-}
+  int32_t off_cpu = mlg_check_attrs(m, gpu_fns, ngpu, item);
   if (off_cpu != 0) {
   if ((m[0]).ndropf < MLG_MAX_FNS) {
   (m[0]).dropf[(m[0]).ndropf] = item;
@@ -13634,7 +17957,11 @@ void mlg_collect(Mlg* m, int32_t root) {
   if (k == AST_CAPABILITY) {
   mlg_add_capability(m, d);
 } else {
+  if (k == AST_EXPR_STMT && (((m[0]).arena).nodes[d]).a == AST_NONE) {
+  int32_t _skip = 0;
+} else {
   mlg_refuse(m, d, mlg_decl_label(k));
+}
 }
 }
 }
@@ -14557,9 +18884,13 @@ int32_t mlg_assemble(Mlg* m, uint8_t* body, int32_t body_len, uint8_t* dst, int3
   (m[0]).cap = dst_cap;
   (m[0]).len = 0;
   (m[0]).ind = 0;
+  if (mlg_st32(m) == 1) {
+  mlg_s(m, "module attributes {llvm.data_layout = \"e-m:e-p:32:32-i64:64-n32:64-S128\", llvm.target_triple = \"wasm32-unknown-emscripten\"} {");
+} else {
   mlg_s(m, "module {");
+}
   mlg_nl(m);
-  if ((m[0]).need_malloc == 1) {
+  if ((m[0]).need_malloc == 1 && mlg_st32(m) == 0) {
   mlg_s(m, "  llvm.func @malloc(i64) -> !llvm.ptr");
   mlg_nl(m);
 }
@@ -14636,8 +18967,14 @@ int32_t flowc_mlirgen_emit_modules(AstArena arena, int32_t root, uint8_t* src, i
   pi = (pi + 1);
 }
   uint8_t* body = (uint8_t*)(malloc((int64_t)(out_cap)));
-  Mlg mg = (Mlg){ .arena = arena, .src = src, .out = body, .cap = out_cap, .len = 0, .err = 0, .why = "", .why_node = AST_NONE, .last_line = 0, .ind = 1, .nval = 0, .vt = mlg_alloc_i32(MLG_VAL_CAP), .vu = mlg_alloc_i32(MLG_VAL_CAP), .at = mlg_alloc_i32(MLG_MAX_ARGS), .au = mlg_alloc_i32(MLG_MAX_ARGS), .nlabel = 0, .pool = malloc((int64_t)(MLG_POOL_CAP)), .pool_len = 0, .s_off = mlg_alloc_i32(MLG_MAX_STRS), .s_len = mlg_alloc_i32(MLG_MAX_STRS), .nstr = 0, .needs_printf = 0, .st_node = mlg_alloc_i32(MLG_MAX_STRUCTS), .nst = 0, .la_elem = mlg_alloc_i32(MLG_MAX_ARRS), .la_n = mlg_alloc_i32(MLG_MAX_ARRS), .nla = 0, .mr_elem = mlg_alloc_i32(MLG_MAX_ARRS), .mr_n = mlg_alloc_i32(MLG_MAX_ARRS), .nmr = 0, .fn_node = mlg_alloc_i32(MLG_MAX_FNS), .fn_ext = mlg_alloc_i32(MLG_MAX_FNS), .nfn = 0, .declared = mlg_alloc_i32(MLG_MAX_FNS), .l_ns = mlg_alloc_i32(MLG_MAX_LOCALS), .l_ne = mlg_alloc_i32(MLG_MAX_LOCALS), .l_mt = mlg_alloc_i32(MLG_MAX_LOCALS), .l_ft = mlg_alloc_i32(MLG_MAX_LOCALS), .l_ssa = mlg_alloc_i32(MLG_MAX_LOCALS), .l_alloca = mlg_alloc_i32(MLG_MAX_LOCALS), .l_llarr = mlg_alloc_i32(MLG_MAX_LOCALS), .nloc = 0, .ret_mt = MT_VOID, .ret_ft = AST_NONE, .inside_scf_for = 0, .lp_region = mlg_alloc_i32(MLG_MAX_LOOPS), .lp_header = mlg_alloc_i32(MLG_MAX_LOOPS), .lp_end = mlg_alloc_i32(MLG_MAX_LOOPS), .lp_iv = mlg_alloc_i32(MLG_MAX_LOOPS), .lp_step = mlg_alloc_i32(MLG_MAX_LOOPS), .nlp = 0, .v_llarr = mlg_alloc_i32(MLG_VAL_CAP), .a_llarr = mlg_alloc_i32(MLG_MAX_ARGS), .c_node = mlg_alloc_i32(MLG_MAX_FNS), .nconst = 0, .lp_carry = mlg_alloc_i32((MLG_MAX_LOOPS * MLG_MAX_MERGE)), .lp_ncarry = mlg_alloc_i32(MLG_MAX_LOOPS), .df = mlg_alloc_i32(MLG_MAX_DEFERS), .ndf = 0, .dscope = mlg_alloc_i32(MLG_MAX_DEFERS), .ndscope = 0, .rdf = NULL, .rdf_len = 0, .en_node = mlg_alloc_i32(MLG_MAX_ENUMS), .en_st = mlg_alloc_i32(MLG_MAX_ENUMS), .nen = 0, .st_enum = mlg_alloc_i32(MLG_MAX_STRUCTS), .xsrc = (src_len + 1), .xsrc_end = src_cap, .mod_start = mod_start, .nmods = nmods, .mod_names = mod_names, .mod_stride = mod_stride, .nl_ns = mlg_alloc_i32(MLG_MAX_FNS), .nl_ne = mlg_alloc_i32(MLG_MAX_FNS), .nl_tag = mlg_alloc_i32(MLG_MAX_FNS), .nnl = 0, .sv_node = mlg_alloc_i32(MLG_MAX_FNS), .nsv = 0, .span_st = (0 - 1), .sp_elem = mlg_alloc_i32(MLG_MAX_FNS), .sp_node = mlg_alloc_i32(MLG_MAX_FNS), .nsp = 0, .i64_ft = AST_NONE, .clo_st = (0 - 1), .lam_buf = malloc((int64_t)(MLG_SIDE_CAP)), .lam_len = 0, .cb_buf = malloc((int64_t)(MLG_SIDE_CAP)), .cb_len = 0, .cb_fn = mlg_alloc_i32(MLG_MAX_FNS), .ncb = 0, .nlambda = 0, .env_val = (0 - 1), .need_malloc = 0, .ef_node = mlg_alloc_i32(MLG_MAX_ENUMS), .nef = 0, .cap_node = mlg_alloc_i32(MLG_MAX_ENUMS), .ncap = 0, .hs_ef = mlg_alloc_i32(MLG_MAX_DEFERS), .hs_cap = mlg_alloc_i32(MLG_MAX_DEFERS), .nhs = 0, .mc_e = mlg_alloc_i32(MLG_MAX_LOCALS), .mc_t = mlg_alloc_i32(MLG_MAX_LOCALS), .nmc = 0, .dropf = mlg_alloc_i32(MLG_MAX_FNS), .ndropf = 0, .gpuf = mlg_alloc_i32(MLG_MAX_FNS), .ngpuf = 0, .gpu_ssa = 0, .al_node = mlg_alloc_i32(MLG_MAX_FNS), .nal = 0, .al_depth = 0 };
+  Mlg mg = (Mlg){ .arena = arena, .src = src, .out = body, .cap = out_cap, .len = 0, .err = 0, .why = "", .why_node = AST_NONE, .last_line = 0, .ind = 1, .nval = 0, .vt = mlg_alloc_i32(MLG_VAL_CAP), .vu = mlg_alloc_i32(MLG_VAL_CAP), .at = mlg_alloc_i32(MLG_MAX_ARGS), .au = mlg_alloc_i32(MLG_MAX_ARGS), .nlabel = 0, .pool = malloc((int64_t)(MLG_POOL_CAP)), .pool_len = 0, .s_off = mlg_alloc_i32(MLG_MAX_STRS), .s_len = mlg_alloc_i32(MLG_MAX_STRS), .nstr = 0, .needs_printf = 0, .st_node = mlg_alloc_i32(MLG_MAX_STRUCTS), .nst = 0, .la_elem = mlg_alloc_i32(MLG_MAX_ARRS), .la_n = mlg_alloc_i32(MLG_MAX_ARRS), .nla = 0, .mr_elem = mlg_alloc_i32(MLG_MAX_ARRS), .mr_n = mlg_alloc_i32(MLG_MAX_ARRS), .nmr = 0, .fn_node = mlg_alloc_i32(MLG_MAX_FNS), .fn_ext = mlg_alloc_i32(MLG_MAX_FNS), .nfn = 0, .declared = mlg_alloc_i32(MLG_MAX_FNS), .l_ns = mlg_alloc_i32(MLG_MAX_LOCALS), .l_ne = mlg_alloc_i32(MLG_MAX_LOCALS), .l_mt = mlg_alloc_i32(MLG_MAX_LOCALS), .l_ft = mlg_alloc_i32(MLG_MAX_LOCALS), .l_ssa = mlg_alloc_i32(MLG_MAX_LOCALS), .l_alloca = mlg_alloc_i32(MLG_MAX_LOCALS), .l_llarr = mlg_alloc_i32(MLG_MAX_LOCALS), .nloc = 0, .ret_mt = MT_VOID, .ret_ft = AST_NONE, .inside_scf_for = 0, .lp_region = mlg_alloc_i32(MLG_MAX_LOOPS), .lp_header = mlg_alloc_i32(MLG_MAX_LOOPS), .lp_end = mlg_alloc_i32(MLG_MAX_LOOPS), .lp_iv = mlg_alloc_i32(MLG_MAX_LOOPS), .lp_step = mlg_alloc_i32(MLG_MAX_LOOPS), .nlp = 0, .v_llarr = mlg_alloc_i32(MLG_VAL_CAP), .a_llarr = mlg_alloc_i32(MLG_MAX_ARGS), .c_node = mlg_alloc_i32(MLG_MAX_FNS), .nconst = 0, .lp_carry = mlg_alloc_i32((MLG_MAX_LOOPS * MLG_MAX_MERGE)), .lp_ncarry = mlg_alloc_i32(MLG_MAX_LOOPS), .df = mlg_alloc_i32(MLG_MAX_DEFERS), .ndf = 0, .dscope = mlg_alloc_i32(MLG_MAX_DEFERS), .ndscope = 0, .rdf = NULL, .rdf_len = 0, .en_node = mlg_alloc_i32(MLG_MAX_ENUMS), .en_st = mlg_alloc_i32(MLG_MAX_ENUMS), .nen = 0, .st_enum = mlg_alloc_i32(MLG_MAX_STRUCTS), .xsrc = (src_len + 1), .xsrc_end = src_cap, .mod_start = mod_start, .nmods = nmods, .mod_names = mod_names, .mod_stride = mod_stride, .nl_ns = mlg_alloc_i32(MLG_MAX_FNS), .nl_ne = mlg_alloc_i32(MLG_MAX_FNS), .nl_tag = mlg_alloc_i32(MLG_MAX_FNS), .nnl = 0, .sv_node = mlg_alloc_i32(MLG_MAX_FNS), .nsv = 0, .span_st = (0 - 1), .sp_elem = mlg_alloc_i32(MLG_MAX_FNS), .sp_node = mlg_alloc_i32(MLG_MAX_FNS), .nsp = 0, .i64_ft = AST_NONE, .clo_st = (0 - 1), .lam_buf = malloc((int64_t)(MLG_SIDE_CAP)), .lam_len = 0, .cb_buf = malloc((int64_t)(MLG_SIDE_CAP)), .cb_len = 0, .cb_fn = mlg_alloc_i32(MLG_MAX_FNS), .ncb = 0, .nlambda = 0, .env_val = (0 - 1), .need_malloc = 0, .ef_node = mlg_alloc_i32(MLG_MAX_ENUMS), .nef = 0, .cap_node = mlg_alloc_i32(MLG_MAX_ENUMS), .ncap = 0, .hs_ef = mlg_alloc_i32(MLG_MAX_DEFERS), .hs_cap = mlg_alloc_i32(MLG_MAX_DEFERS), .nhs = 0, .mc_e = mlg_alloc_i32(MLG_MAX_LOCALS), .mc_t = mlg_alloc_i32(MLG_MAX_LOCALS), .nmc = 0, .dropf = mlg_alloc_i32(MLG_MAX_FNS), .ndropf = 0, .gpuf = mlg_alloc_i32(MLG_MAX_FNS), .ngpuf = 0, .gpu_ssa = 0, .al_node = mlg_alloc_i32(MLG_MAX_FNS), .nal = 0, .al_depth = 0, .vraw = mlg_alloc_i32(MLG_VAL_CAP), .rawbuf = malloc((int64_t)(MLG_RAW_CAP)), .rawlen = 0, .vtx = mlg_alloc_i32(MLG_VAL_CAP), .vtxi = mlg_alloc_i32(MLG_VAL_CAP), .vc_elem = mlg_alloc_i32(MLG_MAX_ARRS), .vc_n = mlg_alloc_i32(MLG_MAX_ARRS), .nvc = 0, .fk_root = AST_NONE, .fk_mod = 0 };
   Mlg* m = (Mlg*)((&mg));
+  mlg_mark_interp(m);
+  mlg_desugar_forks(m, root);
+  mlg_name_tests(m, root);
+  mrs_prune_helpers(m, root);
+  int32_t _mono = mlg_mono(m, root);
+  mlg_aosoa(m, root);
   mlg_collect(m, root);
   if ((mg).err == 0) {
   mlg_emit_decls(m, root);
@@ -41772,11 +46109,16 @@ typedef struct Parser {
   int32_t err;
   Token err_tok;
   int32_t aliases;
+  int32_t depth;
 } Parser;
 
+static const int32_t FLOWC_PARSE_MAX_DEPTH = 4000;
+int32_t flowc_parser_mlir_mode();
 void flowc_parser_report(Parser p, const char* path);
 Parser flowc_parser_new(uint8_t* input, int32_t len, int32_t ast_cap);
 void flowc_parser_fail(Parser* p);
+int32_t flowc_parser_enter(Parser* p);
+void flowc_parser_leave(Parser* p);
 const char* flowc_parser_tok_kind_name(int32_t kind);
 void flowc_parser_print_error(Parser p, const char* prefix);
 void flowc_parser_free(Parser p);
@@ -41792,11 +46134,14 @@ int32_t flowc_parser_eat_kw(Parser* p, int32_t kw);
 int32_t flowc_parse_int_span(uint8_t* src, int32_t start, int32_t end);
 int32_t flowc_parser_eat_gt(Parser* p);
 int32_t flowc_parse_type(Parser* p);
+int32_t flowc_parse_type_nested(Parser* p);
 int32_t flowc_parse_quantity(Parser* p, int32_t lit, int32_t lit_end);
 int32_t flowc_parse_atom(Parser* p);
 int32_t flowc_parse_postfix(Parser* p);
 int32_t flowc_parse_primary(Parser* p);
+int32_t flowc_parse_primary_nested(Parser* p);
 int32_t flowc_parse_cast(Parser* p);
+int32_t flowc_parse_cast_nested(Parser* p);
 int32_t flowc_parse_range_bound(Parser* p);
 int32_t flowc_parse_range_tail(Parser* p, int32_t args);
 int32_t flowc_parse_binop_kind(Parser p);
@@ -41816,6 +46161,7 @@ int32_t flowc_parse_stmt(Parser* p);
 int32_t flowc_parse_stmt_inner(Parser* p);
 int32_t flowc_parse_assign_rhs(Parser* p);
 int32_t flowc_parse_block(Parser* p);
+int32_t flowc_parse_block_nested(Parser* p);
 int32_t flowc_parse_param(Parser* p);
 int32_t flowc_parse_function(Parser* p);
 int32_t flowc_parse_struct(Parser* p);
@@ -41866,6 +46212,20 @@ int32_t flowc_parse_attach_attrs(Parser* p, int32_t lo, int32_t hi, int32_t item
 int32_t flowc_parse_program(Parser* p);
 int32_t flowc_parse_is_enum_const(uint8_t* src, int32_t ns, int32_t ne, int32_t es, int32_t ee, int32_t vs, int32_t ve);
 void flowc_parse_resolve_enum_arms(Parser* p);
+int32_t flowc_parser_mlir_mode() {
+  const char* e = getenv("FLOWC_EMIT");
+  uint8_t* ep = (uint8_t*)(e);
+  if (ep != NULL && ep[0] == 109 && ep[1] == 108 && ep[2] == 105 && ep[3] == 114 && ep[4] == 0) {
+  return 1;
+}
+  const char* b = getenv("FLOWC_BACKEND");
+  uint8_t* bp = (uint8_t*)(b);
+  if (bp != NULL && bp[0] == 109 && bp[1] == 108 && bp[2] == 105 && bp[3] == 114 && bp[4] == 0) {
+  return 1;
+}
+  return 0;
+}
+
 void flowc_parser_report(Parser p, const char* path) {
   int32_t n = (((p).cur).end - ((p).cur).start);
   uint8_t* text = (uint8_t*)((((p).lex).input + ((p).cur).start));
@@ -41883,7 +46243,7 @@ Parser flowc_parser_new(uint8_t* input, int32_t len, int32_t ast_cap) {
   Lexer lex = flowc_lexer_new(input, len);
   Token cur = flowc_lexer_next((&lex));
   AstArena arena = flowc_ast_new(ast_cap);
-  return (Parser){ .lex = lex, .cur = cur, .arena = arena, .err = 0, .err_tok = cur, .aliases = AST_NONE };
+  return (Parser){ .lex = lex, .cur = cur, .arena = arena, .err = 0, .err_tok = cur, .aliases = AST_NONE, .depth = 0 };
 }
 
 void flowc_parser_fail(Parser* p) {
@@ -41891,6 +46251,19 @@ void flowc_parser_fail(Parser* p) {
   (p[0]).err_tok = (p[0]).cur;
 }
   (p[0]).err = 1;
+}
+
+int32_t flowc_parser_enter(Parser* p) {
+  (p[0]).depth = ((p[0]).depth + 1);
+  if ((p[0]).depth > FLOWC_PARSE_MAX_DEPTH) {
+  flowc_parser_fail(p);
+  return 0;
+}
+  return 1;
+}
+
+void flowc_parser_leave(Parser* p) {
+  (p[0]).depth = ((p[0]).depth - 1);
 }
 
 const char* flowc_parser_tok_kind_name(int32_t kind) {
@@ -42075,7 +46448,15 @@ int32_t flowc_parser_eat_gt(Parser* p) {
 }
 
 int32_t flowc_parse_type(Parser* p) {
-  __flowc_tail: ;
+  int32_t node = AST_NONE;
+  if (flowc_parser_enter(p) == 1) {
+  node = flowc_parse_type_nested(p);
+}
+  flowc_parser_leave(p);
+  return node;
+}
+
+int32_t flowc_parse_type_nested(Parser* p) {
   if (flowc_parser_check(p[0], TOK_AMP) == 1) {
   int32_t start = ((p[0]).cur).start;
   flowc_parser_advance(p);
@@ -42116,11 +46497,7 @@ int32_t flowc_parse_type(Parser* p) {
 }
   return id;
 } else {
-  {
-  __auto_type __flowc_targ0 = p;
-  p = __flowc_targ0;
-  goto __flowc_tail;
-  }
+  return flowc_parse_type(p);
 }
 }
   if (flowc_parser_check(p[0], TOK_LBRACK) == 1) {
@@ -43127,6 +47504,15 @@ int32_t flowc_parse_postfix(Parser* p) {
 }
 
 int32_t flowc_parse_primary(Parser* p) {
+  int32_t node = AST_NONE;
+  if (flowc_parser_enter(p) == 1) {
+  node = flowc_parse_primary_nested(p);
+}
+  flowc_parser_leave(p);
+  return node;
+}
+
+int32_t flowc_parse_primary_nested(Parser* p) {
   Token tok = (p[0]).cur;
   if ((tok).kind == TOK_BANG || (tok).kind == TOK_MINUS || (tok).kind == TOK_AMP || (tok).kind == TOK_TILDE) {
   int32_t op = (tok).kind;
@@ -43234,6 +47620,15 @@ int32_t flowc_parse_primary(Parser* p) {
 }
 
 int32_t flowc_parse_cast(Parser* p) {
+  int32_t node = AST_NONE;
+  if (flowc_parser_enter(p) == 1) {
+  node = flowc_parse_cast_nested(p);
+}
+  flowc_parser_leave(p);
+  return node;
+}
+
+int32_t flowc_parse_cast_nested(Parser* p) {
   int32_t base = flowc_parse_primary(p);
   if (base == AST_NONE) {
   return AST_NONE;
@@ -44436,6 +48831,15 @@ int32_t flowc_parse_assign_rhs(Parser* p) {
 }
 
 int32_t flowc_parse_block(Parser* p) {
+  int32_t node = AST_NONE;
+  if (flowc_parser_enter(p) == 1) {
+  node = flowc_parse_block_nested(p);
+}
+  flowc_parser_leave(p);
+  return node;
+}
+
+int32_t flowc_parse_block_nested(Parser* p) {
   int32_t start = ((p[0]).cur).start;
   if (flowc_parser_eat(p, TOK_LBRACE) == 0) {
   return AST_NONE;
@@ -46837,6 +51241,27 @@ int32_t flowc_parse_program(Parser* p) {
   if (flowc_parser_check_kw(p[0], KW_CAPABILITY) == 1) {
   item = flowc_parse_capability_decl(p);
 } else {
+  if (flowc_parser_check_kw(p[0], KW_TEST) == 1 && flowc_parser_mlir_mode() == 1 && (flowc_parser_peek(p[0], 1)).kind == TOK_STRING) {
+  int32_t tk_start = ((p[0]).cur).start;
+  flowc_parser_advance(p);
+  int32_t tns = ((p[0]).cur).start;
+  int32_t tne = ((p[0]).cur).end;
+  flowc_parser_advance(p);
+  int32_t tbody = flowc_parse_block(p);
+  if (tbody == AST_NONE) {
+  flowc_parser_fail(p);
+  return AST_NONE;
+}
+  int32_t tfn = flowc_ast_alloc((&(p[0]).arena), AST_FN, tk_start, ((p[0]).cur).start);
+  if (tfn == AST_NONE) {
+  flowc_parser_fail(p);
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[tfn]).name_start = tns;
+  (((p[0]).arena).nodes[tfn]).name_end = tne;
+  (((p[0]).arena).nodes[tfn]).c = tbody;
+  item = tfn;
+} else {
   if (flowc_parser_check_kw(p[0], KW_TRAIT) == 1 || flowc_parser_check_kw(p[0], KW_IMPL) == 1 || flowc_parser_check_kw(p[0], KW_TEST) == 1) {
   int32_t ti_start = ((p[0]).cur).start;
   flowc_parser_advance(p);
@@ -46851,6 +51276,7 @@ int32_t flowc_parse_program(Parser* p) {
 } else {
   flowc_parser_fail(p);
   return AST_NONE;
+}
 }
 }
 }
@@ -72598,6 +77024,7 @@ static const int32_t FLOWC_RESOLVE_AST_CAP = 262144;
 static const int32_t FLOWC_RESOLVE_SIG_CAP = 1048576;
 static const int32_t FLOWC_RESOLVE_FNS_CAP = 262144;
 static const int32_t FLOWC_RESOLVE_TPL_CAP = 262144;
+static const char* const FLOWC_RANGE_HELPERS = "\nfunction __flow_sum_range(start: i32, limit: i32, step: i32) -> i32 {\n    if step == 0 {\n        return 0\n    }\n    let mut count: i32 = 0\n    if step > 0 {\n        if start >= limit {\n            return 0\n        }\n        count = (limit - start + step - 1) / step\n    } else {\n        if start <= limit {\n            return 0\n        }\n        count = (start - limit + (0 - step) - 1) / (0 - step)\n    }\n    let endpoints: i32 = 2 * start + (count - 1) * step\n    if count % 2 == 0 {\n        return (count / 2) * endpoints\n    }\n    return count * (endpoints / 2)\n}\nfunction __flow_range_gcd(a: i64, b: i64) -> i64 {\n    let mut x: i64 = a\n    let mut y: i64 = b\n    if x < 0 { x = 0 - x }\n    if y < 0 { y = 0 - y }\n    while y != 0 {\n        let t: i64 = x % y\n        x = y\n        y = t\n    }\n    return x\n}\n\nfunction __flow_range_modinv(a: i64, m: i64) -> i64 {\n    if m <= 1 {\n        return 0\n    }\n    let mut old_r: i64 = a % m\n    if old_r < 0 {\n        old_r = old_r + m\n    }\n    let mut r: i64 = m\n    let mut old_s: i64 = 1\n    let mut s: i64 = 0\n    while r != 0 {\n        let q: i64 = old_r / r\n        let next_r: i64 = old_r - q * r\n        old_r = r\n        r = next_r\n        let next_s: i64 = old_s - q * s\n        old_s = s\n        s = next_s\n    }\n    let mut inv: i64 = old_s % m\n    if inv < 0 {\n        inv = inv + m\n    }\n    return inv\n}\n\nfunction __flow_range_count(start: i64, limit: i64, stride: i64) -> i64 {\n    if stride == 0 {\n        return 0\n    }\n    if stride > 0 {\n        if start >= limit {\n            return 0\n        }\n        return (limit - start + stride - 1) / stride\n    }\n    let up: i64 = 0 - stride\n    if start <= limit {\n        return 0\n    }\n    return (start - limit + up - 1) / up\n}\n\nfunction __flow_progression_sum(first: i64, count: i64, stride: i64) -> i64 {\n    if count <= 0 {\n        return 0\n    }\n    let endpoints: i64 = 2 * first + (count - 1) * stride\n    if count % 2 == 0 {\n        return (count / 2) * endpoints\n    }\n    return count * (endpoints / 2)\n}\n\nfunction __flow_sum_range_isect(sa: i32, ea: i32, pa: i32, sb: i32, eb: i32, pb: i32) -> i32 {\n    let count_a: i64 = __flow_range_count(sa as i64, ea as i64, pa as i64)\n    let count_b: i64 = __flow_range_count(sb as i64, eb as i64, pb as i64)\n    if count_a <= 0 {\n        return 0\n    }\n    if count_b <= 0 {\n        return 0\n    }\n\n    let mut first_a: i64 = sa as i64\n    let mut step_a: i64 = pa as i64\n    if step_a < 0 {\n        first_a = first_a + (count_a - 1) * step_a\n        step_a = 0 - step_a\n    }\n    let mut first_b: i64 = sb as i64\n    let mut step_b: i64 = pb as i64\n    if step_b < 0 {\n        first_b = first_b + (count_b - 1) * step_b\n        step_b = 0 - step_b\n    }\n\n    let common: i64 = __flow_range_gcd(step_a, step_b)\n    let offset: i64 = first_b - first_a\n    if offset % common != 0 {\n        return 0\n    }\n\n    let modulus: i64 = step_b / common\n    let step: i64 = step_a * modulus\n    let mut index: i64 = 0\n    if modulus > 1 {\n        let inverse: i64 = __flow_range_modinv((step_a / common) % modulus, modulus)\n        let mut scaled: i64 = (offset / common) % modulus\n        if scaled < 0 {\n            scaled = scaled + modulus\n        }\n        index = (scaled * inverse) % modulus\n    }\n    let mut value: i64 = first_a + index * step_a\n\n    let mut low: i64 = first_a\n    if first_b > low {\n        low = first_b\n    }\n    let mut high: i64 = first_a + (count_a - 1) * step_a\n    let last_b: i64 = first_b + (count_b - 1) * step_b\n    if last_b < high {\n        high = last_b\n    }\n\n    if value < low {\n        let gap: i64 = low - value\n        value = value + ((gap + step - 1) / step) * step\n    }\n    if value > high {\n        return 0\n    }\n\n    let count: i64 = (high - value) / step + 1\n    return __flow_progression_sum(value, count, step) as i32\n}\n\nfunction __flow_sum_range_union(sa: i32, ea: i32, pa: i32, sb: i32, eb: i32, pb: i32) -> i32 {\n    let only_a: i32 = __flow_sum_range(sa, ea, pa)\n    let only_b: i32 = __flow_sum_range(sb, eb, pb)\n    let both: i32 = __flow_sum_range_isect(sa, ea, pa, sb, eb, pb)\n    return only_a + only_b - both\n}\n";
 #undef MLI_MAX_EDITS
 static const int32_t MLI_MAX_EDITS = 1024;
 #undef MLI_POOL_CAP
@@ -72608,6 +77035,9 @@ int32_t flowc_resolve_cstr_eq(uint8_t* a, uint8_t* b);
 int32_t flowc_resolve_find_path(uint8_t* store, int32_t n, int32_t row_cap, uint8_t* path);
 int32_t flowc_expand_stages_in_place(uint8_t* src, int32_t n, int32_t cap, int32_t stages);
 int32_t flowc_expand_all_in_place(uint8_t* src, int32_t n, int32_t cap);
+int32_t flowc_expand_for_mlir_in_place(uint8_t* src, int32_t n, int32_t cap);
+int32_t flowc_has_range_sum(uint8_t* src, int32_t n);
+int32_t flowc_append_range_helpers(uint8_t* src, int32_t n, int32_t cap);
 int32_t flowc_impl_is_ident(int32_t c);
 int32_t flowc_impl_skip_ws(uint8_t* src, int32_t i, int32_t n);
 int32_t flowc_impl_ident_end(uint8_t* src, int32_t i, int32_t n);
@@ -72763,6 +77193,68 @@ int32_t flowc_expand_all_in_place(uint8_t* src, int32_t n, int32_t cap) {
   return m2;
 }
   return flowc_mono_lit_expand_in_place(src, m2, cap);
+}
+
+int32_t flowc_expand_for_mlir_in_place(uint8_t* src, int32_t n, int32_t cap) {
+  int32_t m = flowc_expand_stages_in_place(src, n, cap, 15);
+  if (m < 0) {
+  return m;
+}
+  return flowc_append_range_helpers(src, m, cap);
+}
+
+int32_t flowc_has_range_sum(uint8_t* src, int32_t n) {
+  int32_t i = 0;
+  while ((i + 4) < n) {
+  if (src[i] == 115 && src[(i + 1)] == 117 && src[(i + 2)] == 109 && src[(i + 3)] == 40) {
+  int32_t ok = 1;
+  if (i > 0) {
+  int32_t c = (int32_t)(src[(i - 1)]);
+  if (c >= 97 && c <= 122 || c >= 65 && c <= 90 || c >= 48 && c <= 57 || c == 95) {
+  ok = 0;
+}
+}
+  if (ok == 1) {
+  int32_t depth = 1;
+  int32_t j = (i + 4);
+  while ((j + 1) < n && depth > 0) {
+  if (src[j] == 40) {
+  depth = (depth + 1);
+}
+  if (src[j] == 41) {
+  depth = (depth - 1);
+}
+  if (depth == 1 && src[j] == 46 && src[(j + 1)] == 46) {
+  return 1;
+}
+  j = (j + 1);
+}
+}
+}
+  i = (i + 1);
+}
+  return 0;
+}
+
+int32_t flowc_append_range_helpers(uint8_t* src, int32_t n, int32_t cap) {
+  if (flowc_has_range_sum(src, n) == 0) {
+  return n;
+}
+  uint8_t* h = (uint8_t*)(FLOWC_RANGE_HELPERS);
+  int32_t k = 0;
+  while (h[k] != 0) {
+  k = (k + 1);
+}
+  if (((n + k) + 1) >= cap) {
+  return n;
+}
+  int32_t i = 0;
+  while (i < k) {
+  src[(n + i)] = h[i];
+  i = (i + 1);
+}
+  src[(n + k)] = 0;
+  return (n + k);
 }
 
 int32_t flowc_impl_is_ident(int32_t c) {
@@ -75146,6 +79638,7 @@ static const int32_t MB_SRC_CAP = 1048576;
 static const int32_t MB_ALL_CAP = 8388608;
 #undef MB_AST_CAP
 static const int32_t MB_AST_CAP = 1048576;
+int32_t mb_env_is(const char* name, const char* want);
 int32_t* mb_alloc_i32(int32_t n);
 void mb_zero(uint8_t* p, int32_t n);
 int32_t mb_put(uint8_t* dst, int32_t o, int32_t cap, uint8_t* s, int32_t n);
@@ -75161,8 +79654,28 @@ int32_t mb_try_parts(uint8_t* root, uint8_t* src, int32_t* ps, int32_t* pe, int3
 int32_t mb_resolve(MlirBundle* b, AstArena arena, uint8_t* src, int32_t imp, uint8_t* base_dir, uint8_t* out);
 void mb_visit(MlirBundle* b, int32_t k);
 int32_t flowc_mlir_wants_modules(const char* in_path);
-int32_t mb_typecheck(MlirBundle* b);
+int32_t mb_typecheck(MlirBundle* b, int32_t* fatal_out);
 int32_t flowc_mlir_emit_program(const char* in_path, uint8_t* out, int32_t out_cap, int32_t typecheck);
+int32_t mb_env_is(const char* name, const char* want) {
+  const char* v = getenv(name);
+  uint8_t* vp = (uint8_t*)(v);
+  if (vp == NULL) {
+  return 0;
+}
+  uint8_t* wp = (uint8_t*)(want);
+  int32_t i = 0;
+  while (wp[i] != 0) {
+  if (vp[i] != wp[i]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  if (vp[i] != 0) {
+  return 0;
+}
+  return 1;
+}
+
 int32_t* mb_alloc_i32(int32_t n) {
   uint8_t* raw = (uint8_t*)(malloc(((int64_t)(n) * 4)));
   int32_t* p = (int32_t*)(raw);
@@ -75597,7 +80110,7 @@ void mb_visit(MlirBundle* b, int32_t k) {
   return;
 }
   src[n] = 0;
-  n = flowc_expand_all_in_place(src, n, MB_SRC_CAP);
+  n = flowc_expand_for_mlir_in_place(src, n, MB_SRC_CAP);
   if (n < 0) {
   (b[0]).err = 1;
   free(src);
@@ -75674,7 +80187,7 @@ int32_t flowc_mlir_wants_modules(const char* in_path) {
   return 0;
 }
   src[n] = 0;
-  n = flowc_expand_all_in_place(src, n, MB_SRC_CAP);
+  n = flowc_expand_for_mlir_in_place(src, n, MB_SRC_CAP);
   if (n < 0) {
   free(src);
   return 0;
@@ -75696,7 +80209,8 @@ int32_t flowc_mlir_wants_modules(const char* in_path) {
   return found;
 }
 
-int32_t mb_typecheck(MlirBundle* b) {
+int32_t mb_typecheck(MlirBundle* b, int32_t* fatal_out) {
+  fatal_out[0] = 1;
   uint8_t* no_src = (uint8_t*)(NULL);
   TcCtx ctx = flowc_tc_init(no_src);
   (ctx).lenient = 1;
@@ -75730,6 +80244,7 @@ int32_t mb_typecheck(MlirBundle* b) {
   i = (i + 1);
 }
   free(src);
+  fatal_out[0] = (ctx).fatal;
   flowc_tc_free((&ctx));
   return total;
 }
@@ -75803,8 +80318,13 @@ int32_t flowc_mlir_emit_program(const char* in_path, uint8_t* out, int32_t out_c
 }
   (mb).starts[(mb).norder] = (mb).all_len;
   if (typecheck == 1) {
-  int32_t tc_errs = mb_typecheck(b);
-  if (tc_errs > 0) {
+  int32_t tc_fatal[1] = { 0 };
+  int32_t tc_errs = mb_typecheck(b, (int32_t*)((&tc_fatal[0])));
+  int32_t lenient_ok = ((tc_fatal[0] == 0 && mb_env_is("FLOWC_LENIENT", "1") == 1) ? (1) : (0));
+  if (tc_errs > 0 && lenient_ok == 1) {
+  printf("flowc: %d type warning(s) (lenient mode)\n", tc_errs);
+}
+  if (tc_errs > 0 && lenient_ok == 0) {
   puts("flowc emit: bundle typecheck failed");
   printf("flowc emit: tc_errs=%d\n", tc_errs);
   return (0 - 1);
@@ -75817,9 +80337,6 @@ int32_t flowc_mlir_emit_program(const char* in_path, uint8_t* out, int32_t out_c
   flowc_parser_print_error(p, in_path);
   flowc_parser_free(p);
   return (0 - 1);
-}
-  if (typecheck == 1) {
-  flowc_fuse_pipelines((&(p).arena), (mb).all);
 }
   (mb).starts[(mb).norder] = (mb).all_len;
   uint8_t* names = (uint8_t*)(malloc((int64_t)((MB_MAX_MODS * MB_PATH))));
@@ -76095,7 +80612,7 @@ int32_t flowc_emit_mode() {
 }
   int32_t out_cap = 4194304;
   if (flowc_want_mlir() == 1) {
-  out_cap = 33554432;
+  out_cap = 268435456;
 }
   uint8_t* out = (uint8_t*)(malloc((int64_t)(out_cap)));
   if (out == NULL) {
@@ -76191,7 +80708,11 @@ int32_t flowc_emit_mode() {
   return 1;
 }
   src[nsrc] = 0;
+  if (want_mlir == 1) {
+  nsrc = flowc_expand_for_mlir_in_place(src, nsrc, src_cap);
+} else {
   nsrc = flowc_expand_all_in_place(src, nsrc, src_cap);
+}
   if (nsrc < 0) {
   free(src);
   free(out);
@@ -76219,7 +80740,9 @@ int32_t flowc_emit_mode() {
   sem[1] = 0;
   flowc_semcheck_single((p).arena, root, src, getenv("FLOWC_IN"), (int32_t*)((&sem[0])));
 }
+  if (want_mlir == 0) {
   flowc_fuse_pipelines((&(p).arena), src);
+}
   int32_t sfatal[1] = { 0 };
   int32_t tc_errs = (flowc_typecheck_fatal_sem((p).arena, root, src, getenv("FLOWC_IN"), (int32_t*)((&sfatal[0])), 1) + sem[0]);
   sfatal[0] = (sfatal[0] + sem[1]);
