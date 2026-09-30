@@ -1,0 +1,185 @@
+# @module flowc.residual
+# @means  Recognition-relative residual extraction and structured-residual tracking.
+#
+# A residual is not "error". It is an observed semantic fact that is visible
+# in the active recognition domains but absent from the recogniser's current
+# represented fact set. Structured residuals are residuals that persist across
+# windows and, optionally, retain predictive utility.
+
+import .semantic_facts {
+    FlowcSemanticFact,
+    FLOWC_FACT_STATUS_OBSERVED,
+    flowc_fact_none, flowc_fact_valid, flowc_fact_visible,
+    flowc_fact_equivalent, flowc_fact_promote
+}
+
+export struct FlowcResidual {
+    fact: FlowcSemanticFact,
+    present: i32
+}
+
+export struct FlowcResidualState {
+    fact: FlowcSemanticFact,
+    windows_seen: i32,
+    predictive_hits: i32,
+    predictive_trials: i32
+}
+
+export function flowc_residual_none() -> FlowcResidual {
+    return FlowcResidual {
+        fact: flowc_fact_none(),
+        present: 0
+    }
+}
+
+export function flowc_residual_state_new() -> FlowcResidualState {
+    return FlowcResidualState {
+        fact: flowc_fact_none(),
+        windows_seen: 0,
+        predictive_hits: 0,
+        predictive_trials: 0
+    }
+}
+
+export function flowc_residual_is_represented(
+    observed: FlowcSemanticFact,
+    represented: ptr<FlowcSemanticFact>,
+    represented_count: i32,
+    active_domains: i32
+) -> i32 {
+    let mut i: i32 = 0
+    while i < represented_count {
+        if flowc_fact_visible(represented[i], active_domains) == 1 {
+            if flowc_fact_equivalent(observed, represented[i]) == 1 {
+                return 1
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+export function flowc_residual_extract_one(
+    observed: FlowcSemanticFact,
+    represented: ptr<FlowcSemanticFact>,
+    represented_count: i32,
+    active_domains: i32
+) -> FlowcResidual {
+    if flowc_fact_visible(observed, active_domains) == 0 {
+        return flowc_residual_none()
+    }
+    if flowc_residual_is_represented(
+        observed, represented, represented_count, active_domains
+    ) == 1 {
+        return flowc_residual_none()
+    }
+    return FlowcResidual {
+        fact: observed,
+        present: 1
+    }
+}
+
+export function flowc_residual_extract(
+    observed: ptr<FlowcSemanticFact>,
+    observed_count: i32,
+    represented: ptr<FlowcSemanticFact>,
+    represented_count: i32,
+    active_domains: i32,
+    out: ptr<FlowcSemanticFact>,
+    out_cap: i32
+) -> i32 {
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < observed_count and n < out_cap {
+        let residual: FlowcResidual = flowc_residual_extract_one(
+            observed[i], represented, represented_count, active_domains
+        )
+        if residual.present == 1 {
+            out[n] = residual.fact
+            n = n + 1
+        }
+        i = i + 1
+    }
+    return n
+}
+
+# Track the same residual across independent observation windows. If a
+# different fact arrives, the state restarts for that new residual.
+export function flowc_residual_observe_window(
+    state: ptr<FlowcResidualState>,
+    fact: FlowcSemanticFact,
+    predictive_hit: i32,
+    predictive_trial: i32
+) -> void {
+    if flowc_fact_valid(fact) == 0 {
+        return
+    }
+
+    if state[0].windows_seen == 0 {
+        state[0].fact = fact
+    } else {
+        if flowc_fact_equivalent(state[0].fact, fact) == 0 {
+            state[0].fact = fact
+            state[0].windows_seen = 0
+            state[0].predictive_hits = 0
+            state[0].predictive_trials = 0
+        }
+    }
+
+    state[0].windows_seen = state[0].windows_seen + 1
+    if predictive_trial != 0 {
+        state[0].predictive_trials = state[0].predictive_trials + 1
+        if predictive_hit != 0 {
+            state[0].predictive_hits = state[0].predictive_hits + 1
+        }
+    }
+}
+
+# min_predictive_ppm == 0 means persistence alone is sufficient.
+# This is deliberately a diagnostic/promotability test, not a proof rule.
+export function flowc_residual_is_structured(
+    state: FlowcResidualState,
+    min_windows: i32,
+    min_samples: i32,
+    min_predictive_ppm: i32
+) -> i32 {
+    if flowc_fact_valid(state.fact) == 0 {
+        return 0
+    }
+    if min_windows <= 0 or state.windows_seen < min_windows {
+        return 0
+    }
+    if min_samples > 0 and state.fact.samples < min_samples {
+        return 0
+    }
+    if min_predictive_ppm > 0 {
+        if state.predictive_trials <= 0 {
+            return 0
+        }
+        let ppm: i64 = ((state.predictive_hits as i64) * 1000000) / (state.predictive_trials as i64)
+        if ppm < min_predictive_ppm as i64 {
+            return 0
+        }
+    }
+    return 1
+}
+
+# Residual structure never grants semantic authority by itself.
+# Promotion still requires proof or an executable guard.
+export function flowc_residual_promote(
+    state: FlowcResidualState,
+    min_windows: i32,
+    min_samples: i32,
+    min_predictive_ppm: i32,
+    statically_proven: i32,
+    guard_available: i32
+) -> FlowcSemanticFact {
+    if flowc_residual_is_structured(
+        state, min_windows, min_samples, min_predictive_ppm
+    ) == 0 {
+        return state.fact
+    }
+    return flowc_fact_promote(
+        state.fact, statically_proven, guard_available
+    )
+}
