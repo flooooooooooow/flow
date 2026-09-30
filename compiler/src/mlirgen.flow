@@ -1935,6 +1935,36 @@ function mlg_hp_use(m: ptr<Mlg>, b: i32) {
     }
 }
 
+function mlg_mt_bytes(t: i32) -> i32
+function mlg_emit_memref_buf(m: ptr<Mlg>, mt: i32, n: i32, zero: i32) -> i32
+function mlg_szs(m: ptr<Mlg>) -> string
+
+# memcpy(dst, src, n) through libc.
+function mlg_emit_memcpy(m: ptr<Mlg>, dst: i32, src: i32, n: i32) {
+    mlg_lc_use(m, LC_MEMCPY)
+    let nb: i32 = mlg_new_val(m, MT_I64)
+    mlg_line(m)
+    mlg_v(m, nb)
+    mlg_s(m, " = arith.constant ")
+    mlg_i(m, n)
+    mlg_s(m, " : ")
+    mlg_s(m, mlg_szs(m))
+    mlg_nl(m)
+    let r: i32 = mlg_new_val(m, MT_PTR)
+    mlg_line(m)
+    mlg_v(m, r)
+    mlg_s(m, " = func.call @memcpy(")
+    mlg_v(m, dst)
+    mlg_s(m, ", ")
+    mlg_v(m, src)
+    mlg_s(m, ", ")
+    mlg_v(m, nb)
+    mlg_s(m, ") : (!llvm.ptr, !llvm.ptr, ")
+    mlg_s(m, mlg_szs(m))
+    mlg_s(m, ") -> !llvm.ptr")
+    mlg_nl(m)
+}
+
 # 1 when ident e is the implicit UI layout state `_ui_state` (not a local).
 function mlg_is_ui_state(m: ptr<Mlg>, e: i32) -> i32 {
     if mlg_span_is(m, mlg_ns(m, e), mlg_ne(m, e), "_ui_state") == 0 {
@@ -3854,6 +3884,17 @@ function mlg_libc_mode(m: ptr<Mlg>, k: i32) -> i32 {
     if mlg_chain_len(m, params) != np {
         return 2
     }
+    let ns: i32 = mlg_ns(m, f)
+    let ne: i32 = mlg_ne(m, f)
+    if mlg_span_is(m, ns, ne, "malloc") == 1 or mlg_span_is(m, ns, ne, "calloc") == 1 or mlg_span_is(m, ns, ne, "realloc") == 1 or mlg_span_is(m, ns, ne, "free") == 1 {
+        # An allocator whose Flow signature returns a plain value (a stub
+        # `malloc(size: i32) -> i32`) is the program's own, as the C backend
+        # decides.
+        let r: i32 = m[0].arena.nodes[f].b
+        if r != AST_NONE and mlg_kind(m, r) == AST_TYPE and m[0].arena.nodes[r].a == AST_NONE and mlg_span_is(m, mlg_ns(m, r), mlg_ne(m, r), "void") == 0 {
+            return 2
+        }
+    }
     return 1
 }
 
@@ -4760,12 +4801,34 @@ function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
         }
         tq = tq + 1
     }
+    # Sized arrays held as !llvm.array passed to memref parameters: copied in
+    # before the call and back after it (cpb_*), so the callee sees and
+    # changes the caller's elements as C's pointer passing does.
+    let mut cpb_src: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let mut cpb_tmp: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let mut cpb_bytes: array<i32, 8> = [0, 0, 0, 0, 0, 0, 0, 0]
+    let mut ncpb: i32 = 0
     let mut c: i32 = 0
     while c < nmin {
         let an2: i32 = mlg_chain_at(m, args, c)
         let mut actual: i32 = mlg_vty(m, vals[c])
         if actual == MT_NONE {
             actual = mlg_expr_mt(m, an2)
+        }
+        let atag: i32 = mlg_vllarr(m, vals[c])
+        if actual == MT_PTR and atag != 0 and mlg_is_memref_mt(exp[c]) == 1 and ncpb < 8 and m[0].la_elem[atag - MT_LLARR] == m[0].mr_elem[exp[c] - MT_MEMREF] {
+            let an: i32 = m[0].la_n[atag - MT_LLARR]
+            let tmt: i32 = mlg_memref_of(m, m[0].la_elem[atag - MT_LLARR], an)
+            let tmp: i32 = mlg_emit_memref_buf(m, tmt, an, 0)
+            let tptr: i32 = mlg_cast(m, tmp, tmt, MT_PTR)
+            let nbytes: i32 = an * mlg_mt_bytes(m[0].la_elem[atag - MT_LLARR])
+            mlg_emit_memcpy(m, tptr, vals[c], nbytes)
+            cpb_src[ncpb] = vals[c]
+            cpb_tmp[ncpb] = tptr
+            cpb_bytes[ncpb] = nbytes
+            ncpb = ncpb + 1
+            vals[c] = tmp
+            actual = tmt
         }
         if actual != exp[c] {
             if (actual == MT_INDEX and exp[c] == MT_I32) or (actual == MT_I32 and exp[c] == MT_INDEX) {
@@ -4851,6 +4914,11 @@ function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
     mlg_s(m, ") -> ")
     mlg_put_type(m, ret)
     mlg_nl(m)
+    let mut cb: i32 = 0
+    while cb < ncpb {
+        mlg_emit_memcpy(m, cpb_src[cb], cpb_tmp[cb], cpb_bytes[cb])
+        cb = cb + 1
+    }
     if ret == MT_VOID {
         if want_value == 1 {
             mlg_refuse(m, e, "value of a void call")
@@ -5530,6 +5598,12 @@ function mlg_emit_field_n(m: ptr<Mlg>, e: i32, obj: i32, fs: i32, fe: i32) -> i3
                 base = m[0].l_ssa[l]
             }
         }
+    }
+    if base == V_NONE and mlg_val_mt(m, ov, obj) == MT_PTR {
+        # A pointer to a struct that a call or a cast returns: read through
+        # it (the C backend's `->`, #1065).
+        sk = fsk
+        base = ov
     }
     if base != V_NONE {
         let mut idx2: i32 = 0
@@ -7536,46 +7610,16 @@ function mlg_emit_lambda(m: ptr<Mlg>, f: i32) -> i32 {
         mlg_s(m, szs)
         mlg_nl(m)
         env = mlg_new_val(m, MT_PTR)
-        let mut have_calloc: i32 = 0
-        let mut have_malloc: i32 = 0
-        let mut q: i32 = 0
-        while q < m[0].nfn {
-            let fq: i32 = m[0].fn_node[q]
-            if mlg_span_is(m, mlg_ns(m, fq), mlg_ne(m, fq), "calloc") == 1 {
-                have_calloc = 1
-            }
-            if mlg_span_is(m, mlg_ns(m, fq), mlg_ne(m, fq), "malloc") == 1 {
-                have_malloc = 1
-            }
-            q = q + 1
-        }
-        if have_calloc == 1 {
-            let one: i32 = mlg_const_int(m, 1, szt)
-            mlg_line(m)
-            mlg_v(m, env)
-            mlg_s(m, " = func.call @calloc(")
-            mlg_v(m, one)
-            mlg_s(m, ", ")
-            mlg_v(m, sz)
-            mlg_s(m, ") : (")
-            mlg_s(m, szs)
-            mlg_s(m, ", ")
-            mlg_s(m, szs)
-            mlg_s(m, ") -> !llvm.ptr")
-            mlg_nl(m)
-        } else {
-            mlg_line(m)
-            mlg_v(m, env)
-            if have_malloc == 0 {
-                mlg_lc_use(m, LC_MALLOC)
-            }
-            mlg_s(m, " = func.call @malloc(")
-            mlg_v(m, sz)
-            mlg_s(m, ") : (")
-            mlg_s(m, szs)
-            mlg_s(m, ") -> !llvm.ptr")
-            mlg_nl(m)
-        }
+        # The environment is malloc'd (libc's, declared once in the header).
+        mlg_lc_use(m, LC_MALLOC)
+        mlg_line(m)
+        mlg_v(m, env)
+        mlg_s(m, " = func.call @malloc(")
+        mlg_v(m, sz)
+        mlg_s(m, ") : (")
+        mlg_s(m, szs)
+        mlg_s(m, ") -> !llvm.ptr")
+        mlg_nl(m)
         i = 0
         while i < nf and m[0].err == 0 {
             let mut v: i32 = mlg_capture_value(m, fs[i], fe[i])
@@ -8657,7 +8701,12 @@ function mlg_emit_let(m: ptr<Mlg>, st: i32) {
                 vt = MT_PTR
             }
         } else {
-            v = mlg_emit_expr(m, init)
+            let lcb: i32 = mlg_callback_target(m, init, mt)
+            if lcb >= 0 {
+                v = mlg_emit_callback_closure(m, lcb)
+            } else {
+                v = mlg_emit_expr(m, init)
+            }
         }
     }
     if m[0].err != 0 {
@@ -8714,6 +8763,20 @@ function mlg_emit_return(m: ptr<Mlg>, st: i32) {
         mlg_line(m)
         mlg_s(m, "func.return ")
         mlg_v(m, sv)
+        mlg_s(m, " : ")
+        mlg_put_type(m, rt)
+        mlg_nl(m)
+        return
+    }
+    let rcb: i32 = mlg_callback_target(m, e, rt)
+    if rcb >= 0 {
+        # A function named as the value of a function-typed return: its
+        # closure adapter.
+        let cv: i32 = mlg_emit_callback_closure(m, rcb)
+        mlg_paste_return_defers(m)
+        mlg_line(m)
+        mlg_s(m, "func.return ")
+        mlg_v(m, cv)
         mlg_s(m, " : ")
         mlg_put_type(m, rt)
         mlg_nl(m)
@@ -18018,7 +18081,7 @@ function mlg_lc_declared(m: ptr<Mlg>, name: string) -> i32 {
     let mut i: i32 = 0
     while i < m[0].nfn {
         let f: i32 = m[0].fn_node[i]
-        if mlg_span_is(m, mlg_ns(m, f), mlg_ne(m, f), name) == 1 and mlg_libc_mode(m, i) != 1 {
+        if mlg_span_is(m, mlg_ns(m, f), mlg_ne(m, f), name) == 1 and mlg_libc_mode(m, i) == 0 {
             return 1
         }
         i = i + 1
