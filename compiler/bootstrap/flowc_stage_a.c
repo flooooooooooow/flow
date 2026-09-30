@@ -8272,6 +8272,29 @@ int32_t mlg_addr_lvalue(Mlg* m, int32_t e) {
   int32_t arr = (((m[0]).arena).nodes[e]).a;
   int32_t ie = (((m[0]).arena).nodes[e]).b;
   int32_t arr_ft = mlg_expr_ft(m, arr);
+  int32_t span_e = AST_NONE;
+  int32_t span_ft = FT_NONE;
+  if (mlg_ft_is_span(m, arr_ft) == 1) {
+  span_e = arr;
+  span_ft = arr_ft;
+} else {
+  if (mlg_kind(m, arr) == AST_FIELD_ACCESS && mlg_span_is(m, mlg_ns(m, arr), mlg_ne(m, arr), "data") == 1) {
+  int32_t obj = (((m[0]).arena).nodes[arr]).a;
+  int32_t oft = mlg_expr_ft(m, obj);
+  if (mlg_ft_is_span(m, oft) == 1) {
+  span_e = obj;
+  span_ft = oft;
+}
+}
+}
+  if (span_e != AST_NONE) {
+  int32_t sv = mlg_emit_expr(m, span_e);
+  int32_t siv = mlg_emit_expr(m, ie);
+  int32_t sit = mlg_index_type(m, ie, siv);
+  int32_t set = mlg_ft_to_mt(m, (((m[0]).arena).nodes[span_ft]).a, e);
+  int32_t sdp = mlg_span_data(m, sv, e);
+  return mlg_ptr_gep(m, sdp, siv, sit, set);
+}
   if (mlg_ft_is_pointer(m, arr_ft) == 1) {
   int32_t av = mlg_emit_expr(m, arr);
   int32_t iv = mlg_emit_expr(m, ie);
