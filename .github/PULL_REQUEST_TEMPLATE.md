@@ -8,7 +8,7 @@
 - [ ] `./flow test --strict --tier2`
 - [ ] Relevant example runs (`./flow run …`)
 - [ ] Docs updated when behavior or syntax changed
-- [ ] `Questions.md` updated if this requires a language-design decision
+- [ ] `docs/project/Questions.md` updated if this requires a language-design decision
 
 ## Compatibility
 
