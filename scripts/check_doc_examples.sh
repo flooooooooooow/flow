@@ -43,7 +43,7 @@ fi
 stale=0
 if [[ ! -x "$BIN" || "$TOOL_FLOWC" -nt "$BIN" ]]; then
     stale=1
-elif [[ -n "$(find tools/doc_examples scripts/tools/lib compiler/src -name '*.flow' -newer "$BIN" -print -quit)" ]]; then
+elif [[ -n "$(find tools/doc_examples scripts/tools/lib lib/stdlib compiler/src -name '*.flow' -newer "$BIN" -print -quit)" ]]; then
     stale=1
 fi
 if [[ "$stale" -eq 1 ]]; then

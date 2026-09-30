@@ -25,7 +25,9 @@
 # swallows a newline does not advance the line count), so diagnostics carry
 # the same line and column as the Python host.
 #
-# Leaf module: externs only.
+# Leaf module: externs and the shared byte buffer (bytebuf.flow) only.
+
+import .bytebuf { ByteBuf, bb_new, bb_free, bb_putc, bb_puts, bb_put_span, bb_put_i64, bb_put_i32 }
 
 extern {
     function malloc(size: i64) -> ptr<u8>
@@ -34,73 +36,6 @@ extern {
     function strlen(s: string) -> i64
     function strcmp(a: string, b: string) -> i32
     function puts(s: string) -> i32
-}
-
-# ── Growable byte buffer ─────────────────────────────────────────
-
-export struct FbBuf {
-    p: ptr<u8>,
-    len: i32,
-    cap: i32
-}
-
-function fb_buf_new(cap: i32) -> ptr<FbBuf> {
-    let b: ptr<FbBuf> = malloc(16) as ptr<FbBuf>
-    b[0].p = malloc((cap + 1) as i64)
-    b[0].len = 0
-    b[0].cap = cap
-    b[0].p[0] = 0
-    return b
-}
-
-function fb_buf_free(b: ptr<FbBuf>) {
-    free(b[0].p)
-    free(b as ptr<u8>)
-}
-
-function fb_putc(b: ptr<FbBuf>, ch: u8) {
-    if b[0].len + 1 >= b[0].cap {
-        let ncap: i32 = b[0].cap * 2 + 64
-        b[0].p = realloc(b[0].p, (ncap + 1) as i64)
-        b[0].cap = ncap
-    }
-    b[0].p[b[0].len] = ch
-    b[0].len = b[0].len + 1
-    b[0].p[b[0].len] = 0
-}
-
-function fb_puts(b: ptr<FbBuf>, s: string) {
-    let sp: ptr<u8> = s as ptr<u8>
-    let mut i: i32 = 0
-    while sp[i] != 0 {
-        fb_putc(b, sp[i])
-        i = i + 1
-    }
-}
-
-function fb_put_span(b: ptr<FbBuf>, src: ptr<u8>, s: i32, e: i32) {
-    let mut i: i32 = s
-    while i < e {
-        fb_putc(b, src[i])
-        i = i + 1
-    }
-}
-
-function fb_put_i64(b: ptr<FbBuf>, v: i64) {
-    if v < 0 {
-        fb_putc(b, 45)
-        # -2^63 cannot be negated; durations never reach it.
-        fb_put_i64(b, 0 - v)
-        return
-    }
-    if v >= 10 {
-        fb_put_i64(b, v / 10)
-    }
-    fb_putc(b, (48 + (v % 10)) as u8)
-}
-
-function fb_put_int(b: ptr<FbBuf>, v: i32) {
-    fb_put_i64(b, v as i64)
 }
 
 # ── Characters ───────────────────────────────────────────────────
@@ -286,7 +221,7 @@ export struct Fb {
     nfs: ptr<i32>,
     nfe: ptr<i32>,
     # string arena: every name is an offset into it
-    nm: ptr<FbBuf>,
+    nm: ptr<ByteBuf>,
     # flows
     nf: i32,
     f_name: ptr<i32>,
@@ -367,12 +302,12 @@ export struct Fb {
     err_flow: i32,
     err_line: i32,
     err_col: i32,
-    emsg: ptr<FbBuf>,
-    ehint: ptr<FbBuf>,
+    emsg: ptr<ByteBuf>,
+    ehint: ptr<ByteBuf>,
     has_hint: i32,
     # lowering
     cur: i32,
-    out: ptr<FbBuf>
+    out: ptr<ByteBuf>
 }
 
 # File-level name kinds (nx_kind).
@@ -420,22 +355,22 @@ function fb_s(c: ptr<Fb>, off: i32) -> ptr<u8> {
 
 function fb_intern_span(c: ptr<Fb>, s: i32, e: i32) -> i32 {
     let off: i32 = c[0].nm[0].len
-    fb_put_span(c[0].nm, c[0].src, s, e)
-    fb_putc(c[0].nm, 0)
+    bb_put_span(c[0].nm, c[0].src, s, e)
+    bb_putc(c[0].nm, 0)
     return off
 }
 
 function fb_intern(c: ptr<Fb>, s: string) -> i32 {
     let off: i32 = c[0].nm[0].len
-    fb_puts(c[0].nm, s)
-    fb_putc(c[0].nm, 0)
+    bb_puts(c[0].nm, s)
+    bb_putc(c[0].nm, 0)
     return off
 }
 
-function fb_intern_buf(c: ptr<Fb>, b: ptr<FbBuf>) -> i32 {
+function fb_intern_buf(c: ptr<Fb>, b: ptr<ByteBuf>) -> i32 {
     let off: i32 = c[0].nm[0].len
-    fb_put_span(c[0].nm, b[0].p, 0, b[0].len)
-    fb_putc(c[0].nm, 0)
+    bb_put_span(c[0].nm, b[0].p, 0, b[0].len)
+    bb_putc(c[0].nm, 0)
     return off
 }
 
@@ -465,7 +400,7 @@ function fb_name_starts_uu(c: ptr<Fb>, a: i32) -> i32 {
 
 # err: 0 none, 1 FlowSyntaxError (prints "Error: ... at line L[, column C]"),
 # 2 plain SyntaxError (message only).
-function fb_err_begin(c: ptr<Fb>, kind: i32, line: i32, col: i32) -> ptr<FbBuf> {
+function fb_err_begin(c: ptr<Fb>, kind: i32, line: i32, col: i32) -> ptr<ByteBuf> {
     c[0].err = kind
     c[0].err_line = line
     c[0].err_col = col
@@ -477,7 +412,7 @@ function fb_err_begin(c: ptr<Fb>, kind: i32, line: i32, col: i32) -> ptr<FbBuf> 
     return c[0].emsg
 }
 
-function fb_err_hint(c: ptr<Fb>) -> ptr<FbBuf> {
+function fb_err_hint(c: ptr<Fb>) -> ptr<ByteBuf> {
     c[0].has_hint = 1
     return c[0].ehint
 }
@@ -501,44 +436,44 @@ function fb_contains(hay: ptr<u8>, needle: string) -> i32 {
 function fb_auto_hint(c: ptr<Fb>) {
     let m: ptr<u8> = c[0].emsg[0].p
     if fb_contains(m, "Expected TokenType.RBRACE") == 1 {
-        fb_puts(fb_err_hint(c), "Missing closing brace '}'. Check for unbalanced braces.")
+        bb_puts(fb_err_hint(c), "Missing closing brace '}'. Check for unbalanced braces.")
         return
     }
     if fb_contains(m, "Expected TokenType.RPAREN") == 1 {
-        fb_puts(fb_err_hint(c), "Missing closing parenthesis ')'. Check function calls and expressions.")
+        bb_puts(fb_err_hint(c), "Missing closing parenthesis ')'. Check function calls and expressions.")
         return
     }
     if fb_contains(m, "Expected TokenType.SEMICOLON") == 1 {
-        fb_puts(fb_err_hint(c), "Semicolons are optional in FLOW. If you see this error, there may be a syntax issue before this point.")
+        bb_puts(fb_err_hint(c), "Semicolons are optional in FLOW. If you see this error, there may be a syntax issue before this point.")
         return
     }
     if fb_contains(m, "Expected TokenType.IDENTIFIER") == 1 {
-        fb_puts(fb_err_hint(c), "Expected a name (identifier) here. Names must start with a letter or underscore.")
+        bb_puts(fb_err_hint(c), "Expected a name (identifier) here. Names must start with a letter or underscore.")
         return
     }
     if fb_contains(m, "Unexpected token in expression") == 1 {
-        fb_puts(fb_err_hint(c), "This token cannot start an expression. Check for typos or missing operators.")
+        bb_puts(fb_err_hint(c), "This token cannot start an expression. Check for typos or missing operators.")
         return
     }
     if fb_contains(m, "Unexpected declaration") == 1 {
-        fb_puts(fb_err_hint(c), "This keyword cannot appear at the top level. Check for missing braces or incorrect nesting.")
+        bb_puts(fb_err_hint(c), "This keyword cannot appear at the top level. Check for missing braces or incorrect nesting.")
         return
     }
 }
 
 # Parser.error(): FlowSyntaxError at the current token.
-function fb_perr(c: ptr<Fb>) -> ptr<FbBuf> {
+function fb_perr(c: ptr<Fb>) -> ptr<ByteBuf> {
     let t: i32 = c[0].pos
     return fb_err_begin(c, 1, c[0].tl[t], c[0].tc[t])
 }
 
 # _error() in flow_blocks.py: FlowSyntaxError at a line, no column.
-function fb_verr(c: ptr<Fb>, line: i32) -> ptr<FbBuf> {
+function fb_verr(c: ptr<Fb>, line: i32) -> ptr<ByteBuf> {
     return fb_err_begin(c, 1, line, 0)
 }
 
 # A plain SyntaxError (str() is the message alone).
-function fb_serr(c: ptr<Fb>) -> ptr<FbBuf> {
+function fb_serr(c: ptr<Fb>) -> ptr<ByteBuf> {
     return fb_err_begin(c, 2, 0, 0)
 }
 
@@ -989,9 +924,9 @@ function fb_advance(c: ptr<Fb>) {
     }
 }
 
-function fb_put_ttype(c: ptr<Fb>, b: ptr<FbBuf>, t: i32) {
-    fb_puts(b, "TokenType.")
-    fb_puts(b, fb_ttype(c, t))
+function fb_put_ttype(c: ptr<Fb>, b: ptr<ByteBuf>, t: i32) {
+    bb_puts(b, "TokenType.")
+    bb_puts(b, fb_ttype(c, t))
 }
 
 # Parser.expect(): consumes a token of TokenType `name`. Soft identifiers
@@ -1009,10 +944,10 @@ function fb_expect(c: ptr<Fb>, name: string) -> i32 {
             return t
         }
     }
-    let m: ptr<FbBuf> = fb_perr(c)
-    fb_puts(m, "Expected TokenType.")
-    fb_puts(m, name)
-    fb_puts(m, ", got ")
+    let m: ptr<ByteBuf> = fb_perr(c)
+    bb_puts(m, "Expected TokenType.")
+    bb_puts(m, name)
+    bb_puts(m, ", got ")
     fb_put_ttype(c, m, t)
     fb_auto_hint(c)
     return 0 - 1
@@ -1119,63 +1054,63 @@ function fb_parse_type(c: ptr<Fb>) -> i32 {
             fb_advance(c)
             let inner: i32 = fb_parse_type(c)
             if inner < 0 { return 0 - 1 }
-            let b: ptr<FbBuf> = fb_buf_new(32)
-            fb_puts(b, fb_s(c, name) as string)
-            fb_putc(b, 95)
+            let b: ptr<ByteBuf> = bb_new(32)
+            bb_puts(b, fb_s(c, name) as string)
+            bb_putc(b, 95)
             if fb_name_is(c, name, "array") == 1 and fb_is_op(c, c[0].pos, OP_COMMA) == 1 {
                 fb_advance(c)
                 let st: i32 = c[0].pos
                 if c[0].tk[st] != TK_NUM {
-                    let m: ptr<FbBuf> = fb_perr(c)
-                    fb_puts(m, "array size must be an integer literal, got ")
+                    let m: ptr<ByteBuf> = fb_perr(c)
+                    bb_puts(m, "array size must be an integer literal, got ")
                     fb_put_ttype(c, m, st)
-                    fb_puts(fb_err_hint(c), "use a non-negative integer literal for the array size, e.g. 4")
-                    fb_buf_free(b)
+                    bb_puts(fb_err_hint(c), "use a non-negative integer literal for the array size, e.g. 4")
+                    bb_free(b)
                     return 0 - 1
                 }
-                fb_put_span(b, c[0].src, c[0].ts[st], c[0].te[st])
-                fb_putc(b, 95)
+                bb_put_span(b, c[0].src, c[0].ts[st], c[0].te[st])
+                bb_putc(b, 95)
                 fb_advance(c)
             }
-            fb_puts(b, fb_s(c, inner) as string)
+            bb_puts(b, fb_s(c, inner) as string)
             let out: i32 = fb_intern_buf(c, b)
-            fb_buf_free(b)
+            bb_free(b)
             if fb_expect_greater(c) < 0 { return 0 - 1 }
             return out
         }
         if fb_is_op(c, cur, OP_LBRACKET) == 1 {
             fb_advance(c)
             if fb_expect(c, "RBRACKET") < 0 { return 0 - 1 }
-            let b2: ptr<FbBuf> = fb_buf_new(32)
-            fb_puts(b2, "array_")
-            fb_puts(b2, fb_s(c, name) as string)
+            let b2: ptr<ByteBuf> = bb_new(32)
+            bb_puts(b2, "array_")
+            bb_puts(b2, fb_s(c, name) as string)
             let out2: i32 = fb_intern_buf(c, b2)
-            fb_buf_free(b2)
+            bb_free(b2)
             return out2
         }
         if fb_is_op(c, cur, OP_LESS) == 1 {
             fb_advance(c)
-            let b3: ptr<FbBuf> = fb_buf_new(32)
-            fb_puts(b3, fb_s(c, name) as string)
+            let b3: ptr<ByteBuf> = bb_new(32)
+            bb_puts(b3, fb_s(c, name) as string)
             let a0: i32 = fb_parse_type(c)
             if a0 < 0 {
-                fb_buf_free(b3)
+                bb_free(b3)
                 return 0 - 1
             }
-            fb_putc(b3, 95)
-            fb_puts(b3, fb_s(c, a0) as string)
+            bb_putc(b3, 95)
+            bb_puts(b3, fb_s(c, a0) as string)
             while fb_is_op(c, c[0].pos, OP_COMMA) == 1 {
                 fb_advance(c)
                 let a1: i32 = fb_parse_type(c)
                 if a1 < 0 {
-                    fb_buf_free(b3)
+                    bb_free(b3)
                     return 0 - 1
                 }
-                fb_putc(b3, 95)
-                fb_puts(b3, fb_s(c, a1) as string)
+                bb_putc(b3, 95)
+                bb_puts(b3, fb_s(c, a1) as string)
             }
             let out3: i32 = fb_intern_buf(c, b3)
-            fb_buf_free(b3)
+            bb_free(b3)
             if fb_expect_greater(c) < 0 { return 0 - 1 }
             return out3
         }
@@ -1185,8 +1120,8 @@ function fb_parse_type(c: ptr<Fb>) -> i32 {
         fb_advance(c)
         return fb_tok_str(c, t)
     }
-    let m2: ptr<FbBuf> = fb_serr(c)
-    fb_puts(m2, "Unexpected type token: ")
+    let m2: ptr<ByteBuf> = fb_serr(c)
+    bb_puts(m2, "Unexpected type token: ")
     fb_put_ttype(c, m2, t)
     return 0 - 1
 }
@@ -1486,7 +1421,7 @@ function fb_parse_struct_lit(c: ptr<Fb>, name_tok: i32) -> i32 {
     let mut fields: i32 = 0 - 1
     while fb_is_op(c, c[0].pos, OP_RBRACE) == 0 {
         if fb_at_eof(c) == 1 {
-            fb_puts(fb_serr(c), "Unterminated struct literal: expected '}' before end of file")
+            bb_puts(fb_serr(c), "Unterminated struct literal: expected '}' before end of file")
             return 0 - 1
         }
         let ft2: i32 = fb_expect(c, "IDENTIFIER")
@@ -1518,7 +1453,7 @@ function fb_skip_braces(c: ptr<Fb>) -> i32 {
         }
         fb_advance(c)
     }
-    fb_puts(fb_serr(c), "Unterminated block: expected '}' before end of file")
+    bb_puts(fb_serr(c), "Unterminated block: expected '}' before end of file")
     return 0 - 1
 }
 
@@ -1563,7 +1498,7 @@ function fb_parse_if_expr(c: ptr<Fb>) -> i32 {
     if th < 0 { return 0 - 1 }
     if fb_expect(c, "RBRACE") < 0 { return 0 - 1 }
     if fb_tt_is(c, c[0].pos, "ELSE") == 0 {
-        fb_puts(fb_serr(c), "if-expression requires an else branch")
+        bb_puts(fb_serr(c), "if-expression requires an else branch")
         return 0 - 1
     }
     fb_advance(c)
@@ -1733,8 +1668,8 @@ function fb_parse_primary(c: ptr<Fb>) -> i32 {
     if fb_tt_is(c, t, "IF") == 1 {
         return fb_parse_if_expr(c)
     }
-    let m: ptr<FbBuf> = fb_serr(c)
-    fb_puts(m, "Unexpected token in expression: ")
+    let m: ptr<ByteBuf> = fb_serr(c)
+    bb_puts(m, "Unexpected token in expression: ")
     fb_put_ttype(c, m, t)
     return 0 - 1
 }
@@ -1757,10 +1692,10 @@ function fb_pipe_args(c: ptr<Fb>, piped: i32, args: i32) -> i32 {
         return piped
     }
     if holes > 1 {
-        let m: ptr<FbBuf> = fb_perr(c)
-        fb_puts(m, "Pipeline placeholder '_' may appear at most once per '|>' stage (found ")
-        fb_put_int(m, holes)
-        fb_puts(m, "); the piped value fills a single slot")
+        let m: ptr<ByteBuf> = fb_perr(c)
+        bb_puts(m, "Pipeline placeholder '_' may appear at most once per '|>' stage (found ")
+        bb_put_i32(m, holes)
+        bb_puts(m, "); the piped value fills a single slot")
         return 0 - 2
     }
     # Rebuild the list with the hole replaced.
@@ -1785,7 +1720,7 @@ function fb_parse_stage_params(c: ptr<Fb>, name_tok: i32, source: i32) -> i32 {
     while fb_is_op(c, c[0].pos, OP_RBRACE) == 0 {
         let pt: i32 = c[0].pos
         if fb_is_ident(c, pt) == 0 {
-            fb_puts(fb_perr(c), "Expected a parameter name in flow stage params")
+            bb_puts(fb_perr(c), "Expected a parameter name in flow stage params")
             return 0 - 1
         }
         fb_advance(c)
@@ -1793,10 +1728,10 @@ function fb_parse_stage_params(c: ptr<Fb>, name_tok: i32, source: i32) -> i32 {
         let mut k: i32 = params
         while k >= 0 {
             if fb_tok_span_eq(c, c[0].ntok[k], pt) == 1 {
-                let m: ptr<FbBuf> = fb_perr(c)
-                fb_puts(m, "Duplicate stage parameter '")
-                fb_put_span(m, c[0].src, c[0].ts[pt], c[0].te[pt])
-                fb_puts(m, "'")
+                let m: ptr<ByteBuf> = fb_perr(c)
+                bb_puts(m, "Duplicate stage parameter '")
+                bb_put_span(m, c[0].src, c[0].ts[pt], c[0].te[pt])
+                bb_puts(m, "'")
                 return 0 - 1
             }
             k = c[0].nx[k]
@@ -1811,10 +1746,10 @@ function fb_parse_stage_params(c: ptr<Fb>, name_tok: i32, source: i32) -> i32 {
         }
     }
     if params < 0 {
-        let m2: ptr<FbBuf> = fb_perr(c)
-        fb_puts(m2, "flow stage '")
-        fb_put_span(m2, c[0].src, c[0].ts[name_tok], c[0].te[name_tok])
-        fb_puts(m2, "' has empty '{}'; drop the braces or add `param: value` overrides")
+        let m2: ptr<ByteBuf> = fb_perr(c)
+        bb_puts(m2, "flow stage '")
+        bb_put_span(m2, c[0].src, c[0].ts[name_tok], c[0].te[name_tok])
+        bb_puts(m2, "' has empty '{}'; drop the braces or add `param: value` overrides")
         return 0 - 1
     }
     if fb_expect(c, "RBRACE") < 0 { return 0 - 1 }
@@ -1841,15 +1776,15 @@ function fb_parse_fork(c: ptr<Fb>, t: i32, source: i32) -> i32 {
     while fb_is_op(c, c[0].pos, OP_RBRACE) == 0 {
         let ft: i32 = c[0].pos
         if fb_is_ident(c, ft) == 0 {
-            fb_puts(fb_perr(c), "Expected a fork field name before '='")
+            bb_puts(fb_perr(c), "Expected a fork field name before '='")
             return 0 - 1
         }
         fb_advance(c)
         if fb_is_op(c, c[0].pos, OP_COLON) == 1 {
-            let m: ptr<FbBuf> = fb_perr(c)
-            fb_puts(m, "Fork block fields use '=' (a pipeline), not ':'; write `")
+            let m: ptr<ByteBuf> = fb_perr(c)
+            bb_puts(m, "Fork block fields use '=' (a pipeline), not ':'; write `")
             fb_put_tok(m, c, ft)
-            fb_puts(m, "  = source-pipeline`")
+            bb_puts(m, "  = source-pipeline`")
             return 0 - 1
         }
         if fb_expect(c, "ASSIGN") < 0 { return 0 - 1 }
@@ -1857,10 +1792,10 @@ function fb_parse_fork(c: ptr<Fb>, t: i32, source: i32) -> i32 {
         let mut q: i32 = first_field
         while q < ft {
             if fb_is_ident(c, q) == 1 and fb_is_op(c, q + 1, OP_ASSIGN) == 1 and fb_tok_span_eq(c, q, ft) == 1 and fb_fork_field_start(c, first_field, q) == 1 {
-                let m2: ptr<FbBuf> = fb_perr(c)
-                fb_puts(m2, "Duplicate fork field '")
+                let m2: ptr<ByteBuf> = fb_perr(c)
+                bb_puts(m2, "Duplicate fork field '")
                 fb_put_tok(m2, c, ft)
-                fb_puts(m2, "'")
+                bb_puts(m2, "'")
                 return 0 - 1
             }
             q = q + 1
@@ -1870,7 +1805,7 @@ function fb_parse_fork(c: ptr<Fb>, t: i32, source: i32) -> i32 {
         let src: i32 = fb_node(c, N_OPAQUE, ft)
         let k: i32 = c[0].nk[rhs]
         if k != N_CALL and k != N_METHOD and k != N_VAR {
-            fb_puts(fb_serr(c), "Pipeline '|>' must be followed by a function call, method call, function name, declarative sort, or fork block (e.g. `x |> f()`, `x |> f`, `x |> sort by .score`, or `x |> Record { a = f, b = g }`)")
+            bb_puts(fb_serr(c), "Pipeline '|>' must be followed by a function call, method call, function name, declarative sort, or fork block (e.g. `x |> f()`, `x |> f`, `x |> sort by .score`, or `x |> Record { a = f, b = g }`)")
             return 0 - 1
         }
         if fb_parse_pipeline(c, src) < 0 { return 0 - 1 }
@@ -1880,7 +1815,7 @@ function fb_parse_fork(c: ptr<Fb>, t: i32, source: i32) -> i32 {
         }
     }
     if nfields == 0 {
-        fb_puts(fb_perr(c), "Fork block must have at least one `field = …` branch")
+        bb_puts(fb_perr(c), "Fork block must have at least one `field = …` branch")
         return 0 - 1
     }
     if fb_expect(c, "RBRACE") < 0 { return 0 - 1 }
@@ -1923,7 +1858,7 @@ function fb_parse_pipeline(c: ptr<Fb>, left0: i32) -> i32 {
             if fb_expect(c, "LBRACE") < 0 { return 0 - 1 }
             if fb_is_ident(c, c[0].pos) == 1 and fb_is_op(c, fb_la(c), OP_COLON) == 1 {
                 if rec < 0 {
-                    fb_puts(fb_perr(c), "an anonymous `|> { ... }` is a fork block and uses '=' branches; ':' parameter fields need a named flow stage")
+                    bb_puts(fb_perr(c), "an anonymous `|> { ... }` is a fork block and uses '=' branches; ':' parameter fields need a named flow stage")
                     return 0 - 1
                 }
                 left = fb_parse_stage_params(c, rec, left)
@@ -1952,7 +1887,7 @@ function fb_parse_pipeline(c: ptr<Fb>, left0: i32) -> i32 {
                         c[0].nx[left] = 0 - 1
                         left = fb_node2(c, N_CALL, c[0].ntok[rhs], left, 0 - 1)
                     } else {
-                        fb_puts(fb_serr(c), "Pipeline '|>' must be followed by a function call, method call, function name, declarative sort, or fork block (e.g. `x |> f()`, `x |> f`, `x |> sort by .score`, or `x |> Record { a = f, b = g }`)")
+                        bb_puts(fb_serr(c), "Pipeline '|>' must be followed by a function call, method call, function name, declarative sort, or fork block (e.g. `x |> f()`, `x |> f`, `x |> sort by .score`, or `x |> Record { a = f, b = g }`)")
                         return 0 - 1
                     }
                 }
@@ -2027,12 +1962,12 @@ function fb_pow10(k: i32) -> i64 {
 function fb_parse_duration(c: ptr<Fb>, where_s: i32, ns: ptr<i64>, text: ptr<i32>) -> i32 {
     let nt: i32 = c[0].pos
     if c[0].tk[nt] != TK_NUM {
-        let m: ptr<FbBuf> = fb_perr(c)
-        fb_puts(m, "Expected a duration in ")
-        fb_puts(m, fb_s(c, where_s) as string)
-        fb_puts(m, ", got ")
+        let m: ptr<ByteBuf> = fb_perr(c)
+        bb_puts(m, "Expected a duration in ")
+        bb_puts(m, fb_s(c, where_s) as string)
+        bb_puts(m, ", got ")
         fb_put_ttype(c, m, nt)
-        fb_puts(fb_err_hint(c), "write a number with a time-unit suffix, e.g. '10 ms' (units: ns, us, ms, s, min)")
+        bb_puts(fb_err_hint(c), "write a number with a time-unit suffix, e.g. '10 ms' (units: ns, us, ms, s, min)")
         return 0 - 1
     }
     fb_advance(c)
@@ -2050,29 +1985,29 @@ function fb_parse_duration(c: ptr<Fb>, where_s: i32, ns: ptr<i64>, text: ptr<i32
         }
     }
     if upow < 0 {
-        let m2: ptr<FbBuf> = fb_perr(c)
-        fb_puts(m2, "Expected a time unit after '")
-        fb_put_span(m2, c[0].src, c[0].ts[nt], c[0].te[nt])
-        fb_puts(m2, "' in ")
-        fb_puts(m2, fb_s(c, where_s) as string)
-        fb_puts(m2, ", got ")
+        let m2: ptr<ByteBuf> = fb_perr(c)
+        bb_puts(m2, "Expected a time unit after '")
+        bb_put_span(m2, c[0].src, c[0].ts[nt], c[0].te[nt])
+        bb_puts(m2, "' in ")
+        bb_puts(m2, fb_s(c, where_s) as string)
+        bb_puts(m2, ", got ")
         if fb_is_ident(c, st) == 1 {
-            fb_putc(m2, 39)
-            fb_put_span(m2, c[0].src, c[0].ts[st], c[0].te[st])
-            fb_putc(m2, 39)
+            bb_putc(m2, 39)
+            bb_put_span(m2, c[0].src, c[0].ts[st], c[0].te[st])
+            bb_putc(m2, 39)
         } else {
             fb_put_ttype(c, m2, st)
         }
-        fb_puts(fb_err_hint(c), "valid time units: ns, us, ms, s, min")
+        bb_puts(fb_err_hint(c), "valid time units: ns, us, ms, s, min")
         return 0 - 1
     }
     fb_advance(c)
-    let tb: ptr<FbBuf> = fb_buf_new(32)
-    fb_put_span(tb, c[0].src, c[0].ts[nt], c[0].te[nt])
-    fb_putc(tb, 32)
-    fb_put_span(tb, c[0].src, c[0].ts[st], c[0].te[st])
+    let tb: ptr<ByteBuf> = bb_new(32)
+    bb_put_span(tb, c[0].src, c[0].ts[nt], c[0].te[nt])
+    bb_putc(tb, 32)
+    bb_put_span(tb, c[0].src, c[0].ts[st], c[0].te[st])
     text[0] = fb_intern_buf(c, tb)
-    fb_buf_free(tb)
+    bb_free(tb)
     # Mantissa and decimal exponent of the number token.
     let p: ptr<u8> = c[0].src
     let s: i32 = c[0].ts[nt]
@@ -2161,22 +2096,22 @@ function fb_parse_duration(c: ptr<Fb>, where_s: i32, ns: ptr<i64>, text: ptr<i32
         }
     }
     if whole == 0 {
-        let m3: ptr<FbBuf> = fb_perr(c)
-        fb_puts(m3, "Duration '")
-        fb_puts(m3, fb_s(c, text[0]) as string)
-        fb_puts(m3, "' in ")
-        fb_puts(m3, fb_s(c, where_s) as string)
-        fb_puts(m3, " is not a whole number of nanoseconds; time is not silently rounded")
-        fb_puts(fb_err_hint(c), "use a finer unit, e.g. '500 us' instead of '0.5 ms'")
+        let m3: ptr<ByteBuf> = fb_perr(c)
+        bb_puts(m3, "Duration '")
+        bb_puts(m3, fb_s(c, text[0]) as string)
+        bb_puts(m3, "' in ")
+        bb_puts(m3, fb_s(c, where_s) as string)
+        bb_puts(m3, " is not a whole number of nanoseconds; time is not silently rounded")
+        bb_puts(fb_err_hint(c), "use a finer unit, e.g. '500 us' instead of '0.5 ms'")
         return 0 - 1
     }
     if over == 1 {
-        let m4: ptr<FbBuf> = fb_perr(c)
-        fb_puts(m4, "Duration '")
-        fb_puts(m4, fb_s(c, text[0]) as string)
-        fb_puts(m4, "' in ")
-        fb_puts(m4, fb_s(c, where_s) as string)
-        fb_puts(m4, " overflows the i64 nanosecond range")
+        let m4: ptr<ByteBuf> = fb_perr(c)
+        bb_puts(m4, "Duration '")
+        bb_puts(m4, fb_s(c, text[0]) as string)
+        bb_puts(m4, "' in ")
+        bb_puts(m4, fb_s(c, where_s) as string)
+        bb_puts(m4, " overflows the i64 nanosecond range")
         return 0 - 1
     }
     ns[0] = val
@@ -2185,13 +2120,13 @@ function fb_parse_duration(c: ptr<Fb>, where_s: i32, ns: ptr<i64>, text: ptr<i32
 
 # ── Flow block grammar (Parser.parse_flow_decl) ──────────────────
 
-function fb_put_tok(b: ptr<FbBuf>, c: ptr<Fb>, t: i32) {
-    fb_put_span(b, c[0].src, c[0].ts[t], c[0].te[t])
+function fb_put_tok(b: ptr<ByteBuf>, c: ptr<Fb>, t: i32) {
+    bb_put_span(b, c[0].src, c[0].ts[t], c[0].te[t])
 }
 
 # "... in flow 'Name' ..." helpers.
-function fb_put_fname(b: ptr<FbBuf>, c: ptr<Fb>, f: i32) {
-    fb_puts(b, fb_s(c, c[0].f_name[f]) as string)
+function fb_put_fname(b: ptr<ByteBuf>, c: ptr<Fb>, f: i32) {
+    bb_puts(b, fb_s(c, c[0].f_name[f]) as string)
 }
 
 # `{ NAME becomes expr ... }` shared by `when` and `every`. kind 1 when,
@@ -2200,29 +2135,29 @@ function fb_parse_becomes_body(c: ptr<Fb>, f: i32, kind: i32, owner: i32, word: 
     if fb_expect(c, "LBRACE") < 0 { return 0 - 1 }
     while fb_is_op(c, c[0].pos, OP_RBRACE) == 0 {
         if fb_at_eof(c) == 1 {
-            let m: ptr<FbBuf> = fb_perr(c)
-            fb_puts(m, "Unterminated '")
-            fb_puts(m, word)
-            fb_puts(m, "' body in flow '")
+            let m: ptr<ByteBuf> = fb_perr(c)
+            bb_puts(m, "Unterminated '")
+            bb_puts(m, word)
+            bb_puts(m, "' body in flow '")
             fb_put_fname(m, c, f)
-            fb_puts(m, "': expected '}' before end of file")
+            bb_puts(m, "': expected '}' before end of file")
             return 0 - 1
         }
         let st: i32 = c[0].pos
         let la: i32 = fb_la(c)
         if fb_is_ident(c, st) == 0 or fb_is_word(c, la, "becomes") == 0 {
-            let m2: ptr<FbBuf> = fb_perr(c)
-            fb_puts(m2, "Unexpected statement in '")
-            fb_puts(m2, word)
-            fb_puts(m2, "' body of flow '")
+            let m2: ptr<ByteBuf> = fb_perr(c)
+            bb_puts(m2, "Unexpected statement in '")
+            bb_puts(m2, word)
+            bb_puts(m2, "' body of flow '")
             fb_put_fname(m2, c, f)
-            fb_puts(m2, "'")
-            let h: ptr<FbBuf> = fb_err_hint(c)
-            fb_puts(h, "'")
-            fb_puts(h, word)
-            fb_puts(h, "' bodies contain ")
-            fb_puts(h, what)
-            fb_puts(h, " in this version: 'x becomes expr'")
+            bb_puts(m2, "'")
+            let h: ptr<ByteBuf> = fb_err_hint(c)
+            bb_puts(h, "'")
+            bb_puts(h, word)
+            bb_puts(h, "' bodies contain ")
+            bb_puts(h, what)
+            bb_puts(h, " in this version: 'x becomes expr'")
             return 0 - 1
         }
         fb_advance(c)
@@ -2252,7 +2187,7 @@ function fb_wrap_top(c: ptr<Fb>, root: i32, start_tok: i32) -> i32 {
 # parser._source_between(start_tok, end_tok).
 function fb_source_between(c: ptr<Fb>, st: i32, et: i32) -> i32 {
     let p: ptr<u8> = c[0].src
-    let b: ptr<FbBuf> = fb_buf_new(64)
+    let b: ptr<ByteBuf> = bb_new(64)
     let sl: i32 = c[0].tl[st]
     let el: i32 = c[0].tl[et]
     # Line starts by counting "\n" (source.split("\n")).
@@ -2279,7 +2214,7 @@ function fb_source_between(c: ptr<Fb>, st: i32, et: i32) -> i32 {
         }
     }
     let out: i32 = fb_intern_buf(c, b)
-    fb_buf_free(b)
+    bb_free(b)
     return out
 }
 
@@ -2324,23 +2259,23 @@ function fb_col_offset(c: ptr<Fb>, ln: i32, col: i32) -> i32 {
 }
 
 # Python str.strip() of p[s..e) into b.
-function fb_put_stripped(b: ptr<FbBuf>, p: ptr<u8>, s: i32, e: i32) {
+function fb_put_stripped(b: ptr<ByteBuf>, p: ptr<u8>, s: i32, e: i32) {
     let mut a: i32 = s
     let mut z: i32 = e
     while a < z and fb_is_space(p[a]) == 1 { a = a + 1 }
     while z > a and fb_is_space(p[z - 1]) == 1 { z = z - 1 }
-    fb_put_span(b, p, a, z)
+    bb_put_span(b, p, a, z)
 }
 
 # One part of " ".join(p.strip() for p in parts if p.strip()).
-function fb_put_part(b: ptr<FbBuf>, p: ptr<u8>, s: i32, e: i32, first: i32) -> i32 {
+function fb_put_part(b: ptr<ByteBuf>, p: ptr<u8>, s: i32, e: i32, first: i32) -> i32 {
     let mut a: i32 = s
     let mut z: i32 = e
     while a < z and fb_is_space(p[a]) == 1 { a = a + 1 }
     while z > a and fb_is_space(p[z - 1]) == 1 { z = z - 1 }
     if a >= z { return first }
-    if first == 0 { fb_putc(b, 32) }
-    fb_put_span(b, p, a, z)
+    if first == 0 { bb_putc(b, 32) }
+    bb_put_span(b, p, a, z)
     return 0
 }
 
@@ -2350,12 +2285,12 @@ function fb_parse_invariant(c: ptr<Fb>, f: i32, kind: i32, word: string) -> i32 
     let mut count: i32 = 0
     while fb_is_op(c, c[0].pos, OP_RBRACE) == 0 {
         if fb_at_eof(c) == 1 {
-            let m: ptr<FbBuf> = fb_perr(c)
-            fb_puts(m, "Unterminated '")
-            fb_puts(m, word)
-            fb_puts(m, "' body in flow '")
+            let m: ptr<ByteBuf> = fb_perr(c)
+            bb_puts(m, "Unterminated '")
+            bb_puts(m, word)
+            bb_puts(m, "' body in flow '")
             fb_put_fname(m, c, f)
-            fb_puts(m, "': expected '}' before end of file")
+            bb_puts(m, "': expected '}' before end of file")
             return 0 - 1
         }
         let st: i32 = c[0].pos
@@ -2372,16 +2307,16 @@ function fb_parse_invariant(c: ptr<Fb>, f: i32, kind: i32, word: string) -> i32 
     }
     if fb_expect(c, "RBRACE") < 0 { return 0 - 1 }
     if count == 0 {
-        let m2: ptr<FbBuf> = fb_perr(c)
-        fb_puts(m2, "'")
-        fb_puts(m2, word)
-        fb_puts(m2, "' block in flow '")
+        let m2: ptr<ByteBuf> = fb_perr(c)
+        bb_puts(m2, "'")
+        bb_puts(m2, word)
+        bb_puts(m2, "' block in flow '")
         fb_put_fname(m2, c, f)
-        fb_puts(m2, "' needs at least one boolean expression")
-        let h: ptr<FbBuf> = fb_err_hint(c)
-        fb_puts(h, "write '")
-        fb_puts(h, word)
-        fb_puts(h, " { x < 1.0 }' or remove the block")
+        bb_puts(m2, "' needs at least one boolean expression")
+        let h: ptr<ByteBuf> = fb_err_hint(c)
+        bb_puts(h, "write '")
+        bb_puts(h, word)
+        bb_puts(h, " { x < 1.0 }' or remove the block")
         return 0 - 1
     }
     return 0
@@ -2394,10 +2329,10 @@ function fb_parse_recognize(c: ptr<Fb>, f: i32) -> i32 {
     let first: i32 = c[0].nrc
     while fb_is_op(c, c[0].pos, OP_RBRACE) == 0 {
         if fb_at_eof(c) == 1 {
-            let m: ptr<FbBuf> = fb_perr(c)
-            fb_puts(m, "Unterminated 'recognize' block in flow '")
+            let m: ptr<ByteBuf> = fb_perr(c)
+            bb_puts(m, "Unterminated 'recognize' block in flow '")
             fb_put_fname(m, c, f)
-            fb_puts(m, "': expected '}' before end of file")
+            bb_puts(m, "': expected '}' before end of file")
             return 0 - 1
         }
         if fb_is_op(c, c[0].pos, OP_COMMA) == 1 {
@@ -2409,13 +2344,13 @@ function fb_parse_recognize(c: ptr<Fb>, f: i32) -> i32 {
             let mut k: i32 = first
             while k < c[0].nrc {
                 if fb_name_eq(c, c[0].rc_name[k], dn) == 1 {
-                    let m2: ptr<FbBuf> = fb_perr(c)
-                    fb_puts(m2, "recognition domain '")
-                    fb_puts(m2, fb_s(c, dn) as string)
-                    fb_puts(m2, "' appears twice in flow '")
+                    let m2: ptr<ByteBuf> = fb_perr(c)
+                    bb_puts(m2, "recognition domain '")
+                    bb_puts(m2, fb_s(c, dn) as string)
+                    bb_puts(m2, "' appears twice in flow '")
                     fb_put_fname(m2, c, f)
-                    fb_puts(m2, "'")
-                    fb_puts(fb_err_hint(c), "list each recognition domain once")
+                    bb_puts(m2, "'")
+                    bb_puts(fb_err_hint(c), "list each recognition domain once")
                     return 0 - 1
                 }
                 k = k + 1
@@ -2431,11 +2366,11 @@ function fb_parse_recognize(c: ptr<Fb>, f: i32) -> i32 {
     }
     if fb_expect(c, "RBRACE") < 0 { return 0 - 1 }
     if c[0].nrc == first {
-        let m3: ptr<FbBuf> = fb_perr(c)
-        fb_puts(m3, "'recognize' block in flow '")
+        let m3: ptr<ByteBuf> = fb_perr(c)
+        bb_puts(m3, "'recognize' block in flow '")
         fb_put_fname(m3, c, f)
-        fb_puts(m3, "' needs at least one domain")
-        fb_puts(fb_err_hint(c), "write 'recognize { numerical realtime causal safety memory }'")
+        bb_puts(m3, "' needs at least one domain")
+        bb_puts(fb_err_hint(c), "write 'recognize { numerical realtime causal safety memory }'")
         return 0 - 1
     }
     c[0].f_rec[f] = 1
@@ -2448,10 +2383,10 @@ function fb_parse_connect(c: ptr<Fb>, f: i32) -> i32 {
     if fb_expect(c, "LBRACE") < 0 { return 0 - 1 }
     while fb_is_op(c, c[0].pos, OP_RBRACE) == 0 {
         if fb_at_eof(c) == 1 {
-            let m: ptr<FbBuf> = fb_perr(c)
-            fb_puts(m, "Unterminated 'connect' body in flow '")
+            let m: ptr<ByteBuf> = fb_perr(c)
+            bb_puts(m, "Unterminated 'connect' body in flow '")
             fb_put_fname(m, c, f)
-            fb_puts(m, "': expected '}' before end of file")
+            bb_puts(m, "': expected '}' before end of file")
             return 0 - 1
         }
         let st: i32 = c[0].pos
@@ -2485,28 +2420,28 @@ function fb_parse_solver(c: ptr<Fb>, f: i32) -> i32 {
     let mut method: i32 = 0 - 1
     let nsbox: ptr<i64> = malloc(8) as ptr<i64>
     let txbox: ptr<i32> = malloc(4) as ptr<i32>
-    let wb: ptr<FbBuf> = fb_buf_new(64)
-    fb_puts(wb, "the solver dt of flow '")
+    let wb: ptr<ByteBuf> = bb_new(64)
+    bb_puts(wb, "the solver dt of flow '")
     fb_put_fname(wb, c, f)
-    fb_puts(wb, "'")
+    bb_puts(wb, "'")
     let where_s: i32 = fb_intern_buf(c, wb)
-    fb_buf_free(wb)
+    bb_free(wb)
     let mut rc: i32 = 0
     while rc == 0 and fb_is_op(c, c[0].pos, OP_RBRACE) == 0 {
         if fb_at_eof(c) == 1 {
-            let m: ptr<FbBuf> = fb_perr(c)
-            fb_puts(m, "Unterminated 'solver' block in flow '")
+            let m: ptr<ByteBuf> = fb_perr(c)
+            bb_puts(m, "Unterminated 'solver' block in flow '")
             fb_put_fname(m, c, f)
-            fb_puts(m, "': expected '}' before end of file")
+            bb_puts(m, "': expected '}' before end of file")
             rc = 0 - 1
         } else {
             let t: i32 = c[0].pos
             if fb_is_word(c, t, "dt") == 1 {
                 if have_dt == 1 {
-                    let m2: ptr<FbBuf> = fb_perr(c)
-                    fb_puts(m2, "'solver' block in flow '")
+                    let m2: ptr<ByteBuf> = fb_perr(c)
+                    bb_puts(m2, "'solver' block in flow '")
                     fb_put_fname(m2, c, f)
-                    fb_puts(m2, "' sets 'dt' twice")
+                    bb_puts(m2, "' sets 'dt' twice")
                     rc = 0 - 1
                 } else {
                     fb_advance(c)
@@ -2521,10 +2456,10 @@ function fb_parse_solver(c: ptr<Fb>, f: i32) -> i32 {
             } else {
                 if fb_is_word(c, t, "method") == 1 {
                     if method >= 0 {
-                        let m3: ptr<FbBuf> = fb_perr(c)
-                        fb_puts(m3, "'solver' block in flow '")
+                        let m3: ptr<ByteBuf> = fb_perr(c)
+                        bb_puts(m3, "'solver' block in flow '")
                         fb_put_fname(m3, c, f)
-                        fb_puts(m3, "' sets 'method' twice")
+                        bb_puts(m3, "' sets 'method' twice")
                         rc = 0 - 1
                     } else {
                         fb_advance(c)
@@ -2536,11 +2471,11 @@ function fb_parse_solver(c: ptr<Fb>, f: i32) -> i32 {
                         }
                     }
                 } else {
-                    let m4: ptr<FbBuf> = fb_perr(c)
-                    fb_puts(m4, "Unexpected item in 'solver' block of flow '")
+                    let m4: ptr<ByteBuf> = fb_perr(c)
+                    bb_puts(m4, "Unexpected item in 'solver' block of flow '")
                     fb_put_fname(m4, c, f)
-                    fb_puts(m4, "'")
-                    fb_puts(fb_err_hint(c), "solver blocks contain 'dt <duration>' and 'method euler' or 'method rk4'")
+                    bb_puts(m4, "'")
+                    bb_puts(fb_err_hint(c), "solver blocks contain 'dt <duration>' and 'method euler' or 'method rk4'")
                     rc = 0 - 1
                 }
             }
@@ -2551,11 +2486,11 @@ function fb_parse_solver(c: ptr<Fb>, f: i32) -> i32 {
     if rc < 0 { return 0 - 1 }
     if fb_expect(c, "RBRACE") < 0 { return 0 - 1 }
     if have_dt == 0 {
-        let m5: ptr<FbBuf> = fb_perr(c)
-        fb_puts(m5, "'solver' block in flow '")
+        let m5: ptr<ByteBuf> = fb_perr(c)
+        bb_puts(m5, "'solver' block in flow '")
         fb_put_fname(m5, c, f)
-        fb_puts(m5, "' needs a 'dt' setting")
-        fb_puts(fb_err_hint(c), "write 'solver { dt 1 ms }'")
+        bb_puts(m5, "' needs a 'dt' setting")
+        bb_puts(fb_err_hint(c), "write 'solver { dt 1 ms }'")
         return 0 - 1
     }
     if method < 0 { method = fb_intern(c, "euler") }
@@ -2596,13 +2531,13 @@ function fb_parse_flow_item(c: ptr<Fb>, f: i32) -> i32 {
         if fb_tok_is(c, t, "output") == 1 { kind = MK_OUTPUT }
         if fb_tok_is(c, t, "param") == 1 { kind = MK_PARAM }
         if kind == MK_INPUT and init >= 0 {
-            let m: ptr<FbBuf> = fb_perr(c)
-            fb_puts(m, "input '")
+            let m: ptr<ByteBuf> = fb_perr(c)
+            bb_puts(m, "input '")
             fb_put_tok(m, c, nt)
-            fb_puts(m, "' in flow '")
+            bb_puts(m, "' in flow '")
             fb_put_fname(m, c, f)
-            fb_puts(m, "' cannot have an initializer; inputs are written by the embedder")
-            fb_puts(fb_err_hint(c), "remove the '= ...' part")
+            bb_puts(m, "' cannot have an initializer; inputs are written by the embedder")
+            bb_puts(fb_err_hint(c), "remove the '= ...' part")
             return 0 - 1
         }
         fb_add_member(c, f, kind, fb_tok_str(c, nt), ty, init, c[0].tl[t])
@@ -2641,12 +2576,12 @@ function fb_parse_flow_item(c: ptr<Fb>, f: i32) -> i32 {
     }
     if tid == 1 and fb_tok_is(c, t, "every") == 1 and c[0].tk[la] == TK_NUM {
         fb_advance(c)
-        let wb: ptr<FbBuf> = fb_buf_new(64)
-        fb_puts(wb, "the 'every' period of flow '")
+        let wb: ptr<ByteBuf> = bb_new(64)
+        bb_puts(wb, "the 'every' period of flow '")
         fb_put_fname(wb, c, f)
-        fb_puts(wb, "'")
+        bb_puts(wb, "'")
         let where_s: i32 = fb_intern_buf(c, wb)
-        fb_buf_free(wb)
+        bb_free(wb)
         let nsbox: ptr<i64> = malloc(8) as ptr<i64>
         let txbox: ptr<i32> = malloc(4) as ptr<i32>
         let drc: i32 = fb_parse_duration(c, where_s, nsbox, txbox)
@@ -2666,11 +2601,11 @@ function fb_parse_flow_item(c: ptr<Fb>, f: i32) -> i32 {
     let la_brace: i32 = fb_is_op(c, la, OP_LBRACE)
     if tid == 1 and la_brace == 1 and fb_tok_is(c, t, "solver") == 1 {
         if c[0].f_solver[f] == 1 {
-            let m2: ptr<FbBuf> = fb_perr(c)
-            fb_puts(m2, "flow '")
+            let m2: ptr<ByteBuf> = fb_perr(c)
+            bb_puts(m2, "flow '")
             fb_put_fname(m2, c, f)
-            fb_puts(m2, "' has two 'solver' blocks; a flow pins at most one default step")
-            fb_puts(fb_err_hint(c), "merge the settings into one solver block")
+            bb_puts(m2, "' has two 'solver' blocks; a flow pins at most one default step")
+            bb_puts(fb_err_hint(c), "merge the settings into one solver block")
             return 0 - 1
         }
         return fb_parse_solver(c, f)
@@ -2683,11 +2618,11 @@ function fb_parse_flow_item(c: ptr<Fb>, f: i32) -> i32 {
     }
     if tid == 1 and la_brace == 1 and fb_tok_is(c, t, "recognize") == 1 {
         if c[0].f_rec[f] == 1 {
-            let m3: ptr<FbBuf> = fb_perr(c)
-            fb_puts(m3, "flow '")
+            let m3: ptr<ByteBuf> = fb_perr(c)
+            bb_puts(m3, "flow '")
             fb_put_fname(m3, c, f)
-            fb_puts(m3, "' has two 'recognize' blocks")
-            fb_puts(fb_err_hint(c), "merge the domains into one recognize block")
+            bb_puts(m3, "' has two 'recognize' blocks")
+            bb_puts(fb_err_hint(c), "merge the domains into one recognize block")
             return 0 - 1
         }
         return fb_parse_recognize(c, f)
@@ -2701,25 +2636,25 @@ function fb_parse_flow_item(c: ptr<Fb>, f: i32) -> i32 {
         let cty: i32 = fb_parse_type(c)
         if cty < 0 { return 0 - 1 }
         if fb_is_op(c, c[0].pos, OP_ASSIGN) == 1 {
-            let m4: ptr<FbBuf> = fb_perr(c)
-            fb_puts(m4, "nested flow member '")
+            let m4: ptr<ByteBuf> = fb_perr(c)
+            bb_puts(m4, "nested flow member '")
             fb_put_tok(m4, c, t)
-            fb_puts(m4, "' in flow '")
+            bb_puts(m4, "' in flow '")
             fb_put_fname(m4, c, f)
-            fb_puts(m4, "' cannot have an initializer; children are constructed by ")
-            fb_puts(m4, fb_s(c, cty) as string)
-            fb_puts(m4, "_new inside the parent")
-            fb_puts(fb_err_hint(c), "remove the '= ...' part")
+            bb_puts(m4, "' cannot have an initializer; children are constructed by ")
+            bb_puts(m4, fb_s(c, cty) as string)
+            bb_puts(m4, "_new inside the parent")
+            bb_puts(fb_err_hint(c), "remove the '= ...' part")
             return 0 - 1
         }
         fb_add_member(c, f, MK_CHILD, fb_tok_str(c, t), cty, 0 - 1, c[0].tl[t])
         return 0
     }
-    let m5: ptr<FbBuf> = fb_perr(c)
-    fb_puts(m5, "Unexpected item in flow '")
+    let m5: ptr<ByteBuf> = fb_perr(c)
+    bb_puts(m5, "Unexpected item in flow '")
     fb_put_fname(m5, c, f)
-    fb_puts(m5, "' body")
-    fb_puts(fb_err_hint(c), "flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x reaches expr { x becomes expr }'), discrete blocks ('every 10 ms { x becomes expr }'), composition ('connect { a.out -> b.in }'), invariants ('always { expr }' / 'never { expr }'), semantic contracts ('recognize { numerical realtime }'), and settings ('solver { dt 1 ms }')")
+    bb_puts(m5, "' body")
+    bb_puts(fb_err_hint(c), "flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x reaches expr { x becomes expr }'), discrete blocks ('every 10 ms { x becomes expr }'), composition ('connect { a.out -> b.in }'), invariants ('always { expr }' / 'never { expr }'), semantic contracts ('recognize { numerical realtime }'), and settings ('solver { dt 1 ms }')")
     return 0 - 1
 }
 
@@ -2735,10 +2670,10 @@ function fb_parse_flow(c: ptr<Fb>, f: i32) -> i32 {
     if fb_expect(c, "LBRACE") < 0 { return 0 - 1 }
     while fb_is_op(c, c[0].pos, OP_RBRACE) == 0 {
         if fb_at_eof(c) == 1 {
-            let m: ptr<FbBuf> = fb_perr(c)
-            fb_puts(m, "Unterminated flow '")
+            let m: ptr<ByteBuf> = fb_perr(c)
+            bb_puts(m, "Unterminated flow '")
             fb_put_fname(m, c, f)
-            fb_puts(m, "': expected '}' before end of file")
+            bb_puts(m, "': expected '}' before end of file")
             return 0 - 1
         }
         if fb_parse_flow_item(c, f) < 0 { return 0 - 1 }
@@ -2897,44 +2832,44 @@ function fb_check_pure(c: ptr<Fb>, x: i32, f: i32, where_s: i32, line: i32) -> i
     if x < 0 { return 0 }
     let k: i32 = c[0].nk[x]
     if k == N_EFFECT {
-        let m: ptr<FbBuf> = fb_verr(c, line)
-        fb_puts(m, "effect call in ")
-        fb_puts(m, fb_s(c, where_s) as string)
-        fb_puts(m, " of flow '")
+        let m: ptr<ByteBuf> = fb_verr(c, line)
+        bb_puts(m, "effect call in ")
+        bb_puts(m, fb_s(c, where_s) as string)
+        bb_puts(m, " of flow '")
         fb_put_fname(m, c, f)
-        fb_puts(m, "'; dynamics expressions must be pure")
-        fb_puts(fb_err_hint(c), "lift effectful work out of the flow body")
+        bb_puts(m, "'; dynamics expressions must be pure")
+        bb_puts(fb_err_hint(c), "lift effectful work out of the flow body")
         return 0 - 1
     }
     if k == N_METHOD {
-        let m2: ptr<FbBuf> = fb_verr(c, line)
-        fb_puts(m2, "method call in ")
-        fb_puts(m2, fb_s(c, where_s) as string)
-        fb_puts(m2, " of flow '")
+        let m2: ptr<ByteBuf> = fb_verr(c, line)
+        bb_puts(m2, "method call in ")
+        bb_puts(m2, fb_s(c, where_s) as string)
+        bb_puts(m2, " of flow '")
         fb_put_fname(m2, c, f)
-        fb_puts(m2, "'; dynamics expressions must be pure plain calls in this version")
+        bb_puts(m2, "'; dynamics expressions must be pure plain calls in this version")
         return 0 - 1
     }
     if k == N_LAMBDA {
-        let m3: ptr<FbBuf> = fb_verr(c, line)
-        fb_puts(m3, "lambda in ")
-        fb_puts(m3, fb_s(c, where_s) as string)
-        fb_puts(m3, " of flow '")
+        let m3: ptr<ByteBuf> = fb_verr(c, line)
+        bb_puts(m3, "lambda in ")
+        bb_puts(m3, fb_s(c, where_s) as string)
+        bb_puts(m3, " of flow '")
         fb_put_fname(m3, c, f)
-        fb_puts(m3, "' is not supported")
+        bb_puts(m3, "' is not supported")
         return 0 - 1
     }
     if k == N_CALL {
         let nm: i32 = fb_call_name(c, x)
         if fb_is_pure_math(fb_s(c, nm)) == 0 and fb_has_name(c, NX_LOCAL_FN, nm) == 0 {
-            let m4: ptr<FbBuf> = fb_verr(c, line)
-            fb_puts(m4, "call to '")
-            fb_puts(m4, fb_s(c, nm) as string)
-            fb_puts(m4, "' in ")
-            fb_puts(m4, fb_s(c, where_s) as string)
-            fb_puts(m4, " of flow '")
+            let m4: ptr<ByteBuf> = fb_verr(c, line)
+            bb_puts(m4, "call to '")
+            bb_puts(m4, fb_s(c, nm) as string)
+            bb_puts(m4, "' in ")
+            bb_puts(m4, fb_s(c, where_s) as string)
+            bb_puts(m4, " of flow '")
             fb_put_fname(m4, c, f)
-            fb_puts(m4, "' cannot be proven pure; only C math functions and non-extern functions defined in the same file are allowed here (v1)")
+            bb_puts(m4, "' cannot be proven pure; only C math functions and non-extern functions defined in the same file are allowed here (v1)")
             return 0 - 1
         }
         let mut a: i32 = c[0].na[x]
@@ -2964,12 +2899,12 @@ function fb_check_pure_s(c: ptr<Fb>, x: i32, f: i32, where_s: string, line: i32)
 
 # "'x evolves as'" style where-strings: pre + name + post.
 function fb_where(c: ptr<Fb>, pre: string, name: i32, post: string) -> i32 {
-    let b: ptr<FbBuf> = fb_buf_new(64)
-    fb_puts(b, pre)
-    fb_puts(b, fb_s(c, name) as string)
-    fb_puts(b, post)
+    let b: ptr<ByteBuf> = bb_new(64)
+    bb_puts(b, pre)
+    bb_puts(b, fb_s(c, name) as string)
+    bb_puts(b, post)
     let out: i32 = fb_intern_buf(c, b)
-    fb_buf_free(b)
+    bb_free(b)
     return out
 }
 
@@ -2980,14 +2915,14 @@ function fb_check_threshold(c: ptr<Fb>, x: i32, f: i32, w: i32) -> i32 {
     if k == N_VAR {
         let nm: i32 = fb_tok_str(c, c[0].ntok[x])
         if fb_find_member(c, f, MK_PARAM, nm) >= 0 { return 0 }
-        let m: ptr<FbBuf> = fb_verr(c, c[0].wh_line[w])
-        fb_puts(m, "threshold of 'when ")
-        fb_puts(m, fb_s(c, c[0].wh_target[w]) as string)
-        fb_puts(m, " reaches' in flow '")
+        let m: ptr<ByteBuf> = fb_verr(c, c[0].wh_line[w])
+        bb_puts(m, "threshold of 'when ")
+        bb_puts(m, fb_s(c, c[0].wh_target[w]) as string)
+        bb_puts(m, " reaches' in flow '")
         fb_put_fname(m, c, f)
-        fb_puts(m, "' references '")
-        fb_puts(m, fb_s(c, nm) as string)
-        fb_puts(m, "'; thresholds must be constant over a step, built from params and literals (v1)")
+        bb_puts(m, "' references '")
+        bb_puts(m, fb_s(c, nm) as string)
+        bb_puts(m, "'; thresholds must be constant over a step, built from params and literals (v1)")
         return 0 - 1
     }
     if k == N_BIN or k == N_UN or k == N_CAST {
@@ -3004,12 +2939,12 @@ function fb_check_threshold(c: ptr<Fb>, x: i32, f: i32, w: i32) -> i32 {
         free(kids as ptr<u8>)
         return 0
     }
-    let m2: ptr<FbBuf> = fb_verr(c, c[0].wh_line[w])
-    fb_puts(m2, "threshold of 'when ")
-    fb_puts(m2, fb_s(c, c[0].wh_target[w]) as string)
-    fb_puts(m2, " reaches' in flow '")
+    let m2: ptr<ByteBuf> = fb_verr(c, c[0].wh_line[w])
+    bb_puts(m2, "threshold of 'when ")
+    bb_puts(m2, fb_s(c, c[0].wh_target[w]) as string)
+    bb_puts(m2, " reaches' in flow '")
     fb_put_fname(m2, c, f)
-    fb_puts(m2, "' must be built from params and literals (v1)")
+    bb_puts(m2, "' must be built from params and literals (v1)")
     return 0 - 1
 }
 
@@ -3023,13 +2958,13 @@ function fb_check_booleanish(c: ptr<Fb>, x: i32, f: i32, word: string, line: i32
     if k == N_UN and (c[0].nop[x] == OP_NOT or c[0].nop[x] == OPX_NOT_WORD) { return 0 }
     if k == N_LIT and fb_tt_is(c, c[0].ntok[x], "BOOLEAN") == 1 { return 0 }
     if k == N_VAR { return 0 }
-    let m: ptr<FbBuf> = fb_verr(c, line)
-    fb_puts(m, "'")
-    fb_puts(m, word)
-    fb_puts(m, "' clause in flow '")
+    let m: ptr<ByteBuf> = fb_verr(c, line)
+    bb_puts(m, "'")
+    bb_puts(m, word)
+    bb_puts(m, "' clause in flow '")
     fb_put_fname(m, c, f)
-    fb_puts(m, "' must be a boolean expression")
-    fb_puts(fb_err_hint(c), "write a comparison or logical expression, e.g. 'x < 1.0'")
+    bb_puts(m, "' must be a boolean expression")
+    bb_puts(fb_err_hint(c), "write a comparison or logical expression, e.g. 'x < 1.0'")
     return 0 - 1
 }
 
@@ -3076,24 +3011,24 @@ function fb_port_combinational(c: ptr<Fb>, f: i32, port: i32) -> i32 {
 function fb_single_port(c: ptr<Fb>, sf: i32, kind: i32, word: string, line: i32) -> i32 {
     let n: i32 = fb_count_members(c, sf, kind)
     if n != 1 {
-        let m: ptr<FbBuf> = fb_verr(c, line)
-        fb_puts(m, "flow '")
+        let m: ptr<ByteBuf> = fb_verr(c, line)
+        bb_puts(m, "flow '")
         fb_put_fname(m, c, sf)
-        fb_puts(m, "' used as a pipeline stage must have exactly one ")
-        fb_puts(m, word)
-        fb_puts(m, " (has ")
-        fb_put_int(m, n)
-        fb_puts(m, "); wire it with `connect` explicitly")
+        bb_puts(m, "' used as a pipeline stage must have exactly one ")
+        bb_puts(m, word)
+        bb_puts(m, " (has ")
+        bb_put_i32(m, n)
+        bb_puts(m, "); wire it with `connect` explicitly")
         return 0 - 1
     }
     return fb_nth_member(c, sf, kind, 0)
 }
 
 # Sorted ", ".join of the param names of flow sf, or "(none)".
-function fb_put_sorted_params(c: ptr<Fb>, b: ptr<FbBuf>, sf: i32) {
+function fb_put_sorted_params(c: ptr<Fb>, b: ptr<ByteBuf>, sf: i32) {
     let n: i32 = fb_count_members(c, sf, MK_PARAM)
     if n == 0 {
-        fb_puts(b, "(none)")
+        bb_puts(b, "(none)")
         return
     }
     let used: ptr<i32> = malloc(((n + 1) as i64) * 4) as ptr<i32>
@@ -3119,8 +3054,8 @@ function fb_put_sorted_params(c: ptr<Fb>, b: ptr<FbBuf>, sf: i32) {
             j = j + 1
         }
         used[best] = 1
-        if k > 0 { fb_puts(b, ", ") }
-        fb_puts(b, fb_s(c, c[0].mm_name[fb_nth_member(c, sf, MK_PARAM, best)]) as string)
+        if k > 0 { bb_puts(b, ", ") }
+        bb_puts(b, fb_s(c, c[0].mm_name[fb_nth_member(c, sf, MK_PARAM, best)]) as string)
         k = k + 1
     }
     free(used as ptr<u8>)
@@ -3142,16 +3077,16 @@ function fb_expand_pipelines(c: ptr<Fb>, f: i32) -> i32 {
                 let sname: i32 = fb_tok_str(c, c[0].ntok[cur])
                 let sf: i32 = fb_find_flow(c, sname)
                 if sf < 0 {
-                    let m: ptr<FbBuf> = fb_verr(c, line)
-                    fb_puts(m, "'")
-                    fb_puts(m, fb_s(c, sname) as string)
-                    fb_puts(m, " { ... }' in output '")
-                    fb_puts(m, fb_s(c, c[0].mm_name[o]) as string)
-                    fb_puts(m, "' of '")
+                    let m: ptr<ByteBuf> = fb_verr(c, line)
+                    bb_puts(m, "'")
+                    bb_puts(m, fb_s(c, sname) as string)
+                    bb_puts(m, " { ... }' in output '")
+                    bb_puts(m, fb_s(c, c[0].mm_name[o]) as string)
+                    bb_puts(m, "' of '")
                     fb_put_fname(m, c, f)
-                    fb_puts(m, "' names '")
-                    fb_puts(m, fb_s(c, sname) as string)
-                    fb_puts(m, "', which is not a flow")
+                    bb_puts(m, "' names '")
+                    bb_puts(m, fb_s(c, sname) as string)
+                    bb_puts(m, "', which is not a flow")
                     free(stages as ptr<u8>)
                     return 0 - 1
                 }
@@ -3163,14 +3098,14 @@ function fb_expand_pipelines(c: ptr<Fb>, f: i32) -> i32 {
                 if k == N_CALL and c[0].ntok[cur] >= 0 and fb_find_flow(c, fb_call_name(c, cur)) >= 0 {
                     let cf: i32 = fb_find_flow(c, fb_call_name(c, cur))
                     if fb_list_len(c, c[0].na[cur]) != 1 {
-                        let m2: ptr<FbBuf> = fb_verr(c, line)
-                        fb_puts(m2, "flow stage '")
+                        let m2: ptr<ByteBuf> = fb_verr(c, line)
+                        bb_puts(m2, "flow stage '")
                         fb_put_fname(m2, c, cf)
-                        fb_puts(m2, "' in output '")
-                        fb_puts(m2, fb_s(c, c[0].mm_name[o]) as string)
-                        fb_puts(m2, "' of '")
+                        bb_puts(m2, "' in output '")
+                        bb_puts(m2, fb_s(c, c[0].mm_name[o]) as string)
+                        bb_puts(m2, "' of '")
                         fb_put_fname(m2, c, f)
-                        fb_puts(m2, "' takes only the piped value")
+                        bb_puts(m2, "' takes only the piped value")
                         free(stages as ptr<u8>)
                         return 0 - 1
                     }
@@ -3197,12 +3132,12 @@ function fb_expand_pipelines(c: ptr<Fb>, f: i32) -> i32 {
                 }
             }
             if src_m < 0 {
-                let m3: ptr<FbBuf> = fb_verr(c, line)
-                fb_puts(m3, "flow pipeline for output '")
-                fb_puts(m3, fb_s(c, c[0].mm_name[o]) as string)
-                fb_puts(m3, "' of '")
+                let m3: ptr<ByteBuf> = fb_verr(c, line)
+                bb_puts(m3, "flow pipeline for output '")
+                bb_puts(m3, fb_s(c, c[0].mm_name[o]) as string)
+                bb_puts(m3, "' of '")
                 fb_put_fname(m3, c, f)
-                fb_puts(m3, "' must start from a port (an input/state, or `child.port`)")
+                bb_puts(m3, "' must start from a port (an input/state, or `child.port`)")
                 free(stages as ptr<u8>)
                 return 0 - 1
             }
@@ -3214,28 +3149,28 @@ function fb_expand_pipelines(c: ptr<Fb>, f: i32) -> i32 {
                 let si: i32 = ns - 1 - i
                 let sf2: i32 = stages[si * 2]
                 let params: i32 = stages[si * 2 + 1]
-                let cb: ptr<FbBuf> = fb_buf_new(32)
-                fb_puts(cb, "__")
-                fb_puts(cb, fb_s(c, c[0].mm_name[o]) as string)
-                fb_puts(cb, "_stage")
-                fb_put_int(cb, i)
+                let cb: ptr<ByteBuf> = bb_new(32)
+                bb_puts(cb, "__")
+                bb_puts(cb, fb_s(c, c[0].mm_name[o]) as string)
+                bb_puts(cb, "_stage")
+                bb_put_i32(cb, i)
                 let child_name: i32 = fb_intern_buf(c, cb)
-                fb_buf_free(cb)
+                bb_free(cb)
                 # _check_stage_params
                 let mut pk: i32 = params
                 while pk >= 0 {
                     let pn: i32 = fb_tok_str(c, c[0].ntok[pk])
                     if fb_find_member(c, sf2, MK_PARAM, pn) < 0 {
-                        let m4: ptr<FbBuf> = fb_verr(c, line)
-                        fb_puts(m4, "flow stage '")
+                        let m4: ptr<ByteBuf> = fb_verr(c, line)
+                        bb_puts(m4, "flow stage '")
                         fb_put_fname(m4, c, sf2)
-                        fb_puts(m4, "' in '")
+                        bb_puts(m4, "' in '")
                         fb_put_fname(m4, c, f)
-                        fb_puts(m4, "' has no param '")
-                        fb_puts(m4, fb_s(c, pn) as string)
-                        fb_puts(m4, "'")
-                        let h: ptr<FbBuf> = fb_err_hint(c)
-                        fb_puts(h, "stage overrides set `param` fields; declared params are: ")
+                        bb_puts(m4, "' has no param '")
+                        bb_puts(m4, fb_s(c, pn) as string)
+                        bb_puts(m4, "'")
+                        let h: ptr<ByteBuf> = fb_err_hint(c)
+                        bb_puts(h, "stage overrides set `param` fields; declared params are: ")
                         fb_put_sorted_params(c, h, sf2)
                         free(stages as ptr<u8>)
                         return 0 - 1
@@ -3339,32 +3274,32 @@ function fb_validate_members(c: ptr<Fb>, f: i32) -> i32 {
             if c[0].mm_flow[i] == f and fb_member_rank(c[0].mm_kind[i]) == rank {
                 let nm: i32 = c[0].mm_name[i]
                 if fb_seen_before(c, f, i) == 1 {
-                    let m: ptr<FbBuf> = fb_verr(c, c[0].mm_line[i])
-                    fb_puts(m, "flow '")
+                    let m: ptr<ByteBuf> = fb_verr(c, c[0].mm_line[i])
+                    bb_puts(m, "flow '")
                     fb_put_fname(m, c, f)
-                    fb_puts(m, "' declares '")
-                    fb_puts(m, fb_s(c, nm) as string)
-                    fb_puts(m, "' twice")
+                    bb_puts(m, "' declares '")
+                    bb_puts(m, fb_s(c, nm) as string)
+                    bb_puts(m, "' twice")
                     return 0 - 1
                 }
                 if fb_name_starts_uu(c, nm) == 1 {
-                    let m2: ptr<FbBuf> = fb_verr(c, c[0].mm_line[i])
-                    fb_puts(m2, "flow member '")
-                    fb_puts(m2, fb_s(c, nm) as string)
-                    fb_puts(m2, "' may not start with '__' (reserved for compiler-generated fields)")
+                    let m2: ptr<ByteBuf> = fb_verr(c, c[0].mm_line[i])
+                    bb_puts(m2, "flow member '")
+                    bb_puts(m2, fb_s(c, nm) as string)
+                    bb_puts(m2, "' may not start with '__' (reserved for compiler-generated fields)")
                     return 0 - 1
                 }
                 if fb_is_member_type(c, c[0].mm_type[i]) == 0 {
-                    let m3: ptr<FbBuf> = fb_verr(c, c[0].mm_line[i])
-                    fb_puts(m3, fb_kind_word(c[0].mm_kind[i]))
-                    fb_puts(m3, " '")
-                    fb_puts(m3, fb_s(c, nm) as string)
-                    fb_puts(m3, "' in flow '")
+                    let m3: ptr<ByteBuf> = fb_verr(c, c[0].mm_line[i])
+                    bb_puts(m3, fb_kind_word(c[0].mm_kind[i]))
+                    bb_puts(m3, " '")
+                    bb_puts(m3, fb_s(c, nm) as string)
+                    bb_puts(m3, "' in flow '")
                     fb_put_fname(m3, c, f)
-                    fb_puts(m3, "' has type '")
-                    fb_puts(m3, fb_s(c, c[0].mm_type[i]) as string)
-                    fb_puts(m3, "'; a flow member is f64, f32, or a declared unit")
-                    fb_puts(fb_err_hint(c), "declare the dimension with 'unit Angle' first")
+                    bb_puts(m3, "' has type '")
+                    bb_puts(m3, fb_s(c, c[0].mm_type[i]) as string)
+                    bb_puts(m3, "'; a flow member is f64, f32, or a declared unit")
+                    bb_puts(fb_err_hint(c), "declare the dimension with 'unit Angle' first")
                     return 0 - 1
                 }
             }
@@ -3377,40 +3312,40 @@ function fb_validate_members(c: ptr<Fb>, f: i32) -> i32 {
         if c[0].mm_flow[ci] == f and c[0].mm_kind[ci] == MK_CHILD {
             let cn: i32 = c[0].mm_name[ci]
             if fb_seen_before(c, f, ci) == 1 {
-                let m4: ptr<FbBuf> = fb_verr(c, c[0].mm_line[ci])
-                fb_puts(m4, "flow '")
+                let m4: ptr<ByteBuf> = fb_verr(c, c[0].mm_line[ci])
+                bb_puts(m4, "flow '")
                 fb_put_fname(m4, c, f)
-                fb_puts(m4, "' declares '")
-                fb_puts(m4, fb_s(c, cn) as string)
-                fb_puts(m4, "' twice")
+                bb_puts(m4, "' declares '")
+                bb_puts(m4, fb_s(c, cn) as string)
+                bb_puts(m4, "' twice")
                 return 0 - 1
             }
             if fb_name_starts_uu(c, cn) == 1 and c[0].mm_synth[ci] == 0 {
-                let m5: ptr<FbBuf> = fb_verr(c, c[0].mm_line[ci])
-                fb_puts(m5, "flow member '")
-                fb_puts(m5, fb_s(c, cn) as string)
-                fb_puts(m5, "' may not start with '__' (reserved for compiler-generated fields)")
+                let m5: ptr<ByteBuf> = fb_verr(c, c[0].mm_line[ci])
+                bb_puts(m5, "flow member '")
+                bb_puts(m5, fb_s(c, cn) as string)
+                bb_puts(m5, "' may not start with '__' (reserved for compiler-generated fields)")
                 return 0 - 1
             }
             if fb_name_eq(c, c[0].mm_type[ci], c[0].f_name[f]) == 1 {
-                let m6: ptr<FbBuf> = fb_verr(c, c[0].mm_line[ci])
-                fb_puts(m6, "nested flow member '")
-                fb_puts(m6, fb_s(c, cn) as string)
-                fb_puts(m6, "' in flow '")
+                let m6: ptr<ByteBuf> = fb_verr(c, c[0].mm_line[ci])
+                bb_puts(m6, "nested flow member '")
+                bb_puts(m6, fb_s(c, cn) as string)
+                bb_puts(m6, "' in flow '")
                 fb_put_fname(m6, c, f)
-                fb_puts(m6, "' cannot have the parent type (no recursive nesting)")
+                bb_puts(m6, "' cannot have the parent type (no recursive nesting)")
                 return 0 - 1
             }
             if fb_find_flow(c, c[0].mm_type[ci]) < 0 {
-                let m7: ptr<FbBuf> = fb_verr(c, c[0].mm_line[ci])
-                fb_puts(m7, "nested flow member '")
-                fb_puts(m7, fb_s(c, cn) as string)
-                fb_puts(m7, "' in flow '")
+                let m7: ptr<ByteBuf> = fb_verr(c, c[0].mm_line[ci])
+                bb_puts(m7, "nested flow member '")
+                bb_puts(m7, fb_s(c, cn) as string)
+                bb_puts(m7, "' in flow '")
                 fb_put_fname(m7, c, f)
-                fb_puts(m7, "' has type '")
-                fb_puts(m7, fb_s(c, c[0].mm_type[ci]) as string)
-                fb_puts(m7, "', which is not a flow in this file")
-                fb_puts(fb_err_hint(c), "declare the child with 'flow ChildName { ... }' first")
+                bb_puts(m7, "' has type '")
+                bb_puts(m7, fb_s(c, c[0].mm_type[ci]) as string)
+                bb_puts(m7, "', which is not a flow in this file")
+                bb_puts(fb_err_hint(c), "declare the child with 'flow ChildName { ... }' first")
                 return 0 - 1
             }
         }
@@ -3435,10 +3370,10 @@ function fb_validate_connect(c: ptr<Fb>, f: i32) -> i32 {
         k = k + 1
     }
     if first_conn >= 0 and nch == 0 {
-        let m: ptr<FbBuf> = fb_verr(c, c[0].cn_line[first_conn])
-        fb_puts(m, "'connect' in flow '")
+        let m: ptr<ByteBuf> = fb_verr(c, c[0].cn_line[first_conn])
+        bb_puts(m, "'connect' in flow '")
         fb_put_fname(m, c, f)
-        fb_puts(m, "' needs nested flow members to wire (e.g. 'plant : Motor')")
+        bb_puts(m, "' needs nested flow members to wire (e.g. 'plant : Motor')")
         return 0 - 1
     }
     let mut i: i32 = 0
@@ -3453,38 +3388,38 @@ function fb_validate_connect(c: ptr<Fb>, f: i32) -> i32 {
             let src_child: i32 = fb_find_member(c, f, MK_CHILD, sm)
             let dst_child: i32 = fb_find_member(c, f, MK_CHILD, dm)
             if parent == 0 and src_child < 0 {
-                let m1: ptr<FbBuf> = fb_verr(c, line)
-                fb_puts(m1, "connection source '")
-                fb_puts(m1, fb_s(c, sm) as string)
-                fb_putc(m1, 46)
-                fb_puts(m1, fb_s(c, sp) as string)
-                fb_puts(m1, "' in flow '")
+                let m1: ptr<ByteBuf> = fb_verr(c, line)
+                bb_puts(m1, "connection source '")
+                bb_puts(m1, fb_s(c, sm) as string)
+                bb_putc(m1, 46)
+                bb_puts(m1, fb_s(c, sp) as string)
+                bb_puts(m1, "' in flow '")
                 fb_put_fname(m1, c, f)
-                fb_puts(m1, "' names unknown nested member '")
-                fb_puts(m1, fb_s(c, sm) as string)
-                fb_puts(m1, "'")
+                bb_puts(m1, "' names unknown nested member '")
+                bb_puts(m1, fb_s(c, sm) as string)
+                bb_puts(m1, "'")
                 return 0 - 1
             }
             if dst_child < 0 {
-                let m2: ptr<FbBuf> = fb_verr(c, line)
-                fb_puts(m2, "connection destination '")
-                fb_puts(m2, fb_s(c, dm) as string)
-                fb_putc(m2, 46)
-                fb_puts(m2, fb_s(c, dp) as string)
-                fb_puts(m2, "' in flow '")
+                let m2: ptr<ByteBuf> = fb_verr(c, line)
+                bb_puts(m2, "connection destination '")
+                bb_puts(m2, fb_s(c, dm) as string)
+                bb_putc(m2, 46)
+                bb_puts(m2, fb_s(c, dp) as string)
+                bb_puts(m2, "' in flow '")
                 fb_put_fname(m2, c, f)
-                fb_puts(m2, "' names unknown nested member '")
-                fb_puts(m2, fb_s(c, dm) as string)
-                fb_puts(m2, "'")
+                bb_puts(m2, "' names unknown nested member '")
+                bb_puts(m2, fb_s(c, dm) as string)
+                bb_puts(m2, "'")
                 return 0 - 1
             }
             if parent == 0 and fb_name_eq(c, sm, dm) == 1 {
-                let m3: ptr<FbBuf> = fb_verr(c, line)
-                fb_puts(m3, "connection in flow '")
+                let m3: ptr<ByteBuf> = fb_verr(c, line)
+                bb_puts(m3, "connection in flow '")
                 fb_put_fname(m3, c, f)
-                fb_puts(m3, "' wires '")
-                fb_puts(m3, fb_s(c, sm) as string)
-                fb_puts(m3, "' to itself; Stage-1 connect is between sibling subflows only")
+                bb_puts(m3, "' wires '")
+                bb_puts(m3, fb_s(c, sm) as string)
+                bb_puts(m3, "' to itself; Stage-1 connect is between sibling subflows only")
                 return 0 - 1
             }
             let dst_flow: i32 = fb_find_flow(c, c[0].mm_type[dst_child])
@@ -3492,125 +3427,125 @@ function fb_validate_connect(c: ptr<Fb>, f: i32) -> i32 {
             if parent == 1 {
                 src_port = fb_lookup_port(c, f, sp)
                 if src_port < 0 {
-                    let m4: ptr<FbBuf> = fb_verr(c, line)
-                    fb_puts(m4, "connection source '")
-                    fb_puts(m4, fb_s(c, sp) as string)
-                    fb_puts(m4, "' in flow '")
+                    let m4: ptr<ByteBuf> = fb_verr(c, line)
+                    bb_puts(m4, "connection source '")
+                    bb_puts(m4, fb_s(c, sp) as string)
+                    bb_puts(m4, "' in flow '")
                     fb_put_fname(m4, c, f)
-                    fb_puts(m4, "' is not a port of this flow")
-                    let h: ptr<FbBuf> = fb_err_hint(c)
-                    fb_puts(h, "a bare source must be an input or state of '")
+                    bb_puts(m4, "' is not a port of this flow")
+                    let h: ptr<ByteBuf> = fb_err_hint(c)
+                    bb_puts(h, "a bare source must be an input or state of '")
                     fb_put_fname(h, c, f)
-                    fb_puts(h, "'; a child source is written 'child.port'")
+                    bb_puts(h, "'; a child source is written 'child.port'")
                     return 0 - 1
                 }
                 let sk: i32 = c[0].mm_kind[src_port]
                 if sk != MK_INPUT and sk != MK_STATE {
-                    let m5: ptr<FbBuf> = fb_verr(c, line)
-                    fb_puts(m5, "connection source '")
-                    fb_puts(m5, fb_s(c, sp) as string)
-                    fb_puts(m5, "' in flow '")
+                    let m5: ptr<ByteBuf> = fb_verr(c, line)
+                    bb_puts(m5, "connection source '")
+                    bb_puts(m5, fb_s(c, sp) as string)
+                    bb_puts(m5, "' in flow '")
                     fb_put_fname(m5, c, f)
-                    fb_puts(m5, "' is a ")
-                    fb_puts(m5, fb_kind_word(sk))
-                    fb_puts(m5, "; a parent source must be an input or state")
+                    bb_puts(m5, "' is a ")
+                    bb_puts(m5, fb_kind_word(sk))
+                    bb_puts(m5, "; a parent source must be an input or state")
                     return 0 - 1
                 }
             } else {
                 let src_flow: i32 = fb_find_flow(c, c[0].mm_type[src_child])
                 src_port = fb_lookup_port(c, src_flow, sp)
                 if src_port < 0 {
-                    let m6: ptr<FbBuf> = fb_verr(c, line)
-                    fb_puts(m6, "'")
-                    fb_puts(m6, fb_s(c, sm) as string)
-                    fb_putc(m6, 46)
-                    fb_puts(m6, fb_s(c, sp) as string)
-                    fb_puts(m6, "' in flow '")
+                    let m6: ptr<ByteBuf> = fb_verr(c, line)
+                    bb_puts(m6, "'")
+                    bb_puts(m6, fb_s(c, sm) as string)
+                    bb_putc(m6, 46)
+                    bb_puts(m6, fb_s(c, sp) as string)
+                    bb_puts(m6, "' in flow '")
                     fb_put_fname(m6, c, f)
-                    fb_puts(m6, "' is not a port of '")
+                    bb_puts(m6, "' is not a port of '")
                     fb_put_fname(m6, c, src_flow)
-                    fb_puts(m6, "'")
-                    let h2: ptr<FbBuf> = fb_err_hint(c)
-                    fb_puts(h2, "connect sources must be an output or state of '")
+                    bb_puts(m6, "'")
+                    let h2: ptr<ByteBuf> = fb_err_hint(c)
+                    bb_puts(h2, "connect sources must be an output or state of '")
                     fb_put_fname(h2, c, src_flow)
-                    fb_puts(h2, "'")
+                    bb_puts(h2, "'")
                     return 0 - 1
                 }
                 let sk2: i32 = c[0].mm_kind[src_port]
                 if sk2 != MK_OUTPUT and sk2 != MK_STATE {
-                    let m7: ptr<FbBuf> = fb_verr(c, line)
-                    fb_puts(m7, "'")
-                    fb_puts(m7, fb_s(c, sm) as string)
-                    fb_putc(m7, 46)
-                    fb_puts(m7, fb_s(c, sp) as string)
-                    fb_puts(m7, "' in flow '")
+                    let m7: ptr<ByteBuf> = fb_verr(c, line)
+                    bb_puts(m7, "'")
+                    bb_puts(m7, fb_s(c, sm) as string)
+                    bb_putc(m7, 46)
+                    bb_puts(m7, fb_s(c, sp) as string)
+                    bb_puts(m7, "' in flow '")
                     fb_put_fname(m7, c, f)
-                    fb_puts(m7, "' is a ")
-                    fb_puts(m7, fb_kind_word(sk2))
-                    fb_puts(m7, "; connection sources must be an output or state")
+                    bb_puts(m7, "' is a ")
+                    bb_puts(m7, fb_kind_word(sk2))
+                    bb_puts(m7, "; connection sources must be an output or state")
                     return 0 - 1
                 }
             }
             let dst_port: i32 = fb_lookup_port(c, dst_flow, dp)
             if dst_port < 0 {
-                let m8: ptr<FbBuf> = fb_verr(c, line)
-                fb_puts(m8, "'")
-                fb_puts(m8, fb_s(c, dm) as string)
-                fb_putc(m8, 46)
-                fb_puts(m8, fb_s(c, dp) as string)
-                fb_puts(m8, "' in flow '")
+                let m8: ptr<ByteBuf> = fb_verr(c, line)
+                bb_puts(m8, "'")
+                bb_puts(m8, fb_s(c, dm) as string)
+                bb_putc(m8, 46)
+                bb_puts(m8, fb_s(c, dp) as string)
+                bb_puts(m8, "' in flow '")
                 fb_put_fname(m8, c, f)
-                fb_puts(m8, "' is not a port of '")
+                bb_puts(m8, "' is not a port of '")
                 fb_put_fname(m8, c, dst_flow)
-                fb_puts(m8, "'")
-                let h3: ptr<FbBuf> = fb_err_hint(c)
-                fb_puts(h3, "connection destinations must be an input of '")
+                bb_puts(m8, "'")
+                let h3: ptr<ByteBuf> = fb_err_hint(c)
+                bb_puts(h3, "connection destinations must be an input of '")
                 fb_put_fname(h3, c, dst_flow)
-                fb_puts(h3, "'")
+                bb_puts(h3, "'")
                 return 0 - 1
             }
             if c[0].mm_kind[dst_port] != MK_INPUT {
-                let m9: ptr<FbBuf> = fb_verr(c, line)
-                fb_puts(m9, "'")
-                fb_puts(m9, fb_s(c, dm) as string)
-                fb_putc(m9, 46)
-                fb_puts(m9, fb_s(c, dp) as string)
-                fb_puts(m9, "' in flow '")
+                let m9: ptr<ByteBuf> = fb_verr(c, line)
+                bb_puts(m9, "'")
+                bb_puts(m9, fb_s(c, dm) as string)
+                bb_putc(m9, 46)
+                bb_puts(m9, fb_s(c, dp) as string)
+                bb_puts(m9, "' in flow '")
                 fb_put_fname(m9, c, f)
-                fb_puts(m9, "' is a ")
-                fb_puts(m9, fb_kind_word(c[0].mm_kind[dst_port]))
-                fb_puts(m9, "; connection destinations must be an input")
+                bb_puts(m9, "' is a ")
+                bb_puts(m9, fb_kind_word(c[0].mm_kind[dst_port]))
+                bb_puts(m9, "; connection destinations must be an input")
                 return 0 - 1
             }
             if fb_name_eq(c, c[0].mm_type[src_port], c[0].mm_type[dst_port]) == 0 {
-                let m10: ptr<FbBuf> = fb_verr(c, line)
-                fb_puts(m10, "type mismatch in connect of flow '")
+                let m10: ptr<ByteBuf> = fb_verr(c, line)
+                bb_puts(m10, "type mismatch in connect of flow '")
                 fb_put_fname(m10, c, f)
-                fb_puts(m10, "': '")
-                fb_puts(m10, fb_s(c, sm) as string)
-                fb_putc(m10, 46)
-                fb_puts(m10, fb_s(c, sp) as string)
-                fb_puts(m10, "' is ")
-                fb_puts(m10, fb_s(c, c[0].mm_type[src_port]) as string)
-                fb_puts(m10, " but '")
-                fb_puts(m10, fb_s(c, dm) as string)
-                fb_putc(m10, 46)
-                fb_puts(m10, fb_s(c, dp) as string)
-                fb_puts(m10, "' is ")
-                fb_puts(m10, fb_s(c, c[0].mm_type[dst_port]) as string)
+                bb_puts(m10, "': '")
+                bb_puts(m10, fb_s(c, sm) as string)
+                bb_putc(m10, 46)
+                bb_puts(m10, fb_s(c, sp) as string)
+                bb_puts(m10, "' is ")
+                bb_puts(m10, fb_s(c, c[0].mm_type[src_port]) as string)
+                bb_puts(m10, " but '")
+                bb_puts(m10, fb_s(c, dm) as string)
+                bb_putc(m10, 46)
+                bb_puts(m10, fb_s(c, dp) as string)
+                bb_puts(m10, "' is ")
+                bb_puts(m10, fb_s(c, c[0].mm_type[dst_port]) as string)
                 return 0 - 1
             }
             let mut j: i32 = 0
             while j < i {
                 if c[0].cn_flow[j] == f and fb_name_eq(c, c[0].cn_dm[j], dm) == 1 and fb_name_eq(c, c[0].cn_dp[j], dp) == 1 {
-                    let m11: ptr<FbBuf> = fb_verr(c, line)
-                    fb_puts(m11, "input '")
-                    fb_puts(m11, fb_s(c, dm) as string)
-                    fb_putc(m11, 46)
-                    fb_puts(m11, fb_s(c, dp) as string)
-                    fb_puts(m11, "' in flow '")
+                    let m11: ptr<ByteBuf> = fb_verr(c, line)
+                    bb_puts(m11, "input '")
+                    bb_puts(m11, fb_s(c, dm) as string)
+                    bb_putc(m11, 46)
+                    bb_puts(m11, fb_s(c, dp) as string)
+                    bb_puts(m11, "' in flow '")
                     fb_put_fname(m11, c, f)
-                    fb_puts(m11, "' has two incoming connections")
+                    bb_puts(m11, "' has two incoming connections")
                     return 0 - 1
                 }
                 j = j + 1
@@ -3728,18 +3663,18 @@ function fb_check_loops(c: ptr<Fb>, f: i32) -> i32 {
                 e2 = e2 + 1
             }
         }
-        let mb: ptr<FbBuf> = fb_verr(c, line)
-        fb_puts(mb, "algebraic loop in connect of flow '")
+        let mb: ptr<ByteBuf> = fb_verr(c, line)
+        bb_puts(mb, "algebraic loop in connect of flow '")
         fb_put_fname(mb, c, f)
-        fb_puts(mb, "' through combinational outputs: ")
+        bb_puts(mb, "' through combinational outputs: ")
         let mut q2: i32 = cyc[0]
         while q2 < sp[0] {
-            fb_puts(mb, fb_s(c, c[0].mm_name[fb_nth_member(c, f, MK_CHILD, stack[q2])]) as string)
-            fb_puts(mb, " -> ")
+            bb_puts(mb, fb_s(c, c[0].mm_name[fb_nth_member(c, f, MK_CHILD, stack[q2])]) as string)
+            bb_puts(mb, " -> ")
             q2 = q2 + 1
         }
-        fb_puts(mb, fb_s(c, c[0].mm_name[fb_nth_member(c, f, MK_CHILD, cyc[1])]) as string)
-        fb_puts(fb_err_hint(c), "break the loop with a state (or an output mapped from a state); Modelica-style algebraic solvers are out of scope")
+        bb_puts(mb, fb_s(c, c[0].mm_name[fb_nth_member(c, f, MK_CHILD, cyc[1])]) as string)
+        bb_puts(fb_err_hint(c), "break the loop with a state (or an output mapped from a state); Modelica-style algebraic solvers are out of scope")
         rc = 0 - 1
     }
     free(state as ptr<u8>)
@@ -3757,12 +3692,12 @@ function fb_validate_flow(c: ptr<Fb>, f: i32) -> i32 {
         if c[0].rc_flow[r] == f and fb_recognition_ok(fb_s(c, c[0].rc_name[r])) == 0 {
             let mut rl: i32 = c[0].f_rec_line[f]
             if rl == 0 { rl = fline }
-            let m: ptr<FbBuf> = fb_verr(c, rl)
-            fb_puts(m, "unknown recognition domain '")
-            fb_puts(m, fb_s(c, c[0].rc_name[r]) as string)
-            fb_puts(m, "' in flow '")
+            let m: ptr<ByteBuf> = fb_verr(c, rl)
+            bb_puts(m, "unknown recognition domain '")
+            bb_puts(m, fb_s(c, c[0].rc_name[r]) as string)
+            bb_puts(m, "' in flow '")
             fb_put_fname(m, c, f)
-            fb_puts(m, "'; valid domains: numerical, realtime, causal, safety, memory")
+            bb_puts(m, "'; valid domains: numerical, realtime, causal, safety, memory")
             return 0 - 1
         }
         r = r + 1
@@ -3770,11 +3705,11 @@ function fb_validate_flow(c: ptr<Fb>, f: i32) -> i32 {
     let nstates: i32 = fb_count_members(c, f, MK_STATE)
     let nchildren: i32 = fb_count_members(c, f, MK_CHILD)
     if nstates == 0 and nchildren == 0 {
-        let m2: ptr<FbBuf> = fb_verr(c, fline)
-        fb_puts(m2, "flow '")
+        let m2: ptr<ByteBuf> = fb_verr(c, fline)
+        bb_puts(m2, "flow '")
         fb_put_fname(m2, c, f)
-        fb_puts(m2, "' declares no state")
-        fb_puts(fb_err_hint(c), "add at least one 'state name : f64 = value' declaration, or nest child flows ('plant : Motor') for a composite")
+        bb_puts(m2, "' declares no state")
+        bb_puts(fb_err_hint(c), "add at least one 'state name : f64 = value' declaration, or nest child flows ('plant : Motor') for a composite")
         return 0 - 1
     }
     let mut si: i32 = 0
@@ -3788,12 +3723,12 @@ function fb_validate_flow(c: ptr<Fb>, f: i32) -> i32 {
         if si == 6 { suf = "_default_dt" }
         let gen: i32 = fb_where(c, "", c[0].f_name[f], suf)
         if fb_has_name(c, NX_TAKEN, gen) == 1 {
-            let m3: ptr<FbBuf> = fb_verr(c, fline)
-            fb_puts(m3, "name '")
-            fb_puts(m3, fb_s(c, gen) as string)
-            fb_puts(m3, "' is reserved by flow '")
+            let m3: ptr<ByteBuf> = fb_verr(c, fline)
+            bb_puts(m3, "name '")
+            bb_puts(m3, fb_s(c, gen) as string)
+            bb_puts(m3, "' is reserved by flow '")
             fb_put_fname(m3, c, f)
-            fb_puts(m3, "' (the compiler generates it)")
+            bb_puts(m3, "' (the compiler generates it)")
             return 0 - 1
         }
         si = si + 1
@@ -3803,18 +3738,18 @@ function fb_validate_flow(c: ptr<Fb>, f: i32) -> i32 {
     let mut i: i32 = 0
     while i < c[0].nmm {
         if c[0].mm_flow[i] == f and c[0].mm_kind[i] == MK_PARAM and c[0].mm_init[i] < 0 {
-            let m4: ptr<FbBuf> = fb_verr(c, c[0].mm_line[i])
-            fb_puts(m4, "param '")
-            fb_puts(m4, fb_s(c, c[0].mm_name[i]) as string)
-            fb_puts(m4, "' in flow '")
+            let m4: ptr<ByteBuf> = fb_verr(c, c[0].mm_line[i])
+            bb_puts(m4, "param '")
+            bb_puts(m4, fb_s(c, c[0].mm_name[i]) as string)
+            bb_puts(m4, "' in flow '")
             fb_put_fname(m4, c, f)
-            fb_puts(m4, "' needs a default value")
-            let h: ptr<FbBuf> = fb_err_hint(c)
-            fb_puts(h, "write 'param ")
-            fb_puts(h, fb_s(c, c[0].mm_name[i]) as string)
-            fb_puts(h, " : ")
-            fb_puts(h, fb_s(c, c[0].mm_type[i]) as string)
-            fb_puts(h, " = 1.0'")
+            bb_puts(m4, "' needs a default value")
+            let h: ptr<ByteBuf> = fb_err_hint(c)
+            bb_puts(h, "write 'param ")
+            bb_puts(h, fb_s(c, c[0].mm_name[i]) as string)
+            bb_puts(h, " : ")
+            bb_puts(h, fb_s(c, c[0].mm_type[i]) as string)
+            bb_puts(h, " = 1.0'")
             return 0 - 1
         }
         i = i + 1
@@ -3822,16 +3757,16 @@ function fb_validate_flow(c: ptr<Fb>, f: i32) -> i32 {
     i = 0
     while i < c[0].nmm {
         if c[0].mm_flow[i] == f and c[0].mm_kind[i] == MK_OUTPUT and c[0].mm_init[i] < 0 {
-            let m5: ptr<FbBuf> = fb_verr(c, c[0].mm_line[i])
-            fb_puts(m5, "output '")
-            fb_puts(m5, fb_s(c, c[0].mm_name[i]) as string)
-            fb_puts(m5, "' in flow '")
+            let m5: ptr<ByteBuf> = fb_verr(c, c[0].mm_line[i])
+            bb_puts(m5, "output '")
+            bb_puts(m5, fb_s(c, c[0].mm_name[i]) as string)
+            bb_puts(m5, "' in flow '")
             fb_put_fname(m5, c, f)
-            fb_puts(m5, "' needs an inline map ('output ")
-            fb_puts(m5, fb_s(c, c[0].mm_name[i]) as string)
-            fb_puts(m5, " : ")
-            fb_puts(m5, fb_s(c, c[0].mm_type[i]) as string)
-            fb_puts(m5, " = expr'); assigning outputs from 'every'/'when' blocks is a later card")
+            bb_puts(m5, "' needs an inline map ('output ")
+            bb_puts(m5, fb_s(c, c[0].mm_name[i]) as string)
+            bb_puts(m5, " : ")
+            bb_puts(m5, fb_s(c, c[0].mm_type[i]) as string)
+            bb_puts(m5, " = expr'); assigning outputs from 'every'/'when' blocks is a later card")
             return 0 - 1
         }
         i = i + 1
@@ -3842,27 +3777,27 @@ function fb_validate_flow(c: ptr<Fb>, f: i32) -> i32 {
         if c[0].ev_flow[e] == f {
             let tg: i32 = c[0].ev_target[e]
             if fb_find_member(c, f, MK_STATE, tg) < 0 {
-                let m6: ptr<FbBuf> = fb_verr(c, c[0].ev_line[e])
-                fb_puts(m6, "'")
-                fb_puts(m6, fb_s(c, tg) as string)
-                fb_puts(m6, " evolves as' in flow '")
+                let m6: ptr<ByteBuf> = fb_verr(c, c[0].ev_line[e])
+                bb_puts(m6, "'")
+                bb_puts(m6, fb_s(c, tg) as string)
+                bb_puts(m6, " evolves as' in flow '")
                 fb_put_fname(m6, c, f)
-                fb_puts(m6, "' requires '")
-                fb_puts(m6, fb_s(c, tg) as string)
-                fb_puts(m6, "' to be a declared state")
-                let h2: ptr<FbBuf> = fb_err_hint(c)
-                fb_puts(h2, "declare 'state ")
-                fb_puts(h2, fb_s(c, tg) as string)
-                fb_puts(h2, " : f64 = 0.0' or fix the name")
+                bb_puts(m6, "' requires '")
+                bb_puts(m6, fb_s(c, tg) as string)
+                bb_puts(m6, "' to be a declared state")
+                let h2: ptr<ByteBuf> = fb_err_hint(c)
+                bb_puts(h2, "declare 'state ")
+                bb_puts(h2, fb_s(c, tg) as string)
+                bb_puts(h2, " : f64 = 0.0' or fix the name")
                 return 0 - 1
             }
             if fb_evolve_of(c, f, tg) != e {
-                let m7: ptr<FbBuf> = fb_verr(c, c[0].ev_line[e])
-                fb_puts(m7, "state '")
-                fb_puts(m7, fb_s(c, tg) as string)
-                fb_puts(m7, "' in flow '")
+                let m7: ptr<ByteBuf> = fb_verr(c, c[0].ev_line[e])
+                bb_puts(m7, "state '")
+                bb_puts(m7, fb_s(c, tg) as string)
+                bb_puts(m7, "' in flow '")
                 fb_put_fname(m7, c, f)
-                fb_puts(m7, "' has two 'evolves' declarations; a state has exactly one derivative")
+                bb_puts(m7, "' has two 'evolves' declarations; a state has exactly one derivative")
                 return 0 - 1
             }
             if fb_check_pure(c, c[0].ev_expr[e], f, fb_where(c, "'", tg, " evolves as'"), c[0].ev_line[e]) < 0 { return 0 - 1 }
@@ -3875,35 +3810,35 @@ function fb_validate_flow(c: ptr<Fb>, f: i32) -> i32 {
         if c[0].wh_flow[w] == f {
             let gt: i32 = c[0].wh_target[w]
             if fb_find_member(c, f, MK_STATE, gt) < 0 {
-                let m8: ptr<FbBuf> = fb_verr(c, c[0].wh_line[w])
-                fb_puts(m8, "'when ")
-                fb_puts(m8, fb_s(c, gt) as string)
-                fb_puts(m8, " reaches' in flow '")
+                let m8: ptr<ByteBuf> = fb_verr(c, c[0].wh_line[w])
+                bb_puts(m8, "'when ")
+                bb_puts(m8, fb_s(c, gt) as string)
+                bb_puts(m8, " reaches' in flow '")
                 fb_put_fname(m8, c, f)
-                fb_puts(m8, "' requires '")
-                fb_puts(m8, fb_s(c, gt) as string)
-                fb_puts(m8, "' to be a declared state")
-                let h3: ptr<FbBuf> = fb_err_hint(c)
-                fb_puts(h3, "declare 'state ")
-                fb_puts(h3, fb_s(c, gt) as string)
-                fb_puts(h3, " : f64 = 0.0' or fix the name")
+                bb_puts(m8, "' requires '")
+                bb_puts(m8, fb_s(c, gt) as string)
+                bb_puts(m8, "' to be a declared state")
+                let h3: ptr<ByteBuf> = fb_err_hint(c)
+                bb_puts(h3, "declare 'state ")
+                bb_puts(h3, fb_s(c, gt) as string)
+                bb_puts(h3, " : f64 = 0.0' or fix the name")
                 return 0 - 1
             }
             if fb_evolve_of(c, f, gt) < 0 {
-                let m9: ptr<FbBuf> = fb_verr(c, c[0].wh_line[w])
-                fb_puts(m9, "'when ")
-                fb_puts(m9, fb_s(c, gt) as string)
-                fb_puts(m9, " reaches' in flow '")
+                let m9: ptr<ByteBuf> = fb_verr(c, c[0].wh_line[w])
+                bb_puts(m9, "'when ")
+                bb_puts(m9, fb_s(c, gt) as string)
+                bb_puts(m9, " reaches' in flow '")
                 fb_put_fname(m9, c, f)
-                fb_puts(m9, "' requires '")
-                fb_puts(m9, fb_s(c, gt) as string)
-                fb_puts(m9, "' to be a continuous state")
-                let h4: ptr<FbBuf> = fb_err_hint(c)
-                fb_puts(h4, "give '")
-                fb_puts(h4, fb_s(c, gt) as string)
-                fb_puts(h4, "' an '")
-                fb_puts(h4, fb_s(c, gt) as string)
-                fb_puts(h4, " evolves as ...' declaration")
+                bb_puts(m9, "' requires '")
+                bb_puts(m9, fb_s(c, gt) as string)
+                bb_puts(m9, "' to be a continuous state")
+                let h4: ptr<ByteBuf> = fb_err_hint(c)
+                bb_puts(h4, "give '")
+                bb_puts(h4, fb_s(c, gt) as string)
+                bb_puts(h4, "' an '")
+                bb_puts(h4, fb_s(c, gt) as string)
+                bb_puts(h4, " evolves as ...' declaration")
                 return 0 - 1
             }
             if fb_check_threshold(c, c[0].wh_thr[w], f, w) < 0 { return 0 - 1 }
@@ -3912,25 +3847,25 @@ function fb_validate_flow(c: ptr<Fb>, f: i32) -> i32 {
                 if c[0].bc_kind[b] == 1 and c[0].bc_owner[b] == w {
                     let rt: i32 = c[0].bc_target[b]
                     if fb_find_member(c, f, MK_STATE, rt) < 0 {
-                        let m10: ptr<FbBuf> = fb_verr(c, c[0].bc_line[b])
-                        fb_puts(m10, "'")
-                        fb_puts(m10, fb_s(c, rt) as string)
-                        fb_puts(m10, " becomes' in the 'when ")
-                        fb_puts(m10, fb_s(c, gt) as string)
-                        fb_puts(m10, " reaches' body of flow '")
+                        let m10: ptr<ByteBuf> = fb_verr(c, c[0].bc_line[b])
+                        bb_puts(m10, "'")
+                        bb_puts(m10, fb_s(c, rt) as string)
+                        bb_puts(m10, " becomes' in the 'when ")
+                        bb_puts(m10, fb_s(c, gt) as string)
+                        bb_puts(m10, " reaches' body of flow '")
                         fb_put_fname(m10, c, f)
-                        fb_puts(m10, "' requires '")
-                        fb_puts(m10, fb_s(c, rt) as string)
-                        fb_puts(m10, "' to be a declared state")
+                        bb_puts(m10, "' requires '")
+                        bb_puts(m10, fb_s(c, rt) as string)
+                        bb_puts(m10, "' to be a declared state")
                         return 0 - 1
                     }
                     if fb_becomes_seen(c, 1, w, b) == 1 {
-                        let m11: ptr<FbBuf> = fb_verr(c, c[0].bc_line[b])
-                        fb_puts(m11, "state '")
-                        fb_puts(m11, fb_s(c, rt) as string)
-                        fb_puts(m11, "' has two 'becomes' resets in one 'when' body of flow '")
+                        let m11: ptr<ByteBuf> = fb_verr(c, c[0].bc_line[b])
+                        bb_puts(m11, "state '")
+                        bb_puts(m11, fb_s(c, rt) as string)
+                        bb_puts(m11, "' has two 'becomes' resets in one 'when' body of flow '")
                         fb_put_fname(m11, c, f)
-                        fb_puts(m11, "'; resets in an event apply simultaneously, so each state has one writer")
+                        bb_puts(m11, "'; resets in an event apply simultaneously, so each state has one writer")
                         return 0 - 1
                     }
                     if fb_check_pure(c, c[0].bc_expr[b], f, fb_where(c, "'", rt, " becomes'"), c[0].bc_line[b]) < 0 { return 0 - 1 }
@@ -3943,22 +3878,22 @@ function fb_validate_flow(c: ptr<Fb>, f: i32) -> i32 {
     # solver
     if c[0].f_solver[f] == 1 {
         if c[0].f_dt_ns[f] <= 0 {
-            let m12: ptr<FbBuf> = fb_verr(c, c[0].f_solver_line[f])
-            fb_puts(m12, "solver dt of flow '")
+            let m12: ptr<ByteBuf> = fb_verr(c, c[0].f_solver_line[f])
+            bb_puts(m12, "solver dt of flow '")
             fb_put_fname(m12, c, f)
-            fb_puts(m12, "' must be positive, got '")
-            fb_puts(m12, fb_s(c, c[0].f_dt_text[f]) as string)
-            fb_puts(m12, "'")
+            bb_puts(m12, "' must be positive, got '")
+            bb_puts(m12, fb_s(c, c[0].f_dt_text[f]) as string)
+            bb_puts(m12, "'")
             return 0 - 1
         }
         let meth: i32 = c[0].f_method[f]
         if fb_name_is(c, meth, "euler") == 0 and fb_name_is(c, meth, "rk4") == 0 {
-            let m13: ptr<FbBuf> = fb_verr(c, c[0].f_solver_line[f])
-            fb_puts(m13, "unknown solver method '")
-            fb_puts(m13, fb_s(c, meth) as string)
-            fb_puts(m13, "' in flow '")
+            let m13: ptr<ByteBuf> = fb_verr(c, c[0].f_solver_line[f])
+            bb_puts(m13, "unknown solver method '")
+            bb_puts(m13, fb_s(c, meth) as string)
+            bb_puts(m13, "' in flow '")
             fb_put_fname(m13, c, f)
-            fb_puts(m13, "'; valid methods: euler, rk4")
+            bb_puts(m13, "'; valid methods: euler, rk4")
             return 0 - 1
         }
     }
@@ -3967,12 +3902,12 @@ function fb_validate_flow(c: ptr<Fb>, f: i32) -> i32 {
     while v < c[0].ney {
         if c[0].ey_flow[v] == f {
             if c[0].ey_ns[v] <= 0 {
-                let m14: ptr<FbBuf> = fb_verr(c, c[0].ey_line[v])
-                fb_puts(m14, "'every ")
-                fb_puts(m14, fb_s(c, c[0].ey_text[v]) as string)
-                fb_puts(m14, "' in flow '")
+                let m14: ptr<ByteBuf> = fb_verr(c, c[0].ey_line[v])
+                bb_puts(m14, "'every ")
+                bb_puts(m14, fb_s(c, c[0].ey_text[v]) as string)
+                bb_puts(m14, "' in flow '")
                 fb_put_fname(m14, c, f)
-                fb_puts(m14, "' has a zero period; the period must be positive")
+                bb_puts(m14, "' has a zero period; the period must be positive")
                 return 0 - 1
             }
             let mut u: i32 = 0
@@ -3980,40 +3915,40 @@ function fb_validate_flow(c: ptr<Fb>, f: i32) -> i32 {
                 if c[0].bc_kind[u] == 2 and c[0].bc_owner[u] == v {
                     let ut: i32 = c[0].bc_target[u]
                     if fb_find_member(c, f, MK_STATE, ut) < 0 {
-                        let m15: ptr<FbBuf> = fb_verr(c, c[0].bc_line[u])
-                        fb_puts(m15, "'")
-                        fb_puts(m15, fb_s(c, ut) as string)
-                        fb_puts(m15, " becomes' in the 'every ")
-                        fb_puts(m15, fb_s(c, c[0].ey_text[v]) as string)
-                        fb_puts(m15, "' body of flow '")
+                        let m15: ptr<ByteBuf> = fb_verr(c, c[0].bc_line[u])
+                        bb_puts(m15, "'")
+                        bb_puts(m15, fb_s(c, ut) as string)
+                        bb_puts(m15, " becomes' in the 'every ")
+                        bb_puts(m15, fb_s(c, c[0].ey_text[v]) as string)
+                        bb_puts(m15, "' body of flow '")
                         fb_put_fname(m15, c, f)
-                        fb_puts(m15, "' requires '")
-                        fb_puts(m15, fb_s(c, ut) as string)
-                        fb_puts(m15, "' to be a declared state")
+                        bb_puts(m15, "' requires '")
+                        bb_puts(m15, fb_s(c, ut) as string)
+                        bb_puts(m15, "' to be a declared state")
                         return 0 - 1
                     }
                     if fb_evolve_of(c, f, ut) >= 0 {
-                        let m16: ptr<FbBuf> = fb_verr(c, c[0].bc_line[u])
-                        fb_puts(m16, "state '")
-                        fb_puts(m16, fb_s(c, ut) as string)
-                        fb_puts(m16, "' in flow '")
+                        let m16: ptr<ByteBuf> = fb_verr(c, c[0].bc_line[u])
+                        bb_puts(m16, "state '")
+                        bb_puts(m16, fb_s(c, ut) as string)
+                        bb_puts(m16, "' in flow '")
                         fb_put_fname(m16, c, f)
-                        fb_puts(m16, "' has both an 'evolves' declaration and a 'becomes' update in an 'every' block; a state is continuous or discrete")
-                        let h5: ptr<FbBuf> = fb_err_hint(c)
-                        fb_puts(h5, "reset '")
-                        fb_puts(h5, fb_s(c, ut) as string)
-                        fb_puts(h5, "' from a 'when ")
-                        fb_puts(h5, fb_s(c, ut) as string)
-                        fb_puts(h5, " reaches ...' event, or drop its 'evolves' declaration")
+                        bb_puts(m16, "' has both an 'evolves' declaration and a 'becomes' update in an 'every' block; a state is continuous or discrete")
+                        let h5: ptr<ByteBuf> = fb_err_hint(c)
+                        bb_puts(h5, "reset '")
+                        bb_puts(h5, fb_s(c, ut) as string)
+                        bb_puts(h5, "' from a 'when ")
+                        bb_puts(h5, fb_s(c, ut) as string)
+                        bb_puts(h5, " reaches ...' event, or drop its 'evolves' declaration")
                         return 0 - 1
                     }
                     if fb_becomes_seen(c, 2, v, u) == 1 {
-                        let m17: ptr<FbBuf> = fb_verr(c, c[0].bc_line[u])
-                        fb_puts(m17, "state '")
-                        fb_puts(m17, fb_s(c, ut) as string)
-                        fb_puts(m17, "' has two 'becomes' updates in one 'every' body of flow '")
+                        let m17: ptr<ByteBuf> = fb_verr(c, c[0].bc_line[u])
+                        bb_puts(m17, "state '")
+                        bb_puts(m17, fb_s(c, ut) as string)
+                        bb_puts(m17, "' has two 'becomes' updates in one 'every' body of flow '")
                         fb_put_fname(m17, c, f)
-                        fb_puts(m17, "'; updates in a block apply simultaneously, so each state has one writer")
+                        bb_puts(m17, "'; updates in a block apply simultaneously, so each state has one writer")
                         return 0 - 1
                     }
                     if fb_check_pure(c, c[0].bc_expr[u], f, fb_where(c, "'", ut, " becomes'"), c[0].bc_line[u]) < 0 { return 0 - 1 }
@@ -4198,7 +4133,7 @@ function fb_count_whens(c: ptr<Fb>, f: i32) -> i32 {
 
 # Emit a user expression as written, with member reads rewritten to
 # `self.name`. Line breaks and comments between tokens become one space.
-function fb_emit_expr(c: ptr<Fb>, b: ptr<FbBuf>, x: i32) {
+function fb_emit_expr(c: ptr<Fb>, b: ptr<ByteBuf>, x: i32) {
     let f: i32 = c[0].cur
     let s: i32 = c[0].nfs[x]
     let e: i32 = c[0].nfe[x]
@@ -4216,90 +4151,90 @@ function fb_emit_expr(c: ptr<Fb>, b: ptr<FbBuf>, x: i32) {
                     k = k + 1
                 }
                 if plain == 1 {
-                    fb_put_span(b, p, g0, g1)
+                    bb_put_span(b, p, g0, g1)
                 } else {
-                    fb_putc(b, 32)
+                    bb_putc(b, 32)
                 }
             }
         }
         if c[0].tvar[t] == 1 and fb_is_member_tok(c, f, t) == 1 {
-            fb_puts(b, "self.")
+            bb_puts(b, "self.")
         }
-        fb_put_span(b, p, c[0].ts[t], c[0].te[t])
+        bb_put_span(b, p, c[0].ts[t], c[0].te[t])
         t = t + 1
     }
 }
 
-function fb_put_name(c: ptr<Fb>, b: ptr<FbBuf>, off: i32) {
-    fb_puts(b, fb_s(c, off) as string)
+function fb_put_name(c: ptr<Fb>, b: ptr<ByteBuf>, off: i32) {
+    bb_puts(b, fb_s(c, off) as string)
 }
 
-function fb_put_self(c: ptr<Fb>, b: ptr<FbBuf>, off: i32) {
-    fb_puts(b, "self.")
+function fb_put_self(c: ptr<Fb>, b: ptr<ByteBuf>, off: i32) {
+    bb_puts(b, "self.")
     fb_put_name(c, b, off)
 }
 
 # repr(ns / 1e9) for a whole number of nanoseconds (shortest round-trip
 # repr equals the exact decimal up to 15 significant digits).
-function fb_put_seconds(b: ptr<FbBuf>, ns: i64) {
+function fb_put_seconds(b: ptr<ByteBuf>, ns: i64) {
     if ns == 0 {
-        fb_puts(b, "0.0")
+        bb_puts(b, "0.0")
         return
     }
-    let db: ptr<FbBuf> = fb_buf_new(32)
-    fb_put_i64(db, ns)
+    let db: ptr<ByteBuf> = bb_new(32)
+    bb_put_i64(db, ns)
     let full: i32 = db[0].len
     let mut nd: i32 = full
     while nd > 1 and db[0].p[nd - 1] == 48 { nd = nd - 1 }
     let decpt: i32 = full - 9
     let d: ptr<u8> = db[0].p
     if decpt <= 0 - 4 or decpt > 16 {
-        fb_putc(b, d[0])
+        bb_putc(b, d[0])
         if nd > 1 {
-            fb_putc(b, 46)
-            fb_put_span(b, d, 1, nd)
+            bb_putc(b, 46)
+            bb_put_span(b, d, 1, nd)
         }
-        fb_putc(b, 101)
+        bb_putc(b, 101)
         let ex: i32 = decpt - 1
         if ex < 0 {
-            fb_putc(b, 45)
+            bb_putc(b, 45)
         } else {
-            fb_putc(b, 43)
+            bb_putc(b, 43)
         }
         let mut ax: i32 = ex
         if ax < 0 { ax = 0 - ax }
-        if ax < 10 { fb_putc(b, 48) }
-        fb_put_int(b, ax)
+        if ax < 10 { bb_putc(b, 48) }
+        bb_put_i32(b, ax)
     } else {
         if decpt <= 0 {
-            fb_puts(b, "0.")
+            bb_puts(b, "0.")
             let mut z: i32 = 0
             while z < 0 - decpt {
-                fb_putc(b, 48)
+                bb_putc(b, 48)
                 z = z + 1
             }
-            fb_put_span(b, d, 0, nd)
+            bb_put_span(b, d, 0, nd)
         } else {
             if decpt >= nd {
-                fb_put_span(b, d, 0, nd)
+                bb_put_span(b, d, 0, nd)
                 let mut z2: i32 = nd
                 while z2 < decpt {
-                    fb_putc(b, 48)
+                    bb_putc(b, 48)
                     z2 = z2 + 1
                 }
-                fb_puts(b, ".0")
+                bb_puts(b, ".0")
             } else {
-                fb_put_span(b, d, 0, decpt)
-                fb_putc(b, 46)
-                fb_put_span(b, d, decpt, nd)
+                bb_put_span(b, d, 0, decpt)
+                bb_putc(b, 46)
+                bb_put_span(b, d, decpt, nd)
             }
         }
     }
-    fb_buf_free(db)
+    bb_free(db)
 }
 
 # Type name of member i as written in declarations.
-function fb_put_mtype(c: ptr<Fb>, b: ptr<FbBuf>, i: i32) {
+function fb_put_mtype(c: ptr<Fb>, b: ptr<ByteBuf>, i: i32) {
     fb_put_name(c, b, c[0].mm_type[i])
 }
 
@@ -4309,20 +4244,20 @@ function fb_is_float_type(c: ptr<Fb>, ty: i32) -> i32 {
 }
 
 # _derivative_type(): f64/f32 keep their type, a dimension becomes f64.
-function fb_put_dtype(c: ptr<Fb>, b: ptr<FbBuf>, i: i32) {
+function fb_put_dtype(c: ptr<Fb>, b: ptr<ByteBuf>, i: i32) {
     if fb_is_float_type(c, c[0].mm_type[i]) == 1 {
         fb_put_mtype(c, b, i)
     } else {
-        fb_puts(b, "f64")
+        bb_puts(b, "f64")
     }
 }
 
 # _dt_for_state(): `dt`, or `(dt as f32)` for an f32 state.
-function fb_put_dt(c: ptr<Fb>, b: ptr<FbBuf>, i: i32) {
+function fb_put_dt(c: ptr<Fb>, b: ptr<ByteBuf>, i: i32) {
     if fb_name_is(c, c[0].mm_type[i], "f32") == 1 {
-        fb_puts(b, "(dt as f32)")
+        bb_puts(b, "(dt as f32)")
     } else {
-        fb_puts(b, "dt")
+        bb_puts(b, "dt")
     }
 }
 
@@ -4348,29 +4283,29 @@ function fb_field_kind(r: i32) -> i32 {
 }
 
 # _zero_of(): the default for a struct field in Name_new.
-function fb_put_zero(c: ptr<Fb>, b: ptr<FbBuf>, ty: i32) {
+function fb_put_zero(c: ptr<Fb>, b: ptr<ByteBuf>, ty: i32) {
     if fb_name_is(c, ty, "i64") == 1 {
-        fb_puts(b, "0")
+        bb_puts(b, "0")
         return
     }
     if fb_is_float_type(c, ty) == 1 {
-        fb_puts(b, "0.0")
+        bb_puts(b, "0.0")
         return
     }
     if fb_find_flow(c, ty) < 0 {
-        fb_puts(b, "(0.0 as ")
+        bb_puts(b, "(0.0 as ")
         fb_put_name(c, b, ty)
-        fb_puts(b, ")")
+        bb_puts(b, ")")
         return
     }
     fb_put_name(c, b, ty)
-    fb_puts(b, "_new()")
+    bb_puts(b, "_new()")
 }
 
-function fb_emit_struct(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
-    fb_puts(b, "struct ")
+function fb_emit_struct(c: ptr<Fb>, b: ptr<ByteBuf>, f: i32) {
+    bb_puts(b, "struct ")
     fb_put_fname(b, c, f)
-    fb_puts(b, " { ")
+    bb_puts(b, " { ")
     let mut first: i32 = 1
     let mut r: i32 = 0
     while r < 5 {
@@ -4379,10 +4314,10 @@ function fb_emit_struct(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
         let mut k: i32 = 0
         while k < n {
             let i: i32 = fb_nth_member(c, f, kind, k)
-            if first == 0 { fb_puts(b, ", ") }
+            if first == 0 { bb_puts(b, ", ") }
             first = 0
             fb_put_name(c, b, c[0].mm_name[i])
-            fb_puts(b, ": ")
+            bb_puts(b, ": ")
             fb_put_mtype(c, b, i)
             k = k + 1
         }
@@ -4391,52 +4326,52 @@ function fb_emit_struct(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
     let ne: i32 = fb_count_everys(c, f)
     let mut j: i32 = 0
     while j < ne {
-        if first == 0 { fb_puts(b, ", ") }
+        if first == 0 { bb_puts(b, ", ") }
         first = 0
-        fb_puts(b, "__every_")
-        fb_put_int(b, j)
-        fb_puts(b, "_acc: i64")
+        bb_puts(b, "__every_")
+        bb_put_i32(b, j)
+        bb_puts(b, "_acc: i64")
         j = j + 1
     }
     let nw: i32 = fb_count_whens(c, f)
     j = 0
     while j < nw {
-        if first == 0 { fb_puts(b, ", ") }
+        if first == 0 { bb_puts(b, ", ") }
         first = 0
-        fb_puts(b, "__guard_")
-        fb_put_int(b, j)
-        fb_puts(b, "_prev: f64")
+        bb_puts(b, "__guard_")
+        bb_put_i32(b, j)
+        bb_puts(b, "_prev: f64")
         j = j + 1
     }
-    fb_puts(b, " }")
+    bb_puts(b, " }")
 }
 
-function fb_fn_head(c: ptr<Fb>, b: ptr<FbBuf>, f: i32, suffix: string, params: string, ret: string) {
-    fb_puts(b, "@flow_api function ")
+function fb_fn_head(c: ptr<Fb>, b: ptr<ByteBuf>, f: i32, suffix: string, params: string, ret: string) {
+    bb_puts(b, "@flow_api function ")
     fb_put_fname(b, c, f)
-    fb_puts(b, suffix)
-    fb_puts(b, "(")
+    bb_puts(b, suffix)
+    bb_puts(b, "(")
     if strlen(params) > 0 {
-        fb_puts(b, params)
+        bb_puts(b, params)
     }
-    fb_puts(b, ") -> ")
-    fb_puts(b, ret)
-    fb_puts(b, " { ")
+    bb_puts(b, ") -> ")
+    bb_puts(b, ret)
+    bb_puts(b, " { ")
 }
 
-function fb_self_param(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
-    fb_puts(b, "self: ptr<")
+function fb_self_param(c: ptr<Fb>, b: ptr<ByteBuf>, f: i32) {
+    bb_puts(b, "self: ptr<")
     fb_put_fname(b, c, f)
-    fb_puts(b, ">")
+    bb_puts(b, ">")
 }
 
-function fb_emit_new(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
+function fb_emit_new(c: ptr<Fb>, b: ptr<ByteBuf>, f: i32) {
     fb_fn_head(c, b, f, "_new", "", fb_s(c, c[0].f_name[f]) as string)
-    fb_puts(b, "let mut __self: ")
+    bb_puts(b, "let mut __self: ")
     fb_put_fname(b, c, f)
-    fb_puts(b, " = ")
+    bb_puts(b, " = ")
     fb_put_fname(b, c, f)
-    fb_puts(b, " { ")
+    bb_puts(b, " { ")
     let mut first: i32 = 1
     let mut r: i32 = 0
     while r < 5 {
@@ -4445,10 +4380,10 @@ function fb_emit_new(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
         let mut k: i32 = 0
         while k < n {
             let i: i32 = fb_nth_member(c, f, kind, k)
-            if first == 0 { fb_puts(b, ", ") }
+            if first == 0 { bb_puts(b, ", ") }
             first = 0
             fb_put_name(c, b, c[0].mm_name[i])
-            fb_puts(b, ": ")
+            bb_puts(b, ": ")
             fb_put_zero(c, b, c[0].mm_type[i])
             k = k + 1
         }
@@ -4457,26 +4392,26 @@ function fb_emit_new(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
     let ne: i32 = fb_count_everys(c, f)
     let mut j: i32 = 0
     while j < ne {
-        if first == 0 { fb_puts(b, ", ") }
+        if first == 0 { bb_puts(b, ", ") }
         first = 0
-        fb_puts(b, "__every_")
-        fb_put_int(b, j)
-        fb_puts(b, "_acc: 0")
+        bb_puts(b, "__every_")
+        bb_put_i32(b, j)
+        bb_puts(b, "_acc: 0")
         j = j + 1
     }
     let nw: i32 = fb_count_whens(c, f)
     j = 0
     while j < nw {
-        if first == 0 { fb_puts(b, ", ") }
+        if first == 0 { bb_puts(b, ", ") }
         first = 0
-        fb_puts(b, "__guard_")
-        fb_put_int(b, j)
-        fb_puts(b, "_prev: 0.0")
+        bb_puts(b, "__guard_")
+        bb_put_i32(b, j)
+        bb_puts(b, "_prev: 0.0")
         j = j + 1
     }
-    fb_puts(b, " }; ")
+    bb_puts(b, " }; ")
     fb_put_fname(b, c, f)
-    fb_puts(b, "_init(&__self); return __self; }")
+    bb_puts(b, "_init(&__self); return __self; }")
 }
 
 # Index of the k-th when of flow f in the global table.
@@ -4507,15 +4442,15 @@ function fb_nth_every(c: ptr<Fb>, f: i32, k: i32) -> i32 {
 }
 
 # _guard_expr(): self.x - (threshold), widened to f64 for an f32 state.
-function fb_emit_guard(c: ptr<Fb>, b: ptr<FbBuf>, f: i32, w: i32) {
+function fb_emit_guard(c: ptr<Fb>, b: ptr<ByteBuf>, f: i32, w: i32) {
     let st: i32 = fb_find_member(c, f, MK_STATE, c[0].wh_target[w])
     let narrow: i32 = fb_name_is(c, c[0].mm_type[st], "f32")
-    if narrow == 1 { fb_puts(b, "((") }
+    if narrow == 1 { bb_puts(b, "((") }
     fb_put_self(c, b, c[0].wh_target[w])
-    fb_puts(b, " - (")
+    bb_puts(b, " - (")
     fb_emit_expr(c, b, c[0].wh_thr[w])
-    fb_puts(b, ")")
-    if narrow == 1 { fb_puts(b, ") as f64)") }
+    bb_puts(b, ")")
+    if narrow == 1 { bb_puts(b, ") as f64)") }
 }
 
 function fb_has_outputs(c: ptr<Fb>, f: i32) -> i32 {
@@ -4523,20 +4458,20 @@ function fb_has_outputs(c: ptr<Fb>, f: i32) -> i32 {
     return 0
 }
 
-function fb_emit_init(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
-    fb_puts(b, "@flow_api function ")
+function fb_emit_init(c: ptr<Fb>, b: ptr<ByteBuf>, f: i32) {
+    bb_puts(b, "@flow_api function ")
     fb_put_fname(b, c, f)
-    fb_puts(b, "_init(")
+    bb_puts(b, "_init(")
     fb_self_param(c, b, f)
-    fb_puts(b, ") -> void { ")
+    bb_puts(b, ") -> void { ")
     let np: i32 = fb_count_members(c, f, MK_PARAM)
     let mut k: i32 = 0
     while k < np {
         let i: i32 = fb_nth_member(c, f, MK_PARAM, k)
         fb_put_self(c, b, c[0].mm_name[i])
-        fb_puts(b, " = ")
+        bb_puts(b, " = ")
         fb_emit_expr(c, b, c[0].mm_init[i])
-        fb_puts(b, "; ")
+        bb_puts(b, "; ")
         k = k + 1
     }
     let ni: i32 = fb_count_members(c, f, MK_INPUT)
@@ -4544,7 +4479,7 @@ function fb_emit_init(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
     while k < ni {
         let i2: i32 = fb_nth_member(c, f, MK_INPUT, k)
         fb_put_self(c, b, c[0].mm_name[i2])
-        fb_puts(b, " = 0.0; ")
+        bb_puts(b, " = 0.0; ")
         k = k + 1
     }
     let ns: i32 = fb_count_members(c, f, MK_STATE)
@@ -4552,13 +4487,13 @@ function fb_emit_init(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
     while k < ns {
         let i3: i32 = fb_nth_member(c, f, MK_STATE, k)
         fb_put_self(c, b, c[0].mm_name[i3])
-        fb_puts(b, " = ")
+        bb_puts(b, " = ")
         if c[0].mm_init[i3] >= 0 {
             fb_emit_expr(c, b, c[0].mm_init[i3])
         } else {
-            fb_puts(b, "0.0")
+            bb_puts(b, "0.0")
         }
-        fb_puts(b, "; ")
+        bb_puts(b, "; ")
         k = k + 1
     }
     let nc: i32 = fb_count_members(c, f, MK_CHILD)
@@ -4566,17 +4501,17 @@ function fb_emit_init(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
     while k < nc {
         let i4: i32 = fb_nth_member(c, f, MK_CHILD, k)
         fb_put_name(c, b, c[0].mm_type[i4])
-        fb_puts(b, "_init(&")
+        bb_puts(b, "_init(&")
         fb_put_self(c, b, c[0].mm_name[i4])
-        fb_puts(b, "); ")
+        bb_puts(b, "); ")
         let mut pk: i32 = c[0].mm_params[i4]
         while pk >= 0 {
             fb_put_self(c, b, c[0].mm_name[i4])
-            fb_putc(b, 46)
-            fb_put_span(b, c[0].src, c[0].ts[c[0].ntok[pk]], c[0].te[c[0].ntok[pk]])
-            fb_puts(b, " = ")
+            bb_putc(b, 46)
+            bb_put_span(b, c[0].src, c[0].ts[c[0].ntok[pk]], c[0].te[c[0].ntok[pk]])
+            bb_puts(b, " = ")
             fb_emit_expr(c, b, c[0].na[pk])
-            fb_puts(b, "; ")
+            bb_puts(b, "; ")
             pk = c[0].nx[pk]
         }
         k = k + 1
@@ -4584,26 +4519,26 @@ function fb_emit_init(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
     let ne: i32 = fb_count_everys(c, f)
     k = 0
     while k < ne {
-        fb_puts(b, "self.__every_")
-        fb_put_int(b, k)
-        fb_puts(b, "_acc = 0; ")
+        bb_puts(b, "self.__every_")
+        bb_put_i32(b, k)
+        bb_puts(b, "_acc = 0; ")
         k = k + 1
     }
     let nw: i32 = fb_count_whens(c, f)
     k = 0
     while k < nw {
-        fb_puts(b, "self.__guard_")
-        fb_put_int(b, k)
-        fb_puts(b, "_prev = ")
+        bb_puts(b, "self.__guard_")
+        bb_put_i32(b, k)
+        bb_puts(b, "_prev = ")
         fb_emit_guard(c, b, f, fb_nth_when(c, f, k))
-        fb_puts(b, "; ")
+        bb_puts(b, "; ")
         k = k + 1
     }
     if fb_has_outputs(c, f) == 1 {
         fb_put_fname(b, c, f)
-        fb_puts(b, "_outputs(self); ")
+        bb_puts(b, "_outputs(self); ")
     }
-    fb_puts(b, "}")
+    bb_puts(b, "}")
 }
 
 # Evolved states in state declaration order (_in_state_order).
@@ -4628,64 +4563,64 @@ function fb_count_evolved(c: ptr<Fb>, f: i32) -> i32 {
     return n
 }
 
-function fb_emit_derivs(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
-    fb_puts(b, "@flow_api function ")
+function fb_emit_derivs(c: ptr<Fb>, b: ptr<ByteBuf>, f: i32) {
+    bb_puts(b, "@flow_api function ")
     fb_put_fname(b, c, f)
-    fb_puts(b, "_derivs(")
+    bb_puts(b, "_derivs(")
     fb_self_param(c, b, f)
     let nev: i32 = fb_count_evolved(c, f)
     let mut k: i32 = 0
     while k < nev {
         let i: i32 = fb_nth_evolved(c, f, k)
-        fb_puts(b, ", d_")
+        bb_puts(b, ", d_")
         fb_put_name(c, b, c[0].mm_name[i])
-        fb_puts(b, ": ptr<")
+        bb_puts(b, ": ptr<")
         fb_put_dtype(c, b, i)
-        fb_puts(b, ">")
+        bb_puts(b, ">")
         k = k + 1
     }
-    fb_puts(b, ") -> void { ")
+    bb_puts(b, ") -> void { ")
     k = 0
     while k < nev {
         let i2: i32 = fb_nth_evolved(c, f, k)
         let e: i32 = fb_evolve_of(c, f, c[0].mm_name[i2])
-        fb_puts(b, "d_")
+        bb_puts(b, "d_")
         fb_put_name(c, b, c[0].mm_name[i2])
-        fb_puts(b, "[0] = ")
+        bb_puts(b, "[0] = ")
         fb_emit_expr(c, b, c[0].ev_expr[e])
-        fb_puts(b, "; ")
+        bb_puts(b, "; ")
         k = k + 1
     }
-    fb_puts(b, "}")
+    bb_puts(b, "}")
 }
 
 # Name_derivs(self, &<stage>_x, ...)
-function fb_emit_derivs_call(c: ptr<Fb>, b: ptr<FbBuf>, f: i32, stage: string) {
+function fb_emit_derivs_call(c: ptr<Fb>, b: ptr<ByteBuf>, f: i32, stage: string) {
     fb_put_fname(b, c, f)
-    fb_puts(b, "_derivs(self")
+    bb_puts(b, "_derivs(self")
     let nev: i32 = fb_count_evolved(c, f)
     let mut k: i32 = 0
     while k < nev {
         let i: i32 = fb_nth_evolved(c, f, k)
-        fb_puts(b, ", &")
-        fb_puts(b, stage)
-        fb_putc(b, 95)
+        bb_puts(b, ", &")
+        bb_puts(b, stage)
+        bb_putc(b, 95)
         fb_put_name(c, b, c[0].mm_name[i])
         k = k + 1
     }
-    fb_puts(b, "); ")
+    bb_puts(b, "); ")
 }
 
-function fb_emit_euler(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
+function fb_emit_euler(c: ptr<Fb>, b: ptr<ByteBuf>, f: i32) {
     let nev: i32 = fb_count_evolved(c, f)
     let mut k: i32 = 0
     while k < nev {
         let i: i32 = fb_nth_evolved(c, f, k)
-        fb_puts(b, "let mut d_")
+        bb_puts(b, "let mut d_")
         fb_put_name(c, b, c[0].mm_name[i])
-        fb_puts(b, ": ")
+        bb_puts(b, ": ")
         fb_put_dtype(c, b, i)
-        fb_puts(b, " = 0.0; ")
+        bb_puts(b, " = 0.0; ")
         k = k + 1
     }
     if nev > 0 {
@@ -4696,64 +4631,64 @@ function fb_emit_euler(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
         let i2: i32 = fb_nth_evolved(c, f, k)
         let nm: i32 = c[0].mm_name[i2]
         fb_put_self(c, b, nm)
-        fb_puts(b, " = ")
+        bb_puts(b, " = ")
         fb_put_self(c, b, nm)
-        fb_puts(b, " + ")
+        bb_puts(b, " + ")
         let dim: i32 = 1 - fb_is_float_type(c, c[0].mm_type[i2])
-        if dim == 1 { fb_puts(b, "((") }
-        fb_puts(b, "d_")
+        if dim == 1 { bb_puts(b, "((") }
+        bb_puts(b, "d_")
         fb_put_name(c, b, nm)
-        fb_puts(b, " * ")
+        bb_puts(b, " * ")
         fb_put_dt(c, b, i2)
         if dim == 1 {
-            fb_puts(b, ") as ")
+            bb_puts(b, ") as ")
             fb_put_mtype(c, b, i2)
-            fb_puts(b, ")")
+            bb_puts(b, ")")
         }
-        fb_puts(b, "; ")
+        bb_puts(b, "; ")
         k = k + 1
     }
 }
 
 # self.x = y0_x + k_x * <scale> for every evolved state.
-function fb_emit_rk_stage(c: ptr<Fb>, b: ptr<FbBuf>, f: i32, stage: string, scale: i32) {
+function fb_emit_rk_stage(c: ptr<Fb>, b: ptr<ByteBuf>, f: i32, stage: string, scale: i32) {
     let nev: i32 = fb_count_evolved(c, f)
     let mut k: i32 = 0
     while k < nev {
         let i: i32 = fb_nth_evolved(c, f, k)
         let nm: i32 = c[0].mm_name[i]
         fb_put_self(c, b, nm)
-        fb_puts(b, " = y0_")
+        bb_puts(b, " = y0_")
         fb_put_name(c, b, nm)
-        fb_puts(b, " + ")
-        fb_puts(b, stage)
-        fb_putc(b, 95)
+        bb_puts(b, " + ")
+        bb_puts(b, stage)
+        bb_putc(b, 95)
         fb_put_name(c, b, nm)
-        fb_puts(b, " * ")
+        bb_puts(b, " * ")
         if scale == 1 {
-            fb_puts(b, "(")
+            bb_puts(b, "(")
             fb_put_dt(c, b, i)
-            fb_puts(b, " * 0.5)")
+            bb_puts(b, " * 0.5)")
         } else {
             fb_put_dt(c, b, i)
         }
-        fb_puts(b, "; ")
+        bb_puts(b, "; ")
         k = k + 1
     }
 }
 
-function fb_emit_rk4(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
+function fb_emit_rk4(c: ptr<Fb>, b: ptr<ByteBuf>, f: i32) {
     let nev: i32 = fb_count_evolved(c, f)
     let mut k: i32 = 0
     while k < nev {
         let i: i32 = fb_nth_evolved(c, f, k)
-        fb_puts(b, "let y0_")
+        bb_puts(b, "let y0_")
         fb_put_name(c, b, c[0].mm_name[i])
-        fb_puts(b, ": ")
+        bb_puts(b, ": ")
         fb_put_mtype(c, b, i)
-        fb_puts(b, " = ")
+        bb_puts(b, " = ")
         fb_put_self(c, b, c[0].mm_name[i])
-        fb_puts(b, "; ")
+        bb_puts(b, "; ")
         k = k + 1
     }
     let mut st: i32 = 1
@@ -4761,13 +4696,13 @@ function fb_emit_rk4(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
         k = 0
         while k < nev {
             let i2: i32 = fb_nth_evolved(c, f, k)
-            fb_puts(b, "let mut k")
-            fb_put_int(b, st)
-            fb_putc(b, 95)
+            bb_puts(b, "let mut k")
+            bb_put_i32(b, st)
+            bb_putc(b, 95)
             fb_put_name(c, b, c[0].mm_name[i2])
-            fb_puts(b, ": ")
+            bb_puts(b, ": ")
             fb_put_mtype(c, b, i2)
-            fb_puts(b, " = 0.0; ")
+            bb_puts(b, " = 0.0; ")
             k = k + 1
         }
         st = st + 1
@@ -4784,75 +4719,75 @@ function fb_emit_rk4(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
         let i3: i32 = fb_nth_evolved(c, f, k)
         let nm: i32 = c[0].mm_name[i3]
         fb_put_self(c, b, nm)
-        fb_puts(b, " = y0_")
+        bb_puts(b, " = y0_")
         fb_put_name(c, b, nm)
-        fb_puts(b, " + (k1_")
+        bb_puts(b, " + (k1_")
         fb_put_name(c, b, nm)
-        fb_puts(b, " + k2_")
+        bb_puts(b, " + k2_")
         fb_put_name(c, b, nm)
-        fb_puts(b, " * 2.0 + k3_")
+        bb_puts(b, " * 2.0 + k3_")
         fb_put_name(c, b, nm)
-        fb_puts(b, " * 2.0 + k4_")
+        bb_puts(b, " * 2.0 + k4_")
         fb_put_name(c, b, nm)
-        fb_puts(b, ") * (")
+        bb_puts(b, ") * (")
         fb_put_dt(c, b, i3)
-        fb_puts(b, " / 6.0); ")
+        bb_puts(b, " / 6.0); ")
         k = k + 1
     }
 }
 
-function fb_emit_every(c: ptr<Fb>, b: ptr<FbBuf>, f: i32, k: i32) {
+function fb_emit_every(c: ptr<Fb>, b: ptr<ByteBuf>, f: i32, k: i32) {
     let v: i32 = fb_nth_every(c, f, k)
-    let acc: ptr<FbBuf> = fb_buf_new(32)
-    fb_puts(acc, "self.__every_")
-    fb_put_int(acc, k)
-    fb_puts(acc, "_acc")
+    let acc: ptr<ByteBuf> = bb_new(32)
+    bb_puts(acc, "self.__every_")
+    bb_put_i32(acc, k)
+    bb_puts(acc, "_acc")
     let a: string = acc[0].p as string
-    fb_puts(b, a)
-    fb_puts(b, " = ")
-    fb_puts(b, a)
-    fb_puts(b, " + __dt_ns; let mut __every_")
-    fb_put_int(b, k)
-    fb_puts(b, "_n: i64 = 0; while ")
-    fb_puts(b, a)
-    fb_puts(b, " >= ")
-    fb_put_i64(b, c[0].ey_ns[v])
-    fb_puts(b, " && __every_")
-    fb_put_int(b, k)
-    fb_puts(b, "_n < 1024 { ")
-    fb_puts(b, a)
-    fb_puts(b, " = ")
-    fb_puts(b, a)
-    fb_puts(b, " - ")
-    fb_put_i64(b, c[0].ey_ns[v])
-    fb_puts(b, "; __every_")
-    fb_put_int(b, k)
-    fb_puts(b, "_n = __every_")
-    fb_put_int(b, k)
-    fb_puts(b, "_n + 1; ")
+    bb_puts(b, a)
+    bb_puts(b, " = ")
+    bb_puts(b, a)
+    bb_puts(b, " + __dt_ns; let mut __every_")
+    bb_put_i32(b, k)
+    bb_puts(b, "_n: i64 = 0; while ")
+    bb_puts(b, a)
+    bb_puts(b, " >= ")
+    bb_put_i64(b, c[0].ey_ns[v])
+    bb_puts(b, " && __every_")
+    bb_put_i32(b, k)
+    bb_puts(b, "_n < 1024 { ")
+    bb_puts(b, a)
+    bb_puts(b, " = ")
+    bb_puts(b, a)
+    bb_puts(b, " - ")
+    bb_put_i64(b, c[0].ey_ns[v])
+    bb_puts(b, "; __every_")
+    bb_put_i32(b, k)
+    bb_puts(b, "_n = __every_")
+    bb_put_i32(b, k)
+    bb_puts(b, "_n + 1; ")
     fb_emit_staged(c, b, f, 2, v, "__tick_", k)
-    fb_puts(b, "} ")
-    fb_buf_free(acc)
+    bb_puts(b, "} ")
+    bb_free(acc)
 }
 
 # Synchronous `becomes` writes: every right-hand side into a temporary,
 # then every target assigned.
-function fb_emit_staged(c: ptr<Fb>, b: ptr<FbBuf>, f: i32, kind: i32, owner: i32, prefix: string, k: i32) {
+function fb_emit_staged(c: ptr<Fb>, b: ptr<ByteBuf>, f: i32, kind: i32, owner: i32, prefix: string, k: i32) {
     let mut u: i32 = 0
     while u < c[0].nbc {
         if c[0].bc_kind[u] == kind and c[0].bc_owner[u] == owner {
             let tg: i32 = c[0].bc_target[u]
             let st: i32 = fb_find_member(c, f, MK_STATE, tg)
-            fb_puts(b, "let ")
-            fb_puts(b, prefix)
-            fb_put_int(b, k)
-            fb_putc(b, 95)
+            bb_puts(b, "let ")
+            bb_puts(b, prefix)
+            bb_put_i32(b, k)
+            bb_putc(b, 95)
             fb_put_name(c, b, tg)
-            fb_puts(b, ": ")
+            bb_puts(b, ": ")
             fb_put_mtype(c, b, st)
-            fb_puts(b, " = ")
+            bb_puts(b, " = ")
             fb_emit_expr(c, b, c[0].bc_expr[u])
-            fb_puts(b, "; ")
+            bb_puts(b, "; ")
         }
         u = u + 1
     }
@@ -4861,36 +4796,36 @@ function fb_emit_staged(c: ptr<Fb>, b: ptr<FbBuf>, f: i32, kind: i32, owner: i32
         if c[0].bc_kind[u] == kind and c[0].bc_owner[u] == owner {
             let tg2: i32 = c[0].bc_target[u]
             fb_put_self(c, b, tg2)
-            fb_puts(b, " = ")
-            fb_puts(b, prefix)
-            fb_put_int(b, k)
-            fb_putc(b, 95)
+            bb_puts(b, " = ")
+            bb_puts(b, prefix)
+            bb_put_i32(b, k)
+            bb_putc(b, 95)
             fb_put_name(c, b, tg2)
-            fb_puts(b, "; ")
+            bb_puts(b, "; ")
         }
         u = u + 1
     }
 }
 
-function fb_emit_event(c: ptr<Fb>, b: ptr<FbBuf>, f: i32, k: i32) {
+function fb_emit_event(c: ptr<Fb>, b: ptr<ByteBuf>, f: i32, k: i32) {
     let w: i32 = fb_nth_when(c, f, k)
-    fb_puts(b, "let __g_")
-    fb_put_int(b, k)
-    fb_puts(b, ": f64 = ")
+    bb_puts(b, "let __g_")
+    bb_put_i32(b, k)
+    bb_puts(b, ": f64 = ")
     fb_emit_guard(c, b, f, w)
-    fb_puts(b, "; if (__g_")
-    fb_put_int(b, k)
-    fb_puts(b, " < 0.0) != (self.__guard_")
-    fb_put_int(b, k)
-    fb_puts(b, "_prev < 0.0) || __g_")
-    fb_put_int(b, k)
-    fb_puts(b, " == 0.0 { ")
+    bb_puts(b, "; if (__g_")
+    bb_put_i32(b, k)
+    bb_puts(b, " < 0.0) != (self.__guard_")
+    bb_put_i32(b, k)
+    bb_puts(b, "_prev < 0.0) || __g_")
+    bb_put_i32(b, k)
+    bb_puts(b, " == 0.0 { ")
     fb_emit_staged(c, b, f, 1, w, "__reset_", k)
-    fb_puts(b, "} self.__guard_")
-    fb_put_int(b, k)
-    fb_puts(b, "_prev = ")
+    bb_puts(b, "} self.__guard_")
+    bb_put_i32(b, k)
+    bb_puts(b, "_prev = ")
     fb_emit_guard(c, b, f, w)
-    fb_puts(b, "; ")
+    bb_puts(b, "; ")
 }
 
 # _topo_child_order: stable Kahn over combinational edges; on a cycle,
@@ -4952,7 +4887,7 @@ function fb_topo_children(c: ptr<Fb>, f: i32, order: ptr<i32>) -> i32 {
     return n
 }
 
-function fb_emit_child_steps(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
+function fb_emit_child_steps(c: ptr<Fb>, b: ptr<ByteBuf>, f: i32) {
     let n: i32 = fb_count_members(c, f, MK_CHILD)
     if n == 0 { return }
     let order: ptr<i32> = malloc(((n + 1) as i64) * 4) as ptr<i32>
@@ -4965,24 +4900,24 @@ function fb_emit_child_steps(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
         while i < c[0].ncn {
             if c[0].cn_flow[i] == f and fb_name_eq(c, c[0].cn_dm[i], cn) == 1 {
                 fb_put_self(c, b, c[0].cn_dm[i])
-                fb_putc(b, 46)
+                bb_putc(b, 46)
                 fb_put_name(c, b, c[0].cn_dp[i])
-                fb_puts(b, " = ")
+                bb_puts(b, " = ")
                 if fb_name_is(c, c[0].cn_sm[i], "") == 1 {
                     fb_put_self(c, b, c[0].cn_sp[i])
                 } else {
                     fb_put_self(c, b, c[0].cn_sm[i])
-                    fb_putc(b, 46)
+                    bb_putc(b, 46)
                     fb_put_name(c, b, c[0].cn_sp[i])
                 }
-                fb_puts(b, "; ")
+                bb_puts(b, "; ")
             }
             i = i + 1
         }
         fb_put_name(c, b, c[0].mm_type[ch])
-        fb_puts(b, "_step(&")
+        bb_puts(b, "_step(&")
         fb_put_self(c, b, cn)
-        fb_puts(b, ", dt); ")
+        bb_puts(b, ", dt); ")
         k = k + 1
     }
     free(order as ptr<u8>)
@@ -5017,21 +4952,21 @@ function fb_nth_clause(c: ptr<Fb>, f: i32, idx: i32) -> i32 {
 }
 
 # C-string escaping of the invariant message (backslash, then quote).
-function fb_put_escaped(b: ptr<FbBuf>, s: ptr<u8>) {
+function fb_put_escaped(b: ptr<ByteBuf>, s: ptr<u8>) {
     let mut i: i32 = 0
     while s[i] != 0 {
-        if s[i] == 92 or s[i] == 34 { fb_putc(b, 92) }
-        fb_putc(b, s[i])
+        if s[i] == 92 or s[i] == 34 { bb_putc(b, 92) }
+        bb_putc(b, s[i])
         i = i + 1
     }
 }
 
-function fb_emit_step(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
-    fb_puts(b, "@flow_api function ")
+function fb_emit_step(c: ptr<Fb>, b: ptr<ByteBuf>, f: i32) {
+    bb_puts(b, "@flow_api function ")
     fb_put_fname(b, c, f)
-    fb_puts(b, "_step(")
+    bb_puts(b, "_step(")
     fb_self_param(c, b, f)
-    fb_puts(b, ", dt: f64) -> void { ")
+    bb_puts(b, ", dt: f64) -> void { ")
     if c[0].f_solver[f] == 1 and fb_name_is(c, c[0].f_method[f], "rk4") == 1 {
         fb_emit_rk4(c, b, f)
     } else {
@@ -5039,7 +4974,7 @@ function fb_emit_step(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
     }
     let ne: i32 = fb_count_everys(c, f)
     if ne > 0 {
-        fb_puts(b, "let __dt_ns: i64 = ((dt * 1000000000.0) as i64); ")
+        bb_puts(b, "let __dt_ns: i64 = ((dt * 1000000000.0) as i64); ")
     }
     let mut k: i32 = 0
     while k < ne {
@@ -5054,94 +4989,94 @@ function fb_emit_step(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
     }
     if fb_has_outputs(c, f) == 1 {
         fb_put_fname(b, c, f)
-        fb_puts(b, "_outputs(self); ")
+        bb_puts(b, "_outputs(self); ")
     }
     fb_emit_child_steps(c, b, f)
     let nclauses: i32 = fb_count_clauses(c, f)
     if nclauses > 0 {
-        fb_puts(b, "let __viol: i32 = ")
+        bb_puts(b, "let __viol: i32 = ")
         fb_put_fname(b, c, f)
-        fb_puts(b, "_check(self); ")
+        bb_puts(b, "_check(self); ")
         let mut q: i32 = 0
         while q < nclauses {
             let cl: i32 = fb_nth_clause(c, f, q)
-            fb_puts(b, "if __viol == ")
-            fb_put_int(b, q + 1)
-            fb_puts(b, " { flow_panic(\"")
-            let mb: ptr<FbBuf> = fb_buf_new(64)
+            bb_puts(b, "if __viol == ")
+            bb_put_i32(b, q + 1)
+            bb_puts(b, " { flow_panic(\"")
+            let mb: ptr<ByteBuf> = bb_new(64)
             fb_put_fname(mb, c, f)
-            fb_putc(mb, 58)
-            fb_put_int(mb, c[0].iv_line[cl])
-            fb_puts(mb, ": invariant violated: ")
-            fb_puts(mb, fb_s(c, c[0].iv_text[cl]) as string)
+            bb_putc(mb, 58)
+            bb_put_i32(mb, c[0].iv_line[cl])
+            bb_puts(mb, ": invariant violated: ")
+            bb_puts(mb, fb_s(c, c[0].iv_text[cl]) as string)
             fb_put_escaped(b, mb[0].p)
-            fb_buf_free(mb)
-            fb_puts(b, "\"); } ")
+            bb_free(mb)
+            bb_puts(b, "\"); } ")
             q = q + 1
         }
     }
-    fb_puts(b, "}")
+    bb_puts(b, "}")
 }
 
-function fb_emit_default_dt(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
-    fb_puts(b, "@flow_api function ")
+function fb_emit_default_dt(c: ptr<Fb>, b: ptr<ByteBuf>, f: i32) {
+    bb_puts(b, "@flow_api function ")
     fb_put_fname(b, c, f)
-    fb_puts(b, "_default_dt() -> f64 { return ")
+    bb_puts(b, "_default_dt() -> f64 { return ")
     if c[0].f_solver[f] == 1 {
         fb_put_seconds(b, c[0].f_dt_ns[f])
     } else {
         fb_put_seconds(b, 1000000)
     }
-    fb_puts(b, "; }")
+    bb_puts(b, "; }")
 }
 
-function fb_emit_outputs(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
-    fb_puts(b, "@flow_api function ")
+function fb_emit_outputs(c: ptr<Fb>, b: ptr<ByteBuf>, f: i32) {
+    bb_puts(b, "@flow_api function ")
     fb_put_fname(b, c, f)
-    fb_puts(b, "_outputs(")
+    bb_puts(b, "_outputs(")
     fb_self_param(c, b, f)
-    fb_puts(b, ") -> void { ")
+    bb_puts(b, ") -> void { ")
     let no: i32 = fb_count_members(c, f, MK_OUTPUT)
     let mut k: i32 = 0
     while k < no {
         let o: i32 = fb_nth_member(c, f, MK_OUTPUT, k)
         fb_put_self(c, b, c[0].mm_name[o])
-        fb_puts(b, " = ")
+        bb_puts(b, " = ")
         if c[0].mm_pipe_m[o] >= 0 {
             fb_put_self(c, b, c[0].mm_pipe_m[o])
-            fb_putc(b, 46)
+            bb_putc(b, 46)
             fb_put_name(c, b, c[0].mm_pipe_p[o])
         } else {
             fb_emit_expr(c, b, c[0].mm_init[o])
         }
-        fb_puts(b, "; ")
+        bb_puts(b, "; ")
         k = k + 1
     }
-    fb_puts(b, "}")
+    bb_puts(b, "}")
 }
 
-function fb_emit_check(c: ptr<Fb>, b: ptr<FbBuf>, f: i32) {
-    fb_puts(b, "@flow_api function ")
+function fb_emit_check(c: ptr<Fb>, b: ptr<ByteBuf>, f: i32) {
+    bb_puts(b, "@flow_api function ")
     fb_put_fname(b, c, f)
-    fb_puts(b, "_check(")
+    bb_puts(b, "_check(")
     fb_self_param(c, b, f)
-    fb_puts(b, ") -> i32 { ")
+    bb_puts(b, ") -> i32 { ")
     let n: i32 = fb_count_clauses(c, f)
     let mut q: i32 = 0
     while q < n {
         let cl: i32 = fb_nth_clause(c, f, q)
         if c[0].iv_kind[cl] == 1 {
-            fb_puts(b, "if !(")
+            bb_puts(b, "if !(")
         } else {
-            fb_puts(b, "if (")
+            bb_puts(b, "if (")
         }
         fb_emit_expr(c, b, c[0].iv_expr[cl])
-        fb_puts(b, ") { return ")
-        fb_put_int(b, q + 1)
-        fb_puts(b, "; } ")
+        bb_puts(b, ") { return ")
+        bb_put_i32(b, q + 1)
+        bb_puts(b, "; } ")
         q = q + 1
     }
-    fb_puts(b, "return 0; }")
+    bb_puts(b, "return 0; }")
 }
 
 # Mark every rewritable variable in flow f's expressions.
@@ -5207,16 +5142,16 @@ function fb_lower_flow(c: ptr<Fb>, f: i32) {
     let mut ndecl: i32 = 6
     if fb_has_outputs(c, f) == 1 { ndecl = ndecl + 1 }
     if fb_count_clauses(c, f) > 0 { ndecl = ndecl + 1 }
-    let b: ptr<FbBuf> = c[0].out
+    let b: ptr<ByteBuf> = c[0].out
     let mut d: i32 = 0
     let mut used: i32 = 0
     while d < ndecl {
         if d > 0 {
             if used < lines - 1 {
-                fb_putc(b, 10)
+                bb_putc(b, 10)
                 used = used + 1
             } else {
-                fb_putc(b, 32)
+                bb_putc(b, 32)
             }
         }
         if d == 0 { fb_emit_struct(c, b, f) }
@@ -5236,7 +5171,7 @@ function fb_lower_flow(c: ptr<Fb>, f: i32) {
         d = d + 1
     }
     while used < lines - 1 {
-        fb_putc(b, 10)
+        bb_putc(b, 10)
         used = used + 1
     }
 }
@@ -5272,7 +5207,7 @@ function fb_ctx_new(src: ptr<u8>, n: i32) -> ptr<Fb> {
     c[0].nx = fb_alloc_i32(256)
     c[0].nfs = fb_alloc_i32(256)
     c[0].nfe = fb_alloc_i32(256)
-    c[0].nm = fb_buf_new(4096)
+    c[0].nm = bb_new(4096)
     c[0].nf = 0
     c[0].f_name = fb_alloc_i32(FB_MAX_FLOWS)
     c[0].f_line = fb_alloc_i32(FB_MAX_FLOWS)
@@ -5345,11 +5280,11 @@ function fb_ctx_new(src: ptr<u8>, n: i32) -> ptr<Fb> {
     c[0].err_flow = 0 - 1
     c[0].err_line = 0
     c[0].err_col = 0
-    c[0].emsg = fb_buf_new(256)
-    c[0].ehint = fb_buf_new(256)
+    c[0].emsg = bb_new(256)
+    c[0].ehint = bb_new(256)
     c[0].has_hint = 0
     c[0].cur = 0
-    c[0].out = fb_buf_new(n * 2 + 1024)
+    c[0].out = bb_new(n * 2 + 1024)
     return c
 }
 
@@ -5370,10 +5305,10 @@ function fb_ctx_free(c: ptr<Fb>) {
     free(c[0].nx as ptr<u8>)
     free(c[0].nfs as ptr<u8>)
     free(c[0].nfe as ptr<u8>)
-    fb_buf_free(c[0].nm)
-    fb_buf_free(c[0].emsg)
-    fb_buf_free(c[0].ehint)
-    fb_buf_free(c[0].out)
+    bb_free(c[0].nm)
+    bb_free(c[0].emsg)
+    bb_free(c[0].ehint)
+    bb_free(c[0].out)
     # The item tables are small and freed with the process in the one-shot
     # compile paths; the context itself is released here.
     free(c as ptr<u8>)
@@ -5466,31 +5401,31 @@ function fb_scan(c: ptr<Fb>, flows: ptr<i32>) -> i32 {
 # Print the diagnostic as the Python host would show the first line of
 # the exception, plus the hint.
 function fb_report(c: ptr<Fb>) {
-    let b: ptr<FbBuf> = fb_buf_new(512)
-    fb_puts(b, "flowc flow: ")
+    let b: ptr<ByteBuf> = bb_new(512)
+    bb_puts(b, "flowc flow: ")
     if c[0].err == 1 {
-        fb_puts(b, "Error: ")
-        fb_put_span(b, c[0].emsg[0].p, 0, c[0].emsg[0].len)
+        bb_puts(b, "Error: ")
+        bb_put_span(b, c[0].emsg[0].p, 0, c[0].emsg[0].len)
         if c[0].err_line > 0 {
-            fb_puts(b, " at line ")
-            fb_put_int(b, c[0].err_line)
+            bb_puts(b, " at line ")
+            bb_put_i32(b, c[0].err_line)
             if c[0].err_col > 0 {
-                fb_puts(b, ", column ")
-                fb_put_int(b, c[0].err_col)
+                bb_puts(b, ", column ")
+                bb_put_i32(b, c[0].err_col)
             }
         }
     } else {
-        fb_put_span(b, c[0].emsg[0].p, 0, c[0].emsg[0].len)
+        bb_put_span(b, c[0].emsg[0].p, 0, c[0].emsg[0].len)
     }
     puts(b[0].p as string)
     if c[0].has_hint == 1 {
         b[0].len = 0
         b[0].p[0] = 0
-        fb_puts(b, "flowc flow hint: ")
-        fb_put_span(b, c[0].ehint[0].p, 0, c[0].ehint[0].len)
+        bb_puts(b, "flowc flow hint: ")
+        bb_put_span(b, c[0].ehint[0].p, 0, c[0].ehint[0].len)
         puts(b[0].p as string)
     }
-    fb_buf_free(b)
+    bb_free(b)
 }
 
 # Does the source mention `flow` at all? Most files do not, and they skip
@@ -5535,10 +5470,10 @@ function fb_expand(c: ptr<Fb>) -> i32 {
         let mut g: i32 = 0
         while g < f {
             if fb_name_eq(c, c[0].f_name[g], c[0].f_name[f]) == 1 {
-                let m: ptr<FbBuf> = fb_verr(c, c[0].f_line[f])
-                fb_puts(m, "flow '")
+                let m: ptr<ByteBuf> = fb_verr(c, c[0].f_line[f])
+                bb_puts(m, "flow '")
                 fb_put_fname(m, c, f)
-                fb_puts(m, "' is declared twice")
+                bb_puts(m, "' is declared twice")
                 return 0 - 1
             }
             g = g + 1
@@ -5551,12 +5486,12 @@ function fb_expand(c: ptr<Fb>) -> i32 {
     while f < nfl {
         if fb_expand_pipelines(c, f) < 0 { return 0 - 1 }
         if fb_validate_flow(c, f) < 0 { return 0 - 1 }
-        fb_put_span(c[0].out, c[0].src, prev, c[0].f_start[f])
+        bb_put_span(c[0].out, c[0].src, prev, c[0].f_start[f])
         fb_lower_flow(c, f)
         prev = c[0].f_end[f]
         f = f + 1
     }
-    fb_put_span(c[0].out, c[0].src, prev, c[0].n)
+    bb_put_span(c[0].out, c[0].src, prev, c[0].n)
     return 1
 }
 
@@ -5577,7 +5512,7 @@ export function flowc_flow_blocks_expand_in_place(buf: ptr<u8>, n: i32, cap: i32
         fb_ctx_free(c)
         return n
     }
-    let out: ptr<FbBuf> = c[0].out
+    let out: ptr<ByteBuf> = c[0].out
     let m: i32 = out[0].len
     if m >= cap {
         puts("flowc flow: expanded source exceeds the source buffer")

@@ -28,7 +28,7 @@
 # or ".freebuff/".
 
 import "scripts/tools/lib/text.flow"
-import "scripts/tools/lib/regex.flow"
+import "stdlib/regex.flow"
 import "compiler/src/pkg_json.flow"
 import "compiler/src/ast.flow"
 import "compiler/src/token.flow"
@@ -437,7 +437,7 @@ function matches_pattern(source: string, pattern: string) -> bool {
     if has_regex_meta(pattern) {
         let r: ptr<Regex> = rx_compile(pattern, 0)
         if ft_len(rx_error(r)) == 0 {
-            return rx_search(r, source)
+            return rx_test(r, source)
         }
     }
     return ft_contains(ascii_lower(source), ascii_lower(pattern))
@@ -781,7 +781,7 @@ function analyze_fn(w: ptr<Walk>, fnid: i32, out: ptr<Finding>, n: ptr<i32>) -> 
 # Parser.parse() expands flow blocks when a line starts one.
 function has_flow_blocks(code: string) -> bool {
     let r: ptr<Regex> = rx_compile("^\\s*flow\\s+\\w+\\s*\\{", 8)
-    return rx_search(r, code)
+    return rx_test(r, code)
 }
 
 # The idiom findings for one file's source, or -1 when the Python advisor

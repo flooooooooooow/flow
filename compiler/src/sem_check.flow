@@ -402,6 +402,9 @@ export function sem_build_module(c: ptr<Sem>, m: i32, is_root: bool) {
                     sem_decl_add(c, DK_FUNC, m, f, sem_nname(c, f), fi3)
                 } elif sem_nk(c, f) == AST_EXTERN_TYPE {
                     sem_decl_add(c, DK_EXTERN_TYPE, m, f, sem_nname(c, f), 0 - 1)
+                } elif sem_nk(c, f) == AST_CONST {
+                    # extern const NAME: T (#1075): a typed C constant.
+                    sem_decl_add(c, DK_CONST, m, f, sem_nname(c, f), 0 - 1)
                 }
                 f = sem_nnext(c, f)
             }
@@ -1351,7 +1354,7 @@ function sem_literal_int(c: ptr<Sem>, e: i32, via_const: bool, ok: ptr<i32>) -> 
         let s: i32 = sem_lookup_const_symbol(c, sem_nname(c, e))
         if s >= 0 {
             let d: i32 = sem_iv_get(c.sy_def, s)
-            if d >= 0 and sem_decl_kind(c, d) == DK_CONST {
+            if d >= 0 and sem_decl_kind(c, d) == DK_CONST and sem_nival(c, sem_decl_node(c, d)) != 2 {
                 let saved: i32 = c.cm
                 sem_set_mod(c, sem_iv_get(c.d_mod, d))
                 let v: i64 = sem_literal_int(c, sem_nb(c, sem_decl_node(c, d)), true, ok)
@@ -4259,6 +4262,10 @@ function sem_check_function(c: ptr<Sem>, fi: i32) {
 
 function sem_check_const(c: ptr<Sem>, d: i32) {
     let node: i32 = sem_decl_node(c, d)
+    # An extern const has no Flow initializer: the C compiler supplies it.
+    if sem_nival(c, node) == 2 {
+        return
+    }
     let et: i32 = sem_check_expression(c, sem_nb(c, node))
     let xt: i32 = sem_parse_type(c, sem_pt_of_ast(c, sem_na(c, node)))
     if sem_can_coerce(c, et, xt) == false {

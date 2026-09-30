@@ -26468,11 +26468,219 @@ int32_t flowc_span_ends_with(uint8_t* text, int32_t start, int32_t end, uint8_t*
 }
 
 
-typedef struct ShBuf {
-  uint8_t* buf;
-  int32_t cap;
+typedef struct ByteBuf {
+  uint8_t* p;
   int32_t len;
-} ShBuf;
+  int32_t cap;
+  int32_t err;
+} ByteBuf;
+
+ByteBuf* bb_new(int32_t cap);
+void bb_free(ByteBuf* b);
+bool bb_reserve(ByteBuf* b, int32_t extra);
+void bb_putc(ByteBuf* b, uint8_t c);
+void bb_put_bytes(ByteBuf* b, uint8_t* src, int32_t n);
+void bb_puts(ByteBuf* b, const char* s);
+void bb_put_span(ByteBuf* b, uint8_t* src, int32_t s, int32_t e);
+void bb_put_i64(ByteBuf* b, int64_t v);
+void bb_put_i32(ByteBuf* b, int32_t v);
+int32_t bb_len(ByteBuf* b);
+int32_t bb_at(ByteBuf* b, int32_t i);
+const char* bb_cstr(ByteBuf* b);
+const char* bb_str(ByteBuf* b);
+void bb_truncate(ByteBuf* b, int32_t n);
+void bb_clear(ByteBuf* b);
+bool bb_is_space(uint8_t c);
+bool bb_is_digit(uint8_t c);
+bool bb_is_alpha(uint8_t c);
+bool bb_is_word(uint8_t c);
+bool bb_span_eq(uint8_t* a, int32_t a_s, int32_t a_e, uint8_t* b, int32_t b_s, int32_t b_e);
+ByteBuf* bb_new(int32_t cap) {
+  ByteBuf* b = (ByteBuf*)((ByteBuf*)(malloc(24)));
+  int32_t c = cap;
+  if (c < 16) {
+  c = 16;
+}
+  { __typeof__((b[0]).p) __flowc_st70 = (uint8_t*)(malloc((int64_t)((c + 1)))); (b[0]).p = __flowc_st70; }
+  (b[0]).len = 0;
+  (b[0]).cap = c;
+  (b[0]).err = 0;
+  if ((b[0]).p == NULL) {
+  (b[0]).cap = 0;
+  (b[0]).err = 1;
+  return b;
+}
+  (b[0]).p[0] = 0;
+  return b;
+}
+
+void bb_free(ByteBuf* b) {
+  if (b == NULL) {
+  return;
+}
+  if ((b[0]).p != NULL) {
+  free((void*)((b[0]).p));
+}
+  free((void*)(b));
+}
+
+bool bb_reserve(ByteBuf* b, int32_t extra) {
+  int32_t need = ((b[0]).len + extra);
+  if (need <= (b[0]).cap) {
+  return 1;
+}
+  int32_t ncap = (((b[0]).cap * 2) + 64);
+  if (ncap < need) {
+  ncap = need;
+}
+  uint8_t* np = (uint8_t*)((uint8_t*)(realloc((void*)((b[0]).p), (int64_t)((ncap + 1)))));
+  if (np == NULL) {
+  (b[0]).err = 1;
+  return 0;
+}
+  (b[0]).p = np;
+  (b[0]).cap = ncap;
+  return 1;
+}
+
+void bb_putc(ByteBuf* b, uint8_t c) {
+  if ((b[0]).len >= (b[0]).cap) {
+  if (bb_reserve(b, 1) == 0) {
+  return;
+}
+}
+  (b[0]).p[(b[0]).len] = c;
+  (b[0]).len = ((b[0]).len + 1);
+  (b[0]).p[(b[0]).len] = 0;
+}
+
+void bb_put_bytes(ByteBuf* b, uint8_t* src, int32_t n) {
+  if (n <= 0) {
+  return;
+}
+  if (bb_reserve(b, n) == 0) {
+  return;
+}
+  uint8_t* dst = (uint8_t*)((b[0]).p);
+  int32_t base = (b[0]).len;
+  int32_t i = 0;
+  while (i < n) {
+  dst[(base + i)] = src[i];
+  i = (i + 1);
+}
+  (b[0]).len = (base + n);
+  dst[(b[0]).len] = 0;
+}
+
+void bb_puts(ByteBuf* b, const char* s) {
+  bb_put_bytes(b, (uint8_t*)(s), (int32_t)(strlen(s)));
+}
+
+void bb_put_span(ByteBuf* b, uint8_t* src, int32_t s, int32_t e) {
+  if (e <= s) {
+  return;
+}
+  if (bb_reserve(b, (e - s)) == 0) {
+  return;
+}
+  uint8_t* dst = (uint8_t*)((b[0]).p);
+  int32_t o = (b[0]).len;
+  int32_t i = s;
+  while (i < e) {
+  dst[o] = src[i];
+  o = (o + 1);
+  i = (i + 1);
+}
+  (b[0]).len = o;
+  dst[o] = 0;
+}
+
+void bb_put_i64(ByteBuf* b, int64_t v) {
+  if (v < 0) {
+  bb_putc(b, 45);
+  if (v <= (0 - 10)) {
+  bb_put_i64(b, (0 - (v / 10)));
+}
+  bb_putc(b, (uint8_t)((48 - (v % 10))));
+  return;
+}
+  if (v >= 10) {
+  bb_put_i64(b, (v / 10));
+}
+  bb_putc(b, (uint8_t)((48 + (v % 10))));
+}
+
+void bb_put_i32(ByteBuf* b, int32_t v) {
+  bb_put_i64(b, (int64_t)(v));
+}
+
+int32_t bb_len(ByteBuf* b) {
+  return (b[0]).len;
+}
+
+int32_t bb_at(ByteBuf* b, int32_t i) {
+  if (i < 0 || i >= (b[0]).len) {
+  return (0 - 1);
+}
+  return (int32_t)((b[0]).p[i]);
+}
+
+const char* bb_cstr(ByteBuf* b) {
+  return (const char*)((b[0]).p);
+}
+
+const char* bb_str(ByteBuf* b) {
+  uint8_t* out = (uint8_t*)((uint8_t*)(malloc((int64_t)(((b[0]).len + 1)))));
+  int32_t i = 0;
+  while (i < (b[0]).len) {
+  out[i] = (b[0]).p[i];
+  i = (i + 1);
+}
+  out[(b[0]).len] = 0;
+  return (const char*)(out);
+}
+
+void bb_truncate(ByteBuf* b, int32_t n) {
+  if (n >= 0 && n < (b[0]).len) {
+  (b[0]).len = n;
+  (b[0]).p[n] = 0;
+}
+}
+
+void bb_clear(ByteBuf* b) {
+  bb_truncate(b, 0);
+}
+
+bool bb_is_space(uint8_t c) {
+  return c == 32 || c >= 9 && c <= 13 || c >= 28 && c <= 31;
+}
+
+bool bb_is_digit(uint8_t c) {
+  return c >= 48 && c <= 57;
+}
+
+bool bb_is_alpha(uint8_t c) {
+  return c >= 65 && c <= 90 || c >= 97 && c <= 122;
+}
+
+bool bb_is_word(uint8_t c) {
+  return bb_is_alpha(c) || bb_is_digit(c) || c == 95;
+}
+
+bool bb_span_eq(uint8_t* a, int32_t a_s, int32_t a_e, uint8_t* b, int32_t b_s, int32_t b_e) {
+  if ((a_e - a_s) != (b_e - b_s)) {
+  return 0;
+}
+  int32_t i = 0;
+  while (i < (a_e - a_s)) {
+  if (a[(a_s + i)] != b[(b_s + i)]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
 
 typedef struct ShCtx {
   uint8_t* p;
@@ -26480,7 +26688,7 @@ typedef struct ShCtx {
   int32_t pn;
   int32_t target;
   int32_t err;
-  ShBuf* msg;
+  ByteBuf* msg;
   int32_t* tk;
   int32_t* ts;
   int32_t* te;
@@ -26594,24 +26802,21 @@ static const int32_t TY_METAL = 9;
 static const int32_t TY_WGSL = 18;
 #undef TY_CONSTS
 static const int32_t TY_CONSTS = 27;
-ShBuf* flowc_shader_buf_new(int32_t cap);
-void flowc_shader_buf_free(ShBuf* w);
-void sh_putc(ShBuf* w, uint8_t c);
-void flowc_shader_putc(ShBuf* w, uint8_t c);
-void sh_puts(ShBuf* w, const char* s);
-void sh_line(ShBuf* w, const char* s);
-void sh_put_span(ShBuf* w, uint8_t* p, int32_t s, int32_t e);
-void sh_rule(ShBuf* w, int32_t n);
-void sh_pad(ShBuf* w, int32_t indent);
+ByteBuf* flowc_shader_buf_new(int32_t cap);
+void flowc_shader_buf_free(ByteBuf* w);
+void flowc_shader_putc(ByteBuf* w, uint8_t c);
+void sh_line(ByteBuf* w, const char* s);
+void sh_rule(ByteBuf* w, int32_t n);
+void sh_pad(ByteBuf* w, int32_t indent);
 int32_t* sh_ints(int32_t n);
 void sh_pool_add(ShCtx* c, const char* s);
 void sh_pool_add_set(ShCtx* c, const char* a, const char* b, const char* d, const char* e, const char* f, const char* g, const char* h, const char* i, const char* j);
 ShCtx* flowc_shader_ctx_new(uint8_t* src, int32_t n);
 void flowc_shader_ctx_free(ShCtx* c);
 int32_t flowc_shader_ctx_err(ShCtx* c);
-ShBuf* flowc_shader_ctx_msg(ShCtx* c);
+ByteBuf* flowc_shader_ctx_msg(ShCtx* c);
 int32_t flowc_shader_fill_count(ShCtx* c);
-void flowc_shader_put_fill_name(ShCtx* c, ShBuf* w, int32_t k);
+void flowc_shader_put_fill_name(ShCtx* c, ByteBuf* w, int32_t k);
 int32_t flowc_shader_fill_named(ShCtx* c, int32_t k, uint8_t* name, int32_t nlen);
 int32_t sh_err(ShCtx* c);
 void sh_fail(ShCtx* c, const char* m);
@@ -26666,7 +26871,7 @@ int32_t sh_parse_primary(ShCtx* c);
 int32_t sh_parse_body_span(ShCtx* c, int32_t s, int32_t e);
 int32_t sh_ty_is(ShCtx* c, int32_t h, const char* lit);
 int32_t sh_ty_eq(ShCtx* c, int32_t a, int32_t b);
-void sh_put_ty(ShCtx* c, ShBuf* w, int32_t h);
+void sh_put_ty(ShCtx* c, ByteBuf* w, int32_t h);
 int32_t sh_ty_known(ShCtx* c, int32_t k);
 int32_t sh_map_type(ShCtx* c, int32_t h);
 int32_t sh_ty_named(ShCtx* c, int32_t s, int32_t e);
@@ -26680,81 +26885,48 @@ int32_t sh_is_wgsl_float_fn(ShCtx* c, int32_t k);
 int32_t sh_guess(ShCtx* c, int32_t x);
 int32_t sh_is_metal_builtin(ShCtx* c, int32_t k);
 int32_t sh_is_wgsl_builtin(ShCtx* c, int32_t k);
-void sh_put_name(ShCtx* c, ShBuf* w, int32_t k);
+void sh_put_name(ShCtx* c, ByteBuf* w, int32_t k);
 void sh_unknown_fn(ShCtx* c, int32_t x);
-void sh_emit_call(ShCtx* c, ShBuf* w, int32_t x);
-void sh_emit_expr(ShCtx* c, ShBuf* w, int32_t x);
-int32_t sh_emit_stmts(ShCtx* c, ShBuf* w, int32_t head, int32_t indent);
+void sh_emit_call(ShCtx* c, ByteBuf* w, int32_t x);
+void sh_emit_expr(ShCtx* c, ByteBuf* w, int32_t x);
+int32_t sh_emit_stmts(ShCtx* c, ByteBuf* w, int32_t head, int32_t indent);
 int32_t sh_has_color_assign(ShCtx* c, int32_t head);
-void sh_emit_fn(ShCtx* c, ShBuf* w, int32_t k);
-void sh_emit_fill(ShCtx* c, ShBuf* w, int32_t k);
-int32_t flowc_shader_gen(ShCtx* c, ShBuf* w, int32_t target, uint8_t* name, int32_t nlen, int32_t only);
-void sh_prelude_metal(ShBuf* w);
-void sh_prelude_wgsl(ShBuf* w);
-ShBuf* flowc_shader_buf_new(int32_t cap) {
-  ShBuf* w = (ShBuf*)((ShBuf*)(malloc(24)));
-  { __typeof__((w[0]).buf) __flowc_st166 = malloc((int64_t)((cap + 1))); (w[0]).buf = __flowc_st166; }
-  (w[0]).cap = cap;
-  (w[0]).len = 0;
-  return w;
+void sh_emit_fn(ShCtx* c, ByteBuf* w, int32_t k);
+void sh_emit_fill(ShCtx* c, ByteBuf* w, int32_t k);
+int32_t flowc_shader_gen(ShCtx* c, ByteBuf* w, int32_t target, uint8_t* name, int32_t nlen, int32_t only);
+void sh_prelude_metal(ByteBuf* w);
+void sh_prelude_wgsl(ByteBuf* w);
+ByteBuf* flowc_shader_buf_new(int32_t cap) {
+  return bb_new(cap);
 }
 
-void flowc_shader_buf_free(ShBuf* w) {
-  free((w[0]).buf);
-  free((uint8_t*)(w));
+void flowc_shader_buf_free(ByteBuf* w) {
+  bb_free(w);
 }
 
-void sh_putc(ShBuf* w, uint8_t c) {
-  if ((w[0]).len >= (w[0]).cap) {
-  int32_t ncap = (((w[0]).cap * 2) + 64);
-  { __typeof__((w[0]).buf) __flowc_st240 = realloc((w[0]).buf, (int64_t)((ncap + 1))); (w[0]).buf = __flowc_st240; }
-  (w[0]).cap = ncap;
-}
-  (w[0]).buf[(w[0]).len] = c;
-  (w[0]).len = ((w[0]).len + 1);
+void flowc_shader_putc(ByteBuf* w, uint8_t c) {
+  bb_putc(w, c);
 }
 
-void flowc_shader_putc(ShBuf* w, uint8_t c) {
-  sh_putc(w, c);
+void sh_line(ByteBuf* w, const char* s) {
+  bb_puts(w, s);
+  bb_putc(w, 10);
 }
 
-void sh_puts(ShBuf* w, const char* s) {
-  uint8_t* p = (uint8_t*)(s);
-  int32_t n = (int32_t)(strlen(s));
+void sh_rule(ByteBuf* w, int32_t n) {
   int32_t i = 0;
   while (i < n) {
-  sh_putc(w, p[i]);
+  bb_putc(w, 226);
+  bb_putc(w, 148);
+  bb_putc(w, 128);
   i = (i + 1);
 }
 }
 
-void sh_line(ShBuf* w, const char* s) {
-  sh_puts(w, s);
-  sh_putc(w, 10);
-}
-
-void sh_put_span(ShBuf* w, uint8_t* p, int32_t s, int32_t e) {
-  int32_t i = s;
-  while (i < e) {
-  sh_putc(w, p[i]);
-  i = (i + 1);
-}
-}
-
-void sh_rule(ShBuf* w, int32_t n) {
-  int32_t i = 0;
-  while (i < n) {
-  sh_putc(w, 226);
-  sh_putc(w, 148);
-  sh_putc(w, 128);
-  i = (i + 1);
-}
-}
-
-void sh_pad(ShBuf* w, int32_t indent) {
+void sh_pad(ByteBuf* w, int32_t indent) {
   int32_t i = 0;
   while (i < (indent * 4)) {
-  sh_putc(w, 32);
+  bb_putc(w, 32);
   i = (i + 1);
 }
 }
@@ -26792,7 +26964,7 @@ void sh_pool_add_set(ShCtx* c, const char* a, const char* b, const char* d, cons
 ShCtx* flowc_shader_ctx_new(uint8_t* src, int32_t n) {
   ShCtx* c = (ShCtx*)((ShCtx*)(malloc(512)));
   int32_t cap = (n + 8);
-  { __typeof__((c[0]).p) __flowc_st759 = malloc((int64_t)((n + 512))); (c[0]).p = __flowc_st759; }
+  { __typeof__((c[0]).p) __flowc_st576 = malloc((int64_t)((n + 512))); (c[0]).p = __flowc_st576; }
   int32_t i = 0;
   while (i < n) {
   (c[0]).p[i] = src[i];
@@ -26803,44 +26975,44 @@ ShCtx* flowc_shader_ctx_new(uint8_t* src, int32_t n) {
   (c[0]).pn = (n + 1);
   (c[0]).target = SH_METAL;
   (c[0]).err = 0;
-  { __typeof__((c[0]).msg) __flowc_st825 = flowc_shader_buf_new(256); (c[0]).msg = __flowc_st825; }
-  { __typeof__((c[0]).tk) __flowc_st832 = sh_ints(cap); (c[0]).tk = __flowc_st832; }
-  { __typeof__((c[0]).ts) __flowc_st839 = sh_ints(cap); (c[0]).ts = __flowc_st839; }
-  { __typeof__((c[0]).te) __flowc_st846 = sh_ints(cap); (c[0]).te = __flowc_st846; }
+  { __typeof__((c[0]).msg) __flowc_st642 = flowc_shader_buf_new(256); (c[0]).msg = __flowc_st642; }
+  { __typeof__((c[0]).tk) __flowc_st649 = sh_ints(cap); (c[0]).tk = __flowc_st649; }
+  { __typeof__((c[0]).ts) __flowc_st656 = sh_ints(cap); (c[0]).ts = __flowc_st656; }
+  { __typeof__((c[0]).te) __flowc_st663 = sh_ints(cap); (c[0]).te = __flowc_st663; }
   (c[0]).ntok = 0;
   (c[0]).ti = 0;
-  { __typeof__((c[0]).nk) __flowc_st867 = sh_ints((cap * 2)); (c[0]).nk = __flowc_st867; }
-  { __typeof__((c[0]).na) __flowc_st876 = sh_ints((cap * 2)); (c[0]).na = __flowc_st876; }
-  { __typeof__((c[0]).nb) __flowc_st885 = sh_ints((cap * 2)); (c[0]).nb = __flowc_st885; }
-  { __typeof__((c[0]).nc) __flowc_st894 = sh_ints((cap * 2)); (c[0]).nc = __flowc_st894; }
-  { __typeof__((c[0]).nx) __flowc_st903 = sh_ints((cap * 2)); (c[0]).nx = __flowc_st903; }
-  { __typeof__((c[0]).s1) __flowc_st912 = sh_ints((cap * 2)); (c[0]).s1 = __flowc_st912; }
-  { __typeof__((c[0]).e1) __flowc_st921 = sh_ints((cap * 2)); (c[0]).e1 = __flowc_st921; }
-  { __typeof__((c[0]).nf) __flowc_st930 = sh_ints((cap * 2)); (c[0]).nf = __flowc_st930; }
+  { __typeof__((c[0]).nk) __flowc_st684 = sh_ints((cap * 2)); (c[0]).nk = __flowc_st684; }
+  { __typeof__((c[0]).na) __flowc_st693 = sh_ints((cap * 2)); (c[0]).na = __flowc_st693; }
+  { __typeof__((c[0]).nb) __flowc_st702 = sh_ints((cap * 2)); (c[0]).nb = __flowc_st702; }
+  { __typeof__((c[0]).nc) __flowc_st711 = sh_ints((cap * 2)); (c[0]).nc = __flowc_st711; }
+  { __typeof__((c[0]).nx) __flowc_st720 = sh_ints((cap * 2)); (c[0]).nx = __flowc_st720; }
+  { __typeof__((c[0]).s1) __flowc_st729 = sh_ints((cap * 2)); (c[0]).s1 = __flowc_st729; }
+  { __typeof__((c[0]).e1) __flowc_st738 = sh_ints((cap * 2)); (c[0]).e1 = __flowc_st738; }
+  { __typeof__((c[0]).nf) __flowc_st747 = sh_ints((cap * 2)); (c[0]).nf = __flowc_st747; }
   (c[0]).nn = 0;
-  { __typeof__((c[0]).ys) __flowc_st947 = sh_ints(((cap * 3) + TY_CONSTS)); (c[0]).ys = __flowc_st947; }
-  { __typeof__((c[0]).ye) __flowc_st958 = sh_ints(((cap * 3) + TY_CONSTS)); (c[0]).ye = __flowc_st958; }
+  { __typeof__((c[0]).ys) __flowc_st764 = sh_ints(((cap * 3) + TY_CONSTS)); (c[0]).ys = __flowc_st764; }
+  { __typeof__((c[0]).ye) __flowc_st775 = sh_ints(((cap * 3) + TY_CONSTS)); (c[0]).ye = __flowc_st775; }
   (c[0]).ny = 0;
-  { __typeof__((c[0]).vs) __flowc_st973 = sh_ints((cap * 2)); (c[0]).vs = __flowc_st973; }
-  { __typeof__((c[0]).ve) __flowc_st982 = sh_ints((cap * 2)); (c[0]).ve = __flowc_st982; }
-  { __typeof__((c[0]).vt) __flowc_st991 = sh_ints((cap * 2)); (c[0]).vt = __flowc_st991; }
+  { __typeof__((c[0]).vs) __flowc_st790 = sh_ints((cap * 2)); (c[0]).vs = __flowc_st790; }
+  { __typeof__((c[0]).ve) __flowc_st799 = sh_ints((cap * 2)); (c[0]).ve = __flowc_st799; }
+  { __typeof__((c[0]).vt) __flowc_st808 = sh_ints((cap * 2)); (c[0]).vt = __flowc_st808; }
   (c[0]).nv = 0;
-  { __typeof__((c[0]).fns) __flowc_st1004 = sh_ints(cap); (c[0]).fns = __flowc_st1004; }
-  { __typeof__((c[0]).fne) __flowc_st1011 = sh_ints(cap); (c[0]).fne = __flowc_st1011; }
-  { __typeof__((c[0]).fbs) __flowc_st1018 = sh_ints(cap); (c[0]).fbs = __flowc_st1018; }
-  { __typeof__((c[0]).fbe) __flowc_st1025 = sh_ints(cap); (c[0]).fbe = __flowc_st1025; }
-  { __typeof__((c[0]).frt) __flowc_st1032 = sh_ints(cap); (c[0]).frt = __flowc_st1032; }
-  { __typeof__((c[0]).fp0) __flowc_st1039 = sh_ints(cap); (c[0]).fp0 = __flowc_st1039; }
-  { __typeof__((c[0]).fpn) __flowc_st1046 = sh_ints(cap); (c[0]).fpn = __flowc_st1046; }
+  { __typeof__((c[0]).fns) __flowc_st821 = sh_ints(cap); (c[0]).fns = __flowc_st821; }
+  { __typeof__((c[0]).fne) __flowc_st828 = sh_ints(cap); (c[0]).fne = __flowc_st828; }
+  { __typeof__((c[0]).fbs) __flowc_st835 = sh_ints(cap); (c[0]).fbs = __flowc_st835; }
+  { __typeof__((c[0]).fbe) __flowc_st842 = sh_ints(cap); (c[0]).fbe = __flowc_st842; }
+  { __typeof__((c[0]).frt) __flowc_st849 = sh_ints(cap); (c[0]).frt = __flowc_st849; }
+  { __typeof__((c[0]).fp0) __flowc_st856 = sh_ints(cap); (c[0]).fp0 = __flowc_st856; }
+  { __typeof__((c[0]).fpn) __flowc_st863 = sh_ints(cap); (c[0]).fpn = __flowc_st863; }
   (c[0]).nfn = 0;
-  { __typeof__((c[0]).pas) __flowc_st1059 = sh_ints(cap); (c[0]).pas = __flowc_st1059; }
-  { __typeof__((c[0]).pae) __flowc_st1066 = sh_ints(cap); (c[0]).pae = __flowc_st1066; }
-  { __typeof__((c[0]).pat) __flowc_st1073 = sh_ints(cap); (c[0]).pat = __flowc_st1073; }
+  { __typeof__((c[0]).pas) __flowc_st876 = sh_ints(cap); (c[0]).pas = __flowc_st876; }
+  { __typeof__((c[0]).pae) __flowc_st883 = sh_ints(cap); (c[0]).pae = __flowc_st883; }
+  { __typeof__((c[0]).pat) __flowc_st890 = sh_ints(cap); (c[0]).pat = __flowc_st890; }
   (c[0]).npa = 0;
-  { __typeof__((c[0]).fls) __flowc_st1086 = sh_ints(cap); (c[0]).fls = __flowc_st1086; }
-  { __typeof__((c[0]).fle) __flowc_st1093 = sh_ints(cap); (c[0]).fle = __flowc_st1093; }
-  { __typeof__((c[0]).flbs) __flowc_st1100 = sh_ints(cap); (c[0]).flbs = __flowc_st1100; }
-  { __typeof__((c[0]).flbe) __flowc_st1107 = sh_ints(cap); (c[0]).flbe = __flowc_st1107; }
+  { __typeof__((c[0]).fls) __flowc_st903 = sh_ints(cap); (c[0]).fls = __flowc_st903; }
+  { __typeof__((c[0]).fle) __flowc_st910 = sh_ints(cap); (c[0]).fle = __flowc_st910; }
+  { __typeof__((c[0]).flbs) __flowc_st917 = sh_ints(cap); (c[0]).flbs = __flowc_st917; }
+  { __typeof__((c[0]).flbe) __flowc_st924 = sh_ints(cap); (c[0]).flbe = __flowc_st924; }
   (c[0]).nfl = 0;
   sh_pool_add_set(c, "f32", "i32", "bool", "vec2", "vec3", "vec4", "mat2", "mat3", "mat4");
   sh_pool_add_set(c, "float", "int", "bool", "float2", "float3", "float4", "float2x2", "float3x3", "float4x4");
@@ -26889,7 +27061,7 @@ int32_t flowc_shader_ctx_err(ShCtx* c) {
   return (c[0]).err;
 }
 
-ShBuf* flowc_shader_ctx_msg(ShCtx* c) {
+ByteBuf* flowc_shader_ctx_msg(ShCtx* c) {
   return (c[0]).msg;
 }
 
@@ -26897,8 +27069,8 @@ int32_t flowc_shader_fill_count(ShCtx* c) {
   return (c[0]).nfl;
 }
 
-void flowc_shader_put_fill_name(ShCtx* c, ShBuf* w, int32_t k) {
-  sh_put_span(w, (c[0]).p, (c[0]).fls[k], (c[0]).fle[k]);
+void flowc_shader_put_fill_name(ShCtx* c, ByteBuf* w, int32_t k) {
+  bb_put_span(w, (c[0]).p, (c[0]).fls[k], (c[0]).fle[k]);
 }
 
 int32_t flowc_shader_fill_named(ShCtx* c, int32_t k, uint8_t* name, int32_t nlen) {
@@ -26928,7 +27100,7 @@ int32_t sh_err(ShCtx* c) {
 
 void sh_fail(ShCtx* c, const char* m) {
   if (sh_err(c) == 1) {
-  sh_puts((c[0]).msg, m);
+  bb_puts((c[0]).msg, m);
 }
 }
 
@@ -27202,9 +27374,9 @@ int32_t sh_parse_params(ShCtx* c, int32_t s, int32_t e) {
 }
   if (colon >= se[1]) {
   if (sh_err(c) == 1) {
-  sh_puts((c[0]).msg, "Shader fn param needs name: type, got '");
-  sh_put_span((c[0]).msg, p, se[0], se[1]);
-  sh_puts((c[0]).msg, "'");
+  bb_puts((c[0]).msg, "Shader fn param needs name: type, got '");
+  bb_put_span((c[0]).msg, p, se[0], se[1]);
+  bb_puts((c[0]).msg, "'");
 }
   rc = (0 - 1);
 } else {
@@ -27219,7 +27391,7 @@ int32_t sh_parse_params(ShCtx* c, int32_t s, int32_t e) {
   se[0] = (colon + 1);
   se[1] = pe;
   sh_strip(p, se);
-  { __typeof__((c[0]).pat[k]) __flowc_st2912 = sh_ty_span(c, se[0], se[1]); (c[0]).pat[k] = __flowc_st2912; }
+  { __typeof__((c[0]).pat[k]) __flowc_st2729 = sh_ty_span(c, se[0], se[1]); (c[0]).pat[k] = __flowc_st2729; }
   (c[0]).npa = (k + 1);
 }
 }
@@ -27308,7 +27480,7 @@ int32_t flowc_shader_extract(ShCtx* c) {
   rse[0] = hf[4];
   rse[1] = hf[5];
   sh_strip(p, rse);
-  { __typeof__((c[0]).frt[k]) __flowc_st3317 = sh_ty_span(c, rse[0], rse[1]); (c[0]).frt[k] = __flowc_st3317; }
+  { __typeof__((c[0]).frt[k]) __flowc_st3134 = sh_ty_span(c, rse[0], rse[1]); (c[0]).frt[k] = __flowc_st3134; }
   free((uint8_t*)(rse));
   (c[0]).nfn = (k + 1);
 }
@@ -27372,11 +27544,11 @@ int32_t flowc_shader_expand_in_place(uint8_t* buf, int32_t n, int32_t cap) {
   rc = (0 - 1);
 }
   if (rc != 0) {
-  ShBuf* line = (ShBuf*)(flowc_shader_buf_new(256));
-  sh_puts(line, "flowc shader: ");
-  sh_put_span(line, ((c[0]).msg[0]).buf, 0, ((c[0]).msg[0]).len);
-  (line[0]).buf[(line[0]).len] = 0;
-  puts((const char*)((line[0]).buf));
+  ByteBuf* line = (ByteBuf*)(flowc_shader_buf_new(256));
+  bb_puts(line, "flowc shader: ");
+  bb_put_span(line, ((c[0]).msg[0]).p, 0, ((c[0]).msg[0]).len);
+  (line[0]).p[(line[0]).len] = 0;
+  puts((const char*)((line[0]).p));
   flowc_shader_buf_free(line);
   flowc_shader_ctx_free(c);
   return (0 - 1);
@@ -27623,11 +27795,11 @@ int32_t sh_match(ShCtx* c, int32_t kind) {
 void sh_err_got(ShCtx* c, const char* head) {
   if (sh_err(c) == 1) {
   int32_t t = (c[0]).ti;
-  sh_puts((c[0]).msg, head);
-  sh_puts((c[0]).msg, sh_kind_name((c[0]).tk[t]));
-  sh_puts((c[0]).msg, " '");
-  sh_put_span((c[0]).msg, (c[0]).p, (c[0]).ts[t], (c[0]).te[t]);
-  sh_puts((c[0]).msg, "'");
+  bb_puts((c[0]).msg, head);
+  bb_puts((c[0]).msg, sh_kind_name((c[0]).tk[t]));
+  bb_puts((c[0]).msg, " '");
+  bb_put_span((c[0]).msg, (c[0]).p, (c[0]).ts[t], (c[0]).te[t]);
+  bb_puts((c[0]).msg, "'");
 }
 }
 
@@ -27645,18 +27817,18 @@ int32_t sh_expect(ShCtx* c, int32_t kind, const char* lit) {
 }
   if (ok == 0) {
   if (sh_err(c) == 1) {
-  sh_puts((c[0]).msg, "Shader parse error: expected ");
-  sh_puts((c[0]).msg, sh_kind_name(kind));
+  bb_puts((c[0]).msg, "Shader parse error: expected ");
+  bb_puts((c[0]).msg, sh_kind_name(kind));
   if (has_lit > 0) {
-  sh_puts((c[0]).msg, " '");
-  sh_puts((c[0]).msg, lit);
-  sh_puts((c[0]).msg, "'");
+  bb_puts((c[0]).msg, " '");
+  bb_puts((c[0]).msg, lit);
+  bb_puts((c[0]).msg, "'");
 }
-  sh_puts((c[0]).msg, ", got ");
-  sh_puts((c[0]).msg, sh_kind_name((c[0]).tk[t]));
-  sh_puts((c[0]).msg, " '");
-  sh_put_span((c[0]).msg, (c[0]).p, (c[0]).ts[t], (c[0]).te[t]);
-  sh_puts((c[0]).msg, "'");
+  bb_puts((c[0]).msg, ", got ");
+  bb_puts((c[0]).msg, sh_kind_name((c[0]).tk[t]));
+  bb_puts((c[0]).msg, " '");
+  bb_put_span((c[0]).msg, (c[0]).p, (c[0]).ts[t], (c[0]).te[t]);
+  bb_puts((c[0]).msg, "'");
 }
   return (0 - 1);
 }
@@ -27753,7 +27925,7 @@ int32_t sh_parse_stmt(ShCtx* c) {
   if (k == T_NEWLINE || k == T_SEMI || k == T_RBRACE || k == T_EOF) {
   return r;
 }
-  { __typeof__((c[0]).na[r]) __flowc_st5326 = sh_parse_expr(c); (c[0]).na[r] = __flowc_st5326; }
+  { __typeof__((c[0]).na[r]) __flowc_st5143 = sh_parse_expr(c); (c[0]).na[r] = __flowc_st5143; }
   return r;
 }
   if (sh_cur(c) == T_IDENT) {
@@ -27762,7 +27934,7 @@ int32_t sh_parse_stmt(ShCtx* c) {
   return (0 - 1);
 }
   int32_t a = sh_node_tok(c, S_ASSIGN, name);
-  { __typeof__((c[0]).na[a]) __flowc_st5365 = sh_parse_expr(c); (c[0]).na[a] = __flowc_st5365; }
+  { __typeof__((c[0]).na[a]) __flowc_st5182 = sh_parse_expr(c); (c[0]).na[a] = __flowc_st5182; }
   return a;
 }
   sh_err_got(c, "Shader statement expected, got ");
@@ -27786,12 +27958,12 @@ int32_t sh_parse_let(ShCtx* c) {
   if (ty < 0) {
   return (0 - 1);
 }
-  { __typeof__((c[0]).nb[st]) __flowc_st5470 = sh_ty_span(c, (c[0]).ts[ty], (c[0]).te[ty]); (c[0]).nb[st] = __flowc_st5470; }
+  { __typeof__((c[0]).nb[st]) __flowc_st5287 = sh_ty_span(c, (c[0]).ts[ty], (c[0]).te[ty]); (c[0]).nb[st] = __flowc_st5287; }
 }
   if (sh_expect(c, T_ASSIGN, "") < 0) {
   return (0 - 1);
 }
-  { __typeof__((c[0]).na[st]) __flowc_st5493 = sh_parse_expr(c); (c[0]).na[st] = __flowc_st5493; }
+  { __typeof__((c[0]).na[st]) __flowc_st5310 = sh_parse_expr(c); (c[0]).na[st] = __flowc_st5310; }
   return st;
 }
 
@@ -27807,12 +27979,12 @@ int32_t sh_parse_if(ShCtx* c) {
   return (0 - 1);
 }
   int32_t st = sh_node(c, S_IF);
-  { __typeof__((c[0]).na[st]) __flowc_st5545 = sh_parse_expr(c); (c[0]).na[st] = __flowc_st5545; }
+  { __typeof__((c[0]).na[st]) __flowc_st5362 = sh_parse_expr(c); (c[0]).na[st] = __flowc_st5362; }
   if ((c[0]).err != 0) {
   return (0 - 1);
 }
   sh_skip_nl(c);
-  { __typeof__((c[0]).nb[st]) __flowc_st5569 = sh_parse_body(c); (c[0]).nb[st] = __flowc_st5569; }
+  { __typeof__((c[0]).nb[st]) __flowc_st5386 = sh_parse_body(c); (c[0]).nb[st] = __flowc_st5386; }
   if ((c[0]).err != 0) {
   return (0 - 1);
 }
@@ -27821,9 +27993,9 @@ int32_t sh_parse_if(ShCtx* c) {
   sh_advance(c);
   sh_skip_nl(c);
   if (sh_cur_is(c, T_IDENT, "if") == 1) {
-  { __typeof__((c[0]).nc[st]) __flowc_st5611 = sh_parse_if(c); (c[0]).nc[st] = __flowc_st5611; }
+  { __typeof__((c[0]).nc[st]) __flowc_st5428 = sh_parse_if(c); (c[0]).nc[st] = __flowc_st5428; }
 } else {
-  { __typeof__((c[0]).nc[st]) __flowc_st5621 = sh_parse_body(c); (c[0]).nc[st] = __flowc_st5621; }
+  { __typeof__((c[0]).nc[st]) __flowc_st5438 = sh_parse_body(c); (c[0]).nc[st] = __flowc_st5438; }
 }
 }
   return st;
@@ -27843,7 +28015,7 @@ int32_t sh_parse_for(ShCtx* c) {
   return (0 - 1);
 }
   sh_advance(c);
-  { __typeof__((c[0]).na[st]) __flowc_st5694 = sh_parse_expr(c); (c[0]).na[st] = __flowc_st5694; }
+  { __typeof__((c[0]).na[st]) __flowc_st5511 = sh_parse_expr(c); (c[0]).na[st] = __flowc_st5511; }
   if ((c[0]).err != 0) {
   return (0 - 1);
 }
@@ -27852,12 +28024,12 @@ int32_t sh_parse_for(ShCtx* c) {
   return (0 - 1);
 }
   sh_advance(c);
-  { __typeof__((c[0]).nb[st]) __flowc_st5734 = sh_parse_expr(c); (c[0]).nb[st] = __flowc_st5734; }
+  { __typeof__((c[0]).nb[st]) __flowc_st5551 = sh_parse_expr(c); (c[0]).nb[st] = __flowc_st5551; }
   if ((c[0]).err != 0) {
   return (0 - 1);
 }
   sh_skip_nl(c);
-  { __typeof__((c[0]).nc[st]) __flowc_st5758 = sh_parse_body(c); (c[0]).nc[st] = __flowc_st5758; }
+  { __typeof__((c[0]).nc[st]) __flowc_st5575 = sh_parse_body(c); (c[0]).nc[st] = __flowc_st5575; }
   return st;
 }
 
@@ -27914,7 +28086,7 @@ int32_t sh_parse_unary(ShCtx* c) {
   if (sh_cur_is(c, T_OP, "-") == 1 || sh_cur(c) == T_NOT) {
   int32_t op = sh_advance(c);
   int32_t u = sh_node_tok(c, E_UNARY, op);
-  { __typeof__((c[0]).na[u]) __flowc_st6015 = sh_parse_unary(c); (c[0]).na[u] = __flowc_st6015; }
+  { __typeof__((c[0]).na[u]) __flowc_st5832 = sh_parse_unary(c); (c[0]).na[u] = __flowc_st5832; }
   return u;
 }
   return sh_parse_postfix(c);
@@ -28028,8 +28200,8 @@ int32_t sh_ty_eq(ShCtx* c, int32_t a, int32_t b) {
   return sh_span_eq((c[0]).p, (c[0]).ys[a], (c[0]).ye[a], (c[0]).ys[b], (c[0]).ye[b]);
 }
 
-void sh_put_ty(ShCtx* c, ShBuf* w, int32_t h) {
-  sh_put_span(w, (c[0]).p, (c[0]).ys[h], (c[0]).ye[h]);
+void sh_put_ty(ShCtx* c, ByteBuf* w, int32_t h) {
+  bb_put_span(w, (c[0]).p, (c[0]).ys[h], (c[0]).ye[h]);
 }
 
 int32_t sh_ty_known(ShCtx* c, int32_t k) {
@@ -28052,9 +28224,9 @@ int32_t sh_map_type(ShCtx* c, int32_t h) {
 }
   if ((c[0]).target == SH_WGSL) {
   if (sh_err(c) == 1) {
-  sh_puts((c[0]).msg, "Unsupported WGSL shader type '");
+  bb_puts((c[0]).msg, "Unsupported WGSL shader type '");
   sh_put_ty(c, (c[0]).msg, h);
-  sh_puts((c[0]).msg, "'");
+  bb_puts((c[0]).msg, "'");
 }
   return (0 - 1);
 }
@@ -28384,28 +28556,28 @@ int32_t sh_is_wgsl_builtin(ShCtx* c, int32_t k) {
   return 0;
 }
 
-void sh_put_name(ShCtx* c, ShBuf* w, int32_t k) {
-  sh_put_span(w, (c[0]).p, (c[0]).s1[k], (c[0]).e1[k]);
+void sh_put_name(ShCtx* c, ByteBuf* w, int32_t k) {
+  bb_put_span(w, (c[0]).p, (c[0]).s1[k], (c[0]).e1[k]);
 }
 
 void sh_unknown_fn(ShCtx* c, int32_t x) {
   if (sh_err(c) == 1) {
-  sh_puts((c[0]).msg, "Unknown shader function '");
+  bb_puts((c[0]).msg, "Unknown shader function '");
   sh_put_name(c, (c[0]).msg, x);
-  sh_puts((c[0]).msg, "'");
+  bb_puts((c[0]).msg, "'");
 }
 }
 
-void sh_emit_call(ShCtx* c, ShBuf* w, int32_t x) {
+void sh_emit_call(ShCtx* c, ByteBuf* w, int32_t x) {
   int32_t nargs = (c[0]).nc[x];
-  ShBuf* args = (ShBuf*)(flowc_shader_buf_new(64));
+  ByteBuf* args = (ByteBuf*)(flowc_shader_buf_new(64));
   int32_t* ars = (int32_t*)(sh_ints(nargs));
   int32_t* ae = (int32_t*)(sh_ints(nargs));
   int32_t a = (c[0]).na[x];
   int32_t k = 0;
   while (a >= 0 && (c[0]).err == 0) {
   if (k > 0) {
-  sh_puts(args, ", ");
+  bb_puts(args, ", ");
 }
   ars[k] = (args[0]).len;
   sh_emit_expr(c, args, a);
@@ -28432,48 +28604,48 @@ void sh_emit_call(ShCtx* c, ShBuf* w, int32_t x) {
 } else {
   int32_t at = sh_guess(c, (c[0]).na[x]);
   if (at >= 0 && sh_ty_is(c, at, "vec2<f32>") == 1) {
-  sh_puts(w, "fsl_hash21");
+  bb_puts(w, "fsl_hash21");
 } else {
-  sh_puts(w, "fsl_hash11");
+  bb_puts(w, "fsl_hash11");
 }
 }
 } else {
   if (nargs == 1) {
   int32_t at2 = sh_guess(c, (c[0]).na[x]);
   if (sh_ty_is(c, at2, "float2") == 1 || sh_ty_is(c, at2, "vec2") == 1) {
-  sh_puts(w, "fsl_hash21");
+  bb_puts(w, "fsl_hash21");
 } else {
-  sh_puts(w, "fsl_hash11");
+  bb_puts(w, "fsl_hash11");
 }
 } else {
-  sh_puts(w, "fsl_hash21");
+  bb_puts(w, "fsl_hash21");
 }
 }
 } else {
   if (sh_node_is(c, x, "noise") == 1) {
-  sh_puts(w, "fsl_noise");
+  bb_puts(w, "fsl_noise");
 } else {
   if (sh_node_is(c, x, "fbm") == 1) {
-  sh_puts(w, "fsl_fbm");
+  bb_puts(w, "fsl_fbm");
 } else {
   if (sh_node_is(c, x, "palette") == 1) {
-  sh_puts(w, "fsl_palette");
+  bb_puts(w, "fsl_palette");
 } else {
   if (wg == SH_METAL && sh_node_is(c, x, "mod") == 1) {
-  sh_puts(w, "fmod");
+  bb_puts(w, "fmod");
 } else {
   if (wg == SH_WGSL && (sh_node_is(c, x, "mod") == 1 || sh_node_is(c, x, "fmod") == 1)) {
   if (nargs != 2) {
   if (sh_err(c) == 1) {
   sh_put_name(c, (c[0]).msg, x);
-  sh_puts((c[0]).msg, "() expects two arguments");
+  bb_puts((c[0]).msg, "() expects two arguments");
 }
 } else {
-  sh_putc(w, 40);
-  sh_put_span(w, (args[0]).buf, ars[0], ae[0]);
-  sh_puts(w, " % ");
-  sh_put_span(w, (args[0]).buf, ars[1], ae[1]);
-  sh_putc(w, 41);
+  bb_putc(w, 40);
+  bb_put_span(w, (args[0]).p, ars[0], ae[0]);
+  bb_puts(w, " % ");
+  bb_put_span(w, (args[0]).p, ars[1], ae[1]);
+  bb_putc(w, 41);
 }
   paren = 0;
 } else {
@@ -28481,14 +28653,14 @@ void sh_emit_call(ShCtx* c, ShBuf* w, int32_t x) {
   if (nargs != 1) {
   sh_fail(c, "saturate() expects one argument");
 } else {
-  sh_puts(w, "clamp(");
-  sh_put_span(w, (args[0]).buf, ars[0], ae[0]);
-  sh_puts(w, ", 0.0, 1.0)");
+  bb_puts(w, "clamp(");
+  bb_put_span(w, (args[0]).p, ars[0], ae[0]);
+  bb_puts(w, ", 0.0, 1.0)");
 }
   paren = 0;
 } else {
   if (wg == SH_WGSL && sh_node_is(c, x, "rsqrt") == 1) {
-  sh_puts(w, "inverseSqrt");
+  bb_puts(w, "inverseSqrt");
 } else {
   int32_t known = 0;
   if (wg == SH_WGSL) {
@@ -28517,9 +28689,9 @@ void sh_emit_call(ShCtx* c, ShBuf* w, int32_t x) {
 }
 }
   if (paren == 1 && (c[0]).err == 0) {
-  sh_putc(w, 40);
-  sh_put_span(w, (args[0]).buf, 0, (args[0]).len);
-  sh_putc(w, 41);
+  bb_putc(w, 40);
+  bb_put_span(w, (args[0]).p, 0, (args[0]).len);
+  bb_putc(w, 41);
 }
 }
   free((uint8_t*)(ars));
@@ -28527,7 +28699,7 @@ void sh_emit_call(ShCtx* c, ShBuf* w, int32_t x) {
   flowc_shader_buf_free(args);
 }
 
-void sh_emit_expr(ShCtx* c, ShBuf* w, int32_t x) {
+void sh_emit_expr(ShCtx* c, ByteBuf* w, int32_t x) {
   if ((c[0]).err != 0) {
   return;
 }
@@ -28535,17 +28707,17 @@ void sh_emit_expr(ShCtx* c, ShBuf* w, int32_t x) {
   if (kind == E_NUMBER) {
   sh_put_name(c, w, x);
   if ((c[0]).nf[x] == 1) {
-  sh_puts(w, ".0");
+  bb_puts(w, ".0");
 }
   return;
 }
   if (kind == E_NAME) {
   if (sh_node_is(c, x, "time") == 1) {
-  sh_puts(w, "uniforms.time");
+  bb_puts(w, "uniforms.time");
 } else {
   if (sh_node_is(c, x, "resolution") == 1) {
   sh_put_ty(c, w, sh_ty_known(c, 3));
-  sh_puts(w, "(uniforms.width, uniforms.height)");
+  bb_puts(w, "(uniforms.width, uniforms.height)");
 } else {
   sh_put_name(c, w, x);
 }
@@ -28553,47 +28725,47 @@ void sh_emit_expr(ShCtx* c, ShBuf* w, int32_t x) {
   return;
 }
   if (kind == E_UNARY) {
-  sh_putc(w, 40);
+  bb_putc(w, 40);
   sh_put_name(c, w, x);
   sh_emit_expr(c, w, (c[0]).na[x]);
-  sh_putc(w, 41);
+  bb_putc(w, 41);
   return;
 }
   if (kind == E_BINARY) {
   if ((c[0]).target == SH_METAL && sh_node_is(c, x, "%") == 1) {
-  sh_puts(w, "fmod(");
+  bb_puts(w, "fmod(");
   sh_emit_expr(c, w, (c[0]).na[x]);
-  sh_puts(w, ", ");
+  bb_puts(w, ", ");
   sh_emit_expr(c, w, (c[0]).nb[x]);
-  sh_putc(w, 41);
+  bb_putc(w, 41);
   return;
 }
-  sh_putc(w, 40);
+  bb_putc(w, 40);
   sh_emit_expr(c, w, (c[0]).na[x]);
-  sh_putc(w, 32);
+  bb_putc(w, 32);
   sh_put_name(c, w, x);
-  sh_putc(w, 32);
+  bb_putc(w, 32);
   sh_emit_expr(c, w, (c[0]).nb[x]);
-  sh_putc(w, 41);
+  bb_putc(w, 41);
   return;
 }
   if (kind == E_SWIZZLE) {
   sh_emit_expr(c, w, (c[0]).na[x]);
-  sh_putc(w, 46);
+  bb_putc(w, 46);
   sh_put_name(c, w, x);
   return;
 }
   if (kind == E_CAST) {
   sh_put_ty(c, w, sh_ty_named(c, (c[0]).s1[x], (c[0]).e1[x]));
-  sh_putc(w, 40);
+  bb_putc(w, 40);
   sh_emit_expr(c, w, (c[0]).na[x]);
-  sh_putc(w, 41);
+  bb_putc(w, 41);
   return;
 }
   sh_emit_call(c, w, x);
 }
 
-int32_t sh_emit_stmts(ShCtx* c, ShBuf* w, int32_t head, int32_t indent) {
+int32_t sh_emit_stmts(ShCtx* c, ByteBuf* w, int32_t head, int32_t indent) {
   int32_t lines = 0;
   int32_t st = head;
   while (st >= 0 && (c[0]).err == 0) {
@@ -28610,19 +28782,19 @@ int32_t sh_emit_stmts(ShCtx* c, ShBuf* w, int32_t head, int32_t indent) {
   sh_pad(w, indent);
   if ((c[0]).target == SH_WGSL) {
   if ((c[0]).nf[st] == 1) {
-  sh_puts(w, "var ");
+  bb_puts(w, "var ");
 } else {
-  sh_puts(w, "let ");
+  bb_puts(w, "let ");
 }
   sh_put_name(c, w, st);
-  sh_puts(w, ": ");
+  bb_puts(w, ": ");
   sh_put_ty(c, w, ty);
 } else {
   sh_put_ty(c, w, ty);
-  sh_putc(w, 32);
+  bb_putc(w, 32);
   sh_put_name(c, w, st);
 }
-  sh_puts(w, " = ");
+  bb_puts(w, " = ");
   sh_emit_expr(c, w, (c[0]).na[st]);
   sh_line(w, ";");
   lines = (lines + 1);
@@ -28631,7 +28803,7 @@ int32_t sh_emit_stmts(ShCtx* c, ShBuf* w, int32_t head, int32_t indent) {
   if (kind == S_ASSIGN) {
   sh_pad(w, indent);
   sh_put_name(c, w, st);
-  sh_puts(w, " = ");
+  bb_puts(w, " = ");
   sh_emit_expr(c, w, (c[0]).na[st]);
   sh_line(w, ";");
   lines = (lines + 1);
@@ -28641,7 +28813,7 @@ int32_t sh_emit_stmts(ShCtx* c, ShBuf* w, int32_t head, int32_t indent) {
   if ((c[0]).na[st] < 0) {
   sh_line(w, "return;");
 } else {
-  sh_puts(w, "return ");
+  bb_puts(w, "return ");
   sh_emit_expr(c, w, (c[0]).na[st]);
   sh_line(w, ";");
 }
@@ -28649,7 +28821,7 @@ int32_t sh_emit_stmts(ShCtx* c, ShBuf* w, int32_t head, int32_t indent) {
 } else {
   if (kind == S_IF) {
   sh_pad(w, indent);
-  sh_puts(w, "if (");
+  bb_puts(w, "if (");
   sh_emit_expr(c, w, (c[0]).na[st]);
   sh_line(w, ") {");
   lines = (lines + 1);
@@ -28668,27 +28840,27 @@ int32_t sh_emit_stmts(ShCtx* c, ShBuf* w, int32_t head, int32_t indent) {
   sh_env_set(c, (c[0]).s1[st], (c[0]).e1[st], sh_ty_known(c, 1));
   sh_pad(w, indent);
   if (wg == SH_WGSL) {
-  sh_puts(w, "for (var ");
+  bb_puts(w, "for (var ");
   sh_put_name(c, w, st);
-  sh_puts(w, ": i32 = i32(");
+  bb_puts(w, ": i32 = i32(");
 } else {
-  sh_puts(w, "for (int ");
+  bb_puts(w, "for (int ");
   sh_put_name(c, w, st);
-  sh_puts(w, " = int(");
+  bb_puts(w, " = int(");
 }
   sh_emit_expr(c, w, (c[0]).na[st]);
-  sh_puts(w, "); ");
+  bb_puts(w, "); ");
   sh_put_name(c, w, st);
   if (wg == SH_WGSL) {
-  sh_puts(w, " < i32(");
+  bb_puts(w, " < i32(");
 } else {
-  sh_puts(w, " < int(");
+  bb_puts(w, " < int(");
 }
   sh_emit_expr(c, w, (c[0]).nb[st]);
-  sh_puts(w, "); ");
+  bb_puts(w, "); ");
   sh_put_name(c, w, st);
   if (wg == SH_WGSL) {
-  sh_puts(w, " = ");
+  bb_puts(w, " = ");
   sh_put_name(c, w, st);
   sh_line(w, " + 1) {");
 } else {
@@ -28728,14 +28900,14 @@ int32_t sh_has_color_assign(ShCtx* c, int32_t head) {
   return 0;
 }
 
-void sh_emit_fn(ShCtx* c, ShBuf* w, int32_t k) {
+void sh_emit_fn(ShCtx* c, ByteBuf* w, int32_t k) {
   (c[0]).nv = 0;
   int32_t wg = (c[0]).target;
   int32_t ret = 0;
   if (wg == SH_METAL) {
   ret = sh_map_type(c, (c[0]).frt[k]);
 }
-  ShBuf* params = (ShBuf*)(flowc_shader_buf_new(64));
+  ByteBuf* params = (ByteBuf*)(flowc_shader_buf_new(64));
   int32_t i = 0;
   while (i < (c[0]).fpn[k] && (c[0]).err == 0) {
   int32_t pi = ((c[0]).fp0[k] + i);
@@ -28743,16 +28915,16 @@ void sh_emit_fn(ShCtx* c, ShBuf* w, int32_t k) {
   if ((c[0]).err == 0) {
   sh_env_set(c, (c[0]).pas[pi], (c[0]).pae[pi], mt);
   if (i > 0) {
-  sh_puts(params, ", ");
+  bb_puts(params, ", ");
 }
   if (wg == SH_WGSL) {
-  sh_put_span(params, (c[0]).p, (c[0]).pas[pi], (c[0]).pae[pi]);
-  sh_puts(params, ": ");
+  bb_put_span(params, (c[0]).p, (c[0]).pas[pi], (c[0]).pae[pi]);
+  bb_puts(params, ": ");
   sh_put_ty(c, params, mt);
 } else {
   sh_put_ty(c, params, mt);
-  sh_putc(params, 32);
-  sh_put_span(params, (c[0]).p, (c[0]).pas[pi], (c[0]).pae[pi]);
+  bb_putc(params, 32);
+  bb_put_span(params, (c[0]).p, (c[0]).pas[pi], (c[0]).pae[pi]);
 }
 }
   i = (i + 1);
@@ -28761,7 +28933,7 @@ void sh_emit_fn(ShCtx* c, ShBuf* w, int32_t k) {
   flowc_shader_buf_free(params);
   return;
 }
-  ShBuf* body = (ShBuf*)(flowc_shader_buf_new(256));
+  ByteBuf* body = (ByteBuf*)(flowc_shader_buf_new(256));
   int32_t stmts = sh_parse_body_span(c, (c[0]).fbs[k], (c[0]).fbe[k]);
   int32_t nl = 0;
   if ((c[0]).err == 0) {
@@ -28772,25 +28944,25 @@ void sh_emit_fn(ShCtx* c, ShBuf* w, int32_t k) {
 }
   if ((c[0]).err == 0) {
   if (wg == SH_WGSL) {
-  sh_puts(w, "fn ");
-  sh_put_span(w, (c[0]).p, (c[0]).fns[k], (c[0]).fne[k]);
-  sh_putc(w, 40);
-  sh_put_span(w, (params[0]).buf, 0, (params[0]).len);
-  sh_puts(w, ") -> ");
+  bb_puts(w, "fn ");
+  bb_put_span(w, (c[0]).p, (c[0]).fns[k], (c[0]).fne[k]);
+  bb_putc(w, 40);
+  bb_put_span(w, (params[0]).p, 0, (params[0]).len);
+  bb_puts(w, ") -> ");
   sh_put_ty(c, w, ret);
   sh_line(w, " {");
 } else {
-  sh_puts(w, "static inline ");
+  bb_puts(w, "static inline ");
   sh_put_ty(c, w, ret);
-  sh_putc(w, 32);
-  sh_put_span(w, (c[0]).p, (c[0]).fns[k], (c[0]).fne[k]);
-  sh_putc(w, 40);
-  sh_put_span(w, (params[0]).buf, 0, (params[0]).len);
+  bb_putc(w, 32);
+  bb_put_span(w, (c[0]).p, (c[0]).fns[k], (c[0]).fne[k]);
+  bb_putc(w, 40);
+  bb_put_span(w, (params[0]).p, 0, (params[0]).len);
   sh_line(w, ") {");
 }
-  sh_put_span(w, (body[0]).buf, 0, (body[0]).len);
+  bb_put_span(w, (body[0]).p, 0, (body[0]).len);
   if (nl == 0) {
-  sh_putc(w, 10);
+  bb_putc(w, 10);
 }
   sh_line(w, "}");
 }
@@ -28798,30 +28970,30 @@ void sh_emit_fn(ShCtx* c, ShBuf* w, int32_t k) {
   flowc_shader_buf_free(body);
 }
 
-void sh_emit_fill(ShCtx* c, ShBuf* w, int32_t k) {
+void sh_emit_fill(ShCtx* c, ByteBuf* w, int32_t k) {
   int32_t stmts = sh_parse_body_span(c, (c[0]).flbs[k], (c[0]).flbe[k]);
   if ((c[0]).err != 0) {
   return;
 }
   if (sh_has_color_assign(c, stmts) == 0) {
   if (sh_err(c) == 1) {
-  sh_puts((c[0]).msg, "shader fill '");
-  sh_put_span((c[0]).msg, (c[0]).p, (c[0]).fls[k], (c[0]).fle[k]);
-  sh_puts((c[0]).msg, "' must assign `color = ...`");
+  bb_puts((c[0]).msg, "shader fill '");
+  bb_put_span((c[0]).msg, (c[0]).p, (c[0]).fls[k], (c[0]).fle[k]);
+  bb_puts((c[0]).msg, "' must assign `color = ...`");
 }
   return;
 }
   (c[0]).nv = 0;
   if ((c[0]).target == SH_WGSL) {
   sh_line(w, "@fragment");
-  sh_puts(w, "fn ");
-  sh_put_span(w, (c[0]).p, (c[0]).fls[k], (c[0]).fle[k]);
+  bb_puts(w, "fn ");
+  bb_put_span(w, (c[0]).p, (c[0]).fls[k], (c[0]).fle[k]);
   sh_line(w, "_frag(in: FlowVertexOut) -> @location(0) vec4<f32> {");
   sh_line(w, "    let uv: vec2<f32> = in.uv;");
   sh_line(w, "    var color: vec4<f32> = vec4<f32>(0.0, 0.0, 0.0, 1.0);");
 } else {
-  sh_puts(w, "fragment float4 ");
-  sh_put_span(w, (c[0]).p, (c[0]).fls[k], (c[0]).fle[k]);
+  bb_puts(w, "fragment float4 ");
+  bb_put_span(w, (c[0]).p, (c[0]).fls[k], (c[0]).fle[k]);
   sh_line(w, "_frag(");
   sh_line(w, "    FlowVertexOut in [[stage_in]],");
   sh_line(w, "    constant FlowShaderUniforms& uniforms [[buffer(0)]]");
@@ -28834,7 +29006,7 @@ void sh_emit_fill(ShCtx* c, ShBuf* w, int32_t k) {
   sh_line(w, "}");
 }
 
-int32_t flowc_shader_gen(ShCtx* c, ShBuf* w, int32_t target, uint8_t* name, int32_t nlen, int32_t only) {
+int32_t flowc_shader_gen(ShCtx* c, ByteBuf* w, int32_t target, uint8_t* name, int32_t nlen, int32_t only) {
   (c[0]).target = target;
   int32_t nsel = 0;
   int32_t k = 0;
@@ -28853,11 +29025,11 @@ int32_t flowc_shader_gen(ShCtx* c, ShBuf* w, int32_t target, uint8_t* name, int3
 } else {
   sh_prelude_metal(w);
 }
-  sh_puts(w, "\n\n");
+  bb_puts(w, "\n\n");
   int32_t f = 0;
   while (f < (c[0]).nfn && (c[0]).err == 0) {
   sh_emit_fn(c, w, f);
-  sh_puts(w, "\n\n");
+  bb_puts(w, "\n\n");
   f = (f + 1);
 }
   int32_t seen = 0;
@@ -28867,7 +29039,7 @@ int32_t flowc_shader_gen(ShCtx* c, ShBuf* w, int32_t target, uint8_t* name, int3
   sh_emit_fill(c, w, k);
   seen = (seen + 1);
   if (seen < nsel) {
-  sh_putc(w, 10);
+  bb_putc(w, 10);
 }
 }
   k = (k + 1);
@@ -28878,7 +29050,7 @@ int32_t flowc_shader_gen(ShCtx* c, ShBuf* w, int32_t target, uint8_t* name, int3
   return 0;
 }
 
-void sh_prelude_metal(ShBuf* w) {
+void sh_prelude_metal(ByteBuf* w) {
   sh_line(w, "");
   sh_line(w, "#include <metal_stdlib>");
   sh_line(w, "using namespace metal;");
@@ -28905,11 +29077,11 @@ void sh_prelude_metal(ShBuf* w) {
   sh_line(w, "    return out;");
   sh_line(w, "}");
   sh_line(w, "");
-  sh_puts(w, "// ");
+  bb_puts(w, "// ");
   sh_rule(w, 2);
-  sh_puts(w, " FSL standard library (hash / noise / palette) ");
+  bb_puts(w, " FSL standard library (hash / noise / palette) ");
   sh_rule(w, 19);
-  sh_putc(w, 10);
+  bb_putc(w, 10);
   sh_line(w, "static inline float fsl_hash11(float p) {");
   sh_line(w, "    p = fract(p * 0.1031);");
   sh_line(w, "    p *= p + 33.33;");
@@ -28955,7 +29127,7 @@ void sh_prelude_metal(ShBuf* w) {
   sh_line(w, "}");
 }
 
-void sh_prelude_wgsl(ShBuf* w) {
+void sh_prelude_wgsl(ByteBuf* w) {
   sh_line(w, "");
   sh_line(w, "struct FlowShaderUniforms {");
   sh_line(w, "    time: f32,");
@@ -33901,16 +34073,10 @@ int32_t flowc_field_expand_in_place(uint8_t* buf, int32_t n, int32_t cap) {
 }
 
 
-typedef struct DySb {
-  uint8_t* p;
-  int32_t len;
-  int32_t cap;
-} DySb;
-
 typedef struct DyC {
   int32_t err;
-  DySb* msg;
-  DySb* nm;
+  ByteBuf* msg;
+  ByteBuf* nm;
   double* fp;
   int32_t fnum;
   int32_t fcap;
@@ -34054,12 +34220,7 @@ int32_t dy_old_space(int32_t c);
 int32_t dy_old_starts(const char* s, const char* prefix);
 const char* flowc_strip_comments(const char* line);
 const char* flowc_strip_dynamics_namespace(const char* line);
-DySb* dy_sb_new(int32_t cap);
-void dy_putc(DySb* b, uint8_t ch);
-void dy_puts(DySb* b, const char* s);
-void dy_span(DySb* b, uint8_t* src, int32_t s, int32_t e);
-void dy_i64(DySb* b, int64_t v);
-void dy_utf8(DySb* b, int32_t cp);
+void dy_utf8(ByteBuf* b, int32_t cp);
 int32_t dy_ws(uint8_t ch);
 int32_t dy_digit(uint8_t ch);
 int32_t dy_word(uint8_t ch);
@@ -34086,14 +34247,14 @@ int32_t dy_name_lit(DyC* c, const char* s);
 const char* dy_nstr(DyC* c, int32_t off);
 int32_t dy_neq(DyC* c, int32_t a, int32_t b);
 int32_t dy_neq_lit(DyC* c, int32_t a, const char* s);
-void dy_pn(DySb* b, DyC* c, int32_t off);
+void dy_pn(ByteBuf* b, DyC* c, int32_t off);
 int32_t dy_fpush(DyC* c, double v);
 int32_t dy_bd(DyC* c, int32_t kind, int32_t var, int32_t hz);
 int32_t dy_gl(DyC* c, int32_t off);
 int32_t dy_at(DyC* c, int32_t name, double v);
-DySb* dy_err(DyC* c);
+ByteBuf* dy_err(DyC* c);
 void dy_err_s(DyC* c, const char* s);
-void dy_repr_str(DySb* b, uint8_t* p, int32_t s, int32_t e);
+void dy_repr_str(ByteBuf* b, uint8_t* p, int32_t s, int32_t e);
 int64_t dy_int(DyC* c, uint8_t* p, int32_t s0, int32_t e0);
 int32_t dy_digits_us(uint8_t* p, int32_t k, int32_t e);
 int32_t dy_lower_eq(uint8_t* p, int32_t s, int32_t e, const char* lit);
@@ -34101,11 +34262,11 @@ double dy_float(DyC* c, uint8_t* p, int32_t s0, int32_t e0);
 int64_t dy_bits(double x);
 int32_t dy_exact(double x, uint8_t* dig, int32_t* dp);
 void dy_round(uint8_t* dig, int32_t nd, int32_t pr, uint8_t* out, int32_t* dp);
-int32_t dy_fmt_special(DySb* b, double v, const char* zero);
-void dy_exp10(DySb* b, int32_t x);
-void dy_g17(DySb* b, double v);
-void dy_repr(DySb* b, double v);
-void dy_flow_f64(DySb* b, double v);
+int32_t dy_fmt_special(ByteBuf* b, double v, const char* zero);
+void dy_exp10(ByteBuf* b, int32_t x);
+void dy_g17(ByteBuf* b, double v);
+void dy_repr(ByteBuf* b, double v);
+void dy_flow_f64(ByteBuf* b, double v);
 Dp* dy_prog_new(int32_t cap0);
 int32_t dy_find_sys(DyC* c, Dp* g, int32_t name);
 int32_t dy_find_hz(DyC* c, Dp* g, int32_t name);
@@ -34129,45 +34290,45 @@ int32_t dy_paren_form(uint8_t* p, int32_t s, int32_t e, const char* word, int32_
 void dy_rep_linear_body(DyC* c, uint8_t* p, Dp* g, int32_t r, int32_t* bs, int32_t* be, int32_t nb);
 void dy_portrait_body(DyC* c, uint8_t* p, Dp* g, int32_t t, int32_t* bs, int32_t* be, int32_t nb);
 int32_t dy_rep_head(uint8_t* p, int32_t s, int32_t e, int32_t* caps);
-void dy_extract_represent(DyC* c, uint8_t* p, int32_t n, Dp* g, DySb* out);
-void dy_at_repr(DySb* m, DyC* c, Dp* g, int32_t r);
-void dy_rep_prefix(DySb* m, DyC* c, Dp* g, int32_t r);
+void dy_extract_represent(DyC* c, uint8_t* p, int32_t n, Dp* g, ByteBuf* out);
+void dy_at_repr(ByteBuf* m, DyC* c, Dp* g, int32_t r);
+void dy_rep_prefix(ByteBuf* m, DyC* c, Dp* g, int32_t r);
 void dy_rep_to_dsys(DyC* c, Dp* g, int32_t r);
 void dy_invalid(DyC* c, const char* what, uint8_t* p, int32_t s, int32_t e);
 int32_t dy_arrow(uint8_t* p, int32_t s, int32_t e, int32_t* l, int32_t* r);
-void dy_lqr_prefix(DySb* m, DyC* c, int32_t sys);
+void dy_lqr_prefix(ByteBuf* m, DyC* c, int32_t sys);
 void dy_lqr(DyC* c, uint8_t* p, Dp* g, int32_t sys, int32_t* bs, int32_t* be, int32_t nb);
-void dy_an_prefix(DySb* m, DyC* c, int32_t sys);
-void dy_lqr_braces(DySb* m);
+void dy_an_prefix(ByteBuf* m, DyC* c, int32_t sys);
+void dy_lqr_braces(ByteBuf* m);
 void dy_analyze_vision(DyC* c, uint8_t* p, Dp* g, int32_t sys, int32_t* bs, int32_t* be, int32_t nb);
 void dy_validate_raw(DyC* c, Dp* g);
 int32_t dy_cp_prefix(uint8_t* p, int32_t s, int32_t e, int32_t limit);
-void dy_parse(DyC* c, uint8_t* p0, int32_t n0, Dp* g, DySb* out);
+void dy_parse(DyC* c, uint8_t* p0, int32_t n0, Dp* g, ByteBuf* out);
 int32_t dy_parse_rest(DyC* c, uint8_t* p, Dp* g, int32_t* ls, int32_t* le, int32_t nl, int32_t i, int32_t s, int32_t e, int32_t* bs, int32_t* be, int32_t* nb, int32_t* kept);
-void dy_ln(DySb* b, const char* s);
-void dy_eol(DySb* b);
+void dy_ln(ByteBuf* b, const char* s);
+void dy_eol(ByteBuf* b);
 void dy_key_error(DyC* c, int32_t off);
 int64_t dy_steps_or(DyC* c, Dp* g, int32_t name, int64_t dflt);
-int32_t dy_bufs(DySb* b, int32_t* bi, int32_t count);
-void dy_bufref(DySb* b, int32_t k);
-void dy_bufargs(DySb* b, int32_t first, int32_t count);
-void dy_flat_array(DySb* b, DyC* c, int32_t f0, int32_t fnn);
-void dy_rep_array(DySb* b, int64_t n, const char* item);
-void dy_matrix(DySb* b, DyC* c, int32_t name, const char* which, int64_t rows, int64_t cols);
-void dy_ga_arrays(DySb* b, DySb* tag, int64_t pop);
-void dy_tag(DySb* t, const char* pre, int32_t k);
-void dy_tagp(DySb* b, DySb* t);
+int32_t dy_bufs(ByteBuf* b, int32_t* bi, int32_t count);
+void dy_bufref(ByteBuf* b, int32_t k);
+void dy_bufargs(ByteBuf* b, int32_t first, int32_t count);
+void dy_flat_array(ByteBuf* b, DyC* c, int32_t f0, int32_t fnn);
+void dy_rep_array(ByteBuf* b, int64_t n, const char* item);
+void dy_matrix(ByteBuf* b, DyC* c, int32_t name, const char* which, int64_t rows, int64_t cols);
+void dy_ga_arrays(ByteBuf* b, ByteBuf* tag, int64_t pop);
+void dy_tag(ByteBuf* t, const char* pre, int32_t k);
+void dy_tagp(ByteBuf* b, ByteBuf* t);
 int32_t dy_is_identifier(DyC* c, int32_t off);
-int32_t dy_compile(DyC* c, Dp* g, DySb* b);
-void dy_compile_portraits(DyC* c, Dp* g, DySb* b);
+int32_t dy_compile(DyC* c, Dp* g, ByteBuf* b);
+void dy_compile_portraits(DyC* c, Dp* g, ByteBuf* b);
 int32_t dy_head_ns(uint8_t* p, int32_t k, int32_t n, int32_t* caps);
 int32_t dy_head_at(uint8_t* p, int32_t i, int32_t n, int32_t* caps);
 int32_t flowc_dynamics_has_dsl(uint8_t* p, int32_t n);
-int32_t dy_contains(DySb* b, const char* lit);
-void dy_prepend(DySb* b, const char* lit);
+int32_t dy_contains(ByteBuf* b, const char* lit);
+void dy_prepend(ByteBuf* b, const char* lit);
 int32_t dy_find_main_call(uint8_t* p, int32_t n);
 int32_t dy_find_main_body(uint8_t* p, int32_t n);
-int32_t dy_expand(DyC* c, uint8_t* p, int32_t n, DySb* out);
+int32_t dy_expand(DyC* c, uint8_t* p, int32_t n, ByteBuf* out);
 DyC* dy_ctx_new(int32_t n);
 int32_t flowc_dynamics_expand_in_place(uint8_t* buf, int32_t n, int32_t cap);
 int32_t dy_old_space(int32_t c) {
@@ -34250,68 +34411,19 @@ const char* flowc_strip_dynamics_namespace(const char* line) {
   return (const char*)(buf);
 }
 
-DySb* dy_sb_new(int32_t cap) {
-  DySb* b = (DySb*)((DySb*)(malloc(16)));
-  { __typeof__((b[0]).p) __flowc_st407 = malloc((int64_t)((cap + 1))); (b[0]).p = __flowc_st407; }
-  (b[0]).len = 0;
-  (b[0]).cap = cap;
-  (b[0]).p[0] = 0;
-  return b;
-}
-
-void dy_putc(DySb* b, uint8_t ch) {
-  if (((b[0]).len + 1) >= (b[0]).cap) {
-  int32_t ncap = (((b[0]).cap * 2) + 64);
-  { __typeof__((b[0]).p) __flowc_st472 = realloc((b[0]).p, (int64_t)((ncap + 1))); (b[0]).p = __flowc_st472; }
-  (b[0]).cap = ncap;
-}
-  (b[0]).p[(b[0]).len] = ch;
-  (b[0]).len = ((b[0]).len + 1);
-  (b[0]).p[(b[0]).len] = 0;
-}
-
-void dy_puts(DySb* b, const char* s) {
-  uint8_t* sp = (uint8_t*)((uint8_t*)(s));
-  int32_t i = 0;
-  while (sp[i] != 0) {
-  dy_putc(b, sp[i]);
-  i = (i + 1);
-}
-}
-
-void dy_span(DySb* b, uint8_t* src, int32_t s, int32_t e) {
-  int32_t i = s;
-  while (i < e) {
-  dy_putc(b, src[i]);
-  i = (i + 1);
-}
-}
-
-void dy_i64(DySb* b, int64_t v) {
-  if (v < 0) {
-  dy_putc(b, 45);
-  dy_i64(b, (0 - v));
-  return;
-}
-  if (v >= 10) {
-  dy_i64(b, (v / 10));
-}
-  dy_putc(b, (uint8_t)((48 + (v % 10))));
-}
-
-void dy_utf8(DySb* b, int32_t cp) {
+void dy_utf8(ByteBuf* b, int32_t cp) {
   if (cp < 128) {
-  dy_putc(b, (uint8_t)(cp));
+  bb_putc(b, (uint8_t)(cp));
   return;
 }
   if (cp < 2048) {
-  dy_putc(b, (uint8_t)((192 + (cp / 64))));
-  dy_putc(b, (uint8_t)((128 + (cp % 64))));
+  bb_putc(b, (uint8_t)((192 + (cp / 64))));
+  bb_putc(b, (uint8_t)((128 + (cp % 64))));
   return;
 }
-  dy_putc(b, (uint8_t)((224 + (cp / 4096))));
-  dy_putc(b, (uint8_t)((128 + ((cp / 64) % 64))));
-  dy_putc(b, (uint8_t)((128 + (cp % 64))));
+  bb_putc(b, (uint8_t)((224 + (cp / 4096))));
+  bb_putc(b, (uint8_t)((128 + ((cp / 64) % 64))));
+  bb_putc(b, (uint8_t)((128 + (cp % 64))));
 }
 
 int32_t dy_ws(uint8_t ch) {
@@ -34614,15 +34726,15 @@ double* dy_f64s(int32_t n) {
 
 int32_t dy_name(DyC* c, uint8_t* p, int32_t s, int32_t e) {
   int32_t off = ((c[0]).nm[0]).len;
-  dy_span((c[0]).nm, p, s, e);
-  dy_putc((c[0]).nm, 0);
+  bb_put_span((c[0]).nm, p, s, e);
+  bb_putc((c[0]).nm, 0);
   return off;
 }
 
 int32_t dy_name_lit(DyC* c, const char* s) {
   int32_t off = ((c[0]).nm[0]).len;
-  dy_puts((c[0]).nm, s);
-  dy_putc((c[0]).nm, 0);
+  bb_puts((c[0]).nm, s);
+  bb_putc((c[0]).nm, 0);
   return off;
 }
 
@@ -34644,14 +34756,14 @@ int32_t dy_neq_lit(DyC* c, int32_t a, const char* s) {
   return 0;
 }
 
-void dy_pn(DySb* b, DyC* c, int32_t off) {
-  dy_puts(b, dy_nstr(c, off));
+void dy_pn(ByteBuf* b, DyC* c, int32_t off) {
+  bb_puts(b, dy_nstr(c, off));
 }
 
 int32_t dy_fpush(DyC* c, double v) {
   if ((c[0]).fnum >= (c[0]).fcap) {
   int32_t ncap = (((c[0]).fcap * 2) + 64);
-  { __typeof__((c[0]).fp) __flowc_st2200 = (double*)(realloc((uint8_t*)((c[0]).fp), ((int64_t)((ncap + 1)) * 8))); (c[0]).fp = __flowc_st2200; }
+  { __typeof__((c[0]).fp) __flowc_st1955 = (double*)(realloc((uint8_t*)((c[0]).fp), ((int64_t)((ncap + 1)) * 8))); (c[0]).fp = __flowc_st1955; }
   (c[0]).fcap = ncap;
 }
   (c[0]).fp[(c[0]).fnum] = v;
@@ -34662,9 +34774,9 @@ int32_t dy_fpush(DyC* c, double v) {
 int32_t dy_bd(DyC* c, int32_t kind, int32_t var, int32_t hz) {
   if ((c[0]).nbd >= (c[0]).bdcap) {
   int32_t ncap = (((c[0]).bdcap * 2) + 64);
-  { __typeof__((c[0]).bd_kind) __flowc_st2291 = (int32_t*)(realloc((uint8_t*)((c[0]).bd_kind), ((int64_t)((ncap + 1)) * 4))); (c[0]).bd_kind = __flowc_st2291; }
-  { __typeof__((c[0]).bd_var) __flowc_st2314 = (int32_t*)(realloc((uint8_t*)((c[0]).bd_var), ((int64_t)((ncap + 1)) * 4))); (c[0]).bd_var = __flowc_st2314; }
-  { __typeof__((c[0]).bd_hz) __flowc_st2337 = (int32_t*)(realloc((uint8_t*)((c[0]).bd_hz), ((int64_t)((ncap + 1)) * 4))); (c[0]).bd_hz = __flowc_st2337; }
+  { __typeof__((c[0]).bd_kind) __flowc_st2046 = (int32_t*)(realloc((uint8_t*)((c[0]).bd_kind), ((int64_t)((ncap + 1)) * 4))); (c[0]).bd_kind = __flowc_st2046; }
+  { __typeof__((c[0]).bd_var) __flowc_st2069 = (int32_t*)(realloc((uint8_t*)((c[0]).bd_var), ((int64_t)((ncap + 1)) * 4))); (c[0]).bd_var = __flowc_st2069; }
+  { __typeof__((c[0]).bd_hz) __flowc_st2092 = (int32_t*)(realloc((uint8_t*)((c[0]).bd_hz), ((int64_t)((ncap + 1)) * 4))); (c[0]).bd_hz = __flowc_st2092; }
   (c[0]).bdcap = ncap;
 }
   (c[0]).bd_kind[(c[0]).nbd] = kind;
@@ -34677,7 +34789,7 @@ int32_t dy_bd(DyC* c, int32_t kind, int32_t var, int32_t hz) {
 int32_t dy_gl(DyC* c, int32_t off) {
   if ((c[0]).ngl >= (c[0]).glcap) {
   int32_t ncap = (((c[0]).glcap * 2) + 64);
-  { __typeof__((c[0]).gl) __flowc_st2446 = (int32_t*)(realloc((uint8_t*)((c[0]).gl), ((int64_t)((ncap + 1)) * 4))); (c[0]).gl = __flowc_st2446; }
+  { __typeof__((c[0]).gl) __flowc_st2201 = (int32_t*)(realloc((uint8_t*)((c[0]).gl), ((int64_t)((ncap + 1)) * 4))); (c[0]).gl = __flowc_st2201; }
   (c[0]).glcap = ncap;
 }
   (c[0]).gl[(c[0]).ngl] = off;
@@ -34688,8 +34800,8 @@ int32_t dy_gl(DyC* c, int32_t off) {
 int32_t dy_at(DyC* c, int32_t name, double v) {
   if ((c[0]).nat >= (c[0]).atcap) {
   int32_t ncap = (((c[0]).atcap * 2) + 64);
-  { __typeof__((c[0]).at_name) __flowc_st2535 = (int32_t*)(realloc((uint8_t*)((c[0]).at_name), ((int64_t)((ncap + 1)) * 4))); (c[0]).at_name = __flowc_st2535; }
-  { __typeof__((c[0]).at_val) __flowc_st2558 = (double*)(realloc((uint8_t*)((c[0]).at_val), ((int64_t)((ncap + 1)) * 8))); (c[0]).at_val = __flowc_st2558; }
+  { __typeof__((c[0]).at_name) __flowc_st2290 = (int32_t*)(realloc((uint8_t*)((c[0]).at_name), ((int64_t)((ncap + 1)) * 4))); (c[0]).at_name = __flowc_st2290; }
+  { __typeof__((c[0]).at_val) __flowc_st2313 = (double*)(realloc((uint8_t*)((c[0]).at_val), ((int64_t)((ncap + 1)) * 8))); (c[0]).at_val = __flowc_st2313; }
   (c[0]).atcap = ncap;
 }
   (c[0]).at_name[(c[0]).nat] = name;
@@ -34698,7 +34810,7 @@ int32_t dy_at(DyC* c, int32_t name, double v) {
   return ((c[0]).nat - 1);
 }
 
-DySb* dy_err(DyC* c) {
+ByteBuf* dy_err(DyC* c) {
   (c[0]).err = 1;
   ((c[0]).msg[0]).len = 0;
   ((c[0]).msg[0]).p[0] = 0;
@@ -34706,26 +34818,26 @@ DySb* dy_err(DyC* c) {
 }
 
 void dy_err_s(DyC* c, const char* s) {
-  DySb* m = (DySb*)(dy_err(c));
-  dy_puts(m, s);
+  ByteBuf* m = (ByteBuf*)(dy_err(c));
+  bb_puts(m, s);
 }
 
-void dy_repr_str(DySb* b, uint8_t* p, int32_t s, int32_t e) {
+void dy_repr_str(ByteBuf* b, uint8_t* p, int32_t s, int32_t e) {
   uint8_t q = 39;
   if (dy_find(p, s, e, 39) >= 0 && dy_find(p, s, e, 34) < 0) {
   q = 34;
 }
-  dy_putc(b, q);
+  bb_putc(b, q);
   int32_t k = s;
   while (k < e) {
   uint8_t ch = p[k];
   if (ch == 92 || ch == q) {
-  dy_putc(b, 92);
+  bb_putc(b, 92);
 }
-  dy_putc(b, ch);
+  bb_putc(b, ch);
   k = (k + 1);
 }
-  dy_putc(b, q);
+  bb_putc(b, q);
 }
 
 int64_t dy_int(DyC* c, uint8_t* p, int32_t s0, int32_t e0) {
@@ -34769,8 +34881,8 @@ int64_t dy_int(DyC* c, uint8_t* p, int32_t s0, int32_t e0) {
   ok = 0;
 }
   if (ok == 0) {
-  DySb* m = (DySb*)(dy_err(c));
-  dy_puts(m, "invalid literal for int() with base 10: ");
+  ByteBuf* m = (ByteBuf*)(dy_err(c));
+  bb_puts(m, "invalid literal for int() with base 10: ");
   dy_repr_str(m, p, s0, e0);
   return 0;
 }
@@ -34876,8 +34988,8 @@ double dy_float(DyC* c, uint8_t* p, int32_t s0, int32_t e0) {
 }
 }
   if (ok == 0) {
-  DySb* m = (DySb*)(dy_err(c));
-  dy_puts(m, "could not convert string to float: ");
+  ByteBuf* m = (ByteBuf*)(dy_err(c));
+  bb_puts(m, "could not convert string to float: ");
   dy_repr_str(m, p, s0, e0);
   return 0.0;
 }
@@ -35050,43 +35162,43 @@ void dy_round(uint8_t* dig, int32_t nd, int32_t pr, uint8_t* out, int32_t* dp) {
   dp[0] = (dp[0] + 1);
 }
 
-int32_t dy_fmt_special(DySb* b, double v, const char* zero) {
+int32_t dy_fmt_special(ByteBuf* b, double v, const char* zero) {
   if (v != v) {
-  dy_puts(b, "nan");
+  bb_puts(b, "nan");
   return 1;
 }
   if (dy_bits(v) < 0) {
-  dy_putc(b, 45);
+  bb_putc(b, 45);
 }
   double d = (v - v);
   if (d != d) {
-  dy_puts(b, "inf");
+  bb_puts(b, "inf");
   return 1;
 }
   if (v == 0.0) {
-  dy_puts(b, zero);
+  bb_puts(b, zero);
   return 1;
 }
   return 0;
 }
 
-void dy_exp10(DySb* b, int32_t x) {
+void dy_exp10(ByteBuf* b, int32_t x) {
   if (x < 0) {
-  dy_putc(b, 45);
+  bb_putc(b, 45);
 } else {
-  dy_putc(b, 43);
+  bb_putc(b, 43);
 }
   int32_t ax = x;
   if (ax < 0) {
   ax = (0 - ax);
 }
   if (ax < 10) {
-  dy_putc(b, 48);
+  bb_putc(b, 48);
 }
-  dy_i64(b, (int64_t)(ax));
+  bb_put_i64(b, (int64_t)(ax));
 }
 
-void dy_g17(DySb* b, double v) {
+void dy_g17(ByteBuf* b, double v) {
   if (dy_fmt_special(b, v, "0") == 1) {
   return;
 }
@@ -35107,27 +35219,27 @@ void dy_g17(DySb* b, double v) {
 }
   if (x >= (0 - 4) && x < 17) {
   if (decpt <= 0) {
-  dy_puts(b, "0.");
+  bb_puts(b, "0.");
   int32_t z = 0;
   while (z < (0 - decpt)) {
-  dy_putc(b, 48);
+  bb_putc(b, 48);
   z = (z + 1);
 }
-  dy_span(b, r, 0, last);
+  bb_put_span(b, r, 0, last);
 } else {
-  dy_span(b, r, 0, decpt);
+  bb_put_span(b, r, 0, decpt);
   if (last > decpt) {
-  dy_putc(b, 46);
-  dy_span(b, r, decpt, last);
+  bb_putc(b, 46);
+  bb_put_span(b, r, decpt, last);
 }
 }
 } else {
-  dy_putc(b, r[0]);
+  bb_putc(b, r[0]);
   if (last > 1) {
-  dy_putc(b, 46);
-  dy_span(b, r, 1, last);
+  bb_putc(b, 46);
+  bb_put_span(b, r, 1, last);
 }
-  dy_putc(b, 101);
+  bb_putc(b, 101);
   dy_exp10(b, x);
 }
   free(dig);
@@ -35135,7 +35247,7 @@ void dy_g17(DySb* b, double v) {
   free((uint8_t*)(dp));
 }
 
-void dy_repr(DySb* b, double v) {
+void dy_repr(ByteBuf* b, double v) {
   if (dy_fmt_special(b, v, "0.0") == 1) {
   return;
 }
@@ -35148,16 +35260,16 @@ void dy_repr(DySb* b, double v) {
   int32_t* dp = (int32_t*)(dy_i32s(1));
   int32_t nd = dy_exact(a, dig, dp);
   int32_t exact_dp = dp[0];
-  DySb* chk = (DySb*)(dy_sb_new(64));
+  ByteBuf* chk = (ByteBuf*)(bb_new(64));
   int32_t pr = 1;
   while (pr <= 17) {
   dp[0] = exact_dp;
   dy_round(dig, nd, pr, r, dp);
   (chk[0]).len = 0;
-  dy_puts(chk, "0.");
-  dy_span(chk, r, 0, pr);
-  dy_putc(chk, 101);
-  dy_i64(chk, (int64_t)(dp[0]));
+  bb_puts(chk, "0.");
+  bb_put_span(chk, r, 0, pr);
+  bb_putc(chk, 101);
+  bb_put_i64(chk, (int64_t)(dp[0]));
   if (strtod((const char*)((chk[0]).p), NULL) == a) {
   break;
 }
@@ -35171,35 +35283,35 @@ void dy_repr(DySb* b, double v) {
   int32_t x = (decpt - 1);
   if (x >= (0 - 4) && x < 16) {
   if (decpt <= 0) {
-  dy_puts(b, "0.");
+  bb_puts(b, "0.");
   int32_t z = 0;
   while (z < (0 - decpt)) {
-  dy_putc(b, 48);
+  bb_putc(b, 48);
   z = (z + 1);
 }
-  dy_span(b, r, 0, last);
+  bb_put_span(b, r, 0, last);
 } else {
   if (decpt >= last) {
-  dy_span(b, r, 0, last);
+  bb_put_span(b, r, 0, last);
   int32_t z2 = last;
   while (z2 < decpt) {
-  dy_putc(b, 48);
+  bb_putc(b, 48);
   z2 = (z2 + 1);
 }
-  dy_puts(b, ".0");
+  bb_puts(b, ".0");
 } else {
-  dy_span(b, r, 0, decpt);
-  dy_putc(b, 46);
-  dy_span(b, r, decpt, last);
+  bb_put_span(b, r, 0, decpt);
+  bb_putc(b, 46);
+  bb_put_span(b, r, decpt, last);
 }
 }
 } else {
-  dy_putc(b, r[0]);
+  bb_putc(b, r[0]);
   if (last > 1) {
-  dy_putc(b, 46);
-  dy_span(b, r, 1, last);
+  bb_putc(b, 46);
+  bb_put_span(b, r, 1, last);
 }
-  dy_putc(b, 101);
+  bb_putc(b, 101);
   dy_exp10(b, x);
 }
   free(dig);
@@ -35209,20 +35321,20 @@ void dy_repr(DySb* b, double v) {
   free((uint8_t*)(chk));
 }
 
-void dy_flow_f64(DySb* b, double v) {
-  DySb* t = (DySb*)(dy_sb_new(40));
+void dy_flow_f64(ByteBuf* b, double v) {
+  ByteBuf* t = (ByteBuf*)(bb_new(40));
   dy_g17(t, v);
   int32_t s = 0;
   if ((t[0]).p[0] == 46) {
-  dy_putc(b, 48);
+  bb_putc(b, 48);
 }
   if ((t[0]).len >= 2 && (t[0]).p[0] == 45 && (t[0]).p[1] == 46) {
-  dy_puts(b, "-0");
+  bb_puts(b, "-0");
   s = 1;
 }
-  dy_span(b, (t[0]).p, s, (t[0]).len);
+  bb_put_span(b, (t[0]).p, s, (t[0]).len);
   if (dy_find((t[0]).p, 0, (t[0]).len, 101) < 0 && dy_find((t[0]).p, 0, (t[0]).len, 69) < 0 && dy_find((t[0]).p, 0, (t[0]).len, 46) < 0) {
-  dy_puts(b, ".0");
+  bb_puts(b, ".0");
 }
   free((t[0]).p);
   free((uint8_t*)(t));
@@ -35233,113 +35345,113 @@ Dp* dy_prog_new(int32_t cap0) {
   Dp* g = (Dp*)((Dp*)(malloc(2048)));
   (g[0]).cap = cap;
   (g[0]).nsy = 0;
-  { __typeof__((g[0]).sy_name) __flowc_st5197 = dy_i32s(cap); (g[0]).sy_name = __flowc_st5197; }
-  { __typeof__((g[0]).sy_mode) __flowc_st5204 = dy_i32s(cap); (g[0]).sy_mode = __flowc_st5204; }
-  { __typeof__((g[0]).sy_dt) __flowc_st5211 = dy_f64s(cap); (g[0]).sy_dt = __flowc_st5211; }
-  { __typeof__((g[0]).sy_n) __flowc_st5218 = dy_i64s(cap); (g[0]).sy_n = __flowc_st5218; }
-  { __typeof__((g[0]).sy_m) __flowc_st5225 = dy_i64s(cap); (g[0]).sy_m = __flowc_st5225; }
-  { __typeof__((g[0]).sy_p) __flowc_st5232 = dy_i64s(cap); (g[0]).sy_p = __flowc_st5232; }
-  { __typeof__((g[0]).sy_a0) __flowc_st5239 = dy_i32s(cap); (g[0]).sy_a0 = __flowc_st5239; }
-  { __typeof__((g[0]).sy_an) __flowc_st5246 = dy_i32s(cap); (g[0]).sy_an = __flowc_st5246; }
-  { __typeof__((g[0]).sy_b0) __flowc_st5253 = dy_i32s(cap); (g[0]).sy_b0 = __flowc_st5253; }
-  { __typeof__((g[0]).sy_bn) __flowc_st5260 = dy_i32s(cap); (g[0]).sy_bn = __flowc_st5260; }
-  { __typeof__((g[0]).sy_c0) __flowc_st5267 = dy_i32s(cap); (g[0]).sy_c0 = __flowc_st5267; }
-  { __typeof__((g[0]).sy_cn) __flowc_st5274 = dy_i32s(cap); (g[0]).sy_cn = __flowc_st5274; }
+  { __typeof__((g[0]).sy_name) __flowc_st4952 = dy_i32s(cap); (g[0]).sy_name = __flowc_st4952; }
+  { __typeof__((g[0]).sy_mode) __flowc_st4959 = dy_i32s(cap); (g[0]).sy_mode = __flowc_st4959; }
+  { __typeof__((g[0]).sy_dt) __flowc_st4966 = dy_f64s(cap); (g[0]).sy_dt = __flowc_st4966; }
+  { __typeof__((g[0]).sy_n) __flowc_st4973 = dy_i64s(cap); (g[0]).sy_n = __flowc_st4973; }
+  { __typeof__((g[0]).sy_m) __flowc_st4980 = dy_i64s(cap); (g[0]).sy_m = __flowc_st4980; }
+  { __typeof__((g[0]).sy_p) __flowc_st4987 = dy_i64s(cap); (g[0]).sy_p = __flowc_st4987; }
+  { __typeof__((g[0]).sy_a0) __flowc_st4994 = dy_i32s(cap); (g[0]).sy_a0 = __flowc_st4994; }
+  { __typeof__((g[0]).sy_an) __flowc_st5001 = dy_i32s(cap); (g[0]).sy_an = __flowc_st5001; }
+  { __typeof__((g[0]).sy_b0) __flowc_st5008 = dy_i32s(cap); (g[0]).sy_b0 = __flowc_st5008; }
+  { __typeof__((g[0]).sy_bn) __flowc_st5015 = dy_i32s(cap); (g[0]).sy_bn = __flowc_st5015; }
+  { __typeof__((g[0]).sy_c0) __flowc_st5022 = dy_i32s(cap); (g[0]).sy_c0 = __flowc_st5022; }
+  { __typeof__((g[0]).sy_cn) __flowc_st5029 = dy_i32s(cap); (g[0]).sy_cn = __flowc_st5029; }
   (g[0]).nhz = 0;
-  { __typeof__((g[0]).hz_name) __flowc_st5287 = dy_i32s(cap); (g[0]).hz_name = __flowc_st5287; }
-  { __typeof__((g[0]).hz_kind) __flowc_st5294 = dy_i32s(cap); (g[0]).hz_kind = __flowc_st5294; }
-  { __typeof__((g[0]).hz_steps) __flowc_st5301 = dy_i64s(cap); (g[0]).hz_steps = __flowc_st5301; }
-  { __typeof__((g[0]).hz_gamma) __flowc_st5308 = dy_f64s(cap); (g[0]).hz_gamma = __flowc_st5308; }
+  { __typeof__((g[0]).hz_name) __flowc_st5042 = dy_i32s(cap); (g[0]).hz_name = __flowc_st5042; }
+  { __typeof__((g[0]).hz_kind) __flowc_st5049 = dy_i32s(cap); (g[0]).hz_kind = __flowc_st5049; }
+  { __typeof__((g[0]).hz_steps) __flowc_st5056 = dy_i64s(cap); (g[0]).hz_steps = __flowc_st5056; }
+  { __typeof__((g[0]).hz_gamma) __flowc_st5063 = dy_f64s(cap); (g[0]).hz_gamma = __flowc_st5063; }
   (g[0]).nwf = 0;
-  { __typeof__((g[0]).wf_name) __flowc_st5321 = dy_i32s(cap); (g[0]).wf_name = __flowc_st5321; }
-  { __typeof__((g[0]).wf_w) __flowc_st5328 = dy_i64s(cap); (g[0]).wf_w = __flowc_st5328; }
-  { __typeof__((g[0]).wf_h) __flowc_st5335 = dy_i64s(cap); (g[0]).wf_h = __flowc_st5335; }
-  { __typeof__((g[0]).wf_tiles) __flowc_st5342 = dy_i64s(cap); (g[0]).wf_tiles = __flowc_st5342; }
-  { __typeof__((g[0]).wf_seed) __flowc_st5349 = dy_i64s(cap); (g[0]).wf_seed = __flowc_st5349; }
-  { __typeof__((g[0]).wf_pc) __flowc_st5356 = dy_i64s(cap); (g[0]).wf_pc = __flowc_st5356; }
-  { __typeof__((g[0]).wf_pt) __flowc_st5363 = dy_i64s(cap); (g[0]).wf_pt = __flowc_st5363; }
-  { __typeof__((g[0]).wf_steps) __flowc_st5370 = dy_i64s(cap); (g[0]).wf_steps = __flowc_st5370; }
+  { __typeof__((g[0]).wf_name) __flowc_st5076 = dy_i32s(cap); (g[0]).wf_name = __flowc_st5076; }
+  { __typeof__((g[0]).wf_w) __flowc_st5083 = dy_i64s(cap); (g[0]).wf_w = __flowc_st5083; }
+  { __typeof__((g[0]).wf_h) __flowc_st5090 = dy_i64s(cap); (g[0]).wf_h = __flowc_st5090; }
+  { __typeof__((g[0]).wf_tiles) __flowc_st5097 = dy_i64s(cap); (g[0]).wf_tiles = __flowc_st5097; }
+  { __typeof__((g[0]).wf_seed) __flowc_st5104 = dy_i64s(cap); (g[0]).wf_seed = __flowc_st5104; }
+  { __typeof__((g[0]).wf_pc) __flowc_st5111 = dy_i64s(cap); (g[0]).wf_pc = __flowc_st5111; }
+  { __typeof__((g[0]).wf_pt) __flowc_st5118 = dy_i64s(cap); (g[0]).wf_pt = __flowc_st5118; }
+  { __typeof__((g[0]).wf_steps) __flowc_st5125 = dy_i64s(cap); (g[0]).wf_steps = __flowc_st5125; }
   (g[0]).nse = 0;
-  { __typeof__((g[0]).se_sys) __flowc_st5383 = dy_i32s(cap); (g[0]).se_sys = __flowc_st5383; }
-  { __typeof__((g[0]).se_b0) __flowc_st5390 = dy_i32s(cap); (g[0]).se_b0 = __flowc_st5390; }
-  { __typeof__((g[0]).se_bn) __flowc_st5397 = dy_i32s(cap); (g[0]).se_bn = __flowc_st5397; }
+  { __typeof__((g[0]).se_sys) __flowc_st5138 = dy_i32s(cap); (g[0]).se_sys = __flowc_st5138; }
+  { __typeof__((g[0]).se_b0) __flowc_st5145 = dy_i32s(cap); (g[0]).se_b0 = __flowc_st5145; }
+  { __typeof__((g[0]).se_bn) __flowc_st5152 = dy_i32s(cap); (g[0]).se_bn = __flowc_st5152; }
   (g[0]).nga = 0;
-  { __typeof__((g[0]).ga_sys) __flowc_st5410 = dy_i32s(cap); (g[0]).ga_sys = __flowc_st5410; }
-  { __typeof__((g[0]).ga_hz) __flowc_st5417 = dy_i32s(cap); (g[0]).ga_hz = __flowc_st5417; }
-  { __typeof__((g[0]).ga_k1) __flowc_st5424 = dy_i32s(cap); (g[0]).ga_k1 = __flowc_st5424; }
-  { __typeof__((g[0]).ga_k2) __flowc_st5431 = dy_i32s(cap); (g[0]).ga_k2 = __flowc_st5431; }
-  { __typeof__((g[0]).ga_pop) __flowc_st5438 = dy_i64s(cap); (g[0]).ga_pop = __flowc_st5438; }
-  { __typeof__((g[0]).ga_gen) __flowc_st5445 = dy_i64s(cap); (g[0]).ga_gen = __flowc_st5445; }
-  { __typeof__((g[0]).ga_mut) __flowc_st5452 = dy_f64s(cap); (g[0]).ga_mut = __flowc_st5452; }
+  { __typeof__((g[0]).ga_sys) __flowc_st5165 = dy_i32s(cap); (g[0]).ga_sys = __flowc_st5165; }
+  { __typeof__((g[0]).ga_hz) __flowc_st5172 = dy_i32s(cap); (g[0]).ga_hz = __flowc_st5172; }
+  { __typeof__((g[0]).ga_k1) __flowc_st5179 = dy_i32s(cap); (g[0]).ga_k1 = __flowc_st5179; }
+  { __typeof__((g[0]).ga_k2) __flowc_st5186 = dy_i32s(cap); (g[0]).ga_k2 = __flowc_st5186; }
+  { __typeof__((g[0]).ga_pop) __flowc_st5193 = dy_i64s(cap); (g[0]).ga_pop = __flowc_st5193; }
+  { __typeof__((g[0]).ga_gen) __flowc_st5200 = dy_i64s(cap); (g[0]).ga_gen = __flowc_st5200; }
+  { __typeof__((g[0]).ga_mut) __flowc_st5207 = dy_f64s(cap); (g[0]).ga_mut = __flowc_st5207; }
   (g[0]).ncl = 0;
-  { __typeof__((g[0]).cl_sys) __flowc_st5465 = dy_i32s(cap); (g[0]).cl_sys = __flowc_st5465; }
-  { __typeof__((g[0]).cl_k1) __flowc_st5472 = dy_i32s(cap); (g[0]).cl_k1 = __flowc_st5472; }
-  { __typeof__((g[0]).cl_k2) __flowc_st5479 = dy_i32s(cap); (g[0]).cl_k2 = __flowc_st5479; }
-  { __typeof__((g[0]).cl_b0) __flowc_st5486 = dy_i32s(cap); (g[0]).cl_b0 = __flowc_st5486; }
-  { __typeof__((g[0]).cl_bn) __flowc_st5493 = dy_i32s(cap); (g[0]).cl_bn = __flowc_st5493; }
+  { __typeof__((g[0]).cl_sys) __flowc_st5220 = dy_i32s(cap); (g[0]).cl_sys = __flowc_st5220; }
+  { __typeof__((g[0]).cl_k1) __flowc_st5227 = dy_i32s(cap); (g[0]).cl_k1 = __flowc_st5227; }
+  { __typeof__((g[0]).cl_k2) __flowc_st5234 = dy_i32s(cap); (g[0]).cl_k2 = __flowc_st5234; }
+  { __typeof__((g[0]).cl_b0) __flowc_st5241 = dy_i32s(cap); (g[0]).cl_b0 = __flowc_st5241; }
+  { __typeof__((g[0]).cl_bn) __flowc_st5248 = dy_i32s(cap); (g[0]).cl_bn = __flowc_st5248; }
   (g[0]).nanz = 0;
-  { __typeof__((g[0]).an_sys) __flowc_st5506 = dy_i32s(cap); (g[0]).an_sys = __flowc_st5506; }
-  { __typeof__((g[0]).an_k1) __flowc_st5513 = dy_i32s(cap); (g[0]).an_k1 = __flowc_st5513; }
-  { __typeof__((g[0]).an_k2) __flowc_st5520 = dy_i32s(cap); (g[0]).an_k2 = __flowc_st5520; }
-  { __typeof__((g[0]).an_hz) __flowc_st5527 = dy_i32s(cap); (g[0]).an_hz = __flowc_st5527; }
-  { __typeof__((g[0]).an_rep) __flowc_st5534 = dy_i32s(cap); (g[0]).an_rep = __flowc_st5534; }
+  { __typeof__((g[0]).an_sys) __flowc_st5261 = dy_i32s(cap); (g[0]).an_sys = __flowc_st5261; }
+  { __typeof__((g[0]).an_k1) __flowc_st5268 = dy_i32s(cap); (g[0]).an_k1 = __flowc_st5268; }
+  { __typeof__((g[0]).an_k2) __flowc_st5275 = dy_i32s(cap); (g[0]).an_k2 = __flowc_st5275; }
+  { __typeof__((g[0]).an_hz) __flowc_st5282 = dy_i32s(cap); (g[0]).an_hz = __flowc_st5282; }
+  { __typeof__((g[0]).an_rep) __flowc_st5289 = dy_i32s(cap); (g[0]).an_rep = __flowc_st5289; }
   (g[0]).ncp = 0;
-  { __typeof__((g[0]).cp_sys) __flowc_st5547 = dy_i32s(cap); (g[0]).cp_sys = __flowc_st5547; }
-  { __typeof__((g[0]).cp_field) __flowc_st5554 = dy_i32s(cap); (g[0]).cp_field = __flowc_st5554; }
-  { __typeof__((g[0]).cp_rep) __flowc_st5561 = dy_i32s(cap); (g[0]).cp_rep = __flowc_st5561; }
-  { __typeof__((g[0]).cp_k1) __flowc_st5568 = dy_i32s(cap); (g[0]).cp_k1 = __flowc_st5568; }
-  { __typeof__((g[0]).cp_k2) __flowc_st5575 = dy_i32s(cap); (g[0]).cp_k2 = __flowc_st5575; }
-  { __typeof__((g[0]).cp_guid) __flowc_st5582 = dy_i32s(cap); (g[0]).cp_guid = __flowc_st5582; }
-  { __typeof__((g[0]).cp_b0) __flowc_st5589 = dy_i32s(cap); (g[0]).cp_b0 = __flowc_st5589; }
-  { __typeof__((g[0]).cp_bn) __flowc_st5596 = dy_i32s(cap); (g[0]).cp_bn = __flowc_st5596; }
+  { __typeof__((g[0]).cp_sys) __flowc_st5302 = dy_i32s(cap); (g[0]).cp_sys = __flowc_st5302; }
+  { __typeof__((g[0]).cp_field) __flowc_st5309 = dy_i32s(cap); (g[0]).cp_field = __flowc_st5309; }
+  { __typeof__((g[0]).cp_rep) __flowc_st5316 = dy_i32s(cap); (g[0]).cp_rep = __flowc_st5316; }
+  { __typeof__((g[0]).cp_k1) __flowc_st5323 = dy_i32s(cap); (g[0]).cp_k1 = __flowc_st5323; }
+  { __typeof__((g[0]).cp_k2) __flowc_st5330 = dy_i32s(cap); (g[0]).cp_k2 = __flowc_st5330; }
+  { __typeof__((g[0]).cp_guid) __flowc_st5337 = dy_i32s(cap); (g[0]).cp_guid = __flowc_st5337; }
+  { __typeof__((g[0]).cp_b0) __flowc_st5344 = dy_i32s(cap); (g[0]).cp_b0 = __flowc_st5344; }
+  { __typeof__((g[0]).cp_bn) __flowc_st5351 = dy_i32s(cap); (g[0]).cp_bn = __flowc_st5351; }
   (g[0]).ngd = 0;
-  { __typeof__((g[0]).gd_sys) __flowc_st5609 = dy_i32s(cap); (g[0]).gd_sys = __flowc_st5609; }
-  { __typeof__((g[0]).gd_k1) __flowc_st5616 = dy_i32s(cap); (g[0]).gd_k1 = __flowc_st5616; }
-  { __typeof__((g[0]).gd_k2) __flowc_st5623 = dy_i32s(cap); (g[0]).gd_k2 = __flowc_st5623; }
-  { __typeof__((g[0]).gd_field) __flowc_st5630 = dy_i32s(cap); (g[0]).gd_field = __flowc_st5630; }
-  { __typeof__((g[0]).gd_guid) __flowc_st5637 = dy_i32s(cap); (g[0]).gd_guid = __flowc_st5637; }
-  { __typeof__((g[0]).gd_hz) __flowc_st5644 = dy_i32s(cap); (g[0]).gd_hz = __flowc_st5644; }
-  { __typeof__((g[0]).gd_b0) __flowc_st5651 = dy_i32s(cap); (g[0]).gd_b0 = __flowc_st5651; }
-  { __typeof__((g[0]).gd_bn) __flowc_st5658 = dy_i32s(cap); (g[0]).gd_bn = __flowc_st5658; }
+  { __typeof__((g[0]).gd_sys) __flowc_st5364 = dy_i32s(cap); (g[0]).gd_sys = __flowc_st5364; }
+  { __typeof__((g[0]).gd_k1) __flowc_st5371 = dy_i32s(cap); (g[0]).gd_k1 = __flowc_st5371; }
+  { __typeof__((g[0]).gd_k2) __flowc_st5378 = dy_i32s(cap); (g[0]).gd_k2 = __flowc_st5378; }
+  { __typeof__((g[0]).gd_field) __flowc_st5385 = dy_i32s(cap); (g[0]).gd_field = __flowc_st5385; }
+  { __typeof__((g[0]).gd_guid) __flowc_st5392 = dy_i32s(cap); (g[0]).gd_guid = __flowc_st5392; }
+  { __typeof__((g[0]).gd_hz) __flowc_st5399 = dy_i32s(cap); (g[0]).gd_hz = __flowc_st5399; }
+  { __typeof__((g[0]).gd_b0) __flowc_st5406 = dy_i32s(cap); (g[0]).gd_b0 = __flowc_st5406; }
+  { __typeof__((g[0]).gd_bn) __flowc_st5413 = dy_i32s(cap); (g[0]).gd_bn = __flowc_st5413; }
   (g[0]).nrp = 0;
-  { __typeof__((g[0]).rp_flow) __flowc_st5671 = dy_i32s(cap); (g[0]).rp_flow = __flowc_st5671; }
-  { __typeof__((g[0]).rp_mode) __flowc_st5678 = dy_i32s(cap); (g[0]).rp_mode = __flowc_st5678; }
-  { __typeof__((g[0]).rp_dt) __flowc_st5685 = dy_f64s(cap); (g[0]).rp_dt = __flowc_st5685; }
-  { __typeof__((g[0]).rp_n) __flowc_st5692 = dy_i64s(cap); (g[0]).rp_n = __flowc_st5692; }
-  { __typeof__((g[0]).rp_m) __flowc_st5699 = dy_i64s(cap); (g[0]).rp_m = __flowc_st5699; }
-  { __typeof__((g[0]).rp_p) __flowc_st5706 = dy_i64s(cap); (g[0]).rp_p = __flowc_st5706; }
-  { __typeof__((g[0]).rp_a0) __flowc_st5713 = dy_i32s(cap); (g[0]).rp_a0 = __flowc_st5713; }
-  { __typeof__((g[0]).rp_an) __flowc_st5720 = dy_i32s(cap); (g[0]).rp_an = __flowc_st5720; }
-  { __typeof__((g[0]).rp_b0) __flowc_st5727 = dy_i32s(cap); (g[0]).rp_b0 = __flowc_st5727; }
-  { __typeof__((g[0]).rp_bn) __flowc_st5734 = dy_i32s(cap); (g[0]).rp_bn = __flowc_st5734; }
-  { __typeof__((g[0]).rp_c0) __flowc_st5741 = dy_i32s(cap); (g[0]).rp_c0 = __flowc_st5741; }
-  { __typeof__((g[0]).rp_cn) __flowc_st5748 = dy_i32s(cap); (g[0]).rp_cn = __flowc_st5748; }
-  { __typeof__((g[0]).rp_at0) __flowc_st5755 = dy_i32s(cap); (g[0]).rp_at0 = __flowc_st5755; }
-  { __typeof__((g[0]).rp_atn) __flowc_st5762 = dy_i32s(cap); (g[0]).rp_atn = __flowc_st5762; }
-  { __typeof__((g[0]).rp_nin) __flowc_st5769 = dy_i32s(cap); (g[0]).rp_nin = __flowc_st5769; }
+  { __typeof__((g[0]).rp_flow) __flowc_st5426 = dy_i32s(cap); (g[0]).rp_flow = __flowc_st5426; }
+  { __typeof__((g[0]).rp_mode) __flowc_st5433 = dy_i32s(cap); (g[0]).rp_mode = __flowc_st5433; }
+  { __typeof__((g[0]).rp_dt) __flowc_st5440 = dy_f64s(cap); (g[0]).rp_dt = __flowc_st5440; }
+  { __typeof__((g[0]).rp_n) __flowc_st5447 = dy_i64s(cap); (g[0]).rp_n = __flowc_st5447; }
+  { __typeof__((g[0]).rp_m) __flowc_st5454 = dy_i64s(cap); (g[0]).rp_m = __flowc_st5454; }
+  { __typeof__((g[0]).rp_p) __flowc_st5461 = dy_i64s(cap); (g[0]).rp_p = __flowc_st5461; }
+  { __typeof__((g[0]).rp_a0) __flowc_st5468 = dy_i32s(cap); (g[0]).rp_a0 = __flowc_st5468; }
+  { __typeof__((g[0]).rp_an) __flowc_st5475 = dy_i32s(cap); (g[0]).rp_an = __flowc_st5475; }
+  { __typeof__((g[0]).rp_b0) __flowc_st5482 = dy_i32s(cap); (g[0]).rp_b0 = __flowc_st5482; }
+  { __typeof__((g[0]).rp_bn) __flowc_st5489 = dy_i32s(cap); (g[0]).rp_bn = __flowc_st5489; }
+  { __typeof__((g[0]).rp_c0) __flowc_st5496 = dy_i32s(cap); (g[0]).rp_c0 = __flowc_st5496; }
+  { __typeof__((g[0]).rp_cn) __flowc_st5503 = dy_i32s(cap); (g[0]).rp_cn = __flowc_st5503; }
+  { __typeof__((g[0]).rp_at0) __flowc_st5510 = dy_i32s(cap); (g[0]).rp_at0 = __flowc_st5510; }
+  { __typeof__((g[0]).rp_atn) __flowc_st5517 = dy_i32s(cap); (g[0]).rp_atn = __flowc_st5517; }
+  { __typeof__((g[0]).rp_nin) __flowc_st5524 = dy_i32s(cap); (g[0]).rp_nin = __flowc_st5524; }
   (g[0]).npt = 0;
-  { __typeof__((g[0]).pt_flow) __flowc_st5782 = dy_i32s(cap); (g[0]).pt_flow = __flowc_st5782; }
-  { __typeof__((g[0]).pt_ax0) __flowc_st5789 = dy_i32s(cap); (g[0]).pt_ax0 = __flowc_st5789; }
-  { __typeof__((g[0]).pt_ax1) __flowc_st5796 = dy_i32s(cap); (g[0]).pt_ax1 = __flowc_st5796; }
-  { __typeof__((g[0]).pt_trail) __flowc_st5803 = dy_i64s(cap); (g[0]).pt_trail = __flowc_st5803; }
-  { __typeof__((g[0]).pt_w) __flowc_st5810 = dy_i64s(cap); (g[0]).pt_w = __flowc_st5810; }
-  { __typeof__((g[0]).pt_h) __flowc_st5817 = dy_i64s(cap); (g[0]).pt_h = __flowc_st5817; }
-  { __typeof__((g[0]).pt_set0) __flowc_st5824 = dy_i32s(cap); (g[0]).pt_set0 = __flowc_st5824; }
-  { __typeof__((g[0]).pt_set1) __flowc_st5831 = dy_i32s(cap); (g[0]).pt_set1 = __flowc_st5831; }
-  { __typeof__((g[0]).pt_lo0) __flowc_st5838 = dy_f64s(cap); (g[0]).pt_lo0 = __flowc_st5838; }
-  { __typeof__((g[0]).pt_hi0) __flowc_st5845 = dy_f64s(cap); (g[0]).pt_hi0 = __flowc_st5845; }
-  { __typeof__((g[0]).pt_lo1) __flowc_st5852 = dy_f64s(cap); (g[0]).pt_lo1 = __flowc_st5852; }
-  { __typeof__((g[0]).pt_hi1) __flowc_st5859 = dy_f64s(cap); (g[0]).pt_hi1 = __flowc_st5859; }
-  { __typeof__((g[0]).pt_k0) __flowc_st5866 = dy_i32s(cap); (g[0]).pt_k0 = __flowc_st5866; }
-  { __typeof__((g[0]).pt_k1) __flowc_st5873 = dy_i32s(cap); (g[0]).pt_k1 = __flowc_st5873; }
+  { __typeof__((g[0]).pt_flow) __flowc_st5537 = dy_i32s(cap); (g[0]).pt_flow = __flowc_st5537; }
+  { __typeof__((g[0]).pt_ax0) __flowc_st5544 = dy_i32s(cap); (g[0]).pt_ax0 = __flowc_st5544; }
+  { __typeof__((g[0]).pt_ax1) __flowc_st5551 = dy_i32s(cap); (g[0]).pt_ax1 = __flowc_st5551; }
+  { __typeof__((g[0]).pt_trail) __flowc_st5558 = dy_i64s(cap); (g[0]).pt_trail = __flowc_st5558; }
+  { __typeof__((g[0]).pt_w) __flowc_st5565 = dy_i64s(cap); (g[0]).pt_w = __flowc_st5565; }
+  { __typeof__((g[0]).pt_h) __flowc_st5572 = dy_i64s(cap); (g[0]).pt_h = __flowc_st5572; }
+  { __typeof__((g[0]).pt_set0) __flowc_st5579 = dy_i32s(cap); (g[0]).pt_set0 = __flowc_st5579; }
+  { __typeof__((g[0]).pt_set1) __flowc_st5586 = dy_i32s(cap); (g[0]).pt_set1 = __flowc_st5586; }
+  { __typeof__((g[0]).pt_lo0) __flowc_st5593 = dy_f64s(cap); (g[0]).pt_lo0 = __flowc_st5593; }
+  { __typeof__((g[0]).pt_hi0) __flowc_st5600 = dy_f64s(cap); (g[0]).pt_hi0 = __flowc_st5600; }
+  { __typeof__((g[0]).pt_lo1) __flowc_st5607 = dy_f64s(cap); (g[0]).pt_lo1 = __flowc_st5607; }
+  { __typeof__((g[0]).pt_hi1) __flowc_st5614 = dy_f64s(cap); (g[0]).pt_hi1 = __flowc_st5614; }
+  { __typeof__((g[0]).pt_k0) __flowc_st5621 = dy_i32s(cap); (g[0]).pt_k0 = __flowc_st5621; }
+  { __typeof__((g[0]).pt_k1) __flowc_st5628 = dy_i32s(cap); (g[0]).pt_k1 = __flowc_st5628; }
   (g[0]).nlq = 0;
-  { __typeof__((g[0]).lq_sys) __flowc_st5886 = dy_i32s(cap); (g[0]).lq_sys = __flowc_st5886; }
-  { __typeof__((g[0]).lq_q0) __flowc_st5893 = dy_i32s(cap); (g[0]).lq_q0 = __flowc_st5893; }
-  { __typeof__((g[0]).lq_qn) __flowc_st5900 = dy_i32s(cap); (g[0]).lq_qn = __flowc_st5900; }
-  { __typeof__((g[0]).lq_r) __flowc_st5907 = dy_f64s(cap); (g[0]).lq_r = __flowc_st5907; }
-  { __typeof__((g[0]).lq_g0) __flowc_st5914 = dy_i32s(cap); (g[0]).lq_g0 = __flowc_st5914; }
-  { __typeof__((g[0]).lq_gn) __flowc_st5921 = dy_i32s(cap); (g[0]).lq_gn = __flowc_st5921; }
-  { __typeof__((g[0]).lq_it) __flowc_st5928 = dy_i64s(cap); (g[0]).lq_it = __flowc_st5928; }
+  { __typeof__((g[0]).lq_sys) __flowc_st5641 = dy_i32s(cap); (g[0]).lq_sys = __flowc_st5641; }
+  { __typeof__((g[0]).lq_q0) __flowc_st5648 = dy_i32s(cap); (g[0]).lq_q0 = __flowc_st5648; }
+  { __typeof__((g[0]).lq_qn) __flowc_st5655 = dy_i32s(cap); (g[0]).lq_qn = __flowc_st5655; }
+  { __typeof__((g[0]).lq_r) __flowc_st5662 = dy_f64s(cap); (g[0]).lq_r = __flowc_st5662; }
+  { __typeof__((g[0]).lq_g0) __flowc_st5669 = dy_i32s(cap); (g[0]).lq_g0 = __flowc_st5669; }
+  { __typeof__((g[0]).lq_gn) __flowc_st5676 = dy_i32s(cap); (g[0]).lq_gn = __flowc_st5676; }
+  { __typeof__((g[0]).lq_it) __flowc_st5683 = dy_i64s(cap); (g[0]).lq_it = __flowc_st5683; }
   return g;
 }
 
@@ -35720,7 +35832,7 @@ void dy_parse_nmp(DyC* c, uint8_t* p, int32_t s, int32_t e, int64_t* nv, int64_t
   int32_t* ws = (int32_t*)(dy_i32s(((e - s) + 1)));
   int32_t* we = (int32_t*)(dy_i32s(((e - s) + 1)));
   int32_t n = dy_split_ws(p, s, e, ws, we);
-  { __typeof__(nv[idx]) __flowc_st8482 = dy_int(c, p, ws[1], we[1]); nv[idx] = __flowc_st8482; }
+  { __typeof__(nv[idx]) __flowc_st8237 = dy_int(c, p, ws[1], we[1]); nv[idx] = __flowc_st8237; }
   if ((c[0]).err == 0) {
   int32_t k = 0;
   while (k < n) {
@@ -35728,7 +35840,7 @@ void dy_parse_nmp(DyC* c, uint8_t* p, int32_t s, int32_t e, int64_t* nv, int64_t
   if ((k + 1) >= n) {
   dy_err_s(c, "list index out of range");
 } else {
-  { __typeof__(mv[idx]) __flowc_st8534 = dy_int(c, p, ws[(k + 1)], we[(k + 1)]); mv[idx] = __flowc_st8534; }
+  { __typeof__(mv[idx]) __flowc_st8289 = dy_int(c, p, ws[(k + 1)], we[(k + 1)]); mv[idx] = __flowc_st8289; }
 }
   break;
 }
@@ -35742,7 +35854,7 @@ void dy_parse_nmp(DyC* c, uint8_t* p, int32_t s, int32_t e, int64_t* nv, int64_t
   if ((k2 + 1) >= n) {
   dy_err_s(c, "list index out of range");
 } else {
-  { __typeof__(pv[idx]) __flowc_st8600 = dy_int(c, p, ws[(k2 + 1)], we[(k2 + 1)]); pv[idx] = __flowc_st8600; }
+  { __typeof__(pv[idx]) __flowc_st8355 = dy_int(c, p, ws[(k2 + 1)], we[(k2 + 1)]); pv[idx] = __flowc_st8355; }
 }
   break;
 }
@@ -35823,10 +35935,10 @@ void dy_parse_at(DyC* c, uint8_t* p, int32_t s0, int32_t e0, Dp* g, int32_t r) {
   if (pa[1] > pa[0]) {
   int32_t col = dy_find(p, pa[0], pa[1], 58);
   if (col < 0) {
-  DySb* m = (DySb*)(dy_err(c));
-  dy_puts(m, "invalid `at` binding '");
-  dy_span(m, p, pa[0], pa[1]);
-  dy_puts(m, "' in represent linear; expected name: value");
+  ByteBuf* m = (ByteBuf*)(dy_err(c));
+  bb_puts(m, "invalid `at` binding '");
+  bb_put_span(m, p, pa[0], pa[1]);
+  bb_puts(m, "' in represent linear; expected name: value");
   free((uint8_t*)(pa));
   free((uint8_t*)(se));
   return;
@@ -35840,18 +35952,18 @@ void dy_parse_at(DyC* c, uint8_t* p, int32_t s0, int32_t e0, Dp* g, int32_t r) {
   vl[1] = pa[1];
   dy_strip(p, vl);
   if (dy_all_word(p, nm[0], nm[1]) == 0) {
-  DySb* m2 = (DySb*)(dy_err(c));
-  dy_puts(m2, "invalid state name in `at`: ");
-  dy_span(m2, p, nm[0], nm[1]);
+  ByteBuf* m2 = (ByteBuf*)(dy_err(c));
+  bb_puts(m2, "invalid state name in `at`: ");
+  bb_put_span(m2, p, nm[0], nm[1]);
   return;
 }
   double v = dy_float(c, p, vl[0], vl[1]);
   if ((c[0]).err != 0) {
-  DySb* m3 = (DySb*)(dy_err(c));
-  dy_puts(m3, "invalid numeric value in `at` for '");
-  dy_span(m3, p, nm[0], nm[1]);
-  dy_puts(m3, "': ");
-  dy_span(m3, p, vl[0], vl[1]);
+  ByteBuf* m3 = (ByteBuf*)(dy_err(c));
+  bb_puts(m3, "invalid numeric value in `at` for '");
+  bb_put_span(m3, p, nm[0], nm[1]);
+  bb_puts(m3, "': ");
+  bb_put_span(m3, p, vl[0], vl[1]);
   return;
 }
   int32_t off = dy_name(c, p, nm[0], nm[1]);
@@ -35898,9 +36010,9 @@ int32_t dy_name_list(DyC* c, uint8_t* p, int32_t s0, int32_t e0) {
   dy_strip(p, pa);
   if (pa[1] > pa[0]) {
   if (dy_all_word(p, pa[0], pa[1]) == 0) {
-  DySb* m = (DySb*)(dy_err(c));
-  dy_puts(m, "invalid name in represent linear list: ");
-  dy_span(m, p, pa[0], pa[1]);
+  ByteBuf* m = (ByteBuf*)(dy_err(c));
+  bb_puts(m, "invalid name in represent linear list: ");
+  bb_put_span(m, p, pa[0], pa[1]);
   return 0;
 }
   count = (count + 1);
@@ -35975,28 +36087,28 @@ void dy_rep_linear_body(DyC* c, uint8_t* p, Dp* g, int32_t r, int32_t* bs, int32
   (g[0]).rp_mode[r] = 0;
 } else {
   if (dy_starts(p, s, e, "dt ") == 1) {
-  { __typeof__((g[0]).rp_dt[r]) __flowc_st9801 = dy_float_part(c, p, s, e, 1); (g[0]).rp_dt[r] = __flowc_st9801; }
+  { __typeof__((g[0]).rp_dt[r]) __flowc_st9556 = dy_float_part(c, p, s, e, 1); (g[0]).rp_dt[r] = __flowc_st9556; }
 } else {
   if (dy_starts(p, s, e, "n ") == 1) {
   dy_parse_nmp(c, p, s, e, (g[0]).rp_n, (g[0]).rp_m, (g[0]).rp_p, r);
 } else {
   if (dy_starts(p, s, e, "A ") == 1) {
-  { __typeof__((g[0]).rp_an[r]) __flowc_st9851 = dy_floats(c, p, (s + 2), e, f0); (g[0]).rp_an[r] = __flowc_st9851; }
+  { __typeof__((g[0]).rp_an[r]) __flowc_st9606 = dy_floats(c, p, (s + 2), e, f0); (g[0]).rp_an[r] = __flowc_st9606; }
   (g[0]).rp_a0[r] = f0[0];
 } else {
   if (dy_starts(p, s, e, "B ") == 1) {
-  { __typeof__((g[0]).rp_bn[r]) __flowc_st9884 = dy_floats(c, p, (s + 2), e, f0); (g[0]).rp_bn[r] = __flowc_st9884; }
+  { __typeof__((g[0]).rp_bn[r]) __flowc_st9639 = dy_floats(c, p, (s + 2), e, f0); (g[0]).rp_bn[r] = __flowc_st9639; }
   (g[0]).rp_b0[r] = f0[0];
 } else {
   if (dy_starts(p, s, e, "C ") == 1) {
-  { __typeof__((g[0]).rp_cn[r]) __flowc_st9917 = dy_floats(c, p, (s + 2), e, f0); (g[0]).rp_cn[r] = __flowc_st9917; }
+  { __typeof__((g[0]).rp_cn[r]) __flowc_st9672 = dy_floats(c, p, (s + 2), e, f0); (g[0]).rp_cn[r] = __flowc_st9672; }
   (g[0]).rp_c0[r] = f0[0];
 } else {
-  DySb* m = (DySb*)(dy_err(c));
-  dy_puts(m, "unknown item in represent linear for '");
+  ByteBuf* m = (ByteBuf*)(dy_err(c));
+  bb_puts(m, "unknown item in represent linear for '");
   dy_pn(m, c, (g[0]).rp_flow[r]);
-  dy_puts(m, "': ");
-  dy_span(m, p, s, e);
+  bb_puts(m, "': ");
+  bb_put_span(m, p, s, e);
 }
 }
 }
@@ -36028,15 +36140,15 @@ void dy_portrait_body(DyC* c, uint8_t* p, Dp* g, int32_t t, int32_t* bs, int32_t
   int32_t done = 0;
   int32_t m1 = dy_match(p, s, e, "trail^#~", caps);
   if (m1 == e) {
-  { __typeof__((g[0]).pt_trail[t]) __flowc_st10101 = dy_int(c, p, caps[0], caps[1]); (g[0]).pt_trail[t] = __flowc_st10101; }
+  { __typeof__((g[0]).pt_trail[t]) __flowc_st9856 = dy_int(c, p, caps[0], caps[1]); (g[0]).pt_trail[t] = __flowc_st9856; }
   if ((c[0]).err != 0) {
   return;
 }
   if ((g[0]).pt_trail[t] <= 0) {
-  DySb* m = (DySb*)(dy_err(c));
-  dy_puts(m, "represent phase_portrait for '");
+  ByteBuf* m = (ByteBuf*)(dy_err(c));
+  bb_puts(m, "represent phase_portrait for '");
   dy_pn(m, c, fl);
-  dy_puts(m, "': trail must be positive");
+  bb_puts(m, "': trail must be positive");
   return;
 }
   done = 1;
@@ -36044,8 +36156,8 @@ void dy_portrait_body(DyC* c, uint8_t* p, Dp* g, int32_t t, int32_t* bs, int32_t
   if (done == 0) {
   int32_t m2 = dy_match(p, s, e, "window^#~,~#~", caps);
   if (m2 == e) {
-  { __typeof__((g[0]).pt_w[t]) __flowc_st10174 = dy_int(c, p, caps[0], caps[1]); (g[0]).pt_w[t] = __flowc_st10174; }
-  { __typeof__((g[0]).pt_h[t]) __flowc_st10190 = dy_int(c, p, caps[2], caps[3]); (g[0]).pt_h[t] = __flowc_st10190; }
+  { __typeof__((g[0]).pt_w[t]) __flowc_st9929 = dy_int(c, p, caps[0], caps[1]); (g[0]).pt_w[t] = __flowc_st9929; }
+  { __typeof__((g[0]).pt_h[t]) __flowc_st9945 = dy_int(c, p, caps[2], caps[3]); (g[0]).pt_h[t] = __flowc_st9945; }
   done = 1;
 }
 }
@@ -36065,16 +36177,16 @@ void dy_portrait_body(DyC* c, uint8_t* p, Dp* g, int32_t t, int32_t* bs, int32_t
   int32_t is0 = dy_neq(c, ax, (g[0]).pt_ax0[t]);
   int32_t is1 = dy_neq(c, ax, (g[0]).pt_ax1[t]);
   if (is0 == 0 && is1 == 0) {
-  DySb* m = (DySb*)(dy_err(c));
-  dy_puts(m, "represent phase_portrait for '");
+  ByteBuf* m = (ByteBuf*)(dy_err(c));
+  bb_puts(m, "represent phase_portrait for '");
   dy_pn(m, c, fl);
-  dy_puts(m, "': map axis '");
+  bb_puts(m, "': map axis '");
   dy_pn(m, c, ax);
-  dy_puts(m, "' is not one of (");
+  bb_puts(m, "' is not one of (");
   dy_pn(m, c, (g[0]).pt_ax0[t]);
-  dy_puts(m, ", ");
+  bb_puts(m, ", ");
   dy_pn(m, c, (g[0]).pt_ax1[t]);
-  dy_puts(m, ")");
+  bb_puts(m, ")");
   return;
 }
   double lo = dy_float(c, p, caps[2], caps[3]);
@@ -36083,12 +36195,12 @@ void dy_portrait_body(DyC* c, uint8_t* p, Dp* g, int32_t t, int32_t* bs, int32_t
   hi = dy_float(c, p, caps[4], caps[5]);
 }
   if ((c[0]).err != 0) {
-  DySb* m4 = (DySb*)(dy_err(c));
-  dy_puts(m4, "represent phase_portrait for '");
+  ByteBuf* m4 = (ByteBuf*)(dy_err(c));
+  bb_puts(m4, "represent phase_portrait for '");
   dy_pn(m4, c, fl);
-  dy_puts(m4, "': invalid range in map for '");
+  bb_puts(m4, "': invalid range in map for '");
   dy_pn(m4, c, ax);
-  dy_puts(m4, "'");
+  bb_puts(m4, "'");
   return;
 }
   if (is0 == 1) {
@@ -36107,11 +36219,11 @@ void dy_portrait_body(DyC* c, uint8_t* p, Dp* g, int32_t t, int32_t* bs, int32_t
 }
 }
   if (done == 0) {
-  DySb* m5 = (DySb*)(dy_err(c));
-  dy_puts(m5, "unknown item in represent phase_portrait for '");
+  ByteBuf* m5 = (ByteBuf*)(dy_err(c));
+  bb_puts(m5, "unknown item in represent phase_portrait for '");
   dy_pn(m5, c, fl);
-  dy_puts(m5, "': ");
-  dy_span(m5, p, s, e);
+  bb_puts(m5, "': ");
+  bb_put_span(m5, p, s, e);
   return;
 }
   if ((c[0]).err != 0) {
@@ -36121,21 +36233,21 @@ void dy_portrait_body(DyC* c, uint8_t* p, Dp* g, int32_t t, int32_t* bs, int32_t
   i = (i + 1);
 }
   if ((g[0]).pt_set0[t] == 0 || (g[0]).pt_set1[t] == 0) {
-  DySb* m6 = (DySb*)(dy_err(c));
-  dy_puts(m6, "represent phase_portrait for '");
+  ByteBuf* m6 = (ByteBuf*)(dy_err(c));
+  bb_puts(m6, "represent phase_portrait for '");
   dy_pn(m6, c, fl);
-  dy_puts(m6, "': need map for both '");
+  bb_puts(m6, "': need map for both '");
   dy_pn(m6, c, (g[0]).pt_ax0[t]);
-  dy_puts(m6, "' and '");
+  bb_puts(m6, "' and '");
   dy_pn(m6, c, (g[0]).pt_ax1[t]);
-  dy_puts(m6, "'");
+  bb_puts(m6, "'");
   return;
 }
   if ((g[0]).pt_k0[t] == (g[0]).pt_k1[t]) {
-  DySb* m7 = (DySb*)(dy_err(c));
-  dy_puts(m7, "represent phase_portrait for '");
+  ByteBuf* m7 = (ByteBuf*)(dy_err(c));
+  bb_puts(m7, "represent phase_portrait for '");
   dy_pn(m7, c, fl);
-  dy_puts(m7, "': maps must assign one axis to col and one to row");
+  bb_puts(m7, "': maps must assign one axis to col and one to row");
 }
 }
 
@@ -36168,7 +36280,7 @@ int32_t dy_rep_head(uint8_t* p, int32_t s, int32_t e, int32_t* caps) {
   return 0;
 }
 
-void dy_extract_represent(DyC* c, uint8_t* p, int32_t n, Dp* g, DySb* out) {
+void dy_extract_represent(DyC* c, uint8_t* p, int32_t n, Dp* g, ByteBuf* out) {
   int32_t* ls = (int32_t*)(dy_i32s((n + 2)));
   int32_t* le = (int32_t*)(dy_i32s((n + 2)));
   int32_t nl = dy_split_lines(p, n, ls, le);
@@ -36199,10 +36311,10 @@ void dy_extract_represent(DyC* c, uint8_t* p, int32_t n, Dp* g, DySb* out) {
   fbd = (depth + delta);
   have_fbd = 1;
   if (first == 0) {
-  dy_putc(out, 10);
+  bb_putc(out, 10);
 }
   first = 0;
-  dy_span(out, p, a, b);
+  bb_put_span(out, p, a, b);
   depth = (depth + delta);
   i = (i + 1);
   handled = 1;
@@ -36250,19 +36362,19 @@ void dy_extract_represent(DyC* c, uint8_t* p, int32_t n, Dp* g, DySb* out) {
   return;
 }
   if (dy_eq(p, ks, ke, "koopman") == 1 || dy_eq(p, ks, ke, "transfer_function") == 1 || dy_eq(p, ks, ke, "frequency") == 1) {
-  DySb* m = (DySb*)(dy_err(c));
-  dy_puts(m, "represent ");
-  dy_span(m, p, ks, ke);
-  dy_puts(m, ": not yet implemented (Stage-1 ships `represent linear` with explicit A/B/C; see docs/vision/north-star.md ");
+  ByteBuf* m = (ByteBuf*)(dy_err(c));
+  bb_puts(m, "represent ");
+  bb_put_span(m, p, ks, ke);
+  bb_puts(m, ": not yet implemented (Stage-1 ships `represent linear` with explicit A/B/C; see docs/vision/north-star.md ");
   dy_utf8(m, DY_SECTION);
-  dy_puts(m, "9)");
+  bb_puts(m, "9)");
   return;
 }
   if (dy_eq(p, ks, ke, "linear") == 0) {
-  DySb* m2 = (DySb*)(dy_err(c));
-  dy_puts(m2, "unknown represent kind '");
-  dy_span(m2, p, ks, ke);
-  dy_puts(m2, "'; expected linear, nonlinear, phase_portrait, or a reserved form (koopman|transfer_function|frequency)");
+  ByteBuf* m2 = (ByteBuf*)(dy_err(c));
+  bb_puts(m2, "unknown represent kind '");
+  bb_put_span(m2, p, ks, ke);
+  bb_puts(m2, "'; expected linear, nonlinear, phase_portrait, or a reserved form (koopman|transfer_function|frequency)");
   return;
 }
   int32_t fname = (0 - 1);
@@ -36311,50 +36423,50 @@ void dy_extract_represent(DyC* c, uint8_t* p, int32_t n, Dp* g, DySb* out) {
 }
 }
   if (first == 0) {
-  dy_putc(out, 10);
+  bb_putc(out, 10);
 }
   first = 0;
-  dy_span(out, p, a, b);
+  bb_put_span(out, p, a, b);
   i = (i + 1);
 }
 }
 }
 
-void dy_at_repr(DySb* m, DyC* c, Dp* g, int32_t r) {
-  dy_putc(m, 123);
+void dy_at_repr(ByteBuf* m, DyC* c, Dp* g, int32_t r) {
+  bb_putc(m, 123);
   int32_t q = 0;
   while (q < (g[0]).rp_atn[r]) {
   if (q > 0) {
-  dy_puts(m, ", ");
+  bb_puts(m, ", ");
 }
   int32_t k = ((g[0]).rp_at0[r] + q);
   uint8_t* nm = (uint8_t*)((((c[0]).nm[0]).p + (c[0]).at_name[k]));
   dy_repr_str(m, nm, 0, (int32_t)(strlen((const char*)(nm))));
-  dy_puts(m, ": ");
+  bb_puts(m, ": ");
   dy_repr(m, (c[0]).at_val[k]);
   q = (q + 1);
 }
-  dy_putc(m, 125);
+  bb_putc(m, 125);
 }
 
-void dy_rep_prefix(DySb* m, DyC* c, Dp* g, int32_t r) {
-  dy_puts(m, "represent linear for '");
+void dy_rep_prefix(ByteBuf* m, DyC* c, Dp* g, int32_t r) {
+  bb_puts(m, "represent linear for '");
   dy_pn(m, c, (g[0]).rp_flow[r]);
-  dy_puts(m, "': ");
+  bb_puts(m, "': ");
 }
 
 void dy_rep_to_dsys(DyC* c, Dp* g, int32_t r) {
   int32_t an = (g[0]).rp_an[r];
   if (an == 0) {
-  DySb* m = (DySb*)(dy_err(c));
+  ByteBuf* m = (ByteBuf*)(dy_err(c));
   dy_rep_prefix(m, c, g, r);
-  dy_puts(m, "linearization coefficients required");
+  bb_puts(m, "linearization coefficients required");
   if ((g[0]).rp_atn[r] > 0) {
-  dy_puts(m, " (operating point at ");
+  bb_puts(m, " (operating point at ");
   dy_at_repr(m, c, g, r);
-  dy_puts(m, " was given, but automatic Jacobian linearization is not yet implemented)");
+  bb_puts(m, " was given, but automatic Jacobian linearization is not yet implemented)");
 }
-  dy_puts(m, "; supply explicit A (and optional B/C) matrices in the represent linear block, e.g. `A 0.0 1.0 -9.81 0.0`");
+  bb_puts(m, "; supply explicit A (and optional B/C) matrices in the represent linear block, e.g. `A 0.0 1.0 -9.81 0.0`");
   return;
 }
   int64_t n = (g[0]).rp_n[r];
@@ -36367,26 +36479,26 @@ void dy_rep_to_dsys(DyC* c, Dp* g, int32_t r) {
   root = (root + 1);
 }
   if ((root * root) != (int64_t)(an) || root < 1) {
-  DySb* m2 = (DySb*)(dy_err(c));
+  ByteBuf* m2 = (ByteBuf*)(dy_err(c));
   dy_rep_prefix(m2, c, g, r);
-  dy_puts(m2, "A must list n");
+  bb_puts(m2, "A must list n");
   dy_utf8(m2, DY_TIMES);
-  dy_puts(m2, "n floats (got ");
-  dy_i64(m2, (int64_t)(an));
-  dy_puts(m2, " values); or set `n` explicitly");
+  bb_puts(m2, "n floats (got ");
+  bb_put_i64(m2, (int64_t)(an));
+  bb_puts(m2, " values); or set `n` explicitly");
   return;
 }
   n = root;
 } else {
   if ((int64_t)(an) != (n * n)) {
-  DySb* m3 = (DySb*)(dy_err(c));
+  ByteBuf* m3 = (ByteBuf*)(dy_err(c));
   dy_rep_prefix(m3, c, g, r);
-  dy_puts(m3, "A has ");
-  dy_i64(m3, (int64_t)(an));
-  dy_puts(m3, " entries but n=");
-  dy_i64(m3, n);
-  dy_puts(m3, " expects ");
-  dy_i64(m3, (n * n));
+  bb_puts(m3, "A has ");
+  bb_put_i64(m3, (int64_t)(an));
+  bb_puts(m3, " entries but n=");
+  bb_put_i64(m3, n);
+  bb_puts(m3, " expects ");
+  bb_put_i64(m3, (n * n));
   return;
 }
 }
@@ -36418,27 +36530,27 @@ void dy_rep_to_dsys(DyC* c, Dp* g, int32_t r) {
 } else {
   if (mm <= 0) {
   if (((int64_t)(bn) % n) != 0) {
-  DySb* m4 = (DySb*)(dy_err(c));
+  ByteBuf* m4 = (ByteBuf*)(dy_err(c));
   dy_rep_prefix(m4, c, g, r);
-  dy_puts(m4, "B length ");
-  dy_i64(m4, (int64_t)(bn));
-  dy_puts(m4, " is not a multiple of n=");
-  dy_i64(m4, n);
+  bb_puts(m4, "B length ");
+  bb_put_i64(m4, (int64_t)(bn));
+  bb_puts(m4, " is not a multiple of n=");
+  bb_put_i64(m4, n);
   return;
 }
   mm = ((int64_t)(bn) / n);
 } else {
   if ((int64_t)(bn) != (n * mm)) {
-  DySb* m5 = (DySb*)(dy_err(c));
+  ByteBuf* m5 = (ByteBuf*)(dy_err(c));
   dy_rep_prefix(m5, c, g, r);
-  dy_puts(m5, "B has ");
-  dy_i64(m5, (int64_t)(bn));
-  dy_puts(m5, " entries but n=");
-  dy_i64(m5, n);
-  dy_puts(m5, " m=");
-  dy_i64(m5, mm);
-  dy_puts(m5, " expects ");
-  dy_i64(m5, (n * mm));
+  bb_puts(m5, "B has ");
+  bb_put_i64(m5, (int64_t)(bn));
+  bb_puts(m5, " entries but n=");
+  bb_put_i64(m5, n);
+  bb_puts(m5, " m=");
+  bb_put_i64(m5, mm);
+  bb_puts(m5, " expects ");
+  bb_put_i64(m5, (n * mm));
   return;
 }
 }
@@ -36451,15 +36563,15 @@ void dy_rep_to_dsys(DyC* c, Dp* g, int32_t r) {
   pp = n;
 }
   if (pp != n) {
-  DySb* m6 = (DySb*)(dy_err(c));
+  ByteBuf* m6 = (ByteBuf*)(dy_err(c));
   dy_rep_prefix(m6, c, g, r);
-  dy_puts(m6, "supply C (p");
+  bb_puts(m6, "supply C (p");
   dy_utf8(m6, DY_TIMES);
-  dy_puts(m6, "n) when p != n (got p=");
-  dy_i64(m6, pp);
-  dy_puts(m6, ", n=");
-  dy_i64(m6, n);
-  dy_puts(m6, ")");
+  bb_puts(m6, "n) when p != n (got p=");
+  bb_put_i64(m6, pp);
+  bb_puts(m6, ", n=");
+  bb_put_i64(m6, n);
+  bb_puts(m6, ")");
   return;
 }
   c0 = (c[0]).fnum;
@@ -36480,42 +36592,42 @@ void dy_rep_to_dsys(DyC* c, Dp* g, int32_t r) {
 } else {
   if (pp <= 0) {
   if (((int64_t)(cn) % n) != 0) {
-  DySb* m7 = (DySb*)(dy_err(c));
+  ByteBuf* m7 = (ByteBuf*)(dy_err(c));
   dy_rep_prefix(m7, c, g, r);
-  dy_puts(m7, "C length ");
-  dy_i64(m7, (int64_t)(cn));
-  dy_puts(m7, " is not a multiple of n=");
-  dy_i64(m7, n);
+  bb_puts(m7, "C length ");
+  bb_put_i64(m7, (int64_t)(cn));
+  bb_puts(m7, " is not a multiple of n=");
+  bb_put_i64(m7, n);
   return;
 }
   pp = ((int64_t)(cn) / n);
 } else {
   if ((int64_t)(cn) != (pp * n)) {
-  DySb* m8 = (DySb*)(dy_err(c));
+  ByteBuf* m8 = (ByteBuf*)(dy_err(c));
   dy_rep_prefix(m8, c, g, r);
-  dy_puts(m8, "C has ");
-  dy_i64(m8, (int64_t)(cn));
-  dy_puts(m8, " entries but p=");
-  dy_i64(m8, pp);
-  dy_puts(m8, " n=");
-  dy_i64(m8, n);
-  dy_puts(m8, " expects ");
-  dy_i64(m8, (pp * n));
+  bb_puts(m8, "C has ");
+  bb_put_i64(m8, (int64_t)(cn));
+  bb_puts(m8, " entries but p=");
+  bb_put_i64(m8, pp);
+  bb_puts(m8, " n=");
+  bb_put_i64(m8, n);
+  bb_puts(m8, " expects ");
+  bb_put_i64(m8, (pp * n));
   return;
 }
 }
 }
   int32_t off = ((c[0]).nm[0]).len;
   dy_pn((c[0]).nm, c, (g[0]).rp_flow[r]);
-  dy_puts((c[0]).nm, "_lin");
-  dy_putc((c[0]).nm, 0);
+  bb_puts((c[0]).nm, "_lin");
+  bb_putc((c[0]).nm, 0);
   if (dy_find_sys(c, g, off) >= 0) {
-  DySb* m9 = (DySb*)(dy_err(c));
+  ByteBuf* m9 = (ByteBuf*)(dy_err(c));
   dy_rep_prefix(m9, c, g, r);
   ((c[0]).msg[0]).len = (((c[0]).msg[0]).len - 2);
-  dy_puts(m9, " conflicts with an existing dsys '");
+  bb_puts(m9, " conflicts with an existing dsys '");
   dy_pn(m9, c, off);
-  dy_puts(m9, "'");
+  bb_puts(m9, "'");
   return;
 }
   int32_t k = dy_sys_slot(c, g, off);
@@ -36533,9 +36645,9 @@ void dy_rep_to_dsys(DyC* c, Dp* g, int32_t r) {
 }
 
 void dy_invalid(DyC* c, const char* what, uint8_t* p, int32_t s, int32_t e) {
-  DySb* m = (DySb*)(dy_err(c));
-  dy_puts(m, what);
-  dy_span(m, p, s, e);
+  ByteBuf* m = (ByteBuf*)(dy_err(c));
+  bb_puts(m, what);
+  bb_put_span(m, p, s, e);
 }
 
 int32_t dy_arrow(uint8_t* p, int32_t s, int32_t e, int32_t* l, int32_t* r) {
@@ -36552,10 +36664,10 @@ int32_t dy_arrow(uint8_t* p, int32_t s, int32_t e, int32_t* l, int32_t* r) {
   return 1;
 }
 
-void dy_lqr_prefix(DySb* m, DyC* c, int32_t sys) {
-  dy_puts(m, "analyze ");
+void dy_lqr_prefix(ByteBuf* m, DyC* c, int32_t sys) {
+  bb_puts(m, "analyze ");
   dy_pn(m, c, sys);
-  dy_puts(m, " lqr: ");
+  bb_puts(m, " lqr: ");
 }
 
 void dy_lqr(DyC* c, uint8_t* p, Dp* g, int32_t sys, int32_t* bs, int32_t* be, int32_t nb) {
@@ -36584,11 +36696,11 @@ void dy_lqr(DyC* c, uint8_t* p, Dp* g, int32_t sys, int32_t* bs, int32_t* be, in
   int32_t* we = (int32_t*)(dy_i32s(((e - s) + 1)));
   int32_t np = dy_split_ws(p, s, e, ws, we);
   if (np != 2) {
-  DySb* m = (DySb*)(dy_err(c));
+  ByteBuf* m = (ByteBuf*)(dy_err(c));
   dy_lqr_prefix(m, c, sys);
-  dy_puts(m, "expected `R <scalar>`, got '");
-  dy_span(m, p, s, e);
-  dy_puts(m, "'");
+  bb_puts(m, "expected `R <scalar>`, got '");
+  bb_put_span(m, p, s, e);
+  bb_puts(m, "'");
   return;
 }
   rr = dy_float(c, p, ws[1], we[1]);
@@ -36601,19 +36713,19 @@ void dy_lqr(DyC* c, uint8_t* p, Dp* g, int32_t sys, int32_t* bs, int32_t* be, in
   int32_t* we2 = (int32_t*)(dy_i32s(((e - s) + 1)));
   int32_t nn = dy_split_ws(p, (s + 2), e, ws2, we2);
   if (nn == 0) {
-  DySb* m2 = (DySb*)(dy_err(c));
+  ByteBuf* m2 = (ByteBuf*)(dy_err(c));
   dy_lqr_prefix(m2, c, sys);
-  dy_puts(m2, "`->` needs gain variable names");
+  bb_puts(m2, "`->` needs gain variable names");
   return;
 }
   int32_t k = 0;
   while (k < nn) {
   if (dy_all_word(p, ws2[k], we2[k]) == 0) {
-  DySb* m3 = (DySb*)(dy_err(c));
+  ByteBuf* m3 = (ByteBuf*)(dy_err(c));
   dy_lqr_prefix(m3, c, sys);
-  dy_puts(m3, "invalid gain name '");
-  dy_span(m3, p, ws2[k], we2[k]);
-  dy_puts(m3, "'");
+  bb_puts(m3, "invalid gain name '");
+  bb_put_span(m3, p, ws2[k], we2[k]);
+  bb_puts(m3, "'");
   return;
 }
   k = (k + 1);
@@ -36626,11 +36738,11 @@ void dy_lqr(DyC* c, uint8_t* p, Dp* g, int32_t sys, int32_t* bs, int32_t* be, in
 }
   gn = nn;
 } else {
-  DySb* m4 = (DySb*)(dy_err(c));
+  ByteBuf* m4 = (ByteBuf*)(dy_err(c));
   dy_lqr_prefix(m4, c, sys);
-  dy_puts(m4, "unknown item '");
-  dy_span(m4, p, s, e);
-  dy_puts(m4, "' (expected Q / R / max_iter / -> gains)");
+  bb_puts(m4, "unknown item '");
+  bb_put_span(m4, p, s, e);
+  bb_puts(m4, "' (expected Q / R / max_iter / -> gains)");
   return;
 }
 }
@@ -36643,29 +36755,29 @@ void dy_lqr(DyC* c, uint8_t* p, Dp* g, int32_t sys, int32_t* bs, int32_t* be, in
   i = (i + 1);
 }
   if (qn == 0) {
-  DySb* m5 = (DySb*)(dy_err(c));
+  ByteBuf* m5 = (ByteBuf*)(dy_err(c));
   dy_lqr_prefix(m5, c, sys);
-  dy_puts(m5, "missing `Q ");
+  bb_puts(m5, "missing `Q ");
   dy_utf8(m5, DY_ELLIPSIS);
-  dy_puts(m5, "` diagonal");
+  bb_puts(m5, "` diagonal");
   return;
 }
   if (gn == 0) {
-  DySb* m6 = (DySb*)(dy_err(c));
+  ByteBuf* m6 = (ByteBuf*)(dy_err(c));
   dy_lqr_prefix(m6, c, sys);
-  dy_puts(m6, "missing `-> k0 k1 ");
+  bb_puts(m6, "missing `-> k0 k1 ");
   dy_utf8(m6, DY_ELLIPSIS);
-  dy_puts(m6, "` gain bindings");
+  bb_puts(m6, "` gain bindings");
   return;
 }
   if (gn != qn) {
-  DySb* m7 = (DySb*)(dy_err(c));
+  ByteBuf* m7 = (ByteBuf*)(dy_err(c));
   dy_lqr_prefix(m7, c, sys);
-  dy_puts(m7, "Q has ");
-  dy_i64(m7, (int64_t)(qn));
-  dy_puts(m7, " entries but -> lists ");
-  dy_i64(m7, (int64_t)(gn));
-  dy_puts(m7, " gains (need one gain per state)");
+  bb_puts(m7, "Q has ");
+  bb_put_i64(m7, (int64_t)(qn));
+  bb_puts(m7, " entries but -> lists ");
+  bb_put_i64(m7, (int64_t)(gn));
+  bb_puts(m7, " gains (need one gain per state)");
   return;
 }
   int32_t t = (g[0]).nlq;
@@ -36679,16 +36791,16 @@ void dy_lqr(DyC* c, uint8_t* p, Dp* g, int32_t sys, int32_t* bs, int32_t* be, in
   (g[0]).nlq = (t + 1);
 }
 
-void dy_an_prefix(DySb* m, DyC* c, int32_t sys) {
-  dy_puts(m, "analyze ");
+void dy_an_prefix(ByteBuf* m, DyC* c, int32_t sys) {
+  bb_puts(m, "analyze ");
   dy_pn(m, c, sys);
-  dy_puts(m, ": ");
+  bb_puts(m, ": ");
 }
 
-void dy_lqr_braces(DySb* m) {
-  dy_puts(m, "`lqr { ");
+void dy_lqr_braces(ByteBuf* m) {
+  bb_puts(m, "`lqr { ");
   dy_utf8(m, DY_ELLIPSIS);
-  dy_puts(m, " }`");
+  bb_puts(m, " }`");
 }
 
 void dy_analyze_vision(DyC* c, uint8_t* p, Dp* g, int32_t sys, int32_t* bs, int32_t* be, int32_t nb) {
@@ -36718,9 +36830,9 @@ void dy_analyze_vision(DyC* c, uint8_t* p, Dp* g, int32_t sys, int32_t* bs, int3
 } else {
   if (dy_eq(p, s, e, "lqr") == 1) {
   if ((i + 1) >= nb || dy_find(p, bs[(i + 1)], be[(i + 1)], 123) < 0) {
-  DySb* m = (DySb*)(dy_err(c));
+  ByteBuf* m = (ByteBuf*)(dy_err(c));
   dy_an_prefix(m, c, sys);
-  dy_puts(m, "expected ");
+  bb_puts(m, "expected ");
   dy_lqr_braces(m);
   return;
 }
@@ -36732,30 +36844,30 @@ void dy_analyze_vision(DyC* c, uint8_t* p, Dp* g, int32_t sys, int32_t* bs, int3
   saw = 1;
   i = nx2;
 } else {
-  DySb* m2 = (DySb*)(dy_err(c));
+  ByteBuf* m2 = (ByteBuf*)(dy_err(c));
   dy_an_prefix(m2, c, sys);
-  dy_puts(m2, "Stage-1 supports ");
+  bb_puts(m2, "Stage-1 supports ");
   dy_lqr_braces(m2);
-  dy_puts(m2, " only; got '");
-  dy_span(m2, p, s, e);
-  dy_puts(m2, "'");
+  bb_puts(m2, " only; got '");
+  bb_put_span(m2, p, s, e);
+  bb_puts(m2, "'");
   return;
 }
 }
 }
 }
   if (saw == 0) {
-  DySb* m3 = (DySb*)(dy_err(c));
+  ByteBuf* m3 = (ByteBuf*)(dy_err(c));
   dy_an_prefix(m3, c, sys);
-  dy_puts(m3, "empty body ");
+  bb_puts(m3, "empty body ");
   dy_utf8(m3, DY_DASH);
-  dy_puts(m3, " add `lqr { Q ");
+  bb_puts(m3, " add `lqr { Q ");
   dy_utf8(m3, DY_ELLIPSIS);
-  dy_puts(m3, " R ");
+  bb_puts(m3, " R ");
   dy_utf8(m3, DY_ELLIPSIS);
-  dy_puts(m3, " -> ");
+  bb_puts(m3, " -> ");
   dy_utf8(m3, DY_ELLIPSIS);
-  dy_puts(m3, " }`");
+  bb_puts(m3, " }`");
 }
 }
 
@@ -36768,8 +36880,8 @@ void dy_validate_raw(DyC* c, Dp* g) {
   while (r < (g[0]).nrp) {
   int32_t off = ((c[0]).nm[0]).len;
   dy_pn((c[0]).nm, c, (g[0]).rp_flow[r]);
-  dy_puts((c[0]).nm, "_lin");
-  dy_putc((c[0]).nm, 0);
+  bb_puts((c[0]).nm, "_lin");
+  bb_putc((c[0]).nm, 0);
   if (dy_neq(c, off, name) == 1) {
   synth = 1;
 }
@@ -36780,27 +36892,27 @@ void dy_validate_raw(DyC* c, Dp* g) {
   int64_t mm = (g[0]).sy_m[i];
   int64_t pp = (g[0]).sy_p[i];
   if (n <= 0) {
-  DySb* m = (DySb*)(dy_err(c));
-  dy_puts(m, "dsys '");
+  ByteBuf* m = (ByteBuf*)(dy_err(c));
+  bb_puts(m, "dsys '");
   dy_pn(m, c, name);
-  dy_puts(m, "': n must be positive, got ");
-  dy_i64(m, n);
+  bb_puts(m, "': n must be positive, got ");
+  bb_put_i64(m, n);
   return;
 }
   if (mm < 0) {
-  DySb* m2 = (DySb*)(dy_err(c));
-  dy_puts(m2, "dsys '");
+  ByteBuf* m2 = (ByteBuf*)(dy_err(c));
+  bb_puts(m2, "dsys '");
   dy_pn(m2, c, name);
-  dy_puts(m2, "': m must be non-negative, got ");
-  dy_i64(m2, mm);
+  bb_puts(m2, "': m must be non-negative, got ");
+  bb_put_i64(m2, mm);
   return;
 }
   if (pp <= 0) {
-  DySb* m3 = (DySb*)(dy_err(c));
-  dy_puts(m3, "dsys '");
+  ByteBuf* m3 = (ByteBuf*)(dy_err(c));
+  bb_puts(m3, "dsys '");
   dy_pn(m3, c, name);
-  dy_puts(m3, "': p must be positive, got ");
-  dy_i64(m3, pp);
+  bb_puts(m3, "': p must be positive, got ");
+  bb_put_i64(m3, pp);
   return;
 }
   if ((g[0]).sy_an[i] > 0 || (g[0]).sy_bn[i] > 0 || (g[0]).sy_cn[i] > 0) {
@@ -36817,39 +36929,39 @@ void dy_validate_raw(DyC* c, Dp* g) {
   got = (g[0]).sy_cn[i];
 }
   if ((int64_t)(got) != want) {
-  DySb* m4 = (DySb*)(dy_err(c));
-  dy_puts(m4, "dsys '");
+  ByteBuf* m4 = (ByteBuf*)(dy_err(c));
+  bb_puts(m4, "dsys '");
   dy_pn(m4, c, name);
-  dy_puts(m4, "': ");
+  bb_puts(m4, "': ");
   if (which == 0) {
-  dy_puts(m4, "A needs ");
+  bb_puts(m4, "A needs ");
 }
   if (which == 1) {
-  dy_puts(m4, "B needs ");
+  bb_puts(m4, "B needs ");
 }
   if (which == 2) {
-  dy_puts(m4, "C needs ");
+  bb_puts(m4, "C needs ");
 }
-  dy_i64(m4, want);
-  dy_puts(m4, " entries for ");
+  bb_put_i64(m4, want);
+  bb_puts(m4, " entries for ");
   if (which == 0) {
-  dy_puts(m4, "n = ");
-  dy_i64(m4, n);
+  bb_puts(m4, "n = ");
+  bb_put_i64(m4, n);
 }
   if (which == 1) {
-  dy_puts(m4, "n = ");
-  dy_i64(m4, n);
-  dy_puts(m4, ", m = ");
-  dy_i64(m4, mm);
+  bb_puts(m4, "n = ");
+  bb_put_i64(m4, n);
+  bb_puts(m4, ", m = ");
+  bb_put_i64(m4, mm);
 }
   if (which == 2) {
-  dy_puts(m4, "p = ");
-  dy_i64(m4, pp);
-  dy_puts(m4, ", n = ");
-  dy_i64(m4, n);
+  bb_puts(m4, "p = ");
+  bb_put_i64(m4, pp);
+  bb_puts(m4, ", n = ");
+  bb_put_i64(m4, n);
 }
-  dy_puts(m4, ", got ");
-  dy_i64(m4, (int64_t)(got));
+  bb_puts(m4, ", got ");
+  bb_put_i64(m4, (int64_t)(got));
   return;
 }
   which = (which + 1);
@@ -36875,8 +36987,8 @@ int32_t dy_cp_prefix(uint8_t* p, int32_t s, int32_t e, int32_t limit) {
   return e;
 }
 
-void dy_parse(DyC* c, uint8_t* p0, int32_t n0, Dp* g, DySb* out) {
-  DySb* st = (DySb*)(dy_sb_new((n0 + 16)));
+void dy_parse(DyC* c, uint8_t* p0, int32_t n0, Dp* g, ByteBuf* out) {
+  ByteBuf* st = (ByteBuf*)(bb_new((n0 + 16)));
   dy_extract_represent(c, p0, n0, g, st);
   if ((c[0]).err != 0) {
   return;
@@ -36918,18 +37030,18 @@ void dy_parse(DyC* c, uint8_t* p0, int32_t n0, Dp* g, DySb* out) {
 } else {
   if (dy_match(p, s, e, "dyn~{", caps) >= 0 || dy_match(p, s, e, "dynamics~{", caps) >= 0) {
   int32_t nx = dy_block_keep(p, ls, le, nl, i, bs, be, nb);
-  DySb* body = (DySb*)(dy_sb_new((n + 16)));
+  ByteBuf* body = (ByteBuf*)(bb_new((n + 16)));
   int32_t q = 0;
   while (q < nb[0]) {
   if (q > 0) {
-  dy_putc(body, 10);
+  bb_putc(body, 10);
 }
-  dy_span(body, p, bs[q], be[q]);
+  bb_put_span(body, p, bs[q], be[q]);
   q = (q + 1);
 }
-  dy_putc(body, 10);
+  bb_putc(body, 10);
   Dp* inner = (Dp*)(dy_prog_new((body[0]).len));
-  DySb* left = (DySb*)(dy_sb_new(((body[0]).len + 16)));
+  ByteBuf* left = (ByteBuf*)(bb_new(((body[0]).len + 16)));
   dy_parse(c, (body[0]).p, (body[0]).len, inner, left);
   if ((c[0]).err != 0) {
   return;
@@ -36939,9 +37051,9 @@ void dy_parse(DyC* c, uint8_t* p0, int32_t n0, Dp* g, DySb* out) {
   ls2[1] = (left[0]).len;
   dy_strip((left[0]).p, ls2);
   if (ls2[1] > ls2[0]) {
-  DySb* m = (DySb*)(dy_err(c));
-  dy_puts(m, "dynamics { ... } block may only contain dynamics DSL constructs; leftover:\n");
-  dy_span(m, (left[0]).p, ls2[0], dy_cp_prefix((left[0]).p, ls2[0], ls2[1], 200));
+  ByteBuf* m = (ByteBuf*)(dy_err(c));
+  bb_puts(m, "dynamics { ... } block may only contain dynamics DSL constructs; leftover:\n");
+  bb_put_span(m, (left[0]).p, ls2[0], dy_cp_prefix((left[0]).p, ls2[0], ls2[1], 200));
   return;
 }
   dy_merge(c, g, inner);
@@ -36993,21 +37105,21 @@ void dy_parse(DyC* c, uint8_t* p0, int32_t n0, Dp* g, DySb* out) {
   (g[0]).sy_mode[k] = 1;
 } else {
   if (dy_starts(p, ts, te, "dt ") == 1) {
-  { __typeof__((g[0]).sy_dt[k]) __flowc_st14894 = dy_float_part(c, p, ts, te, 1); (g[0]).sy_dt[k] = __flowc_st14894; }
+  { __typeof__((g[0]).sy_dt[k]) __flowc_st14649 = dy_float_part(c, p, ts, te, 1); (g[0]).sy_dt[k] = __flowc_st14649; }
 } else {
   if (dy_starts(p, ts, te, "n ") == 1) {
   dy_parse_nmp(c, p, ts, te, (g[0]).sy_n, (g[0]).sy_m, (g[0]).sy_p, k);
 } else {
   if (dy_starts(p, ts, te, "A ") == 1) {
-  { __typeof__((g[0]).sy_an[k]) __flowc_st14944 = dy_floats(c, p, (ts + 2), te, f0); (g[0]).sy_an[k] = __flowc_st14944; }
+  { __typeof__((g[0]).sy_an[k]) __flowc_st14699 = dy_floats(c, p, (ts + 2), te, f0); (g[0]).sy_an[k] = __flowc_st14699; }
   (g[0]).sy_a0[k] = f0[0];
 } else {
   if (dy_starts(p, ts, te, "B ") == 1) {
-  { __typeof__((g[0]).sy_bn[k]) __flowc_st14977 = dy_floats(c, p, (ts + 2), te, f0); (g[0]).sy_bn[k] = __flowc_st14977; }
+  { __typeof__((g[0]).sy_bn[k]) __flowc_st14732 = dy_floats(c, p, (ts + 2), te, f0); (g[0]).sy_bn[k] = __flowc_st14732; }
   (g[0]).sy_b0[k] = f0[0];
 } else {
   if (dy_starts(p, ts, te, "C ") == 1) {
-  { __typeof__((g[0]).sy_cn[k]) __flowc_st15010 = dy_floats(c, p, (ts + 2), te, f0); (g[0]).sy_cn[k] = __flowc_st15010; }
+  { __typeof__((g[0]).sy_cn[k]) __flowc_st14765 = dy_floats(c, p, (ts + 2), te, f0); (g[0]).sy_cn[k] = __flowc_st14765; }
   (g[0]).sy_c0[k] = f0[0];
 }
 }
@@ -37023,14 +37135,14 @@ void dy_parse(DyC* c, uint8_t* p0, int32_t n0, Dp* g, DySb* out) {
   j = (j + 1);
 }
   if (dy_find_sys(c, g, name) >= 0) {
-  DySb* m2 = (DySb*)(dy_err(c));
-  dy_puts(m2, "dsys '");
+  ByteBuf* m2 = (ByteBuf*)(dy_err(c));
+  bb_puts(m2, "dsys '");
   dy_pn(m2, c, name);
-  dy_puts(m2, "' redeclared (conflicts with a prior dsys or represent linear ");
+  bb_puts(m2, "' redeclared (conflicts with a prior dsys or represent linear ");
   dy_utf8(m2, DY_ARROW);
-  dy_puts(m2, " '");
+  bb_puts(m2, " '");
   dy_pn(m2, c, name);
-  dy_puts(m2, "')");
+  bb_puts(m2, "')");
   return;
 }
   (g[0]).sy_name[k] = name;
@@ -37076,10 +37188,10 @@ void dy_parse(DyC* c, uint8_t* p0, int32_t n0, Dp* g, DySb* out) {
 }
   if (kept == 1) {
   if (first == 0) {
-  dy_putc(out, 10);
+  bb_putc(out, 10);
 }
   first = 0;
-  dy_span(out, p, a, b);
+  bb_put_span(out, p, a, b);
   i = (i + 1);
 }
 }
@@ -37138,10 +37250,10 @@ int32_t dy_parse_rest(DyC* c, uint8_t* p, Dp* g, int32_t* ls, int32_t* le, int32
   return i;
 }
   int32_t t2 = (g[0]).nga;
-  { __typeof__((g[0]).ga_sys[t2]) __flowc_st15744 = dy_name(c, p, caps[0], caps[1]); (g[0]).ga_sys[t2] = __flowc_st15744; }
-  { __typeof__((g[0]).ga_hz[t2]) __flowc_st15760 = dy_name(c, p, caps[2], caps[3]); (g[0]).ga_hz[t2] = __flowc_st15760; }
-  { __typeof__((g[0]).ga_k1[t2]) __flowc_st15776 = dy_name(c, p, caps[4], caps[5]); (g[0]).ga_k1[t2] = __flowc_st15776; }
-  { __typeof__((g[0]).ga_k2[t2]) __flowc_st15792 = dy_name(c, p, caps[6], caps[7]); (g[0]).ga_k2[t2] = __flowc_st15792; }
+  { __typeof__((g[0]).ga_sys[t2]) __flowc_st15499 = dy_name(c, p, caps[0], caps[1]); (g[0]).ga_sys[t2] = __flowc_st15499; }
+  { __typeof__((g[0]).ga_hz[t2]) __flowc_st15515 = dy_name(c, p, caps[2], caps[3]); (g[0]).ga_hz[t2] = __flowc_st15515; }
+  { __typeof__((g[0]).ga_k1[t2]) __flowc_st15531 = dy_name(c, p, caps[4], caps[5]); (g[0]).ga_k1[t2] = __flowc_st15531; }
+  { __typeof__((g[0]).ga_k2[t2]) __flowc_st15547 = dy_name(c, p, caps[6], caps[7]); (g[0]).ga_k2[t2] = __flowc_st15547; }
   (g[0]).ga_pop[t2] = 8;
   (g[0]).ga_gen[t2] = 20;
   (g[0]).ga_mut[t2] = 0.3;
@@ -37152,13 +37264,13 @@ int32_t dy_parse_rest(DyC* c, uint8_t* p, Dp* g, int32_t* ls, int32_t* le, int32
   bl[1] = be[j2];
   dy_strip_comments(p, bl);
   if (dy_starts(p, bl[0], bl[1], "population ") == 1) {
-  { __typeof__((g[0]).ga_pop[t2]) __flowc_st15883 = dy_int_part(c, p, bl[0], bl[1], 1); (g[0]).ga_pop[t2] = __flowc_st15883; }
+  { __typeof__((g[0]).ga_pop[t2]) __flowc_st15638 = dy_int_part(c, p, bl[0], bl[1], 1); (g[0]).ga_pop[t2] = __flowc_st15638; }
 } else {
   if (dy_starts(p, bl[0], bl[1], "generations ") == 1) {
-  { __typeof__((g[0]).ga_gen[t2]) __flowc_st15912 = dy_int_part(c, p, bl[0], bl[1], 1); (g[0]).ga_gen[t2] = __flowc_st15912; }
+  { __typeof__((g[0]).ga_gen[t2]) __flowc_st15667 = dy_int_part(c, p, bl[0], bl[1], 1); (g[0]).ga_gen[t2] = __flowc_st15667; }
 } else {
   if (dy_starts(p, bl[0], bl[1], "mutation ") == 1) {
-  { __typeof__((g[0]).ga_mut[t2]) __flowc_st15941 = dy_float_part(c, p, bl[0], bl[1], 1); (g[0]).ga_mut[t2] = __flowc_st15941; }
+  { __typeof__((g[0]).ga_mut[t2]) __flowc_st15696 = dy_float_part(c, p, bl[0], bl[1], 1); (g[0]).ga_mut[t2] = __flowc_st15696; }
 }
 }
 }
@@ -37176,9 +37288,9 @@ int32_t dy_parse_rest(DyC* c, uint8_t* p, Dp* g, int32_t* ls, int32_t* le, int32
   return i;
 }
   int32_t t3 = (g[0]).ncl;
-  { __typeof__((g[0]).cl_sys[t3]) __flowc_st16024 = dy_name(c, p, caps[0], caps[1]); (g[0]).cl_sys[t3] = __flowc_st16024; }
-  { __typeof__((g[0]).cl_k1[t3]) __flowc_st16040 = dy_name(c, p, caps[2], caps[3]); (g[0]).cl_k1[t3] = __flowc_st16040; }
-  { __typeof__((g[0]).cl_k2[t3]) __flowc_st16056 = dy_name(c, p, caps[4], caps[5]); (g[0]).cl_k2[t3] = __flowc_st16056; }
+  { __typeof__((g[0]).cl_sys[t3]) __flowc_st15779 = dy_name(c, p, caps[0], caps[1]); (g[0]).cl_sys[t3] = __flowc_st15779; }
+  { __typeof__((g[0]).cl_k1[t3]) __flowc_st15795 = dy_name(c, p, caps[2], caps[3]); (g[0]).cl_k1[t3] = __flowc_st15795; }
+  { __typeof__((g[0]).cl_k2[t3]) __flowc_st15811 = dy_name(c, p, caps[4], caps[5]); (g[0]).cl_k2[t3] = __flowc_st15811; }
   int32_t nx3 = dy_block(p, ls, le, nl, i, bs, be, nb);
   int32_t b3 = (c[0]).nbd;
   int32_t j3 = 0;
@@ -37210,23 +37322,23 @@ int32_t dy_parse_rest(DyC* c, uint8_t* p, Dp* g, int32_t* ls, int32_t* le, int32
   if (dy_starts(p, s, e, "analyze ") == 1) {
   if (dy_match(p, s, e, "analyze^@^ga^@^@^over^@~->~@~{", caps) >= 0) {
   int32_t t4 = (g[0]).nanz;
-  { __typeof__((g[0]).an_sys[t4]) __flowc_st16291 = dy_name(c, p, caps[0], caps[1]); (g[0]).an_sys[t4] = __flowc_st16291; }
-  { __typeof__((g[0]).an_k1[t4]) __flowc_st16307 = dy_name(c, p, caps[2], caps[3]); (g[0]).an_k1[t4] = __flowc_st16307; }
-  { __typeof__((g[0]).an_k2[t4]) __flowc_st16323 = dy_name(c, p, caps[4], caps[5]); (g[0]).an_k2[t4] = __flowc_st16323; }
-  { __typeof__((g[0]).an_hz[t4]) __flowc_st16339 = dy_name(c, p, caps[6], caps[7]); (g[0]).an_hz[t4] = __flowc_st16339; }
-  { __typeof__((g[0]).an_rep[t4]) __flowc_st16355 = dy_name(c, p, caps[8], caps[9]); (g[0]).an_rep[t4] = __flowc_st16355; }
+  { __typeof__((g[0]).an_sys[t4]) __flowc_st16046 = dy_name(c, p, caps[0], caps[1]); (g[0]).an_sys[t4] = __flowc_st16046; }
+  { __typeof__((g[0]).an_k1[t4]) __flowc_st16062 = dy_name(c, p, caps[2], caps[3]); (g[0]).an_k1[t4] = __flowc_st16062; }
+  { __typeof__((g[0]).an_k2[t4]) __flowc_st16078 = dy_name(c, p, caps[4], caps[5]); (g[0]).an_k2[t4] = __flowc_st16078; }
+  { __typeof__((g[0]).an_hz[t4]) __flowc_st16094 = dy_name(c, p, caps[6], caps[7]); (g[0]).an_hz[t4] = __flowc_st16094; }
+  { __typeof__((g[0]).an_rep[t4]) __flowc_st16110 = dy_name(c, p, caps[8], caps[9]); (g[0]).an_rep[t4] = __flowc_st16110; }
   (g[0]).nanz = (t4 + 1);
   return dy_block(p, ls, le, nl, i, bs, be, nb);
 }
   if (dy_match(p, s, e, "analyze^@~{", caps) < 0) {
-  DySb* m = (DySb*)(dy_err(c));
-  dy_puts(m, "Invalid analyze block: ");
-  dy_span(m, p, s, e);
-  dy_puts(m, " (expected `analyze Name ga k1 k2 over H -> r {{");
+  ByteBuf* m = (ByteBuf*)(dy_err(c));
+  bb_puts(m, "Invalid analyze block: ");
+  bb_put_span(m, p, s, e);
+  bb_puts(m, " (expected `analyze Name ga k1 k2 over H -> r {{");
   dy_utf8(m, DY_ELLIPSIS);
-  dy_puts(m, "}}` or `analyze Name {{ lqr {{ ");
+  bb_puts(m, "}}` or `analyze Name {{ lqr {{ ");
   dy_utf8(m, DY_ELLIPSIS);
-  dy_puts(m, " }} }}`)");
+  bb_puts(m, " }} }}`)");
   return i;
 }
   int32_t sys5 = dy_name(c, p, caps[0], caps[1]);
@@ -37301,12 +37413,12 @@ int32_t dy_parse_rest(DyC* c, uint8_t* p, Dp* g, int32_t* ls, int32_t* le, int32
   return i;
 }
   int32_t t7 = (g[0]).ncp;
-  { __typeof__((g[0]).cp_sys[t7]) __flowc_st16818 = dy_name(c, p, caps[0], caps[1]); (g[0]).cp_sys[t7] = __flowc_st16818; }
-  { __typeof__((g[0]).cp_field[t7]) __flowc_st16834 = dy_name(c, p, caps[2], caps[3]); (g[0]).cp_field[t7] = __flowc_st16834; }
-  { __typeof__((g[0]).cp_rep[t7]) __flowc_st16850 = dy_name(c, p, caps[4], caps[5]); (g[0]).cp_rep[t7] = __flowc_st16850; }
-  { __typeof__((g[0]).cp_k1[t7]) __flowc_st16866 = dy_name(c, p, caps[6], caps[7]); (g[0]).cp_k1[t7] = __flowc_st16866; }
-  { __typeof__((g[0]).cp_k2[t7]) __flowc_st16882 = dy_name(c, p, caps[8], caps[9]); (g[0]).cp_k2[t7] = __flowc_st16882; }
-  { __typeof__((g[0]).cp_guid[t7]) __flowc_st16892 = dy_name_lit(c, "guide"); (g[0]).cp_guid[t7] = __flowc_st16892; }
+  { __typeof__((g[0]).cp_sys[t7]) __flowc_st16573 = dy_name(c, p, caps[0], caps[1]); (g[0]).cp_sys[t7] = __flowc_st16573; }
+  { __typeof__((g[0]).cp_field[t7]) __flowc_st16589 = dy_name(c, p, caps[2], caps[3]); (g[0]).cp_field[t7] = __flowc_st16589; }
+  { __typeof__((g[0]).cp_rep[t7]) __flowc_st16605 = dy_name(c, p, caps[4], caps[5]); (g[0]).cp_rep[t7] = __flowc_st16605; }
+  { __typeof__((g[0]).cp_k1[t7]) __flowc_st16621 = dy_name(c, p, caps[6], caps[7]); (g[0]).cp_k1[t7] = __flowc_st16621; }
+  { __typeof__((g[0]).cp_k2[t7]) __flowc_st16637 = dy_name(c, p, caps[8], caps[9]); (g[0]).cp_k2[t7] = __flowc_st16637; }
+  { __typeof__((g[0]).cp_guid[t7]) __flowc_st16647 = dy_name_lit(c, "guide"); (g[0]).cp_guid[t7] = __flowc_st16647; }
   int32_t nx7 = dy_block(p, ls, le, nl, i, bs, be, nb);
   int32_t b7 = (c[0]).nbd;
   int32_t j7 = 0;
@@ -37316,7 +37428,7 @@ int32_t dy_parse_rest(DyC* c, uint8_t* p, Dp* g, int32_t* ls, int32_t* le, int32
   dy_strip_comments(p, bl);
   if (dy_arrow(p, bl[0], bl[1], l, r) == 1) {
   if (dy_eq(p, l[0], l[1], "guidance") == 1) {
-  { __typeof__((g[0]).cp_guid[t7]) __flowc_st16976 = dy_name(c, p, r[0], r[1]); (g[0]).cp_guid[t7] = __flowc_st16976; }
+  { __typeof__((g[0]).cp_guid[t7]) __flowc_st16731 = dy_name(c, p, r[0], r[1]); (g[0]).cp_guid[t7] = __flowc_st16731; }
 } else {
   dy_bd(c, (0 - 1), dy_name(c, p, r[0], r[1]), dy_name(c, p, l[0], l[1]));
 }
@@ -37334,12 +37446,12 @@ int32_t dy_parse_rest(DyC* c, uint8_t* p, Dp* g, int32_t* ls, int32_t* le, int32
   return i;
 }
   int32_t t8 = (g[0]).ngd;
-  { __typeof__((g[0]).gd_sys[t8]) __flowc_st17093 = dy_name(c, p, caps[0], caps[1]); (g[0]).gd_sys[t8] = __flowc_st17093; }
-  { __typeof__((g[0]).gd_k1[t8]) __flowc_st17109 = dy_name(c, p, caps[2], caps[3]); (g[0]).gd_k1[t8] = __flowc_st17109; }
-  { __typeof__((g[0]).gd_k2[t8]) __flowc_st17125 = dy_name(c, p, caps[4], caps[5]); (g[0]).gd_k2[t8] = __flowc_st17125; }
-  { __typeof__((g[0]).gd_field[t8]) __flowc_st17141 = dy_name(c, p, caps[6], caps[7]); (g[0]).gd_field[t8] = __flowc_st17141; }
-  { __typeof__((g[0]).gd_guid[t8]) __flowc_st17157 = dy_name(c, p, caps[8], caps[9]); (g[0]).gd_guid[t8] = __flowc_st17157; }
-  { __typeof__((g[0]).gd_hz[t8]) __flowc_st17173 = dy_name(c, p, caps[10], caps[11]); (g[0]).gd_hz[t8] = __flowc_st17173; }
+  { __typeof__((g[0]).gd_sys[t8]) __flowc_st16848 = dy_name(c, p, caps[0], caps[1]); (g[0]).gd_sys[t8] = __flowc_st16848; }
+  { __typeof__((g[0]).gd_k1[t8]) __flowc_st16864 = dy_name(c, p, caps[2], caps[3]); (g[0]).gd_k1[t8] = __flowc_st16864; }
+  { __typeof__((g[0]).gd_k2[t8]) __flowc_st16880 = dy_name(c, p, caps[4], caps[5]); (g[0]).gd_k2[t8] = __flowc_st16880; }
+  { __typeof__((g[0]).gd_field[t8]) __flowc_st16896 = dy_name(c, p, caps[6], caps[7]); (g[0]).gd_field[t8] = __flowc_st16896; }
+  { __typeof__((g[0]).gd_guid[t8]) __flowc_st16912 = dy_name(c, p, caps[8], caps[9]); (g[0]).gd_guid[t8] = __flowc_st16912; }
+  { __typeof__((g[0]).gd_hz[t8]) __flowc_st16928 = dy_name(c, p, caps[10], caps[11]); (g[0]).gd_hz[t8] = __flowc_st16928; }
   int32_t nx8 = dy_block(p, ls, le, nl, i, bs, be, nb);
   int32_t b8 = (c[0]).nbd;
   int32_t j8 = 0;
@@ -37361,16 +37473,16 @@ int32_t dy_parse_rest(DyC* c, uint8_t* p, Dp* g, int32_t* ls, int32_t* le, int32
   return i;
 }
 
-void dy_ln(DySb* b, const char* s) {
-  dy_puts(b, s);
+void dy_ln(ByteBuf* b, const char* s) {
+  bb_puts(b, s);
 }
 
-void dy_eol(DySb* b) {
-  dy_putc(b, 10);
+void dy_eol(ByteBuf* b) {
+  bb_putc(b, 10);
 }
 
 void dy_key_error(DyC* c, int32_t off) {
-  DySb* m = (DySb*)(dy_err(c));
+  ByteBuf* m = (ByteBuf*)(dy_err(c));
   uint8_t* np = (uint8_t*)((((c[0]).nm[0]).p + off));
   dy_repr_str(m, np, 0, (int32_t)(strlen((const char*)(np))));
 }
@@ -37386,123 +37498,123 @@ int64_t dy_steps_or(DyC* c, Dp* g, int32_t name, int64_t dflt) {
   return dflt;
 }
 
-int32_t dy_bufs(DySb* b, int32_t* bi, int32_t count) {
+int32_t dy_bufs(ByteBuf* b, int32_t* bi, int32_t count) {
   int32_t first = bi[0];
   int32_t k = 0;
   while (k < count) {
-  dy_puts(b, "    let __dsys_b");
-  dy_i64(b, (int64_t)(bi[0]));
-  dy_puts(b, ": array<f64, 4> = [0.0, 0.0, 0.0, 0.0]\n");
+  bb_puts(b, "    let __dsys_b");
+  bb_put_i64(b, (int64_t)(bi[0]));
+  bb_puts(b, ": array<f64, 4> = [0.0, 0.0, 0.0, 0.0]\n");
   bi[0] = (bi[0] + 1);
   k = (k + 1);
 }
   return first;
 }
 
-void dy_bufref(DySb* b, int32_t k) {
-  dy_puts(b, "__dsys_b");
-  dy_i64(b, (int64_t)(k));
+void dy_bufref(ByteBuf* b, int32_t k) {
+  bb_puts(b, "__dsys_b");
+  bb_put_i64(b, (int64_t)(k));
 }
 
-void dy_bufargs(DySb* b, int32_t first, int32_t count) {
+void dy_bufargs(ByteBuf* b, int32_t first, int32_t count) {
   int32_t k = 0;
   while (k < count) {
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
   dy_bufref(b, (first + k));
   k = (k + 1);
 }
 }
 
-void dy_flat_array(DySb* b, DyC* c, int32_t f0, int32_t fnn) {
-  dy_puts(b, ": array<f64, ");
+void dy_flat_array(ByteBuf* b, DyC* c, int32_t f0, int32_t fnn) {
+  bb_puts(b, ": array<f64, ");
   if (fnn > 1) {
-  dy_i64(b, (int64_t)(fnn));
+  bb_put_i64(b, (int64_t)(fnn));
 } else {
-  dy_puts(b, "1");
+  bb_puts(b, "1");
 }
-  dy_puts(b, "> = [");
+  bb_puts(b, "> = [");
   int32_t k = 0;
   while (k < fnn) {
   if (k > 0) {
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
 }
   dy_flow_f64(b, (c[0]).fp[(f0 + k)]);
   k = (k + 1);
 }
-  dy_puts(b, "]");
+  bb_puts(b, "]");
 }
 
-void dy_rep_array(DySb* b, int64_t n, const char* item) {
+void dy_rep_array(ByteBuf* b, int64_t n, const char* item) {
   int64_t m = n;
   if (m < 1) {
   m = 1;
 }
-  dy_putc(b, 91);
+  bb_putc(b, 91);
   int64_t k = 0;
   while (k < m) {
   if (k > 0) {
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
 }
-  dy_puts(b, item);
+  bb_puts(b, item);
   k = (k + 1);
 }
-  dy_putc(b, 93);
+  bb_putc(b, 93);
 }
 
-void dy_matrix(DySb* b, DyC* c, int32_t name, const char* which, int64_t rows, int64_t cols) {
-  dy_puts(b, "Matrix { data: __dsys_");
+void dy_matrix(ByteBuf* b, DyC* c, int32_t name, const char* which, int64_t rows, int64_t cols) {
+  bb_puts(b, "Matrix { data: __dsys_");
   dy_pn(b, c, name);
-  dy_puts(b, which);
-  dy_puts(b, ", rows: ");
-  dy_i64(b, rows);
-  dy_puts(b, ", cols: ");
-  dy_i64(b, cols);
-  dy_puts(b, " }");
+  bb_puts(b, which);
+  bb_puts(b, ", rows: ");
+  bb_put_i64(b, rows);
+  bb_puts(b, ", cols: ");
+  bb_put_i64(b, cols);
+  bb_puts(b, " }");
 }
 
-void dy_ga_arrays(DySb* b, DySb* tag, int64_t pop) {
-  dy_puts(b, "    let ");
-  dy_span(b, (tag[0]).p, 0, (tag[0]).len);
-  dy_puts(b, "_k1: array<f64, ");
-  dy_i64(b, pop);
-  dy_puts(b, "> = ");
+void dy_ga_arrays(ByteBuf* b, ByteBuf* tag, int64_t pop) {
+  bb_puts(b, "    let ");
+  bb_put_span(b, (tag[0]).p, 0, (tag[0]).len);
+  bb_puts(b, "_k1: array<f64, ");
+  bb_put_i64(b, pop);
+  bb_puts(b, "> = ");
   dy_rep_array(b, pop, "0.0");
   dy_eol(b);
-  dy_puts(b, "    let ");
-  dy_span(b, (tag[0]).p, 0, (tag[0]).len);
-  dy_puts(b, "_k2: array<f64, ");
-  dy_i64(b, pop);
-  dy_puts(b, "> = ");
+  bb_puts(b, "    let ");
+  bb_put_span(b, (tag[0]).p, 0, (tag[0]).len);
+  bb_puts(b, "_k2: array<f64, ");
+  bb_put_i64(b, pop);
+  bb_puts(b, "> = ");
   dy_rep_array(b, pop, "0.0");
   dy_eol(b);
-  dy_puts(b, "    let ");
-  dy_span(b, (tag[0]).p, 0, (tag[0]).len);
-  dy_puts(b, "_fit: array<f64, ");
-  dy_i64(b, pop);
-  dy_puts(b, "> = ");
+  bb_puts(b, "    let ");
+  bb_put_span(b, (tag[0]).p, 0, (tag[0]).len);
+  bb_puts(b, "_fit: array<f64, ");
+  bb_put_i64(b, pop);
+  bb_puts(b, "> = ");
   dy_rep_array(b, pop, "0.0");
   dy_eol(b);
-  dy_puts(b, "    let ");
-  dy_span(b, (tag[0]).p, 0, (tag[0]).len);
-  dy_puts(b, "_bk1: array<f64, 1> = [0.0]\n");
-  dy_puts(b, "    let ");
-  dy_span(b, (tag[0]).p, 0, (tag[0]).len);
-  dy_puts(b, "_bk2: array<f64, 1> = [0.0]\n");
-  dy_puts(b, "    let ");
-  dy_span(b, (tag[0]).p, 0, (tag[0]).len);
-  dy_puts(b, "_hist: array<f64, 32> = ");
+  bb_puts(b, "    let ");
+  bb_put_span(b, (tag[0]).p, 0, (tag[0]).len);
+  bb_puts(b, "_bk1: array<f64, 1> = [0.0]\n");
+  bb_puts(b, "    let ");
+  bb_put_span(b, (tag[0]).p, 0, (tag[0]).len);
+  bb_puts(b, "_bk2: array<f64, 1> = [0.0]\n");
+  bb_puts(b, "    let ");
+  bb_put_span(b, (tag[0]).p, 0, (tag[0]).len);
+  bb_puts(b, "_hist: array<f64, 32> = ");
   dy_rep_array(b, 32, "0.0");
   dy_eol(b);
 }
 
-void dy_tag(DySb* t, const char* pre, int32_t k) {
+void dy_tag(ByteBuf* t, const char* pre, int32_t k) {
   (t[0]).len = 0;
-  dy_puts(t, pre);
-  dy_i64(t, (int64_t)(k));
+  bb_puts(t, pre);
+  bb_put_i64(t, (int64_t)(k));
 }
 
-void dy_tagp(DySb* b, DySb* t) {
-  dy_span(b, (t[0]).p, 0, (t[0]).len);
+void dy_tagp(ByteBuf* b, ByteBuf* t) {
+  bb_put_span(b, (t[0]).p, 0, (t[0]).len);
 }
 
 int32_t dy_is_identifier(DyC* c, int32_t off) {
@@ -37516,26 +37628,26 @@ int32_t dy_is_identifier(DyC* c, int32_t off) {
   return 1;
 }
 
-int32_t dy_compile(DyC* c, Dp* g, DySb* b) {
+int32_t dy_compile(DyC* c, Dp* g, ByteBuf* b) {
   if ((g[0]).nsy == 0 && (g[0]).nwf == 0 && (g[0]).nse == 0 && (g[0]).nga == 0 && (g[0]).ncl == 0 && (g[0]).nanz == 0 && (g[0]).nlq == 0 && (g[0]).ncp == 0 && (g[0]).ngd == 0) {
   return 0;
 }
   int32_t* bi = (int32_t*)(dy_i32s(1));
   bi[0] = 0;
-  DySb* tag = (DySb*)(dy_sb_new(32));
-  dy_puts(b, "    # --- dsys DSL expansion (auto-generated) ---\n");
+  ByteBuf* tag = (ByteBuf*)(bb_new(32));
+  bb_puts(b, "    # --- dsys DSL expansion (auto-generated) ---\n");
   int32_t i = 0;
   while (i < (g[0]).nhz) {
-  dy_puts(b, "    let h_");
+  bb_puts(b, "    let h_");
   dy_pn(b, c, (g[0]).hz_name[i]);
   if ((g[0]).hz_kind[i] == 0) {
-  dy_puts(b, ": Horizon = horizon_finite(");
-  dy_i64(b, (g[0]).hz_steps[i]);
+  bb_puts(b, ": Horizon = horizon_finite(");
+  bb_put_i64(b, (g[0]).hz_steps[i]);
 } else {
-  dy_puts(b, ": Horizon = horizon_infinite(");
+  bb_puts(b, ": Horizon = horizon_infinite(");
   dy_g17(b, (g[0]).hz_gamma[i]);
 }
-  dy_puts(b, ")\n");
+  bb_puts(b, ")\n");
   i = (i + 1);
 }
   i = 0;
@@ -37544,56 +37656,56 @@ int32_t dy_compile(DyC* c, Dp* g, DySb* b) {
   int64_t n = (g[0]).sy_n[i];
   int64_t mm = (g[0]).sy_m[i];
   int64_t pp = (g[0]).sy_p[i];
-  dy_puts(b, "    let __dsys_");
+  bb_puts(b, "    let __dsys_");
   dy_pn(b, c, nm);
-  dy_puts(b, "_A");
+  bb_puts(b, "_A");
   dy_flat_array(b, c, (g[0]).sy_a0[i], (g[0]).sy_an[i]);
   dy_eol(b);
-  dy_puts(b, "    let __dsys_");
+  bb_puts(b, "    let __dsys_");
   dy_pn(b, c, nm);
-  dy_puts(b, "_B");
+  bb_puts(b, "_B");
   dy_flat_array(b, c, (g[0]).sy_b0[i], (g[0]).sy_bn[i]);
   dy_eol(b);
-  dy_puts(b, "    let __dsys_");
+  bb_puts(b, "    let __dsys_");
   dy_pn(b, c, nm);
-  dy_puts(b, "_C");
+  bb_puts(b, "_C");
   dy_flat_array(b, c, (g[0]).sy_c0[i], (g[0]).sy_cn[i]);
   dy_eol(b);
-  dy_puts(b, "    let __dsys_");
+  bb_puts(b, "    let __dsys_");
   dy_pn(b, c, nm);
   if ((g[0]).sy_mode[i] == 1) {
-  dy_puts(b, "_cont: DynamicalSystem = dsys_continuous(");
+  bb_puts(b, "_cont: DynamicalSystem = dsys_continuous(");
 } else {
-  dy_puts(b, ": DynamicalSystem = dsys_discrete(");
+  bb_puts(b, ": DynamicalSystem = dsys_discrete(");
 }
-  dy_i64(b, n);
-  dy_puts(b, ", ");
-  dy_i64(b, mm);
-  dy_puts(b, ", ");
-  dy_i64(b, pp);
-  dy_puts(b, ", ");
+  bb_put_i64(b, n);
+  bb_puts(b, ", ");
+  bb_put_i64(b, mm);
+  bb_puts(b, ", ");
+  bb_put_i64(b, pp);
+  bb_puts(b, ", ");
   dy_g17(b, (g[0]).sy_dt[i]);
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
   dy_matrix(b, c, nm, "_A", n, n);
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
   dy_matrix(b, c, nm, "_B", n, mm);
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
   dy_matrix(b, c, nm, "_C", pp, n);
-  dy_puts(b, ")\n");
+  bb_puts(b, ")\n");
   if ((g[0]).sy_mode[i] == 1) {
   int32_t f = dy_bufs(b, bi, 5);
-  dy_puts(b, "    let __dsys_");
+  bb_puts(b, "    let __dsys_");
   dy_pn(b, c, nm);
-  dy_puts(b, ": DynamicalSystem = dsys_euler_discretize(__dsys_");
+  bb_puts(b, ": DynamicalSystem = dsys_euler_discretize(__dsys_");
   dy_pn(b, c, nm);
-  dy_puts(b, "_cont");
+  bb_puts(b, "_cont");
   dy_bufargs(b, f, 4);
-  dy_puts(b, ")\n");
+  bb_puts(b, ")\n");
 }
   if (dy_is_identifier(c, nm) == 1) {
-  dy_puts(b, "    let ");
+  bb_puts(b, "    let ");
   dy_pn(b, c, nm);
-  dy_puts(b, ": DynamicalSystem = __dsys_");
+  bb_puts(b, ": DynamicalSystem = __dsys_");
   dy_pn(b, c, nm);
   dy_eol(b);
 }
@@ -37604,48 +37716,48 @@ int32_t dy_compile(DyC* c, Dp* g, DySb* b) {
   int32_t wn = (g[0]).wf_name[i];
   int64_t cells = ((g[0]).wf_w[i] * (g[0]).wf_h[i]);
   int64_t opts = (cells * (g[0]).wf_tiles[i]);
-  dy_puts(b, "    let __wfc_");
+  bb_puts(b, "    let __wfc_");
   dy_pn(b, c, wn);
-  dy_puts(b, "_cells: array<i32, ");
-  dy_i64(b, cells);
-  dy_puts(b, "> = ");
+  bb_puts(b, "_cells: array<i32, ");
+  bb_put_i64(b, cells);
+  bb_puts(b, "> = ");
   dy_rep_array(b, cells, "-1");
   dy_eol(b);
-  dy_puts(b, "    let __wfc_");
+  bb_puts(b, "    let __wfc_");
   dy_pn(b, c, wn);
-  dy_puts(b, "_opts: array<i32, ");
-  dy_i64(b, opts);
-  dy_puts(b, "> = ");
+  bb_puts(b, "_opts: array<i32, ");
+  bb_put_i64(b, opts);
+  bb_puts(b, "> = ");
   dy_rep_array(b, opts, "1");
   dy_eol(b);
-  dy_puts(b, "    for __wfc_i in 0 to ");
-  dy_i64(b, cells);
-  dy_puts(b, " {\n        __wfc_");
+  bb_puts(b, "    for __wfc_i in 0 to ");
+  bb_put_i64(b, cells);
+  bb_puts(b, " {\n        __wfc_");
   dy_pn(b, c, wn);
-  dy_puts(b, "_cells[__wfc_i] = -1\n    }\n");
-  dy_puts(b, "    for __wfc_j in 0 to ");
-  dy_i64(b, opts);
-  dy_puts(b, " {\n        __wfc_");
+  bb_puts(b, "_cells[__wfc_i] = -1\n    }\n");
+  bb_puts(b, "    for __wfc_j in 0 to ");
+  bb_put_i64(b, opts);
+  bb_puts(b, " {\n        __wfc_");
   dy_pn(b, c, wn);
-  dy_puts(b, "_opts[__wfc_j] = 1\n    }\n");
-  dy_puts(b, "    __wfc_");
+  bb_puts(b, "_opts[__wfc_j] = 1\n    }\n");
+  bb_puts(b, "    __wfc_");
   dy_pn(b, c, wn);
-  dy_puts(b, "_cells[");
-  dy_i64(b, (g[0]).wf_pc[i]);
-  dy_puts(b, "] = ");
-  dy_i64(b, (g[0]).wf_pt[i]);
+  bb_puts(b, "_cells[");
+  bb_put_i64(b, (g[0]).wf_pc[i]);
+  bb_puts(b, "] = ");
+  bb_put_i64(b, (g[0]).wf_pt[i]);
   dy_eol(b);
-  dy_puts(b, "    let __wfc_");
+  bb_puts(b, "    let __wfc_");
   dy_pn(b, c, wn);
-  dy_puts(b, ": WFCGrid = WFCGrid { width: ");
-  dy_i64(b, (g[0]).wf_w[i]);
-  dy_puts(b, ", height: ");
-  dy_i64(b, (g[0]).wf_h[i]);
-  dy_puts(b, ", cells: __wfc_");
+  bb_puts(b, ": WFCGrid = WFCGrid { width: ");
+  bb_put_i64(b, (g[0]).wf_w[i]);
+  bb_puts(b, ", height: ");
+  bb_put_i64(b, (g[0]).wf_h[i]);
+  bb_puts(b, ", cells: __wfc_");
   dy_pn(b, c, wn);
-  dy_puts(b, "_cells, options: __wfc_");
+  bb_puts(b, "_cells, options: __wfc_");
   dy_pn(b, c, wn);
-  dy_puts(b, "_opts }\n");
+  bb_puts(b, "_opts }\n");
   i = (i + 1);
 }
   i = 0;
@@ -37662,44 +37774,44 @@ int32_t dy_compile(DyC* c, Dp* g, DySb* b) {
   int32_t var = (c[0]).bd_var[bdx];
   if (kind == 1) {
   int32_t f = dy_bufs(b, bi, 5);
-  dy_puts(b, "    let mut ");
+  bb_puts(b, "    let mut ");
   dy_pn(b, c, var);
-  dy_puts(b, ": i32 = 0\n    ");
+  bb_puts(b, ": i32 = 0\n    ");
   dy_pn(b, c, var);
-  dy_puts(b, " = is_controllable(__dsys_");
+  bb_puts(b, " = is_controllable(__dsys_");
   dy_pn(b, c, sys);
   dy_bufargs(b, f, 5);
-  dy_puts(b, ")\n");
+  bb_puts(b, ")\n");
 }
   if (kind == 2) {
-  dy_puts(b, "    let mut ");
+  bb_puts(b, "    let mut ");
   dy_pn(b, c, var);
-  dy_puts(b, ": f64 = 0.0\n    ");
+  bb_puts(b, ": f64 = 0.0\n    ");
   dy_pn(b, c, var);
-  dy_puts(b, " = matrix_spectral_radius_2x2(__dsys_");
+  bb_puts(b, " = matrix_spectral_radius_2x2(__dsys_");
   dy_pn(b, c, sys);
-  dy_puts(b, ".A)\n");
+  bb_puts(b, ".A)\n");
 }
   if (kind == 3 || kind == 4) {
   int32_t f2 = dy_bufs(b, bi, 4);
-  dy_puts(b, "    let mut ");
+  bb_puts(b, "    let mut ");
   dy_pn(b, c, var);
-  dy_puts(b, ": f64 = 0.0\n    let __W_");
+  bb_puts(b, ": f64 = 0.0\n    let __W_");
   dy_pn(b, c, var);
   if (kind == 3) {
-  dy_puts(b, ": Matrix = gramian_finite_horizon(__dsys_");
+  bb_puts(b, ": Matrix = gramian_finite_horizon(__dsys_");
 } else {
-  dy_puts(b, ": Matrix = gramian_infinite_horizon(__dsys_");
+  bb_puts(b, ": Matrix = gramian_infinite_horizon(__dsys_");
 }
   dy_pn(b, c, sys);
-  dy_puts(b, ", h_");
+  bb_puts(b, ", h_");
   dy_pn(b, c, (c[0]).bd_hz[bdx]);
   dy_bufargs(b, f2, 4);
-  dy_puts(b, ")\n    ");
+  bb_puts(b, ")\n    ");
   dy_pn(b, c, var);
-  dy_puts(b, " = matrix_trace(__W_");
+  bb_puts(b, " = matrix_trace(__W_");
   dy_pn(b, c, var);
-  dy_puts(b, ")\n");
+  bb_puts(b, ")\n");
 }
   q = (q + 1);
 }
@@ -37717,52 +37829,52 @@ int32_t dy_compile(DyC* c, Dp* g, DySb* b) {
   int64_t steps = dy_steps_or(c, g, (g[0]).ga_hz[i], 50);
   int64_t pop = (g[0]).ga_pop[i];
   dy_tag(tag, "__ga_e", i);
-  dy_puts(b, "    let mut ");
+  bb_puts(b, "    let mut ");
   dy_pn(b, c, (g[0]).ga_k1[i]);
-  dy_puts(b, ": f64 = 0.0\n    let mut ");
+  bb_puts(b, ": f64 = 0.0\n    let mut ");
   dy_pn(b, c, (g[0]).ga_k2[i]);
-  dy_puts(b, ": f64 = 0.0\n");
+  bb_puts(b, ": f64 = 0.0\n");
   dg[ndg] = (g[0]).ga_k1[i];
   dg[(ndg + 1)] = (g[0]).ga_k2[i];
   ndg = (ndg + 2);
   dy_ga_arrays(b, tag, pop);
-  dy_puts(b, "    let ");
+  bb_puts(b, "    let ");
   dy_tagp(b, tag);
-  dy_puts(b, "_cfg: GAConfig = GAConfig { population: ");
-  dy_i64(b, pop);
-  dy_puts(b, ", generations: ");
-  dy_i64(b, (g[0]).ga_gen[i]);
-  dy_puts(b, ", horizon: ");
-  dy_i64(b, steps);
-  dy_puts(b, ", mutation: ");
+  bb_puts(b, "_cfg: GAConfig = GAConfig { population: ");
+  bb_put_i64(b, pop);
+  bb_puts(b, ", generations: ");
+  bb_put_i64(b, (g[0]).ga_gen[i]);
+  bb_puts(b, ", horizon: ");
+  bb_put_i64(b, steps);
+  bb_puts(b, ", mutation: ");
   dy_g17(b, (g[0]).ga_mut[i]);
-  dy_puts(b, " }\n    ga_evolve_traced(__dsys_");
+  bb_puts(b, " }\n    ga_evolve_traced(__dsys_");
   dy_pn(b, c, sys2);
-  dy_puts(b, ", ");
-  dy_i64(b, steps);
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
+  bb_put_i64(b, steps);
+  bb_puts(b, ", ");
   dy_tagp(b, tag);
-  dy_puts(b, "_cfg, ");
+  bb_puts(b, "_cfg, ");
   dy_tagp(b, tag);
-  dy_puts(b, "_k1, ");
+  bb_puts(b, "_k1, ");
   dy_tagp(b, tag);
-  dy_puts(b, "_k2, ");
+  bb_puts(b, "_k2, ");
   dy_tagp(b, tag);
-  dy_puts(b, "_fit, ");
+  bb_puts(b, "_fit, ");
   dy_tagp(b, tag);
-  dy_puts(b, "_bk1, ");
+  bb_puts(b, "_bk1, ");
   dy_tagp(b, tag);
-  dy_puts(b, "_bk2, ");
+  bb_puts(b, "_bk2, ");
   dy_tagp(b, tag);
-  dy_puts(b, "_hist)\n    ");
+  bb_puts(b, "_hist)\n    ");
   dy_pn(b, c, (g[0]).ga_k1[i]);
-  dy_puts(b, " = ");
+  bb_puts(b, " = ");
   dy_tagp(b, tag);
-  dy_puts(b, "_bk1[0]\n    ");
+  bb_puts(b, "_bk1[0]\n    ");
   dy_pn(b, c, (g[0]).ga_k2[i]);
-  dy_puts(b, " = ");
+  bb_puts(b, " = ");
   dy_tagp(b, tag);
-  dy_puts(b, "_bk2[0]\n");
+  bb_puts(b, "_bk2[0]\n");
   i = (i + 1);
 }
   i = 0;
@@ -37773,46 +37885,46 @@ int32_t dy_compile(DyC* c, Dp* g, DySb* b) {
   return 0;
 }
   int32_t f3 = dy_bufs(b, bi, 2);
-  dy_puts(b, "    let __cl_");
+  bb_puts(b, "    let __cl_");
   dy_pn(b, c, sys3);
-  dy_puts(b, ": DynamicalSystem = ga_closed_loop_matrix(__dsys_");
+  bb_puts(b, ": DynamicalSystem = ga_closed_loop_matrix(__dsys_");
   dy_pn(b, c, sys3);
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
   dy_pn(b, c, (g[0]).cl_k1[i]);
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
   dy_pn(b, c, (g[0]).cl_k2[i]);
   dy_bufargs(b, f3, 2);
-  dy_puts(b, ")\n");
+  bb_puts(b, ")\n");
   int32_t q3 = 0;
   while (q3 < (g[0]).cl_bn[i]) {
   int32_t bdx3 = ((g[0]).cl_b0[i] + q3);
   int32_t kind3 = (c[0]).bd_kind[bdx3];
   int32_t var3 = (c[0]).bd_var[bdx3];
   if (kind3 == 5) {
-  dy_puts(b, "    let mut ");
+  bb_puts(b, "    let mut ");
   dy_pn(b, c, var3);
-  dy_puts(b, ": f64 = matrix_spectral_radius_2x2(__cl_");
+  bb_puts(b, ": f64 = matrix_spectral_radius_2x2(__cl_");
   dy_pn(b, c, sys3);
-  dy_puts(b, ".A)\n");
+  bb_puts(b, ".A)\n");
 }
   if (kind3 == 6) {
-  dy_puts(b, "    let mut ");
+  bb_puts(b, "    let mut ");
   dy_pn(b, c, var3);
-  dy_puts(b, ": i32 = 0\n    if matrix_spectral_radius_2x2(__cl_");
+  bb_puts(b, ": i32 = 0\n    if matrix_spectral_radius_2x2(__cl_");
   dy_pn(b, c, sys3);
-  dy_puts(b, ".A) < 1.0 { ");
+  bb_puts(b, ".A) < 1.0 { ");
   dy_pn(b, c, var3);
-  dy_puts(b, " = 1 }\n");
+  bb_puts(b, " = 1 }\n");
 }
   if (kind3 == 7) {
   int64_t st3 = dy_steps_or(c, g, (c[0]).bd_hz[bdx3], 50);
-  dy_puts(b, "    let mut ");
+  bb_puts(b, "    let mut ");
   dy_pn(b, c, var3);
-  dy_puts(b, ": f64 = ga_closed_loop_energy(__cl_");
+  bb_puts(b, ": f64 = ga_closed_loop_energy(__cl_");
   dy_pn(b, c, sys3);
-  dy_puts(b, ", ");
-  dy_i64(b, st3);
-  dy_puts(b, ")\n");
+  bb_puts(b, ", ");
+  bb_put_i64(b, st3);
+  bb_puts(b, ")\n");
 }
   q3 = (q3 + 1);
 }
@@ -37844,50 +37956,50 @@ int32_t dy_compile(DyC* c, Dp* g, DySb* b) {
 }
   dy_tag(tag, "__ga_a", i);
   int32_t rep = (g[0]).an_rep[i];
-  dy_puts(b, "    let mut ");
+  bb_puts(b, "    let mut ");
   dy_pn(b, c, rep);
-  dy_puts(b, ": GAAnalysisReport = GAAnalysisReport {\n");
-  dy_puts(b, "        plant_controllable: 0, plant_spectral_radius: 0.0,\n");
-  dy_puts(b, "        closed_spectral_radius: 0.0, gramian_open_finite: 0.0,\n");
-  dy_puts(b, "        gramian_open_infinite: 0.0, closed_loop_energy: 0.0,\n");
-  dy_puts(b, "        baseline_cost: 0.0, evolved_cost: 0.0, fitness_drop: 0.0,\n");
-  dy_puts(b, "        convergence_gen: 0, stable_closed_loop: 0\n");
-  dy_puts(b, "    }\n");
+  bb_puts(b, ": GAAnalysisReport = GAAnalysisReport {\n");
+  bb_puts(b, "        plant_controllable: 0, plant_spectral_radius: 0.0,\n");
+  bb_puts(b, "        closed_spectral_radius: 0.0, gramian_open_finite: 0.0,\n");
+  bb_puts(b, "        gramian_open_infinite: 0.0, closed_loop_energy: 0.0,\n");
+  bb_puts(b, "        baseline_cost: 0.0, evolved_cost: 0.0, fitness_drop: 0.0,\n");
+  bb_puts(b, "        convergence_gen: 0, stable_closed_loop: 0\n");
+  bb_puts(b, "    }\n");
   dy_ga_arrays(b, tag, pop4);
   int32_t f4 = dy_bufs(b, bi, 12);
-  dy_puts(b, "    let ");
+  bb_puts(b, "    let ");
   dy_tagp(b, tag);
-  dy_puts(b, "_cfg: GAConfig = GAConfig { population: ");
-  dy_i64(b, pop4);
-  dy_puts(b, ", generations: ");
-  dy_i64(b, gens4);
-  dy_puts(b, ", horizon: ");
-  dy_i64(b, steps4);
-  dy_puts(b, ", mutation: ");
+  bb_puts(b, "_cfg: GAConfig = GAConfig { population: ");
+  bb_put_i64(b, pop4);
+  bb_puts(b, ", generations: ");
+  bb_put_i64(b, gens4);
+  bb_puts(b, ", horizon: ");
+  bb_put_i64(b, steps4);
+  bb_puts(b, ", mutation: ");
   dy_g17(b, mut4);
-  dy_puts(b, " }\n    ");
+  bb_puts(b, " }\n    ");
   dy_pn(b, c, rep);
-  dy_puts(b, " = ga_analyze_control_search(__dsys_");
+  bb_puts(b, " = ga_analyze_control_search(__dsys_");
   dy_pn(b, c, sys4);
-  dy_puts(b, ", ");
-  dy_i64(b, steps4);
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
+  bb_put_i64(b, steps4);
+  bb_puts(b, ", ");
   dy_tagp(b, tag);
-  dy_puts(b, "_cfg, ");
+  bb_puts(b, "_cfg, ");
   dy_tagp(b, tag);
-  dy_puts(b, "_k1, ");
+  bb_puts(b, "_k1, ");
   dy_tagp(b, tag);
-  dy_puts(b, "_k2, ");
+  bb_puts(b, "_k2, ");
   dy_tagp(b, tag);
-  dy_puts(b, "_fit, ");
+  bb_puts(b, "_fit, ");
   dy_tagp(b, tag);
-  dy_puts(b, "_bk1, ");
+  bb_puts(b, "_bk1, ");
   dy_tagp(b, tag);
-  dy_puts(b, "_bk2, ");
+  bb_puts(b, "_bk2, ");
   dy_tagp(b, tag);
-  dy_puts(b, "_hist");
+  bb_puts(b, "_hist");
   dy_bufargs(b, f4, 12);
-  dy_puts(b, ")\n");
+  bb_puts(b, ")\n");
   int32_t kk = 0;
   while (kk < 2) {
   int32_t kv = (g[0]).an_k1[i];
@@ -37903,23 +38015,23 @@ int32_t dy_compile(DyC* c, Dp* g, DySb* b) {
   d = (d + 1);
 }
   if (seen == 0) {
-  dy_puts(b, "    let mut ");
+  bb_puts(b, "    let mut ");
   dy_pn(b, c, kv);
-  dy_puts(b, ": f64 = 0.0\n");
+  bb_puts(b, ": f64 = 0.0\n");
   dg[ndg] = kv;
   ndg = (ndg + 1);
 }
   kk = (kk + 1);
 }
-  dy_puts(b, "    ");
+  bb_puts(b, "    ");
   dy_pn(b, c, (g[0]).an_k1[i]);
-  dy_puts(b, " = ");
+  bb_puts(b, " = ");
   dy_tagp(b, tag);
-  dy_puts(b, "_bk1[0]\n    ");
+  bb_puts(b, "_bk1[0]\n    ");
   dy_pn(b, c, (g[0]).an_k2[i]);
-  dy_puts(b, " = ");
+  bb_puts(b, " = ");
   dy_tagp(b, tag);
-  dy_puts(b, "_bk2[0]\n");
+  bb_puts(b, "_bk2[0]\n");
   i = (i + 1);
 }
   i = 0;
@@ -37927,75 +38039,75 @@ int32_t dy_compile(DyC* c, Dp* g, DySb* b) {
   int32_t sys5 = (g[0]).lq_sys[i];
   int32_t si = dy_find_sys(c, g, sys5);
   if (si < 0) {
-  DySb* m = (DySb*)(dy_err(c));
+  ByteBuf* m = (ByteBuf*)(dy_err(c));
   dy_lqr_prefix(m, c, sys5);
-  dy_puts(m, "unknown dsys '");
+  bb_puts(m, "unknown dsys '");
   dy_pn(m, c, sys5);
-  dy_puts(m, "'");
+  bb_puts(m, "'");
   return 0;
 }
   int64_t n5 = (g[0]).sy_n[si];
   if ((g[0]).sy_m[si] != 1) {
-  DySb* m2 = (DySb*)(dy_err(c));
+  ByteBuf* m2 = (ByteBuf*)(dy_err(c));
   dy_lqr_prefix(m2, c, sys5);
-  dy_puts(m2, "Stage-1 needs scalar input (m=1), got m=");
-  dy_i64(m2, (g[0]).sy_m[si]);
+  bb_puts(m2, "Stage-1 needs scalar input (m=1), got m=");
+  bb_put_i64(m2, (g[0]).sy_m[si]);
   return 0;
 }
   if ((int64_t)((g[0]).lq_qn[i]) != n5) {
-  DySb* m3 = (DySb*)(dy_err(c));
+  ByteBuf* m3 = (ByteBuf*)(dy_err(c));
   dy_lqr_prefix(m3, c, sys5);
-  dy_puts(m3, "Q length ");
-  dy_i64(m3, (int64_t)((g[0]).lq_qn[i]));
-  dy_puts(m3, " != n=");
-  dy_i64(m3, n5);
+  bb_puts(m3, "Q length ");
+  bb_put_i64(m3, (int64_t)((g[0]).lq_qn[i]));
+  bb_puts(m3, " != n=");
+  bb_put_i64(m3, n5);
   return 0;
 }
   if (n5 > 8) {
-  DySb* m4 = (DySb*)(dy_err(c));
+  ByteBuf* m4 = (ByteBuf*)(dy_err(c));
   dy_lqr_prefix(m4, c, sys5);
-  dy_puts(m4, "n=");
-  dy_i64(m4, n5);
-  dy_puts(m4, " exceeds LQR_MAX_N=8");
+  bb_puts(m4, "n=");
+  bb_put_i64(m4, n5);
+  bb_puts(m4, " exceeds LQR_MAX_N=8");
   return 0;
 }
   dy_tag(tag, "__lqr_", i);
-  dy_puts(b, "    let ");
+  bb_puts(b, "    let ");
   dy_tagp(b, tag);
-  dy_puts(b, "_q");
+  bb_puts(b, "_q");
   dy_flat_array(b, c, (g[0]).lq_q0[i], (g[0]).lq_qn[i]);
-  dy_puts(b, "\n    let mut ");
+  bb_puts(b, "\n    let mut ");
   dy_tagp(b, tag);
-  dy_puts(b, "_k: array<f64, ");
-  dy_i64(b, n5);
-  dy_puts(b, "> = ");
+  bb_puts(b, "_k: array<f64, ");
+  bb_put_i64(b, n5);
+  bb_puts(b, "> = ");
   dy_rep_array(b, n5, "0.0");
-  dy_puts(b, "\n    let ");
+  bb_puts(b, "\n    let ");
   dy_tagp(b, tag);
-  dy_puts(b, "_iters: i32 = dlqr_diag_q_scalar_u(__dsys_");
+  bb_puts(b, "_iters: i32 = dlqr_diag_q_scalar_u(__dsys_");
   dy_pn(b, c, sys5);
-  dy_puts(b, ".A.data, __dsys_");
+  bb_puts(b, ".A.data, __dsys_");
   dy_pn(b, c, sys5);
-  dy_puts(b, ".B.data, ");
+  bb_puts(b, ".B.data, ");
   dy_tagp(b, tag);
-  dy_puts(b, "_q, ");
+  bb_puts(b, "_q, ");
   dy_flow_f64(b, (g[0]).lq_r[i]);
-  dy_puts(b, ", ");
-  dy_i64(b, n5);
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
+  bb_put_i64(b, n5);
+  bb_puts(b, ", ");
   dy_tagp(b, tag);
-  dy_puts(b, "_k, ");
-  dy_i64(b, (g[0]).lq_it[i]);
-  dy_puts(b, ")\n");
+  bb_puts(b, "_k, ");
+  bb_put_i64(b, (g[0]).lq_it[i]);
+  bb_puts(b, ")\n");
   int32_t gi = 0;
   while (gi < (g[0]).lq_gn[i]) {
-  dy_puts(b, "    let ");
+  bb_puts(b, "    let ");
   dy_pn(b, c, (c[0]).gl[((g[0]).lq_g0[i] + gi)]);
-  dy_puts(b, ": f64 = ");
+  bb_puts(b, ": f64 = ");
   dy_tagp(b, tag);
-  dy_puts(b, "_k[");
-  dy_i64(b, (int64_t)(gi));
-  dy_puts(b, "]\n");
+  bb_puts(b, "_k[");
+  bb_put_i64(b, (int64_t)(gi));
+  bb_puts(b, "]\n");
   gi = (gi + 1);
 }
   i = (i + 1);
@@ -38009,52 +38121,52 @@ int32_t dy_compile(DyC* c, Dp* g, DySb* b) {
   return 0;
 }
   int32_t guid = (g[0]).cp_guid[i];
-  dy_puts(b, "    let ");
+  bb_puts(b, "    let ");
   dy_pn(b, c, guid);
-  dy_puts(b, ": CoupledGuidance = couple_ga_wfc_guidance(");
+  bb_puts(b, ": CoupledGuidance = couple_ga_wfc_guidance(");
   dy_pn(b, c, (g[0]).cp_rep[i]);
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
   dy_pn(b, c, (g[0]).cp_k1[i]);
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
   dy_pn(b, c, (g[0]).cp_k2[i]);
-  dy_puts(b, ", ");
-  dy_i64(b, (g[0]).wf_seed[wi]);
-  dy_puts(b, ", ");
-  dy_i64(b, (g[0]).wf_steps[wi]);
-  dy_puts(b, ")\n    let __wfc_rep_");
+  bb_puts(b, ", ");
+  bb_put_i64(b, (g[0]).wf_seed[wi]);
+  bb_puts(b, ", ");
+  bb_put_i64(b, (g[0]).wf_steps[wi]);
+  bb_puts(b, ")\n    let __wfc_rep_");
   dy_pn(b, c, fld);
-  dy_puts(b, ": WFCRunReport = wfc_run_guided(__wfc_");
+  bb_puts(b, ": WFCRunReport = wfc_run_guided(__wfc_");
   dy_pn(b, c, fld);
-  dy_puts(b, ", ");
-  dy_i64(b, (g[0]).wf_tiles[wi]);
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
+  bb_put_i64(b, (g[0]).wf_tiles[wi]);
+  bb_puts(b, ", ");
   dy_pn(b, c, guid);
-  dy_puts(b, ")\n");
+  bb_puts(b, ")\n");
   int32_t q6 = 0;
   while (q6 < (g[0]).cp_bn[i]) {
   int32_t bdx6 = ((g[0]).cp_b0[i] + q6);
   int32_t lhs = (c[0]).bd_hz[bdx6];
   int32_t var6 = (c[0]).bd_var[bdx6];
   if (dy_neq_lit(c, lhs, "collapsed") == 1) {
-  dy_puts(b, "    let mut ");
+  bb_puts(b, "    let mut ");
   dy_pn(b, c, var6);
-  dy_puts(b, ": i32 = __wfc_rep_");
+  bb_puts(b, ": i32 = __wfc_rep_");
   dy_pn(b, c, fld);
-  dy_puts(b, ".collapsed\n");
+  bb_puts(b, ".collapsed\n");
 }
   if (dy_neq_lit(c, lhs, "wall_fraction") == 1) {
-  dy_puts(b, "    let mut ");
+  bb_puts(b, "    let mut ");
   dy_pn(b, c, var6);
-  dy_puts(b, ": f64 = __wfc_rep_");
+  bb_puts(b, ": f64 = __wfc_rep_");
   dy_pn(b, c, fld);
-  dy_puts(b, ".wall_fraction\n");
+  bb_puts(b, ".wall_fraction\n");
 }
   if (dy_neq_lit(c, lhs, "entropy") == 1) {
-  dy_puts(b, "    let mut ");
+  bb_puts(b, "    let mut ");
   dy_pn(b, c, var6);
-  dy_puts(b, ": f64 = __wfc_rep_");
+  bb_puts(b, ": f64 = __wfc_rep_");
   dy_pn(b, c, fld);
-  dy_puts(b, ".mean_entropy\n");
+  bb_puts(b, ".mean_entropy\n");
 }
   q6 = (q6 + 1);
 }
@@ -38071,22 +38183,22 @@ int32_t dy_compile(DyC* c, Dp* g, DySb* b) {
   int32_t fld7 = (g[0]).gd_field[i];
   int32_t f7 = dy_bufs(b, bi, 3);
   dy_tag(tag, "__guide_ev_", i);
-  dy_puts(b, "    let ");
+  bb_puts(b, "    let ");
   dy_tagp(b, tag);
-  dy_puts(b, ": GuidedEvolutionReport = guide_state_evolution(__dsys_");
+  bb_puts(b, ": GuidedEvolutionReport = guide_state_evolution(__dsys_");
   dy_pn(b, c, sys7);
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
   dy_pn(b, c, (g[0]).gd_k1[i]);
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
   dy_pn(b, c, (g[0]).gd_k2[i]);
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
   dy_pn(b, c, (g[0]).gd_guid[i]);
-  dy_puts(b, ", __wfc_rep_");
+  bb_puts(b, ", __wfc_rep_");
   dy_pn(b, c, fld7);
-  dy_puts(b, ", ");
-  dy_i64(b, steps7);
+  bb_puts(b, ", ");
+  bb_put_i64(b, steps7);
   dy_bufargs(b, f7, 3);
-  dy_puts(b, ")\n");
+  bb_puts(b, ")\n");
   int32_t q7 = 0;
   while (q7 < (g[0]).gd_bn[i]) {
   int32_t bdx7 = ((g[0]).gd_b0[i] + q7);
@@ -38115,29 +38227,29 @@ int32_t dy_compile(DyC* c, Dp* g, DySb* b) {
   ty = ": i32 = ";
 }
   if (strlen(field) > 0) {
-  dy_puts(b, "    let mut ");
+  bb_puts(b, "    let mut ");
   dy_pn(b, c, var7);
-  dy_puts(b, ty);
+  bb_puts(b, ty);
   dy_tagp(b, tag);
-  dy_puts(b, field);
+  bb_puts(b, field);
   dy_eol(b);
 }
   if (dy_neq_lit(c, lhs7, "wall_fraction") == 1) {
-  dy_puts(b, "    let mut ");
+  bb_puts(b, "    let mut ");
   dy_pn(b, c, var7);
-  dy_puts(b, ": f64 = __wfc_rep_");
+  bb_puts(b, ": f64 = __wfc_rep_");
   dy_pn(b, c, fld7);
-  dy_puts(b, ".wall_fraction\n");
+  bb_puts(b, ".wall_fraction\n");
 }
   q7 = (q7 + 1);
 }
   i = (i + 1);
 }
-  dy_puts(b, "    # --- end dsys DSL expansion ---");
+  bb_puts(b, "    # --- end dsys DSL expansion ---");
   return 1;
 }
 
-void dy_compile_portraits(DyC* c, Dp* g, DySb* b) {
+void dy_compile_portraits(DyC* c, Dp* g, ByteBuf* b) {
   int32_t i = 0;
   while (i < (g[0]).npt) {
   if (i > 0) {
@@ -38161,63 +38273,63 @@ void dy_compile_portraits(DyC* c, Dp* g, DySb* b) {
   int64_t tr = (g[0]).pt_trail[i];
   int64_t w = (g[0]).pt_w[i];
   int64_t h = (g[0]).pt_h[i];
-  dy_puts(b, "# generated from represent phase_portrait for ");
+  bb_puts(b, "# generated from represent phase_portrait for ");
   dy_pn(b, c, fl);
-  dy_puts(b, "\nconst ");
+  bb_puts(b, "\nconst ");
   dy_pn(b, c, fl);
-  dy_puts(b, "_portrait_trail: i32 = ");
-  dy_i64(b, tr);
-  dy_puts(b, "\nconst ");
+  bb_puts(b, "_portrait_trail: i32 = ");
+  bb_put_i64(b, tr);
+  bb_puts(b, "\nconst ");
   dy_pn(b, c, fl);
-  dy_puts(b, "_portrait_win_w: i32 = ");
-  dy_i64(b, w);
-  dy_puts(b, "\nconst ");
+  bb_puts(b, "_portrait_win_w: i32 = ");
+  bb_put_i64(b, w);
+  bb_puts(b, "\nconst ");
   dy_pn(b, c, fl);
-  dy_puts(b, "_portrait_win_h: i32 = ");
-  dy_i64(b, h);
-  dy_puts(b, "\n\nfunction ");
+  bb_puts(b, "_portrait_win_h: i32 = ");
+  bb_put_i64(b, h);
+  bb_puts(b, "\n\nfunction ");
   dy_pn(b, c, fl);
-  dy_puts(b, "_portrait_frame(\n    g: Gfx,\n    xs: ptr<f64>,\n    zs: ptr<f64>,\n    head: ptr<i32>,\n    count: ptr<i32>,\n    ");
+  bb_puts(b, "_portrait_frame(\n    g: Gfx,\n    xs: ptr<f64>,\n    zs: ptr<f64>,\n    head: ptr<i32>,\n    count: ptr<i32>,\n    ");
   dy_pn(b, c, ax0);
-  dy_puts(b, ": f64,\n    ");
+  bb_puts(b, ": f64,\n    ");
   dy_pn(b, c, ax1);
-  dy_puts(b, ": f64\n) -> void {\n    trail_push_2d(xs, zs, ");
-  dy_i64(b, tr);
-  dy_puts(b, ", head, count, ");
+  bb_puts(b, ": f64\n) -> void {\n    trail_push_2d(xs, zs, ");
+  bb_put_i64(b, tr);
+  bb_puts(b, ", head, count, ");
   dy_pn(b, c, ax0);
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
   dy_pn(b, c, ax1);
-  dy_puts(b, ")\n    let h: i32 = head[0]\n    let c: i32 = count[0]\n    gfx_clear(g, 8, 8, 16)\n    for i in 0 to c {\n        let idx: i32 = trail_index(h, c, ");
-  dy_i64(b, tr);
-  dy_puts(b, ", i)\n        let px: i32 = project_axis(xs[idx], ");
+  bb_puts(b, ")\n    let h: i32 = head[0]\n    let c: i32 = count[0]\n    gfx_clear(g, 8, 8, 16)\n    for i in 0 to c {\n        let idx: i32 = trail_index(h, c, ");
+  bb_put_i64(b, tr);
+  bb_puts(b, ", i)\n        let px: i32 = project_axis(xs[idx], ");
   dy_repr(b, a0lo);
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
   dy_repr(b, a0hi);
-  dy_puts(b, ", ");
-  dy_i64(b, w);
-  dy_puts(b, ", 10)\n        let py: i32 = project_axis(zs[idx], ");
+  bb_puts(b, ", ");
+  bb_put_i64(b, w);
+  bb_puts(b, ", 10)\n        let py: i32 = project_axis(zs[idx], ");
   dy_repr(b, a1lo);
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
   dy_repr(b, a1hi);
-  dy_puts(b, ", ");
-  dy_i64(b, h);
-  dy_puts(b, ", 30)\n        let b: i32 = 25 + (230 * (i + 1)) / c\n        let mut size: i32 = 2\n        if i >= c - 12 { size = 3 }\n        gfx_fill_rect(g, px, py, size, size, b, (b * 3) / 5, 30)\n    }\n    let hx: i32 = project_axis(");
+  bb_puts(b, ", ");
+  bb_put_i64(b, h);
+  bb_puts(b, ", 30)\n        let b: i32 = 25 + (230 * (i + 1)) / c\n        let mut size: i32 = 2\n        if i >= c - 12 { size = 3 }\n        gfx_fill_rect(g, px, py, size, size, b, (b * 3) / 5, 30)\n    }\n    let hx: i32 = project_axis(");
   dy_pn(b, c, ax0);
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
   dy_repr(b, a0lo);
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
   dy_repr(b, a0hi);
-  dy_puts(b, ", ");
-  dy_i64(b, w);
-  dy_puts(b, ", 10)\n    let hz: i32 = project_axis(");
+  bb_puts(b, ", ");
+  bb_put_i64(b, w);
+  bb_puts(b, ", 10)\n    let hz: i32 = project_axis(");
   dy_pn(b, c, ax1);
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
   dy_repr(b, a1lo);
-  dy_puts(b, ", ");
+  bb_puts(b, ", ");
   dy_repr(b, a1hi);
-  dy_puts(b, ", ");
-  dy_i64(b, h);
-  dy_puts(b, ", 30)\n    gfx_fill_rect(g, hx - 1, hz - 1, 5, 5, 255, 240, 180)\n}\n");
+  bb_puts(b, ", ");
+  bb_put_i64(b, h);
+  bb_puts(b, ", 30)\n    gfx_fill_rect(g, hx - 1, hz - 1, 5, 5, 255, 240, 180)\n}\n");
   i = (i + 1);
 }
 }
@@ -38296,19 +38408,19 @@ int32_t flowc_dynamics_has_dsl(uint8_t* p, int32_t n) {
   return r;
 }
 
-int32_t dy_contains(DySb* b, const char* lit) {
+int32_t dy_contains(ByteBuf* b, const char* lit) {
   if (dy_find_str((b[0]).p, 0, (b[0]).len, lit) >= 0) {
   return 1;
 }
   return 0;
 }
 
-void dy_prepend(DySb* b, const char* lit) {
-  DySb* t = (DySb*)(dy_sb_new(((b[0]).len + 64)));
-  dy_puts(t, lit);
-  dy_span(t, (b[0]).p, 0, (b[0]).len);
+void dy_prepend(ByteBuf* b, const char* lit) {
+  ByteBuf* t = (ByteBuf*)(bb_new(((b[0]).len + 64)));
+  bb_puts(t, lit);
+  bb_put_span(t, (b[0]).p, 0, (b[0]).len);
   (b[0]).len = 0;
-  dy_span(b, (t[0]).p, 0, (t[0]).len);
+  bb_put_span(b, (t[0]).p, 0, (t[0]).len);
   free((t[0]).p);
   free((uint8_t*)(t));
 }
@@ -38347,26 +38459,26 @@ int32_t dy_find_main_body(uint8_t* p, int32_t n) {
   return (0 - 1);
 }
 
-int32_t dy_expand(DyC* c, uint8_t* p, int32_t n, DySb* out) {
+int32_t dy_expand(DyC* c, uint8_t* p, int32_t n, ByteBuf* out) {
   if (flowc_dynamics_has_dsl(p, n) == 0) {
-  dy_span(out, p, 0, n);
+  bb_put_span(out, p, 0, n);
   return 0;
 }
   Dp* g = (Dp*)(dy_prog_new(n));
-  DySb* merged = (DySb*)(dy_sb_new((n + 64)));
+  ByteBuf* merged = (ByteBuf*)(bb_new((n + 64)));
   dy_parse(c, p, n, g, merged);
   if ((c[0]).err != 0) {
   return (0 - 1);
 }
-  DySb* setup = (DySb*)(dy_sb_new(4096));
+  ByteBuf* setup = (ByteBuf*)(bb_new(4096));
   int32_t has_setup = dy_compile(c, g, setup);
   if ((c[0]).err != 0) {
   return (0 - 1);
 }
-  DySb* portraits = (DySb*)(dy_sb_new(1024));
+  ByteBuf* portraits = (ByteBuf*)(bb_new(1024));
   dy_compile_portraits(c, g, portraits);
   if (has_setup == 0 && (portraits[0]).len == 0) {
-  dy_span(out, (merged[0]).p, 0, (merged[0]).len);
+  bb_put_span(out, (merged[0]).p, 0, (merged[0]).len);
   return 0;
 }
   int32_t needs_ga = 0;
@@ -38396,73 +38508,73 @@ int32_t dy_expand(DyC* c, uint8_t* p, int32_t n, DySb* out) {
   dy_prepend(merged, "import \"stdlib/gfx.flow\"\n");
 }
 }
-  DySb* cur = (DySb*)(merged);
+  ByteBuf* cur = (ByteBuf*)(merged);
   if ((portraits[0]).len > 0) {
   int32_t* hs = (int32_t*)(dy_i32s(2));
   hs[0] = 0;
   hs[1] = (portraits[0]).len;
   dy_strip((portraits[0]).p, hs);
-  DySb* nx = (DySb*)(dy_sb_new((((cur[0]).len + (portraits[0]).len) + 16)));
+  ByteBuf* nx = (ByteBuf*)(bb_new((((cur[0]).len + (portraits[0]).len) + 16)));
   int32_t at = dy_find_main_call((cur[0]).p, (cur[0]).len);
   if (at < 0) {
   int32_t* rs = (int32_t*)(dy_i32s(2));
   rs[0] = 0;
   rs[1] = (cur[0]).len;
   dy_rstrip((cur[0]).p, rs);
-  dy_span(nx, (cur[0]).p, 0, rs[1]);
-  dy_puts(nx, "\n\n");
-  dy_span(nx, (portraits[0]).p, hs[0], hs[1]);
-  dy_puts(nx, "\n");
+  bb_put_span(nx, (cur[0]).p, 0, rs[1]);
+  bb_puts(nx, "\n\n");
+  bb_put_span(nx, (portraits[0]).p, hs[0], hs[1]);
+  bb_puts(nx, "\n");
 } else {
-  dy_span(nx, (cur[0]).p, 0, at);
-  dy_puts(nx, "\n\n");
-  dy_span(nx, (portraits[0]).p, hs[0], hs[1]);
-  dy_puts(nx, "\n");
-  dy_span(nx, (cur[0]).p, at, (cur[0]).len);
+  bb_put_span(nx, (cur[0]).p, 0, at);
+  bb_puts(nx, "\n\n");
+  bb_put_span(nx, (portraits[0]).p, hs[0], hs[1]);
+  bb_puts(nx, "\n");
+  bb_put_span(nx, (cur[0]).p, at, (cur[0]).len);
 }
   cur = nx;
 }
   if (has_setup == 1) {
   int32_t end = dy_find_main_body((cur[0]).p, (cur[0]).len);
   if (end < 0) {
-  dy_span(out, (cur[0]).p, 0, (cur[0]).len);
-  dy_puts(out, "\n\nfunction main() -> i32 {\n");
-  dy_span(out, (setup[0]).p, 0, (setup[0]).len);
-  dy_puts(out, "\n    return 0\n}\n");
+  bb_put_span(out, (cur[0]).p, 0, (cur[0]).len);
+  bb_puts(out, "\n\nfunction main() -> i32 {\n");
+  bb_put_span(out, (setup[0]).p, 0, (setup[0]).len);
+  bb_puts(out, "\n    return 0\n}\n");
 } else {
-  dy_span(out, (cur[0]).p, 0, end);
-  dy_puts(out, "\n");
-  dy_span(out, (setup[0]).p, 0, (setup[0]).len);
-  dy_puts(out, "\n");
-  dy_span(out, (cur[0]).p, end, (cur[0]).len);
+  bb_put_span(out, (cur[0]).p, 0, end);
+  bb_puts(out, "\n");
+  bb_put_span(out, (setup[0]).p, 0, (setup[0]).len);
+  bb_puts(out, "\n");
+  bb_put_span(out, (cur[0]).p, end, (cur[0]).len);
 }
   return 0;
 }
-  dy_span(out, (cur[0]).p, 0, (cur[0]).len);
+  bb_put_span(out, (cur[0]).p, 0, (cur[0]).len);
   return 0;
 }
 
 DyC* dy_ctx_new(int32_t n) {
   DyC* c = (DyC*)((DyC*)(malloc(256)));
   (c[0]).err = 0;
-  { __typeof__((c[0]).msg) __flowc_st22599 = dy_sb_new(256); (c[0]).msg = __flowc_st22599; }
-  { __typeof__((c[0]).nm) __flowc_st22608 = dy_sb_new((n + 256)); (c[0]).nm = __flowc_st22608; }
+  { __typeof__((c[0]).msg) __flowc_st22354 = bb_new(256); (c[0]).msg = __flowc_st22354; }
+  { __typeof__((c[0]).nm) __flowc_st22363 = bb_new((n + 256)); (c[0]).nm = __flowc_st22363; }
   (c[0]).fcap = (n + 64);
-  { __typeof__((c[0]).fp) __flowc_st22626 = dy_f64s((c[0]).fcap); (c[0]).fp = __flowc_st22626; }
+  { __typeof__((c[0]).fp) __flowc_st22381 = dy_f64s((c[0]).fcap); (c[0]).fp = __flowc_st22381; }
   (c[0]).fnum = 0;
   (c[0]).bdcap = (n + 64);
-  { __typeof__((c[0]).bd_kind) __flowc_st22650 = dy_i32s((c[0]).bdcap); (c[0]).bd_kind = __flowc_st22650; }
-  { __typeof__((c[0]).bd_var) __flowc_st22660 = dy_i32s((c[0]).bdcap); (c[0]).bd_var = __flowc_st22660; }
-  { __typeof__((c[0]).bd_hz) __flowc_st22670 = dy_i32s((c[0]).bdcap); (c[0]).bd_hz = __flowc_st22670; }
+  { __typeof__((c[0]).bd_kind) __flowc_st22405 = dy_i32s((c[0]).bdcap); (c[0]).bd_kind = __flowc_st22405; }
+  { __typeof__((c[0]).bd_var) __flowc_st22415 = dy_i32s((c[0]).bdcap); (c[0]).bd_var = __flowc_st22415; }
+  { __typeof__((c[0]).bd_hz) __flowc_st22425 = dy_i32s((c[0]).bdcap); (c[0]).bd_hz = __flowc_st22425; }
   (c[0]).nbd = 0;
   (c[0]).glcap = (n + 64);
-  { __typeof__((c[0]).gl) __flowc_st22694 = dy_i32s((c[0]).glcap); (c[0]).gl = __flowc_st22694; }
+  { __typeof__((c[0]).gl) __flowc_st22449 = dy_i32s((c[0]).glcap); (c[0]).gl = __flowc_st22449; }
   (c[0]).ngl = 0;
   (c[0]).atcap = 64;
-  { __typeof__((c[0]).at_name) __flowc_st22713 = dy_i32s(64); (c[0]).at_name = __flowc_st22713; }
-  { __typeof__((c[0]).at_val) __flowc_st22720 = dy_f64s(64); (c[0]).at_val = __flowc_st22720; }
+  { __typeof__((c[0]).at_name) __flowc_st22468 = dy_i32s(64); (c[0]).at_name = __flowc_st22468; }
+  { __typeof__((c[0]).at_val) __flowc_st22475 = dy_f64s(64); (c[0]).at_val = __flowc_st22475; }
   (c[0]).nat = 0;
-  dy_putc((c[0]).nm, 0);
+  bb_putc((c[0]).nm, 0);
   return c;
 }
 
@@ -38474,12 +38586,12 @@ int32_t flowc_dynamics_expand_in_place(uint8_t* buf, int32_t n, int32_t cap) {
   return n;
 }
   DyC* c = (DyC*)(dy_ctx_new(n));
-  DySb* out = (DySb*)(dy_sb_new(((n * 2) + 4096)));
+  ByteBuf* out = (ByteBuf*)(bb_new(((n * 2) + 4096)));
   int32_t rc = dy_expand(c, buf, n, out);
   if (rc < 0) {
-  DySb* line = (DySb*)(dy_sb_new((((c[0]).msg[0]).len + 32)));
-  dy_puts(line, "flowc dynamics: ");
-  dy_span(line, ((c[0]).msg[0]).p, 0, ((c[0]).msg[0]).len);
+  ByteBuf* line = (ByteBuf*)(bb_new((((c[0]).msg[0]).len + 32)));
+  bb_puts(line, "flowc dynamics: ");
+  bb_put_span(line, ((c[0]).msg[0]).p, 0, ((c[0]).msg[0]).len);
   puts((const char*)((line[0]).p));
   return (0 - 1);
 }
@@ -38496,12 +38608,6 @@ int32_t flowc_dynamics_expand_in_place(uint8_t* buf, int32_t n, int32_t cap) {
   return (out[0]).len;
 }
 
-
-typedef struct FbBuf {
-  uint8_t* p;
-  int32_t len;
-  int32_t cap;
-} FbBuf;
 
 typedef struct Fb {
   uint8_t* src;
@@ -38526,7 +38632,7 @@ typedef struct Fb {
   int32_t* nx;
   int32_t* nfs;
   int32_t* nfe;
-  FbBuf* nm;
+  ByteBuf* nm;
   int32_t nf;
   int32_t* f_name;
   int32_t* f_line;
@@ -38596,11 +38702,11 @@ typedef struct Fb {
   int32_t err_flow;
   int32_t err_line;
   int32_t err_col;
-  FbBuf* emsg;
-  FbBuf* ehint;
+  ByteBuf* emsg;
+  ByteBuf* ehint;
   int32_t has_hint;
   int32_t cur;
-  FbBuf* out;
+  ByteBuf* out;
 } Fb;
 
 #undef TK_IDENT
@@ -38773,13 +38879,6 @@ static const int32_t OPX_IN = 100;
 static const int32_t OPX_NOT_WORD = 101;
 #undef FB_I64_MAX
 static const int64_t FB_I64_MAX = 9223372036854775807;
-FbBuf* fb_buf_new(int32_t cap);
-void fb_buf_free(FbBuf* b);
-void fb_putc(FbBuf* b, uint8_t ch);
-void fb_puts(FbBuf* b, const char* s);
-void fb_put_span(FbBuf* b, uint8_t* src, int32_t s, int32_t e);
-void fb_put_i64(FbBuf* b, int64_t v);
-void fb_put_int(FbBuf* b, int32_t v);
 int32_t fb_is_space(uint8_t ch);
 int32_t fb_is_digit(uint8_t ch);
 int32_t fb_is_hex(uint8_t ch);
@@ -38793,18 +38892,18 @@ const char* fb_op_name(int32_t op);
 uint8_t* fb_s(Fb* c, int32_t off);
 int32_t fb_intern_span(Fb* c, int32_t s, int32_t e);
 int32_t fb_intern(Fb* c, const char* s);
-int32_t fb_intern_buf(Fb* c, FbBuf* b);
+int32_t fb_intern_buf(Fb* c, ByteBuf* b);
 int32_t fb_tok_str(Fb* c, int32_t t);
 int32_t fb_name_eq(Fb* c, int32_t a, int32_t b);
 int32_t fb_name_is(Fb* c, int32_t a, const char* lit);
 int32_t fb_name_starts_uu(Fb* c, int32_t a);
-FbBuf* fb_err_begin(Fb* c, int32_t kind, int32_t line, int32_t col);
-FbBuf* fb_err_hint(Fb* c);
+ByteBuf* fb_err_begin(Fb* c, int32_t kind, int32_t line, int32_t col);
+ByteBuf* fb_err_hint(Fb* c);
 int32_t fb_contains(uint8_t* hay, const char* needle);
 void fb_auto_hint(Fb* c);
-FbBuf* fb_perr(Fb* c);
-FbBuf* fb_verr(Fb* c, int32_t line);
-FbBuf* fb_serr(Fb* c);
+ByteBuf* fb_perr(Fb* c);
+ByteBuf* fb_verr(Fb* c, int32_t line);
+ByteBuf* fb_serr(Fb* c);
 void fb_err_clear(Fb* c);
 int32_t fb_expand_len(uint8_t* p, int32_t s, int32_t e);
 int32_t fb_op2(int32_t* op, int32_t code, int32_t len);
@@ -38831,7 +38930,7 @@ int32_t fb_at_eof(Fb* c);
 int32_t fb_la(Fb* c);
 int32_t fb_la2(Fb* c);
 void fb_advance(Fb* c);
-void fb_put_ttype(Fb* c, FbBuf* b, int32_t t);
+void fb_put_ttype(Fb* c, ByteBuf* b, int32_t t);
 int32_t fb_expect(Fb* c, const char* name);
 int32_t fb_node(Fb* c, int32_t kind, int32_t tok);
 int32_t fb_node2(Fb* c, int32_t kind, int32_t tok, int32_t a, int32_t b);
@@ -38879,16 +38978,16 @@ void fb_add_name(Fb* c, int32_t kind, int32_t name);
 int32_t fb_has_name(Fb* c, int32_t kind, int32_t name);
 int64_t fb_pow10(int32_t k);
 int32_t fb_parse_duration(Fb* c, int32_t where_s, int64_t* ns, int32_t* text);
-void fb_put_tok(FbBuf* b, Fb* c, int32_t t);
-void fb_put_fname(FbBuf* b, Fb* c, int32_t f);
+void fb_put_tok(ByteBuf* b, Fb* c, int32_t t);
+void fb_put_fname(ByteBuf* b, Fb* c, int32_t f);
 int32_t fb_parse_becomes_body(Fb* c, int32_t f, int32_t kind, int32_t owner, const char* word, const char* what);
 int32_t fb_wrap_top(Fb* c, int32_t root, int32_t start_tok);
 int32_t fb_source_between(Fb* c, int32_t st, int32_t et);
 int32_t fb_line_start(Fb* c, int32_t ln);
 int32_t fb_line_end(Fb* c, int32_t off);
 int32_t fb_col_offset(Fb* c, int32_t ln, int32_t col);
-void fb_put_stripped(FbBuf* b, uint8_t* p, int32_t s, int32_t e);
-int32_t fb_put_part(FbBuf* b, uint8_t* p, int32_t s, int32_t e, int32_t first);
+void fb_put_stripped(ByteBuf* b, uint8_t* p, int32_t s, int32_t e);
+int32_t fb_put_part(ByteBuf* b, uint8_t* p, int32_t s, int32_t e, int32_t first);
 int32_t fb_parse_invariant(Fb* c, int32_t f, int32_t kind, const char* word);
 int32_t fb_parse_recognize(Fb* c, int32_t f);
 int32_t fb_parse_connect(Fb* c, int32_t f);
@@ -38916,7 +39015,7 @@ int32_t fb_check_booleanish(Fb* c, int32_t x, int32_t f, const char* word, int32
 int32_t fb_refs_inputs(Fb* c, int32_t x, int32_t f);
 int32_t fb_port_combinational(Fb* c, int32_t f, int32_t port);
 int32_t fb_single_port(Fb* c, int32_t sf, int32_t kind, const char* word, int32_t line);
-void fb_put_sorted_params(Fb* c, FbBuf* b, int32_t sf);
+void fb_put_sorted_params(Fb* c, ByteBuf* b, int32_t sf);
 int32_t fb_expand_pipelines(Fb* c, int32_t f);
 int32_t fb_is_member_type(Fb* c, int32_t ty);
 int32_t fb_is_scalar_type(Fb* c, int32_t ty);
@@ -38939,45 +39038,45 @@ int32_t fb_tok_ends(Fb* c, int32_t t, const char* lit);
 int32_t fb_digits_value(uint8_t* p, int32_t s, int32_t e);
 int32_t fb_count_everys(Fb* c, int32_t f);
 int32_t fb_count_whens(Fb* c, int32_t f);
-void fb_emit_expr(Fb* c, FbBuf* b, int32_t x);
-void fb_put_name(Fb* c, FbBuf* b, int32_t off);
-void fb_put_self(Fb* c, FbBuf* b, int32_t off);
-void fb_put_seconds(FbBuf* b, int64_t ns);
-void fb_put_mtype(Fb* c, FbBuf* b, int32_t i);
+void fb_emit_expr(Fb* c, ByteBuf* b, int32_t x);
+void fb_put_name(Fb* c, ByteBuf* b, int32_t off);
+void fb_put_self(Fb* c, ByteBuf* b, int32_t off);
+void fb_put_seconds(ByteBuf* b, int64_t ns);
+void fb_put_mtype(Fb* c, ByteBuf* b, int32_t i);
 int32_t fb_is_float_type(Fb* c, int32_t ty);
-void fb_put_dtype(Fb* c, FbBuf* b, int32_t i);
-void fb_put_dt(Fb* c, FbBuf* b, int32_t i);
+void fb_put_dtype(Fb* c, ByteBuf* b, int32_t i);
+void fb_put_dt(Fb* c, ByteBuf* b, int32_t i);
 int32_t fb_field_count(Fb* c, int32_t f);
 int32_t fb_field_kind(int32_t r);
-void fb_put_zero(Fb* c, FbBuf* b, int32_t ty);
-void fb_emit_struct(Fb* c, FbBuf* b, int32_t f);
-void fb_fn_head(Fb* c, FbBuf* b, int32_t f, const char* suffix, const char* params, const char* ret);
-void fb_self_param(Fb* c, FbBuf* b, int32_t f);
-void fb_emit_new(Fb* c, FbBuf* b, int32_t f);
+void fb_put_zero(Fb* c, ByteBuf* b, int32_t ty);
+void fb_emit_struct(Fb* c, ByteBuf* b, int32_t f);
+void fb_fn_head(Fb* c, ByteBuf* b, int32_t f, const char* suffix, const char* params, const char* ret);
+void fb_self_param(Fb* c, ByteBuf* b, int32_t f);
+void fb_emit_new(Fb* c, ByteBuf* b, int32_t f);
 int32_t fb_nth_when(Fb* c, int32_t f, int32_t k);
 int32_t fb_nth_every(Fb* c, int32_t f, int32_t k);
-void fb_emit_guard(Fb* c, FbBuf* b, int32_t f, int32_t w);
+void fb_emit_guard(Fb* c, ByteBuf* b, int32_t f, int32_t w);
 int32_t fb_has_outputs(Fb* c, int32_t f);
-void fb_emit_init(Fb* c, FbBuf* b, int32_t f);
+void fb_emit_init(Fb* c, ByteBuf* b, int32_t f);
 int32_t fb_nth_evolved(Fb* c, int32_t f, int32_t k);
 int32_t fb_count_evolved(Fb* c, int32_t f);
-void fb_emit_derivs(Fb* c, FbBuf* b, int32_t f);
-void fb_emit_derivs_call(Fb* c, FbBuf* b, int32_t f, const char* stage);
-void fb_emit_euler(Fb* c, FbBuf* b, int32_t f);
-void fb_emit_rk_stage(Fb* c, FbBuf* b, int32_t f, const char* stage, int32_t scale);
-void fb_emit_rk4(Fb* c, FbBuf* b, int32_t f);
-void fb_emit_every(Fb* c, FbBuf* b, int32_t f, int32_t k);
-void fb_emit_staged(Fb* c, FbBuf* b, int32_t f, int32_t kind, int32_t owner, const char* prefix, int32_t k);
-void fb_emit_event(Fb* c, FbBuf* b, int32_t f, int32_t k);
+void fb_emit_derivs(Fb* c, ByteBuf* b, int32_t f);
+void fb_emit_derivs_call(Fb* c, ByteBuf* b, int32_t f, const char* stage);
+void fb_emit_euler(Fb* c, ByteBuf* b, int32_t f);
+void fb_emit_rk_stage(Fb* c, ByteBuf* b, int32_t f, const char* stage, int32_t scale);
+void fb_emit_rk4(Fb* c, ByteBuf* b, int32_t f);
+void fb_emit_every(Fb* c, ByteBuf* b, int32_t f, int32_t k);
+void fb_emit_staged(Fb* c, ByteBuf* b, int32_t f, int32_t kind, int32_t owner, const char* prefix, int32_t k);
+void fb_emit_event(Fb* c, ByteBuf* b, int32_t f, int32_t k);
 int32_t fb_topo_children(Fb* c, int32_t f, int32_t* order);
-void fb_emit_child_steps(Fb* c, FbBuf* b, int32_t f);
+void fb_emit_child_steps(Fb* c, ByteBuf* b, int32_t f);
 int32_t fb_count_clauses(Fb* c, int32_t f);
 int32_t fb_nth_clause(Fb* c, int32_t f, int32_t idx);
-void fb_put_escaped(FbBuf* b, uint8_t* s);
-void fb_emit_step(Fb* c, FbBuf* b, int32_t f);
-void fb_emit_default_dt(Fb* c, FbBuf* b, int32_t f);
-void fb_emit_outputs(Fb* c, FbBuf* b, int32_t f);
-void fb_emit_check(Fb* c, FbBuf* b, int32_t f);
+void fb_put_escaped(ByteBuf* b, uint8_t* s);
+void fb_emit_step(Fb* c, ByteBuf* b, int32_t f);
+void fb_emit_default_dt(Fb* c, ByteBuf* b, int32_t f);
+void fb_emit_outputs(Fb* c, ByteBuf* b, int32_t f);
+void fb_emit_check(Fb* c, ByteBuf* b, int32_t f);
 void fb_mark_flow(Fb* c, int32_t f);
 void fb_lower_flow(Fb* c, int32_t f);
 int32_t* fb_alloc_i32(int32_t n);
@@ -38989,64 +39088,6 @@ void fb_report(Fb* c);
 int32_t fb_maybe_flow(uint8_t* p, int32_t n);
 int32_t fb_expand(Fb* c);
 int32_t flowc_flow_blocks_expand_in_place(uint8_t* buf, int32_t n, int32_t cap);
-FbBuf* fb_buf_new(int32_t cap) {
-  FbBuf* b = (FbBuf*)((FbBuf*)(malloc(16)));
-  { __typeof__((b[0]).p) __flowc_st64 = malloc((int64_t)((cap + 1))); (b[0]).p = __flowc_st64; }
-  (b[0]).len = 0;
-  (b[0]).cap = cap;
-  (b[0]).p[0] = 0;
-  return b;
-}
-
-void fb_buf_free(FbBuf* b) {
-  free((b[0]).p);
-  free((uint8_t*)(b));
-}
-
-void fb_putc(FbBuf* b, uint8_t ch) {
-  if (((b[0]).len + 1) >= (b[0]).cap) {
-  int32_t ncap = (((b[0]).cap * 2) + 64);
-  { __typeof__((b[0]).p) __flowc_st146 = realloc((b[0]).p, (int64_t)((ncap + 1))); (b[0]).p = __flowc_st146; }
-  (b[0]).cap = ncap;
-}
-  (b[0]).p[(b[0]).len] = ch;
-  (b[0]).len = ((b[0]).len + 1);
-  (b[0]).p[(b[0]).len] = 0;
-}
-
-void fb_puts(FbBuf* b, const char* s) {
-  uint8_t* sp = (uint8_t*)((uint8_t*)(s));
-  int32_t i = 0;
-  while (sp[i] != 0) {
-  fb_putc(b, sp[i]);
-  i = (i + 1);
-}
-}
-
-void fb_put_span(FbBuf* b, uint8_t* src, int32_t s, int32_t e) {
-  int32_t i = s;
-  while (i < e) {
-  fb_putc(b, src[i]);
-  i = (i + 1);
-}
-}
-
-void fb_put_i64(FbBuf* b, int64_t v) {
-  if (v < 0) {
-  fb_putc(b, 45);
-  fb_put_i64(b, (0 - v));
-  return;
-}
-  if (v >= 10) {
-  fb_put_i64(b, (v / 10));
-}
-  fb_putc(b, (uint8_t)((48 + (v % 10))));
-}
-
-void fb_put_int(FbBuf* b, int32_t v) {
-  fb_put_i64(b, (int64_t)(v));
-}
-
 int32_t fb_is_space(uint8_t ch) {
   if (ch == 32) {
   return 1;
@@ -39261,22 +39302,22 @@ uint8_t* fb_s(Fb* c, int32_t off) {
 
 int32_t fb_intern_span(Fb* c, int32_t s, int32_t e) {
   int32_t off = ((c[0]).nm[0]).len;
-  fb_put_span((c[0]).nm, (c[0]).src, s, e);
-  fb_putc((c[0]).nm, 0);
+  bb_put_span((c[0]).nm, (c[0]).src, s, e);
+  bb_putc((c[0]).nm, 0);
   return off;
 }
 
 int32_t fb_intern(Fb* c, const char* s) {
   int32_t off = ((c[0]).nm[0]).len;
-  fb_puts((c[0]).nm, s);
-  fb_putc((c[0]).nm, 0);
+  bb_puts((c[0]).nm, s);
+  bb_putc((c[0]).nm, 0);
   return off;
 }
 
-int32_t fb_intern_buf(Fb* c, FbBuf* b) {
+int32_t fb_intern_buf(Fb* c, ByteBuf* b) {
   int32_t off = ((c[0]).nm[0]).len;
-  fb_put_span((c[0]).nm, (b[0]).p, 0, (b[0]).len);
-  fb_putc((c[0]).nm, 0);
+  bb_put_span((c[0]).nm, (b[0]).p, 0, (b[0]).len);
+  bb_putc((c[0]).nm, 0);
   return off;
 }
 
@@ -39312,7 +39353,7 @@ int32_t fb_name_starts_uu(Fb* c, int32_t a) {
   return 0;
 }
 
-FbBuf* fb_err_begin(Fb* c, int32_t kind, int32_t line, int32_t col) {
+ByteBuf* fb_err_begin(Fb* c, int32_t kind, int32_t line, int32_t col) {
   (c[0]).err = kind;
   (c[0]).err_line = line;
   (c[0]).err_col = col;
@@ -39324,7 +39365,7 @@ FbBuf* fb_err_begin(Fb* c, int32_t kind, int32_t line, int32_t col) {
   return (c[0]).emsg;
 }
 
-FbBuf* fb_err_hint(Fb* c) {
+ByteBuf* fb_err_hint(Fb* c) {
   (c[0]).has_hint = 1;
   return (c[0]).ehint;
 }
@@ -39349,41 +39390,41 @@ int32_t fb_contains(uint8_t* hay, const char* needle) {
 void fb_auto_hint(Fb* c) {
   uint8_t* m = (uint8_t*)(((c[0]).emsg[0]).p);
   if (fb_contains(m, "Expected TokenType.RBRACE") == 1) {
-  fb_puts(fb_err_hint(c), "Missing closing brace '}'. Check for unbalanced braces.");
+  bb_puts(fb_err_hint(c), "Missing closing brace '}'. Check for unbalanced braces.");
   return;
 }
   if (fb_contains(m, "Expected TokenType.RPAREN") == 1) {
-  fb_puts(fb_err_hint(c), "Missing closing parenthesis ')'. Check function calls and expressions.");
+  bb_puts(fb_err_hint(c), "Missing closing parenthesis ')'. Check function calls and expressions.");
   return;
 }
   if (fb_contains(m, "Expected TokenType.SEMICOLON") == 1) {
-  fb_puts(fb_err_hint(c), "Semicolons are optional in FLOW. If you see this error, there may be a syntax issue before this point.");
+  bb_puts(fb_err_hint(c), "Semicolons are optional in FLOW. If you see this error, there may be a syntax issue before this point.");
   return;
 }
   if (fb_contains(m, "Expected TokenType.IDENTIFIER") == 1) {
-  fb_puts(fb_err_hint(c), "Expected a name (identifier) here. Names must start with a letter or underscore.");
+  bb_puts(fb_err_hint(c), "Expected a name (identifier) here. Names must start with a letter or underscore.");
   return;
 }
   if (fb_contains(m, "Unexpected token in expression") == 1) {
-  fb_puts(fb_err_hint(c), "This token cannot start an expression. Check for typos or missing operators.");
+  bb_puts(fb_err_hint(c), "This token cannot start an expression. Check for typos or missing operators.");
   return;
 }
   if (fb_contains(m, "Unexpected declaration") == 1) {
-  fb_puts(fb_err_hint(c), "This keyword cannot appear at the top level. Check for missing braces or incorrect nesting.");
+  bb_puts(fb_err_hint(c), "This keyword cannot appear at the top level. Check for missing braces or incorrect nesting.");
   return;
 }
 }
 
-FbBuf* fb_perr(Fb* c) {
+ByteBuf* fb_perr(Fb* c) {
   int32_t t = (c[0]).pos;
   return fb_err_begin(c, 1, (c[0]).tl[t], (c[0]).tc[t]);
 }
 
-FbBuf* fb_verr(Fb* c, int32_t line) {
+ByteBuf* fb_verr(Fb* c, int32_t line) {
   return fb_err_begin(c, 1, line, 0);
 }
 
-FbBuf* fb_serr(Fb* c) {
+ByteBuf* fb_serr(Fb* c) {
   return fb_err_begin(c, 2, 0, 0);
 }
 
@@ -40130,9 +40171,9 @@ void fb_advance(Fb* c) {
 }
 }
 
-void fb_put_ttype(Fb* c, FbBuf* b, int32_t t) {
-  fb_puts(b, "TokenType.");
-  fb_puts(b, fb_ttype(c, t));
+void fb_put_ttype(Fb* c, ByteBuf* b, int32_t t) {
+  bb_puts(b, "TokenType.");
+  bb_puts(b, fb_ttype(c, t));
 }
 
 int32_t fb_expect(Fb* c, const char* name) {
@@ -40147,10 +40188,10 @@ int32_t fb_expect(Fb* c, const char* name) {
   return t;
 }
 }
-  FbBuf* m = (FbBuf*)(fb_perr(c));
-  fb_puts(m, "Expected TokenType.");
-  fb_puts(m, name);
-  fb_puts(m, ", got ");
+  ByteBuf* m = (ByteBuf*)(fb_perr(c));
+  bb_puts(m, "Expected TokenType.");
+  bb_puts(m, name);
+  bb_puts(m, ", got ");
   fb_put_ttype(c, m, t);
   fb_auto_hint(c);
   return (0 - 1);
@@ -40161,15 +40202,15 @@ int32_t fb_node(Fb* c, int32_t kind, int32_t tok) {
   if (id >= (c[0]).ncap) {
   int32_t ncap = (((c[0]).ncap * 2) + 64);
   int64_t bytes = ((int64_t)(ncap) * 4);
-  { __typeof__((c[0]).nk) __flowc_st5112 = (int32_t*)(realloc((uint8_t*)((c[0]).nk), bytes)); (c[0]).nk = __flowc_st5112; }
-  { __typeof__((c[0]).nop) __flowc_st5129 = (int32_t*)(realloc((uint8_t*)((c[0]).nop), bytes)); (c[0]).nop = __flowc_st5129; }
-  { __typeof__((c[0]).ntok) __flowc_st5146 = (int32_t*)(realloc((uint8_t*)((c[0]).ntok), bytes)); (c[0]).ntok = __flowc_st5146; }
-  { __typeof__((c[0]).na) __flowc_st5163 = (int32_t*)(realloc((uint8_t*)((c[0]).na), bytes)); (c[0]).na = __flowc_st5163; }
-  { __typeof__((c[0]).nb) __flowc_st5180 = (int32_t*)(realloc((uint8_t*)((c[0]).nb), bytes)); (c[0]).nb = __flowc_st5180; }
-  { __typeof__((c[0]).nc) __flowc_st5197 = (int32_t*)(realloc((uint8_t*)((c[0]).nc), bytes)); (c[0]).nc = __flowc_st5197; }
-  { __typeof__((c[0]).nx) __flowc_st5214 = (int32_t*)(realloc((uint8_t*)((c[0]).nx), bytes)); (c[0]).nx = __flowc_st5214; }
-  { __typeof__((c[0]).nfs) __flowc_st5231 = (int32_t*)(realloc((uint8_t*)((c[0]).nfs), bytes)); (c[0]).nfs = __flowc_st5231; }
-  { __typeof__((c[0]).nfe) __flowc_st5248 = (int32_t*)(realloc((uint8_t*)((c[0]).nfe), bytes)); (c[0]).nfe = __flowc_st5248; }
+  { __typeof__((c[0]).nk) __flowc_st4839 = (int32_t*)(realloc((uint8_t*)((c[0]).nk), bytes)); (c[0]).nk = __flowc_st4839; }
+  { __typeof__((c[0]).nop) __flowc_st4856 = (int32_t*)(realloc((uint8_t*)((c[0]).nop), bytes)); (c[0]).nop = __flowc_st4856; }
+  { __typeof__((c[0]).ntok) __flowc_st4873 = (int32_t*)(realloc((uint8_t*)((c[0]).ntok), bytes)); (c[0]).ntok = __flowc_st4873; }
+  { __typeof__((c[0]).na) __flowc_st4890 = (int32_t*)(realloc((uint8_t*)((c[0]).na), bytes)); (c[0]).na = __flowc_st4890; }
+  { __typeof__((c[0]).nb) __flowc_st4907 = (int32_t*)(realloc((uint8_t*)((c[0]).nb), bytes)); (c[0]).nb = __flowc_st4907; }
+  { __typeof__((c[0]).nc) __flowc_st4924 = (int32_t*)(realloc((uint8_t*)((c[0]).nc), bytes)); (c[0]).nc = __flowc_st4924; }
+  { __typeof__((c[0]).nx) __flowc_st4941 = (int32_t*)(realloc((uint8_t*)((c[0]).nx), bytes)); (c[0]).nx = __flowc_st4941; }
+  { __typeof__((c[0]).nfs) __flowc_st4958 = (int32_t*)(realloc((uint8_t*)((c[0]).nfs), bytes)); (c[0]).nfs = __flowc_st4958; }
+  { __typeof__((c[0]).nfe) __flowc_st4975 = (int32_t*)(realloc((uint8_t*)((c[0]).nfe), bytes)); (c[0]).nfe = __flowc_st4975; }
   (c[0]).ncap = ncap;
 }
   (c[0]).nk[id] = kind;
@@ -40260,27 +40301,27 @@ int32_t fb_parse_type(Fb* c) {
   if (inner < 0) {
   return (0 - 1);
 }
-  FbBuf* b = (FbBuf*)(fb_buf_new(32));
-  fb_puts(b, (const char*)(fb_s(c, name)));
-  fb_putc(b, 95);
+  ByteBuf* b = (ByteBuf*)(bb_new(32));
+  bb_puts(b, (const char*)(fb_s(c, name)));
+  bb_putc(b, 95);
   if (fb_name_is(c, name, "array") == 1 && fb_is_op(c, (c[0]).pos, OP_COMMA) == 1) {
   fb_advance(c);
   int32_t st = (c[0]).pos;
   if ((c[0]).tk[st] != TK_NUM) {
-  FbBuf* m = (FbBuf*)(fb_perr(c));
-  fb_puts(m, "array size must be an integer literal, got ");
+  ByteBuf* m = (ByteBuf*)(fb_perr(c));
+  bb_puts(m, "array size must be an integer literal, got ");
   fb_put_ttype(c, m, st);
-  fb_puts(fb_err_hint(c), "use a non-negative integer literal for the array size, e.g. 4");
-  fb_buf_free(b);
+  bb_puts(fb_err_hint(c), "use a non-negative integer literal for the array size, e.g. 4");
+  bb_free(b);
   return (0 - 1);
 }
-  fb_put_span(b, (c[0]).src, (c[0]).ts[st], (c[0]).te[st]);
-  fb_putc(b, 95);
+  bb_put_span(b, (c[0]).src, (c[0]).ts[st], (c[0]).te[st]);
+  bb_putc(b, 95);
   fb_advance(c);
 }
-  fb_puts(b, (const char*)(fb_s(c, inner)));
+  bb_puts(b, (const char*)(fb_s(c, inner)));
   int32_t out = fb_intern_buf(c, b);
-  fb_buf_free(b);
+  bb_free(b);
   if (fb_expect_greater(c) < 0) {
   return (0 - 1);
 }
@@ -40291,36 +40332,36 @@ int32_t fb_parse_type(Fb* c) {
   if (fb_expect(c, "RBRACKET") < 0) {
   return (0 - 1);
 }
-  FbBuf* b2 = (FbBuf*)(fb_buf_new(32));
-  fb_puts(b2, "array_");
-  fb_puts(b2, (const char*)(fb_s(c, name)));
+  ByteBuf* b2 = (ByteBuf*)(bb_new(32));
+  bb_puts(b2, "array_");
+  bb_puts(b2, (const char*)(fb_s(c, name)));
   int32_t out2 = fb_intern_buf(c, b2);
-  fb_buf_free(b2);
+  bb_free(b2);
   return out2;
 }
   if (fb_is_op(c, cur, OP_LESS) == 1) {
   fb_advance(c);
-  FbBuf* b3 = (FbBuf*)(fb_buf_new(32));
-  fb_puts(b3, (const char*)(fb_s(c, name)));
+  ByteBuf* b3 = (ByteBuf*)(bb_new(32));
+  bb_puts(b3, (const char*)(fb_s(c, name)));
   int32_t a0 = fb_parse_type(c);
   if (a0 < 0) {
-  fb_buf_free(b3);
+  bb_free(b3);
   return (0 - 1);
 }
-  fb_putc(b3, 95);
-  fb_puts(b3, (const char*)(fb_s(c, a0)));
+  bb_putc(b3, 95);
+  bb_puts(b3, (const char*)(fb_s(c, a0)));
   while (fb_is_op(c, (c[0]).pos, OP_COMMA) == 1) {
   fb_advance(c);
   int32_t a1 = fb_parse_type(c);
   if (a1 < 0) {
-  fb_buf_free(b3);
+  bb_free(b3);
   return (0 - 1);
 }
-  fb_putc(b3, 95);
-  fb_puts(b3, (const char*)(fb_s(c, a1)));
+  bb_putc(b3, 95);
+  bb_puts(b3, (const char*)(fb_s(c, a1)));
 }
   int32_t out3 = fb_intern_buf(c, b3);
-  fb_buf_free(b3);
+  bb_free(b3);
   if (fb_expect_greater(c) < 0) {
   return (0 - 1);
 }
@@ -40332,8 +40373,8 @@ int32_t fb_parse_type(Fb* c) {
   fb_advance(c);
   return fb_tok_str(c, t);
 }
-  FbBuf* m2 = (FbBuf*)(fb_serr(c));
-  fb_puts(m2, "Unexpected type token: ");
+  ByteBuf* m2 = (ByteBuf*)(fb_serr(c));
+  bb_puts(m2, "Unexpected type token: ");
   fb_put_ttype(c, m2, t);
   return (0 - 1);
 }
@@ -40738,7 +40779,7 @@ int32_t fb_parse_struct_lit(Fb* c, int32_t name_tok) {
   int32_t fields = (0 - 1);
   while (fb_is_op(c, (c[0]).pos, OP_RBRACE) == 0) {
   if (fb_at_eof(c) == 1) {
-  fb_puts(fb_serr(c), "Unterminated struct literal: expected '}' before end of file");
+  bb_puts(fb_serr(c), "Unterminated struct literal: expected '}' before end of file");
   return (0 - 1);
 }
   int32_t ft2 = fb_expect(c, "IDENTIFIER");
@@ -40779,7 +40820,7 @@ int32_t fb_skip_braces(Fb* c) {
 }
   fb_advance(c);
 }
-  fb_puts(fb_serr(c), "Unterminated block: expected '}' before end of file");
+  bb_puts(fb_serr(c), "Unterminated block: expected '}' before end of file");
   return (0 - 1);
 }
 
@@ -40850,7 +40891,7 @@ int32_t fb_parse_if_expr(Fb* c) {
   return (0 - 1);
 }
   if (fb_tt_is(c, (c[0]).pos, "ELSE") == 0) {
-  fb_puts(fb_serr(c), "if-expression requires an else branch");
+  bb_puts(fb_serr(c), "if-expression requires an else branch");
   return (0 - 1);
 }
   fb_advance(c);
@@ -40965,7 +41006,7 @@ int32_t fb_parse_primary(Fb* c) {
   if (fb_is_ident(c, u) == 1 && (c[0]).tl[u] == (c[0]).tl[t] && fb_is_upper((c[0]).src[(c[0]).ts[u]]) == 1) {
   fb_advance(c);
   int32_t q = fb_node2(c, N_CAST, u, lit, (0 - 1));
-  { __typeof__((c[0]).nop[q]) __flowc_st8632 = fb_tok_str(c, u); (c[0]).nop[q] = __flowc_st8632; }
+  { __typeof__((c[0]).nop[q]) __flowc_st8359 = fb_tok_str(c, u); (c[0]).nop[q] = __flowc_st8359; }
   return q;
 }
   return lit;
@@ -41058,8 +41099,8 @@ int32_t fb_parse_primary(Fb* c) {
   if (fb_tt_is(c, t, "IF") == 1) {
   return fb_parse_if_expr(c);
 }
-  FbBuf* m = (FbBuf*)(fb_serr(c));
-  fb_puts(m, "Unexpected token in expression: ");
+  ByteBuf* m = (ByteBuf*)(fb_serr(c));
+  bb_puts(m, "Unexpected token in expression: ");
   fb_put_ttype(c, m, t);
   return (0 - 1);
 }
@@ -41085,10 +41126,10 @@ int32_t fb_pipe_args(Fb* c, int32_t piped, int32_t args) {
   return piped;
 }
   if (holes > 1) {
-  FbBuf* m = (FbBuf*)(fb_perr(c));
-  fb_puts(m, "Pipeline placeholder '_' may appear at most once per '|>' stage (found ");
-  fb_put_int(m, holes);
-  fb_puts(m, "); the piped value fills a single slot");
+  ByteBuf* m = (ByteBuf*)(fb_perr(c));
+  bb_puts(m, "Pipeline placeholder '_' may appear at most once per '|>' stage (found ");
+  bb_put_i32(m, holes);
+  bb_puts(m, "); the piped value fills a single slot");
   return (0 - 2);
 }
   int32_t head = (0 - 1);
@@ -41111,7 +41152,7 @@ int32_t fb_parse_stage_params(Fb* c, int32_t name_tok, int32_t source) {
   while (fb_is_op(c, (c[0]).pos, OP_RBRACE) == 0) {
   int32_t pt = (c[0]).pos;
   if (fb_is_ident(c, pt) == 0) {
-  fb_puts(fb_perr(c), "Expected a parameter name in flow stage params");
+  bb_puts(fb_perr(c), "Expected a parameter name in flow stage params");
   return (0 - 1);
 }
   fb_advance(c);
@@ -41121,10 +41162,10 @@ int32_t fb_parse_stage_params(Fb* c, int32_t name_tok, int32_t source) {
   int32_t k = params;
   while (k >= 0) {
   if (fb_tok_span_eq(c, (c[0]).ntok[k], pt) == 1) {
-  FbBuf* m = (FbBuf*)(fb_perr(c));
-  fb_puts(m, "Duplicate stage parameter '");
-  fb_put_span(m, (c[0]).src, (c[0]).ts[pt], (c[0]).te[pt]);
-  fb_puts(m, "'");
+  ByteBuf* m = (ByteBuf*)(fb_perr(c));
+  bb_puts(m, "Duplicate stage parameter '");
+  bb_put_span(m, (c[0]).src, (c[0]).ts[pt], (c[0]).te[pt]);
+  bb_puts(m, "'");
   return (0 - 1);
 }
   k = (c[0]).nx[k];
@@ -41141,10 +41182,10 @@ int32_t fb_parse_stage_params(Fb* c, int32_t name_tok, int32_t source) {
 }
 }
   if (params < 0) {
-  FbBuf* m2 = (FbBuf*)(fb_perr(c));
-  fb_puts(m2, "flow stage '");
-  fb_put_span(m2, (c[0]).src, (c[0]).ts[name_tok], (c[0]).te[name_tok]);
-  fb_puts(m2, "' has empty '{}'; drop the braces or add `param: value` overrides");
+  ByteBuf* m2 = (ByteBuf*)(fb_perr(c));
+  bb_puts(m2, "flow stage '");
+  bb_put_span(m2, (c[0]).src, (c[0]).ts[name_tok], (c[0]).te[name_tok]);
+  bb_puts(m2, "' has empty '{}'; drop the braces or add `param: value` overrides");
   return (0 - 1);
 }
   if (fb_expect(c, "RBRACE") < 0) {
@@ -41175,15 +41216,15 @@ int32_t fb_parse_fork(Fb* c, int32_t t, int32_t source) {
   while (fb_is_op(c, (c[0]).pos, OP_RBRACE) == 0) {
   int32_t ft = (c[0]).pos;
   if (fb_is_ident(c, ft) == 0) {
-  fb_puts(fb_perr(c), "Expected a fork field name before '='");
+  bb_puts(fb_perr(c), "Expected a fork field name before '='");
   return (0 - 1);
 }
   fb_advance(c);
   if (fb_is_op(c, (c[0]).pos, OP_COLON) == 1) {
-  FbBuf* m = (FbBuf*)(fb_perr(c));
-  fb_puts(m, "Fork block fields use '=' (a pipeline), not ':'; write `");
+  ByteBuf* m = (ByteBuf*)(fb_perr(c));
+  bb_puts(m, "Fork block fields use '=' (a pipeline), not ':'; write `");
   fb_put_tok(m, c, ft);
-  fb_puts(m, "  = source-pipeline`");
+  bb_puts(m, "  = source-pipeline`");
   return (0 - 1);
 }
   if (fb_expect(c, "ASSIGN") < 0) {
@@ -41192,10 +41233,10 @@ int32_t fb_parse_fork(Fb* c, int32_t t, int32_t source) {
   int32_t q = first_field;
   while (q < ft) {
   if (fb_is_ident(c, q) == 1 && fb_is_op(c, (q + 1), OP_ASSIGN) == 1 && fb_tok_span_eq(c, q, ft) == 1 && fb_fork_field_start(c, first_field, q) == 1) {
-  FbBuf* m2 = (FbBuf*)(fb_perr(c));
-  fb_puts(m2, "Duplicate fork field '");
+  ByteBuf* m2 = (ByteBuf*)(fb_perr(c));
+  bb_puts(m2, "Duplicate fork field '");
   fb_put_tok(m2, c, ft);
-  fb_puts(m2, "'");
+  bb_puts(m2, "'");
   return (0 - 1);
 }
   q = (q + 1);
@@ -41207,7 +41248,7 @@ int32_t fb_parse_fork(Fb* c, int32_t t, int32_t source) {
   int32_t src = fb_node(c, N_OPAQUE, ft);
   int32_t k = (c[0]).nk[rhs];
   if (k != N_CALL && k != N_METHOD && k != N_VAR) {
-  fb_puts(fb_serr(c), "Pipeline '|>' must be followed by a function call, method call, function name, declarative sort, or fork block (e.g. `x |> f()`, `x |> f`, `x |> sort by .score`, or `x |> Record { a = f, b = g }`)");
+  bb_puts(fb_serr(c), "Pipeline '|>' must be followed by a function call, method call, function name, declarative sort, or fork block (e.g. `x |> f()`, `x |> f`, `x |> sort by .score`, or `x |> Record { a = f, b = g }`)");
   return (0 - 1);
 }
   if (fb_parse_pipeline(c, src) < 0) {
@@ -41219,7 +41260,7 @@ int32_t fb_parse_fork(Fb* c, int32_t t, int32_t source) {
 }
 }
   if (nfields == 0) {
-  fb_puts(fb_perr(c), "Fork block must have at least one `field = …` branch");
+  bb_puts(fb_perr(c), "Fork block must have at least one `field = …` branch");
   return (0 - 1);
 }
   if (fb_expect(c, "RBRACE") < 0) {
@@ -41271,7 +41312,7 @@ int32_t fb_parse_pipeline(Fb* c, int32_t left0) {
 }
   if (fb_is_ident(c, (c[0]).pos) == 1 && fb_is_op(c, fb_la(c), OP_COLON) == 1) {
   if (rec < 0) {
-  fb_puts(fb_perr(c), "an anonymous `|> { ... }` is a fork block and uses '=' branches; ':' parameter fields need a named flow stage");
+  bb_puts(fb_perr(c), "an anonymous `|> { ... }` is a fork block and uses '=' branches; ':' parameter fields need a named flow stage");
   return (0 - 1);
 }
   left = fb_parse_stage_params(c, rec, left);
@@ -41310,7 +41351,7 @@ int32_t fb_parse_pipeline(Fb* c, int32_t left0) {
   (c[0]).nx[left] = (0 - 1);
   left = fb_node2(c, N_CALL, (c[0]).ntok[rhs], left, (0 - 1));
 } else {
-  fb_puts(fb_serr(c), "Pipeline '|>' must be followed by a function call, method call, function name, declarative sort, or fork block (e.g. `x |> f()`, `x |> f`, `x |> sort by .score`, or `x |> Record { a = f, b = g }`)");
+  bb_puts(fb_serr(c), "Pipeline '|>' must be followed by a function call, method call, function name, declarative sort, or fork block (e.g. `x |> f()`, `x |> f`, `x |> sort by .score`, or `x |> Record { a = f, b = g }`)");
   return (0 - 1);
 }
 }
@@ -41378,12 +41419,12 @@ int64_t fb_pow10(int32_t k) {
 int32_t fb_parse_duration(Fb* c, int32_t where_s, int64_t* ns, int32_t* text) {
   int32_t nt = (c[0]).pos;
   if ((c[0]).tk[nt] != TK_NUM) {
-  FbBuf* m = (FbBuf*)(fb_perr(c));
-  fb_puts(m, "Expected a duration in ");
-  fb_puts(m, (const char*)(fb_s(c, where_s)));
-  fb_puts(m, ", got ");
+  ByteBuf* m = (ByteBuf*)(fb_perr(c));
+  bb_puts(m, "Expected a duration in ");
+  bb_puts(m, (const char*)(fb_s(c, where_s)));
+  bb_puts(m, ", got ");
   fb_put_ttype(c, m, nt);
-  fb_puts(fb_err_hint(c), "write a number with a time-unit suffix, e.g. '10 ms' (units: ns, us, ms, s, min)");
+  bb_puts(fb_err_hint(c), "write a number with a time-unit suffix, e.g. '10 ms' (units: ns, us, ms, s, min)");
   return (0 - 1);
 }
   fb_advance(c);
@@ -41409,29 +41450,29 @@ int32_t fb_parse_duration(Fb* c, int32_t where_s, int64_t* ns, int32_t* text) {
 }
 }
   if (upow < 0) {
-  FbBuf* m2 = (FbBuf*)(fb_perr(c));
-  fb_puts(m2, "Expected a time unit after '");
-  fb_put_span(m2, (c[0]).src, (c[0]).ts[nt], (c[0]).te[nt]);
-  fb_puts(m2, "' in ");
-  fb_puts(m2, (const char*)(fb_s(c, where_s)));
-  fb_puts(m2, ", got ");
+  ByteBuf* m2 = (ByteBuf*)(fb_perr(c));
+  bb_puts(m2, "Expected a time unit after '");
+  bb_put_span(m2, (c[0]).src, (c[0]).ts[nt], (c[0]).te[nt]);
+  bb_puts(m2, "' in ");
+  bb_puts(m2, (const char*)(fb_s(c, where_s)));
+  bb_puts(m2, ", got ");
   if (fb_is_ident(c, st) == 1) {
-  fb_putc(m2, 39);
-  fb_put_span(m2, (c[0]).src, (c[0]).ts[st], (c[0]).te[st]);
-  fb_putc(m2, 39);
+  bb_putc(m2, 39);
+  bb_put_span(m2, (c[0]).src, (c[0]).ts[st], (c[0]).te[st]);
+  bb_putc(m2, 39);
 } else {
   fb_put_ttype(c, m2, st);
 }
-  fb_puts(fb_err_hint(c), "valid time units: ns, us, ms, s, min");
+  bb_puts(fb_err_hint(c), "valid time units: ns, us, ms, s, min");
   return (0 - 1);
 }
   fb_advance(c);
-  FbBuf* tb = (FbBuf*)(fb_buf_new(32));
-  fb_put_span(tb, (c[0]).src, (c[0]).ts[nt], (c[0]).te[nt]);
-  fb_putc(tb, 32);
-  fb_put_span(tb, (c[0]).src, (c[0]).ts[st], (c[0]).te[st]);
-  { __typeof__(text[0]) __flowc_st10902 = fb_intern_buf(c, tb); text[0] = __flowc_st10902; }
-  fb_buf_free(tb);
+  ByteBuf* tb = (ByteBuf*)(bb_new(32));
+  bb_put_span(tb, (c[0]).src, (c[0]).ts[nt], (c[0]).te[nt]);
+  bb_putc(tb, 32);
+  bb_put_span(tb, (c[0]).src, (c[0]).ts[st], (c[0]).te[st]);
+  { __typeof__(text[0]) __flowc_st10629 = fb_intern_buf(c, tb); text[0] = __flowc_st10629; }
+  bb_free(tb);
   uint8_t* p = (uint8_t*)((c[0]).src);
   int32_t s = (c[0]).ts[nt];
   int32_t e = (c[0]).te[nt];
@@ -41549,34 +41590,34 @@ int32_t fb_parse_duration(Fb* c, int32_t where_s, int64_t* ns, int32_t* text) {
 }
 }
   if (whole == 0) {
-  FbBuf* m3 = (FbBuf*)(fb_perr(c));
-  fb_puts(m3, "Duration '");
-  fb_puts(m3, (const char*)(fb_s(c, text[0])));
-  fb_puts(m3, "' in ");
-  fb_puts(m3, (const char*)(fb_s(c, where_s)));
-  fb_puts(m3, " is not a whole number of nanoseconds; time is not silently rounded");
-  fb_puts(fb_err_hint(c), "use a finer unit, e.g. '500 us' instead of '0.5 ms'");
+  ByteBuf* m3 = (ByteBuf*)(fb_perr(c));
+  bb_puts(m3, "Duration '");
+  bb_puts(m3, (const char*)(fb_s(c, text[0])));
+  bb_puts(m3, "' in ");
+  bb_puts(m3, (const char*)(fb_s(c, where_s)));
+  bb_puts(m3, " is not a whole number of nanoseconds; time is not silently rounded");
+  bb_puts(fb_err_hint(c), "use a finer unit, e.g. '500 us' instead of '0.5 ms'");
   return (0 - 1);
 }
   if (over == 1) {
-  FbBuf* m4 = (FbBuf*)(fb_perr(c));
-  fb_puts(m4, "Duration '");
-  fb_puts(m4, (const char*)(fb_s(c, text[0])));
-  fb_puts(m4, "' in ");
-  fb_puts(m4, (const char*)(fb_s(c, where_s)));
-  fb_puts(m4, " overflows the i64 nanosecond range");
+  ByteBuf* m4 = (ByteBuf*)(fb_perr(c));
+  bb_puts(m4, "Duration '");
+  bb_puts(m4, (const char*)(fb_s(c, text[0])));
+  bb_puts(m4, "' in ");
+  bb_puts(m4, (const char*)(fb_s(c, where_s)));
+  bb_puts(m4, " overflows the i64 nanosecond range");
   return (0 - 1);
 }
   ns[0] = val;
   return 0;
 }
 
-void fb_put_tok(FbBuf* b, Fb* c, int32_t t) {
-  fb_put_span(b, (c[0]).src, (c[0]).ts[t], (c[0]).te[t]);
+void fb_put_tok(ByteBuf* b, Fb* c, int32_t t) {
+  bb_put_span(b, (c[0]).src, (c[0]).ts[t], (c[0]).te[t]);
 }
 
-void fb_put_fname(FbBuf* b, Fb* c, int32_t f) {
-  fb_puts(b, (const char*)(fb_s(c, (c[0]).f_name[f])));
+void fb_put_fname(ByteBuf* b, Fb* c, int32_t f) {
+  bb_puts(b, (const char*)(fb_s(c, (c[0]).f_name[f])));
 }
 
 int32_t fb_parse_becomes_body(Fb* c, int32_t f, int32_t kind, int32_t owner, const char* word, const char* what) {
@@ -41585,29 +41626,29 @@ int32_t fb_parse_becomes_body(Fb* c, int32_t f, int32_t kind, int32_t owner, con
 }
   while (fb_is_op(c, (c[0]).pos, OP_RBRACE) == 0) {
   if (fb_at_eof(c) == 1) {
-  FbBuf* m = (FbBuf*)(fb_perr(c));
-  fb_puts(m, "Unterminated '");
-  fb_puts(m, word);
-  fb_puts(m, "' body in flow '");
+  ByteBuf* m = (ByteBuf*)(fb_perr(c));
+  bb_puts(m, "Unterminated '");
+  bb_puts(m, word);
+  bb_puts(m, "' body in flow '");
   fb_put_fname(m, c, f);
-  fb_puts(m, "': expected '}' before end of file");
+  bb_puts(m, "': expected '}' before end of file");
   return (0 - 1);
 }
   int32_t st = (c[0]).pos;
   int32_t la = fb_la(c);
   if (fb_is_ident(c, st) == 0 || fb_is_word(c, la, "becomes") == 0) {
-  FbBuf* m2 = (FbBuf*)(fb_perr(c));
-  fb_puts(m2, "Unexpected statement in '");
-  fb_puts(m2, word);
-  fb_puts(m2, "' body of flow '");
+  ByteBuf* m2 = (ByteBuf*)(fb_perr(c));
+  bb_puts(m2, "Unexpected statement in '");
+  bb_puts(m2, word);
+  bb_puts(m2, "' body of flow '");
   fb_put_fname(m2, c, f);
-  fb_puts(m2, "'");
-  FbBuf* h = (FbBuf*)(fb_err_hint(c));
-  fb_puts(h, "'");
-  fb_puts(h, word);
-  fb_puts(h, "' bodies contain ");
-  fb_puts(h, what);
-  fb_puts(h, " in this version: 'x becomes expr'");
+  bb_puts(m2, "'");
+  ByteBuf* h = (ByteBuf*)(fb_err_hint(c));
+  bb_puts(h, "'");
+  bb_puts(h, word);
+  bb_puts(h, "' bodies contain ");
+  bb_puts(h, what);
+  bb_puts(h, " in this version: 'x becomes expr'");
   return (0 - 1);
 }
   fb_advance(c);
@@ -41620,8 +41661,8 @@ int32_t fb_parse_becomes_body(Fb* c, int32_t f, int32_t kind, int32_t owner, con
   int32_t i = (c[0]).nbc;
   (c[0]).bc_kind[i] = kind;
   (c[0]).bc_owner[i] = owner;
-  { __typeof__((c[0]).bc_target[i]) __flowc_st11737 = fb_tok_str(c, st); (c[0]).bc_target[i] = __flowc_st11737; }
-  { __typeof__((c[0]).bc_expr[i]) __flowc_st11748 = fb_wrap_top(c, rhs, rhs_s); (c[0]).bc_expr[i] = __flowc_st11748; }
+  { __typeof__((c[0]).bc_target[i]) __flowc_st11464 = fb_tok_str(c, st); (c[0]).bc_target[i] = __flowc_st11464; }
+  { __typeof__((c[0]).bc_expr[i]) __flowc_st11475 = fb_wrap_top(c, rhs, rhs_s); (c[0]).bc_expr[i] = __flowc_st11475; }
   (c[0]).bc_line[i] = (c[0]).tl[st];
   (c[0]).nbc = (i + 1);
 }
@@ -41636,7 +41677,7 @@ int32_t fb_wrap_top(Fb* c, int32_t root, int32_t start_tok) {
 
 int32_t fb_source_between(Fb* c, int32_t st, int32_t et) {
   uint8_t* p = (uint8_t*)((c[0]).src);
-  FbBuf* b = (FbBuf*)(fb_buf_new(64));
+  ByteBuf* b = (ByteBuf*)(bb_new(64));
   int32_t sl = (c[0]).tl[st];
   int32_t el = (c[0]).tl[et];
   int32_t s_off = fb_col_offset(c, sl, (c[0]).tc[st]);
@@ -41661,7 +41702,7 @@ int32_t fb_source_between(Fb* c, int32_t st, int32_t et) {
 }
 }
   int32_t out = fb_intern_buf(c, b);
-  fb_buf_free(b);
+  bb_free(b);
   return out;
 }
 
@@ -41713,7 +41754,7 @@ int32_t fb_col_offset(Fb* c, int32_t ln, int32_t col) {
   return i;
 }
 
-void fb_put_stripped(FbBuf* b, uint8_t* p, int32_t s, int32_t e) {
+void fb_put_stripped(ByteBuf* b, uint8_t* p, int32_t s, int32_t e) {
   int32_t a = s;
   int32_t z = e;
   while (a < z && fb_is_space(p[a]) == 1) {
@@ -41722,10 +41763,10 @@ void fb_put_stripped(FbBuf* b, uint8_t* p, int32_t s, int32_t e) {
   while (z > a && fb_is_space(p[(z - 1)]) == 1) {
   z = (z - 1);
 }
-  fb_put_span(b, p, a, z);
+  bb_put_span(b, p, a, z);
 }
 
-int32_t fb_put_part(FbBuf* b, uint8_t* p, int32_t s, int32_t e, int32_t first) {
+int32_t fb_put_part(ByteBuf* b, uint8_t* p, int32_t s, int32_t e, int32_t first) {
   int32_t a = s;
   int32_t z = e;
   while (a < z && fb_is_space(p[a]) == 1) {
@@ -41738,9 +41779,9 @@ int32_t fb_put_part(FbBuf* b, uint8_t* p, int32_t s, int32_t e, int32_t first) {
   return first;
 }
   if (first == 0) {
-  fb_putc(b, 32);
+  bb_putc(b, 32);
 }
-  fb_put_span(b, p, a, z);
+  bb_put_span(b, p, a, z);
   return 0;
 }
 
@@ -41752,12 +41793,12 @@ int32_t fb_parse_invariant(Fb* c, int32_t f, int32_t kind, const char* word) {
   int32_t count = 0;
   while (fb_is_op(c, (c[0]).pos, OP_RBRACE) == 0) {
   if (fb_at_eof(c) == 1) {
-  FbBuf* m = (FbBuf*)(fb_perr(c));
-  fb_puts(m, "Unterminated '");
-  fb_puts(m, word);
-  fb_puts(m, "' body in flow '");
+  ByteBuf* m = (ByteBuf*)(fb_perr(c));
+  bb_puts(m, "Unterminated '");
+  bb_puts(m, word);
+  bb_puts(m, "' body in flow '");
   fb_put_fname(m, c, f);
-  fb_puts(m, "': expected '}' before end of file");
+  bb_puts(m, "': expected '}' before end of file");
   return (0 - 1);
 }
   int32_t st = (c[0]).pos;
@@ -41768,9 +41809,9 @@ int32_t fb_parse_invariant(Fb* c, int32_t f, int32_t kind, const char* word) {
   int32_t i = (c[0]).niv;
   (c[0]).iv_flow[i] = f;
   (c[0]).iv_kind[i] = kind;
-  { __typeof__((c[0]).iv_expr[i]) __flowc_st12435 = fb_wrap_top(c, ex, st); (c[0]).iv_expr[i] = __flowc_st12435; }
+  { __typeof__((c[0]).iv_expr[i]) __flowc_st12162 = fb_wrap_top(c, ex, st); (c[0]).iv_expr[i] = __flowc_st12162; }
   (c[0]).iv_line[i] = (c[0]).tl[st];
-  { __typeof__((c[0]).iv_text[i]) __flowc_st12462 = fb_source_between(c, st, (c[0]).pos); (c[0]).iv_text[i] = __flowc_st12462; }
+  { __typeof__((c[0]).iv_text[i]) __flowc_st12189 = fb_source_between(c, st, (c[0]).pos); (c[0]).iv_text[i] = __flowc_st12189; }
   (c[0]).niv = (i + 1);
   count = (count + 1);
 }
@@ -41778,16 +41819,16 @@ int32_t fb_parse_invariant(Fb* c, int32_t f, int32_t kind, const char* word) {
   return (0 - 1);
 }
   if (count == 0) {
-  FbBuf* m2 = (FbBuf*)(fb_perr(c));
-  fb_puts(m2, "'");
-  fb_puts(m2, word);
-  fb_puts(m2, "' block in flow '");
+  ByteBuf* m2 = (ByteBuf*)(fb_perr(c));
+  bb_puts(m2, "'");
+  bb_puts(m2, word);
+  bb_puts(m2, "' block in flow '");
   fb_put_fname(m2, c, f);
-  fb_puts(m2, "' needs at least one boolean expression");
-  FbBuf* h = (FbBuf*)(fb_err_hint(c));
-  fb_puts(h, "write '");
-  fb_puts(h, word);
-  fb_puts(h, " { x < 1.0 }' or remove the block");
+  bb_puts(m2, "' needs at least one boolean expression");
+  ByteBuf* h = (ByteBuf*)(fb_err_hint(c));
+  bb_puts(h, "write '");
+  bb_puts(h, word);
+  bb_puts(h, " { x < 1.0 }' or remove the block");
   return (0 - 1);
 }
   return 0;
@@ -41802,10 +41843,10 @@ int32_t fb_parse_recognize(Fb* c, int32_t f) {
   int32_t first = (c[0]).nrc;
   while (fb_is_op(c, (c[0]).pos, OP_RBRACE) == 0) {
   if (fb_at_eof(c) == 1) {
-  FbBuf* m = (FbBuf*)(fb_perr(c));
-  fb_puts(m, "Unterminated 'recognize' block in flow '");
+  ByteBuf* m = (ByteBuf*)(fb_perr(c));
+  bb_puts(m, "Unterminated 'recognize' block in flow '");
   fb_put_fname(m, c, f);
-  fb_puts(m, "': expected '}' before end of file");
+  bb_puts(m, "': expected '}' before end of file");
   return (0 - 1);
 }
   if (fb_is_op(c, (c[0]).pos, OP_COMMA) == 1) {
@@ -41819,13 +41860,13 @@ int32_t fb_parse_recognize(Fb* c, int32_t f) {
   int32_t k = first;
   while (k < (c[0]).nrc) {
   if (fb_name_eq(c, (c[0]).rc_name[k], dn) == 1) {
-  FbBuf* m2 = (FbBuf*)(fb_perr(c));
-  fb_puts(m2, "recognition domain '");
-  fb_puts(m2, (const char*)(fb_s(c, dn)));
-  fb_puts(m2, "' appears twice in flow '");
+  ByteBuf* m2 = (ByteBuf*)(fb_perr(c));
+  bb_puts(m2, "recognition domain '");
+  bb_puts(m2, (const char*)(fb_s(c, dn)));
+  bb_puts(m2, "' appears twice in flow '");
   fb_put_fname(m2, c, f);
-  fb_puts(m2, "'");
-  fb_puts(fb_err_hint(c), "list each recognition domain once");
+  bb_puts(m2, "'");
+  bb_puts(fb_err_hint(c), "list each recognition domain once");
   return (0 - 1);
 }
   k = (k + 1);
@@ -41843,11 +41884,11 @@ int32_t fb_parse_recognize(Fb* c, int32_t f) {
   return (0 - 1);
 }
   if ((c[0]).nrc == first) {
-  FbBuf* m3 = (FbBuf*)(fb_perr(c));
-  fb_puts(m3, "'recognize' block in flow '");
+  ByteBuf* m3 = (ByteBuf*)(fb_perr(c));
+  bb_puts(m3, "'recognize' block in flow '");
   fb_put_fname(m3, c, f);
-  fb_puts(m3, "' needs at least one domain");
-  fb_puts(fb_err_hint(c), "write 'recognize { numerical realtime causal safety memory }'");
+  bb_puts(m3, "' needs at least one domain");
+  bb_puts(fb_err_hint(c), "write 'recognize { numerical realtime causal safety memory }'");
   return (0 - 1);
 }
   (c[0]).f_rec[f] = 1;
@@ -41862,10 +41903,10 @@ int32_t fb_parse_connect(Fb* c, int32_t f) {
 }
   while (fb_is_op(c, (c[0]).pos, OP_RBRACE) == 0) {
   if (fb_at_eof(c) == 1) {
-  FbBuf* m = (FbBuf*)(fb_perr(c));
-  fb_puts(m, "Unterminated 'connect' body in flow '");
+  ByteBuf* m = (ByteBuf*)(fb_perr(c));
+  bb_puts(m, "Unterminated 'connect' body in flow '");
   fb_put_fname(m, c, f);
-  fb_puts(m, "': expected '}' before end of file");
+  bb_puts(m, "': expected '}' before end of file");
   return (0 - 1);
 }
   int32_t st = (c[0]).pos;
@@ -41913,28 +41954,28 @@ int32_t fb_parse_solver(Fb* c, int32_t f) {
   int32_t method = (0 - 1);
   int64_t* nsbox = (int64_t*)((int64_t*)(malloc(8)));
   int32_t* txbox = (int32_t*)((int32_t*)(malloc(4)));
-  FbBuf* wb = (FbBuf*)(fb_buf_new(64));
-  fb_puts(wb, "the solver dt of flow '");
+  ByteBuf* wb = (ByteBuf*)(bb_new(64));
+  bb_puts(wb, "the solver dt of flow '");
   fb_put_fname(wb, c, f);
-  fb_puts(wb, "'");
+  bb_puts(wb, "'");
   int32_t where_s = fb_intern_buf(c, wb);
-  fb_buf_free(wb);
+  bb_free(wb);
   int32_t rc = 0;
   while (rc == 0 && fb_is_op(c, (c[0]).pos, OP_RBRACE) == 0) {
   if (fb_at_eof(c) == 1) {
-  FbBuf* m = (FbBuf*)(fb_perr(c));
-  fb_puts(m, "Unterminated 'solver' block in flow '");
+  ByteBuf* m = (ByteBuf*)(fb_perr(c));
+  bb_puts(m, "Unterminated 'solver' block in flow '");
   fb_put_fname(m, c, f);
-  fb_puts(m, "': expected '}' before end of file");
+  bb_puts(m, "': expected '}' before end of file");
   rc = (0 - 1);
 } else {
   int32_t t = (c[0]).pos;
   if (fb_is_word(c, t, "dt") == 1) {
   if (have_dt == 1) {
-  FbBuf* m2 = (FbBuf*)(fb_perr(c));
-  fb_puts(m2, "'solver' block in flow '");
+  ByteBuf* m2 = (ByteBuf*)(fb_perr(c));
+  bb_puts(m2, "'solver' block in flow '");
   fb_put_fname(m2, c, f);
-  fb_puts(m2, "' sets 'dt' twice");
+  bb_puts(m2, "' sets 'dt' twice");
   rc = (0 - 1);
 } else {
   fb_advance(c);
@@ -41949,10 +41990,10 @@ int32_t fb_parse_solver(Fb* c, int32_t f) {
 } else {
   if (fb_is_word(c, t, "method") == 1) {
   if (method >= 0) {
-  FbBuf* m3 = (FbBuf*)(fb_perr(c));
-  fb_puts(m3, "'solver' block in flow '");
+  ByteBuf* m3 = (ByteBuf*)(fb_perr(c));
+  bb_puts(m3, "'solver' block in flow '");
   fb_put_fname(m3, c, f);
-  fb_puts(m3, "' sets 'method' twice");
+  bb_puts(m3, "' sets 'method' twice");
   rc = (0 - 1);
 } else {
   fb_advance(c);
@@ -41964,11 +42005,11 @@ int32_t fb_parse_solver(Fb* c, int32_t f) {
 }
 }
 } else {
-  FbBuf* m4 = (FbBuf*)(fb_perr(c));
-  fb_puts(m4, "Unexpected item in 'solver' block of flow '");
+  ByteBuf* m4 = (ByteBuf*)(fb_perr(c));
+  bb_puts(m4, "Unexpected item in 'solver' block of flow '");
   fb_put_fname(m4, c, f);
-  fb_puts(m4, "'");
-  fb_puts(fb_err_hint(c), "solver blocks contain 'dt <duration>' and 'method euler' or 'method rk4'");
+  bb_puts(m4, "'");
+  bb_puts(fb_err_hint(c), "solver blocks contain 'dt <duration>' and 'method euler' or 'method rk4'");
   rc = (0 - 1);
 }
 }
@@ -41983,11 +42024,11 @@ int32_t fb_parse_solver(Fb* c, int32_t f) {
   return (0 - 1);
 }
   if (have_dt == 0) {
-  FbBuf* m5 = (FbBuf*)(fb_perr(c));
-  fb_puts(m5, "'solver' block in flow '");
+  ByteBuf* m5 = (ByteBuf*)(fb_perr(c));
+  bb_puts(m5, "'solver' block in flow '");
   fb_put_fname(m5, c, f);
-  fb_puts(m5, "' needs a 'dt' setting");
-  fb_puts(fb_err_hint(c), "write 'solver { dt 1 ms }'");
+  bb_puts(m5, "' needs a 'dt' setting");
+  bb_puts(fb_err_hint(c), "write 'solver { dt 1 ms }'");
   return (0 - 1);
 }
   if (method < 0) {
@@ -42047,13 +42088,13 @@ int32_t fb_parse_flow_item(Fb* c, int32_t f) {
   kind = MK_PARAM;
 }
   if (kind == MK_INPUT && init >= 0) {
-  FbBuf* m = (FbBuf*)(fb_perr(c));
-  fb_puts(m, "input '");
+  ByteBuf* m = (ByteBuf*)(fb_perr(c));
+  bb_puts(m, "input '");
   fb_put_tok(m, c, nt);
-  fb_puts(m, "' in flow '");
+  bb_puts(m, "' in flow '");
   fb_put_fname(m, c, f);
-  fb_puts(m, "' cannot have an initializer; inputs are written by the embedder");
-  fb_puts(fb_err_hint(c), "remove the '= ...' part");
+  bb_puts(m, "' cannot have an initializer; inputs are written by the embedder");
+  bb_puts(fb_err_hint(c), "remove the '= ...' part");
   return (0 - 1);
 }
   fb_add_member(c, f, kind, fb_tok_str(c, nt), ty, init, (c[0]).tl[t]);
@@ -42072,8 +42113,8 @@ int32_t fb_parse_flow_item(Fb* c, int32_t f) {
 }
   int32_t i = (c[0]).nev;
   (c[0]).ev_flow[i] = f;
-  { __typeof__((c[0]).ev_target[i]) __flowc_st13777 = fb_tok_str(c, t); (c[0]).ev_target[i] = __flowc_st13777; }
-  { __typeof__((c[0]).ev_expr[i]) __flowc_st13788 = fb_wrap_top(c, rhs, rs); (c[0]).ev_expr[i] = __flowc_st13788; }
+  { __typeof__((c[0]).ev_target[i]) __flowc_st13504 = fb_tok_str(c, t); (c[0]).ev_target[i] = __flowc_st13504; }
+  { __typeof__((c[0]).ev_expr[i]) __flowc_st13515 = fb_wrap_top(c, rhs, rs); (c[0]).ev_expr[i] = __flowc_st13515; }
   (c[0]).ev_line[i] = (c[0]).tl[t];
   (c[0]).nev = (i + 1);
   return 0;
@@ -42092,20 +42133,20 @@ int32_t fb_parse_flow_item(Fb* c, int32_t f) {
 }
   int32_t w = (c[0]).nwh;
   (c[0]).wh_flow[w] = f;
-  { __typeof__((c[0]).wh_target[w]) __flowc_st13900 = fb_tok_str(c, gt); (c[0]).wh_target[w] = __flowc_st13900; }
-  { __typeof__((c[0]).wh_thr[w]) __flowc_st13911 = fb_wrap_top(c, thr, ts0); (c[0]).wh_thr[w] = __flowc_st13911; }
+  { __typeof__((c[0]).wh_target[w]) __flowc_st13627 = fb_tok_str(c, gt); (c[0]).wh_target[w] = __flowc_st13627; }
+  { __typeof__((c[0]).wh_thr[w]) __flowc_st13638 = fb_wrap_top(c, thr, ts0); (c[0]).wh_thr[w] = __flowc_st13638; }
   (c[0]).wh_line[w] = (c[0]).tl[t];
   (c[0]).nwh = (w + 1);
   return fb_parse_becomes_body(c, f, 1, w, "when", "resets");
 }
   if (tid == 1 && fb_tok_is(c, t, "every") == 1 && (c[0]).tk[la] == TK_NUM) {
   fb_advance(c);
-  FbBuf* wb = (FbBuf*)(fb_buf_new(64));
-  fb_puts(wb, "the 'every' period of flow '");
+  ByteBuf* wb = (ByteBuf*)(bb_new(64));
+  bb_puts(wb, "the 'every' period of flow '");
   fb_put_fname(wb, c, f);
-  fb_puts(wb, "'");
+  bb_puts(wb, "'");
   int32_t where_s = fb_intern_buf(c, wb);
-  fb_buf_free(wb);
+  bb_free(wb);
   int64_t* nsbox = (int64_t*)((int64_t*)(malloc(8)));
   int32_t* txbox = (int32_t*)((int32_t*)(malloc(4)));
   int32_t drc = fb_parse_duration(c, where_s, nsbox, txbox);
@@ -42127,11 +42168,11 @@ int32_t fb_parse_flow_item(Fb* c, int32_t f) {
   int32_t la_brace = fb_is_op(c, la, OP_LBRACE);
   if (tid == 1 && la_brace == 1 && fb_tok_is(c, t, "solver") == 1) {
   if ((c[0]).f_solver[f] == 1) {
-  FbBuf* m2 = (FbBuf*)(fb_perr(c));
-  fb_puts(m2, "flow '");
+  ByteBuf* m2 = (ByteBuf*)(fb_perr(c));
+  bb_puts(m2, "flow '");
   fb_put_fname(m2, c, f);
-  fb_puts(m2, "' has two 'solver' blocks; a flow pins at most one default step");
-  fb_puts(fb_err_hint(c), "merge the settings into one solver block");
+  bb_puts(m2, "' has two 'solver' blocks; a flow pins at most one default step");
+  bb_puts(fb_err_hint(c), "merge the settings into one solver block");
   return (0 - 1);
 }
   return fb_parse_solver(c, f);
@@ -42144,11 +42185,11 @@ int32_t fb_parse_flow_item(Fb* c, int32_t f) {
 }
   if (tid == 1 && la_brace == 1 && fb_tok_is(c, t, "recognize") == 1) {
   if ((c[0]).f_rec[f] == 1) {
-  FbBuf* m3 = (FbBuf*)(fb_perr(c));
-  fb_puts(m3, "flow '");
+  ByteBuf* m3 = (ByteBuf*)(fb_perr(c));
+  bb_puts(m3, "flow '");
   fb_put_fname(m3, c, f);
-  fb_puts(m3, "' has two 'recognize' blocks");
-  fb_puts(fb_err_hint(c), "merge the domains into one recognize block");
+  bb_puts(m3, "' has two 'recognize' blocks");
+  bb_puts(fb_err_hint(c), "merge the domains into one recognize block");
   return (0 - 1);
 }
   return fb_parse_recognize(c, f);
@@ -42164,25 +42205,25 @@ int32_t fb_parse_flow_item(Fb* c, int32_t f) {
   return (0 - 1);
 }
   if (fb_is_op(c, (c[0]).pos, OP_ASSIGN) == 1) {
-  FbBuf* m4 = (FbBuf*)(fb_perr(c));
-  fb_puts(m4, "nested flow member '");
+  ByteBuf* m4 = (ByteBuf*)(fb_perr(c));
+  bb_puts(m4, "nested flow member '");
   fb_put_tok(m4, c, t);
-  fb_puts(m4, "' in flow '");
+  bb_puts(m4, "' in flow '");
   fb_put_fname(m4, c, f);
-  fb_puts(m4, "' cannot have an initializer; children are constructed by ");
-  fb_puts(m4, (const char*)(fb_s(c, cty)));
-  fb_puts(m4, "_new inside the parent");
-  fb_puts(fb_err_hint(c), "remove the '= ...' part");
+  bb_puts(m4, "' cannot have an initializer; children are constructed by ");
+  bb_puts(m4, (const char*)(fb_s(c, cty)));
+  bb_puts(m4, "_new inside the parent");
+  bb_puts(fb_err_hint(c), "remove the '= ...' part");
   return (0 - 1);
 }
   fb_add_member(c, f, MK_CHILD, fb_tok_str(c, t), cty, (0 - 1), (c[0]).tl[t]);
   return 0;
 }
-  FbBuf* m5 = (FbBuf*)(fb_perr(c));
-  fb_puts(m5, "Unexpected item in flow '");
+  ByteBuf* m5 = (ByteBuf*)(fb_perr(c));
+  bb_puts(m5, "Unexpected item in flow '");
   fb_put_fname(m5, c, f);
-  fb_puts(m5, "' body");
-  fb_puts(fb_err_hint(c), "flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x reaches expr { x becomes expr }'), discrete blocks ('every 10 ms { x becomes expr }'), composition ('connect { a.out -> b.in }'), invariants ('always { expr }' / 'never { expr }'), semantic contracts ('recognize { numerical realtime }'), and settings ('solver { dt 1 ms }')");
+  bb_puts(m5, "' body");
+  bb_puts(fb_err_hint(c), "flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x reaches expr { x becomes expr }'), discrete blocks ('every 10 ms { x becomes expr }'), composition ('connect { a.out -> b.in }'), invariants ('always { expr }' / 'never { expr }'), semantic contracts ('recognize { numerical realtime }'), and settings ('solver { dt 1 ms }')");
   return (0 - 1);
 }
 
@@ -42195,16 +42236,16 @@ int32_t fb_parse_flow(Fb* c, int32_t f) {
   if (nt < 0) {
   return (0 - 1);
 }
-  { __typeof__((c[0]).f_name[f]) __flowc_st14498 = fb_tok_str(c, nt); (c[0]).f_name[f] = __flowc_st14498; }
+  { __typeof__((c[0]).f_name[f]) __flowc_st14225 = fb_tok_str(c, nt); (c[0]).f_name[f] = __flowc_st14225; }
   if (fb_expect(c, "LBRACE") < 0) {
   return (0 - 1);
 }
   while (fb_is_op(c, (c[0]).pos, OP_RBRACE) == 0) {
   if (fb_at_eof(c) == 1) {
-  FbBuf* m = (FbBuf*)(fb_perr(c));
-  fb_puts(m, "Unterminated flow '");
+  ByteBuf* m = (ByteBuf*)(fb_perr(c));
+  bb_puts(m, "Unterminated flow '");
   fb_put_fname(m, c, f);
-  fb_puts(m, "': expected '}' before end of file");
+  bb_puts(m, "': expected '}' before end of file");
   return (0 - 1);
 }
   if (fb_parse_flow_item(c, f) < 0) {
@@ -42407,44 +42448,44 @@ int32_t fb_check_pure(Fb* c, int32_t x, int32_t f, int32_t where_s, int32_t line
 }
   int32_t k = (c[0]).nk[x];
   if (k == N_EFFECT) {
-  FbBuf* m = (FbBuf*)(fb_verr(c, line));
-  fb_puts(m, "effect call in ");
-  fb_puts(m, (const char*)(fb_s(c, where_s)));
-  fb_puts(m, " of flow '");
+  ByteBuf* m = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(m, "effect call in ");
+  bb_puts(m, (const char*)(fb_s(c, where_s)));
+  bb_puts(m, " of flow '");
   fb_put_fname(m, c, f);
-  fb_puts(m, "'; dynamics expressions must be pure");
-  fb_puts(fb_err_hint(c), "lift effectful work out of the flow body");
+  bb_puts(m, "'; dynamics expressions must be pure");
+  bb_puts(fb_err_hint(c), "lift effectful work out of the flow body");
   return (0 - 1);
 }
   if (k == N_METHOD) {
-  FbBuf* m2 = (FbBuf*)(fb_verr(c, line));
-  fb_puts(m2, "method call in ");
-  fb_puts(m2, (const char*)(fb_s(c, where_s)));
-  fb_puts(m2, " of flow '");
+  ByteBuf* m2 = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(m2, "method call in ");
+  bb_puts(m2, (const char*)(fb_s(c, where_s)));
+  bb_puts(m2, " of flow '");
   fb_put_fname(m2, c, f);
-  fb_puts(m2, "'; dynamics expressions must be pure plain calls in this version");
+  bb_puts(m2, "'; dynamics expressions must be pure plain calls in this version");
   return (0 - 1);
 }
   if (k == N_LAMBDA) {
-  FbBuf* m3 = (FbBuf*)(fb_verr(c, line));
-  fb_puts(m3, "lambda in ");
-  fb_puts(m3, (const char*)(fb_s(c, where_s)));
-  fb_puts(m3, " of flow '");
+  ByteBuf* m3 = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(m3, "lambda in ");
+  bb_puts(m3, (const char*)(fb_s(c, where_s)));
+  bb_puts(m3, " of flow '");
   fb_put_fname(m3, c, f);
-  fb_puts(m3, "' is not supported");
+  bb_puts(m3, "' is not supported");
   return (0 - 1);
 }
   if (k == N_CALL) {
   int32_t nm = fb_call_name(c, x);
   if (fb_is_pure_math(fb_s(c, nm)) == 0 && fb_has_name(c, NX_LOCAL_FN, nm) == 0) {
-  FbBuf* m4 = (FbBuf*)(fb_verr(c, line));
-  fb_puts(m4, "call to '");
-  fb_puts(m4, (const char*)(fb_s(c, nm)));
-  fb_puts(m4, "' in ");
-  fb_puts(m4, (const char*)(fb_s(c, where_s)));
-  fb_puts(m4, " of flow '");
+  ByteBuf* m4 = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(m4, "call to '");
+  bb_puts(m4, (const char*)(fb_s(c, nm)));
+  bb_puts(m4, "' in ");
+  bb_puts(m4, (const char*)(fb_s(c, where_s)));
+  bb_puts(m4, " of flow '");
   fb_put_fname(m4, c, f);
-  fb_puts(m4, "' cannot be proven pure; only C math functions and non-extern functions defined in the same file are allowed here (v1)");
+  bb_puts(m4, "' cannot be proven pure; only C math functions and non-extern functions defined in the same file are allowed here (v1)");
   return (0 - 1);
 }
   int32_t a = (c[0]).na[x];
@@ -42475,12 +42516,12 @@ int32_t fb_check_pure_s(Fb* c, int32_t x, int32_t f, const char* where_s, int32_
 }
 
 int32_t fb_where(Fb* c, const char* pre, int32_t name, const char* post) {
-  FbBuf* b = (FbBuf*)(fb_buf_new(64));
-  fb_puts(b, pre);
-  fb_puts(b, (const char*)(fb_s(c, name)));
-  fb_puts(b, post);
+  ByteBuf* b = (ByteBuf*)(bb_new(64));
+  bb_puts(b, pre);
+  bb_puts(b, (const char*)(fb_s(c, name)));
+  bb_puts(b, post);
   int32_t out = fb_intern_buf(c, b);
-  fb_buf_free(b);
+  bb_free(b);
   return out;
 }
 
@@ -42497,14 +42538,14 @@ int32_t fb_check_threshold(Fb* c, int32_t x, int32_t f, int32_t w) {
   if (fb_find_member(c, f, MK_PARAM, nm) >= 0) {
   return 0;
 }
-  FbBuf* m = (FbBuf*)(fb_verr(c, (c[0]).wh_line[w]));
-  fb_puts(m, "threshold of 'when ");
-  fb_puts(m, (const char*)(fb_s(c, (c[0]).wh_target[w])));
-  fb_puts(m, " reaches' in flow '");
+  ByteBuf* m = (ByteBuf*)(fb_verr(c, (c[0]).wh_line[w]));
+  bb_puts(m, "threshold of 'when ");
+  bb_puts(m, (const char*)(fb_s(c, (c[0]).wh_target[w])));
+  bb_puts(m, " reaches' in flow '");
   fb_put_fname(m, c, f);
-  fb_puts(m, "' references '");
-  fb_puts(m, (const char*)(fb_s(c, nm)));
-  fb_puts(m, "'; thresholds must be constant over a step, built from params and literals (v1)");
+  bb_puts(m, "' references '");
+  bb_puts(m, (const char*)(fb_s(c, nm)));
+  bb_puts(m, "'; thresholds must be constant over a step, built from params and literals (v1)");
   return (0 - 1);
 }
   if (k == N_BIN || k == N_UN || k == N_CAST) {
@@ -42521,12 +42562,12 @@ int32_t fb_check_threshold(Fb* c, int32_t x, int32_t f, int32_t w) {
   free((uint8_t*)(kids));
   return 0;
 }
-  FbBuf* m2 = (FbBuf*)(fb_verr(c, (c[0]).wh_line[w]));
-  fb_puts(m2, "threshold of 'when ");
-  fb_puts(m2, (const char*)(fb_s(c, (c[0]).wh_target[w])));
-  fb_puts(m2, " reaches' in flow '");
+  ByteBuf* m2 = (ByteBuf*)(fb_verr(c, (c[0]).wh_line[w]));
+  bb_puts(m2, "threshold of 'when ");
+  bb_puts(m2, (const char*)(fb_s(c, (c[0]).wh_target[w])));
+  bb_puts(m2, " reaches' in flow '");
   fb_put_fname(m2, c, f);
-  fb_puts(m2, "' must be built from params and literals (v1)");
+  bb_puts(m2, "' must be built from params and literals (v1)");
   return (0 - 1);
 }
 
@@ -42550,13 +42591,13 @@ int32_t fb_check_booleanish(Fb* c, int32_t x, int32_t f, const char* word, int32
   if (k == N_VAR) {
   return 0;
 }
-  FbBuf* m = (FbBuf*)(fb_verr(c, line));
-  fb_puts(m, "'");
-  fb_puts(m, word);
-  fb_puts(m, "' clause in flow '");
+  ByteBuf* m = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(m, "'");
+  bb_puts(m, word);
+  bb_puts(m, "' clause in flow '");
   fb_put_fname(m, c, f);
-  fb_puts(m, "' must be a boolean expression");
-  fb_puts(fb_err_hint(c), "write a comparison or logical expression, e.g. 'x < 1.0'");
+  bb_puts(m, "' must be a boolean expression");
+  bb_puts(fb_err_hint(c), "write a comparison or logical expression, e.g. 'x < 1.0'");
   return (0 - 1);
 }
 
@@ -42610,23 +42651,23 @@ int32_t fb_port_combinational(Fb* c, int32_t f, int32_t port) {
 int32_t fb_single_port(Fb* c, int32_t sf, int32_t kind, const char* word, int32_t line) {
   int32_t n = fb_count_members(c, sf, kind);
   if (n != 1) {
-  FbBuf* m = (FbBuf*)(fb_verr(c, line));
-  fb_puts(m, "flow '");
+  ByteBuf* m = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(m, "flow '");
   fb_put_fname(m, c, sf);
-  fb_puts(m, "' used as a pipeline stage must have exactly one ");
-  fb_puts(m, word);
-  fb_puts(m, " (has ");
-  fb_put_int(m, n);
-  fb_puts(m, "); wire it with `connect` explicitly");
+  bb_puts(m, "' used as a pipeline stage must have exactly one ");
+  bb_puts(m, word);
+  bb_puts(m, " (has ");
+  bb_put_i32(m, n);
+  bb_puts(m, "); wire it with `connect` explicitly");
   return (0 - 1);
 }
   return fb_nth_member(c, sf, kind, 0);
 }
 
-void fb_put_sorted_params(Fb* c, FbBuf* b, int32_t sf) {
+void fb_put_sorted_params(Fb* c, ByteBuf* b, int32_t sf) {
   int32_t n = fb_count_members(c, sf, MK_PARAM);
   if (n == 0) {
-  fb_puts(b, "(none)");
+  bb_puts(b, "(none)");
   return;
 }
   int32_t* used = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 1)) * 4))));
@@ -42655,9 +42696,9 @@ void fb_put_sorted_params(Fb* c, FbBuf* b, int32_t sf) {
 }
   used[best] = 1;
   if (k > 0) {
-  fb_puts(b, ", ");
+  bb_puts(b, ", ");
 }
-  fb_puts(b, (const char*)(fb_s(c, (c[0]).mm_name[fb_nth_member(c, sf, MK_PARAM, best)])));
+  bb_puts(b, (const char*)(fb_s(c, (c[0]).mm_name[fb_nth_member(c, sf, MK_PARAM, best)])));
   k = (k + 1);
 }
   free((uint8_t*)(used));
@@ -42679,16 +42720,16 @@ int32_t fb_expand_pipelines(Fb* c, int32_t f) {
   int32_t sname = fb_tok_str(c, (c[0]).ntok[cur]);
   int32_t sf = fb_find_flow(c, sname);
   if (sf < 0) {
-  FbBuf* m = (FbBuf*)(fb_verr(c, line));
-  fb_puts(m, "'");
-  fb_puts(m, (const char*)(fb_s(c, sname)));
-  fb_puts(m, " { ... }' in output '");
-  fb_puts(m, (const char*)(fb_s(c, (c[0]).mm_name[o])));
-  fb_puts(m, "' of '");
+  ByteBuf* m = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(m, "'");
+  bb_puts(m, (const char*)(fb_s(c, sname)));
+  bb_puts(m, " { ... }' in output '");
+  bb_puts(m, (const char*)(fb_s(c, (c[0]).mm_name[o])));
+  bb_puts(m, "' of '");
   fb_put_fname(m, c, f);
-  fb_puts(m, "' names '");
-  fb_puts(m, (const char*)(fb_s(c, sname)));
-  fb_puts(m, "', which is not a flow");
+  bb_puts(m, "' names '");
+  bb_puts(m, (const char*)(fb_s(c, sname)));
+  bb_puts(m, "', which is not a flow");
   free((uint8_t*)(stages));
   return (0 - 1);
 }
@@ -42700,14 +42741,14 @@ int32_t fb_expand_pipelines(Fb* c, int32_t f) {
   if (k == N_CALL && (c[0]).ntok[cur] >= 0 && fb_find_flow(c, fb_call_name(c, cur)) >= 0) {
   int32_t cf = fb_find_flow(c, fb_call_name(c, cur));
   if (fb_list_len(c, (c[0]).na[cur]) != 1) {
-  FbBuf* m2 = (FbBuf*)(fb_verr(c, line));
-  fb_puts(m2, "flow stage '");
+  ByteBuf* m2 = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(m2, "flow stage '");
   fb_put_fname(m2, c, cf);
-  fb_puts(m2, "' in output '");
-  fb_puts(m2, (const char*)(fb_s(c, (c[0]).mm_name[o])));
-  fb_puts(m2, "' of '");
+  bb_puts(m2, "' in output '");
+  bb_puts(m2, (const char*)(fb_s(c, (c[0]).mm_name[o])));
+  bb_puts(m2, "' of '");
   fb_put_fname(m2, c, f);
-  fb_puts(m2, "' takes only the piped value");
+  bb_puts(m2, "' takes only the piped value");
   free((uint8_t*)(stages));
   return (0 - 1);
 }
@@ -42733,12 +42774,12 @@ int32_t fb_expand_pipelines(Fb* c, int32_t f) {
 }
 }
   if (src_m < 0) {
-  FbBuf* m3 = (FbBuf*)(fb_verr(c, line));
-  fb_puts(m3, "flow pipeline for output '");
-  fb_puts(m3, (const char*)(fb_s(c, (c[0]).mm_name[o])));
-  fb_puts(m3, "' of '");
+  ByteBuf* m3 = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(m3, "flow pipeline for output '");
+  bb_puts(m3, (const char*)(fb_s(c, (c[0]).mm_name[o])));
+  bb_puts(m3, "' of '");
   fb_put_fname(m3, c, f);
-  fb_puts(m3, "' must start from a port (an input/state, or `child.port`)");
+  bb_puts(m3, "' must start from a port (an input/state, or `child.port`)");
   free((uint8_t*)(stages));
   return (0 - 1);
 }
@@ -42749,27 +42790,27 @@ int32_t fb_expand_pipelines(Fb* c, int32_t f) {
   int32_t si = ((ns - 1) - i);
   int32_t sf2 = stages[(si * 2)];
   int32_t params = stages[((si * 2) + 1)];
-  FbBuf* cb = (FbBuf*)(fb_buf_new(32));
-  fb_puts(cb, "__");
-  fb_puts(cb, (const char*)(fb_s(c, (c[0]).mm_name[o])));
-  fb_puts(cb, "_stage");
-  fb_put_int(cb, i);
+  ByteBuf* cb = (ByteBuf*)(bb_new(32));
+  bb_puts(cb, "__");
+  bb_puts(cb, (const char*)(fb_s(c, (c[0]).mm_name[o])));
+  bb_puts(cb, "_stage");
+  bb_put_i32(cb, i);
   int32_t child_name = fb_intern_buf(c, cb);
-  fb_buf_free(cb);
+  bb_free(cb);
   int32_t pk = params;
   while (pk >= 0) {
   int32_t pn = fb_tok_str(c, (c[0]).ntok[pk]);
   if (fb_find_member(c, sf2, MK_PARAM, pn) < 0) {
-  FbBuf* m4 = (FbBuf*)(fb_verr(c, line));
-  fb_puts(m4, "flow stage '");
+  ByteBuf* m4 = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(m4, "flow stage '");
   fb_put_fname(m4, c, sf2);
-  fb_puts(m4, "' in '");
+  bb_puts(m4, "' in '");
   fb_put_fname(m4, c, f);
-  fb_puts(m4, "' has no param '");
-  fb_puts(m4, (const char*)(fb_s(c, pn)));
-  fb_puts(m4, "'");
-  FbBuf* h = (FbBuf*)(fb_err_hint(c));
-  fb_puts(h, "stage overrides set `param` fields; declared params are: ");
+  bb_puts(m4, "' has no param '");
+  bb_puts(m4, (const char*)(fb_s(c, pn)));
+  bb_puts(m4, "'");
+  ByteBuf* h = (ByteBuf*)(fb_err_hint(c));
+  bb_puts(h, "stage overrides set `param` fields; declared params are: ");
   fb_put_sorted_params(c, h, sf2);
   free((uint8_t*)(stages));
   return (0 - 1);
@@ -42890,32 +42931,32 @@ int32_t fb_validate_members(Fb* c, int32_t f) {
   if ((c[0]).mm_flow[i] == f && fb_member_rank((c[0]).mm_kind[i]) == rank) {
   int32_t nm = (c[0]).mm_name[i];
   if (fb_seen_before(c, f, i) == 1) {
-  FbBuf* m = (FbBuf*)(fb_verr(c, (c[0]).mm_line[i]));
-  fb_puts(m, "flow '");
+  ByteBuf* m = (ByteBuf*)(fb_verr(c, (c[0]).mm_line[i]));
+  bb_puts(m, "flow '");
   fb_put_fname(m, c, f);
-  fb_puts(m, "' declares '");
-  fb_puts(m, (const char*)(fb_s(c, nm)));
-  fb_puts(m, "' twice");
+  bb_puts(m, "' declares '");
+  bb_puts(m, (const char*)(fb_s(c, nm)));
+  bb_puts(m, "' twice");
   return (0 - 1);
 }
   if (fb_name_starts_uu(c, nm) == 1) {
-  FbBuf* m2 = (FbBuf*)(fb_verr(c, (c[0]).mm_line[i]));
-  fb_puts(m2, "flow member '");
-  fb_puts(m2, (const char*)(fb_s(c, nm)));
-  fb_puts(m2, "' may not start with '__' (reserved for compiler-generated fields)");
+  ByteBuf* m2 = (ByteBuf*)(fb_verr(c, (c[0]).mm_line[i]));
+  bb_puts(m2, "flow member '");
+  bb_puts(m2, (const char*)(fb_s(c, nm)));
+  bb_puts(m2, "' may not start with '__' (reserved for compiler-generated fields)");
   return (0 - 1);
 }
   if (fb_is_member_type(c, (c[0]).mm_type[i]) == 0) {
-  FbBuf* m3 = (FbBuf*)(fb_verr(c, (c[0]).mm_line[i]));
-  fb_puts(m3, fb_kind_word((c[0]).mm_kind[i]));
-  fb_puts(m3, " '");
-  fb_puts(m3, (const char*)(fb_s(c, nm)));
-  fb_puts(m3, "' in flow '");
+  ByteBuf* m3 = (ByteBuf*)(fb_verr(c, (c[0]).mm_line[i]));
+  bb_puts(m3, fb_kind_word((c[0]).mm_kind[i]));
+  bb_puts(m3, " '");
+  bb_puts(m3, (const char*)(fb_s(c, nm)));
+  bb_puts(m3, "' in flow '");
   fb_put_fname(m3, c, f);
-  fb_puts(m3, "' has type '");
-  fb_puts(m3, (const char*)(fb_s(c, (c[0]).mm_type[i])));
-  fb_puts(m3, "'; a flow member is f64, f32, or a declared unit");
-  fb_puts(fb_err_hint(c), "declare the dimension with 'unit Angle' first");
+  bb_puts(m3, "' has type '");
+  bb_puts(m3, (const char*)(fb_s(c, (c[0]).mm_type[i])));
+  bb_puts(m3, "'; a flow member is f64, f32, or a declared unit");
+  bb_puts(fb_err_hint(c), "declare the dimension with 'unit Angle' first");
   return (0 - 1);
 }
 }
@@ -42928,40 +42969,40 @@ int32_t fb_validate_members(Fb* c, int32_t f) {
   if ((c[0]).mm_flow[ci] == f && (c[0]).mm_kind[ci] == MK_CHILD) {
   int32_t cn = (c[0]).mm_name[ci];
   if (fb_seen_before(c, f, ci) == 1) {
-  FbBuf* m4 = (FbBuf*)(fb_verr(c, (c[0]).mm_line[ci]));
-  fb_puts(m4, "flow '");
+  ByteBuf* m4 = (ByteBuf*)(fb_verr(c, (c[0]).mm_line[ci]));
+  bb_puts(m4, "flow '");
   fb_put_fname(m4, c, f);
-  fb_puts(m4, "' declares '");
-  fb_puts(m4, (const char*)(fb_s(c, cn)));
-  fb_puts(m4, "' twice");
+  bb_puts(m4, "' declares '");
+  bb_puts(m4, (const char*)(fb_s(c, cn)));
+  bb_puts(m4, "' twice");
   return (0 - 1);
 }
   if (fb_name_starts_uu(c, cn) == 1 && (c[0]).mm_synth[ci] == 0) {
-  FbBuf* m5 = (FbBuf*)(fb_verr(c, (c[0]).mm_line[ci]));
-  fb_puts(m5, "flow member '");
-  fb_puts(m5, (const char*)(fb_s(c, cn)));
-  fb_puts(m5, "' may not start with '__' (reserved for compiler-generated fields)");
+  ByteBuf* m5 = (ByteBuf*)(fb_verr(c, (c[0]).mm_line[ci]));
+  bb_puts(m5, "flow member '");
+  bb_puts(m5, (const char*)(fb_s(c, cn)));
+  bb_puts(m5, "' may not start with '__' (reserved for compiler-generated fields)");
   return (0 - 1);
 }
   if (fb_name_eq(c, (c[0]).mm_type[ci], (c[0]).f_name[f]) == 1) {
-  FbBuf* m6 = (FbBuf*)(fb_verr(c, (c[0]).mm_line[ci]));
-  fb_puts(m6, "nested flow member '");
-  fb_puts(m6, (const char*)(fb_s(c, cn)));
-  fb_puts(m6, "' in flow '");
+  ByteBuf* m6 = (ByteBuf*)(fb_verr(c, (c[0]).mm_line[ci]));
+  bb_puts(m6, "nested flow member '");
+  bb_puts(m6, (const char*)(fb_s(c, cn)));
+  bb_puts(m6, "' in flow '");
   fb_put_fname(m6, c, f);
-  fb_puts(m6, "' cannot have the parent type (no recursive nesting)");
+  bb_puts(m6, "' cannot have the parent type (no recursive nesting)");
   return (0 - 1);
 }
   if (fb_find_flow(c, (c[0]).mm_type[ci]) < 0) {
-  FbBuf* m7 = (FbBuf*)(fb_verr(c, (c[0]).mm_line[ci]));
-  fb_puts(m7, "nested flow member '");
-  fb_puts(m7, (const char*)(fb_s(c, cn)));
-  fb_puts(m7, "' in flow '");
+  ByteBuf* m7 = (ByteBuf*)(fb_verr(c, (c[0]).mm_line[ci]));
+  bb_puts(m7, "nested flow member '");
+  bb_puts(m7, (const char*)(fb_s(c, cn)));
+  bb_puts(m7, "' in flow '");
   fb_put_fname(m7, c, f);
-  fb_puts(m7, "' has type '");
-  fb_puts(m7, (const char*)(fb_s(c, (c[0]).mm_type[ci])));
-  fb_puts(m7, "', which is not a flow in this file");
-  fb_puts(fb_err_hint(c), "declare the child with 'flow ChildName { ... }' first");
+  bb_puts(m7, "' has type '");
+  bb_puts(m7, (const char*)(fb_s(c, (c[0]).mm_type[ci])));
+  bb_puts(m7, "', which is not a flow in this file");
+  bb_puts(fb_err_hint(c), "declare the child with 'flow ChildName { ... }' first");
   return (0 - 1);
 }
 }
@@ -42992,10 +43033,10 @@ int32_t fb_validate_connect(Fb* c, int32_t f) {
   k = (k + 1);
 }
   if (first_conn >= 0 && nch == 0) {
-  FbBuf* m = (FbBuf*)(fb_verr(c, (c[0]).cn_line[first_conn]));
-  fb_puts(m, "'connect' in flow '");
+  ByteBuf* m = (ByteBuf*)(fb_verr(c, (c[0]).cn_line[first_conn]));
+  bb_puts(m, "'connect' in flow '");
   fb_put_fname(m, c, f);
-  fb_puts(m, "' needs nested flow members to wire (e.g. 'plant : Motor')");
+  bb_puts(m, "' needs nested flow members to wire (e.g. 'plant : Motor')");
   return (0 - 1);
 }
   int32_t i = 0;
@@ -43010,38 +43051,38 @@ int32_t fb_validate_connect(Fb* c, int32_t f) {
   int32_t src_child = fb_find_member(c, f, MK_CHILD, sm);
   int32_t dst_child = fb_find_member(c, f, MK_CHILD, dm);
   if (parent == 0 && src_child < 0) {
-  FbBuf* m1 = (FbBuf*)(fb_verr(c, line));
-  fb_puts(m1, "connection source '");
-  fb_puts(m1, (const char*)(fb_s(c, sm)));
-  fb_putc(m1, 46);
-  fb_puts(m1, (const char*)(fb_s(c, sp)));
-  fb_puts(m1, "' in flow '");
+  ByteBuf* m1 = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(m1, "connection source '");
+  bb_puts(m1, (const char*)(fb_s(c, sm)));
+  bb_putc(m1, 46);
+  bb_puts(m1, (const char*)(fb_s(c, sp)));
+  bb_puts(m1, "' in flow '");
   fb_put_fname(m1, c, f);
-  fb_puts(m1, "' names unknown nested member '");
-  fb_puts(m1, (const char*)(fb_s(c, sm)));
-  fb_puts(m1, "'");
+  bb_puts(m1, "' names unknown nested member '");
+  bb_puts(m1, (const char*)(fb_s(c, sm)));
+  bb_puts(m1, "'");
   return (0 - 1);
 }
   if (dst_child < 0) {
-  FbBuf* m2 = (FbBuf*)(fb_verr(c, line));
-  fb_puts(m2, "connection destination '");
-  fb_puts(m2, (const char*)(fb_s(c, dm)));
-  fb_putc(m2, 46);
-  fb_puts(m2, (const char*)(fb_s(c, dp)));
-  fb_puts(m2, "' in flow '");
+  ByteBuf* m2 = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(m2, "connection destination '");
+  bb_puts(m2, (const char*)(fb_s(c, dm)));
+  bb_putc(m2, 46);
+  bb_puts(m2, (const char*)(fb_s(c, dp)));
+  bb_puts(m2, "' in flow '");
   fb_put_fname(m2, c, f);
-  fb_puts(m2, "' names unknown nested member '");
-  fb_puts(m2, (const char*)(fb_s(c, dm)));
-  fb_puts(m2, "'");
+  bb_puts(m2, "' names unknown nested member '");
+  bb_puts(m2, (const char*)(fb_s(c, dm)));
+  bb_puts(m2, "'");
   return (0 - 1);
 }
   if (parent == 0 && fb_name_eq(c, sm, dm) == 1) {
-  FbBuf* m3 = (FbBuf*)(fb_verr(c, line));
-  fb_puts(m3, "connection in flow '");
+  ByteBuf* m3 = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(m3, "connection in flow '");
   fb_put_fname(m3, c, f);
-  fb_puts(m3, "' wires '");
-  fb_puts(m3, (const char*)(fb_s(c, sm)));
-  fb_puts(m3, "' to itself; Stage-1 connect is between sibling subflows only");
+  bb_puts(m3, "' wires '");
+  bb_puts(m3, (const char*)(fb_s(c, sm)));
+  bb_puts(m3, "' to itself; Stage-1 connect is between sibling subflows only");
   return (0 - 1);
 }
   int32_t dst_flow = fb_find_flow(c, (c[0]).mm_type[dst_child]);
@@ -43049,125 +43090,125 @@ int32_t fb_validate_connect(Fb* c, int32_t f) {
   if (parent == 1) {
   src_port = fb_lookup_port(c, f, sp);
   if (src_port < 0) {
-  FbBuf* m4 = (FbBuf*)(fb_verr(c, line));
-  fb_puts(m4, "connection source '");
-  fb_puts(m4, (const char*)(fb_s(c, sp)));
-  fb_puts(m4, "' in flow '");
+  ByteBuf* m4 = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(m4, "connection source '");
+  bb_puts(m4, (const char*)(fb_s(c, sp)));
+  bb_puts(m4, "' in flow '");
   fb_put_fname(m4, c, f);
-  fb_puts(m4, "' is not a port of this flow");
-  FbBuf* h = (FbBuf*)(fb_err_hint(c));
-  fb_puts(h, "a bare source must be an input or state of '");
+  bb_puts(m4, "' is not a port of this flow");
+  ByteBuf* h = (ByteBuf*)(fb_err_hint(c));
+  bb_puts(h, "a bare source must be an input or state of '");
   fb_put_fname(h, c, f);
-  fb_puts(h, "'; a child source is written 'child.port'");
+  bb_puts(h, "'; a child source is written 'child.port'");
   return (0 - 1);
 }
   int32_t sk = (c[0]).mm_kind[src_port];
   if (sk != MK_INPUT && sk != MK_STATE) {
-  FbBuf* m5 = (FbBuf*)(fb_verr(c, line));
-  fb_puts(m5, "connection source '");
-  fb_puts(m5, (const char*)(fb_s(c, sp)));
-  fb_puts(m5, "' in flow '");
+  ByteBuf* m5 = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(m5, "connection source '");
+  bb_puts(m5, (const char*)(fb_s(c, sp)));
+  bb_puts(m5, "' in flow '");
   fb_put_fname(m5, c, f);
-  fb_puts(m5, "' is a ");
-  fb_puts(m5, fb_kind_word(sk));
-  fb_puts(m5, "; a parent source must be an input or state");
+  bb_puts(m5, "' is a ");
+  bb_puts(m5, fb_kind_word(sk));
+  bb_puts(m5, "; a parent source must be an input or state");
   return (0 - 1);
 }
 } else {
   int32_t src_flow = fb_find_flow(c, (c[0]).mm_type[src_child]);
   src_port = fb_lookup_port(c, src_flow, sp);
   if (src_port < 0) {
-  FbBuf* m6 = (FbBuf*)(fb_verr(c, line));
-  fb_puts(m6, "'");
-  fb_puts(m6, (const char*)(fb_s(c, sm)));
-  fb_putc(m6, 46);
-  fb_puts(m6, (const char*)(fb_s(c, sp)));
-  fb_puts(m6, "' in flow '");
+  ByteBuf* m6 = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(m6, "'");
+  bb_puts(m6, (const char*)(fb_s(c, sm)));
+  bb_putc(m6, 46);
+  bb_puts(m6, (const char*)(fb_s(c, sp)));
+  bb_puts(m6, "' in flow '");
   fb_put_fname(m6, c, f);
-  fb_puts(m6, "' is not a port of '");
+  bb_puts(m6, "' is not a port of '");
   fb_put_fname(m6, c, src_flow);
-  fb_puts(m6, "'");
-  FbBuf* h2 = (FbBuf*)(fb_err_hint(c));
-  fb_puts(h2, "connect sources must be an output or state of '");
+  bb_puts(m6, "'");
+  ByteBuf* h2 = (ByteBuf*)(fb_err_hint(c));
+  bb_puts(h2, "connect sources must be an output or state of '");
   fb_put_fname(h2, c, src_flow);
-  fb_puts(h2, "'");
+  bb_puts(h2, "'");
   return (0 - 1);
 }
   int32_t sk2 = (c[0]).mm_kind[src_port];
   if (sk2 != MK_OUTPUT && sk2 != MK_STATE) {
-  FbBuf* m7 = (FbBuf*)(fb_verr(c, line));
-  fb_puts(m7, "'");
-  fb_puts(m7, (const char*)(fb_s(c, sm)));
-  fb_putc(m7, 46);
-  fb_puts(m7, (const char*)(fb_s(c, sp)));
-  fb_puts(m7, "' in flow '");
+  ByteBuf* m7 = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(m7, "'");
+  bb_puts(m7, (const char*)(fb_s(c, sm)));
+  bb_putc(m7, 46);
+  bb_puts(m7, (const char*)(fb_s(c, sp)));
+  bb_puts(m7, "' in flow '");
   fb_put_fname(m7, c, f);
-  fb_puts(m7, "' is a ");
-  fb_puts(m7, fb_kind_word(sk2));
-  fb_puts(m7, "; connection sources must be an output or state");
+  bb_puts(m7, "' is a ");
+  bb_puts(m7, fb_kind_word(sk2));
+  bb_puts(m7, "; connection sources must be an output or state");
   return (0 - 1);
 }
 }
   int32_t dst_port = fb_lookup_port(c, dst_flow, dp);
   if (dst_port < 0) {
-  FbBuf* m8 = (FbBuf*)(fb_verr(c, line));
-  fb_puts(m8, "'");
-  fb_puts(m8, (const char*)(fb_s(c, dm)));
-  fb_putc(m8, 46);
-  fb_puts(m8, (const char*)(fb_s(c, dp)));
-  fb_puts(m8, "' in flow '");
+  ByteBuf* m8 = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(m8, "'");
+  bb_puts(m8, (const char*)(fb_s(c, dm)));
+  bb_putc(m8, 46);
+  bb_puts(m8, (const char*)(fb_s(c, dp)));
+  bb_puts(m8, "' in flow '");
   fb_put_fname(m8, c, f);
-  fb_puts(m8, "' is not a port of '");
+  bb_puts(m8, "' is not a port of '");
   fb_put_fname(m8, c, dst_flow);
-  fb_puts(m8, "'");
-  FbBuf* h3 = (FbBuf*)(fb_err_hint(c));
-  fb_puts(h3, "connection destinations must be an input of '");
+  bb_puts(m8, "'");
+  ByteBuf* h3 = (ByteBuf*)(fb_err_hint(c));
+  bb_puts(h3, "connection destinations must be an input of '");
   fb_put_fname(h3, c, dst_flow);
-  fb_puts(h3, "'");
+  bb_puts(h3, "'");
   return (0 - 1);
 }
   if ((c[0]).mm_kind[dst_port] != MK_INPUT) {
-  FbBuf* m9 = (FbBuf*)(fb_verr(c, line));
-  fb_puts(m9, "'");
-  fb_puts(m9, (const char*)(fb_s(c, dm)));
-  fb_putc(m9, 46);
-  fb_puts(m9, (const char*)(fb_s(c, dp)));
-  fb_puts(m9, "' in flow '");
+  ByteBuf* m9 = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(m9, "'");
+  bb_puts(m9, (const char*)(fb_s(c, dm)));
+  bb_putc(m9, 46);
+  bb_puts(m9, (const char*)(fb_s(c, dp)));
+  bb_puts(m9, "' in flow '");
   fb_put_fname(m9, c, f);
-  fb_puts(m9, "' is a ");
-  fb_puts(m9, fb_kind_word((c[0]).mm_kind[dst_port]));
-  fb_puts(m9, "; connection destinations must be an input");
+  bb_puts(m9, "' is a ");
+  bb_puts(m9, fb_kind_word((c[0]).mm_kind[dst_port]));
+  bb_puts(m9, "; connection destinations must be an input");
   return (0 - 1);
 }
   if (fb_name_eq(c, (c[0]).mm_type[src_port], (c[0]).mm_type[dst_port]) == 0) {
-  FbBuf* m10 = (FbBuf*)(fb_verr(c, line));
-  fb_puts(m10, "type mismatch in connect of flow '");
+  ByteBuf* m10 = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(m10, "type mismatch in connect of flow '");
   fb_put_fname(m10, c, f);
-  fb_puts(m10, "': '");
-  fb_puts(m10, (const char*)(fb_s(c, sm)));
-  fb_putc(m10, 46);
-  fb_puts(m10, (const char*)(fb_s(c, sp)));
-  fb_puts(m10, "' is ");
-  fb_puts(m10, (const char*)(fb_s(c, (c[0]).mm_type[src_port])));
-  fb_puts(m10, " but '");
-  fb_puts(m10, (const char*)(fb_s(c, dm)));
-  fb_putc(m10, 46);
-  fb_puts(m10, (const char*)(fb_s(c, dp)));
-  fb_puts(m10, "' is ");
-  fb_puts(m10, (const char*)(fb_s(c, (c[0]).mm_type[dst_port])));
+  bb_puts(m10, "': '");
+  bb_puts(m10, (const char*)(fb_s(c, sm)));
+  bb_putc(m10, 46);
+  bb_puts(m10, (const char*)(fb_s(c, sp)));
+  bb_puts(m10, "' is ");
+  bb_puts(m10, (const char*)(fb_s(c, (c[0]).mm_type[src_port])));
+  bb_puts(m10, " but '");
+  bb_puts(m10, (const char*)(fb_s(c, dm)));
+  bb_putc(m10, 46);
+  bb_puts(m10, (const char*)(fb_s(c, dp)));
+  bb_puts(m10, "' is ");
+  bb_puts(m10, (const char*)(fb_s(c, (c[0]).mm_type[dst_port])));
   return (0 - 1);
 }
   int32_t j = 0;
   while (j < i) {
   if ((c[0]).cn_flow[j] == f && fb_name_eq(c, (c[0]).cn_dm[j], dm) == 1 && fb_name_eq(c, (c[0]).cn_dp[j], dp) == 1) {
-  FbBuf* m11 = (FbBuf*)(fb_verr(c, line));
-  fb_puts(m11, "input '");
-  fb_puts(m11, (const char*)(fb_s(c, dm)));
-  fb_putc(m11, 46);
-  fb_puts(m11, (const char*)(fb_s(c, dp)));
-  fb_puts(m11, "' in flow '");
+  ByteBuf* m11 = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(m11, "input '");
+  bb_puts(m11, (const char*)(fb_s(c, dm)));
+  bb_putc(m11, 46);
+  bb_puts(m11, (const char*)(fb_s(c, dp)));
+  bb_puts(m11, "' in flow '");
   fb_put_fname(m11, c, f);
-  fb_puts(m11, "' has two incoming connections");
+  bb_puts(m11, "' has two incoming connections");
   return (0 - 1);
 }
   j = (j + 1);
@@ -43296,18 +43337,18 @@ int32_t fb_check_loops(Fb* c, int32_t f) {
   e2 = (e2 + 1);
 }
 }
-  FbBuf* mb = (FbBuf*)(fb_verr(c, line));
-  fb_puts(mb, "algebraic loop in connect of flow '");
+  ByteBuf* mb = (ByteBuf*)(fb_verr(c, line));
+  bb_puts(mb, "algebraic loop in connect of flow '");
   fb_put_fname(mb, c, f);
-  fb_puts(mb, "' through combinational outputs: ");
+  bb_puts(mb, "' through combinational outputs: ");
   int32_t q2 = cyc[0];
   while (q2 < sp[0]) {
-  fb_puts(mb, (const char*)(fb_s(c, (c[0]).mm_name[fb_nth_member(c, f, MK_CHILD, stack[q2])])));
-  fb_puts(mb, " -> ");
+  bb_puts(mb, (const char*)(fb_s(c, (c[0]).mm_name[fb_nth_member(c, f, MK_CHILD, stack[q2])])));
+  bb_puts(mb, " -> ");
   q2 = (q2 + 1);
 }
-  fb_puts(mb, (const char*)(fb_s(c, (c[0]).mm_name[fb_nth_member(c, f, MK_CHILD, cyc[1])])));
-  fb_puts(fb_err_hint(c), "break the loop with a state (or an output mapped from a state); Modelica-style algebraic solvers are out of scope");
+  bb_puts(mb, (const char*)(fb_s(c, (c[0]).mm_name[fb_nth_member(c, f, MK_CHILD, cyc[1])])));
+  bb_puts(fb_err_hint(c), "break the loop with a state (or an output mapped from a state); Modelica-style algebraic solvers are out of scope");
   rc = (0 - 1);
 }
   free((uint8_t*)(state));
@@ -43326,12 +43367,12 @@ int32_t fb_validate_flow(Fb* c, int32_t f) {
   if (rl == 0) {
   rl = fline;
 }
-  FbBuf* m = (FbBuf*)(fb_verr(c, rl));
-  fb_puts(m, "unknown recognition domain '");
-  fb_puts(m, (const char*)(fb_s(c, (c[0]).rc_name[r])));
-  fb_puts(m, "' in flow '");
+  ByteBuf* m = (ByteBuf*)(fb_verr(c, rl));
+  bb_puts(m, "unknown recognition domain '");
+  bb_puts(m, (const char*)(fb_s(c, (c[0]).rc_name[r])));
+  bb_puts(m, "' in flow '");
   fb_put_fname(m, c, f);
-  fb_puts(m, "'; valid domains: numerical, realtime, causal, safety, memory");
+  bb_puts(m, "'; valid domains: numerical, realtime, causal, safety, memory");
   return (0 - 1);
 }
   r = (r + 1);
@@ -43339,11 +43380,11 @@ int32_t fb_validate_flow(Fb* c, int32_t f) {
   int32_t nstates = fb_count_members(c, f, MK_STATE);
   int32_t nchildren = fb_count_members(c, f, MK_CHILD);
   if (nstates == 0 && nchildren == 0) {
-  FbBuf* m2 = (FbBuf*)(fb_verr(c, fline));
-  fb_puts(m2, "flow '");
+  ByteBuf* m2 = (ByteBuf*)(fb_verr(c, fline));
+  bb_puts(m2, "flow '");
   fb_put_fname(m2, c, f);
-  fb_puts(m2, "' declares no state");
-  fb_puts(fb_err_hint(c), "add at least one 'state name : f64 = value' declaration, or nest child flows ('plant : Motor') for a composite");
+  bb_puts(m2, "' declares no state");
+  bb_puts(fb_err_hint(c), "add at least one 'state name : f64 = value' declaration, or nest child flows ('plant : Motor') for a composite");
   return (0 - 1);
 }
   int32_t si = 0;
@@ -43369,12 +43410,12 @@ int32_t fb_validate_flow(Fb* c, int32_t f) {
 }
   int32_t gen = fb_where(c, "", (c[0]).f_name[f], suf);
   if (fb_has_name(c, NX_TAKEN, gen) == 1) {
-  FbBuf* m3 = (FbBuf*)(fb_verr(c, fline));
-  fb_puts(m3, "name '");
-  fb_puts(m3, (const char*)(fb_s(c, gen)));
-  fb_puts(m3, "' is reserved by flow '");
+  ByteBuf* m3 = (ByteBuf*)(fb_verr(c, fline));
+  bb_puts(m3, "name '");
+  bb_puts(m3, (const char*)(fb_s(c, gen)));
+  bb_puts(m3, "' is reserved by flow '");
   fb_put_fname(m3, c, f);
-  fb_puts(m3, "' (the compiler generates it)");
+  bb_puts(m3, "' (the compiler generates it)");
   return (0 - 1);
 }
   si = (si + 1);
@@ -43385,18 +43426,18 @@ int32_t fb_validate_flow(Fb* c, int32_t f) {
   int32_t i = 0;
   while (i < (c[0]).nmm) {
   if ((c[0]).mm_flow[i] == f && (c[0]).mm_kind[i] == MK_PARAM && (c[0]).mm_init[i] < 0) {
-  FbBuf* m4 = (FbBuf*)(fb_verr(c, (c[0]).mm_line[i]));
-  fb_puts(m4, "param '");
-  fb_puts(m4, (const char*)(fb_s(c, (c[0]).mm_name[i])));
-  fb_puts(m4, "' in flow '");
+  ByteBuf* m4 = (ByteBuf*)(fb_verr(c, (c[0]).mm_line[i]));
+  bb_puts(m4, "param '");
+  bb_puts(m4, (const char*)(fb_s(c, (c[0]).mm_name[i])));
+  bb_puts(m4, "' in flow '");
   fb_put_fname(m4, c, f);
-  fb_puts(m4, "' needs a default value");
-  FbBuf* h = (FbBuf*)(fb_err_hint(c));
-  fb_puts(h, "write 'param ");
-  fb_puts(h, (const char*)(fb_s(c, (c[0]).mm_name[i])));
-  fb_puts(h, " : ");
-  fb_puts(h, (const char*)(fb_s(c, (c[0]).mm_type[i])));
-  fb_puts(h, " = 1.0'");
+  bb_puts(m4, "' needs a default value");
+  ByteBuf* h = (ByteBuf*)(fb_err_hint(c));
+  bb_puts(h, "write 'param ");
+  bb_puts(h, (const char*)(fb_s(c, (c[0]).mm_name[i])));
+  bb_puts(h, " : ");
+  bb_puts(h, (const char*)(fb_s(c, (c[0]).mm_type[i])));
+  bb_puts(h, " = 1.0'");
   return (0 - 1);
 }
   i = (i + 1);
@@ -43404,16 +43445,16 @@ int32_t fb_validate_flow(Fb* c, int32_t f) {
   i = 0;
   while (i < (c[0]).nmm) {
   if ((c[0]).mm_flow[i] == f && (c[0]).mm_kind[i] == MK_OUTPUT && (c[0]).mm_init[i] < 0) {
-  FbBuf* m5 = (FbBuf*)(fb_verr(c, (c[0]).mm_line[i]));
-  fb_puts(m5, "output '");
-  fb_puts(m5, (const char*)(fb_s(c, (c[0]).mm_name[i])));
-  fb_puts(m5, "' in flow '");
+  ByteBuf* m5 = (ByteBuf*)(fb_verr(c, (c[0]).mm_line[i]));
+  bb_puts(m5, "output '");
+  bb_puts(m5, (const char*)(fb_s(c, (c[0]).mm_name[i])));
+  bb_puts(m5, "' in flow '");
   fb_put_fname(m5, c, f);
-  fb_puts(m5, "' needs an inline map ('output ");
-  fb_puts(m5, (const char*)(fb_s(c, (c[0]).mm_name[i])));
-  fb_puts(m5, " : ");
-  fb_puts(m5, (const char*)(fb_s(c, (c[0]).mm_type[i])));
-  fb_puts(m5, " = expr'); assigning outputs from 'every'/'when' blocks is a later card");
+  bb_puts(m5, "' needs an inline map ('output ");
+  bb_puts(m5, (const char*)(fb_s(c, (c[0]).mm_name[i])));
+  bb_puts(m5, " : ");
+  bb_puts(m5, (const char*)(fb_s(c, (c[0]).mm_type[i])));
+  bb_puts(m5, " = expr'); assigning outputs from 'every'/'when' blocks is a later card");
   return (0 - 1);
 }
   i = (i + 1);
@@ -43423,27 +43464,27 @@ int32_t fb_validate_flow(Fb* c, int32_t f) {
   if ((c[0]).ev_flow[e] == f) {
   int32_t tg = (c[0]).ev_target[e];
   if (fb_find_member(c, f, MK_STATE, tg) < 0) {
-  FbBuf* m6 = (FbBuf*)(fb_verr(c, (c[0]).ev_line[e]));
-  fb_puts(m6, "'");
-  fb_puts(m6, (const char*)(fb_s(c, tg)));
-  fb_puts(m6, " evolves as' in flow '");
+  ByteBuf* m6 = (ByteBuf*)(fb_verr(c, (c[0]).ev_line[e]));
+  bb_puts(m6, "'");
+  bb_puts(m6, (const char*)(fb_s(c, tg)));
+  bb_puts(m6, " evolves as' in flow '");
   fb_put_fname(m6, c, f);
-  fb_puts(m6, "' requires '");
-  fb_puts(m6, (const char*)(fb_s(c, tg)));
-  fb_puts(m6, "' to be a declared state");
-  FbBuf* h2 = (FbBuf*)(fb_err_hint(c));
-  fb_puts(h2, "declare 'state ");
-  fb_puts(h2, (const char*)(fb_s(c, tg)));
-  fb_puts(h2, " : f64 = 0.0' or fix the name");
+  bb_puts(m6, "' requires '");
+  bb_puts(m6, (const char*)(fb_s(c, tg)));
+  bb_puts(m6, "' to be a declared state");
+  ByteBuf* h2 = (ByteBuf*)(fb_err_hint(c));
+  bb_puts(h2, "declare 'state ");
+  bb_puts(h2, (const char*)(fb_s(c, tg)));
+  bb_puts(h2, " : f64 = 0.0' or fix the name");
   return (0 - 1);
 }
   if (fb_evolve_of(c, f, tg) != e) {
-  FbBuf* m7 = (FbBuf*)(fb_verr(c, (c[0]).ev_line[e]));
-  fb_puts(m7, "state '");
-  fb_puts(m7, (const char*)(fb_s(c, tg)));
-  fb_puts(m7, "' in flow '");
+  ByteBuf* m7 = (ByteBuf*)(fb_verr(c, (c[0]).ev_line[e]));
+  bb_puts(m7, "state '");
+  bb_puts(m7, (const char*)(fb_s(c, tg)));
+  bb_puts(m7, "' in flow '");
   fb_put_fname(m7, c, f);
-  fb_puts(m7, "' has two 'evolves' declarations; a state has exactly one derivative");
+  bb_puts(m7, "' has two 'evolves' declarations; a state has exactly one derivative");
   return (0 - 1);
 }
   if (fb_check_pure(c, (c[0]).ev_expr[e], f, fb_where(c, "'", tg, " evolves as'"), (c[0]).ev_line[e]) < 0) {
@@ -43457,35 +43498,35 @@ int32_t fb_validate_flow(Fb* c, int32_t f) {
   if ((c[0]).wh_flow[w] == f) {
   int32_t gt = (c[0]).wh_target[w];
   if (fb_find_member(c, f, MK_STATE, gt) < 0) {
-  FbBuf* m8 = (FbBuf*)(fb_verr(c, (c[0]).wh_line[w]));
-  fb_puts(m8, "'when ");
-  fb_puts(m8, (const char*)(fb_s(c, gt)));
-  fb_puts(m8, " reaches' in flow '");
+  ByteBuf* m8 = (ByteBuf*)(fb_verr(c, (c[0]).wh_line[w]));
+  bb_puts(m8, "'when ");
+  bb_puts(m8, (const char*)(fb_s(c, gt)));
+  bb_puts(m8, " reaches' in flow '");
   fb_put_fname(m8, c, f);
-  fb_puts(m8, "' requires '");
-  fb_puts(m8, (const char*)(fb_s(c, gt)));
-  fb_puts(m8, "' to be a declared state");
-  FbBuf* h3 = (FbBuf*)(fb_err_hint(c));
-  fb_puts(h3, "declare 'state ");
-  fb_puts(h3, (const char*)(fb_s(c, gt)));
-  fb_puts(h3, " : f64 = 0.0' or fix the name");
+  bb_puts(m8, "' requires '");
+  bb_puts(m8, (const char*)(fb_s(c, gt)));
+  bb_puts(m8, "' to be a declared state");
+  ByteBuf* h3 = (ByteBuf*)(fb_err_hint(c));
+  bb_puts(h3, "declare 'state ");
+  bb_puts(h3, (const char*)(fb_s(c, gt)));
+  bb_puts(h3, " : f64 = 0.0' or fix the name");
   return (0 - 1);
 }
   if (fb_evolve_of(c, f, gt) < 0) {
-  FbBuf* m9 = (FbBuf*)(fb_verr(c, (c[0]).wh_line[w]));
-  fb_puts(m9, "'when ");
-  fb_puts(m9, (const char*)(fb_s(c, gt)));
-  fb_puts(m9, " reaches' in flow '");
+  ByteBuf* m9 = (ByteBuf*)(fb_verr(c, (c[0]).wh_line[w]));
+  bb_puts(m9, "'when ");
+  bb_puts(m9, (const char*)(fb_s(c, gt)));
+  bb_puts(m9, " reaches' in flow '");
   fb_put_fname(m9, c, f);
-  fb_puts(m9, "' requires '");
-  fb_puts(m9, (const char*)(fb_s(c, gt)));
-  fb_puts(m9, "' to be a continuous state");
-  FbBuf* h4 = (FbBuf*)(fb_err_hint(c));
-  fb_puts(h4, "give '");
-  fb_puts(h4, (const char*)(fb_s(c, gt)));
-  fb_puts(h4, "' an '");
-  fb_puts(h4, (const char*)(fb_s(c, gt)));
-  fb_puts(h4, " evolves as ...' declaration");
+  bb_puts(m9, "' requires '");
+  bb_puts(m9, (const char*)(fb_s(c, gt)));
+  bb_puts(m9, "' to be a continuous state");
+  ByteBuf* h4 = (ByteBuf*)(fb_err_hint(c));
+  bb_puts(h4, "give '");
+  bb_puts(h4, (const char*)(fb_s(c, gt)));
+  bb_puts(h4, "' an '");
+  bb_puts(h4, (const char*)(fb_s(c, gt)));
+  bb_puts(h4, " evolves as ...' declaration");
   return (0 - 1);
 }
   if (fb_check_threshold(c, (c[0]).wh_thr[w], f, w) < 0) {
@@ -43496,25 +43537,25 @@ int32_t fb_validate_flow(Fb* c, int32_t f) {
   if ((c[0]).bc_kind[b] == 1 && (c[0]).bc_owner[b] == w) {
   int32_t rt = (c[0]).bc_target[b];
   if (fb_find_member(c, f, MK_STATE, rt) < 0) {
-  FbBuf* m10 = (FbBuf*)(fb_verr(c, (c[0]).bc_line[b]));
-  fb_puts(m10, "'");
-  fb_puts(m10, (const char*)(fb_s(c, rt)));
-  fb_puts(m10, " becomes' in the 'when ");
-  fb_puts(m10, (const char*)(fb_s(c, gt)));
-  fb_puts(m10, " reaches' body of flow '");
+  ByteBuf* m10 = (ByteBuf*)(fb_verr(c, (c[0]).bc_line[b]));
+  bb_puts(m10, "'");
+  bb_puts(m10, (const char*)(fb_s(c, rt)));
+  bb_puts(m10, " becomes' in the 'when ");
+  bb_puts(m10, (const char*)(fb_s(c, gt)));
+  bb_puts(m10, " reaches' body of flow '");
   fb_put_fname(m10, c, f);
-  fb_puts(m10, "' requires '");
-  fb_puts(m10, (const char*)(fb_s(c, rt)));
-  fb_puts(m10, "' to be a declared state");
+  bb_puts(m10, "' requires '");
+  bb_puts(m10, (const char*)(fb_s(c, rt)));
+  bb_puts(m10, "' to be a declared state");
   return (0 - 1);
 }
   if (fb_becomes_seen(c, 1, w, b) == 1) {
-  FbBuf* m11 = (FbBuf*)(fb_verr(c, (c[0]).bc_line[b]));
-  fb_puts(m11, "state '");
-  fb_puts(m11, (const char*)(fb_s(c, rt)));
-  fb_puts(m11, "' has two 'becomes' resets in one 'when' body of flow '");
+  ByteBuf* m11 = (ByteBuf*)(fb_verr(c, (c[0]).bc_line[b]));
+  bb_puts(m11, "state '");
+  bb_puts(m11, (const char*)(fb_s(c, rt)));
+  bb_puts(m11, "' has two 'becomes' resets in one 'when' body of flow '");
   fb_put_fname(m11, c, f);
-  fb_puts(m11, "'; resets in an event apply simultaneously, so each state has one writer");
+  bb_puts(m11, "'; resets in an event apply simultaneously, so each state has one writer");
   return (0 - 1);
 }
   if (fb_check_pure(c, (c[0]).bc_expr[b], f, fb_where(c, "'", rt, " becomes'"), (c[0]).bc_line[b]) < 0) {
@@ -43528,22 +43569,22 @@ int32_t fb_validate_flow(Fb* c, int32_t f) {
 }
   if ((c[0]).f_solver[f] == 1) {
   if ((c[0]).f_dt_ns[f] <= 0) {
-  FbBuf* m12 = (FbBuf*)(fb_verr(c, (c[0]).f_solver_line[f]));
-  fb_puts(m12, "solver dt of flow '");
+  ByteBuf* m12 = (ByteBuf*)(fb_verr(c, (c[0]).f_solver_line[f]));
+  bb_puts(m12, "solver dt of flow '");
   fb_put_fname(m12, c, f);
-  fb_puts(m12, "' must be positive, got '");
-  fb_puts(m12, (const char*)(fb_s(c, (c[0]).f_dt_text[f])));
-  fb_puts(m12, "'");
+  bb_puts(m12, "' must be positive, got '");
+  bb_puts(m12, (const char*)(fb_s(c, (c[0]).f_dt_text[f])));
+  bb_puts(m12, "'");
   return (0 - 1);
 }
   int32_t meth = (c[0]).f_method[f];
   if (fb_name_is(c, meth, "euler") == 0 && fb_name_is(c, meth, "rk4") == 0) {
-  FbBuf* m13 = (FbBuf*)(fb_verr(c, (c[0]).f_solver_line[f]));
-  fb_puts(m13, "unknown solver method '");
-  fb_puts(m13, (const char*)(fb_s(c, meth)));
-  fb_puts(m13, "' in flow '");
+  ByteBuf* m13 = (ByteBuf*)(fb_verr(c, (c[0]).f_solver_line[f]));
+  bb_puts(m13, "unknown solver method '");
+  bb_puts(m13, (const char*)(fb_s(c, meth)));
+  bb_puts(m13, "' in flow '");
   fb_put_fname(m13, c, f);
-  fb_puts(m13, "'; valid methods: euler, rk4");
+  bb_puts(m13, "'; valid methods: euler, rk4");
   return (0 - 1);
 }
 }
@@ -43551,12 +43592,12 @@ int32_t fb_validate_flow(Fb* c, int32_t f) {
   while (v < (c[0]).ney) {
   if ((c[0]).ey_flow[v] == f) {
   if ((c[0]).ey_ns[v] <= 0) {
-  FbBuf* m14 = (FbBuf*)(fb_verr(c, (c[0]).ey_line[v]));
-  fb_puts(m14, "'every ");
-  fb_puts(m14, (const char*)(fb_s(c, (c[0]).ey_text[v])));
-  fb_puts(m14, "' in flow '");
+  ByteBuf* m14 = (ByteBuf*)(fb_verr(c, (c[0]).ey_line[v]));
+  bb_puts(m14, "'every ");
+  bb_puts(m14, (const char*)(fb_s(c, (c[0]).ey_text[v])));
+  bb_puts(m14, "' in flow '");
   fb_put_fname(m14, c, f);
-  fb_puts(m14, "' has a zero period; the period must be positive");
+  bb_puts(m14, "' has a zero period; the period must be positive");
   return (0 - 1);
 }
   int32_t u = 0;
@@ -43564,40 +43605,40 @@ int32_t fb_validate_flow(Fb* c, int32_t f) {
   if ((c[0]).bc_kind[u] == 2 && (c[0]).bc_owner[u] == v) {
   int32_t ut = (c[0]).bc_target[u];
   if (fb_find_member(c, f, MK_STATE, ut) < 0) {
-  FbBuf* m15 = (FbBuf*)(fb_verr(c, (c[0]).bc_line[u]));
-  fb_puts(m15, "'");
-  fb_puts(m15, (const char*)(fb_s(c, ut)));
-  fb_puts(m15, " becomes' in the 'every ");
-  fb_puts(m15, (const char*)(fb_s(c, (c[0]).ey_text[v])));
-  fb_puts(m15, "' body of flow '");
+  ByteBuf* m15 = (ByteBuf*)(fb_verr(c, (c[0]).bc_line[u]));
+  bb_puts(m15, "'");
+  bb_puts(m15, (const char*)(fb_s(c, ut)));
+  bb_puts(m15, " becomes' in the 'every ");
+  bb_puts(m15, (const char*)(fb_s(c, (c[0]).ey_text[v])));
+  bb_puts(m15, "' body of flow '");
   fb_put_fname(m15, c, f);
-  fb_puts(m15, "' requires '");
-  fb_puts(m15, (const char*)(fb_s(c, ut)));
-  fb_puts(m15, "' to be a declared state");
+  bb_puts(m15, "' requires '");
+  bb_puts(m15, (const char*)(fb_s(c, ut)));
+  bb_puts(m15, "' to be a declared state");
   return (0 - 1);
 }
   if (fb_evolve_of(c, f, ut) >= 0) {
-  FbBuf* m16 = (FbBuf*)(fb_verr(c, (c[0]).bc_line[u]));
-  fb_puts(m16, "state '");
-  fb_puts(m16, (const char*)(fb_s(c, ut)));
-  fb_puts(m16, "' in flow '");
+  ByteBuf* m16 = (ByteBuf*)(fb_verr(c, (c[0]).bc_line[u]));
+  bb_puts(m16, "state '");
+  bb_puts(m16, (const char*)(fb_s(c, ut)));
+  bb_puts(m16, "' in flow '");
   fb_put_fname(m16, c, f);
-  fb_puts(m16, "' has both an 'evolves' declaration and a 'becomes' update in an 'every' block; a state is continuous or discrete");
-  FbBuf* h5 = (FbBuf*)(fb_err_hint(c));
-  fb_puts(h5, "reset '");
-  fb_puts(h5, (const char*)(fb_s(c, ut)));
-  fb_puts(h5, "' from a 'when ");
-  fb_puts(h5, (const char*)(fb_s(c, ut)));
-  fb_puts(h5, " reaches ...' event, or drop its 'evolves' declaration");
+  bb_puts(m16, "' has both an 'evolves' declaration and a 'becomes' update in an 'every' block; a state is continuous or discrete");
+  ByteBuf* h5 = (ByteBuf*)(fb_err_hint(c));
+  bb_puts(h5, "reset '");
+  bb_puts(h5, (const char*)(fb_s(c, ut)));
+  bb_puts(h5, "' from a 'when ");
+  bb_puts(h5, (const char*)(fb_s(c, ut)));
+  bb_puts(h5, " reaches ...' event, or drop its 'evolves' declaration");
   return (0 - 1);
 }
   if (fb_becomes_seen(c, 2, v, u) == 1) {
-  FbBuf* m17 = (FbBuf*)(fb_verr(c, (c[0]).bc_line[u]));
-  fb_puts(m17, "state '");
-  fb_puts(m17, (const char*)(fb_s(c, ut)));
-  fb_puts(m17, "' has two 'becomes' updates in one 'every' body of flow '");
+  ByteBuf* m17 = (ByteBuf*)(fb_verr(c, (c[0]).bc_line[u]));
+  bb_puts(m17, "state '");
+  bb_puts(m17, (const char*)(fb_s(c, ut)));
+  bb_puts(m17, "' has two 'becomes' updates in one 'every' body of flow '");
   fb_put_fname(m17, c, f);
-  fb_puts(m17, "'; updates in a block apply simultaneously, so each state has one writer");
+  bb_puts(m17, "'; updates in a block apply simultaneously, so each state has one writer");
   return (0 - 1);
 }
   if (fb_check_pure(c, (c[0]).bc_expr[u], f, fb_where(c, "'", ut, " becomes'"), (c[0]).bc_line[u]) < 0) {
@@ -43816,7 +43857,7 @@ int32_t fb_count_whens(Fb* c, int32_t f) {
   return n;
 }
 
-void fb_emit_expr(Fb* c, FbBuf* b, int32_t x) {
+void fb_emit_expr(Fb* c, ByteBuf* b, int32_t x) {
   int32_t f = (c[0]).cur;
   int32_t s = (c[0]).nfs[x];
   int32_t e = (c[0]).nfe[x];
@@ -43836,36 +43877,36 @@ void fb_emit_expr(Fb* c, FbBuf* b, int32_t x) {
   k = (k + 1);
 }
   if (plain == 1) {
-  fb_put_span(b, p, g0, g1);
+  bb_put_span(b, p, g0, g1);
 } else {
-  fb_putc(b, 32);
+  bb_putc(b, 32);
 }
 }
 }
   if ((c[0]).tvar[t] == 1 && fb_is_member_tok(c, f, t) == 1) {
-  fb_puts(b, "self.");
+  bb_puts(b, "self.");
 }
-  fb_put_span(b, p, (c[0]).ts[t], (c[0]).te[t]);
+  bb_put_span(b, p, (c[0]).ts[t], (c[0]).te[t]);
   t = (t + 1);
 }
 }
 
-void fb_put_name(Fb* c, FbBuf* b, int32_t off) {
-  fb_puts(b, (const char*)(fb_s(c, off)));
+void fb_put_name(Fb* c, ByteBuf* b, int32_t off) {
+  bb_puts(b, (const char*)(fb_s(c, off)));
 }
 
-void fb_put_self(Fb* c, FbBuf* b, int32_t off) {
-  fb_puts(b, "self.");
+void fb_put_self(Fb* c, ByteBuf* b, int32_t off) {
+  bb_puts(b, "self.");
   fb_put_name(c, b, off);
 }
 
-void fb_put_seconds(FbBuf* b, int64_t ns) {
+void fb_put_seconds(ByteBuf* b, int64_t ns) {
   if (ns == 0) {
-  fb_puts(b, "0.0");
+  bb_puts(b, "0.0");
   return;
 }
-  FbBuf* db = (FbBuf*)(fb_buf_new(32));
-  fb_put_i64(db, ns);
+  ByteBuf* db = (ByteBuf*)(bb_new(32));
+  bb_put_i64(db, ns);
   int32_t full = (db[0]).len;
   int32_t nd = full;
   while (nd > 1 && (db[0]).p[(nd - 1)] == 48) {
@@ -43874,55 +43915,55 @@ void fb_put_seconds(FbBuf* b, int64_t ns) {
   int32_t decpt = (full - 9);
   uint8_t* d = (uint8_t*)((db[0]).p);
   if (decpt <= (0 - 4) || decpt > 16) {
-  fb_putc(b, d[0]);
+  bb_putc(b, d[0]);
   if (nd > 1) {
-  fb_putc(b, 46);
-  fb_put_span(b, d, 1, nd);
+  bb_putc(b, 46);
+  bb_put_span(b, d, 1, nd);
 }
-  fb_putc(b, 101);
+  bb_putc(b, 101);
   int32_t ex = (decpt - 1);
   if (ex < 0) {
-  fb_putc(b, 45);
+  bb_putc(b, 45);
 } else {
-  fb_putc(b, 43);
+  bb_putc(b, 43);
 }
   int32_t ax = ex;
   if (ax < 0) {
   ax = (0 - ax);
 }
   if (ax < 10) {
-  fb_putc(b, 48);
+  bb_putc(b, 48);
 }
-  fb_put_int(b, ax);
+  bb_put_i32(b, ax);
 } else {
   if (decpt <= 0) {
-  fb_puts(b, "0.");
+  bb_puts(b, "0.");
   int32_t z = 0;
   while (z < (0 - decpt)) {
-  fb_putc(b, 48);
+  bb_putc(b, 48);
   z = (z + 1);
 }
-  fb_put_span(b, d, 0, nd);
+  bb_put_span(b, d, 0, nd);
 } else {
   if (decpt >= nd) {
-  fb_put_span(b, d, 0, nd);
+  bb_put_span(b, d, 0, nd);
   int32_t z2 = nd;
   while (z2 < decpt) {
-  fb_putc(b, 48);
+  bb_putc(b, 48);
   z2 = (z2 + 1);
 }
-  fb_puts(b, ".0");
+  bb_puts(b, ".0");
 } else {
-  fb_put_span(b, d, 0, decpt);
-  fb_putc(b, 46);
-  fb_put_span(b, d, decpt, nd);
+  bb_put_span(b, d, 0, decpt);
+  bb_putc(b, 46);
+  bb_put_span(b, d, decpt, nd);
 }
 }
 }
-  fb_buf_free(db);
+  bb_free(db);
 }
 
-void fb_put_mtype(Fb* c, FbBuf* b, int32_t i) {
+void fb_put_mtype(Fb* c, ByteBuf* b, int32_t i) {
   fb_put_name(c, b, (c[0]).mm_type[i]);
 }
 
@@ -43933,19 +43974,19 @@ int32_t fb_is_float_type(Fb* c, int32_t ty) {
   return 0;
 }
 
-void fb_put_dtype(Fb* c, FbBuf* b, int32_t i) {
+void fb_put_dtype(Fb* c, ByteBuf* b, int32_t i) {
   if (fb_is_float_type(c, (c[0]).mm_type[i]) == 1) {
   fb_put_mtype(c, b, i);
 } else {
-  fb_puts(b, "f64");
+  bb_puts(b, "f64");
 }
 }
 
-void fb_put_dt(Fb* c, FbBuf* b, int32_t i) {
+void fb_put_dt(Fb* c, ByteBuf* b, int32_t i) {
   if (fb_name_is(c, (c[0]).mm_type[i], "f32") == 1) {
-  fb_puts(b, "(dt as f32)");
+  bb_puts(b, "(dt as f32)");
 } else {
-  fb_puts(b, "dt");
+  bb_puts(b, "dt");
 }
 }
 
@@ -43975,29 +44016,29 @@ int32_t fb_field_kind(int32_t r) {
   return MK_PARAM;
 }
 
-void fb_put_zero(Fb* c, FbBuf* b, int32_t ty) {
+void fb_put_zero(Fb* c, ByteBuf* b, int32_t ty) {
   if (fb_name_is(c, ty, "i64") == 1) {
-  fb_puts(b, "0");
+  bb_puts(b, "0");
   return;
 }
   if (fb_is_float_type(c, ty) == 1) {
-  fb_puts(b, "0.0");
+  bb_puts(b, "0.0");
   return;
 }
   if (fb_find_flow(c, ty) < 0) {
-  fb_puts(b, "(0.0 as ");
+  bb_puts(b, "(0.0 as ");
   fb_put_name(c, b, ty);
-  fb_puts(b, ")");
+  bb_puts(b, ")");
   return;
 }
   fb_put_name(c, b, ty);
-  fb_puts(b, "_new()");
+  bb_puts(b, "_new()");
 }
 
-void fb_emit_struct(Fb* c, FbBuf* b, int32_t f) {
-  fb_puts(b, "struct ");
+void fb_emit_struct(Fb* c, ByteBuf* b, int32_t f) {
+  bb_puts(b, "struct ");
   fb_put_fname(b, c, f);
-  fb_puts(b, " { ");
+  bb_puts(b, " { ");
   int32_t first = 1;
   int32_t r = 0;
   while (r < 5) {
@@ -44007,11 +44048,11 @@ void fb_emit_struct(Fb* c, FbBuf* b, int32_t f) {
   while (k < n) {
   int32_t i = fb_nth_member(c, f, kind, k);
   if (first == 0) {
-  fb_puts(b, ", ");
+  bb_puts(b, ", ");
 }
   first = 0;
   fb_put_name(c, b, (c[0]).mm_name[i]);
-  fb_puts(b, ": ");
+  bb_puts(b, ": ");
   fb_put_mtype(c, b, i);
   k = (k + 1);
 }
@@ -44021,55 +44062,55 @@ void fb_emit_struct(Fb* c, FbBuf* b, int32_t f) {
   int32_t j = 0;
   while (j < ne) {
   if (first == 0) {
-  fb_puts(b, ", ");
+  bb_puts(b, ", ");
 }
   first = 0;
-  fb_puts(b, "__every_");
-  fb_put_int(b, j);
-  fb_puts(b, "_acc: i64");
+  bb_puts(b, "__every_");
+  bb_put_i32(b, j);
+  bb_puts(b, "_acc: i64");
   j = (j + 1);
 }
   int32_t nw = fb_count_whens(c, f);
   j = 0;
   while (j < nw) {
   if (first == 0) {
-  fb_puts(b, ", ");
+  bb_puts(b, ", ");
 }
   first = 0;
-  fb_puts(b, "__guard_");
-  fb_put_int(b, j);
-  fb_puts(b, "_prev: f64");
+  bb_puts(b, "__guard_");
+  bb_put_i32(b, j);
+  bb_puts(b, "_prev: f64");
   j = (j + 1);
 }
-  fb_puts(b, " }");
+  bb_puts(b, " }");
 }
 
-void fb_fn_head(Fb* c, FbBuf* b, int32_t f, const char* suffix, const char* params, const char* ret) {
-  fb_puts(b, "@flow_api function ");
+void fb_fn_head(Fb* c, ByteBuf* b, int32_t f, const char* suffix, const char* params, const char* ret) {
+  bb_puts(b, "@flow_api function ");
   fb_put_fname(b, c, f);
-  fb_puts(b, suffix);
-  fb_puts(b, "(");
+  bb_puts(b, suffix);
+  bb_puts(b, "(");
   if (strlen(params) > 0) {
-  fb_puts(b, params);
+  bb_puts(b, params);
 }
-  fb_puts(b, ") -> ");
-  fb_puts(b, ret);
-  fb_puts(b, " { ");
+  bb_puts(b, ") -> ");
+  bb_puts(b, ret);
+  bb_puts(b, " { ");
 }
 
-void fb_self_param(Fb* c, FbBuf* b, int32_t f) {
-  fb_puts(b, "self: ptr<");
+void fb_self_param(Fb* c, ByteBuf* b, int32_t f) {
+  bb_puts(b, "self: ptr<");
   fb_put_fname(b, c, f);
-  fb_puts(b, ">");
+  bb_puts(b, ">");
 }
 
-void fb_emit_new(Fb* c, FbBuf* b, int32_t f) {
+void fb_emit_new(Fb* c, ByteBuf* b, int32_t f) {
   fb_fn_head(c, b, f, "_new", "", (const char*)(fb_s(c, (c[0]).f_name[f])));
-  fb_puts(b, "let mut __self: ");
+  bb_puts(b, "let mut __self: ");
   fb_put_fname(b, c, f);
-  fb_puts(b, " = ");
+  bb_puts(b, " = ");
   fb_put_fname(b, c, f);
-  fb_puts(b, " { ");
+  bb_puts(b, " { ");
   int32_t first = 1;
   int32_t r = 0;
   while (r < 5) {
@@ -44079,11 +44120,11 @@ void fb_emit_new(Fb* c, FbBuf* b, int32_t f) {
   while (k < n) {
   int32_t i = fb_nth_member(c, f, kind, k);
   if (first == 0) {
-  fb_puts(b, ", ");
+  bb_puts(b, ", ");
 }
   first = 0;
   fb_put_name(c, b, (c[0]).mm_name[i]);
-  fb_puts(b, ": ");
+  bb_puts(b, ": ");
   fb_put_zero(c, b, (c[0]).mm_type[i]);
   k = (k + 1);
 }
@@ -44093,29 +44134,29 @@ void fb_emit_new(Fb* c, FbBuf* b, int32_t f) {
   int32_t j = 0;
   while (j < ne) {
   if (first == 0) {
-  fb_puts(b, ", ");
+  bb_puts(b, ", ");
 }
   first = 0;
-  fb_puts(b, "__every_");
-  fb_put_int(b, j);
-  fb_puts(b, "_acc: 0");
+  bb_puts(b, "__every_");
+  bb_put_i32(b, j);
+  bb_puts(b, "_acc: 0");
   j = (j + 1);
 }
   int32_t nw = fb_count_whens(c, f);
   j = 0;
   while (j < nw) {
   if (first == 0) {
-  fb_puts(b, ", ");
+  bb_puts(b, ", ");
 }
   first = 0;
-  fb_puts(b, "__guard_");
-  fb_put_int(b, j);
-  fb_puts(b, "_prev: 0.0");
+  bb_puts(b, "__guard_");
+  bb_put_i32(b, j);
+  bb_puts(b, "_prev: 0.0");
   j = (j + 1);
 }
-  fb_puts(b, " }; ");
+  bb_puts(b, " }; ");
   fb_put_fname(b, c, f);
-  fb_puts(b, "_init(&__self); return __self; }");
+  bb_puts(b, "_init(&__self); return __self; }");
 }
 
 int32_t fb_nth_when(Fb* c, int32_t f, int32_t k) {
@@ -44148,18 +44189,18 @@ int32_t fb_nth_every(Fb* c, int32_t f, int32_t k) {
   return (0 - 1);
 }
 
-void fb_emit_guard(Fb* c, FbBuf* b, int32_t f, int32_t w) {
+void fb_emit_guard(Fb* c, ByteBuf* b, int32_t f, int32_t w) {
   int32_t st = fb_find_member(c, f, MK_STATE, (c[0]).wh_target[w]);
   int32_t narrow = fb_name_is(c, (c[0]).mm_type[st], "f32");
   if (narrow == 1) {
-  fb_puts(b, "((");
+  bb_puts(b, "((");
 }
   fb_put_self(c, b, (c[0]).wh_target[w]);
-  fb_puts(b, " - (");
+  bb_puts(b, " - (");
   fb_emit_expr(c, b, (c[0]).wh_thr[w]);
-  fb_puts(b, ")");
+  bb_puts(b, ")");
   if (narrow == 1) {
-  fb_puts(b, ") as f64)");
+  bb_puts(b, ") as f64)");
 }
 }
 
@@ -44170,20 +44211,20 @@ int32_t fb_has_outputs(Fb* c, int32_t f) {
   return 0;
 }
 
-void fb_emit_init(Fb* c, FbBuf* b, int32_t f) {
-  fb_puts(b, "@flow_api function ");
+void fb_emit_init(Fb* c, ByteBuf* b, int32_t f) {
+  bb_puts(b, "@flow_api function ");
   fb_put_fname(b, c, f);
-  fb_puts(b, "_init(");
+  bb_puts(b, "_init(");
   fb_self_param(c, b, f);
-  fb_puts(b, ") -> void { ");
+  bb_puts(b, ") -> void { ");
   int32_t np = fb_count_members(c, f, MK_PARAM);
   int32_t k = 0;
   while (k < np) {
   int32_t i = fb_nth_member(c, f, MK_PARAM, k);
   fb_put_self(c, b, (c[0]).mm_name[i]);
-  fb_puts(b, " = ");
+  bb_puts(b, " = ");
   fb_emit_expr(c, b, (c[0]).mm_init[i]);
-  fb_puts(b, "; ");
+  bb_puts(b, "; ");
   k = (k + 1);
 }
   int32_t ni = fb_count_members(c, f, MK_INPUT);
@@ -44191,7 +44232,7 @@ void fb_emit_init(Fb* c, FbBuf* b, int32_t f) {
   while (k < ni) {
   int32_t i2 = fb_nth_member(c, f, MK_INPUT, k);
   fb_put_self(c, b, (c[0]).mm_name[i2]);
-  fb_puts(b, " = 0.0; ");
+  bb_puts(b, " = 0.0; ");
   k = (k + 1);
 }
   int32_t ns = fb_count_members(c, f, MK_STATE);
@@ -44199,13 +44240,13 @@ void fb_emit_init(Fb* c, FbBuf* b, int32_t f) {
   while (k < ns) {
   int32_t i3 = fb_nth_member(c, f, MK_STATE, k);
   fb_put_self(c, b, (c[0]).mm_name[i3]);
-  fb_puts(b, " = ");
+  bb_puts(b, " = ");
   if ((c[0]).mm_init[i3] >= 0) {
   fb_emit_expr(c, b, (c[0]).mm_init[i3]);
 } else {
-  fb_puts(b, "0.0");
+  bb_puts(b, "0.0");
 }
-  fb_puts(b, "; ");
+  bb_puts(b, "; ");
   k = (k + 1);
 }
   int32_t nc = fb_count_members(c, f, MK_CHILD);
@@ -44213,17 +44254,17 @@ void fb_emit_init(Fb* c, FbBuf* b, int32_t f) {
   while (k < nc) {
   int32_t i4 = fb_nth_member(c, f, MK_CHILD, k);
   fb_put_name(c, b, (c[0]).mm_type[i4]);
-  fb_puts(b, "_init(&");
+  bb_puts(b, "_init(&");
   fb_put_self(c, b, (c[0]).mm_name[i4]);
-  fb_puts(b, "); ");
+  bb_puts(b, "); ");
   int32_t pk = (c[0]).mm_params[i4];
   while (pk >= 0) {
   fb_put_self(c, b, (c[0]).mm_name[i4]);
-  fb_putc(b, 46);
-  fb_put_span(b, (c[0]).src, (c[0]).ts[(c[0]).ntok[pk]], (c[0]).te[(c[0]).ntok[pk]]);
-  fb_puts(b, " = ");
+  bb_putc(b, 46);
+  bb_put_span(b, (c[0]).src, (c[0]).ts[(c[0]).ntok[pk]], (c[0]).te[(c[0]).ntok[pk]]);
+  bb_puts(b, " = ");
   fb_emit_expr(c, b, (c[0]).na[pk]);
-  fb_puts(b, "; ");
+  bb_puts(b, "; ");
   pk = (c[0]).nx[pk];
 }
   k = (k + 1);
@@ -44231,26 +44272,26 @@ void fb_emit_init(Fb* c, FbBuf* b, int32_t f) {
   int32_t ne = fb_count_everys(c, f);
   k = 0;
   while (k < ne) {
-  fb_puts(b, "self.__every_");
-  fb_put_int(b, k);
-  fb_puts(b, "_acc = 0; ");
+  bb_puts(b, "self.__every_");
+  bb_put_i32(b, k);
+  bb_puts(b, "_acc = 0; ");
   k = (k + 1);
 }
   int32_t nw = fb_count_whens(c, f);
   k = 0;
   while (k < nw) {
-  fb_puts(b, "self.__guard_");
-  fb_put_int(b, k);
-  fb_puts(b, "_prev = ");
+  bb_puts(b, "self.__guard_");
+  bb_put_i32(b, k);
+  bb_puts(b, "_prev = ");
   fb_emit_guard(c, b, f, fb_nth_when(c, f, k));
-  fb_puts(b, "; ");
+  bb_puts(b, "; ");
   k = (k + 1);
 }
   if (fb_has_outputs(c, f) == 1) {
   fb_put_fname(b, c, f);
-  fb_puts(b, "_outputs(self); ");
+  bb_puts(b, "_outputs(self); ");
 }
-  fb_puts(b, "}");
+  bb_puts(b, "}");
 }
 
 int32_t fb_nth_evolved(Fb* c, int32_t f, int32_t k) {
@@ -44278,63 +44319,63 @@ int32_t fb_count_evolved(Fb* c, int32_t f) {
   return n;
 }
 
-void fb_emit_derivs(Fb* c, FbBuf* b, int32_t f) {
-  fb_puts(b, "@flow_api function ");
+void fb_emit_derivs(Fb* c, ByteBuf* b, int32_t f) {
+  bb_puts(b, "@flow_api function ");
   fb_put_fname(b, c, f);
-  fb_puts(b, "_derivs(");
+  bb_puts(b, "_derivs(");
   fb_self_param(c, b, f);
   int32_t nev = fb_count_evolved(c, f);
   int32_t k = 0;
   while (k < nev) {
   int32_t i = fb_nth_evolved(c, f, k);
-  fb_puts(b, ", d_");
+  bb_puts(b, ", d_");
   fb_put_name(c, b, (c[0]).mm_name[i]);
-  fb_puts(b, ": ptr<");
+  bb_puts(b, ": ptr<");
   fb_put_dtype(c, b, i);
-  fb_puts(b, ">");
+  bb_puts(b, ">");
   k = (k + 1);
 }
-  fb_puts(b, ") -> void { ");
+  bb_puts(b, ") -> void { ");
   k = 0;
   while (k < nev) {
   int32_t i2 = fb_nth_evolved(c, f, k);
   int32_t e = fb_evolve_of(c, f, (c[0]).mm_name[i2]);
-  fb_puts(b, "d_");
+  bb_puts(b, "d_");
   fb_put_name(c, b, (c[0]).mm_name[i2]);
-  fb_puts(b, "[0] = ");
+  bb_puts(b, "[0] = ");
   fb_emit_expr(c, b, (c[0]).ev_expr[e]);
-  fb_puts(b, "; ");
+  bb_puts(b, "; ");
   k = (k + 1);
 }
-  fb_puts(b, "}");
+  bb_puts(b, "}");
 }
 
-void fb_emit_derivs_call(Fb* c, FbBuf* b, int32_t f, const char* stage) {
+void fb_emit_derivs_call(Fb* c, ByteBuf* b, int32_t f, const char* stage) {
   fb_put_fname(b, c, f);
-  fb_puts(b, "_derivs(self");
+  bb_puts(b, "_derivs(self");
   int32_t nev = fb_count_evolved(c, f);
   int32_t k = 0;
   while (k < nev) {
   int32_t i = fb_nth_evolved(c, f, k);
-  fb_puts(b, ", &");
-  fb_puts(b, stage);
-  fb_putc(b, 95);
+  bb_puts(b, ", &");
+  bb_puts(b, stage);
+  bb_putc(b, 95);
   fb_put_name(c, b, (c[0]).mm_name[i]);
   k = (k + 1);
 }
-  fb_puts(b, "); ");
+  bb_puts(b, "); ");
 }
 
-void fb_emit_euler(Fb* c, FbBuf* b, int32_t f) {
+void fb_emit_euler(Fb* c, ByteBuf* b, int32_t f) {
   int32_t nev = fb_count_evolved(c, f);
   int32_t k = 0;
   while (k < nev) {
   int32_t i = fb_nth_evolved(c, f, k);
-  fb_puts(b, "let mut d_");
+  bb_puts(b, "let mut d_");
   fb_put_name(c, b, (c[0]).mm_name[i]);
-  fb_puts(b, ": ");
+  bb_puts(b, ": ");
   fb_put_dtype(c, b, i);
-  fb_puts(b, " = 0.0; ");
+  bb_puts(b, " = 0.0; ");
   k = (k + 1);
 }
   if (nev > 0) {
@@ -44345,65 +44386,65 @@ void fb_emit_euler(Fb* c, FbBuf* b, int32_t f) {
   int32_t i2 = fb_nth_evolved(c, f, k);
   int32_t nm = (c[0]).mm_name[i2];
   fb_put_self(c, b, nm);
-  fb_puts(b, " = ");
+  bb_puts(b, " = ");
   fb_put_self(c, b, nm);
-  fb_puts(b, " + ");
+  bb_puts(b, " + ");
   int32_t dim = (1 - fb_is_float_type(c, (c[0]).mm_type[i2]));
   if (dim == 1) {
-  fb_puts(b, "((");
+  bb_puts(b, "((");
 }
-  fb_puts(b, "d_");
+  bb_puts(b, "d_");
   fb_put_name(c, b, nm);
-  fb_puts(b, " * ");
+  bb_puts(b, " * ");
   fb_put_dt(c, b, i2);
   if (dim == 1) {
-  fb_puts(b, ") as ");
+  bb_puts(b, ") as ");
   fb_put_mtype(c, b, i2);
-  fb_puts(b, ")");
+  bb_puts(b, ")");
 }
-  fb_puts(b, "; ");
+  bb_puts(b, "; ");
   k = (k + 1);
 }
 }
 
-void fb_emit_rk_stage(Fb* c, FbBuf* b, int32_t f, const char* stage, int32_t scale) {
+void fb_emit_rk_stage(Fb* c, ByteBuf* b, int32_t f, const char* stage, int32_t scale) {
   int32_t nev = fb_count_evolved(c, f);
   int32_t k = 0;
   while (k < nev) {
   int32_t i = fb_nth_evolved(c, f, k);
   int32_t nm = (c[0]).mm_name[i];
   fb_put_self(c, b, nm);
-  fb_puts(b, " = y0_");
+  bb_puts(b, " = y0_");
   fb_put_name(c, b, nm);
-  fb_puts(b, " + ");
-  fb_puts(b, stage);
-  fb_putc(b, 95);
+  bb_puts(b, " + ");
+  bb_puts(b, stage);
+  bb_putc(b, 95);
   fb_put_name(c, b, nm);
-  fb_puts(b, " * ");
+  bb_puts(b, " * ");
   if (scale == 1) {
-  fb_puts(b, "(");
+  bb_puts(b, "(");
   fb_put_dt(c, b, i);
-  fb_puts(b, " * 0.5)");
+  bb_puts(b, " * 0.5)");
 } else {
   fb_put_dt(c, b, i);
 }
-  fb_puts(b, "; ");
+  bb_puts(b, "; ");
   k = (k + 1);
 }
 }
 
-void fb_emit_rk4(Fb* c, FbBuf* b, int32_t f) {
+void fb_emit_rk4(Fb* c, ByteBuf* b, int32_t f) {
   int32_t nev = fb_count_evolved(c, f);
   int32_t k = 0;
   while (k < nev) {
   int32_t i = fb_nth_evolved(c, f, k);
-  fb_puts(b, "let y0_");
+  bb_puts(b, "let y0_");
   fb_put_name(c, b, (c[0]).mm_name[i]);
-  fb_puts(b, ": ");
+  bb_puts(b, ": ");
   fb_put_mtype(c, b, i);
-  fb_puts(b, " = ");
+  bb_puts(b, " = ");
   fb_put_self(c, b, (c[0]).mm_name[i]);
-  fb_puts(b, "; ");
+  bb_puts(b, "; ");
   k = (k + 1);
 }
   int32_t st = 1;
@@ -44411,13 +44452,13 @@ void fb_emit_rk4(Fb* c, FbBuf* b, int32_t f) {
   k = 0;
   while (k < nev) {
   int32_t i2 = fb_nth_evolved(c, f, k);
-  fb_puts(b, "let mut k");
-  fb_put_int(b, st);
-  fb_putc(b, 95);
+  bb_puts(b, "let mut k");
+  bb_put_i32(b, st);
+  bb_putc(b, 95);
   fb_put_name(c, b, (c[0]).mm_name[i2]);
-  fb_puts(b, ": ");
+  bb_puts(b, ": ");
   fb_put_mtype(c, b, i2);
-  fb_puts(b, " = 0.0; ");
+  bb_puts(b, " = 0.0; ");
   k = (k + 1);
 }
   st = (st + 1);
@@ -44434,73 +44475,73 @@ void fb_emit_rk4(Fb* c, FbBuf* b, int32_t f) {
   int32_t i3 = fb_nth_evolved(c, f, k);
   int32_t nm = (c[0]).mm_name[i3];
   fb_put_self(c, b, nm);
-  fb_puts(b, " = y0_");
+  bb_puts(b, " = y0_");
   fb_put_name(c, b, nm);
-  fb_puts(b, " + (k1_");
+  bb_puts(b, " + (k1_");
   fb_put_name(c, b, nm);
-  fb_puts(b, " + k2_");
+  bb_puts(b, " + k2_");
   fb_put_name(c, b, nm);
-  fb_puts(b, " * 2.0 + k3_");
+  bb_puts(b, " * 2.0 + k3_");
   fb_put_name(c, b, nm);
-  fb_puts(b, " * 2.0 + k4_");
+  bb_puts(b, " * 2.0 + k4_");
   fb_put_name(c, b, nm);
-  fb_puts(b, ") * (");
+  bb_puts(b, ") * (");
   fb_put_dt(c, b, i3);
-  fb_puts(b, " / 6.0); ");
+  bb_puts(b, " / 6.0); ");
   k = (k + 1);
 }
 }
 
-void fb_emit_every(Fb* c, FbBuf* b, int32_t f, int32_t k) {
+void fb_emit_every(Fb* c, ByteBuf* b, int32_t f, int32_t k) {
   int32_t v = fb_nth_every(c, f, k);
-  FbBuf* acc = (FbBuf*)(fb_buf_new(32));
-  fb_puts(acc, "self.__every_");
-  fb_put_int(acc, k);
-  fb_puts(acc, "_acc");
+  ByteBuf* acc = (ByteBuf*)(bb_new(32));
+  bb_puts(acc, "self.__every_");
+  bb_put_i32(acc, k);
+  bb_puts(acc, "_acc");
   const char* a = (const char*)((acc[0]).p);
-  fb_puts(b, a);
-  fb_puts(b, " = ");
-  fb_puts(b, a);
-  fb_puts(b, " + __dt_ns; let mut __every_");
-  fb_put_int(b, k);
-  fb_puts(b, "_n: i64 = 0; while ");
-  fb_puts(b, a);
-  fb_puts(b, " >= ");
-  fb_put_i64(b, (c[0]).ey_ns[v]);
-  fb_puts(b, " && __every_");
-  fb_put_int(b, k);
-  fb_puts(b, "_n < 1024 { ");
-  fb_puts(b, a);
-  fb_puts(b, " = ");
-  fb_puts(b, a);
-  fb_puts(b, " - ");
-  fb_put_i64(b, (c[0]).ey_ns[v]);
-  fb_puts(b, "; __every_");
-  fb_put_int(b, k);
-  fb_puts(b, "_n = __every_");
-  fb_put_int(b, k);
-  fb_puts(b, "_n + 1; ");
+  bb_puts(b, a);
+  bb_puts(b, " = ");
+  bb_puts(b, a);
+  bb_puts(b, " + __dt_ns; let mut __every_");
+  bb_put_i32(b, k);
+  bb_puts(b, "_n: i64 = 0; while ");
+  bb_puts(b, a);
+  bb_puts(b, " >= ");
+  bb_put_i64(b, (c[0]).ey_ns[v]);
+  bb_puts(b, " && __every_");
+  bb_put_i32(b, k);
+  bb_puts(b, "_n < 1024 { ");
+  bb_puts(b, a);
+  bb_puts(b, " = ");
+  bb_puts(b, a);
+  bb_puts(b, " - ");
+  bb_put_i64(b, (c[0]).ey_ns[v]);
+  bb_puts(b, "; __every_");
+  bb_put_i32(b, k);
+  bb_puts(b, "_n = __every_");
+  bb_put_i32(b, k);
+  bb_puts(b, "_n + 1; ");
   fb_emit_staged(c, b, f, 2, v, "__tick_", k);
-  fb_puts(b, "} ");
-  fb_buf_free(acc);
+  bb_puts(b, "} ");
+  bb_free(acc);
 }
 
-void fb_emit_staged(Fb* c, FbBuf* b, int32_t f, int32_t kind, int32_t owner, const char* prefix, int32_t k) {
+void fb_emit_staged(Fb* c, ByteBuf* b, int32_t f, int32_t kind, int32_t owner, const char* prefix, int32_t k) {
   int32_t u = 0;
   while (u < (c[0]).nbc) {
   if ((c[0]).bc_kind[u] == kind && (c[0]).bc_owner[u] == owner) {
   int32_t tg = (c[0]).bc_target[u];
   int32_t st = fb_find_member(c, f, MK_STATE, tg);
-  fb_puts(b, "let ");
-  fb_puts(b, prefix);
-  fb_put_int(b, k);
-  fb_putc(b, 95);
+  bb_puts(b, "let ");
+  bb_puts(b, prefix);
+  bb_put_i32(b, k);
+  bb_putc(b, 95);
   fb_put_name(c, b, tg);
-  fb_puts(b, ": ");
+  bb_puts(b, ": ");
   fb_put_mtype(c, b, st);
-  fb_puts(b, " = ");
+  bb_puts(b, " = ");
   fb_emit_expr(c, b, (c[0]).bc_expr[u]);
-  fb_puts(b, "; ");
+  bb_puts(b, "; ");
 }
   u = (u + 1);
 }
@@ -44509,36 +44550,36 @@ void fb_emit_staged(Fb* c, FbBuf* b, int32_t f, int32_t kind, int32_t owner, con
   if ((c[0]).bc_kind[u] == kind && (c[0]).bc_owner[u] == owner) {
   int32_t tg2 = (c[0]).bc_target[u];
   fb_put_self(c, b, tg2);
-  fb_puts(b, " = ");
-  fb_puts(b, prefix);
-  fb_put_int(b, k);
-  fb_putc(b, 95);
+  bb_puts(b, " = ");
+  bb_puts(b, prefix);
+  bb_put_i32(b, k);
+  bb_putc(b, 95);
   fb_put_name(c, b, tg2);
-  fb_puts(b, "; ");
+  bb_puts(b, "; ");
 }
   u = (u + 1);
 }
 }
 
-void fb_emit_event(Fb* c, FbBuf* b, int32_t f, int32_t k) {
+void fb_emit_event(Fb* c, ByteBuf* b, int32_t f, int32_t k) {
   int32_t w = fb_nth_when(c, f, k);
-  fb_puts(b, "let __g_");
-  fb_put_int(b, k);
-  fb_puts(b, ": f64 = ");
+  bb_puts(b, "let __g_");
+  bb_put_i32(b, k);
+  bb_puts(b, ": f64 = ");
   fb_emit_guard(c, b, f, w);
-  fb_puts(b, "; if (__g_");
-  fb_put_int(b, k);
-  fb_puts(b, " < 0.0) != (self.__guard_");
-  fb_put_int(b, k);
-  fb_puts(b, "_prev < 0.0) || __g_");
-  fb_put_int(b, k);
-  fb_puts(b, " == 0.0 { ");
+  bb_puts(b, "; if (__g_");
+  bb_put_i32(b, k);
+  bb_puts(b, " < 0.0) != (self.__guard_");
+  bb_put_i32(b, k);
+  bb_puts(b, "_prev < 0.0) || __g_");
+  bb_put_i32(b, k);
+  bb_puts(b, " == 0.0 { ");
   fb_emit_staged(c, b, f, 1, w, "__reset_", k);
-  fb_puts(b, "} self.__guard_");
-  fb_put_int(b, k);
-  fb_puts(b, "_prev = ");
+  bb_puts(b, "} self.__guard_");
+  bb_put_i32(b, k);
+  bb_puts(b, "_prev = ");
   fb_emit_guard(c, b, f, w);
-  fb_puts(b, "; ");
+  bb_puts(b, "; ");
 }
 
 int32_t fb_topo_children(Fb* c, int32_t f, int32_t* order) {
@@ -44577,7 +44618,7 @@ int32_t fb_topo_children(Fb* c, int32_t f, int32_t* order) {
   cyclic = 1;
 } else {
   done[pick] = 1;
-  { __typeof__(order[placed]) __flowc_st26337 = fb_nth_member(c, f, MK_CHILD, pick); order[placed] = __flowc_st26337; }
+  { __typeof__(order[placed]) __flowc_st26064 = fb_nth_member(c, f, MK_CHILD, pick); order[placed] = __flowc_st26064; }
   placed = (placed + 1);
   int32_t pn = (c[0]).mm_name[order[(placed - 1)]];
   i = 0;
@@ -44595,7 +44636,7 @@ int32_t fb_topo_children(Fb* c, int32_t f, int32_t* order) {
   if (cyclic == 1) {
   k = 0;
   while (k < n) {
-  { __typeof__(order[k]) __flowc_st26450 = fb_nth_member(c, f, MK_CHILD, k); order[k] = __flowc_st26450; }
+  { __typeof__(order[k]) __flowc_st26177 = fb_nth_member(c, f, MK_CHILD, k); order[k] = __flowc_st26177; }
   k = (k + 1);
 }
 }
@@ -44604,7 +44645,7 @@ int32_t fb_topo_children(Fb* c, int32_t f, int32_t* order) {
   return n;
 }
 
-void fb_emit_child_steps(Fb* c, FbBuf* b, int32_t f) {
+void fb_emit_child_steps(Fb* c, ByteBuf* b, int32_t f) {
   int32_t n = fb_count_members(c, f, MK_CHILD);
   if (n == 0) {
   return;
@@ -44619,24 +44660,24 @@ void fb_emit_child_steps(Fb* c, FbBuf* b, int32_t f) {
   while (i < (c[0]).ncn) {
   if ((c[0]).cn_flow[i] == f && fb_name_eq(c, (c[0]).cn_dm[i], cn) == 1) {
   fb_put_self(c, b, (c[0]).cn_dm[i]);
-  fb_putc(b, 46);
+  bb_putc(b, 46);
   fb_put_name(c, b, (c[0]).cn_dp[i]);
-  fb_puts(b, " = ");
+  bb_puts(b, " = ");
   if (fb_name_is(c, (c[0]).cn_sm[i], "") == 1) {
   fb_put_self(c, b, (c[0]).cn_sp[i]);
 } else {
   fb_put_self(c, b, (c[0]).cn_sm[i]);
-  fb_putc(b, 46);
+  bb_putc(b, 46);
   fb_put_name(c, b, (c[0]).cn_sp[i]);
 }
-  fb_puts(b, "; ");
+  bb_puts(b, "; ");
 }
   i = (i + 1);
 }
   fb_put_name(c, b, (c[0]).mm_type[ch]);
-  fb_puts(b, "_step(&");
+  bb_puts(b, "_step(&");
   fb_put_self(c, b, cn);
-  fb_puts(b, ", dt); ");
+  bb_puts(b, ", dt); ");
   k = (k + 1);
 }
   free((uint8_t*)(order));
@@ -44673,23 +44714,23 @@ int32_t fb_nth_clause(Fb* c, int32_t f, int32_t idx) {
   return (0 - 1);
 }
 
-void fb_put_escaped(FbBuf* b, uint8_t* s) {
+void fb_put_escaped(ByteBuf* b, uint8_t* s) {
   int32_t i = 0;
   while (s[i] != 0) {
   if (s[i] == 92 || s[i] == 34) {
-  fb_putc(b, 92);
+  bb_putc(b, 92);
 }
-  fb_putc(b, s[i]);
+  bb_putc(b, s[i]);
   i = (i + 1);
 }
 }
 
-void fb_emit_step(Fb* c, FbBuf* b, int32_t f) {
-  fb_puts(b, "@flow_api function ");
+void fb_emit_step(Fb* c, ByteBuf* b, int32_t f) {
+  bb_puts(b, "@flow_api function ");
   fb_put_fname(b, c, f);
-  fb_puts(b, "_step(");
+  bb_puts(b, "_step(");
   fb_self_param(c, b, f);
-  fb_puts(b, ", dt: f64) -> void { ");
+  bb_puts(b, ", dt: f64) -> void { ");
   if ((c[0]).f_solver[f] == 1 && fb_name_is(c, (c[0]).f_method[f], "rk4") == 1) {
   fb_emit_rk4(c, b, f);
 } else {
@@ -44697,7 +44738,7 @@ void fb_emit_step(Fb* c, FbBuf* b, int32_t f) {
 }
   int32_t ne = fb_count_everys(c, f);
   if (ne > 0) {
-  fb_puts(b, "let __dt_ns: i64 = ((dt * 1000000000.0) as i64); ");
+  bb_puts(b, "let __dt_ns: i64 = ((dt * 1000000000.0) as i64); ");
 }
   int32_t k = 0;
   while (k < ne) {
@@ -44712,94 +44753,94 @@ void fb_emit_step(Fb* c, FbBuf* b, int32_t f) {
 }
   if (fb_has_outputs(c, f) == 1) {
   fb_put_fname(b, c, f);
-  fb_puts(b, "_outputs(self); ");
+  bb_puts(b, "_outputs(self); ");
 }
   fb_emit_child_steps(c, b, f);
   int32_t nclauses = fb_count_clauses(c, f);
   if (nclauses > 0) {
-  fb_puts(b, "let __viol: i32 = ");
+  bb_puts(b, "let __viol: i32 = ");
   fb_put_fname(b, c, f);
-  fb_puts(b, "_check(self); ");
+  bb_puts(b, "_check(self); ");
   int32_t q = 0;
   while (q < nclauses) {
   int32_t cl = fb_nth_clause(c, f, q);
-  fb_puts(b, "if __viol == ");
-  fb_put_int(b, (q + 1));
-  fb_puts(b, " { flow_panic(\"");
-  FbBuf* mb = (FbBuf*)(fb_buf_new(64));
+  bb_puts(b, "if __viol == ");
+  bb_put_i32(b, (q + 1));
+  bb_puts(b, " { flow_panic(\"");
+  ByteBuf* mb = (ByteBuf*)(bb_new(64));
   fb_put_fname(mb, c, f);
-  fb_putc(mb, 58);
-  fb_put_int(mb, (c[0]).iv_line[cl]);
-  fb_puts(mb, ": invariant violated: ");
-  fb_puts(mb, (const char*)(fb_s(c, (c[0]).iv_text[cl])));
+  bb_putc(mb, 58);
+  bb_put_i32(mb, (c[0]).iv_line[cl]);
+  bb_puts(mb, ": invariant violated: ");
+  bb_puts(mb, (const char*)(fb_s(c, (c[0]).iv_text[cl])));
   fb_put_escaped(b, (mb[0]).p);
-  fb_buf_free(mb);
-  fb_puts(b, "\"); } ");
+  bb_free(mb);
+  bb_puts(b, "\"); } ");
   q = (q + 1);
 }
 }
-  fb_puts(b, "}");
+  bb_puts(b, "}");
 }
 
-void fb_emit_default_dt(Fb* c, FbBuf* b, int32_t f) {
-  fb_puts(b, "@flow_api function ");
+void fb_emit_default_dt(Fb* c, ByteBuf* b, int32_t f) {
+  bb_puts(b, "@flow_api function ");
   fb_put_fname(b, c, f);
-  fb_puts(b, "_default_dt() -> f64 { return ");
+  bb_puts(b, "_default_dt() -> f64 { return ");
   if ((c[0]).f_solver[f] == 1) {
   fb_put_seconds(b, (c[0]).f_dt_ns[f]);
 } else {
   fb_put_seconds(b, 1000000);
 }
-  fb_puts(b, "; }");
+  bb_puts(b, "; }");
 }
 
-void fb_emit_outputs(Fb* c, FbBuf* b, int32_t f) {
-  fb_puts(b, "@flow_api function ");
+void fb_emit_outputs(Fb* c, ByteBuf* b, int32_t f) {
+  bb_puts(b, "@flow_api function ");
   fb_put_fname(b, c, f);
-  fb_puts(b, "_outputs(");
+  bb_puts(b, "_outputs(");
   fb_self_param(c, b, f);
-  fb_puts(b, ") -> void { ");
+  bb_puts(b, ") -> void { ");
   int32_t no = fb_count_members(c, f, MK_OUTPUT);
   int32_t k = 0;
   while (k < no) {
   int32_t o = fb_nth_member(c, f, MK_OUTPUT, k);
   fb_put_self(c, b, (c[0]).mm_name[o]);
-  fb_puts(b, " = ");
+  bb_puts(b, " = ");
   if ((c[0]).mm_pipe_m[o] >= 0) {
   fb_put_self(c, b, (c[0]).mm_pipe_m[o]);
-  fb_putc(b, 46);
+  bb_putc(b, 46);
   fb_put_name(c, b, (c[0]).mm_pipe_p[o]);
 } else {
   fb_emit_expr(c, b, (c[0]).mm_init[o]);
 }
-  fb_puts(b, "; ");
+  bb_puts(b, "; ");
   k = (k + 1);
 }
-  fb_puts(b, "}");
+  bb_puts(b, "}");
 }
 
-void fb_emit_check(Fb* c, FbBuf* b, int32_t f) {
-  fb_puts(b, "@flow_api function ");
+void fb_emit_check(Fb* c, ByteBuf* b, int32_t f) {
+  bb_puts(b, "@flow_api function ");
   fb_put_fname(b, c, f);
-  fb_puts(b, "_check(");
+  bb_puts(b, "_check(");
   fb_self_param(c, b, f);
-  fb_puts(b, ") -> i32 { ");
+  bb_puts(b, ") -> i32 { ");
   int32_t n = fb_count_clauses(c, f);
   int32_t q = 0;
   while (q < n) {
   int32_t cl = fb_nth_clause(c, f, q);
   if ((c[0]).iv_kind[cl] == 1) {
-  fb_puts(b, "if !(");
+  bb_puts(b, "if !(");
 } else {
-  fb_puts(b, "if (");
+  bb_puts(b, "if (");
 }
   fb_emit_expr(c, b, (c[0]).iv_expr[cl]);
-  fb_puts(b, ") { return ");
-  fb_put_int(b, (q + 1));
-  fb_puts(b, "; } ");
+  bb_puts(b, ") { return ");
+  bb_put_i32(b, (q + 1));
+  bb_puts(b, "; } ");
   q = (q + 1);
 }
-  fb_puts(b, "return 0; }");
+  bb_puts(b, "return 0; }");
 }
 
 void fb_mark_flow(Fb* c, int32_t f) {
@@ -44876,16 +44917,16 @@ void fb_lower_flow(Fb* c, int32_t f) {
   if (fb_count_clauses(c, f) > 0) {
   ndecl = (ndecl + 1);
 }
-  FbBuf* b = (FbBuf*)((c[0]).out);
+  ByteBuf* b = (ByteBuf*)((c[0]).out);
   int32_t d = 0;
   int32_t used = 0;
   while (d < ndecl) {
   if (d > 0) {
   if (used < (lines - 1)) {
-  fb_putc(b, 10);
+  bb_putc(b, 10);
   used = (used + 1);
 } else {
-  fb_putc(b, 32);
+  bb_putc(b, 32);
 }
 }
   if (d == 0) {
@@ -44919,7 +44960,7 @@ void fb_lower_flow(Fb* c, int32_t f) {
   d = (d + 1);
 }
   while (used < (lines - 1)) {
-  fb_putc(b, 10);
+  bb_putc(b, 10);
   used = (used + 1);
 }
 }
@@ -44934,101 +44975,101 @@ Fb* fb_ctx_new(uint8_t* src, int32_t n) {
   (c[0]).n = n;
   int32_t tcap = (n + 2);
   (c[0]).nt = 0;
-  { __typeof__((c[0]).tk) __flowc_st28029 = fb_alloc_i32(tcap); (c[0]).tk = __flowc_st28029; }
-  { __typeof__((c[0]).top) __flowc_st28036 = fb_alloc_i32(tcap); (c[0]).top = __flowc_st28036; }
-  { __typeof__((c[0]).ts) __flowc_st28043 = fb_alloc_i32(tcap); (c[0]).ts = __flowc_st28043; }
-  { __typeof__((c[0]).te) __flowc_st28050 = fb_alloc_i32(tcap); (c[0]).te = __flowc_st28050; }
-  { __typeof__((c[0]).tl) __flowc_st28057 = fb_alloc_i32(tcap); (c[0]).tl = __flowc_st28057; }
-  { __typeof__((c[0]).tc) __flowc_st28064 = fb_alloc_i32(tcap); (c[0]).tc = __flowc_st28064; }
-  { __typeof__((c[0]).tvar) __flowc_st28071 = fb_alloc_i32(tcap); (c[0]).tvar = __flowc_st28071; }
+  { __typeof__((c[0]).tk) __flowc_st27756 = fb_alloc_i32(tcap); (c[0]).tk = __flowc_st27756; }
+  { __typeof__((c[0]).top) __flowc_st27763 = fb_alloc_i32(tcap); (c[0]).top = __flowc_st27763; }
+  { __typeof__((c[0]).ts) __flowc_st27770 = fb_alloc_i32(tcap); (c[0]).ts = __flowc_st27770; }
+  { __typeof__((c[0]).te) __flowc_st27777 = fb_alloc_i32(tcap); (c[0]).te = __flowc_st27777; }
+  { __typeof__((c[0]).tl) __flowc_st27784 = fb_alloc_i32(tcap); (c[0]).tl = __flowc_st27784; }
+  { __typeof__((c[0]).tc) __flowc_st27791 = fb_alloc_i32(tcap); (c[0]).tc = __flowc_st27791; }
+  { __typeof__((c[0]).tvar) __flowc_st27798 = fb_alloc_i32(tcap); (c[0]).tvar = __flowc_st27798; }
   (c[0]).pos = 0;
   (c[0]).nn = 0;
   (c[0]).ncap = 256;
-  { __typeof__((c[0]).nk) __flowc_st28096 = fb_alloc_i32(256); (c[0]).nk = __flowc_st28096; }
-  { __typeof__((c[0]).nop) __flowc_st28103 = fb_alloc_i32(256); (c[0]).nop = __flowc_st28103; }
-  { __typeof__((c[0]).ntok) __flowc_st28110 = fb_alloc_i32(256); (c[0]).ntok = __flowc_st28110; }
-  { __typeof__((c[0]).na) __flowc_st28117 = fb_alloc_i32(256); (c[0]).na = __flowc_st28117; }
-  { __typeof__((c[0]).nb) __flowc_st28124 = fb_alloc_i32(256); (c[0]).nb = __flowc_st28124; }
-  { __typeof__((c[0]).nc) __flowc_st28131 = fb_alloc_i32(256); (c[0]).nc = __flowc_st28131; }
-  { __typeof__((c[0]).nx) __flowc_st28138 = fb_alloc_i32(256); (c[0]).nx = __flowc_st28138; }
-  { __typeof__((c[0]).nfs) __flowc_st28145 = fb_alloc_i32(256); (c[0]).nfs = __flowc_st28145; }
-  { __typeof__((c[0]).nfe) __flowc_st28152 = fb_alloc_i32(256); (c[0]).nfe = __flowc_st28152; }
-  { __typeof__((c[0]).nm) __flowc_st28159 = fb_buf_new(4096); (c[0]).nm = __flowc_st28159; }
+  { __typeof__((c[0]).nk) __flowc_st27823 = fb_alloc_i32(256); (c[0]).nk = __flowc_st27823; }
+  { __typeof__((c[0]).nop) __flowc_st27830 = fb_alloc_i32(256); (c[0]).nop = __flowc_st27830; }
+  { __typeof__((c[0]).ntok) __flowc_st27837 = fb_alloc_i32(256); (c[0]).ntok = __flowc_st27837; }
+  { __typeof__((c[0]).na) __flowc_st27844 = fb_alloc_i32(256); (c[0]).na = __flowc_st27844; }
+  { __typeof__((c[0]).nb) __flowc_st27851 = fb_alloc_i32(256); (c[0]).nb = __flowc_st27851; }
+  { __typeof__((c[0]).nc) __flowc_st27858 = fb_alloc_i32(256); (c[0]).nc = __flowc_st27858; }
+  { __typeof__((c[0]).nx) __flowc_st27865 = fb_alloc_i32(256); (c[0]).nx = __flowc_st27865; }
+  { __typeof__((c[0]).nfs) __flowc_st27872 = fb_alloc_i32(256); (c[0]).nfs = __flowc_st27872; }
+  { __typeof__((c[0]).nfe) __flowc_st27879 = fb_alloc_i32(256); (c[0]).nfe = __flowc_st27879; }
+  { __typeof__((c[0]).nm) __flowc_st27886 = bb_new(4096); (c[0]).nm = __flowc_st27886; }
   (c[0]).nf = 0;
-  { __typeof__((c[0]).f_name) __flowc_st28172 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_name = __flowc_st28172; }
-  { __typeof__((c[0]).f_line) __flowc_st28179 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_line = __flowc_st28179; }
-  { __typeof__((c[0]).f_start) __flowc_st28186 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_start = __flowc_st28186; }
-  { __typeof__((c[0]).f_end) __flowc_st28193 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_end = __flowc_st28193; }
-  { __typeof__((c[0]).f_solver) __flowc_st28200 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_solver = __flowc_st28200; }
-  { __typeof__((c[0]).f_dt_ns) __flowc_st28216 = (int64_t*)(malloc(((int64_t)((FB_MAX_FLOWS + 1)) * 8))); (c[0]).f_dt_ns = __flowc_st28216; }
-  { __typeof__((c[0]).f_dt_text) __flowc_st28223 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_dt_text = __flowc_st28223; }
-  { __typeof__((c[0]).f_method) __flowc_st28230 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_method = __flowc_st28230; }
-  { __typeof__((c[0]).f_solver_line) __flowc_st28237 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_solver_line = __flowc_st28237; }
-  { __typeof__((c[0]).f_rec) __flowc_st28244 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_rec = __flowc_st28244; }
-  { __typeof__((c[0]).f_rec_line) __flowc_st28251 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_rec_line = __flowc_st28251; }
-  { __typeof__((c[0]).f_out) __flowc_st28258 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_out = __flowc_st28258; }
+  { __typeof__((c[0]).f_name) __flowc_st27899 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_name = __flowc_st27899; }
+  { __typeof__((c[0]).f_line) __flowc_st27906 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_line = __flowc_st27906; }
+  { __typeof__((c[0]).f_start) __flowc_st27913 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_start = __flowc_st27913; }
+  { __typeof__((c[0]).f_end) __flowc_st27920 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_end = __flowc_st27920; }
+  { __typeof__((c[0]).f_solver) __flowc_st27927 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_solver = __flowc_st27927; }
+  { __typeof__((c[0]).f_dt_ns) __flowc_st27943 = (int64_t*)(malloc(((int64_t)((FB_MAX_FLOWS + 1)) * 8))); (c[0]).f_dt_ns = __flowc_st27943; }
+  { __typeof__((c[0]).f_dt_text) __flowc_st27950 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_dt_text = __flowc_st27950; }
+  { __typeof__((c[0]).f_method) __flowc_st27957 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_method = __flowc_st27957; }
+  { __typeof__((c[0]).f_solver_line) __flowc_st27964 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_solver_line = __flowc_st27964; }
+  { __typeof__((c[0]).f_rec) __flowc_st27971 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_rec = __flowc_st27971; }
+  { __typeof__((c[0]).f_rec_line) __flowc_st27978 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_rec_line = __flowc_st27978; }
+  { __typeof__((c[0]).f_out) __flowc_st27985 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_out = __flowc_st27985; }
   int32_t icap = ((tcap * 2) + 16);
   (c[0]).icap = icap;
   (c[0]).nmm = 0;
-  { __typeof__((c[0]).mm_flow) __flowc_st28284 = fb_alloc_i32(icap); (c[0]).mm_flow = __flowc_st28284; }
-  { __typeof__((c[0]).mm_kind) __flowc_st28291 = fb_alloc_i32(icap); (c[0]).mm_kind = __flowc_st28291; }
-  { __typeof__((c[0]).mm_name) __flowc_st28298 = fb_alloc_i32(icap); (c[0]).mm_name = __flowc_st28298; }
-  { __typeof__((c[0]).mm_type) __flowc_st28305 = fb_alloc_i32(icap); (c[0]).mm_type = __flowc_st28305; }
-  { __typeof__((c[0]).mm_init) __flowc_st28312 = fb_alloc_i32(icap); (c[0]).mm_init = __flowc_st28312; }
-  { __typeof__((c[0]).mm_line) __flowc_st28319 = fb_alloc_i32(icap); (c[0]).mm_line = __flowc_st28319; }
-  { __typeof__((c[0]).mm_synth) __flowc_st28326 = fb_alloc_i32(icap); (c[0]).mm_synth = __flowc_st28326; }
-  { __typeof__((c[0]).mm_params) __flowc_st28333 = fb_alloc_i32(icap); (c[0]).mm_params = __flowc_st28333; }
-  { __typeof__((c[0]).mm_pipe_m) __flowc_st28340 = fb_alloc_i32(icap); (c[0]).mm_pipe_m = __flowc_st28340; }
-  { __typeof__((c[0]).mm_pipe_p) __flowc_st28347 = fb_alloc_i32(icap); (c[0]).mm_pipe_p = __flowc_st28347; }
+  { __typeof__((c[0]).mm_flow) __flowc_st28011 = fb_alloc_i32(icap); (c[0]).mm_flow = __flowc_st28011; }
+  { __typeof__((c[0]).mm_kind) __flowc_st28018 = fb_alloc_i32(icap); (c[0]).mm_kind = __flowc_st28018; }
+  { __typeof__((c[0]).mm_name) __flowc_st28025 = fb_alloc_i32(icap); (c[0]).mm_name = __flowc_st28025; }
+  { __typeof__((c[0]).mm_type) __flowc_st28032 = fb_alloc_i32(icap); (c[0]).mm_type = __flowc_st28032; }
+  { __typeof__((c[0]).mm_init) __flowc_st28039 = fb_alloc_i32(icap); (c[0]).mm_init = __flowc_st28039; }
+  { __typeof__((c[0]).mm_line) __flowc_st28046 = fb_alloc_i32(icap); (c[0]).mm_line = __flowc_st28046; }
+  { __typeof__((c[0]).mm_synth) __flowc_st28053 = fb_alloc_i32(icap); (c[0]).mm_synth = __flowc_st28053; }
+  { __typeof__((c[0]).mm_params) __flowc_st28060 = fb_alloc_i32(icap); (c[0]).mm_params = __flowc_st28060; }
+  { __typeof__((c[0]).mm_pipe_m) __flowc_st28067 = fb_alloc_i32(icap); (c[0]).mm_pipe_m = __flowc_st28067; }
+  { __typeof__((c[0]).mm_pipe_p) __flowc_st28074 = fb_alloc_i32(icap); (c[0]).mm_pipe_p = __flowc_st28074; }
   (c[0]).nev = 0;
-  { __typeof__((c[0]).ev_flow) __flowc_st28360 = fb_alloc_i32(icap); (c[0]).ev_flow = __flowc_st28360; }
-  { __typeof__((c[0]).ev_target) __flowc_st28367 = fb_alloc_i32(icap); (c[0]).ev_target = __flowc_st28367; }
-  { __typeof__((c[0]).ev_expr) __flowc_st28374 = fb_alloc_i32(icap); (c[0]).ev_expr = __flowc_st28374; }
-  { __typeof__((c[0]).ev_line) __flowc_st28381 = fb_alloc_i32(icap); (c[0]).ev_line = __flowc_st28381; }
+  { __typeof__((c[0]).ev_flow) __flowc_st28087 = fb_alloc_i32(icap); (c[0]).ev_flow = __flowc_st28087; }
+  { __typeof__((c[0]).ev_target) __flowc_st28094 = fb_alloc_i32(icap); (c[0]).ev_target = __flowc_st28094; }
+  { __typeof__((c[0]).ev_expr) __flowc_st28101 = fb_alloc_i32(icap); (c[0]).ev_expr = __flowc_st28101; }
+  { __typeof__((c[0]).ev_line) __flowc_st28108 = fb_alloc_i32(icap); (c[0]).ev_line = __flowc_st28108; }
   (c[0]).nwh = 0;
-  { __typeof__((c[0]).wh_flow) __flowc_st28394 = fb_alloc_i32(icap); (c[0]).wh_flow = __flowc_st28394; }
-  { __typeof__((c[0]).wh_target) __flowc_st28401 = fb_alloc_i32(icap); (c[0]).wh_target = __flowc_st28401; }
-  { __typeof__((c[0]).wh_thr) __flowc_st28408 = fb_alloc_i32(icap); (c[0]).wh_thr = __flowc_st28408; }
-  { __typeof__((c[0]).wh_line) __flowc_st28415 = fb_alloc_i32(icap); (c[0]).wh_line = __flowc_st28415; }
+  { __typeof__((c[0]).wh_flow) __flowc_st28121 = fb_alloc_i32(icap); (c[0]).wh_flow = __flowc_st28121; }
+  { __typeof__((c[0]).wh_target) __flowc_st28128 = fb_alloc_i32(icap); (c[0]).wh_target = __flowc_st28128; }
+  { __typeof__((c[0]).wh_thr) __flowc_st28135 = fb_alloc_i32(icap); (c[0]).wh_thr = __flowc_st28135; }
+  { __typeof__((c[0]).wh_line) __flowc_st28142 = fb_alloc_i32(icap); (c[0]).wh_line = __flowc_st28142; }
   (c[0]).ney = 0;
-  { __typeof__((c[0]).ey_flow) __flowc_st28428 = fb_alloc_i32(icap); (c[0]).ey_flow = __flowc_st28428; }
-  { __typeof__((c[0]).ey_ns) __flowc_st28444 = (int64_t*)(malloc(((int64_t)((icap + 1)) * 8))); (c[0]).ey_ns = __flowc_st28444; }
-  { __typeof__((c[0]).ey_text) __flowc_st28451 = fb_alloc_i32(icap); (c[0]).ey_text = __flowc_st28451; }
-  { __typeof__((c[0]).ey_line) __flowc_st28458 = fb_alloc_i32(icap); (c[0]).ey_line = __flowc_st28458; }
+  { __typeof__((c[0]).ey_flow) __flowc_st28155 = fb_alloc_i32(icap); (c[0]).ey_flow = __flowc_st28155; }
+  { __typeof__((c[0]).ey_ns) __flowc_st28171 = (int64_t*)(malloc(((int64_t)((icap + 1)) * 8))); (c[0]).ey_ns = __flowc_st28171; }
+  { __typeof__((c[0]).ey_text) __flowc_st28178 = fb_alloc_i32(icap); (c[0]).ey_text = __flowc_st28178; }
+  { __typeof__((c[0]).ey_line) __flowc_st28185 = fb_alloc_i32(icap); (c[0]).ey_line = __flowc_st28185; }
   (c[0]).nbc = 0;
-  { __typeof__((c[0]).bc_kind) __flowc_st28471 = fb_alloc_i32(icap); (c[0]).bc_kind = __flowc_st28471; }
-  { __typeof__((c[0]).bc_owner) __flowc_st28478 = fb_alloc_i32(icap); (c[0]).bc_owner = __flowc_st28478; }
-  { __typeof__((c[0]).bc_target) __flowc_st28485 = fb_alloc_i32(icap); (c[0]).bc_target = __flowc_st28485; }
-  { __typeof__((c[0]).bc_expr) __flowc_st28492 = fb_alloc_i32(icap); (c[0]).bc_expr = __flowc_st28492; }
-  { __typeof__((c[0]).bc_line) __flowc_st28499 = fb_alloc_i32(icap); (c[0]).bc_line = __flowc_st28499; }
+  { __typeof__((c[0]).bc_kind) __flowc_st28198 = fb_alloc_i32(icap); (c[0]).bc_kind = __flowc_st28198; }
+  { __typeof__((c[0]).bc_owner) __flowc_st28205 = fb_alloc_i32(icap); (c[0]).bc_owner = __flowc_st28205; }
+  { __typeof__((c[0]).bc_target) __flowc_st28212 = fb_alloc_i32(icap); (c[0]).bc_target = __flowc_st28212; }
+  { __typeof__((c[0]).bc_expr) __flowc_st28219 = fb_alloc_i32(icap); (c[0]).bc_expr = __flowc_st28219; }
+  { __typeof__((c[0]).bc_line) __flowc_st28226 = fb_alloc_i32(icap); (c[0]).bc_line = __flowc_st28226; }
   (c[0]).niv = 0;
-  { __typeof__((c[0]).iv_flow) __flowc_st28512 = fb_alloc_i32(icap); (c[0]).iv_flow = __flowc_st28512; }
-  { __typeof__((c[0]).iv_kind) __flowc_st28519 = fb_alloc_i32(icap); (c[0]).iv_kind = __flowc_st28519; }
-  { __typeof__((c[0]).iv_expr) __flowc_st28526 = fb_alloc_i32(icap); (c[0]).iv_expr = __flowc_st28526; }
-  { __typeof__((c[0]).iv_line) __flowc_st28533 = fb_alloc_i32(icap); (c[0]).iv_line = __flowc_st28533; }
-  { __typeof__((c[0]).iv_text) __flowc_st28540 = fb_alloc_i32(icap); (c[0]).iv_text = __flowc_st28540; }
+  { __typeof__((c[0]).iv_flow) __flowc_st28239 = fb_alloc_i32(icap); (c[0]).iv_flow = __flowc_st28239; }
+  { __typeof__((c[0]).iv_kind) __flowc_st28246 = fb_alloc_i32(icap); (c[0]).iv_kind = __flowc_st28246; }
+  { __typeof__((c[0]).iv_expr) __flowc_st28253 = fb_alloc_i32(icap); (c[0]).iv_expr = __flowc_st28253; }
+  { __typeof__((c[0]).iv_line) __flowc_st28260 = fb_alloc_i32(icap); (c[0]).iv_line = __flowc_st28260; }
+  { __typeof__((c[0]).iv_text) __flowc_st28267 = fb_alloc_i32(icap); (c[0]).iv_text = __flowc_st28267; }
   (c[0]).ncn = 0;
-  { __typeof__((c[0]).cn_flow) __flowc_st28553 = fb_alloc_i32(icap); (c[0]).cn_flow = __flowc_st28553; }
-  { __typeof__((c[0]).cn_sm) __flowc_st28560 = fb_alloc_i32(icap); (c[0]).cn_sm = __flowc_st28560; }
-  { __typeof__((c[0]).cn_sp) __flowc_st28567 = fb_alloc_i32(icap); (c[0]).cn_sp = __flowc_st28567; }
-  { __typeof__((c[0]).cn_dm) __flowc_st28574 = fb_alloc_i32(icap); (c[0]).cn_dm = __flowc_st28574; }
-  { __typeof__((c[0]).cn_dp) __flowc_st28581 = fb_alloc_i32(icap); (c[0]).cn_dp = __flowc_st28581; }
-  { __typeof__((c[0]).cn_line) __flowc_st28588 = fb_alloc_i32(icap); (c[0]).cn_line = __flowc_st28588; }
+  { __typeof__((c[0]).cn_flow) __flowc_st28280 = fb_alloc_i32(icap); (c[0]).cn_flow = __flowc_st28280; }
+  { __typeof__((c[0]).cn_sm) __flowc_st28287 = fb_alloc_i32(icap); (c[0]).cn_sm = __flowc_st28287; }
+  { __typeof__((c[0]).cn_sp) __flowc_st28294 = fb_alloc_i32(icap); (c[0]).cn_sp = __flowc_st28294; }
+  { __typeof__((c[0]).cn_dm) __flowc_st28301 = fb_alloc_i32(icap); (c[0]).cn_dm = __flowc_st28301; }
+  { __typeof__((c[0]).cn_dp) __flowc_st28308 = fb_alloc_i32(icap); (c[0]).cn_dp = __flowc_st28308; }
+  { __typeof__((c[0]).cn_line) __flowc_st28315 = fb_alloc_i32(icap); (c[0]).cn_line = __flowc_st28315; }
   (c[0]).nrc = 0;
-  { __typeof__((c[0]).rc_flow) __flowc_st28601 = fb_alloc_i32(icap); (c[0]).rc_flow = __flowc_st28601; }
-  { __typeof__((c[0]).rc_name) __flowc_st28608 = fb_alloc_i32(icap); (c[0]).rc_name = __flowc_st28608; }
+  { __typeof__((c[0]).rc_flow) __flowc_st28328 = fb_alloc_i32(icap); (c[0]).rc_flow = __flowc_st28328; }
+  { __typeof__((c[0]).rc_name) __flowc_st28335 = fb_alloc_i32(icap); (c[0]).rc_name = __flowc_st28335; }
   (c[0]).nnames = 0;
-  { __typeof__((c[0]).nx_kind) __flowc_st28621 = fb_alloc_i32(icap); (c[0]).nx_kind = __flowc_st28621; }
-  { __typeof__((c[0]).nx_name) __flowc_st28628 = fb_alloc_i32(icap); (c[0]).nx_name = __flowc_st28628; }
+  { __typeof__((c[0]).nx_kind) __flowc_st28348 = fb_alloc_i32(icap); (c[0]).nx_kind = __flowc_st28348; }
+  { __typeof__((c[0]).nx_name) __flowc_st28355 = fb_alloc_i32(icap); (c[0]).nx_name = __flowc_st28355; }
   (c[0]).err = 0;
   (c[0]).err_flow = (0 - 1);
   (c[0]).err_line = 0;
   (c[0]).err_col = 0;
-  { __typeof__((c[0]).emsg) __flowc_st28661 = fb_buf_new(256); (c[0]).emsg = __flowc_st28661; }
-  { __typeof__((c[0]).ehint) __flowc_st28668 = fb_buf_new(256); (c[0]).ehint = __flowc_st28668; }
+  { __typeof__((c[0]).emsg) __flowc_st28388 = bb_new(256); (c[0]).emsg = __flowc_st28388; }
+  { __typeof__((c[0]).ehint) __flowc_st28395 = bb_new(256); (c[0]).ehint = __flowc_st28395; }
   (c[0]).has_hint = 0;
   (c[0]).cur = 0;
-  { __typeof__((c[0]).out) __flowc_st28691 = fb_buf_new(((n * 2) + 1024)); (c[0]).out = __flowc_st28691; }
+  { __typeof__((c[0]).out) __flowc_st28418 = bb_new(((n * 2) + 1024)); (c[0]).out = __flowc_st28418; }
   return c;
 }
 
@@ -45049,10 +45090,10 @@ void fb_ctx_free(Fb* c) {
   free((uint8_t*)((c[0]).nx));
   free((uint8_t*)((c[0]).nfs));
   free((uint8_t*)((c[0]).nfe));
-  fb_buf_free((c[0]).nm);
-  fb_buf_free((c[0]).emsg);
-  fb_buf_free((c[0]).ehint);
-  fb_buf_free((c[0]).out);
+  bb_free((c[0]).nm);
+  bb_free((c[0]).emsg);
+  bb_free((c[0]).ehint);
+  bb_free((c[0]).out);
   free((uint8_t*)(c));
 }
 
@@ -45162,31 +45203,31 @@ int32_t fb_scan(Fb* c, int32_t* flows) {
 }
 
 void fb_report(Fb* c) {
-  FbBuf* b = (FbBuf*)(fb_buf_new(512));
-  fb_puts(b, "flowc flow: ");
+  ByteBuf* b = (ByteBuf*)(bb_new(512));
+  bb_puts(b, "flowc flow: ");
   if ((c[0]).err == 1) {
-  fb_puts(b, "Error: ");
-  fb_put_span(b, ((c[0]).emsg[0]).p, 0, ((c[0]).emsg[0]).len);
+  bb_puts(b, "Error: ");
+  bb_put_span(b, ((c[0]).emsg[0]).p, 0, ((c[0]).emsg[0]).len);
   if ((c[0]).err_line > 0) {
-  fb_puts(b, " at line ");
-  fb_put_int(b, (c[0]).err_line);
+  bb_puts(b, " at line ");
+  bb_put_i32(b, (c[0]).err_line);
   if ((c[0]).err_col > 0) {
-  fb_puts(b, ", column ");
-  fb_put_int(b, (c[0]).err_col);
+  bb_puts(b, ", column ");
+  bb_put_i32(b, (c[0]).err_col);
 }
 }
 } else {
-  fb_put_span(b, ((c[0]).emsg[0]).p, 0, ((c[0]).emsg[0]).len);
+  bb_put_span(b, ((c[0]).emsg[0]).p, 0, ((c[0]).emsg[0]).len);
 }
   puts((const char*)((b[0]).p));
   if ((c[0]).has_hint == 1) {
   (b[0]).len = 0;
   (b[0]).p[0] = 0;
-  fb_puts(b, "flowc flow hint: ");
-  fb_put_span(b, ((c[0]).ehint[0]).p, 0, ((c[0]).ehint[0]).len);
+  bb_puts(b, "flowc flow hint: ");
+  bb_put_span(b, ((c[0]).ehint[0]).p, 0, ((c[0]).ehint[0]).len);
   puts((const char*)((b[0]).p));
 }
-  fb_buf_free(b);
+  bb_free(b);
 }
 
 int32_t fb_maybe_flow(uint8_t* p, int32_t n) {
@@ -45230,10 +45271,10 @@ int32_t fb_expand(Fb* c) {
   int32_t g = 0;
   while (g < f) {
   if (fb_name_eq(c, (c[0]).f_name[g], (c[0]).f_name[f]) == 1) {
-  FbBuf* m = (FbBuf*)(fb_verr(c, (c[0]).f_line[f]));
-  fb_puts(m, "flow '");
+  ByteBuf* m = (ByteBuf*)(fb_verr(c, (c[0]).f_line[f]));
+  bb_puts(m, "flow '");
   fb_put_fname(m, c, f);
-  fb_puts(m, "' is declared twice");
+  bb_puts(m, "' is declared twice");
   return (0 - 1);
 }
   g = (g + 1);
@@ -45250,12 +45291,12 @@ int32_t fb_expand(Fb* c) {
   if (fb_validate_flow(c, f) < 0) {
   return (0 - 1);
 }
-  fb_put_span((c[0]).out, (c[0]).src, prev, (c[0]).f_start[f]);
+  bb_put_span((c[0]).out, (c[0]).src, prev, (c[0]).f_start[f]);
   fb_lower_flow(c, f);
   prev = (c[0]).f_end[f];
   f = (f + 1);
 }
-  fb_put_span((c[0]).out, (c[0]).src, prev, (c[0]).n);
+  bb_put_span((c[0]).out, (c[0]).src, prev, (c[0]).n);
   return 1;
 }
 
@@ -45277,7 +45318,7 @@ int32_t flowc_flow_blocks_expand_in_place(uint8_t* buf, int32_t n, int32_t cap) 
   fb_ctx_free(c);
   return n;
 }
-  FbBuf* out = (FbBuf*)((c[0]).out);
+  ByteBuf* out = (ByteBuf*)((c[0]).out);
   int32_t m = (out[0]).len;
   if (m >= cap) {
   puts("flowc flow: expanded source exceeds the source buffer");
@@ -46211,6 +46252,7 @@ int32_t flowc_parse_block_nested(Parser* p);
 int32_t flowc_parse_param(Parser* p);
 int32_t flowc_parse_function(Parser* p);
 int32_t flowc_parse_struct(Parser* p);
+int32_t flowc_parse_extern_const(Parser* p);
 int32_t flowc_parse_extern(Parser* p);
 int32_t flowc_parse_import_name(Parser* p);
 int32_t flowc_parse_brace_idents(Parser* p);
@@ -49237,6 +49279,50 @@ int32_t flowc_parse_struct(Parser* p) {
   return id;
 }
 
+int32_t flowc_parse_extern_const(Parser* p) {
+  int32_t start = ((p[0]).cur).start;
+  if (flowc_parser_eat_kw(p, KW_CONST) == 0) {
+  return AST_NONE;
+}
+  if (flowc_parser_check(p[0], TOK_IDENT) == 0) {
+  flowc_parser_fail(p);
+  return AST_NONE;
+}
+  int32_t ns = ((p[0]).cur).start;
+  int32_t ne = ((p[0]).cur).end;
+  flowc_parser_advance(p);
+  if (flowc_parser_eat(p, TOK_COLON) == 0) {
+  return AST_NONE;
+}
+  int32_t ty = flowc_parse_type(p);
+  int32_t cexpr = AST_NONE;
+  if (flowc_parser_check(p[0], TOK_EQ) == 1) {
+  flowc_parser_advance(p);
+  if (flowc_parser_check(p[0], TOK_STRING) == 0) {
+  flowc_parser_fail(p);
+  return AST_NONE;
+}
+  cexpr = flowc_parse_expr(p);
+  if (cexpr == AST_NONE) {
+  return AST_NONE;
+}
+}
+  if (flowc_parser_check(p[0], TOK_SEMI) == 1) {
+  flowc_parser_advance(p);
+}
+  int32_t id = flowc_ast_alloc((&(p[0]).arena), AST_CONST, start, ((p[0]).cur).start);
+  if (id == AST_NONE) {
+  flowc_parser_fail(p);
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[id]).name_start = ns;
+  (((p[0]).arena).nodes[id]).name_end = ne;
+  (((p[0]).arena).nodes[id]).a = ty;
+  (((p[0]).arena).nodes[id]).b = cexpr;
+  (((p[0]).arena).nodes[id]).ival = 2;
+  return id;
+}
+
 int32_t flowc_parse_extern(Parser* p) {
   int32_t start = ((p[0]).cur).start;
   if (flowc_parser_eat_kw(p, KW_EXTERN) == 0) {
@@ -49265,6 +49351,19 @@ int32_t flowc_parse_extern(Parser* p) {
   (((p[0]).arena).nodes[tid]).name_start = tns;
   (((p[0]).arena).nodes[tid]).name_end = tne;
   return tid;
+}
+  if (flowc_parser_check_kw(p[0], KW_CONST) == 1) {
+  int32_t cid = flowc_parse_extern_const(p);
+  if (cid == AST_NONE) {
+  return AST_NONE;
+}
+  int32_t eid = flowc_ast_alloc((&(p[0]).arena), AST_EXTERN, start, ((p[0]).cur).start);
+  if (eid == AST_NONE) {
+  flowc_parser_fail(p);
+  return AST_NONE;
+}
+  (((p[0]).arena).nodes[eid]).a = cid;
+  return eid;
 }
   if (flowc_parser_check_kw(p[0], KW_FUNCTION) == 1) {
   flowc_parser_advance(p);
@@ -49313,6 +49412,17 @@ int32_t flowc_parse_extern(Parser* p) {
   (((p[0]).arena).nodes[tid]).name_start = tns;
   (((p[0]).arena).nodes[tid]).name_end = tne;
   fns = flowc_ast_chain_push((&(p[0]).arena), fns, tid);
+  if (flowc_parser_check(p[0], TOK_COMMA) == 1) {
+  flowc_parser_advance(p);
+}
+  continue;
+}
+  if (flowc_parser_check_kw(p[0], KW_CONST) == 1) {
+  int32_t kid = flowc_parse_extern_const(p);
+  if (kid == AST_NONE) {
+  return AST_NONE;
+}
+  fns = flowc_ast_chain_push((&(p[0]).arena), fns, kid);
   if (flowc_parser_check(p[0], TOK_COMMA) == 1) {
   flowc_parser_advance(p);
 }
@@ -55599,25 +55709,25 @@ int32_t flowc_bpf_gen_compile(const char* in_path, const char* out_path, const c
 }
 
 
-void se_putc(ShBuf* w, uint8_t c);
-void se_puts(ShBuf* w, const char* s);
-const char* se_cstr(ShBuf* w);
+void se_putc(ByteBuf* w, uint8_t c);
+void se_puts(ByteBuf* w, const char* s);
+const char* se_cstr(ByteBuf* w);
 void se_error(const char* head, const char* tail);
 void se_ctx_error(ShCtx* c);
-ShBuf* se_path(const char* dir, ShBuf* a, const char* b);
+ByteBuf* se_path(const char* dir, ByteBuf* a, const char* b);
 void se_mkdirs(const char* dir);
-ShBuf* se_stem(const char* path);
-int32_t se_write(ShBuf* path, ShBuf* data);
-ShBuf* se_fill_name(ShCtx* c, int32_t k);
+ByteBuf* se_stem(const char* path);
+int32_t se_write(ByteBuf* path, ByteBuf* data);
+ByteBuf* se_fill_name(ShCtx* c, int32_t k);
 int32_t se_metal(ShCtx* c, const char* in_path, const char* out_dir, uint8_t* name, int32_t nlen);
 int32_t se_wgsl(ShCtx* c, const char* in_path, const char* out_dir, uint8_t* name, int32_t nlen);
 int32_t se_mode_is(const char* mode, const char* want);
 int32_t flowc_shader_mode(const char* mode, const char* in_path, const char* out_path, const char* name);
-void se_putc(ShBuf* w, uint8_t c) {
+void se_putc(ByteBuf* w, uint8_t c) {
   flowc_shader_putc(w, c);
 }
 
-void se_puts(ShBuf* w, const char* s) {
+void se_puts(ByteBuf* w, const char* s) {
   uint8_t* p = (uint8_t*)(s);
   int32_t n = (int32_t)(strlen(s));
   int32_t i = 0;
@@ -55627,13 +55737,13 @@ void se_puts(ShBuf* w, const char* s) {
 }
 }
 
-const char* se_cstr(ShBuf* w) {
-  (w[0]).buf[(w[0]).len] = 0;
-  return (const char*)((w[0]).buf);
+const char* se_cstr(ByteBuf* w) {
+  (w[0]).p[(w[0]).len] = 0;
+  return (const char*)((w[0]).p);
 }
 
 void se_error(const char* head, const char* tail) {
-  ShBuf* w = (ShBuf*)(flowc_shader_buf_new(4096));
+  ByteBuf* w = (ByteBuf*)(flowc_shader_buf_new(4096));
   se_puts(w, "flowc shader: ");
   se_puts(w, head);
   se_puts(w, tail);
@@ -55642,27 +55752,27 @@ void se_error(const char* head, const char* tail) {
 }
 
 void se_ctx_error(ShCtx* c) {
-  ShBuf* m = (ShBuf*)(flowc_shader_ctx_msg(c));
-  ShBuf* w = (ShBuf*)(flowc_shader_buf_new(((m[0]).len + 64)));
+  ByteBuf* m = (ByteBuf*)(flowc_shader_ctx_msg(c));
+  ByteBuf* w = (ByteBuf*)(flowc_shader_buf_new(((m[0]).len + 64)));
   se_puts(w, "flowc shader: ");
   int32_t i = 0;
   while (i < (m[0]).len) {
-  se_putc(w, (m[0]).buf[i]);
+  se_putc(w, (m[0]).p[i]);
   i = (i + 1);
 }
   puts(se_cstr(w));
   flowc_shader_buf_free(w);
 }
 
-ShBuf* se_path(const char* dir, ShBuf* a, const char* b) {
-  ShBuf* w = (ShBuf*)(flowc_shader_buf_new(4096));
+ByteBuf* se_path(const char* dir, ByteBuf* a, const char* b) {
+  ByteBuf* w = (ByteBuf*)(flowc_shader_buf_new(4096));
   se_puts(w, dir);
-  if ((w[0]).len > 0 && (w[0]).buf[((w[0]).len - 1)] != 47) {
+  if ((w[0]).len > 0 && (w[0]).p[((w[0]).len - 1)] != 47) {
   se_putc(w, 47);
 }
   int32_t i = 0;
   while (i < (a[0]).len) {
-  se_putc(w, (a[0]).buf[i]);
+  se_putc(w, (a[0]).p[i]);
   i = (i + 1);
 }
   se_puts(w, b);
@@ -55670,15 +55780,15 @@ ShBuf* se_path(const char* dir, ShBuf* a, const char* b) {
 }
 
 void se_mkdirs(const char* dir) {
-  ShBuf* w = (ShBuf*)(flowc_shader_buf_new(4096));
+  ByteBuf* w = (ByteBuf*)(flowc_shader_buf_new(4096));
   se_puts(w, dir);
   int32_t n = (w[0]).len;
   int32_t i = 1;
   while (i < n) {
-  if ((w[0]).buf[i] == 47) {
-  (w[0]).buf[i] = 0;
-  flowc_io_mkdir((const char*)((w[0]).buf));
-  (w[0]).buf[i] = 47;
+  if ((w[0]).p[i] == 47) {
+  (w[0]).p[i] = 0;
+  flowc_io_mkdir((const char*)((w[0]).p));
+  (w[0]).p[i] = 47;
 }
   i = (i + 1);
 }
@@ -55686,7 +55796,7 @@ void se_mkdirs(const char* dir) {
   flowc_shader_buf_free(w);
 }
 
-ShBuf* se_stem(const char* path) {
+ByteBuf* se_stem(const char* path) {
   uint8_t* p = (uint8_t*)(path);
   int32_t n = (int32_t)(strlen(path));
   int32_t b = 0;
@@ -55706,7 +55816,7 @@ ShBuf* se_stem(const char* path) {
 }
   k = (k - 1);
 }
-  ShBuf* w = (ShBuf*)(flowc_shader_buf_new((n + 8)));
+  ByteBuf* w = (ByteBuf*)(flowc_shader_buf_new((n + 8)));
   i = b;
   while (i < e) {
   se_putc(w, p[i]);
@@ -55715,31 +55825,31 @@ ShBuf* se_stem(const char* path) {
   return w;
 }
 
-int32_t se_write(ShBuf* path, ShBuf* data) {
-  if (flowc_write_file(se_cstr(path), (data[0]).buf, (data[0]).len) != 0) {
+int32_t se_write(ByteBuf* path, ByteBuf* data) {
+  if (flowc_write_file(se_cstr(path), (data[0]).p, (data[0]).len) != 0) {
   se_error("cannot write ", se_cstr(path));
   return 1;
 }
   return 0;
 }
 
-ShBuf* se_fill_name(ShCtx* c, int32_t k) {
-  ShBuf* w = (ShBuf*)(flowc_shader_buf_new(64));
+ByteBuf* se_fill_name(ShCtx* c, int32_t k) {
+  ByteBuf* w = (ByteBuf*)(flowc_shader_buf_new(64));
   flowc_shader_put_fill_name(c, w, k);
   return w;
 }
 
 int32_t se_metal(ShCtx* c, const char* in_path, const char* out_dir, uint8_t* name, int32_t nlen) {
   se_mkdirs(out_dir);
-  ShBuf* stem = (ShBuf*)(se_stem(in_path));
-  ShBuf* src = (ShBuf*)(flowc_shader_buf_new(65536));
+  ByteBuf* stem = (ByteBuf*)(se_stem(in_path));
+  ByteBuf* src = (ByteBuf*)(flowc_shader_buf_new(65536));
   if (flowc_shader_gen(c, src, SH_METAL, name, nlen, (0 - 1)) != 0) {
   se_ctx_error(c);
   return 1;
 }
-  ShBuf* gallery = (ShBuf*)(se_path(out_dir, stem, "_gallery.metal"));
+  ByteBuf* gallery = (ByteBuf*)(se_path(out_dir, stem, "_gallery.metal"));
   int32_t rc = se_write(gallery, src);
-  ShBuf* entries = (ShBuf*)(flowc_shader_buf_new(4096));
+  ByteBuf* entries = (ByteBuf*)(flowc_shader_buf_new(4096));
   int32_t nfl = flowc_shader_fill_count(c);
   int32_t k = 0;
   while (k < nfl) {
@@ -55749,22 +55859,22 @@ int32_t se_metal(ShCtx* c, const char* in_path, const char* out_dir, uint8_t* na
 }
   k = (k + 1);
 }
-  ShBuf* epath = (ShBuf*)(se_path(out_dir, stem, "_gallery.entries"));
+  ByteBuf* epath = (ByteBuf*)(se_path(out_dir, stem, "_gallery.entries"));
   if (rc == 0) {
   rc = se_write(epath, entries);
 }
   k = 0;
   while (k < nfl && rc == 0) {
   if (nlen < 0 || flowc_shader_fill_named(c, k, name, nlen) == 1) {
-  ShBuf* one = (ShBuf*)(flowc_shader_buf_new(65536));
+  ByteBuf* one = (ByteBuf*)(flowc_shader_buf_new(65536));
   flowc_shader_gen(c, one, SH_METAL, name, nlen, k);
-  ShBuf* fname = (ShBuf*)(se_fill_name(c, k));
-  ShBuf* mpath = (ShBuf*)(se_path(out_dir, fname, "_fill.metal"));
+  ByteBuf* fname = (ByteBuf*)(se_fill_name(c, k));
+  ByteBuf* mpath = (ByteBuf*)(se_path(out_dir, fname, "_fill.metal"));
   rc = se_write(mpath, one);
-  ShBuf* entry = (ShBuf*)(flowc_shader_buf_new(128));
+  ByteBuf* entry = (ByteBuf*)(flowc_shader_buf_new(128));
   flowc_shader_put_fill_name(c, entry, k);
   se_puts(entry, "_frag\n");
-  ShBuf* ypath = (ShBuf*)(se_path(out_dir, fname, "_fill.entry"));
+  ByteBuf* ypath = (ByteBuf*)(se_path(out_dir, fname, "_fill.entry"));
   if (rc == 0) {
   rc = se_write(ypath, entry);
 }
@@ -55789,16 +55899,16 @@ int32_t se_metal(ShCtx* c, const char* in_path, const char* out_dir, uint8_t* na
 
 int32_t se_wgsl(ShCtx* c, const char* in_path, const char* out_dir, uint8_t* name, int32_t nlen) {
   se_mkdirs(out_dir);
-  ShBuf* stem = (ShBuf*)(se_stem(in_path));
-  ShBuf* src = (ShBuf*)(flowc_shader_buf_new(65536));
+  ByteBuf* stem = (ByteBuf*)(se_stem(in_path));
+  ByteBuf* src = (ByteBuf*)(flowc_shader_buf_new(65536));
   if (flowc_shader_gen(c, src, SH_WGSL, name, nlen, (0 - 1)) != 0) {
   se_ctx_error(c);
   return 1;
 }
-  ShBuf* out = (ShBuf*)(se_path(out_dir, stem, "_gallery.wgsl"));
+  ByteBuf* out = (ByteBuf*)(se_path(out_dir, stem, "_gallery.wgsl"));
   if (nlen >= 0) {
   flowc_shader_buf_free(out);
-  ShBuf* nb = (ShBuf*)(flowc_shader_buf_new((nlen + 8)));
+  ByteBuf* nb = (ByteBuf*)(flowc_shader_buf_new((nlen + 8)));
   int32_t i = 0;
   while (i < nlen) {
   se_putc(nb, name[i]);
@@ -55808,7 +55918,7 @@ int32_t se_wgsl(ShCtx* c, const char* in_path, const char* out_dir, uint8_t* nam
   flowc_shader_buf_free(nb);
 }
   int32_t rc = se_write(out, src);
-  ShBuf* entries = (ShBuf*)(flowc_shader_buf_new(4096));
+  ByteBuf* entries = (ByteBuf*)(flowc_shader_buf_new(4096));
   int32_t nfl = flowc_shader_fill_count(c);
   int32_t first = 1;
   int32_t k = 0;
@@ -55823,7 +55933,7 @@ int32_t se_wgsl(ShCtx* c, const char* in_path, const char* out_dir, uint8_t* nam
 }
   k = (k + 1);
 }
-  ShBuf* epath = (ShBuf*)(se_path(out_dir, stem, "_gallery.wgsl.entries"));
+  ByteBuf* epath = (ByteBuf*)(se_path(out_dir, stem, "_gallery.wgsl.entries"));
   if (rc == 0) {
   rc = se_write(epath, entries);
 }
@@ -55899,7 +56009,7 @@ int32_t flowc_shader_mode(const char* mode, const char* in_path, const char* out
   if (se_mode_is(mode, "list") == 1) {
   int32_t k = 0;
   while (k < nfl) {
-  ShBuf* nm = (ShBuf*)(se_fill_name(c, k));
+  ByteBuf* nm = (ByteBuf*)(se_fill_name(c, k));
   puts(se_cstr(nm));
   flowc_shader_buf_free(nm);
   k = (k + 1);
@@ -55931,7 +56041,7 @@ int32_t flowc_shader_mode(const char* mode, const char* in_path, const char* out
   k2 = (k2 + 1);
 }
   if (hit == 0) {
-  ShBuf* w = (ShBuf*)(flowc_shader_buf_new((nlen + 32)));
+  ByteBuf* w = (ByteBuf*)(flowc_shader_buf_new((nlen + 32)));
   se_puts(w, "Shader '");
   se_puts(w, name);
   se_puts(w, "' not found");
@@ -68038,6 +68148,16 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
 }
 }
 }
+  if (((arena).nodes[ef]).kind == AST_CONST && ((arena).nodes[ef]).b != AST_NONE) {
+  int32_t cx = ((arena).nodes[ef]).b;
+  flowc_cgen_puts((&w), "static const ");
+  flowc_cgen_emit_type((&w), arena, src, ((arena).nodes[ef]).a);
+  flowc_cgen_putc((&w), 32);
+  flowc_cgen_put_span((&w), src, ((arena).nodes[ef]).name_start, ((arena).nodes[ef]).name_end);
+  flowc_cgen_puts((&w), " = (");
+  flowc_cgen_put_span((&w), src, (((arena).nodes[cx]).name_start + 1), (((arena).nodes[cx]).name_end - 1));
+  flowc_cgen_puts((&w), ");\n");
+}
   ef = ((arena).nodes[ef]).next;
 }
 }
@@ -69137,6 +69257,10 @@ void sem_build_module(Sem* c, int32_t m, bool is_root) {
 } else {
   if (sem_nk(c, f) == AST_EXTERN_TYPE) {
   sem_decl_add(c, DK_EXTERN_TYPE, m, f, sem_nname(c, f), (0 - 1));
+} else {
+  if (sem_nk(c, f) == AST_CONST) {
+  sem_decl_add(c, DK_CONST, m, f, sem_nname(c, f), (0 - 1));
+}
 }
 }
   f = sem_nnext(c, f);
@@ -69399,7 +69523,7 @@ void sem_collect_types(Sem* c) {
   if (k == DK_ALIAS) {
   int32_t base_pt = sem_pt_of_ast(c, sem_na(c, node));
   int32_t alias_t = sem_ty_named(c->t, TK_TYPE_ALIAS, name);
-  { __typeof__(tys->base[alias_t]) __flowc_st3036 = sem_parse_type(c, base_pt); tys->base[alias_t] = __flowc_st3036; }
+  { __typeof__(tys->base[alias_t]) __flowc_st3056 = sem_parse_type(c, base_pt); tys->base[alias_t] = __flowc_st3056; }
   int32_t s2 = sem_sym_new(c, name, alias_t, SK_TYPE);
   sem_scope_define_global(c, s2);
   int32_t se3 = sem_se_new(c, name, SE_ALIAS, i);
@@ -69494,7 +69618,7 @@ void sem_define_function(Sem* c, const char* name, int32_t fi) {
   sem_ty_add_param(c->t, f, sem_parse_type(c, sem_fi_param_type(c, fi, i)));
   i = (i + 1);
 }
-  { __typeof__(tys->ret[f]) __flowc_st3479 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); tys->ret[f] = __flowc_st3479; }
+  { __typeof__(tys->ret[f]) __flowc_st3499 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); tys->ret[f] = __flowc_st3499; }
   i = 0;
   while (i < sem_fi_neffects(c, fi)) {
   sem_ty_add_effect(c->t, f, sem_fi_effect(c, fi, i));
@@ -70136,7 +70260,7 @@ int64_t sem_literal_int(Sem* c, int32_t e, bool via_const, int32_t* ok) {
   int32_t s = sem_lookup_const_symbol(c, sem_nname(c, e));
   if (s >= 0) {
   int32_t d = sem_iv_get(c->sy_def, s);
-  if (d >= 0 && sem_decl_kind(c, d) == DK_CONST) {
+  if (d >= 0 && sem_decl_kind(c, d) == DK_CONST && sem_nival(c, sem_decl_node(c, d)) != 2) {
   int32_t saved = c->cm;
   sem_set_mod(c, sem_iv_get(c->d_mod, d));
   int64_t v = sem_literal_int(c, sem_nb(c, sem_decl_node(c, d)), 1, ok);
@@ -71672,7 +71796,7 @@ int32_t sem_check_slice_expr(Sem* c, int32_t e) {
 }
   int32_t sp = sem_ty_named(c->t, TK_SPAN, __flowc_str_concat(prefix, sem_tstr(c, el)));
   tys->elem[sp] = el;
-  { __typeof__(tys->size[sp]) __flowc_st13207 = sem_static_length(c, e); tys->size[sp] = __flowc_st13207; }
+  { __typeof__(tys->size[sp]) __flowc_st13235 = sem_static_length(c, e); tys->size[sp] = __flowc_st13235; }
   return sp;
 }
 
@@ -71746,14 +71870,14 @@ int32_t sem_check_lambda(Sem* c, int32_t e) {
   p = sem_nnext(c, p);
 }
   SemIntVec* saved_sink = (SemIntVec*)(c->return_sink);
-  { __typeof__(c->return_sink) __flowc_st13556 = sem_iv_new(); c->return_sink = __flowc_st13556; }
+  { __typeof__(c->return_sink) __flowc_st13584 = sem_iv_new(); c->return_sink = __flowc_st13584; }
   sem_check_block(c, sem_ncc(c, e));
   c->return_sink = saved_sink;
   sem_pop_scope(c);
   if (sem_nb(c, e) != AST_NONE) {
-  { __typeof__(tys->ret[f]) __flowc_st13586 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e))); tys->ret[f] = __flowc_st13586; }
+  { __typeof__(tys->ret[f]) __flowc_st13614 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e))); tys->ret[f] = __flowc_st13614; }
 } else {
-  { __typeof__(tys->ret[f]) __flowc_st13595 = sem_tmk(c, TK_VOID); tys->ret[f] = __flowc_st13595; }
+  { __typeof__(tys->ret[f]) __flowc_st13623 = sem_tmk(c, TK_VOID); tys->ret[f] = __flowc_st13623; }
 }
   return f;
 }
@@ -73048,9 +73172,9 @@ void sem_check_function(Sem* c, int32_t fi) {
   SemStrVec* prev_storage = (SemStrVec*)(c->local_storage);
   SemStrMap* prev_origin = (SemStrMap*)(c->span_origin);
   int32_t prev_ret = c->current_return_type;
-  { __typeof__(c->local_storage) __flowc_st19058 = sem_sv_new(); c->local_storage = __flowc_st19058; }
-  { __typeof__(c->span_origin) __flowc_st19062 = sem_sm_new(); c->span_origin = __flowc_st19062; }
-  { __typeof__(c->current_return_type) __flowc_st19071 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); c->current_return_type = __flowc_st19071; }
+  { __typeof__(c->local_storage) __flowc_st19086 = sem_sv_new(); c->local_storage = __flowc_st19086; }
+  { __typeof__(c->span_origin) __flowc_st19090 = sem_sm_new(); c->span_origin = __flowc_st19090; }
+  { __typeof__(c->current_return_type) __flowc_st19099 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); c->current_return_type = __flowc_st19099; }
   i = 0;
   while (i < sem_fi_nparams(c, fi)) {
   int32_t pt = sem_parse_type(c, sem_fi_param_type(c, fi, i));
@@ -73058,7 +73182,7 @@ void sem_check_function(Sem* c, int32_t fi) {
   i = (i + 1);
 }
   SemIntVec* prev_sink = (SemIntVec*)(c->return_sink);
-  { __typeof__(c->return_sink) __flowc_st19114 = sem_iv_new(); c->return_sink = __flowc_st19114; }
+  { __typeof__(c->return_sink) __flowc_st19142 = sem_iv_new(); c->return_sink = __flowc_st19142; }
   sem_check_block(c, sem_iv_get(c->fi_body, fi));
   SemIntVec* returns = (SemIntVec*)(c->return_sink);
   c->return_sink = prev_sink;
@@ -73092,6 +73216,9 @@ void sem_check_function(Sem* c, int32_t fi) {
 
 void sem_check_const(Sem* c, int32_t d) {
   int32_t node = sem_decl_node(c, d);
+  if (sem_nival(c, node) == 2) {
+  return;
+}
   int32_t et = sem_check_expression(c, sem_nb(c, node));
   int32_t xt = sem_parse_type(c, sem_pt_of_ast(c, sem_na(c, node)));
   if (sem_can_coerce(c, et, xt) == 0) {
@@ -75781,6 +75908,15 @@ void flowc_tc_collect_globals(TcCtx* ctx, AstArena arena, int32_t root) {
   if (kind == AST_EXTERN || kind == AST_C_IMPORT) {
   (ctx[0]).has_extern = 1;
 }
+  if (kind == AST_EXTERN) {
+  int32_t xc = ((arena).nodes[item]).a;
+  while (xc != AST_NONE) {
+  if (((arena).nodes[xc]).kind == AST_CONST) {
+  flowc_tc_bind_value(ctx, ((arena).nodes[xc]).name_start, ((arena).nodes[xc]).name_end, ((arena).nodes[xc]).a);
+}
+  xc = ((arena).nodes[xc]).next;
+}
+}
   if (kind == AST_CONST) {
   int32_t ty = ((arena).nodes[item]).a;
   flowc_tc_bind_value(ctx, ((arena).nodes[item]).name_start, ((arena).nodes[item]).name_end, ty);
@@ -75947,7 +76083,7 @@ void flowc_tc_seed_export(TcCtx* ctx, AstArena dep_arena, int32_t dep_root, uint
   return;
 }
   (ctx[0]).eff_len = (ctx[0]).eff_seed_len;
-  { __typeof__((ctx[0]).eff_len) __flowc_st8785 = flowc_eff_collect(dep_arena, dep_root, dep_src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_len); (ctx[0]).eff_len = __flowc_st8785; }
+  { __typeof__((ctx[0]).eff_len) __flowc_st8836 = flowc_eff_collect(dep_arena, dep_root, dep_src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_len); (ctx[0]).eff_len = __flowc_st8836; }
   (ctx[0]).eff_seed_len = (ctx[0]).eff_len;
   int32_t item = ((dep_arena).nodes[dep_root]).a;
   while (item != AST_NONE) {
@@ -75975,6 +76111,9 @@ void flowc_tc_seed_export(TcCtx* ctx, AstArena dep_arena, int32_t dep_root, uint
   if (ene > ens) {
   flowc_tc_seed_bind(ctx, dep_src, ens, ene, 1, (-1));
 }
+}
+  if (((dep_arena).nodes[ext]).kind == AST_CONST) {
+  flowc_tc_seed_bind(ctx, dep_src, ((dep_arena).nodes[ext]).name_start, ((dep_arena).nodes[ext]).name_end, 0, (-1));
 }
   ext = ((dep_arena).nodes[ext]).next;
 }
@@ -76680,7 +76819,7 @@ void ut_register_unit(UCtx* u, AstArena arena, int32_t d) {
   (u[0]).u_ne[k] = ne;
   (u[0]).u_dims[k] = dims;
   (u[0]).u_ok[k] = ok;
-  { __typeof__((u[0]).u_rad[k]) __flowc_st12354 = flowc_tc_span_is(src, ns, ne, "Radian"); (u[0]).u_rad[k] = __flowc_st12354; }
+  { __typeof__((u[0]).u_rad[k]) __flowc_st12431 = flowc_tc_span_is(src, ns, ne, "Radian"); (u[0]).u_rad[k] = __flowc_st12431; }
   (u[0]).u_len = (k + 1);
 }
 
@@ -77697,7 +77836,7 @@ int32_t flowc_tc_check_program(TcCtx* ctx, AstArena arena, int32_t root) {
   flowc_tc_err(ctx);
   (ctx[0]).fatal = ((ctx[0]).fatal + 1);
 }
-  { __typeof__((ctx[0]).eff_len) __flowc_st17004 = flowc_eff_collect(arena, root, (ctx[0]).src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_seed_len); (ctx[0]).eff_len = __flowc_st17004; }
+  { __typeof__((ctx[0]).eff_len) __flowc_st17081 = flowc_eff_collect(arena, root, (ctx[0]).src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_seed_len); (ctx[0]).eff_len = __flowc_st17081; }
   flowc_tc_collect_globals(ctx, arena, root);
   if ((ctx[0]).sem_on == 0) {
   flowc_tc_check_rows(ctx, arena, root);
@@ -77707,7 +77846,7 @@ int32_t flowc_tc_check_program(TcCtx* ctx, AstArena arena, int32_t root) {
 }
   flowc_tc_check_fns(ctx, arena, root);
   if ((ctx[0]).sem_on == 0) {
-  { __typeof__((ctx[0]).err) __flowc_st17062 = ((ctx[0]).err + flowc_units_check(arena, (ctx[0]).src, root)); (ctx[0]).err = __flowc_st17062; }
+  { __typeof__((ctx[0]).err) __flowc_st17139 = ((ctx[0]).err + flowc_units_check(arena, (ctx[0]).src, root)); (ctx[0]).err = __flowc_st17139; }
 }
   (ctx[0]).eff_len = (ctx[0]).eff_seed_len;
   return (ctx[0]).err;
@@ -77766,6 +77905,7 @@ void flowc_resolve_import_error(const char* mpath, uint8_t* src, int32_t s, int3
 int32_t flowc_resolve_copy_cstr(const char* s, uint8_t* dst, int32_t cap);
 int32_t flowc_resolve_cstr_eq(uint8_t* a, uint8_t* b);
 int32_t flowc_resolve_find_path(uint8_t* store, int32_t n, int32_t row_cap, uint8_t* path);
+uint8_t* flowc_resolve_abspath(uint8_t* path);
 int32_t flowc_expand_stages_in_place(uint8_t* src, int32_t n, int32_t cap, int32_t stages);
 int32_t flowc_expand_all_in_place(uint8_t* src, int32_t n, int32_t cap);
 int32_t flowc_expand_for_mlir_in_place(uint8_t* src, int32_t n, int32_t cap);
@@ -77807,8 +77947,9 @@ int32_t flowc_resolve_toml_string_value(uint8_t* toml, int32_t n, const char* ta
 int32_t flowc_resolve_try_under(const char* root, uint8_t* src, int32_t s, int32_t e, uint8_t* out, int32_t cap);
 int32_t flowc_resolve_package_path(uint8_t* src, int32_t name_start, int32_t name_end, const char* project_root, uint8_t* out_path, int32_t out_path_cap);
 int32_t flowc_resolve_dirname(const char* path, uint8_t* out, int32_t out_cap);
-int32_t flowc_resolve_normalize_dots(uint8_t* path, int32_t n);
+int32_t flowc_resolve_normalize(uint8_t* p, int32_t n);
 int32_t flowc_resolve_import_at(uint8_t* src, int32_t s, int32_t e, int32_t form, const char* mod_search, const char* search_dir, const char* project_root, uint8_t* imp_path);
+int32_t flowc_resolve_import_at_raw(uint8_t* src, int32_t s, int32_t e, int32_t form, const char* mod_search, const char* search_dir, const char* project_root, uint8_t* imp_path);
 int32_t flowc_resolve_append_path(uint8_t* store, int32_t n, const char* path);
 int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, const char* project_root, uint8_t* path_store);
 int32_t flowc_resolve_deps_ready(const char* path, const char* search_dir, const char* project_root, uint8_t* all_store, int32_t all_n, uint8_t* out_store, int32_t out_n, uint8_t* src, uint8_t* imp_path);
@@ -77897,7 +78038,57 @@ int32_t flowc_resolve_find_path(uint8_t* store, int32_t n, int32_t row_cap, uint
 }
   i = (i + 1);
 }
+  uint8_t* abs = (uint8_t*)(flowc_resolve_abspath(path));
+  if (abs == NULL) {
   return (0 - 1);
+}
+  i = 0;
+  while (i < n) {
+  uint8_t* other = (uint8_t*)(flowc_resolve_abspath((store + (i * row_cap))));
+  if (other != NULL) {
+  int32_t same = flowc_resolve_cstr_eq(other, abs);
+  free(other);
+  if (same == 1) {
+  free(abs);
+  return i;
+}
+}
+  i = (i + 1);
+}
+  free(abs);
+  return (0 - 1);
+}
+
+uint8_t* flowc_resolve_abspath(uint8_t* path) {
+  int32_t n = (int32_t)(strlen((const char*)(path)));
+  int32_t pre = 0;
+  uint8_t* cp = (uint8_t*)(NULL);
+  if (n == 0 || path[0] != 47) {
+  const char* cwd = getenv("PWD");
+  cp = cwd;
+  if (cp == NULL || cp[0] != 47) {
+  return NULL;
+}
+  pre = ((int32_t)(strlen(cwd)) + 1);
+}
+  uint8_t* out = (uint8_t*)(malloc((int64_t)(((pre + n) + 1))));
+  int32_t o = 0;
+  if (pre > 0) {
+  while (o < (pre - 1)) {
+  out[o] = cp[o];
+  o = (o + 1);
+}
+  out[o] = 47;
+  o = (o + 1);
+}
+  int32_t k = 0;
+  while (k < n) {
+  out[(o + k)] = path[k];
+  k = (k + 1);
+}
+  out[(o + n)] = 0;
+  int32_t _l = flowc_resolve_normalize(out, (o + n));
+  return out;
 }
 
 int32_t flowc_expand_stages_in_place(uint8_t* src, int32_t n, int32_t cap, int32_t stages) {
@@ -79457,93 +79648,65 @@ int32_t flowc_resolve_dirname(const char* path, uint8_t* out, int32_t out_cap) {
   return last_slash;
 }
 
-int32_t flowc_resolve_normalize_dots(uint8_t* path, int32_t n) {
-  int32_t has = 0;
-  int32_t i = 0;
-  while ((i + 2) < n && has == 0) {
-  if (path[i] == 47 && path[(i + 1)] == 46 && (path[(i + 2)] == 47 || path[(i + 2)] == 46 && ((i + 3) >= n || path[(i + 3)] == 47))) {
-  has = 1;
-}
-  i = (i + 1);
-}
-  if (has == 0) {
-  return n;
-}
-  int32_t starts[256] = { 0 };
-  int32_t ends[256] = { 0 };
-  int32_t ns = 0;
-  int32_t s = 0;
-  i = 0;
-  while (i <= n) {
-  if (i == n || path[i] == 47) {
-  int32_t len = (i - s);
-  bool is_dot = len == 1 && path[s] == 46;
-  bool is_up = len == 2 && path[s] == 46 && path[(s + 1)] == 46;
-  if (is_dot && ns > 0) {
-} else {
-  if (is_up && ns > 0) {
-  int32_t ts = starts[(ns - 1)];
-  int32_t tl = (ends[(ns - 1)] - ts);
-  bool top_dot = tl == 1 && path[ts] == 46;
-  bool top_up = tl == 2 && path[ts] == 46 && path[(ts + 1)] == 46;
-  if (top_up || tl == 0) {
-  if (ns >= 256) {
-  return n;
-}
-  starts[ns] = s;
-  ends[ns] = i;
-  ns = (ns + 1);
-} else {
-  if (top_dot) {
-  starts[(ns - 1)] = s;
-  ends[(ns - 1)] = i;
-} else {
-  ns = (ns - 1);
-}
-}
-} else {
-  if (ns >= 256) {
-  return n;
-}
-  starts[ns] = s;
-  ends[ns] = i;
-  ns = (ns + 1);
-}
-}
-  s = (i + 1);
-}
-  i = (i + 1);
-}
-  uint8_t* tmp = (uint8_t*)(malloc((int64_t)((n + 1))));
-  if (tmp == NULL) {
-  return n;
-}
+int32_t flowc_resolve_normalize(uint8_t* p, int32_t n) {
+  int32_t* pre = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 2)) * 4))));
+  int32_t* dots = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 2)) * 4))));
+  int32_t nseg = 0;
   int32_t o = 0;
-  int32_t k = 0;
-  while (k < ns) {
-  if (k > 0) {
-  tmp[o] = 47;
-  o = (o + 1);
+  int32_t i = 0;
+  if (n > 0 && p[0] == 47) {
+  o = 1;
+  i = 1;
 }
-  int32_t j = starts[k];
-  while (j < ends[k]) {
-  tmp[o] = path[j];
-  o = (o + 1);
+  int32_t root = o;
+  while (i < n) {
+  int32_t j = i;
+  while (j < n && p[j] != 47) {
   j = (j + 1);
 }
+  int32_t len = (j - i);
+  bool is_dotdot = len == 2 && p[i] == 46 && p[(i + 1)] == 46;
+  if (len == 0 || len == 1 && p[i] == 46) {
+} else {
+  if (is_dotdot && nseg > 0 && dots[(nseg - 1)] == 0) {
+  nseg = (nseg - 1);
+  o = pre[nseg];
+} else {
+  pre[nseg] = o;
+  dots[nseg] = 0;
+  if (is_dotdot) {
+  dots[nseg] = 1;
+}
+  nseg = (nseg + 1);
+  if (o > root) {
+  p[o] = 47;
+  o = (o + 1);
+}
+  int32_t k = 0;
+  while (k < len) {
+  p[(o + k)] = p[(i + k)];
   k = (k + 1);
 }
-  k = 0;
-  while (k < o) {
-  path[k] = tmp[k];
-  k = (k + 1);
+  o = (o + len);
 }
-  path[o] = 0;
-  free(tmp);
+}
+  i = (j + 1);
+}
+  p[o] = 0;
+  free((uint8_t*)(pre));
+  free((uint8_t*)(dots));
   return o;
 }
 
 int32_t flowc_resolve_import_at(uint8_t* src, int32_t s, int32_t e, int32_t form, const char* mod_search, const char* search_dir, const char* project_root, uint8_t* imp_path) {
+  int32_t plen = flowc_resolve_import_at_raw(src, s, e, form, mod_search, search_dir, project_root, imp_path);
+  if (plen > 0) {
+  return flowc_resolve_normalize(imp_path, plen);
+}
+  return plen;
+}
+
+int32_t flowc_resolve_import_at_raw(uint8_t* src, int32_t s, int32_t e, int32_t form, const char* mod_search, const char* search_dir, const char* project_root, uint8_t* imp_path) {
   if (form == 1 || form == 2) {
   int32_t plen = flowc_resolve_sibling_path(src, s, e, mod_search, imp_path, FLOWC_RESOLVE_PATH_CAP);
   if (plen < 0 && (!__flowc_str_eq(mod_search, search_dir))) {
@@ -79555,7 +79718,7 @@ int32_t flowc_resolve_import_at(uint8_t* src, int32_t s, int32_t e, int32_t form
   if (plen < 0) {
   return (0 - 1);
 }
-  return flowc_resolve_normalize_dots(imp_path, plen);
+  return plen;
 }
   if (form == 0) {
   int32_t plen2 = flowc_resolve_package_path(src, s, e, project_root, imp_path, FLOWC_RESOLVE_PATH_CAP);
@@ -79846,13 +80009,13 @@ int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, 
   return (0 - 1);
 }
   if (tpl != NULL) {
-  { __typeof__(tpl_len[0]) __flowc_st10063 = flowc_resolve_add_templates((p).arena, root, src, own, tpl, tpl_cap, tpl_len[0]); tpl_len[0] = __flowc_st10063; }
+  { __typeof__(tpl_len[0]) __flowc_st10157 = flowc_resolve_add_templates((p).arena, root, src, own, tpl, tpl_cap, tpl_len[0]); tpl_len[0] = __flowc_st10157; }
 }
   int32_t _setf = setenv("FLOWC_CGEN_FILE", path, 1);
   int32_t n = flowc_cgen_emit_sigs((p).arena, root, src, out, out_cap, flags, sigs, siglen[0]);
   if (sigs != NULL) {
-  { __typeof__(siglen[0]) __flowc_st10102 = flowc_cgen_collect_sigs((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st10102; }
-  { __typeof__(siglen[0]) __flowc_st10116 = flowc_eff_collect((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st10116; }
+  { __typeof__(siglen[0]) __flowc_st10196 = flowc_cgen_collect_sigs((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st10196; }
+  { __typeof__(siglen[0]) __flowc_st10210 = flowc_eff_collect((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st10210; }
 }
   flowc_parser_free(p);
   free(src);
@@ -80126,8 +80289,8 @@ int32_t flowc_bundle_semcheck(uint8_t* all_store, int32_t all_n, const char* sea
 }
   sem_check_program(c);
   sem_report(c);
-  { __typeof__(counts[0]) __flowc_st11551 = sem_error_count(c); counts[0] = __flowc_st11551; }
-  { __typeof__(counts[1]) __flowc_st11557 = sem_fatal_count(c); counts[1] = __flowc_st11557; }
+  { __typeof__(counts[0]) __flowc_st11645 = sem_error_count(c); counts[0] = __flowc_st11645; }
+  { __typeof__(counts[1]) __flowc_st11651 = sem_fatal_count(c); counts[1] = __flowc_st11651; }
   return 0;
 }
 

@@ -25,8 +25,11 @@
 # so a Flow program that mentions the syntax in a string literal (such as
 # tests/lang/test_dsl_detect.flow) was replaced by a stub.
 #
-# Leaf module: externs only, so it links into the frontend without pulling
-# anything else in. File output lives in shader_emit.flow.
+# Leaf module: externs and the shared byte buffer (bytebuf.flow) only, so
+# it links into the frontend without pulling anything else in. File output
+# lives in shader_emit.flow.
+
+import .bytebuf { ByteBuf, bb_new, bb_free, bb_putc, bb_puts, bb_put_span }
 
 extern {
     function malloc(size: i64) -> ptr<u8>
@@ -83,79 +86,40 @@ const TY_METAL: i32 = 9
 const TY_WGSL: i32 = 18
 const TY_CONSTS: i32 = 27
 
-# Growable output buffer. `buf` always has room for a trailing NUL.
-export struct ShBuf {
-    buf: ptr<u8>,
-    cap: i32,
-    len: i32
+# Output goes to the shared growable buffer (bytebuf.flow, #985).
+export function flowc_shader_buf_new(cap: i32) -> ptr<ByteBuf> {
+    return bb_new(cap)
 }
 
-export function flowc_shader_buf_new(cap: i32) -> ptr<ShBuf> {
-    let w: ptr<ShBuf> = malloc(24) as ptr<ShBuf>
-    w[0].buf = malloc((cap + 1) as i64)
-    w[0].cap = cap
-    w[0].len = 0
-    return w
+export function flowc_shader_buf_free(w: ptr<ByteBuf>) {
+    bb_free(w)
 }
 
-export function flowc_shader_buf_free(w: ptr<ShBuf>) {
-    free(w[0].buf)
-    free(w as ptr<u8>)
+export function flowc_shader_putc(w: ptr<ByteBuf>, c: u8) {
+    bb_putc(w, c)
 }
 
-function sh_putc(w: ptr<ShBuf>, c: u8) {
-    if w[0].len >= w[0].cap {
-        let ncap: i32 = w[0].cap * 2 + 64
-        w[0].buf = realloc(w[0].buf, (ncap + 1) as i64)
-        w[0].cap = ncap
-    }
-    w[0].buf[w[0].len] = c
-    w[0].len = w[0].len + 1
-}
-
-export function flowc_shader_putc(w: ptr<ShBuf>, c: u8) {
-    sh_putc(w, c)
-}
-
-function sh_puts(w: ptr<ShBuf>, s: string) {
-    let p: ptr<u8> = s
-    let n: i32 = strlen(s) as i32
-    let mut i: i32 = 0
-    while i < n {
-        sh_putc(w, p[i])
-        i = i + 1
-    }
-}
-
-function sh_line(w: ptr<ShBuf>, s: string) {
-    sh_puts(w, s)
-    sh_putc(w, 10)
-}
-
-function sh_put_span(w: ptr<ShBuf>, p: ptr<u8>, s: i32, e: i32) {
-    let mut i: i32 = s
-    while i < e {
-        sh_putc(w, p[i])
-        i = i + 1
-    }
+function sh_line(w: ptr<ByteBuf>, s: string) {
+    bb_puts(w, s)
+    bb_putc(w, 10)
 }
 
 # `n` box-drawing rules (U+2500) for the Metal prelude banner.
-function sh_rule(w: ptr<ShBuf>, n: i32) {
+function sh_rule(w: ptr<ByteBuf>, n: i32) {
     let mut i: i32 = 0
     while i < n {
-        sh_putc(w, 226)
-        sh_putc(w, 148)
-        sh_putc(w, 128)
+        bb_putc(w, 226)
+        bb_putc(w, 148)
+        bb_putc(w, 128)
         i = i + 1
     }
 }
 
 # 4 spaces per level, as the Python's "    " * indent.
-function sh_pad(w: ptr<ShBuf>, indent: i32) {
+function sh_pad(w: ptr<ByteBuf>, indent: i32) {
     let mut i: i32 = 0
     while i < indent * 4 {
-        sh_putc(w, 32)
+        bb_putc(w, 32)
         i = i + 1
     }
 }
@@ -168,7 +132,7 @@ export struct ShCtx {
     pn: i32,
     target: i32,
     err: i32,
-    msg: ptr<ShBuf>,
+    msg: ptr<ByteBuf>,
     tk: ptr<i32>,
     ts: ptr<i32>,
     te: ptr<i32>,
@@ -342,7 +306,7 @@ export function flowc_shader_ctx_err(c: ptr<ShCtx>) -> i32 {
     return c[0].err
 }
 
-export function flowc_shader_ctx_msg(c: ptr<ShCtx>) -> ptr<ShBuf> {
+export function flowc_shader_ctx_msg(c: ptr<ShCtx>) -> ptr<ByteBuf> {
     return c[0].msg
 }
 
@@ -350,8 +314,8 @@ export function flowc_shader_fill_count(c: ptr<ShCtx>) -> i32 {
     return c[0].nfl
 }
 
-export function flowc_shader_put_fill_name(c: ptr<ShCtx>, w: ptr<ShBuf>, k: i32) {
-    sh_put_span(w, c[0].p, c[0].fls[k], c[0].fle[k])
+export function flowc_shader_put_fill_name(c: ptr<ShCtx>, w: ptr<ByteBuf>, k: i32) {
+    bb_put_span(w, c[0].p, c[0].fls[k], c[0].fle[k])
 }
 
 # 1 when fill k is named p[s..e) of `name`.
@@ -384,7 +348,7 @@ function sh_err(c: ptr<ShCtx>) -> i32 {
 
 function sh_fail(c: ptr<ShCtx>, m: string) {
     if sh_err(c) == 1 {
-        sh_puts(c[0].msg, m)
+        bb_puts(c[0].msg, m)
     }
 }
 
@@ -647,9 +611,9 @@ function sh_parse_params(c: ptr<ShCtx>, s: i32, e: i32) -> i32 {
             }
             if colon >= se[1] {
                 if sh_err(c) == 1 {
-                    sh_puts(c[0].msg, "Shader fn param needs name: type, got '")
-                    sh_put_span(c[0].msg, p, se[0], se[1])
-                    sh_puts(c[0].msg, "'")
+                    bb_puts(c[0].msg, "Shader fn param needs name: type, got '")
+                    bb_put_span(c[0].msg, p, se[0], se[1])
+                    bb_puts(c[0].msg, "'")
                 }
                 rc = 0 - 1
             } else {
@@ -830,11 +794,11 @@ export function flowc_shader_expand_in_place(buf: ptr<u8>, n: i32, cap: i32) -> 
         rc = 0 - 1
     }
     if rc != 0 {
-        let line: ptr<ShBuf> = flowc_shader_buf_new(256)
-        sh_puts(line, "flowc shader: ")
-        sh_put_span(line, c[0].msg[0].buf, 0, c[0].msg[0].len)
-        line[0].buf[line[0].len] = 0
-        puts(line[0].buf as string)
+        let line: ptr<ByteBuf> = flowc_shader_buf_new(256)
+        bb_puts(line, "flowc shader: ")
+        bb_put_span(line, c[0].msg[0].p, 0, c[0].msg[0].len)
+        line[0].p[line[0].len] = 0
+        puts(line[0].p as string)
         flowc_shader_buf_free(line)
         flowc_shader_ctx_free(c)
         return 0 - 1
@@ -1016,11 +980,11 @@ function sh_match(c: ptr<ShCtx>, kind: i32) -> i32 {
 function sh_err_got(c: ptr<ShCtx>, head: string) {
     if sh_err(c) == 1 {
         let t: i32 = c[0].ti
-        sh_puts(c[0].msg, head)
-        sh_puts(c[0].msg, sh_kind_name(c[0].tk[t]))
-        sh_puts(c[0].msg, " '")
-        sh_put_span(c[0].msg, c[0].p, c[0].ts[t], c[0].te[t])
-        sh_puts(c[0].msg, "'")
+        bb_puts(c[0].msg, head)
+        bb_puts(c[0].msg, sh_kind_name(c[0].tk[t]))
+        bb_puts(c[0].msg, " '")
+        bb_put_span(c[0].msg, c[0].p, c[0].ts[t], c[0].te[t])
+        bb_puts(c[0].msg, "'")
     }
 }
 
@@ -1037,18 +1001,18 @@ function sh_expect(c: ptr<ShCtx>, kind: i32, lit: string) -> i32 {
     }
     if ok == 0 {
         if sh_err(c) == 1 {
-            sh_puts(c[0].msg, "Shader parse error: expected ")
-            sh_puts(c[0].msg, sh_kind_name(kind))
+            bb_puts(c[0].msg, "Shader parse error: expected ")
+            bb_puts(c[0].msg, sh_kind_name(kind))
             if has_lit > 0 {
-                sh_puts(c[0].msg, " '")
-                sh_puts(c[0].msg, lit)
-                sh_puts(c[0].msg, "'")
+                bb_puts(c[0].msg, " '")
+                bb_puts(c[0].msg, lit)
+                bb_puts(c[0].msg, "'")
             }
-            sh_puts(c[0].msg, ", got ")
-            sh_puts(c[0].msg, sh_kind_name(c[0].tk[t]))
-            sh_puts(c[0].msg, " '")
-            sh_put_span(c[0].msg, c[0].p, c[0].ts[t], c[0].te[t])
-            sh_puts(c[0].msg, "'")
+            bb_puts(c[0].msg, ", got ")
+            bb_puts(c[0].msg, sh_kind_name(c[0].tk[t]))
+            bb_puts(c[0].msg, " '")
+            bb_put_span(c[0].msg, c[0].p, c[0].ts[t], c[0].te[t])
+            bb_puts(c[0].msg, "'")
         }
         return 0 - 1
     }
@@ -1426,8 +1390,8 @@ function sh_ty_eq(c: ptr<ShCtx>, a: i32, b: i32) -> i32 {
     return sh_span_eq(c[0].p, c[0].ys[a], c[0].ye[a], c[0].ys[b], c[0].ye[b])
 }
 
-function sh_put_ty(c: ptr<ShCtx>, w: ptr<ShBuf>, h: i32) {
-    sh_put_span(w, c[0].p, c[0].ys[h], c[0].ye[h])
+function sh_put_ty(c: ptr<ShCtx>, w: ptr<ByteBuf>, h: i32) {
+    bb_put_span(w, c[0].p, c[0].ys[h], c[0].ye[h])
 }
 
 # Target spelling of FSL type index k (0 f32 .. 8 mat4).
@@ -1453,9 +1417,9 @@ function sh_map_type(c: ptr<ShCtx>, h: i32) -> i32 {
     }
     if c[0].target == SH_WGSL {
         if sh_err(c) == 1 {
-            sh_puts(c[0].msg, "Unsupported WGSL shader type '")
+            bb_puts(c[0].msg, "Unsupported WGSL shader type '")
             sh_put_ty(c, c[0].msg, h)
-            sh_puts(c[0].msg, "'")
+            bb_puts(c[0].msg, "'")
         }
         return 0 - 1
     }
@@ -1684,31 +1648,31 @@ function sh_is_wgsl_builtin(c: ptr<ShCtx>, k: i32) -> i32 {
     return 0
 }
 
-function sh_put_name(c: ptr<ShCtx>, w: ptr<ShBuf>, k: i32) {
-    sh_put_span(w, c[0].p, c[0].s1[k], c[0].e1[k])
+function sh_put_name(c: ptr<ShCtx>, w: ptr<ByteBuf>, k: i32) {
+    bb_put_span(w, c[0].p, c[0].s1[k], c[0].e1[k])
 }
 
 function sh_unknown_fn(c: ptr<ShCtx>, x: i32) {
     if sh_err(c) == 1 {
-        sh_puts(c[0].msg, "Unknown shader function '")
+        bb_puts(c[0].msg, "Unknown shader function '")
         sh_put_name(c, c[0].msg, x)
-        sh_puts(c[0].msg, "'")
+        bb_puts(c[0].msg, "'")
     }
 }
 
 # Emit a call. Arguments are emitted first into `args` (their errors come
 # first, as the Python built the argument strings before dispatching);
 # arg k is args[ars[k]..ae[k]).
-function sh_emit_call(c: ptr<ShCtx>, w: ptr<ShBuf>, x: i32) {
+function sh_emit_call(c: ptr<ShCtx>, w: ptr<ByteBuf>, x: i32) {
     let nargs: i32 = c[0].nc[x]
-    let args: ptr<ShBuf> = flowc_shader_buf_new(64)
+    let args: ptr<ByteBuf> = flowc_shader_buf_new(64)
     let ars: ptr<i32> = sh_ints(nargs)
     let ae: ptr<i32> = sh_ints(nargs)
     let mut a: i32 = c[0].na[x]
     let mut k: i32 = 0
     while a >= 0 and c[0].err == 0 {
         if k > 0 {
-            sh_puts(args, ", ")
+            bb_puts(args, ", ")
         }
         ars[k] = args[0].len
         sh_emit_expr(c, args, a)
@@ -1732,56 +1696,56 @@ function sh_emit_call(c: ptr<ShCtx>, w: ptr<ShBuf>, x: i32) {
                 } else {
                     let at: i32 = sh_guess(c, c[0].na[x])
                     if at >= 0 and sh_ty_is(c, at, "vec2<f32>") == 1 {
-                        sh_puts(w, "fsl_hash21")
+                        bb_puts(w, "fsl_hash21")
                     } else {
-                        sh_puts(w, "fsl_hash11")
+                        bb_puts(w, "fsl_hash11")
                     }
                 }
             } else {
                 if nargs == 1 {
                     let at2: i32 = sh_guess(c, c[0].na[x])
                     if sh_ty_is(c, at2, "float2") == 1 or sh_ty_is(c, at2, "vec2") == 1 {
-                        sh_puts(w, "fsl_hash21")
+                        bb_puts(w, "fsl_hash21")
                     } else {
-                        sh_puts(w, "fsl_hash11")
+                        bb_puts(w, "fsl_hash11")
                     }
                 } else {
-                    sh_puts(w, "fsl_hash21")
+                    bb_puts(w, "fsl_hash21")
                 }
             }
         } elif sh_node_is(c, x, "noise") == 1 {
-            sh_puts(w, "fsl_noise")
+            bb_puts(w, "fsl_noise")
         } elif sh_node_is(c, x, "fbm") == 1 {
-            sh_puts(w, "fsl_fbm")
+            bb_puts(w, "fsl_fbm")
         } elif sh_node_is(c, x, "palette") == 1 {
-            sh_puts(w, "fsl_palette")
+            bb_puts(w, "fsl_palette")
         } elif wg == SH_METAL and sh_node_is(c, x, "mod") == 1 {
-            sh_puts(w, "fmod")
+            bb_puts(w, "fmod")
         } elif wg == SH_WGSL and (sh_node_is(c, x, "mod") == 1 or sh_node_is(c, x, "fmod") == 1) {
             if nargs != 2 {
                 if sh_err(c) == 1 {
                     sh_put_name(c, c[0].msg, x)
-                    sh_puts(c[0].msg, "() expects two arguments")
+                    bb_puts(c[0].msg, "() expects two arguments")
                 }
             } else {
-                sh_putc(w, 40)
-                sh_put_span(w, args[0].buf, ars[0], ae[0])
-                sh_puts(w, " % ")
-                sh_put_span(w, args[0].buf, ars[1], ae[1])
-                sh_putc(w, 41)
+                bb_putc(w, 40)
+                bb_put_span(w, args[0].p, ars[0], ae[0])
+                bb_puts(w, " % ")
+                bb_put_span(w, args[0].p, ars[1], ae[1])
+                bb_putc(w, 41)
             }
             paren = 0
         } elif wg == SH_WGSL and sh_node_is(c, x, "saturate") == 1 {
             if nargs != 1 {
                 sh_fail(c, "saturate() expects one argument")
             } else {
-                sh_puts(w, "clamp(")
-                sh_put_span(w, args[0].buf, ars[0], ae[0])
-                sh_puts(w, ", 0.0, 1.0)")
+                bb_puts(w, "clamp(")
+                bb_put_span(w, args[0].p, ars[0], ae[0])
+                bb_puts(w, ", 0.0, 1.0)")
             }
             paren = 0
         } elif wg == SH_WGSL and sh_node_is(c, x, "rsqrt") == 1 {
-            sh_puts(w, "inverseSqrt")
+            bb_puts(w, "inverseSqrt")
         } else {
             let mut known: i32 = 0
             if wg == SH_WGSL {
@@ -1800,9 +1764,9 @@ function sh_emit_call(c: ptr<ShCtx>, w: ptr<ShBuf>, x: i32) {
             }
         }
         if paren == 1 and c[0].err == 0 {
-            sh_putc(w, 40)
-            sh_put_span(w, args[0].buf, 0, args[0].len)
-            sh_putc(w, 41)
+            bb_putc(w, 40)
+            bb_put_span(w, args[0].p, 0, args[0].len)
+            bb_putc(w, 41)
         }
     }
     free(ars as ptr<u8>)
@@ -1810,7 +1774,7 @@ function sh_emit_call(c: ptr<ShCtx>, w: ptr<ShBuf>, x: i32) {
     flowc_shader_buf_free(args)
 }
 
-function sh_emit_expr(c: ptr<ShCtx>, w: ptr<ShBuf>, x: i32) {
+function sh_emit_expr(c: ptr<ShCtx>, w: ptr<ByteBuf>, x: i32) {
     if c[0].err != 0 {
         return
     }
@@ -1818,57 +1782,57 @@ function sh_emit_expr(c: ptr<ShCtx>, w: ptr<ShBuf>, x: i32) {
     if kind == E_NUMBER {
         sh_put_name(c, w, x)
         if c[0].nf[x] == 1 {
-            sh_puts(w, ".0")
+            bb_puts(w, ".0")
         }
         return
     }
     if kind == E_NAME {
         if sh_node_is(c, x, "time") == 1 {
-            sh_puts(w, "uniforms.time")
+            bb_puts(w, "uniforms.time")
         } elif sh_node_is(c, x, "resolution") == 1 {
             sh_put_ty(c, w, sh_ty_known(c, 3))
-            sh_puts(w, "(uniforms.width, uniforms.height)")
+            bb_puts(w, "(uniforms.width, uniforms.height)")
         } else {
             sh_put_name(c, w, x)
         }
         return
     }
     if kind == E_UNARY {
-        sh_putc(w, 40)
+        bb_putc(w, 40)
         sh_put_name(c, w, x)
         sh_emit_expr(c, w, c[0].na[x])
-        sh_putc(w, 41)
+        bb_putc(w, 41)
         return
     }
     if kind == E_BINARY {
         if c[0].target == SH_METAL and sh_node_is(c, x, "%") == 1 {
-            sh_puts(w, "fmod(")
+            bb_puts(w, "fmod(")
             sh_emit_expr(c, w, c[0].na[x])
-            sh_puts(w, ", ")
+            bb_puts(w, ", ")
             sh_emit_expr(c, w, c[0].nb[x])
-            sh_putc(w, 41)
+            bb_putc(w, 41)
             return
         }
-        sh_putc(w, 40)
+        bb_putc(w, 40)
         sh_emit_expr(c, w, c[0].na[x])
-        sh_putc(w, 32)
+        bb_putc(w, 32)
         sh_put_name(c, w, x)
-        sh_putc(w, 32)
+        bb_putc(w, 32)
         sh_emit_expr(c, w, c[0].nb[x])
-        sh_putc(w, 41)
+        bb_putc(w, 41)
         return
     }
     if kind == E_SWIZZLE {
         sh_emit_expr(c, w, c[0].na[x])
-        sh_putc(w, 46)
+        bb_putc(w, 46)
         sh_put_name(c, w, x)
         return
     }
     if kind == E_CAST {
         sh_put_ty(c, w, sh_ty_named(c, c[0].s1[x], c[0].e1[x]))
-        sh_putc(w, 40)
+        bb_putc(w, 40)
         sh_emit_expr(c, w, c[0].na[x])
-        sh_putc(w, 41)
+        bb_putc(w, 41)
         return
     }
     sh_emit_call(c, w, x)
@@ -1877,7 +1841,7 @@ function sh_emit_expr(c: ptr<ShCtx>, w: ptr<ShBuf>, x: i32) {
 # ── Statement emit ───────────────────────────────────────────────
 
 # emit_stmts(); returns the number of lines written.
-function sh_emit_stmts(c: ptr<ShCtx>, w: ptr<ShBuf>, head: i32, indent: i32) -> i32 {
+function sh_emit_stmts(c: ptr<ShCtx>, w: ptr<ByteBuf>, head: i32, indent: i32) -> i32 {
     let mut lines: i32 = 0
     let mut st: i32 = head
     while st >= 0 and c[0].err == 0 {
@@ -1894,19 +1858,19 @@ function sh_emit_stmts(c: ptr<ShCtx>, w: ptr<ShBuf>, head: i32, indent: i32) -> 
                 sh_pad(w, indent)
                 if c[0].target == SH_WGSL {
                     if c[0].nf[st] == 1 {
-                        sh_puts(w, "var ")
+                        bb_puts(w, "var ")
                     } else {
-                        sh_puts(w, "let ")
+                        bb_puts(w, "let ")
                     }
                     sh_put_name(c, w, st)
-                    sh_puts(w, ": ")
+                    bb_puts(w, ": ")
                     sh_put_ty(c, w, ty)
                 } else {
                     sh_put_ty(c, w, ty)
-                    sh_putc(w, 32)
+                    bb_putc(w, 32)
                     sh_put_name(c, w, st)
                 }
-                sh_puts(w, " = ")
+                bb_puts(w, " = ")
                 sh_emit_expr(c, w, c[0].na[st])
                 sh_line(w, ";")
                 lines = lines + 1
@@ -1914,7 +1878,7 @@ function sh_emit_stmts(c: ptr<ShCtx>, w: ptr<ShBuf>, head: i32, indent: i32) -> 
         } elif kind == S_ASSIGN {
             sh_pad(w, indent)
             sh_put_name(c, w, st)
-            sh_puts(w, " = ")
+            bb_puts(w, " = ")
             sh_emit_expr(c, w, c[0].na[st])
             sh_line(w, ";")
             lines = lines + 1
@@ -1923,14 +1887,14 @@ function sh_emit_stmts(c: ptr<ShCtx>, w: ptr<ShBuf>, head: i32, indent: i32) -> 
             if c[0].na[st] < 0 {
                 sh_line(w, "return;")
             } else {
-                sh_puts(w, "return ")
+                bb_puts(w, "return ")
                 sh_emit_expr(c, w, c[0].na[st])
                 sh_line(w, ";")
             }
             lines = lines + 1
         } elif kind == S_IF {
             sh_pad(w, indent)
-            sh_puts(w, "if (")
+            bb_puts(w, "if (")
             sh_emit_expr(c, w, c[0].na[st])
             sh_line(w, ") {")
             lines = lines + 1
@@ -1950,27 +1914,27 @@ function sh_emit_stmts(c: ptr<ShCtx>, w: ptr<ShBuf>, head: i32, indent: i32) -> 
             sh_env_set(c, c[0].s1[st], c[0].e1[st], sh_ty_known(c, 1))
             sh_pad(w, indent)
             if wg == SH_WGSL {
-                sh_puts(w, "for (var ")
+                bb_puts(w, "for (var ")
                 sh_put_name(c, w, st)
-                sh_puts(w, ": i32 = i32(")
+                bb_puts(w, ": i32 = i32(")
             } else {
-                sh_puts(w, "for (int ")
+                bb_puts(w, "for (int ")
                 sh_put_name(c, w, st)
-                sh_puts(w, " = int(")
+                bb_puts(w, " = int(")
             }
             sh_emit_expr(c, w, c[0].na[st])
-            sh_puts(w, "); ")
+            bb_puts(w, "); ")
             sh_put_name(c, w, st)
             if wg == SH_WGSL {
-                sh_puts(w, " < i32(")
+                bb_puts(w, " < i32(")
             } else {
-                sh_puts(w, " < int(")
+                bb_puts(w, " < int(")
             }
             sh_emit_expr(c, w, c[0].nb[st])
-            sh_puts(w, "); ")
+            bb_puts(w, "); ")
             sh_put_name(c, w, st)
             if wg == SH_WGSL {
-                sh_puts(w, " = ")
+                bb_puts(w, " = ")
                 sh_put_name(c, w, st)
                 sh_line(w, " + 1) {")
             } else {
@@ -2010,14 +1974,14 @@ function sh_has_color_assign(c: ptr<ShCtx>, head: i32) -> i32 {
 # ── Module emit ──────────────────────────────────────────────────
 
 # _emit_fn() for user fn k.
-function sh_emit_fn(c: ptr<ShCtx>, w: ptr<ShBuf>, k: i32) {
+function sh_emit_fn(c: ptr<ShCtx>, w: ptr<ByteBuf>, k: i32) {
     c[0].nv = 0
     let wg: i32 = c[0].target
     let mut ret: i32 = 0
     if wg == SH_METAL {
         ret = sh_map_type(c, c[0].frt[k])
     }
-    let params: ptr<ShBuf> = flowc_shader_buf_new(64)
+    let params: ptr<ByteBuf> = flowc_shader_buf_new(64)
     let mut i: i32 = 0
     while i < c[0].fpn[k] and c[0].err == 0 {
         let pi: i32 = c[0].fp0[k] + i
@@ -2025,16 +1989,16 @@ function sh_emit_fn(c: ptr<ShCtx>, w: ptr<ShBuf>, k: i32) {
         if c[0].err == 0 {
             sh_env_set(c, c[0].pas[pi], c[0].pae[pi], mt)
             if i > 0 {
-                sh_puts(params, ", ")
+                bb_puts(params, ", ")
             }
             if wg == SH_WGSL {
-                sh_put_span(params, c[0].p, c[0].pas[pi], c[0].pae[pi])
-                sh_puts(params, ": ")
+                bb_put_span(params, c[0].p, c[0].pas[pi], c[0].pae[pi])
+                bb_puts(params, ": ")
                 sh_put_ty(c, params, mt)
             } else {
                 sh_put_ty(c, params, mt)
-                sh_putc(params, 32)
-                sh_put_span(params, c[0].p, c[0].pas[pi], c[0].pae[pi])
+                bb_putc(params, 32)
+                bb_put_span(params, c[0].p, c[0].pas[pi], c[0].pae[pi])
             }
         }
         i = i + 1
@@ -2043,7 +2007,7 @@ function sh_emit_fn(c: ptr<ShCtx>, w: ptr<ShBuf>, k: i32) {
         flowc_shader_buf_free(params)
         return
     }
-    let body: ptr<ShBuf> = flowc_shader_buf_new(256)
+    let body: ptr<ByteBuf> = flowc_shader_buf_new(256)
     let stmts: i32 = sh_parse_body_span(c, c[0].fbs[k], c[0].fbe[k])
     let mut nl: i32 = 0
     if c[0].err == 0 {
@@ -2054,25 +2018,25 @@ function sh_emit_fn(c: ptr<ShCtx>, w: ptr<ShBuf>, k: i32) {
     }
     if c[0].err == 0 {
         if wg == SH_WGSL {
-            sh_puts(w, "fn ")
-            sh_put_span(w, c[0].p, c[0].fns[k], c[0].fne[k])
-            sh_putc(w, 40)
-            sh_put_span(w, params[0].buf, 0, params[0].len)
-            sh_puts(w, ") -> ")
+            bb_puts(w, "fn ")
+            bb_put_span(w, c[0].p, c[0].fns[k], c[0].fne[k])
+            bb_putc(w, 40)
+            bb_put_span(w, params[0].p, 0, params[0].len)
+            bb_puts(w, ") -> ")
             sh_put_ty(c, w, ret)
             sh_line(w, " {")
         } else {
-            sh_puts(w, "static inline ")
+            bb_puts(w, "static inline ")
             sh_put_ty(c, w, ret)
-            sh_putc(w, 32)
-            sh_put_span(w, c[0].p, c[0].fns[k], c[0].fne[k])
-            sh_putc(w, 40)
-            sh_put_span(w, params[0].buf, 0, params[0].len)
+            bb_putc(w, 32)
+            bb_put_span(w, c[0].p, c[0].fns[k], c[0].fne[k])
+            bb_putc(w, 40)
+            bb_put_span(w, params[0].p, 0, params[0].len)
             sh_line(w, ") {")
         }
-        sh_put_span(w, body[0].buf, 0, body[0].len)
+        bb_put_span(w, body[0].p, 0, body[0].len)
         if nl == 0 {
-            sh_putc(w, 10)
+            bb_putc(w, 10)
         }
         sh_line(w, "}")
     }
@@ -2080,30 +2044,30 @@ function sh_emit_fn(c: ptr<ShCtx>, w: ptr<ShBuf>, k: i32) {
     flowc_shader_buf_free(body)
 }
 
-function sh_emit_fill(c: ptr<ShCtx>, w: ptr<ShBuf>, k: i32) {
+function sh_emit_fill(c: ptr<ShCtx>, w: ptr<ByteBuf>, k: i32) {
     let stmts: i32 = sh_parse_body_span(c, c[0].flbs[k], c[0].flbe[k])
     if c[0].err != 0 {
         return
     }
     if sh_has_color_assign(c, stmts) == 0 {
         if sh_err(c) == 1 {
-            sh_puts(c[0].msg, "shader fill '")
-            sh_put_span(c[0].msg, c[0].p, c[0].fls[k], c[0].fle[k])
-            sh_puts(c[0].msg, "' must assign `color = ...`")
+            bb_puts(c[0].msg, "shader fill '")
+            bb_put_span(c[0].msg, c[0].p, c[0].fls[k], c[0].fle[k])
+            bb_puts(c[0].msg, "' must assign `color = ...`")
         }
         return
     }
     c[0].nv = 0
     if c[0].target == SH_WGSL {
         sh_line(w, "@fragment")
-        sh_puts(w, "fn ")
-        sh_put_span(w, c[0].p, c[0].fls[k], c[0].fle[k])
+        bb_puts(w, "fn ")
+        bb_put_span(w, c[0].p, c[0].fls[k], c[0].fle[k])
         sh_line(w, "_frag(in: FlowVertexOut) -> @location(0) vec4<f32> {")
         sh_line(w, "    let uv: vec2<f32> = in.uv;")
         sh_line(w, "    var color: vec4<f32> = vec4<f32>(0.0, 0.0, 0.0, 1.0);")
     } else {
-        sh_puts(w, "fragment float4 ")
-        sh_put_span(w, c[0].p, c[0].fls[k], c[0].fle[k])
+        bb_puts(w, "fragment float4 ")
+        bb_put_span(w, c[0].p, c[0].fls[k], c[0].fle[k])
         sh_line(w, "_frag(")
         sh_line(w, "    FlowVertexOut in [[stage_in]],")
         sh_line(w, "    constant FlowShaderUniforms& uniforms [[buffer(0)]]")
@@ -2119,7 +2083,7 @@ function sh_emit_fill(c: ptr<ShCtx>, w: ptr<ShBuf>, k: i32) {
 # generate_metal_for_module() / generate_wgsl_for_module() over the fills
 # selected by `name` (all when nlen < 0) and `only` (all when < 0). Returns
 # 0, or -1 with the error set.
-export function flowc_shader_gen(c: ptr<ShCtx>, w: ptr<ShBuf>, target: i32, name: ptr<u8>, nlen: i32, only: i32) -> i32 {
+export function flowc_shader_gen(c: ptr<ShCtx>, w: ptr<ByteBuf>, target: i32, name: ptr<u8>, nlen: i32, only: i32) -> i32 {
     c[0].target = target
     let mut nsel: i32 = 0
     let mut k: i32 = 0
@@ -2138,11 +2102,11 @@ export function flowc_shader_gen(c: ptr<ShCtx>, w: ptr<ShBuf>, target: i32, name
     } else {
         sh_prelude_metal(w)
     }
-    sh_puts(w, "\n\n")
+    bb_puts(w, "\n\n")
     let mut f: i32 = 0
     while f < c[0].nfn and c[0].err == 0 {
         sh_emit_fn(c, w, f)
-        sh_puts(w, "\n\n")
+        bb_puts(w, "\n\n")
         f = f + 1
     }
     let mut seen: i32 = 0
@@ -2152,7 +2116,7 @@ export function flowc_shader_gen(c: ptr<ShCtx>, w: ptr<ShBuf>, target: i32, name
             sh_emit_fill(c, w, k)
             seen = seen + 1
             if seen < nsel {
-                sh_putc(w, 10)
+                bb_putc(w, 10)
             }
         }
         k = k + 1
@@ -2165,7 +2129,7 @@ export function flowc_shader_gen(c: ptr<ShCtx>, w: ptr<ShBuf>, target: i32, name
 
 # ── Preludes (the Python _PRELUDE strings) ───────────────────────
 
-function sh_prelude_metal(w: ptr<ShBuf>) {
+function sh_prelude_metal(w: ptr<ByteBuf>) {
     sh_line(w, "")
     sh_line(w, "#include <metal_stdlib>")
     sh_line(w, "using namespace metal;")
@@ -2192,11 +2156,11 @@ function sh_prelude_metal(w: ptr<ShBuf>) {
     sh_line(w, "    return out;")
     sh_line(w, "}")
     sh_line(w, "")
-    sh_puts(w, "// ")
+    bb_puts(w, "// ")
     sh_rule(w, 2)
-    sh_puts(w, " FSL standard library (hash / noise / palette) ")
+    bb_puts(w, " FSL standard library (hash / noise / palette) ")
     sh_rule(w, 19)
-    sh_putc(w, 10)
+    bb_putc(w, 10)
     sh_line(w, "static inline float fsl_hash11(float p) {")
     sh_line(w, "    p = fract(p * 0.1031);")
     sh_line(w, "    p *= p + 33.33;")
@@ -2242,7 +2206,7 @@ function sh_prelude_metal(w: ptr<ShBuf>) {
     sh_line(w, "}")
 }
 
-function sh_prelude_wgsl(w: ptr<ShBuf>) {
+function sh_prelude_wgsl(w: ptr<ByteBuf>) {
     sh_line(w, "")
     sh_line(w, "struct FlowShaderUniforms {")
     sh_line(w, "    time: f32,")

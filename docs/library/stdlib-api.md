@@ -1,8 +1,8 @@
 # Standard Library API (generated)
 
-> Auto-generated from `lib/stdlib/` on 2026-09-29 by `scripts/gen_stdlib_docs.sh`. Per-function docs come from `#` comments immediately above each `export function`.
+> Auto-generated from `lib/stdlib/` on 2026-09-30 by `scripts/gen_stdlib_docs.sh`. Per-function docs come from `#` comments immediately above each `export function`.
 
-**112** modules scanned.
+**115** modules scanned.
 
 ## Modules
 
@@ -1175,6 +1175,12 @@ BLAS/LAPACK bindings via Apple Accelerate (or OpenBLAS on Linux) Import: import 
 | `zeros` | `(rows: i32, cols: i32) -> Mat` | rows×cols zero matrix (alias for mat_new). |
 | `ones` | `(rows: i32, cols: i32) -> Mat` | rows×cols matrix filled with 1.0. |
 
+### `bytebuf.flow`
+
+Growable byte buffer and ASCII character tests.  The code lives in compiler/src/bytebuf.flow, a leaf module the compiler's
+
+*No `export` items found (internal / extern-only module).*
+
 ### `checked_arith.flow`
 
 Checked / saturating / wrapping integer arithmetic (#275). Prefer these helpers when you need defined overflow behaviour outside the safety-profile default (which aborts via FLOW_CHECKED_*).
@@ -1992,6 +1998,25 @@ Option Type Represents an optional value: either Some(value) or None
 
 *No `export` items found (internal / extern-only module).*
 
+### `os.flow`
+
+errno, signals and the C constants that go with them (issue #1075).  import std.os { os_errno, os_signal_watch, os_signal_take, SIGINT, EINTR }
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `os_errno` | `() -> i32` | errno after the last failed system call. |
+| `os_set_errno` | `(e: i32) -> void` | - |
+| `os_strerror` | `(e: i32) -> string` | strerror(e): the system's text for an errno value. |
+| `os_signal_watch` | `(sig: i32) -> bool` | Count deliveries of `sig` instead of taking its default action. False when the signal cannot be caught (SIGKILL, SIGSTOP) or is out of range. |
+| `os_signal_take` | `(sig: i32) -> i32` | Deliveries of a watched `sig` since the last call; resets the count. |
+| `os_signal_pending` | `(sig: i32) -> i32` | Deliveries of a watched `sig` not yet taken. |
+| `os_signal_handle` | `(sig: i32, handler: ptr<void>) -> bool` | Run `handler`, a Flow function taking the signal number as i32, when `sig` arrives. Pass it as `name as ptr<void>`. |
+| `os_signal_ignore` | `(sig: i32) -> bool` | - |
+| `os_signal_default` | `(sig: i32) -> bool` | - |
+| `os_raise` | `(sig: i32) -> i32` | Send `sig` to this process. |
+
 ### `planet.flow`
 
 planet: a procedural planet as a system that evolves through time.  A planet is not a texture. It is the fixed point of a few slow processes
@@ -2092,16 +2117,56 @@ FLOW POSIX Standard Library File I/O, processes, environment, and system calls
 
 ### `process.flow`
 
-Process / host-command helpers Runtime: flow_run_cmd / flow_have_cmd in runtime/flow_sys_info.c
+Processes: run a program with an argument vector and capture what it prints, read this program's own arguments and environment.
+
+**Structs:** `ProcStrs`, `ProcCmd`, `ProcResult`
+
+**Constants:**
+
+- `PROC_CAPTURE: i32`
+- `PROC_INHERIT: i32`
+- `PROC_NULL: i32`
+- `PROC_MERGE: i32`
 
 **Functions:**
 
 | Name | Signature | Docs |
 |------|-----------|------|
-| `run_cmd` | `(cmd: string) -> i32` | - |
-| `have_cmd` | `(name: string) -> bool` | - |
-| `env_is` | `(name: string, want: string) -> bool` | - |
-| `str_eq` | `(a: string, b: string) -> bool` | - |
+| `proc_strs_new` | `() -> ptr<ProcStrs>` | String lists |
+| `proc_strs_push` | `(l: ptr<ProcStrs>, s: string) -> void` | Append `s`; the list stays NULL-terminated, so `items` is a C argv. |
+| `proc_strs_len` | `(l: ptr<ProcStrs>) -> i32` | - |
+| `proc_strs_get` | `(l: ptr<ProcStrs>, i: i32) -> string` | - |
+| `proc_cmd` | `(program: string) -> ptr<ProcCmd>` | A command that runs `program`, found on PATH when it has no slash. |
+| `proc_sh` | `(script: string) -> ptr<ProcCmd>` | `/bin/sh -c script`, for when a shell is wanted. |
+| `proc_arg` | `(c: ptr<ProcCmd>, a: string) -> void` | - |
+| `proc_env` | `(c: ptr<ProcCmd>, name: string, value: string) -> void` | Set NAME=value in the child's environment, on top of this program's. |
+| `proc_env_clear` | `(c: ptr<ProcCmd>) -> void` | Start the child with only the variables given through proc_env. |
+| `proc_cwd` | `(c: ptr<ProcCmd>, dir: string) -> void` | Run the child in `dir`. |
+| `proc_timeout_ms` | `(c: ptr<ProcCmd>, ms: i64) -> void` | Kill the child with SIGKILL after `ms` milliseconds. 0 means no limit. |
+| `proc_input` | `(c: ptr<ProcCmd>, text: string) -> void` | Feed `text` to the child's stdin, then close it. |
+| `proc_stdin` | `(c: ptr<ProcCmd>, mode: i32) -> void` | stdin: PROC_NULL (the default) or PROC_INHERIT. |
+| `proc_stdout` | `(c: ptr<ProcCmd>, mode: i32) -> void` | stdout: PROC_CAPTURE (the default), PROC_INHERIT or PROC_NULL. |
+| `proc_stderr` | `(c: ptr<ProcCmd>, mode: i32) -> void` | stderr: PROC_CAPTURE (the default), PROC_INHERIT, PROC_NULL or PROC_MERGE. |
+| `proc_run` | `(c: ptr<ProcCmd>) -> ptr<ProcResult>` | Run the command to completion and return what it did. |
+| `proc_status` | `(c: ptr<ProcCmd>) -> i32` | Run with stdout and stderr passed through; return the exit code. |
+| `proc_output` | `(c: ptr<ProcCmd>) -> string` | stdout of `c`, or "" when it could not start. stderr passes through. |
+| `proc_ok` | `(r: ptr<ProcResult>) -> bool` | True when the command started and exited 0 within its time limit. |
+| `proc_argc` | `() -> i32` | Number of command-line arguments, the program name included. |
+| `proc_argv` | `(i: i32) -> string` | Argument `i` (0 is the program name), or "" past the end. |
+| `proc_args` | `() -> ptr<ProcStrs>` | All arguments after the program name. |
+| `proc_getenv` | `(name: string) -> string` | The value of environment variable `name`, or "" when it is unset. |
+| `proc_has_env` | `(name: string) -> bool` | - |
+| `proc_setenv` | `(name: string, value: string) -> bool` | - |
+| `proc_unsetenv` | `(name: string) -> bool` | - |
+| `proc_environ` | `() -> ptr<ProcStrs>` | This program's environment as NAME=value strings. |
+| `proc_getcwd` | `() -> string` | The working directory, or "" when it cannot be read. |
+| `proc_chdir` | `(dir: string) -> bool` | - |
+| `proc_pid` | `() -> i32` | - |
+| `proc_now_ms` | `() -> i64` | Milliseconds on a monotonic clock, for timing. |
+| `proc_sleep_ms` | `(ms: i32) -> void` | - |
+| `proc_which` | `(name: string) -> string` | The path `name` runs as: `name` itself when it has a slash and is executable, else the first executable match on PATH, else "". |
+| `proc_errno` | `() -> i32` | errno after the last failed system call, and its text. |
+| `proc_strerror` | `(e: i32) -> string` | - |
 
 ### `procgen.flow`
 
@@ -2228,6 +2293,60 @@ Minimal Python embedding interface (extern-backed)
 | `python_call_f32` | `(ctx: PythonContext, fn_name: string, arg: f32) -> PythonContext` | - |
 | `python_call_bool` | `(ctx: PythonContext, fn_name: string, arg: bool) -> PythonContext` | - |
 | `python_end` | `() -> void` | - |
+
+### `regex.flow`
+
+Regular expressions: the part of Python's `re` that programs and the repository tools use, with Python's matching rules.
+
+**Structs:** `Regex`, `RxText`, `RxMatch`, `RxStrs`
+
+**Constants:**
+
+- `RX_IGNORECASE: i32`
+- `RX_MULTILINE: i32`
+- `RX_DOTALL: i32`
+- `RX_ASCII: i32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `rx_decode` | `(s: string, out_len: ptr<i32>) -> ptr<i32>` | Decode `s` into a fresh code point array; the length goes to out_len[0]. |
+| `rx_text` | `(s: string) -> ptr<RxText>` | Decode `s` once for repeated matching. |
+| `rx_is_space` | `(cp: i32) -> bool` | - |
+| `rx_is_digit` | `(cp: i32) -> bool` | - |
+| `rx_is_word` | `(cp: i32) -> bool` | - |
+| `rx_lower` | `(cp: i32) -> i32` | Simple lower and upper case for ASCII, Latin-1, Greek and Cyrillic. |
+| `rx_upper` | `(cp: i32) -> i32` | - |
+| `rx_group_index` | `(r: ptr<Regex>, name: string) -> i32` | The number of the group called `name`, or -1. |
+| `rx_compile` | `(pattern: string, flags: i32) -> ptr<Regex>` | Compile `pattern` with Python-style `flags`. Check rx_ok or rx_error afterwards: a pattern that does not compile matches nothing. |
+| `rx_py_flags` | `() -> i32` | re.MULTILINE \| re.DOTALL, the flag set the repository tools use. |
+| `rx_error` | `(r: ptr<Regex>) -> string` | - |
+| `rx_ok` | `(r: ptr<Regex>) -> bool` | - |
+| `rx_group_count` | `(r: ptr<Regex>) -> i32` | Number of capture groups. |
+| `rx_test_cps` | `(r: ptr<Regex>, text: ptr<i32>, tlen: i32) -> bool` | re.search on already-decoded text, as a yes or no. |
+| `rx_test` | `(r: ptr<Regex>, text: string) -> bool` | True when the pattern matches anywhere in `text` (re.search as a bool). |
+| `rx_search` | `(r: ptr<Regex>, text: string) -> ptr<RxMatch>` | re.search: the first match anywhere in `text`, or null. |
+| `rx_search_from` | `(r: ptr<Regex>, text: string, pos: i32) -> ptr<RxMatch>` | pattern.search(text, pos): the first match at or after code point `pos`. ^ and \b still see the text before `pos`. |
+| `rx_match` | `(r: ptr<Regex>, text: string) -> ptr<RxMatch>` | re.match: a match that starts at the beginning of `text`, or null. |
+| `rx_fullmatch` | `(r: ptr<Regex>, text: string) -> ptr<RxMatch>` | re.fullmatch: a match that covers all of `text`, or null. |
+| `rx_next` | `(m: ptr<RxMatch>) -> ptr<RxMatch>` | re.finditer: the match after `m` in the same text, or null. An empty match is followed by a search that may not match empty at the same place. |
+| `rx_m_groups` | `(m: ptr<RxMatch>) -> i32` | Number of capture groups (group 0 is the whole match and not counted). |
+| `rx_m_matched` | `(m: ptr<RxMatch>, g: i32) -> bool` | True when group g took part in the match. |
+| `rx_m_group` | `(m: ptr<RxMatch>, g: i32) -> string` | Text of group g; "" when it did not take part (Python's None). |
+| `rx_m_named` | `(m: ptr<RxMatch>, name: string) -> string` | Text of the group called `name`. |
+| `rx_m_start` | `(m: ptr<RxMatch>, g: i32) -> i32` | Start and end of group g in code points, as Python's m.start(g) and m.end(g); -1 when the group did not take part. |
+| `rx_m_end` | `(m: ptr<RxMatch>, g: i32) -> i32` | - |
+| `rx_m_byte_start` | `(m: ptr<RxMatch>, g: i32) -> i32` | Start and end of group g as UTF-8 byte offsets into the Flow string. |
+| `rx_m_byte_end` | `(m: ptr<RxMatch>, g: i32) -> i32` | - |
+| `rx_strs_len` | `(l: ptr<RxStrs>) -> i32` | - |
+| `rx_strs_get` | `(l: ptr<RxStrs>, i: i32) -> string` | - |
+| `rx_strs_width` | `(l: ptr<RxStrs>) -> i32` | Strings per match in a findall result: 1, or the group count when the pattern has two or more groups. |
+| `rx_findall` | `(r: ptr<Regex>, text: string) -> ptr<RxStrs>` | re.findall. With no groups each item is a whole match, with one group it is that group, and with more the groups of each match follow one another (rx_strs_width per match). A group that did not take part gives "". |
+| `rx_m_expand` | `(m: ptr<RxMatch>, tmpl: string) -> string` | m.expand(template): the template with \1, \g<name> and escapes filled in. |
+| `rx_sub` | `(r: ptr<Regex>, repl: string, text: string, count: i32) -> string` | re.sub: `text` with the first `count` matches (all when count is 0) replaced by the expansion of `repl`. A bad template leaves `text` as it is and sets rx_error. |
+| `rx_split` | `(r: ptr<Regex>, text: string, maxsplit: i32) -> ptr<RxStrs>` | re.split: the pieces of `text` between matches, with the groups of each match in between. At most `maxsplit` splits when it is above 0. |
+| `rx_escape` | `(s: string) -> string` | re.escape: `s` with every character that has a meaning in a pattern escaped, so the pattern matches `s` literally. |
 
 ### `render3d.flow`
 
