@@ -1,53 +1,31 @@
-#!/usr/bin/env bash
-# Public Flow command dispatcher.
-#
-# Keep project testing small and first-class without growing the historical
-# monolithic shell driver further. The complete legacy/current command driver
-# lives beside this file as `flow-driver`; every command except project-level
-# `flow test` delegates to it unchanged.
-
-set -euo pipefail
-
-# Resolve the launcher itself before locating sibling files. Homebrew and
-# source installs commonly expose `flow` through a symlink in ~/.local/bin.
-SOURCE="${BASH_SOURCE[0]}"
-while [ -h "$SOURCE" ]; do
-    SOURCE_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
-    SOURCE="$(readlink "$SOURCE")"
-    [[ "$SOURCE" != /* ]] && SOURCE="$SOURCE_DIR/$SOURCE"
+#!/bin/sh
+# flow: the Flow command line. The command itself is a Flow program,
+# tools/flow_cli; this stub builds it with a C compiler from the checked-in
+# bootstrap C on first use (and again when its sources change), then execs it.
+set -e
+src=$0
+while [ -h "$src" ]; do
+    dir=$(cd -P "$(dirname "$src")" && pwd)
+    src=$(readlink "$src")
+    case $src in /*) ;; *) src=$dir/$src ;; esac
 done
-SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
-DRIVER="$SCRIPT_DIR/flow-driver"
-
-if [ ! -x "$DRIVER" ]; then
-    echo "flow: internal driver not found or not executable: $DRIVER" >&2
-    exit 2
+root=$(cd -P "$(dirname "$src")" && pwd)
+cache=$root/build
+[ -w "$root" ] || cache=${XDG_CACHE_HOME:-$HOME/.cache}/flow
+bin=$cache/cli/flow
+boot=$root/compiler/build/flowc_bootstrap
+[ -w "$root" ] || boot=$cache/flowc_bootstrap
+if [ ! -x "$bin" ] || [ -n "$(find "$root/tools/flow_cli" "$root/lib/stdlib/process.flow" "$root/lib/stdlib/os.flow" "$root/compiler/src/bytebuf.flow" "$root/compiler/bootstrap/flowc_stage_a.c" -newer "$bin" 2>/dev/null | head -n 1)" ]; then
+    mkdir -p "$cache/cli" "$(dirname "$boot")"
+    if [ ! -x "$boot" ] || [ -n "$(find "$root/compiler/bootstrap/flowc_stage_a.c" -newer "$boot")" ]; then
+        echo "flow: building flowc from compiler/bootstrap/flowc_stage_a.c..." >&2
+        ${CC:-cc} -O2 -w -o "$boot.tmp.$$" "$root/compiler/bootstrap/flowc_stage_a.c" -lm
+        mv -f "$boot.tmp.$$" "$boot"
+    fi
+    (cd "$root" && FLOWC_BUNDLE=1 FLOWC_DIR=. FLOWC_TYPECHECK=1 FLOWC_IN=tools/flow_cli/main.flow \
+        FLOWC_OUT="$bin.tmp.$$.c" "$boot" >/dev/null)
+    ${CC:-cc} -O1 -w -o "$bin.tmp.$$" "$bin.tmp.$$.c" -lm
+    rm -f "$bin.tmp.$$.c"
+    mv -f "$bin.tmp.$$" "$bin"
 fi
-
-if [ "${1:-}" = "test" ]; then
-    shift
-
-    # Compiler maintainers keep the historical repository-wide tier sweep.
-    # `--project` opts into the new project runner even from the Flow repo root.
-    project_mode=1
-    if [ "${1:-}" = "--compiler" ]; then
-        shift
-        exec "$DRIVER" test "$@"
-    fi
-    if [ "${1:-}" = "--project" ]; then
-        shift
-    elif [ -f "$SCRIPT_DIR/flow.toml" ] && [ "$(pwd -P)" = "$SCRIPT_DIR" ]; then
-        project_mode=0
-    fi
-
-    if [ "$project_mode" -eq 0 ]; then
-        exec "$DRIVER" test "$@"
-    fi
-
-    export FLOW_TEST_DRIVER="$DRIVER"
-    export FLOW_TEST_BUILD_DIR="$SCRIPT_DIR/build"
-    # The project test runner is a Flow program (tools/project_test).
-    exec "$DRIVER" __project-test "$@"
-fi
-
-exec "$DRIVER" "$@"
+FLOW_CLI_ROOT=$root exec "$bin" "$@"
