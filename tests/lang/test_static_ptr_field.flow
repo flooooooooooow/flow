@@ -1,0 +1,29 @@
+# A field read or store through a module-level ptr<T> goes through the
+# pointer (#1078). flowc emitted `(tab).len`, which C rejects.
+
+struct Table {
+    len: i32
+    cap: i32
+}
+
+let mut tab: ptr<Table> = null
+
+function table_len() -> i32 {
+    return tab.len
+}
+
+function table_grow(by: i32) {
+    tab.cap = tab.cap + by
+}
+
+function main() -> i32 {
+    tab = malloc(16) as ptr<Table>
+    tab[0] = Table { len: 3, cap: 8 }
+    if table_len() != 3 { return 1 }
+    table_grow(2)
+    if tab[0].cap != 10 { return 2 }
+    tab.len = 4
+    if tab[0].len != 4 { return 3 }
+    free(tab)
+    return 0
+}

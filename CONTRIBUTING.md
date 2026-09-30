@@ -6,6 +6,20 @@ New code is written in Flow, including tools, scripts and tests. CI fails when
 a new `.py` file appears or tracked Python grows. See the "Flow first" section
 of [AGENTS.md](AGENTS.md).
 
+## Canonical agent workflow
+
+Coding agents follow [the Flow Agentic Loop](docs/project/agentic-loop.md)
+and [the repository structure contract](docs/project/repository-structure.md).
+`AGENTS.md` is the short operational entry point. GitHub issues, pull
+requests, CI and `ROADMAP.md` are live state. Contributor documents must not
+carry changing test counts, active-agent lists or current failure snapshots.
+
+The loop optimizes for verified merged work. Session and pull-request volume
+are not goals. An agent checks for overlapping work before implementation and
+again before opening a pull request.
+
+---
+
 ## Agentic Pair Programming Guidelines
 
 Flow is developed through **human-AI collaboration**. This document defines how that works.
@@ -88,10 +102,11 @@ Should compile to C switch statements where possible."
 
 ### AI Response Patterns
 
-1. **Before major changes**: State plan, get approval
-2. **During implementation**: Update todos, show progress
-3. **After completion**: Summarize what changed, verify it works
-4. **When stuck**: Explain the blocker, propose alternatives
+1. **Before implementation**: Check for overlapping work and establish the relevant baseline
+2. **For design changes**: Surface the decision before implementation; scoped approved work may proceed autonomously
+3. **During implementation**: Keep the change focused and preserve verification evidence
+4. **After completion**: Re-check overlap, run the relevant gates, and record the evidence in the pull request
+5. **When blocked**: Record the blocker in GitHub so it survives the session
 
 ---
 
@@ -163,8 +178,8 @@ is a keyword, while the linked file kept the name that parses.
 ### Starting a Session
 
 1. **Context Recovery**
-   - AI reads ROADMAP.md, recent changes
-   - Human states current goal
+   - Read ROADMAP.md, recent changes, open issues, and open pull requests
+   - Confirm the requested outcome and whether it is already in flight
    
 2. **Scope Agreement**
    - Define what "done" looks like

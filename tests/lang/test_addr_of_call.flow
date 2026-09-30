@@ -1,0 +1,29 @@
+# The address of a call result (#1066). C cannot take the address of an
+# rvalue, so flowc spills the result to a temporary first.
+
+struct P {
+    x: i32
+    y: i32
+}
+
+function mk(v: i32) -> P {
+    return P { x: v, y: v * 2 }
+}
+
+function sum(p: ptr<P>) -> i32 {
+    return p.x + p.y
+}
+
+function twice(v: i32) -> i32 {
+    return v * 2
+}
+
+function read(p: ptr<i32>) -> i32 {
+    return p[0]
+}
+
+function main() -> i32 {
+    if sum(&mk(5)) != 15 { return 1 }
+    if read(&twice(4)) != 8 { return 2 }
+    return 0
+}
