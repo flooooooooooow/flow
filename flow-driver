@@ -1553,8 +1553,8 @@ compile_audio_program() {
     if ! clang -O2 -fno-omit-frame-pointer "${audio_cflags[@]}" "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" "$flow_input" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "${FLOW_CONC_SOURCES[@]}" \
-        "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
         "${audio_sources[@]}" \
+        "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
         "${py_ldflags[@]}" "${audio_ldflags[@]}" "${FLOW_CONC_LDFLAGS[@]}" -o "$build_dir/$basename" \
         2>"$build_dir/$basename.link.log"; then
         print_error "C compilation/linking failed"
