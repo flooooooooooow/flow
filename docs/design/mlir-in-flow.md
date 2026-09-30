@@ -4,9 +4,128 @@ The MLIR backend was the largest block of Python between flowc and deleting
 `src/flow`. This page inventoried it, sorted it into what could move to Flow
 and what could not, and recorded the order of the port. The port is
 finished: `compiler/src/mlirgen.flow` writes the MLIR (`FLOWC_EMIT=mlir`),
-shell scripts run the MLIR tools, and `src/flow` is gone. The sections after
-the first one are the record of how it got there, with the numbers of their
-time.
+shell scripts run the MLIR tools, and `src/flow` is gone. The first two
+sections describe the backend as it is; the rest are the record of how it
+got there, with the numbers of their time.
+
+## Correct against the C backend
+
+While the Python generator existed, the emitter copied it text for text,
+bugs included, because text parity was the gate. With the Python generator
+deleted, the contract is the C backend's: the emitter writes MLIR that
+verifies, and the program built from it prints what the C build prints and
+exits with the same code.
+
+`compiler/scripts/mlir_vs_c.sh` holds it. It builds every tracked program
+with a `main` through `flow compile` and `flow compile --backend=mlir`, runs
+both with stdin closed and a timeout, and compares exit code and stdout. A
+program the C backend does not build is counted apart; the floor in
+`compiler/mlir_vs_c/floor.txt` gates the number that run the same. Output
+that changes between two runs of the same build (clocks, addresses) is
+not compared.
+
+On macOS (LLVM 22), 2026-09-30:
+
+| | when parity with Python was the contract | now |
+|---|---|---|
+| programs with `main` | 1465 | 1466 |
+| the C backend builds | 1130 | 1131 |
+| the MLIR backend builds too | 759 (67.2%) | 1078 (95.3%) |
+| same exit code and stdout | 629 (55.7%) | 1002 (88.6%) |
+
+The floor is 5 under the last recorded run, since a few timing programs
+flap when the corpus runs in parallel.
+
+`parity_mlir.sh` stays as the regression gate on the text: its goldens are
+now recorded from flowc with `--record`, and each change to them comes with
+the fix that caused it.
+
+### What changed
+
+* Issues: forward declarations emit nothing and overloads get the C
+  backend's mangled names (#1059); `len` of spans, arrays and strings, and
+  sized span parameters (#1060); `@gpu` negation, `!` and `elif` (#1061);
+  lambda captures and untyped lambda bindings (#1062); non-literal consts,
+  record update, unknown and capability types (#1063).
+* Values: integer literals past the i32 range are i64, float literals f64;
+  bools widen unsigned; conditions of any scalar type test `!= 0`; returned
+  values are cast to the return type; `let x = e` takes the type of `e`.
+* Printing and strings: `print`/`println` use the C backend's conversions
+  and separators; string `+` (numbers formatted as C does), `==` and match
+  patterns compare contents; C escapes in string literals are decoded.
+* Floating point: `a * b + c` and its mirror images are one
+  `llvm.intr.fmuladd`, the intrinsic clang emits when it contracts them
+  within an expression, so LLVM fuses or splits them as it does for the
+  C build and results agree to the bit. Float `!=` is unordered, so NaN
+  != NaN, as in C. Unsigned integers convert to and from floats as
+  unsigned.
+* Control: `defer` runs on `break` and `continue` out of nested blocks;
+  `elif` conditions see the locals as they were before the `if`; struct
+  patterns check nested and literal fields; a match ends in
+  `llvm.unreachable` only when every arm returns.
+* Statements: `expect c` writes `expect failed (line N)` and exits 1 when
+  `c` is false; `a = b = v` is an expression; `ui_*` layout blocks call
+  their `_begin` and `_end` functions around the body.
+* Runtime checks (`FLOWC_CHECKS=1`, the default of `flow_to_mlir.sh`):
+  integer division by zero, shift range, and reads of sized arrays and
+  spans abort with `flow: <what>` as the C backend's checks do.
+* Data: statics fold negative and constant initializers; `[v; N]` takes a
+  constant `N` and fills in a loop; a short array literal zeroes the rest;
+  arrays over 64 KiB live on the heap, since an alloca in a loop is not
+  released; arguments are evaluated left to right; an array returned by
+  value is copied to the heap, and assigning to a sized array copies;
+  `array<T>(n)` zeroes its elements.
+* Intrinsics the C backend provides: `sizeof<T>()`, `flow_panic`,
+  `i32_to_f32`, `str` as the string type.
+* C interop: libc and `<math.h>` functions without a declaration are
+  declared with their C signatures, and a Flow declaration of one (the
+  `@libm` stubs of `stdlib/math.flow`) yields to libc, as the C header
+  does. `@cInclude` and `@cImport` are accepted; `@cEmbed` C is written
+  beside the MLIR and linked by `flow compile --backend=mlir`.
+* Operators: `+ - * /` and unary minus on `Dual` call the overloads the C
+  backend calls, and the `Tensor` operators call `tensor_add` and its
+  siblings; `v in arr` scans a sized array; pointer minus pointer counts
+  elements.
+* Declarative ordering: `xs |> sort` (keys, `descending`, `unique`) is a
+  stable merge sort and `xs |> find(t)` a search, both with the C
+  backend's three-way compare (strcmp, IEEE 754 totalOrder, signed or
+  unsigned order). Every C plan is stable, so the order agrees.
+* More control and data: `@max_iterations(N)` aborts past its bound; a
+  value function whose end is reachable returns zero; a field read
+  through a mutable pointer uses its current value; rows of a nested
+  array literal are copies, so a returned nested array keeps its rows;
+  the proof layer is erased as for C, so proof-only files emit an empty
+  module.
+* Removed: string interpolation (the C backend prints the literal), the
+  linalg rewrite of pointer loops (its casts do not lower), the
+  module-wide array name cache.
+
+### Known gaps
+
+What the gate still reports, largest first:
+
+* Types that only a C header defines. `stdlib/concurrent.flow` holds
+  `pthread_mutex_t` and its kin by value from `<pthread.h>` (16
+  programs); `c64` complex numbers, `stdlib/rf.flow` and a few fixtures
+  name types the emitter has no layout for (12); `extern type` handles
+  and helpers defined in an included header (3).
+* Forms the emitter refuses: `impl Trait for Type` methods, which the
+  parser skips; fields of a generic struct inferred at the call; two
+  lowered forms of `test_lowered_forms.flow`; SIMD vector ops that
+  mlir-opt does not know.
+* A C-side reference that is itself undefined. Signed overflow in the
+  LCGs of `stdlib/tensor.flow`, `examples/ml` and `hash_table.flow`
+  (clang assumes it cannot happen, the MLIR build wraps); the GA history
+  buffer the dynamics DSL sizes at 32 for 40 generations
+  (`spring_mass_control`); reads past an array in `ok_namespaced`,
+  `matmul_benchmark` and `livecode_demo`; type-error fixtures whose C
+  build crashes.
+* Floating point that still parts in the last bits and then grows:
+  `double_pendulum` (chaotic) and `policy_pong`.
+* Build-mode guards: `test_only_guard` expects the C build's modes, and
+  the MLIR build runs under `mlir`.
+* Concurrency and network examples whose C build waits past the timeout
+  or whose output depends on scheduling.
 
 ## Finished: the Python MLIR stack is deleted
 
@@ -34,7 +153,7 @@ live against any revision that has the Python generator, taken with `git
 archive`, so the gate outlives the deletion.
 
 Added for the last slices: generic monomorphization, `fork`/`choose`
-desugaring, range sums, test blocks, string interpolation, vectors,
+desugaring, range sums, test blocks, vectors,
 tensors (struct fields, arguments, `tensor_add`, `tensor_matmul`), the AoSoA
 rewrite, counted-loop rotation of `while true`, dual numbers through
 operator structs, unsized arrays, 128-bit and wide integer literals, and the
@@ -203,18 +322,9 @@ Everything else is refused with a located reason, for example
 `flowc mlir: unsupported: match statement at line 8`. Refusal is deliberate:
 a program either gets the Python generator's MLIR or it gets none.
 
-The emitter follows the Python lowering one decision at a time, down to its
-quirks, because parity is the gate. Known quirks it reproduces rather than
-fixes (each is a Python MLIR behaviour that differs from the C backend):
-
-* an `i64` passed to `println` is printed with `%d`;
-* `println` of a `string` variable prints no newline;
-* float literals are `f32` constants, widened with `arith.extf`;
-* integer literals above 2^31-1 wrap to negative `i32` constants;
-* a `bool` widened to an integer uses `arith.extsi`, so `true` becomes -1;
-* `for i in 5 to 0` counts down (the C backend runs no iterations).
-
-These belong in a later behaviour fix made on both generators at once.
+The emitter followed the Python lowering one decision at a time, down to its
+quirks, because parity was the gate. Those quirks are fixed now; see
+[Correct against the C backend](#correct-against-the-c-backend).
 
 ### `--backend=mlir` on the flowc host
 
@@ -341,26 +451,13 @@ pointer loop lowers normally. Spans and slices are not covered: Python
 only borrows spans from memref arrays, so the programs that use them mostly
 fail on the Python side.
 
-### Python behaviour copied, not fixed
+### Python behaviour copied, then fixed
 
-These are Python MLIR behaviours the emitter now reproduces. Each one gives
-MLIR that does not verify or does not do what the program says, on both
-paths:
-
-* `let x = e` with no annotation types `x` as `memref<16xi8>`, so any
-  arithmetic on it is typed `memref<16xi8>` too.
-* The `elif` conditions of a cf `if` read the locals the then-arm assigned
-  (the entry bindings are restored only before each arm's body), which
-  fails dominance when the then-arm assigned one.
-* String `+` becomes a `# String concatenation: ...` comment and a value
-  with no definition.
-* A static initialized with a negative literal (`let mut x: i32 = -1`)
-  starts at zero; only a bare literal is kept.
-* The `!llvm.array` tag Python records for a local is also cached under the
-  local's name for the rest of the module, so a later `ptr` local of the same
-  name, in any function, is indexed as that array.
-* `linalg.generic` loops go through `builtin.unrealized_conversion_cast`,
-  which mlir-translate cannot lower.
+The Python MLIR behaviours this slice reproduced (untyped `let` as
+`memref<16xi8>`, elif conditions reading the then-arm's locals, string `+`
+as a comment, negative static initializers at zero, the module-wide array
+name cache, `linalg.generic` through casts mlir-translate cannot lower) are
+fixed; see [Correct against the C backend](#correct-against-the-c-backend).
 
 ### Refused on purpose
 
@@ -370,7 +467,7 @@ Tensor-shaped field and Tensor arguments to struct-returning calls (Python's
 `_is_tensor_struct` copies those its own way), the sprintf, snprintf,
 fprintf and scanf externs (always `llvm.func` varargs in Python), list
 patterns, spans, and everything in slices 5 to 11. The next section lifts
-most of these.
+most of these. The proof layer is now erased as the C backend erases it.
 
 ### Numbers
 
@@ -481,42 +578,23 @@ modes the MLIR backend runs under (`compile`, `mlir`). With
 generator numbers each kernel's values from `%1`, so the normalizer starts
 names over at each `gpu.func`; `parity_mlir.sh` checks `gpu_*` fixtures in
 GPU mode and, with `--python`, every accepted program that has a kernel.
-`@cInclude`, `@cEmbed` and `@cImport` stay refused: Python rejects the
-first two (`CIncludeDecl`, `CEmbedDecl`) in all 38 corpus programs that use
-them, and the third reads C headers.
+`@cInclude`, `@cEmbed` and `@cImport` were refused while parity with
+Python held (Python rejected the first two); they are accepted now, see
+[Correct against the C backend](#correct-against-the-c-backend).
 
 Type aliases lower as their base type and units as f64
 (`_resolve_type_alias`).
 
-### More Python behaviour copied, not fixed
+### More Python behaviour copied, then fixed
 
-Filed as #1059 to #1063 so both generators can change together.
-
-* A forward declaration is an empty `func.func` next to the definition, and
-  every overload is a `func.func` of the same name (#1059).
-* `len(s)` on a span calls an undeclared `@len`; a parameter typed
-  `&[T; N]` or `span<T, N>` is declared `!llvm.ptr` while its body extracts
-  span fields from it (#1060).
-* In `@gpu` kernels, `-x` on an integer is `arith.subi %x, 0`, `!x` has an
-  immediate operand, and `elif` branches are dropped (#1061).
-* Lambda captures include called function names, stored as i32 through
-  `ptrtoint`; a lambda that calls `print` or `println` fails in Python and
-  is refused; `elif` conditions and slices are not searched for captures
-  (#1062).
-* A const that is not a literal, a cast or negated literal, or an integer
-  expression is zero; a record update on a base declared without a type
-  yields the base unchanged; any unknown type name, capability types
-  included, is `memref<16xi8>` (#1063).
-* `[v; N]` takes only a literal N.
-* The vectorized loop casts its bounds `: i32 to index` whatever their
-  type, and its comment says f32 for i32 loops too.
-* `array<u8>(n)` spells the element as written, `memref<?xu8>`, and the
-  call's expression type is i32.
-* `array<array<i32, 3>, 4>` is `memref<4xmemref<3xi32>>`.
-* A void lambda returns `llvm.mlir.undef : ()`, and a void callback adapter
-  binds `%result` to a `-> ()` call.
-* Arithmetic on a struct with float members (dual numbers) gets float ops
-  typed as the struct; refused, since the emitter does not reproduce it.
+Filed as #1059 to #1063 while parity was the gate, and fixed since (see
+[Correct against the C backend](#correct-against-the-c-backend)): forward
+declarations and overloads, `len` of a span and sized span parameters, the
+`@gpu` negation, `!` and `elif`, lambda captures, non-literal consts,
+record update on an untyped base, unknown types as `memref<16xi8>`, `[v;
+N]` with a literal N only, the vectorized loop's `i32` bounds, the void
+lambda and callback adapter. Arithmetic on dual numbers through operators
+calls the `add`, `sub`, `mul`, `div` and `neg` overloads, as in C.
 
 ### Numbers
 
