@@ -166,6 +166,7 @@ jobs:
       - run: scripts/check_doc_links.sh
       - run: scripts/check_tool_layout.sh
       - run: scripts/check_makefile_contract.sh
+      - run: scripts/check_project_state_sources.sh
       - name: Jules dispatch backpressure tests
         run: scripts/tools/jules_dispatch/test.sh
       - name: Benchmark harness tests (no Python)

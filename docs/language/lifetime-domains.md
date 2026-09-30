@@ -67,7 +67,7 @@ let mut cache: span<f32> = null
 Those are the only two places a domain is written in v0. This is the
 "annotation-only" answer to the open question in the issue: no `domain frame
 { ... }` blocks, no per-`let` annotations, no domains in types. See
-[Questions.md](../../Questions.md).
+[project Questions](../project/Questions.md).
 
 ## How a value gets its domain
 
