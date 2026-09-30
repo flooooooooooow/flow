@@ -833,6 +833,14 @@
           "path": "project/architecture-writeup.md"
         },
         {
+          "label": "Agentic Loop",
+          "path": "project/agentic-loop.md"
+        },
+        {
+          "label": "Repository Structure",
+          "path": "project/repository-structure.md"
+        },
+        {
           "label": "Maturity",
           "path": "project/maturity.md"
         },
