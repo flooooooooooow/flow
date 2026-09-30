@@ -33,7 +33,9 @@
 # cannot contain, so no backtracking is needed. Whitespace is Python's ASCII
 # `\s` set (9..13, 28..32); a byte >= 128 counts as a word character.
 #
-# Leaf module: externs only.
+# Leaf module: externs and the shared byte buffer (bytebuf.flow) only.
+
+import .bytebuf { ByteBuf, bb_new, bb_putc, bb_puts, bb_put_span, bb_put_i64 }
 
 extern {
     function strcmp(a: string, b: string) -> i32
@@ -124,77 +126,20 @@ export function flowc_strip_dynamics_namespace(line: string) -> string {
     return buf as string
 }
 
-# ── Growable byte buffer ─────────────────────────────────────────
-
-export struct DySb {
-    p: ptr<u8>,
-    len: i32,
-    cap: i32
-}
-
-function dy_sb_new(cap: i32) -> ptr<DySb> {
-    let b: ptr<DySb> = malloc(16) as ptr<DySb>
-    b[0].p = malloc((cap + 1) as i64)
-    b[0].len = 0
-    b[0].cap = cap
-    b[0].p[0] = 0
-    return b
-}
-
-function dy_putc(b: ptr<DySb>, ch: u8) {
-    if b[0].len + 1 >= b[0].cap {
-        let ncap: i32 = b[0].cap * 2 + 64
-        b[0].p = realloc(b[0].p, (ncap + 1) as i64)
-        b[0].cap = ncap
-    }
-    b[0].p[b[0].len] = ch
-    b[0].len = b[0].len + 1
-    b[0].p[b[0].len] = 0
-}
-
-function dy_puts(b: ptr<DySb>, s: string) {
-    let sp: ptr<u8> = s as ptr<u8>
-    let mut i: i32 = 0
-    while sp[i] != 0 {
-        dy_putc(b, sp[i])
-        i = i + 1
-    }
-}
-
-function dy_span(b: ptr<DySb>, src: ptr<u8>, s: i32, e: i32) {
-    let mut i: i32 = s
-    while i < e {
-        dy_putc(b, src[i])
-        i = i + 1
-    }
-}
-
-function dy_i64(b: ptr<DySb>, v: i64) {
-    if v < 0 {
-        dy_putc(b, 45)
-        dy_i64(b, 0 - v)
-        return
-    }
-    if v >= 10 {
-        dy_i64(b, v / 10)
-    }
-    dy_putc(b, (48 + (v % 10)) as u8)
-}
-
 # A code point as UTF-8 (the messages carry a few non-ASCII signs).
-function dy_utf8(b: ptr<DySb>, cp: i32) {
+function dy_utf8(b: ptr<ByteBuf>, cp: i32) {
     if cp < 128 {
-        dy_putc(b, cp as u8)
+        bb_putc(b, cp as u8)
         return
     }
     if cp < 2048 {
-        dy_putc(b, (192 + cp / 64) as u8)
-        dy_putc(b, (128 + cp % 64) as u8)
+        bb_putc(b, (192 + cp / 64) as u8)
+        bb_putc(b, (128 + cp % 64) as u8)
         return
     }
-    dy_putc(b, (224 + cp / 4096) as u8)
-    dy_putc(b, (128 + (cp / 64) % 64) as u8)
-    dy_putc(b, (128 + cp % 64) as u8)
+    bb_putc(b, (224 + cp / 4096) as u8)
+    bb_putc(b, (128 + (cp / 64) % 64) as u8)
+    bb_putc(b, (128 + cp % 64) as u8)
 }
 
 # ── Characters and spans ─────────────────────────────────────────
@@ -470,8 +415,8 @@ function dy_match(p: ptr<u8>, s: i32, e: i32, pat: string, caps: ptr<i32>) -> i3
 
 export struct DyC {
     err: i32,
-    msg: ptr<DySb>,
-    nm: ptr<DySb>,
+    msg: ptr<ByteBuf>,
+    nm: ptr<ByteBuf>,
     fp: ptr<f64>,
     fnum: i32,
     fcap: i32,
@@ -504,15 +449,15 @@ function dy_f64s(n: i32) -> ptr<f64> {
 # Copy p[s..e) into the name arena; returns its offset.
 function dy_name(c: ptr<DyC>, p: ptr<u8>, s: i32, e: i32) -> i32 {
     let off: i32 = c[0].nm[0].len
-    dy_span(c[0].nm, p, s, e)
-    dy_putc(c[0].nm, 0)
+    bb_put_span(c[0].nm, p, s, e)
+    bb_putc(c[0].nm, 0)
     return off
 }
 
 function dy_name_lit(c: ptr<DyC>, s: string) -> i32 {
     let off: i32 = c[0].nm[0].len
-    dy_puts(c[0].nm, s)
-    dy_putc(c[0].nm, 0)
+    bb_puts(c[0].nm, s)
+    bb_putc(c[0].nm, 0)
     return off
 }
 
@@ -534,8 +479,8 @@ function dy_neq_lit(c: ptr<DyC>, a: i32, s: string) -> i32 {
     return 0
 }
 
-function dy_pn(b: ptr<DySb>, c: ptr<DyC>, off: i32) {
-    dy_puts(b, dy_nstr(c, off))
+function dy_pn(b: ptr<ByteBuf>, c: ptr<DyC>, off: i32) {
+    bb_puts(b, dy_nstr(c, off))
 }
 
 function dy_fpush(c: ptr<DyC>, v: f64) -> i32 {
@@ -589,7 +534,7 @@ function dy_at(c: ptr<DyC>, name: i32, v: f64) -> i32 {
 }
 
 # Start an error message; returns the buffer to append to.
-function dy_err(c: ptr<DyC>) -> ptr<DySb> {
+function dy_err(c: ptr<DyC>) -> ptr<ByteBuf> {
     c[0].err = 1
     c[0].msg[0].len = 0
     c[0].msg[0].p[0] = 0
@@ -597,27 +542,27 @@ function dy_err(c: ptr<DyC>) -> ptr<DySb> {
 }
 
 function dy_err_s(c: ptr<DyC>, s: string) {
-    let m: ptr<DySb> = dy_err(c)
-    dy_puts(m, s)
+    let m: ptr<ByteBuf> = dy_err(c)
+    bb_puts(m, s)
 }
 
 # repr() of a str, as ValueError messages quote it.
-function dy_repr_str(b: ptr<DySb>, p: ptr<u8>, s: i32, e: i32) {
+function dy_repr_str(b: ptr<ByteBuf>, p: ptr<u8>, s: i32, e: i32) {
     let mut q: u8 = 39
     if dy_find(p, s, e, 39) >= 0 and dy_find(p, s, e, 34) < 0 {
         q = 34
     }
-    dy_putc(b, q)
+    bb_putc(b, q)
     let mut k: i32 = s
     while k < e {
         let ch: u8 = p[k]
         if ch == 92 or ch == q {
-            dy_putc(b, 92)
+            bb_putc(b, 92)
         }
-        dy_putc(b, ch)
+        bb_putc(b, ch)
         k = k + 1
     }
-    dy_putc(b, q)
+    bb_putc(b, q)
 }
 
 # ── Numbers: int() and float() ───────────────────────────────────
@@ -665,8 +610,8 @@ function dy_int(c: ptr<DyC>, p: ptr<u8>, s0: i32, e0: i32) -> i64 {
         ok = 0
     }
     if ok == 0 {
-        let m: ptr<DySb> = dy_err(c)
-        dy_puts(m, "invalid literal for int() with base 10: ")
+        let m: ptr<ByteBuf> = dy_err(c)
+        bb_puts(m, "invalid literal for int() with base 10: ")
         dy_repr_str(m, p, s0, e0)
         return 0
     }
@@ -774,8 +719,8 @@ function dy_float(c: ptr<DyC>, p: ptr<u8>, s0: i32, e0: i32) -> f64 {
         }
     }
     if ok == 0 {
-        let m: ptr<DySb> = dy_err(c)
-        dy_puts(m, "could not convert string to float: ")
+        let m: ptr<ByteBuf> = dy_err(c)
+        bb_puts(m, "could not convert string to float: ")
         dy_repr_str(m, p, s0, e0)
         return 0.0
     }
@@ -960,44 +905,44 @@ function dy_round(dig: ptr<u8>, nd: i32, pr: i32, out: ptr<u8>, dp: ptr<i32>) {
 
 # nan / inf / zero / sign handling shared by both formats. Returns 1 when
 # the value was fully written; otherwise writes the sign and returns 0.
-function dy_fmt_special(b: ptr<DySb>, v: f64, zero: string) -> i32 {
+function dy_fmt_special(b: ptr<ByteBuf>, v: f64, zero: string) -> i32 {
     if v != v {
-        dy_puts(b, "nan")
+        bb_puts(b, "nan")
         return 1
     }
     if dy_bits(v) < 0 {
-        dy_putc(b, 45)
+        bb_putc(b, 45)
     }
     let d: f64 = v - v
     if d != d {
-        dy_puts(b, "inf")
+        bb_puts(b, "inf")
         return 1
     }
     if v == 0.0 {
-        dy_puts(b, zero)
+        bb_puts(b, zero)
         return 1
     }
     return 0
 }
 
-function dy_exp10(b: ptr<DySb>, x: i32) {
+function dy_exp10(b: ptr<ByteBuf>, x: i32) {
     if x < 0 {
-        dy_putc(b, 45)
+        bb_putc(b, 45)
     } else {
-        dy_putc(b, 43)
+        bb_putc(b, 43)
     }
     let mut ax: i32 = x
     if ax < 0 {
         ax = 0 - ax
     }
     if ax < 10 {
-        dy_putc(b, 48)
+        bb_putc(b, 48)
     }
-    dy_i64(b, ax as i64)
+    bb_put_i64(b, ax as i64)
 }
 
 # f"{v:.17g}"
-function dy_g17(b: ptr<DySb>, v: f64) {
+function dy_g17(b: ptr<ByteBuf>, v: f64) {
     if dy_fmt_special(b, v, "0") == 1 {
         return
     }
@@ -1019,27 +964,27 @@ function dy_g17(b: ptr<DySb>, v: f64) {
     }
     if x >= 0 - 4 and x < 17 {
         if decpt <= 0 {
-            dy_puts(b, "0.")
+            bb_puts(b, "0.")
             let mut z: i32 = 0
             while z < 0 - decpt {
-                dy_putc(b, 48)
+                bb_putc(b, 48)
                 z = z + 1
             }
-            dy_span(b, r, 0, last)
+            bb_put_span(b, r, 0, last)
         } else {
-            dy_span(b, r, 0, decpt)
+            bb_put_span(b, r, 0, decpt)
             if last > decpt {
-                dy_putc(b, 46)
-                dy_span(b, r, decpt, last)
+                bb_putc(b, 46)
+                bb_put_span(b, r, decpt, last)
             }
         }
     } else {
-        dy_putc(b, r[0])
+        bb_putc(b, r[0])
         if last > 1 {
-            dy_putc(b, 46)
-            dy_span(b, r, 1, last)
+            bb_putc(b, 46)
+            bb_put_span(b, r, 1, last)
         }
-        dy_putc(b, 101)
+        bb_putc(b, 101)
         dy_exp10(b, x)
     }
     free(dig)
@@ -1048,7 +993,7 @@ function dy_g17(b: ptr<DySb>, v: f64) {
 }
 
 # repr(v): the shortest digits that read back as v.
-function dy_repr(b: ptr<DySb>, v: f64) {
+function dy_repr(b: ptr<ByteBuf>, v: f64) {
     if dy_fmt_special(b, v, "0.0") == 1 {
         return
     }
@@ -1061,16 +1006,16 @@ function dy_repr(b: ptr<DySb>, v: f64) {
     let dp: ptr<i32> = dy_i32s(1)
     let nd: i32 = dy_exact(a, dig, dp)
     let exact_dp: i32 = dp[0]
-    let chk: ptr<DySb> = dy_sb_new(64)
+    let chk: ptr<ByteBuf> = bb_new(64)
     let mut pr: i32 = 1
     while pr <= 17 {
         dp[0] = exact_dp
         dy_round(dig, nd, pr, r, dp)
         chk[0].len = 0
-        dy_puts(chk, "0.")
-        dy_span(chk, r, 0, pr)
-        dy_putc(chk, 101)
-        dy_i64(chk, dp[0] as i64)
+        bb_puts(chk, "0.")
+        bb_put_span(chk, r, 0, pr)
+        bb_putc(chk, 101)
+        bb_put_i64(chk, dp[0] as i64)
         if strtod(chk[0].p as string, null) == a {
             break
         }
@@ -1084,35 +1029,35 @@ function dy_repr(b: ptr<DySb>, v: f64) {
     let x: i32 = decpt - 1
     if x >= 0 - 4 and x < 16 {
         if decpt <= 0 {
-            dy_puts(b, "0.")
+            bb_puts(b, "0.")
             let mut z: i32 = 0
             while z < 0 - decpt {
-                dy_putc(b, 48)
+                bb_putc(b, 48)
                 z = z + 1
             }
-            dy_span(b, r, 0, last)
+            bb_put_span(b, r, 0, last)
         } else {
             if decpt >= last {
-                dy_span(b, r, 0, last)
+                bb_put_span(b, r, 0, last)
                 let mut z2: i32 = last
                 while z2 < decpt {
-                    dy_putc(b, 48)
+                    bb_putc(b, 48)
                     z2 = z2 + 1
                 }
-                dy_puts(b, ".0")
+                bb_puts(b, ".0")
             } else {
-                dy_span(b, r, 0, decpt)
-                dy_putc(b, 46)
-                dy_span(b, r, decpt, last)
+                bb_put_span(b, r, 0, decpt)
+                bb_putc(b, 46)
+                bb_put_span(b, r, decpt, last)
             }
         }
     } else {
-        dy_putc(b, r[0])
+        bb_putc(b, r[0])
         if last > 1 {
-            dy_putc(b, 46)
-            dy_span(b, r, 1, last)
+            bb_putc(b, 46)
+            bb_put_span(b, r, 1, last)
         }
-        dy_putc(b, 101)
+        bb_putc(b, 101)
         dy_exp10(b, x)
     }
     free(dig)
@@ -1123,20 +1068,20 @@ function dy_repr(b: ptr<DySb>, v: f64) {
 }
 
 # _flow_f64: .17g, with ".0" when there is no "." or exponent.
-function dy_flow_f64(b: ptr<DySb>, v: f64) {
-    let t: ptr<DySb> = dy_sb_new(40)
+function dy_flow_f64(b: ptr<ByteBuf>, v: f64) {
+    let t: ptr<ByteBuf> = bb_new(40)
     dy_g17(t, v)
     let mut s: i32 = 0
     if t[0].p[0] == 46 {
-        dy_putc(b, 48)
+        bb_putc(b, 48)
     }
     if t[0].len >= 2 and t[0].p[0] == 45 and t[0].p[1] == 46 {
-        dy_puts(b, "-0")
+        bb_puts(b, "-0")
         s = 1
     }
-    dy_span(b, t[0].p, s, t[0].len)
+    bb_put_span(b, t[0].p, s, t[0].len)
     if dy_find(t[0].p, 0, t[0].len, 101) < 0 and dy_find(t[0].p, 0, t[0].len, 69) < 0 and dy_find(t[0].p, 0, t[0].len, 46) < 0 {
-        dy_puts(b, ".0")
+        bb_puts(b, ".0")
     }
     free(t[0].p)
     free(t as ptr<u8>)
@@ -1870,10 +1815,10 @@ function dy_parse_at(c: ptr<DyC>, p: ptr<u8>, s0: i32, e0: i32, g: ptr<Dp>, r: i
         if pa[1] > pa[0] {
             let col: i32 = dy_find(p, pa[0], pa[1], 58)
             if col < 0 {
-                let m: ptr<DySb> = dy_err(c)
-                dy_puts(m, "invalid `at` binding '")
-                dy_span(m, p, pa[0], pa[1])
-                dy_puts(m, "' in represent linear; expected name: value")
+                let m: ptr<ByteBuf> = dy_err(c)
+                bb_puts(m, "invalid `at` binding '")
+                bb_put_span(m, p, pa[0], pa[1])
+                bb_puts(m, "' in represent linear; expected name: value")
                 free(pa as ptr<u8>)
                 free(se as ptr<u8>)
                 return
@@ -1887,18 +1832,18 @@ function dy_parse_at(c: ptr<DyC>, p: ptr<u8>, s0: i32, e0: i32, g: ptr<Dp>, r: i
             vl[1] = pa[1]
             dy_strip(p, vl)
             if dy_all_word(p, nm[0], nm[1]) == 0 {
-                let m2: ptr<DySb> = dy_err(c)
-                dy_puts(m2, "invalid state name in `at`: ")
-                dy_span(m2, p, nm[0], nm[1])
+                let m2: ptr<ByteBuf> = dy_err(c)
+                bb_puts(m2, "invalid state name in `at`: ")
+                bb_put_span(m2, p, nm[0], nm[1])
                 return
             }
             let v: f64 = dy_float(c, p, vl[0], vl[1])
             if c[0].err != 0 {
-                let m3: ptr<DySb> = dy_err(c)
-                dy_puts(m3, "invalid numeric value in `at` for '")
-                dy_span(m3, p, nm[0], nm[1])
-                dy_puts(m3, "': ")
-                dy_span(m3, p, vl[0], vl[1])
+                let m3: ptr<ByteBuf> = dy_err(c)
+                bb_puts(m3, "invalid numeric value in `at` for '")
+                bb_put_span(m3, p, nm[0], nm[1])
+                bb_puts(m3, "': ")
+                bb_put_span(m3, p, vl[0], vl[1])
                 return
             }
             # dict: a repeated name keeps its place, takes the new value.
@@ -1947,9 +1892,9 @@ function dy_name_list(c: ptr<DyC>, p: ptr<u8>, s0: i32, e0: i32) -> i32 {
         dy_strip(p, pa)
         if pa[1] > pa[0] {
             if dy_all_word(p, pa[0], pa[1]) == 0 {
-                let m: ptr<DySb> = dy_err(c)
-                dy_puts(m, "invalid name in represent linear list: ")
-                dy_span(m, p, pa[0], pa[1])
+                let m: ptr<ByteBuf> = dy_err(c)
+                bb_puts(m, "invalid name in represent linear list: ")
+                bb_put_span(m, p, pa[0], pa[1])
                 return 0
             }
             count = count + 1
@@ -2044,11 +1989,11 @@ function dy_rep_linear_body(c: ptr<DyC>, p: ptr<u8>, g: ptr<Dp>, r: i32, bs: ptr
                                             g[0].rp_cn[r] = dy_floats(c, p, s + 2, e, f0)
                                             g[0].rp_c0[r] = f0[0]
                                         } else {
-                                            let m: ptr<DySb> = dy_err(c)
-                                            dy_puts(m, "unknown item in represent linear for '")
+                                            let m: ptr<ByteBuf> = dy_err(c)
+                                            bb_puts(m, "unknown item in represent linear for '")
                                             dy_pn(m, c, g[0].rp_flow[r])
-                                            dy_puts(m, "': ")
-                                            dy_span(m, p, s, e)
+                                            bb_puts(m, "': ")
+                                            bb_put_span(m, p, s, e)
                                         }
                                     }
                                 }
@@ -2085,10 +2030,10 @@ function dy_portrait_body(c: ptr<DyC>, p: ptr<u8>, g: ptr<Dp>, t: i32, bs: ptr<i
                     return
                 }
                 if g[0].pt_trail[t] <= 0 {
-                    let m: ptr<DySb> = dy_err(c)
-                    dy_puts(m, "represent phase_portrait for '")
+                    let m: ptr<ByteBuf> = dy_err(c)
+                    bb_puts(m, "represent phase_portrait for '")
                     dy_pn(m, c, fl)
-                    dy_puts(m, "': trail must be positive")
+                    bb_puts(m, "': trail must be positive")
                     return
                 }
                 done = 1
@@ -2117,16 +2062,16 @@ function dy_portrait_body(c: ptr<DyC>, p: ptr<u8>, g: ptr<Dp>, t: i32, bs: ptr<i
                     let is0: i32 = dy_neq(c, ax, g[0].pt_ax0[t])
                     let is1: i32 = dy_neq(c, ax, g[0].pt_ax1[t])
                     if is0 == 0 and is1 == 0 {
-                        let m: ptr<DySb> = dy_err(c)
-                        dy_puts(m, "represent phase_portrait for '")
+                        let m: ptr<ByteBuf> = dy_err(c)
+                        bb_puts(m, "represent phase_portrait for '")
                         dy_pn(m, c, fl)
-                        dy_puts(m, "': map axis '")
+                        bb_puts(m, "': map axis '")
                         dy_pn(m, c, ax)
-                        dy_puts(m, "' is not one of (")
+                        bb_puts(m, "' is not one of (")
                         dy_pn(m, c, g[0].pt_ax0[t])
-                        dy_puts(m, ", ")
+                        bb_puts(m, ", ")
                         dy_pn(m, c, g[0].pt_ax1[t])
-                        dy_puts(m, ")")
+                        bb_puts(m, ")")
                         return
                     }
                     let lo: f64 = dy_float(c, p, caps[2], caps[3])
@@ -2135,12 +2080,12 @@ function dy_portrait_body(c: ptr<DyC>, p: ptr<u8>, g: ptr<Dp>, t: i32, bs: ptr<i
                         hi = dy_float(c, p, caps[4], caps[5])
                     }
                     if c[0].err != 0 {
-                        let m4: ptr<DySb> = dy_err(c)
-                        dy_puts(m4, "represent phase_portrait for '")
+                        let m4: ptr<ByteBuf> = dy_err(c)
+                        bb_puts(m4, "represent phase_portrait for '")
                         dy_pn(m4, c, fl)
-                        dy_puts(m4, "': invalid range in map for '")
+                        bb_puts(m4, "': invalid range in map for '")
                         dy_pn(m4, c, ax)
-                        dy_puts(m4, "'")
+                        bb_puts(m4, "'")
                         return
                     }
                     if is0 == 1 {
@@ -2159,11 +2104,11 @@ function dy_portrait_body(c: ptr<DyC>, p: ptr<u8>, g: ptr<Dp>, t: i32, bs: ptr<i
                 }
             }
             if done == 0 {
-                let m5: ptr<DySb> = dy_err(c)
-                dy_puts(m5, "unknown item in represent phase_portrait for '")
+                let m5: ptr<ByteBuf> = dy_err(c)
+                bb_puts(m5, "unknown item in represent phase_portrait for '")
                 dy_pn(m5, c, fl)
-                dy_puts(m5, "': ")
-                dy_span(m5, p, s, e)
+                bb_puts(m5, "': ")
+                bb_put_span(m5, p, s, e)
                 return
             }
             if c[0].err != 0 {
@@ -2173,21 +2118,21 @@ function dy_portrait_body(c: ptr<DyC>, p: ptr<u8>, g: ptr<Dp>, t: i32, bs: ptr<i
         i = i + 1
     }
     if g[0].pt_set0[t] == 0 or g[0].pt_set1[t] == 0 {
-        let m6: ptr<DySb> = dy_err(c)
-        dy_puts(m6, "represent phase_portrait for '")
+        let m6: ptr<ByteBuf> = dy_err(c)
+        bb_puts(m6, "represent phase_portrait for '")
         dy_pn(m6, c, fl)
-        dy_puts(m6, "': need map for both '")
+        bb_puts(m6, "': need map for both '")
         dy_pn(m6, c, g[0].pt_ax0[t])
-        dy_puts(m6, "' and '")
+        bb_puts(m6, "' and '")
         dy_pn(m6, c, g[0].pt_ax1[t])
-        dy_puts(m6, "'")
+        bb_puts(m6, "'")
         return
     }
     if g[0].pt_k0[t] == g[0].pt_k1[t] {
-        let m7: ptr<DySb> = dy_err(c)
-        dy_puts(m7, "represent phase_portrait for '")
+        let m7: ptr<ByteBuf> = dy_err(c)
+        bb_puts(m7, "represent phase_portrait for '")
         dy_pn(m7, c, fl)
-        dy_puts(m7, "': maps must assign one axis to col and one to row")
+        bb_puts(m7, "': maps must assign one axis to col and one to row")
     }
 }
 
@@ -2231,7 +2176,7 @@ const DY_DASH: i32 = 8212
 
 # _extract_represent_blocks: represents and portraits go to g; the kept
 # lines are joined into out.
-function dy_extract_represent(c: ptr<DyC>, p: ptr<u8>, n: i32, g: ptr<Dp>, out: ptr<DySb>) {
+function dy_extract_represent(c: ptr<DyC>, p: ptr<u8>, n: i32, g: ptr<Dp>, out: ptr<ByteBuf>) {
     let ls: ptr<i32> = dy_i32s(n + 2)
     let le: ptr<i32> = dy_i32s(n + 2)
     let nl: i32 = dy_split_lines(p, n, ls, le)
@@ -2262,10 +2207,10 @@ function dy_extract_represent(c: ptr<DyC>, p: ptr<u8>, n: i32, g: ptr<Dp>, out: 
                 fbd = depth + delta
                 have_fbd = 1
                 if first == 0 {
-                    dy_putc(out, 10)
+                    bb_putc(out, 10)
                 }
                 first = 0
-                dy_span(out, p, a, b)
+                bb_put_span(out, p, a, b)
                 depth = depth + delta
                 i = i + 1
                 handled = 1
@@ -2313,19 +2258,19 @@ function dy_extract_represent(c: ptr<DyC>, p: ptr<u8>, n: i32, g: ptr<Dp>, out: 
                         return
                     }
                     if dy_eq(p, ks, ke, "koopman") == 1 or dy_eq(p, ks, ke, "transfer_function") == 1 or dy_eq(p, ks, ke, "frequency") == 1 {
-                        let m: ptr<DySb> = dy_err(c)
-                        dy_puts(m, "represent ")
-                        dy_span(m, p, ks, ke)
-                        dy_puts(m, ": not yet implemented (Stage-1 ships `represent linear` with explicit A/B/C; see docs/vision/north-star.md ")
+                        let m: ptr<ByteBuf> = dy_err(c)
+                        bb_puts(m, "represent ")
+                        bb_put_span(m, p, ks, ke)
+                        bb_puts(m, ": not yet implemented (Stage-1 ships `represent linear` with explicit A/B/C; see docs/vision/north-star.md ")
                         dy_utf8(m, DY_SECTION)
-                        dy_puts(m, "9)")
+                        bb_puts(m, "9)")
                         return
                     }
                     if dy_eq(p, ks, ke, "linear") == 0 {
-                        let m2: ptr<DySb> = dy_err(c)
-                        dy_puts(m2, "unknown represent kind '")
-                        dy_span(m2, p, ks, ke)
-                        dy_puts(m2, "'; expected linear, nonlinear, phase_portrait, or a reserved form (koopman|transfer_function|frequency)")
+                        let m2: ptr<ByteBuf> = dy_err(c)
+                        bb_puts(m2, "unknown represent kind '")
+                        bb_put_span(m2, p, ks, ke)
+                        bb_puts(m2, "'; expected linear, nonlinear, phase_portrait, or a reserved form (koopman|transfer_function|frequency)")
                         return
                     }
                     let mut fname: i32 = 0 - 1
@@ -2374,52 +2319,52 @@ function dy_extract_represent(c: ptr<DyC>, p: ptr<u8>, n: i32, g: ptr<Dp>, out: 
                 }
             }
             if first == 0 {
-                dy_putc(out, 10)
+                bb_putc(out, 10)
             }
             first = 0
-            dy_span(out, p, a, b)
+            bb_put_span(out, p, a, b)
             i = i + 1
         }
     }
 }
 
 # repr() of the at_point dict: {'angle': 0.0, 'velocity': 0.0}
-function dy_at_repr(m: ptr<DySb>, c: ptr<DyC>, g: ptr<Dp>, r: i32) {
-    dy_putc(m, 123)
+function dy_at_repr(m: ptr<ByteBuf>, c: ptr<DyC>, g: ptr<Dp>, r: i32) {
+    bb_putc(m, 123)
     let mut q: i32 = 0
     while q < g[0].rp_atn[r] {
         if q > 0 {
-            dy_puts(m, ", ")
+            bb_puts(m, ", ")
         }
         let k: i32 = g[0].rp_at0[r] + q
         let nm: ptr<u8> = c[0].nm[0].p + c[0].at_name[k]
         dy_repr_str(m, nm, 0, strlen(nm as string) as i32)
-        dy_puts(m, ": ")
+        bb_puts(m, ": ")
         dy_repr(m, c[0].at_val[k])
         q = q + 1
     }
-    dy_putc(m, 125)
+    bb_putc(m, 125)
 }
 
-function dy_rep_prefix(m: ptr<DySb>, c: ptr<DyC>, g: ptr<Dp>, r: i32) {
-    dy_puts(m, "represent linear for '")
+function dy_rep_prefix(m: ptr<ByteBuf>, c: ptr<DyC>, g: ptr<Dp>, r: i32) {
+    bb_puts(m, "represent linear for '")
     dy_pn(m, c, g[0].rp_flow[r])
-    dy_puts(m, "': ")
+    bb_puts(m, "': ")
 }
 
 # _represent_to_dsys, then the conflict check; adds `<Flow>_lin`.
 function dy_rep_to_dsys(c: ptr<DyC>, g: ptr<Dp>, r: i32) {
     let an: i32 = g[0].rp_an[r]
     if an == 0 {
-        let m: ptr<DySb> = dy_err(c)
+        let m: ptr<ByteBuf> = dy_err(c)
         dy_rep_prefix(m, c, g, r)
-        dy_puts(m, "linearization coefficients required")
+        bb_puts(m, "linearization coefficients required")
         if g[0].rp_atn[r] > 0 {
-            dy_puts(m, " (operating point at ")
+            bb_puts(m, " (operating point at ")
             dy_at_repr(m, c, g, r)
-            dy_puts(m, " was given, but automatic Jacobian linearization is not yet implemented)")
+            bb_puts(m, " was given, but automatic Jacobian linearization is not yet implemented)")
         }
-        dy_puts(m, "; supply explicit A (and optional B/C) matrices in the represent linear block, e.g. `A 0.0 1.0 -9.81 0.0`")
+        bb_puts(m, "; supply explicit A (and optional B/C) matrices in the represent linear block, e.g. `A 0.0 1.0 -9.81 0.0`")
         return
     }
     let mut n: i64 = g[0].rp_n[r]
@@ -2433,26 +2378,26 @@ function dy_rep_to_dsys(c: ptr<DyC>, g: ptr<Dp>, r: i32) {
             root = root + 1
         }
         if root * root != (an as i64) or root < 1 {
-            let m2: ptr<DySb> = dy_err(c)
+            let m2: ptr<ByteBuf> = dy_err(c)
             dy_rep_prefix(m2, c, g, r)
-            dy_puts(m2, "A must list n")
+            bb_puts(m2, "A must list n")
             dy_utf8(m2, DY_TIMES)
-            dy_puts(m2, "n floats (got ")
-            dy_i64(m2, an as i64)
-            dy_puts(m2, " values); or set `n` explicitly")
+            bb_puts(m2, "n floats (got ")
+            bb_put_i64(m2, an as i64)
+            bb_puts(m2, " values); or set `n` explicitly")
             return
         }
         n = root
     } else {
         if (an as i64) != n * n {
-            let m3: ptr<DySb> = dy_err(c)
+            let m3: ptr<ByteBuf> = dy_err(c)
             dy_rep_prefix(m3, c, g, r)
-            dy_puts(m3, "A has ")
-            dy_i64(m3, an as i64)
-            dy_puts(m3, " entries but n=")
-            dy_i64(m3, n)
-            dy_puts(m3, " expects ")
-            dy_i64(m3, n * n)
+            bb_puts(m3, "A has ")
+            bb_put_i64(m3, an as i64)
+            bb_puts(m3, " entries but n=")
+            bb_put_i64(m3, n)
+            bb_puts(m3, " expects ")
+            bb_put_i64(m3, n * n)
             return
         }
     }
@@ -2484,27 +2429,27 @@ function dy_rep_to_dsys(c: ptr<DyC>, g: ptr<Dp>, r: i32) {
     } else {
         if mm <= 0 {
             if (bn as i64) % n != 0 {
-                let m4: ptr<DySb> = dy_err(c)
+                let m4: ptr<ByteBuf> = dy_err(c)
                 dy_rep_prefix(m4, c, g, r)
-                dy_puts(m4, "B length ")
-                dy_i64(m4, bn as i64)
-                dy_puts(m4, " is not a multiple of n=")
-                dy_i64(m4, n)
+                bb_puts(m4, "B length ")
+                bb_put_i64(m4, bn as i64)
+                bb_puts(m4, " is not a multiple of n=")
+                bb_put_i64(m4, n)
                 return
             }
             mm = (bn as i64) / n
         } else {
             if (bn as i64) != n * mm {
-                let m5: ptr<DySb> = dy_err(c)
+                let m5: ptr<ByteBuf> = dy_err(c)
                 dy_rep_prefix(m5, c, g, r)
-                dy_puts(m5, "B has ")
-                dy_i64(m5, bn as i64)
-                dy_puts(m5, " entries but n=")
-                dy_i64(m5, n)
-                dy_puts(m5, " m=")
-                dy_i64(m5, mm)
-                dy_puts(m5, " expects ")
-                dy_i64(m5, n * mm)
+                bb_puts(m5, "B has ")
+                bb_put_i64(m5, bn as i64)
+                bb_puts(m5, " entries but n=")
+                bb_put_i64(m5, n)
+                bb_puts(m5, " m=")
+                bb_put_i64(m5, mm)
+                bb_puts(m5, " expects ")
+                bb_put_i64(m5, n * mm)
                 return
             }
         }
@@ -2517,15 +2462,15 @@ function dy_rep_to_dsys(c: ptr<DyC>, g: ptr<Dp>, r: i32) {
             pp = n
         }
         if pp != n {
-            let m6: ptr<DySb> = dy_err(c)
+            let m6: ptr<ByteBuf> = dy_err(c)
             dy_rep_prefix(m6, c, g, r)
-            dy_puts(m6, "supply C (p")
+            bb_puts(m6, "supply C (p")
             dy_utf8(m6, DY_TIMES)
-            dy_puts(m6, "n) when p != n (got p=")
-            dy_i64(m6, pp)
-            dy_puts(m6, ", n=")
-            dy_i64(m6, n)
-            dy_puts(m6, ")")
+            bb_puts(m6, "n) when p != n (got p=")
+            bb_put_i64(m6, pp)
+            bb_puts(m6, ", n=")
+            bb_put_i64(m6, n)
+            bb_puts(m6, ")")
             return
         }
         c0 = c[0].fnum
@@ -2546,27 +2491,27 @@ function dy_rep_to_dsys(c: ptr<DyC>, g: ptr<Dp>, r: i32) {
     } else {
         if pp <= 0 {
             if (cn as i64) % n != 0 {
-                let m7: ptr<DySb> = dy_err(c)
+                let m7: ptr<ByteBuf> = dy_err(c)
                 dy_rep_prefix(m7, c, g, r)
-                dy_puts(m7, "C length ")
-                dy_i64(m7, cn as i64)
-                dy_puts(m7, " is not a multiple of n=")
-                dy_i64(m7, n)
+                bb_puts(m7, "C length ")
+                bb_put_i64(m7, cn as i64)
+                bb_puts(m7, " is not a multiple of n=")
+                bb_put_i64(m7, n)
                 return
             }
             pp = (cn as i64) / n
         } else {
             if (cn as i64) != pp * n {
-                let m8: ptr<DySb> = dy_err(c)
+                let m8: ptr<ByteBuf> = dy_err(c)
                 dy_rep_prefix(m8, c, g, r)
-                dy_puts(m8, "C has ")
-                dy_i64(m8, cn as i64)
-                dy_puts(m8, " entries but p=")
-                dy_i64(m8, pp)
-                dy_puts(m8, " n=")
-                dy_i64(m8, n)
-                dy_puts(m8, " expects ")
-                dy_i64(m8, pp * n)
+                bb_puts(m8, "C has ")
+                bb_put_i64(m8, cn as i64)
+                bb_puts(m8, " entries but p=")
+                bb_put_i64(m8, pp)
+                bb_puts(m8, " n=")
+                bb_put_i64(m8, n)
+                bb_puts(m8, " expects ")
+                bb_put_i64(m8, pp * n)
                 return
             }
         }
@@ -2574,15 +2519,15 @@ function dy_rep_to_dsys(c: ptr<DyC>, g: ptr<Dp>, r: i32) {
     # Name `<Flow>_lin`.
     let off: i32 = c[0].nm[0].len
     dy_pn(c[0].nm, c, g[0].rp_flow[r])
-    dy_puts(c[0].nm, "_lin")
-    dy_putc(c[0].nm, 0)
+    bb_puts(c[0].nm, "_lin")
+    bb_putc(c[0].nm, 0)
     if dy_find_sys(c, g, off) >= 0 {
-        let m9: ptr<DySb> = dy_err(c)
+        let m9: ptr<ByteBuf> = dy_err(c)
         dy_rep_prefix(m9, c, g, r)
         c[0].msg[0].len = c[0].msg[0].len - 2
-        dy_puts(m9, " conflicts with an existing dsys '")
+        bb_puts(m9, " conflicts with an existing dsys '")
         dy_pn(m9, c, off)
-        dy_puts(m9, "'")
+        bb_puts(m9, "'")
         return
     }
     let k: i32 = dy_sys_slot(c, g, off)
@@ -2603,9 +2548,9 @@ function dy_rep_to_dsys(c: ptr<DyC>, g: ptr<Dp>, r: i32) {
 
 # "Invalid <what>: <line>"
 function dy_invalid(c: ptr<DyC>, what: string, p: ptr<u8>, s: i32, e: i32) {
-    let m: ptr<DySb> = dy_err(c)
-    dy_puts(m, what)
-    dy_span(m, p, s, e)
+    let m: ptr<ByteBuf> = dy_err(c)
+    bb_puts(m, what)
+    bb_put_span(m, p, s, e)
 }
 
 # Split a stripped binding line at the first "->": lhs to l, rhs to r.
@@ -2624,10 +2569,10 @@ function dy_arrow(p: ptr<u8>, s: i32, e: i32, l: ptr<i32>, r: ptr<i32>) -> i32 {
     return 1
 }
 
-function dy_lqr_prefix(m: ptr<DySb>, c: ptr<DyC>, sys: i32) {
-    dy_puts(m, "analyze ")
+function dy_lqr_prefix(m: ptr<ByteBuf>, c: ptr<DyC>, sys: i32) {
+    bb_puts(m, "analyze ")
     dy_pn(m, c, sys)
-    dy_puts(m, " lqr: ")
+    bb_puts(m, " lqr: ")
 }
 
 # _parse_lqr_block_body
@@ -2657,11 +2602,11 @@ function dy_lqr(c: ptr<DyC>, p: ptr<u8>, g: ptr<Dp>, sys: i32, bs: ptr<i32>, be:
                     let we: ptr<i32> = dy_i32s(e - s + 1)
                     let np: i32 = dy_split_ws(p, s, e, ws, we)
                     if np != 2 {
-                        let m: ptr<DySb> = dy_err(c)
+                        let m: ptr<ByteBuf> = dy_err(c)
                         dy_lqr_prefix(m, c, sys)
-                        dy_puts(m, "expected `R <scalar>`, got '")
-                        dy_span(m, p, s, e)
-                        dy_puts(m, "'")
+                        bb_puts(m, "expected `R <scalar>`, got '")
+                        bb_put_span(m, p, s, e)
+                        bb_puts(m, "'")
                         return
                     }
                     rr = dy_float(c, p, ws[1], we[1])
@@ -2674,19 +2619,19 @@ function dy_lqr(c: ptr<DyC>, p: ptr<u8>, g: ptr<Dp>, sys: i32, bs: ptr<i32>, be:
                             let we2: ptr<i32> = dy_i32s(e - s + 1)
                             let nn: i32 = dy_split_ws(p, s + 2, e, ws2, we2)
                             if nn == 0 {
-                                let m2: ptr<DySb> = dy_err(c)
+                                let m2: ptr<ByteBuf> = dy_err(c)
                                 dy_lqr_prefix(m2, c, sys)
-                                dy_puts(m2, "`->` needs gain variable names")
+                                bb_puts(m2, "`->` needs gain variable names")
                                 return
                             }
                             let mut k: i32 = 0
                             while k < nn {
                                 if dy_all_word(p, ws2[k], we2[k]) == 0 {
-                                    let m3: ptr<DySb> = dy_err(c)
+                                    let m3: ptr<ByteBuf> = dy_err(c)
                                     dy_lqr_prefix(m3, c, sys)
-                                    dy_puts(m3, "invalid gain name '")
-                                    dy_span(m3, p, ws2[k], we2[k])
-                                    dy_puts(m3, "'")
+                                    bb_puts(m3, "invalid gain name '")
+                                    bb_put_span(m3, p, ws2[k], we2[k])
+                                    bb_puts(m3, "'")
                                     return
                                 }
                                 k = k + 1
@@ -2699,11 +2644,11 @@ function dy_lqr(c: ptr<DyC>, p: ptr<u8>, g: ptr<Dp>, sys: i32, bs: ptr<i32>, be:
                             }
                             gn = nn
                         } else {
-                            let m4: ptr<DySb> = dy_err(c)
+                            let m4: ptr<ByteBuf> = dy_err(c)
                             dy_lqr_prefix(m4, c, sys)
-                            dy_puts(m4, "unknown item '")
-                            dy_span(m4, p, s, e)
-                            dy_puts(m4, "' (expected Q / R / max_iter / -> gains)")
+                            bb_puts(m4, "unknown item '")
+                            bb_put_span(m4, p, s, e)
+                            bb_puts(m4, "' (expected Q / R / max_iter / -> gains)")
                             return
                         }
                     }
@@ -2716,29 +2661,29 @@ function dy_lqr(c: ptr<DyC>, p: ptr<u8>, g: ptr<Dp>, sys: i32, bs: ptr<i32>, be:
         i = i + 1
     }
     if qn == 0 {
-        let m5: ptr<DySb> = dy_err(c)
+        let m5: ptr<ByteBuf> = dy_err(c)
         dy_lqr_prefix(m5, c, sys)
-        dy_puts(m5, "missing `Q ")
+        bb_puts(m5, "missing `Q ")
         dy_utf8(m5, DY_ELLIPSIS)
-        dy_puts(m5, "` diagonal")
+        bb_puts(m5, "` diagonal")
         return
     }
     if gn == 0 {
-        let m6: ptr<DySb> = dy_err(c)
+        let m6: ptr<ByteBuf> = dy_err(c)
         dy_lqr_prefix(m6, c, sys)
-        dy_puts(m6, "missing `-> k0 k1 ")
+        bb_puts(m6, "missing `-> k0 k1 ")
         dy_utf8(m6, DY_ELLIPSIS)
-        dy_puts(m6, "` gain bindings")
+        bb_puts(m6, "` gain bindings")
         return
     }
     if gn != qn {
-        let m7: ptr<DySb> = dy_err(c)
+        let m7: ptr<ByteBuf> = dy_err(c)
         dy_lqr_prefix(m7, c, sys)
-        dy_puts(m7, "Q has ")
-        dy_i64(m7, qn as i64)
-        dy_puts(m7, " entries but -> lists ")
-        dy_i64(m7, gn as i64)
-        dy_puts(m7, " gains (need one gain per state)")
+        bb_puts(m7, "Q has ")
+        bb_put_i64(m7, qn as i64)
+        bb_puts(m7, " entries but -> lists ")
+        bb_put_i64(m7, gn as i64)
+        bb_puts(m7, " gains (need one gain per state)")
         return
     }
     let t: i32 = g[0].nlq
@@ -2752,17 +2697,17 @@ function dy_lqr(c: ptr<DyC>, p: ptr<u8>, g: ptr<Dp>, sys: i32, bs: ptr<i32>, be:
     g[0].nlq = t + 1
 }
 
-function dy_an_prefix(m: ptr<DySb>, c: ptr<DyC>, sys: i32) {
-    dy_puts(m, "analyze ")
+function dy_an_prefix(m: ptr<ByteBuf>, c: ptr<DyC>, sys: i32) {
+    bb_puts(m, "analyze ")
     dy_pn(m, c, sys)
-    dy_puts(m, ": ")
+    bb_puts(m, ": ")
 }
 
 # `lqr { … }` in the message templates.
-function dy_lqr_braces(m: ptr<DySb>) {
-    dy_puts(m, "`lqr { ")
+function dy_lqr_braces(m: ptr<ByteBuf>) {
+    bb_puts(m, "`lqr { ")
     dy_utf8(m, DY_ELLIPSIS)
-    dy_puts(m, " }`")
+    bb_puts(m, " }`")
 }
 
 # _parse_analyze_vision_body
@@ -2793,9 +2738,9 @@ function dy_analyze_vision(c: ptr<DyC>, p: ptr<u8>, g: ptr<Dp>, sys: i32, bs: pt
             } else {
                 if dy_eq(p, s, e, "lqr") == 1 {
                     if i + 1 >= nb or dy_find(p, bs[i + 1], be[i + 1], 123) < 0 {
-                        let m: ptr<DySb> = dy_err(c)
+                        let m: ptr<ByteBuf> = dy_err(c)
                         dy_an_prefix(m, c, sys)
-                        dy_puts(m, "expected ")
+                        bb_puts(m, "expected ")
                         dy_lqr_braces(m)
                         return
                     }
@@ -2807,30 +2752,30 @@ function dy_analyze_vision(c: ptr<DyC>, p: ptr<u8>, g: ptr<Dp>, sys: i32, bs: pt
                     saw = 1
                     i = nx2
                 } else {
-                    let m2: ptr<DySb> = dy_err(c)
+                    let m2: ptr<ByteBuf> = dy_err(c)
                     dy_an_prefix(m2, c, sys)
-                    dy_puts(m2, "Stage-1 supports ")
+                    bb_puts(m2, "Stage-1 supports ")
                     dy_lqr_braces(m2)
-                    dy_puts(m2, " only; got '")
-                    dy_span(m2, p, s, e)
-                    dy_puts(m2, "'")
+                    bb_puts(m2, " only; got '")
+                    bb_put_span(m2, p, s, e)
+                    bb_puts(m2, "'")
                     return
                 }
             }
         }
     }
     if saw == 0 {
-        let m3: ptr<DySb> = dy_err(c)
+        let m3: ptr<ByteBuf> = dy_err(c)
         dy_an_prefix(m3, c, sys)
-        dy_puts(m3, "empty body ")
+        bb_puts(m3, "empty body ")
         dy_utf8(m3, DY_DASH)
-        dy_puts(m3, " add `lqr { Q ")
+        bb_puts(m3, " add `lqr { Q ")
         dy_utf8(m3, DY_ELLIPSIS)
-        dy_puts(m3, " R ")
+        bb_puts(m3, " R ")
         dy_utf8(m3, DY_ELLIPSIS)
-        dy_puts(m3, " -> ")
+        bb_puts(m3, " -> ")
         dy_utf8(m3, DY_ELLIPSIS)
-        dy_puts(m3, " }`")
+        bb_puts(m3, " }`")
     }
 }
 
@@ -2844,8 +2789,8 @@ function dy_validate_raw(c: ptr<DyC>, g: ptr<Dp>) {
         while r < g[0].nrp {
             let off: i32 = c[0].nm[0].len
             dy_pn(c[0].nm, c, g[0].rp_flow[r])
-            dy_puts(c[0].nm, "_lin")
-            dy_putc(c[0].nm, 0)
+            bb_puts(c[0].nm, "_lin")
+            bb_putc(c[0].nm, 0)
             if dy_neq(c, off, name) == 1 {
                 synth = 1
             }
@@ -2856,27 +2801,27 @@ function dy_validate_raw(c: ptr<DyC>, g: ptr<Dp>) {
             let mm: i64 = g[0].sy_m[i]
             let pp: i64 = g[0].sy_p[i]
             if n <= 0 {
-                let m: ptr<DySb> = dy_err(c)
-                dy_puts(m, "dsys '")
+                let m: ptr<ByteBuf> = dy_err(c)
+                bb_puts(m, "dsys '")
                 dy_pn(m, c, name)
-                dy_puts(m, "': n must be positive, got ")
-                dy_i64(m, n)
+                bb_puts(m, "': n must be positive, got ")
+                bb_put_i64(m, n)
                 return
             }
             if mm < 0 {
-                let m2: ptr<DySb> = dy_err(c)
-                dy_puts(m2, "dsys '")
+                let m2: ptr<ByteBuf> = dy_err(c)
+                bb_puts(m2, "dsys '")
                 dy_pn(m2, c, name)
-                dy_puts(m2, "': m must be non-negative, got ")
-                dy_i64(m2, mm)
+                bb_puts(m2, "': m must be non-negative, got ")
+                bb_put_i64(m2, mm)
                 return
             }
             if pp <= 0 {
-                let m3: ptr<DySb> = dy_err(c)
-                dy_puts(m3, "dsys '")
+                let m3: ptr<ByteBuf> = dy_err(c)
+                bb_puts(m3, "dsys '")
                 dy_pn(m3, c, name)
-                dy_puts(m3, "': p must be positive, got ")
-                dy_i64(m3, pp)
+                bb_puts(m3, "': p must be positive, got ")
+                bb_put_i64(m3, pp)
                 return
             }
             if g[0].sy_an[i] > 0 or g[0].sy_bn[i] > 0 or g[0].sy_cn[i] > 0 {
@@ -2893,39 +2838,39 @@ function dy_validate_raw(c: ptr<DyC>, g: ptr<Dp>) {
                         got = g[0].sy_cn[i]
                     }
                     if (got as i64) != want {
-                        let m4: ptr<DySb> = dy_err(c)
-                        dy_puts(m4, "dsys '")
+                        let m4: ptr<ByteBuf> = dy_err(c)
+                        bb_puts(m4, "dsys '")
                         dy_pn(m4, c, name)
-                        dy_puts(m4, "': ")
+                        bb_puts(m4, "': ")
                         if which == 0 {
-                            dy_puts(m4, "A needs ")
+                            bb_puts(m4, "A needs ")
                         }
                         if which == 1 {
-                            dy_puts(m4, "B needs ")
+                            bb_puts(m4, "B needs ")
                         }
                         if which == 2 {
-                            dy_puts(m4, "C needs ")
+                            bb_puts(m4, "C needs ")
                         }
-                        dy_i64(m4, want)
-                        dy_puts(m4, " entries for ")
+                        bb_put_i64(m4, want)
+                        bb_puts(m4, " entries for ")
                         if which == 0 {
-                            dy_puts(m4, "n = ")
-                            dy_i64(m4, n)
+                            bb_puts(m4, "n = ")
+                            bb_put_i64(m4, n)
                         }
                         if which == 1 {
-                            dy_puts(m4, "n = ")
-                            dy_i64(m4, n)
-                            dy_puts(m4, ", m = ")
-                            dy_i64(m4, mm)
+                            bb_puts(m4, "n = ")
+                            bb_put_i64(m4, n)
+                            bb_puts(m4, ", m = ")
+                            bb_put_i64(m4, mm)
                         }
                         if which == 2 {
-                            dy_puts(m4, "p = ")
-                            dy_i64(m4, pp)
-                            dy_puts(m4, ", n = ")
-                            dy_i64(m4, n)
+                            bb_puts(m4, "p = ")
+                            bb_put_i64(m4, pp)
+                            bb_puts(m4, ", n = ")
+                            bb_put_i64(m4, n)
                         }
-                        dy_puts(m4, ", got ")
-                        dy_i64(m4, got as i64)
+                        bb_puts(m4, ", got ")
+                        bb_put_i64(m4, got as i64)
                         return
                     }
                     which = which + 1
@@ -2953,8 +2898,8 @@ function dy_cp_prefix(p: ptr<u8>, s: i32, e: i32, limit: i32) -> i32 {
 }
 
 # parse_dynamics_dsl (patched): fills g, writes the stripped source to out.
-function dy_parse(c: ptr<DyC>, p0: ptr<u8>, n0: i32, g: ptr<Dp>, out: ptr<DySb>) {
-    let st: ptr<DySb> = dy_sb_new(n0 + 16)
+function dy_parse(c: ptr<DyC>, p0: ptr<u8>, n0: i32, g: ptr<Dp>, out: ptr<ByteBuf>) {
+    let st: ptr<ByteBuf> = bb_new(n0 + 16)
     dy_extract_represent(c, p0, n0, g, st)
     if c[0].err != 0 {
         return
@@ -2996,18 +2941,18 @@ function dy_parse(c: ptr<DyC>, p0: ptr<u8>, n0: i32, g: ptr<Dp>, out: ptr<DySb>)
         } else {
             if dy_match(p, s, e, "dyn~{", caps) >= 0 or dy_match(p, s, e, "dynamics~{", caps) >= 0 {
                 let nx: i32 = dy_block_keep(p, ls, le, nl, i, bs, be, nb)
-                let body: ptr<DySb> = dy_sb_new(n + 16)
+                let body: ptr<ByteBuf> = bb_new(n + 16)
                 let mut q: i32 = 0
                 while q < nb[0] {
                     if q > 0 {
-                        dy_putc(body, 10)
+                        bb_putc(body, 10)
                     }
-                    dy_span(body, p, bs[q], be[q])
+                    bb_put_span(body, p, bs[q], be[q])
                     q = q + 1
                 }
-                dy_putc(body, 10)
+                bb_putc(body, 10)
                 let inner: ptr<Dp> = dy_prog_new(body[0].len)
-                let left: ptr<DySb> = dy_sb_new(body[0].len + 16)
+                let left: ptr<ByteBuf> = bb_new(body[0].len + 16)
                 dy_parse(c, body[0].p, body[0].len, inner, left)
                 if c[0].err != 0 {
                     return
@@ -3017,9 +2962,9 @@ function dy_parse(c: ptr<DyC>, p0: ptr<u8>, n0: i32, g: ptr<Dp>, out: ptr<DySb>)
                 ls2[1] = left[0].len
                 dy_strip(left[0].p, ls2)
                 if ls2[1] > ls2[0] {
-                    let m: ptr<DySb> = dy_err(c)
-                    dy_puts(m, "dynamics { ... } block may only contain dynamics DSL constructs; leftover:\n")
-                    dy_span(m, left[0].p, ls2[0], dy_cp_prefix(left[0].p, ls2[0], ls2[1], 200))
+                    let m: ptr<ByteBuf> = dy_err(c)
+                    bb_puts(m, "dynamics { ... } block may only contain dynamics DSL constructs; leftover:\n")
+                    bb_put_span(m, left[0].p, ls2[0], dy_cp_prefix(left[0].p, ls2[0], ls2[1], 200))
                     return
                 }
                 dy_merge(c, g, inner)
@@ -3102,14 +3047,14 @@ function dy_parse(c: ptr<DyC>, p0: ptr<u8>, n0: i32, g: ptr<Dp>, out: ptr<DySb>)
                         j = j + 1
                     }
                     if dy_find_sys(c, g, name) >= 0 {
-                        let m2: ptr<DySb> = dy_err(c)
-                        dy_puts(m2, "dsys '")
+                        let m2: ptr<ByteBuf> = dy_err(c)
+                        bb_puts(m2, "dsys '")
                         dy_pn(m2, c, name)
-                        dy_puts(m2, "' redeclared (conflicts with a prior dsys or represent linear ")
+                        bb_puts(m2, "' redeclared (conflicts with a prior dsys or represent linear ")
                         dy_utf8(m2, DY_ARROW)
-                        dy_puts(m2, " '")
+                        bb_puts(m2, " '")
                         dy_pn(m2, c, name)
-                        dy_puts(m2, "')")
+                        bb_puts(m2, "')")
                         return
                     }
                     g[0].sy_name[k] = name
@@ -3155,10 +3100,10 @@ function dy_parse(c: ptr<DyC>, p0: ptr<u8>, n0: i32, g: ptr<Dp>, out: ptr<DySb>)
         }
         if kept == 1 {
             if first == 0 {
-                dy_putc(out, 10)
+                bb_putc(out, 10)
             }
             first = 0
-            dy_span(out, p, a, b)
+            bb_put_span(out, p, a, b)
             i = i + 1
         }
     }
@@ -3300,16 +3245,16 @@ function dy_parse_rest(c: ptr<DyC>, p: ptr<u8>, g: ptr<Dp>, ls: ptr<i32>, le: pt
             return dy_block(p, ls, le, nl, i, bs, be, nb)
         }
         if dy_match(p, s, e, "analyze^@~{", caps) < 0 {
-            let m: ptr<DySb> = dy_err(c)
-            dy_puts(m, "Invalid analyze block: ")
-            dy_span(m, p, s, e)
+            let m: ptr<ByteBuf> = dy_err(c)
+            bb_puts(m, "Invalid analyze block: ")
+            bb_put_span(m, p, s, e)
             # The second half of this message is not an f-string in the
             # Python, so its doubled braces are literal.
-            dy_puts(m, " (expected `analyze Name ga k1 k2 over H -> r {{")
+            bb_puts(m, " (expected `analyze Name ga k1 k2 over H -> r {{")
             dy_utf8(m, DY_ELLIPSIS)
-            dy_puts(m, "}}` or `analyze Name {{ lqr {{ ")
+            bb_puts(m, "}}` or `analyze Name {{ lqr {{ ")
             dy_utf8(m, DY_ELLIPSIS)
-            dy_puts(m, " }} }}`)")
+            bb_puts(m, " }} }}`)")
             return i
         }
         let sys5: i32 = dy_name(c, p, caps[0], caps[1])
@@ -3446,17 +3391,17 @@ function dy_parse_rest(c: ptr<DyC>, p: ptr<u8>, g: ptr<Dp>, ls: ptr<i32>, le: pt
 
 # ── compile_dynamics_program ─────────────────────────────────────
 
-function dy_ln(b: ptr<DySb>, s: string) {
-    dy_puts(b, s)
+function dy_ln(b: ptr<ByteBuf>, s: string) {
+    bb_puts(b, s)
 }
 
-function dy_eol(b: ptr<DySb>) {
-    dy_putc(b, 10)
+function dy_eol(b: ptr<ByteBuf>) {
+    bb_putc(b, 10)
 }
 
 # KeyError('name') -> "'name'"
 function dy_key_error(c: ptr<DyC>, off: i32) {
-    let m: ptr<DySb> = dy_err(c)
+    let m: ptr<ByteBuf> = dy_err(c)
     let np: ptr<u8> = c[0].nm[0].p + off
     dy_repr_str(m, np, 0, strlen(np as string) as i32)
 }
@@ -3472,125 +3417,125 @@ function dy_steps_or(c: ptr<DyC>, g: ptr<Dp>, name: i32, dflt: i64) -> i64 {
     return dflt
 }
 
-function dy_bufs(b: ptr<DySb>, bi: ptr<i32>, count: i32) -> i32 {
+function dy_bufs(b: ptr<ByteBuf>, bi: ptr<i32>, count: i32) -> i32 {
     let first: i32 = bi[0]
     let mut k: i32 = 0
     while k < count {
-        dy_puts(b, "    let __dsys_b")
-        dy_i64(b, bi[0] as i64)
-        dy_puts(b, ": array<f64, 4> = [0.0, 0.0, 0.0, 0.0]\n")
+        bb_puts(b, "    let __dsys_b")
+        bb_put_i64(b, bi[0] as i64)
+        bb_puts(b, ": array<f64, 4> = [0.0, 0.0, 0.0, 0.0]\n")
         bi[0] = bi[0] + 1
         k = k + 1
     }
     return first
 }
 
-function dy_bufref(b: ptr<DySb>, k: i32) {
-    dy_puts(b, "__dsys_b")
-    dy_i64(b, k as i64)
+function dy_bufref(b: ptr<ByteBuf>, k: i32) {
+    bb_puts(b, "__dsys_b")
+    bb_put_i64(b, k as i64)
 }
 
 # `, __dsys_bK, ...` for count buffers from first.
-function dy_bufargs(b: ptr<DySb>, first: i32, count: i32) {
+function dy_bufargs(b: ptr<ByteBuf>, first: i32, count: i32) {
     let mut k: i32 = 0
     while k < count {
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
         dy_bufref(b, first + k)
         k = k + 1
     }
 }
 
-function dy_flat_array(b: ptr<DySb>, c: ptr<DyC>, f0: i32, fnn: i32) {
-    dy_puts(b, ": array<f64, ")
+function dy_flat_array(b: ptr<ByteBuf>, c: ptr<DyC>, f0: i32, fnn: i32) {
+    bb_puts(b, ": array<f64, ")
     if fnn > 1 {
-        dy_i64(b, fnn as i64)
+        bb_put_i64(b, fnn as i64)
     } else {
-        dy_puts(b, "1")
+        bb_puts(b, "1")
     }
-    dy_puts(b, "> = [")
+    bb_puts(b, "> = [")
     let mut k: i32 = 0
     while k < fnn {
         if k > 0 {
-            dy_puts(b, ", ")
+            bb_puts(b, ", ")
         }
         dy_flow_f64(b, c[0].fp[f0 + k])
         k = k + 1
     }
-    dy_puts(b, "]")
+    bb_puts(b, "]")
 }
 
-function dy_rep_array(b: ptr<DySb>, n: i64, item: string) {
+function dy_rep_array(b: ptr<ByteBuf>, n: i64, item: string) {
     let mut m: i64 = n
     if m < 1 {
         m = 1
     }
-    dy_putc(b, 91)
+    bb_putc(b, 91)
     let mut k: i64 = 0
     while k < m {
         if k > 0 {
-            dy_puts(b, ", ")
+            bb_puts(b, ", ")
         }
-        dy_puts(b, item)
+        bb_puts(b, item)
         k = k + 1
     }
-    dy_putc(b, 93)
+    bb_putc(b, 93)
 }
 
-function dy_matrix(b: ptr<DySb>, c: ptr<DyC>, name: i32, which: string, rows: i64, cols: i64) {
-    dy_puts(b, "Matrix { data: __dsys_")
+function dy_matrix(b: ptr<ByteBuf>, c: ptr<DyC>, name: i32, which: string, rows: i64, cols: i64) {
+    bb_puts(b, "Matrix { data: __dsys_")
     dy_pn(b, c, name)
-    dy_puts(b, which)
-    dy_puts(b, ", rows: ")
-    dy_i64(b, rows)
-    dy_puts(b, ", cols: ")
-    dy_i64(b, cols)
-    dy_puts(b, " }")
+    bb_puts(b, which)
+    bb_puts(b, ", rows: ")
+    bb_put_i64(b, rows)
+    bb_puts(b, ", cols: ")
+    bb_put_i64(b, cols)
+    bb_puts(b, " }")
 }
 
 # Emit `let <var>: <ty> = <tag>_arrays...` shared by GA and analyze.
-function dy_ga_arrays(b: ptr<DySb>, tag: ptr<DySb>, pop: i64) {
-    dy_puts(b, "    let ")
-    dy_span(b, tag[0].p, 0, tag[0].len)
-    dy_puts(b, "_k1: array<f64, ")
-    dy_i64(b, pop)
-    dy_puts(b, "> = ")
+function dy_ga_arrays(b: ptr<ByteBuf>, tag: ptr<ByteBuf>, pop: i64) {
+    bb_puts(b, "    let ")
+    bb_put_span(b, tag[0].p, 0, tag[0].len)
+    bb_puts(b, "_k1: array<f64, ")
+    bb_put_i64(b, pop)
+    bb_puts(b, "> = ")
     dy_rep_array(b, pop, "0.0")
     dy_eol(b)
-    dy_puts(b, "    let ")
-    dy_span(b, tag[0].p, 0, tag[0].len)
-    dy_puts(b, "_k2: array<f64, ")
-    dy_i64(b, pop)
-    dy_puts(b, "> = ")
+    bb_puts(b, "    let ")
+    bb_put_span(b, tag[0].p, 0, tag[0].len)
+    bb_puts(b, "_k2: array<f64, ")
+    bb_put_i64(b, pop)
+    bb_puts(b, "> = ")
     dy_rep_array(b, pop, "0.0")
     dy_eol(b)
-    dy_puts(b, "    let ")
-    dy_span(b, tag[0].p, 0, tag[0].len)
-    dy_puts(b, "_fit: array<f64, ")
-    dy_i64(b, pop)
-    dy_puts(b, "> = ")
+    bb_puts(b, "    let ")
+    bb_put_span(b, tag[0].p, 0, tag[0].len)
+    bb_puts(b, "_fit: array<f64, ")
+    bb_put_i64(b, pop)
+    bb_puts(b, "> = ")
     dy_rep_array(b, pop, "0.0")
     dy_eol(b)
-    dy_puts(b, "    let ")
-    dy_span(b, tag[0].p, 0, tag[0].len)
-    dy_puts(b, "_bk1: array<f64, 1> = [0.0]\n")
-    dy_puts(b, "    let ")
-    dy_span(b, tag[0].p, 0, tag[0].len)
-    dy_puts(b, "_bk2: array<f64, 1> = [0.0]\n")
-    dy_puts(b, "    let ")
-    dy_span(b, tag[0].p, 0, tag[0].len)
-    dy_puts(b, "_hist: array<f64, 32> = ")
+    bb_puts(b, "    let ")
+    bb_put_span(b, tag[0].p, 0, tag[0].len)
+    bb_puts(b, "_bk1: array<f64, 1> = [0.0]\n")
+    bb_puts(b, "    let ")
+    bb_put_span(b, tag[0].p, 0, tag[0].len)
+    bb_puts(b, "_bk2: array<f64, 1> = [0.0]\n")
+    bb_puts(b, "    let ")
+    bb_put_span(b, tag[0].p, 0, tag[0].len)
+    bb_puts(b, "_hist: array<f64, 32> = ")
     dy_rep_array(b, 32, "0.0")
     dy_eol(b)
 }
 
-function dy_tag(t: ptr<DySb>, pre: string, k: i32) {
+function dy_tag(t: ptr<ByteBuf>, pre: string, k: i32) {
     t[0].len = 0
-    dy_puts(t, pre)
-    dy_i64(t, k as i64)
+    bb_puts(t, pre)
+    bb_put_i64(t, k as i64)
 }
 
-function dy_tagp(b: ptr<DySb>, t: ptr<DySb>) {
-    dy_span(b, t[0].p, 0, t[0].len)
+function dy_tagp(b: ptr<ByteBuf>, t: ptr<ByteBuf>) {
+    bb_put_span(b, t[0].p, 0, t[0].len)
 }
 
 function dy_is_identifier(c: ptr<DyC>, off: i32) -> i32 {
@@ -3605,26 +3550,26 @@ function dy_is_identifier(c: ptr<DyC>, off: i32) -> i32 {
 }
 
 # Returns 1 when setup code was produced into b (without the final "\n").
-function dy_compile(c: ptr<DyC>, g: ptr<Dp>, b: ptr<DySb>) -> i32 {
+function dy_compile(c: ptr<DyC>, g: ptr<Dp>, b: ptr<ByteBuf>) -> i32 {
     if g[0].nsy == 0 and g[0].nwf == 0 and g[0].nse == 0 and g[0].nga == 0 and g[0].ncl == 0 and g[0].nanz == 0 and g[0].nlq == 0 and g[0].ncp == 0 and g[0].ngd == 0 {
         return 0
     }
     let bi: ptr<i32> = dy_i32s(1)
     bi[0] = 0
-    let tag: ptr<DySb> = dy_sb_new(32)
-    dy_puts(b, "    # --- dsys DSL expansion (auto-generated) ---\n")
+    let tag: ptr<ByteBuf> = bb_new(32)
+    bb_puts(b, "    # --- dsys DSL expansion (auto-generated) ---\n")
     let mut i: i32 = 0
     while i < g[0].nhz {
-        dy_puts(b, "    let h_")
+        bb_puts(b, "    let h_")
         dy_pn(b, c, g[0].hz_name[i])
         if g[0].hz_kind[i] == 0 {
-            dy_puts(b, ": Horizon = horizon_finite(")
-            dy_i64(b, g[0].hz_steps[i])
+            bb_puts(b, ": Horizon = horizon_finite(")
+            bb_put_i64(b, g[0].hz_steps[i])
         } else {
-            dy_puts(b, ": Horizon = horizon_infinite(")
+            bb_puts(b, ": Horizon = horizon_infinite(")
             dy_g17(b, g[0].hz_gamma[i])
         }
-        dy_puts(b, ")\n")
+        bb_puts(b, ")\n")
         i = i + 1
     }
     i = 0
@@ -3633,56 +3578,56 @@ function dy_compile(c: ptr<DyC>, g: ptr<Dp>, b: ptr<DySb>) -> i32 {
         let n: i64 = g[0].sy_n[i]
         let mm: i64 = g[0].sy_m[i]
         let pp: i64 = g[0].sy_p[i]
-        dy_puts(b, "    let __dsys_")
+        bb_puts(b, "    let __dsys_")
         dy_pn(b, c, nm)
-        dy_puts(b, "_A")
+        bb_puts(b, "_A")
         dy_flat_array(b, c, g[0].sy_a0[i], g[0].sy_an[i])
         dy_eol(b)
-        dy_puts(b, "    let __dsys_")
+        bb_puts(b, "    let __dsys_")
         dy_pn(b, c, nm)
-        dy_puts(b, "_B")
+        bb_puts(b, "_B")
         dy_flat_array(b, c, g[0].sy_b0[i], g[0].sy_bn[i])
         dy_eol(b)
-        dy_puts(b, "    let __dsys_")
+        bb_puts(b, "    let __dsys_")
         dy_pn(b, c, nm)
-        dy_puts(b, "_C")
+        bb_puts(b, "_C")
         dy_flat_array(b, c, g[0].sy_c0[i], g[0].sy_cn[i])
         dy_eol(b)
-        dy_puts(b, "    let __dsys_")
+        bb_puts(b, "    let __dsys_")
         dy_pn(b, c, nm)
         if g[0].sy_mode[i] == 1 {
-            dy_puts(b, "_cont: DynamicalSystem = dsys_continuous(")
+            bb_puts(b, "_cont: DynamicalSystem = dsys_continuous(")
         } else {
-            dy_puts(b, ": DynamicalSystem = dsys_discrete(")
+            bb_puts(b, ": DynamicalSystem = dsys_discrete(")
         }
-        dy_i64(b, n)
-        dy_puts(b, ", ")
-        dy_i64(b, mm)
-        dy_puts(b, ", ")
-        dy_i64(b, pp)
-        dy_puts(b, ", ")
+        bb_put_i64(b, n)
+        bb_puts(b, ", ")
+        bb_put_i64(b, mm)
+        bb_puts(b, ", ")
+        bb_put_i64(b, pp)
+        bb_puts(b, ", ")
         dy_g17(b, g[0].sy_dt[i])
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
         dy_matrix(b, c, nm, "_A", n, n)
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
         dy_matrix(b, c, nm, "_B", n, mm)
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
         dy_matrix(b, c, nm, "_C", pp, n)
-        dy_puts(b, ")\n")
+        bb_puts(b, ")\n")
         if g[0].sy_mode[i] == 1 {
             let f: i32 = dy_bufs(b, bi, 5)
-            dy_puts(b, "    let __dsys_")
+            bb_puts(b, "    let __dsys_")
             dy_pn(b, c, nm)
-            dy_puts(b, ": DynamicalSystem = dsys_euler_discretize(__dsys_")
+            bb_puts(b, ": DynamicalSystem = dsys_euler_discretize(__dsys_")
             dy_pn(b, c, nm)
-            dy_puts(b, "_cont")
+            bb_puts(b, "_cont")
             dy_bufargs(b, f, 4)
-            dy_puts(b, ")\n")
+            bb_puts(b, ")\n")
         }
         if dy_is_identifier(c, nm) == 1 {
-            dy_puts(b, "    let ")
+            bb_puts(b, "    let ")
             dy_pn(b, c, nm)
-            dy_puts(b, ": DynamicalSystem = __dsys_")
+            bb_puts(b, ": DynamicalSystem = __dsys_")
             dy_pn(b, c, nm)
             dy_eol(b)
         }
@@ -3693,48 +3638,48 @@ function dy_compile(c: ptr<DyC>, g: ptr<Dp>, b: ptr<DySb>) -> i32 {
         let wn: i32 = g[0].wf_name[i]
         let cells: i64 = g[0].wf_w[i] * g[0].wf_h[i]
         let opts: i64 = cells * g[0].wf_tiles[i]
-        dy_puts(b, "    let __wfc_")
+        bb_puts(b, "    let __wfc_")
         dy_pn(b, c, wn)
-        dy_puts(b, "_cells: array<i32, ")
-        dy_i64(b, cells)
-        dy_puts(b, "> = ")
+        bb_puts(b, "_cells: array<i32, ")
+        bb_put_i64(b, cells)
+        bb_puts(b, "> = ")
         dy_rep_array(b, cells, "-1")
         dy_eol(b)
-        dy_puts(b, "    let __wfc_")
+        bb_puts(b, "    let __wfc_")
         dy_pn(b, c, wn)
-        dy_puts(b, "_opts: array<i32, ")
-        dy_i64(b, opts)
-        dy_puts(b, "> = ")
+        bb_puts(b, "_opts: array<i32, ")
+        bb_put_i64(b, opts)
+        bb_puts(b, "> = ")
         dy_rep_array(b, opts, "1")
         dy_eol(b)
-        dy_puts(b, "    for __wfc_i in 0 to ")
-        dy_i64(b, cells)
-        dy_puts(b, " {\n        __wfc_")
+        bb_puts(b, "    for __wfc_i in 0 to ")
+        bb_put_i64(b, cells)
+        bb_puts(b, " {\n        __wfc_")
         dy_pn(b, c, wn)
-        dy_puts(b, "_cells[__wfc_i] = -1\n    }\n")
-        dy_puts(b, "    for __wfc_j in 0 to ")
-        dy_i64(b, opts)
-        dy_puts(b, " {\n        __wfc_")
+        bb_puts(b, "_cells[__wfc_i] = -1\n    }\n")
+        bb_puts(b, "    for __wfc_j in 0 to ")
+        bb_put_i64(b, opts)
+        bb_puts(b, " {\n        __wfc_")
         dy_pn(b, c, wn)
-        dy_puts(b, "_opts[__wfc_j] = 1\n    }\n")
-        dy_puts(b, "    __wfc_")
+        bb_puts(b, "_opts[__wfc_j] = 1\n    }\n")
+        bb_puts(b, "    __wfc_")
         dy_pn(b, c, wn)
-        dy_puts(b, "_cells[")
-        dy_i64(b, g[0].wf_pc[i])
-        dy_puts(b, "] = ")
-        dy_i64(b, g[0].wf_pt[i])
+        bb_puts(b, "_cells[")
+        bb_put_i64(b, g[0].wf_pc[i])
+        bb_puts(b, "] = ")
+        bb_put_i64(b, g[0].wf_pt[i])
         dy_eol(b)
-        dy_puts(b, "    let __wfc_")
+        bb_puts(b, "    let __wfc_")
         dy_pn(b, c, wn)
-        dy_puts(b, ": WFCGrid = WFCGrid { width: ")
-        dy_i64(b, g[0].wf_w[i])
-        dy_puts(b, ", height: ")
-        dy_i64(b, g[0].wf_h[i])
-        dy_puts(b, ", cells: __wfc_")
+        bb_puts(b, ": WFCGrid = WFCGrid { width: ")
+        bb_put_i64(b, g[0].wf_w[i])
+        bb_puts(b, ", height: ")
+        bb_put_i64(b, g[0].wf_h[i])
+        bb_puts(b, ", cells: __wfc_")
         dy_pn(b, c, wn)
-        dy_puts(b, "_cells, options: __wfc_")
+        bb_puts(b, "_cells, options: __wfc_")
         dy_pn(b, c, wn)
-        dy_puts(b, "_opts }\n")
+        bb_puts(b, "_opts }\n")
         i = i + 1
     }
     i = 0
@@ -3751,44 +3696,44 @@ function dy_compile(c: ptr<DyC>, g: ptr<Dp>, b: ptr<DySb>) -> i32 {
             let var: i32 = c[0].bd_var[bdx]
             if kind == 1 {
                 let f: i32 = dy_bufs(b, bi, 5)
-                dy_puts(b, "    let mut ")
+                bb_puts(b, "    let mut ")
                 dy_pn(b, c, var)
-                dy_puts(b, ": i32 = 0\n    ")
+                bb_puts(b, ": i32 = 0\n    ")
                 dy_pn(b, c, var)
-                dy_puts(b, " = is_controllable(__dsys_")
+                bb_puts(b, " = is_controllable(__dsys_")
                 dy_pn(b, c, sys)
                 dy_bufargs(b, f, 5)
-                dy_puts(b, ")\n")
+                bb_puts(b, ")\n")
             }
             if kind == 2 {
-                dy_puts(b, "    let mut ")
+                bb_puts(b, "    let mut ")
                 dy_pn(b, c, var)
-                dy_puts(b, ": f64 = 0.0\n    ")
+                bb_puts(b, ": f64 = 0.0\n    ")
                 dy_pn(b, c, var)
-                dy_puts(b, " = matrix_spectral_radius_2x2(__dsys_")
+                bb_puts(b, " = matrix_spectral_radius_2x2(__dsys_")
                 dy_pn(b, c, sys)
-                dy_puts(b, ".A)\n")
+                bb_puts(b, ".A)\n")
             }
             if kind == 3 or kind == 4 {
                 let f2: i32 = dy_bufs(b, bi, 4)
-                dy_puts(b, "    let mut ")
+                bb_puts(b, "    let mut ")
                 dy_pn(b, c, var)
-                dy_puts(b, ": f64 = 0.0\n    let __W_")
+                bb_puts(b, ": f64 = 0.0\n    let __W_")
                 dy_pn(b, c, var)
                 if kind == 3 {
-                    dy_puts(b, ": Matrix = gramian_finite_horizon(__dsys_")
+                    bb_puts(b, ": Matrix = gramian_finite_horizon(__dsys_")
                 } else {
-                    dy_puts(b, ": Matrix = gramian_infinite_horizon(__dsys_")
+                    bb_puts(b, ": Matrix = gramian_infinite_horizon(__dsys_")
                 }
                 dy_pn(b, c, sys)
-                dy_puts(b, ", h_")
+                bb_puts(b, ", h_")
                 dy_pn(b, c, c[0].bd_hz[bdx])
                 dy_bufargs(b, f2, 4)
-                dy_puts(b, ")\n    ")
+                bb_puts(b, ")\n    ")
                 dy_pn(b, c, var)
-                dy_puts(b, " = matrix_trace(__W_")
+                bb_puts(b, " = matrix_trace(__W_")
                 dy_pn(b, c, var)
-                dy_puts(b, ")\n")
+                bb_puts(b, ")\n")
             }
             q = q + 1
         }
@@ -3807,52 +3752,52 @@ function dy_compile(c: ptr<DyC>, g: ptr<Dp>, b: ptr<DySb>) -> i32 {
         let steps: i64 = dy_steps_or(c, g, g[0].ga_hz[i], 50)
         let pop: i64 = g[0].ga_pop[i]
         dy_tag(tag, "__ga_e", i)
-        dy_puts(b, "    let mut ")
+        bb_puts(b, "    let mut ")
         dy_pn(b, c, g[0].ga_k1[i])
-        dy_puts(b, ": f64 = 0.0\n    let mut ")
+        bb_puts(b, ": f64 = 0.0\n    let mut ")
         dy_pn(b, c, g[0].ga_k2[i])
-        dy_puts(b, ": f64 = 0.0\n")
+        bb_puts(b, ": f64 = 0.0\n")
         dg[ndg] = g[0].ga_k1[i]
         dg[ndg + 1] = g[0].ga_k2[i]
         ndg = ndg + 2
         dy_ga_arrays(b, tag, pop)
-        dy_puts(b, "    let ")
+        bb_puts(b, "    let ")
         dy_tagp(b, tag)
-        dy_puts(b, "_cfg: GAConfig = GAConfig { population: ")
-        dy_i64(b, pop)
-        dy_puts(b, ", generations: ")
-        dy_i64(b, g[0].ga_gen[i])
-        dy_puts(b, ", horizon: ")
-        dy_i64(b, steps)
-        dy_puts(b, ", mutation: ")
+        bb_puts(b, "_cfg: GAConfig = GAConfig { population: ")
+        bb_put_i64(b, pop)
+        bb_puts(b, ", generations: ")
+        bb_put_i64(b, g[0].ga_gen[i])
+        bb_puts(b, ", horizon: ")
+        bb_put_i64(b, steps)
+        bb_puts(b, ", mutation: ")
         dy_g17(b, g[0].ga_mut[i])
-        dy_puts(b, " }\n    ga_evolve_traced(__dsys_")
+        bb_puts(b, " }\n    ga_evolve_traced(__dsys_")
         dy_pn(b, c, sys2)
-        dy_puts(b, ", ")
-        dy_i64(b, steps)
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
+        bb_put_i64(b, steps)
+        bb_puts(b, ", ")
         dy_tagp(b, tag)
-        dy_puts(b, "_cfg, ")
+        bb_puts(b, "_cfg, ")
         dy_tagp(b, tag)
-        dy_puts(b, "_k1, ")
+        bb_puts(b, "_k1, ")
         dy_tagp(b, tag)
-        dy_puts(b, "_k2, ")
+        bb_puts(b, "_k2, ")
         dy_tagp(b, tag)
-        dy_puts(b, "_fit, ")
+        bb_puts(b, "_fit, ")
         dy_tagp(b, tag)
-        dy_puts(b, "_bk1, ")
+        bb_puts(b, "_bk1, ")
         dy_tagp(b, tag)
-        dy_puts(b, "_bk2, ")
+        bb_puts(b, "_bk2, ")
         dy_tagp(b, tag)
-        dy_puts(b, "_hist)\n    ")
+        bb_puts(b, "_hist)\n    ")
         dy_pn(b, c, g[0].ga_k1[i])
-        dy_puts(b, " = ")
+        bb_puts(b, " = ")
         dy_tagp(b, tag)
-        dy_puts(b, "_bk1[0]\n    ")
+        bb_puts(b, "_bk1[0]\n    ")
         dy_pn(b, c, g[0].ga_k2[i])
-        dy_puts(b, " = ")
+        bb_puts(b, " = ")
         dy_tagp(b, tag)
-        dy_puts(b, "_bk2[0]\n")
+        bb_puts(b, "_bk2[0]\n")
         i = i + 1
     }
     i = 0
@@ -3863,46 +3808,46 @@ function dy_compile(c: ptr<DyC>, g: ptr<Dp>, b: ptr<DySb>) -> i32 {
             return 0
         }
         let f3: i32 = dy_bufs(b, bi, 2)
-        dy_puts(b, "    let __cl_")
+        bb_puts(b, "    let __cl_")
         dy_pn(b, c, sys3)
-        dy_puts(b, ": DynamicalSystem = ga_closed_loop_matrix(__dsys_")
+        bb_puts(b, ": DynamicalSystem = ga_closed_loop_matrix(__dsys_")
         dy_pn(b, c, sys3)
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
         dy_pn(b, c, g[0].cl_k1[i])
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
         dy_pn(b, c, g[0].cl_k2[i])
         dy_bufargs(b, f3, 2)
-        dy_puts(b, ")\n")
+        bb_puts(b, ")\n")
         let mut q3: i32 = 0
         while q3 < g[0].cl_bn[i] {
             let bdx3: i32 = g[0].cl_b0[i] + q3
             let kind3: i32 = c[0].bd_kind[bdx3]
             let var3: i32 = c[0].bd_var[bdx3]
             if kind3 == 5 {
-                dy_puts(b, "    let mut ")
+                bb_puts(b, "    let mut ")
                 dy_pn(b, c, var3)
-                dy_puts(b, ": f64 = matrix_spectral_radius_2x2(__cl_")
+                bb_puts(b, ": f64 = matrix_spectral_radius_2x2(__cl_")
                 dy_pn(b, c, sys3)
-                dy_puts(b, ".A)\n")
+                bb_puts(b, ".A)\n")
             }
             if kind3 == 6 {
-                dy_puts(b, "    let mut ")
+                bb_puts(b, "    let mut ")
                 dy_pn(b, c, var3)
-                dy_puts(b, ": i32 = 0\n    if matrix_spectral_radius_2x2(__cl_")
+                bb_puts(b, ": i32 = 0\n    if matrix_spectral_radius_2x2(__cl_")
                 dy_pn(b, c, sys3)
-                dy_puts(b, ".A) < 1.0 { ")
+                bb_puts(b, ".A) < 1.0 { ")
                 dy_pn(b, c, var3)
-                dy_puts(b, " = 1 }\n")
+                bb_puts(b, " = 1 }\n")
             }
             if kind3 == 7 {
                 let st3: i64 = dy_steps_or(c, g, c[0].bd_hz[bdx3], 50)
-                dy_puts(b, "    let mut ")
+                bb_puts(b, "    let mut ")
                 dy_pn(b, c, var3)
-                dy_puts(b, ": f64 = ga_closed_loop_energy(__cl_")
+                bb_puts(b, ": f64 = ga_closed_loop_energy(__cl_")
                 dy_pn(b, c, sys3)
-                dy_puts(b, ", ")
-                dy_i64(b, st3)
-                dy_puts(b, ")\n")
+                bb_puts(b, ", ")
+                bb_put_i64(b, st3)
+                bb_puts(b, ")\n")
             }
             q3 = q3 + 1
         }
@@ -3935,50 +3880,50 @@ function dy_compile(c: ptr<DyC>, g: ptr<Dp>, b: ptr<DySb>) -> i32 {
         }
         dy_tag(tag, "__ga_a", i)
         let rep: i32 = g[0].an_rep[i]
-        dy_puts(b, "    let mut ")
+        bb_puts(b, "    let mut ")
         dy_pn(b, c, rep)
-        dy_puts(b, ": GAAnalysisReport = GAAnalysisReport {\n")
-        dy_puts(b, "        plant_controllable: 0, plant_spectral_radius: 0.0,\n")
-        dy_puts(b, "        closed_spectral_radius: 0.0, gramian_open_finite: 0.0,\n")
-        dy_puts(b, "        gramian_open_infinite: 0.0, closed_loop_energy: 0.0,\n")
-        dy_puts(b, "        baseline_cost: 0.0, evolved_cost: 0.0, fitness_drop: 0.0,\n")
-        dy_puts(b, "        convergence_gen: 0, stable_closed_loop: 0\n")
-        dy_puts(b, "    }\n")
+        bb_puts(b, ": GAAnalysisReport = GAAnalysisReport {\n")
+        bb_puts(b, "        plant_controllable: 0, plant_spectral_radius: 0.0,\n")
+        bb_puts(b, "        closed_spectral_radius: 0.0, gramian_open_finite: 0.0,\n")
+        bb_puts(b, "        gramian_open_infinite: 0.0, closed_loop_energy: 0.0,\n")
+        bb_puts(b, "        baseline_cost: 0.0, evolved_cost: 0.0, fitness_drop: 0.0,\n")
+        bb_puts(b, "        convergence_gen: 0, stable_closed_loop: 0\n")
+        bb_puts(b, "    }\n")
         dy_ga_arrays(b, tag, pop4)
         let f4: i32 = dy_bufs(b, bi, 12)
-        dy_puts(b, "    let ")
+        bb_puts(b, "    let ")
         dy_tagp(b, tag)
-        dy_puts(b, "_cfg: GAConfig = GAConfig { population: ")
-        dy_i64(b, pop4)
-        dy_puts(b, ", generations: ")
-        dy_i64(b, gens4)
-        dy_puts(b, ", horizon: ")
-        dy_i64(b, steps4)
-        dy_puts(b, ", mutation: ")
+        bb_puts(b, "_cfg: GAConfig = GAConfig { population: ")
+        bb_put_i64(b, pop4)
+        bb_puts(b, ", generations: ")
+        bb_put_i64(b, gens4)
+        bb_puts(b, ", horizon: ")
+        bb_put_i64(b, steps4)
+        bb_puts(b, ", mutation: ")
         dy_g17(b, mut4)
-        dy_puts(b, " }\n    ")
+        bb_puts(b, " }\n    ")
         dy_pn(b, c, rep)
-        dy_puts(b, " = ga_analyze_control_search(__dsys_")
+        bb_puts(b, " = ga_analyze_control_search(__dsys_")
         dy_pn(b, c, sys4)
-        dy_puts(b, ", ")
-        dy_i64(b, steps4)
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
+        bb_put_i64(b, steps4)
+        bb_puts(b, ", ")
         dy_tagp(b, tag)
-        dy_puts(b, "_cfg, ")
+        bb_puts(b, "_cfg, ")
         dy_tagp(b, tag)
-        dy_puts(b, "_k1, ")
+        bb_puts(b, "_k1, ")
         dy_tagp(b, tag)
-        dy_puts(b, "_k2, ")
+        bb_puts(b, "_k2, ")
         dy_tagp(b, tag)
-        dy_puts(b, "_fit, ")
+        bb_puts(b, "_fit, ")
         dy_tagp(b, tag)
-        dy_puts(b, "_bk1, ")
+        bb_puts(b, "_bk1, ")
         dy_tagp(b, tag)
-        dy_puts(b, "_bk2, ")
+        bb_puts(b, "_bk2, ")
         dy_tagp(b, tag)
-        dy_puts(b, "_hist")
+        bb_puts(b, "_hist")
         dy_bufargs(b, f4, 12)
-        dy_puts(b, ")\n")
+        bb_puts(b, ")\n")
         let mut kk: i32 = 0
         while kk < 2 {
             let mut kv: i32 = g[0].an_k1[i]
@@ -3994,23 +3939,23 @@ function dy_compile(c: ptr<DyC>, g: ptr<Dp>, b: ptr<DySb>) -> i32 {
                 d = d + 1
             }
             if seen == 0 {
-                dy_puts(b, "    let mut ")
+                bb_puts(b, "    let mut ")
                 dy_pn(b, c, kv)
-                dy_puts(b, ": f64 = 0.0\n")
+                bb_puts(b, ": f64 = 0.0\n")
                 dg[ndg] = kv
                 ndg = ndg + 1
             }
             kk = kk + 1
         }
-        dy_puts(b, "    ")
+        bb_puts(b, "    ")
         dy_pn(b, c, g[0].an_k1[i])
-        dy_puts(b, " = ")
+        bb_puts(b, " = ")
         dy_tagp(b, tag)
-        dy_puts(b, "_bk1[0]\n    ")
+        bb_puts(b, "_bk1[0]\n    ")
         dy_pn(b, c, g[0].an_k2[i])
-        dy_puts(b, " = ")
+        bb_puts(b, " = ")
         dy_tagp(b, tag)
-        dy_puts(b, "_bk2[0]\n")
+        bb_puts(b, "_bk2[0]\n")
         i = i + 1
     }
     i = 0
@@ -4018,75 +3963,75 @@ function dy_compile(c: ptr<DyC>, g: ptr<Dp>, b: ptr<DySb>) -> i32 {
         let sys5: i32 = g[0].lq_sys[i]
         let si: i32 = dy_find_sys(c, g, sys5)
         if si < 0 {
-            let m: ptr<DySb> = dy_err(c)
+            let m: ptr<ByteBuf> = dy_err(c)
             dy_lqr_prefix(m, c, sys5)
-            dy_puts(m, "unknown dsys '")
+            bb_puts(m, "unknown dsys '")
             dy_pn(m, c, sys5)
-            dy_puts(m, "'")
+            bb_puts(m, "'")
             return 0
         }
         let n5: i64 = g[0].sy_n[si]
         if g[0].sy_m[si] != 1 {
-            let m2: ptr<DySb> = dy_err(c)
+            let m2: ptr<ByteBuf> = dy_err(c)
             dy_lqr_prefix(m2, c, sys5)
-            dy_puts(m2, "Stage-1 needs scalar input (m=1), got m=")
-            dy_i64(m2, g[0].sy_m[si])
+            bb_puts(m2, "Stage-1 needs scalar input (m=1), got m=")
+            bb_put_i64(m2, g[0].sy_m[si])
             return 0
         }
         if (g[0].lq_qn[i] as i64) != n5 {
-            let m3: ptr<DySb> = dy_err(c)
+            let m3: ptr<ByteBuf> = dy_err(c)
             dy_lqr_prefix(m3, c, sys5)
-            dy_puts(m3, "Q length ")
-            dy_i64(m3, g[0].lq_qn[i] as i64)
-            dy_puts(m3, " != n=")
-            dy_i64(m3, n5)
+            bb_puts(m3, "Q length ")
+            bb_put_i64(m3, g[0].lq_qn[i] as i64)
+            bb_puts(m3, " != n=")
+            bb_put_i64(m3, n5)
             return 0
         }
         if n5 > 8 {
-            let m4: ptr<DySb> = dy_err(c)
+            let m4: ptr<ByteBuf> = dy_err(c)
             dy_lqr_prefix(m4, c, sys5)
-            dy_puts(m4, "n=")
-            dy_i64(m4, n5)
-            dy_puts(m4, " exceeds LQR_MAX_N=8")
+            bb_puts(m4, "n=")
+            bb_put_i64(m4, n5)
+            bb_puts(m4, " exceeds LQR_MAX_N=8")
             return 0
         }
         dy_tag(tag, "__lqr_", i)
-        dy_puts(b, "    let ")
+        bb_puts(b, "    let ")
         dy_tagp(b, tag)
-        dy_puts(b, "_q")
+        bb_puts(b, "_q")
         dy_flat_array(b, c, g[0].lq_q0[i], g[0].lq_qn[i])
-        dy_puts(b, "\n    let mut ")
+        bb_puts(b, "\n    let mut ")
         dy_tagp(b, tag)
-        dy_puts(b, "_k: array<f64, ")
-        dy_i64(b, n5)
-        dy_puts(b, "> = ")
+        bb_puts(b, "_k: array<f64, ")
+        bb_put_i64(b, n5)
+        bb_puts(b, "> = ")
         dy_rep_array(b, n5, "0.0")
-        dy_puts(b, "\n    let ")
+        bb_puts(b, "\n    let ")
         dy_tagp(b, tag)
-        dy_puts(b, "_iters: i32 = dlqr_diag_q_scalar_u(__dsys_")
+        bb_puts(b, "_iters: i32 = dlqr_diag_q_scalar_u(__dsys_")
         dy_pn(b, c, sys5)
-        dy_puts(b, ".A.data, __dsys_")
+        bb_puts(b, ".A.data, __dsys_")
         dy_pn(b, c, sys5)
-        dy_puts(b, ".B.data, ")
+        bb_puts(b, ".B.data, ")
         dy_tagp(b, tag)
-        dy_puts(b, "_q, ")
+        bb_puts(b, "_q, ")
         dy_flow_f64(b, g[0].lq_r[i])
-        dy_puts(b, ", ")
-        dy_i64(b, n5)
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
+        bb_put_i64(b, n5)
+        bb_puts(b, ", ")
         dy_tagp(b, tag)
-        dy_puts(b, "_k, ")
-        dy_i64(b, g[0].lq_it[i])
-        dy_puts(b, ")\n")
+        bb_puts(b, "_k, ")
+        bb_put_i64(b, g[0].lq_it[i])
+        bb_puts(b, ")\n")
         let mut gi: i32 = 0
         while gi < g[0].lq_gn[i] {
-            dy_puts(b, "    let ")
+            bb_puts(b, "    let ")
             dy_pn(b, c, c[0].gl[g[0].lq_g0[i] + gi])
-            dy_puts(b, ": f64 = ")
+            bb_puts(b, ": f64 = ")
             dy_tagp(b, tag)
-            dy_puts(b, "_k[")
-            dy_i64(b, gi as i64)
-            dy_puts(b, "]\n")
+            bb_puts(b, "_k[")
+            bb_put_i64(b, gi as i64)
+            bb_puts(b, "]\n")
             gi = gi + 1
         }
         i = i + 1
@@ -4100,52 +4045,52 @@ function dy_compile(c: ptr<DyC>, g: ptr<Dp>, b: ptr<DySb>) -> i32 {
             return 0
         }
         let guid: i32 = g[0].cp_guid[i]
-        dy_puts(b, "    let ")
+        bb_puts(b, "    let ")
         dy_pn(b, c, guid)
-        dy_puts(b, ": CoupledGuidance = couple_ga_wfc_guidance(")
+        bb_puts(b, ": CoupledGuidance = couple_ga_wfc_guidance(")
         dy_pn(b, c, g[0].cp_rep[i])
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
         dy_pn(b, c, g[0].cp_k1[i])
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
         dy_pn(b, c, g[0].cp_k2[i])
-        dy_puts(b, ", ")
-        dy_i64(b, g[0].wf_seed[wi])
-        dy_puts(b, ", ")
-        dy_i64(b, g[0].wf_steps[wi])
-        dy_puts(b, ")\n    let __wfc_rep_")
+        bb_puts(b, ", ")
+        bb_put_i64(b, g[0].wf_seed[wi])
+        bb_puts(b, ", ")
+        bb_put_i64(b, g[0].wf_steps[wi])
+        bb_puts(b, ")\n    let __wfc_rep_")
         dy_pn(b, c, fld)
-        dy_puts(b, ": WFCRunReport = wfc_run_guided(__wfc_")
+        bb_puts(b, ": WFCRunReport = wfc_run_guided(__wfc_")
         dy_pn(b, c, fld)
-        dy_puts(b, ", ")
-        dy_i64(b, g[0].wf_tiles[wi])
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
+        bb_put_i64(b, g[0].wf_tiles[wi])
+        bb_puts(b, ", ")
         dy_pn(b, c, guid)
-        dy_puts(b, ")\n")
+        bb_puts(b, ")\n")
         let mut q6: i32 = 0
         while q6 < g[0].cp_bn[i] {
             let bdx6: i32 = g[0].cp_b0[i] + q6
             let lhs: i32 = c[0].bd_hz[bdx6]
             let var6: i32 = c[0].bd_var[bdx6]
             if dy_neq_lit(c, lhs, "collapsed") == 1 {
-                dy_puts(b, "    let mut ")
+                bb_puts(b, "    let mut ")
                 dy_pn(b, c, var6)
-                dy_puts(b, ": i32 = __wfc_rep_")
+                bb_puts(b, ": i32 = __wfc_rep_")
                 dy_pn(b, c, fld)
-                dy_puts(b, ".collapsed\n")
+                bb_puts(b, ".collapsed\n")
             }
             if dy_neq_lit(c, lhs, "wall_fraction") == 1 {
-                dy_puts(b, "    let mut ")
+                bb_puts(b, "    let mut ")
                 dy_pn(b, c, var6)
-                dy_puts(b, ": f64 = __wfc_rep_")
+                bb_puts(b, ": f64 = __wfc_rep_")
                 dy_pn(b, c, fld)
-                dy_puts(b, ".wall_fraction\n")
+                bb_puts(b, ".wall_fraction\n")
             }
             if dy_neq_lit(c, lhs, "entropy") == 1 {
-                dy_puts(b, "    let mut ")
+                bb_puts(b, "    let mut ")
                 dy_pn(b, c, var6)
-                dy_puts(b, ": f64 = __wfc_rep_")
+                bb_puts(b, ": f64 = __wfc_rep_")
                 dy_pn(b, c, fld)
-                dy_puts(b, ".mean_entropy\n")
+                bb_puts(b, ".mean_entropy\n")
             }
             q6 = q6 + 1
         }
@@ -4162,22 +4107,22 @@ function dy_compile(c: ptr<DyC>, g: ptr<Dp>, b: ptr<DySb>) -> i32 {
         let fld7: i32 = g[0].gd_field[i]
         let f7: i32 = dy_bufs(b, bi, 3)
         dy_tag(tag, "__guide_ev_", i)
-        dy_puts(b, "    let ")
+        bb_puts(b, "    let ")
         dy_tagp(b, tag)
-        dy_puts(b, ": GuidedEvolutionReport = guide_state_evolution(__dsys_")
+        bb_puts(b, ": GuidedEvolutionReport = guide_state_evolution(__dsys_")
         dy_pn(b, c, sys7)
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
         dy_pn(b, c, g[0].gd_k1[i])
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
         dy_pn(b, c, g[0].gd_k2[i])
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
         dy_pn(b, c, g[0].gd_guid[i])
-        dy_puts(b, ", __wfc_rep_")
+        bb_puts(b, ", __wfc_rep_")
         dy_pn(b, c, fld7)
-        dy_puts(b, ", ")
-        dy_i64(b, steps7)
+        bb_puts(b, ", ")
+        bb_put_i64(b, steps7)
         dy_bufargs(b, f7, 3)
-        dy_puts(b, ")\n")
+        bb_puts(b, ")\n")
         let mut q7: i32 = 0
         while q7 < g[0].gd_bn[i] {
             let bdx7: i32 = g[0].gd_b0[i] + q7
@@ -4206,30 +4151,30 @@ function dy_compile(c: ptr<DyC>, g: ptr<Dp>, b: ptr<DySb>) -> i32 {
                 ty = ": i32 = "
             }
             if strlen(field) > 0 {
-                dy_puts(b, "    let mut ")
+                bb_puts(b, "    let mut ")
                 dy_pn(b, c, var7)
-                dy_puts(b, ty)
+                bb_puts(b, ty)
                 dy_tagp(b, tag)
-                dy_puts(b, field)
+                bb_puts(b, field)
                 dy_eol(b)
             }
             if dy_neq_lit(c, lhs7, "wall_fraction") == 1 {
-                dy_puts(b, "    let mut ")
+                bb_puts(b, "    let mut ")
                 dy_pn(b, c, var7)
-                dy_puts(b, ": f64 = __wfc_rep_")
+                bb_puts(b, ": f64 = __wfc_rep_")
                 dy_pn(b, c, fld7)
-                dy_puts(b, ".wall_fraction\n")
+                bb_puts(b, ".wall_fraction\n")
             }
             q7 = q7 + 1
         }
         i = i + 1
     }
-    dy_puts(b, "    # --- end dsys DSL expansion ---")
+    bb_puts(b, "    # --- end dsys DSL expansion ---")
     return 1
 }
 
 # compile_phase_portraits
-function dy_compile_portraits(c: ptr<DyC>, g: ptr<Dp>, b: ptr<DySb>) {
+function dy_compile_portraits(c: ptr<DyC>, g: ptr<Dp>, b: ptr<ByteBuf>) {
     let mut i: i32 = 0
     while i < g[0].npt {
         if i > 0 {
@@ -4253,63 +4198,63 @@ function dy_compile_portraits(c: ptr<DyC>, g: ptr<Dp>, b: ptr<DySb>) {
         let tr: i64 = g[0].pt_trail[i]
         let w: i64 = g[0].pt_w[i]
         let h: i64 = g[0].pt_h[i]
-        dy_puts(b, "# generated from represent phase_portrait for ")
+        bb_puts(b, "# generated from represent phase_portrait for ")
         dy_pn(b, c, fl)
-        dy_puts(b, "\nconst ")
+        bb_puts(b, "\nconst ")
         dy_pn(b, c, fl)
-        dy_puts(b, "_portrait_trail: i32 = ")
-        dy_i64(b, tr)
-        dy_puts(b, "\nconst ")
+        bb_puts(b, "_portrait_trail: i32 = ")
+        bb_put_i64(b, tr)
+        bb_puts(b, "\nconst ")
         dy_pn(b, c, fl)
-        dy_puts(b, "_portrait_win_w: i32 = ")
-        dy_i64(b, w)
-        dy_puts(b, "\nconst ")
+        bb_puts(b, "_portrait_win_w: i32 = ")
+        bb_put_i64(b, w)
+        bb_puts(b, "\nconst ")
         dy_pn(b, c, fl)
-        dy_puts(b, "_portrait_win_h: i32 = ")
-        dy_i64(b, h)
-        dy_puts(b, "\n\nfunction ")
+        bb_puts(b, "_portrait_win_h: i32 = ")
+        bb_put_i64(b, h)
+        bb_puts(b, "\n\nfunction ")
         dy_pn(b, c, fl)
-        dy_puts(b, "_portrait_frame(\n    g: Gfx,\n    xs: ptr<f64>,\n    zs: ptr<f64>,\n    head: ptr<i32>,\n    count: ptr<i32>,\n    ")
+        bb_puts(b, "_portrait_frame(\n    g: Gfx,\n    xs: ptr<f64>,\n    zs: ptr<f64>,\n    head: ptr<i32>,\n    count: ptr<i32>,\n    ")
         dy_pn(b, c, ax0)
-        dy_puts(b, ": f64,\n    ")
+        bb_puts(b, ": f64,\n    ")
         dy_pn(b, c, ax1)
-        dy_puts(b, ": f64\n) -> void {\n    trail_push_2d(xs, zs, ")
-        dy_i64(b, tr)
-        dy_puts(b, ", head, count, ")
+        bb_puts(b, ": f64\n) -> void {\n    trail_push_2d(xs, zs, ")
+        bb_put_i64(b, tr)
+        bb_puts(b, ", head, count, ")
         dy_pn(b, c, ax0)
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
         dy_pn(b, c, ax1)
-        dy_puts(b, ")\n    let h: i32 = head[0]\n    let c: i32 = count[0]\n    gfx_clear(g, 8, 8, 16)\n    for i in 0 to c {\n        let idx: i32 = trail_index(h, c, ")
-        dy_i64(b, tr)
-        dy_puts(b, ", i)\n        let px: i32 = project_axis(xs[idx], ")
+        bb_puts(b, ")\n    let h: i32 = head[0]\n    let c: i32 = count[0]\n    gfx_clear(g, 8, 8, 16)\n    for i in 0 to c {\n        let idx: i32 = trail_index(h, c, ")
+        bb_put_i64(b, tr)
+        bb_puts(b, ", i)\n        let px: i32 = project_axis(xs[idx], ")
         dy_repr(b, a0lo)
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
         dy_repr(b, a0hi)
-        dy_puts(b, ", ")
-        dy_i64(b, w)
-        dy_puts(b, ", 10)\n        let py: i32 = project_axis(zs[idx], ")
+        bb_puts(b, ", ")
+        bb_put_i64(b, w)
+        bb_puts(b, ", 10)\n        let py: i32 = project_axis(zs[idx], ")
         dy_repr(b, a1lo)
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
         dy_repr(b, a1hi)
-        dy_puts(b, ", ")
-        dy_i64(b, h)
-        dy_puts(b, ", 30)\n        let b: i32 = 25 + (230 * (i + 1)) / c\n        let mut size: i32 = 2\n        if i >= c - 12 { size = 3 }\n        gfx_fill_rect(g, px, py, size, size, b, (b * 3) / 5, 30)\n    }\n    let hx: i32 = project_axis(")
+        bb_puts(b, ", ")
+        bb_put_i64(b, h)
+        bb_puts(b, ", 30)\n        let b: i32 = 25 + (230 * (i + 1)) / c\n        let mut size: i32 = 2\n        if i >= c - 12 { size = 3 }\n        gfx_fill_rect(g, px, py, size, size, b, (b * 3) / 5, 30)\n    }\n    let hx: i32 = project_axis(")
         dy_pn(b, c, ax0)
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
         dy_repr(b, a0lo)
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
         dy_repr(b, a0hi)
-        dy_puts(b, ", ")
-        dy_i64(b, w)
-        dy_puts(b, ", 10)\n    let hz: i32 = project_axis(")
+        bb_puts(b, ", ")
+        bb_put_i64(b, w)
+        bb_puts(b, ", 10)\n    let hz: i32 = project_axis(")
         dy_pn(b, c, ax1)
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
         dy_repr(b, a1lo)
-        dy_puts(b, ", ")
+        bb_puts(b, ", ")
         dy_repr(b, a1hi)
-        dy_puts(b, ", ")
-        dy_i64(b, h)
-        dy_puts(b, ", 30)\n    gfx_fill_rect(g, hx - 1, hz - 1, 5, 5, 255, 240, 180)\n}\n")
+        bb_puts(b, ", ")
+        bb_put_i64(b, h)
+        bb_puts(b, ", 30)\n    gfx_fill_rect(g, hx - 1, hz - 1, 5, 5, 255, 240, 180)\n}\n")
         i = i + 1
     }
 }
@@ -4362,19 +4307,19 @@ export function flowc_dynamics_has_dsl(p: ptr<u8>, n: i32) -> i32 {
 
 # ── Assembly ─────────────────────────────────────────────────────
 
-function dy_contains(b: ptr<DySb>, lit: string) -> i32 {
+function dy_contains(b: ptr<ByteBuf>, lit: string) -> i32 {
     if dy_find_str(b[0].p, 0, b[0].len, lit) >= 0 {
         return 1
     }
     return 0
 }
 
-function dy_prepend(b: ptr<DySb>, lit: string) {
-    let t: ptr<DySb> = dy_sb_new(b[0].len + 64)
-    dy_puts(t, lit)
-    dy_span(t, b[0].p, 0, b[0].len)
+function dy_prepend(b: ptr<ByteBuf>, lit: string) {
+    let t: ptr<ByteBuf> = bb_new(b[0].len + 64)
+    bb_puts(t, lit)
+    bb_put_span(t, b[0].p, 0, b[0].len)
     b[0].len = 0
-    dy_span(b, t[0].p, 0, t[0].len)
+    bb_put_span(b, t[0].p, 0, t[0].len)
     free(t[0].p)
     free(t as ptr<u8>)
 }
@@ -4416,26 +4361,26 @@ function dy_find_main_body(p: ptr<u8>, n: i32) -> i32 {
 }
 
 # expand_dynamics_dsl: writes the result to out. Returns 0 or -1 (error in c).
-function dy_expand(c: ptr<DyC>, p: ptr<u8>, n: i32, out: ptr<DySb>) -> i32 {
+function dy_expand(c: ptr<DyC>, p: ptr<u8>, n: i32, out: ptr<ByteBuf>) -> i32 {
     if flowc_dynamics_has_dsl(p, n) == 0 {
-        dy_span(out, p, 0, n)
+        bb_put_span(out, p, 0, n)
         return 0
     }
     let g: ptr<Dp> = dy_prog_new(n)
-    let merged: ptr<DySb> = dy_sb_new(n + 64)
+    let merged: ptr<ByteBuf> = bb_new(n + 64)
     dy_parse(c, p, n, g, merged)
     if c[0].err != 0 {
         return 0 - 1
     }
-    let setup: ptr<DySb> = dy_sb_new(4096)
+    let setup: ptr<ByteBuf> = bb_new(4096)
     let has_setup: i32 = dy_compile(c, g, setup)
     if c[0].err != 0 {
         return 0 - 1
     }
-    let portraits: ptr<DySb> = dy_sb_new(1024)
+    let portraits: ptr<ByteBuf> = bb_new(1024)
     dy_compile_portraits(c, g, portraits)
     if has_setup == 0 and portraits[0].len == 0 {
-        dy_span(out, merged[0].p, 0, merged[0].len)
+        bb_put_span(out, merged[0].p, 0, merged[0].len)
         return 0
     }
     let mut needs_ga: i32 = 0
@@ -4465,30 +4410,30 @@ function dy_expand(c: ptr<DyC>, p: ptr<u8>, n: i32, out: ptr<DySb>) -> i32 {
             dy_prepend(merged, "import \"stdlib/gfx.flow\"\n")
         }
     }
-    let mut cur: ptr<DySb> = merged
+    let mut cur: ptr<ByteBuf> = merged
     if portraits[0].len > 0 {
         # inject_before_main(merged, helpers.strip())
         let hs: ptr<i32> = dy_i32s(2)
         hs[0] = 0
         hs[1] = portraits[0].len
         dy_strip(portraits[0].p, hs)
-        let nx: ptr<DySb> = dy_sb_new(cur[0].len + portraits[0].len + 16)
+        let nx: ptr<ByteBuf> = bb_new(cur[0].len + portraits[0].len + 16)
         let at: i32 = dy_find_main_call(cur[0].p, cur[0].len)
         if at < 0 {
             let rs: ptr<i32> = dy_i32s(2)
             rs[0] = 0
             rs[1] = cur[0].len
             dy_rstrip(cur[0].p, rs)
-            dy_span(nx, cur[0].p, 0, rs[1])
-            dy_puts(nx, "\n\n")
-            dy_span(nx, portraits[0].p, hs[0], hs[1])
-            dy_puts(nx, "\n")
+            bb_put_span(nx, cur[0].p, 0, rs[1])
+            bb_puts(nx, "\n\n")
+            bb_put_span(nx, portraits[0].p, hs[0], hs[1])
+            bb_puts(nx, "\n")
         } else {
-            dy_span(nx, cur[0].p, 0, at)
-            dy_puts(nx, "\n\n")
-            dy_span(nx, portraits[0].p, hs[0], hs[1])
-            dy_puts(nx, "\n")
-            dy_span(nx, cur[0].p, at, cur[0].len)
+            bb_put_span(nx, cur[0].p, 0, at)
+            bb_puts(nx, "\n\n")
+            bb_put_span(nx, portraits[0].p, hs[0], hs[1])
+            bb_puts(nx, "\n")
+            bb_put_span(nx, cur[0].p, at, cur[0].len)
         }
         cur = nx
     }
@@ -4496,28 +4441,28 @@ function dy_expand(c: ptr<DyC>, p: ptr<u8>, n: i32, out: ptr<DySb>) -> i32 {
         # The fixed inject_dynamics_setup from _dynamics_dsl_fixes.
         let end: i32 = dy_find_main_body(cur[0].p, cur[0].len)
         if end < 0 {
-            dy_span(out, cur[0].p, 0, cur[0].len)
-            dy_puts(out, "\n\nfunction main() -> i32 {\n")
-            dy_span(out, setup[0].p, 0, setup[0].len)
-            dy_puts(out, "\n    return 0\n}\n")
+            bb_put_span(out, cur[0].p, 0, cur[0].len)
+            bb_puts(out, "\n\nfunction main() -> i32 {\n")
+            bb_put_span(out, setup[0].p, 0, setup[0].len)
+            bb_puts(out, "\n    return 0\n}\n")
         } else {
-            dy_span(out, cur[0].p, 0, end)
-            dy_puts(out, "\n")
-            dy_span(out, setup[0].p, 0, setup[0].len)
-            dy_puts(out, "\n")
-            dy_span(out, cur[0].p, end, cur[0].len)
+            bb_put_span(out, cur[0].p, 0, end)
+            bb_puts(out, "\n")
+            bb_put_span(out, setup[0].p, 0, setup[0].len)
+            bb_puts(out, "\n")
+            bb_put_span(out, cur[0].p, end, cur[0].len)
         }
         return 0
     }
-    dy_span(out, cur[0].p, 0, cur[0].len)
+    bb_put_span(out, cur[0].p, 0, cur[0].len)
     return 0
 }
 
 function dy_ctx_new(n: i32) -> ptr<DyC> {
     let c: ptr<DyC> = malloc(256) as ptr<DyC>
     c[0].err = 0
-    c[0].msg = dy_sb_new(256)
-    c[0].nm = dy_sb_new(n + 256)
+    c[0].msg = bb_new(256)
+    c[0].nm = bb_new(n + 256)
     c[0].fcap = n + 64
     c[0].fp = dy_f64s(c[0].fcap)
     c[0].fnum = 0
@@ -4534,7 +4479,7 @@ function dy_ctx_new(n: i32) -> ptr<DyC> {
     c[0].at_val = dy_f64s(64)
     c[0].nat = 0
     # Offset 0 is the empty name.
-    dy_putc(c[0].nm, 0)
+    bb_putc(c[0].nm, 0)
     return c
 }
 
@@ -4549,12 +4494,12 @@ export function flowc_dynamics_expand_in_place(buf: ptr<u8>, n: i32, cap: i32) -
         return n
     }
     let c: ptr<DyC> = dy_ctx_new(n)
-    let out: ptr<DySb> = dy_sb_new(n * 2 + 4096)
+    let out: ptr<ByteBuf> = bb_new(n * 2 + 4096)
     let rc: i32 = dy_expand(c, buf, n, out)
     if rc < 0 {
-        let line: ptr<DySb> = dy_sb_new(c[0].msg[0].len + 32)
-        dy_puts(line, "flowc dynamics: ")
-        dy_span(line, c[0].msg[0].p, 0, c[0].msg[0].len)
+        let line: ptr<ByteBuf> = bb_new(c[0].msg[0].len + 32)
+        bb_puts(line, "flowc dynamics: ")
+        bb_put_span(line, c[0].msg[0].p, 0, c[0].msg[0].len)
         puts(line[0].p as string)
         return 0 - 1
     }

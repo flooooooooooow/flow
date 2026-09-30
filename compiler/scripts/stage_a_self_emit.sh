@@ -58,16 +58,20 @@ self_emit_module lexer compiler/build/self_token.h
     compiler/build/self_lexer.c compiler/build/self_lexer.h
 
 self_emit_module fileio
+# Shared byte buffer (#985), a leaf the DSL expanders import.
+self_emit_module bytebuf
+"$C_TO_HDR" \
+    compiler/build/self_bytebuf.c compiler/build/self_bytebuf.h
 self_emit_module field_dsl
 "$C_TO_HDR" \
     compiler/build/self_field_dsl.c compiler/build/self_field_dsl.h
-self_emit_module dynamics_dsl
+self_emit_module dynamics_dsl compiler/build/self_bytebuf.h
 "$C_TO_HDR" \
     compiler/build/self_dynamics_dsl.c compiler/build/self_dynamics_dsl.h
-self_emit_module flow_blocks
+self_emit_module flow_blocks compiler/build/self_bytebuf.h
 "$C_TO_HDR" \
     compiler/build/self_flow_blocks.c compiler/build/self_flow_blocks.h
-self_emit_module shader_dsl
+self_emit_module shader_dsl compiler/build/self_bytebuf.h
 "$C_TO_HDR" \
     compiler/build/self_shader_dsl.c compiler/build/self_shader_dsl.h
 # Effect table shared by cgen, typecheck and resolve (#675).
@@ -207,6 +211,7 @@ self_emit_module resolve \
     compiler/build/self_parser.h \
     compiler/build/self_fileio.h \
     compiler/build/self_field_dsl.h \
+    compiler/build/self_bytebuf.h \
     compiler/build/self_dynamics_dsl.h \
     compiler/build/self_flow_blocks.h \
     compiler/build/self_shader_dsl.h \
@@ -230,6 +235,7 @@ cc -r -o compiler/build/flowc_frontend_self.o \
     compiler/build/self_parser.o \
     compiler/build/self_fileio.o \
     compiler/build/self_field_dsl.o \
+    compiler/build/self_bytebuf.o \
     compiler/build/self_dynamics_dsl.o \
     compiler/build/self_flow_blocks.o \
     compiler/build/self_shader_dsl.o \
@@ -297,6 +303,7 @@ cc -O0 -c \
     -include compiler/build/self_parser.h \
     -include compiler/build/self_fileio.h \
     -include compiler/build/self_field_dsl.h \
+    -include compiler/build/self_bytebuf.h \
     -include compiler/build/self_dynamics_dsl.h \
     -include compiler/build/self_flow_blocks.h \
     -include compiler/build/self_shader_dsl.h \

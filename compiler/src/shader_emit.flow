@@ -19,8 +19,9 @@
 # output directory is created with its parents.
 
 import .fileio { flowc_read_file, flowc_write_file, flowc_io_file_size, flowc_io_mkdir }
+import .bytebuf { ByteBuf }
 import .shader_dsl {
-    ShBuf, ShCtx, SH_METAL, SH_WGSL,
+    ShCtx, SH_METAL, SH_WGSL,
     flowc_shader_buf_new, flowc_shader_buf_free, flowc_shader_putc, flowc_shader_ctx_new,
     flowc_shader_ctx_free, flowc_shader_ctx_msg, flowc_shader_extract,
     flowc_shader_fill_count, flowc_shader_put_fill_name,
@@ -35,11 +36,11 @@ extern {
     function puts(s: string) -> i32
 }
 
-function se_putc(w: ptr<ShBuf>, c: u8) {
+function se_putc(w: ptr<ByteBuf>, c: u8) {
     flowc_shader_putc(w, c)
 }
 
-function se_puts(w: ptr<ShBuf>, s: string) {
+function se_puts(w: ptr<ByteBuf>, s: string) {
     let p: ptr<u8> = s
     let n: i32 = strlen(s) as i32
     let mut i: i32 = 0
@@ -49,13 +50,13 @@ function se_puts(w: ptr<ShBuf>, s: string) {
     }
 }
 
-function se_cstr(w: ptr<ShBuf>) -> string {
-    w[0].buf[w[0].len] = 0
-    return w[0].buf as string
+function se_cstr(w: ptr<ByteBuf>) -> string {
+    w[0].p[w[0].len] = 0
+    return w[0].p as string
 }
 
 function se_error(head: string, tail: string) {
-    let w: ptr<ShBuf> = flowc_shader_buf_new(4096)
+    let w: ptr<ByteBuf> = flowc_shader_buf_new(4096)
     se_puts(w, "flowc shader: ")
     se_puts(w, head)
     se_puts(w, tail)
@@ -64,12 +65,12 @@ function se_error(head: string, tail: string) {
 }
 
 function se_ctx_error(c: ptr<ShCtx>) {
-    let m: ptr<ShBuf> = flowc_shader_ctx_msg(c)
-    let w: ptr<ShBuf> = flowc_shader_buf_new(m[0].len + 64)
+    let m: ptr<ByteBuf> = flowc_shader_ctx_msg(c)
+    let w: ptr<ByteBuf> = flowc_shader_buf_new(m[0].len + 64)
     se_puts(w, "flowc shader: ")
     let mut i: i32 = 0
     while i < m[0].len {
-        se_putc(w, m[0].buf[i])
+        se_putc(w, m[0].p[i])
         i = i + 1
     }
     puts(se_cstr(w))
@@ -77,15 +78,15 @@ function se_ctx_error(c: ptr<ShCtx>) {
 }
 
 # out_dir + "/" + a + b + c into a fresh buffer.
-function se_path(dir: string, a: ptr<ShBuf>, b: string) -> ptr<ShBuf> {
-    let w: ptr<ShBuf> = flowc_shader_buf_new(4096)
+function se_path(dir: string, a: ptr<ByteBuf>, b: string) -> ptr<ByteBuf> {
+    let w: ptr<ByteBuf> = flowc_shader_buf_new(4096)
     se_puts(w, dir)
-    if w[0].len > 0 and w[0].buf[w[0].len - 1] != 47 {
+    if w[0].len > 0 and w[0].p[w[0].len - 1] != 47 {
         se_putc(w, 47)
     }
     let mut i: i32 = 0
     while i < a[0].len {
-        se_putc(w, a[0].buf[i])
+        se_putc(w, a[0].p[i])
         i = i + 1
     }
     se_puts(w, b)
@@ -95,15 +96,15 @@ function se_path(dir: string, a: ptr<ShBuf>, b: string) -> ptr<ShBuf> {
 # mkdir -p: each parent, then the directory. Failures (already exists)
 # are ignored; a directory that cannot be made fails the first write.
 function se_mkdirs(dir: string) {
-    let w: ptr<ShBuf> = flowc_shader_buf_new(4096)
+    let w: ptr<ByteBuf> = flowc_shader_buf_new(4096)
     se_puts(w, dir)
     let n: i32 = w[0].len
     let mut i: i32 = 1
     while i < n {
-        if w[0].buf[i] == 47 {
-            w[0].buf[i] = 0
-            flowc_io_mkdir(w[0].buf as string)
-            w[0].buf[i] = 47
+        if w[0].p[i] == 47 {
+            w[0].p[i] = 0
+            flowc_io_mkdir(w[0].p as string)
+            w[0].p[i] = 47
         }
         i = i + 1
     }
@@ -112,7 +113,7 @@ function se_mkdirs(dir: string) {
 }
 
 # Path(source).stem: the base name without its last suffix.
-function se_stem(path: string) -> ptr<ShBuf> {
+function se_stem(path: string) -> ptr<ByteBuf> {
     let p: ptr<u8> = path
     let n: i32 = strlen(path) as i32
     let mut b: i32 = 0
@@ -132,7 +133,7 @@ function se_stem(path: string) -> ptr<ShBuf> {
         }
         k = k - 1
     }
-    let w: ptr<ShBuf> = flowc_shader_buf_new(n + 8)
+    let w: ptr<ByteBuf> = flowc_shader_buf_new(n + 8)
     i = b
     while i < e {
         se_putc(w, p[i])
@@ -141,16 +142,16 @@ function se_stem(path: string) -> ptr<ShBuf> {
     return w
 }
 
-function se_write(path: ptr<ShBuf>, data: ptr<ShBuf>) -> i32 {
-    if flowc_write_file(se_cstr(path), data[0].buf, data[0].len) != 0 {
+function se_write(path: ptr<ByteBuf>, data: ptr<ByteBuf>) -> i32 {
+    if flowc_write_file(se_cstr(path), data[0].p, data[0].len) != 0 {
         se_error("cannot write ", se_cstr(path))
         return 1
     }
     return 0
 }
 
-function se_fill_name(c: ptr<ShCtx>, k: i32) -> ptr<ShBuf> {
-    let w: ptr<ShBuf> = flowc_shader_buf_new(64)
+function se_fill_name(c: ptr<ShCtx>, k: i32) -> ptr<ByteBuf> {
+    let w: ptr<ByteBuf> = flowc_shader_buf_new(64)
     flowc_shader_put_fill_name(c, w, k)
     return w
 }
@@ -158,15 +159,15 @@ function se_fill_name(c: ptr<ShCtx>, k: i32) -> ptr<ShBuf> {
 # Metal: gallery, entries, and one library per fill.
 function se_metal(c: ptr<ShCtx>, in_path: string, out_dir: string, name: ptr<u8>, nlen: i32) -> i32 {
     se_mkdirs(out_dir)
-    let stem: ptr<ShBuf> = se_stem(in_path)
-    let src: ptr<ShBuf> = flowc_shader_buf_new(65536)
+    let stem: ptr<ByteBuf> = se_stem(in_path)
+    let src: ptr<ByteBuf> = flowc_shader_buf_new(65536)
     if flowc_shader_gen(c, src, SH_METAL, name, nlen, 0 - 1) != 0 {
         se_ctx_error(c)
         return 1
     }
-    let gallery: ptr<ShBuf> = se_path(out_dir, stem, "_gallery.metal")
+    let gallery: ptr<ByteBuf> = se_path(out_dir, stem, "_gallery.metal")
     let mut rc: i32 = se_write(gallery, src)
-    let entries: ptr<ShBuf> = flowc_shader_buf_new(4096)
+    let entries: ptr<ByteBuf> = flowc_shader_buf_new(4096)
     let nfl: i32 = flowc_shader_fill_count(c)
     let mut k: i32 = 0
     while k < nfl {
@@ -176,22 +177,22 @@ function se_metal(c: ptr<ShCtx>, in_path: string, out_dir: string, name: ptr<u8>
         }
         k = k + 1
     }
-    let epath: ptr<ShBuf> = se_path(out_dir, stem, "_gallery.entries")
+    let epath: ptr<ByteBuf> = se_path(out_dir, stem, "_gallery.entries")
     if rc == 0 {
         rc = se_write(epath, entries)
     }
     k = 0
     while k < nfl and rc == 0 {
         if nlen < 0 or flowc_shader_fill_named(c, k, name, nlen) == 1 {
-            let one: ptr<ShBuf> = flowc_shader_buf_new(65536)
+            let one: ptr<ByteBuf> = flowc_shader_buf_new(65536)
             flowc_shader_gen(c, one, SH_METAL, name, nlen, k)
-            let fname: ptr<ShBuf> = se_fill_name(c, k)
-            let mpath: ptr<ShBuf> = se_path(out_dir, fname, "_fill.metal")
+            let fname: ptr<ByteBuf> = se_fill_name(c, k)
+            let mpath: ptr<ByteBuf> = se_path(out_dir, fname, "_fill.metal")
             rc = se_write(mpath, one)
-            let entry: ptr<ShBuf> = flowc_shader_buf_new(128)
+            let entry: ptr<ByteBuf> = flowc_shader_buf_new(128)
             flowc_shader_put_fill_name(c, entry, k)
             se_puts(entry, "_frag\n")
-            let ypath: ptr<ShBuf> = se_path(out_dir, fname, "_fill.entry")
+            let ypath: ptr<ByteBuf> = se_path(out_dir, fname, "_fill.entry")
             if rc == 0 {
                 rc = se_write(ypath, entry)
             }
@@ -217,16 +218,16 @@ function se_metal(c: ptr<ShCtx>, in_path: string, out_dir: string, name: ptr<u8>
 # WGSL: one module for the selection, and the entries list.
 function se_wgsl(c: ptr<ShCtx>, in_path: string, out_dir: string, name: ptr<u8>, nlen: i32) -> i32 {
     se_mkdirs(out_dir)
-    let stem: ptr<ShBuf> = se_stem(in_path)
-    let src: ptr<ShBuf> = flowc_shader_buf_new(65536)
+    let stem: ptr<ByteBuf> = se_stem(in_path)
+    let src: ptr<ByteBuf> = flowc_shader_buf_new(65536)
     if flowc_shader_gen(c, src, SH_WGSL, name, nlen, 0 - 1) != 0 {
         se_ctx_error(c)
         return 1
     }
-    let mut out: ptr<ShBuf> = se_path(out_dir, stem, "_gallery.wgsl")
+    let mut out: ptr<ByteBuf> = se_path(out_dir, stem, "_gallery.wgsl")
     if nlen >= 0 {
         flowc_shader_buf_free(out)
-        let nb: ptr<ShBuf> = flowc_shader_buf_new(nlen + 8)
+        let nb: ptr<ByteBuf> = flowc_shader_buf_new(nlen + 8)
         let mut i: i32 = 0
         while i < nlen {
             se_putc(nb, name[i])
@@ -236,7 +237,7 @@ function se_wgsl(c: ptr<ShCtx>, in_path: string, out_dir: string, name: ptr<u8>,
         flowc_shader_buf_free(nb)
     }
     let mut rc: i32 = se_write(out, src)
-    let entries: ptr<ShBuf> = flowc_shader_buf_new(4096)
+    let entries: ptr<ByteBuf> = flowc_shader_buf_new(4096)
     let nfl: i32 = flowc_shader_fill_count(c)
     let mut first: i32 = 1
     let mut k: i32 = 0
@@ -251,7 +252,7 @@ function se_wgsl(c: ptr<ShCtx>, in_path: string, out_dir: string, name: ptr<u8>,
         }
         k = k + 1
     }
-    let epath: ptr<ShBuf> = se_path(out_dir, stem, "_gallery.wgsl.entries")
+    let epath: ptr<ByteBuf> = se_path(out_dir, stem, "_gallery.wgsl.entries")
     if rc == 0 {
         rc = se_write(epath, entries)
     }
@@ -330,7 +331,7 @@ export function flowc_shader_mode(mode: string, in_path: string, out_path: strin
     if se_mode_is(mode, "list") == 1 {
         let mut k: i32 = 0
         while k < nfl {
-            let nm: ptr<ShBuf> = se_fill_name(c, k)
+            let nm: ptr<ByteBuf> = se_fill_name(c, k)
             puts(se_cstr(nm))
             flowc_shader_buf_free(nm)
             k = k + 1
@@ -362,7 +363,7 @@ export function flowc_shader_mode(mode: string, in_path: string, out_path: strin
             k2 = k2 + 1
         }
         if hit == 0 {
-            let w: ptr<ShBuf> = flowc_shader_buf_new(nlen + 32)
+            let w: ptr<ByteBuf> = flowc_shader_buf_new(nlen + 32)
             se_puts(w, "Shader '")
             se_puts(w, name)
             se_puts(w, "' not found")
