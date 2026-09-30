@@ -2271,6 +2271,9 @@ function mlg_find_fn_call(m: ptr<Mlg>, e: i32, k: i32) -> i32 {
                 let amt: i32 = mlg_expr_mt(m, a)
                 if amt == pmt {
                     score = score + 10
+                } elif mlg_kind(m, a) == AST_FLOAT and mlg_is_float_mt(pmt) == 1 {
+                    # A float literal fits f32 as well as f64, as in C.
+                    score = score + 10
                 }
                 if mlg_kind(m, a) == AST_INT and mlg_ft_name_is(m, pt, "i32") == 1 {
                     score = score + 1
@@ -2437,6 +2440,9 @@ function mlg_resolve_operand(l: i32, r: i32) -> i32 {
         let mut w: i32 = mlg_width(l)
         if mlg_width(r) > w {
             w = mlg_width(r)
+        }
+        if w > 64 {
+            return MT_I128
         }
         if w > 32 {
             return MT_I64
@@ -4055,6 +4061,9 @@ function mlg_uk_named(m: ptr<Mlg>, name: string) -> i32 {
     return 0
 }
 
+function mlg_zero(m: ptr<Mlg>, t: i32) -> i32
+function mlg_idx_const(m: ptr<Mlg>, n: i32) -> i32
+
 # 1 when call e is the array<T>(...) constructor.
 function mlg_is_array_ctor(m: ptr<Mlg>, e: i32) -> i32 {
     if m[0].arena.nodes[e].b != AST_NONE and m[0].arena.nodes[e].ival == 0 and mlg_span_is(m, mlg_ns(m, e), mlg_ne(m, e), "array") == 1 and m[0].arena.nodes[e].start == m[0].arena.nodes[e].name_start {
@@ -4135,6 +4144,37 @@ function mlg_emit_array_ctor(m: ptr<Mlg>, e: i32) -> i32 {
         mlg_v(m, sv)
         mlg_s(m, ") : ")
         mlg_put_type(m, dt)
+        mlg_nl(m)
+        # Zeroed, as the C backend's calloc.
+        let z: i32 = mlg_zero(m, et)
+        let c0: i32 = mlg_idx_const(m, 0)
+        let c1: i32 = mlg_idx_const(m, 1)
+        let iv: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_s(m, "scf.for ")
+        mlg_v(m, iv)
+        mlg_s(m, " = ")
+        mlg_v(m, c0)
+        mlg_s(m, " to ")
+        mlg_v(m, sv)
+        mlg_s(m, " step ")
+        mlg_v(m, c1)
+        mlg_s(m, " {")
+        mlg_nl(m)
+        m[0].ind = m[0].ind + 1
+        mlg_line(m)
+        mlg_s(m, "memref.store ")
+        mlg_v(m, z)
+        mlg_s(m, ", ")
+        mlg_v(m, a)
+        mlg_s(m, "[")
+        mlg_v(m, iv)
+        mlg_s(m, "] : ")
+        mlg_put_type(m, dt)
+        mlg_nl(m)
+        m[0].ind = m[0].ind - 1
+        mlg_line(m)
+        mlg_s(m, "}")
         mlg_nl(m)
         return a
     }
@@ -5686,7 +5726,7 @@ function mlg_as_i1(m: ptr<Mlg>, v: i32, t: i32) -> i32 {
         mlg_nl(m)
         mlg_line(m)
         mlg_v(m, out)
-        mlg_s(m, " = arith.cmpf one, ")
+        mlg_s(m, " = arith.cmpf une, ")
     } else {
         mlg_s(m, " = arith.constant 0 : ")
         mlg_put_type(m, t)
@@ -6162,7 +6202,7 @@ function mlg_emit_binop(m: ptr<Mlg>, e: i32) -> i32 {
         if is_float == 1 {
             mlg_s(m, "arith.cmpf ")
             if op == TOK_EQEQ { mlg_s(m, "oeq") }
-            if op == TOK_NE { mlg_s(m, "one") }
+            if op == TOK_NE { mlg_s(m, "une") }
             if op == TOK_LT { mlg_s(m, "olt") }
             if op == TOK_LE { mlg_s(m, "ole") }
             if op == TOK_GT { mlg_s(m, "ogt") }
@@ -8559,11 +8599,108 @@ function mlg_emit_return(m: ptr<Mlg>, st: i32) {
         return
     }
     let vt: i32 = mlg_val_mt(m, v, e)
+    if vt == MT_PTR and mlg_is_memref_mt(rt) == 1 and m[0].mr_n[rt - MT_MEMREF] >= 0 {
+        # A sized array local held as an !llvm.array: copy its bytes into a
+        # heap memref of the return type.
+        let hk: i32 = rt - MT_MEMREF
+        let hm: i32 = mlg_new_val(m, rt)
+        mlg_line(m)
+        mlg_v(m, hm)
+        mlg_s(m, " = memref.alloc() : ")
+        mlg_put_type(m, rt)
+        mlg_nl(m)
+        let hp: i32 = mlg_cast(m, hm, rt, MT_PTR)
+        mlg_lc_use(m, LC_MEMCPY)
+        let nb: i32 = mlg_new_val(m, MT_I64)
+        mlg_line(m)
+        mlg_v(m, nb)
+        mlg_s(m, " = arith.constant ")
+        mlg_i64(m, (m[0].mr_n[hk] as i64) * (mlg_mt_bytes(m[0].mr_elem[hk]) as i64))
+        mlg_s(m, " : ")
+        mlg_s(m, mlg_szs(m))
+        mlg_nl(m)
+        let cpr: i32 = mlg_new_val(m, MT_PTR)
+        mlg_line(m)
+        mlg_v(m, cpr)
+        mlg_s(m, " = func.call @memcpy(")
+        mlg_v(m, hp)
+        mlg_s(m, ", ")
+        mlg_v(m, v)
+        mlg_s(m, ", ")
+        mlg_v(m, nb)
+        mlg_s(m, ") : (!llvm.ptr, !llvm.ptr, ")
+        mlg_s(m, mlg_szs(m))
+        mlg_s(m, ") -> !llvm.ptr")
+        mlg_nl(m)
+        mlg_paste_return_defers(m)
+        mlg_line(m)
+        mlg_s(m, "func.return ")
+        mlg_v(m, hm)
+        mlg_s(m, " : ")
+        mlg_put_type(m, rt)
+        mlg_nl(m)
+        return
+    }
     if vt != rt {
-        v = mlg_cast(m, v, vt, rt)
+        if mlg_is_memref_mt(vt) == 1 and mlg_is_memref_mt(rt) == 1 {
+            let mc: i32 = mlg_new_val(m, rt)
+            mlg_line(m)
+            mlg_v(m, mc)
+            mlg_s(m, " = memref.cast ")
+            mlg_v(m, v)
+            mlg_s(m, " : ")
+            mlg_put_type(m, vt)
+            mlg_s(m, " to ")
+            mlg_put_type(m, rt)
+            mlg_nl(m)
+            v = mc
+        } else {
+            v = mlg_cast(m, v, vt, rt)
+        }
     }
     if mlg_is_struct_mt(rt) == 1 {
         v = mlg_stabilize(m, v, rt)
+    }
+    if mlg_is_memref_mt(rt) == 1 {
+        # An array returned by value outlives the callee's stack: copy it to
+        # the heap (the storage of a local array is an alloca).
+        let k: i32 = rt - MT_MEMREF
+        let h: i32 = mlg_new_val(m, rt)
+        if m[0].mr_n[k] < 0 {
+            let c0: i32 = mlg_idx_const(m, 0)
+            let d: i32 = mlg_new_val(m, MT_INDEX)
+            mlg_line(m)
+            mlg_v(m, d)
+            mlg_s(m, " = memref.dim ")
+            mlg_v(m, v)
+            mlg_s(m, ", ")
+            mlg_v(m, c0)
+            mlg_s(m, " : ")
+            mlg_put_type(m, rt)
+            mlg_nl(m)
+            mlg_line(m)
+            mlg_v(m, h)
+            mlg_s(m, " = memref.alloc(")
+            mlg_v(m, d)
+            mlg_s(m, ") : ")
+        } else {
+            mlg_line(m)
+            mlg_v(m, h)
+            mlg_s(m, " = memref.alloc() : ")
+        }
+        mlg_put_type(m, rt)
+        mlg_nl(m)
+        mlg_line(m)
+        mlg_s(m, "memref.copy ")
+        mlg_v(m, v)
+        mlg_s(m, ", ")
+        mlg_v(m, h)
+        mlg_s(m, " : ")
+        mlg_put_type(m, rt)
+        mlg_s(m, " to ")
+        mlg_put_type(m, rt)
+        mlg_nl(m)
+        v = h
     }
     mlg_paste_return_defers(m)
     mlg_line(m)
@@ -8626,6 +8763,35 @@ function mlg_emit_assign(m: ptr<Mlg>, st: i32) {
         }
         if vt != tt {
             v = mlg_cast(m, v, vt, tt)
+        }
+        let lla: i32 = m[0].l_llarr[l]
+        if lla != 0 and tt == MT_PTR and m[0].l_alloca[l] == V_NONE {
+            # A sized array local is assigned by copy, as a C array
+            # assignment is: memcpy into its storage.
+            mlg_lc_use(m, LC_MEMCPY)
+            let bytes: i64 = (m[0].la_n[lla - MT_LLARR] as i64) * (mlg_mt_bytes(m[0].la_elem[lla - MT_LLARR]) as i64)
+            let nb: i32 = mlg_new_val(m, MT_I64)
+            mlg_line(m)
+            mlg_v(m, nb)
+            mlg_s(m, " = arith.constant ")
+            mlg_i64(m, bytes)
+            mlg_s(m, " : ")
+            mlg_s(m, mlg_szs(m))
+            mlg_nl(m)
+            let cp: i32 = mlg_new_val(m, MT_PTR)
+            mlg_line(m)
+            mlg_v(m, cp)
+            mlg_s(m, " = func.call @memcpy(")
+            mlg_v(m, m[0].l_ssa[l])
+            mlg_s(m, ", ")
+            mlg_v(m, v)
+            mlg_s(m, ", ")
+            mlg_v(m, nb)
+            mlg_s(m, ") : (!llvm.ptr, !llvm.ptr, ")
+            mlg_s(m, mlg_szs(m))
+            mlg_s(m, ") -> !llvm.ptr")
+            mlg_nl(m)
+            return
         }
         # Python rebinds the name to the value; an alloca-backed local also
         # stores it.
@@ -9659,7 +9825,7 @@ function mlg_guard_i1(m: ptr<Mlg>, v: i32, t: i32) -> i32 {
         mlg_nl(m)
         mlg_line(m)
         mlg_v(m, r)
-        mlg_s(m, " = arith.cmpf one, ")
+        mlg_s(m, " = arith.cmpf une, ")
     } else {
         if t == MT_PTR {
             mlg_s(m, " = llvm.mlir.zero : !llvm.ptr")
@@ -11238,8 +11404,40 @@ function mlg_emit_stmt(m: ptr<Mlg>, st: i32) {
         return
     }
     if k == AST_UNARY and m[0].arena.nodes[st].ival == KW_EXPECT {
-        # Python evaluates the condition only; the abort is the C backend's.
-        let _c: i32 = mlg_emit_expr(m, m[0].arena.nodes[st].a)
+        # `expect c`: when c is false, `expect failed (line N)` on stderr
+        # and exit 1, as the C backend does.
+        let c: i32 = mlg_emit_cond(m, m[0].arena.nodes[st].a)
+        let t: i32 = mlg_const_int(m, 1, MT_I1)
+        let bad: i32 = mlg_new_val(m, MT_I1)
+        mlg_line(m)
+        mlg_v(m, bad)
+        mlg_s(m, " = arith.xori ")
+        mlg_v(m, c)
+        mlg_s(m, ", ")
+        mlg_v(m, t)
+        mlg_s(m, " : i1")
+        mlg_nl(m)
+        let msg: ptr<u8> = malloc(64)
+        let ml: i32 = snprintf(msg, 64, "\"expect failed (line %d)\"", mlg_node_line(m, st))
+        let k2: i32 = mlg_intern(m, msg, ml)
+        free(msg)
+        mlg_hp_use(m, HP_PANIC)
+        mlg_line(m)
+        mlg_s(m, "scf.if ")
+        mlg_v(m, bad)
+        mlg_s(m, " {")
+        mlg_nl(m)
+        m[0].ind = m[0].ind + 1
+        let p: i32 = mlg_emit_addressof_str(m, k2)
+        mlg_line(m)
+        mlg_s(m, "func.call @__flow_panic(")
+        mlg_v(m, p)
+        mlg_s(m, ") : (!llvm.ptr) -> ()")
+        mlg_nl(m)
+        m[0].ind = m[0].ind - 1
+        mlg_line(m)
+        mlg_s(m, "}")
+        mlg_nl(m)
         return
     }
     if k == AST_LAYOUT {
