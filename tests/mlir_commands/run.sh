@@ -57,6 +57,7 @@ filter() {
         | sed -e "s#$root#<ROOT>#g" -e "s#$WORK#<WORK>#g" -E -e 's#/build/run\.[A-Za-z0-9]{6}/#/build/run.X/#g' \
         | awk '/^module( attributes.*)? \{$/ { skip = 1 } skip && /-{20,}$/ { skip = 0; next } !skip' \
         | awk 'gf && /^[0-9.]+$/ { print "<GFLOPS>"; gf = 0; next } { gf = /^(Naive|Vectorized \((unroll|auto)\)|Parallelized|Tiled \+ .*|Baseline \(Flow naive GFLOP\/s\)):$/; print }' \
+        | awk '/^MLIR: / { asm = 0 } asm { next } /^Assembly: / { print; print "<ASM>"; asm = 1; next } { print }' \
         | grep -vE '^(ℹ️|🚀)' \
         | grep -vE '^✅ (Generated|FLOW|MLIR|LLVM|Built|C →|🎧|🚀)' \
         | grep -vE '^⚠️ +flowc MLIR emitter' \
