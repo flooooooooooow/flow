@@ -1,23 +1,23 @@
 # @module flowc.mlirgen
 # @means  Stage-A MLIR emitter: lower the core language to textual MLIR.
 #
-# The port of src/flow/mlir_generator.py and its patch modules (see
-# docs/design/mlir-in-flow.md, slices 1 to 6). It emits the same textual
-# MLIR as the Python generator for the programs it covers: functions,
+# Began as the port of the retired src/flow/mlir_generator.py (see
+# docs/design/mlir-in-flow.md). It covers functions,
 # scalar arithmetic, control flow (if/elif/else, while, for with
 # break/continue, match), enums, defer, address-of, structs, fixed and
 # memref arrays, spans and slices, pointers, casts, print/println, module
 # statics and consts, programs with imports (joined by mlir_bundle.flow),
 # lambdas and closures, algebraic effects, record update, and, under
 # FLOWC_MLIR_GPU=1, the GPU dialect module of mlir_gpu_codegen.py.
-# Anything else is refused with `flowc mlir: unsupported: <what> at line N`,
-# so a caller can fall back to the Python host instead of getting wrong MLIR.
+# Anything else is refused with `flowc mlir: unsupported: <what> at line N`
+# rather than lowered wrongly.
 #
-# The emitter follows the Python generator's lowering decisions one for one
-# (which values live in allocas, when an `if` becomes scf.if or cf blocks,
-# when a counted loop becomes scf.for), because the parity gate
-# compiler/scripts/parity_mlir.sh compares the two outputs as text after
-# renaming SSA values and block labels.
+# The contract is the C backend's behaviour: the MLIR verifies and the
+# program prints and exits as its C build does (compiler/scripts/
+# mlir_vs_c.sh). Its lowering decisions (which values live in allocas, when
+# an `if` becomes scf.if or cf blocks, when a counted loop becomes scf.for)
+# are still the Python generator's; compiler/scripts/parity_mlir.sh holds
+# the text to recorded goldens as a regression check.
 
 import .fileio { flowc_write_file }
 import .token {
@@ -936,6 +936,14 @@ function mlg_ft_name_is(m: ptr<Mlg>, ft: i32, lit: string) -> i32 {
     return mlg_span_is(m, mlg_ns(m, ft), mlg_ne(m, ft), lit)
 }
 
+# 1 for `string` and its `str` spelling.
+function mlg_ft_is_string(m: ptr<Mlg>, ft: i32) -> i32 {
+    if mlg_ft_name_is(m, ft, "string") == 1 or mlg_ft_name_is(m, ft, "str") == 1 {
+        return 1
+    }
+    return 0
+}
+
 # Python `flow_type.name.startswith("u")`.
 function mlg_ft_unsigned(m: ptr<Mlg>, ft: i32) -> i32 {
     if ft <= FT_STRUCT {
@@ -1372,7 +1380,7 @@ function mlg_ft_to_mt(m: ptr<Mlg>, ft: i32, at: i32) -> i32 {
     if mlg_span_is(m, ns, ne, "f64") == 1 { return MT_F64 }
     if mlg_span_is(m, ns, ne, "bool") == 1 { return MT_I1 }
     if mlg_span_is(m, ns, ne, "void") == 1 { return MT_VOID }
-    if mlg_span_is(m, ns, ne, "string") == 1 { return MT_PTR }
+    if mlg_span_is(m, ns, ne, "string") == 1 or mlg_span_is(m, ns, ne, "str") == 1 { return MT_PTR }
     if mlg_span_is(m, ns, ne, "ptr") == 1 {
         if m[0].arena.nodes[ft].a == AST_NONE {
             mlg_refuse(m, at, "bare ptr type")
@@ -1875,6 +1883,7 @@ const LC_SNPRINTF: i32 = 8
 const LC_STRCMP: i32 = 16
 const LC_WRITE: i32 = 32
 const LC_ABORT: i32 = 64
+const LC_EXIT: i32 = 128
 const HP_CONCAT: i32 = 1
 const HP_STREQ: i32 = 2
 const HP_STR_I64: i32 = 4
@@ -1882,6 +1891,7 @@ const HP_STR_U64: i32 = 8
 const HP_STR_F64: i32 = 16
 const HP_STRLEN: i32 = 32
 const HP_FAULT: i32 = 64
+const HP_PANIC: i32 = 128
 
 function mlg_lc_use(m: ptr<Mlg>, b: i32) {
     m[0].lc_need = m[0].lc_need | b
@@ -1900,6 +1910,10 @@ function mlg_hp_use(m: ptr<Mlg>, b: i32) {
     }
     if b == HP_STRLEN {
         mlg_lc_use(m, LC_STRLEN)
+    }
+    if b == HP_PANIC {
+        mlg_lc_use(m, LC_STRLEN | LC_WRITE | LC_EXIT)
+        mlg_intern_lit(m, "\"\\n\"")
     }
     if b == HP_FAULT {
         mlg_lc_use(m, LC_STRLEN | LC_WRITE | LC_ABORT)
@@ -2303,7 +2317,7 @@ function mlg_expr_ft(m: ptr<Mlg>, e: i32) -> i32 {
         }
         let lf: i32 = mlg_expr_ft(m, m[0].arena.nodes[e].a)
         let rf: i32 = mlg_expr_ft(m, m[0].arena.nodes[e].b)
-        if op == TOK_PLUS and (mlg_ft_name_is(m, lf, "string") == 1 or mlg_ft_name_is(m, rf, "string") == 1) {
+        if op == TOK_PLUS and (mlg_ft_is_string(m, lf) == 1 or mlg_ft_is_string(m, rf) == 1) {
             return mlg_named_ft(m, 0, "string")
         }
         let want: i32 = mlg_expr_mt(m, e)
@@ -2566,6 +2580,7 @@ function mlg_is_array_ctor(m: ptr<Mlg>, e: i32) -> i32
 function mlg_ctor_mt(m: ptr<Mlg>, e: i32) -> i32
 function mlg_libc_sig(m: ptr<Mlg>, ns: i32, ne: i32, pts: ptr<i32>, np: ptr<i32>) -> i32
 function mlg_call_is_libc(m: ptr<Mlg>, e: i32, k: i32) -> i32
+function mlg_sizeof_mt(m: ptr<Mlg>, e: i32) -> i32
 function mlg_len_mt(m: ptr<Mlg>, e: i32) -> i32
 
 function mlg_expr_mt(m: ptr<Mlg>, e: i32) -> i32 {
@@ -2645,6 +2660,12 @@ function mlg_expr_mt(m: ptr<Mlg>, e: i32) -> i32 {
         }
         if mlg_span_is(m, mlg_ns(m, e), mlg_ne(m, e), "len") == 1 {
             return mlg_len_mt(m, e)
+        }
+        if mlg_sizeof_mt(m, e) != MT_NONE {
+            return MT_I64
+        }
+        if mlg_span_is(m, mlg_ns(m, e), mlg_ne(m, e), "i32_to_f32") == 1 {
+            return MT_F32
         }
         let mut lpts: array<i32, 16> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
         let mut lnp: i32 = 0
@@ -3309,7 +3330,7 @@ function mlg_expr_is_string(m: ptr<Mlg>, e: i32) -> i32 {
     if k == AST_STRING {
         return 1
     }
-    if mlg_ft_name_is(m, mlg_expr_ft(m, e), "string") == 1 {
+    if mlg_ft_is_string(m, mlg_expr_ft(m, e)) == 1 {
         return 1
     }
     if k == AST_BINOP and m[0].arena.nodes[e].ival == TOK_PLUS {
@@ -3629,7 +3650,7 @@ function mlg_emit_printf_call(m: ptr<Mlg>, e: i32) -> i32 {
             t = mlg_expr_mt(m, a)
             if ak == AST_IDENT {
                 let l: i32 = mlg_find_local(m, mlg_ns(m, a), mlg_ne(m, a))
-                if l >= 0 and mlg_ft_name_is(m, m[0].l_ft[l], "string") == 1 {
+                if l >= 0 and mlg_ft_is_string(m, m[0].l_ft[l]) == 1 {
                     t = MT_PTR
                 }
             }
@@ -3811,6 +3832,56 @@ function mlg_call_is_libc(m: ptr<Mlg>, e: i32, k: i32) -> i32 {
         }
     }
     return 0
+}
+
+# The MLIR type sizeof<T>() measures when call e is `sizeof_<T>` (the name
+# monomorphization gives it) and nothing else defines that name, else
+# MT_NONE.
+function mlg_sizeof_mt(m: ptr<Mlg>, e: i32) -> i32 {
+    let ns: i32 = mlg_ns(m, e)
+    let ne: i32 = mlg_ne(m, e)
+    if m[0].arena.nodes[e].a != AST_NONE or mlg_span_prefix(m, ns, ne, "sizeof_") == 0 or ne - ns <= 7 {
+        return MT_NONE
+    }
+    let s: i32 = ns + 7
+    if mlg_span_is(m, s, ne, "i8") == 1 or mlg_span_is(m, s, ne, "u8") == 1 or mlg_span_is(m, s, ne, "bool") == 1 { return MT_I8 }
+    if mlg_span_is(m, s, ne, "i16") == 1 or mlg_span_is(m, s, ne, "u16") == 1 { return MT_I16 }
+    if mlg_span_is(m, s, ne, "i32") == 1 or mlg_span_is(m, s, ne, "u32") == 1 { return MT_I32 }
+    if mlg_span_is(m, s, ne, "i64") == 1 or mlg_span_is(m, s, ne, "u64") == 1 { return MT_I64 }
+    if mlg_span_is(m, s, ne, "f32") == 1 { return MT_F32 }
+    if mlg_span_is(m, s, ne, "f64") == 1 { return MT_F64 }
+    if mlg_span_is(m, s, ne, "string") == 1 or mlg_span_prefix(m, s, ne, "ptr") == 1 { return MT_PTR }
+    let k: i32 = mlg_struct_index(m, s, ne)
+    if k >= 0 {
+        return MT_STRUCT + k
+    }
+    return MT_NONE
+}
+
+# sizeof<T>() as i64, the C backend's (int64_t)sizeof(T): the offset of
+# element 1 of a T array based at null.
+function mlg_emit_sizeof(m: ptr<Mlg>, t: i32) -> i32 {
+    let z: i32 = mlg_new_val(m, MT_PTR)
+    mlg_line(m)
+    mlg_v(m, z)
+    mlg_s(m, " = llvm.mlir.zero : !llvm.ptr")
+    mlg_nl(m)
+    let g: i32 = mlg_new_val(m, MT_PTR)
+    mlg_line(m)
+    mlg_v(m, g)
+    mlg_s(m, " = llvm.getelementptr ")
+    mlg_v(m, z)
+    mlg_s(m, "[1] : (!llvm.ptr) -> !llvm.ptr, ")
+    mlg_put_type(m, t)
+    mlg_nl(m)
+    let r: i32 = mlg_new_val(m, MT_I64)
+    mlg_line(m)
+    mlg_v(m, r)
+    mlg_s(m, " = llvm.ptrtoint ")
+    mlg_v(m, g)
+    mlg_s(m, " : !llvm.ptr to i64")
+    mlg_nl(m)
+    return r
 }
 
 # The signature noted for undeclared callee src[ns..ne], or -1.
@@ -4461,6 +4532,11 @@ function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
         return mlg_emit_tensor_add(m, e)
     }
     let k: i32 = mlg_find_fn_call(m, e, mlg_find_fn(m, ns, ne))
+    if mlg_span_is(m, ns, ne, "i32_to_f32") == 1 and mlg_chain_len(m, m[0].arena.nodes[e].a) == 1 and (k < 0 or m[0].fn_ext[k] == 1) {
+        # The C backend's intrinsic, declared or not: (float)x.
+        let iv: i32 = mlg_emit_expr(m, m[0].arena.nodes[e].a)
+        return mlg_cast(m, iv, mlg_val_mt(m, iv, m[0].arena.nodes[e].a), MT_F32)
+    }
     if mlg_call_is_libc(m, e, k) == 1 {
         # A Flow declaration of a libc function: C's signature wins.
         return mlg_emit_unknown_call(m, e, want_value)
@@ -4471,6 +4547,21 @@ function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
             if lv != V_NONE {
                 return lv
             }
+        }
+        let szt: i32 = mlg_sizeof_mt(m, e)
+        if szt != MT_NONE {
+            return mlg_emit_sizeof(m, szt)
+        }
+        if mlg_span_is(m, ns, ne, "flow_panic") == 1 and mlg_chain_len(m, m[0].arena.nodes[e].a) == 1 {
+            # The trap an invariant lowers to: the message on stderr, exit 1.
+            let pm: i32 = mlg_emit_str_operand(m, m[0].arena.nodes[e].a)
+            mlg_hp_use(m, HP_PANIC)
+            mlg_line(m)
+            mlg_s(m, "func.call @__flow_panic(")
+            mlg_v(m, pm)
+            mlg_s(m, ") : (!llvm.ptr) -> ()")
+            mlg_nl(m)
+            return V_NONE
         }
         # libc and <math.h> functions, as the C backend calls them (on
         # doubles, whatever the argument type).
@@ -7303,6 +7394,11 @@ function mlg_emit_lambda(m: ptr<Mlg>, f: i32) -> i32 {
         if mlg_capture_info(m, fs[i], fe[i], &t, &ft) == 0 {
             mlg_refuse(m, f, "lambda capturing a name with no declaration")
             return V_NONE
+        }
+        if t == MT_INDEX {
+            # A loop index has no LLVM storage type: the environment holds
+            # it as i64.
+            t = MT_I64
         }
         if mlg_is_memref_mt(t) == 1 or t == MT_NONE or t == MT_VOID {
             mlg_refuse(m, f, "lambda capturing an array or vector")
@@ -10523,22 +10619,6 @@ function mlg_emit_scf_for(m: ptr<Mlg>, st: i32, step_val: i32) {
     mlg_free_i32(locs)
 }
 
-# Python _memref_scalar_base for a pointer: 1 when e is a name whose Flow
-# type is a pointer to `elem` (f32 or i32). Memref arrays never get here.
-function mlg_ptr_base_of(m: ptr<Mlg>, e: i32, elem: string) -> i32 {
-    if mlg_kind(m, e) != AST_IDENT {
-        return 0
-    }
-    let ft: i32 = mlg_expr_ft(m, e)
-    if mlg_find_local(m, mlg_ns(m, e), mlg_ne(m, e)) < 0 and mlg_find_static(m, mlg_ns(m, e), mlg_ne(m, e)) < 0 {
-        return 0
-    }
-    if mlg_ft_is_pointer(m, ft) == 0 {
-        return 0
-    }
-    return mlg_ft_name_is(m, m[0].arena.nodes[ft].a, elem)
-}
-
 # 1 when e is `b[i]` for the loop variable i.
 function mlg_is_iv_index(m: ptr<Mlg>, e: i32, st: i32) -> i32 {
     if mlg_kind(m, e) != AST_INDEX or m[0].arena.nodes[e].ival != 0 {
@@ -10549,171 +10629,6 @@ function mlg_is_iv_index(m: ptr<Mlg>, e: i32, st: i32) -> i32 {
         return 0
     }
     return mlg_span_eq(m, mlg_ns(m, ie), mlg_ne(m, ie), mlg_ns(m, st), mlg_ne(m, st))
-}
-
-function mlg_put_linalg_memref(m: ptr<Mlg>, hi: i32, is_hex: i32, elem: string)
-
-# Python _try_linalg_elementwise_for: `for i in 0 to N { out[i] = a[i] op b[i] }`
-# over f32 or i32 pointers becomes one linalg.generic. Returns 1 when it
-# emitted the loop, 0 (nothing emitted) otherwise.
-function mlg_try_linalg(m: ptr<Mlg>, st: i32) -> i32 {
-    if m[0].arena.nodes[st].ival != 0 {
-        return 0
-    }
-    let body: i32 = m[0].arena.nodes[st].c
-    let s0: i32 = m[0].arena.nodes[body].a
-    if s0 == AST_NONE or m[0].arena.nodes[s0].next != AST_NONE or mlg_kind(m, s0) != AST_ASSIGN {
-        return 0
-    }
-    let lo: i32 = m[0].arena.nodes[st].a
-    let hi: i32 = m[0].arena.nodes[st].b
-    let mut ok: i32 = 1
-    if mlg_kind(m, lo) != AST_INT or mlg_int_value(m, lo, &ok) != 0 {
-        return 0
-    }
-    let hk: i32 = mlg_kind(m, hi)
-    if hk != AST_INT and hk != AST_FLOAT and hk != AST_BOOL and hk != AST_STRING {
-        return 0
-    }
-    let target: i32 = m[0].arena.nodes[s0].a
-    let rhs: i32 = m[0].arena.nodes[s0].b
-    if mlg_is_iv_index(m, target, st) == 0 or mlg_kind(m, rhs) != AST_BINOP {
-        return 0
-    }
-    let l: i32 = m[0].arena.nodes[rhs].a
-    let r: i32 = m[0].arena.nodes[rhs].b
-    if mlg_is_iv_index(m, l, st) == 0 or mlg_is_iv_index(m, r, st) == 0 {
-        return 0
-    }
-    let out_a: i32 = m[0].arena.nodes[target].a
-    let mut elem: string = "f32"
-    if mlg_ptr_base_of(m, out_a, "f32") == 0 {
-        if mlg_ptr_base_of(m, out_a, "i32") == 0 {
-            return 0
-        }
-        elem = "i32"
-    }
-    let in1: i32 = m[0].arena.nodes[l].a
-    let in2: i32 = m[0].arena.nodes[r].a
-    if mlg_ptr_base_of(m, in1, elem) == 0 or mlg_ptr_base_of(m, in2, elem) == 0 {
-        return 0
-    }
-    let op: i32 = m[0].arena.nodes[rhs].ival
-    if op != TOK_PLUS and op != TOK_MINUS and op != TOK_STAR {
-        return 0
-    }
-    if mlg_kind(m, hi) != AST_INT {
-        mlg_refuse(m, hi, "elementwise loop bound of this literal form")
-        return 1
-    }
-    let hs: i32 = mlg_ns(m, hi)
-    let he: i32 = mlg_ne(m, hi)
-    let mut digits: i32 = 1
-    let mut q: i32 = hs
-    while q < he {
-        if m[0].src[q] < 48 or m[0].src[q] > 57 {
-            digits = 0
-        }
-        q = q + 1
-    }
-    let is_hex: i32 = mlg_span_prefix(m, hs, he, "0x")
-    if digits == 0 and is_hex == 0 {
-        mlg_refuse(m, hi, "elementwise loop bound of this literal form")
-        return 1
-    }
-    let ov: i32 = mlg_emit_expr(m, out_a)
-    let av: i32 = mlg_emit_expr(m, in1)
-    let bv: i32 = mlg_emit_expr(m, in2)
-    let vals: array<i32, 3> = [ov, av, bv]
-    let mut cast: array<i32, 3> = [0, 0, 0]
-    let mut i: i32 = 0
-    while i < 3 {
-        cast[i] = mlg_new_val(m, MT_PTR)
-        mlg_line(m)
-        mlg_v(m, cast[i])
-        mlg_s(m, " = builtin.unrealized_conversion_cast ")
-        mlg_v(m, vals[i])
-        mlg_s(m, " : !llvm.ptr to memref<")
-        if is_hex == 1 {
-            let mut hok: i32 = 1
-            mlg_i64(m, mlg_int_value(m, hi, &hok))
-        } else {
-            mlg_span(m, hs, he)
-        }
-        mlg_s(m, "x")
-        mlg_s(m, elem)
-        mlg_s(m, ">")
-        mlg_nl(m)
-        i = i + 1
-    }
-    # memref<Nxelem> text, from the first cast line.
-    mlg_line(m)
-    mlg_s(m, "linalg.generic {indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>], iterator_types = [\"parallel\"]} ins(")
-    mlg_v(m, cast[1])
-    mlg_s(m, ", ")
-    mlg_v(m, cast[2])
-    mlg_s(m, " : ")
-    mlg_put_linalg_memref(m, hi, is_hex, elem)
-    mlg_s(m, ", ")
-    mlg_put_linalg_memref(m, hi, is_hex, elem)
-    mlg_s(m, ") outs(")
-    mlg_v(m, cast[0])
-    mlg_s(m, " : ")
-    mlg_put_linalg_memref(m, hi, is_hex, elem)
-    mlg_s(m, ") {")
-    mlg_nl(m)
-    m[0].ind = m[0].ind + 1
-    mlg_line(m)
-    mlg_s(m, "^bb0(%in1: ")
-    mlg_s(m, elem)
-    mlg_s(m, ", %in2: ")
-    mlg_s(m, elem)
-    mlg_s(m, ", %out: ")
-    mlg_s(m, elem)
-    mlg_s(m, "):")
-    mlg_nl(m)
-    let res: i32 = mlg_new_val(m, MT_I32)
-    mlg_line(m)
-    mlg_s(m, "  ")
-    mlg_v(m, res)
-    mlg_s(m, " = ")
-    let fl: ptr<u8> = elem
-    if fl[0] == 102 {
-        if op == TOK_PLUS { mlg_s(m, "arith.addf") }
-        if op == TOK_MINUS { mlg_s(m, "arith.subf") }
-        if op == TOK_STAR { mlg_s(m, "arith.mulf") }
-    } else {
-        if op == TOK_PLUS { mlg_s(m, "arith.addi") }
-        if op == TOK_MINUS { mlg_s(m, "arith.subi") }
-        if op == TOK_STAR { mlg_s(m, "arith.muli") }
-    }
-    mlg_s(m, " %in1, %in2 : ")
-    mlg_s(m, elem)
-    mlg_nl(m)
-    mlg_line(m)
-    mlg_s(m, "  linalg.yield ")
-    mlg_v(m, res)
-    mlg_s(m, " : ")
-    mlg_s(m, elem)
-    mlg_nl(m)
-    m[0].ind = m[0].ind - 1
-    mlg_line(m)
-    mlg_s(m, "}")
-    mlg_nl(m)
-    return 1
-}
-
-function mlg_put_linalg_memref(m: ptr<Mlg>, hi: i32, is_hex: i32, elem: string) {
-    mlg_s(m, "memref<")
-    if is_hex == 1 {
-        let mut hok: i32 = 1
-        mlg_i64(m, mlg_int_value(m, hi, &hok))
-    } else {
-        mlg_span(m, mlg_ns(m, hi), mlg_ne(m, hi))
-    }
-    mlg_s(m, "x")
-    mlg_s(m, elem)
-    mlg_s(m, ">")
 }
 
 # Python _memref_scalar_base, as _try_vectorize_elementwise_for then uses
@@ -11144,9 +11059,6 @@ function mlg_emit_scf_parallel(m: ptr<Mlg>, st: i32, step_val: i32) {
 
 function mlg_emit_for(m: ptr<Mlg>, st: i32) {
     let par: i32 = mlg_for_is_parallel(m, st)
-    if par == 0 and mlg_try_linalg(m, st) == 1 {
-        return
-    }
     if par == 0 and (mlg_try_vectorize(m, st) == 1 or m[0].err != 0) {
         return
     }
@@ -17829,6 +17741,10 @@ function mlg_put_lc_decls(m: ptr<Mlg>) {
         mlg_s(m, "  func.func private @abort() -> ()")
         mlg_nl(m)
     }
+    if (m[0].lc_need & LC_EXIT) != 0 and mlg_lc_declared(m, "exit") == 0 {
+        mlg_s(m, "  func.func private @exit(i32) -> ()")
+        mlg_nl(m)
+    }
     if (m[0].lc_need & LC_STRCMP) != 0 and mlg_lc_declared(m, "strcmp") == 0 {
         mlg_s(m, "  func.func private @strcmp(!llvm.ptr, !llvm.ptr) -> i32")
         mlg_nl(m)
@@ -17940,6 +17856,25 @@ function mlg_put_helpers(m: ptr<Mlg>) {
         mlg_s(m, "    }\n")
         mlg_s(m, "    func.return %r : i32\n")
         mlg_s(m, "  }\n")
+    }
+    if (m[0].hp_need & HP_PANIC) != 0 {
+        mlg_s(m, "  func.func private @__flow_panic(%arg0: !llvm.ptr) {\n")
+        mlg_s(m, "    %fd = arith.constant 2 : i32\n")
+        mlg_s(m, "    %n = func.call @strlen(%arg0) : (!llvm.ptr) -> ")
+        mlg_s(m, sz)
+        mlg_s(m, "\n    %w1 = func.call @write(%fd, %arg0, %n) : (i32, !llvm.ptr, ")
+        mlg_s(m, sz)
+        mlg_s(m, ") -> ")
+        mlg_s(m, sz)
+        mlg_s(m, "\n    %nl = llvm.mlir.addressof @str_")
+        mlg_i(m, mlg_intern_lit(m, "\"\\n\""))
+        mlg_s(m, " : !llvm.ptr\n    %n1 = arith.constant 1 : ")
+        mlg_s(m, sz)
+        mlg_s(m, "\n    %w2 = func.call @write(%fd, %nl, %n1) : (i32, !llvm.ptr, ")
+        mlg_s(m, sz)
+        mlg_s(m, ") -> ")
+        mlg_s(m, sz)
+        mlg_s(m, "\n    %one = arith.constant 1 : i32\n    func.call @exit(%one) : (i32) -> ()\n    func.return\n  }\n")
     }
     if (m[0].hp_need & HP_FAULT) != 0 {
         mlg_s(m, "  func.func private @__flow_fault(%arg0: !llvm.ptr) {\n")
