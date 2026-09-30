@@ -187,14 +187,14 @@ export function tls_connect(host: string, port: string) -> ptr<Conn> {
     if rc != 0 {
         return conn_fail("getaddrinfo " + host + ": " + gai_strerror(rc))
     }
-    let linux: bool = net_is_linux()
+    let on_linux: bool = net_is_linux()
     let mut ai: ptr<u8> = res[0]
     let mut fd: i32 = -1
     while ai != null and fd < 0 {
         let f: ptr<i32> = ai as ptr<i32>
         let ptrs: ptr<ptr<u8>> = ai as ptr<ptr<u8>>
         let mut addr: ptr<u8> = ptrs[4]
-        if linux {
+        if on_linux {
             addr = ptrs[3]
         }
         let s: i32 = socket(f[1], f[2], f[3])
@@ -243,7 +243,7 @@ export function tls_connect(host: string, port: string) -> ptr<Conn> {
         return conn_fail("certificate verify failed for " + host)
     }
     let mut nonblock: i32 = 4
-    if linux {
+    if on_linux {
         nonblock = 2048
     }
     let fl: i32 = fcntl(fd, 3, 0)
