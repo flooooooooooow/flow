@@ -2425,6 +2425,11 @@ function sem_check_call(c: ptr<Sem>, e: i32, stmt: i32) -> i32 {
     if sem_is_pipe_find(c, e) {
         return sem_check_find_expr(c, sem_na(c, e), sem_nnext(c, sem_na(c, e)))
     }
+    # sizeof<T>() is the byte size of T as an i64, as cgen emits it (#952).
+    # With no user function of that name it is not a generic instance.
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "sizeof") and sem_lookup(c, "sizeof") < 0 {
+        return sem_tmk(c, TK_I64)
+    }
     return sem_check_function_call(c, sem_call_name(c, e), sem_call_args(c, sem_na(c, e)), e, stmt)
 }
 
