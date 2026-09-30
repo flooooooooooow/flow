@@ -247,6 +247,31 @@ function flowc_resolve_norm_path(path: string, out: ptr<u8>, cap: i32) -> i32 {
     return w
 }
 
+# Fold the path already written to `buf` in place, so a module path is
+# stored and looked up in one form (#1073). Returns the new length, or `len`
+# unchanged when the fold does not fit.
+function flowc_resolve_norm_in_place(buf: ptr<u8>, cap: i32, len: i32) -> i32 {
+    if buf == null or len <= 0 {
+        return len
+    }
+    let tmp: ptr<u8> = malloc(cap as i64)
+    if tmp == null {
+        return len
+    }
+    let nl: i32 = flowc_resolve_norm_path(buf as string, tmp, cap)
+    if nl < 0 {
+        free(tmp)
+        return len
+    }
+    let mut i: i32 = 0
+    while i <= nl {
+        buf[i] = tmp[i]
+        i = i + 1
+    }
+    free(tmp)
+    return nl
+}
+
 function flowc_resolve_append_path(store: ptr<u8>, n: i32, path: string) -> i32 {
     let norm: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
     if norm == null {
@@ -1951,14 +1976,20 @@ function flowc_resolve_import_at(
         if plen < 0 {
             return 0 - 1
         }
-        return plen
+        # Every caller either stores this path or looks it up among the stored
+        # ones, and the store holds folded paths, so fold here: `./a.flow` and
+        # `a.flow` must not read as two modules (#1073).
+        return flowc_resolve_norm_in_place(imp_path, FLOWC_RESOLVE_PATH_CAP, plen)
     }
     if form == 0 {
         let mut plen2: i32 = flowc_resolve_package_path(src, s, e, project_root, imp_path, FLOWC_RESOLVE_PATH_CAP)
         if plen2 == 0 - 1 {
             plen2 = flowc_resolve_dotted_any(src, s, e, mod_search, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP)
         }
-        return plen2
+        if plen2 < 0 {
+            return plen2
+        }
+        return flowc_resolve_norm_in_place(imp_path, FLOWC_RESOLVE_PATH_CAP, plen2)
     }
     return 0 - 3
 }

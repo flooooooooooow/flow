@@ -1,0 +1,19 @@
+# A module path is stored and looked up in one folded form (#1073). The
+# folding used to happen only on the way into the module store, so an import
+# that resolved to `./ips/dep.flow` was stored as `ips/dep.flow` and the
+# bundle ordering pass, which looks the dep up by the unfolded name, decided
+# the module had no dependency in the bundle and emitted it out of order.
+# Here `ips/dep.flow` is reached by two spellings and through a module that
+# imports it with a third.
+import "./ips/mid.flow"
+import "ips/dep.flow"
+
+function main() -> i32 {
+    if ips_dep_val() != 5 {
+        return 1
+    }
+    if ips_mid_val() != 10 {
+        return 2
+    }
+    return 0
+}

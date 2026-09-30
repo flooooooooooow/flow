@@ -1,0 +1,5 @@
+import "./dep.flow"
+
+export function ips_mid_val() -> i32 {
+    return ips_dep_val() * 2
+}
