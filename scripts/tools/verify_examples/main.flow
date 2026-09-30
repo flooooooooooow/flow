@@ -155,40 +155,13 @@ function utc_now() -> string {
 # f"flow {version} @ {commit}"
 function compiler_version() -> string {
     let commit: string = uc_strip(pr_capture("git rev-parse --short HEAD 2>/dev/null"))
+    # VERSION holds one line, the canonical version.
     let mut version: string = "unknown"
-    let text: string = ft_read_file("pyproject.toml")
+    let text: string = ft_read_file("VERSION")
     if text as ptr<u8> != null {
-        # re.search(r'^version\s*=\s*"([^"]+)"', text, re.M)
         let lines: ptr<StrList> = ft_split_lines(text)
-        let mut i: i32 = 0
-        let mut found: bool = false
-        while i < ft_list_len(lines) and found == false {
-            let ln: string = ft_list_get(lines, i)
-            if ft_starts(ln, "version") {
-                let p: ptr<u8> = ln as ptr<u8>
-                let mut q: i32 = 7
-                while p[q] == 32 or p[q] == 9 or p[q] == 12 or p[q] == 11 or p[q] == 13 {
-                    q = q + 1
-                }
-                if p[q] == 61 {
-                    q = q + 1
-                    while p[q] == 32 or p[q] == 9 or p[q] == 12 or p[q] == 11 or p[q] == 13 {
-                        q = q + 1
-                    }
-                    if p[q] == 34 {
-                        let vs: i32 = q + 1
-                        let mut ve: i32 = vs
-                        while p[ve] != 0 and p[ve] != 34 {
-                            ve = ve + 1
-                        }
-                        if ve > vs and p[ve] == 34 {
-                            version = ft_slice(ln, vs, ve)
-                            found = true
-                        }
-                    }
-                }
-            }
-            i = i + 1
+        if ft_list_len(lines) > 0 and ft_len(uc_strip(ft_list_get(lines, 0))) > 0 {
+            version = uc_strip(ft_list_get(lines, 0))
         }
     }
     return "flow " + version + " @ " + commit

@@ -1,0 +1,87 @@
+module {
+  llvm.func @printf(!llvm.ptr, ...) -> i32
+  llvm.mlir.global internal constant @str_0("%d\0A\00") {addr_space = 0 : i32}
+  llvm.mlir.global internal constant @str_1("%f\0A\00") {addr_space = 0 : i32}
+  llvm.mlir.global internal constant @str_2("unsigned compare\0A\00") {addr_space = 0 : i32}
+  func.func @mix(%arg0: i32, %arg1: i64) -> i64 {
+    %c7_i64 = arith.constant 7 : i64
+    %0 = arith.extsi %arg0 : i32 to i64
+    %1 = arith.muli %0, %arg1 : i64
+    %2 = arith.addi %1, %c7_i64 : i64
+    return %2 : i64
+  }
+  func.func @udiv(%arg0: i32, %arg1: i32) -> i32 {
+    %0 = arith.divui %arg0, %arg1 : i32
+    return %0 : i32
+  }
+  func.func @umod(%arg0: i8, %arg1: i8) -> i8 {
+    %0 = arith.extui %arg0 : i8 to i32
+    %1 = arith.extui %arg1 : i8 to i32
+    %2 = arith.remui %0, %1 : i32
+    %3 = arith.trunci %2 : i32 to i8
+    return %3 : i8
+  }
+  func.func @shifts(%arg0: i32) -> i32 {
+    %c3_i32 = arith.constant 3 : i32
+    %c1_i32 = arith.constant 1 : i32
+    %c12_i32 = arith.constant 12 : i32
+    %0 = arith.shli %arg0, %c3_i32 : i32
+    %1 = arith.shrsi %0, %c1_i32 : i32
+    %2 = arith.andi %arg0, %c12_i32 : i32
+    %3 = arith.xori %1, %2 : i32
+    %4 = arith.ori %3, %c1_i32 : i32
+    return %4 : i32
+  }
+  func.func @ushift(%arg0: i32) -> i32 {
+    %c4_i32 = arith.constant 4 : i32
+    %0 = arith.shrui %arg0, %c4_i32 : i32
+    return %0 : i32
+  }
+  func.func @fmix(%arg0: f64, %arg1: f32) -> f64 {
+    %cst = arith.constant 2.500000e+00 : f64
+    %cst_0 = arith.constant 2.500000e-01 : f64
+    %0 = arith.mulf %arg0, %cst : f64
+    %1 = arith.extf %arg1 : f32 to f64
+    %2 = arith.addf %0, %1 : f64
+    %3 = arith.subf %2, %cst_0 : f64
+    return %3 : f64
+  }
+  func.func @main() -> i32 {
+    %c37_i32 = arith.constant 37 : i32
+    %c0_i32 = arith.constant 0 : i32
+    %0 = llvm.mlir.addressof @str_0 : !llvm.ptr
+    %1 = llvm.mlir.addressof @str_1 : !llvm.ptr
+    %2 = llvm.mlir.addressof @str_2 : !llvm.ptr
+    %c46_i32 = arith.constant 46 : i32
+    %c-13_i32 = arith.constant -13 : i32
+    %c5_i32 = arith.constant 5 : i32
+    %c300000_i64 = arith.constant 300000 : i64
+    %cst = arith.constant 6.000000e+00 : f64
+    %c-41_i32 = arith.constant -41 : i32
+    %c4000007_i64 = arith.constant 4000007 : i64
+    %c1333333333_i64 = arith.constant 1333333333 : i64
+    %c45_i32 = arith.constant 45 : i32
+    %c250000000_i64 = arith.constant 250000000 : i64
+    %cst_0 = arith.constant 4.000000e+00 : f64
+    %c4_i32 = arith.constant 4 : i32
+    %cst_1 = arith.constant -4.000000e+00 : f64
+    %3 = llvm.call @printf(%0, %c37_i32) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+    %4 = llvm.call @printf(%0, %c46_i32) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+    %5 = llvm.call @printf(%0, %c-13_i32) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+    %6 = llvm.call @printf(%0, %c5_i32) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+    %7 = llvm.call @printf(%0, %c4000007_i64) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
+    %8 = llvm.call @printf(%0, %c1333333333_i64) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
+    %9 = llvm.call @printf(%0, %c5_i32) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+    %10 = llvm.call @printf(%0, %c45_i32) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+    %11 = llvm.call @printf(%0, %c250000000_i64) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
+    %12 = llvm.call @printf(%0, %c300000_i64) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
+    %13 = llvm.call @printf(%1, %cst_0) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, f64) -> i32
+    %14 = llvm.call @printf(%1, %cst) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, f64) -> i32
+    %15 = llvm.call @printf(%0, %c4_i32) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+    %16 = llvm.call @printf(%1, %cst_1) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, f64) -> i32
+    %17 = llvm.call @printf(%0, %c-41_i32) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+    %18 = llvm.call @printf(%2) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr) -> i32
+    return %c0_i32 : i32
+  }
+}
+

@@ -6,7 +6,7 @@ on:
     paths:
       - 'CHANGELOG.md'
       - 'docs/project/CHANGELOG.md'
-      - 'src/flow/version.py'
+      - 'VERSION'
       - 'scripts/check_changelog.sh'
       - 'scripts/tools/changelog_check/**'
       - 'scripts/tools/lib/**'
@@ -17,7 +17,7 @@ on:
     paths:
       - 'CHANGELOG.md'
       - 'docs/project/CHANGELOG.md'
-      - 'src/flow/version.py'
+      - 'VERSION'
       - 'scripts/check_changelog.sh'
       - 'scripts/tools/changelog_check/**'
       - 'scripts/tools/lib/**'

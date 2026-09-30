@@ -20,7 +20,7 @@ BIN="$(scripts/tools/build_tool.sh doc_coverage)"
 OUT=build/doc-coverage
 mkdir -p "$OUT"
 git ls-files 'lib/stdlib/*.flow' 'lib/stdlib/**/*.flow' > "$OUT/stdlib.txt"
-find src/flow -maxdepth 1 -name '*.py' > "$OUT/backends.txt"
+find compiler/src -maxdepth 1 -name '*.flow' | LC_ALL=C sort > "$OUT/backends.txt"
 find docs -name '*.md' > "$OUT/doc-pages.txt"
 
 exec "$BIN" "$@"

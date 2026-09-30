@@ -39,6 +39,21 @@ Python remains acceptable for **tooling** (wiki build, LSP glue, benches) until 
 
 Detail: [`compiler/README.md`](../../compiler/README.md).
 
+### Backends
+
+Every backend is a module of `compiler/src`:
+
+| Module | Output |
+|--------|--------|
+| `cgen` | C, the default path |
+| `jsgen` | JavaScript |
+| `mlirgen` | MLIR (`FLOWC_EMIT=mlir`), lowered by `compiler/scripts/mlir_lower.sh` |
+| `metal_codegen` | Metal shaders for `@gpu` functions |
+| `wgsl_codegen` | WGSL shaders for `@gpu` functions |
+| `bpf_target` | eBPF subset checks |
+| `bpf_gen` | eBPF bytecode |
+| `wasm_gen` | WebAssembly |
+
 ### Language suite
 
 The `.flow` files in `tests/lang/` are the language regression target. Run

@@ -119,7 +119,7 @@ jobs:
             exit 0
           fi
 
-          BODY="Automated sync of every version reference to \`$VERSION\`, from the canonical value in \`src/flow/version.py\`."
+          BODY="Automated sync of every version reference to \`$VERSION\`, from the canonical value in \`VERSION\`."
           if [[ '${{ steps.brew.outputs.enabled }}' == 'true' ]]; then
             BODY="$BODY"$'\n\n'"The Homebrew formula was bumped with a digest computed from the published release tarball."
           else

@@ -12,8 +12,7 @@ on:
       - 'compiler/src/mlirgen.flow'
       - 'compiler/bootstrap/flowc_stage_a.c'
       - 'tests/targets/**'
-      - 'src/flow/mlir_generator.py'
-      - 'src/flow/transpiler.py'
+      - 'compiler/scripts/flow_to_mlir.sh'
       - 'runtime/wasm/**'
       - 'tests/fixtures/wasm/**'
       - 'tests/wasm/**'
@@ -30,8 +29,7 @@ on:
       - 'compiler/src/mlirgen.flow'
       - 'compiler/bootstrap/flowc_stage_a.c'
       - 'tests/targets/**'
-      - 'src/flow/mlir_generator.py'
-      - 'src/flow/transpiler.py'
+      - 'compiler/scripts/flow_to_mlir.sh'
       - 'runtime/wasm/**'
       - 'tests/fixtures/wasm/**'
       - 'tests/wasm/**'
@@ -44,9 +42,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # alloc_sum.flow uses an unsized array, which the flowc MLIR emitter does
-      # not cover yet: flow_to_llvm.sh lowers it with the Python MLIR generator.
-      - uses: ./.github/actions/setup-python
       - uses: ./.github/actions/install-toolchain
         with:
           mlir: 'true'

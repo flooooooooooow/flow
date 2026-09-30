@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Smoke: transpile math_prose + proof_sub demo and check expected string constants
+# Smoke: compile (flowc) math_prose + proof_sub demo and check expected string constants
 # in the generated C (host may hang on newly linked Mach-Os).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 OUT="${1:-compiler/build/math_prose_demo.c}"
 mkdir -p "$(dirname "$OUT")"
-PYTHONPATH=src python3 -m flow.transpiler \
-  examples/compilers/math_prose_demo.flow --c --lenient -o "$OUT"
+compiler/scripts/flowc_emit.sh --lenient \
+  examples/compilers/math_prose_demo.flow "$OUT"
 
 need=(
   'zero is the left identity, for addition on the natural numbers'

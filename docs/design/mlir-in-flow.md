@@ -1,13 +1,104 @@
 # MLIR in Flow
 
-The MLIR backend is the largest block of Python between flowc and deleting
-`src/flow`. This page inventories it, sorts it into what can move to Flow now
-and what cannot, and records the order of the port. Slices 1 to 6 have
-landed, with the GPU dialect text of slice 10:
-`compiler/src/mlirgen.flow` emits textual MLIR for the core language,
-statement forms, programs with imports and module statics, spans and
-arrays, lambdas and closures, and algebraic effects, selected with
-`FLOWC_EMIT=mlir`, and `flow run --backend=mlir` uses it.
+The MLIR backend was the largest block of Python between flowc and deleting
+`src/flow`. This page inventoried it, sorted it into what could move to Flow
+and what could not, and recorded the order of the port. The port is
+finished: `compiler/src/mlirgen.flow` writes the MLIR (`FLOWC_EMIT=mlir`),
+shell scripts run the MLIR tools, and `src/flow` is gone. The sections after
+the first one are the record of how it got there, with the numbers of their
+time.
+
+## Finished: the Python MLIR stack is deleted
+
+Every slice has landed and `src/flow` is gone. The MLIR backend is
+`compiler/src/mlirgen.flow` for text, bash for process orchestration, and C
+or Objective-C for the GPU runtimes. No MLIR command runs Python.
+
+### Emitter coverage
+
+Against the Python generator at `bb23f19f`, run with `--lenient` over every
+`.flow` file in the repository:
+
+| Mode | Python emits MLIR | flowc text-equal after normalization |
+|---|---|---|
+| 64-bit | 1270 | 1270 |
+| `--mlir-gpu` (`FLOWC_MLIR_GPU=1`, programs with `@gpu`) | 14 | 14 |
+| `--wasm32` (`FLOWC_MLIR_SIZE_T=32`) | 1270 | 1270 |
+
+flowc also accepts 3 programs the Python generator fails on
+(`tests/lang/test_prefix_deref.flow`, `tests/tools/lsp/fixtures/attr.flow`
+and a fuzz crash reproducer). `parity_mlir.sh` holds this as goldens: 21
+fixtures (text, and run output where mlir-opt is installed), the GPU and
+wasm32 fixtures, and 1252 corpus digests. `--python <rev>` still compares
+live against any revision that has the Python generator, taken with `git
+archive`, so the gate outlives the deletion.
+
+Added for the last slices: generic monomorphization, `fork`/`choose`
+desugaring, range sums, test blocks, string interpolation, vectors,
+tensors (struct fields, arguments, `tensor_add`, `tensor_matmul`), the AoSoA
+rewrite, counted-loop rotation of `while true`, dual numbers through
+operator structs, unsized arrays, 128-bit and wide integer literals, and the
+wasm32 32-bit `size_t` ABI.
+
+`FLOWC_LENIENT=1` makes non-fatal type errors warnings, as Python's
+`--lenient` did. `flow_to_mlir.sh --lenient` sets it; the MLIR commands of
+the driver and `--jit` use it.
+
+### Orchestration
+
+| Was | Now |
+|---|---|
+| `mlir_optimizer.py` pipelines | `compiler/scripts/mlir_optimize.sh`, pipeline text from `scripts/tools/mlir_pipeline` |
+| `mlir_jit.py` lowering | `compiler/scripts/mlir_lower.sh` |
+| `mlir_jit.py` loading, `jit_runner.py` (ctypes) | `flow jit`: emit, lower, link an executable, run it |
+| `mlir_spirv.py` | `compiler/scripts/mlir_spirv.sh` |
+| transpiler `--mlir` entry | `compiler/scripts/flow_to_mlir.sh`, `flow_to_llvm.sh` |
+| `gpu_integration.py`, `gpu_runtime.py`, `metal_runtime.py` | `benchmarks/gpu/gpu_microbenchmark.c`, `runtime/gpu_metal.m` |
+
+`tests/mlir_commands/run.sh` checks 72 command cases (`flow mlir`,
+`mlir-run`, `jit`, `ml`, `test-mlir`, `test-matmul`, `compile-audio --mlir`,
+`--mlir-gpu`, `--emit-spirv` and the pass pipelines) against goldens
+recorded from the Python stack at `bb23f19f`, with `python` and `python3`
+stubbed to exit 127.
+
+### What the deletion took with it
+
+The Python parser, type checker, monomorphizer and module resolver had one
+caller left, the MLIR generator, so they went with it: 30 files and 25,782
+lines under `src/flow`, and 111 pytest files that imported them.
+
+What those tests checked is covered as follows:
+
+* MLIR text and runs: `parity_mlir.sh` and `tests/mlir_commands/run.sh`.
+* Lowering, DSLs and flow blocks: `tests/cgen`, `tests/lang`,
+  `parity_flow_blocks.sh`, `parity_dynamics_dsl.sh`, `parity_field_dsl.sh`,
+  `parity_shader_dsl.sh`, `parity_lowering.sh`, `parity_effects.sh`.
+* Front-end crashes: `tests/fuzz/run.sh` replaces the Python fuzz harness.
+  It replays `tests/fuzz/crashes`, generates nesting 20000 levels deep, and
+  runs seeded mutations of the corpus through flowc, failing on a signal or
+  a hang. It found that flowc overflowed its stack on deep nesting;
+  `FLOWC_PARSE_MAX_DEPTH` in `compiler/src/parser.flow` now makes that a
+  parse error.
+* The Stable conformance corpus: `tests/conformance/run.sh`, through flowc.
+* Type-checker rules flowc has: `tests/cgen/tc_reject_*` pin arity,
+  unbound calls and a value returned from a void function.
+
+### What the deletion left open
+
+Some diagnostics existed only in the Python type checker. The port of that
+checker to flowc (`compiler/src/sem_check.flow`, #1071) closed most of them:
+
+* `tests/conformance/run.sh` passes, including the Stable negatives
+  `01_type_mismatch` and `02_immutable_assignment`.
+* `scripts/check_doc_examples.sh --check-ledger` finds every
+  `expect-error` example rejected, and the ledger is empty.
+* `compiler/scripts/typecheck_rules.sh` holds one negative program per
+  ported rule, and `compiler/scripts/parity_typecheck.sh --check` holds
+  flowc to the Python checker's recorded diagnostics.
+
+A probe of the remaining items on the old list found three that
+`flowc --strict` still accepts: an invalid `\x` escape in a string, a
+`for` range with `step 0`, and `import "../x.flow"` path traversal.
 
 ## Inventory
 
@@ -474,17 +565,17 @@ shrinks, and Python code is deleted only where nothing calls it any more.
 5. **Functions as values** (done): lambdas, closures, callbacks
    (`mlir_closure_parity.py`, `mlir_nested_closure_parity.py`).
 6. **Effects and capabilities** (done).
-7. **AST rewrites**: counted-loop rotation, AoSoA layout and the
+7. **AST rewrites** (done): counted-loop rotation, AoSoA layout and the
    linalg/vector rewrites of elementwise loops (`mlir_canonicalize.py` and
    the `_try_*_elementwise_for` paths). The linalg rewrite over pointers is
    done, and so is the vector rewrite of single-store memref loops.
-8. **Orchestration**: the `mlir_optimizer.py` pipelines and `mlir_spirv.py`
+8. **Orchestration** (done): the `mlir_optimizer.py` pipelines and `mlir_spirv.py`
    as bash beside `mlir_lower.sh`; `flow mlir`, `mlir-run`, wasm and BPF
    switched to flowc.
 9. **Denotational dialect**: once the lane lands, a second pass over flow
    blocks writes the `flow.*` module ahead of the operational one, under the
    same `FLOW_DENOTATIONAL=1` switch.
-10. **GPU**: `mlir_gpu_codegen.py` (done, `FLOWC_MLIR_GPU=1`) and
+10. **GPU** (done): `mlir_gpu_codegen.py` (`FLOWC_MLIR_GPU=1`) and
     `metal_codegen.py` as Flow text emitters; Metal and CUDA runtimes in C.
-11. **JIT**: `flow jit` as emit, lower, link and run; `mlir_jit.py`,
+11. **JIT** (done): `flow jit` as emit, lower, link and run; `mlir_jit.py`,
     `jit_runner.py` and the ctypes runtimes deleted.

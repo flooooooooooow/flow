@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
     paths:
-      - src/flow/version.py
+      - VERSION
       - .github/workflows/finalize-flow-1.0.1.yml
 
 permissions:
@@ -26,11 +26,7 @@ jobs:
         run: |
           scripts/sync_version.sh --check
           scripts/check_changelog.sh
-          test "$(PYTHONPATH=src python3 - <<'PY'
-          from flow.version import __version__
-          print(__version__)
-          PY
-          )" = "1.0.1"
+          test "$(head -n 1 VERSION)" = "1.0.1"
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           grep -q '^## \[1\.0\.1\] - 2026-08-23$' docs/project/CHANGELOG.md
 

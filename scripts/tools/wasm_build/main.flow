@@ -8,13 +8,12 @@
 #
 # The first argument the shims pass selects the mode: `build`, `gallery`, or
 # `gallery-one` (one gallery target, run in parallel by the gallery through
-# xargs -P). The shims set FLOW_REPO_ROOT, WASM_BUILD_PYTHON (the python3 the
-# MLIR backend runs under), WASM_BUILD_BIN (this executable) and the emscripten
-# environment the Homebrew toolchain needs.
+# xargs -P). The shims set FLOW_REPO_ROOT, WASM_BUILD_BIN (this executable)
+# and the emscripten environment the Homebrew toolchain needs.
 #
 # Flow sources go to C with flowc (compiler/scripts/flowc_emit.sh). The MLIR
-# backend still runs the Python-hosted compiler (python3 -m flow.transpiler
-# --mlir --llvm --wasm32) to reach LLVM IR. emcc links the
+# backend reaches wasm32 LLVM IR through compiler/scripts/flow_to_llvm.sh
+# --wasm32 (the flowc MLIR emitter). emcc links the
 # result, gfx programs against runtime/gfx_wasm.c. Page text lives in
 # scripts/tools/wasm_build/assets. Those files store the em dash, the en
 # dash and curly quotes as @MDASH@, @NDASH@, @LDQUO@ and @RDQUO@, which this
@@ -47,14 +46,6 @@ function root() -> string {
         return pr_cwd()
     }
     return r
-}
-
-function python() -> string {
-    let py: string = getenv("WASM_BUILD_PYTHON")
-    if py as ptr<u8> == null or ft_len(py) == 0 {
-        return "python3"
-    }
-    return py
 }
 
 function asset(name: string) -> string {
@@ -655,17 +646,14 @@ function flow_to_c(b: ptr<Build>, program: string, c_out: string, library: bool)
     return ft_read_file(c_out)
 }
 
+# Flow to wasm32 LLVM IR through MLIR: compiler/scripts/flow_to_llvm.sh
+# --wasm32 (the flowc MLIR emitter, ILP32 size_t, mlir_lower.sh).
 function flow_to_llvm_ir(b: ptr<Build>, program: string, ll_out: string) -> string {
     let _m: bool = pr_mkdir_p(parent_dir(ll_out))
-    let mut pypath: string = root() + "/src"
-    let old: string = getenv("PYTHONPATH")
-    if old as ptr<u8> != null and ft_len(old) > 0 {
-        pypath = pypath + ":" + old
-    }
-    let cmd: string = pr_quote(python()) + " -m flow.transpiler " + pr_quote(program) + " --mlir --llvm --wasm32 --lenient -o " + pr_quote(ll_out)
-    let pr: ptr<Proc> = run_capture(cmd, "PYTHONPATH=" + pr_quote(pypath) + " ")
+    let cmd: string = pr_quote(root() + "/compiler/scripts/flow_to_llvm.sh") + " --wasm32 " + pr_quote(program) + " " + pr_quote(ll_out)
+    let pr: ptr<Proc> = run_capture(cmd, "")
     if pr[0].code != 0 or ft_exists(ll_out) == false or file_size(ll_out) <= 0 {
-        let _f: bool = fail(b, "flow->mlir->llvm: " + last_detail(pr, "transpiler failed"))
+        let _f: bool = fail(b, "flow->mlir->llvm: " + last_detail(pr, "flow_to_llvm.sh failed"))
         return null as string
     }
     return ft_read_file(ll_out)

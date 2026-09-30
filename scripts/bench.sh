@@ -35,8 +35,6 @@ check_deps() {
 setup_env() {
     echo "🔧 Setting up environment..."
     
-    # Add src to PYTHONPATH
-    export PYTHONPATH="$(pwd)/src:$PYTHONPATH"
     
     # Create temp directory
     mkdir -p /tmp/flow_benchmarks
@@ -58,7 +56,7 @@ run_c() {
 # Run FLOW benchmarks only
 run_flow() {
     echo "🚀 Running FLOW benchmarks..."
-    python3 scripts/run_bench.py benchmarks/main.flow
+    scripts/run_bench.sh benchmarks/main.flow
 }
 
 # Run full comparison

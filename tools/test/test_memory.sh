@@ -49,9 +49,9 @@ check_dependencies() {
         exit 1
     fi
     
-    if ! python3 -c "import flow.transpiler" 2>/dev/null; then
-        echo -e "${RED}❌ Error: FLOW transpiler not found${NC}"
-        echo "Please ensure FLOW is properly installed"
+    if [ ! -x ./flow ]; then
+        echo -e "${RED}❌ Error: ./flow not found${NC}"
+        echo "Run this from the repository root"
         exit 1
     fi
     

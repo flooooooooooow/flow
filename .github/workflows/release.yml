@@ -43,18 +43,12 @@ jobs:
         shell: bash
         run: |
           scripts/sync_version.sh --check
-          python3 - <<'PY'
-          import os
-          from pathlib import Path
-          tag = os.environ['FLOW_RELEASE_TAG']
-          expected = tag.removeprefix('v')
-          ns = {}
-          exec(Path('src/flow/version.py').read_text(), ns)
-          actual = ns['__version__']
-          if actual != expected:
-              raise SystemExit(f'tag {tag} does not match src/flow/version.py ({actual})')
-          print(f'version contract: {actual}')
-          PY
+          actual="$(head -n 1 VERSION)"
+          if [ "$actual" != "${FLOW_RELEASE_TAG#v}" ]; then
+            echo "tag $FLOW_RELEASE_TAG does not match VERSION ($actual)" >&2
+            exit 1
+          fi
+          echo "version contract: $actual"
         env:
           FLOW_RELEASE_TAG: ${{ steps.tag.outputs.name }}
 
@@ -67,17 +61,15 @@ jobs:
         run: scripts/check_doc_examples.sh strict
 
       - name: Run permanent Stable conformance corpus
-        run: python3 -m pytest tests/conformance -q
+        run: tests/conformance/run.sh
 
       - name: Fuzz release compiler front end
         if: startsWith(steps.tag.outputs.name, 'v1.')
         env:
           FLOW_FUZZ_SECONDS: '60'
-        run: python3 tests/fuzz/run_fuzz.py --target all --seed 1000
+        run: tests/fuzz/run.sh --seconds "$FLOW_FUZZ_SECONDS" --seed 1000
 
       - name: Strict Flow corpus
-        env:
-          PYTHONPATH: src
         run: |
           chmod +x ./flow compiler/scripts/*.sh
           ./flow test --tier2 --strict

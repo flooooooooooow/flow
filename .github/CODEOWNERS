@@ -2,7 +2,6 @@
 * @godofecht
 
 # Language implementation and self-hosting compiler.
-/src/flow/ @godofecht
 /compiler/ @godofecht
 /runtime/ @godofecht
 

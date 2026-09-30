@@ -9,8 +9,8 @@
 #   flow run PROG.flow --predict       print the cost model's backend
 #
 # The C path is flowc (compiler/scripts/flowc_emit.sh), then clang (or cc),
-# then the program. `--backend=mlir` runs the MLIR JIT of the Python host
-# (python3 -m flow.transpiler --jit), which is where the MLIR backend lives.
+# then the program. `--backend=mlir` runs the MLIR JIT (`flow jit` in its raw
+# mode, FLOW_JIT_RAW=1: the program's output and exit status).
 # `--backend=auto` compiles with C: the runner this replaces meant to ask the
 # cost model, but its call always failed and fell back to C, and C it stays
 # until the MLIR path is native. `--predict` prints what the cost model says.
@@ -413,10 +413,8 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         # The MLIR JIT compiles and runs in one step.
         t1 = now_us()
         t2 = t1
-        let mut jit: string = "PYTHONPATH=" + pr_quote(repo + "/src") + "${PYTHONPATH:+:$PYTHONPATH} python3 -m flow.transpiler " + pr_quote(path) + " --jit"
-        if lenient {
-            jit = jit + " --lenient"
-        }
+        # `flow jit` in raw mode: the program's own output and exit status.
+        let jit: string = "FLOW_JIT_RAW=1 " + pr_quote(repo + "/flow") + " jit " + pr_quote(path)
         rc = run_status(jit + " >" + pr_quote(outf) + " 2>" + pr_quote(errf))
     }
     let t3: i64 = now_us()

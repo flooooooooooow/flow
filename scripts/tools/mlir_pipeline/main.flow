@@ -1,0 +1,149 @@
+# The mlir-opt optimization pipeline for a set of `flow mlir` flags.
+#
+#   mlir_pipeline [--opt-level O0|O1|O2|O3] [--no-vectorization]
+#       [--loop-fusion] [--no-loop-fusion] [--no-mem2reg] [--no-sccp]
+#       [--no-licm] [--no-cse] [--no-dce] [--no-inline]
+#       [--enable-loop-pipelining] [--enable-multi-buffering]
+#
+# prints the --pass-pipeline string, as MLIROptimizer.build_pass_pipeline in
+# the retired src/flow/mlir_optimizer.py built it from the transpiler flags
+# (mlir_opt_kwargs_from_args). Other arguments are ignored, so a caller can
+# pass the whole `flow mlir` flag list. compiler/scripts/mlir_optimize.sh
+# runs mlir-opt with the result.
+#
+# Nesting: `inline` and `symbol-dce` are module passes (they need a symbol
+# table); the rest nest under func.func(...). affine-super-vectorize (O3)
+# and affine-loop-fusion only act on affine loops, which the Flow emitter
+# does not produce; loop fusion stays opt-in because it can hang mlir-opt on
+# large non-affine modules (flow#466). MLIR has no GVN pass: --no-cse turns
+# off `cse`, its stand-in.
+#
+# Exit status: 0, or 2 for an unknown optimization level.
+
+import .text { ft_out, ft_outln, ft_errln, ft_eq, ft_len, ft_starts, ft_from }
+
+struct PipeFlags {
+    level: i32,
+    vectorization: bool,
+    loop_fusion: bool,
+    mem2reg: bool,
+    sccp: bool,
+    licm: bool,
+    gvn: bool,
+    dce: bool,
+    inliner: bool,
+    pipelining: bool,
+    multi_buffering: bool
+}
+
+# "O0".."O3" -> 0..3, else -1.
+function level_of(s: string) -> i32 {
+    if ft_eq(s, "O0") { return 0 }
+    if ft_eq(s, "O1") { return 1 }
+    if ft_eq(s, "O2") { return 2 }
+    if ft_eq(s, "O3") { return 3 }
+    return -1
+}
+
+# Append `pass` to a comma-separated list.
+function add(list: string, pass: string) -> string {
+    if ft_len(list) == 0 {
+        return pass
+    }
+    return list + "," + pass
+}
+
+function build_pipeline(f: PipeFlags) -> string {
+    let o1: bool = f.level >= 1
+    let o2: bool = f.level >= 2
+    let o3: bool = f.level == 3
+    let mut prefix: string = ""
+    let mut fn_passes: string = ""
+    let mut suffix: string = ""
+    if o1 {
+        fn_passes = add(fn_passes, "canonicalize")
+        if f.gvn {
+            fn_passes = add(fn_passes, "cse")
+        }
+        prefix = add(prefix, "one-shot-bufferize{bufferize-function-boundaries=1}")
+    }
+    if o2 {
+        if f.inliner { prefix = add(prefix, "inline") }
+        if f.sccp { fn_passes = add(fn_passes, "sccp") }
+        if f.mem2reg { fn_passes = add(fn_passes, "mem2reg") }
+        if f.licm { fn_passes = add(fn_passes, "loop-invariant-code-motion") }
+        if f.loop_fusion {
+            fn_passes = add(fn_passes, "affine-loop-fusion")
+            fn_passes = add(fn_passes, "linalg-fuse-elementwise-ops")
+        }
+        if f.multi_buffering { fn_passes = add(fn_passes, "test-multi-buffering{multiplier=2}") }
+        if f.pipelining { fn_passes = add(fn_passes, "test-scf-pipelining") }
+    }
+    if o3 and f.vectorization {
+        fn_passes = add(fn_passes, "affine-super-vectorize")
+    }
+    if f.dce and o1 {
+        suffix = add(suffix, "symbol-dce")
+        suffix = add(suffix, "canonicalize")
+    }
+    let mut parts: string = prefix
+    if ft_len(fn_passes) > 0 {
+        parts = add(parts, "func.func(" + fn_passes + ")")
+    }
+    if ft_len(suffix) > 0 {
+        parts = add(parts, suffix)
+    }
+    return "builtin.module(" + parts + ")"
+}
+
+function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
+    let mut f: PipeFlags = PipeFlags {
+        level: 2, vectorization: true, loop_fusion: false, mem2reg: true,
+        sccp: true, licm: true, gvn: true, dce: true, inliner: true,
+        pipelining: false, multi_buffering: false
+    }
+    let mut i: i32 = 1
+    while i < argc {
+        let a: string = argv[i] as string
+        let mut lv: string = ""
+        if ft_eq(a, "--opt-level") {
+            if i + 1 < argc {
+                lv = argv[i + 1] as string
+                i = i + 1
+            }
+        } elif ft_starts(a, "--opt-level=") {
+            lv = ft_from(a, 12)
+        } elif ft_eq(a, "--no-vectorization") {
+            f.vectorization = false
+        } elif ft_eq(a, "--loop-fusion") {
+            f.loop_fusion = true
+        } elif ft_eq(a, "--no-mem2reg") {
+            f.mem2reg = false
+        } elif ft_eq(a, "--no-sccp") {
+            f.sccp = false
+        } elif ft_eq(a, "--no-licm") {
+            f.licm = false
+        } elif ft_eq(a, "--no-cse") {
+            f.gvn = false
+        } elif ft_eq(a, "--no-dce") {
+            f.dce = false
+        } elif ft_eq(a, "--no-inline") {
+            f.inliner = false
+        } elif ft_eq(a, "--enable-loop-pipelining") {
+            f.pipelining = true
+        } elif ft_eq(a, "--enable-multi-buffering") {
+            f.multi_buffering = true
+        }
+        if ft_len(lv) > 0 {
+            let n: i32 = level_of(lv)
+            if n < 0 {
+                ft_errln("mlir_pipeline: --opt-level: invalid choice: '" + lv + "' (choose from 'O0', 'O1', 'O2', 'O3')")
+                return 2
+            }
+            f.level = n
+        }
+        i = i + 1
+    }
+    ft_outln(build_pipeline(f))
+    return 0
+}

@@ -1,10 +1,10 @@
 # MLIR Auto-tuning Report (Issue #668)
 
 ## Overview
-This report documents the initial integration of an MLIR transform dialect auto-tuner in the Python host (`src/flow/mlir_optimizer.py`). The auto-tuner attempts to find the best parameter (e.g., tile size) for a given kernel by generating multiple instances of the kernel's optimization pipeline, lowering them to LLVM IR, executing them via a test harness, and measuring actual runtime performance.
+This report documents the initial integration of an MLIR transform dialect auto-tuner , first in the Python host (`src/flow/mlir_optimizer.py`, now retired) and now in `benchmarks/micro/transform_tuning_benchmark.sh`. The auto-tuner attempts to find the best parameter (e.g., tile size) for a given kernel by generating multiple instances of the kernel's optimization pipeline, lowering them to LLVM IR, executing them via a test harness, and measuring actual runtime performance.
 
 ## Tuning Harness & Benchmark
-A new microbenchmark was added at `benchmarks/micro/transform_tuning_benchmark.py`. This script sets up a `linalg.matmul` kernel and evaluates several tile sizes using the new `autotune_transform` method on `MLIROptimizer`. 
+A new microbenchmark was added at `benchmarks/micro/transform_tuning_benchmark.sh`. This script sets up a `linalg.matmul` kernel and evaluates several tile sizes through mlir-opt's transform interpreter. 
 
 If the environment is fully equipped with the required toolchain (`mlir-opt`, `mlir-translate`, and `clang`), the auto-tuner drives the compilation and runs a small C-harness to measure the raw execution time of each tiled kernel.
 

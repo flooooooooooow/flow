@@ -122,7 +122,7 @@ cd flow
 ./flow run examples/basics/hello_world.flow
 ```
 
-The production compiler path requires a conforming C11 toolchain. Python 3.9+ is retained for the reference/bootstrap compiler and development tooling. The canonical 1.0 execution host is the C toolchain.
+The compiler needs a conforming C11 toolchain and nothing else: flowc builds from checked-in C. The MLIR backend also needs `mlir-opt` and `mlir-translate` (LLVM). The canonical 1.0 execution host is the C toolchain.
 
 Optional: `./flow install` puts `flow` on your PATH (`~/.local/bin`).
 
@@ -292,7 +292,6 @@ Site: [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/)
 | Path | Contents |
 |------|----------|
 | [`flow`](flow) | CLI entry point |
-| [`src/flow/`](src/flow/) | Python tooling: MLIR generator fallback, `flow check`, wheels, Metal and WGSL generators |
 | [`compiler/`](compiler/) | `flowc`, the self-hosted compiler |
 | [`lib/stdlib/`](lib/stdlib/) | Standard library |
 | [`runtime/`](runtime/) | Native runtime (graphics, audio, recording) |
@@ -317,9 +316,11 @@ needs no Python to build a working compiler.
 The Python C backend is retired. On the repository corpus flowc matches it on
 1037 of 1053 programs with `main()` and builds 6 that it could not
 ([report](compiler/corpus_parity/report.txt)). `FLOW_HOST=python` now stops
-with an error. Python remains for the MLIR backend (its generator fallback and
-the JIT) and for a few scripts. `flow python` still calls setuptools to build
-the wheel. See
+with an error. The MLIR backend is Flow too: `compiler/src/mlirgen.flow`
+writes the MLIR text and shell scripts drive mlir-opt, mlir-translate and
+clang, so `flow mlir`, `mlir-run` and `jit` run without Python. The Python
+compiler package `src/flow` is deleted. `flow python` still calls setuptools
+to build the wheel. See
 [docs/project/self-hosting.md](docs/project/self-hosting.md) and
 [compiler/README.md](compiler/README.md).
 
@@ -343,10 +344,10 @@ the wheel. See
 
 ```bash
 # Fuzz the compiler
-python3 tests/fuzz/run_fuzz.py --seconds 30
+tests/fuzz/run.sh --seconds 30
 
 # Regenerate examples compile-status table
-python3 scripts/verify_examples.py
+scripts/verify_examples.sh
 ```
 
 ### Editor support

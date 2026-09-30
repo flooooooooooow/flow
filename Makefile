@@ -4,7 +4,8 @@
 CC = clang
 CXX = clang++
 LLVM_PATH = /opt/homebrew/opt/llvm/bin
-FLOWC = PYTHONPATH=./src python3 -m flow.transpiler
+# The Flow MLIR emitter (flowc, FLOWC_EMIT=mlir): IN.flow OUT.mlir
+FLOWC = ./compiler/scripts/flow_to_mlir.sh --lenient
 MLIR_OPT = $(LLVM_PATH)/mlir-opt
 MLIR_TRANSLATE = $(LLVM_PATH)/mlir-translate
 LLC = $(LLVM_PATH)/llc
@@ -30,7 +31,7 @@ run: compile
 compile:
 	@echo "Compiling $(PROGRAM)..."
 	@mkdir -p build
-	@$(FLOWC) $(PROGRAM) -o build/$(basename $(PROGRAM)).mlir
+	@$(FLOWC) $(PROGRAM) build/$(basename $(PROGRAM)).mlir
 	@echo "✅ FLOW → MLIR: build/$(basename $(PROGRAM)).mlir"
 	@$(MLIR_OPT) build/$(basename $(PROGRAM)).mlir --convert-func-to-llvm --convert-arith-to-llvm --convert-cf-to-llvm -o build/$(basename $(PROGRAM)).llvm.mlir
 	@echo "✅ MLIR → LLVM MLIR: build/$(basename $(PROGRAM)).llvm.mlir"
@@ -44,7 +45,7 @@ compile:
 
 # Quick compile (just to MLIR)
 mlir:
-	@$(FLOWC) $(PROGRAM) -o build/$(basename $(PROGRAM)).mlir
+	@$(FLOWC) $(PROGRAM) build/$(basename $(PROGRAM)).mlir
 	@echo "✅ Generated: build/$(basename $(PROGRAM)).mlir"
 
 # Test with examples
@@ -86,7 +87,7 @@ repl:
 		if [ "$$line" = "exit" ]; then break; fi; \
 		echo "$$line" > temp.flow; \
 		echo "function main() -> i32 { $$line return 0 }" >> temp.flow; \
-		$(FLOWC) temp.flow 2>/dev/null && echo "✅ Valid FLOW syntax" || echo "❌ Invalid syntax"; \
+		$(FLOWC) temp.flow /dev/null 2>/dev/null && echo "✅ Valid FLOW syntax" || echo "❌ Invalid syntax"; \
 		rm -f temp.flow; \
 	done
 
@@ -95,8 +96,6 @@ install:
 	@echo "Installing FLOW dependencies..."
 	@brew install llvm
 	@echo "✅ LLVM installed"
-	@pip3 install --user dataclasses 2>/dev/null || true
-	@echo "✅ Python dependencies ready"
 
 # Clean build files
 clean:

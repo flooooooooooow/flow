@@ -34,7 +34,7 @@ import .sem_check { flowc_semcheck_single }
 import .resolve {
     flowc_resolve_sibling_path, flowc_bundle_emit, flowc_bundle_typecheck, flowc_bundle_typecheck_fatal,
     flowc_resolve_dirname, flowc_expand_all_in_place, flowc_expand_stages_in_place,
-    flowc_semcheck_imports
+    flowc_semcheck_imports, flowc_expand_for_mlir_in_place
 }
 
 extern {
@@ -286,10 +286,11 @@ function flowc_emit_mode() -> i32 {
 
     # 4 MiB: the self-hosted compiler bundle passed 1 MiB of C once the
     # dynamics, flow-block, shader, package, effects and proof modules joined it.
-    # MLIR text runs larger: Python writes a `[v; N]` literal out N times.
+    # MLIR text runs larger: Python writes a `[v; N]` literal out N times
+    # (the evoleco grids reach 104 MB).
     let mut out_cap: i32 = 4194304
     if flowc_want_mlir() == 1 {
-        out_cap = 33554432
+        out_cap = 268435456
     }
     let out: ptr<u8> = malloc(out_cap as i64)
     if out == null {
@@ -392,7 +393,11 @@ function flowc_emit_mode() -> i32 {
         src[nsrc] = 0
 
         # DSLs expand before parse, as the Python host does.
-        nsrc = flowc_expand_all_in_place(src, nsrc, src_cap)
+        if want_mlir == 1 {
+            nsrc = flowc_expand_for_mlir_in_place(src, nsrc, src_cap)
+        } else {
+            nsrc = flowc_expand_all_in_place(src, nsrc, src_cap)
+        }
         if nsrc < 0 {
             free(src)
             free(out)
@@ -428,7 +433,10 @@ function flowc_emit_mode() -> i32 {
                 sem[1] = 0
                 flowc_semcheck_single(p.arena, root, src, getenv("FLOWC_IN"), &sem[0] as ptr<i32>)
             }
-            flowc_fuse_pipelines(&p.arena, src)
+            # The Python MLIR generator does not fuse pipeline stages.
+            if want_mlir == 0 {
+                flowc_fuse_pipelines(&p.arena, src)
+            }
             let sfatal: array<i32, 1> = [0]
             let tc_errs: i32 = flowc_typecheck_fatal_sem(p.arena, root, src, getenv("FLOWC_IN"), &sfatal[0] as ptr<i32>, 1) + sem[0]
             sfatal[0] = sfatal[0] + sem[1]

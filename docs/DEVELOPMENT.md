@@ -14,20 +14,25 @@ FLOW Source → Parser → AST → C Backend → C Code → clang → Executable
 
 ### Core Components
 
-#### Parser (`src/flow/parser.py`)
-- **Tokenizer**: Regex-based tokenization with named groups
-- **Parser**: Recursive descent parser for all language constructs
-- **AST Nodes**: Dataclasses for syntax tree representation
+The compiler is flowc, written in Flow under `compiler/src/` and built from
+the checked-in C in `compiler/bootstrap/`. See
+[compiler/README.md](../compiler/README.md).
 
-#### C Backend (`src/flow/c_generator.py`)
-- **Type System**: Maps FLOW types to C types
-- **Struct Support**: Generates C structs with proper field ordering
-- **Expression Generation**: Handles all expression types including field access
+#### Parser (`compiler/src/lexer.flow`, `parser.flow`)
+- **Lexer**: streaming tokenizer
+- **Parser**: recursive descent into an AST arena (`ast.flow`); nesting
+  deeper than `FLOWC_PARSE_MAX_DEPTH` is a parse error
 
-#### MLIR Backend (`src/flow/mlir_generator.py`)
-- **Dialect Generation**: Emits MLIR func, arith, and cf dialects
-- **Type Mapping**: Converts FLOW types to MLIR types
-- **SSA Form**: Generates proper MLIR SSA values
+#### C Backend (`compiler/src/cgen.flow`)
+- **Type System**: maps Flow types to C types
+- **Checks**: `typecheck.flow` runs first; `--strict` makes every type error fatal
+
+#### MLIR Backend (`compiler/src/mlirgen.flow`)
+- **Text emission**: `FLOWC_EMIT=mlir` writes func, arith, scf, cf, llvm,
+  memref, vector and gpu dialect text
+- **Lowering**: `compiler/scripts/mlir_lower.sh`, `mlir_optimize.sh` and
+  `mlir_spirv.sh` drive mlir-opt and mlir-translate
+- Design and parity record: [MLIR in Flow](design/mlir-in-flow.md)
 
 #### WebAssembly Target (`flow wasm32`, `scripts/tools/llvm_target`)
 - **Freestanding wasm32**: Lowers MLIR to LLVM IR and links it with
@@ -152,12 +157,11 @@ Verify program execution:
 
 ### Source Layout
 ```
-src/flow/
-├── __init__.py          # Package initialization
-├── transpiler.py        # Main CLI interface
-├── parser.py            # Tokenizer and parser
-├── c_generator.py       # C code generation
-└── mlir_generator.py    # MLIR generation
+compiler/
+├── src/                 # flowc, in Flow (lexer, parser, typecheck, cgen, mlirgen, ...)
+├── bootstrap/           # flowc_stage_a.c, the checked-in C that builds flowc
+├── scripts/             # build, parity and MLIR lowering scripts
+└── fixtures/            # compiler fixtures and parity goldens
 ```
 
 ### Build Artifacts
@@ -252,18 +256,15 @@ middle-end specialization, C ABI contracts, backend parity, executable pins.
 
 | Layer | Where | How to run |
 |-------|-------|------------|
-| Sema matrix | `tests/unit/test_type_checker.py` | `pytest` |
-| Monomorphize | `tests/unit/test_monomorphize.py` | `pytest` |
-| C ABI / lowering | `tests/unit/test_c_generator_abi.py` | `pytest` |
-| C ↔ MLIR parity | `tests/unit/test_backend_parity.py` | `pytest` (MLIR tools for parity half) |
-| Nesting torture | `tests/unit/test_torture_nesting.py` | `pytest` |
-| Pipeline smoke | `tests/unit/test_compiler_pipeline.py` | `pytest` |
+| Sema rejections and C lowering | `tests/cgen/*.flow` + `.expect` | `tests/cgen/run.sh` |
+| Language programs | `tests/lang/*.flow` | `./flow test-lang` |
+| Stable conformance | `tests/conformance/` | `tests/conformance/run.sh` |
+| MLIR text and runs | `compiler/fixtures/mlir/` | `compiler/scripts/parity_mlir.sh` |
+| MLIR commands | `tests/mlir_commands/` | `tests/mlir_commands/run.sh` |
 | Runtime exit-code | `tests/runtime/test_*_ops.flow` etc. | `./flow test-runtime` |
 | LSP JSON-RPC | `tests/tools/lsp/sessions/*.lsp` | `tests/tools/lsp/run.sh` (native server, no Python) |
-| Fuzz | `tests/fuzz/` | `python3 tests/fuzz/run_fuzz.py` |
+| Fuzz | `tests/fuzz/` | `tests/fuzz/run.sh` |
 | Tier-2 transpile | git-tracked `tests/**/*.flow` | `./flow test --tier2` |
-
-Shared helpers: `tests/unit/compiler_helpers.py`.
 
 Pytest only collects **git-tracked** files under `tests/` unless
 `FLOW_PYTEST_ALL=1`. `git add` new modules so CI sees them.
@@ -305,12 +306,13 @@ corpus keeps compiling while unit tests pin strict behavior.
   propagates SSA updates for parent locals (shallow scope copy was dropping
   loop-carried values after nested `while` replaced symbol entries).
 - Parity suite covers nested while / array mutate; pins in
-  `tests/unit/test_mlir_while_cf.py`. Clang link failures in `test-runtime`
+  `compiler/fixtures/mlir/`. Clang link failures in `test-runtime`
   print a short error snippet without `--verbose`.
 
 ### Phase 5 notes
 
-- `src/flow/mlir_canonicalize.py` runs two AST rewrites ahead of MLIR
+- The MLIR emitter (`compiler/src/mlirgen.flow`, once
+  `src/flow/mlir_canonicalize.py`) runs two AST rewrites ahead of MLIR
   generation. Both came out of compiling Doom through the MLIR backend.
 - Counted-loop rotation (#473): `while true { P; if c == 0 { break }; S }`
   becomes `P; while c != 0 { S; P }`. The exit test moves to the loop latch, so
