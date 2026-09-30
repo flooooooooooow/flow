@@ -2237,6 +2237,33 @@ function flowc_cgen_expr_type_node(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
         }
         return AST_NONE
     }
+    # `a[i]` has the element type of an array, pointer or span base (#1009).
+    if kind == AST_INDEX {
+        let bt: i32 = flowc_cgen_expr_type_node(w, arena, src, arena.nodes[id].a)
+        if bt == AST_NONE or arena.nodes[bt].kind != AST_TYPE {
+            return AST_NONE
+        }
+        if arena.nodes[bt].a == AST_NONE {
+            return AST_NONE
+        }
+        if flowc_cgen_span_is(src, arena.nodes[bt].name_start, arena.nodes[bt].name_end, "ptr") == 1 {
+            return arena.nodes[bt].a
+        }
+        if flowc_cgen_span_is(src, arena.nodes[bt].name_start, arena.nodes[bt].name_end, "array") == 1 {
+            return arena.nodes[bt].a
+        }
+        if flowc_cgen_span_is(src, arena.nodes[bt].name_start, arena.nodes[bt].name_end, "span") == 1 {
+            return arena.nodes[bt].a
+        }
+        if arena.nodes[bt].c == AST_TYPE_FIXED_ARRAY {
+            return arena.nodes[bt].a
+        }
+        # Nameless `[T; N]` / `&[T]` also store the element in `.a`.
+        if arena.nodes[bt].name_start == 0 and arena.nodes[bt].name_end == 0 {
+            return arena.nodes[bt].a
+        }
+        return AST_NONE
+    }
     return AST_NONE
 }
 
@@ -2512,6 +2539,10 @@ function flowc_cgen_expr_prim(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         return flowc_cgen_ident_prim(w, arena, src, id)
     }
     if kind == AST_FIELD_ACCESS {
+        return flowc_cgen_prim_of_type(arena, src, flowc_cgen_expr_type_node(w, arena, src, id))
+    }
+    # `a[i]` of an f32/i32/... array or pointer: the element prim (#1009).
+    if kind == AST_INDEX {
         return flowc_cgen_prim_of_type(arena, src, flowc_cgen_expr_type_node(w, arena, src, id))
     }
     if kind == AST_UNARY {

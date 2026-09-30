@@ -1,0 +1,26 @@
+# A float (or int) array / pointer element used as a string `+` operand
+# needs number-to-string conversion (#1009).
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    let mut frequency: [f32; 4] = [1.5, 2.5, 3.5, 4.5]
+    let s: string = "f=" + frequency[0]
+    if strcmp(s, "f=1.500000") != 0 {
+        return 1
+    }
+    let p: ptr<f32> = &frequency[0]
+    let s2: string = "f=" + p[1]
+    if strcmp(s2, "f=2.500000") != 0 {
+        return 2
+    }
+    let xs: [i32; 3] = [10, 20, 30]
+    let s3: string = "n=" + xs[2]
+    if strcmp(s3, "n=30") != 0 {
+        return 3
+    }
+    return 0
+}
