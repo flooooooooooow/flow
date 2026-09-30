@@ -27304,9 +27304,11 @@ int32_t sem_parse_type(Sem* c, int32_t pt) {
   i = (i + 1);
 }
   if (t->pt_elem[pt] >= 0) {
-  t->ret[f] = sem_parse_type(c, t->pt_elem[pt]);
+  int32_t new_ret_1 = sem_parse_type(c, t->pt_elem[pt]);
+  t->ret[f] = new_ret_1;
 } else {
-  t->ret[f] = sem_ty_mk(t, TK_VOID);
+  int32_t new_ret_2 = sem_ty_mk(t, TK_VOID);
+  t->ret[f] = new_ret_2;
 }
   if (sem_s_starts(name, "fn_")) {
   int32_t e = 0;
@@ -27383,13 +27385,16 @@ int32_t sem_parse_type(Sem* c, int32_t pt) {
   int32_t k = sem_iv_get(c->se_kind, se);
   if (k == SE_ALIAS) {
   int32_t al = sem_ty_named(t, TK_TYPE_ALIAS, name);
-  t->base[al] = sem_parse_type(c, sem_iv_get(c->se_base, se));
+  int32_t new_base_3 = sem_parse_type(c, sem_iv_get(c->se_base, se));
+  t->base[al] = new_base_3;
   return al;
 }
   if (k == SE_DISTINCT) {
   int32_t di = sem_ty_named(t, TK_DISTINCT, name);
-  t->base[di] = sem_parse_type(c, sem_iv_get(c->se_base, se));
-  t->dims[di] = sem_unit_dims_of_name(c, name);
+  int32_t new_base_4 = sem_parse_type(c, sem_iv_get(c->se_base, se));
+  t->base[di] = new_base_4;
+  SemIntVec* new_dims_5 = (SemIntVec*)(sem_unit_dims_of_name(c, name));
+  t->dims[di] = new_dims_5;
   return di;
 }
   return sem_ty_struct(t, name);
@@ -27505,7 +27510,8 @@ int32_t sem_unit_result_type(Sem* c, SemIntVec* dims) {
   name = sem_format_dims(c, d);
 }
   int32_t id = sem_ty_named(c->t, TK_DISTINCT, name);
-  tys->base[id] = sem_ty_mk(c->t, TK_F64);
+  int32_t new_base_6 = sem_ty_mk(c->t, TK_F64);
+  tys->base[id] = new_base_6;
   tys->dims[id] = d;
   return id;
 }
@@ -64254,7 +64260,8 @@ void sem_collect_types(Sem* c) {
   if (k == DK_ALIAS) {
   int32_t base_pt = sem_pt_of_ast(c, sem_na(c, node));
   int32_t alias_t = sem_ty_named(c->t, TK_TYPE_ALIAS, name);
-  tys->base[alias_t] = sem_parse_type(c, base_pt);
+  int32_t new_base_1 = sem_parse_type(c, base_pt);
+  tys->base[alias_t] = new_base_1;
   int32_t s2 = sem_sym_new(c, name, alias_t, SK_TYPE);
   sem_scope_define_global(c, s2);
   int32_t se3 = sem_se_new(c, name, SE_ALIAS, i);
@@ -64349,7 +64356,8 @@ void sem_define_function(Sem* c, const char* name, int32_t fi) {
   sem_ty_add_param(c->t, f, sem_parse_type(c, sem_fi_param_type(c, fi, i)));
   i = (i + 1);
 }
-  tys->ret[f] = sem_parse_type(c, sem_iv_get(c->fi_ret, fi));
+  int32_t new_ret_2 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi));
+  tys->ret[f] = new_ret_2;
   i = 0;
   while (i < sem_fi_neffects(c, fi)) {
   sem_ty_add_effect(c->t, f, sem_fi_effect(c, fi, i));
@@ -66502,7 +66510,8 @@ int32_t sem_check_slice_expr(Sem* c, int32_t e) {
 }
   int32_t sp = sem_ty_named(c->t, TK_SPAN, __flowc_str_concat(prefix, sem_tstr(c, el)));
   tys->elem[sp] = el;
-  tys->size[sp] = sem_static_length(c, e);
+  int32_t new_size_3 = sem_static_length(c, e);
+  tys->size[sp] = new_size_3;
   return sp;
 }
 
@@ -66581,9 +66590,11 @@ int32_t sem_check_lambda(Sem* c, int32_t e) {
   c->return_sink = saved_sink;
   sem_pop_scope(c);
   if (sem_nb(c, e) != AST_NONE) {
-  tys->ret[f] = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e)));
+  int32_t new_ret_4 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e)));
+  tys->ret[f] = new_ret_4;
 } else {
-  tys->ret[f] = sem_tmk(c, TK_VOID);
+  int32_t new_ret_5 = sem_tmk(c, TK_VOID);
+  tys->ret[f] = new_ret_5;
 }
   return f;
 }
