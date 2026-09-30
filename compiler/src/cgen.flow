@@ -15,7 +15,7 @@ import .ast {
     AST_FLOAT, AST_FOR, AST_WHILE, AST_ASSIGN, AST_EXPR_STMT, AST_UNARY,
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM, AST_TYPE_ALIAS,
     AST_EXTERN_TYPE, AST_C_INCLUDE, AST_C_EMBED, AST_C_IMPORT, AST_ENUM,
-    AST_DEFER, AST_IF_EXPR, AST_IDENT_SORT_MOD, AST_FIELD, flowc_ast_reject_unsupported,
+    AST_DEFER, AST_IF_EXPR, AST_IDENT_SORT_MOD, AST_FIELD, flowc_ast_reject_unsupported_but, AST_RECORD_UPDATE,
     AST_MATCH_ARM_EXT, AST_LAYOUT, AST_PIPE_BLOCK, PIPE_BLOCK_CHOOSE, AST_IDENT_FORK_SRC, AST_SORT_BY, AST_TYPE_FIXED_ARRAY, AST_TRY, AST_VECTOR_LIT, flowc_ast_chain_len,
     flowc_ast_enum_of_const,
     AST_EFFECT, AST_CAPABILITY, AST_HANDLE, AST_TYPE_CAPABILITY,
@@ -6907,6 +6907,51 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         }
         return
     }
+    if kind == AST_STRUCT_LIT and arena.nodes[id].c != AST_NONE {
+        # Record update `Name { ..base, f: v }`, as the Python C host wrote
+        # it: `({ Name t = base; t.f = v; t; })`. An array field is copied
+        # in with memcpy, since C cannot assign an array.
+        flowc_cgen_puts(w, "({ ")
+        flowc_cgen_put_struct_lit_name(w, arena, src, id)
+        flowc_cgen_puts(w, " __flowc_sl")
+        flowc_cgen_put_i32(w, id)
+        flowc_cgen_puts(w, " = (")
+        flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].c)
+        flowc_cgen_puts(w, "); ")
+        let mut uf: i32 = arena.nodes[id].a
+        while uf != AST_NONE {
+            let uv: i32 = arena.nodes[uf].a
+            if flowc_cgen_sl_array_copy(w, arena, src, uv) == 1 {
+                # As for a struct literal: a pointer field takes the decayed
+                # array, an array field its elements.
+                flowc_cgen_puts(w, "memcpy(&")
+                flowc_cgen_emit_sl_member(w, arena, src, id, uf)
+                flowc_cgen_puts(w, ", __builtin_choose_expr(__builtin_types_compatible_p(__typeof__(")
+                flowc_cgen_emit_sl_member(w, arena, src, id, uf)
+                flowc_cgen_puts(w, "), __typeof__(&")
+                flowc_cgen_emit_sl_member(w, arena, src, id, uf)
+                flowc_cgen_puts(w, "[0])), (void*)&(__typeof__(&(")
+                flowc_cgen_emit_expr(w, arena, src, uv)
+                flowc_cgen_puts(w, ")[0])){ (")
+                flowc_cgen_emit_expr(w, arena, src, uv)
+                flowc_cgen_puts(w, ") }, (void*)(")
+                flowc_cgen_emit_expr(w, arena, src, uv)
+                flowc_cgen_puts(w, ")), sizeof(")
+                flowc_cgen_emit_sl_member(w, arena, src, id, uf)
+                flowc_cgen_puts(w, ")); ")
+            } else {
+                flowc_cgen_emit_sl_member(w, arena, src, id, uf)
+                flowc_cgen_puts(w, " = ")
+                flowc_cgen_emit_expr(w, arena, src, uv)
+                flowc_cgen_puts(w, "; ")
+            }
+            uf = arena.nodes[uf].next
+        }
+        flowc_cgen_puts(w, "__flowc_sl")
+        flowc_cgen_put_i32(w, id)
+        flowc_cgen_puts(w, "; })")
+        return
+    }
     if kind == AST_STRUCT_LIT {
         # (Name){ .f1 = e1, .f2 = e2 }
         # For generic struct literals, use mangled name: Name_type1_type2
@@ -10680,7 +10725,8 @@ export function flowc_cgen_emit_sigs(
         return 0 - 1
     }
     flowc_proof_erase(arena, root)
-    if flowc_ast_reject_unsupported(arena, src, "flowc cgen") != 0 {
+    # Record update lowers here (flowc_cgen_emit_expr); the rest refuse.
+    if flowc_ast_reject_unsupported_but(arena, src, "flowc cgen", AST_RECORD_UPDATE) != 0 {
         return 0 - 1
     }
     let mut w: CgenBuf = flowc_cgen_buf_init(out, out_cap)
