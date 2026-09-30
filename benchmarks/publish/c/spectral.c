@@ -3,13 +3,13 @@
 #endif
 #include <time.h>
 #include <stdint.h>
-#ifndef __APPLE__
-static uint64_t clock_gettime_nsec_np(int clock_id) {
+/* Monotonic clock in nanoseconds. clock_gettime(CLOCK_MONOTONIC) is POSIX
+   and works on Linux and on macOS 10.12 and later. */
+static uint64_t bench_now_ns(void) {
     struct timespec ts;
-    clock_gettime(clock_id, &ts);
-    return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000LL + (uint64_t)ts.tv_nsec;
 }
-#endif
 /* Spectral norm, from the Computer Language Benchmarks Game.
  * Same algorithm and size as spectral.flow. */
 #include <stdio.h>
@@ -58,7 +58,7 @@ int main(void) {
         u[i] = 1.0;
     }
 
-    uint64_t t0 = clock_gettime_nsec_np(CLOCK_MONOTONIC);
+    uint64_t t0 = bench_now_ns();
 
     for (int i = 0; i < 10; i++) {
         mult_AtAv(u, v, tmp, N);
@@ -72,7 +72,7 @@ int main(void) {
     }
     double result = sqrt(vBv / vv);
 
-    uint64_t t1 = clock_gettime_nsec_np(CLOCK_MONOTONIC);
+    uint64_t t1 = bench_now_ns();
     double secs = (t1 - t0) / 1e9;
 
     printf("result %.9f\n", result);
