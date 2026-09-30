@@ -151,3 +151,5 @@ btree_test.db
 # Parity goldens are source, not build output.
 !compiler/fixtures/mlir/*.mlir
 !compiler/fixtures/mlir/*.out
+!tests/mlir_commands/expected/*.mlir
+!tests/mlir_commands/expected/*.out

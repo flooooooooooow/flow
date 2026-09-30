@@ -1,0 +1,9 @@
+🔥 JIT compiling mlir_tensor_bench.flow...
+MLIR Tensor Benchmark
+=====================
+matmul 64x64 sum checkpoint
+65396.410156
+matmul 128x128 sum checkpoint
+523201.312500
+done
+✅ JIT finished with exit code: 0

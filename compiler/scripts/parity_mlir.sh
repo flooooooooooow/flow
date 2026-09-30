@@ -34,14 +34,22 @@
 # only. With --python, every accepted program that has an @gpu kernel is
 # compared in GPU mode as well.
 #
+# wasm32 mode: a fixture named wasm_*.flow is also emitted with
+# FLOWC_MLIR_SIZE_T=32 and compared with its `<name>.w32.mlir` golden
+# (Python --wasm32), text only. With --python, every accepted program that
+# declares an extern block is compared in wasm32 mode as well.
+#
 # Normalization (compiler/scripts/mlir_normalize.awk): SSA values and block
 # labels are renamed in order of first appearance and indentation is
 # dropped. Python numbers a value before emitting its operands and indents
 # unevenly; neither changes the program. Everything else must be equal byte
 # for byte, including string globals and their order.
 #
-# Goldens were recorded from 84806b0d (origin/main after #1020 and #1018;
-# the Python MLIR generator is unchanged since eec7463f).
+# flowc runs with FLOWC_LENIENT=1, as Python ran with --lenient: type errors
+# that are not fatal are warnings on both sides.
+#
+# Goldens were recorded from bb23f19f (origin/main after #1027; the Python
+# MLIR generator is unchanged since eec7463f).
 #
 # Env: FLOWC_BIN=<path> tests that binary instead of building
 # compiler/build/flowc_bootstrap from the checked-in bootstrap C.
@@ -108,6 +116,13 @@ flowc_emit_gpu() {
     local in="$1" out="$2"
     rm -f "$out"
     FLOWC_LENIENT=1 FLOWC_MLIR_GPU=1 FLOWC_EMIT=mlir FLOWC_IN="$in" FLOWC_OUT="$out" "$BIN" >"$out.log" 2>&1
+}
+
+# flowc_emit_w32 <in.flow> <out.mlir>: the wasm32 ABI (Python --wasm32).
+flowc_emit_w32() {
+    local in="$1" out="$2"
+    rm -f "$out"
+    FLOWC_LENIENT=1 FLOWC_MLIR_SIZE_T=32 FLOWC_EMIT=mlir FLOWC_IN="$in" FLOWC_OUT="$out" "$BIN" >"$out.log" 2>&1
 }
 
 # run_exe <tag> <src_dir> <out>: run <tag>.exe with no stdin, in a scratch
@@ -181,6 +196,10 @@ if [[ "$mode" == "--write-golden" ]]; then
             python_emit "$f" "$WORK/python/$key.gpu.mlir" --mlir-gpu
             awk -f "$NORM" "$WORK/python/$key.gpu.mlir" > "$base.gpu.mlir"
         fi
+        if [[ "$(basename "$f")" == wasm_* ]]; then
+            python_emit "$f" "$WORK/python/$key.w32.mlir" --wasm32
+            awk -f "$NORM" "$WORK/python/$key.w32.mlir" > "$base.w32.mlir"
+        fi
         if [[ "$have_mlir" -eq 1 ]]; then
             python_emit "$f" "$WORK/python/$key.ll" --llvm
             build_run "$WORK/python/$key" "$WORK/python/$key.ll" ll "$(dirname "$f")"
@@ -218,6 +237,7 @@ fail=0
 # 1. Fixtures vs goldens (text); gpu_* fixtures also under FLOWC_MLIR_GPU=1.
 fx_pass=0
 gpu_pass=0
+w32_pass=0
 for f in "${fixtures[@]}"; do
     base="$FIX/$(basename "$f" .flow)"
     key="$(key_of "$f")"
@@ -244,9 +264,20 @@ for f in "${fixtures[@]}"; do
             echo "FAIL $f: GPU-mode MLIR differs from $base.gpu.mlir" >&2
         fi
     fi
+    if [[ "$(basename "$f")" == wasm_* ]]; then
+        if flowc_emit_w32 "$f" "$WORK/flowc/$key.w32.mlir" \
+            && awk -f "$NORM" "$WORK/flowc/$key.w32.mlir" > "$WORK/flowc/$key.w32.norm" \
+            && cmp -s "$base.w32.mlir" "$WORK/flowc/$key.w32.norm"; then
+            w32_pass=$((w32_pass + 1))
+        else
+            fail=$((fail + 1))
+            echo "FAIL $f: wasm32-mode MLIR differs from $base.w32.mlir" >&2
+        fi
+    fi
 done
 echo "fixtures (text): pass=${fx_pass} of ${#fixtures[@]}"
 echo "fixtures (gpu text): pass=${gpu_pass}"
+echo "fixtures (wasm32 text): pass=${w32_pass}"
 
 # 2. Fixtures run (stdout + exit) vs goldens.
 if [[ "$have_mlir" -eq 1 ]]; then
@@ -307,6 +338,8 @@ if [[ "$mode" == "--python" ]]; then
     text_fail=0
     gpu_same=0
     gpu_fail=0
+    w32_same=0
+    w32_fail=0
     py_fail=0
     run_same=0
     run_fail=0
@@ -342,6 +375,19 @@ if [[ "$mode" == "--python" ]]; then
             else
                 gpu_fail=$((gpu_fail + 1))
                 echo "FAIL live $f: GPU-mode MLIR differs from python@${rev}" >&2
+            fi
+        fi
+        # A program with externs: the wasm32 ABI as well.
+        if grep -q "^extern" "$f" \
+            && python_emit "$f" "$WORK/python/$key.w32.mlir" --wasm32 \
+            && flowc_emit_w32 "$f" "$WORK/flowc/$key.w32.mlir"; then
+            awk -f "$NORM" "$WORK/flowc/$key.w32.mlir" > "$WORK/flowc/$key.w32.norm"
+            awk -f "$NORM" "$WORK/python/$key.w32.mlir" > "$WORK/python/$key.w32.norm"
+            if cmp -s "$WORK/flowc/$key.w32.norm" "$WORK/python/$key.w32.norm"; then
+                w32_same=$((w32_same + 1))
+            else
+                w32_fail=$((w32_fail + 1))
+                echo "FAIL live $f: wasm32-mode MLIR differs from python@${rev}" >&2
             fi
         fi
         [[ "$have_mlir" -eq 1 ]] || continue
@@ -380,10 +426,11 @@ if [[ "$mode" == "--python" ]]; then
     done < "$WORK/all.txt"
     echo "live python@${rev}: accepted=${accepted} text_same=${text_same} text_fail=${text_fail} python_fail=${py_fail}"
     echo "live gpu dialect: same=${gpu_same} fail=${gpu_fail}"
+    echo "live wasm32 abi: same=${w32_same} fail=${w32_fail}"
     if [[ "$have_mlir" -eq 1 ]]; then
         echo "live run: same=${run_same} fail=${run_fail} nondeterministic=${run_nondet} both_unbuildable=${run_skip}"
     fi
-    fail=$((fail + text_fail + gpu_fail + run_fail))
+    fail=$((fail + text_fail + gpu_fail + w32_fail + run_fail))
 fi
 
 if [[ "$fail" -ne 0 ]]; then

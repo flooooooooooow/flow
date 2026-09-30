@@ -15,9 +15,9 @@ cd "$ROOT"
 if [[ -n "${FLOWC_VERSION:-}" ]]; then
     VERSION="$FLOWC_VERSION"
 else
-    VERSION="$(sed -n 's/^__version__ = "\([^"]*\)"$/\1/p' src/flow/version.py)"
+    VERSION="$(head -n 1 VERSION 2>/dev/null)"
     if [[ -z "$VERSION" ]]; then
-        echo "package_flowc: could not read canonical version from src/flow/version.py" >&2
+        echo "package_flowc: could not read the canonical version from VERSION" >&2
         exit 1
     fi
 fi

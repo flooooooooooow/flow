@@ -10,8 +10,8 @@ is being ported away.
   external command (git, find, clang), use a thin bash shim that runs the
   command and leaves its output in `build/` for the Flow program to read.
   `scripts/tools/repo_stats/` and `tools/python_ratchet/` show the pattern.
-- Do not grow existing Python. A bug fix in `src/flow/` is fine when it is
-  small. A new feature belongs in the Flow compiler under `compiler/src/`.
+- Do not grow existing Python. The Python compiler (`src/flow/`) is
+  deleted; compiler features belong in `compiler/src/`.
 - New tests are `.flow` programs under `tests/lang/`. `main()` returns 0 on
   success and a nonzero check number on failure. Do not add pytest tests.
 - When porting Python, delete it in the same PR once parity is shown, then
@@ -129,14 +129,14 @@ dynamics DSL (2) and flow blocks (4). The bundle takes up to 128 modules and
 
 Denotational MLIR lane (2026-09-22): a `flow.*` dialect that keeps the
 vector-field structure of `flow` evolution blocks for the MLIR passes (#664,
-#665, #667, #671). Not merged: `src/flow/denotational_mlir.py`, the
-`denotational_blocks` kwarg of `flow_to_mlir` and the `FLOW_DENOTATIONAL=1`
-path in `transpiler.py` are not on main.
+#665, #667, #671). Not merged. The Python MLIR generator it hooked into is
+deleted, so the lane now lands as a pass in `compiler/src/mlirgen.flow`
+under the same `FLOW_DENOTATIONAL=1` switch (docs/design/mlir-in-flow.md).
 
-The Python C backend is retired (flowc is the only C compiler). After that,
-on 2026-09-29, the local Python suite (`pytest tests/ -m "not slow"`) is at
-1443 passed, 0 failed, 9 skipped, and the tracked Python is 278 files and
-67005 lines.
+The Python compiler is deleted: flowc is the only compiler for C and MLIR.
+The pytest files that remain drive `./flow` and the scripts as subprocesses
+(`pytest tests/ -m "not slow"`). Front-end crashes are `tests/fuzz/run.sh`
+and the Stable corpus is `tests/conformance/run.sh`.
 
 ### Bootstrap suite
 

@@ -13,10 +13,10 @@ class Flow < Formula
 
   def install
     # Keep the repo layout intact — the public `flow` dispatcher and its
-    # internal `flow-driver` resolve SCRIPT_DIR and expect src/, lib/, runtime/
-    # next to themselves.
-    libexec.install "flow", "flow-driver", "flow-lsp"
-    libexec.install "src", "lib", "runtime", "compiler"
+    # internal `flow-driver` resolve SCRIPT_DIR and expect VERSION, lib/,
+    # runtime/ and compiler/ next to themselves.
+    libexec.install "flow", "flow-driver", "flow-lsp", "VERSION"
+    libexec.install "lib", "runtime", "compiler"
     libexec.install "tools" if (buildpath/"tools").exist?
     libexec.install "wasm" if (buildpath/"wasm").exist?
     libexec.install "examples" if (buildpath/"examples").exist?

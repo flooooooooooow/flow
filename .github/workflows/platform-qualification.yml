@@ -67,8 +67,6 @@ jobs:
           "$RUNNER_TEMP/flow_c11_probe"
 
       - name: Strict Flow corpus
-        env:
-          PYTHONPATH: src
         run: |
           chmod +x ./flow compiler/scripts/*.sh
           ./flow test --tier2 --strict

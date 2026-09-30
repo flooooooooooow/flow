@@ -1,7 +1,7 @@
 # Check that the current release is represented in Flow's canonical changelog.
 #
 # Run through scripts/check_changelog.sh from the repository root. The
-# version comes from src/flow/version.py; every `## [x]` heading in
+# version is the first line of VERSION; every `## [x]` heading in
 # docs/project/CHANGELOG.md is a section. The heading matcher follows the
 # Python pattern `^## \[([^]]+)\](?:\s+-\s+.*)?$` under re.MULTILINE, which
 # is what the script this replaces used.
@@ -10,7 +10,7 @@ import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_read_file, 
 import .unicode { uc_decode, uc_len, uc_is_space }
 
 const CHANGELOG: string = "docs/project/CHANGELOG.md"
-const VERSION: string = "src/flow/version.py"
+const VERSION: string = "VERSION"
 
 # Byte length of the whitespace character at `at`, or 0.
 function ws_at(p: ptr<u8>, at: i32) -> i32 {
@@ -35,31 +35,21 @@ function ws_run(p: ptr<u8>, at: i32) -> i32 {
     return q
 }
 
-# re.search(r'__version__\s*=\s*["\']([^"\']+)["\']'), group 1, or null.
+# The first line of VERSION, trimmed of trailing whitespace, or null.
 function current_version(text: string) -> string {
     let p: ptr<u8> = text as ptr<u8>
     let n: i32 = ft_len(text)
-    let mut i: i32 = 0
-    while i < n {
-        if ft_at(text, i, "__version__") {
-            let mut q: i32 = ws_run(p, i + 11)
-            if p[q] == 61 {
-                q = ws_run(p, q + 1)
-                if p[q] == 34 or p[q] == 39 {
-                    let start: i32 = q + 1
-                    let mut e: i32 = start
-                    while p[e] != 0 and p[e] != 34 and p[e] != 39 {
-                        e = e + 1
-                    }
-                    if e > start and p[e] != 0 {
-                        return ft_slice(text, start, e)
-                    }
-                }
-            }
-        }
-        i = i + 1
+    let mut e: i32 = 0
+    while e < n and p[e] != 10 {
+        e = e + 1
     }
-    return null as string
+    while e > 0 and ws_at(p, e - 1) > 0 {
+        e = e - 1
+    }
+    if e == 0 {
+        return null as string
+    }
+    return ft_slice(text, 0, e)
 }
 
 # re.findall(r"^## \[([^]]+)\](?:\s+-\s+.*)?$", text, re.MULTILINE)
@@ -133,7 +123,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     }
     let version: string = current_version(vtext)
     if version as ptr<u8> == null {
-        ft_errln("could not read __version__ from src/flow/version.py")
+        ft_errln("could not read the version from VERSION")
         return 1
     }
     let ctext: string = ft_read_file(CHANGELOG)

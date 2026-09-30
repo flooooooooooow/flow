@@ -10,8 +10,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # of two projects that share a source basename (e.g. src/main.flow) cannot
 # clobber each other's executable or generated runtime C (#817).
 : "${FLOW_BUILD_ROOT:=$SCRIPT_DIR/build}"
-FLOWC_MODULE="flow.transpiler"
-export PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
 LLVM_PATH="${LLVM_PATH:-}"
 
 # Colors for output
@@ -300,9 +298,9 @@ flow_native_tool() {
     printf '%s\n' "$bin"
 }
 
-# Canonical version string (src/flow/version.py holds the single source).
+# Canonical version string (VERSION holds the single source).
 flow_canonical_version() {
-    sed -n 's/^__version__ = "\(.*\)"$/\1/p' "$SCRIPT_DIR/src/flow/version.py" 2>/dev/null
+    head -n 1 "$SCRIPT_DIR/VERSION" 2>/dev/null
 }
 
 # ---------------------------------------------------------------------------
@@ -1024,116 +1022,54 @@ compile_program() {
     compile_program_flowc "$1"
 }
 
-# MLIR CPU backend. With the default flowc host the Flow emitter
-# (compiler/src/mlirgen.flow, FLOWC_EMIT=mlir) writes the MLIR and
-# compiler/scripts/mlir_lower.sh lowers it, with no Python. A program outside
-# the emitter's slice is refused with a reason and falls back to the Python
-# MLIR generator.
+# MLIR CPU backend. compiler/scripts/flow_to_mlir.sh writes the MLIR with the
+# Flow emitter (compiler/src/mlirgen.flow, FLOWC_EMIT=mlir), lenient as the
+# Python path was, compiler/scripts/mlir_lower.sh lowers it to LLVM IR, and
+# clang links it with the Flow runtime.
 compile_program_mlir() {
     local program="$1"
     require_flow_file "$program"
     flow_host_mode >/dev/null
-    local rc=0
-    compile_program_mlir_flowc "$program" || rc=$?
-    if [ "$rc" -eq 0 ]; then
-        return 0
-    fi
-    if [ "$rc" -ne 3 ]; then
-        exit 1
-    fi
-    print_warning "flowc MLIR emitter does not cover this program yet (${FLOW_MLIR_REFUSAL:-refused}); using the Python MLIR generator"
-    compile_program_mlir_python "$program"
-}
-
-# The MLIR emitter lives in the main.flow build of flowc (the checked-in
-# bootstrap C), not in the driver.flow builds ensure_flowc may prefer.
-# FLOWC_BIN overrides; otherwise compiler/build/flowc_bootstrap is built
-# from compiler/bootstrap/flowc_stage_a.c with cc when missing or stale.
-flow_resolve_flowc_mlir() {
-    if [[ -n "${FLOWC_BIN:-}" && -x "${FLOWC_BIN}" ]]; then
-        printf '%s\n' "$FLOWC_BIN"
-        return 0
-    fi
-    local boot_c="$SCRIPT_DIR/compiler/bootstrap/flowc_stage_a.c"
-    local boot="$SCRIPT_DIR/compiler/build/flowc_bootstrap"
-    if [[ ! -x "$boot" || "$boot_c" -nt "$boot" ]]; then
-        mkdir -p "$SCRIPT_DIR/compiler/build"
-        "${CC:-cc}" -O2 -w -o "$boot.tmp.$$" "$boot_c" >/dev/null 2>&1 || return 1
-        mv -f "$boot.tmp.$$" "$boot"
-    fi
-    printf '%s\n' "$boot"
-}
-
-# Flow MLIR emitter path. Returns 3 when flowc refuses the program (the
-# reason is left in FLOW_MLIR_REFUSAL), 1 on a lowering or link failure.
-compile_program_mlir_flowc() {
-    local program="$1"
     check_mlir_deps
-    local driver
-    if ! driver="$(flow_resolve_flowc_mlir)"; then
-        FLOW_MLIR_REFUSAL="no flowc built from compiler/bootstrap"
-        return 3
-    fi
     local basename
     basename=$(basename "$program" .flow)
     local build_dir="$FLOW_BUILD_ROOT"
     mkdir -p "$build_dir"
-    print_info "Compiling $program (CPU backend=mlir, host=flowc)..."
-    # FLOWC_ROOT: where imports find packages/ and the fallback lib/stdlib.
-    if ! FLOWC_EMIT=mlir FLOWC_TYPECHECK="${FLOWC_TYPECHECK:-1}" \
-        FLOWC_ROOT="$SCRIPT_DIR" \
-        FLOWC_IN="$program" FLOWC_OUT="$build_dir/$basename.mlir" \
-        "$driver" >"$build_dir/.flowc_mlir_log" 2>&1; then
-        FLOW_MLIR_REFUSAL="$(grep -m1 'flowc' "$build_dir/.flowc_mlir_log" || true)"
-        return 3
+    print_info "Compiling $program (CPU backend=mlir)..."
+    if ! flow_emit_mlir --lenient "$program" "$build_dir/$basename.mlir"; then
+        print_error "FLOW MLIR compilation failed"
+        exit 1
     fi
-    if ! head -1 "$build_dir/$basename.mlir" | grep -q '^module'; then
-        FLOW_MLIR_REFUSAL="$driver does not know FLOWC_EMIT=mlir"
-        return 3
-    fi
-    print_success "FLOW → MLIR (flowc): $basename.mlir"
+    print_success "FLOW → MLIR: $basename.mlir"
     if ! "$SCRIPT_DIR/compiler/scripts/mlir_lower.sh" "$build_dir/$basename.mlir" \
         "$build_dir/$basename.ll"; then
         print_error "MLIR lowering failed (mlir-opt / mlir-translate)"
-        return 1
+        exit 1
     fi
     print_success "MLIR → LLVM: $basename.ll"
-    flow_collect_cflags
-    if ! clang "${FLOW_COLLECTED_CFLAGS[@]}" -O2 -fno-omit-frame-pointer \
-        "${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}" \
-        -Wno-unused-command-line-argument -Wno-override-module \
-        "$build_dir/$basename.ll" -lm -o "$build_dir/$basename"; then
-        print_error "LLVM IR link failed (flowc MLIR path)"
-        return 1
+    if ! flow_link_mlir_ll "$build_dir/$basename.ll" "$build_dir/$basename"; then
+        print_error "MLIR/LLVM compilation/linking failed"
+        exit 1
     fi
     print_success "LLVM → Executable: $basename"
     print_success "🚀 Ready to run (mlir): $build_dir/$basename"
-    return 0
 }
 
-# Python MLIR generator path: FLOW → MLIR → LLVM IR → clang + Flow runtime.
-compile_program_mlir_python() {
-    local program="$1"
-    require_flow_file "$program"
-    check_mlir_deps
-    local basename
-    basename=$(basename "$program" .flow)
-    local build_dir="$FLOW_BUILD_ROOT"
+# flow_emit_mlir [--gpu] [--wasm32] [--jit] [--lenient] IN.flow OUT.mlir: the MLIR of a
+# program (compiler/scripts/flow_to_mlir.sh; FLOWC_BIN selects flowc).
+flow_emit_mlir() {
+    "$SCRIPT_DIR/compiler/scripts/flow_to_mlir.sh" "$@"
+}
+
+# flow_link_mlir_ll IN.ll OUT: link lowered MLIR with the Flow runtime, as
+# the Python MLIR path always did (clang -O2, the concurrency runtime, the
+# lib/runtime archive, the GPU runtime where there is one).
+flow_link_mlir_ll() {
+    local ll="$1" exe="$2"
     local py_framework_dir="/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
     local py_header_dir="$py_framework_dir/Python3.framework/Headers"
     local py_cflags=()
     local py_ldflags=()
-
-    print_info "Compiling $program (CPU backend=mlir)..."
-    mkdir -p "$build_dir"
-
-    if ! python3 -m "$FLOWC_MODULE" "$program" --mlir --llvm --lenient -o "$build_dir/$basename.ll" 2>"$build_dir/.flowc_err"; then
-        print_error "FLOW MLIR/LLVM compilation failed"
-        cat "$build_dir/.flowc_err" >&2
-        exit 1
-    fi
-    print_success "FLOW → MLIR → LLVM: $basename.ll"
-
     if [ -d "$py_header_dir" ]; then
         py_cflags+=("-I$py_header_dir" "-DFLOW_PY_EMBED")
         py_ldflags+=("-F$py_framework_dir" "-framework" "Python3" "-Wl,-rpath,$py_framework_dir")
@@ -1141,24 +1077,18 @@ compile_program_mlir_python() {
     flow_gpu_link_flags
     flow_concurrency_flags
     flow_runtime_flow_sources
-
     flow_collect_cflags
     FLOW_CONC_LDFLAGS+=("${FLOW_COLLECTED_LDFLAGS[@]+"${FLOW_COLLECTED_LDFLAGS[@]}"}")
-
-    if ! clang "${FLOW_COLLECTED_CFLAGS[@]}" -O2 -fno-omit-frame-pointer \
-        "${py_cflags[@]}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" \
-        "$build_dir/$basename.ll" \
+    clang "${FLOW_COLLECTED_CFLAGS[@]}" -O2 -fno-omit-frame-pointer \
+        -Wno-override-module \
+        "${py_cflags[@]+"${py_cflags[@]}"}" "${FLOW_CONC_CFLAGS[@]}" -I"$SCRIPT_DIR/runtime" \
+        "$ll" \
         "$SCRIPT_DIR/runtime/flow_python_embed.c" \
         "${FLOW_CONC_SOURCES[@]}" \
         "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}" \
         "${FLOW_GPU_SOURCES[@]+"${FLOW_GPU_SOURCES[@]}"}" \
-        "${py_ldflags[@]}" "${FLOW_GPU_LDFLAGS[@]+"${FLOW_GPU_LDFLAGS[@]}"}" "${FLOW_CONC_LDFLAGS[@]}" \
-        -lm -o "$build_dir/$basename"; then
-        print_error "MLIR/LLVM compilation/linking failed"
-        exit 1
-    fi
-    print_success "LLVM → Executable: $basename"
-    print_success "🚀 Ready to run (mlir): $build_dir/$basename"
+        "${py_ldflags[@]+"${py_ldflags[@]}"}" "${FLOW_GPU_LDFLAGS[@]+"${FLOW_GPU_LDFLAGS[@]}"}" "${FLOW_CONC_LDFLAGS[@]}" \
+        -lm -o "$exe"
 }
 
 # Parse optional --backend=c|mlir / --sanitize= / --profile= / --show-flags
@@ -1575,9 +1505,11 @@ compile_audio_program() {
     mkdir -p "$build_dir"
     
     if [ $use_mlir -eq 1 ]; then
-        if ! python3 -m "$FLOWC_MODULE" "$program" --mlir --llvm --lenient -o "$build_dir/$basename.ll" 2>"$build_dir/.flowc_err"; then
+        check_mlir_deps
+        if ! flow_emit_mlir --lenient "$program" "$build_dir/$basename.mlir" \
+            || ! "$SCRIPT_DIR/compiler/scripts/mlir_lower.sh" "$build_dir/$basename.mlir" \
+                "$build_dir/$basename.ll"; then
             print_error "FLOW MLIR/LLVM compilation failed"
-            cat "$build_dir/.flowc_err" >&2
             exit 1
         fi
         print_success "FLOW → MLIR → LLVM: $basename.ll"
@@ -1714,74 +1646,264 @@ run_window_program() {
     print_info "Running..."
     "$exe_file"
 }
-# Generate MLIR only
+# flow mlir PROGRAM [FLAGS]: write $FLOW_BUILD_ROOT/<name>.mlir and print it.
+#
+# The Flow emitter writes the MLIR (compiler/scripts/flow_to_mlir.sh), then,
+# in the order the retired Python transpiler used: --optimize runs the
+# mlir-opt pipeline the flags select (compiler/scripts/mlir_optimize.sh,
+# --opt-report prints its statistics), --llvm lowers to LLVM IR
+# (mlir_lower.sh), --emit-spirv lowers the GPU module to SPIR-V
+# (mlir_spirv.sh; --spirv-out, default build/<name>.spv). -o also copies the
+# result there. --print-pass-pipeline prints the pipeline and stops.
 generate_mlir() {
     local program=""
-    local flags=()
-    # Accept flags before or after the program path
+    local optimize=0 report=0 print_pipeline=0 gpu=0 spirv=0 wasm32=0 llvm=0 jit=0
+    local spirv_out="" out=""
+    local opt_flags=() emit_flags=()
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --optimize) optimize=1 ;;
+            --opt-level) opt_flags+=("$1" "${2:-}"); shift ;;
+            --opt-level=*) opt_flags+=(--opt-level "${1#--opt-level=}") ;;
+            --no-vectorization|--loop-fusion|--no-loop-fusion|--no-mem2reg|--no-sccp|--no-licm|--no-cse|--no-dce|--no-inline|--no-aosoa)
+                opt_flags+=("$1") ;;
+            --opt-report) report=1 ;;
+            --print-pass-pipeline) print_pipeline=1 ;;
+            --mlir-gpu) gpu=1 ;;
+            --emit-spirv) spirv=1 ;;
+            --spirv-out) spirv_out="${2:-}"; shift ;;
+            --wasm32) wasm32=1 ;;
+            --llvm) llvm=1 ;;
+            --jit|--hot-reload) jit=1 ;;
+            -o|--output) out="${2:-}"; shift ;;
+            --mode) shift ;;
+            --lenient) emit_flags+=(--lenient) ;;
+            --mlir|--strict|--verify|--strict-effects|--module-info|--validate-imports|--mode=*) ;;
+            --debug-info) print_warning "--debug-info: the Flow MLIR emitter writes no DWARF debug info" ;;
+            --gpu|--gpu-backend|--gpu-backend=*)
+                print_error "flow mlir: $1 (the Python CUDA/OpenCL integration) is retired; use --mlir-gpu, flow gpu, or --gpu on flow run"
+                exit 2 ;;
             -*)
-                flags+=("$1")
-                # Flags that take a value
-                case "$1" in
-                    --spirv-out|--output|-o|--opt-level)
-                        shift
-                        if [ $# -gt 0 ]; then
-                            flags+=("$1")
-                        fi
-                        ;;
-                esac
-                ;;
+                print_error "flow mlir: unknown option $1"
+                exit 2 ;;
             *)
                 if [ -z "$program" ]; then
                     program="$1"
                 else
-                    flags+=("$1")
+                    print_error "flow mlir: unexpected argument $1"
+                    exit 2
                 fi
                 ;;
         esac
         shift
     done
-    local basename
-    basename=$(basename "$program" .flow)
-    local build_dir="$FLOW_BUILD_ROOT"
-    
+
+    if [ "$print_pipeline" -eq 1 ]; then
+        "$SCRIPT_DIR/compiler/scripts/mlir_optimize.sh" --print-pass-pipeline \
+            ${opt_flags[@]+"${opt_flags[@]}"}
+        return $?
+    fi
     if [ -z "$program" ] || [ ! -f "$program" ]; then
         print_error "Program not found: $program"
         exit 1
     fi
-    
+    if [ "$jit" -eq 1 ]; then
+        run_flow_jit "$program"
+        return $?
+    fi
+    local basename
+    basename=$(basename "$program" .flow)
+    local build_dir="$FLOW_BUILD_ROOT"
+    local mlir_file="$build_dir/$basename.mlir"
     mkdir -p "$build_dir"
 
     check_mlir_deps
 
-    local mlir_cmd=(python3 -m "$FLOWC_MODULE" "$program" --mlir)
-    if [ ${#flags[@]} -gt 0 ]; then
-        mlir_cmd+=("${flags[@]}")
-    fi
-    mlir_cmd+=(-o "$build_dir/$basename.mlir")
-    if "${mlir_cmd[@]}"; then
-        print_success "Generated MLIR: $build_dir/$basename.mlir"
-        echo "----------------------------------------"
-        cat "$build_dir/$basename.mlir"
-        echo "----------------------------------------"
-    else
+    [ "$gpu" -eq 1 ] && emit_flags+=(--gpu)
+    [ "$wasm32" -eq 1 ] && emit_flags+=(--wasm32)
+    if ! flow_emit_mlir ${emit_flags[@]+"${emit_flags[@]}"} "$program" "$mlir_file"; then
         print_error "MLIR generation failed"
         exit 1
     fi
+    if [ "$optimize" -eq 1 ]; then
+        local report_flag=()
+        [ "$report" -eq 1 ] && report_flag=(--opt-report)
+        if ! "$SCRIPT_DIR/compiler/scripts/mlir_optimize.sh" ${opt_flags[@]+"${opt_flags[@]}"} \
+            ${report_flag[@]+"${report_flag[@]}"} "$mlir_file" "$mlir_file"; then
+            echo "MLIR optimization failed" >&2
+            print_error "MLIR generation failed"
+            exit 1
+        fi
+    fi
+    if [ "$llvm" -eq 1 ]; then
+        if ! "$SCRIPT_DIR/compiler/scripts/mlir_lower.sh" "$mlir_file" "$mlir_file.ll"; then
+            echo "LLVM IR generation failed" >&2
+            print_error "MLIR generation failed"
+            exit 1
+        fi
+        mv -f "$mlir_file.ll" "$mlir_file"
+    fi
+    if [ "$spirv" -eq 1 ]; then
+        [ -n "$spirv_out" ] || spirv_out="build/$basename.spv"
+        local spirv_err
+        if ! spirv_err="$("$SCRIPT_DIR/compiler/scripts/mlir_spirv.sh" spirv "$mlir_file" "$spirv_out" 2>&1)"; then
+            echo "SPIR-V generation failed: $spirv_err" >&2
+            print_error "MLIR generation failed"
+            exit 1
+        fi
+        echo "Generated SPIR-V: $spirv_out" >&2
+    fi
+    if [ -n "$out" ]; then
+        mkdir -p "$(dirname "$out")"
+        cp "$mlir_file" "$out"
+    fi
+    print_success "Generated MLIR: $mlir_file"
+    echo "----------------------------------------"
+    cat "$mlir_file"
+    echo "----------------------------------------"
 }
 
-# JIT compile and run via MLIR (links Flow runtime when FLOW_JIT_LINK_RUNTIME=1).
+# flow jit PROGRAM: emit, optimize (O2), lower, link a native executable and
+# run it, as the retired ctypes JIT (src/flow/jit_runner.py, mlir_jit.py)
+# did. The build is ASAN on macOS (stable aggregate-return codegen on arm64);
+# FLOW_JIT_ASAN=0 builds -O2 first and retries under ASAN when the program
+# crashes; elsewhere -O2 first, then ASAN. FLOW_JIT_LINK_RUNTIME=1 (the
+# default here) links the Flow runtime, as `flow mlir-run` does.
+# FLOW_JIT_TIMEOUT (default 300 s) bounds each run.
 run_flow_jit() {
     local program="$1"
-    # Link Flow runtime into JIT executables by default (matches mlir-run / --backend=mlir).
-    FLOW_JIT_LINK_RUNTIME="${FLOW_JIT_LINK_RUNTIME:-1}" \
-    python3 -c "
-from flow.jit_runner import FlowJITRunner
-import sys
-sys.exit(0 if FlowJITRunner(sys.argv[1]).run_once() else 1)
-" "$program"
+    local name
+    name="$(basename "$program")"
+    # FLOW_JIT_RAW=1: the retired `transpiler --jit` contract (flow run
+    # --backend jit): no progress lines, and the exit status is the program's.
+    [ "${FLOW_JIT_RAW:-0}" = 1 ] || echo "🔥 JIT compiling $name..."
+    local work
+    work="$(mktemp -d "${TMPDIR:-/tmp}/flow_jit_XXXXXX")" || return 1
+    local rc
+    flow_jit_once "$program" "$work"
+    rc=$?
+    rm -rf "$work"
+    return $rc
+}
+
+# 1 when a JIT exit status means the native code died (signal, abort, or the
+# timeout's -1), as MLIRJIT.is_crash_exit.
+flow_jit_is_crash() {
+    local code="$1"
+    [ "$code" -lt 0 ] && return 0
+    case "$code" in
+        134|138|139) return 0 ;;
+    esac
+    return 1
+}
+
+flow_jit_once() {
+    local program="$1" work="$2"
+    if ! flow_emit_mlir --jit "$program" "$work/jit_module.mlir" 2>"$work/emit.err"; then
+        cat "$work/emit.err" >&2
+        echo "❌ JIT error: MLIR generation failed for $(basename "$program")"
+        return 1
+    fi
+    if ! "$SCRIPT_DIR/compiler/scripts/mlir_optimize.sh" --opt-level O2 \
+        "$work/jit_module.mlir" "$work/jit_module.mlir"; then
+        echo "MLIR optimization failed" >&2
+        return 1
+    fi
+    local ok=1
+    if ! "$SCRIPT_DIR/compiler/scripts/mlir_lower.sh" "$work/jit_module.mlir" \
+        "$work/jit_module.ll" 2>"$work/lower.err"; then
+        echo "MLIR lowering (mlir-opt) failed: $(cat "$work/lower.err")"
+        ok=0
+    fi
+
+    local asan_env="${FLOW_JIT_ASAN:-}" attempts=()
+    local asan_off=0
+    case "$(printf '%s' "$asan_env" | tr '[:upper:]' '[:lower:]')" in
+        0|false|no|off) asan_off=1 ;;
+    esac
+    if [ -n "$asan_env" ] && [ "$asan_off" -eq 1 ]; then
+        attempts=(fast asan)
+    elif [ -n "$asan_env" ] || [ "$(uname -s)" = Darwin ]; then
+        attempts=(asan)
+    else
+        attempts=(fast asan)
+    fi
+
+    local link_rt=0
+    case "$(printf '%s' "${FLOW_JIT_LINK_RUNTIME:-1}" | tr '[:upper:]' '[:lower:]')" in
+        0|false|no|off|"") link_rt=0 ;;
+        *) link_rt=1 ;;
+    esac
+    local rt_args=()
+    if [ "$link_rt" -eq 1 ]; then
+        flow_concurrency_flags
+        flow_runtime_flow_sources
+        flow_gpu_link_flags
+        rt_args=("${FLOW_CONC_CFLAGS[@]}" "${FLOW_CONC_SOURCES[@]}"
+            "${FLOW_RUNTIME_FLOW_SOURCES[@]+"${FLOW_RUNTIME_FLOW_SOURCES[@]}"}"
+            "${FLOW_GPU_SOURCES[@]+"${FLOW_GPU_SOURCES[@]}"}"
+            "${FLOW_GPU_LDFLAGS[@]+"${FLOW_GPU_LDFLAGS[@]}"}" "${FLOW_CONC_LDFLAGS[@]}")
+    fi
+
+    local timeout_s="${FLOW_JIT_TIMEOUT:-300}"
+    local result="" idx=0 n=${#attempts[@]} kind
+    if [ "$ok" -eq 1 ]; then
+        for kind in "${attempts[@]}"; do
+            idx=$((idx + 1))
+            local cflags=(-O2)
+            [ "$kind" = asan ] && cflags=(-fsanitize=address -g -O2 -fno-omit-frame-pointer)
+            local exe="$work/jit_module_$idx"
+            if ! clang "${cflags[@]}" -Wno-override-module "$work/jit_module.ll" \
+                ${rt_args[@]+"${rt_args[@]}"} -o "$exe" -lm </dev/null 2>"$work/cc.err"; then
+                echo "LLVM executable build failed: $(cat "$work/cc.err")"
+                continue
+            fi
+            local code=0
+            if command -v timeout >/dev/null 2>&1; then
+                timeout "$timeout_s" "$exe" </dev/null || code=$?
+            else
+                "$exe" </dev/null || code=$?
+            fi
+            if [ "$code" -eq 124 ] && command -v timeout >/dev/null 2>&1; then
+                echo "❌ JIT execution timed out after ${timeout_s}s"
+                code=-1
+            elif [ "$code" -gt 128 ]; then
+                # A signal: report it negative, as subprocess did (-11 for SIGSEGV).
+                code=$((128 - code))
+            fi
+            result="$code"
+            if ! flow_jit_is_crash "$code"; then
+                break
+            fi
+            if [ "$idx" -lt "$n" ]; then
+                echo "⚠️  JIT native crash (exit $code); retrying with ASAN executable..."
+                continue
+            fi
+            echo "❌ JIT native crash (exit $code) after all attempts"
+        done
+    fi
+
+    if [ -z "$result" ]; then
+        echo "❌ JIT execution failed (see errors above)"
+        echo "   Requires: mlir-opt, mlir-translate, clang on PATH"
+        echo "   macOS: brew install llvm && export PATH=\"\$(brew --prefix llvm)/bin:\$PATH\""
+        return 1
+    fi
+    if flow_jit_is_crash "$result"; then
+        echo "❌ JIT crashed (exit $result): a fault in the native code"
+        echo "   Usually arm64 aggregate-return stack aliasing in MLIR codegen."
+        echo "   ASAN retry should have run automatically; unset FLOW_JIT_ASAN=0 to prefer ASAN."
+        return 1
+    fi
+    if [ "${FLOW_JIT_RAW:-0}" = 1 ]; then
+        return "$result"
+    fi
+    if [ "$result" -ne 0 ]; then
+        echo "❌ JIT finished with exit code: $result"
+        return 1
+    fi
+    echo "✅ JIT finished with exit code: $result"
+    return 0
 }
 
 mlir_lower_and_link() {
@@ -2299,9 +2421,14 @@ run_ui_layout_window() {
 }
 
 # Run the underlying transpiler directly (advanced flags)
+# flow transpile: the Python transpiler's command line is retired. MLIR
+# comes from `flow mlir` (the same flags), C from `flow compile` or
+# compiler/scripts/flowc_emit.sh.
 run_transpiler() {
-    check_deps
-    python3 -m "$FLOWC_MODULE" "$@"
+    print_error "flow transpile (python -m flow.transpiler) is retired."
+    echo "  MLIR:     ./flow mlir <file.flow> [--optimize] [--llvm] [--mlir-gpu] [--emit-spirv] [-o OUT]" >&2
+    echo "  C:        ./flow compile <file.flow>, or compiler/scripts/flowc_emit.sh <in.flow> <out.c>" >&2
+    return 2
 }
 
 # Run tests with tiered validation
@@ -2624,7 +2751,7 @@ run_python_tests() {
     if command -v pytest &> /dev/null; then
         print_info "Running Python unit tests..."
         cd "$SCRIPT_DIR"
-        PYTHONPATH="$SCRIPT_DIR/src" pytest tests/unit/ tests/integration/ -v --tb=short
+        pytest tests/unit/ tests/integration/ -v --tb=short
         local status=$?
         if [ $status -eq 0 ]; then
             print_success "✅ All Python tests passed!"
@@ -2678,7 +2805,7 @@ run_matmul_tests() {
     run_program "$program"
 
     print_info "Generating MLIR..."
-    python3 -m "$FLOWC_MODULE" "$mlir_program" --mlir -o "$mlir_file" >/dev/null 2>&1 || {
+    flow_emit_mlir "$mlir_program" "$mlir_file" >/dev/null 2>&1 || {
         print_warning "MLIR generation failed"
     }
 
@@ -2730,19 +2857,33 @@ run_gpu_tests() {
         run_runtime_tests "${runtime_args[@]}" "$SCRIPT_DIR/tests/runtime/gpu_features.flow"
     fi
 
-    if command -v pytest &> /dev/null; then
-        print_info "Running GPU codegen integration test..."
-        PYTHONPATH="$SCRIPT_DIR/src" pytest tests/integration/test_gpu_codegen.py -q --tb=short
-        local status=$?
-        if [ $status -eq 0 ]; then
-            print_success "✅ GPU codegen test passed!"
-        else
-            print_error "❌ GPU codegen test failed"
-            exit 1
+    print_info "Running GPU codegen check (flow gpu, Metal)..."
+    local gpu_status=0 gpu_prog gpu_want gpu_kernel
+    for gpu_prog in "examples/gpu/vector_add_gpu.flow:vector_add vector_scale vector_saxpy" \
+        "examples/gpu/flow_gpu_vector_add.flow:vec_add_gpu" \
+        "lib/stdlib/gpu_gradients.flow:gpu_mse_grad gpu_relu_grad gpu_sigmoid_grad"; do
+        gpu_want="${gpu_prog#*:}"
+        gpu_prog="${gpu_prog%%:*}"
+        for gpu_kernel in $gpu_want; do
+            rm -f "$SCRIPT_DIR/build/gpu/$gpu_kernel.metal"
+        done
+        if ! "$SCRIPT_DIR/flow" gpu "$SCRIPT_DIR/$gpu_prog" >/dev/null 2>&1; then
+            print_error "flow gpu failed: $gpu_prog"
+            gpu_status=1
+            continue
         fi
+        for gpu_kernel in $gpu_want; do
+            if [ ! -f "$SCRIPT_DIR/build/gpu/$gpu_kernel.metal" ]; then
+                print_error "missing build/gpu/$gpu_kernel.metal from $gpu_prog"
+                gpu_status=1
+            fi
+        done
+    done
+    if [ $gpu_status -eq 0 ]; then
+        print_success "✅ GPU codegen test passed!"
     else
-        print_warning "pytest not found. Skipping GPU codegen test."
-        print_info "Install with: pip install pytest"
+        print_error "❌ GPU codegen test failed"
+        exit 1
     fi
 }
 
@@ -3179,7 +3320,7 @@ run_mlir_tests() {
         
         # Step 1: Generate MLIR
         local gen_output
-        gen_output=$(python3 -m "$FLOWC_MODULE" "$program" --mlir --lenient -o "$mlir_file" 2>&1)
+        gen_output=$(flow_emit_mlir --lenient "$program" "$mlir_file" 2>&1)
         if [ $? -ne 0 ]; then
             print_error "✗ $rel_path (MLIR generation failed)"
             failed=$((failed + 1))
@@ -3566,7 +3707,7 @@ case "${1:-help}" in
         fi
         
         PROGRAM_NAME=$(basename "${1:-}" .flow)
-        BUILD_DIR="$SCRIPT_DIR/build"
+        BUILD_DIR="$FLOW_BUILD_ROOT"
         MLIR_FILE="$BUILD_DIR/${PROGRAM_NAME}.mlir"
         OBJ_FILE="$BUILD_DIR/${PROGRAM_NAME}_mlir.o"
         EXE_FILE="$BUILD_DIR/${PROGRAM_NAME}_mlir"
@@ -3675,7 +3816,7 @@ case "${1:-help}" in
                 print_info "MLIR ML ($subcmd): $program"
                 if [ "$subcmd" = "bench" ]; then
                     generate_mlir "$program"
-                    BUILD_DIR="$SCRIPT_DIR/build"
+                    BUILD_DIR="$FLOW_BUILD_ROOT"
                     PROGRAM_NAME=$(basename "$program" .flow)
                     MLIR_FILE="$BUILD_DIR/${PROGRAM_NAME}.mlir"
                     OBJ_FILE="$BUILD_DIR/${PROGRAM_NAME}_mlir.o"
@@ -3729,21 +3870,21 @@ case "${1:-help}" in
                     run_flow_jit "$SCRIPT_DIR/tests/stdlib/test_mlp2_backward.flow"
                     print_info "  MLIR AOT smoke: mlir_tensor_bench"
                     generate_mlir "$SCRIPT_DIR/examples/ml/mlir_tensor_bench.flow" >/dev/null
-                    BENCH_MLIR="$SCRIPT_DIR/build/mlir_tensor_bench.mlir"
-                    BENCH_OBJ="$SCRIPT_DIR/build/mlir_tensor_bench_mlir.o"
-                    BENCH_EXE="$SCRIPT_DIR/build/mlir_tensor_bench_mlir"
+                    BENCH_MLIR="$FLOW_BUILD_ROOT/mlir_tensor_bench.mlir"
+                    BENCH_OBJ="$FLOW_BUILD_ROOT/mlir_tensor_bench_mlir.o"
+                    BENCH_EXE="$FLOW_BUILD_ROOT/mlir_tensor_bench_mlir"
                     if ! mlir_lower_and_link "$BENCH_MLIR" "$BENCH_OBJ" "$BENCH_EXE" 3; then
                         exit 1
                     fi
                     print_info "  MLIR GPU smoke: gpu_kernels"
-                    if ! python3 -m "$FLOWC_MODULE" "$SCRIPT_DIR/lib/stdlib/gpu_kernels.flow" \
-                        --mlir --mlir-gpu -o "$SCRIPT_DIR/build/gpu_kernels.mlir" >/dev/null 2>&1; then
+                    if ! flow_emit_mlir --gpu "$SCRIPT_DIR/lib/stdlib/gpu_kernels.flow" \
+                        "$FLOW_BUILD_ROOT/gpu_kernels.mlir" >/dev/null 2>&1; then
                         print_error "GPU MLIR generation failed"
                         exit 1
                     fi
                     print_info "  MLIR SPIR-V smoke: gpu_kernels (best-effort)"
-                    if python3 -m "$FLOWC_MODULE" "$SCRIPT_DIR/lib/stdlib/gpu_kernels.flow" \
-                        --mlir --mlir-gpu --emit-spirv -o "$SCRIPT_DIR/build/gpu_kernels.spv" >/dev/null 2>&1; then
+                    if "$SCRIPT_DIR/compiler/scripts/mlir_spirv.sh" spirv "$FLOW_BUILD_ROOT/gpu_kernels.mlir" \
+                        "$FLOW_BUILD_ROOT/gpu_kernels.spv" >/dev/null 2>&1; then
                         print_success "  SPIR-V lowering ok"
                     else
                         print_warning "  SPIR-V lowering WIP (GPU MLIR codegen ok)"

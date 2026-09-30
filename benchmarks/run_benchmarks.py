@@ -14,11 +14,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 def get_flow_version():
-    version_file = ROOT / "src" / "flow" / "version.py"
+    version_file = ROOT / "VERSION"
     if version_file.exists():
-        env = {}
-        exec(version_file.read_text(), env)
-        return env.get("__version__", "unknown")
+        return version_file.read_text().strip() or "unknown"
     return "unknown"
 
 def get_system_info():

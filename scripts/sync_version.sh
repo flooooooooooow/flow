@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Keep every version string in the tree in sync with src/flow/version.py.
+# Keep every version string in the tree in sync with VERSION.
 #
 # The logic is the Flow program in scripts/tools/sync_version. Flow cannot
 # make network requests, so for --sha256-from-release this shim downloads
@@ -41,7 +41,7 @@ if [[ "$want_fetch" -eq 1 && "$have_sha" -eq 0 ]]; then
     version="$set_version"
     while [[ "$version" == v* ]]; do version="${version#v}"; done
   else
-    version="$(sed -n 's/^__version__ = "\([^"]*\)"$/\1/p' src/flow/version.py | head -n 1)"
+    version="$(head -n 1 VERSION)"
   fi
   url="https://github.com/flooooooooooow/flow/releases/download/v${version}/flow-v${version}.tar.gz"
   tarball="$(mktemp)"

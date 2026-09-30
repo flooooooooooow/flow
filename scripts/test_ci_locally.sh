@@ -27,9 +27,6 @@ python3 --version
 echo -e "${BLUE}Checking clang...${NC}"
 clang --version | head -3
 
-echo ""
-echo -e "${BLUE}Setting up environment...${NC}"
-export PYTHONPATH=src
 
 # Install Python dependencies (if needed)
 echo -e "${BLUE}Installing dependencies...${NC}"
@@ -45,7 +42,7 @@ echo -e "${BLUE}=== Running Tier 2 tests (transpile + compile) ===${NC}"
 
 echo ""
 echo -e "${BLUE}=== Running Python unit tests ===${NC}"
-PYTHONPATH=src pytest tests/ -v --tb=short || echo "No Python unit tests or pytest not configured"
+pytest tests/ -v --tb=short || echo "No Python unit tests or pytest not configured"
 
 echo ""
 echo -e "${BLUE}=== Running example programs ===${NC}"
@@ -53,13 +50,8 @@ echo -e "${BLUE}=== Running example programs ===${NC}"
 ./flow compile examples/basics/fibonacci.flow
 
 echo ""
-echo -e "${BLUE}=== Running Lint checks ===${NC}"
-python3 -m py_compile src/flow/parser.py
-python3 -m py_compile src/flow/transpiler.py
-python3 -m py_compile src/flow/type_checker.py
-python3 -m py_compile src/flow/mlir_generator.py
-python3 -m py_compile src/flow/monomorphize.py
-python3 -m py_compile src/flow/module_resolver.py
+echo -e "${BLUE}=== Checking the bootstrap compiler ===${NC}"
+./compiler/scripts/bootstrap_from_c.sh --verify
 
 echo ""
 echo -e "${GREEN}✅ All CI checks passed locally!${NC}"

@@ -1,0 +1,78 @@
+; ModuleID = 'LLVMDialectModule'
+source_filename = "LLVMDialectModule"
+
+define i32 @matmul_naive(ptr %0, ptr %1, ptr %2) {
+  br label %4
+
+4:                                                ; preds = %44, %3
+  %5 = phi i64 [ %45, %44 ], [ 0, %3 ]
+  %6 = icmp slt i64 %5, 2
+  br i1 %6, label %7, label %46
+
+7:                                                ; preds = %4
+  br label %8
+
+8:                                                ; preds = %35, %7
+  %9 = phi i64 [ %43, %35 ], [ 0, %7 ]
+  %10 = icmp slt i64 %9, 2
+  br i1 %10, label %11, label %44
+
+11:                                               ; preds = %8
+  %12 = alloca float, i64 1, align 4
+  store float 0.000000e+00, ptr %12, align 4
+  br label %13
+
+13:                                               ; preds = %16, %11
+  %14 = phi i64 [ %34, %16 ], [ 0, %11 ]
+  %15 = icmp slt i64 %14, 2
+  br i1 %15, label %16, label %35
+
+16:                                               ; preds = %13
+  %17 = load float, ptr %12, align 4
+  %18 = trunc i64 %5 to i32
+  %19 = mul i32 %18, 2
+  %20 = trunc i64 %14 to i32
+  %21 = add i32 %19, %20
+  %22 = sext i32 %21 to i64
+  %23 = getelementptr [4 x float], ptr %1, i32 0, i64 %22
+  %24 = load float, ptr %23, align 4
+  %25 = trunc i64 %14 to i32
+  %26 = mul i32 %25, 2
+  %27 = trunc i64 %9 to i32
+  %28 = add i32 %26, %27
+  %29 = sext i32 %28 to i64
+  %30 = getelementptr [4 x float], ptr %2, i32 0, i64 %29
+  %31 = load float, ptr %30, align 4
+  %32 = fmul float %24, %31
+  %33 = fadd float %17, %32
+  store float %33, ptr %12, align 4
+  %34 = add i64 %14, 1
+  br label %13
+
+35:                                               ; preds = %13
+  %36 = load float, ptr %12, align 4
+  %37 = trunc i64 %5 to i32
+  %38 = mul i32 %37, 2
+  %39 = trunc i64 %9 to i32
+  %40 = add i32 %38, %39
+  %41 = sext i32 %40 to i64
+  %42 = getelementptr [4 x float], ptr %0, i32 0, i64 %41
+  store float %36, ptr %42, align 4
+  %43 = add i64 %9, 1
+  br label %8
+
+44:                                               ; preds = %8
+  %45 = add i64 %5, 1
+  br label %4
+
+46:                                               ; preds = %4
+  ret i32 0
+}
+
+define i32 @main() {
+  ret i32 0
+}
+
+!llvm.module.flags = !{!0}
+
+!0 = !{i32 2, !"Debug Info Version", i32 3}

@@ -97,24 +97,16 @@ function one_run(exe: string) -> ptr<BenchRun> {
 }
 
 function version() -> string {
-    let text: string = ft_read_file(ft_join(root(), "src/flow/version.py"))
+    # VERSION holds one line, the canonical version.
+    let text: string = ft_read_file(ft_join(root(), "VERSION"))
     if text as ptr<u8> == null {
         return "unknown"
     }
     let lines: ptr<StrList> = ft_split_lines(text)
-    let mut i: i32 = 0
-    while i < ft_list_len(lines) {
-        let line: string = ft_list_get(lines, i)
-        if ft_starts(line, "__version__ = \"") {
-            let rest: string = ft_from(line, 15)
-            let q: i32 = ft_find(rest, "\"", 0)
-            if q >= 0 {
-                return ft_slice(rest, 0, q)
-            }
-        }
-        i = i + 1
+    if ft_list_len(lines) == 0 or ft_len(ft_list_get(lines, 0)) == 0 {
+        return "unknown"
     }
-    return "unknown"
+    return ft_list_get(lines, 0)
 }
 
 function git_sha() -> string {

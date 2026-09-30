@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Smoke: transpile know_demo and check fingerprint / know string constants.
+# Smoke: compile (flowc) know_demo and check fingerprint / know string constants.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$ROOT"
 OUT="${1:-compiler/build/know_demo.c}"
 mkdir -p "$(dirname "$OUT")"
-PYTHONPATH=src python3 -m flow.transpiler \
-  examples/compilers/know_demo.flow --c --lenient -o "$OUT"
+compiler/scripts/flowc_emit.sh --lenient \
+  examples/compilers/know_demo.flow "$OUT"
 
 need=(
   'know+fingerprint: PASS'

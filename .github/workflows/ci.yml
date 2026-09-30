@@ -5,7 +5,6 @@ on:
   push:
     branches: [main, master]
     paths:
-      - 'src/**'
       - 'compiler/**'
       - 'tests/**'
       - 'examples/**'
@@ -17,7 +16,8 @@ on:
       - 'flow.toml'
       - '.gitignore'
       - '.github/**'
-      - 'pyproject.toml'
+      - 'VERSION'
+      - 'pytest.ini'
       - 'requirements.txt'
       - 'requirements.lock'
       - 'scripts/**'
@@ -34,7 +34,6 @@ on:
   pull_request:
     branches: [main, master]
     paths:
-      - 'src/**'
       - 'compiler/**'
       - 'tests/**'
       - 'examples/**'
@@ -46,7 +45,8 @@ on:
       - 'flow.toml'
       - '.gitignore'
       - '.github/**'
-      - 'pyproject.toml'
+      - 'VERSION'
+      - 'pytest.ini'
       - 'requirements.txt'
       - 'requirements.lock'
       - 'scripts/**'
@@ -93,7 +93,7 @@ jobs:
         with:
           filters: |
             src:
-              - 'src/**'
+              - 'compiler/src/**'
             compiler:
               - 'compiler/**'
               - 'tests/cgen/**'
@@ -127,10 +127,10 @@ jobs:
             deps:
               - 'requirements.lock'
               - 'requirements.txt'
-              - 'pyproject.toml'
+              - 'pytest.ini'
 
-  # Manifests, docs headers and the CLI banner all mirror src/flow/version.py.
-  # They have drifted before: 0.11.0 nearly shipped with version.py still
+  # Manifests, docs headers and the CLI banner all mirror VERSION.
+  # They have drifted before: 0.11.0 nearly shipped with the canonical file still
   # reading 0.3.3 and three hardcoded 0.10.0 strings in the flow driver.
   # Deliberately ungated: the drift-prone files (README.md, CITATION.cff,
   # flow.toml, docs/LANGUAGE_SPEC.md) sit outside every paths-filter above.
@@ -270,15 +270,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: ./.github/actions/setup-python
-
       - uses: ./.github/actions/install-toolchain
         with:
           mlir: 'true'
 
       - name: Tier 2 (transpile + clang, strict)
-        env:
-          PYTHONPATH: src
         run: |
           chmod +x ./flow
           # Tier 2 already transpiles; tier 1 was redundant (~2× work).
@@ -422,6 +418,13 @@ jobs:
           # --backend=mlir on the flowc host needs no Python either.
           PATH="/tmp/nopy-mlir:$PATH" FLOW_HOST=flowc \
             ./flow run --backend=mlir compiler/fixtures/mlir/control.flow
+
+      # flow mlir (with --optimize, --llvm, --mlir-gpu, --emit-spirv and the
+      # pass pipelines), mlir-run, jit, ml, test-mlir, test-matmul and
+      # compile-audio --mlir against the goldens recorded from the Python
+      # MLIR stack; the script stubs python itself.
+      - name: MLIR command goldens (no Python)
+        run: timeout 20m ./tests/mlir_commands/run.sh
 
       - name: Compile and run a Flow program (FLOW_HOST=flowc)
         env:
@@ -616,19 +619,18 @@ jobs:
 
       - uses: ./.github/actions/setup-python
 
+      # The remaining pytest files drive ./flow and the scripts as
+      # subprocesses; none imports a Python compiler.
       - name: Pytest (fast)
         env:
-          PYTHONPATH: src
           PYTEST_ADDOPTS: --tb=short -q
         run: pytest tests/ -m "not slow"
 
-      - name: Arithmetic safety tests
-        env:
-          PYTHONPATH: src
-        run: pytest tests/unit/test_arith_safety.py tests/unit/test_safety_profile_enforcement.py -v
+      - name: Stable conformance corpus
+        run: tests/conformance/run.sh
 
   fuzz:
-    name: Fuzz (parser/pipeline)
+    name: Fuzz (flowc)
     runs-on: ubuntu-latest
     needs: changes
     if: |
@@ -637,17 +639,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: ./.github/actions/setup-python
-
-      # The parser hands DSL and flow-block expansion to flowc. Build it
-      # first, or the first such input spends the per-input timeout in cc.
       - name: Build flowc from the bootstrap C
         run: bash compiler/scripts/ensure_flowc.sh
 
-      - name: Fuzz targets (30s each, fails only on new crash classes)
-        env:
-          PYTHONPATH: src
-        run: python3 tests/fuzz/run_fuzz.py --seconds 30 --seed 1234
+      # Crash pins, deep nesting and 30s of seeded mutation; fails on a
+      # signal or a hang.
+      - name: Fuzz flowc
+        run: tests/fuzz/run.sh --seconds 30 --seed 1234
 
   plugin-dsp:
     name: Plugin DSP test

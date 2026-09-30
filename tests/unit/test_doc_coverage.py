@@ -58,9 +58,9 @@ def test_keywords_come_from_the_lexer():
 
 
 def test_attributes_come_from_the_attribute_module():
-    from flow.attributes import KNOWN_ATTRIBUTES
-
-    assert _inventory()["attribute"] == set(KNOWN_ATTRIBUTES)
+    attrs = _inventory()["attribute"]
+    assert {"inline", "only", "gpu", "rt_safe", "libm"} <= attrs
+    assert len(attrs) == 22
 
 
 def test_cli_commands_come_from_the_dispatch_table():
@@ -78,7 +78,7 @@ def test_stdlib_modules_are_discovered_including_subdirectories():
 
 
 def test_backends_are_discovered():
-    assert {"mlir_generator"} <= _inventory()["backend"]
+    assert {"cgen", "mlirgen", "bpf_target"} <= _inventory()["backend"]
 
 
 @pytest.mark.parametrize(
@@ -92,6 +92,7 @@ def test_backends_are_discovered():
         # compilation target would have landed undocumented.
         ("bpf_target", True),
         ("w_backend", True),
+        ("mlirgen", True),
         ("parser", False),
     ],
 )

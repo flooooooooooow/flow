@@ -168,6 +168,75 @@ export function flowc_expand_all_in_place(src: ptr<u8>, n: i32, cap: i32) -> i32
     return flowc_mono_lit_expand_in_place(src, m2, cap)
 }
 
+# The expansions the MLIR path runs: every DSL, but neither impl blocks
+# (Python's MLIR generator emits nothing for them) nor the generic struct
+# literal inference, which Python's MLIR path never had (a bare
+# `Box { .. }` stays bare there).
+export function flowc_expand_for_mlir_in_place(src: ptr<u8>, n: i32, cap: i32) -> i32 {
+    let m: i32 = flowc_expand_stages_in_place(src, n, cap, 15)
+    if m < 0 {
+        return m
+    }
+    return flowc_append_range_helpers(src, m, cap)
+}
+
+# The range-sum helpers of src/flow/range_sums.py (HELPER_SOURCE, then
+# SET_HELPER_SOURCE), which Python's parser appends to a module whose
+# sum(range) needs a runtime call. The MLIR emitter keeps the ones Python
+# would have appended and drops the rest.
+const FLOWC_RANGE_HELPERS: string = "\nfunction __flow_sum_range(start: i32, limit: i32, step: i32) -> i32 {\n    if step == 0 {\n        return 0\n    }\n    let mut count: i32 = 0\n    if step > 0 {\n        if start >= limit {\n            return 0\n        }\n        count = (limit - start + step - 1) / step\n    } else {\n        if start <= limit {\n            return 0\n        }\n        count = (start - limit + (0 - step) - 1) / (0 - step)\n    }\n    let endpoints: i32 = 2 * start + (count - 1) * step\n    if count % 2 == 0 {\n        return (count / 2) * endpoints\n    }\n    return count * (endpoints / 2)\n}\nfunction __flow_range_gcd(a: i64, b: i64) -> i64 {\n    let mut x: i64 = a\n    let mut y: i64 = b\n    if x < 0 { x = 0 - x }\n    if y < 0 { y = 0 - y }\n    while y != 0 {\n        let t: i64 = x % y\n        x = y\n        y = t\n    }\n    return x\n}\n\nfunction __flow_range_modinv(a: i64, m: i64) -> i64 {\n    if m <= 1 {\n        return 0\n    }\n    let mut old_r: i64 = a % m\n    if old_r < 0 {\n        old_r = old_r + m\n    }\n    let mut r: i64 = m\n    let mut old_s: i64 = 1\n    let mut s: i64 = 0\n    while r != 0 {\n        let q: i64 = old_r / r\n        let next_r: i64 = old_r - q * r\n        old_r = r\n        r = next_r\n        let next_s: i64 = old_s - q * s\n        old_s = s\n        s = next_s\n    }\n    let mut inv: i64 = old_s % m\n    if inv < 0 {\n        inv = inv + m\n    }\n    return inv\n}\n\nfunction __flow_range_count(start: i64, limit: i64, stride: i64) -> i64 {\n    if stride == 0 {\n        return 0\n    }\n    if stride > 0 {\n        if start >= limit {\n            return 0\n        }\n        return (limit - start + stride - 1) / stride\n    }\n    let up: i64 = 0 - stride\n    if start <= limit {\n        return 0\n    }\n    return (start - limit + up - 1) / up\n}\n\nfunction __flow_progression_sum(first: i64, count: i64, stride: i64) -> i64 {\n    if count <= 0 {\n        return 0\n    }\n    let endpoints: i64 = 2 * first + (count - 1) * stride\n    if count % 2 == 0 {\n        return (count / 2) * endpoints\n    }\n    return count * (endpoints / 2)\n}\n\nfunction __flow_sum_range_isect(sa: i32, ea: i32, pa: i32, sb: i32, eb: i32, pb: i32) -> i32 {\n    let count_a: i64 = __flow_range_count(sa as i64, ea as i64, pa as i64)\n    let count_b: i64 = __flow_range_count(sb as i64, eb as i64, pb as i64)\n    if count_a <= 0 {\n        return 0\n    }\n    if count_b <= 0 {\n        return 0\n    }\n\n    let mut first_a: i64 = sa as i64\n    let mut step_a: i64 = pa as i64\n    if step_a < 0 {\n        first_a = first_a + (count_a - 1) * step_a\n        step_a = 0 - step_a\n    }\n    let mut first_b: i64 = sb as i64\n    let mut step_b: i64 = pb as i64\n    if step_b < 0 {\n        first_b = first_b + (count_b - 1) * step_b\n        step_b = 0 - step_b\n    }\n\n    let common: i64 = __flow_range_gcd(step_a, step_b)\n    let offset: i64 = first_b - first_a\n    if offset % common != 0 {\n        return 0\n    }\n\n    let modulus: i64 = step_b / common\n    let step: i64 = step_a * modulus\n    let mut index: i64 = 0\n    if modulus > 1 {\n        let inverse: i64 = __flow_range_modinv((step_a / common) % modulus, modulus)\n        let mut scaled: i64 = (offset / common) % modulus\n        if scaled < 0 {\n            scaled = scaled + modulus\n        }\n        index = (scaled * inverse) % modulus\n    }\n    let mut value: i64 = first_a + index * step_a\n\n    let mut low: i64 = first_a\n    if first_b > low {\n        low = first_b\n    }\n    let mut high: i64 = first_a + (count_a - 1) * step_a\n    let last_b: i64 = first_b + (count_b - 1) * step_b\n    if last_b < high {\n        high = last_b\n    }\n\n    if value < low {\n        let gap: i64 = low - value\n        value = value + ((gap + step - 1) / step) * step\n    }\n    if value > high {\n        return 0\n    }\n\n    let count: i64 = (high - value) / step + 1\n    return __flow_progression_sum(value, count, step) as i32\n}\n\nfunction __flow_sum_range_union(sa: i32, ea: i32, pa: i32, sb: i32, eb: i32, pb: i32) -> i32 {\n    let only_a: i32 = __flow_sum_range(sa, ea, pa)\n    let only_b: i32 = __flow_sum_range(sb, eb, pb)\n    let both: i32 = __flow_sum_range_isect(sa, ea, pa, sb, eb, pb)\n    return only_a + only_b - both\n}\n"
+
+# 1 when src[0, n) holds `sum(` with a `..` inside its parentheses.
+function flowc_has_range_sum(src: ptr<u8>, n: i32) -> i32 {
+    let mut i: i32 = 0
+    while i + 4 < n {
+        if src[i] == 115 and src[i + 1] == 117 and src[i + 2] == 109 and src[i + 3] == 40 {
+            let mut ok: i32 = 1
+            if i > 0 {
+                let c: i32 = src[i - 1] as i32
+                if (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or (c >= 48 and c <= 57) or c == 95 {
+                    ok = 0
+                }
+            }
+            if ok == 1 {
+                let mut depth: i32 = 1
+                let mut j: i32 = i + 4
+                while j + 1 < n and depth > 0 {
+                    if src[j] == 40 { depth = depth + 1 }
+                    if src[j] == 41 { depth = depth - 1 }
+                    if depth == 1 and src[j] == 46 and src[j + 1] == 46 {
+                        return 1
+                    }
+                    j = j + 1
+                }
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+function flowc_append_range_helpers(src: ptr<u8>, n: i32, cap: i32) -> i32 {
+    if flowc_has_range_sum(src, n) == 0 {
+        return n
+    }
+    let h: ptr<u8> = FLOWC_RANGE_HELPERS
+    let mut k: i32 = 0
+    while h[k] != 0 {
+        k = k + 1
+    }
+    if n + k + 1 >= cap {
+        return n
+    }
+    let mut i: i32 = 0
+    while i < k {
+        src[n + i] = h[i]
+        i = i + 1
+    }
+    src[n + k] = 0
+    return n + k
+}
+
 # --- impl blocks -----------------------------------------------------------
 # `impl Trait for Type { function m(self, a: A) -> R { ... } }` defines the
 # top-level function `Type_Trait_m(self: Type, a: A) -> R`, as the Python

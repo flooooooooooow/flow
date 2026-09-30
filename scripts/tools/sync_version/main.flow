@@ -1,8 +1,9 @@
 # Keep every version string in the tree in sync with one canonical value.
 #
-# The canonical version lives in src/flow/version.py. Every other surface
-# (manifests, docs headers, the CLI banner, the Homebrew formula) mirrors it.
-# Historically those drifted: 0.11.0 shipped with version.py still reading
+# The canonical version is the one line of VERSION at the repository root.
+# Every other surface (manifests, docs headers, the CLI banner, the Homebrew
+# formula) mirrors it. Historically those drifted: 0.11.0 shipped with the
+# canonical file (then src/flow/version.py) still reading
 # 0.3.3 and three hardcoded 0.10.0 strings in the `flow` driver.
 #
 # Run through scripts/sync_version.sh from the repository root:
@@ -32,7 +33,7 @@ extern {
 }
 
 const PROG: string = "sync_version.sh"
-const CANONICAL: string = "src/flow/version.py"
+const CANONICAL: string = "VERSION"
 
 # Character classes a version run can use.
 const CLS_NOT_QUOTE: i32 = 0
@@ -323,41 +324,40 @@ function version_eq_pat() -> ptr<Pat> {
 # Patterns for mirror `m`, in the order Python applies them.
 function mirror_path(m: i32) -> string {
     if m == 0 { return "flow.toml" }
-    if m == 1 { return "pyproject.toml" }
-    if m == 2 { return "CITATION.cff" }
-    if m == 3 { return "README.md" }
-    if m == 4 { return "docs/wiki-home.md" }
-    if m == 5 { return "docs/LANGUAGE_SPEC.md" }
-    if m == 6 { return "flow-driver" }
+    if m == 1 { return "CITATION.cff" }
+    if m == 2 { return "README.md" }
+    if m == 3 { return "docs/wiki-home.md" }
+    if m == 4 { return "docs/LANGUAGE_SPEC.md" }
+    if m == 5 { return "flow-driver" }
     return "packaging/homebrew/Formula/flow.rb"
 }
 
-const MIRROR_N: i32 = 8
+const MIRROR_N: i32 = 7
 
 function mirror_release_only(m: i32) -> bool {
-    return m == 7
+    return m == 6
 }
 
 function mirror_pattern_count(m: i32) -> i32 {
+    if m == 3 { return 2 }
     if m == 4 { return 2 }
-    if m == 5 { return 2 }
+    if m == 5 { return 3 }
     if m == 6 { return 3 }
-    if m == 7 { return 3 }
     return 1
 }
 
 function mirror_pattern(m: i32, k: i32) -> ptr<Pat> {
-    if m == 0 or m == 1 {
+    if m == 0 {
         return version_eq_pat()
     }
-    if m == 2 {
+    if m == 1 {
         let pt2: ptr<Pat> = pat_new("^version: (?P<version>\\S+)$")
         pat_lit(pt2, "version: ")
         pat_run(pt2, CLS_NOT_SPACE, 1, -1, 1)
         pat_eol(pt2)
         return pt2
     }
-    if m == 3 {
+    if m == 2 {
         let pt3: ptr<Pat> = pat_new("^\\| Version \\| (?P<version>\\S+) \\|$")
         pat_lit(pt3, "| Version | ")
         pat_run(pt3, CLS_NOT_SPACE, 1, -1, 1)
@@ -365,7 +365,7 @@ function mirror_pattern(m: i32, k: i32) -> ptr<Pat> {
         pat_eol(pt3)
         return pt3
     }
-    if m == 4 {
+    if m == 3 {
         if k == 0 {
             let pt4: ptr<Pat> = pat_new("^<p class=\"wiki-hero-eyebrow\">v(?P<version>\\S+) ·")
             pat_lit(pt4, "<p class=\"wiki-hero-eyebrow\">v")
@@ -379,7 +379,7 @@ function mirror_pattern(m: i32, k: i32) -> ptr<Pat> {
         pat_lit(pt5, " ·")
         return pt5
     }
-    if m == 5 {
+    if m == 4 {
         if k == 0 {
             let pt6: ptr<Pat> = pat_new("^> \\*\\*Version\\*\\*: (?P<version>\\S+)$")
             pat_lit(pt6, "> **Version**: ")
@@ -394,7 +394,7 @@ function mirror_pattern(m: i32, k: i32) -> ptr<Pat> {
         pat_eol(pt7)
         return pt7
     }
-    if m == 6 {
+    if m == 5 {
         if k == 0 {
             let pt8: ptr<Pat> = pat_new("^    echo \"Flow Programming Language v(?P<version>[^\"]+)\"$")
             pat_lit(pt8, "    echo \"Flow Programming Language v")
@@ -478,10 +478,8 @@ function sha_pattern() -> ptr<Pat> {
 }
 
 function canonical_pattern() -> ptr<Pat> {
-    let pc: ptr<Pat> = pat_new("^__version__ = \"(?P<version>[^\"]+)\"$")
-    pat_lit(pc, "__version__ = \"")
-    pat_run(pc, CLS_NOT_QUOTE, 1, -1, 1)
-    pat_lit(pc, "\"")
+    let pc: ptr<Pat> = pat_new("^(?P<version>\\S+)$")
+    pat_run(pc, CLS_NOT_SPACE, 1, -1, 1)
     pat_eol(pc)
     return pc
 }
@@ -525,7 +523,7 @@ function write_canonical(text: string, version: string) -> string {
         if at_line_start(p, pos) {
             let end: i32 = pat_match_from(pc, p, 0, pos)
             if end >= 0 {
-                return ft_slice(text, 0, pos) + "__version__ = \"" + version + "\"" + ft_from(text, end)
+                return ft_slice(text, 0, pos) + version + ft_from(text, end)
             }
         }
         pos = pos + 1
@@ -765,7 +763,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
             found = read_canonical(ctext2)
         }
         if found as ptr<u8> == null {
-            ft_errln("error: no __version__ assignment found in " + abs_canonical())
+            ft_errln("error: no version line found in " + abs_canonical())
             return 1
         }
         version = found

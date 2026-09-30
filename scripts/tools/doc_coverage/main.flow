@@ -3,11 +3,12 @@
 # The feature list is read out of the compiler, never hand-maintained, so it
 # cannot quietly fall behind the implementation:
 #
-#   keywords        src/flow/parser.py, Lexer.keyword_map
-#   attributes      src/flow/attributes.py, the sets KNOWN_ATTRIBUTES unions
+#   keywords        tools/lsp/catalog.flow, reserved_name_list (the lexer
+#                   keyword map)
+#   attributes      compiler/src/attributes.flow, flowc_is_known_attr
 #   CLI commands    the `flow` driver's dispatch table
 #   stdlib modules  lib/stdlib/**/*.flow
-#   backends        src/flow/*_generator.py and friends
+#   backends        compiler/src/*gen.flow, *_codegen.flow, *_target.flow
 #
 # docs/coverage.json maps each feature to the page that documents it. A
 # mapping is only accepted when the named page exists and actually mentions
@@ -26,7 +27,7 @@
 #   --inventory                  print category:name for every feature
 #   --map FILE                   check against another coverage map
 #   --mentions CAT FEATURE FILE  print True or False
-#   --is-backend NAME            print True or False for a src/flow file stem
+#   --is-backend NAME            print True or False for a compiler/src file stem
 
 import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_read_file, ft_write_file, ft_exists, ft_starts, ft_ends, ft_at, ft_find, ft_slice, ft_from, ft_find_byte, ft_split_lines, ft_basename, ft_stem, ft_ljust, ft_rjust, ft_repr, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_sort, ft_list_sorted_unique, ft_set_new, ft_set_add, ft_set_has, StrList, StrSet }
 import .unicode { uc_decode, uc_len, uc_prev, uc_is_word, uc_is_space, uc_strip }
@@ -41,6 +42,8 @@ const PROG: string = "check_doc_coverage.sh"
 const STDLIB_LIST: string = "build/doc-coverage/stdlib.txt"
 const BACKEND_LIST: string = "build/doc-coverage/backends.txt"
 const DOC_PAGES: string = "build/doc-coverage/doc-pages.txt"
+const KEYWORD_SOURCE: string = "tools/lsp/catalog.flow"
+const ATTR_SOURCE: string = "compiler/src/attributes.flow"
 const CAT_N: i32 = 5
 
 # Categories in sorted order, as Python iterates sorted(inventory.items()).
@@ -85,106 +88,49 @@ function is_lower_ident(c: i32) -> bool {
     return (c >= 97 and c <= 122) or c == 95
 }
 
-# self\.keyword_map\s*=\s*\{(.*?)\n\s*\} (DOTALL), then
-# ['"]([a-z_]+)['"]\s*: over the block.
+# The reserved words: the `tl_push(out, "word")` lines of
+# reserved_name_list in tools/lsp/catalog.flow, which carries the lexer
+# keyword map. Type names (i32, f64, ...) have digits and drop out, as they
+# did when this read the Python lexer.
 function keywords(out: ptr<StrList>) -> bool {
-    let src: string = ft_read_file("src/flow/parser.py")
-    if src as ptr<u8> == null {
+    let text: string = ft_read_file(KEYWORD_SOURCE)
+    if text as ptr<u8> == null {
         return false
     }
-    let text: string = md_sanitize(src)
-    let p: ptr<u8> = text as ptr<u8>
-    let n: i32 = ft_len(text)
-    let mut at: i32 = ft_find(text, "self.keyword_map", 0)
-    let mut bstart: i32 = -1
-    let mut bend: i32 = -1
-    while at >= 0 and bstart < 0 {
-        let mut k: i32 = skip_ws(p, at + 16, n)
-        if p[k] == 61 {
-            k = skip_ws(p, k + 1, n)
-            if p[k] == 123 {
-                let start: i32 = k + 1
-                let mut q: i32 = start
-                while q < n and bstart < 0 {
-                    if p[q] == 10 {
-                        let r: i32 = skip_ws(p, q + 1, n)
-                        if p[r] == 125 {
-                            bstart = start
-                            bend = q
-                        }
-                    }
-                    q = q + 1
-                }
-            }
-        }
-        if bstart < 0 {
-            at = ft_find(text, "self.keyword_map", at + 1)
-        }
-    }
-    if bstart < 0 {
-        return false
-    }
-    let mut i: i32 = bstart
-    while i < bend {
-        let c: i32 = p[i] as i32
-        if c == 39 or c == 34 {
-            let mut j: i32 = i + 1
-            while j < bend and is_lower_ident(p[j] as i32) {
-                j = j + 1
-            }
-            if j > i + 1 and j < bend and (p[j] == 39 or p[j] == 34) {
-                let colon: i32 = skip_ws(p, j + 1, n)
-                if colon < bend and p[colon] == 58 {
-                    let word: string = ft_slice(text, i + 1, j)
-                    if uninteresting_keyword(word) == false {
-                        ft_list_push(out, word)
-                    }
-                    i = colon + 1
-                    continue
-                }
-            }
-        }
-        i = i + 1
-    }
-    return true
-}
-
-# String literals inside `NAME = frozenset({ ... })` in attributes.py,
-# ignoring comments.
-function frozenset_members(text: string, name: string, out: ptr<StrList>) -> bool {
-    let head: string = name + " = frozenset({"
-    let mut at: i32 = ft_find(text, head, 0)
-    while at > 0 and ft_byte_at(text, at - 1) != 10 {
-        at = ft_find(text, head, at + 1)
-    }
+    let head: string = "export function reserved_name_list("
+    let at: i32 = ft_find(text, head, 0)
     if at < 0 {
         return false
     }
-    let p: ptr<u8> = text as ptr<u8>
-    let mut i: i32 = at + ft_len(head)
-    while p[i] != 0 {
-        let c: i32 = p[i] as i32
-        if c == 125 {
-            return true
-        }
-        if c == 35 {
-            while p[i] != 0 and p[i] != 10 {
-                i = i + 1
-            }
-            continue
-        }
-        if c == 34 or c == 39 {
-            let close: i32 = ft_find_byte(text, c, i + 1)
-            if close < 0 {
-                return false
-            }
-            ft_list_push(out, ft_slice(text, i + 1, close))
-            i = close + 1
-            continue
-        }
-        i = i + 1
+    let mut end: i32 = ft_find(text, "\n}", at)
+    if end < 0 {
+        end = ft_len(text)
     }
-    return false
+    let body: string = ft_slice(text, at, end)
+    let push: string = "tl_push(out, \""
+    let mut i: i32 = ft_find(body, push, 0)
+    let mut any: bool = false
+    while i >= 0 {
+        let start: i32 = i + ft_len(push)
+        let close: i32 = ft_find_byte(body, 34, start)
+        if close < 0 {
+            return false
+        }
+        let word: string = ft_slice(body, start, close)
+        let wp: ptr<u8> = word as ptr<u8>
+        let mut ok: bool = ft_len(word) > 0
+        let mut k: i32 = 0
+        while ok and k < ft_len(word) {
+            ok = is_lower_ident(wp[k] as i32)
+            k = k + 1
+        }
+        if ok and uninteresting_keyword(word) == false {
+            ft_list_push(out, word)
+        }
+        any = true
+        i = ft_find(body, push, close)
+    }
+    return any
 }
 
 function ft_byte_at(s: string, i: i32) -> i32 {
@@ -192,37 +138,63 @@ function ft_byte_at(s: string, i: i32) -> i32 {
     return p[i] as i32
 }
 
-# KNOWN_ATTRIBUTES = A | B | C, each a frozenset literal in the same module.
-function attributes(out: ptr<StrList>) -> bool {
-    let text: string = ft_read_file("src/flow/attributes.py")
-    if text as ptr<u8> == null {
-        return false
-    }
-    let head: string = "\nKNOWN_ATTRIBUTES = "
-    let at: i32 = ft_find(text, head, 0)
+# `streq(name, "x")` inside one attribute-set function of
+# compiler/src/attributes.flow.
+function attr_set_members(text: string, fname: string, out: ptr<StrList>) -> bool {
+    let at: i32 = ft_find(text, "\nfunction " + fname + "(", 0)
     if at < 0 {
         return false
     }
-    let line_end: i32 = ft_find_byte(text, 10, at + 1)
-    let rhs: string = ft_slice(text, at + ft_len(head), line_end)
-    let p: ptr<u8> = rhs as ptr<u8>
-    let n: i32 = ft_len(rhs)
-    let mut i: i32 = 0
+    let mut end: i32 = ft_find(text, "\n}", at)
+    if end < 0 {
+        end = ft_len(text)
+    }
+    let body: string = ft_slice(text, at, end)
+    let probe: string = "streq(name, \""
+    let mut i: i32 = ft_find(body, probe, 0)
     let mut any: bool = false
-    while i < n {
-        while i < n and (p[i] == 32 or p[i] == 124) {
-            i = i + 1
+    while i >= 0 {
+        let start: i32 = i + ft_len(probe)
+        let close: i32 = ft_find_byte(body, 34, start)
+        if close < 0 {
+            return false
         }
-        let start: i32 = i
-        while i < n and p[i] != 32 and p[i] != 124 {
-            i = i + 1
+        ft_list_push(out, ft_slice(body, start, close))
+        any = true
+        i = ft_find(body, probe, close)
+    }
+    return any
+}
+
+# The known attributes: flowc_is_known_attr in compiler/src/attributes.flow
+# is the union of is_codegen_attr, is_guard_attr and is_semantic_attr.
+function attributes(out: ptr<StrList>) -> bool {
+    let text: string = ft_read_file(ATTR_SOURCE)
+    if text as ptr<u8> == null {
+        return false
+    }
+    let known: i32 = ft_find(text, "export function flowc_is_known_attr(", 0)
+    if known < 0 {
+        return false
+    }
+    let mut kend: i32 = ft_find(text, "\n}", known)
+    if kend < 0 {
+        kend = ft_len(text)
+    }
+    let body: string = ft_slice(text, known, kend)
+    let mut any: bool = false
+    let mut i: i32 = ft_find(body, "if is_", 0)
+    while i >= 0 {
+        let start: i32 = i + 3
+        let paren: i32 = ft_find_byte(body, 40, start)
+        if paren < 0 {
+            return false
         }
-        if i > start {
-            if frozenset_members(text, ft_slice(rhs, start, i), out) == false {
-                return false
-            }
-            any = true
+        if attr_set_members(text, ft_slice(body, start, paren), out) == false {
+            return false
         }
+        any = true
+        i = ft_find(body, "if is_", paren)
     }
     return any
 }
@@ -347,10 +319,10 @@ function has_test_part(path: string) -> bool {
     return ft_eq(path, "test") or ft_starts(path, "test/") or ft_ends(path, "/test") or ft_find(path, "/test/", 0) >= 0
 }
 
-# Suffixes a backend module can carry. `_target` is here because a BPF
-# target once landed as bpf_target.py, which the first three suffixes missed.
+# Suffixes a backend module of compiler/src can carry: cgen, jsgen, mlirgen,
+# wasm_gen, metal_codegen, bpf_target.
 function is_backend(stem: string) -> bool {
-    return ft_ends(stem, "_generator") or ft_ends(stem, "_codegen") or ft_ends(stem, "_compiler") or ft_ends(stem, "_target") or ft_ends(stem, "_backend")
+    return ft_ends(stem, "gen") or ft_ends(stem, "_generator") or ft_ends(stem, "_codegen") or ft_ends(stem, "_compiler") or ft_ends(stem, "_target") or ft_ends(stem, "_backend")
 }
 
 function backends(out: ptr<StrList>) -> bool {
@@ -376,12 +348,12 @@ function inventory() -> ptr<ptr<StrList>> {
     let inv: ptr<ptr<StrList>> = malloc(8 * 5) as ptr<ptr<StrList>>
     let raw_kw: ptr<StrList> = ft_list_new()
     if keywords(raw_kw) == false {
-        ft_errln("could not find Lexer.keyword_map in parser.py")
+        ft_errln("could not read reserved_name_list from " + KEYWORD_SOURCE)
         return null
     }
     let raw_attr: ptr<StrList> = ft_list_new()
     if attributes(raw_attr) == false {
-        ft_errln("could not read KNOWN_ATTRIBUTES from src/flow/attributes.py")
+        ft_errln("could not read flowc_is_known_attr from " + ATTR_SOURCE)
         return null
     }
     let raw_cli: ptr<StrList> = ft_list_new()

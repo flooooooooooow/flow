@@ -11,8 +11,8 @@ import .ast {
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM,
     AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_TYPE_ALIAS, AST_SHADER, AST_IDENT_SORT_MOD, AST_MATCH_ARM_EXT, AST_LAYOUT, AST_PIPE_BLOCK, PIPE_BLOCK_CHOOSE, AST_IDENT_FORK_SRC, AST_SORT_BY, AST_TRY, AST_VECTOR_LIT,
     AST_HANDLE, AST_CAPABILITY, AST_CAP_METHOD, AST_TYPE_CAPABILITY,
-    AST_ATTR, AST_ATTR_HAS_ARGS, AST_RECORD_UPDATE,
-    flowc_ast_chain_len, flowc_ast_reject_unsupported, flowc_ast_reject_unsupported_but, flowc_ast_enum_of_const
+    AST_ATTR, AST_ATTR_HAS_ARGS,
+    flowc_ast_chain_len, flowc_ast_reject_unsupported, flowc_ast_reject_unsupported_but, flowc_ast_enum_of_const, AST_RECORD_UPDATE
 }
 import .attributes {
     flowc_attr_args_from_span, flowc_attr_span_is, flowc_is_known_attr,

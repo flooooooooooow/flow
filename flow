@@ -18,7 +18,6 @@ while [ -h "$SOURCE" ]; do
 done
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 DRIVER="$SCRIPT_DIR/flow-driver"
-export PYTHONPATH="$SCRIPT_DIR/src${PYTHONPATH:+:$PYTHONPATH}"
 
 if [ ! -x "$DRIVER" ]; then
     echo "flow: internal driver not found or not executable: $DRIVER" >&2

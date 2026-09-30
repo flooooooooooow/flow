@@ -9,11 +9,12 @@ frame (the animation is not a stack of identical frames).
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 
 import pytest
 
-from .compiler_helpers import needs_clang
+needs_clang = pytest.mark.skipif(shutil.which("clang") is None, reason="clang not installed")
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 EXAMPLE = os.path.join(REPO_ROOT, "examples", "graphics", "gif_writer.flow")
