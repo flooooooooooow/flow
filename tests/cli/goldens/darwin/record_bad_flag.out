@@ -1,0 +1,3 @@
+[0;31m❌ Unknown flag for 'flow record': --frob[0m
+  usage: flow record <program.flow> [--frames N] [--skip N] [--out DIR]
+                     [--gif [PATH]] [--keys SPEC] [--fps N] [--stride N] [--width PX]

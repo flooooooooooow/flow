@@ -1,0 +1,2 @@
+[0;34mℹ️  Compiling fill-shader from examples/gpu/shader_plasma.flow...[0m
+[0;32m✅ FLOW → WGSL: <ROOT>/build/shaders/shader_plasma_gallery.wgsl[0m
