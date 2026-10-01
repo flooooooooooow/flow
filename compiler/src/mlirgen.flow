@@ -14,9 +14,9 @@
 #
 # The contract is the C backend's behaviour: the MLIR verifies and the
 # program prints and exits as its C build does (compiler/scripts/
-# mlir_vs_c.sh). Its lowering decisions (which values live in allocas, when
+# mlir_vs_c.flow). Its lowering decisions (which values live in allocas, when
 # an `if` becomes scf.if or cf blocks, when a counted loop becomes scf.for)
-# are still the Python generator's; compiler/scripts/parity_mlir.sh holds
+# are still the Python generator's; compiler/scripts/parity_mlir.flow holds
 # the text to recorded goldens as a regression check.
 
 import .fileio { flowc_write_file }

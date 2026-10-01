@@ -1,0 +1,696 @@
+# Parity gate for the Flow MLIR emitter (compiler/src/mlirgen.flow).
+#
+# A regression gate on the MLIR text the emitter writes and on the output of
+# the programs built from it. The goldens began as the retired Python
+# generator's output; since the emitter stopped copying that generator's
+# bugs (docs/design/mlir-in-flow.md) they are recorded from flowc with
+# --record, each change tied to the fix that caused it. Correctness against
+# the C backend is compiler/scripts/mlir_vs_c.flow.
+#
+#   ./flow tool compiler/scripts/parity_mlir.flow
+#       Golden mode, no Python. Each fixture in compiler/fixtures/mlir/ must
+#       emit MLIR equal to its `<name>.mlir` golden after normalization, and
+#       every program listed in compiler/fixtures/mlir/corpus.txt must still
+#       be accepted and match its recorded digest. When mlir-opt is
+#       installed, each fixture is also lowered (compiler/scripts/
+#       mlir_lower.sh), linked with clang and run; stdout plus exit code must
+#       equal `<name>.out`.
+#
+#   ./flow tool compiler/scripts/parity_mlir.flow --python <rev>
+#       Also run the Python generator from git revision <rev> over the
+#       fixtures and every .flow under examples/, tests/, lib/, benchmarks/
+#       and compiler/fixtures/. Every program flowc accepts must produce the
+#       same normalized MLIR as Python. With mlir-opt installed, each such
+#       program is built through both MLIR paths (flowc + mlir_lower.sh, and
+#       `python -m flow.transpiler --mlir --llvm`) and run; the two runs must
+#       agree. Needs python3 and git.
+#
+#   ./flow tool compiler/scripts/parity_mlir.flow --write-golden <rev>
+#       Rewrite the fixture goldens and corpus.txt from the Python generator
+#       at <rev>. Only programs whose flowc output already equals Python's
+#       are recorded in corpus.txt.
+#
+#   ./flow tool compiler/scripts/parity_mlir.flow --record
+#       Rewrite the goldens from flowc: fixture text (GPU and wasm32 text
+#       too), run output where mlir-opt is installed, and the digest of every
+#       corpus program flowc accepts. Review the diff before committing it.
+#
+# GPU mode: a fixture named gpu_*.flow is also emitted with FLOWC_MLIR_GPU=1
+# and compared with its `<name>.gpu.mlir` golden (Python --mlir-gpu), text
+# only. With --python, every accepted program that has an @gpu kernel is
+# compared in GPU mode as well.
+#
+# wasm32 mode: a fixture named wasm_*.flow is also emitted with
+# FLOWC_MLIR_SIZE_T=32 and compared with its `<name>.w32.mlir` golden
+# (Python --wasm32), text only. With --python, every accepted program that
+# declares an extern block is compared in wasm32 mode as well.
+#
+# Normalization (gl_mlir_normalize in compiler/scripts/gate_lib.flow): SSA
+# values and block labels are renamed in order of first appearance and
+# indentation is dropped. Python numbers a value before emitting its
+# operands and indents unevenly; neither changes the program. Everything
+# else must be equal byte for byte, including string globals and their
+# order.
+#
+# flowc runs with FLOWC_LENIENT=1, as Python ran with --lenient: type errors
+# that are not fatal are warnings on both sides.
+#
+# Goldens were first recorded from Python at bb23f19f, then from flowc with
+# --record as the emitter's bug fixes changed its output.
+#
+# Env: FLOWC_BIN=<path> tests that binary instead of building
+# compiler/build/flowc_bootstrap from the checked-in bootstrap C.
+# LLVM_PATH / MLIR_OPT / MLIR_TRANSLATE locate the MLIR tools.
+
+import "tools/flow_cli/sys.flow"
+import "compiler/scripts/gate_lib.flow"
+import std.process { ProcCmd, ProcResult, ProcStrs, proc_cmd, proc_arg, proc_env, proc_args, proc_run, proc_timeout_ms }
+
+const FIX: string = "compiler/fixtures/mlir"
+const WORK: string = "compiler/build/parity_mlir"
+const PYREF: string = "compiler/build/parity_mlir/pyref"
+const USAGE_NAME: string = "./flow tool compiler/scripts/parity_mlir.flow"
+
+let mut ROOT_P: ptr<u8> = null
+let mut BIN_P: ptr<u8> = null
+let mut MLIR_CC_P: ptr<u8> = null
+let mut HAVE_MLIR: bool = false
+
+function root_dir() -> string {
+    return ROOT_P as string
+}
+
+function flowc_bin() -> string {
+    return BIN_P as string
+}
+
+# The MLIR lowering step: `lower <in.mlir> <out.ll>`, `lower --tools`.
+function lower_cmd() -> ptr<ProcStrs> {
+    return sl_of1("compiler/scripts/mlir_lower.sh")
+}
+
+function key_of(f: string) -> string {
+    return s_replace(f, "/", "__")
+}
+
+# flowc on <in.flow>, writing <out.mlir> and <out.mlir>.log: 0 when flowc
+# accepts the program. `mode` is "", "gpu" or "w32". The type check is
+# lenient, as `flow compile --mlir` ran it on the Python host.
+function flowc_emit(input: string, out: string, mode: string) -> i32 {
+    rm_f(out)
+    let c: ptr<ProcCmd> = gl_cmd(sl_of1(flowc_bin()))
+    proc_env(c, "FLOWC_LENIENT", "1")
+    if s_eq(mode, "gpu") {
+        proc_env(c, "FLOWC_MLIR_GPU", "1")
+    } elif s_eq(mode, "w32") {
+        proc_env(c, "FLOWC_MLIR_SIZE_T", "32")
+    }
+    proc_env(c, "FLOWC_EMIT", "mlir")
+    proc_env(c, "FLOWC_IN", input)
+    proc_env(c, "FLOWC_OUT", out)
+    return gl_run_log(c, out + ".log", 0)
+}
+
+# Normalize <src> into <dst>; stops the gate when <src> cannot be read.
+function norm_to(src: string, dst: string) {
+    let b: Bytes = read_bytes(src)
+    if b.len < 0 {
+        errln("parity_mlir: cannot read " + src)
+        cli_exit(2)
+    }
+    let _w: bool = write_text(dst, gl_mlir_normalize(b.data as string))
+}
+
+# The same, as part of a condition: false when <src> cannot be read.
+function try_norm_to(src: string, dst: string) -> bool {
+    let b: Bytes = read_bytes(src)
+    if b.len < 0 {
+        return false
+    }
+    return write_text(dst, gl_mlir_normalize(b.data as string))
+}
+
+function digest_of(path: string) -> string {
+    let b: Bytes = read_bytes(path)
+    if b.len < 0 {
+        return gl_sha256_text("")
+    }
+    return gl_sha256(b.data, b.len)
+}
+
+# Run <tag>.exe with no stdin, in a scratch directory so programs that
+# write files leave the checkout alone; write its stdout, then
+# `exit=<code>`, to <out>.
+function run_exe(tag: string, out: string) {
+    mkdir_p_or_exit(WORK + "/rundir")
+    let tmp: string = tag + ".stdout"
+    let code: i32 = gl_run_exe(root_dir() + "/" + tag + ".exe", tmp, 10, WORK + "/rundir")
+    let _w: bool = write_text(out, read_text(tmp) + "exit=" + s_itoa(code) + "\n")
+    rm_f(tmp)
+}
+
+# Link and run once; writes <tag>.out and keeps <tag>.exe. kind is "mlir"
+# (lower first) or "ll". 0 on success, 1 when lowering fails, 2 when the
+# link fails.
+function build_run(tag: string, input: string, kind: string) -> i32 {
+    let mut ll: string = tag + ".ll"
+    if s_eq(kind, "mlir") {
+        let argv: ptr<ProcStrs> = lower_cmd()
+        sl_push2(argv, input, ll)
+        if gl_run_log(gl_cmd(argv), tag + ".lower.log", 0) != 0 {
+            return 1
+        }
+    } else {
+        ll = input
+    }
+    let cc: string = env_or("CC", MLIR_CC_P as string)
+    let link: ptr<ProcStrs> = sl_of3(cc, "-w", "-O1")
+    sl_push2(link, ll, "-lm")
+    sl_push2(link, "-o", tag + ".exe")
+    if gl_run_log(gl_cmd(link), tag + ".link.log", 120) != 0 {
+        return 2
+    }
+    run_exe(tag, tag + ".out")
+    return 0
+}
+
+# The Python package from git revision <rev>.
+function python_setup(rev: string) {
+    mkdir_p_or_exit(PYREF)
+    # The Python host expands flow blocks with flowc built from the
+    # bootstrap C of the same revision.
+    let tar: string = WORK + "/pyref.tar"
+    let ga: ptr<ProcStrs> = sl_of3("git", "archive", "-o")
+    sl_push2(ga, tar, rev)
+    sl_push2(ga, "src/flow", "compiler/bootstrap/flowc_stage_a.c")
+    check(run_argv(ga))
+    let tx: ptr<ProcStrs> = sl_of3("tar", "-x", "-f")
+    sl_push(tx, tar)
+    sl_push2(tx, "-C", PYREF)
+    check(run_argv(tx))
+    rm_f(tar)
+    # The resolver's fallback stdlib and packages sit next to src/flow; point
+    # them at this checkout's, as flowc (FLOWC_ROOT) uses.
+    let _l: bool = gl_symlink(root_dir() + "/lib", PYREF + "/lib")
+    let _p: bool = gl_symlink(root_dir() + "/packages", PYREF + "/packages")
+}
+
+# python3 -m flow.transpiler <in> --mlir [extra] --lenient -o <out>
+function python_emit(input: string, out: string, extra: string) -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("python3", "-m", "flow.transpiler")
+    sl_push2(argv, input, "--mlir")
+    if s_len(extra) > 0 {
+        sl_push(argv, extra)
+    }
+    sl_push(argv, "--lenient")
+    sl_push2(argv, "-o", out)
+    let c: ptr<ProcCmd> = gl_cmd(argv)
+    proc_env(c, "PYTHONPATH", PYREF + "/src")
+    proc_timeout_ms(c, 120000)
+    let r: ptr<ProcResult> = proc_run(c)
+    let _w: bool = write_text(out + ".log", r.stderr)
+    return gl_status(r, true)
+}
+
+# Every .flow under the corpus directories, byte-sorted.
+function corpus_files() -> ptr<ProcStrs> {
+    let all: ptr<ProcStrs> = sl_new()
+    gl_find_files("examples", ".flow", all)
+    gl_find_files("tests", ".flow", all)
+    gl_find_files("lib", ".flow", all)
+    gl_find_files("benchmarks", ".flow", all)
+    gl_find_files("compiler/fixtures", ".flow", all)
+    gl_sort(all)
+    return all
+}
+
+# A line of the file that starts with `prefix` (grep -q "^prefix").
+function has_line_prefix(path: string, prefix: string) -> bool {
+    let text: string = read_text(path)
+    return s_starts(text, prefix) or s_contains(text, "\n" + prefix)
+}
+
+function stem(f: string) -> string {
+    return path_stem(f, ".flow")
+}
+
+function write_corpus(header2: string, rows: string) {
+    let _w: bool = write_text(FIX + "/corpus.txt", "# Corpus programs the Flow MLIR emitter " + header2 + rows)
+}
+
+function mode_write_golden(fixtures: ptr<ProcStrs>, rev: string) -> i32 {
+    python_setup(rev)
+    let mut i: i32 = 0
+    while i < sl_len(fixtures) {
+        let f: string = sl_get(fixtures, i)
+        let base: string = FIX + "/" + stem(f)
+        let key: string = key_of(f)
+        let py: string = WORK + "/python/" + key
+        check(python_emit(f, py + ".mlir", ""))
+        norm_to(py + ".mlir", base + ".mlir")
+        if s_starts(path_basename(f), "gpu_") {
+            check(python_emit(f, py + ".gpu.mlir", "--mlir-gpu"))
+            norm_to(py + ".gpu.mlir", base + ".gpu.mlir")
+        }
+        if s_starts(path_basename(f), "wasm_") {
+            check(python_emit(f, py + ".w32.mlir", "--wasm32"))
+            norm_to(py + ".w32.mlir", base + ".w32.mlir")
+        }
+        if HAVE_MLIR {
+            check(python_emit(f, py + ".ll", "--llvm"))
+            check(build_run(py, py + ".ll", "ll"))
+            let _c: bool = copy_file(py + ".out", base + ".out")
+            rm_f(py + ".exe")
+        }
+        i = i + 1
+    }
+    let all: ptr<ProcStrs> = corpus_files()
+    let rows: ptr<ProcStrs> = sl_new()
+    let mut k: i32 = 0
+    while k < sl_len(all) {
+        let f: string = sl_get(all, k)
+        k = k + 1
+        if s_starts(f, FIX + "/") {
+            continue
+        }
+        let key: string = key_of(f)
+        let fl: string = WORK + "/flowc/" + key
+        let py: string = WORK + "/python/" + key
+        if flowc_emit(f, fl + ".mlir", "") != 0 {
+            continue
+        }
+        if python_emit(f, py + ".mlir", "") != 0 {
+            continue
+        }
+        norm_to(fl + ".mlir", fl + ".norm")
+        norm_to(py + ".mlir", py + ".norm")
+        if same_bytes(fl + ".norm", py + ".norm") {
+            sl_push(rows, digest_of(fl + ".norm") + " " + f)
+        }
+    }
+    write_corpus("covers, with the digest of\n# their normalized MLIR. Written by parity_mlir.flow --write-golden " + rev + ".\n", gl_join_lines(rows))
+    outln("wrote goldens for " + s_itoa(sl_len(fixtures)) + " fixtures and " + s_itoa(sl_len(rows)) + " corpus programs from " + rev)
+    return 0
+}
+
+function mode_record(fixtures: ptr<ProcStrs>) -> i32 {
+    # The goldens from flowc itself: normalized text (and GPU and wasm32
+    # text), run output where mlir-opt is installed, and a digest of every
+    # program under the corpus directories flowc accepts.
+    let mut i: i32 = 0
+    while i < sl_len(fixtures) {
+        let f: string = sl_get(fixtures, i)
+        let base: string = FIX + "/" + stem(f)
+        let key: string = key_of(f)
+        let fl: string = WORK + "/flowc/" + key
+        if flowc_emit(f, fl + ".mlir", "") != 0 {
+            errln("record: flowc refused fixture " + f + ": " + gl_first_line(fl + ".mlir.log"))
+            return 1
+        }
+        norm_to(fl + ".mlir", base + ".mlir")
+        if s_starts(path_basename(f), "gpu_") {
+            let _g: i32 = flowc_emit(f, fl + ".gpu.mlir", "gpu")
+            norm_to(fl + ".gpu.mlir", base + ".gpu.mlir")
+        }
+        if s_starts(path_basename(f), "wasm_") {
+            let _w: i32 = flowc_emit(f, fl + ".w32.mlir", "w32")
+            norm_to(fl + ".w32.mlir", base + ".w32.mlir")
+        }
+        if HAVE_MLIR {
+            if build_run(fl, fl + ".mlir", "mlir") == 0 {
+                let _c: bool = copy_file(fl + ".out", base + ".out")
+                rm_f(fl + ".exe")
+            } else {
+                errln("record: fixture " + f + " does not build")
+                return 1
+            }
+        }
+        i = i + 1
+    }
+    let all: ptr<ProcStrs> = corpus_files()
+    let rows: ptr<ProcStrs> = sl_new()
+    let mut k: i32 = 0
+    while k < sl_len(all) {
+        let f: string = sl_get(all, k)
+        k = k + 1
+        if s_starts(f, FIX + "/") {
+            continue
+        }
+        let fl: string = WORK + "/flowc/" + key_of(f)
+        if flowc_emit(f, fl + ".mlir", "") != 0 {
+            continue
+        }
+        norm_to(fl + ".mlir", fl + ".norm")
+        sl_push(rows, digest_of(fl + ".norm") + " " + f)
+    }
+    write_corpus("accepts, with the digest of\n# their normalized MLIR. Written by parity_mlir.flow --record.\n", gl_join_lines(rows))
+    outln("recorded goldens for " + s_itoa(sl_len(fixtures)) + " fixtures and " + s_itoa(sl_len(rows)) + " corpus programs from flowc")
+    return 0
+}
+
+# Text of `n` lines of `diff a b` on stderr.
+function show_diff(a: string, b: string, n: i32) {
+    errs(gl_head(gl_diff(a, b), n))
+}
+
+# One mode of a fixture against its golden: "gpu" or "w32".
+function fixture_mode(f: string, base: string, fl: string, mode: string, golden_ext: string, label: string) -> bool {
+    let out: string = fl + "." + mode + ".mlir"
+    let norm: string = fl + "." + mode + ".norm"
+    if flowc_emit(f, out, mode) == 0 and try_norm_to(out, norm) and same_bytes(base + golden_ext, norm) {
+        return true
+    }
+    errln("FAIL " + f + ": " + label + "-mode MLIR differs from " + base + golden_ext)
+    return false
+}
+
+# The corpus line `want path`, as `read -r want f` splits it.
+function corpus_line_parts(line: string) -> ptr<ProcStrs> {
+    let p: ptr<u8> = line as ptr<u8>
+    let n: i32 = s_len(line)
+    let mut i: i32 = 0
+    while i < n and (p[i] == 32 or p[i] == 9) {
+        i = i + 1
+    }
+    let ws: i32 = i
+    while i < n and p[i] != 32 and p[i] != 9 {
+        i = i + 1
+    }
+    let want: string = s_slice(line, ws, i)
+    while i < n and (p[i] == 32 or p[i] == 9) {
+        i = i + 1
+    }
+    let mut e: i32 = n
+    while e > i and (p[e - 1] == 32 or p[e - 1] == 9) {
+        e = e - 1
+    }
+    return sl_of2(want, s_slice(line, i, e))
+}
+
+# 4. Live comparison with the Python generator at <rev>; the failures.
+function live_python(fixtures: ptr<ProcStrs>, rev: string) -> i32 {
+    python_setup(rev)
+    let all: ptr<ProcStrs> = sl_copy(fixtures)
+    let found: ptr<ProcStrs> = corpus_files()
+    let mut q: i32 = 0
+    while q < sl_len(found) {
+        if not s_starts(sl_get(found, q), FIX + "/") {
+            sl_push(all, sl_get(found, q))
+        }
+        q = q + 1
+    }
+    let at: string = "python@" + rev
+    let mut accepted: i32 = 0
+    let mut text_same: i32 = 0
+    let mut text_fail: i32 = 0
+    let mut gpu_same: i32 = 0
+    let mut gpu_fail: i32 = 0
+    let mut w32_same: i32 = 0
+    let mut w32_fail: i32 = 0
+    let mut py_fail: i32 = 0
+    let mut run_same: i32 = 0
+    let mut run_fail: i32 = 0
+    let mut run_skip: i32 = 0
+    let mut run_nondet: i32 = 0
+    let mut i: i32 = 0
+    while i < sl_len(all) {
+        let f: string = sl_get(all, i)
+        i = i + 1
+        let key: string = key_of(f)
+        let fl: string = WORK + "/flowc/" + key
+        let py: string = WORK + "/python/" + key
+        if flowc_emit(f, fl + ".mlir", "") != 0 {
+            continue
+        }
+        accepted = accepted + 1
+        if python_emit(f, py + ".mlir", "") != 0 {
+            py_fail = py_fail + 1
+            errln("note: " + at + " fails on " + f + " (flowc accepts it)")
+            continue
+        }
+        norm_to(fl + ".mlir", fl + ".norm")
+        norm_to(py + ".mlir", py + ".norm")
+        if same_bytes(fl + ".norm", py + ".norm") {
+            text_same = text_same + 1
+        } else {
+            text_fail = text_fail + 1
+            errln("FAIL live " + f + ": MLIR differs from " + at)
+            show_diff(py + ".norm", fl + ".norm", 10)
+            continue
+        }
+        # A program with @gpu kernels: the GPU dialect module as well.
+        if has_line_prefix(f, "@gpu") and python_emit(f, py + ".gpu.mlir", "--mlir-gpu") == 0 and flowc_emit(f, fl + ".gpu.mlir", "gpu") == 0 {
+            norm_to(fl + ".gpu.mlir", fl + ".gpu.norm")
+            norm_to(py + ".gpu.mlir", py + ".gpu.norm")
+            if same_bytes(fl + ".gpu.norm", py + ".gpu.norm") {
+                gpu_same = gpu_same + 1
+            } else {
+                gpu_fail = gpu_fail + 1
+                errln("FAIL live " + f + ": GPU-mode MLIR differs from " + at)
+            }
+        }
+        # A program with externs: the wasm32 ABI as well.
+        if has_line_prefix(f, "extern") and python_emit(f, py + ".w32.mlir", "--wasm32") == 0 and flowc_emit(f, fl + ".w32.mlir", "w32") == 0 {
+            norm_to(fl + ".w32.mlir", fl + ".w32.norm")
+            norm_to(py + ".w32.mlir", py + ".w32.norm")
+            if same_bytes(fl + ".w32.norm", py + ".w32.norm") {
+                w32_same = w32_same + 1
+            } else {
+                w32_fail = w32_fail + 1
+                errln("FAIL live " + f + ": wasm32-mode MLIR differs from " + at)
+            }
+        }
+        if not HAVE_MLIR {
+            continue
+        }
+        # Run parity: both MLIR paths must build and agree, or both fail.
+        let mut flow_ok: i32 = 1
+        let mut py_ok: i32 = 1
+        if build_run(fl, fl + ".mlir", "mlir") != 0 {
+            flow_ok = 0
+        }
+        if python_emit(f, py + ".ll", "--llvm") == 0 and nonempty(py + ".ll") {
+            if build_run(py, py + ".ll", "ll") != 0 {
+                py_ok = 0
+            }
+        } else {
+            py_ok = 0
+        }
+        if flow_ok == 0 and py_ok == 0 {
+            run_skip = run_skip + 1
+        } elif flow_ok != py_ok {
+            run_fail = run_fail + 1
+            errln("FAIL run " + f + ": only one MLIR path built (flowc=" + s_itoa(flow_ok) + " python=" + s_itoa(py_ok) + ")")
+        } elif same_bytes(fl + ".out", py + ".out") {
+            run_same = run_same + 1
+        } else {
+            # Timings and printed addresses change from run to run. A program
+            # whose build disagrees with itself on a second run (either path)
+            # is not comparable.
+            run_exe(py, py + ".out2")
+            run_exe(fl, fl + ".out2")
+            if not same_bytes(py + ".out", py + ".out2") or not same_bytes(fl + ".out", fl + ".out2") {
+                run_nondet = run_nondet + 1
+            } else {
+                run_fail = run_fail + 1
+                errln("FAIL run " + f + ": run output differs")
+                show_diff(py + ".out", fl + ".out", 10)
+            }
+        }
+        rm_f(fl + ".exe")
+        rm_f(py + ".exe")
+    }
+    outln("live " + at + ": accepted=" + s_itoa(accepted) + " text_same=" + s_itoa(text_same) + " text_fail=" + s_itoa(text_fail) + " python_fail=" + s_itoa(py_fail))
+    outln("live gpu dialect: same=" + s_itoa(gpu_same) + " fail=" + s_itoa(gpu_fail))
+    outln("live wasm32 abi: same=" + s_itoa(w32_same) + " fail=" + s_itoa(w32_fail))
+    if HAVE_MLIR {
+        outln("live run: same=" + s_itoa(run_same) + " fail=" + s_itoa(run_fail) + " nondeterministic=" + s_itoa(run_nondet) + " both_unbuildable=" + s_itoa(run_skip))
+    }
+    return text_fail + gpu_fail + w32_fail + run_fail
+}
+
+function main() -> i32 {
+    ROOT_P = gl_enter_root() as ptr<u8>
+    let args: ptr<ProcStrs> = proc_args()
+    let mode: string = sl_get(args, 0)
+    let rev: string = sl_get(args, 1)
+    if not (s_empty(mode) or s_eq(mode, "--python") or s_eq(mode, "--write-golden") or s_eq(mode, "--record")) {
+        errln("usage: " + USAGE_NAME + " [--python <rev> | --write-golden <rev> | --record]")
+        return 2
+    }
+    if not s_empty(mode) and not s_eq(mode, "--record") and s_empty(rev) {
+        errln("usage: " + USAGE_NAME + " " + mode + " <rev>")
+        return 2
+    }
+    rm_rf(WORK)
+    mkdir_p_or_exit(WORK + "/flowc")
+    mkdir_p_or_exit(WORK + "/python")
+    mkdir_p_or_exit(WORK + "/bin")
+
+    let mut bin: string = env("FLOWC_BIN")
+    if s_empty(bin) {
+        bin = "compiler/build/flowc_bootstrap"
+        check(gl_build_flowc(bin, false, true))
+    }
+    BIN_P = bin as ptr<u8>
+    outln("=== parity_mlir: flowc = " + bin + " ===")
+
+    let tools_argv: ptr<ProcStrs> = lower_cmd()
+    sl_push(tools_argv, "--tools")
+    let tc: ptr<ProcCmd> = gl_cmd(tools_argv)
+    let tr: ptr<ProcResult> = proc_run(tc)
+    HAVE_MLIR = gl_status(tr, false) == 0
+    # Link the lowered IR with the clang of the same LLVM as mlir-translate:
+    # an older clang (Xcode's) cannot read the IR attributes a newer LLVM
+    # writes.
+    let mut mlir_cc: string = "clang"
+    if HAVE_MLIR {
+        let tl: ptr<ProcStrs> = gl_lines(tr.stdout)
+        let mut translate: string = ""
+        let mut t: i32 = 0
+        while t < sl_len(tl) {
+            if s_starts(sl_get(tl, t), "mlir-translate=") and s_empty(translate) {
+                translate = s_from(sl_get(tl, t), 15)
+            }
+            t = t + 1
+        }
+        let llvm_bin: string = path_dirname(translate)
+        if is_exec(llvm_bin + "/clang") {
+            mlir_cc = llvm_bin + "/clang"
+        }
+    }
+    MLIR_CC_P = mlir_cc as ptr<u8>
+
+    let fixtures: ptr<ProcStrs> = glob_suffix(FIX, ".flow")
+
+    if s_eq(mode, "--write-golden") {
+        return mode_write_golden(fixtures, rev)
+    }
+    if s_eq(mode, "--record") {
+        return mode_record(fixtures)
+    }
+
+    let mut fail: i32 = 0
+
+    # 1. Fixtures vs goldens (text); gpu_* fixtures also under FLOWC_MLIR_GPU=1.
+    let mut fx_pass: i32 = 0
+    let mut gpu_pass: i32 = 0
+    let mut w32_pass: i32 = 0
+    let mut i: i32 = 0
+    while i < sl_len(fixtures) {
+        let f: string = sl_get(fixtures, i)
+        i = i + 1
+        let base: string = FIX + "/" + stem(f)
+        let fl: string = WORK + "/flowc/" + key_of(f)
+        if flowc_emit(f, fl + ".mlir", "") != 0 {
+            fail = fail + 1
+            errln("FAIL " + f + ": flowc refused it: " + gl_first_line(fl + ".mlir.log"))
+            continue
+        }
+        norm_to(fl + ".mlir", fl + ".norm")
+        if is_file(base + ".mlir") and same_bytes(base + ".mlir", fl + ".norm") {
+            fx_pass = fx_pass + 1
+        } else {
+            fail = fail + 1
+            errln("FAIL " + f + ": MLIR differs from " + base + ".mlir")
+            if is_file(base + ".mlir") {
+                show_diff(base + ".mlir", fl + ".norm", 20)
+            }
+        }
+        if s_starts(path_basename(f), "gpu_") {
+            if fixture_mode(f, base, fl, "gpu", ".gpu.mlir", "GPU") {
+                gpu_pass = gpu_pass + 1
+            } else {
+                fail = fail + 1
+            }
+        }
+        if s_starts(path_basename(f), "wasm_") {
+            if fixture_mode(f, base, fl, "w32", ".w32.mlir", "wasm32") {
+                w32_pass = w32_pass + 1
+            } else {
+                fail = fail + 1
+            }
+        }
+    }
+    outln("fixtures (text): pass=" + s_itoa(fx_pass) + " of " + s_itoa(sl_len(fixtures)))
+    outln("fixtures (gpu text): pass=" + s_itoa(gpu_pass))
+    outln("fixtures (wasm32 text): pass=" + s_itoa(w32_pass))
+
+    # 2. Fixtures run (stdout + exit) vs goldens.
+    if HAVE_MLIR {
+        let mut run_pass: i32 = 0
+        let mut j: i32 = 0
+        while j < sl_len(fixtures) {
+            let f: string = sl_get(fixtures, j)
+            j = j + 1
+            let base: string = FIX + "/" + stem(f)
+            let fl: string = WORK + "/flowc/" + key_of(f)
+            if not is_file(fl + ".mlir") {
+                continue
+            }
+            if build_run(fl, fl + ".mlir", "mlir") != 0 {
+                fail = fail + 1
+                errln("FAIL " + f + ": did not lower or link")
+                errs(gl_head(read_text(fl + ".lower.log") + read_text(fl + ".link.log"), 10))
+                continue
+            }
+            rm_f(fl + ".exe")
+            if is_file(base + ".out") and same_bytes(base + ".out", fl + ".out") {
+                run_pass = run_pass + 1
+            } else {
+                fail = fail + 1
+                errln("FAIL " + f + ": run output differs from " + base + ".out")
+                if is_file(base + ".out") {
+                    show_diff(base + ".out", fl + ".out", 10)
+                }
+            }
+        }
+        outln("fixtures (run): pass=" + s_itoa(run_pass) + " of " + s_itoa(sl_len(fixtures)))
+    } else {
+        outln("fixtures (run): skipped, mlir-opt not found (brew install llvm)")
+    }
+
+    # 3. Recorded corpus: still accepted, same MLIR.
+    let mut corpus_n: i32 = 0
+    let mut corpus_fail: i32 = 0
+    let lines: ptr<ProcStrs> = gl_file_lines(FIX + "/corpus.txt")
+    let mut k: i32 = 0
+    while k < sl_len(lines) {
+        let line: string = sl_get(lines, k)
+        k = k + 1
+        if s_starts(line, "#") {
+            continue
+        }
+        let parts: ptr<ProcStrs> = corpus_line_parts(line)
+        let want: string = sl_get(parts, 0)
+        let f: string = sl_get(parts, 1)
+        if s_empty(want) or s_eq(want, "#") {
+            continue
+        }
+        corpus_n = corpus_n + 1
+        let fl: string = WORK + "/flowc/" + key_of(f)
+        if flowc_emit(f, fl + ".mlir", "") != 0 {
+            corpus_fail = corpus_fail + 1
+            errln("FAIL corpus " + f + ": no longer accepted: " + gl_first_line(fl + ".mlir.log"))
+            continue
+        }
+        norm_to(fl + ".mlir", fl + ".norm")
+        if not s_eq(digest_of(fl + ".norm"), want) {
+            corpus_fail = corpus_fail + 1
+            errln("FAIL corpus " + f + ": MLIR changed since the golden was recorded")
+        }
+    }
+    outln("corpus (recorded): programs=" + s_itoa(corpus_n) + " fail=" + s_itoa(corpus_fail))
+    fail = fail + corpus_fail
+
+    if s_eq(mode, "--python") {
+        fail = fail + live_python(fixtures, rev)
+    }
+
+    if fail != 0 {
+        outln("parity_mlir: FAIL (" + s_itoa(fail) + ")")
+        return 1
+    }
+    outln("parity_mlir: PASS")
+    return 0
+}

@@ -28,7 +28,7 @@ in progress and are not counted as landed.
 | Emit → cc → run for subset fixtures | Works (sum/fib/structs/ptr/bundle/…) |
 | Self-emit fixed-point (`stage_a_self_emit*.sh`) | Works for the Stage-A frontend object graph |
 | Full language on the C path without Python | **Yes**. On the corpus flowc matches the retired Python backend on 1037 of 1053 programs with `main()` and builds 6 it could not ([`report.txt`](../../compiler/corpus_parity/report.txt)) |
-| MLIR backend without Python | **Yes**. flowc's MLIR text equals the retired Python generator's on all 1270 programs it lowered ([`parity_mlir.sh`](../../compiler/scripts/parity_mlir.sh)); `flow mlir`, `mlir-run`, `jit`, `ml`, `test-mlir`, `--mlir-gpu` and `--emit-spirv` pass `./flow tool tests/mlir_commands/run.flow` with Python stubbed |
+| MLIR backend without Python | **Yes**. flowc's MLIR text equals the retired Python generator's on all 1270 programs it lowered ([`parity_mlir.flow`](../../compiler/scripts/parity_mlir.flow)); `flow mlir`, `mlir-run`, `jit`, `ml`, `test-mlir`, `--mlir-gpu` and `--emit-spirv` pass `./flow tool tests/mlir_commands/run.flow` with Python stubbed |
 | CI user-compile without `pip install` | **Yes**: `flowc-compile` job (Phase D slice 1) |
 | Flow-in-WASM compiler | **No**. See [wasm.md](../language/wasm.md) |
 

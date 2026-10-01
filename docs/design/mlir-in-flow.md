@@ -16,7 +16,7 @@ deleted, the contract is the C backend's: the emitter writes MLIR that
 verifies, and the program built from it prints what the C build prints and
 exits with the same code.
 
-`compiler/scripts/mlir_vs_c.sh` holds it. It builds every tracked program
+`compiler/scripts/mlir_vs_c.flow` holds it. It builds every tracked program
 with a `main` through `flow compile` and `flow compile --backend=mlir`, runs
 both with stdin closed and a timeout, and compares exit code and stdout. A
 program the C backend does not build is counted apart; the floor in
@@ -36,7 +36,7 @@ On macOS (LLVM 22), 2026-09-30:
 The floor is 5 under the last recorded run, since a few timing programs
 flap when the corpus runs in parallel.
 
-`parity_mlir.sh` stays as the regression gate on the text: its goldens are
+`parity_mlir.flow` stays as the regression gate on the text: its goldens are
 now recorded from flowc with `--record`, and each change to them comes with
 the fix that caused it.
 
@@ -146,7 +146,7 @@ Against the Python generator at `bb23f19f`, run with `--lenient` over every
 
 flowc also accepts 3 programs the Python generator fails on
 (`tests/lang/test_prefix_deref.flow`, `tests/tools/lsp/fixtures/attr.flow`
-and a fuzz crash reproducer). `parity_mlir.sh` holds this as goldens: 21
+and a fuzz crash reproducer). `parity_mlir.flow` holds this as goldens: 21
 fixtures (text, and run output where mlir-opt is installed), the GPU and
 wasm32 fixtures, and 1252 corpus digests. `--python <rev>` still compares
 live against any revision that has the Python generator, taken with `git
@@ -188,7 +188,7 @@ lines under `src/flow`, and 111 pytest files that imported them.
 
 What those tests checked is covered as follows:
 
-* MLIR text and runs: `parity_mlir.sh` and `./flow tool tests/mlir_commands/run.flow`.
+* MLIR text and runs: `parity_mlir.flow` and `./flow tool tests/mlir_commands/run.flow`.
 * Lowering, DSLs and flow blocks: `tests/cgen`, `tests/lang`,
   `parity_flow_blocks.flow`, `parity_dynamics_dsl.flow`, `parity_field_dsl.flow`,
   `parity_shader_dsl.flow`, `parity_lowering.flow`, `parity_effects.flow`.
@@ -364,7 +364,7 @@ and takes the old path. `FLOW_HOST=python` is retired and no longer selects it.
 
 ### Parity gate
 
-`compiler/scripts/parity_mlir.sh`, modelled on `parity_field_dsl.flow`:
+`compiler/scripts/parity_mlir.flow`, modelled on `parity_field_dsl.flow`:
 
 * golden mode (no Python): the fixtures in `compiler/fixtures/mlir/` against
   their `.mlir` goldens (normalized Python output) and, with mlir-opt
@@ -379,7 +379,7 @@ and takes the old path. `FLOW_HOST=python` is retired and no longer selects it.
   through both MLIR paths and run, and the runs must agree.
 * `--write-golden <rev>` rewrites the goldens.
 
-Normalization (`compiler/scripts/mlir_normalize.awk`) renames `%N` values and
+Normalization (`gl_mlir_normalize` in `compiler/scripts/gate_lib.flow`) renames `%N` values and
 `^bbN` labels in order of first appearance and drops indentation. Python
 numbers a value before it emits the value's operands, so its numbers are not
 in text order; the renaming makes that irrelevant. Nothing else is
@@ -603,7 +603,7 @@ modes the MLIR backend runs under (`compile`, `mlir`). With
 `FLOWC_MLIR_GPU=1`, the counterpart of `--mlir-gpu`, the kernels become
 `gpu.module @flow_kernels` as `mlir_gpu_codegen.py` writes it. That
 generator numbers each kernel's values from `%1`, so the normalizer starts
-names over at each `gpu.func`; `parity_mlir.sh` checks `gpu_*` fixtures in
+names over at each `gpu.func`; `parity_mlir.flow` checks `gpu_*` fixtures in
 GPU mode and, with `--python`, every accepted program that has a kernel.
 `@cInclude`, `@cEmbed` and `@cImport` were refused while parity with
 Python held (Python rejected the first two); they are accepted now, see
@@ -650,7 +650,7 @@ figures above (a few large programs time out in clang under load). In GPU
 mode, 5 of 5 corpus programs with a kernel Python lowers are text-equal;
 Python fails on the other 3, and flowc refuses them.
 
-`parity_mlir.sh` golden mode: 18 fixtures (text and run, and `gpu_kernels`
+`parity_mlir.flow` golden mode: 18 fixtures (text and run, and `gpu_kernels`
 in GPU mode) and 948 recorded corpus programs.
 
 ## Slice order
