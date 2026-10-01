@@ -1,0 +1,225 @@
+# Checks for scripts/tools/lattice_allpass (tools/audio).
+#
+# The reference values were recorded from the numpy/matplotlib scripts this
+# tool replaced:
+#   - numpy default_rng(seed).standard_normal(1440) for the six hi-hat seeds,
+#     printed with %.17g, hashed with SHA-256;
+#   - SHA-256 of the reference input.wav (byte-identical in the Flow port);
+#   - the printed reflections and RMS lines.
+# The two all-pass outputs run through the stdlib's f32 lattice, so they
+# are checked by format and length here; against the float64 reference they
+# differ by at most 1 LSB on 115 and 162 of 144000 samples.
+#
+# Usage: ./flow tool tests/tools/audio/run.flow
+
+import "tools/flow_cli/sys.flow"
+import "tools/doc_examples/sha256.flow"
+import std.process { ProcCmd, ProcResult, ProcStrs, proc_cmd, proc_arg, proc_env, proc_stdin, proc_stdout, proc_stderr, proc_run, proc_chdir, PROC_CAPTURE, PROC_NULL, PROC_INHERIT }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+struct Tally {
+    pass: i32,
+    fail: i32
+}
+
+let mut T: ptr<Tally> = null
+
+function ok(name: string) {
+    let t: ptr<Tally> = T
+    outln("PASS " + name)
+    t.pass = t.pass + 1
+}
+
+function bad(name: string) {
+    let t: ptr<Tally> = T
+    outln("FAIL " + name)
+    t.fail = t.fail + 1
+}
+
+function status_of(r: ptr<ProcResult>) -> i32 {
+    if s_len(r.error) > 0 {
+        return 127
+    }
+    if r.exit_code < 0 {
+        return 128 - r.exit_code
+    }
+    return r.exit_code
+}
+
+function file_sha(p: string) -> string {
+    let b: Bytes = read_bytes(p)
+    if b.len < 0 {
+        return ""
+    }
+    return sha256_hex_bytes(b.data, b.len)
+}
+
+# `od -A n -t x1 -N n FILE | tr -d ' \n'`
+function head_hex(p: string, n: i64) -> string {
+    let b: Bytes = read_bytes(p)
+    let digits: string = "0123456789abcdef"
+    let mut out_hex: string = ""
+    let mut i: i64 = 0
+    while i < n and i < b.len {
+        let v: i32 = b.data[i] as i32
+        out_hex = out_hex + s_slice(digits, v / 16, v / 16 + 1) + s_slice(digits, v % 16, v % 16 + 1)
+        i = i + 1
+    }
+    return out_hex
+}
+
+function file_size(p: string) -> i64 {
+    let b: Bytes = read_bytes(p)
+    return b.len
+}
+
+# An SVG: not empty, "<?xml" in its first five bytes, "</svg>" on its last
+# line, and the same bytes as the copy in the figures directory.
+function svg_ok(f: string, copy: string) -> bool {
+    if not nonempty(f) {
+        return false
+    }
+    let text: string = read_text(f)
+    if not s_starts(text, "<?xml") {
+        return false
+    }
+    let mut body: string = text
+    if s_ends(body, "\n") {
+        body = s_slice(body, 0, s_len(body) - 1)
+    }
+    let last: string = s_from(body, s_rfind_byte(body, 10) + 1)
+    return s_contains(last, "</svg>") and same_bytes(f, copy)
+}
+
+function main() -> i32 {
+    let root: string = env_or("FLOW_REPO_ROOT", cwd_logical())
+    let _cd: bool = proc_chdir(root)
+    env_set("PWD", root)
+    let t: ptr<Tally> = malloc(16) as ptr<Tally>
+    T = t
+    t.pass = 0
+    t.fail = 0
+
+    let bc: ptr<ProcCmd> = proc_cmd(root + "/flow")
+    proc_arg(bc, "tool")
+    proc_arg(bc, "--path")
+    proc_arg(bc, "lattice_allpass")
+    proc_stdout(bc, PROC_CAPTURE)
+    proc_stderr(bc, PROC_INHERIT)
+    let br: ptr<ProcResult> = proc_run(bc)
+    if status_of(br) != 0 {
+        cli_exit(status_of(br))
+    }
+    let bin: string = s_chomp_all(br.stdout)
+    let work: string = mktemp_dir(env_or("TMPDIR", "/tmp") + "/flow-audio-tests.XXXXXX")
+    on_exit_remove(work)
+
+    # numpy's Generator stream, bit for bit.
+    let seeds: ptr<ProcStrs> = s_words("250 750 1250 1750 2250 2750")
+    let want: ptr<ProcStrs> = s_words("8c01848b869fed0cc74f895ec5ad4d38b172fa50d0657e1c875d51106303df30 2835689ad7819d8ad35cd3a51c8c08a32b992c8628568fbb223e4761a0763153 0636583a9dc39988fe47a075efee42b14567858cdc0c88d5f69583ae3412dd3f fc1d431f11a66ebbdfc2eaf1266c7c5076521c50279b7fcb2995cec88816710e e655efbe6d57fde867d24e37678adfc15e92d1e29c3c8d0feed1bb3f5fee2db5 a3d7ed8771bcd02835f3123b002afc9b4a0ffcfca1736057cd3c188c16217852")
+    let mut i: i32 = 0
+    while i < sl_len(seeds) {
+        let seed: string = sl_get(seeds, i)
+        let c: ptr<ProcCmd> = proc_cmd(bin)
+        proc_arg(c, "normals")
+        proc_arg(c, seed)
+        proc_arg(c, "1440")
+        proc_stdout(c, PROC_CAPTURE)
+        proc_stderr(c, PROC_INHERIT)
+        let r: ptr<ProcResult> = proc_run(c)
+        if status_of(r) != 0 {
+            cli_exit(status_of(r))
+        }
+        let got: string = sha256_hex(r.stdout)
+        if s_eq(got, sl_get(want, i)) {
+            ok("normals seed " + seed)
+        } else {
+            bad("normals seed " + seed + " (" + got + ")")
+        }
+        i = i + 1
+    }
+
+    # The demo, with every output redirected into the temp dir.
+    let d: ptr<ProcCmd> = proc_cmd(bin)
+    proc_arg(d, "demo")
+    proc_arg(d, "--no-open")
+    proc_env(d, "LATTICE_ALLPASS_OUT", work)
+    proc_stdout(d, PROC_CAPTURE)
+    proc_stderr(d, PROC_CAPTURE)
+    let rd: ptr<ProcResult> = proc_run(d)
+    if status_of(rd) == 0 {
+        ok("demo exit 0")
+    } else {
+        bad("demo exit status")
+        out(rd.stderr)
+    }
+
+    let _w: bool = write_text(work + "/stdout", rd.stdout)
+    let head: string = head_lines(work + "/stdout", 3)
+    let expected: string = "Schur reflections k = [-0.86768672  0.52942705 -0.13723952  0.012     ]\nRMS  in=0.1774  static=0.1774  mod=0.1774\nRMS ratio static=1.0000  mod=1.0000\n"
+    if s_eq(head, expected) {
+        ok("demo printed numbers")
+    } else {
+        bad("demo printed numbers")
+        let _h1: bool = write_text(work + "/head", head)
+        let _h2: bool = write_text(work + "/head.expected", expected)
+        let df: ptr<ProcCmd> = proc_cmd("diff")
+        proc_arg(df, "-u")
+        proc_arg(df, work + "/head.expected")
+        proc_arg(df, work + "/head")
+        proc_stdout(df, PROC_CAPTURE)
+        let rdf: ptr<ProcResult> = proc_run(df)
+        out(rdf.stdout)
+    }
+
+    let audio: string = work + "/build/audio/lattice_allpass"
+    let hdr: string = "524946462465040057415645666d74201000000001000100" + "80bb000000770100020010006461746100650400"
+    let wavs: ptr<ProcStrs> = s_words("input output_static_allpass output_modulated_allpass")
+    let mut k: i32 = 0
+    while k < sl_len(wavs) {
+        let w: string = sl_get(wavs, k)
+        let f: string = audio + "/" + w + ".wav"
+        let size: i64 = file_size(f)
+        if size < 0 {
+            # The demo wrote nothing to check: stop here, as the shell runner
+            # did when `wc -c < FILE` failed under `set -e`.
+            errln("tests/tools/audio/run.flow: " + f + ": No such file or directory")
+            cli_exit(1)
+        }
+        if size == 288044 and s_eq(head_hex(f, 44), hdr) {
+            ok(w + ".wav: 16-bit mono 48 kHz, 144000 frames")
+        } else {
+            bad(w + ".wav header/size (" + s_itoa(size as i32) + ")")
+        }
+        k = k + 1
+    }
+    if s_eq(file_sha(audio + "/input.wav"), "1c0d2a8ae84b2488102b5fb9e34cdfb9bcb0efcc3774d25b6fbe6b3d1e28f103") {
+        ok("input.wav matches the reference bytes")
+    } else {
+        bad("input.wav differs from the reference")
+    }
+
+    let plots: string = work + "/build/plots/schur_lattice_allpass"
+    let figs: string = work + "/docs/research/schur_lattice_allpass/figures"
+    let names: ptr<ProcStrs> = s_words("dsp_bode_pz_groupdelay dsp_impulse_step audio_waveforms audio_rms_envelope audio_spectrograms audio_modulation_proof audio_phase_difference")
+    let mut j: i32 = 0
+    while j < sl_len(names) {
+        let n: string = sl_get(names, j)
+        if svg_ok(plots + "/" + n + ".svg", figs + "/" + n + ".svg") {
+            ok(n + ".svg written and copied")
+        } else {
+            bad(n + ".svg")
+        }
+        j = j + 1
+    }
+
+    outln("audio tool checks: " + s_itoa(t.pass) + " passed, " + s_itoa(t.fail) + " failed")
+    if t.fail > 0 {
+        cli_exit(1)
+    }
+    cli_exit(0)
+    return 0
+}

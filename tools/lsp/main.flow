@@ -8,7 +8,7 @@
 # tools/lsp/analyze.flow; formatting uses compiler/src/fmt.flow.
 #
 # This replaces src/flow/lsp_server.py. Responses keep that server's JSON
-# layout, so tests/tools/lsp/run.sh can diff the two.
+# layout, so tests/tools/lsp/run.flow can diff the two.
 #
 # The launcher (the flow CLI, tools/flow_cli) passes FLOW_ROOT, the repository root, which
 # locates lib/stdlib for stdlib hover, completion and definition.

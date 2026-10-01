@@ -287,7 +287,7 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 - ✅ **NEW:** Unified postfix chaining (`ptr[0].field`, `f()[1].x`, `pts[0].method()`)
 - ✅ **NEW:** Strict-clean corpus (`./flow test --strict --tier2`, 215/215) with `# flow:lenient` pragma
 - ✅ **NEW:** Fuzzing harness (`tests/fuzz/run_fuzz.py`) wired into CI
-- ✅ **NEW:** LSP inline diagnostics, find references, rename (transcript test in `tests/tools/lsp/run.sh`)
+- ✅ **NEW:** LSP inline diagnostics, find references, rename (transcript test in `tests/tools/lsp/run.flow`)
 
 **What's broken/missing:**
 - ✅ **FIXED (#124):** MLIR backend exercised against chained postfix AST shapes
@@ -645,7 +645,7 @@ Make `flow-lsp` actually useful.
 - [x] Inline error diagnostics (publishDiagnostics on didOpen/didChange, debounced)
 - [x] Rename symbol (with prepareRename validation and keyword rejection)
 
-Covered by the transcript test `tests/tools/lsp/run.sh`, which drives the native server (`tools/lsp/main.flow`) through recorded JSON-RPC sessions.
+Covered by the transcript test `tests/tools/lsp/run.flow`, which drives the native server (`tools/lsp/main.flow`) through recorded JSON-RPC sessions.
 
 ### 3.2 REPL (Complete ✅)
 **Priority:** Medium  

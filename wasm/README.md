@@ -92,7 +92,7 @@ wasm/
 
 The converter is `scripts/flow_to_wasm.sh`, a shim over the Flow program
 `scripts/tools/flow_to_wasm/main.flow`. Page text lives in
-`scripts/tools/flow_to_wasm/assets`. `tests/tools/flow_to_wasm/run.sh` checks
+`scripts/tools/flow_to_wasm/assets`. `tests/tools/flow_to_wasm/run.flow` checks
 it against goldens recorded from the Python converter it replaced.
 
 ### Single File

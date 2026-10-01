@@ -1,0 +1,256 @@
+# Parity test for the legacy converter behind `flow wasm --legacy`
+# (scripts/tools/flow_to_wasm/main.flow).
+#
+# The goldens in tests/tools/flow_to_wasm/expected were recorded from
+# wasm/flow_to_wasm.py, the Python converter this tool replaced, before it
+# was deleted. Only the usage text changed, to name the shim.
+#
+# Two stubs keep the cases fast and independent of the toolchain:
+#   - a fake flowc (FLOWC_BIN, read by compiler/scripts/flowc_emit.sh)
+#     writes fixed C, or fails for a source containing "broken";
+#   - a fake emcc records its argv and, per FAKE_EMCC_MODE, succeeds
+#     (writing the .js and .wasm), fails `--version`, or fails the compile
+#     with more than 200 characters on stderr.
+#
+# Each case writes <case>.txt: stdout, the exit code and the emcc argv log.
+# Generated .c, .html and index.html files are compared byte for byte.
+# python and python3 are stubbed out on PATH, so a pass also shows the tool
+# needs no Python.
+#
+# Usage:
+#   ./flow tool tests/tools/flow_to_wasm/run.flow            check
+#   ./flow tool tests/tools/flow_to_wasm/run.flow --update   rewrite the goldens from the tool
+
+import "tools/flow_cli/sys.flow"
+import "scripts/tools/lib/bgproc.flow"
+import std.process { ProcCmd, ProcResult, ProcStrs, proc_cmd, proc_arg, proc_env, proc_cwd, proc_stdin, proc_stdout, proc_stderr, proc_run, proc_chdir, PROC_CAPTURE, PROC_NULL, PROC_INHERIT, PROC_MERGE }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+struct Ctx {
+    root: string,
+    here: string,
+    work: string,
+    tool: string,
+    update: bool,
+    pass: i32,
+    fail: i32
+}
+
+let mut CTX: ptr<Ctx> = null
+
+# The stand-in for flowc that compiler/scripts/flowc_emit.sh runs.
+const FAKE_FLOWC: string = "#!/bin/sh\nif grep -q broken \"$FLOWC_IN\"; then\n    echo \"fake flowc: parse error in $(basename \"$FLOWC_IN\")\" >&2\n    exit 1\nfi\nprintf '/* fake flowc: %s */\\nint main(void) {\\n    return (0 < 1 && 2 > 1) ? 0 : 1;\\n}\\n' \"$(basename \"$FLOWC_IN\")\" > \"$FLOWC_OUT\"\n"
+
+# The stand-in for emcc: logs its argv, then acts per FAKE_EMCC_MODE.
+const FAKE_EMCC: string = "#!/bin/sh\n{\n    printf 'argv:'\n    for a in \"$@\"; do printf ' [%s]' \"$a\"; done\n    printf '\\n'\n} >> \"$FAKE_EMCC_LOG\"\nmode=\"${FAKE_EMCC_MODE:-ok}\"\nif [ \"$1\" = \"--version\" ]; then\n    [ \"$mode\" = verfail ] && { echo \"broken emcc\" >&2; exit 3; }\n    echo \"emcc (fake) 1.0\"\n    exit 0\nfi\nif [ \"$mode\" = compfail ]; then\n    echo \"stdout is dropped\"\n    printf 'emcc: error: caf\\303\\251 %0250d\\nsecond line\\n' 0 >&2\n    exit 1\nfi\nout=\"\"\nprev=\"\"\nfor a in \"$@\"; do\n    [ \"$prev\" = \"-o\" ] && out=\"$a\"\n    prev=\"$a\"\ndone\necho \"// fake js\" > \"$out\"\nprintf 'wasm' > \"${out%.js}.wasm\"\n"
+
+function status_of(r: ptr<ProcResult>) -> i32 {
+    if s_len(r.error) > 0 {
+        return 127
+    }
+    if r.exit_code < 0 {
+        return 128 - r.exit_code
+    }
+    return r.exit_code
+}
+
+function write_exec(path: string, text: string) {
+    let _w: bool = write_text(path, text)
+    let _m: bool = set_mode(path, 493)
+}
+
+# `diff -u a b 2>&1 | head -40`
+function show_diff(a: string, b: string) {
+    let d: ptr<ProcCmd> = proc_cmd("diff")
+    proc_arg(d, "-u")
+    proc_arg(d, a)
+    proc_arg(d, b)
+    proc_stdout(d, PROC_CAPTURE)
+    proc_stderr(d, PROC_MERGE)
+    let r: ptr<ProcResult> = proc_run(d)
+    let lines: ptr<ProcStrs> = s_lines(r.stdout)
+    let mut i: i32 = 0
+    while i < sl_len(lines) and i < 40 {
+        outln(sl_get(lines, i))
+        i = i + 1
+    }
+}
+
+function compare(name: string, expected: string, actual: string) {
+    let c: ptr<Ctx> = CTX
+    if c.update {
+        let _m: bool = mkdir_p(path_dirname(expected))
+        if exists(actual) {
+            let _c: bool = copy_file(actual, expected)
+        } else {
+            rm_f(expected)
+        }
+        c.pass = c.pass + 1
+        return
+    }
+    if not exists(actual) and not exists(expected) {
+        c.pass = c.pass + 1
+    } elif exists(actual) and exists(expected) and same_bytes(expected, actual) {
+        c.pass = c.pass + 1
+    } else {
+        outln("FAIL flow_to_wasm/" + name)
+        show_diff(expected, actual)
+        c.fail = c.fail + 1
+    }
+}
+
+# run <case> <emcc mode> <PATH> <repo root> args...
+# Runs from $work/cwd so relative output paths print the same everywhere.
+function run_case(name: string, mode: string, path: string, repo: string, args: ptr<ProcStrs>) {
+    let c: ptr<Ctx> = CTX
+    let log: string = c.work + "/" + name + ".emcc"
+    let txt: string = c.work + "/" + name + ".txt"
+    let _l: bool = write_text(log, "")
+    let _m: bool = mkdir_p(c.work + "/cwd")
+    let t: ptr<ProcCmd> = proc_cmd(c.tool)
+    let mut i: i32 = 0
+    while i < sl_len(args) {
+        proc_arg(t, sl_get(args, i))
+        i = i + 1
+    }
+    proc_cwd(t, c.work + "/cwd")
+    proc_env(t, "PWD", c.work + "/cwd")
+    proc_env(t, "FLOW_REPO_ROOT", repo)
+    proc_env(t, "FAKE_EMCC_MODE", mode)
+    proc_env(t, "FAKE_EMCC_LOG", log)
+    proc_env(t, "PATH", path)
+    proc_stdin(t, PROC_NULL)
+    proc_stdout(t, PROC_CAPTURE)
+    proc_stderr(t, PROC_CAPTURE)
+    let r: ptr<ProcResult> = proc_run(t)
+    let rc: i32 = status_of(r)
+    let _e: bool = write_text(c.work + "/" + name + ".err", r.stderr)
+    let mut text: string = r.stdout + "--- exit " + s_itoa(rc) + "\n--- emcc\n" + read_text(log)
+    text = s_replace(text, c.work, "WORK")
+    let _t: bool = write_text(txt, text)
+    compare(name + ".txt", c.here + "/expected/" + name + ".txt", txt)
+}
+
+# The generated files of one case.
+function check_files(name: string, dir: string, files: string) {
+    let c: ptr<Ctx> = CTX
+    let fl: ptr<ProcStrs> = s_words(files)
+    let mut i: i32 = 0
+    while i < sl_len(fl) {
+        let f: string = sl_get(fl, i)
+        compare(name + "/" + f, c.here + "/expected/" + name + "/" + f, dir + "/" + f)
+        i = i + 1
+    }
+}
+
+function main() -> i32 {
+    let c: ptr<Ctx> = malloc(56) as ptr<Ctx>
+    CTX = c
+    c.root = env_or("FLOW_REPO_ROOT", cwd_logical())
+    let root: string = c.root
+    let _cd: bool = proc_chdir(root)
+    env_set("PWD", root)
+    c.here = root + "/tests/tools/flow_to_wasm"
+    let args: ptr<ProcStrs> = proc_args()
+    c.update = sl_len(args) > 0 and s_eq(sl_get(args, 0), "--update")
+    c.pass = 0
+    c.fail = 0
+
+    let raw: string = mktemp_dir(env_or("TMPDIR", "/tmp") + "/flow-to-wasm-tests.XXXXXX")
+    on_exit_remove(raw)
+    let work: string = abs_dir_physical(raw)
+    c.work = work
+
+    let mut tool: string = env("FLOW_TO_WASM_TOOL")
+    if s_len(tool) == 0 {
+        let b: ptr<ProcCmd> = proc_cmd(root + "/flow")
+        proc_arg(b, "tool")
+        proc_arg(b, "--path")
+        proc_arg(b, "flow_to_wasm")
+        proc_stdout(b, PROC_CAPTURE)
+        proc_stderr(b, PROC_INHERIT)
+        let br: ptr<ProcResult> = proc_run(b)
+        if status_of(br) != 0 {
+            cli_exit(status_of(br))
+        }
+        tool = s_chomp_all(br.stdout)
+    }
+    c.tool = tool
+
+    # Stubs.
+    let _b1: bool = mkdir_p(work + "/bin")
+    let _b2: bool = mkdir_p(work + "/nopy")
+    write_exec(work + "/nopy/python", "#!/bin/sh\necho \"python: stubbed out by the flow_to_wasm test\" >&2\nexit 127\n")
+    write_exec(work + "/nopy/python3", "#!/bin/sh\necho \"python3: stubbed out by the flow_to_wasm test\" >&2\nexit 127\n")
+    write_exec(work + "/flowc", FAKE_FLOWC)
+    write_exec(work + "/bin/emcc", FAKE_EMCC)
+    env_set("FLOWC_BIN", work + "/flowc")
+
+    # Sources: CRLF line ends and HTML metacharacters in the page text.
+    let src: string = work + "/src"
+    let _s: bool = mkdir_p(src)
+    let _s1: bool = write_text(src + "/hello.flow", "function main() -> i32 {\r\n    # a < b && c > d\r\n    return 0\r\n}\r\n")
+    let _s2: bool = write_text(src + "/plain.flow", "function main() -> i32 {\n    return 0\n}\n")
+    let _s3: bool = write_text(src + "/broken.flow", "function main( {\n  broken\n")
+
+    let base_path: string = work + "/nopy:/usr/bin:/bin:/usr/sbin:/sbin"
+    let fake_path: string = work + "/nopy:" + work + "/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+
+    run_case("usage", "ok", fake_path, root, sl_new())
+    run_case("missing", "ok", fake_path, root, sl_of1("nope.flow"))
+    run_case("wasm", "ok", fake_path, root, sl_of2("../src/hello.flow", "./out/wasm/"))
+    check_files("wasm", work + "/cwd/out/wasm", "hello.c hello.html")
+    let dirs: ptr<ProcStrs> = s_split(base_path, 58)
+    let mut emcc_on_base: bool = false
+    let mut i: i32 = 0
+    while i < sl_len(dirs) {
+        if is_exec(sl_get(dirs, i) + "/emcc") and not is_dir(sl_get(dirs, i) + "/emcc") {
+            emcc_on_base = true
+        }
+        i = i + 1
+    }
+    if emcc_on_base {
+        outln("SKIP flow_to_wasm/no_emcc (emcc is in /usr/bin or /bin)")
+    } else {
+        run_case("no_emcc", "ok", base_path, root, sl_of2(src + "/hello.flow", work + "/cwd/out/no_emcc"))
+        check_files("no_emcc", work + "/cwd/out/no_emcc", "hello.c hello.html")
+    }
+    let vf: ptr<ProcStrs> = sl_of2("../src/plain.flow", "out/verfail")
+    sl_push2(vf, "extra", "args")
+    run_case("emcc_version_fails", "verfail", fake_path, root, vf)
+    check_files("emcc_version_fails", work + "/cwd/out/verfail", "plain.c plain.html")
+    run_case("emcc_compile_fails", "compfail", fake_path, root, sl_of2("../src/plain.flow", "out/compfail"))
+    run_case("flowc_fails", "ok", fake_path, root, sl_of2("../src/broken.flow", "out/broken"))
+    check_files("flowc_fails", work + "/cwd/out/broken", "broken.c broken.html")
+
+    # --all works on <root>/examples and writes <root>/wasm/wasm_examples. Give
+    # it a root of its own: the scripts the tool needs, three of the listed
+    # examples (one broken), and a page left over from an earlier run, which the
+    # index still links.
+    let fake_root: string = work + "/root"
+    let _f1: bool = mkdir_p(fake_root + "/examples")
+    let _f2: bool = mkdir_p(fake_root + "/compiler")
+    let _f3: bool = mkdir_p(fake_root + "/wasm/wasm_examples")
+    let _l1: bool = bg_symlink(root + "/scripts", fake_root + "/scripts")
+    let _l2: bool = bg_symlink(root + "/compiler/scripts", fake_root + "/compiler/scripts")
+    let _c1: bool = copy_file(src + "/plain.flow", fake_root + "/examples/fibonacci.flow")
+    let _c2: bool = copy_file(src + "/hello.flow", fake_root + "/examples/gcd.flow")
+    let _c3: bool = copy_file(src + "/broken.flow", fake_root + "/examples/simple_search.flow")
+    let _c4: bool = write_text(fake_root + "/wasm/wasm_examples/power.html", "<p>left over</p>\n")
+    run_case("all", "ok", fake_path, fake_root, sl_of1("--all"))
+    check_files("all", fake_root + "/wasm/wasm_examples", "index.html fibonacci.html gcd.html gcd.c")
+
+    if c.update {
+        outln("flow_to_wasm: goldens updated (" + s_itoa(c.pass) + " files)")
+        cli_exit(0)
+    }
+    outln("flow_to_wasm: " + s_itoa(c.pass) + " passed, " + s_itoa(c.fail) + " failed")
+    if c.fail > 0 {
+        cli_exit(1)
+    }
+    cli_exit(0)
+    return 0
+}

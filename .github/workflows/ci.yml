@@ -492,6 +492,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The runners are Flow programs (tests/tools/run.flow and the ones it
+      # starts), built by `./flow tool`.
       - name: Tool transcripts without Python
         run: |
           mkdir -p /tmp/nopy
@@ -499,9 +501,9 @@ jobs:
           cp /tmp/nopy/python3 /tmp/nopy/python
           chmod +x /tmp/nopy/python3 /tmp/nopy/python
           export PATH="/tmp/nopy:$PATH"
-          chmod +x ./flow compiler/scripts/*.sh tests/tools/run.sh tests/tools/audio/run.sh tools/audio/*.sh tests/tools/discord_welcome/run.sh tools/discord-welcome/build.sh
+          chmod +x ./flow compiler/scripts/*.sh tools/discord-welcome/build.sh
           ./compiler/scripts/bootstrap_from_c.sh
-          ./tests/tools/run.sh
+          ./flow tool tests/tools/run.flow
 
       # Checks print SKIP when mlir-opt or emcc is missing, as on this runner.
       # tests/scripts/run.sh stubs python and python3 itself.
@@ -519,7 +521,7 @@ jobs:
       # against goldens recorded from the bash driver it replaced: stdout,
       # stderr, exit code and files written for every subcommand, per OS.
       - name: CLI goldens (tests/cli)
-        run: ./tests/cli/run.sh
+        run: ./flow tool tests/cli/run.flow
 
   # flowc must keep parsing every .flow file the Python parser accepts. The
   # count of files that parse may not fall below compiler/parse_coverage/

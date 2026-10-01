@@ -83,9 +83,12 @@ function sha_table() -> ptr<i64> {
 }
 
 export function sha256_hex(s: string) -> string {
+    return sha256_hex_bytes(s as ptr<u8>, strlen(s))
+}
+
+# SHA-256 of `n` bytes at `src`, which may hold NUL bytes.
+export function sha256_hex_bytes(src: ptr<u8>, n: i64) -> string {
     let kt: ptr<i64> = sha_table()
-    let n: i64 = strlen(s)
-    let src: ptr<u8> = s as ptr<u8>
     # Padded message: data, 0x80, zeros, 64-bit big-endian bit length.
     let total: i64 = ((n + 9 + 63) / 64) * 64
     let msg: ptr<u8> = malloc(total) as ptr<u8>
