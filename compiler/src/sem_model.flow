@@ -243,7 +243,9 @@ export function sem_new(strict: bool) -> ptr<Sem> {
     let c: ptr<Sem> = malloc(8192) as ptr<Sem>
     c.t = sem_tys_new()
     c.strict = strict
-    c.check_effect_rows = false
+    # Stable effect checking is the default. The legacy zero/no-op fallback
+    # remains available only through the explicit permissive environment.
+    c.check_effect_rows = true
     c.safety_profile = false
     let prof: string = getenv("FLOW_PROFILE")
     if prof as ptr<u8> != null {
@@ -256,6 +258,10 @@ export function sem_new(strict: bool) -> ptr<Sem> {
         if sem_s_eq(se, "1") {
             c.check_effect_rows = true
         }
+    }
+    let pe: string = getenv("FLOWC_PERMISSIVE_EFFECTS")
+    if pe as ptr<u8> != null and sem_s_eq(pe, "1") {
+        c.check_effect_rows = false
     }
     c.nm = 0
     c.m_ar = malloc(64 * 24) as ptr<AstArena>

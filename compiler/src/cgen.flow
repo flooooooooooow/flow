@@ -10188,8 +10188,8 @@ function flowc_cgen_is_cembed_fn(w: ptr<CgenBuf>, src: ptr<u8>, ns: i32, ne: i32
 #   handle E with C -> save the slot, install &_C_E_vtable, run the body,
 #                      restore the slot
 #   E.op(args)      -> E_op(args)
-# Unhandled operations return zero, or abort when FLOW_STRICT_EFFECTS=1 at run
-# time (FLOWC_STRICT_EFFECTS=1 at compile time makes that unconditional).
+# Unhandled operations abort by default. FLOWC_PERMISSIVE_EFFECTS=1 at compile
+# time and FLOW_PERMISSIVE_EFFECTS=1 at run time restore zero/no-op fallback.
 
 # Unwrap `export` around a declaration of `want` kind.
 function flowc_cgen_eff_unwrap(arena: AstArena, item: i32, want: i32) -> i32 {
@@ -10216,15 +10216,20 @@ function flowc_cgen_eff_runtime_once(w: ptr<CgenBuf>) {
         flowc_cgen_puts(w, "#define FLOW_STRICT_EFFECTS_COMPILE 1\n")
         flowc_cgen_puts(w, "static int _flow_strict_effects(void) {\n    return 1;\n}\n")
     } else {
-        flowc_cgen_puts(w, "static int _flow_strict_effects(void) {\n    static int cached = -1;\n    if (cached < 0) {\n        const char *e = getenv(\"FLOW_STRICT_EFFECTS\");\n        cached = (e && e[0] == '1') ? 1 : 0;\n    }\n    return cached;\n}\n")
+        flowc_cgen_puts(w, "static int _flow_strict_effects(void) {\n    static int cached = -1;\n    if (cached < 0) {\n        const char *p = getenv(\"FLOW_PERMISSIVE_EFFECTS\");\n        cached = (p && p[0] == '1') ? 0 : 1;\n    }\n    return cached;\n}\n")
     }
-    flowc_cgen_puts(w, "static void _flow_unhandled_effect(const char *effect, const char *op) {\n    if (_flow_strict_effects()) {\n        fprintf(stderr, \"flow: unhandled effect %s.%s (set FLOW_STRICT_EFFECTS=0 to allow zero defaults)\\n\", effect, op);\n        abort();\n    }\n}\n")
+    flowc_cgen_puts(w, "static void _flow_unhandled_effect(const char *effect, const char *op) {\n    if (_flow_strict_effects()) {\n        fprintf(stderr, \"flow: unhandled effect %s.%s (set FLOW_PERMISSIVE_EFFECTS=1 to allow zero defaults)\\n\", effect, op);\n        abort();\n    }\n}\n")
     flowc_cgen_puts(w, "__attribute__((weak)) int32_t flow_fiber_current_id(void) { return -1; }\n")
     flowc_cgen_puts(w, "#ifndef FLOW_FIBER_MAX\n#define FLOW_FIBER_MAX 4096\n#endif\n")
     flowc_cgen_puts(w, "#endif\n")
 }
 
 function flowc_cgen_eff_strict() -> i32 {
+    let pe: string = getenv("FLOWC_PERMISSIVE_EFFECTS")
+    let pep: ptr<u8> = pe as ptr<u8>
+    if pep != null and pep[0] == 49 {
+        return 0
+    }
     let se: string = getenv("FLOWC_STRICT_EFFECTS")
     let sep: ptr<u8> = se as ptr<u8>
     if sep != null and sep[0] == 49 {

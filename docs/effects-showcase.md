@@ -222,7 +222,7 @@ This keeps real inventory behaviour, freezes time, and captures outbound notific
 
 ### 10. Declare an effect row on a function
 
-Under `--strict-effects`, functions can state which effects they may perform.
+Stable compilation checks effect rows by default. Functions can state which effects they may perform.
 
 ```flow preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow
 function greet(name: string) -> void with Log {
@@ -259,29 +259,28 @@ function main() -> i32 {
 }
 ```
 
-With strict effects enabled, the call is valid because the enclosing handler covers the row.
+The call is valid because the enclosing handler covers the row.
 
 ### 13. Turn unhandled effects into compile-time errors
 
 ```sh
-FLOWC_STRICT_EFFECTS=1 ./flow tool compiler/scripts/flowc_emit.flow program.flow build/program.c
+./flow tool compiler/scripts/flowc_emit.flow program.flow build/program.c
 ```
 
-`FLOWC_STRICT_EFFECTS=1` checks bare performs and function effect rows. The default language mode
-remains backwards-compatible with soft defaults.
+Normal Stable compilation checks bare performs and function effect rows.
 
 ### 14. Turn unhandled effects into runtime failures
 
 ```sh
-FLOW_STRICT_EFFECTS=1 ./flow run program.flow
+./flow run program.flow
 ```
 
-This is useful when you want fail-loud behaviour without changing source syntax.
+An unhandled operation fails loudly at runtime.
 
-### 15. Use the default soft fallback deliberately
+### 15. Use the permissive fallback deliberately
 
-Without strict effects, an unhandled operation returns its zeroed default and `void` operations
-become no-ops.
+Set `FLOWC_PERMISSIVE_EFFECTS=1` while compiling and `FLOW_PERMISSIVE_EFFECTS=1` while running
+to restore the legacy zeroed default and no-op behaviour.
 
 ```flow preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow
 function main() -> i32 {
@@ -609,9 +608,8 @@ such as `FiberAsync` and `NetpollAsyncIO` pull in their runtime support only whe
 
 These are important when designing real programs around the feature.
 
-**Effect rows are opt-in.** `--strict-effects` enables compile-time coverage checking for lexical
-handlers and declared function rows. Without it, the language keeps soft defaults for unhandled
-operations.
+**Effect rows are checked by default.** Set `FLOWC_PERMISSIVE_EFFECTS=1` to opt into the legacy
+soft defaults for unhandled operations.
 
 **Capability methods have no `self`.** They are plain functions, so a handler cannot carry
 per-instance fields. It can still keep state: a module-level `let mut` is mutable from inside a
