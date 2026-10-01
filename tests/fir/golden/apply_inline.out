@@ -1,0 +1,10 @@
+FIR-G: funcs=2 blocks=2 ops=8 values=6 operands=6 types=2
+call ops: 0
+reachable: main
+dead: double
+applied: inline applied=1
+call graph:
+effects / pure:
+  double: effects=0x0000 pure=True
+  main: effects=0x0000 pure=True
+device: requested=cpu chosen=cpu

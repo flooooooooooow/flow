@@ -1,13 +1,11 @@
-FIR-G: funcs=9 blocks=10 ops=39 values=29 operands=24 types=3
-call ops: 10
-reachable: callee1, callee2, caller, leaf, main, mid, ping, pong, printf
+FIR-G: funcs=7 blocks=8 ops=35 values=27 operands=22 types=3
+call ops: 7
+reachable: caller, leaf, main, mid, ping, pong, printf
 dead: (none)
-applied: const_fold folded=0; dce removed=0; dead_elim removed=1 (dead)
+applied: const_fold folded=0; dce removed=0; inline applied=3; dead_elim removed=3 (callee1, callee2, dead)
 call graph:
   leaf -> printf  (op 1)
   mid -> leaf  (op 1)
-  caller -> callee1  (op 2)
-  caller -> callee2  (op 1)
   ping -> pong  (op 1)
   pong -> ping  (op 1)
   main -> mid  (op 1)
@@ -17,8 +15,6 @@ effects / pure:
   printf: effects=0x0018 pure=False
   leaf: effects=0x0018 pure=False
   mid: effects=0x0018 pure=False
-  callee1: effects=0x0000 pure=True
-  callee2: effects=0x0000 pure=True
   caller: effects=0x0000 pure=True
   ping: effects=0x0000 pure=True
   pong: effects=0x0000 pure=True
