@@ -703,7 +703,7 @@ Effects are useful when core logic needs an operation but should not know its
 implementation. A request to the AI should name both the operation contract
 and the handler contexts.
 
-```flow
+```flow expect-error
 effect Log {
     info(msg: string) -> void,
 }
