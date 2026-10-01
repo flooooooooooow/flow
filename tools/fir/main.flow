@@ -714,6 +714,10 @@ function dump_graph(g: ptr<FirG>) {
         tb_put_int(&tb, iv_get(&g.op_block, o))
         tb_puts(&tb, " callee=")
         tb_put_int(&tb, iv_get(&g.op_callee, o))
+        tb_puts(&tb, " t0=")
+        tb_put_int(&tb, fg_branch_target0(g, o))
+        tb_puts(&tb, " t1=")
+        tb_put_int(&tb, fg_branch_target1(g, o))
         tb_puts(&tb, "\n")
         o = o + 1
     }

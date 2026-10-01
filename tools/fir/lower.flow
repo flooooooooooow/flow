@@ -1762,9 +1762,10 @@ function lower_stmt(lw: ptr<Lower>, bid: i32, s: i32) {
             nx = elif_child(m, cur)
         }
         let else_blk: i32 = m.arena.nodes[cur].c
+        let mut else_bid: i32 = -1
         if else_blk != AST_NONE {
-            let eb: i32 = fg_add_block(lw.g, lw.fid)
-            lower_block(lw, eb, else_blk)
+            else_bid = fg_add_block(lw.g, lw.fid)
+            lower_block(lw, else_bid, else_blk)
         }
         let mut i: i32 = 0
         while i < elifs.len {
@@ -1775,6 +1776,11 @@ function lower_stmt(lw: ptr<Lower>, bid: i32, s: i32) {
         }
         let _br: i32 = op0(lw, bid, OP_COND_BR, 0)
         fg_add_operand(lw.g, _br, _c)
+        let mut false_target: i32 = -1
+        if else_blk != AST_NONE {
+            false_target = else_bid
+        }
+        fg_set_branch_targets(lw.g, _br, then_b, false_target)
         return
     }
     if k == AST_WHILE {
@@ -1783,12 +1789,14 @@ function lower_stmt(lw: ptr<Lower>, bid: i32, s: i32) {
         lower_block(lw, body_b, m.arena.nodes[s].b)
         let _br: i32 = op0(lw, bid, OP_BR, 0)
         fg_add_operand(lw.g, _br, _c)
+        fg_set_branch_targets(lw.g, _br, body_b, -1)
         return
     }
     if k == AST_FOR {
         let body_b: i32 = fg_add_block(lw.g, lw.fid)
         lower_block(lw, body_b, m.arena.nodes[s].c)
         let _br: i32 = op0(lw, bid, OP_BR, 0)
+        fg_set_branch_targets(lw.g, _br, body_b, -1)
         return
     }
     if k == AST_EXPR_STMT {

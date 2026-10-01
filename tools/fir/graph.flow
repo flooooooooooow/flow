@@ -180,6 +180,8 @@ export struct FirG {
     op_edge_begin: IVec,
     op_edge_count: IVec,
     op_operands: IVec,
+    op_target0: IVec,
+    op_target1: IVec,
     op_aux: IVec,
     op_const: IVec,
     const_pool: TList,
@@ -212,6 +214,8 @@ export function fg_new() -> ptr<FirG> {
     g.op_edge_begin = iv_new()
     g.op_edge_count = iv_new()
     g.op_operands = iv_new()
+    g.op_target0 = iv_new()
+    g.op_target1 = iv_new()
     g.op_aux = iv_new()
     g.op_const = iv_new()
     g.const_pool = tl_new()
@@ -286,6 +290,8 @@ export function fg_add_op(g: ptr<FirG>, opcode: i32, fid: i32, bid: i32, n_opera
     g.num_values = g.num_values + n_results
     iv_push(&g.op_edge_begin, g.op_operands.len)
     iv_push(&g.op_edge_count, 0)
+    iv_push(&g.op_target0, -1)
+    iv_push(&g.op_target1, -1)
     iv_push(&g.op_aux, 0)
     iv_push(&g.op_const, 0)
     iv_push(&g.op_opcode, opcode)
@@ -312,6 +318,21 @@ export function fg_add_operand(g: ptr<FirG>, op: i32, v: i32) {
 
 export function fg_op_noperands(g: ptr<FirG>, op: i32) -> i32 {
     return iv_get(&g.op_edge_count, op)
+}
+
+# Explicit CFG successors for branch terminators. Operand edges remain SSA
+# value edges, so block ids never get confused with values.
+export function fg_set_branch_targets(g: ptr<FirG>, op: i32, target0: i32, target1: i32) {
+    iv_set(&g.op_target0, op, target0)
+    iv_set(&g.op_target1, op, target1)
+}
+
+export function fg_branch_target0(g: ptr<FirG>, op: i32) -> i32 {
+    return iv_get(&g.op_target0, op)
+}
+
+export function fg_branch_target1(g: ptr<FirG>, op: i32) -> i32 {
+    return iv_get(&g.op_target1, op)
 }
 
 export function fg_operand(g: ptr<FirG>, op: i32, i: i32) -> i32 {
@@ -834,6 +855,7 @@ export function fg_apply_inline(g: ptr<FirG>) -> FirInline {
                         let nres: i32 = fg_op_nresults(g, cop)
                         let ne: i32 = iv_get(&g.op_edge_count, cop)
                         let nop: i32 = fg_add_op(ng, ccode, iv_get(&g.op_function, op), iv_get(&g.op_block, op), iv_get(&g.op_operand_count, cop), nres, -1)
+                        fg_set_branch_targets(ng, nop, fg_branch_target0(g, cop), fg_branch_target1(g, cop))
                         fg_inline_copy_meta(g, cop, ng, nop)
                         let mut e: i32 = 0
                         while e < ne {
@@ -866,6 +888,7 @@ export function fg_apply_inline(g: ptr<FirG>) -> FirInline {
             let nres: i32 = fg_op_nresults(g, op)
             let ne: i32 = iv_get(&g.op_edge_count, op)
             let nop: i32 = fg_add_op(ng, code, iv_get(&g.op_function, op), iv_get(&g.op_block, op), iv_get(&g.op_operand_count, op), nres, iv_get(&g.op_callee, op))
+            fg_set_branch_targets(ng, nop, fg_branch_target0(g, op), fg_branch_target1(g, op))
             fg_inline_copy_meta(g, op, ng, nop)
             let mut e: i32 = 0
             while e < ne {
@@ -943,6 +966,13 @@ export function fg_compact2(g: ptr<FirG>, keep: ptr<i32>, keep_op: ptr<i32>) -> 
                 cal = remap[cal] - 1
             }
             let nop: i32 = fg_add_op(ng, iv_get(&g.op_opcode, op), remap[of] - 1, bremap[iv_get(&g.op_block, op)] - 1, iv_get(&g.op_operand_count, op), fg_op_nresults(g, op), cal)
+            let t0: i32 = fg_branch_target0(g, op)
+            let t1: i32 = fg_branch_target1(g, op)
+            let mut nt0: i32 = -1
+            let mut nt1: i32 = -1
+            if t0 >= 0 { nt0 = bremap[t0] - 1 }
+            if t1 >= 0 { nt1 = bremap[t1] - 1 }
+            fg_set_branch_targets(ng, nop, nt0, nt1)
             iv_set(&ng.op_aux, nop, iv_get(&g.op_aux, op))
             if iv_get(&g.op_const, op) != 0 {
                 fg_op_set_const(ng, nop, fg_op_const_text(g, op))
