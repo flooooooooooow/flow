@@ -1,0 +1,37 @@
+$ flow_pkg sync --program src/main.flow
+[exit 0]
+== stdout
+[94mInstalling dependencies...[0m
+[94m↓ collectionsx@0.1.0 from registry[0m
+[92m✓ Installed collectionsx from @ROOT@/registry/packages/collectionsx[0m
+
+[92m✓ All dependencies installed (flow.lock updated)[0m
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+entry = "src/main.flow"
+
+[dependencies]
+collectionsx = "^0.1"
+
+[dev-dependencies]
+== flow.lock
+{
+  "version": 1,
+  "packages": {
+    "collectionsx": {
+      "version": "0.1.0",
+      "source": "registry",
+      "resolved": {
+        "path": "@ROOT@/registry/packages/collectionsx"
+      }
+    }
+  }
+}
+== flow_packages
+D flow_packages
+D flow_packages/collectionsx
+F flow_packages/collectionsx/flow.toml -rw-r--r-- 1625288112 225
+D flow_packages/collectionsx/src
+F flow_packages/collectionsx/src/lib.flow -rw-r--r-- 59783340 5402

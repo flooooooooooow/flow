@@ -1,0 +1,55 @@
+$ flow_pkg add image
+[exit 0]
+== stdout
+[94mResolved image@0.1.0 from flow-packages[0m
+[92m✓ Added image = "0.1.0"[0m
+[94m↓ image@0.1.0 from registry[0m
+[92m✓ Installed image from @ROOT@/registry/packages/image[0m
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+description = ""
+author = ""
+license = "MIT"
+entry = "src/main.flow"
+
+[dependencies]
+image = "0.1.0"
+
+[dev-dependencies]
+
+[build]
+host = "flowc"
+# test_command = "flow run tests/test_main.flow"
+
+[conventions]
+# avoid = [
+#   { pattern = "reverse for loop", reason = "generates incorrect step direction (#410)", workaround = "use while with explicit decrement" },
+# ]
+
+[patterns]
+# math = "use fabs((x) as f64) as f32 for single-precision abs"
+== flow.lock
+{
+  "version": 1,
+  "packages": {
+    "image": {
+      "version": "0.1.0",
+      "source": "registry",
+      "resolved": {
+        "path": "@ROOT@/registry/packages/image"
+      }
+    }
+  }
+}
+== flow_packages
+D flow_packages
+D flow_packages/image
+F flow_packages/image/flow.toml -rw-r--r-- 2958219220 277
+D flow_packages/image/native
+F flow_packages/image/native/flow_image.c -rw-r--r-- 3071950777 5788
+F flow_packages/image/native/flow_image.h -rw-r--r-- 1712476626 1703
+F flow_packages/image/native/stb_image.h -rw-r--r-- 3934085198 283010
+D flow_packages/image/src
+F flow_packages/image/src/lib.flow -rw-r--r-- 3458643682 2619

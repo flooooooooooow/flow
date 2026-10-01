@@ -1,0 +1,18 @@
+$ flow_pkg install
+[exit 0]
+== stdout
+[94mInstalling dependencies...[0m
+[91mPath dependency not found: @WORK@/cases/install-path-missing/does_not_exist[0m
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+entry = "src/main.flow"
+
+[dependencies]
+gone = { path = "../does_not_exist" }
+
+[dev-dependencies]
+== flow.lock
+== flow_packages
+D flow_packages

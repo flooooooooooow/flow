@@ -1,0 +1,32 @@
+$ flow_pkg install
+[exit 0]
+== stdout
+[94mInstalling dependencies...[0m
+[92m✓ Installed single from @WORK@/cases/install-path-file/single.flow[0m
+
+[92m✓ All dependencies installed (flow.lock updated)[0m
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+entry = "src/main.flow"
+
+[dependencies]
+single = { path = "../single.flow" }
+
+[dev-dependencies]
+== flow.lock
+{
+  "version": 1,
+  "packages": {
+    "single": {
+      "version": {
+        "path": "../single.flow"
+      },
+      "source": "path"
+    }
+  }
+}
+== flow_packages
+D flow_packages
+F flow_packages/single.flow -rw-r--r-- 3529170930 44

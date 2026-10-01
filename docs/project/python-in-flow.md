@@ -23,7 +23,7 @@ in progress and are not counted as landed.
 | Claim | Reality |
 |---|---|
 | Default `./flow compile` / `./flow run` | **flowc**, the only C compiler. `FLOW_HOST=python` is retired and stops with an error |
-| `./flow run` with no Python installed | **Yes** on the flowc host (#960). The package sync decision is `scripts/tools/pkg_sync/main.flow`; a project that must fetch a dependency runs the Flow package manager (`compiler/src/pkg_main.flow`). `scripts/check_run_without_python.sh` checks it |
+| `./flow run` with no Python installed | **Yes** on the flowc host (#960). The package sync decision is `scripts/tools/pkg_sync/main.flow`; a project that must fetch a dependency runs the Flow package manager (`compiler/src/pkg_main.flow`). `./flow tool scripts/check_run_without_python.flow` checks it |
 | Stage-A lexer / parser / cgen / typecheck / resolve | Landed in `compiler/src/*.flow`; fixtures + module dogfood |
 | Emit → cc → run for subset fixtures | Works (sum/fib/structs/ptr/bundle/…) |
 | Self-emit fixed-point (`stage_a_self_emit*.sh`) | Works for the Stage-A frontend object graph |

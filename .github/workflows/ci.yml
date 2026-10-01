@@ -391,7 +391,10 @@ jobs:
         run: ./flow tool tests/flow_run/run.flow
 
       - name: Package command goldens (init, publish, build, clean)
-        run: ./scripts/check_pkg_commands.sh
+        run: ./flow tool scripts/check_pkg_commands.flow
+
+      - name: Package dependency goldens (install, sync, add, search, info)
+        run: ./flow tool scripts/check_pkg_parity.flow
 
       - name: GPU shader goldens (flow gpu)
         run: ./tests/gpu/run.sh
@@ -455,10 +458,10 @@ jobs:
 
       # The default `flow run` / `flow compile` path from a clean compiler/build
       # and build/: flowc comes from ensure_flowc (bootstrap C with cc), and the
-      # dependency sync check is scripts/tools/pkg_sync. The script stubs python
+      # dependency sync check is scripts/tools/pkg_sync. The check stubs python
       # and python3 to log and exit 127, and fails if either is called.
       - name: flow run with python and python3 stubbed to exit 127
-        run: ./scripts/check_run_without_python.sh
+        run: ./flow tool scripts/check_run_without_python.flow
 
       - name: Package the distributable compiler
         run: ./flow tool compiler/scripts/package_flowc.flow

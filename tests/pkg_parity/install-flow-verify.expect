@@ -1,0 +1,105 @@
+$ flow_pkg install
+[exit 0]
+== stdout
+[94mInstalling dependencies...[0m
+[94m↓ flow-verify@0.1.0 from registry[0m
+[92m✓ Installed flow-verify from @ROOT@/lib/verify[0m
+
+[92m✓ All dependencies installed (flow.lock updated)[0m
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+entry = "src/main.flow"
+
+[dependencies]
+flow-verify = "*"
+
+[dev-dependencies]
+== flow.lock
+{
+  "version": 1,
+  "packages": {
+    "flow-verify": {
+      "version": "0.1.0",
+      "source": "registry",
+      "resolved": {
+        "path": "@ROOT@/lib/verify"
+      }
+    }
+  }
+}
+== flow_packages
+D flow_packages
+D flow_packages/flow-verify
+F flow_packages/flow-verify/Bool.flow -rw-r--r-- 2673131813 2014
+F flow_packages/flow-verify/Bool.proof.md -rw-r--r-- 2918907645 6288
+F flow_packages/flow-verify/Bool.proof.tex -rw-r--r-- 3482222788 8302
+F flow_packages/flow-verify/Comb.flow -rw-r--r-- 871142401 843
+F flow_packages/flow-verify/Comb.proof.md -rw-r--r-- 2463931873 2103
+F flow_packages/flow-verify/Comb.proof.tex -rw-r--r-- 390694003 3407
+F flow_packages/flow-verify/Eq.flow -rw-r--r-- 3328970120 452
+F flow_packages/flow-verify/Eq.proof.md -rw-r--r-- 2355209947 764
+F flow_packages/flow-verify/Eq.proof.tex -rw-r--r-- 2558763845 1713
+F flow_packages/flow-verify/Finset.flow -rw-r--r-- 4120338671 1859
+F flow_packages/flow-verify/Finset.proof.md -rw-r--r-- 2346023775 3941
+F flow_packages/flow-verify/Finset.proof.tex -rw-r--r-- 967832319 7266
+F flow_packages/flow-verify/Group.flow -rw-r--r-- 2668983030 1224
+F flow_packages/flow-verify/Group.proof.md -rw-r--r-- 3649216078 2660
+F flow_packages/flow-verify/Group.proof.tex -rw-r--r-- 1187940216 5036
+F flow_packages/flow-verify/GroupHom.flow -rw-r--r-- 1125282065 735
+F flow_packages/flow-verify/GroupHom.proof.md -rw-r--r-- 3778296640 1462
+F flow_packages/flow-verify/GroupHom.proof.tex -rw-r--r-- 389436155 2898
+F flow_packages/flow-verify/Ideal.flow -rw-r--r-- 1282055949 730
+F flow_packages/flow-verify/Ideal.proof.md -rw-r--r-- 3816724054 1690
+F flow_packages/flow-verify/Ideal.proof.tex -rw-r--r-- 4234553934 2995
+F flow_packages/flow-verify/Int.flow -rw-r--r-- 52403612 941
+F flow_packages/flow-verify/Int.proof.md -rw-r--r-- 263399676 1997
+F flow_packages/flow-verify/Int.proof.tex -rw-r--r-- 1231038941 3888
+F flow_packages/flow-verify/List.flow -rw-r--r-- 1339956795 719
+F flow_packages/flow-verify/List.proof.md -rw-r--r-- 2133432523 1455
+F flow_packages/flow-verify/List.proof.tex -rw-r--r-- 38248323 2872
+F flow_packages/flow-verify/Monoid.flow -rw-r--r-- 72836716 958
+F flow_packages/flow-verify/Monoid.proof.md -rw-r--r-- 3404776101 2025
+F flow_packages/flow-verify/Monoid.proof.tex -rw-r--r-- 2328524692 3923
+F flow_packages/flow-verify/Nat-core.flow -rw-r--r-- 297809325 2883
+F flow_packages/flow-verify/Nat-core.proof.md -rw-r--r-- 975548987 8179
+F flow_packages/flow-verify/Nat-core.proof.tex -rw-r--r-- 2501139490 10844
+F flow_packages/flow-verify/Nat-mul.flow -rw-r--r-- 2420454025 1049
+F flow_packages/flow-verify/Nat-mul.proof.md -rw-r--r-- 2263756874 2349
+F flow_packages/flow-verify/Nat-mul.proof.tex -rw-r--r-- 2832284988 4268
+F flow_packages/flow-verify/Nat-order.flow -rw-r--r-- 3561627189 1595
+F flow_packages/flow-verify/Nat-order.proof.md -rw-r--r-- 1353277333 3993
+F flow_packages/flow-verify/Nat-order.proof.tex -rw-r--r-- 898028148 6102
+F flow_packages/flow-verify/Nat-sq.flow -rw-r--r-- 1326732542 474
+F flow_packages/flow-verify/Nat-sq.proof.md -rw-r--r-- 3755218823 948
+F flow_packages/flow-verify/Nat-sq.proof.tex -rw-r--r-- 1902587739 1798
+F flow_packages/flow-verify/Nat.flow -rw-r--r-- 1209846232 729
+F flow_packages/flow-verify/Nat.proof.md -rw-r--r-- 122670534 1619
+F flow_packages/flow-verify/Nat.proof.tex -rw-r--r-- 801790549 3044
+F flow_packages/flow-verify/Order.flow -rw-r--r-- 3396033093 1171
+F flow_packages/flow-verify/Order.proof.md -rw-r--r-- 78397221 2435
+F flow_packages/flow-verify/Order.proof.tex -rw-r--r-- 2109225508 4218
+F flow_packages/flow-verify/Pair.flow -rw-r--r-- 765352670 1384
+F flow_packages/flow-verify/Pair.proof.md -rw-r--r-- 507809091 2884
+F flow_packages/flow-verify/Pair.proof.tex -rw-r--r-- 3697183785 4690
+F flow_packages/flow-verify/Rat.flow -rw-r--r-- 3612199027 920
+F flow_packages/flow-verify/Rat.proof.md -rw-r--r-- 1909749861 1952
+F flow_packages/flow-verify/Rat.proof.tex -rw-r--r-- 3327674496 3842
+F flow_packages/flow-verify/Ratio.flow -rw-r--r-- 4106149772 871
+F flow_packages/flow-verify/Ratio.proof.md -rw-r--r-- 2666623586 1633
+F flow_packages/flow-verify/Ratio.proof.tex -rw-r--r-- 97349721 3082
+F flow_packages/flow-verify/Real.flow -rw-r--r-- 2390747561 925
+F flow_packages/flow-verify/Real.proof.md -rw-r--r-- 917317084 2080
+F flow_packages/flow-verify/Real.proof.tex -rw-r--r-- 1743732416 3973
+F flow_packages/flow-verify/Ring.flow -rw-r--r-- 728300998 1264
+F flow_packages/flow-verify/Ring.proof.md -rw-r--r-- 2257862409 2722
+F flow_packages/flow-verify/Ring.proof.tex -rw-r--r-- 3643798640 5100
+F flow_packages/flow-verify/RingHom.flow -rw-r--r-- 4091759402 718
+F flow_packages/flow-verify/RingHom.proof.md -rw-r--r-- 2642384452 1475
+F flow_packages/flow-verify/RingHom.proof.tex -rw-r--r-- 3837063214 2892
+F flow_packages/flow-verify/SchurLattice.flow -rw-r--r-- 837179247 750
+F flow_packages/flow-verify/SchurLattice.proof.md -rw-r--r-- 2701704578 1470
+F flow_packages/flow-verify/Subgroup.flow -rw-r--r-- 45516338 1119
+F flow_packages/flow-verify/Subgroup.proof.md -rw-r--r-- 726279102 2765
+F flow_packages/flow-verify/Subgroup.proof.tex -rw-r--r-- 3674462180 4467

@@ -1,0 +1,36 @@
+$ flow_pkg sync --program src/main.flow
+[exit 0]
+== stdout
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+entry = "src/main.flow"
+
+[dependencies]
+json = "0.1.0"
+toml = "0.1.0"
+
+[dev-dependencies]
+== flow.lock
+{
+  "version": 1,
+  "packages": {
+    "zzz_other": {
+      "version": "9.9.9",
+      "source": "registry"
+    },
+    "toml": {
+      "version": "0.1.0",
+      "source": "registry",
+      "resolved": {
+        "path": "@ROOT@/registry/packages/toml"
+      }
+    }
+  },
+  "extra": "café"
+}
+== flow_packages
+D flow_packages
+D flow_packages/json
+D flow_packages/toml

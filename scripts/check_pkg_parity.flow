@@ -1,0 +1,503 @@
+# Golden check for the dependency commands of the Flow package manager
+# (compiler/src/pkg.flow): install, sync, add, search and info.
+#
+# Each case builds a small project, runs the package manager in it and
+# compares stdout, the exit status, flow.toml, flow.lock and flow_packages/
+# (file list, contents and modes) against tests/pkg_parity/<case>.expect.
+# The goldens were recorded once both package managers agreed on every case:
+# this check replaced scripts/check_pkg_parity.sh, which ran each case
+# against the Python package manager (src/flow/package.py at 660ff30d) too.
+#
+# Cases cover every package in registry/packages, path/git/stdlib
+# dependencies, a registry override with several versions, and the error
+# paths (unknown package, bad version constraint, missing path, bad git ref).
+#
+#   ./flow tool scripts/check_pkg_parity.flow            compare
+#   ./flow tool scripts/check_pkg_parity.flow --record   rewrite the goldens
+
+@cEmbed("#include <stdio.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+static const char *pp_mode(const char *p) {
+  struct stat st;
+  char *b = (char *)malloc(11);
+  if (lstat(p, &st) != 0) { b[0] = 0; return b; }
+  mode_t m = st.st_mode;
+  b[0] = S_ISDIR(m) ? 'd' : S_ISLNK(m) ? 'l' : S_ISREG(m) ? '-' : '?';
+  const char *rwx = \"rwxrwxrwx\";
+  for (int i = 0; i < 9; i++) { b[1 + i] = (m & (0400 >> i)) ? rwx[i] : '-'; }
+  b[10] = 0;
+  return b;
+}
+static const char *pp_cksum(const char *p) {
+  char *b = (char *)malloc(48);
+  FILE *f = fopen(p, \"rb\");
+  if (f == 0) { b[0] = 0; return b; }
+  unsigned int crc = 0; unsigned long long len = 0; int c;
+  while ((c = fgetc(f)) != EOF) {
+    crc ^= ((unsigned int)c) << 24;
+    for (int k = 0; k < 8; k++) { crc = (crc & 0x80000000u) ? (crc << 1) ^ 0x04C11DB7u : (crc << 1); }
+    len++;
+  }
+  fclose(f);
+  unsigned long long n = len;
+  while (n > 0) {
+    crc ^= ((unsigned int)(n & 0xff)) << 24;
+    for (int k = 0; k < 8; k++) { crc = (crc & 0x80000000u) ? (crc << 1) ^ 0x04C11DB7u : (crc << 1); }
+    n >>= 8;
+  }
+  snprintf(b, 48, \"%u %llu\", ~crc, len);
+  return b;
+}
+")
+
+import "tools/flow_cli/sys.flow"
+import "scripts/check_lib.flow"
+import std.process { ProcCmd, ProcResult, ProcStrs, proc_args, proc_stdout, proc_stderr, PROC_CAPTURE, PROC_NULL }
+
+extern {
+    function pp_mode(p: string) -> string
+    function pp_cksum(p: string) -> string
+}
+
+let mut ROOT: string = ""
+let mut WORK: string = ""
+let mut GOLD: string = ""
+let mut TOOL: string = ""
+let mut GITREPO: string = ""
+let mut FIRST_SHA: string = ""
+let mut RECORD: bool = false
+let mut PASS: i32 = 0
+let mut FAIL: i32 = 0
+
+# ---------------------------------------------------------------------------
+# Snapshots
+# ---------------------------------------------------------------------------
+
+function walk(base: string, rel: string, acc: ptr<ProcStrs>) {
+    let names: ptr<ProcStrs> = list_dir(base + "/" + rel)
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        let p: string = rel + "/" + sl_get(names, i)
+        sl_push(acc, p)
+        let full: string = base + "/" + p
+        if is_dir(full) and not is_link(full) {
+            walk(base, p, acc)
+        }
+        i = i + 1
+    }
+}
+
+# Manifest, lock and the installed tree of a project.
+function snapshot(dir: string) -> string {
+    let mut out: string = "== flow.toml\n"
+    if is_file(dir + "/flow.toml") {
+        out = out + read_text(dir + "/flow.toml")
+    }
+    out = out + "== flow.lock\n"
+    if is_file(dir + "/flow.lock") {
+        out = out + read_text(dir + "/flow.lock")
+    }
+    out = out + "== flow_packages\n"
+    if not is_dir(dir + "/flow_packages") {
+        return out
+    }
+    let paths: ptr<ProcStrs> = sl_of1("flow_packages")
+    walk(dir, "flow_packages", paths)
+    sl_sort(paths, false)
+    let mut i: i32 = 0
+    while i < sl_len(paths) {
+        let p: string = sl_get(paths, i)
+        let full: string = dir + "/" + p
+        if s_eq(path_basename(p), ".git") and is_dir(full) {
+            # A clone's own metadata holds timestamps; compare the
+            # checked-out commit instead of the bytes.
+            let g: ptr<ProcStrs> = sl_of3("git", "-C", path_dirname(full))
+            sl_push2(g, "rev-parse", "HEAD")
+            let gc: ptr<ProcCmd> = cmd(g)
+            cmd_quiet_err(gc)
+            out = out + "G " + p + " HEAD=" + capture(gc) + "\n"
+        } elif s_contains(p, "/.git/") {
+            out = out
+        } elif is_link(full) {
+            out = out + "L " + p + " -> " + capture(cmd(sl_of2("readlink", full))) + "\n"
+        } elif is_dir(full) {
+            out = out + "D " + p + "\n"
+        } else {
+            out = out + "F " + p + " " + pp_mode(full) + " " + pp_cksum(full) + "\n"
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# Absolute paths in a record: the project, the scratch tree, the checkout.
+function normalize(text: string, proj: string) -> string {
+    return s_replace(s_replace(s_replace(text, proj, "<proj>"), WORK, "@WORK@"), ROOT, "@ROOT@")
+}
+
+# ---------------------------------------------------------------------------
+# Projects
+# ---------------------------------------------------------------------------
+
+function put(p: string, text: string) {
+    mkdir_p_or_exit(path_dirname(p))
+    if not write_text(p, text) {
+        errln("cannot write " + p)
+        cli_exit(1)
+    }
+}
+
+# flow.toml for package NAME with the given [dependencies] lines, and an
+# empty src/main.flow program.
+function manifest(dir: string, deps: ptr<ProcStrs>) {
+    let mut t: string = "[package]\nname = \"app\"\nversion = \"0.1.0\"\nentry = \"src/main.flow\"\n\n[dependencies]\n"
+    let mut i: i32 = 0
+    while i < sl_len(deps) {
+        t = t + sl_get(deps, i) + "\n"
+        i = i + 1
+    }
+    put(dir + "/flow.toml", t + "\n[dev-dependencies]\n")
+    put(dir + "/src/main.flow", "function main() -> i32 {\n    return 0\n}\n")
+}
+
+function manifest1(dir: string, dep: string) {
+    manifest(dir, sl_of1(dep))
+}
+
+function make_lib(d: string) {
+    put(d + "/src/lib.flow", "export function f() -> i32 {\n    return 1\n}\n")
+    put(d + "/build/out.o", "x\n")
+    put(d + "/.git/HEAD", "x\n")
+    put(d + "/src/__pycache__/m.pyc", "x\n")
+    put(d + "/src/stale.pyc", "x\n")
+    put(d + "/nested/build/o", "x\n")
+    put(d + "/nested/keep.txt", "keep\n")
+    let _m: bool = set_mode(d + "/nested/keep.txt", 493)
+}
+
+function lock_text() -> string {
+    return "{\n  \"version\": 1,\n  \"packages\": {\n    \"zzz_other\": {\n      \"version\": \"9.9.9\",\n      \"source\": \"registry\"\n    },\n    \"toml\": {\n      \"version\": \"0.1.0\",\n      \"source\": \"registry\",\n      \"resolved\": {\n        \"path\": \"" + ROOT + "/registry/packages/toml\"\n      }\n    }\n  },\n  \"extra\": \"café\"\n}\n"
+}
+
+function git_dep(spec: string) -> string {
+    return "mylib = { git = \"file://" + GITREPO + "\", " + spec + " }"
+}
+
+# Build the project `kind` names in `dir`.
+function setup(kind: string, dir: string) {
+    let colon: i32 = s_find_byte(kind, 58, 0)
+    let mut arg: string = ""
+    let mut k: string = kind
+    if colon >= 0 {
+        k = s_slice(kind, 0, colon)
+        arg = s_from(kind, colon + 1)
+    }
+    if s_eq(k, "none") {
+        return
+    } elif s_eq(k, "empty") {
+        manifest(dir, sl_new())
+    } elif s_eq(k, "dep") {
+        manifest1(dir, arg + " = \"0.1.0\"")
+    } elif s_eq(k, "caret") {
+        manifest1(dir, arg + " = \"^0.1\"")
+    } elif s_eq(k, "multi") {
+        manifest1(dir, "multi = \"" + arg + "\"")
+    } elif s_eq(k, "verify") {
+        manifest1(dir, "flow-verify = \"*\"")
+    } elif s_eq(k, "unknown") {
+        manifest1(dir, "no_such_package = \"1.0.0\"")
+    } elif s_eq(k, "bad_version") {
+        manifest1(dir, "json = \"2.0.0\"")
+    } elif s_eq(k, "garbage_version") {
+        manifest1(dir, "json = \"^abc\"")
+    } elif s_eq(k, "partial") {
+        manifest(dir, sl_of3("json = \"0.1.0\"", "nope = \"1.0.0\"", "toml = \"*\""))
+    } elif s_eq(k, "locked") {
+        manifest(dir, sl_of2("json = \"0.1.0\"", "toml = \"0.1.0\""))
+        put(dir + "/flow.lock", lock_text())
+    } elif s_eq(k, "bad_lock") {
+        manifest1(dir, "json = \"0.1.0\"")
+        put(dir + "/flow.lock", "{ not json\n")
+    } elif s_eq(k, "synced") {
+        setup("locked", dir)
+        mkdir_p_or_exit(dir + "/flow_packages/json")
+        mkdir_p_or_exit(dir + "/flow_packages/toml")
+    } elif s_eq(k, "path") {
+        make_lib(path_dirname(dir) + "/shared_lib")
+        manifest1(dir, "mylib = { path = \"../shared_lib\" }")
+    } elif s_eq(k, "path_file") {
+        put(path_dirname(dir) + "/single.flow", "export function g() -> i32 {\n    return 2\n}\n")
+        manifest1(dir, "single = { path = \"../single.flow\" }")
+    } elif s_eq(k, "path_missing") {
+        manifest1(dir, "gone = { path = \"../does_not_exist\" }")
+    } elif s_eq(k, "add_path") {
+        make_lib(dir + "/vendor/lib2")
+        manifest(dir, sl_new())
+    } elif s_eq(k, "stdlib") {
+        manifest1(dir, "collections = \"*\"")
+    } elif s_eq(k, "local_file") {
+        manifest1(dir, "helper = \"1.0.0\"")
+        put(dir + "/helper.flow", "# local\n")
+    } elif s_eq(k, "unsupported") {
+        manifest1(dir, "odd = { version = \"1.0\" }")
+    } elif s_eq(k, "git_tag") {
+        manifest1(dir, git_dep("tag = \"v1\""))
+    } elif s_eq(k, "git_rev") {
+        manifest1(dir, git_dep("rev = \"" + FIRST_SHA + "\""))
+    } elif s_eq(k, "git_subdir") {
+        manifest1(dir, "sub = { git = \"file://" + GITREPO + "\", branch = \"stable\", subdir = \"pkgs/sub\" }")
+    } elif s_eq(k, "git_bad_subdir") {
+        manifest1(dir, "sub = { git = \"file://" + GITREPO + "\", subdir = \"nope\" }")
+    } elif s_eq(k, "git_bad_tag") {
+        manifest1(dir, git_dep("tag = \"v404\""))
+    } else {
+        errln("check_pkg_parity: unknown setup " + kind)
+        cli_exit(1)
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Cases
+# ---------------------------------------------------------------------------
+
+# Build the project, run the package manager with `args` in it, and compare
+# the record with the golden (or store it).
+function case_run(name: string, kind: string, args: ptr<ProcStrs>) {
+    let dir: string = WORK + "/cases/" + name + "/flow"
+    mkdir_p_or_exit(dir)
+    setup(kind, dir)
+    let argv: ptr<ProcStrs> = sl_of1(TOOL)
+    sl_extend(argv, args)
+    let c: ptr<ProcCmd> = cmd(argv)
+    cmd_cwd(c, dir)
+    cmd_env(c, "PWD", dir)
+    cmd_env(c, "FLOW_REPO_ROOT", ROOT)
+    proc_stdout(c, PROC_CAPTURE)
+    proc_stderr(c, PROC_NULL)
+    let r: ptr<ProcResult> = run_result(c)
+    let rec: string = normalize("$ flow_pkg " + sl_join(args, " ") + "\n[exit " + s_itoa(r.exit_code) + "]\n== stdout\n" + r.stdout + snapshot(dir), dir)
+    let result: string = WORK + "/cases/" + name + ".result"
+    let _w: bool = write_text(result, rec)
+    let gold: string = GOLD + "/" + name + ".expect"
+    if RECORD {
+        let _c: bool = copy_file(result, gold)
+        outln("recorded " + name)
+        return
+    }
+    if same_bytes(result, gold) {
+        outln("PASS " + name + " (exit " + s_itoa(r.exit_code) + ")")
+        PASS = PASS + 1
+    } else {
+        outln("FAIL " + name)
+        out(chk_prefix(chk_head(chk_diff(gold, result), 30), "     "))
+        FAIL = FAIL + 1
+    }
+}
+
+function case1(name: string, kind: string, a: string) {
+    case_run(name, kind, sl_of1(a))
+}
+
+function casew(name: string, kind: string, args: string) {
+    case_run(name, kind, s_words(args))
+}
+
+# git with fixed dates, so the commits (and their hashes) are the same on
+# every machine.
+function git_at(dir: string, args: ptr<ProcStrs>) {
+    let argv: ptr<ProcStrs> = sl_of3("git", "-C", dir)
+    sl_extend(argv, args)
+    let c: ptr<ProcCmd> = cmd(argv)
+    cmd_env(c, "GIT_AUTHOR_DATE", "2026-01-01T00:00:00+0000")
+    cmd_env(c, "GIT_COMMITTER_DATE", "2026-01-01T00:00:00+0000")
+    cmd_env(c, "GIT_CONFIG_GLOBAL", "/dev/null")
+    cmd_env(c, "GIT_CONFIG_NOSYSTEM", "1")
+    cmd_quiet(c)
+    if run(c) != 0 {
+        errln("check_pkg_parity: git " + sl_join(args, " ") + " failed")
+        cli_exit(1)
+    }
+}
+
+# A local repository served over file://: tag v1 on the first commit, a
+# second commit on main, and a branch `stable` there.
+function make_git_repo() {
+    GITREPO = WORK + "/gitsrc/mylib"
+    put(GITREPO + "/lib.flow", "export function f() -> i32 {\n    return 1\n}\n")
+    put(GITREPO + "/pkgs/sub/src/lib.flow", "export function s() -> i32 {\n    return 2\n}\n")
+    git_at(GITREPO, s_words("init -q -b main"))
+    git_at(GITREPO, s_words("config user.email parity@example.invalid"))
+    git_at(GITREPO, s_words("config user.name parity"))
+    git_at(GITREPO, s_words("add -A"))
+    git_at(GITREPO, s_words("commit -q -m one"))
+    git_at(GITREPO, s_words("tag v1"))
+    let _a: bool = append_text(GITREPO + "/lib.flow", "# two\n")
+    git_at(GITREPO, s_words("commit -q -am two"))
+    git_at(GITREPO, s_words("branch -q stable"))
+    let g: ptr<ProcStrs> = sl_of3("git", "-C", GITREPO)
+    sl_push2(g, "rev-list", "--max-parents=0")
+    sl_push(g, "HEAD")
+    FIRST_SHA = capture(cmd(g))
+}
+
+# add json --version REQ
+function add_version(req: string) -> ptr<ProcStrs> {
+    let a: ptr<ProcStrs> = sl_of3("add", "json", "--version")
+    sl_push(a, req)
+    return a
+}
+
+# tr -c 'A-Za-z0-9.' '_'
+function slug(s: string) -> string {
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < s_len(s) {
+        let c: i32 = s_byte(s, i)
+        if (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 46 {
+            out = out + s_slice(s, i, i + 1)
+        } else {
+            out = out + "_"
+        }
+        i = i + 1
+    }
+    return out
+}
+
+function override_index() -> string {
+    let r: string = ROOT + "/registry/packages/"
+    return "{\n  \"name\": \"parity-index\",\n  \"crates\": {\n    \"multi\": {\n      \"description\": \"Several versions\",\n      \"versions\": [\n        {\"version\": \"1.2.0\", \"path\": \"" + r + "json\"},\n        {\"version\": \"1.10.0\", \"yanked\": true, \"path\": \"" + r + "toml\"},\n        {\"version\": \"1.3.0\", \"path\": \"registry/packages/mathkit\"},\n        {\"version\": \"v2.0.0-beta\", \"path\": \"registry/packages/strings\"},\n        {\"version\": \"0.4.1\", \"path\": \"registry/packages/log\"}\n      ]\n    },\n    \"viagit\": {\n      \"description\": \"From git\",\n      \"homepage\": \"https://example.invalid/viagit\",\n      \"versions\": [\n        {\"version\": \"0.1.0\", \"git\": \"file://" + GITREPO + "\", \"tag\": \"v1\"}\n      ]\n    }\n  }\n}\n"
+}
+
+function main() -> i32 {
+    ROOT = chk_enter()
+    GOLD = ROOT + "/tests/pkg_parity"
+    let args: ptr<ProcStrs> = proc_args()
+    if sl_len(args) > 0 and s_eq(sl_get(args, 0), "--record") {
+        RECORD = true
+        mkdir_p_or_exit(GOLD)
+    }
+    WORK = chk_mktemp("flow-pkg-parity")
+    on_exit_remove(WORK)
+    env_unset("FLOW_REGISTRY_PATH")
+    env_unset("FLOW_REGISTRY_URL")
+
+    # Any package command builds the tool (build/tools/flow_pkg/flow_pkg).
+    let warm: ptr<ProcCmd> = cmd(sl_of3(ROOT + "/flow", "info", "hello_lib"))
+    cmd_cwd(warm, WORK)
+    cmd_env(warm, "PWD", WORK)
+    cmd_quiet(warm)
+    let _w: i32 = run(warm)
+    TOOL = ROOT + "/build/tools/flow_pkg/flow_pkg"
+    if not is_exec(TOOL) {
+        outln("check_pkg_parity: could not build the Flow package tool")
+        cli_exit(1)
+    }
+
+    # Every registry package: install, add, sync, pinned requirement.
+    let pkgs: ptr<ProcStrs> = list_dir(ROOT + "/registry/packages")
+    sl_sort(pkgs, false)
+    let mut i: i32 = 0
+    while i < sl_len(pkgs) {
+        let pkg: string = sl_get(pkgs, i)
+        if is_dir(ROOT + "/registry/packages/" + pkg) {
+            case1("install-" + pkg, "dep:" + pkg, "install")
+            casew("sync-" + pkg, "caret:" + pkg, "sync --program src/main.flow")
+            case_run("add-" + pkg, "empty", sl_of2("add", pkg))
+            case_run("add-at-" + pkg, "empty", sl_of2("add", pkg + "@^0.1.0"))
+        }
+        i = i + 1
+    }
+    case1("install-flow-verify", "verify", "install")
+
+    # Version requirements and errors.
+    casew("add-latest", "empty", "add json@latest")
+    case_run("add-ge", "empty", add_version(">=0.1.0"))
+    case_run("add-exact-eq", "empty", add_version("==0.1.0"))
+    casew("add-unknown", "empty", "add no_such_package")
+    casew("add-bad-constraint", "empty", "add json@^9.0")
+    casew("add-garbage-constraint", "empty", "add json@not.a.version")
+    casew("add-twice", "dep:json", "add json")
+    case1("install-unknown", "unknown", "install")
+    casew("sync-unknown", "unknown", "sync --program src/main.flow")
+    case1("install-bad-version", "bad_version", "install")
+    case1("install-garbage-version", "garbage_version", "install")
+    case1("install-partial-failure", "partial", "install")
+    casew("add-no-manifest", "none", "add json")
+    case1("install-no-manifest", "none", "install")
+    case1("add-usage", "empty", "add")
+    case1("info-missing-arg", "empty", "info")
+
+    # flow.lock handling.
+    case1("install-existing-lock", "locked", "install")
+    case1("install-malformed-lock", "bad_lock", "install")
+    casew("sync-already-installed", "synced", "sync --program src/main.flow")
+
+    # Path, stdlib and local-file dependencies.
+    case1("install-path", "path", "install")
+    case1("install-path-file", "path_file", "install")
+    case1("install-path-missing", "path_missing", "install")
+    casew("add-path", "add_path", "add --path vendor/lib2 --name lib2")
+    case1("install-stdlib", "stdlib", "install")
+    casew("add-stdlib", "empty", "add collections")
+    case1("install-local-file", "local_file", "install")
+    case1("install-unsupported-spec", "unsupported", "install")
+
+    # Git dependencies (a local repository over file://).
+    make_git_repo()
+    case1("install-git-tag", "git_tag", "install")
+    case1("install-git-rev", "git_rev", "install")
+    case1("install-git-subdir", "git_subdir", "install")
+    case1("install-git-bad-subdir", "git_bad_subdir", "install")
+    case1("install-git-bad-tag", "git_bad_tag", "install")
+    let gu: ptr<ProcStrs> = sl_of3("add", "git+file://" + GITREPO + ".git#main", "--tag")
+    sl_push(gu, "v1")
+    case_run("add-git-url", "empty", gu)
+    let gf: ptr<ProcStrs> = sl_of3("add", "--git", "file://" + GITREPO)
+    sl_push2(gf, "--name", "mine")
+    sl_push2(gf, "--branch", "stable")
+    sl_push2(gf, "--subdir", "pkgs/sub")
+    case_run("add-git-flag", "empty", gf)
+
+    # Registry override: several versions, yanked, git sources.
+    let index: string = WORK + "/index.json"
+    put(index, override_index())
+    env_set("FLOW_REGISTRY_PATH", index)
+    let reqs: ptr<ProcStrs> = sl_of3("*", "^1.2", "^1")
+    sl_push2(reqs, ">=1.2.5", "==1.2")
+    sl_push2(reqs, "1.3.0", "^0.4")
+    sl_push2(reqs, "^0.4.2", "2")
+    sl_push2(reqs, "1.10.0", "v2")
+    sl_push(reqs, " 1.3.0 ")
+    let mut q: i32 = 0
+    while q < sl_len(reqs) {
+        let req: string = sl_get(reqs, q)
+        case1("override-install-" + slug(req), "multi:" + req, "install")
+        q = q + 1
+    }
+    casew("override-add", "empty", "add multi")
+    casew("override-add-caret", "empty", "add multi@^0.4")
+    casew("override-add-git", "empty", "add viagit")
+    case1("override-search", "empty", "search")
+    casew("override-info", "empty", "info multi")
+    env_unset("FLOW_REGISTRY_PATH")
+
+    # search / info against the bundled index.
+    case1("search-all", "empty", "search")
+    casew("search-json", "empty", "search json")
+    casew("search-pure", "empty", "search pure")
+    casew("search-none", "empty", "search zzzz_nothing")
+    casew("info-json", "empty", "info json")
+    casew("info-unknown", "empty", "info nope")
+
+    if RECORD {
+        cli_exit(0)
+    }
+    outln("")
+    outln("parity: pass=" + s_itoa(PASS) + " fail=" + s_itoa(FAIL))
+    if FAIL != 0 {
+        cli_exit(1)
+    }
+    cli_exit(0)
+    return 0
+}
