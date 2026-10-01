@@ -12,7 +12,7 @@
 #                                            FLOWC_STRICT_EFFECTS=1,
 #                                            FLOWC_WERROR=1)
 #
-# and is compiled the way `flowc_emit.sh --strict` compiles it, stopping after
+# and is compiled the way `flowc_emit.flow --strict` compiles it, stopping after
 # the type check. The expected messages were recorded from the Python checker
 # (its em dash and ellipsis spelled ": " and "...", as flowc prints them).
 # The warnings are the checker's TypeCheckResult.warnings, which the Python
@@ -49,7 +49,7 @@ for f in "$DIR"/*.flow; do
     log="$WORK/$name.log"
     set +e
     env ${envs[@]+"${envs[@]}"} FLOWC_CHECK_ONLY=1 FLOWC_BIN="$BIN" \
-        compiler/scripts/flowc_emit.sh --strict "$f" "$WORK/$name.c" > "$log" 2>&1
+        ./flow tool compiler/scripts/flowc_emit.flow --strict "$f" "$WORK/$name.c" > "$log" 2>&1
     rc=$?
     set -e
     got="$(sed -n -E 's/^.*:[0-9]+:[0-9]+: error: //p' "$log" | head -1)"

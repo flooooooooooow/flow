@@ -8,8 +8,8 @@
 # (tools/doc_examples `dump`), and the checker snippets that tests/unit fed
 # the Python checker, kept as fixtures in compiler/fixtures/typecheck_parity/
 # unit/. Each is checked twice: strict (Python `--strict`, the default; flowc
-# `compiler/scripts/flowc_emit.sh --strict`) and lenient (Python `--lenient`,
-# which rejects only its fatal errors; flowc_emit.sh --lenient, which is what
+# `compiler/scripts/flowc_emit.flow --strict`) and lenient (Python `--lenient`,
+# which rejects only its fatal errors; flowc_emit.flow --lenient, which is what
 # `flow compile` runs).
 #
 #   ./compiler/scripts/parity_typecheck.sh [--check] [--list CLASS] [--only REGEX]
@@ -346,7 +346,7 @@ for m in S L; do
     flag=--strict
     [[ "$m" == L ]] && flag=--lenient
     rm -f "$d/o.c"
-    (cd "$root" && ulimit -t 30 && FLOWC_CHECK_ONLY=1 FLOWC_WARNINGS=all FLOWC_BIN="$bin" compiler/scripts/flowc_emit.sh "$flag" "$path" "$d/o.c") > "$d/log.$m" 2>&1
+    (cd "$root" && ulimit -t 30 && FLOWC_CHECK_ONLY=1 FLOWC_WARNINGS=all FLOWC_BIN="$bin" ./flow tool compiler/scripts/flowc_emit.flow "$flag" "$path" "$d/o.c") > "$d/log.$m" 2>&1
     rc=$?
     log="$d/log.$m"
     if grep -qE 'parse error|flowc emit: parse failed|bundle tc: (gather|topo|read) failed|read FLOWC_IN failed|expansion overflowed|unsupported in Stage-A|cannot resolve|could not resolve|import not found' "$log"; then

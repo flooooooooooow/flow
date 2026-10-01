@@ -197,7 +197,7 @@ two things from it:
 * a `.wgsl` per `@gpu` function, plus a small JSON reflection (binding indices,
   storage access modes, uniform layout, workgroup size) so the JavaScript host
   never has to re-parse Flow;
-* the same file through flowc (`compiler/scripts/flowc_emit.sh`) into WASM,
+* the same file through flowc (`compiler/scripts/flowc_emit.flow`) into WASM,
   where the kernel bodies become ordinary C.
 
 The CPU reference is not a re-implementation. Flow's C generator already emits

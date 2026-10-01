@@ -171,7 +171,7 @@ function compile_all(d: ptr<Data>, have_rust: bool) -> void {
         let bd: string = build_dir()
         tc[b] = timed("clang\t-O3\t-march=native\t-lm\t" + pub_dir() + "/c/" + name + ".c\t-o\t" + bd + "/" + name + "_c")
         let gen_c: string = bd + "/" + name + "_flow.c"
-        tt[b] = timed(root() + "/compiler/scripts/flowc_emit.sh\t--lenient\t" + pub_dir() + "/flow/" + name + ".flow\t" + gen_c)
+        tt[b] = timed(root() + "/flow\ttool\t" + root() + "/compiler/scripts/flowc_emit.flow\t--lenient\t" + pub_dir() + "/flow/" + name + ".flow\t" + gen_c)
         tl[b] = timed("clang\t-O3\t-march=native\t-lm\t" + gen_c + "\t-o\t" + bd + "/" + name + "_flow")
         if have_rust {
             tr[b] = timed("rustc\t-C\topt-level=3\t-C\ttarget-cpu=native\t" + pub_dir() + "/rust/" + name + ".rs\t-o\t" + bd + "/" + name + "_rust")

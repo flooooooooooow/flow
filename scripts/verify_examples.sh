@@ -3,7 +3,7 @@
 # compiles, and regenerate the status table in examples/STATUS.md.
 #
 # The logic is the Flow program in scripts/tools/verify_examples. It runs
-# flowc (compiler/scripts/flowc_emit.sh) and clang per file, in parallel
+# flowc (compiler/scripts/flowc_emit.flow) and clang per file, in parallel
 # through xargs -P.
 #
 # Usage (from anywhere):
@@ -18,7 +18,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
 
 if [[ -z "${FLOWC_BIN:-}" ]]; then
-    FLOWC_BIN="$(bash "$ROOT/compiler/scripts/ensure_flowc.sh")"
+    FLOWC_BIN="$("$ROOT/flow" tool "$ROOT/compiler/scripts/ensure_flowc.flow")"
     [[ "$FLOWC_BIN" == /* ]] || FLOWC_BIN="$ROOT/$FLOWC_BIN"
     export FLOWC_BIN
 fi

@@ -6,7 +6,7 @@
 # was deleted. Only the usage text changed, to name the shim.
 #
 # Two stubs keep the cases fast and independent of the toolchain:
-#   - a fake flowc (FLOWC_BIN, read by compiler/scripts/flowc_emit.sh)
+#   - a fake flowc (FLOWC_BIN, read by compiler/scripts/flowc_emit.flow)
 #     writes fixed C, or fails for a source containing "broken";
 #   - a fake emcc records its argv and, per FAKE_EMCC_MODE, succeeds
 #     (writing the .js and .wasm), fails `--version`, or fails the compile
@@ -41,7 +41,7 @@ struct Ctx {
 
 let mut CTX: ptr<Ctx> = null
 
-# The stand-in for flowc that compiler/scripts/flowc_emit.sh runs.
+# The stand-in for flowc that compiler/scripts/flowc_emit.flow runs.
 const FAKE_FLOWC: string = "#!/bin/sh\nif grep -q broken \"$FLOWC_IN\"; then\n    echo \"fake flowc: parse error in $(basename \"$FLOWC_IN\")\" >&2\n    exit 1\nfi\nprintf '/* fake flowc: %s */\\nint main(void) {\\n    return (0 < 1 && 2 > 1) ? 0 : 1;\\n}\\n' \"$(basename \"$FLOWC_IN\")\" > \"$FLOWC_OUT\"\n"
 
 # The stand-in for emcc: logs its argv, then acts per FAKE_EMCC_MODE.
@@ -227,7 +227,8 @@ function main() -> i32 {
     check_files("flowc_fails", work + "/cwd/out/broken", "broken.c broken.html")
 
     # --all works on <root>/examples and writes <root>/wasm/wasm_examples. Give
-    # it a root of its own: the scripts the tool needs, three of the listed
+    # it a root of its own: the scripts the tool needs and the ./flow it runs
+    # them with, three of the listed
     # examples (one broken), and a page left over from an earlier run, which the
     # index still links.
     let fake_root: string = work + "/root"
@@ -236,6 +237,7 @@ function main() -> i32 {
     let _f3: bool = mkdir_p(fake_root + "/wasm/wasm_examples")
     let _l1: bool = bg_symlink(root + "/scripts", fake_root + "/scripts")
     let _l2: bool = bg_symlink(root + "/compiler/scripts", fake_root + "/compiler/scripts")
+    let _l3: bool = bg_symlink(root + "/flow", fake_root + "/flow")
     let _c1: bool = copy_file(src + "/plain.flow", fake_root + "/examples/fibonacci.flow")
     let _c2: bool = copy_file(src + "/hello.flow", fake_root + "/examples/gcd.flow")
     let _c3: bool = copy_file(src + "/broken.flow", fake_root + "/examples/simple_search.flow")

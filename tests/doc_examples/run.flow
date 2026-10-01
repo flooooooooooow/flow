@@ -72,7 +72,7 @@ function main() -> i32 {
     let only: ptr<ProcStrs> = tr_args()
     # Build flowc up front: on a clean checkout the first case would otherwise
     # catch ensure_flowc's build notice in its stderr.
-    let ef: ptr<ProcCmd> = cmd(sl_of2("bash", "compiler/scripts/ensure_flowc.sh"))
+    let ef: ptr<ProcCmd> = cmd(sl_of3("./flow", "tool", "compiler/scripts/ensure_flowc.flow"))
     cmd_quiet(ef)
     let _e: i32 = run(ef)
 
