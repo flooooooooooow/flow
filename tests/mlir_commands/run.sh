@@ -72,8 +72,8 @@ filter() {
 }
 
 pipeline_of() {
-    if [[ -x "$root/compiler/scripts/mlir_optimize.sh" ]]; then
-        "$root/compiler/scripts/mlir_optimize.sh" --print-pass-pipeline "$@"
+    if [[ -f "$root/tools/flow_cli/mlir_tools.flow" ]]; then
+        "$root/flow" mlir-optimize --print-pass-pipeline "$@"
     else
         PYTHONPATH="$root/src" python3 -m flow.transpiler --print-pass-pipeline "$@"
     fi

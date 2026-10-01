@@ -5,8 +5,8 @@
 #
 # FUNCTION defaults to run_demo for a path with "demo" or "test" in it,
 # run_bench for one with "main", else main. The program is emitted with the
-# Flow MLIR emitter (compiler/scripts/flow_to_mlir.sh), lowered with
-# mlir_lower.sh, and linked at -O3 -march=native with a small C runner that
+# Flow MLIR emitter (`flow flow-to-mlir`), lowered with
+# `flow mlir-lower`, and linked at -O3 -march=native with a small C runner that
 # calls FUNCTION and supplies the JIT runtime helpers (jit_print, jit_time,
 # jit_reload_check). This replaces scripts/run_bench.py, which loaded the
 # same code as a shared object through ctypes.
@@ -27,9 +27,9 @@ echo "Reading $input..."
 work="$(mktemp -d "${TMPDIR:-/tmp}/flow-bench.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 
-"$ROOT/compiler/scripts/flow_to_mlir.sh" "$input" "$work/bench.mlir"
+"$ROOT/flow" flow-to-mlir "$input" "$work/bench.mlir"
 echo "Lowering MLIR to LLVM..."
-"$ROOT/compiler/scripts/mlir_lower.sh" "$work/bench.mlir" "$work/bench.ll"
+"$ROOT/flow" mlir-lower "$work/bench.mlir" "$work/bench.ll"
 
 cat > "$work/runner.c" <<EOF
 #include <stdio.h>

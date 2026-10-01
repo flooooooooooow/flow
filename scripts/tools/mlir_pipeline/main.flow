@@ -8,8 +8,8 @@
 # prints the --pass-pipeline string, as MLIROptimizer.build_pass_pipeline in
 # the retired src/flow/mlir_optimizer.py built it from the transpiler flags
 # (mlir_opt_kwargs_from_args). Other arguments are ignored, so a caller can
-# pass the whole `flow mlir` flag list. compiler/scripts/mlir_optimize.sh
-# runs mlir-opt with the result.
+# pass the whole `flow mlir` flag list. `flow mlir-optimize`
+# (tools/flow_cli/mlir_tools.flow) runs mlir-opt with the result.
 #
 # Nesting: `inline` and `symbol-dce` are module passes (they need a symbol
 # table); the rest nest under func.func(...). affine-super-vectorize (O3)

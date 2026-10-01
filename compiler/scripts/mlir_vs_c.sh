@@ -3,7 +3,7 @@
 #
 # Every tracked .flow file that defines main() is built twice the way `flow
 # run` builds it: `flow compile` (the C backend) and `flow compile
-# --backend=mlir` (compiler/src/mlirgen.flow, compiler/scripts/mlir_lower.sh,
+# --backend=mlir` (compiler/src/mlirgen.flow, flow mlir-lower,
 # clang). Both executables run from the repository root with stdin closed
 # and a timeout. A program is "same" when both build and the runs agree on
 # exit code and stdout. The C backend is the reference: a program it does
@@ -233,7 +233,7 @@ main() {
         shift
     done
 
-    if ! compiler/scripts/mlir_lower.sh --tools > /dev/null 2>&1; then
+    if ! ./flow mlir-lower --tools > /dev/null 2>&1; then
         echo "mlir_vs_c: mlir-opt / mlir-translate not found (brew install llvm, or set LLVM_PATH)" >&2
         exit 2
     fi

@@ -7,6 +7,7 @@
 import "tools/flow_cli/sys.flow"
 import "tools/flow_cli/toolchain.flow"
 import "tools/flow_cli/build.flow"
+import "tools/flow_cli/mlir_tools.flow"
 import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg }
 
 # ---------------------------------------------------------------------------
@@ -929,17 +930,18 @@ export function cmd_ml(args: ptr<ProcStrs>) -> i32 {
                 cli_exit(1)
             }
             info("  MLIR GPU smoke: gpu_kernels")
-            let gc: ptr<ProcCmd> = flow_emit_mlir_cmd(sl_of3("--gpu", root() + "/lib/stdlib/gpu_kernels.flow", build_root() + "/gpu_kernels.mlir"))
-            cmd_quiet(gc)
-            if run(gc) != 0 {
+            sink_push(SINK_NULL, SINK_NULL)
+            let grc: i32 = flow_emit_mlir(sl_of3("--gpu", root() + "/lib/stdlib/gpu_kernels.flow", build_root() + "/gpu_kernels.mlir"))
+            let _go: string = sink_pop()
+            if grc != 0 {
                 error("GPU MLIR generation failed")
                 cli_exit(1)
             }
             info("  MLIR SPIR-V smoke: gpu_kernels (best-effort)")
-            let sp: ptr<ProcCmd> = cmd(sl_of3(root() + "/compiler/scripts/mlir_spirv.sh", "spirv", build_root() + "/gpu_kernels.mlir"))
-            proc_arg(sp, build_root() + "/gpu_kernels.spv")
-            cmd_quiet(sp)
-            if run(sp) == 0 {
+            sink_push(SINK_NULL, SINK_NULL)
+            let src: i32 = mlir_spirv(sl_of3("spirv", build_root() + "/gpu_kernels.mlir", build_root() + "/gpu_kernels.spv"))
+            let _so: string = sink_pop()
+            if src == 0 {
                 success("  SPIR-V lowering ok")
             } else {
                 warning("  SPIR-V lowering WIP (GPU MLIR codegen ok)")

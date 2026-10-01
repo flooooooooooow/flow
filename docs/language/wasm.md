@@ -165,8 +165,8 @@ Names passed to `--export` are checked against the symbols actually defined in
 the generated LLVM IR before clang runs, so a typo fails with the list of
 symbols that do exist rather than with a linker error.
 
-A Flow source reaches LLVM IR through `compiler/scripts/flow_to_llvm.sh
---wasm32`: the flowc MLIR emitter and `mlir_lower.sh`. The emitter has no
+A Flow source reaches LLVM IR through `flow flow-to-llvm
+--wasm32`: the flowc MLIR emitter and `flow mlir-lower`. The emitter has no
 ILP32 `size_t` option, so a program that declares external functions, or one
 the emitter does not cover yet (such as `alloc_sum.flow` with its unsized
 array), is lowered by the Python MLIR generator instead.

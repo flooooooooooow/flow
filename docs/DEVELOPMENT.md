@@ -30,8 +30,9 @@ the checked-in C in `compiler/bootstrap/`. See
 #### MLIR Backend (`compiler/src/mlirgen.flow`)
 - **Text emission**: `FLOWC_EMIT=mlir` writes func, arith, scf, cf, llvm,
   memref, vector and gpu dialect text
-- **Lowering**: `compiler/scripts/mlir_lower.sh`, `mlir_optimize.sh` and
-  `mlir_spirv.sh` drive mlir-opt and mlir-translate
+- **Lowering**: `flow mlir-lower`, `flow mlir-optimize` and
+  `flow mlir-spirv` (tools/flow_cli/mlir_tools.flow) drive mlir-opt and
+  mlir-translate
 - Design and parity record: [MLIR in Flow](design/mlir-in-flow.md)
 
 #### WebAssembly Target (`flow wasm32`, `scripts/tools/llvm_target`)

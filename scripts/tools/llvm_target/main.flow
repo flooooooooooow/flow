@@ -10,8 +10,8 @@
 #       [-O|--opt-level O0|O1|O2|O3|Os|Oz]
 #
 # The first argument the shims pass selects the target. A Flow source is
-# lowered to LLVM IR by compiler/scripts/flow_to_llvm.sh (the flowc MLIR
-# emitter and mlir_lower.sh). For bpf the IR is checked against the
+# lowered to LLVM IR by `flow flow-to-llvm` (the flowc MLIR
+# emitter and `flow mlir-lower`). For bpf the IR is checked against the
 # verifier-hostile constructs the target rejects, given the BPF triple and
 # data layout, and, with --entry/--section, the entry is placed in its ELF
 # section next to a `license` section. clang with the LLVM BPF backend emits
@@ -497,8 +497,8 @@ function bpf_emit_object(ir: string, a: ptr<Args>, work: string) -> string {
 # Lower a Flow file to LLVM IR at `ll`. Returns "" or the process output
 # pieces: the tool's stderr in `err_path`, stdout in `out_path`.
 function lower_flow(src: string, ll: string, flags: string, work: string) -> i32 {
-    let shim: string = root() + "/compiler/scripts/flow_to_llvm.sh"
-    let cmd: string = pr_quote(shim) + flags + " " + pr_quote(src) + " " + pr_quote(ll) + " > " + pr_quote(work + "/lower.out") + " 2> " + pr_quote(work + "/lower.err")
+    let flow: string = root() + "/flow"
+    let cmd: string = pr_quote(flow) + " flow-to-llvm" + flags + " " + pr_quote(src) + " " + pr_quote(ll) + " > " + pr_quote(work + "/lower.out") + " 2> " + pr_quote(work + "/lower.err")
     return pr_run(cmd)
 }
 

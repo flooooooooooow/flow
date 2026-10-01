@@ -47,7 +47,7 @@ Every backend is a module of `compiler/src`:
 |--------|--------|
 | `cgen` | C, the default path |
 | `jsgen` | JavaScript |
-| `mlirgen` | MLIR (`FLOWC_EMIT=mlir`), lowered by `compiler/scripts/mlir_lower.sh` |
+| `mlirgen` | MLIR (`FLOWC_EMIT=mlir`), lowered by `flow mlir-lower` |
 | `metal_codegen` | Metal shaders for `@gpu` functions |
 | `wgsl_codegen` | WGSL shaders for `@gpu` functions |
 | `bpf_target` | eBPF subset checks |

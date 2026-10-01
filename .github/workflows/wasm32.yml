@@ -1,3 +1,4 @@
+# ACTIONS-INTENDED: public repository; the wasm32 backend job of its CI.
 name: wasm32 direct backend
 
 on:
@@ -6,13 +7,11 @@ on:
       - 'scripts/tools/llvm_target/**'
       - 'scripts/tools/lib/**'
       - 'scripts/wasm32_target.sh'
-      - 'compiler/scripts/flow_to_llvm.sh'
-      - 'compiler/scripts/mlir_lower.sh'
+      - 'tools/flow_cli/mlir_tools.flow'
       - 'compiler/scripts/parity_targets.sh'
       - 'compiler/src/mlirgen.flow'
       - 'compiler/bootstrap/flowc_stage_a.c'
       - 'tests/targets/**'
-      - 'compiler/scripts/flow_to_mlir.sh'
       - 'runtime/wasm/**'
       - 'tests/fixtures/wasm/**'
       - 'tests/wasm/**'
@@ -23,13 +22,11 @@ on:
       - 'scripts/tools/llvm_target/**'
       - 'scripts/tools/lib/**'
       - 'scripts/wasm32_target.sh'
-      - 'compiler/scripts/flow_to_llvm.sh'
-      - 'compiler/scripts/mlir_lower.sh'
+      - 'tools/flow_cli/mlir_tools.flow'
       - 'compiler/scripts/parity_targets.sh'
       - 'compiler/src/mlirgen.flow'
       - 'compiler/bootstrap/flowc_stage_a.c'
       - 'tests/targets/**'
-      - 'compiler/scripts/flow_to_mlir.sh'
       - 'runtime/wasm/**'
       - 'tests/fixtures/wasm/**'
       - 'tests/wasm/**'

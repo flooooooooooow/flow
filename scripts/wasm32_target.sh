@@ -7,7 +7,7 @@
 #
 # The compiler is the Flow program in scripts/tools/llvm_target, built with
 # the Stage-A compiler on first use. `flow wasm32` runs this. Flow sources reach
-# LLVM IR through compiler/scripts/flow_to_llvm.sh.
+# LLVM IR through `flow flow-to-llvm`.
 
 set -euo pipefail
 

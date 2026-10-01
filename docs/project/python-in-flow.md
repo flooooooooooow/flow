@@ -58,7 +58,7 @@ the Flow port of each one. The table records where each port stands.
 | `repl.py` | `flow repl` | A REPL written in Flow (`tools/repl/main.flow`): open PR #987 |
 | `test_runner.py` | No callers | Deleted in open PR #987 |
 | `package.py`, `registry.py` | Every package command | Ported to `compiler/src/pkg.flow` and `pkg_main.flow`; both Python files are deleted |
-| `mlir_*.py`, `jit_runner.py`, GPU runtimes | MLIR / Metal / numpy | Complete and deleted. MLIR text in flowc ([`mlirgen.flow`](../../compiler/src/mlirgen.flow), `FLOWC_EMIT=mlir`); lowering, pipelines and SPIR-V in `compiler/scripts/mlir_lower.sh`, `mlir_optimize.sh` and `mlir_spirv.sh`; the JIT is emit, lower, link and run. See [MLIR in Flow](../design/mlir-in-flow.md) |
+| `mlir_*.py`, `jit_runner.py`, GPU runtimes | MLIR / Metal / numpy | Complete and deleted. MLIR text in flowc ([`mlirgen.flow`](../../compiler/src/mlirgen.flow), `FLOWC_EMIT=mlir`); lowering, pipelines and SPIR-V in `flow mlir-lower`, `flow mlir-optimize` and `flow mlir-spirv`; the JIT is emit, lower, link and run. See [MLIR in Flow](../design/mlir-in-flow.md) |
 | `parser.py`, `type_checker.py`, `monomorphize.py`, `module_resolver.py`, `transpiler.py` | Python front end | Deleted. flowc's own front end replaced them. Some Python type-checker diagnostics have no flowc counterpart yet; see [MLIR in Flow](../design/mlir-in-flow.md#what-the-deletion-left-open) |
 
 ## Boundary

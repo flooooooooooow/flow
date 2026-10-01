@@ -1243,19 +1243,6 @@ export function compile_program(program: string) -> i32 {
     return compile_program_flowc(program)
 }
 
-# compiler/scripts/flow_to_mlir.sh ARGS...: status.
-export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
-    let argv: ptr<ProcStrs> = sl_of1(TC_ROOT + "/compiler/scripts/flow_to_mlir.sh")
-    sl_extend(argv, args)
-    return run_argv(argv)
-}
-
-export function flow_emit_mlir_cmd(args: ptr<ProcStrs>) -> ptr<ProcCmd> {
-    let argv: ptr<ProcStrs> = sl_of1(TC_ROOT + "/compiler/scripts/flow_to_mlir.sh")
-    sl_extend(argv, args)
-    return cmd(argv)
-}
-
 # The Python framework flags the driver added when Xcode ships Python3.
 export function py_cflags() -> ptr<ProcStrs> {
     let fw: string = "/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
@@ -1308,32 +1295,4 @@ export function flow_link_mlir_ll(ll: string, exe: string, embed: string) -> i32
     sl_push2(a, "-lm", "-o")
     sl_push(a, exe)
     return run_argv(a)
-}
-
-export function compile_program_mlir(program: string) -> i32 {
-    require_flow_file(program)
-    let _m: string = flow_host_mode()
-    check_mlir_deps()
-    let basename: string = path_stem(program, ".flow")
-    let build_dir: string = TC_BUILD_ROOT
-    mkdir_p_or_exit(build_dir)
-    info("Compiling " + program + " (CPU backend=mlir)...")
-    if flow_emit_mlir(sl_of3("--lenient", program, build_dir + "/" + basename + ".mlir")) != 0 {
-        error("FLOW MLIR compilation failed")
-        cli_exit(1)
-    }
-    success("FLOW → MLIR: " + basename + ".mlir")
-    let lower: ptr<ProcStrs> = sl_of3(TC_ROOT + "/compiler/scripts/mlir_lower.sh", build_dir + "/" + basename + ".mlir", build_dir + "/" + basename + ".ll")
-    if run_argv(lower) != 0 {
-        error("MLIR lowering failed (mlir-opt / mlir-translate)")
-        cli_exit(1)
-    }
-    success("MLIR → LLVM: " + basename + ".ll")
-    if flow_link_mlir_ll(build_dir + "/" + basename + ".ll", build_dir + "/" + basename, build_dir + "/" + basename + ".mlir.c") != 0 {
-        error("MLIR/LLVM compilation/linking failed")
-        cli_exit(1)
-    }
-    success("LLVM → Executable: " + basename)
-    success("🚀 Ready to run (mlir): " + build_dir + "/" + basename)
-    return 0
 }

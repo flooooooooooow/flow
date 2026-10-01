@@ -2,7 +2,7 @@
 # Compare tests/fixtures/wasm/alloc_sum.flow compiled natively through MLIR
 # with the same function compiled to wasm32 and run under Node.
 #
-# The native build lowers the program with compiler/scripts/flow_to_llvm.sh
+# The native build lowers the program with `flow flow-to-llvm`
 # and links it into a small C caller; the wasm build is `flow wasm32`
 # (scripts/wasm32_target.sh), run with runtime/wasm/flow_runtime.mjs. The
 # results must agree to 1e-6. Prints one JSON line:
@@ -10,7 +10,7 @@
 #
 # alloc_sum uses an unsized array, which the flowc MLIR emitter does not
 # cover yet, so both builds currently take the Python MLIR generator
-# fallback in flow_to_llvm.sh.
+# fallback in `flow flow-to-llvm`.
 
 set -euo pipefail
 
@@ -21,7 +21,7 @@ SOURCE=tests/fixtures/wasm/alloc_sum.flow
 work="$(mktemp -d "${TMPDIR:-/tmp}/flow_wasm_parity_.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 
-compiler/scripts/flow_to_llvm.sh "$SOURCE" "$work/alloc_sum_native.ll"
+./flow flow-to-llvm "$SOURCE" "$work/alloc_sum_native.ll"
 cat > "$work/caller.c" <<'C'
 #include <stdio.h>
 float alloc_sum(void);

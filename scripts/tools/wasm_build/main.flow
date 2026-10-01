@@ -12,7 +12,7 @@
 # and the emscripten environment the Homebrew toolchain needs.
 #
 # Flow sources go to C with flowc (compiler/scripts/flowc_emit.sh). The MLIR
-# backend reaches wasm32 LLVM IR through compiler/scripts/flow_to_llvm.sh
+# backend reaches wasm32 LLVM IR through `flow flow-to-llvm`
 # --wasm32 (the flowc MLIR emitter). emcc links the
 # result, gfx programs against runtime/gfx_wasm.c. Page text lives in
 # scripts/tools/wasm_build/assets. Those files store the em dash, the en
@@ -646,14 +646,14 @@ function flow_to_c(b: ptr<Build>, program: string, c_out: string, library: bool)
     return ft_read_file(c_out)
 }
 
-# Flow to wasm32 LLVM IR through MLIR: compiler/scripts/flow_to_llvm.sh
-# --wasm32 (the flowc MLIR emitter, ILP32 size_t, mlir_lower.sh).
+# Flow to wasm32 LLVM IR through MLIR: `flow flow-to-llvm --wasm32` (the
+# flowc MLIR emitter, ILP32 size_t, `flow mlir-lower`).
 function flow_to_llvm_ir(b: ptr<Build>, program: string, ll_out: string) -> string {
     let _m: bool = pr_mkdir_p(parent_dir(ll_out))
-    let cmd: string = pr_quote(root() + "/compiler/scripts/flow_to_llvm.sh") + " --wasm32 " + pr_quote(program) + " " + pr_quote(ll_out)
+    let cmd: string = pr_quote(root() + "/flow") + " flow-to-llvm --wasm32 " + pr_quote(program) + " " + pr_quote(ll_out)
     let pr: ptr<Proc> = run_capture(cmd, "")
     if pr[0].code != 0 or ft_exists(ll_out) == false or file_size(ll_out) <= 0 {
-        let _f: bool = fail(b, "flow->mlir->llvm: " + last_detail(pr, "flow_to_llvm.sh failed"))
+        let _f: bool = fail(b, "flow->mlir->llvm: " + last_detail(pr, "flow flow-to-llvm failed"))
         return null as string
     }
     return ft_read_file(ll_out)

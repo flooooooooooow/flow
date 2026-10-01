@@ -41,7 +41,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     errors = errors + require(text, "$(FLOW) clean")
     errors = errors + require(text, "test-stdlib: test")
     errors = errors + forbid(text, "flow.transpiler", "the Python compiler is gone; delegate to ./flow")
-    errors = errors + forbid(text, "flow_to_mlir.sh", "a second MLIR pipeline; delegate to ./flow mlir")
+    errors = errors + forbid(text, "flow-to-mlir", "a second MLIR pipeline; delegate to ./flow mlir")
     errors = errors + forbid(text, "/opt/homebrew/opt/llvm", "the toolchain is found by ./flow, not hard-coded")
     errors = errors + forbid(text, "mlir-opt", "a second build pipeline; delegate to ./flow")
     errors = errors + forbid(text, "tests/test_simple.flow", "a second test list; ./flow test owns it")

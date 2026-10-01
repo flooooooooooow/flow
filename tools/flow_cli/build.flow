@@ -4,6 +4,7 @@
 
 import "tools/flow_cli/sys.flow"
 import "tools/flow_cli/toolchain.flow"
+import "tools/flow_cli/mlir_tools.flow"
 import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg, proc_input }
 import std.os { os_signal_watch, os_signal_take, SIGINT, SIGTERM }
 
@@ -474,7 +475,7 @@ export function compile_audio_program(program: string, backend: string) -> i32 {
         let ok1: bool = flow_emit_mlir(sl_of3("--lenient", program, build_dir + "/" + basename + ".mlir")) == 0
         let mut ok: bool = ok1
         if ok1 {
-            ok = run_argv(sl_of3(root() + "/compiler/scripts/mlir_lower.sh", build_dir + "/" + basename + ".mlir", build_dir + "/" + basename + ".ll")) == 0
+            ok = mlir_lower(sl_of2(build_dir + "/" + basename + ".mlir", build_dir + "/" + basename + ".ll")) == 0
         }
         if not ok {
             error("FLOW MLIR/LLVM compilation failed")
@@ -1096,9 +1097,9 @@ export function generate_mlir(args: ptr<ProcStrs>) -> i32 {
         i = i + 1
     }
     if print_pipeline {
-        let pp: ptr<ProcStrs> = sl_of2(root() + "/compiler/scripts/mlir_optimize.sh", "--print-pass-pipeline")
+        let pp: ptr<ProcStrs> = sl_of1("--print-pass-pipeline")
         sl_extend(pp, opt_flags)
-        return run_argv(pp)
+        return mlir_optimize(pp)
     }
     if s_len(program) == 0 or not is_file(program) {
         error("Program not found: " + program)
@@ -1124,20 +1125,19 @@ export function generate_mlir(args: ptr<ProcStrs>) -> i32 {
         cli_exit(1)
     }
     if optimize {
-        let o: ptr<ProcStrs> = sl_of1(root() + "/compiler/scripts/mlir_optimize.sh")
-        sl_extend(o, opt_flags)
+        let o: ptr<ProcStrs> = sl_copy(opt_flags)
         if report {
             sl_push(o, "--opt-report")
         }
         sl_push2(o, mlir_file, mlir_file)
-        if run_argv(o) != 0 {
+        if mlir_optimize(o) != 0 {
             errln("MLIR optimization failed")
             error("MLIR generation failed")
             cli_exit(1)
         }
     }
     if llvm {
-        if run_argv(sl_of3(root() + "/compiler/scripts/mlir_lower.sh", mlir_file, mlir_file + ".ll")) != 0 {
+        if mlir_lower(sl_of2(mlir_file, mlir_file + ".ll")) != 0 {
             errln("LLVM IR generation failed")
             error("MLIR generation failed")
             cli_exit(1)
@@ -1148,10 +1148,10 @@ export function generate_mlir(args: ptr<ProcStrs>) -> i32 {
         if s_len(spirv_out) == 0 {
             spirv_out = "build/" + basename + ".spv"
         }
-        let sc: ptr<ProcCmd> = cmd(sl_of3(root() + "/compiler/scripts/mlir_spirv.sh", "spirv", mlir_file))
-        proc_arg(sc, spirv_out)
-        let spirv_err: string = capture_merged(sc)
-        if last_status() != 0 {
+        sink_push(SINK_BUF, SINK_SAME)
+        let src: i32 = mlir_spirv(sl_of3("spirv", mlir_file, spirv_out))
+        let spirv_err: string = s_chomp_all(sink_pop())
+        if src != 0 {
             errln("SPIR-V generation failed: " + spirv_err)
             error("MLIR generation failed")
             cli_exit(1)
@@ -1190,22 +1190,26 @@ function jit_is_crash(code: i32) -> bool {
 }
 
 function flow_jit_once(program: string, work: string) -> i32 {
-    let em: ptr<ProcCmd> = flow_emit_mlir_cmd(sl_of3("--jit", program, work + "/jit_module.mlir"))
-    if run_err_to_file(em, work + "/emit.err") != 0 {
-        errs(read_text(work + "/emit.err"))
+    sink_push(SINK_FD, SINK_BUF)
+    let erc: i32 = flow_emit_mlir(sl_of3("--jit", program, work + "/jit_module.mlir"))
+    let _eo: string = sink_pop()
+    if erc != 0 {
+        errs(sink_err())
         outln("❌ JIT error: MLIR generation failed for " + path_basename(program))
         return 1
     }
-    let o: ptr<ProcStrs> = sl_of3(root() + "/compiler/scripts/mlir_optimize.sh", "--opt-level", "O2")
+    let o: ptr<ProcStrs> = sl_of2("--opt-level", "O2")
     sl_push2(o, work + "/jit_module.mlir", work + "/jit_module.mlir")
-    if run_argv(o) != 0 {
+    if mlir_optimize(o) != 0 {
         errln("MLIR optimization failed")
         return 1
     }
     let mut ok: bool = true
-    let lc: ptr<ProcCmd> = cmd(sl_of3(root() + "/compiler/scripts/mlir_lower.sh", work + "/jit_module.mlir", work + "/jit_module.ll"))
-    if run_err_to_file(lc, work + "/lower.err") != 0 {
-        outln("MLIR lowering (mlir-opt) failed: " + s_chomp_all(read_text(work + "/lower.err")))
+    sink_push(SINK_FD, SINK_BUF)
+    let lrc: i32 = mlir_lower(sl_of2(work + "/jit_module.mlir", work + "/jit_module.ll"))
+    let _lo: string = sink_pop()
+    if lrc != 0 {
+        outln("MLIR lowering (mlir-opt) failed: " + s_chomp_all(sink_err()))
         ok = false
     }
     let asan_env: string = env("FLOW_JIT_ASAN")

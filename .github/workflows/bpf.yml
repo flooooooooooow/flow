@@ -1,3 +1,4 @@
+# ACTIONS-INTENDED: public repository; the bpfel backend job of its CI.
 name: bpfel backend
 
 on:
@@ -6,9 +7,7 @@ on:
       - 'scripts/tools/llvm_target/**'
       - 'scripts/tools/lib/**'
       - 'scripts/bpf_target.sh'
-      - 'compiler/scripts/flow_to_llvm.sh'
-      - 'compiler/scripts/flow_to_mlir.sh'
-      - 'compiler/scripts/mlir_lower.sh'
+      - 'tools/flow_cli/mlir_tools.flow'
       - 'compiler/scripts/parity_targets.sh'
       - 'compiler/src/mlirgen.flow'
       - 'compiler/bootstrap/flowc_stage_a.c'
@@ -21,9 +20,7 @@ on:
       - 'scripts/tools/llvm_target/**'
       - 'scripts/tools/lib/**'
       - 'scripts/bpf_target.sh'
-      - 'compiler/scripts/flow_to_llvm.sh'
-      - 'compiler/scripts/flow_to_mlir.sh'
-      - 'compiler/scripts/mlir_lower.sh'
+      - 'tools/flow_cli/mlir_tools.flow'
       - 'compiler/scripts/parity_targets.sh'
       - 'compiler/src/mlirgen.flow'
       - 'compiler/bootstrap/flowc_stage_a.c'

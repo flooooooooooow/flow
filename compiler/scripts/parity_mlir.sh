@@ -14,7 +14,7 @@
 #       every program listed in compiler/fixtures/mlir/corpus.txt must still
 #       be accepted and match its recorded digest. When mlir-opt is
 #       installed, each fixture is also lowered (compiler/scripts/
-#       mlir_lower.sh), linked with clang and run; stdout plus exit code must
+#       flow mlir-lower), linked with clang and run; stdout plus exit code must
 #       equal `<name>.out`.
 #
 #   ./compiler/scripts/parity_mlir.sh --python <rev>
@@ -22,7 +22,7 @@
 #       fixtures and every .flow under examples/, tests/, lib/, benchmarks/
 #       and compiler/fixtures/. Every program flowc accepts must produce the
 #       same normalized MLIR as Python. With mlir-opt installed, each such
-#       program is built through both MLIR paths (flowc + mlir_lower.sh, and
+#       program is built through both MLIR paths (flowc + flow mlir-lower, and
 #       `python -m flow.transpiler --mlir --llvm`) and run; the two runs must
 #       agree. Needs python3 and git.
 #
@@ -68,7 +68,7 @@ cd "$ROOT"
 FIX=compiler/fixtures/mlir
 WORK=compiler/build/parity_mlir
 NORM=compiler/scripts/mlir_normalize.awk
-LOWER=compiler/scripts/mlir_lower.sh
+LOWER=(./flow mlir-lower)
 mode="${1:-}"
 rev="${2:-}"
 case "$mode" in
@@ -91,14 +91,14 @@ fi
 echo "=== parity_mlir: flowc = ${BIN} ==="
 
 have_mlir=0
-if "$LOWER" --tools >/dev/null 2>&1; then
+if "${LOWER[@]}" --tools >/dev/null 2>&1; then
     have_mlir=1
 fi
 # Link the lowered IR with the clang of the same LLVM as mlir-translate:
 # an older clang (Xcode's) cannot read the IR attributes a newer LLVM writes.
 MLIR_CC=clang
 if [[ "$have_mlir" -eq 1 ]]; then
-    llvm_bin="$(dirname "$("$LOWER" --tools | sed -n 's/^mlir-translate=//p')")"
+    llvm_bin="$(dirname "$("${LOWER[@]}" --tools | sed -n 's/^mlir-translate=//p')")"
     [[ -x "$llvm_bin/clang" ]] && MLIR_CC="$llvm_bin/clang"
 fi
 
@@ -160,7 +160,7 @@ build_run() {
     local tag="$1" in="$2" kind="$3" src_dir="$4"
     local ll="$tag.ll"
     if [[ "$kind" == "mlir" ]]; then
-        if ! "$LOWER" "$in" "$ll" >"$tag.lower.log" 2>&1; then
+        if ! "${LOWER[@]}" "$in" "$ll" >"$tag.lower.log" 2>&1; then
             return 1
         fi
     else
