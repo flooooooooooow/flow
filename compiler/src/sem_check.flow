@@ -1957,6 +1957,25 @@ function sem_match_implicit_effect_overload(c: ptr<Sem>, cands: ptr<SemIntVec>, 
     return 0 - 1
 }
 
+# Map a selected semantic function type back to its AST declaration when the
+# declaration belongs to the module currently being checked. Imported
+# declarations live in separate arenas and need the bundle remapping layer.
+function sem_local_ast_fn_for_candidate(c: ptr<Sem>, name: string, candidate: i32) -> i32 {
+    let mut s: i32 = 0
+    while s < sem_iv_len(c.sy_type) {
+        if sem_iv_get(c.sy_kind, s) == SK_FUNCTION and
+           sem_iv_get(c.sy_type, s) == candidate and
+           sem_s_eq(sem_sv_get(c.sy_name, s), name) {
+            let fi: i32 = sem_iv_get(c.sy_def, s)
+            if fi >= 0 and sem_iv_get(c.fi_mod, fi) == c.cm {
+                return sem_iv_get(c.fi_node, fi)
+            }
+        }
+        s = s + 1
+    }
+    return AST_NONE
+}
+
 # _static_length
 function sem_static_length(c: ptr<Sem>, e: i32) -> i32 {
     if sem_nk(c, e) == AST_ARRAY_LIT {
@@ -2251,6 +2270,14 @@ function sem_check_function_call(c: ptr<Sem>, name: string, args: ptr<SemIntVec>
     }
     c.relax_c_strings = false
     if matching >= 0 {
+        # Keep the semantic overload decision on the call node for the native
+        # C emitter. The declaration id is local to this arena by construction.
+        if node >= 0 {
+            let bound: i32 = sem_local_ast_fn_for_candidate(c, name, matching)
+            if bound >= 0 and bound < c.ar.len and c.ar.nodes[bound].kind == AST_FN {
+                c.ar.nodes[node].aux_id = bound
+            }
+        }
         sem_check_span_arguments(c, name, args, matching)
         if c.current_function_name as ptr<u8> != null {
             let mut idx: i32 = 0

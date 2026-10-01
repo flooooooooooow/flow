@@ -1602,6 +1602,40 @@ function flowc_cgen_put_mangled_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
     }
 }
 
+# A semantic overload binding written by the native checker. The declaration
+# id is valid only when it points into this arena and still has the call's
+# source name and explicit arity.
+function flowc_cgen_bound_call_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, call_id: i32) -> i32 {
+    if call_id == AST_NONE or call_id < 0 or call_id >= arena.len or arena.nodes[call_id].kind != AST_CALL {
+        return AST_NONE
+    }
+    let fn_id: i32 = arena.nodes[call_id].aux_id
+    if fn_id < 0 or fn_id >= arena.len or arena.nodes[fn_id].kind != AST_FN {
+        return AST_NONE
+    }
+    if flowc_cgen_span_eq(src, arena.nodes[call_id].name_start, arena.nodes[call_id].name_end, arena.nodes[fn_id].name_start, arena.nodes[fn_id].name_end) == 0 {
+        return AST_NONE
+    }
+    let nargs: i32 = flowc_ast_chain_len(arena, arena.nodes[call_id].a)
+    let mut nparams: i32 = 0
+    let mut implicit: i32 = 0
+    let mut p: i32 = arena.nodes[fn_id].a
+    while p != AST_NONE {
+        nparams = nparams + 1
+        let ty: i32 = arena.nodes[p].a
+        if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE and
+           (arena.nodes[ty].c == AST_TYPE_CAPABILITY or
+            flowc_eff_is_effect(w[0].eff, w[0].eff_len, src, arena.nodes[ty].name_start, arena.nodes[ty].name_end) == 1) {
+            implicit = implicit + 1
+        }
+        p = arena.nodes[p].next
+    }
+    if nparams - implicit != nargs {
+        return AST_NONE
+    }
+    return fn_id
+}
+
 # Find the best overload for a call based on argument types.
 # Returns the AST_FN node index of the best match, or AST_NONE when the
 # candidates are incompatible or tied. This mirrors the semantic resolver:
@@ -6824,7 +6858,10 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         let n_overloads: i32 = flowc_cgen_count_overloads(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         let mut fn_id: i32 = AST_NONE
         if n_overloads > 1 {
-            fn_id = flowc_cgen_resolve_overload(w, arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end, id)
+            fn_id = flowc_cgen_bound_call_fn(w, arena, src, id)
+            if fn_id == AST_NONE {
+                fn_id = flowc_cgen_resolve_overload(w, arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end, id)
+            }
             if fn_id != AST_NONE {
                 flowc_cgen_put_mangled_fn(w, arena, src, fn_id)
             } else {
