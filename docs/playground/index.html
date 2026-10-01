@@ -472,7 +472,7 @@
         <strong>Run (native local)</strong> talks to a loopback compile API
         (<code>./flow tool playground_server</code>, or <code>./flow playground</code>) that uses the real Flow→C toolchain (#132).
         <strong>WASM hello</strong> loads a local emscripten artifact when present
-        (<code>./flow wasm</code> / <code>scripts/build_wasm_hello.sh</code> →
+        (<code>./flow wasm</code> / <code>./flow tool scripts/build_wasm_hello.flow</code> →
         <code>build/wasm_hello/hello.html</code>). Full in-browser Flow compiler remains deferred (#121).
         Tutorials:
         <a href="../tutorials/index.html" style="color: var(--accent)">Interactive Tutorials</a>;
@@ -1075,7 +1075,7 @@ function main() -> i32 {
                 outputEl.textContent =
                     'No problems found by the basic checks.\n\n' +
                     'Note: these are lightweight editor checks (comment style, ranges, balanced ' +
-                    'brackets). Only the real compiler is authoritative — run this program with ' +
+                    'brackets). Only the real compiler is authoritative: run this program with ' +
                     './flow run (see below).';
                 statusDot.className = 'status-dot success';
                 statusText.textContent = 'Looks OK';
@@ -1177,7 +1177,7 @@ function main() -> i32 {
                         return;
                     }
                 } catch (e) {
-                    /* server not running — fine */
+                    /* server not running: fine */
                 }
             }
         }
@@ -1229,7 +1229,7 @@ function main() -> i32 {
                         window.open(href, '_blank', 'noopener');
                         outputEl.className = 'output-content success';
                         outputEl.textContent =
-                            'Opened ' + href + '\n\nBuild with:\n  ./scripts/build_wasm_hello.sh\n  ./flow wasm examples/basics/hello_world.flow';
+                            'Opened ' + href + '\n\nBuild with:\n  ./flow tool scripts/build_wasm_hello.flow\n  ./flow wasm examples/basics/hello_world.flow';
                         return;
                     }
                 } catch (e) { /* try next */ }
@@ -1238,7 +1238,7 @@ function main() -> i32 {
             outputEl.textContent =
                 'No build/wasm_hello/hello.html found.\n\n' +
                 'From the repo root (needs emcc):\n' +
-                '  ./scripts/build_wasm_hello.sh\n' +
+                '  ./flow tool scripts/build_wasm_hello.flow\n' +
                 '  python3 -m http.server 8765 --directory build/wasm_hello\n\n' +
                 'Native-local Run still uses the real Flow→C toolchain on localhost.';
         }
@@ -1357,7 +1357,7 @@ function main() -> i32 {
             const outputEl = document.getElementById('output');
             const hint = browserEngineAvailable()
                 ? 'Click "Check Syntax" for lint checks, or "Run (browser)" for interpreter output (not native).'
-                : 'Click "Check Syntax" for basic lint checks (comment style, ranges, balanced braces). These are lightweight editor checks — only the real compiler is authoritative.';
+                : 'Click "Check Syntax" for basic lint checks (comment style, ranges, balanced braces). These are lightweight editor checks: only the real compiler is authoritative.';
             outputEl.textContent = hint;
             outputEl.className = 'output-content';
             document.getElementById('outputPanelLabel').textContent = 'Output';

@@ -108,14 +108,14 @@ Playground (local compile API):
 Smoke test (skips cleanly if `emcc` is missing, CI-safe, exit 0):
 
 ```bash
-./scripts/build_wasm_hello.sh
+./flow tool scripts/build_wasm_hello.flow
 ```
 
 With a working Emscripten on `PATH` (prefer official emsdk; needs Python ≥ 3.10):
 
 ```bash
 source ~/emsdk/emsdk_env.sh   # or your emsdk path
-./scripts/build_wasm_hello.sh
+./flow tool scripts/build_wasm_hello.flow
 python3 -m http.server 8765 --directory build/wasm_hello
 # open http://localhost:8765/hello.html
 ```
@@ -123,7 +123,7 @@ python3 -m http.server 8765 --directory build/wasm_hello
 Optional: compile Flow-transpiled C instead of the harness:
 
 ```bash
-FLOW_WASM_FROM_FLOW=1 ./scripts/build_wasm_hello.sh
+FLOW_WASM_FROM_FLOW=1 ./flow tool scripts/build_wasm_hello.flow
 ```
 
 Manual end-to-end without the script:
@@ -135,9 +135,9 @@ emcc build/hello_world.c -o build/wasm_hello/hello.js \
   -s EXPORTED_RUNTIME_METHODS="['ccall','cwrap']"
 ```
 
-See also older helpers under `scripts/build_wasm.sh`, `./flow tool flow_to_wasm`
-(`./flow wasm --legacy`), and `wasm/wasm_examples/`. Those are the browser gallery;
-`build_wasm_hello.sh` is the documented minimal path for issue #121.
+See also the older helper `./flow tool flow_to_wasm`
+(`./flow wasm --legacy`) and `wasm/wasm_examples/`. Those are the browser gallery;
+`build_wasm_hello.flow` is the documented minimal path for issue #121.
 
 ## Direct wasm32 (no Emscripten)
 

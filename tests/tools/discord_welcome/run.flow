@@ -208,7 +208,9 @@ function main() -> i32 {
     t.pass = 0
     t.fail = 0
 
-    let bc: ptr<ProcCmd> = proc_cmd("tools/discord-welcome/build.sh")
+    let bc: ptr<ProcCmd> = proc_cmd("./flow")
+    proc_arg(bc, "tool")
+    proc_arg(bc, "tools/discord-welcome/build.flow")
     proc_stdin(bc, PROC_NULL)
     proc_stdout(bc, PROC_CAPTURE)
     proc_stderr(bc, PROC_INHERIT)

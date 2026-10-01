@@ -43,7 +43,7 @@ After the release workflow succeeds:
 1. Download/read `SHA256SUMS.txt`.
 2. Update `packaging/homebrew/Formula/flow.rb`.
 3. Test the formula locally.
-4. Run `packaging/homebrew/sync-tap.sh`.
+4. Run `./flow tool packaging/homebrew/sync-tap.flow`.
 
 ## After release
 

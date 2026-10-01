@@ -29,7 +29,7 @@ certificate verification against the system trust store.
 
 | File | Purpose |
 |------|---------|
-| `build.sh` | Builds the bot (`scripts/tools/discord_welcome`) and prints the binary path. |
+| `build.flow` | Builds the bot (`scripts/tools/discord_welcome`) and prints the binary path. |
 | `messages.json` | Welcome message templates. Edit to change the copy. |
 | `.env.example` | Template for the env file the bot reads. |
 | `systemd/discord-welcome.service` | systemd unit for the VPS host. |
@@ -57,8 +57,8 @@ Needs a C compiler and OpenSSL 3 (`brew install openssl@3` on macOS,
 `apt install libssl-dev` on Debian and Ubuntu). No Python.
 
 ```bash
-tools/discord-welcome/build.sh                        # prints build/flow-tools/discord_welcome
-tools/discord-welcome/build.sh /tmp/discord-welcome   # or builds to a chosen path
+./flow tool tools/discord-welcome/build.flow                        # prints build/flow-tools/discord_welcome
+./flow tool tools/discord-welcome/build.flow /tmp/discord-welcome   # or builds to a chosen path
 ```
 
 ## Run locally
@@ -66,7 +66,7 @@ tools/discord-welcome/build.sh /tmp/discord-welcome   # or builds to a chosen pa
 From the repository root:
 
 ```bash
-BIN="$(tools/discord-welcome/build.sh)"
+BIN="$(./flow tool tools/discord-welcome/build.flow)"
 cp tools/discord-welcome/.env.example tools/discord-welcome/.env
 # fill in DISCORD_TOKEN and WELCOME_CHANNEL_ID
 set -a; . tools/discord-welcome/.env; set +a
@@ -108,7 +108,7 @@ useradd --system --home /opt/discord-welcome --shell /usr/sbin/nologin discord-w
 mkdir -p /opt/discord-welcome
 
 # from a checkout of the repository (needs cc and libssl-dev)
-tools/discord-welcome/build.sh /opt/discord-welcome/discord-welcome
+./flow tool tools/discord-welcome/build.flow /opt/discord-welcome/discord-welcome
 cp tools/discord-welcome/messages.json /opt/discord-welcome/
 chown -R discord-welcome:discord-welcome /opt/discord-welcome
 
