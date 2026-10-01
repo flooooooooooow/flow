@@ -9,7 +9,7 @@
 > Python compiler package `src/flow` is deleted. Python still runs the
 > setuptools wheel build of `flow python` and the scripts listed under
 > Boundary.
-> New code is written in Flow. `scripts/python_ratchet.sh` fails CI when a new
+> New code is written in Flow. `./flow tool python_ratchet` fails CI when a new
 > `.py` file appears or tracked Python grows (#981).
 
 The compiler is [`compiler/`](../../compiler/) (`flowc`). No Python compiler
@@ -102,7 +102,7 @@ need no Python. The Python original was deleted in the same pull request.
 | `tools/audio/lattice_allpass_audio_demo.py`, `plot_lattice_allpass.py` | `tools/audio/*.sh` → `scripts/tools/lattice_allpass` (WAV and SVG from Flow) | #1076 |
 | `tools/discord-welcome/bot.py`, `welcome.py` | `tools/discord-welcome/build.sh` → `scripts/tools/discord_welcome` (Gateway over TLS through OpenSSL) | #1076 |
 | The last pytest files (`tests/unit`, `tests/integration`) | Shell tests in [`tests/scripts/`](../../tests/scripts/run.sh), `./flow test-scripts` | #1076 |
-| None (new) | [`scripts/python_ratchet.sh`](../../scripts/python_ratchet.sh) → `tools/python_ratchet/main.flow` | #981 |
+| None (new) | `./flow tool python_ratchet` → `tools/python_ratchet/main.flow` | #981 |
 
 #965 also deleted Python with no port: the Euclid book generators, the backlog
 sorters, `flow_debug.py`, `flow_jit_opt.py`, `simd_check.py` and other

@@ -22,6 +22,7 @@ import "tools/flow_cli/build.flow"
 import "tools/flow_cli/tests.flow"
 import "tools/flow_cli/commands.flow"
 import "tools/flow_cli/help.flow"
+import "tools/flow_cli/tool.flow"
 import std.process { ProcCmd, ProcStrs, proc_args, proc_argv }
 
 # The root: $FLOW_CLI_ROOT from the stub, else found by walking up from this
@@ -407,6 +408,8 @@ function dispatch(c: string, args: ptr<ProcStrs>) -> i32 {
         return flow_know(args)
     } elif is(c, "doc") {
         return cmd_doc(args)
+    } elif is(c, "tool") {
+        return cmd_tool(args)
     } elif is(c, "help") {
         show_help()
         return 0

@@ -30,34 +30,55 @@ repository invariant.
 ## Flow first
 
 New code in this repository is written in Flow. This covers features,
-tools, scripts, CI checks, parity gates and tests. Python is legacy that
-is being ported away.
+tools, scripts, CI checks, parity gates and tests. Python and shell are
+legacy that is being ported away.
 
-- Do not add a `.py` file. Write the program in Flow. When Flow needs an
-  external command (git, find, clang), run it with `std.process`
-  (docs/library/process.md); `std.regex` covers Python-style regular
-  expressions. `scripts/tools/repo_stats/` and `tools/python_ratchet/`
-  show the pattern: the shell script only builds the program.
+- Do not add a `.py` file or a shell script. Write the program in Flow.
+  When Flow needs an external command (git, find, cc, clang), run it with
+  `std.process` (docs/library/process.md): argv, captured stdout and
+  stderr, exit status, timeout, environment and working directory, with no
+  shell in between. `std.regex` covers Python-style regular expressions.
+- Run a repository program with `./flow tool NAME` (for
+  `scripts/tools/NAME/main.flow` or `tools/NAME/main.flow`) or
+  `./flow tool PATH.flow`. It builds the program with the Stage-A flowc from
+  the checked-in bootstrap C, caches it in `build/flow-tools`, and runs it
+  with `FLOW_REPO_ROOT` set. `./flow tool --path NAME` prints the binary.
+  A tool needs no shell wrapper; point callers at `./flow tool`.
+  `tools/flow_cli/sys.flow` has shell-like helpers (run, capture, files,
+  temp dirs, globbing) for programs that replace a script.
 - Do not grow existing Python. The Python compiler (`src/flow/`) is
   deleted; compiler features belong in `compiler/src/`.
 - New tests are `.flow` programs under `tests/lang/`. `main()` returns 0 on
   success and a nonzero check number on failure. Do not add pytest tests.
-- When porting Python, delete it in the same PR once parity is shown, then
-  run `./scripts/python_ratchet.sh --update` to lower the baseline.
+- When porting Python or shell, show parity (same stdout, stderr, exit code
+  and written files on real input and on an error case), switch the
+  callers, and delete the old file in the same PR. Then lower the baseline:
+  `./flow tool python_ratchet --update` or `./flow tool shell_ratchet --update`.
 - When Flow cannot express something, work around it and open an issue
   naming the gap. That is how the language gets the feature.
 
-Enforcement. CI runs `./scripts/python_ratchet.sh`, a Flow program that
-fails when a new `.py` file appears or total tracked Python exceeds
-`tools/python_ratchet/baseline.txt`. Claude Code sessions in this repo
-also load `.claude/settings.json`, whose hook refuses to create a `.py`
-file. Vendored trees (`third_party/`, `.lake/`) are exempt.
+Enforcement. CI runs two Flow programs. `./flow tool python_ratchet` fails
+when a new `.py` file appears or total tracked Python exceeds
+`tools/python_ratchet/baseline.txt`. `./flow tool shell_ratchet` fails when
+a new shell script appears (`.sh`, `.bash`, or an extensionless file with a
+`#!` line for sh, bash, zsh, ksh or dash) or the tracked shell lines exceed
+`tools/shell_ratchet/baseline.txt`. Claude Code sessions in this repo also
+load `.claude/settings.json`, whose hook refuses to create a `.py` file.
+Vendored trees (`third_party/`, `.lake/`) are exempt.
 
-The baseline only moves down. `--update` drops deleted files and lowers
+A few scripts have to stay shell. They are listed with a reason in
+`tools/shell_ratchet/allow.txt` and sit outside the line total: the `./flow`
+stub, which builds flowc and the CLI with cc before any Flow program
+exists; the `flow-lsp` editor launcher; and
+`compiler/scripts/bootstrap_from_c.sh`, which proves the checked-in
+bootstrap C rebuilds itself with cc alone and so cannot depend on a binary
+built from that C. Adding to the list is a reviewed change with a reason.
+
+The baselines only move down. `--update` drops deleted files and lowers
 the line limit. It never adds a file.
 
-The ratchet program is built from `compiler/bootstrap/flowc_stage_a.c`, so
-it needs a C compiler and no Python.
+Both ratchets are built from `compiler/bootstrap/flowc_stage_a.c`, so they
+need a C compiler and no Python.
 
 ## Bootstrap C regeneration workflow
 

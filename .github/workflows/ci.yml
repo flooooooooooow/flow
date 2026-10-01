@@ -29,6 +29,7 @@ on:
       - 'CITATION.cff'
       - '**.md'
       - '**.py'
+      - '**.sh'
       - 'tools/python_ratchet/**'
   pull_request:
     branches: [main, master]
@@ -57,6 +58,7 @@ on:
       - 'CITATION.cff'
       - '**.md'
       - '**.py'
+      - '**.sh'
       - 'tools/python_ratchet/**'
 
 concurrency:
@@ -143,14 +145,25 @@ jobs:
 
   # New code is written in Flow. Fails when a new .py file appears or tracked
   # Python grows past tools/python_ratchet/baseline.txt. The checker is a Flow
-  # program built from the checked-in C bootstrap, so no Python is installed.
-  # Deliberately ungated, like the version check above.
+  # program that ./flow builds from the checked-in C bootstrap, so no Python
+  # is installed. Deliberately ungated, like the version check above.
   python-ratchet:
     name: Python ratchet (Flow first)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: ./scripts/python_ratchet.sh
+      - run: ./flow tool python_ratchet
+
+  # The same rule for shell. Fails when a new shell script appears or the
+  # tracked shell outside tools/shell_ratchet/allow.txt grows past
+  # tools/shell_ratchet/baseline.txt. std.process runs commands from Flow,
+  # so tooling no longer needs a shell wrapper. Deliberately ungated.
+  shell-ratchet:
+    name: Shell ratchet (Flow first)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: ./flow tool shell_ratchet
 
   # Relative links in tracked markdown, as a reader meets them on GitHub.
   # check_wiki_links.sh validates the built site instead; the two catch

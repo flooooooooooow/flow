@@ -91,6 +91,7 @@
     "cli:test-scripts": "AI_FLOW_HANDBOOK.md",
     "cli:test-runtime": "DEVELOPMENT.md",
     "cli:test-strict": "tutorials/advanced.md",
+    "cli:tool": "book/appendix-c-command-reference.md",
     "cli:transpile": "book/appendix-c-command-reference.md",
     "cli:version": "library/stdlib-api.md",
     "cli:wasm": "language/wasm-crossings.md",

@@ -85,6 +85,8 @@ Project / packages:
                     Freestanding wasm32 module through MLIR (no libc)
   bpf <in.flow|in.ll> -o OUT.o [--entry NAME --section SEC] [-O 0..3]
                     eBPF ELF object (bpfel) through MLIR
+  tool NAME|PATH.flow [args]  Build and run a repository Flow program
+                    (scripts/tools/NAME, tools/NAME, or a .flow path)
   repl              Start interactive REPL
   lsp               Start the language server on stdio
   examples          List project examples (or compiler examples outside a project)
