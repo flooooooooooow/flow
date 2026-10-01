@@ -6,7 +6,7 @@
 #         before parse on every source flowc reads.
 #
 # Output is byte-identical to `expand_dynamics_dsl` in the Python module,
-# including its quirks, and compiler/scripts/parity_dynamics_dsl.sh holds
+# including its quirks, and compiler/scripts/parity_dynamics_dsl.flow holds
 # the two to that. Quirks kept on purpose:
 #
 #   * Once the DSL is detected, the result is the kept lines joined by

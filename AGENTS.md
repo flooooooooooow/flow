@@ -134,11 +134,12 @@ gen1.c and gen2.c differ only when your edit changes the C that flowc writes
 emitted by itself. Keep going until two generations agree.
 
 Then run the parity gates for what you touched. All of them work without
-Python in golden mode: `parity_lowering.sh`, `parity_effects.sh`,
-`parity_proofs.sh`, `parity_mlir.sh`, `parity_field_dsl.sh`,
-`parity_dynamics_dsl.sh`, `parity_flow_blocks.sh`, `parity_shader_dsl.sh`,
+Python in golden mode: `parity_lowering.flow`, `parity_effects.flow`,
+`parity_proofs.sh`, `parity_mlir.sh`, `parity_field_dsl.flow`,
+`parity_dynamics_dsl.flow`, `parity_flow_blocks.flow`, `parity_shader_dsl.flow`,
 `parse_coverage.sh --check`, `fmt_check.sh --check` and
-`corpus_parity.sh --check`, all under `compiler/scripts/`. The C output
+`corpus_parity.sh --check`, all under `compiler/scripts/`. A `.flow` gate
+runs with `./flow tool compiler/scripts/<name>.flow`. The C output
 goldens are `tests/cgen/run.sh`, and the language tests are
 `./flow test-lang`.
 

@@ -1,0 +1,364 @@
+# Parity gate for the constructs flowc lowers that were parse-only (#996):
+# match or-patterns / guards / nested patterns, ui layout blocks, pipeline
+# fork and choose blocks, declarative sort, [T; N], expr?, <a, b> vector
+# literals, module blocks, and the unit / distinct declarations.
+#
+# Every file in compiler/parity_lowering/corpus.txt is built on flowc
+# (bundle emit, cc) and, when it links, run with a timeout. The result is
+# held to the Python host's, recorded as goldens in
+# compiler/parity_lowering/expected.tsv:
+#
+#   file  status  exit  stdout-md5  diagnostic
+#
+# status is `accept` (the C compiles) or `reject`. exit and stdout-md5 are
+# `-` when the program did not link or run on the Python host, or is listed
+# in compiler/parity_lowering/norun.txt (timing output, GUI, long runs). For
+# a rejected file, the diagnostic is the Python host's message, which the
+# flowc output must contain; `-` skips that check.
+#
+#   ./flow tool compiler/scripts/parity_lowering.flow
+#       flowc vs the goldens. Needs only a C compiler.
+#
+#   ./flow tool compiler/scripts/parity_lowering.flow --python <rev>
+#       also build every corpus file with the Python host from git
+#       revision <rev> and require the same results live. Needs python3.
+#
+#   ./flow tool compiler/scripts/parity_lowering.flow --write-golden <rev>
+#       rewrite the goldens from the Python host at <rev>.
+#
+# The goldens were written from ff99639e (origin/main when the lowering
+# landed; the Python host still carried all of these paths). The unit
+# fixtures (compiler/fixtures/units_*.flow, #1008) were added from 5f36fc60.
+# A Python type error is recorded as its first `✗` line, whole.
+#
+# Env: FLOWC_BIN=<path> tests that binary instead of building
+# compiler/build/flowc_bootstrap from the checked-in bootstrap C.
+
+import "tools/flow_cli/sys.flow"
+import "compiler/scripts/parity_lib.flow"
+import std.process { ProcCmd, ProcStrs, proc_arg, proc_stdin, PROC_NULL }
+
+const USAGE: string = "usage: ./flow tool compiler/scripts/parity_lowering.flow"
+const DATA: string = "compiler/parity_lowering"
+const WORK: string = "compiler/build/parity_lowering"
+
+let mut BIN_P: ptr<u8> = null
+
+function bin() -> string {
+    return BIN_P as string
+}
+
+let mut NORUN: ptr<ProcStrs> = null
+let mut DIVERGENT: ptr<ProcStrs> = null
+
+# The text after the last `sep` in `s`, or `s` when there is none
+# (sed 's/^.*SEP//').
+function after_last(s: string, sep: string) -> string {
+    let mut at: i32 = 0 - 1
+    let mut i: i32 = s_find(s, sep, 0)
+    while i >= 0 {
+        at = i
+        i = s_find(s, sep, i + 1)
+    }
+    if at < 0 {
+        return s
+    }
+    return s_from(s, at + s_len(sep))
+}
+
+# `cut -c1-200`: the first 200 characters (UTF-8 aware).
+function first_chars(s: string, n: i32) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let len: i32 = s_len(s)
+    let mut chars: i32 = 0
+    let mut i: i32 = 0
+    while i < len {
+        if (p[i] & 192) != 128 {
+            if chars == n {
+                return s_slice(s, 0, i)
+            }
+            chars = chars + 1
+        }
+        i = i + 1
+    }
+    return s
+}
+
+# The Python host's diagnostic from its log: the first `✗` line whole, or
+# else the first line naming an error.
+function python_diag(log: string) -> string {
+    let lines: ptr<ProcStrs> = pl_read_lines(log)
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let l: string = sl_get(lines, i)
+        if s_contains(l, "✗ ") {
+            return first_chars(after_last(l, "✗ "), 200)
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < sl_len(lines) {
+        let l: string = sl_get(lines, i)
+        if s_contains(l, "Error") or s_contains(l, "error") {
+            return first_chars(after_last(after_last(l, "Error: "), "error: "), 200)
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+# cc -w ... -I<dir of f> -Itests/lang, quiet.
+function cc_cmd(f: string) -> ptr<ProcCmd> {
+    let c: ptr<ProcCmd> = cmd(sl_of2(pl_cc(), "-w"))
+    return c
+}
+
+# One TSV row for file `f` built by `host`.
+function result(host: string, f: string, log: string, c: string, dir: string) -> string {
+    let key: string = pl_key(f)
+    let mut status: string = "reject"
+    let mut exit_code: string = "-"
+    let mut md5: string = "-"
+    let mut diag: string = "-"
+    let inc: string = "-I" + path_dirname(f)
+    let mut compiled: bool = false
+    if nonempty(c) {
+        let o: ptr<ProcCmd> = cc_cmd(f)
+        proc_arg(o, "-c")
+        proc_arg(o, "-o")
+        proc_arg(o, dir + "/" + key + ".o")
+        proc_arg(o, c)
+        proc_arg(o, inc)
+        proc_arg(o, "-Itests/lang")
+        compiled = pl_run(o, "", "-", 0) == 0
+    }
+    if compiled {
+        status = "accept"
+        if not sl_has(NORUN, f) {
+            let l: ptr<ProcCmd> = cc_cmd(f)
+            proc_arg(l, "-o")
+            proc_arg(l, dir + "/" + key + ".bin")
+            proc_arg(l, c)
+            proc_arg(l, inc)
+            proc_arg(l, "-Itests/lang")
+            proc_arg(l, "-lm")
+            if pl_run(l, "", "-", 0) == 0 {
+                let r: ptr<ProcCmd> = pl_cmd1(dir + "/" + key + ".bin")
+                proc_stdin(r, PROC_NULL)
+                let code: i32 = pl_run(r, dir + "/" + key + ".out", "-", 20)
+                exit_code = s_itoa(code)
+                md5 = pl_md5_file(dir + "/" + key + ".out")
+                if code == 142 {
+                    exit_code = "timeout"
+                    md5 = "-"
+                }
+            }
+        }
+    } elif s_eq(host, "python") {
+        diag = python_diag(log)
+        if s_len(diag) == 0 {
+            diag = "-"
+        }
+    }
+    return f + "\t" + status + "\t" + exit_code + "\t" + md5 + "\t" + diag + "\n"
+}
+
+function flowc_cmd(f: string, dir: string, key: string) -> ptr<ProcCmd> {
+    let c: ptr<ProcCmd> = pl_cmd1(bin())
+    cmd_env(c, "FLOWC_BUNDLE", "1")
+    cmd_env(c, "FLOWC_DIR", dir)
+    cmd_env(c, "FLOWC_IN", f)
+    cmd_env(c, "FLOWC_OUT", WORK + "/flowc/" + key + ".c")
+    return c
+}
+
+function run_flowc(corpus: ptr<ProcStrs>) {
+    let tsv: string = WORK + "/flowc.tsv"
+    let _t: bool = write_text(tsv, "")
+    let mut i: i32 = 0
+    while i < sl_len(corpus) {
+        let f: string = sl_get(corpus, i)
+        let key: string = pl_key(f)
+        let log: string = WORK + "/flowc/" + key + ".log"
+        let mut code: i32 = pl_run(flowc_cmd(f, path_dirname(f), key), log, "&", 60)
+        if code != 0 {
+            # Imports spelled from the repo root (tests/lang does this).
+            code = pl_run(flowc_cmd(f, ".", key), "+" + log, "&", 60)
+        }
+        if code != 0 {
+            rm_f(WORK + "/flowc/" + key + ".c")
+        }
+        let _a: bool = append_text(tsv, result("flowc", f, log, WORK + "/flowc/" + key + ".c", WORK + "/flowc"))
+        i = i + 1
+    }
+}
+
+function run_python(rev: string, corpus: ptr<ProcStrs>) {
+    mkdir_p_or_exit(WORK + "/pyref")
+    check(pl_git_archive(rev, sl_of1("src/flow"), WORK + "/pyref"))
+    let tsv: string = WORK + "/python.tsv"
+    let _t: bool = write_text(tsv, "")
+    let mut i: i32 = 0
+    while i < sl_len(corpus) {
+        let f: string = sl_get(corpus, i)
+        let key: string = pl_key(f)
+        let log: string = WORK + "/python/" + key + ".log"
+        let c: ptr<ProcCmd> = cmd(sl_of3("python3", "-m", "flow.transpiler"))
+        proc_arg(c, f)
+        proc_arg(c, "--c")
+        proc_arg(c, "-o")
+        proc_arg(c, WORK + "/python/" + key + ".c")
+        cmd_env(c, "PYTHONPATH", WORK + "/pyref/src")
+        let code: i32 = pl_run(c, log, "&", 120)
+        if code != 0 {
+            rm_f(WORK + "/python/" + key + ".c")
+        }
+        let _a: bool = append_text(tsv, result("python", f, log, WORK + "/python/" + key + ".c", WORK + "/python"))
+        i = i + 1
+    }
+}
+
+# Hold flowc.tsv to the rows of `want`. Returns the failure count as a
+# shell function's status (modulo 256).
+function compare(want: ptr<ProcStrs>, label: string) -> i32 {
+    let got_rows: ptr<ProcStrs> = pl_read_lines(WORK + "/flowc.tsv")
+    let mut n: i32 = 0
+    let mut same_status: i32 = 0
+    let mut same_run: i32 = 0
+    let mut same_diag: i32 = 0
+    let mut known: i32 = 0
+    let mut fail: i32 = 0
+    let mut i: i32 = 0
+    while i < sl_len(want) {
+        let cols: ptr<ProcStrs> = s_split(sl_get(want, i), 9)
+        i = i + 1
+        let f: string = sl_get(cols, 0)
+        let status: string = sl_get(cols, 1)
+        let exit_code: string = sl_get(cols, 2)
+        let md5: string = sl_get(cols, 3)
+        let diag: string = sl_join(sl_tail(cols, 4), "\t")
+        n = n + 1
+        if sl_has(DIVERGENT, f) {
+            known = known + 1
+            continue
+        }
+        let mut got: string = ""
+        let mut j: i32 = 0
+        while j < sl_len(got_rows) {
+            if s_contains(sl_get(got_rows, j), f + "\t") {
+                got = sl_get(got_rows, j)
+                break
+            }
+            j = j + 1
+        }
+        let gcols: ptr<ProcStrs> = s_split(got, 9)
+        let g_status: string = sl_get(gcols, 1)
+        let g_exit: string = sl_get(gcols, 2)
+        let g_md5: string = sl_get(gcols, 3)
+        if not s_eq(g_status, status) {
+            fail = fail + 1
+            errln("FAIL " + f + ": " + label + " " + status + ", flowc " + g_status)
+            continue
+        }
+        same_status = same_status + 1
+        if s_eq(status, "reject") {
+            if not s_eq(diag, "-") and not s_contains(read_text(WORK + "/flowc/" + pl_key(f) + ".log"), diag) {
+                fail = fail + 1
+                errln("FAIL " + f + ": flowc diagnostic lacks: " + diag)
+                continue
+            }
+            same_diag = same_diag + 1
+            continue
+        }
+        if s_eq(exit_code, "-") or s_eq(exit_code, "timeout") {
+            continue
+        }
+        if not s_eq(g_exit, exit_code) or not s_eq(g_md5, md5) {
+            fail = fail + 1
+            let mut how: string = "differs"
+            if s_eq(g_md5, md5) {
+                how = "same"
+            }
+            errln("FAIL " + f + ": " + label + " exit " + exit_code + ", flowc exit " + g_exit + " (stdout " + how + ")")
+            continue
+        }
+        same_run = same_run + 1
+    }
+    outln(label + ": files=" + s_itoa(n) + " accept/reject=" + s_itoa(same_status) + " run=" + s_itoa(same_run) + " diagnostics=" + s_itoa(same_diag) + " known-divergent=" + s_itoa(known) + " fail=" + s_itoa(fail))
+    return fail % 256
+}
+
+function main() -> i32 {
+    let root: string = pl_enter()
+    let args: ptr<ProcStrs> = pl_args()
+    let mode: string = sl_get(args, 0)
+    let rev: string = sl_get(args, 1)
+    pl_fresh(WORK, sl_of2("flowc", "python"))
+    BIN_P = pl_flowc("", true, false) as ptr<u8>
+    outln("=== parity_lowering: flowc = " + bin() + " ===")
+
+    let corpus: ptr<ProcStrs> = pl_data_lines(DATA + "/corpus.txt")
+    let _c: bool = write_text(WORK + "/corpus", pl_lines_text(corpus))
+    NORUN = sl_new()
+    let nr: ptr<ProcStrs> = pl_data_lines(DATA + "/norun.txt")
+    let mut i: i32 = 0
+    while i < sl_len(nr) {
+        sl_push(NORUN, pl_field1(sl_get(nr, i)))
+        i = i + 1
+    }
+    let _n: bool = write_text(WORK + "/norun", pl_lines_text(NORUN))
+    DIVERGENT = sl_new()
+    let dv: ptr<ProcStrs> = pl_data_lines(DATA + "/divergent.txt")
+    i = 0
+    while i < sl_len(dv) {
+        sl_push(DIVERGENT, pl_field1(sl_get(dv, i)))
+        i = i + 1
+    }
+    let _d: bool = write_text(WORK + "/divergent", pl_lines_text(DIVERGENT))
+
+    if s_eq(mode, "--write-golden") {
+        if s_len(rev) == 0 {
+            errln(USAGE + " --write-golden <rev>")
+            cli_exit(2)
+        }
+        run_python(rev, corpus)
+        let rows: string = read_text(WORK + "/python.tsv")
+        let _w: bool = write_text(DATA + "/expected.tsv", "# file\tstatus\texit\tstdout-md5\tdiagnostic (Python host at " + rev + ")\n" + rows)
+        outln("wrote " + s_itoa(sl_len(s_lines(rows))) + " goldens from " + rev)
+        cli_exit(0)
+    }
+
+    run_flowc(corpus)
+    let mut fail: i32 = 0
+    let want: ptr<ProcStrs> = sl_new()
+    let exp: ptr<ProcStrs> = pl_read_lines(DATA + "/expected.tsv")
+    i = 0
+    let mut kept: string = ""
+    while i < sl_len(exp) {
+        let l: string = sl_get(exp, i)
+        if not s_starts(l, "#") {
+            sl_push(want, l)
+            kept = kept + l + "\n"
+        }
+        i = i + 1
+    }
+    let _e: bool = write_text(WORK + "/expected", kept)
+    fail = fail + compare(want, "golden")
+
+    if s_eq(mode, "--python") {
+        if s_len(rev) == 0 {
+            errln(USAGE + " --python <rev>")
+            cli_exit(2)
+        }
+        run_python(rev, corpus)
+        fail = fail + compare(pl_read_lines(WORK + "/python.tsv"), "python@" + rev)
+    }
+
+    if fail != 0 {
+        outln("parity_lowering: FAIL (" + s_itoa(fail) + ")")
+        cli_exit(1)
+    }
+    outln("parity_lowering: PASS")
+    cli_exit(0)
+    return 0
+}

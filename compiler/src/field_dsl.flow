@@ -5,7 +5,7 @@
 #         and `boundary T { left = A  right = B }` compile without Python.
 #
 # Output is byte-identical to `expand_field_dsl` in src/flow/field_dsl.py,
-# including its quirks, and compiler/scripts/parity_field_dsl.sh holds the
+# including its quirks, and compiler/scripts/parity_field_dsl.flow holds the
 # two to that. Quirks kept on purpose:
 #
 #   * The result is the kept lines joined by "\n", so a trailing newline is

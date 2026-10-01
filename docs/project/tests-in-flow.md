@@ -179,7 +179,7 @@ tests/scripts, run by tests/scripts/run.sh.
 | test_escaping_closures.py | c | run tests moved to tests/lang; parse and typecheck checks remain |
 | test_evolves_syntax.py | a | AST and validation of evolves; reference-Euler run blocked on flow blocks in Stage-A (#681) |
 | test_export_abi.py | b | --export ABI shape in generated C |
-| test_field_dsl.py | c | field DSL through the flowc expander; parity lives in `compiler/scripts/parity_field_dsl.sh` |
+| test_field_dsl.py | c | field DSL through the flowc expander; parity lives in `compiler/scripts/parity_field_dsl.flow` |
 | test_flow_dimensioned_state.py | a | parse and validation; one integration run blocked on flow blocks in Stage-A (#681) |
 | test_frontend_cache.py | c | frontend cache internals |
 | test_fuzz_crash_pins.py | c | parser crash regression pins |
@@ -263,7 +263,7 @@ tests/scripts, run by tests/scripts/run.sh.
 | test_sort_expr.py | b | sort lowering asserted on generated C |
 | test_span_data_field.py | c | span typechecking |
 | test_spans.py | c | span typechecking and lowering |
-| test_strict_effects.py | b | #line directives in generated C; the effect checks moved to compiler/scripts/parity_effects.sh |
+| test_strict_effects.py | b | #line directives in generated C; the effect checks moved to compiler/scripts/parity_effects.flow |
 | test_strict_gaps.py | c | strict-mode typechecking regressions |
 | test_strict_lambda_types.py | c | strict-mode lambda diagnostics |
 | test_string_concat.py | b | string concat lowering in generated C |
