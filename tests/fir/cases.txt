@@ -23,6 +23,8 @@ apply_fold_dce	none	tests/fir/programs/fold.flow --apply const_fold,dce
 apply_inline	none	tests/fir/programs/inline.flow --apply inline
 apply_inline_all	none	tests/fir/programs/inline.flow --apply all
 apply_inline_json	none	tests/fir/programs/inline.flow --json --apply inline
+apply_inline_multiblock	none	tests/fir/programs/inline_multiblock.flow --apply inline
+apply_inline_multiblock_all	none	tests/fir/programs/inline_multiblock.flow --apply all
 apply_bad	full	tests/fir/programs/analysis.flow --apply wat
 apply_missing	full	tests/fir/programs/analysis.flow --apply
 nomain	none	tests/fir/programs/nomain.flow --json --opts
