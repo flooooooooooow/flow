@@ -60439,6 +60439,7 @@ void flowc_cgen_export_not_found(CgenBuf* w, uint8_t* list, int32_t s, int32_t e
 void flowc_cgen_emit_export_aliases(CgenBuf* w, AstArena arena, uint8_t* src, int32_t root);
 int32_t flowc_cgen_export_mark(AstArena arena, uint8_t* src, int32_t root, uint8_t* buf, int32_t cap, int32_t len);
 int32_t flowc_cgen_export_missing(uint8_t* sigs, int32_t sigs_len, uint8_t* out, int32_t cap);
+void flowc_cgen_put_cembed(CgenBuf* w, uint8_t* src, int32_t start, int32_t end);
 int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t* out, int32_t out_cap, int32_t flags, uint8_t* sigs, int32_t sigs_len);
 int32_t flowc_cgen_emit_ex(AstArena arena, int32_t root, uint8_t* src, uint8_t* out, int32_t out_cap, int32_t flags);
 int32_t flowc_cgen_is_type_param_name(AstArena arena, uint8_t* src, int32_t ns, int32_t ne);
@@ -70858,6 +70859,23 @@ int32_t flowc_cgen_export_missing(uint8_t* sigs, int32_t sigs_len, uint8_t* out,
   return (w).len;
 }
 
+void flowc_cgen_put_cembed(CgenBuf* w, uint8_t* src, int32_t start, int32_t end) {
+  int32_t i = start;
+  while (i < end) {
+  int32_t c = (int32_t)(src[i]);
+  if (c == 92 && (i + 1) < end) {
+  int32_t n = (int32_t)(src[(i + 1)]);
+  if (n == 92 || n == 34) {
+  flowc_cgen_putc(w, n);
+  i = (i + 2);
+  continue;
+}
+}
+  flowc_cgen_putc(w, c);
+  i = (i + 1);
+}
+}
+
 int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t* out, int32_t out_cap, int32_t flags, uint8_t* sigs, int32_t sigs_len) {
   if (root == AST_NONE || root < 0) {
   return (0 - 1);
@@ -71138,7 +71156,7 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   item = ((arena).nodes[root]).a;
   while (item != AST_NONE) {
   if (((arena).nodes[item]).kind == AST_C_EMBED) {
-  flowc_cgen_put_span((&w), src, (((arena).nodes[item]).name_start + 1), (((arena).nodes[item]).name_end - 1));
+  flowc_cgen_put_cembed((&w), src, (((arena).nodes[item]).name_start + 1), (((arena).nodes[item]).name_end - 1));
   flowc_cgen_putc((&w), 10);
   flowc_cgen_scan_cembed_names((&w), src, (((arena).nodes[item]).name_start + 1), (((arena).nodes[item]).name_end - 1));
 }
