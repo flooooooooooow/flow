@@ -16,10 +16,14 @@ extern {
 }
 
 function main() -> i32 {
-    # RTLD_LAZY = 1 on macOS
-    let lib: ptr<DynLib> = dlopen("libm.dylib", 1)
+    # RTLD_LAZY is 1 on macOS and Linux. libm is libm.dylib on macOS and
+    # libm.so.6 on glibc Linux.
+    let mut lib: ptr<DynLib> = dlopen("libm.dylib", 1)
     if lib == null as ptr<DynLib> {
-        puts("FAIL: could not dlopen libm.dylib")
+        lib = dlopen("libm.so.6", 1)
+    }
+    if lib == null as ptr<DynLib> {
+        puts("FAIL: could not dlopen libm (libm.dylib or libm.so.6)")
         return 1
     }
 

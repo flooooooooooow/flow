@@ -73,6 +73,7 @@ static int flow_py_load() {
     const char* override = getenv("FLOW_PYTHON_LIB");
     const char* candidates[] = {
         override,
+        "libpython3.14.dylib",
         "libpython3.13.dylib",
         "libpython3.12.dylib",
         "libpython3.11.dylib",
@@ -83,6 +84,14 @@ static int flow_py_load() {
         "/Applications/Xcode.app/Contents/Developer/Library/Frameworks/Python3.framework/Python3",
         "/Library/Frameworks/Python.framework/Python",
         "/System/Library/Frameworks/Python.framework/Python",
+        /* Linux: the versioned shared library, found through the loader's
+           search path (the libpython3.X package or a --enable-shared build). */
+        "libpython3.14.so.1.0",
+        "libpython3.13.so.1.0",
+        "libpython3.12.so.1.0",
+        "libpython3.11.so.1.0",
+        "libpython3.10.so.1.0",
+        "libpython3.9.so.1.0",
         NULL
     };
 
