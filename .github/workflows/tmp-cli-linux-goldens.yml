@@ -1,0 +1,32 @@
+# ACTIONS-INTENDED: temporary; records the Linux stdout goldens for tests/cli on the CI runner, then is deleted.
+name: Record CLI Linux goldens (temporary)
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Record with the native CLI
+        run: |
+          chmod +x ./flow ./compiler/scripts/*.sh tests/cli/run.sh
+          ./compiler/scripts/bootstrap_from_c.sh
+          ./tests/cli/run.sh --update || true
+          echo "=== .code/.err that differ from the bash driver's recordings ==="
+          git diff --stat -- 'tests/cli/goldens/linux/*.code' 'tests/cli/goldens/linux/*.err' || true
+          git diff -- 'tests/cli/goldens/linux/*.code' 'tests/cli/goldens/linux/*.err' | head -400 || true
+          mkdir -p /tmp/cli-out
+          cp tests/cli/goldens/linux/*.out /tmp/cli-out/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-linux-out-goldens
+          path: /tmp/cli-out/
+          retention-days: 3
