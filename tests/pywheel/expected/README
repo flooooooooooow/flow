@@ -1,6 +1,6 @@
-Goldens for tests/pywheel/run.sh.
+Goldens for tests/pywheel/run.flow.
 
-They were written by `tests/pywheel/run.sh --update` from the Flow tool and
+They were written by `./flow tool tests/pywheel/run.flow --update` from the Flow tool and
 checked against the Python generator (src/flow/python_generator.py through
 `python3 -m flow.transpiler --python`) before it was deleted. Stdout, exit
 status and every generated file matched byte for byte for all 17 cases, and

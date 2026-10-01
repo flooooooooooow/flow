@@ -1,0 +1,168 @@
+# WebGPU page parity gate: `wasm/crossings.sh gpu --no-build` and
+# `wasm/crossings.sh shader`.
+#
+# Builds the WGSL half of the GPU crossing page (tools/gpu for the shaders,
+# scripts/tools/wasm_crossings for the page) for each case below, with
+# python and python3 stubbed out on PATH, and compares stdout, the exit
+# status and every file written with tests/gpu/crossing/<case>/. The goldens
+# were recorded from wasm/flow_wasm_gpu.py and wasm/flow_webgpu_shader.py
+# of PARITY_REF:
+#
+#   ./flow tool tests/gpu/crossing.flow --record     # needs python3 and git
+#
+# The page now names tools/gpu/main.flow and `wasm/crossings.sh gpu` where it
+# named the Python files; the recording applies that rename. The emcc build of
+# the CPU reference (without --no-build) was checked byte for byte against
+# the Python builder once (the .js and .wasm match); it needs emscripten, so
+# the gate leaves it out.
+
+import "tools/flow_cli/sys.flow"
+import "scripts/tools/lib/testrun.flow"
+import std.process { ProcCmd, ProcStrs, proc_arg }
+
+# name|command|arguments. `gpu` is the GPU crossing (--no-build);
+# `shader` is the `shader fill` WebGPU page (wasm/flow_webgpu_shader.py).
+function cases() -> ptr<ProcStrs> {
+    let c: ptr<ProcStrs> = sl_new()
+    sl_push2(c, "default|gpu|", "count|gpu|-n 4096")
+    sl_push2(c, "stdlib_kernels|gpu|lib/stdlib/gpu_kernels.flow -n 1000", "no_kernels|gpu|tests/gpu/programs/no_gpu.flow")
+    sl_push2(c, "wgsl_error|gpu|tests/gpu/programs/wgsl_err_cast.flow", "missing|gpu|tests/gpu/programs/missing.flow")
+    sl_push2(c, "shader_gradient|shader|examples/gpu/vgpu/gradient.flow", "shader_named|shader|examples/gpu/shader_photoreal.flow --name photoreal_marble --size 320x200 --time 1.5")
+    sl_push2(c, "shader_time_big|shader|examples/gpu/vgpu/gradient.flow --time 1e17", "shader_time_small|shader|examples/gpu/vgpu/gradient.flow --time 0.00001")
+    sl_push2(c, "shader_bad_size|shader|examples/gpu/vgpu/gradient.flow --size 10", "shader_zero_size|shader|examples/gpu/vgpu/gradient.flow --size 0x5")
+    sl_push2(c, "shader_bad_time|shader|examples/gpu/vgpu/gradient.flow --time abc", "shader_unknown_fill|shader|examples/gpu/vgpu/gradient.flow --name nope")
+    sl_push2(c, "shader_no_fills|shader|tests/gpu/programs/no_gpu.flow", "shader_missing|shader|tests/gpu/programs/missing.flow")
+    return c
+}
+
+# The recording's rename of the Python file names, in place.
+function rename_credits(files: string) {
+    let names: ptr<ProcStrs> = list_dir(files)
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        let f: string = files + "/" + sl_get(names, i)
+        i = i + 1
+        if not is_file(f) {
+            continue
+        }
+        let mut t: string = s_replace(read_text(f), "by src/flow/wgsl_codegen.py", "by tools/gpu/main.flow")
+        if s_ends(f, "/index.html") {
+            t = s_replace(t, "<code>src/flow/wgsl_codegen.py</code>", "<code>tools/gpu/main.flow</code>")
+            # Once per line, as sed without g.
+            let lines: ptr<ProcStrs> = s_split(t, 10)
+            let mut k: i32 = 0
+            while k < sl_len(lines) {
+                let l: string = sl_get(lines, k)
+                let at: i32 = s_find(l, "<code>wasm/flow_wasm_gpu.py</code>", 0)
+                if at >= 0 {
+                    lines.items[k] = s_slice(l, 0, at) + "<code>wasm/crossings.sh gpu</code>" + s_from(l, at + 34)
+                }
+                k = k + 1
+            }
+            t = sl_join(lines, "\n")
+        }
+        let _w: bool = write_text(f, t)
+    }
+}
+
+function main() -> i32 {
+    let root: string = tr_enter_root()
+    let parity_ref: string = env_or("PARITY_REF", "fcd2edfe")
+    let exp: string = "tests/gpu/crossing"
+    let args: ptr<ProcStrs> = tr_args()
+    let record: bool = sl_len(args) > 0 and s_eq(sl_get(args, 0), "--record")
+    let work: string = tr_workdir("flow-gpu-crossing")
+    let log: string = work + "/python-calls.log"
+
+    let mut tree: string = root
+    if record {
+        tree = work + "/ref"
+        let _m: bool = mkdir_p(tree)
+        let ga: ptr<ProcStrs> = sl_of3("git", "archive", "--output")
+        sl_push2(ga, work + "/ref.tar", parity_ref)
+        sl_extend(ga, s_words("wasm src lib compiler/scripts compiler/bootstrap examples"))
+        check(run_argv(ga))
+        let tx: ptr<ProcStrs> = sl_of3("tar", "-x", "-f")
+        sl_push2(tx, work + "/ref.tar", "-C")
+        sl_push(tx, tree)
+        check(run_argv(tx))
+        # The inputs are this checkout's programs (the page embeds the source).
+        rm_rf(tree + "/examples")
+        let _e: bool = tr_copy_tree("examples", tree + "/examples")
+        let _p: bool = tr_copy_tree("tests/gpu/programs", tree + "/tests/gpu/programs")
+    } else {
+        tr_stub_python_log(work + "/bin", log)
+    }
+
+    let mut pass: i32 = 0
+    let mut fail: i32 = 0
+    let all: ptr<ProcStrs> = cases()
+    let mut ci: i32 = 0
+    while ci < sl_len(all) {
+        let parts: ptr<ProcStrs> = s_split(sl_get(all, ci), 124)
+        ci = ci + 1
+        let name: string = sl_get(parts, 0)
+        let kind: string = sl_get(parts, 1)
+        let cargs: ptr<ProcStrs> = s_words(sl_get(parts, 2))
+        let out_rel: string = "site/wasm-crossings/gpu-gate"
+        rm_rf(tree + "/" + out_rel)
+        let got: string = work + "/got/" + name
+        let _m: bool = mkdir_p(got + "/files")
+        let argv: ptr<ProcStrs> = sl_new()
+        if record {
+            sl_push(argv, "python3")
+            if s_eq(kind, "gpu") {
+                sl_push(argv, "wasm/flow_wasm_gpu.py")
+            } else {
+                sl_push(argv, "wasm/flow_webgpu_shader.py")
+            }
+        } else {
+            sl_push2(argv, "wasm/crossings.sh", kind)
+        }
+        sl_extend(argv, cargs)
+        if s_eq(kind, "gpu") {
+            sl_push(argv, "--no-build")
+        }
+        sl_push2(argv, "--out", out_rel)
+        let rc: i32 = tr_run_files(argv, tree, got + "/stdout.raw", work + "/stderr")
+        let _r: bool = write_text(got + "/rc", s_itoa(rc) + "\n")
+        let _s: bool = write_text(got + "/stdout", s_replace(read_text(got + "/stdout.raw"), tree, "@ROOT@"))
+        rm_f(got + "/stdout.raw")
+        if is_dir(tree + "/" + out_rel) {
+            let _c: bool = tr_copy_tree(tree + "/" + out_rel, got + "/files")
+        }
+        rm_rf(tree + "/" + out_rel)
+        if record {
+            rename_credits(got + "/files")
+            rm_rf(exp + "/" + name)
+            let _me: bool = mkdir_p(exp + "/" + name)
+            let _ct: bool = tr_copy_tree(got, exp + "/" + name)
+            outln("rec   " + name)
+            continue
+        }
+        # An empty files/ is not kept in a golden (the repository holds no empty
+        # directories); drop it so the diff matches.
+        if sl_len(list_dir(got + "/files")) == 0 {
+            rm_rf(got + "/files")
+        }
+        let dv: ptr<ProcStrs> = sl_of3("diff", "-r", exp + "/" + name)
+        sl_push(dv, got)
+        if run_to_file(cmd(dv), work + "/diff.txt", true) == 0 {
+            pass = pass + 1
+        } else {
+            fail = fail + 1
+            outln("FAIL " + name)
+            out(tr_head(read_text(work + "/diff.txt"), 20))
+        }
+    }
+
+    if record {
+        cli_exit(0)
+    }
+    if tr_python_called(log, "gpu crossing gate: python was called:") {
+        fail = fail + 1
+    }
+    outln("gpu crossing gate: " + s_itoa(pass) + " passed, " + s_itoa(fail) + " failed")
+    tr_exit(fail)
+    return 0
+}
