@@ -1,0 +1,11 @@
+FIR-G: funcs=2 blocks=2 ops=23 values=19 operands=18 types=2
+call ops: 1
+reachable: compute, main
+dead: (none)
+applied: dce removed=3
+call graph:
+  main -> compute  (op 1)
+effects / pure:
+  compute: effects=0x0000 pure=True
+  main: effects=0x0000 pure=True
+device: requested=cpu chosen=cpu

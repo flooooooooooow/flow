@@ -1,0 +1,32 @@
+{
+  "summary": "FIR-G: funcs=2 blocks=2 ops=26 values=22 operands=20 types=2",
+  "call_edges": [
+    {
+      "caller": "main",
+      "callee": "compute",
+      "op": 1
+    }
+  ],
+  "effects": {
+    "compute": 0,
+    "main": 0
+  },
+  "pure": {
+    "compute": true,
+    "main": true
+  },
+  "reachable": [
+    "compute",
+    "main"
+  ],
+  "dead": [],
+  "applied": {"const_fold": 4},
+  "num_call_ops": 1,
+  "device_requested": "cpu",
+  "device_chosen": "cpu",
+  "opt_candidates": {
+    "total": 0,
+    "by_kind": {},
+    "top": []
+  }
+}

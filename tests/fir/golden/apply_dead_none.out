@@ -1,0 +1,12 @@
+FIR-G: funcs=2 blocks=4 ops=23 values=18 operands=16 types=2
+call ops: 3
+reachable: fibonacci, main
+dead: (none)
+applied: dead_elim removed=0
+call graph:
+  fibonacci -> fibonacci  (op 2)
+  main -> fibonacci  (op 1)
+effects / pure:
+  fibonacci: effects=0x0000 pure=True
+  main: effects=0x0000 pure=True
+device: requested=cpu chosen=cpu

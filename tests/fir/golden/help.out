@@ -1,6 +1,6 @@
 usage: flow fir-g [-h] [--json] [--device {cpu,numpy,mlx,auto}] [--bench]
                   [--calibrate] [--thresholds THRESHOLDS] [--opts]
-                  [program]
+                  [--apply PASSES] [program]
 
 Flow FIR-G: program graph + CPU/MLX analyses
 
@@ -22,3 +22,7 @@ options:
                         ~/.cache/flow/fir_g_route.json)
   --opts                list deterministic optimisation candidates (dead_elim
                         / inline)
+  --apply PASSES        apply optimisation passes and report the rewritten
+                        graph. PASSES is a comma list from
+                        {dead_elim, const_fold, dce, all}.
+                        With --opts, candidates reflect the post-pass graph

@@ -1,4 +1,4 @@
 usage: flow fir-g [-h] [--json] [--device {cpu,numpy,mlx,auto}] [--bench]
                   [--calibrate] [--thresholds THRESHOLDS] [--opts]
                   [--apply PASSES] [program]
-flow fir-g: error: argument --device: expected one argument
+flow fir-g: error: argument --apply: invalid choice: 'wat' (choose from dead_elim, const_fold, dce, all)

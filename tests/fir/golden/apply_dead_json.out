@@ -1,0 +1,188 @@
+{
+  "summary": "FIR-G: funcs=9 blocks=10 ops=39 values=29 operands=24 types=3",
+  "call_edges": [
+    {
+      "caller": "leaf",
+      "callee": "printf",
+      "op": 1
+    },
+    {
+      "caller": "mid",
+      "callee": "leaf",
+      "op": 1
+    },
+    {
+      "caller": "caller",
+      "callee": "callee1",
+      "op": 2
+    },
+    {
+      "caller": "caller",
+      "callee": "callee2",
+      "op": 1
+    },
+    {
+      "caller": "ping",
+      "callee": "pong",
+      "op": 1
+    },
+    {
+      "caller": "pong",
+      "callee": "ping",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "mid",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "caller",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "ping",
+      "op": 1
+    }
+  ],
+  "effects": {
+    "printf": 24,
+    "leaf": 24,
+    "mid": 24,
+    "callee1": 0,
+    "callee2": 0,
+    "caller": 0,
+    "ping": 0,
+    "pong": 0,
+    "main": 24
+  },
+  "pure": {
+    "printf": false,
+    "leaf": false,
+    "mid": false,
+    "callee1": true,
+    "callee2": true,
+    "caller": true,
+    "ping": true,
+    "pong": true,
+    "main": false
+  },
+  "reachable": [
+    "callee1",
+    "callee2",
+    "caller",
+    "leaf",
+    "main",
+    "mid",
+    "ping",
+    "pong",
+    "printf"
+  ],
+  "dead": [],
+  "applied": {"dead_elim": [
+      "dead"
+    ]},
+  "num_call_ops": 10,
+  "device_requested": "cpu",
+  "device_chosen": "cpu",
+  "opt_candidates": {
+    "total": 9,
+    "by_kind": {
+      "inline": 9
+    },
+    "top": [
+      {
+        "kind": "inline",
+        "target": "callee2",
+        "score": 45.0,
+        "reason": "callee_ops=2 sites=1 pure=True",
+        "caller": "caller",
+        "callsite_op": 11,
+        "callee_ops": 2,
+        "call_sites": 1
+      },
+      {
+        "kind": "inline",
+        "target": "caller",
+        "score": 39.0,
+        "reason": "callee_ops=4 sites=1 pure=True",
+        "caller": "main",
+        "callsite_op": 33,
+        "callee_ops": 4,
+        "call_sites": 1
+      },
+      {
+        "kind": "inline",
+        "target": "pong",
+        "score": 33.0,
+        "reason": "callee_ops=6 sites=1 pure=True",
+        "caller": "ping",
+        "callsite_op": 24,
+        "callee_ops": 6,
+        "call_sites": 1
+      },
+      {
+        "kind": "inline",
+        "target": "mid",
+        "score": 30.0,
+        "reason": "callee_ops=2 sites=1 pure=False",
+        "caller": "main",
+        "callsite_op": 32,
+        "callee_ops": 2,
+        "call_sites": 1
+      },
+      {
+        "kind": "inline",
+        "target": "leaf",
+        "score": 26.0,
+        "reason": "callee_ops=4 sites=1 pure=False",
+        "caller": "mid",
+        "callsite_op": 4,
+        "callee_ops": 4,
+        "call_sites": 1
+      },
+      {
+        "kind": "inline",
+        "target": "callee1",
+        "score": 11.25,
+        "reason": "callee_ops=2 sites=2 pure=True",
+        "caller": "caller",
+        "callsite_op": 10,
+        "callee_ops": 2,
+        "call_sites": 2
+      },
+      {
+        "kind": "inline",
+        "target": "callee1",
+        "score": 11.25,
+        "reason": "callee_ops=2 sites=2 pure=True",
+        "caller": "caller",
+        "callsite_op": 12,
+        "callee_ops": 2,
+        "call_sites": 2
+      },
+      {
+        "kind": "inline",
+        "target": "ping",
+        "score": 3.75,
+        "reason": "callee_ops=12 sites=2 pure=True",
+        "caller": "pong",
+        "callsite_op": 30,
+        "callee_ops": 12,
+        "call_sites": 2
+      },
+      {
+        "kind": "inline",
+        "target": "ping",
+        "score": 3.75,
+        "reason": "callee_ops=12 sites=2 pure=True",
+        "caller": "main",
+        "callsite_op": 36,
+        "callee_ops": 12,
+        "call_sites": 2
+      }
+    ]
+  }
+}

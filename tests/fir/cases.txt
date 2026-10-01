@@ -11,6 +11,17 @@ forms_text	none	tests/fir/programs/forms.flow --opts
 forms_json	none	tests/fir/programs/forms.flow --json --opts
 analysis_text	none	tests/fir/programs/analysis.flow --opts
 analysis_json	none	tests/fir/programs/analysis.flow --json --opts
+apply_dead_text	none	tests/fir/programs/analysis.flow --apply dead_elim
+apply_dead_json	none	tests/fir/programs/analysis.flow --json --opts --apply dead_elim
+apply_dead_all	none	tests/fir/programs/analysis.flow --apply all
+apply_dead_none	none	examples/basics/fibonacci.flow --apply dead_elim
+apply_fold	none	tests/fir/programs/fold.flow --apply const_fold
+apply_fold_all	none	tests/fir/programs/fold.flow --apply all
+apply_fold_json	none	tests/fir/programs/fold.flow --json --opts --apply const_fold
+apply_dce	none	tests/fir/programs/fold.flow --apply dce
+apply_fold_dce	none	tests/fir/programs/fold.flow --apply const_fold,dce
+apply_bad	full	tests/fir/programs/analysis.flow --apply wat
+apply_missing	full	tests/fir/programs/analysis.flow --apply
 nomain	none	tests/fir/programs/nomain.flow --json --opts
 uses_lib	none	tests/fir/programs/uses_lib.flow --json --opts
 generics	none	tests/lang/test_generics.flow --json --opts

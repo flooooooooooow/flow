@@ -30,6 +30,15 @@ export const OP_ALLOCA: i32 = 12
 export const OP_EFFECT: i32 = 15
 export const OP_OTHER: i32 = 255
 
+# op_aux operator codes for BINOP/UNOP (mapped from the token ids by the
+# lowerer, so this file stays free of the front-end token enum).
+export const AUX_ADD: i32 = 1
+export const AUX_SUB: i32 = 2
+export const AUX_MUL: i32 = 3
+export const AUX_DIV: i32 = 4
+export const AUX_MOD: i32 = 5
+export const AUX_NEG: i32 = 6
+
 export const EFF_WRITES_MEMORY: i32 = 2
 export const EFF_ALLOCATES: i32 = 4
 export const EFF_IO: i32 = 8
@@ -166,6 +175,13 @@ export struct FirG {
     op_block: IVec,
     op_result_begin: IVec,
     op_callee: IVec,
+    op_operand_count: IVec,
+    op_edge_begin: IVec,
+    op_edge_count: IVec,
+    op_operands: IVec,
+    op_aux: IVec,
+    op_const: IVec,
+    const_pool: TList,
     num_operands: i32,
     num_values: i32,
     type_name: TList,
@@ -191,6 +207,13 @@ export function fg_new() -> ptr<FirG> {
     g.op_block = iv_new()
     g.op_result_begin = iv_new()
     g.op_callee = iv_new()
+    g.op_operand_count = iv_new()
+    g.op_edge_begin = iv_new()
+    g.op_edge_count = iv_new()
+    g.op_operands = iv_new()
+    g.op_aux = iv_new()
+    g.op_const = iv_new()
+    g.const_pool = tl_new()
     g.num_operands = 0
     g.num_values = 0
     g.type_name = tl_new()
@@ -257,8 +280,13 @@ export function fg_add_block(g: ptr<FirG>, fid: i32) -> i32 {
 export function fg_add_op(g: ptr<FirG>, opcode: i32, fid: i32, bid: i32, n_operands: i32, n_results: i32, callee: i32) -> i32 {
     let op: i32 = g.op_opcode.len
     g.num_operands = g.num_operands + n_operands
+    iv_push(&g.op_operand_count, n_operands)
     iv_push(&g.op_result_begin, g.num_values)
     g.num_values = g.num_values + n_results
+    iv_push(&g.op_edge_begin, g.op_operands.len)
+    iv_push(&g.op_edge_count, 0)
+    iv_push(&g.op_aux, 0)
+    iv_push(&g.op_const, 0)
     iv_push(&g.op_opcode, opcode)
     iv_push(&g.op_function, fid)
     iv_push(&g.op_block, bid)
@@ -272,6 +300,64 @@ export function fg_add_op(g: ptr<FirG>, opcode: i32, fid: i32, bid: i32, n_opera
 
 export function fg_result(g: ptr<FirG>, op: i32) -> i32 {
     return iv_get(&g.op_result_begin, op)
+}
+
+# Real SSA operand edges. `op_operand_count` stays the declared arity for
+# parity with the Python graph; edges are what passes match on.
+export function fg_add_operand(g: ptr<FirG>, op: i32, v: i32) {
+    iv_push(&g.op_operands, v)
+    iv_set(&g.op_edge_count, op, iv_get(&g.op_edge_count, op) + 1)
+}
+
+export function fg_op_noperands(g: ptr<FirG>, op: i32) -> i32 {
+    return iv_get(&g.op_edge_count, op)
+}
+
+export function fg_operand(g: ptr<FirG>, op: i32, i: i32) -> i32 {
+    return iv_get(&g.op_operands, iv_get(&g.op_edge_begin, op) + i)
+}
+
+# Drop an op's operand edges in place (used by const_fold when it rewrites
+# an op to a CONST). The flat entries stay but are unreferenced.
+export function fg_op_clear_operands(g: ptr<FirG>, op: i32) {
+    iv_set(&g.op_edge_count, op, 0)
+}
+
+# Operator token for BINOP/UNOP (TOK_*); 0 for other ops.
+export function fg_op_set_aux(g: ptr<FirG>, op: i32, aux: i32) {
+    iv_set(&g.op_aux, op, aux)
+}
+
+export function fg_op_aux(g: ptr<FirG>, op: i32) -> i32 {
+    return iv_get(&g.op_aux, op)
+}
+
+# CONST literal text, interned in const_pool. op_const stores index + 1.
+export function fg_op_set_const(g: ptr<FirG>, op: i32, text: string) {
+    tl_push(&g.const_pool, text)
+    iv_set(&g.op_const, op, g.const_pool.len)
+}
+
+export function fg_op_const_text(g: ptr<FirG>, op: i32) -> string {
+    let i: i32 = iv_get(&g.op_const, op)
+    if i == 0 {
+        return ""
+    }
+    return tl_get(&g.const_pool, i - 1)
+}
+
+# The op that produced value `v`, or -1 (values are result_begin + slot;
+# ops here produce at most one result).
+export function fg_value_op(g: ptr<FirG>, v: i32) -> i32 {
+    let mut op: i32 = 0
+    let n: i32 = fg_num_ops(g)
+    while op < n {
+        if iv_get(&g.op_result_begin, op) <= v and v < iv_get(&g.op_result_begin, op) + fg_op_nresults(g, op) {
+            return op
+        }
+        op = op + 1
+    }
+    return -1
 }
 
 export function fg_or_effect(g: ptr<FirG>, fid: i32, bits: i32) {
@@ -602,4 +688,291 @@ export function discover_candidates(g: ptr<FirG>, live: ptr<i32>) -> CandList {
 
 export function cand_kind_name(k: i32) -> string {
     return kind_name(k)
+}
+
+# ── Transforms ──────────────────────────────────────────────────
+
+export struct FirCompact {
+    g: ptr<FirG>,
+    removed: TList
+}
+
+# Result count of op `op` in `g`, from the result_begin prefix sums.
+function fg_op_nresults(g: ptr<FirG>, op: i32) -> i32 {
+    let begin: i32 = iv_get(&g.op_result_begin, op)
+    if op + 1 < fg_num_ops(g) {
+        return iv_get(&g.op_result_begin, op + 1) - begin
+    }
+    return g.num_values - begin
+}
+
+struct FirDce {
+    g: ptr<FirG>,
+    removed_ops: i32
+}
+
+# Rebuild `g` keeping only the functions marked in `keep` (1/0 per function
+# id) and, when `keep_op` is non-null, only the ops it marks. Order is
+# preserved. Function ids, block ids, op ids and value ids are renumbered
+# densely; call targets and operand edges are remapped and the CSR call
+# graph is rebuilt. Returns the new graph and the dropped function names.
+export function fg_compact2(g: ptr<FirG>, keep: ptr<i32>, keep_op: ptr<i32>) -> FirCompact {
+    let nf: i32 = fg_num_funcs(g)
+    let remap: ptr<i32> = calloc((nf + 1) as i64, 4)
+    let ng: ptr<FirG> = fg_new()
+    let mut out: FirCompact = FirCompact { g: ng, removed: tl_new() }
+    # Pass 1: kept functions in order, so op_callee remaps resolve even for
+    # forward references.
+    let mut f: i32 = 0
+    while f < nf {
+        if keep[f] != 0 {
+            remap[f] = fg_add_function(ng, fg_func_name(g, f), iv_get(&g.func_is_extern, f) != 0, iv_get(&g.func_effect_bits, f)) + 1
+        } else {
+            tl_push(&out.removed, fg_func_name(g, f))
+        }
+        f = f + 1
+    }
+    # Pass 2: blocks. A function's blocks are contiguous in the block table,
+    # but a block's ops are not contiguous in the op table (the lowerer
+    # interleaves nested control flow), so ops are bucketed by op_block.
+    let nb_total: i32 = g.block_function.len
+    let bremap: ptr<i32> = calloc((nb_total + 1) as i64, 4)
+    f = 0
+    while f < nf {
+        if keep[f] != 0 {
+            let nfid: i32 = remap[f] - 1
+            let first_b: i32 = iv_get(&g.func_first_block, f)
+            let nb: i32 = iv_get(&g.func_block_count, f)
+            let mut b: i32 = 0
+            while b < nb {
+                bremap[first_b + b] = fg_add_block(ng, nfid) + 1
+                b = b + 1
+            }
+        }
+        f = f + 1
+    }
+    # Pass 3: ops in global order, keeping each block's op order. Operand
+    # edges are remapped through vmap (old value id + 1 -> new value id);
+    # producers are always emitted before their consumers, so every operand
+    # of a kept op already has a new id.
+    let vmap: ptr<i32> = calloc((g.num_values + 1) as i64, 4)
+    let mut op: i32 = 0
+    let nops: i32 = fg_num_ops(g)
+    while op < nops {
+        let of: i32 = iv_get(&g.op_function, op)
+        if of >= 0 and of < nf and keep[of] != 0 and (keep_op == null or keep_op[op] != 0) {
+            let mut cal: i32 = iv_get(&g.op_callee, op)
+            if cal >= 0 {
+                cal = remap[cal] - 1
+            }
+            let nop: i32 = fg_add_op(ng, iv_get(&g.op_opcode, op), remap[of] - 1, bremap[iv_get(&g.op_block, op)] - 1, iv_get(&g.op_operand_count, op), fg_op_nresults(g, op), cal)
+            iv_set(&ng.op_aux, nop, iv_get(&g.op_aux, op))
+            if iv_get(&g.op_const, op) != 0 {
+                fg_op_set_const(ng, nop, fg_op_const_text(g, op))
+            }
+            let mut e: i32 = 0
+            while e < iv_get(&g.op_edge_count, op) {
+                let nv: i32 = vmap[fg_operand(g, op, e)] - 1
+                if nv >= 0 {
+                    fg_add_operand(ng, nop, nv)
+                }
+                e = e + 1
+            }
+            let mut r: i32 = 0
+            while r < fg_op_nresults(g, op) {
+                vmap[fg_result(g, op) + r] = fg_result(ng, nop) + r + 1
+                r = r + 1
+            }
+        }
+        op = op + 1
+    }
+    free(vmap as ptr<void>)
+    # The type table is names only; copy it so interned names survive.
+    let mut t: i32 = 0
+    while t < g.type_name.len {
+        let _tid: i32 = fg_intern_type(ng, tl_get(&g.type_name, t))
+        t = t + 1
+    }
+    fg_build_call_graph_csr(ng)
+    free(remap as ptr<void>)
+    free(bremap as ptr<void>)
+    return out
+}
+
+# Dead-function elimination: drop every function unreachable from the roots
+# (`main`, or function 0 when there is no main). Returns the compacted graph
+# and the removed names; the input graph is left untouched.
+export function fg_apply_dead_elim(g: ptr<FirG>) -> FirCompact {
+    let live: ptr<i32> = fg_reachable(g)
+    let out: FirCompact = fg_compact2(g, live, null)
+    free(live as ptr<void>)
+    return out
+}
+
+# A result op with no side effects: safe to drop when its value is unused.
+function fg_pure_op(code: i32) -> bool {
+    return code == OP_CONST or code == OP_BINOP or code == OP_UNOP
+}
+
+# Dead-op elimination: drop pure result ops (CONST, BINOP, UNOP) whose
+# values are never used as an operand, iterating until nothing else drops.
+# CONSTs stranded by const_fold die here too.
+export function fg_apply_dce(g: ptr<FirG>) -> FirDce {
+    let nf: i32 = fg_num_funcs(g)
+    let keep_f: ptr<i32> = calloc((nf + 1) as i64, 4)
+    let mut i: i32 = 0
+    while i < nf {
+        keep_f[i] = 1
+        i = i + 1
+    }
+    let mut cur: ptr<FirG> = g
+    let mut total: i32 = 0
+    let mut again: bool = true
+    while again {
+        again = false
+        let used: ptr<i32> = calloc((cur.num_values + 1) as i64, 4)
+        let keep: ptr<i32> = calloc((fg_num_ops(cur) + 1) as i64, 4)
+        let mut op: i32 = 0
+        let n: i32 = fg_num_ops(cur)
+        while op < n {
+            keep[op] = 1
+            let mut e: i32 = 0
+            while e < iv_get(&cur.op_edge_count, op) {
+                used[fg_operand(cur, op, e)] = 1
+                e = e + 1
+            }
+            op = op + 1
+        }
+        op = 0
+        while op < n {
+            if fg_pure_op(iv_get(&cur.op_opcode, op)) and fg_op_nresults(cur, op) > 0 and used[fg_result(cur, op)] == 0 {
+                keep[op] = 0
+                again = true
+                total = total + 1
+            }
+            op = op + 1
+        }
+        if again {
+            let comp: FirCompact = fg_compact2(cur, keep_f, keep)
+            cur = comp.g
+        }
+        free(used as ptr<void>)
+        free(keep as ptr<void>)
+    }
+    free(keep_f as ptr<void>)
+    return FirDce { g: cur, removed_ops: total }
+}
+
+# Parse `text` as a decimal or boolean literal. Returns the value, with
+# `ok` set to false for anything else (floats, hex, suffixed ints, names).
+function fg_const_int(text: string, ok: ptr<bool>) -> i64 {
+    ok[0] = false
+    if t_eq(text, "true") {
+        ok[0] = true
+        return 1
+    }
+    if t_eq(text, "false") {
+        ok[0] = true
+        return 0
+    }
+    let n: i32 = t_len(text)
+    let mut i: i32 = 0
+    if n > 0 and t_at(text, 0) == 45 {
+        i = 1
+    }
+    if i >= n {
+        return 0
+    }
+    let mut v: i64 = 0
+    while i < n {
+        if not t_is_digit(t_at(text, i)) {
+            return 0
+        }
+        v = v * 10 + ((t_at(text, i) - 48) as i64)
+        i = i + 1
+    }
+    ok[0] = true
+    if t_at(text, 0) == 45 {
+        return 0 - v
+    }
+    return v
+}
+
+# Constant folding: rewrite BINOP/UNOP ops whose operands are all CONST
+# integer or boolean literals to a CONST holding the folded value, in
+# place. Returns the number of ops folded.
+export function fg_apply_const_fold(g: ptr<FirG>) -> i32 {
+    # value id -> producing op + 1
+    let v2op: ptr<i32> = calloc((g.num_values + 1) as i64, 4)
+    let nops: i32 = fg_num_ops(g)
+    let mut op: i32 = 0
+    while op < nops {
+        let mut r: i32 = 0
+        while r < fg_op_nresults(g, op) {
+            v2op[fg_result(g, op) + r] = op + 1
+            r = r + 1
+        }
+        op = op + 1
+    }
+    let mut folded: i32 = 0
+    op = 0
+    while op < nops {
+        let code: i32 = iv_get(&g.op_opcode, op)
+        let aux: i32 = iv_get(&g.op_aux, op)
+        let ne: i32 = iv_get(&g.op_edge_count, op)
+        let mut res: i64 = 0
+        let mut ok: bool = false
+        if code == OP_BINOP and ne == 2 and aux >= AUX_ADD and aux <= AUX_MOD {
+            let o1: i32 = v2op[fg_operand(g, op, 0)] - 1
+            let o2: i32 = v2op[fg_operand(g, op, 1)] - 1
+            if o1 >= 0 and o2 >= 0 and iv_get(&g.op_opcode, o1) == OP_CONST and iv_get(&g.op_opcode, o2) == OP_CONST {
+                let mut ok1: bool = false
+                let mut ok2: bool = false
+                let a: i64 = fg_const_int(fg_op_const_text(g, o1), &ok1)
+                let b: i64 = fg_const_int(fg_op_const_text(g, o2), &ok2)
+                if ok1 and ok2 {
+                    ok = true
+                    if aux == AUX_ADD {
+                        res = a + b
+                    } elif aux == AUX_SUB {
+                        res = a - b
+                    } elif aux == AUX_MUL {
+                        res = a * b
+                    } elif aux == AUX_DIV {
+                        if b == 0 {
+                            ok = false
+                        } else {
+                            res = a / b
+                        }
+                    } else {
+                        if b == 0 {
+                            ok = false
+                        } else {
+                            res = a % b
+                        }
+                    }
+                }
+            }
+        } elif code == OP_UNOP and ne == 1 and aux == AUX_NEG {
+            let o1: i32 = v2op[fg_operand(g, op, 0)] - 1
+            if o1 >= 0 and iv_get(&g.op_opcode, o1) == OP_CONST {
+                let mut ok1: bool = false
+                let a: i64 = fg_const_int(fg_op_const_text(g, o1), &ok1)
+                if ok1 {
+                    ok = true
+                    res = 0 - a
+                }
+            }
+        }
+        if ok {
+            iv_set(&g.op_opcode, op, OP_CONST)
+            iv_set(&g.op_aux, op, 0)
+            fg_op_clear_operands(g, op)
+            fg_op_set_const(g, op, t_int(res as i32))
+            folded = folded + 1
+        }
+        op = op + 1
+    }
+    free(v2op as ptr<void>)
+    return folded
 }
