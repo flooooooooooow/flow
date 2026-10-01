@@ -1,0 +1,708 @@
+# Parity gate for the proof layer on flowc (#996).
+#
+# flowc erases `theorem`, `assume`, `therefore` and claim references the way
+# the Python host did, and compiler/src/proof_doc.flow replaces the Python
+# proof tools (proof_document, geometry_diagram, geometry_script, know,
+# proof_kernel and their helpers). This gate holds flowc to that behaviour
+# on every examples/verify file.
+#
+#   ./flow tool compiler/scripts/parity_proofs.flow
+#       flowc alone: accept/reject matches compiler/parity_proofs/
+#       python_rejects.txt, programs with a main() print what
+#       compiler/parity_proofs/run/*.expected records, and the proof documents
+#       flowc writes must match the checked-in ones byte for byte. To
+#       refresh a document after a source or renderer change, run
+#       `./flow doc proof <file>.flow` and commit the result.
+#
+#   ./flow tool compiler/scripts/parity_proofs.flow --python <rev>
+#       also run the Python host from git revision <rev> and require the
+#       same accept/reject, the same first diagnostic (line, or the
+#       offending token when Python gives no line), the same program
+#       output, and byte-identical proof artifacts: .proof.md, .proof.tex,
+#       figures, directory mode, the three proof-book bundles, kernels and
+#       `flow know`. Needs python3 and git.
+#
+# The Python proof tools were deleted after 9103c996 (the last revision
+# with the prose that has no dashes, which the Flow port follows).
+#
+# Env: FLOWC_BIN=<path> tests that binary instead of building
+# compiler/build/flowc_bootstrap from the checked-in bootstrap C.
+# JOBS=<n> parallel emits (default 8).
+#
+# The emits run in parallel through `xargs -P`, which starts this program
+# again as a worker (`--emit-one FILE`, `--py-one FILE`) with ROOT, WORK,
+# BIN and REF in the environment: std.process runs one child at a time
+# (#1109).
+
+import "tools/flow_cli/sys.flow"
+import "compiler/scripts/parity_lib.flow"
+import std.process { ProcCmd, ProcStrs, proc_arg, proc_argv, proc_input }
+import std.regex { Regex, RxMatch, rx_search, rx_m_group }
+
+const USAGE: string = "usage: ./flow tool compiler/scripts/parity_proofs.flow [--python <rev>]"
+const DATA: string = "compiler/parity_proofs"
+
+# Strings the whole gate shares (module statics cannot be strings).
+struct Gate {
+    root: string,
+    work: string,
+    bin: string,
+    fail: i32
+}
+
+let mut G: ptr<Gate> = null
+
+# flowc with the proof-document environment set.
+function proof_cmd() -> ptr<ProcCmd> {
+    let g: ptr<Gate> = G
+    let c: ptr<ProcCmd> = pl_cmd1(g.bin)
+    cmd_env(c, "FLOWC_PROOF_DOC", "1")
+    cmd_env(c, "FLOWC_PROOF_ROOT", g.root)
+    return c
+}
+
+# Worker: emit one file on flowc the way the flow CLI does (bundle mode
+# when the file imports), keeping the exit code and log.
+function emit_one(f: string) -> i32 {
+    let root: string = env("ROOT")
+    let out: string = env("WORK") + "/fc"
+    let key: string = pl_key(f)
+    let c: ptr<ProcCmd> = pl_cmd1(env("BIN"))
+    if pl_grep_file(pl_rx("^[ \\t\\n\\r\\f\\v]*import[ \\t\\n\\r\\f\\v]"), f) {
+        cmd_env(c, "FLOWC_BUNDLE", "1")
+        cmd_env(c, "FLOWC_DIR", root)
+        cmd_env(c, "FLOWC_TYPECHECK", "1")
+        cmd_env(c, "FLOWC_IN", root + "/" + f)
+    } else {
+        cmd_env(c, "FLOWC_TYPECHECK", "1")
+        cmd_env(c, "FLOWC_IN", f)
+    }
+    cmd_env(c, "FLOWC_OUT", out + "/" + key + ".c")
+    let rc: i32 = pl_run(c, out + "/" + key + ".log", "&", 0)
+    let _w: bool = write_text(out + "/" + key + ".rc", s_itoa(rc) + "\n")
+    return 0
+}
+
+# Worker: the Python transpiler on one file.
+function py_one(f: string) -> i32 {
+    let out: string = env("WORK") + "/py"
+    let key: string = pl_key(f)
+    let c: ptr<ProcCmd> = cmd(sl_of3("python3", "-m", "flow.transpiler"))
+    proc_arg(c, f)
+    proc_arg(c, "--c")
+    proc_arg(c, "--lenient")
+    proc_arg(c, "-o")
+    proc_arg(c, out + "/" + key + ".c")
+    cmd_env(c, "PYTHONPATH", env("REF") + "/src")
+    let rc: i32 = pl_run(c, out + "/" + key + ".log", "&", 0)
+    let _w: bool = write_text(out + "/" + key + ".rc", s_itoa(rc) + "\n")
+    return 0
+}
+
+# `xargs -P $JOBS -n 1 <this program> FLAG < LIST`
+function run_jobs(flag: string, list: string) {
+    let c: ptr<ProcCmd> = cmd(sl_of3("xargs", "-P", env_or("JOBS", "8")))
+    proc_arg(c, "-n")
+    proc_arg(c, "1")
+    proc_arg(c, proc_argv(0))
+    proc_arg(c, flag)
+    proc_input(c, read_text(list))
+    check(run(c))
+}
+
+# The rc a worker recorded.
+function rc_of(dir: string, f: string) -> string {
+    let g: ptr<Gate> = G
+    return pl_cat(g.work + "/" + dir + "/" + pl_key(f) + ".rc")
+}
+
+# Python's token names for the flowc token text in "unexpected token".
+function py_token(t: string) -> string {
+    if s_eq(t, "COLON") {
+        return ":"
+    } elif s_eq(t, "EQUALS") {
+        return "=="
+    } elif s_eq(t, "ASSIGN") {
+        return "="
+    } elif s_eq(t, "PLUS") {
+        return "+"
+    } elif s_eq(t, "MINUS") {
+        return "-"
+    } elif s_eq(t, "RPAREN") {
+        return ")"
+    } elif s_eq(t, "LPAREN") {
+        return "("
+    } elif s_eq(t, "RBRACE") {
+        return "}"
+    } elif s_eq(t, "LBRACE") {
+        return "{"
+    } elif s_eq(t, "COMMA") {
+        return ","
+    }
+    return "?" + t
+}
+
+# `grep -m1 -oE PATTERN FILE`, then group `g` of that first match; "" when
+# no line matches.
+function first_match(path: string, pattern: string, g: i32) -> string {
+    let r: ptr<Regex> = pl_rx(pattern)
+    let lines: ptr<ProcStrs> = pl_read_lines(path)
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let m: ptr<RxMatch> = rx_search(r, sl_get(lines, i))
+        if m != null {
+            return rx_m_group(m, g)
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+# Files under `dir` (relative "./..." paths, sorted), without *.flow and
+# without anything under a scripts/ directory below the top
+# (`find . -type f ! -name '*.flow' ! -path './*/scripts/*'`).
+function tree_files(dir: string, rel: string, out: ptr<ProcStrs>) {
+    let names: ptr<ProcStrs> = list_dir(dir)
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        let n: string = sl_get(names, i)
+        let p: string = dir + "/" + n
+        let r: string = rel + "/" + n
+        if not is_link(p) {
+            if is_dir(p) {
+                tree_files(p, r, out)
+            } elif is_file(p) and not s_ends(n, ".flow") and s_find(r, "/scripts/", 2) < 0 {
+                sl_push(out, r)
+            }
+        }
+        i = i + 1
+    }
+}
+
+function tree_list(dir: string) -> ptr<ProcStrs> {
+    let out: ptr<ProcStrs> = sl_new()
+    if is_dir(dir) {
+        tree_files(dir, ".", out)
+    }
+    sl_sort(out, false)
+    return out
+}
+
+# Compare two trees file by file; prints "same/total" and counts a gap.
+function compare_trees(label: string, a: string, b: string) {
+    let g: ptr<Gate> = G
+    let files: ptr<ProcStrs> = tree_list(a)
+    let mut same: i32 = 0
+    let mut bad: i32 = 0
+    let mut i: i32 = 0
+    while i < sl_len(files) {
+        let f: string = sl_get(files, i)
+        i = i + 1
+        if is_file(b + "/" + f) and same_bytes(a + "/" + f, b + "/" + f) {
+            same = same + 1
+        } else {
+            bad = bad + 1
+            errln("FAIL " + label + ": " + f + " differs")
+        }
+    }
+    let n: i32 = sl_len(files)
+    let nb: i32 = sl_len(tree_list(b))
+    if nb != n {
+        bad = bad + 1
+        errln("FAIL " + label + ": python wrote " + s_itoa(n) + " files, flowc " + s_itoa(nb))
+    }
+    outln("live " + label + ": " + s_itoa(same) + "/" + s_itoa(n) + " files byte-identical")
+    g.fail = g.fail + bad
+}
+
+# `cp SRC/* DST/` for the regular files in SRC.
+function copy_files(src: string, dst: string, suffix: string) {
+    let names: ptr<ProcStrs> = list_dir(src)
+    sl_sort(names, false)
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        let n: string = sl_get(names, i)
+        if not s_starts(n, ".") and s_ends(n, suffix) and is_file(src + "/" + n) {
+            let _c: bool = copy_file(src + "/" + n, dst + "/" + n)
+        }
+        i = i + 1
+    }
+}
+
+function live(rev: string, files: ptr<ProcStrs>, fc_ok: i32) {
+    let g: ptr<Gate> = G
+    let work: string = g.work
+    let total: i32 = sl_len(files)
+    let ref: string = work + "/pyref"
+    mkdir_p_or_exit(ref)
+    check(pl_git_archive(rev, sl_of2("src/flow", "tools/doc"), ref))
+    # The Python tools find the verify corpus relative to their own tree.
+    let l1: ptr<ProcCmd> = cmd(sl_of3("ln", "-s", g.root + "/lib"))
+    proc_arg(l1, ref + "/lib")
+    check(run(l1))
+    let l2: ptr<ProcCmd> = cmd(sl_of3("ln", "-s", g.root + "/examples"))
+    proc_arg(l2, ref + "/examples")
+    check(run(l2))
+    env_set("REF", ref)
+
+    # 4. Python transpiler on every file.
+    run_jobs("--py-one", work + "/files.txt")
+
+    let mut live_bad: i32 = 0
+    let mut py_ok: i32 = 0
+    let mut diag_line: i32 = 0
+    let mut diag_token: i32 = 0
+    let mut diag_bad: i32 = 0
+    let mut i: i32 = 0
+    while i < total {
+        let f: string = sl_get(files, i)
+        i = i + 1
+        let key: string = pl_key(f)
+        let prc: string = rc_of("py", f)
+        let frc: string = rc_of("fc", f)
+        if s_eq(prc, "0") {
+            py_ok = py_ok + 1
+        }
+        if s_eq(prc, "0") != s_eq(frc, "0") {
+            live_bad = live_bad + 1
+            errln("FAIL live accept/reject " + f + ": python rc=" + prc + " flowc rc=" + frc)
+            continue
+        }
+        if not s_eq(prc, "0") {
+            let pl: string = first_match(work + "/py/" + key + ".log", "at line ([0-9]+)", 1)
+            let fl: string = first_match(work + "/fc/" + key + ".log", "\\.flow:([0-9]+):[0-9]+:", 1)
+            if s_len(pl) > 0 {
+                if s_eq(pl, fl) {
+                    diag_line = diag_line + 1
+                } else {
+                    diag_bad = diag_bad + 1
+                    errln("FAIL diagnostic line " + f + ": python " + pl + ", flowc " + fl)
+                }
+            } else {
+                let ptok: string = first_match(work + "/py/" + key + ".log", "Unexpected token in expression: TokenType\\.([A-Z_]+)", 1)
+                let ftok: string = first_match(work + "/fc/" + key + ".log", "unexpected token '([^']*)'", 1)
+                if s_len(ptok) > 0 and s_eq(py_token(ptok), ftok) {
+                    diag_token = diag_token + 1
+                } else {
+                    diag_bad = diag_bad + 1
+                    errln("FAIL diagnostic token " + f + ": python " + ptok + ", flowc " + ftok)
+                }
+            }
+        }
+    }
+    outln("live python@" + rev + ": python accepts " + s_itoa(py_ok) + "/" + s_itoa(total) + ", flowc " + s_itoa(fc_ok) + "/" + s_itoa(total) + "; accept/reject mismatches: " + s_itoa(live_bad))
+    outln("live diagnostics: same line " + s_itoa(diag_line) + ", same token " + s_itoa(diag_token) + ", mismatches " + s_itoa(diag_bad))
+    g.fail = g.fail + live_bad + diag_bad
+
+    # 5. Program output: the Python C against flowc's, for every program.
+    let main_rx: ptr<Regex> = pl_rx("^[ \\t\\n\\r\\f\\v]*(export[ \\t\\n\\r\\f\\v]+)?function[ \\t\\n\\r\\f\\v]+main[ \\t\\n\\r\\f\\v]*\\(")
+    let mut prog_n: i32 = 0
+    let mut prog_bad: i32 = 0
+    i = 0
+    while i < total {
+        let f: string = sl_get(files, i)
+        i = i + 1
+        let key: string = pl_key(f)
+        if not s_eq(rc_of("py", f), "0") or not pl_grep_file(main_rx, f) {
+            continue
+        }
+        prog_n = prog_n + 1
+        let base: string = work + "/run/" + key
+        let cp: ptr<ProcCmd> = cmd(sl_of3(pl_cc(), "-w", "-O1"))
+        proc_arg(cp, "-o")
+        proc_arg(cp, base + ".py")
+        proc_arg(cp, work + "/py/" + key + ".c")
+        proc_arg(cp, "-lm")
+        let _a: i32 = pl_run(cp, "", "-", 0)
+        let cf: ptr<ProcCmd> = cmd(sl_of3(pl_cc(), "-w", "-O1"))
+        proc_arg(cf, "-o")
+        proc_arg(cf, base + ".fc")
+        proc_arg(cf, work + "/fc/" + key + ".c")
+        proc_arg(cf, "-lm")
+        let _b: i32 = pl_run(cf, "", "-", 0)
+        let pe: i32 = pl_run(pl_cmd1(base + ".py"), base + ".py.out", "&", 0)
+        let fe: i32 = pl_run(pl_cmd1(base + ".fc"), base + ".fc.out", "&", 0)
+        if pe != fe or not same_bytes(base + ".py.out", base + ".fc.out") {
+            prog_bad = prog_bad + 1
+            errln("FAIL program output " + f + " (exit python " + s_itoa(pe) + ", flowc " + s_itoa(fe) + ")")
+        }
+    }
+    outln("live programs: " + s_itoa(prog_n) + " run on both hosts, mismatches: " + s_itoa(prog_bad))
+    g.fail = g.fail + prog_bad
+
+    # 6. Proof artifacts from the Python tools at <rev>.
+    let lib_files: ptr<ProcStrs> = pl_ls_files("lib/verify/*.flow")
+    let _l: bool = write_text(work + "/lib_files.txt", pl_lines_text(lib_files))
+    let _d: bool = write_text(work + "/doc_files.txt", read_text(work + "/files.txt") + read_text(work + "/lib_files.txt"))
+    rm_rf(work + "/docs_fc")
+    let dc: ptr<ProcCmd> = proof_cmd()
+    cmd_env(dc, "FLOWC_PROOF_LIST", work + "/doc_files.txt")
+    cmd_env(dc, "FLOWC_PROOF_OUT", work + "/docs_fc")
+    cmd_env(dc, "FLOWC_PROOF_MIRROR", "1")
+    cmd_env(dc, "FLOWC_PROOF_QUIET", "1")
+    check(run(dc))
+
+    # Directory mode (write_proof_artifacts_tree) on copies of two directories.
+    let dirs: ptr<ProcStrs> = sl_of2("geometry", "euclid/book-ii")
+    i = 0
+    while i < sl_len(dirs) {
+        let d: string = sl_get(dirs, i)
+        i = i + 1
+        let src: string = "examples/verify/" + d
+        let tp: string = work + "/tree_py/" + d
+        let tf: string = work + "/tree_fc/" + d
+        mkdir_p_or_exit(tp + "/scripts")
+        mkdir_p_or_exit(tf + "/scripts")
+        copy_files(src, tp, ".flow")
+        copy_files(src, tf, ".flow")
+        if is_dir(src + "/scripts") {
+            copy_files(src + "/scripts", tp + "/scripts", "")
+            copy_files(src + "/scripts", tf + "/scripts", "")
+        }
+        let names: ptr<ProcStrs> = list_dir(tf)
+        sl_sort(names, false)
+        let mut list: string = ""
+        let mut j: i32 = 0
+        while j < sl_len(names) {
+            let n: string = sl_get(names, j)
+            if s_ends(n, ".flow") and is_file(tf + "/" + n) and not is_link(tf + "/" + n) {
+                list = list + d + "/" + n + "\n"
+            }
+            j = j + 1
+        }
+        let _t: bool = write_text(work + "/tree_list.txt", list)
+        let tc: ptr<ProcCmd> = proof_cmd()
+        cmd_env(tc, "FLOWC_PROOF_LIST", work + "/tree_list.txt")
+        cmd_env(tc, "FLOWC_PROOF_TREE", "1")
+        cmd_cwd(tc, work + "/tree_fc")
+        check(pl_run(tc, work + "/tree_fc_" + s_replace(d, "/", "_") + ".log", "", 0))
+    }
+
+    # Kernel cases: file, then NAME=VALUE pairs.
+    let _k: bool = write_text(work + "/kernel_cases.txt", kernel_cases_text())
+    mkdir_p_or_exit(work + "/kernel")
+    let cases: ptr<ProcStrs> = pl_read_lines(work + "/kernel_cases.txt")
+    i = 0
+    while i < sl_len(cases) {
+        let line: string = sl_get(cases, i)
+        let bar: i32 = s_find_byte(line, 124, 0)
+        let mut kf: string = line
+        let mut params: string = ""
+        if bar >= 0 {
+            kf = s_slice(line, 0, bar)
+            params = s_replace(s_from(line, bar + 1), "|", "\n")
+        }
+        let kc: ptr<ProcCmd> = proof_cmd()
+        cmd_env(kc, "FLOWC_PROOF_KERNEL", "1")
+        cmd_env(kc, "FLOWC_IN", kf)
+        cmd_env(kc, "FLOWC_KERNEL_OUT", work + "/kernel/fc" + s_itoa(i) + ".json")
+        cmd_env(kc, "FLOWC_KERNEL_PARAMS", params)
+        cmd_env(kc, "FLOWC_KERNEL_PLOT", work + "/kernel/fc" + s_itoa(i) + ".dot")
+        check(pl_run(kc, "-", "", 0))
+        i = i + 1
+    }
+
+    # Bundles and `flow know`.
+    let books: ptr<ProcStrs> = sl_of3("book", "basic", "geometry")
+    i = 0
+    while i < 3 {
+        let bc: ptr<ProcCmd> = proof_cmd()
+        cmd_env(bc, "FLOWC_PROOF_BOOK", sl_get(books, i))
+        cmd_env(bc, "FLOWC_PROOF_OUT", work + "/book_fc")
+        cmd_env(bc, "FLOWC_PROOF_NO_REFRESH", "1")
+        check(pl_run(bc, "-", "", 0))
+        i = i + 1
+    }
+    let _q: bool = write_text(work + "/know_queries.txt", know_queries_text())
+    mkdir_p_or_exit(work + "/know_fc")
+    let know: string = work + "/know_fc/know.txt"
+    let _kn: bool = write_text(know, "")
+    let queries: ptr<ProcStrs> = pl_read_lines(work + "/know_queries.txt")
+    i = 0
+    while i < sl_len(queries) {
+        let q: string = sl_get(queries, i)
+        i = i + 1
+        let kc: ptr<ProcCmd> = proof_cmd()
+        cmd_env(kc, "FLOWC_KNOW", q)
+        if pl_run(kc, "+" + know, "-", 0) != 0 {
+            let _u: bool = append_text(know, "UNKNOWN " + q + "\n")
+        }
+    }
+    let lc: ptr<ProcCmd> = proof_cmd()
+    cmd_env(lc, "FLOWC_KNOW_LINT", "1")
+    let _lint: i32 = pl_run(lc, work + "/know_fc/lint.txt", "", 0)
+
+    # The same with the Python tools.
+    check(pl_python(py_proof_tools(), sl_of3(ref, g.root, work)))
+
+    compare_trees("proof documents", work + "/docs_py", work + "/docs_fc")
+    compare_trees("directory mode", work + "/tree_py", work + "/tree_fc")
+    compare_trees("bundles", work + "/book_py", work + "/book_fc")
+    let kfiles: ptr<ProcStrs> = sl_new()
+    let all_k: ptr<ProcStrs> = list_dir(work + "/kernel")
+    sl_sort(all_k, false)
+    let exts: ptr<ProcStrs> = sl_of2(".json", ".dot")
+    let mut e: i32 = 0
+    while e < 2 {
+        let mut j: i32 = 0
+        while j < sl_len(all_k) {
+            let n: string = sl_get(all_k, j)
+            if s_starts(n, "py") and s_ends(n, sl_get(exts, e)) {
+                sl_push(kfiles, n)
+            }
+            j = j + 1
+        }
+        e = e + 1
+    }
+    let mut k_bad: i32 = 0
+    i = 0
+    while i < sl_len(kfiles) {
+        let n: string = sl_get(kfiles, i)
+        i = i + 1
+        if not same_bytes(work + "/kernel/" + n, work + "/kernel/fc" + s_from(n, 2)) {
+            k_bad = k_bad + 1
+            errln("FAIL kernel " + n)
+        }
+    }
+    outln("live kernels: " + s_itoa(sl_len(kfiles) - k_bad) + "/" + s_itoa(sl_len(kfiles)) + " files byte-identical")
+    g.fail = g.fail + k_bad
+    compare_trees("flow know", work + "/know_py", work + "/know_fc")
+}
+
+function finish() {
+    let g: ptr<Gate> = G
+    if g.fail != 0 {
+        outln("parity_proofs: FAIL (" + s_itoa(g.fail) + ")")
+        cli_exit(1)
+    }
+    outln("parity_proofs: PASS")
+    cli_exit(0)
+}
+
+function main() -> i32 {
+    let args: ptr<ProcStrs> = pl_args()
+    let mode: string = sl_get(args, 0)
+    let rev: string = sl_get(args, 1)
+    if s_eq(mode, "--emit-one") {
+        return emit_one(rev)
+    }
+    if s_eq(mode, "--py-one") {
+        return py_one(rev)
+    }
+    G = malloc(32) as ptr<Gate>
+    let g: ptr<Gate> = G
+    g.fail = 0
+    g.root = pl_enter()
+    if s_eq(mode, "--python") and s_len(rev) == 0 {
+        errln(USAGE)
+        cli_exit(2)
+    }
+    g.work = g.root + "/compiler/build/parity_proofs"
+    let work: string = g.work
+    pl_fresh(work, sl_of3("fc", "py", "run"))
+    g.bin = pl_flowc(g.root + "/", true, false)
+    outln("=== parity_proofs: flowc = " + g.bin + " ===")
+
+    let files: ptr<ProcStrs> = pl_ls_files("examples/verify/*.flow")
+    let _f: bool = write_text(work + "/files.txt", pl_lines_text(files))
+    let total: i32 = sl_len(files)
+
+    # 1. Emit every file on flowc the way the flow CLI does (bundle mode when
+    #    the file imports), keeping the exit code and log.
+    env_set("ROOT", g.root)
+    env_set("WORK", work)
+    env_set("BIN", g.bin)
+    run_jobs("--emit-one", work + "/files.txt")
+
+    let mut fc_ok: i32 = 0
+    let rejects: ptr<ProcStrs> = sl_new()
+    let rl: ptr<ProcStrs> = pl_read_lines(DATA + "/python_rejects.txt")
+    let mut i: i32 = 0
+    while i < sl_len(rl) {
+        if not s_starts(sl_get(rl, i), "#") {
+            sl_push(rejects, sl_get(rl, i))
+        }
+        i = i + 1
+    }
+    sl_sort(rejects, false)
+    let _r: bool = write_text(work + "/rejects.txt", pl_lines_text(rejects))
+    let mut reject_bad: i32 = 0
+    i = 0
+    while i < total {
+        let f: string = sl_get(files, i)
+        i = i + 1
+        let rc: string = rc_of("fc", f)
+        if s_eq(rc, "0") {
+            fc_ok = fc_ok + 1
+        }
+        if sl_has(rejects, f) == s_eq(rc, "0") {
+            reject_bad = reject_bad + 1
+            errln("FAIL accept/reject " + f + ": flowc rc=" + rc)
+        }
+    }
+    outln("emit: flowc accepts " + s_itoa(fc_ok) + "/" + s_itoa(total) + "; accept/reject mismatches vs recorded list: " + s_itoa(reject_bad))
+    g.fail = g.fail + reject_bad
+
+    # 2. Programs with a main(): build the flowc C, run it, compare output.
+    let mut run_bad: i32 = 0
+    let exps: ptr<ProcStrs> = glob_suffix(DATA + "/run", ".expected")
+    i = 0
+    while i < sl_len(exps) {
+        let exp: string = sl_get(exps, i)
+        i = i + 1
+        let key: string = path_stem(exp, ".expected")
+        let base: string = work + "/run/" + key
+        let c: ptr<ProcCmd> = cmd(sl_of3(pl_cc(), "-w", "-O1"))
+        proc_arg(c, "-o")
+        proc_arg(c, base)
+        proc_arg(c, work + "/fc/" + key + ".c")
+        proc_arg(c, "-lm")
+        let mut ok: bool = pl_run(c, "", base + ".cc", 0) == 0
+        if ok {
+            ok = pl_run(pl_cmd1(base), base + ".out", "&", 0) == 0
+        }
+        if not ok or not same_bytes(exp, base + ".out") {
+            run_bad = run_bad + 1
+            errln("FAIL run " + key)
+        }
+    }
+    outln("run: " + s_itoa(sl_len(exps)) + " program(s), mismatches: " + s_itoa(run_bad))
+    g.fail = g.fail + run_bad
+
+    # 3. Proof documents for every file, mirrored under $WORK/docs_fc.
+    let dc: ptr<ProcCmd> = proof_cmd()
+    cmd_env(dc, "FLOWC_PROOF_LIST", work + "/files.txt")
+    cmd_env(dc, "FLOWC_PROOF_OUT", work + "/docs_fc")
+    cmd_env(dc, "FLOWC_PROOF_MIRROR", "1")
+    cmd_env(dc, "FLOWC_PROOF_QUIET", "1")
+    check(run(dc))
+    let mut docs_same: i32 = 0
+    let mut docs_n: i32 = 0
+    let mut docs_bad: i32 = 0
+    let exts: ptr<ProcStrs> = sl_of2("proof.md", "proof.tex")
+    i = 0
+    while i < total {
+        let f: string = sl_get(files, i)
+        i = i + 1
+        let d: string = path_dirname(f)
+        let s: string = path_stem(f, ".flow")
+        let mut e: i32 = 0
+        while e < 2 {
+            let ext: string = sl_get(exts, e)
+            e = e + 1
+            docs_n = docs_n + 1
+            if same_bytes(work + "/docs_fc/" + d + "/" + s + "." + ext, d + "/" + s + "." + ext) {
+                docs_same = docs_same + 1
+            } else {
+                docs_bad = docs_bad + 1
+                errln("FAIL doc " + d + "/" + s + "." + ext + " differs from what flowc writes (regenerate: ./flow doc proof " + f + ")")
+            }
+        }
+    }
+    outln("docs: " + s_itoa(docs_same) + "/" + s_itoa(docs_n) + " match the checked-in .proof.md/.proof.tex")
+    g.fail = g.fail + docs_bad
+
+    if s_eq(mode, "--python") {
+        live(rev, files, fc_ok)
+    }
+    finish()
+    return 0
+}
+
+function kernel_cases_text() -> string {
+    return "lib/verify/Nat.flow\n" +
+        "lib/verify/Nat.flow|n=0\n" +
+        "lib/verify/Nat.flow|n=3|m=0\n" +
+        "lib/verify/Bool.flow|a=true\n" +
+        "lib/verify/Bool.flow|a=false|b=yes\n" +
+        "examples/verify/math/derived/Bool-and-assoc.flow|a=false\n" +
+        "examples/verify/math/derived/Bool-de-morgan.flow|a=false\n" +
+        "examples/verify/math/derived/Nat-plus-commutes.flow|a=0|b=1\n" +
+        "examples/verify/geometry/taylor-sin-maclaurin.flow\n" +
+        "examples/verify/math/Int-square-nonneg.flow|n=2\n" +
+        "examples/verify/circuits/full_adder.flow|A=1\n"
+}
+
+function know_queries_text() -> string {
+    return "Nat/+.zero-right\n" +
+        "verify.Nat/+.zero-right\n" +
+        "Bool/||.commutes\n" +
+        "Eq/=.reflexive\n" +
+        "«Nat» «addition» «order does not matter»\n" +
+        "Nat.addition.zero_is_the_left_identity\n" +
+        "examples.verify.math.derived.«Nat» «addition» «zero is the right identity»\n" +
+        "zero is the left identity\n" +
+        "FullAdder/out.correct\n" +
+        "«Geometry» «triangle» «interior angles sum to two right angles»\n" +
+        "Nope/x.missing\n" +
+        "right identity\n" +
+        "lib.verify.Nat/+.zero-left\n"
+}
+
+function py_proof_tools() -> string {
+    return "import os, subprocess, sys\n" +
+        "from pathlib import Path\n" +
+        "ref, root, work = sys.argv[1], sys.argv[2], sys.argv[3]\n" +
+        "sys.path.insert(0, os.path.join(ref, \"src\"))\n" +
+        "os.chdir(root)\n" +
+        "import flow.know as know\n" +
+        "import flow.proof_document as pdoc\n" +
+        "from flow.claim_path import check_duplicate_claims\n" +
+        "from flow.proof_kernel import compile_file_kernel, write_kernel_json, _plot_dot\n" +
+        "\n" +
+        "for f in open(os.path.join(work, \"doc_files.txt\")).read().split(\"\\n\"):\n" +
+        "    if f:\n" +
+        "        pdoc.write_proof_artifacts(f, output_dir=os.path.join(work, \"docs_py\", os.path.dirname(f)))\n" +
+        "\n" +
+        "for d in (\"geometry\", \"euclid/book-ii\"):\n" +
+        "    here = os.getcwd()\n" +
+        "    os.chdir(os.path.join(work, \"tree_py\"))\n" +
+        "    pdoc.write_proof_artifacts_tree(d, recursive=False)\n" +
+        "    os.chdir(here)\n" +
+        "\n" +
+        "out = os.path.join(work, \"kernel\")\n" +
+        "cases = [l.split(\"|\") for l in open(os.path.join(work, \"kernel_cases.txt\")).read().split(\"\\n\") if l]\n" +
+        "for i, parts in enumerate(cases):\n" +
+        "    inst = {}\n" +
+        "    for pair in parts[1:]:\n" +
+        "        k, v = pair.split(\"=\", 1)\n" +
+        "        inst[k.strip()] = v.strip()\n" +
+        "    write_kernel_json(parts[0], output=os.path.join(out, \"py%d.json\" % i), instantiation=inst or None)\n" +
+        "    _plot_dot(compile_file_kernel(parts[0], instantiation=inst or None), os.path.join(out, \"py%d.dot\" % i), title=None)\n" +
+        "\n" +
+        "book = os.path.join(work, \"book_py\")\n" +
+        "os.makedirs(book, exist_ok=True)\n" +
+        "with open(os.path.join(book, \"flow-proof-book.tex\"), \"w\", encoding=\"utf-8\") as fh:\n" +
+        "    fh.write(pdoc.render_side_by_side_bundle(book_parts=pdoc.load_proof_book(root), title=\"Flow Proof Book\"))\n" +
+        "with open(os.path.join(book, \"basic-proofs-side-by-side.tex\"), \"w\", encoding=\"utf-8\") as fh:\n" +
+        "    fh.write(pdoc.render_side_by_side_bundle(pdoc.load_basic_proof_bundle(root), title=\"Flow Basic Proofs\"))\n" +
+        "with open(os.path.join(book, \"geometry-proofs-side-by-side.tex\"), \"w\", encoding=\"utf-8\") as fh:\n" +
+        "    fh.write(pdoc.render_side_by_side_bundle(pdoc.load_geometry_proof_bundle(root), title=\"Flow Euclidean Geometry\"))\n" +
+        "\n" +
+        "kdir = os.path.join(work, \"know_py\")\n" +
+        "os.makedirs(kdir, exist_ok=True)\n" +
+        "with open(os.path.join(kdir, \"know.txt\"), \"w\", encoding=\"utf-8\") as fh:\n" +
+        "    for q in open(os.path.join(work, \"know_queries.txt\"), encoding=\"utf-8\").read().split(\"\\n\"):\n" +
+        "        if not q:\n" +
+        "            continue\n" +
+        "        e = know.lookup_claim(q, root)\n" +
+        "        fh.write((\"UNKNOWN \" + q) if e is None else know.format_know(e))\n" +
+        "        fh.write(\"\\n\")\n" +
+        "# The Python lint walks rglob unsorted; compare in sorted path order.\n" +
+        "rows = []\n" +
+        "for r in know._default_search_roots(root):\n" +
+        "    for fp in sorted(Path(r).rglob(\"*.flow\"), key=lambda p: str(p).replace(\"/\", \"\\x01\")):\n" +
+        "        doc = pdoc.parse_proof_file(str(fp))\n" +
+        "        for thm in doc.theorems:\n" +
+        "            expr = thm.claim_expr or \"\"\n" +
+        "            if not expr:\n" +
+        "                for step in thm.steps:\n" +
+        "                    if step.kind == \"therefore\":\n" +
+        "                        expr = step.text\n" +
+        "                        break\n" +
+        "            if expr:\n" +
+        "                rows.append((thm.claim_path, expr, str(fp)))\n" +
+        "errs = check_duplicate_claims(rows)\n" +
+        "with open(os.path.join(kdir, \"lint.txt\"), \"w\", encoding=\"utf-8\") as fh:\n" +
+        "    fh.write(\"\".join(e + \"\\n\" for e in errs) if errs else \"No duplicate claims found.\\n\")\n"
+}

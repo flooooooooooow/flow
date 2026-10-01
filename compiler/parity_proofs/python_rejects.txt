@@ -1,6 +1,6 @@
 # examples/verify files the Python host rejects (it cannot parse them).
 # Recorded from the Python transpiler at 9103c996; flowc must reject the
-# same files and accept every other one. See compiler/scripts/parity_proofs.sh.
+# same files and accept every other one. See compiler/scripts/parity_proofs.flow.
 examples/verify/euclid/book-i/prop-01-equilateral-triangle.flow
 examples/verify/euclid/book-i/prop-02-copy-segment.flow
 examples/verify/euclid/book-i/prop-04-side-angle-side.flow

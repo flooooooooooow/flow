@@ -1,0 +1,309 @@
+# Parity gate for `flow dap`, the Debug Adapter Protocol server in
+# tools/dap/main.flow (it was src/flow/dap_server.py).
+#
+# Each session feeds scripted client messages to the server, one every
+# half second so the order of replies is fixed, and records the bytes the
+# server wrote to the client and its exit code. Sessions that reach
+# lldb-dap run a fake one (a shell script) that logs every message it gets
+# and answers each with a canned reply holding non-ASCII text and floats,
+# so the log shows the launch rewrite and both directions show the
+# re-serialisation. Results are compared with tests/dap/golden/.
+#
+#   ./flow tool compiler/scripts/parity_dap.flow
+#       the Flow server, with python and python3 stubbed out on PATH.
+#
+#   ./flow tool compiler/scripts/parity_dap.flow --write-golden <rev>
+#       rewrite the goldens from the Python server at git revision <rev>
+#       (the last one is e6a7f046), with _find_lldb_dap patched to the fake
+#       (or to None) and REPO set to this checkout.
+#
+# Normalised: the checkout and work directory paths.
+#
+# The timed feed is this program run again as a worker (`--feed SCRIPT`),
+# piped into the server by `/bin/sh -c`: std.process runs one child at a
+# time and has no pipeline (#1109), and the replies only come in a fixed
+# order when the messages arrive spaced out while the server runs.
+#
+# The fake lldb-dap stays a small shell script the gate writes at run time:
+# it stands in for an external debugger, and its text contains a literal
+# `${`, which a Flow string can only spell split in two (#1108).
+
+import "tools/flow_cli/sys.flow"
+import "compiler/scripts/parity_lib.flow"
+import std.process { ProcCmd, ProcStrs, proc_arg, proc_argv, proc_input, proc_sleep_ms }
+import std.regex { Regex, rx_sub }
+
+const USAGE: string = "usage: ./flow tool compiler/scripts/parity_dap.flow"
+
+# Strings the whole gate shares (module statics cannot be strings).
+struct Gate {
+    root: string,
+    work: string,
+    gold: string,
+    stub_dir: string,
+    pysrc: string,
+    fake: string
+}
+
+let mut G: ptr<Gate> = null
+
+# One DAP frame: the header, then the body.
+function frame(body: string) -> string {
+    return "Content-Length: " + s_itoa(s_len(body)) + "\r\n\r\n" + body
+}
+
+# Worker: write the frames of a session script to stdout, one every half
+# second; a SLEEP line waits 4 s after a launch that builds, so every
+# reply lands before the next message goes out.
+function feed(script: string) -> i32 {
+    let lines: ptr<ProcStrs> = s_lines(script)
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let line: string = sl_get(lines, i)
+        i = i + 1
+        if s_len(line) == 0 {
+            continue
+        }
+        if s_eq(line, "SLEEP") {
+            proc_sleep_ms(4000)
+            continue
+        }
+        out(frame(line))
+        proc_sleep_ms(500)
+    }
+    proc_sleep_ms(1000)
+    return 0
+}
+
+function session_fallback() -> string {
+    return "{\"seq\":1,\"type\":\"request\",\"command\":\"initialize\",\"arguments\":{\"clientID\":\"vscode\",\"clientName\":\"Zed é\",\"linesStartAt1\":true}}\n" +
+        "{\"seq\":2,\"type\":\"request\",\"command\":\"threads\"}\n" +
+        "{\"seq\":3,\"type\":\"request\"}\n" +
+        "{\"seq\":4,\"type\":\"request\",\"command\":\"launch\",\"arguments\":{\"flowFile\":\"examples/basics/hello_world.flow\"}}\n" +
+        "{\"seq\":5,\"type\":\"request\",\"command\":\"threads\"}\n"
+}
+
+function session_eof() -> string {
+    return "{\"seq\":7,\"type\":\"request\",\"command\":\"initialize\"}\n" +
+        "{\"type\":\"request\",\"command\":\"setBreakpoints\",\"arguments\":{\"lines\":[1,2]}}\n"
+}
+
+function session_lldb(broken: string, root: string) -> string {
+    return "{\"seq\":1,\"type\":\"request\",\"command\":\"initialize\",\"arguments\":{\"clientName\":\"Zed é\",\"ratio\":1.50,\"big\":1e20,\"neg\":-0,\"lines\":[[1,2],[]],\"empty\":{}}}\n" +
+        "{\"seq\":2,\"type\":\"request\",\"command\":\"launch\",\"arguments\":{\"stopOnEntry\":true,\"flowFile\":\"examples/basics/hello_world.flow\",\"env\":{\"A\":\"1\"}}}\n" +
+        "SLEEP\n" +
+        "{\"seq\":3,\"type\":\"request\",\"command\":\"launch\",\"arguments\":{\"stopOnEntry\":false}}\n" +
+        "{\"seq\":4,\"type\":\"request\",\"command\":\"launch\"}\n" +
+        "{\"seq\":5,\"type\":\"request\",\"command\":\"launch\",\"arguments\":{\"program\":\"" + broken + "\",\"cwd\":\"/tmp\"}}\n" +
+        "SLEEP\n" +
+        "{\"seq\":6,\"type\":\"request\",\"command\":\"launch\",\"arguments\":{\"flowFile\":\"\",\"program\":\"basics/hello_world.flow\",\"cwd\":\"" + root + "/examples\",\"args\":[\"x\"]}}\n" +
+        "SLEEP\n" +
+        "{\"seq\":7,\"command\":\"launch\",\"type\":\"request\",\"arguments\":{\"source\":\"examples/nope/missing.flow\",\"cwd\":null}}\n" +
+        "SLEEP\n" +
+        "{\"seq\":8,\"type\":\"event\",\"command\":\"launch\",\"arguments\":{\"flowFile\":\"x.flow\"}}\n" +
+        "{\"seq\":9,\"type\":\"request\",\"command\":\"setBreakpoints\",\"arguments\":{\"source\":{\"path\":\"/a/b.flow\"},\"breakpoints\":[{\"line\":3}],\"x\":\"\\u0001\\\"\\\\/\"}}\n" +
+        "{\"seq\":10,\"type\":\"request\",\"command\":\"disconnect\",\"arguments\":{\"terminateDebuggee\":true}}\n"
+}
+
+function normalise(text: string) -> string {
+    let g: ptr<Gate> = G
+    return s_replace(s_replace(text, g.work, "<WORK>"), g.root, "<ROOT>")
+}
+
+# What the comparison ignores: Content-Length values (they count the real
+# paths, so they depend on where the checkout lives) and the build log a
+# failed `flow debug` launch carries (the flow CLI's messages, which differ
+# by host and by flowc version). The message itself must still be there.
+function canon(text: string) -> string {
+    let len_rx: ptr<Regex> = pl_rx("Content-Length: [0-9]+")
+    let log_rx: ptr<Regex> = pl_rx("(flow debug --no-launch failed:)[^\"]*\"")
+    let lines: ptr<ProcStrs> = s_split(text, 10)
+    let mut res: string = ""
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        if i > 0 {
+            res = res + "\n"
+        }
+        res = res + rx_sub(log_rx, "\\1 <BUILD LOG>\"", rx_sub(len_rx, "Content-Length: N", sl_get(lines, i), 0), 0)
+        i = i + 1
+    }
+    return res
+}
+
+function run_session(name: string, lldb: string, script: string) {
+    let g: ptr<Gate> = G
+    let o: string = g.work + "/out/" + name
+    mkdir_p_or_exit(o)
+    let _l: bool = write_text(o + "/lldb.log", "")
+    let mut c: ptr<ProcCmd> = null
+    if s_len(g.pysrc) > 0 {
+        let mut find: string = "None"
+        if s_eq(lldb, "fake") {
+            find = "'" + g.fake + "'"
+        }
+        let code: string = "\nimport sys\nsys.path.insert(0, '" + g.pysrc + "/src')\nfrom pathlib import Path\nimport flow.dap_server as m\nm.REPO = Path('" + g.root + "')\nm._find_lldb_dap = lambda: " + find + "\nsys.exit(m.run_ide_adapter())\n"
+        c = cmd(sl_of3("/bin/sh", "-c", "\"$0\" --feed \"$1\" | python3 -c \"$2\""))
+        proc_arg(c, proc_argv(0))
+        proc_arg(c, script)
+        proc_arg(c, code)
+    } else {
+        let mut forced: string = "-"
+        if s_eq(lldb, "fake") {
+            forced = g.fake
+        }
+        c = cmd(sl_of3("/bin/sh", "-c", "\"$0\" --feed \"$1\" | \"$2\" dap examples/basics/hello_world.flow"))
+        proc_arg(c, proc_argv(0))
+        proc_arg(c, script)
+        proc_arg(c, g.root + "/flow")
+        cmd_env(c, "PATH", g.stub_dir + ":" + env("PATH"))
+        cmd_env(c, "FLOW_LLDB_DAP", forced)
+    }
+    cmd_env(c, "FAKE_LOG", o + "/lldb.log")
+    let rc: i32 = pl_run(c, o + "/stdout", o + "/stderr", 0)
+    let res: string = "exit=" + s_itoa(rc) + "\n--- to client\n" + normalise(read_text(o + "/stdout")) + "\n--- to lldb-dap\n" + normalise(read_text(o + "/lldb.log"))
+    let _w: bool = write_text(o + "/result", res)
+}
+
+function main() -> i32 {
+    let args: ptr<ProcStrs> = pl_args()
+    let mode: string = sl_get(args, 0)
+    let rev: string = sl_get(args, 1)
+    if s_eq(mode, "--feed") {
+        return feed(rev)
+    }
+    G = malloc(48) as ptr<Gate>
+    let g: ptr<Gate> = G
+    let _r: string = pl_enter()
+    g.root = abs_dir_physical(_r)
+    g.gold = g.root + "/tests/dap/golden"
+    g.work = g.root + "/compiler/build/parity_dap"
+    g.pysrc = ""
+    env_set("LC_ALL", "C")
+    rm_rf(g.work)
+    mkdir_p_or_exit(g.work)
+
+    # ------------------------------------------------------------ fake lldb-dap
+    g.fake = g.work + "/fake-lldb-dap"
+    pl_write_exec(g.fake, fake_lldb_dap_text())
+
+    # ------------------------------------------------------------ fixtures
+    # A program that does not build. A parse error stops flowc under the
+    # lenient checking `flow debug` uses; an unbound name is only a C error
+    # there.
+    let broken: string = g.work + "/broken.flow"
+    let _b: bool = write_text(broken, "function main() -> i32 {\n    let x: i32 = 1 +\n    return x\n}\n")
+
+    # ------------------------------------------------------------ runner
+    g.stub_dir = g.work + "/stubbin"
+    mkdir_p_or_exit(g.stub_dir)
+    let pys: ptr<ProcStrs> = sl_of2("python", "python3")
+    let mut i: i32 = 0
+    while i < 2 {
+        let name: string = sl_get(pys, i)
+        pl_write_exec(g.stub_dir + "/" + name, "#!/bin/sh\necho \"" + name + " $*\" >> \"" + g.work + "/python-calls.log\"\nexit 127\n")
+        i = i + 1
+    }
+
+    if s_eq(mode, "--write-golden") {
+        if s_len(rev) == 0 {
+            errln(USAGE + " --write-golden <rev>")
+            cli_exit(2)
+        }
+        g.pysrc = g.work + "/pysrc"
+        mkdir_p_or_exit(g.pysrc)
+        check(pl_git_archive(rev, sl_of1("src/flow"), g.pysrc))
+        mkdir_p_or_exit(g.gold)
+    }
+
+    # Build the debug binary, flowc and the server outside the sessions.
+    let d1: ptr<ProcCmd> = cmd(sl_of3(g.root + "/flow", "debug", "examples/basics/hello_world.flow"))
+    proc_arg(d1, "--no-launch")
+    let _d1: i32 = pl_run(d1, "-", "-", 0)
+    let d2: ptr<ProcCmd> = cmd(sl_of3(g.root + "/flow", "debug", broken))
+    proc_arg(d2, "--no-launch")
+    let _d2: i32 = pl_run(d2, "-", "-", 0)
+    if s_len(g.pysrc) == 0 {
+        let d3: ptr<ProcCmd> = cmd(sl_of3(g.root + "/flow", "dap", "examples/basics/hello_world.flow"))
+        cmd_env(d3, "PATH", g.stub_dir + ":" + env("PATH"))
+        cmd_env(d3, "FLOW_LLDB_DAP", "-")
+        proc_input(d3, "\n")
+        let _d3: i32 = pl_run(d3, "-", "-", 0)
+    }
+
+    let mut pass: i32 = 0
+    let mut fail: i32 = 0
+    let names: ptr<ProcStrs> = sl_of3("fallback", "eof", "lldb")
+    let modes: ptr<ProcStrs> = sl_of3("none", "none", "fake")
+    let scripts: ptr<ProcStrs> = sl_of3(session_fallback(), session_eof(), session_lldb(broken, g.root))
+    i = 0
+    while i < 3 {
+        let name: string = sl_get(names, i)
+        run_session(name, sl_get(modes, i), sl_get(scripts, i))
+        i = i + 1
+        let o: string = g.work + "/out/" + name
+        if s_len(g.pysrc) > 0 {
+            let _c: bool = copy_file(o + "/result", g.gold + "/" + name + ".txt")
+            outln("wrote " + name)
+        } else {
+            let want: string = canon(read_text(g.gold + "/" + name + ".txt"))
+            let got: string = canon(read_text(o + "/result"))
+            if s_eq(want, got) {
+                pass = pass + 1
+            } else {
+                fail = fail + 1
+                outln("FAIL " + name)
+                # The canonical forms go to a temporary directory for diff.
+                let t: string = mktemp_dir_default()
+                let _w1: bool = write_text(t + "/golden", want)
+                let _w2: bool = write_text(t + "/result", got)
+                out(pl_diff_head(t + "/golden", t + "/result", 60, true))
+                rm_rf(t)
+            }
+        }
+    }
+
+    if s_len(g.pysrc) > 0 {
+        cli_exit(0)
+    }
+    if nonempty(g.work + "/python-calls.log") {
+        errln("FAIL python was called:")
+        errs(read_text(g.work + "/python-calls.log"))
+        cli_exit(1)
+    }
+    outln("parity_dap: " + s_itoa(pass) + " passed, " + s_itoa(fail) + " failed")
+    if fail != 0 {
+        cli_exit(1)
+    }
+    cli_exit(0)
+    return 0
+}
+
+function fake_lldb_dap_text() -> string {
+    return "#!/bin/sh\n" +
+        "# Logs each DAP message it reads to $FAKE_LOG and answers it.\n" +
+        "export LC_ALL=C\n" +
+        "send() {\n" +
+        "    n=$(printf '%s' \"$1\" | wc -c | tr -d ' ')\n" +
+        "    printf 'Content-Length: %s\\r\\n\\r\\n%s' \"$n\" \"$1\"\n" +
+        "}\n" +
+        "send '{\"seq\":1,\"type\":\"event\",\"event\":\"output\",\"body\":{\"category\":\"console\",\"output\":\"fake lldb-dap ready\\n\"}}'\n" +
+        "count=1\n" +
+        "while :; do\n" +
+        "    len=\"\"\n" +
+        "    got=0\n" +
+        "    while IFS= read -r line; do\n" +
+        "        got=1\n" +
+        "        line=$(printf '%s' \"$line\" | tr -d '\\r')\n" +
+        "        [ -z \"$line\" ] && break\n" +
+        "        case \"$line\" in\n" +
+        "            Content-Length:*) len=$(printf '%s' \"$" + "{line#Content-Length:}\" | tr -d ' ') ;;\n" +
+        "        esac\n" +
+        "    done\n" +
+        "    [ \"$got\" = 1 ] && [ -n \"$len\" ] || exit 0\n" +
+        "    body=$(dd bs=1 count=\"$len\" 2>/dev/null)\n" +
+        "    printf 'Content-Length: %s\\r\\n\\r\\n%s' \"$len\" \"$body\" >> \"$FAKE_LOG\"\n" +
+        "    printf '\\n' >> \"$FAKE_LOG\"\n" +
+        "    count=$((count + 1))\n" +
+        "    send '{\"seq\":'\"$count\"',\"type\":\"response\",\"success\":true,\"body\":{\"text\":\"café é 😀 tab\\t\",\"nums\":[1,2.50,-0,1e20,1.5e-7,3.0E2,0.0001,123456789012345678],\"ok\":false,\"none\":null,\"nested\":{\"a\":[]}}}'\n" +
+        "done\n"
+}

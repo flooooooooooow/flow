@@ -135,7 +135,7 @@ emitted by itself. Keep going until two generations agree.
 
 Then run the parity gates for what you touched. All of them work without
 Python in golden mode: `parity_lowering.flow`, `parity_effects.flow`,
-`parity_proofs.sh`, `parity_mlir.flow`, `parity_field_dsl.flow`,
+`parity_proofs.flow`, `parity_mlir.flow`, `parity_field_dsl.flow`,
 `parity_dynamics_dsl.flow`, `parity_flow_blocks.flow`, `parity_shader_dsl.flow`,
 `parse_coverage.sh --check`, `fmt_check.sh --check` and
 `corpus_parity.sh --check`, all under `compiler/scripts/`. A `.flow` gate

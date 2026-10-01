@@ -315,7 +315,7 @@ jobs:
       # Python behaviour (accept/reject, program output). The live diff
       # against the Python at a revision is `--python <rev>`.
       - name: proof layer parity (flowc)
-        run: timeout 20m ./compiler/scripts/parity_proofs.sh
+        run: timeout 20m ./flow tool compiler/scripts/parity_proofs.flow
 
       - name: Stage flowc driver for artifact
         run: |
@@ -383,10 +383,10 @@ jobs:
         run: ./flow tool tests/pywheel/run.flow
 
       - name: Project test runner parity (flow test)
-        run: ./compiler/scripts/parity_project_test.sh
+        run: ./flow tool compiler/scripts/parity_project_test.flow
 
       - name: Debug adapter parity (flow dap)
-        run: ./compiler/scripts/parity_dap.sh
+        run: ./flow tool compiler/scripts/parity_dap.flow
 
       - name: FIR-G goldens (flow fir-g)
         run: ./flow tool tests/fir/run.flow

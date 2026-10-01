@@ -3,7 +3,7 @@
 #
 # Prints one `KIND|input|result` line per case. The full proof documents
 # (compiler/src/proof_doc.flow) are held to the former Python by
-# compiler/scripts/parity_proofs.sh.
+# compiler/scripts/parity_proofs.flow.
 #
 # Run directly:  ./flow run examples/compilers/proof_parse_demo.flow
 
