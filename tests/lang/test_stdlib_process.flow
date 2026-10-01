@@ -4,12 +4,13 @@
 # Exit 0 on success; a nonzero exit names the failing check.
 
 import std.process {
-    ProcCmd, ProcResult, ProcStrs, proc_cmd, proc_sh, proc_arg, proc_env,
+    ProcCmd, ProcResult, ProcStrs, ProcHandle, ProcPipe, proc_cmd, proc_sh, proc_arg, proc_env,
     proc_env_clear, proc_cwd, proc_timeout_ms, proc_input, proc_stdout,
     proc_stderr, proc_run, proc_status, proc_output, proc_ok, proc_argc,
     proc_argv, proc_args, proc_strs_len, proc_getenv, proc_has_env,
     proc_setenv, proc_unsetenv, proc_getcwd, proc_which, proc_pid,
-    proc_now_ms, PROC_NULL, PROC_MERGE
+    proc_now_ms, proc_spawn, proc_wait, proc_wait_any, proc_pipe_new,
+    proc_attach_stdin, proc_attach_stdout, PROC_NULL, PROC_MERGE
 }
 
 # Programs declare libc through extern with Flow types, which clash with
@@ -153,6 +154,39 @@ function main() -> i32 {
     let cwd_buf: ptr<u8> = malloc(4096) as ptr<u8>
     let _g: ptr<u8> = getcwd(cwd_buf, 4096)
     if eq(cwd_buf as string, proc_getcwd()) == false { return 32 }
+
+    # Several children can run while each child's pipes are drained.
+    let slow: ptr<ProcCmd> = proc_sh("sleep 1; printf slow")
+    let fast: ptr<ProcCmd> = proc_sh("printf fast")
+    let hs: ptr<ProcHandle> = proc_spawn(slow)
+    let hf: ptr<ProcHandle> = proc_spawn(fast)
+    let handles: ptr<ptr<ProcHandle>> = malloc(16) as ptr<ptr<ProcHandle>>
+    handles[0] = hs
+    handles[1] = hf
+    let which: ptr<i32> = malloc(4) as ptr<i32>
+    let first: ptr<ProcResult> = proc_wait_any(handles, 2, which)
+    if which[0] != 1 or eq(first.stdout, "fast") == false { return 33 }
+    let last: ptr<ProcResult> = proc_wait(hs)
+    if eq(last.stdout, "slow") == false { return 34 }
+
+    # A pipe can connect a producer directly to a consumer.
+    let link: ptr<ProcPipe> = proc_pipe_new()
+    let producer: ptr<ProcCmd> = proc_sh("printf 'abc\\n'")
+    let consumer: ptr<ProcCmd> = proc_cmd("tr")
+    proc_arg(consumer, "a-z")
+    proc_arg(consumer, "A-Z")
+    proc_attach_stdout(producer, link)
+    proc_attach_stdin(consumer, link)
+    let hp: ptr<ProcHandle> = proc_spawn(producer)
+    let hc: ptr<ProcHandle> = proc_spawn(consumer)
+    let cr: ptr<ProcResult> = proc_wait(hc)
+    let _pr: ptr<ProcResult> = proc_wait(hp)
+    if cr.exit_code != 0 {
+        return 36
+    }
+    if eq(cr.stdout, "ABC\n") == false {
+        return 37
+    }
 
     # PATH lookup.
     let sh: string = proc_which("sh")
