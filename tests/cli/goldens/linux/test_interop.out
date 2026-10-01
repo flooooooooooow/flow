@@ -1,8 +1,5 @@
 [0;34mℹ️  Running interop tests...[0m
 [0;34mℹ️  Running FLOW runtime tests...[0m
-[0;31m❌ ✗ tests/runtime/interop/python_embed.flow (exit code 1)[0m
+[0;32m✅ ✓ tests/runtime/interop/python_embed.flow[0m
 ----------------------------------------
-[0;31m❌ Runtime test failures: 1/1[0m
-
-Failed files:
-  - tests/runtime/interop/python_embed.flow (exit=1)
+[0;32m✅ All 1 runtime tests passed![0m
