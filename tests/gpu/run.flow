@@ -1,0 +1,175 @@
+# `flow gpu` parity gate: Metal and WGSL shaders for @gpu functions.
+#
+# Runs `./flow gpu [--wgsl] PROGRAM` for every case in tests/gpu/cases.txt
+# with python and python3 stubbed out on PATH, and compares stdout, stderr,
+# the exit status and every file written under build/gpu or build/wgsl with
+# the goldens in tests/gpu/expected/<case>/. The repository path is replaced
+# by @ROOT@ in both, so the goldens hold on any checkout.
+#
+# The goldens were recorded from the Python generator (src/flow/metal_codegen.py
+# and src/flow/wgsl_codegen.py, run by the flow-driver of PARITY_REF):
+#
+#   ./flow tool tests/gpu/run.flow --record   # needs python3 and git; rewrites the goldens
+#
+# Where the Flow tool's text differs from Python's by design, the case's
+# golden holds the Flow text and tests/gpu/KNOWN_DIFFERENCES.md says why:
+# a Python traceback became one `error: ...` line, and parse and import
+# errors come from the flowc front end.
+#
+# Usage: ./flow tool tests/gpu/run.flow [--record]
+
+import "tools/flow_cli/sys.flow"
+import "scripts/tools/lib/testrun.flow"
+import std.process { ProcCmd, ProcStrs, proc_arg }
+
+let mut ROOT: string = ""
+let mut DRIVER_ROOT: string = ""
+
+# Paths of this checkout (or the recording tree) become @ROOT@. The shaders
+# credit tools/gpu/main.flow where they credited the Python file.
+function normalise(text: string) -> string {
+    let a: string = s_replace(text, DRIVER_ROOT, "@ROOT@")
+    let b: string = s_replace(a, ROOT, "@ROOT@")
+    return s_replace(b, "by src/flow/wgsl_codegen.py", "by tools/gpu/main.flow")
+}
+
+# The program path with / and . as _ (`tr '/.' '__'`).
+function tag_of(prog: string) -> string {
+    return s_replace(s_replace(prog, "/", "_"), ".", "_")
+}
+
+function main() -> i32 {
+    ROOT = tr_enter_root()
+    let parity_ref: string = env_or("PARITY_REF", "fcd2edfe")
+    let cases_file: string = "tests/gpu/cases.txt"
+    let exp: string = "tests/gpu/expected"
+    let args: ptr<ProcStrs> = tr_args()
+    let record: bool = sl_len(args) > 0 and s_eq(sl_get(args, 0), "--record")
+    let work: string = tr_workdir("flow-gpu-gate")
+    let log: string = work + "/python-calls.log"
+
+    DRIVER_ROOT = ROOT
+    if record {
+        # The Python generator as it was: that revision's driver and src/flow.
+        DRIVER_ROOT = work + "/ref"
+        let _m: bool = mkdir_p(DRIVER_ROOT)
+        let ga: ptr<ProcStrs> = sl_of3("git", "archive", "--output")
+        sl_push2(ga, work + "/ref.tar", parity_ref)
+        sl_extend(ga, s_words("flow flow-driver src lib compiler/scripts compiler/bootstrap"))
+        check(run_argv(ga))
+        let tx: ptr<ProcStrs> = sl_of3("tar", "-x", "-f")
+        sl_push2(tx, work + "/ref.tar", "-C")
+        sl_push(tx, DRIVER_ROOT)
+        check(run_argv(tx))
+    } else {
+        tr_stub_python_log(work + "/bin", log)
+        # Build the tool first, so no case sees the build messages.
+        let b: ptr<ProcCmd> = cmd(sl_of3("./flow", "gpu", "tests/gpu/programs/no_gpu.flow"))
+        cmd_quiet(b)
+        let _b: i32 = run(b)
+    }
+
+    let mut pass: i32 = 0
+    let mut fail: i32 = 0
+    let lines: ptr<ProcStrs> = s_lines(read_text(cases_file))
+    let mut li: i32 = 0
+    while li < sl_len(lines) {
+        let words: ptr<ProcStrs> = s_words(sl_get(lines, li))
+        li = li + 1
+        if sl_len(words) == 0 or s_starts(sl_get(words, 0), "#") {
+            continue
+        }
+        let lang: string = sl_get(words, 0)
+        let prog: string = sl_join(sl_tail(words, 1), " ")
+        let tag: string = tag_of(prog) + "_" + lang
+        let mut sub: string = "gpu"
+        let gpu_argv: ptr<ProcStrs> = sl_of2(DRIVER_ROOT + "/flow", "gpu")
+        if s_eq(lang, "wgsl") {
+            sl_push(gpu_argv, "--wgsl")
+            sub = "wgsl"
+        }
+        sl_push(gpu_argv, ROOT + "/" + prog)
+        rm_rf(DRIVER_ROOT + "/build/gpu")
+        rm_rf(DRIVER_ROOT + "/build/wgsl")
+        let o: string = work + "/out/" + tag
+        let _m: bool = mkdir_p(o + "/files")
+        # Keep the program's directory free of the Python resolver's cache.
+        let c: ptr<ProcCmd> = cmd(gpu_argv)
+        tr_cmd_cd(c, ROOT)
+        cmd_env(c, "NO_COLOR", "1")
+        let rc: i32 = tr_run_cmd_files(c, o + "/stdout.raw", o + "/stderr.raw")
+        let _r: bool = write_text(o + "/rc", s_itoa(rc) + "\n")
+        let _so: bool = write_text(o + "/stdout", normalise(read_text(o + "/stdout.raw")))
+        let raw_err: string = read_text(o + "/stderr.raw")
+        if record and (s_starts(raw_err, "Traceback") or s_contains(raw_err, "\nTraceback")) {
+            # A Python traceback is recorded as the one line the Flow tool prints.
+            let mut last: string = tr_tail(raw_err, 1)
+            let pfx: string = "flow.wgsl_codegen.WgslUnsupported: "
+            if s_starts(last, pfx) {
+                last = "error: " + s_from(last, s_len(pfx))
+            }
+            let _se: bool = write_text(o + "/stderr", last)
+        } else {
+            let _se2: bool = write_text(o + "/stderr", normalise(raw_err))
+        }
+        let built: string = DRIVER_ROOT + "/build/" + sub
+        if is_dir(built) {
+            let names: ptr<ProcStrs> = list_dir(built)
+            sl_sort(names, false)
+            let mut k: i32 = 0
+            while k < sl_len(names) {
+                let f: string = built + "/" + sl_get(names, k)
+                if is_file(f) and not s_starts(sl_get(names, k), ".") {
+                    let _wf: bool = write_text(o + "/files/" + sl_get(names, k), normalise(read_text(f)))
+                }
+                k = k + 1
+            }
+        }
+        rm_f(o + "/stdout.raw")
+        rm_f(o + "/stderr.raw")
+        # An empty files/ is not kept in a golden (the repository holds no empty
+        # directories); drop it so the diff matches.
+        if sl_len(list_dir(o + "/files")) == 0 {
+            rm_rf(o + "/files")
+        }
+        if record {
+            if is_file(exp + "/" + tag + "/KEEP") {
+                outln("keep  " + tag + " (known difference, golden holds the Flow text)")
+                continue
+            }
+            rm_rf(exp + "/" + tag)
+            let _me: bool = mkdir_p(exp + "/" + tag)
+            let _ct: bool = tr_copy_tree(o, exp + "/" + tag)
+            outln("rec   " + tag)
+            continue
+        }
+        let dv: ptr<ProcStrs> = sl_of3("diff", "-r", "-x")
+        sl_push2(dv, "KEEP", exp + "/" + tag)
+        sl_push(dv, o)
+        let dc: ptr<ProcCmd> = cmd(dv)
+        let rd: i32 = run_to_file(dc, work + "/diff.txt", true)
+        if rd == 0 {
+            pass = pass + 1
+        } else {
+            fail = fail + 1
+            outln("FAIL " + tag)
+            out(tr_head(read_text(work + "/diff.txt"), 20))
+        }
+    }
+
+    if record {
+        cli_exit(0)
+    }
+    # GPU_GATE_SAVE=DIR keeps this run's outputs, to inspect or to accept a
+    # known difference.
+    let save: string = env("GPU_GATE_SAVE")
+    if s_len(save) > 0 {
+        let _s: bool = tr_copy_tree(work + "/out", save)
+    }
+    if tr_python_called(log, "gpu gate: python was called:") {
+        fail = fail + 1
+    }
+    outln("gpu gate: " + s_itoa(pass) + " passed, " + s_itoa(fail) + " failed")
+    tr_exit(fail)
+    return 0
+}

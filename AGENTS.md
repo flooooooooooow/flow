@@ -185,7 +185,7 @@ under the same `FLOW_DENOTATIONAL=1` switch (docs/design/mlir-in-flow.md).
 
 The Python compiler is deleted: flowc is the only compiler for C and MLIR.
 The shell tests in `tests/scripts/` drive `./flow` and the scripts as
-subprocesses (`./flow test-scripts`); no pytest is left. Front-end crashes are `tests/fuzz/run.sh`
+subprocesses (`./flow test-scripts`); no pytest is left. Front-end crashes are `./flow tool tests/fuzz/run.flow`
 and the Stable corpus is `./flow tool tests/conformance/run.flow`.
 
 ### Bootstrap suite
