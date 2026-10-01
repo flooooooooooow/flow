@@ -31,35 +31,13 @@ on:
       - '**.py'
       - '**.sh'
       - 'tools/python_ratchet/**'
+  # Every pull request runs the workflow, whatever paths it touches. The
+  # `changes` job gates each job by path, and a skipped job counts as passing
+  # for a required check, so every PR gets a CI status. A paths list here left
+  # PRs outside it with no status at all, which deadlocks required checks
+  # (#816).
   pull_request:
     branches: [main, master]
-    paths:
-      - 'compiler/**'
-      - 'tests/**'
-      - 'examples/**'
-      - 'lib/**'
-      - 'runtime/**'
-      - 'flow'
-      - 'Makefile'
-      - 'tools/**'
-      - 'flow.toml'
-      - '.gitignore'
-      - '.github/**'
-      - 'VERSION'
-      - 'requirements.txt'
-      - 'requirements.lock'
-      - 'scripts/**'
-      - 'plugins/**'
-      # Version consistency and Doc links are deliberately ungated at the job
-      # level so markdown drift gets caught. That only works if the workflow
-      # itself fires, so docs-only changes have to be in this list too.
-      - 'docs/**'
-      - 'mkdocs.yml'
-      - 'CITATION.cff'
-      - '**.md'
-      - '**.py'
-      - '**.sh'
-      - 'tools/python_ratchet/**'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
