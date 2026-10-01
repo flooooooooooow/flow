@@ -172,19 +172,22 @@ Merge train of 2026-09-27 to 2026-09-29, all squash-merged to main: #980
 DSL), #989 (package manager), #1001 (parse coverage), #1012 (pattern, ui,
 fork, sort and unit lowering), #1014 (algebraic effects), #1013 (proof
 layer), #1015 (Stage-A batch 3), #1016 (native LSP), #1019 (lossless
-formatter), #1020 (MLIR emitter) and #1018 (corpus parity). Open from it:
-#1021 (CI jobs for the parity gates) and #1022 (ratchet baseline).
+formatter), #1020 (MLIR emitter) and #1018 (corpus parity), then #1021 (CI
+jobs for the parity gates) and #1022 (ratchet baseline).
 
 Every source read in flowc goes through `flowc_expand_stages_in_place` in
 `resolve.flow`: the fill-shader stub (mask 8), then the Field DSL (1), the
 dynamics DSL (2) and flow blocks (4). The bundle takes up to 128 modules and
 4 MiB of C.
 
-Denotational MLIR lane (2026-09-22): a `flow.*` dialect that keeps the
-vector-field structure of `flow` evolution blocks for the MLIR passes (#664,
-#665, #667, #671). Not merged. The Python MLIR generator it hooked into is
-deleted, so the lane now lands as a pass in `compiler/src/mlirgen.flow`
-under the same `FLOW_DENOTATIONAL=1` switch (docs/design/mlir-in-flow.md).
+Denotational MLIR: a `flow.*` dialect that keeps the vector-field structure
+of `flow` evolution blocks for the MLIR optimization issues (#664, #665,
+#667, #671). Nobody is working on it. The Python prototype was written
+against the retired compiler and never merged; it is kept at the tag
+`archive/feat/denotational-mlir`. The design and the remaining Flow slice
+for `compiler/src/mlirgen.flow` are in docs/design/denotational-mlir.md.
+Other reference implementations against the Python compiler are listed in
+docs/project/archive-tags.md.
 
 The Python compiler is deleted: flowc is the only compiler for C and MLIR.
 The tests in `tests/scripts/` are Flow programs (shared harness:
@@ -195,7 +198,7 @@ crashes are `./flow tool tests/fuzz/run.flow` and the Stable corpus is
 
 ### Bootstrap suite
 
-The bootstrap suite is every `.flow` file under `tests/lang/` (183 files)
+The bootstrap suite is every `.flow` file under `tests/lang/` (254 files)
 compiled by the Stage-A compiler in bundle mode, then by cc. flowc reads its
 input and output paths from `FLOWC_IN` and `FLOWC_OUT`. Paths given as
 arguments are ignored and flowc runs its self-test instead, which is how an
@@ -217,14 +220,13 @@ done
 echo "pass=$pass fail=$fail"
 ```
 
-Current on main (2026-09-29): 179 pass, 4 fail.
+Current on main (2026-10-01, macOS arm64): 251 pass, 3 fail.
 
-- Closures passed where a function pointer is expected (2): test_closures,
-  test_fn_ptr. The C gets a closure struct where it wants `int32_t (*)(int32_t)`.
 - Cross-module generics (1): test_generic_channels (`Chan` and
   `channel_send_i32` undeclared).
-- Runtime link (1): test_concurrent_link needs the concurrency runtime,
-  which this loop does not link.
+- Runtime link (2): test_concurrent_link and test_import_stdlib_bare need
+  the concurrency runtime (the `__atomic_*_n` helpers), which this loop does
+  not link.
 
 The include path `-Itests/lang` is needed for test_c_import and
 test_extern_type, whose helper header lives in `tests/lang/`.
