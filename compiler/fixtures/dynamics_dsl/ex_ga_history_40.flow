@@ -16,10 +16,3 @@ ga evolve on plant over rollout -> k1 k2 {
     generations 40
     mutation 0.25
 }
-
-function main() -> i32 {
-    if k1 == k1 and k2 == k2 {
-        return 0
-    }
-    return 1
-}
