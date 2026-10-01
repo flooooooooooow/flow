@@ -344,7 +344,7 @@ to build the wheel. See
 
 ```bash
 # Fuzz the compiler
-tests/fuzz/run.sh --seconds 30
+./flow tool tests/fuzz/run.flow --seconds 30
 
 # Regenerate examples compile-status table
 scripts/verify_examples.sh

@@ -234,7 +234,7 @@ just building it:
 | `main_42.flow` | Node instantiates the module and `answer()` returns 42 |
 | `sum_pair.flow` | Two `f32` values written into exported linear memory sum to 3.75 |
 | `alloc_sum.flow` | Imports exactly `env.malloc`; 32 calls each return 3.75 and linear memory grows |
-| `alloc_sum.flow` | `tests/wasm/compare_native_wasm.sh` compares the wasm result against the same function compiled natively through MLIR |
+| `alloc_sum.flow` | `./flow tool tests/wasm/compare_native_wasm.flow` compares the wasm result against the same function compiled natively through MLIR |
 
 `compiler/scripts/parity_targets.sh wasm32` covers the export validation
 (quoted symbol names included), the clang command and the usage errors against

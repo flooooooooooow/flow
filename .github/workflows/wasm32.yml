@@ -1,3 +1,4 @@
+# ACTIONS-INTENDED: public repository; wasm32 direct backend checks.
 name: wasm32 direct backend
 
 on:
@@ -151,7 +152,7 @@ jobs:
           console.log(`alloc_sum() x32=3.75; memory ${initialBytes} -> ${memory.buffer.byteLength}; imports=${JSON.stringify(imports)}`);
           JS
       - name: Compare native MLIR and wasm32 numerical results
-        run: tests/wasm/compare_native_wasm.sh
+        run: ./flow tool tests/wasm/compare_native_wasm.flow
       # The goldens hold Homebrew LLVM 22 module bytes; this runner's LLVM
       # differs, so the gate checks exit statuses and messages only.
       - name: Run the wasm32 target parity cases

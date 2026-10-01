@@ -68,7 +68,7 @@ jobs:
         if: startsWith(steps.tag.outputs.name, 'v1.')
         env:
           FLOW_FUZZ_SECONDS: '60'
-        run: tests/fuzz/run.sh --seconds "$FLOW_FUZZ_SECONDS" --seed 1000
+        run: ./flow tool tests/fuzz/run.flow --seconds "$FLOW_FUZZ_SECONDS" --seed 1000
 
       - name: Strict Flow corpus
         run: |

@@ -376,7 +376,7 @@ jobs:
         run: ./flow tool tests/check/run.flow
 
       - name: flow python generator goldens (tests/pywheel)
-        run: ./tests/pywheel/run.sh
+        run: ./flow tool tests/pywheel/run.flow
 
       - name: Project test runner parity (flow test)
         run: ./compiler/scripts/parity_project_test.sh
@@ -394,10 +394,10 @@ jobs:
         run: ./scripts/check_pkg_commands.sh
 
       - name: GPU shader goldens (flow gpu)
-        run: ./tests/gpu/run.sh
+        run: ./flow tool tests/gpu/run.flow
 
       - name: GPU and shader crossing pages
-        run: ./tests/gpu/crossing.sh
+        run: ./flow tool tests/gpu/crossing.flow
 
       - uses: ./.github/actions/install-toolchain
         with:
@@ -421,9 +421,9 @@ jobs:
       # flow mlir (with --optimize, --llvm, --mlir-gpu, --emit-spirv and the
       # pass pipelines), mlir-run, jit, ml, test-mlir, test-matmul and
       # compile-audio --mlir against the goldens recorded from the Python
-      # MLIR stack; the script stubs python itself.
+      # MLIR stack; the runner stubs python itself.
       - name: MLIR command goldens (no Python)
-        run: timeout 20m ./tests/mlir_commands/run.sh
+        run: timeout 20m ./flow tool tests/mlir_commands/run.flow
 
       - name: Compile and run a Flow program (FLOW_HOST=flowc)
         env:
@@ -666,7 +666,7 @@ jobs:
       # Crash pins, deep nesting and 30s of seeded mutation; fails on a
       # signal or a hang.
       - name: Fuzz flowc
-        run: tests/fuzz/run.sh --seconds 30 --seed 1234
+        run: ./flow tool tests/fuzz/run.flow --seconds 30 --seed 1234
 
   plugin-dsp:
     name: Plugin DSP test
