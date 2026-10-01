@@ -35,7 +35,7 @@ static const char *bench_utc_date_c(void) {
 ")
 
 import "tools/flow_cli/sys.flow"
-import std.process { ProcCmd, ProcStrs }
+import std.process { ProcCmd, ProcStrs, proc_argv }
 
 extern {
     function bench_fixed_c(v: f64, decimals: i32) -> string
@@ -46,11 +46,13 @@ extern {
 }
 
 # The repository root from `./flow tool`. Run any other way, the program
-# says how to start it and stops with status 2, so nothing else runs it by
-# accident with the wrong working directory.
+# says how to start it and stops with status 2. The corpus gates build and
+# run every program with a main, and they inherit FLOW_REPO_ROOT from their
+# own `./flow tool` start, so the variable alone is not enough: the binary
+# must also be the one `./flow tool` cached under build/flow-tools.
 export function bench_root(program: string) -> string {
     let r: string = env("FLOW_REPO_ROOT")
-    if s_len(r) == 0 {
+    if s_len(r) == 0 or not s_contains(proc_argv(0), "/build/flow-tools/") {
         errln("usage: ./flow tool " + program + " [args...]")
         cli_exit(2)
     }
