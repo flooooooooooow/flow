@@ -1291,8 +1291,10 @@ export function py_ldflags() -> ptr<ProcStrs> {
     return l
 }
 
-# Link lowered MLIR (LLVM IR) with the Flow runtime. Status.
-export function flow_link_mlir_ll(ll: string, exe: string) -> i32 {
+# Link lowered MLIR (LLVM IR) with the Flow runtime, and with the program's
+# @cEmbed C when `embed` names a file that exists (#1093: the MLIR emitter
+# writes it next to the .mlir). Status.
+export function flow_link_mlir_ll(ll: string, exe: string, embed: string) -> i32 {
     gpu_link_flags()
     concurrency_flags()
     let rtf: ptr<ProcStrs> = runtime_flow_sources()
@@ -1306,6 +1308,9 @@ export function flow_link_mlir_ll(ll: string, exe: string) -> i32 {
     sl_extend(a, CONC_CFLAGS)
     sl_push(a, "-I" + tc().root + "/runtime")
     sl_push(a, ll)
+    if embed as ptr<u8> != null and is_file(embed) {
+        sl_push(a, embed)
+    }
     sl_push(a, tc().root + "/runtime/flow_python_embed.c")
     sl_extend(a, CONC_SOURCES)
     sl_extend(a, rtf)
@@ -1337,7 +1342,7 @@ export function compile_program_mlir(program: string) -> i32 {
         cli_exit(1)
     }
     success("MLIR → LLVM: " + basename + ".ll")
-    if flow_link_mlir_ll(build_dir + "/" + basename + ".ll", build_dir + "/" + basename) != 0 {
+    if flow_link_mlir_ll(build_dir + "/" + basename + ".ll", build_dir + "/" + basename, build_dir + "/" + basename + ".mlir.c") != 0 {
         error("MLIR/LLVM compilation/linking failed")
         cli_exit(1)
     }

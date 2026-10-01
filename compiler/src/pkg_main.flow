@@ -2,7 +2,7 @@
 # @means  `flow pkg` command line: add, install, sync, search, info, init,
 #         publish, build, run, build-native, run-native, clean, native-link.
 #
-# Built by flow-driver with the Stage-A compiler and run with FLOW_REPO_ROOT
+# Built by the flow command (tools/flow_cli) with the Stage-A compiler and run with FLOW_REPO_ROOT
 # set to the repository root (registry/index.json, lib/stdlib and the fetch
 # shim live there). Arguments follow the argparse interface the Python
 # package manager had, and so do the exit codes: install, add, search, info
@@ -187,7 +187,7 @@ function cmd_add(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
 # init, publish, build, build-native, run, run-native and clean. Like the
 # Python commands they replace, these exit 0 once the arguments parse, even
 # when the command reports an error; usage errors exit 2. `--` ends options,
-# so flow-driver can pass an entry file that starts with a dash.
+# so the flow command can pass an entry file that starts with a dash.
 function cmd_project(argc: i32, argv: ptr<ptr<u8>>, cmd: string) -> i32 {
     let mut usage: string = str_cat3("usage: flow ", cmd, " [-h]")
     let mut max_pos: i32 = 0
@@ -328,7 +328,7 @@ function cmd_project(argc: i32, argv: ptr<ptr<u8>>, cmd: string) -> i32 {
 
 const NATIVE_LINK_USAGE: string = "usage: flow pkg native-link --program PROGRAM --out FILE [--cc CC] [--cxx CXX] [--opt FLAG]"
 
-# native-link, for flow-driver's link step: compile the [native] sources of
+# native-link, for the flow command's link step: compile the [native] sources of
 # the program's project and installed packages, write the link arguments to
 # FILE. Exits 1 when a source does not compile.
 function cmd_native_link(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
