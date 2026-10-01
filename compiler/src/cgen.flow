@@ -625,6 +625,89 @@ function flowc_cgen_sig_field_is_array(w: ptr<CgenBuf>, arena: AstArena, src: pt
     return 0
 }
 
+# 1 when an imported struct field is a string. Entries use a separate marker
+# from the sized-array table: `{Struct.field\0s\0`.
+function flowc_cgen_sig_field_is_string(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, v: i32) -> i32 {
+    let bt: i32 = flowc_cgen_expr_type_node(w, arena, src, arena.nodes[v].a)
+    if bt == AST_NONE or bt < 0 or arena.nodes[bt].kind != AST_TYPE {
+        return 0
+    }
+    if arena.nodes[bt].a == AST_NONE or flowc_cgen_span_is(src, arena.nodes[bt].name_start, arena.nodes[bt].name_end, "ptr") == 0 {
+        return 0
+    }
+    let pt: i32 = arena.nodes[bt].a
+    if arena.nodes[pt].kind != AST_TYPE or arena.nodes[pt].a != AST_NONE or arena.nodes[pt].ival != 0 {
+        return 0
+    }
+    let ss: i32 = arena.nodes[pt].name_start
+    let se: i32 = arena.nodes[pt].name_end
+    let fs: i32 = arena.nodes[v].name_start
+    let fe: i32 = arena.nodes[v].name_end
+    let keylen: i32 = 1 + (se - ss) + 1 + (fe - fs)
+    let buf: ptr<u8> = w[0].sigs
+    let blen: i32 = w[0].sigs_len
+    let mut p: i32 = 0
+    while p < blen {
+        let mut i: i32 = 0
+        while p + i < blen and buf[p + i] != 0 { i = i + 1 }
+        if i == keylen and buf[p] == 123 {
+            let mut hit: i32 = 1
+            let mut j: i32 = 0
+            while j < se - ss and hit == 1 {
+                if buf[p + 1 + j] != src[ss + j] { hit = 0 }
+                j = j + 1
+            }
+            j = 0
+            while j < fe - fs and hit == 1 {
+                if buf[p + 2 + (se - ss) + j] != src[fs + j] { hit = 0 }
+                j = j + 1
+            }
+            if hit == 1 {
+                let vp: i32 = p + i + 1
+                if vp + 1 < blen and buf[vp] == 115 and buf[vp + 1] == 0 { return 1 }
+            }
+        }
+        let mut q: i32 = p + i + 1
+        while q < blen and buf[q] != 0 { q = q + 1 }
+        p = q + 1
+    }
+    return 0
+}
+
+# Append `{Struct.field\0s\0` for string fields of imported structs.
+function flowc_cgen_sig_put_string_fields(arena: AstArena, src: ptr<u8>, buf: ptr<u8>, cap: i32, len: i32, st: i32) -> i32 {
+    if arena.nodes[st].b != AST_NONE { return len }
+    let ss: i32 = arena.nodes[st].name_start
+    let se: i32 = arena.nodes[st].name_end
+    let mut n: i32 = len
+    let mut f: i32 = arena.nodes[st].a
+    while f != AST_NONE {
+        let ft: i32 = arena.nodes[f].a
+        if arena.nodes[f].kind == AST_FIELD and ft != AST_NONE and arena.nodes[ft].kind == AST_TYPE and flowc_cgen_span_is(src, arena.nodes[ft].name_start, arena.nodes[ft].name_end, "string") == 1 {
+            let fs: i32 = arena.nodes[f].name_start
+            let fe: i32 = arena.nodes[f].name_end
+            if n + (se - ss) + (fe - fs) + 5 <= cap {
+                buf[n] = 123
+                n = n + 1
+                let mut i: i32 = ss
+                while i < se { buf[n] = src[i]; n = n + 1; i = i + 1 }
+                buf[n] = 46
+                n = n + 1
+                i = fs
+                while i < fe { buf[n] = src[i]; n = n + 1; i = i + 1 }
+                buf[n] = 0
+                n = n + 1
+                buf[n] = 115
+                n = n + 1
+                buf[n] = 0
+                n = n + 1
+            }
+        }
+        f = arena.nodes[f].next
+    }
+    return n
+}
+
 # Append `[Struct.field\0N\0` for each sized array field of a plain struct,
 # so a later bundle module copies it in a struct literal (#1074).
 function flowc_cgen_sig_put_array_fields(arena: AstArena, src: ptr<u8>, buf: ptr<u8>, cap: i32, len: i32, st: i32) -> i32 {
@@ -688,6 +771,22 @@ function flowc_cgen_emit_sl_member(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
 # Check if a source span is a C reserved word. If so, emit the mangled
 # name (_flow_<word>) instead. Returns 1 if mangled, 0 if not.
 function flowc_cgen_put_ident(w: ptr<CgenBuf>, src: ptr<u8>, start: i32, end: i32) {
+    if flowc_cgen_span_is(src, start, end, "asm") == 1 {
+        flowc_cgen_puts(w, "_flow_asm")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "typeof") == 1 {
+        flowc_cgen_puts(w, "_flow_typeof")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "restrict") == 1 {
+        flowc_cgen_puts(w, "_flow_restrict")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "_Atomic") == 1 {
+        flowc_cgen_puts(w, "_flow_Atomic")
+        return
+    }
     if flowc_cgen_span_is(src, start, end, "double") == 1 {
         flowc_cgen_puts(w, "_flow_double")
         return
@@ -2462,6 +2561,15 @@ function flowc_cgen_expr_is_string(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
         return flowc_cgen_ident_is_string(w, arena, src, id)
     }
     if kind == AST_FIELD_ACCESS {
+        let base: i32 = arena.nodes[id].a
+        if base != AST_NONE and arena.nodes[base].kind == AST_CALL {
+            if flowc_cgen_sig_is_string(w, arena, src, base) == 1 {
+                return 1
+            }
+        }
+        if flowc_cgen_sig_field_is_string(w, arena, src, id) == 1 {
+            return 1
+        }
         return flowc_cgen_type_is_string(arena, src, flowc_cgen_expr_type_node(w, arena, src, id))
     }
     return 0
@@ -12147,6 +12255,7 @@ export function flowc_cgen_collect_sigs(
         let st: i32 = flowc_cgen_unwrap(arena, item, AST_STRUCT)
         if st != AST_NONE {
             n = flowc_cgen_sig_put_array_fields(arena, src, buf, cap, n, st)
+            n = flowc_cgen_sig_put_string_fields(arena, src, buf, cap, n, st)
         }
         # C functions an extern block declares: an importer's inferred
         # `let` takes their return type too.

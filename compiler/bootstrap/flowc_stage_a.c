@@ -60200,6 +60200,8 @@ int32_t flowc_cgen_expr_is_named(CgenBuf* w, AstArena arena, uint8_t* src, int32
 int32_t flowc_cgen_calls_name(AstArena arena, uint8_t* src, int32_t id, int32_t ns, int32_t ne);
 int32_t flowc_cgen_sl_array_copy(CgenBuf* w, AstArena arena, uint8_t* src, int32_t v);
 int32_t flowc_cgen_sig_field_is_array(CgenBuf* w, AstArena arena, uint8_t* src, int32_t v);
+int32_t flowc_cgen_sig_field_is_string(CgenBuf* w, AstArena arena, uint8_t* src, int32_t v);
+int32_t flowc_cgen_sig_put_string_fields(AstArena arena, uint8_t* src, uint8_t* buf, int32_t cap, int32_t len, int32_t st);
 int32_t flowc_cgen_sig_put_array_fields(AstArena arena, uint8_t* src, uint8_t* buf, int32_t cap, int32_t len, int32_t st);
 void flowc_cgen_emit_sl_member(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id, int32_t field);
 void flowc_cgen_put_ident(CgenBuf* w, uint8_t* src, int32_t start, int32_t end);
@@ -60996,6 +60998,106 @@ int32_t flowc_cgen_sig_field_is_array(CgenBuf* w, AstArena arena, uint8_t* src, 
   return 0;
 }
 
+int32_t flowc_cgen_sig_field_is_string(CgenBuf* w, AstArena arena, uint8_t* src, int32_t v) {
+  int32_t bt = flowc_cgen_expr_type_node(w, arena, src, ((arena).nodes[v]).a);
+  if (bt == AST_NONE || bt < 0 || ((arena).nodes[bt]).kind != AST_TYPE) {
+  return 0;
+}
+  if (((arena).nodes[bt]).a == AST_NONE || flowc_cgen_span_is(src, ((arena).nodes[bt]).name_start, ((arena).nodes[bt]).name_end, "ptr") == 0) {
+  return 0;
+}
+  int32_t pt = ((arena).nodes[bt]).a;
+  if (((arena).nodes[pt]).kind != AST_TYPE || ((arena).nodes[pt]).a != AST_NONE || ((arena).nodes[pt]).ival != 0) {
+  return 0;
+}
+  int32_t ss = ((arena).nodes[pt]).name_start;
+  int32_t se = ((arena).nodes[pt]).name_end;
+  int32_t fs = ((arena).nodes[v]).name_start;
+  int32_t fe = ((arena).nodes[v]).name_end;
+  int32_t keylen = (((1 + (se - ss)) + 1) + (fe - fs));
+  uint8_t* buf = (uint8_t*)((w[0]).sigs);
+  int32_t blen = (w[0]).sigs_len;
+  int32_t p = 0;
+  while (p < blen) {
+  int32_t i = 0;
+  while ((p + i) < blen && buf[(p + i)] != 0) {
+  i = (i + 1);
+}
+  if (i == keylen && buf[p] == 123) {
+  int32_t hit = 1;
+  int32_t j = 0;
+  while (j < (se - ss) && hit == 1) {
+  if (buf[((p + 1) + j)] != src[(ss + j)]) {
+  hit = 0;
+}
+  j = (j + 1);
+}
+  j = 0;
+  while (j < (fe - fs) && hit == 1) {
+  if (buf[(((p + 2) + (se - ss)) + j)] != src[(fs + j)]) {
+  hit = 0;
+}
+  j = (j + 1);
+}
+  if (hit == 1) {
+  int32_t vp = ((p + i) + 1);
+  if ((vp + 1) < blen && buf[vp] == 115 && buf[(vp + 1)] == 0) {
+  return 1;
+}
+}
+}
+  int32_t q = ((p + i) + 1);
+  while (q < blen && buf[q] != 0) {
+  q = (q + 1);
+}
+  p = (q + 1);
+}
+  return 0;
+}
+
+int32_t flowc_cgen_sig_put_string_fields(AstArena arena, uint8_t* src, uint8_t* buf, int32_t cap, int32_t len, int32_t st) {
+  if (((arena).nodes[st]).b != AST_NONE) {
+  return len;
+}
+  int32_t ss = ((arena).nodes[st]).name_start;
+  int32_t se = ((arena).nodes[st]).name_end;
+  int32_t n = len;
+  int32_t f = ((arena).nodes[st]).a;
+  while (f != AST_NONE) {
+  int32_t ft = ((arena).nodes[f]).a;
+  if (((arena).nodes[f]).kind == AST_FIELD && ft != AST_NONE && ((arena).nodes[ft]).kind == AST_TYPE && flowc_cgen_span_is(src, ((arena).nodes[ft]).name_start, ((arena).nodes[ft]).name_end, "string") == 1) {
+  int32_t fs = ((arena).nodes[f]).name_start;
+  int32_t fe = ((arena).nodes[f]).name_end;
+  if ((((n + (se - ss)) + (fe - fs)) + 5) <= cap) {
+  buf[n] = 123;
+  n = (n + 1);
+  int32_t i = ss;
+  while (i < se) {
+  buf[n] = src[i];
+  n = (n + 1);
+  i = (i + 1);
+}
+  buf[n] = 46;
+  n = (n + 1);
+  i = fs;
+  while (i < fe) {
+  buf[n] = src[i];
+  n = (n + 1);
+  i = (i + 1);
+}
+  buf[n] = 0;
+  n = (n + 1);
+  buf[n] = 115;
+  n = (n + 1);
+  buf[n] = 0;
+  n = (n + 1);
+}
+}
+  f = ((arena).nodes[f]).next;
+}
+  return n;
+}
+
 int32_t flowc_cgen_sig_put_array_fields(AstArena arena, uint8_t* src, uint8_t* buf, int32_t cap, int32_t len, int32_t st) {
   if (((arena).nodes[st]).b != AST_NONE) {
   return len;
@@ -61054,6 +61156,22 @@ void flowc_cgen_emit_sl_member(CgenBuf* w, AstArena arena, uint8_t* src, int32_t
 }
 
 void flowc_cgen_put_ident(CgenBuf* w, uint8_t* src, int32_t start, int32_t end) {
+  if (flowc_cgen_span_is(src, start, end, "asm") == 1) {
+  flowc_cgen_puts(w, "_flow_asm");
+  return;
+}
+  if (flowc_cgen_span_is(src, start, end, "typeof") == 1) {
+  flowc_cgen_puts(w, "_flow_typeof");
+  return;
+}
+  if (flowc_cgen_span_is(src, start, end, "restrict") == 1) {
+  flowc_cgen_puts(w, "_flow_restrict");
+  return;
+}
+  if (flowc_cgen_span_is(src, start, end, "_Atomic") == 1) {
+  flowc_cgen_puts(w, "_flow_Atomic");
+  return;
+}
   if (flowc_cgen_span_is(src, start, end, "double") == 1) {
   flowc_cgen_puts(w, "_flow_double");
   return;
@@ -62759,6 +62877,15 @@ int32_t flowc_cgen_expr_is_string(CgenBuf* w, AstArena arena, uint8_t* src, int3
   return flowc_cgen_ident_is_string(w, arena, src, id);
 }
   if (kind == AST_FIELD_ACCESS) {
+  int32_t base = ((arena).nodes[id]).a;
+  if (base != AST_NONE && ((arena).nodes[base]).kind == AST_CALL) {
+  if (flowc_cgen_sig_is_string(w, arena, src, base) == 1) {
+  return 1;
+}
+}
+  if (flowc_cgen_sig_field_is_string(w, arena, src, id) == 1) {
+  return 1;
+}
   return flowc_cgen_type_is_string(arena, src, flowc_cgen_expr_type_node(w, arena, src, id));
 }
   return 0;
@@ -64464,11 +64591,11 @@ void flowc_cgen_plan_init(CgenBuf* w, AstArena arena, uint8_t* src) {
   return;
 }
   int32_t n = (arena).len;
-  { __typeof__((w[0]).plan_order) __flowc_st18696 = (int32_t*)(malloc((n * 4))); (w[0]).plan_order = __flowc_st18696; }
-  { __typeof__((w[0]).plan_has) __flowc_st18708 = (int32_t*)(malloc((n * 4))); (w[0]).plan_has = __flowc_st18708; }
-  { __typeof__((w[0]).plan_seen) __flowc_st18720 = (int32_t*)(malloc((n * 4))); (w[0]).plan_seen = __flowc_st18720; }
-  { __typeof__((w[0]).plan_lo) __flowc_st18732 = (int64_t*)(malloc((n * 8))); (w[0]).plan_lo = __flowc_st18732; }
-  { __typeof__((w[0]).plan_hi) __flowc_st18744 = (int64_t*)(malloc((n * 8))); (w[0]).plan_hi = __flowc_st18744; }
+  { __typeof__((w[0]).plan_order) __flowc_st19393 = (int32_t*)(malloc((n * 4))); (w[0]).plan_order = __flowc_st19393; }
+  { __typeof__((w[0]).plan_has) __flowc_st19405 = (int32_t*)(malloc((n * 4))); (w[0]).plan_has = __flowc_st19405; }
+  { __typeof__((w[0]).plan_seen) __flowc_st19417 = (int32_t*)(malloc((n * 4))); (w[0]).plan_seen = __flowc_st19417; }
+  { __typeof__((w[0]).plan_lo) __flowc_st19429 = (int64_t*)(malloc((n * 8))); (w[0]).plan_lo = __flowc_st19429; }
+  { __typeof__((w[0]).plan_hi) __flowc_st19441 = (int64_t*)(malloc((n * 8))); (w[0]).plan_hi = __flowc_st19441; }
   if ((w[0]).plan_order == NULL || (w[0]).plan_has == NULL || (w[0]).plan_seen == NULL || (w[0]).plan_lo == NULL || (w[0]).plan_hi == NULL) {
   (w[0]).plan_order = NULL;
   (w[0]).plan_has = NULL;
@@ -72100,6 +72227,7 @@ int32_t flowc_cgen_collect_sigs(AstArena arena, int32_t root, uint8_t* src, uint
   int32_t st = flowc_cgen_unwrap(arena, item, AST_STRUCT);
   if (st != AST_NONE) {
   n = flowc_cgen_sig_put_array_fields(arena, src, buf, cap, n, st);
+  n = flowc_cgen_sig_put_string_fields(arena, src, buf, cap, n, st);
 }
   if (((arena).nodes[item]).kind == AST_EXTERN) {
   int32_t ext = ((arena).nodes[item]).a;
