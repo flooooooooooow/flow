@@ -15,7 +15,7 @@ function main() -> i32 {
     let __ga_e0_fit: array<f64, 8> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     let __ga_e0_bk1: array<f64, 1> = [0.0]
     let __ga_e0_bk2: array<f64, 1> = [0.0]
-    let __ga_e0_hist: array<f64, 32> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let __ga_e0_hist: array<f64, 20> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
     let __ga_e0_cfg: GAConfig = GAConfig { population: 8, generations: 20, horizon: 50, mutation: 0.12345678901230001 }
     ga_evolve_traced(__dsys_p, 50, __ga_e0_cfg, __ga_e0_k1, __ga_e0_k2, __ga_e0_fit, __ga_e0_bk1, __ga_e0_bk2, __ga_e0_hist)
     a = __ga_e0_bk1[0]
