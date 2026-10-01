@@ -72,10 +72,12 @@ does not exist, so a deleted script cannot stay referenced.
 A few scripts have to stay shell. They are listed with a reason in
 `tools/shell_ratchet/allow.txt` and sit outside the line total: the `./flow`
 stub, which builds flowc and the CLI with cc before any Flow program
-exists; the `flow-lsp` editor launcher; and
+exists; the `flow-lsp` editor launcher;
 `compiler/scripts/bootstrap_from_c.sh`, which proves the checked-in
 bootstrap C rebuilds itself with cc alone and so cannot depend on a binary
-built from that C. Adding to the list is a reviewed change with a reason.
+built from that C; and `tools/hooks/no_new_python.sh`, the hook in
+`.claude/settings.json` that runs on every file write. Adding to the list
+is a reviewed change with a reason.
 
 The baselines only move down. `--update` drops deleted files and lowers
 the line limit. It never adds a file.

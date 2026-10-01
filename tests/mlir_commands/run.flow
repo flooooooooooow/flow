@@ -17,14 +17,14 @@
 # bb23f19f: flow_async_worker undefined); jit_*_rt cases link the runtime and
 # share the plain golden.
 #
-# MLIR files are normalized by normalize.flow (the rules parity_mlir
-# uses, gl_mlir_normalize in compiler/scripts/gate_lib.flow).
+# MLIR files are normalized with gl_mlir_normalize from
+# compiler/scripts/gate_lib.flow, the rules parity_mlir uses.
 #
 # Needs mlir-opt and mlir-translate (LLVM_PATH, or brew --prefix llvm).
 
 import "tools/flow_cli/sys.flow"
 import "scripts/tools/lib/testrun.flow"
-import "tests/mlir_commands/normalize.flow"
+import "compiler/scripts/gate_lib.flow"
 import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg, proc_timeout_ms }
 import std.regex { Regex, rx_test }
 
@@ -195,7 +195,7 @@ function run_case(root: string, name: string, kind: string, raw_args: ptr<ProcSt
         let mlir: string = d + "/build/" + base + ".mlir"
         if s_eq(kind, "mlir") {
             if is_file(mlir) {
-                let _w: bool = write_text(g + ".mlir", mlir_normalize(read_text(mlir)))
+                let _w: bool = write_text(g + ".mlir", gl_mlir_normalize(read_text(mlir)))
             }
         } elif s_eq(kind, "raw") {
             if is_file(mlir) {
