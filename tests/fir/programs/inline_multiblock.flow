@@ -10,5 +10,5 @@ function branchy(x: i32) -> i32 {
 function main() -> i32 {
     branchy(1)
     branchy(-1)
-    return 0
+    return branchy(1)
 }

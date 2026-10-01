@@ -947,6 +947,34 @@ function fg_value_uses(g: ptr<FirG>, v: i32) -> i32 {
     return uses
 }
 
+function fg_multiblock_direct_return(g: ptr<FirG>, call: i32) -> i32 {
+    let caller_block: i32 = iv_get(&g.op_block, call)
+    let value: i32 = fg_result(g, call)
+    let mut found: i32 = 0
+    let mut op: i32 = call + 1
+    while op < fg_num_ops(g) {
+        if iv_get(&g.op_block, op) == caller_block {
+            let mut e: i32 = 0
+            while e < iv_get(&g.op_edge_count, op) {
+                if fg_operand(g, op, e) == value {
+                    if found != 0 or iv_get(&g.op_opcode, op) != OP_RET or e != 0 {
+                        return 0
+                    }
+                    found = 1
+                }
+                e = e + 1
+            }
+            if found != 0 and iv_get(&g.op_opcode, op) == OP_RET {
+                if op != call + 1 {
+                    return 0
+                }
+            }
+        }
+        op = op + 1
+    }
+    return found
+}
+
 function fg_multiblock_inlineable(g: ptr<FirG>, call: i32) -> i32 {
     if iv_get(&g.op_opcode, call) != OP_CALL {
         return 0
@@ -962,13 +990,15 @@ function fg_multiblock_inlineable(g: ptr<FirG>, call: i32) -> i32 {
     if iv_get(&g.func_block_count, cal) <= 1 {
         return 0
     }
-    # This first multi-block slice discards the callee result. It is safe for
-    # expression statements and leaves value-producing calls on the existing
-    # single-block path until a merge-value representation exists.
-    if fg_value_uses(g, fg_result(g, call)) != 0 {
+    let uses: i32 = fg_value_uses(g, fg_result(g, call))
+    if uses > 1 {
         return 0
     }
     let caller_block: i32 = iv_get(&g.op_block, call)
+    let direct_return: i32 = fg_multiblock_direct_return(g, call)
+    if uses == 1 and direct_return == 0 {
+        return 0
+    }
     let mut suffix_ret: i32 = 0
     let mut op: i32 = call + 1
     while op < fg_num_ops(g) {
@@ -977,7 +1007,10 @@ function fg_multiblock_inlineable(g: ptr<FirG>, call: i32) -> i32 {
         }
         op = op + 1
     }
-    if suffix_ret == 0 or iv_get(&g.op_edge_count, call) == 0 {
+    if direct_return == 0 and (suffix_ret == 0 or iv_get(&g.op_edge_count, call) == 0) {
+        return 0
+    }
+    if direct_return == 1 and iv_get(&g.op_edge_count, call) == 0 {
         return 0
     }
     let first: i32 = iv_get(&g.func_first_block, cal)
@@ -1026,6 +1059,7 @@ function fg_apply_one_multiblock(g: ptr<FirG>, call: i32) -> FirInline {
     let caller: i32 = iv_get(&g.op_function, call)
     let cal: i32 = iv_get(&g.op_callee, call)
     let caller_block: i32 = iv_get(&g.op_block, call)
+    let direct_return: i32 = fg_multiblock_direct_return(g, call)
     let ng: ptr<FirG> = fg_new()
     let nf: i32 = fg_num_funcs(g)
     let mut f: i32 = 0
@@ -1069,6 +1103,10 @@ function fg_apply_one_multiblock(g: ptr<FirG>, call: i32) -> FirInline {
         if op == call {
             let br: i32 = fg_add_op(ng, OP_BR, caller, bmap[oldb] - 1, 0, 0, -1)
             fg_set_branch_targets(ng, br, clones[0] - 1, -1)
+        } elif direct_return == 1 and oldb == caller_block and op > call {
+            # The direct-return form replaces the caller RET with each cloned
+            # callee RET below. The candidate requires that RET to be next.
+            let _skip: i32 = 0
         } else {
             let mut outb: i32 = fg_map_block(bmap, oldb)
             if oldb == caller_block and op > call {
@@ -1111,8 +1149,16 @@ function fg_apply_one_multiblock(g: ptr<FirG>, call: i32) -> FirInline {
             if code == OP_PARAM or (code == OP_LOAD and iv_get(&g.op_aux, op) >= AUX_PARAM_BASE) {
                 # Parameter values were mapped in the prepass.
             } elif code == OP_RET {
-                let br: i32 = fg_add_op(ng, OP_BR, caller, clone_b, 0, 0, -1)
-                fg_set_branch_targets(ng, br, cont, -1)
+                if direct_return == 1 {
+                    let rv: i32 = local[fg_operand(g, op, 0)] - 1
+                    let ret: i32 = fg_add_op(ng, OP_RET, caller, clone_b, 1, 0, -1)
+                    if rv >= 0 {
+                        fg_add_operand(ng, ret, rv)
+                    }
+                } else {
+                    let br: i32 = fg_add_op(ng, OP_BR, caller, clone_b, 0, 0, -1)
+                    fg_set_branch_targets(ng, br, cont, -1)
+                }
             } else {
                 let nop: i32 = fg_add_op(ng, code, caller, clone_b, iv_get(&g.op_operand_count, op), fg_op_nresults(g, op), iv_get(&g.op_callee, op))
                 let old_t0: i32 = fg_branch_target0(g, op)
