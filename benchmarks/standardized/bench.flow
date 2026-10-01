@@ -14,6 +14,7 @@
 
 import "tools/flow_cli/sys.flow"
 import "benchmarks/bench_tools.flow"
+import "tools/flow_cli/flowc_build.flow"
 import std.process { ProcCmd, ProcStrs, proc_arg }
 
 const C_FLAGS: string = "-O3 -march=native -ffast-math"
@@ -88,11 +89,15 @@ function must(c: ptr<ProcCmd>) {
 
 function run_benchmark(root: string, build: string, name: string, flow_file: string, iterations: i32) {
     out("  flow            ")
-    let e: ptr<ProcCmd> = cmd(sl_of3("compiler/scripts/flowc_emit.sh", "--lenient", flow_file))
-    proc_arg(e, build + "/" + name + ".c")
-    cmd_cwd(e, root)
-    cmd_quiet_err(e)
-    must(e)
+    # flowc_emit --lenient FILE OUT 2>/dev/null
+    sink_push(SINK_FD, SINK_NULL)
+    let call: ptr<EmitCall> = flowc_emit_call(root, sl_of3("--lenient", flow_file, build + "/" + name + ".c"), sl_new())
+    let _s: string = sink_pop()
+    if call.rc != 0 {
+        cli_exit(call.rc)
+    }
+    cmd_quiet_err(call.cmd)
+    must(call.cmd)
     let cc: ptr<ProcStrs> = sl_of1("clang")
     sl_extend(cc, s_words(C_FLAGS))
     sl_push2(cc, "-D_DEFAULT_SOURCE", "-Iruntime")

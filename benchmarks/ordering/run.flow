@@ -10,6 +10,7 @@
 
 import "tools/flow_cli/sys.flow"
 import "benchmarks/bench_tools.flow"
+import "tools/flow_cli/flowc_build.flow"
 import std.process { ProcCmd, ProcStrs, proc_arg, proc_args }
 
 # A plan line: `[N] sort...`, or a `chose` line indented six spaces (printed
@@ -46,11 +47,17 @@ function main() -> i32 {
         return 1
     }
     outln("== plans ==")
-    let e: ptr<ProcCmd> = cmd(sl_of3(root + "/compiler/scripts/flowc_emit.sh", "--strict", src))
-    proc_arg(e, work + "/bench.c")
-    cmd_env(e, "FLOWC_EXPLAIN", "1")
-    cmd_quiet_out(e)
-    let erc: i32 = run_err_to_file(e, work + "/plans")
+    # FLOWC_EXPLAIN=1 flowc_emit --strict SRC OUT 2>plans >/dev/null
+    sink_push(SINK_NULL, SINK_BUF)
+    let call: ptr<EmitCall> = flowc_emit_call(root, sl_of3("--strict", src, work + "/bench.c"), sl_of1("FLOWC_EXPLAIN=1"))
+    let _s: string = sink_pop()
+    let planned: string = sink_err()
+    if call.rc != 0 {
+        let _w: bool = write_text(work + "/plans", planned)
+        cli_exit(call.rc)
+    }
+    cmd_quiet_out(call.cmd)
+    let erc: i32 = run_err_to_file(call.cmd, work + "/plans")
     if erc != 0 {
         cli_exit(erc)
     }

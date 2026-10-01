@@ -13,7 +13,8 @@
 
 import "tools/flow_cli/sys.flow"
 import "benchmarks/bench_tools.flow"
-import std.process { ProcCmd, ProcStrs, proc_args }
+import "tools/flow_cli/flowc_build.flow"
+import std.process { ProcCmd, ProcStrs, proc_args, proc_chdir }
 
 const C_FLAGS: string = "-O3 -march=native -ffast-math"
 const PROGRAM: string = "benchmarks/suite/run_benchmarks.flow"
@@ -46,8 +47,11 @@ function in_dir(argv: ptr<ProcStrs>, dir: string) -> ptr<ProcCmd> {
 
 # `CMD 2>&1 | head -N`: the first N lines of the merged output.
 function head_merged(c: ptr<ProcCmd>, n: i32) {
-    let text: string = capture_raw_merged(c)
-    let tp: string = text
+    head_text(capture_raw_merged(c), n)
+}
+
+# `head -N` of `tp`.
+function head_text(tp: string, n: i32) {
     let mut seen: i32 = 0
     let mut i: i32 = 0
     while i < s_len(tp) and seen < n {
@@ -57,6 +61,21 @@ function head_merged(c: ptr<ProcCmd>, n: i32) {
         i = i + 1
     }
     out(s_slice(tp, 0, i))
+}
+
+# flowc_emit ARGS (paths relative to the repository root) with its
+# messages and the driver's output merged, as `flowc_emit ... 2>&1`.
+function emit_merged(root: string, args: ptr<ProcStrs>) -> string {
+    let here: string = cwd_logical()
+    let _c: bool = proc_chdir(root)
+    sink_push(SINK_BUF, SINK_SAME)
+    let call: ptr<EmitCall> = flowc_emit_call(root, args, sl_new())
+    let mut text: string = sink_pop()
+    if call.rc == 0 {
+        text = text + capture_raw_merged(call.cmd)
+    }
+    let _b: bool = proc_chdir(here)
+    return text
 }
 
 # stdout and stderr together, exactly as written.
@@ -113,9 +132,7 @@ function run_benchmark(root: string, suite: string, have_py: bool, name: string,
     outln("")
     # The Flow version: flowc to C, then clang with the same flags.
     green("[Flow] Compiling with same flags as C...")
-    let emit: ptr<ProcStrs> = sl_of3("compiler/scripts/flowc_emit.sh", "--lenient", "benchmarks/suite/flow/" + stem + ".flow")
-    sl_push(emit, "build/" + stem + ".c")
-    head_merged(in_dir(emit, root), 5)
+    head_text(emit_merged(root, sl_of3("--lenient", "benchmarks/suite/flow/" + stem + ".flow", "build/" + stem + ".c")), 5)
     if is_file(root + "/build/" + stem + ".c") {
         let fc: ptr<ProcStrs> = sl_of1("clang")
         sl_extend(fc, s_words(C_FLAGS))
