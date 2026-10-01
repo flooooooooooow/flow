@@ -27,7 +27,7 @@
 #
 # Env: FLOWC_BIN=<path> tests that binary instead of building
 # compiler/build/flowc_bootstrap from the checked-in bootstrap C.
-# JOBS=<n> parallel emits (default 8).
+# JOBS=<n> parallel emits (default $FLOW_GATE_JOBS, else 2).
 #
 # The emits run in parallel through `xargs -P`, which starts this program
 # again as a worker (`--emit-one FILE`, `--py-one FILE`) with ROOT, WORK,
@@ -101,7 +101,7 @@ function py_one(f: string) -> i32 {
 
 # `xargs -P $JOBS -n 1 <this program> FLAG < LIST`
 function run_jobs(flag: string, list: string) {
-    let c: ptr<ProcCmd> = cmd(sl_of3("xargs", "-P", env_or("JOBS", "8")))
+    let c: ptr<ProcCmd> = cmd(sl_of3("xargs", "-P", env_or("JOBS", env_or("FLOW_GATE_JOBS", "2"))))
     proc_arg(c, "-n")
     proc_arg(c, "1")
     proc_arg(c, proc_argv(0))
