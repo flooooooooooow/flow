@@ -787,6 +787,19 @@ function flowc_cgen_put_ident(w: ptr<CgenBuf>, src: ptr<u8>, start: i32, end: i3
         flowc_cgen_puts(w, "_flow_Atomic")
         return
     }
+    # System headers expose these typedef names in the generated C preamble.
+    if flowc_cgen_span_is(src, start, end, "DIR") == 1 {
+        flowc_cgen_puts(w, "_flow_DIR")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "FILE") == 1 {
+        flowc_cgen_puts(w, "_flow_FILE")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "jmp_buf") == 1 {
+        flowc_cgen_puts(w, "_flow_jmp_buf")
+        return
+    }
     if flowc_cgen_span_is(src, start, end, "double") == 1 {
         flowc_cgen_puts(w, "_flow_double")
         return
@@ -5850,6 +5863,20 @@ function flowc_cgen_emit_array_lit_effects(w: ptr<CgenBuf>, arena: AstArena, src
 # Expressions are emitted through this wrapper so that an lvalue context
 # (w.lval) reaches only the chain of index and field-access bases it
 # applies to, never an index or an argument inside it.
+function flowc_cgen_put_string_literal(w: ptr<CgenBuf>, src: ptr<u8>, start: i32, end: i32) {
+    let mut i: i32 = start
+    while i < end {
+        if src[i] == 10 {
+            flowc_cgen_puts(w, "\\n")
+        } elif src[i] == 13 {
+            flowc_cgen_puts(w, "\\r")
+        } else {
+            flowc_cgen_putc(w, src[i])
+        }
+        i = i + 1
+    }
+}
+
 function flowc_cgen_emit_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     if id == AST_NONE or w[0].lval == 0 {
         flowc_cgen_emit_expr_inner(w, arena, src, id)
@@ -6046,8 +6073,9 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         return
     }
     if kind == AST_STRING {
-        # Lexer span includes surrounding quotes; copy bytes as-is.
-        flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        # Lexer spans include surrounding quotes. Escape physical newlines so
+        # the generated C remains a valid string literal.
+        flowc_cgen_put_string_literal(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         return
     }
     if kind == AST_BINOP {
@@ -11571,7 +11599,7 @@ while item != AST_NONE {
                 flowc_cgen_emit_type(&w, arena, src, ty)
             }
             flowc_cgen_putc(&w, 32)
-            flowc_cgen_put_span(&w, src, arena.nodes[item].name_start, arena.nodes[item].name_end)
+            flowc_cgen_put_ident(&w, src, arena.nodes[item].name_start, arena.nodes[item].name_end)
             if arr_n > 0 {
                 flowc_cgen_putc(&w, 91)
                 flowc_cgen_put_i32(&w, arr_n)

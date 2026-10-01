@@ -104,6 +104,12 @@ function main() -> i32 {
     proc_env(c11, "FLOW_PROC_TEST_KEEP", "replaced")
     let r11: ptr<ProcResult> = proc_run(c11)
     if eq(r11.stdout, "replaced") == false { return 16 }
+    # Repeated overrides use the last value supplied by the caller.
+    let c11b: ptr<ProcCmd> = proc_sh("printf '%s' \"$FLOW_PROC_TEST_DUP\"")
+    proc_env(c11b, "FLOW_PROC_TEST_DUP", "first")
+    proc_env(c11b, "FLOW_PROC_TEST_DUP", "last")
+    let r11b: ptr<ProcResult> = proc_run(c11b)
+    if eq(r11b.stdout, "last") == false { return 29 }
     # A cleared environment holds only the overrides.
     let c12: ptr<ProcCmd> = proc_cmd("/usr/bin/env")
     proc_env_clear(c12)

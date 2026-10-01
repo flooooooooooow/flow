@@ -1,0 +1,12 @@
+extern {
+    function puts(s: string) -> i32
+}
+
+const TEXT: string = "line one
+line two
+"
+
+function main() -> i32 {
+    puts(TEXT)
+    return 0
+}
