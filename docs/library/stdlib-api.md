@@ -2143,7 +2143,7 @@ Processes: run a program with an argument vector and capture what it prints, rea
 | `proc_env_clear` | `(c: ptr<ProcCmd>) -> void` | Start the child with only the variables given through proc_env. |
 | `proc_cwd` | `(c: ptr<ProcCmd>, dir: string) -> void` | Run the child in `dir`. |
 | `proc_timeout_ms` | `(c: ptr<ProcCmd>, ms: i64) -> void` | Kill the child with SIGKILL after `ms` milliseconds. 0 means no limit. |
-| `proc_new_group` | `(c: ptr<ProcCmd>, on: bool) -> void` | Start the child as the leader of a new process group, so a timeout kills it and everything it started. The child then no longer receives signals sent to this program's group, such as Ctrl-C at a terminal. |
+| `proc_new_group` | `(c: ptr<ProcCmd>, on: bool) -> void` | Start the child as the leader of a new process group. A command with a timeout always gets one, so a timeout kills it and everything it started. The child then no longer receives signals sent to this program's group, such as Ctrl-C at a terminal. |
 | `proc_input` | `(c: ptr<ProcCmd>, text: string) -> void` | Feed `text` to the child's stdin, then close it. |
 | `proc_stdin` | `(c: ptr<ProcCmd>, mode: i32) -> void` | stdin: PROC_NULL (the default) or PROC_INHERIT. |
 | `proc_stdout` | `(c: ptr<ProcCmd>, mode: i32) -> void` | stdout: PROC_CAPTURE (the default), PROC_INHERIT or PROC_NULL. |
