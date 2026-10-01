@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # MLIR command goldens: `flow mlir`, `mlir-run`, `jit`, `ml`, `test-mlir`,
 # `test-matmul`, `compile-audio --mlir`, `--mlir-gpu`, `--emit-spirv` and the
-# optimizer pass pipelines, checked against what the Python MLIR stack did at
-# bb23f19f (the goldens in tests/mlir_commands/expected/).
+# optimizer pass pipelines, checked against the goldens in
+# tests/mlir_commands/expected/. They were recorded from the Python MLIR stack
+# at bb23f19f; the cases whose MLIR the emitter fixes changed (the text, and
+# jit_spans and audio_offline, which now print what the C backend prints)
+# were re-recorded from flowc with --record.
 #
 #   tests/mlir_commands/run.sh                 check this checkout, python stubbed
 #   tests/mlir_commands/run.sh --record ROOT [NAME...]

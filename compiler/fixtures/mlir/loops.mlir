@@ -1,6 +1,7 @@
 module {
 llvm.func @printf(!llvm.ptr, ...) -> i32
-llvm.mlir.global internal constant @str_0("%d\n\00") {addr_space = 0 : i32} : !llvm.array<4 x i8>
+llvm.mlir.global internal constant @str_0("%d\0A\00") {addr_space = 0 : i32} : !llvm.array<4 x i8>
+llvm.mlir.global internal constant @str_1("%lld\0A\00") {addr_space = 0 : i32} : !llvm.array<6 x i8>
 func.func @sum_to(%arg0: i32) -> i32 {
 %v1 = arith.constant 0 : i32
 %v2 = llvm.mlir.constant(1 : i64) : i64
@@ -46,9 +47,9 @@ scf.for %v32 = %v29 to %v30 step %v31 {
 %v34 = arith.index_cast %v32 : index to i32
 %v35 = arith.cmpi sgt, %v34, %v33 : i32
 scf.if %v35 {
-%v36 = llvm.mlir.addressof @str_0 : !llvm.ptr
-%v37 = arith.index_cast %v32 : index to i32
-%v38 = llvm.call @printf(%v36, %v37) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i32) -> i32
+%v36 = arith.index_cast %v32 : index to i64
+%v37 = llvm.mlir.addressof @str_1 : !llvm.ptr
+%v38 = llvm.call @printf(%v37, %v36) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr, i64) -> i32
 %v39 = arith.constant 0 : i32
 } else {
 %v40 = arith.constant 0 : i32

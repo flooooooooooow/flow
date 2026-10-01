@@ -1,31 +1,50 @@
 ; ModuleID = 'LLVMDialectModule'
 source_filename = "LLVMDialectModule"
 
+@str_0 = internal constant [7 x i8] c"flow: \00"
+@str_1 = internal constant [2 x i8] c"\0A\00"
+@str_2 = internal constant [26 x i8] c"array index out of bounds\00"
+
+declare i64 @strlen(ptr)
+
+declare i64 @write(i32, ptr, i64)
+
+declare void @abort()
+
+define void @__flow_fault(ptr %0) {
+  %2 = call i64 @write(i32 2, ptr @str_0, i64 6)
+  %3 = call i64 @strlen(ptr %0)
+  %4 = call i64 @write(i32 2, ptr %0, i64 %3)
+  %5 = call i64 @write(i32 2, ptr @str_1, i64 1)
+  call void @abort()
+  ret void
+}
+
 define i32 @matmul_naive(ptr %0, ptr %1, ptr %2) {
   br label %4
 
-4:                                                ; preds = %44, %3
-  %5 = phi i64 [ %45, %44 ], [ 0, %3 ]
+4:                                                ; preds = %49, %3
+  %5 = phi i64 [ %50, %49 ], [ 0, %3 ]
   %6 = icmp slt i64 %5, 2
-  br i1 %6, label %7, label %46
+  br i1 %6, label %7, label %51
 
 7:                                                ; preds = %4
   br label %8
 
-8:                                                ; preds = %35, %7
-  %9 = phi i64 [ %43, %35 ], [ 0, %7 ]
+8:                                                ; preds = %40, %7
+  %9 = phi i64 [ %48, %40 ], [ 0, %7 ]
   %10 = icmp slt i64 %9, 2
-  br i1 %10, label %11, label %44
+  br i1 %10, label %11, label %49
 
 11:                                               ; preds = %8
   %12 = alloca float, i64 1, align 4
   store float 0.000000e+00, ptr %12, align 4
   br label %13
 
-13:                                               ; preds = %16, %11
-  %14 = phi i64 [ %34, %16 ], [ 0, %11 ]
+13:                                               ; preds = %34, %11
+  %14 = phi i64 [ %39, %34 ], [ 0, %11 ]
   %15 = icmp slt i64 %14, 2
-  br i1 %15, label %16, label %35
+  br i1 %15, label %16, label %40
 
 16:                                               ; preds = %13
   %17 = load float, ptr %12, align 4
@@ -33,45 +52,65 @@ define i32 @matmul_naive(ptr %0, ptr %1, ptr %2) {
   %19 = mul i32 %18, 2
   %20 = trunc i64 %14 to i32
   %21 = add i32 %19, %20
-  %22 = sext i32 %21 to i64
-  %23 = getelementptr [4 x float], ptr %1, i32 0, i64 %22
-  %24 = load float, ptr %23, align 4
-  %25 = trunc i64 %14 to i32
-  %26 = mul i32 %25, 2
-  %27 = trunc i64 %9 to i32
-  %28 = add i32 %26, %27
-  %29 = sext i32 %28 to i64
-  %30 = getelementptr [4 x float], ptr %2, i32 0, i64 %29
-  %31 = load float, ptr %30, align 4
-  %32 = fmul float %24, %31
-  %33 = fadd float %17, %32
-  store float %33, ptr %12, align 4
-  %34 = add i64 %14, 1
+  %22 = icmp uge i32 %21, 4
+  br i1 %22, label %23, label %24
+
+23:                                               ; preds = %16
+  call void @__flow_fault(ptr @str_2)
+  br label %24
+
+24:                                               ; preds = %23, %16
+  %25 = sext i32 %21 to i64
+  %26 = getelementptr [4 x float], ptr %1, i32 0, i64 %25
+  %27 = load float, ptr %26, align 4
+  %28 = trunc i64 %14 to i32
+  %29 = mul i32 %28, 2
+  %30 = trunc i64 %9 to i32
+  %31 = add i32 %29, %30
+  %32 = icmp uge i32 %31, 4
+  br i1 %32, label %33, label %34
+
+33:                                               ; preds = %24
+  call void @__flow_fault(ptr @str_2)
+  br label %34
+
+34:                                               ; preds = %33, %24
+  %35 = sext i32 %31 to i64
+  %36 = getelementptr [4 x float], ptr %2, i32 0, i64 %35
+  %37 = load float, ptr %36, align 4
+  %38 = call float @llvm.fmuladd.f32(float %27, float %37, float %17)
+  store float %38, ptr %12, align 4
+  %39 = add i64 %14, 1
   br label %13
 
-35:                                               ; preds = %13
-  %36 = load float, ptr %12, align 4
-  %37 = trunc i64 %5 to i32
-  %38 = mul i32 %37, 2
-  %39 = trunc i64 %9 to i32
-  %40 = add i32 %38, %39
-  %41 = sext i32 %40 to i64
-  %42 = getelementptr [4 x float], ptr %0, i32 0, i64 %41
-  store float %36, ptr %42, align 4
-  %43 = add i64 %9, 1
+40:                                               ; preds = %13
+  %41 = load float, ptr %12, align 4
+  %42 = trunc i64 %5 to i32
+  %43 = mul i32 %42, 2
+  %44 = trunc i64 %9 to i32
+  %45 = add i32 %43, %44
+  %46 = sext i32 %45 to i64
+  %47 = getelementptr [4 x float], ptr %0, i32 0, i64 %46
+  store float %41, ptr %47, align 4
+  %48 = add i64 %9, 1
   br label %8
 
-44:                                               ; preds = %8
-  %45 = add i64 %5, 1
+49:                                               ; preds = %8
+  %50 = add i64 %5, 1
   br label %4
 
-46:                                               ; preds = %4
+51:                                               ; preds = %4
   ret i32 0
 }
 
 define i32 @main() {
   ret i32 0
 }
+
+; Function Attrs: nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none)
+declare float @llvm.fmuladd.f32(float, float, float) #0
+
+attributes #0 = { nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none) }
 
 !llvm.module.flags = !{!0}
 

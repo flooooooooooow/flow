@@ -1,6 +1,6 @@
 module {
 llvm.func @printf(!llvm.ptr, ...) -> i32
-llvm.mlir.global internal constant @str_0("%d\n\00") {addr_space = 0 : i32} : !llvm.array<4 x i8>
+llvm.mlir.global internal constant @str_0("%d\0A\00") {addr_space = 0 : i32} : !llvm.array<4 x i8>
 func.func @merges(%arg0: i32) -> i32 {
 %v1 = llvm.mlir.undef : i32
 %v2 = arith.constant 0 : i32

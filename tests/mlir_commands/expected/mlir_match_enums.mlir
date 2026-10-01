@@ -1,6 +1,6 @@
 module {
 llvm.func @printf(!llvm.ptr, ...) -> i32
-llvm.mlir.global internal constant @str_0("%d\n\00") {addr_space = 0 : i32} : !llvm.array<4 x i8>
+llvm.mlir.global internal constant @str_0("%d\0A\00") {addr_space = 0 : i32} : !llvm.array<4 x i8>
 llvm.mlir.global internal constant @Shape_Circle(0 : i32) : i32
 llvm.mlir.global internal constant @Shape_Square(1 : i32) : i32
 llvm.mlir.global internal constant @Shape_Line(2 : i32) : i32

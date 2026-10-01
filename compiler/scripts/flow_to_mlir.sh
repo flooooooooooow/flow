@@ -19,12 +19,16 @@
 #
 # FLOWC_BIN selects the compiler; otherwise compiler/build/flowc_bootstrap,
 # built from compiler/bootstrap/flowc_stage_a.c when missing or stale.
-# FLOWC_TYPECHECK (default 1) and FLOWC_ROOT (default the checkout) pass
-# through.
+# FLOWC_TYPECHECK (default 1), FLOWC_CHECKS (default 1: the runtime checks
+# of division, shifts and array reads the C backend emits) and FLOWC_ROOT
+# (default the checkout) pass through.
 #
 # The emitter covers every program the retired Python MLIR generator lowered
 # (compiler/scripts/parity_mlir.sh); a program it refuses fails here, with
 # `flowc mlir: unsupported: ...` on stderr.
+#
+# A program with @cEmbed C also gets OUT.c (the C with the standard headers
+# ahead of it), which the caller compiles and links with the lowered MLIR.
 #
 # Exit status: 0 with OUT written; 1 when the program does not compile (the
 # diagnostics are on stderr).
@@ -72,7 +76,9 @@ trap 'rm -rf "$work"' EXIT
 # FLOWC_BACKEND=bpf|wasm (compiler/src/bpf_gen.flow, wasm_gen.flow) reach
 # here through flow_to_llvm.sh; the inner flowc must not inherit that mode.
 env_args=(-u FLOWC_BACKEND FLOWC_EMIT=mlir "FLOWC_TYPECHECK=${FLOWC_TYPECHECK:-1}"
-    "FLOWC_ROOT=${FLOWC_ROOT:-$ROOT}" "FLOWC_IN=$in" "FLOWC_OUT=$work/program.mlir")
+    "FLOWC_CHECKS=${FLOWC_CHECKS:-1}"
+    "FLOWC_ROOT=${FLOWC_ROOT:-$ROOT}" "FLOWC_IN=$in" "FLOWC_OUT=$work/program.mlir"
+    "FLOWC_CEMBED_OUT=$work/program.c")
 [[ "$gpu" -eq 1 ]] && env_args+=(FLOWC_MLIR_GPU=1)
 [[ "$wasm32" -eq 1 ]] && env_args+=(FLOWC_MLIR_SIZE_T=32)
 [[ -n "$modes" ]] && env_args+=(FLOWC_MODE=jit)
@@ -86,6 +92,12 @@ if env "${env_args[@]}" "$flowc" >"$work/flowc.log" 2>&1 \
     && head -1 "$work/program.mlir" 2>/dev/null | grep -q '^module'; then
     mkdir -p "$(dirname "$out")"
     cp "$work/program.mlir" "$out"
+    # @cEmbed C, compiled and linked next to the lowered MLIR.
+    if [[ -f "$work/program.c" ]]; then
+        cp "$work/program.c" "$out.c"
+    else
+        rm -f "$out.c"
+    fi
     # Lenient mode keeps type warnings on stderr, as Python's --lenient did.
     grep -E 'type warning' "$work/flowc.log" >&2 || true
     exit 0
