@@ -17,8 +17,8 @@
 # bb23f19f: flow_async_worker undefined); jit_*_rt cases link the runtime and
 # share the plain golden.
 #
-# MLIR files are normalized by normalize.flow (the rules of
-# compiler/scripts/mlir_normalize.awk).
+# MLIR files are normalized by normalize.flow (the rules parity_mlir
+# uses, gl_mlir_normalize in compiler/scripts/gate_lib.flow).
 #
 # Needs mlir-opt and mlir-translate (LLVM_PATH, or brew --prefix llvm).
 

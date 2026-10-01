@@ -1,5 +1,5 @@
 # Corpus programs the Flow MLIR emitter accepts, with the digest of
-# their normalized MLIR. Written by parity_mlir.sh --record.
+# their normalized MLIR. Written by parity_mlir.flow --record.
 eacb5a4617ab8451f7554036bf35d818210ce299905ee6d6b0fead2adfaed3ac benchmarks/aosoa.flow
 4fc7cdb7283fc4aa89c66720b5228d429ee7a54cfbef630d951cd292ca317fd4 benchmarks/baselines/numeric.flow
 d4e5ff3f1602bc3b61be1161ce35f05e97810c7f3a2958f85b38f7a934f287df benchmarks/baselines/rbf_elementwise.flow

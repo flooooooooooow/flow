@@ -1,6 +1,6 @@
 # @module tests.mlir_commands.normalize
 # @means  Normalize textual MLIR for comparison, as
-#         compiler/scripts/mlir_normalize.awk does for parity_mlir.
+#         gl_mlir_normalize in compiler/scripts/gate_lib.flow does for parity_mlir.
 #
 # The Flow emitter and the Python generator number SSA values and blocks
 # differently: Python allocates a number before it emits the op that defines
