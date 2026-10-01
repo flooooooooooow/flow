@@ -360,8 +360,6 @@ for m in S L; do
     else
         verdict=frontend
     fi
-    # -a: a log can echo source bytes that are not valid UTF-8, and GNU grep
-    # would then print "binary file matches" instead of the line.
     msg=""
     if [[ "$verdict" == reject ]]; then
         msg="$(sed -n -E 's/^.*:[0-9]+:[0-9]+: error: //p' "$log" | head -1 | sed 's/\\/\\\\/g')"
