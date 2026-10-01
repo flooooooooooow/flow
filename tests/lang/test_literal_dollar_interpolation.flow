@@ -1,0 +1,9 @@
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    let text: string = "$${line#prefix}"
+    puts(text)
+    return 0
+}
