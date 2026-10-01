@@ -1031,6 +1031,7 @@ typedef struct AstNode {
   int32_t ival;
   int32_t name_start;
   int32_t name_end;
+  int32_t aux_id;
 } AstNode;
 
 typedef struct AstArena {
@@ -1252,7 +1253,7 @@ int32_t flowc_ast_reject_effects(AstArena arena, uint8_t* src, const char* who);
 int32_t flowc_ast_chain_push(AstArena* arena, int32_t head, int32_t node);
 int32_t flowc_ast_chain_len(AstArena arena, int32_t head);
 AstArena flowc_ast_new(int32_t cap) {
-  int64_t size = ((int64_t)(cap) * 40);
+  int64_t size = ((int64_t)(cap) * 44);
   uint8_t* raw = (uint8_t*)(malloc(size));
   AstNode* nodes = (AstNode*)(raw);
   int32_t i = 0;
@@ -1267,6 +1268,7 @@ AstArena flowc_ast_new(int32_t cap) {
   (nodes[i]).ival = 0;
   (nodes[i]).name_start = 0;
   (nodes[i]).name_end = 0;
+  (nodes[i]).aux_id = AST_NONE;
   i = (i + 1);
 }
   return (AstArena){ .nodes = nodes, .len = 0, .cap = cap };
@@ -60230,6 +60232,7 @@ int32_t flowc_cgen_trimmed_eq(uint8_t* src, int32_t a0, int32_t a1, int32_t b0, 
 int32_t flowc_cgen_same_params(AstArena arena, uint8_t* src, int32_t a, int32_t b);
 int32_t flowc_cgen_fn_is_overloaded(AstArena arena, uint8_t* src, int32_t id);
 void flowc_cgen_put_mangled_fn(CgenBuf* w, AstArena arena, uint8_t* src, int32_t fn_id);
+int32_t flowc_cgen_bound_call_fn(CgenBuf* w, AstArena arena, uint8_t* src, int32_t call_id);
 int32_t flowc_cgen_resolve_overload(CgenBuf* w, AstArena arena, uint8_t* src, int32_t start, int32_t end, int32_t call_id);
 int32_t flowc_cgen_infer_arg_type(CgenBuf* w, AstArena arena, uint8_t* src, int32_t arg_id);
 int32_t flowc_cgen_find_type_by_name(AstArena arena, uint8_t* src, uint8_t* name);
@@ -61944,6 +61947,35 @@ void flowc_cgen_put_mangled_fn(CgenBuf* w, AstArena arena, uint8_t* src, int32_t
 }
   param = ((arena).nodes[param]).next;
 }
+}
+
+int32_t flowc_cgen_bound_call_fn(CgenBuf* w, AstArena arena, uint8_t* src, int32_t call_id) {
+  if (call_id == AST_NONE || call_id < 0 || call_id >= (arena).len || ((arena).nodes[call_id]).kind != AST_CALL) {
+  return AST_NONE;
+}
+  int32_t fn_id = ((arena).nodes[call_id]).aux_id;
+  if (fn_id < 0 || fn_id >= (arena).len || ((arena).nodes[fn_id]).kind != AST_FN) {
+  return AST_NONE;
+}
+  if (flowc_cgen_span_eq(src, ((arena).nodes[call_id]).name_start, ((arena).nodes[call_id]).name_end, ((arena).nodes[fn_id]).name_start, ((arena).nodes[fn_id]).name_end) == 0) {
+  return AST_NONE;
+}
+  int32_t nargs = flowc_ast_chain_len(arena, ((arena).nodes[call_id]).a);
+  int32_t nparams = 0;
+  int32_t implicit = 0;
+  int32_t p = ((arena).nodes[fn_id]).a;
+  while (p != AST_NONE) {
+  nparams = (nparams + 1);
+  int32_t ty = ((arena).nodes[p]).a;
+  if (ty != AST_NONE && ((arena).nodes[ty]).kind == AST_TYPE && (((arena).nodes[ty]).c == AST_TYPE_CAPABILITY || flowc_eff_is_effect((w[0]).eff, (w[0]).eff_len, src, ((arena).nodes[ty]).name_start, ((arena).nodes[ty]).name_end) == 1)) {
+  implicit = (implicit + 1);
+}
+  p = ((arena).nodes[p]).next;
+}
+  if ((nparams - implicit) != nargs) {
+  return AST_NONE;
+}
+  return fn_id;
 }
 
 int32_t flowc_cgen_resolve_overload(CgenBuf* w, AstArena arena, uint8_t* src, int32_t start, int32_t end, int32_t call_id) {
@@ -64649,11 +64681,11 @@ void flowc_cgen_plan_init(CgenBuf* w, AstArena arena, uint8_t* src) {
   return;
 }
   int32_t n = (arena).len;
-  { __typeof__((w[0]).plan_order) __flowc_st19712 = (int32_t*)(malloc((n * 4))); (w[0]).plan_order = __flowc_st19712; }
-  { __typeof__((w[0]).plan_has) __flowc_st19724 = (int32_t*)(malloc((n * 4))); (w[0]).plan_has = __flowc_st19724; }
-  { __typeof__((w[0]).plan_seen) __flowc_st19736 = (int32_t*)(malloc((n * 4))); (w[0]).plan_seen = __flowc_st19736; }
-  { __typeof__((w[0]).plan_lo) __flowc_st19748 = (int64_t*)(malloc((n * 8))); (w[0]).plan_lo = __flowc_st19748; }
-  { __typeof__((w[0]).plan_hi) __flowc_st19760 = (int64_t*)(malloc((n * 8))); (w[0]).plan_hi = __flowc_st19760; }
+  { __typeof__((w[0]).plan_order) __flowc_st19910 = (int32_t*)(malloc((n * 4))); (w[0]).plan_order = __flowc_st19910; }
+  { __typeof__((w[0]).plan_has) __flowc_st19922 = (int32_t*)(malloc((n * 4))); (w[0]).plan_has = __flowc_st19922; }
+  { __typeof__((w[0]).plan_seen) __flowc_st19934 = (int32_t*)(malloc((n * 4))); (w[0]).plan_seen = __flowc_st19934; }
+  { __typeof__((w[0]).plan_lo) __flowc_st19946 = (int64_t*)(malloc((n * 8))); (w[0]).plan_lo = __flowc_st19946; }
+  { __typeof__((w[0]).plan_hi) __flowc_st19958 = (int64_t*)(malloc((n * 8))); (w[0]).plan_hi = __flowc_st19958; }
   if ((w[0]).plan_order == NULL || (w[0]).plan_has == NULL || (w[0]).plan_seen == NULL || (w[0]).plan_lo == NULL || (w[0]).plan_hi == NULL) {
   (w[0]).plan_order = NULL;
   (w[0]).plan_has = NULL;
@@ -66952,7 +66984,10 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   int32_t n_overloads = flowc_cgen_count_overloads(arena, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
   int32_t fn_id = AST_NONE;
   if (n_overloads > 1) {
+  fn_id = flowc_cgen_bound_call_fn(w, arena, src, id);
+  if (fn_id == AST_NONE) {
   fn_id = flowc_cgen_resolve_overload(w, arena, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end, id);
+}
   if (fn_id != AST_NONE) {
   flowc_cgen_put_mangled_fn(w, arena, src, fn_id);
 } else {
@@ -72442,6 +72477,7 @@ int32_t sem_check_effect_call(Sem* c, const char* eff, const char* op, SemIntVec
 SemIntVec* sem_candidates_of(Sem* c, int32_t s);
 const char* sem_effect_name_of_param(Sem* c, int32_t p);
 int32_t sem_match_implicit_effect_overload(Sem* c, SemIntVec* cands, SemIntVec* arg_types);
+int32_t sem_local_ast_fn_for_candidate(Sem* c, const char* name, int32_t candidate);
 int32_t sem_static_length(Sem* c, int32_t e);
 int32_t sem_borrow_source_mutable(Sem* c, int32_t e);
 bool sem_check_span_arguments(Sem* c, const char* name, SemIntVec* args, int32_t sig);
@@ -74565,6 +74601,20 @@ int32_t sem_match_implicit_effect_overload(Sem* c, SemIntVec* cands, SemIntVec* 
   return (0 - 1);
 }
 
+int32_t sem_local_ast_fn_for_candidate(Sem* c, const char* name, int32_t candidate) {
+  int32_t s = 0;
+  while (s < sem_iv_len(c->sy_type)) {
+  if (sem_iv_get(c->sy_kind, s) == SK_FUNCTION && sem_iv_get(c->sy_type, s) == candidate && sem_s_eq(sem_sv_get(c->sy_name, s), name)) {
+  int32_t fi = sem_iv_get(c->sy_def, s);
+  if (fi >= 0 && sem_iv_get(c->fi_mod, fi) == c->cm) {
+  return sem_iv_get(c->fi_node, fi);
+}
+}
+  s = (s + 1);
+}
+  return AST_NONE;
+}
+
 int32_t sem_static_length(Sem* c, int32_t e) {
   if (sem_nk(c, e) == AST_ARRAY_LIT) {
   return sem_array_lit_len(c, e);
@@ -74868,6 +74918,12 @@ int32_t sem_check_function_call(Sem* c, const char* name, SemIntVec* args, int32
 }
   c->relax_c_strings = 0;
   if (matching >= 0) {
+  if (node >= 0) {
+  int32_t bound = sem_local_ast_fn_for_candidate(c, name, matching);
+  if (bound >= 0 && bound < (c->ar).len && ((c->ar).nodes[bound]).kind == AST_FN) {
+  ((c->ar).nodes[node]).aux_id = bound;
+}
+}
   sem_check_span_arguments(c, name, args, matching);
   if ((uint8_t*)(c->current_function_name) != NULL) {
   int32_t idx = 0;
@@ -75401,7 +75457,7 @@ int32_t sem_check_slice_expr(Sem* c, int32_t e) {
 }
   int32_t sp = sem_ty_named(c->t, TK_SPAN, __flowc_str_concat(prefix, sem_tstr(c, el)));
   tys->elem[sp] = el;
-  { __typeof__(tys->size[sp]) __flowc_st13280 = sem_static_length(c, e); tys->size[sp] = __flowc_st13280; }
+  { __typeof__(tys->size[sp]) __flowc_st13400 = sem_static_length(c, e); tys->size[sp] = __flowc_st13400; }
   return sp;
 }
 
@@ -75475,14 +75531,14 @@ int32_t sem_check_lambda(Sem* c, int32_t e) {
   p = sem_nnext(c, p);
 }
   SemIntVec* saved_sink = (SemIntVec*)(c->return_sink);
-  { __typeof__(c->return_sink) __flowc_st13629 = sem_iv_new(); c->return_sink = __flowc_st13629; }
+  { __typeof__(c->return_sink) __flowc_st13749 = sem_iv_new(); c->return_sink = __flowc_st13749; }
   sem_check_block(c, sem_ncc(c, e));
   c->return_sink = saved_sink;
   sem_pop_scope(c);
   if (sem_nb(c, e) != AST_NONE) {
-  { __typeof__(tys->ret[f]) __flowc_st13659 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e))); tys->ret[f] = __flowc_st13659; }
+  { __typeof__(tys->ret[f]) __flowc_st13779 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e))); tys->ret[f] = __flowc_st13779; }
 } else {
-  { __typeof__(tys->ret[f]) __flowc_st13668 = sem_tmk(c, TK_VOID); tys->ret[f] = __flowc_st13668; }
+  { __typeof__(tys->ret[f]) __flowc_st13788 = sem_tmk(c, TK_VOID); tys->ret[f] = __flowc_st13788; }
 }
   return f;
 }
@@ -76805,9 +76861,9 @@ void sem_check_function(Sem* c, int32_t fi) {
   SemStrVec* prev_storage = (SemStrVec*)(c->local_storage);
   SemStrMap* prev_origin = (SemStrMap*)(c->span_origin);
   int32_t prev_ret = c->current_return_type;
-  { __typeof__(c->local_storage) __flowc_st19314 = sem_sv_new(); c->local_storage = __flowc_st19314; }
-  { __typeof__(c->span_origin) __flowc_st19318 = sem_sm_new(); c->span_origin = __flowc_st19318; }
-  { __typeof__(c->current_return_type) __flowc_st19327 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); c->current_return_type = __flowc_st19327; }
+  { __typeof__(c->local_storage) __flowc_st19434 = sem_sv_new(); c->local_storage = __flowc_st19434; }
+  { __typeof__(c->span_origin) __flowc_st19438 = sem_sm_new(); c->span_origin = __flowc_st19438; }
+  { __typeof__(c->current_return_type) __flowc_st19447 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); c->current_return_type = __flowc_st19447; }
   i = 0;
   while (i < sem_fi_nparams(c, fi)) {
   int32_t pt = sem_parse_type(c, sem_fi_param_type(c, fi, i));
@@ -76815,7 +76871,7 @@ void sem_check_function(Sem* c, int32_t fi) {
   i = (i + 1);
 }
   SemIntVec* prev_sink = (SemIntVec*)(c->return_sink);
-  { __typeof__(c->return_sink) __flowc_st19370 = sem_iv_new(); c->return_sink = __flowc_st19370; }
+  { __typeof__(c->return_sink) __flowc_st19490 = sem_iv_new(); c->return_sink = __flowc_st19490; }
   sem_check_block(c, sem_iv_get(c->fi_body, fi));
   SemIntVec* returns = (SemIntVec*)(c->return_sink);
   c->return_sink = prev_sink;
