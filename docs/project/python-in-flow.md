@@ -35,13 +35,13 @@ in progress and are not counted as landed.
 Minimal proof that flowc round-trips one fixture (exits non-zero on failure):
 
 ```bash
-./compiler/scripts/stage_a_smoke.sh
+./flow tool compiler/scripts/stage_a_smoke.flow
 ```
 
 Full Stage-A suite (fixtures + frontend modules + driver + self-emit):
 
 ```bash
-./compiler/scripts/roundtrip.sh
+./flow tool compiler/scripts/roundtrip.flow
 ```
 
 ## Python modules and their Flow ports
@@ -196,20 +196,20 @@ from `replace(s, from, to)` needs different parameter names.
 ## Phases
 
 1. **Satellites**: pure string/AST walkers ← largely landed
-2. **Stage-A basics C path**: ten Stage-A-clean `examples/basics/*` via `emit_basics.sh`
+2. **Stage-A basics C path**: ten Stage-A-clean `examples/basics/*` via `emit_basics.flow`
 3. **Language surface**: effects/generics/match after Stage-A can express them
 4. **Optional**: full proof PDF / shader emitters (host-run)
 
 ## Dogfood
 
 ```bash
-./compiler/scripts/stage_a_smoke.sh
+./flow tool compiler/scripts/stage_a_smoke.flow
 ./flow run compiler/src/main.flow
-./compiler/scripts/roundtrip.sh
-FLOWC_EMIT_ONLY=1 ./compiler/scripts/emit_basics.sh
-./compiler/scripts/smoke_math_prose.sh
+./flow tool compiler/scripts/roundtrip.flow
+FLOWC_EMIT_ONLY=1 ./flow tool compiler/scripts/emit_basics.flow
+./flow tool compiler/scripts/smoke_math_prose.flow
 ./compiler/scripts/parity_proofs.sh
-./compiler/scripts/smoke_know.sh
+./flow tool compiler/scripts/smoke_know.flow
 ./compiler/scripts/parity_field_dsl.sh
 ./flow run examples/compilers/claim_address_demo.flow
 ./flow run examples/compilers/math_prose_demo.flow

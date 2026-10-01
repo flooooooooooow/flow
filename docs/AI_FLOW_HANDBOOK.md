@@ -855,7 +855,7 @@ noise and makes the first failure easier to understand.
 5. Add a negative diagnostic case.
 6. Run all tests for the touched compiler stage.
 7. Run backend parity when shared semantics changed.
-8. Run `roundtrip.sh` and `self_host_full.sh` when `compiler/src/` changed.
+8. Run `roundtrip.flow` and `self_host_full.flow` when `compiler/src/` changed.
 
 ### 13.3 Common commands
 
@@ -1143,9 +1143,9 @@ The key commands are:
 ```bash
 ./compiler/scripts/bootstrap_from_c.sh --regen    # after editing compiler/src
 ./compiler/scripts/bootstrap_from_c.sh --verify
-./compiler/scripts/selfcompile_audit.sh
-./compiler/scripts/self_host_full.sh
-./compiler/scripts/roundtrip.sh
+./flow tool compiler/scripts/selfcompile_audit.flow
+./flow tool compiler/scripts/self_host_full.flow
+./flow tool compiler/scripts/roundtrip.flow
 ```
 
 After an intentional compiler-source change, bootstrap C may require

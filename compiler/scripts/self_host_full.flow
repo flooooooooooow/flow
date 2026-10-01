@@ -1,0 +1,209 @@
+# Whole-compiler self-host: flowc bundle-compiles all of compiler/src into
+# one C translation unit, and three consecutive generations agree byte for
+# byte.
+#
+#   gen1 = <bootstrap driver> compiles compiler/src/main.flow
+#   gen2 = gen1 compiles compiler/src/main.flow
+#   gen3 = gen2 compiles compiler/src/main.flow
+#
+# Each generation is a complete flowc: run it with no FLOWC_IN and it runs
+# the front-end self-test suite; run it with FLOWC_IN/FLOWC_OUT/FLOWC_BUNDLE
+# and it emits C. The fixed point is checked on the emitted C and on the
+# object.
+#
+# This is success metric #1 of docs/project/self-hosting.md and the Phase-B
+# exit evidence for issue #151: compiler/src builds under flowc with no
+# FLOWC_TYPECHECK=0 opt-out.
+#
+#   ./flow tool compiler/scripts/self_host_full.flow
+#
+# Env:
+#   FLOWC_BOOTSTRAP=<path>  use this binary as the gen0 emitter
+
+import "tools/flow_cli/sys.flow"
+import "compiler/scripts/gate_lib.flow"
+import std.process { ProcCmd, ProcStrs, proc_arg, proc_input }
+
+const ENTRY: string = "compiler/src/main.flow"
+const SRCDIR: string = "compiler/src"
+
+# Emit the whole compiler with `bin` (a Stage-A driver or a previous
+# generation of flowc) into `out`. Driver.flow binaries take argv and
+# main.flow binaries read the environment, so both are passed.
+function emit_compiler(bin: string, out: string) {
+    rm_f(out)
+    let c: ptr<ProcCmd> = cmd(sl_of3(bin, ENTRY, out))
+    cmd_env(c, "FLOWC_BUNDLE", "1")
+    cmd_env(c, "FLOWC_DIR", SRCDIR)
+    cmd_env(c, "FLOWC_IN", ENTRY)
+    cmd_env(c, "FLOWC_OUT", out)
+    check(run(c))
+    if not nonempty(out) {
+        gate_fail("FAIL emit: " + bin + " wrote no C to " + out)
+    }
+}
+
+# A generation is only real if it passes flowc's own self-tests and can
+# still compile an ordinary Stage-A program.
+function check_generation(gen: string) {
+    let bin: string = "compiler/build/flowc_" + gen
+    let log: string = "compiler/build/flowc_" + gen + "_selftest.log"
+
+    let st: ptr<ProcCmd> = cmd(sl_of1(bin))
+    let names: ptr<ProcStrs> = s_words("FLOWC_IN FLOWC_OUT FLOWC_BUNDLE FLOWC_DIR")
+    let code: i32 = run_without_to_file(st, names, log)
+    if code != 0 {
+        errln("FAIL " + gen + ": self-tests exited " + s_itoa(code))
+        errs(tail_text(read_text(log), 20))
+        cli_exit(1)
+    }
+    if not has(log, "flowc: PASS") {
+        errln("FAIL " + gen + ": self-tests did not print 'flowc: PASS'")
+        errs(tail_text(read_text(log), 20))
+        cli_exit(1)
+    }
+    outln("PASS " + gen + " self-tests (flowc: PASS)")
+
+    # An ordinary user program through this generation: stage_a_sum, exit 45.
+    let sum_c: string = "compiler/build/" + gen + "_stage_a_sum.c"
+    let em: ptr<ProcCmd> = cmd(sl_of1(bin))
+    cmd_env(em, "FLOWC_IN", "compiler/fixtures/stage_a_sum.flow")
+    cmd_env(em, "FLOWC_OUT", sum_c)
+    cmd_quiet_out(em)
+    check(gate_run_without(em, sl_of2("FLOWC_BUNDLE", "FLOWC_DIR")))
+    let args: ptr<ProcStrs> = sl_of3("-O0", "-o", "compiler/build/" + gen + "_stage_a_sum")
+    sl_push(args, sum_c)
+    gate_cc(args)
+    let sum_code: i32 = gate_status("./compiler/build/" + gen + "_stage_a_sum")
+    if sum_code != 45 {
+        gate_fail("FAIL " + gen + ": stage_a_sum exit " + s_itoa(sum_code) + " (want 45)")
+    }
+    outln("PASS " + gen + " compiles stage_a_sum (exit 45)")
+}
+
+# `env -u NAMES... CMD >LOG 2>&1`; the status.
+function run_without_to_file(c: ptr<ProcCmd>, names: ptr<ProcStrs>, log: string) -> i32 {
+    let saved: ptr<ProcStrs> = sl_new()
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        let n: string = sl_get(names, i)
+        if env_isset(n) {
+            sl_push(saved, n + "=" + env(n))
+            env_unset(n)
+        }
+        i = i + 1
+    }
+    let rc: i32 = run_to_file(c, log, true)
+    let mut j: i32 = 0
+    while j < sl_len(saved) {
+        let kv: string = sl_get(saved, j)
+        let eq: i32 = s_find_byte(kv, 61, 0)
+        env_set(s_slice(kv, 0, eq), s_from(kv, eq + 1))
+        j = j + 1
+    }
+    return rc
+}
+
+# `cc -O0 -o BIN SRC.c -lm`
+function build_gen(gen: string) {
+    let args: ptr<ProcStrs> = sl_of3("-O0", "-o", "compiler/build/flowc_" + gen)
+    sl_push2(args, "compiler/build/flowc_" + gen + ".c", "-lm")
+    gate_cc(args)
+}
+
+# The md5 the script printed for a differing object.
+function md5_of(path: string) -> string {
+    if have("md5sum") {
+        let s: string = capture(cmd(sl_of2("md5sum", path)))
+        let w: ptr<ProcStrs> = s_words(s)
+        return sl_get(w, 0) + "  -"
+    }
+    let c: ptr<ProcCmd> = cmd(sl_of2("md5", "-q"))
+    proc_arg(c, path)
+    return capture(c)
+}
+
+function main() -> i32 {
+    let _root: string = gate_enter()
+    gate_mkdir("compiler/build")
+
+    # --- pick the gen0 emitter ---------------------------------------------
+    let mut boot: string = env("FLOWC_BOOTSTRAP")
+    if s_len(boot) == 0 {
+        let cands: ptr<ProcStrs> = s_words("compiler/build/stage_a_driver_flow_self compiler/build/stage_a_driver_flow compiler/build/stage_a_driver compiler/build/flowc_bootstrap")
+        let mut i: i32 = 0
+        while i < sl_len(cands) and s_len(boot) == 0 {
+            if is_exec(sl_get(cands, i)) {
+                boot = sl_get(cands, i)
+            }
+            i = i + 1
+        }
+    }
+    if s_len(boot) == 0 {
+        errln("self_host_full: no Stage-A driver in compiler/build")
+        errln("  run ./flow tool compiler/scripts/roundtrip.flow first (or set FLOWC_BOOTSTRAP)")
+        cli_exit(1)
+    }
+    outln("=== gen0 emitter: " + boot + " ===")
+
+    # --- gen1 --------------------------------------------------------------
+    outln("=== gen1: bootstrap driver compiles all of compiler/src ===")
+    emit_compiler(boot, "compiler/build/flowc_gen1.c")
+    build_gen("gen1")
+    # `wc -c <FILE` as the shell printed it (macOS pads the count).
+    let wc: ptr<ProcCmd> = cmd(sl_of2("wc", "-c"))
+    proc_input(wc, read_text("compiler/build/flowc_gen1.c"))
+    outln("gen1 C: " + capture(wc) + " bytes")
+    check_generation("gen1")
+
+    # --- gen2 --------------------------------------------------------------
+    outln("=== gen2: gen1 compiles all of compiler/src ===")
+    emit_compiler("compiler/build/flowc_gen1", "compiler/build/flowc_gen2.c")
+    if not same_bytes("compiler/build/flowc_gen1.c", "compiler/build/flowc_gen2.c") {
+        errln("FAIL fixed point: gen1.c != gen2.c")
+        let dir: string = mktemp_dir_default()
+        let a: string = dir + "/gen1.head"
+        let b: string = dir + "/gen2.head"
+        let _wa: bool = write_text(a, head_lines("compiler/build/flowc_gen1.c", 400))
+        let _wb: bool = write_text(b, head_lines("compiler/build/flowc_gen2.c", 400))
+        errs(head_text(capture_raw(cmd(sl_of3("diff", a, b))), 40))
+        rm_rf(dir)
+        cli_exit(1)
+    }
+    outln("PASS fixed point: gen1.c == gen2.c")
+    build_gen("gen2")
+    check_generation("gen2")
+
+    # --- gen3 --------------------------------------------------------------
+    outln("=== gen3: gen2 compiles all of compiler/src ===")
+    emit_compiler("compiler/build/flowc_gen2", "compiler/build/flowc_gen3.c")
+    if not same_bytes("compiler/build/flowc_gen2.c", "compiler/build/flowc_gen3.c") {
+        gate_fail("FAIL fixed point: gen2.c != gen3.c")
+    }
+    outln("PASS fixed point: gen2.c == gen3.c")
+    build_gen("gen3")
+    check_generation("gen3")
+
+    # Object bytes: linked binaries carry a build UUID, objects do not. The
+    # C compiler may embed the source path, so both generations compile from
+    # one common source path and no filename-dependent bytes reach the
+    # object (seen with Ubuntu's GCC).
+    let src: string = "compiler/build/fixedpoint_src.c"
+    let _c2: bool = copy_file("compiler/build/flowc_gen2.c", src)
+    gate_cc(s_words("-O0 -c compiler/build/fixedpoint_src.c -o compiler/build/flowc_gen2.o"))
+    let _c3: bool = copy_file("compiler/build/flowc_gen3.c", src)
+    gate_cc(s_words("-O0 -c compiler/build/fixedpoint_src.c -o compiler/build/flowc_gen3.o"))
+    if not same_bytes("compiler/build/flowc_gen2.o", "compiler/build/flowc_gen3.o") {
+        errln("FAIL fixed point: gen2.o != gen3.o")
+        errln("  md5: gen2=" + md5_of("compiler/build/flowc_gen2.o") + " gen3=" + md5_of("compiler/build/flowc_gen3.o"))
+        let cl: ptr<ProcCmd> = cmd(sl_of3("cmp", "-l", "compiler/build/flowc_gen2.o"))
+        proc_arg(cl, "compiler/build/flowc_gen3.o")
+        cmd_quiet_err(cl)
+        errs(head_text(capture_raw(cl), 5))
+        cli_exit(1)
+    }
+    outln("PASS fixed point: gen2.o == gen3.o")
+
+    outln("ALL PASS self_host_full (three consecutive generations, byte-identical)")
+    return 0
+}

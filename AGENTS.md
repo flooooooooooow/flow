@@ -92,7 +92,7 @@ committing, or the `bootstrap_from_c.sh --verify` fixed-point check will fail.
 flowc regenerates itself. There is no Python step: the binary built from the
 previous bootstrap C compiles your edited `compiler/src`, the result compiles
 it again, and the C stops changing (a fixed point, usually at the second
-generation). `self_host_full.sh` proves that fixed point on every run.
+generation). `self_host_full.flow` proves that fixed point on every run.
 
 Link with `-lm`: the proof layer puts math calls into flowc, and Linux does
 not link libm by default.
@@ -110,8 +110,8 @@ env -u FLOWC_IN -u FLOWC_OUT "$(./compiler/scripts/flowc_host.sh)"
 
 # 3. Run the full verification
 ./compiler/scripts/bootstrap_from_c.sh --verify
-./compiler/scripts/self_host_full.sh
-./compiler/scripts/roundtrip.sh
+./flow tool compiler/scripts/self_host_full.flow
+./flow tool compiler/scripts/roundtrip.flow
 ```
 
 Step 2 by hand, for when you need to see each generation:

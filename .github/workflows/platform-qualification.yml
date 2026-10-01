@@ -1,3 +1,4 @@
+# ACTIONS-INTENDED: public repository; Tier 1 platform qualification.
 name: Tier 1 platform qualification
 
 on:
@@ -75,7 +76,7 @@ jobs:
         run: ./compiler/scripts/bootstrap_from_c.sh
 
       - name: Self-host compiler source audit
-        run: ./compiler/scripts/selfcompile_audit.sh
+        run: ./flow tool compiler/scripts/selfcompile_audit.flow
 
       - name: Compile and execute Stable program with flowc
         env:
@@ -89,7 +90,7 @@ jobs:
           test "$ec" -eq 55
 
       - name: Build distributable flowc archive
-        run: ./compiler/scripts/package_flowc.sh
+        run: ./flow tool compiler/scripts/package_flowc.flow
 
       - name: Unpack distributable archive
         shell: bash

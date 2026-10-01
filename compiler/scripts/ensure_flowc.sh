@@ -8,7 +8,7 @@
 #      the current compiler/src (compiler/scripts/flowc_host.sh).
 # Both are complete main.flow builds of flowc. No step needs Python.
 #
-# The Stage-A driver.flow binaries that roundtrip.sh leaves in compiler/build
+# The Stage-A driver.flow binaries that roundtrip.flow leaves in compiler/build
 # (stage_a_driver_flow and friends) are test artifacts with a smaller feature
 # set, so they are never picked here. FLOWC_BIN selects any binary explicitly.
 #

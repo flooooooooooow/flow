@@ -22,18 +22,18 @@ no pip, no network:
 ./flow run examples/basics/fibonacci.flow  # exit 55
 ```
 
-`roundtrip.sh` runs `bootstrap_from_c.sh --verify`, which requires that file to
+`roundtrip.flow` runs `bootstrap_from_c.sh --verify`, which requires that file to
 be byte-for-byte what flowc emits from `compiler/src` today, so it cannot drift.
 After changing `compiler/src`, regenerate with `--regen`.
 
 ## flowc compiles flowc
 
 ```bash
-./compiler/scripts/selfcompile_audit.sh   # every compiler/src module -> C, 0 cc diagnostics
-./compiler/scripts/self_host_full.sh      # three consecutive generation fixed-points
+./flow tool compiler/scripts/selfcompile_audit.flow   # every compiler/src module -> C, 0 cc diagnostics
+./flow tool compiler/scripts/self_host_full.flow      # three consecutive generation fixed-points
 ```
 
-`self_host_full.sh` bundles all of `compiler/src` into one ~195 KB C file. That
+`self_host_full.flow` bundles all of `compiler/src` into one ~195 KB C file. That
 binary is a complete flowc: run it bare and it executes the front-end
 self-tests (`flowc: PASS`); give it `FLOWC_IN`/`FLOWC_OUT` and it emits C. It
 then recompiles `compiler/src`, and so does its child:
@@ -42,7 +42,7 @@ then recompiles `compiler/src`, and so does its child:
 ## Package it
 
 ```bash
-./compiler/scripts/package_flowc.sh   # dist/flowc-<version>-<os>-<arch>.tar.gz
+./flow tool compiler/scripts/package_flowc.flow   # dist/flowc-<version>-<os>-<arch>.tar.gz
 ```
 
 The archive carries the binary, the bootstrap C, a `build.sh` that rebuilds it
@@ -120,8 +120,8 @@ FLOWC_OUT=compiler/build/stage_a_sum.c \
 Round-trip (emit → `cc` → run; `stage_a_sum` / `stage_a_for_sum` exit `45`, `stage_a_const` exit `12`, `stage_a_struct` exit `42`, `stage_a_token_consts` dogfood exit `29`, `stage_a_ptr` / `stage_a_cast` / `stage_a_index_assign` / `stage_a_array_else` / `stage_a_float` / `stage_a_match` exit `42`; `match_unsupported` must be rejected with a struct-pattern diagnostic). Also compile-object dogfood for real modules [`src/token.flow`](src/token.flow), [`src/ast.flow`](src/ast.flow), [`src/lexer.flow`](src/lexer.flow), [`src/fileio.flow`](src/fileio.flow), [`src/parser.flow`](src/parser.flow), [`src/cgen.flow`](src/cgen.flow), [`src/typecheck.flow`](src/typecheck.flow), and [`src/resolve.flow`](src/resolve.flow) plus separate [`src/jsgen.flow`](src/jsgen.flow) / [`src/fmt.flow`](src/fmt.flow) dogfood (`compile_module` + `flowc_jsgen_fmt.o`; `FLOWC_BACKEND=js|fmt` fixture smokes, kept out of `flowc_frontend.o` fixed-point); plus two-file link smoke [`fixtures/pkg_add/`](fixtures/pkg_add/) (`import .math` skipped at emit → link `math.o`+`main.o` → exit `42`); plus `FLOWC_BUNDLE=1` smoke [`fixtures/bundle_main.flow`](fixtures/bundle_main.flow) + [`bundle_lib.flow`](fixtures/bundle_lib.flow) → exit `42` (default bundle typecheck); [`bundle_tc_ok.flow`](fixtures/bundle_tc_ok.flow) / [`bundle_tc_bad.flow`](fixtures/bundle_tc_bad.flow); plus typecheck fixtures (`typecheck_ok` → exit `42`, `typecheck_undef` rejected without opt-out):
 
 ```bash
-./compiler/scripts/roundtrip.sh
-# After editing compiler/src/*.flow: FLOWC_FORCE_HOST=1 ./compiler/scripts/roundtrip.sh
+./flow tool compiler/scripts/roundtrip.flow
+# After editing compiler/src/*.flow: FLOWC_FORCE_HOST=1 ./flow tool compiler/scripts/roundtrip.flow
 ```
 
 ### Two-file link smoke (`pkg_add`)
@@ -129,21 +129,21 @@ Round-trip (emit → `cc` → run; `stage_a_sum` / `stage_a_for_sum` exit `45`, 
 First slice of import-aware Stage-A: emit sibling modules separately (imports skipped in the body, as today), keep `export function` as a non-static C symbol, then `cc` link:
 
 ```bash
-./compiler/scripts/stage_a_link_two.sh
+./flow tool compiler/scripts/stage_a_link_two.flow
 # or with sibling-path resolve check:
-FLOWC_RESOLVE_IMPORTS=1 ./compiler/scripts/stage_a_link_two.sh
+FLOWC_RESOLVE_IMPORTS=1 ./flow tool compiler/scripts/stage_a_link_two.flow
 ```
 
 Expect `pkg_add exit=42` (`add(40, 2)`). Fixture: [`fixtures/pkg_add/math.flow`](fixtures/pkg_add/math.flow) + [`fixtures/pkg_add/main.flow`](fixtures/pkg_add/main.flow).
 
-Stage-A dogfoods `token` + `ast` + `lexer` + `fileio` + `parser` + `cgen` + `typecheck` + `resolve` as C objects (`lexer`/`parser`/`cgen`/`typecheck`/`resolve` compile with headers derived via the Flow tool `scripts/tools/c_to_hdr`; `extern` blocks get `#include <stdio.h>` + `#include <string.h>`). Ends with a relocatable link smoke (`cc -r` → `compiler/build/flowc_frontend.o`) so cross-module symbols resolve, then builds both Stage-A drivers (C host + Flow-written `driver.flow` with CLI argv) and smokes `stage_a_sum` → exit `45`. Roundtrip finishes with a mini self-host (`scripts/stage_a_self_emit.sh`): prefers Flow `stage_a_driver_flow` CLI (C driver fallback) to re-emit those eight frontend sources → `cc -c` → `flowc_frontend_self.o`, then emits `driver.flow` → `self_driver.o` and links **Stage-A Flow driver + self frontend** (`stage_a_driver_flow_self`): smoke `stage_a_sum` → exit `45`. Gen2 (`scripts/stage_a_self_emit_g2.sh`): `self.o` drives another emit → `flowc_frontend_g2.o`, then `cmp` fixed-point (`self.o` == `g2.o`), C `stage_a_driver_g2` + Flow `stage_a_driver_flow_g2` smokes (`stage_a_sum` → exit `45`), and a gen3 token emit that must match `self_token.c` / `g2_token.c`.
+Stage-A dogfoods `token` + `ast` + `lexer` + `fileio` + `parser` + `cgen` + `typecheck` + `resolve` as C objects (`lexer`/`parser`/`cgen`/`typecheck`/`resolve` compile with headers derived via the Flow tool `scripts/tools/c_to_hdr`; `extern` blocks get `#include <stdio.h>` + `#include <string.h>`). Ends with a relocatable link smoke (`cc -r` → `compiler/build/flowc_frontend.o`) so cross-module symbols resolve, then builds both Stage-A drivers (C host + Flow-written `driver.flow` with CLI argv) and smokes `stage_a_sum` → exit `45`. Roundtrip finishes with a mini self-host (`scripts/stage_a_self_emit.flow`): prefers Flow `stage_a_driver_flow` CLI (C driver fallback) to re-emit those eight frontend sources → `cc -c` → `flowc_frontend_self.o`, then emits `driver.flow` → `self_driver.o` and links **Stage-A Flow driver + self frontend** (`stage_a_driver_flow_self`): smoke `stage_a_sum` → exit `45`. Gen2 (`scripts/stage_a_self_emit_g2.flow`): `self.o` drives another emit → `flowc_frontend_g2.o`, then `cmp` fixed-point (`self.o` == `g2.o`), C `stage_a_driver_g2` + Flow `stage_a_driver_flow_g2` smokes (`stage_a_sum` → exit `45`), and a gen3 token emit that must match `self_token.c` / `g2_token.c`.
 
 ### Stage-A driver (`flowc` frontend `.o` + tiny C main)
 
 First binary that links Stage-A-emitted frontend objects with a hand-written C host (CLI argv fallback):
 
 ```bash
-# After roundtrip (or scripts/stage_a_driver.sh once .o + headers exist):
+# After roundtrip (or scripts/stage_a_driver.flow once .o + headers exist):
 ./compiler/build/stage_a_driver \
   compiler/fixtures/stage_a_sum.flow \
   compiler/build/driven_sum.c
@@ -168,7 +168,7 @@ cc -O0 -o compiler/build/driven_sum_flow compiler/build/driven_sum_flow.c
 
 ### Stage-A Flow driver + self frontend
 
-After `stage_a_self_emit.sh`, both the driver and the frontend are Stage-A-emitted Flow (only libc + `cc` remain outside). Emit `driver.flow` → `self_driver.c` (imports skipped), compile with `self_*.h`, link against `flowc_frontend_self.o`:
+After `stage_a_self_emit.flow`, both the driver and the frontend are Stage-A-emitted Flow (only libc + `cc` remain outside). Emit `driver.flow` → `self_driver.c` (imports skipped), compile with `self_*.h`, link against `flowc_frontend_self.o`:
 
 ```bash
 ./compiler/build/stage_a_driver_flow_self \
@@ -287,7 +287,7 @@ Lexer also tokenizes floats, string literals, brackets, `.`, etc.
   across modules (Stage-A; not full cross-file typing)
 - `jsgen` does not lower `AST_MATCH`
 - Note: Stage-A already round-trips `examples/basics/fibonacci.flow` twin
-  (`compiler/fixtures/stage_a_fib.flow` -> exit 55) via `./compiler/scripts/roundtrip.sh`
+  (`compiler/fixtures/stage_a_fib.flow` -> exit 55) via `./flow tool compiler/scripts/roundtrip.flow`
 
 ### Language suite
 
@@ -315,15 +315,15 @@ Batch smoke (emit → `cc` → run) for Stage-A-clean basics (`fibonacci`,
 `power`, `bubble_sort`, `simple_search`):
 
 ```bash
-./compiler/scripts/emit_basics.sh
-# Under host pressure / Gatekeeper delays: FLOWC_EMIT_ONLY=1 ./compiler/scripts/emit_basics.sh
+./flow tool compiler/scripts/emit_basics.flow
+# Under host pressure / Gatekeeper delays: FLOWC_EMIT_ONLY=1 ./flow tool compiler/scripts/emit_basics.flow
 ```
 
 Expect `pass=10`. Power returns 1024 → process status `0`.
 
 Python ports (Claim Coordinates / math prose / premise instantiate / know):
 see [docs/project/python-in-flow.md](../docs/project/python-in-flow.md);
-`./compiler/scripts/smoke_math_prose.sh` and `./compiler/scripts/smoke_know.sh`
+`./flow tool compiler/scripts/smoke_math_prose.flow` and `./flow tool compiler/scripts/smoke_know.flow`
 check generated C string constants.
 
 | Example | Stage-A clean? | Notes |
@@ -343,16 +343,16 @@ check generated C string constants.
 | `declarative_sort.flow` | no | `\|\>` pipe, `println`, extern I/O |
 | `type_safety_demo.flow` | no | `type` / `distinct type` / `println` |
 
-`export function` + multi-file `import .math` link smoke: [`fixtures/pkg_add/`](fixtures/pkg_add/) via `stage_a_link_two.sh` (exit 42). Float literals: [`fixtures/stage_a_float.flow`](fixtures/stage_a_float.flow) (exit 42; `40.5f` / `1.5`).
+`export function` + multi-file `import .math` link smoke: [`fixtures/pkg_add/`](fixtures/pkg_add/) via `stage_a_link_two.flow` (exit 42). Float literals: [`fixtures/stage_a_float.flow`](fixtures/stage_a_float.flow) (exit 42; `40.5f` / `1.5`).
 
-**Self-host loop (whole compiler):** `selfcompile_audit.sh` shows all 17
+**Self-host loop (whole compiler):** `selfcompile_audit.flow` shows all 17
 modules of `compiler/src` emitting C with zero `cc` diagnostics, and
-`self_host_full.sh` closes three generations byte-identically. What is *not*
+`self_host_full.flow` closes three generations byte-identically. What is *not*
 covered is the rest of the language: flowc compiles the subset flowc is
 written in. It does not yet compile all of Flow.
 
 **Self-host loop (frontend modules):** exists via roundtrip +
-`scripts/stage_a_self_emit.sh` / `stage_a_self_emit_g2.sh`: driver
+`scripts/stage_a_self_emit.flow` / `stage_a_self_emit_g2.flow`: driver
 re-emits `token`/`ast`/`lexer`/`fileio`/`parser`/`cgen`/`typecheck`/`resolve` →
 `flowc_frontend_self.o` → `flowc_frontend_g2.o` (byte-identical fixed
 point). Stage-A Flow driver + self frontend (`stage_a_driver_flow_self`)

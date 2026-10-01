@@ -2965,7 +2965,7 @@ export function flowc_bundle_typecheck_fatal(entry_path: string, search_dir: str
 }
 
 # The semantic check of a module compiled on its own whose imports the
-# emitter leaves out (roundtrip.sh builds the compiler one object per
+# emitter leaves out (roundtrip.flow builds the compiler one object per
 # module this way). The imports resolve as in bundle mode, so imported
 # names are known, as they were on the Python host. counts[0] = errors,
 # counts[1] = the errors that stop the compile. Returns 1 when the imports

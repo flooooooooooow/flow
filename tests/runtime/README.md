@@ -45,5 +45,5 @@ Also present:
 - `test_effects*.flow` / concurrency / async / fiber / netpoll: feature areas
 
 Compiler unit checks live in flowc itself (its self-tests run in
-`compiler/scripts/self_host_full.sh`) and in `tests/lang/`, run by
+`compiler/scripts/self_host_full.flow`) and in `tests/lang/`, run by
 `./flow test-lang`. Tool and script behaviour is covered by `./flow test-scripts`.
