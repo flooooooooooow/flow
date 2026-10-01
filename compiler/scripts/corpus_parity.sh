@@ -34,7 +34,9 @@
 # The goldens hold, per file, the Python result: build (ok, reject, ccfail),
 # exit code, a checksum of stdout, and whether stdout changed between two
 # runs of the same Python-built binary (nondet). For nondet files stdout is
-# not compared. The floor is kept per OS (`uname -s`), because some programs
+# not compared. For the files in compiler/corpus_parity/timing.txt, whose
+# run depends on machine load, only the build is compared. The floor is
+# kept per OS (`uname -s`), because some programs
 # need a platform runtime; --check passes with a note when this OS has no
 # floor yet.
 #
@@ -299,11 +301,18 @@ main() {
     if [[ -f "$DATA/nondet.txt" ]]; then
         grep -v -e '^#' -e '^$' "$DATA/nondet.txt" > "$work/nondet" || true
     fi
+    # timing.txt lists files whose run depends on how loaded the machine is
+    # (a 10s limit with seven jobs at once): only their build is compared.
+    touch "$work/timing"
+    if [[ -f "$DATA/timing.txt" ]]; then
+        grep -v -e '^#' -e '^$' "$DATA/timing.txt" > "$work/timing" || true
+    fi
     # Join: path, py build/exit/sum/nondet/cause, flowc build/exit/sum/-/cause.
     # Files without a recorded Python result are counted as "no golden".
     awk -F'\t' -v OFS='\t' '
         FILENAME == ARGV[1] { nd[$1] = 1; next }
-        FILENAME == ARGV[2] { py[$1] = $2 OFS $3 OFS $4 OFS ($1 in nd ? "nondet" : $5) OFS $6; next }
+        FILENAME == ARGV[2] { tm[$1] = 1; next }
+        FILENAME == ARGV[3] { py[$1] = $2 OFS $3 OFS $4 OFS ($1 in nd ? "nondet" : $5) OFS $6; next }
         {
             if (!($1 in py)) { print $1, "nogolden", "-", "-", "-", "-", "no Python golden for this file"; next }
             split(py[$1], p, "\t")
@@ -314,12 +323,13 @@ main() {
             else if (pb != "ok" && fb == "ok") { st = "flowc-accepts"; why = "Python " pb ": " p[5] }
             else if (fb == "reject") { st = "flowc-reject"; why = fc }
             else if (fb == "ccfail") { st = "flowc-ccfail"; why = fc }
+            else if ($1 in tm) { st = "match"; why = "same build (run timing not compared)" }
             else if (fe == "timeout" && pe != "timeout") { st = "run-timeout"; why = "flowc build times out (Python exit " pe ")" }
             else if (fe != pe) { st = "run-exit"; why = "exit code differs (Python " pe ", flowc " fe ")" }
             else if (pn != "nondet" && fs != ps) { st = "run-stdout"; why = "stdout differs" }
             else { st = "match"; why = (pb == "ok") ? "same run" : "both reject" }
             print $1, st, pb, pe, fb, fe, why
-        }' "$work/nondet" "$ref" "$work/flowc.tsv" > "$work/joined"
+        }' "$work/nondet" "$work/timing" "$ref" "$work/flowc.tsv" > "$work/joined"
 
     group_of() {
         awk -F'\t' -v OFS='\t' '{
