@@ -246,7 +246,7 @@ jobs:
 
       - name: Shellcheck
         if: needs.changes.outputs.workflow == 'true'
-        run: shellcheck flow scripts/*.sh
+        run: shellcheck flow $(find scripts -maxdepth 1 -type f -name '*.sh' -print)
 
   security:
     name: Security Scan
