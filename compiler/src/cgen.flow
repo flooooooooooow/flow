@@ -10708,6 +10708,25 @@ export function flowc_cgen_export_missing(sigs: ptr<u8>, sigs_len: i32, out: ptr
     return w.len
 }
 
+# Decode the two escapes used by the surrounding Flow string literal. The
+# embedded C still owns its other backslash escapes, so preserve them.
+function flowc_cgen_put_cembed(w: ptr<CgenBuf>, src: ptr<u8>, start: i32, end: i32) {
+    let mut i: i32 = start
+    while i < end {
+        let c: i32 = src[i] as i32
+        if c == 92 and i + 1 < end {
+            let n: i32 = src[i + 1] as i32
+            if n == 92 or n == 34 {
+                flowc_cgen_putc(w, n)
+                i = i + 2
+                continue
+            }
+        }
+        flowc_cgen_putc(w, c)
+        i = i + 1
+    }
+}
+
 export function flowc_cgen_emit_sigs(
     arena: AstArena,
     root: i32,
@@ -11053,18 +11072,18 @@ export function flowc_cgen_emit_sigs(
         }
         item = arena.nodes[item].next
     }
-    # Pass 0.5b: @cEmbed raw C code (after includes so headers are available)
-    item = arena.nodes[root].a
-    while item != AST_NONE {
-        if arena.nodes[item].kind == AST_C_EMBED {
-            # @cEmbed: emit the raw C code verbatim (strip quotes)
-            flowc_cgen_put_span(&w, src, arena.nodes[item].name_start + 1, arena.nodes[item].name_end - 1)
-            flowc_cgen_putc(&w, 10)  # newline
-            # Scan the embed code for function definition names.
-            flowc_cgen_scan_cembed_names(&w, src, arena.nodes[item].name_start + 1, arena.nodes[item].name_end - 1)
-        }
-        item = arena.nodes[item].next
+# Pass 0.5b: @cEmbed raw C code (after includes so headers are available)
+item = arena.nodes[root].a
+while item != AST_NONE {
+    if arena.nodes[item].kind == AST_C_EMBED {
+        # @cEmbed: emit the raw C code verbatim (strip quotes)
+        flowc_cgen_put_cembed(&w, src, arena.nodes[item].name_start + 1, arena.nodes[item].name_end - 1)
+        flowc_cgen_putc(&w, 10)  # newline
+        # Scan the embed code for function definition names.
+        flowc_cgen_scan_cembed_names(&w, src, arena.nodes[item].name_start + 1, arena.nodes[item].name_end - 1)
     }
+    item = arena.nodes[item].next
+}
     # Pass 0.5c: extern type forward declarations
     item = arena.nodes[root].a
     while item != AST_NONE {
