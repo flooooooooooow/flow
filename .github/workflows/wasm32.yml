@@ -1,3 +1,4 @@
+# ACTIONS-INTENDED: public repository; its CI runs on GitHub Actions.
 name: wasm32 direct backend
 
 on:
@@ -5,7 +6,7 @@ on:
     paths:
       - 'scripts/tools/llvm_target/**'
       - 'scripts/tools/lib/**'
-      - 'scripts/wasm32_target.sh'
+      - 'tools/flow_cli/**'
       - 'compiler/scripts/flow_to_llvm.sh'
       - 'compiler/scripts/mlir_lower.sh'
       - 'compiler/scripts/parity_targets.sh'
@@ -22,7 +23,7 @@ on:
     paths:
       - 'scripts/tools/llvm_target/**'
       - 'scripts/tools/lib/**'
-      - 'scripts/wasm32_target.sh'
+      - 'tools/flow_cli/**'
       - 'compiler/scripts/flow_to_llvm.sh'
       - 'compiler/scripts/mlir_lower.sh'
       - 'compiler/scripts/parity_targets.sh'
@@ -47,15 +48,15 @@ jobs:
           mlir: 'true'
       - name: Compile Flow through MLIR and LLVM IR to WebAssembly
         run: |
-          scripts/wasm32_target.sh tests/fixtures/wasm/main_42.flow \
+          ./flow wasm32 tests/fixtures/wasm/main_42.flow \
             -o /tmp/main_42.wasm \
             --export answer \
             -O O2
-          scripts/wasm32_target.sh tests/fixtures/wasm/sum_pair.flow \
+          ./flow wasm32 tests/fixtures/wasm/sum_pair.flow \
             -o /tmp/sum_pair.wasm \
             --export sum_pair \
             -O O2
-          scripts/wasm32_target.sh tests/fixtures/wasm/alloc_sum.flow \
+          ./flow wasm32 tests/fixtures/wasm/alloc_sum.flow \
             -o /tmp/alloc_sum.wasm \
             --export alloc_sum \
             -O O2

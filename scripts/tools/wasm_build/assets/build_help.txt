@@ -1,10 +1,10 @@
-usage: wasm_build.sh [-h] [--out OUT] [--name NAME] [--title TITLE]
-                     [--backend {c,mlir}] [--preload HOST@VFS] [--link PATH]
-                     [--initial-memory INITIAL_MEMORY]
-                     [--asyncify-stack-size ASYNCIFY_STACK_SIZE] [-O LEVEL]
-                     [--emcc-flag FLAG] [--threads] [--workers WORKERS]
-                     [--timeout TIMEOUT] [--keep-c] [--json]
-                     program
+usage: flow tool wasm_build build [-h] [--out OUT] [--name NAME] [--title TITLE]
+                                  [--backend {c,mlir}] [--preload HOST@VFS] [--link PATH]
+                                  [--initial-memory INITIAL_MEMORY]
+                                  [--asyncify-stack-size ASYNCIFY_STACK_SIZE] [-O LEVEL]
+                                  [--emcc-flag FLAG] [--threads] [--workers WORKERS]
+                                  [--timeout TIMEOUT] [--keep-c] [--json]
+                                  program
 
 Compile one Flow program to a runnable WebAssembly page.
 

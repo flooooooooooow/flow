@@ -1,28 +1,30 @@
 # Generate the Wiki demo showcase, docs/demos/overview.md, from
 # docs/demos/catalog.json.
 #
-# Run through scripts/build_demo_overview.sh from the repository root:
+# Run it as `./flow tool demo_overview` from anywhere in the repository; it
+# works from the repository root:
 #
-#   build_demo_overview.sh                       rewrite overview.md
-#   build_demo_overview.sh --check               exit 1 if overview.md is stale
-#   build_demo_overview.sh --check-previews      require every preview asset
+#   flow tool demo_overview                    rewrite overview.md
+#   flow tool demo_overview --check            exit 1 if overview.md is stale
+#   flow tool demo_overview --check-previews   require every preview asset
 #
 # Output is byte-identical to the Python script this replaces.
 
 import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_repr, ft_read_file, ft_write_file, ft_exists, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_has, StrList }
 import .json { json_parse, json_error, json_get, json_kind, json_str, json_first, json_next, json_kind_number, json_kind_string, json_kind_true, json_kind_false, json_kind_null, Json }
 import .demogen { dg_html_escape, dg_flags, dg_truthy }
+import .repo { rp_enter_root }
 
 extern {
     function malloc(size: i64) -> ptr<void>
 }
 
-const PROG: string = "build_demo_overview.sh"
+const PROG: string = "flow tool demo_overview"
 const CATALOG: string = "docs/demos/catalog.json"
 const OUTPUT: string = "docs/demos/overview.md"
 
 function usage_line() -> string {
-    return "usage: build_demo_overview.sh [-h] [--check] [--check-previews]\n"
+    return "usage: flow tool demo_overview [-h] [--check] [--check-previews]\n"
 }
 
 function help_text() -> string {
@@ -153,7 +155,7 @@ function build(j: ptr<Json>, coll: i32) -> string {
     out = out + "./flow gfx examples/games/tetris_gfx.flow\n"
     out = out + "./flow record examples/morphogenesis/gray_scott.flow --frames 240 --gif out.gif\n"
     out = out + "./flow shader examples/gpu/shader_photoreal.flow --name photoreal_glass\n"
-    out = out + "./scripts/record_shader_gallery.sh --group photoreal\n"
+    out = out + "./flow tool shader_record --group photoreal\n"
     out = out + "```\n\n"
     out = out + "For problem-first code examples rather than visual output, use \n"
     out = out + "[Solve It the Flow Way](../../examples/flow_way/README.md). For interactive browser \n"
@@ -168,6 +170,10 @@ function key_error(k: string) -> i32 {
 }
 
 function main(argc: i32, argv: ptr<string>) -> i32 {
+    if rp_enter_root() == false {
+        ft_errln("demo_overview: cannot enter the repository root")
+        return 1
+    }
     let names: ptr<StrList> = ft_list_new()
     ft_list_push(names, "--check")
     ft_list_push(names, "--check-previews")
@@ -276,7 +282,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
             current = ""
         }
         if ft_eq(current, generated) == false {
-            ft_errln("docs/demos/overview.md is stale; run scripts/build_demo_overview.sh")
+            ft_errln("docs/demos/overview.md is stale; run ./flow tool demo_overview")
             return 1
         }
         ft_outln("demo overview is current")

@@ -16,7 +16,7 @@ Record one headlessly (no display needed):
 FLOW_GFX_RECORD_FRAMES=240 ./flow record examples/games/<name>_gfx.flow
 ```
 
-Regenerate every GIF on this page: `scripts/record_demos.sh`
+Regenerate every GIF on this page: `./flow tool record_demos`
 
 Every game here also runs in a browser, from the same source, on a fourth gfx
 backend that paints a canvas: [WebAssembly Gallery](wasm.md).
@@ -70,7 +70,7 @@ P pause, R restart, Esc quit. Per-game keys are in each file's header comment.
 
 `runtime/gfx_record.c` plus `lib/runtime/gfx_record.flow` implement the same
 API as the windowed backends, drawing into an off-screen buffer and writing
-each presented frame. `scripts/record_demos.sh` drives each game with a scripted
+each presented frame. `./flow tool record_demos` drives each game with a scripted
 key sequence (`FLOW_GFX_RECORD_KEYS`) and assembles the frames into the GIFs on
 this page. Details: [demos README](README.md).
 

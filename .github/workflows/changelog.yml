@@ -1,3 +1,4 @@
+# ACTIONS-INTENDED: public repository; its CI runs on GitHub Actions.
 name: Changelog
 
 on:
@@ -7,7 +8,7 @@ on:
       - 'CHANGELOG.md'
       - 'docs/project/CHANGELOG.md'
       - 'VERSION'
-      - 'scripts/check_changelog.sh'
+      - 'tools/flow_cli/**'
       - 'scripts/tools/changelog_check/**'
       - 'scripts/tools/lib/**'
       - 'scripts/tools/build_tool.sh'
@@ -18,7 +19,7 @@ on:
       - 'CHANGELOG.md'
       - 'docs/project/CHANGELOG.md'
       - 'VERSION'
-      - 'scripts/check_changelog.sh'
+      - 'tools/flow_cli/**'
       - 'scripts/tools/changelog_check/**'
       - 'scripts/tools/lib/**'
       - 'scripts/tools/build_tool.sh'
@@ -33,4 +34,4 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Require current version in canonical changelog
-        run: scripts/check_changelog.sh
+        run: ./flow tool changelog_check

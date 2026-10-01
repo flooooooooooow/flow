@@ -6,10 +6,10 @@ Compile FLOW programs to WebAssembly for browser execution.
 
 ```bash
 # Convert a single file (same as ./flow wasm --legacy FILE)
-scripts/flow_to_wasm.sh examples/basics/fibonacci.flow
+./flow tool flow_to_wasm examples/basics/fibonacci.flow
 
 # Convert the example list
-scripts/flow_to_wasm.sh --all
+./flow tool flow_to_wasm --all
 
 # Open in browser
 open wasm/wasm_examples/index.html
@@ -82,7 +82,6 @@ If you don't have Emscripten installed:
 
 ```
 wasm/
-├── crossings.sh         # WASM crossing demos (threads, sockets, python, fs, gpu)
 ├── hello_harness.c      # Minimal emcc smoke harness
 ├── README.md            # This file
 └── wasm_examples/       # Browser gallery (HTML + generated C)
@@ -90,24 +89,24 @@ wasm/
 
 ## Usage Examples
 
-The converter is `scripts/flow_to_wasm.sh`, a shim over the Flow program
+The converter is `./flow tool flow_to_wasm`, the Flow program
 `scripts/tools/flow_to_wasm/main.flow`. Page text lives in
 `scripts/tools/flow_to_wasm/assets`. `tests/tools/flow_to_wasm/run.flow` checks
 it against goldens recorded from the Python converter it replaced.
 
 ### Single File
 ```bash
-scripts/flow_to_wasm.sh examples/basics/hello_world.flow
+./flow tool flow_to_wasm examples/basics/hello_world.flow
 ```
 
 ### Custom Output Directory
 ```bash
-scripts/flow_to_wasm.sh examples/basics/fibonacci.flow ./my_output
+./flow tool flow_to_wasm examples/basics/fibonacci.flow ./my_output
 ```
 
 ### All Examples
 ```bash
-scripts/flow_to_wasm.sh --all
+./flow tool flow_to_wasm --all
 ```
 
 `--all` converts the fixed list `examples/{fibonacci,factorial,gcd,...}.flow`

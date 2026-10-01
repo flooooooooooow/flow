@@ -31,7 +31,7 @@ New code is Flow. `./flow tool python_ratchet` fails on any new `.py` file
 outside the exempt trees it names.
 
 A source implementation has one canonical home. A tool lives under `tools/`
-or under `scripts/tools/`, never both. `scripts/check_tool_layout.sh` fails
+or under `scripts/tools/`, never both. `./flow tool tool_layout` fails
 when the same tool name appears in both trees.
 
 A shell script may call a tool but should not contain a second copy of it.

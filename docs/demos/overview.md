@@ -267,7 +267,7 @@ offscreen Metal recorder so the published GIFs are produced by the real shader p
 ./flow gfx examples/games/tetris_gfx.flow
 ./flow record examples/morphogenesis/gray_scott.flow --frames 240 --gif out.gif
 ./flow shader examples/gpu/shader_photoreal.flow --name photoreal_glass
-./scripts/record_shader_gallery.sh --group photoreal
+./flow tool shader_record --group photoreal
 ```
 
 For problem-first code examples rather than visual output, use 

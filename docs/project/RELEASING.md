@@ -16,8 +16,8 @@ Flow uses annotated semantic-version tags and GitHub Releases.
    ```bash
    ./flow test --strict --tier2
    ./flow tool compiler/scripts/roundtrip.flow
-   scripts/build_wiki.sh
-   scripts/check_wiki_links.sh
+   ./flow tool build_wiki
+   ./flow tool wiki_links
    ```
 4. Merge the release PR and require green `CI`.
 

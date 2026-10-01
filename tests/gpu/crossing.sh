@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# WebGPU page parity gate: `wasm/crossings.sh gpu --no-build` and
-# `wasm/crossings.sh shader`.
+# WebGPU page parity gate: `./flow tool wasm_crossings gpu --no-build` and
+# `./flow tool wasm_crossings shader`.
 #
 # Builds the WGSL half of the GPU crossing page (tools/gpu for the shaders,
 # scripts/tools/wasm_crossings for the page) for each case below, with
@@ -11,7 +11,7 @@
 #
 #   tests/gpu/crossing.sh --record     # needs python3 and git
 #
-# The page now names tools/gpu/main.flow and `wasm/crossings.sh gpu` where it
+# The page now names tools/gpu/main.flow and `./flow tool wasm_crossings gpu` where it
 # named the Python files; the recording applies that rename. The emcc build of
 # the CPU reference (without --no-build) was checked byte for byte against
 # the Python builder once (the .js and .wasm match); it needs emscripten, so
@@ -89,9 +89,9 @@ for c in "${cases[@]}"; do
             ( cd "$tree" && python3 wasm/flow_webgpu_shader.py $args --out "$out_rel" ) > "$got/stdout.raw" 2> "$work/stderr"
         fi
     elif [[ "$cmd" == "gpu" ]]; then
-        ( cd "$tree" && wasm/crossings.sh gpu $args --no-build --out "$out_rel" ) > "$got/stdout.raw" 2> "$work/stderr"
+        ( cd "$tree" && ./flow tool wasm_crossings gpu $args --no-build --out "$out_rel" ) > "$got/stdout.raw" 2> "$work/stderr"
     else
-        ( cd "$tree" && wasm/crossings.sh shader $args --out "$out_rel" ) > "$got/stdout.raw" 2> "$work/stderr"
+        ( cd "$tree" && ./flow tool wasm_crossings shader $args --out "$out_rel" ) > "$got/stdout.raw" 2> "$work/stderr"
     fi
     echo $? > "$got/rc"
     sed "s|$tree|@ROOT@|g" "$got/stdout.raw" > "$got/stdout"
@@ -106,7 +106,7 @@ for c in "${cases[@]}"; do
         done
         if [[ -f "$got/files/index.html" ]]; then
             sed -i.bak -e 's|<code>src/flow/wgsl_codegen.py</code>|<code>tools/gpu/main.flow</code>|g' \
-                -e 's|<code>wasm/flow_wasm_gpu.py</code>|<code>wasm/crossings.sh gpu</code>|' "$got/files/index.html"
+                -e 's|<code>wasm/flow_wasm_gpu.py</code>|<code>./flow tool wasm_crossings gpu</code>|' "$got/files/index.html"
             rm -f "$got/files/index.html.bak"
         fi
         rm -rf "$EXP/$name"

@@ -16,5 +16,5 @@ Library: [`lib/stdlib/fmm2d.flow`](../library/fmm2d.md).
 ./flow gfx examples/numerical/fmm_adaptive.flow
 ./flow record examples/numerical/fmm_adaptive.flow \
   --frames 4 --out /tmp/fmm
-scripts/record_demos.sh --group numerical
+./flow tool record_demos --group numerical
 ```

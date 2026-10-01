@@ -19,7 +19,7 @@ target can do today.
 
 ```bash
 ./flow wasm examples/games/snake_gfx.flow --out build/wasm/snake
-scripts/build_wasm_gallery.sh               # all of them, into site/wasm/
+./flow tool wasm_build gallery              # all of them, into site/wasm/
 ```
 
 `./flow wasm` writes a `.wasm`, its `.js` loader and a runnable `index.html`.
@@ -135,14 +135,13 @@ emcc build/hello_world.c -o build/wasm_hello/hello.js \
   -s EXPORTED_RUNTIME_METHODS="['ccall','cwrap']"
 ```
 
-See also older helpers under `scripts/build_wasm.sh`, `scripts/flow_to_wasm.sh`
+See also older helpers under `scripts/build_wasm.sh`, `./flow tool flow_to_wasm`
 (`./flow wasm --legacy`), and `wasm/wasm_examples/`. Those are the browser gallery;
 `build_wasm_hello.sh` is the documented minimal path for issue #121.
 
 ## Direct wasm32 (no Emscripten)
 
-`./flow wasm32` (`scripts/wasm32_target.sh`, the Flow program in
-`scripts/tools/llvm_target`) compiles a Flow file, or LLVM IR in a `.ll` file,
+`./flow wasm32` (the Flow program in `scripts/tools/llvm_target`) compiles a Flow file, or LLVM IR in a `.ll` file,
 to a freestanding wasm32 module without going near the C backend or
 Emscripten:
 

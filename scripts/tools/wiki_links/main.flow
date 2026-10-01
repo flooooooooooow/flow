@@ -1,10 +1,10 @@
 # Validate internal links in the built wiki under build/wiki.
 #
-# Run through scripts/check_wiki_links.sh after scripts/build_wiki.sh. The
-# shim lists the tree with find(1), since Flow cannot read directories:
+# Run it as `./flow tool wiki_links` after `./flow tool build_wiki`, from
+# anywhere in the repository. It lists the tree with find(1):
 #
-#   build/wiki-links/entries.txt   every path under build/wiki, find order
-#   build/wiki-links/dirs.txt      the directories among them
+#   find build/wiki            every path under build/wiki, find order
+#   find build/wiki -type d    the directories among them
 #
 # Pages are visited in the order Python 3.12's Path.rglob("*.md") yields
 # them, rebuilt from the per-directory order find reports, so the report
@@ -12,6 +12,7 @@
 
 import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_read_file, ft_exists, ft_starts, ft_ends, ft_slice, ft_from, ft_find_byte, ft_split_lines, ft_normpath, ft_dirname, ft_basename, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_set_new, ft_set_add, ft_set_has, ft_map_new, ft_map_get, ft_map_put, StrList, StrSet, StrMap }
 import .unicode { uc_strip }
+import .repo { rp_enter_root, rp_capture, rp_status, rp_argv2 }
 
 extern {
     function malloc(size: i64) -> ptr<void>
@@ -20,8 +21,6 @@ extern {
 }
 
 const WIKI_REL: string = "build/wiki"
-const ENTRIES: string = "build/wiki-links/entries.txt"
-const DIRS: string = "build/wiki-links/dirs.txt"
 
 function cwd() -> string {
     let buf: ptr<i8> = malloc(4096) as ptr<i8>
@@ -276,16 +275,27 @@ function rglob_md(t: ptr<Tree>) -> ptr<i32> {
 }
 
 function main() -> i32 {
+    if rp_enter_root() == false {
+        ft_errln("check_wiki_links: cannot enter the repository root")
+        return 1
+    }
     let root: string = cwd()
     let wiki: string = root + "/" + WIKI_REL
     if ft_exists(wiki) == false {
-        ft_errln("Run scripts/build_wiki.sh first")
+        ft_errln("Run ./flow tool build_wiki first")
         return 1
     }
-    let entries_text: string = ft_read_file(ENTRIES)
-    let dirs_text: string = ft_read_file(DIRS)
-    if entries_text as ptr<u8> == null or dirs_text as ptr<u8> == null {
-        ft_errln("check_wiki_links: missing " + ENTRIES + "; run scripts/check_wiki_links.sh")
+    let entries_text: string = rp_capture(rp_argv2("find", WIKI_REL))
+    if rp_status() != 0 {
+        ft_errln("check_wiki_links: find " + WIKI_REL + " failed")
+        return 1
+    }
+    let dirs_args: ptr<StrList> = rp_argv2("find", WIKI_REL)
+    ft_list_push(dirs_args, "-type")
+    ft_list_push(dirs_args, "d")
+    let dirs_text: string = rp_capture(dirs_args)
+    if rp_status() != 0 {
+        ft_errln("check_wiki_links: find " + WIKI_REL + " failed")
         return 1
     }
     let entries: ptr<StrList> = ft_split_lines(entries_text)
@@ -297,7 +307,7 @@ function main() -> i32 {
         i = i + 1
     }
     if ft_list_len(entries) == 0 or ft_eq(ft_list_get(entries, 0), WIKI_REL) == false {
-        ft_errln("check_wiki_links: " + ENTRIES + " must start with " + WIKI_REL)
+        ft_errln("check_wiki_links: find " + WIKI_REL + " must list " + WIKI_REL + " first")
         return 1
     }
 

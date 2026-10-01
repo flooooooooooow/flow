@@ -2,18 +2,18 @@
 # The wiki nav manifest and the checks that keep it honest.
 #
 # The checks live in the Flow program scripts/tools/wiki_nav, run through
-# scripts/wiki_nav.sh. The wiki build (scripts/build_wiki.sh) runs the same
+# `./flow tool wiki_nav`. The wiki build (`./flow tool build_wiki`) runs the same
 # validation before it writes the sidebar.
 source "$(dirname "$0")/lib.sh"
 
-SHIM="$T_ROOT/scripts/wiki_nav.sh"
+wiki_nav() { "$T_ROOT/flow" tool wiki_nav "$@"; }
 NAV="$T_ROOT/docs/nav.json"
 
 # Non-empty stdout lines of the shim, into FILE.
 lines() {
     local file="$1"
     shift
-    bash "$SHIM" "$@" | awk 'length($0) > 0' > "$file" || true
+    wiki_nav "$@" | awk 'length($0) > 0' > "$file" || true
 }
 
 # The real manifest.
@@ -21,13 +21,13 @@ lines() {
 # This is the check that would have caught project/PROJECT_STRUCTURE.md, a
 # sidebar entry pointing at a file that only exists under archive/.
 check_the_shipped_manifest_is_consistent_with_docs() {
-    t_run bash "$SHIM" --problems
+    t_run wiki_nav --problems
     [[ "$T_RC" -eq 0 ]] || { cat "$T_OUT"; return 1; }
     a_file_is "$T_OUT" ""
 }
 
 check_the_summary_reports_a_consistent_manifest() {
-    t_run bash "$SHIM"
+    t_run wiki_nav
     [[ "$T_RC" -eq 0 ]] || { cat "$T_OUT"; return 1; }
     local want=$'\nnav is consistent with docs/\n'
     tail -c "${#want}" "$T_OUT" > "$T_TMP/tail"
@@ -144,7 +144,7 @@ check_build_generated_pages_do_not_have_to_exist_on_disk() {
 
 # Derived views.
 check_generated_sections_are_filled_in_at_build_time() {
-    t_run bash "$SHIM" --sections --fill euclid "Book I" x.md
+    t_run wiki_nav --sections --fill euclid "Book I" x.md
     jq -c '.[] | select(.id == "proofs-euclid")' "$T_OUT" > "$T_TMP/euclid"
     [[ -s "$T_TMP/euclid" ]] || { echo "no proofs-euclid section"; cat "$T_OUT" | head -c 400; return 1; }
     a_eq "$(jq -c .items "$T_TMP/euclid")" '[{"label":"Book I","path":"x.md"}]' "euclid items"
@@ -152,7 +152,7 @@ check_generated_sections_are_filled_in_at_build_time() {
 }
 
 category() {
-    bash "$SHIM" --category "$1" | tr -d '[:space:]'
+    wiki_nav --category "$1" | tr -d '[:space:]'
 }
 
 check_search_category_follows_the_tab_a_page_sits_under() {

@@ -4,7 +4,7 @@
 #
 # The native build lowers the program with compiler/scripts/flow_to_llvm.sh
 # and links it into a small C caller; the wasm build is `flow wasm32`
-# (scripts/wasm32_target.sh), run with runtime/wasm/flow_runtime.mjs. The
+# (`./flow wasm32`), run with runtime/wasm/flow_runtime.mjs. The
 # results must agree to 1e-6. Prints one JSON line:
 #   {"abs_error": ..., "native_mlir": ..., "source": ..., "wasm32": ...}
 #
@@ -33,7 +33,7 @@ C
 clang -O2 -Wno-override-module "$work/caller.c" "$work/alloc_sum_native.ll" -lm -o "$work/native"
 native="$("$work/native")"
 
-scripts/wasm32_target.sh "$SOURCE" -o "$work/alloc_sum.wasm" --export alloc_sum -O O2
+./flow wasm32 "$SOURCE" -o "$work/alloc_sum.wasm" --export alloc_sum -O O2
 
 node --input-type=module -e '
 import fs from "node:fs";

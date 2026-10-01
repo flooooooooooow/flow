@@ -55,7 +55,7 @@ jobs:
 
       - name: Require complete 1.x stability classification
         if: startsWith(steps.tag.outputs.name, 'v1.')
-        run: scripts/check_stability_manifest.sh --require-complete
+        run: ./flow tool stability_manifest --require-complete
 
       - name: Require zero ordinary documentation debt for 1.x
         if: startsWith(steps.tag.outputs.name, 'v1.')

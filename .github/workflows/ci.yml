@@ -167,7 +167,7 @@ jobs:
       - run: ./flow tool shell_ratchet
 
   # Relative links in tracked markdown, as a reader meets them on GitHub.
-  # check_wiki_links.sh validates the built site instead; the two catch
+  # `flow tool wiki_links` validates the built site instead; the two catch
   # different breakage. Both are Flow programs built with cc alone, so no
   # toolchain setup.
   doc-links:
@@ -175,10 +175,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: scripts/check_doc_links.sh
-      - run: scripts/check_tool_layout.sh
-      - run: scripts/check_makefile_contract.sh
-      - run: scripts/check_project_state_sources.sh
+      - run: ./flow tool doc_links
+      - run: ./flow tool tool_layout
+      - run: ./flow tool makefile_contract
+      - run: ./flow tool project_state
       - name: Jules dispatch backpressure tests
         run: ./flow tool scripts/tools/jules_dispatch/test.flow
       - name: Benchmark harness tests (no Python)
@@ -193,7 +193,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: scripts/check_doc_coverage.sh
+      - run: ./flow tool doc_coverage
 
   # Documented examples are compiled. A ratchet, not a wall: the examples that
   # do not build today are recorded in docs/generated/example-status.json and

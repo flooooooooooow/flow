@@ -1,0 +1,95 @@
+# @module tools.repo
+# @means  The repository root and the few processes the tools used to leave
+#         to their shell shims: entering the root, `git ls-files` and `find`.
+#
+# `./flow tool NAME` runs a tool in the caller's working directory with
+# FLOW_REPO_ROOT set to the repository root. Tools that work on paths
+# relative to the root call rp_enter_root first, as the shims did with
+# `cd "$ROOT"`.
+
+import .text { ft_len, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
+import std.process { ProcCmd, ProcResult, proc_cmd, proc_arg, proc_cwd, proc_stderr, proc_run, proc_getenv, proc_getcwd, proc_chdir, PROC_INHERIT }
+
+# FLOW_REPO_ROOT, or the working directory when it is not set.
+export function rp_root() -> string {
+    let r: string = proc_getenv("FLOW_REPO_ROOT")
+    if ft_len(r) > 0 {
+        return r
+    }
+    return proc_getcwd()
+}
+
+# `cd "$FLOW_REPO_ROOT"` when it is set; false when the chdir fails.
+export function rp_enter_root() -> bool {
+    let r: string = proc_getenv("FLOW_REPO_ROOT")
+    if ft_len(r) == 0 {
+        return true
+    }
+    return proc_chdir(r)
+}
+
+# The status of the last rp_capture.
+let mut RP_STATUS: i32 = 0
+
+export function rp_status() -> i32 {
+    return RP_STATUS
+}
+
+# stdout of `argv` run in `dir` ("" for here); stderr passes through. The
+# exit status is in rp_status().
+export function rp_capture_in(dir: string, argv: ptr<StrList>) -> string {
+    let c: ptr<ProcCmd> = proc_cmd(ft_list_get(argv, 0))
+    let mut i: i32 = 1
+    while i < ft_list_len(argv) {
+        proc_arg(c, ft_list_get(argv, i))
+        i = i + 1
+    }
+    if ft_len(dir) > 0 {
+        proc_cwd(c, dir)
+    }
+    proc_stderr(c, PROC_INHERIT)
+    let r: ptr<ProcResult> = proc_run(c)
+    RP_STATUS = r.exit_code
+    if ft_len(r.error) > 0 {
+        RP_STATUS = 127
+    }
+    return r.stdout
+}
+
+export function rp_capture(argv: ptr<StrList>) -> string {
+    return rp_capture_in("", argv)
+}
+
+# The output lines of `argv` as a list, or null when it failed.
+export function rp_lines(argv: ptr<StrList>) -> ptr<StrList> {
+    let text: string = rp_capture(argv)
+    if RP_STATUS != 0 {
+        return null as ptr<StrList>
+    }
+    return ft_split_lines(text)
+}
+
+export function rp_argv2(a: string, b: string) -> ptr<StrList> {
+    let l: ptr<StrList> = ft_list_new()
+    ft_list_push(l, a)
+    ft_list_push(l, b)
+    return l
+}
+
+export function rp_argv3(a: string, b: string, c: string) -> ptr<StrList> {
+    let l: ptr<StrList> = rp_argv2(a, b)
+    ft_list_push(l, c)
+    return l
+}
+
+# `git ls-files [PATTERN...]` in the working directory, one path per line;
+# null when git failed.
+export function rp_git_ls(patterns: ptr<StrList>) -> ptr<StrList> {
+    let argv: ptr<StrList> = rp_argv2("git", "ls-files")
+    let mut i: i32 = 0
+    while i < ft_list_len(patterns) {
+        ft_list_push(argv, ft_list_get(patterns, i))
+        i = i + 1
+    }
+    return rp_lines(argv)
+}

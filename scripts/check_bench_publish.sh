@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build and run every published benchmark once, in hand-written C and in Flow,
-# with the flags benchmarks/run_publish.sh uses, and check that the two agree.
+# with the flags `flow tool bench_publish` uses, and check that the two agree.
 #
 # The programs time themselves with a monotonic clock. The helper that reads
 # it must build on Linux and macOS alike (#964), so implicit function
