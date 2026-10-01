@@ -8,7 +8,7 @@ import "tools/flow_cli/toolchain.flow"
 import "tools/flow_cli/flowc_build.flow"
 import "tools/flow_cli/build.flow"
 import "tools/flow_cli/mlir_tools.flow"
-import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg }
+import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg, proc_timeout_ms, proc_stdout, proc_stderr, PROC_CAPTURE, PROC_MERGE }
 
 # ---------------------------------------------------------------------------
 # flow test: tier 1 (flowc) and tier 2 (clang -fsyntax-only)
@@ -322,6 +322,7 @@ export function run_runtime_tests(args: ptr<ProcStrs>) -> i32 {
     info("Running FLOW runtime tests...")
     let runtime_dir: string = root() + "/tests/runtime"
     let build_dir: string = mktemp_dir_default()
+    let timeout_ms: i32 = s_atoi(env_or("FLOW_RUNTIME_TEST_TIMEOUT_MS", "90000"), 90000)
     let mut verbose: bool = false
     let targets: ptr<ProcStrs> = sl_new()
     let mut i: i32 = 0
@@ -397,9 +398,20 @@ export function run_runtime_tests(args: ptr<ProcStrs>) -> i32 {
             failed_files = failed_files + "\n  - " + rel_path + " (clang)"
             continue
         }
-        let run_output: string = capture_merged(cmd(sl_of1(exe_file)))
-        let exit_code: i32 = last_status()
+        let run_cmd: ptr<ProcCmd> = cmd(sl_of1(exe_file))
+        proc_stdout(run_cmd, PROC_CAPTURE)
+        proc_stderr(run_cmd, PROC_MERGE)
+        proc_timeout_ms(run_cmd, timeout_ms as i64)
+        let rr: ptr<ProcResult> = run_result(run_cmd)
+        let run_output: string = s_chomp_all(rr.stdout)
+        let exit_code: i32 = rr.exit_code
         let expected_file: string = s_slice(program, 0, s_len(program) - 5) + ".expected"
+        if rr.timed_out {
+            error("✗ " + rel_path + " (timeout after " + s_itoa(timeout_ms) + "ms)")
+            failed = failed + 1
+            failed_files = failed_files + "\n  - " + rel_path + " (timeout)"
+            continue
+        }
         if is_file(expected_file) {
             let expected_output: string = s_chomp_all(read_text(expected_file))
             if not s_eq(run_output, expected_output) {
