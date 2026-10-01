@@ -222,6 +222,9 @@ function run_case(root: string, name: string, kind: string, raw_args: ptr<ProcSt
         let c: ptr<ProcCmd> = cmd(v)
         tr_cmd_cd(c, root)
         cmd_env(c, "FLOW_JIT_LINK_RUNTIME", rt)
+        if s_starts(name, "audio_") {
+            cmd_env(c, "FLOW_TEST_FAST", "1")
+        }
         if s_eq(name, "run_mlir_effects") {
             # This golden covers the legacy zero-default fallback. Stable
             # effect checking remains strict for every other command case.
