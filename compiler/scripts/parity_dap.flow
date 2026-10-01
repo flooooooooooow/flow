@@ -20,17 +20,17 @@
 # Normalised: the checkout and work directory paths.
 #
 # The timed feed is this program run again as a worker (`--feed SCRIPT`),
-# piped into the server by `/bin/sh -c`: std.process runs one child at a
-# time and has no pipeline (#1109), and the replies only come in a fixed
-# order when the messages arrive spaced out while the server runs.
+# connected to the server's stdin by a pipe (proc_spawn, proc_pipe_new):
+# the replies only come in a fixed order when the messages arrive spaced
+# out while the server runs.
 #
 # The fake lldb-dap stays a small shell script the gate writes at run time:
-# it stands in for an external debugger, and its text contains a literal
-# `${`, which a Flow string can only spell split in two (#1108).
+# it stands in for an external debugger. Its one literal `${` is spelled
+# `"$" + "{"` so the string is not read as interpolation.
 
 import "tools/flow_cli/sys.flow"
 import "compiler/scripts/parity_lib.flow"
-import std.process { ProcCmd, ProcStrs, proc_arg, proc_argv, proc_input, proc_sleep_ms }
+import std.process { ProcCmd, ProcResult, ProcStrs, ProcPipe, ProcHandle, proc_arg, proc_argv, proc_input, proc_sleep_ms, proc_pipe_new, proc_attach_stdin, proc_attach_stdout, proc_spawn, proc_wait, proc_stdout, proc_stderr, PROC_CAPTURE }
 import std.regex { Regex, rx_sub }
 
 const USAGE: string = "usage: ./flow tool compiler/scripts/parity_dap.flow"
@@ -142,24 +142,39 @@ function run_session(name: string, lldb: string, script: string) {
             find = "'" + g.fake + "'"
         }
         let code: string = "\nimport sys\nsys.path.insert(0, '" + g.pysrc + "/src')\nfrom pathlib import Path\nimport flow.dap_server as m\nm.REPO = Path('" + g.root + "')\nm._find_lldb_dap = lambda: " + find + "\nsys.exit(m.run_ide_adapter())\n"
-        c = cmd(sl_of3("/bin/sh", "-c", "\"$0\" --feed \"$1\" | python3 -c \"$2\""))
-        proc_arg(c, proc_argv(0))
-        proc_arg(c, script)
-        proc_arg(c, code)
+        c = cmd(sl_of3("python3", "-c", code))
     } else {
         let mut forced: string = "-"
         if s_eq(lldb, "fake") {
             forced = g.fake
         }
-        c = cmd(sl_of3("/bin/sh", "-c", "\"$0\" --feed \"$1\" | \"$2\" dap examples/basics/hello_world.flow"))
-        proc_arg(c, proc_argv(0))
-        proc_arg(c, script)
-        proc_arg(c, g.root + "/flow")
+        c = cmd(sl_of3(g.root + "/flow", "dap", "examples/basics/hello_world.flow"))
         cmd_env(c, "PATH", g.stub_dir + ":" + env("PATH"))
         cmd_env(c, "FLOW_LLDB_DAP", forced)
     }
     cmd_env(c, "FAKE_LOG", o + "/lldb.log")
-    let rc: i32 = pl_run(c, o + "/stdout", o + "/stderr", 0)
+    # `feed | server`: the feeder is this program (`--feed SCRIPT`). It
+    # starts first and takes the pipe's write end, so the server sees end
+    # of file once the feeder exits.
+    let p: ptr<ProcPipe> = proc_pipe_new()
+    let f: ptr<ProcCmd> = cmd(sl_of3(proc_argv(0), "--feed", script))
+    proc_attach_stdout(f, p)
+    let hs: ptr<ptr<ProcHandle>> = malloc(16) as ptr<ptr<ProcHandle>>
+    hs[0] = proc_spawn(f)
+    proc_attach_stdin(c, p)
+    proc_stdout(c, PROC_CAPTURE)
+    proc_stderr(c, PROC_CAPTURE)
+    hs[1] = proc_spawn(c)
+    let feeder: ptr<ProcResult> = proc_wait(hs[0])
+    let server: ptr<ProcResult> = proc_wait(hs[1])
+    # The shell gate ran under pipefail: a failing feeder shows when the
+    # server exits 0.
+    let mut rc: i32 = shell_status(c, server)
+    if rc == 0 {
+        rc = shell_status(f, feeder)
+    }
+    let _o: bool = write_text(o + "/stdout", server.stdout)
+    let _e: bool = write_text(o + "/stderr", server.stderr)
     let res: string = "exit=" + s_itoa(rc) + "\n--- to client\n" + normalise(read_text(o + "/stdout")) + "\n--- to lldb-dap\n" + normalise(read_text(o + "/lldb.log"))
     let _w: bool = write_text(o + "/result", res)
 }

@@ -29,14 +29,11 @@
 # compiler/build/flowc_bootstrap from the checked-in bootstrap C.
 # JOBS=<n> parallel emits (default $FLOW_GATE_JOBS, else 2).
 #
-# The emits run in parallel through `xargs -P`, which starts this program
-# again as a worker (`--emit-one FILE`, `--py-one FILE`) with ROOT, WORK,
-# BIN and REF in the environment: std.process runs one child at a time
-# (#1109).
+# The emits run $JOBS at a time through proc_spawn and proc_wait_any.
 
 import "tools/flow_cli/sys.flow"
 import "compiler/scripts/parity_lib.flow"
-import std.process { ProcCmd, ProcStrs, proc_arg, proc_argv, proc_input }
+import std.process { ProcCmd, ProcStrs, proc_arg }
 import std.regex { Regex, RxMatch, rx_search, rx_m_group }
 
 const USAGE: string = "usage: ./flow tool compiler/scripts/parity_proofs.flow [--python <rev>]"
@@ -61,56 +58,64 @@ function proof_cmd() -> ptr<ProcCmd> {
     return c
 }
 
-# Worker: emit one file on flowc the way the flow CLI does (bundle mode
-# when the file imports), keeping the exit code and log.
-function emit_one(f: string) -> i32 {
-    let root: string = env("ROOT")
-    let out: string = env("WORK") + "/fc"
-    let key: string = pl_key(f)
-    let c: ptr<ProcCmd> = pl_cmd1(env("BIN"))
+# Emit one file on flowc the way the flow CLI does (bundle mode when the
+# file imports).
+function emit_cmd(f: string) -> ptr<ProcCmd> {
+    let g: ptr<Gate> = G
+    let c: ptr<ProcCmd> = pl_cmd1(g.bin)
     if pl_grep_file(pl_rx("^[ \\t\\n\\r\\f\\v]*import[ \\t\\n\\r\\f\\v]"), f) {
         cmd_env(c, "FLOWC_BUNDLE", "1")
-        cmd_env(c, "FLOWC_DIR", root)
+        cmd_env(c, "FLOWC_DIR", g.root)
         cmd_env(c, "FLOWC_TYPECHECK", "1")
-        cmd_env(c, "FLOWC_IN", root + "/" + f)
+        cmd_env(c, "FLOWC_IN", g.root + "/" + f)
     } else {
         cmd_env(c, "FLOWC_TYPECHECK", "1")
         cmd_env(c, "FLOWC_IN", f)
     }
-    cmd_env(c, "FLOWC_OUT", out + "/" + key + ".c")
-    let rc: i32 = pl_run(c, out + "/" + key + ".log", "&", 0)
-    let _w: bool = write_text(out + "/" + key + ".rc", s_itoa(rc) + "\n")
-    return 0
+    cmd_env(c, "FLOWC_OUT", g.work + "/fc/" + pl_key(f) + ".c")
+    return c
 }
 
-# Worker: the Python transpiler on one file.
-function py_one(f: string) -> i32 {
-    let out: string = env("WORK") + "/py"
-    let key: string = pl_key(f)
+# The Python transpiler from the revision in `ref` on one file.
+function py_cmd(f: string, ref: string) -> ptr<ProcCmd> {
+    let g: ptr<Gate> = G
     let c: ptr<ProcCmd> = cmd(sl_of3("python3", "-m", "flow.transpiler"))
     proc_arg(c, f)
     proc_arg(c, "--c")
     proc_arg(c, "--lenient")
     proc_arg(c, "-o")
-    proc_arg(c, out + "/" + key + ".c")
-    cmd_env(c, "PYTHONPATH", env("REF") + "/src")
-    let rc: i32 = pl_run(c, out + "/" + key + ".log", "&", 0)
-    let _w: bool = write_text(out + "/" + key + ".rc", s_itoa(rc) + "\n")
-    return 0
+    proc_arg(c, g.work + "/py/" + pl_key(f) + ".c")
+    cmd_env(c, "PYTHONPATH", ref + "/src")
+    return c
 }
 
-# `xargs -P $JOBS -n 1 <this program> FLAG < LIST`
-function run_jobs(flag: string, list: string) {
-    let c: ptr<ProcCmd> = cmd(sl_of3("xargs", "-P", env_or("JOBS", env_or("FLOW_GATE_JOBS", "2"))))
-    proc_arg(c, "-n")
-    proc_arg(c, "1")
-    proc_arg(c, proc_argv(0))
-    proc_arg(c, flag)
-    proc_input(c, read_text(list))
-    check(run(c))
+# Run the `dir` step ("fc" or "py") for every file, $JOBS at a time,
+# keeping each log and exit code (WORK/DIR/KEY.log and .rc).
+function run_jobs(dir: string, files: ptr<ProcStrs>, ref: string) {
+    let g: ptr<Gate> = G
+    let n: i32 = sl_len(files)
+    let cmds: ptr<ptr<ProcCmd>> = malloc(((n + 1) * 8) as i64) as ptr<ptr<ProcCmd>>
+    let logs: ptr<ProcStrs> = sl_new()
+    let mut i: i32 = 0
+    while i < n {
+        let f: string = sl_get(files, i)
+        if s_eq(dir, "fc") {
+            cmds[i] = emit_cmd(f)
+        } else {
+            cmds[i] = py_cmd(f, ref)
+        }
+        sl_push(logs, g.work + "/" + dir + "/" + pl_key(f) + ".log")
+        i = i + 1
+    }
+    let rcs: ptr<i32> = pl_run_pool(cmds, logs, pl_jobs())
+    i = 0
+    while i < n {
+        let _w: bool = write_text(g.work + "/" + dir + "/" + pl_key(sl_get(files, i)) + ".rc", s_itoa(rcs[i]) + "\n")
+        i = i + 1
+    }
 }
 
-# The rc a worker recorded.
+# The exit code a step recorded for `f`.
 function rc_of(dir: string, f: string) -> string {
     let g: ptr<Gate> = G
     return pl_cat(g.work + "/" + dir + "/" + pl_key(f) + ".rc")
@@ -246,7 +251,7 @@ function live(rev: string, files: ptr<ProcStrs>, fc_ok: i32) {
     env_set("REF", ref)
 
     # 4. Python transpiler on every file.
-    run_jobs("--py-one", work + "/files.txt")
+    run_jobs("py", files, ref)
 
     let mut live_bad: i32 = 0
     let mut py_ok: i32 = 0
@@ -483,12 +488,6 @@ function main() -> i32 {
     let args: ptr<ProcStrs> = pl_args()
     let mode: string = sl_get(args, 0)
     let rev: string = sl_get(args, 1)
-    if s_eq(mode, "--emit-one") {
-        return emit_one(rev)
-    }
-    if s_eq(mode, "--py-one") {
-        return py_one(rev)
-    }
     G = malloc(32) as ptr<Gate>
     let g: ptr<Gate> = G
     g.fail = 0
@@ -508,11 +507,13 @@ function main() -> i32 {
     let total: i32 = sl_len(files)
 
     # 1. Emit every file on flowc the way the flow CLI does (bundle mode when
-    #    the file imports), keeping the exit code and log.
+    #    the file imports), keeping the exit code and log. ROOT, WORK and BIN
+    #    stay in the environment of every later child, as the shell gate
+    #    exported them.
     env_set("ROOT", g.root)
     env_set("WORK", work)
     env_set("BIN", g.bin)
-    run_jobs("--emit-one", work + "/files.txt")
+    run_jobs("fc", files, "")
 
     let mut fc_ok: i32 = 0
     let rejects: ptr<ProcStrs> = sl_new()
