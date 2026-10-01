@@ -963,6 +963,24 @@ function flowc_cgen_sig_returns_array(w: ptr<CgenBuf>, src: ptr<u8>, ns: i32, ne
     return 1
 }
 
+# 1 if an imported function's signature returns a pointer type.
+function flowc_cgen_sig_returns_ptr(w: ptr<CgenBuf>, src: ptr<u8>, ns: i32, ne: i32) -> i32 {
+    let off: i32 = flowc_cgen_sig_find(w[0].sigs, w[0].sigs_len, src, ns, ne)
+    if off < 0 {
+        return 0
+    }
+    let mut i: i32 = off
+    let mut last: u8 = 0
+    while i < w[0].sigs_len and w[0].sigs[i] != 0 {
+        last = w[0].sigs[i]
+        i = i + 1
+    }
+    if last == 42 {
+        return 1
+    }
+    return 0
+}
+
 # Destination of an array fill: mode 0 is the identifier span ns..ne,
 # mode 1 is the return wrapper's `__flowc_ret.v`.
 function flowc_cgen_put_array_dest(w: ptr<CgenBuf>, src: ptr<u8>, dest_mode: i32, ns: i32, ne: i32) {
@@ -2291,6 +2309,8 @@ function flowc_cgen_base_is_ptr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, 
             let fn: i32 = flowc_cgen_find_fn(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
             if fn != AST_NONE {
                 ty = arena.nodes[fn].b
+            } elif flowc_cgen_sig_returns_ptr(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end) == 1 {
+                return 1
             }
         }
         if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE {
