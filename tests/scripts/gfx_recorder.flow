@@ -1,0 +1,174 @@
+# Issue #801: the headless gfx recorder was missing the flow_gfx_text ABI
+# implementation. Records one frame of an "H" drawn with gfx_text and reads
+# the pixels back out of the PPM the recorder writes.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+
+function program() -> string {
+    let mut p: string = "\n"
+    p = p + "import \"stdlib/gfx.flow\"\n"
+    p = p + "\n"
+    p = p + "export function main() -> i32 {\n"
+    p = p + "    let g = gfx_open(320, 240, \"test\")\n"
+    p = p + "    # Draw 'H' in white on black background, scale=1\n"
+    p = p + "    gfx_clear(g, 0, 0, 0)\n"
+    p = p + "    gfx_text(g, 10, 10, \"H\", 1, 255, 255, 255)\n"
+    p = p + "    gfx_present(g)\n"
+    p = p + "    gfx_close(g)\n"
+    p = p + "    return 0\n"
+    p = p + "}\n"
+    return p
+}
+
+# Files under `dir` named frame_*.ppm, at any depth (find order).
+function find_frames(dir: string, found: ptr<ProcStrs>) {
+    let names: ptr<ProcStrs> = list_dir(dir)
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        let n: string = sl_get(names, i)
+        let p: string = dir + "/" + n
+        if is_dir(p) and not is_link(p) {
+            find_frames(p, found)
+        } elif s_starts(n, "frame_") and s_ends(n, ".ppm") {
+            sl_push(found, p)
+        }
+        i = i + 1
+    }
+}
+
+# Byte offset of the first "255" in the file, or -1.
+function first_255(b: Bytes) -> i64 {
+    let mut i: i64 = 0
+    while i + 2 < b.len {
+        if b.data[i] == 50 and b.data[i + 1] == 53 and b.data[i + 2] == 53 {
+            return i
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+# One RGB pixel of a binary PPM (P6) as "r,g,b". The pixels start one
+# whitespace byte after the first "255".
+function ppm_pixel(b: Bytes, width: i32, x: i32, y: i32) -> string {
+    let off: i64 = first_255(b) + 3 + 1 + ((y * width + x) * 3) as i64
+    let mut parts: ptr<ProcStrs> = sl_new()
+    let mut k: i64 = 0
+    while k < 3 {
+        if off + k >= 0 and off + k < b.len {
+            sl_push(parts, s_itoa(b.data[off + k] as i32))
+        }
+        k = k + 1
+    }
+    while sl_len(parts) < 3 {
+        sl_push(parts, "")
+    }
+    return sl_join(parts, ",")
+}
+
+# head -c 32 | tr -c 'P0-9' ' ' | awk '{ print $1, $2, $3, $4 }'
+function ppm_header(b: Bytes) -> string {
+    let mut text: string = ""
+    let mut i: i64 = 0
+    while i < b.len and i < 32 {
+        let c: i32 = b.data[i] as i32
+        if c == 80 {
+            text = text + "P"
+        } elif c >= 48 and c <= 57 {
+            text = text + s_itoa(c - 48)
+        } else {
+            text = text + " "
+        }
+        i = i + 1
+    }
+    let words: ptr<ProcStrs> = s_words(text)
+    let mut fields: ptr<ProcStrs> = sl_new()
+    let mut k: i32 = 0
+    while k < 4 {
+        if k < sl_len(words) {
+            sl_push(fields, sl_get(words, k))
+        } else {
+            sl_push(fields, "")
+        }
+        k = k + 1
+    }
+    return sl_join(fields, " ")
+}
+
+function check_pixel(b: Bytes, x: i32, y: i32, want: string, what: string) -> bool {
+    return a_eq(ppm_pixel(b, 320, x, y), want, what)
+}
+
+function check_record_text() -> i32 {
+    let need: i32 = t_need("clang")
+    if need != T_PASS {
+        return need
+    }
+    let tmp: string = t_tmp()
+    let _w: bool = write_text(tmp + "/test_gfx_text.flow", program())
+    let rec: ptr<ProcCmd> = cmd(sl_of3(t_root() + "/flow", "record", tmp + "/test_gfx_text.flow"))
+    cmd_cwd(rec, tmp)
+    cmd_env(rec, "FLOW_GFX_RECORD_FRAMES", "1")
+    cmd_env(rec, "FLOW_GFX_RECORD_SKIP", "0")
+    if run(rec) != 0 {
+        outln("flow record failed")
+        return T_FAIL
+    }
+
+    let frames: ptr<ProcStrs> = sl_new()
+    if is_dir(tmp + "/frames") {
+        find_frames(tmp + "/frames", frames)
+    } else {
+        outln("find: " + tmp + "/frames: No such file or directory")
+    }
+    if not a_eq(s_itoa(sl_len(frames)), "1", "number of recorded frames") {
+        return T_FAIL
+    }
+    let b: Bytes = read_bytes(sl_get(frames, 0))
+
+    if not a_eq(ppm_header(b), "P6 320 240 255", "PPM header") {
+        return T_FAIL
+    }
+
+    # The 'H' glyph in 5x7, drawn at (10, 10):
+    # rows 0-2 and 4-6: 10001, row 3: 11111.
+    let lit: string = "255,255,255"
+    let dark: string = "0,0,0"
+    if not check_pixel(b, 10, 10, lit, "top-left of H (lit)") {
+        return T_FAIL
+    }
+    if not check_pixel(b, 14, 10, lit, "top-right of H (lit)") {
+        return T_FAIL
+    }
+    if not check_pixel(b, 12, 10, dark, "top-middle of H (dark)") {
+        return T_FAIL
+    }
+    if not check_pixel(b, 10, 13, lit, "middle-left of H (lit)") {
+        return T_FAIL
+    }
+    if not check_pixel(b, 12, 13, lit, "middle of H (lit)") {
+        return T_FAIL
+    }
+    if not check_pixel(b, 14, 13, lit, "middle-right of H (lit)") {
+        return T_FAIL
+    }
+    if not check_pixel(b, 10, 16, lit, "bottom-left of H (lit)") {
+        return T_FAIL
+    }
+    if not check_pixel(b, 14, 16, lit, "bottom-right of H (lit)") {
+        return T_FAIL
+    }
+    if not check_pixel(b, 12, 16, dark, "bottom-middle of H (dark)") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("gfx_recorder")
+    t_start()
+    t_end("record_text", check_record_text())
+    t_done()
+    return 0
+}
