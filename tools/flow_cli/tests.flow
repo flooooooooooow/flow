@@ -58,7 +58,7 @@ function proc_arg2(c: ptr<ProcCmd>, a: string, b: string) {
 }
 
 # The grep chain over the tracked files. tests/cli/ holds CLI fixtures, one
-# of them broken on purpose; tests/cli/run.sh checks them.
+# of them broken on purpose; tests/cli/run.flow checks them.
 function suite_keeps(rel: string) -> bool {
     if not s_ends(rel, ".flow") {
         return false

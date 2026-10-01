@@ -1,0 +1,562 @@
+# Golden tests for the `flow` command line.
+#
+# Each case in tests/cli/cases.txt runs `flow` once and records what it did:
+# stdout, stderr, the exit code and, for cases that write files, which files
+# exist afterwards (with a checksum for text). tests/cli/goldens/ holds the
+# behaviour of the bash driver the Flow CLI replaced, so this is the parity
+# gate for tools/flow_cli.
+#
+# Paths that change between machines and runs are rewritten before the
+# comparison: the repository root, the scratch directory, mktemp names.
+#
+# Usage: ./flow tool tests/cli/run.flow [--update] [name...]
+#   FLOW_CLI=path  the command under test (default: ./flow)
+
+import "tools/flow_cli/sys.flow"
+import std.process { ProcCmd, ProcResult, ProcStrs, proc_cmd, proc_arg, proc_env, proc_cwd, proc_input, proc_stdin, proc_stdout, proc_stderr, proc_run, proc_chdir, PROC_CAPTURE, PROC_NULL }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+# Run state, read and written through a local copy of the pointer (#1078).
+struct Ctx {
+    root: string,
+    root_p: string,
+    gold: string,
+    fix: string,
+    flow: string,
+    work: string,
+    work_p: string,
+    tmp_root: string,
+    update: bool,
+    only: ptr<ProcStrs>,
+    pass: i32,
+    fail: i32,
+    failed: ptr<ProcStrs>
+}
+
+let mut CTX: ptr<Ctx> = null
+
+# ---------------------------------------------------------------------------
+# Normalisation: the sed rewrites of the shell runner, in the same order
+# ---------------------------------------------------------------------------
+
+function is_alnum(c: i32) -> bool {
+    return (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122)
+}
+
+function is_alpha_word(c: i32) -> bool {
+    return (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95
+}
+
+# [A-Za-z_.-]
+function is_name_char(c: i32) -> bool {
+    return is_alpha_word(c) or c == 46 or c == 45
+}
+
+function is_hex_lower(c: i32) -> bool {
+    return (c >= 48 and c <= 57) or (c >= 97 and c <= 102)
+}
+
+function is_digit(c: i32) -> bool {
+    return c >= 48 and c <= 57
+}
+
+# Length of the run of alphanumerics starting at `i`.
+function alnum_run(s: string, i: i32, n: i32) -> i32 {
+    let mut k: i32 = i
+    while k < n and is_alnum(s_byte(s, k)) {
+        k = k + 1
+    }
+    return k - i
+}
+
+# s#build/run\.[A-Za-z0-9]\{6\}#build/run.XXXXXX#g
+function norm_build_run(s: string) -> string {
+    let key: string = "build/run."
+    let n: i32 = s_len(s)
+    let mut out: string = ""
+    let mut pos: i32 = 0
+    let mut i: i32 = s_find(s, key, 0)
+    while i >= 0 {
+        let j: i32 = i + s_len(key)
+        let mut k: i32 = j
+        while k < j + 6 and k < n and is_alnum(s_byte(s, k)) {
+            k = k + 1
+        }
+        if k == j + 6 {
+            out = out + s_slice(s, pos, i) + key + "XXXXXX"
+            pos = k
+            i = s_find(s, key, k)
+        } else {
+            i = s_find(s, key, i + 1)
+        }
+    }
+    return out + s_from(s, pos)
+}
+
+# s#<TMP>/[A-Za-z_.-]*[.]\([A-Za-z0-9]\{6,\}\)#<TMP>/MKTEMP#g
+function norm_mktemp_dot(s: string) -> string {
+    let key: string = "<TMP>/"
+    let n: i32 = s_len(s)
+    let mut out: string = ""
+    let mut pos: i32 = 0
+    let mut i: i32 = s_find(s, key, 0)
+    while i >= 0 {
+        let j: i32 = i + s_len(key)
+        let mut e: i32 = j
+        while e < n and is_name_char(s_byte(s, e)) {
+            e = e + 1
+        }
+        # The last dot inside the run that is followed by six or more
+        # alphanumerics: the greedy prefix backs off to it.
+        let mut end: i32 = 0 - 1
+        let mut p: i32 = e - 1
+        while p >= j and end < 0 {
+            if s_byte(s, p) == 46 {
+                let run: i32 = alnum_run(s, p + 1, n)
+                if run >= 6 {
+                    end = p + 1 + run
+                }
+            }
+            p = p - 1
+        }
+        if end >= 0 {
+            out = out + s_slice(s, pos, i) + "<TMP>/MKTEMP"
+            pos = end
+            i = s_find(s, key, end)
+        } else {
+            i = s_find(s, key, i + 1)
+        }
+    }
+    return out + s_from(s, pos)
+}
+
+# s#<TMP>/tmp\.[A-Za-z0-9]*#<TMP>/MKTEMP#g
+function norm_mktemp_tmp(s: string) -> string {
+    let key: string = "<TMP>/tmp."
+    let n: i32 = s_len(s)
+    let mut out: string = ""
+    let mut pos: i32 = 0
+    let mut i: i32 = s_find(s, key, 0)
+    while i >= 0 {
+        let j: i32 = i + s_len(key)
+        let end: i32 = j + alnum_run(s, j, n)
+        out = out + s_slice(s, pos, i) + "<TMP>/MKTEMP"
+        pos = end
+        i = s_find(s, key, end)
+    }
+    return out + s_from(s, pos)
+}
+
+# s#<TMP>/\([A-Za-z0-9_]*\)-[0-9a-f]\{6\}\.o#<TMP>/\1-XXXXXX.o#g
+function norm_object(s: string) -> string {
+    let key: string = "<TMP>/"
+    let n: i32 = s_len(s)
+    let mut out: string = ""
+    let mut pos: i32 = 0
+    let mut i: i32 = s_find(s, key, 0)
+    while i >= 0 {
+        let j: i32 = i + s_len(key)
+        let mut e: i32 = j
+        while e < n and (is_alnum(s_byte(s, e)) or s_byte(s, e) == 95) {
+            e = e + 1
+        }
+        let mut ok: bool = e < n and s_byte(s, e) == 45
+        let mut k: i32 = e + 1
+        while ok and k < e + 7 {
+            if k >= n or not is_hex_lower(s_byte(s, k)) {
+                ok = false
+            }
+            k = k + 1
+        }
+        if ok and not s_eq(s_slice(s, e + 7, e + 9), ".o") {
+            ok = false
+        }
+        if ok {
+            out = out + s_slice(s, pos, i) + key + s_slice(s, j, e) + "-XXXXXX.o"
+            pos = e + 9
+            i = s_find(s, key, pos)
+        } else {
+            i = s_find(s, key, i + 1)
+        }
+    }
+    return out + s_from(s, pos)
+}
+
+# s#flowc_runtime/[0-9]*-[0-9]*#flowc_runtime/KEY#g
+function norm_runtime_key(s: string) -> string {
+    let key: string = "flowc_runtime/"
+    let n: i32 = s_len(s)
+    let mut out: string = ""
+    let mut pos: i32 = 0
+    let mut i: i32 = s_find(s, key, 0)
+    while i >= 0 {
+        let mut k: i32 = i + s_len(key)
+        while k < n and is_digit(s_byte(s, k)) {
+            k = k + 1
+        }
+        if k < n and s_byte(s, k) == 45 {
+            k = k + 1
+            while k < n and is_digit(s_byte(s, k)) {
+                k = k + 1
+            }
+            out = out + s_slice(s, pos, i) + key + "KEY"
+            pos = k
+            i = s_find(s, key, k)
+        } else {
+            i = s_find(s, key, i + 1)
+        }
+    }
+    return out + s_from(s, pos)
+}
+
+# s#\("[a-z_]*_s": \)[0-9.]*#\1N#g
+function norm_seconds(s: string) -> string {
+    let n: i32 = s_len(s)
+    let mut out: string = ""
+    let mut pos: i32 = 0
+    let mut i: i32 = s_find_byte(s, 34, 0)
+    while i >= 0 {
+        let j: i32 = i + 1
+        let mut e: i32 = j
+        while e < n and ((s_byte(s, e) >= 97 and s_byte(s, e) <= 122) or s_byte(s, e) == 95) {
+            e = e + 1
+        }
+        if e - j >= 2 and s_byte(s, e - 2) == 95 and s_byte(s, e - 1) == 115 and s_eq(s_slice(s, e, e + 3), "\": ") {
+            let mut k: i32 = e + 3
+            while k < n and (is_digit(s_byte(s, k)) or s_byte(s, k) == 46) {
+                k = k + 1
+            }
+            out = out + s_slice(s, pos, e + 3) + "N"
+            pos = k
+            i = s_find_byte(s, 34, k)
+        } else {
+            i = s_find_byte(s, 34, i + 1)
+        }
+    }
+    return out + s_from(s, pos)
+}
+
+function normalize(text: string) -> string {
+    let c: ptr<Ctx> = CTX
+    let mut s: string = s_replace(text, c.work_p, "<WORK>")
+    s = s_replace(s, c.work, "<WORK>")
+    s = s_replace(s, c.root_p, "<ROOT>")
+    s = s_replace(s, c.root, "<ROOT>")
+    s = s_replace(s, c.tmp_root, "<TMP>")
+    s = s_replace(s, "/private<TMP>", "<TMP>")
+    s = norm_build_run(s)
+    s = norm_mktemp_dot(s)
+    s = norm_mktemp_tmp(s)
+    s = norm_object(s)
+    s = norm_runtime_key(s)
+    return norm_seconds(s)
+}
+
+# ---------------------------------------------------------------------------
+# cksum(1): the POSIX CRC-32 and the byte count
+# ---------------------------------------------------------------------------
+
+function cksum(text: string) -> string {
+    let p: ptr<u8> = text as ptr<u8>
+    let n: i32 = s_len(text)
+    let mut crc: i64 = 0
+    let mut i: i32 = 0
+    while i < n {
+        crc = crc_byte(crc, p[i] as i64)
+        i = i + 1
+    }
+    let mut len: i64 = n as i64
+    while len > 0 {
+        crc = crc_byte(crc, len & 255)
+        len = len >> 8
+    }
+    crc = (0 - crc - 1) & 4294967295
+    return i64_str(crc) + "-" + s_itoa(n)
+}
+
+function crc_byte(crc: i64, b: i64) -> i64 {
+    let mut c: i64 = (crc ^ (b << 24)) & 4294967295
+    let mut k: i32 = 0
+    while k < 8 {
+        if (c & 2147483648) != 0 {
+            c = ((c << 1) ^ 79764919) & 4294967295
+        } else {
+            c = (c << 1) & 4294967295
+        }
+        k = k + 1
+    }
+    return c
+}
+
+function i64_str(v: i64) -> string {
+    if v == 0 {
+        return "0"
+    }
+    let mut x: i64 = v
+    let mut out: string = ""
+    while x > 0 {
+        out = s_itoa((x % 10) as i32) + out
+        x = x / 10
+    }
+    return out
+}
+
+# ---------------------------------------------------------------------------
+# Comparison
+# ---------------------------------------------------------------------------
+
+# `diff -u expected actual | sed 's/^/    /' | head -40`
+function show_diff(expected: string, actual: string) {
+    let d: ptr<ProcCmd> = proc_cmd("diff")
+    proc_arg(d, "-u")
+    proc_arg(d, expected)
+    proc_arg(d, actual)
+    proc_stdout(d, PROC_CAPTURE)
+    let r: ptr<ProcResult> = proc_run(d)
+    let lines: ptr<ProcStrs> = s_lines(r.stdout)
+    let mut i: i32 = 0
+    while i < sl_len(lines) and i < 40 {
+        outln("    " + sl_get(lines, i))
+        i = i + 1
+    }
+}
+
+# True when the result for `name.kind` matches its golden (or was recorded).
+function compare(name: string, kind: string, actual: string) -> bool {
+    let c: ptr<Ctx> = CTX
+    let expected: string = c.gold + "/" + name + "." + kind
+    if c.update {
+        let _w: bool = copy_file(actual, expected)
+        return true
+    }
+    if not is_file(expected) {
+        outln("  missing golden " + name + "." + kind)
+        return false
+    }
+    if not same_bytes(expected, actual) {
+        outln("  " + kind + " differs:")
+        show_diff(expected, actual)
+        return false
+    }
+    return true
+}
+
+# The text files whose contents the manifest checksums.
+function is_text_kind(f: string) -> bool {
+    let exts: ptr<ProcStrs> = s_words(".c .flow .toml .mlir .metal .wgsl .lock .json .txt .md .ll")
+    let mut i: i32 = 0
+    while i < sl_len(exts) {
+        if s_ends(f, sl_get(exts, i)) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# ---------------------------------------------------------------------------
+# One case
+# ---------------------------------------------------------------------------
+
+function wanted(name: string) -> bool {
+    let c: ptr<Ctx> = CTX
+    return sl_len(c.only) == 0 or sl_has(c.only, name)
+}
+
+# NAME [cwd=root|proj|empty] [env=K=V]... [files=a,b] [stdin=FILE] -- ARGS...
+function run_case(words: ptr<ProcStrs>) {
+    let c: ptr<Ctx> = CTX
+    let name: string = sl_get(words, 0)
+    if not wanted(name) {
+        return
+    }
+    let mut cwd: string = "root"
+    let mut files: string = ""
+    let mut stdin: string = ""
+    let envs: ptr<ProcStrs> = sl_new()
+    let mut i: i32 = 1
+    while i < sl_len(words) and not s_eq(sl_get(words, i), "--") {
+        let w: string = sl_get(words, i)
+        if s_starts(w, "cwd=") {
+            cwd = s_from(w, 4)
+        } elif s_starts(w, "env=") {
+            sl_push(envs, s_from(w, 4))
+        } elif s_starts(w, "files=") {
+            files = s_from(w, 6)
+        } elif s_starts(w, "stdin=") {
+            stdin = c.root + "/" + s_from(w, 6)
+        }
+        i = i + 1
+    }
+    i = i + 1
+    let mut dir: string = c.root
+    if s_eq(cwd, "proj") {
+        dir = c.work + "/" + name
+        let _m: bool = mkdir_p(dir)
+        let cp: ptr<ProcCmd> = cmd(sl_of2("cp", "-R"))
+        proc_arg(cp, c.fix + "/proj/.")
+        proc_arg(cp, dir + "/")
+        let _r: i32 = run(cp)
+    } elif s_eq(cwd, "empty") {
+        dir = c.work + "/" + name
+        let _m2: bool = mkdir_p(dir)
+    }
+    let mut prog: string = c.flow
+    if s_contains(prog, "/") and not is_abs(prog) {
+        prog = dir + "/" + prog
+    }
+    let fc: ptr<ProcCmd> = proc_cmd(prog)
+    while i < sl_len(words) {
+        proc_arg(fc, s_replace(sl_get(words, i), "@ROOT", c.root))
+        i = i + 1
+    }
+    proc_cwd(fc, dir)
+    # `cd` sets PWD to the logical directory.
+    proc_env(fc, "PWD", path_norm_abs(dir))
+    let mut k: i32 = 0
+    while k < sl_len(envs) {
+        let kv: string = sl_get(envs, k)
+        let eq: i32 = s_find_byte(kv, 61, 0)
+        proc_env(fc, s_slice(kv, 0, eq), s_from(kv, eq + 1))
+        k = k + 1
+    }
+    if s_len(stdin) > 0 {
+        proc_input(fc, read_text(stdin))
+    } else {
+        proc_stdin(fc, PROC_NULL)
+    }
+    proc_stdout(fc, PROC_CAPTURE)
+    proc_stderr(fc, PROC_CAPTURE)
+    let r: ptr<ProcResult> = proc_run(fc)
+    let mut rc: i32 = r.exit_code
+    let mut errtext: string = r.stderr
+    if s_len(r.error) > 0 {
+        rc = 127
+        errtext = "env: " + prog + ": No such file or directory\n"
+    } elif rc < 0 {
+        rc = 128 - rc
+    }
+    let out: string = c.work + "/" + name + ".out"
+    let err: string = c.work + "/" + name + ".err"
+    let code: string = c.work + "/" + name + ".code"
+    let _w1: bool = write_text(out, normalize(r.stdout))
+    let _w2: bool = write_text(err, normalize(errtext))
+    let _w3: bool = write_text(code, s_itoa(rc) + "\n")
+    let mut ok: bool = compare(name, "out", out)
+    ok = compare(name, "err", err) and ok
+    ok = compare(name, "code", code) and ok
+    if s_len(files) > 0 {
+        let manifest: string = c.work + "/" + name + ".files"
+        let mut m: string = ""
+        let flist: ptr<ProcStrs> = s_split(files, 44)
+        let mut j: i32 = 0
+        while j < sl_len(flist) {
+            let f: string = sl_get(flist, j)
+            let p: string = dir + "/" + f
+            if not exists(p) {
+                m = m + f + ": missing\n"
+            } elif is_dir(p) {
+                m = m + f + ": directory\n"
+            } elif is_text_kind(f) {
+                m = m + f + ": " + cksum(normalize(read_text(p))) + "\n"
+            } else {
+                m = m + f + ": present\n"
+            }
+            j = j + 1
+        }
+        let _w4: bool = write_text(manifest, m)
+        ok = compare(name, "files", manifest) and ok
+    }
+    if ok {
+        c.pass = c.pass + 1
+        if c.update {
+            outln("updated " + name)
+        } else {
+            outln("PASS " + name)
+        }
+    } else {
+        c.fail = c.fail + 1
+        sl_push(c.failed, name)
+        outln("FAIL " + name)
+    }
+}
+
+# Warm the caches first, so no case sees one-time build chatter (flowc from
+# the bootstrap C, the Flow tools, the runtime archive).
+function warm() {
+    let c: ptr<Ctx> = CTX
+    let a: ptr<ProcCmd> = cmd(sl_of3(c.flow, "compile", "tests/cli/fixtures/hello.flow"))
+    cmd_quiet(a)
+    let _a: i32 = run(a)
+    let tools: ptr<ProcStrs> = s_words("check lsp")
+    let mut i: i32 = 0
+    while i < sl_len(tools) {
+        let b: ptr<ProcCmd> = cmd(sl_of3(c.flow, sl_get(tools, i), "--build"))
+        cmd_quiet(b)
+        let _b: i32 = run(b)
+        i = i + 1
+    }
+}
+
+function main() -> i32 {
+    let c: ptr<Ctx> = malloc(128) as ptr<Ctx>
+    CTX = c
+    c.root = env_or("FLOW_REPO_ROOT", cwd_logical())
+    env_unset("FLOW_REPO_ROOT")
+    c.root_p = abs_dir_physical(c.root)
+    let _cd: bool = proc_chdir(c.root)
+    env_set("PWD", c.root)
+    # Goldens are per OS (clang, ld and the tools on PATH differ): goldens/<os>.
+    let os: string = s_lower(uname_s())
+    c.gold = c.root + "/tests/cli/goldens/" + os
+    c.fix = c.root + "/tests/cli/fixtures"
+    c.flow = env_or("FLOW_CLI", c.root + "/flow")
+    c.update = false
+    c.only = sl_new()
+    c.pass = 0
+    c.fail = 0
+    c.failed = sl_new()
+    let args: ptr<ProcStrs> = proc_args()
+    let mut first: i32 = 0
+    if sl_len(args) > 0 and s_eq(sl_get(args, 0), "--update") {
+        c.update = true
+        first = 1
+    }
+    c.only = sl_tail(args, first)
+    if not c.update and not is_dir(c.gold) {
+        outln("tests/cli: no goldens for " + os + " (tests/cli/goldens/" + os + "); record them with --update")
+        return 1
+    }
+    let _g: bool = mkdir_p(c.gold)
+    c.work = mktemp_dir(env_or("TMPDIR", "/tmp") + "/flow-cli-tests.XXXXXX")
+    c.work_p = abs_dir_physical(c.work)
+    on_exit_remove(c.work)
+    let mut tr: string = env_or("TMPDIR", "/tmp")
+    if s_ends(tr, "/") {
+        tr = s_slice(tr, 0, s_len(tr) - 1)
+    }
+    c.tmp_root = tr
+
+    warm()
+
+    let lines: ptr<ProcStrs> = s_lines(read_text(c.root + "/tests/cli/cases.txt"))
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let words: ptr<ProcStrs> = s_words(sl_get(lines, i))
+        if sl_len(words) > 0 and not s_starts(sl_get(words, 0), "#") {
+            run_case(words)
+        }
+        i = i + 1
+    }
+
+    outln("tests/cli: " + s_itoa(c.pass) + " passed, " + s_itoa(c.fail) + " failed")
+    if c.fail > 0 {
+        outln("failed: " + sl_join(c.failed, " "))
+        cli_exit(1)
+    }
+    cli_exit(0)
+    return 0
+}
