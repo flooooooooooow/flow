@@ -1,5 +1,5 @@
 {
-  "summary": "FIR-G: funcs=11 blocks=20 ops=185 values=146 operands=121 types=10",
+  "summary": "FIR-G: funcs=11 blocks=38 ops=194 values=146 operands=121 types=10",
   "call_edges": [
     {
       "caller": "add_one",
@@ -84,7 +84,7 @@
         "score": 33.0,
         "reason": "callee_ops=6 sites=1 pure=True",
         "caller": "main",
-        "callsite_op": 126,
+        "callsite_op": 130,
         "callee_ops": 6,
         "call_sites": 1
       },
@@ -154,7 +154,7 @@
         "score": 9.0,
         "reason": "callee_ops=5 sites=2 pure=True",
         "caller": "main",
-        "callsite_op": 112,
+        "callsite_op": 115,
         "callee_ops": 5,
         "call_sites": 2
       },
@@ -164,7 +164,7 @@
         "score": 9.0,
         "reason": "callee_ops=5 sites=2 pure=True",
         "caller": "main",
-        "callsite_op": 117,
+        "callsite_op": 120,
         "callee_ops": 5,
         "call_sites": 2
       },
@@ -204,7 +204,7 @@
         "score": 6.5,
         "reason": "callee_ops=4 sites=3 pure=True",
         "caller": "main",
-        "callsite_op": 75,
+        "callsite_op": 76,
         "callee_ops": 4,
         "call_sites": 3
       },
@@ -214,7 +214,7 @@
         "score": 6.5,
         "reason": "callee_ops=4 sites=3 pure=True",
         "caller": "main",
-        "callsite_op": 79,
+        "callsite_op": 80,
         "callee_ops": 4,
         "call_sites": 3
       },
@@ -224,7 +224,7 @@
         "score": 6.5,
         "reason": "callee_ops=4 sites=3 pure=True",
         "caller": "main",
-        "callsite_op": 84,
+        "callsite_op": 85,
         "callee_ops": 4,
         "call_sites": 3
       }

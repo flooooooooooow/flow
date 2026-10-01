@@ -1,5 +1,5 @@
 {
-  "summary": "FIR-G: funcs=8 blocks=15 ops=321 values=283 operands=230 types=7",
+  "summary": "FIR-G: funcs=8 blocks=28 ops=333 values=283 operands=230 types=7",
   "call_edges": [
     {
       "caller": "pendulum_deriv",

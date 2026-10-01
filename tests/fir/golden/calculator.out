@@ -1,4 +1,4 @@
-FIR-G: funcs=20 blocks=48 ops=546 values=432 operands=327 types=16
+FIR-G: funcs=20 blocks=90 ops=581 values=432 operands=327 types=16
 call ops: 66
 reachable: calculate, is_digit, is_whitespace, lexer_create, lexer_next_token, lexer_read_number, lexer_skip_whitespace, main, parse_expression, parse_factor, parse_term, parser_advance, parser_create, parser_expect, printf
 dead: lexer_peek, lexer_advance, parse_expression, parse_term, parse_factor
@@ -46,13 +46,13 @@ device: requested=cpu chosen=cpu
 opt candidates: total=18 by_kind={'inline': 13, 'dead_elim': 5}
   [inline] lexer_create score=30.0 (callee_ops=7 sites=1 pure=True) caller=calculate
   [inline] parser_create score=30.0 (callee_ops=7 sites=1 pure=True) caller=calculate
-  [dead_elim] lexer_peek score=19.0 (unreachable from roots)
-  [dead_elim] lexer_advance score=15.0 (unreachable from roots)
+  [dead_elim] lexer_peek score=20.0 (unreachable from roots)
+  [dead_elim] lexer_advance score=16.0 (unreachable from roots)
   [dead_elim] parse_expression score=10.0 (unreachable from roots)
   [dead_elim] parse_factor score=10.0 (unreachable from roots)
   [dead_elim] parse_term score=10.0 (unreachable from roots)
-  [inline] lexer_skip_whitespace score=9.0 (callee_ops=14 sites=1 pure=True) caller=lexer_next_token
-  [inline] parser_expect score=9.0 (callee_ops=14 sites=1 pure=True) caller=parse_factor
-  [inline] parser_advance score=3.25 (callee_ops=4 sites=6 pure=True) caller=parser_expect
-  [inline] parser_advance score=3.25 (callee_ops=4 sites=6 pure=True) caller=parse_factor
-  [inline] parser_advance score=3.25 (callee_ops=4 sites=6 pure=True) caller=parse_factor
+  [inline] parser_expect score=6.0 (callee_ops=15 sites=1 pure=True) caller=parse_factor
+  [inline] lexer_skip_whitespace score=3.0 (callee_ops=16 sites=1 pure=True) caller=lexer_next_token
+  [inline] parser_advance score=3.0 (callee_ops=5 sites=6 pure=True) caller=parser_expect
+  [inline] parser_advance score=3.0 (callee_ops=5 sites=6 pure=True) caller=parse_factor
+  [inline] parser_advance score=3.0 (callee_ops=5 sites=6 pure=True) caller=parse_factor

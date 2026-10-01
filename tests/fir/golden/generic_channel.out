@@ -1,5 +1,5 @@
 {
-  "summary": "FIR-G: funcs=118 blocks=196 ops=1485 values=1201 operands=722 types=32",
+  "summary": "FIR-G: funcs=118 blocks=332 ops=1615 values=1201 operands=722 types=32",
   "call_edges": [
     {
       "caller": "channel_destroy_Point",
@@ -728,45 +728,55 @@
   "device_requested": "cpu",
   "device_chosen": "cpu",
   "opt_candidates": {
-    "total": 114,
+    "total": 108,
     "by_kind": {
       "dead_elim": 102,
-      "inline": 12
+      "inline": 6
     },
     "top": [
       {
         "kind": "dead_elim",
         "target": "channel_i32_select2",
-        "score": 78.0,
+        "score": 85.0,
         "reason": "unreachable from roots",
         "caller": null,
         "callsite_op": null,
-        "callee_ops": 68,
+        "callee_ops": 75,
         "call_sites": null
       },
       {
         "kind": "dead_elim",
         "target": "channel_i32_select4",
-        "score": 68.0,
+        "score": 71.0,
         "reason": "unreachable from roots",
         "caller": null,
         "callsite_op": null,
-        "callee_ops": 58,
+        "callee_ops": 61,
         "call_sites": null
       },
       {
         "kind": "dead_elim",
         "target": "channel_i32_recv",
-        "score": 52.0,
+        "score": 54.0,
         "reason": "unreachable from roots",
         "caller": null,
         "callsite_op": null,
-        "callee_ops": 42,
+        "callee_ops": 44,
         "call_sites": null
       },
       {
         "kind": "dead_elim",
         "target": "channel_i64_recv",
+        "score": 54.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 44,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i32_send",
         "score": 52.0,
         "reason": "unreachable from roots",
         "caller": null,
@@ -776,47 +786,47 @@
       },
       {
         "kind": "dead_elim",
-        "target": "channel_i32_send",
-        "score": 50.0,
-        "reason": "unreachable from roots",
-        "caller": null,
-        "callsite_op": null,
-        "callee_ops": 40,
-        "call_sites": null
-      },
-      {
-        "kind": "dead_elim",
         "target": "channel_i64_send",
-        "score": 50.0,
+        "score": 52.0,
         "reason": "unreachable from roots",
         "caller": null,
         "callsite_op": null,
-        "callee_ops": 40,
-        "call_sites": null
-      },
-      {
-        "kind": "dead_elim",
-        "target": "channel_i32_try_send",
-        "score": 48.0,
-        "reason": "unreachable from roots",
-        "caller": null,
-        "callsite_op": null,
-        "callee_ops": 38,
+        "callee_ops": 42,
         "call_sites": null
       },
       {
         "kind": "dead_elim",
         "target": "channel_i64_select2",
-        "score": 48.0,
+        "score": 51.0,
         "reason": "unreachable from roots",
         "caller": null,
         "callsite_op": null,
-        "callee_ops": 38,
+        "callee_ops": 41,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i32_try_send",
+        "score": 50.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 40,
         "call_sites": null
       },
       {
         "kind": "dead_elim",
         "target": "channel_i32_select4_try",
+        "score": 49.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 39,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i64_try_send",
         "score": 45.0,
         "reason": "unreachable from roots",
         "caller": null,
@@ -830,7 +840,7 @@
         "score": 45.0,
         "reason": "callee_ops=2 sites=1 pure=True",
         "caller": "channel_new_Point",
-        "callsite_op": 133,
+        "callsite_op": 145,
         "callee_ops": 2,
         "call_sites": 1
       },
@@ -840,43 +850,43 @@
         "score": 45.0,
         "reason": "callee_ops=2 sites=1 pure=True",
         "caller": "channel_new_i32",
-        "callsite_op": 276,
+        "callsite_op": 300,
         "callee_ops": 2,
         "call_sites": 1
       },
       {
         "kind": "dead_elim",
-        "target": "channel_i64_try_send",
-        "score": 44.0,
-        "reason": "unreachable from roots",
-        "caller": null,
-        "callsite_op": null,
-        "callee_ops": 34,
-        "call_sites": null
-      },
-      {
-        "kind": "dead_elim",
         "target": "channel_i32_try_recv",
-        "score": 42.0,
+        "score": 43.0,
         "reason": "unreachable from roots",
         "caller": null,
         "callsite_op": null,
-        "callee_ops": 32,
+        "callee_ops": 33,
         "call_sites": null
       },
       {
         "kind": "dead_elim",
         "target": "channel_i64_try_recv",
-        "score": 42.0,
+        "score": 43.0,
         "reason": "unreachable from roots",
         "caller": null,
         "callsite_op": null,
-        "callee_ops": 32,
+        "callee_ops": 33,
         "call_sites": null
       },
       {
         "kind": "dead_elim",
         "target": "once_call_begin",
+        "score": 35.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 25,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "mutex_trylock",
         "score": 33.0,
         "reason": "unreachable from roots",
         "caller": null,
@@ -886,7 +896,7 @@
       },
       {
         "kind": "dead_elim",
-        "target": "mutex_trylock",
+        "target": "waitgroup_done",
         "score": 32.0,
         "reason": "unreachable from roots",
         "caller": null,
@@ -897,46 +907,46 @@
       {
         "kind": "dead_elim",
         "target": "channel_i32_select2_try",
-        "score": 29.0,
+        "score": 31.0,
         "reason": "unreachable from roots",
         "caller": null,
         "callsite_op": null,
-        "callee_ops": 19,
+        "callee_ops": 21,
         "call_sites": null
       },
       {
         "kind": "dead_elim",
         "target": "channel_i64_select2_try",
-        "score": 29.0,
+        "score": 31.0,
         "reason": "unreachable from roots",
         "caller": null,
         "callsite_op": null,
-        "callee_ops": 19,
-        "call_sites": null
-      },
-      {
-        "kind": "dead_elim",
-        "target": "waitgroup_done",
-        "score": 29.0,
-        "reason": "unreachable from roots",
-        "caller": null,
-        "callsite_op": null,
-        "callee_ops": 19,
+        "callee_ops": 21,
         "call_sites": null
       },
       {
         "kind": "dead_elim",
         "target": "semaphore_wait",
-        "score": 28.0,
+        "score": 30.0,
         "reason": "unreachable from roots",
         "caller": null,
         "callsite_op": null,
-        "callee_ops": 18,
+        "callee_ops": 20,
         "call_sites": null
       },
       {
         "kind": "dead_elim",
         "target": "spinlock_lock",
+        "score": 29.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 19,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i32_bind",
         "score": 27.0,
         "reason": "unreachable from roots",
         "caller": null,
@@ -946,37 +956,67 @@
       },
       {
         "kind": "dead_elim",
-        "target": "channel_i32_bind",
-        "score": 25.0,
-        "reason": "unreachable from roots",
-        "caller": null,
-        "callsite_op": null,
-        "callee_ops": 15,
-        "call_sites": null
-      },
-      {
-        "kind": "dead_elim",
         "target": "channel_i32_new",
-        "score": 25.0,
+        "score": 27.0,
         "reason": "unreachable from roots",
         "caller": null,
         "callsite_op": null,
-        "callee_ops": 15,
+        "callee_ops": 17,
         "call_sites": null
       },
       {
         "kind": "dead_elim",
         "target": "channel_i64_bind",
-        "score": 25.0,
+        "score": 27.0,
         "reason": "unreachable from roots",
         "caller": null,
         "callsite_op": null,
-        "callee_ops": 15,
+        "callee_ops": 17,
         "call_sites": null
       },
       {
         "kind": "dead_elim",
         "target": "channel_i64_new",
+        "score": 27.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 17,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i32_destroy",
+        "score": 26.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 16,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "channel_i64_destroy",
+        "score": 26.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 16,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "waitgroup_wait",
+        "score": 26.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 16,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "mutex_lock",
         "score": 25.0,
         "reason": "unreachable from roots",
         "caller": null,
@@ -986,72 +1026,32 @@
       },
       {
         "kind": "dead_elim",
-        "target": "mutex_lock",
-        "score": 24.0,
+        "target": "rwlock_unlock",
+        "score": 25.0,
         "reason": "unreachable from roots",
         "caller": null,
         "callsite_op": null,
-        "callee_ops": 14,
-        "call_sites": null
-      },
-      {
-        "kind": "dead_elim",
-        "target": "thread_spawn",
-        "score": 24.0,
-        "reason": "unreachable from roots",
-        "caller": null,
-        "callsite_op": null,
-        "callee_ops": 14,
-        "call_sites": null
-      },
-      {
-        "kind": "dead_elim",
-        "target": "waitgroup_wait",
-        "score": 24.0,
-        "reason": "unreachable from roots",
-        "caller": null,
-        "callsite_op": null,
-        "callee_ops": 14,
+        "callee_ops": 15,
         "call_sites": null
       },
       {
         "kind": "dead_elim",
         "target": "channel_i32_close",
-        "score": 23.0,
+        "score": 24.0,
         "reason": "unreachable from roots",
         "caller": null,
         "callsite_op": null,
-        "callee_ops": 13,
-        "call_sites": null
-      },
-      {
-        "kind": "dead_elim",
-        "target": "channel_i32_destroy",
-        "score": 23.0,
-        "reason": "unreachable from roots",
-        "caller": null,
-        "callsite_op": null,
-        "callee_ops": 13,
+        "callee_ops": 14,
         "call_sites": null
       },
       {
         "kind": "dead_elim",
         "target": "channel_i64_close",
-        "score": 23.0,
+        "score": 24.0,
         "reason": "unreachable from roots",
         "caller": null,
         "callsite_op": null,
-        "callee_ops": 13,
-        "call_sites": null
-      },
-      {
-        "kind": "dead_elim",
-        "target": "channel_i64_destroy",
-        "score": 23.0,
-        "reason": "unreachable from roots",
-        "caller": null,
-        "callsite_op": null,
-        "callee_ops": 13,
+        "callee_ops": 14,
         "call_sites": null
       }
     ]

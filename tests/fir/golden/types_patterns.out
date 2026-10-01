@@ -1,5 +1,5 @@
 {
-  "summary": "FIR-G: funcs=3 blocks=4 ops=56 values=44 operands=40 types=7",
+  "summary": "FIR-G: funcs=3 blocks=6 ops=57 values=44 operands=40 types=7",
   "call_edges": [
     {
       "caller": "main",

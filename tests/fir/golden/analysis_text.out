@@ -1,4 +1,4 @@
-FIR-G: funcs=10 blocks=11 ops=41 values=30 operands=25 types=3
+FIR-G: funcs=10 blocks=13 ops=42 values=30 operands=25 types=3
 call ops: 10
 reachable: callee1, callee2, caller, leaf, main, mid, ping, pong, printf
 dead: dead
@@ -33,5 +33,5 @@ opt candidates: total=10 by_kind={'inline': 9, 'dead_elim': 1}
   [dead_elim] dead score=12.0 (unreachable from roots)
   [inline] callee1 score=11.25 (callee_ops=2 sites=2 pure=True) caller=caller
   [inline] callee1 score=11.25 (callee_ops=2 sites=2 pure=True) caller=caller
-  [inline] ping score=3.75 (callee_ops=12 sites=2 pure=True) caller=pong
-  [inline] ping score=3.75 (callee_ops=12 sites=2 pure=True) caller=main
+  [inline] ping score=3.0 (callee_ops=13 sites=2 pure=True) caller=pong
+  [inline] ping score=3.0 (callee_ops=13 sites=2 pure=True) caller=main

@@ -1,4 +1,4 @@
-FIR-G: funcs=49 blocks=70 ops=511 values=388 operands=280 types=12
+FIR-G: funcs=49 blocks=107 ops=544 values=388 operands=280 types=12
 call ops: 44
 reachable: align_up, arena_alloc, arena_alloc_i32, arena_create, arena_destroy, arena_remaining, arena_reset, arena_used, fill_temps, free, is_power_of_two, main, malloc, sizeof_i32
 dead: calloc, realloc, sizeof_i8, sizeof_i64, sizeof_f32, sizeof_f64, sizeof_ptr, alignof_i32, alignof_i64, alignof_f32, alignof_f64, align_down, alloc_bytes, alloc_zeroed, alloc_i32, alloc_f32, alloc_f64, memory_zero_i32, memory_copy_i32, grow_uninit, grow_zeroed, alloc_uninit, arena_alloc_f32, frame_arena_create, frame_arena_destroy, frame_begin, frame_alloc, frame_alloc_i32, frame_alloc_f32, frame_alloc_f64, frame_end, frame_used, frame_remaining, frame_high_water, frame_count
@@ -90,16 +90,16 @@ effects / pure:
   fill_temps: effects=0x0006 pure=False
   main: effects=0x001e pure=False
 device: requested=cpu chosen=cpu
-opt candidates: total=47 by_kind={'dead_elim': 35, 'inline': 12}
-  [dead_elim] frame_alloc score=51.0 (unreachable from roots)
-  [dead_elim] grow_zeroed score=51.0 (unreachable from roots)
-  [inline] arena_reset score=42.0 (callee_ops=3 sites=1 pure=True) caller=main
+opt candidates: total=45 by_kind={'dead_elim': 35, 'inline': 10}
+  [dead_elim] grow_zeroed score=56.0 (unreachable from roots)
+  [dead_elim] frame_alloc score=53.0 (unreachable from roots)
+  [inline] arena_reset score=39.0 (callee_ops=4 sites=1 pure=True) caller=main
   [inline] arena_remaining score=36.0 (callee_ops=5 sites=1 pure=True) caller=main
-  [dead_elim] frame_arena_destroy score=29.0 (unreachable from roots)
-  [dead_elim] memory_copy_i32 score=26.0 (unreachable from roots)
-  [dead_elim] align_down score=25.0 (unreachable from roots)
-  [dead_elim] memory_zero_i32 score=25.0 (unreachable from roots)
-  [dead_elim] frame_end score=24.0 (unreachable from roots)
+  [dead_elim] frame_arena_destroy score=32.0 (unreachable from roots)
+  [dead_elim] memory_copy_i32 score=28.0 (unreachable from roots)
+  [dead_elim] frame_end score=27.0 (unreachable from roots)
+  [dead_elim] memory_zero_i32 score=27.0 (unreachable from roots)
+  [dead_elim] align_down score=26.0 (unreachable from roots)
   [dead_elim] arena_alloc_f32 score=18.0 (unreachable from roots)
   [dead_elim] frame_alloc_f32 score=18.0 (unreachable from roots)
   [dead_elim] frame_alloc_f64 score=18.0 (unreachable from roots)

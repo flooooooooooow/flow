@@ -1,4 +1,4 @@
-FIR-G: funcs=12 blocks=18 ops=111 values=84 operands=66 types=8
+FIR-G: funcs=12 blocks=23 ops=123 values=90 operands=70 types=8
 call ops: 13
 reachable: classify, compiled, describe, identity_f64, kernel, later, main, malloc, puts
 dead: first_i32_bool, identity_i32, later
@@ -29,7 +29,7 @@ opt candidates: total=7 by_kind={'inline': 4, 'dead_elim': 3}
   [inline] identity_f64 score=42.0 (callee_ops=3 sites=1 pure=True) caller=main
   [inline] compiled score=36.0 (callee_ops=5 sites=1 pure=True) caller=later
   [inline] kernel score=24.0 (callee_ops=5 sites=1 pure=False) caller=later
-  [inline] later score=22.0 (callee_ops=6 sites=1 pure=False) caller=main
+  [inline] later score=20.0 (callee_ops=7 sites=1 pure=False) caller=main
   [dead_elim] first_i32_bool score=14.0 (unreachable from roots)
   [dead_elim] identity_i32 score=13.0 (unreachable from roots)
   [dead_elim] later score=10.0 (unreachable from roots)

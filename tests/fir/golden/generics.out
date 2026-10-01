@@ -1,5 +1,5 @@
 {
-  "summary": "FIR-G: funcs=6 blocks=13 ops=81 values=57 operands=45 types=8",
+  "summary": "FIR-G: funcs=6 blocks=27 ops=88 values=57 operands=45 types=8",
   "call_edges": [
     {
       "caller": "main",
@@ -67,7 +67,7 @@
         "score": 42.0,
         "reason": "callee_ops=3 sites=1 pure=True",
         "caller": "main",
-        "callsite_op": 43,
+        "callsite_op": 45,
         "callee_ops": 3,
         "call_sites": 1
       },
@@ -87,7 +87,7 @@
         "score": 42.0,
         "reason": "callee_ops=3 sites=1 pure=True",
         "caller": "main",
-        "callsite_op": 28,
+        "callsite_op": 29,
         "callee_ops": 3,
         "call_sites": 1
       },
@@ -107,7 +107,7 @@
         "score": 42.0,
         "reason": "callee_ops=3 sites=1 pure=True",
         "caller": "main",
-        "callsite_op": 73,
+        "callsite_op": 79,
         "callee_ops": 3,
         "call_sites": 1
       }
