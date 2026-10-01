@@ -201,37 +201,29 @@ crashes are `./flow tool tests/fuzz/run.flow` and the Stable corpus is
 ### Bootstrap suite
 
 The bootstrap suite is every `.flow` file under `tests/lang/` (254 files)
-compiled by the Stage-A compiler in bundle mode, then by cc. flowc reads its
-input and output paths from `FLOWC_IN` and `FLOWC_OUT`. Paths given as
-arguments are ignored and flowc runs its self-test instead, which is how an
-older version of this loop reported every file as passing.
+compiled by the Stage-A compiler (`compiler/build/flowc_bootstrap`, built
+from the checked-in bootstrap C) in bundle mode, linked, and run. Its entry
+point is `./flow test-lang`:
 
 ```bash
-cc -O2 -o compiler/build/flowc_bootstrap compiler/bootstrap/flowc_stage_a.c -lm
-BOOT=compiler/build/flowc_bootstrap
-pass=0; fail=0
-for f in $(find tests/lang -name "*.flow" | sort); do
-  rm -f /tmp/out.c
-  if FLOWC_BUNDLE=1 FLOWC_DIR=. FLOWC_IN="$f" FLOWC_OUT=/tmp/out.c "$BOOT" >/dev/null 2>&1 \
-     && cc -O0 -Itests/lang -o /tmp/out /tmp/out.c -lm >/dev/null 2>&1; then
-    pass=$((pass + 1))
-  else
-    fail=$((fail + 1)); echo "  FAIL $f"
-  fi
-done
-echo "pass=$pass fail=$fail"
+./flow test-lang
 ```
 
-Current on main (2026-10-01, macOS arm64): 251 pass, 3 fail.
+It type checks in strict mode, adds `-Itests/lang` for the helper header of
+test_c_import and test_extern_type, links the concurrency runtime
+(`runtime/flow_concurrency.c` and the rest, plus the archive built from
+`lib/runtime/*.flow`) into any program that imports `concurrent`, and checks
+the exit code and any `.expected` output. Pass file paths to run a subset.
+Run it from the repository root.
 
-- Cross-module generics (1): test_generic_channels (`Chan` and
-  `channel_send_i32` undeclared).
-- Runtime link (2): test_concurrent_link and test_import_stdlib_bare need
-  the concurrency runtime (the `__atomic_*_n` helpers), which this loop does
-  not link.
+Current on main (2026-10-01, macOS arm64): 254 pass, 0 fail.
 
-The include path `-Itests/lang` is needed for test_c_import and
-test_extern_type, whose helper header lives in `tests/lang/`.
+An older version of this section was a hand-written loop over
+`FLOWC_IN`/`FLOWC_OUT` and `cc ... -lm`. It linked no runtime, so
+test_generic_channels, test_concurrent_link and test_import_stdlib_bare
+failed with undefined `flow_thread_*` and `__atomic_*_n` symbols although
+the compiler handles them. tests/scripts/bootstrap_suite_doc.flow runs the
+command above on those three files.
 
 ## Meta-Agents and Repositories
 
