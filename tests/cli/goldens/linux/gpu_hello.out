@@ -1,0 +1,11 @@
+[0;34mℹ️  Generating GPU shaders from tests/cli/fixtures/hello.flow (metal)...[0m
+No @gpu functions found in the program.
+Mark GPU functions with @gpu decorator:
+
+@gpu
+function vector_add(a: array<f32>, b: array<f32>, out: array<f32>, n: i32) {
+    let i = gpu_thread_id()
+    if i < n {
+        out[i] = a[i] + b[i]
+    }
+}

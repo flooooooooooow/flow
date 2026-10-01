@@ -1,0 +1,6 @@
+[0;34mℹ️  Compiling tests/cli/fixtures/bad_syntax.flow (host=flowc)...[0m
+[0;34mℹ️  flowc emit via <ROOT>/compiler/build/flowc_bootstrap[0m
+flowc emit: parse failed
+tests/cli/fixtures/bad_syntax.flow:2:16: parse error: unexpected token '->' (byte 55)
+flowc emit: arena_len=0
+[0;31m❌ flowc could not compile tests/cli/fixtures/bad_syntax.flow[0m

@@ -1,0 +1,1 @@
+[0;31m❌ flow fmt: tests/cli/fixtures/bad_syntax.flow does not parse; left unchanged[0m
