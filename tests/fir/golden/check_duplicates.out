@@ -1,5 +1,5 @@
 {
-  "summary": "FIR-G: funcs=61 blocks=300 ops=3014 values=2334 operands=1926 types=8",
+  "summary": "FIR-G: funcs=61 blocks=712 ops=3277 values=2334 operands=1926 types=8",
   "call_edges": [
     {
       "caller": "flowc_claim_is_alnum",

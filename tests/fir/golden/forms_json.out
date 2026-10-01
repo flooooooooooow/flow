@@ -1,5 +1,5 @@
 {
-  "summary": "FIR-G: funcs=12 blocks=18 ops=111 values=84 operands=66 types=8",
+  "summary": "FIR-G: funcs=12 blocks=23 ops=123 values=90 operands=70 types=8",
   "call_edges": [
     {
       "caller": "classify",
@@ -105,7 +105,7 @@
         "score": 42.0,
         "reason": "callee_ops=3 sites=1 pure=True",
         "caller": "main",
-        "callsite_op": 72,
+        "callsite_op": 82,
         "callee_ops": 3,
         "call_sites": 1
       },
@@ -115,7 +115,7 @@
         "score": 36.0,
         "reason": "callee_ops=5 sites=1 pure=True",
         "caller": "later",
-        "callsite_op": 57,
+        "callsite_op": 67,
         "callee_ops": 5,
         "call_sites": 1
       },
@@ -125,18 +125,18 @@
         "score": 24.0,
         "reason": "callee_ops=5 sites=1 pure=False",
         "caller": "later",
-        "callsite_op": 59,
+        "callsite_op": 69,
         "callee_ops": 5,
         "call_sites": 1
       },
       {
         "kind": "inline",
         "target": "later",
-        "score": 22.0,
-        "reason": "callee_ops=6 sites=1 pure=False",
+        "score": 20.0,
+        "reason": "callee_ops=7 sites=1 pure=False",
         "caller": "main",
-        "callsite_op": 86,
-        "callee_ops": 6,
+        "callsite_op": 96,
+        "callee_ops": 7,
         "call_sites": 1
       },
       {

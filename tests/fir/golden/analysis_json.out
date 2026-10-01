@@ -1,5 +1,5 @@
 {
-  "summary": "FIR-G: funcs=10 blocks=11 ops=41 values=30 operands=25 types=3",
+  "summary": "FIR-G: funcs=10 blocks=13 ops=42 values=30 operands=25 types=3",
   "call_edges": [
     {
       "caller": "leaf",
@@ -111,7 +111,7 @@
         "score": 39.0,
         "reason": "callee_ops=4 sites=1 pure=True",
         "caller": "main",
-        "callsite_op": 35,
+        "callsite_op": 36,
         "callee_ops": 4,
         "call_sites": 1
       },
@@ -121,7 +121,7 @@
         "score": 33.0,
         "reason": "callee_ops=6 sites=1 pure=True",
         "caller": "ping",
-        "callsite_op": 24,
+        "callsite_op": 25,
         "callee_ops": 6,
         "call_sites": 1
       },
@@ -131,7 +131,7 @@
         "score": 30.0,
         "reason": "callee_ops=2 sites=1 pure=False",
         "caller": "main",
-        "callsite_op": 34,
+        "callsite_op": 35,
         "callee_ops": 2,
         "call_sites": 1
       },
@@ -178,21 +178,21 @@
       {
         "kind": "inline",
         "target": "ping",
-        "score": 3.75,
-        "reason": "callee_ops=12 sites=2 pure=True",
+        "score": 3.0,
+        "reason": "callee_ops=13 sites=2 pure=True",
         "caller": "pong",
-        "callsite_op": 30,
-        "callee_ops": 12,
+        "callsite_op": 31,
+        "callee_ops": 13,
         "call_sites": 2
       },
       {
         "kind": "inline",
         "target": "ping",
-        "score": 3.75,
-        "reason": "callee_ops=12 sites=2 pure=True",
+        "score": 3.0,
+        "reason": "callee_ops=13 sites=2 pure=True",
         "caller": "main",
-        "callsite_op": 38,
-        "callee_ops": 12,
+        "callsite_op": 39,
+        "callee_ops": 13,
         "call_sites": 2
       }
     ]

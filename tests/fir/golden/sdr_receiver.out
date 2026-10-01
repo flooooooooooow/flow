@@ -1,4 +1,4 @@
-FIR-G: funcs=13 blocks=21 ops=198 values=164 operands=125 types=11
+FIR-G: funcs=13 blocks=33 ops=210 values=164 operands=125 types=11
 call ops: 33
 reachable: free, main, malloc, signal_free_Hz8000, signal_get_Hz8000, signal_mix_Hz8000, signal_new_Hz8000, signal_set_Hz8000
 dead: iq, iq_from_real, iq_sample, iq_sample_from_iq, memcpy
@@ -26,16 +26,16 @@ effects / pure:
   memcpy: effects=0x0010 pure=False
   main: effects=0x801e pure=False
 device: requested=cpu chosen=cpu
-opt candidates: total=18 by_kind={'dead_elim': 5, 'inline': 13}
+opt candidates: total=16 by_kind={'dead_elim': 5, 'inline': 11}
   [dead_elim] iq score=16.0 (unreachable from roots)
   [dead_elim] iq_from_real score=15.0 (unreachable from roots)
   [dead_elim] iq_sample score=14.0 (unreachable from roots)
   [dead_elim] iq_sample_from_iq score=13.0 (unreachable from roots)
   [dead_elim] memcpy score=10.0 (unreachable from roots)
-  [inline] signal_set_Hz8000 score=3.0 (callee_ops=13 sites=2 pure=True) caller=main
-  [inline] signal_set_Hz8000 score=3.0 (callee_ops=13 sites=2 pure=True) caller=main
-  [inline] signal_free_Hz8000 score=2.3333 (callee_ops=3 sites=6 pure=False) caller=main
-  [inline] signal_free_Hz8000 score=2.3333 (callee_ops=3 sites=6 pure=False) caller=main
-  [inline] signal_free_Hz8000 score=2.3333 (callee_ops=3 sites=6 pure=False) caller=main
-  [inline] signal_free_Hz8000 score=2.3333 (callee_ops=3 sites=6 pure=False) caller=main
-  [inline] signal_free_Hz8000 score=2.3333 (callee_ops=3 sites=6 pure=False) caller=main
+  [inline] signal_free_Hz8000 score=2.1667 (callee_ops=4 sites=6 pure=False) caller=main
+  [inline] signal_free_Hz8000 score=2.1667 (callee_ops=4 sites=6 pure=False) caller=main
+  [inline] signal_free_Hz8000 score=2.1667 (callee_ops=4 sites=6 pure=False) caller=main
+  [inline] signal_free_Hz8000 score=2.1667 (callee_ops=4 sites=6 pure=False) caller=main
+  [inline] signal_free_Hz8000 score=2.1667 (callee_ops=4 sites=6 pure=False) caller=main
+  [inline] signal_free_Hz8000 score=2.1667 (callee_ops=4 sites=6 pure=False) caller=main
+  [inline] signal_new_Hz8000 score=1.3333 (callee_ops=13 sites=3 pure=False) caller=signal_mix_Hz8000

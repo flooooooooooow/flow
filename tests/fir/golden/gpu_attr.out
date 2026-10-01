@@ -1,5 +1,5 @@
 {
-  "summary": "FIR-G: funcs=4 blocks=7 ops=75 values=65 operands=34 types=6",
+  "summary": "FIR-G: funcs=4 blocks=13 ops=84 values=65 operands=34 types=6",
   "call_edges": [],
   "effects": {
     "vector_add": 33024,
@@ -33,31 +33,31 @@
       {
         "kind": "dead_elim",
         "target": "vector_saxpy",
-        "score": 27.0,
+        "score": 30.0,
         "reason": "unreachable from roots",
         "caller": null,
         "callsite_op": null,
-        "callee_ops": 17,
+        "callee_ops": 20,
         "call_sites": null
       },
       {
         "kind": "dead_elim",
         "target": "vector_add",
-        "score": 25.0,
+        "score": 28.0,
         "reason": "unreachable from roots",
         "caller": null,
         "callsite_op": null,
-        "callee_ops": 15,
+        "callee_ops": 18,
         "call_sites": null
       },
       {
         "kind": "dead_elim",
         "target": "vector_scale",
-        "score": 25.0,
+        "score": 28.0,
         "reason": "unreachable from roots",
         "caller": null,
         "callsite_op": null,
-        "callee_ops": 15,
+        "callee_ops": 18,
         "call_sites": null
       }
     ]

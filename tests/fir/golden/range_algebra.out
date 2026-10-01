@@ -1,5 +1,5 @@
 {
-  "summary": "FIR-G: funcs=13 blocks=57 ops=858 values=699 operands=581 types=4",
+  "summary": "FIR-G: funcs=13 blocks=135 ops=918 values=699 operands=581 types=4",
   "call_edges": [
     {
       "caller": "brute_union",
@@ -127,11 +127,11 @@
       {
         "kind": "dead_elim",
         "target": "__flow_progression_sum",
-        "score": 48.0,
+        "score": 50.0,
         "reason": "unreachable from roots",
         "caller": null,
         "callsite_op": null,
-        "callee_ops": 38,
+        "callee_ops": 40,
         "call_sites": null
       },
       {
@@ -140,7 +140,7 @@
         "score": 2.25,
         "reason": "callee_ops=8 sites=6 pure=True",
         "caller": "main",
-        "callsite_op": 291,
+        "callsite_op": 308,
         "callee_ops": 8,
         "call_sites": 6
       },
@@ -150,7 +150,7 @@
         "score": 2.25,
         "reason": "callee_ops=8 sites=6 pure=True",
         "caller": "main",
-        "callsite_op": 294,
+        "callsite_op": 311,
         "callee_ops": 8,
         "call_sites": 6
       },
@@ -160,7 +160,7 @@
         "score": 2.25,
         "reason": "callee_ops=8 sites=6 pure=True",
         "caller": "main",
-        "callsite_op": 297,
+        "callsite_op": 314,
         "callee_ops": 8,
         "call_sites": 6
       },
@@ -170,7 +170,7 @@
         "score": 2.25,
         "reason": "callee_ops=8 sites=6 pure=True",
         "caller": "main",
-        "callsite_op": 300,
+        "callsite_op": 317,
         "callee_ops": 8,
         "call_sites": 6
       },
@@ -180,7 +180,7 @@
         "score": 2.25,
         "reason": "callee_ops=8 sites=6 pure=True",
         "caller": "main",
-        "callsite_op": 303,
+        "callsite_op": 320,
         "callee_ops": 8,
         "call_sites": 6
       },
@@ -190,7 +190,7 @@
         "score": 2.25,
         "reason": "callee_ops=8 sites=6 pure=True",
         "caller": "main",
-        "callsite_op": 306,
+        "callsite_op": 323,
         "callee_ops": 8,
         "call_sites": 6
       }

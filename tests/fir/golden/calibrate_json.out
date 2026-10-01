@@ -7,7 +7,7 @@
   "saved_to": "build/fir-gate/calibrate_json.json"
 }
 {
-  "summary": "FIR-G: funcs=2 blocks=4 ops=23 values=18 operands=16 types=2",
+  "summary": "FIR-G: funcs=2 blocks=5 ops=24 values=18 operands=16 types=2",
   "call_edges": [
     {
       "caller": "fibonacci",

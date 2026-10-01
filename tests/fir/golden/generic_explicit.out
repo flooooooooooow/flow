@@ -1,4 +1,4 @@
-FIR-G: funcs=3 blocks=7 ops=52 values=37 operands=31 types=6
+FIR-G: funcs=3 blocks=15 ops=56 values=37 operands=31 types=6
 call ops: 4
 reachable: identity_f64, identity_i32, main
 dead: (none)

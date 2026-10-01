@@ -1,4 +1,4 @@
-FIR-G: funcs=9 blocks=10 ops=39 values=29 operands=24 types=3
+FIR-G: funcs=9 blocks=12 ops=40 values=29 operands=24 types=3
 call ops: 10
 reachable: callee1, callee2, caller, leaf, main, mid, ping, pong, printf
 dead: (none)
