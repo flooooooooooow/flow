@@ -8,7 +8,7 @@
 #                                     such as compiler/scripts/roundtrip.flow
 #   flow tool --path NAME|PATH.flow   build only; print the binary's path
 #
-# This replaced scripts/tools/build_tool.sh and the one-line shell shims
+# This replaced the build_tool.sh script and the one-line shell shims
 # that called it. The flowc is the one the stub builds from the checked-in
 # bootstrap C (compiler/build/flowc_bootstrap), so nothing here needs
 # Python or a previous build of flowc.
@@ -16,7 +16,7 @@
 # Programs under scripts/tools compile with FLOWC_DIR=scripts/tools/lib, so
 # `import .text { ... }` finds the shared helpers. Every other program
 # compiles with FLOWC_DIR at the repository root, so it imports by path
-# (`import "scripts/tools/lib/gate.flow"`). Binaries are cached in
+# (`import "scripts/tools/lib/text.flow"`). Binaries are cached in
 # build/flow-tools and rebuilt when the program, a sibling module, the
 # shared helpers, the CLI modules in tools/flow_cli, the standard library
 # or the bootstrap C changes.

@@ -66,7 +66,7 @@ the fix that caused it.
 * Statements: `expect c` writes `expect failed (line N)` and exits 1 when
   `c` is false; `a = b = v` is an expression; `ui_*` layout blocks call
   their `_begin` and `_end` functions around the body.
-* Runtime checks (`FLOWC_CHECKS=1`, the default of `flow_to_mlir.sh`):
+* Runtime checks (`FLOWC_CHECKS=1`, the default of `flow flow-to-mlir`):
   integer division by zero, shift range, and reads of sized arrays and
   spans abort with `flow: <what>` as the C backend's checks do.
 * Data: statics fold negative and constant initializers; `[v; N]` takes a
@@ -160,18 +160,18 @@ operator structs, unsized arrays, 128-bit and wide integer literals, and the
 wasm32 32-bit `size_t` ABI.
 
 `FLOWC_LENIENT=1` makes non-fatal type errors warnings, as Python's
-`--lenient` did. `flow_to_mlir.sh --lenient` sets it; the MLIR commands of
+`--lenient` did. `flow flow-to-mlir --lenient` sets it; the MLIR commands of
 the driver and `--jit` use it.
 
 ### Orchestration
 
 | Was | Now |
 |---|---|
-| `mlir_optimizer.py` pipelines | `compiler/scripts/mlir_optimize.sh`, pipeline text from `scripts/tools/mlir_pipeline` |
-| `mlir_jit.py` lowering | `compiler/scripts/mlir_lower.sh` |
+| `mlir_optimizer.py` pipelines | `flow mlir-optimize`, pipeline text from `scripts/tools/mlir_pipeline` |
+| `mlir_jit.py` lowering | `flow mlir-lower` |
 | `mlir_jit.py` loading, `jit_runner.py` (ctypes) | `flow jit`: emit, lower, link an executable, run it |
-| `mlir_spirv.py` | `compiler/scripts/mlir_spirv.sh` |
-| transpiler `--mlir` entry | `compiler/scripts/flow_to_mlir.sh`, `flow_to_llvm.sh` |
+| `mlir_spirv.py` | `flow mlir-spirv` |
+| transpiler `--mlir` entry | `flow flow-to-mlir`, `flow flow-to-llvm` |
 | `gpu_integration.py`, `gpu_runtime.py`, `metal_runtime.py` | `benchmarks/gpu/gpu_microbenchmark.c`, `runtime/gpu_metal.m` |
 
 `./flow tool tests/mlir_commands/run.flow` checks 72 command cases (`flow mlir`,
@@ -251,7 +251,7 @@ in `compiler/fixtures/typecheck_rules/`:
 
 | Command or job | What it runs today |
 |---|---|
-| `flow run <p> --backend=mlir`, `flow compile <p> --backend=mlir`, `FLOW_CPU_BACKEND=mlir` | `compile_program_mlir` in the driver (now [`tools/flow_cli/toolchain.flow`](../../tools/flow_cli/toolchain.flow)). Since slice 1: flowc emitter plus `mlir_lower.sh` when the program is in the slice, else `python -m flow.transpiler --mlir --llvm`, then clang with the Flow runtime |
+| `flow run <p> --backend=mlir`, `flow compile <p> --backend=mlir`, `FLOW_CPU_BACKEND=mlir` | `compile_program_mlir` in the driver (now [`tools/flow_cli/mlir_tools.flow`](../../tools/flow_cli/mlir_tools.flow)). Since slice 1: flowc emitter plus `flow mlir-lower` when the program is in the slice, else `python -m flow.transpiler --mlir --llvm`, then clang with the Flow runtime |
 | `flow mlir <p> [--optimize ...]` | `python -m flow.transpiler --mlir`; `--optimize` runs `MLIROptimizer` (mlir-opt pass pipelines) |
 | `flow mlir-run <p>` | `flow mlir`, then `mlir_lower_and_link` (mlir-opt, mlir-translate, llc, clang), now in [`tools/flow_cli/build.flow`](../../tools/flow_cli/build.flow) |
 | `flow audio --mlir`, `flow compile-audio --mlir` | transpiler `--mlir --llvm`, linked with the audio runtime |
@@ -259,7 +259,7 @@ in `compiler/fixtures/typecheck_rules/`:
 | `flow ml [run\|jit\|bench\|test]`, `flow test-matmul` | the ML and matmul demos through the same MLIR generator, JIT and optimizer |
 | `flow test-mlir` | `run_mlir_tests`: generate and lower `tests/mlir` plus three core programs |
 | `flow wasm --backend=mlir`, `./flow tool wasm_build build --backend=mlir` | `scripts/tools/wasm_build`: transpiler `--mlir --llvm --wasm32` as a subprocess, then emcc |
-| `flow bpf`, `flow wasm32` | `scripts/tools/llvm_target` through `compiler/scripts/flow_to_llvm.sh`: the flowc emitter plus `mlir_lower.sh` when the program is in the slice (for wasm32, also when it declares no external functions), else transpiler `--llvm`; then clang for the BPF or wasm32 target |
+| `flow bpf`, `flow wasm32` | `scripts/tools/llvm_target` through `flow flow-to-llvm`: the flowc emitter plus `flow mlir-lower` when the program is in the slice (for wasm32, also when it declares no external functions), else transpiler `--llvm`; then clang for the BPF or wasm32 target |
 | `--mlir-gpu`, `--emit-spirv` | `mlir_gpu_codegen.py` (gpu dialect text) and `mlir_spirv.py` (mlir-opt and mlir-translate to SPIR-V) |
 | Metal and CUDA runtimes | `metal_codegen.py` (MSL text), `metal_runtime.py`, `gpu_runtime.py`, `gpu_integration.py` (ctypes, numpy) |
 
@@ -324,7 +324,7 @@ One `module { ... }` of textual MLIR:
    building over the AST, the same kind of work `cgen.flow` does for C.
 2. **Process orchestration moves to bash.** Running mlir-opt, mlir-translate,
    llc and clang with fixed flags needs no language at all.
-   `compiler/scripts/mlir_lower.sh` now does what `MLIRJIT.compile_mlir_to_llvm`
+   `flow mlir-lower` now does what `MLIRJIT.compile_mlir_to_llvm`
    does. The optimizer pipelines and SPIR-V lowering follow the same pattern.
 3. **The ctypes runtimes stay native.** Loading a shared object and calling
    into Metal or CUDA is C's job. The JIT becomes "emit, lower, link an
@@ -354,7 +354,7 @@ quirks, because parity was the gate. Those quirks are fixed now; see
 
 ### `--backend=mlir` on the flowc host
 
-`compile_program_mlir` in the driver (now [`tools/flow_cli/toolchain.flow`](../../tools/flow_cli/toolchain.flow)) tries flowc first: `FLOWC_EMIT=mlir`, then `compiler/scripts/mlir_lower.sh`,
+`compile_program_mlir` in the driver (now [`tools/flow_cli/mlir_tools.flow`](../../tools/flow_cli/mlir_tools.flow)) tries flowc first: `FLOWC_EMIT=mlir`, then `flow mlir-lower`,
 then clang on the `.ll`. No Python runs. When flowc refuses the program the
 driver prints
 
@@ -675,8 +675,8 @@ shrinks, and Python code is deleted only where nothing calls it any more.
    the `_try_*_elementwise_for` paths). The linalg rewrite over pointers is
    done, and so is the vector rewrite of single-store memref loops.
 8. **Orchestration** (done): the `mlir_optimizer.py` pipelines and `mlir_spirv.py`
-   as bash beside `mlir_lower.sh`; `flow mlir`, `mlir-run`, wasm and BPF
-   switched to flowc.
+   as Flow beside `flow mlir-lower` (tools/flow_cli/mlir_tools.flow);
+   `flow mlir`, `mlir-run`, wasm and BPF switched to flowc.
 9. **Denotational dialect**: once the lane lands, a second pass over flow
    blocks writes the `flow.*` module ahead of the operational one, under the
    same `FLOW_DENOTATIONAL=1` switch.
