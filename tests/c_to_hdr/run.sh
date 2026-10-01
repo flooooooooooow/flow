@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Golden check for scripts/tools/c_to_hdr, the header derivation that
-# compiler/scripts/roundtrip.sh runs on each Stage-A module.
+# compiler/scripts/roundtrip.flow runs on each Stage-A module.
 #
 # Each NAME.c here has NAME.h.expect, the header the retired
 # compiler/scripts/flowc_c_to_hdr.py wrote for it. token_flowc.c and

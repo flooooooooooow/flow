@@ -1,0 +1,19 @@
+# Smoke: compile the math_prose + proof_sub demo with flowc and check the
+# expected string constants in the generated C (the host may hang on newly
+# linked Mach-Os, so the binary is not run).
+#
+#   ./flow tool compiler/scripts/smoke_math_prose.flow [OUT.c]
+
+import "tools/flow_cli/sys.flow"
+import "compiler/scripts/gate_lib.flow"
+import std.process { ProcStrs }
+
+function main() -> i32 {
+    let need: ptr<ProcStrs> = sl_new()
+    sl_push(need, "zero is the left identity, for addition on the natural numbers")
+    sl_push(need, "0 + n == n")
+    sl_push(need, "m + n == n + m")
+    sl_push(need, "math_prose+proof_sub: PASS")
+    sl_push(need, "We stipulate zero is the left identity for addition on the natural numbers")
+    return string_smoke("examples/compilers/math_prose_demo.flow", "compiler/build/math_prose_demo.c", need, "math_prose/proof_sub")
+}

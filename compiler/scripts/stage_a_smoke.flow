@@ -1,0 +1,67 @@
+# Minimal Stage-A round-trip smoke: emit one fixture, cc, run, check the
+# exit code. Emits with the flowc built from the current compiler/src.
+# FLOWC_USE_DRIVER=1 prefers a prebuilt stage_a_driver(_flow) instead.
+# The full suite is compiler/scripts/roundtrip.flow.
+#
+#   ./flow tool compiler/scripts/stage_a_smoke.flow
+
+import "tools/flow_cli/sys.flow"
+import "compiler/scripts/gate_lib.flow"
+import std.process { ProcStrs }
+
+const FIXTURE: string = "compiler/fixtures/stage_a_sum.flow"
+const C_OUT: string = "compiler/build/stage_a_smoke_sum.c"
+const BIN: string = "compiler/build/stage_a_smoke_sum"
+const EXPECT: i32 = 45
+
+function stage_a_emit(host: string, src: string, c_out: string) {
+    if s_eq(env("FLOWC_USE_DRIVER"), "1") {
+        if is_exec("compiler/build/stage_a_driver_flow") {
+            gate_run(sl_of3("./compiler/build/stage_a_driver_flow", src, c_out))
+            return
+        }
+        if is_exec("compiler/build/stage_a_driver") {
+            gate_run(sl_of3("./compiler/build/stage_a_driver", src, c_out))
+            return
+        }
+        gate_fail("FAIL stage_a_smoke: FLOWC_USE_DRIVER=1 but no stage_a_driver*")
+    }
+    if not is_file("compiler/src/main.flow") {
+        gate_fail("FAIL stage_a_smoke: missing compiler/src/main.flow")
+    }
+    # Host emit: picks up the latest Stage-A sources; no stale driver binary.
+    env_set("FLOWC_IN", src)
+    env_set("FLOWC_OUT", c_out)
+    gate_run(sl_of1(host))
+}
+
+function main() -> i32 {
+    let root: string = gate_enter()
+    let host: string = gate_flowc_host(root)
+    gate_mkdir("compiler/build")
+
+    # Avoid hanging on `brew --prefix llvm` when Homebrew is busy or locked.
+    if s_len(env("LLVM_PATH")) == 0 {
+        if is_dir("/opt/homebrew/opt/llvm/bin") {
+            env_set("LLVM_PATH", "/opt/homebrew/opt/llvm/bin")
+        } elif is_dir("/usr/local/opt/llvm/bin") {
+            env_set("LLVM_PATH", "/usr/local/opt/llvm/bin")
+        }
+    }
+
+    outln("=== stage_a_smoke (" + FIXTURE + " → exit " + s_itoa(EXPECT) + ") ===")
+    stage_a_emit(host, FIXTURE, C_OUT)
+    if not is_file(C_OUT) {
+        gate_fail("FAIL stage_a_smoke: emit did not write " + C_OUT)
+    }
+    let args: ptr<ProcStrs> = sl_of3("-O0", "-o", BIN)
+    sl_push(args, C_OUT)
+    gate_cc(args)
+    let code: i32 = gate_status("./" + BIN)
+    outln("exit=" + s_itoa(code))
+    if code != EXPECT {
+        gate_fail("FAIL stage_a_smoke: expected exit " + s_itoa(EXPECT) + ", got " + s_itoa(code))
+    }
+    outln("PASS stage_a_smoke")
+    return 0
+}

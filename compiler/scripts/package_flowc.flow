@@ -1,0 +1,202 @@
+# Package a distributable flowc: the Stage-A driver binary, the bootstrap C
+# it was built from, and a build script that needs nothing but a C
+# compiler.
+#
+#   ./flow tool compiler/scripts/package_flowc.flow     # dist/flowc-<ver>-<os>-<arch>.tar.gz
+#   FLOWC_VERSION=v0.9.0 ./flow tool compiler/scripts/package_flowc.flow
+#
+# The tarball is self-contained: its `./build.sh` rebuilds the compiler
+# from the bootstrap C on any platform with a C compiler. The shipped
+# binary is a convenience; the bootstrap C is always there to rebuild from.
+
+@cEmbed("#include <sys/stat.h>
+static int32_t pkg_mode(const char *p) {
+  struct stat st;
+  if (stat(p, &st) != 0) { return -1; }
+  return (int32_t)(st.st_mode & 07777);
+}
+static int32_t pkg_umask(void) { mode_t m = umask(0); umask(m); return (int32_t)m; }
+")
+
+import "tools/flow_cli/sys.flow"
+import "compiler/scripts/gate_lib.flow"
+import std.process { ProcCmd, ProcStrs, proc_arg }
+
+extern {
+    function pkg_mode(p: string) -> i32
+    function pkg_umask() -> i32
+}
+
+# cp SRC DST for a new DST: the source's mode, less the umask. False when
+# SRC cannot be read.
+function cp_file(src: string, dst: string) -> bool {
+    let mode: i32 = pkg_mode(src)
+    if mode < 0 or not copy_file(src, dst) {
+        return false
+    }
+    return set_mode(dst, mode & (4095 - pkg_umask()))
+}
+
+# chmod +x
+function chmod_x(p: string) {
+    let _m: bool = set_mode(p, pkg_mode(p) | (73 & (4095 - pkg_umask())))
+}
+
+# The first executable driver, preferring a self-hosted one; "" if none.
+function pick_driver() -> string {
+    let cands: ptr<ProcStrs> = s_words("compiler/build/stage_a_driver_flow_self compiler/build/stage_a_driver_flow_g2 compiler/build/stage_a_driver_flow compiler/build/flowc_bootstrap")
+    let mut i: i32 = 0
+    while i < sl_len(cands) {
+        if is_exec(sl_get(cands, i)) {
+            return sl_get(cands, i)
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+# The package's build.sh: rebuild flowc with nothing but a C compiler and
+# keep the public `flowc <in.flow> <out.c>` interface.
+function build_script() -> string {
+    let mut s: string = "#!/usr/bin/env sh\n"
+    s = s + "# Rebuild flowc from source with nothing but a C compiler while preserving the\n"
+    s = s + "# package's public `flowc <in.flow> <out.c>` CLI contract. The checked-in\n"
+    s = s + "# bootstrap translation unit uses FLOWC_IN/FLOWC_OUT internally, so keep it as\n"
+    s = s + "# a private core executable and put a tiny POSIX wrapper in front of it.\n"
+    s = s + "set -e\n"
+    s = s + "ROOT=\"$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\"\n"
+    s = s + "CC_BIN=\"${CC:-cc}\"\n"
+    s = s + "\"$CC_BIN\" ${CFLAGS:--O2} -o \"$ROOT/bin/flowc-core\" \"$ROOT/bootstrap/flowc_stage_a.c\" -lm\n"
+    s = s + "cat >\"$ROOT/bin/flowc\" <<'WRAPPER'\n"
+    s = s + "#!/usr/bin/env sh\n"
+    s = s + "set -e\n"
+    s = s + "ROOT=\"$(CDPATH= cd -- \"$(dirname -- \"$0\")/..\" && pwd)\"\n"
+    s = s + "if [ \"$#\" -eq 2 ]; then\n"
+    s = s + "    FLOWC_IN=\"$1\"\n"
+    s = s + "    FLOWC_OUT=\"$2\"\n"
+    s = s + "    export FLOWC_IN FLOWC_OUT\n"
+    s = s + "    exec \"$ROOT/bin/flowc-core\"\n"
+    s = s + "fi\n"
+    s = s + "if [ \"$#\" -eq 0 ] && [ -n \"${FLOWC_IN:-}\" ] && [ -n \"${FLOWC_OUT:-}\" ]; then\n"
+    s = s + "    exec \"$ROOT/bin/flowc-core\"\n"
+    s = s + "fi\n"
+    s = s + "echo \"usage: flowc <in.flow> <out.c>\" >&2\n"
+    s = s + "exit 2\n"
+    s = s + "WRAPPER\n"
+    s = s + "chmod +x \"$ROOT/bin/flowc\"\n"
+    s = s + "echo \"built bin/flowc\"\n"
+    return s
+}
+
+function readme(version: string, os: string, arch: string) -> string {
+    let mut s: string = "# flowc " + version + " (" + os + "/" + arch + ")\n"
+    s = s + "\n"
+    s = s + "Stage-A Flow compiler, written in Flow. It reads a `.flow` file and writes C.\n"
+    s = s + "\n"
+    s = s + "    bin/flowc examples/stage_a_sum.flow sum.c\n"
+    s = s + "    cc -o sum sum.c\n"
+    s = s + "    ./sum ; echo $?      # 45\n"
+    s = s + "\n"
+    s = s + "Multi-file programs: set `FLOWC_BUNDLE=1` and `FLOWC_DIR=<source dir>` and\n"
+    s = s + "relative imports are resolved and emitted into one translation unit.\n"
+    s = s + "\n"
+    s = s + "    FLOWC_BUNDLE=1 FLOWC_DIR=src bin/flowc src/main.flow main.c\n"
+    s = s + "\n"
+    s = s + "## Rebuilding\n"
+    s = s + "\n"
+    s = s + "`bootstrap/flowc_stage_a.c` is the compiler itself, emitted by flowc as a\n"
+    s = s + "single C translation unit. No Python, no package manager, no network:\n"
+    s = s + "\n"
+    s = s + "    ./build.sh\n"
+    s = s + "\n"
+    s = s + "The rebuild keeps the same `bin/flowc <in.flow> <out.c>` interface as the\n"
+    s = s + "prebuilt driver. Internally, the rebuilt bootstrap executable uses\n"
+    s = s + "`FLOWC_IN`/`FLOWC_OUT`; `bin/flowc` is a small POSIX wrapper that adapts\n"
+    s = s + "the public CLI to that bootstrap interface.\n"
+    s = s + "\n"
+    s = s + "That bootstrap C file is checked into the Flow repository and CI fails if it\n"
+    s = s + "is not byte-for-byte what flowc emits from `compiler/src` today, so the\n"
+    s = s + "binary here and the source in the repository cannot drift apart.\n"
+    s = s + "\n"
+    s = s + "## Scope\n"
+    s = s + "\n"
+    s = s + "Stage-A is a subset: functions, structs, `let`/`const`, control flow,\n"
+    s = s + "`match` on integers, pointers, arrays, casts, relative imports, and C\n"
+    s = s + "externs. Programs outside that subset need the full Flow toolchain.\n"
+    return s
+}
+
+function main() -> i32 {
+    let _root: string = gate_enter()
+
+    let mut version: string = env("FLOWC_VERSION")
+    if s_len(version) == 0 {
+        version = s_chomp_all(head_lines("VERSION", 1))
+        if s_len(version) == 0 {
+            gate_fail("package_flowc: could not read the canonical version from VERSION")
+        }
+    }
+    let os: string = s_lower(uname_s())
+    let arch: string = uname_m()
+    let name: string = "flowc-" + version + "-" + os + "-" + arch
+    let stage: string = "compiler/build/pkg/" + name
+    let dist: string = "dist"
+
+    rm_rf(stage)
+    gate_mkdir(stage + "/bin")
+    gate_mkdir(stage + "/bootstrap")
+    gate_mkdir(stage + "/examples")
+    gate_mkdir(dist)
+
+    # The binary: a self-hosted driver when there is one, else build from
+    # the bootstrap C.
+    if s_len(pick_driver()) == 0 {
+        let b: ptr<ProcCmd> = cmd(sl_of1("./compiler/scripts/bootstrap_from_c.sh"))
+        cmd_quiet_out(b)
+        check(run(b))
+    }
+    let driver: string = pick_driver()
+    if s_len(driver) == 0 {
+        cli_exit(1)
+    }
+    outln("packaging " + driver + " as " + name)
+    if not cp_file(driver, stage + "/bin/flowc") {
+        gate_fail("package_flowc: cannot copy " + driver)
+    }
+    chmod_x(stage + "/bin/flowc")
+
+    if not cp_file("compiler/bootstrap/flowc_stage_a.c", stage + "/bootstrap/flowc_stage_a.c") {
+        gate_fail("package_flowc: cannot copy compiler/bootstrap/flowc_stage_a.c")
+    }
+    let _l: bool = cp_file("LICENSE", stage + "/LICENSE")
+    if not cp_file("compiler/fixtures/stage_a_sum.flow", stage + "/examples/stage_a_sum.flow") {
+        gate_fail("package_flowc: cannot copy compiler/fixtures/stage_a_sum.flow")
+    }
+    let _f: bool = cp_file("examples/basics/fibonacci.flow", stage + "/examples/fibonacci.flow")
+
+    if not write_text(stage + "/build.sh", build_script()) {
+        gate_fail("package_flowc: cannot write " + stage + "/build.sh")
+    }
+    chmod_x(stage + "/build.sh")
+    if not write_text(stage + "/README.md", readme(version, os, arch)) {
+        gate_fail("package_flowc: cannot write " + stage + "/README.md")
+    }
+
+    let archive: string = dist + "/" + name + ".tar.gz"
+    let tar: ptr<ProcCmd> = cmd(sl_of3("tar", "-czf", archive))
+    proc_arg(tar, "-C")
+    proc_arg(tar, "compiler/build/pkg")
+    proc_arg(tar, name)
+    check(run(tar))
+    let sum: ptr<ProcCmd> = cmd(sl_of3("shasum", "-a", "256"))
+    proc_arg(sum, name + ".tar.gz")
+    cmd_cwd(sum, dist)
+    check(run_to_file(sum, archive + ".sha256", false))
+    # Record the archive this run produced, so callers do not glob over
+    # stale ones.
+    let _w: bool = write_text(dist + "/flowc-latest.txt", archive + "\n")
+    outln("wrote " + archive)
+    let ls: ptr<ProcCmd> = cmd(sl_of2("ls", "-la"))
+    proc_arg(ls, archive)
+    return run(ls)
+}

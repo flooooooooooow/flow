@@ -1,0 +1,445 @@
+# @module compiler.scripts.gate_lib
+# @means  Shared steps for the Stage-A gate runners in compiler/scripts
+#         (roundtrip, stage_a_self_emit, self_host_full and the smokes).
+#
+# Each runner is a Flow program started with `./flow tool
+# compiler/scripts/NAME.flow`. They keep the behaviour of the shell scripts
+# they replaced: a failed step stops the run with that step's status (the
+# scripts ran under `set -e`), and the messages and file names are the same.
+
+# Shell globs sort with strcoll in the user's locale, so the runners that
+# loop over `dir/*.flow` sort the same way to print in the same order.
+@cEmbed("#include <locale.h>
+#include <string.h>
+static const char gate_locale_env[] = {0};
+static int32_t gate_strcoll(const char *a, const char *b) {
+  static int ready = 0;
+  if (!ready) { setlocale(LC_COLLATE, gate_locale_env); ready = 1; }
+  return (int32_t)strcoll(a, b);
+}
+")
+
+import "tools/flow_cli/sys.flow"
+import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg, proc_chdir, proc_args }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function gate_strcoll(a: string, b: string) -> i32
+}
+
+# ---------------------------------------------------------------------------
+# Setup
+# ---------------------------------------------------------------------------
+
+# The repository root, made the working directory (`cd "$ROOT"`).
+# `flow tool` passes it in FLOW_REPO_ROOT.
+export function gate_enter() -> string {
+    let mut r: string = env("FLOW_REPO_ROOT")
+    if s_len(r) == 0 {
+        r = cwd_logical()
+    }
+    if not proc_chdir(r) {
+        errln("cannot enter " + r)
+        cli_exit(1)
+    }
+    env_set("PWD", r)
+    return r
+}
+
+# `mkdir -p DIR` under `set -e`.
+export function gate_mkdir(d: string) {
+    mkdir_p_or_exit(d)
+}
+
+# Print `msg` to stderr and stop with status 1.
+export function gate_fail(msg: string) {
+    errln(msg)
+    cli_exit(1)
+}
+
+# ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
+
+# The header deriver (scripts/tools/c_to_hdr): $C_TO_HDR, else built with
+# `flow tool`. Exported so nested runners reuse it.
+export function gate_c_to_hdr(root: string) -> string {
+    let have_env: string = env("C_TO_HDR")
+    if s_len(have_env) > 0 {
+        return have_env
+    }
+    let argv: ptr<ProcStrs> = sl_of3(root + "/flow", "tool", "--path")
+    sl_push(argv, "c_to_hdr")
+    let p: string = capture(cmd(argv))
+    check(last_status())
+    return p
+}
+
+# flowc built from the current compiler/src (compiler/scripts/flowc_host.sh).
+export function gate_flowc_host(root: string) -> string {
+    let p: string = capture(cmd(sl_of1("./compiler/scripts/flowc_host.sh")))
+    check(last_status())
+    return p
+}
+
+# Run `argv`; stop on failure (`set -e`).
+export function gate_run(argv: ptr<ProcStrs>) {
+    check(run(cmd(argv)))
+}
+
+# `cc ARGS...` under `set -e`.
+export function gate_cc(args: ptr<ProcStrs>) {
+    let argv: ptr<ProcStrs> = sl_of1("cc")
+    sl_extend(argv, args)
+    check(run(cmd(argv)))
+}
+
+# `"$C_TO_HDR" IN.c OUT.h` under `set -e`.
+export function gate_hdr(tool: string, c_file: string, h_file: string) {
+    check(run(cmd(sl_of3(tool, c_file, h_file))))
+}
+
+# Run a built program; its shell status.
+export function gate_status(bin: string) -> i32 {
+    return run(cmd(sl_of1(bin)))
+}
+
+# Run `bin`, print "LABEL exit=CODE", and stop with status 1 when the code
+# is not `want` (`test "$code" -eq WANT`).
+export function gate_expect_exit(label: string, bin: string, want: i32) {
+    let code: i32 = gate_status(bin)
+    outln(label + " exit=" + s_itoa(code))
+    if code != want {
+        cli_exit(1)
+    }
+}
+
+# Run `c` with the named variables removed from its environment
+# (`env -u NAME ...`); they are put back afterwards.
+export function gate_run_without(c: ptr<ProcCmd>, names: ptr<ProcStrs>) -> i32 {
+    let saved: ptr<ProcStrs> = sl_new()
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        let n: string = sl_get(names, i)
+        if env_isset(n) {
+            sl_push(saved, n + "=" + env(n))
+            env_unset(n)
+        }
+        i = i + 1
+    }
+    let rc: i32 = run(c)
+    let mut j: i32 = 0
+    while j < sl_len(saved) {
+        let kv: string = sl_get(saved, j)
+        let eq: i32 = s_find_byte(kv, 61, 0)
+        env_set(s_slice(kv, 0, eq), s_from(kv, eq + 1))
+        j = j + 1
+    }
+    return rc
+}
+
+# "DIR"/*"SUFFIX" in the order the shell expands it (strcoll in the
+# current locale), as full paths.
+export function glob_sorted(dir: string, suffix: string) -> ptr<ProcStrs> {
+    let l: ptr<ProcStrs> = glob_suffix(dir, suffix)
+    let mut a: i32 = 1
+    while a < sl_len(l) {
+        let mut b: i32 = a
+        while b > 0 and gate_strcoll(sl_get(l, b), sl_get(l, b - 1)) < 0 {
+            let t: string = sl_get(l, b)
+            l.items[b] = sl_get(l, b - 1)
+            l.items[b - 1] = t
+            b = b - 1
+        }
+        a = a + 1
+    }
+    return l
+}
+
+# ---------------------------------------------------------------------------
+# Text checks (grep)
+# ---------------------------------------------------------------------------
+
+# grep -Fq NEEDLE FILE
+export function has(path: string, needle: string) -> bool {
+    return s_contains(read_text(path), needle)
+}
+
+# grep -c NEEDLE FILE (fixed string)
+export function count_lines(path: string, needle: string) -> i32 {
+    let lines: ptr<ProcStrs> = s_lines(read_text(path))
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        if s_contains(sl_get(lines, i), needle) {
+            n = n + 1
+        }
+        i = i + 1
+    }
+    return n
+}
+
+# grep -Eq '^PREFIX' FILE, for a PREFIX with no other pattern syntax.
+export function has_line_start(path: string, prefix: string) -> bool {
+    let lines: ptr<ProcStrs> = s_lines(read_text(path))
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        if s_starts(sl_get(lines, i), prefix) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# `nm OBJ | grep SYM >/dev/null`
+export function nm_has(obj: string, sym: string) -> bool {
+    let out: string = capture_raw(cmd(sl_of2("nm", obj)))
+    return s_contains(out, sym)
+}
+
+# `nm OBJ | grep -Eq '[[:space:]]T[[:space:]]+_?main$'`: OBJ defines main.
+export function nm_defines_main(obj: string) -> bool {
+    let lines: ptr<ProcStrs> = s_lines(capture_raw(cmd(sl_of2("nm", obj))))
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let w: ptr<ProcStrs> = s_words(sl_get(lines, i))
+        let n: i32 = sl_len(w)
+        if n >= 2 and s_eq(sl_get(w, n - 2), "T") {
+            let last: string = sl_get(w, n - 1)
+            if s_eq(last, "main") or s_eq(last, "_main") {
+                return true
+            }
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# The last `n` lines of `text` (`tail -n N`).
+export function tail_text(text: string, n: i32) -> string {
+    let lines: ptr<ProcStrs> = s_lines(text)
+    let mut start: i32 = sl_len(lines) - n
+    if start < 0 {
+        start = 0
+    }
+    let mut out: string = ""
+    let mut i: i32 = start
+    while i < sl_len(lines) {
+        out = out + sl_get(lines, i) + "\n"
+        i = i + 1
+    }
+    return out
+}
+
+# The first `n` lines of `text` (`head -n N`).
+export function head_text(text: string, n: i32) -> string {
+    let lines: ptr<ProcStrs> = s_lines(text)
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < sl_len(lines) and i < n {
+        out = out + sl_get(lines, i) + "\n"
+        i = i + 1
+    }
+    return out
+}
+
+# printf '%-Ns': `s` padded on the right to `w` bytes.
+export function pad_right(s: string, w: i32) -> string {
+    let mut out: string = s
+    while s_len(out) < w {
+        out = out + " "
+    }
+    return out
+}
+
+# printf '%Ns': `s` padded on the left to `w` bytes.
+export function pad_left(s: string, w: i32) -> string {
+    let mut out: string = s
+    while s_len(out) < w {
+        out = " " + out
+    }
+    return out
+}
+
+# Compile `src` to C with `flowc_emit --lenient` and check that every
+# string in `need` appears in the C (the know and math_prose smokes). The
+# C goes to the first argument, else `default_out`.
+export function string_smoke(src: string, default_out: string, need: ptr<ProcStrs>, label: string) -> i32 {
+    let _root: string = gate_enter()
+    let mut c_out: string = sl_get(proc_args(), 0)
+    if s_len(c_out) == 0 {
+        c_out = default_out
+    }
+    gate_mkdir(path_dirname(c_out))
+    let argv: ptr<ProcStrs> = sl_of3("compiler/scripts/flowc_emit.sh", "--lenient", src)
+    sl_push(argv, c_out)
+    gate_run(argv)
+    let mut i: i32 = 0
+    while i < sl_len(need) {
+        if not has(c_out, sl_get(need, i)) {
+            outln("FAIL: missing in " + c_out + ": " + sl_get(need, i))
+            cli_exit(1)
+        }
+        i = i + 1
+    }
+    outln("PASS " + label + " C smoke (" + c_out + ")")
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# The frontend modules
+# ---------------------------------------------------------------------------
+
+# The frontend objects in link order (the `cc -r` that makes
+# flowc_frontend*.o).
+export function frontend_modules() -> ptr<ProcStrs> {
+    return s_words("token ast lexer parser fileio field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl effects proof_lower attributes ordering_hints sort_plans sort_sites cgen overload overload_table type_name expr_type overload_args overload_select overload_registry overload_call typecheck strutil sem_util sem_types sem_cheader sem_model sem_check resolve")
+}
+
+# Symbols the linked frontend has to provide.
+export function frontend_symbols() -> ptr<ProcStrs> {
+    return s_words("flowc_make_tok flowc_ast_new flowc_lexer_next flowc_parse_program flowc_read_file flowc_cgen_emit flowc_typecheck flowc_tc_seed_export flowc_bundle_emit flowc_bundle_typecheck flowc_resolve_sibling_path")
+}
+
+# The headers the Flow driver (driver.flow) is compiled against.
+export function driver_headers() -> ptr<ProcStrs> {
+    return s_words("token ast lexer parser fileio field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl sort_plans cgen overload_table overload_call typecheck resolve")
+}
+
+# The self-emit order (stage_a_self_emit and its gen2 twin), one step per
+# entry: "E NAME [DEP...]" emits and compiles compiler/src/NAME.flow with
+# the DEP headers force-included; "H NAME" derives NAME's header.
+export function self_emit_plan() -> ptr<ProcStrs> {
+    let p: ptr<ProcStrs> = sl_new()
+    sl_push(p, "E token")
+    sl_push(p, "H token")
+    sl_push(p, "E ast")
+    sl_push(p, "E lexer token")
+    sl_push(p, "H ast")
+    sl_push(p, "H lexer")
+    sl_push(p, "E fileio")
+    sl_push(p, "E bytebuf")
+    sl_push(p, "H bytebuf")
+    sl_push(p, "E field_dsl")
+    sl_push(p, "H field_dsl")
+    sl_push(p, "E dynamics_dsl bytebuf")
+    sl_push(p, "H dynamics_dsl")
+    sl_push(p, "E flow_blocks bytebuf")
+    sl_push(p, "H flow_blocks")
+    sl_push(p, "E shader_dsl bytebuf")
+    sl_push(p, "H shader_dsl")
+    sl_push(p, "E effects ast")
+    sl_push(p, "H effects")
+    sl_push(p, "E attributes")
+    sl_push(p, "E ordering_hints")
+    sl_push(p, "E sort_plans")
+    sl_push(p, "H attributes")
+    sl_push(p, "H ordering_hints")
+    sl_push(p, "H sort_plans")
+    sl_push(p, "E sort_sites token ast ordering_hints")
+    sl_push(p, "H sort_sites")
+    sl_push(p, "E parser token ast lexer attributes")
+    sl_push(p, "E proof_lower ast")
+    sl_push(p, "H proof_lower")
+    sl_push(p, "E cgen token ast effects proof_lower attributes sort_plans sort_sites")
+    sl_push(p, "E overload")
+    sl_push(p, "E overload_table")
+    sl_push(p, "E type_name ast")
+    sl_push(p, "E expr_type ast")
+    sl_push(p, "H overload")
+    sl_push(p, "H overload_table")
+    sl_push(p, "H type_name")
+    sl_push(p, "H expr_type")
+    sl_push(p, "E overload_args ast expr_type type_name")
+    sl_push(p, "E overload_select ast overload_table overload type_name")
+    sl_push(p, "E overload_registry ast overload_table")
+    sl_push(p, "H overload_args")
+    sl_push(p, "H overload_select")
+    sl_push(p, "H overload_registry")
+    sl_push(p, "E overload_call ast overload_table overload_args overload_select")
+    sl_push(p, "H overload_call")
+    sl_push(p, "E typecheck ast attributes effects proof_lower overload_table overload_call overload_registry overload_select")
+    sl_push(p, "H parser")
+    sl_push(p, "H fileio")
+    sl_push(p, "H cgen")
+    sl_push(p, "H typecheck")
+    sl_push(p, "E strutil")
+    sl_push(p, "E sem_util")
+    sl_push(p, "H strutil")
+    sl_push(p, "H sem_util")
+    sl_push(p, "E sem_types sem_util")
+    sl_push(p, "H sem_types")
+    sl_push(p, "E sem_cheader sem_util")
+    sl_push(p, "H sem_cheader")
+    sl_push(p, "E sem_model token ast lexer sem_util sem_types")
+    sl_push(p, "H sem_model")
+    sl_push(p, "E sem_check token ast lexer parser sem_util sem_types sem_model sem_cheader")
+    sl_push(p, "H sem_check")
+    sl_push(p, "E resolve token ast lexer parser fileio field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl effects sort_plans cgen overload_table overload_call typecheck strutil sem_util sem_types sem_model sem_check")
+    return p
+}
+
+# Run the self-emit plan with `driver`, writing compiler/build/PREFIXNAME.c,
+# .o and .h. `tag` names the step in the log ("self_emit", "g2_emit").
+export function run_self_emit_plan(driver: string, prefix: string, tag: string, hdr_tool: string) {
+    let plan: ptr<ProcStrs> = self_emit_plan()
+    let mut i: i32 = 0
+    while i < sl_len(plan) {
+        let w: ptr<ProcStrs> = s_words(sl_get(plan, i))
+        let name: string = sl_get(w, 1)
+        let base: string = "compiler/build/" + prefix + name
+        if s_eq(sl_get(w, 0), "H") {
+            gate_hdr(hdr_tool, base + ".c", base + ".h")
+        } else {
+            outln("=== " + tag + " " + name + " ===")
+            gate_run(sl_of3(driver, "compiler/src/" + name + ".flow", base + ".c"))
+            let args: ptr<ProcStrs> = sl_of2("-O0", "-c")
+            let mut j: i32 = 2
+            while j < sl_len(w) {
+                sl_push2(args, "-include", "compiler/build/" + prefix + sl_get(w, j) + ".h")
+                j = j + 1
+            }
+            sl_push(args, base + ".c")
+            sl_push2(args, "-o", base + ".o")
+            gate_cc(args)
+            outln("PASS " + tag + " " + name)
+        }
+        i = i + 1
+    }
+}
+
+# `cc -r -o OUT` over the frontend objects named PREFIXNAME SUFFIX.o.
+export function link_frontend(out_obj: string, prefix: string, suffix: string) {
+    let args: ptr<ProcStrs> = sl_of3("-r", "-o", out_obj)
+    let mods: ptr<ProcStrs> = frontend_modules()
+    let mut i: i32 = 0
+    while i < sl_len(mods) {
+        sl_push(args, "compiler/build/" + prefix + sl_get(mods, i) + suffix + ".o")
+        i = i + 1
+    }
+    gate_cc(args)
+}
+
+# Stop with MSG_PREFIX + SYM + MSG_SUFFIX when a frontend symbol is missing.
+export function check_frontend_symbols(obj: string, before: string, after: string) {
+    let syms: ptr<ProcStrs> = frontend_symbols()
+    let mut i: i32 = 0
+    while i < sl_len(syms) {
+        let sym: string = sl_get(syms, i)
+        if not nm_has(obj, sym) {
+            gate_fail(before + sym + after)
+        }
+        i = i + 1
+    }
+}
+
+# Run `driver SRC OUT.c`, build OUT.c and expect exit 45 from it: the
+# stage_a_sum smoke every driver gets.
+export function sum_smoke(driver: string, c_out: string, bin: string, label: string) {
+    gate_run(sl_of3(driver, "compiler/fixtures/stage_a_sum.flow", c_out))
+    let args: ptr<ProcStrs> = sl_of3("-O0", "-o", bin)
+    sl_push(args, c_out)
+    gate_cc(args)
+    gate_expect_exit(label, bin, 45)
+}

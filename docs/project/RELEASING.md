@@ -15,7 +15,7 @@ Flow uses annotated semantic-version tags and GitHub Releases.
 3. Run:
    ```bash
    ./flow test --strict --tier2
-   ./compiler/scripts/roundtrip.sh
+   ./flow tool compiler/scripts/roundtrip.flow
    scripts/build_wiki.sh
    scripts/check_wiki_links.sh
    ```
