@@ -1,0 +1,18 @@
+# A Flow global may use a name supplied as a typedef by an included C header.
+@cInclude("dirent.h")
+@cInclude("setjmp.h")
+
+let mut DIR: string = "global"
+let mut FILE: string = "file"
+let mut jmp_buf: string = "jump"
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    puts(DIR)
+    puts(FILE)
+    puts(jmp_buf)
+    return 0
+}
