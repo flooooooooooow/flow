@@ -14,12 +14,10 @@ class Flow < Formula
   def install
     # Keep the repo layout intact. `flow` is a sh stub that builds the
     # command line (tools/flow_cli, a Flow program) from the bootstrap C in
-    # compiler/ and expects VERSION, lib/, runtime/ and tools/ next to it.
+    # compiler/bootstrap and expects VERSION, lib/, runtime/ and tools/ next
+    # to it.
     libexec.install "flow", "flow-lsp", "VERSION"
-    # Releases before the Flow CLI shipped a bash driver beside the stub.
-    libexec.install "flow-driver" if (buildpath/"flow-driver").exist?
-    libexec.install "lib", "runtime", "compiler"
-    libexec.install "tools" if (buildpath/"tools").exist?
+    libexec.install "lib", "runtime", "compiler", "tools"
     libexec.install "wasm" if (buildpath/"wasm").exist?
     libexec.install "examples" if (buildpath/"examples").exist?
     libexec.install "pyproject.toml" if (buildpath/"pyproject.toml").exist?
@@ -27,7 +25,6 @@ class Flow < Formula
 
     chmod 0755, libexec/"flow"
     chmod 0755, libexec/"flow-lsp" if (libexec/"flow-lsp").exist?
-    chmod 0755, libexec/"flow-driver" if (libexec/"flow-driver").exist?
     # Build the command line now, so the first `flow` does not have to.
     system libexec/"flow", "version"
 
