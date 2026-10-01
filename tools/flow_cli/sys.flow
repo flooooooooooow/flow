@@ -9,8 +9,7 @@
 # drops trailing newlines as `$(...)` does, and exit statuses are the
 # shell's (128 + N for a child killed by signal N).
 #
-# The shim includes the POSIX headers itself. It spells C strings as char
-# arrays because @cEmbed text cannot hold a double quote (#1089). Nothing in this program may
+# The shim includes the POSIX headers itself. Nothing in this program may
 # declare a POSIX function through `extern` with Flow types, or the C
 # prototypes would clash; that is why this module does not import
 # scripts/tools/lib/text.flow, whose `write` does.
@@ -22,10 +21,6 @@
 #include <sys/types.h>
 #include <sys/utsname.h>
 #include <unistd.h>
-static const char flow_cli_empty[] = {0};
-static const char flow_cli_rb[] = {'r', 'b', 0};
-static const char flow_cli_wb[] = {'w', 'b', 0};
-static const char flow_cli_ab[] = {'a', 'b', 0};
 static int32_t flow_cli_kind(const char *p) {
   struct stat st;
   if (stat(p, &st) != 0) { return 0; }
@@ -81,7 +76,7 @@ static const char *flow_cli_mkstemp(const char *tmpl) {
 }
 static const char *flow_cli_uname(int32_t which) {
   static struct utsname u; static int loaded = 0;
-  if (!loaded) { if (uname(&u) != 0) { return flow_cli_empty; } loaded = 1; }
+  if (!loaded) { if (uname(&u) != 0) { return \"\"; } loaded = 1; }
   return which == 0 ? u.sysname : u.machine;
 }
 static int32_t flow_cli_isatty(int32_t fd) { return isatty(fd) ? 1 : 0; }
@@ -103,7 +98,7 @@ static const char *flow_cli_readdir(void *d) {
 }
 static void flow_cli_closedir(void *d) { closedir((DIR *)d); }
 static uint8_t *flow_cli_read_bytes(const char *p, int64_t *len) {
-  FILE *fp = fopen(p, flow_cli_rb);
+  FILE *fp = fopen(p, \"rb\");
   *len = -1;
   if (fp == 0) { return 0; }
   size_t cap = 65536, n = 0; uint8_t *buf = (uint8_t *)malloc(cap + 1);
@@ -116,7 +111,7 @@ static uint8_t *flow_cli_read_bytes(const char *p, int64_t *len) {
   return buf;
 }
 static int32_t flow_cli_write_bytes(const char *p, uint8_t *buf, int64_t n, int32_t append) {
-  FILE *fp = fopen(p, append ? flow_cli_ab : flow_cli_wb);
+  FILE *fp = fopen(p, append ? \"ab\" : \"wb\");
   if (fp == 0) { return -1; }
   size_t w = n > 0 ? fwrite(buf, 1, (size_t)n, fp) : 0;
   fclose(fp);
@@ -615,8 +610,6 @@ export struct Sink {
 
 let mut SINK: ptr<Sink> = null
 
-# Fields of SINK are read through a local copy of the pointer (#1078).
-
 # Start a redirection. Pop it with sink_pop, which returns what stdout
 # captured (sink_err holds a separate stderr capture).
 export function sink_push(out_mode: i32, err_mode: i32) {
@@ -653,23 +646,20 @@ function sink_out_mode() -> i32 {
     if SINK == null {
         return SINK_FD
     }
-    let s: ptr<Sink> = SINK
-    return s.out_mode
+    return SINK.out_mode
 }
 
 function sink_err_mode() -> i32 {
     if SINK == null {
         return SINK_FD
     }
-    let s: ptr<Sink> = SINK
-    return s.err_mode
+    return SINK.err_mode
 }
 
 function write_out_raw(s: string) {
     let m: i32 = sink_out_mode()
     if m == SINK_BUF {
-        let k: ptr<Sink> = SINK
-        k.out_buf = k.out_buf + s
+        SINK.out_buf = SINK.out_buf + s
     } elif m == SINK_FD {
         let _w: i64 = flow_cli_write(1, s as ptr<u8>, s_len(s) as i64)
     }
@@ -688,8 +678,7 @@ export function errs(s: string) {
     if m == SINK_SAME {
         write_out_raw(s)
     } elif m == SINK_BUF {
-        let k: ptr<Sink> = SINK
-        k.err_buf = k.err_buf + s
+        SINK.err_buf = SINK.err_buf + s
     } elif m == SINK_FD {
         let _w: i64 = flow_cli_write(2, s as ptr<u8>, s_len(s) as i64)
     }

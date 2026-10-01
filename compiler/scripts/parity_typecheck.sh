@@ -364,10 +364,10 @@ for m in S L; do
     if [[ "$verdict" == reject ]]; then
         msg="$(sed -n -E 's/^.*:[0-9]+:[0-9]+: error: //p' "$log" | head -1 | sed 's/\\/\\\\/g')"
         if [[ -z "$msg" ]]; then
-            msg="$(grep -E '^flowc tc: |^flowc: |error' "$log" | grep -vE 'typecheck failed|tc_errs=|module check failed|module_errs=' | head -1)"
+            msg="$(grep -aE '^flowc tc: |^flowc: |error' "$log" | grep -avE 'typecheck failed|tc_errs=|module check failed|module_errs=' | head -1)"
         fi
     elif [[ "$verdict" == frontend ]]; then
-        msg="$(grep -E 'error|failed|unsupported' "$log" | head -1)"
+        msg="$(grep -aE 'error|failed|unsupported' "$log" | head -1)"
     fi
     printf '%s\t%s\t%s\t%s\n' "$key" "$m" "$verdict" "$msg"
 done

@@ -68,9 +68,8 @@ __attribute__((constructor)) static void flow_proc_args_init(int argc, char **ar
 static void flow_proc_args_load(void) { }
 #else
 static void flow_proc_args_load(void) {
-  static const char path[] = {'/','p','r','o','c','/','s','e','l','f','/','c','m','d','l','i','n','e',0};
   if (flow_proc_argv_v != 0) { return; }
-  FILE *fp = fopen(path, (const char[]){'r','b',0});
+  FILE *fp = fopen(\"/proc/self/cmdline\", \"rb\");
   if (fp == 0) { return; }
   size_t cap = 4096, len = 0; char *buf = (char *)malloc(cap + 1);
   for (;;) { size_t got = fread(buf + len, 1, cap - len, fp); len += got; if (got == 0) { break; }
@@ -125,10 +124,9 @@ static int64_t flow_proc_now_ms(void) {
   struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
   return (int64_t)ts.tv_sec * 1000 + (int64_t)(ts.tv_nsec / 1000000);
 }
-static const char flow_proc_devnull[] = {'/','d','e','v','/','n','u','l','l',0};
 static int32_t flow_proc_setup_fd(posix_spawn_file_actions_t *fa, int32_t mode, int32_t fd, int32_t target, int32_t writing) {
   if (mode == 1) { return posix_spawn_file_actions_adddup2(fa, fd, target); }
-  if (mode == 2) { return posix_spawn_file_actions_addopen(fa, target, flow_proc_devnull, writing ? 1 : 0, 0); }
+  if (mode == 2) { return posix_spawn_file_actions_addopen(fa, target, \"/dev/null\", writing ? 1 : 0, 0); }
   if (mode == 3) { return posix_spawn_file_actions_adddup2(fa, 1, target); }
   return 0;
 }
