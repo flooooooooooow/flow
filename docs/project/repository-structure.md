@@ -16,7 +16,7 @@ and CI.
 | `benchmarks/` | Reproducible performance workloads and comparison harnesses |
 | `apps/` | Substantial applications built with Flow |
 | `tools/` | Developer tools with their own implementation, such as the LSP, DAP, REPL and the Python ratchet |
-| `scripts/tools/` | Flow programs behind repository checks and automation, one per `scripts/tools/<name>/main.flow`, built by `scripts/tools/build_tool.sh` |
+| `scripts/tools/` | Flow programs behind repository checks and automation, one per `scripts/tools/<name>/main.flow`, built and run by `./flow tool <name>` |
 | `scripts/` | Thin shell entry points, release and CI glue |
 | `docs/` | User, language, research and project documentation |
 | `docs/generated/` | Reproducibly generated documentation data |

@@ -10,7 +10,7 @@
 
 import "tools/flow_cli/sys.flow"
 import "tests/scripts/harness.flow"
-import std.process { ProcCmd, ProcResult, proc_stdout, proc_stderr, PROC_CAPTURE }
+import std.process { ProcCmd, ProcResult, proc_arg, proc_stdout, proc_stderr, PROC_CAPTURE }
 
 function engine_path() -> string {
     return t_root() + "/site/flow-compile.js"
@@ -95,7 +95,9 @@ function defines_main(code: string) -> bool {
 # regex over fences mispairs a closing fence with the next opening one,
 # which is why tools/doc_examples/blocks.flow exists.
 function gallery_programs() -> ptr<ProcStrs> {
-    let c: ptr<ProcCmd> = cmd(sl_of3("scripts/check_doc_examples.sh", "blocks", gallery_path()))
+    let c: ptr<ProcCmd> = cmd(sl_of3("./flow", "tool", "doc_examples"))
+    proc_arg(c, "blocks")
+    proc_arg(c, gallery_path())
     let mut text: string = capture_raw(c)
     let json_start: i32 = s_find(text, "[", 0)
     if json_start > 0 {

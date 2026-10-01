@@ -1,10 +1,12 @@
 # @module tools.doc_examples
 # @means  Verify the Flow code examples embedded in the documentation.
 #
-# Run through scripts/check_doc_examples.sh, which builds this program,
-# leaves the `git ls-files '*.md'` listing in build/doc-examples/ and passes
-# the flowc and clang it found. See tools/doc_examples/verify.flow for what
-# a block has to survive.
+# Run it as `./flow tool doc_examples` from anywhere in the repository. It
+# lists the markdown with `git ls-files '*.md'` (or every *.md under
+# --root), resolves the flowc the examples are compiled with
+# (compiler/scripts/ensure_flowc.flow unless FLOWC_BIN is set, as
+# `flow compile` does) and works from the repository root. See
+# tools/doc_examples/verify.flow for what a block has to survive.
 #
 # Commands (the first argument; `check` when absent):
 #
@@ -29,7 +31,8 @@
 #
 # Options for every command: --root DIR checks the markdown under DIR
 # instead of the repository (tests), --ledger PATH reads and writes that
-# ledger.
+# ledger. Relative --root, --ledger and --json paths, and the FILEs of
+# `blocks`, are read from the caller's directory.
 
 import "scripts/tools/lib/text.flow"
 import "scripts/tools/lib/unicode.flow"
@@ -39,6 +42,7 @@ import "stdlib/regex.flow"
 import "tools/doc_examples/blocks.flow"
 import "tools/doc_examples/verify.flow"
 import "tools/doc_examples/browser.flow"
+import std.process { ProcCmd, ProcResult, proc_cmd, proc_arg, proc_cwd, proc_stdout, proc_stderr, proc_run, proc_getenv, proc_setenv, proc_getcwd, proc_chdir, proc_pid, proc_which, PROC_CAPTURE, PROC_INHERIT }
 
 extern {
     function malloc(size: i64) -> ptr<void>
@@ -680,7 +684,7 @@ function check_ledger(o: ptr<Opts>, results: ptr<ResList>) -> i32 {
     ft_outln("\nexamples: " + ft_itoa(results.len) + "   unverified: " + ft_itoa(debt) + "   ledger: " + ft_itoa(ledger_debt))
     if resolved > 0 {
         ft_outln("\n" + ft_itoa(resolved) + " example(s) now compile that the ledger lists as failing. Refresh it with:")
-        ft_outln("    ./scripts/check_doc_examples.sh --write-ledger")
+        ft_outln("    ./flow tool doc_examples --write-ledger")
     }
     if regressions.len == 0 {
         ft_outln("\nno new unverified examples")
@@ -908,7 +912,7 @@ function lessons(o: ptr<Opts>) -> i32 {
 # ---------------------------------------------------------------------------
 
 function usage() -> string {
-    return "usage: check_doc_examples.sh [check|strict|snippets|blocks FILE...|lessons|dump|browser] [--report] [--verbose] [--run] [--no-clang] [--write-ledger] [--fail-on-unverified] [--check-ledger] [--root DIR] [--ledger PATH]"
+    return "usage: flow tool doc_examples [check|strict|snippets|blocks FILE...|lessons|dump|browser] [--report] [--verbose] [--run] [--no-clang] [--write-ledger] [--fail-on-unverified] [--check-ledger] [--root DIR] [--ledger PATH]"
 }
 
 # A long option, or an unambiguous prefix of one, as argparse allows.
@@ -945,7 +949,197 @@ function flag_is(arg: string, name: string) -> bool {
     return hits == 1
 }
 
+# ---------------------------------------------------------------------------
+# Setup: the markdown listing, the flowc and the scratch directory
+# ---------------------------------------------------------------------------
+
+# Run `c` for its stdout; stderr passes through. The status is in `rc`.
+function capture_out(c: ptr<ProcCmd>, rc: ptr<i32>) -> string {
+    proc_stdout(c, PROC_CAPTURE)
+    proc_stderr(c, PROC_INHERIT)
+    let r: ptr<ProcResult> = proc_run(c)
+    rc[0] = r.exit_code
+    if ft_len(r.error) > 0 {
+        rc[0] = 127
+    }
+    return r.stdout
+}
+
+function chomp_nl(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut n: i32 = ft_len(s)
+    while n > 0 and p[n - 1] == 10 {
+        n = n - 1
+    }
+    return ft_slice(s, 0, n)
+}
+
+# The shell's logical working directory: $PWD when it names the same
+# directory as getcwd(), else getcwd().
+function logical_cwd() -> string {
+    let phys: string = proc_getcwd()
+    let pwd: string = proc_getenv("PWD")
+    if ft_starts(pwd, "/") and proc_chdir(pwd) {
+        let same: bool = ft_eq(proc_getcwd(), phys)
+        let _b: bool = proc_chdir(phys)
+        if same {
+            return pwd
+        }
+    }
+    return phys
+}
+
+# `cd "$caller" && cd "$dir" && pwd`, or "" when that is not a directory.
+function abs_dir_from(caller: string, dir: string) -> string {
+    let mut d: string = dir
+    if ft_starts(dir, "/") == false {
+        d = caller + "/" + dir
+    }
+    let here: string = proc_getcwd()
+    if proc_chdir(d) == false {
+        return ""
+    }
+    let _b: bool = proc_chdir(here)
+    return ft_normpath(d)
+}
+
+# [ -x path ]
+function is_exec(path: string) -> bool {
+    if ft_find(path, "/", 0) >= 0 {
+        return ft_len(proc_which(path)) > 0
+    }
+    return ft_len(proc_which("./" + path)) > 0
+}
+
+# Every *.md under `dir`, relative to it and sorted by bytes, one per line.
+function markdown_under(dir: string, rc: ptr<i32>) -> string {
+    let c: ptr<ProcCmd> = proc_cmd("find")
+    proc_arg(c, ".")
+    proc_arg(c, "-name")
+    proc_arg(c, "*.md")
+    proc_arg(c, "-type")
+    proc_arg(c, "f")
+    proc_cwd(c, dir)
+    let lines: ptr<StrList> = ft_split_lines(capture_out(c, rc))
+    let rel: ptr<StrList> = ft_list_new()
+    let mut i: i32 = 0
+    while i < ft_list_len(lines) {
+        let l: string = ft_list_get(lines, i)
+        if ft_starts(l, "./") {
+            ft_list_push(rel, ft_from(l, 2))
+        } elif ft_len(l) > 0 {
+            ft_list_push(rel, l)
+        }
+        i = i + 1
+    }
+    ft_list_sort(rel)
+    let mut out: string = ""
+    i = 0
+    while i < ft_list_len(rel) {
+        out = out + ft_list_get(rel, i) + "\n"
+        i = i + 1
+    }
+    return out
+}
+
+function remove_tree(path: string) -> void {
+    let c: ptr<ProcCmd> = proc_cmd("rm")
+    proc_arg(c, "-rf")
+    proc_arg(c, path)
+    let _r: ptr<ProcResult> = proc_run(c)
+}
+
+# Prepare the run the way the shell entry point did, then run the checker.
+# The scratch directory and the listing are removed afterwards.
 function main(argc: i32, argv: ptr<string>) -> i32 {
+    let caller: string = logical_cwd()
+    let mut root: string = proc_getenv("FLOW_REPO_ROOT")
+    if ft_len(root) == 0 {
+        root = caller
+    }
+    let args: ptr<string> = calloc((argc + 1) as i64, 8) as ptr<string>
+    args[0] = argv[0]
+    let mut docs_root: string = root
+    let mut i: i32 = 1
+    while i < argc {
+        let mut a: string = argv[i]
+        let prev: string = argv[i - 1]
+        if i > 1 and ft_eq(prev, "--root") {
+            a = abs_dir_from(caller, a)
+            if ft_len(a) == 0 {
+                ft_errln("flow tool doc_examples: --root " + argv[i] + ": no such directory")
+                return 1
+            }
+            docs_root = a
+        } elif i > 1 and (ft_eq(prev, "--ledger") or ft_eq(prev, "--json")) and ft_starts(a, "/") == false {
+            a = caller + "/" + a
+        }
+        args[i] = a
+        i = i + 1
+    }
+    if proc_chdir(root) == false {
+        ft_errln("flow tool doc_examples: cannot enter " + root)
+        return 1
+    }
+    let rc: ptr<i32> = calloc(1, 4) as ptr<i32>
+    let _m: bool = pr_mkdir_p("build/doc-examples")
+    let listing: string = "build/doc-examples/markdown." + ft_itoa(proc_pid()) + ".txt"
+    let mut tmp: string = proc_getenv("TMPDIR")
+    if ft_len(tmp) == 0 {
+        tmp = "/tmp"
+    }
+    let mk: ptr<ProcCmd> = proc_cmd("mktemp")
+    proc_arg(mk, "-d")
+    proc_arg(mk, tmp + "/flow-doc-examples.XXXXXX")
+    let work: string = chomp_nl(capture_out(mk, rc))
+    if rc[0] != 0 {
+        return 1
+    }
+    let mut md: string = ""
+    if ft_eq(docs_root, root) {
+        let g: ptr<ProcCmd> = proc_cmd("git")
+        proc_arg(g, "ls-files")
+        proc_arg(g, "*.md")
+        md = capture_out(g, rc)
+    } else {
+        md = markdown_under(docs_root, rc)
+    }
+    if rc[0] != 0 or ft_write_file(listing, md) == false {
+        ft_errln("flow tool doc_examples: cannot list the markdown")
+        remove_tree(work)
+        let _u: i32 = pr_run("rm -f " + pr_quote(listing))
+        return 1
+    }
+    let mut flowc: string = proc_getenv("FLOWC_BIN")
+    if ft_len(flowc) == 0 or is_exec(flowc) == false {
+        let e: ptr<ProcCmd> = proc_cmd(root + "/flow")
+        proc_arg(e, "tool")
+        proc_arg(e, "compiler/scripts/ensure_flowc.flow")
+        flowc = chomp_nl(capture_out(e, rc))
+        if rc[0] != 0 {
+            remove_tree(work)
+            let _u2: i32 = pr_run("rm -f " + pr_quote(listing))
+            return rc[0]
+        }
+    }
+    if ft_starts(flowc, "/") == false {
+        flowc = root + "/" + flowc
+    }
+    let _e1: bool = proc_setenv("FLOW_DOC_REPO", root)
+    let _e2: bool = proc_setenv("FLOW_DOC_FLOWC", flowc)
+    let _e3: bool = proc_setenv("FLOW_DOC_WORK", work)
+    let _e4: bool = proc_setenv("FLOW_DOC_LISTING", listing)
+    # `blocks FILE...` reads its files relative to where it was called from.
+    if argc > 1 and ft_eq(argv[1], "blocks") {
+        let _c: bool = proc_chdir(caller)
+    }
+    let status: i32 = check_main(argc, args)
+    remove_tree(work)
+    let _r: i32 = pr_run("rm -f " + pr_quote(root + "/" + listing))
+    return status
+}
+
+function check_main(argc: i32, argv: ptr<string>) -> i32 {
     let o: ptr<Opts> = calloc(1, 32) as ptr<Opts>
     let env: ptr<Env> = calloc(1, 64) as ptr<Env>
     env.repo = or_empty(getenv("FLOW_DOC_REPO"))
@@ -1010,7 +1204,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
             ft_list_push(files, a)
         } else {
             ft_errln(usage())
-            ft_errln("check_doc_examples.sh: error: unrecognized arguments: " + a)
+            ft_errln("flow tool doc_examples: error: unrecognized arguments: " + a)
             return 2
         }
         i = i + 1

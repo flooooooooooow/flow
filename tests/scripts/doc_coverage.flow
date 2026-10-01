@@ -1,6 +1,6 @@
 # Feature coverage: does every part of the language have a documented home?
 #
-# The checker is the Flow program behind scripts/check_doc_coverage.sh. These
+# The checker is scripts/tools/doc_coverage (`./flow tool doc_coverage`). These
 # tests drive it through that entry point, using its --inventory, --map,
 # --mentions and --is-backend options.
 

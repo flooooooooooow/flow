@@ -31,7 +31,7 @@ message, as it did in Python.
 3. `snippets` on a bad info string printed a Python traceback and exited 1.
    It now prints `error: <message>` and still exits 1. Cases: badinfo_*.2.
 
-4. The hint after paid-off debt names `./scripts/check_doc_examples.sh
+4. The hint after paid-off debt names `./flow tool doc_examples
    --write-ledger` in place of `python3 scripts/check_doc_examples.py
    --write-ledger`. Case: ledger_paid.1.
 

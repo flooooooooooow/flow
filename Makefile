@@ -51,10 +51,10 @@ clean:
 	$(FLOW) clean
 
 sync-roadmap:
-	scripts/sync_roadmap.sh
+	./flow tool roadmap_sync
 
 sync-roadmap-dry:
-	scripts/sync_roadmap.sh --dry-run
+	./flow tool roadmap_sync --dry-run
 
 help:
 	@echo "Flow repository convenience targets"

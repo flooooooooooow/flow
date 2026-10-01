@@ -1,4 +1,4 @@
-# Dual CPU backends on the WASM page builder (scripts/wasm_build.sh).
+# Dual CPU backends on the WASM page builder (`./flow tool wasm_build build`).
 #
 # The builder is the Flow program in scripts/tools/wasm_build. These tests
 # drive it through its entry point, so they cover the argument handling, the

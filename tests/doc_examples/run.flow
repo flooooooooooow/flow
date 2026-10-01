@@ -5,7 +5,7 @@
 #   root/        a documentation tree; *.md.in files become *.md in a
 #                scratch copy, so the fixtures are not documentation of this
 #                repository and the real checks never see them
-#   cmd.N        the arguments of one run of scripts/check_doc_examples.sh,
+#   cmd.N        the arguments of one run of `./flow tool doc_examples`,
 #                with --root root added
 #   out.N        expected stdout
 #   err.N        expected stderr
@@ -48,7 +48,7 @@ function differs(label: string, what: string, want: string, got: string, limit: 
 }
 
 function checker(args: ptr<ProcStrs>) -> ptr<ProcCmd> {
-    let argv: ptr<ProcStrs> = sl_of1(ROOT + "/scripts/check_doc_examples.sh")
+    let argv: ptr<ProcStrs> = sl_of3(ROOT + "/flow", "tool", "doc_examples")
     sl_extend(argv, args)
     return cmd(argv)
 }
@@ -70,11 +70,15 @@ function count_lines_with(text: string, needle: string) -> i32 {
 function main() -> i32 {
     ROOT = tr_enter_root()
     let only: ptr<ProcStrs> = tr_args()
-    # Build flowc up front: on a clean checkout the first case would otherwise
-    # catch ensure_flowc's build notice in its stderr.
+    # Build flowc and the checker up front: on a clean checkout the first
+    # case would otherwise catch a build notice in its stderr.
     let ef: ptr<ProcCmd> = cmd(sl_of3("./flow", "tool", "compiler/scripts/ensure_flowc.flow"))
     cmd_quiet(ef)
     let _e: i32 = run(ef)
+    let dc: ptr<ProcCmd> = cmd(sl_of3(ROOT + "/flow", "tool", "--path"))
+    proc_arg(dc, "doc_examples")
+    cmd_quiet(dc)
+    let _d: i32 = run(dc)
 
     let work: string = tr_workdir("flow-doc-examples-tests")
     let log: string = work + "/python-calls.log"

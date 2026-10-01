@@ -60,7 +60,7 @@ The chain exposes input/output sample peak, true peak, RMS, maximum gain reducti
 `verify_run` checks a WAV's format, duration, ceiling, non-silence, finite samples, fades, and expected dominant partial. Render all repository audio examples with:
 
 ```bash
-scripts/render_audio_examples.sh
+./flow tool scripts/render_audio_examples.flow
 ```
 
 The script does not open an audio device; examples are rendered twice and the outputs must be byte-identical.

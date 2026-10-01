@@ -142,7 +142,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: scripts/sync_version.sh --check
+      - run: ./flow tool sync_version --check
 
   # New code is written in Flow. Fails when a new .py file appears or tracked
   # Python grows past tools/python_ratchet/baseline.txt. The checker is a Flow
@@ -169,13 +169,15 @@ jobs:
   # Relative links in tracked markdown, as a reader meets them on GitHub.
   # `flow tool wiki_links` validates the built site instead; the two catch
   # different breakage. Both are Flow programs built with cc alone, so no
-  # toolchain setup.
+  # toolchain setup. script_refs fails when a .flow file names a scripts/ or
+  # compiler/scripts/ path that does not exist (a deleted script).
   doc-links:
     name: Doc links
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - run: ./flow tool doc_links
+      - run: ./flow tool script_refs
       - run: ./flow tool tool_layout
       - run: ./flow tool makefile_contract
       - run: ./flow tool project_state
@@ -209,7 +211,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Compile every ```flow block in the documentation
-        run: scripts/check_doc_examples.sh --check-ledger
+        run: ./flow tool doc_examples --check-ledger
 
   doc-examples-run:
     name: Doc examples (run)
@@ -225,7 +227,7 @@ jobs:
       # example is well-formed, running proves it works. A `defer` freeing
       # memory before the return value was read compiled cleanly (#594).
       - name: Run every complete program in the documentation
-        run: scripts/check_doc_examples.sh --run --check-ledger
+        run: ./flow tool doc_examples --run --check-ledger
 
   lint:
     name: Lint
@@ -505,7 +507,7 @@ jobs:
           cp /tmp/nopy/python3 /tmp/nopy/python
           chmod +x /tmp/nopy/python3 /tmp/nopy/python
           export PATH="/tmp/nopy:$PATH"
-          chmod +x ./flow compiler/scripts/*.sh tools/discord-welcome/build.sh
+          chmod +x ./flow compiler/scripts/*.sh
           ./compiler/scripts/bootstrap_from_c.sh
           ./flow tool tests/tools/run.flow
 
@@ -517,7 +519,7 @@ jobs:
       # The benchmark publisher's harness builds and runs each published
       # program and checks its result (scripts/tools/bench_publish).
       - name: Benchmark publisher check
-        run: ./scripts/check_bench_publish.sh
+        run: ./flow tool bench_publish --check
 
       # The flow command line (tools/flow_cli, built by the ./flow stub)
       # against goldens recorded from the bash driver it replaced: stdout,

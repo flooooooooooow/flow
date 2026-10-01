@@ -19,8 +19,8 @@ This document tracks what we're building next and why.
 > (local kanban at `http://127.0.0.1:9470/app?project=flow`). This document stays
 > the strategic overview; the board is the source of truth for in-flight work.
 > Open items here mirror to GitHub issues as `[roadmap]` labels via
-> `scripts/sync_roadmap.sh` (creates missing issues, closes + checks ones marked
-> done); `scripts/sync_issues.sh` then rounds trip state with `issues-checklist.md`.
+> `./flow tool roadmap_sync` (creates missing issues, closes + checks ones marked
+> done); `./flow tool issues_sync` then rounds trip state with `issues-checklist.md`.
 
 ---
 
@@ -193,7 +193,7 @@ a proof corpus rather than the showcase.
 Canonical demos should use shipped `flow` / `evolves` / AD / BLAS instead of
 hand-rolled C-shaped loops. API sketches live in
 [pattern-adoption.md](docs/project/pattern-adoption.md). Open items below sync to GitHub
-`[roadmap]` issues via `scripts/sync_roadmap.sh`.
+`[roadmap]` issues via `./flow tool roadmap_sync`.
 
 | Task | Status | Impact |
 |------|--------|--------|
@@ -216,10 +216,10 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 
 | File | Problem | Action | Status |
 |------|---------|--------|--------|
-| `/bench.sh` | Empty (0 bytes), superseded by `scripts/bench.sh` | Deleted | ✅ |
+| `/bench.sh` | Empty (0 bytes), superseded by the benchmark harness (`./flow tool bench_harness`) | Deleted | ✅ |
 | `/run_bench.py` | Empty (0 bytes), superseded by `scripts/run_bench.py` | Deleted | ✅ |
 | `/flow_wasm.py` | Suspected duplicate of `wasm/flow_to_wasm.py` | Kept: inspection showed it is NOT a duplicate | ✅ |
-| `/test_ci_locally.sh` | Dev utility loose at repo root | Moved to `scripts/test_ci_locally.sh` | ✅ |
+| `/test_ci_locally.sh` | Dev utility loose at repo root | Moved to `scripts/test_ci_locally.flow` | ✅ |
 
 #### Medium Priority: Remove Empty Stubs
 

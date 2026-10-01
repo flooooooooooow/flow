@@ -3,7 +3,7 @@
 
 import "tools/flow_cli/sys.flow"
 
-# `flow version`. scripts/sync_version.sh keeps the version strings in this
+# `flow version`. ./flow tool sync_version keeps the version strings in this
 # file in step with VERSION.
 export const FLOW_VERSION_LINE: string = "Flow 2.0.0"
 

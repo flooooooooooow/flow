@@ -15,7 +15,7 @@ mkdir -p "$BUILD_DIR"
 C_FLAGS="-O3 -march=native -ffast-math"
 
 # Microsecond wall clock without Python: the Flow benchmark harness prints it.
-TIMER="$FLOW_ROOT/$("$FLOW_ROOT/scripts/tools/build_tool.sh" bench_harness)"
+TIMER="$("$FLOW_ROOT/flow" tool --path bench_harness)"
 now_us() {
     "$TIMER" --now-us
 }

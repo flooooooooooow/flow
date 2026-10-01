@@ -1,5 +1,5 @@
 # Heading-id generation and the anchor half of the link checker
-# (scripts/check_doc_links.sh).
+# (`./flow tool doc_links`).
 
 import "tools/flow_cli/sys.flow"
 import "tests/scripts/harness.flow"

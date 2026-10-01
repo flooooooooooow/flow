@@ -5,14 +5,18 @@
 # stats block in README.md and docs/generated/repository-stats.json.
 # With --check it only reports whether they are stale.
 #
-# git runs through std.process. scripts/update_repo_stats.sh only builds
-# this program and runs it under a time limit.
+# git runs through std.process. Run it as `./flow tool repo_stats
+# [--check]` from anywhere in the repository; it works from the repository
+# root. The work runs in a child process under a time limit
+# (FLOW_STATS_TIMEOUT seconds, default 90), so a stuck run cannot block CI:
+# the child is killed with SIGKILL and the exit status is 124, as
+# timeout(1) reports it.
 #
 # It replaced scripts/update_repo_stats.py and matches its output byte for
 # byte, messages included.
 
 import .text { ft_outln, ft_errln }
-import std.process { ProcCmd, ProcResult, proc_cmd, proc_arg, proc_timeout_ms, proc_run, proc_argc, proc_argv }
+import std.process { ProcCmd, ProcResult, proc_cmd, proc_arg, proc_env, proc_timeout_ms, proc_stdin, proc_stdout, proc_stderr, proc_run, proc_argc, proc_argv, proc_getenv, proc_chdir, PROC_INHERIT }
 
 extern {
     function malloc(size: i64) -> ptr<void>
@@ -587,7 +591,55 @@ function stats_rev() -> string {
     return rev
 }
 
+# Run this program again as a child with a time limit; its exit status, or
+# 124 when the limit killed it.
+function run_with_time_limit() -> i32 {
+    let mut secs: i32 = 90
+    let t: string = proc_getenv("FLOW_STATS_TIMEOUT")
+    if strlen(t) > 0 {
+        secs = parse_secs(t)
+    }
+    let c: ptr<ProcCmd> = proc_cmd(proc_argv(0))
+    let mut i: i32 = 1
+    while i < proc_argc() {
+        proc_arg(c, proc_argv(i))
+        i = i + 1
+    }
+    proc_env(c, "FLOW_STATS_CHILD", "1")
+    proc_timeout_ms(c, (secs as i64) * 1000)
+    proc_stdin(c, PROC_INHERIT)
+    proc_stdout(c, PROC_INHERIT)
+    proc_stderr(c, PROC_INHERIT)
+    let r: ptr<ProcResult> = proc_run(c)
+    if r.timed_out {
+        return 124
+    }
+    if strlen(r.error) > 0 {
+        ft_errln("repo_stats: " + r.error)
+        return 127
+    }
+    if r.exit_code < 0 {
+        return 128 - r.exit_code
+    }
+    return r.exit_code
+}
+
+# Decimal seconds; 0 for anything else.
+function parse_secs(s: string) -> i32 {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while p[i] >= 48 and p[i] <= 57 {
+        n = n * 10 + (p[i] as i32) - 48
+        i = i + 1
+    }
+    return n
+}
+
 function main() -> i32 {
+    if strlen(proc_getenv("FLOW_STATS_CHILD")) == 0 {
+        return run_with_time_limit()
+    }
     let lf: ptr<i32> = malloc((LANG_N as i64) * 4) as ptr<i32>
     let ll: ptr<i32> = malloc((LANG_N as i64) * 4) as ptr<i32>
     let af: ptr<i32> = malloc((AREA_N as i64) * 4) as ptr<i32>
@@ -622,6 +674,16 @@ function main() -> i32 {
             return 2
         }
         ai = ai + 1
+    }
+
+    # Without --inputs the counter works on the repository: `flow tool`
+    # names its root in FLOW_REPO_ROOT.
+    let repo_root: string = proc_getenv("FLOW_REPO_ROOT")
+    if strlen(inputs) == 0 and strlen(repo_root) > 0 {
+        if proc_chdir(repo_root) == false {
+            ft_errln("repo_stats: cannot enter " + repo_root)
+            return 1
+        }
     }
 
     let mut list_text: string = ""

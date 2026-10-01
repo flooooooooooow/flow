@@ -16,7 +16,7 @@
 | Third-party `flow-verify` section (1000+ proofs) | ✅ |
 | Euclid book index pages (auto-generated) | ✅ |
 | Build script (`scripts/build_wiki.py`) | ✅ |
-| Deploy script (`scripts/deploy_wiki.sh`) | ✅ build-only (VPS behind `FLOW_WIKI_VPS=1`) |
+| Deploy script (`./flow tool deploy_wiki`) | ✅ build-only (VPS behind `FLOW_WIKI_VPS=1`) |
 | Version dropdown + changelog | ✅ |
 | GitHub Pages deploy (`wiki.yml`) | ✅ |
 | VPS live deploy (`/flow/` + `/transpile/`) | ❌ disabled |
@@ -56,7 +56,7 @@
 | Task | Notes |
 |------|-------|
 | Pagefind wiki search | ✅ | `./flow tool build_wiki --pagefind` after wiki build when node/npx present; ⌘K uses Pagefind with `search-index.json` fallback |
-| Playground: compile via WASM or API | partial ✅ | browser interpreter + **Run (native local)** via `./flow tool playground_server` (#132); next: emscripten hello artifact (`scripts/build_wasm_hello.sh`, [language/wasm.md](language/wasm.md)); in-browser Flow compiler still deferred (#121) |
+| Playground: compile via WASM or API | partial ✅ | browser interpreter + **Run (native local)** via `./flow tool playground_server` (#132); next: emscripten hello artifact (`./flow tool scripts/build_wasm_hello.flow`, [language/wasm.md](language/wasm.md)); in-browser Flow compiler still deferred (#121) |
 | Proof graph visualization | ✅ partial: module-level `import` graph (`third-party/proof-graph.md`, `scripts/build_wiki.py::build_proof_graph`); per-theorem Claim Path edges still open |
 | Dark/light theme toggle | ✅ Header **Theme** button; `localStorage` key `flow-wiki-theme` |
 

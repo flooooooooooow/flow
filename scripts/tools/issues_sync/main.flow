@@ -1,0 +1,244 @@
+# Two-way sync between docs/project/issues-checklist.md and GitHub issues.
+#
+#   flow tool issues_sync [--repo owner/name] [--file path] [--comment TEXT]
+#       [--dry-run] [--verbose] [--debug]
+#
+# For every checklist line "- [ ] #N ..." or "- [x] #N ...":
+#   - an issue closed on GitHub is marked [x] here;
+#   - an issue marked [x] here and open on GitHub is closed there, after
+#     posting --comment when one is given.
+# --dry-run asks GitHub but changes nothing on either side. --debug prints
+# each gh command before it runs. Needs gh (authenticated). The file is read
+# relative to the working directory.
+
+import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_starts, ft_slice, ft_from, ft_find, ft_read_file, ft_write_file, ft_exists, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
+import std.process { ProcCmd, ProcResult, proc_cmd, proc_arg, proc_stdin, proc_stdout, proc_stderr, proc_run, proc_which, PROC_INHERIT, PROC_CAPTURE }
+
+struct Opts {
+    repo: string
+    file: string
+    comment: string
+    dry_run: bool
+    verbose: bool
+    debug: bool
+}
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+# The issue number of a checklist line "- [ ] #123 ..." ([ ], [x] or [X]),
+# or "" when the line is not one.
+function issue_number(line: string) -> string {
+    let p: ptr<u8> = line as ptr<u8>
+    if ft_starts(line, "- [") == false {
+        return ""
+    }
+    let mark: i32 = p[3] as i32
+    if mark != 32 and mark != 120 and mark != 88 {
+        return ""
+    }
+    if ft_starts(ft_from(line, 4), "] #") == false {
+        return ""
+    }
+    let s: i32 = 7
+    let mut e: i32 = s
+    while p[e] >= 48 and p[e] <= 57 {
+        e = e + 1
+    }
+    if e == s or p[e] != 32 {
+        return ""
+    }
+    return ft_slice(line, s, e)
+}
+
+function is_checked(line: string) -> bool {
+    return ft_starts(line, "- [x]") or ft_starts(line, "- [X]")
+}
+
+# ${line/- [ ] /- [x] }: the first "- [ ] " anywhere in the line.
+function mark_done(line: string) -> string {
+    let at: i32 = ft_find(line, "- [ ] ", 0)
+    if at < 0 {
+        return line
+    }
+    return ft_slice(line, 0, at) + "- [x] " + ft_from(line, at + 6)
+}
+
+# The lines `while IFS= read -r line` sees: a last line without a newline
+# is not read.
+function read_lines(text: string) -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    let p: ptr<u8> = text as ptr<u8>
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        if p[i] == 10 {
+            ft_list_push(out, ft_slice(text, start, i))
+            start = i + 1
+        }
+        i = i + 1
+    }
+    return out
+}
+
+function show(o: ptr<Opts>, c: ptr<ProcCmd>, words: string) -> void {
+    if o.debug {
+        ft_errln("+ gh " + words)
+    }
+}
+
+# gh with stdout and stderr passed through; its exit status.
+function gh_run(o: ptr<Opts>, c: ptr<ProcCmd>, words: string) -> i32 {
+    show(o, c, words)
+    proc_stdin(c, PROC_INHERIT)
+    proc_stdout(c, PROC_INHERIT)
+    proc_stderr(c, PROC_INHERIT)
+    let r: ptr<ProcResult> = proc_run(c)
+    if ft_len(r.error) > 0 {
+        return 127
+    }
+    return r.exit_code
+}
+
+# The state ("open" or "closed") of issue `num`, or null when gh failed.
+function issue_state(o: ptr<Opts>, num: string) -> string {
+    let path: string = "/repos/" + o.repo + "/issues/" + num
+    let c: ptr<ProcCmd> = proc_cmd("gh")
+    proc_arg(c, "api")
+    proc_arg(c, "-H")
+    proc_arg(c, "Accept: application/vnd.github+json")
+    proc_arg(c, path)
+    proc_arg(c, "--jq")
+    proc_arg(c, ".state")
+    show(o, c, "api -H 'Accept: application/vnd.github+json' " + path + " --jq .state")
+    proc_stdout(c, PROC_CAPTURE)
+    proc_stderr(c, PROC_INHERIT)
+    let r: ptr<ProcResult> = proc_run(c)
+    if ft_len(r.error) > 0 or r.exit_code != 0 {
+        return null as string
+    }
+    let mut n: i32 = ft_len(r.stdout)
+    let p: ptr<u8> = r.stdout as ptr<u8>
+    while n > 0 and p[n - 1] == 10 {
+        n = n - 1
+    }
+    return ft_slice(r.stdout, 0, n)
+}
+
+# Comment (when asked) and close; 0, or the status of the gh call that
+# failed, which ends the run as `set -e` did.
+function close_issue(o: ptr<Opts>, num: string) -> i32 {
+    if ft_len(o.comment) > 0 {
+        let cc: ptr<ProcCmd> = proc_cmd("gh")
+        proc_arg(cc, "issue")
+        proc_arg(cc, "comment")
+        proc_arg(cc, num)
+        proc_arg(cc, "--repo")
+        proc_arg(cc, o.repo)
+        proc_arg(cc, "--body")
+        proc_arg(cc, o.comment)
+        let rc: i32 = gh_run(o, cc, "issue comment " + num + " --repo " + o.repo + " --body '" + o.comment + "'")
+        if rc != 0 {
+            return rc
+        }
+    }
+    let c: ptr<ProcCmd> = proc_cmd("gh")
+    proc_arg(c, "issue")
+    proc_arg(c, "close")
+    proc_arg(c, num)
+    proc_arg(c, "--repo")
+    proc_arg(c, o.repo)
+    return gh_run(o, c, "issue close " + num + " --repo " + o.repo)
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    let o: ptr<Opts> = malloc(64) as ptr<Opts>
+    o.repo = "flooooooooooow/flow"
+    o.file = "docs/project/issues-checklist.md"
+    o.comment = ""
+    o.dry_run = false
+    o.verbose = false
+    o.debug = false
+    let mut i: i32 = 1
+    while i < argc {
+        let a: string = argv[i]
+        let takes: bool = ft_eq(a, "--repo") or ft_eq(a, "--file") or ft_eq(a, "--comment")
+        if takes and i + 1 >= argc {
+            ft_errln("issues_sync: " + a + " needs a value")
+            return 1
+        }
+        if ft_eq(a, "--repo") {
+            o.repo = argv[i + 1]
+            i = i + 1
+        } elif ft_eq(a, "--file") {
+            o.file = argv[i + 1]
+            i = i + 1
+        } elif ft_eq(a, "--comment") {
+            o.comment = argv[i + 1]
+            i = i + 1
+        } elif ft_eq(a, "--dry-run") {
+            o.dry_run = true
+        } elif ft_eq(a, "--verbose") {
+            o.verbose = true
+        } elif ft_eq(a, "--debug") {
+            o.verbose = true
+            o.debug = true
+        } else {
+            ft_errln("Unknown arg: " + a)
+            return 1
+        }
+        i = i + 1
+    }
+    if ft_len(proc_which("gh")) == 0 {
+        ft_errln("gh not found. Install GitHub CLI first.")
+        return 1
+    }
+    if ft_exists(o.file) == false {
+        ft_errln("Checklist file not found: " + o.file)
+        return 1
+    }
+    let text: string = ft_read_file(o.file)
+    if text as ptr<u8> == null {
+        ft_errln("Checklist file not found: " + o.file)
+        return 1
+    }
+    let lines: ptr<StrList> = read_lines(text)
+    let mut dry: string = "0"
+    if o.dry_run {
+        dry = "1"
+    }
+    let mut out: string = ""
+    let mut k: i32 = 0
+    while k < ft_list_len(lines) {
+        let mut line: string = ft_list_get(lines, k)
+        let num: string = issue_number(line)
+        if ft_len(num) > 0 {
+            if o.verbose {
+                ft_outln("Syncing issue #" + num + " (dry_run=" + dry + ")...")
+            }
+            let state: string = issue_state(o, num)
+            if state as ptr<u8> == null {
+                ft_errln("Failed to fetch issue #" + num + " from " + o.repo + ".")
+                return 1
+            }
+            if ft_eq(state, "closed") {
+                line = mark_done(line)
+            } elif is_checked(line) and o.dry_run == false {
+                let rc: i32 = close_issue(o, num)
+                if rc != 0 {
+                    return rc
+                }
+            }
+        }
+        out = out + line + "\n"
+        k = k + 1
+    }
+    if o.dry_run == false {
+        if ft_write_file(o.file, out) == false {
+            ft_errln("issues_sync: cannot write " + o.file)
+            return 1
+        }
+    }
+    return 0
+}

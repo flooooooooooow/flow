@@ -2,7 +2,7 @@
 #
 # Every tracked .flow file that defines main() is built twice the way `flow
 # run` builds it: `flow compile` (the C backend) and `flow compile
-# --backend=mlir` (compiler/src/mlirgen.flow, compiler/scripts/mlir_lower.sh,
+# --backend=mlir` (compiler/src/mlirgen.flow, flow mlir-lower,
 # clang). Both executables run from the repository root with stdin closed
 # and a timeout. A program is "same" when both build and the runs agree on
 # exit code and stdout. The C backend is the reference: a program it does
@@ -321,7 +321,7 @@ function main() -> i32 {
         jobs = 1
     }
 
-    let tools: ptr<ProcStrs> = sl_of2("compiler/scripts/mlir_lower.sh", "--tools")
+    let tools: ptr<ProcStrs> = sl_of3("./flow", "mlir-lower", "--tools")
     if gl_run_file(tools, "", GL_ERR_NULL, 0) != 0 {
         errln("mlir_vs_c: mlir-opt / mlir-translate not found (brew install llvm, or set LLVM_PATH)")
         return 2

@@ -139,7 +139,7 @@ Should compile to C switch statements where possible."
 ### Code Blocks in Documentation
 
 CI compiles every ` ```flow ` block in every tracked markdown file with flowc
-(`scripts/check_doc_examples.sh`). A block that neither compiles nor carries a
+(`./flow tool doc_examples`). A block that neither compiles nor carries a
 reason is a build failure, and the unverified count can only go down.
 
 A block does not need a `main`. The checker wraps a bare fragment in one and
@@ -346,16 +346,16 @@ New roadmap items should include:
 ## Roadmap Sync
 
 Open items in `ROADMAP.md` mirror to GitHub issues (label `roadmap`) so the
-tracker stays visible on GitHub. Two scripts handle it:
+tracker stays visible on GitHub. Two tools handle it:
 
-- `scripts/sync_roadmap.sh` creates a GitHub issue for every open item: the
+- `./flow tool roadmap_sync` creates a GitHub issue for every open item: the
   🔲 and `partial` statuses, unchecked `- [ ]` checkboxes, numbered
   🔲 items, and the curated known-gaps list. When an item is marked
   done in `ROADMAP.md`, it closes the issue and checks the
   `docs/project/issues-checklist.md` line. Rewording an item updates the
   existing issue instead of creating a duplicate. The logic is the Flow
   program in `scripts/tools/roadmap_sync`.
-- `scripts/sync_issues.sh` round-trips state between `docs/project/issues-checklist.md`
+- `./flow tool issues_sync` round-trips state between `docs/project/issues-checklist.md`
   and GitHub (closes issues checked locally, checks items closed on GitHub).
 
 Run it after editing `ROADMAP.md`:
