@@ -7,6 +7,7 @@
 
 import "tools/flow_cli/sys.flow"
 import "tests/scripts/harness.flow"
+import std.process { ProcResult, proc_run }
 
 extern {
     function malloc(size: i64) -> ptr<void>
@@ -55,7 +56,8 @@ function probe_emcc() {
         emcc_env(c, "EM_LLVM_ROOT", "/opt/homebrew/opt/emscripten/libexec/llvm/bin")
         emcc_env(c, "EM_BINARYEN_ROOT", "/opt/homebrew/opt/emscripten/libexec/binaryen")
         cmd_quiet(c)
-        e.ok = run(c) == 0
+        let r: ptr<ProcResult> = proc_run(c)
+        e.ok = r.exit_code == 0
     }
     EMCC = e
 }

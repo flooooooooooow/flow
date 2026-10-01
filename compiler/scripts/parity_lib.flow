@@ -10,7 +10,7 @@
 # codes and the files they write under compiler/build.
 
 import "tools/flow_cli/sys.flow"
-import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg, proc_stdin, proc_stdout, proc_stderr, proc_timeout_ms, proc_input, proc_run, proc_args, proc_chdir, PROC_CAPTURE, PROC_INHERIT, PROC_NULL, PROC_MERGE }
+import std.process { ProcCmd, ProcResult, ProcStrs, ProcHandle, proc_spawn, proc_wait_any, proc_arg, proc_stdin, proc_stdout, proc_stderr, proc_timeout_ms, proc_input, proc_run, proc_args, proc_chdir, PROC_CAPTURE, PROC_INHERIT, PROC_NULL, PROC_MERGE }
 import std.regex { Regex, RxMatch, rx_compile, rx_search }
 
 extern {
@@ -141,6 +141,49 @@ export function pl_run(c: ptr<ProcCmd>, out: string, err: string, timeout_s: i32
     return code
 }
 
+# The worker count for a gate's parallel steps: $JOBS, else
+# $FLOW_GATE_JOBS, else 2.
+export function pl_jobs() -> i32 {
+    let n: i32 = s_atoi(env_or("JOBS", env_or("FLOW_GATE_JOBS", "2")), 2)
+    if n < 1 {
+        return 1
+    }
+    return n
+}
+
+# Run every command in `cmds`, at most `jobs` at a time, each with stdout
+# and stderr merged into the file logs[i] (`cmd > LOG 2>&1`). Returns the
+# shell status of each command, by index.
+export function pl_run_pool(cmds: ptr<ptr<ProcCmd>>, logs: ptr<ProcStrs>, jobs: i32) -> ptr<i32> {
+    let n: i32 = sl_len(logs)
+    let status: ptr<i32> = malloc(((n + 1) * 4) as i64) as ptr<i32>
+    let slots: ptr<ptr<ProcHandle>> = malloc(((jobs + 1) * 8) as i64) as ptr<ptr<ProcHandle>>
+    let owner: ptr<i32> = malloc(((jobs + 1) * 4) as i64) as ptr<i32>
+    let at: ptr<i32> = malloc(4) as ptr<i32>
+    let mut next: i32 = 0
+    let mut active: i32 = 0
+    while next < n or active > 0 {
+        while active < jobs and next < n {
+            let c: ptr<ProcCmd> = cmds[next]
+            proc_stdout(c, PROC_CAPTURE)
+            proc_stderr(c, PROC_MERGE)
+            slots[active] = proc_spawn(c)
+            owner[active] = next
+            active = active + 1
+            next = next + 1
+        }
+        let r: ptr<ProcResult> = proc_wait_any(slots, active, at)
+        let k: i32 = at[0]
+        let i: i32 = owner[k]
+        status[i] = shell_status(cmds[i], r)
+        let _w: bool = write_text(sl_get(logs, i), r.stdout)
+        active = active - 1
+        slots[k] = slots[active]
+        owner[k] = owner[active]
+    }
+    return status
+}
+
 # Write (PATH) or append (+PATH) text.
 function pl_put(dest: string, text: string) {
     if s_starts(dest, "+") {
@@ -158,7 +201,7 @@ export function pl_capture_merged(c: ptr<ProcCmd>) -> string {
 
 # Run `python3 - ARGS` with `script` on stdin, as a heredoc did. stdout
 # and stderr are this program's. The gates hold their Python as one
-# `"...\n" +` piece per line: a Flow string cannot span lines (#1106).
+# `"...\n" +` piece per line.
 export function pl_python(script: string, args: ptr<ProcStrs>) -> i32 {
     let c: ptr<ProcCmd> = cmd(sl_of2("python3", "-"))
     let mut i: i32 = 0

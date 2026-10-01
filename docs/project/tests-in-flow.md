@@ -238,7 +238,7 @@ tests/scripts, run by `./flow test-scripts` (tests/scripts/run.flow).
 | test_plan_selector.py | c | plan selector internals |
 | test_pointer_string_casts.py | b | generated-C text |
 | test_postfix_chaining.py | c | runnable programs moved to tests/lang; AST and C-text asserts stay |
-| test_project_test_runner.py | c | removed with the Python runner; its cases are in compiler/scripts/parity_project_test.sh |
+| test_project_test_runner.py | c | removed with the Python runner; its cases are in compiler/scripts/parity_project_test.flow |
 | test_proof_bundle.py | c | proof tooling |
 | test_proof_document.py | c | proof tooling |
 | test_proof_kernel.py | c | proof kernel internals |

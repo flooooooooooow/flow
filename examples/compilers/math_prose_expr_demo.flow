@@ -2,7 +2,7 @@
 #
 # Prints one `KIND|expr|result` line per case. The proof documents built
 # from these conversions are held to the former Python by
-# compiler/scripts/parity_proofs.sh.
+# compiler/scripts/parity_proofs.flow.
 #
 # Run directly:  ./flow run examples/compilers/math_prose_expr_demo.flow
 

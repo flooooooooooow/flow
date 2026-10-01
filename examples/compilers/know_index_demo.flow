@@ -2,7 +2,7 @@
 #
 # Prints one `KIND|input|result` line per case. `flow know` itself runs on
 # flowc (compiler/src/proof_doc.flow) and is held to the former Python by
-# compiler/scripts/parity_proofs.sh.
+# compiler/scripts/parity_proofs.flow.
 #
 # Run directly:  ./flow run examples/compilers/know_index_demo.flow
 
