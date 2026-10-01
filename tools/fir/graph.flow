@@ -1145,14 +1145,24 @@ function fg_apply_one_multiblock(g: ptr<FirG>, call: i32) -> FirInline {
 }
 
 function fg_apply_multiblock_inline(g: ptr<FirG>) -> FirInline {
-    let mut op: i32 = 0
-    while op < fg_num_ops(g) {
-        if fg_multiblock_inlineable(g, op) == 1 {
-            return fg_apply_one_multiblock(g, op)
+    let mut cur: ptr<FirG> = g
+    let mut total: i32 = 0
+    let mut again: bool = true
+    while again {
+        again = false
+        let mut op: i32 = 0
+        while op < fg_num_ops(cur) {
+            if fg_multiblock_inlineable(cur, op) == 1 {
+                let one: FirInline = fg_apply_one_multiblock(cur, op)
+                cur = one.g
+                total = total + one.inlined
+                again = true
+                break
+            }
+            op = op + 1
         }
-        op = op + 1
     }
-    return FirInline { g: g, inlined: 0 }
+    return FirInline { g: cur, inlined: total }
 }
 
 export function fg_apply_inline(g: ptr<FirG>) -> FirInline {
