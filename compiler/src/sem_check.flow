@@ -4297,13 +4297,13 @@ function sem_check_const(c: ptr<Sem>, d: i32) {
 }
 
 function sem_is_static_primitive(n: string) -> bool {
-    return sem_s_eq(n, "i32") or sem_s_eq(n, "i64") or sem_s_eq(n, "u8") or sem_s_eq(n, "u32") or sem_s_eq(n, "f32") or sem_s_eq(n, "f64") or sem_s_eq(n, "c64") or sem_s_eq(n, "c128") or sem_s_eq(n, "bool")
+    return sem_s_eq(n, "i32") or sem_s_eq(n, "i64") or sem_s_eq(n, "u8") or sem_s_eq(n, "u32") or sem_s_eq(n, "f32") or sem_s_eq(n, "f64") or sem_s_eq(n, "c64") or sem_s_eq(n, "c128") or sem_s_eq(n, "bool") or sem_s_eq(n, "string")
 }
 
 # _is_const_scalar
 function sem_is_const_scalar(c: ptr<Sem>, e: i32) -> bool {
     if sem_is_literal(c, e) {
-        return sem_nk(c, e) != AST_STRING
+        return true
     }
     if sem_is_unary_op(c, e, TOK_MINUS) {
         return sem_is_literal(c, sem_na(c, e))
@@ -4355,7 +4355,7 @@ function sem_check_static(c: ptr<Sem>, d: i32) {
     }
     if is_fixed {
         let en: string = sem_pt_name(c.t, tys.pt_elem[pt])
-        if sem_is_static_primitive(en) == false {
+        if sem_is_static_primitive(en) == false or sem_s_eq(en, "string") {
             sem_err(c, "Module static '" + name + "' has unsupported array element type '" + en + "': static arrays may only hold primitives (i32/i64/u8/u32/f32/f64/c64/c128/bool)")
             return
         }
@@ -4382,7 +4382,7 @@ function sem_check_static(c: ptr<Sem>, d: i32) {
             return
         }
     } else {
-        sem_err(c, "Module static '" + name + "' has unsupported type '" + tn + "': module statics must be a primitive (i32/i64/u8/u32/f32/f64/c64/c128/bool), a fixed array of primitives, or ptr<T>")
+        sem_err(c, "Module static '" + name + "' has unsupported type '" + tn + "': module statics must be a primitive (i32/i64/u8/u32/f32/f64/c64/c128/bool/string), a fixed array of primitives, or ptr<T>")
         return
     }
     let et: i32 = sem_check_expression(c, value)

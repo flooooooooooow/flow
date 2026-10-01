@@ -76584,12 +76584,12 @@ void sem_check_const(Sem* c, int32_t d) {
 }
 
 bool sem_is_static_primitive(const char* n) {
-  return sem_s_eq(n, "i32") || sem_s_eq(n, "i64") || sem_s_eq(n, "u8") || sem_s_eq(n, "u32") || sem_s_eq(n, "f32") || sem_s_eq(n, "f64") || sem_s_eq(n, "c64") || sem_s_eq(n, "c128") || sem_s_eq(n, "bool");
+  return sem_s_eq(n, "i32") || sem_s_eq(n, "i64") || sem_s_eq(n, "u8") || sem_s_eq(n, "u32") || sem_s_eq(n, "f32") || sem_s_eq(n, "f64") || sem_s_eq(n, "c64") || sem_s_eq(n, "c128") || sem_s_eq(n, "bool") || sem_s_eq(n, "string");
 }
 
 bool sem_is_const_scalar(Sem* c, int32_t e) {
   if (sem_is_literal(c, e)) {
-  return sem_nk(c, e) != AST_STRING;
+  return 1;
 }
   if (sem_is_unary_op(c, e, TOK_MINUS)) {
   return sem_is_literal(c, sem_na(c, e));
@@ -76640,7 +76640,7 @@ void sem_check_static(Sem* c, int32_t d) {
 }
   if (is_fixed) {
   const char* en = sem_pt_name(c->t, tys->pt_elem[pt]);
-  if (sem_is_static_primitive(en) == 0) {
+  if (sem_is_static_primitive(en) == 0 || sem_s_eq(en, "string")) {
   sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Module static '", name), "' has unsupported array element type '"), en), "': static arrays may only hold primitives (i32/i64/u8/u32/f32/f64/c64/c128/bool)"));
   return;
 }
@@ -76668,7 +76668,7 @@ void sem_check_static(Sem* c, int32_t d) {
   return;
 }
 } else {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Module static '", name), "' has unsupported type '"), tn), "': module statics must be a primitive (i32/i64/u8/u32/f32/f64/c64/c128/bool), a fixed array of primitives, or ptr<T>"));
+  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Module static '", name), "' has unsupported type '"), tn), "': module statics must be a primitive (i32/i64/u8/u32/f32/f64/c64/c128/bool/string), a fixed array of primitives, or ptr<T>"));
   return;
 }
 }
