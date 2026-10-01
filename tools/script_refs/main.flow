@@ -48,10 +48,10 @@ function path_at(text: string, at: i32) -> string {
 }
 
 # True when `at` begins a reference: `prefix` there, and the byte before
-# is not a path byte (so `tests/scripts/x` is not `scripts/x`), or is the
+# is not a path byte (so `tests/scripts/NAME` is not `scripts/NAME`), or is the
 # slash that opens a string.
 function starts_ref(text: string, at: i32, prefix: string) -> bool {
-    # `root() + "/scripts/x"`: a string that starts with a slash.
+    # `root() + "/scripts/NAME"`: a string that starts with a slash.
     let quoted_slash: bool = at > 1 and s_byte(text, at - 1) == 47 and s_byte(text, at - 2) == 34
     if at > 0 and is_path_byte(s_byte(text, at - 1)) and not quoted_slash {
         return false
