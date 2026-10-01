@@ -51,7 +51,7 @@ echo "PASS bootstrap compiles stage_a_sum (exit 45)"
 
 # Emit compiler/src/main.flow in bundle mode with the flowc binary $1 into $2.
 emit_main() {
-    FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
+    FLOWC_PERMISSIVE_EFFECTS=1 FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
     FLOWC_IN=compiler/src/main.flow FLOWC_OUT="$2" \
         "$1"
     [[ -s "$2" ]]

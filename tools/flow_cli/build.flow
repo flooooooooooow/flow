@@ -511,7 +511,13 @@ export function compile_audio_program(program: string, backend: string) -> i32 {
     }
     concurrency_flags()
     let rtf: ptr<ProcStrs> = runtime_flow_sources()
-    let a: ptr<ProcStrs> = sl_of3("clang", "-O2", "-fno-omit-frame-pointer")
+    let mut opt: string = "-O2"
+    if s_eq(env("FLOW_TEST_FAST"), "1") {
+        # The MLIR command golden runner uses this for large generated audio
+        # graphs. Production audio builds keep the normal optimization level.
+        opt = "-O0"
+    }
+    let a: ptr<ProcStrs> = sl_of3("clang", opt, "-fno-omit-frame-pointer")
     sl_extend(a, audio_cflags)
     sl_extend(a, py_cflags())
     sl_extend(a, conc_cflags())

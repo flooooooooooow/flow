@@ -106,7 +106,8 @@ export struct TcCtx {
     hcap: i32,
     # Function or capability method being checked, else AST_NONE.
     cur_fn: i32,
-    # FLOWC_STRICT_EFFECTS=1: effect rows are checked (Python --strict-effects).
+    # Stable effect rows are checked by default. FLOWC_PERMISSIVE_EFFECTS=1
+    # restores the legacy permissive path.
     strict_effects: i32,
     # 1 when the semantic checker (sem_check.flow) ran on this program: the
     # checks it makes with the Python host's rules and messages are left to
@@ -2150,11 +2151,16 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
     let marks: ptr<i32> = raw_mk
     let hs_s: ptr<i32> = raw_hs
     let hs_e: ptr<i32> = raw_he
-    let mut strict_effects: i32 = 0
+    let mut strict_effects: i32 = 1
     let se: string = getenv("FLOWC_STRICT_EFFECTS")
     let sep: ptr<u8> = se as ptr<u8>
     if sep != null and sep[0] == 49 {
         strict_effects = 1
+    }
+    let pe: string = getenv("FLOWC_PERMISSIVE_EFFECTS")
+    let pep: ptr<u8> = pe as ptr<u8>
+    if pep != null and pep[0] == 49 {
+        strict_effects = 0
     }
     return TcCtx {
         src: src,

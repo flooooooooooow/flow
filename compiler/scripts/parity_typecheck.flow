@@ -790,6 +790,12 @@ function compare(work: string, list: string) -> string {
                 cls = "agree-accept"
             } elif s_eq(pvv, "reject") and s_eq(fv, "accept") {
                 cls = "py-only"
+            } elif s_contains(fm, "Unhandled effect") or s_contains(fm, "requires effect(s)") {
+                # Stable Flow deliberately rejects uncovered effects by
+                # default. The retired Python reference accepted these inputs
+                # under its legacy zero-value policy, so this is an expected
+                # policy difference rather than a type-system mismatch.
+                cls = "effect-policy"
             } elif s_eq(pvv, "accept") and s_eq(fv, "reject") {
                 cls = "flowc-only"
             } elif s_eq(norm(gl_map_get(pm, key + "\t" + m)), norm(fm)) {
@@ -835,7 +841,7 @@ function compare(work: string, list: string) -> string {
             outln(key + " [strict]\n    python: " + p + "\n    flowc:  " + f)
         }
     }
-    let classes: ptr<ProcStrs> = s_words("agree-accept agree-same agree-diff py-only flowc-only frontend stale no-golden warn-same warn-diff warn-py-only warn-flowc-only")
+    let classes: ptr<ProcStrs> = s_words("agree-accept agree-same agree-diff effect-policy py-only flowc-only frontend stale no-golden warn-same warn-diff warn-py-only warn-flowc-only")
     let mut report: string = pad_right("class", 16) + " " + pad_left("strict", 8) + " " + pad_left("lenient", 8) + "\n"
     let mut c: i32 = 0
     while c < sl_len(classes) {

@@ -1,6 +1,8 @@
-# Effects parity fixture: an unhandled operation returns zero, a called
+# Effects parity fixture: permissive mode keeps the legacy zero/no-op fallback.
+# An unhandled operation returns zero, a called
 # function sees the installed handler, a nested handle overrides and then
 # restores, and an operation the handler lacks falls back to zero.
+# effects-mode: permissive
 
 effect Log {
     info(msg: string) -> void,

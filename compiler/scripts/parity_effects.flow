@@ -26,10 +26,10 @@
 #                 needs is not linked here; the same holds on both hosts)
 #   run exit=N    followed by what the program printed
 #
-# Fixtures run under the Python host's default strict checking; a fixture
-# marked `# effects-mode: strict` adds --strict-effects (flowc:
-# FLOWC_STRICT_EFFECTS=1), and `# effects-mode: runtime-strict` runs the
-# program with FLOW_STRICT_EFFECTS=1 and records stderr too. Corpus files
+# Fixtures use Stable strict checking by default. A fixture marked
+# `# effects-mode: permissive` opts into legacy zero/no-op fallback, and
+# `# effects-mode: runtime-strict` records stderr from the default fail-loud
+# runtime path. Corpus files
 # compile the way `flow run` does (Python --lenient, flowc FLOWC_TYPECHECK=1).
 #
 # Diagnostics are compared as text. Two Python messages spell a separator
@@ -120,7 +120,9 @@ function build_runtime() {
 
 function fixture_mode(f: string) -> string {
     let lines: ptr<ProcStrs> = pl_read_lines(f)
-    if sl_has(lines, "# effects-mode: strict") {
+    if sl_has(lines, "# effects-mode: permissive") {
+        return "permissive"
+    } elif sl_has(lines, "# effects-mode: strict") {
         return "strict"
     } elif sl_has(lines, "# effects-mode: runtime-strict") {
         return "runtime-strict"
@@ -158,7 +160,10 @@ function run_c(c: string, res: string, m: string) {
     let dir: string = path_dirname(c)
     let r: ptr<ProcCmd> = pl_cmd1(exe)
     let mut code: i32 = 0
-    if s_eq(m, "runtime-strict") {
+    if s_eq(m, "permissive") {
+        cmd_env(r, "FLOW_PERMISSIVE_EFFECTS", "1")
+        code = pl_run(r, dir + "/run.txt", "-", 10)
+    } elif s_eq(m, "runtime-strict") {
         cmd_env(r, "FLOW_STRICT_EFFECTS", "1")
         code = pl_run(r, dir + "/run.txt", "&", 10)
     } else {
@@ -177,6 +182,12 @@ function flowc_result(f: string, res: string, m: string) {
     }
     let c: ptr<ProcCmd> = pl_cmd1(g.bin)
     cmd_env(c, "FLOWC_STRICT_EFFECTS", strict)
+    if s_eq(m, "permissive") {
+        cmd_env(c, "FLOWC_PERMISSIVE_EFFECTS", "1")
+    } elif s_eq(m, "runtime-strict") {
+        # Compile permissively so the runtime failure path can be exercised.
+        cmd_env(c, "FLOWC_PERMISSIVE_EFFECTS", "1")
+    }
     cmd_env(c, "FLOWC_BUNDLE", "1")
     cmd_env(c, "FLOWC_DIR", g.root)
     cmd_env(c, "FLOWC_TYPECHECK", "1")

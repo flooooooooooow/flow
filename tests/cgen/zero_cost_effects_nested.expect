@@ -4,7 +4,7 @@
 # each effect to its own handler, and leaving a block restores the outer one.
 # A lambda body keeps the vtable call: the closure may run after the block
 # exits. The lambda captures nothing, since the effect name is a type (#1057).
-# Outside every block the call dispatches through the runtime handler.
+# Outside every block the call aborts under the stable strict runtime policy.
 + Loud_info("a");
 + Soft_info("b");
 + total = (total + Counter_tick(1));
@@ -16,11 +16,4 @@
 - Log_info("a")
 - Meter_tick(1)
 - .Log = Log
-exit 0
-stdout [loud] a
-stdout [soft] b
-stdout [tick] 1
-stdout [loud] c
-stdout [soft] d
-stdout [loud] e
-stdout [loud] f
+exit 134

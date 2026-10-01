@@ -66,7 +66,7 @@ effect Notify {
 
 Business logic calls the interface directly.
 
-```flow preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow
+```flow expect-error preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow
 function announce() -> void {
     let t: i32 = Clock.now()
     printf("time=%d\n", t)
@@ -102,7 +102,7 @@ The handler is active only inside the block.
 
 ### 5. Swap implementations without changing business code
 
-```flow preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow
+```flow expect-error preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow
 capability WallClock {
     effect Clock,
     function now() -> i32 {
@@ -134,7 +134,7 @@ handle Clock with FrozenClock {
 
 ### 6. Override a handler in a nested dynamic scope
 
-```flow preamble=tests/fixtures/doc_preambles/effects-showcase-all.flow
+```flow expect-error preamble=tests/fixtures/doc_preambles/effects-showcase-all.flow
 handle Log with OpsLogger {
     Log.info("loud")
 
@@ -152,7 +152,7 @@ The outer handler is restored automatically when the inner block exits.
 
 A capability can implement more than one effect.
 
-```flow preamble=tests/fixtures/doc_preambles/effects-showcase-all.flow
+```flow expect-error preamble=tests/fixtures/doc_preambles/effects-showcase-all.flow
 capability TestBackend {
     effect Inventory, Notify,
 
@@ -206,7 +206,7 @@ handle Clock with FrozenClock {
 
 You do not need an all-production or all-test stack.
 
-```flow preamble=tests/fixtures/doc_preambles/effects-showcase-all.flow
+```flow expect-error preamble=tests/fixtures/doc_preambles/effects-showcase-all.flow
 handle Clock with FrozenClock {
     handle Log with OpsLogger {
         handle Inventory with WarehouseInventory {
@@ -222,7 +222,7 @@ This keeps real inventory behaviour, freezes time, and captures outbound notific
 
 ### 10. Declare an effect row on a function
 
-Under `--strict-effects`, functions can state which effects they may perform.
+Stable compilation checks effect rows by default. Functions can state which effects they may perform.
 
 ```flow preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow
 function greet(name: string) -> void with Log {
@@ -250,7 +250,7 @@ A caller may either install a handler or declare the same requirement on its own
 
 ### 12. Close the effect row at the application boundary
 
-```flow preamble=tests/fixtures/doc_preambles/effects-showcase-all.flow
+```flow expect-error preamble=tests/fixtures/doc_preambles/effects-showcase-all.flow
 function main() -> i32 {
     handle Log with Console {
         shout()
@@ -259,31 +259,30 @@ function main() -> i32 {
 }
 ```
 
-With strict effects enabled, the call is valid because the enclosing handler covers the row.
+The call is valid because the enclosing handler covers the row.
 
 ### 13. Turn unhandled effects into compile-time errors
 
 ```sh
-FLOWC_STRICT_EFFECTS=1 ./flow tool compiler/scripts/flowc_emit.flow program.flow build/program.c
+./flow tool compiler/scripts/flowc_emit.flow program.flow build/program.c
 ```
 
-`FLOWC_STRICT_EFFECTS=1` checks bare performs and function effect rows. The default language mode
-remains backwards-compatible with soft defaults.
+Normal Stable compilation checks bare performs and function effect rows.
 
 ### 14. Turn unhandled effects into runtime failures
 
 ```sh
-FLOW_STRICT_EFFECTS=1 ./flow run program.flow
+./flow run program.flow
 ```
 
-This is useful when you want fail-loud behaviour without changing source syntax.
+An unhandled operation fails loudly at runtime.
 
-### 15. Use the default soft fallback deliberately
+### 15. Use the permissive fallback deliberately
 
-Without strict effects, an unhandled operation returns its zeroed default and `void` operations
-become no-ops.
+Set `FLOWC_PERMISSIVE_EFFECTS=1` while compiling and `FLOW_PERMISSIVE_EFFECTS=1` while running
+to restore the legacy zeroed default and no-op behaviour.
 
-```flow preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow
+```flow expect-error preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow
 function main() -> i32 {
     let t: i32 = Clock.now()
     printf("%d\n", t)   # 0 when no Clock handler is installed
@@ -296,7 +295,7 @@ would be a correctness bug.
 
 ### 16. Use effects for dependency injection
 
-```flow
+```flow expect-error
 effect Database {
     query(sql: string) -> string,
     execute(sql: string) -> i32,
@@ -309,7 +308,7 @@ function get_user_name(user_id: i32) -> string {
 
 Production and test database capabilities can be swapped at the call boundary.
 
-```flow preamble=tests/fixtures/doc_preambles/effects-showcase-all.flow
+```flow expect-error preamble=tests/fixtures/doc_preambles/effects-showcase-all.flow
 handle Database with ProductionDB {
     let name: string = get_user_name(1)
 }
@@ -324,7 +323,7 @@ example.
 
 ### 17. Inject configuration without a framework
 
-```flow
+```flow expect-error
 effect Config {
     get_config(key: string) -> string,
 }
@@ -360,7 +359,7 @@ The function stays unaware of environment variables, files, fixtures, or test ha
 
 ### 18. Silence or redirect logging for one region
 
-```flow preamble=tests/fixtures/doc_preambles/effects-showcase-all.flow
+```flow expect-error preamble=tests/fixtures/doc_preambles/effects-showcase-all.flow
 capability NullLogger {
     effect Log,
 
@@ -383,7 +382,7 @@ The business function is unchanged and no global logging mode is mutated.
 Capability methods have no `self`, so stateful loops usually keep their state in ordinary locals
 and let the effect decide the policy.
 
-```flow
+```flow expect-error
 effect Counter {
     next(current: i32) -> i32,
 }
@@ -413,7 +412,7 @@ function count_up_to(start: i32, target: i32) -> i32 {
 
 The same loop can use either policy.
 
-```flow preamble=tests/fixtures/doc_preambles/effects-showcase-all.flow
+```flow expect-error preamble=tests/fixtures/doc_preambles/effects-showcase-all.flow
 handle Counter with UnitCounter {
     let result: i32 = count_up_to(0, 5)
 }
@@ -553,7 +552,7 @@ effect Notify {
 
 Its business function is written once:
 
-```flow preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow from=examples/effects/showcase.flow
+```flow expect-error preamble=tests/fixtures/doc_preambles/effects-showcase-effects.flow from=examples/effects/showcase.flow
 function place_order(sku: i32, qty: i32) -> i32 {
     Log.info("order received")
     let available: i32 = Inventory.stock_of(sku)
@@ -609,9 +608,8 @@ such as `FiberAsync` and `NetpollAsyncIO` pull in their runtime support only whe
 
 These are important when designing real programs around the feature.
 
-**Effect rows are opt-in.** `--strict-effects` enables compile-time coverage checking for lexical
-handlers and declared function rows. Without it, the language keeps soft defaults for unhandled
-operations.
+**Effect rows are checked by default.** Set `FLOWC_PERMISSIVE_EFFECTS=1` to opt into the legacy
+soft defaults for unhandled operations.
 
 **Capability methods have no `self`.** They are plain functions, so a handler cannot carry
 per-instance fields. It can still keep state: a module-level `let mut` is mutable from inside a

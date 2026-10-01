@@ -1,3 +1,4 @@
+# effects-mode: permissive
 # FiberAsync — cooperative fibers behind the Async effect
 # Run: ./flow run examples/concurrency/fiber_async.flow
 

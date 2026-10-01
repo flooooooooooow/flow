@@ -1,5 +1,3 @@
-run exit=0
-2 both
-cap=5
-20 other
-0
+reject
+Unhandled effect 'Counter.bump' in 'show': wrap in `handle Counter with ...`, declare `with Counter` on the function, or omit --strict-effects to allow zero defaults
+Unhandled effect 'Counter.bump' in 'main': wrap in `handle Counter with ...`, declare `with Counter` on the function, or omit --strict-effects to allow zero defaults

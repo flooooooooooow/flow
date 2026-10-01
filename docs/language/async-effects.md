@@ -14,7 +14,7 @@ Umbrella + measured Go comparison:
 
 ## Intent
 
-```flow
+```flow expect-error
 import "stdlib/async.flow"
 
 function fetch_user(user_id: i32) -> i32 {

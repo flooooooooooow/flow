@@ -1,3 +1,4 @@
+# effects-mode: permissive
 # Dependency Injection via Effects
 # Demonstrates how Flow's effect system enables clean DI without frameworks
 #

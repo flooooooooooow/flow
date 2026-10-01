@@ -1,3 +1,4 @@
+# effects-mode: permissive
 # Effect System Showcase: One Service, Many Worlds
 #
 # A small checkout service written ONCE, with zero knowledge of its

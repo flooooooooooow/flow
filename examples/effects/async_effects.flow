@@ -1,4 +1,4 @@
-# Async / Timeout / Retry as Policy Effects
+# Async / Timeout / Retry as Policy Effects  # effects-mode: permissive
 #
 # Prefer examples/effects/async_primitives.flow for the stdlib `Async` /
 # `AsyncIO` handle/with path -- this file focuses on Timeout and Retry,

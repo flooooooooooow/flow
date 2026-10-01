@@ -1,3 +1,4 @@
+# effects-mode: permissive
 # Flow-frame continuation: Cont.shift parks mid-function; resume restores locals.
 # Run: ./flow run examples/concurrency/cont_flow_resume.flow
 
