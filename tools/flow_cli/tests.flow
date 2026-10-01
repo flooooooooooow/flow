@@ -180,7 +180,7 @@ export function run_tests(args: ptr<ProcStrs>) -> i32 {
             }
             let mut file_mode: string = strict_mode
             let mut effect_env: string = ""
-            if s_contains(head, "effects-mode: permissive") {
+            if effects_permissive(program) {
                 effect_env = "FLOWC_PERMISSIVE_EFFECTS=1"
             }
             if s_eq(strict_mode, "--strict") and s_contains(head, "flow:lenient") {
@@ -264,6 +264,26 @@ export function strip_root(p: string) -> string {
 # Program lists for test-runtime and test-lang
 # ---------------------------------------------------------------------------
 
+# A test whose first three lines carry `# effects-mode: permissive` opts out
+# of strict effect handling (#1165): it is compiled with
+# FLOWC_PERMISSIVE_EFFECTS=1 and run with FLOW_PERMISSIVE_EFFECTS=1. test,
+# test-runtime and test-lang all read the pragma through this function.
+export function effects_permissive(program: string) -> bool {
+    return s_contains(head_lines(program, 3), "effects-mode: permissive")
+}
+
+# Set both effect variables for a permissive program, otherwise put back what
+# the caller's environment had.
+function effects_env(permissive: bool, had_c: bool, saved_c: string, had_r: bool, saved_r: string) {
+    if permissive {
+        env_set("FLOWC_PERMISSIVE_EFFECTS", "1")
+        env_set("FLOW_PERMISSIVE_EFFECTS", "1")
+    } else {
+        restore_env("FLOWC_PERMISSIVE_EFFECTS", had_c, saved_c)
+        restore_env("FLOW_PERMISSIVE_EFFECTS", had_r, saved_r)
+    }
+}
+
 # find DIR -name "*.flow" ! -path "*/wip/*", in find's order.
 function find_flow(dir: string) -> ptr<ProcStrs> {
     let f: ptr<ProcStrs> = sl_of3("find", dir, "-name")
@@ -330,6 +350,12 @@ export function run_runtime_tests(args: ptr<ProcStrs>) -> i32 {
     let mut passed: i32 = 0
     let mut failed: i32 = 0
     let mut failed_files: string = ""
+    # flowc_emit_to_c, flowc_link_c and the program inherit this process's
+    # environment, so the effect pragma is applied there per program.
+    let had_c: bool = env_isset("FLOWC_PERMISSIVE_EFFECTS")
+    let saved_c: string = env("FLOWC_PERMISSIVE_EFFECTS")
+    let had_r: bool = env_isset("FLOW_PERMISSIVE_EFFECTS")
+    let saved_r: string = env("FLOW_PERMISSIVE_EFFECTS")
     let mut k: i32 = 0
     while k < sl_len(programs) {
         let program: string = sl_get(programs, k)
@@ -338,6 +364,7 @@ export function run_runtime_tests(args: ptr<ProcStrs>) -> i32 {
             continue
         }
         total = total + 1
+        effects_env(effects_permissive(program), had_c, saved_c, had_r, saved_r)
         let rel_path: string = strip_root(program)
         let basename: string = path_stem(program, ".flow")
         let c_file: string = build_dir + "/" + basename + ".c"
@@ -401,6 +428,7 @@ export function run_runtime_tests(args: ptr<ProcStrs>) -> i32 {
             failed_files = failed_files + "\n  - " + rel_path + " (exit=" + s_itoa(exit_code) + ")"
         }
     }
+    effects_env(false, had_c, saved_c, had_r, saved_r)
     rm_rf(build_dir)
     outln("----------------------------------------")
     if total == 0 {
@@ -517,6 +545,10 @@ export function run_lang_tests(args: ptr<ProcStrs>) -> i32 {
         cmd_env(tc, "FLOWC_CHECKS", env_or("FLOWC_CHECKS", "1"))
         cmd_env(tc, "FLOWC_IN", abs_prog)
         cmd_env(tc, "FLOWC_OUT", c_file)
+        let permissive: bool = effects_permissive(program)
+        if permissive {
+            cmd_env(tc, "FLOWC_PERMISSIVE_EFFECTS", "1")
+        }
         let saved_lenient: string = env("FLOWC_LENIENT")
         let had_lenient: bool = env_isset("FLOWC_LENIENT")
         env_unset("FLOWC_LENIENT")
@@ -571,6 +603,9 @@ export function run_lang_tests(args: ptr<ProcStrs>) -> i32 {
         let stdout_file: string = build_dir + "/" + basename + ".stdout"
         let stderr_file: string = build_dir + "/" + basename + ".stderr"
         let rc: ptr<ProcCmd> = cmd(sl_of1(exe_file))
+        if permissive {
+            cmd_env(rc, "FLOW_PERMISSIVE_EFFECTS", "1")
+        }
         cmd_capture_out(rc)
         cmd_capture_err(rc)
         let rr: ptr<ProcResult> = run_result(rc)
