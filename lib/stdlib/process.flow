@@ -48,6 +48,7 @@ extern int flow_proc_c_access(const char *, int) __asm__(FLOW_PROC_SYM(access));
 extern char *flow_proc_c_getcwd(char *, unsigned long) __asm__(FLOW_PROC_SYM(getcwd));
 extern int flow_proc_c_chdir(const char *) __asm__(FLOW_PROC_SYM(chdir));
 extern int flow_proc_c_getpid(void) __asm__(FLOW_PROC_SYM(getpid));
+extern int flow_proc_c_kill(int, int) __asm__(FLOW_PROC_SYM(kill));
 struct flow_proc_pollfd { int fd; short events; short revents; };
 #if defined(__APPLE__)
 extern int flow_proc_c_poll(struct flow_proc_pollfd *, unsigned int, int) __asm__(FLOW_PROC_SYM(poll));
@@ -164,7 +165,7 @@ static int32_t flow_proc_wait(int32_t pid, int32_t nohang, int32_t *code) {
   else { *code = -1; }
   return 1;
 }
-static int32_t flow_proc_kill(int32_t pid, int32_t sig) { return (int32_t)kill((pid_t)pid, sig); }
+static int32_t flow_proc_kill(int32_t pid, int32_t sig) { return (int32_t)flow_proc_c_kill((int)pid, (int)sig); }
 static int32_t flow_proc_sigkill(void) { return (int32_t)SIGKILL; }
 static int32_t flow_proc_sigterm(void) { return (int32_t)SIGTERM; }
 static int32_t flow_proc_access_x(const char *path) { return flow_proc_c_access(path, 1) == 0 ? 1 : 0; }
