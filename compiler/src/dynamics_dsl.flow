@@ -3493,7 +3493,11 @@ function dy_matrix(b: ptr<ByteBuf>, c: ptr<DyC>, name: i32, which: string, rows:
 }
 
 # Emit `let <var>: <ty> = <tag>_arrays...` shared by GA and analyze.
-function dy_ga_arrays(b: ptr<ByteBuf>, tag: ptr<ByteBuf>, pop: i64) {
+function dy_ga_arrays(b: ptr<ByteBuf>, tag: ptr<ByteBuf>, pop: i64, generations: i64) {
+    let mut hist_n: i64 = generations
+    if hist_n < 1 {
+        hist_n = 1
+    }
     bb_puts(b, "    let ")
     bb_put_span(b, tag[0].p, 0, tag[0].len)
     bb_puts(b, "_k1: array<f64, ")
@@ -3523,8 +3527,10 @@ function dy_ga_arrays(b: ptr<ByteBuf>, tag: ptr<ByteBuf>, pop: i64) {
     bb_puts(b, "_bk2: array<f64, 1> = [0.0]\n")
     bb_puts(b, "    let ")
     bb_put_span(b, tag[0].p, 0, tag[0].len)
-    bb_puts(b, "_hist: array<f64, 32> = ")
-    dy_rep_array(b, 32, "0.0")
+    bb_puts(b, "_hist: array<f64, ")
+    bb_put_i64(b, hist_n)
+    bb_puts(b, "> = ")
+    dy_rep_array(b, hist_n, "0.0")
     dy_eol(b)
 }
 
@@ -3760,7 +3766,7 @@ function dy_compile(c: ptr<DyC>, g: ptr<Dp>, b: ptr<ByteBuf>) -> i32 {
         dg[ndg] = g[0].ga_k1[i]
         dg[ndg + 1] = g[0].ga_k2[i]
         ndg = ndg + 2
-        dy_ga_arrays(b, tag, pop)
+        dy_ga_arrays(b, tag, pop, g[0].ga_gen[i])
         bb_puts(b, "    let ")
         dy_tagp(b, tag)
         bb_puts(b, "_cfg: GAConfig = GAConfig { population: ")
@@ -3889,7 +3895,7 @@ function dy_compile(c: ptr<DyC>, g: ptr<Dp>, b: ptr<ByteBuf>) -> i32 {
         bb_puts(b, "        baseline_cost: 0.0, evolved_cost: 0.0, fitness_drop: 0.0,\n")
         bb_puts(b, "        convergence_gen: 0, stable_closed_loop: 0\n")
         bb_puts(b, "    }\n")
-        dy_ga_arrays(b, tag, pop4)
+        dy_ga_arrays(b, tag, pop4, gens4)
         let f4: i32 = dy_bufs(b, bi, 12)
         bb_puts(b, "    let ")
         dy_tagp(b, tag)
