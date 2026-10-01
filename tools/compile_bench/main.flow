@@ -1,0 +1,218 @@
+# Compile bench, written in Flow.
+#
+# #735 asks for a machine-readable view of compile-to-result cost: flowc
+# emit, the C toolchain, and the program run, for tiny/medium/large
+# programs. The in-compiler phase timers are a separate change; this tool
+# times the three stages as processes and reports the minimum of N
+# repetitions as JSON, plus source lines per emit second.
+#
+#   ./flow tool compile_bench                 three stock programs, 5 reps
+#   ./flow tool compile_bench --repeat 3 prog.flow ...
+#
+# The compiler under test is the bootstrap binary, rebuilt from the
+# checked-in bootstrap C when missing or older. Output is one JSON object
+# per program: {"program","loc","emit_ms","cc_ms","run_ms","total_ms",
+# "reps","loc_per_emit_s"}.
+#
+# Exit codes: 0 pass, 1 a stage failed, 2 bad arguments or setup.
+
+import std.process { ProcCmd, ProcResult, ProcStrs, proc_cmd, proc_arg, proc_env, proc_run, proc_argc, proc_argv, proc_getenv, proc_strs_new, proc_strs_push, proc_strs_len, proc_strs_get, PROC_NULL }
+import "tools/flow_cli/sys.flow"
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function snprintf(buf: ptr<i8>, size: i64, fmt: string, ...) -> i32
+}
+
+function i64_str(v: i64) -> string {
+    let b: ptr<i8> = malloc(32) as ptr<i8>
+    let _n: i32 = snprintf(b, 32, "%lld", v)
+    return b as string
+}
+
+function count_lines(path: string) -> i64 {
+    let text: string = read_text(path)
+    let mut lines: i64 = 0
+    let mut i: i32 = 0
+    let n: i32 = s_len(text)
+    while i < n {
+        if s_byte(text, i) == 10 {
+            lines = lines + 1
+        }
+        i = i + 1
+    }
+    return lines
+}
+
+# Split "NAME=VALUE" and set it on the command.
+function env_kv(c: ptr<ProcCmd>, kv: string) {
+    let mut e: i32 = 0
+    while e < s_len(kv) and s_byte(kv, e) != 61 {
+        e = e + 1
+    }
+    proc_env(c, s_slice(kv, 0, e), s_from(kv, e + 1))
+}
+
+# Run argv with env pairs applied; elapsed ms, or -1 on nonzero exit.
+function timed_ms(argv: ptr<ProcStrs>, env: ptr<ProcStrs>) -> i64 {
+    return timed_ms_rc(argv, env, true)
+}
+
+# `strict`=false measures the run even when the program exits nonzero: a
+# benchmark's main may return its result.
+function timed_ms_rc(argv: ptr<ProcStrs>, env: ptr<ProcStrs>, strict: bool) -> i64 {
+    let c: ptr<ProcCmd> = cmd(argv)
+    let mut i: i32 = 0
+    while i < proc_strs_len(env) {
+        env_kv(c, proc_strs_get(env, i))
+        i = i + 1
+    }
+    cmd_quiet(c)
+    let r: ptr<ProcResult> = proc_run(c)
+    if r.timed_out or s_len(r.error) > 0 or (strict and r.exit_code != 0) {
+        return 0 - 1
+    }
+    return r.elapsed_ms
+}
+
+function main() -> i32 {
+    let root: string = proc_getenv("FLOW_REPO_ROOT")
+    let work: string = root + "/build/compile_bench"
+    let mut repeat: i32 = 5
+    let progs: ptr<ProcStrs> = proc_strs_new()
+
+    let mut i: i32 = 1
+    while i < proc_argc() {
+        let a: string = proc_argv(i)
+        if s_eq(a, "--repeat") {
+            i = i + 1
+            if i >= proc_argc() {
+                errln("compile_bench: --repeat needs a count")
+                return 2
+            }
+            repeat = s_atoi(proc_argv(i), 0)
+            if repeat < 1 {
+                errln("compile_bench: --repeat must be >= 1")
+                return 2
+            }
+        } else {
+            proc_strs_push(progs, a)
+        }
+        i = i + 1
+    }
+    if proc_strs_len(progs) == 0 {
+        proc_strs_push(progs, "examples/basics/hello_world.flow")
+        proc_strs_push(progs, "examples/basics/fibonacci.flow")
+        proc_strs_push(progs, "compiler/src/main.flow")
+    }
+
+    if not mkdir_p(work) {
+        errln("compile_bench: could not create " + work)
+        return 2
+    }
+
+    # The Stage-A compiler under test: the checked-in bootstrap C, rebuilt
+    # when the binary is missing or older than it.
+    let boot: string = work + "/flowc_bootstrap"
+    let bootsrc: string = root + "/compiler/bootstrap/flowc_stage_a.c"
+    if not exists(boot) or newer(bootsrc, boot) {
+        let cb: ptr<ProcCmd> = proc_cmd("cc")
+        proc_arg(cb, "-O2")
+        proc_arg(cb, "-o")
+        proc_arg(cb, boot)
+        proc_arg(cb, bootsrc)
+        proc_arg(cb, "-lm")
+        let br: ptr<ProcResult> = proc_run(cb)
+        if br.exit_code != 0 {
+            errln("compile_bench: cc could not build flowc_bootstrap")
+            errln(br.stderr)
+            return 2
+        }
+    }
+
+    let out_c: string = work + "/p.c"
+    let out_bin: string = work + "/p"
+    let no_env: ptr<ProcStrs> = proc_strs_new()
+
+    let cc_a: ptr<ProcStrs> = proc_strs_new()
+    proc_strs_push(cc_a, "cc")
+    proc_strs_push(cc_a, "-O2")
+    proc_strs_push(cc_a, "-o")
+    proc_strs_push(cc_a, out_bin)
+    proc_strs_push(cc_a, out_c)
+    proc_strs_push(cc_a, "-lm")
+
+    let mut rc: i32 = 0
+    i = 0
+    while i < proc_strs_len(progs) {
+        let p: string = proc_strs_get(progs, i)
+        i = i + 1
+        let mut path: string = p
+        if s_byte(p, 0) != 47 {
+            path = root + "/" + p
+        }
+        if not is_file(path) {
+            errln("compile_bench: no such program " + path)
+            rc = 1
+            continue
+        }
+        let loc: i64 = count_lines(path)
+        let emit_env2: ptr<ProcStrs> = proc_strs_new()
+        proc_strs_push(emit_env2, "FLOWC_BUNDLE=1")
+        proc_strs_push(emit_env2, "FLOWC_DIR=" + root)
+        proc_strs_push(emit_env2, "FLOWC_OUT=" + out_c)
+        proc_strs_push(emit_env2, "FLOWC_IN=" + path)
+        let emit_a: ptr<ProcStrs> = argv_to_strs(boot)
+        let run_a: ptr<ProcStrs> = argv_to_strs(out_bin)
+
+        let mut emit_min: i64 = 0 - 1
+        let mut cc_min: i64 = 0 - 1
+        let mut run_min: i64 = 0 - 1
+        let mut r: i32 = 0
+        while r < repeat {
+            let e: i64 = timed_ms(emit_a, emit_env2)
+            if e >= 0 and (emit_min < 0 or e < emit_min) {
+                emit_min = e
+            }
+            let ct: i64 = timed_ms(cc_a, no_env)
+            if ct >= 0 and (cc_min < 0 or ct < cc_min) {
+                cc_min = ct
+            }
+            let rn: i64 = timed_ms_rc(run_a, no_env, false)
+            if rn >= 0 and (run_min < 0 or rn < run_min) {
+                run_min = rn
+            }
+            r = r + 1
+        }
+        if emit_min < 0 {
+            errln("compile_bench: flowc emit failed for " + path)
+            rc = 1
+        } elif cc_min < 0 {
+            errln("compile_bench: cc failed for " + path)
+            rc = 1
+        }
+        let mut total: i64 = emit_min + cc_min
+        if run_min >= 0 {
+            total = total + run_min
+        }
+        let mut line: string = "{\"program\": \"" + p + "\", \"loc\": " + i64_str(loc)
+        line = line + ", \"emit_ms\": " + i64_str(emit_min)
+        line = line + ", \"cc_ms\": " + i64_str(cc_min)
+        line = line + ", \"run_ms\": " + i64_str(run_min)
+        line = line + ", \"total_ms\": " + i64_str(total)
+        line = line + ", \"reps\": " + i64_str(repeat as i64)
+        if loc > 0 and emit_min > 0 {
+            line = line + ", \"loc_per_emit_s\": " + i64_str((loc * 1000) / emit_min)
+        }
+        line = line + "}"
+        outln(line)
+    }
+    return rc
+}
+
+function argv_to_strs(a: string) -> ptr<ProcStrs> {
+    let v: ptr<ProcStrs> = proc_strs_new()
+    proc_strs_push(v, a)
+    return v
+}
