@@ -38,6 +38,12 @@ export const AUX_MUL: i32 = 3
 export const AUX_DIV: i32 = 4
 export const AUX_MOD: i32 = 5
 export const AUX_NEG: i32 = 6
+export const AUX_EQ: i32 = 7
+export const AUX_NE: i32 = 8
+export const AUX_LT: i32 = 9
+export const AUX_LE: i32 = 10
+export const AUX_GT: i32 = 11
+export const AUX_GE: i32 = 12
 export const AUX_PARAM_BASE: i32 = 1000
 
 export const EFF_WRITES_MEMORY: i32 = 2
@@ -816,7 +822,7 @@ function fg_inline_copy_meta(src: ptr<FirG>, sop: i32, dst: ptr<FirG>, dop: i32)
 
 # Apply all safe trivial inline sites in one graph rebuild.  The callee body
 # is copied at the call site and its return value replaces the CALL result.
-export function fg_apply_inline(g: ptr<FirG>) -> FirInline {
+export function fg_apply_trivial_inline(g: ptr<FirG>) -> FirInline {
     let ng: ptr<FirG> = fg_new()
     let nf: i32 = fg_num_funcs(g)
     let mut f: i32 = 0
@@ -928,6 +934,293 @@ export function fg_apply_inline(g: ptr<FirG>) -> FirInline {
     fg_build_call_graph_csr(ng)
     free(vmap as ptr<void>)
     return FirInline { g: ng, inlined: inlined }
+}
+
+# Return the number of operand edges that read value `v`.
+function fg_value_uses(g: ptr<FirG>, v: i32) -> i32 {
+    let mut uses: i32 = 0
+    let mut op: i32 = 0
+    while op < fg_num_ops(g) {
+        let mut e: i32 = 0
+        while e < iv_get(&g.op_edge_count, op) {
+            if fg_operand(g, op, e) == v {
+                uses = uses + 1
+            }
+            e = e + 1
+        }
+        op = op + 1
+    }
+    return uses
+}
+
+function fg_multiblock_direct_return(g: ptr<FirG>, call: i32) -> i32 {
+    let caller_block: i32 = iv_get(&g.op_block, call)
+    let value: i32 = fg_result(g, call)
+    let mut found: i32 = 0
+    let mut op: i32 = call + 1
+    while op < fg_num_ops(g) {
+        if iv_get(&g.op_block, op) == caller_block {
+            let mut e: i32 = 0
+            while e < iv_get(&g.op_edge_count, op) {
+                if fg_operand(g, op, e) == value {
+                    if found != 0 or iv_get(&g.op_opcode, op) != OP_RET or e != 0 {
+                        return 0
+                    }
+                    found = 1
+                }
+                e = e + 1
+            }
+            if found != 0 and iv_get(&g.op_opcode, op) == OP_RET {
+                if op != call + 1 {
+                    return 0
+                }
+            }
+        }
+        op = op + 1
+    }
+    return found
+}
+
+function fg_multiblock_inlineable(g: ptr<FirG>, call: i32) -> i32 {
+    if iv_get(&g.op_opcode, call) != OP_CALL {
+        return 0
+    }
+    let cal: i32 = iv_get(&g.op_callee, call)
+    let caller: i32 = iv_get(&g.op_function, call)
+    if cal < 0 or cal >= fg_num_funcs(g) or cal == caller {
+        return 0
+    }
+    if iv_get(&g.func_is_extern, cal) != 0 or not fg_is_pure(g, cal) {
+        return 0
+    }
+    if iv_get(&g.func_block_count, cal) <= 1 {
+        return 0
+    }
+    let uses: i32 = fg_value_uses(g, fg_result(g, call))
+    if uses > 1 {
+        return 0
+    }
+    let caller_block: i32 = iv_get(&g.op_block, call)
+    let direct_return: i32 = fg_multiblock_direct_return(g, call)
+    if uses == 1 and direct_return == 0 {
+        return 0
+    }
+    let mut suffix_ret: i32 = 0
+    let mut op: i32 = call + 1
+    while op < fg_num_ops(g) {
+        if iv_get(&g.op_block, op) == caller_block and iv_get(&g.op_opcode, op) == OP_RET {
+            suffix_ret = 1
+        }
+        op = op + 1
+    }
+    if direct_return == 0 and (suffix_ret == 0 or iv_get(&g.op_edge_count, call) == 0) {
+        return 0
+    }
+    if direct_return == 1 and iv_get(&g.op_edge_count, call) == 0 {
+        return 0
+    }
+    let first: i32 = iv_get(&g.func_first_block, cal)
+    let last: i32 = first + iv_get(&g.func_block_count, cal)
+    op = 0
+    while op < fg_num_ops(g) {
+        let b: i32 = iv_get(&g.op_block, op)
+        if b >= first and b < last {
+            let code: i32 = iv_get(&g.op_opcode, op)
+            if code == OP_CALL or code == OP_STORE or code == OP_ALLOCA or code == OP_EFFECT {
+                return 0
+            }
+        }
+        op = op + 1
+    }
+    return 1
+}
+
+function fg_map_block(map: ptr<i32>, old: i32) -> i32 {
+    if old < 0 {
+        return -1
+    }
+    return map[old] - 1
+}
+
+function fg_copy_remapped_op(g: ptr<FirG>, ng: ptr<FirG>, op: i32, fid: i32, bid: i32, vmap: ptr<i32>, bmap: ptr<i32>) -> i32 {
+    let code: i32 = iv_get(&g.op_opcode, op)
+    let nres: i32 = fg_op_nresults(g, op)
+    let nop: i32 = fg_add_op(ng, code, fid, bid, iv_get(&g.op_operand_count, op), nres, iv_get(&g.op_callee, op))
+    fg_set_branch_targets(ng, nop, fg_map_block(bmap, fg_branch_target0(g, op)), fg_map_block(bmap, fg_branch_target1(g, op)))
+    fg_inline_copy_meta(g, op, ng, nop)
+    let mut e: i32 = 0
+    while e < iv_get(&g.op_edge_count, op) {
+        let mapped: i32 = vmap[fg_operand(g, op, e)] - 1
+        if mapped >= 0 {
+            fg_add_operand(ng, nop, mapped)
+        } else {
+            fg_add_operand(ng, nop, 0)
+        }
+        e = e + 1
+    }
+    return nop
+}
+
+function fg_apply_one_multiblock(g: ptr<FirG>, call: i32) -> FirInline {
+    let caller: i32 = iv_get(&g.op_function, call)
+    let cal: i32 = iv_get(&g.op_callee, call)
+    let caller_block: i32 = iv_get(&g.op_block, call)
+    let direct_return: i32 = fg_multiblock_direct_return(g, call)
+    let ng: ptr<FirG> = fg_new()
+    let nf: i32 = fg_num_funcs(g)
+    let mut f: i32 = 0
+    while f < nf {
+        let _fid: i32 = fg_add_function(ng, fg_func_name(g, f), iv_get(&g.func_is_extern, f) != 0, iv_get(&g.func_effect_bits, f))
+        f = f + 1
+    }
+    let mut t: i32 = 0
+    while t < g.type_name.len {
+        let _tid: i32 = fg_intern_type(ng, tl_get(&g.type_name, t))
+        t = t + 1
+    }
+    let nb: i32 = g.block_function.len
+    let bmap: ptr<i32> = calloc((nb + 1) as i64, 4) as ptr<i32>
+    let ncb: i32 = iv_get(&g.func_block_count, cal)
+    let clones: ptr<i32> = calloc((ncb + 1) as i64, 4) as ptr<i32>
+    let mut cont: i32 = -1
+    f = 0
+    while f < nf {
+        let first: i32 = iv_get(&g.func_first_block, f)
+        let count: i32 = iv_get(&g.func_block_count, f)
+        let mut j: i32 = 0
+        while j < count {
+            bmap[first + j] = fg_add_block(ng, f) + 1
+            j = j + 1
+        }
+        if f == caller {
+            cont = fg_add_block(ng, f)
+            j = 0
+            while j < ncb {
+                clones[j] = fg_add_block(ng, f) + 1
+                j = j + 1
+            }
+        }
+        f = f + 1
+    }
+    let vmap: ptr<i32> = calloc((g.num_values + 1) as i64, 4) as ptr<i32>
+    let mut op: i32 = 0
+    while op < fg_num_ops(g) {
+        let oldb: i32 = iv_get(&g.op_block, op)
+        if op == call {
+            let br: i32 = fg_add_op(ng, OP_BR, caller, bmap[oldb] - 1, 0, 0, -1)
+            fg_set_branch_targets(ng, br, clones[0] - 1, -1)
+        } elif direct_return == 1 and oldb == caller_block and op > call {
+            # The direct-return form replaces the caller RET with each cloned
+            # callee RET below. The candidate requires that RET to be next.
+            let _skip: i32 = 0
+        } else {
+            let mut outb: i32 = fg_map_block(bmap, oldb)
+            if oldb == caller_block and op > call {
+                outb = cont
+            }
+            let nop: i32 = fg_copy_remapped_op(g, ng, op, iv_get(&g.op_function, op), outb, vmap, bmap)
+            let nres: i32 = fg_op_nresults(g, op)
+            if nres > 0 {
+                vmap[fg_result(g, op)] = fg_result(ng, nop) + 1
+            }
+        }
+        op = op + 1
+    }
+    let local: ptr<i32> = calloc((g.num_values + 1) as i64, 4) as ptr<i32>
+    let first_cal: i32 = iv_get(&g.func_first_block, cal)
+    let mut param: i32 = 0
+    op = 0
+    while op < fg_num_ops(g) {
+        let b: i32 = iv_get(&g.op_block, op)
+        if b >= first_cal and b < first_cal + ncb {
+            let code: i32 = iv_get(&g.op_opcode, op)
+            if code == OP_PARAM {
+                local[fg_result(g, op)] = vmap[fg_operand(g, call, param)]
+                param = param + 1
+            } elif code == OP_LOAD and iv_get(&g.op_aux, op) >= AUX_PARAM_BASE {
+                let pi: i32 = iv_get(&g.op_aux, op) - AUX_PARAM_BASE
+                if pi >= 0 and pi < iv_get(&g.op_edge_count, call) {
+                    local[fg_result(g, op)] = vmap[fg_operand(g, call, pi)]
+                }
+            }
+        }
+        op = op + 1
+    }
+    op = 0
+    while op < fg_num_ops(g) {
+        let b: i32 = iv_get(&g.op_block, op)
+        if b >= first_cal and b < first_cal + ncb {
+            let code: i32 = iv_get(&g.op_opcode, op)
+            let clone_b: i32 = clones[b - first_cal] - 1
+            if code == OP_PARAM or (code == OP_LOAD and iv_get(&g.op_aux, op) >= AUX_PARAM_BASE) {
+                # Parameter values were mapped in the prepass.
+            } elif code == OP_RET {
+                if direct_return == 1 {
+                    let rv: i32 = local[fg_operand(g, op, 0)] - 1
+                    let ret: i32 = fg_add_op(ng, OP_RET, caller, clone_b, 1, 0, -1)
+                    if rv >= 0 {
+                        fg_add_operand(ng, ret, rv)
+                    }
+                } else {
+                    let br: i32 = fg_add_op(ng, OP_BR, caller, clone_b, 0, 0, -1)
+                    fg_set_branch_targets(ng, br, cont, -1)
+                }
+            } else {
+                let nop: i32 = fg_add_op(ng, code, caller, clone_b, iv_get(&g.op_operand_count, op), fg_op_nresults(g, op), iv_get(&g.op_callee, op))
+                let old_t0: i32 = fg_branch_target0(g, op)
+                let old_t1: i32 = fg_branch_target1(g, op)
+                let mut new_t0: i32 = -1
+                let mut new_t1: i32 = -1
+                if old_t0 >= 0 { new_t0 = clones[old_t0 - first_cal] - 1 }
+                if old_t1 >= 0 { new_t1 = clones[old_t1 - first_cal] - 1 }
+                fg_set_branch_targets(ng, nop, new_t0, new_t1)
+                fg_inline_copy_meta(g, op, ng, nop)
+                let mut e: i32 = 0
+                while e < iv_get(&g.op_edge_count, op) {
+                    let mapped: i32 = local[fg_operand(g, op, e)] - 1
+                    fg_add_operand(ng, nop, mapped)
+                    e = e + 1
+                }
+                if fg_op_nresults(g, op) > 0 {
+                    local[fg_result(g, op)] = fg_result(ng, nop) + 1
+                }
+            }
+        }
+        op = op + 1
+    }
+    fg_build_call_graph_csr(ng)
+    free(local as ptr<void>)
+    free(vmap as ptr<void>)
+    free(clones as ptr<void>)
+    free(bmap as ptr<void>)
+    return FirInline { g: ng, inlined: 1 }
+}
+
+function fg_apply_multiblock_inline(g: ptr<FirG>) -> FirInline {
+    let mut cur: ptr<FirG> = g
+    let mut total: i32 = 0
+    let mut again: bool = true
+    while again {
+        again = false
+        let mut op: i32 = 0
+        while op < fg_num_ops(cur) {
+            if fg_multiblock_inlineable(cur, op) == 1 {
+                let one: FirInline = fg_apply_one_multiblock(cur, op)
+                cur = one.g
+                total = total + one.inlined
+                again = true
+                break
+            }
+            op = op + 1
+        }
+    }
+    return FirInline { g: cur, inlined: total }
+}
+
+export function fg_apply_inline(g: ptr<FirG>) -> FirInline {
+    let multi: FirInline = fg_apply_multiblock_inline(g)
+    let trivial: FirInline = fg_apply_trivial_inline(multi.g)
+    return FirInline { g: trivial.g, inlined: multi.inlined + trivial.inlined }
 }
 
 # Rebuild `g` keeping only the functions marked in `keep` (1/0 per function
@@ -1148,7 +1441,7 @@ export function fg_apply_const_fold(g: ptr<FirG>) -> i32 {
         let ne: i32 = iv_get(&g.op_edge_count, op)
         let mut res: i64 = 0
         let mut ok: bool = false
-        if code == OP_BINOP and ne == 2 and aux >= AUX_ADD and aux <= AUX_MOD {
+        if code == OP_BINOP and ne == 2 and aux >= AUX_ADD and aux <= AUX_GE {
             let o1: i32 = v2op[fg_operand(g, op, 0)] - 1
             let o2: i32 = v2op[fg_operand(g, op, 1)] - 1
             if o1 >= 0 and o2 >= 0 and iv_get(&g.op_opcode, o1) == OP_CONST and iv_get(&g.op_opcode, o2) == OP_CONST {
@@ -1170,12 +1463,24 @@ export function fg_apply_const_fold(g: ptr<FirG>) -> i32 {
                         } else {
                             res = a / b
                         }
-                    } else {
+                    } elif aux == AUX_MOD {
                         if b == 0 {
                             ok = false
                         } else {
                             res = a % b
                         }
+                    } elif aux == AUX_EQ {
+                        res = (a == b) as i64
+                    } elif aux == AUX_NE {
+                        res = (a != b) as i64
+                    } elif aux == AUX_LT {
+                        res = (a < b) as i64
+                    } elif aux == AUX_LE {
+                        res = (a <= b) as i64
+                    } elif aux == AUX_GT {
+                        res = (a > b) as i64
+                    } else {
+                        res = (a >= b) as i64
                     }
                 }
             }

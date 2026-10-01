@@ -1,4 +1,4 @@
-FIR-G: funcs=2 blocks=2 ops=23 values=19 operands=18 types=2
+FIR-G: funcs=2 blocks=2 ops=28 values=23 operands=22 types=3
 call ops: 1
 reachable: compute, main
 dead: (none)

@@ -1338,6 +1338,12 @@ function aux_code(tok: i32) -> i32 {
     if tok == TOK_STAR { return AUX_MUL }
     if tok == TOK_SLASH { return AUX_DIV }
     if tok == TOK_PERCENT { return AUX_MOD }
+    if tok == TOK_EQEQ { return AUX_EQ }
+    if tok == TOK_NE { return AUX_NE }
+    if tok == TOK_LT { return AUX_LT }
+    if tok == TOK_LE { return AUX_LE }
+    if tok == TOK_GT { return AUX_GT }
+    if tok == TOK_GE { return AUX_GE }
     return 0
 }
 
