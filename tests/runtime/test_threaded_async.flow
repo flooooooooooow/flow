@@ -1,3 +1,4 @@
+# effects-mode: permissive
 # Runtime test: ThreadedAsync spawn/join on real threads
 import "stdlib/async.flow"
 

@@ -179,13 +179,21 @@ export function run_tests(args: ptr<ProcStrs>) -> i32 {
                 continue
             }
             let mut file_mode: string = strict_mode
+            let mut effect_env: string = ""
+            if s_contains(head, "effects-mode: permissive") {
+                effect_env = "FLOWC_PERMISSIVE_EFFECTS=1"
+            }
             if s_eq(strict_mode, "--strict") and s_contains(head, "flow:lenient") {
                 file_mode = "--lenient"
                 warning("~ " + rel_path + " (marked flow:lenient)")
             }
             # flowc_emit FILE_MODE PROGRAM C_FILE, stdout and stderr together.
             sink_push(SINK_BUF, SINK_SAME)
-            let call: ptr<EmitCall> = flowc_emit_call(root(), sl_of3(file_mode, program, c_file), sl_of1("FLOWC_BIN=" + tier_flowc))
+            let envs: ptr<ProcStrs> = sl_of1("FLOWC_BIN=" + tier_flowc)
+            if s_len(effect_env) > 0 {
+                sl_push(envs, effect_env)
+            }
+            let call: ptr<EmitCall> = flowc_emit_call(root(), sl_of3(file_mode, program, c_file), envs)
             let mut transpile_output: string = s_chomp_all(sink_pop())
             let mut transpile_rc: i32 = call.rc
             if call.rc == 0 {

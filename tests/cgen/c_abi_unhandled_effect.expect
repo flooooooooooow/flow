@@ -1,6 +1,5 @@
 # Ported from tests/unit/test_c_generator_abi.py (strict effects). The
-# dispatcher falls through to _flow_unhandled_effect, which aborts only when
-# FLOW_STRICT_EFFECTS=1 at run time. By default the op returns zero.
+# dispatcher falls through to _flow_unhandled_effect, which aborts by default.
 + _flow_unhandled_effect("Log", "write");
 + abort();
-exit 0
+exit 134

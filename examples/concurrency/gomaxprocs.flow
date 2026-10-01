@@ -1,3 +1,4 @@
+# effects-mode: permissive
 # FLOW_MAXPROCS / async_set_maxprocs — Go GOMAXPROCS analogue
 # Run: ./flow run examples/concurrency/gomaxprocs.flow
 

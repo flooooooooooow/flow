@@ -1,3 +1,4 @@
+# effects-mode: permissive
 import "stdlib/async.flow"
 
 function main() -> i32 {

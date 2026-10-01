@@ -1,3 +1,4 @@
+# effects-mode: permissive
 # TcpEffect via BlockingTcp — one loopback accept/send/recv round-trip.
 # Server listens; client connects and sends "ping"; server echoes.
 #

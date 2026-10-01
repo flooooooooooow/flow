@@ -1,3 +1,4 @@
+# effects-mode: permissive
 # Async primitives (effects-based) — SimulatedAsync / BlockingAsyncIO / FiberAsync
 #
 # Uses stdlib `Async` / `AsyncIO` with `handle ... with ...` (not the older

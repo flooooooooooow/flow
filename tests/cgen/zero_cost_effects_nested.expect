@@ -16,7 +16,7 @@
 - Log_info("a")
 - Meter_tick(1)
 - .Log = Log
-exit 0
+exit 134
 stdout [loud] a
 stdout [soft] b
 stdout [tick] 1
