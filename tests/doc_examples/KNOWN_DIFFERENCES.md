@@ -10,7 +10,7 @@ below. Every exit status is the same as Python's.
 
 The Python checker parsed and type-checked each block with the Python front
 end, then compiled it with flowc. The Flow checker parses with the flowc
-parser and compiles with `compiler/scripts/flowc_emit.sh --strict`, whose
+parser and compiles with `./flow tool compiler/scripts/flowc_emit.flow --strict`, whose
 type check is the port of the Python one (compiler/src/sem_check.flow). A
 type error stops the block at stage `types` with the checker's first
 message, as it did in Python.

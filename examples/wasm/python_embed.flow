@@ -1,7 +1,7 @@
 # Flow calling Python, in a browser.
 #
 #   cd examples/wasm && ../../flow run python_embed.flow   # native, libpython
-#   wasm/crossings.sh python                               # browser, Pyodide
+#   ./flow tool wasm_crossings python                      # browser, Pyodide
 #
 # Nothing below is browser-aware. It is the ordinary embedding surface from
 # lib/stdlib/python_embed.flow: init, extend sys.path, import a module, call

@@ -1,11 +1,13 @@
 # Keep the root Makefile a thin wrapper around the public ./flow CLI (#974).
 #
-# Run through scripts/check_makefile_contract.sh from the repository root.
+# Run it as `./flow tool makefile_contract` from anywhere in the
+# repository; it works from the repository root.
 # Every build, run and test target must delegate to $(FLOW); the Makefile
 # must not grow its own compiler pipeline, a hard-coded LLVM path, or a
 # second hand-written test list.
 
 import .text { ft_outln, ft_errln, ft_contains, ft_read_file }
+import .repo { rp_enter_root }
 
 const MAKEFILE: string = "Makefile"
 
@@ -26,6 +28,10 @@ function forbid(text: string, needle: string, why: string) -> i32 {
 }
 
 function main(argc: i32, argv: ptr<string>) -> i32 {
+    if rp_enter_root() == false {
+        ft_errln("makefile-contract: cannot enter the repository root")
+        return 1
+    }
     let text: string = ft_read_file(MAKEFILE)
     if text as ptr<u8> == null {
         ft_errln("makefile-contract: cannot read " + MAKEFILE)

@@ -2,7 +2,7 @@
 #
 # Each case is tests/cgen/<name>.flow plus tests/cgen/<name>.expect (this
 # runner, run.flow, is not a case). The program is compiled to C with
-# compiler/scripts/flowc_emit.sh and the expectations are checked line by
+# compiler/scripts/flowc_emit.flow and the expectations are checked line by
 # line:
 #
 #   + TEXT     the emitted C contains TEXT (fixed string)
@@ -11,7 +11,7 @@
 #   exit N     the C builds with cc and the program exits with N
 #   stdout T   ... and its stdout contains the line T (needs an exit line)
 #   reject T   flowc refuses the program and its output contains T
-#   flags F    pass F to flowc_emit.sh (--strict, --no-checks)
+#   flags F    pass F to flowc_emit (--strict, --no-checks)
 #   env K=V    set K=V for flowc (FLOWC_DEBUG_INFO=1)
 #   explain F  the `flow explain` report (FLOWC_EXPLAIN=1, on stderr)
 #              equals tests/cgen/F byte for byte
@@ -28,9 +28,9 @@ import "scripts/tools/lib/testrun.flow"
 import std.process { ProcCmd, ProcStrs, proc_arg }
 import std.regex { Regex }
 
-# flowc_emit.sh with the case's flags and K=V environment.
+# flowc_emit with the case's flags and K=V environment.
 function emit_cmd(flags: ptr<ProcStrs>, envs: ptr<ProcStrs>, src: string, c_out: string) -> ptr<ProcCmd> {
-    let argv: ptr<ProcStrs> = sl_of1("compiler/scripts/flowc_emit.sh")
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "compiler/scripts/flowc_emit.flow")
     sl_extend(argv, flags)
     sl_push2(argv, src, c_out)
     let c: ptr<ProcCmd> = cmd(argv)

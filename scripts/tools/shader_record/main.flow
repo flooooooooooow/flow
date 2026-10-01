@@ -1,14 +1,14 @@
 # Record FSL shaders to GIFs through the real Metal backend.
 #
-# Run through scripts/record_shader_gallery.sh from the repository root:
+# Run it as `./flow tool shader_record`:
 #
-#   record_shader_gallery.sh --group photoreal
-#   record_shader_gallery.sh --name photoreal_gold
-#   record_shader_gallery.sh --group classic --frames 30 --fps 15
+#   flow tool shader_record --group photoreal
+#   flow tool shader_record --name photoreal_gold
+#   flow tool shader_record --group classic --frames 30 --fps 15
 #
 # The pipeline is .flow -> FSL -> MSL (flowc FLOWC_SHADER=metal) -> Metal GPU
 # -> BGRA texture -> PPM frames (runtime/shader_record_metal.m) -> GIF. The
-# GIF encoder is scripts/frames_to_gif.sh (median cut, Floyd-Steinberg, in
+# GIF encoder is `flow tool frames_to_gif` (median cut, Floyd-Steinberg, in
 # Flow). Everything else here is the logic of the Python script this
 # replaced, with the same options, messages and exit codes.
 #
@@ -24,8 +24,8 @@ extern {
     function strcmp(a: string, b: string) -> i32
 }
 
-const PROG: string = "record_shader_gallery.sh"
-const USAGE: string = "usage: record_shader_gallery.sh [-h] [--group {photoreal,classic,all}] [--name NAME] [--out OUT] [--build-dir BUILD_DIR] [--width WIDTH] [--height HEIGHT] [--frames FRAMES] [--fps FPS] [--gif-width GIF_WIDTH]"
+const PROG: string = "flow tool shader_record"
+const USAGE: string = "usage: flow tool shader_record [-h] [--group {photoreal,classic,all}] [--name NAME] [--out OUT] [--build-dir BUILD_DIR] [--width WIDTH] [--height HEIGHT] [--frames FRAMES] [--fps FPS] [--gif-width GIF_WIDTH]"
 
 function root() -> string {
     let r: string = getenv("FLOW_REPO_ROOT")
@@ -148,7 +148,7 @@ function sorted_copy(l: ptr<StrList>) -> ptr<StrList> {
 }
 
 function flowc() -> string {
-    let f: string = pr_chomp(pr_capture("bash " + pr_quote(path_in("compiler/scripts/ensure_flowc.sh")) + " --cc-only 2>/dev/null"))
+    let f: string = pr_chomp(pr_capture(pr_quote(path_in("flow")) + " tool " + pr_quote(path_in("compiler/scripts/ensure_flowc.flow")) + " --cc-only 2>/dev/null"))
     if ft_starts(f, "/") {
         return f
     }
@@ -317,7 +317,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         run_checked("cd " + pr_quote(root()) + " && " + pr_quote(recorder) + " " + pr_quote(ft_list_get(sel_metal, idx)) + " " + pr_quote(entry) + " " + pr_quote(frame_dir) + " " + ft_itoa(width) + " " + ft_itoa(height) + " " + ft_itoa(frames) + " " + ft_itoa(fps), recorder)
         let _m3: bool = pr_mkdir_p(out_abs)
         let gif: string = out_abs + "/" + pn + ".gif"
-        run_checked("cd " + pr_quote(root()) + " && " + pr_quote(path_in("scripts/frames_to_gif.sh")) + " " + pr_quote(frame_dir) + " " + pr_quote(gif) + " --fps " + ft_itoa(fps) + " --stride 1 --width " + ft_itoa(gif_width), "frames_to_gif.sh")
+        run_checked("cd " + pr_quote(root()) + " && " + pr_quote(path_in("flow")) + " tool frames_to_gif " + pr_quote(frame_dir) + " " + pr_quote(gif) + " --fps " + ft_itoa(fps) + " --stride 1 --width " + ft_itoa(gif_width), "flow tool frames_to_gif")
         idx = idx + 1
     }
     ft_outln("Recorded " + ft_itoa(n) + " GIF(s) into " + out_arg)

@@ -1,19 +1,24 @@
 # Browser checks for the built wiki, spoken over the Chrome DevTools
 # Protocol, plus a static server to preview it.
 #
-#   scripts/wiki_contrast.sh     WCAG AA contrast audit of the rendered wiki
-#   scripts/wiki_verify.sh       smoke test of the wiki shell
-#   scripts/wiki_serve.sh [DIR] [PORT]
-#                                serve DIR (build/wiki) on PORT (8899)
+#   flow tool wiki_browser contrast    WCAG AA contrast audit of the rendered wiki
+#   flow tool wiki_browser verify      smoke test of the wiki shell
+#   flow tool wiki_browser serve [DIR] [PORT]
+#                                      serve DIR (build/wiki) on PORT (8899)
 #
-# The shims pass the mode as the first argument: `contrast`, `verify` or
-# `serve`. The checks expect the wiki at http://localhost:8899/ (override
-# with FLOW_WIKI_BASE) and launch headless Chrome themselves (set CHROME to
-# pick the executable). The contrast audit script is contrast_audit.js next
-# to this file.
+# The checks expect the wiki at http://localhost:8899/ (override with
+# FLOW_WIKI_BASE) and launch headless Chrome themselves (set CHROME to pick
+# the executable). The contrast audit script is contrast_audit.js next to
+# this file.
+#
+# A check runs as a child of this program, which watches it: the child
+# writes the Chrome PID and profile directory it started to
+# FLOW_WIKI_BROWSER_STATE and clears the file after a clean shutdown. If the
+# check dies first, or is interrupted, the parent kills that one PID and
+# removes that one directory.
 
-import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_read_file, ft_rjust, ft_slice, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
-import .proc { pr_cwd }
+import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_read_file, ft_write_file, ft_contains, ft_rjust, ft_slice, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
+import .proc { pr_cwd, pr_run, pr_quote }
 import .json { json_parse, json_error, json_get, json_kind, json_str, json_first, json_next, json_kind_string, json_kind_true, json_kind_number, Json }
 import .bench { bn_fixed, bn_parse_float }
 import .net
@@ -26,6 +31,34 @@ extern {
     function getenv(name: string) -> string
     function pow(x: f64, y: f64) -> f64
     function atoi(s: string) -> i32
+    function kill(pid: i32, sig: i32) -> i32
+    function unlink(path: string) -> i32
+    function fork() -> i32
+    function waitpid(pid: i32, status: ptr<i32>, options: i32) -> i32
+    function _exit(code: i32) -> void
+    function getpid() -> i32
+    function setenv(name: string, value: string, overwrite: i32) -> i32
+    function usleep(us: i32) -> i32
+}
+
+# SIGINT and SIGTERM in the supervising parent: noted, so it can clean up
+# after the check before it exits. On macOS <signal.h> must not follow the
+# `kill` extern above (its asm label clashes); <sys/signal.h>, which the
+# generated C already includes there, declares signal().
+@cEmbed("#if !defined(__APPLE__)
+#include <signal.h>
+#else
+#include <sys/signal.h>
+#endif
+static volatile int flow_wb_sig = 0;
+static void flow_wb_on_sig(int s) { flow_wb_sig = s; }
+static void flow_wb_watch(void) { signal(SIGINT, flow_wb_on_sig); signal(SIGTERM, flow_wb_on_sig); }
+static int32_t flow_wb_got(void) { return (int32_t)flow_wb_sig; }
+")
+
+extern {
+    function flow_wb_watch() -> void
+    function flow_wb_got() -> i32
 }
 
 function root() -> string {
@@ -548,8 +581,128 @@ function run_verify() -> i32 {
 # ---------------------------------------------------------------------------
 
 function usage() -> i32 {
-    ft_errln("usage: wiki_browser contrast | verify | serve [DIR] [PORT]")
+    ft_errln("usage: flow tool wiki_browser contrast | verify | serve [DIR] [PORT]")
     return 2
+}
+
+# Kill the Chrome a dead check left behind and remove its profile.
+function cleanup_state(state: string) -> void {
+    let text: string = ft_read_file(state)
+    if text as ptr<u8> != null and ft_len(text) > 0 {
+        let lines: ptr<StrList> = split_nl(text)
+        let pid_s: string = list_at(lines, 0)
+        let dir: string = list_at(lines, 1)
+        if all_digits(pid_s) {
+            let pid: i32 = atoi(pid_s)
+            if pid > 0 and kill(pid, 0) == 0 {
+                let _t: i32 = kill(pid, 15)
+                let _z: i32 = usleep(1000000)
+                if kill(pid, 0) == 0 {
+                    let _k: i32 = kill(pid, 9)
+                }
+            }
+        }
+        if ft_contains(dir, "/flow-wiki-browser.") {
+            let _r: i32 = pr_run("rm -rf " + pr_quote(dir))
+        }
+    }
+    let _u: i32 = unlink(state)
+}
+
+function list_at(l: ptr<StrList>, i: i32) -> string {
+    if i < ft_list_len(l) {
+        return ft_list_get(l, i)
+    }
+    return ""
+}
+
+function split_nl(text: string) -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    let p: ptr<u8> = text as ptr<u8>
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        if p[i] == 10 {
+            ft_list_push(out, ft_slice(text, start, i))
+            start = i + 1
+        }
+        i = i + 1
+    }
+    if i > start {
+        ft_list_push(out, ft_slice(text, start, i))
+    }
+    return out
+}
+
+function all_digits(s: string) -> bool {
+    let p: ptr<u8> = s as ptr<u8>
+    if ft_len(s) == 0 {
+        return false
+    }
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        if p[i] < 48 or p[i] > 57 {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+# Run check `mode` in a forked child and clean up after it, whatever happens
+# to it. Interrupted, the parent exits 130 (SIGINT) or 143 (SIGTERM) after
+# the cleanup, as the shell trap it replaces did.
+function supervise(mode: string) -> i32 {
+    let mut tmp: string = getenv("TMPDIR")
+    if tmp as ptr<u8> == null or ft_len(tmp) == 0 {
+        tmp = "/tmp"
+    }
+    if ft_len(tmp) > 1 and ft_eq(ft_slice(tmp, ft_len(tmp) - 1, ft_len(tmp)), "/") {
+        tmp = ft_slice(tmp, 0, ft_len(tmp) - 1)
+    }
+    let state: string = tmp + "/flow-wiki-browser-state." + ft_itoa(getpid())
+    let _w: bool = ft_write_file(state, "")
+    let pid: i32 = fork()
+    if pid == 0 {
+        let _s: i32 = setenv("FLOW_WIKI_BROWSER_STATE", state, 1)
+        let mut rc: i32 = 0
+        if ft_eq(mode, "contrast") {
+            rc = run_contrast()
+        } else {
+            rc = run_verify()
+        }
+        _exit(rc)
+    }
+    if pid < 0 {
+        ft_errln("wiki_browser: fork failed")
+        let _u: i32 = unlink(state)
+        return 1
+    }
+    flow_wb_watch()
+    let st: ptr<i32> = malloc(4) as ptr<i32>
+    st[0] = 0
+    while waitpid(pid, st, 0) < 0 {
+        if kill(pid, 0) != 0 {
+            break
+        }
+    }
+    cleanup_state(state)
+    if flow_wb_got() == 2 {
+        return 130
+    }
+    if flow_wb_got() == 15 {
+        return 143
+    }
+    let s: i32 = st[0]
+    if (s & 127) != 0 {
+        return 128 + (s & 127)
+    }
+    return (s >> 8) & 255
+}
+
+function supervised() -> bool {
+    let s: string = getenv("FLOW_WIKI_BROWSER_STATE")
+    return s as ptr<u8> != null and ft_len(s) > 0
 }
 
 function main(argc: i32, argv: ptr<string>) -> i32 {
@@ -557,6 +710,9 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         return usage()
     }
     let mode: string = argv[1]
+    if (ft_eq(mode, "contrast") or ft_eq(mode, "verify")) and argc == 2 and supervised() == false {
+        return supervise(mode)
+    }
     if ft_eq(mode, "contrast") and argc == 2 {
         return run_contrast()
     }

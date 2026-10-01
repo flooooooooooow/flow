@@ -140,7 +140,7 @@ python3 -m flow.transpiler examples/new_feature.flow
 #### 2. Generation Tests
 Verify output code quality:
 ```bash
-compiler/scripts/flowc_emit.sh examples/new_feature.flow /tmp/test.c
+./flow tool compiler/scripts/flowc_emit.flow examples/new_feature.flow /tmp/test.c
 ```
 
 #### 3. Runtime Tests
@@ -279,10 +279,10 @@ middle-end specialization, C ABI contracts, backend parity, executable pins.
 | Language programs | `tests/lang/*.flow` | `./flow test-lang` |
 | Stable conformance | `tests/conformance/` | `./flow tool tests/conformance/run.flow` |
 | MLIR text and runs | `compiler/fixtures/mlir/` | `compiler/scripts/parity_mlir.sh` |
-| MLIR commands | `tests/mlir_commands/` | `tests/mlir_commands/run.sh` |
+| MLIR commands | `tests/mlir_commands/` | `./flow tool tests/mlir_commands/run.flow` |
 | Runtime exit-code | `tests/runtime/test_*_ops.flow` etc. | `./flow test-runtime` |
 | LSP JSON-RPC | `tests/tools/lsp/sessions/*.lsp` | `tests/tools/lsp/run.flow` (native server, no Python) |
-| Fuzz | `tests/fuzz/` | `tests/fuzz/run.sh` |
+| Fuzz | `tests/fuzz/` | `./flow tool tests/fuzz/run.flow` |
 | Tier-2 transpile | git-tracked `tests/**/*.flow` | `./flow test --tier2` |
 
 Pytest only collects **git-tracked** files under `tests/` unless

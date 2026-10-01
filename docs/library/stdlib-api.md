@@ -1,6 +1,6 @@
 # Standard Library API (generated)
 
-> Auto-generated from `lib/stdlib/` on 2026-09-30 by `scripts/gen_stdlib_docs.sh`. Per-function docs come from `#` comments immediately above each `export function`.
+> Auto-generated from `lib/stdlib/` on 2026-10-01 by `./flow tool gen_stdlib_docs`. Per-function docs come from `#` comments immediately above each `export function`.
 
 **115** modules scanned.
 
@@ -1964,7 +1964,7 @@ Minimal Neural Network utilities (stdlib)  Purpose: reusable training/prediction
 
 ### `nn_autogen.flow`
 
-Auto-generated backprop for XOR loss (2x2x1) via scripts/tools/grad/grad.sh flow  This file demonstrates "no hand-written backprop": gradients are generated from
+Auto-generated backprop for XOR loss (2x2x1) via ./flow tool grad flow  This file demonstrates "no hand-written backprop": gradients are generated from
 
 **Functions:**
 

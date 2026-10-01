@@ -23,12 +23,12 @@ in progress and are not counted as landed.
 | Claim | Reality |
 |---|---|
 | Default `./flow compile` / `./flow run` | **flowc**, the only C compiler. `FLOW_HOST=python` is retired and stops with an error |
-| `./flow run` with no Python installed | **Yes** on the flowc host (#960). The package sync decision is `scripts/tools/pkg_sync/main.flow`; a project that must fetch a dependency runs the Flow package manager (`compiler/src/pkg_main.flow`). `scripts/check_run_without_python.sh` checks it |
+| `./flow run` with no Python installed | **Yes** on the flowc host (#960). The package sync decision is `scripts/tools/pkg_sync/main.flow`; a project that must fetch a dependency runs the Flow package manager (`compiler/src/pkg_main.flow`). `./flow tool scripts/check_run_without_python.flow` checks it |
 | Stage-A lexer / parser / cgen / typecheck / resolve | Landed in `compiler/src/*.flow`; fixtures + module dogfood |
 | Emit → cc → run for subset fixtures | Works (sum/fib/structs/ptr/bundle/…) |
 | Self-emit fixed-point (`stage_a_self_emit*.sh`) | Works for the Stage-A frontend object graph |
 | Full language on the C path without Python | **Yes**. On the corpus flowc matches the retired Python backend on 1037 of 1053 programs with `main()` and builds 6 it could not ([`report.txt`](../../compiler/corpus_parity/report.txt)) |
-| MLIR backend without Python | **Yes**. flowc's MLIR text equals the retired Python generator's on all 1270 programs it lowered ([`parity_mlir.sh`](../../compiler/scripts/parity_mlir.sh)); `flow mlir`, `mlir-run`, `jit`, `ml`, `test-mlir`, `--mlir-gpu` and `--emit-spirv` pass `tests/mlir_commands/run.sh` with Python stubbed |
+| MLIR backend without Python | **Yes**. flowc's MLIR text equals the retired Python generator's on all 1270 programs it lowered ([`parity_mlir.sh`](../../compiler/scripts/parity_mlir.sh)); `flow mlir`, `mlir-run`, `jit`, `ml`, `test-mlir`, `--mlir-gpu` and `--emit-spirv` pass `./flow tool tests/mlir_commands/run.flow` with Python stubbed |
 | CI user-compile without `pip install` | **Yes**: `flowc-compile` job (Phase D slice 1) |
 | Flow-in-WASM compiler | **No**. See [wasm.md](../language/wasm.md) |
 
@@ -79,27 +79,27 @@ need no Python. The Python original was deleted in the same pull request.
 
 | Was (deleted) | Now | PR |
 |---|---|---|
-| `scripts/check_doc_links.py` | [`scripts/check_doc_links.sh`](../../scripts/check_doc_links.sh) → `scripts/tools/doc_links` | #959 |
-| `scripts/check_doc_coverage.py` | [`scripts/check_doc_coverage.sh`](../../scripts/check_doc_coverage.sh) → `scripts/tools/doc_coverage` | #959 |
-| `scripts/check_wiki_links.py` | [`scripts/check_wiki_links.sh`](../../scripts/check_wiki_links.sh) → `scripts/tools/wiki_links` | #959 |
-| `scripts/check_stability_manifest.py` | [`scripts/check_stability_manifest.sh`](../../scripts/check_stability_manifest.sh) → `scripts/tools/stability_manifest` | #959 |
+| `scripts/check_doc_links.py` | [`./flow tool doc_links`](../../scripts/tools/doc_links/main.flow) → `scripts/tools/doc_links` | #959 |
+| `scripts/check_doc_coverage.py` | [`./flow tool doc_coverage`](../../scripts/tools/doc_coverage/main.flow) → `scripts/tools/doc_coverage` | #959 |
+| `scripts/check_wiki_links.py` | [`./flow tool wiki_links`](../../scripts/tools/wiki_links/main.flow) → `scripts/tools/wiki_links` | #959 |
+| `scripts/check_stability_manifest.py` | [`./flow tool stability_manifest`](../../scripts/tools/stability_manifest/main.flow) → `scripts/tools/stability_manifest` | #959 |
 | `scripts/sync_version.py` | [`scripts/sync_version.sh`](../../scripts/sync_version.sh) → `scripts/tools/sync_version` | #959 |
 | `scripts/sync_roadmap.py` | [`scripts/sync_roadmap.sh`](../../scripts/sync_roadmap.sh) → `scripts/tools/roadmap_sync` | #959 |
-| `challenges/flow-specific/check.py` | [`challenges/flow-specific/check.sh`](../../challenges/flow-specific/check.sh) → `scripts/tools/challenge_check` | #965 |
-| `tools/grad/flow_grad_c.py`, `flow_grad_flow.py` | [`scripts/tools/grad/grad.sh`](../../scripts/tools/grad/grad.sh) | #965 |
-| `tools/size/measure_size.py` | [`scripts/tools/measure_size/measure_size.sh`](../../scripts/tools/measure_size/measure_size.sh) | #965 |
-| `wasm/flow_wasm_{threads,sockets,python,fs,crossings}.py` | [`wasm/crossings.sh`](../../wasm/crossings.sh) → `scripts/tools/wasm_crossings` | #965 |
-| `benchmarks/baselines/run_baselines.py` | [`benchmarks/baselines/run_baselines.sh`](../../benchmarks/baselines/run_baselines.sh) → `scripts/tools/bench_baselines` | #965 |
-| `benchmarks/run_publish.py` | [`benchmarks/run_publish.sh`](../../benchmarks/run_publish.sh) → `scripts/tools/bench_publish` | #965 |
-| `wasm/flow_to_wasm.py` | [`scripts/flow_to_wasm.sh`](../../scripts/flow_to_wasm.sh) → `scripts/tools/flow_to_wasm`, the `./flow wasm --legacy` converter | #1076 |
-| `benchmarks/run_benchmarks.py` | [`benchmarks/run_benchmarks.sh`](../../benchmarks/run_benchmarks.sh) → `scripts/tools/bench_harness` | #1076 |
-| `scripts/frames_to_gif.py` | [`scripts/frames_to_gif.sh`](../../scripts/frames_to_gif.sh) → `scripts/tools/frames_to_gif` (GIF encoding in `scripts/tools/lib/gifclip.flow` and `lib/stdlib/gif.flow`) | #1076 |
-| `scripts/record_demos.py` | [`scripts/record_demos.sh`](../../scripts/record_demos.sh) → `scripts/tools/record_demos` | #1076 |
-| `scripts/playground_compile_server.py` | [`scripts/playground_compile_server.sh`](../../scripts/playground_compile_server.sh) → `scripts/tools/playground_server` | #1076 |
-| `scripts/ws_echo_relay.py` | [`scripts/ws_echo_relay.sh`](../../scripts/ws_echo_relay.sh) → `scripts/tools/ws_echo_relay` | #1076 |
-| `scripts/wiki_contrast.py`, `scripts/wiki_verify.py` | [`scripts/wiki_contrast.sh`](../../scripts/wiki_contrast.sh), [`scripts/wiki_verify.sh`](../../scripts/wiki_verify.sh) → `scripts/tools/wiki_browser` (Chrome DevTools Protocol from Flow) | #1076 |
+| `challenges/flow-specific/check.py` | [`./flow tool challenge_check`](../../scripts/tools/challenge_check/main.flow) → `scripts/tools/challenge_check` | #965 |
+| `tools/grad/flow_grad_c.py`, `flow_grad_flow.py` | [`./flow tool grad`](../../scripts/tools/grad/main.flow) | #965 |
+| `tools/size/measure_size.py` | [`./flow tool measure_size`](../../scripts/tools/measure_size/main.flow) | #965 |
+| `wasm/flow_wasm_{threads,sockets,python,fs,crossings}.py` | [`./flow tool wasm_crossings`](../../scripts/tools/wasm_crossings/main.flow) → `scripts/tools/wasm_crossings` | #965 |
+| `benchmarks/baselines/run_baselines.py` | [`./flow tool bench_baselines`](../../scripts/tools/bench_baselines/main.flow) → `scripts/tools/bench_baselines` | #965 |
+| `benchmarks/run_publish.py` | [`./flow tool bench_publish`](../../scripts/tools/bench_publish/main.flow) → `scripts/tools/bench_publish` | #965 |
+| `wasm/flow_to_wasm.py` | [`./flow tool flow_to_wasm`](../../scripts/tools/flow_to_wasm/main.flow) → `scripts/tools/flow_to_wasm`, the `./flow wasm --legacy` converter | #1076 |
+| `benchmarks/run_benchmarks.py` | [`./flow tool bench_harness`](../../scripts/tools/bench_harness/main.flow) → `scripts/tools/bench_harness` | #1076 |
+| `scripts/frames_to_gif.py` | [`./flow tool frames_to_gif`](../../scripts/tools/frames_to_gif/main.flow) → `scripts/tools/frames_to_gif` (GIF encoding in `scripts/tools/lib/gifclip.flow` and `lib/stdlib/gif.flow`) | #1076 |
+| `scripts/record_demos.py` | [`./flow tool record_demos`](../../scripts/tools/record_demos/main.flow) → `scripts/tools/record_demos` | #1076 |
+| `scripts/playground_compile_server.py` | [`./flow tool playground_server`](../../scripts/tools/playground_server/main.flow) → `scripts/tools/playground_server` | #1076 |
+| `scripts/ws_echo_relay.py` | [`./flow tool ws_echo_relay`](../../scripts/tools/ws_echo_relay/main.flow) → `scripts/tools/ws_echo_relay` | #1076 |
+| `scripts/wiki_contrast.py`, `scripts/wiki_verify.py` | [`./flow tool wiki_browser contrast`](../../scripts/tools/wiki_browser/main.flow), [`./flow tool wiki_browser verify`](../../scripts/tools/wiki_browser/main.flow) → `scripts/tools/wiki_browser` (Chrome DevTools Protocol from Flow) | #1076 |
 | `scripts/deploy_wiki.py` | [`scripts/deploy_wiki.sh`](../../scripts/deploy_wiki.sh) | #1076 |
-| `tools/audio/lattice_allpass_audio_demo.py`, `plot_lattice_allpass.py` | `tools/audio/*.sh` → `scripts/tools/lattice_allpass` (WAV and SVG from Flow) | #1076 |
+| `tools/audio/lattice_allpass_audio_demo.py`, `plot_lattice_allpass.py` | `./flow tool lattice_allpass demo` and `plot` → `scripts/tools/lattice_allpass` (WAV and SVG from Flow) | #1076 |
 | `tools/discord-welcome/bot.py`, `welcome.py` | `tools/discord-welcome/build.sh` → `scripts/tools/discord_welcome` (Gateway over TLS through OpenSSL) | #1076 |
 | The last pytest files (`tests/unit`, `tests/integration`) | Shell tests in [`tests/scripts/`](../../tests/scripts/run.sh), `./flow test-scripts` | #1076 |
 | None (new) | `./flow tool python_ratchet` → `tools/python_ratchet/main.flow` | #981 |

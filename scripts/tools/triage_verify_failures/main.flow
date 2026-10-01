@@ -6,11 +6,15 @@
 # (or corpus-bug) feature is responsible, and prints a summary. It changes
 # no source files; it is purely diagnostic.
 #
-# Run through scripts/triage_verify_failures.sh from anywhere:
+# Run it as `./flow tool triage_verify_failures` from anywhere:
 #
-#   triage_verify_failures.sh
-#   triage_verify_failures.sh --roots examples/verify --sample 5
-#   triage_verify_failures.sh --json triage.json
+#   flow tool triage_verify_failures
+#   flow tool triage_verify_failures --roots examples/verify --sample 5
+#   flow tool triage_verify_failures --json triage.json
+#
+# The repository root is VERIFY_ROOT, else FLOW_REPO_ROOT. flowc is resolved
+# once (compiler/scripts/ensure_flowc.sh unless FLOWC_BIN is set) and passed
+# to every worker in FLOWC_BIN.
 #
 # docs/third-party/flow-verify-parser-status.md is the write-up this
 # output was used to produce. Files are checked in parallel by re-running
@@ -22,18 +26,18 @@ import .unicode { uc_strip }
 import .json { json_quote }
 import std.regex { rx_compile, rx_test_cps, rx_decode, rx_is_word, rx_is_space, Regex }
 import .proc { pr_quote, pr_run, pr_capture, pr_resolve }
-import .verify_run { vr_env, vr_parse_int, vr_cpu_count, vr_discover, vr_shorten, vr_pick_line, vr_run_stage, vr_transpile_cmd, vr_c_name, vr_fan_out, vr_usage_error, vr_resolve_opt, vr_is_optlike }
+import .verify_run { vr_env, vr_root, vr_ensure_flowc, vr_parse_int, vr_cpu_count, vr_discover, vr_shorten, vr_pick_line, vr_run_stage, vr_transpile_cmd, vr_c_name, vr_fan_out, vr_usage_error, vr_resolve_opt, vr_is_optlike }
 
 extern {
     function malloc(size: i64) -> ptr<void>
     function chdir(path: string) -> i32
 }
 
-const PROG: string = "triage_verify_failures.sh"
+const PROG: string = "flow tool triage_verify_failures"
 const N_CHECKS: i32 = 14
 
 function usage_text() -> string {
-    return "usage: triage_verify_failures.sh [-h] [--roots ROOTS [ROOTS ...]]\n                                 [--timeout TIMEOUT] [--jobs JOBS]\n                                 [--sample SAMPLE] [--json PATH]\n"
+    return "usage: flow tool triage_verify_failures [-h] [--roots ROOTS [ROOTS ...]]\n                                        [--timeout TIMEOUT] [--jobs JOBS]\n                                        [--sample SAMPLE] [--json PATH]\n"
 }
 
 function help_text() -> string {
@@ -383,7 +387,7 @@ function worker(argc: i32, argv: ptr<string>) -> i32 {
     let ok: ptr<i32> = malloc(4) as ptr<i32>
     let timeout: i32 = vr_parse_int(argv[3], ok)
     let idx: i32 = vr_parse_int(argv[4], ok)
-    let root: string = vr_env("VERIFY_ROOT")
+    let root: string = vr_root()
     let files: ptr<StrList> = ft_split_lines(ft_read_file(tmp + "/files.txt"))
     let res: string = check_one(root, tmp, ft_list_get(files, idx), timeout)
     let _w: bool = ft_write_file(tmp + "/res." + ft_itoa(idx), res)
@@ -547,6 +551,10 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     if argc >= 5 and ft_eq(argv[1], "--worker") {
         return worker(argc, argv)
     }
+    let flowc_rc: i32 = vr_ensure_flowc(vr_root())
+    if flowc_rc != 0 {
+        return flowc_rc
+    }
     if argc >= 2 and ft_eq(argv[1], "--tags-only") {
         return tags_only(argc, argv)
     }
@@ -656,7 +664,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     if json_arg as ptr<u8> != null {
         json_path = pr_resolve(json_arg)
     }
-    let root: string = vr_env("VERIFY_ROOT")
+    let root: string = vr_root()
     let _cd: i32 = chdir(root)
 
     let files: ptr<StrList> = vr_discover(roots, true, false)

@@ -9,6 +9,7 @@
 
 import "tools/flow_cli/sys.flow"
 import "compiler/scripts/gate_lib.flow"
+import "tools/flow_cli/flowc_build.flow"
 import std.process { ProcCmd, ProcStrs, proc_arg }
 
 # "file:12:3: message" -> "message" (sed -E 's/^[^:]+:[0-9]+:[0-9]+: //').

@@ -553,7 +553,7 @@ function read_or_empty(path: string) -> string {
     return s
 }
 
-# Compile one translation unit with flowc (compiler/scripts/flowc_emit.sh)
+# Compile one translation unit with flowc (compiler/scripts/flowc_emit.flow)
 # under the strict type check, as the Python checker ran it. Sets
 # f.csource; a type error fails at `types` with its message, anything else
 # at codegen.
@@ -562,7 +562,7 @@ function flowc_c(env: ptr<Env>, source: string) -> ptr<Front> {
     let src: string = dir + "/block.flow"
     let out: string = dir + "/block.c"
     let _w: bool = ft_write_file(src, source)
-    let cmd: string = "cd " + pr_quote(env.repo) + " && ulimit -t 60; FLOWC_BIN=" + pr_quote(env.flowc) + " " + pr_quote(env.repo + "/compiler/scripts/flowc_emit.sh") + " --strict " + pr_quote(src) + " " + pr_quote(out) + " >" + pr_quote(dir + "/stdout") + " 2>" + pr_quote(dir + "/stderr")
+    let cmd: string = "cd " + pr_quote(env.repo) + " && ulimit -t 60; FLOWC_BIN=" + pr_quote(env.flowc) + " " + pr_quote(env.repo + "/flow") + " tool " + pr_quote(env.repo + "/compiler/scripts/flowc_emit.flow") + " --strict " + pr_quote(src) + " " + pr_quote(out) + " >" + pr_quote(dir + "/stdout") + " 2>" + pr_quote(dir + "/stderr")
     let rc: i32 = pr_run(cmd)
     if rc == 137 or rc == 152 {
         return front_fail("codegen", "flowc did not finish within 60s")

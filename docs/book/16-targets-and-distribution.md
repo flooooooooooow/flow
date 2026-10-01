@@ -9,7 +9,7 @@ before using closures, units, spans, effects, statics, SIMD, or a domain DSL.
 ```bash
 ./flow run program.flow
 ./flow compile program.flow
-compiler/scripts/flowc_emit.sh program.flow build/program.c
+./flow tool compiler/scripts/flowc_emit.flow program.flow build/program.c
 ```
 
 The default build emits C11, invokes the platform compiler, and links an
@@ -19,7 +19,7 @@ native debuggers, sanitizers, static scanners, and existing libraries.
 The C compiler is `flowc`, the self-hosted compiler. It is the only C
 compiler: the Python C backend is retired, and `FLOW_HOST=python` stops with
 an error. `FLOWC_BIN=<path>` selects a particular flowc binary.
-`flowc_emit.sh` writes C only; `--strict` makes every type error fatal and
+`flowc_emit.flow` writes C only; `--strict` makes every type error fatal and
 `--no-checks` leaves out the runtime checks.
 
 ## 16.2 MLIR backend
@@ -119,7 +119,7 @@ which functions and structs have compatible signatures.
 For a C or JavaScript consumer, generate named exports:
 
 ```bash
-compiler/scripts/flowc_emit.sh --library \
+./flow tool compiler/scripts/flowc_emit.flow --library \
     --export add --export process \
     library.flow build/signal.c
 ```

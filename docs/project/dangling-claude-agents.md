@@ -19,5 +19,5 @@ laplacian_growth, viscous_fingering, mycelium, bone_remodelling,
 crack_propagation, river_erosion, turing_hex_ca, flocking_patterns,
 ant_pheromone, sandpile, schelling_segregation, voronoi_growth.
 
-Regenerate: `scripts/record_demos.sh --group morphogenesis`
-and `scripts/record_demos.sh --group neuro`.
+Regenerate: `./flow tool record_demos --group morphogenesis`
+and `./flow tool record_demos --group neuro`.

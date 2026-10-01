@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build and run every published benchmark once, in hand-written C and in Flow,
-# with the flags benchmarks/run_publish.sh uses, and check that the two agree.
+# with the flags `flow tool bench_publish` uses, and check that the two agree.
 #
 # The programs time themselves with a monotonic clock. The helper that reads
 # it must build on Linux and macOS alike (#964), so implicit function
@@ -29,7 +29,7 @@ for name in fib nbody matmul spectral mandelbrot; do
         fail=$((fail + 1))
         continue
     fi
-    if ! "$ROOT/compiler/scripts/flowc_emit.sh" --lenient "$PUB/flow/$name.flow" \
+    if ! "$ROOT/flow" tool "$ROOT/compiler/scripts/flowc_emit.flow" --lenient "$PUB/flow/$name.flow" \
             "$work/${name}_flow.c" > "$work/${name}_emit.log" 2>&1; then
         echo "FAIL $name: flowc could not emit the Flow program"
         sed 's/^/     /' "$work/${name}_emit.log" | tail -n 10

@@ -32,9 +32,8 @@ accept.
 The input may be a `.flow` file or LLVM IR (`.ll`), which is useful when
 inspecting what the pipeline produced before the BPF stage.
 
-`flow bpf` runs `scripts/bpf_target.sh`, the Flow program in
-`scripts/tools/llvm_target`. A Flow source reaches LLVM IR through
-`flow flow-to-llvm`: the flowc MLIR emitter and `flow mlir-lower`,
+`flow bpf` runs the Flow program in `scripts/tools/llvm_target`. A Flow source reaches LLVM IR through
+`compiler/scripts/flow_to_llvm.sh`: the flowc MLIR emitter and `mlir_lower.sh`,
 the path `flow compile --backend=mlir` takes. A program the emitter does not
 cover yet falls back to the Python MLIR generator with a warning.
 

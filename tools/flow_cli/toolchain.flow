@@ -8,6 +8,7 @@
 # (flow-driver): the same files, flags, messages and exit statuses.
 
 import "tools/flow_cli/sys.flow"
+import "tools/flow_cli/flowc_build.flow"
 import std.process { ProcCmd, ProcResult, ProcStrs }
 
 # ---------------------------------------------------------------------------
@@ -101,7 +102,7 @@ export function flow_host_mode() -> string {
     if s_eq(mode, "python") {
         error_to(2, "FLOW_HOST=python is retired: the Python C backend was removed.")
         info_to(2, "flowc compiles every program now. Unset FLOW_HOST (or set FLOW_HOST=flowc).")
-        info_to(2, "C only: compiler/scripts/flowc_emit.sh <in.flow> <out.c>")
+        info_to(2, "C only: ./flow tool compiler/scripts/flowc_emit.flow <in.flow> <out.c>")
         cli_exit(1)
     }
     error_to(2, "Unknown FLOW_HOST='" + mode + "' (expected flowc)")
@@ -119,7 +120,7 @@ export function flow_host_mode_sub() -> string {
     if s_eq(mode, "python") {
         error_to(2, "FLOW_HOST=python is retired: the Python C backend was removed.")
         info_to(2, "flowc compiles every program now. Unset FLOW_HOST (or set FLOW_HOST=flowc).")
-        info_to(2, "C only: compiler/scripts/flowc_emit.sh <in.flow> <out.c>")
+        info_to(2, "C only: ./flow tool compiler/scripts/flowc_emit.flow <in.flow> <out.c>")
         return ""
     }
     error_to(2, "Unknown FLOW_HOST='" + mode + "' (expected flowc)")
@@ -140,24 +141,20 @@ export function flow_cpu_backend() -> string {
 # flowc
 # ---------------------------------------------------------------------------
 
-# compiler/scripts/ensure_flowc.sh [--cc-only]: its stdout, "" on failure.
+# flowc_ensure (tools/flow_cli/flowc_build.flow): the flowc path, "" on
+# failure. `quiet_err` drops its messages (`2>/dev/null`).
 function ensure_flowc(cc_only: bool, quiet_err: bool) -> string {
-    let argv: ptr<ProcStrs> = sl_of2("bash", TC_ROOT + "/compiler/scripts/ensure_flowc.sh")
-    if cc_only {
-        sl_push(argv, "--cc-only")
-    }
-    let c: ptr<ProcCmd> = cmd(argv)
     if quiet_err {
-        cmd_quiet_err(c)
+        sink_push(SINK_FD, SINK_NULL)
     }
-    let path: string = capture(c)
-    if last_status() != 0 {
-        return ""
+    let path: string = flowc_ensure(TC_ROOT, cc_only)
+    if quiet_err {
+        let _o: string = sink_pop()
     }
     return path
 }
 
-# The flowc binary: $FLOWC_BIN when executable, else ensure_flowc.sh.
+# The flowc binary: $FLOWC_BIN when executable, else flowc_ensure.
 # "" when there is none (the driver's error went into a $(...) and was
 # never shown).
 export function flow_resolve_flowc() -> string {
@@ -336,10 +333,9 @@ export function flowc_emit_to_c_env(program: string, c_out: string, envs: ptr<Pr
         return 1
     }
     info("flowc emit via " + driver)
-    let c: ptr<ProcCmd> = cmd(sl_of3(TC_ROOT + "/compiler/scripts/flowc_emit.sh", program, c_out))
-    cmd_env(c, "FLOWC_BIN", driver)
-    apply_envs(c, envs)
-    return run(c)
+    let all: ptr<ProcStrs> = sl_of1("FLOWC_BIN=" + driver)
+    sl_extend(all, envs)
+    return flowc_emit_run(TC_ROOT, sl_of2(program, c_out), all)
 }
 
 export function flowc_emit_to_c(program: string, c_out: string) -> i32 {
@@ -773,7 +769,6 @@ export function gpu_link_flags() {
 # ---------------------------------------------------------------------------
 # The runtime archive (build/flowc_runtime/<key>/libflowrt.a)
 # ---------------------------------------------------------------------------
-
 
 export function rt_archive() -> string {
     return TC_RT_ARCHIVE

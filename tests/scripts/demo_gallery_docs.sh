@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Contracts for the data-driven Wiki demo/gallery system.
 #
-# The generators are Flow programs behind scripts/build_shader_gallery.sh and
-# scripts/build_demo_overview.sh. Their --check mode regenerates the page and
+# The generators are the Flow programs `./flow tool shader_gallery` and
+# `./flow tool demo_overview`. Their --check mode regenerates the page and
 # compares it with the checked-in copy, so the checked-in pages stand for the
 # generated output here.
 source "$(dirname "$0")/lib.sh"
@@ -41,7 +41,7 @@ featured_block() {
 
 check_photoreal_gallery_generator_tracks_all_fsl_entries() {
     t_need_cc
-    t_run scripts/build_shader_gallery.sh --check
+    t_run ./flow tool shader_gallery --check
     [[ "$T_RC" -eq 0 ]] || { cat "$T_ERR"; return 1; }
     a_file_is "$T_OUT" $'shader gallery page is current\n'
 
@@ -56,7 +56,7 @@ check_photoreal_gallery_generator_tracks_all_fsl_entries() {
     a_true "photoreal_energy_crystal listed" grep -qxF photoreal_energy_crystal "$T_TMP/names"
     a_true "photoreal_underwater listed" grep -qxF photoreal_underwater "$T_TMP/names"
     a_eq "$(count_of '<figure class="demo-tile' "$PAGE")" 64 "demo tiles"
-    a_file_contains "$PAGE" "record_shader_gallery.sh --group photoreal"
+    a_file_contains "$PAGE" "flow tool shader_record --group photoreal"
 }
 
 check_demo_catalog_is_unique_and_covers_expected_collections() {
@@ -72,7 +72,7 @@ check_demo_catalog_is_unique_and_covers_expected_collections() {
 
 check_demo_overview_is_derived_from_catalog() {
     t_need_cc
-    t_run scripts/build_demo_overview.sh --check --check-previews
+    t_run ./flow tool demo_overview --check --check-previews
     [[ "$T_RC" -eq 0 ]] || { cat "$T_ERR"; return 1; }
     local page="$T_ROOT/docs/demos/overview.md"
     a_file_contains "$page" "# Demo Showcase"
@@ -87,7 +87,7 @@ check_demo_overview_is_derived_from_catalog() {
 
 check_demo_navigation_is_synced_with_catalog() {
     t_need_cc
-    t_run scripts/sync_demo_nav.sh --check
+    t_run ./flow tool demo_nav --check
     [[ "$T_RC" -eq 0 ]] || { cat "$T_ERR"; return 1; }
     a_file_is "$T_OUT" $'demo navigation is current\n'
 }

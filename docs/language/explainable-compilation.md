@@ -16,7 +16,7 @@ A decision like that is only trustworthy if you can look at it.
 or, through flowc directly:
 
 ```
-FLOWC_EXPLAIN=1 compiler/scripts/flowc_emit.sh program.flow out.c
+FLOWC_EXPLAIN=1 ./flow tool compiler/scripts/flowc_emit.flow program.flow out.c
 ```
 
 The report goes to stderr, so it does not mix with generated output.

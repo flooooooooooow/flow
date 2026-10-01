@@ -10,7 +10,7 @@ Pyodide in the browser. The Python modules those programs import live in
   `tests/runtime/interop/python_embed.flow`
 - `flow_demo.py`, imported by `examples/wasm/python_embed.flow`: natively
   from `examples/wasm` (sys.path entry `../interop/python`) and, copied by
-  `wasm/crossings.sh python`, in the browser
+  `./flow tool wasm_crossings python`, in the browser
 
 ```bash
 ./flow run examples/interop/python_embed.flow

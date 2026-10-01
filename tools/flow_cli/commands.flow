@@ -8,6 +8,7 @@ import "tools/flow_cli/sys.flow"
 import "tools/flow_cli/toolchain.flow"
 import "tools/flow_cli/build.flow"
 import "tools/flow_cli/mlir_tools.flow"
+import "tools/flow_cli/tool.flow"
 import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg }
 
 # ---------------------------------------------------------------------------

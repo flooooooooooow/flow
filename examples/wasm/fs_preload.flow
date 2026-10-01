@@ -1,7 +1,7 @@
 # Reading an input file that was preloaded into the virtual filesystem.
 #
 #   ./flow run examples/wasm/fs_preload.flow
-#   wasm/crossings.sh fs                    # builds this with --preload-file
+#   ./flow tool wasm_crossings fs           # builds this with --preload-file
 #
 # The program opens a relative path and reads it. Natively that is a file on
 # disk. In the browser, emcc --preload-file packed the same file into a .data

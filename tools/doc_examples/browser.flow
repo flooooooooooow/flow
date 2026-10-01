@@ -124,7 +124,7 @@ function run_native(env: ptr<Env>, sn: ptr<Snip>, work: string) {
     let cfile: string = work + "/" + sn.id + ".c"
     let binf: string = work + "/" + sn.id + ".bin"
     let _w: bool = ft_write_file(src, sn.code + "\n")
-    let emit: string = "cd " + pr_quote(env.repo) + " && FLOWC_BIN=" + pr_quote(env.flowc) + " " + pr_quote(env.repo + "/compiler/scripts/flowc_emit.sh") + " " + pr_quote(src) + " " + pr_quote(cfile) + " >" + pr_quote(work + "/o.txt") + " 2>" + pr_quote(work + "/e.txt")
+    let emit: string = "cd " + pr_quote(env.repo) + " && FLOWC_BIN=" + pr_quote(env.flowc) + " " + pr_quote(env.repo + "/flow") + " tool " + pr_quote(env.repo + "/compiler/scripts/flowc_emit.flow") + " " + pr_quote(src) + " " + pr_quote(cfile) + " >" + pr_quote(work + "/o.txt") + " 2>" + pr_quote(work + "/e.txt")
     if pr_run(emit) != 0 {
         sn.stage = "transpile"
         sn.error = py_suffix(uc_strip(read0(work + "/o.txt") + read0(work + "/e.txt")), 600)

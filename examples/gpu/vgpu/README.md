@@ -68,7 +68,7 @@ WGSL emission uses:
 Build a browser runner backed by deterministic offscreen WebGPU readback:
 
 ```bash
-wasm/crossings.sh shader examples/gpu/vgpu/gradient.flow \
+./flow tool wasm_crossings shader examples/gpu/vgpu/gradient.flow \
     --name vgpu_gradient --size 640x360
 python3 -m http.server -d build/webgpu-shader 8000
 ```

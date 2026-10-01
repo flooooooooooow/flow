@@ -1,13 +1,14 @@
 # Check docs/nav.json against docs/, the way the wiki build does.
 #
-# Run through scripts/wiki_nav.sh from the repository root:
+# Run it as `./flow tool wiki_nav` from anywhere in the repository; it works
+# from the repository root:
 #
-#   wiki_nav.sh                         summary; exit 1 on any problem
-#   wiki_nav.sh --problems              one problem per line
-#   wiki_nav.sh --pages                 every page under docs/ that counts
-#   wiki_nav.sh --listed                every path the sidebar points at
-#   wiki_nav.sh --category PATH         search category for a page
-#   wiki_nav.sh --sections [--fill KEY LABEL PATH]...
+#   flow tool wiki_nav                  summary; exit 1 on any problem
+#   flow tool wiki_nav --problems       one problem per line
+#   flow tool wiki_nav --pages          every page under docs/ that counts
+#   flow tool wiki_nav --listed         every path the sidebar points at
+#   flow tool wiki_nav --category PATH  search category for a page
+#   flow tool wiki_nav --sections [--fill KEY LABEL PATH]...
 #                                       the built sidebar sections, with the
 #                                       generated ones filled in
 #
@@ -17,6 +18,7 @@ import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_li
 import .json { json_get, json_len, json_quote, Json }
 import .wiki_util { wb_new, wb_add, wb_str, wu_sort, WBuf }
 import .wiki_nav { wn_load, wn_validate, wn_doc_pages, wn_nav_paths, wn_nav_path_count, wn_dump_sections, wn_category_for }
+import .repo { rp_enter_root }
 
 extern {
     function getenv(name: string) -> string
@@ -41,6 +43,10 @@ function fill_json(labels: ptr<StrList>, paths: ptr<StrList>) -> string {
 }
 
 function main(argc: i32, argv: ptr<string>) -> i32 {
+    if rp_enter_root() == false {
+        ft_errln("wiki_nav: cannot enter the repository root")
+        return 1
+    }
     let mut manifest: string = "docs/nav.json"
     let mut docs: string = "docs"
     let mut mode: string = "summary"

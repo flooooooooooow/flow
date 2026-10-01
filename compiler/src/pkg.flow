@@ -7,10 +7,10 @@
 #
 # This is the package manager that src/flow/package.py and registry.py used
 # to be, ported rule for rule so that flow.lock and flow_packages/ come out
-# byte-identical. Flow programs cannot spawn processes with arguments, so the
-# few steps that need another program (git, curl, tar, cp) go through
-# scripts/tools/pkg_fetch.sh. Every decision stays here: which command to run,
-# with which arguments, and what to do with the result.
+# byte-identical. The few steps that need another program (git, curl, tar,
+# cp, rm) run it through std.process with an argument vector, no shell in
+# between. Every decision stays here: which command to run, with which
+# arguments, and what to do with the result.
 
 import .pkg_json {
     SBuf, JDoc,
@@ -25,7 +25,8 @@ import .pkg_json {
     jd_parse_json, jd_parse_toml, jd_dump_json
 }
 import .semver { Semver, flowc_semver_parse, flowc_semver_cmp, flowc_semver_matches }
-import .fileio { flowc_read_file, flowc_write_file, flowc_io_system, flowc_io_popen_read, flowc_io_mkdir, flowc_io_remove }
+import .fileio { flowc_read_file, flowc_write_file, flowc_io_system, flowc_io_mkdir, flowc_io_remove }
+import std.process { ProcCmd, ProcResult, proc_cmd, proc_arg, proc_cwd, proc_stdin, proc_stdout, proc_stderr, proc_run, proc_which, PROC_INHERIT, PROC_CAPTURE, PROC_NULL }
 
 extern {
     function malloc(size: i64) -> ptr<void>
@@ -61,7 +62,6 @@ export struct Pm {
     d: ptr<JDoc>,
     project_dir: string,
     repo_root: string,
-    shim: string,
     reg: i32,
     reg_pkgs: i32,
     reg_name: string,
@@ -278,7 +278,7 @@ function write_text(path: string, s: string) -> bool {
 }
 
 # ---------------------------------------------------------------------------
-# The bash shim (scripts/tools/pkg_fetch.sh)
+# Other programs (tar, cp, rm, git, curl), run through std.process
 # ---------------------------------------------------------------------------
 
 function shell_quote(sb: ptr<SBuf>, s: string) {
@@ -296,31 +296,6 @@ function shell_quote(sb: ptr<SBuf>, s: string) {
     sb_putc(sb, 39)
 }
 
-# Shell command line for the shim with the arguments in args (an array node
-# of strings). The exit status is the shim's.
-function shim_cmd(pm: ptr<Pm>, args: i32) -> string {
-    let d: ptr<JDoc> = pm[0].d
-    let sb: ptr<SBuf> = sb_new()
-    sb_puts(sb, "bash ")
-    shell_quote(sb, pm[0].shim)
-    let mut c: i32 = jd_first(d, args)
-    while c >= 0 {
-        sb_putc(sb, 32)
-        shell_quote(sb, jd_sval(d, c))
-        c = jd_next(d, c)
-    }
-    return sb_str(sb)
-}
-
-function shim_run(pm: ptr<Pm>, args: i32) -> i32 {
-    let _f: i32 = fflush(null)
-    let st: i32 = flowc_io_system(shim_cmd(pm, args))
-    if st < 0 {
-        return 255
-    }
-    return (st / 256) % 256
-}
-
 function args1(pm: ptr<Pm>, a: string) -> i32 {
     let arr: i32 = jd_arr(pm[0].d)
     jd_append(pm[0].d, arr, jd_str(pm[0].d, a))
@@ -331,27 +306,93 @@ function args_push(pm: ptr<Pm>, arr: i32, a: string) {
     jd_append(pm[0].d, arr, jd_str(pm[0].d, a))
 }
 
-function shim2(pm: ptr<Pm>, cmd: string, a: string) -> i32 {
-    let arr: i32 = args1(pm, cmd)
-    args_push(pm, arr, a)
-    return shim_run(pm, arr)
+# The exit status as a shell reports it: the child's code, 128 plus the
+# signal that ended it, or 127 when it could not be started.
+function child_status(r: ptr<ProcResult>) -> i32 {
+    if str_len(r.error) > 0 {
+        return 127
+    }
+    if r.exit_code < 0 {
+        return 128 - r.exit_code
+    }
+    return r.exit_code
 }
 
-function shim3(pm: ptr<Pm>, cmd: string, a: string, b: string) -> i32 {
-    let arr: i32 = args1(pm, cmd)
-    args_push(pm, arr, a)
-    args_push(pm, arr, b)
-    return shim_run(pm, arr)
+# Run `c` with stdin, stdout and stderr shared with this process, after
+# flushing what this process has printed. Returns the exit status.
+function run_shared(c: ptr<ProcCmd>) -> i32 {
+    let _f: i32 = fflush(null)
+    proc_stdin(c, PROC_INHERIT)
+    proc_stdout(c, PROC_INHERIT)
+    proc_stderr(c, PROC_INHERIT)
+    return child_status(proc_run(c))
 }
 
+function cmd2(prog: string, a: string, b: string) -> ptr<ProcCmd> {
+    let c: ptr<ProcCmd> = proc_cmd(prog)
+    proc_arg(c, a)
+    proc_arg(c, b)
+    return c
+}
+
+# rm -rf p
 function rmtree(pm: ptr<Pm>, p: string) {
-    let _r: i32 = shim2(pm, "rmtree", p)
+    let _r: i32 = run_shared(cmd2("rm", "-rf", p))
+}
+
+# cp -p src dest, then touch dest. Returns the exit status.
+function copy_file(pm: ptr<Pm>, src: string, dest: string) -> i32 {
+    let c: ptr<ProcCmd> = cmd2("cp", "-p", src)
+    proc_arg(c, dest)
+    let rc: i32 = run_shared(c)
+    if rc != 0 {
+        return rc
+    }
+    let t: ptr<ProcCmd> = proc_cmd("touch")
+    proc_arg(t, dest)
+    return run_shared(t)
 }
 
 # shutil.copytree(src, dest, ignore=.git, build, flow_packages, __pycache__,
-# *.pyc) after removing dest.
+# *.pyc) after removing dest. Symlinks are followed. tar writes the tree to
+# a scratch archive, which a second tar unpacks into dest.
 function copy_package_dir(pm: ptr<Pm>, src: string, dest: string) {
-    let _r: i32 = shim3(pm, "copytree", src, dest)
+    rmtree(pm, dest)
+    let _m: i32 = run_shared(cmd2("mkdir", "-p", dest))
+    let archive: string = str_cat(temp_path("flow-pkg-copytree"), ".tar")
+    let pack: ptr<ProcCmd> = cmd2("tar", "-chf", archive)
+    proc_arg(pack, "--exclude")
+    proc_arg(pack, ".git")
+    proc_arg(pack, "--exclude")
+    proc_arg(pack, "build")
+    proc_arg(pack, "--exclude")
+    proc_arg(pack, "flow_packages")
+    proc_arg(pack, "--exclude")
+    proc_arg(pack, "__pycache__")
+    proc_arg(pack, "--exclude")
+    proc_arg(pack, "*.pyc")
+    proc_arg(pack, ".")
+    proc_cwd(pack, src)
+    if run_shared(pack) == 0 {
+        let unpack: ptr<ProcCmd> = cmd2("tar", "-xpf", archive)
+        proc_cwd(unpack, dest)
+        let _u: i32 = run_shared(unpack)
+    }
+    rmtree(pm, archive)
+}
+
+# Download url to dest with curl (15 s limit). Returns curl's exit status,
+# or 200 when curl is not on PATH.
+function fetch_url(pm: ptr<Pm>, url: string, dest: string) -> i32 {
+    if str_len(proc_which("curl")) == 0 {
+        return 200
+    }
+    let c: ptr<ProcCmd> = cmd2("curl", "-fsSL", "--max-time")
+    proc_arg(c, "15")
+    proc_arg(c, "-o")
+    proc_arg(c, dest)
+    proc_arg(c, url)
+    return run_shared(c)
 }
 
 # ---------------------------------------------------------------------------
@@ -371,7 +412,6 @@ export function pm_new(project_dir: string) -> ptr<Pm> {
         root = "."
     }
     pm[0].repo_root = path_resolve(root)
-    pm[0].shim = path_join(pm[0].repo_root, "scripts/tools/pkg_fetch.sh")
     pm[0].reg = -1
     pm[0].reg_pkgs = -1
     pm[0].reg_name = "flow-packages"
@@ -437,7 +477,7 @@ function fetch_remote_index(pm: ptr<Pm>, url: string) -> i32 {
         fail_hard(str_cat("registry URL must be http(s): ", url))
     }
     let tmp: string = str_cat(cache, ".download")
-    if shim3(pm, "fetch-url", url, tmp) == 0 {
+    if fetch_url(pm, url, tmp) == 0 {
         let raw: string = read_text(tmp)
         let _w: bool = write_text(cache, raw)
         rmtree(pm, tmp)
@@ -830,36 +870,50 @@ function is_hex_sha(d: ptr<JDoc>, ref: i32) -> bool {
     return true
 }
 
-# Run git through the shim. argv holds git's arguments; errfile receives
-# stderr. Returns git's exit status, or 200 when git is not on PATH.
+# Run git. argv holds the command ("git" first, as the Python command list
+# did); stdout is discarded and stderr written to errfile. Returns git's
+# exit status, or 200 when git is not on PATH.
 function run_git(pm: ptr<Pm>, argv: i32, errfile: string) -> i32 {
     let d: ptr<JDoc> = pm[0].d
-    let arr: i32 = args1(pm, "git")
-    args_push(pm, arr, errfile)
-    # argv starts with "git" itself, as the Python command list did.
+    if str_len(proc_which("git")) == 0 {
+        return 200
+    }
+    let g: ptr<ProcCmd> = proc_cmd("git")
     let mut c: i32 = jd_next(d, jd_first(d, argv))
     while c >= 0 {
-        args_push(pm, arr, jd_sval(d, c))
+        proc_arg(g, jd_sval(d, c))
         c = jd_next(d, c)
     }
-    return shim_run(pm, arr)
+    let _f: i32 = fflush(null)
+    proc_stdout(g, PROC_NULL)
+    proc_stderr(g, PROC_CAPTURE)
+    let r: ptr<ProcResult> = proc_run(g)
+    let _w: bool = write_text(errfile, r.stderr)
+    return child_status(r)
 }
 
 function git_argv(pm: ptr<Pm>) -> i32 {
     return args1(pm, "git")
 }
 
+# The HEAD commit of repo (git rev-parse HEAD), "" when git fails.
 function git_head_sha(pm: ptr<Pm>, repo: string) -> string {
-    let arr: i32 = args1(pm, "git-head")
-    args_push(pm, arr, repo)
+    let c: ptr<ProcCmd> = cmd2("git", "-C", repo)
+    proc_arg(c, "rev-parse")
+    proc_arg(c, "HEAD")
     let _f: i32 = fflush(null)
-    let buf: ptr<u8> = malloc(256) as ptr<u8>
-    let n: i32 = flowc_io_popen_read(shim_cmd(pm, arr), buf, 255)
-    if n <= 0 {
+    proc_stdout(c, PROC_CAPTURE)
+    proc_stderr(c, PROC_NULL)
+    let r: ptr<ProcResult> = proc_run(c)
+    let mut n: i32 = str_len(r.stdout)
+    if n == 0 {
         return ""
     }
-    buf[n] = 0
-    return str_strip(buf as string)
+    # popen read at most 255 bytes.
+    if n > 255 {
+        n = 255
+    }
+    return str_strip(str_slice(r.stdout, 0, n))
 }
 
 # CalledProcessError's message for a failed git command.
@@ -1036,7 +1090,7 @@ export function install_package(pm: ptr<Pm>, name: string, spec: i32) -> bool {
 
     let stdlib_path: string = stdlib_file(pm, name)
     if path_exists(stdlib_path) {
-        let _c: i32 = shim3(pm, "copyfile", stdlib_path, path_join(pdir, str_cat(name, ".flow")))
+        let _c: i32 = copy_file(pm, stdlib_path, path_join(pdir, str_cat(name, ".flow")))
         say_color(GREEN, str_cat3(CHECK, " Installed ", str_cat(name, " from stdlib")))
         return true
     }
@@ -1058,7 +1112,7 @@ export function install_package(pm: ptr<Pm>, name: string, spec: i32) -> bool {
             if path_is_dir(source) {
                 copy_package_dir(pm, source, dest)
             } else {
-                let _c2: i32 = shim3(pm, "copyfile", source, with_flow_suffix(dest))
+                let _c2: i32 = copy_file(pm, source, with_flow_suffix(dest))
             }
             say_color(GREEN, str_cat3(str_cat3(CHECK, " Installed ", name), " from ", source))
             return true
@@ -1548,8 +1602,8 @@ export function pm_info(pm: ptr<Pm>, name: string) -> bool {
 # init, publish, build, run, build-native, run-native, clean
 #
 # The rest of src/flow/package.py and src/flow/registry.py, ported with the
-# same messages and files. scripts/check_pkg_commands.sh holds the goldens
-# recorded from the Python version.
+# same messages and files. tests/pkg_commands holds the goldens
+# recorded from the Python version (scripts/check_pkg_commands.flow).
 # ---------------------------------------------------------------------------
 
 const ELLIPSIS: string = "\xe2\x80\xa6"
@@ -2168,7 +2222,9 @@ export function pm_build_native(pm: ptr<Pm>, entry_arg: string, release: bool) -
     say_color(BLUE, str_cat3("Building ", name, " with native support..."))
 
     # Step 1: Flow to C with flowc.
-    let emit: i32 = args1(pm, path_join(pm[0].repo_root, "compiler/scripts/flowc_emit.sh"))
+    let emit: i32 = args1(pm, path_join(pm[0].repo_root, "flow"))
+    args_push(pm, emit, "tool")
+    args_push(pm, emit, path_join(pm[0].repo_root, "compiler/scripts/flowc_emit.flow"))
     args_push(pm, emit, "--lenient")
     args_push(pm, emit, path_resolve(src_file))
     args_push(pm, emit, path_resolve(c_file))

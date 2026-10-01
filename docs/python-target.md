@@ -17,7 +17,7 @@ python -c "import mylib; print(mylib.add(1, 2))"
 
 1. `flow python` runs the Flow tool `tools/pywheel`. It parses the program and
    its imports with the flowc front end and decides what to export.
-2. flowc compiles the program to C (`compiler/scripts/flowc_emit.sh --strict`).
+2. flowc compiles the program to C (`./flow tool compiler/scripts/flowc_emit.flow --strict`).
    A type error stops here.
 3. The tool writes a CPython extension source around that C, plus
    `setup.py` and `pyproject.toml`.

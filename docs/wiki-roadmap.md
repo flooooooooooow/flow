@@ -55,8 +55,8 @@
 
 | Task | Notes |
 |------|-------|
-| Pagefind wiki search | ✅ | `scripts/build_pagefind.sh` after wiki build when node/npx present; ⌘K uses Pagefind with `search-index.json` fallback |
-| Playground: compile via WASM or API | partial ✅ | browser interpreter + **Run (native local)** via `scripts/playground_compile_server.sh` (#132); next: emscripten hello artifact (`scripts/build_wasm_hello.sh`, [language/wasm.md](language/wasm.md)); in-browser Flow compiler still deferred (#121) |
+| Pagefind wiki search | ✅ | `./flow tool build_wiki --pagefind` after wiki build when node/npx present; ⌘K uses Pagefind with `search-index.json` fallback |
+| Playground: compile via WASM or API | partial ✅ | browser interpreter + **Run (native local)** via `./flow tool playground_server` (#132); next: emscripten hello artifact (`scripts/build_wasm_hello.sh`, [language/wasm.md](language/wasm.md)); in-browser Flow compiler still deferred (#121) |
 | Proof graph visualization | ✅ partial: module-level `import` graph (`third-party/proof-graph.md`, `scripts/build_wiki.py::build_proof_graph`); per-theorem Claim Path edges still open |
 | Dark/light theme toggle | ✅ Header **Theme** button; `localStorage` key `flow-wiki-theme` |
 
@@ -103,9 +103,9 @@ The **language** roadmap (`ROADMAP.md`) tracks compiler features. The **wiki** r
 1. Edit markdown under `docs/`
 2. Run `python3 scripts/gen_stdlib_docs.py` (if touching stdlib)
 3. Run `python3 scripts/build_wiki.py` (also runs Pagefind if `node`/`npx` are available)
-4. Optional re-index only: `./scripts/build_pagefind.sh`
-5. Preview: `scripts/wiki_serve.sh build/wiki 8777`
-6. Browser checks: serve on port 8899 (`scripts/wiki_serve.sh`), then run `scripts/wiki_verify.sh` and `scripts/wiki_contrast.sh`. Production deploys from `main` via GitHub Pages
+4. Optional re-index only: `./flow tool build_wiki --pagefind`
+5. Preview: `./flow tool wiki_browser serve build/wiki 8777`
+6. Browser checks: serve on port 8899 (`./flow tool wiki_browser serve`), then run `./flow tool wiki_browser verify` and `./flow tool wiki_browser contrast`. Production deploys from `main` via GitHub Pages
 
 ### Releases / changelog
 

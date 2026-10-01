@@ -19,7 +19,7 @@ calling the ordinary socket API round-trips bytes from inside this tab.
 The far end has to speak WebSocket, because a browser cannot open a raw TCP
 socket to an arbitrary host and port. That is a browser security rule.
 Start the relay first:
-<code>scripts/ws_echo_relay.sh --port 9505</code>
+<code>./flow tool ws_echo_relay --port 9505</code>
 </p>
 
 <div class="facts">
@@ -53,9 +53,9 @@ Start the relay first:
 <h2>Flow source</h2>
 <pre class="source"># A TCP round trip from inside a browser tab.
 #
-#   scripts/ws_echo_relay.sh --port 9505 --tcp-port 9506 &amp;
+#   ./flow tool ws_echo_relay --port 9505 --tcp-port 9506 &amp;
 #   ./flow run examples/wasm/tcp_echo.flow          # native, plain TCP
-#   wasm/crossings.sh sockets                       # browser, over WebSocket
+#   ./flow tool wasm_crossings sockets              # browser, over WebSocket
 #
 # This calls Flow&#x27;s ordinary socket API: flow_rt_tcp_connect / send / recv /
 # close in runtime/flow_tcp.c, which are BSD sockets and nothing else. The
@@ -240,7 +240,7 @@ function main() -&gt; i32 {
 # WebSocket echo server works. It is in the tree so the demo has no
 # dependencies.
 #
-#     scripts/ws_echo_relay.sh --port 9505
+#     ./flow tool ws_echo_relay --port 9505
 #
 # Also speaks plain TCP echo on --tcp-port, so the same Flow program can be
 # run natively against the same relay for comparison.
@@ -257,7 +257,7 @@ extern {
     function </pre>
 
 <footer>
-Built by <code>wasm/crossings.sh sockets</code>. Mechanism:
+Built by <code>./flow tool wasm_crossings sockets</code>. Mechanism:
 <code>docs/language/wasm-crossings.md</code>.
 </footer>
 </main>
@@ -289,7 +289,7 @@ function probe() {
       if (settled) return;   // onopen and the timeout can both fire
       settled = true;
       setFact("f-relay", ok ? "reachable" : "not running", ok ? "ok" : "bad");
-      if (!ok) log("relay not reachable: start it with  scripts/ws_echo_relay.sh --port 9505");
+      if (!ok) log("relay not reachable: start it with  ./flow tool ws_echo_relay --port 9505");
       try { ws.close(); } catch (e) { /* already closed */ }
       resolve(ok);
     };

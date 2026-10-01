@@ -2,7 +2,7 @@
 # North-star hybrid-system example for the Helm epic "Vision: Evolution"
 # (cards: evolves-syntax, hybrid-events, constraints).
 # Spec: docs/vision/north-star.md. Kept under docs/ deliberately: excluded
-# from `./flow test` and scripts/verify_examples.sh discovery by location.
+# from `./flow test` and ./flow tool verify_examples discovery by location.
 
 flow Ball {
     state height   : f64 = 10.0

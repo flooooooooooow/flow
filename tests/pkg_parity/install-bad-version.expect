@@ -1,0 +1,18 @@
+$ flow_pkg install
+[exit 0]
+== stdout
+[94mInstalling dependencies...[0m
+[91mUnknown dependency 'json'. Not in registry, path, git, or stdlib. Try: flow search json[0m
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+entry = "src/main.flow"
+
+[dependencies]
+json = "2.0.0"
+
+[dev-dependencies]
+== flow.lock
+== flow_packages
+D flow_packages

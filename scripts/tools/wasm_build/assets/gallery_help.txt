@@ -1,6 +1,6 @@
-usage: build_wasm_gallery.sh [-h] [--out OUT] [--category CATEGORY]
-                             [--only [ONLY ...]] [--list] [-j JOBS] [-O OPT]
-                             [--timeout TIMEOUT]
+usage: flow tool wasm_build gallery [-h] [--out OUT] [--category CATEGORY]
+                                    [--only [ONLY ...]] [--list] [-j JOBS] [-O OPT]
+                                    [--timeout TIMEOUT]
 
 Compile a list of Flow examples to WebAssembly and build the gallery.
 

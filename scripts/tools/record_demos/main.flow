@@ -1,16 +1,16 @@
 # Record docs/demos/*.gif by running the real Flow programs headlessly.
 #
-# Run through scripts/record_demos.sh from anywhere:
+# Run it as `./flow tool record_demos` from anywhere:
 #
-#   scripts/record_demos.sh            # all demos
-#   scripts/record_demos.sh lorenz     # one demo
-#   scripts/record_demos.sh --group morphogenesis
-#   scripts/record_demos.sh --group neuro
-#   scripts/record_demos.sh --group evoleco
-#   scripts/record_demos.sh --group planet
-#   scripts/record_demos.sh --group procgen
-#   scripts/record_demos.sh --group numerical
-#   scripts/record_demos.sh --check    # list every GIF, fail if one is missing
+#   flow tool record_demos            # all demos
+#   flow tool record_demos lorenz     # one demo
+#   flow tool record_demos --group morphogenesis
+#   flow tool record_demos --group neuro
+#   flow tool record_demos --group evoleco
+#   flow tool record_demos --group planet
+#   flow tool record_demos --group procgen
+#   flow tool record_demos --group numerical
+#   flow tool record_demos --check    # list every GIF, fail if one is missing
 #
 # Each demo is compiled with `./flow record`, which links the program against
 # runtime/gfx_record.c instead of a windowing backend. The program then draws

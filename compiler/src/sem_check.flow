@@ -4924,7 +4924,7 @@ export function sem_check_program(c: ptr<Sem>) {
 # `file:line:col: warning: message` per line, in both modes. The Python host
 # collected them and never printed them (#678). FLOWC_WARNINGS=0 silences
 # them; FLOWC_WERROR=1 prints them as errors that stop the compile
-# (compiler/scripts/flowc_emit.sh --no-warnings and --Werror).
+# (compiler/scripts/flowc_emit.flow --no-warnings and --Werror).
 export function sem_report(c: ptr<Sem>) -> i32 {
     let mut i: i32 = 0
     let mut stop: i32 = 0
