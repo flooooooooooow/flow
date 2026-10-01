@@ -10,7 +10,6 @@ on:
       - 'tools/flow_cli/**'
       - 'scripts/tools/stability_manifest/**'
       - 'scripts/tools/lib/**'
-      - 'scripts/tools/build_tool.sh'
       - 'compiler/bootstrap/flowc_stage_a.c'
       - '.github/workflows/stability.yml'
   push:
@@ -24,7 +23,6 @@ on:
       - 'tools/flow_cli/**'
       - 'scripts/tools/stability_manifest/**'
       - 'scripts/tools/lib/**'
-      - 'scripts/tools/build_tool.sh'
       - 'compiler/bootstrap/flowc_stage_a.c'
       - '.github/workflows/stability.yml'
   workflow_dispatch:

@@ -17,7 +17,7 @@
 #   --percentile P X...          linear-interpolated percentile of X
 #   --eval-regression OLD NEW    regression status of two workload objects
 #   --system-info                the "system" object as JSON
-#   --now-us                     wall clock in microseconds (for bench.sh)
+#   --now-us                     wall clock in microseconds (for the standardized bench)
 #
 # Regression policy: an OS or CPU change skips the comparison
 # (skipped_env_mismatch), so does a workload whose runs failed

@@ -72,8 +72,8 @@ the Flow port of each one. The table records where each port stands.
 
 ## Scripts and tools ported to Flow
 
-Each port is a Flow program under `scripts/tools/<name>/main.flow` behind a
-bash shim. `scripts/tools/build_tool.sh` builds the Stage-A compiler from
+Each port is a Flow program under `scripts/tools/<name>/main.flow`, run as
+`./flow tool <name>`. `flow tool` builds the Stage-A compiler from
 `compiler/bootstrap/flowc_stage_a.c` with `cc` and compiles the tool, so these
 need no Python. The Python original was deleted in the same pull request.
 
@@ -83,8 +83,8 @@ need no Python. The Python original was deleted in the same pull request.
 | `scripts/check_doc_coverage.py` | [`./flow tool doc_coverage`](../../scripts/tools/doc_coverage/main.flow) → `scripts/tools/doc_coverage` | #959 |
 | `scripts/check_wiki_links.py` | [`./flow tool wiki_links`](../../scripts/tools/wiki_links/main.flow) → `scripts/tools/wiki_links` | #959 |
 | `scripts/check_stability_manifest.py` | [`./flow tool stability_manifest`](../../scripts/tools/stability_manifest/main.flow) → `scripts/tools/stability_manifest` | #959 |
-| `scripts/sync_version.py` | [`scripts/sync_version.sh`](../../scripts/sync_version.sh) → `scripts/tools/sync_version` | #959 |
-| `scripts/sync_roadmap.py` | [`scripts/sync_roadmap.sh`](../../scripts/sync_roadmap.sh) → `scripts/tools/roadmap_sync` | #959 |
+| `scripts/sync_version.py` | [`./flow tool sync_version`](../../scripts/tools/sync_version/main.flow) → `scripts/tools/sync_version` | #959 |
+| `scripts/sync_roadmap.py` | [`./flow tool roadmap_sync`](../../scripts/tools/roadmap_sync/main.flow) → `scripts/tools/roadmap_sync` | #959 |
 | `challenges/flow-specific/check.py` | [`./flow tool challenge_check`](../../scripts/tools/challenge_check/main.flow) → `scripts/tools/challenge_check` | #965 |
 | `tools/grad/flow_grad_c.py`, `flow_grad_flow.py` | [`./flow tool grad`](../../scripts/tools/grad/main.flow) | #965 |
 | `tools/size/measure_size.py` | [`./flow tool measure_size`](../../scripts/tools/measure_size/main.flow) | #965 |
@@ -98,7 +98,7 @@ need no Python. The Python original was deleted in the same pull request.
 | `scripts/playground_compile_server.py` | [`./flow tool playground_server`](../../scripts/tools/playground_server/main.flow) → `scripts/tools/playground_server` | #1076 |
 | `scripts/ws_echo_relay.py` | [`./flow tool ws_echo_relay`](../../scripts/tools/ws_echo_relay/main.flow) → `scripts/tools/ws_echo_relay` | #1076 |
 | `scripts/wiki_contrast.py`, `scripts/wiki_verify.py` | [`./flow tool wiki_browser contrast`](../../scripts/tools/wiki_browser/main.flow), [`./flow tool wiki_browser verify`](../../scripts/tools/wiki_browser/main.flow) → `scripts/tools/wiki_browser` (Chrome DevTools Protocol from Flow) | #1076 |
-| `scripts/deploy_wiki.py` | [`scripts/deploy_wiki.sh`](../../scripts/deploy_wiki.sh) | #1076 |
+| `scripts/deploy_wiki.py` | [`./flow tool deploy_wiki`](../../scripts/tools/deploy_wiki/main.flow) | #1076 |
 | `tools/audio/lattice_allpass_audio_demo.py`, `plot_lattice_allpass.py` | `./flow tool lattice_allpass demo` and `plot` → `scripts/tools/lattice_allpass` (WAV and SVG from Flow) | #1076 |
 | `tools/discord-welcome/bot.py`, `welcome.py` | `./flow tool tools/discord-welcome/build.flow` → `scripts/tools/discord_welcome` (Gateway over TLS through OpenSSL) | #1076 |
 | The last pytest files (`tests/unit`, `tests/integration`) | Flow tests in [`tests/scripts/`](../../tests/scripts/run.flow), `./flow test-scripts` | #1076 |
@@ -129,7 +129,7 @@ Python and ported those tests to `tests/lang/`. See
 
 | Landed in Flow | Where |
 |---|---|
-| Repo stats counter | [`scripts/tools/repo_stats/main.flow`](../../scripts/tools/repo_stats/main.flow) via [`scripts/update_repo_stats.sh`](../../scripts/update_repo_stats.sh) (git dump stays in shell) |
+| Repo stats counter | [`scripts/tools/repo_stats/main.flow`](../../scripts/tools/repo_stats/main.flow) run as `./flow tool repo_stats` (git runs through std.process) |
 | Claim Coordinates | [`compiler/src/claim_address.flow`](../../compiler/src/claim_address.flow) |
 | Claim path + fingerprint | [`compiler/src/claim_path.flow`](../../compiler/src/claim_path.flow) |
 | Math prose (**complete**) | [`compiler/src/math_prose.flow`](../../compiler/src/math_prose.flow): the whole of `math_prose.py`: coordinates and tier openings, plus `flowc_flow_expr_to_mathematical_english` / `flowc_flow_expr_to_latex` / `flowc_geometry_expr_to_latex` / `flowc_analysis_expr_to_latex` / `flowc_invoke_premise_mathematical`. Regex replaced by hand-written single-pass scans. Gated with the rest of the proof layer by [`parity_proofs.sh`](../../compiler/scripts/parity_proofs.sh) |
@@ -161,8 +161,8 @@ Python and ported those tests to `tests/lang/`. See
 
 Where a Flow port replaces a Python script that still exists, the Python
 stays as the reference and the shim diffs the two on every run. The repo
-stats counter works this way: `update_repo_stats.sh` runs Flow, then fails
-loudly if `update_repo_stats.py` disagrees with what Flow wrote. Open PR #971
+stats counter worked this way: its shell entry point ran Flow, then failed
+loudly if `update_repo_stats.py` disagreed with what Flow wrote. Open PR #971
 drops that cross-check and deletes the Python.
 
 | Still rewrite priority | Target |

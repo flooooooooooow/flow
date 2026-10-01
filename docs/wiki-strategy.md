@@ -80,7 +80,7 @@ build/wiki/ ─► GitHub Actions (wiki.yml) ─► flooooooooooow.github.io/flo
 
 **Rule:** Never edit files in `build/wiki/` by hand. Always change source and rebuild.
 
-VPS deploy is off. Local build: `scripts/deploy_wiki.sh` (builds only). Emergency VPS: `FLOW_WIKI_VPS=1`.
+VPS deploy is off. Local build: `./flow tool deploy_wiki` (builds only). Emergency VPS: `FLOW_WIKI_VPS=1`.
 
 ---
 

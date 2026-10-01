@@ -15,21 +15,30 @@
 # When an item is marked done in ROADMAP.md, its issue is closed and the
 # checklist line flips to - [x].
 #
-# Flow cannot run gh, so scripts/sync_roadmap.sh drives this program in
-# phases and does the GitHub calls in between. Files live in
-# build/roadmap-sync/:
+# Run it as `./flow tool roadmap_sync` from anywhere in the repository; it
+# works from the repository root and needs gh (authenticated):
 #
-#   --phase args    validate arguments, print the normalised repo
-#   --phase plan    read issues.json, report, and write plan.txt (the gh
-#                   calls to make) plus one body-N.md per new issue
-#   --phase apply   read created.txt (numbers of the new issues) and
-#                   rewrite the checklist
+#   flow tool roadmap_sync [--roadmap ROADMAP.md]
+#       [--checklist docs/project/issues-checklist.md]
+#       [--repo owner/name] [--dry-run] [--verbose]
 #
-# Every phase recomputes the plan from the same inputs, so the phases agree.
+# A run goes through three phases and calls gh (std.process) in between.
+# Their files live in build/roadmap-sync/:
+#
+#   args    validate arguments and learn the repository
+#   plan    read issues.json (`gh issue list`), report, and write plan.txt
+#           (the gh calls to make) plus one body-N.md per new issue
+#   apply   read created.txt (numbers of the new issues) and rewrite the
+#           checklist
+#
+# `--phase args|plan|apply` runs one phase alone. Every phase recomputes the
+# plan from the same inputs, so the phases agree.
 
 import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_read_file, ft_write_file, ft_exists, ft_starts, ft_ends, ft_at, ft_find, ft_slice, ft_from, ft_find_byte, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_sort, ft_set_new, ft_set_add, ft_set_has, ft_map_new, ft_map_get, ft_map_put, StrList, StrSet, StrMap }
 import .unicode { uc_decode, uc_len, uc_prev, uc_is_space, uc_strip, uc_lower_str }
 import .mdtext { md_splitlines, md_collapse_ws }
+import .repo { rp_enter_root }
+import std.process { ProcCmd, ProcResult, proc_cmd, proc_arg, proc_stdout, proc_stderr, proc_run, PROC_NULL, PROC_CAPTURE }
 import .json { json_parse, json_error, json_get, json_kind, json_str, json_first, json_next, json_int, json_is_int, json_kind_string, json_kind_array, json_kind_object, Json }
 
 extern {
@@ -38,7 +47,7 @@ extern {
     function closedir(d: ptr<void>) -> i32
 }
 
-const PROG: string = "sync_roadmap.sh"
+const PROG: string = "flow tool roadmap_sync"
 const WORK: string = "build/roadmap-sync"
 const LABEL: string = "roadmap"
 
@@ -954,7 +963,7 @@ struct Args {
 }
 
 function usage() -> string {
-    return "usage: " + PROG + " [-h] [--roadmap ROADMAP] [--checklist CHECKLIST]\n                       [--repo REPO] [--dry-run] [--verbose]\n"
+    return "usage: " + PROG + " [-h] [--roadmap ROADMAP] [--checklist CHECKLIST]\n                               [--repo REPO] [--dry-run] [--verbose]\n"
 }
 
 function arg_error(msg: string) -> i32 {
@@ -978,7 +987,7 @@ function parse_args(argc: i32, argv: ptr<string>, a: ptr<Args>) -> i32 {
     a[0].repo = "flooooooooooow/flow"
     a[0].dry_run = false
     a[0].verbose = false
-    a[0].phase = "plan"
+    a[0].phase = "run"
     let unknown: ptr<StrList> = ft_list_new()
     let mut i: i32 = 1
     while i < argc {
@@ -1326,7 +1335,264 @@ function parse_int(s: string) -> i32 {
     return n
 }
 
+# ---------------------------------------------------------------------------
+# gh
+# ---------------------------------------------------------------------------
+
+const LABEL_COLOR: string = "5319E7"
+const LABEL_DESC: string = "Open ROADMAP.md item synced by ./flow tool roadmap_sync"
+
+# Byte 1, the separator between gh_cmd's arguments. (A "\x01" literal
+# would reach the C output as is, where a hex escape runs on into a
+# following a-f.)
+function sp() -> string {
+    let b: ptr<u8> = malloc(2) as ptr<u8>
+    b[0] = 1
+    b[1] = 0
+    return b as string
+}
+
+# A gh command; `args` holds its arguments separated by sp().
+function gh_cmd(args: string) -> ptr<ProcCmd> {
+    let c: ptr<ProcCmd> = proc_cmd("gh")
+    let mut start: i32 = 0
+    let mut at: i32 = ft_find_byte(args, 1, 0)
+    while at >= 0 {
+        proc_arg(c, ft_slice(args, start, at))
+        start = at + 1
+        at = ft_find_byte(args, 1, start)
+    }
+    proc_arg(c, ft_from(args, start))
+    return c
+}
+
+function gh_status(r: ptr<ProcResult>) -> i32 {
+    if ft_len(r.error) > 0 {
+        return 127
+    }
+    if r.exit_code < 0 {
+        return 128 - r.exit_code
+    }
+    return r.exit_code
+}
+
+# `$(...)`: drop trailing newlines.
+function chomp_nl(s: string) -> string {
+    let mut n: i32 = ft_len(s)
+    let p: ptr<u8> = s as ptr<u8>
+    while n > 0 and p[n - 1] == 10 {
+        n = n - 1
+    }
+    return ft_slice(s, 0, n)
+}
+
+# Run gh with stdout discarded; on failure print its stderr. False when it
+# failed, which ends the run.
+function run_gh_quiet(c: ptr<ProcCmd>) -> bool {
+    proc_stdout(c, PROC_NULL)
+    proc_stderr(c, PROC_CAPTURE)
+    let r: ptr<ProcResult> = proc_run(c)
+    if gh_status(r) != 0 {
+        ft_errln(chomp_nl(r.stderr))
+        return false
+    }
+    return true
+}
+
+# Run gh for its stdout (trailing newlines dropped); on failure print its
+# stderr and return null.
+function gh_output(c: ptr<ProcCmd>) -> string {
+    proc_stdout(c, PROC_CAPTURE)
+    proc_stderr(c, PROC_CAPTURE)
+    let r: ptr<ProcResult> = proc_run(c)
+    if gh_status(r) != 0 {
+        ft_err(r.stderr)
+        return null as string
+    }
+    return chomp_nl(r.stdout)
+}
+
+# Every "ROADMAP-SYNC: <slug>" in `body` pointed at `slug`, as
+# sed -E "s/ROADMAP-SYNC: [a-z0-9-]+/ROADMAP-SYNC: $slug/g".
+function retarget_marker(body: string, slug: string) -> string {
+    let mut out: string = ""
+    let mut from: i32 = 0
+    let mut at: i32 = ft_find(body, "ROADMAP-SYNC: ", 0)
+    let p: ptr<u8> = body as ptr<u8>
+    while at >= 0 {
+        let s: i32 = at + 14
+        let mut e: i32 = s
+        while is_slug_or_dash(p[e] as i32) {
+            e = e + 1
+        }
+        if e > s {
+            out = out + ft_slice(body, from, at) + "ROADMAP-SYNC: " + slug
+            from = e
+            at = ft_find(body, "ROADMAP-SYNC: ", e)
+        } else {
+            at = ft_find(body, "ROADMAP-SYNC: ", at + 1)
+        }
+    }
+    return out + ft_from(body, from)
+}
+
+# The issue number in a gh issue create URL (".../issues/123"), or "0".
+function issue_number_of(out: string) -> string {
+    let mut at: i32 = ft_find(out, "issues/", 0)
+    let p: ptr<u8> = out as ptr<u8>
+    while at >= 0 {
+        let s: i32 = at + 7
+        let mut e: i32 = s
+        while is_digit(p[e] as i32) {
+            e = e + 1
+        }
+        if e > s {
+            return ft_slice(out, s, e)
+        }
+        at = ft_find(out, "issues/", at + 1)
+    }
+    return "0"
+}
+
+# Field `k` (0..4) of a tab-separated plan row. The last field keeps any
+# tabs, as `read -r kind a b c d` does.
+function field(row: string, k: i32) -> string {
+    let mut start: i32 = 0
+    let mut f: i32 = 0
+    while f < k {
+        let t: i32 = ft_find_byte(row, 9, start)
+        if t < 0 {
+            return ""
+        }
+        start = t + 1
+        f = f + 1
+    }
+    if k == 4 {
+        return ft_from(row, start)
+    }
+    let t2: i32 = ft_find_byte(row, 9, start)
+    if t2 < 0 {
+        return ft_from(row, start)
+    }
+    return ft_slice(row, start, t2)
+}
+
+# `gh issue list` for every roadmap issue, left in WORK for the plan phase.
+function list_issues(repo: string) -> void {
+    let c: ptr<ProcCmd> = gh_cmd("issue" + sp() + "list" + sp() + "--repo" + sp() + repo + sp() + "--label" + sp() + LABEL + sp() + "--state" + sp() + "all" + sp() + "--limit" + sp() + "500" + sp() + "--json" + sp() + "number,title,body")
+    proc_stdout(c, PROC_CAPTURE)
+    proc_stderr(c, PROC_CAPTURE)
+    let r: ptr<ProcResult> = proc_run(c)
+    let _j: bool = ft_write_file(WORK + "/issues.json", r.stdout)
+    let _e: bool = ft_write_file(WORK + "/issues.err", r.stderr)
+    let _s: bool = ft_write_file(WORK + "/issues.status", ft_itoa(gh_status(r)) + "\n")
+}
+
+# Carry out plan.txt with gh. Returns 0, or 1 after a failed call.
+function run_plan(repo: string) -> i32 {
+    let rows: ptr<StrList> = ft_split_lines(ft_read_file(WORK + "/plan.txt"))
+    let mut verbose: bool = false
+    let mut v: i32 = 0
+    while v < ft_list_len(rows) {
+        if ft_eq(ft_list_get(rows, v), "verbose") {
+            verbose = true
+        }
+        v = v + 1
+    }
+    let lc: ptr<ProcCmd> = gh_cmd("label" + sp() + "create" + sp() + LABEL + sp() + "--repo" + sp() + repo + sp() + "--color" + sp() + LABEL_COLOR + sp() + "--description" + sp() + LABEL_DESC)
+    proc_stdout(lc, PROC_NULL)
+    proc_stderr(lc, PROC_NULL)
+    let _l: ptr<ProcResult> = proc_run(lc)
+    let mut created: string = ""
+    let _z: bool = ft_write_file(WORK + "/created.txt", "")
+    let mut i: i32 = 0
+    while i < ft_list_len(rows) {
+        let row: string = ft_list_get(rows, i)
+        let kind: string = field(row, 0)
+        let a: string = field(row, 1)
+        let b: string = field(row, 2)
+        let c: string = field(row, 3)
+        let d: string = field(row, 4)
+        if ft_eq(kind, "adopt") {
+            # a=number b=new slug c=old slug d=title
+            if run_gh_quiet(gh_cmd("issue" + sp() + "edit" + sp() + a + sp() + "--repo" + sp() + repo + sp() + "--title" + sp() + "[roadmap] " + d)) == false {
+                return 1
+            }
+            let body: string = gh_output(gh_cmd("issue" + sp() + "view" + sp() + a + sp() + "--repo" + sp() + repo + sp() + "--json" + sp() + "body" + sp() + "--jq" + sp() + ".body"))
+            if body as ptr<u8> == null {
+                return 1
+            }
+            let nb: string = chomp_nl(retarget_marker(body, b))
+            if run_gh_quiet(gh_cmd("issue" + sp() + "edit" + sp() + a + sp() + "--repo" + sp() + repo + sp() + "--body" + sp() + nb)) == false {
+                return 1
+            }
+            if verbose {
+                ft_outln("adopted #" + a + " as '" + d + "' (was slug '" + c + "')")
+            }
+        } elif ft_eq(kind, "create") {
+            # a=slug b=body file c=title
+            let out: string = gh_output(gh_cmd("issue" + sp() + "create" + sp() + "--repo" + sp() + repo + sp() + "--label" + sp() + LABEL + sp() + "--title" + sp() + "[roadmap] " + c + sp() + "--body-file" + sp() + b))
+            if out as ptr<u8> == null {
+                return 1
+            }
+            let number: string = issue_number_of(out)
+            if verbose {
+                ft_outln("created #" + number + ": " + c)
+            }
+            created = created + a + "\t" + number + "\t" + out + "\n"
+            let _w: bool = ft_write_file(WORK + "/created.txt", created)
+        } elif ft_eq(kind, "close") {
+            if verbose {
+                ft_outln("closing #" + a)
+            }
+            if run_gh_quiet(gh_cmd("issue" + sp() + "close" + sp() + a + sp() + "--repo" + sp() + repo)) == false {
+                return 1
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# A whole sync: arguments, gh issue list, plan, the gh calls, apply.
+function run_all(a: ptr<Args>, repo: string) -> i32 {
+    let rm: ptr<ProcCmd> = proc_cmd("rm")
+    proc_arg(rm, "-rf")
+    proc_arg(rm, WORK)
+    let _rm: ptr<ProcResult> = proc_run(rm)
+    let mk: ptr<ProcCmd> = proc_cmd("mkdir")
+    proc_arg(mk, "-p")
+    proc_arg(mk, WORK)
+    let _mk: ptr<ProcResult> = proc_run(mk)
+    if is_file(a[0].roadmap) == false {
+        ft_errln("ROADMAP file not found: " + a[0].roadmap)
+        return 1
+    }
+    if is_file(a[0].checklist) == false {
+        ft_errln("Checklist file not found: " + a[0].checklist)
+        return 1
+    }
+    list_issues(repo)
+    let rc: i32 = phase_plan(a, repo)
+    if rc != 0 {
+        return rc
+    }
+    let plan: string = ft_read_file(WORK + "/plan.txt")
+    if plan as ptr<u8> != null and ft_starts(plan, "dry-run\n") {
+        return 0
+    }
+    let rc2: i32 = run_plan(repo)
+    if rc2 != 0 {
+        return rc2
+    }
+    return phase_apply(a, repo)
+}
+
 function main(argc: i32, argv: ptr<string>) -> i32 {
+    if rp_enter_root() == false {
+        ft_errln(PROG + ": cannot enter the repository root")
+        return 1
+    }
     let a: ptr<Args> = malloc(64) as ptr<Args>
     let rc: i32 = parse_args(argc, argv, a)
     if rc == 3 {
@@ -1337,6 +1603,9 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         return rc
     }
     let repo: string = normalize_repo(a[0].repo)
+    if ft_eq(a[0].phase, "run") {
+        return run_all(a, repo)
+    }
     if ft_eq(a[0].phase, "args") {
         if is_file(a[0].roadmap) == false {
             ft_errln("ROADMAP file not found: " + a[0].roadmap)

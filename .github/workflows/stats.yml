@@ -1,3 +1,4 @@
+# ACTIONS-INTENDED: public repository; its CI runs on GitHub Actions.
 name: Repository Stats
 
 on:
@@ -41,12 +42,10 @@ jobs:
           clang --version
 
       - name: Generate tracked-file statistics
-        run: |
-          chmod +x scripts/update_repo_stats.sh
-          ./scripts/update_repo_stats.sh
+        run: ./flow tool repo_stats
 
       - name: Verify deterministic output
-        run: ./scripts/update_repo_stats.sh --check
+        run: ./flow tool repo_stats --check
 
       - name: Upload machine-readable statistics
         uses: actions/upload-artifact@v4
@@ -92,4 +91,3 @@ jobs:
           echo "::warning::Could not open a PR (Actions may lack create-PR permission)."
           echo "Branch is ready: https://github.com/${{ github.repository }}/pull/new/chore/repository-stats"
           exit 0
-

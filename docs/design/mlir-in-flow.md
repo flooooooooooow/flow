@@ -209,7 +209,7 @@ checker to flowc (`compiler/src/sem_check.flow`, #1071) closed most of them:
 
 * `./flow tool tests/conformance/run.flow` passes, including the Stable negatives
   `01_type_mismatch` and `02_immutable_assignment`.
-* `scripts/check_doc_examples.sh --check-ledger` finds every
+* `./flow tool doc_examples --check-ledger` finds every
   `expect-error` example rejected, and the ledger is empty.
 * `compiler/scripts/typecheck_rules.sh` holds one negative program per
   ported rule, and `compiler/scripts/parity_typecheck.sh --check` holds
