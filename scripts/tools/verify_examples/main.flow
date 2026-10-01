@@ -2,7 +2,7 @@
 # compiles, and regenerate the status table in examples/STATUS.md.
 #
 # Each file goes through the same pipeline as `./flow test --tier2`:
-#   1. transpile: compiler/scripts/flowc_emit.sh --lenient <file> <tmp>.c
+#   1. transpile: compiler/scripts/flowc_emit.flow --lenient <file> <tmp>.c
 #   2. cgen check: clang -fsyntax-only -Wno-everything <tmp>.c
 #
 # Run it as `./flow tool verify_examples` from anywhere:
@@ -233,7 +233,7 @@ function write_status_md(files: ptr<StrList>, status: ptr<StrList>, cats: ptr<St
         swept = swept + "`" + ft_list_get(roots, i) + "/`"
         i = i + 1
     }
-    md = md + "Each file is compile-checked (not executed) with the same pipeline as `./flow test --tier2`: Flow -> C via flowc (`compiler/scripts/flowc_emit.sh --lenient`), then `clang -fsyntax-only` on the generated C. Per-stage timeout: " + ft_itoa(timeout) + "s. Roots swept: " + swept + ".\n\n"
+    md = md + "Each file is compile-checked (not executed) with the same pipeline as `./flow test --tier2`: Flow -> C via flowc (`compiler/scripts/flowc_emit.flow --lenient`), then `clang -fsyntax-only` on the generated C. Per-stage timeout: " + ft_itoa(timeout) + "s. Roots swept: " + swept + ".\n\n"
     if verify_failed > 0 {
         md = md + "> **Note:** " + ft_itoa(verify_failed) + " of the failures below are under `examples/verify/`, the `flow-verify` proof corpus. That corpus is written *ahead of* the verification-keyword parser/checker (see [verification.md](../docs/language/verification.md)) and intentionally explores notation (set operators, Euclidean ratios, ghost contracts) that isn't implemented yet. These are not core-Flow regressions. See [flow-verify-parser-status.md](../docs/third-party/flow-verify-parser-status.md) for a categorized breakdown, or regenerate it with `./flow tool triage_verify_failures`.\n\n"
     }

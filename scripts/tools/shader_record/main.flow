@@ -148,7 +148,7 @@ function sorted_copy(l: ptr<StrList>) -> ptr<StrList> {
 }
 
 function flowc() -> string {
-    let f: string = pr_chomp(pr_capture("bash " + pr_quote(path_in("compiler/scripts/ensure_flowc.sh")) + " --cc-only 2>/dev/null"))
+    let f: string = pr_chomp(pr_capture(pr_quote(path_in("flow")) + " tool " + pr_quote(path_in("compiler/scripts/ensure_flowc.flow")) + " --cc-only 2>/dev/null"))
     if ft_starts(f, "/") {
         return f
     }

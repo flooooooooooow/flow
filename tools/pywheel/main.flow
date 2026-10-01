@@ -8,7 +8,7 @@
 # rules of the Python module resolver). Export inference, the ABI checks,
 # the @python(name=, doc=, exclude=) overrides, the diagnostics and the
 # generated C wrappers match the Python generator. The Flow program's own C
-# comes from flowc (compiler/scripts/flowc_emit.sh), as it did there.
+# comes from flowc (compiler/scripts/flowc_emit.flow), as it did there.
 #
 # Usage (the flow CLI runs this):
 #   flow-pywheel PROGRAM MODULE VERSION MODE OUT_DIR WORK_DIR REPO_ROOT
@@ -1344,7 +1344,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     # generator's strict type check did.
     let stem: string = default_module_name(program)
     let c_path: string = t_cat3(work_dir, "/", t_cat(stem, ".c"))
-    let cmd: string = t_cat3(t_shq(t_cat(repo, "/compiler/scripts/flowc_emit.sh")), " --strict ", t_cat3(t_shq(root_path), " ", t_cat(t_shq(c_path), " >&2")))
+    let cmd: string = t_cat3(t_cat3(t_shq(t_cat(repo, "/flow")), " tool ", t_shq(t_cat(repo, "/compiler/scripts/flowc_emit.flow"))), " --strict ", t_cat3(t_shq(root_path), " ", t_cat(t_shq(c_path), " >&2")))
     if system(cmd) != 0 or not t_file_exists(c_path) {
         err(t_cat("Python generation error: flowc could not compile ", program))
         return 1

@@ -4,7 +4,7 @@
 # The checker is the Flow program in tools/doc_examples (see its main.flow
 # for the commands). Flow cannot spawn git, so this shim lists the tracked
 # markdown into build/doc-examples/, resolves the flowc the examples are
-# compiled with (compiler/scripts/ensure_flowc.sh, as `flow compile` does),
+# compiled with (compiler/scripts/ensure_flowc.flow, as `flow compile` does),
 # builds the checker from the checked-in bootstrap C, and runs it.
 #
 # Usage:
@@ -86,7 +86,7 @@ fi
 # The compiler the examples go through: the one `flow compile` uses.
 flowc="${FLOWC_BIN:-}"
 if [[ -z "$flowc" || ! -x "$flowc" ]]; then
-    flowc="$(bash compiler/scripts/ensure_flowc.sh)"
+    flowc="$(./flow tool compiler/scripts/ensure_flowc.flow)"
 fi
 [[ "$flowc" == /* ]] || flowc="$ROOT/$flowc"
 

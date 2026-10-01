@@ -1,0 +1,149 @@
+# @module scripts.check_lib
+# @means  Steps shared by the check runners in scripts/ (check_pkg_commands,
+#         check_run_without_python and the others started with
+#         `./flow tool scripts/NAME.flow`).
+
+import "tools/flow_cli/sys.flow"
+import std.process { ProcCmd, ProcStrs, proc_chdir }
+
+# The repository root, made the working directory. `flow tool` passes it in
+# FLOW_REPO_ROOT; the variable is then dropped so the commands a check runs
+# see the environment a shell script would have given them.
+export function chk_enter() -> string {
+    let mut r: string = env("FLOW_REPO_ROOT")
+    if s_len(r) == 0 {
+        r = cwd_logical()
+    }
+    r = abs_dir_physical(r)
+    if not proc_chdir(r) {
+        errln("cannot enter " + r)
+        cli_exit(1)
+    }
+    env_set("PWD", r)
+    env_unset("FLOW_REPO_ROOT")
+    return r
+}
+
+# Stub `python` and `python3` in `stub_dir`: each logs "NAME ARGS" to `log`
+# and exits 127. The directory goes first on PATH.
+export function chk_stub_python(stub_dir: string, log: string) {
+    mkdir_p_or_exit(stub_dir)
+    let _l: bool = write_text(log, "")
+    chk_stub_one(stub_dir, log, "python")
+    chk_stub_one(stub_dir, log, "python3")
+    env_set("PATH", stub_dir + ":" + env("PATH"))
+}
+
+function chk_stub_one(stub_dir: string, log: string, name: string) {
+    let p: string = stub_dir + "/" + name
+    let _w: bool = write_text(p, "#!/bin/sh\necho \"" + name + " $*\" >> \"" + log + "\"\nexit 127\n")
+    let _m: bool = set_mode(p, 493)
+}
+
+# sed 's/^/PREFIX/': every line of `text` with `prefix` in front. A last
+# line without a newline keeps none.
+export function chk_prefix(text: string, prefix: string) -> string {
+    if s_len(text) == 0 {
+        return ""
+    }
+    let lines: ptr<ProcStrs> = s_split(text, 10)
+    let n: i32 = sl_len(lines)
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        let ln: string = sl_get(lines, i)
+        if i == n - 1 {
+            if s_len(ln) > 0 {
+                out = out + prefix + ln
+            }
+        } else {
+            out = out + prefix + ln + "\n"
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# head -n N of a text.
+export function chk_head(text: string, n: i32) -> string {
+    let tp: ptr<u8> = text as ptr<u8>
+    let len: i32 = s_len(text)
+    let mut seen: i32 = 0
+    let mut i: i32 = 0
+    while i < len and seen < n {
+        if tp[i] == 10 {
+            seen = seen + 1
+        }
+        i = i + 1
+    }
+    return s_slice(text, 0, i)
+}
+
+# tail -n N of a text.
+export function chk_tail(text: string, n: i32) -> string {
+    let tp: ptr<u8> = text as ptr<u8>
+    let len: i32 = s_len(text)
+    let mut i: i32 = len
+    if i > 0 and tp[i - 1] == 10 {
+        i = i - 1
+    }
+    let mut seen: i32 = 0
+    while i > 0 {
+        if tp[i - 1] == 10 {
+            seen = seen + 1
+            if seen == n {
+                break
+            }
+        }
+        i = i - 1
+    }
+    return s_from(text, i)
+}
+
+# `diff A B` as text (the golden diff a check shows on failure).
+export function chk_diff(a: string, b: string) -> string {
+    return capture_raw(cmd(sl_of3("diff", a, b)))
+}
+
+# cp -R SRC DST for a tree of directories and regular files.
+export function chk_copy_tree(src: string, dst: string) -> bool {
+    if is_dir(src) {
+        if not mkdir_p(dst) {
+            return false
+        }
+        let names: ptr<ProcStrs> = list_dir(src)
+        let mut i: i32 = 0
+        while i < sl_len(names) {
+            let n: string = sl_get(names, i)
+            if not chk_copy_tree(src + "/" + n, dst + "/" + n) {
+                return false
+            }
+            i = i + 1
+        }
+        return true
+    }
+    return copy_file(src, dst)
+}
+
+# Whether some line of `text` is exactly `line` (grep -q '^LINE$').
+export function chk_has_line(text: string, line: string) -> bool {
+    let lines: ptr<ProcStrs> = s_lines(text)
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        if s_eq(sl_get(lines, i), line) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# mktemp -d "${TMPDIR:-/tmp}/NAME.XXXXXX", resolved with pwd -P.
+export function chk_mktemp(name: string) -> string {
+    let t: string = mktemp_dir(env_or("TMPDIR", "/tmp") + "/" + name + ".XXXXXX")
+    if s_len(t) == 0 {
+        errln("mktemp: cannot create a directory for " + name)
+        cli_exit(1)
+    }
+    return abs_dir_physical(t)
+}

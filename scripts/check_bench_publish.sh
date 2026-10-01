@@ -29,7 +29,7 @@ for name in fib nbody matmul spectral mandelbrot; do
         fail=$((fail + 1))
         continue
     fi
-    if ! "$ROOT/compiler/scripts/flowc_emit.sh" --lenient "$PUB/flow/$name.flow" \
+    if ! "$ROOT/flow" tool "$ROOT/compiler/scripts/flowc_emit.flow" --lenient "$PUB/flow/$name.flow" \
             "$work/${name}_flow.c" > "$work/${name}_emit.log" 2>&1; then
         echo "FAIL $name: flowc could not emit the Flow program"
         sed 's/^/     /' "$work/${name}_emit.log" | tail -n 10

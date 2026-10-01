@@ -75,10 +75,12 @@ Every package command is written in Flow: `add`, `sync` (and its alias
 `run-native`, `clean` and the install step of `flow run`. The code is
 [`compiler/src/pkg.flow`](../../compiler/src/pkg.flow), built by the `flow` command line
 with the Stage-A compiler. They need no Python. git, curl, tar and cp run
-through std.process with an argument vector; builds run flowc and clang. `scripts/check_pkg_parity.sh` compares `flow.lock` and
-`flow_packages/` with the Python package manager this replaced, and
-`scripts/check_pkg_commands.sh` checks the other commands against goldens
-recorded from it.
+through std.process with an argument vector; builds run flowc and clang.
+`./flow tool scripts/check_pkg_parity.flow` checks stdout, `flow.lock` and
+`flow_packages/` against goldens in `tests/pkg_parity`, and
+`./flow tool scripts/check_pkg_commands.flow` checks the other commands
+against `tests/pkg_commands`. Both sets were recorded once the Flow package
+manager matched the Python one it replaced.
 
 flowc resolves `import name.module` for a package listed in `[dependencies]`
 from `flow_packages/name/src/module.flow`, then `flow_packages/name/module.flow`,

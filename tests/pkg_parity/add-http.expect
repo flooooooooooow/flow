@@ -1,0 +1,54 @@
+$ flow_pkg add http
+[exit 0]
+== stdout
+[94mResolved http@0.1.0 from flow-packages[0m
+[92m✓ Added http = "0.1.0"[0m
+[94m↓ http@0.1.0 from registry[0m
+[92m✓ Installed http from @ROOT@/registry/packages/http[0m
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+description = ""
+author = ""
+license = "MIT"
+entry = "src/main.flow"
+
+[dependencies]
+http = "0.1.0"
+
+[dev-dependencies]
+
+[build]
+host = "flowc"
+# test_command = "flow run tests/test_main.flow"
+
+[conventions]
+# avoid = [
+#   { pattern = "reverse for loop", reason = "generates incorrect step direction (#410)", workaround = "use while with explicit decrement" },
+# ]
+
+[patterns]
+# math = "use fabs((x) as f64) as f32 for single-precision abs"
+== flow.lock
+{
+  "version": 1,
+  "packages": {
+    "http": {
+      "version": "0.1.0",
+      "source": "registry",
+      "resolved": {
+        "path": "@ROOT@/registry/packages/http"
+      }
+    }
+  }
+}
+== flow_packages
+D flow_packages
+D flow_packages/http
+F flow_packages/http/flow.toml -rw-r--r-- 3609540715 280
+D flow_packages/http/native
+F flow_packages/http/native/flow_http.c -rw-r--r-- 835076283 5001
+F flow_packages/http/native/flow_http.h -rw-r--r-- 3432586399 1755
+D flow_packages/http/src
+F flow_packages/http/src/lib.flow -rw-r--r-- 3850296060 3778

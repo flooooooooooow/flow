@@ -322,7 +322,7 @@ function dispatch(c: string, args: ptr<ProcStrs>) -> i32 {
     } elif is(c, "transpile") {
         error("flow transpile (python -m flow.transpiler) is retired.")
         errln("  MLIR:     ./flow mlir <file.flow> [--optimize] [--llvm] [--mlir-gpu] [--emit-spirv] [-o OUT]")
-        errln("  C:        ./flow compile <file.flow>, or compiler/scripts/flowc_emit.sh <in.flow> <out.c>")
+        errln("  C:        ./flow compile <file.flow>, or ./flow tool compiler/scripts/flowc_emit.flow <in.flow> <out.c>")
         return 2
     } elif is(c, "explain") {
         return cmd_explain(args)

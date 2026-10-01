@@ -608,14 +608,14 @@ function first_with(dir: string, suffix: string) -> string {
     return dir + "/" + ft_list_get(names, 0)
 }
 
-# flowc_emit.sh to C, then clang -O3, as `flow compile` would.
+# flowc_emit to C, then clang -O3, as `flow compile` would.
 function compile_flow(flow_path: string, bin_path: string) -> bool {
     let gen_c: string = bin_path + ".c"
     let log_o: string = bin_path + ".out"
     let log_e: string = bin_path + ".err"
-    let emit: string = ft_join(root(), "compiler/scripts/flowc_emit.sh")
+    let emit: string = pr_quote(ft_join(root(), "flow")) + " tool " + pr_quote(ft_join(root(), "compiler/scripts/flowc_emit.flow"))
     let redirect: string = " >" + pr_quote(log_o) + " 2>" + pr_quote(log_e)
-    if pr_run(pr_quote(emit) + " --lenient " + pr_quote(flow_path) + " " + pr_quote(gen_c) + redirect) != 0 {
+    if pr_run(emit + " --lenient " + pr_quote(flow_path) + " " + pr_quote(gen_c) + redirect) != 0 {
         ft_outln("Compilation to C failed for " + flow_path + ":\n" + ft_read_file(log_o) + "\n" + ft_read_file(log_e))
         return false
     }

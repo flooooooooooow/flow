@@ -4,7 +4,7 @@
 #   flow tool flow_to_wasm --all                  convert the example list
 #
 # For each program it writes <name>.c (flowc through
-# compiler/scripts/flowc_emit.sh), tries emcc for <name>.js and <name>.wasm,
+# compiler/scripts/flowc_emit.flow), tries emcc for <name>.js and <name>.wasm,
 # and writes <name>.html showing the Flow source, the C, and a run button
 # when the WebAssembly build worked. The default output directory is
 # wasm/wasm_examples. --all also writes an index.html there.
@@ -199,16 +199,16 @@ function read_or_empty(path: string) -> string {
     return universal_newlines(t)
 }
 
-# Flow to C through compiler/scripts/flowc_emit.sh; null on failure.
+# Flow to C through compiler/scripts/flowc_emit.flow; null on failure.
 function flow_to_c(flow_file: string) -> string {
     let tmp: string = make_tmpdir()
     if ft_len(tmp) == 0 {
         ft_outln("Error compiling FLOW to C: cannot create a temporary directory")
         return null as string
     }
-    let emit: string = root() + "/compiler/scripts/flowc_emit.sh"
+    let emit: string = pr_quote(root() + "/flow") + " tool " + pr_quote(root() + "/compiler/scripts/flowc_emit.flow")
     let c_path: string = tmp + "/" + pstem(flow_file) + ".c"
-    let cmd: string = pr_quote(emit) + " " + pr_quote(flow_file) + " " + pr_quote(c_path) + " >" + pr_quote(tmp + "/.stdout") + " 2>" + pr_quote(tmp + "/.stderr")
+    let cmd: string = emit + " " + pr_quote(flow_file) + " " + pr_quote(c_path) + " >" + pr_quote(tmp + "/.stdout") + " 2>" + pr_quote(tmp + "/.stderr")
     let rc: i32 = pr_run(cmd)
     if rc != 0 or ft_exists(c_path) == false {
         let mut detail: string = uc_strip(read_or_empty(tmp + "/.stderr"))

@@ -15,7 +15,7 @@
 # The GPU crossing takes its WGSL and kernel manifest from tools/gpu
 # (`flow gpu --build`), the Flow shader generator behind `flow gpu --wgsl`.
 #
-# Flow sources go to C through flowc (compiler/scripts/flowc_emit.sh), the
+# Flow sources go to C through flowc (compiler/scripts/flowc_emit.flow), the
 # compiler `flow compile` runs. Page text lives in
 # wasm/crossing_assets/pages/*.html with @@field@@ slots.
 
@@ -245,7 +245,7 @@ function run(argv: ptr<StrList>, quiet: bool, env_prefix: string) -> void {
 }
 
 function flow_to_c_available() -> bool {
-    return ft_exists(path_in("compiler/scripts/flowc_emit.sh"))
+    return ft_exists(path_in("compiler/scripts/flowc_emit.flow"))
 }
 
 # Compile a .flow source to C with flowc. A runtime module is a library
@@ -253,7 +253,9 @@ function flow_to_c_available() -> bool {
 function flow_to_c(flow_file: string, out_c: string, library: bool) -> string {
     let _m: bool = pr_mkdir_p(ft_dirname(out_c))
     let argv: ptr<StrList> = ft_list_new()
-    ft_list_push(argv, path_in("compiler/scripts/flowc_emit.sh"))
+    ft_list_push(argv, path_in("flow"))
+    ft_list_push(argv, "tool")
+    ft_list_push(argv, path_in("compiler/scripts/flowc_emit.flow"))
     if library {
         ft_list_push(argv, "--library")
         ft_list_push(argv, "--lenient")
@@ -338,7 +340,7 @@ function cmd_threads(o: ptr<Opts>) -> i32 {
     }
     let program: string = resolve_program(arg)
     if flow_to_c_available() == false {
-        die("flowc not found (compiler/scripts/flowc_emit.sh); run from the project root.")
+        die("flowc not found (compiler/scripts/flowc_emit.flow); run from the project root.")
     }
     let mut out_arg: string = o[0].out
     if out_arg as ptr<u8> == null {
@@ -906,7 +908,7 @@ function py_float_repr(v: f64) -> string {
 
 # Run flowc in a FLOWC_SHADER mode; stdout, or the diagnostic and exit 1.
 function flowc_shader(mode: string, source: string, out_dir: string, name: string) -> string {
-    let flowc: string = pr_chomp(pr_capture("bash " + pr_quote(path_in("compiler/scripts/ensure_flowc.sh")) + " --cc-only 2>/dev/null"))
+    let flowc: string = pr_chomp(pr_capture(pr_quote(path_in("flow")) + " tool " + pr_quote(path_in("compiler/scripts/ensure_flowc.flow")) + " --cc-only 2>/dev/null"))
     let mut exe: string = flowc
     if ft_starts(flowc, "/") == false {
         exe = path_in(flowc)

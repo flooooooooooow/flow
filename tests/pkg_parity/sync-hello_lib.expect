@@ -1,0 +1,37 @@
+$ flow_pkg sync --program src/main.flow
+[exit 0]
+== stdout
+[94mInstalling dependencies...[0m
+[94m↓ hello_lib@0.1.0 from registry[0m
+[92m✓ Installed hello_lib from @ROOT@/registry/packages/hello_lib[0m
+
+[92m✓ All dependencies installed (flow.lock updated)[0m
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+entry = "src/main.flow"
+
+[dependencies]
+hello_lib = "^0.1"
+
+[dev-dependencies]
+== flow.lock
+{
+  "version": 1,
+  "packages": {
+    "hello_lib": {
+      "version": "0.1.0",
+      "source": "registry",
+      "resolved": {
+        "path": "@ROOT@/registry/packages/hello_lib"
+      }
+    }
+  }
+}
+== flow_packages
+D flow_packages
+D flow_packages/hello_lib
+F flow_packages/hello_lib/flow.toml -rw-r--r-- 4026651674 206
+D flow_packages/hello_lib/src
+F flow_packages/hello_lib/src/lib.flow -rw-r--r-- 3973085612 213
