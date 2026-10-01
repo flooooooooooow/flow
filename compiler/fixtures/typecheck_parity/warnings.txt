@@ -1,4 +1,4 @@
-# Python type checker warnings, strict (compiler/scripts/parity_typecheck.sh), rev f102d88f
+# Python type checker warnings, strict (compiler/scripts/parity_typecheck.flow), rev f102d88f
 @ apps/cartpole/cartpole_gfx.flow	27686dbc162e866af2ba6b10f918fec2c47494f0
 S frontend
 @ apps/cartpole/control.flow	f686de6d1c07be6d304fe84a7ff33246c5c64654

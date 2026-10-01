@@ -54,7 +54,7 @@ export struct Env {
     serial: i32,
     # FLOW_DOC_DUMP: a directory that receives every harness rung of every
     # block, as d<n>.flow plus d<n>.key holding `<block key>@<mode>`
-    # (compiler/scripts/parity_typecheck.sh reads them). Empty when unset.
+    # (compiler/scripts/parity_typecheck.flow reads them). Empty when unset.
     dump: string,
     # The `dump` command: write the rungs and compile nothing.
     dump_only: bool

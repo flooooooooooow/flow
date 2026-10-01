@@ -1,5 +1,5 @@
 # @module compiler.scripts.corpus_lib
-# @means  What the two corpus gates share (compiler/scripts/corpus_parity.sh
+# @means  What the two corpus gates share (compiler/scripts/corpus_parity.flow
 #         and compiler/scripts/mlir_vs_c.flow): the corpus, the parallel
 #         workers, the files the programs leave behind, failure causes and
 #         the ranked tables of the report.

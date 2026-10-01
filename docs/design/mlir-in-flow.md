@@ -211,8 +211,8 @@ checker to flowc (`compiler/src/sem_check.flow`, #1071) closed most of them:
   `01_type_mismatch` and `02_immutable_assignment`.
 * `./flow tool doc_examples --check-ledger` finds every
   `expect-error` example rejected, and the ledger is empty.
-* `compiler/scripts/typecheck_rules.sh` holds one negative program per
-  ported rule, and `compiler/scripts/parity_typecheck.sh --check` holds
+* `compiler/scripts/typecheck_rules.flow` holds one negative program per
+  ported rule, and `compiler/scripts/parity_typecheck.flow --check` holds
   flowc to the Python checker's recorded diagnostics.
 
 The last items on the old list are closed too, each with a negative program
@@ -241,7 +241,7 @@ in `compiler/fixtures/typecheck_rules/`:
   `flowc_emit.flow --no-warnings` (`FLOWC_WARNINGS=0`) silences them and
   `--Werror` (`FLOWC_WERROR=1`) makes them errors. Warnings inside
   `lib/stdlib` and `lib/runtime` are shown only with `FLOWC_WARNINGS=all`.
-  `parity_typecheck.sh --check` holds them to the Python checker's list in
+  `parity_typecheck.flow --check` holds them to the Python checker's list in
   `compiler/fixtures/typecheck_parity/warnings.txt` (`warn_*`,
   `werror_match`).
 

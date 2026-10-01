@@ -755,6 +755,30 @@ export function gl_build_flowc(bin: string, quiet_warnings: bool, drop_err: bool
     return run(c)
 }
 
+# The binary of compiler/scripts/flowc_emit.flow, which the type-check
+# gates run per input (`./flow tool compiler/scripts/flowc_emit.flow ...`).
+# It is built once, through `./flow tool --path`, and kept in
+# GATE_FLOWC_EMIT so worker processes reuse it. Stops the program when the
+# build fails.
+export function gl_flowc_emit_bin() -> string {
+    let known: string = env("GATE_FLOWC_EMIT")
+    if not s_empty(known) {
+        return known
+    }
+    if s_empty(env("FLOW_REPO_ROOT")) {
+        env_set("FLOW_REPO_ROOT", cwd_logical())
+    }
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "--path")
+    sl_push(argv, "compiler/scripts/flowc_emit.flow")
+    let bin: string = capture(cmd(argv))
+    if last_status() != 0 or s_empty(bin) {
+        errln("cannot build compiler/scripts/flowc_emit.flow")
+        cli_exit(1)
+    }
+    env_set("GATE_FLOWC_EMIT", bin)
+    return bin
+}
+
 # compiler/build/flowc_bootstrap when FLOWC_BIN is unset, rebuilt only when
 # it is missing or older than the bootstrap C; an absolute path. Stops the
 # program with cc's status when the build fails.

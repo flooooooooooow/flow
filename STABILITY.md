@@ -163,7 +163,7 @@ normal deprecation/major-version process.
 `flow fmt` remains Experimental in Flow 1.0, so its layout is outside the 1.x
 compatibility promise and may still change. The formatter is flowc's token-stream pass
 (`compiler/src/fmt.flow`): it rewrites whitespace only and keeps every token and comment.
-`compiler/scripts/fmt_check.sh` checks, over every tracked `.flow` file flowc parses, that
+`compiler/scripts/fmt_check.flow` checks, over every tracked `.flow` file flowc parses, that
 the token and comment stream is unchanged, that formatting is idempotent, and that files
 which compile emit the same C before and after formatting. Promotion is a separate
 decision about freezing the layout.

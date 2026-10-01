@@ -1,4 +1,4 @@
-# Python type checker goldens (compiler/scripts/parity_typecheck.sh), rev f102d88f
+# Python type checker goldens (compiler/scripts/parity_typecheck.flow), rev f102d88f
 @ apps/cartpole/cartpole_gfx.flow	27686dbc162e866af2ba6b10f918fec2c47494f0
 S frontend
 s CalledProcessError: Command '['cc', '-O2', '-o', '/Users/abhishekshivakumar/flow/.claude/worktrees/agent-ac82dfa6bdf04b8ad/compiler/build/parity_typecheck/pyref/compiler/build/flowc_bootstrap.52879', '/Users/abhishekshivakumar/flow/.claude/worktrees/agent-ac82dfa6bdf04b8ad/compiler/build/parity_typecheck/pyref/compiler/bootstrap/flowc_stage_a.c', '-lm']' returned non-zero exit status 1.

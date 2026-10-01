@@ -1,5 +1,5 @@
 # Tracked .flow files the Python reference parser (flow.parser.parse_flow_code)
-# rejects. compiler/scripts/parse_coverage.sh leaves them out of the flowc
+# rejects. compiler/scripts/parse_coverage.flow leaves them out of the flowc
 # coverage count. Each entry is classified below (#997); none is a broken
 # program. When a file starts parsing, drop it here and raise the floor.
 

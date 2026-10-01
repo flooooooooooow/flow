@@ -68,7 +68,7 @@ When `FLOWC_IN` is set to a non-empty path, `main` skips self-tests and instead:
 
 1. Reads that `.flow` source
 2. Parses (+ Stage-A `flowc_typecheck` **on by default**)
-3. Stage-A emit: `flowc_cgen_emit` by default; `FLOWC_BACKEND=js` → `flowc_jsgen_emit`; `FLOWC_BACKEND=fmt` → `flowc_fmt_source` (the formatter), `FLOWC_BACKEND=tokens` → the token and comment stream `compiler/scripts/fmt_check.sh` compares
+3. Stage-A emit: `flowc_cgen_emit` by default; `FLOWC_BACKEND=js` → `flowc_jsgen_emit`; `FLOWC_BACKEND=fmt` → `flowc_fmt_source` (the formatter), `FLOWC_BACKEND=tokens` → the token and comment stream `compiler/scripts/fmt_check.flow` compares
 4. Writes output to `FLOWC_OUT` if set, otherwise prints the buffer to stdout
 
 Typecheck is **on by default** for fixture/app emits (`driver.flow`, C
@@ -199,9 +199,9 @@ Package metadata: [`flow.toml`](flow.toml) (`name = "flowc"`, entry
 | `cgen` | [`src/cgen.flow`](src/cgen.flow) | Stage-A AST→C buffer emitter (`flowc_cgen_emit` / `flowc_cgen_emit_ex`; self-tested) |
 | `jsgen` | [`src/jsgen.flow`](src/jsgen.flow) | Stage-A AST→JS buffer emitter (`flowc_jsgen_emit`; self-tested) |
 | `typecheck` | [`src/typecheck.flow`](src/typecheck.flow) | Stage-A name resolution / lightweight checks (`flowc_typecheck`, `flowc_tc_seed_export`; self-tested); with the semantic check on, only what C generation needs on top of it |
-| `sem_check` | [`src/sem_check.flow`](src/sem_check.flow), [`sem_model`](src/sem_model.flow), [`sem_types`](src/sem_types.flow), [`sem_util`](src/sem_util.flow), [`sem_cheader`](src/sem_cheader.flow) | The type checker: a port of the Python host's `type_checker.py`, rule by rule and message by message, strict by default and lenient under `FLOWC_LENIENT=1`. Gates: `scripts/typecheck_rules.sh` (one program per rule) and `scripts/parity_typecheck.sh` (every tracked program and doc block against the Python goldens) |
+| `sem_check` | [`src/sem_check.flow`](src/sem_check.flow), [`sem_model`](src/sem_model.flow), [`sem_types`](src/sem_types.flow), [`sem_util`](src/sem_util.flow), [`sem_cheader`](src/sem_cheader.flow) | The type checker: a port of the Python host's `type_checker.py`, rule by rule and message by message, strict by default and lenient under `FLOWC_LENIENT=1`. Gates: `scripts/typecheck_rules.flow` (one program per rule) and `scripts/parity_typecheck.flow` (every tracked program and doc block against the Python goldens) |
 | `resolve` | [`src/resolve.flow`](src/resolve.flow) | Multi-file import resolve + `flowc_bundle_emit` / `flowc_bundle_typecheck` |
-| `fmt` | [`src/fmt.flow`](src/fmt.flow) | Token-stream formatter behind `flow fmt` and the language server: rewrites whitespace only (`flowc_fmt_source`; gate `scripts/fmt_check.sh`) |
+| `fmt` | [`src/fmt.flow`](src/fmt.flow) | Token-stream formatter behind `flow fmt` and the language server: rewrites whitespace only (`flowc_fmt_source`; gate `scripts/fmt_check.flow`) |
 | (tests / emit) | [`src/main.flow`](src/main.flow) | Smoke tests; env-gated Stage-A emit (`FLOWC_IN` / `FLOWC_OUT` / `FLOWC_BUNDLE`); `FLOWC_BACKEND=js|fmt|tokens` (else C); typecheck default on (`FLOWC_TYPECHECK=0` / `FLOWC_NO_TYPECHECK=1` opt-out) |
 | `driver` | [`src/driver.flow`](src/driver.flow) | Flow Stage-A driver (CLI argv + getenv + optional `FLOWC_BUNDLE`); emit alone, link `flowc_frontend.o` / `_self.o` / `_g2.o` |
 | `claim_address` | [`src/claim_address.flow`](src/claim_address.flow) | Claim Coordinates (`flowc_claim_*`; Python port; `./flow run` demo) |

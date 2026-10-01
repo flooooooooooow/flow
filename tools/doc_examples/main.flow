@@ -24,7 +24,7 @@
 #       Print the fenced blocks of FILEs as JSON (for other tools).
 #   dump
 #       Write every harness rung of every block to FLOW_DOC_DUMP=<dir> and
-#       compile nothing (the input set of compiler/scripts/parity_typecheck.sh).
+#       compile nothing (the input set of compiler/scripts/parity_typecheck.flow).
 #   lessons
 #       Print the tutorial lessons (docs/tutorials/*.md except README, flow
 #       blocks with a `function main`) as JSON.
@@ -1257,7 +1257,7 @@ function check_main(argc: i32, argv: ptr<string>) -> i32 {
     }
     if ft_eq(cmd, "dump") {
         # Write the harness rungs of every block to FLOW_DOC_DUMP, compile
-        # nothing (compiler/scripts/parity_typecheck.sh).
+        # nothing (compiler/scripts/parity_typecheck.flow).
         if ft_len(env.dump) == 0 {
             ft_errln("error: dump needs FLOW_DOC_DUMP=<dir>")
             return 2

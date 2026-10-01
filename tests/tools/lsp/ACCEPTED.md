@@ -122,7 +122,7 @@ ids 2, 3, 5, 6, 8 and 10 change or delete code.
 The native server formats with `compiler/src/fmt.flow`, the formatter
 behind `flow fmt`. It changes whitespace only: every token and comment
 stays, and line breaks stay where they were
-(`compiler/scripts/fmt_check.sh` checks this over every tracked `.flow`
+(`compiler/scripts/fmt_check.flow` checks this over every tracked `.flow`
 file). `messy.flow` (ids 2 and 3) is re-indented and re-spaced, and keeps
 `struct P { x: f64, y: f64 }` and `if s > 2 { return 1 } else { return 0 }`
 on one line each, commas included. `messy_comments.flow` (id 10) keeps
