@@ -2,6 +2,11 @@
 
 Performance benchmarks for the Flow programming language.
 
+`suite/` and `standardized/` here are copies of the ones under `benchmarks/`,
+with the same sources. Their runners live there:
+`./flow tool benchmarks/suite/run_benchmarks.flow` and
+`./flow tool benchmarks/standardized/bench.flow`.
+
 ## Published results
 
 [RESULTS.md](RESULTS.md) holds the measured comparison of Flow against C,

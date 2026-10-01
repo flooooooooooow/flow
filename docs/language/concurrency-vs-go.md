@@ -98,7 +98,7 @@ flowchart TB
 | Server RPS / netpoll | HTTP accept-loop microbench | See RESULTS.md |
 
 Live numbers: [benchmarks/concurrency/RESULTS.md](../../benchmarks/concurrency/RESULTS.md)
-(`benchmarks/concurrency/run.sh`).
+(`./flow tool benchmarks/concurrency/run.flow`).
 
 ## What we will not do
 

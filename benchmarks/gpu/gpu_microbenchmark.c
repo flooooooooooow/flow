@@ -9,7 +9,7 @@
  *
  * The numbers feed the backend cost model (#749). Without a GPU backend the
  * figures are the simulated ones the earlier Python benchmark printed.
- * Build and run with benchmarks/gpu/gpu_microbenchmark.sh.
+ * Build and run with ./flow tool benchmarks/gpu/gpu_microbenchmark.flow.
  */
 #include <stdint.h>
 #include <stdio.h>

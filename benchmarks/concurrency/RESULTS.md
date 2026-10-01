@@ -4,7 +4,7 @@
 **Date:** 2026-08-04  
 **Flow:** `FLOW_CFLAGS='-O2'` · **Go:** `go run`
 
-Re-run: `benchmarks/concurrency/run.sh`  
+Re-run: `./flow tool benchmarks/concurrency/run.flow`  
 Strategy: [docs/language/replace-go.md](../../docs/language/replace-go.md)
 
 ## Results
