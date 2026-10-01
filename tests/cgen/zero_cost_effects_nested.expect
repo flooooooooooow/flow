@@ -5,6 +5,7 @@
 # A lambda body keeps the vtable call: the closure may run after the block
 # exits. The lambda captures nothing, since the effect name is a type (#1057).
 # Outside every block the call dispatches through the runtime handler.
+env FLOWC_PERMISSIVE_EFFECTS=1
 + Loud_info("a");
 + Soft_info("b");
 + total = (total + Counter_tick(1));
