@@ -7,10 +7,10 @@
 # The scanners below follow the Python regexes the original script used,
 # under re.MULTILINE, including their backtracking.
 
-import .text { ft_out, ft_outln, ft_len, ft_eq, ft_at, ft_slice, ft_from, ft_itoa, ft_starts, ft_contains, ft_replace, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
+import .text { ft_out, ft_outln, ft_errln, ft_read_file, ft_len, ft_eq, ft_at, ft_slice, ft_from, ft_itoa, ft_starts, ft_contains, ft_replace, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
 import .unicode { uc_decode, uc_len, uc_is_space, uc_is_word, uc_strip }
 import .proc { pr_quote, pr_mkdir_p }
-import .wiki_util { wb_new, wb_add, wb_line, wb_write, wu_read_text, wu_splitlines, wu_lstrip_set, wu_sort, wu_lines_of, wu_today, wu_ellipsis, WBuf }
+import .wiki_util { wb_new, wb_add, wb_line, wb_str, wb_write, wu_read_text, wu_splitlines, wu_lstrip_set, wu_sort, wu_lines_of, wu_ellipsis, WBuf }
 
 extern {
     function malloc(size: i64) -> ptr<void>
@@ -353,9 +353,43 @@ function sd_ticked(items: ptr<StrList>) -> string {
     return joined
 }
 
+# Modules scanned by the last sd_render call.
+let mut SD_MODULES: i32 = 0
+
 # Write docs/library/stdlib-api.md under `root` and print the Python
 # script's "Wrote ..." line. Returns 0 on success.
 export function wsd_generate(root: string) -> i32 {
+    let b: ptr<WBuf> = sd_render(root)
+    let out_dir: string = root + "/docs/library"
+    let _mk: bool = pr_mkdir_p(out_dir)
+    let out_path: string = out_dir + "/stdlib-api.md"
+    if wb_write(out_path, b) == false {
+        return 1
+    }
+    ft_outln("Wrote " + out_path + " (" + ft_itoa(SD_MODULES) + " modules)")
+    return 0
+}
+
+# Compare `path` with the page generated from `root`. Returns 0 when they
+# are identical and 1 when the file is missing or differs, so CI fails when
+# lib/stdlib changes and the committed page is not regenerated.
+export function wsd_check(root: string, path: string) -> i32 {
+    let want: string = wb_str(sd_render(root))
+    let have: string = ft_read_file(path)
+    if have as ptr<u8> == null {
+        ft_errln("gen_stdlib_docs: " + path + " is missing; run ./flow tool gen_stdlib_docs")
+        return 1
+    }
+    if ft_eq(have, want) == false {
+        ft_errln("gen_stdlib_docs: " + path + " differs from the generator output; run ./flow tool gen_stdlib_docs and commit the result")
+        return 1
+    }
+    ft_outln("gen_stdlib_docs: " + path + " is up to date (" + ft_itoa(SD_MODULES) + " modules)")
+    return 0
+}
+
+# The page for every module under `root`/lib/stdlib.
+function sd_render(root: string) -> ptr<WBuf> {
     let stdlib: string = root + "/lib/stdlib"
     let found: ptr<StrList> = wu_lines_of("find " + pr_quote(stdlib) + " -name '*.flow' 2>/dev/null")
     let files: ptr<StrList> = ft_list_new()
@@ -377,7 +411,7 @@ export function wsd_generate(root: string) -> i32 {
     let b: ptr<WBuf> = wb_new()
     wb_line(b, "# Standard Library API (generated)")
     wb_line(b, "")
-    wb_line(b, "> Auto-generated from `lib/stdlib/` on " + wu_today() + " by `./flow tool gen_stdlib_docs`. Per-function docs come from `#` comments immediately above each `export function`.")
+    wb_line(b, "> Auto-generated from `lib/stdlib/` by `./flow tool gen_stdlib_docs`. Per-function docs come from `#` comments immediately above each `export function`.")
     wb_line(b, "")
     wb_line(b, "**" + ft_itoa(ft_list_len(files)) + "** modules scanned.")
     wb_line(b, "")
@@ -449,14 +483,8 @@ export function wsd_generate(root: string) -> i32 {
         }
         f = f + 1
     }
-    let out_dir: string = root + "/docs/library"
-    let _mk: bool = pr_mkdir_p(out_dir)
-    let out_path: string = out_dir + "/stdlib-api.md"
-    if wb_write(out_path, b) == false {
-        return 1
-    }
-    ft_outln("Wrote " + out_path + " (" + ft_itoa(ft_list_len(files)) + " modules)")
-    return 0
+    SD_MODULES = ft_list_len(files)
+    return b
 }
 
 function sd_last_slash(s: string) -> i32 {
