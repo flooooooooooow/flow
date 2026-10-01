@@ -9,7 +9,7 @@ documented with measured demos.
 >
 > ```bash
 > ./flow wasm examples/wasm/hello_wasm.flow
-> ./scripts/build_wasm_hello.sh
+> ./flow tool scripts/build_wasm_hello.flow
 > ```
 >
 > Deep dive: [wasm-crossings.md](../language/wasm-crossings.md) ·

@@ -1,0 +1,131 @@
+# Render every audio example to a WAV and assert on the samples.
+#
+# This is how audio is covered on a machine with no sound card. Each example
+# writes a file instead of opening a device (FLOW_AUDIO_RENDER), reads that
+# file back, and gates its own exit code on the checks in
+# stdlib/audio/verify.flow: duration, peak against the safety ceiling, no NaN
+# or infinity, fades present at both ends, and for the tonal ones a Goertzel
+# check that the loudest partial is the frequency the example announced.
+#
+# Every example is rendered twice and the two WAVs must be byte-identical.
+# A render that is not reproducible is a bug even when it passes the checks.
+#
+# No audio device is opened at any point.
+#
+# Usage:  ./flow tool scripts/render_audio_examples.flow [output-dir]
+# Exit:   0 only if every example rendered, verified and reproduced.
+
+import "tools/flow_cli/sys.flow"
+import "scripts/check_lib.flow"
+import std.process { proc_argv, ProcCmd, ProcStrs, proc_args, proc_chdir }
+
+# printf '%-Ns'
+function pad(s: string, n: i32) -> string {
+    let mut out: string = s
+    while s_len(out) < n {
+        out = out + " "
+    }
+    return out
+}
+
+# grep -c '^    \[ok  \]'
+function count_ok(text: string) -> i32 {
+    let lines: ptr<ProcStrs> = s_lines(text)
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        if s_starts(sl_get(lines, i), "    [ok  ]") {
+            n = n + 1
+        }
+        i = i + 1
+    }
+    return n
+}
+
+# FLOW_AUDIO_RENDER=WAV ./flow audio SRC >LOG 2>&1
+function render(src: string, wav: string, log: string) -> i32 {
+    let c: ptr<ProcCmd> = cmd(sl_of3("./flow", "audio", src))
+    cmd_env(c, "FLOW_AUDIO_RENDER", wav)
+    return run_to_file(c, log, true)
+}
+
+function main() -> i32 {
+    tool_only("scripts/render_audio_examples.flow")
+    let root: string = abs_dir(env_or("FLOW_REPO_ROOT", cwd_logical()))
+    env_unset("FLOW_REPO_ROOT")
+    let args: ptr<ProcStrs> = proc_args()
+    let mut out_dir: string = root + "/build/audio"
+    if sl_len(args) > 0 and s_len(sl_get(args, 0)) > 0 {
+        out_dir = sl_get(args, 0)
+    }
+    let logs: string = out_dir + "/logs"
+    mkdir_p_or_exit(out_dir)
+    mkdir_p_or_exit(logs)
+    if not proc_chdir(root) {
+        cli_exit(1)
+    }
+    env_set("PWD", root)
+
+    let examples: ptr<ProcStrs> = s_words("filter_sweep adsr_vs_click fm_voice karplus_strong drum_machine delay_feedback_guard stereo_width evening_piece")
+    let mut pass: i32 = 0
+    let mut fail: i32 = 0
+    let mut failed: string = ""
+    let mut i: i32 = 0
+    while i < sl_len(examples) {
+        let name: string = sl_get(examples, i)
+        i = i + 1
+        let src: string = "examples/audio/" + name + ".flow"
+        if not is_file(src) {
+            outln("MISSING  " + src)
+            fail = fail + 1
+            failed = failed + " " + name + "(missing)"
+            continue
+        }
+        let wav: string = out_dir + "/" + name + ".wav"
+        let log: string = logs + "/" + name + ".log"
+        if render(src, wav, log) != 0 {
+            outln("FAIL     " + name + " (render or verification)")
+            out(chk_prefix(chk_tail(read_text(log), 20), "         "))
+            fail = fail + 1
+            failed = failed + " " + name
+            continue
+        }
+        let rerun: string = out_dir + "/" + name + ".rerun.wav"
+        if render(src, rerun, logs + "/" + name + ".rerun.log") != 0 {
+            outln("FAIL     " + name + " (second render)")
+            fail = fail + 1
+            failed = failed + " " + name + "(rerun)"
+            continue
+        }
+        if not same_bytes(wav, rerun) {
+            outln("FAIL     " + name + " (renders differ between runs)")
+            fail = fail + 1
+            failed = failed + " " + name + "(nondeterministic)"
+            continue
+        }
+        rm_f(rerun)
+        let checks: i32 = count_ok(read_text(log))
+        let bytes: Bytes = read_bytes(wav)
+        outln("ok       " + pad(name, 22) + " " + s_itoa(checks) + " checks, " + s_itoa(bytes.len as i32) + " bytes")
+        pass = pass + 1
+    }
+
+    outln("")
+    outln("audio renders: " + s_itoa(pass) + " passed, " + s_itoa(fail) + " failed  (wav in " + out_dir + ", logs in " + logs + ")")
+    if fail != 0 {
+        outln("failed:" + failed)
+        cli_exit(1)
+    }
+    cli_exit(0)
+    return 0
+}
+
+# These programs change files, run builds and publish, so they run only
+# as `./flow tool PATH.flow` (from build/flow-tools), never from a plain
+# `flow run` such as the corpus checks do.
+function tool_only(path: string) {
+    if not s_contains(proc_argv(0), "/flow-tools/") {
+        errln("run this with ./flow tool " + path)
+        cli_exit(2)
+    }
+}

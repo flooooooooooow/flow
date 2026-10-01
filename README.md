@@ -353,7 +353,7 @@ to build the wheel. See
 ### Editor support
 
 ```bash
-./scripts/publish_vscode_extension.sh --install
+./flow tool scripts/publish_vscode_extension.flow --install
 # Or: cursor --install-extension quilio.flow-language
 ```
 

@@ -410,7 +410,7 @@ below re-derives the constants at `n = 2^14, 2^15, 2^16`, compiles each
 variant to a **native binary** (`FLOW_CFLAGS=-O2 ./flow
 compile`), and runs that binary directly: the timings are the program's own
 `CLOCK_MONOTONIC` report, best of 3 runs, every run exit 0 (PASS). Reproduce
-with `scripts/bench_tiny_pointers.sh`.
+with `./flow tool scripts/bench_tiny_pointers.flow`.
 
 | Phase | n = 2^14 | n = 2^15 | n = 2^16 | scaling |
 |---|---|---|---|---|

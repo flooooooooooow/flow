@@ -28,7 +28,8 @@ Two further axes this tool does **not** yet cover (roadmap):
 ## Build & run (Apple Silicon)
 
 ```bash
-./build.sh
+./flow tool tools/dsp_bench/build.flow   # from the repository root
+cd tools/dsp_bench
 ./dsp_bench --chains 4096 --sections 8 --samples 48000 --reps 4
 ./dsp_bench --chains 16384 --json          # machine-readable
 ```
