@@ -1287,6 +1287,10 @@ function sem_string_has_interp(c: ptr<Sem>, e: i32) -> bool {
     let t: i32 = c.ar.nodes[e].name_end
     let mut i: i32 = s
     while i + 1 < t {
+        if c.src[i] == 36 and c.src[i + 1] == 36 and i + 2 < t and c.src[i + 2] == 123 {
+            i = i + 3
+            continue
+        }
         if c.src[i] == 36 and c.src[i + 1] == 123 {
             return true
         }
@@ -2931,6 +2935,10 @@ function sem_check_interpolation(c: ptr<Sem>, e: i32) -> i32 {
     let mut cursor: i32 = s
     let mut i: i32 = s
     while i < t {
+        if c.src[i] == 36 and i + 2 < t and c.src[i + 1] == 36 and c.src[i + 2] == 123 {
+            i = i + 3
+            continue
+        }
         if c.src[i] == 36 and i + 1 < t and c.src[i + 1] == 123 {
             if i > cursor {
                 let lit: i32 = sem_tmk(c, TK_STRING)
@@ -2982,6 +2990,10 @@ function sem_check_interpolation(c: ptr<Sem>, e: i32) -> i32 {
 function sem_interp_parts_ok(c: ptr<Sem>, s: i32, t: i32) -> bool {
     let mut i: i32 = s
     while i < t {
+        if c.src[i] == 36 and i + 2 < t and c.src[i + 1] == 36 and c.src[i + 2] == 123 {
+            i = i + 3
+            continue
+        }
         if c.src[i] == 36 and i + 1 < t and c.src[i + 1] == 123 {
             let mut j: i32 = i + 2
             while j < t and c.src[j] != 125 {
