@@ -1262,6 +1262,12 @@ function check_main(argc: i32, argv: ptr<string>) -> i32 {
             ft_errln("error: dump needs FLOW_DOC_DUMP=<dir>")
             return 2
         }
+        # An empty dump would let parity_typecheck pass while checking no
+        # documentation at all, so it is an error.
+        if blocks.len == 0 {
+            ft_errln("error: dump found no ```flow blocks in the markdown")
+            return 1
+        }
         env.dump_only = true
         let _dr: ptr<ResList> = run_all(env, blocks, false, false)
         return 0
