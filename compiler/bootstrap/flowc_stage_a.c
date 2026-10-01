@@ -60406,6 +60406,8 @@ int32_t flowc_cgen_has_self_tail_call(AstArena arena, uint8_t* src, int32_t fn);
 int32_t flowc_cgen_is_fiber_main(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 void flowc_cgen_emit_fn_proto(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_is_macro_like(uint8_t* src, int32_t s, int32_t e);
+int32_t flowc_cgen_is_const_string_expr(AstArena arena, int32_t id);
+void flowc_cgen_emit_const_string_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 void flowc_cgen_emit_const(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_find_tp(uint8_t* src, int32_t ns, int32_t ne, int32_t* tp_starts, int32_t* tp_ends, int32_t ntp);
 void flowc_cgen_emit_type_subst(CgenBuf* w, AstArena arena, uint8_t* src, int32_t ty, int32_t* tp_starts, int32_t* tp_ends, int32_t* tp_concrete, int32_t ntp);
@@ -69910,6 +69912,31 @@ int32_t flowc_cgen_is_macro_like(uint8_t* src, int32_t s, int32_t e) {
   return 0;
 }
 
+int32_t flowc_cgen_is_const_string_expr(AstArena arena, int32_t id) {
+  if (id == AST_NONE) {
+  return 0;
+}
+  if (((arena).nodes[id]).kind == AST_STRING) {
+  return 1;
+}
+  if (((arena).nodes[id]).kind != AST_BINOP || ((arena).nodes[id]).ival != TOK_PLUS) {
+  return 0;
+}
+  if (flowc_cgen_is_const_string_expr(arena, ((arena).nodes[id]).a) == 1 && flowc_cgen_is_const_string_expr(arena, ((arena).nodes[id]).b) == 1) {
+  return 1;
+}
+  return 0;
+}
+
+void flowc_cgen_emit_const_string_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
+  if (((arena).nodes[id]).kind == AST_BINOP) {
+  flowc_cgen_emit_const_string_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_emit_const_string_expr(w, arena, src, ((arena).nodes[id]).b);
+} else {
+  flowc_cgen_emit_expr(w, arena, src, id);
+}
+}
+
 void flowc_cgen_emit_const(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
   if (flowc_cgen_is_macro_like(src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end) == 1) {
   flowc_cgen_puts(w, "#undef ");
@@ -69934,7 +69961,12 @@ void flowc_cgen_emit_const(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id)
   flowc_cgen_putc(w, 32);
   flowc_cgen_put_ident(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
   flowc_cgen_puts(w, " = ");
-  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).b);
+  int32_t expr = ((arena).nodes[id]).b;
+  if (ty != AST_NONE && flowc_cgen_type_is_string(arena, src, ty) == 1 && flowc_cgen_is_const_string_expr(arena, expr) == 1) {
+  flowc_cgen_emit_const_string_expr(w, arena, src, expr);
+} else {
+  flowc_cgen_emit_expr(w, arena, src, expr);
+}
   flowc_cgen_puts(w, ";\n");
 }
 
