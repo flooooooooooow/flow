@@ -101,7 +101,7 @@ need no Python. The Python original was deleted in the same pull request.
 | `scripts/deploy_wiki.py` | [`scripts/deploy_wiki.sh`](../../scripts/deploy_wiki.sh) | #1076 |
 | `tools/audio/lattice_allpass_audio_demo.py`, `plot_lattice_allpass.py` | `./flow tool lattice_allpass demo` and `plot` → `scripts/tools/lattice_allpass` (WAV and SVG from Flow) | #1076 |
 | `tools/discord-welcome/bot.py`, `welcome.py` | `tools/discord-welcome/build.sh` → `scripts/tools/discord_welcome` (Gateway over TLS through OpenSSL) | #1076 |
-| The last pytest files (`tests/unit`, `tests/integration`) | Shell tests in [`tests/scripts/`](../../tests/scripts/run.sh), `./flow test-scripts` | #1076 |
+| The last pytest files (`tests/unit`, `tests/integration`) | Flow tests in [`tests/scripts/`](../../tests/scripts/run.flow), `./flow test-scripts` | #1076 |
 | None (new) | `./flow tool python_ratchet` → `tools/python_ratchet/main.flow` | #981 |
 
 #965 also deleted Python with no port: the Euclid book generators, the backlog

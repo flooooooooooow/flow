@@ -4,8 +4,10 @@
 # Values live in one arena of parallel arrays. Node 0 is the root after a
 # successful parse. Containers link their children through `first` / `next`;
 # object members carry their key in `key`. Strings are decoded to UTF-8.
-
-import .text { ft_slice, ft_itoa, ft_repr, ft_len }
+#
+# The module imports nothing, so a program that uses tools/flow_cli/sys.flow
+# can use it too (tools.text declares `write` with Flow types, which clashes
+# with the unistd.h that sys.flow includes).
 
 extern {
     function malloc(size: i64) -> ptr<void>
@@ -44,6 +46,84 @@ export function json_kind_string() -> i32 { return JSON_STRING }
 export function json_kind_array() -> i32 { return JSON_ARRAY }
 export function json_kind_object() -> i32 { return JSON_OBJECT }
 
+function json_slice(p: ptr<u8>, start: i32, end: i32) -> string {
+    let mut n: i32 = end - start
+    if n < 0 {
+        n = 0
+    }
+    let out: ptr<u8> = malloc((n + 1) as i64) as ptr<u8>
+    let mut i: i32 = 0
+    while i < n {
+        out[i] = p[start + i]
+        i = i + 1
+    }
+    out[n] = 0
+    return out as string
+}
+
+function json_itoa(n: i32) -> string {
+    if n == 0 {
+        return "0"
+    }
+    let buf: ptr<u8> = malloc(16) as ptr<u8>
+    let mut v: i64 = n as i64
+    let neg: bool = v < 0
+    if neg {
+        v = 0 - v
+    }
+    let mut o: i32 = 15
+    buf[o] = 0
+    while v > 0 {
+        o = o - 1
+        buf[o] = (48 + (v % 10) as i32) as u8
+        v = v / 10
+    }
+    if neg {
+        o = o - 1
+        buf[o] = 45
+    }
+    return json_slice(buf, o, 15)
+}
+
+# Python repr() of a str that holds no control characters.
+function json_repr(s: string) -> string {
+    let sp: ptr<u8> = s as ptr<u8>
+    let n: i32 = strlen(s) as i32
+    let mut has_single: bool = false
+    let mut has_double: bool = false
+    let mut k: i32 = 0
+    while k < n {
+        if sp[k] == 39 {
+            has_single = true
+        } elif sp[k] == 34 {
+            has_double = true
+        }
+        k = k + 1
+    }
+    let mut quote: i32 = 39
+    if has_single and not has_double {
+        quote = 34
+    }
+    let out: ptr<u8> = malloc((2 * n + 3) as i64) as ptr<u8>
+    let mut o: i32 = 0
+    out[o] = quote as u8
+    o = o + 1
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = sp[i] as i32
+        if c == 92 or c == quote {
+            out[o] = 92
+            o = o + 1
+        }
+        out[o] = c as u8
+        o = o + 1
+        i = i + 1
+    }
+    out[o] = quote as u8
+    out[o + 1] = 0
+    return out as string
+}
+
 function json_alloc(j: ptr<Json>, kind: i32) -> i32 {
     if j[0].count == j[0].cap {
         let nc: i32 = j[0].cap * 2
@@ -80,7 +160,7 @@ function json_ws(j: ptr<Json>) -> void {
 
 function json_fail(j: ptr<Json>, msg: string) -> i32 {
     if strlen(j[0].err) == 0 {
-        j[0].err = msg + " at byte " + ft_itoa(j[0].pos)
+        j[0].err = msg + " at byte " + json_itoa(j[0].pos)
     }
     return -1
 }
@@ -322,7 +402,7 @@ function json_parse_value(j: ptr<Json>) -> i32 {
         j[0].pos = e
         let nid: i32 = json_alloc(j, JSON_NUMBER)
         let svals2: ptr<string> = j[0].sval
-        svals2[nid] = ft_slice(p as string, start, e)
+        svals2[nid] = json_slice(p, start, e)
         return nid
     }
     return json_fail(j, "unexpected character")
@@ -437,7 +517,7 @@ export function json_pyrepr(j: ptr<Json>, id: i32) -> string {
     if k == JSON_TRUE { return "True" }
     if k == JSON_FALSE { return "False" }
     if k == JSON_NUMBER { return json_str(j, id) }
-    if k == JSON_STRING { return ft_repr(json_str(j, id)) }
+    if k == JSON_STRING { return json_repr(json_str(j, id)) }
     let mut out: string = "["
     let mut close: string = "]"
     if k == JSON_OBJECT {
@@ -452,7 +532,7 @@ export function json_pyrepr(j: ptr<Json>, id: i32) -> string {
         }
         first = false
         if k == JSON_OBJECT {
-            out = out + ft_repr(json_key(j, c)) + ": "
+            out = out + json_repr(json_key(j, c)) + ": "
         }
         out = out + json_pyrepr(j, c)
         c = json_next(j, c)

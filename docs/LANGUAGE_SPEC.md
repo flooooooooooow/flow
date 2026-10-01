@@ -1281,7 +1281,7 @@ function main() -> i32 {
 ```
 
 - Example: `examples/graphics/gif_writer.flow` (24-frame animation)
-- Tests: `tests/lang/test_gif_encoder.flow`, `tests/scripts/gif_flow_encoder.sh`
+- Tests: `tests/lang/test_gif_encoder.flow`, `tests/scripts/gif_flow_encoder.flow`
   (`scripts/tools/gif_check`, a GIF89a reader in Flow, decodes the output as
   ground truth)
 

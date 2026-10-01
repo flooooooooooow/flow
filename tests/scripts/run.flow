@@ -1,0 +1,76 @@
+# The tests that drive ./flow, the Flow tools behind the scripts and the
+# checked-in docs as subprocesses. They replaced the last subprocess-only
+# pytest files. Each tests/scripts/<name>.flow is a program built and run
+# with `./flow tool`; it prints one PASS, FAIL or SKIP line per check, and a
+# check skips when a tool it needs (clang, node, emcc, mlir-opt, strip) is
+# missing. The shared harness is tests/scripts/harness.flow.
+#
+# python and python3 are stubbed out on PATH: nothing here may need them.
+#
+# Usage: ./flow test-scripts [name...]
+#        ./flow tool tests/scripts/run.flow [name...]
+
+import "tools/flow_cli/sys.flow"
+import std.process { ProcStrs, proc_args, proc_chdir }
+
+function stub(dir: string, name: string) {
+    let path: string = dir + "/" + name
+    let body: string = "#!/bin/sh\necho \"" + name + " $*\" >> \"" + dir + "/python-calls.log\"\nexit 127\n"
+    let _w: bool = write_text(path, body)
+    let _m: bool = set_mode(path, 493)
+}
+
+function main() -> i32 {
+    let root: string = env_or("FLOW_REPO_ROOT", cwd_logical())
+    let _cd: bool = proc_chdir(root)
+    env_set("PWD", root)
+    let only: ptr<ProcStrs> = proc_args()
+
+    let dir: string = mktemp_dir(env_or("TMPDIR", "/tmp") + "/flow-script-tests-nopy.XXXXXX")
+    if s_len(dir) == 0 {
+        errln("tests/scripts: cannot create a scratch directory")
+        return 1
+    }
+    on_exit_remove(dir)
+    stub(dir, "python")
+    stub(dir, "python3")
+    env_set("PATH", dir + ":" + env("PATH"))
+
+    let failed: ptr<ProcStrs> = sl_new()
+    let tests: ptr<ProcStrs> = glob_suffix("tests/scripts", ".flow")
+    let mut i: i32 = 0
+    while i < sl_len(tests) {
+        let prog: string = sl_get(tests, i)
+        i = i + 1
+        let name: string = path_stem(prog, ".flow")
+        if s_eq(name, "run") or s_eq(name, "harness") {
+            continue
+        }
+        if sl_len(only) > 0 and not sl_has(only, name) {
+            continue
+        }
+        if run_argv(sl_of3("./flow", "tool", prog)) != 0 {
+            sl_push(failed, name)
+        }
+    }
+
+    let calls: string = read_text(dir + "/python-calls.log")
+    if s_len(calls) > 0 {
+        outln("FAIL python was called:")
+        let lines: ptr<ProcStrs> = s_lines(calls)
+        let mut k: i32 = 0
+        while k < sl_len(lines) {
+            outln("    " + sl_get(lines, k))
+            k = k + 1
+        }
+        sl_push(failed, "python-calls")
+    }
+
+    if sl_len(failed) > 0 {
+        outln("tests/scripts: failures in " + sl_join(failed, " "))
+        cli_exit(1)
+    }
+    outln("tests/scripts: all files passed")
+    cli_exit(0)
+    return 0
+}
