@@ -57,7 +57,7 @@ Every backend is a module of `compiler/src`:
 ### Language suite
 
 The `.flow` files in `tests/lang/` are the language regression target. Run
-them with `./flow test-lang`. The C output goldens are `tests/cgen/run.sh`.
+them with `./flow test-lang`. The C output goldens are `./flow tool tests/cgen/run.flow`.
 The bare bootstrap loop over `tests/lang/` (no runtime libraries linked) is
 in [`AGENTS.md`](../../AGENTS.md#bootstrap-suite), with its current count and
 the remaining failures.

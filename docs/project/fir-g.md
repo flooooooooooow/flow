@@ -118,7 +118,7 @@ Each stage is useful alone. Do not block on ML.
 | Store, analyses, opt candidates | `tools/fir/graph.flow`, `compiler/src/fir_analysis.flow` |
 | Graphify, monomorphization | `tools/fir/lower.flow`, `tools/fir/mono.flow`, `tools/fir/ranges.flow` |
 | CLI, routing, calibration | `tools/fir/main.flow` (`./flow fir-g …`) |
-| Tests | `tests/fir/run.sh` (goldens from the retired Python tool), `tests/lang/test_fir_*.flow` |
+| Tests | `./flow tool tests/fir/run.flow` (goldens from the retired Python tool), `tests/lang/test_fir_*.flow` |
 
 **Out of scope still:** applying opts to IR, beam search, replacing C/MLIR emitters,
 dominators, full alias analysis, putting MLX in the trusted correctness core.

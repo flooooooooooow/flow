@@ -62,7 +62,7 @@ jobs:
         run: scripts/check_doc_examples.sh strict
 
       - name: Run permanent Stable conformance corpus
-        run: tests/conformance/run.sh
+        run: ./flow tool tests/conformance/run.flow
 
       - name: Fuzz release compiler front end
         if: startsWith(steps.tag.outputs.name, 'v1.')

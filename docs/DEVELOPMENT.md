@@ -218,7 +218,7 @@ exit code is non-zero when a file matches, which makes it usable as a gate.
 `--idioms` adds the idiom hints (FIDIOM001, a `let mut` never reassigned;
 FIDIOM002, a return that rebuilds one value field by field), and
 `--format=json` prints them as JSON. The command is the Flow program
-`tools/check/main.flow`; `tests/check/run.sh` holds its goldens.
+`tools/check/main.flow`; `./flow tool tests/check/run.flow` checks its goldens.
 
 ### Debugging Tips
 
@@ -274,9 +274,9 @@ middle-end specialization, C ABI contracts, backend parity, executable pins.
 
 | Layer | Where | How to run |
 |-------|-------|------------|
-| Sema rejections and C lowering | `tests/cgen/*.flow` + `.expect` | `tests/cgen/run.sh` |
+| Sema rejections and C lowering | `tests/cgen/*.flow` + `.expect` | `./flow tool tests/cgen/run.flow` |
 | Language programs | `tests/lang/*.flow` | `./flow test-lang` |
-| Stable conformance | `tests/conformance/` | `tests/conformance/run.sh` |
+| Stable conformance | `tests/conformance/` | `./flow tool tests/conformance/run.flow` |
 | MLIR text and runs | `compiler/fixtures/mlir/` | `compiler/scripts/parity_mlir.sh` |
 | MLIR commands | `tests/mlir_commands/` | `tests/mlir_commands/run.sh` |
 | Runtime exit-code | `tests/runtime/test_*_ops.flow` etc. | `./flow test-runtime` |

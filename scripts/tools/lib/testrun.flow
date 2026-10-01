@@ -1,0 +1,424 @@
+# @module scripts.tools.lib.testrun
+# @means  Shared pieces of the golden test runners under tests/ (cgen,
+#         fir, flow_run, gpu, pywheel and the rest): the repository root,
+#         a scratch directory removed at exit, python stubs on PATH,
+#         line-wise text edits and the head of a diff.
+#
+# The runners are Flow programs run with `./flow tool PATH.flow`, which
+# compiles them with FLOWC_DIR at the repository root, so they import this
+# module as "scripts/tools/lib/testrun.flow". It lives here because `flow
+# tool` rebuilds a program when anything in scripts/tools/lib changes.
+#
+# Everything goes through tools/flow_cli/sys.flow. This module must not
+# import scripts/tools/lib/text.flow (its `write` clashes with sys.flow).
+
+@cEmbed("#include <unistd.h>
+static int32_t flow_tr_symlink(const char *target, const char *path) { return symlink(target, path); }
+")
+
+import "tools/flow_cli/sys.flow"
+import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg, proc_chdir, proc_argc, proc_argv }
+
+extern {
+    function flow_tr_symlink(target: string, path: string) -> i32
+}
+
+# ln -s TARGET PATH; true on success.
+export function tr_symlink(target: string, path: string) -> bool {
+    return flow_tr_symlink(target, path) == 0
+}
+
+# cp -R SRC DST for a tree of plain files and directories (what git holds
+# in the fixture trees): DST is created, then filled. A symlink is copied as
+# what it points to. Every created file has the default mode.
+export function tr_copy_tree(src: string, dst: string) -> bool {
+    if not is_dir(src) {
+        return copy_file(src, dst)
+    }
+    if not is_dir(dst) and not mkdir_p(dst) {
+        return false
+    }
+    let names: ptr<ProcStrs> = list_dir(src)
+    sl_sort(names, false)
+    let mut ok: bool = true
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        let n: string = sl_get(names, i)
+        if not tr_copy_tree(src + "/" + n, dst + "/" + n) {
+            ok = false
+        }
+        i = i + 1
+    }
+    return ok
+}
+
+# Every file under `dir` (recursively, not through symlinked directories)
+# whose name ends in `suffix`, sorted.
+export function tr_find_suffix(dir: string, suffix: string) -> ptr<ProcStrs> {
+    let found: ptr<ProcStrs> = sl_new()
+    tr_find_into(dir, suffix, found)
+    sl_sort(found, false)
+    return found
+}
+
+function tr_find_into(dir: string, suffix: string, found: ptr<ProcStrs>) {
+    let names: ptr<ProcStrs> = list_dir(dir)
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        let p: string = dir + "/" + sl_get(names, i)
+        if is_dir(p) and not is_link(p) {
+            tr_find_into(p, suffix, found)
+        } elif s_ends(p, suffix) {
+            sl_push(found, p)
+        }
+        i = i + 1
+    }
+}
+
+# mv each *.SUFFIX.in under `dir` to *.SUFFIX (the fixtures keep their
+# sources out of the repository's corpus that way).
+export function tr_strip_in(dir: string, suffix: string) {
+    let l: ptr<ProcStrs> = tr_find_suffix(dir, suffix + ".in")
+    let mut i: i32 = 0
+    while i < sl_len(l) {
+        let f: string = sl_get(l, i)
+        let _m: bool = move_file(f, s_slice(f, 0, s_len(f) - 3))
+        i = i + 1
+    }
+}
+
+import std.regex { Regex, rx_compile, rx_sub, rx_test, rx_ok, rx_error }
+import std.bytebuf { ByteBuf, bb_new, bb_puts, bb_putc, bb_str, bb_free }
+
+# The repository root (FLOW_REPO_ROOT, which `flow tool` sets), made the
+# working directory, as `cd "$ROOT"`.
+#
+# Without FLOW_REPO_ROOT the runner stops with exit 2 before doing
+# anything. The corpus gates (corpus_parity, mlir_vs_c) build and run every
+# tracked program that has a main, from the repository root and with a
+# timeout; a runner started that way must not run a whole test suite and
+# leave its children behind when the timeout kills it.
+export function tr_enter_root() -> string {
+    let r: string = env("FLOW_REPO_ROOT")
+    if s_len(r) == 0 {
+        errln("this is a test runner: run it with ./flow tool PATH.flow (FLOW_REPO_ROOT is not set)")
+        cli_exit(2)
+    }
+    if not proc_chdir(r) {
+        errln("cannot cd to " + r)
+        cli_exit(1)
+    }
+    env_set("PWD", r)
+    return r
+}
+
+# This program's arguments after the program name.
+export function tr_args() -> ptr<ProcStrs> {
+    let l: ptr<ProcStrs> = sl_new()
+    let mut i: i32 = 1
+    while i < proc_argc() {
+        sl_push(l, proc_argv(i))
+        i = i + 1
+    }
+    return l
+}
+
+# mktemp -d "${TMPDIR:-/tmp}/NAME.XXXXXX", removed at exit (cli_exit), as
+# the physical path (`cd "$work" && pwd -P`).
+export function tr_workdir(name: string) -> string {
+    let mut base: string = tmp_base()
+    if s_ends(base, "/") {
+        base = s_slice(base, 0, s_len(base) - 1)
+    }
+    let w: string = mktemp_dir(base + "/" + name + ".XXXXXX")
+    if s_len(w) == 0 {
+        errln("mktemp failed for " + name)
+        cli_exit(1)
+    }
+    on_exit_remove(w)
+    return abs_dir_physical(w)
+}
+
+# An executable /bin/sh script `dir/name` with `body` after the #! line.
+export function tr_stub(dir: string, name: string, body: string) {
+    let p: string = dir + "/" + name
+    let _w: bool = write_text(p, "#!/bin/sh\n" + body)
+    let _m: bool = set_mode(p, 493)
+}
+
+# python and python3 stubs in `dir` that append "NAME ARGS" to `log` and
+# exit 127, with `dir` first on PATH. The usual guard of the runners.
+export function tr_stub_python_log(dir: string, log: string) {
+    let _d: bool = mkdir_p(dir)
+    tr_stub(dir, "python", "echo \"python $*\" >> \"" + log + "\"\nexit 127\n")
+    tr_stub(dir, "python3", "echo \"python3 $*\" >> \"" + log + "\"\nexit 127\n")
+    tr_path_prepend(dir)
+}
+
+# python and python3 stubs in `dir` that print "NAME called: ARGS" on
+# stderr and exit 127, with `dir` first on PATH.
+export function tr_stub_python_loud(dir: string) {
+    let _d: bool = mkdir_p(dir)
+    tr_stub(dir, "python", "echo \"python called: $*\" >&2\nexit 127\n")
+    tr_stub(dir, "python3", "echo \"python3 called: $*\" >&2\nexit 127\n")
+    tr_path_prepend(dir)
+}
+
+export function tr_path_prepend(dir: string) {
+    env_set("PATH", dir + ":" + env("PATH"))
+}
+
+# The "python was called" footer most runners print: true when `log` is
+# not empty, after printing `title` and the log.
+export function tr_python_called(log: string, title: string) -> bool {
+    if not nonempty(log) {
+        return false
+    }
+    outln(title)
+    out(read_text(log))
+    return true
+}
+
+# `cmp -s a b`, false when either file is missing.
+export function tr_same(a: string, b: string) -> bool {
+    if not is_file(a) or not is_file(b) {
+        return false
+    }
+    return same_bytes(a, b)
+}
+
+# The first `n` lines of `text`, each with its newline (`head -n N`).
+export function tr_head(text: string, n: i32) -> string {
+    let p: ptr<u8> = text as ptr<u8>
+    let len: i32 = s_len(text)
+    let mut i: i32 = 0
+    let mut lines: i32 = 0
+    while i < len and lines < n {
+        if p[i] == 10 {
+            lines = lines + 1
+        }
+        i = i + 1
+    }
+    return s_slice(text, 0, i)
+}
+
+# The last `n` lines of `text` (`tail -n N`); a final line without a
+# newline counts as a line.
+export function tr_tail(text: string, n: i32) -> string {
+    let mut total: i32 = tr_count_lines(text)
+    if s_len(text) > 0 and not s_ends(text, "\n") {
+        total = total + 1
+    }
+    if total <= n {
+        return text
+    }
+    return s_from(text, s_len(tr_head(text, total - n)))
+}
+
+# "$(tail -n 1 FILE)": the last line of `text`, without its newline.
+export function tr_last_line(text: string) -> string {
+    let mut t: string = text
+    if s_ends(t, "\n") {
+        t = s_slice(t, 0, s_len(t) - 1)
+    }
+    let nl: i32 = s_rfind_byte(t, 10)
+    if nl < 0 {
+        return t
+    }
+    return s_from(t, nl + 1)
+}
+
+# Every line of `text` with `prefix` in front (`sed 's/^/PREFIX/'`).
+export function tr_indent(text: string, prefix: string) -> string {
+    let b: ptr<ByteBuf> = bb_new(s_len(text) + 64)
+    let p: ptr<u8> = text as ptr<u8>
+    let n: i32 = s_len(text)
+    let mut at_start: bool = true
+    let mut i: i32 = 0
+    while i < n {
+        if at_start {
+            bb_puts(b, prefix)
+            at_start = false
+        }
+        bb_putc(b, p[i])
+        if p[i] == 10 {
+            at_start = true
+        }
+        i = i + 1
+    }
+    let s: string = bb_str(b)
+    bb_free(b)
+    return s
+}
+
+# Lines joined with single spaces (`tr '\n' ' '`): every newline becomes a
+# space.
+export function tr_nl_to_space(text: string) -> string {
+    return s_replace(text, "\n", " ")
+}
+
+# A pattern for tr_sed, compiled once. Stops the program on a bad pattern.
+export function tr_rx(pattern: string) -> ptr<Regex> {
+    let r: ptr<Regex> = rx_compile(pattern, 0)
+    if not rx_ok(r) {
+        errln("bad pattern " + pattern + ": " + rx_error(r))
+        cli_exit(2)
+    }
+    return r
+}
+
+# sed "s/RX/REPL/g" line by line (REPL uses \1 for groups), or only the
+# first `count` matches of each line when count > 0 (no g flag: count 1). A
+# final line without a newline stays without one.
+export function tr_sed(text: string, r: ptr<Regex>, repl: string, count: i32) -> string {
+    let b: ptr<ByteBuf> = bb_new(s_len(text) + 64)
+    let n: i32 = s_len(text)
+    let p: ptr<u8> = text as ptr<u8>
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i <= n {
+        if i == n or p[i] == 10 {
+            if i > start or i < n {
+                bb_puts(b, rx_sub(r, repl, s_slice(text, start, i), count))
+            }
+            if i < n {
+                bb_putc(b, 10)
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    let s: string = bb_str(b)
+    bb_free(b)
+    return s
+}
+
+# True when some line of `text` matches `r` (grep -q).
+export function tr_grep(text: string, r: ptr<Regex>) -> bool {
+    let lines: ptr<ProcStrs> = s_lines(text)
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        if rx_test(r, sl_get(lines, i)) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# True when some line of `text` equals `line` (grep -Fxq).
+export function tr_has_line(text: string, line: string) -> bool {
+    let lines: ptr<ProcStrs> = s_lines(text)
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        if s_eq(sl_get(lines, i), line) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# Number of lines of `text` (`wc -l`: newline characters).
+export function tr_count_lines(text: string) -> i32 {
+    let p: ptr<u8> = text as ptr<u8>
+    let n: i32 = s_len(text)
+    let mut c: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 10 {
+            c = c + 1
+        }
+        i = i + 1
+    }
+    return c
+}
+
+# The lines of `text` sorted by bytes (`LC_ALL=C sort`); every line ends in
+# a newline, as sort writes them.
+export function tr_sort_lines(text: string) -> string {
+    let l: ptr<ProcStrs> = s_lines(text)
+    sl_sort(l, false)
+    let b: ptr<ByteBuf> = bb_new(s_len(text) + 16)
+    let mut i: i32 = 0
+    while i < sl_len(l) {
+        bb_puts(b, sl_get(l, i))
+        bb_putc(b, 10)
+        i = i + 1
+    }
+    let s: string = bb_str(b)
+    bb_free(b)
+    return s
+}
+
+# What `diff OPTS a b` prints on stdout, whatever its status. Its stderr
+# (a missing file) passes through, as it did past `| head` in the scripts.
+export function tr_diff(opts: string, a: string, b: string) -> string {
+    let argv: ptr<ProcStrs> = sl_of1("diff")
+    sl_extend(argv, s_words(opts))
+    sl_push2(argv, a, b)
+    return capture_raw(cmd(argv))
+}
+
+# Run `argv` in `dir` (when not ""), stdout and stderr into the files
+# `out_path` and `err_path`; the shell status.
+export function tr_run_files(argv: ptr<ProcStrs>, dir: string, out_path: string, err_path: string) -> i32 {
+    let c: ptr<ProcCmd> = cmd(argv)
+    tr_cmd_cd(c, dir)
+    return tr_run_cmd_files(c, out_path, err_path)
+}
+
+# `env K=V... cmd`: each "K=V" of `vars` set for the command. A later
+# setting of the same K wins, as with env(1); proc_env alone would keep
+# both and the child would see the first.
+export function tr_cmd_env_list(c: ptr<ProcCmd>, vars: ptr<ProcStrs>) {
+    let mut i: i32 = 0
+    while i < sl_len(vars) {
+        let kv: string = sl_get(vars, i)
+        let eq: i32 = s_find_byte(kv, 61, 0)
+        let key: string = s_slice(kv, 0, eq + 1)
+        let mut later: bool = false
+        let mut j: i32 = i + 1
+        while j < sl_len(vars) {
+            if s_starts(sl_get(vars, j), key) {
+                later = true
+            }
+            j = j + 1
+        }
+        if eq > 0 and not later {
+            cmd_env(c, s_slice(kv, 0, eq), s_from(kv, eq + 1))
+        }
+        i = i + 1
+    }
+}
+
+# `(cd DIR && cmd)`: the working directory, and PWD as cd would set it.
+# Nothing when `dir` is "".
+export function tr_cmd_cd(c: ptr<ProcCmd>, dir: string) {
+    if s_len(dir) == 0 {
+        return
+    }
+    cmd_cwd(c, dir)
+    if is_abs(dir) {
+        cmd_env(c, "PWD", path_norm_abs(dir))
+    } else {
+        cmd_env(c, "PWD", path_norm_abs(cwd_logical() + "/" + dir))
+    }
+}
+
+export function tr_run_cmd_files(c: ptr<ProcCmd>, out_path: string, err_path: string) -> i32 {
+    cmd_capture_out(c)
+    cmd_capture_err(c)
+    let r: ptr<ProcResult> = run_result(c)
+    let _o: bool = write_text(out_path, r.stdout)
+    let _e: bool = write_text(err_path, r.stderr)
+    return r.exit_code
+}
+
+# Exit 0 when nothing failed, else 1 (`[[ $fail -eq 0 ]]`).
+export function tr_exit(fail: i32) {
+    if fail == 0 {
+        cli_exit(0)
+    }
+    cli_exit(1)
+}

@@ -198,7 +198,7 @@ What those tests checked is covered as follows:
   a hang. It found that flowc overflowed its stack on deep nesting;
   `FLOWC_PARSE_MAX_DEPTH` in `compiler/src/parser.flow` now makes that a
   parse error.
-* The Stable conformance corpus: `tests/conformance/run.sh`, through flowc.
+* The Stable conformance corpus: `./flow tool tests/conformance/run.flow`, through flowc.
 * Type-checker rules flowc has: `tests/cgen/tc_reject_*` pin arity,
   unbound calls and a value returned from a void function.
 
@@ -207,7 +207,7 @@ What those tests checked is covered as follows:
 Some diagnostics existed only in the Python type checker. The port of that
 checker to flowc (`compiler/src/sem_check.flow`, #1071) closed most of them:
 
-* `tests/conformance/run.sh` passes, including the Stable negatives
+* `./flow tool tests/conformance/run.flow` passes, including the Stable negatives
   `01_type_mismatch` and `02_immutable_assignment`.
 * `scripts/check_doc_examples.sh --check-ledger` finds every
   `expect-error` example rejected, and the ledger is empty.

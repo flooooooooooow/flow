@@ -180,9 +180,9 @@ jobs:
       - run: scripts/check_makefile_contract.sh
       - run: scripts/check_project_state_sources.sh
       - name: Jules dispatch backpressure tests
-        run: scripts/tools/jules_dispatch/test.sh
+        run: ./flow tool scripts/tools/jules_dispatch/test.flow
       - name: Benchmark harness tests (no Python)
-        run: tests/bench_harness/run.sh
+        run: ./flow tool tests/bench_harness/run.flow
 
   # Every part of the language needs a page. The feature list is read from the
   # compiler, so this fails when something is added and left undocumented.
@@ -299,9 +299,7 @@ jobs:
       # bootstrap binary (compiler/scripts/flowc_host.sh), and the per-module
       # headers come from the Flow tool scripts/tools/c_to_hdr.
       - name: c_to_hdr goldens
-        run: |
-          chmod +x tests/c_to_hdr/run.sh scripts/tools/build_tool.sh
-          ./tests/c_to_hdr/run.sh
+        run: ./flow tool tests/c_to_hdr/run.flow
 
       - name: Stage-A/B self-host roundtrip
         run: |
@@ -372,12 +370,10 @@ jobs:
         run: ./flow tool compiler/scripts/self_host_full.flow
 
       - name: C output goldens (tests/cgen)
-        run: ./tests/cgen/run.sh
+        run: ./flow tool tests/cgen/run.flow
 
       - name: flow check goldens (tests/check)
-        run: |
-          chmod +x ./flow tests/check/run.sh
-          ./tests/check/run.sh
+        run: ./flow tool tests/check/run.flow
 
       - name: flow python generator goldens (tests/pywheel)
         run: ./tests/pywheel/run.sh
@@ -389,10 +385,10 @@ jobs:
         run: ./compiler/scripts/parity_dap.sh
 
       - name: FIR-G goldens (flow fir-g)
-        run: ./tests/fir/run.sh
+        run: ./flow tool tests/fir/run.flow
 
       - name: flow run --json goldens (tools/run)
-        run: ./tests/flow_run/run.sh
+        run: ./flow tool tests/flow_run/run.flow
 
       - name: Package command goldens (init, publish, build, clean)
         run: ./scripts/check_pkg_commands.sh
@@ -652,7 +648,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Stable conformance corpus
-        run: tests/conformance/run.sh
+        run: ./flow tool tests/conformance/run.flow
 
   fuzz:
     name: Fuzz (flowc)

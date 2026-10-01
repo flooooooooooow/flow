@@ -1,0 +1,201 @@
+# C output goldens for flowc.
+#
+# Each case is tests/cgen/<name>.flow plus tests/cgen/<name>.expect (this
+# runner, run.flow, is not a case). The program is compiled to C with
+# compiler/scripts/flowc_emit.sh and the expectations are checked line by
+# line:
+#
+#   + TEXT     the emitted C contains TEXT (fixed string)
+#   - TEXT     the emitted C does not contain TEXT
+#   ~ REGEX    a line of the emitted C matches REGEX
+#   exit N     the C builds with cc and the program exits with N
+#   stdout T   ... and its stdout contains the line T (needs an exit line)
+#   reject T   flowc refuses the program and its output contains T
+#   flags F    pass F to flowc_emit.sh (--strict, --no-checks)
+#   env K=V    set K=V for flowc (FLOWC_DEBUG_INFO=1)
+#   explain F  the `flow explain` report (FLOWC_EXPLAIN=1, on stderr)
+#              equals tests/cgen/F byte for byte
+#   # ...      comment
+#
+# REGEX is std.regex syntax (Python's), which agrees with grep -E on every
+# pattern the goldens use.
+#
+# Usage: ./flow tool tests/cgen/run.flow [name...]
+# Needs a C compiler and nothing else.
+
+import "tools/flow_cli/sys.flow"
+import "scripts/tools/lib/testrun.flow"
+import std.process { ProcCmd, ProcStrs, proc_arg }
+import std.regex { Regex }
+
+# flowc_emit.sh with the case's flags and K=V environment.
+function emit_cmd(flags: ptr<ProcStrs>, envs: ptr<ProcStrs>, src: string, c_out: string) -> ptr<ProcCmd> {
+    let argv: ptr<ProcStrs> = sl_of1("compiler/scripts/flowc_emit.sh")
+    sl_extend(argv, flags)
+    sl_push2(argv, src, c_out)
+    let c: ptr<ProcCmd> = cmd(argv)
+    tr_cmd_env_list(c, envs)
+    return c
+}
+
+function main() -> i32 {
+    let _root: string = tr_enter_root()
+    let args: ptr<ProcStrs> = tr_args()
+    let work: string = tr_workdir("flow-cgen-tests")
+
+    let cases: ptr<ProcStrs> = sl_new()
+    if sl_len(args) > 0 {
+        let mut a: i32 = 0
+        while a < sl_len(args) {
+            let n: string = sl_get(args, a)
+            if s_ends(n, ".flow") {
+                sl_push(cases, "tests/cgen/" + s_slice(n, 0, s_len(n) - 5) + ".flow")
+            } else {
+                sl_push(cases, "tests/cgen/" + n + ".flow")
+            }
+            a = a + 1
+        }
+    } else {
+        # Every tests/cgen/*.flow except this runner, in byte order.
+        let all: ptr<ProcStrs> = glob_suffix("tests/cgen", ".flow")
+        let mut g: i32 = 0
+        while g < sl_len(all) {
+            if not s_eq(sl_get(all, g), "tests/cgen/run.flow") {
+                sl_push(cases, sl_get(all, g))
+            }
+            g = g + 1
+        }
+    }
+
+    let cc: string = env_or("CC", "cc")
+    let mut pass: i32 = 0
+    let mut fail: i32 = 0
+    let mut ci: i32 = 0
+    while ci < sl_len(cases) {
+        let src: string = sl_get(cases, ci)
+        ci = ci + 1
+        let name: string = path_stem(src, ".flow")
+        let exp_path: string = s_slice(src, 0, s_len(src) - 5) + ".expect"
+        if not is_file(exp_path) {
+            outln("FAIL " + name + ": missing " + exp_path)
+            fail = fail + 1
+            continue
+        }
+        let c: string = work + "/" + name + ".c"
+        let log: string = work + "/" + name + ".log"
+        let lines: ptr<ProcStrs> = s_lines(read_text(exp_path))
+        let flags: ptr<ProcStrs> = sl_new()
+        let envs: ptr<ProcStrs> = sl_new()
+        let mut reject: string = ""
+        let mut li: i32 = 0
+        while li < sl_len(lines) {
+            let line: string = sl_get(lines, li)
+            li = li + 1
+            if s_starts(line, "flags ") {
+                sl_extend(flags, s_words(s_from(line, 6)))
+            } elif s_starts(line, "reject ") {
+                reject = s_from(line, 7)
+            } elif s_starts(line, "env ") {
+                sl_push(envs, s_from(line, 4))
+            }
+        }
+
+        let rc: i32 = run_to_file(emit_cmd(flags, envs, src, c), log, true)
+        let bad: ptr<ProcStrs> = sl_new()
+        if s_len(reject) > 0 {
+            if rc == 0 {
+                sl_push(bad, "flowc accepted the program (want: reject " + reject + ")")
+            } elif not s_contains(read_text(log), reject) {
+                sl_push(bad, "rejection does not mention: " + reject)
+            }
+        } elif rc != 0 {
+            sl_push(bad, "flowc failed: " + tr_nl_to_space(tr_tail(read_text(log), 3)))
+        }
+
+        if sl_len(bad) == 0 and s_len(reject) == 0 {
+            let ctext: string = read_text(c)
+            let mut built: bool = false
+            let mut run_rc: string = ""
+            let mut k: i32 = 0
+            while k < sl_len(lines) {
+                let line: string = sl_get(lines, k)
+                k = k + 1
+                if s_starts(line, "+ ") {
+                    if not s_contains(ctext, s_from(line, 2)) {
+                        sl_push(bad, "missing: " + s_from(line, 2))
+                    }
+                } elif s_starts(line, "- ") {
+                    if s_contains(ctext, s_from(line, 2)) {
+                        sl_push(bad, "unexpected: " + s_from(line, 2))
+                    }
+                } elif s_starts(line, "~ ") {
+                    let r: ptr<Regex> = tr_rx(s_from(line, 2))
+                    if not tr_grep(ctext, r) {
+                        sl_push(bad, "no match: " + s_from(line, 2))
+                    }
+                } elif s_starts(line, "exit ") {
+                    let want: string = s_from(line, 5)
+                    if not built {
+                        built = true
+                        let ccv: ptr<ProcStrs> = sl_of3(cc, "-std=c11", "-D_DEFAULT_SOURCE")
+                        sl_extend(ccv, s_words("-w -O0 -Iruntime -o"))
+                        sl_push2(ccv, work + "/" + name, c)
+                        sl_push(ccv, "-lm")
+                        let cclog: string = work + "/" + name + ".cc"
+                        if run_to_file(cmd(ccv), cclog, true) != 0 {
+                            sl_push(bad, "cc failed: " + tr_nl_to_space(tr_head(read_text(cclog), 3)))
+                            continue
+                        }
+                        let pc: ptr<ProcCmd> = cmd(sl_of1(work + "/" + name))
+                        run_rc = s_itoa(run_to_file(pc, work + "/" + name + ".out", true))
+                    }
+                    if not s_eq(run_rc, want) {
+                        let mut shown: string = run_rc
+                        if s_len(shown) == 0 {
+                            shown = "none"
+                        }
+                        sl_push(bad, "exit " + shown + ", want " + want)
+                    }
+                } elif s_starts(line, "explain ") {
+                    let want_file: string = "tests/cgen/" + s_from(line, 8)
+                    let xe: ptr<ProcStrs> = sl_copy(envs)
+                    sl_push2(xe, "FLOWC_EXPLAIN=1", "FLOWC_EXPLAIN_SOURCE=" + src)
+                    let xc: ptr<ProcCmd> = emit_cmd(flags, xe, src, work + "/" + name + ".x.c")
+                    cmd_quiet_out(xc)
+                    let _x: i32 = run_err_to_file(xc, work + "/" + name + ".explain")
+                    if not tr_same(want_file, work + "/" + name + ".explain") {
+                        let dc: ptr<ProcCmd> = cmd(sl_of3("diff", want_file, work + "/" + name + ".explain"))
+                        let d: string = capture_raw(dc)
+                        sl_push(bad, "explain report differs from " + want_file + ": " + tr_nl_to_space(tr_head(d, 4)))
+                    }
+                } elif s_starts(line, "stdout ") {
+                    let outf: string = work + "/" + name + ".out"
+                    if is_file(outf) {
+                        if not tr_has_line(read_text(outf), s_from(line, 7)) {
+                            sl_push(bad, "stdout lacks: " + s_from(line, 7))
+                        }
+                    } else {
+                        sl_push(bad, "stdout line needs an earlier exit line")
+                    }
+                }
+            }
+        }
+
+        if sl_len(bad) == 0 {
+            outln("PASS " + name)
+            pass = pass + 1
+        } else {
+            outln("FAIL " + name)
+            let mut b: i32 = 0
+            while b < sl_len(bad) {
+                outln("    " + sl_get(bad, b))
+                b = b + 1
+            }
+            fail = fail + 1
+        }
+    }
+
+    outln("cgen goldens: " + s_itoa(pass) + " passed, " + s_itoa(fail) + " failed")
+    tr_exit(fail)
+    return 0
+}
