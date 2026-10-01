@@ -66,13 +66,9 @@ function tool_path(name: string) -> string {
     return s_chomp_all(r.stdout)
 }
 
-# The encoder: scripts/frames_to_gif.sh while that shim exists, otherwise
-# the tool itself.
+# The encoder: `./flow tool frames_to_gif`.
 function encoder() -> ptr<ProcCmd> {
     let c: ptr<Ctx> = CTX
-    if is_file(c.root + "/scripts/frames_to_gif.sh") {
-        return proc_cmd("scripts/frames_to_gif.sh")
-    }
     let e: ptr<ProcCmd> = proc_cmd(c.root + "/flow")
     proc_arg(e, "tool")
     proc_arg(e, "frames_to_gif")
@@ -293,7 +289,7 @@ function main() -> i32 {
     let r2: ptr<ProcResult> = proc_run(e2)
     let rc2: i32 = status_of(r2)
     let lines: ptr<ProcStrs> = s_lines(r2.stderr)
-    if rc2 == 2 and sl_has(lines, "frames_to_gif.sh: error: argument --fps: invalid int value: 'abc'") {
+    if rc2 == 2 and sl_has(lines, "flow tool frames_to_gif: error: argument --fps: invalid int value: 'abc'") {
         ok("bad-arg")
     } else {
         bad("bad-arg")

@@ -1,5 +1,5 @@
 {
- "about": "re.search(pattern, text, re.MULTILINE | re.DOTALL) results recorded from CPython, used by check.sh self-test to hold the Flow matcher to Python semantics.",
+ "about": "re.search(pattern, text, re.MULTILINE | re.DOTALL) results recorded from CPython, used by `flow tool challenge_check self-test` to hold the Flow matcher to Python semantics.",
  "cases": [
   {
    "pattern": "\\|>",

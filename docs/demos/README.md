@@ -45,7 +45,7 @@ into `games/` as well so the games directory covers every game.
 The eight software-3D examples in `examples/threed/` have clips at
 `docs/demos/threed/<name>.gif`. Those are recorded directly with
 `./flow record <program> --frames 90 --gif <path> --width 360 --keys <script>`
-rather than through `record_demos.sh`; the key script for each is in the table
+rather than through `flow tool record_demos`; the key script for each is in the table
 in [examples/threed/README.md](../../examples/threed/README.md).
 
 ## Two real recording paths
@@ -61,15 +61,15 @@ SSH and in CI.
 Regenerate the CPU galleries with:
 
 ```bash
-scripts/record_demos.sh                       # all registered gfx demos
-scripts/record_demos.sh frogger               # just one
-scripts/record_demos.sh --group morphogenesis # one gallery
-scripts/record_demos.sh --group neuro         # neuron atlas
-scripts/record_demos.sh --group evoleco       # evolution / ecology
-scripts/record_demos.sh --group planet        # cubesphere planet
-scripts/record_demos.sh --group procgen       # procedural generation
-scripts/record_demos.sh --group numerical     # FMM and friends
-scripts/record_demos.sh --check               # missing GIFs + sizes
+./flow tool record_demos                      # all registered gfx demos
+./flow tool record_demos frogger              # just one
+./flow tool record_demos --group morphogenesis # one gallery
+./flow tool record_demos --group neuro        # neuron atlas
+./flow tool record_demos --group evoleco      # evolution / ecology
+./flow tool record_demos --group planet       # cubesphere planet
+./flow tool record_demos --group procgen      # procedural generation
+./flow tool record_demos --group numerical    # FMM and friends
+./flow tool record_demos --check              # missing GIFs + sizes
 ```
 
 ### FSL / Metal recordings
@@ -82,10 +82,10 @@ time, so scheduling jitter cannot change the captured animation.
 
 ```bash
 # All 64 photoreal shader entries
-./scripts/record_shader_gallery.sh --group photoreal
+./flow tool shader_record --group photoreal
 
 # One material study
-./scripts/record_shader_gallery.sh --name photoreal_gold
+./flow tool shader_record --name photoreal_gold
 
 # Rebuild and validate the generated Wiki page
 python3 scripts/build_shader_gallery.py

@@ -1,15 +1,15 @@
 # Build the WASM crossing demos and their pages under site/wasm-crossings.
 #
 # A "crossing" is one thing people assume cannot reach WebAssembly. Run
-# through wasm/crossings.sh:
+# through `./flow tool wasm_crossings`:
 #
-#   crossings.sh all                     every crossing, then the index
-#   crossings.sh index [--out DIR]       index page only
-#   crossings.sh threads [program.flow] [--workers N] [--out DIR] [--no-build]
-#   crossings.sh gpu [program.flow] [-n COUNT] [--out DIR] [--no-build]
-#   crossings.sh sockets [program.flow] [--port N] [--out DIR] [--no-build]
-#   crossings.sh python  [program.flow] [--out DIR] [--no-build]
-#   crossings.sh fs [program.flow] [--fs memfs|idbfs] [--preload DIR@/MOUNT]
+#   flow tool wasm_crossings all                     every crossing, then the index
+#   flow tool wasm_crossings index [--out DIR]       index page only
+#   flow tool wasm_crossings threads [program.flow] [--workers N] [--out DIR] [--no-build]
+#   flow tool wasm_crossings gpu [program.flow] [-n COUNT] [--out DIR] [--no-build]
+#   flow tool wasm_crossings sockets [program.flow] [--port N] [--out DIR] [--no-build]
+#   flow tool wasm_crossings python  [program.flow] [--out DIR] [--no-build]
+#   flow tool wasm_crossings fs [program.flow] [--fs memfs|idbfs] [--preload DIR@/MOUNT]
 #                   [--export-name NAME] [--out DIR] [--no-build]
 #
 # The GPU crossing takes its WGSL and kernel manifest from tools/gpu
@@ -471,7 +471,7 @@ function cmd_sockets(o: ptr<Opts>) -> i32 {
 
     write_out(out_dir + "/crossing.css", read_asset("crossing.css"))
     write_out(out_dir + "/index.html", sockets_page(stem, program, port))
-    ft_outln("\nStart the relay: scripts/ws_echo_relay.sh --port " + ft_itoa(port))
+    ft_outln("\nStart the relay: ./flow tool ws_echo_relay --port " + ft_itoa(port))
     ft_outln("Serve it:        python3 -m http.server -d site 8000")
     ft_outln("Then open:       http://127.0.0.1:8000/wasm-crossings/sockets/")
     return 0
@@ -835,7 +835,7 @@ function cmd_gpu(o: ptr<Opts>) -> i32 {
 # ---------------------------------------------------------------------------
 
 function arg_error(msg: string) -> void {
-    ft_errln("crossings.sh: error: " + msg)
+    ft_errln("flow tool wasm_crossings: error: " + msg)
     exit(2)
 }
 
@@ -1082,7 +1082,7 @@ function cmd_index(o: ptr<Opts>) -> i32 {
 # ---------------------------------------------------------------------------
 
 function usage() -> i32 {
-    ft_errln("usage: crossings.sh {all,index,threads,gpu,sockets,python,fs,shader} [program.flow] [options]")
+    ft_errln("usage: flow tool wasm_crossings {all,index,threads,gpu,sockets,python,fs,shader} [program.flow] [options]")
     return 2
 }
 
@@ -1103,7 +1103,7 @@ function is_int(s: string) -> bool {
 
 function option_value(argc: i32, argv: ptr<ptr<u8>>, i: i32, name: string) -> string {
     if i + 1 >= argc {
-        ft_errln("crossings.sh: error: argument " + name + ": expected one argument")
+        ft_errln("flow tool wasm_crossings: error: argument " + name + ": expected one argument")
         exit(2)
     }
     return argv[i + 1] as string
@@ -1111,7 +1111,7 @@ function option_value(argc: i32, argv: ptr<ptr<u8>>, i: i32, name: string) -> st
 
 function int_value(v: string, name: string) -> i32 {
     if is_int(v) == false {
-        ft_errln("crossings.sh: error: argument " + name + ": invalid int value: '" + v + "'")
+        ft_errln("flow tool wasm_crossings: error: argument " + name + ": invalid int value: '" + v + "'")
         exit(2)
     }
     return atoi(v)
@@ -1140,7 +1140,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         } elif ft_eq(a, "--fs") {
             let v: string = option_value(argc, argv, i, a)
             if (ft_eq(v, "memfs") or ft_eq(v, "idbfs")) == false {
-                ft_errln("crossings.sh: error: argument --fs: invalid choice: '" + v + "' (choose from 'memfs', 'idbfs')")
+                ft_errln("flow tool wasm_crossings: error: argument --fs: invalid choice: '" + v + "' (choose from 'memfs', 'idbfs')")
                 return 2
             }
             o[0].fs = v
@@ -1164,15 +1164,15 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             o[0].export_name = option_value(argc, argv, i, a)
             i = i + 1
         } elif ft_eq(a, "-h") or ft_eq(a, "--help") {
-            ft_outln("usage: crossings.sh {all,index,threads,gpu,sockets,python,fs,shader} [program.flow] [options]")
+            ft_outln("usage: flow tool wasm_crossings {all,index,threads,gpu,sockets,python,fs,shader} [program.flow] [options]")
             return 0
         } elif ft_starts(a, "-") {
-            ft_errln("crossings.sh: error: unrecognized arguments: " + a)
+            ft_errln("flow tool wasm_crossings: error: unrecognized arguments: " + a)
             return 2
         } elif o[0].program as ptr<u8> == null {
             o[0].program = a
         } else {
-            ft_errln("crossings.sh: error: unrecognized arguments: " + a)
+            ft_errln("flow tool wasm_crossings: error: unrecognized arguments: " + a)
             return 2
         }
         i = i + 1

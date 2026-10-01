@@ -52,7 +52,7 @@ Build it with:
 ./flow wasm examples/wasm/parallel_sum.flow --threads --workers 8
 ```
 
-which is `wasm/crossings.sh threads`. It compiles the program twice from one
+which is `./flow tool wasm_crossings threads`. It compiles the program twice from one
 source: once with `-pthread`, once without, and writes both plus the page into
 `site/wasm-crossings/threads/`.
 
@@ -191,7 +191,7 @@ no vendor compiler in between, so adding a shading language costs one file.
 ./flow gpu lib/stdlib/gpu_kernels.flow --wgsl    # WGSL, same AST
 ```
 
-`wasm/crossings.sh gpu` builds the demo. It takes one Flow file and produces
+`./flow tool wasm_crossings gpu` builds the demo. It takes one Flow file and produces
 two things from it:
 
 * a `.wgsl` per `@gpu` function, plus a small JSON reflection (binding indices,
@@ -301,8 +301,8 @@ subprotocol, and every `send`/`recv` becomes a binary WebSocket frame. Flow's
 this maps onto.
 
 ```
-scripts/ws_echo_relay.sh --port 9505 --tcp-port 9506
-wasm/crossings.sh sockets
+./flow tool ws_echo_relay --port 9505 --tcp-port 9506
+./flow tool wasm_crossings sockets
 ```
 
 ### The constraint people trip over
@@ -313,7 +313,7 @@ speak arbitrary TCP could port-scan your intranet. Whatever is on the far end
 has to speak WebSocket. This is a browser security rule and it is not a Flow
 limitation; the same wall stops every language.
 
-`scripts/ws_echo_relay.sh` is the far end. It runs the Flow program in
+`./flow tool ws_echo_relay` is the far end. It runs the Flow program in
 `scripts/tools/ws_echo_relay`, written on libc sockets so the demo has no
 dependencies: an HTTP upgrade handshake (SHA-1 and base64 from
 `scripts/tools/lib/digest.flow`), a frame codec, and an echo. It also serves
@@ -384,7 +384,7 @@ file. Three backends matter:
 # Same preload without the MEMFS/IDBFS crossing page, works for --backend=c|mlir:
 ./flow wasm examples/wasm/hello_wasm.flow --backend=mlir \
   --preload examples/wasm/data@/data --out build/wasm/hello-preload
-wasm/crossings.sh fs                  # builds all three demos and the page
+./flow tool wasm_crossings fs         # builds all three demos and the page
 ```
 
 ### The constraints people trip over

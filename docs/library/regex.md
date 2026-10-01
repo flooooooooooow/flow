@@ -94,6 +94,6 @@ with `rx_decode`.
 ## Tests
 
 `tests/lang/test_stdlib_regex.flow` checks 82 calls against the results
-CPython gives. `challenges/flow-specific/check.sh self-test` checks 43
+CPython gives. `./flow tool challenge_check self-test` checks 43
 recorded `re.search` cases, and the challenge checker agrees with CPython
 on every catalog pattern over the tracked `.flow` files.

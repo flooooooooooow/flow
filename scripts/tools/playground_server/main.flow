@@ -14,8 +14,8 @@
 #   - CORS answers only local origins
 #
 # Usage (from the repository root):
-#   scripts/playground_compile_server.sh
-#   scripts/playground_compile_server.sh --port 8765 --no-run   # transpile only
+#   ./flow tool playground_server
+#   ./flow tool playground_server --port 8765 --no-run   # transpile only
 #   ./flow playground [PORT]
 #
 # Routes:

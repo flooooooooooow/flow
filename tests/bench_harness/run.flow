@@ -1,5 +1,5 @@
 # Tests for the cross-dimensional benchmark harness (scripts/tools/bench_harness,
-# run as benchmarks/run_benchmarks.sh).
+# run as `./flow tool bench_harness`).
 #
 # Covers the pure functions through the tool's test modes (percentile,
 # regression policy, system info) and a mock run against an empty repository

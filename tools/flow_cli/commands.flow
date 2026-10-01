@@ -8,6 +8,7 @@ import "tools/flow_cli/sys.flow"
 import "tools/flow_cli/toolchain.flow"
 import "tools/flow_cli/flowc_build.flow"
 import "tools/flow_cli/build.flow"
+import "tools/flow_cli/tool.flow"
 import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg }
 
 # ---------------------------------------------------------------------------
@@ -723,15 +724,13 @@ export function cmd_wasm(args0: ptr<ProcStrs>) -> i32 {
         info("Writes .wasm + .js + a runnable index.html.")
         info("gfx programs get a canvas page; others print into the page.")
         info("Requires emcc (Emscripten). See docs/language/wasm.md")
-        info("Whole gallery: scripts/build_wasm_gallery.sh")
+        info("Whole gallery: ./flow tool wasm_build gallery")
         cli_exit(1)
     }
     if s_eq(first, "--legacy") {
         let rest: ptr<ProcStrs> = sl_tail(args, 1)
         require_flow_file(sl_get(rest, 0))
-        let lg: ptr<ProcStrs> = sl_of1(root() + "/scripts/flow_to_wasm.sh")
-        sl_extend(lg, rest)
-        cli_exit(run_argv(lg))
+        cli_exit(run_argv(tool_argv("flow_to_wasm", rest)))
     }
     require_flow_file(first)
     if not have("emcc") {
@@ -746,7 +745,7 @@ export function cmd_wasm(args0: ptr<ProcStrs>) -> i32 {
             cli_exit(1)
         }
         info("Flow → C → WASM with a " + fs + " filesystem (see docs/language/wasm-crossings.md)")
-        let c: ptr<ProcStrs> = sl_of3(root() + "/wasm/crossings.sh", "fs", first)
+        let c: ptr<ProcStrs> = tool_argv("wasm_crossings", sl_of2("fs", first))
         sl_push2(c, "--fs", fs)
         sl_extend(c, preload)
         if run_argv(c) != 0 {
@@ -761,7 +760,7 @@ export function cmd_wasm(args0: ptr<ProcStrs>) -> i32 {
             cli_exit(1)
         }
         info("Flow → C → threaded WASM (see docs/language/wasm-crossings.md)")
-        let t: ptr<ProcStrs> = sl_of3(root() + "/wasm/crossings.sh", "threads", first)
+        let t: ptr<ProcStrs> = tool_argv("wasm_crossings", sl_of2("threads", first))
         sl_push2(t, "--workers", workers)
         if run_argv(t) != 0 {
             error("Threaded WASM build failed")
@@ -774,7 +773,7 @@ export function cmd_wasm(args0: ptr<ProcStrs>) -> i32 {
     } else {
         info("Flow → C → WASM (see docs/language/wasm.md)")
     }
-    let b: ptr<ProcStrs> = sl_of1(root() + "/scripts/wasm_build.sh")
+    let b: ptr<ProcStrs> = tool_argv("wasm_build", sl_of1("build"))
     sl_extend(b, args)
     sl_extend(b, preload)
     sl_extend(b, link)
@@ -799,8 +798,7 @@ export function cmd_playground(port_arg: string) -> i32 {
         cmd_quiet_err(c)
         let _r: i32 = run(c)
     }
-    let s: ptr<ProcStrs> = sl_of3(root() + "/scripts/playground_compile_server.sh", "--port", port)
-    return run_argv(s)
+    return run_argv(tool_argv("playground_server", sl_of2("--port", port)))
 }
 
 # ---------------------------------------------------------------------------

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Heading-id generation and the anchor half of the link checker
-# (scripts/check_doc_links.sh).
+# (`./flow tool doc_links`).
 source "$(dirname "$0")/lib.sh"
 
-CHECKER="$T_ROOT/scripts/check_doc_links.sh"
+checker() { "$T_ROOT/flow" tool doc_links "$@"; }
 
 # heading_slug follows GitHub, including where that looks odd.
 check_slug() {
     local heading="$1" slug="$2"
-    t_run bash "$CHECKER" --slug "$heading"
+    t_run checker --slug "$heading"
     [[ "$T_RC" -eq 0 ]] || { cat "$T_ERR"; return 1; }
     # The slug and one trailing newline, nothing else.
     a_file_is "$T_OUT" "$slug"$'\n'
@@ -35,7 +35,7 @@ check_the_published_wiki_slugger_agrees_with_this_one() {
 
 # Anchors the checker finds in a page, one per line, into $T_TMP/anchors.
 anchors_in() {
-    t_run bash "$CHECKER" --anchors "$1"
+    t_run checker --anchors "$1"
     [[ "$T_RC" -eq 0 ]] || { cat "$T_ERR"; return 1; }
     cp "$T_OUT" "$T_TMP/anchors"
 }
@@ -69,7 +69,7 @@ check_explicit_html_ids_count_as_anchors() {
 # The repository as it stands. One run of the checker serves both checks.
 FULL_OUT="$T_WORK/full.out"
 FULL_RC=0
-bash "$CHECKER" > "$FULL_OUT" 2>&1 || FULL_RC=$?
+checker > "$FULL_OUT" 2>&1 || FULL_RC=$?
 
 # The whole point: no link points at a heading that is not there.
 check_every_documented_anchor_resolves() {

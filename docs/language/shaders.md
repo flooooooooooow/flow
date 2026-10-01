@@ -127,7 +127,7 @@ Record the same shaders into the Wiki gallery through the actual generated Metal
 pipeline:
 
 ```bash
-./scripts/record_shader_gallery.sh --group photoreal
+./flow tool shader_record --group photoreal
 python3 scripts/build_shader_gallery.py --check --check-assets
 ```
 

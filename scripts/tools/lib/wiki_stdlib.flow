@@ -377,7 +377,7 @@ export function wsd_generate(root: string) -> i32 {
     let b: ptr<WBuf> = wb_new()
     wb_line(b, "# Standard Library API (generated)")
     wb_line(b, "")
-    wb_line(b, "> Auto-generated from `lib/stdlib/` on " + wu_today() + " by `scripts/gen_stdlib_docs.sh`. Per-function docs come from `#` comments immediately above each `export function`.")
+    wb_line(b, "> Auto-generated from `lib/stdlib/` on " + wu_today() + " by `./flow tool gen_stdlib_docs`. Per-function docs come from `#` comments immediately above each `export function`.")
     wb_line(b, "")
     wb_line(b, "**" + ft_itoa(ft_list_len(files)) + "** modules scanned.")
     wb_line(b, "")

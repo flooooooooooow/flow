@@ -258,7 +258,7 @@ in `compiler/fixtures/typecheck_rules/`:
 | `flow jit <p>` | `jit_runner.py`: `flow_to_mlir`, then `MLIRJIT` builds a shared object and calls it through ctypes |
 | `flow ml [run\|jit\|bench\|test]`, `flow test-matmul` | the ML and matmul demos through the same MLIR generator, JIT and optimizer |
 | `flow test-mlir` | `run_mlir_tests`: generate and lower `tests/mlir` plus three core programs |
-| `flow wasm --backend=mlir`, `scripts/wasm_build.sh --backend=mlir` | `scripts/tools/wasm_build`: transpiler `--mlir --llvm --wasm32` as a subprocess, then emcc |
+| `flow wasm --backend=mlir`, `./flow tool wasm_build build --backend=mlir` | `scripts/tools/wasm_build`: transpiler `--mlir --llvm --wasm32` as a subprocess, then emcc |
 | `flow bpf`, `flow wasm32` | `scripts/tools/llvm_target` through `compiler/scripts/flow_to_llvm.sh`: the flowc emitter plus `mlir_lower.sh` when the program is in the slice (for wasm32, also when it declares no external functions), else transpiler `--llvm`; then clang for the BPF or wasm32 target |
 | `--mlir-gpu`, `--emit-spirv` | `mlir_gpu_codegen.py` (gpu dialect text) and `mlir_spirv.py` (mlir-opt and mlir-translate to SPIR-V) |
 | Metal and CUDA runtimes | `metal_codegen.py` (MSL text), `metal_runtime.py`, `gpu_runtime.py`, `gpu_integration.py` (ctypes, numpy) |

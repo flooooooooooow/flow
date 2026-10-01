@@ -1,7 +1,7 @@
 # Exchange tests for the two network tools written in Flow:
 #
-#   scripts/tools/playground_server  (scripts/playground_compile_server.sh)
-#   scripts/tools/ws_echo_relay      (scripts/ws_echo_relay.sh)
+#   scripts/tools/playground_server  (./flow tool playground_server)
+#   scripts/tools/ws_echo_relay      (./flow tool ws_echo_relay)
 #
 # Each server is started on a free high port, driven with real requests,
 # and stopped by PID. Replies are compared with goldens in

@@ -1,8 +1,8 @@
 # Generate C and Flow bindings from a .abi file.
 #
-# Run through scripts/gen_abi_bindings.sh:
+# Run it as `./flow tool abi_bindings`:
 #
-#   gen_abi_bindings.sh demos/vulkan_abi/renderer.abi [--out-dir DIR]
+#   flow tool abi_bindings demos/vulkan_abi/renderer.abi [--out-dir DIR]
 #
 # Each non-blank, non-comment line of the .abi file is a signature
 #
@@ -25,11 +25,11 @@ extern {
     function malloc(size: i64) -> ptr<void>
 }
 
-const PROG: string = "gen_abi_bindings.sh"
-const TOOL: string = "scripts/gen_abi_bindings.sh"
+const PROG: string = "flow tool abi_bindings"
+const TOOL: string = "./flow tool abi_bindings"
 
 function usage_line() -> string {
-    return "usage: gen_abi_bindings.sh [-h] [--out-dir OUT_DIR] abi_file\n"
+    return "usage: flow tool abi_bindings [-h] [--out-dir OUT_DIR] abi_file\n"
 }
 
 function help_text() -> string {

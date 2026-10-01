@@ -2,7 +2,7 @@
 # each one end to end, and write baseline_results.md and .json. A median over
 # the limit in contracts.json fails the run.
 #
-# Run through benchmarks/baselines/run_baselines.sh. The shim passes the
+# Run it as `./flow tool bench_baselines`, which passes the
 # repository root in FLOW_REPO_ROOT.
 
 import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_read_file, ft_write_file, ft_exists, ft_starts, ft_find, ft_slice, ft_from, ft_join, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }

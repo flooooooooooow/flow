@@ -1,15 +1,16 @@
 # Compile Flow programs to runnable WebAssembly pages, one at a time or as
 # the site/wasm gallery.
 #
-# Run through the shims:
+# Run it through `./flow tool` (`./flow wasm` runs the build mode):
 #
-#   scripts/wasm_build.sh program.flow [--out DIR] [--backend c|mlir] ...
-#   scripts/build_wasm_gallery.sh [--only NAME ...] [--category ID] [--list]
+#   flow tool wasm_build build program.flow [--out DIR] [--backend c|mlir] ...
+#   flow tool wasm_build gallery [--only NAME ...] [--category ID] [--list]
 #
-# The first argument the shims pass selects the mode: `build`, `gallery`, or
-# `gallery-one` (one gallery target, run in parallel by the gallery through
-# xargs -P). The shims set FLOW_REPO_ROOT, WASM_BUILD_BIN (this executable)
-# and the emscripten environment the Homebrew toolchain needs.
+# The first argument selects the mode: `build`, `gallery`, or `gallery-one`
+# (one gallery target, run in parallel by the gallery through xargs -P).
+# FLOW_REPO_ROOT names the repository (`flow tool` sets it). The program
+# finds itself through WASM_BUILD_BIN, else argv[0], and sets up the
+# emscripten environment the Homebrew toolchain needs (homebrew_emsdk_env).
 #
 # Flow sources go to C with flowc (compiler/scripts/flowc_emit.flow). The MLIR
 # backend reaches wasm32 LLVM IR through compiler/scripts/flow_to_llvm.sh
@@ -30,6 +31,7 @@ extern {
     function malloc(size: i64) -> ptr<void>
     function getenv(name: string) -> string
     function chdir(path: string) -> i32
+    function setenv(name: string, value: string, overwrite: i32) -> i32
     function fopen(path: string, mode: string) -> ptr<void>
     function fclose(fp: ptr<void>) -> i32
     function fseek(fp: ptr<void>, offset: i64, whence: i32) -> i32
@@ -1511,11 +1513,11 @@ function looks_like_option(arg: string) -> bool {
 }
 
 # ---------------------------------------------------------------------------
-# wasm_build.sh
+# flow tool wasm_build build
 # ---------------------------------------------------------------------------
 
 function build_error(msg: string) -> i32 {
-    ft_err(usage_of(asset("build_help.txt")) + "wasm_build.sh: error: " + msg + "\n")
+    ft_err(usage_of(asset("build_help.txt")) + "flow tool wasm_build build: error: " + msg + "\n")
     return 2
 }
 
@@ -2264,11 +2266,11 @@ function card_html(rec: ptr<StrList>) -> string {
 }
 
 # ---------------------------------------------------------------------------
-# build_wasm_gallery.sh
+# flow tool wasm_build gallery
 # ---------------------------------------------------------------------------
 
 function gallery_error(msg: string) -> i32 {
-    ft_err(usage_of(asset("gallery_help.txt")) + "build_wasm_gallery.sh: error: " + msg + "\n")
+    ft_err(usage_of(asset("gallery_help.txt")) + "flow tool wasm_build gallery: error: " + msg + "\n")
     return 2
 }
 
@@ -2521,7 +2523,7 @@ function gallery_main(argc: i32, argv: ptr<string>) -> i32 {
         }
     }
 
-    let mut man: string = "{\n  \"generated_by\": \"scripts/build_wasm_gallery.sh\",\n"
+    let mut man: string = "{\n  \"generated_by\": \"./flow tool wasm_build gallery\",\n"
     man = man + "  \"examples\": " + ft_itoa(ft_list_len(ordered)) + ",\n"
     man = man + "  \"built\": " + ft_itoa(ok_n) + ",\n"
     man = man + "  \"failed\": " + ft_itoa(ft_list_len(ordered) - ok_n) + ",\n"
@@ -2571,9 +2573,35 @@ function ft_list_has_str(items: ptr<StrList>, s: string) -> bool {
     return false
 }
 
+# Homebrew's emscripten ships a config pointing LLVM_ROOT at Xcode clang (no
+# wasm backend) and a launcher that picks a python too old to parse its own
+# sources. Point both at emscripten's own copies unless the caller already
+# has, and remember where this executable is for the gallery's workers.
+function homebrew_emsdk_env(self_bin: string) -> void {
+    env_default("EMSDK_PYTHON", "/opt/homebrew/bin/python3.14")
+    env_default("EM_LLVM_ROOT", "/opt/homebrew/opt/emscripten/libexec/llvm/bin")
+    env_default("EM_BINARYEN_ROOT", "/opt/homebrew/opt/emscripten/libexec/binaryen")
+    let cur: string = getenv("WASM_BUILD_BIN")
+    if cur as ptr<u8> == null or ft_len(cur) == 0 {
+        let _s: i32 = setenv("WASM_BUILD_BIN", self_bin, 1)
+    }
+}
+
+# Set `name` to `path` when it is unset or empty and `path` exists.
+function env_default(name: string, path: string) -> void {
+    let cur: string = getenv(name)
+    if cur as ptr<u8> != null and ft_len(cur) > 0 {
+        return
+    }
+    if ft_exists(path) {
+        let _s: i32 = setenv(name, path, 1)
+    }
+}
+
 function main(argc: i32, argv: ptr<string>) -> i32 {
+    homebrew_emsdk_env(argv[0])
     if argc < 2 {
-        ft_errln("wasm_build: run through scripts/wasm_build.sh or scripts/build_wasm_gallery.sh")
+        ft_errln("usage: flow tool wasm_build build|gallery ARGS")
         return 2
     }
     let mode: string = argv[1]

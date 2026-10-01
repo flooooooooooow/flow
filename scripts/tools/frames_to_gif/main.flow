@@ -1,11 +1,11 @@
 # Encode recorded PPM frames into an animated GIF.
 #
-# Run through scripts/frames_to_gif.sh:
+# Run it as `./flow tool frames_to_gif`:
 #
-#   frames_to_gif.sh <frame-dir> <out.gif> [--fps 20] [--stride 2] [--width 480]
+#   flow tool frames_to_gif <frame-dir> <out.gif> [--fps 20] [--stride 2] [--width 480]
 #
 # Used by `flow record --gif`, which passes --fps/--stride/--width straight
-# through, and by scripts/record_shader_gallery.sh. The frames come from
+# through, and by `flow tool shader_record`. The frames come from
 # runtime/gfx_record.c + lib/runtime/gfx_record.flow (frame_*.ppm, binary
 # P6). Every --stride-th frame is kept and scaled down to --width with
 # nearest neighbour. One palette serves the whole clip: per-frame palettes
@@ -32,8 +32,8 @@ extern {
     function fclose(fp: ptr<void>) -> i32
 }
 
-const PROG: string = "frames_to_gif.sh"
-const USAGE: string = "usage: frames_to_gif.sh [-h] [--fps FPS] [--stride STRIDE] [--width WIDTH]\n                        frame_dir out"
+const PROG: string = "flow tool frames_to_gif"
+const USAGE: string = "usage: flow tool frames_to_gif [-h] [--fps FPS] [--stride STRIDE]\n                               [--width WIDTH]\n                               frame_dir out"
 
 function help_text() -> string {
     return USAGE + "\n\npositional arguments:\n  frame_dir\n  out\n\noptions:\n  -h, --help       show this help message and exit\n  --fps FPS\n  --stride STRIDE  keep every Nth frame\n  --width WIDTH    downscale to this width"

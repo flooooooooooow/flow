@@ -347,7 +347,7 @@ to build the wheel. See
 ./flow tool tests/fuzz/run.flow --seconds 30
 
 # Regenerate examples compile-status table
-scripts/verify_examples.sh
+./flow tool verify_examples
 ```
 
 ### Editor support

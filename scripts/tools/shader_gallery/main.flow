@@ -5,11 +5,12 @@
 # section comments in shader_photoreal_materials.flow become gallery groups,
 # and every fill gets a GIF tile pointing at docs/demos/shaders/<fill>.gif.
 #
-# Run through scripts/build_shader_gallery.sh from the repository root:
+# Run it as `./flow tool shader_gallery` from anywhere in the repository; it
+# works from the repository root:
 #
-#   build_shader_gallery.sh                  rewrite shaders.md
-#   build_shader_gallery.sh --check          exit 1 if shaders.md is stale
-#   build_shader_gallery.sh --check-assets   require every referenced GIF
+#   flow tool shader_gallery                  rewrite shaders.md
+#   flow tool shader_gallery --check          exit 1 if shaders.md is stale
+#   flow tool shader_gallery --check-assets   require every referenced GIF
 #
 # Output is byte-identical to the Python script this replaces. The two line
 # patterns it used are matched by hand below:
@@ -20,12 +21,13 @@ import .text { ft_outln, ft_errln, ft_eq, ft_len, ft_itoa, ft_repr, ft_at, ft_sl
 import .unicode { uc_decode, uc_len, uc_is_space }
 import .mdtext { md_splitlines, md_split_ws }
 import .demogen { dg_html_escape, dg_flags }
+import .repo { rp_enter_root }
 
 extern {
     function malloc(size: i64) -> ptr<void>
 }
 
-const PROG: string = "build_shader_gallery.sh"
+const PROG: string = "flow tool shader_gallery"
 const SCENES: string = "examples/gpu/shader_photoreal.flow"
 const MATERIALS: string = "examples/gpu/shader_photoreal_materials.flow"
 const OUTPUT: string = "docs/demos/shaders.md"
@@ -39,7 +41,7 @@ struct Demos {
 }
 
 function usage_line() -> string {
-    return "usage: build_shader_gallery.sh [-h] [--check] [--check-assets]\n"
+    return "usage: flow tool shader_gallery [-h] [--check] [--check-assets]\n"
 }
 
 function help_text() -> string {
@@ -325,7 +327,7 @@ function build_page(d: ptr<Demos>) -> string {
     out = out + "```bash\n"
     out = out + "./flow shader examples/gpu/shader_photoreal.flow\n"
     out = out + "./flow shader examples/gpu/shader_photoreal_materials.flow --name photoreal_gold\n"
-    out = out + "./scripts/record_shader_gallery.sh --group photoreal\n"
+    out = out + "./flow tool shader_record --group photoreal\n"
     out = out + "```\n\n"
     out = out + "## Scene studies\n\n"
     out = out + "The large studies exercise SDF composition, finite-difference normals, soft shadows, \n"
@@ -372,7 +374,7 @@ function build_page(d: ptr<Demos>) -> string {
         ci = ci + 1
     }
     out = out + "## Recording contract\n\n"
-    out = out + "`scripts/record_shader_gallery.sh` compiles the same FSL files used by `./flow shader`, \n"
+    out = out + "`./flow tool shader_record` compiles the same FSL files used by `./flow shader`, \n"
     out = out + "renders them with `runtime/shader_record_metal.m`, and passes the resulting PPM frames \n"
     out = out + "through the shared GIF encoder. Capture time is `frame / fps`, so animations do not \n"
     out = out + "depend on wall-clock scheduling. The recorder requires macOS with an exposed Metal device.\n\n"
@@ -382,6 +384,10 @@ function build_page(d: ptr<Demos>) -> string {
 }
 
 function main(argc: i32, argv: ptr<string>) -> i32 {
+    if rp_enter_root() == false {
+        ft_errln("shader_gallery: cannot enter the repository root")
+        return 1
+    }
     let flags: ptr<StrList> = ft_list_new()
     ft_list_push(flags, "--check")
     ft_list_push(flags, "--check-assets")
@@ -448,7 +454,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
             current = ""
         }
         if ft_eq(current, generated) == false {
-            ft_errln("docs/demos/shaders.md is stale; run scripts/build_shader_gallery.sh")
+            ft_errln("docs/demos/shaders.md is stale; run ./flow tool shader_gallery")
             return 1
         }
         ft_outln("shader gallery page is current")

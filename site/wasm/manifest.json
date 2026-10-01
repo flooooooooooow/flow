@@ -1,5 +1,5 @@
 {
-  "generated_by": "scripts/build_wasm_gallery.sh",
+  "generated_by": "./flow tool wasm_build gallery",
   "examples": 161,
   "built": 161,
   "failed": 0,

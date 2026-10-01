@@ -12,13 +12,13 @@ an hour. Later problems may take several sessions and need a platform runtime.
 List the challenge identifiers:
 
 ```bash
-challenges/flow-specific/check.sh list
+./flow tool challenge_check list
 ```
 
 Check one file:
 
 ```bash
-challenges/flow-specific/check.sh check F01 answer.flow
+./flow tool challenge_check check F01 answer.flow
 ```
 
 The checker performs two tests:
@@ -34,7 +34,7 @@ exit status decides whether the run passed.
 Target-specific challenges can be checked without launching their runtime:
 
 ```bash
-challenges/flow-specific/check.sh check F33 kernel.flow --syntax-only
+./flow tool challenge_check check F33 kernel.flow --syntax-only
 ```
 
 The machine-readable rules are stored in
@@ -67,7 +67,7 @@ clamp the result to `[0, 100]`.
 - Forbidden shortcut: writing the whole calculation as nested calls.
 - Pass: test raw values below, inside, and above the accepted range. Return a
   different nonzero code for each failed case.
-- Check: `challenges/flow-specific/check.sh check F01 answer.flow`
+- Check: `./flow tool challenge_check check F01 answer.flow`
 
 ### F02. Forked Statistics `**`
 

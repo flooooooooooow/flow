@@ -1,7 +1,9 @@
 # Schur-lattice all-pass demo and verification plots.
 #
-#   tools/audio/lattice_allpass_audio_demo.sh [--no-open]
-#   tools/audio/plot_lattice_allpass.sh [--no-open] [--skip-lean]
+#   flow tool lattice_allpass demo [--no-open]
+#   flow tool lattice_allpass plot [--no-open] [--skip-lean]
+#
+# It works from the repository root (FLOW_REPO_ROOT, set by `flow tool`).
 #
 # `demo` pushes a synthetic test signal through the lattice all-pass of
 # lib/stdlib/audio/lattice_allpass.flow, statically and with a 2 Hz LFO on
@@ -19,6 +21,7 @@
 import "figs_plot.flow"
 import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_starts, ft_ends, ft_read_file, ft_write_file, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_sort, StrList }
 import .proc { pr_quote, pr_run, pr_cwd, pr_mkdir_p, pr_is_dir }
+import .repo { rp_enter_root }
 
 extern {
     function malloc(size: i64) -> ptr<void>
@@ -379,12 +382,16 @@ function run_plot(no_open: bool, skip_lean: bool) -> i32 {
 }
 
 function usage() -> void {
-    ft_errln("usage: lattice_allpass demo [--no-open]")
-    ft_errln("       lattice_allpass plot [--no-open] [--skip-lean]")
-    ft_errln("       lattice_allpass normals SEED N")
+    ft_errln("usage: flow tool lattice_allpass demo [--no-open]")
+    ft_errln("       flow tool lattice_allpass plot [--no-open] [--skip-lean]")
+    ft_errln("       flow tool lattice_allpass normals SEED N")
 }
 
 function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
+    if rp_enter_root() == false {
+        ft_errln("lattice_allpass: cannot enter the repository root")
+        return 1
+    }
     if argc < 2 {
         usage()
         return 2

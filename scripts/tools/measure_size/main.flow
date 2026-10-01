@@ -1,14 +1,16 @@
 # Binary size report for compiled Flow programs.
 #
-# Run through scripts/tools/measure_size/measure_size.sh from anywhere:
+# Run it as `./flow tool measure_size` from anywhere in the repository; it
+# works from the repository root, so program paths are relative to it:
 #
-#   measure_size.sh [--out report.md] [program.flow ...]
+#   flow tool measure_size [--out report.md] [program.flow ...]
 #
 # Each program is compiled with ./flow compile (host from FLOW_HOST, default
 # flowc), measured with size(1), stripped, and measured again. The table
 # compares the stripped binary with a 25 MB Python deployment.
 
 import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_starts, ft_basename, ft_replace, ft_write_file, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_is_ascii_space, StrList }
+import .repo { rp_enter_root }
 
 # sprintf and system: the checker requires them under `@unsafe extern`.
 @unsafe
@@ -112,18 +114,22 @@ function pct_str(stripped: i64) -> string {
 }
 
 function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
+    if rp_enter_root() == false {
+        ft_errln("measure_size: cannot enter the repository root")
+        return 1
+    }
     let mut out_file: string = null as string
     let programs: ptr<StrList> = ft_list_new()
     let mut i: i32 = 1
     while i < argc {
         let a: string = argv[i] as string
         if ft_eq(a, "-h") or ft_eq(a, "--help") {
-            ft_outln("usage: measure_size.sh [-h] [--out OUT] [programs ...]")
+            ft_outln("usage: flow tool measure_size [-h] [--out OUT] [programs ...]")
             return 0
         }
         if ft_eq(a, "--out") {
             if i + 1 >= argc {
-                ft_errln("measure_size.sh: error: argument --out: expected one argument")
+                ft_errln("flow tool measure_size: error: argument --out: expected one argument")
                 return 2
             }
             i = i + 1
