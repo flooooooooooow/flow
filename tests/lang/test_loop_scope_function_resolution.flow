@@ -1,0 +1,17 @@
+extern {
+    function puts(s: string) -> i32
+}
+
+function out(s: string) {
+    let _p: i32 = puts(s)
+}
+
+function main() -> i32 {
+    let mut i: i32 = 0
+    while i < 1 {
+        let out: string = "x"
+        i = i + 1
+    }
+    out("after the loop")
+    return 0
+}
