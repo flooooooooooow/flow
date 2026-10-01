@@ -245,7 +245,16 @@ export struct ProcCmd {
     has_input: bool,
     in_mode: i32,
     out_mode: i32,
-    err_mode: i32
+    err_mode: i32,
+    in_fd: i32,
+    out_fd: i32
+}
+
+# A pipe that can connect two spawned commands. proc_attach_stdin and
+# proc_attach_stdout consume the corresponding end when the command starts.
+export struct ProcPipe {
+    read_fd: i32,
+    write_fd: i32
 }
 
 # What a finished command did.
@@ -259,6 +268,24 @@ export struct ProcResult {
     error: string,
     elapsed_ms: i64,
     pid: i32
+}
+
+# A running child. Keep the handle until proc_wait or proc_wait_any returns.
+export struct ProcHandle {
+    pid: i32,
+    in_fd: i32,
+    out_fd: i32,
+    err_fd: i32,
+    input: string,
+    input_len: i64,
+    input_off: i64,
+    out_b: ptr<ByteBuf>,
+    err_b: ptr<ByteBuf>,
+    chunk: ptr<u8>,
+    result: ptr<ProcResult>,
+    start_ms: i64,
+    deadline: i64,
+    finished: bool
 }
 
 # ---------------------------------------------------------------------------
@@ -314,6 +341,8 @@ export function proc_cmd(program: string) -> ptr<ProcCmd> {
     c.in_mode = PROC_NULL
     c.out_mode = PROC_CAPTURE
     c.err_mode = PROC_CAPTURE
+    c.in_fd = 0 - 1
+    c.out_fd = 0 - 1
     return c
 }
 
@@ -385,6 +414,48 @@ export function proc_stdout(c: ptr<ProcCmd>, mode: i32) {
 # stderr: PROC_CAPTURE (the default), PROC_INHERIT, PROC_NULL or PROC_MERGE.
 export function proc_stderr(c: ptr<ProcCmd>, mode: i32) {
     c.err_mode = mode
+}
+
+# Create one pipe for use by two commands.
+export function proc_pipe_new() -> ptr<ProcPipe> {
+    let p: ptr<ProcPipe> = malloc(8) as ptr<ProcPipe>
+    let fds: ptr<i32> = malloc(8) as ptr<i32>
+    if flow_proc_pipe(fds) != 0 {
+        p.read_fd = 0 - 1
+        p.write_fd = 0 - 1
+        return p
+    }
+    p.read_fd = fds[0]
+    p.write_fd = fds[1]
+    return p
+}
+
+export function proc_pipe_close_read(p: ptr<ProcPipe>) {
+    if p.read_fd >= 0 {
+        let _r: i32 = flow_proc_close(p.read_fd)
+        p.read_fd = 0 - 1
+    }
+}
+
+export function proc_pipe_close_write(p: ptr<ProcPipe>) {
+    if p.write_fd >= 0 {
+        let _r: i32 = flow_proc_close(p.write_fd)
+        p.write_fd = 0 - 1
+    }
+}
+
+# Attach a pipe end before spawning. The parent closes the attached end after
+# the child inherits it.
+export function proc_attach_stdin(c: ptr<ProcCmd>, p: ptr<ProcPipe>) {
+    c.in_fd = p.read_fd
+    p.read_fd = 0 - 1
+    c.in_mode = PROC_CAPTURE
+}
+
+export function proc_attach_stdout(c: ptr<ProcCmd>, p: ptr<ProcPipe>) {
+    c.out_fd = p.write_fd
+    p.write_fd = 0 - 1
+    c.out_mode = PROC_CAPTURE
 }
 
 # ---------------------------------------------------------------------------
@@ -494,6 +565,227 @@ function proc_reap(pid: i32, deadline: i64, r: ptr<ProcResult>) -> i32 {
         let _s: i32 = flow_proc_sleep_ms(5)
     }
     return code[0]
+}
+
+function proc_handle_close_fds(h: ptr<ProcHandle>) {
+    if h.in_fd >= 0 {
+        let _a: i32 = flow_proc_close(h.in_fd)
+        h.in_fd = 0 - 1
+    }
+    if h.out_fd >= 0 {
+        let _b: i32 = flow_proc_close(h.out_fd)
+        h.out_fd = 0 - 1
+    }
+    if h.err_fd >= 0 {
+        let _c: i32 = flow_proc_close(h.err_fd)
+        h.err_fd = 0 - 1
+    }
+}
+
+# Advance one child without waiting for another child to finish.
+function proc_handle_tick(h: ptr<ProcHandle>, timeout_ms: i32) -> bool {
+    if h.finished {
+        return true
+    }
+    let fds: ptr<i32> = malloc(12) as ptr<i32>
+    let evs: ptr<i32> = malloc(12) as ptr<i32>
+    let rev: ptr<i32> = malloc(12) as ptr<i32>
+    let mut n: i32 = 0
+    if h.in_fd >= 0 {
+        fds[n] = h.in_fd
+        evs[n] = 2
+        n = n + 1
+    }
+    if h.out_fd >= 0 {
+        fds[n] = h.out_fd
+        evs[n] = 1
+        n = n + 1
+    }
+    if h.err_fd >= 0 {
+        fds[n] = h.err_fd
+        evs[n] = 1
+        n = n + 1
+    }
+    let ready: i32 = flow_proc_poll(fds, evs, rev, n, timeout_ms)
+    if ready >= 0 {
+        let mut k: i32 = 0
+        while k < n {
+            if rev[k] != 0 {
+                let fd: i32 = fds[k]
+                if fd == h.in_fd {
+                    let mut step: i64 = h.input_len - h.input_off
+                    if step > 512 { step = 512 }
+                    let put: i64 = flow_proc_write(h.in_fd, h.input as ptr<u8>, h.input_off, step)
+                    if put > 0 { h.input_off = h.input_off + put }
+                    if put < 0 or h.input_off >= h.input_len or rev[k] == 2 {
+                        let _i: i32 = flow_proc_close(h.in_fd)
+                        h.in_fd = 0 - 1
+                    }
+                } elif fd == h.out_fd {
+                    if proc_drain(h.out_fd, h.out_b, h.chunk) == false {
+                        let _o: i32 = flow_proc_close(h.out_fd)
+                        h.out_fd = 0 - 1
+                    }
+                } elif fd == h.err_fd {
+                    if proc_drain(h.err_fd, h.err_b, h.chunk) == false {
+                        let _e: i32 = flow_proc_close(h.err_fd)
+                        h.err_fd = 0 - 1
+                    }
+                }
+            }
+            k = k + 1
+        }
+    }
+    let code: ptr<i32> = malloc(4) as ptr<i32>
+    let exited: i32 = flow_proc_wait(h.pid, 1, code)
+    if exited != 0 and h.result.exit_code == 0 - 1 {
+        h.result.exit_code = code[0]
+    }
+    # Once waitpid reports exit, every child-side write end is closed. Drain
+    # to EOF directly so a short final write cannot leave the handle pending.
+    if exited != 0 {
+        while h.out_fd >= 0 {
+            if proc_drain(h.out_fd, h.out_b, h.chunk) == false {
+                let _o2: i32 = flow_proc_close(h.out_fd)
+                h.out_fd = 0 - 1
+            }
+        }
+        while h.err_fd >= 0 {
+            if proc_drain(h.err_fd, h.err_b, h.chunk) == false {
+                let _e2: i32 = flow_proc_close(h.err_fd)
+                h.err_fd = 0 - 1
+            }
+        }
+    }
+    if h.deadline > 0 and flow_proc_now_ms() >= h.deadline and h.result.exit_code == 0 - 1 {
+        h.result.timed_out = true
+        let _k: i32 = flow_proc_kill(h.pid, flow_proc_sigkill())
+        let _w: i32 = flow_proc_wait(h.pid, 0, code)
+        h.result.exit_code = code[0]
+    }
+    if h.result.exit_code != 0 - 1 and h.in_fd < 0 and h.out_fd < 0 and h.err_fd < 0 {
+        h.finished = true
+        h.result.stdout = bb_str(h.out_b)
+        h.result.stderr = bb_str(h.err_b)
+        h.result.elapsed_ms = flow_proc_now_ms() - h.start_ms
+    }
+    return h.finished
+}
+
+# Spawn a command and return immediately. Captured streams are drained by
+# proc_wait or proc_wait_any, so several children can run together.
+export function proc_spawn(c: ptr<ProcCmd>) -> ptr<ProcHandle> {
+    let h: ptr<ProcHandle> = malloc(160) as ptr<ProcHandle>
+    h.pid = 0 - 1
+    h.in_fd = 0 - 1
+    h.out_fd = 0 - 1
+    h.err_fd = 0 - 1
+    h.input = c.input
+    h.input_len = strlen(c.input)
+    h.input_off = 0
+    h.out_b = bb_new(4096)
+    h.err_b = bb_new(1024)
+    h.chunk = malloc(65536) as ptr<u8>
+    h.result = proc_result_new()
+    h.start_ms = flow_proc_now_ms()
+    h.deadline = 0
+    h.finished = false
+    let pin: ptr<i32> = malloc(8) as ptr<i32>
+    let pout: ptr<i32> = malloc(8) as ptr<i32>
+    let perr: ptr<i32> = malloc(8) as ptr<i32>
+    pin[0] = 0 - 1; pin[1] = 0 - 1
+    pout[0] = 0 - 1; pout[1] = 0 - 1
+    perr[0] = 0 - 1; perr[1] = 0 - 1
+    let feed: bool = c.has_input
+    let cap_out: bool = c.out_mode == PROC_CAPTURE and c.out_fd < 0
+    let cap_err: bool = c.err_mode == PROC_CAPTURE
+    let mut pipe_ok: bool = true
+    if feed and c.in_fd < 0 and flow_proc_pipe(pin) != 0 { pipe_ok = false }
+    if cap_out and flow_proc_pipe(pout) != 0 { pipe_ok = false }
+    if cap_err and flow_proc_pipe(perr) != 0 { pipe_ok = false }
+    let mut argv: ptr<string> = c.argv.items
+    let mut cwd: string = c.cwd
+    if strlen(c.cwd) > 0 and flow_proc_spawn_can_chdir() == 0 {
+        let wrapped: ptr<ProcStrs> = proc_strs_new()
+        proc_strs_push(wrapped, "/bin/sh")
+        proc_strs_push(wrapped, "-c")
+        proc_strs_push(wrapped, "cd \"$0\" && exec \"$@\"")
+        proc_strs_push(wrapped, c.cwd)
+        let mut wi: i32 = 0
+        while wi < c.argv.len { proc_strs_push(wrapped, c.argv.items[wi]); wi = wi + 1 }
+        argv = wrapped.items
+        cwd = ""
+    }
+    let mut in_fd: i32 = c.in_fd
+    let attached_in_fd: i32 = c.in_fd
+    if in_fd < 0 and feed { in_fd = pin[0] }
+    let mut out_fd: i32 = c.out_fd
+    let attached_out_fd: i32 = c.out_fd
+    if out_fd < 0 and cap_out { out_fd = pout[1] }
+    let mut in_spawn_mode: i32 = proc_fd_mode(c.in_mode)
+    let mut out_spawn_mode: i32 = proc_fd_mode(c.out_mode)
+    if in_fd >= 0 { in_spawn_mode = FD_PIPE }
+    if out_fd >= 0 { out_spawn_mode = FD_PIPE }
+    if pipe_ok {
+        h.pid = flow_proc_spawn(argv, proc_build_env(c), cwd,
+            in_spawn_mode, in_fd,
+            out_spawn_mode, out_fd,
+            proc_fd_mode(c.err_mode), perr[1])
+    }
+    if pin[0] >= 0 { let _a: i32 = flow_proc_close(pin[0]) }
+    if pout[1] >= 0 { let _b: i32 = flow_proc_close(pout[1]) }
+    if perr[1] >= 0 { let _c: i32 = flow_proc_close(perr[1]) }
+    if attached_in_fd >= 0 { let _ai: i32 = flow_proc_close(attached_in_fd) }
+    if attached_out_fd >= 0 { let _ao: i32 = flow_proc_close(attached_out_fd) }
+    if c.in_fd >= 0 { c.in_fd = 0 - 1 }
+    if c.out_fd >= 0 { c.out_fd = 0 - 1 }
+    h.in_fd = pin[1]
+    h.out_fd = pout[0]
+    h.err_fd = perr[0]
+    if c.in_fd < 0 and feed == false and h.in_fd >= 0 {
+        let _d: i32 = flow_proc_close(h.in_fd)
+        h.in_fd = 0 - 1
+    }
+    if c.in_fd < 0 and feed and h.input_len == 0 and h.in_fd >= 0 {
+        let _e: i32 = flow_proc_close(h.in_fd)
+        h.in_fd = 0 - 1
+    }
+    if c.out_fd >= 0 { h.out_fd = 0 - 1 }
+    if h.pid < 0 {
+        proc_handle_close_fds(h)
+        h.result.exit_code = 127
+        h.result.error = c.argv.items[0] + ": spawn failed"
+        h.finished = true
+        return h
+    }
+    h.result.pid = h.pid
+    if c.timeout_ms > 0 { h.deadline = h.start_ms + c.timeout_ms }
+    return h
+}
+
+export function proc_wait(h: ptr<ProcHandle>) -> ptr<ProcResult> {
+    while h.finished == false {
+        let _d: bool = proc_handle_tick(h, 20)
+    }
+    return h.result
+}
+
+# Wait for whichever child finishes first. index receives its position.
+export function proc_wait_any(handles: ptr<ptr<ProcHandle>>, n: i32, index: ptr<i32>) -> ptr<ProcResult> {
+    while true {
+        let mut i: i32 = 0
+        while i < n {
+            let h: ptr<ProcHandle> = handles[i]
+            let _d: bool = proc_handle_tick(h, 0)
+            if h.finished {
+                index[0] = i
+                return h.result
+            }
+            i = i + 1
+        }
+        let _s: i32 = flow_proc_sleep_ms(1)
+    }
+    return null as ptr<ProcResult>
 }
 
 # Run the command to completion and return what it did.
