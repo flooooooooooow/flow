@@ -3446,7 +3446,11 @@ function sem_check_while_stmt(c: ptr<Sem>, s: i32) -> i32 {
             sem_err(c, "@max_iterations requires a positive bound")
         }
     }
+    # The loop body owns a lexical scope. A binding in the body must not
+    # hide a global function after the loop ends.
+    sem_push_scope(c)
     sem_check_block(c, sem_nb(c, s))
+    sem_pop_scope(c)
     return sem_tmk(c, TK_VOID)
 }
 
