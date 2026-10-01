@@ -1,6 +1,6 @@
 # MLIR command goldens: one case per line, `<name> <kind> <args...>`.
 # Recorded from the Python MLIR stack at bb23f19f (origin/main before it was
-# deleted) with tests/mlir_commands/run.sh --record. Kinds:
+# deleted) with ./flow tool tests/mlir_commands/run.flow --record. Kinds:
 #   mlir      `flow mlir <args>`; the MLIR file, normalized (mlir_normalize.awk)
 #   raw       `flow mlir <args>`; the output file as written (LLVM IR, mlir-opt output)
 #   spirv     `flow mlir <args>` with --emit-spirv; exit status and SPIR-V bytes

@@ -174,7 +174,7 @@ the driver and `--jit` use it.
 | transpiler `--mlir` entry | `compiler/scripts/flow_to_mlir.sh`, `flow_to_llvm.sh` |
 | `gpu_integration.py`, `gpu_runtime.py`, `metal_runtime.py` | `benchmarks/gpu/gpu_microbenchmark.c`, `runtime/gpu_metal.m` |
 
-`tests/mlir_commands/run.sh` checks 72 command cases (`flow mlir`,
+`./flow tool tests/mlir_commands/run.flow` checks 72 command cases (`flow mlir`,
 `mlir-run`, `jit`, `ml`, `test-mlir`, `test-matmul`, `compile-audio --mlir`,
 `--mlir-gpu`, `--emit-spirv` and the pass pipelines) against goldens
 recorded from the Python stack at `bb23f19f`, with `python` and `python3`
@@ -188,11 +188,11 @@ lines under `src/flow`, and 111 pytest files that imported them.
 
 What those tests checked is covered as follows:
 
-* MLIR text and runs: `parity_mlir.sh` and `tests/mlir_commands/run.sh`.
+* MLIR text and runs: `parity_mlir.sh` and `./flow tool tests/mlir_commands/run.flow`.
 * Lowering, DSLs and flow blocks: `tests/cgen`, `tests/lang`,
   `parity_flow_blocks.flow`, `parity_dynamics_dsl.flow`, `parity_field_dsl.flow`,
   `parity_shader_dsl.flow`, `parity_lowering.flow`, `parity_effects.flow`.
-* Front-end crashes: `tests/fuzz/run.sh` replaces the Python fuzz harness.
+* Front-end crashes: `./flow tool tests/fuzz/run.flow` replaces the Python fuzz harness.
   It replays `tests/fuzz/crashes`, generates nesting 20000 levels deep, and
   runs seeded mutations of the corpus through flowc, failing on a signal or
   a hang. It found that flowc overflowed its stack on deep nesting;
