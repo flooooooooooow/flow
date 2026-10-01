@@ -3,7 +3,7 @@
 #
 # The counter is the Flow program in scripts/tools/repo_stats/main.flow. These
 # tests build it with scripts/tools/build_tool.sh and run it in a scratch tree
-# with a hand-written file list, so no git is involved. The formatting rules
+# with a hand-written file list (--inputs), so no git is involved. The formatting rules
 # are pinned here because a truncating Flow counter once published 72.5k
 # against a README that said 72.6k.
 source "$(dirname "$0")/lib.sh"
@@ -53,7 +53,7 @@ run_counter() {
     T_OUT="$T_TMP/counter.out"
     T_ERR="$T_TMP/counter.err"
     set +e
-    (cd "$tree" && "$COUNTER") > "$T_OUT" 2> "$T_ERR"
+    (cd "$tree" && "$COUNTER" --inputs build/repo-stats) > "$T_OUT" 2> "$T_ERR"
     T_RC=$?
     set -e
     STATS="$tree/docs/generated/repository-stats.json"

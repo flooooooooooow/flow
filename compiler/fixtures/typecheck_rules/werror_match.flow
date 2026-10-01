@@ -1,0 +1,12 @@
+# expect: Non-exhaustive match: bool patterns do not cover both `true` and `false` (add the missing value or `_`/`default`)
+# env: FLOWC_WERROR=1
+function f(b: bool) -> i32 {
+    match b {
+        false => { return 0 }
+    }
+    return 1
+}
+
+function main() -> i32 {
+    return f(false)
+}

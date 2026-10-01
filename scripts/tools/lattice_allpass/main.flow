@@ -16,7 +16,7 @@
 # On macOS both open their key outputs with open(1) unless --no-open is
 # given or FLOW_NO_OPEN=1 is set.
 
-import "../lattice_allpass/figs_plot.flow"
+import "figs_plot.flow"
 import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_starts, ft_ends, ft_read_file, ft_write_file, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_sort, StrList }
 import .proc { pr_quote, pr_run, pr_cwd, pr_mkdir_p, pr_is_dir }
 

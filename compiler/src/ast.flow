@@ -132,7 +132,7 @@ export const AST_VECTOR_LIT: i32 = 93
 export const AST_SORT_BY: i32 = 94
 export const AST_MODULE: i32 = 95
 # AST_RECORD_UPDATE: marker for `Name { ..base, f: v }` (b = the AST_STRUCT_LIT,
-#   whose c holds the base expression). Only the MLIR emitter lowers it.
+#   whose c holds the base expression). cgen and the MLIR emitter lower it.
 export const AST_RECORD_UPDATE: i32 = 96
 # Last parse-only kind; keep flowc_ast_first_unsupported in step.
 export const AST_PARSE_ONLY_LAST: i32 = 96
@@ -443,6 +443,13 @@ export function flowc_ast_reject_unsupported_but(arena: AstArena, src: ptr<u8>, 
             line = line + 1
         }
         i = i + 1
+    }
+    if arena.nodes[bad].kind == AST_PIPE_BLOCK {
+        # Flow-stage parameters outside a flow `output` have no meaning to
+        # lower; the Python host refused them in these words (fork_records).
+        let ns: i32 = arena.nodes[bad].name_start
+        printf("%s: line %d: flow stage params `%.*s { ... }` (line %d) are only valid for a flow used as a pipeline stage inside a flow `output`\n", who, line, arena.nodes[bad].name_end - ns, src + ns, line)
+        return 1
     }
     printf("%s: line %d: unsupported in Stage-A: %s\n", who, line, flowc_ast_unsupported_label(arena.nodes[bad].kind))
     return 1

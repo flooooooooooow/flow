@@ -5,8 +5,34 @@
 #
 # Invoked by: ./flow install
 
-import "stdlib/process.flow"
+import std.process { proc_sh, proc_status, proc_which, proc_getenv }
 import "stdlib/sys_info.flow"
+
+extern {
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+function flow_puts(s: string) -> void {
+    let _p: i32 = puts(s)
+}
+
+# A shell command line with its output passed through; the exit code.
+function run_cmd(cmd: string) -> i32 {
+    return proc_status(proc_sh(cmd))
+}
+
+function have_cmd(name: string) -> bool {
+    return strcmp(proc_which(name), "") != 0
+}
+
+function env_is(name: string, want: string) -> bool {
+    return strcmp(proc_getenv(name), want) == 0
+}
+
+function str_eq(a: string, b: string) -> bool {
+    return strcmp(a, b) == 0
+}
 
 function say(msg: string) -> void {
     flow_puts(msg)

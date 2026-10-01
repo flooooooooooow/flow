@@ -12,14 +12,13 @@ Counts tracked source files and refreshes:
 ./scripts/update_repo_stats.sh --check
 ```
 
-The shell shim dumps the tracked-file list and the commit metadata into
-`build/repo-stats/`, builds `main.flow` with `scripts/tools/build_tool.sh`
-(Stage-A flowc from the bootstrap C, so only a C compiler is needed), then
-runs it.
+The script builds `main.flow` with `scripts/tools/build_tool.sh` (Stage-A
+flowc from the bootstrap C, so only a C compiler is needed) and runs it.
+The program runs git itself through `std.process`.
 
 ## Split of responsibility
 
 | Layer | Owns |
 |-------|------|
-| `update_repo_stats.sh` | tracked-file list, revision skipping, build and run with a timeout |
-| `main.flow` | exclude rules, line counts, area/language totals, JSON + README splice |
+| `update_repo_stats.sh` | build and run with a timeout |
+| `main.flow` | git calls, revision skipping, exclude rules, line counts, area/language totals, JSON + README splice |

@@ -3148,6 +3148,56 @@ function flowc_parse_struct(p: ptr<Parser>) -> i32 {
     return id
 }
 
+# `const NAME: Type` or `const NAME: Type = "C expression"` in an extern
+# block (#1075): a C constant the program reads. The bare form names a
+# macro or constant from a header the C output includes; the second binds
+# NAME to an expression the C compiler evaluates, such as
+# "sizeof(struct stat)" or "offsetof(struct stat, st_size)". Returns an
+# AST_CONST with ival = 2, a = type and b = the string literal or AST_NONE.
+function flowc_parse_extern_const(p: ptr<Parser>) -> i32 {
+    let start: i32 = p[0].cur.start
+    if flowc_parser_eat_kw(p, KW_CONST) == 0 {
+        return AST_NONE
+    }
+    if flowc_parser_check(p[0], TOK_IDENT) == 0 {
+        flowc_parser_fail(p)
+        return AST_NONE
+    }
+    let ns: i32 = p[0].cur.start
+    let ne: i32 = p[0].cur.end
+    flowc_parser_advance(p)
+    if flowc_parser_eat(p, TOK_COLON) == 0 {
+        return AST_NONE
+    }
+    let ty: i32 = flowc_parse_type(p)
+    let mut cexpr: i32 = AST_NONE
+    if flowc_parser_check(p[0], TOK_EQ) == 1 {
+        flowc_parser_advance(p)
+        if flowc_parser_check(p[0], TOK_STRING) == 0 {
+            flowc_parser_fail(p)
+            return AST_NONE
+        }
+        cexpr = flowc_parse_expr(p)
+        if cexpr == AST_NONE {
+            return AST_NONE
+        }
+    }
+    if flowc_parser_check(p[0], TOK_SEMI) == 1 {
+        flowc_parser_advance(p)
+    }
+    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_CONST, start, p[0].cur.start)
+    if id == AST_NONE {
+        flowc_parser_fail(p)
+        return AST_NONE
+    }
+    p[0].arena.nodes[id].name_start = ns
+    p[0].arena.nodes[id].name_end = ne
+    p[0].arena.nodes[id].a = ty
+    p[0].arena.nodes[id].b = cexpr
+    p[0].arena.nodes[id].ival = 2
+    return id
+}
+
 # Shallow skip: extern { ... } with brace matching (bodies not typed yet).
 function flowc_parse_extern(p: ptr<Parser>) -> i32 {
     let start: i32 = p[0].cur.start
@@ -3179,6 +3229,20 @@ function flowc_parse_extern(p: ptr<Parser>) -> i32 {
         p[0].arena.nodes[tid].name_start = tns
         p[0].arena.nodes[tid].name_end = tne
         return tid
+    }
+    # extern const NAME: Type [= "C expression"]: a one-item extern block.
+    if flowc_parser_check_kw(p[0], KW_CONST) == 1 {
+        let cid: i32 = flowc_parse_extern_const(p)
+        if cid == AST_NONE {
+            return AST_NONE
+        }
+        let eid: i32 = flowc_ast_alloc(&p[0].arena, AST_EXTERN, start, p[0].cur.start)
+        if eid == AST_NONE {
+            flowc_parser_fail(p)
+            return AST_NONE
+        }
+        p[0].arena.nodes[eid].a = cid
+        return eid
     }
     # extern function name(params) -> Ret  — skip to end of line/semicolon.
     if flowc_parser_check_kw(p[0], KW_FUNCTION) == 1 {
@@ -3233,6 +3297,18 @@ function flowc_parse_extern(p: ptr<Parser>) -> i32 {
             p[0].arena.nodes[tid].name_start = tns
             p[0].arena.nodes[tid].name_end = tne
             fns = flowc_ast_chain_push(&p[0].arena, fns, tid)
+            if flowc_parser_check(p[0], TOK_COMMA) == 1 {
+                flowc_parser_advance(p)
+            }
+            continue
+        }
+        # const NAME: Type [= "C expression"] inside a block
+        if flowc_parser_check_kw(p[0], KW_CONST) == 1 {
+            let kid: i32 = flowc_parse_extern_const(p)
+            if kid == AST_NONE {
+                return AST_NONE
+            }
+            fns = flowc_ast_chain_push(&p[0].arena, fns, kid)
             if flowc_parser_check(p[0], TOK_COMMA) == 1 {
                 flowc_parser_advance(p)
             }

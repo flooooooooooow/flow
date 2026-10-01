@@ -162,7 +162,9 @@ match samples {
 Literal, Boolean, enum, float, string, struct, list, binding, wildcard,
 alternation, and guarded patterns are implemented. Exhaustiveness analysis is
 substantial for Boolean and enum variants and deliberately limited for open
-integer domains. See
+integer domains. A match that misses a case compiles with a warning such as
+`warning: Non-exhaustive match: bool patterns do not cover both ...`.
+See
 [`tests/lang/test_match_patterns.flow`](../../tests/lang/test_match_patterns.flow).
 
 One backend edge remains: `break` inside a C-lowered match arm can leave the C

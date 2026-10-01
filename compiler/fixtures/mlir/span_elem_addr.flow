@@ -1,0 +1,35 @@
+# MLIR fixture: `&xs[i]` and `&xs.data[i]` on a span address the span's own
+# storage, so a callee writing through the pointer updates the span (#908).
+# Both shapes used to spill the element to a fresh slot and hand out the
+# copy's address.
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function printf(fmt: string, ...) -> i32
+}
+
+function put(p: ptr<f64>, v: f64) {
+    p[0] = v
+}
+
+function via_index(s: span<mut f64>, n: i32) {
+    for i in 0 to n {
+        put(&s[i], (i as f64) + 0.5)
+    }
+}
+
+function via_data(s: span<mut f64>, n: i32) {
+    for i in 0 to n {
+        put(&s.data[i], (i as f64) * 2.0)
+    }
+}
+
+function main() -> i32 {
+    let raw: ptr<f64> = malloc(32)
+    let a: span<mut f64> = raw[0..4]
+    via_index(a, 4)
+    printf("%.1f %.1f\n", a[0], a[3])
+    via_data(a, 4)
+    printf("%.1f %.1f\n", a[1], a[3])
+    return 0
+}

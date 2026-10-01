@@ -22,8 +22,8 @@
 # Exit codes: 0 on a clean stop, 1 for a missing or invalid environment
 # variable, an unreadable messages file, or a rejected token.
 
-import "../discord_welcome/welcome.flow"
-import "../discord_welcome/net.flow"
+import "welcome.flow"
+import "net.flow"
 import .text { ft_eq, ft_len, ft_itoa, ft_starts, ft_repr, ft_read_file, ft_split_lines, ft_replace, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
 import .json { json_parse, json_error, json_get, json_kind, json_str, json_int, json_first, json_next, json_quote, json_kind_null, json_kind_true, json_kind_array, json_kind_object, Json }
 

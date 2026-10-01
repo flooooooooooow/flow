@@ -34,10 +34,28 @@
 #       restrict the inputs; --reuse compares the last run's flowc results
 #       again without running flowc.
 #
+#       The checker's warnings (TypeCheckResult.warnings, #678) are compared
+#       in strict mode against compiler/fixtures/typecheck_parity/
+#       warnings.txt, on the inputs both sides type check with the same
+#       verdict, as the sorted list of messages (flowc runs with
+#       FLOWC_WARNINGS=all so library modules count too):
+#
+#         warn-same          both warn the same, or neither warns
+#         warn-diff          both warn, with different messages
+#         warn-py-only       Python warns, flowc does not
+#         warn-flowc-only    flowc warns, Python does not
+#
+#       --check also holds warn-diff, warn-py-only and warn-flowc-only to
+#       their ceilings.
+#
 #   ./compiler/scripts/parity_typecheck.sh --write-golden REV
 #       rewrite the goldens from the Python checker at git revision REV
 #       (src/flow from REV, run on the inputs of this tree). The last
 #       revision recorded is named in golden.txt.
+#
+#   ./compiler/scripts/parity_typecheck.sh --write-warnings REV
+#       rewrite warnings.txt the same way: the warnings of the strict Python
+#       checker at REV on every input.
 #
 #   ./compiler/scripts/parity_typecheck.sh --extract-unit REV
 #       rewrite compiler/fixtures/typecheck_parity/unit/ from the sources
@@ -57,6 +75,7 @@ cd "$ROOT"
 
 DATA=compiler/fixtures/typecheck_parity
 GOLDEN="$DATA/golden.txt"
+WARNINGS="$DATA/warnings.txt"
 CEILING="$DATA/ceiling.txt"
 WORK="$ROOT/compiler/build/parity_typecheck"
 
@@ -70,6 +89,7 @@ keys=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --write-golden) mode="write"; rev="${2:?--write-golden needs a revision}"; shift 2 ;;
+        --write-warnings) mode="warnings"; rev="${2:?--write-warnings needs a revision}"; shift 2 ;;
         --extract-unit) mode="extract"; rev="${2:?--extract-unit needs a revision}"; shift 2 ;;
         --check) check=1; shift ;;
         --list) list="${2:?--list needs a class}"; shift 2 ;;
@@ -191,13 +211,13 @@ fi
 # ---------------------------------------------------------------------------
 # --write-golden: the Python checker, strict and lenient, on every input.
 # ---------------------------------------------------------------------------
-if [[ "$mode" == "write" ]]; then
+if [[ "$mode" == "write" || "$mode" == "warnings" ]]; then
     ref="$(setup_python "$rev")"
     sha="$(git rev-parse --short "$rev")"
     prog="$(cat <<'PY'
 import os, signal, sys, warnings
 warnings.simplefilter("ignore")
-inputs, sha = sys.argv[1], sys.argv[2]
+inputs, sha, what = sys.argv[1], sys.argv[2], sys.argv[3]
 import flow.module_resolver as mr
 # The resolver caches parses in .flow_cache/ next to the root file; keep
 # the tree clean.
@@ -248,6 +268,7 @@ def run(path, strict):
         signal.alarm(0)
         return "frontend", ["checker crashed: %s: %s" % (type(e).__name__, e)], []
     signal.alarm(0)
+    run.warnings = list(r.warnings)
     if strict:
         return ("reject" if r.errors else "accept"), list(r.errors), []
     fatal = list(getattr(r, "fatal_errors", []))
@@ -259,6 +280,15 @@ with open(inputs) as f:
         key, path, blob = line.rstrip("\n").split("\t")
         cwd = os.getcwd()
         print("@ %s\t%s" % (key, blob))
+        if what == "warnings":
+            run.warnings = []
+            verdict, errs, _ = run(path, True)
+            os.chdir(cwd)
+            print("S %s" % verdict)
+            for w in sorted(clean(w) for w in run.warnings):
+                print("W %s" % w)
+            sys.stdout.flush()
+            continue
         for tag, strict in (("S", True), ("L", False)):
             verdict, errs, warns = run(path, strict)
             os.chdir(cwd)
@@ -274,9 +304,16 @@ PY
     total="$(wc -l < "$INPUTS")"
     awk -v n="$jobs" -v t="$total" -v w="$WORK" '{ c = int((NR - 1) * n / t); printf "%s\n", $0 > sprintf("%s/chunk.%03d", w, c) }' "$INPUTS"
     for c in "$WORK"/chunk.???; do
-        PYTHONPATH="$ref/src" PYTHONDONTWRITEBYTECODE=1 python3 -c "$prog" "$c" "$sha" > "$c.out" 2> "$c.log" &
+        PYTHONPATH="$ref/src" PYTHONDONTWRITEBYTECODE=1 python3 -c "$prog" "$c" "$sha" "$mode" > "$c.out" 2> "$c.log" &
     done
     wait
+    if [[ "$mode" == "warnings" ]]; then
+        { echo "# Python type checker warnings, strict (compiler/scripts/parity_typecheck.sh), rev $sha"
+          for c in "$WORK"/chunk.???; do cat "$c.out"; done; } > "$WORK/warnings.new"
+        mv "$WORK/warnings.new" "$ROOT/$WARNINGS"
+        echo "wrote $WARNINGS ($(grep -c '^@ ' "$WARNINGS") inputs, $(grep -c '^W ' "$WARNINGS") warnings, rev $sha)"
+        exit 0
+    fi
     { echo "# Python type checker goldens (compiler/scripts/parity_typecheck.sh), rev $sha"
       for c in "$WORK"/chunk.???; do cat "$c.out"; done; } > "$WORK/golden.new"
     mv "$WORK/golden.new" "$ROOT/$GOLDEN"
@@ -309,7 +346,7 @@ for m in S L; do
     flag=--strict
     [[ "$m" == L ]] && flag=--lenient
     rm -f "$d/o.c"
-    (cd "$root" && ulimit -t 30 && FLOWC_CHECK_ONLY=1 FLOWC_BIN="$bin" compiler/scripts/flowc_emit.sh "$flag" "$path" "$d/o.c") > "$d/log.$m" 2>&1
+    (cd "$root" && ulimit -t 30 && FLOWC_CHECK_ONLY=1 FLOWC_WARNINGS=all FLOWC_BIN="$bin" compiler/scripts/flowc_emit.sh "$flag" "$path" "$d/o.c") > "$d/log.$m" 2>&1
     rc=$?
     log="$d/log.$m"
     if grep -qE 'parse error|flowc emit: parse failed|bundle tc: (gather|topo|read) failed|read FLOWC_IN failed|expansion overflowed|unsupported in Stage-A|cannot resolve|could not resolve|import not found' "$log"; then
@@ -334,6 +371,9 @@ for m in S L; do
     fi
     printf '%s\t%s\t%s\t%s\n' "$key" "$m" "$verdict" "$msg"
 done
+# The checker's warnings in strict mode, sorted, joined with " || ".
+warns="$(LC_ALL=C sed -n -E 's/^.*:[0-9]+:[0-9]+: warning: //p' "$d/log.S" | LC_ALL=C sed 's/\\/\\\\/g' | LC_ALL=C sort | awk 'NR > 1 { printf " || " } { printf "%s", $0 }')"
+printf '%s\tW\twarn\t%s\n' "$key" "$warns"
 SH
 chmod +x "$WORK/one.sh"
 mkdir -p "$WORK/runs"
@@ -347,13 +387,25 @@ fi
 # Compare.
 # ---------------------------------------------------------------------------
 [[ -f "$GOLDEN" ]] || { echo "parity_typecheck: no goldens ($GOLDEN); run --write-golden REV" >&2; exit 1; }
-awk -F'\t' -v list="$list" -v inputs="$INPUTS" -v report="$WORK/report.txt" '
+[[ -f "$WARNINGS" ]] || { echo "parity_typecheck: no warning goldens ($WARNINGS); run --write-warnings REV" >&2; exit 1; }
+awk -F'\t' -v list="$list" -v inputs="$INPUTS" -v report="$WORK/report.txt" -v wfile="$WARNINGS" '
 function norm(s) { gsub(/\\n/, " ", s); return s }
 BEGIN {
     while ((getline line < inputs) > 0) {
         split(line, ip, "\t"); blob[ip[1]] = ip[3]; want[ip[1]] = 1
     }
+    # warnings.txt: "@ key TAB blob", "S verdict", "W message" (sorted).
+    while ((getline line < wfile) > 0) {
+        if (line ~ /^#/) continue
+        if (substr(line, 1, 2) == "@ ") {
+            wcur = substr(line, 3); split(wcur, q, "\t"); wcur = q[1]; wblob[wcur] = q[2]; pw[wcur] = ""; continue
+        }
+        if (substr(line, 1, 2) == "W ") {
+            pw[wcur] = (pw[wcur] == "" ? "" : pw[wcur] " || ") substr(line, 3)
+        }
+    }
 }
+FNR != NR && $2 == "W" { fw[$1] = $4; next }
 FNR == NR {
     # golden.txt
     if ($0 ~ /^#/) next
@@ -383,11 +435,26 @@ FNR == NR {
     if (list != "" && cls == list) {
         printf "%s [%s]\n    python: %s\n    flowc:  %s\n", key, (m == "S" ? "strict" : "lenient"), pm[key, m], fm
     }
+    # Warnings are compared where both sides type check the same way.
+    if (m == "S" && (cls == "agree-accept" || cls == "agree-same" || cls == "agree-diff") && (key in wblob) && wblob[key] == blob[key]) {
+        wkeys[key] = 1
+    }
 }
 END {
-    n = split("agree-accept agree-same agree-diff py-only flowc-only frontend stale no-golden", cl, " ")
-    printf "%-14s %8s %8s\n", "class", "strict", "lenient" > report
-    for (i = 1; i <= n; i++) printf "%-14s %8d %8d\n", cl[i], count["S", cl[i]], count["L", cl[i]] > report
+    for (key in wkeys) {
+        p = pw[key]; f = fw[key]
+        if (p == f) wc = "warn-same"
+        else if (p != "" && f != "") wc = "warn-diff"
+        else if (p != "") wc = "warn-py-only"
+        else wc = "warn-flowc-only"
+        count["S", wc]++
+        if (list != "" && wc == list) {
+            printf "%s [strict]\n    python: %s\n    flowc:  %s\n", key, p, f
+        }
+    }
+    n = split("agree-accept agree-same agree-diff py-only flowc-only frontend stale no-golden warn-same warn-diff warn-py-only warn-flowc-only", cl, " ")
+    printf "%-16s %8s %8s\n", "class", "strict", "lenient" > report
+    for (i = 1; i <= n; i++) printf "%-16s %8d %8d\n", cl[i], count["S", cl[i]], count["L", cl[i]] > report
     close(report)
 }' "$GOLDEN" "$WORK/flowc.tsv"
 echo

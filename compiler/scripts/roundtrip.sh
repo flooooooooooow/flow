@@ -225,14 +225,20 @@ echo "PASS compile_module fileio greps"
 compile_module field_dsl compiler/src/field_dsl.flow
 "$C_TO_HDR" \
     compiler/build/field_dsl_flowc.c compiler/build/field_dsl_flowc.h
-compile_module dynamics_dsl compiler/src/dynamics_dsl.flow
+# Shared byte buffer (#985), a leaf the DSL expanders import.
+compile_module bytebuf compiler/src/bytebuf.flow
+"$C_TO_HDR" \
+    compiler/build/bytebuf_flowc.c compiler/build/bytebuf_flowc.h
+compile_module dynamics_dsl compiler/src/dynamics_dsl.flow \
+    compiler/build/bytebuf_flowc.h
 "$C_TO_HDR" \
     compiler/build/dynamics_dsl_flowc.c compiler/build/dynamics_dsl_flowc.h
-compile_module flow_blocks compiler/src/flow_blocks.flow
+compile_module flow_blocks compiler/src/flow_blocks.flow \
+    compiler/build/bytebuf_flowc.h
 "$C_TO_HDR" \
     compiler/build/flow_blocks_flowc.c compiler/build/flow_blocks_flowc.h
 # Shader DSL: a leaf module every source read goes through (host stub).
-compile_module shader_dsl compiler/src/shader_dsl.flow
+compile_module shader_dsl compiler/src/shader_dsl.flow compiler/build/bytebuf_flowc.h
 "$C_TO_HDR" \
     compiler/build/shader_dsl_flowc.c compiler/build/shader_dsl_flowc.h
 
@@ -425,6 +431,7 @@ compile_module resolve compiler/src/resolve.flow \
     compiler/build/parser_flowc.h \
     compiler/build/fileio_flowc.h \
     compiler/build/field_dsl_flowc.h \
+    compiler/build/bytebuf_flowc.h \
     compiler/build/dynamics_dsl_flowc.h \
     compiler/build/flow_blocks_flowc.h \
     compiler/build/shader_dsl_flowc.h \
@@ -743,6 +750,7 @@ cc -r -o compiler/build/flowc_frontend.o \
     compiler/build/parser_flowc.o \
     compiler/build/fileio_flowc.o \
     compiler/build/field_dsl_flowc.o \
+    compiler/build/bytebuf_flowc.o \
     compiler/build/dynamics_dsl_flowc.o \
     compiler/build/flow_blocks_flowc.o \
     compiler/build/shader_dsl_flowc.o \
@@ -817,6 +825,7 @@ compile_module driver compiler/src/driver.flow \
     compiler/build/parser_flowc.h \
     compiler/build/fileio_flowc.h \
     compiler/build/field_dsl_flowc.h \
+    compiler/build/bytebuf_flowc.h \
     compiler/build/dynamics_dsl_flowc.h \
     compiler/build/flow_blocks_flowc.h \
     compiler/build/shader_dsl_flowc.h \

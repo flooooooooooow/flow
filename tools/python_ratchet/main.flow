@@ -11,11 +11,12 @@
 # baseline to the current tree. It drops files that no longer exist and
 # lowers the line total. It never adds a file and never raises the total.
 #
-# scripts/python_ratchet.sh runs git and leaves the sorted file list in
-# build/python-ratchet/current.txt, because Flow cannot spawn processes
-# yet. Everything else happens here.
+# The tracked file list comes from `git ls-files`, run through
+# std.process. scripts/python_ratchet.sh only builds this program.
 #
 # Exit codes: 0 pass, 1 ratchet violated, 2 missing or unreadable input.
+
+import std.process { ProcCmd, ProcResult, proc_cmd, proc_arg, proc_timeout_ms, proc_run, proc_argc, proc_argv }
 
 extern {
     function malloc(size: i64) -> ptr<void>
@@ -30,8 +31,6 @@ extern {
 }
 
 const BASELINE: string = "tools/python_ratchet/baseline.txt"
-const CURRENT: string = "build/python-ratchet/current.txt"
-const MODE_FILE: string = "build/python-ratchet/mode.txt"
 const READ_CAP: i32 = 4194304
 const MAX_LINES: i32 = 65536
 
@@ -158,12 +157,82 @@ function starts_with(s: string, prefix: string) -> bool {
     return true
 }
 
+# A heap copy of `s`: split_lines writes into its argument, and a string
+# literal (an empty list) is read-only.
+function writable(s: string) -> string {
+    let n: i32 = strlen(s) as i32
+    let out: ptr<u8> = malloc((n + 1) as i64) as ptr<u8>
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    while i <= n {
+        out[i] = p[i]
+        i = i + 1
+    }
+    return out as string
+}
+
+# Tracked .py files, one per line, sorted by bytes as LC_ALL=C sort does.
+# "" when git fails. Excluded, and nothing else may be:
+#   third_party/, .lake/          vendored trees, which other projects own.
+#   benchmarks/baselines/python/  benchmark subjects. They exist to measure
+#                                 CPython and NumPy as a comparison baseline,
+#                                 so they have to be Python. The harnesses
+#                                 that run them are Flow and bash; no tooling
+#                                 lives here.
+#   examples/interop/python/      the Python side of Flow calling Python
+#                                 (lib/stdlib/python_embed.flow, natively and
+#                                 in Pyodide). The demo's subject is Python.
+# Any other .py is a failure: the baseline lists no files and total 0.
+function tracked_python() -> string {
+    let c: ptr<ProcCmd> = proc_cmd("git")
+    proc_arg(c, "ls-files")
+    proc_arg(c, "--")
+    proc_arg(c, "*.py")
+    proc_arg(c, ":!:third_party/**")
+    proc_arg(c, ":!:**/.lake/**")
+    proc_arg(c, ":!:benchmarks/baselines/python/**")
+    proc_arg(c, ":!:examples/interop/python/**")
+    proc_timeout_ms(c, 60000)
+    let r: ptr<ProcResult> = proc_run(c)
+    if r.exit_code != 0 {
+        println("python-ratchet: git ls-files failed: " + r.stderr + r.error)
+        return writable("")
+    }
+    let starts: ptr<i32> = malloc((MAX_LINES * 4) as i64) as ptr<i32>
+    let n: i32 = split_lines(r.stdout, starts)
+    let names: ptr<string> = malloc(((n + 1) as i64) * 8) as ptr<string>
+    let mut i: i32 = 0
+    while i < n {
+        names[i] = line_at(r.stdout, starts[i])
+        i = i + 1
+    }
+    # Insertion sort: git already lists paths in byte order, so this only
+    # guards the merge walk below.
+    i = 1
+    while i < n {
+        let key: string = names[i]
+        let mut j: i32 = i - 1
+        while j >= 0 and strcmp(names[j], key) > 0 {
+            names[j + 1] = names[j]
+            j = j - 1
+        }
+        names[j + 1] = key
+        i = i + 1
+    }
+    let mut out: string = ""
+    i = 0
+    while i < n {
+        out = out + names[i] + "\n"
+        i = i + 1
+    }
+    return writable(out)
+}
+
 function main() -> i32 {
-    let mode_text: string = read_whole_file(MODE_FILE)
-    let update: bool = starts_with(mode_text, "update")
+    let update: bool = proc_argc() > 1 and strcmp(proc_argv(1), "--update") == 0
 
     let base_text: string = read_whole_file(BASELINE)
-    let cur_text: string = read_whole_file(CURRENT)
+    let cur_text: string = tracked_python()
     if strlen(base_text) == 0 {
         println("python-ratchet: cannot read " + BASELINE)
         return 2

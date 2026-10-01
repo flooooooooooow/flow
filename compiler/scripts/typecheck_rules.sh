@@ -7,12 +7,16 @@
 # Each compiler/fixtures/typecheck_rules/NAME.flow starts with
 #
 #   # expect: <the first error message>     (or `ok`: no type error)
+#   # warn: <the first warning message>     (the check passes and warns)
 #   # env: VAR=value ...                    (optional: FLOW_PROFILE=safety,
-#                                            FLOWC_STRICT_EFFECTS=1)
+#                                            FLOWC_STRICT_EFFECTS=1,
+#                                            FLOWC_WERROR=1)
 #
 # and is compiled the way `flowc_emit.sh --strict` compiles it, stopping after
 # the type check. The expected messages were recorded from the Python checker
 # (its em dash and ellipsis spelled ": " and "...", as flowc prints them).
+# The warnings are the checker's TypeCheckResult.warnings, which the Python
+# host never printed and flowc prints as `FILE:LINE:COL: warning: ...`.
 #
 # Env: FLOWC_BIN=<path> tests that binary; by default the checked-in
 # bootstrap C is compiled to compiler/build/flowc_bootstrap.
@@ -49,6 +53,19 @@ for f in "$DIR"/*.flow; do
     rc=$?
     set -e
     got="$(sed -n -E 's/^.*:[0-9]+:[0-9]+: error: //p' "$log" | head -1)"
+    warn="$(sed -n '1s/^# warn: //p' "$f")"
+    if [[ -n "$warn" ]]; then
+        got_warn="$(sed -n -E 's/^.*:[0-9]+:[0-9]+: warning: //p' "$log" | head -1)"
+        if [[ "$rc" -eq 0 && -z "$got" && "$got_warn" == "$warn" ]]; then
+            pass=$((pass + 1))
+        else
+            fail=$((fail + 1))
+            echo "FAIL $name"
+            echo "  expected warning: $warn"
+            echo "  got:              ${got_warn:-none} (${got:+error: $got, }exit $rc)"
+        fi
+        continue
+    fi
     if [[ "$expect" == "ok" ]]; then
         if [[ "$rc" -eq 0 && -z "$got" ]]; then
             pass=$((pass + 1))

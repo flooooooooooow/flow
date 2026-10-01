@@ -3,6 +3,7 @@
 # compiler/scripts/parity_shader_dsl.sh; this checks the Flow API.
 # Run with: ./flow run tests/lang/test_shader_dsl_port.flow
 
+import "compiler/src/bytebuf.flow"
 import "compiler/src/shader_dsl.flow"
 
 extern {
@@ -11,13 +12,13 @@ extern {
 }
 
 # 1 when `needle` occurs in w[0..len).
-function has(w: ptr<ShBuf>, needle: string) -> i32 {
+function has(w: ptr<ByteBuf>, needle: string) -> i32 {
     let np: ptr<u8> = needle
     let n: i32 = strlen(needle) as i32
     let mut i: i32 = 0
     while i + n <= w[0].len {
         let mut k: i32 = 0
-        while k < n and w[0].buf[i + k] == np[k] {
+        while k < n and w[0].p[i + k] == np[k] {
             k = k + 1
         }
         if k == n {
@@ -28,7 +29,7 @@ function has(w: ptr<ShBuf>, needle: string) -> i32 {
     return 0
 }
 
-function same(w: ptr<ShBuf>, want: string) -> i32 {
+function same(w: ptr<ByteBuf>, want: string) -> i32 {
     if strlen(want) as i32 != w[0].len {
         return 0
     }
@@ -60,7 +61,7 @@ function main() -> i32 {
         puts("FAIL: extract")
         return 3
     }
-    let m: ptr<ShBuf> = flowc_shader_buf_new(64)
+    let m: ptr<ByteBuf> = flowc_shader_buf_new(64)
     if flowc_shader_gen(c, m, SH_METAL, null, 0 - 1, 0 - 1) != 0 {
         puts("FAIL: metal gen")
         return 4
@@ -73,7 +74,7 @@ function main() -> i32 {
         puts("FAIL: metal fill")
         return 6
     }
-    let w: ptr<ShBuf> = flowc_shader_buf_new(64)
+    let w: ptr<ByteBuf> = flowc_shader_buf_new(64)
     if flowc_shader_gen(c, w, SH_WGSL, null, 0 - 1, 0 - 1) != 0 {
         puts("FAIL: wgsl gen")
         return 7
@@ -84,7 +85,7 @@ function main() -> i32 {
     }
 
     let e: ptr<ShCtx> = ctx_for(bad)
-    let o: ptr<ShBuf> = flowc_shader_buf_new(64)
+    let o: ptr<ByteBuf> = flowc_shader_buf_new(64)
     if flowc_shader_gen(e, o, SH_WGSL, null, 0 - 1, 0 - 1) == 0 {
         puts("FAIL: missing color accepted")
         return 9
@@ -94,7 +95,7 @@ function main() -> i32 {
         return 10
     }
 
-    let buf: ptr<ShBuf> = flowc_shader_buf_new(256)
+    let buf: ptr<ByteBuf> = flowc_shader_buf_new(256)
     let gp: ptr<u8> = good
     let gn: i32 = strlen(good) as i32
     let mut i: i32 = 0
@@ -102,7 +103,7 @@ function main() -> i32 {
         flowc_shader_putc(buf, gp[i])
         i = i + 1
     }
-    let n: i32 = flowc_shader_expand_in_place(buf[0].buf, buf[0].len, buf[0].cap)
+    let n: i32 = flowc_shader_expand_in_place(buf[0].p, buf[0].len, buf[0].cap)
     buf[0].len = n
     if same(buf, "function main() -> i32 {\n    return 0\n}\n") == 0 {
         puts("FAIL: host stub")

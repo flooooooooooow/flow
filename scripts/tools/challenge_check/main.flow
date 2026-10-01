@@ -11,11 +11,11 @@
 # The shim passes the repository root in FLOW_REPO_ROOT. Rules live in
 # challenges/flow-specific/catalog.json as Python-syntax regular
 # expressions, matched with re.MULTILINE | re.DOTALL semantics by
-# scripts/tools/lib/regex.flow.
+# lib/stdlib/regex.flow (std.regex).
 
 import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_read_file, ft_exists, ft_starts, ft_ends, ft_find_byte, ft_rfind_byte, ft_slice, ft_from, ft_basename, ft_normpath, ft_join, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_contains, StrList }
 import .json { json_parse, json_error, json_get, json_kind, json_str, json_first, json_next, json_int, json_key, json_kind_string, json_kind_true, json_kind_object, Json }
-import .regex { rx_compile, rx_error, rx_search_cps, rx_decode, rx_py_flags, Regex }
+import std.regex { rx_compile, rx_error, rx_test_cps, rx_decode, rx_py_flags, Regex }
 
 extern {
     function malloc(size: i64) -> ptr<void>
@@ -275,7 +275,7 @@ function rule_matches(j: ptr<Json>, rule: i32, code: ptr<i32>, code_len: i32, ba
         bad[0] = 1
         return false
     }
-    return rx_search_cps(rx, code, code_len)
+    return rx_test_cps(rx, code, code_len)
 }
 
 # Failure messages for one challenge, in the catalog's rule order.
@@ -702,7 +702,7 @@ function cmd_self_test() -> i32 {
         let lenp: ptr<i32> = malloc(4) as ptr<i32>
         let t: string = get_str(j, c, "text")
         let cps: ptr<i32> = rx_decode(t, lenp)
-        let got: bool = rx_search_cps(rx, cps, lenp[0])
+        let got: bool = rx_test_cps(rx, cps, lenp[0])
         let want: bool = json_kind(j, json_get(j, c, "match")) == json_kind_true()
         tally(ft_len(rx_error(rx)) == 0 and got == want, "re.search(" + pattern + ")", failed)
         total = total + 1

@@ -171,6 +171,8 @@ export struct Sem {
     err_pos: ptr<SemIntVec>,
     fatal: ptr<SemStrVec>,
     warnings: ptr<SemStrVec>,
+    warn_mod: ptr<SemIntVec>,
+    warn_pos: ptr<SemIntVec>,
     relax_c_strings: bool,
     return_sink: ptr<SemIntVec>,
     # safety, domains, effects
@@ -341,6 +343,8 @@ export function sem_new(strict: bool) -> ptr<Sem> {
     c.err_pos = sem_iv_new()
     c.fatal = sem_sv_new()
     c.warnings = sem_sv_new()
+    c.warn_mod = sem_iv_new()
+    c.warn_pos = sem_iv_new()
     c.relax_c_strings = false
     c.return_sink = null
     c.reason_pool = sem_sv_new()
@@ -632,6 +636,15 @@ export function sem_err(c: ptr<Sem>, msg: string) {
 
 export function sem_warn(c: ptr<Sem>, msg: string) {
     sem_sv_push(c.warnings, msg)
+    sem_iv_push(c.warn_mod, c.cm)
+    sem_iv_push(c.warn_pos, c.pos)
+}
+
+# Truncate the warning list back to `n`, as sem_err_truncate does errors.
+export function sem_warn_truncate(c: ptr<Sem>, n: i32) {
+    sem_sv_setlen(c.warnings, n)
+    sem_iv_setlen(c.warn_mod, n)
+    sem_iv_setlen(c.warn_pos, n)
 }
 
 # Truncate the error list back to `n` (the quiet re-checks of

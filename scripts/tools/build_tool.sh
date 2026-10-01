@@ -41,8 +41,10 @@ stale=0
 if [[ ! -x "$BIN" || "$FLOWC" -nt "$BIN" || "$SRC" -nt "$BIN" ]]; then
   stale=1
 else
-  # The shared helpers, and any sibling modules the tool imports by path.
-  for f in "$LIB"/*.flow "scripts/tools/$NAME"/*.flow; do
+  # The shared helpers, any sibling modules the tool imports by path, and
+  # the standard library (std.regex and std.process import std.bytebuf,
+  # which re-exports compiler/src/bytebuf.flow).
+  for f in "$LIB"/*.flow "scripts/tools/$NAME"/*.flow lib/stdlib/*.flow compiler/src/bytebuf.flow; do
     if [[ "$f" -nt "$BIN" ]]; then
       stale=1
       break

@@ -1,4 +1,4 @@
-import "../x/c.flow"
+import "tests/fixtures/modules/dotpath/./x/c.flow"
 
 export function a_val() -> i32 {
     return c_val()

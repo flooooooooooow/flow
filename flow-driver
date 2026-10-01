@@ -276,7 +276,7 @@ flow_native_tool() {
         mkdir -p "$cache" || return 1
     fi
     local bin="$cache/flow-$name"
-    if [ -x "$bin" ] && [ -z "$(find "$SCRIPT_DIR/tools/$name" "$SCRIPT_DIR/tools/hostlib" "$SCRIPT_DIR/tools/lsp" "$SCRIPT_DIR/tools/fir" "$SCRIPT_DIR/scripts/tools/lib" \
+    if [ -x "$bin" ] && [ -z "$(find "$SCRIPT_DIR/tools/$name" "$SCRIPT_DIR/tools/hostlib" "$SCRIPT_DIR/tools/lsp" "$SCRIPT_DIR/tools/fir" "$SCRIPT_DIR/scripts/tools/lib" "$SCRIPT_DIR/lib/stdlib" \
             "$SCRIPT_DIR/compiler/src" -name '*.flow' -newer "$bin" -print -quit 2>/dev/null)" ]; then
         printf '%s\n' "$bin"
         return 0

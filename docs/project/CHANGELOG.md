@@ -4,6 +4,14 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+### Type checker diagnostics
+
+- flowc prints the checker's warnings as `FILE:LINE:COL: warning: ...`: non-exhaustive `match`, the address of a pointer, an unknown `handle` handler (#678). `FLOWC_WARNINGS=0` (`flowc_emit.sh --no-warnings`) silences them and `FLOWC_WERROR=1` (`--Werror`) makes them errors. Warnings inside `lib/stdlib` and `lib/runtime` show only with `FLOWC_WARNINGS=all`.
+- A string import with a `..` component, an absolute path or a `~` path is refused: `Unsafe import path: ../x.flow`, as the Python host refused it.
+- An escape in a string that C has no meaning for (`"\xZZ"`, `"\q"`) is refused: `Invalid escape sequence: \x`.
+- `--strict` refuses a literal `step 0` in a `for` range.
+- Record update `Name { ..base, f: v }` compiles on the C backend (#996). Flow-stage parameters `x |> Stage { k: v }` outside a flow `output` are refused with the Python host's message.
+
 ### C backend: flowc only
 
 - flowc is the only C compiler. `flow run`, `compile`, `test`, `test-lang`, `test-runtime`, `gfx`, `record`, `window`, `audio`, `debug`, `patch` and `ml test` all build through it. On the corpus it matches the Python host on 1037 of 1053 programs with `main()` and builds 6 the Python host could not (`compiler/corpus_parity/report.txt`).

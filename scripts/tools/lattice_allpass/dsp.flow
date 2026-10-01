@@ -10,7 +10,7 @@
 # fixed phase table that the reference signal did not use.
 
 import "stdlib/audio/lattice_allpass.flow"
-import "../lattice_allpass/rng.flow"
+import "rng.flow"
 
 extern {
     function malloc(size: i64) -> ptr<void>
