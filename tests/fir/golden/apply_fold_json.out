@@ -1,5 +1,5 @@
 {
-  "summary": "FIR-G: funcs=2 blocks=2 ops=23 values=19 operands=18 types=2",
+  "summary": "FIR-G: funcs=2 blocks=2 ops=26 values=22 operands=20 types=2",
   "call_edges": [
     {
       "caller": "main",
@@ -20,7 +20,7 @@
     "main"
   ],
   "dead": [],
-  "applied": {"const_fold": 3},
+  "applied": {"const_fold": 4},
   "num_call_ops": 1,
   "device_requested": "cpu",
   "device_chosen": "cpu",

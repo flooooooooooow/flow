@@ -1,6 +1,7 @@
 function compute(n: i32) -> i32 {
     let x: i32 = 2 + 3 * 4
     let y: i32 = -5 + n
+    7 + 8
     return x - 1 + y
 }
 

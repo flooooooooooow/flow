@@ -63,7 +63,7 @@ function help_text() -> string {
     tb_puts(&tb, "                        / inline)\n")
     tb_puts(&tb, "  --apply PASSES        apply optimisation passes and report the rewritten\n")
     tb_puts(&tb, "                        graph. PASSES is a comma list from\n")
-    tb_puts(&tb, "                        {dead_elim, const_fold, all}.\n")
+    tb_puts(&tb, "                        {dead_elim, const_fold, dce, all}.\n")
     tb_puts(&tb, "                        With --opts, candidates reflect the post-pass graph\n")
     return tb.data as string
 }
@@ -298,7 +298,9 @@ struct Extra {
     has_dead: bool,
     applied_dead: TList,
     has_fold: bool,
-    applied_folded: i32
+    applied_folded: i32,
+    has_dce: bool,
+    applied_dce: i32
 }
 
 function by_kind_order(c: ptr<CandList>) -> IVec {
@@ -351,6 +353,13 @@ function text_report(r: ptr<Report>, x: ptr<Extra>) -> string {
         if x.has_fold {
             tb_puts(&tb, " const_fold folded=")
             tb_put_int(&tb, x.applied_folded)
+            if x.has_dce or x.has_dead {
+                tb_puts(&tb, ";")
+            }
+        }
+        if x.has_dce {
+            tb_puts(&tb, " dce removed=")
+            tb_put_int(&tb, x.applied_dce)
             if x.has_dead {
                 tb_puts(&tb, ";")
             }
@@ -538,6 +547,13 @@ function json_report(r: ptr<Report>, x: ptr<Extra>) -> string {
         if x.has_fold {
             tb_puts(&tb, "\"const_fold\": ")
             tb_put_int(&tb, x.applied_folded)
+            if x.has_dce or x.has_dead {
+                tb_puts(&tb, ", ")
+            }
+        }
+        if x.has_dce {
+            tb_puts(&tb, "\"dce\": ")
+            tb_put_int(&tb, x.applied_dce)
             if x.has_dead {
                 tb_puts(&tb, ", ")
             }
@@ -972,8 +988,8 @@ function check_apply(v: string) {
         if i == n or t_at(v, i) == 44 {
             let p: string = t_sub(v, s, i)
             s = i + 1
-            if not t_eq(p, "dead_elim") and not t_eq(p, "const_fold") and not t_eq(p, "all") {
-                arg_error(t_cat3("argument --apply: invalid choice: ", py_repr(p), " (choose from dead_elim, const_fold, all)"))
+            if not t_eq(p, "dead_elim") and not t_eq(p, "const_fold") and not t_eq(p, "dce") and not t_eq(p, "all") {
+                arg_error(t_cat3("argument --apply: invalid choice: ", py_repr(p), " (choose from dead_elim, const_fold, dce, all)"))
             }
         }
         i = i + 1
@@ -1134,17 +1150,23 @@ export function main(argc: i32, argp: ptr<ptr<u8>>) -> i32 {
         device_requested: a.device, device_chosen: "cpu", has_bulk: false, bulk_backend: "",
         bulk_ms: 0.0, has_opts: false, cands: CandList { items: null, len: 0, cap: 0 },
         has_bench: false, bench_cpu_ms: 0.0, has_apply: false, has_dead: false, applied_dead: tl_new(),
-        has_fold: false, applied_folded: 0
+        has_fold: false, applied_folded: 0, has_dce: false, applied_dce: 0
     }
     if a.has_apply {
         x.has_apply = true
         x.has_fold = apply_wants(a.apply, "const_fold")
+        x.has_dce = apply_wants(a.apply, "dce")
         x.has_dead = apply_wants(a.apply, "dead_elim")
         if x.has_fold {
             x.applied_folded = fg_apply_const_fold(g)
         }
+        if x.has_dce {
+            let d: FirDce = fg_apply_dce(g)
+            x.applied_dce = d.removed_ops
+            g2 = d.g
+        }
         if x.has_dead {
-            let comp: FirCompact = fg_apply_dead_elim(g)
+            let comp: FirCompact = fg_apply_dead_elim(g2)
             x.applied_dead = comp.removed
             g2 = comp.g
         }

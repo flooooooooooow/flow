@@ -24,5 +24,5 @@ options:
                         / inline)
   --apply PASSES        apply optimisation passes and report the rewritten
                         graph. PASSES is a comma list from
-                        {dead_elim, const_fold, all}.
+                        {dead_elim, const_fold, dce, all}.
                         With --opts, candidates reflect the post-pass graph

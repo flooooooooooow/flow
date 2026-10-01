@@ -706,11 +706,17 @@ function fg_op_nresults(g: ptr<FirG>, op: i32) -> i32 {
     return g.num_values - begin
 }
 
+struct FirDce {
+    g: ptr<FirG>,
+    removed_ops: i32
+}
+
 # Rebuild `g` keeping only the functions marked in `keep` (1/0 per function
-# id), preserving order. Function ids, block ids, op ids and value ids are
-# renumbered densely; call targets are remapped and the CSR call graph is
-# rebuilt. Returns the new graph and the names of the dropped functions.
-export function fg_compact(g: ptr<FirG>, keep: ptr<i32>) -> FirCompact {
+# id) and, when `keep_op` is non-null, only the ops it marks. Order is
+# preserved. Function ids, block ids, op ids and value ids are renumbered
+# densely; call targets and operand edges are remapped and the CSR call
+# graph is rebuilt. Returns the new graph and the dropped function names.
+export function fg_compact2(g: ptr<FirG>, keep: ptr<i32>, keep_op: ptr<i32>) -> FirCompact {
     let nf: i32 = fg_num_funcs(g)
     let remap: ptr<i32> = calloc((nf + 1) as i64, 4)
     let ng: ptr<FirG> = fg_new()
@@ -754,7 +760,7 @@ export function fg_compact(g: ptr<FirG>, keep: ptr<i32>) -> FirCompact {
     let nops: i32 = fg_num_ops(g)
     while op < nops {
         let of: i32 = iv_get(&g.op_function, op)
-        if of >= 0 and of < nf and keep[of] != 0 {
+        if of >= 0 and of < nf and keep[of] != 0 and (keep_op == null or keep_op[op] != 0) {
             let mut cal: i32 = iv_get(&g.op_callee, op)
             if cal >= 0 {
                 cal = remap[cal] - 1
@@ -766,7 +772,10 @@ export function fg_compact(g: ptr<FirG>, keep: ptr<i32>) -> FirCompact {
             }
             let mut e: i32 = 0
             while e < iv_get(&g.op_edge_count, op) {
-                fg_add_operand(ng, nop, vmap[fg_operand(g, op, e)] - 1)
+                let nv: i32 = vmap[fg_operand(g, op, e)] - 1
+                if nv >= 0 {
+                    fg_add_operand(ng, nop, nv)
+                }
                 e = e + 1
             }
             let mut r: i32 = 0
@@ -795,9 +804,63 @@ export function fg_compact(g: ptr<FirG>, keep: ptr<i32>) -> FirCompact {
 # and the removed names; the input graph is left untouched.
 export function fg_apply_dead_elim(g: ptr<FirG>) -> FirCompact {
     let live: ptr<i32> = fg_reachable(g)
-    let out: FirCompact = fg_compact(g, live)
+    let out: FirCompact = fg_compact2(g, live, null)
     free(live as ptr<void>)
     return out
+}
+
+# A result op with no side effects: safe to drop when its value is unused.
+function fg_pure_op(code: i32) -> bool {
+    return code == OP_CONST or code == OP_BINOP or code == OP_UNOP
+}
+
+# Dead-op elimination: drop pure result ops (CONST, BINOP, UNOP) whose
+# values are never used as an operand, iterating until nothing else drops.
+# CONSTs stranded by const_fold die here too.
+export function fg_apply_dce(g: ptr<FirG>) -> FirDce {
+    let nf: i32 = fg_num_funcs(g)
+    let keep_f: ptr<i32> = calloc((nf + 1) as i64, 4)
+    let mut i: i32 = 0
+    while i < nf {
+        keep_f[i] = 1
+        i = i + 1
+    }
+    let mut cur: ptr<FirG> = g
+    let mut total: i32 = 0
+    let mut again: bool = true
+    while again {
+        again = false
+        let used: ptr<i32> = calloc((cur.num_values + 1) as i64, 4)
+        let keep: ptr<i32> = calloc((fg_num_ops(cur) + 1) as i64, 4)
+        let mut op: i32 = 0
+        let n: i32 = fg_num_ops(cur)
+        while op < n {
+            keep[op] = 1
+            let mut e: i32 = 0
+            while e < iv_get(&cur.op_edge_count, op) {
+                used[fg_operand(cur, op, e)] = 1
+                e = e + 1
+            }
+            op = op + 1
+        }
+        op = 0
+        while op < n {
+            if fg_pure_op(iv_get(&cur.op_opcode, op)) and fg_op_nresults(cur, op) > 0 and used[fg_result(cur, op)] == 0 {
+                keep[op] = 0
+                again = true
+                total = total + 1
+            }
+            op = op + 1
+        }
+        if again {
+            let comp: FirCompact = fg_compact2(cur, keep_f, keep)
+            cur = comp.g
+        }
+        free(used as ptr<void>)
+        free(keep as ptr<void>)
+    }
+    free(keep_f as ptr<void>)
+    return FirDce { g: cur, removed_ops: total }
 }
 
 # Parse `text` as a decimal or boolean literal. Returns the value, with

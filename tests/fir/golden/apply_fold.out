@@ -1,8 +1,8 @@
-FIR-G: funcs=2 blocks=2 ops=23 values=19 operands=18 types=2
+FIR-G: funcs=2 blocks=2 ops=26 values=22 operands=20 types=2
 call ops: 1
 reachable: compute, main
 dead: (none)
-applied: const_fold folded=3
+applied: const_fold folded=4
 call graph:
   main -> compute  (op 1)
 effects / pure:
