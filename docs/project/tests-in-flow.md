@@ -281,7 +281,7 @@ tests/scripts, run by tests/scripts/run.sh.
 | test_vectorization_audit.py | b | vectorization report on generated code |
 | test_version.py | c | version string |
 | test_wasm_compiler.py | c | WASM toolchain probes |
-| test_wcet_analysis.py | c | WCET analysis internals; deleted with wcet_analysis.py, see tests/tools/analyze/run.sh |
+| test_wcet_analysis.py | c | WCET analysis internals; deleted with wcet_analysis.py, see tests/tools/analyze/run.flow |
 | tests/scripts/wiki_nav.sh | c | docs tooling; now a shell test |
 | test_working_mlir.py | b | MLIR text goldens |
 | test_working_parser.py | c | parser AST internals |

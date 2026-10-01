@@ -9,7 +9,7 @@
 #                               (was src/flow/misra_scan.py, #277)
 #
 # Both keep the Python commands' flags, report text and exit codes,
-# including the argparse usage and error lines. tests/tools/analyze/run.sh
+# including the argparse usage and error lines. tests/tools/analyze/run.flow
 # checks the output against goldens recorded from the Python versions.
 #
 # The WCET analysis parses with the flowc front end (compiler/src/parser.flow)

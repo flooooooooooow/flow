@@ -13,7 +13,7 @@
 # emcc, git, find) run through std.process with an argument vector; no
 # shell is involved.
 #
-# Behaviour is pinned by tests/cli/run.sh, whose goldens were recorded from
+# Behaviour is pinned by tests/cli/run.flow, whose goldens were recorded from
 # the bash driver.
 
 import "tools/flow_cli/sys.flow"

@@ -243,7 +243,7 @@ from the Python version it replaced.
 - **Done (#695):** the `flow` command is a Flow program,
   [`tools/flow_cli`](../../tools/flow_cli/main.flow). `./flow` is a POSIX sh
   stub that builds it from the bootstrap C with `cc` on first use and execs
-  it. The 4,311-line bash `flow-driver` is deleted; `tests/cli/run.sh` holds
+  it. The 4,311-line bash `flow-driver` is deleted; `tests/cli/run.flow` holds
   the CLI to goldens recorded from it.
 - **Remaining:** Homebrew formula; a published release to point people at;
   optional MLIR/GPU as separate tracks.

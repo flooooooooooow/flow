@@ -177,7 +177,7 @@ or the bootstrap C changes. A read-only install caches both binaries under
 
 The CLI starts external programs (cc, clang, mlir-opt, emcc, git, find)
 through `std.process` with argument vectors, so no shell parses them.
-`tests/cli/run.sh` pins its behaviour: stdout, stderr, exit code and files
+`tests/cli/run.flow` (`./flow tool tests/cli/run.flow`) pins its behaviour: stdout, stderr, exit code and files
 written for every subcommand and its error paths, per OS, against goldens
 recorded from the bash driver it replaced.
 
@@ -280,7 +280,7 @@ middle-end specialization, C ABI contracts, backend parity, executable pins.
 | MLIR text and runs | `compiler/fixtures/mlir/` | `compiler/scripts/parity_mlir.sh` |
 | MLIR commands | `tests/mlir_commands/` | `tests/mlir_commands/run.sh` |
 | Runtime exit-code | `tests/runtime/test_*_ops.flow` etc. | `./flow test-runtime` |
-| LSP JSON-RPC | `tests/tools/lsp/sessions/*.lsp` | `tests/tools/lsp/run.sh` (native server, no Python) |
+| LSP JSON-RPC | `tests/tools/lsp/sessions/*.lsp` | `tests/tools/lsp/run.flow` (native server, no Python) |
 | Fuzz | `tests/fuzz/` | `tests/fuzz/run.sh` |
 | Tier-2 transpile | git-tracked `tests/**/*.flow` | `./flow test --tier2` |
 

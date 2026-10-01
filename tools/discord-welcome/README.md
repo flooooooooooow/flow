@@ -89,7 +89,7 @@ Offline checks, with no token and no network:
 DISCORD_TOKEN=x WELCOME_CHANNEL_ID=555 "$BIN" \
   --replay tests/tools/discord_welcome/gateway.replay --seed 7
 "$BIN" --check-tls                      # GET https://discord.com/api/v10/gateway
-tests/tools/discord_welcome/run.sh
+./flow tool tests/tools/discord_welcome/run.flow
 ```
 
 `--replay FILE` feeds recorded gateway payloads, one JSON object per line,

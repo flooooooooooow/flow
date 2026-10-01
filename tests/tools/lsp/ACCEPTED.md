@@ -1,12 +1,12 @@
 # Accepted differences from the Python language server
 
-`run.sh` diffs the native server's replies against `<case>.python`, the
+`run.flow` diffs the native server's replies against `<case>.python`, the
 replies the retired `src/flow/lsp_server.py` gave to the same session.
 Every line of every `<case>.accepted.diff` falls into one of the classes
 below. A change to the native server that moves any other line fails the
 test.
 
-Before diffing, `run.sh` rewrites U+2014 in the Python recording as a
+Before diffing, `run.flow` rewrites U+2014 in the Python recording as a
 hyphen. The hover and completion prose in `tools/lsp/catalog.flow` is the
 Python text with that one character changed.
 
