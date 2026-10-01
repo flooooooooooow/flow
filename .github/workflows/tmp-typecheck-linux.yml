@@ -1,0 +1,24 @@
+# ACTIONS-INTENDED: temporary; lists the parity_typecheck classes on Linux to record its ceilings, then is deleted.
+name: parity_typecheck on Linux (temporary)
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build flowc from the bootstrap C
+        run: bash compiler/scripts/ensure_flowc.sh
+      - name: parity_typecheck table and the non-agreeing inputs
+        run: |
+          ./compiler/scripts/parity_typecheck.sh 2>/dev/null | grep -v "binary file matches" || true
+          for c in py-only agree-diff flowc-only warn-diff warn-py-only warn-flowc-only; do
+            echo "=== $c ==="
+            ./compiler/scripts/parity_typecheck.sh --reuse --list "$c" 2>/dev/null | grep -v "binary file matches" || true
+          done
