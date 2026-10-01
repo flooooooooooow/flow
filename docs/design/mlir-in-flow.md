@@ -190,8 +190,8 @@ What those tests checked is covered as follows:
 
 * MLIR text and runs: `parity_mlir.sh` and `tests/mlir_commands/run.sh`.
 * Lowering, DSLs and flow blocks: `tests/cgen`, `tests/lang`,
-  `parity_flow_blocks.sh`, `parity_dynamics_dsl.sh`, `parity_field_dsl.sh`,
-  `parity_shader_dsl.sh`, `parity_lowering.sh`, `parity_effects.sh`.
+  `parity_flow_blocks.flow`, `parity_dynamics_dsl.flow`, `parity_field_dsl.flow`,
+  `parity_shader_dsl.flow`, `parity_lowering.flow`, `parity_effects.flow`.
 * Front-end crashes: `tests/fuzz/run.sh` replaces the Python fuzz harness.
   It replays `tests/fuzz/crashes`, generates nesting 20000 levels deep, and
   runs seeded mutations of the corpus through flowc, failing on a signal or
@@ -364,7 +364,7 @@ and takes the old path. `FLOW_HOST=python` is retired and no longer selects it.
 
 ### Parity gate
 
-`compiler/scripts/parity_mlir.sh`, modelled on `parity_field_dsl.sh`:
+`compiler/scripts/parity_mlir.sh`, modelled on `parity_field_dsl.flow`:
 
 * golden mode (no Python): the fixtures in `compiler/fixtures/mlir/` against
   their `.mlir` goldens (normalized Python output) and, with mlir-opt

@@ -5,7 +5,7 @@
 #         shader_codegen_wgsl.py.
 #
 # Output is byte-identical to the Python it replaces, including its quirks,
-# and compiler/scripts/parity_shader_dsl.sh holds the two to that. Quirks
+# and compiler/scripts/parity_shader_dsl.flow holds the two to that. Quirks
 # kept on purpose:
 #
 #   * Characters no token matches (`@`, `[`, `"`, a lone `&` or `|`) are

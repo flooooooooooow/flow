@@ -1,6 +1,6 @@
 # Test for compiler/src/shader_dsl.flow, the FSL port (#683).
 # Byte parity with the retired Python lives in
-# compiler/scripts/parity_shader_dsl.sh; this checks the Flow API.
+# compiler/scripts/parity_shader_dsl.flow; this checks the Flow API.
 # Run with: ./flow run tests/lang/test_shader_dsl_port.flow
 
 import "compiler/src/bytebuf.flow"

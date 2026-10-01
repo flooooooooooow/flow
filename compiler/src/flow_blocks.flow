@@ -9,7 +9,7 @@
 # rewrite stage before its own parser, so this module lowers the flow to
 # Flow source instead: the same struct and the same Name_new / Name_init /
 # Name_derivs / Name_step / Name_default_dt / Name_outputs / Name_check
-# functions, statement for statement. compiler/scripts/parity_flow_blocks.sh
+# functions, statement for statement. compiler/scripts/parity_flow_blocks.flow
 # parses both sides with the Python parser at a git revision and requires
 # the declaration trees to match, and holds error messages to the Python
 # text (message, line, column, hint).

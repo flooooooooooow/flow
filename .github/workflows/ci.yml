@@ -565,17 +565,17 @@ jobs:
       - name: Build flowc from the bootstrap C
         run: bash compiler/scripts/ensure_flowc.sh
       - name: parity_lowering
-        run: timeout 20m ./compiler/scripts/parity_lowering.sh
+        run: timeout 20m ./flow tool compiler/scripts/parity_lowering.flow
       - name: parity_field_dsl
-        run: timeout 10m ./compiler/scripts/parity_field_dsl.sh
+        run: timeout 10m ./flow tool compiler/scripts/parity_field_dsl.flow
       - name: parity_shader_dsl
-        run: timeout 10m ./compiler/scripts/parity_shader_dsl.sh
+        run: timeout 10m ./flow tool compiler/scripts/parity_shader_dsl.flow
       - name: parity_dynamics_dsl
-        run: timeout 10m ./compiler/scripts/parity_dynamics_dsl.sh
+        run: timeout 10m ./flow tool compiler/scripts/parity_dynamics_dsl.flow
       - name: parity_flow_blocks
-        run: timeout 10m ./compiler/scripts/parity_flow_blocks.sh
+        run: timeout 10m ./flow tool compiler/scripts/parity_flow_blocks.flow
       - name: parity_effects
-        run: timeout 10m ./compiler/scripts/parity_effects.sh
+        run: timeout 10m ./flow tool compiler/scripts/parity_effects.flow
       - name: parity_typecheck --check
         run: timeout 20m ./compiler/scripts/parity_typecheck.sh --check
       - name: typecheck_rules
