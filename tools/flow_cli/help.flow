@@ -65,6 +65,8 @@ export function show_help() {
     outln("  test-strict       Shortcut for: test --strict")
     outln("  test-runtime      Run runtime tests (compile + execute)")
     outln("  test-lang         Run tests/lang/ language tests (strict flowc + compile + execute)")
+    outln("                    --timeout=SECONDS  Per-program limit for test-runtime and test-lang")
+    outln("                    (default 120, or FLOW_TEST_TIMEOUT); a timeout is a failure")
     outln("  test-mlir         Run MLIR verification (requires LLVM)")
     outln("  test-scripts      Run the Flow tests in tests/scripts")
     outln("  test-interop      Run interop runtime tests")

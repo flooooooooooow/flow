@@ -121,6 +121,10 @@ transpile_retired -- transpile tests/cli/fixtures/hello.flow
 test_lang_one -- test-lang tests/lang/test_arithmetic.flow
 test_lang_missing -- test-lang tests/cli/fixtures/none_here
 test_runtime_one -- test-runtime tests/runtime/test_arithmetic.flow
+test_runtime_timeout -- test-runtime --timeout=1 tests/cli/fixtures/hang.flow
+test_lang_timeout -- test-lang --timeout=1 tests/cli/fixtures/hang.flow
+test_runtime_timeout_bad -- test-runtime --timeout=0 tests/runtime/test_arithmetic.flow
+test_lang_timeout_env env=FLOW_TEST_TIMEOUT=soon -- test-lang tests/lang/test_arithmetic.flow
 test_scripts_none -- test-scripts no_such_script_test
 test_project_help cwd=proj -- test --help
 test_project_list cwd=proj -- test --list
