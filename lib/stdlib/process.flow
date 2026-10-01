@@ -48,6 +48,7 @@ extern int flow_proc_c_access(const char *, int) __asm__(FLOW_PROC_SYM(access));
 extern char *flow_proc_c_getcwd(char *, unsigned long) __asm__(FLOW_PROC_SYM(getcwd));
 extern int flow_proc_c_chdir(const char *) __asm__(FLOW_PROC_SYM(chdir));
 extern int flow_proc_c_getpid(void) __asm__(FLOW_PROC_SYM(getpid));
+extern int flow_proc_c_setpgid(int, int) __asm__(FLOW_PROC_SYM(setpgid));
 extern int flow_proc_c_kill(int, int) __asm__(FLOW_PROC_SYM(kill));
 struct flow_proc_pollfd { int fd; short events; short revents; };
 #if defined(__APPLE__)
@@ -165,7 +166,9 @@ static int32_t flow_proc_wait(int32_t pid, int32_t nohang, int32_t *code) {
   else { *code = -1; }
   return 1;
 }
+static int32_t flow_proc_setpgid(int32_t pid) { return (int32_t)flow_proc_c_setpgid((int)pid, (int)pid); }
 static int32_t flow_proc_kill(int32_t pid, int32_t sig) { return (int32_t)flow_proc_c_kill((int)pid, (int)sig); }
+static int32_t flow_proc_kill_group(int32_t pid, int32_t sig) { return (int32_t)flow_proc_c_kill(-(int)pid, (int)sig); }
 static int32_t flow_proc_sigkill(void) { return (int32_t)SIGKILL; }
 static int32_t flow_proc_sigterm(void) { return (int32_t)SIGTERM; }
 static int32_t flow_proc_access_x(const char *path) { return flow_proc_c_access(path, 1) == 0 ? 1 : 0; }
@@ -197,7 +200,9 @@ extern {
     function flow_proc_spawn_can_chdir() -> i32
     function flow_proc_spawn(argv: ptr<string>, envp: ptr<string>, cwd: string, in_mode: i32, in_fd: i32, out_mode: i32, out_fd: i32, err_mode: i32, err_fd: i32) -> i32
     function flow_proc_wait(pid: i32, nohang: i32, code: ptr<i32>) -> i32
+    function flow_proc_setpgid(pid: i32) -> i32
     function flow_proc_kill(pid: i32, sig: i32) -> i32
+    function flow_proc_kill_group(pid: i32, sig: i32) -> i32
     function flow_proc_sigkill() -> i32
     function flow_proc_sigterm() -> i32
     function flow_proc_access_x(path: string) -> i32
@@ -873,6 +878,7 @@ export function proc_run(c: ptr<ProcCmd>) -> ptr<ProcResult> {
         return r
     }
     r.pid = pid
+    let grouped: bool = flow_proc_setpgid(pid) == 0
 
     let mut deadline: i64 = 0
     if c.timeout_ms > 0 {
@@ -971,7 +977,11 @@ export function proc_run(c: ptr<ProcCmd>) -> ptr<ProcResult> {
         let _x2: i32 = flow_proc_close(err_fd)
     }
     if r.timed_out {
-        let _k: i32 = flow_proc_kill(pid, flow_proc_sigkill())
+        if grouped {
+            let _kg: i32 = flow_proc_kill_group(pid, flow_proc_sigkill())
+        } else {
+            let _k: i32 = flow_proc_kill(pid, flow_proc_sigkill())
+        }
     }
     r.exit_code = proc_reap(pid, deadline, r)
     r.stdout = bb_str(out_b)
