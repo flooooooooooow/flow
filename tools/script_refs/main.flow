@@ -1,7 +1,8 @@
 # Script reference check, written in Flow.
 #
 # Every `scripts/...` or `compiler/scripts/...` path named in a tracked
-# .flow file, in code or in a comment, must exist in the checkout. A
+# .flow file, a workflow under .github/workflows or the Makefile, in code
+# or in a comment, must exist in the checkout. A
 # reference to a deleted script fails here instead of at run time.
 #
 #   ./flow tool script_refs            check; list each missing path
@@ -91,7 +92,9 @@ function main() -> i32 {
     if s_len(root) == 0 {
         root = cwd_physical()
     }
-    let g: ptr<ProcCmd> = cmd(sl_of3("git", "ls-files", "*.flow"))
+    let ga: ptr<ProcStrs> = sl_of3("git", "ls-files", "*.flow")
+    sl_push2(ga, ".github/workflows/*.yml", "Makefile")
+    let g: ptr<ProcCmd> = cmd(ga)
     cmd_cwd(g, root)
     let listing: string = capture(g)
     if last_status() != 0 {
@@ -115,6 +118,6 @@ function main() -> i32 {
         errln("script_refs: " + s_itoa(bad) + " reference(s) to scripts that do not exist")
         return 1
     }
-    outln("script_refs: every scripts/ path named in " + s_itoa(sl_len(files)) + " .flow files exists")
+    outln("script_refs: every scripts/ path named in " + s_itoa(sl_len(files)) + " files exists")
     return 0
 }

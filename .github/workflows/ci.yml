@@ -244,9 +244,11 @@ jobs:
         with:
           shellcheck: 'true'
 
+      # The launchers that stay shell (tools/shell_ratchet/allow.txt), and any
+      # .sh left in scripts/; find keeps an empty set from failing (#1153).
       - name: Shellcheck
         if: needs.changes.outputs.workflow == 'true'
-        run: shellcheck flow $(find scripts -maxdepth 1 -type f -name '*.sh' -print)
+        run: shellcheck flow flow-lsp $(find scripts -maxdepth 1 -type f -name '*.sh' -print)
 
   security:
     name: Security Scan
