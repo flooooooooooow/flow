@@ -38,6 +38,12 @@ export const AUX_MUL: i32 = 3
 export const AUX_DIV: i32 = 4
 export const AUX_MOD: i32 = 5
 export const AUX_NEG: i32 = 6
+export const AUX_EQ: i32 = 7
+export const AUX_NE: i32 = 8
+export const AUX_LT: i32 = 9
+export const AUX_LE: i32 = 10
+export const AUX_GT: i32 = 11
+export const AUX_GE: i32 = 12
 export const AUX_PARAM_BASE: i32 = 1000
 
 export const EFF_WRITES_MEMORY: i32 = 2
@@ -1435,7 +1441,7 @@ export function fg_apply_const_fold(g: ptr<FirG>) -> i32 {
         let ne: i32 = iv_get(&g.op_edge_count, op)
         let mut res: i64 = 0
         let mut ok: bool = false
-        if code == OP_BINOP and ne == 2 and aux >= AUX_ADD and aux <= AUX_MOD {
+        if code == OP_BINOP and ne == 2 and aux >= AUX_ADD and aux <= AUX_GE {
             let o1: i32 = v2op[fg_operand(g, op, 0)] - 1
             let o2: i32 = v2op[fg_operand(g, op, 1)] - 1
             if o1 >= 0 and o2 >= 0 and iv_get(&g.op_opcode, o1) == OP_CONST and iv_get(&g.op_opcode, o2) == OP_CONST {
@@ -1457,12 +1463,24 @@ export function fg_apply_const_fold(g: ptr<FirG>) -> i32 {
                         } else {
                             res = a / b
                         }
-                    } else {
+                    } elif aux == AUX_MOD {
                         if b == 0 {
                             ok = false
                         } else {
                             res = a % b
                         }
+                    } elif aux == AUX_EQ {
+                        res = (a == b) as i64
+                    } elif aux == AUX_NE {
+                        res = (a != b) as i64
+                    } elif aux == AUX_LT {
+                        res = (a < b) as i64
+                    } elif aux == AUX_LE {
+                        res = (a <= b) as i64
+                    } elif aux == AUX_GT {
+                        res = (a > b) as i64
+                    } else {
+                        res = (a >= b) as i64
                     }
                 }
             }
