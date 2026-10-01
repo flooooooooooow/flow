@@ -1,7 +1,7 @@
 # Adaptive ordering: measured results
 
 Source: `benchmarks/ordering/adaptive_sort_bench.flow`
-Runner: `benchmarks/ordering/run.sh 5`
+Runner: `./flow tool benchmarks/ordering/run.flow 5`
 
 Machine: Apple M4 Max, macOS 26.2, Apple clang 17.0.0, `-O2`.
 Measured 2026-08-06. Five runs, median reported, copy baseline subtracted.
@@ -47,7 +47,7 @@ there is nothing left to time.
 ## Reproducing
 
 ```
-benchmarks/ordering/run.sh 5
+./flow tool benchmarks/ordering/run.flow 5
 ```
 
 It prints the selected plan for every site before the timings, from the same

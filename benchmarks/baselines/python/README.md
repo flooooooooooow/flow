@@ -14,9 +14,9 @@ message otherwise.
 |---|---|---|
 | `cross_harness/<suite>/<name>/` | `benchmarks/cross_harness/<suite>/<name>/*.flow` | `./flow tool bench_harness` (scripts/tools/bench_harness) |
 | `publish/` | `benchmarks/publish/{flow,c,rust}/` | `./flow tool bench_publish` (scripts/tools/bench_publish) |
-| `suite/` | `benchmarks/suite/{flow,c}/` | `benchmarks/suite/run_benchmarks.sh` |
-| `standardized/record_numpy.py` | `benchmarks/standardized/record/record.flow` | `benchmarks/standardized/bench.sh` |
+| `suite/` | `benchmarks/suite/{flow,c}/` | `./flow tool benchmarks/suite/run_benchmarks.flow` |
+| `standardized/record_numpy.py` | `benchmarks/standardized/record/record.flow` | `./flow tool benchmarks/standardized/bench.flow` |
 
 The `suite/*_numpy.py` and `suite/01_fibonacci_memo.py` variants show the
-idiomatic NumPy or memoised form. `benchmarks/suite/run_benchmarks.sh` runs
+idiomatic NumPy or memoised form. `./flow tool benchmarks/suite/run_benchmarks.flow` runs
 the NumPy variant next to the plain one when NumPy is installed.

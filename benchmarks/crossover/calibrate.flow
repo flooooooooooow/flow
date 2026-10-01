@@ -1,0 +1,98 @@
+# @module benchmarks.crossover.calibrate
+# @means  C against MLIR for the crossover corpus, next to the cost
+#         model's guess.
+#
+#   ./flow tool benchmarks/crossover/calibrate.flow
+#
+# Each program in benchmarks/crossover runs through `./flow run --json` with
+# each backend; the time is the runner's own total_s. A failed run reads
+# Error. The last column is `./flow run --predict`, the backend the cost
+# model picks. RESULTS.md holds a measured table.
+
+import "tools/flow_cli/sys.flow"
+import "benchmarks/bench_tools.flow"
+import std.process { ProcCmd, ProcStrs, proc_arg }
+
+# `printf '%-Ns'`
+function ljust(s: string, n: i32) -> string {
+    let mut r: string = s
+    while s_len(r) < n {
+        r = r + " "
+    }
+    return r
+}
+
+# Every number after `"total_s": ` in `text`, one per line, as
+# sed -n 's/.*"total_s": \([0-9.]*\).*/\1/p' prints them.
+function total_s(text: string) -> string {
+    let lines: ptr<ProcStrs> = s_lines(text)
+    let key: string = "\"total_s\": "
+    let found: ptr<ProcStrs> = sl_new()
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let l: string = sl_get(lines, i)
+        # sed's greedy .* takes the last occurrence on the line.
+        let mut at: i32 = -1
+        let mut p: i32 = s_find(l, key, 0)
+        while p >= 0 {
+            at = p
+            p = s_find(l, key, p + 1)
+        }
+        if at >= 0 {
+            let start: i32 = at + s_len(key)
+            let mut end: i32 = start
+            while end < s_len(l) and ((s_byte(l, end) >= 48 and s_byte(l, end) <= 57) or s_byte(l, end) == 46) {
+                end = end + 1
+            }
+            sl_push(found, s_slice(l, start, end))
+        }
+        i = i + 1
+    }
+    return sl_join(found, "\n")
+}
+
+function run_backend(root: string, f: string, backend: string) -> string {
+    let c: ptr<ProcCmd> = cmd(sl_of3("./flow", "run", f))
+    proc_arg(c, "--backend=" + backend)
+    proc_arg(c, "--json")
+    cmd_cwd(c, root)
+    cmd_quiet_err(c)
+    let text: string = capture(c)
+    if last_status() != 0 {
+        return "Error"
+    }
+    return total_s(text)
+}
+
+function main() -> i32 {
+    let root: string = bench_root("benchmarks/crossover/calibrate.flow")
+    outln(ljust("Program", 30) + " | " + ljust("C Time (s)", 12) + " | " + ljust("MLIR Time (s)", 15) + " | " + ljust("Winner", 6) + " | Predicted")
+    outln("-------------------------------------------------------------------------------------")
+    let files: ptr<ProcStrs> = glob_suffix(root + "/benchmarks/crossover", ".flow")
+    let mut i: i32 = 0
+    while i < sl_len(files) {
+        let path: string = sl_get(files, i)
+        i = i + 1
+        let base: string = path_basename(path)
+        # This program lives here too; it is not one of the subjects.
+        if s_eq(base, "calibrate.flow") {
+            continue
+        }
+        let f: string = "benchmarks/crossover/" + base
+        let c: string = run_backend(root, f, "c")
+        let m: string = run_backend(root, f, "mlir")
+        let mut winner: string = "C"
+        if s_eq(c, "Error") and not s_eq(m, "Error") {
+            winner = "MLIR"
+        } elif not s_eq(c, "Error") and not s_eq(m, "Error") and s_len(c) > 0 and s_len(m) > 0 and bench_parse(m) < bench_parse(c) {
+            winner = "MLIR"
+        }
+        let pc: ptr<ProcCmd> = cmd(sl_of3("./flow", "run", f))
+        proc_arg(pc, "--predict")
+        cmd_cwd(pc, root)
+        let predicted: string = capture(pc)
+        outln(ljust(base, 30) + " | " + ljust(c, 12) + " | " + ljust(m, 15) + " | " + ljust(winner, 6) + " | " + predicted)
+    }
+    cli_exit(0)
+    return 0
+}

@@ -158,8 +158,7 @@ Headroom              5298 µs     5311 µs    99% margin
 ## Reproduction
 
 ```bash
-cd benchmarks/suite
-./run_benchmarks.sh all
+./flow tool benchmarks/suite/run_benchmarks.flow all
 ```
 
 ## Methodology Notes

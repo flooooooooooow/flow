@@ -5,9 +5,8 @@ Accurate, cross-language performance comparison between Flow, C, and Python.
 ## Quick Start
 
 ```bash
-cd benchmarks/suite
-./run_benchmarks.sh           # Run all benchmarks
-./run_benchmarks.sh fibonacci # Run single benchmark
+./flow tool benchmarks/suite/run_benchmarks.flow           # Run all benchmarks
+./flow tool benchmarks/suite/run_benchmarks.flow fibonacci # Run single benchmark
 ```
 
 ## The 4 Benchmarks
@@ -109,7 +108,7 @@ On a typical modern machine (M1/M2 Mac, Intel i7, AMD Ryzen):
    `benchmarks/baselines/python/suite/`
 2. Follow naming: `NN_name.{flow,c,py}`
 3. Include timing and result verification
-4. Update `run_benchmarks.sh`
+4. Update `benchmarks/suite/run_benchmarks.flow`
 
 ## Interpreting Results
 

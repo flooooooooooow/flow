@@ -1,7 +1,7 @@
 # Single-threaded buffered channel throughput (Flow Channel_i32)
 # Buffer capacity == N so send-all then recv-all does not deadlock.
-# Compare with channel_throughput.go — same N / buf.
-# Run via: benchmarks/concurrency/run.sh
+# Compare with channel_throughput.go: same N and buf.
+# Run via: ./flow tool benchmarks/concurrency/run.flow
 
 import "stdlib/concurrent.flow"
 import "stdlib/time.flow"

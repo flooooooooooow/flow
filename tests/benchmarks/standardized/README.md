@@ -38,7 +38,7 @@ Flow ranks in **Tier 1** with C, C++, Rust, Zig, and Go.
 ## Run
 
 ```bash
-./bench.sh
+./flow tool benchmarks/standardized/bench.flow
 ```
 
 Or manually:

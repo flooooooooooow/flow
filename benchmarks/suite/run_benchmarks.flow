@@ -1,0 +1,202 @@
+# @module benchmarks.suite.run_benchmarks
+# @means  The Flow benchmark suite: each benchmark built from C and from
+#         Flow (flowc to C, then clang with the same flags) and run, with
+#         the CPython subjects in benchmarks/baselines/python/suite when
+#         python3 works (and their NumPy variants when NumPy is installed).
+#
+#   ./flow tool benchmarks/suite/run_benchmarks.flow [benchmark]
+#
+# benchmark: fibonacci (1, fib), nbody (2), matmul (3), spectral (4),
+# spmv (5), audio_rt (6, audio), or all (the default). Binaries go to
+# benchmarks/suite/build; the generated C to build/ at the repository root.
+# A step that fails stops the run with its status, as `set -e` did.
+
+import "tools/flow_cli/sys.flow"
+import "benchmarks/bench_tools.flow"
+import std.process { ProcCmd, ProcStrs, proc_args }
+
+const C_FLAGS: string = "-O3 -march=native -ffast-math"
+const PROGRAM: string = "benchmarks/suite/run_benchmarks.flow"
+
+function blue(s: string) {
+    outln(C_BLUE + s + C_NC)
+}
+
+function green(s: string) {
+    outln(C_GREEN + s + C_NC)
+}
+
+function yellow(s: string) {
+    outln(C_YELLOW + s + C_NC)
+}
+
+# Run `c`; stop the program with its status when it fails.
+function must(c: ptr<ProcCmd>) {
+    let rc: i32 = run(c)
+    if rc != 0 {
+        cli_exit(rc)
+    }
+}
+
+function in_dir(argv: ptr<ProcStrs>, dir: string) -> ptr<ProcCmd> {
+    let c: ptr<ProcCmd> = cmd(argv)
+    cmd_cwd(c, dir)
+    return c
+}
+
+# `CMD 2>&1 | head -N`: the first N lines of the merged output.
+function head_merged(c: ptr<ProcCmd>, n: i32) {
+    let text: string = capture_raw_merged(c)
+    let tp: string = text
+    let mut seen: i32 = 0
+    let mut i: i32 = 0
+    while i < s_len(tp) and seen < n {
+        if s_byte(tp, i) == 10 {
+            seen = seen + 1
+        }
+        i = i + 1
+    }
+    out(s_slice(tp, 0, i))
+}
+
+# stdout and stderr together, exactly as written.
+function capture_raw_merged(c: ptr<ProcCmd>) -> string {
+    cmd_merge_err(c)
+    return capture_raw(c)
+}
+
+function python_works() -> bool {
+    let c: ptr<ProcCmd> = cmd(sl_of2("python3", "--version"))
+    cmd_quiet(c)
+    return run(c) == 0
+}
+
+function run_python(subjects: string, stem: string, have_py: bool) {
+    let plain: string = subjects + "/" + stem + ".py"
+    let numpy: string = subjects + "/" + stem + "_numpy.py"
+    blue("────────────────────────────────────────")
+    blue("  Python 3")
+    blue("────────────────────────────────────────")
+    if not have_py {
+        outln("python3 not found; skipping the Python subject")
+        return
+    }
+    if not is_file(plain) {
+        outln("no Python subject for " + stem)
+        return
+    }
+    must(cmd(sl_of2("python3", plain)))
+    if is_file(numpy) {
+        let probe: ptr<ProcCmd> = cmd(sl_of3("python3", "-c", "import numpy"))
+        cmd_quiet(probe)
+        if run(probe) == 0 {
+            outln("")
+            blue("  Python 3 + NumPy")
+            must(cmd(sl_of2("python3", numpy)))
+        }
+    }
+}
+
+function run_benchmark(root: string, suite: string, have_py: bool, name: string, num: string) {
+    let stem: string = num + "_" + name
+    yellow("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    yellow("  BENCHMARK: " + name)
+    yellow("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    outln("")
+    # The C version.
+    green("[C] Compiling with: clang " + C_FLAGS)
+    let cc: ptr<ProcStrs> = sl_of1("clang")
+    sl_extend(cc, s_words(C_FLAGS))
+    sl_push2(cc, "-lm", "c/" + stem + ".c")
+    sl_push2(cc, "-o", "build/" + stem + "_c")
+    must(in_dir(cc, suite))
+    outln("")
+    # The Flow version: flowc to C, then clang with the same flags.
+    green("[Flow] Compiling with same flags as C...")
+    let emit: ptr<ProcStrs> = sl_of3("compiler/scripts/flowc_emit.sh", "--lenient", "benchmarks/suite/flow/" + stem + ".flow")
+    sl_push(emit, "build/" + stem + ".c")
+    head_merged(in_dir(emit, root), 5)
+    if is_file(root + "/build/" + stem + ".c") {
+        let fc: ptr<ProcStrs> = sl_of1("clang")
+        sl_extend(fc, s_words(C_FLAGS))
+        sl_push2(fc, "-lm", "build/" + stem + ".c")
+        sl_push2(fc, "-o", "benchmarks/suite/build/" + stem + "_flow")
+        let c: ptr<ProcCmd> = in_dir(fc, root)
+        cmd_merge_err(c)
+        if run(c) != 0 {
+            outln("Clang compilation failed")
+        }
+    } else {
+        outln("C file not generated, trying direct compile...")
+        head_merged(in_dir(sl_of3("./flow", "compile", "benchmarks/suite/flow/" + stem + ".flow"), root), 3)
+        if is_file(root + "/build/" + stem) {
+            let _c: bool = copy_file(root + "/build/" + stem, suite + "/build/" + stem + "_flow")
+            let _m: bool = set_mode(suite + "/build/" + stem + "_flow", 493)
+        }
+    }
+    outln("")
+    blue("────────────────────────────────────────")
+    blue("  C (clang -O3)")
+    blue("────────────────────────────────────────")
+    must(in_dir(sl_of1("./build/" + stem + "_c"), suite))
+    outln("")
+    blue("────────────────────────────────────────")
+    blue("  Flow (compiled to C)")
+    blue("────────────────────────────────────────")
+    must(in_dir(sl_of1("./build/" + stem + "_flow"), suite))
+    outln("")
+    run_python(root + "/benchmarks/baselines/python/suite", stem, have_py)
+    outln("")
+}
+
+# The benchmark an argument names, "" for an unknown one.
+function pick(a: string) -> string {
+    if s_eq(a, "1") or s_eq(a, "fib") or s_eq(a, "fibonacci") {
+        return "fibonacci"
+    } elif s_eq(a, "2") or s_eq(a, "nbody") {
+        return "nbody"
+    } elif s_eq(a, "3") or s_eq(a, "matmul") {
+        return "matmul"
+    } elif s_eq(a, "4") or s_eq(a, "spectral") {
+        return "spectral"
+    } elif s_eq(a, "5") or s_eq(a, "spmv") {
+        return "spmv"
+    } elif s_eq(a, "6") or s_eq(a, "audio") or s_eq(a, "audio_rt") {
+        return "audio_rt"
+    } elif s_eq(a, "all") or s_len(a) == 0 {
+        return "all"
+    }
+    return ""
+}
+
+function main() -> i32 {
+    let root: string = bench_root(PROGRAM)
+    let suite: string = root + "/benchmarks/suite"
+    blue("╔══════════════════════════════════════════════════════════════╗")
+    blue("║           FLOW LANGUAGE BENCHMARK SUITE                      ║")
+    blue("╚══════════════════════════════════════════════════════════════╝")
+    outln("")
+    let _m: bool = mkdir_p(suite + "/build")
+    let have_py: bool = python_works()
+    let args: ptr<ProcStrs> = proc_args()
+    let which_one: string = pick(sl_get(args, 0))
+    if s_len(which_one) == 0 {
+        outln("Usage: ./flow tool " + PROGRAM + " [benchmark]")
+        outln("  Benchmarks: fibonacci, nbody, matmul, spectral, spmv, audio_rt, all")
+        cli_exit(1)
+    }
+    let names: ptr<ProcStrs> = s_words("fibonacci nbody matmul spectral spmv audio_rt")
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        let name: string = sl_get(names, i)
+        if s_eq(which_one, "all") or s_eq(which_one, name) {
+            run_benchmark(root, suite, have_py, name, "0" + s_itoa(i + 1))
+        }
+        i = i + 1
+    }
+    green("╔══════════════════════════════════════════════════════════════╗")
+    green("║                    BENCHMARKS COMPLETE                       ║")
+    green("╚══════════════════════════════════════════════════════════════╝")
+    cli_exit(0)
+    return 0
+}
