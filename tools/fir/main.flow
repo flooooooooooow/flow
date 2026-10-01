@@ -38,7 +38,7 @@ extern {
 
 const NEVER_BULK: i32 = 1000000000
 
-const USAGE: string = "usage: flow fir-g [-h] [--json] [--device {cpu,numpy,mlx,auto}] [--bench]\n                  [--calibrate] [--thresholds THRESHOLDS] [--opts]\n                  [program]\n"
+const USAGE: string = "usage: flow fir-g [-h] [--json] [--device {cpu,numpy,mlx,auto}] [--bench]\n                  [--calibrate] [--thresholds THRESHOLDS] [--opts]\n                  [--apply PASSES] [program]\n"
 
 function help_text() -> string {
     let mut tb: TBuf = tb_new()
@@ -61,6 +61,9 @@ function help_text() -> string {
     tb_puts(&tb, "                        ~/.cache/flow/fir_g_route.json)\n")
     tb_puts(&tb, "  --opts                list deterministic optimisation candidates (dead_elim\n")
     tb_puts(&tb, "                        / inline)\n")
+    tb_puts(&tb, "  --apply PASSES        apply optimisation passes and report the rewritten\n")
+    tb_puts(&tb, "                        graph. PASSES is a comma list from {dead_elim, all}.\n")
+    tb_puts(&tb, "                        With --opts, candidates reflect the post-pass graph\n")
     return tb.data as string
 }
 
@@ -289,7 +292,9 @@ struct Extra {
     has_opts: bool,
     cands: CandList,
     has_bench: bool,
-    bench_cpu_ms: f64
+    bench_cpu_ms: f64,
+    has_apply: bool,
+    applied_dead: TList
 }
 
 function by_kind_order(c: ptr<CandList>) -> IVec {
@@ -337,6 +342,15 @@ function text_report(r: ptr<Report>, x: ptr<Extra>) -> string {
     tb_puts(&tb, join_names(&r.reachable))
     tb_puts(&tb, "\ndead: ")
     tb_puts(&tb, join_names(&r.dead))
+    if x.has_apply {
+        tb_puts(&tb, "\napplied: dead_elim removed=")
+        tb_put_int(&tb, x.applied_dead.len)
+        if x.applied_dead.len > 0 {
+            tb_puts(&tb, " (")
+            tb_puts(&tb, join_names(&x.applied_dead))
+            tb_puts(&tb, ")")
+        }
+    }
     tb_puts(&tb, "\ncall graph:")
     let mut i: i32 = 0
     while i < r.edge_weight.len {
@@ -505,6 +519,11 @@ function json_report(r: ptr<Report>, x: ptr<Extra>) -> string {
     json_str_list(&tb, &r.reachable, "  ")
     tb_puts(&tb, ",\n  \"dead\": ")
     json_str_list(&tb, &r.dead, "  ")
+    if x.has_apply {
+        tb_puts(&tb, ",\n  \"applied\": {\"dead_elim\": ")
+        json_str_list(&tb, &x.applied_dead, "    ")
+        tb_puts(&tb, "}")
+    }
     tb_puts(&tb, ",\n  \"num_call_ops\": ")
     tb_put_int(&tb, r.num_call_ops)
     tb_puts(&tb, ",\n  \"device_requested\": ")
@@ -837,7 +856,9 @@ struct Args {
     calibrate: bool,
     thresholds: string,
     has_thresholds: bool,
-    opts: bool
+    opts: bool,
+    apply: string,
+    has_apply: bool
 }
 
 
@@ -852,6 +873,7 @@ function match_long(a: string) -> string {
     tl_push(&names, "--calibrate")
     tl_push(&names, "--thresholds")
     tl_push(&names, "--opts")
+    tl_push(&names, "--apply")
     let mut found: string = ""
     let mut count: i32 = 0
     let mut i: i32 = 0
@@ -900,10 +922,27 @@ function check_device(v: string) {
     arg_error(t_cat3("argument --device: invalid choice: ", py_repr(v), " (choose from cpu, numpy, mlx, auto)"))
 }
 
+function check_apply(v: string) {
+    let n: i32 = t_len(v)
+    let mut s: i32 = 0
+    let mut i: i32 = 0
+    while i <= n {
+        if i == n or t_at(v, i) == 44 {
+            let p: string = t_sub(v, s, i)
+            s = i + 1
+            if not t_eq(p, "dead_elim") and not t_eq(p, "all") {
+                arg_error(t_cat3("argument --apply: invalid choice: ", py_repr(p), " (choose from dead_elim, all)"))
+            }
+        }
+        i = i + 1
+    }
+}
+
 function parse_args(argv: ptr<TList>) -> Args {
     let mut a: Args = Args {
         program: "", has_program: false, json: false, device: "cpu", bench: false,
-        calibrate: false, thresholds: "", has_thresholds: false, opts: false
+        calibrate: false, thresholds: "", has_thresholds: false, opts: false,
+        apply: "", has_apply: false
     }
     let mut extras: TList = tl_new()
     let mut only_pos: bool = false
@@ -950,7 +989,7 @@ function parse_args(argv: ptr<TList>) -> Args {
             out(help_text())
             exit(0)
         }
-        if t_eq(opt, "--device") or t_eq(opt, "--thresholds") {
+        if t_eq(opt, "--device") or t_eq(opt, "--thresholds") or t_eq(opt, "--apply") {
             if not has_value {
                 let nxt_ok: bool = i < argv.len and not (t_len(tl_get(argv, i)) > 1 and t_at(tl_get(argv, i), 0) == 45 and not is_negative_number(tl_get(argv, i)))
                 if not nxt_ok {
@@ -962,6 +1001,10 @@ function parse_args(argv: ptr<TList>) -> Args {
             if t_eq(opt, "--device") {
                 check_device(value)
                 a.device = value
+            } elif t_eq(opt, "--apply") {
+                check_apply(value)
+                a.apply = value
+                a.has_apply = true
             } else {
                 a.thresholds = value
                 a.has_thresholds = true
@@ -1043,15 +1086,23 @@ export function main(argc: i32, argp: ptr<ptr<u8>>) -> i32 {
         return 1
     }
     let g: ptr<FirG> = graphify(ld)
-    if t_len(t_env("FIR_G_DUMP", "")) > 0 {
-        dump_graph(g)
-        return 0
-    }
+    let mut g2: ptr<FirG> = g
     let mut r: Report = analyse(g)
     let mut x: Extra = Extra {
         device_requested: a.device, device_chosen: "cpu", has_bulk: false, bulk_backend: "",
         bulk_ms: 0.0, has_opts: false, cands: CandList { items: null, len: 0, cap: 0 },
-        has_bench: false, bench_cpu_ms: 0.0
+        has_bench: false, bench_cpu_ms: 0.0, has_apply: false, applied_dead: tl_new()
+    }
+    if a.has_apply {
+        let comp: FirCompact = fg_apply_dead_elim(g)
+        x.has_apply = true
+        x.applied_dead = comp.removed
+        g2 = comp.g
+        r = analyse(g2)
+    }
+    if t_len(t_env("FIR_G_DUMP", "")) > 0 {
+        dump_graph(g2)
+        return 0
     }
     # Routing (fir_route.choose_analysis_backend) with no NumPy and no MLX.
     if t_eq(a.device, "numpy") {
@@ -1069,8 +1120,8 @@ export function main(argc: i32, argp: ptr<ptr<u8>>) -> i32 {
         }
         let th: Thresholds = load_thresholds(tpath)
         if th.ok and th.min_funcs < (NEVER_BULK as i64) {
-            let nf: i64 = fg_num_funcs(g) as i64
-            let ne: i64 = fg_num_edges(g) as i64
+            let nf: i64 = fg_num_funcs(g2) as i64
+            let ne: i64 = fg_num_edges(g2) as i64
             if nf >= th.min_funcs or ne >= th.min_edges {
                 let be: string = th.bulk_backend
                 if t_eq(be, "mlx") or t_eq(be, "numpy") or t_eq(be, "cpu") {
@@ -1100,14 +1151,14 @@ export function main(argc: i32, argp: ptr<ptr<u8>>) -> i32 {
     }
     if a.opts {
         x.has_opts = true
-        x.cands = discover_candidates(g, r.live)
+        x.cands = discover_candidates(g2, r.live)
     }
     if a.bench {
         # break_even_hint: the CPU analyses, five times, on a fresh copy of
         # the effect bits each time.
-        let nf: i32 = fg_num_funcs(g)
+        let nf: i32 = fg_num_funcs(g2)
         let saved: ptr<i32> = calloc((nf + 1) as i64, 4) as ptr<i32>
-        let bits: ptr<i32> = g.func_effect_bits.data
+        let bits: ptr<i32> = g2.func_effect_bits.data
         let mut k: i32 = 0
         while k < nf {
             saved[k] = bits[k]
@@ -1116,8 +1167,8 @@ export function main(argc: i32, argp: ptr<ptr<u8>>) -> i32 {
         let t0: f64 = now_ms()
         let mut rep: i32 = 0
         while rep < 5 {
-            fg_propagate_effects(g)
-            let _live: ptr<i32> = fg_reachable(g)
+            fg_propagate_effects(g2)
+            let _live: ptr<i32> = fg_reachable(g2)
             k = 0
             while k < nf {
                 bits[k] = saved[k]

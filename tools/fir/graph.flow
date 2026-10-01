@@ -166,6 +166,7 @@ export struct FirG {
     op_block: IVec,
     op_result_begin: IVec,
     op_callee: IVec,
+    op_operand_count: IVec,
     num_operands: i32,
     num_values: i32,
     type_name: TList,
@@ -191,6 +192,7 @@ export function fg_new() -> ptr<FirG> {
     g.op_block = iv_new()
     g.op_result_begin = iv_new()
     g.op_callee = iv_new()
+    g.op_operand_count = iv_new()
     g.num_operands = 0
     g.num_values = 0
     g.type_name = tl_new()
@@ -257,6 +259,7 @@ export function fg_add_block(g: ptr<FirG>, fid: i32) -> i32 {
 export function fg_add_op(g: ptr<FirG>, opcode: i32, fid: i32, bid: i32, n_operands: i32, n_results: i32, callee: i32) -> i32 {
     let op: i32 = g.op_opcode.len
     g.num_operands = g.num_operands + n_operands
+    iv_push(&g.op_operand_count, n_operands)
     iv_push(&g.op_result_begin, g.num_values)
     g.num_values = g.num_values + n_results
     iv_push(&g.op_opcode, opcode)
@@ -602,4 +605,95 @@ export function discover_candidates(g: ptr<FirG>, live: ptr<i32>) -> CandList {
 
 export function cand_kind_name(k: i32) -> string {
     return kind_name(k)
+}
+
+# ── Transforms ──────────────────────────────────────────────────
+
+export struct FirCompact {
+    g: ptr<FirG>,
+    removed: TList
+}
+
+# Result count of op `op` in `g`, from the result_begin prefix sums.
+function fg_op_nresults(g: ptr<FirG>, op: i32) -> i32 {
+    let begin: i32 = iv_get(&g.op_result_begin, op)
+    if op + 1 < fg_num_ops(g) {
+        return iv_get(&g.op_result_begin, op + 1) - begin
+    }
+    return g.num_values - begin
+}
+
+# Rebuild `g` keeping only the functions marked in `keep` (1/0 per function
+# id), preserving order. Function ids, block ids, op ids and value ids are
+# renumbered densely; call targets are remapped and the CSR call graph is
+# rebuilt. Returns the new graph and the names of the dropped functions.
+export function fg_compact(g: ptr<FirG>, keep: ptr<i32>) -> FirCompact {
+    let nf: i32 = fg_num_funcs(g)
+    let remap: ptr<i32> = calloc((nf + 1) as i64, 4)
+    let ng: ptr<FirG> = fg_new()
+    let mut out: FirCompact = FirCompact { g: ng, removed: tl_new() }
+    # Pass 1: kept functions in order, so op_callee remaps resolve even for
+    # forward references.
+    let mut f: i32 = 0
+    while f < nf {
+        if keep[f] != 0 {
+            remap[f] = fg_add_function(ng, fg_func_name(g, f), iv_get(&g.func_is_extern, f) != 0, iv_get(&g.func_effect_bits, f)) + 1
+        } else {
+            tl_push(&out.removed, fg_func_name(g, f))
+        }
+        f = f + 1
+    }
+    # Pass 2: blocks. A function's blocks are contiguous in the block table,
+    # but a block's ops are not contiguous in the op table (the lowerer
+    # interleaves nested control flow), so ops are bucketed by op_block.
+    let nb_total: i32 = g.block_function.len
+    let bremap: ptr<i32> = calloc((nb_total + 1) as i64, 4)
+    f = 0
+    while f < nf {
+        if keep[f] != 0 {
+            let nfid: i32 = remap[f] - 1
+            let first_b: i32 = iv_get(&g.func_first_block, f)
+            let nb: i32 = iv_get(&g.func_block_count, f)
+            let mut b: i32 = 0
+            while b < nb {
+                bremap[first_b + b] = fg_add_block(ng, nfid) + 1
+                b = b + 1
+            }
+        }
+        f = f + 1
+    }
+    # Pass 3: ops in global order, keeping each block's op order.
+    let mut op: i32 = 0
+    let nops: i32 = fg_num_ops(g)
+    while op < nops {
+        let of: i32 = iv_get(&g.op_function, op)
+        if of >= 0 and of < nf and keep[of] != 0 {
+            let mut cal: i32 = iv_get(&g.op_callee, op)
+            if cal >= 0 {
+                cal = remap[cal] - 1
+            }
+            let _nop: i32 = fg_add_op(ng, iv_get(&g.op_opcode, op), remap[of] - 1, bremap[iv_get(&g.op_block, op)] - 1, iv_get(&g.op_operand_count, op), fg_op_nresults(g, op), cal)
+        }
+        op = op + 1
+    }
+    # The type table is names only; copy it so interned names survive.
+    let mut t: i32 = 0
+    while t < g.type_name.len {
+        let _tid: i32 = fg_intern_type(ng, tl_get(&g.type_name, t))
+        t = t + 1
+    }
+    fg_build_call_graph_csr(ng)
+    free(remap as ptr<void>)
+    free(bremap as ptr<void>)
+    return out
+}
+
+# Dead-function elimination: drop every function unreachable from the roots
+# (`main`, or function 0 when there is no main). Returns the compacted graph
+# and the removed names; the input graph is left untouched.
+export function fg_apply_dead_elim(g: ptr<FirG>) -> FirCompact {
+    let live: ptr<i32> = fg_reachable(g)
+    let out: FirCompact = fg_compact(g, live)
+    free(live as ptr<void>)
+    return out
 }
