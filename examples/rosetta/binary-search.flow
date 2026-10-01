@@ -1,0 +1,32 @@
+# Rosetta Code task: Binary search
+# Find a value in a sorted array. Return its index, or -1 when absent.
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function binary_search(xs: span<i32>, target: i32) -> i32 {
+    let mut lo: i32 = 0
+    let mut hi: i32 = xs.len as i32 - 1
+    while lo <= hi {
+        let mid: i32 = lo + (hi - lo) / 2
+        if xs[mid] == target {
+            return mid
+        }
+        if xs[mid] < target {
+            lo = mid + 1
+        } else {
+            hi = mid - 1
+        }
+    }
+    return -1
+}
+
+function main() -> i32 {
+    let xs: array<i32, 10> = [2, 5, 8, 12, 16, 23, 38, 56, 72, 91]
+    printf("index of 23 = %d\n", binary_search(xs, 23))
+    printf("index of 2 = %d\n", binary_search(xs, 2))
+    printf("index of 91 = %d\n", binary_search(xs, 91))
+    printf("index of 42 = %d\n", binary_search(xs, 42))
+    return 0
+}

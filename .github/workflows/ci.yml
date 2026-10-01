@@ -268,6 +268,7 @@ jobs:
     if: |
       needs.changes.outputs.src == 'true' ||
       needs.changes.outputs.tests == 'true' ||
+      needs.changes.outputs.examples == 'true' ||
       needs.changes.outputs.libs == 'true' ||
       needs.changes.outputs.runtime == 'true'
     steps:
@@ -284,6 +285,9 @@ jobs:
           # --strict: type-checker findings fail the build. Files with a
           # documented "# flow:lenient - <reason>" pragma are exempt.
           ./flow test --tier2 --strict
+
+      - name: Rosetta Code examples (run and compare output)
+        run: ./flow test-runtime examples/rosetta
 
   flowc-bootstrap:
     name: flowc self-host roundtrip

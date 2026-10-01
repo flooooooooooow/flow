@@ -1,0 +1,28 @@
+# Rosetta Code task: FizzBuzz
+# Print the numbers 1 to 100. For multiples of three print "Fizz",
+# for multiples of five print "Buzz", and for multiples of both print "FizzBuzz".
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function main() -> i32 {
+    let mut i: i32 = 1
+    while i <= 100 {
+        if i % 15 == 0 {
+            println("FizzBuzz")
+        } else {
+            if i % 3 == 0 {
+                println("Fizz")
+            } else {
+                if i % 5 == 0 {
+                    println("Buzz")
+                } else {
+                    printf("%d\n", i)
+                }
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}

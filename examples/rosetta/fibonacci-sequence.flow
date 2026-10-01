@@ -1,0 +1,21 @@
+# Rosetta Code task: Fibonacci sequence
+# Print the first fifteen Fibonacci numbers, computed iteratively.
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function main() -> i32 {
+    let mut a: i32 = 0
+    let mut b: i32 = 1
+    let mut i: i32 = 0
+    while i < 15 {
+        printf("%d ", a)
+        let next: i32 = a + b
+        a = b
+        b = next
+        i = i + 1
+    }
+    println("")
+    return 0
+}
