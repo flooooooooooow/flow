@@ -1,0 +1,13 @@
+extern {
+    function puts(s: string) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    let text: string = "$${line#prefix}"
+    if strcmp(text, "$${line#prefix}") != 0 {
+        return 1
+    }
+    puts(text)
+    return 0
+}

@@ -5866,7 +5866,10 @@ function flowc_cgen_emit_array_lit_effects(w: ptr<CgenBuf>, arena: AstArena, src
 function flowc_cgen_put_string_literal(w: ptr<CgenBuf>, src: ptr<u8>, start: i32, end: i32) {
     let mut i: i32 = start
     while i < end {
-        if src[i] == 10 {
+        if src[i] == 36 and i + 2 < end and src[i + 1] == 36 and src[i + 2] == 123 {
+            flowc_cgen_putc(w, 36)
+            i = i + 1
+        } elif src[i] == 10 {
             flowc_cgen_puts(w, "\\n")
         } elif src[i] == 13 {
             flowc_cgen_puts(w, "\\r")
