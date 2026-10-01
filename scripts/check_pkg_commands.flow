@@ -19,7 +19,7 @@
 
 import "tools/flow_cli/sys.flow"
 import "scripts/check_lib.flow"
-import std.process { ProcCmd, ProcResult, ProcStrs, proc_args, proc_stdout, proc_stderr, PROC_CAPTURE, PROC_NULL }
+import std.process { proc_argv, ProcCmd, ProcResult, ProcStrs, proc_args, proc_stdout, proc_stderr, PROC_CAPTURE, PROC_NULL }
 
 let mut ROOT: string = ""
 let mut RECORD: bool = false
@@ -491,6 +491,7 @@ function cases_clean() {
 }
 
 function main() -> i32 {
+    tool_only("scripts/check_pkg_commands.flow")
     ROOT = chk_enter()
     GOLD = ROOT + "/tests/pkg_commands"
     let args: ptr<ProcStrs> = proc_args()
@@ -537,4 +538,14 @@ function main() -> i32 {
     }
     cli_exit(0)
     return 0
+}
+
+# These programs change files, run builds and publish, so they run only
+# as `./flow tool PATH.flow` (from build/flow-tools), never from a plain
+# `flow run` such as the corpus checks do.
+function tool_only(path: string) {
+    if not s_contains(proc_argv(0), "/flow-tools/") {
+        errln("run this with ./flow tool " + path)
+        cli_exit(2)
+    }
 }
