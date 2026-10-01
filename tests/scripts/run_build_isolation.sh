@@ -15,7 +15,6 @@ make_project() {
 }
 
 check_concurrent_run_does_not_cross_projects() {
-    [[ -e ./flow-driver ]] || t_skip "flow-driver not present"
     t_need clang
     make_project "$T_TMP/proj_a" I_AM_PROJECT_A
     make_project "$T_TMP/proj_b" I_AM_PROJECT_B
@@ -23,10 +22,10 @@ check_concurrent_run_does_not_cross_projects() {
     # Repeat a few times to exercise the compile/launch overlap window.
     local round out_a out_b pid_a pid_b
     for round in 1 2 3; do
-        FLOW_HOST=flowc ./flow-driver run "$T_TMP/proj_a/src/main.flow" \
+        FLOW_HOST=flowc ./flow run "$T_TMP/proj_a/src/main.flow" \
             > "$T_TMP/a.$round.out" 2> "$T_TMP/a.$round.err" &
         pid_a=$!
-        FLOW_HOST=flowc ./flow-driver run "$T_TMP/proj_b/src/main.flow" \
+        FLOW_HOST=flowc ./flow run "$T_TMP/proj_b/src/main.flow" \
             > "$T_TMP/b.$round.out" 2> "$T_TMP/b.$round.err" &
         pid_b=$!
         # Only stdout is asserted, as before; the exit status is not.

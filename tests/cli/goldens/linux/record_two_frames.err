@@ -1,0 +1,4 @@
+/usr/bin/ld: warning: <TMP>/flow_fctx_x86_64-XXXXXX.o: missing .note.GNU-stack section implies executable stack
+/usr/bin/ld: NOTE: This behaviour is deprecated and will be removed in a future version of the linker
+[gfx-record] Mouse probe - Flow — 320x240, up to 2 frames → frames
+[gfx-record] wrote 2 frame(s) of 2 presented

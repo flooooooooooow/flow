@@ -1,0 +1,4 @@
+[0;34mℹ️  Compiling fill-shader from examples/gpu/shader_plasma.flow...[0m
+[0;32m✅ FLOW → Metal: shader_plasma_gallery.metal[0m
+[0;34mℹ️  Gallery entries: 1 shader(s)[0m
+[0;34mℹ️  Emit-only: <ROOT>/build/shaders/shader_plasma_gallery.metal[0m

@@ -153,3 +153,4 @@ btree_test.db
 !compiler/fixtures/mlir/*.out
 !tests/mlir_commands/expected/*.mlir
 !tests/mlir_commands/expected/*.out
+!tests/cli/goldens/**/*.out

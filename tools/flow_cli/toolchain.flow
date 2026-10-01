@@ -1,0 +1,1352 @@
+# @module tools.flow_cli.toolchain
+# @means  The compiler toolchain behind `flow`: which flowc to use, building
+#         the Flow tools (package manager, LSP, REPL and the rest) on first
+#         use, C flags and sanitizers, the runtime archive, and the link
+#         steps for the C and MLIR paths.
+#
+# Every function keeps the behaviour of the bash driver it replaced
+# (flow-driver): the same files, flags, messages and exit statuses.
+
+import "tools/flow_cli/sys.flow"
+import std.process { ProcCmd, ProcResult, ProcStrs }
+
+# ---------------------------------------------------------------------------
+# State shared by the commands
+# ---------------------------------------------------------------------------
+
+export struct Toolchain {
+    # The repository (or install) root: SCRIPT_DIR in the driver.
+    root: string,
+    # Build root for compilation artifacts, $FLOW_BUILD_ROOT or root/build.
+    build_root: string,
+    llvm: string,
+    # Sanitizer switches: FLOW_UBSAN / FLOW_ASAN / FLOW_TSAN, updated by
+    # FLOW_SANITIZE (shell variables in the driver, so not exported).
+    san_ub: string,
+    san_a: string,
+    san_t: string,
+    # FLOW_SKIP_AUDIO_STUB, set by the audio and gfx builds.
+    skip_audio: string,
+    rt_archive: string
+}
+
+# Module statics hold primitives and pointers only (#1086), so the strings
+# live here.
+let mut T: ptr<Toolchain> = null
+
+# A field read straight off a module-static pointer compiles to C `.` (#1078),
+# so the fields are reached through this accessor.
+function tc() -> ptr<Toolchain> {
+    return T
+}
+
+export function root() -> string {
+    return tc().root
+}
+
+export function build_root() -> string {
+    return tc().build_root
+}
+
+export function set_build_root(p: string) {
+    tc().build_root = p
+    env_set("FLOW_BUILD_ROOT", p)
+}
+
+export function llvm_path() -> string {
+    return tc().llvm
+}
+
+export function set_skip_audio_stub() {
+    tc().skip_audio = "1"
+}
+
+export function toolchain_init(root_dir: string) {
+    T = malloc(64) as ptr<Toolchain>
+    tc().rt_archive = ""
+    tc().root = root_dir
+    tc().build_root = env_or("FLOW_BUILD_ROOT", tc().root + "/build")
+    tc().llvm = env("LLVM_PATH")
+    tc().san_ub = env("FLOW_UBSAN")
+    tc().san_a = env("FLOW_ASAN")
+    tc().san_t = env("FLOW_TSAN")
+    tc().skip_audio = env("FLOW_SKIP_AUDIO_STUB")
+}
+
+# ${CC:-cc}
+export function cc_default() -> string {
+    return env_or("CC", "cc")
+}
+
+# ---------------------------------------------------------------------------
+# LLVM, host mode, CPU backend
+# ---------------------------------------------------------------------------
+
+export function resolve_llvm_path() {
+    if s_len(tc().llvm) > 0 {
+        return
+    }
+    let mo: string = which("mlir-opt")
+    if s_len(mo) > 0 {
+        tc().llvm = path_dirname(mo)
+        return
+    }
+    if have("brew") {
+        let c: ptr<ProcCmd> = cmd(sl_of3("brew", "--prefix", "llvm"))
+        cmd_quiet_err(c)
+        let prefix: string = capture(c)
+        if s_len(prefix) > 0 {
+            tc().llvm = prefix + "/bin"
+            return
+        }
+    }
+    tc().llvm = "/opt/homebrew/opt/llvm/bin"
+}
+
+# flow_host_mode: "flowc", or print why and exit 1. `to_stdout_ok` is false
+# where the driver called it inside $(...): its messages all go to stderr
+# anyway, so the flag only documents the call site.
+export function flow_host_mode() -> string {
+    let mode: string = env_or("FLOW_HOST", "flowc")
+    if s_eq(mode, "flowc") or s_eq(mode, "auto") {
+        return "flowc"
+    }
+    if s_eq(mode, "python") {
+        error_to(2, "FLOW_HOST=python is retired: the Python C backend was removed.")
+        info_to(2, "flowc compiles every program now. Unset FLOW_HOST (or set FLOW_HOST=flowc).")
+        info_to(2, "C only: compiler/scripts/flowc_emit.sh <in.flow> <out.c>")
+        cli_exit(1)
+    }
+    error_to(2, "Unknown FLOW_HOST='" + mode + "' (expected flowc)")
+    cli_exit(1)
+    return ""
+}
+
+# The mode as `$(flow_host_mode)` sees it: "" when it failed (the messages
+# still reach stderr), without exiting this program.
+export function flow_host_mode_sub() -> string {
+    let mode: string = env_or("FLOW_HOST", "flowc")
+    if s_eq(mode, "flowc") or s_eq(mode, "auto") {
+        return "flowc"
+    }
+    if s_eq(mode, "python") {
+        error_to(2, "FLOW_HOST=python is retired: the Python C backend was removed.")
+        info_to(2, "flowc compiles every program now. Unset FLOW_HOST (or set FLOW_HOST=flowc).")
+        info_to(2, "C only: compiler/scripts/flowc_emit.sh <in.flow> <out.c>")
+        return ""
+    }
+    error_to(2, "Unknown FLOW_HOST='" + mode + "' (expected flowc)")
+    return ""
+}
+
+# FLOW_CPU_BACKEND=c|mlir (default c); exits on anything else. The driver
+# printed the error inside $(...), so the message never showed.
+export function flow_cpu_backend() -> string {
+    let mode: string = env_or("FLOW_CPU_BACKEND", "c")
+    if s_eq(mode, "c") or s_eq(mode, "mlir") {
+        return mode
+    }
+    return ""
+}
+
+# ---------------------------------------------------------------------------
+# flowc
+# ---------------------------------------------------------------------------
+
+# compiler/scripts/ensure_flowc.sh [--cc-only]: its stdout, "" on failure.
+function ensure_flowc(cc_only: bool, quiet_err: bool) -> string {
+    let argv: ptr<ProcStrs> = sl_of2("bash", tc().root + "/compiler/scripts/ensure_flowc.sh")
+    if cc_only {
+        sl_push(argv, "--cc-only")
+    }
+    let c: ptr<ProcCmd> = cmd(argv)
+    if quiet_err {
+        cmd_quiet_err(c)
+    }
+    let path: string = capture(c)
+    if last_status() != 0 {
+        return ""
+    }
+    return path
+}
+
+# The flowc binary: $FLOWC_BIN when executable, else ensure_flowc.sh.
+# "" when there is none (the driver's error went into a $(...) and was
+# never shown).
+export function flow_resolve_flowc() -> string {
+    let fb: string = env("FLOWC_BIN")
+    let mut driver: string = ""
+    if s_len(fb) > 0 and is_exec(fb) {
+        driver = fb
+    } else {
+        driver = ensure_flowc(false, false)
+        if s_len(driver) > 0 and not is_abs(driver) {
+            driver = tc().root + "/" + driver
+        }
+    }
+    if s_len(driver) == 0 or not is_exec(driver) {
+        return ""
+    }
+    return driver
+}
+
+# Build a Flow tool with the Stage-A driver; the binary's path or "".
+#   entry, deps: paths relative to tc().root
+# build/tools/NAME/NAME, rebuilt when the entry, a listed source or the
+# driver is newer; written under a temporary name first.
+export function flow_build_flow_tool(name: string, entry: string, deps: ptr<ProcStrs>) -> string {
+    let src: string = tc().root + "/" + entry
+    let dir: string = tc().root + "/build/tools/" + name
+    let bin: string = dir + "/" + name
+    let fb: string = env("FLOWC_BIN")
+    let mut driver: string = ""
+    if s_len(fb) > 0 and is_exec(fb) {
+        driver = fb
+    } else {
+        driver = ensure_flowc(true, true)
+        if s_len(driver) == 0 {
+            return ""
+        }
+        if not is_abs(driver) {
+            driver = tc().root + "/" + driver
+        }
+    }
+    let mut stale: bool = false
+    if not is_exec(bin) or newer(src, bin) or newer(driver, bin) {
+        stale = true
+    }
+    let mut i: i32 = 0
+    while i < sl_len(deps) {
+        if newer(tc().root + "/" + sl_get(deps, i), bin) {
+            stale = true
+        }
+        i = i + 1
+    }
+    if not stale {
+        return bin
+    }
+    if not mkdir_p(dir) {
+        return ""
+    }
+    let tmp: string = dir + "/" + name + ".tmp." + s_itoa(pid())
+    let fc: ptr<ProcCmd> = cmd(sl_of1(driver))
+    cmd_cwd(fc, tc().root)
+    cmd_env(fc, "FLOWC_BUNDLE", "1")
+    cmd_env(fc, "FLOWC_DIR", tc().root)
+    cmd_env(fc, "FLOWC_TYPECHECK", "1")
+    cmd_env(fc, "FLOWC_IN", src)
+    cmd_env(fc, "FLOWC_OUT", tmp + ".c")
+    cmd_quiet(fc)
+    let mut ok: bool = run(fc) == 0
+    if ok {
+        let argv: ptr<ProcStrs> = sl_of3(cc_default(), "-std=c11", "-D_DEFAULT_SOURCE")
+        sl_push(argv, "-O2")
+        sl_push2(argv, "-o", tmp)
+        sl_push(argv, tmp + ".c")
+        let cc: ptr<ProcCmd> = cmd(argv)
+        cmd_quiet(cc)
+        ok = run(cc) == 0
+    }
+    if not ok {
+        rm_f(tmp)
+        rm_f(tmp + ".c")
+        return ""
+    }
+    rm_f(tmp + ".c")
+    if not move_file(tmp, bin) {
+        return ""
+    }
+    return bin
+}
+
+# The dependency-sync check (scripts/tools/pkg_sync).
+export function flow_pkg_sync_tool() -> string {
+    return flow_build_flow_tool("pkg_sync", "scripts/tools/pkg_sync/main.flow", sl_new())
+}
+
+# The package manager (compiler/src/pkg_main.flow).
+export function flow_pkg_tool() -> string {
+    let deps: ptr<ProcStrs> = sl_of3("compiler/src/pkg.flow", "compiler/src/pkg_json.flow", "compiler/src/semver.flow")
+    sl_push(deps, "compiler/src/fileio.flow")
+    return flow_build_flow_tool("flow_pkg", "compiler/src/pkg_main.flow", deps)
+}
+
+# Run the Flow package manager with `args`; its status.
+export function flow_pkg_native(args: ptr<ProcStrs>) -> i32 {
+    let tool: string = flow_pkg_tool()
+    if s_len(tool) == 0 {
+        error("Could not build the package manager (compiler/src/pkg_main.flow).")
+        return 1
+    }
+    let argv: ptr<ProcStrs> = sl_of1(tool)
+    sl_extend(argv, args)
+    let c: ptr<ProcCmd> = cmd(argv)
+    cmd_env(c, "FLOW_REPO_ROOT", tc().root)
+    return run(c)
+}
+
+# flow_pkg_native run in directory `dir` (the demo launchers' `cd`).
+export function flow_pkg_native_in(dir: string, args: ptr<ProcStrs>) -> i32 {
+    let tool: string = flow_pkg_tool()
+    if s_len(tool) == 0 {
+        error("Could not build the package manager (compiler/src/pkg_main.flow).")
+        return 1
+    }
+    let argv: ptr<ProcStrs> = sl_of1(tool)
+    sl_extend(argv, args)
+    let c: ptr<ProcCmd> = cmd(argv)
+    cmd_env(c, "FLOW_REPO_ROOT", tc().root)
+    cmd_cwd(c, dir)
+    return run(c)
+}
+
+# Install the dependencies of the project containing `program`, if any.
+export function flow_sync_program(program: string) -> i32 {
+    let abs_program: string = abs_file_physical(program)
+    let tool: string = flow_pkg_sync_tool()
+    if s_len(tool) > 0 {
+        let rc: i32 = run(cmd(sl_of2(tool, abs_program)))
+        if rc == 0 {
+            return 0
+        }
+        if rc != 3 {
+            return rc
+        }
+    }
+    return flow_pkg_native(sl_of3("sync", "--program", abs_program))
+}
+
+# A main.flow flowc for the FLOWC_* modes (FLOWC_SHADER, FLOWC_EXPLAIN):
+# FLOWC_BIN, else the checked-in bootstrap C built with cc. "" on failure,
+# after printing why (to stdout: the driver's `$(...)` swallowed it).
+export function flow_flowc_main() -> string {
+    let fb: string = env("FLOWC_BIN")
+    if s_len(fb) > 0 and is_exec(fb) {
+        return fb
+    }
+    let boot_c: string = tc().root + "/compiler/bootstrap/flowc_stage_a.c"
+    let bin: string = tc().root + "/compiler/build/flowc_bootstrap"
+    if not is_exec(bin) or newer(boot_c, bin) {
+        let _m: bool = mkdir_p(tc().root + "/compiler/build")
+        let argv: ptr<ProcStrs> = sl_of3(cc_default(), "-O2", "-o")
+        sl_push(argv, bin)
+        sl_push(argv, boot_c)
+        sl_push(argv, "-lm")
+        let c: ptr<ProcCmd> = cmd(argv)
+        cmd_quiet_err(c)
+        if run(c) != 0 {
+            return ""
+        }
+    }
+    return bin
+}
+
+# flowc_emit_to_c PROGRAM C_OUT with extra environment `envs` (NAME=value
+# strings, the driver's `VAR=x flowc_emit_to_c ...`). Status.
+export function flowc_emit_to_c_env(program: string, c_out: string, envs: ptr<ProcStrs>) -> i32 {
+    let driver: string = flow_resolve_flowc()
+    if s_len(driver) == 0 {
+        return 1
+    }
+    info("flowc emit via " + driver)
+    let c: ptr<ProcCmd> = cmd(sl_of3(tc().root + "/compiler/scripts/flowc_emit.sh", program, c_out))
+    cmd_env(c, "FLOWC_BIN", driver)
+    apply_envs(c, envs)
+    return run(c)
+}
+
+export function flowc_emit_to_c(program: string, c_out: string) -> i32 {
+    return flowc_emit_to_c_env(program, c_out, sl_new())
+}
+
+# Apply NAME=value strings to a command's environment.
+export function apply_envs(c: ptr<ProcCmd>, envs: ptr<ProcStrs>) {
+    let mut i: i32 = 0
+    while i < sl_len(envs) {
+        let kv: string = sl_get(envs, i)
+        let eq: i32 = s_find_byte(kv, 61, 0)
+        if eq > 0 {
+            cmd_env(c, s_slice(kv, 0, eq), s_from(kv, eq + 1))
+        }
+        i = i + 1
+    }
+}
+
+# Run `c` with the named variables removed from its environment
+# (`env -u NAME ...`): they are unset here for the call and put back.
+export function run_without_env(c: ptr<ProcCmd>, names: ptr<ProcStrs>) -> i32 {
+    let saved: ptr<ProcStrs> = sl_new()
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        let n: string = sl_get(names, i)
+        if env_isset(n) {
+            sl_push(saved, n + "=" + env(n))
+            env_unset(n)
+        }
+        i = i + 1
+    }
+    let rc: i32 = run(c)
+    let mut j: i32 = 0
+    while j < sl_len(saved) {
+        let kv: string = sl_get(saved, j)
+        let eq: i32 = s_find_byte(kv, 61, 0)
+        env_set(s_slice(kv, 0, eq), s_from(kv, eq + 1))
+        j = j + 1
+    }
+    return rc
+}
+
+# One lib/runtime/*.flow module as its own C library unit (#1030).
+export function flowc_emit_runtime_module(module: string, c_out: string) -> i32 {
+    let driver: string = flow_resolve_flowc()
+    if s_len(driver) == 0 {
+        return 1
+    }
+    let c: ptr<ProcCmd> = cmd(sl_of1(driver))
+    cmd_env(c, "FLOWC_LIBRARY", "1")
+    cmd_env(c, "FLOWC_LENIENT", "1")
+    cmd_env(c, "FLOWC_IN", module)
+    cmd_env(c, "FLOWC_OUT", c_out)
+    return run_without_env(c, sl_of2("FLOWC_BUNDLE", "FLOWC_EXPORT"))
+}
+
+# True when a .flow file under `dir` (recursively) is newer than `bin`:
+# find DIR -name '*.flow' -newer BIN -print -quit.
+function any_flow_newer(dir: string, bin_mtime: i64) -> bool {
+    let names: ptr<ProcStrs> = list_dir(dir)
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        let p: string = dir + "/" + sl_get(names, i)
+        if is_dir(p) and not is_link(p) {
+            if any_flow_newer(p, bin_mtime) {
+                return true
+            }
+        } elif s_ends(p, ".flow") and mtime(p) > bin_mtime {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# A host tool written in Flow (tools/NAME/main.flow: repl, lsp, check, ...),
+# built on first use and whenever a Flow source it can import is newer.
+# The binary's path, or "" after printing why to stderr.
+export function flow_native_tool(name: string) -> string {
+    let src: string = "tools/" + name + "/main.flow"
+    if not is_file(tc().root + "/" + src) {
+        return ""
+    }
+    let mut cache: string = tc().root + "/build/tools"
+    if not mkdir_p(cache) or not is_writable(cache) {
+        cache = env_or("XDG_CACHE_HOME", env("HOME") + "/.cache") + "/flow/tools"
+        if not mkdir_p(cache) {
+            errln("mkdir: " + cache + ": cannot create directory")
+            return ""
+        }
+    }
+    let bin: string = cache + "/flow-" + name
+    if is_exec(bin) {
+        let bm: i64 = mtime(bin)
+        let dirs: ptr<ProcStrs> = sl_of3("tools/" + name, "tools/hostlib", "tools/lsp")
+        sl_push(dirs, "tools/fir")
+        sl_push(dirs, "scripts/tools/lib")
+        sl_push(dirs, "lib/stdlib")
+        sl_push(dirs, "compiler/src")
+        let mut fresh: bool = true
+        let mut i: i32 = 0
+        while i < sl_len(dirs) and fresh {
+            if any_flow_newer(tc().root + "/" + sl_get(dirs, i), bm) {
+                fresh = false
+            }
+            i = i + 1
+        }
+        if fresh {
+            return bin
+        }
+    }
+    let driver: string = flow_resolve_flowc()
+    if s_len(driver) == 0 {
+        return ""
+    }
+    let fc: ptr<ProcCmd> = cmd(sl_of1(driver))
+    cmd_cwd(fc, tc().root)
+    cmd_env(fc, "FLOWC_BUNDLE", "1")
+    cmd_env(fc, "FLOWC_DIR", ".")
+    cmd_env(fc, "FLOWC_TYPECHECK", "1")
+    cmd_env(fc, "FLOWC_IN", src)
+    cmd_env(fc, "FLOWC_OUT", bin + ".c")
+    if run_out_to_err(fc) != 0 {
+        error_to(2, "flowc could not build " + src)
+        return ""
+    }
+    let tmp: string = bin + ".tmp." + s_itoa(pid())
+    let argv: ptr<ProcStrs> = sl_of3(cc_default(), "-O2", "-w")
+    sl_push2(argv, "-o", tmp)
+    sl_push(argv, bin + ".c")
+    sl_push(argv, "-lm")
+    if run_out_to_err(cmd(argv)) != 0 {
+        error_to(2, "C compiler could not build flow-" + name)
+        return ""
+    }
+    if not move_file(tmp, bin) {
+        return ""
+    }
+    return bin
+}
+
+# The first line of VERSION.
+export function flow_canonical_version() -> string {
+    let text: string = read_text(tc().root + "/VERSION")
+    let nl: i32 = s_find_byte(text, 10, 0)
+    if nl < 0 {
+        return text
+    }
+    return s_slice(text, 0, nl)
+}
+
+# ---------------------------------------------------------------------------
+# C flags and sanitizers (MISRA Phase 0, #269 / #270)
+# ---------------------------------------------------------------------------
+
+export function clang_warning_flags() -> ptr<ProcStrs> {
+    let f: ptr<ProcStrs> = sl_of3("-std=c11", "-D_DEFAULT_SOURCE", "-Wall")
+    sl_push(f, "-Wextra")
+    sl_push(f, "-Wno-unused-function")
+    sl_push(f, "-Wno-unused-variable")
+    sl_push(f, "-Wno-unused-parameter")
+    sl_push(f, "-Wno-error=implicit-function-declaration")
+    sl_push(f, "-Wno-error=int-conversion")
+    let profile: string = env("FLOW_PROFILE")
+    if s_eq(profile, "safety") or s_eq(profile, "flight") {
+        sl_push(f, "-Werror")
+        sl_push(f, "-Werror=implicit-function-declaration")
+        sl_push(f, "-Wno-strict-prototypes")
+        sl_push(f, "-Wno-c23-extensions")
+        sl_push(f, "-Wno-format")
+    }
+    return f
+}
+
+# FLOW_SANITIZE=ub,asan,tsan sets the switches; an unknown name exits 1.
+function apply_sanitize(cflags: ptr<ProcStrs>, ldflags: ptr<ProcStrs>) {
+    let sanitize: string = env("FLOW_SANITIZE")
+    if s_len(sanitize) > 0 {
+        let parts: ptr<ProcStrs> = s_split(sanitize, 44)
+        # `IFS=, read -ra` drops one trailing empty field.
+        let mut n: i32 = sl_len(parts)
+        if n > 0 and s_len(sl_get(parts, n - 1)) == 0 {
+            n = n - 1
+        }
+        let mut i: i32 = 0
+        while i < n {
+            let item: string = sl_get(parts, i)
+            if s_eq(item, "ub") or s_eq(item, "undefined") or s_eq(item, "ubsan") {
+                tc().san_ub = "1"
+            } elif s_eq(item, "asan") or s_eq(item, "address") {
+                tc().san_a = "1"
+            } elif s_eq(item, "tsan") or s_eq(item, "thread") {
+                tc().san_t = "1"
+            } elif s_len(item) > 0 {
+                error("Unknown sanitizer '" + item + "' (expected ub,asan,tsan)")
+                cli_exit(1)
+            }
+            i = i + 1
+        }
+    }
+    if s_eq(tc().san_ub, "1") {
+        sl_push2(cflags, "-fsanitize=undefined", "-fno-sanitize-recover=all")
+        sl_push2(cflags, "-g", "-fno-omit-frame-pointer")
+        sl_push(ldflags, "-fsanitize=undefined")
+    }
+    if s_eq(tc().san_a, "1") {
+        sl_push2(cflags, "-fsanitize=address", "-g")
+        sl_push(cflags, "-fno-omit-frame-pointer")
+        sl_push(ldflags, "-fsanitize=address")
+    }
+    if s_eq(tc().san_t, "1") {
+        sl_push2(cflags, "-fsanitize=thread", "-g")
+        sl_push(cflags, "-fno-omit-frame-pointer")
+        sl_push(ldflags, "-fsanitize=thread")
+    }
+}
+
+# FLOW_COLLECTED_CFLAGS / FLOW_COLLECTED_LDFLAGS
+let mut COLLECTED_CFLAGS: ptr<ProcStrs> = null
+let mut COLLECTED_LDFLAGS: ptr<ProcStrs> = null
+
+export function collect_cflags() {
+    COLLECTED_CFLAGS = clang_warning_flags()
+    COLLECTED_LDFLAGS = sl_new()
+    apply_sanitize(COLLECTED_CFLAGS, COLLECTED_LDFLAGS)
+    let extra: string = env("FLOW_CFLAGS")
+    if s_len(extra) > 0 {
+        sl_extend(COLLECTED_CFLAGS, s_words(extra))
+    }
+    let ld: string = env("FLOW_LDFLAGS")
+    if s_len(ld) > 0 {
+        sl_extend(COLLECTED_LDFLAGS, s_words(ld))
+    }
+}
+
+export function collected_cflags() -> ptr<ProcStrs> {
+    return COLLECTED_CFLAGS
+}
+
+export function collected_ldflags() -> ptr<ProcStrs> {
+    return COLLECTED_LDFLAGS
+}
+
+export function show_clang_flags() {
+    collect_cflags()
+    outln("Flow C compile flags (MISRA Phase 0):")
+    outln("  cflags:  " + sl_join(COLLECTED_CFLAGS, " "))
+    if sl_len(COLLECTED_LDFLAGS) > 0 {
+        outln("  ldflags: " + sl_join(COLLECTED_LDFLAGS, " "))
+    } else {
+        outln("  ldflags: (none beyond defaults)")
+    }
+    outln("  profile: " + env_or("FLOW_PROFILE", "default"))
+    outln("  opt:     -O" + env_or("FLOW_OPT_LEVEL", "2") + " (override with FLOW_OPT_LEVEL=0|1|2|3|s)")
+    outln("  sanitize: UBSAN=" + dflt(tc().san_ub, "0") + " ASAN=" + dflt(tc().san_a, "0") + " TSAN=" + dflt(tc().san_t, "0") + " FLOW_SANITIZE=" + env("FLOW_SANITIZE"))
+}
+
+function dflt(v: string, d: string) -> string {
+    if s_len(v) == 0 {
+        return d
+    }
+    return v
+}
+
+# ---------------------------------------------------------------------------
+# Concurrency runtime, OpenSSL, OpenMP, GPU
+# ---------------------------------------------------------------------------
+
+let mut CONC_SOURCES: ptr<ProcStrs> = null
+let mut CONC_CFLAGS: ptr<ProcStrs> = null
+let mut CONC_LDFLAGS: ptr<ProcStrs> = null
+let mut OPENSSL_PROBED: bool = false
+let mut OPENSSL_CFLAGS: ptr<ProcStrs> = null
+let mut OPENSSL_LDFLAGS: ptr<ProcStrs> = null
+let mut OPENMP_PROBED: bool = false
+let mut OPENMP_FLAGS: ptr<ProcStrs> = null
+
+export function conc_sources() -> ptr<ProcStrs> {
+    return CONC_SOURCES
+}
+
+export function conc_cflags() -> ptr<ProcStrs> {
+    return CONC_CFLAGS
+}
+
+export function conc_ldflags() -> ptr<ProcStrs> {
+    return CONC_LDFLAGS
+}
+
+# Run a probe compile quietly; true when it built.
+function probe(argv: ptr<ProcStrs>) -> bool {
+    let c: ptr<ProcCmd> = cmd(argv)
+    cmd_quiet_err(c)
+    return run(c) == 0
+}
+
+export function concurrency_flags() {
+    let rt: string = tc().root + "/runtime/"
+    CONC_SOURCES = sl_new()
+    let names: ptr<ProcStrs> = s_words("flow_concurrency.c flow_fiber.c flow_fctx_init.c flow_netpoll.c flow_netpoll_fiber.c flow_http_bench.c flow_tcp.c flow_race.c flow_cont.c flow_rt_support.c flow_rt_task_store.c flow_rt_fiber_async.c flow_rt_parallel.c flow_rt_cchan.c flow_rt_sysinfo.c flow_rt_crypto.c flow_tls.c")
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        sl_push(CONC_SOURCES, rt + sl_get(names, i))
+        i = i + 1
+    }
+    let m: string = uname_m()
+    if s_eq(m, "arm64") or s_eq(m, "aarch64") {
+        sl_push(CONC_SOURCES, rt + "flow_fctx_arm64.S")
+    } elif s_eq(m, "x86_64") or s_eq(m, "amd64") {
+        sl_push(CONC_SOURCES, rt + "flow_fctx_x86_64.S")
+    }
+    CONC_CFLAGS = sl_of1("-I" + tc().root + "/runtime")
+    CONC_LDFLAGS = sl_of1("-pthread")
+    if s_eq(uname_s(), "Darwin") {
+        sl_push2(CONC_LDFLAGS, "-framework", "CoreFoundation")
+    }
+    if not OPENSSL_PROBED {
+        OPENSSL_PROBED = true
+        OPENSSL_CFLAGS = sl_new()
+        OPENSSL_LDFLAGS = sl_new()
+        let mut prefix: string = ""
+        if have("brew") {
+            let c1: ptr<ProcCmd> = cmd(sl_of3("brew", "--prefix", "openssl@3"))
+            cmd_quiet_err(c1)
+            prefix = capture(c1)
+            if last_status() != 0 {
+                let c2: ptr<ProcCmd> = cmd(sl_of3("brew", "--prefix", "openssl"))
+                cmd_quiet_err(c2)
+                prefix = capture(c2)
+                if last_status() != 0 {
+                    prefix = ""
+                }
+            }
+        }
+        let probe_c: string = tc().root + "/build/.ossl_probe.c"
+        let probe_bin: string = tc().root + "/build/.ossl_probe"
+        let _m: bool = mkdir_p(tc().root + "/build")
+        let _w: bool = write_text(probe_c, "#include <openssl/ssl.h>\nint main(void){SSL_CTX_new(TLS_method());return 0;}\n")
+        let mut done: bool = false
+        if s_len(prefix) > 0 {
+            let a: ptr<ProcStrs> = sl_of3("clang", "-I" + prefix + "/include", probe_c)
+            sl_push(a, "-L" + prefix + "/lib")
+            sl_push2(a, "-lssl", "-lcrypto")
+            sl_push2(a, "-o", probe_bin)
+            if probe(a) {
+                OPENSSL_CFLAGS = sl_of2("-DFLOW_HAS_OPENSSL=1", "-I" + prefix + "/include")
+                OPENSSL_LDFLAGS = sl_of2("-L" + prefix + "/lib", "-Wl,-rpath," + prefix + "/lib")
+                sl_push2(OPENSSL_LDFLAGS, "-lssl", "-lcrypto")
+                done = true
+            }
+        }
+        if not done {
+            let pc: ptr<ProcCmd> = cmd(sl_of3("pkg-config", "--exists", "openssl"))
+            cmd_quiet_err(pc)
+            if have("pkg-config") and run(pc) == 0 {
+                let cf: string = capture(cmd(sl_of3("pkg-config", "--cflags", "openssl")))
+                let lf: string = capture(cmd(sl_of3("pkg-config", "--libs", "openssl")))
+                let a2: ptr<ProcStrs> = sl_of1("clang")
+                sl_extend(a2, s_words(cf))
+                sl_push(a2, probe_c)
+                sl_extend(a2, s_words(lf))
+                sl_push2(a2, "-o", probe_bin)
+                if probe(a2) {
+                    OPENSSL_CFLAGS = sl_of1("-DFLOW_HAS_OPENSSL=1")
+                    sl_extend(OPENSSL_CFLAGS, s_words(cf))
+                    OPENSSL_LDFLAGS = s_words(lf)
+                    done = true
+                }
+            }
+        }
+        if not done {
+            OPENSSL_CFLAGS = sl_of1("-DFLOW_HAS_OPENSSL=0")
+        }
+        rm_f(probe_c)
+        rm_f(probe_bin)
+    }
+    sl_extend(CONC_CFLAGS, OPENSSL_CFLAGS)
+    sl_extend(CONC_LDFLAGS, OPENSSL_LDFLAGS)
+    if not OPENMP_PROBED {
+        OPENMP_PROBED = true
+        OPENMP_FLAGS = sl_new()
+        let probe_c2: string = tc().root + "/build/.omp_probe.c"
+        let probe_bin2: string = tc().root + "/build/.omp_probe"
+        let _m2: bool = mkdir_p(tc().root + "/build")
+        let _w2: bool = write_text(probe_c2, "int main(void){return 0;}\n")
+        let b1: ptr<ProcStrs> = sl_of3("clang", "-fopenmp", probe_c2)
+        sl_push2(b1, "-o", probe_bin2)
+        sl_push(b1, "-lomp")
+        let b2: ptr<ProcStrs> = sl_of3("clang", "-fopenmp", probe_c2)
+        sl_push2(b2, "-o", probe_bin2)
+        let b3: ptr<ProcStrs> = sl_of3("clang", "-Xpreprocessor", "-fopenmp")
+        sl_push(b3, probe_c2)
+        sl_push2(b3, "-o", probe_bin2)
+        sl_push(b3, "-lomp")
+        if probe(b1) {
+            OPENMP_FLAGS = sl_of2("-fopenmp", "-lomp")
+        } elif probe(b2) {
+            OPENMP_FLAGS = sl_of1("-fopenmp")
+        } elif probe(b3) {
+            OPENMP_FLAGS = sl_of3("-Xpreprocessor", "-fopenmp", "-lomp")
+        }
+        rm_f(probe_c2)
+        rm_f(probe_bin2)
+    }
+    sl_extend(CONC_CFLAGS, OPENMP_FLAGS)
+    sl_extend(CONC_LDFLAGS, OPENMP_FLAGS)
+}
+
+let mut GPU_SOURCES: ptr<ProcStrs> = null
+let mut GPU_LDFLAGS: ptr<ProcStrs> = null
+
+export function gpu_sources() -> ptr<ProcStrs> {
+    return GPU_SOURCES
+}
+
+export function gpu_ldflags() -> ptr<ProcStrs> {
+    return GPU_LDFLAGS
+}
+
+export function gpu_link_flags() {
+    GPU_SOURCES = sl_new()
+    GPU_LDFLAGS = sl_new()
+    if s_eq(uname_s(), "Darwin") {
+        sl_push(GPU_SOURCES, tc().root + "/runtime/gpu_metal.m")
+        sl_push2(GPU_LDFLAGS, "-framework", "Metal")
+        sl_push2(GPU_LDFLAGS, "-framework", "Foundation")
+    }
+}
+
+# ---------------------------------------------------------------------------
+# The runtime archive (build/flowc_runtime/<key>/libflowrt.a)
+# ---------------------------------------------------------------------------
+
+
+export function rt_archive() -> string {
+    return tc().rt_archive
+}
+
+# FNV-1a over the key inputs, printed as two decimal halves ("a-b", the
+# shape the driver's `cksum | awk` key had).
+struct Fnv {
+    h: u64
+}
+
+function fnv_bytes(f: ptr<Fnv>, p: ptr<u8>, n: i64) {
+    let mut h: u64 = f.h
+    let mut i: i64 = 0
+    while i < n {
+        h = (h ^ (p[i] as u64)) * 1099511628211
+        i = i + 1
+    }
+    f.h = h
+}
+
+function fnv_str(f: ptr<Fnv>, s: string) {
+    fnv_bytes(f, s as ptr<u8>, s_len(s) as i64)
+}
+
+function fnv_file(f: ptr<Fnv>, path: string) {
+    let b: Bytes = read_bytes(path)
+    if b.len > 0 {
+        fnv_bytes(f, b.data, b.len)
+    }
+}
+
+function u32_str(v: u64) -> string {
+    let mut x: u64 = v & 4294967295
+    if x == 0 {
+        return "0"
+    }
+    let mut s: string = ""
+    while x > 0 {
+        let d: u64 = x % 10
+        s = s_slice("0123456789", d as i32, (d + 1) as i32) + s
+        x = x / 10
+    }
+    return s
+}
+
+export function flowc_runtime_archive(driver: string, cc_bin: string) -> bool {
+    concurrency_flags()
+    gpu_link_flags()
+    let c_srcs: ptr<ProcStrs> = sl_of1(tc().root + "/runtime/flow_python_embed.c")
+    sl_extend(c_srcs, CONC_SOURCES)
+    sl_extend(c_srcs, GPU_SOURCES)
+    let flow_srcs: ptr<ProcStrs> = sl_new()
+    let all: ptr<ProcStrs> = glob_suffix(tc().root + "/lib/runtime", ".flow")
+    let darwin: bool = s_eq(uname_s(), "Darwin")
+    let mut i: i32 = 0
+    while i < sl_len(all) {
+        let f: string = sl_get(all, i)
+        let base: string = path_stem(f, ".flow")
+        let mut skip: bool = false
+        if s_eq(base, "gpu_memory_stub") and darwin {
+            skip = true
+        }
+        if s_eq(base, "shader_host") or s_eq(base, "gfx_record") {
+            skip = true
+        }
+        if s_eq(base, "audio_device_stub") and s_eq(tc().skip_audio, "1") {
+            skip = true
+        }
+        if not skip and is_file(f) {
+            sl_push(flow_srcs, f)
+        }
+        i = i + 1
+    }
+    let fnv: ptr<Fnv> = malloc(8) as ptr<Fnv>
+    fnv.h = 14695981039346656037
+    fnv_str(fnv, "library\n" + cc_bin + "\n")
+    fnv_str(fnv, sl_join(COLLECTED_CFLAGS, "\n") + "\n" + sl_join(CONC_CFLAGS, "\n") + "\n")
+    fnv_str(fnv, sl_join(c_srcs, "\n") + "\n" + sl_join(flow_srcs, "\n") + "\n")
+    let mut k: i32 = 0
+    while k < sl_len(c_srcs) {
+        fnv_file(fnv, sl_get(c_srcs, k))
+        k = k + 1
+    }
+    k = 0
+    while k < sl_len(flow_srcs) {
+        fnv_file(fnv, sl_get(flow_srcs, k))
+        k = k + 1
+    }
+    fnv_file(fnv, driver)
+    let key: string = u32_str(fnv.h >> 32) + "-" + u32_str(fnv.h)
+    let rootdir: string = tc().root + "/build/flowc_runtime"
+    let dir: string = rootdir + "/" + key
+    tc().rt_archive = dir + "/libflowrt.a"
+    if is_file(tc().rt_archive) {
+        return true
+    }
+    if not mkdir_p(rootdir) {
+        return false
+    }
+    let tmp: string = mktemp_dir(rootdir + "/tmp.XXXXXX")
+    if s_len(tmp) == 0 {
+        return false
+    }
+    let objs: ptr<ProcStrs> = sl_new()
+    let mut j: i32 = 0
+    while j < sl_len(flow_srcs) {
+        let f: string = sl_get(flow_srcs, j)
+        let base: string = path_stem(f, ".flow")
+        let fc: ptr<ProcCmd> = cmd(sl_of1(driver))
+        cmd_env(fc, "FLOWC_LIBRARY", "1")
+        cmd_env(fc, "FLOWC_LENIENT", "1")
+        cmd_env(fc, "FLOWC_IN", f)
+        cmd_env(fc, "FLOWC_OUT", tmp + "/rt_" + base + ".c")
+        proc_stdout_capture_merged(fc)
+        let rc: i32 = run_without_env_capture(fc, sl_of2("FLOWC_BUNDLE", "FLOWC_EXPORT"), tmp + "/rt_" + base + ".log")
+        if rc != 0 {
+            error("flowc could not build runtime module " + base + ".flow")
+            errs(read_text(tmp + "/rt_" + base + ".log"))
+            rm_rf(tmp)
+            return false
+        }
+        let a: ptr<ProcStrs> = sl_of1(cc_bin)
+        sl_extend(a, COLLECTED_CFLAGS)
+        sl_push2(a, "-w", "-O2")
+        sl_extend(a, CONC_CFLAGS)
+        sl_push(a, "-I" + tc().root + "/runtime")
+        sl_push2(a, "-c", "-o")
+        sl_push(a, tmp + "/rt_" + base + ".o")
+        sl_push(a, tmp + "/rt_" + base + ".c")
+        if run_argv(a) != 0 {
+            error("C compilation failed for runtime module " + base + ".flow (flowc host)")
+            rm_rf(tmp)
+            return false
+        }
+        sl_push(objs, tmp + "/rt_" + base + ".o")
+        j = j + 1
+    }
+    let mut m: i32 = 0
+    while m < sl_len(c_srcs) {
+        let f: string = sl_get(c_srcs, m)
+        let base: string = path_drop_ext(path_basename(f))
+        let a: ptr<ProcStrs> = sl_of1(cc_bin)
+        sl_extend(a, COLLECTED_CFLAGS)
+        sl_push2(a, "-w", "-O2")
+        sl_extend(a, CONC_CFLAGS)
+        sl_push(a, "-I" + tc().root + "/runtime")
+        sl_push2(a, "-c", "-o")
+        sl_push(a, tmp + "/c_" + base + ".o")
+        sl_push(a, f)
+        if run_argv(a) != 0 {
+            error("C compilation failed for runtime source " + f + " (flowc host)")
+            rm_rf(tmp)
+            return false
+        }
+        sl_push(objs, tmp + "/c_" + base + ".o")
+        m = m + 1
+    }
+    rm_f(tmp + "/libflowrt.a")
+    let ar: ptr<ProcStrs> = sl_of3("ar", "rcs", tmp + "/libflowrt.a")
+    sl_extend(ar, objs)
+    if run_argv(ar) != 0 {
+        rm_rf(tmp)
+        return false
+    }
+    # Publish atomically; a concurrent build of the same key may have won.
+    if not move_file(tmp, dir) {
+        rm_rf(tmp)
+    }
+    return is_file(tc().rt_archive)
+}
+
+# Run with stdout and stderr (merged) written to `log`, and the named
+# variables unset (`env -u ... cmd > log 2>&1`).
+function run_without_env_capture(c: ptr<ProcCmd>, names: ptr<ProcStrs>, log: string) -> i32 {
+    let saved: ptr<ProcStrs> = sl_new()
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        let n: string = sl_get(names, i)
+        if env_isset(n) {
+            sl_push(saved, n + "=" + env(n))
+            env_unset(n)
+        }
+        i = i + 1
+    }
+    let rc: i32 = run_to_file(c, log, true)
+    let mut j: i32 = 0
+    while j < sl_len(saved) {
+        let kv: string = sl_get(saved, j)
+        let eq: i32 = s_find_byte(kv, 61, 0)
+        env_set(s_slice(kv, 0, eq), s_from(kv, eq + 1))
+        j = j + 1
+    }
+    return rc
+}
+
+function proc_stdout_capture_merged(c: ptr<ProcCmd>) {
+    cmd_capture_out(c)
+    cmd_merge_err(c)
+}
+
+# clang when there is one, else cc.
+export function cc_bin() -> string {
+    if have("clang") {
+        return "clang"
+    }
+    return "cc"
+}
+
+# True when a line of `text` is `[native]` after leading blanks
+# (grep '^[[:space:]]*\[native\]').
+function declares_native(text: string) -> bool {
+    let lines: ptr<ProcStrs> = s_lines(text)
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let l: string = sl_get(lines, i)
+        let mut j: i32 = 0
+        while j < s_len(l) and s_is_space(s_byte(l, j)) {
+            j = j + 1
+        }
+        if s_starts(s_from(l, j), "[native]") {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# The [native] C sources of the program's project and of its installed
+# packages: the package manager compiles each into a cached object under
+# <project>/build/flow_native/ and names the objects and link flags (#1085).
+# An empty list when no flow.toml declares a [native] table; null after
+# printing why when the sources do not build.
+export function flow_pkg_native_link_args(program: string, cc: string) -> ptr<ProcStrs> {
+    let args: ptr<ProcStrs> = sl_new()
+    if s_len(program) == 0 {
+        return args
+    }
+    let mut dir: string = abs_dir_physical(path_dirname(program))
+    if s_len(dir) == 0 {
+        return args
+    }
+    while not is_file(dir + "/flow.toml") {
+        if s_eq(dir, "/") {
+            return args
+        }
+        dir = path_dirname(dir)
+    }
+    let mut any: bool = declares_native(read_text(dir + "/flow.toml"))
+    let pkgs: ptr<ProcStrs> = list_dir(dir + "/flow_packages")
+    sl_sort(pkgs, false)
+    let mut i: i32 = 0
+    while i < sl_len(pkgs) and not any {
+        let t: string = dir + "/flow_packages/" + sl_get(pkgs, i) + "/flow.toml"
+        if is_file(t) and declares_native(read_text(t)) {
+            any = true
+        }
+        i = i + 1
+    }
+    if not any {
+        return args
+    }
+    let mut cxx: string = "c++"
+    if s_eq(cc, "clang") and have("clang++") {
+        cxx = "clang++"
+    }
+    let out_file: string = mktemp_file(tmp_base() + "/flow-native-link.XXXXXX")
+    if s_len(out_file) == 0 {
+        return null
+    }
+    let tool: string = flow_pkg_tool()
+    let mut rc: i32 = 1
+    if s_len(tool) == 0 {
+        errln(C_RED + "❌ Could not build the package manager (compiler/src/pkg_main.flow)." + C_NC)
+    } else {
+        let a: ptr<ProcStrs> = sl_of3(tool, "native-link", "--program")
+        sl_push(a, abs_file_physical(program))
+        sl_push2(a, "--out", out_file)
+        sl_push2(a, "--cc", cc)
+        sl_push2(a, "--cxx", cxx)
+        sl_push2(a, "--opt", "-O" + env_or("FLOW_OPT_LEVEL", "2"))
+        let c: ptr<ProcCmd> = cmd(a)
+        cmd_env(c, "FLOW_REPO_ROOT", tc().root)
+        rc = run_out_to_err(c)
+    }
+    if rc != 0 {
+        rm_f(out_file)
+        error("Could not build the [native] sources of " + dir)
+        return null
+    }
+    let lines: ptr<ProcStrs> = s_lines(read_text(out_file))
+    rm_f(out_file)
+    let mut k: i32 = 0
+    while k < sl_len(lines) {
+        let line: string = sl_get(lines, k)
+        k = k + 1
+        if s_len(line) == 0 {
+            continue
+        }
+        if s_eq(line, "@cxx") {
+            if s_eq(uname_s(), "Darwin") {
+                sl_push(args, "-lc++")
+            } else {
+                sl_push(args, "-lstdc++")
+            }
+        } else {
+            sl_push(args, line)
+        }
+    }
+    return args
+}
+
+# Link generated C with the runtime archive. Status.
+export function flowc_link_c(c_file: string, exe_file: string, program: string) -> i32 {
+    collect_cflags()
+    let cc: string = cc_bin()
+    let inc: ptr<ProcStrs> = sl_new()
+    if s_len(program) > 0 {
+        sl_push(inc, "-I" + path_dirname(program))
+    }
+    let native: ptr<ProcStrs> = flow_pkg_native_link_args(program, cc)
+    if native == null {
+        error("C compilation/linking failed (flowc host)")
+        return 1
+    }
+    let opt: string = "-O" + env_or("FLOW_OPT_LEVEL", "2")
+    if s_eq(env("FLOWC_NO_RUNTIME"), "1") {
+        let a: ptr<ProcStrs> = sl_of1(cc)
+        sl_extend(a, COLLECTED_CFLAGS)
+        sl_push(a, opt)
+        sl_extend(a, inc)
+        sl_extend(a, COLLECTED_LDFLAGS)
+        sl_push2(a, "-o", exe_file)
+        sl_push(a, c_file)
+        sl_extend(a, native)
+        sl_push(a, "-lm")
+        if run_argv(a) != 0 {
+            error("C compilation/linking failed (flowc host)")
+            return 1
+        }
+        return 0
+    }
+    let driver: string = flow_resolve_flowc()
+    if s_len(driver) == 0 {
+        return 1
+    }
+    if not flowc_runtime_archive(driver, cc) {
+        error("C compilation/linking failed (flowc host): no runtime archive")
+        return 1
+    }
+    let a: ptr<ProcStrs> = sl_of1(cc)
+    sl_extend(a, COLLECTED_CFLAGS)
+    sl_push(a, opt)
+    sl_extend(a, CONC_CFLAGS)
+    sl_push(a, "-I" + tc().root + "/runtime")
+    sl_extend(a, inc)
+    sl_push2(a, "-o", exe_file)
+    sl_push(a, c_file)
+    sl_extend(a, native)
+    sl_push(a, tc().rt_archive)
+    sl_extend(a, GPU_LDFLAGS)
+    sl_extend(a, CONC_LDFLAGS)
+    sl_extend(a, COLLECTED_LDFLAGS)
+    sl_push(a, "-lm")
+    if run_argv(a) != 0 {
+        error("C compilation/linking failed (flowc host)")
+        return 1
+    }
+    return 0
+}
+
+# The archive for links outside flowc_link_c; exits 1 when it cannot be
+# built (flow_runtime_flow_sources).
+let mut RUNTIME_FLOW_SOURCES: ptr<ProcStrs> = null
+
+export function runtime_flow_sources() -> ptr<ProcStrs> {
+    RUNTIME_FLOW_SOURCES = sl_new()
+    let cc: string = cc_bin()
+    let driver: string = flow_resolve_flowc()
+    if s_len(driver) == 0 {
+        cli_exit(1)
+    }
+    collect_cflags()
+    if not flowc_runtime_archive(driver, cc) {
+        error("flowc could not build the Flow runtime (lib/runtime/*.flow)")
+        cli_exit(1)
+    }
+    RUNTIME_FLOW_SOURCES = sl_of1(tc().rt_archive)
+    return RUNTIME_FLOW_SOURCES
+}
+
+# ---------------------------------------------------------------------------
+# Checks
+# ---------------------------------------------------------------------------
+
+# require_flow_file: exits 1 unless `program` names an existing .flow file.
+export function require_flow_file(program: string) {
+    if s_len(program) == 0 {
+        error("Usage: flow <command> <program.flow>")
+        cli_exit(1)
+    }
+    if not s_ends(program, ".flow") {
+        error("Expected a .flow file, got: " + program)
+        cli_exit(1)
+    }
+    if not is_file(program) {
+        error("Program not found: " + program)
+        cli_exit(1)
+    }
+}
+
+export function check_deps() {
+    let mode: string = flow_host_mode_sub()
+    if s_len(mode) == 0 {
+        cli_exit(1)
+    }
+    if not have("clang") and not have("cc") {
+        error("clang or cc is required")
+        cli_exit(1)
+    }
+}
+
+export function check_mlir_deps() {
+    resolve_llvm_path()
+    env_set("LLVM_PATH", tc().llvm)
+    if is_dir(tc().llvm) {
+        let path: string = env("PATH")
+        if not s_contains(":" + path + ":", ":" + tc().llvm + ":") {
+            env_set("PATH", tc().llvm + ":" + path)
+        }
+    }
+    if not is_exec(tc().llvm + "/mlir-opt") {
+        error("MLIR tools not found. Run './flow install' (or brew install llvm)")
+        cli_exit(1)
+    }
+    if not is_exec(tc().llvm + "/mlir-translate") {
+        error("mlir-translate not found. Run './flow install' (or brew install llvm)")
+        cli_exit(1)
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Compiling a program
+# ---------------------------------------------------------------------------
+
+export function compile_program_flowc(program: string) -> i32 {
+    require_flow_file(program)
+    let basename: string = path_stem(program, ".flow")
+    let build_dir: string = tc().build_root
+    mkdir_p_or_exit(build_dir)
+    info("Compiling " + program + " (host=flowc)...")
+    if flowc_emit_to_c(program, build_dir + "/" + basename + ".c") != 0 {
+        error("flowc could not compile " + program)
+        return 1
+    }
+    success("FLOW → C: " + basename + ".c")
+    if flowc_link_c(build_dir + "/" + basename + ".c", build_dir + "/" + basename, program) != 0 {
+        return 1
+    }
+    success("C → Executable: " + basename)
+    success("🚀 Ready to run: " + build_dir + "/" + basename)
+    return 0
+}
+
+export function compile_program(program: string) -> i32 {
+    let _m: string = flow_host_mode()
+    return compile_program_flowc(program)
+}
+
+# compiler/scripts/flow_to_mlir.sh ARGS...: status.
+export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
+    let argv: ptr<ProcStrs> = sl_of1(tc().root + "/compiler/scripts/flow_to_mlir.sh")
+    sl_extend(argv, args)
+    return run_argv(argv)
+}
+
+export function flow_emit_mlir_cmd(args: ptr<ProcStrs>) -> ptr<ProcCmd> {
+    let argv: ptr<ProcStrs> = sl_of1(tc().root + "/compiler/scripts/flow_to_mlir.sh")
+    sl_extend(argv, args)
+    return cmd(argv)
+}
+
+# The Python framework flags the driver added when Xcode ships Python3.
+export function py_cflags() -> ptr<ProcStrs> {
+    let fw: string = "/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
+    let hdr: string = fw + "/Python3.framework/Headers"
+    let l: ptr<ProcStrs> = sl_new()
+    if is_dir(hdr) {
+        sl_push2(l, "-I" + hdr, "-DFLOW_PY_EMBED")
+    }
+    return l
+}
+
+export function py_ldflags() -> ptr<ProcStrs> {
+    let fw: string = "/Applications/Xcode.app/Contents/Developer/Library/Frameworks"
+    let hdr: string = fw + "/Python3.framework/Headers"
+    let l: ptr<ProcStrs> = sl_new()
+    if is_dir(hdr) {
+        sl_push2(l, "-F" + fw, "-framework")
+        sl_push2(l, "Python3", "-Wl,-rpath," + fw)
+    }
+    return l
+}
+
+# Link lowered MLIR (LLVM IR) with the Flow runtime, and with the program's
+# @cEmbed C when `embed` names a file that exists (#1093: the MLIR emitter
+# writes it next to the .mlir). Status.
+export function flow_link_mlir_ll(ll: string, exe: string, embed: string) -> i32 {
+    gpu_link_flags()
+    concurrency_flags()
+    let rtf: ptr<ProcStrs> = runtime_flow_sources()
+    collect_cflags()
+    sl_extend(CONC_LDFLAGS, COLLECTED_LDFLAGS)
+    let a: ptr<ProcStrs> = sl_of1("clang")
+    sl_extend(a, COLLECTED_CFLAGS)
+    sl_push2(a, "-O2", "-fno-omit-frame-pointer")
+    sl_push(a, "-Wno-override-module")
+    sl_extend(a, py_cflags())
+    sl_extend(a, CONC_CFLAGS)
+    sl_push(a, "-I" + tc().root + "/runtime")
+    sl_push(a, ll)
+    if embed as ptr<u8> != null and is_file(embed) {
+        sl_push(a, embed)
+    }
+    sl_push(a, tc().root + "/runtime/flow_python_embed.c")
+    sl_extend(a, CONC_SOURCES)
+    sl_extend(a, rtf)
+    sl_extend(a, GPU_SOURCES)
+    sl_extend(a, py_ldflags())
+    sl_extend(a, GPU_LDFLAGS)
+    sl_extend(a, CONC_LDFLAGS)
+    sl_push2(a, "-lm", "-o")
+    sl_push(a, exe)
+    return run_argv(a)
+}
+
+export function compile_program_mlir(program: string) -> i32 {
+    require_flow_file(program)
+    let _m: string = flow_host_mode()
+    check_mlir_deps()
+    let basename: string = path_stem(program, ".flow")
+    let build_dir: string = tc().build_root
+    mkdir_p_or_exit(build_dir)
+    info("Compiling " + program + " (CPU backend=mlir)...")
+    if flow_emit_mlir(sl_of3("--lenient", program, build_dir + "/" + basename + ".mlir")) != 0 {
+        error("FLOW MLIR compilation failed")
+        cli_exit(1)
+    }
+    success("FLOW → MLIR: " + basename + ".mlir")
+    let lower: ptr<ProcStrs> = sl_of3(tc().root + "/compiler/scripts/mlir_lower.sh", build_dir + "/" + basename + ".mlir", build_dir + "/" + basename + ".ll")
+    if run_argv(lower) != 0 {
+        error("MLIR lowering failed (mlir-opt / mlir-translate)")
+        cli_exit(1)
+    }
+    success("MLIR → LLVM: " + basename + ".ll")
+    if flow_link_mlir_ll(build_dir + "/" + basename + ".ll", build_dir + "/" + basename, build_dir + "/" + basename + ".mlir.c") != 0 {
+        error("MLIR/LLVM compilation/linking failed")
+        cli_exit(1)
+    }
+    success("LLVM → Executable: " + basename)
+    success("🚀 Ready to run (mlir): " + build_dir + "/" + basename)
+    return 0
+}

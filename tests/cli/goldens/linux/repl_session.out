@@ -1,0 +1,54 @@
+[1mFLOW REPL v2.0.0[0m
+Type expressions, statements, or [93m:help[0m for commands
+Press [93mCtrl+D[0m or type [93m:quit[0m to exit
+
+[94mflow>[0m 
+[1mREPL Commands:[0m
+  [93m:help[0m      Show this help
+  [93m:quit[0m      Exit the REPL
+  [93m:vars[0m      Show defined variables
+  [93m:funcs[0m     Show defined functions
+  [93m:clear[0m     Clear all definitions
+  [93m:type <expr>[0m  Show the type of an expression
+
+[1mExamples:[0m
+  [92mlet x = 42[0m              Define a variable
+  [92mx * 2[0m                   Evaluate expression
+  [92mfunction add(a: i32, b: i32) -> i32 { return a + b }[0m
+  [92madd(1, 2)[0m               Call function
+
+[94mflow>[0m [92mx[0m = 42
+[94mflow>[0m 84
+[94mflow>[0m [92my[0m = 1.5
+[94mflow>[0m 3.0
+[94mflow>[0m [92mDefined function add(a: i32, b: i32) -> i32[0m
+[94mflow>[0m 45
+[94mflow>[0m [94m...>[0m [94m...>[0m [92mDefined function mul(a: i32, b: i32) -> i32[0m
+[94mflow>[0m 42
+[94mflow>[0m [92mDefined struct Point { x: i32, y: i32 }[0m
+[94mflow>[0m [1mVariables:[0m
+  [92mx[0m: auto = 42
+  [92my[0m: f64 = 1.5
+[94mflow>[0m [1mFunctions:[0m
+  [92mfunction add(a: i32, b: i32) -> i32[0m
+  [92mfunction mul(a: i32, b: i32) -> i32[0m
+[94mflow>[0m [93mType inference not fully implemented yet[0m
+[94mflow>[0m [91mUnknown command: :bogus[0m
+[94mflow>[0m 4.0
+[94mflow>[0m [92mx[0m = 43
+[94mflow>[0m 43
+[94mflow>[0m [92mr[0m = 2.5
+[94mflow>[0m 5.0
+[94mflow>[0m [92mDefined function noret(a: i32) -> void[0m
+[94mflow>[0m [1mFunctions:[0m
+  [92mfunction add(a: i32, b: i32) -> i32[0m
+  [92mfunction mul(a: i32, b: i32) -> i32[0m
+  [92mfunction noret(a: i32)[0m
+[94mflow>[0m Cleared all definitions
+[94mflow>[0m No variables defined
+[94mflow>[0m No functions defined
+[94mflow>[0m [91mVariable declaration needs an initializer[0m
+[94mflow>[0m 3
+[94mflow>[0m 14
+[94mflow>[0m 
+[93mGoodbye![0m

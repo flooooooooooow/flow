@@ -60,7 +60,7 @@ if [[ ! -f "$BOOT_C" ]]; then
 fi
 
 # --cc-only: the binary built from the checked-in bootstrap C and nothing
-# else. flow-driver builds its helper tools (pkg_sync, the package manager)
+# else. The flow CLI builds its helper tools (pkg_sync, the package manager)
 # with it, and flowc_host.sh starts from it.
 if [[ "${1:-}" != "--cc-only" ]] && compiler_sources_edited; then
     echo "ensure_flowc: compiler/src has local edits; building flowc from them" >&2

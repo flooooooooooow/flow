@@ -1,0 +1,7 @@
+[0;34mℹ️  Running GPU feature tests...[0m
+[0;34mℹ️  Running FLOW runtime tests...[0m
+[0;32m✅ ✓ tests/runtime/gpu_features.flow[0m
+----------------------------------------
+[0;32m✅ All 1 runtime tests passed![0m
+[0;34mℹ️  Running GPU codegen check (flow gpu, Metal)...[0m
+[0;32m✅ ✅ GPU codegen test passed![0m

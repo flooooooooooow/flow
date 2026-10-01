@@ -38,7 +38,7 @@ if [[ "$record" -eq 1 ]]; then
     cmd="${FLOW_CHECK_REF:?set FLOW_CHECK_REF to the reference command}"
     mkdir -p "$EXPECT"
 else
-    tool="$("$ROOT/flow-driver" check --build)"
+    tool="$("$ROOT/flow" check --build)"
     cmd="$tool"
     mkdir -p "$work/bin"
     for name in python python3; do

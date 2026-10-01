@@ -164,9 +164,27 @@ compiler/
 └── fixtures/            # compiler fixtures and parity goldens
 ```
 
+### The `flow` command
+
+`./flow` is a short POSIX sh stub. The command line itself is a Flow
+program, [`tools/flow_cli`](../tools/flow_cli/main.flow): argument parsing,
+the command table, the flowc and tool builds, C flags and sanitizers, the
+runtime archive and the link steps. On first use the stub builds flowc from
+`compiler/bootstrap/flowc_stage_a.c` with `cc`, compiles `tools/flow_cli` with
+it into `build/cli/flow`, and execs that binary. It rebuilds when a CLI source
+or the bootstrap C changes. A read-only install caches both binaries under
+`$XDG_CACHE_HOME/flow` (or `~/.cache/flow`) instead.
+
+The CLI starts external programs (cc, clang, mlir-opt, emcc, git, find)
+through `std.process` with argument vectors, so no shell parses them.
+`tests/cli/run.sh` pins its behaviour: stdout, stderr, exit code and files
+written for every subcommand and its error paths, per OS, against goldens
+recorded from the bash driver it replaced.
+
 ### Build Artifacts
 ```
 build/
+├── cli/flow             # The flow command line, built by ./flow
 ├── *.c                  # Generated C code
 ├── *.mlir               # Generated MLIR
 ├── *.o                  # Object files

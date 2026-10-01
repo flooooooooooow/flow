@@ -1,0 +1,11 @@
+[0;34mℹ️  Compiling src/main.flow (host=flowc)...[0m
+[0;34mℹ️  flowc emit via <ROOT>/compiler/build/flowc_bootstrap[0m
+[0;32m✅ FLOW → C: main.c[0m
+[0;32m✅ C → Executable: main[0m
+[0;32m✅ 🚀 Ready to run: <ROOT>/build/run.XXXXXX/main[0m
+[0;34mℹ️  Running main...[0m
+----------------------------------------
+project main
+----------------------------------------
+[0;32m✅ Program finished[0m
+Exit code: 0

@@ -1,7 +1,7 @@
 # Compile Flow, or LLVM IR, to an eBPF ELF object or a freestanding wasm32
 # module.
 #
-# Run through the shims (flow-driver runs them as `flow bpf` and
+# Run through the shims (the flow CLI runs them as `flow bpf` and
 # `flow wasm32`):
 #
 #   scripts/bpf_target.sh IN.flow|IN.ll -o OUT.o [--target bpfel]

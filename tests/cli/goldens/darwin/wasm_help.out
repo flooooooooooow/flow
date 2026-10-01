@@ -1,0 +1,7 @@
+[0;31m❌ Usage: flow wasm <program.flow> [--out DIR] [--legacy][0m
+[0;34mℹ️                   [--backend=c|mlir] [--link PATH] [--preload DIR@/MOUNT][0m
+[0;34mℹ️                   [--threads [--workers N]] [--fs memfs|idbfs][0m
+[0;34mℹ️  Writes .wasm + .js + a runnable index.html.[0m
+[0;34mℹ️  gfx programs get a canvas page; others print into the page.[0m
+[0;34mℹ️  Requires emcc (Emscripten). See docs/language/wasm.md[0m
+[0;34mℹ️  Whole gallery: scripts/build_wasm_gallery.sh[0m

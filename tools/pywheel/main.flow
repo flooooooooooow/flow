@@ -10,7 +10,7 @@
 # generated C wrappers match the Python generator. The Flow program's own C
 # comes from flowc (compiler/scripts/flowc_emit.sh), as it did there.
 #
-# Usage (flow-driver runs this):
+# Usage (the flow CLI runs this):
 #   flow-pywheel PROGRAM MODULE VERSION MODE OUT_DIR WORK_DIR REPO_ROOT
 #     MODULE   Python module name, "" for the program's file name
 #     MODE     "source" writes OUT_DIR/MODULE_ext.c and prints its path;

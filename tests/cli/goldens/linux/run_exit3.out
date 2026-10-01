@@ -1,0 +1,8 @@
+[0;34mℹ️  Compiling tests/cli/fixtures/exit3.flow (host=flowc)...[0m
+[0;34mℹ️  flowc emit via <ROOT>/compiler/build/flowc_bootstrap[0m
+[0;32m✅ FLOW → C: exit3.c[0m
+[0;32m✅ C → Executable: exit3[0m
+[0;32m✅ 🚀 Ready to run: <ROOT>/build/run.XXXXXX/exit3[0m
+[0;34mℹ️  Running exit3...[0m
+----------------------------------------
+about to exit 3

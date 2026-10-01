@@ -1,0 +1,5 @@
+# The smallest program the CLI goldens run.
+function main() -> i32 {
+    println("hello from the cli goldens")
+    return 0
+}

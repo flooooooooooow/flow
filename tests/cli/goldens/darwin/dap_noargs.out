@@ -1,0 +1,2 @@
+[0;31m❌ Usage: flow dap <program.flow>[0m
+[0;34mℹ️  IDE: VS Code FLOW debugger type (lldb-dap). CLI opens ./flow debug.[0m

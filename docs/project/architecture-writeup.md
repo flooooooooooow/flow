@@ -16,7 +16,7 @@ Flow is a classic front end with multiple back ends:
    - **Metal and WGSL codegen** (`tools/gpu/main.flow`, `flow gpu [--wgsl]`): the `@gpu` kernel path; fill shaders go through flowc (`compiler/src/shader_dsl.flow`).
    - **MLIR GPU + SPIR-V** (`src/flow/mlir_gpu_codegen.py`, `src/flow/mlir_spirv.py`): parallel cross-platform compute emit (`--mlir-gpu --emit-spirv`).
 
-The CLI (`flow` bash script and `src/flow/transpiler.py`) orchestrates these flows. CPU default remains **C**; MLIR links the same Flow runtime objects when used via `--backend=mlir` or `mlir-run`. GPU: Metal stays primary on Darwin; SPIR-V is emit-only until a Vulkan/MoltenVK loader lands.
+The CLI (`flow`, the Flow program in `tools/flow_cli`) orchestrates these flows. CPU default remains **C**; MLIR links the same Flow runtime objects when used via `--backend=mlir` or `mlir-run`. GPU: Metal stays primary on Darwin; SPIR-V is emit-only until a Vulkan/MoltenVK loader lands.
 
 **WebAssembly:** `./flow wasm` accepts the same `--backend=c|mlir` switch. C path is Flow→C→emcc; MLIR path is Flow→MLIR→LLVM IR→emcc (browser stubs only, no Metal). See [docs/language/wasm.md](../language/wasm.md).
 
