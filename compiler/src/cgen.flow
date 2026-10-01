@@ -1603,60 +1603,110 @@ function flowc_cgen_put_mangled_fn(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
 }
 
 # Find the best overload for a call based on argument types.
-# Returns the AST_FN node index of the best match.
-# For unsuffixed integer literals, prefers i32 over unsigned types.
+# Returns the AST_FN node index of the best match, or AST_NONE when the
+# candidates are incompatible or tied. This mirrors the semantic resolver:
+# ordinary exact compatibility runs first, then unsuffixed integer-literal
+# widening. A candidate with a different explicit arity is never considered.
 function flowc_cgen_resolve_overload(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, start: i32, end: i32, call_id: i32) -> i32 {
     let mut best: i32 = AST_NONE
     let mut best_score: i32 = 0 - 1
+    let mut best_kind: i32 = 0 - 1
+    let mut tied: i32 = 0
     let mut i: i32 = 0
     while i < arena.len {
         if arena.nodes[i].kind == AST_FN {
             if arena.nodes[i].c != AST_NONE {
                 if flowc_cgen_span_eq(src, start, end, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
-                # Score this candidate against the call arguments.
-                let mut score: i32 = 0
-                let mut arg: i32 = arena.nodes[call_id].a
-                let mut param: i32 = arena.nodes[i].a
-                let mut exact: i32 = 1
-                while arg != AST_NONE and param != AST_NONE {
-                    let arg_ty: i32 = flowc_cgen_infer_arg_type(w, arena, src, arg)
-                    let param_ty: i32 = arena.nodes[param].a
-                    if arena.nodes[arg].kind == AST_FLOAT and param_ty != AST_NONE {
-                        # A float literal matches f32 or f64, never an integer.
-                        if flowc_cgen_ty_is_float_name(arena, src, param_ty) == 1 {
-                            score = score + 10
-                        } else {
-                            score = score + 1
-                            exact = 0
+                    # Capability/effect parameters at the tail are supplied
+                    # by the emitter when the call omits them. They do not
+                    # change the source-level overload arity.
+                    let mut param_total: i32 = 0
+                    let mut implicit: i32 = 0
+                    let mut count_param: i32 = arena.nodes[i].a
+                    while count_param != AST_NONE {
+                        param_total = param_total + 1
+                        let pty: i32 = arena.nodes[count_param].a
+                        if pty != AST_NONE and arena.nodes[pty].kind == AST_TYPE and
+                           (arena.nodes[pty].c == AST_TYPE_CAPABILITY or
+                            flowc_eff_is_effect(w[0].eff, w[0].eff_len, src, arena.nodes[pty].name_start, arena.nodes[pty].name_end) == 1) {
+                            implicit = implicit + 1
                         }
-                    } elif arg_ty != AST_NONE and param_ty != AST_NONE {
-                        if flowc_cgen_span_eq(src, arena.nodes[arg_ty].name_start, arena.nodes[arg_ty].name_end, arena.nodes[param_ty].name_start, arena.nodes[param_ty].name_end) == 1 {
-                            score = score + 10
-                        } else {
-                            # Type mismatch: penalize but don't reject.
-                            score = score + 1
-                            exact = 0
-                        }
-                    } else {
-                        # Can't determine arg type. Give a small score.
-                        score = score + 1
+                        count_param = arena.nodes[count_param].next
                     }
-                    arg = arena.nodes[arg].next
-                    param = arena.nodes[param].next
-                }
-                # Prefer exact matches. Among exact matches, prefer the
-                # first one (i32 before u32 in source order for literals).
-                if exact == 1 and score > best_score {
-                    best = i
-                    best_score = score
-                } elif best == AST_NONE {
-                    best = i
-                    best_score = score
-                }
+                    let nargs: i32 = flowc_ast_chain_len(arena, arena.nodes[call_id].a)
+                    if param_total - implicit == nargs {
+                        let mut score: i32 = 0
+                        let mut kind: i32 = 2
+                        let mut arg: i32 = arena.nodes[call_id].a
+                        let mut param: i32 = arena.nodes[i].a
+                        let mut pidx: i32 = 0
+                        while arg != AST_NONE and pidx < nargs and param != AST_NONE {
+                            let arg_ty: i32 = flowc_cgen_infer_arg_type(w, arena, src, arg)
+                            let param_ty: i32 = arena.nodes[param].a
+                            let mut fit: i32 = 0
+                            if arena.nodes[arg].kind == AST_INT and param_ty != AST_NONE {
+                                if flowc_cgen_span_is(src, arena.nodes[param_ty].name_start, arena.nodes[param_ty].name_end, "i32") == 1 {
+                                    fit = 2
+                                } elif flowc_cgen_ty_is_int_name(arena, src, param_ty) == 1 {
+                                    fit = 1
+                                }
+                            } elif arena.nodes[arg].kind == AST_FLOAT and param_ty != AST_NONE {
+                                if flowc_cgen_span_is(src, arena.nodes[param_ty].name_start, arena.nodes[param_ty].name_end, "f64") == 1 {
+                                    fit = 2
+                                } elif flowc_cgen_span_is(src, arena.nodes[param_ty].name_start, arena.nodes[param_ty].name_end, "f32") == 1 {
+                                    fit = 1
+                                }
+                            } elif arena.nodes[arg].kind == AST_STRING and param_ty != AST_NONE and
+                                   flowc_cgen_span_is(src, arena.nodes[param_ty].name_start, arena.nodes[param_ty].name_end, "string") == 1 {
+                                fit = 2
+                            } elif arena.nodes[arg].kind == AST_BOOL and param_ty != AST_NONE and
+                                   flowc_cgen_span_is(src, arena.nodes[param_ty].name_start, arena.nodes[param_ty].name_end, "bool") == 1 {
+                                fit = 2
+                            } elif arg_ty != AST_NONE and param_ty != AST_NONE {
+                                if flowc_cgen_span_eq(src, arena.nodes[arg_ty].name_start, arena.nodes[arg_ty].name_end, arena.nodes[param_ty].name_start, arena.nodes[param_ty].name_end) == 1 {
+                                    fit = 2
+                                } elif flowc_cgen_type_is_span(arena, src, param_ty) == 1 and flowc_cgen_ty_is_array(arena, src, arg_ty) == 1 {
+                                    fit = 1
+                                }
+                            } else {
+                                # A sole overload may still be emitted when
+                                # the frontend could not infer an argument.
+                                fit = 0
+                            }
+                            if fit == 0 {
+                                if arg_ty == AST_NONE and arena.nodes[arg].kind != AST_INT and arena.nodes[arg].kind != AST_FLOAT and arena.nodes[arg].kind != AST_STRING and arena.nodes[arg].kind != AST_BOOL {
+                                    if kind > 0 { kind = 0 }
+                                } else {
+                                    kind = 0 - 1
+                                }
+                            } elif fit == 1 {
+                                if kind > 1 { kind = 1 }
+                                score = score + 1
+                            } else {
+                                score = score + 2
+                            }
+                            arg = arena.nodes[arg].next
+                            param = arena.nodes[param].next
+                            pidx = pidx + 1
+                        }
+                        if kind >= 0 {
+                            if kind > best_kind or (kind == best_kind and score > best_score) {
+                                best = i
+                                best_kind = kind
+                                best_score = score
+                                tied = 0
+                            } elif kind == best_kind and score == best_score {
+                                tied = 1
+                            }
+                        }
+                    }
                 }
             }
         }
         i = i + 1
+    }
+    if tied == 1 {
+        return AST_NONE
     }
     return best
 }
