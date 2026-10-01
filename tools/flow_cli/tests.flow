@@ -5,6 +5,7 @@
 
 import "tools/flow_cli/sys.flow"
 import "tools/flow_cli/toolchain.flow"
+import "tools/flow_cli/flowc_build.flow"
 import "tools/flow_cli/build.flow"
 import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg }
 
@@ -181,11 +182,16 @@ export function run_tests(args: ptr<ProcStrs>) -> i32 {
                 file_mode = "--lenient"
                 warning("~ " + rel_path + " (marked flow:lenient)")
             }
-            let tc: ptr<ProcCmd> = cmd(sl_of3(root() + "/compiler/scripts/flowc_emit.sh", file_mode, program))
-            proc_arg(tc, c_file)
-            cmd_env(tc, "FLOWC_BIN", tier_flowc)
-            let transpile_output: string = capture_merged(tc)
-            if last_status() != 0 {
+            # flowc_emit FILE_MODE PROGRAM C_FILE, stdout and stderr together.
+            sink_push(SINK_BUF, SINK_SAME)
+            let call: ptr<EmitCall> = flowc_emit_call(root(), sl_of3(file_mode, program, c_file), sl_of1("FLOWC_BIN=" + tier_flowc))
+            let mut transpile_output: string = s_chomp_all(sink_pop())
+            let mut transpile_rc: i32 = call.rc
+            if call.rc == 0 {
+                transpile_output = capture_merged(call.cmd)
+                transpile_rc = last_status()
+            }
+            if transpile_rc != 0 {
                 error("✗ " + rel_path + " (transpile failed)")
                 outln("    Error output:")
                 out(head_of(transpile_output + "\n", 10))

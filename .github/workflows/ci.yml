@@ -167,7 +167,7 @@ jobs:
       - run: ./flow tool shell_ratchet
 
   # Relative links in tracked markdown, as a reader meets them on GitHub.
-  # check_wiki_links.sh validates the built site instead; the two catch
+  # `flow tool wiki_links` validates the built site instead; the two catch
   # different breakage. Both are Flow programs built with cc alone, so no
   # toolchain setup.
   doc-links:
@@ -175,10 +175,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: scripts/check_doc_links.sh
-      - run: scripts/check_tool_layout.sh
-      - run: scripts/check_makefile_contract.sh
-      - run: scripts/check_project_state_sources.sh
+      - run: ./flow tool doc_links
+      - run: ./flow tool tool_layout
+      - run: ./flow tool makefile_contract
+      - run: ./flow tool project_state
       - name: Jules dispatch backpressure tests
         run: ./flow tool scripts/tools/jules_dispatch/test.flow
       - name: Benchmark harness tests (no Python)
@@ -193,7 +193,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: scripts/check_doc_coverage.sh
+      - run: ./flow tool doc_coverage
 
   # Documented examples are compiled. A ratchet, not a wall: the examples that
   # do not build today are recorded in docs/generated/example-status.json and
@@ -268,6 +268,7 @@ jobs:
     if: |
       needs.changes.outputs.src == 'true' ||
       needs.changes.outputs.tests == 'true' ||
+      needs.changes.outputs.examples == 'true' ||
       needs.changes.outputs.libs == 'true' ||
       needs.changes.outputs.runtime == 'true'
     steps:
@@ -285,6 +286,9 @@ jobs:
           # documented "# flow:lenient - <reason>" pragma are exempt.
           ./flow test --tier2 --strict
 
+      - name: Rosetta Code examples (run and compare output)
+        run: ./flow test-runtime examples/rosetta
+
   flowc-bootstrap:
     name: flowc self-host roundtrip
     runs-on: ubuntu-latest
@@ -296,7 +300,7 @@ jobs:
       - uses: actions/checkout@v7
 
       # No Python: the compiler host is flowc built from compiler/src by the
-      # bootstrap binary (compiler/scripts/flowc_host.sh), and the per-module
+      # bootstrap binary (compiler/scripts/flowc_host.flow), and the per-module
       # headers come from the Flow tool scripts/tools/c_to_hdr.
       - name: c_to_hdr goldens
         run: ./flow tool tests/c_to_hdr/run.flow
@@ -391,7 +395,10 @@ jobs:
         run: ./flow tool tests/flow_run/run.flow
 
       - name: Package command goldens (init, publish, build, clean)
-        run: ./scripts/check_pkg_commands.sh
+        run: ./flow tool scripts/check_pkg_commands.flow
+
+      - name: Package dependency goldens (install, sync, add, search, info)
+        run: ./flow tool scripts/check_pkg_parity.flow
 
       - name: GPU shader goldens (flow gpu)
         run: ./flow tool tests/gpu/run.flow
@@ -455,10 +462,10 @@ jobs:
 
       # The default `flow run` / `flow compile` path from a clean compiler/build
       # and build/: flowc comes from ensure_flowc (bootstrap C with cc), and the
-      # dependency sync check is scripts/tools/pkg_sync. The script stubs python
+      # dependency sync check is scripts/tools/pkg_sync. The check stubs python
       # and python3 to log and exit 127, and fails if either is called.
       - name: flow run with python and python3 stubbed to exit 127
-        run: ./scripts/check_run_without_python.sh
+        run: ./flow tool scripts/check_run_without_python.flow
 
       - name: Package the distributable compiler
         run: ./flow tool compiler/scripts/package_flowc.flow
@@ -557,7 +564,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build flowc from the bootstrap C
-        run: bash compiler/scripts/ensure_flowc.sh
+        run: ./flow tool compiler/scripts/ensure_flowc.flow
       - name: parity_lowering
         run: timeout 20m ./flow tool compiler/scripts/parity_lowering.flow
       - name: parity_field_dsl
@@ -659,7 +666,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Build flowc from the bootstrap C
-        run: bash compiler/scripts/ensure_flowc.sh
+        run: ./flow tool compiler/scripts/ensure_flowc.flow
 
       # Crash pins, deep nesting and 30s of seeded mutation; fails on a
       # signal or a hang.

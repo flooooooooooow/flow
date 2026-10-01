@@ -1,0 +1,56 @@
+$ flow_pkg add --git file://@WORK@/gitsrc/mylib --name mine --branch stable --subdir pkgs/sub
+[exit 0]
+== stdout
+[92m✓ Added mine = { git = "file://@WORK@/gitsrc/mylib", branch = "stable", subdir = "pkgs/sub" }[0m
+[92m✓ Installed mine from git (file://@WORK@/gitsrc/mylib/pkgs/sub)[0m
+[94m  pinned rev a0bc2e0c97ca[0m
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+description = ""
+author = ""
+license = "MIT"
+entry = "src/main.flow"
+
+[dependencies]
+mine = { git = "file://@WORK@/gitsrc/mylib", branch = "stable", subdir = "pkgs/sub" }
+
+[dev-dependencies]
+
+[build]
+host = "flowc"
+# test_command = "flow run tests/test_main.flow"
+
+[conventions]
+# avoid = [
+#   { pattern = "reverse for loop", reason = "generates incorrect step direction (#410)", workaround = "use while with explicit decrement" },
+# ]
+
+[patterns]
+# math = "use fabs((x) as f64) as f32 for single-precision abs"
+== flow.lock
+{
+  "version": 1,
+  "packages": {
+    "mine": {
+      "version": {
+        "git": "file://@WORK@/gitsrc/mylib",
+        "branch": "stable",
+        "subdir": "pkgs/sub"
+      },
+      "source": "git",
+      "resolved": {
+        "git": "file://@WORK@/gitsrc/mylib",
+        "branch": "stable",
+        "subdir": "pkgs/sub",
+        "rev": "a0bc2e0c97ca330e1cb88b93dd8e6d2216b43cfa"
+      }
+    }
+  }
+}
+== flow_packages
+D flow_packages
+D flow_packages/mine
+D flow_packages/mine/src
+F flow_packages/mine/src/lib.flow -rw-r--r-- 1170334700 44

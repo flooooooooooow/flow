@@ -1,0 +1,27 @@
+# Rosetta Code task: Factorial
+# Compute the factorial of a number with an iterative loop.
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function factorial(n: i32) -> i32 {
+    let mut result: i32 = 1
+    let mut i: i32 = 2
+    while i <= n {
+        result = result * i
+        i = i + 1
+    }
+    return result
+}
+
+function main() -> i32 {
+    let mut n: i32 = 0
+    while n <= 10 {
+        printf("%d", n)
+        print("! = ")
+        printf("%d\n", factorial(n))
+        n = n + 1
+    }
+    return 0
+}

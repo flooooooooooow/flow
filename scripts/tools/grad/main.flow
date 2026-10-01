@@ -1,8 +1,8 @@
 # Gradient code generation for a scalar f32 Flow function, by reverse mode
 # over a static tape. A prototype: it handles a small subset of Flow.
 #
-#   grad.sh c    <file.flow> <function>   C program: value + gradients
-#   grad.sh flow <file.flow> <function>   Flow module: Grad_<f>, grad_<f>
+#   flow tool grad c    <file.flow> <function>   C program: value + gradients
+#   flow tool grad flow <file.flow> <function>   Flow module: Grad_<f>, grad_<f>
 #
 # Supported inside the differentiated function:
 #   f32 literals, parameters, let-bound locals, + - * /, unary -,
@@ -1485,7 +1485,7 @@ function die(msg: string) -> i32 {
 
 function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     if argc != 4 {
-        ft_errln("usage: grad.sh {c|flow} <file.flow> <function_name>")
+        ft_errln("usage: flow tool grad {c|flow} <file.flow> <function_name>")
         return 2
     }
     let mode_arg: string = argv[1] as string
@@ -1496,7 +1496,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         mode = 1
     }
     if mode < 0 {
-        ft_errln("usage: grad.sh {c|flow} <file.flow> <function_name>")
+        ft_errln("usage: flow tool grad {c|flow} <file.flow> <function_name>")
         return 2
     }
     let path: string = argv[2] as string

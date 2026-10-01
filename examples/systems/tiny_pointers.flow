@@ -203,18 +203,17 @@ function hash_u32(x: i32, salt: i32) -> i32 {
 
 # xorshift32 PRNG. Deterministic per seed, so the whole demo is reproducible.
 function rng_next(state: ptr<i32>) -> i32 {
-    let mut x: i32 = state[0]
+    # Keep the bit generator unsigned. Signed left shifts become invalid when
+    # the high bit is set, which occurs during the scaled churn benchmark.
+    let mut x: u32 = state[0] as u32
     if x == 0 {
-        x = 2463534242
+        x = 2463534242 as u32
     }
     x = x ^ (x << 13)
     x = x ^ (x >> 17)
     x = x ^ (x << 5)
-    state[0] = x
-    if x < 0 {
-        x = 0 - x
-    }
-    return x
+    state[0] = x as i32
+    return (x & 2147483647) as i32
 }
 
 # Distinct keys via modular multiplication: key_i = i·11469 mod 2^24.

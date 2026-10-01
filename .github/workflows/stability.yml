@@ -1,3 +1,4 @@
+# ACTIONS-INTENDED: public repository; its CI runs on GitHub Actions.
 name: Stability contract
 
 on:
@@ -6,7 +7,7 @@ on:
     paths:
       - 'STABILITY.md'
       - 'stability/**'
-      - 'scripts/check_stability_manifest.sh'
+      - 'tools/flow_cli/**'
       - 'scripts/tools/stability_manifest/**'
       - 'scripts/tools/lib/**'
       - 'scripts/tools/build_tool.sh'
@@ -20,7 +21,7 @@ on:
     paths:
       - 'STABILITY.md'
       - 'stability/**'
-      - 'scripts/check_stability_manifest.sh'
+      - 'tools/flow_cli/**'
       - 'scripts/tools/stability_manifest/**'
       - 'scripts/tools/lib/**'
       - 'scripts/tools/build_tool.sh'
@@ -43,10 +44,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Validate manifest schema and repository paths
-        run: scripts/check_stability_manifest.sh
+        run: ./flow tool stability_manifest
       - name: Require complete classification for RC/final qualification
         if: >-
           startsWith(github.ref, 'refs/tags/v1.0.0-rc.') ||
           github.ref == 'refs/tags/v1.0.0' ||
           inputs.require_complete == true
-        run: scripts/check_stability_manifest.sh --require-complete
+        run: ./flow tool stability_manifest --require-complete

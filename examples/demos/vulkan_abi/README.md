@@ -14,5 +14,5 @@ Generated files (do not edit by hand):
 
 Regenerate:
 ```
-./scripts/gen_abi_bindings.sh examples/demos/vulkan_abi/renderer.abi
+./flow tool abi_bindings examples/demos/vulkan_abi/renderer.abi
 ```

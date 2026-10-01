@@ -13,7 +13,7 @@ extern {
 }
 
 function shim() -> string {
-    return t_root() + "/scripts/wasm_build.sh"
+    return t_root() + "/flow"
 }
 
 function hello() -> string {
@@ -25,7 +25,8 @@ function snake() -> string {
 }
 
 function builder(program: string, args: ptr<ProcStrs>) -> ptr<ProcCmd> {
-    let argv: ptr<ProcStrs> = sl_of2(shim(), program)
+    let argv: ptr<ProcStrs> = sl_of3(shim(), "tool", "wasm_build")
+    sl_push2(argv, "build", program)
     sl_extend(argv, args)
     return cmd(argv)
 }

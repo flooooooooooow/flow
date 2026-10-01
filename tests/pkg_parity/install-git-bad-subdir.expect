@@ -1,0 +1,25 @@
+$ flow_pkg install
+[exit 0]
+== stdout
+[94mInstalling dependencies...[0m
+[91mGit dependency sub: subdir 'nope' not found in repo[0m
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+entry = "src/main.flow"
+
+[dependencies]
+sub = { git = "file://@WORK@/gitsrc/mylib", subdir = "nope" }
+
+[dev-dependencies]
+== flow.lock
+== flow_packages
+D flow_packages
+D flow_packages/.git-staging-sub
+G flow_packages/.git-staging-sub/.git HEAD=a0bc2e0c97ca330e1cb88b93dd8e6d2216b43cfa
+F flow_packages/.git-staging-sub/lib.flow -rw-r--r-- 1607108927 50
+D flow_packages/.git-staging-sub/pkgs
+D flow_packages/.git-staging-sub/pkgs/sub
+D flow_packages/.git-staging-sub/pkgs/sub/src
+F flow_packages/.git-staging-sub/pkgs/sub/src/lib.flow -rw-r--r-- 1170334700 44

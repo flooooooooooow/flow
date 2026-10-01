@@ -1,0 +1,29 @@
+# Rosetta Code task: 100 doors
+# There are 100 doors, all closed. On pass k you toggle every k-th door.
+# After 100 passes, print which doors are open. The open doors are the
+# perfect squares.
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function main() -> i32 {
+    let mut open: array<bool, 101> = [false; 101]
+    let mut pass: i32 = 1
+    while pass <= 100 {
+        let mut door: i32 = pass
+        while door <= 100 {
+            open[door] = open[door] == false
+            door = door + pass
+        }
+        pass = pass + 1
+    }
+    let mut d: i32 = 1
+    while d <= 100 {
+        if open[d] {
+            printf("door %d is open\n", d)
+        }
+        d = d + 1
+    }
+    return 0
+}

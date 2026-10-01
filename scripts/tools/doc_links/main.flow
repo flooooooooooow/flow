@@ -1,6 +1,6 @@
 # Check that relative links in tracked markdown resolve to real files.
 #
-# Complements scripts/check_wiki_links.sh, which validates the *built* wiki
+# Complements ./flow tool wiki_links, which validates the *built* wiki
 # under build/wiki. This one validates the repo as it sits on GitHub, where
 # most readers meet it. The two catch different things: a link can be fine on
 # the deployed site and dead in the tree, or the reverse.
@@ -10,13 +10,13 @@
 # GENERATED (is_generated) and skipped, because they are correct for the audience that
 # follows them.
 #
-# Run through scripts/check_doc_links.sh, which leaves `git ls-files` output
-# in build/doc-links/ (Flow cannot spawn git):
+# Run it as `./flow tool doc_links` from anywhere in the repository. It
+# works from the repository root and reads the index with `git ls-files`:
 #
-#   check_doc_links.sh              report and exit 1 on breakage
-#   check_doc_links.sh --list-ok    also list what was skipped
-#   check_doc_links.sh --slug TEXT  print the heading id for TEXT
-#   check_doc_links.sh --anchors F  print every anchor page F offers, sorted
+#   flow tool doc_links              report and exit 1 on breakage
+#   flow tool doc_links --list-ok    also list what was skipped
+#   flow tool doc_links --slug TEXT  print the heading id for TEXT
+#   flow tool doc_links --anchors F  print every anchor page F offers, sorted
 #
 # Links are resolved against the git index rather than the filesystem. A
 # working tree accumulates untracked build output, and resolving against it
@@ -25,14 +25,13 @@
 import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_read_file, ft_starts, ft_ends, ft_slice, ft_from, ft_find_byte, ft_split_lines, ft_normpath, ft_dirname, ft_basename, ft_join, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_sort, ft_set_new, ft_set_add, ft_set_has, ft_map_new, ft_map_get, ft_map_put, StrList, StrSet, StrMap }
 import .unicode { uc_decode, uc_len, uc_is_word, uc_is_space, uc_lower_str, uc_strip, uc_put, uc_to_cps, uc_count }
 import .mdtext { md_sanitize, md_split_ws }
+import .repo { rp_enter_root, rp_capture, rp_status, rp_argv2, rp_argv3 }
 
 extern {
     function malloc(size: i64) -> ptr<void>
 }
 
-const PROG: string = "check_doc_links.sh"
-const TRACKED: string = "build/doc-links/tracked.txt"
-const MARKDOWN: string = "build/doc-links/markdown.txt"
+const PROG: string = "flow tool doc_links"
 
 # GENERATED: basenames produced by scripts/build_wiki.py into the published site.
 function is_generated(name: string) -> bool {
@@ -519,10 +518,14 @@ function help_text() -> string {
 }
 
 function run_check(list_ok: bool) -> i32 {
-    let tracked_text: string = ft_read_file(TRACKED)
-    let md_text: string = ft_read_file(MARKDOWN)
-    if tracked_text as ptr<u8> == null or md_text as ptr<u8> == null {
-        ft_errln(PROG + ": missing " + TRACKED + "; run scripts/check_doc_links.sh")
+    let tracked_text: string = rp_capture(rp_argv2("git", "ls-files"))
+    if rp_status() != 0 {
+        ft_errln(PROG + ": git ls-files failed")
+        return 1
+    }
+    let md_text: string = rp_capture(rp_argv3("git", "ls-files", "*.md"))
+    if rp_status() != 0 {
+        ft_errln(PROG + ": git ls-files failed")
         return 1
     }
     let idx: ptr<Index> = build_index(ft_split_lines(tracked_text))
@@ -662,6 +665,10 @@ function run_check(list_ok: bool) -> i32 {
 }
 
 function main(argc: i32, argv: ptr<string>) -> i32 {
+    if rp_enter_root() == false {
+        ft_errln(PROG + ": cannot enter the repository root")
+        return 1
+    }
     let mut list_ok: bool = false
     let mut i: i32 = 1
     while i < argc {

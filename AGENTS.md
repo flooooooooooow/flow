@@ -98,9 +98,9 @@ Link with `-lm`: the proof layer puts math calls into flowc, and Linux does
 not link libm by default.
 
 ```bash
-# 1. Selftest the edited compiler. flowc_host.sh builds a flowc from the
+# 1. Selftest the edited compiler. flowc_host.flow builds a flowc from the
 #    current compiler/src with the binary of the checked-in bootstrap C.
-env -u FLOWC_IN -u FLOWC_OUT "$(./compiler/scripts/flowc_host.sh)"
+env -u FLOWC_IN -u FLOWC_OUT "$(./flow tool compiler/scripts/flowc_host.flow)"
 # Look for "flowc: PASS" at the end.
 
 # 2. Regenerate: self-emit from the previous bootstrap until the C reaches a
@@ -151,14 +151,14 @@ If multiple agents are editing `compiler/src/` simultaneously:
 2. **Regenerate bootstrap C last.** Only regenerate after all `compiler/src/`
    edits are done and the selftest of the edited compiler passes:
    ```bash
-   env -u FLOWC_IN -u FLOWC_OUT "$(./compiler/scripts/flowc_host.sh)"
+   env -u FLOWC_IN -u FLOWC_OUT "$(./flow tool compiler/scripts/flowc_host.flow)"
    # Look for "flowc: PASS" at the end
    ```
 3. **Commit bootstrap C in a separate commit** from source edits, with a
    message like `fix: regenerate bootstrap C after <change>`. This avoids
    merge conflicts on the large generated file.
 4. **If the old bootstrap cannot compile your sources**, do not regenerate
-   the bootstrap C. Fix the source first. flowc_host.sh prints the error.
+   the bootstrap C. Fix the source first. flowc_host.flow prints the error.
 
 ### Current in-flight work
 

@@ -1,0 +1,15 @@
+$ flow_pkg search zzzz_nothing
+[exit 0]
+== stdout
+[93mNo packages matched 'zzzz_nothing'[0m
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+entry = "src/main.flow"
+
+[dependencies]
+
+[dev-dependencies]
+== flow.lock
+== flow_packages

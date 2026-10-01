@@ -234,7 +234,7 @@ FLOW_GFX_RECORD_DIR=/tmp/frames FLOW_GFX_RECORD_FRAMES=120 \
   ./flow record examples/evolution/lorenz_gfx.flow
 
 # All README demos as GIFs:
-scripts/record_demos.sh
+./flow tool record_demos
 ```
 
 Scripted input for games uses `FLOW_GFX_RECORD_KEYS`; see

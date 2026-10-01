@@ -279,7 +279,7 @@ resets are `when v reaches threshold { v becomes reset }`.
 Run them with `./flow record examples/neuro/<name>.flow --frames 90 --out
 build/frames --gif build/<name>.gif`, or windowed with `./flow gfx`.
 Gallery: [docs/demos/neuro.md](../docs/demos/neuro.md); regenerate with
-`scripts/record_demos.sh --group neuro`.
+`./flow tool record_demos --group neuro`.
 
 ### Evolutionary biology (`evoleco/`)
 Fifteen live graphics simulations for evolutionary biologists (population
@@ -295,7 +295,7 @@ textbook measurement before the window opens.
 
 Run with `./flow gfx examples/evoleco/<name>.flow` or headless
 `./flow record`. Gallery: [docs/demos/evoleco.md](../docs/demos/evoleco.md);
-regenerate with `scripts/record_demos.sh --group evoleco`.
+regenerate with `./flow tool record_demos --group evoleco`.
 
 ### Planet (`planet/`)
 Seven staged gfx demos of the cubesphere planet pipeline in
@@ -308,7 +308,7 @@ gates a stage measurement before the window opens.
 
 Run with `./flow gfx examples/planet/<name>.flow` or headless
 `./flow record`. Gallery: [docs/demos/planet.md](../docs/demos/planet.md);
-regenerate with `scripts/record_demos.sh --group planet`.
+regenerate with `./flow tool record_demos --group planet`.
 
 ### Procedural generation (`procgen/`)
 Eight gated gfx demos of noise, heightmaps, caves, WFC dungeons, Voronoi
@@ -322,7 +322,7 @@ regions, islands, and biome tile maps (see
 
 Run with `./flow gfx examples/procgen/<name>.flow` or headless
 `./flow record`. Gallery: [docs/demos/procgen.md](../docs/demos/procgen.md);
-regenerate with `scripts/record_demos.sh --group procgen`.
+regenerate with `./flow tool record_demos --group procgen`.
 
 ### Dynamics (`dynamics/`)
 Dynamical systems, analysis, and control via `stdlib/dynamics` and the

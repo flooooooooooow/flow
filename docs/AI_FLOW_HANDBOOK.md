@@ -188,7 +188,7 @@ binary. A flowc failure is a Flow failure: there is no second C compiler to
 check against. Report it with the smallest program that shows it.
 
 For C only, without linking, use
-`compiler/scripts/flowc_emit.sh [--strict|--lenient] [--no-checks] IN.flow OUT.c`.
+`./flow tool compiler/scripts/flowc_emit.flow [--strict|--lenient] [--no-checks] IN.flow OUT.c`.
 
 ```bash
 ./flow run examples/basics/fibonacci.flow
@@ -1643,7 +1643,7 @@ Run the documentation link or example checks relevant to the edited files.
 | Show version | `./flow version` |
 | Show command help | `./flow help` |
 | Run a program | `./flow run file.flow` |
-| Emit C only | `compiler/scripts/flowc_emit.sh file.flow out.c` |
+| Emit C only | `./flow tool compiler/scripts/flowc_emit.flow file.flow out.c` |
 | Compile only | `./flow compile file.flow` |
 | Use MLIR CPU | `./flow run file.flow --backend=mlir` |
 | Emit MLIR | `./flow mlir file.flow` |

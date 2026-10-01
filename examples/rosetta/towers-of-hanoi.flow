@@ -1,0 +1,23 @@
+# Rosetta Code task: Towers of Hanoi
+# Move a stack of disks from one peg to another, one disk at a time,
+# never placing a larger disk on a smaller one.
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function hanoi(n: i32, src: i32, dst: i32, aux: i32) {
+    if n == 0 {
+        return
+    }
+    hanoi(n - 1, src, aux, dst)
+    printf("move disk %d", n)
+    printf(" from peg %d", src)
+    printf(" to peg %d\n", dst)
+    hanoi(n - 1, aux, dst, src)
+}
+
+function main() -> i32 {
+    hanoi(3, 1, 3, 2)
+    return 0
+}

@@ -1,11 +1,17 @@
 # Generate docs/library/stdlib-api.md from lib/stdlib/*.flow export
-# signatures. Run through scripts/gen_stdlib_docs.sh from the repository
-# root; the work is in scripts/tools/lib/wiki_stdlib.flow, which the wiki
+# signatures. Run it as `./flow tool gen_stdlib_docs` from anywhere in the
+# repository; it works from the repository root. The work is in scripts/tools/lib/wiki_stdlib.flow, which the wiki
 # build shares.
 
 import .proc { pr_cwd }
 import .wiki_stdlib { wsd_generate }
+import .repo { rp_enter_root }
+import .text { ft_errln }
 
 function main() -> i32 {
+    if rp_enter_root() == false {
+        ft_errln("gen_stdlib_docs: cannot enter the repository root")
+        return 1
+    }
     return wsd_generate(pr_cwd())
 }

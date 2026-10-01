@@ -1,0 +1,14 @@
+$ flow_pkg add
+[exit 2]
+== stdout
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+entry = "src/main.flow"
+
+[dependencies]
+
+[dev-dependencies]
+== flow.lock
+== flow_packages

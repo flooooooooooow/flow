@@ -4,11 +4,11 @@
 # Rust, and the Python subjects in benchmarks/baselines/python/publish/, then
 # writes benchmarks/RESULTS.md. Rust and Python are skipped when rustc or a
 # working python3 is missing. Run through
-# benchmarks/run_publish.sh:
+# `./flow tool bench_publish`:
 #
-#   run_publish.sh            full run, writes RESULTS.md
-#   run_publish.sh --quick    1 repetition, no report
-#   run_publish.sh --reps N
+#   flow tool bench_publish            full run, writes RESULTS.md
+#   flow tool bench_publish --quick    1 repetition, no report
+#   flow tool bench_publish --reps N
 #
 # Method:
 # - Each program times only its workload with a monotonic clock and prints
@@ -171,7 +171,7 @@ function compile_all(d: ptr<Data>, have_rust: bool) -> void {
         let bd: string = build_dir()
         tc[b] = timed("clang\t-O3\t-march=native\t-lm\t" + pub_dir() + "/c/" + name + ".c\t-o\t" + bd + "/" + name + "_c")
         let gen_c: string = bd + "/" + name + "_flow.c"
-        tt[b] = timed(root() + "/compiler/scripts/flowc_emit.sh\t--lenient\t" + pub_dir() + "/flow/" + name + ".flow\t" + gen_c)
+        tt[b] = timed(root() + "/flow\ttool\t" + root() + "/compiler/scripts/flowc_emit.flow\t--lenient\t" + pub_dir() + "/flow/" + name + ".flow\t" + gen_c)
         tl[b] = timed("clang\t-O3\t-march=native\t-lm\t" + gen_c + "\t-o\t" + bd + "/" + name + "_flow")
         if have_rust {
             tr[b] = timed("rustc\t-C\topt-level=3\t-C\ttarget-cpu=native\t" + pub_dir() + "/rust/" + name + ".rs\t-o\t" + bd + "/" + name + "_rust")
@@ -445,7 +445,7 @@ function write_report(d: ptr<Data>, have_rust: bool, path: string) -> void {
     o = o + "- Python: " + python_v + "\n"
     o = o + "- Rust: " + rust_v + "\n\n"
     o = o + "## Reproduce\n\n"
-    o = o + "```bash\n./benchmarks/run_publish.sh\n```\n\n"
+    o = o + "```bash\n./flow tool bench_publish\n```\n\n"
     o = o + "This regenerates benchmarks/RESULTS.md in place. A full run takes\n"
     o = o + "a few minutes; most of that is the Python repetitions.\n"
     if ft_write_file(path, o) == false {
@@ -477,11 +477,11 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         } elif ft_starts(a, "--reps=") {
             reps = atoi(ft_from(a, 7))
         } elif ft_eq(a, "-h") or ft_eq(a, "--help") {
-            ft_outln("usage: run_publish.sh [-h] [--quick] [--reps REPS]")
+            ft_outln("usage: flow tool bench_publish [-h] [--quick] [--reps REPS]")
             return 0
         } else {
-            ft_errln("usage: run_publish.sh [-h] [--quick] [--reps REPS]")
-            ft_errln("run_publish.sh: error: unrecognized arguments: " + a)
+            ft_errln("usage: flow tool bench_publish [-h] [--quick] [--reps REPS]")
+            ft_errln("flow tool bench_publish: error: unrecognized arguments: " + a)
             return 2
         }
         i = i + 1

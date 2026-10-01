@@ -1,12 +1,12 @@
 # Flow challenge checker: confirm a submission uses the language forms a
 # challenge requires, then compile and run it.
 #
-# Run through challenges/flow-specific/check.sh from anywhere:
+# Run it as `./flow tool challenge_check` from anywhere:
 #
-#   check.sh list
-#   check.sh check F01 path/to/answer.flow [--syntax-only] [--timeout N]
-#   check.sh scan file.flow...    syntax verdict of every challenge per file
-#   check.sh self-test            unit checks for the matcher and stripper
+#   flow tool challenge_check list
+#   flow tool challenge_check check F01 path/to/answer.flow [--syntax-only] [--timeout N]
+#   flow tool challenge_check scan file.flow...    syntax verdict of every challenge per file
+#   flow tool challenge_check self-test            unit checks for the matcher and stripper
 #
 # The shim passes the repository root in FLOW_REPO_ROOT. Rules live in
 # challenges/flow-specific/catalog.json as Python-syntax regular
@@ -34,10 +34,10 @@ extern {
     function atoi(s: string) -> i32
 }
 
-const PROG: string = "check.sh"
+const PROG: string = "flow tool challenge_check"
 const CATALOG_REL: string = "challenges/flow-specific/catalog.json"
-const USAGE: string = "usage: check.sh [-h] {list,check,scan,self-test} ..."
-const CHECK_USAGE: string = "usage: check.sh check [-h] [--syntax-only] [--timeout TIMEOUT] challenge_id submission"
+const USAGE: string = "usage: flow tool challenge_check [-h] {list,check,scan,self-test} ..."
+const CHECK_USAGE: string = "usage: flow tool challenge_check check [-h] [--syntax-only] [--timeout TIMEOUT] challenge_id submission"
 
 struct Catalog {
     j: ptr<Json>

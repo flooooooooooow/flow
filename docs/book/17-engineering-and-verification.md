@@ -22,7 +22,7 @@ module, effect, DSL, and runtime work.
 Strict compilation turns type and effect findings into failures:
 
 ```bash
-compiler/scripts/flowc_emit.sh --strict program.flow build/program.c
+./flow tool compiler/scripts/flowc_emit.flow --strict program.flow build/program.c
 ```
 
 A good diagnostic names the source location, the failed rule, the actual and

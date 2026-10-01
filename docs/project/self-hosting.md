@@ -172,8 +172,8 @@ flow blocks and the shader DSL, and it is now the only C compiler.
 - Thin `./flow` shim. `FLOW_HOST=flowc` is the only value; `auto` is treated
   as flowc, and `python` stops with an error pointing to flowc.
   `FLOWC_BIN=<path>` picks a flowc binary.
-- Resolve driver via `compiler/scripts/ensure_flowc.sh`, which builds flowc
-  from the checked-in bootstrap C. `compiler/scripts/flowc_host.sh` prints a
+- Resolve driver via `compiler/scripts/ensure_flowc.flow`, which builds flowc
+  from the checked-in bootstrap C. `compiler/scripts/flowc_host.flow` prints a
   flowc built from the current `compiler/src`.
 - CI: after `roundtrip.flow`, smoke `FLOW_HOST=flowc` on Stage-A basics.
 - Example and benchmark jobs run on flowc.
@@ -201,8 +201,8 @@ flow blocks and the shader DSL, and it is now the only C compiler.
   under the same shims. CI job `flowc self-host (no Python)` has no
   `setup-python` step and repeats both checks.
 
-  `ensure_flowc.sh` builds this. It once fell back to a Python Gen0
-  roundtrip; that fallback is gone, and `flowc_host.sh` builds a flowc from
+  `ensure_flowc.flow` builds this. It once fell back to a Python Gen0
+  roundtrip; that fallback is gone, and `flowc_host.flow` builds a flowc from
   the current `compiler/src` with the bootstrap binary.
 
   The checked-in C cannot drift: `bootstrap_from_c.sh --verify` runs in

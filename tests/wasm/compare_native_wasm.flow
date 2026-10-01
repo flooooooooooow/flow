@@ -3,7 +3,7 @@
 #
 # The native build lowers the program with compiler/scripts/flow_to_llvm.sh
 # and links it into a small C caller; the wasm build is `flow wasm32`
-# (scripts/wasm32_target.sh), run with runtime/wasm/flow_runtime.mjs. The
+# (`./flow wasm32`), run with runtime/wasm/flow_runtime.mjs. The
 # results must agree to 1e-6. Prints one JSON line:
 #   {"abs_error": ..., "native_mlir": ..., "source": ..., "wasm32": ...}
 #
@@ -56,8 +56,9 @@ function main() -> i32 {
     let native: string = capture(cmd(sl_of1(work + "/native")))
     check(last_status())
 
-    let wv: ptr<ProcStrs> = sl_of3("scripts/wasm32_target.sh", SOURCE, "-o")
-    sl_push2(wv, work + "/alloc_sum.wasm", "--export")
+    let wv: ptr<ProcStrs> = sl_of3("./flow", "wasm32", SOURCE)
+    sl_push2(wv, "-o", work + "/alloc_sum.wasm")
+    sl_push(wv, "--export")
     sl_push2(wv, "alloc_sum", "-O")
     sl_push(wv, "O2")
     check(run_argv(wv))

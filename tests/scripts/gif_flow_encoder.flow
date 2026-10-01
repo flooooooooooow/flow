@@ -53,8 +53,10 @@ function build_fixture(f: ptr<Fixture>) {
     let example: string = t_root() + "/examples/graphics/gif_writer.flow"
     let td: string = t_work() + "/gif_demo"
     let _m: bool = mkdir_p(td)
-    let emit: ptr<ProcCmd> = cmd(sl_of3("compiler/scripts/flowc_emit.sh", "--strict", example))
-    proc_arg(emit, td + "/gif_writer.c")
+    let emit_args: ptr<ProcStrs> = sl_of3(t_root() + "/flow", "tool", "compiler/scripts/flowc_emit.flow")
+    sl_push(emit_args, "--strict")
+    sl_push2(emit_args, example, td + "/gif_writer.c")
+    let emit: ptr<ProcCmd> = cmd(emit_args)
     if run_logged(emit, td + "/emit.log") != 0 {
         f.err = "flowc_emit failed: " + tail5(td + "/emit.log")
         return

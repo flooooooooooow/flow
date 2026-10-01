@@ -111,7 +111,7 @@ flowc emits every exported function under its plain name. It can also emit
 versioned ABI aliases when compiling a library:
 
 ```bash
-compiler/scripts/flowc_emit.sh --library --export add --export scale library.flow build/library.c
+./flow tool compiler/scripts/flowc_emit.flow --library --export add --export scale library.flow build/library.c
 ```
 
 ## 11.9 Native project sources

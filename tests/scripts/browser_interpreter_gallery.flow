@@ -96,7 +96,11 @@ function defines_main(code: string) -> bool {
 # which is why tools/doc_examples/blocks.flow exists.
 function gallery_programs() -> ptr<ProcStrs> {
     let c: ptr<ProcCmd> = cmd(sl_of3("scripts/check_doc_examples.sh", "blocks", gallery_path()))
-    let text: string = capture_raw(c)
+    let mut text: string = capture_raw(c)
+    let json_start: i32 = s_find(text, "[", 0)
+    if json_start > 0 {
+        text = s_from(text, json_start)
+    }
     let _w: bool = write_text(t_tmp() + "/blocks.json", text)
     let j: ptr<Json> = tj_parse(text)
     let programs: ptr<ProcStrs> = sl_new()

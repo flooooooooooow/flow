@@ -340,14 +340,14 @@ to build the wheel. See
 ./flow mlir <file>             # Emit MLIR (requires LLVM/MLIR tools)
 ```
 
-`FLOWC_BIN=<path>` picks a flowc binary. `compiler/scripts/flowc_emit.sh IN.flow OUT.c` writes C only.
+`FLOWC_BIN=<path>` picks a flowc binary. `./flow tool compiler/scripts/flowc_emit.flow IN.flow OUT.c` writes C only.
 
 ```bash
 # Fuzz the compiler
 ./flow tool tests/fuzz/run.flow --seconds 30
 
 # Regenerate examples compile-status table
-scripts/verify_examples.sh
+./flow tool verify_examples
 ```
 
 ### Editor support

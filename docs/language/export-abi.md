@@ -9,7 +9,7 @@ same shape.
 ## Flags
 
 ```
-compiler/scripts/flowc_emit.sh --export foo --export bar prog.flow prog.c
+./flow tool compiler/scripts/flowc_emit.flow --export foo --export bar prog.flow prog.c
 FLOWC_EXPORT="foo,bar" FLOWC_IN=prog.flow FLOWC_OUT=prog.c flowc
 ```
 
@@ -45,7 +45,7 @@ overload-resolution changes.
 ## Emscripten usage
 
 ```
-compiler/scripts/flowc_emit.sh --library --export add prog.flow build/prog.c
+./flow tool compiler/scripts/flowc_emit.flow --library --export add prog.flow build/prog.c
 emcc build/prog.c -o build/prog.js \
   -sEXPORTED_FUNCTIONS=_flow_export_add \
   -sEXPORTED_RUNTIME_METHODS=ccall,cwrap

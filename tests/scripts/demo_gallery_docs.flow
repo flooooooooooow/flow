@@ -142,7 +142,7 @@ function check_photoreal_gallery_generator_tracks_all_fsl_entries() -> i32 {
     if not a_eq(s_itoa(count_of(page, "<figure class=\"demo-tile")), "64", "demo tiles") {
         return T_FAIL
     }
-    if not a_file_contains(page_path(), "record_shader_gallery.sh --group photoreal") {
+    if not a_file_contains(page_path(), "flow tool shader_record --group photoreal") {
         return T_FAIL
     }
     return T_PASS

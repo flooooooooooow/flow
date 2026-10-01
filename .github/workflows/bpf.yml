@@ -1,3 +1,4 @@
+# ACTIONS-INTENDED: public repository; its CI runs on GitHub Actions.
 name: bpfel backend
 
 on:
@@ -5,7 +6,7 @@ on:
     paths:
       - 'scripts/tools/llvm_target/**'
       - 'scripts/tools/lib/**'
-      - 'scripts/bpf_target.sh'
+      - 'tools/flow_cli/**'
       - 'compiler/scripts/flow_to_llvm.sh'
       - 'compiler/scripts/flow_to_mlir.sh'
       - 'compiler/scripts/mlir_lower.sh'
@@ -20,7 +21,7 @@ on:
     paths:
       - 'scripts/tools/llvm_target/**'
       - 'scripts/tools/lib/**'
-      - 'scripts/bpf_target.sh'
+      - 'tools/flow_cli/**'
       - 'compiler/scripts/flow_to_llvm.sh'
       - 'compiler/scripts/flow_to_mlir.sh'
       - 'compiler/scripts/mlir_lower.sh'
@@ -63,7 +64,7 @@ jobs:
 
       - name: Compile Flow through MLIR and LLVM to eBPF ELF
         run: |
-          scripts/bpf_target.sh tests/fixtures/bpf/answer.flow \
+          ./flow bpf tests/fixtures/bpf/answer.flow \
             --target bpfel \
             -O 2 \
             -o /tmp/answer.bpf.o
@@ -75,7 +76,7 @@ jobs:
 
       - name: Compile Flow socket-filter program with BPF metadata
         run: |
-          scripts/bpf_target.sh tests/fixtures/bpf/socket_filter.flow \
+          ./flow bpf tests/fixtures/bpf/socket_filter.flow \
             --target bpfel \
             --entry socket_filter \
             --section socket \
@@ -99,7 +100,7 @@ jobs:
             ret i32 0
           }
           EOF
-          if scripts/bpf_target.sh /tmp/invalid.ll -o /tmp/invalid.o 2>/tmp/reject.log; then
+          if ./flow bpf /tmp/invalid.ll -o /tmp/invalid.o 2>/tmp/reject.log; then
             echo 'bpfel unexpectedly accepted malloc dependency' >&2
             exit 1
           fi

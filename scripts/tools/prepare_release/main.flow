@@ -1,18 +1,20 @@
 # Prepare a Flow release branch from one small release-notes file.
 #
-# Run through scripts/prepare_release.sh:
+# Run it as `./flow tool prepare_release`:
 #
-#   prepare_release.sh --version 1.0.2 --release-date 2026-09-20 \
+#   flow tool prepare_release --version 1.0.2 --release-date 2026-09-20 \
 #       --notes .github/releases/1.0.2.md [--root DIR]
 #
-# Steps: bump the canonical version with sync_version.sh, add the notes body
-# to docs/project/CHANGELOG.md under "## Unreleased", rewrite the current
-# release paragraph and the release-history table in CHANGELOG.md, then
-# verify with sync_version.sh --check and check_changelog.sh.
+# Steps: bump the canonical version with `flow tool sync_version`, add the
+# notes body to docs/project/CHANGELOG.md under "## Unreleased", rewrite the
+# current release paragraph and the release-history table in CHANGELOG.md,
+# then verify with `flow tool sync_version --check` and
+# `flow tool changelog_check`, all run through the root's own ./flow.
 #
-# The shim passes the repository root in PREPARE_RELEASE_ROOT; --root and a
-# relative --notes resolve the way the Python script did (--root against the
-# caller's directory, --notes against the root).
+# The root is --root, else PREPARE_RELEASE_ROOT, else FLOW_REPO_ROOT (set by
+# `flow tool`). --root and a relative --notes resolve the way the Python
+# script did (--root against the caller's directory, --notes against the
+# root).
 
 import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_byte, ft_at, ft_starts, ft_find, ft_contains, ft_slice, ft_from, ft_replace, ft_repr, ft_read_file, ft_write_file, ft_itoa, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
 import .unicode { uc_strip, uc_decode, uc_is_space }
@@ -23,9 +25,9 @@ extern {
     function getenv(name: string) -> string
 }
 
-const PROG: string = "prepare_release.sh"
+const PROG: string = "flow tool prepare_release"
 function usage_text() -> string {
-    return "usage: prepare_release.sh [-h] --version VERSION --release-date RELEASE_DATE\n                          --notes NOTES [--root ROOT]\n"
+    return "usage: flow tool prepare_release [-h] --version VERSION\n                                 --release-date RELEASE_DATE --notes NOTES\n                                 [--root ROOT]\n"
 }
 
 # Const strings joined with + compile to pointer addition (#967).
@@ -404,6 +406,12 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     let mut date: string = null as string
     let mut notes_arg: string = null as string
     let mut root_arg: string = getenv("PREPARE_RELEASE_ROOT")
+    if root_arg as ptr<u8> == null or ft_len(root_arg) == 0 {
+        root_arg = getenv("FLOW_REPO_ROOT")
+    }
+    if root_arg as ptr<u8> == null or ft_len(root_arg) == 0 {
+        root_arg = "."
+    }
     let extras: ptr<StrList> = ft_list_new()
     let mut i: i32 = 1
     while i < argc {
@@ -505,10 +513,11 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
         return fail(nt[0].error)
     }
 
-    let sv_cmd: string = "bash " + pr_quote(root + "/scripts/sync_version.sh") + " --set " + pr_quote(version) + " --release-date " + pr_quote(date)
+    let flow: string = pr_quote(root + "/flow")
+    let sv_cmd: string = flow + " tool sync_version --set " + pr_quote(version) + " --release-date " + pr_quote(date)
     let rc1: i32 = run_in(root, sv_cmd)
     if rc1 != 0 {
-        return called_process_error("sync_version.sh --set", rc1)
+        return called_process_error("flow tool sync_version --set", rc1)
     }
     if update_detailed_changelog(root, version, date, nt[0].body) != 0 {
         return 1
@@ -516,13 +525,13 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     if update_root_changelog(root, version, date, nt[0].headline) != 0 {
         return 1
     }
-    let rc2: i32 = run_in(root, "bash " + pr_quote(root + "/scripts/sync_version.sh") + " --check")
+    let rc2: i32 = run_in(root, flow + " tool sync_version --check")
     if rc2 != 0 {
-        return called_process_error("sync_version.sh --check", rc2)
+        return called_process_error("flow tool sync_version --check", rc2)
     }
-    let rc3: i32 = run_in(root, "bash " + pr_quote(root + "/scripts/check_changelog.sh"))
+    let rc3: i32 = run_in(root, flow + " tool changelog_check")
     if rc3 != 0 {
-        return called_process_error("check_changelog.sh", rc3)
+        return called_process_error("flow tool changelog_check", rc3)
     }
     let vtext: string = ft_read_file(root + "/VERSION")
     if vtext as ptr<u8> == null or (ft_eq(vtext, version + "\n") == false and ft_eq(vtext, version) == false) {

@@ -13,7 +13,7 @@ extern {
 }
 
 function checker(args: ptr<ProcStrs>) -> ptr<ProcStrs> {
-    let argv: ptr<ProcStrs> = sl_of2("bash", t_root() + "/scripts/check_doc_coverage.sh")
+    let argv: ptr<ProcStrs> = sl_of3(t_root() + "/flow", "tool", "doc_coverage")
     sl_extend(argv, args)
     return argv
 }
