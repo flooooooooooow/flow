@@ -52,6 +52,7 @@ let mut CTX: ptr<Ctx> = null
 
 function cleanup() {
     let c: ptr<Ctx> = CTX
+    let _left: i32 = leftovers(true)
     let mut i: i32 = 0
     while i < sl_len(c.pids) {
         let p: i32 = s_atoi(sl_get(c.pids, i), 0)
@@ -59,6 +60,140 @@ function cleanup() {
         let _w: i32 = bg_wait(p)
         i = i + 1
     }
+}
+
+# `ps -axo pid=,ppid=,command=` as rows of three fields.
+function ps_rows() -> ptr<ProcStrs> {
+    let p: ptr<ProcCmd> = proc_cmd("ps")
+    proc_arg(p, "-axo")
+    proc_arg(p, "pid=,ppid=,command=")
+    proc_stdout(p, PROC_CAPTURE)
+    proc_stderr(p, PROC_NULL)
+    return s_lines(proc_run(p).stdout)
+}
+
+# Field `k` (0 pid, 1 ppid, 2 command) of a ps row.
+function ps_field(row: string, k: i32) -> string {
+    let mut i: i32 = 0
+    let mut f: i32 = 0
+    while f <= k {
+        while i < s_len(row) and s_byte(row, i) == 32 {
+            i = i + 1
+        }
+        if f == 2 {
+            return s_from(row, i)
+        }
+        let start: i32 = i
+        while i < s_len(row) and s_byte(row, i) != 32 {
+            i = i + 1
+        }
+        if f == k {
+            return s_slice(row, start, i)
+        }
+        f = f + 1
+    }
+    return ""
+}
+
+# TMPDIR for the playground servers: work/tmp, without the double slash a
+# TMPDIR ending in / leaves in work (the reply normalisation needs single
+# slashes).
+function pg_tmp() -> string {
+    let c: ptr<Ctx> = CTX
+    return s_replace(c.work, "//", "/") + "/tmp"
+}
+
+# Processes still running from the playground's temp directories under this
+# run's TMPDIR (programs a killed server left behind, #1134). With `kill`,
+# each one gets SIGKILL. Returns how many there were.
+function leftovers(kill: bool) -> i32 {
+    let c: ptr<Ctx> = CTX
+    if s_len(c.work) == 0 {
+        return 0
+    }
+    let prefix: string = pg_tmp() + "/flow-playground-"
+    let rows: ptr<ProcStrs> = ps_rows()
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < sl_len(rows) {
+        if s_starts(ps_field(sl_get(rows, i), 2), prefix) {
+            n = n + 1
+            if kill {
+                let _k: bool = bg_kill(s_atoi(ps_field(sl_get(rows, i), 0), 0), 9)
+            }
+        }
+        i = i + 1
+    }
+    return n
+}
+
+# Wait up to `secs` seconds for leftovers() to reach zero; true when it did.
+function no_leftovers_within(secs: i32) -> bool {
+    let deadline: i64 = proc_now_ms() + (secs as i64) * 1000
+    while leftovers(false) > 0 {
+        if proc_now_ms() >= deadline {
+            return false
+        }
+        proc_sleep_ms(250)
+    }
+    return true
+}
+
+function pass_or_fail(name: string, ok: bool, why: string) {
+    let c: ptr<Ctx> = CTX
+    if ok {
+        outln("PASS " + name)
+        c.pass = c.pass + 1
+    } else {
+        outln("FAIL " + name + ": " + why)
+        c.fail = c.fail + 1
+    }
+}
+
+# A server killed while its program runs: the program it started must not
+# outlive it for long. Starts a server with a 1 s run limit, posts a
+# program that never ends, kills the server and its connection child with
+# SIGKILL once the program runs, and waits for the CPU-time limit to end
+# the orphan.
+function orphan_case(playground: ptr<ProcStrs>, loop: string) {
+    let c: ptr<Ctx> = CTX
+    let pg: ptr<ProcStrs> = sl_copy(playground)
+    sl_push2(pg, "--port", "PORT")
+    sl_push2(pg, "--run-timeout", "1")
+    sl_push(pg, "--transpile-timeout=60")
+    start_server("compile API on", c.work + "/orphan.log", pg)
+    let server: i32 = s_atoi(sl_get(c.pids, sl_len(c.pids) - 1), 0)
+    let lc: ptr<ProcStrs> = sl_of3("curl", "-s", "-i")
+    sl_push2(lc, "--max-time", "120")
+    sl_push2(lc, "-X", "POST")
+    sl_push2(lc, "-d", loop)
+    sl_push(lc, url() + "/compile")
+    let lp: BgProc = bg_start(lc.items, "", false, "/dev/null", "/dev/null")
+    let deadline: i64 = proc_now_ms() + 60000
+    while leftovers(false) == 0 and proc_now_ms() < deadline {
+        proc_sleep_ms(100)
+    }
+    let started: bool = leftovers(false) > 0
+    let rows: ptr<ProcStrs> = ps_rows()
+    let mut i: i32 = 0
+    while i < sl_len(rows) {
+        let row: string = sl_get(rows, i)
+        if s_atoi(ps_field(row, 1), 0) == server and s_starts(ps_field(row, 2), pg_tmp() + "/") == false {
+            let _kc: bool = bg_kill(s_atoi(ps_field(row, 0), 0), 9)
+        }
+        i = i + 1
+    }
+    let _ks: bool = bg_kill(server, 9)
+    let _ws: i32 = bg_wait(server)
+    if lp.pid > 0 {
+        let _kl: bool = bg_kill(lp.pid, 9)
+        let _wl: i32 = bg_wait(lp.pid)
+    }
+    if started == false {
+        pass_or_fail("playground/orphan_ends", false, "the program never started")
+        return
+    }
+    pass_or_fail("playground/orphan_ends", no_leftovers_within(180), "the program outlived its server by 180 s")
 }
 
 function finish(code: i32) {
@@ -424,6 +559,7 @@ function repeat_a(n: i32) -> string {
 function main() -> i32 {
     let c: ptr<Ctx> = malloc(80) as ptr<Ctx>
     CTX = c
+    c.work = ""
     c.root = env_or("FLOW_REPO_ROOT", cwd_logical())
     let _cd: bool = proc_chdir(c.root)
     env_set("PWD", c.root)
@@ -438,6 +574,10 @@ function main() -> i32 {
     let work: string = mktemp_dir(env_or("TMPDIR", "/tmp") + "/flow-net-tests.XXXXXX")
     on_exit_remove(work)
     c.work = work
+    # The playground makes its per-request directories under TMPDIR; keeping
+    # them in the work directory lets leftovers() find what a run left behind.
+    let _mt: bool = mkdir_p(pg_tmp())
+    env_set("TMPDIR", pg_tmp())
 
     let playground: ptr<ProcStrs> = server_cmd("NET_TEST_PLAYGROUND", "playground_server")
     let relay: ptr<ProcStrs> = server_cmd("NET_TEST_RELAY", "ws_echo_relay")
@@ -509,6 +649,7 @@ function main() -> i32 {
     }
     let _rt: bool = write_text(work + "/pg_run_timeout.txt", normalise(read_text(work + "/pg_run_timeout.raw"), ""))
     check("playground/run_timeout", c.exp + "/playground_run_timeout.txt", work + "/pg_run_timeout.txt")
+    pass_or_fail("playground/run_timeout_no_leftovers", no_leftovers_within(5), "the timed-out program is still running")
 
     raw_case("garbage", "GARBAGE\r\n\r\n")
     raw_case("http09_get", "GET /health\r\n\r\n")
@@ -527,6 +668,7 @@ function main() -> i32 {
     raw_case("post_negative_length", "POST /compile HTTP/1.0\r\nContent-Length: -5\r\n\r\n")
     raw_case("post_bad_utf8", "POST /compile HTTP/1.0\r\nContent-Length: 14\r\n\r\n{\"source\":\"\xff\"}")
     raw_case("get_fragment", "GET /health#x HTTP/1.0\r\n\r\n")
+    orphan_case(playground, loop)
 
     # -----------------------------------------------------------------------
     # WebSocket echo relay
