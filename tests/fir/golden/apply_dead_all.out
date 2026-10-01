@@ -2,7 +2,7 @@ FIR-G: funcs=9 blocks=10 ops=39 values=29 operands=24 types=3
 call ops: 10
 reachable: callee1, callee2, caller, leaf, main, mid, ping, pong, printf
 dead: (none)
-applied: dead_elim removed=1 (dead)
+applied: const_fold folded=0; dead_elim removed=1 (dead)
 call graph:
   leaf -> printf  (op 1)
   mid -> leaf  (op 1)

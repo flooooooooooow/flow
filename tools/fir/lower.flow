@@ -1305,11 +1305,54 @@ function op1(lw: ptr<Lower>, bid: i32, opcode: i32, nopd: i32, callee: i32) -> i
     return fg_result(lw.g, op)
 }
 
+# A CONST result carrying its literal source text (the value for ints,
+# bools and floats; the decoded span for strings; "null" for null).
+function op_const(lw: ptr<Lower>, bid: i32, text: string) -> i32 {
+    let op: i32 = fg_add_op(lw.g, OP_CONST, lw.fid, bid, 0, 1, -1)
+    fg_op_set_const(lw.g, op, text)
+    return fg_result(lw.g, op)
+}
+
+# A BINOP with real operand edges and an AUX_* operator code.
+function op_binop(lw: ptr<Lower>, bid: i32, tok: i32, l: i32, r: i32) -> i32 {
+    let op: i32 = fg_add_op(lw.g, OP_BINOP, lw.fid, bid, 2, 1, -1)
+    fg_add_operand(lw.g, op, l)
+    fg_add_operand(lw.g, op, r)
+    fg_op_set_aux(lw.g, op, aux_code(tok))
+    return fg_result(lw.g, op)
+}
+
+# A UNOP with a real operand edge and an AUX_* operator code.
+function op_unop(lw: ptr<Lower>, bid: i32, tok: i32, v: i32) -> i32 {
+    let op: i32 = fg_add_op(lw.g, OP_UNOP, lw.fid, bid, 1, 1, -1)
+    fg_add_operand(lw.g, op, v)
+    fg_op_set_aux(lw.g, op, aux_code_unary(tok))
+    return fg_result(lw.g, op)
+}
+
+# Token id -> AUX_* code; 0 for operators const_fold does not handle.
+function aux_code(tok: i32) -> i32 {
+    if tok == TOK_PLUS { return AUX_ADD }
+    if tok == TOK_MINUS { return AUX_SUB }
+    if tok == TOK_STAR { return AUX_MUL }
+    if tok == TOK_SLASH { return AUX_DIV }
+    if tok == TOK_PERCENT { return AUX_MOD }
+    return 0
+}
+
+# aux_code for unary ops; only unary minus folds.
+function aux_code_unary(tok: i32) -> i32 {
+    if tok == TOK_MINUS { return AUX_NEG }
+    return 0
+}
+
 function lower_call(lw: ptr<Lower>, bid: i32, name0: string, args: i32) -> i32 {
     let mut n: i32 = 0
+    let mut argvals: IVec = iv_new()
     let mut a: i32 = args
     while a != AST_NONE {
         let _v: i32 = lower_expr(lw, bid, a)
+        iv_push(&argvals, _v)
         n = n + 1
         a = lw.m.arena.nodes[a].next
     }
@@ -1321,7 +1364,13 @@ function lower_call(lw: ptr<Lower>, bid: i32, name0: string, args: i32) -> i32 {
     if is_alloc_call(name) {
         fg_or_effect(lw.g, lw.fid, EFF_ALLOCATES | EFF_WRITES_MEMORY)
     }
-    let v: i32 = op1(lw, bid, OP_CALL, n, callee)
+    let cop: i32 = fg_add_op(lw.g, OP_CALL, lw.fid, bid, n, 1, callee)
+    let mut ai: i32 = 0
+    while ai < argvals.len {
+        fg_add_operand(lw.g, cop, iv_get(&argvals, ai))
+        ai = ai + 1
+    }
+    let v: i32 = fg_result(lw.g, cop)
     if callee < 0 and not is_io_call(name) and not is_alloc_call(name) {
         fg_or_effect(lw.g, lw.fid, EFF_UNKNOWN)
     }
@@ -1355,7 +1404,7 @@ function lower_string(lw: ptr<Lower>, bid: i32, id: i32) -> i32 {
     let text: string = t_span(m.src, s, e)
     let string_ty: i32 = fg_intern_type(lw.g, "string")
     if t_find(text, "${") < 0 {
-        return op1(lw, bid, OP_CONST, 0, -1)
+        return op_const(lw, bid, text)
     }
     let n: i32 = t_len(text)
     let mut cursor: i32 = 0
@@ -1365,7 +1414,7 @@ function lower_string(lw: ptr<Lower>, bid: i32, id: i32) -> i32 {
     while i < n {
         if t_at(text, i) == 36 and i + 1 < n and t_at(text, i + 1) == 123 {
             if i > cursor {
-                let v: i32 = op1(lw, bid, OP_CONST, 0, -1)
+                let v: i32 = op_const(lw, bid, t_sub(text, cursor, i))
                 acc = join_part(lw, bid, acc, v)
                 nparts = nparts + 1
             }
@@ -1384,7 +1433,7 @@ function lower_string(lw: ptr<Lower>, bid: i32, id: i32) -> i32 {
         }
     }
     if cursor < n {
-        let v3: i32 = op1(lw, bid, OP_CONST, 0, -1)
+        let v3: i32 = op_const(lw, bid, t_sub(text, cursor, n))
         acc = join_part(lw, bid, acc, v3)
         nparts = nparts + 1
     }
@@ -1396,7 +1445,7 @@ function join_part(lw: ptr<Lower>, bid: i32, acc: i32, v: i32) -> i32 {
     if acc < 0 {
         return v
     }
-    return op1(lw, bid, OP_BINOP, 2, -1)
+    return op_binop(lw, bid, TOK_PLUS, acc, v)
 }
 
 # Parse `text` as an expression with the flowc parser and lower it.
@@ -1431,11 +1480,11 @@ function lower_expr(lw: ptr<Lower>, bid: i32, id: i32) -> i32 {
         } else {
             let _t2: i32 = fg_intern_type(lw.g, "bool")
         }
-        return op1(lw, bid, OP_CONST, 0, -1)
+        return op_const(lw, bid, node_name(m, id))
     }
     if k == AST_FLOAT {
         let _t: i32 = fg_intern_type(lw.g, "f32")
-        return op1(lw, bid, OP_CONST, 0, -1)
+        return op_const(lw, bid, node_name(m, id))
     }
     if k == AST_STRING {
         let _t: i32 = fg_intern_type(lw.g, "string")
@@ -1445,14 +1494,14 @@ function lower_expr(lw: ptr<Lower>, bid: i32, id: i32) -> i32 {
         let name: string = node_name(m, id)
         if t_eq(name, "null") {
             let _t: i32 = fg_intern_type(lw.g, "ptr_void")
-            return op1(lw, bid, OP_CONST, 0, -1)
+            return op_const(lw, bid, "null")
         }
         return op1(lw, bid, OP_LOAD, 0, -1)
     }
     if k == AST_BINOP {
         let _l: i32 = lower_expr(lw, bid, m.arena.nodes[id].a)
         let _r: i32 = lower_expr(lw, bid, m.arena.nodes[id].b)
-        return op1(lw, bid, OP_BINOP, 2, -1)
+        return op_binop(lw, bid, m.arena.nodes[id].ival, _l, _r)
     }
     if k == AST_UNARY {
         let uop: i32 = m.arena.nodes[id].ival
@@ -1464,7 +1513,7 @@ function lower_expr(lw: ptr<Lower>, bid: i32, id: i32) -> i32 {
             return op1(lw, bid, OP_LOAD, 0, -1)
         }
         let _v: i32 = lower_expr(lw, bid, m.arena.nodes[id].a)
-        return op1(lw, bid, OP_UNOP, 1, -1)
+        return op_unop(lw, bid, uop, _v)
     }
     if k == AST_CALL {
         if folded_sum(m, id) {
@@ -1530,6 +1579,8 @@ function hoist_source(lw: ptr<Lower>, bid: i32, src: i32) {
     let _t: i32 = fg_intern_type(lw.g, "auto")
     let _a: i32 = op1(lw, bid, OP_ALLOCA, 0, -1)
     let _st: i32 = op0(lw, bid, OP_STORE, 2)
+    fg_add_operand(lw.g, _st, _a)
+    fg_add_operand(lw.g, _st, _x)
 }
 
 function hoist_chain(lw: ptr<Lower>, bid: i32, first: i32) {
@@ -1661,6 +1712,7 @@ function lower_stmt(lw: ptr<Lower>, bid: i32, s: i32) {
         if v != AST_NONE {
             let _x: i32 = lower_expr(lw, bid, v)
             let _o: i32 = op0(lw, bid, OP_RET, 1)
+            fg_add_operand(lw.g, _o, _x)
         } else {
             let _o2: i32 = op0(lw, bid, OP_RET, 0)
         }
@@ -1678,12 +1730,15 @@ function lower_stmt(lw: ptr<Lower>, bid: i32, s: i32) {
             let _t: i32 = fg_intern_type(lw.g, tname)
             let _a: i32 = op1(lw, bid, OP_ALLOCA, 0, -1)
             let _st: i32 = op0(lw, bid, OP_STORE, 2)
+            fg_add_operand(lw.g, _st, _a)
+            fg_add_operand(lw.g, _st, _x)
         }
         return
     }
     if k == AST_ASSIGN {
         let _x: i32 = lower_expr(lw, bid, m.arena.nodes[s].b)
         let _st: i32 = op0(lw, bid, OP_STORE, 0)
+        fg_add_operand(lw.g, _st, _x)
         return
     }
     if k == AST_IF {
@@ -1712,6 +1767,7 @@ function lower_stmt(lw: ptr<Lower>, bid: i32, s: i32) {
             i = i + 1
         }
         let _br: i32 = op0(lw, bid, OP_COND_BR, 0)
+        fg_add_operand(lw.g, _br, _c)
         return
     }
     if k == AST_WHILE {
@@ -1719,6 +1775,7 @@ function lower_stmt(lw: ptr<Lower>, bid: i32, s: i32) {
         let _c: i32 = lower_expr(lw, bid, m.arena.nodes[s].a)
         lower_block(lw, body_b, m.arena.nodes[s].b)
         let _br: i32 = op0(lw, bid, OP_BR, 0)
+        fg_add_operand(lw.g, _br, _c)
         return
     }
     if k == AST_FOR {
