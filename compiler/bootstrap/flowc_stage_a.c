@@ -17739,7 +17739,7 @@ void dy_bufargs(ByteBuf* b, int32_t first, int32_t count);
 void dy_flat_array(ByteBuf* b, DyC* c, int32_t f0, int32_t fnn);
 void dy_rep_array(ByteBuf* b, int64_t n, const char* item);
 void dy_matrix(ByteBuf* b, DyC* c, int32_t name, const char* which, int64_t rows, int64_t cols);
-void dy_ga_arrays(ByteBuf* b, ByteBuf* tag, int64_t pop);
+void dy_ga_arrays(ByteBuf* b, ByteBuf* tag, int64_t pop, int64_t generations);
 void dy_tag(ByteBuf* t, const char* pre, int32_t k);
 void dy_tagp(ByteBuf* b, ByteBuf* t);
 int32_t dy_is_identifier(DyC* c, int32_t off);
@@ -20996,7 +20996,11 @@ void dy_matrix(ByteBuf* b, DyC* c, int32_t name, const char* which, int64_t rows
   bb_puts(b, " }");
 }
 
-void dy_ga_arrays(ByteBuf* b, ByteBuf* tag, int64_t pop) {
+void dy_ga_arrays(ByteBuf* b, ByteBuf* tag, int64_t pop, int64_t generations) {
+  int64_t hist_n = generations;
+  if (hist_n < 1) {
+  hist_n = 1;
+}
   bb_puts(b, "    let ");
   bb_put_span(b, (tag[0]).p, 0, (tag[0]).len);
   bb_puts(b, "_k1: array<f64, ");
@@ -21026,8 +21030,10 @@ void dy_ga_arrays(ByteBuf* b, ByteBuf* tag, int64_t pop) {
   bb_puts(b, "_bk2: array<f64, 1> = [0.0]\n");
   bb_puts(b, "    let ");
   bb_put_span(b, (tag[0]).p, 0, (tag[0]).len);
-  bb_puts(b, "_hist: array<f64, 32> = ");
-  dy_rep_array(b, 32, "0.0");
+  bb_puts(b, "_hist: array<f64, ");
+  bb_put_i64(b, hist_n);
+  bb_puts(b, "> = ");
+  dy_rep_array(b, hist_n, "0.0");
   dy_eol(b);
 }
 
@@ -21261,7 +21267,7 @@ int32_t dy_compile(DyC* c, Dp* g, ByteBuf* b) {
   dg[ndg] = (g[0]).ga_k1[i];
   dg[(ndg + 1)] = (g[0]).ga_k2[i];
   ndg = (ndg + 2);
-  dy_ga_arrays(b, tag, pop);
+  dy_ga_arrays(b, tag, pop, (g[0]).ga_gen[i]);
   bb_puts(b, "    let ");
   dy_tagp(b, tag);
   bb_puts(b, "_cfg: GAConfig = GAConfig { population: ");
@@ -21389,7 +21395,7 @@ int32_t dy_compile(DyC* c, Dp* g, ByteBuf* b) {
   bb_puts(b, "        baseline_cost: 0.0, evolved_cost: 0.0, fitness_drop: 0.0,\n");
   bb_puts(b, "        convergence_gen: 0, stable_closed_loop: 0\n");
   bb_puts(b, "    }\n");
-  dy_ga_arrays(b, tag, pop4);
+  dy_ga_arrays(b, tag, pop4, gens4);
   int32_t f4 = dy_bufs(b, bi, 12);
   bb_puts(b, "    let ");
   dy_tagp(b, tag);
@@ -21981,22 +21987,22 @@ int32_t dy_expand(DyC* c, uint8_t* p, int32_t n, ByteBuf* out) {
 DyC* dy_ctx_new(int32_t n) {
   DyC* c = (DyC*)((DyC*)(malloc(256)));
   (c[0]).err = 0;
-  { __typeof__((c[0]).msg) __flowc_st22354 = bb_new(256); (c[0]).msg = __flowc_st22354; }
-  { __typeof__((c[0]).nm) __flowc_st22363 = bb_new((n + 256)); (c[0]).nm = __flowc_st22363; }
+  { __typeof__((c[0]).msg) __flowc_st22382 = bb_new(256); (c[0]).msg = __flowc_st22382; }
+  { __typeof__((c[0]).nm) __flowc_st22391 = bb_new((n + 256)); (c[0]).nm = __flowc_st22391; }
   (c[0]).fcap = (n + 64);
-  { __typeof__((c[0]).fp) __flowc_st22381 = dy_f64s((c[0]).fcap); (c[0]).fp = __flowc_st22381; }
+  { __typeof__((c[0]).fp) __flowc_st22409 = dy_f64s((c[0]).fcap); (c[0]).fp = __flowc_st22409; }
   (c[0]).fnum = 0;
   (c[0]).bdcap = (n + 64);
-  { __typeof__((c[0]).bd_kind) __flowc_st22405 = dy_i32s((c[0]).bdcap); (c[0]).bd_kind = __flowc_st22405; }
-  { __typeof__((c[0]).bd_var) __flowc_st22415 = dy_i32s((c[0]).bdcap); (c[0]).bd_var = __flowc_st22415; }
-  { __typeof__((c[0]).bd_hz) __flowc_st22425 = dy_i32s((c[0]).bdcap); (c[0]).bd_hz = __flowc_st22425; }
+  { __typeof__((c[0]).bd_kind) __flowc_st22433 = dy_i32s((c[0]).bdcap); (c[0]).bd_kind = __flowc_st22433; }
+  { __typeof__((c[0]).bd_var) __flowc_st22443 = dy_i32s((c[0]).bdcap); (c[0]).bd_var = __flowc_st22443; }
+  { __typeof__((c[0]).bd_hz) __flowc_st22453 = dy_i32s((c[0]).bdcap); (c[0]).bd_hz = __flowc_st22453; }
   (c[0]).nbd = 0;
   (c[0]).glcap = (n + 64);
-  { __typeof__((c[0]).gl) __flowc_st22449 = dy_i32s((c[0]).glcap); (c[0]).gl = __flowc_st22449; }
+  { __typeof__((c[0]).gl) __flowc_st22477 = dy_i32s((c[0]).glcap); (c[0]).gl = __flowc_st22477; }
   (c[0]).ngl = 0;
   (c[0]).atcap = 64;
-  { __typeof__((c[0]).at_name) __flowc_st22468 = dy_i32s(64); (c[0]).at_name = __flowc_st22468; }
-  { __typeof__((c[0]).at_val) __flowc_st22475 = dy_f64s(64); (c[0]).at_val = __flowc_st22475; }
+  { __typeof__((c[0]).at_name) __flowc_st22496 = dy_i32s(64); (c[0]).at_name = __flowc_st22496; }
+  { __typeof__((c[0]).at_val) __flowc_st22503 = dy_f64s(64); (c[0]).at_val = __flowc_st22503; }
   (c[0]).nat = 0;
   bb_putc((c[0]).nm, 0);
   return c;
