@@ -21,3 +21,14 @@ Darwin flowc-only 1 0
 Darwin warn-diff 0 0
 Darwin warn-py-only 0 0
 Darwin warn-flowc-only 0 0
+#
+# Linux, recorded on the ubuntu-latest CI runner: the same differences, and
+# one more py-only. lib/stdlib/net.flow calls htons, which glibc declares
+# as a macro; the Python checker's @cImport did not see it as a function
+# ("Undefined function 'htons'"), and flowc does.
+Linux py-only 7 0
+Linux agree-diff 1 0
+Linux flowc-only 1 0
+Linux warn-diff 0 0
+Linux warn-py-only 0 0
+Linux warn-flowc-only 0 0
