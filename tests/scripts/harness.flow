@@ -61,7 +61,7 @@ export function t_begin(name: string) {
     let _cd: bool = proc_chdir(h.root)
     env_set("PWD", h.root)
     h.name = name
-    h.work = mktemp_dir(tmp_base() + "/flow-script-tests.XXXXXX")
+    h.work = mktemp_dir(env_or("TMPDIR", "/tmp") + "/flow-script-tests.XXXXXX")
     if s_len(h.work) == 0 {
         errln(name + ": cannot create a scratch directory")
         cli_exit(1)

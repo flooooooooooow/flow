@@ -873,7 +873,7 @@ Use a focused path when supported:
 
 ```bash
 ./flow test-runtime tests/runtime/test_arithmetic.flow
-./tests/scripts/run.sh doc_anchors
+./flow test-scripts doc_anchors
 ```
 
 The AI MUST report what it actually ran. It MUST NOT say "all tests pass" when
@@ -2273,7 +2273,7 @@ families in the current driver.
 | `test-strict` | Strict test shortcut. |
 | `test-runtime` | Compile and execute runtime tests. |
 | `test-lang` | Strict language tests that compile and run. |
-| `test-scripts` | Shell tests that drive `./flow` and the scripts (`tests/scripts`). |
+| `test-scripts` | Flow programs that drive `./flow`, the tools and the docs as subprocesses (`tests/scripts`). |
 | `test-interop` | Native interoperability tests. |
 | `test-gpu` | GPU feature and code-generation tests. |
 | `test-mlir` | MLIR verification tests. |

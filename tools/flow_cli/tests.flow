@@ -708,7 +708,7 @@ export function run_mlir_tests() -> i32 {
 # ---------------------------------------------------------------------------
 
 export function run_script_tests(args: ptr<ProcStrs>) -> i32 {
-    let argv: ptr<ProcStrs> = sl_of1(root() + "/tests/scripts/run.sh")
+    let argv: ptr<ProcStrs> = sl_of3(root() + "/flow", "tool", root() + "/tests/scripts/run.flow")
     sl_extend(argv, args)
     return run_argv(argv)
 }

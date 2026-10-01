@@ -473,8 +473,8 @@ jobs:
 
   # Host tools written in Flow (flow repl) run their stdin transcripts with
   # python and python3 removed from PATH, so a Python fallback cannot hide.
-  # The same job runs tests/scripts, the shell tests that replaced the pytest
-  # files; they drive ./flow and the scripts/*.sh tools as subprocesses.
+  # The same job runs tests/scripts, the Flow tests that replaced the pytest
+  # files; they drive ./flow, the Flow tools and the docs as subprocesses.
   native-tools:
     name: Native tools (no Python)
     runs-on: ubuntu-latest
@@ -503,11 +503,9 @@ jobs:
           ./flow tool tests/tools/run.flow
 
       # Checks print SKIP when mlir-opt or emcc is missing, as on this runner.
-      # tests/scripts/run.sh stubs python and python3 itself.
-      - name: Shell tests (tests/scripts)
-        run: |
-          chmod +x ./flow tests/scripts/*.sh
-          ./tests/scripts/run.sh
+      # The runner (tests/scripts/run.flow) stubs python and python3 itself.
+      - name: Flow tests (tests/scripts)
+        run: ./flow test-scripts
 
       # The benchmark publisher's harness builds and runs each published
       # program and checks its result (scripts/tools/bench_publish).
@@ -635,7 +633,7 @@ jobs:
           set -e
           test "$ec" -eq 55
 
-  # The pytest job used to live here. Its tests are shell tests now
+  # The pytest job used to live here. Its tests are Flow programs now
   # (tests/scripts, run by native-tools), so this job keeps only the corpus.
   conformance:
     name: Conformance corpus

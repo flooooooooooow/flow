@@ -37,8 +37,8 @@ echo -e "${BLUE}=== Running Tier 2 tests (transpile + compile) ===${NC}"
 ./flow test --tier 2
 
 echo ""
-echo -e "${BLUE}=== Running the shell tests (tests/scripts) ===${NC}"
-./tests/scripts/run.sh
+echo -e "${BLUE}=== Running the script tests (tests/scripts) ===${NC}"
+./flow test-scripts
 
 echo ""
 echo -e "${BLUE}=== Running example programs ===${NC}"

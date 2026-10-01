@@ -56,7 +56,7 @@ Testing:
   test-runtime      Run runtime tests (compile + execute)
   test-lang         Run tests/lang/ language tests (strict flowc + compile + execute)
   test-mlir         Run MLIR verification (requires LLVM)
-  test-scripts      Run the shell tests in tests/scripts
+  test-scripts      Run the Flow tests in tests/scripts
   test-interop      Run interop runtime tests
   test-gpu          Run GPU feature + codegen tests
   test-matmul       Run matmul optimization demo + print assembly
