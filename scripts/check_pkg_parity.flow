@@ -5,8 +5,8 @@
 # compares stdout, the exit status, flow.toml, flow.lock and flow_packages/
 # (file list, contents and modes) against tests/pkg_parity/<case>.expect.
 # The goldens were recorded once both package managers agreed on every case:
-# this check replaced scripts/check_pkg_parity.sh, which ran each case
-# against the Python package manager (src/flow/package.py at 660ff30d) too.
+# the shell check this replaced also ran each case
+# against the Python package manager (src/flow/package.py at 660ff30d).
 #
 # Cases cover every package in registry/packages, path/git/stdlib
 # dependencies, a registry override with several versions, and the error
