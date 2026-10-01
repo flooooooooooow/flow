@@ -277,7 +277,7 @@ middle-end specialization, C ABI contracts, backend parity, executable pins.
 | Sema rejections and C lowering | `tests/cgen/*.flow` + `.expect` | `./flow tool tests/cgen/run.flow` |
 | Language programs | `tests/lang/*.flow` | `./flow test-lang` |
 | Stable conformance | `tests/conformance/` | `./flow tool tests/conformance/run.flow` |
-| MLIR text and runs | `compiler/fixtures/mlir/` | `compiler/scripts/parity_mlir.sh` |
+| MLIR text and runs | `compiler/fixtures/mlir/` | `./flow tool compiler/scripts/parity_mlir.flow` |
 | MLIR commands | `tests/mlir_commands/` | `./flow tool tests/mlir_commands/run.flow` |
 | Runtime exit-code | `tests/runtime/test_*_ops.flow` etc. | `./flow test-runtime` |
 | LSP JSON-RPC | `tests/tools/lsp/sessions/*.lsp` | `tests/tools/lsp/run.flow` (native server, no Python) |

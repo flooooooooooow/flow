@@ -24,7 +24,7 @@
 # (default the checkout) pass through.
 #
 # The emitter covers every program the retired Python MLIR generator lowered
-# (compiler/scripts/parity_mlir.sh); a program it refuses fails here, with
+# (compiler/scripts/parity_mlir.flow); a program it refuses fails here, with
 # `flowc mlir: unsupported: ...` on stderr.
 #
 # A program with @cEmbed C also gets OUT.c (the C with the standard headers

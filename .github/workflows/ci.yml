@@ -413,7 +413,7 @@ jobs:
           printf '#!/bin/sh\necho "python invoked: $0 $*" >&2\nexit 127\n' > /tmp/nopy-mlir/python3
           cp /tmp/nopy-mlir/python3 /tmp/nopy-mlir/python
           chmod +x /tmp/nopy-mlir/python3 /tmp/nopy-mlir/python
-          PATH="/tmp/nopy-mlir:$PATH" timeout 10m ./compiler/scripts/parity_mlir.sh
+          PATH="/tmp/nopy-mlir:$PATH" timeout 10m ./flow tool compiler/scripts/parity_mlir.flow
           # --backend=mlir on the flowc host needs no Python either.
           PATH="/tmp/nopy-mlir:$PATH" FLOW_HOST=flowc \
             ./flow run --backend=mlir compiler/fixtures/mlir/control.flow

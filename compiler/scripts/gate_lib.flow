@@ -1,6 +1,9 @@
 # @module compiler.scripts.gate_lib
-# @means  Shared steps for the Stage-A gate runners in compiler/scripts
-#         (roundtrip, stage_a_self_emit, self_host_full and the smokes).
+# @means  Shared steps for the gate programs in compiler/scripts: the
+#         Stage-A runners (roundtrip, self_host_full, the smokes) and the
+#         parity, corpus, format and parse gates (parity_mlir, mlir_vs_c,
+#         corpus_parity, parity_typecheck, fmt_check, parse_coverage,
+#         parity_targets, typecheck_rules).
 #
 # Each runner is a Flow program started with `./flow tool
 # compiler/scripts/NAME.flow`. They keep the behaviour of the shell scripts
@@ -20,7 +23,8 @@ static int32_t gate_strcoll(const char *a, const char *b) {
 ")
 
 import "tools/flow_cli/sys.flow"
-import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg, proc_chdir, proc_args }
+import std.bytebuf { ByteBuf, bb_new, bb_puts, bb_put_span, bb_putc, bb_str, bb_free }
+import std.process { ProcCmd, ProcResult, ProcStrs, proc_cmd, proc_arg, proc_env, proc_cwd, proc_stdin, proc_stdout, proc_stderr, proc_run, proc_timeout_ms, proc_argv, proc_chdir, proc_args, proc_strs_new, proc_strs_push, proc_strs_len, proc_strs_get, PROC_CAPTURE, PROC_INHERIT, PROC_NULL, PROC_MERGE }
 
 extern {
     function malloc(size: i64) -> ptr<void>
@@ -442,4 +446,1162 @@ export function sum_smoke(driver: string, c_out: string, bin: string, label: str
     sl_push(args, c_out)
     gate_cc(args)
     gate_expect_exit(label, bin, 45)
+}
+
+# ===========================================================================
+# The parity, corpus, format and parse gates (gl_*)
+# ===========================================================================
+#
+# They replaced shell scripts, so a few helpers keep a shell tool's exact
+# behaviour on purpose: `gl_cksum_file` prints what `cksum` prints, the
+# MLIR normalizer is the awk filter the goldens were written with, and
+# `gl_count_desc` orders like `sort | uniq -c | sort -rn`.
+#
+# Workers run in parallel as child processes of the gate (the shell's
+# `cmd &` and `wait`): gl_spawn starts this program again with the worker
+# arguments and gl_wait collects it. The shim below is the part std.process
+# has no call for, a spawn that does not wait.
+
+@cEmbed("#include <errno.h>
+#include <locale.h>
+#include <signal.h>
+#include <string.h>
+#include <time.h>
+#include <spawn.h>
+#include <sys/resource.h>
+#include <fcntl.h>
+#include <sys/wait.h>
+#include <unistd.h>
+extern char **environ;
+static const char gate_lib_devnull[] = {'/', 'd', 'e', 'v', '/', 'n', 'u', 'l', 'l', 0};
+static const char gate_lib_fmt1[] = {'%', '.', '1', 'f', 0};
+static int32_t gate_lib_spawn(const char **argv) {
+  posix_spawn_file_actions_t fa;
+  pid_t pid = 0;
+  int rc;
+  if (posix_spawn_file_actions_init(&fa) != 0) { return -1; }
+  rc = posix_spawn_file_actions_addopen(&fa, 0, gate_lib_devnull, O_RDONLY, 0);
+  if (rc == 0) { rc = posix_spawnp(&pid, argv[0], &fa, 0, (char *const *)argv, environ); }
+  posix_spawn_file_actions_destroy(&fa);
+  if (rc != 0) { return -1; }
+  return (int32_t)pid;
+}
+static int32_t gate_lib_wait(int32_t pid) {
+  int st = 0;
+  pid_t r;
+  for (;;) { r = waitpid((pid_t)pid, &st, 0); if (r >= 0 || errno != EINTR) { break; } }
+  if (r <= 0) { return 127; }
+  if (WIFEXITED(st)) { return (int32_t)WEXITSTATUS(st); }
+  if (WIFSIGNALED(st)) { return 128 + (int32_t)WTERMSIG(st); }
+  return 1;
+}
+static int32_t gate_lib_ncpu(void) {
+  long n = sysconf(_SC_NPROCESSORS_ONLN);
+  return n > 0 ? (int32_t)n : 4;
+}
+static const char *gate_lib_pct(double v) {
+  char *b = (char *)malloc(64);
+  snprintf(b, 64, gate_lib_fmt1, v);
+  return b;
+}
+static int32_t gate_lib_symlink(const char *target, const char *link) {
+  unlink(link);
+  return symlink(target, link) == 0 ? 0 : -1;
+}
+static int64_t gate_lib_now_ms(void) {
+  struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (int64_t)ts.tv_sec * 1000 + (int64_t)(ts.tv_nsec / 1000000);
+}
+static int32_t gate_lib_run_file(const char **argv, const char *out, int32_t err_mode, int64_t timeout_ms) {
+  posix_spawn_file_actions_t fa;
+  posix_spawnattr_t at;
+  pid_t pid = 0;
+  int rc, st = 0;
+  if (posix_spawn_file_actions_init(&fa) != 0) { return 127; }
+  if (posix_spawnattr_init(&at) != 0) { posix_spawn_file_actions_destroy(&fa); return 127; }
+  posix_spawnattr_setflags(&at, POSIX_SPAWN_SETPGROUP);
+  posix_spawnattr_setpgroup(&at, 0);
+  rc = posix_spawn_file_actions_addopen(&fa, 0, gate_lib_devnull, O_RDONLY, 0);
+  if (rc == 0) {
+    const char *o = (out != 0 && out[0] != 0) ? out : gate_lib_devnull;
+    rc = posix_spawn_file_actions_addopen(&fa, 1, o, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+  }
+  if (rc == 0 && err_mode == 1) { rc = posix_spawn_file_actions_adddup2(&fa, 1, 2); }
+  if (rc == 0 && err_mode == 2) { rc = posix_spawn_file_actions_addopen(&fa, 2, gate_lib_devnull, O_WRONLY, 0); }
+  if (rc == 0) { rc = posix_spawnp(&pid, argv[0], &fa, &at, (char *const *)argv, environ); }
+  posix_spawn_file_actions_destroy(&fa);
+  posix_spawnattr_destroy(&at);
+  if (rc != 0) { return rc == ENOENT ? 127 : 126; }
+  int64_t deadline = timeout_ms > 0 ? gate_lib_now_ms() + timeout_ms : 0;
+  int nap = 1;
+  for (;;) {
+    pid_t r = waitpid(pid, &st, deadline > 0 ? WNOHANG : 0);
+    if (r < 0 && errno == EINTR) { continue; }
+    if (r == pid) { break; }
+    if (r < 0) { return 127; }
+    if (gate_lib_now_ms() >= deadline) {
+      kill(-pid, SIGKILL);
+      kill(pid, SIGKILL);
+      while (waitpid(pid, &st, 0) < 0 && errno == EINTR) { }
+      return 124;
+    }
+    usleep((useconds_t)nap * 1000);
+    if (nap < 20) { nap = nap * 2; }
+  }
+  if (WIFEXITED(st)) { return (int32_t)WEXITSTATUS(st); }
+  if (WIFSIGNALED(st)) { return 128 + (int32_t)WTERMSIG(st); }
+  return 1;
+}
+static int32_t gate_lib_run_cpu(const char **argv, const char *out, int32_t cpu_secs) {
+  int st = 0;
+  pid_t pid = fork();
+  if (pid < 0) { return 127; }
+  if (pid == 0) {
+    struct rlimit rl;
+    rl.rlim_cur = (rlim_t)cpu_secs; rl.rlim_max = (rlim_t)cpu_secs;
+    if (cpu_secs > 0) { setrlimit(RLIMIT_CPU, &rl); }
+    int in = open(gate_lib_devnull, O_RDONLY);
+    if (in >= 0) { dup2(in, 0); close(in); }
+    int fd = open(out, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    if (fd >= 0) { dup2(fd, 1); dup2(fd, 2); close(fd); }
+    execvp(argv[0], (char *const *)argv);
+    _exit(errno == ENOENT ? 127 : 126);
+  }
+  while (waitpid(pid, &st, 0) < 0) { if (errno != EINTR) { return 127; } }
+  if (WIFEXITED(st)) { return (int32_t)WEXITSTATUS(st); }
+  if (WIFSIGNALED(st)) { return 128 + (int32_t)WTERMSIG(st); }
+  return 1;
+}
+static int32_t gate_lib_spawn_io(const char **argv, const char *out, const char *err) {
+  posix_spawn_file_actions_t fa;
+  pid_t pid = 0;
+  int rc;
+  if (posix_spawn_file_actions_init(&fa) != 0) { return -1; }
+  rc = posix_spawn_file_actions_addopen(&fa, 0, gate_lib_devnull, O_RDONLY, 0);
+  if (rc == 0) { rc = posix_spawn_file_actions_addopen(&fa, 1, out, O_WRONLY | O_CREAT | O_TRUNC, 0666); }
+  if (rc == 0) { rc = posix_spawn_file_actions_addopen(&fa, 2, err, O_WRONLY | O_CREAT | O_TRUNC, 0666); }
+  if (rc == 0) { rc = posix_spawnp(&pid, argv[0], &fa, 0, (char *const *)argv, environ); }
+  posix_spawn_file_actions_destroy(&fa);
+  if (rc != 0) { return -1; }
+  return (int32_t)pid;
+}
+")
+
+extern {
+    function gate_lib_spawn(argv: ptr<string>) -> i32
+    function gate_lib_wait(pid: i32) -> i32
+    function gate_lib_ncpu() -> i32
+    function gate_lib_pct(v: f64) -> string
+    function gate_lib_symlink(target: string, link: string) -> i32
+    function gate_lib_run_cpu(argv: ptr<string>, out: string, cpu_secs: i32) -> i32
+    function gate_lib_spawn_io(argv: ptr<string>, out: string, err: string) -> i32
+    function gate_lib_run_file(argv: ptr<string>, out: string, err_mode: i32, timeout_ms: i64) -> i32
+    function strcmp(a: string, b: string) -> i32
+}
+
+# ---------------------------------------------------------------------------
+# The repository and this program
+# ---------------------------------------------------------------------------
+
+let mut GL_SELF: ptr<u8> = null
+
+# Change to the repository root (FLOW_REPO_ROOT, which `flow tool` sets)
+# and return it. The path of this program is resolved first, so workers
+# can be started after the change of directory.
+export function gl_enter_root() -> string {
+    let me: string = proc_argv(0)
+    if s_contains(me, "/") {
+        GL_SELF = abs_file_physical(me) as ptr<u8>
+    } else {
+        GL_SELF = which(me) as ptr<u8>
+    }
+    let mut root: string = env("FLOW_REPO_ROOT")
+    if s_len(root) == 0 {
+        root = cwd_physical()
+    }
+    let _ok: bool = proc_chdir(root)
+    return cwd_logical()
+}
+
+# This program's own path, for starting workers.
+export function gl_self() -> string {
+    if GL_SELF == null {
+        return ""
+    }
+    return GL_SELF as string
+}
+
+export function gl_ncpu() -> i32 {
+    return gate_lib_ncpu()
+}
+
+# ln -sfn target link
+export function gl_symlink(target: string, link: string) -> bool {
+    return gate_lib_symlink(target, link) == 0
+}
+
+# ---------------------------------------------------------------------------
+# Workers
+# ---------------------------------------------------------------------------
+
+# Start `argv` without waiting (stdin from /dev/null, stdout and stderr
+# shared); the pid, or -1.
+export function gl_spawn(argv: ptr<ProcStrs>) -> i32 {
+    return gate_lib_spawn(argv.items)
+}
+
+# Start `argv` without waiting, stdout into `out` and stderr into `err`;
+# the pid, or -1.
+export function gl_spawn_io(argv: ptr<ProcStrs>, out: string, err: string) -> i32 {
+    return gate_lib_spawn_io(argv.items, out, err)
+}
+
+# `(ulimit -t SECS && argv...) > out 2>&1 < /dev/null`: run with a CPU
+# time limit; the shell status.
+export function gl_run_cpu_limited(argv: ptr<ProcStrs>, out: string, cpu_secs: i32) -> i32 {
+    return gate_lib_run_cpu(argv.items, out, cpu_secs)
+}
+
+# Wait for a child started by gl_spawn; its shell status.
+export function gl_wait(pid: i32) -> i32 {
+    if pid < 0 {
+        return 127
+    }
+    return gate_lib_wait(pid)
+}
+
+# ---------------------------------------------------------------------------
+# Running programs
+# ---------------------------------------------------------------------------
+
+# The status a shell reports for a finished command, printing nothing: the
+# exit code, 128 + N for signal N, 127 when it could not start. With
+# `limited`, a command that ran past its time limit reads 124, as under
+# timeout(1).
+export function gl_status(r: ptr<ProcResult>, limited: bool) -> i32 {
+    if limited and r.timed_out {
+        return 124
+    }
+    if s_len(r.error) > 0 {
+        return 127
+    }
+    if r.exit_code < 0 {
+        return 128 - r.exit_code
+    }
+    return r.exit_code
+}
+
+# A command with stdin from /dev/null and stdout and stderr captured.
+export function gl_cmd(argv: ptr<ProcStrs>) -> ptr<ProcCmd> {
+    let c: ptr<ProcCmd> = proc_cmd(proc_strs_get(argv, 0))
+    let mut i: i32 = 1
+    while i < proc_strs_len(argv) {
+        proc_arg(c, proc_strs_get(argv, i))
+        i = i + 1
+    }
+    proc_stdin(c, PROC_NULL)
+    proc_stdout(c, PROC_CAPTURE)
+    proc_stderr(c, PROC_CAPTURE)
+    return c
+}
+
+# `cmd > path 2>&1 < /dev/null`, within `secs` seconds when secs > 0;
+# the shell status (124 on a timeout).
+export function gl_run_log(c: ptr<ProcCmd>, path: string, secs: i32) -> i32 {
+    proc_stdin(c, PROC_NULL)
+    proc_stdout(c, PROC_CAPTURE)
+    proc_stderr(c, PROC_MERGE)
+    if secs > 0 {
+        proc_timeout_ms(c, (secs as i64) * 1000)
+    }
+    let r: ptr<ProcResult> = proc_run(c)
+    let _w: bool = write_text(path, r.stdout)
+    return gl_status(r, secs > 0)
+}
+
+# `timeout secs exe < /dev/null > out 2> /dev/null`, run in `dir` when it
+# is not ""; the shell status (124 on a timeout).
+export function gl_run_exe(exe: string, out: string, secs: i32, dir: string) -> i32 {
+    let c: ptr<ProcCmd> = proc_cmd(exe)
+    proc_stdin(c, PROC_NULL)
+    proc_stdout(c, PROC_CAPTURE)
+    proc_stderr(c, PROC_NULL)
+    if s_len(dir) > 0 {
+        proc_cwd(c, dir)
+    }
+    if secs > 0 {
+        proc_timeout_ms(c, (secs as i64) * 1000)
+    }
+    let r: ptr<ProcResult> = proc_run(c)
+    let _w: bool = write_text(out, r.stdout)
+    return gl_status(r, secs > 0)
+}
+
+# Stream modes for gl_run_file's stderr.
+export const GL_ERR_INHERIT: i32 = 0
+export const GL_ERR_TO_OUT: i32 = 1
+export const GL_ERR_NULL: i32 = 2
+
+# `timeout secs argv... < /dev/null > out` with stderr as `err_mode` says;
+# out "" is /dev/null. The command runs in its own process group, which
+# is killed whole when the time runs out (as timeout(1) does). The shell
+# status: 124 on a timeout, 127 when the program does not exist.
+export function gl_run_file(argv: ptr<ProcStrs>, out: string, err_mode: i32, secs: i32) -> i32 {
+    return gate_lib_run_file(argv.items, out, err_mode, (secs as i64) * 1000)
+}
+
+# ${CC:-cc}
+export function gl_cc() -> string {
+    return env_or("CC", "cc")
+}
+
+# Compile the checked-in bootstrap C to `bin` with ${CC:-cc} -O2, adding
+# -w when `quiet_warnings`. stderr is dropped when `drop_err`. The status.
+export function gl_build_flowc(bin: string, quiet_warnings: bool, drop_err: bool) -> i32 {
+    let argv: ptr<ProcStrs> = sl_of2(gl_cc(), "-O2")
+    if quiet_warnings {
+        sl_push(argv, "-w")
+    }
+    sl_push2(argv, "-o", bin)
+    sl_push2(argv, "compiler/bootstrap/flowc_stage_a.c", "-lm")
+    let c: ptr<ProcCmd> = cmd(argv)
+    if drop_err {
+        cmd_quiet_err(c)
+    }
+    return run(c)
+}
+
+# compiler/build/flowc_bootstrap when FLOWC_BIN is unset, rebuilt only when
+# it is missing or older than the bootstrap C; an absolute path. Stops the
+# program with cc's status when the build fails.
+export function gl_flowc_cached(var: string, root: string) -> string {
+    let mut bin: string = env(var)
+    if s_len(bin) == 0 {
+        mkdir_p_or_exit("compiler/build")
+        bin = root + "/compiler/build/flowc_bootstrap"
+        if not is_exec(bin) or newer("compiler/bootstrap/flowc_stage_a.c", bin) {
+            check(gl_build_flowc(bin, true, false))
+        }
+    }
+    if not is_abs(bin) {
+        bin = root + "/" + bin
+    }
+    return bin
+}
+
+# ---------------------------------------------------------------------------
+# Files and lists
+# ---------------------------------------------------------------------------
+
+# Bytes [a, b) of `p` as a new string (no length scan of the source).
+function gl_copy(p: ptr<u8>, a: i32, b: i32) -> string {
+    let out: ptr<u8> = malloc((b - a + 1) as i64) as ptr<u8>
+    let mut i: i32 = 0
+    while i < b - a {
+        out[i] = p[a + i]
+        i = i + 1
+    }
+    out[b - a] = 0
+    return out as string
+}
+
+# Lines of `text`, without a final empty line; "" gives no lines. The same
+# as s_lines, in time linear in the text.
+export function gl_lines(text: string) -> ptr<ProcStrs> {
+    let l: ptr<ProcStrs> = proc_strs_new()
+    let n: i32 = s_len(text)
+    let p: ptr<u8> = text as ptr<u8>
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 10 {
+            proc_strs_push(l, gl_copy(p, start, i))
+            start = i + 1
+        }
+        i = i + 1
+    }
+    if start < n {
+        proc_strs_push(l, gl_copy(p, start, n))
+    }
+    return l
+}
+
+# Lines of a file (no final empty line); none when it cannot be read.
+export function gl_file_lines(path: string) -> ptr<ProcStrs> {
+    return gl_lines(read_text(path))
+}
+
+# `grep -v -e '^#' -e '^$' file`: the lines that are not comments or empty.
+export function gl_list_file(path: string) -> ptr<ProcStrs> {
+    let all: ptr<ProcStrs> = gl_file_lines(path)
+    let out: ptr<ProcStrs> = sl_new()
+    let mut i: i32 = 0
+    while i < sl_len(all) {
+        let l: string = sl_get(all, i)
+        if s_len(l) > 0 and not s_starts(l, "#") {
+            sl_push(out, l)
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# Each element followed by a newline.
+export function gl_join_lines(l: ptr<ProcStrs>) -> string {
+    let b: ptr<ByteBuf> = bb_new(4096)
+    let mut i: i32 = 0
+    while i < sl_len(l) {
+        bb_puts(b, sl_get(l, i))
+        bb_putc(b, 10)
+        i = i + 1
+    }
+    let s: string = bb_str(b)
+    bb_free(b)
+    return s
+}
+
+# Byte-sorted copy with duplicates dropped (LC_ALL=C sort -u).
+export function gl_sort_unique(l: ptr<ProcStrs>) -> ptr<ProcStrs> {
+    let c: ptr<ProcStrs> = sl_copy(l)
+    gl_sort(c)
+    let out: ptr<ProcStrs> = sl_new()
+    let mut i: i32 = 0
+    while i < sl_len(c) {
+        let s: string = sl_get(c, i)
+        if i == 0 or not s_eq(s, sl_get(c, i - 1)) {
+            sl_push(out, s)
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# Order of two strings: by bytes (LC_ALL=C), or by the collation of the
+# locale the environment names, as sort(1) and comm(1) order without
+# LC_ALL=C (ties broken by bytes).
+export function gl_cmp(a: string, b: string, locale: bool) -> i32 {
+    if locale {
+        let c: i32 = gate_strcoll(a, b)
+        if c != 0 {
+            return c
+        }
+    }
+    return strcmp(a, b)
+}
+
+# Sort by bytes, in place.
+export function gl_sort(l: ptr<ProcStrs>) {
+    gl_sort_by(l, false)
+}
+
+# Sort in the locale's collation, in place (plain `sort`).
+export function gl_sort_locale(l: ptr<ProcStrs>) {
+    gl_sort_by(l, true)
+}
+
+# A merge sort, for lists of thousands.
+export function gl_sort_by(l: ptr<ProcStrs>, locale: bool) {
+    let n: i32 = sl_len(l)
+    if n < 2 {
+        return
+    }
+    let tmp: ptr<string> = malloc((n as i64) * 8) as ptr<string>
+    let mut width: i32 = 1
+    while width < n {
+        let mut lo: i32 = 0
+        while lo < n {
+            let mut mid: i32 = lo + width
+            if mid > n {
+                mid = n
+            }
+            let mut hi: i32 = lo + 2 * width
+            if hi > n {
+                hi = n
+            }
+            let mut a: i32 = lo
+            let mut b: i32 = mid
+            let mut k: i32 = lo
+            while k < hi {
+                if a < mid and (b >= hi or gl_cmp(l.items[a], l.items[b], locale) <= 0) {
+                    tmp[k] = l.items[a]
+                    a = a + 1
+                } else {
+                    tmp[k] = l.items[b]
+                    b = b + 1
+                }
+                k = k + 1
+            }
+            lo = hi
+        }
+        let mut j: i32 = 0
+        while j < n {
+            l.items[j] = tmp[j]
+            j = j + 1
+        }
+        width = width * 2
+    }
+}
+
+# `comm -23 a b` on lists sorted the same way: the elements of `a` not
+# in `b`.
+export function gl_minus(a: ptr<ProcStrs>, b: ptr<ProcStrs>, locale: bool) -> ptr<ProcStrs> {
+    let out: ptr<ProcStrs> = sl_new()
+    let mut i: i32 = 0
+    let mut j: i32 = 0
+    while i < sl_len(a) {
+        if j >= sl_len(b) {
+            sl_push(out, sl_get(a, i))
+            i = i + 1
+        } else {
+            let c: i32 = gl_cmp(sl_get(a, i), sl_get(b, j), locale)
+            if c < 0 {
+                sl_push(out, sl_get(a, i))
+                i = i + 1
+            } elif c > 0 {
+                j = j + 1
+            } else {
+                i = i + 1
+                j = j + 1
+            }
+        }
+    }
+    return out
+}
+
+# The tracked files matching a pathspec, as `git ls-files` lists them.
+export function gl_git_ls(spec: string) -> ptr<ProcStrs> {
+    let c: ptr<ProcCmd> = proc_cmd("git")
+    proc_arg(c, "ls-files")
+    proc_arg(c, spec)
+    proc_stdin(c, PROC_NULL)
+    proc_stderr(c, PROC_INHERIT)
+    let r: ptr<ProcResult> = proc_run(c)
+    return gl_lines(r.stdout)
+}
+
+# Paths of the regular files named *suffix under `dir`, as
+# `find dir -name '*suffix' -type f` finds them (symlinks are not
+# followed). Appended to `out`.
+export function gl_find_files(dir: string, suffix: string, out: ptr<ProcStrs>) {
+    let names: ptr<ProcStrs> = list_dir(dir)
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        let p: string = dir + "/" + sl_get(names, i)
+        if not is_link(p) {
+            if is_dir(p) {
+                gl_find_files(p, suffix, out)
+            } elif is_file(p) and s_ends(sl_get(names, i), suffix) {
+                sl_push(out, p)
+            }
+        }
+        i = i + 1
+    }
+}
+
+# True when a line of the file matches `function[[:space:]]+main` (the
+# corpus test of `flow run`).
+export function gl_has_main(path: string) -> bool {
+    let b: Bytes = read_bytes(path)
+    if b.len < 0 {
+        return false
+    }
+    let t: string = b.data as string
+    let p: ptr<u8> = b.data
+    let n: i32 = b.len as i32
+    let mut at: i32 = s_find(t, "function", 0)
+    while at >= 0 {
+        let mut i: i32 = at + 8
+        let mut gap: i32 = 0
+        while i < n and (p[i] == 32 or p[i] == 9 or p[i] == 11 or p[i] == 12 or p[i] == 13) {
+            i = i + 1
+            gap = gap + 1
+        }
+        if gap > 0 and i + 4 <= n and p[i] == 109 and p[i + 1] == 97 and p[i + 2] == 105 and p[i + 3] == 110 {
+            return true
+        }
+        at = s_find(t, "function", at + 1)
+    }
+    return false
+}
+
+# The first line of a file without its newline (`head -1` inside $(...)).
+export function gl_first_line(path: string) -> string {
+    return s_chomp_all(head_lines(path, 1))
+}
+
+# Up to `n` lines of `text`, each with its newline (`head -n N`).
+export function gl_head(text: string, n: i32) -> string {
+    let p: ptr<u8> = text as ptr<u8>
+    let len: i32 = s_len(text)
+    let mut seen: i32 = 0
+    let mut i: i32 = 0
+    while i < len and seen < n {
+        if p[i] == 10 {
+            seen = seen + 1
+        }
+        i = i + 1
+    }
+    return s_slice(text, 0, i)
+}
+
+# `diff a b`: its stdout.
+export function gl_diff(a: string, b: string) -> string {
+    let c: ptr<ProcCmd> = gl_cmd(sl_of3("diff", a, b))
+    let r: ptr<ProcResult> = proc_run(c)
+    return r.stdout
+}
+
+# Field `k` (from 0) of a TAB-separated line, "" past the end.
+export function gl_field(line: string, k: i32) -> string {
+    let p: ptr<u8> = line as ptr<u8>
+    let n: i32 = s_len(line)
+    let mut f: i32 = 0
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i <= n {
+        if i == n or p[i] == 9 {
+            if f == k {
+                return s_slice(line, start, i)
+            }
+            f = f + 1
+            start = i + 1
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+# Fields `k` and after of a TAB-separated line (`cut -f K-`).
+export function gl_fields_from(line: string, k: i32) -> string {
+    let p: ptr<u8> = line as ptr<u8>
+    let n: i32 = s_len(line)
+    let mut f: i32 = 0
+    let mut i: i32 = 0
+    if k == 0 {
+        return line
+    }
+    while i < n {
+        if p[i] == 9 {
+            f = f + 1
+            if f == k {
+                return s_from(line, i + 1)
+            }
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+# ---------------------------------------------------------------------------
+# Formatting
+# ---------------------------------------------------------------------------
+
+export function gl_num(n: i32, w: i32) -> string {
+    return pad_left(s_itoa(n), w)
+}
+
+# awk's printf "%.1f" of 100 * a / b ("0.0" when b is 0).
+export function gl_pct(a: i32, b: i32) -> string {
+    if b == 0 {
+        return "0.0"
+    }
+    return gate_lib_pct(100.0 * (a as f64) / (b as f64))
+}
+
+# The width `uniq -c` gives its counts: 4 for BSD uniq, 7 for GNU.
+export function gl_uniq_width() -> i32 {
+    if s_eq(uname_s(), "Darwin") {
+        return 4
+    }
+    return 7
+}
+
+# `sort | uniq -c | sort -rn` in the locale's collation (plain `sort`):
+# the distinct values with their counts, most frequent first and, at equal
+# counts, in descending order of the `uniq -c` line.
+export struct GlCounts {
+    vals: ptr<ProcStrs>,
+    counts: ptr<i32>,
+    n: i32
+}
+
+export function gl_count_desc(l: ptr<ProcStrs>) -> ptr<GlCounts> {
+    let s: ptr<ProcStrs> = sl_copy(l)
+    gl_sort_locale(s)
+    let vals: ptr<ProcStrs> = sl_new()
+    let counts: ptr<i32> = malloc(((sl_len(s) + 1) as i64) * 4) as ptr<i32>
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < sl_len(s) {
+        if n > 0 and s_eq(sl_get(s, i), sl_get(vals, n - 1)) {
+            counts[n - 1] = counts[n - 1] + 1
+        } else {
+            sl_push(vals, sl_get(s, i))
+            counts[n] = 1
+            n = n + 1
+        }
+        i = i + 1
+    }
+    # Insertion sort: count descending, then value descending.
+    let mut a: i32 = 1
+    while a < n {
+        let cv: string = vals.items[a]
+        let cc: i32 = counts[a]
+        let mut b: i32 = a
+        while b > 0 and (counts[b - 1] < cc or (counts[b - 1] == cc and gl_cmp(vals.items[b - 1], cv, true) < 0)) {
+            vals.items[b] = vals.items[b - 1]
+            counts[b] = counts[b - 1]
+            b = b - 1
+        }
+        vals.items[b] = cv
+        counts[b] = cc
+        a = a + 1
+    }
+    let out: ptr<GlCounts> = malloc(24) as ptr<GlCounts>
+    out.vals = vals
+    out.counts = counts
+    out.n = n
+    return out
+}
+
+# ---------------------------------------------------------------------------
+# A string set and map
+# ---------------------------------------------------------------------------
+
+export struct GlMap {
+    keys: ptr<string>,
+    vals: ptr<string>,
+    cap: i32,
+    len: i32
+}
+
+export function gl_map_new() -> ptr<GlMap> {
+    let m: ptr<GlMap> = malloc(24) as ptr<GlMap>
+    m.cap = 64
+    m.len = 0
+    m.keys = malloc(64 * 8) as ptr<string>
+    m.vals = malloc(64 * 8) as ptr<string>
+    let mut i: i32 = 0
+    while i < 64 {
+        m.keys[i] = null as string
+        i = i + 1
+    }
+    return m
+}
+
+function gl_hash(s: string) -> i64 {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut h: i64 = 2166136261
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        h = ((h ^ (p[i] as i64)) * 16777619) & 4294967295
+        i = i + 1
+    }
+    return h
+}
+
+function gl_map_slot(m: ptr<GlMap>, key: string) -> i32 {
+    let mut i: i32 = (gl_hash(key) % (m.cap as i64)) as i32
+    while (m.keys[i] as ptr<u8>) != null and not s_eq(m.keys[i], key) {
+        i = (i + 1) % m.cap
+    }
+    return i
+}
+
+export function gl_map_put(m: ptr<GlMap>, key: string, val: string) {
+    if (m.len + 1) * 2 > m.cap {
+        let old_keys: ptr<string> = m.keys
+        let old_vals: ptr<string> = m.vals
+        let old_cap: i32 = m.cap
+        m.cap = m.cap * 2
+        m.keys = malloc((m.cap as i64) * 8) as ptr<string>
+        m.vals = malloc((m.cap as i64) * 8) as ptr<string>
+        let mut z: i32 = 0
+        while z < m.cap {
+            m.keys[z] = null as string
+            z = z + 1
+        }
+        m.len = 0
+        let mut k: i32 = 0
+        while k < old_cap {
+            if (old_keys[k] as ptr<u8>) != null {
+                gl_map_put(m, old_keys[k], old_vals[k])
+            }
+            k = k + 1
+        }
+    }
+    let i: i32 = gl_map_slot(m, key)
+    if (m.keys[i] as ptr<u8>) == null {
+        m.keys[i] = key
+        m.len = m.len + 1
+    }
+    m.vals[i] = val
+}
+
+export function gl_map_has(m: ptr<GlMap>, key: string) -> bool {
+    let i: i32 = gl_map_slot(m, key)
+    return (m.keys[i] as ptr<u8>) != null
+}
+
+# The value, or "" when the key is absent.
+export function gl_map_get(m: ptr<GlMap>, key: string) -> string {
+    let i: i32 = gl_map_slot(m, key)
+    if (m.keys[i] as ptr<u8>) == null {
+        return ""
+    }
+    return m.vals[i]
+}
+
+# A set of the strings in `l`.
+export function gl_set_of(l: ptr<ProcStrs>) -> ptr<GlMap> {
+    let m: ptr<GlMap> = gl_map_new()
+    let mut i: i32 = 0
+    while i < sl_len(l) {
+        gl_map_put(m, sl_get(l, i), "1")
+        i = i + 1
+    }
+    return m
+}
+
+# ---------------------------------------------------------------------------
+# Digests
+# ---------------------------------------------------------------------------
+
+const GL_MASK32: i64 = 4294967295
+
+function gl_rotr(x: i64, n: i64) -> i64 {
+    return ((x >> n) | (x << (32 - n))) & GL_MASK32
+}
+
+function gl_sha_k() -> ptr<i64> {
+    let k: ptr<i64> = malloc(64 * 8) as ptr<i64>
+    k[0] = 1116352408
+    k[1] = 1899447441
+    k[2] = 3049323471
+    k[3] = 3921009573
+    k[4] = 961987163
+    k[5] = 1508970993
+    k[6] = 2453635748
+    k[7] = 2870763221
+    k[8] = 3624381080
+    k[9] = 310598401
+    k[10] = 607225278
+    k[11] = 1426881987
+    k[12] = 1925078388
+    k[13] = 2162078206
+    k[14] = 2614888103
+    k[15] = 3248222580
+    k[16] = 3835390401
+    k[17] = 4022224774
+    k[18] = 264347078
+    k[19] = 604807628
+    k[20] = 770255983
+    k[21] = 1249150122
+    k[22] = 1555081692
+    k[23] = 1996064986
+    k[24] = 2554220882
+    k[25] = 2821834349
+    k[26] = 2952996808
+    k[27] = 3210313671
+    k[28] = 3336571891
+    k[29] = 3584528711
+    k[30] = 113926993
+    k[31] = 338241895
+    k[32] = 666307205
+    k[33] = 773529912
+    k[34] = 1294757372
+    k[35] = 1396182291
+    k[36] = 1695183700
+    k[37] = 1986661051
+    k[38] = 2177026350
+    k[39] = 2456956037
+    k[40] = 2730485921
+    k[41] = 2820302411
+    k[42] = 3259730800
+    k[43] = 3345764771
+    k[44] = 3516065817
+    k[45] = 3600352804
+    k[46] = 4094571909
+    k[47] = 275423344
+    k[48] = 430227734
+    k[49] = 506948616
+    k[50] = 659060556
+    k[51] = 883997877
+    k[52] = 958139571
+    k[53] = 1322822218
+    k[54] = 1537002063
+    k[55] = 1747873779
+    k[56] = 1955562222
+    k[57] = 2024104815
+    k[58] = 2227730452
+    k[59] = 2361852424
+    k[60] = 2428436474
+    k[61] = 2756734187
+    k[62] = 3204031479
+    k[63] = 3329325298
+    return k
+}
+
+# SHA-256 of `n` bytes as lower-case hex (`shasum -a 256`).
+export function gl_sha256(data: ptr<u8>, n: i64) -> string {
+    let total: i64 = ((n + 8) / 64 + 1) * 64
+    let msg: ptr<u8> = malloc(total) as ptr<u8>
+    let mut i: i64 = 0
+    while i < n {
+        msg[i] = data[i]
+        i = i + 1
+    }
+    while i < total {
+        msg[i] = 0
+        i = i + 1
+    }
+    msg[n] = 128
+    let bits: i64 = n * 8
+    let mut b: i64 = 0
+    while b < 8 {
+        msg[total - 1 - b] = ((bits >> (b * 8)) & 255) as u8
+        b = b + 1
+    }
+    let k: ptr<i64> = gl_sha_k()
+    let h: ptr<i64> = malloc(8 * 8) as ptr<i64>
+    h[0] = 1779033703
+    h[1] = 3144134277
+    h[2] = 1013904242
+    h[3] = 2773480762
+    h[4] = 1359893119
+    h[5] = 2600822924
+    h[6] = 528734635
+    h[7] = 1541459225
+    let w: ptr<i64> = malloc(64 * 8) as ptr<i64>
+    let mut off: i64 = 0
+    while off < total {
+        let mut t: i32 = 0
+        while t < 16 {
+            let q: i64 = off + (t as i64) * 4
+            w[t] = ((msg[q] as i64) << 24) | ((msg[q + 1] as i64) << 16) | ((msg[q + 2] as i64) << 8) | (msg[q + 3] as i64)
+            t = t + 1
+        }
+        while t < 64 {
+            let s0: i64 = gl_rotr(w[t - 15], 7) ^ gl_rotr(w[t - 15], 18) ^ (w[t - 15] >> 3)
+            let s1: i64 = gl_rotr(w[t - 2], 17) ^ gl_rotr(w[t - 2], 19) ^ (w[t - 2] >> 10)
+            w[t] = (w[t - 16] + s0 + w[t - 7] + s1) & GL_MASK32
+            t = t + 1
+        }
+        let mut a: i64 = h[0]
+        let mut bb: i64 = h[1]
+        let mut c: i64 = h[2]
+        let mut d: i64 = h[3]
+        let mut e: i64 = h[4]
+        let mut f: i64 = h[5]
+        let mut g: i64 = h[6]
+        let mut hh: i64 = h[7]
+        t = 0
+        while t < 64 {
+            let S1: i64 = gl_rotr(e, 6) ^ gl_rotr(e, 11) ^ gl_rotr(e, 25)
+            let ch: i64 = (e & f) ^ ((~e & GL_MASK32) & g)
+            let t1: i64 = (hh + S1 + ch + k[t] + w[t]) & GL_MASK32
+            let S0: i64 = gl_rotr(a, 2) ^ gl_rotr(a, 13) ^ gl_rotr(a, 22)
+            let maj: i64 = (a & bb) ^ (a & c) ^ (bb & c)
+            let t2: i64 = (S0 + maj) & GL_MASK32
+            hh = g
+            g = f
+            f = e
+            e = (d + t1) & GL_MASK32
+            d = c
+            c = bb
+            bb = a
+            a = (t1 + t2) & GL_MASK32
+            t = t + 1
+        }
+        h[0] = (h[0] + a) & GL_MASK32
+        h[1] = (h[1] + bb) & GL_MASK32
+        h[2] = (h[2] + c) & GL_MASK32
+        h[3] = (h[3] + d) & GL_MASK32
+        h[4] = (h[4] + e) & GL_MASK32
+        h[5] = (h[5] + f) & GL_MASK32
+        h[6] = (h[6] + g) & GL_MASK32
+        h[7] = (h[7] + hh) & GL_MASK32
+        off = off + 64
+    }
+    let digits: ptr<u8> = "0123456789abcdef" as ptr<u8>
+    let out: ptr<u8> = malloc(65) as ptr<u8>
+    let mut j: i32 = 0
+    while j < 8 {
+        let mut s: i32 = 0
+        while s < 8 {
+            let nib: i64 = (h[j] >> (28 - (s as i64) * 4)) & 15
+            out[j * 8 + s] = digits[nib]
+            s = s + 1
+        }
+        j = j + 1
+    }
+    out[64] = 0
+    return out as string
+}
+
+export function gl_sha256_text(s: string) -> string {
+    return gl_sha256(s as ptr<u8>, s_len(s) as i64)
+}
+
+# What `cksum < file | awk '{print $1 "-" $2}'` prints: the POSIX CRC and
+# the byte count. An unreadable file reads as empty.
+export function gl_cksum_file(path: string) -> string {
+    let b: Bytes = read_bytes(path)
+    let mut n: i64 = b.len
+    if n < 0 {
+        n = 0
+    }
+    return gl_crc_of(b.data, n) + "-" + gl_i64_str(n)
+}
+
+# The CRC alone (`printf %s TEXT | cksum | cut -d' ' -f1`).
+export function gl_cksum_text(s: string) -> string {
+    return gl_crc_of(s as ptr<u8>, s_len(s) as i64)
+}
+
+function gl_crc_of(data: ptr<u8>, n: i64) -> string {
+    let mut crc: i64 = 0
+    let mut i: i64 = 0
+    while i < n {
+        crc = gl_crc_byte(crc, data[i] as i64)
+        i = i + 1
+    }
+    let mut len: i64 = n
+    while len > 0 {
+        crc = gl_crc_byte(crc, len & 255)
+        len = len >> 8
+    }
+    crc = (~crc) & GL_MASK32
+    return gl_i64_str(crc)
+}
+
+function gl_crc_byte(crc: i64, byte: i64) -> i64 {
+    let mut c: i64 = (crc ^ (byte << 24)) & GL_MASK32
+    let mut k: i32 = 0
+    while k < 8 {
+        if (c & 2147483648) != 0 {
+            c = ((c << 1) ^ 79764919) & GL_MASK32
+        } else {
+            c = (c << 1) & GL_MASK32
+        }
+        k = k + 1
+    }
+    return c
+}
+
+export function gl_i64_str(v: i64) -> string {
+    if v == 0 {
+        return "0"
+    }
+    let buf: ptr<u8> = malloc(24) as ptr<u8>
+    let mut x: i64 = v
+    let mut i: i32 = 22
+    buf[23] = 0
+    while x > 0 {
+        buf[i] = (48 + (x % 10)) as u8
+        x = x / 10
+        i = i - 1
+    }
+    return ((buf as i64 + (i + 1) as i64) as ptr<u8>) as string
+}
+
+# ---------------------------------------------------------------------------
+# MLIR normalization (the parity goldens' normal form)
+# ---------------------------------------------------------------------------
+#
+# The Flow emitter and the Python generator number SSA values and blocks
+# differently: Python allocates a number before it emits the op that defines
+# it, and it indents region bodies unevenly. Neither changes the program.
+# This makes the two comparable:
+#
+#   * leading and trailing blanks are dropped, and empty lines skipped;
+#   * every %<digits> value is renamed %v<k> in order of first appearance
+#     (%argN block arguments and named values such as %in are kept);
+#   * every ^bb<digits> label is renamed ^b<k> the same way;
+#   * the value names start over at each `gpu.func`, which the GPU
+#     generator numbers from %1 on its own (the counter goes on).
+#
+# Global string constants (`llvm.mlir.global ...`) are left as they are, so
+# a format string such as "%5d" is never touched.
+
+function gl_is_digit(c: u8) -> bool {
+    return c >= 48 and c <= 57
+}
+
+export function gl_mlir_normalize(text: string) -> string {
+    let lines: ptr<ProcStrs> = gl_lines(text)
+    let nlines: i32 = sl_len(lines)
+    let mut vals: ptr<GlMap> = gl_map_new()
+    let labels: ptr<GlMap> = gl_map_new()
+    let mut nv: i32 = 0
+    let mut nl: i32 = 0
+    let out: ptr<ByteBuf> = bb_new(s_len(text) + 64)
+    let mut li: i32 = 0
+    while li < nlines {
+        let raw: string = sl_get(lines, li)
+        li = li + 1
+        let rp: ptr<u8> = raw as ptr<u8>
+        let mut a: i32 = 0
+        let mut b: i32 = s_len(raw)
+        while a < b and (rp[a] == 32 or rp[a] == 9) {
+            a = a + 1
+        }
+        while b > a and (rp[b - 1] == 32 or rp[b - 1] == 9) {
+            b = b - 1
+        }
+        if b == a {
+            continue
+        }
+        let line: string = s_slice(raw, a, b)
+        if s_starts(line, "llvm.mlir.global ") {
+            bb_puts(out, line)
+            bb_putc(out, 10)
+            continue
+        }
+        if s_starts(line, "gpu.func ") {
+            vals = gl_map_new()
+        }
+        let p: ptr<u8> = line as ptr<u8>
+        let n: i32 = s_len(line)
+        let mut start: i32 = 0
+        let mut i: i32 = 0
+        while i < n {
+            if p[i] == 37 and i + 1 < n and gl_is_digit(p[i + 1]) {
+                let mut j: i32 = i + 1
+                while j < n and gl_is_digit(p[j]) {
+                    j = j + 1
+                }
+                let tok: string = gl_copy(p, i, j)
+                if not gl_map_has(vals, tok) {
+                    nv = nv + 1
+                    gl_map_put(vals, tok, "%v" + s_itoa(nv))
+                }
+                bb_put_span(out, p, start, i)
+                bb_puts(out, gl_map_get(vals, tok))
+                start = j
+                i = j
+            } elif p[i] == 94 and i + 3 < n and p[i + 1] == 98 and p[i + 2] == 98 and gl_is_digit(p[i + 3]) {
+                let mut j2: i32 = i + 3
+                while j2 < n and gl_is_digit(p[j2]) {
+                    j2 = j2 + 1
+                }
+                let tok2: string = gl_copy(p, i, j2)
+                if not gl_map_has(labels, tok2) {
+                    nl = nl + 1
+                    gl_map_put(labels, tok2, "^b" + s_itoa(nl))
+                }
+                bb_put_span(out, p, start, i)
+                bb_puts(out, gl_map_get(labels, tok2))
+                start = j2
+                i = j2
+            } else {
+                i = i + 1
+            }
+        }
+        bb_put_span(out, p, start, n)
+        bb_putc(out, 10)
+    }
+    let s: string = bb_str(out)
+    bb_free(out)
+    return s
 }
