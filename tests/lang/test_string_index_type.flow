@@ -1,0 +1,8 @@
+function main() -> i32 {
+    let s: string = "abc"
+    let c: i32 = s[1] as i32
+    if c != 98 {
+        return 1
+    }
+    return 0
+}
