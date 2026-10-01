@@ -269,8 +269,9 @@ and `wasm32.yml` compiles `tests/fixtures/wasm/*.flow` through MLIR to
 WebAssembly and compares against native MLIR builds. `tests/unit` has 18
 `test_mlir_*.py` files that import the generator directly.
 
-The denotational lane described in `AGENTS.md` (a `flow.*` dialect for
-evolution blocks, `FLOW_DENOTATIONAL=1`, a `denotational_blocks` argument to
+The denotational lane ([Denotational MLIR](denotational-mlir.md): a
+`flow.*` dialect for evolution blocks, `FLOW_DENOTATIONAL=1`, a
+`denotational_blocks` argument to
 `flow_to_mlir`) is not on `main` at the time of this slice; there is no
 `src/flow/denotational_mlir.py` to port yet. Its hook is additive: when it is
 set, the dialect module is written ahead of the operational lowering. The
@@ -679,7 +680,8 @@ shrinks, and Python code is deleted only where nothing calls it any more.
    `flow mlir`, `mlir-run`, wasm and BPF switched to flowc.
 9. **Denotational dialect**: once the lane lands, a second pass over flow
    blocks writes the `flow.*` module ahead of the operational one, under the
-   same `FLOW_DENOTATIONAL=1` switch.
+   same `FLOW_DENOTATIONAL=1` switch. Not started; see
+   [Denotational MLIR](denotational-mlir.md).
 10. **GPU** (done): `mlir_gpu_codegen.py` (`FLOWC_MLIR_GPU=1`) and
     `metal_codegen.py` as Flow text emitters; Metal and CUDA runtimes in C.
 11. **JIT** (done): `flow jit` as emit, lower, link and run; `mlir_jit.py`,
