@@ -65,9 +65,9 @@ a new shell script appears (`.sh`, `.bash`, or an extensionless file with a
 `tools/shell_ratchet/baseline.txt`. Claude Code sessions in this repo also
 load `.claude/settings.json`, whose hook refuses to create a `.py` file.
 Vendored trees (`third_party/`, `.lake/`) are exempt.
-`./flow tool script_refs` fails when a tracked `.flow` file names a
-`scripts/...` or `compiler/scripts/...` path that does not exist, so a
-deleted script cannot stay referenced.
+`./flow tool script_refs` fails when a tracked `.flow` file, workflow or
+the Makefile names a `scripts/...` or `compiler/scripts/...` path that
+does not exist, so a deleted script cannot stay referenced.
 
 A few scripts have to stay shell. They are listed with a reason in
 `tools/shell_ratchet/allow.txt` and sit outside the line total: the `./flow`
