@@ -66151,7 +66151,7 @@ void flowc_cgen_put_string_literal(CgenBuf* w, uint8_t* src, int32_t start, int3
   if (src[i] == 13) {
   flowc_cgen_puts(w, "\\r");
 } else {
-  if (src[i] == 92 && (i + 3) < end && src[(i + 1)] == 120) {
+  if (src[i] == 92 && (i + 3) < end && src[(i + 1)] == 120 && (src[(i + 2)] >= 48 && src[(i + 2)] <= 57 || src[(i + 2)] >= 65 && src[(i + 2)] <= 70 || src[(i + 2)] >= 97 && src[(i + 2)] <= 102) && (src[(i + 3)] >= 48 && src[(i + 3)] <= 57 || src[(i + 3)] >= 65 && src[(i + 3)] <= 70 || src[(i + 3)] >= 97 && src[(i + 3)] <= 102)) {
   flowc_cgen_putc(w, src[i]);
   flowc_cgen_putc(w, src[(i + 1)]);
   flowc_cgen_putc(w, src[(i + 2)]);
