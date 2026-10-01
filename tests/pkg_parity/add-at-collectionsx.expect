@@ -1,0 +1,51 @@
+$ flow_pkg add collectionsx@^0.1.0
+[exit 0]
+== stdout
+[94mResolved collectionsx@0.1.0 from flow-packages[0m
+[92m✓ Added collectionsx = "^0.1.0"[0m
+[94m↓ collectionsx@0.1.0 from registry[0m
+[92m✓ Installed collectionsx from @ROOT@/registry/packages/collectionsx[0m
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+description = ""
+author = ""
+license = "MIT"
+entry = "src/main.flow"
+
+[dependencies]
+collectionsx = "^0.1.0"
+
+[dev-dependencies]
+
+[build]
+host = "flowc"
+# test_command = "flow run tests/test_main.flow"
+
+[conventions]
+# avoid = [
+#   { pattern = "reverse for loop", reason = "generates incorrect step direction (#410)", workaround = "use while with explicit decrement" },
+# ]
+
+[patterns]
+# math = "use fabs((x) as f64) as f32 for single-precision abs"
+== flow.lock
+{
+  "version": 1,
+  "packages": {
+    "collectionsx": {
+      "version": "0.1.0",
+      "source": "registry",
+      "resolved": {
+        "path": "@ROOT@/registry/packages/collectionsx"
+      }
+    }
+  }
+}
+== flow_packages
+D flow_packages
+D flow_packages/collectionsx
+F flow_packages/collectionsx/flow.toml -rw-r--r-- 1625288112 225
+D flow_packages/collectionsx/src
+F flow_packages/collectionsx/src/lib.flow -rw-r--r-- 59783340 5402

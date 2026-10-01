@@ -1,0 +1,42 @@
+$ flow_pkg install
+[exit 0]
+== stdout
+[94mInstalling dependencies...[0m
+[92m✓ Installed sub from git (file://@WORK@/gitsrc/mylib/pkgs/sub)[0m
+
+[92m✓ All dependencies installed (flow.lock updated)[0m
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+entry = "src/main.flow"
+
+[dependencies]
+sub = { git = "file://@WORK@/gitsrc/mylib", branch = "stable", subdir = "pkgs/sub" }
+
+[dev-dependencies]
+== flow.lock
+{
+  "version": 1,
+  "packages": {
+    "sub": {
+      "version": {
+        "git": "file://@WORK@/gitsrc/mylib",
+        "branch": "stable",
+        "subdir": "pkgs/sub"
+      },
+      "source": "git",
+      "resolved": {
+        "git": "file://@WORK@/gitsrc/mylib",
+        "branch": "stable",
+        "subdir": "pkgs/sub",
+        "rev": "a0bc2e0c97ca330e1cb88b93dd8e6d2216b43cfa"
+      }
+    }
+  }
+}
+== flow_packages
+D flow_packages
+D flow_packages/sub
+D flow_packages/sub/src
+F flow_packages/sub/src/lib.flow -rw-r--r-- 1170334700 44

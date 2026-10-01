@@ -1,0 +1,51 @@
+$ flow_pkg add json@latest
+[exit 0]
+== stdout
+[94mResolved json@0.1.0 from flow-packages[0m
+[92m✓ Added json = "0.1.0"[0m
+[94m↓ json@0.1.0 from registry[0m
+[92m✓ Installed json from @ROOT@/registry/packages/json[0m
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+description = ""
+author = ""
+license = "MIT"
+entry = "src/main.flow"
+
+[dependencies]
+json = "0.1.0"
+
+[dev-dependencies]
+
+[build]
+host = "flowc"
+# test_command = "flow run tests/test_main.flow"
+
+[conventions]
+# avoid = [
+#   { pattern = "reverse for loop", reason = "generates incorrect step direction (#410)", workaround = "use while with explicit decrement" },
+# ]
+
+[patterns]
+# math = "use fabs((x) as f64) as f32 for single-precision abs"
+== flow.lock
+{
+  "version": 1,
+  "packages": {
+    "json": {
+      "version": "0.1.0",
+      "source": "registry",
+      "resolved": {
+        "path": "@ROOT@/registry/packages/json"
+      }
+    }
+  }
+}
+== flow_packages
+D flow_packages
+D flow_packages/json
+F flow_packages/json/flow.toml -rw-r--r-- 2072806930 215
+D flow_packages/json/src
+F flow_packages/json/src/lib.flow -rw-r--r-- 1957823396 13865

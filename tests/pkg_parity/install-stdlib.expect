@@ -1,0 +1,30 @@
+$ flow_pkg install
+[exit 0]
+== stdout
+[94mInstalling dependencies...[0m
+[92m✓ Installed collections from stdlib[0m
+
+[92m✓ All dependencies installed (flow.lock updated)[0m
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+entry = "src/main.flow"
+
+[dependencies]
+collections = "*"
+
+[dev-dependencies]
+== flow.lock
+{
+  "version": 1,
+  "packages": {
+    "collections": {
+      "version": "*",
+      "source": "stdlib"
+    }
+  }
+}
+== flow_packages
+D flow_packages
+F flow_packages/collections.flow -rw-r--r-- 171660124 8958

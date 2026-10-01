@@ -1,0 +1,51 @@
+$ flow_pkg add serde@^0.1.0
+[exit 0]
+== stdout
+[94mResolved serde@0.1.0 from flow-packages[0m
+[92m✓ Added serde = "^0.1.0"[0m
+[94m↓ serde@0.1.0 from registry[0m
+[92m✓ Installed serde from @ROOT@/registry/packages/serde[0m
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+description = ""
+author = ""
+license = "MIT"
+entry = "src/main.flow"
+
+[dependencies]
+serde = "^0.1.0"
+
+[dev-dependencies]
+
+[build]
+host = "flowc"
+# test_command = "flow run tests/test_main.flow"
+
+[conventions]
+# avoid = [
+#   { pattern = "reverse for loop", reason = "generates incorrect step direction (#410)", workaround = "use while with explicit decrement" },
+# ]
+
+[patterns]
+# math = "use fabs((x) as f64) as f32 for single-precision abs"
+== flow.lock
+{
+  "version": 1,
+  "packages": {
+    "serde": {
+      "version": "0.1.0",
+      "source": "registry",
+      "resolved": {
+        "path": "@ROOT@/registry/packages/serde"
+      }
+    }
+  }
+}
+== flow_packages
+D flow_packages
+D flow_packages/serde
+F flow_packages/serde/flow.toml -rw-r--r-- 2987565159 239
+D flow_packages/serde/src
+F flow_packages/serde/src/lib.flow -rw-r--r-- 2898392791 2366
