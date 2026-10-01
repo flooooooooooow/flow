@@ -43,7 +43,7 @@ jobs:
       - name: Verify tag version matches the source tree
         shell: bash
         run: |
-          scripts/sync_version.sh --check
+          ./flow tool sync_version --check
           actual="$(head -n 1 VERSION)"
           if [ "$actual" != "${FLOW_RELEASE_TAG#v}" ]; then
             echo "tag $FLOW_RELEASE_TAG does not match VERSION ($actual)" >&2
@@ -59,7 +59,7 @@ jobs:
 
       - name: Require zero ordinary documentation debt for 1.x
         if: startsWith(steps.tag.outputs.name, 'v1.')
-        run: scripts/check_doc_examples.sh strict
+        run: ./flow tool doc_examples strict
 
       - name: Run permanent Stable conformance corpus
         run: ./flow tool tests/conformance/run.flow
@@ -174,7 +174,7 @@ jobs:
           SHA="$(sha256sum "flow-${TAG}.tar.gz" | awk '{print $1}')"
           git fetch origin main
           git switch -C release-homebrew origin/main
-          scripts/sync_version.sh --homebrew --sha256 "$SHA"
+          ./flow tool sync_version --homebrew --sha256 "$SHA"
           if git diff --quiet -- packaging/homebrew/Formula/flow.rb; then
             echo "Homebrew formula already matches $TAG"
             exit 0

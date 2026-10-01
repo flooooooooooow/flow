@@ -181,7 +181,7 @@ if [[ "$reuse" -eq 0 ]]; then
 done > "$INPUTS.files"
 
 mkdir -p "$WORK/docdump"
-FLOW_DOC_DUMP="$WORK/docdump" ./scripts/check_doc_examples.sh dump > "$WORK/docdump.log" 2>&1 || {
+FLOW_DOC_DUMP="$WORK/docdump" ./flow tool doc_examples dump > "$WORK/docdump.log" 2>&1 || {
     cat "$WORK/docdump.log" >&2
     echo "parity_typecheck: the doc block dump failed" >&2
     exit 1

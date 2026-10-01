@@ -1,8 +1,9 @@
+# ACTIONS-INTENDED: public repository; its CI runs on GitHub Actions.
 name: Version Bump
 
 # Two ways in:
-#   * push a v* tag — the tree is bumped to match the tag after the fact
-#   * run manually with a version — for bumping ahead of tagging
+#   * push a v* tag: the tree is bumped to match the tag after the fact
+#   * run manually with a version: for bumping ahead of tagging
 #
 # main is protected, so this opens a PR rather than pushing directly. Same
 # approach as the repository-stats workflow.
@@ -89,10 +90,10 @@ jobs:
           if [[ '${{ steps.brew.outputs.enabled }}' == 'true' ]]; then
             ARGS+=(--sha256-from-release)
           fi
-          scripts/sync_version.sh "${ARGS[@]}"
+          ./flow tool sync_version "${ARGS[@]}"
 
       - name: Verify the result is self-consistent
-        run: scripts/sync_version.sh --check
+        run: ./flow tool sync_version --check
 
       - name: Open or update the bump PR
         env:

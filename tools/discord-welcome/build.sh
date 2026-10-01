@@ -2,7 +2,7 @@
 # Build the Flow welcome bot (scripts/tools/discord_welcome) and print the
 # path of the executable.
 #
-# Same pipeline as scripts/tools/build_tool.sh (Stage-A flowc from the
+# Same pipeline as `./flow tool` (Stage-A flowc from the
 # checked-in bootstrap C, bundle mode), plus OpenSSL at link time: Homebrew
 # openssl@3 on macOS, pkg-config or plain -lssl -lcrypto elsewhere.
 #

@@ -46,14 +46,15 @@ export function vr_root() -> string {
 }
 
 # Resolve flowc once for every worker: when FLOWC_BIN is unset, run
-# compiler/scripts/ensure_flowc.sh and export its answer as an absolute
+# `flow tool compiler/scripts/ensure_flowc.flow` and export its answer as an absolute
 # path. Returns 0, or the script's exit status after its message.
 export function vr_ensure_flowc(root: string) -> i32 {
     if ft_len(vr_env("FLOWC_BIN")) > 0 {
         return 0
     }
-    let c: ptr<ProcCmd> = proc_cmd("bash")
-    proc_arg(c, root + "/compiler/scripts/ensure_flowc.sh")
+    let c: ptr<ProcCmd> = proc_cmd(root + "/flow")
+    proc_arg(c, "tool")
+    proc_arg(c, root + "/compiler/scripts/ensure_flowc.flow")
     proc_stderr(c, PROC_INHERIT)
     let r: ptr<ProcResult> = proc_run(c)
     if r.exit_code != 0 or ft_len(r.error) > 0 {

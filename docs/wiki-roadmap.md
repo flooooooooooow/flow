@@ -16,7 +16,7 @@
 | Third-party `flow-verify` section (1000+ proofs) | ✅ |
 | Euclid book index pages (auto-generated) | ✅ |
 | Build script (`scripts/build_wiki.py`) | ✅ |
-| Deploy script (`scripts/deploy_wiki.sh`) | ✅ build-only (VPS behind `FLOW_WIKI_VPS=1`) |
+| Deploy script (`./flow tool deploy_wiki`) | ✅ build-only (VPS behind `FLOW_WIKI_VPS=1`) |
 | Version dropdown + changelog | ✅ |
 | GitHub Pages deploy (`wiki.yml`) | ✅ |
 | VPS live deploy (`/flow/` + `/transpile/`) | ❌ disabled |

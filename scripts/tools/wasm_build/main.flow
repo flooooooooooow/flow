@@ -11,7 +11,7 @@
 # xargs -P). The shims set FLOW_REPO_ROOT, WASM_BUILD_BIN (this executable)
 # and the emscripten environment the Homebrew toolchain needs.
 #
-# Flow sources go to C with flowc (compiler/scripts/flowc_emit.sh). The MLIR
+# Flow sources go to C with flowc (compiler/scripts/flowc_emit.flow). The MLIR
 # backend reaches wasm32 LLVM IR through `flow flow-to-llvm`
 # --wasm32 (the flowc MLIR emitter). emcc links the
 # result, gfx programs against runtime/gfx_wasm.c. Page text lives in
@@ -630,10 +630,10 @@ function resolve_backend(explicit: string, errs: ptr<StrList>) -> string {
 
 function flow_to_c(b: ptr<Build>, program: string, c_out: string, library: bool) -> string {
     let _m: bool = pr_mkdir_p(parent_dir(c_out))
-    # flowc through compiler/scripts/flowc_emit.sh. A runtime module is a
+    # flowc through compiler/scripts/flowc_emit.flow. A runtime module is a
     # library unit (--library, #1030): no runtime checks and plain external
     # names, so it links next to the program's C.
-    let mut cmd: string = pr_quote(root() + "/compiler/scripts/flowc_emit.sh")
+    let mut cmd: string = pr_quote(root() + "/flow") + " tool " + pr_quote(root() + "/compiler/scripts/flowc_emit.flow")
     if library {
         cmd = cmd + " --library"
     }

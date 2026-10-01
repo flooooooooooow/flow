@@ -8,17 +8,18 @@ Counts tracked source files and refreshes:
 ## Run
 
 ```bash
-./scripts/update_repo_stats.sh
-./scripts/update_repo_stats.sh --check
+./flow tool repo_stats
+./flow tool repo_stats --check
 ```
 
-The script builds `main.flow` with `scripts/tools/build_tool.sh` (Stage-A
-flowc from the bootstrap C, so only a C compiler is needed) and runs it.
-The program runs git itself through `std.process`.
+`flow tool` builds `main.flow` with the Stage-A flowc from the bootstrap C,
+so only a C compiler is needed, and runs it. The program runs git itself
+through `std.process`, and runs its work in a child process under a time
+limit (`FLOW_STATS_TIMEOUT` seconds, default 90).
 
 ## Split of responsibility
 
 | Layer | Owns |
 |-------|------|
-| `update_repo_stats.sh` | build and run with a timeout |
-| `main.flow` | git calls, revision skipping, exclude rules, line counts, area/language totals, JSON + README splice |
+| `flow tool` | build the program and run it from the caller's directory |
+| `main.flow` | the time limit, git calls, revision skipping, exclude rules, line counts, area/language totals, JSON + README splice |

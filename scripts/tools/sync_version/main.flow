@@ -6,18 +6,19 @@
 # canonical file (then src/flow/version.py) still reading
 # 0.3.3 and three hardcoded 0.10.0 strings in the `flow` driver.
 #
-# Run through scripts/sync_version.sh from the repository root:
+# Run it as `./flow tool sync_version` from anywhere in the repository; it
+# works from the repository root:
 #
-#   sync_version.sh                  rewrite mirrors from canonical
-#   sync_version.sh --check          exit 1 if any mirror drifted
-#   sync_version.sh --set 0.12.0     bump canonical, then rewrite
-#   sync_version.sh --set v0.12.0 --release-date 2026-09-01
+#   flow tool sync_version                  rewrite mirrors from canonical
+#   flow tool sync_version --check          exit 1 if any mirror drifted
+#   flow tool sync_version --set 0.12.0     bump canonical, then rewrite
+#   flow tool sync_version --set v0.12.0 --release-date 2026-09-01
 #
 # The Homebrew formula is only touched with --homebrew: its url and sha256
 # point at a release tarball that does not exist until the tag is published.
 # Qualify and publish the release first, then run --homebrew --sha256 <digest>.
-# --sha256-from-release has the shim download the tarball and hash it; the
-# digest reaches this program as --prefetched-sha256.
+# --sha256-from-release downloads the tarball with curl and hashes it with
+# sha256sum (or shasum -a 256) before anything is written.
 #
 # Each mirror pattern is a line-anchored sequence of literal text and one
 # character-class run holding the version. The matcher below follows Python
@@ -25,6 +26,8 @@
 # `^` and `$` in MULTILINE mode), so output is unchanged from the Python
 # script this replaces.
 
+import .repo { rp_enter_root, rp_capture, rp_status, rp_argv2, rp_argv3 }
+import std.process { proc_which, proc_pid, proc_getenv }
 import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_repr, ft_read_file, ft_write_file, ft_exists, ft_starts, ft_ends, ft_slice, ft_from, ft_byte, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
 
 extern {
@@ -32,7 +35,7 @@ extern {
     function getcwd(buf: ptr<i8>, size: i64) -> ptr<i8>
 }
 
-const PROG: string = "sync_version.sh"
+const PROG: string = "flow tool sync_version"
 const CANONICAL: string = "VERSION"
 
 # Character classes a version run can use.
@@ -584,7 +587,7 @@ function is_semver(v: string) -> bool {
 # ---------------------------------------------------------------------------
 
 function usage() -> string {
-    return "usage: " + PROG + " [-h] [--check] [--set NEW_VERSION] [--homebrew]\n                       [--sha256 SHA256] [--sha256-from-release]\n                       [--release-date RELEASE_DATE]\n"
+    return "usage: " + PROG + " [-h] [--check] [--set NEW_VERSION] [--homebrew]\n                             [--sha256 SHA256] [--sha256-from-release]\n                             [--release-date RELEASE_DATE]\n"
 }
 
 function arg_error(msg: string) -> i32 {
@@ -605,7 +608,7 @@ function help_text() -> string {
     return h
 }
 
-# Long options in argparse order. Index 6 is the shim's private option.
+# Long options in argparse order.
 function opt_name(i: i32) -> string {
     if i == 0 { return "--help" }
     if i == 1 { return "--check" }
@@ -613,19 +616,68 @@ function opt_name(i: i32) -> string {
     if i == 3 { return "--homebrew" }
     if i == 4 { return "--sha256" }
     if i == 5 { return "--sha256-from-release" }
-    if i == 6 { return "--release-date" }
-    return "--prefetched-sha256"
+    return "--release-date"
 }
 
 function opt_takes_value(i: i32) -> bool {
-    return i == 2 or i == 4 or i == 6 or i == 7
+    return i == 2 or i == 4 or i == 6
 }
 
 function opt_metavar(i: i32) -> string {
     if i == 2 { return "--set" }
     if i == 4 { return "--sha256" }
-    if i == 6 { return "--release-date" }
-    return "--prefetched-sha256"
+    return "--release-date"
+}
+
+# The first line of VERSION as it stands (`head -n 1 VERSION`).
+function canonical_first_line() -> string {
+    let text: string = ft_read_file(CANONICAL)
+    if text as ptr<u8> == null {
+        return ""
+    }
+    let mut n: i32 = 0
+    while ft_byte(text, n) != 0 and ft_byte(text, n) != 10 {
+        n = n + 1
+    }
+    return ft_slice(text, 0, n)
+}
+
+# Download the release tarball of `version` and return its SHA-256, or null
+# after printing why.
+function release_digest(version: string) -> string {
+    let url: string = "https://github.com/flooooooooooow/flow/releases/download/v" + version + "/flow-v" + version + ".tar.gz"
+    let mut tmp_dir: string = proc_getenv("TMPDIR")
+    if ft_len(tmp_dir) == 0 {
+        tmp_dir = "/tmp"
+    }
+    let tarball: string = tmp_dir + "/flow-release-" + ft_itoa(proc_pid()) + ".tar.gz"
+    let curl: ptr<StrList> = rp_argv3("curl", "-fsSL", "-o")
+    ft_list_push(curl, tarball)
+    ft_list_push(curl, url)
+    let mut ok: bool = ft_len(proc_which("curl")) > 0
+    if ok {
+        let _c: string = rp_capture(curl)
+        ok = rp_status() == 0
+    }
+    if ok == false {
+        let _r: string = rp_capture(rp_argv3("rm", "-f", tarball))
+        ft_errln("error: could not download " + url)
+        return null as string
+    }
+    let mut out: string = ""
+    if ft_len(proc_which("sha256sum")) > 0 {
+        out = rp_capture(rp_argv2("sha256sum", tarball))
+    } else {
+        let sh: ptr<StrList> = rp_argv3("shasum", "-a", "256")
+        ft_list_push(sh, tarball)
+        out = rp_capture(sh)
+    }
+    let _r2: string = rp_capture(rp_argv3("rm", "-f", tarball))
+    let mut n: i32 = 0
+    while ft_byte(out, n) != 0 and ft_byte(out, n) != 32 and ft_byte(out, n) != 10 {
+        n = n + 1
+    }
+    return ft_slice(out, 0, n)
 }
 
 function strip_leading_v(s: string) -> string {
@@ -637,6 +689,10 @@ function strip_leading_v(s: string) -> string {
 }
 
 function main(argc: i32, argv: ptr<string>) -> i32 {
+    if rp_enter_root() == false {
+        ft_errln(PROG + ": cannot enter the repository root")
+        return 1
+    }
     let mut check: bool = false
     let mut homebrew_flag: bool = false
     let mut from_release: bool = false
@@ -663,7 +719,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
             }
             let mut which: i32 = -1
             let mut k: i32 = 0
-            while k < 8 {
+            while k < 7 {
                 if ft_eq(opt_name(k), name) {
                     which = k
                 }
@@ -717,7 +773,6 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
             if which == 4 { sha256 = value }
             if which == 5 { from_release = true }
             if which == 6 { release_date = value }
-            if which == 7 { prefetched = value }
         } else {
             ft_list_push(unknown, arg)
         }
@@ -738,6 +793,19 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
 
     if check and new_version as ptr<u8> != null {
         return arg_error("--check and --set are mutually exclusive")
+    }
+
+    # The digest is fetched before anything is written, so a missing
+    # release changes nothing.
+    if from_release and sha256 as ptr<u8> == null {
+        let mut fetch_version: string = canonical_first_line()
+        if new_version as ptr<u8> != null {
+            fetch_version = strip_leading_v(new_version)
+        }
+        prefetched = release_digest(fetch_version)
+        if prefetched as ptr<u8> == null {
+            return 1
+        }
     }
 
     let mut version: string = ""
@@ -774,10 +842,6 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     if from_release and sha256 as ptr<u8> == null {
         let url: string = "https://github.com/flooooooooooow/flow/releases/download/v" + version + "/flow-v" + version + ".tar.gz"
         ft_outln("fetching " + url)
-        if prefetched as ptr<u8> == null {
-            ft_errln("error: --sha256-from-release needs the digest; run through scripts/sync_version.sh")
-            return 1
-        }
         sha256 = prefetched
         ft_outln("sha256: " + sha256)
     }
@@ -845,7 +909,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     if check {
         ft_outln("")
         ft_outln(ft_itoa(ft_list_len(drifted)) + " file(s) disagree with " + version + ".")
-        ft_outln("Fix with: scripts/sync_version.sh")
+        ft_outln("Fix with: ./flow tool sync_version")
         return 1
     }
     ft_outln("")

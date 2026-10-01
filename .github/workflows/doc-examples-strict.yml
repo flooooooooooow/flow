@@ -9,7 +9,7 @@ on:
       - '**.md'
       - 'src/**'
       - 'lib/**'
-      - 'scripts/check_doc_examples.sh'
+      - 'tools/flow_cli/**'
       - 'scripts/tools/lib/**'
       - 'tools/doc_examples/**'
       - 'tests/doc_examples/**'
@@ -33,11 +33,11 @@ jobs:
       - name: Checker goldens
         run: ./flow tool tests/doc_examples/run.flow
       - name: Reject Flow hidden in text fences
-        run: scripts/check_doc_examples.sh snippets
+        run: ./flow tool doc_examples snippets
       - name: Compile documented Flow and enforce the debt ratchet
-        run: scripts/check_doc_examples.sh --check-ledger
+        run: ./flow tool doc_examples --check-ledger
       - name: Require zero documentation debt for Flow 1.0 qualification
         if: >-
           startsWith(github.ref, 'refs/tags/v1.0.0-rc.') ||
           github.ref == 'refs/tags/v1.0.0'
-        run: scripts/check_doc_examples.sh strict
+        run: ./flow tool doc_examples strict

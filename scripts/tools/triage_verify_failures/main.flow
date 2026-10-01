@@ -13,7 +13,7 @@
 #   flow tool triage_verify_failures --json triage.json
 #
 # The repository root is VERIFY_ROOT, else FLOW_REPO_ROOT. flowc is resolved
-# once (compiler/scripts/ensure_flowc.sh unless FLOWC_BIN is set) and passed
+# once (compiler/scripts/ensure_flowc.flow unless FLOWC_BIN is set) and passed
 # to every worker in FLOWC_BIN.
 #
 # docs/third-party/flow-verify-parser-status.md is the write-up this
