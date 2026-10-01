@@ -264,7 +264,7 @@ With strict effects enabled, the call is valid because the enclosing handler cov
 ### 13. Turn unhandled effects into compile-time errors
 
 ```sh
-FLOWC_STRICT_EFFECTS=1 compiler/scripts/flowc_emit.sh program.flow build/program.c
+FLOWC_STRICT_EFFECTS=1 ./flow tool compiler/scripts/flowc_emit.flow program.flow build/program.c
 ```
 
 `FLOWC_STRICT_EFFECTS=1` checks bare performs and function effect rows. The default language mode

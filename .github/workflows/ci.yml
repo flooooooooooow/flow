@@ -296,7 +296,7 @@ jobs:
       - uses: actions/checkout@v7
 
       # No Python: the compiler host is flowc built from compiler/src by the
-      # bootstrap binary (compiler/scripts/flowc_host.sh), and the per-module
+      # bootstrap binary (compiler/scripts/flowc_host.flow), and the per-module
       # headers come from the Flow tool scripts/tools/c_to_hdr.
       - name: c_to_hdr goldens
         run: ./flow tool tests/c_to_hdr/run.flow
@@ -559,7 +559,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Build flowc from the bootstrap C
-        run: bash compiler/scripts/ensure_flowc.sh
+        run: ./flow tool compiler/scripts/ensure_flowc.flow
       - name: parity_lowering
         run: timeout 20m ./flow tool compiler/scripts/parity_lowering.flow
       - name: parity_field_dsl
@@ -661,7 +661,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Build flowc from the bootstrap C
-        run: bash compiler/scripts/ensure_flowc.sh
+        run: ./flow tool compiler/scripts/ensure_flowc.flow
 
       # Crash pins, deep nesting and 30s of seeded mutation; fails on a
       # signal or a hang.

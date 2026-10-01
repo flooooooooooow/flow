@@ -4,7 +4,7 @@
 #   ./flow tool tests/fuzz/run.flow --seconds 60 --seed 7   longer mutation run
 #   ./flow tool tests/fuzz/run.flow --pins-only             crash pins and deep nesting only
 #
-# flowc must never crash. Each input goes through compiler/scripts/flowc_emit.sh
+# flowc must never crash. Each input goes through compiler/scripts/flowc_emit.flow
 # (parse, resolve, type check, C emission). A crash is a signal (exit 128 and
 # up) or no answer within 20 seconds; any other exit is flowc refusing the
 # input. Pins and deep inputs must also say where: exit 0, or exit 1 with a
@@ -43,7 +43,9 @@ let mut RX_LOC: ptr<Regex> = null
 # crash. `located`: exit 1 must carry a file:line:col: diagnostic.
 function check_input(name: string, f: string, located: bool) -> bool {
     RUNS = RUNS + 1
-    let c: ptr<ProcCmd> = cmd(sl_of3("./compiler/scripts/flowc_emit.sh", f, WORK + "/out.c"))
+    let c: ptr<ProcCmd> = cmd(sl_of3("./flow", "tool", "compiler/scripts/flowc_emit.flow"))
+    proc_arg(c, f)
+    proc_arg(c, WORK + "/out.c")
     proc_timeout_ms(c, 20000)
     cmd_capture_out(c)
     cmd_merge_err(c)
@@ -77,7 +79,7 @@ function check_input(name: string, f: string, located: bool) -> bool {
     }
     outln("CRASH " + name + ": " + why)
     outln("  input: " + f)
-    outln("  rerun: compiler/scripts/flowc_emit.sh " + f + " /tmp/out.c")
+    outln("  rerun: ./flow tool compiler/scripts/flowc_emit.flow " + f + " /tmp/out.c")
     out(tr_head(tr_indent(r.stdout, "  | "), 5))
     return false
 }
@@ -220,7 +222,7 @@ function main() -> i32 {
     }
 
     if s_len(env("FLOWC_BIN")) == 0 {
-        let f: string = capture(cmd(sl_of1("./compiler/scripts/ensure_flowc.sh")))
+        let f: string = capture(cmd(sl_of3("./flow", "tool", "compiler/scripts/ensure_flowc.flow")))
         if last_status() != 0 {
             cli_exit(1)
         }

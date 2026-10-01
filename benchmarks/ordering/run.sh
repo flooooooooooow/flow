@@ -16,7 +16,7 @@ SRC="$ROOT/benchmarks/ordering/adaptive_sort_bench.flow"
 OUT="$(mktemp -d 2>/dev/null || mktemp -d -t flow_order_bench)"
 
 echo "== plans =="
-FLOWC_EXPLAIN=1 "$ROOT/compiler/scripts/flowc_emit.sh" --strict "$SRC" "$OUT/bench.c" \
+FLOWC_EXPLAIN=1 "$ROOT/flow" tool "$ROOT/compiler/scripts/flowc_emit.flow" --strict "$SRC" "$OUT/bench.c" \
     2>"$OUT/plans" >/dev/null
 grep -E '^\[[0-9]+\] sort|^      chose ' "$OUT/plans" | sed 's/^      //'
 

@@ -238,7 +238,7 @@ in `compiler/fixtures/typecheck_rules/`:
   `domain_*`).
 * Match exhaustiveness and the checker's other warnings print as
   `FILE:LINE:COL: warning: ...` (#678), which the Python host never did.
-  `flowc_emit.sh --no-warnings` (`FLOWC_WARNINGS=0`) silences them and
+  `flowc_emit.flow --no-warnings` (`FLOWC_WARNINGS=0`) silences them and
   `--Werror` (`FLOWC_WERROR=1`) makes them errors. Warnings inside
   `lib/stdlib` and `lib/runtime` are shown only with `FLOWC_WARNINGS=all`.
   `parity_typecheck.sh --check` holds them to the Python checker's list in

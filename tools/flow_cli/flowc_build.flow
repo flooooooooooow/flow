@@ -1,0 +1,637 @@
+# @module tools.flow_cli.flowc_build
+# @means  Finding and building flowc, and compiling one program to C with
+#         it. The flow command calls these directly; the entry points
+#         compiler/scripts/{ensure_flowc,flowc_host,flowc_emit}.flow wrap
+#         them for scripts and tools. They replaced three shell scripts of
+#         the same names.
+#
+# ensure: compiler/build/flowc_bootstrap, built with cc from the checked-in
+#   bootstrap C, unless compiler/src has local edits the checked-in C cannot
+#   reflect; for those, the host below. "Local edits" means uncommitted
+#   changes under compiler/src in a git work tree. Outside one (a release
+#   tarball) a source newer than the bootstrap C counts. The Stage-A
+#   driver.flow binaries that roundtrip leaves in compiler/build are test
+#   artifacts with a smaller feature set and are never picked.
+#
+# host: a flowc compiled from the current compiler/src by the bootstrap
+#   binary, cached in compiler/build/flowc_host/<key>/flowc. The key is the
+#   POSIX cksum of the bootstrap C followed by compiler/src/*.flow, so a
+#   repeated call costs one checksum. Builds go to a temporary name first.
+#
+# emit: one Flow program to C, as `flow compile` does: type checker on,
+#   type errors warnings except the fatal ones (lenient), runtime checks on.
+#   A program that imports modules or uses the Field or dynamics DSL is
+#   bundled from the repository root.
+#
+# Every function takes the repository root. Messages go to stderr with the
+# old scripts' prefixes (ensure_flowc:, flowc_host:, flowc_emit:).
+
+# Shell globs sort with strcoll in the user's locale; the cache key reads
+# compiler/src/*.flow in that order.
+@cEmbed("#include <locale.h>
+#include <string.h>
+static const char fcb_locale_env[] = {0};
+static int32_t fcb_strcoll(const char *a, const char *b) {
+  static int ready = 0;
+  if (!ready) { setlocale(LC_COLLATE, fcb_locale_env); ready = 1; }
+  return (int32_t)strcoll(a, b);
+}
+")
+
+import "tools/flow_cli/sys.flow"
+import std.process { ProcCmd, ProcStrs, proc_arg, proc_env_clear, proc_environ }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function fcb_strcoll(a: string, b: string) -> i32
+}
+
+const BOOT_C: string = "compiler/bootstrap/flowc_stage_a.c"
+const BOOT_BIN: string = "compiler/build/flowc_bootstrap"
+
+# ---------------------------------------------------------------------------
+# Small helpers
+# ---------------------------------------------------------------------------
+
+# "DIR"/*"SUFFIX" in the order the shell expands it, as full paths.
+export function glob_sorted(dir: string, suffix: string) -> ptr<ProcStrs> {
+    let l: ptr<ProcStrs> = glob_suffix(dir, suffix)
+    let mut a: i32 = 1
+    while a < sl_len(l) {
+        let mut b: i32 = a
+        while b > 0 and fcb_strcoll(sl_get(l, b), sl_get(l, b - 1)) < 0 {
+            let t: string = sl_get(l, b)
+            l.items[b] = sl_get(l, b - 1)
+            l.items[b - 1] = t
+            b = b - 1
+        }
+        a = a + 1
+    }
+    return l
+}
+
+# `p` made absolute against `root` when it is relative.
+function under(root: string, p: string) -> string {
+    if is_abs(p) {
+        return p
+    }
+    return root + "/" + p
+}
+
+# ---------------------------------------------------------------------------
+# POSIX cksum
+# ---------------------------------------------------------------------------
+
+const CRC_MASK: i64 = 4294967295
+
+function crc_table() -> ptr<i64> {
+    let t: ptr<i64> = malloc(2048) as ptr<i64>
+    let mut i: i64 = 0
+    while i < 256 {
+        let mut c: i64 = i << 24
+        let mut k: i32 = 0
+        while k < 8 {
+            if (c & 2147483648) != 0 {
+                c = ((c << 1) ^ 79764919) & CRC_MASK
+            } else {
+                c = (c << 1) & CRC_MASK
+            }
+            k = k + 1
+        }
+        t[i] = c
+        i = i + 1
+    }
+    return t
+}
+
+function crc_byte(t: ptr<i64>, crc: i64, b: i64) -> i64 {
+    return ((crc << 8) ^ t[((crc >> 24) ^ b) & 255]) & CRC_MASK
+}
+
+# `cat FILES | cksum | awk '{print $1 "-" $2}'`; "" when a file is unreadable.
+export function cksum_key(files: ptr<ProcStrs>) -> string {
+    let t: ptr<i64> = crc_table()
+    let mut crc: i64 = 0
+    let mut total: i64 = 0
+    let mut f: i32 = 0
+    while f < sl_len(files) {
+        let d: Bytes = read_bytes(sl_get(files, f))
+        if d.len < 0 {
+            return ""
+        }
+        let mut i: i64 = 0
+        while i < d.len {
+            crc = crc_byte(t, crc, d.data[i] as i64)
+            i = i + 1
+        }
+        total = total + d.len
+        f = f + 1
+    }
+    let mut n: i64 = total
+    while n > 0 {
+        crc = crc_byte(t, crc, n & 255)
+        n = n >> 8
+    }
+    crc = (crc ^ CRC_MASK) & CRC_MASK
+    return i64_text(crc) + "-" + i64_text(total)
+}
+
+function i64_text(v: i64) -> string {
+    if v == 0 {
+        return "0"
+    }
+    let digits: string = "0123456789"
+    let mut out: string = ""
+    let mut x: i64 = v
+    while x > 0 {
+        let d: i32 = (x % 10) as i32
+        out = s_slice(digits, d, d + 1) + out
+        x = x / 10
+    }
+    return out
+}
+
+# ---------------------------------------------------------------------------
+# ensure
+# ---------------------------------------------------------------------------
+
+# True when compiler/src differs from what the checked-in bootstrap C was
+# generated from.
+function sources_edited(root: string) -> bool {
+    if have("git") {
+        let probe: ptr<ProcCmd> = cmd(sl_of2("git", "rev-parse"))
+        proc_arg(probe, "--is-inside-work-tree")
+        cmd_cwd(probe, root)
+        cmd_quiet(probe)
+        if run(probe) == 0 {
+            let st: ptr<ProcCmd> = cmd(sl_of3("git", "status", "--porcelain"))
+            proc_arg(st, "--")
+            proc_arg(st, "compiler/src")
+            cmd_cwd(st, root)
+            cmd_quiet_err(st)
+            return s_len(capture(st)) > 0
+        }
+    }
+    # Not a git checkout (release tarball, copied tree): fall back to mtimes.
+    return tree_newer(root + "/compiler/src", root + "/" + BOOT_C)
+}
+
+# find DIR -type f -newer REF -print -quit | grep -q .
+function tree_newer(dir: string, reference: string) -> bool {
+    let names: ptr<ProcStrs> = list_dir(dir)
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        let p: string = dir + "/" + sl_get(names, i)
+        if is_dir(p) and not is_link(p) {
+            if tree_newer(p, reference) {
+                return true
+            }
+        } elif is_file(p) and mtime(p) > mtime(reference) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# compiler/build/flowc_bootstrap from the checked-in C with cc alone,
+# written under a temporary name first.
+function build_bootstrap(root: string) -> bool {
+    let bin: string = root + "/" + BOOT_BIN
+    let boot_c: string = root + "/" + BOOT_C
+    if is_exec(bin) and not newer(boot_c, bin) {
+        return true
+    }
+    errln("ensure_flowc: building flowc_bootstrap from checked-in C (cc only)...")
+    let tmp: string = bin + ".tmp." + s_itoa(pid())
+    let argv: ptr<ProcStrs> = sl_of1(env_or("CC", "cc"))
+    sl_extend(argv, s_words(env_or("CFLAGS", "-O2")))
+    sl_push2(argv, "-o", tmp)
+    sl_push2(argv, boot_c, "-lm")
+    let c: ptr<ProcCmd> = cmd(argv)
+    cmd_quiet_err(c)
+    if run(c) == 0 and move_file(tmp, bin) {
+        return true
+    }
+    rm_f(tmp)
+    return false
+}
+
+# The flowc to use, "" after printing why there is none. The bootstrap
+# path is relative ("compiler/build/flowc_bootstrap"), as the script
+# printed it; the host path is absolute. `cc_only` takes the bootstrap
+# binary whatever the state of compiler/src.
+export function flowc_ensure(root: string, cc_only: bool) -> string {
+    if not mkdir_p(root + "/compiler/build") {
+        errln("mkdir: " + root + "/compiler/build: cannot create directory")
+        return ""
+    }
+    if not is_file(root + "/" + BOOT_C) {
+        errln("ensure_flowc: no flowc driver available (need cc and " + BOOT_C + ")")
+        return ""
+    }
+    if not cc_only and sources_edited(root) {
+        errln("ensure_flowc: compiler/src has local edits; building flowc from them")
+        return flowc_host(root)
+    }
+    if build_bootstrap(root) {
+        return BOOT_BIN
+    }
+    errln("ensure_flowc: bootstrap C did not build")
+    return ""
+}
+
+# ---------------------------------------------------------------------------
+# host
+# ---------------------------------------------------------------------------
+
+# A flowc built from the current compiler/src; "" after printing why not.
+# $FLOWC_HOST_BIN when set (returned as is).
+export function flowc_host(root: string) -> string {
+    let given: string = env("FLOWC_HOST_BIN")
+    if s_len(given) > 0 {
+        return given
+    }
+    let files: ptr<ProcStrs> = sl_of1(root + "/" + BOOT_C)
+    sl_extend(files, glob_sorted(root + "/compiler/src", ".flow"))
+    let key: string = cksum_key(files)
+    let dir: string = "compiler/build/flowc_host/" + key
+    let bin: string = dir + "/flowc"
+    if is_exec(root + "/" + bin) {
+        return root + "/" + bin
+    }
+
+    let boot: string = flowc_ensure(root, true)
+    if s_len(boot) == 0 {
+        return ""
+    }
+    let boot_abs: string = under(root, boot)
+    if not mkdir_p(root + "/" + dir) {
+        errln("mkdir: " + root + "/" + dir + ": cannot create directory")
+        return ""
+    }
+    let tmp: string = root + "/" + dir + "/flowc.tmp." + s_itoa(pid())
+    let em: ptr<ProcCmd> = cmd(sl_of1(boot_abs))
+    cmd_cwd(em, root)
+    cmd_env(em, "FLOWC_BUNDLE", "1")
+    cmd_env(em, "FLOWC_DIR", "compiler/src")
+    cmd_env(em, "FLOWC_IN", "compiler/src/main.flow")
+    cmd_env(em, "FLOWC_OUT", tmp + ".c")
+    if run_to_file(em, tmp + ".log", true) != 0 {
+        errln("flowc_host: " + boot_abs + " could not compile compiler/src/main.flow")
+        errs(read_text(tmp + ".log"))
+        rm_f(tmp + ".c")
+        rm_f(tmp + ".log")
+        return ""
+    }
+    let cc: string = env_or("CC", "cc")
+    let build: ptr<ProcCmd> = cmd(sl_of3(cc, "-O2", "-w"))
+    proc_arg(build, "-o")
+    proc_arg(build, tmp)
+    proc_arg(build, tmp + ".c")
+    proc_arg(build, "-lm")
+    if run(build) != 0 {
+        errln("flowc_host: " + cc + " could not build the emitted compiler")
+        rm_f(tmp)
+        rm_f(tmp + ".c")
+        rm_f(tmp + ".log")
+        return ""
+    }
+    rm_f(tmp + ".c")
+    rm_f(tmp + ".log")
+    if not move_file(tmp, root + "/" + bin) {
+        return ""
+    }
+    return root + "/" + bin
+}
+
+# ---------------------------------------------------------------------------
+# emit
+# ---------------------------------------------------------------------------
+
+# How to run the driver for one emit: its path, the directory to run in,
+# the variables to set (NAME=value) and to remove. `rc` is nonzero when
+# there is nothing to run (the message is already printed).
+export struct EmitPlan {
+    rc: i32,
+    driver: string,
+    cwd: string,
+    sets: ptr<ProcStrs>,
+    unsets: ptr<ProcStrs>
+}
+
+function plan_fail(rc: i32) -> ptr<EmitPlan> {
+    let p: ptr<EmitPlan> = malloc(48) as ptr<EmitPlan>
+    p.rc = rc
+    p.driver = ""
+    p.cwd = ""
+    p.sets = sl_new()
+    p.unsets = sl_new()
+    return p
+}
+
+export const EMIT_USAGE: string = "usage: ./flow tool compiler/scripts/flowc_emit.flow [--strict|--lenient] [--no-checks] [--no-warnings|--Werror] [--library] [--export NAME]... IN.flow OUT.c"
+
+function is_space_byte(c: i32) -> bool {
+    return c == 32 or (c >= 9 and c <= 13)
+}
+
+# The rest of `line` after leading [[:space:]].
+function after_indent(line: string) -> string {
+    let mut i: i32 = 0
+    while is_space_byte(s_byte(line, i)) {
+        i = i + 1
+    }
+    return s_from(line, i)
+}
+
+# `s` starts with WORD followed by a [[:space:]] byte.
+function word_then_space(s: string, word: string) -> bool {
+    return s_starts(s, word) and is_space_byte(s_byte(s, s_len(word)))
+}
+
+# The patterns that decide on bundle mode (grep -E, line by line):
+#   ^[[:space:]]*import[[:space:]]
+#   ^[[:space:]]*(field|boundary)[[:space:]]
+#   ^[[:space:]]*((dyn|dynamics)\.)?(dsys|horizon|...)[[:space:]]
+#   ^[[:space:]]*(dyn|dynamics)[[:space:]]*\{
+function line_needs_bundle(line: string) -> bool {
+    let s: string = after_indent(line)
+    if word_then_space(s, "import") or word_then_space(s, "field") or word_then_space(s, "boundary") {
+        return true
+    }
+    let mut rest: string = s
+    if s_starts(rest, "dynamics.") {
+        rest = s_from(rest, 9)
+    } elif s_starts(rest, "dyn.") {
+        rest = s_from(rest, 4)
+    }
+    let kws: ptr<ProcStrs> = s_words("dsys horizon sense ga closed analyze wfc couple guide represent")
+    let mut i: i32 = 0
+    while i < sl_len(kws) {
+        if word_then_space(rest, sl_get(kws, i)) {
+            return true
+        }
+        i = i + 1
+    }
+    if s_starts(s, "dynamics") {
+        return s_starts(after_indent(s_from(s, 8)), "{")
+    }
+    if s_starts(s, "dyn") {
+        return s_starts(after_indent(s_from(s, 3)), "{")
+    }
+    return false
+}
+
+function needs_bundle(program: string) -> bool {
+    let lines: ptr<ProcStrs> = s_lines(read_text(program))
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        if line_needs_bundle(sl_get(lines, i)) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# "$(cd "$(dirname "$p")" && pwd)/$(basename "$p")" from `cwd`.
+function abs_from(cwd: string, p: string) -> string {
+    let d: string = path_dirname(p)
+    let mut full: string = d
+    if not is_abs(d) {
+        full = cwd + "/" + d
+    }
+    return path_norm_abs(full) + "/" + path_basename(p)
+}
+
+# Parse flowc_emit's arguments and decide how to run the driver. Runs
+# ensure when FLOWC_BIN does not name an executable. `cwd` is the caller's
+# working directory (relative paths are resolved against it).
+export function flowc_emit_plan(root: string, cwd: string, args: ptr<ProcStrs>) -> ptr<EmitPlan> {
+    let mut lenient: string = env_or("FLOWC_LENIENT", "1")
+    let mut checks: string = env_or("FLOWC_CHECKS", "1")
+    let mut library: string = env_or("FLOWC_LIBRARY", "0")
+    let mut exports: string = env("FLOWC_EXPORT")
+    let mut warnings: string = env_or("FLOWC_WARNINGS", "1")
+    let mut werror: string = env_or("FLOWC_WERROR", "0")
+    let mut i: i32 = 0
+    let mut parsing: bool = true
+    while parsing and i < sl_len(args) {
+        let a: string = sl_get(args, i)
+        if s_eq(a, "--strict") {
+            lenient = "0"
+            i = i + 1
+        } elif s_eq(a, "--lenient") {
+            lenient = "1"
+            i = i + 1
+        } elif s_eq(a, "--no-warnings") {
+            warnings = "0"
+            i = i + 1
+        } elif s_eq(a, "--Werror") {
+            werror = "1"
+            i = i + 1
+        } elif s_eq(a, "--no-checks") {
+            checks = "0"
+            i = i + 1
+        } elif s_eq(a, "--library") {
+            library = "1"
+            i = i + 1
+        } elif s_eq(a, "--export") {
+            if i + 1 >= sl_len(args) {
+                errln("flowc_emit: --export needs a NAME")
+                return plan_fail(2)
+            }
+            exports = join_export(exports, sl_get(args, i + 1))
+            i = i + 2
+        } elif s_starts(a, "--export=") {
+            exports = join_export(exports, s_from(a, 9))
+            i = i + 1
+        } elif s_eq(a, "--module-name") {
+            if i + 1 >= sl_len(args) {
+                errln("flowc_emit: --module-name needs a NAME")
+                return plan_fail(2)
+            }
+            i = i + 2
+        } elif s_starts(a, "--module-name=") {
+            i = i + 1
+        } elif s_eq(a, "--") {
+            i = i + 1
+            parsing = false
+        } elif s_starts(a, "-") {
+            errln("flowc_emit: unknown option " + a)
+            return plan_fail(2)
+        } else {
+            parsing = false
+        }
+    }
+    if sl_len(args) - i != 2 {
+        errln(EMIT_USAGE)
+        return plan_fail(2)
+    }
+    let program: string = sl_get(args, i)
+    let c_out: string = sl_get(args, i + 1)
+    if not is_file(under(cwd, program)) {
+        errln("flowc_emit: no such file: " + program)
+        return plan_fail(1)
+    }
+
+    # A copy: flowc_emit_call puts the environment back after planning,
+    # which frees the string getenv returned.
+    let mut driver: string = s_from(env("FLOWC_BIN"), 0)
+    if s_len(driver) == 0 or not is_exec(under(cwd, driver)) {
+        driver = flowc_ensure(root, false)
+        if s_len(driver) == 0 {
+            errln("flowc_emit: no flowc (set FLOWC_BIN or run compiler/scripts/bootstrap_from_c.sh)")
+            return plan_fail(1)
+        }
+        driver = under(root, driver)
+    }
+    if not is_abs(driver) {
+        driver = abs_from(cwd, driver)
+    }
+
+    if s_eq(library, "1") {
+        checks = "0"
+    }
+
+    let out_dir: string = path_dirname(under(cwd, c_out))
+    if not mkdir_p(out_dir) {
+        errln("mkdir: " + out_dir + ": cannot create directory")
+        return plan_fail(1)
+    }
+    let p: ptr<EmitPlan> = plan_fail(0)
+    p.driver = driver
+    let typecheck: string = env_or("FLOWC_TYPECHECK", "1")
+    if needs_bundle(under(cwd, program)) {
+        p.cwd = root
+        sl_push(p.sets, "FLOWC_BUNDLE=1")
+        sl_push(p.sets, "FLOWC_DIR=" + root)
+        sl_push(p.sets, "FLOWC_TYPECHECK=" + typecheck)
+        sl_push(p.sets, "FLOWC_CHECKS=" + checks)
+        sl_push(p.sets, "FLOWC_LENIENT=" + lenient)
+        sl_push(p.sets, "FLOWC_WARNINGS=" + warnings)
+        sl_push(p.sets, "FLOWC_WERROR=" + werror)
+        sl_push(p.sets, "FLOWC_LIBRARY=" + library)
+        sl_push(p.sets, "FLOWC_EXPORT=" + exports)
+        sl_push(p.sets, "FLOWC_IN=" + abs_from(cwd, program))
+        sl_push(p.sets, "FLOWC_OUT=" + abs_from(cwd, c_out))
+        return p
+    }
+    # Positional argv runs the self-test; emit needs FLOWC_IN / FLOWC_OUT.
+    p.cwd = cwd
+    sl_push(p.unsets, "FLOWC_BUNDLE")
+    sl_push(p.sets, "FLOWC_TYPECHECK=" + typecheck)
+    sl_push(p.sets, "FLOWC_CHECKS=" + checks)
+    sl_push(p.sets, "FLOWC_LENIENT=" + lenient)
+    sl_push(p.sets, "FLOWC_WARNINGS=" + warnings)
+    sl_push(p.sets, "FLOWC_WERROR=" + werror)
+    sl_push(p.sets, "FLOWC_LIBRARY=" + library)
+    sl_push(p.sets, "FLOWC_EXPORT=" + exports)
+    sl_push(p.sets, "FLOWC_IN=" + program)
+    sl_push(p.sets, "FLOWC_OUT=" + c_out)
+    return p
+}
+
+function join_export(have: string, name: string) -> string {
+    if s_len(have) == 0 {
+        return name
+    }
+    return have + "," + name
+}
+
+# The variable name of a NAME=value entry.
+function entry_name(kv: string) -> string {
+    let eq: i32 = s_find_byte(kv, 61, 0)
+    if eq < 0 {
+        return kv
+    }
+    return s_slice(kv, 0, eq)
+}
+
+# The plan as a command that runs the driver as a child, with exactly the
+# environment the script's `exec env ...` gave it.
+export function emit_plan_cmd(p: ptr<EmitPlan>) -> ptr<ProcCmd> {
+    let c: ptr<ProcCmd> = cmd(sl_of1(p.driver))
+    cmd_cwd(c, p.cwd)
+    proc_env_clear(c)
+    let skip: ptr<ProcStrs> = sl_copy(p.unsets)
+    let mut i: i32 = 0
+    while i < sl_len(p.sets) {
+        sl_push(skip, entry_name(sl_get(p.sets, i)))
+        i = i + 1
+    }
+    let all: ptr<ProcStrs> = proc_environ()
+    let mut j: i32 = 0
+    while j < sl_len(all) {
+        let kv: string = sl_get(all, j)
+        let name: string = entry_name(kv)
+        if not sl_has(skip, name) {
+            cmd_env(c, name, s_from(kv, s_len(name) + 1))
+        }
+        j = j + 1
+    }
+    let mut k: i32 = 0
+    while k < sl_len(p.sets) {
+        let kv: string = sl_get(p.sets, k)
+        let name: string = entry_name(kv)
+        cmd_env(c, name, s_from(kv, s_len(name) + 1))
+        k = k + 1
+    }
+    return c
+}
+
+# One emit prepared to run as a child of this program: `rc` is nonzero when
+# there is nothing to run (the message is already printed), else `cmd` runs
+# the driver.
+export struct EmitCall {
+    rc: i32,
+    cmd: ptr<ProcCmd>
+}
+
+# flowc_emit ARGS... with the NAME=value pairs in `envs` set first, as
+# `VAR=x flowc_emit ...` would: they are read while the arguments are
+# planned and reach the driver. This program's environment is put back.
+export function flowc_emit_call(root: string, args: ptr<ProcStrs>, envs: ptr<ProcStrs>) -> ptr<EmitCall> {
+    let saved: ptr<ProcStrs> = sl_new()
+    let mut i: i32 = 0
+    while i < sl_len(envs) {
+        let kv: string = sl_get(envs, i)
+        let name: string = entry_name(kv)
+        if env_isset(name) {
+            sl_push(saved, name + "=" + env(name))
+        } else {
+            sl_push(saved, name)
+        }
+        env_set(name, s_from(kv, s_len(name) + 1))
+        i = i + 1
+    }
+    let call: ptr<EmitCall> = malloc(16) as ptr<EmitCall>
+    let p: ptr<EmitPlan> = flowc_emit_plan(root, cwd_logical(), args)
+    call.rc = p.rc
+    call.cmd = null
+    if p.rc == 0 {
+        call.cmd = emit_plan_cmd(p)
+    }
+    let mut j: i32 = 0
+    while j < sl_len(saved) {
+        let kv: string = sl_get(saved, j)
+        let eq: i32 = s_find_byte(kv, 61, 0)
+        if eq < 0 {
+            env_unset(kv)
+        } else {
+            env_set(s_slice(kv, 0, eq), s_from(kv, eq + 1))
+        }
+        j = j + 1
+    }
+    return call
+}
+
+# flowc_emit_call, then run the driver; the status.
+export function flowc_emit_run(root: string, args: ptr<ProcStrs>, envs: ptr<ProcStrs>) -> i32 {
+    let call: ptr<EmitCall> = flowc_emit_call(root, args, envs)
+    if call.rc != 0 {
+        return call.rc
+    }
+    return run(call.cmd)
+}

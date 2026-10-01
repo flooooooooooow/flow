@@ -20,7 +20,7 @@ FIXTURE_ERR=""
 build_fixture() {
     local td="$T_WORK/gif_demo"
     mkdir -p "$td"
-    if ! compiler/scripts/flowc_emit.sh --strict "$EXAMPLE" "$td/gif_writer.c" > "$td/emit.log" 2>&1; then
+    if ! ./flow tool compiler/scripts/flowc_emit.flow --strict "$EXAMPLE" "$td/gif_writer.c" > "$td/emit.log" 2>&1; then
         FIXTURE_ERR="flowc_emit failed: $(tail -n 5 "$td/emit.log")"
         return
     fi

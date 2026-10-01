@@ -1,0 +1,29 @@
+# Print the path of a flowc, building it when needed.
+#
+#   ./flow tool compiler/scripts/ensure_flowc.flow [--cc-only]
+#
+# compiler/build/flowc_bootstrap, built with cc from the checked-in
+# bootstrap C, unless compiler/src has local edits the checked-in C cannot
+# reflect; for those, a flowc the bootstrap binary compiles from the current
+# compiler/src (compiler/scripts/flowc_host.flow). --cc-only always takes
+# the bootstrap binary. The logic is tools/flow_cli/flowc_build.flow, which
+# the flow command uses directly.
+
+import "tools/flow_cli/sys.flow"
+import "tools/flow_cli/flowc_build.flow"
+import std.process { ProcStrs, proc_args, proc_chdir }
+
+function main() -> i32 {
+    let mut root: string = env("FLOW_REPO_ROOT")
+    if s_len(root) == 0 {
+        root = cwd_logical()
+    }
+    let _cd: bool = proc_chdir(root)
+    let cc_only: bool = s_eq(sl_get(proc_args(), 0), "--cc-only")
+    let p: string = flowc_ensure(root, cc_only)
+    if s_len(p) == 0 {
+        return 1
+    }
+    outln(p)
+    return 0
+}

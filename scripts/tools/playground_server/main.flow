@@ -2,7 +2,7 @@
 #
 # Binds to 127.0.0.1 only. The playground's "Run (native local)" button
 # POSTs source here; the server transpiles it with the real Flow toolchain
-# (compiler/scripts/flowc_emit.sh), optionally compiles and runs it with
+# (compiler/scripts/flowc_emit.flow), optionally compiles and runs it with
 # clang, and returns stdout/stderr as JSON.
 #
 # Security (keep this localhost-only):
@@ -380,7 +380,9 @@ function compile_in(cfg: ptr<Config>, tmp: string, source: string, do_run: bool,
 
     # Flow to C goes through flowc.
     let tp_argv: ptr<StrList> = ft_list_new()
-    ft_list_push(tp_argv, root + "/compiler/scripts/flowc_emit.sh")
+    ft_list_push(tp_argv, root + "/flow")
+    ft_list_push(tp_argv, "tool")
+    ft_list_push(tp_argv, root + "/compiler/scripts/flowc_emit.flow")
     ft_list_push(tp_argv, "--lenient")
     ft_list_push(tp_argv, flow_path)
     ft_list_push(tp_argv, c_path)

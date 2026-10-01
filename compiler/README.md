@@ -6,10 +6,10 @@ commands all use it. The Python C backend is retired, and `FLOW_HOST=python`
 stops with an error. `FLOWC_BIN=<path>` picks a flowc binary.
 
 Drivers live under `compiler/build/`; if none exist,
-`compiler/scripts/ensure_flowc.sh` builds one from the checked-in bootstrap C.
-`compiler/scripts/flowc_host.sh` prints a flowc built from the current
+`compiler/scripts/ensure_flowc.flow` builds one from the checked-in bootstrap C.
+`compiler/scripts/flowc_host.flow` prints a flowc built from the current
 `compiler/src`. For scripts and tools that want C only, use
-`compiler/scripts/flowc_emit.sh [--strict|--lenient] [--no-checks] IN.flow OUT.c`.
+`./flow tool compiler/scripts/flowc_emit.flow [--strict|--lenient] [--no-checks] IN.flow OUT.c`.
 
 ## Get a compiler with nothing but `cc`
 
@@ -55,7 +55,7 @@ From the repo root:
 
 ```bash
 ./flow run examples/basics/hello_world.flow
-env -u FLOWC_IN -u FLOWC_OUT "$(./compiler/scripts/flowc_host.sh)"
+env -u FLOWC_IN -u FLOWC_OUT "$(./flow tool compiler/scripts/flowc_host.flow)"
 ```
 
 Expected exit: `flowc: PASS` (lexer smoke + in-memory parse tests + disk

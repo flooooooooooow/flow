@@ -2,7 +2,7 @@
 # Triage parser failures under the `flow-verify` proof corpus (examples/verify/).
 #
 # The logic is the Flow program in scripts/tools/triage_verify_failures. It
-# runs flowc (compiler/scripts/flowc_emit.sh) per file, in parallel through
+# runs flowc (compiler/scripts/flowc_emit.flow) per file, in parallel through
 # xargs -P, and prints failures bucketed by error and by suspected missing
 # feature.
 #
@@ -18,7 +18,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
 
 if [[ -z "${FLOWC_BIN:-}" ]]; then
-    FLOWC_BIN="$(bash "$ROOT/compiler/scripts/ensure_flowc.sh")"
+    FLOWC_BIN="$("$ROOT/flow" tool "$ROOT/compiler/scripts/ensure_flowc.flow")"
     [[ "$FLOWC_BIN" == /* ]] || FLOWC_BIN="$ROOT/$FLOWC_BIN"
     export FLOWC_BIN
 fi

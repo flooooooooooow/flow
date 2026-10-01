@@ -1,0 +1,35 @@
+# Print the path of a flowc built from the current compiler/src.
+#
+#   host="$(./flow tool compiler/scripts/flowc_host.flow)"
+#   FLOWC_IN=prog.flow FLOWC_OUT=prog.c "$host"
+#
+# This is the compiler host for work on flowc itself. The checked-in
+# bootstrap C (compiler/bootstrap/flowc_stage_a.c) is built with cc, and that
+# binary compiles compiler/src/main.flow in bundle mode. The result is a
+# complete flowc (self-tests with no FLOWC_IN, C emit with FLOWC_IN and
+# FLOWC_OUT) that reflects any local edits under compiler/src.
+#
+# The binary is cached under compiler/build/flowc_host/<key>/flowc, keyed on
+# the contents of compiler/src and the bootstrap C.
+#
+# Env:
+#   FLOWC_HOST_BIN=<path>  use this binary instead (printed as is)
+#   CC                     C compiler (default cc)
+
+import "tools/flow_cli/sys.flow"
+import "tools/flow_cli/flowc_build.flow"
+import std.process { proc_chdir }
+
+function main() -> i32 {
+    let mut root: string = env("FLOW_REPO_ROOT")
+    if s_len(root) == 0 {
+        root = cwd_logical()
+    }
+    let _cd: bool = proc_chdir(root)
+    let p: string = flowc_host(root)
+    if s_len(p) == 0 {
+        return 1
+    }
+    outln(p)
+    return 0
+}

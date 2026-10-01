@@ -6,6 +6,7 @@
 
 import "tools/flow_cli/sys.flow"
 import "tools/flow_cli/toolchain.flow"
+import "tools/flow_cli/flowc_build.flow"
 import "tools/flow_cli/build.flow"
 import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg }
 
@@ -357,13 +358,22 @@ export function cmd_explain(args: ptr<ProcStrs>) -> i32 {
         cli_exit(1)
     }
     let dir: string = mktemp_dir_default()
-    let argv: ptr<ProcStrs> = sl_of1(root() + "/compiler/scripts/flowc_emit.sh")
-    sl_extend(argv, rest)
+    let argv: ptr<ProcStrs> = sl_copy(rest)
     sl_push2(argv, program, dir + "/out.c")
-    let c: ptr<ProcCmd> = cmd(argv)
-    cmd_env(c, "FLOWC_BIN", flowc)
-    cmd_env(c, "FLOWC_EXPLAIN", "1")
-    cmd_env(c, "FLOWC_EXPLAIN_SOURCE", program)
+    let envs: ptr<ProcStrs> = sl_of3("FLOWC_BIN=" + flowc, "FLOWC_EXPLAIN=1", "FLOWC_EXPLAIN_SOURCE=" + program)
+    # The emitter's own messages were captured with the child's output:
+    # stderr is printed to stdout and stdout to stderr, as below.
+    sink_push(SINK_BUF, SINK_BUF)
+    let call: ptr<EmitCall> = flowc_emit_call(root(), argv, envs)
+    let plan_out: string = sink_pop()
+    let plan_err: string = sink_err()
+    if call.rc != 0 {
+        out(plan_err)
+        errs(plan_out)
+        rm_rf(dir)
+        return call.rc
+    }
+    let c: ptr<ProcCmd> = call.cmd
     cmd_capture_out(c)
     cmd_capture_err(c)
     let r: ptr<ProcResult> = run_result(c)
