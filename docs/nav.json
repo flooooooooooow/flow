@@ -1,6 +1,6 @@
 {
   "_note": [
-    "Single source of truth for the wiki sidebar. scripts/build_wiki.sh reads",
+    "Single source of truth for the wiki sidebar. ./flow tool build_wiki reads",
     "this; the search categories, llms.txt and the mkdocs nav derive from it.",
     "JSON rather than YAML because the wiki builder is a Flow program with a",
     "small JSON reader (scripts/tools/lib/json.flow) and no YAML parser.",

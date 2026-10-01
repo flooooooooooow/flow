@@ -14,7 +14,7 @@ captured offscreen from the generated Metal fragment shader with deterministic t
 ```bash
 ./flow shader examples/gpu/shader_photoreal.flow
 ./flow shader examples/gpu/shader_photoreal_materials.flow --name photoreal_gold
-./scripts/record_shader_gallery.sh --group photoreal
+./flow tool shader_record --group photoreal
 ```
 
 ## Scene studies
@@ -736,7 +736,7 @@ ambient occlusion, Fresnel response, reflection/refraction and procedural enviro
 
 ## Recording contract
 
-`scripts/record_shader_gallery.sh` compiles the same FSL files used by `./flow shader`, 
+`./flow tool shader_record` compiles the same FSL files used by `./flow shader`, 
 renders them with `runtime/shader_record_metal.m`, and passes the resulting PPM frames 
 through the shared GIF encoder. Capture time is `frame / fps`, so animations do not 
 depend on wall-clock scheduling. The recorder requires macOS with an exposed Metal device.

@@ -40,7 +40,7 @@ if [[ "$vps" -eq 1 ]]; then
   fi
 fi
 
-bash "$ROOT/scripts/build_wiki.sh"
+"$ROOT/flow" tool build_wiki
 
 if [[ ! -d "$BUILD" ]]; then
   echo "Build directory missing" >&2
@@ -51,7 +51,7 @@ if [[ "$vps" -ne 1 ]]; then
   echo "Wiki built → $BUILD"
   echo "VPS deploy disabled. Docs publish via GitHub Pages:"
   echo "  $PAGES_URL"
-  echo "Preview locally:  scripts/wiki_serve.sh build/wiki 8777"
+  echo "Preview locally:  ./flow tool wiki_browser serve build/wiki 8777"
   echo "Emergency VPS:    FLOW_WIKI_VPS=1 scripts/deploy_wiki.sh"
   exit 0
 fi

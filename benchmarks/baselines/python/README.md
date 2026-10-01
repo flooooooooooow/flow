@@ -12,8 +12,8 @@ message otherwise.
 
 | Directory | Twin of | Run by |
 |---|---|---|
-| `cross_harness/<suite>/<name>/` | `benchmarks/cross_harness/<suite>/<name>/*.flow` | `benchmarks/run_benchmarks.sh` (scripts/tools/bench_harness) |
-| `publish/` | `benchmarks/publish/{flow,c,rust}/` | `benchmarks/run_publish.sh` (scripts/tools/bench_publish) |
+| `cross_harness/<suite>/<name>/` | `benchmarks/cross_harness/<suite>/<name>/*.flow` | `./flow tool bench_harness` (scripts/tools/bench_harness) |
+| `publish/` | `benchmarks/publish/{flow,c,rust}/` | `./flow tool bench_publish` (scripts/tools/bench_publish) |
 | `suite/` | `benchmarks/suite/{flow,c}/` | `benchmarks/suite/run_benchmarks.sh` |
 | `standardized/record_numpy.py` | `benchmarks/standardized/record/record.flow` | `benchmarks/standardized/bench.sh` |
 

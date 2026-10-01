@@ -1,7 +1,8 @@
 # Validate Flow's machine-readable 1.0 stability surface manifest,
 # stability/surfaces.json.
 #
-# Run through scripts/check_stability_manifest.sh from the repository root.
+# Run it as `./flow tool stability_manifest` from anywhere in the
+# repository; it works from the repository root.
 #
 #   --require-complete   fail if any surface is still classified "pending"
 #                        (the RC1 gate)
@@ -10,9 +11,10 @@
 
 import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_repr, ft_read_file, ft_exists, ft_starts, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_sort, ft_set_new, ft_set_add, ft_set_has, StrList, StrSet }
 import .json { json_parse, json_error, json_get, json_kind, json_str, json_first, json_next, json_is_int, json_int, json_pyrepr, json_len, json_kind_string, json_kind_array, json_kind_object, json_kind_number, json_kind_true, json_kind_false, Json }
+import .repo { rp_enter_root }
 
 const MANIFEST: string = "stability/surfaces.json"
-const PROG: string = "check_stability_manifest.sh"
+const PROG: string = "flow tool stability_manifest"
 
 function fail(message: string) -> i32 {
     ft_errln("stability manifest: " + message)
@@ -193,6 +195,10 @@ function usage() -> string {
 }
 
 function main(argc: i32, argv: ptr<string>) -> i32 {
+    if rp_enter_root() == false {
+        ft_errln("stability manifest: cannot enter the repository root")
+        return 1
+    }
     let mut require_complete: bool = false
     let mut i: i32 = 1
     while i < argc {

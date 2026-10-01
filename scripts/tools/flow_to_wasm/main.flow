@@ -1,7 +1,7 @@
 # The legacy Flow to WebAssembly converter behind `flow wasm --legacy`.
 #
-#   scripts/flow_to_wasm.sh <file.flow> [outdir]   convert one program
-#   scripts/flow_to_wasm.sh --all                  convert the example list
+#   flow tool flow_to_wasm <file.flow> [outdir]   convert one program
+#   flow tool flow_to_wasm --all                  convert the example list
 #
 # For each program it writes <name>.c (flowc through
 # compiler/scripts/flowc_emit.sh), tries emcc for <name>.js and <name>.wasm,
@@ -9,9 +9,9 @@
 # when the WebAssembly build worked. The default output directory is
 # wasm/wasm_examples. --all also writes an index.html there.
 #
-# The page text lives in scripts/tools/flow_to_wasm/assets. The shim sets
+# The page text lives in scripts/tools/flow_to_wasm/assets. `flow tool` sets
 # FLOW_REPO_ROOT; without it the current directory is the repository root.
-# The current builder is `flow wasm` (scripts/wasm_build.sh).
+# The current builder is `flow wasm` (scripts/tools/wasm_build).
 
 import .text { ft_out, ft_outln, ft_errln, ft_eq, ft_len, ft_read_file, ft_write_file, ft_exists, ft_starts, ft_ends, ft_replace, ft_slice, ft_from, ft_at, ft_rfind_byte, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_itoa, StrList }
 import .proc { pr_quote, pr_run, pr_capture, pr_chomp, pr_cwd, pr_is_dir }
@@ -411,11 +411,11 @@ function build_all() -> i32 {
 
 function usage() -> i32 {
     ft_outln("Usage:")
-    ft_outln("  scripts/flow_to_wasm.sh <flow_file>     # Convert single file")
-    ft_outln("  scripts/flow_to_wasm.sh --all           # Convert all examples")
+    ft_outln("  ./flow tool flow_to_wasm <flow_file>    # Convert single file")
+    ft_outln("  ./flow tool flow_to_wasm --all          # Convert all examples")
     ft_outln("")
     ft_outln("Example:")
-    ft_outln("  scripts/flow_to_wasm.sh examples/basics/fibonacci.flow")
+    ft_outln("  ./flow tool flow_to_wasm examples/basics/fibonacci.flow")
     return 1
 }
 

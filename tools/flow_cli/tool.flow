@@ -214,6 +214,21 @@ export function tool_build(spec: string) -> string {
     return bin
 }
 
+# The argv that runs tool `spec` with `args`, with FLOW_REPO_ROOT exported as
+# `flow tool` exports it. Exits 2 when the tool cannot be built. The CLI
+# commands that hand work to a repository tool (`flow bpf`, `flow wasm`,
+# `flow playground`, `flow record --gif`) run it through this.
+export function tool_argv(spec: string, args: ptr<ProcStrs>) -> ptr<ProcStrs> {
+    let bin: string = tool_build(spec)
+    if s_len(bin) == 0 {
+        cli_exit(2)
+    }
+    env_set("FLOW_REPO_ROOT", root())
+    let argv: ptr<ProcStrs> = sl_of1(bin)
+    sl_extend(argv, args)
+    return argv
+}
+
 # `flow tool ...`
 export function cmd_tool(args: ptr<ProcStrs>) -> i32 {
     let first: string = sl_get(args, 0)

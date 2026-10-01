@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Dual CPU backends on the WASM page builder (scripts/wasm_build.sh).
+# Dual CPU backends on the WASM page builder (`./flow tool wasm_build build`).
 #
 # The builder is the Flow program in scripts/tools/wasm_build. These tests
 # drive it through its shim, so they cover the argument handling, the emcc
@@ -7,7 +7,7 @@
 # compiler; the real builds skip unless emcc works.
 source "$(dirname "$0")/lib.sh"
 
-SHIM="$T_ROOT/scripts/wasm_build.sh"
+wasm_build() { "$T_ROOT/flow" tool wasm_build build "$@"; }
 HELLO="$T_ROOT/examples/wasm/hello_wasm.flow"
 SNAKE="$T_ROOT/examples/games/snake_gfx.flow"
 
@@ -39,14 +39,14 @@ need_emcc() {
 
 check_backend_from_environment_is_validated() {
     t_need_cc
-    FLOW_CPU_BACKEND=spirv t_run "$SHIM" "$HELLO" --out "$T_TMP"
+    FLOW_CPU_BACKEND=spirv t_run wasm_build "$HELLO" --out "$T_TMP"
     a_eq "$T_RC" 1 "exit status"
     a_file_is "$T_ERR" $'error: unknown backend \'spirv\' (expected c|mlir)\n'
 }
 
 check_backend_choice_is_checked_by_the_parser() {
     t_need_cc
-    t_run "$SHIM" "$HELLO" --backend spirv
+    t_run wasm_build "$HELLO" --backend spirv
     a_eq "$T_RC" 2 "exit status"
     a_file_contains "$T_ERR" "invalid choice: 'spirv' (choose from c, mlir)"
 }
@@ -66,7 +66,7 @@ check_emcc_command_preload_link_and_opt() {
     } > "$T_TMP/bin/emcc"
     chmod 755 "$T_TMP/bin/emcc"
     local support="$T_ROOT/runtime/flow_rt_support.c"
-    PATH="$T_TMP/bin:$PATH" t_run "$SHIM" "$HELLO" \
+    PATH="$T_TMP/bin:$PATH" t_run wasm_build "$HELLO" \
         --out "$T_TMP/out" \
         -O1 \
         --preload /tmp/data@/data \
@@ -93,7 +93,7 @@ check_wasm_build_backend() {
     [[ -e "$HELLO" ]] || t_skip "hello_wasm.flow missing"
     need_emcc
     local out="$T_TMP/$backend"
-    t_run "$SHIM" "$HELLO" --out "$out" --backend "$backend" -O1 --json
+    t_run wasm_build "$HELLO" --out "$out" --backend "$backend" -O1 --json
     [[ "$T_RC" -eq 0 ]] || { cat "$T_ERR"; return 1; }
     a_eq "$(jq -r .backend "$T_OUT")" "$backend" "json backend"
     a_exists "$out/hello_wasm.wasm"
@@ -113,7 +113,7 @@ check_wasm_build_preload_emits_data() {
     mkdir -p "$T_TMP/pack"
     printf 'hello from preload\n' > "$T_TMP/pack/note.txt"
     local out="$T_TMP/out-$backend"
-    t_run "$SHIM" "$HELLO" --out "$out" --backend "$backend" -O1 \
+    t_run wasm_build "$HELLO" --out "$out" --backend "$backend" -O1 \
         --preload "$T_TMP/pack@/data" \
         --link "$T_ROOT/runtime/flow_rt_support.c" \
         --json
@@ -130,7 +130,7 @@ check_wasm_mlir_gfx_snake() {
     [[ -e "$SNAKE" ]] || t_skip "snake_gfx.flow missing"
     need_emcc
     local out="$T_TMP/snake-mlir"
-    t_run "$SHIM" "$SNAKE" --out "$out" --backend mlir -O1 --json
+    t_run wasm_build "$SNAKE" --out "$out" --backend mlir -O1 --json
     [[ "$T_RC" -eq 0 ]] || { cat "$T_ERR"; return 1; }
     a_eq "$(jq -r .backend "$T_OUT")" mlir "json backend"
     a_eq "$(jq '.gfx == true' "$T_OUT")" true "json gfx is true"

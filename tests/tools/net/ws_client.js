@@ -1,4 +1,4 @@
-// Raw-socket client for scripts/ws_echo_relay.sh, used by
+// Raw-socket client for ./flow tool ws_echo_relay, used by
 // tests/tools/net/run.flow. It writes the handshake and the frames itself
 // (masked, as a browser does) and prints one line per reply, so the
 // transcript pins down the exact bytes the relay sends back.

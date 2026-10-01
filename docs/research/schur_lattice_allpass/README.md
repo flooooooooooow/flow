@@ -19,7 +19,7 @@ pdflatex schur_lattice_allpass.tex
 ## Verification plots
 
 ```bash
-tools/audio/plot_lattice_allpass.sh              # add --skip-lean to skip lake build
+./flow tool lattice_allpass plot                 # add --skip-lean to skip lake build
 open build/plots/schur_lattice_allpass/schur_lattice_novel_demo.svg
 ```
 
@@ -41,7 +41,7 @@ Both scripts run the Flow program `scripts/tools/lattice_allpass`. The DSP is
 Audio WAV outputs: `build/audio/lattice_allpass/` (`input.wav`, `output_static_allpass.wav`, `output_modulated_allpass.wav`)
 
 ```bash
-tools/audio/lattice_allpass_audio_demo.sh
+./flow tool lattice_allpass demo
 afplay build/audio/lattice_allpass/output_modulated_allpass.wav
 ```
 

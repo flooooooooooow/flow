@@ -117,7 +117,7 @@ We deliberately **do not** use MkDocs for the live site today. The custom shell 
 1. **Custom domain**: `flow-lang.org` (referenced in verification docs; DNS TBD)
 2. **Versioned docs**: `/transpile/v0.7/` alongside `latest`
 3. **API autogen**: stdlib signatures from `flow doc` or LSP
-4. **Pagefind**: ✅ optional post-build index (`scripts/build_pagefind.sh`); ⌘K prefers Pagefind, falls back to `search-index.json`
+4. **Pagefind**: ✅ optional post-build index (`./flow tool build_wiki --pagefind`); ⌘K prefers Pagefind, falls back to `search-index.json`
 5. **Playground embed**: runnable snippets from tutorial pages
 6. **CI deploy**: ✅ GitHub Pages via `wiki.yml` on `docs/` / `site/` change
 

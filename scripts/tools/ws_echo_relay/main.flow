@@ -11,7 +11,7 @@
 # WebSocket echo server works. It is in the tree so the demo has no
 # dependencies.
 #
-#     scripts/ws_echo_relay.sh --port 9505
+#     ./flow tool ws_echo_relay --port 9505
 #
 # Also speaks plain TCP echo on --tcp-port, so the same Flow program can be
 # run natively against the same relay for comparison.

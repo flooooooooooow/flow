@@ -78,7 +78,7 @@ fn gpu_vector_add(
 <pre class="source"># One Flow kernel, two backends: WGSL on the browser&#x27;s GPU and C on the CPU.
 #
 #   ./flow gpu examples/wasm/gpu_vector_add.flow      # Metal shaders
-#   wasm/crossings.sh gpu                             # WGSL + WASM CPU reference
+#   ./flow tool wasm_crossings gpu                    # WGSL + WASM CPU reference
 #
 # The @gpu bodies below are the ones from lib/stdlib/gpu_kernels.flow. Two
 # things read the same AST:
@@ -193,13 +193,13 @@ export function fill_pattern(buf: ptr&lt;f32&gt;, n: i32, seed: i32) -&gt; void 
 }
 
 function main() -&gt; i32 {
-    println(&quot;gpu_vector_add: kernels for WGSL + CPU reference (see wasm/crossings.sh gpu)&quot;)
+    println(&quot;gpu_vector_add: kernels for WGSL + CPU reference (see ./flow tool wasm_crossings gpu)&quot;)
     return 0
 }
 </pre>
 
 <footer>
-Built by <code>wasm/crossings.sh gpu</code>; WGSL from
+Built by <code>./flow tool wasm_crossings gpu</code>; WGSL from
 <code>tools/gpu/main.flow</code>. Mechanism:
 <code>docs/language/wasm-crossings.md</code>.
 </footer>
