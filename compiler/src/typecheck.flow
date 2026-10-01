@@ -3518,6 +3518,9 @@ function ut_expr(u: ptr<UCtx>, arena: AstArena, id: i32) -> UTy {
     if kind == AST_INDEX {
         let b: UTy = ut_expr(u, arena, arena.nodes[id].a)
         ut_expr(u, arena, arena.nodes[id].b)
+        if b.tag == UT_OTHER and b.prim == UP_STRING and arena.nodes[id].ival == 0 {
+            return ut_prim(UP_U8)
+        }
         if b.tag == UT_SEQ and arena.nodes[id].ival == 0 {
             return ut_of_type(u, arena, b.node)
         }

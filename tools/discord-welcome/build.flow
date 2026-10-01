@@ -1,0 +1,119 @@
+# Build the Flow welcome bot (scripts/tools/discord_welcome) and print the
+# path of the executable.
+#
+# Same pipeline as `./flow tool` (Stage-A flowc from the checked-in
+# bootstrap C, bundle mode, FLOWC_DIR=scripts/tools/lib), plus OpenSSL at
+# link time: Homebrew openssl@3 on macOS, pkg-config or plain -lssl
+# -lcrypto elsewhere.
+#
+# Usage: ./flow tool tools/discord-welcome/build.flow [OUTPUT]
+
+import "tools/flow_cli/sys.flow"
+import std.process { proc_argv, ProcCmd, ProcResult, ProcStrs, proc_args, proc_chdir, proc_stdout, proc_stderr, PROC_CAPTURE, PROC_NULL }
+
+function fail_with(rc: i32) {
+    if rc != 0 {
+        cli_exit(rc)
+    }
+}
+
+# The OpenSSL link flags.
+function ssl_libs() -> ptr<ProcStrs> {
+    let mut prefix: string = ""
+    if have("brew") {
+        let b: ptr<ProcCmd> = cmd(sl_of3("brew", "--prefix", "openssl@3"))
+        cmd_quiet_err(b)
+        prefix = capture(b)
+    }
+    if s_len(prefix) > 0 and is_dir(prefix + "/lib") {
+        let l: ptr<ProcStrs> = sl_of2("-L" + prefix + "/lib", "-Wl,-rpath," + prefix + "/lib")
+        sl_push2(l, "-lssl", "-lcrypto")
+        return l
+    }
+    let pc: ptr<ProcCmd> = cmd(sl_of3("pkg-config", "--exists", "openssl"))
+    cmd_quiet(pc)
+    if run(pc) == 0 {
+        return s_words(capture(cmd(sl_of3("pkg-config", "--libs", "openssl"))))
+    }
+    return sl_of2("-lssl", "-lcrypto")
+}
+
+function main() -> i32 {
+    tool_only("tools/discord-welcome/build.flow")
+    let root: string = abs_dir(env_or("FLOW_REPO_ROOT", cwd_logical()))
+    env_unset("FLOW_REPO_ROOT")
+    if not proc_chdir(root) {
+        cli_exit(1)
+    }
+    env_set("PWD", root)
+
+    let name: string = "discord_welcome"
+    let src_dir: string = "scripts/tools/" + name
+    let lib: string = "scripts/tools/lib"
+    let out_dir: string = "build/flow-tools"
+    let flowc: string = out_dir + "/flowc"
+    let boot_c: string = "compiler/bootstrap/flowc_stage_a.c"
+    let c_out: string = out_dir + "/" + name + ".c"
+    let args: ptr<ProcStrs> = proc_args()
+    let mut bin: string = out_dir + "/" + name
+    if sl_len(args) > 0 and s_len(sl_get(args, 0)) > 0 {
+        bin = sl_get(args, 0)
+    }
+    let cc: string = env_or("CC", "cc")
+
+    mkdir_p_or_exit(out_dir)
+    if not is_exec(flowc) or newer(boot_c, flowc) {
+        let fc: ptr<ProcStrs> = sl_of3(cc, "-O1", "-w")
+        sl_push2(fc, "-o", flowc)
+        sl_push2(fc, boot_c, "-lm")
+        fail_with(run_argv(fc))
+    }
+
+    let mut stale: bool = not is_exec(bin) or newer(flowc, bin)
+    if not stale {
+        let srcs: ptr<ProcStrs> = glob_suffix(src_dir, ".flow")
+        sl_extend(srcs, glob_suffix(lib, ".flow"))
+        let mut i: i32 = 0
+        while i < sl_len(srcs) and not stale {
+            if newer(sl_get(srcs, i), bin) {
+                stale = true
+            }
+            i = i + 1
+        }
+    }
+
+    if stale {
+        let libs: ptr<ProcStrs> = ssl_libs()
+        let fe: ptr<ProcCmd> = cmd(sl_of1(flowc))
+        cmd_env(fe, "FLOWC_BUNDLE", "1")
+        cmd_env(fe, "FLOWC_DIR", lib)
+        cmd_env(fe, "FLOWC_TYPECHECK", "1")
+        cmd_env(fe, "FLOWC_IN", src_dir + "/main.flow")
+        cmd_env(fe, "FLOWC_OUT", c_out)
+        let log: string = out_dir + "/" + name + ".flowc.log"
+        if run_to_file(fe, log, true) != 0 {
+            errs(read_text(log))
+            errln("discord-welcome build: flowc could not compile " + src_dir + "/main.flow")
+            cli_exit(1)
+        }
+        mkdir_p_or_exit(path_dirname(bin))
+        let link: ptr<ProcStrs> = sl_of3(cc, "-O2", "-w")
+        sl_push2(link, "-o", bin)
+        sl_push(link, c_out)
+        sl_extend(link, libs)
+        fail_with(run_argv(link))
+    }
+
+    outln(bin)
+    return 0
+}
+
+# These programs change files, run builds and publish, so they run only
+# as `./flow tool PATH.flow` (from build/flow-tools), never from a plain
+# `flow run` such as the corpus checks do.
+function tool_only(path: string) {
+    if not s_contains(proc_argv(0), "/flow-tools/") {
+        errln("run this with ./flow tool " + path)
+        cli_exit(2)
+    }
+}

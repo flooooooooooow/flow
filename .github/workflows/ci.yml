@@ -505,7 +505,7 @@ jobs:
           cp /tmp/nopy/python3 /tmp/nopy/python
           chmod +x /tmp/nopy/python3 /tmp/nopy/python
           export PATH="/tmp/nopy:$PATH"
-          chmod +x ./flow compiler/scripts/*.sh tools/discord-welcome/build.sh
+          chmod +x ./flow compiler/scripts/*.sh
           ./compiler/scripts/bootstrap_from_c.sh
           ./flow tool tests/tools/run.flow
 

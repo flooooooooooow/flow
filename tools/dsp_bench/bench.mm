@@ -1,9 +1,9 @@
-// dsp_bench — scalar CPU vs NEON SIMD vs Metal GPU on a bank of Schur all-pass
+// dsp_bench: scalar CPU vs NEON SIMD vs Metal GPU on a bank of Schur all-pass
 // chains. The chains are independent (this is the honest parallel axis); each
 // chain is internally serial (recursive IIR), so speed comes from processing
 // many chains at once, not from vectorising one chain.
 //
-//   Build:  ./build.sh        (or see the clang line at the bottom of that file)
+//   Build:  ./flow tool tools/dsp_bench/build.flow   (from the repository root)
 //   Run:    ./dsp_bench --chains 4096 --sections 8 --samples 48000
 //
 // Apple Silicon only (NEON + Metal). Emits a table and, with --json, machine
@@ -314,7 +314,7 @@ int main (int argc, char** argv)
         return 0;
     }
 
-    printf ("\n  dsp_bench — Schur all-pass bank   (%d chains x %d sections x %d samples)\n", B, O, N);
+    printf ("\n  dsp_bench: Schur all-pass bank   (%d chains x %d sections x %d samples)\n", B, O, N);
     printf ("  workload: %.2f G section-updates per run,  best of %d reps\n\n", sectionUpdates / 1e9, cfg.reps);
     printf ("  %-14s %10s %14s %10s %12s  %s\n", "backend", "time (ms)", "Gupdates/s", "speedup", "max-diff", "check");
     printf ("  %s\n", "------------------------------------------------------------------------------");

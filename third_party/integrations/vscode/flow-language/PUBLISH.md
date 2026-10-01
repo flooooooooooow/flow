@@ -59,7 +59,7 @@ missing the run fails fast with a clear message.
 
 ### One-time setup
 
-Steps 1–3 above, then export the token instead of storing it as a secret:
+Steps 1 to 3 above, then export the token instead of storing it as a secret:
 
 ```bash
 export OVSX_PAT='…your token…'   # do not commit
@@ -70,8 +70,8 @@ export OVSX_PAT='…your token…'   # do not commit
 From the repo root:
 
 ```bash
-./scripts/publish_vscode_extension.sh          # package only (.vsix)
-./scripts/publish_vscode_extension.sh --ovsx   # package + publish to Open VSX
+./flow tool scripts/publish_vscode_extension.flow          # package only (.vsix)
+./flow tool scripts/publish_vscode_extension.flow --ovsx   # package + publish to Open VSX
 ```
 
 Or manually:

@@ -1,0 +1,31 @@
+# Build the dsp_bench tool (Apple Silicon: NEON + Metal) next to its
+# source, as tools/dsp_bench/dsp_bench.
+#
+#   ./flow tool tools/dsp_bench/build.flow
+
+import "tools/flow_cli/sys.flow"
+import std.process { proc_argv, ProcCmd, ProcStrs }
+
+function main() -> i32 {
+    tool_only("tools/dsp_bench/build.flow")
+    let root: string = env_or("FLOW_REPO_ROOT", cwd_logical())
+    env_unset("FLOW_REPO_ROOT")
+    let dir: string = root + "/tools/dsp_bench"
+    let argv: ptr<ProcStrs> = s_words("clang++ -O3 -std=c++17 -ffast-math -fobjc-arc bench.mm -framework Metal -framework Foundation -o dsp_bench")
+    let c: ptr<ProcCmd> = cmd(argv)
+    cmd_cwd(c, dir)
+    cmd_env(c, "PWD", dir)
+    check(run(c))
+    outln("built ./dsp_bench")
+    return 0
+}
+
+# These programs change files, run builds and publish, so they run only
+# as `./flow tool PATH.flow` (from build/flow-tools), never from a plain
+# `flow run` such as the corpus checks do.
+function tool_only(path: string) {
+    if not s_contains(proc_argv(0), "/flow-tools/") {
+        errln("run this with ./flow tool " + path)
+        cli_exit(2)
+    }
+}
