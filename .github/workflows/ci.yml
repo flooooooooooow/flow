@@ -584,6 +584,53 @@ jobs:
       - name: corpus_parity --check
         run: timeout 45m ./flow tool compiler/scripts/corpus_parity.flow --check
 
+  # tests/lang through the Stage-A compiler, as `./flow test-lang` runs it
+  # locally: strict transpile, link (with the concurrency runtime when a
+  # program imports it), run, and compare the exit code and any .expected
+  # output. Each program runs under a time limit and a hang fails with a
+  # timeout line (#1174).
+  lang-tests:
+    name: Language tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: changes
+    if: |
+      needs.changes.outputs.compiler == 'true' ||
+      needs.changes.outputs.libs == 'true' ||
+      needs.changes.outputs.runtime == 'true' ||
+      needs.changes.outputs.tests == 'true' ||
+      needs.changes.outputs.tools == 'true' ||
+      needs.changes.outputs.workflow == 'true'
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/install-toolchain
+
+      - name: Language tests (tests/lang)
+        run: ./flow test-lang
+
+  # tests/runtime compiled with the flowc host, linked against the runtime
+  # archive and run, under the same per-program time limit.
+  runtime-tests:
+    name: Runtime tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: changes
+    if: |
+      needs.changes.outputs.compiler == 'true' ||
+      needs.changes.outputs.libs == 'true' ||
+      needs.changes.outputs.runtime == 'true' ||
+      needs.changes.outputs.tests == 'true' ||
+      needs.changes.outputs.tools == 'true' ||
+      needs.changes.outputs.workflow == 'true'
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/install-toolchain
+
+      - name: Runtime tests (tests/runtime)
+        run: ./flow test-runtime
+
   # Phase D: user-facing compile must not pip-install the Python compiler.
   flowc-compile:
     name: flowc compile (no pip)
@@ -747,6 +794,8 @@ jobs:
       - flowc-bootstrap
       - flowc-selfhost
       - flowc-compile
+      - lang-tests
+      - runtime-tests
       - conformance
       - fuzz
       - flow-examples
@@ -788,6 +837,7 @@ jobs:
           workflow='${{ needs.changes.outputs.workflow }}'
           plugins='${{ needs.changes.outputs.plugins }}'
           deps='${{ needs.changes.outputs.deps }}'
+          tools='${{ needs.changes.outputs.tools }}'
           lint_req=false;  if [ "$src" = "true" ] || [ "$workflow" = "true" ] || [ "$deps" = "true" ]; then lint_req=true; fi
           sec_req=false;   if [ "$src" = "true" ] || [ "$deps" = "true" ]; then sec_req=true; fi
           tier_req=false;  if [ "$src" = "true" ] || [ "$tests" = "true" ] || [ "$libs" = "true" ] || [ "$runtime" = "true" ]; then tier_req=true; fi
@@ -797,6 +847,7 @@ jobs:
           compiler_req=false; if [ "$compiler" = "true" ] || [ "$workflow" = "true" ]; then compiler_req=true; fi
           plugin_req=false; if [ "$plugins" = "true" ] || [ "$workflow" = "true" ]; then plugin_req=true; fi
           gfx_req=false;   if [ "$runtime" = "true" ] || [ "$workflow" = "true" ]; then gfx_req=true; fi
+          suite_req=false; if [ "$compiler" = "true" ] || [ "$libs" = "true" ] || [ "$runtime" = "true" ] || [ "$tests" = "true" ] || [ "$tools" = "true" ] || [ "$workflow" = "true" ]; then suite_req=true; fi
           docs='${{ needs.changes.outputs.docs }}'
           # Coverage is ungated: a new keyword or subcommand in src/ must not
           # land undocumented just because the PR touched no markdown.
@@ -810,6 +861,8 @@ jobs:
           add flowc-bootstrap   '${{ needs.flowc-bootstrap.result }}'    "$compiler_req"
           add flowc-selfhost    '${{ needs.flowc-selfhost.result }}'     "$compiler_req"
           add flowc-compile     '${{ needs.flowc-compile.result }}'      "$compiler_req"
+          add lang-tests        '${{ needs.lang-tests.result }}'        "$suite_req"
+          add runtime-tests     '${{ needs.runtime-tests.result }}'     "$suite_req"
           add conformance       '${{ needs.conformance.result }}'       "$conf_req"
           add fuzz              '${{ needs.fuzz.result }}'              "$fuzz_req"
           add flow-examples     '${{ needs.flow-examples.result }}'      "$ex_req"
