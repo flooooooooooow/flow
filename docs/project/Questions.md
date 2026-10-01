@@ -151,7 +151,7 @@ runs under today's Python→C host. Next phases: more syntax, then a backend.
 **Progress:** Stage-A path well underway. Host runs tests; Stage-A emits+links
 real `token`/`ast`/`lexer`/`fileio`/`parser`/`cgen` → `flowc_frontend.o`; C
 driver emits fixtures; **self-emit** rebuilds frontend → `flowc_frontend_self.o`.
-See [compiler/README.md](../../compiler/README.md), `roundtrip.sh`.
+See [compiler/README.md](../../compiler/README.md), `roundtrip.flow`.
 
 **Options:**
 1. **Heterogeneous forever**: Flow front-end (lex/parse/typecheck), keep C/MLIR

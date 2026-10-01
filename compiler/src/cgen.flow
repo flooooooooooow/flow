@@ -9634,6 +9634,31 @@ function flowc_cgen_is_macro_like(src: ptr<u8>, s: i32, e: i32) -> i32 {
     return 0
 }
 
+# Return 1 when an expression is a string literal or a tree of literal-only
+# string concatenations. Such an expression can be emitted as adjacent C
+# string literals, which keeps a top-level const initializer compile-time.
+function flowc_cgen_is_const_string_expr(arena: AstArena, id: i32) -> i32 {
+    if id == AST_NONE { return 0 }
+    if arena.nodes[id].kind == AST_STRING { return 1 }
+    if arena.nodes[id].kind != AST_BINOP or arena.nodes[id].ival != TOK_PLUS {
+        return 0
+    }
+    if flowc_cgen_is_const_string_expr(arena, arena.nodes[id].a) == 1 and
+       flowc_cgen_is_const_string_expr(arena, arena.nodes[id].b) == 1 {
+        return 1
+    }
+    return 0
+}
+
+function flowc_cgen_emit_const_string_expr(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    if arena.nodes[id].kind == AST_BINOP {
+        flowc_cgen_emit_const_string_expr(w, arena, src, arena.nodes[id].a)
+        flowc_cgen_emit_const_string_expr(w, arena, src, arena.nodes[id].b)
+    } else {
+        flowc_cgen_emit_expr(w, arena, src, id)
+    }
+}
+
 # Stage-A: export const (ival==1) → global `const int32_t` (linkable across TUs);
 # non-export stays `static const int32_t`.
 function flowc_cgen_emit_const(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
@@ -9666,7 +9691,14 @@ function flowc_cgen_emit_const(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, i
     flowc_cgen_putc(w, 32)
     flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
     flowc_cgen_puts(w, " = ")
-    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+    let expr: i32 = arena.nodes[id].b
+    if ty != AST_NONE and flowc_cgen_type_is_string(arena, src, ty) == 1 and
+       flowc_cgen_is_const_string_expr(arena, expr) == 1 {
+        # C concatenates adjacent string literals during translation.
+        flowc_cgen_emit_const_string_expr(w, arena, src, expr)
+    } else {
+        flowc_cgen_emit_expr(w, arena, src, expr)
+    }
     flowc_cgen_puts(w, ";\n")
 }
 

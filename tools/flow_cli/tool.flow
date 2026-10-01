@@ -18,7 +18,8 @@
 # compiles with FLOWC_DIR at the repository root, so it imports by path
 # (`import "scripts/tools/lib/gate.flow"`). Binaries are cached in
 # build/flow-tools and rebuilt when the program, a sibling module, the
-# shared helpers, the standard library or the bootstrap C changes.
+# shared helpers, the CLI modules in tools/flow_cli, the standard library
+# or the bootstrap C changes.
 #
 # The program runs in the caller's working directory with FLOW_REPO_ROOT
 # set to the repository root. Exit status is the program's own.
@@ -153,6 +154,10 @@ export function tool_build(spec: string) -> string {
     let mut stale: bool = not is_exec(bin) or newer(flowc, bin) or newer(t.src, bin)
     if not stale {
         stale = dir_newer(path_dirname(t.src), bin) or dir_newer(root() + "/scripts/tools/lib", bin)
+    }
+    # Programs import the CLI's own modules (tools/flow_cli/sys.flow).
+    if not stale {
+        stale = dir_newer(root() + "/tools/flow_cli", bin)
     }
     if not stale {
         stale = dir_newer(root() + "/lib/stdlib", bin) or newer(root() + "/compiler/src/bytebuf.flow", bin)

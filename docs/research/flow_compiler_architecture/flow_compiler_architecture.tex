@@ -616,8 +616,8 @@ The architecture described here corresponds to the open-source repository
 ./flow compile examples/effects/showcase.flow
 
 # Stage-A roundtrip / self-host smokes (from repo root)
-./compiler/scripts/roundtrip.sh
-./compiler/scripts/stage_a_self_emit_g2.sh
+./flow tool compiler/scripts/roundtrip.flow
+./flow tool compiler/scripts/stage_a_self_emit_g2.flow
 
 # Dynamics surface
 ./flow run examples/dynamics/ga_dsys_syntax.flow

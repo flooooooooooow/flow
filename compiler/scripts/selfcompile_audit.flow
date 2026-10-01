@@ -1,0 +1,181 @@
+# Every module under compiler/src must bundle-emit C that the C compiler
+# accepts with no errors. This is the Phase-B exit condition of
+# docs/project/self-hosting.md turned into a gate: if a language gap
+# reappears, it shows up here as a named module with a count of C
+# diagnostics.
+#
+#   ./flow tool compiler/scripts/selfcompile_audit.flow
+#   FLOWC_AUDIT_BIN=compiler/build/flowc_bootstrap ./flow tool compiler/scripts/selfcompile_audit.flow
+
+import "tools/flow_cli/sys.flow"
+import "compiler/scripts/gate_lib.flow"
+import std.process { ProcCmd, ProcStrs, proc_arg }
+
+# "file:12:3: message" -> "message" (sed -E 's/^[^:]+:[0-9]+:[0-9]+: //').
+function strip_location(line: string) -> string {
+    let c1: i32 = s_find_byte(line, 58, 0)
+    if c1 <= 0 {
+        return line
+    }
+    let c2: i32 = s_find_byte(line, 58, c1 + 1)
+    if c2 < 0 or not s_is_digits(s_slice(line, c1 + 1, c2)) {
+        return line
+    }
+    let c3: i32 = s_find_byte(line, 58, c2 + 1)
+    if c3 < 0 or not s_is_digits(s_slice(line, c2 + 1, c3)) {
+        return line
+    }
+    if s_byte(line, c3 + 1) != 32 {
+        return line
+    }
+    return s_from(line, c3 + 2)
+}
+
+# `sort | uniq -c | sort -rn | head -5 | sed 's/^/    /'` over `lines`.
+function top_errors(lines: ptr<ProcStrs>) -> string {
+    sl_sort(lines, false)
+    let uniq: ptr<ProcStrs> = sl_new()
+    let counts: ptr<ProcStrs> = sl_new()
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let n: i32 = sl_len(uniq)
+        if n > 0 and s_eq(sl_get(uniq, n - 1), sl_get(lines, i)) {
+            let last: ptr<ProcStrs> = counts
+            last.items[n - 1] = s_itoa(s_atoi(sl_get(counts, n - 1), 0) + 1)
+        } else {
+            sl_push(uniq, sl_get(lines, i))
+            sl_push(counts, "1")
+        }
+        i = i + 1
+    }
+    # uniq -c pads the count to 4 columns on BSD and 7 on GNU.
+    let mut width: i32 = 7
+    if s_eq(uname_s(), "Darwin") {
+        width = 4
+    }
+    let rows: ptr<ProcStrs> = sl_new()
+    let mut j: i32 = 0
+    while j < sl_len(uniq) {
+        sl_push(rows, pad_left(sl_get(counts, j), width) + " " + sl_get(uniq, j))
+        j = j + 1
+    }
+    # sort -rn: count descending, ties by the whole line descending.
+    let mut a: i32 = 1
+    while a < sl_len(rows) {
+        let mut b: i32 = a
+        while b > 0 and row_before(sl_get(rows, b), sl_get(rows, b - 1)) {
+            let t: string = sl_get(rows, b)
+            rows.items[b] = sl_get(rows, b - 1)
+            rows.items[b - 1] = t
+            b = b - 1
+        }
+        a = a + 1
+    }
+    let mut out: string = ""
+    let mut k: i32 = 0
+    while k < sl_len(rows) and k < 5 {
+        out = out + "    " + sl_get(rows, k) + "\n"
+        k = k + 1
+    }
+    return out
+}
+
+# True when row `x` sorts before row `y` under `sort -rn`.
+function row_before(x: string, y: string) -> bool {
+    let cx: i32 = s_atoi(sl_get(s_words(x), 0), 0)
+    let cy: i32 = s_atoi(sl_get(s_words(y), 0), 0)
+    if cx != cy {
+        return cx > cy
+    }
+    return strcmp(x, y) > 0
+}
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+}
+
+function main() -> i32 {
+    let _root: string = gate_enter()
+    gate_mkdir("compiler/build/audit")
+
+    # GCC and clang spell "no cap on reported errors" differently. CI runs
+    # on Ubuntu, where cc is GCC.
+    let ver: ptr<ProcCmd> = cmd(sl_of2("cc", "--version"))
+    cmd_quiet_err(ver)
+    let mut err_flag: string = "-fmax-errors=0"
+    if s_contains(s_lower(capture_raw(ver)), "clang") {
+        err_flag = "-ferror-limit=0"
+    }
+
+    let mut drv: string = env("FLOWC_AUDIT_BIN")
+    if s_len(drv) == 0 {
+        let cands: ptr<ProcStrs> = s_words("compiler/build/stage_a_driver_flow_self compiler/build/stage_a_driver_flow_g2 compiler/build/stage_a_driver_flow compiler/build/flowc_bootstrap")
+        let mut i: i32 = 0
+        while i < sl_len(cands) and s_len(drv) == 0 {
+            if is_exec(sl_get(cands, i)) {
+                drv = sl_get(cands, i)
+            }
+            i = i + 1
+        }
+    }
+    if s_len(drv) == 0 {
+        gate_fail("selfcompile_audit: no flowc driver — run bootstrap_from_c.sh first")
+    }
+    outln("=== self-compile audit via " + drv + " ===")
+
+    let mut failed: bool = false
+    let files: ptr<ProcStrs> = glob_sorted("compiler/src", ".flow")
+    let mut f: i32 = 0
+    while f < sl_len(files) {
+        let src: string = "compiler/src/" + path_basename(sl_get(files, f))
+        let name: string = path_stem(src, ".flow")
+        let c_out: string = "compiler/build/audit/" + name + ".c"
+        let log: string = "compiler/build/audit/" + name + ".log"
+        rm_f(c_out)
+        # driver.flow binaries take argv; a binary built from main.flow
+        # reads FLOWC_IN / FLOWC_OUT. Both are passed so either works.
+        let em: ptr<ProcCmd> = cmd(sl_of3(drv, src, c_out))
+        cmd_env(em, "FLOWC_BUNDLE", "1")
+        cmd_env(em, "FLOWC_DIR", "compiler/src")
+        cmd_env(em, "FLOWC_IN", src)
+        cmd_env(em, "FLOWC_OUT", c_out)
+        if run_to_file(em, log, true) != 0 {
+            outln("FAIL " + name + ": flowc could not emit")
+            out(tail_text(read_text(log), 5))
+            failed = true
+        } elif not nonempty(c_out) {
+            # A driver that exits 0 without writing anything used to surface
+            # three steps later as "clang: no input files".
+            outln("FAIL " + name + ": flowc exited 0 but wrote no C to " + c_out)
+            out(tail_text(read_text(log), 5))
+            failed = true
+        } else {
+            let sc: ptr<ProcCmd> = cmd(sl_of3("cc", "-fsyntax-only", err_flag))
+            proc_arg(sc, c_out)
+            let lines: ptr<ProcStrs> = s_lines(capture_merged(sc))
+            let errs_found: ptr<ProcStrs> = sl_new()
+            let mut i: i32 = 0
+            while i < sl_len(lines) {
+                if s_contains(sl_get(lines, i), "error:") {
+                    sl_push(errs_found, strip_location(sl_get(lines, i)))
+                }
+                i = i + 1
+            }
+            if sl_len(errs_found) != 0 {
+                outln("FAIL " + name + ": " + s_itoa(sl_len(errs_found)) + " C errors")
+                out(top_errors(errs_found))
+                failed = true
+            } else {
+                let size: string = s_itoa(s_len(read_text(c_out)))
+                outln("PASS " + pad_right(name, 14) + " " + pad_left(size, 8) + " bytes of C, 0 diagnostics")
+            }
+        }
+        f = f + 1
+    }
+
+    if failed {
+        gate_fail("FAIL selfcompile_audit: compiler/src does not fully compile under flowc")
+    }
+    outln("ALL PASS selfcompile_audit (all of compiler/src compiles under flowc)")
+    return 0
+}
