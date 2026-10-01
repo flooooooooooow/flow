@@ -21,4 +21,4 @@ You can also use the FLOW CLI:
 # compat aliases: ./flow vulkan-demo  |  ./flow vulkan-demo-basic
 ```
 
-`run.sh` sets `VK_ICD_FILENAMES` and `VK_LAYER_PATH` for Homebrew installs.
+`flow demo vulkan` sets `VK_ICD_FILENAMES` and `VK_LAYER_PATH` for Homebrew installs.

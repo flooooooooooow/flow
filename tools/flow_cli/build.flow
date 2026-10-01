@@ -996,7 +996,43 @@ function vulkan_demo(dir_name: string, what: string, label: string, fail_label: 
         cli_exit(1)
     }
     info("Running Vulkan " + label + " demo...")
-    return run_argv(sl_of1(demo_dir + "/run.sh"))
+    return run_vulkan_binary(demo_dir + "/" + dir_name)
+}
+
+# Run a Vulkan demo binary with the environment Homebrew's MoltenVK, Vulkan
+# loader and validation layers need: the ICD and layer paths when they are
+# installed, FLOW_VK_PRETTY and FLOW_VK_TRACE (default 1), and their
+# libraries ahead of DYLD_LIBRARY_PATH.
+function run_vulkan_binary(exe: string) -> i32 {
+    let brew: string = "/opt/homebrew/opt"
+    let icd: string = brew + "/molten-vk/etc/vulkan/icd.d/MoltenVK_icd.json"
+    let layers: string = brew + "/vulkan-validationlayers/share/vulkan/explicit_layer.d"
+    if is_file(icd) {
+        env_set("VK_ICD_FILENAMES", icd)
+    }
+    if is_dir(layers) {
+        env_set("VK_LAYER_PATH", layers)
+    }
+    env_set("FLOW_VK_PRETTY", env_or("FLOW_VK_PRETTY", "1"))
+    env_set("FLOW_VK_TRACE", env_or("FLOW_VK_TRACE", "1"))
+    let libs: ptr<ProcStrs> = sl_new()
+    let candidates: ptr<ProcStrs> = sl_of3(brew + "/vulkan-validationlayers/lib", brew + "/vulkan-loader/lib", brew + "/molten-vk/lib")
+    let mut i: i32 = 0
+    while i < sl_len(candidates) {
+        if is_dir(sl_get(candidates, i)) {
+            sl_push(libs, sl_get(candidates, i))
+        }
+        i = i + 1
+    }
+    if sl_len(libs) > 0 {
+        let mut dyld: string = sl_join(libs, ":")
+        let old: string = env("DYLD_LIBRARY_PATH")
+        if s_len(old) > 0 {
+            dyld = dyld + ":" + old
+        }
+        env_set("DYLD_LIBRARY_PATH", dyld)
+    }
+    return run_argv(sl_of1(exe))
 }
 
 export function run_vulkan_demo() -> i32 {

@@ -35,7 +35,7 @@ $(FRAG_SPV): shaders/triangle.frag
 	$(SHADER_COMPILER) -V $< -o $@
 
 run: all
-	./run.sh
+	cd ../.. && ./flow demo vulkan basic
 
 clean:
 	rm -f $(TARGET) $(VERT_SPV) $(FRAG_SPV)
