@@ -13,7 +13,7 @@
 # Python checker never downgraded (a capability used as a value).
 #
 # The walk mirrors the Python methods one for one, named after them, so a
-# difference against compiler/scripts/parity_typecheck.sh points at one
+# difference against compiler/scripts/parity_typecheck.flow points at one
 # function on each side.
 
 import .ast {

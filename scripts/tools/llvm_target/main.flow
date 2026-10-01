@@ -21,7 +21,7 @@
 #
 # This replaces src/flow/bpf_target.py and src/flow/wasm_compiler.py. The
 # messages, exit codes and output files are theirs; compiler/scripts/
-# parity_targets.sh holds the goldens. wasm32 also takes an .ll input
+# parity_targets.flow holds the goldens. wasm32 also takes an .ll input
 # (the Python module only exposed that as llvm_to_wasm).
 
 import .text { ft_itoa, ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_byte, ft_starts, ft_ends, ft_find, ft_contains, ft_slice, ft_from, ft_replace, ft_repr, ft_read_file, ft_write_file, ft_exists, ft_dirname, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_sort, ft_set_new, ft_set_has, ft_set_add, StrList, StrSet }

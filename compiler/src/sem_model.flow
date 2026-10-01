@@ -11,7 +11,7 @@
 #
 # Every function mirrors the Python method it is named after, including its
 # quirks: the goal is the same verdict and the same message for every
-# program (compiler/scripts/parity_typecheck.sh).
+# program (compiler/scripts/parity_typecheck.flow).
 
 import .ast {
     AstArena, AST_NONE, AST_TYPE, AST_EFFECT_ROW, AST_TYPE_FIXED_ARRAY,

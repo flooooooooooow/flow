@@ -140,8 +140,8 @@ Then run the parity gates for what you touched. All of them work without
 Python in golden mode: `parity_lowering.flow`, `parity_effects.flow`,
 `parity_proofs.flow`, `parity_mlir.flow`, `parity_field_dsl.flow`,
 `parity_dynamics_dsl.flow`, `parity_flow_blocks.flow`, `parity_shader_dsl.flow`,
-`parse_coverage.sh --check`, `fmt_check.sh --check` and
-`corpus_parity.sh --check`, all under `compiler/scripts/`. A `.flow` gate
+`parse_coverage.flow --check`, `fmt_check.flow --check` and
+`corpus_parity.flow --check`, all under `compiler/scripts/`. A `.flow` gate
 runs with `./flow tool compiler/scripts/<name>.flow`. The C output
 goldens are `./flow tool tests/cgen/run.flow`, and the language tests are
 `./flow test-lang`.

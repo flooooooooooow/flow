@@ -7,7 +7,8 @@ on:
       - 'scripts/tools/llvm_target/**'
       - 'scripts/tools/lib/**'
       - 'tools/flow_cli/**'
-      - 'compiler/scripts/parity_targets.sh'
+      - 'compiler/scripts/parity_targets.flow'
+      - 'compiler/scripts/gate_lib.flow'
       - 'compiler/src/mlirgen.flow'
       - 'compiler/bootstrap/flowc_stage_a.c'
       - 'tests/targets/**'
@@ -19,7 +20,8 @@ on:
       - 'scripts/tools/llvm_target/**'
       - 'scripts/tools/lib/**'
       - 'tools/flow_cli/**'
-      - 'compiler/scripts/parity_targets.sh'
+      - 'compiler/scripts/parity_targets.flow'
+      - 'compiler/scripts/gate_lib.flow'
       - 'compiler/src/mlirgen.flow'
       - 'compiler/bootstrap/flowc_stage_a.c'
       - 'tests/targets/**'
@@ -48,7 +50,7 @@ jobs:
       # The goldens hold Homebrew LLVM 22 object bytes; this runner's LLVM
       # differs, so the gate checks exit statuses and messages only.
       - name: Run the bpf target parity cases
-        run: compiler/scripts/parity_targets.sh bpf --portable
+        run: ./flow tool compiler/scripts/parity_targets.flow bpf --portable
 
       - name: Verify LLVM BPF backend is available
         run: |

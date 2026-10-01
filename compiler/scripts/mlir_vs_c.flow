@@ -13,7 +13,7 @@
 #   --check          fail when fewer programs are "same" than the floor
 #   --update         write compiler/mlir_vs_c/report.txt and the floor
 #   --failures       list every program the C backend builds that is not same
-#   --jobs N         parallel builds (default: half the CPUs)
+#   --jobs N         parallel builds (default: FLOW_GATE_JOBS, else half the CPUs)
 #   --timeout S      seconds per program run (default 10)
 #   --build-timeout S  seconds per build, either backend (default 300)
 #   --only REGEX     restrict the corpus to paths matching REGEX

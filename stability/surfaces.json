@@ -94,7 +94,7 @@
       "classification": "experimental",
       "source": "compiler/src/fmt.flow",
       "owner_issue": 651,
-      "note": "flow fmt remains Experimental in 1.0. It is the flowc token-stream formatter; compiler/scripts/fmt_check.sh checks token and comment preservation, idempotence and identical emitted C over every tracked .flow file. Promotion to Stable is a separate decision."
+      "note": "flow fmt remains Experimental in 1.0. It is the flowc token-stream formatter; compiler/scripts/fmt_check.flow checks token and comment preservation, idempotence and identical emitted C over every tracked .flow file. Promotion to Stable is a separate decision."
     },
     {
       "id": "cli-extended",

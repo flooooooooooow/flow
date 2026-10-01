@@ -1,0 +1,323 @@
+# Formatter gate for flowc's `fmt` backend (compiler/src/fmt.flow).
+#
+# For every tracked .flow file that flowc parses, formats it once and
+# checks three things:
+#
+#   preservation  the token and comment stream is unchanged
+#                 (FLOWC_BACKEND=tokens on the source and on the result);
+#   idempotence   formatting the result again changes nothing;
+#   semantics     when the source compiles to C on flowc (bundle mode,
+#                 FLOWC_DIR = the file's directory), the formatted file
+#                 compiles to the same C, byte for byte.
+#
+#   ./flow tool compiler/scripts/fmt_check.flow                 # report
+#   ./flow tool compiler/scripts/fmt_check.flow --check         # fail on any miss
+#   ./flow tool compiler/scripts/fmt_check.flow --update-floor  # record the counts
+#   ./flow tool compiler/scripts/fmt_check.flow --failures      # also list each miss
+#
+# --check fails when a file misses preservation, idempotence or semantics
+# and is not listed in compiler/fmt_check/exceptions.txt, or when fewer
+# files are checked than compiler/fmt_check/floor.txt records.
+#
+# FLOWC=path selects the binary; by default the checked-in bootstrap C is
+# compiled to compiler/build/flowc_bootstrap. FMT_CHECK_JOBS sets the
+# number of parallel workers (else FLOW_GATE_JOBS, else 8).
+
+import "tools/flow_cli/sys.flow"
+import "compiler/scripts/gate_lib.flow"
+import "compiler/scripts/corpus_lib.flow"
+import std.process { ProcCmd, ProcStrs, proc_args, proc_env }
+
+const DATA: string = "compiler/fmt_check"
+const FLOOR_FILE: string = "compiler/fmt_check/floor.txt"
+const EXCEPTIONS: string = "compiler/fmt_check/exceptions.txt"
+const USAGE_NAME: string = "./flow tool compiler/scripts/fmt_check.flow"
+
+# flowc with FLOWC_BACKEND=<backend> on <input>, writing <out>, its output
+# dropped; true when it exits 0.
+function flowc_backend(flowc: string, backend: string, input: string, out: string) -> bool {
+    let c: ptr<ProcCmd> = gl_cmd(sl_of1(flowc))
+    proc_env(c, "FLOWC_BACKEND", backend)
+    proc_env(c, "FLOWC_IN", input)
+    proc_env(c, "FLOWC_OUT", out)
+    return gl_run_log(c, "/dev/null", 0) == 0
+}
+
+# flowc in bundle mode with FLOWC_DIR=<dir>.
+function flowc_bundle(flowc: string, dir: string, input: string, out: string) -> bool {
+    let c: ptr<ProcCmd> = gl_cmd(sl_of1(flowc))
+    proc_env(c, "FLOWC_BUNDLE", "1")
+    proc_env(c, "FLOWC_DIR", dir)
+    proc_env(c, "FLOWC_IN", input)
+    proc_env(c, "FLOWC_OUT", out)
+    return gl_run_log(c, "/dev/null", 0) == 0
+}
+
+# One file: `parse TAB tokens TAB idem TAB sem TAB path`, each field ok,
+# fail or skip.
+function check_one(flowc: string, f: string, work: string, seq: i32) -> string {
+    let d: string = work + "/" + s_itoa(pid()) + "." + s_itoa(seq)
+    mkdir_p_or_exit(d)
+    let base: string = path_basename(f)
+    let mut parse: string = "ok"
+    let mut tok: string = "skip"
+    let mut idem: string = "skip"
+    let mut sem: string = "skip"
+    if not flowc_backend(flowc, "fmt", f, d + "/once.flow") {
+        parse = "fail"
+    } else {
+        let _a: bool = flowc_backend(flowc, "tokens", f, d + "/src.tok")
+        let _b: bool = flowc_backend(flowc, "tokens", d + "/once.flow", d + "/once.tok")
+        if (nonempty(d + "/src.tok") or not nonempty(f)) and same_bytes(d + "/src.tok", d + "/once.tok") {
+            tok = "ok"
+        } else {
+            tok = "fail"
+        }
+        if flowc_backend(flowc, "fmt", d + "/once.flow", d + "/twice.flow") and same_bytes(d + "/once.flow", d + "/twice.flow") {
+            idem = "ok"
+        } else {
+            idem = "fail"
+        }
+        # Semantics: compile the source and the formatted copy under the
+        # same file name, so any path the C mentions is the same.
+        let dir: string = path_dirname(f)
+        mkdir_p_or_exit(d + "/a")
+        mkdir_p_or_exit(d + "/b")
+        let _c: bool = copy_file(f, d + "/a/" + base)
+        let _e: bool = copy_file(d + "/once.flow", d + "/b/" + base)
+        if flowc_bundle(flowc, dir, d + "/a/" + base, d + "/a.c") and nonempty(d + "/a.c") {
+            let mut same: bool = false
+            if flowc_bundle(flowc, dir, d + "/b/" + base, d + "/b.c") {
+                let ca: string = s_replace(s_replace(read_text(d + "/a.c"), d + "/a/", ""), d + "/b/", "")
+                let cb: string = s_replace(s_replace(read_text(d + "/b.c"), d + "/a/", ""), d + "/b/", "")
+                same = s_eq(ca, cb)
+            }
+            if same {
+                sem = "ok"
+            } else {
+                sem = "fail"
+            }
+        }
+    }
+    rm_rf(d)
+    return parse + "\t" + tok + "\t" + idem + "\t" + sem + "\t" + f + "\n"
+}
+
+# --one <work> <flowc> <chunk>: one worker's files.
+function worker_main(args: ptr<ProcStrs>) -> i32 {
+    let work: string = sl_get(args, 1)
+    let flowc: string = sl_get(args, 2)
+    let files: ptr<ProcStrs> = gl_file_lines(sl_get(args, 3))
+    let results: string = work + "/results." + s_itoa(pid())
+    let mut i: i32 = 0
+    while i < sl_len(files) {
+        let _a: bool = append_text(results, check_one(flowc, sl_get(files, i), work, i))
+        i = i + 1
+    }
+    return 0
+}
+
+# `sort -t TAB -k5`: by the path field (and the rest of the line), in the
+# locale's collation.
+function sort_by_path(rows: ptr<ProcStrs>) -> ptr<ProcStrs> {
+    let keyed: ptr<ProcStrs> = sl_new()
+    let by: ptr<GlMap> = gl_map_new()
+    let mut i: i32 = 0
+    while i < sl_len(rows) {
+        let k: string = gl_fields_from(sl_get(rows, i), 4)
+        sl_push(keyed, k)
+        gl_map_put(by, k, sl_get(rows, i))
+        i = i + 1
+    }
+    gl_sort_locale(keyed)
+    let out: ptr<ProcStrs> = sl_new()
+    let mut j: i32 = 0
+    while j < sl_len(keyed) {
+        sl_push(out, gl_map_get(by, sl_get(keyed, j)))
+        j = j + 1
+    }
+    return out
+}
+
+function count_field(rows: ptr<ProcStrs>, k: i32, value: string, negate: bool) -> i32 {
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < sl_len(rows) {
+        let eq: bool = s_eq(gl_field(sl_get(rows, i), k), value)
+        if eq != negate {
+            n = n + 1
+        }
+        i = i + 1
+    }
+    return n
+}
+
+function is_miss(row: string) -> bool {
+    return s_eq(gl_field(row, 0), "ok") and (s_eq(gl_field(row, 1), "fail") or s_eq(gl_field(row, 2), "fail") or s_eq(gl_field(row, 3), "fail"))
+}
+
+function finish(code: i32) -> i32 {
+    cli_exit(code)
+    return code
+}
+
+function main() -> i32 {
+    let root: string = gl_enter_root()
+    let args: ptr<ProcStrs> = proc_args()
+    if s_eq(sl_get(args, 0), "--one") {
+        return worker_main(args)
+    }
+    let mode: string = sl_get(args, 0)
+    if not (s_empty(mode) or s_eq(mode, "--check") or s_eq(mode, "--update-floor") or s_eq(mode, "--failures")) {
+        errln("usage: " + USAGE_NAME + " [--check | --update-floor | --failures]")
+        return 2
+    }
+
+    let mut flowc: string = env("FLOWC")
+    if s_empty(flowc) {
+        mkdir_p_or_exit("compiler/build")
+        flowc = "compiler/build/flowc_bootstrap"
+        if not is_exec(flowc) or newer("compiler/bootstrap/flowc_stage_a.c", flowc) {
+            check(gl_build_flowc(flowc, true, false))
+        }
+    }
+    if not is_abs(flowc) {
+        flowc = root + "/" + flowc
+    }
+    env_set("FLOWC", flowc)
+
+    let tmp: string = mktemp_dir_default()
+    on_exit_remove(tmp)
+    mkdir_p_or_exit(tmp + "/work")
+
+    # Golden layouts: compiler/fixtures/fmt/<name>.flow formats to
+    # <name>.expected, and the expected text is already formatted.
+    let mut golden_fail: bool = false
+    let mut golden_n: i32 = 0
+    let srcs: ptr<ProcStrs> = glob_suffix("compiler/fixtures/fmt", ".flow")
+    gl_sort_locale(srcs)
+    let mut g: i32 = 0
+    while g < sl_len(srcs) {
+        let src: string = sl_get(srcs, g)
+        g = g + 1
+        let want: string = s_slice(src, 0, s_len(src) - 5) + ".expected"
+        golden_n = golden_n + 1
+        if not flowc_backend(flowc, "fmt", src, tmp + "/golden.flow") or not same_bytes(tmp + "/golden.flow", want) {
+            outln("golden FAIL " + src + " (expected " + want + ")")
+            out(gl_head(gl_diff(want, tmp + "/golden.flow"), 20))
+            golden_fail = true
+        }
+        if not flowc_backend(flowc, "fmt", want, tmp + "/golden2.flow") or not same_bytes(tmp + "/golden2.flow", want) {
+            outln("golden FAIL " + want + " is not a fixed point")
+            golden_fail = true
+        }
+    }
+
+    let files: ptr<ProcStrs> = gl_git_ls("*.flow")
+    gl_sort_locale(files)
+    # FMT_CHECK_JOBS, then FLOW_GATE_JOBS (the worker cap shared by every
+    # gate), then 8.
+    let jobs: i32 = s_atoi(env_or("FMT_CHECK_JOBS", env_or("FLOW_GATE_JOBS", "8")), 8)
+    let wargs: ptr<ProcStrs> = sl_of3("--one", tmp + "/work", flowc)
+    cl_run_workers(files, jobs, tmp + "/work", wargs)
+    let results: ptr<ProcStrs> = sort_by_path(cl_collect(tmp + "/work", "results."))
+
+    let exceptions: ptr<ProcStrs> = gl_list_file(EXCEPTIONS)
+    gl_sort_locale(exceptions)
+
+    let total: i32 = sl_len(files)
+    let parsed: i32 = count_field(results, 0, "ok", false)
+    let tok_ok: i32 = count_field(results, 1, "ok", false)
+    let idem_ok: i32 = count_field(results, 2, "ok", false)
+    let sem_n: i32 = count_field(results, 3, "skip", true)
+    let sem_ok: i32 = count_field(results, 3, "ok", false)
+
+    outln("flowc fmt gate over " + s_itoa(total) + " tracked .flow files (" + s_itoa(parsed) + " parse and were formatted)")
+    outln("  preservation: " + s_itoa(tok_ok) + "/" + s_itoa(parsed))
+    outln("  idempotence:  " + s_itoa(idem_ok) + "/" + s_itoa(parsed))
+    outln("  semantics:    " + s_itoa(sem_ok) + "/" + s_itoa(sem_n) + " (files that compile to C)")
+    let mut golden_word: string = "ok"
+    if golden_fail {
+        golden_word = "FAIL"
+    }
+    outln("  golden:       " + s_itoa(golden_n) + " fixture(s), " + golden_word)
+
+    let misses: ptr<ProcStrs> = sl_new()
+    let mut m: i32 = 0
+    while m < sl_len(results) {
+        if is_miss(sl_get(results, m)) {
+            sl_push(misses, gl_field(sl_get(results, m), 4))
+        }
+        m = m + 1
+    }
+    gl_sort_locale(misses)
+    let new_misses: ptr<ProcStrs> = gl_minus(misses, exceptions, true)
+
+    if s_eq(mode, "--failures") or sl_len(new_misses) > 0 {
+        if sl_len(misses) > 0 {
+            outln("")
+            outln("misses (preservation, idempotence, semantics):")
+            let mut r: i32 = 0
+            while r < sl_len(results) {
+                let row: string = sl_get(results, r)
+                if is_miss(row) {
+                    outln("  " + gl_field(row, 4) + "  " + gl_field(row, 1) + " " + gl_field(row, 2) + " " + gl_field(row, 3))
+                }
+                r = r + 1
+            }
+        }
+    }
+
+    if s_eq(mode, "--update-floor") {
+        mkdir_p_or_exit(DATA)
+        let _w: bool = write_text(FLOOR_FILE, "formatted " + s_itoa(parsed) + "\nsemantics " + s_itoa(sem_n) + "\n")
+        outln("")
+        outln("floor set: formatted " + s_itoa(parsed) + ", semantics " + s_itoa(sem_n))
+    }
+
+    if s_eq(mode, "--check") {
+        let mut rc: i32 = 0
+        if golden_fail {
+            errln("fmt gate: golden layout fixtures differ")
+            rc = 1
+        }
+        if sl_len(new_misses) > 0 {
+            errln("fmt gate: files the formatter changes (not in " + EXCEPTIONS + "):")
+            let mut n: i32 = 0
+            while n < sl_len(new_misses) {
+                errln("  " + sl_get(new_misses, n))
+                n = n + 1
+            }
+            rc = 1
+        }
+        if is_file(FLOOR_FILE) {
+            let mut floor_fmt: string = ""
+            let mut floor_sem: string = ""
+            let fl: ptr<ProcStrs> = gl_file_lines(FLOOR_FILE)
+            let mut q: i32 = 0
+            while q < sl_len(fl) {
+                let w: ptr<ProcStrs> = s_words(sl_get(fl, q))
+                if s_eq(sl_get(w, 0), "formatted") {
+                    floor_fmt = sl_get(w, 1)
+                } elif s_eq(sl_get(w, 0), "semantics") {
+                    floor_sem = sl_get(w, 1)
+                }
+                q = q + 1
+            }
+            if parsed < s_atoi(floor_fmt, 0) {
+                errln("fmt gate: " + s_itoa(parsed) + " files formatted < floor " + floor_fmt)
+                rc = 1
+            }
+            if sem_n < s_atoi(floor_sem, 0) {
+                errln("fmt gate: " + s_itoa(sem_n) + " files compared on C < floor " + floor_sem)
+                rc = 1
+            }
+        }
+        if rc == 0 {
+            outln("")
+            outln("fmt gate OK")
+        }
+        return finish(rc)
+    }
+    return finish(0)
+}

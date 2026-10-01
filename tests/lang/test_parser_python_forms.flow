@@ -1,5 +1,5 @@
 # Parser contract for the Python-grammar forms flowc accepts, which of them
-# stay parse-only nodes, and parse error positions. See compiler/scripts/parse_coverage.sh.
+# stay parse-only nodes, and parse error positions. See compiler/scripts/parse_coverage.flow.
 
 import "compiler/src/ast.flow"
 import "compiler/src/parser.flow"

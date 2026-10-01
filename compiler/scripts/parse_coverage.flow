@@ -1,0 +1,215 @@
+# Parse coverage of the self-hosted flowc front end.
+#
+# Runs flowc's lexer and parser (FLOWC_PARSE_ONLY=1) on every tracked .flow
+# file and reports how many parse. Files the Python reference parser also
+# rejects are listed in compiler/parse_coverage/python_rejects.txt and are
+# left out, so the count measures only the gap between the two parsers.
+#
+#   ./flow tool compiler/scripts/parse_coverage.flow                 # report + histogram
+#   ./flow tool compiler/scripts/parse_coverage.flow --check         # fail if below the floor
+#   ./flow tool compiler/scripts/parse_coverage.flow --update-floor  # record the current count
+#   ./flow tool compiler/scripts/parse_coverage.flow --failures      # also list each failure
+#
+# FLOWC=path selects the binary. By default the checked-in bootstrap C is
+# compiled to compiler/build/flowc_bootstrap, so the gate needs only a C
+# compiler.
+#
+# The reference list is recorded with the Python parser and checked in, with
+# each entry filed under a comment that says why it does not parse (#997).
+# To find new entries after adding files, run from the repo root and file
+# each new path under its reason:
+#
+#   git ls-files '*.flow' | PYTHONPATH=src python3 -c 'import sys
+#   from flow.parser import parse_flow_code
+#   for f in sys.stdin.read().split():
+#       try: parse_flow_code(open(f, encoding="utf-8").read())
+#       except BaseException: print(f)'
+
+import "tools/flow_cli/sys.flow"
+import "compiler/scripts/gate_lib.flow"
+import "compiler/scripts/corpus_lib.flow"
+import std.process { ProcCmd, ProcResult, ProcStrs, proc_args, proc_env, proc_run, proc_stderr, PROC_MERGE }
+
+const DATA: string = "compiler/parse_coverage"
+const REJECTS: string = "compiler/parse_coverage/python_rejects.txt"
+const FLOOR_FILE: string = "compiler/parse_coverage/floor.txt"
+
+function group_of(f: string) -> string {
+    if s_starts(f, "examples/verify/") {
+        return "examples/verify"
+    }
+    if s_starts(f, "examples/") {
+        return "examples (other)"
+    }
+    if s_starts(f, "lib/stdlib/") {
+        return "lib/stdlib"
+    }
+    if s_starts(f, "tests/lang/") {
+        return "tests/lang"
+    }
+    if s_starts(f, "compiler/") {
+        return "compiler"
+    }
+    return "other"
+}
+
+# The token a failure names, for the histogram: `unexpected <kind> <text>`
+# with the byte offset dropped, literals folded together.
+function failing_token(line: string) -> string {
+    let mut s: string = cl_sub(line, "^.*parse error: unexpected ([a-z ]+) (.*) \\(byte [0-9]+\\)$", "\\1 \\2", 1)
+    s = cl_sub(s, "^(integer|float|string) .*", "\\1 literal", 1)
+    return s
+}
+
+function main() -> i32 {
+    let root: string = gl_enter_root()
+    let args: ptr<ProcStrs> = proc_args()
+    let mode: string = sl_get(args, 0)
+
+    let mut flowc: string = env("FLOWC")
+    if s_empty(flowc) {
+        mkdir_p_or_exit("compiler/build")
+        flowc = "compiler/build/flowc_bootstrap"
+        if not is_exec(flowc) or newer("compiler/bootstrap/flowc_stage_a.c", flowc) {
+            check(gl_build_flowc(flowc, true, false))
+        }
+    }
+
+    let all: ptr<ProcStrs> = gl_git_ls("*.flow")
+    gl_sort_locale(all)
+    let rejects: ptr<ProcStrs> = gl_list_file(REJECTS)
+    gl_sort_locale(rejects)
+    let files: ptr<ProcStrs> = gl_minus(all, rejects, true)
+
+    let results: ptr<ProcStrs> = sl_new()
+    let fails: ptr<ProcStrs> = sl_new()
+    let mut pass: i32 = 0
+    let mut i: i32 = 0
+    while i < sl_len(files) {
+        let f: string = sl_get(files, i)
+        i = i + 1
+        let c: ptr<ProcCmd> = gl_cmd(sl_of1(flowc))
+        proc_env(c, "FLOWC_IN", f)
+        proc_env(c, "FLOWC_PARSE_ONLY", "1")
+        let r: ptr<ProcResult> = proc_run_merged(c)
+        if gl_status(r, false) == 0 {
+            sl_push(results, "ok\t" + f)
+            pass = pass + 1
+        } else {
+            let out_lines: ptr<ProcStrs> = gl_lines(s_chomp_all(r.stdout))
+            let mut line: string = ""
+            let mut k: i32 = 0
+            while k < sl_len(out_lines) and s_empty(line) {
+                if s_contains(sl_get(out_lines, k), "parse error:") {
+                    line = sl_get(out_lines, k)
+                }
+                k = k + 1
+            }
+            if s_empty(line) {
+                line = f + ":0:0: parse error: no diagnostic (" + sl_get(out_lines, 0) + ")"
+            }
+            let row: string = "fail\t" + f + "\t" + line
+            sl_push(results, row)
+            sl_push(fails, gl_field(row, 2))
+        }
+    }
+
+    let total: i32 = sl_len(files)
+    let fail: i32 = total - pass
+    let skipped: i32 = sl_len(rejects)
+
+    outln("flowc parse coverage: " + s_itoa(pass) + "/" + s_itoa(total) + " parse, " + s_itoa(fail) + " fail (" + s_itoa(skipped) + " files skipped: Python parser rejects them too)")
+    outln("")
+    outln("by area:")
+    let groups: ptr<ProcStrs> = sl_new()
+    let tot: ptr<GlMap> = gl_map_new()
+    let ok: ptr<GlMap> = gl_map_new()
+    let mut j: i32 = 0
+    while j < sl_len(results) {
+        let row: string = sl_get(results, j)
+        let g: string = group_of(gl_field(row, 1))
+        if not gl_map_has(tot, g) {
+            sl_push(groups, g)
+        }
+        gl_map_put(tot, g, s_itoa(s_atoi(gl_map_get(tot, g), 0) + 1))
+        if s_eq(gl_field(row, 0), "ok") {
+            gl_map_put(ok, g, s_itoa(s_atoi(gl_map_get(ok, g), 0) + 1))
+        }
+        j = j + 1
+    }
+    let area: ptr<ProcStrs> = sl_new()
+    let mut a: i32 = 0
+    while a < sl_len(groups) {
+        let g: string = sl_get(groups, a)
+        sl_push(area, "  " + pad_right(g, 18) + " " + gl_num(s_atoi(gl_map_get(ok, g), 0), 5) + " / " + gl_num(s_atoi(gl_map_get(tot, g), 0), 5))
+        a = a + 1
+    }
+    gl_sort_locale(area)
+    out(gl_join_lines(area))
+
+    if fail > 0 {
+        outln("")
+        outln("failing token (count):")
+        let toks: ptr<ProcStrs> = sl_new()
+        let mut t: i32 = 0
+        while t < sl_len(fails) {
+            sl_push(toks, failing_token(sl_get(fails, t)))
+            t = t + 1
+        }
+        let counts: ptr<GlCounts> = gl_count_desc(toks)
+        let width: i32 = gl_uniq_width()
+        let mut q: i32 = 0
+        while q < counts.n and q < 40 {
+            outln(gl_num(counts.counts[q], width) + " " + sl_get(counts.vals, q))
+            q = q + 1
+        }
+    }
+
+    if s_eq(mode, "--failures") {
+        outln("")
+        outln("failures:")
+        let mut x: i32 = 0
+        while x < sl_len(fails) {
+            outln("  " + sl_get(fails, x))
+            x = x + 1
+        }
+    }
+
+    if s_eq(mode, "--update-floor") {
+        mkdir_p_or_exit(DATA)
+        let _w: bool = write_text(FLOOR_FILE, s_itoa(pass) + "\n")
+        outln("")
+        outln("floor set to " + s_itoa(pass))
+    }
+
+    if s_eq(mode, "--check") {
+        let mut floor: i32 = 0
+        if is_file(FLOOR_FILE) {
+            floor = s_atoi(s_strip_all_space(read_text(FLOOR_FILE)), 0)
+        }
+        outln("")
+        if pass < floor {
+            errln("parse coverage regressed: " + s_itoa(pass) + " < floor " + s_itoa(floor))
+            errln("files flowc cannot parse:")
+            let mut y: i32 = 0
+            while y < sl_len(fails) {
+                errln("  " + sl_get(fails, y))
+                y = y + 1
+            }
+            errln("If files were deleted rather than broken, lower the floor with")
+            errln("./flow tool compiler/scripts/parse_coverage.flow --update-floor")
+            return 1
+        }
+        outln("parse coverage OK: " + s_itoa(pass) + " >= floor " + s_itoa(floor))
+        if pass > floor {
+            outln("(run ./flow tool compiler/scripts/parse_coverage.flow --update-floor to raise the floor)")
+        }
+    }
+    return 0
+}
+
+# Run with stderr joined to stdout (`$(cmd 2>&1)`).
+function proc_run_merged(c: ptr<ProcCmd>) -> ptr<ProcResult> {
+    proc_stderr(c, PROC_MERGE)
+    return proc_run(c)
+}

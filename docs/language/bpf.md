@@ -108,7 +108,7 @@ rather than trusting the exit code: `llvm-readelf` must report a BPF machine
 type, and `llvm-objdump` must show the named program section and the `license`
 section.
 
-`compiler/scripts/parity_targets.sh bpf` covers the ABI header, the
+`./flow tool compiler/scripts/parity_targets.flow bpf` covers the ABI header, the
 forbidden-symbol, unwind and dynamic-alloca checks, the metadata decoration and
 every usage error. It compares exit status, message and object bytes with the
 goldens in `tests/targets`.

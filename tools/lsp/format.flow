@@ -3,7 +3,7 @@
 #
 # The server formats with flowc's formatter (compiler/src/fmt.flow), the
 # same pass as `flow fmt`. It rewrites whitespace only and keeps every
-# token and comment; compiler/scripts/fmt_check.sh checks that, and that
+# token and comment; compiler/scripts/fmt_check.flow checks that, and that
 # the result is a fixed point, over every tracked .flow file. A document
 # flowc cannot parse gets no edit.
 

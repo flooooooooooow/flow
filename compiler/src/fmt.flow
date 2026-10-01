@@ -16,7 +16,7 @@
 # Line breaks stay where the author put them, and multi-line strings are
 # copied as they are. The flowc parser does not look at whitespace, so the
 # formatted file parses to the same tree and emits the same C.
-# compiler/scripts/fmt_check.sh holds the formatter to that over every
+# compiler/scripts/fmt_check.flow holds the formatter to that over every
 # tracked .flow file.
 
 import .token {
@@ -653,7 +653,7 @@ export function flowc_fmt_source(src: ptr<u8>, n: i32, out: ptr<u8>, out_cap: i3
 
 # The token and comment stream the formatter must keep, one element per
 # record: `T<kind> <text>\n` for a token, `C <text>\n` for a comment.
-# compiler/scripts/fmt_check.sh compares it before and after formatting.
+# compiler/scripts/fmt_check.flow compares it before and after formatting.
 export function flowc_fmt_token_dump(src: ptr<u8>, n: i32, out: ptr<u8>, out_cap: i32) -> i32 {
     let els: ptr<i32> = malloc(((n + 1) * FMT_REC * 4) as i64) as ptr<i32>
     if els == null {

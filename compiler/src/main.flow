@@ -516,7 +516,7 @@ function flowc_emit_mode() -> i32 {
 # typecheck) and write it to FLOWC_OUT, or stdout. The source must parse;
 # a file flowc cannot parse is left alone and the mode returns 1.
 # FLOWC_BACKEND=tokens (`dump` = 1): write the token and comment stream the
-# formatter keeps instead, without parsing (compiler/scripts/fmt_check.sh).
+# formatter keeps instead, without parsing (compiler/scripts/fmt_check.flow).
 function flowc_fmt_mode(in_path: string, dump: i32) -> i32 {
     let src_cap: i32 = 8388608
     let src: ptr<u8> = malloc(src_cap as i64)
@@ -577,7 +577,7 @@ function flowc_fmt_mode(in_path: string, dump: i32) -> i32 {
 
 # FLOWC_PARSE_ONLY=1 with FLOWC_IN: run the lexer and parser only. Prints
 # `ok <path>` and returns 0, or prints `<path>:<line>:<col>: parse error: ...`
-# and returns 1. Used by compiler/scripts/parse_coverage.sh.
+# and returns 1. Used by compiler/scripts/parse_coverage.flow.
 function flowc_parse_only_mode() -> i32 {
     let in_path: string = getenv("FLOWC_IN")
     let src_cap: i32 = 8388608

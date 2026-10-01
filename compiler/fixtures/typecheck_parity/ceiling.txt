@@ -1,4 +1,4 @@
-# Ceilings for compiler/scripts/parity_typecheck.sh --check, per OS
+# Ceilings for compiler/scripts/parity_typecheck.flow --check, per OS
 # (`uname -s`): OS class strict lenient. Lower them as differences close;
 # never raise them. Every remaining difference is intended:
 #

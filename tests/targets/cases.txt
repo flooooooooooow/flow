@@ -1,4 +1,4 @@
-# Cases for compiler/scripts/parity_targets.sh.
+# Cases for compiler/scripts/parity_targets.flow.
 #
 #   name | tool | compare | arguments
 #

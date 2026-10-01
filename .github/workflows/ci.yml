@@ -546,13 +546,12 @@ jobs:
 
       - name: Parse every tracked .flow file with flowc
         run: |
-          chmod +x compiler/scripts/parse_coverage.sh
-          ./compiler/scripts/parse_coverage.sh --check
+          ./flow tool compiler/scripts/parse_coverage.flow --check
 
   # Non-regression gates for the Flow ports. Each runs in golden mode against
   # outputs recorded from the Python reference, so it needs only a C
   # compiler. parity_shader_dsl skips its xcrun metal step where there is no
-  # Metal toolchain. parse_coverage.sh --check runs in its own job above.
+  # Metal toolchain. parse_coverage.flow --check runs in its own job above.
   flowc-parity-gates:
     name: flowc parity gates (golden)
     runs-on: ubuntu-latest
@@ -580,11 +579,11 @@ jobs:
       - name: parity_effects
         run: timeout 10m ./flow tool compiler/scripts/parity_effects.flow
       - name: parity_typecheck --check
-        run: timeout 20m ./compiler/scripts/parity_typecheck.sh --check
+        run: timeout 20m ./flow tool compiler/scripts/parity_typecheck.flow --check
       - name: typecheck_rules
-        run: timeout 10m ./compiler/scripts/typecheck_rules.sh
+        run: timeout 10m ./flow tool compiler/scripts/typecheck_rules.flow
       - name: fmt_check --check
-        run: timeout 20m ./compiler/scripts/fmt_check.sh --check
+        run: timeout 20m ./flow tool compiler/scripts/fmt_check.flow --check
 
   # Whole-corpus parity between the flowc and Python hosts on the C backend,
   # against recorded Python goldens (no Python). The floor is kept per OS;
@@ -599,7 +598,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: corpus_parity --check
-        run: timeout 45m ./compiler/scripts/corpus_parity.sh --check
+        run: timeout 45m ./flow tool compiler/scripts/corpus_parity.flow --check
 
   # Phase D: user-facing compile must not pip-install the Python compiler.
   flowc-compile:
