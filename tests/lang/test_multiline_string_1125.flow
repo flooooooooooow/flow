@@ -1,0 +1,14 @@
+extern {
+    function strcmp(a: string, b: string) -> i32
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    let s: string = "line one
+line two"
+    if strcmp(s, "line one\nline two") != 0 {
+        return 1
+    }
+    puts(s)
+    return 0
+}
