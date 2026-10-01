@@ -60297,8 +60297,8 @@ int32_t flowc_cgen_var_elem_type(AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_method_recv_needs_addr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t call, int32_t fn_id);
 int32_t flowc_cgen_fn_param_type(AstArena arena, int32_t fn_id, int32_t param_idx);
 int32_t flowc_cgen_fn_param_is_span(AstArena arena, uint8_t* src, int32_t fn_id, int32_t param_idx);
-int32_t flowc_cgen_is_array_var(AstArena arena, uint8_t* src, int32_t id);
-int32_t flowc_cgen_array_var_size(AstArena arena, uint8_t* src, int32_t id);
+int32_t flowc_cgen_is_array_var(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
+int32_t flowc_cgen_array_var_size(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_find_enum_variant(AstArena arena, uint8_t* src, int32_t ns, int32_t ne);
 void flowc_cgen_emit_fork_src(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 void flowc_cgen_emit_pipe_block(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
@@ -64387,42 +64387,22 @@ int32_t flowc_cgen_fn_param_is_span(AstArena arena, uint8_t* src, int32_t fn_id,
   return 0;
 }
 
-int32_t flowc_cgen_is_array_var(AstArena arena, uint8_t* src, int32_t id) {
-  int32_t ns = ((arena).nodes[id]).name_start;
-  int32_t ne = ((arena).nodes[id]).name_end;
-  int32_t i = 0;
-  while (i < (arena).len) {
-  if (((arena).nodes[i]).kind == AST_LET) {
-  if (flowc_cgen_span_eq(src, ns, ne, ((arena).nodes[i]).name_start, ((arena).nodes[i]).name_end) == 1) {
-  int32_t ty = ((arena).nodes[i]).a;
-  if (ty != AST_NONE) {
+int32_t flowc_cgen_is_array_var(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
+  int32_t decl = flowc_cgen_scoped_decl(w, arena, src, id);
+  if (decl != AST_NONE && ((arena).nodes[decl]).a != AST_NONE) {
+  int32_t ty = ((arena).nodes[decl]).a;
   if (((arena).nodes[ty]).ival > 0) {
   return 1;
 }
 }
-}
-}
-  i = (i + 1);
-}
   return 0;
 }
 
-int32_t flowc_cgen_array_var_size(AstArena arena, uint8_t* src, int32_t id) {
-  int32_t ns = ((arena).nodes[id]).name_start;
-  int32_t ne = ((arena).nodes[id]).name_end;
-  int32_t i = 0;
-  while (i < (arena).len) {
-  if (((arena).nodes[i]).kind == AST_LET) {
-  if (flowc_cgen_span_eq(src, ns, ne, ((arena).nodes[i]).name_start, ((arena).nodes[i]).name_end) == 1) {
-  int32_t ty = ((arena).nodes[i]).a;
-  if (ty != AST_NONE) {
-  if (((arena).nodes[ty]).ival > 0) {
+int32_t flowc_cgen_array_var_size(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
+  int32_t decl = flowc_cgen_scoped_decl(w, arena, src, id);
+  if (decl != AST_NONE && ((arena).nodes[decl]).a != AST_NONE) {
+  int32_t ty = ((arena).nodes[decl]).a;
   return ((arena).nodes[ty]).ival;
-}
-}
-}
-}
-  i = (i + 1);
 }
   return 0;
 }
@@ -64606,11 +64586,11 @@ void flowc_cgen_plan_init(CgenBuf* w, AstArena arena, uint8_t* src) {
   return;
 }
   int32_t n = (arena).len;
-  { __typeof__((w[0]).plan_order) __flowc_st19435 = (int32_t*)(malloc((n * 4))); (w[0]).plan_order = __flowc_st19435; }
-  { __typeof__((w[0]).plan_has) __flowc_st19447 = (int32_t*)(malloc((n * 4))); (w[0]).plan_has = __flowc_st19447; }
-  { __typeof__((w[0]).plan_seen) __flowc_st19459 = (int32_t*)(malloc((n * 4))); (w[0]).plan_seen = __flowc_st19459; }
-  { __typeof__((w[0]).plan_lo) __flowc_st19471 = (int64_t*)(malloc((n * 8))); (w[0]).plan_lo = __flowc_st19471; }
-  { __typeof__((w[0]).plan_hi) __flowc_st19483 = (int64_t*)(malloc((n * 8))); (w[0]).plan_hi = __flowc_st19483; }
+  { __typeof__((w[0]).plan_order) __flowc_st19344 = (int32_t*)(malloc((n * 4))); (w[0]).plan_order = __flowc_st19344; }
+  { __typeof__((w[0]).plan_has) __flowc_st19356 = (int32_t*)(malloc((n * 4))); (w[0]).plan_has = __flowc_st19356; }
+  { __typeof__((w[0]).plan_seen) __flowc_st19368 = (int32_t*)(malloc((n * 4))); (w[0]).plan_seen = __flowc_st19368; }
+  { __typeof__((w[0]).plan_lo) __flowc_st19380 = (int64_t*)(malloc((n * 8))); (w[0]).plan_lo = __flowc_st19380; }
+  { __typeof__((w[0]).plan_hi) __flowc_st19392 = (int64_t*)(malloc((n * 8))); (w[0]).plan_hi = __flowc_st19392; }
   if ((w[0]).plan_order == NULL || (w[0]).plan_has == NULL || (w[0]).plan_seen == NULL || (w[0]).plan_lo == NULL || (w[0]).plan_hi == NULL) {
   (w[0]).plan_order = NULL;
   (w[0]).plan_has = NULL;
@@ -67064,8 +67044,8 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
 }
 }
   if (fn_id != AST_NONE && flowc_cgen_fn_param_is_span(arena, src, fn_id, param_idx) == 1) {
-  if (((arena).nodes[arg]).kind == AST_IDENT && flowc_cgen_is_array_var(arena, src, arg) == 1) {
-  int32_t arr_size = flowc_cgen_array_var_size(arena, src, arg);
+  if (((arena).nodes[arg]).kind == AST_IDENT && flowc_cgen_is_array_var(w, arena, src, arg) == 1) {
+  int32_t arr_size = flowc_cgen_array_var_size(w, arena, src, arg);
   flowc_cgen_puts(w, "((");
   flowc_cgen_emit_type(w, arena, src, flowc_cgen_fn_param_type(arena, fn_id, param_idx));
   flowc_cgen_puts(w, "){ ");
@@ -75645,6 +75625,9 @@ int32_t sem_check_expression_stmt(Sem* c, int32_t e, int32_t stmt) {
   return bt;
 }
   int32_t bk = sem_tkind(c, bt);
+  if (bk == TK_STRING) {
+  return sem_tmk(c, TK_U8);
+}
   if (bk == TK_ARRAY || bk == TK_POINTER || bk == TK_SPAN) {
   int32_t el = sem_telem(c, bt);
   if (el >= 0) {
@@ -76759,9 +76742,9 @@ void sem_check_function(Sem* c, int32_t fi) {
   SemStrVec* prev_storage = (SemStrVec*)(c->local_storage);
   SemStrMap* prev_origin = (SemStrMap*)(c->span_origin);
   int32_t prev_ret = c->current_return_type;
-  { __typeof__(c->local_storage) __flowc_st19305 = sem_sv_new(); c->local_storage = __flowc_st19305; }
-  { __typeof__(c->span_origin) __flowc_st19309 = sem_sm_new(); c->span_origin = __flowc_st19309; }
-  { __typeof__(c->current_return_type) __flowc_st19318 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); c->current_return_type = __flowc_st19318; }
+  { __typeof__(c->local_storage) __flowc_st19314 = sem_sv_new(); c->local_storage = __flowc_st19314; }
+  { __typeof__(c->span_origin) __flowc_st19318 = sem_sm_new(); c->span_origin = __flowc_st19318; }
+  { __typeof__(c->current_return_type) __flowc_st19327 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); c->current_return_type = __flowc_st19327; }
   i = 0;
   while (i < sem_fi_nparams(c, fi)) {
   int32_t pt = sem_parse_type(c, sem_fi_param_type(c, fi, i));
@@ -76769,7 +76752,7 @@ void sem_check_function(Sem* c, int32_t fi) {
   i = (i + 1);
 }
   SemIntVec* prev_sink = (SemIntVec*)(c->return_sink);
-  { __typeof__(c->return_sink) __flowc_st19361 = sem_iv_new(); c->return_sink = __flowc_st19361; }
+  { __typeof__(c->return_sink) __flowc_st19370 = sem_iv_new(); c->return_sink = __flowc_st19370; }
   sem_check_block(c, sem_iv_get(c->fi_body, fi));
   SemIntVec* returns = (SemIntVec*)(c->return_sink);
   c->return_sink = prev_sink;
@@ -81246,6 +81229,9 @@ UTy ut_expr(UCtx* u, AstArena arena, int32_t id) {
   if (kind == AST_INDEX) {
   UTy b = ut_expr(u, arena, ((arena).nodes[id]).a);
   ut_expr(u, arena, ((arena).nodes[id]).b);
+  if ((b).tag == UT_OTHER && (b).prim == UP_STRING && ((arena).nodes[id]).ival == 0) {
+  return ut_prim(UP_U8);
+}
   if ((b).tag == UT_SEQ && ((arena).nodes[id]).ival == 0) {
   return ut_of_type(u, arena, (b).node);
 }
@@ -81583,7 +81569,7 @@ int32_t flowc_tc_check_program(TcCtx* ctx, AstArena arena, int32_t root) {
   flowc_tc_err(ctx);
   (ctx[0]).fatal = ((ctx[0]).fatal + 1);
 }
-  { __typeof__((ctx[0]).eff_len) __flowc_st17081 = flowc_eff_collect(arena, root, (ctx[0]).src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_seed_len); (ctx[0]).eff_len = __flowc_st17081; }
+  { __typeof__((ctx[0]).eff_len) __flowc_st17103 = flowc_eff_collect(arena, root, (ctx[0]).src, (ctx[0]).eff, (ctx[0]).eff_cap, (ctx[0]).eff_seed_len); (ctx[0]).eff_len = __flowc_st17103; }
   flowc_tc_collect_globals(ctx, arena, root);
   if ((ctx[0]).sem_on == 0) {
   flowc_tc_check_rows(ctx, arena, root);
@@ -81593,7 +81579,7 @@ int32_t flowc_tc_check_program(TcCtx* ctx, AstArena arena, int32_t root) {
 }
   flowc_tc_check_fns(ctx, arena, root);
   if ((ctx[0]).sem_on == 0) {
-  { __typeof__((ctx[0]).err) __flowc_st17139 = ((ctx[0]).err + flowc_units_check(arena, (ctx[0]).src, root)); (ctx[0]).err = __flowc_st17139; }
+  { __typeof__((ctx[0]).err) __flowc_st17161 = ((ctx[0]).err + flowc_units_check(arena, (ctx[0]).src, root)); (ctx[0]).err = __flowc_st17161; }
 }
   (ctx[0]).eff_len = (ctx[0]).eff_seed_len;
   return (ctx[0]).err;
