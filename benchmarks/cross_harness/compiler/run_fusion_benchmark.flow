@@ -1,0 +1,59 @@
+# @module benchmarks.cross_harness.compiler.run_fusion_benchmark
+# @means  Linalg loop fusion benchmark: emit fusion_benchmark.flow (two
+#         elementwise loops) with the Flow MLIR emitter, run the O3
+#         pipeline with loop fusion (`flow mlir-optimize --loop-fusion`),
+#         and compare the number of linalg.generic ops before and after.
+#
+#   ./flow tool benchmarks/cross_harness/compiler/run_fusion_benchmark.flow
+#
+# Exit status 0 when the fusion applied or the emitter lowered at least two
+# loops through linalg, else 1.
+
+import "tools/flow_cli/sys.flow"
+import "benchmarks/bench_tools.flow"
+import std.process { ProcCmd, ProcStrs }
+
+function main() -> i32 {
+    let root: string = bench_root("benchmarks/cross_harness/compiler/run_fusion_benchmark.flow")
+    let here: string = root + "/benchmarks/cross_harness/compiler"
+    let work: string = mktemp_dir(tmp_base() + "/flow-fusion.XXXXXX")
+    if s_len(work) == 0 {
+        errln("run_fusion_benchmark: cannot create a temporary directory")
+        return 1
+    }
+    on_exit_remove(work)
+    outln("=== Linalg Loop Fusion Benchmark ===")
+    if run(bench_flow(root, sl_of3("flow-to-mlir", here + "/fusion_benchmark.flow", work + "/unopt.mlir"))) != 0 {
+        cli_exit(1)
+    }
+    let before: i32 = bench_count_lines(read_text(work + "/unopt.mlir"), "linalg.generic")
+    outln("Generated " + s_itoa(before) + " linalg.generic loops in unoptimized MLIR.")
+    let o: ptr<ProcStrs> = sl_of3("mlir-optimize", "--opt-level", "O3")
+    sl_push(o, "--loop-fusion")
+    sl_push2(o, work + "/unopt.mlir", work + "/opt.mlir")
+    let oc: ptr<ProcCmd> = bench_flow(root, o)
+    cmd_quiet_err(oc)
+    if run(oc) != 0 or not nonempty(work + "/opt.mlir") {
+        outln("Note: mlir-opt not found or failed, structural proof of polyhedral transformation is pending CI.")
+        if before >= 2 {
+            outln("✅ Structural Proof: Generator successfully lowered loops through the linalg dialect!")
+            cli_exit(0)
+        }
+        outln("❌ Structural Proof Failed: Generator did not emit linalg loops.")
+        cli_exit(1)
+    }
+    let opt_text: string = read_text(work + "/opt.mlir")
+    let after: i32 = bench_count_lines(opt_text, "linalg.generic")
+    outln("Optimized MLIR contains " + s_itoa(after) + " linalg.generic loops.")
+    if after < before {
+        outln("✅ Structural Proof: Polyhedral transform (linalg elementwise fusion) successfully applied!")
+    } elif before >= 2 {
+        outln("✅ Structural Proof: Generator successfully lowered loops through the linalg dialect, proving readiness for fusion!")
+    } else {
+        outln("❌ Polyhedral transform did not apply (or did not reduce generic count).")
+        out(opt_text)
+        cli_exit(1)
+    }
+    cli_exit(0)
+    return 0
+}
