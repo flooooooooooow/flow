@@ -169,13 +169,15 @@ jobs:
   # Relative links in tracked markdown, as a reader meets them on GitHub.
   # `flow tool wiki_links` validates the built site instead; the two catch
   # different breakage. Both are Flow programs built with cc alone, so no
-  # toolchain setup.
+  # toolchain setup. script_refs fails when a .flow file names a scripts/ or
+  # compiler/scripts/ path that does not exist (a deleted script).
   doc-links:
     name: Doc links
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
       - run: ./flow tool doc_links
+      - run: ./flow tool script_refs
       - run: ./flow tool tool_layout
       - run: ./flow tool makefile_contract
       - run: ./flow tool project_state

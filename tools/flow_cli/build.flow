@@ -4,8 +4,8 @@
 
 import "tools/flow_cli/sys.flow"
 import "tools/flow_cli/toolchain.flow"
-import "tools/flow_cli/mlir_tools.flow"
 import "tools/flow_cli/tool.flow"
+import "tools/flow_cli/mlir_tools.flow"
 import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg, proc_input }
 import std.os { os_signal_watch, os_signal_take, SIGINT, SIGTERM }
 
@@ -922,7 +922,7 @@ export function record_gfx_program(args: ptr<ProcStrs>) -> i32 {
         if s_len(dir) == 0 {
             dir = "frames"
         }
-        let g: ptr<ProcStrs> = sl_of3(root() + "/scripts/frames_to_gif.sh", dir, rec_gif)
+        let g: ptr<ProcStrs> = tool_argv("frames_to_gif", sl_of2(dir, rec_gif))
         if s_len(gif_fps) > 0 {
             sl_push2(g, "--fps", gif_fps)
         }

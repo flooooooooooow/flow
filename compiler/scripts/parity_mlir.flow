@@ -13,7 +13,7 @@
 #       every program listed in compiler/fixtures/mlir/corpus.txt must still
 #       be accepted and match its recorded digest. When mlir-opt is
 #       installed, each fixture is also lowered (compiler/scripts/
-#       mlir_lower.sh), linked with clang and run; stdout plus exit code must
+#       flow mlir-lower), linked with clang and run; stdout plus exit code must
 #       equal `<name>.out`.
 #
 #   ./flow tool compiler/scripts/parity_mlir.flow --python <rev>
@@ -21,7 +21,7 @@
 #       fixtures and every .flow under examples/, tests/, lib/, benchmarks/
 #       and compiler/fixtures/. Every program flowc accepts must produce the
 #       same normalized MLIR as Python. With mlir-opt installed, each such
-#       program is built through both MLIR paths (flowc + mlir_lower.sh, and
+#       program is built through both MLIR paths (flowc + flow mlir-lower, and
 #       `python -m flow.transpiler --mlir --llvm`) and run; the two runs must
 #       agree. Needs python3 and git.
 #
@@ -86,7 +86,7 @@ function flowc_bin() -> string {
 
 # The MLIR lowering step: `lower <in.mlir> <out.ll>`, `lower --tools`.
 function lower_cmd() -> ptr<ProcStrs> {
-    return sl_of1("compiler/scripts/mlir_lower.sh")
+    return sl_of2("./flow", "mlir-lower")
 }
 
 function key_of(f: string) -> string {
