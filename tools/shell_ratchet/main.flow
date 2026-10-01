@@ -1,0 +1,495 @@
+# Shell ratchet, written in Flow.
+#
+# The repository's tooling is written in Flow. std.process lets a Flow
+# program run git, cc and the rest directly, so a shell script is no longer
+# needed to spawn them. This program keeps shell from growing:
+#
+#   1. Every tracked shell script is listed in baseline.txt or allow.txt.
+#   2. The scripts in baseline.txt together have no more lines than the
+#      total on its first line.
+#
+# A shell script is a tracked file ending in .sh or .bash, or a file with
+# no extension whose first line is a #! line naming sh, bash, zsh, ksh or
+# dash. third_party/ is excluded: other projects own it.
+#
+# allow.txt lists the scripts that have to stay shell, one per line as
+# "PATH  REASON". They are outside the line total. Adding one is a reviewed
+# change to that file and needs a reason; the program rejects an entry
+# without one.
+#
+# Deleting or shrinking shell always passes. `--update` tightens the
+# baseline to the current tree: it drops files that are gone and lowers the
+# total. It never adds a file and never raises the total.
+#
+#   ./flow tool shell_ratchet            check, exit 1 on new or grown shell
+#   ./flow tool shell_ratchet --update   tighten the baseline after a port
+#
+# Exit codes: 0 pass, 1 ratchet violated, 2 missing or unreadable input.
+
+import std.process { ProcCmd, ProcResult, ProcStrs, proc_cmd, proc_arg, proc_timeout_ms, proc_run, proc_argc, proc_argv, proc_getenv, proc_chdir, proc_strs_new, proc_strs_push, proc_strs_len, proc_strs_get }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fclose(fp: ptr<void>) -> i32
+    function fread(buf: ptr<u8>, size: i64, count: i64, fp: ptr<void>) -> i32
+    function fwrite(buf: ptr<u8>, size: i64, count: i64, fp: ptr<void>) -> i32
+    function snprintf(buf: ptr<i8>, size: i64, fmt: string, value: i32) -> i32
+    function puts(s: string) -> i32
+}
+
+const BASELINE: string = "tools/shell_ratchet/baseline.txt"
+const ALLOW: string = "tools/shell_ratchet/allow.txt"
+const READ_CAP: i32 = 4194304
+
+function say(s: string) {
+    let _p: i32 = puts(s)
+}
+
+function i32_str(n: i32) -> string {
+    let buf: ptr<i8> = malloc(48) as ptr<i8>
+    let _n: i32 = snprintf(buf, 48, "%d", n)
+    return buf as string
+}
+
+# The file's bytes as a string; "" when it is missing.
+function read_whole_file(path: string) -> string {
+    let fp: ptr<void> = fopen(path, "rb")
+    if fp == null {
+        return ""
+    }
+    let buf: ptr<u8> = malloc(READ_CAP as i64) as ptr<u8>
+    let n: i32 = fread(buf, 1, READ_CAP - 1, fp)
+    let _c: i32 = fclose(fp)
+    if n < 0 {
+        buf[0] = 0
+        return buf as string
+    }
+    buf[n] = 0
+    return buf as string
+}
+
+function write_whole_file(path: string, text: string) -> i32 {
+    let fp: ptr<void> = fopen(path, "wb")
+    if fp == null {
+        return 1
+    }
+    let n: i32 = strlen(text) as i32
+    let wrote: i32 = fwrite(text as ptr<u8>, 1, n, fp)
+    let _c: i32 = fclose(fp)
+    if wrote != n {
+        return 1
+    }
+    return 0
+}
+
+# Lines as `wc -l` counts them, plus one for a final line with no newline.
+function count_file_lines(path: string) -> i32 {
+    let fp: ptr<void> = fopen(path, "rb")
+    if fp == null {
+        return 0
+    }
+    let chunk: ptr<u8> = malloc(4096) as ptr<u8>
+    let mut lines: i32 = 0
+    let mut last: i32 = 10
+    let mut n: i32 = fread(chunk, 1, 4096, fp)
+    while n > 0 {
+        let mut i: i32 = 0
+        while i < n {
+            let ch: i32 = chunk[i] as i32
+            if ch == 10 {
+                lines = lines + 1
+            }
+            last = ch
+            i = i + 1
+        }
+        n = fread(chunk, 1, 4096, fp)
+    }
+    let _c: i32 = fclose(fp)
+    free(chunk)
+    if last != 10 {
+        lines = lines + 1
+    }
+    return lines
+}
+
+# s[a:b] as a new string.
+function slice(s: string, a: i32, b: i32) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let out: ptr<u8> = malloc((b - a + 1) as i64) as ptr<u8>
+    let mut i: i32 = 0
+    while i < b - a {
+        out[i] = p[a + i]
+        i = i + 1
+    }
+    out[b - a] = 0
+    return out as string
+}
+
+# Non-empty lines of `text`, CR stripped.
+function lines_of(text: string) -> ptr<ProcStrs> {
+    let out: ptr<ProcStrs> = proc_strs_new()
+    let p: ptr<u8> = text as ptr<u8>
+    let n: i32 = strlen(text) as i32
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i <= n {
+        let mut c: i32 = 0
+        if i < n {
+            c = p[i] as i32
+        }
+        if i == n or c == 10 {
+            let mut e: i32 = i
+            if e > start and p[e - 1] as i32 == 13 {
+                e = e - 1
+            }
+            if e > start {
+                proc_strs_push(out, slice(text, start, e))
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    return out
+}
+
+function starts_with(s: string, prefix: string) -> bool {
+    let n: i64 = strlen(prefix)
+    if strlen(s) < n {
+        return false
+    }
+    let sp: ptr<u8> = s as ptr<u8>
+    let pp: ptr<u8> = prefix as ptr<u8>
+    let mut i: i32 = 0
+    while (i as i64) < n {
+        if sp[i] != pp[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+function ends_with(s: string, suffix: string) -> bool {
+    let n: i32 = strlen(s) as i32
+    let m: i32 = strlen(suffix) as i32
+    if m > n {
+        return false
+    }
+    let sp: ptr<u8> = s as ptr<u8>
+    let xp: ptr<u8> = suffix as ptr<u8>
+    let mut i: i32 = 0
+    while i < m {
+        if sp[n - m + i] != xp[i] {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+function contains(hay: string, needle: string) -> bool {
+    let n: i32 = strlen(hay) as i32
+    let m: i32 = strlen(needle) as i32
+    let hp: ptr<u8> = hay as ptr<u8>
+    let np: ptr<u8> = needle as ptr<u8>
+    let mut i: i32 = 0
+    while i + m <= n {
+        let mut j: i32 = 0
+        while j < m and hp[i + j] == np[j] {
+            j = j + 1
+        }
+        if j == m {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# The last path component has no '.'.
+function no_extension(path: string) -> bool {
+    let p: ptr<u8> = path as ptr<u8>
+    let n: i32 = strlen(path) as i32
+    let mut i: i32 = n - 1
+    while i >= 0 {
+        let c: i32 = p[i] as i32
+        if c == 47 {
+            return true
+        }
+        if c == 46 {
+            return false
+        }
+        i = i - 1
+    }
+    return true
+}
+
+# The first line is a #! line that runs a POSIX-family shell.
+function has_shell_shebang(path: string) -> bool {
+    let fp: ptr<void> = fopen(path, "rb")
+    if fp == null {
+        return false
+    }
+    let buf: ptr<u8> = malloc(129) as ptr<u8>
+    let n: i32 = fread(buf, 1, 128, fp)
+    let _c: i32 = fclose(fp)
+    if n < 2 or buf[0] as i32 != 35 or buf[1] as i32 != 33 {
+        return false
+    }
+    let mut e: i32 = 0
+    while e < n and buf[e] as i32 != 10 {
+        e = e + 1
+    }
+    buf[e] = 0
+    let line: string = buf as string
+    # The interpreter word: the basename of the program, or the argument
+    # after `env`.
+    let words: ptr<ProcStrs> = proc_strs_new()
+    let lp: ptr<u8> = line as ptr<u8>
+    let mut i: i32 = 2
+    while i < e {
+        while i < e and (lp[i] as i32 == 32 or lp[i] as i32 == 9) {
+            i = i + 1
+        }
+        let s: i32 = i
+        while i < e and lp[i] as i32 != 32 and lp[i] as i32 != 9 {
+            i = i + 1
+        }
+        if i > s {
+            proc_strs_push(words, slice(line, s, i))
+        }
+    }
+    let mut k: i32 = 0
+    while k < proc_strs_len(words) {
+        let w: string = proc_strs_get(words, k)
+        let mut base: string = w
+        let wp: ptr<u8> = w as ptr<u8>
+        let mut j: i32 = (strlen(w) as i32) - 1
+        while j >= 0 and wp[j] as i32 != 47 {
+            j = j - 1
+        }
+        if j >= 0 {
+            base = slice(w, j + 1, strlen(w) as i32)
+        }
+        if strcmp(base, "env") != 0 and not starts_with(base, "-") {
+            return strcmp(base, "sh") == 0 or strcmp(base, "bash") == 0 or strcmp(base, "zsh") == 0 or strcmp(base, "ksh") == 0 or strcmp(base, "dash") == 0
+        }
+        k = k + 1
+    }
+    return false
+}
+
+function sort_strs(l: ptr<ProcStrs>) {
+    let n: i32 = proc_strs_len(l)
+    let mut i: i32 = 1
+    while i < n {
+        let key: string = l.items[i]
+        let mut j: i32 = i - 1
+        while j >= 0 and strcmp(l.items[j], key) > 0 {
+            l.items[j + 1] = l.items[j]
+            j = j - 1
+        }
+        l.items[j + 1] = key
+        i = i + 1
+    }
+}
+
+function has(l: ptr<ProcStrs>, s: string) -> bool {
+    let mut i: i32 = 0
+    while i < proc_strs_len(l) {
+        if strcmp(proc_strs_get(l, i), s) == 0 {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# Tracked shell scripts, byte-sorted. Null when git fails.
+function tracked_shell() -> ptr<ProcStrs> {
+    let c: ptr<ProcCmd> = proc_cmd("git")
+    proc_arg(c, "ls-files")
+    proc_arg(c, "--")
+    proc_arg(c, ":!:third_party/**")
+    proc_timeout_ms(c, 60000)
+    let r: ptr<ProcResult> = proc_run(c)
+    if r.exit_code != 0 {
+        say("shell-ratchet: git ls-files failed: " + r.stderr + r.error)
+        return null
+    }
+    let all: ptr<ProcStrs> = lines_of(r.stdout)
+    let out: ptr<ProcStrs> = proc_strs_new()
+    let mut i: i32 = 0
+    while i < proc_strs_len(all) {
+        let f: string = proc_strs_get(all, i)
+        if ends_with(f, ".sh") or ends_with(f, ".bash") {
+            proc_strs_push(out, f)
+        } elif no_extension(f) and has_shell_shebang(f) {
+            proc_strs_push(out, f)
+        }
+        i = i + 1
+    }
+    sort_strs(out)
+    return out
+}
+
+# The path at the start of an allow.txt line ("" for comments).
+function allow_path(line: string) -> string {
+    if starts_with(line, "#") {
+        return ""
+    }
+    let p: ptr<u8> = line as ptr<u8>
+    let n: i32 = strlen(line) as i32
+    let mut i: i32 = 0
+    while i < n and p[i] as i32 != 32 and p[i] as i32 != 9 {
+        i = i + 1
+    }
+    return slice(line, 0, i)
+}
+
+# The text after the path on an allow.txt line, spaces trimmed.
+function allow_reason(line: string) -> string {
+    let p: ptr<u8> = line as ptr<u8>
+    let n: i32 = strlen(line) as i32
+    let mut i: i32 = 0
+    while i < n and p[i] as i32 != 32 and p[i] as i32 != 9 {
+        i = i + 1
+    }
+    while i < n and (p[i] as i32 == 32 or p[i] as i32 == 9) {
+        i = i + 1
+    }
+    return slice(line, i, n)
+}
+
+function main() -> i32 {
+    let root: string = proc_getenv("FLOW_REPO_ROOT")
+    if strlen(root) > 0 {
+        let _ok: bool = proc_chdir(root)
+    }
+    let update: bool = proc_argc() > 1 and strcmp(proc_argv(1), "--update") == 0
+
+    let base_text: string = read_whole_file(BASELINE)
+    if strlen(base_text) == 0 {
+        say("shell-ratchet: cannot read " + BASELINE)
+        return 2
+    }
+    let allow_text: string = read_whole_file(ALLOW)
+    if strlen(allow_text) == 0 {
+        say("shell-ratchet: cannot read " + ALLOW)
+        return 2
+    }
+    let cur: ptr<ProcStrs> = tracked_shell()
+    if cur == null {
+        return 2
+    }
+
+    let base_lines: ptr<ProcStrs> = lines_of(base_text)
+    let header: string = proc_strs_get(base_lines, 0)
+    if not starts_with(header, "total ") {
+        say("shell-ratchet: first line of " + BASELINE + " must be 'total <lines>'")
+        return 2
+    }
+    let hp: ptr<u8> = header as ptr<u8>
+    let mut allowed_total: i32 = 0
+    let mut d: i32 = 6
+    while hp[d] >= 48 and hp[d] <= 57 {
+        allowed_total = allowed_total * 10 + (hp[d] as i32 - 48)
+        d = d + 1
+    }
+    let base: ptr<ProcStrs> = proc_strs_new()
+    let mut b: i32 = 1
+    while b < proc_strs_len(base_lines) {
+        proc_strs_push(base, proc_strs_get(base_lines, b))
+        b = b + 1
+    }
+
+    let allow: ptr<ProcStrs> = proc_strs_new()
+    let allow_lines: ptr<ProcStrs> = lines_of(allow_text)
+    let mut bad_allow: i32 = 0
+    let mut a: i32 = 0
+    while a < proc_strs_len(allow_lines) {
+        let line: string = proc_strs_get(allow_lines, a)
+        let path: string = allow_path(line)
+        if strlen(path) > 0 {
+            if strlen(allow_reason(line)) == 0 {
+                say("shell-ratchet: " + ALLOW + ": no reason given for " + path)
+                bad_allow = bad_allow + 1
+            }
+            proc_strs_push(allow, path)
+        }
+        a = a + 1
+    }
+    if bad_allow > 0 {
+        return 2
+    }
+
+    let mut new_files: i32 = 0
+    let mut total: i32 = 0
+    let mut counted: i32 = 0
+    let mut allowed_n: i32 = 0
+    let kept: ptr<ProcStrs> = proc_strs_new()
+    let mut i: i32 = 0
+    while i < proc_strs_len(cur) {
+        let f: string = proc_strs_get(cur, i)
+        if has(allow, f) {
+            allowed_n = allowed_n + 1
+        } elif has(base, f) {
+            proc_strs_push(kept, f)
+            total = total + count_file_lines(f)
+            counted = counted + 1
+        } else {
+            say("  new shell script: " + f)
+            new_files = new_files + 1
+        }
+        i = i + 1
+    }
+    let gone_files: i32 = proc_strs_len(base) - proc_strs_len(kept)
+
+    say("shell-ratchet: " + i32_str(counted) + " shell scripts, " + i32_str(total) + " lines (limit " + i32_str(allowed_total) + "); " + i32_str(allowed_n) + " allowed to stay shell")
+
+    if update {
+        let mut new_total: i32 = allowed_total
+        if total < new_total {
+            new_total = total
+        }
+        let mut body: string = "total " + i32_str(new_total) + "\n"
+        let mut k: i32 = 0
+        while k < proc_strs_len(kept) {
+            body = body + proc_strs_get(kept, k) + "\n"
+            k = k + 1
+        }
+        if write_whole_file(BASELINE, body) != 0 {
+            say("shell-ratchet: cannot write " + BASELINE)
+            return 2
+        }
+        say("shell-ratchet: baseline tightened, dropped " + i32_str(gone_files) + " files, limit now " + i32_str(new_total))
+        if new_files > 0 {
+            say("shell-ratchet: the new files above were not added. Write them in Flow.")
+            return 1
+        }
+        return 0
+    }
+
+    let mut failed: bool = false
+    if new_files > 0 {
+        say("shell-ratchet: FAIL. " + i32_str(new_files) + " new shell script(s). New tooling is written in Flow; std.process runs commands.")
+        failed = true
+    }
+    if total > allowed_total {
+        say("shell-ratchet: FAIL. Shell grew by " + i32_str(total - allowed_total) + " lines. Port the change to Flow or remove shell elsewhere.")
+        failed = true
+    }
+    if gone_files > 0 or total < allowed_total {
+        say("shell-ratchet: shell shrank. Run ./flow tool shell_ratchet --update to lock it in.")
+    }
+    if failed {
+        say("shell-ratchet: see AGENTS.md, section 'Flow first'.")
+        return 1
+    }
+    say("shell-ratchet: PASS")
+    return 0
+}

@@ -95,6 +95,8 @@ export function show_help() {
     outln("                    Freestanding wasm32 module through MLIR (no libc)")
     outln("  bpf <in.flow|in.ll> -o OUT.o [--entry NAME --section SEC] [-O 0..3]")
     outln("                    eBPF ELF object (bpfel) through MLIR")
+    outln("  tool NAME|PATH.flow [args]  Build and run a repository Flow program")
+    outln("                    (scripts/tools/NAME, tools/NAME, or a .flow path)")
     outln("  repl              Start interactive REPL")
     outln("  lsp               Start the language server on stdio")
     outln("  examples          List project examples (or compiler examples outside a project)")

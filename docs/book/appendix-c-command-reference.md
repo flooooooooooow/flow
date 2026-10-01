@@ -120,6 +120,20 @@ zero remain valid. Exact output/expected-failure tests can use sibling
 See [`../language/testing.md`](../language/testing.md) for the complete project
 testing contract.
 
+## Repository tools
+
+| Command | Purpose |
+|---|---|
+| `flow tool NAME [args...]` | build and run `scripts/tools/NAME/main.flow` or `tools/NAME/main.flow` |
+| `flow tool PATH.flow [args...]` | build and run any Flow program in the repository |
+| `flow tool --path NAME` | build only and print the cached binary's path |
+
+The program is compiled with the Stage-A flowc built from the checked-in
+bootstrap C, cached in `build/flow-tools`, and run in the current directory
+with `FLOW_REPO_ROOT` set to the repository root. The repository's checks,
+gates and generators are Flow programs run this way; for example
+`./flow tool shell_ratchet` and `./flow tool python_ratchet`.
+
 ## Projects and packages
 
 | Command | Purpose |

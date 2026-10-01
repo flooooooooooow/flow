@@ -27,7 +27,7 @@ and CI.
 
 ## Structural invariants
 
-New code is Flow. `scripts/python_ratchet.sh` fails on any new `.py` file
+New code is Flow. `./flow tool python_ratchet` fails on any new `.py` file
 outside the exempt trees it names.
 
 A source implementation has one canonical home. A tool lives under `tools/`

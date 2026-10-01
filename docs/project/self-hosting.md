@@ -217,7 +217,7 @@ flow blocks and the shader DSL, and it is now the only C compiler.
 | `benchmarks/baselines/python/` | benchmark subjects that measure CPython and NumPy; Flow and bash harnesses run them and skip them when there is no python3 |
 | `examples/interop/python/` | the Python modules Flow programs call through `lib/stdlib/python_embed.flow` |
 
-No other tracked `.py` file exists. `scripts/python_ratchet.sh` excludes only
+No other tracked `.py` file exists. `./flow tool python_ratchet` excludes only
 those two directories (and vendored trees) and fails on any other `.py`.
 
 `flow check`, `flow analyze`, `flow fir-g`, `flow gpu`, `flow dap`, `flow bpf`,

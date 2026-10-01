@@ -12,11 +12,11 @@
 # lowers the line total. It never adds a file and never raises the total.
 #
 # The tracked file list comes from `git ls-files`, run through
-# std.process. scripts/python_ratchet.sh only builds this program.
+# std.process. `./flow tool python_ratchet` builds and runs it.
 #
 # Exit codes: 0 pass, 1 ratchet violated, 2 missing or unreadable input.
 
-import std.process { ProcCmd, ProcResult, proc_cmd, proc_arg, proc_timeout_ms, proc_run, proc_argc, proc_argv }
+import std.process { ProcCmd, ProcResult, proc_cmd, proc_arg, proc_timeout_ms, proc_run, proc_argc, proc_argv, proc_getenv, proc_chdir }
 
 extern {
     function malloc(size: i64) -> ptr<void>
@@ -229,6 +229,12 @@ function tracked_python() -> string {
 }
 
 function main() -> i32 {
+    # `flow tool` runs this from the caller's directory; paths are
+    # relative to the repository root.
+    let root: string = proc_getenv("FLOW_REPO_ROOT")
+    if strlen(root) > 0 {
+        let _ok: bool = proc_chdir(root)
+    }
     let update: bool = proc_argc() > 1 and strcmp(proc_argv(1), "--update") == 0
 
     let base_text: string = read_whole_file(BASELINE)
@@ -334,7 +340,7 @@ function main() -> i32 {
         failed = true
     }
     if gone_files > 0 or total < allowed_total {
-        println("python-ratchet: Python shrank. Run scripts/python_ratchet.sh --update to lock it in.")
+        println("python-ratchet: Python shrank. Run ./flow tool python_ratchet --update to lock it in.")
     }
     if failed {
         println("python-ratchet: see AGENTS.md, section 'Flow first'.")
