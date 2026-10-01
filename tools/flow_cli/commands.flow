@@ -6,8 +6,8 @@
 
 import "tools/flow_cli/sys.flow"
 import "tools/flow_cli/toolchain.flow"
-import "tools/flow_cli/flowc_build.flow"
 import "tools/flow_cli/build.flow"
+import "tools/flow_cli/mlir_tools.flow"
 import "tools/flow_cli/tool.flow"
 import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg }
 
@@ -359,22 +359,13 @@ export function cmd_explain(args: ptr<ProcStrs>) -> i32 {
         cli_exit(1)
     }
     let dir: string = mktemp_dir_default()
-    let argv: ptr<ProcStrs> = sl_copy(rest)
+    let argv: ptr<ProcStrs> = sl_of1(root() + "/compiler/scripts/flowc_emit.sh")
+    sl_extend(argv, rest)
     sl_push2(argv, program, dir + "/out.c")
-    let envs: ptr<ProcStrs> = sl_of3("FLOWC_BIN=" + flowc, "FLOWC_EXPLAIN=1", "FLOWC_EXPLAIN_SOURCE=" + program)
-    # The emitter's own messages were captured with the child's output:
-    # stderr is printed to stdout and stdout to stderr, as below.
-    sink_push(SINK_BUF, SINK_BUF)
-    let call: ptr<EmitCall> = flowc_emit_call(root(), argv, envs)
-    let plan_out: string = sink_pop()
-    let plan_err: string = sink_err()
-    if call.rc != 0 {
-        out(plan_err)
-        errs(plan_out)
-        rm_rf(dir)
-        return call.rc
-    }
-    let c: ptr<ProcCmd> = call.cmd
+    let c: ptr<ProcCmd> = cmd(argv)
+    cmd_env(c, "FLOWC_BIN", flowc)
+    cmd_env(c, "FLOWC_EXPLAIN", "1")
+    cmd_env(c, "FLOWC_EXPLAIN_SOURCE", program)
     cmd_capture_out(c)
     cmd_capture_err(c)
     let r: ptr<ProcResult> = run_result(c)
@@ -724,13 +715,15 @@ export function cmd_wasm(args0: ptr<ProcStrs>) -> i32 {
         info("Writes .wasm + .js + a runnable index.html.")
         info("gfx programs get a canvas page; others print into the page.")
         info("Requires emcc (Emscripten). See docs/language/wasm.md")
-        info("Whole gallery: ./flow tool wasm_build gallery")
+        info("Whole gallery: scripts/build_wasm_gallery.sh")
         cli_exit(1)
     }
     if s_eq(first, "--legacy") {
         let rest: ptr<ProcStrs> = sl_tail(args, 1)
         require_flow_file(sl_get(rest, 0))
-        cli_exit(run_argv(tool_argv("flow_to_wasm", rest)))
+        let lg: ptr<ProcStrs> = sl_of1(root() + "/scripts/flow_to_wasm.sh")
+        sl_extend(lg, rest)
+        cli_exit(run_argv(lg))
     }
     require_flow_file(first)
     if not have("emcc") {
@@ -745,7 +738,7 @@ export function cmd_wasm(args0: ptr<ProcStrs>) -> i32 {
             cli_exit(1)
         }
         info("Flow → C → WASM with a " + fs + " filesystem (see docs/language/wasm-crossings.md)")
-        let c: ptr<ProcStrs> = tool_argv("wasm_crossings", sl_of2("fs", first))
+        let c: ptr<ProcStrs> = sl_of3(root() + "/wasm/crossings.sh", "fs", first)
         sl_push2(c, "--fs", fs)
         sl_extend(c, preload)
         if run_argv(c) != 0 {
@@ -760,7 +753,7 @@ export function cmd_wasm(args0: ptr<ProcStrs>) -> i32 {
             cli_exit(1)
         }
         info("Flow → C → threaded WASM (see docs/language/wasm-crossings.md)")
-        let t: ptr<ProcStrs> = tool_argv("wasm_crossings", sl_of2("threads", first))
+        let t: ptr<ProcStrs> = sl_of3(root() + "/wasm/crossings.sh", "threads", first)
         sl_push2(t, "--workers", workers)
         if run_argv(t) != 0 {
             error("Threaded WASM build failed")
@@ -773,7 +766,7 @@ export function cmd_wasm(args0: ptr<ProcStrs>) -> i32 {
     } else {
         info("Flow → C → WASM (see docs/language/wasm.md)")
     }
-    let b: ptr<ProcStrs> = tool_argv("wasm_build", sl_of1("build"))
+    let b: ptr<ProcStrs> = sl_of1(root() + "/scripts/wasm_build.sh")
     sl_extend(b, args)
     sl_extend(b, preload)
     sl_extend(b, link)
@@ -798,7 +791,8 @@ export function cmd_playground(port_arg: string) -> i32 {
         cmd_quiet_err(c)
         let _r: i32 = run(c)
     }
-    return run_argv(tool_argv("playground_server", sl_of2("--port", port)))
+    let s: ptr<ProcStrs> = sl_of3(root() + "/scripts/playground_compile_server.sh", "--port", port)
+    return run_argv(s)
 }
 
 # ---------------------------------------------------------------------------
@@ -937,17 +931,18 @@ export function cmd_ml(args: ptr<ProcStrs>) -> i32 {
                 cli_exit(1)
             }
             info("  MLIR GPU smoke: gpu_kernels")
-            let gc: ptr<ProcCmd> = flow_emit_mlir_cmd(sl_of3("--gpu", root() + "/lib/stdlib/gpu_kernels.flow", build_root() + "/gpu_kernels.mlir"))
-            cmd_quiet(gc)
-            if run(gc) != 0 {
+            sink_push(SINK_NULL, SINK_NULL)
+            let grc: i32 = flow_emit_mlir(sl_of3("--gpu", root() + "/lib/stdlib/gpu_kernels.flow", build_root() + "/gpu_kernels.mlir"))
+            let _go: string = sink_pop()
+            if grc != 0 {
                 error("GPU MLIR generation failed")
                 cli_exit(1)
             }
             info("  MLIR SPIR-V smoke: gpu_kernels (best-effort)")
-            let sp: ptr<ProcCmd> = cmd(sl_of3(root() + "/compiler/scripts/mlir_spirv.sh", "spirv", build_root() + "/gpu_kernels.mlir"))
-            proc_arg(sp, build_root() + "/gpu_kernels.spv")
-            cmd_quiet(sp)
-            if run(sp) == 0 {
+            sink_push(SINK_NULL, SINK_NULL)
+            let src: i32 = mlir_spirv(sl_of3("spirv", build_root() + "/gpu_kernels.mlir", build_root() + "/gpu_kernels.spv"))
+            let _so: string = sink_pop()
+            if src == 0 {
                 success("  SPIR-V lowering ok")
             } else {
                 warning("  SPIR-V lowering WIP (GPU MLIR codegen ok)")

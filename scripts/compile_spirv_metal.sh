@@ -8,7 +8,7 @@
 # used as is. SPIRV-Cross lowers the SPIR-V to Metal Shading Language
 # (--msl-only stops there), then xcrun metal and metallib build the library.
 # OUT defaults to build/<stem>.metallib, or build/<stem>.metal with
-# --msl-only. The steps are compiler/scripts/mlir_spirv.sh.
+# --msl-only. The steps are `flow mlir-spirv` (tools/flow_cli/mlir_tools.flow).
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 
@@ -52,7 +52,7 @@ mkdir -p "$(dirname "$output")"
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/flow-spirv-metal.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
-SPIRV="$ROOT/compiler/scripts/mlir_spirv.sh"
+SPIRV=("$ROOT/flow" mlir-spirv)
 
 fail() {
     echo "Metal compilation failed: $*" >&2
@@ -73,12 +73,12 @@ $(cat "$work/flow.log")"
 esac
 
 if [[ "$msl_only" -eq 1 ]]; then
-    "$SPIRV" msl "$spv" "$output" ${cross_args[@]+"${cross_args[@]}"} 2>"$work/err" \
+    "${SPIRV[@]}" msl "$spv" "$output" ${cross_args[@]+"${cross_args[@]}"} 2>"$work/err" \
         || fail "$(cat "$work/err")"
 else
-    "$SPIRV" msl "$spv" "$work/$stem.metal" ${cross_args[@]+"${cross_args[@]}"} 2>"$work/err" \
+    "${SPIRV[@]}" msl "$spv" "$work/$stem.metal" ${cross_args[@]+"${cross_args[@]}"} 2>"$work/err" \
         || fail "$(cat "$work/err")"
-    "$SPIRV" metallib "$work/$stem.metal" "$output" "$sdk" 2>"$work/err" \
+    "${SPIRV[@]}" metallib "$work/$stem.metal" "$output" "$sdk" 2>"$work/err" \
         || fail "$(cat "$work/err")"
 fi
 echo "Generated Metal artifact: $output"

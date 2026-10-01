@@ -3085,7 +3085,7 @@ int32_t flowc_wasm_gen_compile(const char* in_path, const char* out_path, const 
   if (cmd == NULL) {
   return 1;
 }
-  int32_t _s1 = sprintf(cmd, (uint8_t*)("compiler/scripts/flow_to_llvm.sh --wasm32 %s build/flow_wasm_tmp.ll"), (uint8_t*)(in_path), (uint8_t*)(""), (uint8_t*)(""));
+  int32_t _s1 = sprintf(cmd, (uint8_t*)("./flow flow-to-llvm --wasm32 %s build/flow_wasm_tmp.ll"), (uint8_t*)(in_path), (uint8_t*)(""), (uint8_t*)(""));
   int32_t rc1 = flowc_io_system((const char*)(cmd));
   if (rc1 != 0) {
   puts("error: Flow -> LLVM IR lowering failed");
@@ -58929,7 +58929,7 @@ int32_t flowc_bpf_gen_compile(const char* in_path, const char* out_path, const c
   if (cmd == NULL) {
   return 1;
 }
-  int32_t _s1 = sprintf(cmd, (uint8_t*)("compiler/scripts/flow_to_llvm.sh --optimize O%s %s build/flow_bpf_tmp.ll"), (uint8_t*)(optimize), (uint8_t*)(in_path), (uint8_t*)(""));
+  int32_t _s1 = sprintf(cmd, (uint8_t*)("./flow flow-to-llvm --optimize O%s %s build/flow_bpf_tmp.ll"), (uint8_t*)(optimize), (uint8_t*)(in_path), (uint8_t*)(""));
   int32_t rc1 = flowc_io_system((const char*)(cmd));
   if (rc1 != 0) {
   puts("error: Flow -> LLVM IR lowering failed");

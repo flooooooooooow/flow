@@ -1,7 +1,7 @@
 # Compare tests/fixtures/wasm/alloc_sum.flow compiled natively through MLIR
 # with the same function compiled to wasm32 and run under Node.
 #
-# The native build lowers the program with compiler/scripts/flow_to_llvm.sh
+# The native build lowers the program with `flow flow-to-llvm`
 # and links it into a small C caller; the wasm build is `flow wasm32`
 # (`./flow wasm32`), run with runtime/wasm/flow_runtime.mjs. The
 # results must agree to 1e-6. Prints one JSON line:
@@ -46,7 +46,9 @@ function main() -> i32 {
     let _root: string = tr_enter_root()
     let work: string = tr_workdir("flow_wasm_parity_")
 
-    check(run_argv(sl_of3("compiler/scripts/flow_to_llvm.sh", SOURCE, work + "/alloc_sum_native.ll")))
+    let llvm: ptr<ProcStrs> = sl_of3("./flow", "flow-to-llvm", SOURCE)
+    sl_push(llvm, work + "/alloc_sum_native.ll")
+    check(run_argv(llvm))
     let _c: bool = write_text(work + "/caller.c", CALLER)
     let cl: ptr<ProcStrs> = sl_of3("clang", "-O2", "-Wno-override-module")
     sl_push2(cl, work + "/caller.c", work + "/alloc_sum_native.ll")

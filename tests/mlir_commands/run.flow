@@ -55,6 +55,7 @@ function compile_patterns() {
     sl_push(RX_DROP, "^✅ (Generated|FLOW|MLIR|LLVM|Built|C →|🎧|🚀)")
     sl_push(RX_DROP, "^⚠️ +flowc MLIR emitter")
     sl_push(RX_DROP, "^(Resolving modules|Parsed [0-9]+ functions|Generated (MLIR|LLVM IR|SPIR-V)|Type warnings|  ⚠ |  \\.\\.\\. and |Input file:)")
+    sl_push(RX_DROP, "^ensure_flowc: compiler/src has local edits; building flowc from them$")
     sl_push(RX_DROP, "^(real|user|sys) +[0-9.]+$")
     sl_push(RX_DROP, "^-{20,}$")
     sl_push(RX_DROP, "overriding the module target triple|^[0-9]+ warnings? generated\\.$")
@@ -157,18 +158,10 @@ function filter(text: string) -> string {
 }
 
 function pipeline_cmd(root: string, args: ptr<ProcStrs>) -> ptr<ProcCmd> {
-    let opt: string = root + "/compiler/scripts/mlir_optimize.sh"
-    if is_exec(opt) {
-        let v: ptr<ProcStrs> = sl_of2(opt, "--print-pass-pipeline")
-        sl_extend(v, args)
-        return cmd(v)
-    }
-    let v2: ptr<ProcStrs> = sl_of3("python3", "-m", "flow.transpiler")
-    sl_push(v2, "--print-pass-pipeline")
-    sl_extend(v2, args)
-    let c: ptr<ProcCmd> = cmd(v2)
-    cmd_env(c, "PYTHONPATH", root + "/src")
-    return c
+    let v: ptr<ProcStrs> = sl_of2(root + "/flow", "mlir-optimize")
+    sl_push(v, "--print-pass-pipeline")
+    sl_extend(v, args)
+    return cmd(v)
 }
 
 # Run one case; it writes WORK/got/NAME.*.

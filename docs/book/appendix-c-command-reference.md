@@ -134,6 +134,23 @@ with `FLOW_REPO_ROOT` set to the repository root. The repository's checks,
 gates and generators are Flow programs run this way; for example
 `./flow tool shell_ratchet` and `./flow tool python_ratchet`.
 
+## MLIR toolchain steps
+
+`flow mlir`, `mlir-run`, `jit` and `--backend=mlir` are built from these
+steps. Each one is also a command, for CI, benchmarks and scripts that need
+a single step.
+
+| Command | Purpose |
+|---|---|
+| `flow flow-to-mlir [--gpu] [--wasm32] [--jit] [--lenient] IN.flow OUT.mlir` | emit MLIR with flowc (`FLOWC_EMIT=mlir`); @cEmbed C goes to `OUT.mlir.c` |
+| `flow flow-to-llvm [--wasm32] [--optimize OLEVEL] IN.flow OUT.ll` | `flow-to-mlir`, then `mlir-lower` |
+| `flow mlir-lower IN.mlir OUT.ll` | lower to LLVM IR with mlir-opt and mlir-translate; `--tools` prints their paths |
+| `flow mlir-optimize [FLAGS] [--opt-report] IN.mlir OUT.mlir` | run the `--optimize` pass pipeline; `--print-pass-pipeline` prints it |
+| `flow mlir-spirv spirv\|msl\|metallib\|mlir-msl\|mlir-metallib IN OUT` | lower a GPU module to SPIR-V, Metal Shading Language or a .metallib |
+
+The tools are found through `MLIR_OPT`, `MLIR_TRANSLATE`, `SPIRV_CROSS` and
+`XCRUN`, then `LLVM_PATH`, `PATH` and Homebrew. `FLOWC_BIN` picks the flowc.
+
 ## Projects and packages
 
 | Command | Purpose |

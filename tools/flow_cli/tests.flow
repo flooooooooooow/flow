@@ -7,6 +7,7 @@ import "tools/flow_cli/sys.flow"
 import "tools/flow_cli/toolchain.flow"
 import "tools/flow_cli/flowc_build.flow"
 import "tools/flow_cli/build.flow"
+import "tools/flow_cli/mlir_tools.flow"
 import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg }
 
 # ---------------------------------------------------------------------------
@@ -680,8 +681,10 @@ export function run_mlir_tests() -> i32 {
         total = total + 1
         let rel_path: string = strip_root(program)
         let mlir_file: string = build_dir + "/" + path_stem(program, ".flow") + ".mlir"
-        let _g: string = capture_merged(flow_emit_mlir_cmd(sl_of3("--lenient", program, mlir_file)))
-        if last_status() != 0 {
+        sink_push(SINK_BUF, SINK_SAME)
+        let grc: i32 = flow_emit_mlir(sl_of3("--lenient", program, mlir_file))
+        let _g: string = sink_pop()
+        if grc != 0 {
             error("✗ " + rel_path + " (MLIR generation failed)")
             failed = failed + 1
             continue
@@ -800,9 +803,10 @@ export function run_matmul_tests(args: ptr<ProcStrs>) -> i32 {
     info("Running matmul optimizations...")
     check(run_program(sl_of1(program)))
     info("Generating MLIR...")
-    let mc: ptr<ProcCmd> = flow_emit_mlir_cmd(sl_of2(mlir_program, mlir_file))
-    cmd_quiet(mc)
-    if run(mc) != 0 {
+    sink_push(SINK_NULL, SINK_NULL)
+    let mrc: i32 = flow_emit_mlir(sl_of2(mlir_program, mlir_file))
+    let _mo: string = sink_pop()
+    if mrc != 0 {
         warning("MLIR generation failed")
     }
     info("Generating assembly...")

@@ -1,17 +1,17 @@
 # Compile Flow, or LLVM IR, to an eBPF ELF object or a freestanding wasm32
 # module.
 #
-# The flow CLI runs it as `flow bpf` and `flow wasm32`:
+# Run through the shims (the flow CLI runs them as `flow bpf` and
+# `flow wasm32`):
 #
-#   flow bpf IN.flow|IN.ll -o OUT.o [--target bpfel]
+#   scripts/bpf_target.sh IN.flow|IN.ll -o OUT.o [--target bpfel]
 #       [--entry NAME --section SECTION] [--license TEXT] [-O 0|1|2|3]
-#   flow wasm32 IN.flow|IN.ll -o OUT.wasm [--export NAME ...]
+#   scripts/wasm32_target.sh IN.flow|IN.ll -o OUT.wasm [--export NAME ...]
 #       [-O|--opt-level O0|O1|O2|O3|Os|Oz]
 #
-# (`flow tool llvm_target bpf|wasm32 ...` is the same.) The first argument
-# selects the target. A Flow source is
-# lowered to LLVM IR by compiler/scripts/flow_to_llvm.sh (the flowc MLIR
-# emitter and mlir_lower.sh). For bpf the IR is checked against the
+# The first argument the shims pass selects the target. A Flow source is
+# lowered to LLVM IR by `flow flow-to-llvm` (the flowc MLIR
+# emitter and `flow mlir-lower`). For bpf the IR is checked against the
 # verifier-hostile constructs the target rejects, given the BPF triple and
 # data layout, and, with --entry/--section, the entry is placed in its ELF
 # section next to a `license` section. clang with the LLVM BPF backend emits
@@ -497,8 +497,8 @@ function bpf_emit_object(ir: string, a: ptr<Args>, work: string) -> string {
 # Lower a Flow file to LLVM IR at `ll`. Returns "" or the process output
 # pieces: the tool's stderr in `err_path`, stdout in `out_path`.
 function lower_flow(src: string, ll: string, flags: string, work: string) -> i32 {
-    let shim: string = root() + "/compiler/scripts/flow_to_llvm.sh"
-    let cmd: string = pr_quote(shim) + flags + " " + pr_quote(src) + " " + pr_quote(ll) + " > " + pr_quote(work + "/lower.out") + " 2> " + pr_quote(work + "/lower.err")
+    let flow: string = root() + "/flow"
+    let cmd: string = pr_quote(flow) + " flow-to-llvm" + flags + " " + pr_quote(src) + " " + pr_quote(ll) + " > " + pr_quote(work + "/lower.out") + " 2> " + pr_quote(work + "/lower.err")
     return pr_run(cmd)
 }
 
@@ -785,7 +785,7 @@ function option_value(argc: i32, argv: ptr<ptr<u8>>, i: i32, name: string, v: pt
 
 function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     if argc < 2 {
-        ft_errln("usage: flow tool llvm_target bpf|wasm32 ARGS")
+        ft_errln("usage: llvm_target bpf|wasm32 ARGS")
         return 2
     }
     let mode: string = argv[1] as string

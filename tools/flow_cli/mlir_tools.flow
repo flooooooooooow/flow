@@ -1,0 +1,745 @@
+# @module tools.flow_cli.mlir_tools
+# @means  The MLIR toolchain steps of the `flow` command line: emit MLIR
+#         with flowc, optimize it with mlir-opt, lower it to LLVM IR, and
+#         lower GPU modules to SPIR-V and Metal.
+#
+# Each step is a function the other CLI modules call directly, and a
+# command of its own for callers outside the CLI (CI, benchmarks, scripts):
+#
+#   flow flow-to-mlir [--gpu] [--wasm32] [--jit] [--lenient] IN.flow OUT.mlir
+#   flow flow-to-llvm [--wasm32] [--optimize OLEVEL] IN.flow OUT.ll
+#   flow mlir-lower IN.mlir OUT.ll | --tools
+#   flow mlir-optimize [FLAGS] [--opt-report] IN.mlir OUT.mlir
+#   flow mlir-optimize --print-pass-pipeline [FLAGS]
+#   flow mlir-spirv spirv|msl|metallib|mlir-msl|mlir-metallib IN OUT [...]
+#
+# These replaced the shell scripts of the same names (underscored) in
+# compiler/scripts, with the same arguments, environment variables,
+# messages and exit statuses.
+#
+# flow-to-mlir: flowc (compiler/src/mlirgen.flow, FLOWC_EMIT=mlir) writes
+# the MLIR.
+#   --gpu     @gpu kernels as a gpu.module (FLOWC_MLIR_GPU=1)
+#   --wasm32  ILP32 ABI: libc size_t/long as i32 (FLOWC_MLIR_SIZE_T=32)
+#   --jit     guard modes jit, mlir and compile (FLOWC_MODE=jit), as the JIT
+#             runner used; it also implies --lenient
+#   --lenient type errors that are not fatal are warnings (FLOWC_LENIENT=1);
+#             otherwise any type error fails the program
+# FLOWC_BIN selects the compiler; otherwise compiler/build/flowc_bootstrap,
+# built from compiler/bootstrap/flowc_stage_a.c when missing or stale.
+# FLOWC_TYPECHECK (default 1), FLOWC_CHECKS (default 1) and FLOWC_ROOT
+# (default the checkout) pass through. A program with @cEmbed C also gets
+# OUT.c, which the caller compiles and links with the lowered MLIR. Status
+# 0 with OUT written, 1 when the program does not compile (the diagnostics
+# on stderr), 2 for usage.
+#
+# flow-to-llvm: flow-to-mlir, then mlir-lower. --optimize is accepted for
+# the callers (compiler/src/bpf_gen.flow, scripts/tools/llvm_target) and not
+# applied: they run clang at the same level. Status 0, 1 when the program
+# does not compile, 3 when mlir-opt or mlir-translate is missing.
+#
+# mlir-lower: mlir-opt with the lowering pass list of the retired
+# src/flow/mlir_jit.py, then mlir-translate --mlir-to-llvmir. Tools:
+# $MLIR_OPT / $MLIR_TRANSLATE, $LLVM_PATH/<tool>, PATH, `brew --prefix
+# llvm`/bin. --tools prints the tool paths. Status that of the failing
+# tool, 2 for usage, 3 when a tool is missing.
+#
+# mlir-optimize: the pass list comes from scripts/tools/mlir_pipeline. An
+# mlir-opt that cannot parse the func/arith mix (some Ubuntu mlir-14
+# packages) copies IN to OUT unchanged. --opt-report writes the pass
+# statistics to stderr. Unknown flags are ignored, so callers pass their
+# whole flag list. Status mlir-opt's, 2 for usage, 3 when mlir-opt is
+# missing.
+#
+# mlir-spirv: SPIR-V is the portable GPU artifact; Apple targets lower it
+# through SPIRV-Cross to Metal Shading Language and on to a .metallib with
+# xcrun metal and metallib. Tools: $MLIR_OPT / $MLIR_TRANSLATE /
+# $SPIRV_CROSS / $XCRUN, then $LLVM_PATH (MLIR tools), PATH and brew. SDK
+# defaults to macosx. Status 0, 1 when a step fails, 2 for usage.
+
+import "tools/flow_cli/sys.flow"
+import "tools/flow_cli/toolchain.flow"
+import "tools/flow_cli/tool.flow"
+import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg }
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+# Run `c` with stdin from /dev/null.
+function run_quiet_in(c: ptr<ProcCmd>) -> i32 {
+    cmd_no_stdin(c)
+    return run(c)
+}
+
+# Run `c` with stdout into `out_file` and stderr into `err_file`.
+function run_split(c: ptr<ProcCmd>, out_file: string, err_file: string) -> i32 {
+    cmd_capture_out(c)
+    cmd_capture_err(c)
+    let r: ptr<ProcResult> = run_result(c)
+    let _o: bool = write_text(out_file, r.stdout)
+    let _e: bool = write_text(err_file, r.stderr)
+    return r.exit_code
+}
+
+# `[[ a -ef b ]]`: both name the same existing file.
+function same_file(a: string, b: string) -> bool {
+    if not exists(a) or not exists(b) {
+        return false
+    }
+    return s_eq(abs_file_physical(a), abs_file_physical(b))
+}
+
+# mkdir -p "$(dirname "$p")"
+function mkdir_parent(p: string) {
+    let _m: bool = mkdir_p(path_dirname(p))
+}
+
+# `brew --prefix PKG`/bin/NAME when it is executable, else "".
+function brew_tool(pkg: string, name: string) -> string {
+    if not have("brew") {
+        return ""
+    }
+    let c: ptr<ProcCmd> = cmd(sl_of3("brew", "--prefix", pkg))
+    cmd_quiet_err(c)
+    let prefix: string = capture(c)
+    if s_len(prefix) > 0 and is_exec(prefix + "/bin/" + name) {
+        return prefix + "/bin/" + name
+    }
+    return ""
+}
+
+# The tool lookup of mlir-lower (and mlir-optimize): the override as given,
+# $LLVM_PATH/NAME, PATH, then brew's llvm. "" when there is none.
+function llvm_tool(name: string, override: string) -> string {
+    if s_len(override) > 0 {
+        return override
+    }
+    let lp: string = env("LLVM_PATH")
+    if s_len(lp) > 0 and is_exec(lp + "/" + name) {
+        return lp + "/" + name
+    }
+    let w: string = which(name)
+    if s_len(w) > 0 {
+        return w
+    }
+    return brew_tool("llvm", name)
+}
+
+# ---------------------------------------------------------------------------
+# flow flow-to-mlir
+# ---------------------------------------------------------------------------
+
+# The flowc to emit with, or "" after printing why.
+function emit_flowc() -> string {
+    let fb: string = env("FLOWC_BIN")
+    if s_len(fb) > 0 and is_exec(fb) {
+        return fb
+    }
+    let boot_c: string = root() + "/compiler/bootstrap/flowc_stage_a.c"
+    let flowc: string = root() + "/compiler/build/flowc_bootstrap"
+    if is_exec(flowc) and not newer(boot_c, flowc) {
+        return flowc
+    }
+    let _m: bool = mkdir_p(root() + "/compiler/build")
+    let tmp: string = flowc + ".tmp." + s_itoa(pid())
+    let c: ptr<ProcCmd> = cmd(sl_of3(cc_default(), "-O2", "-w"))
+    proc_arg(c, "-o")
+    proc_arg(c, tmp)
+    proc_arg(c, boot_c)
+    proc_arg(c, "-lm")
+    cmd_quiet(c)
+    if run(c) != 0 {
+        rm_f(tmp)
+        errln("flow_to_mlir: could not build flowc from " + boot_c)
+        return ""
+    }
+    if not move_file(tmp, flowc) {
+        return ""
+    }
+    return flowc
+}
+
+# Set or unset an environment variable, returning the old value so it can be
+# put back with env_restore.
+function env_swap(name: string, value: string, set: bool) -> string {
+    let mut old: string = "\x01"
+    if env_isset(name) {
+        old = env(name)
+    }
+    if set {
+        env_set(name, value)
+    } else {
+        env_unset(name)
+    }
+    return old
+}
+
+function env_restore(name: string, old: string) {
+    if s_eq(old, "\x01") {
+        env_unset(name)
+    } else {
+        env_set(name, old)
+    }
+}
+
+# Emit IN.flow as MLIR into OUT. `args` are flow-to-mlir's arguments.
+export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
+    let mut gpu: bool = false
+    let mut wasm32: bool = false
+    let mut jit: bool = false
+    let mut lenient: bool = false
+    let mut i: i32 = 0
+    while i < sl_len(args) {
+        let a: string = sl_get(args, i)
+        if s_eq(a, "--gpu") {
+            gpu = true
+        } elif s_eq(a, "--wasm32") {
+            wasm32 = true
+        } elif s_eq(a, "--jit") {
+            jit = true
+            lenient = true
+        } elif s_eq(a, "--lenient") {
+            lenient = true
+        } else {
+            break
+        }
+        i = i + 1
+    }
+    if sl_len(args) - i != 2 {
+        errln("usage: flow flow-to-mlir [--gpu] [--wasm32] [--jit] [--lenient] IN.flow OUT.mlir")
+        return 2
+    }
+    let input: string = sl_get(args, i)
+    let output: string = sl_get(args, i + 1)
+    let flowc: string = emit_flowc()
+    if s_len(flowc) == 0 {
+        return 1
+    }
+    let work: string = mktemp_dir(tmp_base() + "/flow-to-mlir.XXXXXX")
+    if s_len(work) == 0 {
+        errln("flow_to_mlir: cannot create a temporary directory")
+        return 1
+    }
+    let c: ptr<ProcCmd> = cmd(sl_of1(flowc))
+    cmd_env(c, "FLOWC_EMIT", "mlir")
+    cmd_env(c, "FLOWC_TYPECHECK", env_or("FLOWC_TYPECHECK", "1"))
+    cmd_env(c, "FLOWC_CHECKS", env_or("FLOWC_CHECKS", "1"))
+    cmd_env(c, "FLOWC_ROOT", env_or("FLOWC_ROOT", root()))
+    cmd_env(c, "FLOWC_IN", input)
+    cmd_env(c, "FLOWC_OUT", work + "/program.mlir")
+    cmd_env(c, "FLOWC_CEMBED_OUT", work + "/program.c")
+    if gpu {
+        cmd_env(c, "FLOWC_MLIR_GPU", "1")
+    }
+    if wasm32 {
+        cmd_env(c, "FLOWC_MLIR_SIZE_T", "32")
+    }
+    if jit {
+        cmd_env(c, "FLOWC_MODE", "jit")
+    }
+    if lenient {
+        cmd_env(c, "FLOWC_LENIENT", "1")
+    }
+    # FLOWC_BACKEND=bpf|wasm (compiler/src/bpf_gen.flow, wasm_gen.flow) reach
+    # here through flow-to-llvm; the inner flowc must not inherit that mode,
+    # nor FLOWC_LENIENT unless --lenient asked for it.
+    let old_backend: string = env_swap("FLOWC_BACKEND", "", false)
+    let mut old_lenient: string = "\x01"
+    if not lenient {
+        old_lenient = env_swap("FLOWC_LENIENT", "", false)
+    }
+    let log: string = work + "/flowc.log"
+    let rc: i32 = run_to_file(c, log, true)
+    env_restore("FLOWC_BACKEND", old_backend)
+    if not lenient {
+        env_restore("FLOWC_LENIENT", old_lenient)
+    }
+    let mlir: string = work + "/program.mlir"
+    if rc == 0 and s_starts(head_lines(mlir, 1), "module") {
+        mkdir_parent(output)
+        let _c: bool = copy_file(mlir, output)
+        # @cEmbed C, compiled and linked next to the lowered MLIR.
+        if is_file(work + "/program.c") {
+            let _e: bool = copy_file(work + "/program.c", output + ".c")
+        } else {
+            rm_f(output + ".c")
+        }
+        # Lenient mode keeps type warnings on stderr.
+        let lines: ptr<ProcStrs> = s_lines(read_text(log))
+        let mut k: i32 = 0
+        while k < sl_len(lines) {
+            if s_contains(sl_get(lines, k), "type warning") {
+                errln(sl_get(lines, k))
+            }
+            k = k + 1
+        }
+        rm_rf(work)
+        return 0
+    }
+    errs(read_text(log))
+    rm_rf(work)
+    return 1
+}
+
+# ---------------------------------------------------------------------------
+# flow mlir-lower
+# ---------------------------------------------------------------------------
+
+# Lower IN.mlir to OUT.ll. `args` are mlir-lower's arguments.
+export function mlir_lower(args: ptr<ProcStrs>) -> i32 {
+    let opt: string = llvm_tool("mlir-opt", env("MLIR_OPT"))
+    if s_len(opt) == 0 {
+        errln("mlir_lower: mlir-opt not found (brew install llvm, or set LLVM_PATH)")
+        return 3
+    }
+    let translate: string = llvm_tool("mlir-translate", env("MLIR_TRANSLATE"))
+    if s_len(translate) == 0 {
+        errln("mlir_lower: mlir-translate not found (brew install llvm, or set LLVM_PATH)")
+        return 3
+    }
+    if s_eq(sl_get(args, 0), "--tools") {
+        outln("mlir-opt=" + opt)
+        outln("mlir-translate=" + translate)
+        return 0
+    }
+    if sl_len(args) != 2 {
+        errln("usage: flow mlir-lower <in.mlir> <out.ll>")
+        return 2
+    }
+    let input: string = sl_get(args, 0)
+    let output: string = sl_get(args, 1)
+    let mut stem: string = output
+    if s_ends(stem, ".ll") {
+        stem = s_slice(stem, 0, s_len(stem) - 3)
+    }
+    let lowered: string = stem + ".lowered.mlir"
+    # vector.transfer_* -> scf/vector.load-store must run before scf-to-cf,
+    # and convert-vector-to-llvm before func-to-llvm (the mlir_jit.py order).
+    let o: ptr<ProcStrs> = sl_of1(opt)
+    sl_extend(o, s_words("--convert-linalg-to-loops --convert-vector-to-scf --convert-math-to-llvm --convert-scf-to-cf --memref-expand --convert-vector-to-llvm --convert-arith-to-llvm --convert-index-to-llvm --convert-cf-to-llvm --convert-func-to-llvm --finalize-memref-to-llvm --reconcile-unrealized-casts"))
+    sl_push(o, input)
+    sl_push2(o, "-o", lowered)
+    let rc1: i32 = run_quiet_in(cmd(o))
+    if rc1 != 0 {
+        return rc1
+    }
+    let t: ptr<ProcStrs> = sl_of3(translate, "--mlir-to-llvmir", lowered)
+    sl_push2(t, "-o", output)
+    let rc2: i32 = run_quiet_in(cmd(t))
+    if rc2 != 0 {
+        return rc2
+    }
+    rm_f(lowered)
+    return 0
+}
+
+# The mlir-opt mlir-lower --tools reports, or "" when it or mlir-translate
+# is missing.
+function lower_mlir_opt() -> string {
+    let opt: string = llvm_tool("mlir-opt", env("MLIR_OPT"))
+    if s_len(opt) == 0 or s_len(llvm_tool("mlir-translate", env("MLIR_TRANSLATE"))) == 0 {
+        return ""
+    }
+    return opt
+}
+
+# ---------------------------------------------------------------------------
+# flow flow-to-llvm
+# ---------------------------------------------------------------------------
+
+# Lower IN.flow to OUT.ll through MLIR. `args` are flow-to-llvm's arguments.
+export function flow_to_llvm(args: ptr<ProcStrs>) -> i32 {
+    let emit: ptr<ProcStrs> = sl_new()
+    let mut i: i32 = 0
+    while i < sl_len(args) {
+        let a: string = sl_get(args, i)
+        if s_eq(a, "--wasm32") {
+            sl_push(emit, "--wasm32")
+            i = i + 1
+        } elif s_eq(a, "--optimize") {
+            i = i + 2
+        } else {
+            break
+        }
+    }
+    if i > sl_len(args) or sl_len(args) - i != 2 {
+        errln("usage: flow flow-to-llvm [--wasm32] [--optimize OLEVEL] IN.flow OUT.ll")
+        return 2
+    }
+    let input: string = sl_get(args, i)
+    let output: string = sl_get(args, i + 1)
+    let work: string = mktemp_dir(tmp_base() + "/flow-to-llvm.XXXXXX")
+    if s_len(work) == 0 {
+        errln("flow_to_llvm: cannot create a temporary directory")
+        return 1
+    }
+    sl_push2(emit, input, work + "/program.mlir")
+    if flow_emit_mlir(emit) != 0 {
+        rm_rf(work)
+        return 1
+    }
+    let rc: i32 = mlir_lower(sl_of2(work + "/program.mlir", output))
+    rm_rf(work)
+    return rc
+}
+
+# ---------------------------------------------------------------------------
+# flow mlir-optimize
+# ---------------------------------------------------------------------------
+
+const PROBE_MLIR: string = "module {\n  func.func @__flow_opt_probe(%arg0: i32) -> i32 {\n    %0 = arith.constant 0 : i32\n    func.return %0 : i32\n  }\n}\n"
+
+# Optimize IN.mlir into OUT.mlir. `args` are mlir-optimize's arguments.
+export function mlir_optimize(args: ptr<ProcStrs>) -> i32 {
+    let mut print_only: bool = false
+    let mut report: bool = false
+    let flags: ptr<ProcStrs> = sl_new()
+    let files: ptr<ProcStrs> = sl_new()
+    let mut i: i32 = 0
+    while i < sl_len(args) {
+        let a: string = sl_get(args, i)
+        if s_eq(a, "--print-pass-pipeline") {
+            print_only = true
+        } elif s_eq(a, "--opt-report") {
+            report = true
+        } elif s_eq(a, "--opt-level") {
+            sl_push2(flags, a, sl_get(args, i + 1))
+            i = i + 1
+        } elif s_starts(a, "-") {
+            sl_push(flags, a)
+        } else {
+            sl_push(files, a)
+        }
+        i = i + 1
+    }
+    let tool: string = tool_build("mlir_pipeline")
+    if s_len(tool) == 0 {
+        errln("mlir_optimize: could not build scripts/tools/mlir_pipeline")
+        return 1
+    }
+    let pargv: ptr<ProcStrs> = sl_of1(tool)
+    sl_extend(pargv, flags)
+    let pipeline: string = capture(cmd(pargv))
+    if last_status() != 0 {
+        return last_status()
+    }
+    if print_only {
+        outln(pipeline)
+        return 0
+    }
+    if sl_len(files) != 2 {
+        errln("usage: flow mlir-optimize [FLAGS] [--opt-report] IN.mlir OUT.mlir")
+        return 2
+    }
+    let input: string = sl_get(files, 0)
+    let output: string = sl_get(files, 1)
+    let opt: string = lower_mlir_opt()
+    if s_len(opt) == 0 {
+        errln("mlir_optimize: mlir-opt not found (brew install llvm, or set LLVM_PATH)")
+        return 3
+    }
+    let work: string = mktemp_dir(tmp_base() + "/flow-mlir-opt.XXXXXX")
+    if s_len(work) == 0 {
+        errln("mlir_optimize: cannot create a temporary directory")
+        return 1
+    }
+    let rc: i32 = optimize_in(opt, pipeline, input, output, work, report)
+    rm_rf(work)
+    return rc
+}
+
+# IN -> OUT unchanged, unless they are the same file.
+function copy_through(input: string, output: string) -> i32 {
+    if not same_file(input, output) {
+        let _c: bool = copy_file(input, output)
+    }
+    return 0
+}
+
+function optimize_in(opt: string, pipeline: string, input: string, output: string, work: string, report: bool) -> i32 {
+    let _p: bool = write_text(work + "/probe.mlir", PROBE_MLIR)
+    let probe: ptr<ProcStrs> = sl_of3(opt, "--mlir-print-op-on-diagnostic=false", "--pass-pipeline=builtin.module(func.func(canonicalize))")
+    sl_push(probe, work + "/probe.mlir")
+    sl_push2(probe, "-o", work + "/probe.out")
+    let pc: ptr<ProcCmd> = cmd(probe)
+    cmd_quiet(pc)
+    if run_quiet_in(pc) != 0 {
+        return copy_through(input, output)
+    }
+    let main: ptr<ProcStrs> = sl_of3(opt, "--mlir-print-op-on-diagnostic=false", "--pass-pipeline=" + pipeline)
+    sl_push(main, input)
+    sl_push2(main, "-o", work + "/out.mlir")
+    let mc: ptr<ProcCmd> = cmd(main)
+    cmd_no_stdin(mc)
+    let rc: i32 = run_err_to_file(mc, work + "/err")
+    if rc != 0 {
+        let err: string = read_text(work + "/err")
+        if s_contains(err, "func.func") and s_contains(err, "unknown") {
+            return copy_through(input, output)
+        }
+        errln("MLIR optimization failed: " + s_chomp_all(err))
+        return rc
+    }
+    let _c: bool = copy_file(work + "/out.mlir", output)
+    if report {
+        let _r: bool = copy_file(output, work + "/report_in.mlir")
+        let st: ptr<ProcStrs> = sl_of3(opt, "--mlir-print-op-on-diagnostic=false", "--mlir-pass-statistics")
+        sl_push2(st, "--pass-pipeline=" + pipeline, work + "/report_in.mlir")
+        let sc: ptr<ProcCmd> = cmd(st)
+        cmd_no_stdin(sc)
+        let _s: i32 = run_split(sc, work + "/stats.out", work + "/stats.err")
+        errln("=== MLIR Optimization Report ===")
+        errln("Input file: " + output)
+        errln("Pass pipeline: " + pipeline)
+        errln("")
+        if nonempty(work + "/stats.out") {
+            errln("Pass Statistics:")
+            errs(read_text(work + "/stats.out"))
+        }
+        if nonempty(work + "/stats.err") {
+            errln("Diagnostics:")
+            errs(read_text(work + "/stats.err"))
+        }
+    }
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# flow mlir-spirv
+# ---------------------------------------------------------------------------
+
+# The tool lookup of mlir-spirv: an override that exists, $LLVM_PATH/NAME
+# for the llvm tools, PATH, then brew --prefix PKG. "" after printing why.
+function spirv_tool(name: string, override: string, pkg: string) -> string {
+    if s_len(override) > 0 and exists(override) {
+        return override
+    }
+    let lp: string = env("LLVM_PATH")
+    if s_eq(pkg, "llvm") and s_len(lp) > 0 and is_exec(lp + "/" + name) {
+        return lp + "/" + name
+    }
+    let w: string = which(name)
+    if s_len(w) > 0 {
+        return w
+    }
+    if s_len(pkg) > 0 {
+        let b: string = brew_tool(pkg, name)
+        if s_len(b) > 0 {
+            return b
+        }
+    }
+    errln(name + " not found ('" + name + "'). Install it or set the matching tool override environment variable.")
+    return ""
+}
+
+# A failed step: the message on stderr, status 1.
+function spirv_die(msg: string) -> i32 {
+    errln(msg)
+    return 1
+}
+
+# The file's text without trailing newlines, as $(cat FILE) gives it.
+function cat_sub(p: string) -> string {
+    return s_chomp_all(read_text(p))
+}
+
+function to_spirv(input: string, output: string, extra: ptr<ProcStrs>, work: string) -> i32 {
+    let opt: string = spirv_tool("mlir-opt", env("MLIR_OPT"), "llvm")
+    if s_len(opt) == 0 {
+        return 1
+    }
+    let translate: string = spirv_tool("mlir-translate", env("MLIR_TRANSLATE"), "llvm")
+    if s_len(translate) == 0 {
+        return 1
+    }
+    # Outline kernels and lower to the SPIR-V dialect.
+    let o: ptr<ProcStrs> = sl_of1(opt)
+    sl_extend(o, s_words("-gpu-kernel-outlining -convert-scf-to-spirv -convert-memref-to-spirv -convert-arith-to-spirv -convert-index-to-spirv -convert-gpu-to-spirv -reconcile-unrealized-casts"))
+    sl_extend(o, extra)
+    sl_push(o, input)
+    sl_push2(o, "-o", work + "/spirv.mlir")
+    let oc: ptr<ProcCmd> = cmd(o)
+    cmd_no_stdin(oc)
+    let rc: i32 = run_split(oc, work + "/opt.out", work + "/opt.err")
+    if rc != 0 {
+        let mut why: string = cat_sub(work + "/opt.err")
+        if not nonempty(work + "/opt.err") {
+            why = cat_sub(work + "/opt.out")
+        }
+        return spirv_die("mlir-opt SPIR-V lowering failed (exit " + s_itoa(rc) + "):\n" + why)
+    }
+    # Serialize the SPIR-V binary.
+    # -o rather than a stdout capture: the SPIR-V is binary.
+    let t: ptr<ProcStrs> = sl_of3(translate, "--mlir-to-spirv", work + "/spirv.mlir")
+    sl_push2(t, "-o", work + "/out.spv")
+    let tc: ptr<ProcCmd> = cmd(t)
+    cmd_no_stdin(tc)
+    let trc: i32 = run_err_to_file(tc, work + "/tr.err")
+    if trc != 0 {
+        return spirv_die("mlir-translate --mlir-to-spirv failed (exit " + s_itoa(trc) + "):\n" + cat_sub(work + "/tr.err"))
+    }
+    if not nonempty(work + "/out.spv") {
+        return spirv_die("mlir-translate produced empty SPIR-V output")
+    }
+    mkdir_parent(output)
+    let _c: bool = copy_file(work + "/out.spv", output)
+    return 0
+}
+
+# True when `text` holds a byte that is not white space.
+function has_non_space(text: string) -> bool {
+    let n: i32 = s_len(text)
+    let mut i: i32 = 0
+    while i < n {
+        if not s_is_space(s_byte(text, i)) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+function to_msl(input: string, output: string, extra: ptr<ProcStrs>, work: string) -> i32 {
+    let cross: string = spirv_tool("spirv-cross", env("SPIRV_CROSS"), "spirv-cross")
+    if s_len(cross) == 0 {
+        return 1
+    }
+    if not nonempty(input) {
+        return spirv_die("SPIR-V input missing or empty: " + input)
+    }
+    let a: ptr<ProcStrs> = sl_of3(cross, input, "--msl")
+    sl_extend(a, extra)
+    let c: ptr<ProcCmd> = cmd(a)
+    cmd_no_stdin(c)
+    let rc: i32 = run_split(c, work + "/out.metal", work + "/cross.err")
+    if rc != 0 {
+        let mut why: string = cat_sub(work + "/cross.err")
+        if not nonempty(work + "/cross.err") {
+            why = cat_sub(work + "/out.metal")
+        }
+        return spirv_die("spirv-cross MSL lowering failed (exit " + s_itoa(rc) + "):\n" + why)
+    }
+    if not has_non_space(read_text(work + "/out.metal")) {
+        return spirv_die("spirv-cross produced empty MSL output")
+    }
+    mkdir_parent(output)
+    let _c: bool = copy_file(work + "/out.metal", output)
+    return 0
+}
+
+function to_metallib(input: string, output: string, sdk: string, work: string) -> i32 {
+    let xcrun: string = spirv_tool("xcrun", env("XCRUN"), "")
+    if s_len(xcrun) == 0 {
+        return 1
+    }
+    if not nonempty(input) {
+        return spirv_die("MSL input missing or empty: " + input)
+    }
+    mkdir_parent(output)
+    let m: ptr<ProcStrs> = sl_of3(xcrun, "-sdk", sdk)
+    sl_push2(m, "metal", "-c")
+    sl_push(m, input)
+    sl_push2(m, "-o", work + "/kernel.air")
+    let mc: ptr<ProcCmd> = cmd(m)
+    cmd_no_stdin(mc)
+    let rc1: i32 = run_to_file(mc, work + "/m.log", true)
+    if rc1 != 0 {
+        return spirv_die("Metal compilation failed (exit " + s_itoa(rc1) + "):\n" + cat_sub(work + "/m.log"))
+    }
+    let l: ptr<ProcStrs> = sl_of3(xcrun, "-sdk", sdk)
+    sl_push2(l, "metallib", work + "/kernel.air")
+    sl_push2(l, "-o", output)
+    let lc: ptr<ProcCmd> = cmd(l)
+    cmd_no_stdin(lc)
+    let rc2: i32 = run_to_file(lc, work + "/l.log", true)
+    if rc2 != 0 {
+        return spirv_die("metallib failed (exit " + s_itoa(rc2) + "):\n" + cat_sub(work + "/l.log"))
+    }
+    if not nonempty(output) {
+        return spirv_die("metallib completed without producing output")
+    }
+    return 0
+}
+
+function spirv_usage() -> i32 {
+    errln("usage: flow mlir-spirv spirv|msl|metallib|mlir-msl|mlir-metallib IN OUT [...]")
+    return 2
+}
+
+# The SPIR-V and Metal steps. `args` are mlir-spirv's arguments.
+export function mlir_spirv(args: ptr<ProcStrs>) -> i32 {
+    if sl_len(args) < 3 {
+        return spirv_usage()
+    }
+    let what: string = sl_get(args, 0)
+    let input: string = sl_get(args, 1)
+    let output: string = sl_get(args, 2)
+    let rest: ptr<ProcStrs> = sl_tail(args, 3)
+    let known: bool = s_eq(what, "spirv") or s_eq(what, "msl") or s_eq(what, "metallib") or s_eq(what, "mlir-msl") or s_eq(what, "mlir-metallib")
+    if not known {
+        return spirv_usage()
+    }
+    let mut sdk: string = sl_get(rest, 0)
+    if s_len(sdk) == 0 {
+        sdk = "macosx"
+    }
+    let work: string = mktemp_dir(tmp_base() + "/flow-spirv.XXXXXX")
+    if s_len(work) == 0 {
+        return spirv_die("mlir_spirv: cannot create a temporary directory")
+    }
+    let mut rc: i32 = 0
+    if s_eq(what, "spirv") {
+        rc = to_spirv(input, output, rest, work)
+    } elif s_eq(what, "msl") {
+        rc = to_msl(input, output, rest, work)
+    } elif s_eq(what, "metallib") {
+        rc = to_metallib(input, output, sdk, work)
+    } elif s_eq(what, "mlir-msl") {
+        rc = to_spirv(input, work + "/kernel.spv", sl_new(), work)
+        if rc == 0 {
+            rc = to_msl(work + "/kernel.spv", output, rest, work)
+        }
+    } else {
+        rc = to_spirv(input, work + "/kernel.spv", sl_new(), work)
+        if rc == 0 {
+            rc = to_msl(work + "/kernel.spv", work + "/kernel.metal", sl_new(), work)
+        }
+        if rc == 0 {
+            rc = to_metallib(work + "/kernel.metal", output, sdk, work)
+        }
+    }
+    rm_rf(work)
+    return rc
+}
+
+# ---------------------------------------------------------------------------
+# flow compile --backend=mlir
+# ---------------------------------------------------------------------------
+
+export function compile_program_mlir(program: string) -> i32 {
+    require_flow_file(program)
+    let _m: string = flow_host_mode()
+    check_mlir_deps()
+    let basename: string = path_stem(program, ".flow")
+    let build_dir: string = build_root()
+    mkdir_p_or_exit(build_dir)
+    info("Compiling " + program + " (CPU backend=mlir)...")
+    if flow_emit_mlir(sl_of3("--lenient", program, build_dir + "/" + basename + ".mlir")) != 0 {
+        error("FLOW MLIR compilation failed")
+        cli_exit(1)
+    }
+    success("FLOW → MLIR: " + basename + ".mlir")
+    if mlir_lower(sl_of2(build_dir + "/" + basename + ".mlir", build_dir + "/" + basename + ".ll")) != 0 {
+        error("MLIR lowering failed (mlir-opt / mlir-translate)")
+        cli_exit(1)
+    }
+    success("MLIR → LLVM: " + basename + ".ll")
+    if flow_link_mlir_ll(build_dir + "/" + basename + ".ll", build_dir + "/" + basename, build_dir + "/" + basename + ".mlir.c") != 0 {
+        error("MLIR/LLVM compilation/linking failed")
+        cli_exit(1)
+    }
+    success("LLVM → Executable: " + basename)
+    success("🚀 Ready to run (mlir): " + build_dir + "/" + basename)
+    return 0
+}

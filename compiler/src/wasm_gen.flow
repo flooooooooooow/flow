@@ -15,7 +15,7 @@ export function flowc_wasm_gen_compile(in_path: string, out_path: string, optimi
     if cmd == null { return 1 }
     
     # 1. Flow -> LLVM IR
-    let _s1: i32 = sprintf(cmd, "compiler/scripts/flow_to_llvm.sh --wasm32 %s build/flow_wasm_tmp.ll" as ptr<u8>, in_path as ptr<u8>, "" as ptr<u8>, "" as ptr<u8>)
+    let _s1: i32 = sprintf(cmd, "./flow flow-to-llvm --wasm32 %s build/flow_wasm_tmp.ll" as ptr<u8>, in_path as ptr<u8>, "" as ptr<u8>, "" as ptr<u8>)
     let rc1: i32 = flowc_io_system(cmd as string)
     if rc1 != 0 {
         puts("error: Flow -> LLVM IR lowering failed")

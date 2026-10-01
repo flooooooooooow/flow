@@ -23,6 +23,7 @@ import "tools/flow_cli/tests.flow"
 import "tools/flow_cli/commands.flow"
 import "tools/flow_cli/help.flow"
 import "tools/flow_cli/tool.flow"
+import "tools/flow_cli/mlir_tools.flow"
 import std.process { ProcCmd, ProcStrs, proc_args, proc_argv }
 
 # The root: $FLOW_CLI_ROOT from the stub, else found by walking up from this
@@ -410,6 +411,16 @@ function dispatch(c: string, args: ptr<ProcStrs>) -> i32 {
         return cmd_doc(args)
     } elif is(c, "tool") {
         return cmd_tool(args)
+    } elif is(c, "flow-to-mlir") {
+        return flow_emit_mlir(args)
+    } elif is(c, "flow-to-llvm") {
+        return flow_to_llvm(args)
+    } elif is(c, "mlir-lower") {
+        return mlir_lower(args)
+    } elif is(c, "mlir-optimize") {
+        return mlir_optimize(args)
+    } elif is(c, "mlir-spirv") {
+        return mlir_spirv(args)
     } elif is(c, "help") {
         show_help()
         return 0
