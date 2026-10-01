@@ -157,7 +157,8 @@ export function pl_capture_merged(c: ptr<ProcCmd>) -> string {
 }
 
 # Run `python3 - ARGS` with `script` on stdin, as a heredoc did. stdout
-# and stderr are this program's.
+# and stderr are this program's. The gates hold their Python as one
+# `"...\n" +` piece per line: a Flow string cannot span lines (#1106).
 export function pl_python(script: string, args: ptr<ProcStrs>) -> i32 {
     let c: ptr<ProcCmd> = cmd(sl_of2("python3", "-"))
     let mut i: i32 = 0

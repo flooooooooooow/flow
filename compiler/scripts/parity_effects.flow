@@ -91,6 +91,7 @@ function build_runtime() {
         i = i + 1
     }
     let m: string = uname_m()
+    # Not `asm`: flowc does not mangle C keywords yet (#1088).
     let mut asm_src: string = ""
     if s_eq(m, "arm64") or s_eq(m, "aarch64") {
         asm_src = "runtime/flow_fctx_arm64.S"

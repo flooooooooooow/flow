@@ -64,7 +64,7 @@
 # A diagnostic is compared as text. flowc prints `<file>:<line>:<col>:
 # error: <message>`; the Python checker's message is the same text. The
 # Python messages that spell a separator with an em dash or an ellipsis are
-# mapped to ": " and "..." first, as parity_effects.sh does.
+# mapped to ": " and "..." first, as parity_effects.flow does.
 #
 # Env: FLOWC_BIN=<path> tests that binary; by default the checked-in
 # bootstrap C is compiled to compiler/build/flowc_bootstrap. JOBS=N sets the
