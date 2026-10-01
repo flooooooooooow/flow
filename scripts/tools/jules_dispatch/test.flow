@@ -1,5 +1,5 @@
 # Backpressure and claim tests for the Jules dispatcher
-# (scripts/tools/jules_dispatch, run as scripts/dispatch_uncovered_jules.sh).
+# (scripts/tools/jules_dispatch, run as `./flow tool jules_dispatch`).
 #
 # Each case runs the dispatcher in a scratch directory with fake `gh` and
 # `jules` commands on PATH, then checks stdout, the decision log and whether

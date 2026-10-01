@@ -1,0 +1,38 @@
+$ flow_pkg add git+file://@WORK@/gitsrc/mylib.git#main --tag v1
+[exit 0]
+== stdout
+[92m✓ Added mylib.git#main = { git = "file://@WORK@/gitsrc/mylib.git#main", tag = "v1" }[0m
+[91mGit dependency install failed for mylib.git#main: Command '['git', 'clone', '--depth', '1', '--branch', 'v1', 'file://@WORK@/gitsrc/mylib.git#main', '<proj>/flow_packages/mylib.git#main']' returned non-zero exit status 128. — Cloning into '<proj>/flow_packages/mylib.git#main'...
+fatal: '@WORK@/gitsrc/mylib.git#main' does not appear to be a git repository
+fatal: Could not read from remote repository.
+
+Please make sure you have the correct access rights
+and the repository exists.[0m
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+description = ""
+author = ""
+license = "MIT"
+entry = "src/main.flow"
+
+[dependencies]
+mylib.git#main = { git = "file://@WORK@/gitsrc/mylib.git#main", tag = "v1" }
+
+[dev-dependencies]
+
+[build]
+host = "flowc"
+# test_command = "flow run tests/test_main.flow"
+
+[conventions]
+# avoid = [
+#   { pattern = "reverse for loop", reason = "generates incorrect step direction (#410)", workaround = "use while with explicit decrement" },
+# ]
+
+[patterns]
+# math = "use fabs((x) as f64) as f32 for single-precision abs"
+== flow.lock
+== flow_packages
+D flow_packages

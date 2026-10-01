@@ -1,17 +1,17 @@
 # The legacy Flow to WebAssembly converter behind `flow wasm --legacy`.
 #
-#   scripts/flow_to_wasm.sh <file.flow> [outdir]   convert one program
-#   scripts/flow_to_wasm.sh --all                  convert the example list
+#   flow tool flow_to_wasm <file.flow> [outdir]   convert one program
+#   flow tool flow_to_wasm --all                  convert the example list
 #
 # For each program it writes <name>.c (flowc through
-# compiler/scripts/flowc_emit.sh), tries emcc for <name>.js and <name>.wasm,
+# compiler/scripts/flowc_emit.flow), tries emcc for <name>.js and <name>.wasm,
 # and writes <name>.html showing the Flow source, the C, and a run button
 # when the WebAssembly build worked. The default output directory is
 # wasm/wasm_examples. --all also writes an index.html there.
 #
-# The page text lives in scripts/tools/flow_to_wasm/assets. The shim sets
+# The page text lives in scripts/tools/flow_to_wasm/assets. `flow tool` sets
 # FLOW_REPO_ROOT; without it the current directory is the repository root.
-# The current builder is `flow wasm` (scripts/wasm_build.sh).
+# The current builder is `flow wasm` (scripts/tools/wasm_build).
 
 import .text { ft_out, ft_outln, ft_errln, ft_eq, ft_len, ft_read_file, ft_write_file, ft_exists, ft_starts, ft_ends, ft_replace, ft_slice, ft_from, ft_at, ft_rfind_byte, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_itoa, StrList }
 import .proc { pr_quote, pr_run, pr_capture, pr_chomp, pr_cwd, pr_is_dir }
@@ -199,16 +199,16 @@ function read_or_empty(path: string) -> string {
     return universal_newlines(t)
 }
 
-# Flow to C through compiler/scripts/flowc_emit.sh; null on failure.
+# Flow to C through compiler/scripts/flowc_emit.flow; null on failure.
 function flow_to_c(flow_file: string) -> string {
     let tmp: string = make_tmpdir()
     if ft_len(tmp) == 0 {
         ft_outln("Error compiling FLOW to C: cannot create a temporary directory")
         return null as string
     }
-    let emit: string = root() + "/compiler/scripts/flowc_emit.sh"
+    let emit: string = pr_quote(root() + "/flow") + " tool " + pr_quote(root() + "/compiler/scripts/flowc_emit.flow")
     let c_path: string = tmp + "/" + pstem(flow_file) + ".c"
-    let cmd: string = pr_quote(emit) + " " + pr_quote(flow_file) + " " + pr_quote(c_path) + " >" + pr_quote(tmp + "/.stdout") + " 2>" + pr_quote(tmp + "/.stderr")
+    let cmd: string = emit + " " + pr_quote(flow_file) + " " + pr_quote(c_path) + " >" + pr_quote(tmp + "/.stdout") + " 2>" + pr_quote(tmp + "/.stderr")
     let rc: i32 = pr_run(cmd)
     if rc != 0 or ft_exists(c_path) == false {
         let mut detail: string = uc_strip(read_or_empty(tmp + "/.stderr"))
@@ -411,11 +411,11 @@ function build_all() -> i32 {
 
 function usage() -> i32 {
     ft_outln("Usage:")
-    ft_outln("  scripts/flow_to_wasm.sh <flow_file>     # Convert single file")
-    ft_outln("  scripts/flow_to_wasm.sh --all           # Convert all examples")
+    ft_outln("  ./flow tool flow_to_wasm <flow_file>    # Convert single file")
+    ft_outln("  ./flow tool flow_to_wasm --all          # Convert all examples")
     ft_outln("")
     ft_outln("Example:")
-    ft_outln("  scripts/flow_to_wasm.sh examples/basics/fibonacci.flow")
+    ft_outln("  ./flow tool flow_to_wasm examples/basics/fibonacci.flow")
     return 1
 }
 

@@ -1,5 +1,5 @@
-# WebGPU page parity gate: `wasm/crossings.sh gpu --no-build` and
-# `wasm/crossings.sh shader`.
+# WebGPU page parity gate: `./flow tool wasm_crossings gpu --no-build` and
+# `./flow tool wasm_crossings shader`.
 #
 # Builds the WGSL half of the GPU crossing page (tools/gpu for the shaders,
 # scripts/tools/wasm_crossings for the page) for each case below, with
@@ -10,7 +10,7 @@
 #
 #   ./flow tool tests/gpu/crossing.flow --record     # needs python3 and git
 #
-# The page now names tools/gpu/main.flow and `wasm/crossings.sh gpu` where it
+# The page now names tools/gpu/main.flow and `./flow tool wasm_crossings gpu` where it
 # named the Python files; the recording applies that rename. The emcc build of
 # the CPU reference (without --no-build) was checked byte for byte against
 # the Python builder once (the .js and .wasm match); it needs emscripten, so
@@ -55,7 +55,7 @@ function rename_credits(files: string) {
                 let l: string = sl_get(lines, k)
                 let at: i32 = s_find(l, "<code>wasm/flow_wasm_gpu.py</code>", 0)
                 if at >= 0 {
-                    lines.items[k] = s_slice(l, 0, at) + "<code>wasm/crossings.sh gpu</code>" + s_from(l, at + 34)
+                    lines.items[k] = s_slice(l, 0, at) + "<code>./flow tool wasm_crossings gpu</code>" + s_from(l, at + 34)
                 }
                 k = k + 1
             }
@@ -117,7 +117,8 @@ function main() -> i32 {
                 sl_push(argv, "wasm/flow_webgpu_shader.py")
             }
         } else {
-            sl_push2(argv, "wasm/crossings.sh", kind)
+            sl_push2(argv, "./flow", "tool")
+            sl_push2(argv, "wasm_crossings", kind)
         }
         sl_extend(argv, cargs)
         if s_eq(kind, "gpu") {

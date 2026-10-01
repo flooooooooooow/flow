@@ -57,7 +57,7 @@ function fixtures(dir: string, suffix: string) -> ptr<ProcStrs> {
 }
 
 function emit(args: ptr<ProcStrs>, log: string) -> i32 {
-    let argv: ptr<ProcStrs> = sl_of1("./compiler/scripts/flowc_emit.sh")
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "compiler/scripts/flowc_emit.flow")
     sl_extend(argv, args)
     return run_to_file(cmd(argv), log, true)
 }
@@ -66,7 +66,7 @@ function main() -> i32 {
     let root: string = tr_enter_root()
     let here: string = root + "/tests/conformance"
     if s_len(env("FLOWC_BIN")) == 0 {
-        let f: string = capture(cmd(sl_of1("./compiler/scripts/ensure_flowc.sh")))
+        let f: string = capture(cmd(sl_of3("./flow", "tool", "compiler/scripts/ensure_flowc.flow")))
         if last_status() != 0 {
             cli_exit(1)
         }

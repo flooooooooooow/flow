@@ -26,7 +26,7 @@
 
 import "tools/flow_cli/sys.flow"
 import "tools/flow_cli/toolchain.flow"
-import std.process { ProcCmd, ProcStrs, proc_arg }
+import std.process { ProcCmd, ProcStrs, proc_arg, proc_env_clear, proc_environ }
 
 extern {
     function malloc(size: i64) -> ptr<void>
@@ -138,6 +138,21 @@ function tool_flowc() -> string {
     return flowc
 }
 
+# Give `c` this program's environment without any FLOWC_* variable.
+function clean_flowc_env(c: ptr<ProcCmd>) {
+    proc_env_clear(c)
+    let all: ptr<ProcStrs> = proc_environ()
+    let mut i: i32 = 0
+    while i < sl_len(all) {
+        let kv: string = sl_get(all, i)
+        let eq: i32 = s_find_byte(kv, 61, 0)
+        if eq > 0 and not s_starts(kv, "FLOWC_") {
+            cmd_env(c, s_slice(kv, 0, eq), s_from(kv, eq + 1))
+        }
+        i = i + 1
+    }
+}
+
 # Build the tool; the binary's path, or "" after printing why.
 export function tool_build(spec: string) -> string {
     let t: ptr<ToolSpec> = tool_resolve(spec)
@@ -184,6 +199,9 @@ export function tool_build(spec: string) -> string {
     let log: string = dir + "/" + t.name + ".flowc.log"
     let fc: ptr<ProcCmd> = cmd(sl_of1(flowc))
     cmd_cwd(fc, root())
+    # The caller's FLOWC_* settings (FLOWC_CHECK_ONLY=1 ./flow tool ...)
+    # are meant for the program, not for building it.
+    clean_flowc_env(fc)
     cmd_env(fc, "FLOWC_BUNDLE", "1")
     cmd_env(fc, "FLOWC_DIR", t.lib)
     cmd_env(fc, "FLOWC_TYPECHECK", "1")
@@ -212,6 +230,21 @@ export function tool_build(spec: string) -> string {
         return ""
     }
     return bin
+}
+
+# The argv that runs tool `spec` with `args`, with FLOW_REPO_ROOT exported as
+# `flow tool` exports it. Exits 2 when the tool cannot be built. The CLI
+# commands that hand work to a repository tool (`flow bpf`, `flow wasm`,
+# `flow playground`, `flow record --gif`) run it through this.
+export function tool_argv(spec: string, args: ptr<ProcStrs>) -> ptr<ProcStrs> {
+    let bin: string = tool_build(spec)
+    if s_len(bin) == 0 {
+        cli_exit(2)
+    }
+    env_set("FLOW_REPO_ROOT", root())
+    let argv: ptr<ProcStrs> = sl_of1(bin)
+    sl_extend(argv, args)
+    return argv
 }
 
 # `flow tool ...`

@@ -3,10 +3,10 @@
 # benchmarks/baselines/python/cross_harness when python3 is available, then
 # writes one JSON file of timings and can compare it with an earlier one.
 #
-# Run through benchmarks/run_benchmarks.sh, which passes the repository root
+# Run it as `./flow tool bench_harness`, which passes the repository root
 # in FLOW_REPO_ROOT.
 #
-#   run_benchmarks.sh [--smoke] [--baseline OLD.json] [--out OUT.json] [--cleanup]
+#   flow tool bench_harness [--smoke] [--baseline OLD.json] [--out OUT.json] [--cleanup]
 #
 # --smoke runs 3 repetitions instead of 10. --baseline compares every
 # workload's Flow median with the same workload in OLD.json and exits 1 on a
@@ -53,7 +53,7 @@ function root() -> string {
 }
 
 function usage() -> string {
-    return "usage: run_benchmarks.sh [-h] [--smoke] [--baseline BASELINE] [--out OUT] [--cleanup]"
+    return "usage: flow tool bench_harness [-h] [--smoke] [--baseline BASELINE] [--out OUT] [--cleanup]"
 }
 
 # ---------------------------------------------------------------------------
@@ -608,14 +608,14 @@ function first_with(dir: string, suffix: string) -> string {
     return dir + "/" + ft_list_get(names, 0)
 }
 
-# flowc_emit.sh to C, then clang -O3, as `flow compile` would.
+# flowc_emit to C, then clang -O3, as `flow compile` would.
 function compile_flow(flow_path: string, bin_path: string) -> bool {
     let gen_c: string = bin_path + ".c"
     let log_o: string = bin_path + ".out"
     let log_e: string = bin_path + ".err"
-    let emit: string = ft_join(root(), "compiler/scripts/flowc_emit.sh")
+    let emit: string = pr_quote(ft_join(root(), "flow")) + " tool " + pr_quote(ft_join(root(), "compiler/scripts/flowc_emit.flow"))
     let redirect: string = " >" + pr_quote(log_o) + " 2>" + pr_quote(log_e)
-    if pr_run(pr_quote(emit) + " --lenient " + pr_quote(flow_path) + " " + pr_quote(gen_c) + redirect) != 0 {
+    if pr_run(emit + " --lenient " + pr_quote(flow_path) + " " + pr_quote(gen_c) + redirect) != 0 {
         ft_outln("Compilation to C failed for " + flow_path + ":\n" + ft_read_file(log_o) + "\n" + ft_read_file(log_e))
         return false
     }
@@ -820,7 +820,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             return 0
         } else {
             ft_errln(usage())
-            ft_errln("run_benchmarks.sh: error: unrecognized arguments: " + a)
+            ft_errln("flow tool bench_harness: error: unrecognized arguments: " + a)
             return 2
         }
         i = i + 1

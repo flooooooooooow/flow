@@ -1,0 +1,54 @@
+$ flow_pkg add ffi
+[exit 0]
+== stdout
+[94mResolved ffi@0.1.0 from flow-packages[0m
+[92m✓ Added ffi = "0.1.0"[0m
+[94m↓ ffi@0.1.0 from registry[0m
+[92m✓ Installed ffi from @ROOT@/registry/packages/ffi[0m
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+description = ""
+author = ""
+license = "MIT"
+entry = "src/main.flow"
+
+[dependencies]
+ffi = "0.1.0"
+
+[dev-dependencies]
+
+[build]
+host = "flowc"
+# test_command = "flow run tests/test_main.flow"
+
+[conventions]
+# avoid = [
+#   { pattern = "reverse for loop", reason = "generates incorrect step direction (#410)", workaround = "use while with explicit decrement" },
+# ]
+
+[patterns]
+# math = "use fabs((x) as f64) as f32 for single-precision abs"
+== flow.lock
+{
+  "version": 1,
+  "packages": {
+    "ffi": {
+      "version": "0.1.0",
+      "source": "registry",
+      "resolved": {
+        "path": "@ROOT@/registry/packages/ffi"
+      }
+    }
+  }
+}
+== flow_packages
+D flow_packages
+D flow_packages/ffi
+F flow_packages/ffi/flow.toml -rw-r--r-- 3817549184 268
+D flow_packages/ffi/native
+F flow_packages/ffi/native/flow_ffi.c -rw-r--r-- 1038404449 118
+F flow_packages/ffi/native/flow_ffi.h -rw-r--r-- 286042432 253
+D flow_packages/ffi/src
+F flow_packages/ffi/src/lib.flow -rw-r--r-- 2984440564 1796

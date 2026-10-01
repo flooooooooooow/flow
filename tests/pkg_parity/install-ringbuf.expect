@@ -1,0 +1,37 @@
+$ flow_pkg install
+[exit 0]
+== stdout
+[94mInstalling dependencies...[0m
+[94m↓ ringbuf@0.1.0 from registry[0m
+[92m✓ Installed ringbuf from @ROOT@/registry/packages/ringbuf[0m
+
+[92m✓ All dependencies installed (flow.lock updated)[0m
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+entry = "src/main.flow"
+
+[dependencies]
+ringbuf = "0.1.0"
+
+[dev-dependencies]
+== flow.lock
+{
+  "version": 1,
+  "packages": {
+    "ringbuf": {
+      "version": "0.1.0",
+      "source": "registry",
+      "resolved": {
+        "path": "@ROOT@/registry/packages/ringbuf"
+      }
+    }
+  }
+}
+== flow_packages
+D flow_packages
+D flow_packages/ringbuf
+F flow_packages/ringbuf/flow.toml -rw-r--r-- 2184217734 217
+D flow_packages/ringbuf/src
+F flow_packages/ringbuf/src/lib.flow -rw-r--r-- 3842987883 1348

@@ -95,7 +95,7 @@ for size in "${sizes[@]}"; do
     for r in 1 2 3; do
         out="$WORK/out_${size}_${r}.txt"
         "$bin" > "$out" 2>&1 || { echo "size $size run $r: binary failed"; exit 1; }
-        grep -q 'PASS , ' "$out" || { echo "size $size run $r: no PASS"; exit 1; }
+        grep -q 'PASS:' "$out" || { echo "size $size run $r: no PASS"; exit 1; }
     done
     # best-of-3 per phase, from the binary's own CLOCK_MONOTONIC report
     for r in 1 2 3; do

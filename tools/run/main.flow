@@ -8,7 +8,7 @@
 #                      [--lenient] [--extra-cflags "FLAGS"]
 #   flow run PROG.flow --predict       print the cost model's backend
 #
-# The C path is flowc (compiler/scripts/flowc_emit.sh), then clang (or cc),
+# The C path is flowc (compiler/scripts/flowc_emit.flow), then clang (or cc),
 # then the program. `--backend=mlir` runs the MLIR JIT (`flow jit` in its raw
 # mode, FLOW_JIT_RAW=1: the program's output and exit status).
 # `--backend=auto` compiles with C: the runner this replaces meant to ask the
@@ -344,7 +344,7 @@ function main(argc: i32, argv: ptr<string>) -> i32 {
     let mut t2: i64 = t0
     let mut rc: i32 = 0
     if ft_eq(backend, "c") {
-        let mut emit: string = pr_quote(repo + "/compiler/scripts/flowc_emit.sh")
+        let mut emit: string = pr_quote(repo + "/flow") + " tool " + pr_quote(repo + "/compiler/scripts/flowc_emit.flow")
         if lenient {
             emit = emit + " --lenient"
         }

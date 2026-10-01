@@ -10585,7 +10585,7 @@ function flowc_cgen_lambda_has_caps(w: ptr<CgenBuf>, lam_id: i32) -> i32 {
 }
 
 # --- export aliases and library units (#1030) ------------------------------
-# FLOWC_EXPORT="a,b" (flowc_emit.sh --export NAME) appends, for each named
+# FLOWC_EXPORT="a,b" (flowc_emit.flow --export NAME) appends, for each named
 # function, a visible alias `flow_export_<name>` that forwards to the C symbol
 # (the mangled one when the name is overloaded), as the Python host's
 # `--export` did (#396). A WASM or FFI caller then links against a name that
@@ -10594,7 +10594,7 @@ function flowc_cgen_lambda_has_caps(w: ptr<CgenBuf>, lam_id: i32) -> i32 {
 # the signature table carries a `#export:<name>` entry for each alias already
 # written, so a later module skips it and the bundle knows what is missing.
 #
-# FLOWC_LIBRARY=1 (flowc_emit.sh --library) emits a unit meant to be linked
+# FLOWC_LIBRARY=1 (flowc_emit.flow --library) emits a unit meant to be linked
 # next to a program: no runtime checks and no fault handler, and main is
 # never moved onto a fiber. flowc already keeps plain C names (only true
 # overloads are mangled, since C cannot hold two definitions of one name),

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Parity gate for `flow bpf` and `flow wasm32` (scripts/tools/llvm_target).
 #
-# Runs every case in tests/targets/cases.txt through scripts/bpf_target.sh or
-# scripts/wasm32_target.sh with stub `python` and `python3` first on PATH
+# Runs every case in tests/targets/cases.txt through `./flow bpf` or
+# `./flow wasm32` with stub `python` and `python3` first on PATH
 # (each logs its arguments and exits 127), and compares the exit status,
 # stderr and the SHA-256 of the written object with the goldens in
 # tests/targets/expected. The goldens were captured from the Python modules
@@ -64,7 +64,7 @@ done
 export PATH="$stub_dir:$PATH"
 
 # Build the tool once, outside the timed cases.
-if ! scripts/tools/build_tool.sh llvm_target >/dev/null; then
+if ! ./flow tool --path llvm_target >/dev/null; then
     echo "parity_targets: could not build scripts/tools/llvm_target" >&2
     exit 1
 fi
@@ -87,7 +87,7 @@ while IFS='|' read -r name tool cmp args; do
         argv+=("$(printf '%b' "$a")")
     done
     rc=0
-    "scripts/${tool}_target.sh" "${argv[@]+"${argv[@]}"}" 2>"$work/$name.raw" || rc=$?
+    ./flow "$tool" "${argv[@]+"${argv[@]}"}" 2>"$work/$name.raw" || rc=$?
     if [[ "$rc" -eq 2 ]]; then
         grep -E ': error: ' "$work/$name.raw" | sed -E 's/^[^:]*: error: /error: /' > "$work/$name.err"
     else

@@ -9,7 +9,7 @@ Rust, and plain CPython: same algorithms, same sizes, same clang and flags
 for Flow-generated C and hand-written C. Regenerate it with:
 
 ```bash
-./benchmarks/run_publish.sh
+./flow tool bench_publish
 ```
 
 The sources for those runs live in `publish/` with one directory per
@@ -25,8 +25,6 @@ benchmarks/
 │   ├── c/                   # Hand-written C equivalents
 │   └── rust/                # Rust equivalents
 ├── baselines/python/        # CPython and NumPy subjects for every comparison
-├── run_publish.sh           # Runs the harness (scripts/tools/bench_publish)
-├── run_benchmarks.sh        # Cross-harness runner (scripts/tools/bench_harness)
 ├── micro/                    # Micro-benchmarks
 │   ├── fft_benchmark.flow   # Fast Fourier Transform
 │   ├── mandelbrot_benchmark.flow  # Fractal computation

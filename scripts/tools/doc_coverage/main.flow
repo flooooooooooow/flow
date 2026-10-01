@@ -15,12 +15,12 @@
 # the feature, so an entry cannot be a promise nobody kept. Features that
 # genuinely have no home carry a written reason instead.
 #
-# Run through scripts/check_doc_coverage.sh, which leaves the file listings
-# this program cannot make itself in build/doc-coverage/:
+# Run it as `./flow tool doc_coverage` from anywhere in the repository. It
+# works from the repository root and lists the stdlib with `git ls-files`:
 #
-#   check_doc_coverage.sh                    report and gate
-#   check_doc_coverage.sh --propose          suggest homes for gaps
-#   check_doc_coverage.sh --write-proposal   write docs/coverage.json from them
+#   flow tool doc_coverage                    report and gate
+#   flow tool doc_coverage --propose          suggest homes for gaps
+#   flow tool doc_coverage --write-proposal   write docs/coverage.json from them
 #
 # Options used by the unit tests:
 #
@@ -32,16 +32,14 @@
 import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_read_file, ft_write_file, ft_exists, ft_starts, ft_ends, ft_at, ft_find, ft_slice, ft_from, ft_find_byte, ft_split_lines, ft_basename, ft_stem, ft_ljust, ft_rjust, ft_repr, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_sort, ft_list_sorted_unique, ft_set_new, ft_set_add, ft_set_has, StrList, StrSet }
 import .unicode { uc_decode, uc_len, uc_prev, uc_is_word, uc_is_space, uc_strip }
 import .mdtext { md_sanitize }
+import .repo { rp_enter_root, rp_git_ls, rp_lines, rp_argv2 }
 import .json { json_parse, json_error, json_get, json_kind, json_str, json_key, json_first, json_next, json_quote, json_kind_string, json_kind_object, json_kind_array, json_kind_null, json_kind_true, json_kind_false, Json }
 
 extern {
     function malloc(size: i64) -> ptr<void>
 }
 
-const PROG: string = "check_doc_coverage.sh"
-const STDLIB_LIST: string = "build/doc-coverage/stdlib.txt"
-const BACKEND_LIST: string = "build/doc-coverage/backends.txt"
-const DOC_PAGES: string = "build/doc-coverage/doc-pages.txt"
+const PROG: string = "flow tool doc_coverage"
 const KEYWORD_SOURCE: string = "tools/lsp/catalog.flow"
 const ATTR_SOURCE: string = "compiler/src/attributes.flow"
 const CLI_SOURCE: string = "tools/flow_cli/main.flow"
@@ -235,12 +233,27 @@ function cli_commands(out: ptr<StrList>) -> i32 {
     return 0
 }
 
+# find(1) output for `args`, or an empty list when it failed.
+function find_lines(args: ptr<StrList>) -> ptr<StrList> {
+    let argv: ptr<StrList> = ft_list_new()
+    ft_list_push(argv, "find")
+    let mut i: i32 = 0
+    while i < ft_list_len(args) {
+        ft_list_push(argv, ft_list_get(args, i))
+        i = i + 1
+    }
+    let lines: ptr<StrList> = rp_lines(argv)
+    if lines == null {
+        return ft_list_new()
+    }
+    return lines
+}
+
 function stdlib_modules(out: ptr<StrList>) -> bool {
-    let text: string = ft_read_file(STDLIB_LIST)
-    if text as ptr<u8> == null {
+    let lines: ptr<StrList> = rp_git_ls(rp_argv2("lib/stdlib/*.flow", "lib/stdlib/**/*.flow"))
+    if lines == null {
         return false
     }
-    let lines: ptr<StrList> = ft_split_lines(text)
     let mut i: i32 = 0
     while i < ft_list_len(lines) {
         let line: string = ft_list_get(lines, i)
@@ -264,11 +277,11 @@ function is_backend(stem: string) -> bool {
 }
 
 function backends(out: ptr<StrList>) -> bool {
-    let text: string = ft_read_file(BACKEND_LIST)
-    if text as ptr<u8> == null {
-        return false
-    }
-    let lines: ptr<StrList> = ft_split_lines(text)
+    let args: ptr<StrList> = rp_argv2("compiler/src", "-maxdepth")
+    ft_list_push(args, "1")
+    ft_list_push(args, "-name")
+    ft_list_push(args, "*.flow")
+    let lines: ptr<StrList> = find_lines(args)
     let mut i: i32 = 0
     while i < ft_list_len(lines) {
         let stem: string = ft_stem(ft_list_get(lines, i))
@@ -302,12 +315,12 @@ function inventory() -> ptr<ptr<StrList>> {
     }
     let raw_std: ptr<StrList> = ft_list_new()
     if stdlib_modules(raw_std) == false {
-        ft_errln(PROG + ": missing " + STDLIB_LIST + "; run scripts/check_doc_coverage.sh")
+        ft_errln(PROG + ": git ls-files could not list lib/stdlib")
         return null
     }
     let raw_back: ptr<StrList> = ft_list_new()
     if backends(raw_back) == false {
-        ft_errln(PROG + ": missing " + BACKEND_LIST + "; run scripts/check_doc_coverage.sh")
+        ft_errln(PROG + ": could not list compiler/src")
         return null
     }
     inv[0] = ft_list_sorted_unique(raw_attr)
@@ -626,11 +639,9 @@ function run_check(inv: ptr<ptr<StrList>>, map_path: string, docs: string) -> i3
 # Pages under docs/, sorted, skipping formal/ and dot-directories.
 function doc_pages() -> ptr<StrList> {
     let out: ptr<StrList> = ft_list_new()
-    let text: string = ft_read_file(DOC_PAGES)
-    if text as ptr<u8> == null {
-        return out
-    }
-    let lines: ptr<StrList> = ft_split_lines(text)
+    let args: ptr<StrList> = rp_argv2("docs", "-name")
+    ft_list_push(args, "*.md")
+    let lines: ptr<StrList> = find_lines(args)
     let mut i: i32 = 0
     while i < ft_list_len(lines) {
         let line: string = ft_list_get(lines, i)
@@ -850,6 +861,10 @@ function print_bool(b: bool) -> void {
 }
 
 function main(argc: i32, argv: ptr<string>) -> i32 {
+    if rp_enter_root() == false {
+        ft_errln(PROG + ": cannot enter the repository root")
+        return 1
+    }
     let mut do_propose: bool = false
     let mut do_write: bool = false
     let mut do_inventory: bool = false

@@ -25,6 +25,7 @@ static int32_t gate_strcoll(const char *a, const char *b) {
 import "tools/flow_cli/sys.flow"
 import std.bytebuf { ByteBuf, bb_new, bb_puts, bb_put_span, bb_putc, bb_str, bb_free }
 import std.process { ProcCmd, ProcResult, ProcStrs, proc_cmd, proc_arg, proc_env, proc_cwd, proc_stdin, proc_stdout, proc_stderr, proc_run, proc_timeout_ms, proc_argv, proc_chdir, proc_args, proc_strs_new, proc_strs_push, proc_strs_len, proc_strs_get, PROC_CAPTURE, PROC_INHERIT, PROC_NULL, PROC_MERGE }
+import "tools/flow_cli/flowc_build.flow"
 
 extern {
     function malloc(size: i64) -> ptr<void>
@@ -79,10 +80,13 @@ export function gate_c_to_hdr(root: string) -> string {
     return p
 }
 
-# flowc built from the current compiler/src (compiler/scripts/flowc_host.sh).
+# flowc built from the current compiler/src (flowc_host in
+# tools/flow_cli/flowc_build.flow); stops the run when there is none.
 export function gate_flowc_host(root: string) -> string {
-    let p: string = capture(cmd(sl_of1("./compiler/scripts/flowc_host.sh")))
-    check(last_status())
+    let p: string = flowc_host(root)
+    if s_len(p) == 0 {
+        cli_exit(1)
+    }
     return p
 }
 
@@ -140,24 +144,6 @@ export function gate_run_without(c: ptr<ProcCmd>, names: ptr<ProcStrs>) -> i32 {
         j = j + 1
     }
     return rc
-}
-
-# "DIR"/*"SUFFIX" in the order the shell expands it (strcoll in the
-# current locale), as full paths.
-export function glob_sorted(dir: string, suffix: string) -> ptr<ProcStrs> {
-    let l: ptr<ProcStrs> = glob_suffix(dir, suffix)
-    let mut a: i32 = 1
-    while a < sl_len(l) {
-        let mut b: i32 = a
-        while b > 0 and gate_strcoll(sl_get(l, b), sl_get(l, b - 1)) < 0 {
-            let t: string = sl_get(l, b)
-            l.items[b] = sl_get(l, b - 1)
-            l.items[b - 1] = t
-            b = b - 1
-        }
-        a = a + 1
-    }
-    return l
 }
 
 # ---------------------------------------------------------------------------
@@ -270,15 +256,13 @@ export function pad_left(s: string, w: i32) -> string {
 # string in `need` appears in the C (the know and math_prose smokes). The
 # C goes to the first argument, else `default_out`.
 export function string_smoke(src: string, default_out: string, need: ptr<ProcStrs>, label: string) -> i32 {
-    let _root: string = gate_enter()
+    let root: string = gate_enter()
     let mut c_out: string = sl_get(proc_args(), 0)
     if s_len(c_out) == 0 {
         c_out = default_out
     }
     gate_mkdir(path_dirname(c_out))
-    let argv: ptr<ProcStrs> = sl_of3("compiler/scripts/flowc_emit.sh", "--lenient", src)
-    sl_push(argv, c_out)
-    gate_run(argv)
+    check(flowc_emit_run(root, sl_of3("--lenient", src, c_out), sl_new()))
     let mut i: i32 = 0
     while i < sl_len(need) {
         if not has(c_out, sl_get(need, i)) {

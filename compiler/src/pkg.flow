@@ -1602,8 +1602,8 @@ export function pm_info(pm: ptr<Pm>, name: string) -> bool {
 # init, publish, build, run, build-native, run-native, clean
 #
 # The rest of src/flow/package.py and src/flow/registry.py, ported with the
-# same messages and files. scripts/check_pkg_commands.sh holds the goldens
-# recorded from the Python version.
+# same messages and files. tests/pkg_commands holds the goldens
+# recorded from the Python version (scripts/check_pkg_commands.flow).
 # ---------------------------------------------------------------------------
 
 const ELLIPSIS: string = "\xe2\x80\xa6"
@@ -2222,7 +2222,9 @@ export function pm_build_native(pm: ptr<Pm>, entry_arg: string, release: bool) -
     say_color(BLUE, str_cat3("Building ", name, " with native support..."))
 
     # Step 1: Flow to C with flowc.
-    let emit: i32 = args1(pm, path_join(pm[0].repo_root, "compiler/scripts/flowc_emit.sh"))
+    let emit: i32 = args1(pm, path_join(pm[0].repo_root, "flow"))
+    args_push(pm, emit, "tool")
+    args_push(pm, emit, path_join(pm[0].repo_root, "compiler/scripts/flowc_emit.flow"))
     args_push(pm, emit, "--lenient")
     args_push(pm, emit, path_resolve(src_file))
     args_push(pm, emit, path_resolve(c_file))

@@ -7,8 +7,8 @@ Safety certification expects the same Flow source to emit byte-identical C.
 For a single translation unit emitted by flowc, the only C compiler:
 
 ```bash
-compiler/scripts/flowc_emit.sh prog.flow a.c
-compiler/scripts/flowc_emit.sh prog.flow b.c
+./flow tool compiler/scripts/flowc_emit.flow prog.flow a.c
+./flow tool compiler/scripts/flowc_emit.flow prog.flow b.c
 diff -u a.c b.c   # must be empty
 ```
 

@@ -4,7 +4,7 @@
  * a CAMetalLayer and wall-clock animation, while gallery recordings need no
  * window and must be reproducible. The program renders the exact generated MSL
  * fragment entry into an offscreen Metal texture, copies BGRA pixels back to a
- * shared buffer, and writes P6 PPM frames for scripts/frames_to_gif.sh.
+ * shared buffer, and writes P6 PPM frames for ./flow tool frames_to_gif.
  *
  * Build on macOS:
  *   xcrun clang -O2 -fobjc-arc runtime/shader_record_metal.m \

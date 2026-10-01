@@ -1,6 +1,6 @@
 # Open a Jules session for every open issue that does not already have one.
 #
-# Run through scripts/dispatch_uncovered_jules.sh. Older dispatchers read
+# Run it as `./flow tool jules_dispatch`. Older dispatchers read
 # `jules_sessions.json`, which drifts: sessions get deleted server side and
 # the file still lists them, so issues get skipped that have no live
 # session. This asks Jules what actually exists instead, and only

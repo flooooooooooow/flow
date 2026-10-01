@@ -6,7 +6,9 @@
 
 import "tools/flow_cli/sys.flow"
 import "tools/flow_cli/toolchain.flow"
+import "tools/flow_cli/flowc_build.flow"
 import "tools/flow_cli/build.flow"
+import "tools/flow_cli/tool.flow"
 import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg }
 
 # ---------------------------------------------------------------------------
@@ -357,13 +359,22 @@ export function cmd_explain(args: ptr<ProcStrs>) -> i32 {
         cli_exit(1)
     }
     let dir: string = mktemp_dir_default()
-    let argv: ptr<ProcStrs> = sl_of1(root() + "/compiler/scripts/flowc_emit.sh")
-    sl_extend(argv, rest)
+    let argv: ptr<ProcStrs> = sl_copy(rest)
     sl_push2(argv, program, dir + "/out.c")
-    let c: ptr<ProcCmd> = cmd(argv)
-    cmd_env(c, "FLOWC_BIN", flowc)
-    cmd_env(c, "FLOWC_EXPLAIN", "1")
-    cmd_env(c, "FLOWC_EXPLAIN_SOURCE", program)
+    let envs: ptr<ProcStrs> = sl_of3("FLOWC_BIN=" + flowc, "FLOWC_EXPLAIN=1", "FLOWC_EXPLAIN_SOURCE=" + program)
+    # The emitter's own messages were captured with the child's output:
+    # stderr is printed to stdout and stdout to stderr, as below.
+    sink_push(SINK_BUF, SINK_BUF)
+    let call: ptr<EmitCall> = flowc_emit_call(root(), argv, envs)
+    let plan_out: string = sink_pop()
+    let plan_err: string = sink_err()
+    if call.rc != 0 {
+        out(plan_err)
+        errs(plan_out)
+        rm_rf(dir)
+        return call.rc
+    }
+    let c: ptr<ProcCmd> = call.cmd
     cmd_capture_out(c)
     cmd_capture_err(c)
     let r: ptr<ProcResult> = run_result(c)
@@ -713,15 +724,13 @@ export function cmd_wasm(args0: ptr<ProcStrs>) -> i32 {
         info("Writes .wasm + .js + a runnable index.html.")
         info("gfx programs get a canvas page; others print into the page.")
         info("Requires emcc (Emscripten). See docs/language/wasm.md")
-        info("Whole gallery: scripts/build_wasm_gallery.sh")
+        info("Whole gallery: ./flow tool wasm_build gallery")
         cli_exit(1)
     }
     if s_eq(first, "--legacy") {
         let rest: ptr<ProcStrs> = sl_tail(args, 1)
         require_flow_file(sl_get(rest, 0))
-        let lg: ptr<ProcStrs> = sl_of1(root() + "/scripts/flow_to_wasm.sh")
-        sl_extend(lg, rest)
-        cli_exit(run_argv(lg))
+        cli_exit(run_argv(tool_argv("flow_to_wasm", rest)))
     }
     require_flow_file(first)
     if not have("emcc") {
@@ -736,7 +745,7 @@ export function cmd_wasm(args0: ptr<ProcStrs>) -> i32 {
             cli_exit(1)
         }
         info("Flow → C → WASM with a " + fs + " filesystem (see docs/language/wasm-crossings.md)")
-        let c: ptr<ProcStrs> = sl_of3(root() + "/wasm/crossings.sh", "fs", first)
+        let c: ptr<ProcStrs> = tool_argv("wasm_crossings", sl_of2("fs", first))
         sl_push2(c, "--fs", fs)
         sl_extend(c, preload)
         if run_argv(c) != 0 {
@@ -751,7 +760,7 @@ export function cmd_wasm(args0: ptr<ProcStrs>) -> i32 {
             cli_exit(1)
         }
         info("Flow → C → threaded WASM (see docs/language/wasm-crossings.md)")
-        let t: ptr<ProcStrs> = sl_of3(root() + "/wasm/crossings.sh", "threads", first)
+        let t: ptr<ProcStrs> = tool_argv("wasm_crossings", sl_of2("threads", first))
         sl_push2(t, "--workers", workers)
         if run_argv(t) != 0 {
             error("Threaded WASM build failed")
@@ -764,7 +773,7 @@ export function cmd_wasm(args0: ptr<ProcStrs>) -> i32 {
     } else {
         info("Flow → C → WASM (see docs/language/wasm.md)")
     }
-    let b: ptr<ProcStrs> = sl_of1(root() + "/scripts/wasm_build.sh")
+    let b: ptr<ProcStrs> = tool_argv("wasm_build", sl_of1("build"))
     sl_extend(b, args)
     sl_extend(b, preload)
     sl_extend(b, link)
@@ -789,8 +798,7 @@ export function cmd_playground(port_arg: string) -> i32 {
         cmd_quiet_err(c)
         let _r: i32 = run(c)
     }
-    let s: ptr<ProcStrs> = sl_of3(root() + "/scripts/playground_compile_server.sh", "--port", port)
-    return run_argv(s)
+    return run_argv(tool_argv("playground_server", sl_of2("--port", port)))
 }
 
 # ---------------------------------------------------------------------------

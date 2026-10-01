@@ -139,7 +139,7 @@ python3 -m flow.transpiler examples/new_feature.flow
 #### 2. Generation Tests
 Verify output code quality:
 ```bash
-compiler/scripts/flowc_emit.sh examples/new_feature.flow /tmp/test.c
+./flow tool compiler/scripts/flowc_emit.flow examples/new_feature.flow /tmp/test.c
 ```
 
 #### 3. Runtime Tests

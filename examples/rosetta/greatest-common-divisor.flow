@@ -1,0 +1,24 @@
+# Rosetta Code task: Greatest common divisor
+# Find the greatest common divisor of two integers with the Euclidean algorithm.
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function gcd(a: i32, b: i32) -> i32 {
+    let mut x: i32 = a
+    let mut y: i32 = b
+    while y != 0 {
+        let temp: i32 = y
+        y = x % y
+        x = temp
+    }
+    return x
+}
+
+function main() -> i32 {
+    printf("gcd(56, 98) = %d\n", gcd(56, 98))
+    printf("gcd(48, 18) = %d\n", gcd(48, 18))
+    printf("gcd(1071, 462) = %d\n", gcd(1071, 462))
+    return 0
+}

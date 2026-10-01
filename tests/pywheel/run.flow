@@ -11,7 +11,7 @@
 #   dist/       every file written under dist/, byte for byte; a missing
 #               dist/ means nothing may be written. In a generated
 #               MODULE_ext.c the line @FLOWC_C@ stands for the program's C,
-#               which the gate takes from compiler/scripts/flowc_emit.sh, so a
+#               which the gate takes from compiler/scripts/flowc_emit.flow, so a
 #               change in flowc's output does not touch these goldens.
 #
 # The goldens were captured from the Python generator before it was deleted
@@ -39,7 +39,9 @@ const MARK: string = "@FLOWC_C@"
 
 # The program's C, as the tool embeds it.
 function flowc_c(prog: string, c_out: string) -> i32 {
-    let c: ptr<ProcCmd> = cmd(sl_of3("compiler/scripts/flowc_emit.sh", "--strict", prog))
+    let c: ptr<ProcCmd> = cmd(sl_of3("./flow", "tool", "compiler/scripts/flowc_emit.flow"))
+    proc_arg(c, "--strict")
+    proc_arg(c, prog)
     proc_arg(c, c_out)
     cmd_quiet(c)
     return run(c)

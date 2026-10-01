@@ -1,6 +1,6 @@
 # Input for scripts/tools/grad: one scalar function per supported feature.
 #
-#   scripts/tools/grad/grad.sh c scripts/tools/grad/demo.flow f > build/grad_demo.c
+#   ./flow tool grad c scripts/tools/grad/demo.flow f > build/grad_demo.c
 #   clang -O2 build/grad_demo.c -lm -o build/grad_demo
 #   ./build/grad_demo 1.0 2.0
 

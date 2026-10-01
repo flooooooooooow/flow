@@ -1,0 +1,31 @@
+# Rosetta Code task: Ackermann function
+# The two-argument Ackermann function, defined recursively.
+
+extern {
+    function printf(fmt: string, val: i32) -> i32
+}
+
+function ackermann(m: i32, n: i32) -> i32 {
+    if m == 0 {
+        return n + 1
+    }
+    if n == 0 {
+        return ackermann(m - 1, 1)
+    }
+    return ackermann(m - 1, ackermann(m, n - 1))
+}
+
+function main() -> i32 {
+    let mut m: i32 = 0
+    while m <= 3 {
+        let mut n: i32 = 0
+        while n <= 4 {
+            printf("A(%d", m)
+            printf(", %d) = ", n)
+            printf("%d\n", ackermann(m, n))
+            n = n + 1
+        }
+        m = m + 1
+    }
+    return 0
+}

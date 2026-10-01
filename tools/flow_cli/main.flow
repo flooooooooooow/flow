@@ -322,7 +322,7 @@ function dispatch(c: string, args: ptr<ProcStrs>) -> i32 {
     } elif is(c, "transpile") {
         error("flow transpile (python -m flow.transpiler) is retired.")
         errln("  MLIR:     ./flow mlir <file.flow> [--optimize] [--llvm] [--mlir-gpu] [--emit-spirv] [-o OUT]")
-        errln("  C:        ./flow compile <file.flow>, or compiler/scripts/flowc_emit.sh <in.flow> <out.c>")
+        errln("  C:        ./flow compile <file.flow>, or ./flow tool compiler/scripts/flowc_emit.flow <in.flow> <out.c>")
         return 2
     } elif is(c, "explain") {
         return cmd_explain(args)
@@ -354,9 +354,9 @@ function dispatch(c: string, args: ptr<ProcStrs>) -> i32 {
     } elif is(c, "python") {
         return cmd_python(args)
     } elif is(c, "bpf") {
-        return exec_argv(prepend(root() + "/scripts/bpf_target.sh", args))
+        return exec_argv(tool_argv("llvm_target", prepend("bpf", args)))
     } elif is(c, "wasm32") {
-        return exec_argv(prepend(root() + "/scripts/wasm32_target.sh", args))
+        return exec_argv(tool_argv("llvm_target", prepend("wasm32", args)))
     } elif is(c, "wasm") {
         return cmd_wasm(args)
     } elif is(c, "playground") {

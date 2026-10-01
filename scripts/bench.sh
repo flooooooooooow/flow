@@ -62,7 +62,7 @@ run_flow() {
 run_comparison() {
     echo "🎯 Running full benchmark comparison..."
     cd benchmarks
-    ./run_benchmarks.sh --cleanup
+    ../flow tool bench_harness --cleanup
     cd ..
 }
 

@@ -48,7 +48,7 @@ Record one headlessly, no display needed:
 Regenerate every GIF on this page:
 
 ```bash
-scripts/record_demos.sh --group morphogenesis
+./flow tool record_demos --group morphogenesis
 ```
 
 Every example labels itself on screen with `stdlib/text.flow`: title, the
@@ -120,7 +120,7 @@ the header.
 
 `runtime/gfx_record.c` plus `lib/runtime/gfx_record.flow` implement the same API
 as the windowed backends, drawing into an off-screen buffer and writing each
-presented frame as a PPM. `scripts/record_demos.sh` then assembles the frames
+presented frame as a PPM. `./flow tool record_demos` then assembles the frames
 into the GIFs on this page.
 
 These clips take no input at all, so the tuning is entirely in the frame budget.
