@@ -17,9 +17,8 @@
 # `import .text { ... }` finds the shared helpers. Every other program
 # compiles with FLOWC_DIR at the repository root, so it imports by path
 # (`import "scripts/tools/lib/text.flow"`). Binaries are cached in
-# build/flow-tools and rebuilt when the program, a sibling module, the
-# shared helpers, the CLI modules in tools/flow_cli, the standard library
-# or the bootstrap C changes.
+# build/flow-tools and rebuilt when the bootstrap C, the program, or any
+# module it imports (followed transitively) changes.
 #
 # The program runs in the caller's working directory with FLOW_REPO_ROOT
 # set to the repository root. Exit status is the program's own.
@@ -92,15 +91,111 @@ function tool_resolve(spec: string) -> ptr<ToolSpec> {
     return t
 }
 
-# True when any "*.flow" in `dir` is newer than `bin`.
-function dir_newer(dir: string, bin: string) -> bool {
-    let files: ptr<ProcStrs> = glob_suffix(dir, ".flow")
+# `s` without leading spaces and tabs.
+function ltrim(s: string) -> string {
     let mut i: i32 = 0
-    while i < sl_len(files) {
-        if newer(sl_get(files, i), bin) {
-            return true
+    while i < s_len(s) and (s_byte(s, i) == 32 or s_byte(s, i) == 9) {
+        i = i + 1
+    }
+    return s_from(s, i)
+}
+
+# The module named by an import line ("tools/flow_cli/sys.flow", ".text",
+# "std.process"), or "" when `line` is not an import.
+function import_spec(line: string) -> string {
+    let mut s: string = ltrim(line)
+    if s_starts(s, "export ") {
+        s = ltrim(s_from(s, 7))
+    }
+    if not s_starts(s, "import ") {
+        return ""
+    }
+    s = ltrim(s_from(s, 7))
+    if s_starts(s, "\"") {
+        let q: i32 = s_find_byte(s, 34, 1)
+        if q < 0 {
+            return ""
+        }
+        return s_slice(s, 0, q + 1)
+    }
+    let mut e: i32 = 0
+    while e < s_len(s) {
+        let c: i32 = s_byte(s, e)
+        if c == 32 or c == 9 or c == 123 {
+            break
+        }
+        e = e + 1
+    }
+    return s_slice(s, 0, e)
+}
+
+# The first of `cands` that is a file, or "".
+function first_file(cands: ptr<ProcStrs>) -> string {
+    let mut i: i32 = 0
+    while i < sl_len(cands) {
+        if is_file(sl_get(cands, i)) {
+            return sl_get(cands, i)
         }
         i = i + 1
+    }
+    return ""
+}
+
+# The file an import resolves to, from a module in `dir`, or "". Unresolved
+# names (a C header, a module flowc finds some other way) are skipped: this
+# only decides when to rebuild, and flowc reports real errors.
+function import_file(spec: string, dir: string, lib: string) -> string {
+    let r: string = root()
+    let c: ptr<ProcStrs> = sl_new()
+    if s_starts(spec, "\"") {
+        let p: string = s_slice(spec, 1, s_len(spec) - 1)
+        sl_push(c, dir + "/" + p)
+        sl_push(c, r + "/" + p)
+        sl_push(c, lib + "/" + p)
+        sl_push(c, r + "/lib/" + p)
+        return first_file(c)
+    }
+    if s_starts(spec, ".") {
+        let n: string = s_replace(s_from(spec, 1), ".", "/") + ".flow"
+        sl_push(c, dir + "/" + n)
+        sl_push(c, lib + "/" + n)
+        return first_file(c)
+    }
+    if s_starts(spec, "std.") or s_starts(spec, "stdlib.") {
+        let dot: i32 = s_find_byte(spec, 46, 0)
+        sl_push(c, r + "/lib/stdlib/" + s_replace(s_from(spec, dot + 1), ".", "/") + ".flow")
+        return first_file(c)
+    }
+    let n: string = s_replace(spec, ".", "/") + ".flow"
+    sl_push(c, r + "/" + n)
+    sl_push(c, lib + "/" + n)
+    sl_push(c, dir + "/" + n)
+    return first_file(c)
+}
+
+# True when `src` or any module it imports, directly or not, is newer than
+# `bin`.
+function deps_newer(src: string, lib: string, bin: string) -> bool {
+    let seen: ptr<ProcStrs> = sl_of1(src)
+    let mut k: i32 = 0
+    while k < sl_len(seen) {
+        let f: string = sl_get(seen, k)
+        if newer(f, bin) {
+            return true
+        }
+        let lines: ptr<ProcStrs> = s_lines(read_text(f))
+        let mut i: i32 = 0
+        while i < sl_len(lines) {
+            let spec: string = import_spec(sl_get(lines, i))
+            if s_len(spec) > 0 {
+                let dep: string = import_file(spec, path_dirname(f), lib)
+                if s_len(dep) > 0 and not sl_has(seen, dep) {
+                    sl_push(seen, dep)
+                }
+            }
+            i = i + 1
+        }
+        k = k + 1
     }
     return false
 }
@@ -166,28 +261,9 @@ export function tool_build(spec: string) -> string {
     }
     let dir: string = root() + "/build/flow-tools"
     let bin: string = dir + "/" + t.name
-    let mut stale: bool = not is_exec(bin) or newer(flowc, bin) or newer(t.src, bin)
-    if not stale {
-        stale = dir_newer(path_dirname(t.src), bin) or dir_newer(root() + "/scripts/tools/lib", bin)
-    }
-    # Programs import the CLI's own modules (tools/flow_cli/sys.flow).
-    if not stale {
-        stale = dir_newer(root() + "/tools/flow_cli", bin)
-    }
-    if not stale {
-        stale = dir_newer(root() + "/lib/stdlib", bin) or newer(root() + "/compiler/src/bytebuf.flow", bin)
-    }
-    if not stale {
-        let subs: ptr<ProcStrs> = list_dir(root() + "/lib/stdlib")
-        let mut i: i32 = 0
-        while i < sl_len(subs) and not stale {
-            let d: string = root() + "/lib/stdlib/" + sl_get(subs, i)
-            if is_dir(d) and dir_newer(d, bin) {
-                stale = true
-            }
-            i = i + 1
-        }
-    }
+    # Rebuilt when the bootstrap flowc, the program or any module it imports
+    # (followed through every import, as flowc's bundle does) changed.
+    let stale: bool = not is_exec(bin) or newer(flowc, bin) or deps_newer(t.src, t.lib, bin)
     if not stale {
         return bin
     }
