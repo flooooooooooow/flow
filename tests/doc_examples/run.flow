@@ -1,0 +1,199 @@
+# Goldens for the documentation example checker (tools/doc_examples).
+#
+# Each case is tests/doc_examples/cases/<name>/ with:
+#
+#   root/        a documentation tree; *.md.in files become *.md in a
+#                scratch copy, so the fixtures are not documentation of this
+#                repository and the real checks never see them
+#   cmd.N        the arguments of one run of scripts/check_doc_examples.sh,
+#                with --root root added
+#   out.N        expected stdout
+#   err.N        expected stderr
+#   rc.N         expected exit status
+#   ledger.N     expected ledger after a --write-ledger run ("generated"
+#                reads DATE)
+#
+# The goldens were recorded from the Python checker (scripts/
+# check_doc_examples.py and friends) before it was deleted. The cases where
+# the Flow checker differs on purpose are listed in KNOWN_DIFFERENCES.md.
+#
+# Python and python3 are stubbed out on PATH: the checker must not need them.
+# The lessons command also runs on the real tutorials, with the structural
+# checks the Python unit test made.
+#
+# Usage: ./flow tool tests/doc_examples/run.flow [case...]
+
+import "tools/flow_cli/sys.flow"
+import "scripts/tools/lib/testrun.flow"
+import std.process { ProcCmd, ProcStrs, proc_arg }
+import std.regex { Regex, RxStrs, rx_findall, rx_strs_len, rx_strs_get }
+
+let mut ROOT: string = ""
+let mut FAIL: i32 = 0
+
+function report_fail(what: string) {
+    outln("FAIL " + what)
+    FAIL = FAIL + 1
+}
+
+# `diff -u WANT GOT`; when they differ, print "  LABEL: WHAT differs" and
+# the head of the diff, indented. True when they differ.
+function differs(label: string, what: string, want: string, got: string, limit: i32) -> bool {
+    if tr_same(want, got) {
+        return false
+    }
+    outln("  " + label + ": " + what + " differs")
+    out(tr_head(tr_indent(tr_diff("-u", want, got), "    "), limit))
+    return true
+}
+
+function checker(args: ptr<ProcStrs>) -> ptr<ProcCmd> {
+    let argv: ptr<ProcStrs> = sl_of1(ROOT + "/scripts/check_doc_examples.sh")
+    sl_extend(argv, args)
+    return cmd(argv)
+}
+
+# Number of lines of `text` that contain `needle` (grep -c -F).
+function count_lines_with(text: string, needle: string) -> i32 {
+    let l: ptr<ProcStrs> = s_lines(text)
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < sl_len(l) {
+        if s_contains(sl_get(l, i), needle) {
+            n = n + 1
+        }
+        i = i + 1
+    }
+    return n
+}
+
+function main() -> i32 {
+    ROOT = tr_enter_root()
+    let only: ptr<ProcStrs> = tr_args()
+    # Build flowc up front: on a clean checkout the first case would otherwise
+    # catch ensure_flowc's build notice in its stderr.
+    let ef: ptr<ProcCmd> = cmd(sl_of2("bash", "compiler/scripts/ensure_flowc.sh"))
+    cmd_quiet(ef)
+    let _e: i32 = run(ef)
+
+    let work: string = tr_workdir("flow-doc-examples-tests")
+    let log: string = work + "/python-calls.log"
+    tr_stub_python_log(work + "/bin", log)
+
+    let cases: ptr<ProcStrs> = sl_new()
+    if sl_len(only) > 0 {
+        let mut a: i32 = 0
+        while a < sl_len(only) {
+            sl_push(cases, "tests/doc_examples/cases/" + sl_get(only, a))
+            a = a + 1
+        }
+    } else {
+        let names: ptr<ProcStrs> = list_dir("tests/doc_examples/cases")
+        sl_sort(names, false)
+        let mut a: i32 = 0
+        while a < sl_len(names) {
+            let d: string = "tests/doc_examples/cases/" + sl_get(names, a)
+            if is_dir(d) and not s_starts(sl_get(names, a), ".") {
+                sl_push(cases, d)
+            }
+            a = a + 1
+        }
+    }
+
+    let date_rx: ptr<Regex> = tr_rx("\"generated\": \"[0-9-]*\"")
+    let mut pass: i32 = 0
+    let mut ci: i32 = 0
+    while ci < sl_len(cases) {
+        let cs: string = sl_get(cases, ci)
+        ci = ci + 1
+        let name: string = path_basename(cs)
+        let cmds: ptr<ProcStrs> = sl_new()
+        let entries: ptr<ProcStrs> = list_dir(cs)
+        sl_sort(entries, false)
+        let mut k: i32 = 0
+        while k < sl_len(entries) {
+            if s_starts(sl_get(entries, k), "cmd.") {
+                sl_push(cmds, cs + "/" + sl_get(entries, k))
+            }
+            k = k + 1
+        }
+        let mut ki: i32 = 0
+        while ki < sl_len(cmds) {
+            let cmdf: string = sl_get(cmds, ki)
+            ki = ki + 1
+            let n: string = path_ext(cmdf)
+            let rundir: string = work + "/" + name + "." + n
+            let _m: bool = mkdir_p(rundir)
+            let _c: bool = tr_copy_tree(cs + "/root", rundir + "/root")
+            tr_strip_in(rundir + "/root", ".md")
+            let first: ptr<ProcStrs> = s_lines(read_text(cmdf))
+            let mut args: ptr<ProcStrs> = sl_new()
+            if sl_len(first) > 0 {
+                args = s_words(sl_get(first, 0))
+            }
+            sl_push2(args, "--root", "root")
+            let c: ptr<ProcCmd> = checker(args)
+            tr_cmd_cd(c, rundir)
+            let rc: i32 = tr_run_cmd_files(c, rundir + "/stdout", rundir + "/stderr")
+            let label: string = name + "." + n
+            let mut ok: bool = true
+            let want_rc: string = s_chomp_all(read_text(cs + "/rc." + n))
+            if not s_eq(s_itoa(rc), want_rc) {
+                outln("  " + label + ": exit " + s_itoa(rc) + ", expected " + want_rc)
+                ok = false
+            }
+            if differs(label, "stdout", cs + "/out." + n, rundir + "/stdout", 40) {
+                ok = false
+            }
+            if differs(label, "stderr", cs + "/err." + n, rundir + "/stderr", 20) {
+                ok = false
+            }
+            if is_file(cs + "/ledger." + n) {
+                let led: string = tr_sed(read_text(rundir + "/root/ledger.json"), date_rx, "\"generated\": \"DATE\"", 1)
+                let _w: bool = write_text(rundir + "/ledger", led)
+                if differs(label, "ledger", cs + "/ledger." + n, rundir + "/ledger", 40) {
+                    ok = false
+                }
+            }
+            if ok {
+                pass = pass + 1
+            } else {
+                report_fail(label)
+            }
+        }
+    }
+
+    # The tutorial lessons on the real docs: many, all with a main, all from
+    # docs/tutorials/ and none from its README.
+    if sl_len(only) == 0 {
+        let lc: ptr<ProcCmd> = checker(sl_of1("lessons"))
+        let lessons: string = capture_raw(lc)
+        if last_status() != 0 {
+            cli_exit(last_status())
+        }
+        let total: i32 = count_lines_with(lessons, "\"path\": ")
+        let paths: ptr<RxStrs> = rx_findall(tr_rx("\"path\": \"docs/tutorials/[^\"/]*\\.md\""), lessons)
+        let mut tut: i32 = 0
+        let mut p: i32 = 0
+        while p < rx_strs_len(paths) {
+            if not s_contains(rx_strs_get(paths, p), "README.md") {
+                tut = tut + 1
+            }
+            p = p + 1
+        }
+        let mains: i32 = count_lines_with(lessons, "function main")
+        if total > 200 and tut == total and mains == total {
+            pass = pass + 1
+        } else {
+            outln("  lessons: " + s_itoa(total) + " lessons, " + s_itoa(tut) + " from docs/tutorials, " + s_itoa(mains) + " with a main")
+            report_fail("lessons")
+        }
+    }
+
+    if tr_python_called(log, "FAIL python was called:") {
+        FAIL = FAIL + 1
+    }
+    outln("doc_examples: " + s_itoa(pass) + " passed, " + s_itoa(FAIL) + " failed")
+    tr_exit(FAIL)
+    return 0
+}

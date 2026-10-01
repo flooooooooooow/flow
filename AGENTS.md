@@ -140,7 +140,7 @@ Python in golden mode: `parity_lowering.flow`, `parity_effects.flow`,
 `parse_coverage.sh --check`, `fmt_check.sh --check` and
 `corpus_parity.sh --check`, all under `compiler/scripts/`. A `.flow` gate
 runs with `./flow tool compiler/scripts/<name>.flow`. The C output
-goldens are `tests/cgen/run.sh`, and the language tests are
+goldens are `./flow tool tests/cgen/run.flow`, and the language tests are
 `./flow test-lang`.
 
 ### Coordination protocol
@@ -186,7 +186,7 @@ under the same `FLOW_DENOTATIONAL=1` switch (docs/design/mlir-in-flow.md).
 The Python compiler is deleted: flowc is the only compiler for C and MLIR.
 The shell tests in `tests/scripts/` drive `./flow` and the scripts as
 subprocesses (`./flow test-scripts`); no pytest is left. Front-end crashes are `tests/fuzz/run.sh`
-and the Stable corpus is `tests/conformance/run.sh`.
+and the Stable corpus is `./flow tool tests/conformance/run.flow`.
 
 ### Bootstrap suite
 

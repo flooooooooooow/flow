@@ -14,7 +14,7 @@ diff -u a.c b.c   # must be empty
 
 `./compiler/scripts/bootstrap_from_c.sh --verify` checks this on the largest
 program in the repository: flowc must reproduce its own C byte for byte. The
-C output goldens in `tests/cgen` (`tests/cgen/run.sh`) fail on any change to
+C output goldens in `tests/cgen` (`./flow tool tests/cgen/run.flow`) fail on any change to
 the emitted C. The Python test `test_reproducible_c_emit` covered the retired
 Python C backend and is gone.
 

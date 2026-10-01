@@ -293,7 +293,7 @@ Lexer also tokenizes floats, string literals, brackets, `.`, etc.
 
 The `.flow` files in `tests/lang/` are the language regression target:
 `./flow test-lang` runs them on flowc. The C output goldens are
-`tests/cgen/run.sh`. The bare bootstrap loop over `tests/lang/`, with its
+`./flow tool tests/cgen/run.flow`. The bare bootstrap loop over `tests/lang/`, with its
 current count and remaining failures, is in [`AGENTS.md`](../AGENTS.md#bootstrap-suite).
 
 Recently landed features that closed earlier gaps:

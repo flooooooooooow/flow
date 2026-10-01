@@ -12,7 +12,7 @@ migration.
 The Python C backend is now retired, and flowc is the only C compiler. Python
 tests that drove the Python C backend are removed or rewritten against flowc.
 Language tests are `tests/lang` (`./flow test-lang`), and C output goldens are
-`tests/cgen` (`tests/cgen/run.sh`). The inventory below records the files as
+`tests/cgen` (`./flow tool tests/cgen/run.flow`). The inventory below records the files as
 they were classified before the retirement.
 
 ## Classes
@@ -124,7 +124,7 @@ tests of a Python pass that the transpiler does not call
 (test_pipeline_fusion.py fusion correctness, the rotation-equivalence tests
 in test_counted_loop_rotation.py), comparisons against a Python reference
 (test_time_blocks.py rk4), and tool tests. The tool tests have since left
-Python: test_flow_run.py is now tests/flow_run/run.sh, and the gfx recorder,
+Python: test_flow_run.py is now tests/flow_run/run.flow, and the gfx recorder,
 GIF encoder and other subprocess-only files are shell tests under
 tests/scripts, run by tests/scripts/run.sh.
 
@@ -139,7 +139,7 @@ tests/scripts, run by tests/scripts/run.sh.
 | test_backend_parity.py | b | C runs moved to tests/lang; MLIR JIT parity stays host-side |
 | test_backend_parity_extended.py | b | C versus MLIR differential parity |
 | test_basic.py | c | pytest infrastructure smoke |
-| test_benchmarks.py | c | benchmark harness tooling; now tests/bench_harness/run.sh |
+| test_benchmarks.py | c | benchmark harness tooling; now tests/bench_harness/run.flow |
 | test_bpf_target.py | c | eBPF target checks |
 | tests/scripts/browser_interpreter_gallery.sh | c | browser interpreter tooling; now a shell test |
 | test_bundle_symbol_closure.py | c | bundle symbol closure internals |
