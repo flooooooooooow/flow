@@ -159,6 +159,10 @@ jobs:
       - run: ./flow tool tool_layout
       - run: ./flow tool makefile_contract
       - run: ./flow tool project_state
+      # docs/library/stdlib-api.md is generated from lib/stdlib; fail when the
+      # committed page is behind the generator.
+      - name: Stdlib API page matches lib/stdlib
+        run: ./flow tool gen_stdlib_docs --check
       - name: Jules dispatch backpressure tests
         run: ./flow tool scripts/tools/jules_dispatch/test.flow
       - name: Benchmark harness tests (no Python)

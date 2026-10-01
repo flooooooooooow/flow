@@ -1,6 +1,6 @@
 # Standard Library API (generated)
 
-> Auto-generated from `lib/stdlib/` on 2026-10-01 by `./flow tool gen_stdlib_docs`. Per-function docs come from `#` comments immediately above each `export function`.
+> Auto-generated from `lib/stdlib/` by `./flow tool gen_stdlib_docs`. Per-function docs come from `#` comments immediately above each `export function`.
 
 **115** modules scanned.
 
@@ -2119,7 +2119,7 @@ FLOW POSIX Standard Library File I/O, processes, environment, and system calls
 
 Processes: run a program with an argument vector and capture what it prints, read this program's own arguments and environment.
 
-**Structs:** `ProcStrs`, `ProcCmd`, `ProcResult`
+**Structs:** `ProcStrs`, `ProcCmd`, `ProcPipe`, `ProcResult`, `ProcHandle`
 
 **Constants:**
 
@@ -2147,6 +2147,14 @@ Processes: run a program with an argument vector and capture what it prints, rea
 | `proc_stdin` | `(c: ptr<ProcCmd>, mode: i32) -> void` | stdin: PROC_NULL (the default) or PROC_INHERIT. |
 | `proc_stdout` | `(c: ptr<ProcCmd>, mode: i32) -> void` | stdout: PROC_CAPTURE (the default), PROC_INHERIT or PROC_NULL. |
 | `proc_stderr` | `(c: ptr<ProcCmd>, mode: i32) -> void` | stderr: PROC_CAPTURE (the default), PROC_INHERIT, PROC_NULL or PROC_MERGE. |
+| `proc_pipe_new` | `() -> ptr<ProcPipe>` | Create one pipe for use by two commands. |
+| `proc_pipe_close_read` | `(p: ptr<ProcPipe>) -> void` | - |
+| `proc_pipe_close_write` | `(p: ptr<ProcPipe>) -> void` | - |
+| `proc_attach_stdin` | `(c: ptr<ProcCmd>, p: ptr<ProcPipe>) -> void` | Attach a pipe end before spawning. The parent closes the attached end after the child inherits it. |
+| `proc_attach_stdout` | `(c: ptr<ProcCmd>, p: ptr<ProcPipe>) -> void` | - |
+| `proc_spawn` | `(c: ptr<ProcCmd>) -> ptr<ProcHandle>` | Spawn a command and return immediately. Captured streams are drained by proc_wait or proc_wait_any, so several children can run together. |
+| `proc_wait` | `(h: ptr<ProcHandle>) -> ptr<ProcResult>` | - |
+| `proc_wait_any` | `(handles: ptr<ptr<ProcHandle>>, n: i32, index: ptr<i32>) -> ptr<ProcResult>` | Wait for whichever child finishes first. index receives its position. |
 | `proc_run` | `(c: ptr<ProcCmd>) -> ptr<ProcResult>` | Run the command to completion and return what it did. |
 | `proc_status` | `(c: ptr<ProcCmd>) -> i32` | Run with stdout and stderr passed through; return the exit code. |
 | `proc_output` | `(c: ptr<ProcCmd>) -> string` | stdout of `c`, or "" when it could not start. stderr passes through. |

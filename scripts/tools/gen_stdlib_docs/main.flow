@@ -2,16 +2,39 @@
 # signatures. Run it as `./flow tool gen_stdlib_docs` from anywhere in the
 # repository; it works from the repository root. The work is in scripts/tools/lib/wiki_stdlib.flow, which the wiki
 # build shares.
+#
+#   ./flow tool gen_stdlib_docs                 rewrite the page
+#   ./flow tool gen_stdlib_docs --check [FILE]  exit 1 when FILE (default
+#       docs/library/stdlib-api.md, relative to the repository root)
+#       differs from the generator output. CI runs this in the Doc links job.
 
 import .proc { pr_cwd }
-import .wiki_stdlib { wsd_generate }
+import .wiki_stdlib { wsd_generate, wsd_check }
 import .repo { rp_enter_root }
-import .text { ft_errln }
+import .text { ft_errln, ft_eq }
 
-function main() -> i32 {
+function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
+    let mut check: bool = false
+    let mut path: string = "docs/library/stdlib-api.md"
+    let mut i: i32 = 1
+    while i < argc {
+        let a: string = argv[i] as string
+        if ft_eq(a, "--check") {
+            check = true
+        } elif check {
+            path = a
+        } else {
+            ft_errln("usage: ./flow tool gen_stdlib_docs [--check [FILE]]")
+            return 2
+        }
+        i = i + 1
+    }
     if rp_enter_root() == false {
         ft_errln("gen_stdlib_docs: cannot enter the repository root")
         return 1
+    }
+    if check {
+        return wsd_check(pr_cwd(), path)
     }
     return wsd_generate(pr_cwd())
 }
