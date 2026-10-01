@@ -13,9 +13,9 @@
 #   flow mlir-optimize --print-pass-pipeline [FLAGS]
 #   flow mlir-spirv spirv|msl|metallib|mlir-msl|mlir-metallib IN OUT [...]
 #
-# These replaced compiler/scripts/flow_to_mlir.sh, flow_to_llvm.sh,
-# mlir_lower.sh, mlir_optimize.sh and mlir_spirv.sh, with the same
-# arguments, environment variables, messages and exit statuses.
+# These replaced the shell scripts of the same names (underscored) in
+# compiler/scripts, with the same arguments, environment variables,
+# messages and exit statuses.
 #
 # flow-to-mlir: flowc (compiler/src/mlirgen.flow, FLOWC_EMIT=mlir) writes
 # the MLIR.
