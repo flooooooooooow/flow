@@ -4355,7 +4355,7 @@ function sem_check_static(c: ptr<Sem>, d: i32) {
     }
     if is_fixed {
         let en: string = sem_pt_name(c.t, tys.pt_elem[pt])
-        if sem_is_static_primitive(en) == false {
+        if sem_is_static_primitive(en) == false or sem_s_eq(en, "string") {
             sem_err(c, "Module static '" + name + "' has unsupported array element type '" + en + "': static arrays may only hold primitives (i32/i64/u8/u32/f32/f64/c64/c128/bool)")
             return
         }
