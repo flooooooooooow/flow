@@ -38,6 +38,7 @@ export const AUX_MUL: i32 = 3
 export const AUX_DIV: i32 = 4
 export const AUX_MOD: i32 = 5
 export const AUX_NEG: i32 = 6
+export const AUX_PARAM_BASE: i32 = 1000
 
 export const EFF_WRITES_MEMORY: i32 = 2
 export const EFF_ALLOCATES: i32 = 4
@@ -709,6 +710,182 @@ function fg_op_nresults(g: ptr<FirG>, op: i32) -> i32 {
 struct FirDce {
     g: ptr<FirG>,
     removed_ops: i32
+}
+
+struct FirInline {
+    g: ptr<FirG>,
+    inlined: i32
+}
+
+# The first inliner is deliberately limited to a pure, single-block expression
+# function.  Such a body has parameters, CONST/BINOP/UNOP nodes, and one RET.
+# Rebuilding the graph keeps SSA ids dense and leaves branches, stores, and
+# effects on the trusted non-inlined path.
+function fg_inlineable_call(g: ptr<FirG>, call: i32) -> i32 {
+    if iv_get(&g.op_opcode, call) != OP_CALL {
+        return 0
+    }
+    let cal: i32 = iv_get(&g.op_callee, call)
+    if cal < 0 or cal >= fg_num_funcs(g) or cal == iv_get(&g.op_function, call) {
+        return 0
+    }
+    if iv_get(&g.func_is_extern, cal) != 0 or not fg_is_pure(g, cal) {
+        return 0
+    }
+    if iv_get(&g.func_block_count, cal) != 1 {
+        return 0
+    }
+    let bid: i32 = iv_get(&g.func_first_block, cal)
+    let mut params: i32 = 0
+    let mut returns: i32 = 0
+    let mut ret_edges: i32 = 0
+    let mut op: i32 = 0
+    while op < fg_num_ops(g) {
+        if iv_get(&g.op_block, op) == bid {
+            let code: i32 = iv_get(&g.op_opcode, op)
+            if code == OP_PARAM {
+                params = params + 1
+            } elif code == OP_RET {
+                returns = returns + 1
+                ret_edges = iv_get(&g.op_edge_count, op)
+            } elif code == OP_LOAD {
+                if iv_get(&g.op_aux, op) < AUX_PARAM_BASE {
+                    return 0
+                }
+            } elif code != OP_CONST and code != OP_BINOP and code != OP_UNOP {
+                return 0
+            }
+        }
+        op = op + 1
+    }
+    if returns != 1 or ret_edges != 1 {
+        return 0
+    }
+    if iv_get(&g.op_edge_count, call) != params {
+        return 0
+    }
+    return 1
+}
+
+function fg_inline_copy_meta(src: ptr<FirG>, sop: i32, dst: ptr<FirG>, dop: i32) {
+    iv_set(&dst.op_aux, dop, iv_get(&src.op_aux, sop))
+    if iv_get(&src.op_const, sop) != 0 {
+        fg_op_set_const(dst, dop, fg_op_const_text(src, sop))
+    }
+}
+
+# Apply all safe trivial inline sites in one graph rebuild.  The callee body
+# is copied at the call site and its return value replaces the CALL result.
+export function fg_apply_inline(g: ptr<FirG>) -> FirInline {
+    let ng: ptr<FirG> = fg_new()
+    let nf: i32 = fg_num_funcs(g)
+    let mut f: i32 = 0
+    while f < nf {
+        let _fid: i32 = fg_add_function(ng, fg_func_name(g, f), iv_get(&g.func_is_extern, f) != 0, iv_get(&g.func_effect_bits, f))
+        f = f + 1
+    }
+    let mut b: i32 = 0
+    while b < g.block_function.len {
+        let _bid: i32 = fg_add_block(ng, iv_get(&g.block_function, b))
+        b = b + 1
+    }
+    let mut t: i32 = 0
+    while t < g.type_name.len {
+        let _tid: i32 = fg_intern_type(ng, tl_get(&g.type_name, t))
+        t = t + 1
+    }
+    let vmap: ptr<i32> = calloc((g.num_values + 1) as i64, 4) as ptr<i32>
+    let mut inlined: i32 = 0
+    let mut op: i32 = 0
+    while op < fg_num_ops(g) {
+        let code: i32 = iv_get(&g.op_opcode, op)
+        if code == OP_CALL and fg_inlineable_call(g, op) == 1 {
+            let cal: i32 = iv_get(&g.op_callee, op)
+            let cbid: i32 = iv_get(&g.func_first_block, cal)
+            let local: ptr<i32> = calloc((g.num_values + 1) as i64, 4) as ptr<i32>
+            let mut param: i32 = 0
+            let mut cop: i32 = 0
+            while cop < fg_num_ops(g) {
+                if iv_get(&g.op_block, cop) == cbid {
+                    let ccode: i32 = iv_get(&g.op_opcode, cop)
+                    if ccode == OP_PARAM {
+                        let arg: i32 = fg_operand(g, op, param)
+                        local[fg_result(g, cop)] = vmap[arg] + 0
+                        param = param + 1
+                    } elif ccode == OP_LOAD and iv_get(&g.op_aux, cop) >= AUX_PARAM_BASE {
+                        let pi: i32 = iv_get(&g.op_aux, cop) - AUX_PARAM_BASE
+                        if pi < 0 or pi >= iv_get(&g.op_edge_count, op) {
+                            local[fg_result(g, cop)] = 0
+                        } else {
+                            local[fg_result(g, cop)] = vmap[fg_operand(g, op, pi)]
+                        }
+                    }
+                }
+                cop = cop + 1
+            }
+            let returned: ptr<i32> = calloc(1, 4) as ptr<i32>
+            cop = 0
+            while cop < fg_num_ops(g) {
+                if iv_get(&g.op_block, cop) == cbid {
+                    let ccode: i32 = iv_get(&g.op_opcode, cop)
+                    if ccode == OP_RET {
+                        returned[0] = local[fg_operand(g, cop, 0)]
+                    } elif ccode != OP_PARAM and not (ccode == OP_LOAD and iv_get(&g.op_aux, cop) >= AUX_PARAM_BASE) {
+                        let nres: i32 = fg_op_nresults(g, cop)
+                        let ne: i32 = iv_get(&g.op_edge_count, cop)
+                        let nop: i32 = fg_add_op(ng, ccode, iv_get(&g.op_function, op), iv_get(&g.op_block, op), iv_get(&g.op_operand_count, cop), nres, -1)
+                        fg_inline_copy_meta(g, cop, ng, nop)
+                        let mut e: i32 = 0
+                        while e < ne {
+                            let oldv: i32 = fg_operand(g, cop, e)
+                            let mapped: i32 = local[oldv] - 1
+                            if mapped < 0 {
+                                # The precondition above excludes malformed
+                                # bodies. Keep a harmless load if one appears.
+                                fg_add_operand(ng, nop, 0)
+                            } else {
+                                fg_add_operand(ng, nop, mapped)
+                            }
+                            e = e + 1
+                        }
+                        if nres > 0 {
+                            local[fg_result(g, cop)] = fg_result(ng, nop) + 1
+                        }
+                    }
+                }
+                cop = cop + 1
+            }
+            let retv: i32 = returned[0] - 1
+            if retv >= 0 {
+                vmap[fg_result(g, op)] = retv + 1
+                inlined = inlined + 1
+            }
+            free(returned as ptr<void>)
+            free(local as ptr<void>)
+        } else {
+            let nres: i32 = fg_op_nresults(g, op)
+            let ne: i32 = iv_get(&g.op_edge_count, op)
+            let nop: i32 = fg_add_op(ng, code, iv_get(&g.op_function, op), iv_get(&g.op_block, op), iv_get(&g.op_operand_count, op), nres, iv_get(&g.op_callee, op))
+            fg_inline_copy_meta(g, op, ng, nop)
+            let mut e: i32 = 0
+            while e < ne {
+                let mapped: i32 = vmap[fg_operand(g, op, e)] - 1
+                if mapped >= 0 {
+                    fg_add_operand(ng, nop, mapped)
+                } else {
+                    fg_add_operand(ng, nop, 0)
+                }
+                e = e + 1
+            }
+            if nres > 0 {
+                vmap[fg_result(g, op)] = fg_result(ng, nop) + 1
+            }
+        }
+        op = op + 1
+    }
+    fg_build_call_graph_csr(ng)
+    free(vmap as ptr<void>)
+    return FirInline { g: ng, inlined: inlined }
 }
 
 # Rebuild `g` keeping only the functions marked in `keep` (1/0 per function

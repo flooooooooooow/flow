@@ -1267,7 +1267,8 @@ struct Lower {
     fid: i32,
     i32_ty: i32,
     mo: ptr<Mono>,
-    map: ptr<TMap>
+    map: ptr<TMap>,
+    params: ptr<SMap>
 }
 
 # The type name the Python AST holds after monomorphization: substituted
@@ -1495,6 +1496,12 @@ function lower_expr(lw: ptr<Lower>, bid: i32, id: i32) -> i32 {
         if t_eq(name, "null") {
             let _t: i32 = fg_intern_type(lw.g, "ptr_void")
             return op_const(lw, bid, "null")
+        }
+        let pv: i32 = sm_get(lw.params, name)
+        if pv >= 0 {
+            let po: i32 = fg_add_op(lw.g, OP_LOAD, lw.fid, bid, 0, 1, -1)
+            fg_op_set_aux(lw.g, po, AUX_PARAM_BASE + pv)
+            return fg_result(lw.g, po)
         }
         return op1(lw, bid, OP_LOAD, 0, -1)
     }
@@ -1824,11 +1831,16 @@ export function graphify(ld: ptr<Loader>) -> ptr<FirG> {
             if d.spec >= 0 {
                 map = mono_req_map(ld.mono, d.spec)
             }
-            let mut lw: Lower = Lower { g: g, m: m, fid: fid, i32_ty: i32_ty, mo: ld.mono, map: map }
+            let mut param_map: SMap = sm_new()
+            let mut lw: Lower = Lower { g: g, m: m, fid: fid, i32_ty: i32_ty, mo: ld.mono, map: map, params: &param_map }
             let mut p: i32 = m.arena.nodes[d.node].a
+            let mut param_index: i32 = 0
             while p != AST_NONE {
                 let _t: i32 = fg_intern_type(g, lw_type_name(&lw, m.arena.nodes[p].a))
-                let _o: i32 = fg_add_op(g, OP_PARAM, fid, bid, 0, 1, -1)
+                let po: i32 = fg_add_op(g, OP_PARAM, fid, bid, 0, 1, -1)
+                let _pr: i32 = po
+                sm_put(&param_map, node_name(m, p), param_index)
+                param_index = param_index + 1
                 p = m.arena.nodes[p].next
             }
             lower_block(&lw, bid, body)
