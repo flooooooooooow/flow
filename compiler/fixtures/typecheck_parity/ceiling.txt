@@ -9,11 +9,12 @@
 #     generic struct literal inference: tests/lang/test_generic_struct_infer.flow,
 #       tests/cgen/generic_struct_infer.flow
 #     a module alias used as a value: tests/lang/test_import_alias.flow
+#     string module statics (#1103): tests/lang/test_module_string_static.flow
 #   agree-diff 1: compiler/fixtures/typecheck_rules/chained_assign_mismatch.flow,
 #     where Python typed the inner assignment unknown.
 #   flowc-only 1: the modules-namespacing.md block that defines `gain` twice.
 #     Python kept both as overloads and clang rejected the redefinition.
-Darwin py-only 6 0
+Darwin py-only 7 0
 Darwin agree-diff 1 0
 Darwin flowc-only 1 0
 #   warnings (#678): flowc prints the checker's warnings; none differ from
