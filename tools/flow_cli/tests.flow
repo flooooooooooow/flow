@@ -562,10 +562,7 @@ export function run_lang_tests(args: ptr<ProcStrs>) -> i32 {
         let exit_code: i32 = rr.exit_code
         let _w1: bool = write_text(stdout_file, rr.stdout)
         let _w2: bool = write_text(stderr_file, rr.stderr)
-        # Locals first: `rr.stdout + rr.stderr` compiles to pointer addition (#1087).
-        let so: string = rr.stdout
-        let se: string = rr.stderr
-        let run_output: string = s_chomp_all(so + se)
+        let run_output: string = s_chomp_all(rr.stdout + rr.stderr)
         let stem: string = s_slice(program, 0, s_len(program) - 5)
         let exitcode_file: string = stem + ".exitcode"
         let mut want_exit: string = "0"
@@ -780,14 +777,14 @@ export function run_matmul_tests(args: ptr<ProcStrs>) -> i32 {
     let program: string = root() + "/examples/bench/matmul_optimizations.flow"
     let mlir_program: string = root() + "/examples/bench/matmul_mlir.flow"
     let build_dir: string = build_root()
-    let c_file: string = build_dir + "/matmul_optimizations.asm_args.c"
+    let c_file: string = build_dir + "/matmul_optimizations.asm.c"
     let s_file: string = build_dir + "/matmul_optimizations.s"
     let mlir_file: string = build_dir + "/matmul_mlir.mlir"
     let mut print_asm: bool = true
     let mut print_mlir: bool = true
     let mut i: i32 = 0
     while i < sl_len(args) {
-        if s_eq(sl_get(args, i), "--no-asm_args") {
+        if s_eq(sl_get(args, i), "--no-asm") {
             print_asm = false
         } elif s_eq(sl_get(args, i), "--no-mlir") {
             print_mlir = false
@@ -810,10 +807,10 @@ export function run_matmul_tests(args: ptr<ProcStrs>) -> i32 {
         error("C generation failed")
         cli_exit(1)
     }
-    let asm_args: ptr<ProcStrs> = sl_of3("clang", "-O2", "-S")
-    sl_push(asm_args, c_file)
-    sl_push2(asm_args, "-o", s_file)
-    let ac: ptr<ProcCmd> = cmd(asm_args)
+    let asm: ptr<ProcStrs> = sl_of3("clang", "-O2", "-S")
+    sl_push(asm, c_file)
+    sl_push2(asm, "-o", s_file)
+    let ac: ptr<ProcCmd> = cmd(asm)
     cmd_quiet_err(ac)
     if run(ac) != 0 {
         error("Assembly generation failed")
