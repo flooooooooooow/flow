@@ -1,0 +1,24 @@
+# A stable span length is loaded once before the loop. In-loop `.len` reads
+# reuse that value while the span remains unbound.
+
+function sumspan(xs: &[i32]) -> i32 {
+    let mut total: i32 = 0
+    for i in 0 to xs.len {
+        total = total + xs[i] + xs.len - xs.len + len(xs) - len(xs)
+    }
+    return total
+}
+
+function rebound(xs: &[i32], ys: &[i32]) -> i32 {
+    let mut total: i32 = 0
+    for i in 0 to xs.len {
+        xs = ys
+        total = total + i
+    }
+    return total
+}
+
+function main() -> i32 {
+    let values: [i32; 3] = [4, 5, 6]
+    return sumspan(values) - 15
+}
