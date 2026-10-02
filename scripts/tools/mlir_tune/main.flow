@@ -1,4 +1,4 @@
-import .text { ft_outln, ft_errln, ft_len, ft_starts, ft_from, ft_byte }
+import .text { ft_outln, ft_errln, ft_len, ft_starts, ft_from, ft_byte, ft_eq }
 
 function ft_digit(v: i32) -> bool {
     return v >= 48 and v <= 57
@@ -40,8 +40,13 @@ function valid_tiles(s: string) -> bool {
     return false
 }
 
-function transform_of(op: string, tiles: string) -> string {
-    return "module attributes {transform.with_named_sequence} {\n" +
+function valid_target(s: string) -> bool {
+    return ft_eq(s, "cpu") or ft_eq(s, "gpu") or
+           ft_eq(s, "nvptx") or ft_eq(s, "amdgpu")
+}
+
+function transform_of(op: string, tiles: string, target: string) -> string {
+    return "module attributes {transform.with_named_sequence, flow.tune_target = \"" + target + "\", flow.tune_strategy = \"tile\"} {\n" +
            "  transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {\n" +
            "    %matmul = transform.structured.match ops{[\"" + op + "\"]} in %arg0 : (!transform.any_op) -> !transform.any_op\n" +
            "    %tiled_linalg_op, %loops:3 = transform.structured.tile_using_for %matmul tile_sizes [" + tiles + "] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op)\n" +
@@ -54,6 +59,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     let mut i: i32 = 1
     let mut tiles: string = "64, 64, 64"
     let mut op: string = "linalg.matmul"
+    let mut target: string = "cpu"
     
     while i < argc {
         let a: string = argv[i] as string
@@ -61,6 +67,8 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             tiles = ft_from(a, 8)
         } elif ft_starts(a, "--op=") {
             op = ft_from(a, 5)
+        } elif ft_starts(a, "--target=") {
+            target = ft_from(a, 9)
         }
         i = i + 1
     }
@@ -72,6 +80,10 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         ft_errln("mlir_tune: --tiles expects one to three positive integers")
         return 2
     }
-    ft_outln(transform_of(op, tiles))
+    if not valid_target(target) {
+        ft_errln("mlir_tune: --target must be one of 'cpu', 'gpu', 'nvptx', 'amdgpu'")
+        return 2
+    }
+    ft_outln(transform_of(op, tiles, target))
     return 0
 }
