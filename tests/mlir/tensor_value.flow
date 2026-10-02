@@ -1,0 +1,9 @@
+# Tensor values use a fresh tensor destination for elementwise operations.
+
+extern {
+    function tensor_add(a: tensor_f32, b: tensor_f32) -> tensor_f32
+}
+
+function add(a: tensor_f32, b: tensor_f32) -> tensor_f32 {
+    return tensor_add(a, b)
+}

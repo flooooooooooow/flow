@@ -4733,14 +4733,42 @@ function mlg_method_call_node0(m: ptr<Mlg>, e: i32) -> i32 {
     return t
 }
 
-# Python's tensor_add intrinsic: one linalg.generic adding the second
-# argument into the first, typed by the first.
+# Python's tensor_add intrinsic. Memref values keep the established in-place
+# destination form. Tensor values use a fresh tensor.empty destination so the
+# operation has value semantics and One-Shot Bufferization can choose the
+# storage reuse after alias analysis.
 function mlg_emit_tensor_add(m: ptr<Mlg>, e: i32) -> i32 {
     let a0: i32 = m[0].arena.nodes[e].a
     let a1: i32 = m[0].arena.nodes[a0].next
     let v0: i32 = mlg_emit_expr(m, a0)
     let v1: i32 = mlg_emit_expr(m, a1)
     let t0: i32 = mlg_val_mt(m, v0, a0)
+    let mut init: i32 = V_NONE
+    if mlg_is_tensor_type_mt(t0) == 1 {
+        let z: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, z)
+        mlg_s(m, " = arith.constant 0 : index")
+        mlg_nl(m)
+        let dim: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, dim)
+        mlg_s(m, " = tensor.dim ")
+        mlg_v(m, v0)
+        mlg_s(m, ", ")
+        mlg_v(m, z)
+        mlg_s(m, " : ")
+        mlg_put_type(m, t0)
+        mlg_nl(m)
+        init = mlg_new_val(m, t0)
+        mlg_line(m)
+        mlg_v(m, init)
+        mlg_s(m, " = tensor.empty(")
+        mlg_v(m, dim)
+        mlg_s(m, ") : ")
+        mlg_put_type(m, t0)
+        mlg_nl(m)
+    }
     let r: i32 = mlg_new_val(m, t0)
     mlg_line(m)
     mlg_v(m, r)
@@ -4758,7 +4786,11 @@ function mlg_emit_tensor_add(m: ptr<Mlg>, e: i32) -> i32 {
     mlg_s(m, " : ")
     mlg_put_type(m, t0)
     mlg_s(m, ") outs(")
-    mlg_v(m, v0)
+    if init != V_NONE {
+        mlg_v(m, init)
+    } else {
+        mlg_v(m, v0)
+    }
     mlg_s(m, " : ")
     mlg_put_type(m, t0)
     mlg_s(m, ") {")
