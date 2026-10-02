@@ -32,11 +32,26 @@ function check_padding_adds_storage() -> i32 {
     return T_PASS
 }
 
+function check_power_of_two_swizzle() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-swizzle")
+    sl_push(argv, "compiler/fixtures/mlir_opt/aosoa_padding.flow")
+    sl_push(argv, t_tmp() + "/aosoa-swizzled.mlir")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    cmd_env(c, "FLOWC_MLIR_AOSOA_SWIZZLE", "4")
+    if t_run(c) != 0 { return T_FAIL }
+    let output: string = read_text(t_tmp() + "/aosoa-swizzled.mlir")
+    if not a_contains(output, "memref<4xf32>") { return T_FAIL }
+    if not a_contains(output, "arith.xori") { return T_FAIL }
+    return T_PASS
+}
+
 function main() -> i32 {
     t_begin("mlir_aosoa")
     t_start()
     t_end("non_power_of_two_extent", check_non_power_of_two_extent())
     t_end("padding_adds_storage", check_padding_adds_storage())
+    t_start()
+    t_end("power_of_two_swizzle", check_power_of_two_swizzle())
     t_done()
     return 0
 }
