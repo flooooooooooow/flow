@@ -249,6 +249,7 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
     }
     if register_tiles {
         cmd_env(c, "FLOWC_MLIR_REGISTER_TILES", "1")
+    }
     if aosoa_pad {
         cmd_env(c, "FLOWC_MLIR_AOSOA_PAD", "1")
     }

@@ -1170,6 +1170,7 @@ export function generate_mlir(args: ptr<ProcStrs>) -> i32 {
     }
     if register_tiles {
         sl_push(emit_flags, "--register-tiles")
+    }
     if aosoa_pad {
         sl_push(emit_flags, "--aosoa-pad")
     }
