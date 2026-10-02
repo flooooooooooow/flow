@@ -37,11 +37,18 @@ function parse_csv3(s: string, out: ptr<i32>) -> i32 {
     return 3
 }
 
-function emit_view(out: string, arena: i32, index: i32, offset: i32, size: i32) -> string {
+function emit_view(out: string, arena: i32, index: i32, offset: i32, size: i32, space: string) -> string {
+    let mut arena_type: string = "memref<" + ft_itoa(arena) + "xi8>"
+    let mut view_type: string = "memref<" + ft_itoa(size) +
+        "xi8, strided<[1], offset: " + ft_itoa(offset) + ">>"
+    if ft_eq(space, "shared") {
+        arena_type = "memref<" + ft_itoa(arena) + "xi8, 3>"
+        view_type = "memref<" + ft_itoa(size) +
+            "xi8, strided<[1], offset: " + ft_itoa(offset) + ">, 3>"
+    }
     return out + "    %buf" + ft_itoa(index) + " = memref.subview %arena[" +
-        ft_itoa(offset) + "][" + ft_itoa(size) + "][1] : memref<" +
-        ft_itoa(arena) + "xi8> to memref<" + ft_itoa(size) +
-        "xi8, strided<[1], offset: " + ft_itoa(offset) + ">>\n"
+        ft_itoa(offset) + "][" + ft_itoa(size) + "][1] : " + arena_type +
+        " to " + view_type + "\n"
 }
 
 function emit_module(items: array<StaticBuffer, 64>, plan: StaticMemoryPlan, target: string, space: string) -> string {
@@ -49,11 +56,14 @@ function emit_module(items: array<StaticBuffer, 64>, plan: StaticMemoryPlan, tar
         ft_itoa(plan.arena_size) + ", flow.static_buffer_count = " +
         ft_itoa(plan.count) + ", flow.static_memory_target = \"" + target +
         "\", flow.static_memory_space = \"" + space + "\"} {\n  func.func @flow_static_buffers() {\n"
-    out = out + "    %arena = memref.alloca() : memref<" +
-        ft_itoa(plan.arena_size) + "xi8>\n"
+    let mut arena_type: string = "memref<" + ft_itoa(plan.arena_size) + "xi8>"
+    if ft_eq(space, "shared") {
+        arena_type = "memref<" + ft_itoa(plan.arena_size) + "xi8, 3>"
+    }
+    out = out + "    %arena = memref.alloca() : " + arena_type + "\n"
     let mut i: i32 = 0
     while i < plan.count {
-        out = emit_view(out, plan.arena_size, i, plan.offsets[i], items[i].size)
+        out = emit_view(out, plan.arena_size, i, plan.offsets[i], items[i].size, space)
         i = i + 1
     }
     out = out + "    return\n  }\n}\n"
