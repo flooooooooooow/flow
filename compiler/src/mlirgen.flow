@@ -18325,7 +18325,27 @@ function mao_chain(m: ptr<Mlg>, head: i32, st: i32, vars: ptr<i32>, nv: i32) -> 
 }
 
 # The SoA struct for size n (made once), whose name is set in *ns/*ne.
-function mao_soa(m: ptr<Mlg>, st: i32, n: i32, made: ptr<i32>, nmade: ptr<i32>) -> i32 {
+# FLOWC_MLIR_AOSOA_PAD=N gives each generated field array N extra storage
+# elements.  Source-level indexing keeps the logical extent n.
+function mlg_aosoa_pad() -> i32 {
+    let v: string = getenv("FLOWC_MLIR_AOSOA_PAD")
+    let p: ptr<u8> = v
+    if p == null {
+        return 0
+    }
+    let mut i: i32 = 0
+    let mut n: i32 = 0
+    while p[i] >= 48 and p[i] <= 57 {
+        n = n * 10 + (p[i] as i32) - 48
+        i = i + 1
+    }
+    if n < 1 or n > 64 {
+        return 0
+    }
+    return n
+}
+
+function mao_soa(m: ptr<Mlg>, st: i32, n: i32, pad: i32, made: ptr<i32>, nmade: ptr<i32>) -> i32 {
     let mut i: i32 = 0
     while i < nmade[0] {
         let s: i32 = made[i]
@@ -18352,7 +18372,7 @@ function mao_soa(m: ptr<Mlg>, st: i32, n: i32, made: ptr<i32>, nmade: ptr<i32>) 
         m[0].arena.nodes[at].name_start = arr_s
         m[0].arena.nodes[at].name_end = arr_s + 5
         m[0].arena.nodes[at].a = m[0].arena.nodes[f].a
-        m[0].arena.nodes[at].ival = n
+        m[0].arena.nodes[at].ival = n + pad
         let fd: i32 = mn_copy(m, f)
         m[0].arena.nodes[fd].a = at
         if fh == AST_NONE {
@@ -18371,7 +18391,7 @@ function mao_soa(m: ptr<Mlg>, st: i32, n: i32, made: ptr<i32>, nmade: ptr<i32>) 
     return sd
 }
 
-function mao_block(m: ptr<Mlg>, blk: i32, st: i32, vars: ptr<i32>, nv: ptr<i32>, made: ptr<i32>, nmade: ptr<i32>) {
+function mao_block(m: ptr<Mlg>, blk: i32, st: i32, pad: i32, vars: ptr<i32>, nv: ptr<i32>, made: ptr<i32>, nmade: ptr<i32>) {
     if blk == AST_NONE or blk < 0 or mlg_kind(m, blk) != AST_BLOCK {
         return
     }
@@ -18380,7 +18400,7 @@ function mao_block(m: ptr<Mlg>, blk: i32, st: i32, vars: ptr<i32>, nv: ptr<i32>,
         let k: i32 = mlg_kind(m, s)
         if k == AST_LET and mao_is_target(m, m[0].arena.nodes[s].a) == 1 {
             let n: i32 = m[0].arena.nodes[m[0].arena.nodes[s].a].ival
-            let sd: i32 = mao_soa(m, st, n, made, nmade)
+            let sd: i32 = mao_soa(m, st, n, pad, made, nmade)
             let ty: i32 = mn_flat(m, mlg_ns(m, sd), mlg_ne(m, sd))
             m[0].arena.nodes[s].a = ty
             if nv[0] < 64 {
@@ -18391,21 +18411,21 @@ function mao_block(m: ptr<Mlg>, blk: i32, st: i32, vars: ptr<i32>, nv: ptr<i32>,
             if k == AST_IF or k == AST_WHILE or k == AST_FOR or k == AST_BLOCK or k == AST_HANDLE or k == AST_MATCH {
                 if k == AST_IF or k == AST_WHILE {
                     m[0].arena.nodes[s].a = mao_expr(m, m[0].arena.nodes[s].a, st, vars, nv[0])
-                    mao_block(m, m[0].arena.nodes[s].b, st, vars, nv, made, nmade)
+                    mao_block(m, m[0].arena.nodes[s].b, st, pad, vars, nv, made, nmade)
                     if k == AST_IF {
-                        mao_block(m, m[0].arena.nodes[s].c, st, vars, nv, made, nmade)
+                        mao_block(m, m[0].arena.nodes[s].c, st, pad, vars, nv, made, nmade)
                     }
                 }
                 if k == AST_FOR {
                     m[0].arena.nodes[s].a = mao_expr(m, m[0].arena.nodes[s].a, st, vars, nv[0])
                     m[0].arena.nodes[s].b = mao_expr(m, m[0].arena.nodes[s].b, st, vars, nv[0])
-                    mao_block(m, m[0].arena.nodes[s].c, st, vars, nv, made, nmade)
+                    mao_block(m, m[0].arena.nodes[s].c, st, pad, vars, nv, made, nmade)
                 }
                 if k == AST_BLOCK {
-                    mao_block(m, s, st, vars, nv, made, nmade)
+                    mao_block(m, s, st, pad, vars, nv, made, nmade)
                 }
                 if k == AST_HANDLE {
-                    mao_block(m, m[0].arena.nodes[s].a, st, vars, nv, made, nmade)
+                    mao_block(m, m[0].arena.nodes[s].a, st, pad, vars, nv, made, nmade)
                 }
                 if k == AST_MATCH {
                     m[0].arena.nodes[s].a = mao_expr(m, m[0].arena.nodes[s].a, st, vars, nv[0])
@@ -18442,11 +18462,12 @@ function mlg_aosoa(m: ptr<Mlg>, root: i32) {
     let nv: array<i32, 1> = [0]
     let made: ptr<i32> = mlg_alloc_i32(64)
     let nmade: array<i32, 1> = [0]
+    let pad: i32 = mlg_aosoa_pad()
     item = m[0].arena.nodes[root].a
     while item != AST_NONE {
         let d2: i32 = mlg_unwrap(m, item)
         if mlg_kind(m, d2) == AST_FN {
-            mao_block(m, m[0].arena.nodes[d2].c, st, vars, &nv[0] as ptr<i32>, made, &nmade[0] as ptr<i32>)
+            mao_block(m, m[0].arena.nodes[d2].c, st, pad, vars, &nv[0] as ptr<i32>, made, &nmade[0] as ptr<i32>)
         }
         item = m[0].arena.nodes[item].next
     }
