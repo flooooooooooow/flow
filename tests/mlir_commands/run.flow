@@ -182,7 +182,7 @@ function run_case(root: string, name: string, kind: string, raw_args: ptr<ProcSt
         sl_push(args, a)
     }
     let g: string = WORK + "/got/" + name
-    if s_eq(kind, "mlir") or s_eq(kind, "raw") or s_eq(kind, "spirv") {
+    if s_eq(kind, "mlir") or s_eq(kind, "affine") or s_eq(kind, "raw") or s_eq(kind, "spirv") {
         let prog: string = sl_get(args, 0)
         let base: string = path_stem(prog, ".flow")
         let v: ptr<ProcStrs> = sl_of2("./flow", "mlir")
@@ -190,10 +190,13 @@ function run_case(root: string, name: string, kind: string, raw_args: ptr<ProcSt
         let c: ptr<ProcCmd> = cmd(v)
         tr_cmd_cd(c, root)
         cmd_env(c, "FLOW_BUILD_ROOT", d + "/build")
+        if s_eq(kind, "affine") {
+            cmd_env(c, "FLOWC_MLIR_AFFINE", "1")
+        }
         let rc: i32 = run_to_file(c, d + "/log", true)
         let _r: bool = write_text(g + ".rc", s_itoa(rc) + "\n")
         let mlir: string = d + "/build/" + base + ".mlir"
-        if s_eq(kind, "mlir") {
+        if s_eq(kind, "mlir") or s_eq(kind, "affine") {
             if is_file(mlir) {
                 let _w: bool = write_text(g + ".mlir", gl_mlir_normalize(read_text(mlir)))
             }
