@@ -1569,6 +1569,9 @@ int32_t flowc_text_equal(uint8_t* src, int32_t a_start, int32_t a_end, int32_t b
 int32_t flowc_clone_substitute(AstArena* arena, int32_t id, uint8_t* src, int32_t param, int32_t replacement);
 int32_t flowc_simple_lambda_body(AstArena* arena, int32_t id);
 int32_t flowc_fuse_map(AstArena* arena, uint8_t* src, int32_t outer, int32_t inner);
+int32_t flowc_map_family(int32_t family);
+int32_t flowc_new_binop(AstArena* arena, int32_t left, int32_t right, int32_t tok);
+int32_t flowc_fuse_affine_map(AstArena* arena, uint8_t* src, int32_t outer, int32_t inner, int32_t outer_family, int32_t inner_family);
 void flowc_fuse_pipelines(AstArena* arena, uint8_t* src);
 int32_t flowc_name_is(uint8_t* src, int32_t start, int32_t end, const char* name) {
   int32_t want = (int32_t)(strlen(name));
@@ -1740,6 +1743,121 @@ int32_t flowc_fuse_map(AstArena* arena, uint8_t* src, int32_t outer, int32_t inn
   return lam;
 }
 
+int32_t flowc_map_family(int32_t family) {
+  if (family == 1 || family == 3 || family == 5) {
+  return 5;
+}
+  if (family == 2 || family == 4 || family == 6) {
+  return 6;
+}
+  return 0;
+}
+
+int32_t flowc_new_binop(AstArena* arena, int32_t left, int32_t right, int32_t tok) {
+  int32_t out = flowc_ast_alloc(arena, AST_BINOP, 0, 0);
+  if (out != AST_NONE) {
+  ((arena[0]).nodes[out]).a = left;
+  ((arena[0]).nodes[out]).b = right;
+  ((arena[0]).nodes[out]).ival = tok;
+}
+  return out;
+}
+
+int32_t flowc_fuse_affine_map(AstArena* arena, uint8_t* src, int32_t outer, int32_t inner, int32_t outer_family, int32_t inner_family) {
+  if (flowc_map_family(outer_family) != flowc_map_family(inner_family)) {
+  return 0;
+}
+  int32_t map_call = ((outer_family == 5 || outer_family == 6) ? (outer) : (inner));
+  int32_t affine_call = ((outer_family == 5 || outer_family == 6) ? (inner) : (outer));
+  int32_t map_args = ((arena[0]).nodes[map_call]).a;
+  int32_t affine_args = ((arena[0]).nodes[affine_call]).a;
+  if (map_args == AST_NONE || affine_args == AST_NONE) {
+  return 0;
+}
+  int32_t map_n = ((arena[0]).nodes[map_args]).next;
+  int32_t map_lam = ((map_n == AST_NONE) ? (AST_NONE) : (((arena[0]).nodes[map_n]).next));
+  int32_t affine_n = ((arena[0]).nodes[affine_args]).next;
+  int32_t affine_value = ((affine_n == AST_NONE) ? (AST_NONE) : (((arena[0]).nodes[affine_n]).next));
+  if (map_n == AST_NONE || map_lam == AST_NONE || affine_n == AST_NONE || affine_value == AST_NONE) {
+  return 0;
+}
+  if (((arena[0]).nodes[map_lam]).next != AST_NONE) {
+  return 0;
+}
+  int32_t map_body = flowc_simple_lambda_body(arena, map_lam);
+  if (map_body == AST_NONE) {
+  return 0;
+}
+  int32_t map_param = ((arena[0]).nodes[map_lam]).a;
+  int32_t p = flowc_ast_alloc(arena, AST_PARAM, ((arena[0]).nodes[map_param]).start, ((arena[0]).nodes[map_param]).end);
+  if (p == AST_NONE) {
+  return 0;
+}
+  ((arena[0]).nodes[p]).name_start = ((arena[0]).nodes[map_param]).name_start;
+  ((arena[0]).nodes[p]).name_end = ((arena[0]).nodes[map_param]).name_end;
+  ((arena[0]).nodes[p]).a = ((arena[0]).nodes[map_param]).a;
+  ((arena[0]).nodes[p]).b = ((arena[0]).nodes[map_param]).b;
+  int32_t x = flowc_ast_alloc(arena, AST_IDENT, ((arena[0]).nodes[p]).start, ((arena[0]).nodes[p]).end);
+  if (x == AST_NONE) {
+  return 0;
+}
+  ((arena[0]).nodes[x]).name_start = ((arena[0]).nodes[p]).name_start;
+  ((arena[0]).nodes[x]).name_end = ((arena[0]).nodes[p]).name_end;
+  int32_t affine_arg = flowc_clone_substitute(arena, affine_value, src, AST_NONE, AST_NONE);
+  if (affine_arg == AST_NONE) {
+  return 0;
+}
+  int32_t map_input = AST_NONE;
+  if (outer_family == 5 || outer_family == 6) {
+  int32_t op = 24;
+  if (inner_family == 1 || inner_family == 2) {
+  op = 26;
+}
+  map_input = flowc_new_binop(arena, x, affine_arg, op);
+} else {
+  map_input = flowc_clone_substitute(arena, map_body, src, map_param, x);
+}
+  if (map_input == AST_NONE) {
+  return 0;
+}
+  int32_t body = AST_NONE;
+  if (outer_family == 5 || outer_family == 6) {
+  body = flowc_clone_substitute(arena, map_body, src, map_param, map_input);
+} else {
+  int32_t op = 24;
+  if (outer_family == 1 || outer_family == 2) {
+  op = 26;
+}
+  body = flowc_new_binop(arena, map_input, affine_arg, op);
+}
+  if (body == AST_NONE) {
+  return 0;
+}
+  int32_t ret = flowc_ast_alloc(arena, AST_RETURN, ((arena[0]).nodes[map_lam]).start, ((arena[0]).nodes[map_lam]).end);
+  int32_t block = flowc_ast_alloc(arena, AST_BLOCK, ((arena[0]).nodes[map_lam]).start, ((arena[0]).nodes[map_lam]).end);
+  int32_t lam = flowc_ast_alloc(arena, AST_FN, ((arena[0]).nodes[map_lam]).start, ((arena[0]).nodes[map_lam]).end);
+  if (ret == AST_NONE || block == AST_NONE || lam == AST_NONE) {
+  return 0;
+}
+  ((arena[0]).nodes[ret]).a = body;
+  ((arena[0]).nodes[block]).a = ret;
+  ((arena[0]).nodes[lam]).a = p;
+  ((arena[0]).nodes[lam]).b = ((arena[0]).nodes[map_lam]).b;
+  ((arena[0]).nodes[lam]).c = block;
+  ((arena[0]).nodes[lam]).name_start = (0 - (arena[0]).len);
+  ((arena[0]).nodes[lam]).name_end = ((arena[0]).nodes[lam]).name_start;
+  int32_t base = ((outer_family == 5 || outer_family == 6) ? (affine_args) : (map_args));
+  int32_t target_n = ((outer_family == 5 || outer_family == 6) ? (affine_n) : (map_n));
+  ((arena[0]).nodes[outer]).a = base;
+  ((arena[0]).nodes[target_n]).next = lam;
+  ((arena[0]).nodes[lam]).next = AST_NONE;
+  if (outer_family != 5 && outer_family != 6) {
+  ((arena[0]).nodes[outer]).name_start = ((arena[0]).nodes[map_call]).name_start;
+  ((arena[0]).nodes[outer]).name_end = ((arena[0]).nodes[map_call]).name_end;
+}
+  return 1;
+}
+
 void flowc_fuse_pipelines(AstArena* arena, uint8_t* src) {
   int32_t changed = 1;
   while (changed == 1) {
@@ -1751,7 +1869,12 @@ void flowc_fuse_pipelines(AstArena* arena, uint8_t* src) {
   int32_t family = flowc_stage_family(src, node);
   if (family != 0) {
   int32_t inner = (node).a;
-  if (inner != AST_NONE && ((arena[0]).nodes[inner]).kind == AST_CALL && flowc_stage_family(src, (arena[0]).nodes[inner]) == family) {
+  int32_t inner_family = ((inner == AST_NONE) ? (0) : (flowc_stage_family(src, (arena[0]).nodes[inner])));
+  bool compatible = inner_family == family;
+  if ((!compatible) && flowc_map_family(family) != 0 && flowc_map_family(family) == flowc_map_family(inner_family)) {
+  compatible = 1;
+}
+  if (inner != AST_NONE && ((arena[0]).nodes[inner]).kind == AST_CALL && compatible) {
   int32_t inner_a = ((arena[0]).nodes[inner]).a;
   int32_t inner_n = ((inner_a == AST_NONE) ? (AST_NONE) : (((arena[0]).nodes[inner_a]).next));
   int32_t outer_n = ((arena[0]).nodes[inner]).next;
@@ -1759,6 +1882,13 @@ void flowc_fuse_pipelines(AstArena* arena, uint8_t* src) {
   int32_t inner_value = ((arena[0]).nodes[inner_n]).next;
   int32_t outer_value = ((arena[0]).nodes[outer_n]).next;
   if (inner_value != AST_NONE && outer_value != AST_NONE) {
+  if (family != inner_family) {
+  if (flowc_fuse_affine_map(arena, src, id, inner, family, inner_family) == 1) {
+  changed = 1;
+}
+  id = (id + 1);
+  continue;
+}
   if (family >= 5) {
   int32_t map_lam = flowc_fuse_map(arena, src, id, inner);
   if (map_lam != AST_NONE) {
@@ -1775,7 +1905,7 @@ void flowc_fuse_pipelines(AstArena* arena, uint8_t* src) {
   if (binop_id != AST_NONE) {
   ((arena[0]).nodes[binop_id]).a = inner_value;
   ((arena[0]).nodes[binop_id]).b = outer_value;
-  { __typeof__(((arena[0]).nodes[binop_id]).ival) __flowc_st1351 = ((family <= 2) ? (26) : (24)); ((arena[0]).nodes[binop_id]).ival = __flowc_st1351; }
+  { __typeof__(((arena[0]).nodes[binop_id]).ival) __flowc_st2174 = ((family <= 2) ? (26) : (24)); ((arena[0]).nodes[binop_id]).ival = __flowc_st2174; }
   ((arena[0]).nodes[id]).a = inner_a;
   ((arena[0]).nodes[inner_a]).next = inner_n;
   ((arena[0]).nodes[inner_n]).next = binop_id;
