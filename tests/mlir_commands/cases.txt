@@ -27,8 +27,8 @@ mlir_print_logic mlir compiler/fixtures/mlir/print_logic.flow --lenient
 mlir_record_update mlir compiler/fixtures/mlir/record_update.flow --lenient
 mlir_spans_data mlir compiler/fixtures/mlir/spans_data.flow --lenient
 mlir_structs mlir compiler/fixtures/mlir/structs.flow --lenient
-mlir_aosoa_padding aosoa-pad tests/mlir_opt/aosoa_padding.flow --lenient --aosoa-pad
-mlir_aosoa_swizzle aosoa-swizzle tests/mlir_opt/aosoa_padding.flow --lenient --aosoa-swizzle
+mlir_aosoa_padding aosoa-pad compiler/fixtures/mlir_opt/aosoa_padding.flow --lenient --aosoa-pad
+mlir_aosoa_swizzle aosoa-swizzle compiler/fixtures/mlir_opt/aosoa_padding.flow --lenient --aosoa-swizzle
 mlir_basic_arith mlir tests/mlir/basic_arith.flow --lenient
 mlir_affine_loop affine tests/mlir/affine_loop.flow --lenient
 mlir_tiled_loop tile tests/mlir/affine_loop.flow --lenient
