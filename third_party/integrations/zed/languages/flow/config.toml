@@ -1,0 +1,6 @@
+name = "Flow"
+grammar = "flow"
+path_suffixes = ["flow"]
+line_comments = ["# "]
+tab_size = 4
+hard_tabs = false
