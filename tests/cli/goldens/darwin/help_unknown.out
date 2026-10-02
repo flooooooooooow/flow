@@ -99,8 +99,8 @@ Project / packages:
   help              Show this help
 
 Environment:
-  FLOW_STRICT_EFFECTS=1  Abort on unhandled effect ops (C backend)
-                         Also enables compile-time effect-row checks with --strict-effects
+  FLOWC_PERMISSIVE_EFFECTS=1  Compile with legacy zero defaults
+  FLOW_PERMISSIVE_EFFECTS=1   Run with legacy zero/no-op defaults
   FLOW_CPU_BACKEND=c|mlir  Select CPU codegen (default c; same as --backend)
   FLOWC_BIN=<path>       flowc binary for the C path (default: built from compiler/bootstrap)
 

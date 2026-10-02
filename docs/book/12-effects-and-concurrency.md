@@ -55,7 +55,7 @@ function process(name: string) -> void with BookLog {
 With strict effects enabled, callers must either install the effect or include it in their own row.
 
 ```bash
-FLOW_STRICT_EFFECTS=1 ./flow run examples/effects/effect_rows.flow
+./flow run examples/effects/effect_rows.flow
 ```
 
 ## 12.3 Swappable policy

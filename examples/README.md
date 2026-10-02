@@ -346,7 +346,7 @@ Beat-Go track, see `docs/language/concurrency-vs-go.md`:
 ### Effects (`effects/`)
 Flow's unique algebraic effects (not available in Mojo/Julia):
 - `showcase.flow` - One business function, four handler stacks (production/test/nested/composed)
-- `effect_rows.flow` - Signature effect rows (`with E`) under `--strict-effects`
+- `effect_rows.flow` - Signature effect rows (`with E`) under Stable checking
 - `dependency_injection.flow` - DI without frameworks
 - `state_effects.flow` - Swappable policy effects with explicitly-threaded state
 - `async_primitives.flow` - stdlib `Async`/`AsyncIO` via `handle`/`with`
@@ -451,4 +451,3 @@ A few examples known to compile *and run* successfully:
 2. Include a `main() -> i32` function
 3. Test with `./flow run path/to/example.flow`
 4. Update this README (and the canonical entrypoints table when adding a domain)
-

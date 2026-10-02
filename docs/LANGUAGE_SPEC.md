@@ -912,13 +912,12 @@ function_decl := 'function' IDENTIFIER '(' parameters? ')' '->' type
                  ('with' IDENTIFIER (',' IDENTIFIER)*)? block
 ```
 
-**Status:** ✅ Implemented (enforced under `--strict-effects` or
-`FLOW_STRICT_EFFECTS=1`)
+**Status:** ✅ Implemented in Stable mode. Use `FLOWC_PERMISSIVE_EFFECTS=1`
+for the legacy permissive compiler path.
 
 A `with E1, E2` clause declares effects the function may perform. The body may
 use those effects without a local `handle`. Callers must cover the row via an
-enclosing `handle` or their own `with` clause. Soft zero defaults remain when
-`--strict-effects` is omitted. First-class types carry the same clause:
+enclosing `handle` or their own `with` clause. First-class types carry the same clause:
 `(string) -> void with Log`. See `examples/effects/effect_rows.flow` and
 [effects-showcase.md](effects-showcase.md).
 

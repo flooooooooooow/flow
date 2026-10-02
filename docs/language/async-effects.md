@@ -73,8 +73,9 @@ Business logic depends only on the effect. Swap `SimulatedAsync`,
 - **`NetpollAsyncIO`** uses real kqueue/epoll. On a fiber, `poll_read` /
   `poll_write` **park the fiber** (`flow_netpoll_fiber_*`); off-fiber they
   block the OS thread. `sleep_ms` still uses the blocking timer path.
-- **Unhandled ops** still default to zero / no-op unless `--strict-effects` /
-  `FLOW_STRICT_EFFECTS=1` is set. The three ways to treat an unhandled effect are
+- **Unhandled ops** fail loudly in Stable mode. Set `FLOWC_PERMISSIVE_EFFECTS=1`
+  while compiling and `FLOW_PERMISSIVE_EFFECTS=1` while running to use the
+  legacy zero / no-op behavior. The three ways to treat an unhandled effect are
   recipes 13-15 of the
   [Effects Showcase](../effects-showcase.md#13-turn-unhandled-effects-into-compile-time-errors).
 
@@ -95,8 +96,8 @@ Business logic depends only on the effect. Swap `SimulatedAsync`,
 | `async` / `await` syntax sugar | Only after the runtime model is solid; do **not** add keywords first |
 | Stateful handlers (`capability` with mutable task tables) | Capabilities are currently stateless; use struct+`impl` workarounds elsewhere |
 
-Effect-row typing (`function f() -> T with E1, E2`) and `--strict-effects` already
-ship. See [LANGUAGE_SPEC §6.3.1](../LANGUAGE_SPEC.md#631-signature-effect-rows)
+Effect-row typing (`function f() -> T with E1, E2`) ships in Stable mode. See
+[LANGUAGE_SPEC §6.3.1](../LANGUAGE_SPEC.md#631-signature-effect-rows)
 and recipes 10-12 of the
 [Effects Showcase](../effects-showcase.md#10-declare-an-effect-row-on-a-function).
 
