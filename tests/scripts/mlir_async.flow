@@ -36,6 +36,7 @@ function check_target_engines() -> i32 {
     let gpu: string = read_text(t_out())
     if not a_contains(gpu, "flow.async_copy_engine = \"gpu.async\"") { return T_FAIL }
     if a_contains(gpu, "nvgpu.device_async_copy") { return T_FAIL }
+    if not a_contains(gpu, "memref.copy %src0, %dst0") { return T_FAIL }
 
     let argv2: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_async/main.flow")
     sl_push(argv2, "--target=amdgpu")
@@ -43,6 +44,7 @@ function check_target_engines() -> i32 {
     let amd: string = read_text(t_out())
     if not a_contains(amd, "flow.async_copy_engine = \"amdgpu.async\"") { return T_FAIL }
     if a_contains(amd, "nvgpu.device_async_copy") { return T_FAIL }
+    if not a_contains(amd, "memref.copy %src0, %dst0") { return T_FAIL }
     return T_PASS
 }
 
