@@ -1,7 +1,4 @@
 module {
-func.func private @tensor_sub(tensor<?xf32>, tensor<?xf32>) -> tensor<?xf32>
-func.func private @tensor_mul(tensor<?xf32>, tensor<?xf32>) -> tensor<?xf32>
-func.func private @tensor_div(tensor<?xf32>, tensor<?xf32>) -> tensor<?xf32>
 func.func @ops(%arg0: tensor<?xf32>, %arg1: tensor<?xf32>) -> tensor<?xf32> {
 %v1 = arith.constant 0 : index
 %v2 = tensor.dim %arg0, %v1 : tensor<?xf32>

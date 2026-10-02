@@ -13722,8 +13722,8 @@ function mlg_emit_extern_fn(m: ptr<Mlg>, f0: i32) {
         m[0].needs_printf = 1
         return
     }
-    if mlg_span_is(m, ns, ne, "tensor_add") == 1 {
-        # Python never declares its tensor_add intrinsic.
+    if mlg_span_is(m, ns, ne, "tensor_add") == 1 or mlg_span_is(m, ns, ne, "tensor_sub") == 1 or mlg_span_is(m, ns, ne, "tensor_mul") == 1 or mlg_span_is(m, ns, ne, "tensor_div") == 1 {
+        # Python never declares its tensor elementwise intrinsics.
         return
     }
     let k: i32 = mlg_find_fn(m, ns, ne)
