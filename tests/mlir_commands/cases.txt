@@ -28,6 +28,7 @@ mlir_record_update mlir compiler/fixtures/mlir/record_update.flow --lenient
 mlir_spans_data mlir compiler/fixtures/mlir/spans_data.flow --lenient
 mlir_structs mlir compiler/fixtures/mlir/structs.flow --lenient
 mlir_aosoa_padding aosoa-pad compiler/fixtures/mlir/aosoa_padding.flow --lenient
+mlir_aosoa_swizzle aosoa-swizzle compiler/fixtures/mlir/aosoa_padding.flow --lenient
 mlir_basic_arith mlir tests/mlir/basic_arith.flow --lenient
 mlir_tensor_value mlir compiler/fixtures/mlir_opt/tensor_value.flow --lenient
 mlir_matmul mlir examples/bench/matmul_mlir.flow --lenient
