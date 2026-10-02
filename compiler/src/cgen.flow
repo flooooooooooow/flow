@@ -143,13 +143,19 @@ export struct CgenBuf {
     bounds_loop_end: i32,
     bounds_span_start: i32,
     bounds_span_end: i32,
+    # Loop-invariant span `.len` hoisting for the active range loop. The
+    # source span identifies the local whose length was loaded into the
+    # loop-specific `__flowc_len_<id>` temporary.
+    len_hoist_span_start: i32,
+    len_hoist_span_end: i32,
+    len_hoist_id: i32,
     # The AST_PROGRAM of the module being emitted, so a name can resolve to a
     # module static (a top-level `let`). AST_NONE in scratch buffers.
     root: i32
 }
 
 function flowc_cgen_buf_init(out: ptr<u8>, cap: i32) -> CgenBuf {
-    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null as string, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0, handle_ids: null, handle_len: 0, bounds_loop_start: -1, bounds_loop_end: -1, bounds_span_start: -1, bounds_span_end: -1, root: AST_NONE }
+    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null as string, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0, handle_ids: null, handle_len: 0, bounds_loop_start: -1, bounds_loop_end: -1, bounds_span_start: -1, bounds_span_end: -1, len_hoist_span_start: -1, len_hoist_span_end: -1, len_hoist_id: AST_NONE, root: AST_NONE }
 }
 
 function flowc_cgen_putc(w: ptr<CgenBuf>, c: i32) {
@@ -5777,6 +5783,66 @@ function flowc_cgen_bounds_span_base(w: ptr<CgenBuf>, arena: AstArena, src: ptr<
     return base
 }
 
+# Conservative invalidation for span-length hoisting. A span value can change
+# when its name is assigned, shadowed, or addressed. Element writes and value
+# arguments leave the two-word span value unchanged, so they remain eligible.
+function flowc_cgen_name_rebound_in_node(arena: AstArena, src: ptr<u8>, id: i32, ns: i32, ne: i32) -> i32 {
+    if id == AST_NONE {
+        return 0
+    }
+    let k: i32 = arena.nodes[id].kind
+    if k == AST_LET or k == AST_PARAM or k == AST_FOR {
+        if flowc_cgen_span_eq(src, arena.nodes[id].name_start, arena.nodes[id].name_end, ns, ne) == 1 {
+            return 1
+        }
+    }
+    if k == AST_ASSIGN {
+        let lhs: i32 = arena.nodes[id].a
+        if lhs != AST_NONE and arena.nodes[lhs].kind == AST_IDENT and flowc_cgen_span_eq(src, arena.nodes[lhs].name_start, arena.nodes[lhs].name_end, ns, ne) == 1 {
+            return 1
+        }
+    }
+    if k == AST_UNARY and arena.nodes[id].ival == TOK_AMP {
+        let operand: i32 = arena.nodes[id].a
+        if operand != AST_NONE and arena.nodes[operand].kind == AST_IDENT and flowc_cgen_span_eq(src, arena.nodes[operand].name_start, arena.nodes[operand].name_end, ns, ne) == 1 {
+            return 1
+        }
+    }
+    if flowc_cgen_name_rebound_in_node(arena, src, arena.nodes[id].a, ns, ne) == 1 {
+        return 1
+    }
+    if flowc_cgen_name_rebound_in_node(arena, src, arena.nodes[id].b, ns, ne) == 1 {
+        return 1
+    }
+    if flowc_cgen_name_rebound_in_node(arena, src, arena.nodes[id].c, ns, ne) == 1 {
+        return 1
+    }
+    return flowc_cgen_name_rebound_in_node(arena, src, arena.nodes[id].next, ns, ne)
+}
+
+# The local span whose `.len` can be loaded once for this range loop, or
+# AST_NONE when the bound is not a stable direct span field.
+function flowc_cgen_len_hoist_base(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    let hi: i32 = arena.nodes[id].b
+    if hi == AST_NONE or arena.nodes[hi].kind != AST_FIELD_ACCESS {
+        return AST_NONE
+    }
+    if flowc_cgen_span_is(src, arena.nodes[hi].name_start, arena.nodes[hi].name_end, "len") == 0 {
+        return AST_NONE
+    }
+    let base: i32 = arena.nodes[hi].a
+    if base == AST_NONE or arena.nodes[base].kind != AST_IDENT {
+        return AST_NONE
+    }
+    if flowc_cgen_checked_is_span(w, arena, src, base) == 0 {
+        return AST_NONE
+    }
+    if flowc_cgen_name_rebound_in_node(arena, src, arena.nodes[id].c, arena.nodes[base].name_start, arena.nodes[base].name_end) == 1 {
+        return AST_NONE
+    }
+    return base
+}
+
 function flowc_cgen_is_proven_span_index(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     if w[0].bounds_loop_start < 0 or w[0].bounds_span_start < 0 {
         return 0
@@ -6757,7 +6823,14 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             flowc_cgen_putc(w, 40)
             let mut arg: i32 = arena.nodes[id].a
             if arg != AST_NONE {
-                flowc_cgen_emit_expr(w, arena, src, arg)
+                if arena.nodes[arg].kind == AST_IDENT and w[0].len_hoist_id != AST_NONE and flowc_cgen_span_eq(src, arena.nodes[arg].name_start, arena.nodes[arg].name_end, w[0].len_hoist_span_start, w[0].len_hoist_span_end) == 1 and flowc_cgen_checked_is_span(w, arena, src, arg) == 1 {
+                    flowc_cgen_puts(w, "__flowc_len_")
+                    flowc_cgen_put_i32(w, w[0].len_hoist_id)
+                    flowc_cgen_putc(w, 41)
+                    return
+                } else {
+                    flowc_cgen_emit_expr(w, arena, src, arg)
+                }
             }
             flowc_cgen_puts(w, ").len")
             return
@@ -7184,6 +7257,11 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
     if kind == AST_FIELD_ACCESS {
         # (base).field or base->field if base is a pointer.
         let base: i32 = arena.nodes[id].a
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "len") == 1 and base != AST_NONE and arena.nodes[base].kind == AST_IDENT and w[0].len_hoist_id != AST_NONE and flowc_cgen_span_eq(src, arena.nodes[base].name_start, arena.nodes[base].name_end, w[0].len_hoist_span_start, w[0].len_hoist_span_end) == 1 {
+            flowc_cgen_puts(w, "__flowc_len_")
+            flowc_cgen_put_i32(w, w[0].len_hoist_id)
+            return
+        }
         # Resolved through the current function's parameters and locals
         # and through struct fields, so `p.x` on a local ptr<P> is p->x;
         # a call or a cast returning ptr<P> reads through it too (#1065).
@@ -7972,6 +8050,9 @@ function flowc_cgen_emit_for_dir(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>,
     let saved_loop_end: i32 = w[0].bounds_loop_end
     let saved_span_start: i32 = w[0].bounds_span_start
     let saved_span_end: i32 = w[0].bounds_span_end
+    let saved_len_start: i32 = w[0].len_hoist_span_start
+    let saved_len_end: i32 = w[0].len_hoist_span_end
+    let saved_len_id: i32 = w[0].len_hoist_id
     let proven_span: i32 = flowc_cgen_bounds_span_base(w, arena, src, id, dir)
     if proven_span != AST_NONE {
         w[0].bounds_loop_start = arena.nodes[id].name_start
@@ -7983,6 +8064,21 @@ function flowc_cgen_emit_for_dir(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>,
         w[0].bounds_loop_end = -1
         w[0].bounds_span_start = -1
         w[0].bounds_span_end = -1
+    }
+    let hoist_base: i32 = flowc_cgen_len_hoist_base(w, arena, src, id)
+    if hoist_base != AST_NONE {
+        w[0].len_hoist_span_start = arena.nodes[hoist_base].name_start
+        w[0].len_hoist_span_end = arena.nodes[hoist_base].name_end
+        w[0].len_hoist_id = id
+        flowc_cgen_puts(w, "  const int64_t __flowc_len_")
+        flowc_cgen_put_i32(w, id)
+        flowc_cgen_puts(w, " = (")
+        flowc_cgen_put_span(w, src, arena.nodes[hoist_base].name_start, arena.nodes[hoist_base].name_end)
+        flowc_cgen_puts(w, ").len;\n")
+    } else {
+        w[0].len_hoist_span_start = -1
+        w[0].len_hoist_span_end = -1
+        w[0].len_hoist_id = AST_NONE
     }
     flowc_cgen_puts(w, "  for (int32_t ")
     flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
@@ -8010,6 +8106,9 @@ function flowc_cgen_emit_for_dir(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>,
     w[0].bounds_loop_end = saved_loop_end
     w[0].bounds_span_start = saved_span_start
     w[0].bounds_span_end = saved_span_end
+    w[0].len_hoist_span_start = saved_len_start
+    w[0].len_hoist_span_end = saved_len_end
+    w[0].len_hoist_id = saved_len_id
 }
 
 function flowc_cgen_step_is_literal(arena: AstArena, step: i32) -> i32 {
