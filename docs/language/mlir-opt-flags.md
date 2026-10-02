@@ -79,9 +79,8 @@ FLOWC_MLIR_AFFINE=1 ./flow flow-to-mlir tests/mlir/affine_loop.flow /tmp/affine.
 
 The first slice covers positive constant steps, integer or dynamic bounds, and
 bodies with no loop-carried values or control-flow exits. The default remains
-`scf.for`.
-This keeps existing MLIR goldens stable while affine fusion and tiling are
-introduced incrementally.
+`scf.for`. This keeps existing MLIR goldens stable while affine fusion and
+tiling are introduced incrementally.
 
 Zero-based loops can use nested affine loops with a requested tile size:
 
@@ -114,7 +113,7 @@ created by the opt-in AoSoA lowering. Source-level array extents and indexing
 remain unchanged. Values from 1 through 64 are accepted. The default is zero.
 
 ```bash
-FLOWC_MLIR_AOSOA_PAD=1 ./flow mlir tests/mlir_opt/aosoa_padding.flow --lenient
+FLOWC_MLIR_AOSOA_PAD=1 ./flow mlir compiler/fixtures/mlir/aosoa_padding.flow --lenient
 ```
 
 Set `FLOWC_MLIR_AOSOA_SWIZZLE=N` to xor each generated field index with that
