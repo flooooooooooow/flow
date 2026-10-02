@@ -1,0 +1,36 @@
+# Smoke test for the transform-dialect schedule generator.
+
+import "scripts/tools/lib/testrun.flow"
+import "tests/scripts/harness.flow"
+
+function check_transform_schedule() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv, "--op=linalg.matmul")
+    sl_push(argv, "--tiles=32,32,8")
+    if t_run(t_cmd(argv)) != 0 {
+        outln("mlir_tune exited with " + s_itoa(t_rc()))
+        return T_FAIL
+    }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "transform.with_named_sequence") {
+        outln("missing transform module attribute")
+        return T_FAIL
+    }
+    if not a_contains(output, "linalg.matmul") {
+        outln("missing operation match")
+        return T_FAIL
+    }
+    if not a_contains(output, "[32,32,8]") {
+        outln("missing tile sizes")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("mlir_tune")
+    t_start()
+    t_end("transform_schedule", check_transform_schedule())
+    t_done()
+    return 0
+}
