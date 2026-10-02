@@ -5,6 +5,7 @@
 #       [--no-licm] [--no-cse] [--no-dce] [--no-inline]
 #       [--enable-loop-pipelining] [--enable-multi-buffering]
 #       [--enable-affine-tiling --affine-tile-size N]
+#       [--enable-affine-normalization]
 #       [--enable-async-copy --async-copy-target gpu|nvptx|amdgpu]
 #
 # prints the --pass-pipeline string, as MLIROptimizer.build_pass_pipeline in
@@ -22,7 +23,48 @@
 #
 # Exit status: 0, or 2 for an unknown optimization level.
 
-import .text { ft_out, ft_outln, ft_errln, ft_eq, ft_len, ft_starts, ft_from }
+@cEmbed("#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <unistd.h>")
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+    function strncmp(a: string, b: string, n: i64) -> i32
+    function write(fd: i32, buf: string, n: i64) -> i64
+    function snprintf(buf: ptr<i8>, size: i64, fmt: string, value: i32) -> i32
+}
+
+function ft_outln(s: string) {
+    let _w: i64 = write(1, s + "\n", strlen(s) + 1)
+}
+
+function ft_errln(s: string) {
+    let _w: i64 = write(2, s + "\n", strlen(s) + 1)
+}
+
+function ft_eq(a: string, b: string) -> bool { return strcmp(a, b) == 0 }
+function ft_len(s: string) -> i32 { return strlen(s) as i32 }
+function ft_starts(s: string, prefix: string) -> bool {
+    return strncmp(s, prefix, strlen(prefix)) == 0
+}
+
+function ft_from(s: string, start: i32) -> string {
+    let n: i32 = (strlen(s) as i32) - start
+    let out: ptr<u8> = malloc((n + 1) as i64) as ptr<u8>
+    let src: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    while i < n {
+        out[i] = src[start + i]
+        i = i + 1
+    }
+    out[n] = 0
+    return out as string
+}
+
+function ft_itoa(n: i32) -> string {
+    let buf: ptr<i8> = malloc(32) as ptr<i8>
+    let _n: i32 = snprintf(buf, 32, "%d", n)
+    return buf as string
+}
 
 struct PipeFlags {
     level: i32,
@@ -38,6 +80,7 @@ struct PipeFlags {
     multi_buffering: bool,
     affine_tiling: bool,
     affine_tile_size: i32,
+    affine_normalization: bool,
     async_copy: bool,
     async_target: i32
 }
@@ -106,6 +149,7 @@ function build_pipeline(f: PipeFlags) -> string {
         }
         if f.multi_buffering { fn_passes = add(fn_passes, "test-multi-buffering{multiplier=2}") }
         if f.pipelining { fn_passes = add(fn_passes, "test-scf-pipelining") }
+        if f.affine_normalization { fn_passes = add(fn_passes, "affine-loop-normalize") }
         if f.affine_tiling { fn_passes = add(fn_passes, "affine-loop-tile{tile-size=" + ft_itoa(f.affine_tile_size) + "}") }
         if f.async_copy { fn_passes = add(fn_passes, "gpu-async-region") }
     }
@@ -131,7 +175,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         level: 2, vectorization: true, loop_fusion: false, mem2reg: true,
         sccp: true, licm: true, gvn: true, dce: true, inliner: true,
         pipelining: false, multi_buffering: false, affine_tiling: false,
-        affine_tile_size: 0, async_copy: false,
+        affine_tile_size: 0, affine_normalization: false, async_copy: false,
         async_target: 0
     }
     let mut i: i32 = 1
@@ -167,6 +211,8 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             f.multi_buffering = true
         } elif ft_eq(a, "--enable-affine-tiling") {
             f.affine_tiling = true
+        } elif ft_eq(a, "--enable-affine-normalization") {
+            f.affine_normalization = true
         } elif ft_eq(a, "--affine-tile-size") {
             if i + 1 < argc {
                 let tile: i32 = positive_int(argv[i + 1] as string)
