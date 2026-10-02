@@ -36,6 +36,20 @@ python3 -m flow.transpiler --print-pass-pipeline --opt-level O2 --no-inline
 
 `--opt-report` prints pass statistics using the same flag set.
 
+## Register tiles
+
+`--register-tiles` enables the opt-in `register_tile_outer_product(a, b)`
+intrinsic. For vector operands it emits `vector.outerproduct`, preserving the
+tile shape for later AMX, SME, or GPU target selection.
+
+The default lane budget is 256 scalar lanes. Set
+`FLOWC_MLIR_REGISTER_TILE_MAX_LANES` to a smaller target budget when a tile
+must fit a particular register file.
+
+```bash
+./flow mlir compiler/fixtures/mlir/register_tile_probe.flow --register-tiles
+```
+
 ## Generator-side vectorization
 
 Independently of `--optimize`, the generator rewrites simple elementwise

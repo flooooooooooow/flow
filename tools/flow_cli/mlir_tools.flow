@@ -6,7 +6,7 @@
 # Each step is a function the other CLI modules call directly, and a
 # command of its own for callers outside the CLI (CI, benchmarks, scripts):
 #
-#   flow flow-to-mlir [--gpu] [--wasm32] [--jit] [--lenient] IN.flow OUT.mlir
+#   flow flow-to-mlir [--gpu] [--wasm32] [--register-tiles] [--jit] [--lenient] IN.flow OUT.mlir
 #   flow flow-to-llvm [--wasm32] [--optimize OLEVEL] IN.flow OUT.ll
 #   flow mlir-lower IN.mlir OUT.ll | --tools
 #   flow mlir-optimize [FLAGS] [--opt-report] IN.mlir OUT.mlir
@@ -21,6 +21,7 @@
 # the MLIR.
 #   --gpu     @gpu kernels as a gpu.module (FLOWC_MLIR_GPU=1)
 #   --wasm32  ILP32 ABI: libc size_t/long as i32 (FLOWC_MLIR_SIZE_T=32)
+#   --register-tiles  enable vector.outerproduct register-tile lowering
 #   --jit     guard modes jit, mlir and compile (FLOWC_MODE=jit), as the JIT
 #             runner used; it also implies --lenient
 #   --lenient type errors that are not fatal are warnings (FLOWC_LENIENT=1);
@@ -187,6 +188,7 @@ function env_restore(name: string, old: string) {
 export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
     let mut gpu: bool = false
     let mut wasm32: bool = false
+    let mut register_tiles: bool = false
     let mut jit: bool = false
     let mut lenient: bool = false
     let mut i: i32 = 0
@@ -196,6 +198,8 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
             gpu = true
         } elif s_eq(a, "--wasm32") {
             wasm32 = true
+        } elif s_eq(a, "--register-tiles") {
+            register_tiles = true
         } elif s_eq(a, "--jit") {
             jit = true
             lenient = true
@@ -207,7 +211,7 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
         i = i + 1
     }
     if sl_len(args) - i != 2 {
-        errln("usage: flow flow-to-mlir [--gpu] [--wasm32] [--jit] [--lenient] IN.flow OUT.mlir")
+        errln("usage: flow flow-to-mlir [--gpu] [--wasm32] [--register-tiles] [--jit] [--lenient] IN.flow OUT.mlir")
         return 2
     }
     let input: string = sl_get(args, i)
@@ -234,6 +238,9 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
     }
     if wasm32 {
         cmd_env(c, "FLOWC_MLIR_SIZE_T", "32")
+    }
+    if register_tiles {
+        cmd_env(c, "FLOWC_MLIR_REGISTER_TILES", "1")
     }
     if jit {
         cmd_env(c, "FLOWC_MODE", "jit")

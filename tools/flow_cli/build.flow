@@ -1074,6 +1074,7 @@ export function generate_mlir(args: ptr<ProcStrs>) -> i32 {
     let mut report: bool = false
     let mut print_pipeline: bool = false
     let mut gpu: bool = false
+    let mut register_tiles: bool = false
     let mut spirv: bool = false
     let mut wasm32: bool = false
     let mut llvm: bool = false
@@ -1101,6 +1102,8 @@ export function generate_mlir(args: ptr<ProcStrs>) -> i32 {
             print_pipeline = true
         } elif s_eq(a, "--mlir-gpu") {
             gpu = true
+        } elif s_eq(a, "--register-tiles") {
+            register_tiles = true
         } elif s_eq(a, "--emit-spirv") {
             spirv = true
         } elif s_eq(a, "--spirv-out") {
@@ -1158,6 +1161,9 @@ export function generate_mlir(args: ptr<ProcStrs>) -> i32 {
     check_mlir_deps()
     if gpu {
         sl_push(emit_flags, "--gpu")
+    }
+    if register_tiles {
+        sl_push(emit_flags, "--register-tiles")
     }
     if wasm32 {
         sl_push(emit_flags, "--wasm32")
