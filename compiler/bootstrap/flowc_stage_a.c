@@ -40204,10 +40204,13 @@ int32_t mrs_emit(Mlg* m, int32_t e, int32_t want_value);
 void mrs_prune_helpers(Mlg* m, int32_t root);
 int32_t mao_is_target(Mlg* m, int32_t t);
 int32_t mao_is_var(Mlg* m, int32_t* vars, int32_t nv, int32_t e);
-int32_t mao_expr(Mlg* m, int32_t e, int32_t st, int32_t* vars, int32_t nv);
-int32_t mao_chain(Mlg* m, int32_t head, int32_t st, int32_t* vars, int32_t nv);
-int32_t mao_soa(Mlg* m, int32_t st, int32_t n, int32_t* made, int32_t* nmade);
-void mao_block(Mlg* m, int32_t blk, int32_t st, int32_t* vars, int32_t* nv, int32_t* made, int32_t* nmade);
+int32_t mao_expr(Mlg* m, int32_t e, int32_t st, int32_t swizzle, int32_t* vars, int32_t nv);
+int32_t mao_chain(Mlg* m, int32_t head, int32_t st, int32_t swizzle, int32_t* vars, int32_t nv);
+int32_t mlg_aosoa_pad();
+int32_t mlg_aosoa_swizzle();
+int32_t mao_swizzle_index(Mlg* m, int32_t e, int32_t shift);
+int32_t mao_soa(Mlg* m, int32_t st, int32_t n, int32_t pad, int32_t* made, int32_t* nmade);
+void mao_block(Mlg* m, int32_t blk, int32_t st, int32_t pad, int32_t swizzle, int32_t* vars, int32_t* nv, int32_t* made, int32_t* nmade);
 void mlg_aosoa(Mlg* m, int32_t root);
 int32_t mlg_item_dropped(Mlg* m, int32_t item);
 void mlg_collect(Mlg* m, int32_t root);
@@ -57885,7 +57888,7 @@ int32_t mao_is_var(Mlg* m, int32_t* vars, int32_t nv, int32_t e) {
   return 0;
 }
 
-int32_t mao_expr(Mlg* m, int32_t e, int32_t st, int32_t* vars, int32_t nv) {
+int32_t mao_expr(Mlg* m, int32_t e, int32_t st, int32_t swizzle, int32_t* vars, int32_t nv) {
   if (e == AST_NONE || e < 0) {
   return e;
 }
@@ -57903,32 +57906,96 @@ int32_t mao_expr(Mlg* m, int32_t e, int32_t st, int32_t* vars, int32_t nv) {
   (((m[0]).arena).nodes[fa]).name_end = (((m[0]).arena).nodes[e]).name_end;
   int32_t ix = mlg_new_node(m, AST_INDEX, (((m[0]).arena).nodes[o]).start);
   (((m[0]).arena).nodes[ix]).a = fa;
-  { __typeof__((((m[0]).arena).nodes[ix]).b) __flowc_st85188 = mao_expr(m, (((m[0]).arena).nodes[o]).b, st, vars, nv); (((m[0]).arena).nodes[ix]).b = __flowc_st85188; }
+  int32_t index = mao_expr(m, (((m[0]).arena).nodes[o]).b, st, swizzle, vars, nv);
+  { __typeof__((((m[0]).arena).nodes[ix]).b) __flowc_st85197 = mao_swizzle_index(m, index, swizzle); (((m[0]).arena).nodes[ix]).b = __flowc_st85197; }
   return ix;
 }
 }
 }
-  { __typeof__((((m[0]).arena).nodes[e]).a) __flowc_st85218 = mao_chain(m, (((m[0]).arena).nodes[e]).a, st, vars, nv); (((m[0]).arena).nodes[e]).a = __flowc_st85218; }
+  { __typeof__((((m[0]).arena).nodes[e]).a) __flowc_st85228 = mao_chain(m, (((m[0]).arena).nodes[e]).a, st, swizzle, vars, nv); (((m[0]).arena).nodes[e]).a = __flowc_st85228; }
   if (k != AST_CALL && k != AST_CAST && k != AST_LET) {
-  { __typeof__((((m[0]).arena).nodes[e]).b) __flowc_st85251 = mao_chain(m, (((m[0]).arena).nodes[e]).b, st, vars, nv); (((m[0]).arena).nodes[e]).b = __flowc_st85251; }
+  { __typeof__((((m[0]).arena).nodes[e]).b) __flowc_st85262 = mao_chain(m, (((m[0]).arena).nodes[e]).b, st, swizzle, vars, nv); (((m[0]).arena).nodes[e]).b = __flowc_st85262; }
 }
   if (k == AST_INDEX || k == AST_IF_EXPR) {
-  { __typeof__((((m[0]).arena).nodes[e]).c) __flowc_st85282 = mao_expr(m, (((m[0]).arena).nodes[e]).c, st, vars, nv); (((m[0]).arena).nodes[e]).c = __flowc_st85282; }
+  { __typeof__((((m[0]).arena).nodes[e]).c) __flowc_st85294 = mao_expr(m, (((m[0]).arena).nodes[e]).c, st, swizzle, vars, nv); (((m[0]).arena).nodes[e]).c = __flowc_st85294; }
 }
   return e;
 }
 
-int32_t mao_chain(Mlg* m, int32_t head, int32_t st, int32_t* vars, int32_t nv) {
+int32_t mao_chain(Mlg* m, int32_t head, int32_t st, int32_t swizzle, int32_t* vars, int32_t nv) {
   if (head == AST_NONE || head < 0) {
   return head;
 }
   int32_t nx = (((m[0]).arena).nodes[head]).next;
-  int32_t h2 = mao_expr(m, head, st, vars, nv);
-  { __typeof__((((m[0]).arena).nodes[h2]).next) __flowc_st85345 = mao_chain(m, nx, st, vars, nv); (((m[0]).arena).nodes[h2]).next = __flowc_st85345; }
+  int32_t h2 = mao_expr(m, head, st, swizzle, vars, nv);
+  { __typeof__((((m[0]).arena).nodes[h2]).next) __flowc_st85361 = mao_chain(m, nx, st, swizzle, vars, nv); (((m[0]).arena).nodes[h2]).next = __flowc_st85361; }
   return h2;
 }
 
-int32_t mao_soa(Mlg* m, int32_t st, int32_t n, int32_t* made, int32_t* nmade) {
+int32_t mlg_aosoa_pad() {
+  const char* v = getenv("FLOWC_MLIR_AOSOA_PAD");
+  uint8_t* p = (uint8_t*)(v);
+  if (p == NULL) {
+  return 0;
+}
+  int32_t i = 0;
+  int32_t n = 0;
+  while (p[i] >= 48 && p[i] <= 57) {
+  n = (((n * 10) + (int32_t)(p[i])) - 48);
+  i = (i + 1);
+}
+  if (n < 1 || n > 64) {
+  return 0;
+}
+  return n;
+}
+
+int32_t mlg_aosoa_swizzle() {
+  const char* v = getenv("FLOWC_MLIR_AOSOA_SWIZZLE");
+  uint8_t* p = (uint8_t*)(v);
+  if (p == NULL) {
+  return 0;
+}
+  int32_t i = 0;
+  int32_t n = 0;
+  while (p[i] >= 48 && p[i] <= 57) {
+  n = (((n * 10) + (int32_t)(p[i])) - 48);
+  i = (i + 1);
+}
+  if (n < 2 || n > 32) {
+  return 0;
+}
+  int32_t w = 1;
+  int32_t shift = 0;
+  while (w < n) {
+  w = (w * 2);
+  shift = (shift + 1);
+}
+  if (w != n) {
+  return 0;
+}
+  return shift;
+}
+
+int32_t mao_swizzle_index(Mlg* m, int32_t e, int32_t shift) {
+  if (e == AST_NONE || e < 0 || shift <= 0) {
+  return e;
+}
+  int32_t ec = mn_copy(m, e);
+  int32_t sh = mlg_new_node(m, AST_INT, (((m[0]).arena).nodes[e]).start);
+  (((m[0]).arena).nodes[sh]).ival = shift;
+  int32_t hi = mlg_new_node(m, AST_BINOP, (((m[0]).arena).nodes[e]).start);
+  (((m[0]).arena).nodes[hi]).ival = TOK_SHR;
+  (((m[0]).arena).nodes[hi]).a = ec;
+  (((m[0]).arena).nodes[hi]).b = sh;
+  int32_t out = mlg_new_node(m, AST_BINOP, (((m[0]).arena).nodes[e]).start);
+  (((m[0]).arena).nodes[out]).ival = TOK_CARET;
+  (((m[0]).arena).nodes[out]).a = e;
+  (((m[0]).arena).nodes[out]).b = hi;
+  return out;
+}
+
+int32_t mao_soa(Mlg* m, int32_t st, int32_t n, int32_t pad, int32_t* made, int32_t* nmade) {
   int32_t i = 0;
   while (i < nmade[0]) {
   int32_t s = made[i];
@@ -57954,7 +58021,7 @@ int32_t mao_soa(Mlg* m, int32_t st, int32_t n, int32_t* made, int32_t* nmade) {
   (((m[0]).arena).nodes[at]).name_start = arr_s;
   (((m[0]).arena).nodes[at]).name_end = (arr_s + 5);
   (((m[0]).arena).nodes[at]).a = (((m[0]).arena).nodes[f]).a;
-  (((m[0]).arena).nodes[at]).ival = n;
+  (((m[0]).arena).nodes[at]).ival = (n + pad);
   int32_t fd = mn_copy(m, f);
   (((m[0]).arena).nodes[fd]).a = at;
   if (fh == AST_NONE) {
@@ -57973,7 +58040,7 @@ int32_t mao_soa(Mlg* m, int32_t st, int32_t n, int32_t* made, int32_t* nmade) {
   return sd;
 }
 
-void mao_block(Mlg* m, int32_t blk, int32_t st, int32_t* vars, int32_t* nv, int32_t* made, int32_t* nmade) {
+void mao_block(Mlg* m, int32_t blk, int32_t st, int32_t pad, int32_t swizzle, int32_t* vars, int32_t* nv, int32_t* made, int32_t* nmade) {
   if (blk == AST_NONE || blk < 0 || mlg_kind(m, blk) != AST_BLOCK) {
   return;
 }
@@ -57982,7 +58049,7 @@ void mao_block(Mlg* m, int32_t blk, int32_t st, int32_t* vars, int32_t* nv, int3
   int32_t k = mlg_kind(m, s);
   if (k == AST_LET && mao_is_target(m, (((m[0]).arena).nodes[s]).a) == 1) {
   int32_t n = (((m[0]).arena).nodes[(((m[0]).arena).nodes[s]).a]).ival;
-  int32_t sd = mao_soa(m, st, n, made, nmade);
+  int32_t sd = mao_soa(m, st, n, pad, made, nmade);
   int32_t ty = mn_flat(m, mlg_ns(m, sd), mlg_ne(m, sd));
   (((m[0]).arena).nodes[s]).a = ty;
   if (nv[0] < 64) {
@@ -57992,33 +58059,33 @@ void mao_block(Mlg* m, int32_t blk, int32_t st, int32_t* vars, int32_t* nv, int3
 } else {
   if (k == AST_IF || k == AST_WHILE || k == AST_FOR || k == AST_BLOCK || k == AST_HANDLE || k == AST_MATCH) {
   if (k == AST_IF || k == AST_WHILE) {
-  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st85827 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, vars, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st85827; }
-  mao_block(m, (((m[0]).arena).nodes[s]).b, st, vars, nv, made, nmade);
+  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st86160 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, swizzle, vars, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st86160; }
+  mao_block(m, (((m[0]).arena).nodes[s]).b, st, pad, swizzle, vars, nv, made, nmade);
   if (k == AST_IF) {
-  mao_block(m, (((m[0]).arena).nodes[s]).c, st, vars, nv, made, nmade);
+  mao_block(m, (((m[0]).arena).nodes[s]).c, st, pad, swizzle, vars, nv, made, nmade);
 }
 }
   if (k == AST_FOR) {
-  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st85893 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, vars, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st85893; }
-  { __typeof__((((m[0]).arena).nodes[s]).b) __flowc_st85917 = mao_expr(m, (((m[0]).arena).nodes[s]).b, st, vars, nv[0]); (((m[0]).arena).nodes[s]).b = __flowc_st85917; }
-  mao_block(m, (((m[0]).arena).nodes[s]).c, st, vars, nv, made, nmade);
+  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st86231 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, swizzle, vars, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st86231; }
+  { __typeof__((((m[0]).arena).nodes[s]).b) __flowc_st86256 = mao_expr(m, (((m[0]).arena).nodes[s]).b, st, swizzle, vars, nv[0]); (((m[0]).arena).nodes[s]).b = __flowc_st86256; }
+  mao_block(m, (((m[0]).arena).nodes[s]).c, st, pad, swizzle, vars, nv, made, nmade);
 }
   if (k == AST_BLOCK) {
-  mao_block(m, s, st, vars, nv, made, nmade);
+  mao_block(m, s, st, pad, swizzle, vars, nv, made, nmade);
 }
   if (k == AST_HANDLE) {
-  mao_block(m, (((m[0]).arena).nodes[s]).a, st, vars, nv, made, nmade);
+  mao_block(m, (((m[0]).arena).nodes[s]).a, st, pad, swizzle, vars, nv, made, nmade);
 }
   if (k == AST_MATCH) {
-  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st85997 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, vars, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st85997; }
+  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st86343 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, swizzle, vars, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st86343; }
 }
 } else {
   if (k == AST_LET) {
-  { __typeof__((((m[0]).arena).nodes[s]).b) __flowc_st86027 = mao_expr(m, (((m[0]).arena).nodes[s]).b, st, vars, nv[0]); (((m[0]).arena).nodes[s]).b = __flowc_st86027; }
+  { __typeof__((((m[0]).arena).nodes[s]).b) __flowc_st86374 = mao_expr(m, (((m[0]).arena).nodes[s]).b, st, swizzle, vars, nv[0]); (((m[0]).arena).nodes[s]).b = __flowc_st86374; }
 } else {
-  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st86052 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, vars, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st86052; }
+  { __typeof__((((m[0]).arena).nodes[s]).a) __flowc_st86400 = mao_expr(m, (((m[0]).arena).nodes[s]).a, st, swizzle, vars, nv[0]); (((m[0]).arena).nodes[s]).a = __flowc_st86400; }
   if (k == AST_ASSIGN) {
-  { __typeof__((((m[0]).arena).nodes[s]).b) __flowc_st86079 = mao_expr(m, (((m[0]).arena).nodes[s]).b, st, vars, nv[0]); (((m[0]).arena).nodes[s]).b = __flowc_st86079; }
+  { __typeof__((((m[0]).arena).nodes[s]).b) __flowc_st86428 = mao_expr(m, (((m[0]).arena).nodes[s]).b, st, swizzle, vars, nv[0]); (((m[0]).arena).nodes[s]).b = __flowc_st86428; }
 }
 }
 }
@@ -58044,11 +58111,13 @@ void mlg_aosoa(Mlg* m, int32_t root) {
   int32_t nv[1] = { 0 };
   int32_t* made = (int32_t*)(mlg_alloc_i32(64));
   int32_t nmade[1] = { 0 };
+  int32_t pad = mlg_aosoa_pad();
+  int32_t swizzle = mlg_aosoa_swizzle();
   item = (((m[0]).arena).nodes[root]).a;
   while (item != AST_NONE) {
   int32_t d2 = mlg_unwrap(m, item);
   if (mlg_kind(m, d2) == AST_FN) {
-  mao_block(m, (((m[0]).arena).nodes[d2]).c, st, vars, (int32_t*)((&nv[0])), made, (int32_t*)((&nmade[0])));
+  mao_block(m, (((m[0]).arena).nodes[d2]).c, st, pad, swizzle, vars, (int32_t*)((&nv[0])), made, (int32_t*)((&nmade[0])));
 }
   item = (((m[0]).arena).nodes[item]).next;
 }
@@ -58094,7 +58163,7 @@ void mlg_collect(Mlg* m, int32_t root) {
   (m[0]).ndropf = ((m[0]).ndropf + 1);
 }
   if (off_cpu == 2 && (m[0]).ngpuf < MLG_MAX_FNS) {
-  { __typeof__((m[0]).gpuf[(m[0]).ngpuf]) __flowc_st86503 = mlg_unwrap(m, item); (m[0]).gpuf[(m[0]).ngpuf] = __flowc_st86503; }
+  { __typeof__((m[0]).gpuf[(m[0]).ngpuf]) __flowc_st86860 = mlg_unwrap(m, item); (m[0]).gpuf[(m[0]).ngpuf] = __flowc_st86860; }
   (m[0]).ngpuf = ((m[0]).ngpuf + 1);
 }
   item = (((m[0]).arena).nodes[item]).next;
@@ -58563,7 +58632,7 @@ int32_t mlg_gpu_expr(Mlg* m, int32_t e, int32_t* t) {
   mlg_s(m, "] : ");
   mlg_gpu_put_type(m, at);
   mlg_nl(m);
-  { __typeof__(t[0]) __flowc_st88487 = mlg_gpu_elem(m, at); t[0] = __flowc_st88487; }
+  { __typeof__(t[0]) __flowc_st88844 = mlg_gpu_elem(m, at); t[0] = __flowc_st88844; }
   return s3;
 }
   if (k == AST_BINOP) {
@@ -58774,12 +58843,12 @@ void mlg_gpu_for(Mlg* m, int32_t st) {
   int32_t* res = (int32_t*)(mlg_alloc_i32((nc + 1)));
   int32_t i = 0;
   while (i < nc) {
-  { __typeof__(its[i]) __flowc_st89424 = mlg_gpu_new(m); its[i] = __flowc_st89424; }
+  { __typeof__(its[i]) __flowc_st89781 = mlg_gpu_new(m); its[i] = __flowc_st89781; }
   i = (i + 1);
 }
   i = 0;
   while (i < nc) {
-  { __typeof__(res[i]) __flowc_st89445 = mlg_gpu_new(m); res[i] = __flowc_st89445; }
+  { __typeof__(res[i]) __flowc_st89802 = mlg_gpu_new(m); res[i] = __flowc_st89802; }
   i = (i + 1);
 }
   mlg_line(m);
