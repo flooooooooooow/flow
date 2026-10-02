@@ -1,0 +1,31 @@
+# Static counted loops can use the affine dialect when requested.
+
+function fill(a: array<f32>, n: i32) -> void {
+    for i in 0 to 16 step 1 {
+        a[i] = 1.0
+    }
+}
+
+function count() -> void {
+    for i in 0 to 4 step 1 {
+        println(i)
+    }
+}
+
+function fill_dynamic(a: array<f32>, n: i32) -> void {
+    for i in 0 to n step 1 {
+        a[i] = 2.0
+    }
+}
+
+function fill_parallel(a: array<f32>, n: i32) -> void {
+    parallel for i in 0 to n step 1 {
+        a[i] = 3.0
+    }
+}
+
+function fill_tiled(a: array<f32, 8>) -> void {
+    for i in 0 to 8 step 1 {
+        a[i] = 4.0
+    }
+}
