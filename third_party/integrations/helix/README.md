@@ -1,7 +1,14 @@
 # Helix support
 
-Merge the contents of `languages.toml` into `~/.config/helix/languages.toml`.
+Merge the contents of `languages.toml` into
+`~/.config/helix/languages.toml`, then fetch and build the grammar:
 
-This enables Flow filetype recognition and the existing `flow lsp` language server.
+```bash
+hx --grammar fetch
+hx --grammar build
+```
 
-Tree-sitter highlighting is intentionally not declared here yet. Helix grammar sources are best pointed at a dedicated, versioned `tree-sitter-flow` repository; the grammar source currently lives at `third_party/integrations/tree-sitter-flow` in the main Flow repository and should be split out after validation.
+This enables Flow file recognition, Tree-sitter highlighting, and the
+`flow lsp` language server. The grammar is pinned to commit
+`2e0cfb80a52a72d08a00b9ac9afc5889c31fe71c` from the standalone
+`tree-sitter-flow` repository.
