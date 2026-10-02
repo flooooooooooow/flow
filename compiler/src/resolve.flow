@@ -22,6 +22,7 @@ import .fileio { flowc_read_file, flowc_io_exists }
 import .field_dsl { flowc_field_expand_in_place }
 import .dynamics_dsl { flowc_dynamics_expand_in_place }
 import .flow_blocks { flowc_flow_blocks_expand_in_place }
+import .pipeline_fusion { flowc_fuse_pipelines }
 import .shader_dsl { flowc_shader_expand_in_place }
 import .cgen { flowc_cgen_emit_sigs, flowc_cgen_collect_sigs, flowc_cgen_export_missing }
 import .effects { flowc_eff_collect }
@@ -2481,6 +2482,7 @@ function flowc_resolve_emit_one(
     if tpl != null {
         tpl_len[0] = flowc_resolve_add_templates(p.arena, root, src, own, tpl, tpl_cap, tpl_len[0])
     }
+    flowc_fuse_pipelines(&p.arena, src)
     # The file this module's #line directives name (FLOWC_DEBUG_INFO=1).
     let _setf: i32 = setenv("FLOWC_CGEN_FILE", path, 1)
     let mut n: i32 = flowc_cgen_emit_sigs(p.arena, root, src, out, out_cap, flags, sigs, siglen[0])
