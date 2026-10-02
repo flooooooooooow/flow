@@ -1,0 +1,23 @@
+import "compiler/src/static_memory.flow"
+import "tests/scripts/harness.flow"
+
+function check_plan() -> i32 {
+    let mut items: array<StaticBuffer, 64> = []
+    items[0] = StaticBuffer { size: 64, start: 0, end: 2, alignment: 16 }
+    items[1] = StaticBuffer { size: 32, start: 3, end: 5, alignment: 16 }
+    items[2] = StaticBuffer { size: 48, start: 1, end: 4, alignment: 16 }
+    let plan: StaticMemoryPlan = flowc_static_memory_plan(items, 3, 16)
+    if plan.offsets[0] != 0 { return T_FAIL }
+    if plan.offsets[2] != 64 { return T_FAIL }
+    if plan.offsets[1] != 0 { return T_FAIL }
+    if plan.arena_size != 112 { return T_FAIL }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("static_memory")
+    t_start()
+    t_end("plan_reuses_released_space", check_plan())
+    t_done()
+    return 0
+}
