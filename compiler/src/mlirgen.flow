@@ -4743,8 +4743,9 @@ function mlg_emit_tensor_elementwise(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     let v0: i32 = mlg_emit_expr(m, a0)
     let v1: i32 = mlg_emit_expr(m, a1)
     let t0: i32 = mlg_val_mt(m, v0, a0)
+    let tensor_result: i32 = mlg_is_tensor_type_mt(t0)
     let mut init: i32 = V_NONE
-    if mlg_is_tensor_type_mt(t0) == 1 {
+    if tensor_result == 1 {
         let z: i32 = mlg_new_val(m, MT_INDEX)
         mlg_line(m)
         mlg_v(m, z)
@@ -4775,13 +4776,23 @@ function mlg_emit_tensor_elementwise(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     mlg_s(m, " = linalg.generic {")
     mlg_nl(m)
     mlg_line(m)
-    mlg_s(m, "  indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>],")
+    if tensor_result == 1 {
+        mlg_s(m, "  indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>],")
+    } else {
+        mlg_s(m, "  indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>],")
+    }
     mlg_nl(m)
     mlg_line(m)
     mlg_s(m, "  iterator_types = [\"parallel\"]")
     mlg_nl(m)
     mlg_line(m)
     mlg_s(m, "} ins(")
+    if tensor_result == 1 {
+        mlg_v(m, v0)
+        mlg_s(m, " : ")
+        mlg_put_type(m, t0)
+        mlg_s(m, ", ")
+    }
     mlg_v(m, v1)
     mlg_s(m, " : ")
     mlg_put_type(m, t0)
@@ -4796,7 +4807,11 @@ function mlg_emit_tensor_elementwise(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     mlg_s(m, ") {")
     mlg_nl(m)
     mlg_line(m)
-    mlg_s(m, "^bb0(%in: f32, %out: f32):")
+    if tensor_result == 1 {
+        mlg_s(m, "^bb0(%lhs: f32, %rhs: f32, %out: f32):")
+    } else {
+        mlg_s(m, "^bb0(%in: f32, %out: f32):")
+    }
     mlg_nl(m)
     let s: i32 = mlg_new_val(m, MT_F32)
     mlg_line(m)
@@ -4808,7 +4823,11 @@ function mlg_emit_tensor_elementwise(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     if op == TOK_SLASH { opname = "divf" }
     mlg_s(m, " = arith.")
     mlg_s(m, opname)
-    mlg_s(m, " %in, %out : f32")
+    if tensor_result == 1 {
+        mlg_s(m, " %lhs, %rhs : f32")
+    } else {
+        mlg_s(m, " %in, %out : f32")
+    }
     mlg_nl(m)
     mlg_line(m)
     mlg_s(m, "  linalg.yield ")
