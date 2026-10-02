@@ -31,6 +31,8 @@ mlir_aosoa_padding aosoa-pad compiler/fixtures/mlir_opt/aosoa_padding.flow --len
 mlir_aosoa_swizzle aosoa-swizzle compiler/fixtures/mlir_opt/aosoa_padding.flow --lenient --aosoa-swizzle
 mlir_basic_arith mlir tests/mlir/basic_arith.flow --lenient
 mlir_tensor_value mlir compiler/fixtures/mlir_opt/tensor_value.flow --lenient
+mlir_affine_loop affine tests/mlir/affine_loop.flow --lenient
+mlir_tiled_loop tile tests/mlir/affine_loop.flow --lenient
 mlir_matmul mlir examples/bench/matmul_mlir.flow --lenient
 mlir_tensor_bench mlir examples/ml/mlir_tensor_bench.flow --lenient
 mlir_register_tiles mlir compiler/fixtures/mlir_opt/register_tile_probe.flow --lenient --register-tiles
