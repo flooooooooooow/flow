@@ -11,6 +11,9 @@ function parse_num(s: string) -> i32 {
     let mut n: i32 = 0
     let mut i: i32 = 0
     while s[i] != 0 {
+        if s[i] < 48 or s[i] > 57 {
+            return -1
+        }
         n = n * 10 + (s[i] - 48)
         i = i + 1
     }
@@ -25,6 +28,9 @@ function parse_csv3(s: string, out: ptr<i32>) -> i32 {
     out[0] = parse_num(ft_slice(s, 0, first))
     out[1] = parse_num(ft_slice(s, first + 1, second))
     out[2] = parse_num(ft_from(s, second + 1))
+    if out[0] < 0 or out[1] < 0 or out[2] < 0 {
+        return 0
+    }
     return 3
 }
 
