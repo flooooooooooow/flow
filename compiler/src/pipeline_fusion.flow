@@ -3,7 +3,7 @@
 #         Port of the python implementation in src/flow/pipeline_fusion.py.
 #         Implements scale_f32(scale_f32(buf, n, a), n, b) -> scale_f32(buf, n, a*b)
 
-import .ast { AstArena, AstNode, AST_CALL, AST_BINOP, AST_FLOAT, AST_IDENT, AST_NONE, AST_EXPR_STMT, AST_LET, AST_ASSIGN, AST_RETURN, flowc_ast_alloc }
+import .ast { AstArena, AstNode, AST_CALL, AST_BINOP, AST_FLOAT, AST_IDENT, AST_NONE, AST_EXPR_STMT, AST_LET, AST_ASSIGN, AST_RETURN, AST_FN, AST_BLOCK, AST_PARAM, flowc_ast_alloc }
 
 extern {
     function printf(fmt: string, ...) -> i32
@@ -22,13 +22,16 @@ function flowc_name_is(src: ptr<u8>, start: i32, end: i32, name: string) -> i32 
     return 1
 }
 
-# 1 = scale_f32, 2 = scale_f64, 3 = offset_f32, 4 = offset_f64.
+# 1 = scale_f32, 2 = scale_f64, 3 = offset_f32, 4 = offset_f64,
+# 5 = map_f32, 6 = map_f64.
 function flowc_stage_family(src: ptr<u8>, node: AstNode) -> i32 {
     if node.kind != AST_CALL { return 0 }
     if flowc_name_is(src, node.name_start, node.name_end, "scale_f32") == 1 { return 1 }
     if flowc_name_is(src, node.name_start, node.name_end, "scale_f64") == 1 { return 2 }
     if flowc_name_is(src, node.name_start, node.name_end, "offset_f32") == 1 { return 3 }
     if flowc_name_is(src, node.name_start, node.name_end, "offset_f64") == 1 { return 4 }
+    if flowc_name_is(src, node.name_start, node.name_end, "map_f32") == 1 { return 5 }
+    if flowc_name_is(src, node.name_start, node.name_end, "map_f64") == 1 { return 6 }
     return 0
 }
 
@@ -44,6 +47,131 @@ function flowc_text_equal(src: ptr<u8>, a_start: i32, a_end: i32, b_start: i32, 
 
 extern {
     function strlen(s: string) -> i64
+}
+
+# Clone an expression tree while replacing references to one lambda parameter.
+# The replacement is cloned at each use, so the resulting AST owns every
+# expression and its argument chains independently.
+function flowc_clone_substitute(
+    arena: ptr<AstArena>,
+    id: i32,
+    src: ptr<u8>,
+    param: i32,
+    replacement: i32
+) -> i32 {
+    if id == AST_NONE {
+        return AST_NONE
+    }
+    if param != AST_NONE and arena[0].nodes[id].kind == AST_IDENT and
+       flowc_text_equal(src, arena[0].nodes[id].name_start, arena[0].nodes[id].name_end,
+                        arena[0].nodes[param].name_start, arena[0].nodes[param].name_end) == 1 {
+        return flowc_clone_substitute(arena, replacement, src, AST_NONE, AST_NONE)
+    }
+    let n: AstNode = arena[0].nodes[id]
+    let out: i32 = flowc_ast_alloc(arena, n.kind, n.start, n.end)
+    if out == AST_NONE {
+        return AST_NONE
+    }
+    arena[0].nodes[out].ival = n.ival
+    arena[0].nodes[out].name_start = n.name_start
+    arena[0].nodes[out].name_end = n.name_end
+    arena[0].nodes[out].a = if n.a == AST_NONE { AST_NONE } else { flowc_clone_substitute(arena, n.a, src, param, replacement) }
+    arena[0].nodes[out].b = if n.b == AST_NONE { AST_NONE } else { flowc_clone_substitute(arena, n.b, src, param, replacement) }
+    arena[0].nodes[out].c = if n.c == AST_NONE { AST_NONE } else { flowc_clone_substitute(arena, n.c, src, param, replacement) }
+    arena[0].nodes[out].next = if n.next == AST_NONE { AST_NONE } else { flowc_clone_substitute(arena, n.next, src, param, replacement) }
+    return out
+}
+
+# Return the only expression in a simple lambda, or AST_NONE for a shape whose
+# control flow or effects make substitution unsafe.
+function flowc_simple_lambda_body(arena: ptr<AstArena>, id: i32) -> i32 {
+    if id == AST_NONE or arena[0].nodes[id].kind != AST_FN {
+        return AST_NONE
+    }
+    let param: i32 = arena[0].nodes[id].a
+    if param == AST_NONE or arena[0].nodes[param].next != AST_NONE {
+        return AST_NONE
+    }
+    let body: i32 = arena[0].nodes[id].c
+    if body == AST_NONE or arena[0].nodes[body].kind != AST_BLOCK {
+        return AST_NONE
+    }
+    let stmt: i32 = arena[0].nodes[body].a
+    if stmt == AST_NONE or arena[0].nodes[stmt].kind != AST_RETURN or arena[0].nodes[stmt].next != AST_NONE {
+        return AST_NONE
+    }
+    return arena[0].nodes[stmt].a
+}
+
+# map_T(map_T(buf, n, f), n, g) -> map_T(buf, n, |x| g(f(x))). The generated
+# lambda keeps the source parameter type and substitutes only expression
+# bodies with one return statement. Multi-statement and control-flow lambdas
+# stay intact until a wider effect-aware pass exists.
+function flowc_fuse_map(
+    arena: ptr<AstArena>,
+    src: ptr<u8>,
+    outer: i32,
+    inner: i32
+) -> i32 {
+    let inner_args: i32 = arena[0].nodes[inner].a
+    let outer_args: i32 = arena[0].nodes[outer].a
+    if inner_args == AST_NONE or outer_args == AST_NONE {
+        return AST_NONE
+    }
+    let inner_n: i32 = arena[0].nodes[inner_args].next
+    let outer_n: i32 = arena[0].nodes[outer_args].next
+    if inner_n == AST_NONE or outer_n == AST_NONE {
+        return AST_NONE
+    }
+    let f_lam: i32 = arena[0].nodes[inner_n].next
+    let g_lam: i32 = arena[0].nodes[outer_n].next
+    if f_lam == AST_NONE or g_lam == AST_NONE or
+       arena[0].nodes[f_lam].next != AST_NONE or arena[0].nodes[g_lam].next != AST_NONE {
+        return AST_NONE
+    }
+    let f_body: i32 = flowc_simple_lambda_body(arena, f_lam)
+    let g_body: i32 = flowc_simple_lambda_body(arena, g_lam)
+    if f_body == AST_NONE or g_body == AST_NONE {
+        return AST_NONE
+    }
+    let f_param: i32 = arena[0].nodes[f_lam].a
+    let g_param: i32 = arena[0].nodes[g_lam].a
+    let p: i32 = flowc_ast_alloc(arena, AST_PARAM, arena[0].nodes[f_param].start, arena[0].nodes[f_param].end)
+    if p == AST_NONE {
+        return AST_NONE
+    }
+    arena[0].nodes[p].name_start = arena[0].nodes[f_param].name_start
+    arena[0].nodes[p].name_end = arena[0].nodes[f_param].name_end
+    arena[0].nodes[p].a = arena[0].nodes[f_param].a
+    arena[0].nodes[p].b = arena[0].nodes[f_param].b
+    let x: i32 = flowc_ast_alloc(arena, AST_IDENT, arena[0].nodes[p].start, arena[0].nodes[p].end)
+    if x == AST_NONE {
+        return AST_NONE
+    }
+    arena[0].nodes[x].name_start = arena[0].nodes[p].name_start
+    arena[0].nodes[x].name_end = arena[0].nodes[p].name_end
+    let f_arg: i32 = flowc_clone_substitute(arena, f_body, src, f_param, x)
+    if f_arg == AST_NONE {
+        return AST_NONE
+    }
+    let composed_body_expr: i32 = flowc_clone_substitute(arena, g_body, src, g_param, f_arg)
+    if composed_body_expr == AST_NONE {
+        return AST_NONE
+    }
+    let ret: i32 = flowc_ast_alloc(arena, AST_RETURN, arena[0].nodes[g_lam].start, arena[0].nodes[g_lam].end)
+    let block: i32 = flowc_ast_alloc(arena, AST_BLOCK, arena[0].nodes[g_lam].start, arena[0].nodes[g_lam].end)
+    let lam: i32 = flowc_ast_alloc(arena, AST_FN, arena[0].nodes[g_lam].start, arena[0].nodes[g_lam].end)
+    if ret == AST_NONE or block == AST_NONE or lam == AST_NONE {
+        return AST_NONE
+    }
+    arena[0].nodes[ret].a = composed_body_expr
+    arena[0].nodes[block].a = ret
+    arena[0].nodes[lam].a = p
+    arena[0].nodes[lam].b = arena[0].nodes[g_lam].b
+    arena[0].nodes[lam].c = block
+    arena[0].nodes[lam].name_start = 0 - arena[0].len
+    arena[0].nodes[lam].name_end = arena[0].nodes[lam].name_start
+    return lam
 }
 
 # Fuse adjacent stages from one algebraic family. The pass repeats until no
@@ -70,12 +198,24 @@ export function flowc_fuse_pipelines(arena: ptr<AstArena>, src: ptr<u8>) -> void
                         let inner_value: i32 = arena[0].nodes[inner_n].next
                         let outer_value: i32 = arena[0].nodes[outer_n].next
                         if inner_value != AST_NONE and outer_value != AST_NONE {
+                            if family >= 5 {
+                                let map_lam: i32 = flowc_fuse_map(arena, src, id, inner)
+                                if map_lam != AST_NONE {
+                                    arena[0].nodes[id].a = inner_a
+                                    arena[0].nodes[inner_a].next = inner_n
+                                    arena[0].nodes[inner_n].next = map_lam
+                                    arena[0].nodes[map_lam].next = AST_NONE
+                                    changed = 1
+                                }
+                                id = id + 1
+                                continue
+                            }
                             let binop_id: i32 = flowc_ast_alloc(arena, AST_BINOP, 0, 0)
                             if binop_id != AST_NONE {
                                 arena[0].nodes[binop_id].a = inner_value
                                 arena[0].nodes[binop_id].b = outer_value
                                 # scale(a, b) is a * b. offset(a, b) is a + b.
-                                arena[0].nodes[binop_id].ival = if family <= 2 { 26 } else { 23 }
+                                arena[0].nodes[binop_id].ival = if family <= 2 { 26 } else { 24 }
                                 arena[0].nodes[id].a = inner_a
                                 arena[0].nodes[inner_a].next = inner_n
                                 arena[0].nodes[inner_n].next = binop_id
