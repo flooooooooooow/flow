@@ -14,6 +14,9 @@ function parse_num(s: string) -> i32 {
         if s[i] < 48 or s[i] > 57 {
             return -1
         }
+        if n > 214748364 or (n == 214748364 and s[i] > 55) {
+            return -1
+        }
         n = n * 10 + (s[i] - 48)
         i = i + 1
     }
