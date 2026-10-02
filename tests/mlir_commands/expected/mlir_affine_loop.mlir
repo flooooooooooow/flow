@@ -37,4 +37,15 @@ memref.store %v22, %arg0[%v20] : memref<?xf32>
 }
 func.return
 }
+func.func @fill_parallel(%arg0: memref<?xf32>, %arg1: i32) -> () {
+%v23 = arith.constant 0 : i32
+%v24 = arith.index_cast %v23 : i32 to index
+%v25 = arith.index_cast %arg1 : i32 to index
+affine.parallel (%v26) = (%v24) to (%v25) step (1) {
+%v27 = arith.constant 3.0 : f64
+%v28 = arith.truncf %v27 : f64 to f32
+memref.store %v28, %arg0[%v26] : memref<?xf32>
+}
+func.return
+}
 }

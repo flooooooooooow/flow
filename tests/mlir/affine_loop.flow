@@ -17,3 +17,9 @@ function fill_dynamic(a: array<f32>, n: i32) -> void {
         a[i] = 2.0
     }
 }
+
+function fill_parallel(a: array<f32>, n: i32) -> void {
+    parallel for i in 0 to n step 1 {
+        a[i] = 3.0
+    }
+}
