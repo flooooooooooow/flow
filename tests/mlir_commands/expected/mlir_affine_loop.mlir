@@ -48,4 +48,18 @@ memref.store %v28, %arg0[%v26] : memref<?xf32>
 }
 func.return
 }
+func.func @fill_tiled(%arg0: !llvm.ptr) -> () {
+%v29 = arith.constant 0 : i32
+%v30 = arith.constant 8 : i32
+%v31 = arith.index_cast %v29 : i32 to index
+%v32 = arith.index_cast %v30 : i32 to index
+affine.for %v33 = %v31 to %v32 step 1 {
+%v34 = arith.constant 4.0 : f64
+%v35 = arith.truncf %v34 : f64 to f32
+%v36 = arith.index_cast %v33 : index to i64
+%v37 = llvm.getelementptr %arg0[0, %v36] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<8 x f32>
+llvm.store %v35, %v37 : f32, !llvm.ptr
+}
+func.return
+}
 }

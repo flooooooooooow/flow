@@ -68,3 +68,14 @@ bodies with no loop-carried values or control-flow exits. The default remains
 `scf.for`.
 This keeps existing MLIR goldens stable while affine fusion and tiling are
 introduced incrementally.
+
+Static zero-based loops whose extent is divisible by the requested tile size
+can use nested affine loops:
+
+```bash
+FLOWC_MLIR_AFFINE=1 FLOWC_MLIR_TILE=4 \
+  ./flow flow-to-mlir tests/mlir/affine_loop.flow /tmp/tiled.mlir
+```
+
+The inner loop carries the original induction value. Partial tiles and loops
+with carried values use the existing lowering.

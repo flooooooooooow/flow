@@ -11839,6 +11839,101 @@ function mlg_affine_parallel_eligible(m: ptr<Mlg>, st: i32) -> i32 {
     return 1
 }
 
+function mlg_affine_tile_size() -> i32 {
+    let v: string = getenv("FLOWC_MLIR_TILE")
+    let p: ptr<u8> = v
+    if p == null { return 0 }
+    let mut i: i32 = 0
+    let mut n: i32 = 0
+    while p[i] >= 48 and p[i] <= 57 {
+        n = n * 10 + (p[i] as i32) - 48
+        i = i + 1
+    }
+    if n < 2 or n > 64 { return 0 }
+    return n
+}
+
+function mlg_affine_tile_eligible(m: ptr<Mlg>, st: i32) -> i32 {
+    let tile: i32 = mlg_affine_tile_size()
+    if tile == 0 or mlg_affine_enabled() == 0 or mlg_for_is_parallel(m, st) == 1 {
+        return 0
+    }
+    if mlg_kind(m, m[0].arena.nodes[st].a) != AST_INT or mlg_kind(m, m[0].arena.nodes[st].b) != AST_INT {
+        return 0
+    }
+    if m[0].arena.nodes[m[0].arena.nodes[st].a].ival != 0 {
+        return 0
+    }
+    let hi: i32 = m[0].arena.nodes[m[0].arena.nodes[st].b].ival
+    if hi <= 0 or hi % tile != 0 { return 0 }
+    let mut step: i32 = 0
+    if mlg_const_step(m, m[0].arena.nodes[st].ival, &step) == 0 or step != 1 {
+        return 0
+    }
+    if mlg_needs_cf(m, m[0].arena.nodes[st].c) == 1 { return 0 }
+    let locs: ptr<i32> = mlg_alloc_i32(MLG_MAX_MERGE)
+    let nc: i32 = mlg_loop_carried(m, m[0].arena.nodes[st].c, locs)
+    mlg_free_i32(locs)
+    if nc != 0 { return 0 }
+    return 1
+}
+
+function mlg_emit_affine_tiled(m: ptr<Mlg>, st: i32) {
+    let tile: i32 = mlg_affine_tile_size()
+    let hi_e: i32 = m[0].arena.nodes[st].b
+    let hi: i32 = m[0].arena.nodes[hi_e].ival
+    let lb: i32 = mlg_emit_idx_const(m, 0)
+    let ub: i32 = mlg_emit_idx_const(m, hi)
+    let step_tile: i32 = mlg_emit_idx_const(m, tile)
+    let outer: i32 = mlg_new_val(m, MT_INDEX)
+    mlg_line(m)
+    mlg_s(m, "affine.for ")
+    mlg_v(m, outer)
+    mlg_s(m, " = ")
+    mlg_v(m, lb)
+    mlg_s(m, " to ")
+    mlg_v(m, ub)
+    mlg_s(m, " step ")
+    mlg_i(m, tile)
+    mlg_s(m, " {")
+    mlg_nl(m)
+    m[0].ind = m[0].ind + 1
+    let inner: i32 = mlg_new_val(m, MT_INDEX)
+    mlg_line(m)
+    mlg_s(m, "affine.for ")
+    mlg_v(m, inner)
+    mlg_s(m, " = ")
+    mlg_v(m, lb)
+    mlg_s(m, " to ")
+    mlg_v(m, step_tile)
+    mlg_s(m, " step 1 {")
+    mlg_nl(m)
+    m[0].ind = m[0].ind + 1
+    let idx: i32 = mlg_new_val(m, MT_INDEX)
+    mlg_line(m)
+    mlg_v(m, idx)
+    mlg_s(m, " = arith.addi ")
+    mlg_v(m, outer)
+    mlg_s(m, ", ")
+    mlg_v(m, inner)
+    mlg_s(m, " : index")
+    mlg_nl(m)
+    mlg_add_local(m, mlg_ns(m, st), mlg_ne(m, st), MT_INDEX, FT_NONE, idx)
+    let none: ptr<i32> = mlg_alloc_i32(1)
+    let k: i32 = mlg_push_loop(m, 2, 0, 0, V_NONE, V_NONE, none, 0)
+    mlg_emit_block(m, m[0].arena.nodes[st].c)
+    m[0].nlp = k
+    mlg_free_i32(none)
+    m[0].ind = m[0].ind - 1
+    mlg_line(m)
+    mlg_s(m, "}")
+    mlg_nl(m)
+    m[0].ind = m[0].ind - 1
+    mlg_line(m)
+    mlg_s(m, "}")
+    mlg_nl(m)
+}
+
 function mlg_emit_affine_parallel(m: ptr<Mlg>, st: i32, step_val: i32) {
     let lo_e: i32 = m[0].arena.nodes[st].a
     let hi_e: i32 = m[0].arena.nodes[st].b
@@ -12591,6 +12686,10 @@ function mlg_emit_for(m: ptr<Mlg>, st: i32) {
         let mut step_val: i32 = 0
         let _has: i32 = mlg_const_step(m, m[0].arena.nodes[st].ival, &step_val)
         mlg_emit_affine_parallel(m, st, step_val)
+        return
+    }
+    if par == 0 and mlg_affine_tile_eligible(m, st) == 1 {
+        mlg_emit_affine_tiled(m, st)
         return
     }
     if par == 0 and mlg_affine_eligible(m, st) == 1 {

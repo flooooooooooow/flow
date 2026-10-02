@@ -23,3 +23,9 @@ function fill_parallel(a: array<f32>, n: i32) -> void {
         a[i] = 3.0
     }
 }
+
+function fill_tiled(a: array<f32, 8>) -> void {
+    for i in 0 to 8 step 1 {
+        a[i] = 4.0
+    }
+}
