@@ -142,7 +142,7 @@ function main() -> i32 {
         outln("Reported tuning metric is pending toolchain availability, but pipeline logic is successfully tested.")
     }
     if s_len(best) > 0 {
-        outln("Successfully selected best tile size: " + best)
+        outln("Successfully selected best tile schedule: " + best)
         if has_toolchain {
             outln("Best runtime: " + bench_fixed(best_metric, 6) + "s")
         } else {
