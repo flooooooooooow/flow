@@ -2983,6 +2983,28 @@ function mlg_register_tiles_enabled() -> i32 {
     return 0
 }
 
+function mlg_register_tile_cap(s: string, out: ptr<i32>) -> i32 {
+    let p: ptr<u8> = s
+    if p == null or p[0] == 0 {
+        out[0] = 256
+        return 1
+    }
+    let mut i: i32 = 0
+    let mut cap: i32 = 0
+    while p[i] != 0 {
+        if p[i] < 48 or p[i] > 57 {
+            return 0
+        }
+        cap = cap * 10 + (p[i] - 48)
+        i = i + 1
+    }
+    if cap <= 0 {
+        return 0
+    }
+    out[0] = cap
+    return 1
+}
+
 # Emit one hardware-shaped register tile. The operation stays in the vector
 # dialect so targets can select AMX, SME, or a GPU matrix instruction later.
 function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
@@ -3003,8 +3025,11 @@ function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
     let am: i32 = m[0].vc_n[at - MT_VECTOR]
     let bn: i32 = m[0].vc_n[bt - MT_VECTOR]
     let cap_s: string = getenv("FLOWC_MLIR_REGISTER_TILE_MAX_LANES")
-    let cap_p: ptr<u8> = cap_s
-    let cap: i32 = if cap_p == null or cap_p[0] == 0 { 256 } else { atoi(cap_s) }
+    let mut cap: i32 = 0
+    if mlg_register_tile_cap(cap_s, &cap) == 0 {
+        mlg_refuse(m, e, "FLOWC_MLIR_REGISTER_TILE_MAX_LANES must be a positive integer")
+        return V_NONE
+    }
     if am <= 0 or bn <= 0 or am * bn > cap {
         mlg_refuse(m, e, "register tile exceeds FLOWC_MLIR_REGISTER_TILE_MAX_LANES")
         return V_NONE
