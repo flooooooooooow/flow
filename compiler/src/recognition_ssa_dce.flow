@@ -1,0 +1,39 @@
+# @module flowc.recognition_ssa_dce
+# @means  Derive exact zero-drift RSSA evidence for proven unreachable DCE.
+
+import .fir_opts { FlowcOptCandidate, flowc_is_dead_elim_candidate }
+import .recognition_ssa {
+    FLOWC_RSSA_OK,
+    FlowcRecognitionContract,
+    FlowcAttractorSignature,
+    flowc_rssa_empty_signature
+}
+import .recognition_ssa_gate { FlowcRssaGateResult, flowc_rssa_gate_candidate }
+
+# Only kind=0 candidates proven unreachable and non-main receive this exact
+# certificate. Inlining and other transformations must use real observations.
+export function flowc_rssa_gate_exact_dead_elim(
+    candidate: FlowcOptCandidate,
+    is_reachable: i32,
+    is_main: i32,
+    contracts: ptr<FlowcRecognitionContract>,
+    contract_count: i32,
+    out: ptr<FlowcRssaGateResult>
+) -> i32 {
+    if candidate.kind != 0 {
+        out[0].candidate = candidate
+        out[0].allowed = 0
+        return 8
+    }
+    if flowc_is_dead_elim_candidate(is_reachable, is_main) == 0 {
+        out[0].candidate = candidate
+        out[0].allowed = 0
+        return 8
+    }
+    let empty: FlowcAttractorSignature = flowc_rssa_empty_signature()
+    let before: array<FlowcAttractorSignature, 5> = [empty, empty, empty, empty, empty]
+    let after: array<FlowcAttractorSignature, 5> = [empty, empty, empty, empty, empty]
+    return flowc_rssa_gate_candidate(
+        candidate, 1, contracts, contract_count, &before[0], &after[0], out
+    )
+}
