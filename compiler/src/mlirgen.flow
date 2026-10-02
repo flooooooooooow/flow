@@ -4830,8 +4830,13 @@ function mlg_emit_tensor_scalar(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     let v0: i32 = mlg_emit_expr(m, a0)
     let v1: i32 = mlg_emit_expr(m, a1)
     let t0: i32 = mlg_val_mt(m, v0, a0)
+    let t1: i32 = mlg_val_mt(m, v1, a1)
     if mlg_is_tensor_type_mt(t0) == 0 {
         mlg_refuse(m, e, "tensor scalar operation requires a tensor")
+        return V_NONE
+    }
+    if t1 != MT_F32 {
+        mlg_refuse(m, e, "tensor scalar operation requires an f32 scalar")
         return V_NONE
     }
     let z: i32 = mlg_new_val(m, MT_INDEX)
