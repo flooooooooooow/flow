@@ -1,0 +1,2 @@
+[0;34mℹ️  Running FLOW language tests (tests/lang/, strict)...[0m
+[0;31m❌ FLOW_TEST_TIMEOUT wants a whole number of seconds above 0, got 'soon'[0m

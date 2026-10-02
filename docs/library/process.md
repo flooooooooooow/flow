@@ -39,7 +39,8 @@ Settings, each optional:
 | `proc_env(c, name, value)` | set a variable in the child, on top of this program's environment |
 | `proc_env_clear(c)` | start the child with only the `proc_env` variables |
 | `proc_cwd(c, dir)` | run the child in `dir` |
-| `proc_timeout_ms(c, ms)` | kill the child with `SIGKILL` after `ms` milliseconds |
+| `proc_timeout_ms(c, ms)` | kill the child, and every program it started, with `SIGKILL` after `ms` milliseconds; the child leads its own process group |
+| `proc_new_group(c, on)` | start the child as the leader of a new process group even without a timeout; a child in its own group misses signals sent to this program's group, such as Ctrl-C |
 | `proc_input(c, text)` | write `text` to the child's stdin, then close it |
 | `proc_stdin(c, mode)` | `PROC_NULL` (the default) or `PROC_INHERIT` |
 | `proc_stdout(c, mode)` | `PROC_CAPTURE` (the default), `PROC_INHERIT` or `PROC_NULL` |

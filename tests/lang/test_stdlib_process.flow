@@ -10,7 +10,8 @@ import std.process {
     proc_argv, proc_args, proc_strs_len, proc_getenv, proc_has_env,
     proc_setenv, proc_unsetenv, proc_getcwd, proc_which, proc_pid,
     proc_now_ms, proc_spawn, proc_wait, proc_wait_any, proc_pipe_new,
-    proc_attach_stdin, proc_attach_stdout, PROC_NULL, PROC_MERGE
+    proc_attach_stdin, proc_attach_stdout, proc_new_group, proc_sleep_ms,
+    PROC_NULL, PROC_MERGE
 }
 
 # Programs declare libc through extern with Flow types, which clash with
@@ -33,10 +34,33 @@ extern {
     function waitpid(pid: i32, status: ptr<i32>, options: i32) -> i32
     function kill(pid: i32, sig: i32) -> i32
     function poll(fds: ptr<u8>, n: i64, timeout: i32) -> i32
+    function atoi(s: string) -> i32
 }
 
 function eq(a: string, b: string) -> bool {
     return strcmp(a, b) == 0
+}
+
+# True once `pid` no longer exists, polling for up to two seconds while an
+# orphan is reaped.
+function gone(pid: i32) -> bool {
+    let mut waited: i32 = 0
+    while waited < 2000 {
+        if kill(pid, 0) != 0 {
+            return true
+        }
+        proc_sleep_ms(20)
+        waited = waited + 20
+    }
+    return false
+}
+
+# A shell that starts `sleep 30` in the background, prints its pid and waits.
+function sleeper() -> ptr<ProcCmd> {
+    let c: ptr<ProcCmd> = proc_sh("sleep 30 & echo $!; wait")
+    proc_new_group(c, true)
+    proc_timeout_ms(c, 300)
+    return c
 }
 
 function main() -> i32 {
@@ -85,6 +109,26 @@ function main() -> i32 {
     proc_timeout_ms(c7, 5000)
     let r7: ptr<ProcResult> = proc_run(c7)
     if r7.timed_out or r7.exit_code != 0 { return 12 }
+
+    # With proc_new_group a timeout kills the child's whole process group,
+    # so a program it started in the background dies too (#1174).
+    let r7g: ptr<ProcResult> = proc_run(sleeper())
+    let bg: i32 = atoi(r7g.stdout)
+    if r7g.timed_out == false or r7g.exit_code != 0 - 9 { return 38 }
+    if bg <= 0 { return 39 }
+    if gone(bg) == false {
+        let _k: i32 = kill(bg, 9)
+        return 40
+    }
+    # The same through proc_spawn and proc_wait.
+    let h7: ptr<ProcHandle> = proc_spawn(sleeper())
+    let r7h: ptr<ProcResult> = proc_wait(h7)
+    let bg2: i32 = atoi(r7h.stdout)
+    if r7h.timed_out == false or bg2 <= 0 { return 41 }
+    if gone(bg2) == false {
+        let _k2: i32 = kill(bg2, 9)
+        return 42
+    }
 
     # Signals come back negative, as in Python's subprocess.
     let r8: ptr<ProcResult> = proc_run(proc_sh("kill -TERM $$"))

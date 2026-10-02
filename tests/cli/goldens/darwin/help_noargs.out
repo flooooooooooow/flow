@@ -55,6 +55,8 @@ Testing:
   test-strict       Shortcut for: test --strict
   test-runtime      Run runtime tests (compile + execute)
   test-lang         Run tests/lang/ language tests (strict flowc + compile + execute)
+                    --timeout=SECONDS  Per-program limit for test-runtime and test-lang
+                    (default 120, or FLOW_TEST_TIMEOUT); a timeout is a failure
   test-mlir         Run MLIR verification (requires LLVM)
   test-scripts      Run the Flow tests in tests/scripts
   test-interop      Run interop runtime tests

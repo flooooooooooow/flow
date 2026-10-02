@@ -8,7 +8,7 @@ import "tools/flow_cli/toolchain.flow"
 import "tools/flow_cli/flowc_build.flow"
 import "tools/flow_cli/build.flow"
 import "tools/flow_cli/mlir_tools.flow"
-import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg, proc_timeout_ms, proc_stdout, proc_stderr, PROC_CAPTURE, PROC_MERGE }
+import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg, proc_new_group, proc_timeout_ms }
 
 # ---------------------------------------------------------------------------
 # flow test: tier 1 (flowc) and tier 2 (clang -fsyntax-only)
@@ -284,6 +284,53 @@ function effects_env(permissive: bool, had_c: bool, saved_c: string, had_r: bool
     }
 }
 
+# Each test-runtime and test-lang program runs under a time limit (#1174):
+# --timeout=SECONDS, else FLOW_TEST_TIMEOUT (seconds), else, for
+# test-runtime, FLOW_RUNTIME_TEST_TIMEOUT_MS, else 120 seconds. The program
+# leads its own process group and the whole group is killed at the limit,
+# so one hang fails one test and the run goes on. Limits are kept in ms.
+const TEST_TIMEOUT_DEFAULT_MS: i32 = 120000
+
+function test_timeout_parse(v: string, source: string, unit: string) -> i32 {
+    if not s_is_digits(v) or s_atoi(v, 0) <= 0 {
+        error(source + " wants a whole number of " + unit + " above 0, got '" + v + "'")
+        cli_exit(2)
+    }
+    return s_atoi(v, 0)
+}
+
+function test_timeout_default(runtime: bool) -> i32 {
+    if env_isset("FLOW_TEST_TIMEOUT") {
+        return test_timeout_parse(env("FLOW_TEST_TIMEOUT"), "FLOW_TEST_TIMEOUT", "seconds") * 1000
+    }
+    if runtime and env_isset("FLOW_RUNTIME_TEST_TIMEOUT_MS") {
+        return test_timeout_parse(env("FLOW_RUNTIME_TEST_TIMEOUT_MS"), "FLOW_RUNTIME_TEST_TIMEOUT_MS", "milliseconds")
+    }
+    return TEST_TIMEOUT_DEFAULT_MS
+}
+
+function test_timeout_arg(a: string) -> i32 {
+    return test_timeout_parse(s_from(a, 10), "--timeout", "seconds") * 1000
+}
+
+# Run one test program under the limit.
+function run_test_program(c: ptr<ProcCmd>, limit_ms: i32) -> ptr<ProcResult> {
+    proc_new_group(c, true)
+    proc_timeout_ms(c, limit_ms as i64)
+    return run_result(c)
+}
+
+function limit_text(limit_ms: i32) -> string {
+    if limit_ms % 1000 == 0 {
+        return s_itoa(limit_ms / 1000) + "s"
+    }
+    return s_itoa(limit_ms) + "ms"
+}
+
+function timeout_message(rel_path: string, limit_ms: i32) -> string {
+    return "✗ " + rel_path + " (timed out after " + limit_text(limit_ms) + "; killed its process group; limit: --timeout=SECONDS or FLOW_TEST_TIMEOUT)"
+}
+
 # find DIR -name "*.flow" ! -path "*/wip/*", in find's order.
 function find_flow(dir: string) -> ptr<ProcStrs> {
     let f: ptr<ProcStrs> = sl_of3("find", dir, "-name")
@@ -322,14 +369,16 @@ export function run_runtime_tests(args: ptr<ProcStrs>) -> i32 {
     info("Running FLOW runtime tests...")
     let runtime_dir: string = root() + "/tests/runtime"
     let build_dir: string = mktemp_dir_default()
-    let timeout_ms: i32 = s_atoi(env_or("FLOW_RUNTIME_TEST_TIMEOUT_MS", "90000"), 90000)
     let mut verbose: bool = false
+    let mut limit_ms: i32 = test_timeout_default(true)
     let targets: ptr<ProcStrs> = sl_new()
     let mut i: i32 = 0
     while i < sl_len(args) {
         let a: string = sl_get(args, i)
         if s_eq(a, "--verbose") or s_eq(a, "-v") {
             verbose = true
+        } elif s_starts(a, "--timeout=") {
+            limit_ms = test_timeout_arg(a)
         } else {
             sl_push(targets, a)
         }
@@ -398,20 +447,22 @@ export function run_runtime_tests(args: ptr<ProcStrs>) -> i32 {
             failed_files = failed_files + "\n  - " + rel_path + " (clang)"
             continue
         }
-        let run_cmd: ptr<ProcCmd> = cmd(sl_of1(exe_file))
-        proc_stdout(run_cmd, PROC_CAPTURE)
-        proc_stderr(run_cmd, PROC_MERGE)
-        proc_timeout_ms(run_cmd, timeout_ms as i64)
-        let rr: ptr<ProcResult> = run_result(run_cmd)
+        let rc: ptr<ProcCmd> = cmd(sl_of1(exe_file))
+        cmd_capture_out(rc)
+        cmd_merge_err(rc)
+        let rr: ptr<ProcResult> = run_test_program(rc, limit_ms)
         let run_output: string = s_chomp_all(rr.stdout)
         let exit_code: i32 = rr.exit_code
-        let expected_file: string = s_slice(program, 0, s_len(program) - 5) + ".expected"
         if rr.timed_out {
-            error("✗ " + rel_path + " (timeout after " + s_itoa(timeout_ms) + "ms)")
+            error(timeout_message(rel_path, limit_ms))
+            if s_len(run_output) > 0 {
+                out(tail_of(run_output + "\n", 12))
+            }
             failed = failed + 1
-            failed_files = failed_files + "\n  - " + rel_path + " (timeout)"
+            failed_files = failed_files + "\n  - " + rel_path + " (timeout " + limit_text(limit_ms) + ")"
             continue
         }
+        let expected_file: string = s_slice(program, 0, s_len(program) - 5) + ".expected"
         if is_file(expected_file) {
             let expected_output: string = s_chomp_all(read_text(expected_file))
             if not s_eq(run_output, expected_output) {
@@ -506,12 +557,15 @@ export function run_lang_tests(args: ptr<ProcStrs>) -> i32 {
     let lang_dir: string = root() + "/tests/lang"
     let build_dir: string = mktemp_dir_default()
     let mut verbose: bool = false
+    let mut limit_ms: i32 = test_timeout_default(false)
     let targets: ptr<ProcStrs> = sl_new()
     let mut i: i32 = 0
     while i < sl_len(args) {
         let a: string = sl_get(args, i)
         if s_eq(a, "--verbose") or s_eq(a, "-v") {
             verbose = true
+        } elif s_starts(a, "--timeout=") {
+            limit_ms = test_timeout_arg(a)
         } else {
             sl_push(targets, a)
         }
@@ -620,7 +674,17 @@ export function run_lang_tests(args: ptr<ProcStrs>) -> i32 {
         }
         cmd_capture_out(rc)
         cmd_capture_err(rc)
-        let rr: ptr<ProcResult> = run_result(rc)
+        let rr: ptr<ProcResult> = run_test_program(rc, limit_ms)
+        if rr.timed_out {
+            error(timeout_message(rel_path, limit_ms))
+            let partial: string = s_chomp_all(rr.stdout + rr.stderr)
+            if s_len(partial) > 0 {
+                out(tail_of(partial + "\n", 12))
+            }
+            failed = failed + 1
+            failed_files = failed_files + "\n  - " + rel_path + " (timeout " + limit_text(limit_ms) + ")"
+            continue
+        }
         let exit_code: i32 = rr.exit_code
         let _w1: bool = write_text(stdout_file, rr.stdout)
         let _w2: bool = write_text(stderr_file, rr.stderr)

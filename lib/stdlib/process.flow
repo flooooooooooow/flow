@@ -17,8 +17,11 @@
 #
 # exit_code follows Python's subprocess: the exit status, or minus the
 # signal number when a signal ended the child. A command that runs past its
-# timeout is killed with SIGKILL and has timed_out set. A command that
-# could not be started has exit_code 127 and says why in `error`.
+# timeout is killed with SIGKILL and has timed_out set. A command with a
+# timeout, or started with proc_new_group, leads its own process group, and
+# a timeout kills the whole group, so programs it started die with it. A
+# command that could not be started has exit_code 127 and says why in
+# `error`.
 #
 # Everything above the system calls is Flow. The C below is a thin shim:
 # the calls whose prototypes or struct layouts differ between platforms
@@ -48,7 +51,6 @@ extern int flow_proc_c_access(const char *, int) __asm__(FLOW_PROC_SYM(access));
 extern char *flow_proc_c_getcwd(char *, unsigned long) __asm__(FLOW_PROC_SYM(getcwd));
 extern int flow_proc_c_chdir(const char *) __asm__(FLOW_PROC_SYM(chdir));
 extern int flow_proc_c_getpid(void) __asm__(FLOW_PROC_SYM(getpid));
-extern int flow_proc_c_setpgid(int, int) __asm__(FLOW_PROC_SYM(setpgid));
 extern int flow_proc_c_kill(int, int) __asm__(FLOW_PROC_SYM(kill));
 struct flow_proc_pollfd { int fd; short events; short revents; };
 #if defined(__APPLE__)
@@ -139,11 +141,21 @@ static int32_t flow_proc_setup_fd(posix_spawn_file_actions_t *fa, int32_t mode, 
 #endif
 static int32_t flow_proc_spawn_can_chdir(void) { return FLOW_PROC_HAVE_CHDIR; }
 static int32_t flow_proc_spawn(const char **argv, const char **envp, const char *cwd,
-    int32_t in_mode, int32_t in_fd, int32_t out_mode, int32_t out_fd, int32_t err_mode, int32_t err_fd) {
+    int32_t in_mode, int32_t in_fd, int32_t out_mode, int32_t out_fd, int32_t err_mode, int32_t err_fd,
+    int32_t new_group) {
   posix_spawn_file_actions_t fa;
+  posix_spawnattr_t at;
   pid_t pid = 0;
   int rc;
   if (posix_spawn_file_actions_init(&fa) != 0) { return -ENOMEM; }
+  if (posix_spawnattr_init(&at) != 0) { posix_spawn_file_actions_destroy(&fa); return -ENOMEM; }
+  /* The group is set in the child before exec, so nothing it starts can
+   * escape a later kill of the group. */
+  if (new_group) {
+    rc = posix_spawnattr_setpgroup(&at, 0);
+    if (rc == 0) { rc = posix_spawnattr_setflags(&at, POSIX_SPAWN_SETPGROUP); }
+    if (rc != 0) { posix_spawnattr_destroy(&at); posix_spawn_file_actions_destroy(&fa); return -(int32_t)rc; }
+  }
   rc = flow_proc_setup_fd(&fa, in_mode, in_fd, 0, 0);
   if (rc == 0) { rc = flow_proc_setup_fd(&fa, out_mode, out_fd, 1, 1); }
   if (rc == 0) { rc = flow_proc_setup_fd(&fa, err_mode, err_fd, 2, 1); }
@@ -151,8 +163,9 @@ static int32_t flow_proc_spawn(const char **argv, const char **envp, const char 
   if (rc == 0 && cwd != 0 && cwd[0] != 0) { rc = posix_spawn_file_actions_addchdir_np(&fa, cwd); }
 #endif
   if (rc == 0) {
-    rc = posix_spawnp(&pid, argv[0], &fa, 0, (char *const *)argv, envp != 0 ? (char *const *)envp : environ);
+    rc = posix_spawnp(&pid, argv[0], &fa, &at, (char *const *)argv, envp != 0 ? (char *const *)envp : environ);
   }
+  posix_spawnattr_destroy(&at);
   posix_spawn_file_actions_destroy(&fa);
   if (rc != 0) { return -(int32_t)rc; }
   return (int32_t)pid;
@@ -166,9 +179,12 @@ static int32_t flow_proc_wait(int32_t pid, int32_t nohang, int32_t *code) {
   else { *code = -1; }
   return 1;
 }
-static int32_t flow_proc_setpgid(int32_t pid) { return (int32_t)flow_proc_c_setpgid((int)pid, (int)pid); }
 static int32_t flow_proc_kill(int32_t pid, int32_t sig) { return (int32_t)flow_proc_c_kill((int)pid, (int)sig); }
-static int32_t flow_proc_kill_group(int32_t pid, int32_t sig) { return (int32_t)flow_proc_c_kill(-(int)pid, (int)sig); }
+/* The child's group when it leads one, else the child alone. */
+static int32_t flow_proc_kill_tree(int32_t pid, int32_t group, int32_t sig) {
+  if (group && flow_proc_c_kill(-(int)pid, (int)sig) == 0) { return 0; }
+  return (int32_t)flow_proc_c_kill((int)pid, (int)sig);
+}
 static int32_t flow_proc_sigkill(void) { return (int32_t)SIGKILL; }
 static int32_t flow_proc_sigterm(void) { return (int32_t)SIGTERM; }
 static int32_t flow_proc_access_x(const char *path) { return flow_proc_c_access(path, 1) == 0 ? 1 : 0; }
@@ -198,11 +214,10 @@ extern {
     function flow_proc_sleep_ms(ms: i32) -> i32
     function flow_proc_now_ms() -> i64
     function flow_proc_spawn_can_chdir() -> i32
-    function flow_proc_spawn(argv: ptr<string>, envp: ptr<string>, cwd: string, in_mode: i32, in_fd: i32, out_mode: i32, out_fd: i32, err_mode: i32, err_fd: i32) -> i32
+    function flow_proc_spawn(argv: ptr<string>, envp: ptr<string>, cwd: string, in_mode: i32, in_fd: i32, out_mode: i32, out_fd: i32, err_mode: i32, err_fd: i32, new_group: i32) -> i32
     function flow_proc_wait(pid: i32, nohang: i32, code: ptr<i32>) -> i32
-    function flow_proc_setpgid(pid: i32) -> i32
     function flow_proc_kill(pid: i32, sig: i32) -> i32
-    function flow_proc_kill_group(pid: i32, sig: i32) -> i32
+    function flow_proc_kill_tree(pid: i32, group: i32, sig: i32) -> i32
     function flow_proc_sigkill() -> i32
     function flow_proc_sigterm() -> i32
     function flow_proc_access_x(path: string) -> i32
@@ -253,7 +268,8 @@ export struct ProcCmd {
     out_mode: i32,
     err_mode: i32,
     in_fd: i32,
-    out_fd: i32
+    out_fd: i32,
+    new_group: bool
 }
 
 # A pipe that can connect two spawned commands. proc_attach_stdin and
@@ -291,7 +307,8 @@ export struct ProcHandle {
     result: ptr<ProcResult>,
     start_ms: i64,
     deadline: i64,
-    finished: bool
+    finished: bool,
+    group: bool
 }
 
 # ---------------------------------------------------------------------------
@@ -349,6 +366,7 @@ export function proc_cmd(program: string) -> ptr<ProcCmd> {
     c.err_mode = PROC_CAPTURE
     c.in_fd = 0 - 1
     c.out_fd = 0 - 1
+    c.new_group = false
     return c
 }
 
@@ -397,6 +415,14 @@ export function proc_cwd(c: ptr<ProcCmd>, dir: string) {
 # Kill the child with SIGKILL after `ms` milliseconds. 0 means no limit.
 export function proc_timeout_ms(c: ptr<ProcCmd>, ms: i64) {
     c.timeout_ms = ms
+}
+
+# Start the child as the leader of a new process group. A command with a
+# timeout always gets one, so a timeout kills it and everything it started.
+# The child then no longer receives signals sent to this program's group,
+# such as Ctrl-C at a terminal.
+export function proc_new_group(c: ptr<ProcCmd>, on: bool) {
+    c.new_group = on
 }
 
 # Feed `text` to the child's stdin, then close it.
@@ -550,7 +576,7 @@ function proc_drain(fd: i32, b: ptr<ByteBuf>, chunk: ptr<u8>) -> bool {
 
 # Wait for the child to exit, up to `deadline` (0: no limit). Kills it
 # when the deadline passes. Returns the exit code.
-function proc_reap(pid: i32, deadline: i64, r: ptr<ProcResult>) -> i32 {
+function proc_reap(pid: i32, group: bool, deadline: i64, r: ptr<ProcResult>) -> i32 {
     let code: ptr<i32> = malloc(4) as ptr<i32>
     code[0] = 0 - 1
     if deadline == 0 {
@@ -564,7 +590,7 @@ function proc_reap(pid: i32, deadline: i64, r: ptr<ProcResult>) -> i32 {
         }
         if flow_proc_now_ms() >= deadline {
             r.timed_out = true
-            let _k: i32 = flow_proc_kill(pid, flow_proc_sigkill())
+            let _k: i32 = flow_proc_kill_tree(pid, group as i32, flow_proc_sigkill())
             let _w2: i32 = flow_proc_wait(pid, 0, code)
             return code[0]
         }
@@ -665,7 +691,7 @@ function proc_handle_tick(h: ptr<ProcHandle>, timeout_ms: i32) -> bool {
     }
     if h.deadline > 0 and flow_proc_now_ms() >= h.deadline and h.result.exit_code == 0 - 1 {
         h.result.timed_out = true
-        let _k: i32 = flow_proc_kill(h.pid, flow_proc_sigkill())
+        let _k: i32 = flow_proc_kill_tree(h.pid, h.group as i32, flow_proc_sigkill())
         let _w: i32 = flow_proc_wait(h.pid, 0, code)
         h.result.exit_code = code[0]
     }
@@ -696,6 +722,7 @@ export function proc_spawn(c: ptr<ProcCmd>) -> ptr<ProcHandle> {
     h.start_ms = flow_proc_now_ms()
     h.deadline = 0
     h.finished = false
+    h.group = c.new_group or c.timeout_ms > 0
     let pin: ptr<i32> = malloc(8) as ptr<i32>
     let pout: ptr<i32> = malloc(8) as ptr<i32>
     let perr: ptr<i32> = malloc(8) as ptr<i32>
@@ -736,7 +763,7 @@ export function proc_spawn(c: ptr<ProcCmd>) -> ptr<ProcHandle> {
         h.pid = flow_proc_spawn(argv, proc_build_env(c), cwd,
             in_spawn_mode, in_fd,
             out_spawn_mode, out_fd,
-            proc_fd_mode(c.err_mode), perr[1])
+            proc_fd_mode(c.err_mode), perr[1], h.group as i32)
     }
     if pin[0] >= 0 { let _a: i32 = flow_proc_close(pin[0]) }
     if pout[1] >= 0 { let _b: i32 = flow_proc_close(pout[1]) }
@@ -844,9 +871,10 @@ export function proc_run(c: ptr<ProcCmd>) -> ptr<ProcResult> {
     if feed {
         in_mode = FD_PIPE
     }
+    let grouped: bool = c.new_group or c.timeout_ms > 0
     let mut pid: i32 = 0 - 1
     if pipe_ok {
-        pid = flow_proc_spawn(argv, proc_build_env(c), cwd, in_mode, pin[0], proc_fd_mode(c.out_mode), pout[1], proc_fd_mode(c.err_mode), perr[1])
+        pid = flow_proc_spawn(argv, proc_build_env(c), cwd, in_mode, pin[0], proc_fd_mode(c.out_mode), pout[1], proc_fd_mode(c.err_mode), perr[1], grouped as i32)
     }
     # The child has its copies; close ours of the child's ends.
     if pin[0] >= 0 {
@@ -878,7 +906,6 @@ export function proc_run(c: ptr<ProcCmd>) -> ptr<ProcResult> {
         return r
     }
     r.pid = pid
-    let grouped: bool = flow_proc_setpgid(pid) == 0
 
     let mut deadline: i64 = 0
     if c.timeout_ms > 0 {
@@ -977,13 +1004,9 @@ export function proc_run(c: ptr<ProcCmd>) -> ptr<ProcResult> {
         let _x2: i32 = flow_proc_close(err_fd)
     }
     if r.timed_out {
-        if grouped {
-            let _kg: i32 = flow_proc_kill_group(pid, flow_proc_sigkill())
-        } else {
-            let _k: i32 = flow_proc_kill(pid, flow_proc_sigkill())
-        }
+        let _k: i32 = flow_proc_kill_tree(pid, grouped as i32, flow_proc_sigkill())
     }
-    r.exit_code = proc_reap(pid, deadline, r)
+    r.exit_code = proc_reap(pid, grouped, deadline, r)
     r.stdout = bb_str(out_b)
     r.stderr = bb_str(err_b)
     bb_free(out_b)
