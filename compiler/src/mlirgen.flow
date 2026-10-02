@@ -4733,11 +4733,11 @@ function mlg_method_call_node0(m: ptr<Mlg>, e: i32) -> i32 {
     return t
 }
 
-# Python's tensor_add intrinsic. Memref values keep the established in-place
+# Python's elementwise tensor intrinsics. Memref values keep the established in-place
 # destination form. Tensor values use a fresh tensor.empty destination so the
 # operation has value semantics and One-Shot Bufferization can choose the
 # storage reuse after alias analysis.
-function mlg_emit_tensor_add(m: ptr<Mlg>, e: i32) -> i32 {
+function mlg_emit_tensor_elementwise(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     let a0: i32 = m[0].arena.nodes[e].a
     let a1: i32 = m[0].arena.nodes[a0].next
     let v0: i32 = mlg_emit_expr(m, a0)
@@ -4802,7 +4802,13 @@ function mlg_emit_tensor_add(m: ptr<Mlg>, e: i32) -> i32 {
     mlg_line(m)
     mlg_s(m, "  ")
     mlg_v(m, s)
-    mlg_s(m, " = arith.addf %in, %out : f32")
+    let mut opname: string = "addf"
+    if op == TOK_MINUS { opname = "subf" }
+    if op == TOK_STAR { opname = "mulf" }
+    if op == TOK_SLASH { opname = "divf" }
+    mlg_s(m, " = arith.")
+    mlg_s(m, opname)
+    mlg_s(m, " %in, %out : f32")
     mlg_nl(m)
     mlg_line(m)
     mlg_s(m, "  linalg.yield ")
@@ -4900,9 +4906,13 @@ function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
     if mlg_span_is(m, ns, ne, "register_tile_outer_product") == 1 and mlg_chain_len(m, m[0].arena.nodes[e].a) == 2 {
         return mlg_emit_register_tile_outer_product(m, e)
     }
-    # The tensor_add intrinsic over memrefs, unless the program defines it.
-    if mlg_span_is(m, ns, ne, "tensor_add") == 1 and mlg_chain_len(m, m[0].arena.nodes[e].a) == 2 and (k < 0 or m[0].fn_ext[k] == 1) {
-        return mlg_emit_tensor_add(m, e)
+    # Elementwise tensor intrinsics over memrefs and tensors, unless the
+    # program defines the operation itself.
+    if mlg_chain_len(m, m[0].arena.nodes[e].a) == 2 and (k < 0 or m[0].fn_ext[k] == 1) {
+        if mlg_span_is(m, ns, ne, "tensor_add") == 1 { return mlg_emit_tensor_elementwise(m, e, TOK_PLUS) }
+        if mlg_span_is(m, ns, ne, "tensor_sub") == 1 { return mlg_emit_tensor_elementwise(m, e, TOK_MINUS) }
+        if mlg_span_is(m, ns, ne, "tensor_mul") == 1 { return mlg_emit_tensor_elementwise(m, e, TOK_STAR) }
+        if mlg_span_is(m, ns, ne, "tensor_div") == 1 { return mlg_emit_tensor_elementwise(m, e, TOK_SLASH) }
     }
     if mlg_span_is(m, ns, ne, "i32_to_f32") == 1 and mlg_chain_len(m, m[0].arena.nodes[e].a) == 1 and (k < 0 or m[0].fn_ext[k] == 1) {
         # The C backend's intrinsic, declared or not: (float)x.
