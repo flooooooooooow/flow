@@ -1,0 +1,43 @@
+# One-Shot Bufferization must lower tensor values across user-defined calls.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+
+function check_tensor_boundary_bufferizes() -> i32 {
+    let need: i32 = t_need("mlir-opt")
+    if need != T_PASS {
+        return need
+    }
+    let emit: ptr<ProcStrs> = sl_of3("./flow", "mlir", "compiler/fixtures/mlir_opt/tensor_boundary.flow")
+    sl_push(emit, "--lenient")
+    if t_run_argv(emit) != 0 {
+        return T_FAIL
+    }
+    let input: string = "build/tensor_boundary.mlir"
+    if not exists(input) {
+        return T_FAIL
+    }
+    let output: string = t_tmp() + "/tensor_boundary.bufferized.mlir"
+    let optimize: ptr<ProcStrs> = sl_of3("./flow", "mlir-optimize", input)
+    sl_push(optimize, output)
+    sl_push2(optimize, "--opt-level", "O1")
+    if t_run_argv(optimize) != 0 {
+        return T_FAIL
+    }
+    let text: string = read_text(output)
+    if not a_contains(text, "memref<") {
+        return T_FAIL
+    }
+    if a_contains(text, "tensor<") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("mlir_bufferize_boundary")
+    t_start()
+    t_end("tensor_calls_lower_to_memrefs", check_tensor_boundary_bufferizes())
+    t_done()
+    return 0
+}
