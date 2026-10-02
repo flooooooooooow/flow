@@ -441,6 +441,13 @@ export function mlir_optimize(args: ptr<ProcStrs>) -> i32 {
         } elif s_eq(a, "--opt-level") {
             sl_push2(flags, a, sl_get(args, i + 1))
             i = i + 1
+        } elif s_eq(a, "--async-copy-target") {
+            if i + 1 >= sl_len(args) {
+                errln("mlir_optimize: --async-copy-target requires a value")
+                return 2
+            }
+            sl_push2(flags, a, sl_get(args, i + 1))
+            i = i + 1
         } elif s_starts(a, "-") {
             sl_push(flags, a)
         } else {

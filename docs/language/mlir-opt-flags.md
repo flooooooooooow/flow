@@ -36,6 +36,47 @@ python3 -m flow.transpiler --print-pass-pipeline --opt-level O2 --no-inline
 
 `--opt-report` prints pass statistics using the same flag set.
 
+## Async copy capability gate
+
+Loop pipelining and multi-buffering remain opt-in. The GPU async-region pass
+also requires an explicit target capability:
+
+```bash
+./flow mlir-optimize --print-pass-pipeline \
+  --enable-async-copy --async-copy-target gpu
+```
+
+Accepted targets are `gpu`, `nvptx` and `amdgpu`. The target flag adds
+`gpu-async-region` to the function pipeline. A CPU pipeline does not acquire
+an async-copy pass implicitly. The current gate marks GPU regions async. It
+does not synthesize `nvgpu.device_async_copy` operations or claim a hardware
+copy engine is available. Those lowerings need target-specific IR and a
+profitability check.
+
+The token graph emitter follows the same contract:
+
+```bash
+./flow tool scripts/tools/mlir_async/main.flow \
+  --stages=3 --buffers=4 --target=nvptx
+```
+
+It emits an explicit chain of `async.execute` dependencies and records the
+selected target in `flow.async_target`. The emitter rejects a missing or
+unknown target. A backend can consume this contract when it supplies a real
+async-copy operation and its completion token.
+
+Static scratchpad plans use the same explicit target boundary:
+
+```bash
+./flow tool scripts/tools/mlir_static_memory/main.flow \
+  --target=nvptx --memory-space=shared
+```
+
+The planner records `flow.static_memory_target` and
+`flow.static_memory_space` in the module. `shared` requires a GPU-family
+target. The current emitter keeps the allocation and offset plan explicit for
+the target lowering that consumes it.
+
 ## Register tiles
 
 `--register-tiles` enables the opt-in `register_tile_outer_product(a, b)`

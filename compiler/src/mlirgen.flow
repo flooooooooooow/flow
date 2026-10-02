@@ -4743,8 +4743,9 @@ function mlg_emit_tensor_elementwise(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     let v0: i32 = mlg_emit_expr(m, a0)
     let v1: i32 = mlg_emit_expr(m, a1)
     let t0: i32 = mlg_val_mt(m, v0, a0)
+    let tensor_result: i32 = mlg_is_tensor_type_mt(t0)
     let mut init: i32 = V_NONE
-    if mlg_is_tensor_type_mt(t0) == 1 {
+    if tensor_result == 1 {
         let z: i32 = mlg_new_val(m, MT_INDEX)
         mlg_line(m)
         mlg_v(m, z)
@@ -4775,13 +4776,23 @@ function mlg_emit_tensor_elementwise(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     mlg_s(m, " = linalg.generic {")
     mlg_nl(m)
     mlg_line(m)
-    mlg_s(m, "  indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>],")
+    if tensor_result == 1 {
+        mlg_s(m, "  indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>],")
+    } else {
+        mlg_s(m, "  indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>],")
+    }
     mlg_nl(m)
     mlg_line(m)
     mlg_s(m, "  iterator_types = [\"parallel\"]")
     mlg_nl(m)
     mlg_line(m)
     mlg_s(m, "} ins(")
+    if tensor_result == 1 {
+        mlg_v(m, v0)
+        mlg_s(m, " : ")
+        mlg_put_type(m, t0)
+        mlg_s(m, ", ")
+    }
     mlg_v(m, v1)
     mlg_s(m, " : ")
     mlg_put_type(m, t0)
@@ -4796,7 +4807,11 @@ function mlg_emit_tensor_elementwise(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     mlg_s(m, ") {")
     mlg_nl(m)
     mlg_line(m)
-    mlg_s(m, "^bb0(%in: f32, %out: f32):")
+    if tensor_result == 1 {
+        mlg_s(m, "^bb0(%lhs: f32, %rhs: f32, %out: f32):")
+    } else {
+        mlg_s(m, "^bb0(%in: f32, %out: f32):")
+    }
     mlg_nl(m)
     let s: i32 = mlg_new_val(m, MT_F32)
     mlg_line(m)
@@ -4808,7 +4823,11 @@ function mlg_emit_tensor_elementwise(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     if op == TOK_SLASH { opname = "divf" }
     mlg_s(m, " = arith.")
     mlg_s(m, opname)
-    mlg_s(m, " %in, %out : f32")
+    if tensor_result == 1 {
+        mlg_s(m, " %lhs, %rhs : f32")
+    } else {
+        mlg_s(m, " %in, %out : f32")
+    }
     mlg_nl(m)
     mlg_line(m)
     mlg_s(m, "  linalg.yield ")
@@ -12044,6 +12063,20 @@ function mlg_affine_tile_size() -> i32 {
     return n
 }
 
+function mlg_affine_tile_l2_size() -> i32 {
+    let v: string = getenv("FLOWC_MLIR_TILE_L2")
+    let p: ptr<u8> = v
+    if p == null { return 0 }
+    let mut i: i32 = 0
+    let mut n: i32 = 0
+    while p[i] >= 48 and p[i] <= 57 {
+        n = n * 10 + (p[i] as i32) - 48
+        i = i + 1
+    }
+    if n < 2 or n > 128 { return 0 }
+    return n
+}
+
 function mlg_affine_tile_eligible(m: ptr<Mlg>, st: i32) -> i32 {
     let tile: i32 = mlg_affine_tile_size()
     if tile == 0 or mlg_affine_enabled() == 0 or mlg_for_is_parallel(m, st) == 1 {
@@ -12063,12 +12096,125 @@ function mlg_affine_tile_eligible(m: ptr<Mlg>, st: i32) -> i32 {
 
 function mlg_emit_affine_tiled(m: ptr<Mlg>, st: i32) {
     let tile: i32 = mlg_affine_tile_size()
+    let l2: i32 = mlg_affine_tile_l2_size()
     let lo0: i32 = mlg_emit_expr(m, m[0].arena.nodes[st].a)
     let lb: i32 = mlg_emit_idx_cast(m, lo0)
     let inner_lb: i32 = mlg_emit_idx_const(m, 0)
     let hi_e: i32 = m[0].arena.nodes[st].b
     let hi0: i32 = mlg_emit_expr(m, hi_e)
     let ub: i32 = mlg_emit_idx_cast(m, hi0)
+    if l2 != 0 and l2 >= tile {
+        let outer: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_s(m, "affine.for ")
+        mlg_v(m, outer)
+        mlg_s(m, " = ")
+        mlg_v(m, lb)
+        mlg_s(m, " to ")
+        mlg_v(m, ub)
+        mlg_s(m, " step ")
+        mlg_i(m, l2)
+        mlg_s(m, " {")
+        mlg_nl(m)
+        m[0].ind = m[0].ind + 1
+        let outer_rem: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, outer_rem)
+        mlg_s(m, " = arith.subi ")
+        mlg_v(m, ub)
+        mlg_s(m, ", ")
+        mlg_v(m, outer)
+        mlg_s(m, " : index")
+        mlg_nl(m)
+        let outer_ub: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, outer_ub)
+        mlg_s(m, " = affine.min affine_map<(d0) -> (d0, ")
+        mlg_i(m, l2)
+        mlg_s(m, ")> (")
+        mlg_v(m, outer_rem)
+        mlg_s(m, ")")
+        mlg_nl(m)
+        let middle: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_s(m, "affine.for ")
+        mlg_v(m, middle)
+        mlg_s(m, " = ")
+        mlg_v(m, inner_lb)
+        mlg_s(m, " to ")
+        mlg_v(m, outer_ub)
+        mlg_s(m, " step ")
+        mlg_i(m, tile)
+        mlg_s(m, " {")
+        mlg_nl(m)
+        m[0].ind = m[0].ind + 1
+        let middle_rem: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, middle_rem)
+        mlg_s(m, " = arith.subi ")
+        mlg_v(m, outer_ub)
+        mlg_s(m, ", ")
+        mlg_v(m, middle)
+        mlg_s(m, " : index")
+        mlg_nl(m)
+        let inner_ub2: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, inner_ub2)
+        mlg_s(m, " = affine.min affine_map<(d0) -> (d0, ")
+        mlg_i(m, tile)
+        mlg_s(m, ")> (")
+        mlg_v(m, middle_rem)
+        mlg_s(m, ")")
+        mlg_nl(m)
+        let inner: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_s(m, "affine.for ")
+        mlg_v(m, inner)
+        mlg_s(m, " = ")
+        mlg_v(m, inner_lb)
+        mlg_s(m, " to ")
+        mlg_v(m, inner_ub2)
+        mlg_s(m, " step 1 {")
+        mlg_nl(m)
+        m[0].ind = m[0].ind + 1
+        let partial: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, partial)
+        mlg_s(m, " = arith.addi ")
+        mlg_v(m, outer)
+        mlg_s(m, ", ")
+        mlg_v(m, middle)
+        mlg_s(m, " : index")
+        mlg_nl(m)
+        let idx2: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, idx2)
+        mlg_s(m, " = arith.addi ")
+        mlg_v(m, partial)
+        mlg_s(m, ", ")
+        mlg_v(m, inner)
+        mlg_s(m, " : index")
+        mlg_nl(m)
+        mlg_add_local(m, mlg_ns(m, st), mlg_ne(m, st), MT_INDEX, FT_NONE, idx2)
+        let none2: ptr<i32> = mlg_alloc_i32(1)
+        let k2: i32 = mlg_push_loop(m, 2, 0, 0, V_NONE, V_NONE, none2, 0)
+        mlg_emit_block(m, m[0].arena.nodes[st].c)
+        m[0].nlp = k2
+        mlg_free_i32(none2)
+        m[0].ind = m[0].ind - 1
+        mlg_line(m)
+        mlg_s(m, "}")
+        mlg_nl(m)
+        m[0].ind = m[0].ind - 1
+        mlg_line(m)
+        mlg_s(m, "}")
+        mlg_nl(m)
+        m[0].ind = m[0].ind - 1
+        mlg_line(m)
+        mlg_s(m, "}")
+        mlg_nl(m)
+        return
+    }
     let step_tile: i32 = mlg_emit_idx_const(m, tile)
     let outer: i32 = mlg_new_val(m, MT_INDEX)
     mlg_line(m)

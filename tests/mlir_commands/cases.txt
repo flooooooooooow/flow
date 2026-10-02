@@ -33,6 +33,7 @@ mlir_basic_arith mlir tests/mlir/basic_arith.flow --lenient
 mlir_tensor_value mlir compiler/fixtures/mlir_opt/tensor_value.flow --lenient
 mlir_affine_loop affine tests/mlir/affine_loop.flow --lenient
 mlir_tiled_loop tile tests/mlir/affine_loop.flow --lenient
+mlir_multitiled_loop tile2 tests/mlir/affine_loop.flow --lenient
 mlir_matmul mlir examples/bench/matmul_mlir.flow --lenient
 mlir_tensor_bench mlir examples/ml/mlir_tensor_bench.flow --lenient
 mlir_register_tiles mlir compiler/fixtures/mlir_opt/register_tile_probe.flow --lenient --register-tiles
@@ -70,6 +71,8 @@ pipe_no_fusion pipeline --no-loop-fusion
 pipe_no_m2r_sccp pipeline --no-mem2reg --no-sccp
 pipe_no_cse_dce_inline pipeline --no-cse --no-dce --no-inline
 pipe_o1_nolicm_nodce pipeline --opt-level O1 --no-licm --no-dce
+pipe_async pipeline --enable-loop-pipelining --enable-multi-buffering
+pipe_gpu_async pipeline --enable-async-copy --async-copy-target gpu
 
 # --emit-spirv (fails at mlir-opt on the Python generator's GPU module too).
 spirv_gpu_kernels spirv lib/stdlib/gpu_kernels.flow --mlir-gpu --emit-spirv --spirv-out @WORK@/k.spv

@@ -35,3 +35,9 @@ function fill_tiled_offset(a: array<f32, 12>) -> void {
         a[i] = 5.0
     }
 }
+
+function fill_multitiled(a: array<f32, 12>) -> void {
+    for i in 0 to 12 step 1 {
+        a[i] = 6.0
+    }
+}
