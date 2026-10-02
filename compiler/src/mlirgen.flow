@@ -12049,12 +12049,6 @@ function mlg_affine_tile_eligible(m: ptr<Mlg>, st: i32) -> i32 {
     if tile == 0 or mlg_affine_enabled() == 0 or mlg_for_is_parallel(m, st) == 1 {
         return 0
     }
-    if mlg_kind(m, m[0].arena.nodes[st].a) != AST_INT {
-        return 0
-    }
-    if m[0].arena.nodes[m[0].arena.nodes[st].a].ival != 0 {
-        return 0
-    }
     let mut step: i32 = 0
     if mlg_const_step(m, m[0].arena.nodes[st].ival, &step) == 0 or step != 1 {
         return 0
@@ -12069,8 +12063,10 @@ function mlg_affine_tile_eligible(m: ptr<Mlg>, st: i32) -> i32 {
 
 function mlg_emit_affine_tiled(m: ptr<Mlg>, st: i32) {
     let tile: i32 = mlg_affine_tile_size()
+    let lo0: i32 = mlg_emit_expr(m, m[0].arena.nodes[st].a)
+    let lb: i32 = mlg_emit_idx_cast(m, lo0)
+    let inner_lb: i32 = mlg_emit_idx_const(m, 0)
     let hi_e: i32 = m[0].arena.nodes[st].b
-    let lb: i32 = mlg_emit_idx_const(m, 0)
     let hi0: i32 = mlg_emit_expr(m, hi_e)
     let ub: i32 = mlg_emit_idx_cast(m, hi0)
     let step_tile: i32 = mlg_emit_idx_const(m, tile)
@@ -12110,7 +12106,7 @@ function mlg_emit_affine_tiled(m: ptr<Mlg>, st: i32) {
     mlg_s(m, "affine.for ")
     mlg_v(m, inner)
     mlg_s(m, " = ")
-    mlg_v(m, lb)
+    mlg_v(m, inner_lb)
     mlg_s(m, " to ")
     mlg_v(m, inner_ub)
     mlg_s(m, " step 1 {")
