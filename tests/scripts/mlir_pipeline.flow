@@ -1,0 +1,30 @@
+import "scripts/tools/lib/testrun.flow"
+import "tests/scripts/harness.flow"
+
+function check_affine_normalization() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    sl_push(argv, "--enable-affine-normalization")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "affine-loop-normalize") { return T_FAIL }
+    return T_PASS
+}
+
+function check_normalization_stays_opt_in() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    if a_contains(read_text(t_out()), "affine-loop-normalize") { return T_FAIL }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("mlir_pipeline")
+    t_start()
+    t_end("affine_normalization", check_affine_normalization())
+    t_start()
+    t_end("normalization_opt_in", check_normalization_stays_opt_in())
+    t_done()
+    return 0
+}
