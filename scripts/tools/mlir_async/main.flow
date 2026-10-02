@@ -7,8 +7,14 @@ function target_id(s: string) -> i32 {
     return -1
 }
 
+function async_engine(s: string) -> string {
+    if at_eq(s, "gpu") { return "gpu.async" }
+    if at_eq(s, "amdgpu") { return "amdgpu.async" }
+    return "nvgpu.device_async_copy"
+}
+
 function async_module(stages: i32, buffers: i32, op: string, target: string) -> string {
-    let mut out: string = "module attributes {flow.async_buffers = " + at_itoa(buffers) + ", flow.async_target = \"" + target + "\"} {\n"
+    let mut out: string = "module attributes {flow.async_buffers = " + at_itoa(buffers) + ", flow.async_target = \"" + target + "\", flow.async_copy_engine = \"" + async_engine(target) + "\"} {\n"
     out = out + "  func.func @flow_async_pipeline() -> !async.token {\n"
     let mut i: i32 = 0
     let mut previous: string = ""
@@ -30,7 +36,7 @@ function async_module(stages: i32, buffers: i32, op: string, target: string) -> 
 }
 
 function nvgpu_module(stages: i32, buffers: i32, op: string) -> string {
-    let mut out: string = "module attributes {flow.async_buffers = " + at_itoa(buffers) + ", flow.async_target = \"nvptx\"} {\n"
+    let mut out: string = "module attributes {flow.async_buffers = " + at_itoa(buffers) + ", flow.async_target = \"nvptx\", flow.async_copy_engine = \"nvgpu.device_async_copy\"} {\n"
     out = out + "  func.func @flow_async_pipeline() -> !nvgpu.device.async.token {\n"
     out = out + "    %c0 = arith.constant 0 : index\n"
     let mut i: i32 = 0
