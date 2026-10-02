@@ -71,6 +71,7 @@ pipe_no_fusion pipeline --no-loop-fusion
 pipe_no_m2r_sccp pipeline --no-mem2reg --no-sccp
 pipe_no_cse_dce_inline pipeline --no-cse --no-dce --no-inline
 pipe_o1_nolicm_nodce pipeline --opt-level O1 --no-licm --no-dce
+pipe_async pipeline --enable-loop-pipelining --enable-multi-buffering
 
 # --emit-spirv (fails at mlir-opt on the Python generator's GPU module too).
 spirv_gpu_kernels spirv lib/stdlib/gpu_kernels.flow --mlir-gpu --emit-spirv --spirv-out @WORK@/k.spv
