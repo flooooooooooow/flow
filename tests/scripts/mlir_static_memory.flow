@@ -7,9 +7,31 @@ function check_static_views() -> i32 {
     if t_run(t_cmd(argv)) != 0 { return T_FAIL }
     let output: string = read_text(t_out())
     if not a_contains(output, "flow.static_arena_bytes = 112") { return T_FAIL }
+    if not a_contains(output, "flow.static_memory_target = \"cpu\"") { return T_FAIL }
+    if not a_contains(output, "flow.static_memory_space = \"stack\"") { return T_FAIL }
     if not a_contains(output, "%arena = memref.alloca() : memref<112xi8>") { return T_FAIL }
     if not a_contains(output, "memref.subview %arena[64][48][1]") { return T_FAIL }
     if not a_contains(output, "offset: 64") { return T_FAIL }
+    return T_PASS
+}
+
+function check_shared_target() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_static_memory/main.flow")
+    sl_push(argv, "--target=nvptx")
+    sl_push(argv, "--memory-space=shared")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "flow.static_memory_target = \"nvptx\"") { return T_FAIL }
+    if not a_contains(output, "flow.static_memory_space = \"shared\"") { return T_FAIL }
+    return T_PASS
+}
+
+function check_shared_requires_gpu() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_static_memory/main.flow")
+    sl_push(argv, "--target=cpu")
+    sl_push(argv, "--memory-space=shared")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "shared memory requires a GPU target") { return T_FAIL }
     return T_PASS
 }
 
@@ -17,6 +39,8 @@ function main() -> i32 {
     t_begin("mlir_static_memory")
     t_start()
     t_end("scratchpad_views", check_static_views())
+    t_end("gpu_shared_target", check_shared_target())
+    t_end("shared_target_gate", check_shared_requires_gpu())
     t_done()
     return 0
 }

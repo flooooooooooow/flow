@@ -65,6 +65,18 @@ selected target in `flow.async_target`. The emitter rejects a missing or
 unknown target. A backend can consume this contract when it supplies a real
 async-copy operation and its completion token.
 
+Static scratchpad plans use the same explicit target boundary:
+
+```bash
+./flow tool scripts/tools/mlir_static_memory/main.flow \
+  --target=nvptx --memory-space=shared
+```
+
+The planner records `flow.static_memory_target` and
+`flow.static_memory_space` in the module. `shared` requires a GPU-family
+target. The current emitter keeps the allocation and offset plan explicit for
+the target lowering that consumes it.
+
 ## Register tiles
 
 `--register-tiles` enables the opt-in `register_tile_outer_product(a, b)`
