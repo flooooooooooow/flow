@@ -75,6 +75,12 @@ selected target in `flow.async_target`. The emitter rejects a missing or
 unknown target. A backend can consume this contract when it supplies a real
 async-copy operation and its completion token.
 
+For `nvptx`, the emitter produces `nvgpu.device_async_copy`,
+`nvgpu.device_async_create_group`, and `nvgpu.device_async_wait` operations
+with `!nvgpu.device.async.token` results. The generic `async.execute` graph
+remains available for the other accepted targets. The NVGPU path still needs
+target lowering and measured profitability before automatic promotion.
+
 Static scratchpad plans use the same explicit target boundary:
 
 ```bash
