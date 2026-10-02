@@ -24,12 +24,25 @@ function check_lane_budget_refuses_tile() -> i32 {
     return T_PASS
 }
 
+function check_invalid_lane_budget_refuses_configuration() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--register-tiles")
+    sl_push(argv, "compiler/fixtures/mlir_opt/register_tile_nested.flow")
+    sl_push(argv, t_tmp() + "/invalid-budget.mlir")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    cmd_env(c, "FLOWC_MLIR_REGISTER_TILE_MAX_LANES", "eight")
+    if t_run(c) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "must be a positive integer") { return T_FAIL }
+    return T_PASS
+}
+
 function main() -> i32 {
     t_begin("mlir_register_tiles")
     t_start()
     t_end("nested_outer_product", check_nested_outer_product())
     t_start()
     t_end("lane_budget", check_lane_budget_refuses_tile())
+    t_start()
+    t_end("invalid_lane_budget", check_invalid_lane_budget_refuses_configuration())
     t_done()
     return 0
 }
