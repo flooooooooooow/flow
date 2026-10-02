@@ -67,6 +67,14 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         js_errln("jit_specialize: need at least one shape and lanes in 1..64")
         return 2
     }
+    let mut shape_i: i32 = 0
+    while shape_i < count {
+        if shapes[shape_i] < 1 {
+            js_errln("jit_specialize: shapes must be positive integers")
+            return 2
+        }
+        shape_i = shape_i + 1
+    }
     let mut out: string = "module attributes {flow.jit.cache = \"shape-specialized\", flow.jit.masked_tails = true} {\n"
     out = out + "  func.func @flow_kernel_generic(%buf: memref<?xf32>, %n: index) -> index { return %n : index }\n"
     let mut k: i32 = 0
