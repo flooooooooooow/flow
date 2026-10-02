@@ -62,4 +62,18 @@ llvm.store %v35, %v37 : f32, !llvm.ptr
 }
 func.return
 }
+func.func @fill_tiled_offset(%arg0: !llvm.ptr) -> () {
+%v38 = arith.constant 2 : i32
+%v39 = arith.constant 10 : i32
+%v40 = arith.index_cast %v38 : i32 to index
+%v41 = arith.index_cast %v39 : i32 to index
+affine.for %v42 = %v40 to %v41 step 1 {
+%v43 = arith.constant 5.0 : f64
+%v44 = arith.truncf %v43 : f64 to f32
+%v45 = arith.index_cast %v42 : index to i64
+%v46 = llvm.getelementptr %arg0[0, %v45] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<12 x f32>
+llvm.store %v44, %v46 : f32, !llvm.ptr
+}
+func.return
+}
 }
