@@ -60478,6 +60478,10 @@ typedef struct CgenBuf {
   int32_t explain;
   int32_t* handle_ids;
   int32_t handle_len;
+  int32_t bounds_loop_start;
+  int32_t bounds_loop_end;
+  int32_t bounds_span_start;
+  int32_t bounds_span_end;
   int32_t root;
 } CgenBuf;
 
@@ -60664,6 +60668,8 @@ void flowc_cgen_emit_checks_prelude(CgenBuf* w);
 int32_t flowc_cgen_div_is_checked(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_checked_array_size(CgenBuf* w, AstArena arena, uint8_t* src, int32_t base);
 int32_t flowc_cgen_checked_is_span(CgenBuf* w, AstArena arena, uint8_t* src, int32_t base);
+int32_t flowc_cgen_bounds_span_base(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id, int32_t dir);
+int32_t flowc_cgen_is_proven_span_index(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 void flowc_cgen_emit_checked_index(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id, int32_t size);
 const char* flowc_cgen_prim_ctype(int32_t p);
 int32_t flowc_cgen_array_lit_len(AstArena arena, int32_t id);
@@ -60772,7 +60778,7 @@ void flowc_cgen_emit_mono(CgenBuf* w, AstArena arena, uint8_t* src, int32_t root
 int32_t flowc_cgen_emit(AstArena arena, int32_t root, uint8_t* src, uint8_t* out, int32_t out_cap);
 int32_t flowc_cgen_collect_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t* buf, int32_t cap, int32_t len);
 CgenBuf flowc_cgen_buf_init(uint8_t* out, int32_t cap) {
-  return (CgenBuf){ .out = out, .cap = cap, .len = 0, .err = 0, .sigs = NULL, .sigs_len = 0, .cembed_names = NULL, .cembed_offs = NULL, .cembed_lens = NULL, .cembed_count = 0, .cap_starts = NULL, .cap_ends = NULL, .cap_count = 0, .in_lambda = 0, .lambda_cap_lambda = NULL, .lambda_cap_start = NULL, .lambda_cap_end = NULL, .lambda_cap_count = 0, .mono_tp_starts = NULL, .mono_tp_ends = NULL, .mono_tp_concrete = NULL, .mono_ntp = 0, .cur_fn = AST_NONE, .defer_ids = NULL, .defer_len = 0, .loop_defer_base = 0, .tail_fn = AST_NONE, .eff = NULL, .eff_len = 0, .fiber_main = 0, .checks = 0, .lval = 0, .dbg_file = (const char*)(NULL), .dbg_pos = 0, .dbg_line = 1, .plan_order = NULL, .plan_has = NULL, .plan_lo = NULL, .plan_hi = NULL, .plan_seen = NULL, .explain = 0, .handle_ids = NULL, .handle_len = 0, .root = AST_NONE };
+  return (CgenBuf){ .out = out, .cap = cap, .len = 0, .err = 0, .sigs = NULL, .sigs_len = 0, .cembed_names = NULL, .cembed_offs = NULL, .cembed_lens = NULL, .cembed_count = 0, .cap_starts = NULL, .cap_ends = NULL, .cap_count = 0, .in_lambda = 0, .lambda_cap_lambda = NULL, .lambda_cap_start = NULL, .lambda_cap_end = NULL, .lambda_cap_count = 0, .mono_tp_starts = NULL, .mono_tp_ends = NULL, .mono_tp_concrete = NULL, .mono_ntp = 0, .cur_fn = AST_NONE, .defer_ids = NULL, .defer_len = 0, .loop_defer_base = 0, .tail_fn = AST_NONE, .eff = NULL, .eff_len = 0, .fiber_main = 0, .checks = 0, .lval = 0, .dbg_file = (const char*)(NULL), .dbg_pos = 0, .dbg_line = 1, .plan_order = NULL, .plan_has = NULL, .plan_lo = NULL, .plan_hi = NULL, .plan_seen = NULL, .explain = 0, .handle_ids = NULL, .handle_len = 0, .bounds_loop_start = (-1), .bounds_loop_end = (-1), .bounds_span_start = (-1), .bounds_span_end = (-1), .root = AST_NONE };
 }
 
 void flowc_cgen_putc(CgenBuf* w, int32_t c) {
@@ -65002,11 +65008,11 @@ void flowc_cgen_plan_init(CgenBuf* w, AstArena arena, uint8_t* src) {
   return;
 }
   int32_t n = (arena).len;
-  { __typeof__((w[0]).plan_order) __flowc_st19969 = (int32_t*)(malloc((n * 4))); (w[0]).plan_order = __flowc_st19969; }
-  { __typeof__((w[0]).plan_has) __flowc_st19981 = (int32_t*)(malloc((n * 4))); (w[0]).plan_has = __flowc_st19981; }
-  { __typeof__((w[0]).plan_seen) __flowc_st19993 = (int32_t*)(malloc((n * 4))); (w[0]).plan_seen = __flowc_st19993; }
-  { __typeof__((w[0]).plan_lo) __flowc_st20005 = (int64_t*)(malloc((n * 8))); (w[0]).plan_lo = __flowc_st20005; }
-  { __typeof__((w[0]).plan_hi) __flowc_st20017 = (int64_t*)(malloc((n * 8))); (w[0]).plan_hi = __flowc_st20017; }
+  { __typeof__((w[0]).plan_order) __flowc_st19989 = (int32_t*)(malloc((n * 4))); (w[0]).plan_order = __flowc_st19989; }
+  { __typeof__((w[0]).plan_has) __flowc_st20001 = (int32_t*)(malloc((n * 4))); (w[0]).plan_has = __flowc_st20001; }
+  { __typeof__((w[0]).plan_seen) __flowc_st20013 = (int32_t*)(malloc((n * 4))); (w[0]).plan_seen = __flowc_st20013; }
+  { __typeof__((w[0]).plan_lo) __flowc_st20025 = (int64_t*)(malloc((n * 8))); (w[0]).plan_lo = __flowc_st20025; }
+  { __typeof__((w[0]).plan_hi) __flowc_st20037 = (int64_t*)(malloc((n * 8))); (w[0]).plan_hi = __flowc_st20037; }
   if ((w[0]).plan_order == NULL || (w[0]).plan_has == NULL || (w[0]).plan_seen == NULL || (w[0]).plan_lo == NULL || (w[0]).plan_hi == NULL) {
   (w[0]).plan_order = NULL;
   (w[0]).plan_has = NULL;
@@ -66282,6 +66288,49 @@ int32_t flowc_cgen_checked_is_span(CgenBuf* w, AstArena arena, uint8_t* src, int
   return 0;
 }
 
+int32_t flowc_cgen_bounds_span_base(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id, int32_t dir) {
+  int32_t lo = ((arena).nodes[id]).a;
+  if (lo == AST_NONE || ((arena).nodes[lo]).kind != AST_INT || ((arena).nodes[lo]).ival != 0) {
+  return AST_NONE;
+}
+  int32_t hi = ((arena).nodes[id]).b;
+  if (hi == AST_NONE || ((arena).nodes[hi]).kind != AST_FIELD_ACCESS) {
+  return AST_NONE;
+}
+  if (flowc_cgen_span_is(src, ((arena).nodes[hi]).name_start, ((arena).nodes[hi]).name_end, "len") == 0) {
+  return AST_NONE;
+}
+  int32_t base = ((arena).nodes[hi]).a;
+  if (base == AST_NONE || ((arena).nodes[base]).kind != AST_IDENT) {
+  return AST_NONE;
+}
+  if (flowc_cgen_checked_is_span(w, arena, src, base) == 0) {
+  return AST_NONE;
+}
+  return base;
+}
+
+int32_t flowc_cgen_is_proven_span_index(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
+  if ((w[0]).bounds_loop_start < 0 || (w[0]).bounds_span_start < 0) {
+  return 0;
+}
+  int32_t base = ((arena).nodes[id]).a;
+  int32_t idx = ((arena).nodes[id]).b;
+  if (base == AST_NONE || idx == AST_NONE) {
+  return 0;
+}
+  if (((arena).nodes[base]).kind != AST_IDENT || ((arena).nodes[idx]).kind != AST_IDENT) {
+  return 0;
+}
+  if (flowc_cgen_span_eq(src, ((arena).nodes[base]).name_start, ((arena).nodes[base]).name_end, (w[0]).bounds_span_start, (w[0]).bounds_span_end) == 0) {
+  return 0;
+}
+  if (flowc_cgen_span_eq(src, ((arena).nodes[idx]).name_start, ((arena).nodes[idx]).name_end, (w[0]).bounds_loop_start, (w[0]).bounds_loop_end) == 0) {
+  return 0;
+}
+  return 1;
+}
+
 void flowc_cgen_emit_checked_index(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id, int32_t size) {
   int32_t base = ((arena).nodes[id]).a;
   int32_t idx = ((arena).nodes[id]).b;
@@ -67013,7 +67062,7 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   return;
 }
   int32_t idx_lv = (w[0]).lval;
-  if ((w[0]).checks == 1 && idx_lv == 0) {
+  if ((w[0]).checks == 1 && idx_lv == 0 && flowc_cgen_is_proven_span_index(w, arena, src, id) == 0) {
   int32_t csize = flowc_cgen_checked_array_size(w, arena, src, ((arena).nodes[id]).a);
   if (csize > 0) {
   flowc_cgen_emit_checked_index(w, arena, src, id, csize);
@@ -68269,6 +68318,22 @@ int32_t flowc_cgen_for_literal_dir(AstArena arena, uint8_t* src, int32_t lo, int
 }
 
 void flowc_cgen_emit_for_dir(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id, int32_t dir) {
+  int32_t saved_loop_start = (w[0]).bounds_loop_start;
+  int32_t saved_loop_end = (w[0]).bounds_loop_end;
+  int32_t saved_span_start = (w[0]).bounds_span_start;
+  int32_t saved_span_end = (w[0]).bounds_span_end;
+  int32_t proven_span = flowc_cgen_bounds_span_base(w, arena, src, id, dir);
+  if (proven_span != AST_NONE) {
+  (w[0]).bounds_loop_start = ((arena).nodes[id]).name_start;
+  (w[0]).bounds_loop_end = ((arena).nodes[id]).name_end;
+  (w[0]).bounds_span_start = ((arena).nodes[proven_span]).name_start;
+  (w[0]).bounds_span_end = ((arena).nodes[proven_span]).name_end;
+} else {
+  (w[0]).bounds_loop_start = (-1);
+  (w[0]).bounds_loop_end = (-1);
+  (w[0]).bounds_span_start = (-1);
+  (w[0]).bounds_span_end = (-1);
+}
   flowc_cgen_puts(w, "  for (int32_t ");
   flowc_cgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
   flowc_cgen_puts(w, " = ");
@@ -68291,6 +68356,10 @@ void flowc_cgen_emit_for_dir(CgenBuf* w, AstArena arena, uint8_t* src, int32_t i
   flowc_cgen_puts(w, " + (-1)) ");
 }
   flowc_cgen_emit_block(w, arena, src, ((arena).nodes[id]).c);
+  (w[0]).bounds_loop_start = saved_loop_start;
+  (w[0]).bounds_loop_end = saved_loop_end;
+  (w[0]).bounds_span_start = saved_span_start;
+  (w[0]).bounds_span_end = saved_span_end;
 }
 
 int32_t flowc_cgen_step_is_literal(AstArena arena, int32_t step) {
