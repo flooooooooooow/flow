@@ -55,6 +55,7 @@ extern {
     function strtod(s: ptr<u8>, end: ptr<u8>) -> f64
     function getenv(name: string) -> string
     function strcmp(a: string, b: string) -> i32
+    function atoi(s: string) -> i32
 }
 
 # ---------------------------------------------------------------------------
@@ -1555,16 +1556,10 @@ function mlg_ft_to_mt(m: ptr<Mlg>, ft: i32, at: i32) -> i32 {
             vq = vq + 1
         }
         let vin: i32 = m[0].arena.nodes[ft].a
-        if vok == 1 and vn > 0 and mlg_kind(m, vin) == AST_TYPE and m[0].arena.nodes[vin].a == AST_NONE {
-            let vs: i32 = mlg_ns(m, vin)
-            let ve: i32 = mlg_ne(m, vin)
-            let mut vel: i32 = MT_NONE
-            if mlg_span_is(m, vs, ve, "f32") == 1 { vel = MT_F32 }
-            if mlg_span_is(m, vs, ve, "f64") == 1 { vel = MT_F64 }
-            if mlg_span_is(m, vs, ve, "i8") == 1 { vel = MT_I8 }
-            if mlg_span_is(m, vs, ve, "i16") == 1 { vel = MT_I16 }
-            if mlg_span_is(m, vs, ve, "i32") == 1 { vel = MT_I32 }
-            if mlg_span_is(m, vs, ve, "i64") == 1 { vel = MT_I64 }
+        if vok == 1 and vn > 0 and mlg_kind(m, vin) == AST_TYPE {
+            # Nested vectors are the register-tile representation used by
+            # vector.outerproduct: vecM<vecN<T>> becomes vector<Mxvector<NxT>>.
+            let vel: i32 = mlg_ft_to_mt(m, vin, at)
             if vel != MT_NONE {
                 return mlg_vector_of(m, vel, vn)
             }
@@ -2880,6 +2875,13 @@ function mlg_expr_mt(m: ptr<Mlg>, e: i32) -> i32 {
             return mlg_ft_to_mt(m, m[0].arena.nodes[m[0].l_ft[cl]].b, e)
         }
         let k: i32 = mlg_find_fn_call(m, e, mlg_find_fn(m, mlg_ns(m, e), mlg_ne(m, e)))
+        if mlg_span_is(m, mlg_ns(m, e), mlg_ne(m, e), "register_tile_outer_product") == 1 and mlg_chain_len(m, m[0].arena.nodes[e].a) == 2 {
+            let a: i32 = mlg_expr_mt(m, m[0].arena.nodes[e].a)
+            let b: i32 = mlg_expr_mt(m, m[0].arena.nodes[m[0].arena.nodes[e].a].next)
+            if mlg_is_vector_mt(a) == 1 and mlg_is_vector_mt(b) == 1 {
+                return mlg_vector_of(m, b, m[0].vc_n[a - MT_VECTOR])
+            }
+        }
         if k >= 0 {
             if mlg_call_is_libc(m, e, k) == 1 {
                 let mut kpts: array<i32, 16> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
@@ -2970,6 +2972,57 @@ function mlg_expr_mt(m: ptr<Mlg>, e: i32) -> i32 {
         return mlg_memref_of(m, et, n)
     }
     return MT_I32
+}
+
+function mlg_register_tiles_enabled() -> i32 {
+    let v: string = getenv("FLOWC_MLIR_REGISTER_TILES")
+    let p: ptr<u8> = v
+    if p != null and p[0] == 49 {
+        return 1
+    }
+    return 0
+}
+
+# Emit one hardware-shaped register tile. The operation stays in the vector
+# dialect so targets can select AMX, SME, or a GPU matrix instruction later.
+function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
+    if mlg_register_tiles_enabled() == 0 {
+        mlg_refuse(m, e, "register-tile lowering requires FLOWC_MLIR_REGISTER_TILES=1")
+        return V_NONE
+    }
+    let a: i32 = m[0].arena.nodes[e].a
+    let b: i32 = m[0].arena.nodes[a].next
+    let av: i32 = mlg_emit_expr(m, a)
+    let bv: i32 = mlg_emit_expr(m, b)
+    let at: i32 = mlg_val_mt(m, av, a)
+    let bt: i32 = mlg_val_mt(m, bv, b)
+    if mlg_is_vector_mt(at) == 0 or mlg_is_vector_mt(bt) == 0 {
+        mlg_refuse(m, e, "register tile operands must be vectors")
+        return V_NONE
+    }
+    let am: i32 = m[0].vc_n[at - MT_VECTOR]
+    let bn: i32 = m[0].vc_n[bt - MT_VECTOR]
+    let cap_s: string = getenv("FLOWC_MLIR_REGISTER_TILE_MAX_LANES")
+    let cap_p: ptr<u8> = cap_s
+    let cap: i32 = if cap_p == null or cap_p[0] == 0 { 256 } else { atoi(cap_s) }
+    if am <= 0 or bn <= 0 or am * bn > cap {
+        mlg_refuse(m, e, "register tile exceeds FLOWC_MLIR_REGISTER_TILE_MAX_LANES")
+        return V_NONE
+    }
+    let rt: i32 = mlg_vector_of(m, bt, am)
+    let r: i32 = mlg_new_val(m, rt)
+    mlg_line(m)
+    mlg_v(m, r)
+    mlg_s(m, " = vector.outerproduct ")
+    mlg_v(m, av)
+    mlg_s(m, ", ")
+    mlg_v(m, bv)
+    mlg_s(m, " : ")
+    mlg_put_type(m, at)
+    mlg_s(m, ", ")
+    mlg_put_type(m, bt)
+    mlg_nl(m)
+    return r
 }
 
 # ---------------------------------------------------------------------------
@@ -4812,6 +4865,9 @@ function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
         return mlg_emit_printf_call(m, e)
     }
     let k: i32 = mlg_find_fn_call(m, e, mlg_find_fn(m, ns, ne))
+    if mlg_span_is(m, ns, ne, "register_tile_outer_product") == 1 and mlg_chain_len(m, m[0].arena.nodes[e].a) == 2 {
+        return mlg_emit_register_tile_outer_product(m, e)
+    }
     # The tensor_add intrinsic over memrefs, unless the program defines it.
     if mlg_span_is(m, ns, ne, "tensor_add") == 1 and mlg_chain_len(m, m[0].arena.nodes[e].a) == 2 and (k < 0 or m[0].fn_ext[k] == 1) {
         return mlg_emit_tensor_add(m, e)
