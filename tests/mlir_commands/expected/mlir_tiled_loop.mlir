@@ -111,4 +111,25 @@ llvm.store %v74, %v76 : f32, !llvm.ptr
 }
 func.return
 }
+func.func @fill_multitiled(%arg0: !llvm.ptr) -> () {
+%v77 = arith.constant 0 : i32
+%v78 = arith.index_cast %v77 : i32 to index
+%v79 = arith.constant 0 : index
+%v80 = arith.constant 12 : i32
+%v81 = arith.index_cast %v80 : i32 to index
+%v82 = arith.constant 4 : index
+affine.for %v83 = %v78 to %v81 step 4 {
+%v84 = arith.subi %v81, %v83 : index
+%v85 = affine.min affine_map<(d0) -> (d0, 4)> (%v84)
+affine.for %v86 = %v79 to %v85 step 1 {
+%v87 = arith.addi %v83, %v86 : index
+%v88 = arith.constant 6.0 : f64
+%v89 = arith.truncf %v88 : f64 to f32
+%v90 = arith.index_cast %v87 : index to i64
+%v91 = llvm.getelementptr %arg0[0, %v90] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<12 x f32>
+llvm.store %v89, %v91 : f32, !llvm.ptr
+}
+}
+func.return
+}
 }

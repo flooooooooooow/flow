@@ -6,14 +6,32 @@ function check_async_pipeline() -> i32 {
     sl_push(argv, "--stages=3")
     sl_push(argv, "--buffers=4")
     sl_push(argv, "--op=linalg.matmul")
+    sl_push(argv, "--target=nvptx")
     if t_run(t_cmd(argv)) != 0 {
         outln("mlir_async exited with " + s_itoa(t_rc()))
         return T_FAIL
     }
     let output: string = read_text(t_out())
-    if not a_contains(output, "flow.async_buffers = 4") { return T_FAIL }
+    if not a_contains(output, "flow.async_buffers = 4, flow.async_target = \"nvptx\"") { return T_FAIL }
     if not a_contains(output, "%stage2 = async.execute [%stage1]") { return T_FAIL }
     if not a_contains(output, "async.copy stage 1 for linalg.matmul") { return T_FAIL }
+    return T_PASS
+}
+
+function check_requires_target() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_async/main.flow")
+    sl_push(argv, "--stages=2")
+    sl_push(argv, "--buffers=2")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--target is required") { return T_FAIL }
+    return T_PASS
+}
+
+function check_rejects_unknown_target() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_async/main.flow")
+    sl_push(argv, "--target=cpu")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "must be one of 'gpu', 'nvptx', 'amdgpu'") { return T_FAIL }
     return T_PASS
 }
 
@@ -21,6 +39,8 @@ function main() -> i32 {
     t_begin("mlir_async")
     t_start()
     t_end("pipeline_dependencies", check_async_pipeline())
+    t_end("target_capability_gate", check_requires_target())
+    t_end("unknown_target_rejected", check_rejects_unknown_target())
     t_done()
     return 0
 }
