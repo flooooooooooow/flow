@@ -1,0 +1,47 @@
+import .text { at_outln, at_errln, at_starts, at_from, at_itoa }
+
+function async_module(stages: i32, buffers: i32, op: string) -> string {
+    let mut out: string = "module attributes {flow.async_buffers = " + at_itoa(buffers) + "} {\n"
+    out = out + "  func.func @flow_async_pipeline() -> !async.token {\n"
+    let mut i: i32 = 0
+    let mut previous: string = ""
+    while i < stages {
+        let name: string = "%stage" + at_itoa(i)
+        if i == 0 {
+            out = out + "    " + name + " = async.execute {\n"
+        } else {
+            out = out + "    " + name + " = async.execute [" + previous + "] {\n"
+        }
+        out = out + "      // async.copy stage " + at_itoa(i) + " for " + op + "\n"
+        out = out + "      async.yield\n"
+        out = out + "    } : !async.token\n"
+        previous = name
+        i = i + 1
+    }
+    out = out + "    func.return " + previous + " : !async.token\n  }\n}\n"
+    return out
+}
+
+function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
+    let mut stages: i32 = 2
+    let mut buffers: i32 = 2
+    let mut op: string = "linalg.matmul"
+    let mut i: i32 = 1
+    while i < argc {
+        let arg: string = argv[i] as string
+        if at_starts(arg, "--stages=") {
+            stages = atoi(at_from(arg, 9))
+        } elif at_starts(arg, "--buffers=") {
+            buffers = atoi(at_from(arg, 10))
+        } elif at_starts(arg, "--op=") {
+            op = at_from(arg, 5)
+        }
+        i = i + 1
+    }
+    if stages < 1 or stages > 32 or buffers < 2 or buffers > 16 {
+        at_errln("mlir_async: stages must be 1..32 and buffers must be 2..16")
+        return 2
+    }
+    at_outln(async_module(stages, buffers, op))
+    return 0
+}
