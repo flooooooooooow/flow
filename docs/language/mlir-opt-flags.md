@@ -36,6 +36,23 @@ python3 -m flow.transpiler --print-pass-pipeline --opt-level O2 --no-inline
 
 `--opt-report` prints pass statistics using the same flag set.
 
+## Async copy capability gate
+
+Loop pipelining and multi-buffering remain opt-in. The GPU async-region pass
+also requires an explicit target capability:
+
+```bash
+./flow mlir-optimize --print-pass-pipeline \
+  --enable-async-copy --async-copy-target gpu
+```
+
+Accepted targets are `gpu`, `nvptx` and `amdgpu`. The target flag adds
+`gpu-async-region` to the function pipeline. A CPU pipeline does not acquire
+an async-copy pass implicitly. The current gate marks GPU regions async. It
+does not synthesize `nvgpu.device_async_copy` operations or claim a hardware
+copy engine is available. Those lowerings need target-specific IR and a
+profitability check.
+
 ## Register tiles
 
 `--register-tiles` enables the opt-in `register_tile_outer_product(a, b)`
