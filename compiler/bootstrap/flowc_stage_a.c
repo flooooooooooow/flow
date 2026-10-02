@@ -1563,54 +1563,95 @@ int32_t flowc_ast_chain_len(AstArena arena, int32_t head) {
 static const int32_t FLOWC_IO_SEEK_SET = 0;
 static const int32_t FLOWC_IO_SEEK_END = 2;
 
+int32_t flowc_name_is(uint8_t* src, int32_t start, int32_t end, const char* name);
+int32_t flowc_stage_family(uint8_t* src, AstNode node);
+int32_t flowc_text_equal(uint8_t* src, int32_t a_start, int32_t a_end, int32_t b_start, int32_t b_end);
 void flowc_fuse_pipelines(AstArena* arena, uint8_t* src);
+int32_t flowc_name_is(uint8_t* src, int32_t start, int32_t end, const char* name) {
+  int32_t want = (int32_t)(strlen(name));
+  if ((end - start) != want) {
+  return 0;
+}
+  uint8_t* p = (uint8_t*)((uint8_t*)(name));
+  int32_t i = 0;
+  while (i < want) {
+  if (src[(start + i)] != p[i]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
+int32_t flowc_stage_family(uint8_t* src, AstNode node) {
+  if ((node).kind != AST_CALL) {
+  return 0;
+}
+  if (flowc_name_is(src, (node).name_start, (node).name_end, "scale_f32") == 1) {
+  return 1;
+}
+  if (flowc_name_is(src, (node).name_start, (node).name_end, "scale_f64") == 1) {
+  return 2;
+}
+  if (flowc_name_is(src, (node).name_start, (node).name_end, "offset_f32") == 1) {
+  return 3;
+}
+  if (flowc_name_is(src, (node).name_start, (node).name_end, "offset_f64") == 1) {
+  return 4;
+}
+  return 0;
+}
+
+int32_t flowc_text_equal(uint8_t* src, int32_t a_start, int32_t a_end, int32_t b_start, int32_t b_end) {
+  if ((a_end - a_start) != (b_end - b_start)) {
+  return 0;
+}
+  int32_t i = 0;
+  while (i < (a_end - a_start)) {
+  if (src[(a_start + i)] != src[(b_start + i)]) {
+  return 0;
+}
+  i = (i + 1);
+}
+  return 1;
+}
+
 void flowc_fuse_pipelines(AstArena* arena, uint8_t* src) {
-  int32_t id = 0;
+  int32_t changed = 1;
+  while (changed == 1) {
+  changed = 0;
   int32_t len = (arena[0]).len;
+  int32_t id = 0;
   while (id < len) {
   AstNode node = (arena[0]).nodes[id];
-  if ((node).kind == AST_CALL) {
-  int32_t ns = (node).name_start;
-  int32_t ne = (node).name_end;
-  int32_t is_scale = 0;
-  if ((ne - ns) == 9) {
-  is_scale = 1;
-}
-  if (is_scale == 1) {
-  int32_t first_arg = (node).a;
-  if (first_arg != AST_NONE) {
-  if (((arena[0]).nodes[first_arg]).kind == AST_CALL) {
-  int32_t ins = ((arena[0]).nodes[first_arg]).name_start;
-  int32_t ine = ((arena[0]).nodes[first_arg]).name_end;
-  if ((ine - ins) == 9) {
-  int32_t inner_a = ((arena[0]).nodes[first_arg]).a;
-  if (inner_a != AST_NONE) {
-  int32_t inner_n = ((arena[0]).nodes[inner_a]).next;
-  if (inner_n != AST_NONE) {
-  int32_t inner_val = ((arena[0]).nodes[inner_n]).next;
-  int32_t outer_a = (node).a;
-  int32_t outer_n = ((arena[0]).nodes[outer_a]).next;
-  if (outer_n != AST_NONE) {
-  int32_t outer_val = ((arena[0]).nodes[outer_n]).next;
-  if (inner_val != AST_NONE && outer_val != AST_NONE) {
+  int32_t family = flowc_stage_family(src, node);
+  if (family != 0) {
+  int32_t inner = (node).a;
+  if (inner != AST_NONE && ((arena[0]).nodes[inner]).kind == AST_CALL && flowc_stage_family(src, (arena[0]).nodes[inner]) == family) {
+  int32_t inner_a = ((arena[0]).nodes[inner]).a;
+  int32_t inner_n = ((inner_a == AST_NONE) ? (AST_NONE) : (((arena[0]).nodes[inner_a]).next));
+  int32_t outer_n = ((arena[0]).nodes[inner]).next;
+  if (inner_a != AST_NONE && inner_n != AST_NONE && outer_n != AST_NONE && flowc_text_equal(src, ((arena[0]).nodes[inner_n]).start, ((arena[0]).nodes[inner_n]).end, ((arena[0]).nodes[outer_n]).start, ((arena[0]).nodes[outer_n]).end) == 1) {
+  int32_t inner_value = ((arena[0]).nodes[inner_n]).next;
+  int32_t outer_value = ((arena[0]).nodes[outer_n]).next;
+  if (inner_value != AST_NONE && outer_value != AST_NONE) {
   int32_t binop_id = flowc_ast_alloc(arena, AST_BINOP, 0, 0);
-  ((arena[0]).nodes[binop_id]).a = inner_val;
-  ((arena[0]).nodes[binop_id]).b = outer_val;
-  ((arena[0]).nodes[binop_id]).ival = 26;
+  if (binop_id != AST_NONE) {
+  ((arena[0]).nodes[binop_id]).a = inner_value;
+  ((arena[0]).nodes[binop_id]).b = outer_value;
+  { __typeof__(((arena[0]).nodes[binop_id]).ival) __flowc_st436 = ((family <= 2) ? (26) : (23)); ((arena[0]).nodes[binop_id]).ival = __flowc_st436; }
   ((arena[0]).nodes[id]).a = inner_a;
   ((arena[0]).nodes[inner_a]).next = inner_n;
   ((arena[0]).nodes[inner_n]).next = binop_id;
   ((arena[0]).nodes[binop_id]).next = AST_NONE;
-}
-}
-}
-}
+  changed = 1;
 }
 }
 }
 }
 }
   id = (id + 1);
+}
 }
 }
 
