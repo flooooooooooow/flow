@@ -1572,9 +1572,10 @@ int32_t flowc_name_is(uint8_t* src, int32_t start, int32_t end, const char* name
   if ((end - start) != want) {
   return 0;
 }
+  uint8_t* p = (uint8_t*)((uint8_t*)(name));
   int32_t i = 0;
   while (i < want) {
-  if (src[(start + i)] != name[i]) {
+  if (src[(start + i)] != p[i]) {
   return 0;
 }
   i = (i + 1);
@@ -1638,7 +1639,7 @@ void flowc_fuse_pipelines(AstArena* arena, uint8_t* src) {
   if (binop_id != AST_NONE) {
   ((arena[0]).nodes[binop_id]).a = inner_value;
   ((arena[0]).nodes[binop_id]).b = outer_value;
-  { __typeof__(((arena[0]).nodes[binop_id]).ival) __flowc_st429 = ((family <= 2) ? (26) : (23)); ((arena[0]).nodes[binop_id]).ival = __flowc_st429; }
+  { __typeof__(((arena[0]).nodes[binop_id]).ival) __flowc_st436 = ((family <= 2) ? (26) : (23)); ((arena[0]).nodes[binop_id]).ival = __flowc_st436; }
   ((arena[0]).nodes[id]).a = inner_a;
   ((arena[0]).nodes[inner_a]).next = inner_n;
   ((arena[0]).nodes[inner_n]).next = binop_id;
