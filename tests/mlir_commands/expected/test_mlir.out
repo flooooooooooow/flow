@@ -1,4 +1,3 @@
-✅ ✓ tests/mlir/tensor_value.flow
 ✅ ✓ tests/mlir/affine_loop.flow
 ✅ ✓ tests/mlir/basic_arith.flow
 ✅ ✓ tests/core/hello_world.flow
