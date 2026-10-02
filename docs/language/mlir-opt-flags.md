@@ -93,3 +93,16 @@ FLOWC_MLIR_AFFINE=1 FLOWC_MLIR_TILE=4 \
 The inner loop carries the original induction value. The final tile uses an
 affine minimum, so dynamic and partial extents remain in the tiled path. Loops
 with carried values use the existing lowering.
+
+## Tensor-scalar linalg broadcasts
+
+The MLIR emitter lowers the tensor intrinsics `tensor_scale` and
+`tensor_add_scalar` to `linalg.generic`. The scalar operand uses a zero-rank
+affine map, so the operation stays a structured broadcast through later
+bufferization and fusion passes.
+
+The command golden covers both forms:
+
+```bash
+./flow tool tests/mlir_commands/run.flow --only mlir_tensor_scalars
+```

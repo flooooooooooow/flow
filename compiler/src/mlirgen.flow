@@ -4202,7 +4202,7 @@ function mlg_uk_find(m: ptr<Mlg>, ns: i32, ne: i32) -> i32 {
 function mlg_emit_unknown_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
     let ns: i32 = mlg_ns(m, e)
     let ne: i32 = mlg_ne(m, e)
-    if mlg_span_prefix(m, ns, ne, "array_") == 1 or mlg_span_is(m, ns, ne, "tensor_add") == 1 or mlg_span_is(m, ns, ne, "__flow_dbg") == 1 or mlg_span_is(m, ns, ne, "sprintf") == 1 or mlg_span_is(m, ns, ne, "snprintf") == 1 or mlg_span_is(m, ns, ne, "fprintf") == 1 or mlg_span_is(m, ns, ne, "sscanf") == 1 or mlg_span_is(m, ns, ne, "fscanf") == 1 or mlg_span_is(m, ns, ne, "scanf") == 1 {
+    if mlg_span_prefix(m, ns, ne, "array_") == 1 or mlg_span_is(m, ns, ne, "tensor_add") == 1 or mlg_span_is(m, ns, ne, "tensor_scale") == 1 or mlg_span_is(m, ns, ne, "tensor_add_scalar") == 1 or mlg_span_is(m, ns, ne, "__flow_dbg") == 1 or mlg_span_is(m, ns, ne, "sprintf") == 1 or mlg_span_is(m, ns, ne, "snprintf") == 1 or mlg_span_is(m, ns, ne, "fprintf") == 1 or mlg_span_is(m, ns, ne, "sscanf") == 1 or mlg_span_is(m, ns, ne, "fscanf") == 1 or mlg_span_is(m, ns, ne, "scanf") == 1 {
         mlg_refuse(m, e, "call to an undeclared or builtin function")
         return V_NONE
     }
@@ -4822,6 +4822,92 @@ function mlg_emit_tensor_elementwise(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     return r
 }
 
+# Tensor-scalar elementwise operations use a zero-rank broadcast operand. The
+# tensor result gets a fresh destination so tensor values retain value semantics.
+function mlg_emit_tensor_scalar(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
+    let a0: i32 = m[0].arena.nodes[e].a
+    let a1: i32 = m[0].arena.nodes[a0].next
+    let v0: i32 = mlg_emit_expr(m, a0)
+    let v1: i32 = mlg_emit_expr(m, a1)
+    let t0: i32 = mlg_val_mt(m, v0, a0)
+    if mlg_is_tensor_type_mt(t0) == 0 {
+        mlg_refuse(m, e, "tensor scalar operation requires a tensor")
+        return V_NONE
+    }
+    let z: i32 = mlg_new_val(m, MT_INDEX)
+    mlg_line(m)
+    mlg_v(m, z)
+    mlg_s(m, " = arith.constant 0 : index")
+    mlg_nl(m)
+    let dim: i32 = mlg_new_val(m, MT_INDEX)
+    mlg_line(m)
+    mlg_v(m, dim)
+    mlg_s(m, " = tensor.dim ")
+    mlg_v(m, v0)
+    mlg_s(m, ", ")
+    mlg_v(m, z)
+    mlg_s(m, " : ")
+    mlg_put_type(m, t0)
+    mlg_nl(m)
+    let init: i32 = mlg_new_val(m, t0)
+    mlg_line(m)
+    mlg_v(m, init)
+    mlg_s(m, " = tensor.empty(")
+    mlg_v(m, dim)
+    mlg_s(m, ") : ")
+    mlg_put_type(m, t0)
+    mlg_nl(m)
+    let r: i32 = mlg_new_val(m, t0)
+    mlg_line(m)
+    mlg_v(m, r)
+    mlg_s(m, " = linalg.generic {")
+    mlg_nl(m)
+    mlg_line(m)
+    mlg_s(m, "  indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<() -> ()>, affine_map<(d0) -> (d0)>],")
+    mlg_nl(m)
+    mlg_line(m)
+    mlg_s(m, "  iterator_types = [\"parallel\"]")
+    mlg_nl(m)
+    mlg_line(m)
+    mlg_s(m, "} ins(")
+    mlg_v(m, v0)
+    mlg_s(m, " : ")
+    mlg_put_type(m, t0)
+    mlg_s(m, ", ")
+    mlg_v(m, v1)
+    mlg_s(m, " : f32) outs(")
+    mlg_v(m, init)
+    mlg_s(m, " : ")
+    mlg_put_type(m, t0)
+    mlg_s(m, ") {")
+    mlg_nl(m)
+    mlg_line(m)
+    mlg_s(m, "^bb0(%in: f32, %scalar: f32, %out: f32):")
+    mlg_nl(m)
+    let s: i32 = mlg_new_val(m, MT_F32)
+    mlg_line(m)
+    mlg_s(m, "  ")
+    mlg_v(m, s)
+    mlg_s(m, " = arith.")
+    if op == TOK_STAR {
+        mlg_s(m, "mulf")
+    } else {
+        mlg_s(m, "addf")
+    }
+    mlg_s(m, " %in, %scalar : f32")
+    mlg_nl(m)
+    mlg_line(m)
+    mlg_s(m, "  linalg.yield ")
+    mlg_v(m, s)
+    mlg_s(m, " : f32")
+    mlg_nl(m)
+    mlg_line(m)
+    mlg_s(m, "} -> ")
+    mlg_put_type(m, t0)
+    mlg_nl(m)
+    return r
+}
+
 function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
     if mlg_is_array_ctor(m, e) == 1 {
         return mlg_emit_array_ctor(m, e)
@@ -4913,6 +4999,8 @@ function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
         if mlg_span_is(m, ns, ne, "tensor_sub") == 1 { return mlg_emit_tensor_elementwise(m, e, TOK_MINUS) }
         if mlg_span_is(m, ns, ne, "tensor_mul") == 1 { return mlg_emit_tensor_elementwise(m, e, TOK_STAR) }
         if mlg_span_is(m, ns, ne, "tensor_div") == 1 { return mlg_emit_tensor_elementwise(m, e, TOK_SLASH) }
+        if mlg_span_is(m, ns, ne, "tensor_scale") == 1 { return mlg_emit_tensor_scalar(m, e, TOK_STAR) }
+        if mlg_span_is(m, ns, ne, "tensor_add_scalar") == 1 { return mlg_emit_tensor_scalar(m, e, TOK_PLUS) }
     }
     if mlg_span_is(m, ns, ne, "i32_to_f32") == 1 and mlg_chain_len(m, m[0].arena.nodes[e].a) == 1 and (k < 0 or m[0].fn_ext[k] == 1) {
         # The C backend's intrinsic, declared or not: (float)x.
@@ -13722,7 +13810,7 @@ function mlg_emit_extern_fn(m: ptr<Mlg>, f0: i32) {
         m[0].needs_printf = 1
         return
     }
-    if mlg_span_is(m, ns, ne, "tensor_add") == 1 or mlg_span_is(m, ns, ne, "tensor_sub") == 1 or mlg_span_is(m, ns, ne, "tensor_mul") == 1 or mlg_span_is(m, ns, ne, "tensor_div") == 1 {
+    if mlg_span_is(m, ns, ne, "tensor_add") == 1 or mlg_span_is(m, ns, ne, "tensor_sub") == 1 or mlg_span_is(m, ns, ne, "tensor_mul") == 1 or mlg_span_is(m, ns, ne, "tensor_div") == 1 or mlg_span_is(m, ns, ne, "tensor_scale") == 1 or mlg_span_is(m, ns, ne, "tensor_add_scalar") == 1 {
         # Python never declares its tensor elementwise intrinsics.
         return
     }
