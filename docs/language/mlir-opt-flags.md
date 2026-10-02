@@ -175,8 +175,8 @@ FLOWC_MLIR_AOSOA_PAD=1 ./flow mlir compiler/fixtures/mlir/aosoa_padding.flow --l
 
 Set `FLOWC_MLIR_AOSOA_SWIZZLE=N` to xor each generated field index with that
 index shifted by `log2(N)`. `N` must be a power of two from 2 through 32.
-This keeps the logical array mapping bijective while changing lane placement
-for tiled loads. The default is zero.
+The rewrite applies this only to power-of-two logical extents, which keeps the
+mapping within the source array for irregular extents. The default is zero.
 
 > `affine-super-vectorize` and `affine-loop-fusion` still need affine loops,
 > which the generator does not emit; they remain soft no-ops.
