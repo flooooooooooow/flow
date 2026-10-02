@@ -13,7 +13,9 @@ function check_async_pipeline() -> i32 {
     }
     let output: string = read_text(t_out())
     if not a_contains(output, "flow.async_buffers = 4, flow.async_target = \"nvptx\"") { return T_FAIL }
-    if not a_contains(output, "%stage2 = async.execute [%stage1]") { return T_FAIL }
+    if not a_contains(output, "%copy1 = nvgpu.device_async_copy") { return T_FAIL }
+    if not a_contains(output, "%group2 = nvgpu.device_async_create_group %copy2") { return T_FAIL }
+    if not a_contains(output, "nvgpu.device_async_wait %group1") { return T_FAIL }
     if not a_contains(output, "async.copy stage 1 for linalg.matmul") { return T_FAIL }
     return T_PASS
 }
