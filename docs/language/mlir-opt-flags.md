@@ -53,6 +53,18 @@ does not synthesize `nvgpu.device_async_copy` operations or claim a hardware
 copy engine is available. Those lowerings need target-specific IR and a
 profitability check.
 
+The token graph emitter follows the same contract:
+
+```bash
+./flow tool scripts/tools/mlir_async/main.flow \
+  --stages=3 --buffers=4 --target=nvptx
+```
+
+It emits an explicit chain of `async.execute` dependencies and records the
+selected target in `flow.async_target`. The emitter rejects a missing or
+unknown target. A backend can consume this contract when it supplies a real
+async-copy operation and its completion token.
+
 ## Register tiles
 
 `--register-tiles` enables the opt-in `register_tile_outer_product(a, b)`

@@ -1,7 +1,14 @@
-import .text { at_outln, at_errln, at_starts, at_from, at_itoa }
+import .text { at_outln, at_errln, at_starts, at_from, at_itoa, at_eq }
 
-function async_module(stages: i32, buffers: i32, op: string) -> string {
-    let mut out: string = "module attributes {flow.async_buffers = " + at_itoa(buffers) + "} {\n"
+function target_id(s: string) -> i32 {
+    if at_eq(s, "gpu") { return 1 }
+    if at_eq(s, "nvptx") { return 2 }
+    if at_eq(s, "amdgpu") { return 3 }
+    return -1
+}
+
+function async_module(stages: i32, buffers: i32, op: string, target: string) -> string {
+    let mut out: string = "module attributes {flow.async_buffers = " + at_itoa(buffers) + ", flow.async_target = \"" + target + "\"} {\n"
     out = out + "  func.func @flow_async_pipeline() -> !async.token {\n"
     let mut i: i32 = 0
     let mut previous: string = ""
@@ -26,6 +33,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     let mut stages: i32 = 2
     let mut buffers: i32 = 2
     let mut op: string = "linalg.matmul"
+    let mut target: string = ""
     let mut i: i32 = 1
     while i < argc {
         let arg: string = argv[i] as string
@@ -35,6 +43,8 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             buffers = atoi(at_from(arg, 10))
         } elif at_starts(arg, "--op=") {
             op = at_from(arg, 5)
+        } elif at_starts(arg, "--target=") {
+            target = at_from(arg, 9)
         }
         i = i + 1
     }
@@ -42,6 +52,10 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         at_errln("mlir_async: stages must be 1..32 and buffers must be 2..16")
         return 2
     }
-    at_outln(async_module(stages, buffers, op))
+    if target_id(target) < 0 {
+        at_errln("mlir_async: --target is required and must be one of 'gpu', 'nvptx', 'amdgpu'")
+        return 2
+    }
+    at_outln(async_module(stages, buffers, op, target))
     return 0
 }

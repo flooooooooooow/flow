@@ -24,6 +24,10 @@ export function at_starts(s: string, prefix: string) -> bool {
     return strncmp(s, prefix, strlen(prefix)) == 0
 }
 
+export function at_eq(a: string, b: string) -> bool {
+    return strcmp(a, b) == 0
+}
+
 export function at_from(s: string, start: i32) -> string {
     let n: i32 = strlen(s) as i32
     let out: ptr<u8> = malloc((n - start + 1) as i64) as ptr<u8>
