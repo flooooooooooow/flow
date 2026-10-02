@@ -54,6 +54,7 @@ extern {
     function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
     function strtod(s: ptr<u8>, end: ptr<u8>) -> f64
     function getenv(name: string) -> string
+    function strcmp(a: string, b: string) -> i32
 }
 
 # ---------------------------------------------------------------------------
@@ -11761,6 +11762,68 @@ function mlg_const_step(m: ptr<Mlg>, step: i32, out: ptr<i32>) -> i32 {
     return 0
 }
 
+# The affine lowering is opt-in while the textual backend grows support for
+# affine maps. Keep the eligibility rule narrow: static integer bounds, a
+# positive constant step, no loop-carried SSA values, and no control-flow
+# exits. These are the loops affine.for can represent without changing the
+# source-level semantics.
+function mlg_affine_enabled() -> i32 {
+    let v: string = getenv("FLOWC_MLIR_AFFINE")
+    let p: ptr<u8> = v
+    if p == null { return 0 }
+    if strcmp(v, "1") == 0 { return 1 }
+    return 0
+}
+
+function mlg_affine_eligible(m: ptr<Mlg>, st: i32) -> i32 {
+    if mlg_affine_enabled() == 0 { return 0 }
+    if mlg_kind(m, m[0].arena.nodes[st].a) != AST_INT or mlg_kind(m, m[0].arena.nodes[st].b) != AST_INT {
+        return 0
+    }
+    let mut step: i32 = 0
+    if mlg_const_step(m, m[0].arena.nodes[st].ival, &step) == 0 or step <= 0 {
+        return 0
+    }
+    if mlg_needs_cf(m, m[0].arena.nodes[st].c) == 1 {
+        return 0
+    }
+    let locs: ptr<i32> = mlg_alloc_i32(MLG_MAX_MERGE)
+    let nc: i32 = mlg_loop_carried(m, m[0].arena.nodes[st].c, locs)
+    mlg_free_i32(locs)
+    if nc != 0 { return 0 }
+    return 1
+}
+
+function mlg_emit_affine_for(m: ptr<Mlg>, st: i32, step_val: i32) {
+    let lo: i32 = mlg_emit_expr(m, m[0].arena.nodes[st].a)
+    let hi: i32 = mlg_emit_expr(m, m[0].arena.nodes[st].b)
+    let lb: i32 = mlg_emit_idx_cast(m, lo)
+    let ub: i32 = mlg_emit_idx_cast(m, hi)
+    let iv: i32 = mlg_new_val(m, MT_INDEX)
+    mlg_line(m)
+    mlg_s(m, "affine.for ")
+    mlg_v(m, iv)
+    mlg_s(m, " = ")
+    mlg_v(m, lb)
+    mlg_s(m, " to ")
+    mlg_v(m, ub)
+    mlg_s(m, " step ")
+    mlg_i(m, step_val)
+    mlg_s(m, " {")
+    mlg_nl(m)
+    m[0].ind = m[0].ind + 1
+    mlg_add_local(m, mlg_ns(m, st), mlg_ne(m, st), MT_INDEX, FT_NONE, iv)
+    let none: ptr<i32> = mlg_alloc_i32(1)
+    let k: i32 = mlg_push_loop(m, 2, 0, 0, V_NONE, V_NONE, none, 0)
+    mlg_emit_block(m, m[0].arena.nodes[st].c)
+    m[0].nlp = k
+    mlg_free_i32(none)
+    m[0].ind = m[0].ind - 1
+    mlg_line(m)
+    mlg_s(m, "}")
+    mlg_nl(m)
+}
+
 # `parallel for` parses as a plain for whose span starts at `parallel`
 # (#1032); older parsers started it at `for`, so also look behind it.
 function mlg_for_is_parallel(m: ptr<Mlg>, st: i32) -> i32 {
@@ -12468,6 +12531,12 @@ function mlg_emit_scf_parallel(m: ptr<Mlg>, st: i32, step_val: i32) {
 
 function mlg_emit_for(m: ptr<Mlg>, st: i32) {
     let par: i32 = mlg_for_is_parallel(m, st)
+    if par == 0 and mlg_affine_eligible(m, st) == 1 {
+        let mut step_val: i32 = 0
+        let _has: i32 = mlg_const_step(m, m[0].arena.nodes[st].ival, &step_val)
+        mlg_emit_affine_for(m, st, step_val)
+        return
+    }
     if par == 0 and (mlg_try_vectorize(m, st) == 1 or m[0].err != 0) {
         return
     }

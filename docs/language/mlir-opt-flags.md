@@ -54,5 +54,16 @@ The lowering pipeline runs `--convert-vector-to-scf` before `--convert-scf-to-cf
 and `--convert-vector-to-llvm` before `--convert-func-to-llvm`; without both,
 `vector.transfer_read` reaches `mlir-translate` as an unregistered op.
 
-> `affine-super-vectorize` and `affine-loop-fusion` still need affine loops,
-> which the generator does not emit; they remain soft no-ops.
+## Affine loop lowering
+
+Static counted loops can use `affine.for` when the generator is asked to emit
+the affine dialect:
+
+```bash
+FLOWC_MLIR_AFFINE=1 ./flow flow-to-mlir tests/mlir/affine_loop.flow /tmp/affine.mlir
+```
+
+The first slice covers positive constant steps, integer bounds, and bodies with
+no loop-carried values or control-flow exits. The default remains `scf.for`.
+This keeps existing MLIR goldens stable while affine fusion and tiling are
+introduced incrementally.
