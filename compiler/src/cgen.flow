@@ -136,13 +136,20 @@ export struct CgenBuf {
     # pass FLOWC_HANDLE_MAX; deeper blocks then keep the vtable dispatch.
     handle_ids: ptr<i32>,
     handle_len: i32,
+    # Names of the span and induction variable for the innermost ascending
+    # `for i in 0 to span.len` body. Indexing that exact span by that exact
+    # induction variable is proven in range while the body is emitted.
+    bounds_loop_start: i32,
+    bounds_loop_end: i32,
+    bounds_span_start: i32,
+    bounds_span_end: i32,
     # The AST_PROGRAM of the module being emitted, so a name can resolve to a
     # module static (a top-level `let`). AST_NONE in scratch buffers.
     root: i32
 }
 
 function flowc_cgen_buf_init(out: ptr<u8>, cap: i32) -> CgenBuf {
-    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null as string, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0, handle_ids: null, handle_len: 0, root: AST_NONE }
+    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null as string, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0, handle_ids: null, handle_len: 0, bounds_loop_start: -1, bounds_loop_end: -1, bounds_span_start: -1, bounds_span_end: -1, root: AST_NONE }
 }
 
 function flowc_cgen_putc(w: ptr<CgenBuf>, c: i32) {
@@ -5745,6 +5752,52 @@ function flowc_cgen_checked_is_span(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
     return 0
 }
 
+# The ascending loop form `for i in 0 to xs.len` proves every `xs[i]` in its
+# body is within the span. Keep this proof local to code emission so nested
+# loops restore their enclosing proof when they finish.
+function flowc_cgen_bounds_span_base(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32, dir: i32) -> i32 {
+    let lo: i32 = arena.nodes[id].a
+    if lo == AST_NONE or arena.nodes[lo].kind != AST_INT or arena.nodes[lo].ival != 0 {
+        return AST_NONE
+    }
+    let hi: i32 = arena.nodes[id].b
+    if hi == AST_NONE or arena.nodes[hi].kind != AST_FIELD_ACCESS {
+        return AST_NONE
+    }
+    if flowc_cgen_span_is(src, arena.nodes[hi].name_start, arena.nodes[hi].name_end, "len") == 0 {
+        return AST_NONE
+    }
+    let base: i32 = arena.nodes[hi].a
+    if base == AST_NONE or arena.nodes[base].kind != AST_IDENT {
+        return AST_NONE
+    }
+    if flowc_cgen_checked_is_span(w, arena, src, base) == 0 {
+        return AST_NONE
+    }
+    return base
+}
+
+function flowc_cgen_is_proven_span_index(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if w[0].bounds_loop_start < 0 or w[0].bounds_span_start < 0 {
+        return 0
+    }
+    let base: i32 = arena.nodes[id].a
+    let idx: i32 = arena.nodes[id].b
+    if base == AST_NONE or idx == AST_NONE {
+        return 0
+    }
+    if arena.nodes[base].kind != AST_IDENT or arena.nodes[idx].kind != AST_IDENT {
+        return 0
+    }
+    if flowc_cgen_span_eq(src, arena.nodes[base].name_start, arena.nodes[base].name_end, w[0].bounds_span_start, w[0].bounds_span_end) == 0 {
+        return 0
+    }
+    if flowc_cgen_span_eq(src, arena.nodes[idx].name_start, arena.nodes[idx].name_end, w[0].bounds_loop_start, w[0].bounds_loop_end) == 0 {
+        return 0
+    }
+    return 1
+}
+
 # A checked read `base[idx]`: `(((unsigned)(i) < N) ? a[i] : (..., a[0]))`
 # for a sized array, the `.len` test for a span.
 function flowc_cgen_emit_checked_index(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32, size: i32) {
@@ -6539,7 +6592,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         # The index is an rvalue even inside an lvalue.
         let idx_lv: i32 = w[0].lval
         # A checked read of a sized array variable or a span.
-        if w[0].checks == 1 and idx_lv == 0 {
+        if w[0].checks == 1 and idx_lv == 0 and flowc_cgen_is_proven_span_index(w, arena, src, id) == 0 {
             let csize: i32 = flowc_cgen_checked_array_size(w, arena, src, arena.nodes[id].a)
             if csize > 0 {
                 flowc_cgen_emit_checked_index(w, arena, src, id, csize)
@@ -7915,6 +7968,22 @@ function flowc_cgen_for_literal_dir(arena: AstArena, src: ptr<u8>, lo: i32, hi: 
 # One direction of a stepless range loop, with a constant step:
 # `for (int32_t i = lo; i < (hi); i = i + 1)` up, `i > (hi); i = i + (-1)` down.
 function flowc_cgen_emit_for_dir(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32, dir: i32) {
+    let saved_loop_start: i32 = w[0].bounds_loop_start
+    let saved_loop_end: i32 = w[0].bounds_loop_end
+    let saved_span_start: i32 = w[0].bounds_span_start
+    let saved_span_end: i32 = w[0].bounds_span_end
+    let proven_span: i32 = flowc_cgen_bounds_span_base(w, arena, src, id, dir)
+    if proven_span != AST_NONE {
+        w[0].bounds_loop_start = arena.nodes[id].name_start
+        w[0].bounds_loop_end = arena.nodes[id].name_end
+        w[0].bounds_span_start = arena.nodes[proven_span].name_start
+        w[0].bounds_span_end = arena.nodes[proven_span].name_end
+    } else {
+        w[0].bounds_loop_start = -1
+        w[0].bounds_loop_end = -1
+        w[0].bounds_span_start = -1
+        w[0].bounds_span_end = -1
+    }
     flowc_cgen_puts(w, "  for (int32_t ")
     flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
     flowc_cgen_puts(w, " = ")
@@ -7937,6 +8006,10 @@ function flowc_cgen_emit_for_dir(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>,
         flowc_cgen_puts(w, " + (-1)) ")
     }
     flowc_cgen_emit_block(w, arena, src, arena.nodes[id].c)
+    w[0].bounds_loop_start = saved_loop_start
+    w[0].bounds_loop_end = saved_loop_end
+    w[0].bounds_span_start = saved_span_start
+    w[0].bounds_span_end = saved_span_end
 }
 
 function flowc_cgen_step_is_literal(arena: AstArena, step: i32) -> i32 {
