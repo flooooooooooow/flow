@@ -230,15 +230,17 @@ note. Showcase and tests rely on zeros.
 type checker (plus runtime abort).
 
 **Update (2026-08-04, later):** Phase 2 shipped: `function f() -> T with E1, E2`
-declares a signature effect row; under `--strict-effects` the body may perform
+declares a signature effect row; in Stable mode the body may perform
 those effects, and callers must cover them via `handle` or their own `with`.
 
 **Update (2026-08-04, final):** First-class rows shipped: `(T) -> R with E` on
-types; calls through such values require `E` under `--strict-effects`. Soft
-defaults remain the language default (option 1). Still open: whether to retire
-soft defaults for typed code later.
+types; calls through such values require `E` in Stable mode. The legacy
+zero/no-op behavior remains available through the explicit permissive environment
+variables described above.
 
-**Status:** ✅ Resolved for typing surface (soft-default policy remains option 1)
+**Status:** ✅ Resolved. Stable compilation and runtime fail loudly by default. Set
+`FLOWC_PERMISSIVE_EFFECTS=1` while compiling and `FLOW_PERMISSIVE_EFFECTS=1`
+while running to retain the legacy zero/no-op behavior.
 
 ---
 

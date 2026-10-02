@@ -187,7 +187,8 @@ flow wasm FILE \
 | `FLOW_HOST=flowc` | the only compiler host; `python` is retired and stops with an error, `auto` means flowc |
 | `FLOWC_BIN=PATH` | use this flowc binary |
 | <code>FLOW_CPU_BACKEND=c&#124;mlir</code> | choose CPU backend |
-| `FLOW_STRICT_EFFECTS=1` | reject uncovered effect operations |
+| `FLOWC_PERMISSIVE_EFFECTS=1` | compile with legacy zero defaults |
+| `FLOW_PERMISSIVE_EFFECTS=1` | run with legacy zero/no-op defaults |
 | `FLOW_PROFILE=safety` | select safety C flags |
 | `FLOW_SANITIZE=ub,asan,tsan` | combined sanitizer selection |
 | `FLOW_UBSAN=1` | undefined-behaviour sanitizer |

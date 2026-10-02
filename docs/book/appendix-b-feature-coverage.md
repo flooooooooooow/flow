@@ -130,8 +130,8 @@ means that the syntax or design is not implemented.
 | capabilities | Full, stateless | Chapter 12 |
 | nested and multiple handlers | Full with C backend | Chapter 12 |
 | dynamic handler restoration | Full with C backend | Chapter 12 |
-| effect rows | Full under strict-effects mode | Chapter 12 |
-| zero/no-op unhandled compatibility | Full default; strict mode available | Chapter 12 |
+| effect rows | Full in Stable mode | Chapter 12 |
+| zero/no-op unhandled compatibility | Explicit permissive mode | Chapter 12 |
 | pthread threads, mutex, condvar, semaphore, once | Native target | Chapter 12 |
 | WaitGroup | Native target | Chapter 12 |
 | buffered channels and close | Native target | Chapter 12 |

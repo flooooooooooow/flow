@@ -596,8 +596,7 @@ The current C backend uses vtable-based dynamic dispatch:
   handles;
 - `handle E with H { ... }` saves the current pointer, installs `H`, runs the block, and restores
   the previous pointer on exit;
-- `E.op(args)` calls through the current handler or uses the soft zero/no-op default when none is
-  installed;
+- `E.op(args)` calls through the current handler or fails loudly when none is installed;
 - operations written directly inside a `handle E with H` block are emitted as direct calls to
   `H`'s methods; calls from deeper functions and from lambdas keep dynamic dispatch.
 
