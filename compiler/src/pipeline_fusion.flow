@@ -215,7 +215,7 @@ export function flowc_fuse_pipelines(arena: ptr<AstArena>, src: ptr<u8>) -> void
                                 arena[0].nodes[binop_id].a = inner_value
                                 arena[0].nodes[binop_id].b = outer_value
                                 # scale(a, b) is a * b. offset(a, b) is a + b.
-                                arena[0].nodes[binop_id].ival = if family <= 2 { 26 } else { 23 }
+                                arena[0].nodes[binop_id].ival = if family <= 2 { 26 } else { 24 }
                                 arena[0].nodes[id].a = inner_a
                                 arena[0].nodes[inner_a].next = inner_n
                                 arena[0].nodes[inner_n].next = binop_id
