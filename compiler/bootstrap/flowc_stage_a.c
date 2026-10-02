@@ -1775,7 +1775,7 @@ void flowc_fuse_pipelines(AstArena* arena, uint8_t* src) {
   if (binop_id != AST_NONE) {
   ((arena[0]).nodes[binop_id]).a = inner_value;
   ((arena[0]).nodes[binop_id]).b = outer_value;
-  { __typeof__(((arena[0]).nodes[binop_id]).ival) __flowc_st1351 = ((family <= 2) ? (26) : (23)); ((arena[0]).nodes[binop_id]).ival = __flowc_st1351; }
+  { __typeof__(((arena[0]).nodes[binop_id]).ival) __flowc_st1351 = ((family <= 2) ? (26) : (24)); ((arena[0]).nodes[binop_id]).ival = __flowc_st1351; }
   ((arena[0]).nodes[id]).a = inner_a;
   ((arena[0]).nodes[inner_a]).next = inner_n;
   ((arena[0]).nodes[inner_n]).next = binop_id;
