@@ -36,6 +36,7 @@ mlir_tiled_loop tile tests/mlir/affine_loop.flow --lenient
 mlir_matmul mlir examples/bench/matmul_mlir.flow --lenient
 mlir_tensor_bench mlir examples/ml/mlir_tensor_bench.flow --lenient
 mlir_register_tiles mlir compiler/fixtures/mlir_opt/register_tile_probe.flow --lenient --register-tiles
+mlir_register_tiles_nested mlir compiler/fixtures/mlir_opt/register_tile_nested.flow --lenient --register-tiles
 mlir_gpu_dialect mlir compiler/fixtures/mlir/gpu_kernels.flow --lenient --mlir-gpu
 mlir_gpu_dialect_stdlib mlir lib/stdlib/gpu_kernels.flow --lenient --mlir-gpu
 
