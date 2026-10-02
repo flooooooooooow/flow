@@ -106,3 +106,16 @@ The command golden covers both forms:
 ```bash
 ./flow tool tests/mlir_commands/run.flow --only mlir_tensor_scalars
 ```
+
+## AoSoA storage padding
+
+Set `FLOWC_MLIR_AOSOA_PAD=N` to add `N` storage elements to each field array
+created by the opt-in AoSoA lowering. Source-level array extents and indexing
+remain unchanged. Values from 1 through 64 are accepted. The default is zero.
+
+```bash
+FLOWC_MLIR_AOSOA_PAD=1 ./flow mlir compiler/fixtures/mlir/aosoa_padding.flow --lenient
+```
+
+> `affine-super-vectorize` and `affine-loop-fusion` still need affine loops,
+> which the generator does not emit; they remain soft no-ops.
