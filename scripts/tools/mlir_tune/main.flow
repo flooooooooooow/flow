@@ -43,8 +43,8 @@ function valid_tiles(s: string) -> bool {
 function transform_of(op: string, tiles: string) -> string {
     return "module attributes {transform.with_named_sequence} {\n" +
            "  transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {\n" +
-           "    %matmul = transform.structured.match ops[\"" + op + "\"] in %arg0 : (!transform.any_op) -> !transform.any_op\n" +
-           "    %tiled_linalg_op, %loops:3 = transform.structured.tile_using_for %matmul [" + tiles + "] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op)\n" +
+           "    %matmul = transform.structured.match ops{[\"" + op + "\"]} in %arg0 : (!transform.any_op) -> !transform.any_op\n" +
+           "    %tiled_linalg_op, %loops:3 = transform.structured.tile_using_for %matmul tile_sizes [" + tiles + "] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op)\n" +
            "    transform.yield\n" +
            "  }\n" +
            "}\n"

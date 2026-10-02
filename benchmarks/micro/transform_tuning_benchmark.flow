@@ -10,14 +10,25 @@ import "tools/flow_cli/sys.flow"
 import "benchmarks/bench_tools.flow"
 import std.process { ProcCmd, ProcStrs }
 
-const KERNEL: string = "module {\n  func.func @matmul_kernel(%A: memref<128x128xf32>, %B: memref<128x128xf32>, %C: memref<128x128xf32>) attributes {llvm.emit_c_interface} {\n    linalg.matmul ins(%A, %B: memref<128x128xf32>, memref<128x128xf32>)\n                  outs(%C: memref<128x128xf32>)\n    func.return\n  }\n}\n"
+const KERNEL: string = "module attributes {transform.with_named_sequence} {\n  func.func @matmul_kernel(%A: memref<128x128xf32>, %B: memref<128x128xf32>, %C: memref<128x128xf32>) attributes {llvm.emit_c_interface} {\n    linalg.matmul ins(%A, %B: memref<128x128xf32>, memref<128x128xf32>)\n                  outs(%C: memref<128x128xf32>)\n    func.return\n  }\n}\n"
 
 const HARNESS: string = "#include <stdio.h>\n#include <stdlib.h>\n#include <time.h>\n\nstruct MemRefDescriptor {\n  float *allocated;\n  float *aligned;\n  long offset;\n  long sizes[2];\n  long strides[2];\n};\n\nextern void _mlir_ciface_matmul_kernel(struct MemRefDescriptor *A, struct MemRefDescriptor *B, struct MemRefDescriptor *C);\n\nstatic double get_time(void) {\n    struct timespec ts;\n    clock_gettime(CLOCK_MONOTONIC, &ts);\n    return ts.tv_sec + ts.tv_nsec * 1e-9;\n}\n\nint main(void) {\n    int N = 128;\n    int size = N * N * sizeof(float);\n    float *A_data = malloc(size);\n    float *B_data = malloc(size);\n    float *C_data = malloc(size);\n    for (int i = 0; i < N * N; i++) {\n        A_data[i] = 1.0f;\n        B_data[i] = 2.0f;\n        C_data[i] = 0.0f;\n    }\n    struct MemRefDescriptor A = {A_data, A_data, 0, {N, N}, {N, 1}};\n    struct MemRefDescriptor B = {B_data, B_data, 0, {N, N}, {N, 1}};\n    struct MemRefDescriptor C = {C_data, C_data, 0, {N, N}, {N, 1}};\n    _mlir_ciface_matmul_kernel(&A, &B, &C);\n    double start = get_time();\n    for (int i = 0; i < 100; i++) {\n        _mlir_ciface_matmul_kernel(&A, &B, &C);\n    }\n    double end = get_time();\n    printf(\"%f\\n\", end - start);\n    free(A_data);\n    free(B_data);\n    free(C_data);\n    return 0;\n}\n"
 
-# The transform script that tiles the matmul by `t` in every dimension.
-function transform_of(t: string) -> string {
-    let tiles: string = "[" + t + ", " + t + ", " + t + "]"
-    return "module attributes {transform.with_named_sequence} {\n  transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {\n    %matmul = transform.structured.match ops[\"linalg.matmul\"] in %arg0 : (!transform.any_op) -> !transform.any_op\n    %tiled_linalg_op, %loops:3 = transform.structured.tile_using_for %matmul " + tiles + " : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op)\n    transform.yield\n  }\n}\n"
+# The transform script that tiles the matmul by a three-dimensional schedule.
+function transform_of(tiles: string) -> string {
+    return "  transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {\n    %matmul = transform.structured.match ops{[\"linalg.matmul\"]} in %arg0 : (!transform.any_op) -> !transform.any_op\n    %tiled_linalg_op, %loops:3 = transform.structured.tile_using_for %matmul tile_sizes [" + tiles + "] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op)\n    transform.yield\n  }\n}\n"
+}
+
+function strip_transform_script(s: string) -> string {
+    let marker: i32 = s_find(s, "\n  transform.named_sequence", 0)
+    if marker < 0 {
+        return s
+    }
+    let close: i32 = s_find(s, "\n  }\n}\n", marker)
+    if close < 0 {
+        return s
+    }
+    return s_slice(s, 0, marker) + "\n}\n"
 }
 
 # The value after "NAME=" in `flow mlir-lower --tools` output, or "".
@@ -43,18 +54,19 @@ function quiet_ok(argv: ptr<ProcStrs>) -> bool {
 
 # Tile, lower, build and run with tile size `t`: the harness's runtime
 # output, or "" when a step fails.
-function evaluate(opt: string, translate: string, cc: string, work: string, t: string) -> string {
-    let d: string = work + "/t" + t
+function evaluate(opt: string, translate: string, cc: string, work: string, candidate: string, tag: string) -> string {
+    let d: string = work + "/t" + tag
     let _m: bool = mkdir_p(d)
-    let _w: bool = write_text(d + "/in.mlir", KERNEL + transform_of(t))
+    let _w: bool = write_text(d + "/in.mlir", s_slice(KERNEL, 0, s_len(KERNEL) - 2) + transform_of(candidate))
     let a: ptr<ProcStrs> = sl_of3(opt, "--mlir-print-op-on-diagnostic=false", "--pass-pipeline=builtin.module(transform-interpreter)")
     sl_push(a, d + "/in.mlir")
     sl_push2(a, "-o", d + "/tiled.mlir")
     if not quiet_ok(a) {
         return ""
     }
+    let _strip: bool = write_text(d + "/tiled.mlir", strip_transform_script(read_text(d + "/tiled.mlir")))
     let b: ptr<ProcStrs> = sl_of1(opt)
-    sl_extend(b, s_words("--convert-linalg-to-loops --lower-affine --convert-scf-to-cf --memref-expand --convert-vector-to-llvm --finalize-memref-to-llvm --convert-func-to-llvm --convert-index-to-llvm --convert-arith-to-llvm --convert-cf-to-llvm --reconcile-unrealized-casts"))
+    sl_extend(b, s_words("--convert-linalg-to-loops --memref-expand --expand-strided-metadata --lower-affine --convert-scf-to-cf --convert-vector-to-llvm --finalize-memref-to-llvm --convert-func-to-llvm --convert-index-to-llvm --convert-arith-to-llvm --convert-cf-to-llvm --reconcile-unrealized-casts"))
     sl_push(b, d + "/tiled.mlir")
     sl_push2(b, "-o", d + "/lowered.mlir")
     if not quiet_ok(b) {
@@ -85,7 +97,7 @@ function main() -> i32 {
     }
     on_exit_remove(work)
     outln("Running transform dialect tuning benchmark...")
-    let tiles: ptr<ProcStrs> = s_words("8 16 32 64")
+    let tiles: ptr<ProcStrs> = s_words("8,8,8 16,16,8 32,16,8 64,32,16")
     let tc: ptr<ProcCmd> = bench_flow(root, sl_of2("mlir-lower", "--tools"))
     cmd_quiet_err(tc)
     let tools_text: string = capture(tc)
@@ -105,8 +117,9 @@ function main() -> i32 {
         let mut i: i32 = 0
         while i < sl_len(tiles) {
             let t: string = sl_get(tiles, i)
+            let tag: string = s_itoa(i)
             i = i + 1
-            let m: string = evaluate(opt, translate, cc, work, t)
+            let m: string = evaluate(opt, translate, cc, work, t, tag)
             if s_len(m) == 0 {
                 continue
             }
@@ -118,12 +131,12 @@ function main() -> i32 {
             }
         }
     } else {
-        best = "64"
+        best = "64,32,16"
     }
     let end: i64 = bench_epoch_s()
     outln("")
     outln("Benchmark Results:")
-    outln("Evaluated tile sizes: [" + sl_join(tiles, ", ") + "]")
+    outln("Evaluated tile schedules: [" + sl_join(tiles, ", ") + "]")
     if not has_toolchain {
         outln("Note: Toolchain (mlir-opt, mlir-translate, clang) not fully available in VM.")
         outln("Reported tuning metric is pending toolchain availability, but pipeline logic is successfully tested.")
