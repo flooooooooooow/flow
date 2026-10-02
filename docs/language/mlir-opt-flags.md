@@ -79,9 +79,8 @@ FLOWC_MLIR_AFFINE=1 ./flow flow-to-mlir tests/mlir/affine_loop.flow /tmp/affine.
 
 The first slice covers positive constant steps, integer or dynamic bounds, and
 bodies with no loop-carried values or control-flow exits. The default remains
-`scf.for`.
-This keeps existing MLIR goldens stable while affine fusion and tiling are
-introduced incrementally.
+`scf.for`. This keeps existing MLIR goldens stable while affine fusion and
+tiling are introduced incrementally.
 
 Zero-based loops can use nested affine loops with a requested tile size:
 
@@ -106,3 +105,21 @@ The command golden covers both forms:
 ```bash
 ./flow tool tests/mlir_commands/run.flow --only mlir_tensor_scalars
 ```
+
+## AoSoA storage padding
+
+Set `FLOWC_MLIR_AOSOA_PAD=N` to add `N` storage elements to each field array
+created by the opt-in AoSoA lowering. Source-level array extents and indexing
+remain unchanged. Values from 1 through 64 are accepted. The default is zero.
+
+```bash
+FLOWC_MLIR_AOSOA_PAD=1 ./flow mlir compiler/fixtures/mlir/aosoa_padding.flow --lenient
+```
+
+Set `FLOWC_MLIR_AOSOA_SWIZZLE=N` to xor each generated field index with that
+index shifted by `log2(N)`. `N` must be a power of two from 2 through 32.
+This keeps the logical array mapping bijective while changing lane placement
+for tiled loads. The default is zero.
+
+> `affine-super-vectorize` and `affine-loop-fusion` still need affine loops,
+> which the generator does not emit; they remain soft no-ops.
