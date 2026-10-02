@@ -78,8 +78,10 @@ async-copy operation and its completion token.
 For `nvptx`, the emitter produces `nvgpu.device_async_copy`,
 `nvgpu.device_async_create_group`, and `nvgpu.device_async_wait` operations
 with `!nvgpu.device.async.token` results. The generic `async.execute` graph
-remains available for the other accepted targets. The NVGPU path still needs
-target lowering and measured profitability before automatic promotion.
+remains available for the other accepted targets and carries a `memref.copy`
+from global memory into address space 3 inside each async region. The NVGPU
+path still needs target lowering and measured profitability before automatic
+promotion.
 
 Static scratchpad plans use the same explicit target boundary:
 

@@ -43,6 +43,9 @@ function async_module(stages: i32, buffers: i32, op: string, target: string) -> 
             out = out + "    " + name + " = async.execute [" + previous + "] {\n"
         }
         out = out + "      // async.copy stage " + at_itoa(i) + " for " + op + "\n"
+        out = out + "      %src" + at_itoa(i) + " = memref.alloc() : memref<16xf32>\n"
+        out = out + "      %dst" + at_itoa(i) + " = memref.alloc() : memref<16xf32, 3>\n"
+        out = out + "      memref.copy %src" + at_itoa(i) + ", %dst" + at_itoa(i) + " : memref<16xf32> to memref<16xf32, 3>\n"
         out = out + "      async.yield\n"
         out = out + "    } : !async.token\n"
         previous = name
