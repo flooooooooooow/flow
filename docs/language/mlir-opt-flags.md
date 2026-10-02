@@ -36,6 +36,16 @@ python3 -m flow.transpiler --print-pass-pipeline --opt-level O2 --no-inline
 
 `--opt-report` prints pass statistics using the same flag set.
 
+The Flow-native `scripts/tools/mlir_tune/main.flow` schedule generator also
+supports loop interchange for three-dimensional structured operations:
+
+```
+./flow tool scripts/tools/mlir_tune/main.flow \
+  --strategy=interchange --permutation=1,2,0
+```
+
+The permutation must contain each loop position from 0 through 2 once.
+
 Affine tiling is opt-in and requires a positive tile size:
 
 ```bash
