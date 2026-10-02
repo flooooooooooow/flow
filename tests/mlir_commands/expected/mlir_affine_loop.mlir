@@ -76,4 +76,18 @@ llvm.store %v44, %v46 : f32, !llvm.ptr
 }
 func.return
 }
+func.func @fill_multitiled(%arg0: !llvm.ptr) -> () {
+%v47 = arith.constant 0 : i32
+%v48 = arith.constant 12 : i32
+%v49 = arith.index_cast %v47 : i32 to index
+%v50 = arith.index_cast %v48 : i32 to index
+affine.for %v51 = %v49 to %v50 step 1 {
+%v52 = arith.constant 6.0 : f64
+%v53 = arith.truncf %v52 : f64 to f32
+%v54 = arith.index_cast %v51 : index to i64
+%v55 = llvm.getelementptr %arg0[0, %v54] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.array<12 x f32>
+llvm.store %v53, %v55 : f32, !llvm.ptr
+}
+func.return
+}
 }

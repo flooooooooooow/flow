@@ -182,7 +182,7 @@ function run_case(root: string, name: string, kind: string, raw_args: ptr<ProcSt
         sl_push(args, a)
     }
     let g: string = WORK + "/got/" + name
-    if s_eq(kind, "mlir") or s_eq(kind, "aosoa-pad") or s_eq(kind, "aosoa-swizzle") or s_eq(kind, "affine") or s_eq(kind, "tile") or s_eq(kind, "raw") or s_eq(kind, "spirv") {
+    if s_eq(kind, "mlir") or s_eq(kind, "aosoa-pad") or s_eq(kind, "aosoa-swizzle") or s_eq(kind, "affine") or s_eq(kind, "tile") or s_eq(kind, "tile2") or s_eq(kind, "raw") or s_eq(kind, "spirv") {
         let prog: string = sl_get(args, 0)
         let base: string = path_stem(prog, ".flow")
         let v: ptr<ProcStrs> = sl_of2("./flow", "mlir")
@@ -201,11 +201,15 @@ function run_case(root: string, name: string, kind: string, raw_args: ptr<ProcSt
         } elif s_eq(kind, "tile") {
             cmd_env(c, "FLOWC_MLIR_AFFINE", "1")
             cmd_env(c, "FLOWC_MLIR_TILE", "4")
+        } elif s_eq(kind, "tile2") {
+            cmd_env(c, "FLOWC_MLIR_AFFINE", "1")
+            cmd_env(c, "FLOWC_MLIR_TILE", "4")
+            cmd_env(c, "FLOWC_MLIR_TILE_L2", "8")
         }
         let rc: i32 = run_to_file(c, d + "/log", true)
         let _r: bool = write_text(g + ".rc", s_itoa(rc) + "\n")
         let mlir: string = d + "/build/" + base + ".mlir"
-        if s_eq(kind, "mlir") or s_eq(kind, "aosoa-pad") or s_eq(kind, "aosoa-swizzle") or s_eq(kind, "affine") or s_eq(kind, "tile") {
+        if s_eq(kind, "mlir") or s_eq(kind, "aosoa-pad") or s_eq(kind, "aosoa-swizzle") or s_eq(kind, "affine") or s_eq(kind, "tile") or s_eq(kind, "tile2") {
             if is_file(mlir) {
                 let _w: bool = write_text(g + ".mlir", gl_mlir_normalize(read_text(mlir)))
             }
