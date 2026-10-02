@@ -13,9 +13,10 @@ extern {
 function flowc_name_is(src: ptr<u8>, start: i32, end: i32, name: string) -> i32 {
     let want: i32 = strlen(name) as i32
     if end - start != want { return 0 }
+    let p: ptr<u8> = name as ptr<u8>
     let mut i: i32 = 0
     while i < want {
-        if src[start + i] != name[i] { return 0 }
+        if src[start + i] != p[i] { return 0 }
         i = i + 1
     }
     return 1
