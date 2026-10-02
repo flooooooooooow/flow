@@ -1,20 +1,19 @@
 # Zed support
 
-Flow's language server can be consumed by Zed, but a distributable Zed language extension should wait until the Tree-sitter grammar is published as a standalone repository with an immutable revision.
+This directory is a Zed language extension for Flow.
 
-When that repository exists, the Zed extension should register:
+It registers:
 
-- language name: Flow
-- file extension: `.flow`
-- line comment: `#`
-- grammar: the standalone `tree-sitter-flow` repository pinned to a commit
-- language server command: `flow lsp`
+- `.flow` files as Flow
+- `#` line comments
+- `tree-sitter-flow` at commit `2e0cfb80a52a72d08a00b9ac9afc5889c31fe71c`
+- highlight queries from the grammar
+- `flow lsp`, found on the worktree's shell `PATH`
 
-Canonical sources:
+## Install for development
 
-- `docs/LANGUAGE_SPEC.md`
-- `third_party/integrations/tree-sitter-flow/grammar.js`
-- `third_party/integrations/tree-sitter-flow/queries/highlights.scm`
-- `third_party/integrations/vscode/flow-language/syntaxes/flow.tmLanguage.json`
+In Zed, open Extensions, choose "Install Dev Extension", then select this
+directory. The `flow` command must be available on `PATH`.
 
-Do not publish a Zed extension with an unpinned grammar or a second hand-maintained syntax definition. The Tree-sitter grammar should remain the syntax source and `flow lsp` should remain the semantic source.
+The grammar source is https://github.com/flooooooooooow/tree-sitter-flow.
+Release `v0.1.0` corresponds to the pinned commit above.
