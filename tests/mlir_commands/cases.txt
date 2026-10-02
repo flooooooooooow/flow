@@ -72,6 +72,7 @@ pipe_no_m2r_sccp pipeline --no-mem2reg --no-sccp
 pipe_no_cse_dce_inline pipeline --no-cse --no-dce --no-inline
 pipe_o1_nolicm_nodce pipeline --opt-level O1 --no-licm --no-dce
 pipe_async pipeline --enable-loop-pipelining --enable-multi-buffering
+pipe_affine_tile pipeline --enable-affine-tiling --affine-tile-size 8
 pipe_gpu_async pipeline --enable-async-copy --async-copy-target gpu
 
 # --emit-spirv (fails at mlir-opt on the Python generator's GPU module too).

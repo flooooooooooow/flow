@@ -4,6 +4,7 @@
 #       [--loop-fusion] [--no-loop-fusion] [--no-mem2reg] [--no-sccp]
 #       [--no-licm] [--no-cse] [--no-dce] [--no-inline]
 #       [--enable-loop-pipelining] [--enable-multi-buffering]
+#       [--enable-affine-tiling --affine-tile-size N]
 #       [--enable-async-copy --async-copy-target gpu|nvptx|amdgpu]
 #
 # prints the --pass-pipeline string, as MLIROptimizer.build_pass_pipeline in
@@ -35,6 +36,8 @@ struct PipeFlags {
     inliner: bool,
     pipelining: bool,
     multi_buffering: bool,
+    affine_tiling: bool,
+    affine_tile_size: i32,
     async_copy: bool,
     async_target: i32
 }
@@ -55,6 +58,19 @@ function level_of(s: string) -> i32 {
     if ft_eq(s, "O2") { return 2 }
     if ft_eq(s, "O3") { return 3 }
     return -1
+}
+
+function positive_int(s: string) -> i32 {
+    let mut i: i32 = 0
+    let mut n: i32 = 0
+    while i < ft_len(s) {
+        let c: i32 = s[i]
+        if c < 48 or c > 57 { return -1 }
+        n = n * 10 + c - 48
+        i = i + 1
+    }
+    if n <= 0 { return -1 }
+    return n
 }
 
 # Append `pass` to a comma-separated list.
@@ -90,6 +106,7 @@ function build_pipeline(f: PipeFlags) -> string {
         }
         if f.multi_buffering { fn_passes = add(fn_passes, "test-multi-buffering{multiplier=2}") }
         if f.pipelining { fn_passes = add(fn_passes, "test-scf-pipelining") }
+        if f.affine_tiling { fn_passes = add(fn_passes, "affine-loop-tile{tile-size=" + ft_itoa(f.affine_tile_size) + "}") }
         if f.async_copy { fn_passes = add(fn_passes, "gpu-async-region") }
     }
     if o3 and f.vectorization {
@@ -113,7 +130,8 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     let mut f: PipeFlags = PipeFlags {
         level: 2, vectorization: true, loop_fusion: false, mem2reg: true,
         sccp: true, licm: true, gvn: true, dce: true, inliner: true,
-        pipelining: false, multi_buffering: false, async_copy: false,
+        pipelining: false, multi_buffering: false, affine_tiling: false,
+        affine_tile_size: 0, async_copy: false,
         async_target: 0
     }
     let mut i: i32 = 1
@@ -147,6 +165,25 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             f.pipelining = true
         } elif ft_eq(a, "--enable-multi-buffering") {
             f.multi_buffering = true
+        } elif ft_eq(a, "--enable-affine-tiling") {
+            f.affine_tiling = true
+        } elif ft_eq(a, "--affine-tile-size") {
+            if i + 1 < argc {
+                let tile: i32 = positive_int(argv[i + 1] as string)
+                if tile < 0 {
+                    ft_errln("mlir_pipeline: --affine-tile-size must be a positive integer")
+                    return 2
+                }
+                f.affine_tile_size = tile
+                i = i + 1
+            }
+        } elif ft_starts(a, "--affine-tile-size=") {
+            let tile: i32 = positive_int(ft_from(a, 19))
+            if tile < 0 {
+                ft_errln("mlir_pipeline: --affine-tile-size must be a positive integer")
+                return 2
+            }
+            f.affine_tile_size = tile
         } elif ft_eq(a, "--enable-async-copy") {
             f.async_copy = true
         } elif ft_eq(a, "--async-copy-target") {
@@ -181,6 +218,10 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     }
     if f.async_copy and f.async_target == 0 {
         ft_errln("mlir_pipeline: --enable-async-copy requires --async-copy-target")
+        return 2
+    }
+    if f.affine_tiling and f.affine_tile_size == 0 {
+        ft_errln("mlir_pipeline: --enable-affine-tiling requires --affine-tile-size")
         return 2
     }
     ft_outln(build_pipeline(f))
