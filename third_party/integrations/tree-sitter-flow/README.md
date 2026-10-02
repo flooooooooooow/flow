@@ -12,6 +12,22 @@ npm install
 npm test
 ```
 
+`npm test` runs `tree-sitter generate` and the corpus suite in
+`test/corpus/`. For a broader check, parse the repository's own Flow
+sources and look for `ERROR` nodes:
+
+```bash
+find /path/to/flow -name '*.flow' > /tmp/flow-files.txt
+npx tree-sitter parse --paths /tmp/flow-files.txt -q
+```
+
+As of this revision the grammar parses the full in-tree corpus cleanly.
+The only remaining `ERROR` results are intentional parse-failure fixtures
+(`tests/*/fixtures/*bad*`, `parse_error.flow`, `syntaxerr.flow`) and
+`tests/lang/test_prefix_deref.flow`, whose `*p = 7` statement after an
+expression line relies on Flow's indentation-aware disambiguation between
+a binary `*` continuation and a dereference statement.
+
 ## Use
 
 The grammar identifies `*.flow` files with scope `source.flow`. Highlight queries live in `queries/highlights.scm`.
