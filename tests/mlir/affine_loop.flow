@@ -11,3 +11,9 @@ function count() -> void {
         println(i)
     }
 }
+
+function fill_dynamic(a: array<f32>, n: i32) -> void {
+    for i in 0 to n step 1 {
+        a[i] = 2.0
+    }
+}

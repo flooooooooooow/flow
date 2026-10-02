@@ -63,7 +63,8 @@ the affine dialect:
 FLOWC_MLIR_AFFINE=1 ./flow flow-to-mlir tests/mlir/affine_loop.flow /tmp/affine.mlir
 ```
 
-The first slice covers positive constant steps, integer bounds, and bodies with
-no loop-carried values or control-flow exits. The default remains `scf.for`.
+The first slice covers positive constant steps, integer or dynamic bounds, and
+bodies with no loop-carried values or control-flow exits. The default remains
+`scf.for`.
 This keeps existing MLIR goldens stable while affine fusion and tiling are
 introduced incrementally.

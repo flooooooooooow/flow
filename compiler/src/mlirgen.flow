@@ -11777,9 +11777,6 @@ function mlg_affine_enabled() -> i32 {
 
 function mlg_affine_eligible(m: ptr<Mlg>, st: i32) -> i32 {
     if mlg_affine_enabled() == 0 { return 0 }
-    if mlg_kind(m, m[0].arena.nodes[st].a) != AST_INT or mlg_kind(m, m[0].arena.nodes[st].b) != AST_INT {
-        return 0
-    }
     let mut step: i32 = 0
     if mlg_const_step(m, m[0].arena.nodes[st].ival, &step) == 0 or step <= 0 {
         return 0
