@@ -36,6 +36,16 @@ python3 -m flow.transpiler --print-pass-pipeline --opt-level O2 --no-inline
 
 `--opt-report` prints pass statistics using the same flag set.
 
+Affine tiling is opt-in and requires a positive tile size:
+
+```bash
+./flow mlir-optimize --print-pass-pipeline \
+  --enable-affine-tiling --affine-tile-size 8
+```
+
+The flag adds `affine-loop-tile{tile-size=8}` to the function pipeline. The
+default pipeline remains unchanged.
+
 ## Async copy capability gate
 
 Loop pipelining and multi-buffering remain opt-in. The GPU async-region pass
