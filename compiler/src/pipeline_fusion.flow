@@ -174,6 +174,131 @@ function flowc_fuse_map(
     return lam
 }
 
+function flowc_map_family(family: i32) -> i32 {
+    if family == 1 or family == 3 or family == 5 { return 5 }
+    if family == 2 or family == 4 or family == 6 { return 6 }
+    return 0
+}
+
+function flowc_new_binop(arena: ptr<AstArena>, left: i32, right: i32, tok: i32) -> i32 {
+    let out: i32 = flowc_ast_alloc(arena, AST_BINOP, 0, 0)
+    if out != AST_NONE {
+        arena[0].nodes[out].a = left
+        arena[0].nodes[out].b = right
+        arena[0].nodes[out].ival = tok
+    }
+    return out
+}
+
+# Compose one affine stage with a map stage. The result keeps the map's
+# allocation shape and moves the affine operation into its lambda:
+#
+#   map(scale(buf, n, a), n, f) -> map(buf, n, |x| f(x * a))
+#   map(offset(buf, n, a), n, f) -> map(buf, n, |x| f(x + a))
+#   scale(map(buf, n, f), n, a) -> map(buf, n, |x| f(x) * a)
+#   offset(map(buf, n, f), n, a) -> map(buf, n, |x| f(x) + a)
+#
+# Lambda bodies must be one pure expression. This is the same safety boundary
+# used by map/map fusion.
+function flowc_fuse_affine_map(
+    arena: ptr<AstArena>,
+    src: ptr<u8>,
+    outer: i32,
+    inner: i32,
+    outer_family: i32,
+    inner_family: i32
+) -> i32 {
+    if flowc_map_family(outer_family) != flowc_map_family(inner_family) {
+        return 0
+    }
+    let map_call: i32 = if outer_family == 5 or outer_family == 6 { outer } else { inner }
+    let affine_call: i32 = if outer_family == 5 or outer_family == 6 { inner } else { outer }
+    let map_args: i32 = arena[0].nodes[map_call].a
+    let affine_args: i32 = arena[0].nodes[affine_call].a
+    if map_args == AST_NONE or affine_args == AST_NONE {
+        return 0
+    }
+    let map_n: i32 = arena[0].nodes[map_args].next
+    let map_lam: i32 = if map_n == AST_NONE { AST_NONE } else { arena[0].nodes[map_n].next }
+    let affine_n: i32 = arena[0].nodes[affine_args].next
+    let affine_value: i32 = if affine_n == AST_NONE { AST_NONE } else { arena[0].nodes[affine_n].next }
+    if map_n == AST_NONE or map_lam == AST_NONE or affine_n == AST_NONE or affine_value == AST_NONE {
+        return 0
+    }
+    if arena[0].nodes[map_lam].next != AST_NONE {
+        return 0
+    }
+    let map_body: i32 = flowc_simple_lambda_body(arena, map_lam)
+    if map_body == AST_NONE {
+        return 0
+    }
+    let map_param: i32 = arena[0].nodes[map_lam].a
+    let p: i32 = flowc_ast_alloc(arena, AST_PARAM, arena[0].nodes[map_param].start, arena[0].nodes[map_param].end)
+    if p == AST_NONE {
+        return 0
+    }
+    arena[0].nodes[p].name_start = arena[0].nodes[map_param].name_start
+    arena[0].nodes[p].name_end = arena[0].nodes[map_param].name_end
+    arena[0].nodes[p].a = arena[0].nodes[map_param].a
+    arena[0].nodes[p].b = arena[0].nodes[map_param].b
+    let x: i32 = flowc_ast_alloc(arena, AST_IDENT, arena[0].nodes[p].start, arena[0].nodes[p].end)
+    if x == AST_NONE {
+        return 0
+    }
+    arena[0].nodes[x].name_start = arena[0].nodes[p].name_start
+    arena[0].nodes[x].name_end = arena[0].nodes[p].name_end
+    let affine_arg: i32 = flowc_clone_substitute(arena, affine_value, src, AST_NONE, AST_NONE)
+    if affine_arg == AST_NONE {
+        return 0
+    }
+    let mut map_input: i32 = AST_NONE
+    if outer_family == 5 or outer_family == 6 {
+        let mut op: i32 = 24
+        if inner_family == 1 or inner_family == 2 { op = 26 }
+        map_input = flowc_new_binop(arena, x, affine_arg, op)
+    } else {
+        map_input = flowc_clone_substitute(arena, map_body, src, map_param, x)
+    }
+    if map_input == AST_NONE {
+        return 0
+    }
+    let mut body: i32 = AST_NONE
+    if outer_family == 5 or outer_family == 6 {
+        body = flowc_clone_substitute(arena, map_body, src, map_param, map_input)
+    } else {
+        let mut op: i32 = 24
+        if outer_family == 1 or outer_family == 2 { op = 26 }
+        body = flowc_new_binop(arena, map_input, affine_arg, op)
+    }
+    if body == AST_NONE {
+        return 0
+    }
+    let ret: i32 = flowc_ast_alloc(arena, AST_RETURN, arena[0].nodes[map_lam].start, arena[0].nodes[map_lam].end)
+    let block: i32 = flowc_ast_alloc(arena, AST_BLOCK, arena[0].nodes[map_lam].start, arena[0].nodes[map_lam].end)
+    let lam: i32 = flowc_ast_alloc(arena, AST_FN, arena[0].nodes[map_lam].start, arena[0].nodes[map_lam].end)
+    if ret == AST_NONE or block == AST_NONE or lam == AST_NONE {
+        return 0
+    }
+    arena[0].nodes[ret].a = body
+    arena[0].nodes[block].a = ret
+    arena[0].nodes[lam].a = p
+    arena[0].nodes[lam].b = arena[0].nodes[map_lam].b
+    arena[0].nodes[lam].c = block
+    arena[0].nodes[lam].name_start = 0 - arena[0].len
+    arena[0].nodes[lam].name_end = arena[0].nodes[lam].name_start
+
+    let base: i32 = if outer_family == 5 or outer_family == 6 { affine_args } else { map_args }
+    let target_n: i32 = if outer_family == 5 or outer_family == 6 { affine_n } else { map_n }
+    arena[0].nodes[outer].a = base
+    arena[0].nodes[target_n].next = lam
+    arena[0].nodes[lam].next = AST_NONE
+    if outer_family != 5 and outer_family != 6 {
+        arena[0].nodes[outer].name_start = arena[0].nodes[map_call].name_start
+        arena[0].nodes[outer].name_end = arena[0].nodes[map_call].name_end
+    }
+    return 1
+}
+
 # Fuse adjacent stages from one algebraic family. The pass repeats until no
 # nested pair remains, so a chain of three or more stages is fully reduced.
 export function flowc_fuse_pipelines(arena: ptr<AstArena>, src: ptr<u8>) -> void {
@@ -187,8 +312,14 @@ export function flowc_fuse_pipelines(arena: ptr<AstArena>, src: ptr<u8>) -> void
             let family: i32 = flowc_stage_family(src, node)
             if family != 0 {
                 let inner: i32 = node.a
+                let inner_family: i32 = if inner == AST_NONE { 0 } else { flowc_stage_family(src, arena[0].nodes[inner]) }
+                let mut compatible: bool = inner_family == family
+                if not compatible and flowc_map_family(family) != 0 and
+                   flowc_map_family(family) == flowc_map_family(inner_family) {
+                    compatible = true
+                }
                 if inner != AST_NONE and arena[0].nodes[inner].kind == AST_CALL and
-                   flowc_stage_family(src, arena[0].nodes[inner]) == family {
+                   compatible {
                     let inner_a: i32 = arena[0].nodes[inner].a
                     let inner_n: i32 = if inner_a == AST_NONE { AST_NONE } else { arena[0].nodes[inner_a].next }
                     let outer_n: i32 = arena[0].nodes[inner].next
@@ -198,6 +329,13 @@ export function flowc_fuse_pipelines(arena: ptr<AstArena>, src: ptr<u8>) -> void
                         let inner_value: i32 = arena[0].nodes[inner_n].next
                         let outer_value: i32 = arena[0].nodes[outer_n].next
                         if inner_value != AST_NONE and outer_value != AST_NONE {
+                            if family != inner_family {
+                                if flowc_fuse_affine_map(arena, src, id, inner, family, inner_family) == 1 {
+                                    changed = 1
+                                }
+                                id = id + 1
+                                continue
+                            }
                             if family >= 5 {
                                 let map_lam: i32 = flowc_fuse_map(arena, src, id, inner)
                                 if map_lam != AST_NONE {
