@@ -45,11 +45,19 @@ function valid_target(s: string) -> bool {
            ft_eq(s, "nvptx") or ft_eq(s, "amdgpu")
 }
 
-function transform_of(op: string, tiles: string, target: string) -> string {
-    return "module attributes {transform.with_named_sequence, flow.tune_target = \"" + target + "\", flow.tune_strategy = \"tile\"} {\n" +
+function valid_strategy(s: string) -> bool {
+    return ft_eq(s, "tile") or ft_eq(s, "vector")
+}
+
+function transform_of(op: string, tiles: string, target: string, strategy: string) -> string {
+    let mut action: string = "    %tiled_linalg_op, %loops:3 = transform.structured.tile_using_for %matmul tile_sizes [" + tiles + "] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op)\n"
+    if ft_eq(strategy, "vector") {
+        action = "    %vectorized = transform.structured.vectorize %matmul vector_sizes [" + tiles + "] : (!transform.any_op) -> !transform.any_op\n"
+    }
+    return "module attributes {transform.with_named_sequence, flow.tune_target = \"" + target + "\", flow.tune_strategy = \"" + strategy + "\"} {\n" +
            "  transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {\n" +
            "    %matmul = transform.structured.match ops{[\"" + op + "\"]} in %arg0 : (!transform.any_op) -> !transform.any_op\n" +
-           "    %tiled_linalg_op, %loops:3 = transform.structured.tile_using_for %matmul tile_sizes [" + tiles + "] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op)\n" +
+           action +
            "    transform.yield\n" +
            "  }\n" +
            "}\n"
@@ -60,6 +68,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     let mut tiles: string = "64, 64, 64"
     let mut op: string = "linalg.matmul"
     let mut target: string = "cpu"
+    let mut strategy: string = "tile"
     
     while i < argc {
         let a: string = argv[i] as string
@@ -69,6 +78,8 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             op = ft_from(a, 5)
         } elif ft_starts(a, "--target=") {
             target = ft_from(a, 9)
+        } elif ft_starts(a, "--strategy=") {
+            strategy = ft_from(a, 11)
         }
         i = i + 1
     }
@@ -84,6 +95,10 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         ft_errln("mlir_tune: --target must be one of 'cpu', 'gpu', 'nvptx', 'amdgpu'")
         return 2
     }
-    ft_outln(transform_of(op, tiles, target))
+    if not valid_strategy(strategy) {
+        ft_errln("mlir_tune: --strategy must be one of 'tile', 'vector'")
+        return 2
+    }
+    ft_outln(transform_of(op, tiles, target, strategy))
     return 0
 }
