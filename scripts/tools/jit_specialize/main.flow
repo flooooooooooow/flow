@@ -75,6 +75,18 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         }
         shape_i = shape_i + 1
     }
+    let mut dup_i: i32 = 0
+    while dup_i < count {
+        let mut dup_j: i32 = dup_i + 1
+        while dup_j < count {
+            if shapes[dup_i] == shapes[dup_j] {
+                js_errln("jit_specialize: shapes must be unique")
+                return 2
+            }
+            dup_j = dup_j + 1
+        }
+        dup_i = dup_i + 1
+    }
     let mut out: string = "module attributes {flow.jit.cache = \"shape-specialized\", flow.jit.masked_tails = true} {\n"
     out = out + "  func.func @flow_kernel_generic(%buf: memref<?xf32>, %n: index) -> index { return %n : index }\n"
     let mut k: i32 = 0
