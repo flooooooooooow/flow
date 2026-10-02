@@ -75,7 +75,7 @@ created by the opt-in AoSoA lowering. Source-level array extents and indexing
 remain unchanged. Values from 1 through 64 are accepted. The default is zero.
 
 ```bash
-FLOWC_MLIR_AOSOA_PAD=1 ./flow mlir compiler/fixtures/mlir/aosoa_padding.flow --lenient
+FLOWC_MLIR_AOSOA_PAD=1 ./flow mlir tests/mlir_opt/aosoa_padding.flow --lenient
 ```
 
 Set `FLOWC_MLIR_AOSOA_SWIZZLE=N` to xor each generated field index with that
