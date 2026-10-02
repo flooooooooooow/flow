@@ -12074,37 +12074,32 @@ function mlg_affine_parallel_eligible(m: ptr<Mlg>, st: i32) -> i32 {
     return 1
 }
 
-function mlg_affine_tile_size() -> i32 {
-    let v: string = getenv("FLOWC_MLIR_TILE")
+function mlg_env_bounded_positive(v: string, lo: i32, hi: i32) -> i32 {
     let p: ptr<u8> = v
     if p == null { return 0 }
+    if p[0] == 0 { return 0 }
     let mut i: i32 = 0
     let mut n: i32 = 0
-    while p[i] >= 48 and p[i] <= 57 {
+    while p[i] != 0 {
+        if p[i] < 48 or p[i] > 57 { return -1 }
         n = n * 10 + (p[i] as i32) - 48
         i = i + 1
     }
-    if n < 2 or n > 64 { return 0 }
+    if n < lo or n > hi { return -1 }
     return n
 }
 
+function mlg_affine_tile_size() -> i32 {
+    return mlg_env_bounded_positive(getenv("FLOWC_MLIR_TILE"), 2, 64)
+}
+
 function mlg_affine_tile_l2_size() -> i32 {
-    let v: string = getenv("FLOWC_MLIR_TILE_L2")
-    let p: ptr<u8> = v
-    if p == null { return 0 }
-    let mut i: i32 = 0
-    let mut n: i32 = 0
-    while p[i] >= 48 and p[i] <= 57 {
-        n = n * 10 + (p[i] as i32) - 48
-        i = i + 1
-    }
-    if n < 2 or n > 128 { return 0 }
-    return n
+    return mlg_env_bounded_positive(getenv("FLOWC_MLIR_TILE_L2"), 2, 128)
 }
 
 function mlg_affine_tile_eligible(m: ptr<Mlg>, st: i32) -> i32 {
     let tile: i32 = mlg_affine_tile_size()
-    if tile == 0 or mlg_affine_enabled() == 0 or mlg_for_is_parallel(m, st) == 1 {
+    if tile <= 0 or mlg_affine_enabled() == 0 or mlg_for_is_parallel(m, st) == 1 {
         return 0
     }
     let mut step: i32 = 0
@@ -18647,38 +18642,12 @@ function mao_chain(m: ptr<Mlg>, head: i32, st: i32, swizzle: i32, vars: ptr<i32>
 # FLOWC_MLIR_AOSOA_PAD=N gives each generated field array N extra storage
 # elements.  Source-level indexing keeps the logical extent n.
 function mlg_aosoa_pad() -> i32 {
-    let v: string = getenv("FLOWC_MLIR_AOSOA_PAD")
-    let p: ptr<u8> = v
-    if p == null {
-        return 0
-    }
-    let mut i: i32 = 0
-    let mut n: i32 = 0
-    while p[i] >= 48 and p[i] <= 57 {
-        n = n * 10 + (p[i] as i32) - 48
-        i = i + 1
-    }
-    if n < 1 or n > 64 {
-        return 0
-    }
-    return n
+    return mlg_env_bounded_positive(getenv("FLOWC_MLIR_AOSOA_PAD"), 1, 64)
 }
 
 function mlg_aosoa_swizzle() -> i32 {
-    let v: string = getenv("FLOWC_MLIR_AOSOA_SWIZZLE")
-    let p: ptr<u8> = v
-    if p == null {
-        return 0
-    }
-    let mut i: i32 = 0
-    let mut n: i32 = 0
-    while p[i] >= 48 and p[i] <= 57 {
-        n = n * 10 + (p[i] as i32) - 48
-        i = i + 1
-    }
-    if n < 2 or n > 32 {
-        return 0
-    }
+    let n: i32 = mlg_env_bounded_positive(getenv("FLOWC_MLIR_AOSOA_SWIZZLE"), 2, 32)
+    if n == 0 { return 0 }
     let mut w: i32 = 1
     let mut shift: i32 = 0
     while w < n {
@@ -18837,6 +18806,14 @@ function mlg_aosoa(m: ptr<Mlg>, root: i32) {
     let nmade: array<i32, 1> = [0]
     let pad: i32 = mlg_aosoa_pad()
     let swizzle: i32 = mlg_aosoa_swizzle()
+    if pad < 0 {
+        mlg_refuse(m, root, "FLOWC_MLIR_AOSOA_PAD must be a positive integer")
+        return
+    }
+    if swizzle < 0 {
+        mlg_refuse(m, root, "FLOWC_MLIR_AOSOA_SWIZZLE must be a power of two")
+        return
+    }
     item = m[0].arena.nodes[root].a
     while item != AST_NONE {
         let d2: i32 = mlg_unwrap(m, item)
