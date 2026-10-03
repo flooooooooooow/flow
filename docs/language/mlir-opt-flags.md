@@ -69,6 +69,10 @@ Affine tiling is opt-in and requires a positive tile size:
 The flag adds `affine-loop-tile{tile-size=8}` to the function pipeline. The
 default pipeline remains unchanged.
 
+Use `--enable-affine-tiling --affine-tile-sizes 64,32,8` for hierarchical
+tiling. Two through four positive sizes up to 4096 are accepted. The matching
+affine tiling passes are emitted in the listed order.
+
 ## Async copy capability gate
 
 Loop pipelining and multi-buffering remain opt-in. The GPU async-region pass

@@ -81,6 +81,8 @@ struct PipeFlags {
     multi_buffering: bool,
     affine_tiling: bool,
     affine_tile_size: i32,
+    affine_tile_levels: i32,
+    affine_tile_sizes: array<i32, 4>,
     affine_normalization: bool,
     affine_unrolling: bool,
     affine_unroll_factor: i32,
@@ -104,6 +106,35 @@ function level_of(s: string) -> i32 {
     if ft_eq(s, "O2") { return 2 }
     if ft_eq(s, "O3") { return 3 }
     return -1
+}
+
+function parse_tile_sizes(s: string, out: ptr<i32>) -> i32 {
+    let n: i32 = ft_len(s)
+    let mut i: i32 = 0
+    let mut count: i32 = 0
+    let mut value: i32 = 0
+    let mut digits: i32 = 0
+    while i <= n {
+        if i == n or s[i] == 44 {
+            if digits == 0 or value <= 0 or value > 4096 or count >= 4 {
+                return -1
+            }
+            out[count] = value
+            count = count + 1
+            value = 0
+            digits = 0
+            i = i + 1
+        } else {
+            let c: i32 = s[i]
+            if c < 48 or c > 57 { return -1 }
+            if value > 409 or (value == 409 and c > 54) { return -1 }
+            value = value * 10 + c - 48
+            digits = digits + 1
+            i = i + 1
+        }
+    }
+    if count < 2 { return -1 }
+    return count
 }
 
 function positive_int(s: string) -> i32 {
@@ -154,7 +185,17 @@ function build_pipeline(f: PipeFlags) -> string {
         if f.pipelining { fn_passes = add(fn_passes, "test-scf-pipelining") }
         if f.affine_normalization { fn_passes = add(fn_passes, "affine-loop-normalize") }
         if f.affine_unrolling { fn_passes = add(fn_passes, "affine-loop-unroll{unroll-factor=" + ft_itoa(f.affine_unroll_factor) + "}") }
-        if f.affine_tiling { fn_passes = add(fn_passes, "affine-loop-tile{tile-size=" + ft_itoa(f.affine_tile_size) + "}") }
+        if f.affine_tiling {
+            if f.affine_tile_levels > 0 {
+                let mut ti: i32 = 0
+                while ti < f.affine_tile_levels {
+                    fn_passes = add(fn_passes, "affine-loop-tile{tile-size=" + ft_itoa(f.affine_tile_sizes[ti]) + "}")
+                    ti = ti + 1
+                }
+            } else {
+                fn_passes = add(fn_passes, "affine-loop-tile{tile-size=" + ft_itoa(f.affine_tile_size) + "}")
+            }
+        }
         if f.async_copy { fn_passes = add(fn_passes, "gpu-async-region") }
     }
     if o3 and f.vectorization {
@@ -179,7 +220,8 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         level: 2, vectorization: true, loop_fusion: false, mem2reg: true,
         sccp: true, licm: true, gvn: true, dce: true, inliner: true,
         pipelining: false, multi_buffering: false, affine_tiling: false,
-        affine_tile_size: 0, affine_normalization: false, affine_unrolling: false,
+        affine_tile_size: 0, affine_tile_levels: 0, affine_tile_sizes: [0, 0, 0, 0],
+        affine_normalization: false, affine_unrolling: false,
         affine_unroll_factor: 0, async_copy: false,
         async_target: 0
     }
@@ -235,6 +277,23 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
                 return 2
             }
             f.affine_tile_size = tile
+        } elif ft_eq(a, "--affine-tile-sizes") {
+            if i + 1 < argc {
+                let levels: i32 = parse_tile_sizes(argv[i + 1] as string, &f.affine_tile_sizes[0])
+                if levels < 0 {
+                    ft_errln("mlir_pipeline: --affine-tile-sizes must contain two to four positive integers up to 4096")
+                    return 2
+                }
+                f.affine_tile_levels = levels
+                i = i + 1
+            }
+        } elif ft_starts(a, "--affine-tile-sizes=") {
+            let levels: i32 = parse_tile_sizes(ft_from(a, 20), &f.affine_tile_sizes[0])
+            if levels < 0 {
+                ft_errln("mlir_pipeline: --affine-tile-sizes must contain two to four positive integers up to 4096")
+                return 2
+            }
+            f.affine_tile_levels = levels
         } elif ft_eq(a, "--enable-affine-unrolling") {
             f.affine_unrolling = true
         } elif ft_eq(a, "--affine-unroll-factor") {
@@ -290,8 +349,8 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         ft_errln("mlir_pipeline: --enable-async-copy requires --async-copy-target")
         return 2
     }
-    if f.affine_tiling and f.affine_tile_size == 0 {
-        ft_errln("mlir_pipeline: --enable-affine-tiling requires --affine-tile-size")
+    if f.affine_tiling and f.affine_tile_size == 0 and f.affine_tile_levels == 0 {
+        ft_errln("mlir_pipeline: --enable-affine-tiling requires --affine-tile-size or --affine-tile-sizes")
         return 2
     }
     if f.affine_unrolling and f.affine_unroll_factor == 0 {
