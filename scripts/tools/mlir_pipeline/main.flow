@@ -4,6 +4,7 @@
 #       [--loop-fusion] [--no-loop-fusion] [--no-mem2reg] [--no-sccp]
 #       [--no-licm] [--no-cse] [--no-dce] [--no-inline]
 #       [--enable-loop-pipelining] [--enable-multi-buffering]
+#       [--multi-buffering-factor N]
 #       [--enable-affine-tiling --affine-tile-size N]
 #       [--enable-affine-normalization]
 #       [--enable-affine-unrolling --affine-unroll-factor N]
@@ -80,6 +81,7 @@ struct PipeFlags {
     inliner: bool,
     pipelining: bool,
     multi_buffering: bool,
+    multi_buffering_factor: i32,
     affine_tiling: bool,
     affine_tile_size: i32,
     affine_tile_levels: i32,
@@ -184,7 +186,7 @@ function build_pipeline(f: PipeFlags) -> string {
             fn_passes = add(fn_passes, "affine-loop-fusion")
             fn_passes = add(fn_passes, "linalg-fuse-elementwise-ops")
         }
-        if f.multi_buffering { fn_passes = add(fn_passes, "test-multi-buffering{multiplier=2}") }
+        if f.multi_buffering { fn_passes = add(fn_passes, "test-multi-buffering{multiplier=" + ft_itoa(f.multi_buffering_factor) + "}") }
         if f.pipelining { fn_passes = add(fn_passes, "test-scf-pipelining") }
         if f.affine_normalization { fn_passes = add(fn_passes, "affine-loop-normalize") }
         if f.affine_unrolling { fn_passes = add(fn_passes, "affine-loop-unroll{unroll-factor=" + ft_itoa(f.affine_unroll_factor) + "}") }
@@ -223,7 +225,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     let mut f: PipeFlags = PipeFlags {
         level: 2, vectorization: true, loop_fusion: false, mem2reg: true,
         sccp: true, licm: true, gvn: true, dce: true, inliner: true,
-        pipelining: false, multi_buffering: false, affine_tiling: false,
+        pipelining: false, multi_buffering: false, multi_buffering_factor: 2, affine_tiling: false,
         affine_tile_size: 0, affine_tile_levels: 0, affine_tile_sizes: [0, 0, 0, 0],
         affine_normalization: false, affine_unrolling: false,
         affine_unroll_factor: 0, async_copy: false,
@@ -261,6 +263,23 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             f.pipelining = true
         } elif ft_eq(a, "--enable-multi-buffering") {
             f.multi_buffering = true
+        } elif ft_eq(a, "--multi-buffering-factor") {
+            if i + 1 < argc {
+                let factor: i32 = positive_int(argv[i + 1] as string)
+                if factor < 2 or factor > 8 {
+                    ft_errln("mlir_pipeline: --multi-buffering-factor must be between 2 and 8")
+                    return 2
+                }
+                f.multi_buffering_factor = factor
+                i = i + 1
+            }
+        } elif ft_starts(a, "--multi-buffering-factor=") {
+            let factor: i32 = positive_int(ft_from(a, 25))
+            if factor < 2 or factor > 8 {
+                ft_errln("mlir_pipeline: --multi-buffering-factor must be between 2 and 8")
+                return 2
+            }
+            f.multi_buffering_factor = factor
         } elif ft_eq(a, "--enable-affine-tiling") {
             f.affine_tiling = true
         } elif ft_eq(a, "--enable-affine-normalization") {
