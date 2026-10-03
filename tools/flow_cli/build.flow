@@ -1248,7 +1248,7 @@ export function run_flow_jit(program: string) -> i32 {
     let key: string = cksum_key(sl_of1(program))
     let cached_exe: string = cache_dir + "/" + key + "_" + name + ".exe"
 
-    let is_cached: bool = is_exec(cached_exe) and newer(cached_exe, program)
+    let is_cached: bool = is_exec(cached_exe) and not deps_newer(program, path_dirname(program), cached_exe)
     let mut timings: JITPhaseTimings = JITPhaseTimings { emit_ms: 0, optimize_ms: 0, lower_ms: 0, link_ms: 0, run_ms: 0 }
 
     let mut rc: i32 = 0
