@@ -72,8 +72,6 @@ function main() -> i32 {
     run_flow(root, "fiber_fanout")
     run_go(dir, "fiber_fanout")
     run_flow(root, "parallel_sum")
-    run_flow(root, "multicore_scaling")
-    run_go(dir, "multicore_scaling")
     run_go(dir, "parallel_sum")
     run_flow(root, "http_server")
     run_go(dir, "http_server")

@@ -59,9 +59,9 @@ Sum the first `size` elements of an f32 array.
 
 Async primitives via algebraic effects  Call sites perform `Async` / `AsyncIO` operations; a capability supplies the
 
-**Effects:** `Async`, `AsyncIO`, `TcpEffect`
+**Effects:** `Async`, `AsyncIO`, `TcpEffect`, `Cont`
 
-**Capabilities:** `BlockingTcp`, `SimulatedAsync`, `ThreadedAsync`, `FiberAsync`, `BlockingAsyncIO`, `NetpollAsyncIO`
+**Capabilities:** `BlockingTcp`, `SimulatedAsync`, `ThreadedAsync`, `FiberAsync`, `BlockingAsyncIO`, `NetpollAsyncIO`, `FiberCont`
 
 **Functions:**
 

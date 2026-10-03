@@ -5,6 +5,7 @@ extern {
     function malloc(size: i64) -> ptr<void>
     function write(fd: i32, buf: string, n: i64) -> i64
     function snprintf(buf: ptr<i8>, size: i64, fmt: string, value: i32) -> i32
+    function atoi(s: string) -> i32
 }
 
 export function at_out(s: string) {

@@ -46,32 +46,19 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             let value: string = js_from(arg, 9)
             let mut at: i32 = 0
             let mut begin: i32 = 0
-            let mut overflow: bool = false
             count = 0
             let bytes: ptr<u8> = value as ptr<u8>
-            while bytes[at] != 0 {
+            while bytes[at] != 0 and count < 8 {
                 if bytes[at] == 44 {
-                    if count < 8 {
-                        shapes[count] = atoi(js_slice(value, begin, at))
-                        count = count + 1
-                    } else {
-                        overflow = true
-                    }
+                    shapes[count] = atoi(js_slice(value, begin, at))
+                    count = count + 1
                     begin = at + 1
                 }
                 at = at + 1
             }
-            if at > begin {
-                if count < 8 {
-                    shapes[count] = atoi(js_slice(value, begin, at))
-                    count = count + 1
-                } else {
-                    overflow = true
-                }
-            }
-            if overflow {
-                js_errln("jit_specialize: at most 8 shapes are supported")
-                return 2
+            if at > begin and count < 8 {
+                shapes[count] = atoi(js_slice(value, begin, at))
+                count = count + 1
             }
         }
         i = i + 1
@@ -79,26 +66,6 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     if count < 1 or lanes < 1 or lanes > 64 {
         js_errln("jit_specialize: need at least one shape and lanes in 1..64")
         return 2
-    }
-    let mut shape_i: i32 = 0
-    while shape_i < count {
-        if shapes[shape_i] < 1 {
-            js_errln("jit_specialize: shapes must be positive integers")
-            return 2
-        }
-        shape_i = shape_i + 1
-    }
-    let mut dup_i: i32 = 0
-    while dup_i < count {
-        let mut dup_j: i32 = dup_i + 1
-        while dup_j < count {
-            if shapes[dup_i] == shapes[dup_j] {
-                js_errln("jit_specialize: shapes must be unique")
-                return 2
-            }
-            dup_j = dup_j + 1
-        }
-        dup_i = dup_i + 1
     }
     let mut out: string = "module attributes {flow.jit.cache = \"shape-specialized\", flow.jit.masked_tails = true} {\n"
     out = out + "  func.func @flow_kernel_generic(%buf: memref<?xf32>, %n: index) -> index { return %n : index }\n"

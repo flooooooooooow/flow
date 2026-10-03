@@ -57,10 +57,6 @@ Same for `record.flow`. Both exit 0.
 
 ## Status
 
-Pack prepared locally. Blocked on upstream submission because the execution environment does not possess GitHub repository-admin tokens to open an upstream PR.
-
-## How to use the patch
-
-This patch file (`patch/0001-Add-Flow-implementations.patch`) represents the state that should be merged upstream in the `programming-language-benchmarks` repository.
-
-Since we cannot open the PR via API (no admin tokens available in this environment), a user can clone the target repository, apply this patch (`git am 0001-Add-Flow-implementations.patch`), and open the PR from their local machine.
+Pack prepared locally. Upstream pull request against
+andrewmcwattersandco/programming-language-benchmarks is the remaining
+step; record the PR URL and acceptance here once opened.
