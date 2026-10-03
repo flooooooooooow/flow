@@ -7,6 +7,7 @@
 #       [--enable-affine-tiling --affine-tile-size N]
 #       [--enable-affine-normalization]
 #       [--enable-affine-unrolling --affine-unroll-factor N]
+#       [--enable-affine-unroll-jam --affine-unroll-jam-factor N]
 #       [--enable-async-copy --async-copy-target gpu|nvptx|amdgpu]
 #
 # prints the --pass-pipeline string, as MLIROptimizer.build_pass_pipeline in
@@ -86,6 +87,8 @@ struct PipeFlags {
     affine_normalization: bool,
     affine_unrolling: bool,
     affine_unroll_factor: i32,
+    affine_unroll_jam: bool,
+    affine_unroll_jam_factor: i32,
     async_copy: bool,
     async_target: i32
 }
@@ -185,6 +188,7 @@ function build_pipeline(f: PipeFlags) -> string {
         if f.pipelining { fn_passes = add(fn_passes, "test-scf-pipelining") }
         if f.affine_normalization { fn_passes = add(fn_passes, "affine-loop-normalize") }
         if f.affine_unrolling { fn_passes = add(fn_passes, "affine-loop-unroll{unroll-factor=" + ft_itoa(f.affine_unroll_factor) + "}") }
+        if f.affine_unroll_jam { fn_passes = add(fn_passes, "affine-loop-unroll-jam{unroll-factor=" + ft_itoa(f.affine_unroll_jam_factor) + "}") }
         if f.affine_tiling {
             if f.affine_tile_levels > 0 {
                 let mut ti: i32 = 0
@@ -223,6 +227,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         affine_tile_size: 0, affine_tile_levels: 0, affine_tile_sizes: [0, 0, 0, 0],
         affine_normalization: false, affine_unrolling: false,
         affine_unroll_factor: 0, async_copy: false,
+        affine_unroll_jam: false, affine_unroll_jam_factor: 0,
         async_target: 0
     }
     let mut i: i32 = 1
@@ -296,6 +301,15 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             f.affine_tile_levels = levels
         } elif ft_eq(a, "--enable-affine-unrolling") {
             f.affine_unrolling = true
+        } elif ft_eq(a, "--enable-affine-unroll-jam") {
+            f.affine_unroll_jam = true
+        } elif ft_eq(a, "--affine-unroll-jam-factor") {
+            if i + 1 < argc {
+                f.affine_unroll_jam_factor = positive_int(argv[i + 1] as string)
+                i = i + 1
+            }
+        } elif ft_starts(a, "--affine-unroll-jam-factor=") {
+            f.affine_unroll_jam_factor = positive_int(ft_from(a, 27))
         } elif ft_eq(a, "--affine-unroll-factor") {
             if i + 1 < argc {
                 let factor: i32 = positive_int(argv[i + 1] as string)
@@ -355,6 +369,10 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     }
     if f.affine_unrolling and f.affine_unroll_factor == 0 {
         ft_errln("mlir_pipeline: --enable-affine-unrolling requires --affine-unroll-factor")
+        return 2
+    }
+    if f.affine_unroll_jam and f.affine_unroll_jam_factor == 0 {
+        ft_errln("mlir_pipeline: --enable-affine-unroll-jam requires --affine-unroll-jam-factor")
         return 2
     }
     ft_outln(build_pipeline(f))

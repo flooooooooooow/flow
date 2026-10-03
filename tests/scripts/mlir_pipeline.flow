@@ -107,6 +107,24 @@ function check_unrolling_requires_factor() -> i32 {
     return T_PASS
 }
 
+function check_affine_unroll_jam() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    sl_push(argv, "--enable-affine-unroll-jam")
+    sl_push(argv, "--affine-unroll-jam-factor=4")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    if not a_contains(read_text(t_out()), "affine-loop-unroll-jam{unroll-factor=4}") { return T_FAIL }
+    return T_PASS
+}
+
+function check_unroll_jam_requires_factor() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--enable-affine-unroll-jam")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "requires --affine-unroll-jam-factor") { return T_FAIL }
+    return T_PASS
+}
+
 function main() -> i32 {
     t_begin("mlir_pipeline")
     t_start()
@@ -131,6 +149,10 @@ function main() -> i32 {
     t_end("affine_unrolling", check_affine_unrolling())
     t_start()
     t_end("unrolling_requires_factor", check_unrolling_requires_factor())
+    t_start()
+    t_end("affine_unroll_jam", check_affine_unroll_jam())
+    t_start()
+    t_end("unroll_jam_requires_factor", check_unroll_jam_requires_factor())
     t_done()
     return 0
 }
