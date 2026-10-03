@@ -3005,6 +3005,19 @@ function mlg_register_tile_cap(s: string, out: ptr<i32>) -> i32 {
     return 1
 }
 
+function mlg_register_tile_target() -> string {
+    let target: string = getenv("FLOWC_MLIR_REGISTER_TILE_TARGET")
+    let p: ptr<u8> = target
+    if p == null or p[0] == 0 {
+        return "generic"
+    }
+    if strcmp(target, "amx") == 0 or strcmp(target, "sme") == 0 or
+       strcmp(target, "nvvm") == 0 or strcmp(target, "generic") == 0 {
+        return target
+    }
+    return ""
+}
+
 # Emit one hardware-shaped register tile. The operation stays in the vector
 # dialect so targets can select AMX, SME, or a GPU matrix instruction later.
 function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
@@ -3034,8 +3047,17 @@ function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
         mlg_refuse(m, e, "register tile exceeds FLOWC_MLIR_REGISTER_TILE_MAX_LANES")
         return V_NONE
     }
+    let target: string = mlg_register_tile_target()
+    if target == "" {
+        mlg_refuse(m, e, "FLOWC_MLIR_REGISTER_TILE_TARGET must be one of 'generic', 'amx', 'sme', 'nvvm'")
+        return V_NONE
+    }
     let rt: i32 = mlg_vector_of(m, bt, am)
     let r: i32 = mlg_new_val(m, rt)
+    mlg_line(m)
+    mlg_s(m, "// flow.register_tile_target = \"")
+    mlg_s(m, target)
+    mlg_s(m, "\"\n")
     mlg_line(m)
     mlg_v(m, r)
     mlg_s(m, " = vector.outerproduct ")
