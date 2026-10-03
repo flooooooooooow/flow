@@ -1,0 +1,13 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	# Source distribution contains driver script, runtime, and stdlib
+
+override_dh_auto_install:
+	mkdir -p debian/flow/usr/bin debian/flow/usr/lib/flow
+	cp -r src lib runtime compiler debian/flow/usr/lib/flow/
+	cp flow debian/flow/usr/bin/flow
+	chmod 755 debian/flow/usr/bin/flow

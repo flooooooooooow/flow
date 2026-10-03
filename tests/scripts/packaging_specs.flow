@@ -1,0 +1,246 @@
+# Tests for packaging specifications across distributions (Homebrew, Nix, Debian, Arch, Scoop).
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import "scripts/tools/lib/json.flow"
+
+function repo_root() -> string {
+    return proc_getenv("FLOW_REPO_ROOT")
+}
+
+function check_packaging_readme_exists() -> i32 {
+    let readme: string = repo_root() + "/packaging/README.md"
+    if not exists(readme) {
+        outln("packaging/README.md does not exist")
+        return T_FAIL
+    }
+    let text: string = read_text(readme)
+    if not s_contains(text, "Homebrew") {
+        outln("README does not contain Homebrew")
+        return T_FAIL
+    }
+    if not s_contains(text, "Nix") {
+        outln("README does not contain Nix")
+        return T_FAIL
+    }
+    if not s_contains(text, "Debian") {
+        outln("README does not contain Debian")
+        return T_FAIL
+    }
+    if not s_contains(text, "Arch Linux") {
+        outln("README does not contain Arch Linux")
+        return T_FAIL
+    }
+    if not s_contains(text, "Scoop") {
+        outln("README does not contain Scoop")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_nix_specs_exist_and_contain_version() -> i32 {
+    let default_nix: string = repo_root() + "/packaging/nix/default.nix"
+    let flake_nix: string = repo_root() + "/packaging/nix/flake.nix"
+    
+    if not a_exists(default_nix) {
+        return T_FAIL
+    }
+    if not a_exists(flake_nix) {
+        return T_FAIL
+    }
+    
+    let content: string = read_text(default_nix)
+    if not s_contains(content, "pname = \"flow\";") {
+        outln("default.nix does not contain pname = \"flow\";")
+        return T_FAIL
+    }
+    if not s_contains(content, "version =") {
+        outln("default.nix does not contain version =")
+        return T_FAIL
+    }
+    if not s_contains(content, "pkgs.fetchFromGitHub") {
+        outln("default.nix does not contain pkgs.fetchFromGitHub")
+        return T_FAIL
+    }
+    
+    let flake_content: string = read_text(flake_nix)
+    if not s_contains(flake_content, "inputs = {") {
+        outln("flake.nix does not contain inputs = {")
+        return T_FAIL
+    }
+    if not s_contains(flake_content, "outputs = {") {
+        outln("flake.nix does not contain outputs = {")
+        return T_FAIL
+    }
+    
+    return T_PASS
+}
+
+function check_debian_control_and_build_script() -> i32 {
+    let control: string = repo_root() + "/packaging/deb/debian/control"
+    let rules: string = repo_root() + "/packaging/deb/debian/rules"
+    let changelog: string = repo_root() + "/packaging/deb/debian/changelog"
+    
+    if not a_exists(control) {
+        return T_FAIL
+    }
+    if not a_exists(rules) {
+        return T_FAIL
+    }
+    if not a_exists(changelog) {
+        return T_FAIL
+    }
+    
+    let ctrl_text: string = read_text(control)
+    if not s_contains(ctrl_text, "Package: flow") {
+        outln("control does not contain Package: flow")
+        return T_FAIL
+    }
+    if not s_contains(ctrl_text, "Depends:") {
+        outln("control does not contain Depends:")
+        return T_FAIL
+    }
+    if not s_contains(ctrl_text, "Description:") {
+        outln("control does not contain Description:")
+        return T_FAIL
+    }
+    
+    let rules_text: string = read_text(rules)
+    if not s_contains(rules_text, "dh $@") {
+        outln("rules does not contain dh $@")
+        return T_FAIL
+    }
+    
+    return T_PASS
+}
+
+function check_arch_pkgbuild_exists_and_valid() -> i32 {
+    let pkgbuild: string = repo_root() + "/packaging/arch/PKGBUILD"
+    
+    if not a_exists(pkgbuild) {
+        return T_FAIL
+    }
+    
+    let text: string = read_text(pkgbuild)
+    if not s_contains(text, "pkgname=flow-language") {
+        outln("PKGBUILD does not contain pkgname=flow-language")
+        return T_FAIL
+    }
+    if not s_contains(text, "pkgver=") {
+        outln("PKGBUILD does not contain pkgver=")
+        return T_FAIL
+    }
+    if not s_contains(text, "package() {") {
+        outln("PKGBUILD does not contain package() {")
+        return T_FAIL
+    }
+    
+    return T_PASS
+}
+
+function check_scoop_json_valid() -> i32 {
+    let scoop_json: string = repo_root() + "/packaging/scoop/flow.json"
+    
+    if not a_exists(scoop_json) {
+        return T_FAIL
+    }
+    
+    let j: ptr<Json> = tj_load(scoop_json)
+    if not tj_ok(j) {
+        outln("scoop/flow.json is not valid JSON")
+        return T_FAIL
+    }
+    
+    let version_id: i32 = tj_path(j, "version")
+    if version_id < 0 {
+        outln("scoop/flow.json missing version field")
+        return T_FAIL
+    }
+    
+    let bin_id: i32 = tj_path(j, "bin")
+    if bin_id < 0 {
+        outln("scoop/flow.json missing bin field")
+        return T_FAIL
+    }
+    let bin: string = json_str(j, bin_id)
+    if not a_eq(bin, "flow", "scoop bin field") {
+        return T_FAIL
+    }
+    
+    let arch_id: i32 = tj_path(j, "architecture")
+    if arch_id < 0 {
+        outln("scoop/flow.json missing architecture field")
+        return T_FAIL
+    }
+    
+    let arch64_id: i32 = tj_path(j, "architecture.64bit")
+    if arch64_id < 0 {
+        outln("scoop/flow.json missing architecture.64bit field")
+        return T_FAIL
+    }
+    
+    let url_id: i32 = tj_path(j, "architecture.64bit.url")
+    if url_id < 0 {
+        outln("scoop/flow.json missing architecture.64bit.url field")
+        return T_FAIL
+    }
+    
+    return T_PASS
+}
+
+function check_getting_started_docs_reference_packages() -> i32 {
+    let getting_started: string = repo_root() + "/docs/getting-started.md"
+    
+    if not a_exists(getting_started) {
+        return T_FAIL
+    }
+    
+    let text: string = read_text(getting_started)
+    if not s_contains(text, "Homebrew") {
+        outln("getting-started.md does not contain Homebrew")
+        return T_FAIL
+    }
+    if not s_contains(text, "Nix") {
+        outln("getting-started.md does not contain Nix")
+        return T_FAIL
+    }
+    if not s_contains(text, "Debian") {
+        outln("getting-started.md does not contain Debian")
+        return T_FAIL
+    }
+    if not s_contains(text, "Arch Linux") {
+        outln("getting-started.md does not contain Arch Linux")
+        return T_FAIL
+    }
+    if not s_contains(text, "Scoop") {
+        outln("getting-started.md does not contain Scoop")
+        return T_FAIL
+    }
+    
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("packaging_specs")
+    
+    t_start()
+    t_end("packaging_readme_exists", check_packaging_readme_exists())
+    
+    t_start()
+    t_end("nix_specs_exist_and_contain_version", check_nix_specs_exist_and_contain_version())
+    
+    t_start()
+    t_end("debian_control_and_build_script", check_debian_control_and_build_script())
+    
+    t_start()
+    t_end("arch_pkgbuild_exists_and_valid", check_arch_pkgbuild_exists_and_valid())
+    
+    t_start()
+    t_end("scoop_json_valid", check_scoop_json_valid())
+    
+    t_start()
+    t_end("getting_started_docs_reference_packages", check_getting_started_docs_reference_packages())
+    
+    t_done()
+    return 0
+}
