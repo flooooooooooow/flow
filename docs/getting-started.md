@@ -12,6 +12,19 @@ brew install flow
 flow version
 ```
 
+### Nix
+
+```bash
+nix profile install github:flooooooooooow/flow
+flow version
+```
+
+Or run directly via Nix flake without installing:
+
+```bash
+nix run github:flooooooooooow/flow -- version
+```
+
 ### From source
 
 ```bash

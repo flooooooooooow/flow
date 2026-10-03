@@ -134,8 +134,8 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 | Item | Status | Note |
 | --- | --- | --- |
 | Versioned releases | DONE | `v0.11.0` tags, GitHub Releases. |
-| Installers | PARTIAL | Source archives; Homebrew formula; no Windows/Winget or official installers. |
-| Package managers | PARTIAL | Homebrew tapped; no winget/apt/nix official recipes beyond tap. |
+| Installers | PARTIAL | Source archives; Homebrew formula; Nix flake/derivation; no Windows/Winget or official installers. |
+| Package managers | PARTIAL | Homebrew tapped; Nix flake/package supported; Linux distro packages evaluated; Winget/Chocolatey deferred until Windows Tier-1 binary release. |
 | CI | DONE | `ci.yml` across jobs and `*.github/workflows` (lint, bootstrap, pytest, fuzz). |
 | Release CI | DONE | `flowc-release.yml` builds binaries on Linux and macOS. |
 | Checksums / signatures | DONE | `SHA256SUMS` for release archives; no formal signing. |
@@ -200,7 +200,7 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 | Pygments | GAP | Not upstreamed. |
 | Language servers | DONE | `flow-lsp`. |
 | Benchmark suites | PARTIAL | `tests/benchmarks`; no external comparative matrix. |
-| Package ecosystems | PARTIAL | Homebrew tap + Open VSX + registry catalogues. |
+| Package ecosystems | PARTIAL | Homebrew tap + Nix flake + Open VSX + registry catalogues. |
 
 ### 15. Standardisation (much later)
 | Item | Status | Note |

@@ -114,6 +114,15 @@ flow run examples/basics/hello_world.flow
 
 Track `main` with `brew install --HEAD flow`. Formula: [`packaging/homebrew`](packaging/homebrew).
 
+### Nix Flake
+
+```bash
+nix run github:flooooooooooow/flow -- version
+nix profile install github:flooooooooooow/flow
+```
+
+Or locally: `nix run .` / `nix profile install .`. Definition: [`packaging/nix`](packaging/nix).
+
 ### From source
 
 ```bash
