@@ -57,6 +57,7 @@ class FlowLexer(RegexLexer):
             (r"\|>|->|=>|==|!=|<=|>=|<<|>>|\+=|-=|\*=|/=|%=|\.\.", Operator),
             (r"[+\-*/%=&|^~!<>]", Operator),
             (r"[{}()\[\],.:;]", Punctuation),
+            (r"[«»∪∩σ@\"?$\\]", Operator),
             (r"[A-Za-z_][A-Za-z0-9_]*(?=\s*\()", Name.Function),
             (r"[A-Za-z_][A-Za-z0-9_]*", Name),
         ]

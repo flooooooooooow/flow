@@ -913,3 +913,18 @@ jobs:
           fields: ${{ steps.summarize.outputs.fields }}
           footer_text: Flow CI · run ${{ github.run_id }}
           footer_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
+  test-pygments:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install and test flow-pygments
+        run: |
+          cd third_party/integrations/pygments-flow
+          python3 -m venv .venv
+          . .venv/bin/activate
+          pip install -e .
+          python3 test_lexer.py
