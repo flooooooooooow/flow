@@ -226,6 +226,14 @@ remain unchanged. Values from 1 through 64 are accepted. The default is zero.
 FLOWC_MLIR_AOSOA_PAD=1 ./flow mlir compiler/fixtures/mlir/aosoa_padding.flow --lenient
 ```
 
+Use `--aosoa-pad-auto` with `flow flow-to-mlir` to add one storage element only
+for power-of-two logical extents. Irregular extents keep their original
+storage size.
+
+```bash
+./flow flow-to-mlir --aosoa-pad-auto compiler/fixtures/mlir_opt/aosoa_padding.flow /tmp/aosoa.mlir
+```
+
 Set `FLOWC_MLIR_AOSOA_SWIZZLE=N` to xor each generated field index with that
 index shifted by `log2(N)`. `N` must be a power of two from 2 through 32.
 The rewrite applies this only to power-of-two logical extents, which keeps the
