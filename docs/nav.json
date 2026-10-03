@@ -1020,6 +1020,7 @@
     "project/MLIR_AUTOTUNING.md": "report on the MLIR transform-dialect auto-tuner and what remains (Issue #668)",
     "research/cutlass_evaluation.md": "internal evaluation of CUTLASS, kept for the record rather than as a guide",
     "project/roadmap-2.0.md": "design tracker for Epic #679, tracked internally in ROADMAP.md",
-    "research/rfc_effects_continuations.md": "rfc doc for effects continuations"
+    "research/rfc_effects_continuations.md": "rfc doc for effects continuations",
+    "project/helix.md": "documentation for setting up Helix editor with Flow syntax highlighting and LSP"
   }
 }

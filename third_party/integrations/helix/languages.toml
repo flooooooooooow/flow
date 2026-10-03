@@ -1,0 +1,19 @@
+# Helix language configuration for Flow
+# Place or merge this snippet into your ~/.config/helix/languages.toml
+
+[[language]]
+name = "flow"
+scope = "source.flow"
+injection-regex = "flow"
+file-types = ["flow"]
+roots = ["flow.toml"]
+comment-token = "#"
+indent = { tab-width = 4, unit = "    " }
+language-servers = ["flow-lsp"]
+
+[language-server.flow-lsp]
+command = "flow-lsp"
+
+[[grammar]]
+name = "flow"
+source = { git = "https://github.com/flooooooooooow/flow-tmLanguage", rev = "main" }
