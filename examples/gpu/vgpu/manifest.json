@@ -12,7 +12,8 @@
       "height": 90,
       "time": 0.0,
       "comparison": {
-        "mode": "exact-rgba8"
+        "mode": "exact-rgba8",
+        "reference": "examples/gpu/vgpu/references/gradient_exact.rgba8"
       },
       "backends": [
         "metal",
@@ -23,6 +24,10 @@
       "id": "mnist",
       "upstream": "https://vgpu.sh/examples/mnist",
       "source": "examples/gpu/vgpu/mnist.flow",
+      "comparison": {
+        "mode": "numerical",
+        "tolerance": 0.0001
+      },
       "backends": [
         "metal",
         "webgpu"
@@ -32,6 +37,10 @@
       "id": "depth",
       "upstream": "https://vgpu.sh/examples/depth",
       "source": "examples/gpu/vgpu/depth_estimation.flow",
+      "comparison": {
+        "mode": "numerical",
+        "tolerance": 0.0001
+      },
       "backends": [
         "metal",
         "webgpu"

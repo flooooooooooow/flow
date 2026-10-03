@@ -2311,6 +2311,10 @@ run_matmul_tests() {
 
 # Run GPU feature tests (runtime + codegen)
 run_gpu_tests() {
+    if [[ "$*" == *"--suite"* ]] || [[ "$*" == *"vgpu"* ]]; then
+        PYTHONPATH="$SCRIPT_DIR/src" python3 -m flow.vgpu_runner "$@"
+        return $?
+    fi
     print_info "Running GPU feature tests..."
     check_deps
     local runtime_args=()
@@ -3177,6 +3181,11 @@ pm.run_native('$SCRIPT_DIR/demos/vulkan_flow_advanced/src/main.flow')
         ;;
     "gpu")
         shift
+        if [ "${1:-}" = "test" ]; then
+            shift
+            PYTHONPATH="$SCRIPT_DIR/src" python3 -m flow.vgpu_runner "$@"
+            exit $?
+        fi
         # --wgsl emits WebGPU shaders instead of Metal, from the same AST.
         gpu_lang="metal"
         gpu_args=()
