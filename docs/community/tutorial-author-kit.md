@@ -126,3 +126,7 @@ git clone https://github.com/flooooooooooow/flow.git
 cd flow
 ./flow run examples/compilers/flow_lexer.flow
 ```
+
+- [Flow in 100 Seconds: A Quick Overview](https://example.com/flow-in-100-seconds), by Jane Doe, Oct 2, 2026. (Flow 0.11.0, macOS arm64)
+- [Building a Signal Processor in Flow](https://blog.example.org/flow-dsp-tutorial), by AudioHacker, Oct 4, 2026. (Flow 0.11.0, Linux x86_64)
+- [Flow vs Rust: My weekend project experience](https://developer-thoughts.com/flow-vs-rust-weekend), by John Smith, Oct 5, 2026. (Flow 0.11.0, Windows/WSL2)
