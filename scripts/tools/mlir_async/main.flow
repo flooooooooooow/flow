@@ -30,8 +30,19 @@ function async_engine(s: string) -> string {
     return "nvgpu.device_async_copy"
 }
 
+function async_capability(s: string) -> string {
+    if at_eq(s, "gpu") { return "gpu.async_copy" }
+    if at_eq(s, "amdgpu") { return "amdgpu.async_copy" }
+    return "nvptx.cp_async"
+}
+
+function async_token_dialect(s: string) -> string {
+    if at_eq(s, "nvptx") { return "nvgpu.device.async.token" }
+    return "async.token"
+}
+
 function async_header(buffers: i32, stages: i32, target: string, engine: string) -> string {
-    return "module attributes {flow.async_buffers = " + at_itoa(buffers) + ", flow.async_buffer_slots = " + at_itoa(buffers) + ", flow.async_stage_count = " + at_itoa(stages) + ", flow.async_schedule = \"circular\", flow.async_target = \"" + target + "\", flow.async_copy_engine = \"" + engine + "\"} {\n"
+    return "module attributes {flow.async_buffers = " + at_itoa(buffers) + ", flow.async_buffer_slots = " + at_itoa(buffers) + ", flow.async_stage_count = " + at_itoa(stages) + ", flow.async_schedule = \"circular\", flow.async_target = \"" + target + "\", flow.async_capability = \"" + async_capability(target) + "\", flow.async_copy_engine = \"" + engine + "\", flow.async_token_dialect = \"" + async_token_dialect(target) + "\"} {\n"
 }
 
 function async_module(stages: i32, buffers: i32, op: string, target: string) -> string {
