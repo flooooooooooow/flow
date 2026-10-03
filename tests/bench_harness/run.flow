@@ -147,8 +147,10 @@ function main() -> i32 {
     sl_push2(want_keys, "\"semantic_parity_status\": \"verified\"", "\"flow_command\": \"echo flow_mock\"")
     sl_push2(want_keys, "\"python_command\": \"echo python_mock\"", "\"warm_mode\": true")
     sl_push2(want_keys, "\"repeats\": 3", "\"flow_metrics\": {")
-    sl_push2(want_keys, "\"python_metrics\": {", "\"median\": ")
-    sl_push2(want_keys, "\"p95\": ", "\"dispersion\": ")
+    sl_push2(want_keys, "\"python_metrics\": {", "\"native_command\": null")
+    sl_push2(want_keys, "\"native_metrics\": {", "\"attribution\": {")
+    sl_push2(want_keys, "\"median\": ", "\"p95\": ")
+    sl_push2(want_keys, "\"dispersion\": ", "\"flow_vs_native\": null")
     sl_push2(want_keys, "\"allocations\": 0", "\"copies\": 0")
     let mut k: i32 = 0
     while k < sl_len(want_keys) {

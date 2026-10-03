@@ -25,6 +25,7 @@ benchmarks/
 │   ├── c/                   # Hand-written C equivalents
 │   └── rust/                # Rust equivalents
 ├── baselines/python/        # CPython and NumPy subjects for every comparison
+├── baselines/native/        # Hand-written C twins for native attribution
 ├── micro/                    # Micro-benchmarks
 │   ├── fft_benchmark.flow   # Fast Fourier Transform
 │   ├── mandelbrot_benchmark.flow  # Fractal computation
