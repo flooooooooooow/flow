@@ -20,7 +20,26 @@ function check_target_metadata() -> i32 {
     let c: ptr<ProcCmd> = t_cmd(argv)
     cmd_env(c, "FLOWC_MLIR_REGISTER_TILE_TARGET", "amx")
     if t_run(c) != 0 { return T_FAIL }
-    if not a_contains(read_text(t_tmp() + "/target.mlir"), "flow.register_tile_target = \"amx\"") { return T_FAIL }
+    let output: string = read_text(t_tmp() + "/target.mlir")
+    if not a_contains(output, "flow.register_tile_target = \"amx\"") { return T_FAIL }
+    if not a_contains(output, "flow.register_tile_lowering = \"amx.tile_mulf\"") { return T_FAIL }
+    return T_PASS
+}
+
+function check_target_lowering_families() -> i32 {
+    let targets: ptr<ProcStrs> = sl_of3("amx", "sme", "nvvm")
+    let expected: ptr<ProcStrs> = sl_of3("amx.tile_mulf", "arm_sme.outerproduct", "nvvm.wgmma")
+    let mut i: i32 = 0
+    while i < 3 {
+        let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--register-tiles")
+        sl_push(argv, "compiler/fixtures/mlir_opt/register_tile_nested.flow")
+        sl_push(argv, t_tmp() + "/target-" + sl_get(targets, i) + ".mlir")
+        let c: ptr<ProcCmd> = t_cmd(argv)
+        cmd_env(c, "FLOWC_MLIR_REGISTER_TILE_TARGET", sl_get(targets, i))
+        if t_run(c) != 0 { return T_FAIL }
+        if not a_contains(read_text(t_tmp() + "/target-" + sl_get(targets, i) + ".mlir"), "flow.register_tile_lowering = \"" + sl_get(expected, i) + "\"") { return T_FAIL }
+        i = i + 1
+    }
     return T_PASS
 }
 
@@ -63,6 +82,7 @@ function main() -> i32 {
     t_end("nested_outer_product", check_nested_outer_product())
     t_start()
     t_end("target_metadata", check_target_metadata())
+    t_end("target_lowering_families", check_target_lowering_families())
     t_start()
     t_end("invalid_target", check_rejects_unknown_target())
     t_start()
