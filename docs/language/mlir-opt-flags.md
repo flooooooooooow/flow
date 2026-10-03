@@ -171,6 +171,9 @@ records the target intrinsic family: `amx.tile_mulf`, `arm_sme.outerproduct`,
 or `nvvm.wgmma`. The default is `generic`, which keeps
 `vector.outerproduct`.
 
+The same selection is available on the command line with
+`--register-tile-target=TARGET` and `--register-tile-max-lanes=N`.
+
 ```bash
 ./flow mlir compiler/fixtures/mlir/register_tile_probe.flow --register-tiles
 ```
