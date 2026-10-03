@@ -871,6 +871,10 @@
         {
           "label": "Linguist Registration",
           "path": "project/linguist.md"
+        },
+        {
+          "label": "Pygments Registration",
+          "path": "project/pygments.md"
         }
       ]
     },

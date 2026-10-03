@@ -16,6 +16,9 @@ dependencies = [
 [project.scripts]
 flowc = "flow.transpiler:main"
 
+[project.entry-points."pygments.lexers"]
+flow = "flow.pygments_lexer:FlowLexer"
+
 [project.optional-dependencies]
 test = [
     "pytest>=7.0",
