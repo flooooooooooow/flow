@@ -10,10 +10,6 @@ function scalar_loop() -> i32 {
     return acc
 }
 
-function math_widen(x: f32) -> f64 {
-    return sqrt(x)
-}
-
 function main() -> i32 {
     return 0
 }
