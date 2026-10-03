@@ -421,12 +421,6 @@ Each file is compile-checked (not executed) with the same pipeline as `./flow te
 | `examples/compilers/proof_parse_demo.flow` | pass |  |
 | `examples/concurrency/channels.flow` | pass |  |
 | `examples/concurrency/channels_i64.flow` | pass |  |
-| `examples/concurrency/cont_demo.flow` | pass |  |
-| `examples/concurrency/cont_flow_resume.flow` | pass |  |
-| `examples/concurrency/cont_multishot.flow` | pass |  |
-| `examples/concurrency/cont_reset.flow` | pass |  |
-| `examples/concurrency/cont_scaffold.flow` | pass |  |
-| `examples/concurrency/cont_stackcopy.flow` | pass |  |
 | `examples/concurrency/fiber_async.flow` | pass |  |
 | `examples/concurrency/fiber_netpoll.flow` | pass |  |
 | `examples/concurrency/fiber_suspend.flow` | pass |  |

@@ -59,9 +59,9 @@ Sum the first `size` elements of an f32 array.
 
 Async primitives via algebraic effects  Call sites perform `Async` / `AsyncIO` operations; a capability supplies the
 
-**Effects:** `Async`, `AsyncIO`, `TcpEffect`, `Cont`
+**Effects:** `Async`, `AsyncIO`, `TcpEffect`
 
-**Capabilities:** `BlockingTcp`, `SimulatedAsync`, `ThreadedAsync`, `FiberAsync`, `BlockingAsyncIO`, `NetpollAsyncIO`, `FiberCont`
+**Capabilities:** `BlockingTcp`, `SimulatedAsync`, `ThreadedAsync`, `FiberAsync`, `BlockingAsyncIO`, `NetpollAsyncIO`
 
 **Functions:**
 
@@ -72,12 +72,6 @@ Async primitives via algebraic effects  Call sites perform `Async` / `AsyncIO` o
 | `tcp_close` | `(fd: i32) -> i32` | - |
 | `async_set_maxprocs` | `(n: i32) -> void` | - |
 | `async_maxprocs` | `() -> i32` | - |
-| `cont_scaffold_available` | `() -> i32` | - |
-| `cont_demo_shift` | `() -> i32` | - |
-| `cont_demo_reset` | `() -> i32` | - |
-| `cont_arm_resume` | `(value: i32) -> void` | - |
-| `cont_resume` | `(value: i32) -> i32` | - |
-| `cont_has_pending` | `() -> i32` | - |
 | `async_delay` | `(ms: i32) -> void` | Thin helpers (same ops; clearer call sites) |
 | `async_spawn` | `(task_id: i32) -> void` | - |
 | `async_join` | `(task_id: i32) -> i32` | - |
