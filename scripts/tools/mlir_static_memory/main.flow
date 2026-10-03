@@ -37,6 +37,25 @@ function parse_csv3(s: string, out: ptr<i32>) -> i32 {
     return 3
 }
 
+function parse_lifetimes(s: string, starts: ptr<i32>, ends: ptr<i32>) -> i32 {
+    let mut pos: i32 = 0
+    let mut i: i32 = 0
+    let n: i32 = ft_len(s)
+    while i < 3 {
+        let comma: i32 = if i == 2 { n } else { ft_find_byte(s, 44, pos) }
+        if comma <= pos { return 0 }
+        let colon: i32 = ft_find_byte(s, 58, pos)
+        if colon < pos or colon >= comma { return 0 }
+        starts[i] = parse_num(ft_slice(s, pos, colon))
+        ends[i] = parse_num(ft_slice(s, colon + 1, comma))
+        if starts[i] < 0 or ends[i] < 0 or ends[i] < starts[i] { return 0 }
+        pos = comma + 1
+        i = i + 1
+    }
+    if pos != n + 1 { return 0 }
+    return 3
+}
+
 function valid_alignment(v: i32) -> bool {
     if v <= 0 or v > 4096 { return false }
     let mut n: i32 = v
@@ -132,12 +151,19 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     let mut target: string = "cpu"
     let mut space: string = "stack"
     let mut alignment: i32 = 16
+    let mut starts: array<i32, 3> = [0, 3, 1]
+    let mut ends: array<i32, 3> = [2, 5, 4]
     let mut i: i32 = 1
     while i < argc {
         let arg: string = argv[i] as string
         if ft_starts(arg, "--sizes=") {
             if parse_csv3(ft_from(arg, 8), &sizes[0]) != 3 {
                 ft_errln("mlir_static_memory: --sizes expects a,b,c")
+                return 2
+            }
+        } elif ft_starts(arg, "--lifetimes=") {
+            if parse_lifetimes(ft_from(arg, 12), &starts[0], &ends[0]) != 3 {
+                ft_errln("mlir_static_memory: --lifetimes expects start:end,start:end,start:end with non-decreasing ranges")
                 return 2
             }
         } elif ft_starts(arg, "--target=") {
@@ -171,9 +197,9 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         return 2
     }
     let mut items: array<StaticBuffer, 64> = []
-    items[0] = StaticBuffer { size: sizes[0], start: 0, end: 2, alignment: alignment }
-    items[1] = StaticBuffer { size: sizes[1], start: 3, end: 5, alignment: alignment }
-    items[2] = StaticBuffer { size: sizes[2], start: 1, end: 4, alignment: alignment }
+    items[0] = StaticBuffer { size: sizes[0], start: starts[0], end: ends[0], alignment: alignment }
+    items[1] = StaticBuffer { size: sizes[1], start: starts[1], end: ends[1], alignment: alignment }
+    items[2] = StaticBuffer { size: sizes[2], start: starts[2], end: ends[2], alignment: alignment }
     let plan: StaticMemoryPlan = flowc_static_memory_plan(items, 3, alignment)
     if plan.arena_size < 0 {
         ft_errln("mlir_static_memory: planned arena exceeds the supported i32 size")
