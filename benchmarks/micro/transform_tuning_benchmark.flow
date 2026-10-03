@@ -5,10 +5,11 @@
 #         autotune_transform loop of the retired mlir_optimizer.py.
 #
 #   ./flow tool benchmarks/micro/transform_tuning_benchmark.flow
+#   ./flow tool benchmarks/micro/transform_tuning_benchmark.flow --pmu-event=cache-misses
 
 import "tools/flow_cli/sys.flow"
 import "benchmarks/bench_tools.flow"
-import std.process { ProcCmd, ProcStrs }
+import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg, proc_cmd, proc_run, proc_stderr, proc_which, PROC_MERGE }
 
 const KERNEL: string = "module attributes {transform.with_named_sequence} {\n  func.func @matmul_kernel(%A: memref<128x128xf32>, %B: memref<128x128xf32>, %C: memref<128x128xf32>) attributes {llvm.emit_c_interface} {\n    linalg.matmul ins(%A, %B: memref<128x128xf32>, memref<128x128xf32>)\n                  outs(%C: memref<128x128xf32>)\n    func.return\n  }\n}\n"
 
@@ -137,6 +138,46 @@ function evaluate(opt: string, translate: string, cc: string, work: string, cand
     return capture(rc)
 }
 
+# Run the compiled candidate under Linux perf. perf writes its CSV record to
+# stderr, so merge it with the harness output and parse the named event below.
+# A missing PMU permission or unsupported event returns an empty string and
+# leaves the caller on the wall-time metric.
+function evaluate_pmu(perf: string, event: string, bench: string) -> string {
+    let c: ptr<ProcCmd> = proc_cmd(perf)
+    proc_arg(c, "stat")
+    proc_arg(c, "-x,")
+    proc_arg(c, "-e")
+    proc_arg(c, event)
+    proc_arg(c, bench)
+    proc_stderr(c, PROC_MERGE)
+    let r: ptr<ProcResult> = proc_run(c)
+    if r.exit_code != 0 {
+        return ""
+    }
+    return r.stdout
+}
+
+function pmu_value(text: string, event: string) -> f64 {
+    let lines: ptr<ProcStrs> = s_lines(text)
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let line: string = sl_get(lines, i)
+        if s_contains(line, "," + event + ",") {
+            let fields: ptr<ProcStrs> = s_split(line, 44)
+            if sl_len(fields) > 0 and not s_contains(sl_get(fields, 0), "<") {
+                return bench_parse(sl_get(fields, 0))
+            }
+        }
+        i = i + 1
+    }
+    return 0.0
+}
+
+function valid_pmu_event(s: string) -> bool {
+    return s == "cycles" or s == "instructions" or s == "cache-misses" or
+           s == "branches" or s == "branch-misses"
+}
+
 function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     let root: string = bench_root("benchmarks/micro/transform_tuning_benchmark.flow")
     let work: string = mktemp_dir(tmp_base() + "/flow-tune.XXXXXX")
@@ -148,6 +189,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     outln("Running transform dialect tuning benchmark...")
     let mut tiles: ptr<ProcStrs> = s_words("8,8,8 16,16,8 32,16,8 64,32,16")
     let mut repetitions: i32 = 3
+    let mut pmu_event: string = ""
     let mut i: i32 = 1
     while i < argc {
         let arg: string = argv[i] as string
@@ -171,8 +213,17 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         } elif arg == "--repetitions" {
             errln("transform_tuning_benchmark: --repetitions requires a value")
             return 2
+        } elif s_starts(arg, "--pmu-event=") {
+            pmu_event = s_from(arg, 12)
+        } elif arg == "--pmu-event" {
+            errln("transform_tuning_benchmark: --pmu-event requires a value")
+            return 2
         }
         i = i + 1
+    }
+    if s_len(pmu_event) > 0 and not valid_pmu_event(pmu_event) {
+        errln("transform_tuning_benchmark: --pmu-event must be one of 'cycles', 'instructions', 'cache-misses', 'branches', 'branch-misses'")
+        return 2
     }
     let tc: ptr<ProcCmd> = bench_flow(root, sl_of2("mlir-lower", "--tools"))
     cmd_quiet_err(tc)
@@ -189,6 +240,8 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     let start: i64 = bench_epoch_s()
     let mut best: string = ""
     let mut best_metric: f64 = 0.0
+    let perf: string = if s_len(pmu_event) > 0 { proc_which("perf") } else { "" }
+    let mut use_pmu: bool = s_len(perf) > 0
     if has_toolchain {
         let mut i: i32 = 0
         while i < sl_len(tiles) {
@@ -199,11 +252,22 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             let mut measured: i32 = 0
             let mut repetition: i32 = 0
             while repetition < repetitions {
-                let m: string = evaluate(opt, translate, cc, work, t, tag + "-" + s_itoa(repetition))
+                let bench_tag: string = tag + "-" + s_itoa(repetition)
+                let m: string = evaluate(opt, translate, cc, work, t, bench_tag)
                 if s_len(m) == 0 {
                     break
                 }
-                total = total + bench_parse(m)
+                let mut metric: f64 = bench_parse(m)
+                if use_pmu {
+                    let pmu: string = evaluate_pmu(perf, pmu_event, work + "/t" + bench_tag + "/bench")
+                    let measured_pmu: f64 = pmu_value(pmu, pmu_event)
+                    if s_len(pmu) > 0 and measured_pmu > 0.0 {
+                        metric = measured_pmu
+                    } else {
+                        use_pmu = false
+                    }
+                }
+                total = total + metric
                 measured = measured + 1
                 repetition = repetition + 1
             }
@@ -211,7 +275,11 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
                 continue
             }
             let v: f64 = total / (measured as f64)
-            outln("Evaluator mean runtime: " + bench_fixed(v, 4) + "s over " + s_itoa(measured) + " run(s)")
+            if use_pmu {
+                outln("Evaluator mean " + pmu_event + ": " + bench_fixed(v, 4) + " over " + s_itoa(measured) + " run(s)")
+            } else {
+                outln("Evaluator mean runtime: " + bench_fixed(v, 4) + "s over " + s_itoa(measured) + " run(s)")
+            }
             if s_len(best) == 0 or v < best_metric {
                 best = t
                 best_metric = v
@@ -228,10 +296,17 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         outln("Note: Toolchain (mlir-opt, mlir-translate, clang) not fully available in VM.")
         outln("Reported tuning metric is pending toolchain availability, but pipeline logic is successfully tested.")
     }
+    if s_len(pmu_event) > 0 and not use_pmu {
+        outln("Note: perf is unavailable; reported tuning metric uses wall time.")
+    }
     if s_len(best) > 0 {
         outln("Successfully selected best tile schedule: " + best)
         if has_toolchain {
-            outln("Best runtime: " + bench_fixed(best_metric, 6) + "s")
+            if use_pmu {
+                outln("Best " + pmu_event + ": " + bench_fixed(best_metric, 6))
+            } else {
+                outln("Best runtime: " + bench_fixed(best_metric, 6) + "s")
+            }
         } else {
             outln("Best simulated runtime: [Pending Toolchain]")
         }
