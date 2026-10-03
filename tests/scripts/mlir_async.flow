@@ -14,6 +14,8 @@ function check_async_pipeline() -> i32 {
     let output: string = read_text(t_out())
     if not a_contains(output, "flow.async_buffers = 4") { return T_FAIL }
     if not a_contains(output, "flow.async_target = \"nvptx\"") { return T_FAIL }
+    if not a_contains(output, "flow.async_capability = \"nvptx.cp_async\"") { return T_FAIL }
+    if not a_contains(output, "flow.async_token_dialect = \"nvgpu.device.async.token\"") { return T_FAIL }
     if not a_contains(output, "%copy1 = nvgpu.device_async_copy") { return T_FAIL }
     if not a_contains(output, "%group2 = nvgpu.device_async_create_group %copy2") { return T_FAIL }
     if not a_contains(output, "nvgpu.device_async_wait %group1") { return T_FAIL }
@@ -36,6 +38,8 @@ function check_target_engines() -> i32 {
     if t_run(t_cmd(argv)) != 0 { return T_FAIL }
     let gpu: string = read_text(t_out())
     if not a_contains(gpu, "flow.async_copy_engine = \"gpu.async\"") { return T_FAIL }
+    if not a_contains(gpu, "flow.async_capability = \"gpu.async_copy\"") { return T_FAIL }
+    if not a_contains(gpu, "flow.async_token_dialect = \"async.token\"") { return T_FAIL }
     if a_contains(gpu, "nvgpu.device_async_copy") { return T_FAIL }
     if not a_contains(gpu, "memref.copy %src_slot0, %dst_slot0") { return T_FAIL }
 
@@ -44,6 +48,8 @@ function check_target_engines() -> i32 {
     if t_run(t_cmd(argv2)) != 0 { return T_FAIL }
     let amd: string = read_text(t_out())
     if not a_contains(amd, "flow.async_copy_engine = \"amdgpu.async\"") { return T_FAIL }
+    if not a_contains(amd, "flow.async_capability = \"amdgpu.async_copy\"") { return T_FAIL }
+    if not a_contains(amd, "flow.async_token_dialect = \"async.token\"") { return T_FAIL }
     if a_contains(amd, "nvgpu.device_async_copy") { return T_FAIL }
     if not a_contains(amd, "memref.copy %src_slot0, %dst_slot0") { return T_FAIL }
     return T_PASS
@@ -141,6 +147,29 @@ function check_rejects_out_of_range_numbers() -> i32 {
     return T_PASS
 }
 
+function check_rejects_missing_values() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_async/main.flow")
+    sl_push(argv, "--target")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--target requires a value") { return T_FAIL }
+
+    let argv2: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_async/main.flow")
+    sl_push(argv2, "--stages")
+    if t_run(t_cmd(argv2)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--stages requires a value") { return T_FAIL }
+
+    let argv3: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_async/main.flow")
+    sl_push(argv3, "--buffers")
+    if t_run(t_cmd(argv3)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--buffers requires a value") { return T_FAIL }
+
+    let argv4: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_async/main.flow")
+    sl_push(argv4, "--op")
+    if t_run(t_cmd(argv4)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--op requires a value") { return T_FAIL }
+    return T_PASS
+}
+
 function main() -> i32 {
     t_begin("mlir_async")
     t_start()
@@ -154,6 +183,7 @@ function main() -> i32 {
     t_end("empty_operation_rejected", check_rejects_empty_operation())
     t_end("malformed_numbers_rejected", check_rejects_malformed_numbers())
     t_end("out_of_range_numbers_rejected", check_rejects_out_of_range_numbers())
+    t_end("missing_values_rejected", check_rejects_missing_values())
     t_done()
     return 0
 }
