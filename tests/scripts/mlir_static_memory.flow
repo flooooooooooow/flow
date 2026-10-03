@@ -10,6 +10,7 @@ function check_static_views() -> i32 {
     if not a_contains(output, "flow.static_arena_alignment = 16") { return T_FAIL }
     if not a_contains(output, "flow.static_buffer_lifetimes = \"0:2,3:5,1:4\"") { return T_FAIL }
     if not a_contains(output, "flow.static_buffer_offsets = \"0,0,64\"") { return T_FAIL }
+    if not a_contains(output, "flow.static_buffer_interference = \"0:2,1:2\"") { return T_FAIL }
     if not a_contains(output, "flow.static_memory_target = \"cpu\"") { return T_FAIL }
     if not a_contains(output, "flow.static_memory_space = \"stack\"") { return T_FAIL }
     if not a_contains(output, "%arena = memref.alloca() : memref<112xi8>") { return T_FAIL }

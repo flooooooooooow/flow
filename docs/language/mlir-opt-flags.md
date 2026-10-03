@@ -159,7 +159,9 @@ as `flow.static_arena_alignment`.
 
 The module also records `flow.static_buffer_lifetimes` as comma-separated
 `start:end` operation ranges and `flow.static_buffer_offsets` as comma-separated
-arena offsets. Both lists use the planner's buffer order.
+arena offsets. It records `flow.static_buffer_interference` as comma-separated
+`i:j` pairs for buffers whose live ranges overlap. All lists use the planner's
+buffer order.
 
 ## Register tiles
 

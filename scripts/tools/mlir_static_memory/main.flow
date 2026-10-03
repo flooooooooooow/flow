@@ -83,13 +83,35 @@ function offset_contract(plan: StaticMemoryPlan) -> string {
     return out
 }
 
+function buffers_overlap(a: StaticBuffer, b: StaticBuffer) -> bool {
+    return a.start <= b.end and b.start <= a.end
+}
+
+function interference_contract(items: array<StaticBuffer, 64>, count: i32) -> string {
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < count {
+        let mut j: i32 = i + 1
+        while j < count {
+            if buffers_overlap(items[i], items[j]) {
+                if ft_len(out) > 0 { out = out + "," }
+                out = out + ft_itoa(i) + ":" + ft_itoa(j)
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return out
+}
+
 function emit_module(items: array<StaticBuffer, 64>, plan: StaticMemoryPlan, target: string, space: string, alignment: i32) -> string {
     let mut out: string = "module attributes {flow.static_arena_bytes = " +
         ft_itoa(plan.arena_size) + ", flow.static_buffer_count = " +
         ft_itoa(plan.count) + ", flow.static_arena_alignment = " +
         ft_itoa(alignment) + ", flow.static_buffer_lifetimes = \"" +
         lifetime_contract(items, plan.count) + "\", flow.static_buffer_offsets = \"" +
-        offset_contract(plan) + "\", flow.static_memory_target = \"" + target +
+        offset_contract(plan) + "\", flow.static_buffer_interference = \"" +
+        interference_contract(items, plan.count) + "\", flow.static_memory_target = \"" + target +
         "\", flow.static_memory_space = \"" + space + "\"} {\n  func.func @flow_static_buffers() {\n"
     let mut arena_type: string = "memref<" + ft_itoa(plan.arena_size) + "xi8>"
     if ft_eq(space, "shared") {
