@@ -1,0 +1,59 @@
+# Flow-native language test: value semantics and move/copy behavior for structs,
+# primitives, and nested composite types.
+# Validates that assignments and parameter passing preserve value semantics (copies
+# are independent and mutating one instance does not affect the original).
+
+struct Point {
+    x: i32,
+    y: i32
+}
+
+struct Line {
+    start: Point,
+    end: Point
+}
+
+function update_point(p: Point) -> Point {
+    let mut local_p: Point = p
+    local_p.x = 999
+    local_p.y = 888
+    return local_p
+}
+
+function main() -> i32 {
+    # 1. Primitive value semantics
+    let a: i32 = 42
+    let mut b: i32 = a
+    b = 100
+    if a != 42 or b != 100 {
+        return 1
+    }
+
+    # 2. Struct assignment value semantics
+    let p1: Point = Point { x: 10, y: 20 }
+    let mut p2: Point = p1
+    p2.x = 500
+    if p1.x != 10 or p1.y != 20 or p2.x != 500 {
+        return 2
+    }
+
+    # 3. Nested struct value semantics
+    let line1: Line = Line {
+        start: Point { x: 0, y: 0 },
+        end: Point { x: 10, y: 10 }
+    }
+    let mut line2: Line = line1
+    line2.start.x = 77
+    if line1.start.x != 0 or line2.start.x != 77 {
+        return 3
+    }
+
+    # 4. Function call parameter value semantics (pass by value)
+    let p3: Point = Point { x: 5, y: 5 }
+    let p4: Point = update_point(p3)
+    if p3.x != 5 or p3.y != 5 or p4.x != 999 or p4.y != 888 {
+        return 4
+    }
+
+    return 0
+}
