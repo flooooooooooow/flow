@@ -12,12 +12,6 @@ brew install flow
 flow version
 ```
 
-### Nix
-
-```bash
-nix run github:flooooooooooow/flow
-```
-
 ### From source
 
 ```bash

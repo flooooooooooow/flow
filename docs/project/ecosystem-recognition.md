@@ -19,7 +19,7 @@ The rule is deliberately strict: a local integration is not marked upstream unti
 | Rosetta Code | Submission pack in `docs/community/rosetta-code.md` | Blocked on UI | Rosetta Code moved to Miraheze, preventing automated tool submission |
 | Independent tutorials | Author kit and reproducibility contract | Waiting on outside authors | At least three technically substantive tutorials by non-core authors |
 | Homebrew | Tap + formula | Available | Maintain release compatibility |
-| Other package managers | Homebrew and Nix flake available | Tracked · #904 | Additional supported-platform distribution |
+| Other package managers | Homebrew is the only mature external package-manager path today | Tracked · #904 | Reproducible Nix packaging and additional supported-platform distribution |
 | Open VSX | VS Code-family extension path documented | Available/project-controlled | External installs and continued publication |
 | Benchmarks | Internal + standardized benchmark layouts | Partial external visibility · #903 | Accepted entries in independent benchmark suites |
 

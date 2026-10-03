@@ -135,7 +135,7 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 | --- | --- | --- |
 | Versioned releases | DONE | `v0.11.0` tags, GitHub Releases. |
 | Installers | PARTIAL | Source archives; Homebrew formula; no Windows/Winget or official installers. |
-| Package managers | PARTIAL | Homebrew tapped and Nix flake available; no winget/apt official recipes yet. |
+| Package managers | PARTIAL | Homebrew tapped; no winget/apt/nix official recipes beyond tap. |
 | CI | DONE | `ci.yml` across jobs and `*.github/workflows` (lint, bootstrap, pytest, fuzz). |
 | Release CI | DONE | `flowc-release.yml` builds binaries on Linux and macOS. |
 | Checksums / signatures | DONE | `SHA256SUMS` for release archives; no formal signing. |
