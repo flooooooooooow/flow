@@ -61,6 +61,11 @@ def mlir_opt_kwargs_from_args(args) -> dict:
         "enable_gvn": not getattr(args, "no_cse", False),
         "enable_dce": not getattr(args, "no_dce", False),
         "enable_inline": not getattr(args, "no_inline", False),
+        "enable_outerproduct_tiling": getattr(args, "enable_outerproduct_tiling", False),
+        "target_arch": getattr(args, "target_arch", "avx512"),
+        "tile_m": getattr(args, "tile_m", 16),
+        "tile_n": getattr(args, "tile_n", 4),
+        "tile_k": getattr(args, "tile_k", 4),
         "optimization_level": getattr(args, "opt_level", "O2"),
     }
 
@@ -143,6 +148,26 @@ def main():
     parser.add_argument(
         "--no-loop-fusion", action="store_true",
         help="Deprecated: loop fusion is off by default (flow#466)",
+    )
+    parser.add_argument(
+        "--enable-outerproduct-tiling",
+        action="store_true",
+        help="Enable vector.outerproduct register tiling and hardware synthesis (#666)",
+    )
+    parser.add_argument(
+        "--target-arch",
+        choices=["avx512", "arm_neon", "intel_amx", "arm_sme", "nvvm_tma"],
+        default="avx512",
+        help="Target silicon architecture for matrix outerproduct lowering",
+    )
+    parser.add_argument(
+        "--tile-m", type=int, default=16, help="Tile M dimension for register outerproduct"
+    )
+    parser.add_argument(
+        "--tile-n", type=int, default=4, help="Tile N dimension for register outerproduct"
+    )
+    parser.add_argument(
+        "--tile-k", type=int, default=4, help="Tile K dimension for register outerproduct"
     )
     parser.add_argument(
         "--no-mem2reg", action="store_true", help="Disable mem2reg (O2+)"
@@ -567,7 +592,7 @@ def main():
             )
 
             # Apply optimizations if requested
-            if args.optimize:
+            if args.optimize or args.enable_outerproduct_tiling:
                 from .mlir_optimizer import MLIROptimizer
                 import tempfile
 
