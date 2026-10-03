@@ -46,7 +46,8 @@ function valid_target(s: string) -> bool {
 }
 
 function valid_strategy(s: string) -> bool {
-    return ft_eq(s, "tile") or ft_eq(s, "vector") or ft_eq(s, "interchange")
+    return ft_eq(s, "tile") or ft_eq(s, "vector") or
+           ft_eq(s, "interchange") or ft_eq(s, "fuse")
 }
 
 function valid_permutation(s: string) -> bool {
@@ -55,12 +56,15 @@ function valid_permutation(s: string) -> bool {
            ft_eq(s, "2,0,1") or ft_eq(s, "2,1,0")
 }
 
-function transform_of(op: string, tiles: string, permutation: string, target: string, strategy: string) -> string {
+function transform_of(op: string, fuse_with: string, tiles: string, permutation: string, target: string, strategy: string) -> string {
     let mut action: string = "    %tiled_linalg_op, %loops:3 = transform.structured.tile_using_for %matmul tile_sizes [" + tiles + "] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op)\n"
     if ft_eq(strategy, "vector") {
         action = "    %vectorized = transform.structured.vectorize %matmul vector_sizes [" + tiles + "] : (!transform.any_op) -> !transform.any_op\n"
     } elif ft_eq(strategy, "interchange") {
         action = "    %interchanged = transform.structured.interchange %matmul iterator_interchange = [" + permutation + "] : (!transform.any_op) -> !transform.any_op\n"
+    } elif ft_eq(strategy, "fuse") {
+        action = "    %producer = transform.structured.match ops{[\"" + fuse_with + "\"]} in %arg0 : (!transform.any_op) -> !transform.any_op\n" +
+                 "    %fused = transform.structured.fuse_into_containing_op %producer into %matmul : (!transform.any_op, !transform.any_op) -> !transform.any_op\n"
     }
     return "module attributes {transform.with_named_sequence, flow.tune_target = \"" + target + "\", flow.tune_strategy = \"" + strategy + "\"} {\n" +
            "  transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {\n" +
@@ -78,6 +82,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     let mut target: string = "cpu"
     let mut strategy: string = "tile"
     let mut permutation: string = "0,1,2"
+    let mut fuse_with: string = "linalg.generic"
     
     while i < argc {
         let a: string = argv[i] as string
@@ -91,6 +96,8 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             strategy = ft_from(a, 11)
         } elif ft_starts(a, "--permutation=") {
             permutation = ft_from(a, 14)
+        } elif ft_starts(a, "--fuse-with=") {
+            fuse_with = ft_from(a, 12)
         }
         i = i + 1
     }
@@ -107,13 +114,17 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         return 2
     }
     if not valid_strategy(strategy) {
-        ft_errln("mlir_tune: --strategy must be one of 'tile', 'vector', 'interchange'")
+        ft_errln("mlir_tune: --strategy must be one of 'tile', 'vector', 'interchange', 'fuse'")
         return 2
     }
     if ft_eq(strategy, "interchange") and not valid_permutation(permutation) {
         ft_errln("mlir_tune: --permutation must be a permutation of 0,1,2")
         return 2
     }
-    ft_outln(transform_of(op, tiles, permutation, target, strategy))
+    if ft_eq(strategy, "fuse") and ft_len(fuse_with) == 0 {
+        ft_errln("mlir_tune: --fuse-with must not be empty")
+        return 2
+    }
+    ft_outln(transform_of(op, fuse_with, tiles, permutation, target, strategy))
     return 0
 }
