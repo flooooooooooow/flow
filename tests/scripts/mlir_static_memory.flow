@@ -8,6 +8,8 @@ function check_static_views() -> i32 {
     let output: string = read_text(t_out())
     if not a_contains(output, "flow.static_arena_bytes = 112") { return T_FAIL }
     if not a_contains(output, "flow.static_arena_alignment = 16") { return T_FAIL }
+    if not a_contains(output, "flow.static_buffer_lifetimes = \"0:2,3:5,1:4\"") { return T_FAIL }
+    if not a_contains(output, "flow.static_buffer_offsets = \"0,0,64\"") { return T_FAIL }
     if not a_contains(output, "flow.static_memory_target = \"cpu\"") { return T_FAIL }
     if not a_contains(output, "flow.static_memory_space = \"stack\"") { return T_FAIL }
     if not a_contains(output, "%arena = memref.alloca() : memref<112xi8>") { return T_FAIL }
@@ -24,6 +26,7 @@ function check_shared_target() -> i32 {
     let output: string = read_text(t_out())
     if not a_contains(output, "flow.static_memory_target = \"nvptx\"") { return T_FAIL }
     if not a_contains(output, "flow.static_arena_alignment = 16") { return T_FAIL }
+    if not a_contains(output, "flow.static_buffer_lifetimes = \"0:2,3:5,1:4\"") { return T_FAIL }
     if not a_contains(output, "flow.static_memory_space = \"shared\"") { return T_FAIL }
     if not a_contains(output, "%arena = memref.alloca() : memref<112xi8, 3>") { return T_FAIL }
     if not a_contains(output, "to memref<48xi8, strided<[1], offset: 64>, 3>") { return T_FAIL }
