@@ -1,0 +1,24 @@
+# EXPECT ERROR: RT-safety violation: 'indirect_caller' is marked '@rt_safe' but makes an unresolved dynamic call
+import stdlib.memory
+
+@rt_safe
+function safe_fn(x: i32) -> i32 {
+    return x * 2
+}
+
+function unsafe_fn(x: i32) -> i32 {
+    let p: ptr<i32> = alloc_i32(x)
+    free(p as ptr<void>)
+    return x
+}
+
+@rt_safe
+function indirect_caller() {
+    let f1: (i32) -> i32 = safe_fn
+    let y: i32 = f1(42)
+}
+
+function main() -> i32 {
+    indirect_caller()
+    return 0
+}
