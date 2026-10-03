@@ -126,6 +126,10 @@ Pass `--alignment=N` to choose a power-of-two arena alignment from 1 through
 4096 bytes. The selected value is applied to every planned buffer and recorded
 as `flow.static_arena_alignment`.
 
+The module also records `flow.static_buffer_lifetimes` as comma-separated
+`start:end` operation ranges and `flow.static_buffer_offsets` as comma-separated
+arena offsets. Both lists use the planner's buffer order.
+
 ## Register tiles
 
 `--register-tiles` enables the opt-in `register_tile_outer_product(a, b)`
