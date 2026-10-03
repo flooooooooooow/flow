@@ -1257,7 +1257,7 @@ function flow_jit_once(program: string, work: string, shape_spec: string) -> i32
     sink_push(SINK_FD, SINK_BUF)
     let eargs: ptr<ProcStrs> = sl_of3("--jit", program, work + "/jit_module.mlir")
     if s_len(shape_spec) > 0 {
-        sl_push(eargs, shape_spec)
+        sl_push(eargs, "--shape-spec=" + shape_spec)
     }
     let erc: i32 = flow_emit_mlir(eargs)
     let _eo: string = sink_pop()

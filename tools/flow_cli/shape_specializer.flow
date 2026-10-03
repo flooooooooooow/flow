@@ -1,9 +1,9 @@
 import "stdlib/string.flow"
-import "stdlib/fileio.flow"
+import "tools/flow_cli/sys.flow"
 
 export function specialize_mlir_shapes(mlir_code: string, func_name: string, dyn_shape: string, static_shape: string) -> string {
     let func_decl: string = "func.func @" + func_name + "("
-    let start_idx: i32 = s_find(mlir_code, func_decl)
+    let start_idx: i32 = s_find(mlir_code, func_decl, 0)
 
     if start_idx < 0 {
         return mlir_code

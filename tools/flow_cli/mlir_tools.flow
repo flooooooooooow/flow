@@ -224,6 +224,8 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
         } elif s_eq(a, "--jit") {
             jit = true
             lenient = true
+        } elif s_starts(a, "--shape-spec=") {
+            shape_spec = s_from(a, 13)
         } elif s_eq(a, "--lenient") {
             lenient = true
         } else {
@@ -408,6 +410,7 @@ function lower_mlir_opt() -> string {
 # Lower IN.flow to OUT.ll through MLIR. `args` are flow-to-llvm's arguments.
 export function flow_to_llvm(args: ptr<ProcStrs>) -> i32 {
     let emit: ptr<ProcStrs> = sl_new()
+    let mut shape_spec: string = ""
     let mut i: i32 = 0
     while i < sl_len(args) {
         let a: string = sl_get(args, i)
@@ -416,12 +419,16 @@ export function flow_to_llvm(args: ptr<ProcStrs>) -> i32 {
             i = i + 1
         } elif s_eq(a, "--optimize") {
             i = i + 2
+        } elif s_starts(a, "--shape-spec=") {
+            shape_spec = s_from(a, 13)
+            sl_push(emit, a)
+            i = i + 1
         } else {
             break
         }
     }
     if i > sl_len(args) or sl_len(args) - i != 2 {
-        errln("usage: flow flow-to-llvm [--wasm32] [--optimize OLEVEL] IN.flow OUT.ll")
+        errln("usage: flow flow-to-llvm [--wasm32] [--optimize OLEVEL] [--shape-spec=SPEC] IN.flow OUT.ll")
         return 2
     }
     let input: string = sl_get(args, i)
@@ -438,7 +445,7 @@ export function flow_to_llvm(args: ptr<ProcStrs>) -> i32 {
     }
     let rc: i32 = mlir_lower(sl_of2(work + "/program.mlir", output))
     if s_len(shape_spec) > 0 {
-        let mut idx: i32 = s_find(shape_spec, "=")
+        let mut idx: i32 = s_find(shape_spec, "=", 0)
         if idx > 0 {
             let dyn_s: string = s_slice(shape_spec, 0, idx)
             let stat_s: string = s_slice(shape_spec, idx + 1, s_len(shape_spec))

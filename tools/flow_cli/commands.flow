@@ -875,6 +875,15 @@ export function cmd_ml(args: ptr<ProcStrs>) -> i32 {
     }
     if s_eq(sub, "run") or s_eq(sub, "jit") or s_eq(sub, "bench") {
         let mut program: string = sl_get(args, 1)
+        let mut shape_spec: string = ""
+        let mut i: i32 = 2
+        while i < sl_len(args) {
+            let a: string = sl_get(args, i)
+            if s_starts(a, "--shape-spec=") {
+                shape_spec = s_from(a, 13)
+            }
+            i = i + 1
+        }
         if s_len(program) == 0 {
             program = root() + "/examples/ml/mlir_tensor_bench.flow"
         }
@@ -892,7 +901,7 @@ export function cmd_ml(args: ptr<ProcStrs>) -> i32 {
             info("Running benchmark...")
             return run_argv(sl_of3("/usr/bin/time", "-p", b + "_mlir"))
         }
-        return run_flow_jit(program, "")
+        return run_flow_jit(program, shape_spec)
     }
     if s_eq(sub, "test") {
         check_deps()
