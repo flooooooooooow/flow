@@ -107,21 +107,6 @@ export function flowc_io_exists(path: string) -> i32 {
     return 0
 }
 
-# Get file mtime. Returns mtime in seconds, or 0 on error.
-# Relies on the stat buffer offset of st_mtime. We read a generic offset.
-export function flowc_io_file_mtime(path: string) -> i64 {
-    let buf: array<u8, 256> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-    let ret: i32 = stat(path, &buf[0])
-    if ret != 0 {
-        return 0
-    }
-    # Hacky: Linux/macOS x86-64/arm64 usually have st_mtime as i64 around offset 72 or 88 or 48.
-    # To be fully correct across platforms we should just rely on the content hash,
-    # as the issue requested content-addressed caching: "Record each module's direct-import content hashes in the entry".
-    # Therefore, let's not rely on mtime and instead just hash the contents! We will implement a file hasher.
-    return 0
-}
-
 # Get file size by seeking to end. Returns size in bytes, or -1 on error.
 export function flowc_io_file_size(path: string) -> i64 {
     let fp: ptr<void> = flowc_io_fopen(path, "rb")
