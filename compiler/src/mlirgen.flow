@@ -3087,6 +3087,17 @@ function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
     mlg_put_type(m, at)
     mlg_s(m, ", ")
     mlg_put_type(m, bt)
+    if target != "generic" {
+        mlg_s(m, " {flow.register_tile_target = \"")
+        mlg_s(m, target)
+        mlg_s(m, "\", flow.register_tile_lowering = \"")
+        mlg_s(m, mlg_register_tile_lowering(target))
+        mlg_s(m, "\", flow.register_tile_lanes = ")
+        mlg_i(m, am * bn)
+        mlg_s(m, ", flow.register_tile_max_lanes = ")
+        mlg_i(m, cap)
+        mlg_s(m, "}")
+    }
     mlg_nl(m)
     return r
 }
