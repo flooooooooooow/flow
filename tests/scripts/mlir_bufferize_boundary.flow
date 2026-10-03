@@ -7,7 +7,8 @@ function check_tensor_value_destination() -> i32 {
     let emit: ptr<ProcStrs> = sl_of3("./flow", "mlir", "compiler/fixtures/mlir_opt/tensor_boundary.flow")
     sl_push(emit, "--lenient")
     if t_run_argv(emit) != 0 {
-        outln("flow mlir failed: " + t_err())
+        outln("flow mlir failed:")
+        outln(read_text(t_err()))
         return T_FAIL
     }
     let input: string = "build/tensor_boundary.mlir"
@@ -30,6 +31,8 @@ function check_tensor_boundary_bufferizes() -> i32 {
     let emit: ptr<ProcStrs> = sl_of3("./flow", "mlir", "compiler/fixtures/mlir_opt/tensor_boundary.flow")
     sl_push(emit, "--lenient")
     if t_run_argv(emit) != 0 {
+        outln("flow mlir failed during bufferization setup:")
+        outln(read_text(t_err()))
         return T_FAIL
     }
     let input: string = "build/tensor_boundary.mlir"
