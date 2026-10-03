@@ -30,6 +30,7 @@ benchmarks/
 │   ├── mandelbrot_benchmark.flow  # Fractal computation
 │   ├── matmul_benchmark.flow     # Matrix multiplication
 │   ├── nbody_benchmark.flow      # N-body simulation
+│   ├── parallel_scaling.flow     # Serial and disjoint-chunk parallel scaling
 │   └── sort_benchmark.flow       # Sorting algorithms
 └── runner.flow              # Benchmark runner with statistics
 ```
@@ -55,6 +56,7 @@ benchmarks/
 | `mandelbrot` | Fractal computation (scalar, unrolled) | Mpixels/sec |
 | `nbody` | N-body gravitational simulation | M interactions/sec |
 | `fft` | Cooley-Tukey FFT | GFLOPS |
+| `parallel_scaling` | Serial and disjoint-chunk parallel passes | Time (ms), efficiency |
 | `sort` | Quicksort, heapsort, insertion sort | Time (ms) |
 
 ## Performance Targets
