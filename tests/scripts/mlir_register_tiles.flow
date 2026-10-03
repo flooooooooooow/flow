@@ -41,6 +41,21 @@ function check_target_metadata() -> i32 {
     return T_PASS
 }
 
+function check_generic_target_stays_vector_only() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--register-tiles")
+    sl_push(argv, "compiler/fixtures/mlir_opt/register_tile_nested.flow")
+    sl_push(argv, t_tmp() + "/generic.mlir")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    if t_run(c) != 0 { return T_FAIL }
+    let output: string = read_text(t_tmp() + "/generic.mlir")
+    if not a_contains(output, "vector.outerproduct") { return T_FAIL }
+    if not a_contains(output, "flow.register_tile_lowering = \"vector.outerproduct\"") { return T_FAIL }
+    if a_contains(output, "flow.register_tile_target = \"amx\"") or
+       a_contains(output, "flow.register_tile_target = \"sme\"") or
+       a_contains(output, "flow.register_tile_target = \"nvvm\"") { return T_FAIL }
+    return T_PASS
+}
+
 function check_cli_target_selection() -> i32 {
     let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--register-tiles")
     sl_push(argv, "--register-tile-target=nvvm")
@@ -61,7 +76,7 @@ function check_target_lowering_families() -> i32 {
     let mut i: i32 = 0
     while i < 3 {
         let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--register-tiles")
-        sl_push(argv, "compiler/fixtures/mlir_opt/register_tile_nested.flow")
+        sl_push(argv, "compiler/fixtures/mlir_opt/register_tile_3d.flow")
         sl_push(argv, t_tmp() + "/target-" + sl_get(targets, i) + ".mlir")
         let c: ptr<ProcCmd> = t_cmd(argv)
         cmd_env(c, "FLOWC_MLIR_REGISTER_TILE_TARGET", sl_get(targets, i))
@@ -69,6 +84,7 @@ function check_target_lowering_families() -> i32 {
         let output: string = read_text(t_tmp() + "/target-" + sl_get(targets, i) + ".mlir")
         if not a_contains(output, "flow.register_tile_lowering = \"" + sl_get(expected, i) + "\"") { return T_FAIL }
         if not a_contains(output, "flow.register_tile_target = \"" + sl_get(targets, i) + "\"") { return T_FAIL }
+        if not a_contains(output, "flow.register_tile_lanes = 24") { return T_FAIL }
         i = i + 1
     }
     return T_PASS
@@ -107,6 +123,17 @@ function check_invalid_lane_budget_refuses_configuration() -> i32 {
     return T_PASS
 }
 
+function check_overflow_lane_budget_refuses_configuration() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--register-tiles")
+    sl_push(argv, "compiler/fixtures/mlir_opt/register_tile_nested.flow")
+    sl_push(argv, t_tmp() + "/overflow-budget.mlir")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    cmd_env(c, "FLOWC_MLIR_REGISTER_TILE_MAX_LANES", "4294967552")
+    if t_run(c) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "must be a positive integer") { return T_FAIL }
+    return T_PASS
+}
+
 function main() -> i32 {
     t_begin("mlir_register_tiles")
     t_start()
@@ -122,6 +149,9 @@ function main() -> i32 {
     t_end("lane_budget", check_lane_budget_refuses_tile())
     t_start()
     t_end("invalid_lane_budget", check_invalid_lane_budget_refuses_configuration())
+    t_end("overflow_lane_budget", check_overflow_lane_budget_refuses_configuration())
+    t_start()
+    t_end("generic_target_contract", check_generic_target_stays_vector_only())
     t_done()
     return 0
 }
