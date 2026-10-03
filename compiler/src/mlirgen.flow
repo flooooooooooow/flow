@@ -3003,6 +3003,9 @@ function mlg_register_tile_cap(s: string, out: ptr<i32>) -> i32 {
         if p[i] < 48 or p[i] > 57 {
             return 0
         }
+        if cap > 214748364 or (cap == 214748364 and p[i] > 55) {
+            return 0
+        }
         cap = cap * 10 + (p[i] - 48)
         i = i + 1
     }
