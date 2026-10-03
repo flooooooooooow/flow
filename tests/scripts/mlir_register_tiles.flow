@@ -10,6 +10,8 @@ function check_nested_outer_product() -> i32 {
     let output: string = read_text(t_tmp() + "/nested.mlir")
     if not a_contains(output, "vector.outerproduct") { return T_FAIL }
     if not a_contains(output, "vector<4xvector<4xf32>>") { return T_FAIL }
+    if not a_contains(output, "flow.register_tile_lanes = 16") { return T_FAIL }
+    if not a_contains(output, "flow.register_tile_max_lanes = 256") { return T_FAIL }
     return T_PASS
 }
 
@@ -23,6 +25,7 @@ function check_target_metadata() -> i32 {
     let output: string = read_text(t_tmp() + "/target.mlir")
     if not a_contains(output, "flow.register_tile_target = \"amx\"") { return T_FAIL }
     if not a_contains(output, "flow.register_tile_lowering = \"amx.tile_mulf\"") { return T_FAIL }
+    if not a_contains(output, "flow.register_tile_lanes = 16") { return T_FAIL }
     return T_PASS
 }
 

@@ -142,7 +142,9 @@ tile shape for later AMX, SME, or GPU target selection.
 
 The default lane budget is 256 scalar lanes. Set
 `FLOWC_MLIR_REGISTER_TILE_MAX_LANES` to a smaller target budget when a tile
-must fit a particular register file.
+must fit a particular register file. The emitter records both
+`flow.register_tile_lanes` and `flow.register_tile_max_lanes` beside each
+outer-product operation for downstream register-pressure analysis.
 
 Set `FLOWC_MLIR_REGISTER_TILE_TARGET` to `amx`, `sme`, or `nvvm` to attach the
 hardware selection metadata used by a later target lowering. The emitter also
