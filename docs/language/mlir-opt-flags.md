@@ -92,6 +92,11 @@ Use `--enable-affine-skewing --affine-skew-factor=N` to add the opt-in
 `affine-loop-skew` pass. The factor must be a positive integer.
 The pass is opt-in and runs inside the function pipeline.
 
+Use `--enable-affine-parallelize` to add the opt-in `affine-parallelize` pass.
+It converts eligible affine loops to one-dimensional `affine.parallel` loops.
+The pass stays opt-in because dependence analysis determines which loops are
+safe to parallelize.
+
 Use `--enable-affine-tiling --affine-tile-sizes 64,32,8` for hierarchical
 tiling. Two through four positive sizes up to 4096 are accepted. The matching
 affine tiling passes are emitted in the listed order.
