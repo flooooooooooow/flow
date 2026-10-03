@@ -6,7 +6,7 @@
 # Each step is a function the other CLI modules call directly, and a
 # command of its own for callers outside the CLI (CI, benchmarks, scripts):
 #
-#   flow flow-to-mlir [--gpu] [--wasm32] [--register-tiles] [--register-tile-target TARGET] [--register-tile-max-lanes N] [--aosoa-pad] [--aosoa-pad-auto] [--aosoa-swizzle] [--jit] [--lenient] IN.flow OUT.mlir
+#   flow flow-to-mlir [--gpu] [--wasm32] [--affine] [--tile-size N] [--tile-l2-size N] [--register-tiles] [--register-tile-target TARGET] [--register-tile-max-lanes N] [--aosoa-pad] [--aosoa-pad-auto] [--aosoa-swizzle] [--jit] [--lenient] IN.flow OUT.mlir
 #   flow flow-to-llvm [--wasm32] [--optimize OLEVEL] IN.flow OUT.ll
 #   flow mlir-lower IN.mlir OUT.ll | --tools
 #   flow mlir-optimize [FLAGS] [--opt-report] IN.mlir OUT.mlir
@@ -21,6 +21,9 @@
 # the MLIR.
 #   --gpu     @gpu kernels as a gpu.module (FLOWC_MLIR_GPU=1)
 #   --wasm32  ILP32 ABI: libc size_t/long as i32 (FLOWC_MLIR_SIZE_T=32)
+#   --affine  enable static-bound affine.for lowering
+#   --tile-size N  set the inner affine tile size
+#   --tile-l2-size N  set the outer affine tile size
 #   --aosoa-pad  enable one-element AoSoA conflict padding
 #   --aosoa-pad-auto  pad power-of-two AoSoA extents
 #   --aosoa-swizzle  enable four-way AoSoA index swizzling
@@ -187,10 +190,27 @@ function env_restore(name: string, old: string) {
     }
 }
 
+function valid_positive_bounded(s: string, hi: i32) -> bool {
+    if s_len(s) == 0 { return false }
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < s_len(s) {
+        let c: i32 = s[i]
+        if c < 48 or c > 57 { return false }
+        if n > hi / 10 or (n == hi / 10 and c - 48 > hi % 10) { return false }
+        n = n * 10 + c - 48
+        i = i + 1
+    }
+    return n > 0
+}
+
 # Emit IN.flow as MLIR into OUT. `args` are flow-to-mlir's arguments.
 export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
     let mut gpu: bool = false
     let mut wasm32: bool = false
+    let mut affine: bool = false
+    let mut tile_size: string = ""
+    let mut tile_l2_size: string = ""
     let mut register_tiles: bool = false
     let mut register_target: string = ""
     let mut register_max_lanes: string = ""
@@ -206,6 +226,30 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
             gpu = true
         } elif s_eq(a, "--wasm32") {
             wasm32 = true
+        } elif s_eq(a, "--affine") {
+            affine = true
+        } elif s_eq(a, "--tile-size") {
+            if i + 1 >= sl_len(args) {
+                errln("flow_to_mlir: --tile-size requires a value")
+                return 2
+            }
+            affine = true
+            tile_size = sl_get(args, i + 1)
+            i = i + 1
+        } elif s_starts(a, "--tile-size=") {
+            affine = true
+            tile_size = s_from(a, 12)
+        } elif s_eq(a, "--tile-l2-size") {
+            if i + 1 >= sl_len(args) {
+                errln("flow_to_mlir: --tile-l2-size requires a value")
+                return 2
+            }
+            affine = true
+            tile_l2_size = sl_get(args, i + 1)
+            i = i + 1
+        } elif s_starts(a, "--tile-l2-size=") {
+            affine = true
+            tile_l2_size = s_from(a, 15)
         } elif s_eq(a, "--register-tiles") {
             register_tiles = true
         } elif s_starts(a, "--register-tile-target=") {
@@ -229,7 +273,7 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
         i = i + 1
     }
     if sl_len(args) - i != 2 {
-        errln("usage: flow flow-to-mlir [--gpu] [--wasm32] [--register-tiles] [--register-tile-target TARGET] [--register-tile-max-lanes N] [--aosoa-pad] [--aosoa-pad-auto] [--aosoa-swizzle] [--jit] [--lenient] IN.flow OUT.mlir")
+        errln("usage: flow flow-to-mlir [--gpu] [--wasm32] [--affine] [--tile-size N] [--tile-l2-size N] [--register-tiles] [--register-tile-target TARGET] [--register-tile-max-lanes N] [--aosoa-pad] [--aosoa-pad-auto] [--aosoa-swizzle] [--jit] [--lenient] IN.flow OUT.mlir")
         return 2
     }
     let input: string = sl_get(args, i)
@@ -256,6 +300,23 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
     }
     if wasm32 {
         cmd_env(c, "FLOWC_MLIR_SIZE_T", "32")
+    }
+    if affine {
+        cmd_env(c, "FLOWC_MLIR_AFFINE", "1")
+    }
+    if s_len(tile_size) > 0 {
+        if not valid_positive_bounded(tile_size, 64) {
+            errln("flow_to_mlir: --tile-size must be a positive integer from 2 through 64")
+            return 2
+        }
+        cmd_env(c, "FLOWC_MLIR_TILE", tile_size)
+    }
+    if s_len(tile_l2_size) > 0 {
+        if not valid_positive_bounded(tile_l2_size, 128) {
+            errln("flow_to_mlir: --tile-l2-size must be a positive integer from 2 through 128")
+            return 2
+        }
+        cmd_env(c, "FLOWC_MLIR_TILE_L2", tile_l2_size)
     }
     if register_tiles {
         cmd_env(c, "FLOWC_MLIR_REGISTER_TILES", "1")
