@@ -1,3 +1,4 @@
+import "tools/flow_cli/shape_specializer.flow"
 # @module tools.flow_cli.mlir_tools
 # @means  The MLIR toolchain steps of the `flow` command line: emit MLIR
 #         with flowc, optimize it with mlir-opt, lower it to LLVM IR, and
@@ -26,6 +27,7 @@
 #   --aosoa-swizzle  enable four-way AoSoA index swizzling
 #   --register-tiles  enable vector.outerproduct register-tile lowering
 #   --jit     guard modes jit, mlir and compile (FLOWC_MODE=jit), as the JIT
+#   --shape-spec=<SHAPE_STR> (e.g. "memref<?xf32>=memref<1024xf32>")
 #             runner used; it also implies --lenient
 #   --lenient type errors that are not fatal are warnings (FLOWC_LENIENT=1);
 #             otherwise any type error fails the program
@@ -198,6 +200,7 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
     let mut aosoa_pad_auto: bool = false
     let mut aosoa_swizzle: bool = false
     let mut jit: bool = false
+    let mut shape_spec: string = ""
     let mut lenient: bool = false
     let mut i: i32 = 0
     while i < sl_len(args) {
@@ -434,8 +437,19 @@ export function flow_to_llvm(args: ptr<ProcStrs>) -> i32 {
         return 1
     }
     let rc: i32 = mlir_lower(sl_of2(work + "/program.mlir", output))
+    if s_len(shape_spec) > 0 {
+        let mut idx: i32 = s_find(shape_spec, "=")
+        if idx > 0 {
+            let dyn_s: string = s_slice(shape_spec, 0, idx)
+            let stat_s: string = s_slice(shape_spec, idx + 1, s_len(shape_spec))
+            let work_dir: string = mktemp_dir(tmp_base() + "/flow_shape_XXXXXX")
+            flow_jit_specialize_file(output, work_dir + "/spec.mlir", "tensor_matmul", dyn_s, stat_s)
+            let _cf: bool = copy_file(work_dir + "/spec.mlir", output)
+        }
+    }
     rm_rf(work)
     return rc
+
 }
 
 # ---------------------------------------------------------------------------

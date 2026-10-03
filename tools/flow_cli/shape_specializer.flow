@@ -1,0 +1,52 @@
+import "stdlib/string.flow"
+import "stdlib/fileio.flow"
+
+export function specialize_mlir_shapes(mlir_code: string, func_name: string, dyn_shape: string, static_shape: string) -> string {
+    let func_decl: string = "func.func @" + func_name + "("
+    let start_idx: i32 = s_find(mlir_code, func_decl)
+
+    if start_idx < 0 {
+        return mlir_code
+    }
+
+    let mut brace_count: i32 = 0
+    let mut in_func: bool = false
+    let mut end_idx: i32 = -1
+
+    let n: i32 = s_len(mlir_code)
+    let mut i: i32 = start_idx
+
+    while i < n {
+        let ch: u8 = s_byte(mlir_code, i)
+        if ch == 123 { # '{'
+            brace_count = brace_count + 1
+            in_func = true
+        } elif ch == 125 { # '}'
+            brace_count = brace_count - 1
+            if in_func and brace_count == 0 {
+                end_idx = i + 1
+                break
+            }
+        }
+        i = i + 1
+    }
+
+    if end_idx < 0 {
+        return mlir_code
+    }
+
+    let prefix: string = s_slice(mlir_code, 0, start_idx)
+    let func_body: string = s_slice(mlir_code, start_idx, end_idx)
+    let suffix: string = s_slice(mlir_code, end_idx, n)
+
+    # Safe string replace inside the function body
+    let replaced_body: string = s_replace(func_body, dyn_shape, static_shape)
+
+    return prefix + replaced_body + suffix
+}
+
+export function flow_jit_specialize_file(input_file: string, output_file: string, func_name: string, dyn_shape: string, static_shape: string) {
+    let code: string = read_text(input_file)
+    let specialized: string = specialize_mlir_shapes(code, func_name, dyn_shape, static_shape)
+    let _ok: bool = write_text(output_file, specialized)
+}
