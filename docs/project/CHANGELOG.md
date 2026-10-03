@@ -4,6 +4,8 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+- FFI: Zero-copy contiguous buffer ABI (`ffi_buffer_handoff`), boundary instrumentation, and benchmarks. (#737)
+
 ### Type checker diagnostics
 
 - flowc prints the checker's warnings as `FILE:LINE:COL: warning: ...`: non-exhaustive `match`, the address of a pointer, an unknown `handle` handler (#678). `FLOWC_WARNINGS=0` (`flowc_emit.sh --no-warnings`) silences them and `FLOWC_WERROR=1` (`--Werror`) makes them errors. Warnings inside `lib/stdlib` and `lib/runtime` show only with `FLOWC_WARNINGS=all`.
