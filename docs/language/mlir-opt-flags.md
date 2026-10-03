@@ -132,8 +132,10 @@ The default lane budget is 256 scalar lanes. Set
 must fit a particular register file.
 
 Set `FLOWC_MLIR_REGISTER_TILE_TARGET` to `amx`, `sme`, or `nvvm` to attach the
-hardware selection metadata used by a later target lowering. The default is
-`generic`.
+hardware selection metadata used by a later target lowering. The emitter also
+records the target intrinsic family: `amx.tile_mulf`, `arm_sme.outerproduct`,
+or `nvvm.wgmma`. The default is `generic`, which keeps
+`vector.outerproduct`.
 
 ```bash
 ./flow mlir compiler/fixtures/mlir/register_tile_probe.flow --register-tiles
