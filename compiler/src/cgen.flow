@@ -1517,6 +1517,61 @@ function flowc_cgen_find_fn(arena: AstArena, src: ptr<u8>, start: i32, end: i32)
     return AST_NONE
 }
 
+# 1 when function `fn` carries the attribute named `lit`.
+function flowc_cgen_fn_has_attr(arena: AstArena, src: ptr<u8>, fn: i32, lit: string) -> i32 {
+    let mut i: i32 = 0
+    while i < fn {
+        if arena.nodes[i].kind == AST_ATTR and arena.nodes[i].b == fn {
+            if flowc_cgen_span_is(src, arena.nodes[i].name_start, arena.nodes[i].name_end, lit) == 1 {
+                return 1
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# C libm spelling for a @libm Flow function whose return type is f32.
+# `abs` is the only stdlib name whose float form is not `<name>f`.
+function flowc_cgen_libm_f32_name(src: ptr<u8>, start: i32, end: i32) -> string {
+    if flowc_cgen_span_is(src, start, end, "abs") == 1 { return "fabsf" }
+    if flowc_cgen_span_is(src, start, end, "acos") == 1 { return "acosf" }
+    if flowc_cgen_span_is(src, start, end, "acosh") == 1 { return "acoshf" }
+    if flowc_cgen_span_is(src, start, end, "asin") == 1 { return "asinf" }
+    if flowc_cgen_span_is(src, start, end, "asinh") == 1 { return "asinhf" }
+    if flowc_cgen_span_is(src, start, end, "atan") == 1 { return "atanf" }
+    if flowc_cgen_span_is(src, start, end, "atan2") == 1 { return "atan2f" }
+    if flowc_cgen_span_is(src, start, end, "atanh") == 1 { return "atanhf" }
+    if flowc_cgen_span_is(src, start, end, "cbrt") == 1 { return "cbrtf" }
+    if flowc_cgen_span_is(src, start, end, "ceil") == 1 { return "ceilf" }
+    if flowc_cgen_span_is(src, start, end, "copysign") == 1 { return "copysignf" }
+    if flowc_cgen_span_is(src, start, end, "cos") == 1 { return "cosf" }
+    if flowc_cgen_span_is(src, start, end, "cosh") == 1 { return "coshf" }
+    if flowc_cgen_span_is(src, start, end, "exp") == 1 { return "expf" }
+    if flowc_cgen_span_is(src, start, end, "exp2") == 1 { return "exp2f" }
+    if flowc_cgen_span_is(src, start, end, "expm1") == 1 { return "expm1f" }
+    if flowc_cgen_span_is(src, start, end, "fabs") == 1 { return "fabsf" }
+    if flowc_cgen_span_is(src, start, end, "fdim") == 1 { return "fdimf" }
+    if flowc_cgen_span_is(src, start, end, "floor") == 1 { return "floorf" }
+    if flowc_cgen_span_is(src, start, end, "fmax") == 1 { return "fmaxf" }
+    if flowc_cgen_span_is(src, start, end, "fmin") == 1 { return "fminf" }
+    if flowc_cgen_span_is(src, start, end, "fmod") == 1 { return "fmodf" }
+    if flowc_cgen_span_is(src, start, end, "hypot") == 1 { return "hypotf" }
+    if flowc_cgen_span_is(src, start, end, "log") == 1 { return "logf" }
+    if flowc_cgen_span_is(src, start, end, "log1p") == 1 { return "log1pf" }
+    if flowc_cgen_span_is(src, start, end, "log2") == 1 { return "log2f" }
+    if flowc_cgen_span_is(src, start, end, "log10") == 1 { return "log10f" }
+    if flowc_cgen_span_is(src, start, end, "pow") == 1 { return "powf" }
+    if flowc_cgen_span_is(src, start, end, "round") == 1 { return "roundf" }
+    if flowc_cgen_span_is(src, start, end, "sin") == 1 { return "sinf" }
+    if flowc_cgen_span_is(src, start, end, "sinh") == 1 { return "sinhf" }
+    if flowc_cgen_span_is(src, start, end, "sqrt") == 1 { return "sqrtf" }
+    if flowc_cgen_span_is(src, start, end, "tan") == 1 { return "tanf" }
+    if flowc_cgen_span_is(src, start, end, "tanh") == 1 { return "tanhf" }
+    if flowc_cgen_span_is(src, start, end, "trunc") == 1 { return "truncf" }
+    return ""
+}
+
 # Count functions with the same name and a body (overloads). Returns count >= 1.
 # Forward declarations (no body) are not counted as overloads.
 function flowc_cgen_count_overloads(arena: AstArena, src: ptr<u8>, start: i32, end: i32) -> i32 {
@@ -3328,6 +3383,80 @@ function flowc_cgen_sig_put_user_libc(arena: AstArena, src: ptr<u8>, buf: ptr<u8
     }
     buf[n] = 0
     return n + 1
+}
+
+# Record `~name\0f32\0` for an @libm function returning f32. Bundle modules
+# are emitted separately, so the entry module sees the marker, not the AST_ATTR.
+function flowc_cgen_sig_put_libm(arena: AstArena, src: ptr<u8>, buf: ptr<u8>, cap: i32, len: i32, fn: i32) -> i32 {
+    if flowc_cgen_fn_has_attr(arena, src, fn, "libm") == 0 {
+        return len
+    }
+    let rt: i32 = arena.nodes[fn].b
+    if rt == AST_NONE or arena.nodes[rt].kind != AST_TYPE or arena.nodes[rt].a != AST_NONE {
+        return len
+    }
+    if flowc_cgen_span_is(src, arena.nodes[rt].name_start, arena.nodes[rt].name_end, "f32") == 0 {
+        return len
+    }
+    let ns: i32 = arena.nodes[fn].name_start
+    let ne: i32 = arena.nodes[fn].name_end
+    if len + (ne - ns) + 6 > cap {
+        return len
+    }
+    let mut n: i32 = len
+    buf[n] = 126
+    n = n + 1
+    let mut i: i32 = ns
+    while i < ne {
+        buf[n] = src[i]
+        n = n + 1
+        i = i + 1
+    }
+    buf[n] = 0
+    n = n + 1
+    buf[n] = 102
+    buf[n + 1] = 51
+    buf[n + 2] = 50
+    buf[n + 3] = 0
+    return n + 4
+}
+
+# 1 when the signature table marks this call's callee as an f32 @libm import.
+function flowc_cgen_sig_libm_is_f32(w: ptr<CgenBuf>, src: ptr<u8>, start: i32, end: i32) -> i32 {
+    let buf: ptr<u8> = w[0].sigs
+    let blen: i32 = w[0].sigs_len
+    if buf == null or blen <= 0 or end <= start {
+        return 0
+    }
+    let nlen: i32 = end - start
+    let mut p: i32 = 0
+    while p < blen {
+        if buf[p] == 126 {
+            let mut i: i32 = 0
+            while i < nlen and p + 1 + i < blen and buf[p + 1 + i] == src[start + i] {
+                i = i + 1
+            }
+            if i == nlen and p + 1 + i < blen and buf[p + 1 + i] == 0 {
+                let v: i32 = p + 2 + nlen
+                if v + 3 < blen and buf[v] == 102 and buf[v + 1] == 51 and buf[v + 2] == 50 and buf[v + 3] == 0 {
+                    return 1
+                }
+            }
+        }
+        while p < blen and buf[p] != 0 {
+            p = p + 1
+        }
+        if p < blen {
+            p = p + 1
+        }
+        while p < blen and buf[p] != 0 {
+            p = p + 1
+        }
+        if p < blen {
+            p = p + 1
+        }
+    }
+    return 0
 }
 
 # 1 when a call to a libc-named function goes to the renamed Flow
@@ -7055,10 +7184,27 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                 return
             }
             if fn_id != AST_NONE or flowc_cgen_is_libc_fn(arena, src, id) == 1 {
-                if flowc_cgen_is_libc_fn(arena, src, id) == 1 and flowc_cgen_call_user_libc(w, arena, src, id, fn_id) == 1 {
-                    flowc_cgen_puts(w, "__flowc_libc_")
+                let mut wrote_name: i32 = 0
+                let mut mapped: string = ""
+                if fn_id != AST_NONE and flowc_cgen_fn_has_attr(arena, src, fn_id, "libm") == 1 {
+                    let rt: i32 = arena.nodes[fn_id].b
+                    if rt != AST_NONE and arena.nodes[rt].kind == AST_TYPE and arena.nodes[rt].a == AST_NONE and flowc_cgen_span_is(src, arena.nodes[rt].name_start, arena.nodes[rt].name_end, "f32") == 1 {
+                        mapped = flowc_cgen_libm_f32_name(src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+                    }
                 }
-                flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+                if strlen(mapped) == 0 and flowc_cgen_sig_libm_is_f32(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end) == 1 {
+                    mapped = flowc_cgen_libm_f32_name(src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+                }
+                if strlen(mapped) > 0 {
+                    flowc_cgen_puts(w, mapped)
+                    wrote_name = 1
+                }
+                if wrote_name == 0 {
+                    if flowc_cgen_is_libc_fn(arena, src, id) == 1 and flowc_cgen_call_user_libc(w, arena, src, id, fn_id) == 1 {
+                        flowc_cgen_puts(w, "__flowc_libc_")
+                    }
+                    flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+                }
             } elif flowc_cgen_put_imported_overload(w, arena, src, id) == 1 {
                 # An overload of an imported function: its mangled name (#1044).
                 fn_id = AST_NONE
@@ -12581,6 +12727,7 @@ export function flowc_cgen_collect_sigs(
             n = flowc_cgen_sig_put_fats(arena, src, buf, cap, n, fn)
             n = flowc_cgen_sig_put_recv(arena, src, buf, cap, n, fn)
             n = flowc_cgen_sig_put_user_libc(arena, src, buf, cap, n, fn)
+            n = flowc_cgen_sig_put_libm(arena, src, buf, cap, n, fn)
         }
         let st: i32 = flowc_cgen_unwrap(arena, item, AST_STRUCT)
         if st != AST_NONE {

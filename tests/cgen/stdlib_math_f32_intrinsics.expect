@@ -1,0 +1,15 @@
++ sinf(
++ cosf(
++ sqrtf(
++ fabsf(
++ expf(
++ logf(
++ tanf(
++ power(
+- = sin(
+- = cos(
+- = sqrt(
+- = exp(
+- = log(
+- = tan(
+exit 0
