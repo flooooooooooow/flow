@@ -32,6 +32,30 @@ function check_padding_adds_storage() -> i32 {
     return T_PASS
 }
 
+function check_auto_padding_targets_power_of_two() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-pad-auto")
+    sl_push(argv, "compiler/fixtures/mlir_opt/aosoa_padding.flow")
+    sl_push(argv, t_tmp() + "/aosoa-auto.mlir")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    if t_run(c) != 0 { return T_FAIL }
+    let output: string = read_text(t_tmp() + "/aosoa-auto.mlir")
+    if not a_contains(output, "memref<5xf32>") { return T_FAIL }
+    if not a_contains(output, "Particle_SoA_4") { return T_FAIL }
+    return T_PASS
+}
+
+function check_auto_padding_leaves_irregular_extent() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-pad-auto")
+    sl_push(argv, "compiler/fixtures/mlir_opt/aosoa_non_power.flow")
+    sl_push(argv, t_tmp() + "/aosoa-auto-irregular.mlir")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    if t_run(c) != 0 { return T_FAIL }
+    let output: string = read_text(t_tmp() + "/aosoa-auto-irregular.mlir")
+    if not a_contains(output, "memref<3xf32>") { return T_FAIL }
+    if a_contains(output, "memref<4xf32>") { return T_FAIL }
+    return T_PASS
+}
+
 function check_padding_rejects_malformed_value() -> i32 {
     let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-pad")
     sl_push(argv, "compiler/fixtures/mlir_opt/aosoa_padding.flow")
@@ -87,6 +111,8 @@ function main() -> i32 {
     t_start()
     t_end("non_power_of_two_extent", check_non_power_of_two_extent())
     t_end("padding_adds_storage", check_padding_adds_storage())
+    t_end("auto_padding_targets_power_of_two", check_auto_padding_targets_power_of_two())
+    t_end("auto_padding_leaves_irregular_extent", check_auto_padding_leaves_irregular_extent())
     t_start()
     t_end("padding_rejects_malformed_value", check_padding_rejects_malformed_value())
     t_start()
