@@ -445,6 +445,7 @@ export function flow_to_llvm(args: ptr<ProcStrs>) -> i32 {
             let work_dir: string = mktemp_dir(tmp_base() + "/flow_shape_XXXXXX")
             flow_jit_specialize_file(output, work_dir + "/spec.mlir", "tensor_matmul", dyn_s, stat_s)
             let _cf: bool = copy_file(work_dir + "/spec.mlir", output)
+            rm_rf(work_dir)
         }
     }
     rm_rf(work)
