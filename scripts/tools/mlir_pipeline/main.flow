@@ -251,10 +251,12 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         let a: string = argv[i] as string
         let mut lv: string = ""
         if ft_eq(a, "--opt-level") {
-            if i + 1 < argc {
-                lv = argv[i + 1] as string
-                i = i + 1
+            if i + 1 >= argc {
+                ft_errln("mlir_pipeline: --opt-level requires a value")
+                return 2
             }
+            lv = argv[i + 1] as string
+            i = i + 1
         } elif ft_starts(a, "--opt-level=") {
             lv = ft_from(a, 12)
         } elif ft_eq(a, "--no-vectorization") {
