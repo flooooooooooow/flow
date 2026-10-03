@@ -76,3 +76,12 @@ def estimate_backend(ast: List[Any]) -> str:
         return "mlir"
         
     return "c"
+
+def should_optimize_mlir_workload(total_loop_iters: int, max_loop_depth: int, elementwise_ops: int) -> bool:
+    """
+    Determines if MLIR optimization pipeline pass overhead can be amortized by the workload scale.
+    For small/trivial workloads, heavy MLIR optimization passes are bypassed to minimize time-to-first-result.
+    """
+    if total_loop_iters < 1000 and max_loop_depth <= 1 and elementwise_ops < 20:
+        return False
+    return True

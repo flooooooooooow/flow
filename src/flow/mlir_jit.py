@@ -5,15 +5,33 @@ Real JIT compilation and execution of MLIR code
 """
 
 import ctypes
+import hashlib
+import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
+from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from .mlir_optimizer import specialize_shapes
-import os
-import shutil
+
+@dataclass
+class JITPhaseTimings:
+    gen_time_ms: float = 0.0
+    opt_time_ms: float = 0.0
+    lowering_time_ms: float = 0.0
+    codegen_link_time_ms: float = 0.0
+    cache_lookup_time_ms: float = 0.0
+    total_compile_ms: float = 0.0
+    warm_cache: bool = False
+    cold_first_result: bool = True
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
 
 class MLIRJIT:
     def _find_mlir_opt(self) -> Optional[str]:
@@ -79,8 +97,35 @@ class MLIRJIT:
         self.compiled_modules: Dict[str, Any] = {}
         self._loaded_libs: List[ctypes.CDLL] = []
         self._module_seq = 0
-        
-    def compile_mlir_to_llvm(self, mlir_code: str, module_name: str = "jit_module", shape_replacements: Optional[dict[str, str]] = None) -> str:
+        self.last_timings: Optional[JITPhaseTimings] = None
+        self._specialization_cache: Dict[str, Tuple[Path, Dict[str, Any]]] = {}
+        self._cache_dir = Path(self.temp_dir) / "cache"
+        self._cache_dir.mkdir(parents=True, exist_ok=True)
+
+    def _get_cache_key(
+        self,
+        mlir_code: str,
+        shape_replacements: Optional[dict[str, str]] = None,
+        opt_kwargs: Optional[dict[str, Any]] = None,
+        asan: bool = False,
+        link_runtime: Optional[bool] = None,
+    ) -> str:
+        hasher = hashlib.sha256()
+        hasher.update(mlir_code.encode("utf-8"))
+        if shape_replacements:
+            hasher.update(json.dumps(shape_replacements, sort_keys=True).encode("utf-8"))
+        if opt_kwargs:
+            hasher.update(json.dumps(opt_kwargs, sort_keys=True).encode("utf-8"))
+        hasher.update(f"asan={asan},link_rt={link_runtime}".encode("utf-8"))
+        return hasher.hexdigest()
+
+    def compile_mlir_to_llvm(
+        self,
+        mlir_code: str,
+        module_name: str = "jit_module",
+        shape_replacements: Optional[dict[str, str]] = None,
+        timings: Optional[JITPhaseTimings] = None,
+    ) -> str:
         """Compile MLIR to LLVM IR using mlir-opt"""
         mlir_opt = self._find_mlir_opt()
         if mlir_opt is None:
@@ -109,6 +154,7 @@ class MLIRJIT:
         mlir_file.write_text(mlir_code)
         
         # 1) Lower MLIR to LLVM dialect MLIR
+        t_lowering_start = time.perf_counter_ns()
         try:
             # Keep this pipeline conservative and widely supported.
             # The goal for SIMD-first (implicit) is: emit LLVM-friendly IR,
@@ -166,6 +212,9 @@ class MLIRJIT:
             if result2.returncode != 0:
                 print(f"MLIR translation (mlir-translate) failed: {result2.stderr}")
                 return ""
+
+            if timings:
+                timings.lowering_time_ms += (time.perf_counter_ns() - t_lowering_start) / 1e6
 
             return llvm_file.read_text()
             
@@ -266,12 +315,14 @@ class MLIRJIT:
         extra_sources: Optional[List[str]] = None,
         extra_ldflags: Optional[List[str]] = None,
         link_runtime: Optional[bool] = None,
+        timings: Optional[JITPhaseTimings] = None,
     ) -> Optional[Path]:
         """Compile LLVM IR to a standalone executable.
 
         When link_runtime is True (or FLOW_JIT_LINK_RUNTIME=1), also link the
         core Flow C runtime so extern symbols resolve like ./flow mlir-run.
         """
+        t_codegen_start = time.perf_counter_ns()
         module_name = self._unique_module_name(module_name)
         llvm_file = Path(self.temp_dir) / f"{module_name}.ll"
         exe_file = Path(self.temp_dir) / module_name
@@ -303,6 +354,8 @@ class MLIRJIT:
             if result.returncode != 0:
                 print(f"LLVM executable build failed: {result.stderr}")
                 return None
+            if timings:
+                timings.codegen_link_time_ms += (time.perf_counter_ns() - t_codegen_start) / 1e6
             return exe_file
         except FileNotFoundError:
             print("❌ clang not found. Install Clang for JIT compilation.")
@@ -398,19 +451,59 @@ class MLIRJIT:
                            shape_replacements: Optional[dict[str, str]] = None,
                            args: List[Any] = None,
                            *,
-                           link_runtime: Optional[bool] = None) -> Optional[Any]:
+                           link_runtime: Optional[bool] = None,
+                           opt_kwargs: Optional[dict[str, Any]] = None) -> Optional[Any]:
         """Full JIT pipeline: MLIR -> LLVM -> native executable -> subprocess execute.
 
         Native code never runs in the Python process (segfaults cannot be caught
         via try/except). On crash, automatically retries with an ASAN executable.
         """
         del func_name, args  # entry point is always main() in the JIT executable
+        t_total_start = time.perf_counter_ns()
+        timings = JITPhaseTimings()
+        self.last_timings = timings
+
+        t_cache_start = time.perf_counter_ns()
+        asan_pref = self._asan_preferred() and not self._force_fast_jit()
+        cache_key = self._get_cache_key(
+            mlir_code=mlir_code,
+            shape_replacements=shape_replacements,
+            opt_kwargs=opt_kwargs,
+            asan=asan_pref,
+            link_runtime=link_runtime,
+        )
+
+        # Check cache
+        if cache_key in self._specialization_cache:
+            exe, meta = self._specialization_cache[cache_key]
+            if exe.exists():
+                timings.cache_lookup_time_ms = (time.perf_counter_ns() - t_cache_start) / 1e6
+                timings.warm_cache = True
+                timings.cold_first_result = False
+                timings.total_compile_ms = timings.cache_lookup_time_ms
+                code = self._run_native_executable(exe)
+                return code
+
+        timings.cache_lookup_time_ms = (time.perf_counter_ns() - t_cache_start) / 1e6
+
         try:
-            
             if shape_replacements:
                 shape_replacements = shape_replacements.copy()
                 shape_replacements['__func__'] = func_name
-            llvm_ir = self.compile_mlir_to_llvm(mlir_code, shape_replacements=shape_replacements)
+
+            # Optional optimization phase if opt_kwargs provided
+            current_mlir = mlir_code
+            if opt_kwargs:
+                from .mlir_optimizer import MLIROptimizer
+                optimizer = MLIROptimizer()
+                tmp_in = Path(self.temp_dir) / f"{cache_key[:8]}_in.mlir"
+                tmp_out = Path(self.temp_dir) / f"{cache_key[:8]}_opt.mlir"
+                tmp_in.write_text(mlir_code)
+                res = optimizer.optimize(str(tmp_in), str(tmp_out), timings=timings, **opt_kwargs)
+                if res == 0 and tmp_out.exists():
+                    current_mlir = tmp_out.read_text()
+
+            llvm_ir = self.compile_mlir_to_llvm(current_mlir, shape_replacements=shape_replacements, timings=timings)
             if not llvm_ir:
                 return None
 
@@ -427,10 +520,15 @@ class MLIRJIT:
             last_code: Optional[int] = None
             for idx, (label, asan) in enumerate(attempts):
                 exe = self.compile_llvm_to_executable(
-                    llvm_ir, asan=asan, link_runtime=link_runtime
+                    llvm_ir, asan=asan, link_runtime=link_runtime, timings=timings
                 )
                 if exe is None:
                     continue
+
+                # Store in specialization cache if successful compilation
+                self._specialization_cache[cache_key] = (exe, timings.to_dict())
+
+                timings.total_compile_ms = (time.perf_counter_ns() - t_total_start) / 1e6
                 code = self._run_native_executable(exe)
                 last_code = code
                 if not self.is_crash_exit(code):

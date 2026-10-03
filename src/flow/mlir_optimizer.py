@@ -10,7 +10,7 @@ import tempfile
 import re
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Any
 
 
 class MLIROptimizer:
@@ -206,7 +206,8 @@ class MLIROptimizer:
                  enable_inline: bool = True,
                  enable_loop_pipelining: bool = False,
                  enable_multi_buffering: bool = False,
-                 optimization_level: str = "O2") -> int:
+                 optimization_level: str = "O2",
+                 timings: Optional[Any] = None) -> int:
         """
         Apply MLIR optimization passes.
 
@@ -255,6 +256,8 @@ class MLIROptimizer:
             output_mlir
         ]
         
+        import time
+        t_opt_start = time.perf_counter_ns()
         try:
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:
@@ -265,6 +268,8 @@ class MLIROptimizer:
                     self._opt_capable = False
                     return 0
                 print(f"MLIR optimization failed: {err}", file=sys.stderr)
+            if timings is not None and hasattr(timings, 'opt_time_ms'):
+                timings.opt_time_ms += (time.perf_counter_ns() - t_opt_start) / 1e6
             return result.returncode
         except Exception as e:
             print(f"Error running MLIR optimizer: {e}", file=sys.stderr)
