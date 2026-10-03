@@ -12,7 +12,8 @@ function check_async_pipeline() -> i32 {
         return T_FAIL
     }
     let output: string = read_text(t_out())
-    if not a_contains(output, "flow.async_buffers = 4, flow.async_target = \"nvptx\"") { return T_FAIL }
+    if not a_contains(output, "flow.async_buffers = 4") { return T_FAIL }
+    if not a_contains(output, "flow.async_target = \"nvptx\"") { return T_FAIL }
     if not a_contains(output, "%copy1 = nvgpu.device_async_copy") { return T_FAIL }
     if not a_contains(output, "%group2 = nvgpu.device_async_create_group %copy2") { return T_FAIL }
     if not a_contains(output, "nvgpu.device_async_wait %group1") { return T_FAIL }
@@ -45,6 +46,21 @@ function check_target_engines() -> i32 {
     if not a_contains(amd, "flow.async_copy_engine = \"amdgpu.async\"") { return T_FAIL }
     if a_contains(amd, "nvgpu.device_async_copy") { return T_FAIL }
     if not a_contains(amd, "memref.copy %src0, %dst0") { return T_FAIL }
+    return T_PASS
+}
+
+function check_circular_buffer_slots() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_async/main.flow")
+    sl_push(argv, "--stages=5")
+    sl_push(argv, "--buffers=2")
+    sl_push(argv, "--target=gpu")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "flow.async_buffer_slots = 2") { return T_FAIL }
+    if not a_contains(output, "flow.async_stage_count = 5") { return T_FAIL }
+    if not a_contains(output, "flow.async_schedule = \"circular\"") { return T_FAIL }
+    if count_of(output, "// async.buffer_slot 0") != 3 { return T_FAIL }
+    if count_of(output, "// async.buffer_slot 1") != 2 { return T_FAIL }
     return T_PASS
 }
 
@@ -86,6 +102,7 @@ function main() -> i32 {
     t_end("pipeline_dependencies", check_async_pipeline())
     t_end("target_capability_gate", check_requires_target())
     t_end("target_copy_engines", check_target_engines())
+    t_end("circular_buffer_slots", check_circular_buffer_slots())
     t_end("unknown_target_rejected", check_rejects_unknown_target())
     t_end("empty_operation_rejected", check_rejects_empty_operation())
     t_end("malformed_numbers_rejected", check_rejects_malformed_numbers())
