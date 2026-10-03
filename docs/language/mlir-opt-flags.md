@@ -92,7 +92,9 @@ affine tiling passes are emitted in the listed order.
 
 ## Async copy capability gate
 
-Loop pipelining and multi-buffering remain opt-in. The GPU async-region pass
+Loop pipelining and multi-buffering remain opt-in. Multi-buffering defaults to
+two buffers. Set `--multi-buffering-factor N` for a multiplier from 2 through
+8. The GPU async-region pass
 also requires an explicit target capability:
 
 ```bash
