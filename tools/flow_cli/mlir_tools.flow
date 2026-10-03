@@ -6,7 +6,7 @@
 # Each step is a function the other CLI modules call directly, and a
 # command of its own for callers outside the CLI (CI, benchmarks, scripts):
 #
-#   flow flow-to-mlir [--gpu] [--wasm32] [--register-tiles] [--aosoa-pad] [--aosoa-swizzle] [--jit] [--lenient] IN.flow OUT.mlir
+#   flow flow-to-mlir [--gpu] [--wasm32] [--register-tiles] [--register-tile-target TARGET] [--register-tile-max-lanes N] [--aosoa-pad] [--aosoa-pad-auto] [--aosoa-swizzle] [--jit] [--lenient] IN.flow OUT.mlir
 #   flow flow-to-llvm [--wasm32] [--optimize OLEVEL] IN.flow OUT.ll
 #   flow mlir-lower IN.mlir OUT.ll | --tools
 #   flow mlir-optimize [FLAGS] [--opt-report] IN.mlir OUT.mlir
@@ -22,6 +22,7 @@
 #   --gpu     @gpu kernels as a gpu.module (FLOWC_MLIR_GPU=1)
 #   --wasm32  ILP32 ABI: libc size_t/long as i32 (FLOWC_MLIR_SIZE_T=32)
 #   --aosoa-pad  enable one-element AoSoA conflict padding
+#   --aosoa-pad-auto  pad power-of-two AoSoA extents
 #   --aosoa-swizzle  enable four-way AoSoA index swizzling
 #   --register-tiles  enable vector.outerproduct register-tile lowering
 #   --jit     guard modes jit, mlir and compile (FLOWC_MODE=jit), as the JIT
@@ -191,7 +192,10 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
     let mut gpu: bool = false
     let mut wasm32: bool = false
     let mut register_tiles: bool = false
+    let mut register_target: string = ""
+    let mut register_max_lanes: string = ""
     let mut aosoa_pad: bool = false
+    let mut aosoa_pad_auto: bool = false
     let mut aosoa_swizzle: bool = false
     let mut jit: bool = false
     let mut lenient: bool = false
@@ -204,8 +208,14 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
             wasm32 = true
         } elif s_eq(a, "--register-tiles") {
             register_tiles = true
+        } elif s_starts(a, "--register-tile-target=") {
+            register_target = s_from(a, 23)
+        } elif s_starts(a, "--register-tile-max-lanes=") {
+            register_max_lanes = s_from(a, 26)
         } elif s_eq(a, "--aosoa-pad") {
             aosoa_pad = true
+        } elif s_eq(a, "--aosoa-pad-auto") {
+            aosoa_pad_auto = true
         } elif s_eq(a, "--aosoa-swizzle") {
             aosoa_swizzle = true
         } elif s_eq(a, "--jit") {
@@ -219,7 +229,7 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
         i = i + 1
     }
     if sl_len(args) - i != 2 {
-        errln("usage: flow flow-to-mlir [--gpu] [--wasm32] [--register-tiles] [--aosoa-pad] [--aosoa-swizzle] [--jit] [--lenient] IN.flow OUT.mlir")
+        errln("usage: flow flow-to-mlir [--gpu] [--wasm32] [--register-tiles] [--register-tile-target TARGET] [--register-tile-max-lanes N] [--aosoa-pad] [--aosoa-pad-auto] [--aosoa-swizzle] [--jit] [--lenient] IN.flow OUT.mlir")
         return 2
     }
     let input: string = sl_get(args, i)
@@ -250,8 +260,17 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
     if register_tiles {
         cmd_env(c, "FLOWC_MLIR_REGISTER_TILES", "1")
     }
+    if s_len(register_target) > 0 {
+        cmd_env(c, "FLOWC_MLIR_REGISTER_TILE_TARGET", register_target)
+    }
+    if s_len(register_max_lanes) > 0 {
+        cmd_env(c, "FLOWC_MLIR_REGISTER_TILE_MAX_LANES", register_max_lanes)
+    }
     if aosoa_pad {
         cmd_env(c, "FLOWC_MLIR_AOSOA_PAD", "1")
+    }
+    if aosoa_pad_auto {
+        cmd_env(c, "FLOWC_MLIR_AOSOA_AUTO_PAD", "1")
     }
     if aosoa_swizzle {
         cmd_env(c, "FLOWC_MLIR_AOSOA_SWIZZLE", "4")
