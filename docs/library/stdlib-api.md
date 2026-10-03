@@ -72,12 +72,6 @@ Async primitives via algebraic effects  Call sites perform `Async` / `AsyncIO` o
 | `tcp_close` | `(fd: i32) -> i32` | - |
 | `async_set_maxprocs` | `(n: i32) -> void` | - |
 | `async_maxprocs` | `() -> i32` | - |
-| `cont_scaffold_available` | `() -> i32` | - |
-| `cont_demo_shift` | `() -> i32` | - |
-| `cont_demo_reset` | `() -> i32` | - |
-| `cont_arm_resume` | `(value: i32) -> void` | - |
-| `cont_resume` | `(value: i32) -> i32` | - |
-| `cont_has_pending` | `() -> i32` | - |
 | `async_delay` | `(ms: i32) -> void` | Thin helpers (same ops; clearer call sites) |
 | `async_spawn` | `(task_id: i32) -> void` | - |
 | `async_join` | `(task_id: i32) -> i32` | - |

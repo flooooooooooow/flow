@@ -21,14 +21,6 @@ extern {
     function flow_netpoll_sleep_ms(ms: i32) -> void
     function flow_netpoll_fiber_poll_read(fd: i32, timeout_ms: i32) -> i32
     function flow_netpoll_fiber_poll_write(fd: i32, timeout_ms: i32) -> i32
-    function flow_cont_available() -> i32
-    function flow_demo_cont_shift() -> i32
-    function flow_demo_cont_reset() -> i32
-    function flow_cont_shift_i32() -> i32
-    # flow_cont_* / flow_demo_cont_* come from lib/runtime/cont.flow
-    function flow_cont_resume_pending(value: i32) -> i32
-    function flow_cont_has_pending() -> i32
-    function flow_cont_arm_resume(value: i32) -> void
     function flow_tcp_connect(host_hash: i32, port: i32) -> i32
     function flow_tcp_send(fd: i32, buf: ptr<i8>, len: i32) -> i32
     function flow_tcp_recv(fd: i32, buf: ptr<i8>, len: i32) -> i32
@@ -222,49 +214,6 @@ export capability NetpollAsyncIO {
     },
 }
 
-# ---------------------------------------------------------------------------
-# Cont — one-shot fiber-backed delimited continuation (Flow-frame resume)
-#
-# Cont.shift() parks the current fiber (locals preserved). Call
-# cont_arm_resume(v) first to spawn a peer that supplies v. Requires
-# FiberCont (or FiberAsync) so main runs on a fiber.
-# ---------------------------------------------------------------------------
-
-export effect Cont {
-    shift() -> i32,
-}
-
-export capability FiberCont {
-    effect Cont,
-
-    function shift() -> i32 {
-        return flow_cont_shift_i32()
-    },
-}
-
-export function cont_scaffold_available() -> i32 {
-    return flow_cont_available()
-}
-
-export function cont_demo_shift() -> i32 {
-    return flow_demo_cont_shift()
-}
-
-export function cont_demo_reset() -> i32 {
-    return flow_demo_cont_reset()
-}
-
-export function cont_arm_resume(value: i32) -> void {
-    flow_cont_arm_resume(value)
-}
-
-export function cont_resume(value: i32) -> i32 {
-    return flow_cont_resume_pending(value)
-}
-
-export function cont_has_pending() -> i32 {
-    return flow_cont_has_pending()
-}
 
 # ---------------------------------------------------------------------------
 # Thin helpers (same ops; clearer call sites)

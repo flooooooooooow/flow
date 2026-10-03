@@ -636,7 +636,7 @@ function probe(argv: ptr<ProcStrs>) -> bool {
 export function concurrency_flags() {
     let rt: string = TC_ROOT + "/runtime/"
     CONC_SOURCES = sl_new()
-    let names: ptr<ProcStrs> = s_words("flow_concurrency.c flow_fiber.c flow_fctx_init.c flow_netpoll.c flow_netpoll_fiber.c flow_http_bench.c flow_tcp.c flow_race.c flow_cont.c flow_rt_support.c flow_rt_task_store.c flow_rt_fiber_async.c flow_rt_parallel.c flow_rt_cchan.c flow_rt_sysinfo.c flow_rt_crypto.c flow_tls.c")
+    let names: ptr<ProcStrs> = s_words("flow_concurrency.c flow_fiber.c flow_fctx_init.c flow_netpoll.c flow_netpoll_fiber.c flow_http_bench.c flow_tcp.c flow_race.c flow_rt_support.c flow_rt_task_store.c flow_rt_fiber_async.c flow_rt_parallel.c flow_rt_cchan.c flow_rt_sysinfo.c flow_rt_crypto.c flow_tls.c")
     let mut i: i32 = 0
     while i < sl_len(names) {
         sl_push(CONC_SOURCES, rt + sl_get(names, i))
