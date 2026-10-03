@@ -3215,6 +3215,12 @@ function flowc_cgen_libc_arity(src: ptr<u8>, s: i32, e: i32) -> i32 {
     if flowc_cgen_span_is(src, s, e, "pow") == 1 { return 2 }
     if flowc_cgen_span_is(src, s, e, "atan2") == 1 { return 2 }
     if flowc_cgen_span_is(src, s, e, "fmod") == 1 { return 2 }
+    if flowc_cgen_span_is(src, s, e, "cexp") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "csqrt") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "conj") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "clog") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "cabs") == 1 { return 1 }
+    if flowc_cgen_span_is(src, s, e, "carg") == 1 { return 1 }
     if flowc_cgen_span_is(src, s, e, "fmin") == 1 { return 2 }
     if flowc_cgen_span_is(src, s, e, "fmax") == 1 { return 2 }
     if flowc_cgen_span_is(src, s, e, "hypot") == 1 { return 2 }
@@ -7055,10 +7061,104 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                 return
             }
             if fn_id != AST_NONE or flowc_cgen_is_libc_fn(arena, src, id) == 1 {
-                if flowc_cgen_is_libc_fn(arena, src, id) == 1 and flowc_cgen_call_user_libc(w, arena, src, id, fn_id) == 1 {
+                let mut is_f32_math: i32 = 0
+                let mut is_c64_math: i32 = 0
+                if flowc_cgen_is_libc_fn(arena, src, id) == 1 {
+                    let first_arg: i32 = arena.nodes[id].a
+                    if first_arg != AST_NONE {
+                        let arg_ty: i32 = flowc_cgen_expr_type_node(w, arena, src, first_arg)
+                        if arg_ty != AST_NONE {
+                            if flowc_cgen_span_is(src, arena.nodes[arg_ty].name_start, arena.nodes[arg_ty].name_end, "f32") == 1 {
+                                is_f32_math = 1
+                            }
+                            if flowc_cgen_span_is(src, arena.nodes[arg_ty].name_start, arena.nodes[arg_ty].name_end, "c64") == 1 {
+                                is_c64_math = 1
+                            }
+                        }
+                    }
+                }
+
+                # If we emit a variant, we don't need the __flowc_libc_ prefix even if it was overridden.
+                let mut suppress_libc_prefix: i32 = 0
+                if is_f32_math == 1 or is_c64_math == 1 {
+                    suppress_libc_prefix = 1
+                }
+
+                if suppress_libc_prefix == 0 and flowc_cgen_is_libc_fn(arena, src, id) == 1 and flowc_cgen_call_user_libc(w, arena, src, id, fn_id) == 1 {
                     flowc_cgen_puts(w, "__flowc_libc_")
                 }
-                flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+
+                if is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "abs") == 1 {
+                    flowc_cgen_puts(w, "fabsf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "fabs") == 1 {
+                    flowc_cgen_puts(w, "fabsf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "sqrt") == 1 {
+                    flowc_cgen_puts(w, "sqrtf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "sin") == 1 {
+                    flowc_cgen_puts(w, "sinf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "cos") == 1 {
+                    flowc_cgen_puts(w, "cosf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "tan") == 1 {
+                    flowc_cgen_puts(w, "tanf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "asin") == 1 {
+                    flowc_cgen_puts(w, "asinf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "acos") == 1 {
+                    flowc_cgen_puts(w, "acosf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "atan") == 1 {
+                    flowc_cgen_puts(w, "atanf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "atan2") == 1 {
+                    flowc_cgen_puts(w, "atan2f")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "exp") == 1 {
+                    flowc_cgen_puts(w, "expf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "log") == 1 {
+                    flowc_cgen_puts(w, "logf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "log2") == 1 {
+                    flowc_cgen_puts(w, "log2f")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "log10") == 1 {
+                    flowc_cgen_puts(w, "log10f")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "sinh") == 1 {
+                    flowc_cgen_puts(w, "sinhf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "cosh") == 1 {
+                    flowc_cgen_puts(w, "coshf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "tanh") == 1 {
+                    flowc_cgen_puts(w, "tanhf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "cbrt") == 1 {
+                    flowc_cgen_puts(w, "cbrtf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "exp2") == 1 {
+                    flowc_cgen_puts(w, "exp2f")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "floor") == 1 {
+                    flowc_cgen_puts(w, "floorf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "ceil") == 1 {
+                    flowc_cgen_puts(w, "ceilf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "round") == 1 {
+                    flowc_cgen_puts(w, "roundf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "trunc") == 1 {
+                    flowc_cgen_puts(w, "truncf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "fmod") == 1 {
+                    flowc_cgen_puts(w, "fmodf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "fmin") == 1 {
+                    flowc_cgen_puts(w, "fminf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "fmax") == 1 {
+                    flowc_cgen_puts(w, "fmaxf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "pow") == 1 {
+                    flowc_cgen_puts(w, "powf")
+                } elif is_f32_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "hypot") == 1 {
+                    flowc_cgen_puts(w, "hypotf")
+                } elif is_c64_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "cexp") == 1 {
+                    flowc_cgen_puts(w, "cexpf")
+                } elif is_c64_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "csqrt") == 1 {
+                    flowc_cgen_puts(w, "csqrtf")
+                } elif is_c64_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "conj") == 1 {
+                    flowc_cgen_puts(w, "conjf")
+                } elif is_c64_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "clog") == 1 {
+                    flowc_cgen_puts(w, "clogf")
+                } elif is_c64_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "cabs") == 1 {
+                    flowc_cgen_puts(w, "cabsf")
+                } elif is_c64_math == 1 and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "carg") == 1 {
+                    flowc_cgen_puts(w, "cargf")
+                } else {
+                    flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+                }
             } elif flowc_cgen_put_imported_overload(w, arena, src, id) == 1 {
                 # An overload of an imported function: its mangled name (#1044).
                 fn_id = AST_NONE
@@ -9471,6 +9571,45 @@ function flowc_cgen_is_libc_fn(arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
     if flowc_cgen_span_is(src, ns, ne, "fabs") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "pow") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "exp") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "cexp") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "csqrt") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "conj") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "clog") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "cabs") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "carg") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "cexpf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "csqrtf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "conjf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "clogf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "cabsf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "cargf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "fabsf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "sqrtf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "sinf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "cosf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "tanf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "asinf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "acosf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "atanf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "atan2f") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "expf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "logf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "log2f") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "log10f") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "sinhf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "coshf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "tanhf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "cbrtf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "exp2f") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "floorf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "ceilf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "roundf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "truncf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "fmodf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "fminf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "fmaxf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "powf") == 1 { return 1 }
+    if flowc_cgen_span_is(src, ns, ne, "hypotf") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "log") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "log2") == 1 { return 1 }
     if flowc_cgen_span_is(src, ns, ne, "log10") == 1 { return 1 }
