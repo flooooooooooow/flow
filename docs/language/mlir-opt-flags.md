@@ -87,6 +87,9 @@ unroll-and-jam with an explicit factor. The transform is opt-in and requires a
 positive factor.
 
 Use `--enable-affine-coalescing` to coalesce compatible nested affine loops.
+
+Use `--enable-affine-skewing --affine-skew-factor=N` to add the opt-in
+`affine-loop-skew` pass. The factor must be a positive integer.
 The pass is opt-in and runs inside the function pipeline.
 
 Use `--enable-affine-tiling --affine-tile-sizes 64,32,8` for hierarchical
