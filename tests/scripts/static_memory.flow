@@ -54,6 +54,14 @@ function check_normalizes_invalid_alignment() -> i32 {
     return T_PASS
 }
 
+function check_rejects_invalid_size() -> i32 {
+    let mut items: array<StaticBuffer, 64> = []
+    items[0] = StaticBuffer { size: 0, start: 0, end: 1, alignment: 16 }
+    let plan: StaticMemoryPlan = flowc_static_memory_plan(items, 1, 16)
+    if plan.arena_size >= 0 { return T_FAIL }
+    return T_PASS
+}
+
 function main() -> i32 {
     t_begin("static_memory")
     t_start()
@@ -62,6 +70,7 @@ function main() -> i32 {
     t_end("honors_buffer_alignment", check_honors_buffer_alignment())
     t_end("clamps_buffer_count", check_clamps_buffer_count())
     t_end("normalizes_invalid_alignment", check_normalizes_invalid_alignment())
+    t_end("rejects_invalid_size", check_rejects_invalid_size())
     t_done()
     return 0
 }

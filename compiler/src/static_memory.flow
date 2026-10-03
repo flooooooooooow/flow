@@ -80,9 +80,14 @@ export function flowc_static_memory_plan(
     let mut i: i32 = 0
     while i < n {
         let item: StaticBuffer = items[i]
+        if item.size <= 0 {
+            out.arena_size = -1
+            break
+        }
         let alignment: i32 = if item.alignment > 0 { item.alignment } else { 1 }
         let step: i32 = if alignment > base_alignment { alignment } else { base_alignment }
         let mut candidate: i32 = 0
+        let mut placed_item: i32 = 0
         let limit: i64 = (out.arena_size as i64) + (item.size as i64) + (step as i64)
         while (candidate as i64) < limit {
             candidate = align_up(candidate, step)
@@ -96,14 +101,21 @@ export function flowc_static_memory_plan(
                     break
                 }
                 if (end as i32) > out.arena_size { out.arena_size = end as i32 }
+                placed_item = 1
                 break
             }
             let next: i64 = (candidate as i64) + (step as i64)
             if next > 2147483647 { break }
             candidate = next as i32
         }
+        if placed_item == 0 {
+            out.arena_size = -1
+            break
+        }
         i = i + 1
     }
-    out.arena_size = align_up(out.arena_size, base_alignment)
+    if out.arena_size >= 0 {
+        out.arena_size = align_up(out.arena_size, base_alignment)
+    }
     return out
 }
