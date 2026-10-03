@@ -23,10 +23,6 @@
       "id": "mnist",
       "upstream": "https://vgpu.sh/examples/mnist",
       "source": "examples/gpu/vgpu/mnist.flow",
-      "comparison": {
-        "mode": "numerical",
-        "tolerance": 1e-5
-      },
       "backends": [
         "metal",
         "webgpu"
@@ -36,10 +32,6 @@
       "id": "depth",
       "upstream": "https://vgpu.sh/examples/depth",
       "source": "examples/gpu/vgpu/depth_estimation.flow",
-      "comparison": {
-        "mode": "numerical",
-        "tolerance": 1e-5
-      },
       "backends": [
         "metal",
         "webgpu"

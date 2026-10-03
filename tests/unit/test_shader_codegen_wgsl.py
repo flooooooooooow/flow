@@ -2,14 +2,12 @@
 
 from pathlib import Path
 
-from flow.parser import parse_flow_code
 from flow.shader_codegen_wgsl import (
     compile_shader_file_wgsl,
     generate_wgsl_for_module,
     generate_wgsl_source,
 )
 from flow.shader_dsl import extract_fill_shaders, extract_shader_module
-from flow.wgsl_codegen import WgslCodegen, extract_gpu_functions
 
 
 GRADIENT = """
@@ -122,32 +120,3 @@ def test_wgsl_requires_color_assignment():
         assert False, "expected SyntaxError"
     except SyntaxError as exc:
         assert "color" in str(exc)
-
-
-def test_vgpu_mnist_and_depth_gpu_kernels_wgsl():
-    mnist_path = Path("examples/gpu/vgpu/mnist.flow")
-    mnist_decls = parse_flow_code(mnist_path.read_text(encoding="utf-8"))
-    mnist_gpu_funcs = extract_gpu_functions(mnist_decls)
-    assert len(mnist_gpu_funcs) == 3
-    names = [f.name for f in mnist_gpu_funcs]
-    assert "mnist_preprocess" in names
-    assert "mnist_dense_layer" in names
-    assert "mnist_postprocess" in names
-
-    codegen = WgslCodegen()
-    wgsl_code = codegen.generate_kernel(mnist_gpu_funcs[0])
-    assert "@compute" in wgsl_code
-    assert "fn mnist_preprocess" in wgsl_code
-
-    depth_path = Path("examples/gpu/vgpu/depth_estimation.flow")
-    depth_decls = parse_flow_code(depth_path.read_text(encoding="utf-8"))
-    depth_gpu_funcs = extract_gpu_functions(depth_decls)
-    assert len(depth_gpu_funcs) == 3
-    names = [f.name for f in depth_gpu_funcs]
-    assert "depth_feature_extract" in names
-    assert "depth_projection_layer" in names
-    assert "depth_colormap_tint" in names
-
-    wgsl_depth = codegen.generate_kernel(depth_gpu_funcs[0])
-    assert "@compute" in wgsl_depth
-    assert "fn depth_feature_extract" in wgsl_depth

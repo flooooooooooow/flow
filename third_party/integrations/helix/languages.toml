@@ -1,0 +1,22 @@
+# Helix editor language configuration for Flow (https://flow-lang.org)
+# Place in ~/.config/helix/languages.toml or submit upstream to helix-editor/helix.
+
+[[language]]
+name = "flow"
+scope = "source.flow"
+injection-regex = "flow"
+file-types = ["flow"]
+roots = ["flow.toml", ".git"]
+auto-format = false
+comment-token = "#"
+indent = { tab-width = 4, unit = "    " }
+language-servers = ["flow-lsp"]
+grammar = "flow"
+
+[language-server.flow-lsp]
+command = "flow"
+args = ["lsp"]
+
+[[grammar]]
+name = "flow"
+source = { git = "https://github.com/flooooooooooow/tree-sitter-flow", rev = "3dbbac87134e00d750e8c736c313d22a4b2c2343" }
