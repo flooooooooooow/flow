@@ -15,6 +15,18 @@ function check_nested_outer_product() -> i32 {
     return T_PASS
 }
 
+function check_nested_lane_budget() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--register-tiles")
+    sl_push(argv, "compiler/fixtures/mlir_opt/register_tile_3d.flow")
+    sl_push(argv, t_tmp() + "/nested-3d.mlir")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    if t_run(c) != 0 { return T_FAIL }
+    let output: string = read_text(t_tmp() + "/nested-3d.mlir")
+    if not a_contains(output, "vector<2xvector<4xvector<3xf32>>>") { return T_FAIL }
+    if not a_contains(output, "flow.register_tile_lanes = 24") { return T_FAIL }
+    return T_PASS
+}
+
 function check_target_metadata() -> i32 {
     let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--register-tiles")
     sl_push(argv, "compiler/fixtures/mlir_opt/register_tile_nested.flow")
@@ -99,6 +111,7 @@ function main() -> i32 {
     t_begin("mlir_register_tiles")
     t_start()
     t_end("nested_outer_product", check_nested_outer_product())
+    t_end("nested_lane_budget", check_nested_lane_budget())
     t_start()
     t_end("target_metadata", check_target_metadata())
     t_end("cli_target_selection", check_cli_target_selection())

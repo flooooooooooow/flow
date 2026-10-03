@@ -718,6 +718,14 @@ function mlg_is_vector_mt(t: i32) -> i32 {
     return 0
 }
 
+function mlg_vector_scalar_lanes(m: ptr<Mlg>, t: i32) -> i32 {
+    if mlg_is_vector_mt(t) == 0 {
+        return 1
+    }
+    return m[0].vc_n[t - MT_VECTOR] *
+        mlg_vector_scalar_lanes(m, m[0].vc_elem[t - MT_VECTOR])
+}
+
 function mlg_is_tensor_type_mt(t: i32) -> i32 {
     if t >= MT_TENSOR {
         return 1
@@ -3050,7 +3058,9 @@ function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
         mlg_refuse(m, e, "FLOWC_MLIR_REGISTER_TILE_MAX_LANES must be a positive integer")
         return V_NONE
     }
-    if am <= 0 or bn <= 0 or am * bn > cap {
+    let rt: i32 = mlg_vector_of(m, bt, am)
+    let tile_lanes: i32 = mlg_vector_scalar_lanes(m, rt)
+    if am <= 0 or bn <= 0 or tile_lanes > cap {
         mlg_refuse(m, e, "register tile exceeds FLOWC_MLIR_REGISTER_TILE_MAX_LANES")
         return V_NONE
     }
@@ -3059,7 +3069,6 @@ function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
         mlg_refuse(m, e, "FLOWC_MLIR_REGISTER_TILE_TARGET must be one of 'generic', 'amx', 'sme', 'nvvm'")
         return V_NONE
     }
-    let rt: i32 = mlg_vector_of(m, bt, am)
     let r: i32 = mlg_new_val(m, rt)
     mlg_line(m)
     mlg_s(m, "// flow.register_tile_target = \"")
@@ -3071,7 +3080,7 @@ function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
     mlg_s(m, "\"\n")
     mlg_line(m)
     mlg_s(m, "// flow.register_tile_lanes = ")
-    mlg_i(m, am * bn)
+    mlg_i(m, tile_lanes)
     mlg_s(m, "\n")
     mlg_line(m)
     mlg_s(m, "// flow.register_tile_max_lanes = ")
@@ -3093,7 +3102,7 @@ function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
         mlg_s(m, "\", flow.register_tile_lowering = \"")
         mlg_s(m, mlg_register_tile_lowering(target))
         mlg_s(m, "\", flow.register_tile_lanes = ")
-        mlg_i(m, am * bn)
+        mlg_i(m, tile_lanes)
         mlg_s(m, ", flow.register_tile_max_lanes = ")
         mlg_i(m, cap)
         mlg_s(m, "}")
