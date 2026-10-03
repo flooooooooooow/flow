@@ -932,6 +932,18 @@
           "path": "community/tutorial-author-kit.md"
         },
         {
+          "label": "Tutorial: Dynamical Systems",
+          "path": "community/tutorials/dynamical-systems.md"
+        },
+        {
+          "label": "Tutorial: Flow for C++",
+          "path": "community/tutorials/cpp-programmer.md"
+        },
+        {
+          "label": "Tutorial: Tiny DSP",
+          "path": "community/tutorials/tiny-dsp.md"
+        },
+        {
           "label": "Community Projects",
           "path": "community/projects.md"
         }

@@ -17,7 +17,7 @@ The rule is deliberately strict: a local integration is not marked upstream unti
 | Helix | `languages.toml` LSP configuration | Local integration · #901 | Tree-sitter grammar published and Flow accepted into Helix languages |
 | Zed | Integration handoff in `third_party/integrations/zed` + existing `flow lsp` | Local handoff · #902 | Dedicated Tree-sitter repository, then a published Zed language extension |
 | Rosetta Code | Submission pack in `docs/community/rosetta-code.md` | Ready to publish | Flow category exists with multiple tasks |
-| Independent tutorials | Author kit and reproducibility contract | Waiting on outside authors | At least three technically substantive tutorials by non-core authors |
+| Independent tutorials | Author kit and reproducibility contract | Available | At least three technically substantive tutorials by non-core authors |
 | Homebrew | Tap + formula | Available | Maintain release compatibility |
 | Other package managers | Homebrew is the only mature external package-manager path today | Tracked · #904 | Reproducible Nix packaging and additional supported-platform distribution |
 | Open VSX | VS Code-family extension path documented | Available/project-controlled | External installs and continued publication |

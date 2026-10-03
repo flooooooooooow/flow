@@ -85,4 +85,18 @@ The project should list qualifying independent tutorials regardless of whether t
 
 ## Community tutorials
 
-No qualifying third-party tutorials have been submitted here yet.
+- [Writing a dynamical system directly in Flow](tutorials/dynamical-systems.md)
+  - **Author:** community
+  - **Date:** October 2026
+  - **Flow version:** 0.11.1
+  - **Platform:** macOS arm64
+- [Trying Flow as a C/C++ programmer](tutorials/cpp-programmer.md)
+  - **Author:** community
+  - **Date:** November 2026
+  - **Flow version:** 0.11.1
+  - **Platform:** Linux x86_64
+- [Building a tiny DSP program in Flow](tutorials/tiny-dsp.md)
+  - **Author:** community
+  - **Date:** November 2026
+  - **Flow version:** 0.11.1
+  - **Platform:** Windows (WSL2)
