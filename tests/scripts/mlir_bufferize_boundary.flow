@@ -4,14 +4,15 @@ import "tools/flow_cli/sys.flow"
 import "tests/scripts/harness.flow"
 
 function check_tensor_value_destination() -> i32 {
-    let emit: ptr<ProcStrs> = sl_of3("./flow", "mlir", "compiler/fixtures/mlir_opt/tensor_boundary.flow")
+    let emit: ptr<ProcStrs> = sl_of2("./flow", "flow-to-mlir")
     sl_push(emit, "--lenient")
+    sl_push2(emit, "compiler/fixtures/mlir_opt/tensor_boundary.flow", t_tmp() + "/tensor_boundary.mlir")
     if t_run_argv(emit) != 0 {
         outln("flow mlir failed:")
         outln(read_text(t_err()))
         return T_FAIL
     }
-    let input: string = "build/tensor_boundary.mlir"
+    let input: string = t_tmp() + "/tensor_boundary.mlir"
     if not exists(input) {
         outln("flow mlir did not write " + input)
         return T_FAIL
@@ -28,14 +29,15 @@ function check_tensor_value_destination() -> i32 {
 }
 
 function check_tensor_boundary_bufferizes() -> i32 {
-    let emit: ptr<ProcStrs> = sl_of3("./flow", "mlir", "compiler/fixtures/mlir_opt/tensor_boundary.flow")
+    let emit: ptr<ProcStrs> = sl_of2("./flow", "flow-to-mlir")
     sl_push(emit, "--lenient")
+    sl_push2(emit, "compiler/fixtures/mlir_opt/tensor_boundary.flow", t_tmp() + "/tensor_boundary.mlir")
     if t_run_argv(emit) != 0 {
         outln("flow mlir failed during bufferization setup:")
         outln(read_text(t_err()))
         return T_FAIL
     }
-    let input: string = "build/tensor_boundary.mlir"
+    let input: string = t_tmp() + "/tensor_boundary.mlir"
     if not exists(input) {
         return T_FAIL
     }
