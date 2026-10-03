@@ -103,8 +103,9 @@ affine tiling passes are emitted in the listed order.
 
 ## Async copy capability gate
 
-Loop pipelining and multi-buffering remain opt-in. Multi-buffering defaults to
-two buffers. Set `--multi-buffering-factor N` for a multiplier from 2 through
+Loop pipelining and multi-buffering remain opt-in for ordinary pipelines.
+Async copy supplies both supporting passes when they are omitted. It uses two
+buffers by default. Set `--multi-buffering-factor N` for a multiplier from 2 through
 8. The GPU async-region pass
 also requires an explicit target capability:
 
@@ -114,7 +115,9 @@ also requires an explicit target capability:
 ```
 
 Accepted targets are `gpu`, `nvptx` and `amdgpu`. The target flag adds
-`gpu-async-region` to the function pipeline. A CPU pipeline does not acquire
+`gpu-async-region` to the function pipeline. Async copy also adds
+`test-multi-buffering{multiplier=2}` and `test-scf-pipelining` when callers do
+not request those passes. A CPU pipeline does not acquire
 an async-copy pass implicitly. The current gate marks GPU regions async. It
 does not synthesize `nvgpu.device_async_copy` operations or claim a hardware
 copy engine is available. Those lowerings need target-specific IR and a
