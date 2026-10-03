@@ -1,0 +1,35 @@
+import "scripts/tools/lib/testrun.flow"
+import "tests/scripts/harness.flow"
+
+function check_affine_emitter_flags() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--affine")
+    sl_push(argv, "--tile-size=4")
+    sl_push(argv, "--tile-l2-size=8")
+    sl_push(argv, "tests/mlir/affine_loop.flow")
+    sl_push(argv, t_tmp() + "/affine.mlir")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_tmp() + "/affine.mlir")
+    if not a_contains(output, "affine.for") { return T_FAIL }
+    if not a_contains(output, "step 8") { return T_FAIL }
+    if not a_contains(output, "step 4") { return T_FAIL }
+    return T_PASS
+}
+
+function check_affine_emitter_rejects_bad_tile() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--tile-size=3oops")
+    sl_push(argv, "tests/mlir/affine_loop.flow")
+    sl_push(argv, t_tmp() + "/bad.mlir")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--tile-size must be a positive integer") { return T_FAIL }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("mlir_affine")
+    t_start()
+    t_end("affine_emitter_flags", check_affine_emitter_flags())
+    t_start()
+    t_end("affine_emitter_bad_tile", check_affine_emitter_rejects_bad_tile())
+    t_done()
+    return 0
+}
