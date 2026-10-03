@@ -244,6 +244,19 @@ function check_benchmark_rejects_wrapped_repetitions() -> i32 {
     return T_PASS
 }
 
+function check_benchmark_rejects_missing_values() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "benchmarks/micro/transform_tuning_benchmark.flow")
+    sl_push(argv, "--candidates")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--candidates requires a value") { return T_FAIL }
+
+    let argv2: ptr<ProcStrs> = sl_of3("./flow", "tool", "benchmarks/micro/transform_tuning_benchmark.flow")
+    sl_push(argv2, "--repetitions")
+    if t_run(t_cmd(argv2)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--repetitions requires a value") { return T_FAIL }
+    return T_PASS
+}
+
 function main() -> i32 {
     t_begin("mlir_tune")
     t_start()
@@ -280,6 +293,7 @@ function main() -> i32 {
     t_end("benchmark_invalid_candidate_space", check_benchmark_rejects_invalid_candidate_space())
     t_end("benchmark_wrapped_candidate_space", check_benchmark_rejects_wrapped_candidate_space())
     t_end("benchmark_wrapped_repetitions", check_benchmark_rejects_wrapped_repetitions())
+    t_end("benchmark_missing_values", check_benchmark_rejects_missing_values())
     t_done()
     return 0
 }
