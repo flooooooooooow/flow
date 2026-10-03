@@ -4,12 +4,46 @@ Get from installation to a real Flow program in a few minutes. Every fenced bloc
 
 ## 1. Install Flow
 
-### Homebrew
+### Homebrew (macOS / Linux)
 
 ```bash
 brew tap flooooooooooow/flow
 brew install flow
 flow version
+```
+
+### Nix / NixOS
+
+Run directly using Flakes:
+```bash
+nix run github:flooooooooooow/flow
+```
+Or install into your Nix profile from `packaging/nix/default.nix`:
+```bash
+nix-env -f packaging/nix/default.nix -i
+```
+
+### Debian / Ubuntu (APT)
+
+Build and install the `.deb` package:
+```bash
+./packaging/deb/build-deb.sh
+sudo dpkg -i /tmp/flow_1.0.2-1_amd64.deb
+```
+
+### Arch Linux (pacman / AUR)
+
+Build and install via PKGBUILD:
+```bash
+cd packaging/arch
+makepkg -si
+```
+
+### Windows (Scoop)
+
+Install using Scoop:
+```bash
+scoop install https://raw.githubusercontent.com/flooooooooooow/flow/main/packaging/scoop/flow.json
 ```
 
 ### From source
