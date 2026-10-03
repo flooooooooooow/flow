@@ -2299,6 +2299,11 @@ function sem_check_function_call(c: ptr<Sem>, name: string, args: ptr<SemIntVec>
             }
         }
         sem_check_span_arguments(c, name, args, matching)
+        let mut contract_i: i32 = 0
+        while contract_i < args.len and contract_i < sem_ty_nparams(c.t, matching) {
+            sem_record_rt_safe_binding(c, args.data[contract_i], arg_types.data[contract_i], sem_ty_param(c.t, matching, contract_i))
+            contract_i = contract_i + 1
+        }
         if c.current_function_name as ptr<u8> != null {
             let mut idx: i32 = 0
             while idx < args.len and idx < sem_ty_nparams(c.t, matching) {
@@ -3333,6 +3338,47 @@ function sem_check_expression(c: ptr<Sem>, e: i32) -> i32 {
     return sem_check_expression_stmt(c, e, 0 - 1)
 }
 
+# True when a function type carries a callable contract/effect name.
+function sem_function_type_has_effect(c: ptr<Sem>, ty: i32, effect: string) -> bool {
+    if ty < 0 or sem_tkind(c, ty) != TK_FUNCTION {
+        return false
+    }
+    let mut i: i32 = 0
+    while i < sem_ty_neffects(c.t, ty) {
+        if sem_s_eq(sem_ty_effect(c.t, ty, i), effect) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# A conversion to an rt_safe callable type must preserve a previously proven
+# contract, or bind a concrete named function whose whole call graph can be
+# verified after declaration checking.
+function sem_record_rt_safe_binding(c: ptr<Sem>, expr: i32, actual: i32, expected: i32) {
+    if sem_function_type_has_effect(c, expected, "rt_safe") == false {
+        return
+    }
+    if sem_function_type_has_effect(c, actual, "rt_safe") {
+        return
+    }
+    if actual < 0 or sem_tkind(c, actual) != TK_FUNCTION {
+        return
+    }
+    if expr >= 0 and sem_nk(c, expr) == AST_IDENT {
+        let name: string = sem_nname(c, expr)
+        let sym: i32 = sem_lookup(c, name)
+        if sym >= 0 and sem_sym_kind(c, sym) == SK_FUNCTION {
+            sem_sv_push(c.rt_binding_target, sem_tstr(c, expected))
+            sem_sv_push(c.rt_binding_fn, name)
+            return
+        }
+    }
+    sem_sv_push(c.rt_binding_target, sem_tstr(c, expected))
+    sem_sv_push(c.rt_binding_fn, "<anonymous function>")
+}
+
 # ---------------------------------------------------------------------------
 # Statements
 # ---------------------------------------------------------------------------
@@ -3378,6 +3424,7 @@ function sem_check_var_decl(c: ptr<Sem>, s: i32) -> i32 {
     let mut expected2: i32 = et
     if has_ann {
         expected2 = sem_parse_type(c, ann)
+        sem_record_rt_safe_binding(c, init, et, expected2)
         if sem_can_coerce(c, et, expected2) == false {
             let und: string = sem_undeclared_type_name(c, expected2, et)
             if sem_s_len(und) > 0 {
@@ -3505,6 +3552,7 @@ function sem_check_assignment(c: ptr<Sem>, s: i32) -> i32 {
             sem_err(c, "span outlives borrowed storage `" + origin2 + "`" + sem_location_suffix(c, s))
         }
     }
+    sem_record_rt_safe_binding(c, value, et2, st)
     if sem_can_coerce(c, et2, st) == false {
         sem_err(c, "Cannot assign " + sem_tstr(c, et2) + " to variable '" + target + "' of type " + sem_tstr(c, st))
     }
