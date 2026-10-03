@@ -51,12 +51,13 @@ The Debug Adapter Protocol server connects the native debugger to editors:
 ## 17.4 Language server and editor support
 
 The LSP supplies syntax diagnostics, document structure, completion and related
-intelligence to the VS Code extension. Because host and backend support differ,
+intelligence to editor integrations. Because host and backend support differ,
 confirm an editor diagnostic with the build command used by
 the project.
 
 The repository includes VS Code language, theme, and extension packaging under
-`third_party/integrations/vscode/`.
+`third_party/integrations/vscode/`, and Zed editor language extension support
+(Tree-sitter queries, config, and LSP integration) under `third_party/integrations/zed/`.
 
 ## 17.5 Test tiers
 

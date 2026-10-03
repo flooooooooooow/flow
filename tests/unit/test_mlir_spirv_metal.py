@@ -134,3 +134,87 @@ def test_msl_to_metallib_uses_xcrun(tmp_path: Path, monkeypatch):
     assert calls[0][0:4] == [str(xcrun), "-sdk", "macosx", "metal"]
     assert calls[1][0:4] == [str(xcrun), "-sdk", "macosx", "metallib"]
     assert output.read_bytes() == b"metallib"
+
+
+def test_find_tool_brew_exception(tmp_path: Path, monkeypatch):
+    brew_bin = tmp_path / "brew"
+    brew_bin.write_text("")
+
+    def fake_which(cmd):
+        if cmd == "brew":
+            return str(brew_bin)
+        return None
+
+    def fake_run(cmd, capture_output=False, text=False, **kwargs):
+        raise OSError("Simulated subprocess error")
+
+    monkeypatch.setattr("shutil.which", fake_which)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    compiler = MLIRSPIRVCompiler(
+        mlir_opt="mlir-opt",
+        mlir_translate="mlir-translate",
+        spirv_cross="spirv-cross",
+        xcrun="xcrun",
+    )
+    # _find_tool should catch the exception from subprocess.run and fall back to returning "spirv-cross"
+    tool_path = compiler._find_tool("spirv-cross")
+    assert tool_path == "spirv-cross"
+
+
+def test_find_tool_brew_success(tmp_path: Path, monkeypatch):
+    brew_bin = tmp_path / "brew"
+    brew_bin.write_text("")
+    prefix_dir = tmp_path / "llvm_prefix"
+    candidate_bin = prefix_dir / "bin" / "mlir-opt"
+    candidate_bin.parent.mkdir(parents=True, exist_ok=True)
+    candidate_bin.write_text("")
+
+    def fake_which(cmd):
+        if cmd == "brew":
+            return str(brew_bin)
+        return None
+
+    def fake_run(cmd, capture_output=False, text=False, **kwargs):
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout=str(prefix_dir) + "\n", stderr=""
+        )
+
+    monkeypatch.setattr("shutil.which", fake_which)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    compiler = MLIRSPIRVCompiler(
+        mlir_opt="mlir-opt",
+        mlir_translate="mlir-translate",
+        spirv_cross="spirv-cross",
+        xcrun="xcrun",
+    )
+    tool_path = compiler._find_tool("mlir-opt")
+    assert tool_path == str(candidate_bin)
+
+
+def test_find_tool_brew_failed_and_missing_candidate(tmp_path: Path, monkeypatch):
+    brew_bin = tmp_path / "brew"
+    brew_bin.write_text("")
+
+    def fake_which(cmd):
+        if cmd == "brew":
+            return str(brew_bin)
+        return None
+
+    def fake_run(cmd, capture_output=False, text=False, **kwargs):
+        return subprocess.CompletedProcess(
+            cmd, 1, stdout="Error", stderr="Failed"
+        )
+
+    monkeypatch.setattr("shutil.which", fake_which)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    compiler = MLIRSPIRVCompiler(
+        mlir_opt="mlir-opt",
+        mlir_translate="mlir-translate",
+        spirv_cross="spirv-cross",
+        xcrun="xcrun",
+    )
+    tool_path = compiler._find_tool("spirv-cross")
+    assert tool_path == "spirv-cross"

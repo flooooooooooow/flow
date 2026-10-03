@@ -1,0 +1,15 @@
+id = "flow"
+name = "Flow"
+version = "0.1.0"
+schema_version = 1
+authors = ["Flow Contributors <contributors@flooooooooooow.org>"]
+description = "Flow language support for Zed editor including syntax highlighting, LSP integration, bracket matching, and indentation rules."
+repository = "https://github.com/flooooooooooow/flow"
+
+[grammars.flow]
+repository = "https://github.com/flooooooooooow/tree-sitter-flow"
+rev = "main"
+
+[language_servers.flow-lsp]
+name = "flow-lsp"
+languages = ["Flow"]
