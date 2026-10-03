@@ -1,0 +1,121 @@
+# @module flowc.static_memory
+# Static lifetime planning for buffers with compile-time sizes.
+
+const FLOWC_STATIC_MEMORY_MAX_BUFFERS: i32 = 64
+
+export struct StaticBuffer {
+    size: i32,
+    start: i32,
+    end: i32,
+    alignment: i32
+}
+
+export struct StaticMemoryPlan {
+    offsets: array<i32, 64>,
+    arena_size: i32,
+    count: i32
+}
+
+function align_up(value: i32, alignment: i32) -> i32 {
+    if alignment <= 1 { return value }
+    let aligned: i64 = (((value as i64) + (alignment as i64) - 1) /
+                        (alignment as i64)) * (alignment as i64)
+    if aligned > 2147483647 { return -1 }
+    return aligned as i32
+}
+
+function overlaps(a: StaticBuffer, b: StaticBuffer) -> i32 {
+    if a.start <= b.end and b.start <= a.end { return 1 }
+    return 0
+}
+
+function block_fits(
+    candidate: i32,
+    size: i32,
+    items: array<StaticBuffer, 64>,
+    offsets: array<i32, 64>,
+    placed: array<i32, 64>,
+    item: StaticBuffer,
+    count: i32
+) -> i32 {
+    let mut j: i32 = 0
+    while j < count {
+        if placed[j] == 1 and overlaps(item, items[j]) == 1 {
+            let left: i64 = candidate as i64
+            let right: i64 = (candidate as i64) + (size as i64)
+            let other_left: i64 = offsets[j] as i64
+            let other_right: i64 = (other_left) + (items[j].size as i64)
+            if left < other_right and other_left < right { return 0 }
+        }
+        j = j + 1
+    }
+    return 1
+}
+
+# Greedy first-fit placement. The input is sorted by start operation by the
+# caller. The planner still checks all earlier buffers, so unsorted input is
+# safe and overlapping lifetimes cannot alias.
+export function flowc_static_memory_plan(
+    items: array<StaticBuffer, 64>,
+    count: i32,
+    arena_alignment: i32
+) -> StaticMemoryPlan {
+    let mut n: i32 = count
+    if n < 0 { n = 0 }
+    if n > FLOWC_STATIC_MEMORY_MAX_BUFFERS { n = FLOWC_STATIC_MEMORY_MAX_BUFFERS }
+    let mut base_alignment: i32 = arena_alignment
+    if base_alignment <= 0 { base_alignment = 1 }
+    let mut out: StaticMemoryPlan = StaticMemoryPlan {
+        offsets: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        arena_size: 0,
+        count: n
+    }
+    let mut placed: array<i32, 64> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                       0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let mut i: i32 = 0
+    while i < n {
+        let item: StaticBuffer = items[i]
+        if item.size <= 0 {
+            out.arena_size = -1
+            break
+        }
+        let alignment: i32 = if item.alignment > 0 { item.alignment } else { 1 }
+        let step: i32 = if alignment > base_alignment { alignment } else { base_alignment }
+        let mut candidate: i32 = 0
+        let mut placed_item: i32 = 0
+        let limit: i64 = (out.arena_size as i64) + (item.size as i64) + (step as i64)
+        while (candidate as i64) < limit {
+            candidate = align_up(candidate, step)
+            if candidate < 0 { break }
+            if block_fits(candidate, item.size, items, out.offsets, placed, item, n) == 1 {
+                out.offsets[i] = candidate
+                placed[i] = 1
+                let end: i64 = (candidate as i64) + (item.size as i64)
+                if end > 2147483647 {
+                    placed[i] = 0
+                    break
+                }
+                if (end as i32) > out.arena_size { out.arena_size = end as i32 }
+                placed_item = 1
+                break
+            }
+            let next: i64 = (candidate as i64) + (step as i64)
+            if next > 2147483647 { break }
+            candidate = next as i32
+        }
+        if placed_item == 0 {
+            out.arena_size = -1
+            break
+        }
+        i = i + 1
+    }
+    if out.arena_size >= 0 {
+        out.arena_size = align_up(out.arena_size, base_alignment)
+    }
+    return out
+}

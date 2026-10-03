@@ -1,0 +1,114 @@
+import .text { js_outln, js_errln, js_starts, js_from, js_slice, js_itoa }
+
+function kernel(shape: i32, lanes: i32) -> string {
+    let name: string = "@flow_kernel_" + js_itoa(shape)
+    return "  func.func " + name + "(%buf: memref<?xf32>, %n: index) -> index {\n" +
+           "    %c0 = arith.constant 0 : index\n" +
+           "    %mask = vector.create_mask %n : vector<" + js_itoa(lanes) + "xi1>\n" +
+           "    %zero = arith.constant dense<0.0> : vector<" + js_itoa(lanes) + "xf32>\n" +
+           "    %tile = vector.maskedload %buf[%c0], %mask, %zero : memref<?xf32>, vector<" + js_itoa(lanes) + "xi1>, vector<" + js_itoa(lanes) + "xf32>\n" +
+           "    // specialized shape " + js_itoa(shape) + "; masked vector tail remains branch-free\n" +
+           "    return %n : index\n" +
+           "  }\n"
+}
+
+function dispatch(shapes: array<i32, 8>, count: i32, lanes: i32) -> string {
+    let mut out: string = "  func.func @flow_jit_dispatch(%buf: memref<?xf32>, %n: index) -> index {\n"
+    let mut generic: string = "%generic"
+    out = out + "    " + generic + " = func.call @flow_kernel_generic(%buf, %n) : (memref<?xf32>, index) -> index\n"
+    let mut i: i32 = 0
+    while i < count {
+        let shape: string = js_itoa(shapes[i])
+        let base: string = generic
+        out = out + "    %shape" + js_itoa(i) + " = arith.constant " + shape + " : index\n"
+        out = out + "    %hit" + js_itoa(i) + " = arith.cmpi eq, %n, %shape" + js_itoa(i) + " : index\n"
+        out = out + "    %chosen" + js_itoa(i) + " = scf.if %hit" + js_itoa(i) + " -> (index) {\n"
+        out = out + "      %spec" + js_itoa(i) + " = func.call @flow_kernel_" + shape + "(%buf, %n) : (memref<?xf32>, index) -> index\n"
+        out = out + "      scf.yield %spec" + js_itoa(i) + " : index\n"
+        out = out + "    } else {\n      scf.yield " + base + " : index\n    }\n"
+        generic = "%chosen" + js_itoa(i)
+        i = i + 1
+    }
+    out = out + "    return " + generic + " : index\n  }\n"
+    return out
+}
+
+function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
+    let mut shapes: array<i32, 8> = [128, 256, 512, 0, 0, 0, 0, 0]
+    let mut count: i32 = 3
+    let mut lanes: i32 = 8
+    let mut i: i32 = 1
+    while i < argc {
+        let arg: string = argv[i] as string
+        if js_starts(arg, "--lanes=") {
+            lanes = atoi(js_from(arg, 8))
+        } elif js_starts(arg, "--shapes=") {
+            let value: string = js_from(arg, 9)
+            let mut at: i32 = 0
+            let mut begin: i32 = 0
+            let mut overflow: bool = false
+            count = 0
+            let bytes: ptr<u8> = value as ptr<u8>
+            while bytes[at] != 0 {
+                if bytes[at] == 44 {
+                    if count < 8 {
+                        shapes[count] = atoi(js_slice(value, begin, at))
+                        count = count + 1
+                    } else {
+                        overflow = true
+                    }
+                    begin = at + 1
+                }
+                at = at + 1
+            }
+            if at > begin {
+                if count < 8 {
+                    shapes[count] = atoi(js_slice(value, begin, at))
+                    count = count + 1
+                } else {
+                    overflow = true
+                }
+            }
+            if overflow {
+                js_errln("jit_specialize: at most 8 shapes are supported")
+                return 2
+            }
+        }
+        i = i + 1
+    }
+    if count < 1 or lanes < 1 or lanes > 64 {
+        js_errln("jit_specialize: need at least one shape and lanes in 1..64")
+        return 2
+    }
+    let mut shape_i: i32 = 0
+    while shape_i < count {
+        if shapes[shape_i] < 1 {
+            js_errln("jit_specialize: shapes must be positive integers")
+            return 2
+        }
+        shape_i = shape_i + 1
+    }
+    let mut dup_i: i32 = 0
+    while dup_i < count {
+        let mut dup_j: i32 = dup_i + 1
+        while dup_j < count {
+            if shapes[dup_i] == shapes[dup_j] {
+                js_errln("jit_specialize: shapes must be unique")
+                return 2
+            }
+            dup_j = dup_j + 1
+        }
+        dup_i = dup_i + 1
+    }
+    let mut out: string = "module attributes {flow.jit.cache = \"shape-specialized\", flow.jit.masked_tails = true} {\n"
+    out = out + "  func.func @flow_kernel_generic(%buf: memref<?xf32>, %n: index) -> index { return %n : index }\n"
+    let mut k: i32 = 0
+    while k < count {
+        out = out + kernel(shapes[k], lanes)
+        k = k + 1
+    }
+    out = out + dispatch(shapes, count, lanes)
+    out = out + "}\n"
+    js_outln(out)
+    return 0
+}

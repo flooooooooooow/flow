@@ -718,6 +718,14 @@ function mlg_is_vector_mt(t: i32) -> i32 {
     return 0
 }
 
+function mlg_vector_scalar_lanes(m: ptr<Mlg>, t: i32) -> i32 {
+    if mlg_is_vector_mt(t) == 0 {
+        return 1
+    }
+    return m[0].vc_n[t - MT_VECTOR] *
+        mlg_vector_scalar_lanes(m, m[0].vc_elem[t - MT_VECTOR])
+}
+
 function mlg_is_tensor_type_mt(t: i32) -> i32 {
     if t >= MT_TENSOR {
         return 1
@@ -2983,6 +2991,51 @@ function mlg_register_tiles_enabled() -> i32 {
     return 0
 }
 
+function mlg_register_tile_cap(s: string, out: ptr<i32>) -> i32 {
+    let p: ptr<u8> = s
+    if p == null or p[0] == 0 {
+        out[0] = 256
+        return 1
+    }
+    let mut i: i32 = 0
+    let mut cap: i32 = 0
+    while p[i] != 0 {
+        if p[i] < 48 or p[i] > 57 {
+            return 0
+        }
+        if cap > 214748364 or (cap == 214748364 and p[i] > 55) {
+            return 0
+        }
+        cap = cap * 10 + (p[i] - 48)
+        i = i + 1
+    }
+    if cap <= 0 {
+        return 0
+    }
+    out[0] = cap
+    return 1
+}
+
+function mlg_register_tile_target() -> string {
+    let target: string = getenv("FLOWC_MLIR_REGISTER_TILE_TARGET")
+    let p: ptr<u8> = target
+    if p == null or p[0] == 0 {
+        return "generic"
+    }
+    if strcmp(target, "amx") == 0 or strcmp(target, "sme") == 0 or
+       strcmp(target, "nvvm") == 0 or strcmp(target, "generic") == 0 {
+        return target
+    }
+    return ""
+}
+
+function mlg_register_tile_lowering(target: string) -> string {
+    if target == "amx" { return "amx.tile_mulf" }
+    if target == "sme" { return "arm_sme.outerproduct" }
+    if target == "nvvm" { return "nvvm.wgmma" }
+    return "vector.outerproduct"
+}
+
 # Emit one hardware-shaped register tile. The operation stays in the vector
 # dialect so targets can select AMX, SME, or a GPU matrix instruction later.
 function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
@@ -3003,14 +3056,39 @@ function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
     let am: i32 = m[0].vc_n[at - MT_VECTOR]
     let bn: i32 = m[0].vc_n[bt - MT_VECTOR]
     let cap_s: string = getenv("FLOWC_MLIR_REGISTER_TILE_MAX_LANES")
-    let cap_p: ptr<u8> = cap_s
-    let cap: i32 = if cap_p == null or cap_p[0] == 0 { 256 } else { atoi(cap_s) }
-    if am <= 0 or bn <= 0 or am * bn > cap {
-        mlg_refuse(m, e, "register tile exceeds FLOWC_MLIR_REGISTER_TILE_MAX_LANES")
+    let mut cap: i32 = 0
+    if mlg_register_tile_cap(cap_s, &cap) == 0 {
+        mlg_refuse(m, e, "FLOWC_MLIR_REGISTER_TILE_MAX_LANES must be a positive integer")
         return V_NONE
     }
     let rt: i32 = mlg_vector_of(m, bt, am)
+    let tile_lanes: i32 = mlg_vector_scalar_lanes(m, rt)
+    if am <= 0 or bn <= 0 or tile_lanes > cap {
+        mlg_refuse(m, e, "register tile exceeds FLOWC_MLIR_REGISTER_TILE_MAX_LANES")
+        return V_NONE
+    }
+    let target: string = mlg_register_tile_target()
+    if target == "" {
+        mlg_refuse(m, e, "FLOWC_MLIR_REGISTER_TILE_TARGET must be one of 'generic', 'amx', 'sme', 'nvvm'")
+        return V_NONE
+    }
     let r: i32 = mlg_new_val(m, rt)
+    mlg_line(m)
+    mlg_s(m, "// flow.register_tile_target = \"")
+    mlg_s(m, target)
+    mlg_s(m, "\"\n")
+    mlg_line(m)
+    mlg_s(m, "// flow.register_tile_lowering = \"")
+    mlg_s(m, mlg_register_tile_lowering(target))
+    mlg_s(m, "\"\n")
+    mlg_line(m)
+    mlg_s(m, "// flow.register_tile_lanes = ")
+    mlg_i(m, tile_lanes)
+    mlg_s(m, "\n")
+    mlg_line(m)
+    mlg_s(m, "// flow.register_tile_max_lanes = ")
+    mlg_i(m, cap)
+    mlg_s(m, "\n")
     mlg_line(m)
     mlg_v(m, r)
     mlg_s(m, " = vector.outerproduct ")
@@ -3021,6 +3099,17 @@ function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
     mlg_put_type(m, at)
     mlg_s(m, ", ")
     mlg_put_type(m, bt)
+    if target != "generic" {
+        mlg_s(m, " {flow.register_tile_target = \"")
+        mlg_s(m, target)
+        mlg_s(m, "\", flow.register_tile_lowering = \"")
+        mlg_s(m, mlg_register_tile_lowering(target))
+        mlg_s(m, "\", flow.register_tile_lanes = ")
+        mlg_i(m, tile_lanes)
+        mlg_s(m, ", flow.register_tile_max_lanes = ")
+        mlg_i(m, cap)
+        mlg_s(m, "}")
+    }
     mlg_nl(m)
     return r
 }
@@ -4202,7 +4291,7 @@ function mlg_uk_find(m: ptr<Mlg>, ns: i32, ne: i32) -> i32 {
 function mlg_emit_unknown_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
     let ns: i32 = mlg_ns(m, e)
     let ne: i32 = mlg_ne(m, e)
-    if mlg_span_prefix(m, ns, ne, "array_") == 1 or mlg_span_is(m, ns, ne, "tensor_add") == 1 or mlg_span_is(m, ns, ne, "__flow_dbg") == 1 or mlg_span_is(m, ns, ne, "sprintf") == 1 or mlg_span_is(m, ns, ne, "snprintf") == 1 or mlg_span_is(m, ns, ne, "fprintf") == 1 or mlg_span_is(m, ns, ne, "sscanf") == 1 or mlg_span_is(m, ns, ne, "fscanf") == 1 or mlg_span_is(m, ns, ne, "scanf") == 1 {
+    if mlg_span_prefix(m, ns, ne, "array_") == 1 or mlg_span_is(m, ns, ne, "tensor_add") == 1 or mlg_span_is(m, ns, ne, "tensor_scale") == 1 or mlg_span_is(m, ns, ne, "tensor_add_scalar") == 1 or mlg_span_is(m, ns, ne, "__flow_dbg") == 1 or mlg_span_is(m, ns, ne, "sprintf") == 1 or mlg_span_is(m, ns, ne, "snprintf") == 1 or mlg_span_is(m, ns, ne, "fprintf") == 1 or mlg_span_is(m, ns, ne, "sscanf") == 1 or mlg_span_is(m, ns, ne, "fscanf") == 1 or mlg_span_is(m, ns, ne, "scanf") == 1 {
         mlg_refuse(m, e, "call to an undeclared or builtin function")
         return V_NONE
     }
@@ -4733,44 +4822,192 @@ function mlg_method_call_node0(m: ptr<Mlg>, e: i32) -> i32 {
     return t
 }
 
-# Python's tensor_add intrinsic: one linalg.generic adding the second
-# argument into the first, typed by the first.
-function mlg_emit_tensor_add(m: ptr<Mlg>, e: i32) -> i32 {
+# Python's elementwise tensor intrinsics. Memref values keep the established in-place
+# destination form. Tensor values use a fresh tensor.empty destination so the
+# operation has value semantics and One-Shot Bufferization can choose the
+# storage reuse after alias analysis.
+function mlg_emit_tensor_elementwise(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
     let a0: i32 = m[0].arena.nodes[e].a
     let a1: i32 = m[0].arena.nodes[a0].next
     let v0: i32 = mlg_emit_expr(m, a0)
     let v1: i32 = mlg_emit_expr(m, a1)
     let t0: i32 = mlg_val_mt(m, v0, a0)
+    let tensor_result: i32 = mlg_is_tensor_type_mt(t0)
+    let mut init: i32 = V_NONE
+    if tensor_result == 1 {
+        let z: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, z)
+        mlg_s(m, " = arith.constant 0 : index")
+        mlg_nl(m)
+        let dim: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, dim)
+        mlg_s(m, " = tensor.dim ")
+        mlg_v(m, v0)
+        mlg_s(m, ", ")
+        mlg_v(m, z)
+        mlg_s(m, " : ")
+        mlg_put_type(m, t0)
+        mlg_nl(m)
+        init = mlg_new_val(m, t0)
+        mlg_line(m)
+        mlg_v(m, init)
+        mlg_s(m, " = tensor.empty(")
+        mlg_v(m, dim)
+        mlg_s(m, ") : ")
+        mlg_put_type(m, t0)
+        mlg_nl(m)
+    }
     let r: i32 = mlg_new_val(m, t0)
     mlg_line(m)
     mlg_v(m, r)
     mlg_s(m, " = linalg.generic {")
     mlg_nl(m)
     mlg_line(m)
-    mlg_s(m, "  indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>],")
+    if tensor_result == 1 {
+        mlg_s(m, "  indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>],")
+    } else {
+        mlg_s(m, "  indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<(d0) -> (d0)>],")
+    }
     mlg_nl(m)
     mlg_line(m)
     mlg_s(m, "  iterator_types = [\"parallel\"]")
     mlg_nl(m)
     mlg_line(m)
     mlg_s(m, "} ins(")
+    if tensor_result == 1 {
+        mlg_v(m, v0)
+        mlg_s(m, " : ")
+        mlg_put_type(m, t0)
+        mlg_s(m, ", ")
+    }
     mlg_v(m, v1)
     mlg_s(m, " : ")
     mlg_put_type(m, t0)
     mlg_s(m, ") outs(")
-    mlg_v(m, v0)
+    if init != V_NONE {
+        mlg_v(m, init)
+    } else {
+        mlg_v(m, v0)
+    }
     mlg_s(m, " : ")
     mlg_put_type(m, t0)
     mlg_s(m, ") {")
     mlg_nl(m)
     mlg_line(m)
-    mlg_s(m, "^bb0(%in: f32, %out: f32):")
+    if tensor_result == 1 {
+        mlg_s(m, "^bb0(%lhs: f32, %rhs: f32, %out: f32):")
+    } else {
+        mlg_s(m, "^bb0(%in: f32, %out: f32):")
+    }
     mlg_nl(m)
     let s: i32 = mlg_new_val(m, MT_F32)
     mlg_line(m)
     mlg_s(m, "  ")
     mlg_v(m, s)
-    mlg_s(m, " = arith.addf %in, %out : f32")
+    let mut opname: string = "addf"
+    if op == TOK_MINUS { opname = "subf" }
+    if op == TOK_STAR { opname = "mulf" }
+    if op == TOK_SLASH { opname = "divf" }
+    mlg_s(m, " = arith.")
+    mlg_s(m, opname)
+    if tensor_result == 1 {
+        mlg_s(m, " %lhs, %rhs : f32")
+    } else {
+        mlg_s(m, " %in, %out : f32")
+    }
+    mlg_nl(m)
+    mlg_line(m)
+    mlg_s(m, "  linalg.yield ")
+    mlg_v(m, s)
+    mlg_s(m, " : f32")
+    mlg_nl(m)
+    mlg_line(m)
+    mlg_s(m, "} -> ")
+    mlg_put_type(m, t0)
+    mlg_nl(m)
+    return r
+}
+
+# Tensor-scalar elementwise operations use a zero-rank broadcast operand. The
+# tensor result gets a fresh destination so tensor values retain value semantics.
+function mlg_emit_tensor_scalar(m: ptr<Mlg>, e: i32, op: i32) -> i32 {
+    let a0: i32 = m[0].arena.nodes[e].a
+    let a1: i32 = m[0].arena.nodes[a0].next
+    let v0: i32 = mlg_emit_expr(m, a0)
+    let v1: i32 = mlg_emit_expr(m, a1)
+    let t0: i32 = mlg_val_mt(m, v0, a0)
+    let t1: i32 = mlg_val_mt(m, v1, a1)
+    if mlg_is_tensor_type_mt(t0) == 0 {
+        mlg_refuse(m, e, "tensor scalar operation requires a tensor")
+        return V_NONE
+    }
+    if t1 != MT_F32 {
+        mlg_refuse(m, e, "tensor scalar operation requires an f32 scalar")
+        return V_NONE
+    }
+    let z: i32 = mlg_new_val(m, MT_INDEX)
+    mlg_line(m)
+    mlg_v(m, z)
+    mlg_s(m, " = arith.constant 0 : index")
+    mlg_nl(m)
+    let dim: i32 = mlg_new_val(m, MT_INDEX)
+    mlg_line(m)
+    mlg_v(m, dim)
+    mlg_s(m, " = tensor.dim ")
+    mlg_v(m, v0)
+    mlg_s(m, ", ")
+    mlg_v(m, z)
+    mlg_s(m, " : ")
+    mlg_put_type(m, t0)
+    mlg_nl(m)
+    let init: i32 = mlg_new_val(m, t0)
+    mlg_line(m)
+    mlg_v(m, init)
+    mlg_s(m, " = tensor.empty(")
+    mlg_v(m, dim)
+    mlg_s(m, ") : ")
+    mlg_put_type(m, t0)
+    mlg_nl(m)
+    let r: i32 = mlg_new_val(m, t0)
+    mlg_line(m)
+    mlg_v(m, r)
+    mlg_s(m, " = linalg.generic {")
+    mlg_nl(m)
+    mlg_line(m)
+    mlg_s(m, "  indexing_maps = [affine_map<(d0) -> (d0)>, affine_map<() -> ()>, affine_map<(d0) -> (d0)>],")
+    mlg_nl(m)
+    mlg_line(m)
+    mlg_s(m, "  iterator_types = [\"parallel\"]")
+    mlg_nl(m)
+    mlg_line(m)
+    mlg_s(m, "} ins(")
+    mlg_v(m, v0)
+    mlg_s(m, " : ")
+    mlg_put_type(m, t0)
+    mlg_s(m, ", ")
+    mlg_v(m, v1)
+    mlg_s(m, " : f32) outs(")
+    mlg_v(m, init)
+    mlg_s(m, " : ")
+    mlg_put_type(m, t0)
+    mlg_s(m, ") {")
+    mlg_nl(m)
+    mlg_line(m)
+    mlg_s(m, "^bb0(%in: f32, %scalar: f32, %out: f32):")
+    mlg_nl(m)
+    let s: i32 = mlg_new_val(m, MT_F32)
+    mlg_line(m)
+    mlg_s(m, "  ")
+    mlg_v(m, s)
+    mlg_s(m, " = arith.")
+    if op == TOK_STAR {
+        mlg_s(m, "mulf")
+    } else {
+        mlg_s(m, "addf")
+    }
+    mlg_s(m, " %in, %scalar : f32")
     mlg_nl(m)
     mlg_line(m)
     mlg_s(m, "  linalg.yield ")
@@ -4868,9 +5105,15 @@ function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
     if mlg_span_is(m, ns, ne, "register_tile_outer_product") == 1 and mlg_chain_len(m, m[0].arena.nodes[e].a) == 2 {
         return mlg_emit_register_tile_outer_product(m, e)
     }
-    # The tensor_add intrinsic over memrefs, unless the program defines it.
-    if mlg_span_is(m, ns, ne, "tensor_add") == 1 and mlg_chain_len(m, m[0].arena.nodes[e].a) == 2 and (k < 0 or m[0].fn_ext[k] == 1) {
-        return mlg_emit_tensor_add(m, e)
+    # Elementwise tensor intrinsics over memrefs and tensors, unless the
+    # program defines the operation itself.
+    if mlg_chain_len(m, m[0].arena.nodes[e].a) == 2 and (k < 0 or m[0].fn_ext[k] == 1) {
+        if mlg_span_is(m, ns, ne, "tensor_add") == 1 { return mlg_emit_tensor_elementwise(m, e, TOK_PLUS) }
+        if mlg_span_is(m, ns, ne, "tensor_sub") == 1 { return mlg_emit_tensor_elementwise(m, e, TOK_MINUS) }
+        if mlg_span_is(m, ns, ne, "tensor_mul") == 1 { return mlg_emit_tensor_elementwise(m, e, TOK_STAR) }
+        if mlg_span_is(m, ns, ne, "tensor_div") == 1 { return mlg_emit_tensor_elementwise(m, e, TOK_SLASH) }
+        if mlg_span_is(m, ns, ne, "tensor_scale") == 1 { return mlg_emit_tensor_scalar(m, e, TOK_STAR) }
+        if mlg_span_is(m, ns, ne, "tensor_add_scalar") == 1 { return mlg_emit_tensor_scalar(m, e, TOK_PLUS) }
     }
     if mlg_span_is(m, ns, ne, "i32_to_f32") == 1 and mlg_chain_len(m, m[0].arena.nodes[e].a) == 1 and (k < 0 or m[0].fn_ext[k] == 1) {
         # The C backend's intrinsic, declared or not: (float)x.
@@ -11895,29 +12138,34 @@ function mlg_affine_parallel_eligible(m: ptr<Mlg>, st: i32) -> i32 {
     return 1
 }
 
-function mlg_affine_tile_size() -> i32 {
-    let v: string = getenv("FLOWC_MLIR_TILE")
+function mlg_env_bounded_positive(v: string, lo: i32, hi: i32) -> i32 {
     let p: ptr<u8> = v
     if p == null { return 0 }
+    if p[0] == 0 { return 0 }
     let mut i: i32 = 0
     let mut n: i32 = 0
-    while p[i] >= 48 and p[i] <= 57 {
+    while p[i] != 0 {
+        if p[i] < 48 or p[i] > 57 { return -1 }
+        if n > hi / 10 { return -1 }
         n = n * 10 + (p[i] as i32) - 48
+        if n > hi { return -1 }
         i = i + 1
     }
-    if n < 2 or n > 64 { return 0 }
+    if n < lo or n > hi { return -1 }
     return n
+}
+
+function mlg_affine_tile_size() -> i32 {
+    return mlg_env_bounded_positive(getenv("FLOWC_MLIR_TILE"), 2, 64)
+}
+
+function mlg_affine_tile_l2_size() -> i32 {
+    return mlg_env_bounded_positive(getenv("FLOWC_MLIR_TILE_L2"), 2, 128)
 }
 
 function mlg_affine_tile_eligible(m: ptr<Mlg>, st: i32) -> i32 {
     let tile: i32 = mlg_affine_tile_size()
-    if tile == 0 or mlg_affine_enabled() == 0 or mlg_for_is_parallel(m, st) == 1 {
-        return 0
-    }
-    if mlg_kind(m, m[0].arena.nodes[st].a) != AST_INT {
-        return 0
-    }
-    if m[0].arena.nodes[m[0].arena.nodes[st].a].ival != 0 {
+    if tile <= 0 or mlg_affine_enabled() == 0 or mlg_for_is_parallel(m, st) == 1 {
         return 0
     }
     let mut step: i32 = 0
@@ -11934,10 +12182,125 @@ function mlg_affine_tile_eligible(m: ptr<Mlg>, st: i32) -> i32 {
 
 function mlg_emit_affine_tiled(m: ptr<Mlg>, st: i32) {
     let tile: i32 = mlg_affine_tile_size()
+    let l2: i32 = mlg_affine_tile_l2_size()
+    let lo0: i32 = mlg_emit_expr(m, m[0].arena.nodes[st].a)
+    let lb: i32 = mlg_emit_idx_cast(m, lo0)
+    let inner_lb: i32 = mlg_emit_idx_const(m, 0)
     let hi_e: i32 = m[0].arena.nodes[st].b
-    let lb: i32 = mlg_emit_idx_const(m, 0)
     let hi0: i32 = mlg_emit_expr(m, hi_e)
     let ub: i32 = mlg_emit_idx_cast(m, hi0)
+    if l2 != 0 and l2 >= tile {
+        let outer: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_s(m, "affine.for ")
+        mlg_v(m, outer)
+        mlg_s(m, " = ")
+        mlg_v(m, lb)
+        mlg_s(m, " to ")
+        mlg_v(m, ub)
+        mlg_s(m, " step ")
+        mlg_i(m, l2)
+        mlg_s(m, " {")
+        mlg_nl(m)
+        m[0].ind = m[0].ind + 1
+        let outer_rem: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, outer_rem)
+        mlg_s(m, " = arith.subi ")
+        mlg_v(m, ub)
+        mlg_s(m, ", ")
+        mlg_v(m, outer)
+        mlg_s(m, " : index")
+        mlg_nl(m)
+        let outer_ub: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, outer_ub)
+        mlg_s(m, " = affine.min affine_map<(d0) -> (d0, ")
+        mlg_i(m, l2)
+        mlg_s(m, ")> (")
+        mlg_v(m, outer_rem)
+        mlg_s(m, ")")
+        mlg_nl(m)
+        let middle: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_s(m, "affine.for ")
+        mlg_v(m, middle)
+        mlg_s(m, " = ")
+        mlg_v(m, inner_lb)
+        mlg_s(m, " to ")
+        mlg_v(m, outer_ub)
+        mlg_s(m, " step ")
+        mlg_i(m, tile)
+        mlg_s(m, " {")
+        mlg_nl(m)
+        m[0].ind = m[0].ind + 1
+        let middle_rem: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, middle_rem)
+        mlg_s(m, " = arith.subi ")
+        mlg_v(m, outer_ub)
+        mlg_s(m, ", ")
+        mlg_v(m, middle)
+        mlg_s(m, " : index")
+        mlg_nl(m)
+        let inner_ub2: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, inner_ub2)
+        mlg_s(m, " = affine.min affine_map<(d0) -> (d0, ")
+        mlg_i(m, tile)
+        mlg_s(m, ")> (")
+        mlg_v(m, middle_rem)
+        mlg_s(m, ")")
+        mlg_nl(m)
+        let inner: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_s(m, "affine.for ")
+        mlg_v(m, inner)
+        mlg_s(m, " = ")
+        mlg_v(m, inner_lb)
+        mlg_s(m, " to ")
+        mlg_v(m, inner_ub2)
+        mlg_s(m, " step 1 {")
+        mlg_nl(m)
+        m[0].ind = m[0].ind + 1
+        let partial: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, partial)
+        mlg_s(m, " = arith.addi ")
+        mlg_v(m, outer)
+        mlg_s(m, ", ")
+        mlg_v(m, middle)
+        mlg_s(m, " : index")
+        mlg_nl(m)
+        let idx2: i32 = mlg_new_val(m, MT_INDEX)
+        mlg_line(m)
+        mlg_v(m, idx2)
+        mlg_s(m, " = arith.addi ")
+        mlg_v(m, partial)
+        mlg_s(m, ", ")
+        mlg_v(m, inner)
+        mlg_s(m, " : index")
+        mlg_nl(m)
+        mlg_add_local(m, mlg_ns(m, st), mlg_ne(m, st), MT_INDEX, FT_NONE, idx2)
+        let none2: ptr<i32> = mlg_alloc_i32(1)
+        let k2: i32 = mlg_push_loop(m, 2, 0, 0, V_NONE, V_NONE, none2, 0)
+        mlg_emit_block(m, m[0].arena.nodes[st].c)
+        m[0].nlp = k2
+        mlg_free_i32(none2)
+        m[0].ind = m[0].ind - 1
+        mlg_line(m)
+        mlg_s(m, "}")
+        mlg_nl(m)
+        m[0].ind = m[0].ind - 1
+        mlg_line(m)
+        mlg_s(m, "}")
+        mlg_nl(m)
+        m[0].ind = m[0].ind - 1
+        mlg_line(m)
+        mlg_s(m, "}")
+        mlg_nl(m)
+        return
+    }
     let step_tile: i32 = mlg_emit_idx_const(m, tile)
     let outer: i32 = mlg_new_val(m, MT_INDEX)
     mlg_line(m)
@@ -11975,7 +12338,7 @@ function mlg_emit_affine_tiled(m: ptr<Mlg>, st: i32) {
     mlg_s(m, "affine.for ")
     mlg_v(m, inner)
     mlg_s(m, " = ")
-    mlg_v(m, lb)
+    mlg_v(m, inner_lb)
     mlg_s(m, " to ")
     mlg_v(m, inner_ub)
     mlg_s(m, " step 1 {")
@@ -13680,8 +14043,8 @@ function mlg_emit_extern_fn(m: ptr<Mlg>, f0: i32) {
         m[0].needs_printf = 1
         return
     }
-    if mlg_span_is(m, ns, ne, "tensor_add") == 1 {
-        # Python never declares its tensor_add intrinsic.
+    if mlg_span_is(m, ns, ne, "tensor_add") == 1 or mlg_span_is(m, ns, ne, "tensor_sub") == 1 or mlg_span_is(m, ns, ne, "tensor_mul") == 1 or mlg_span_is(m, ns, ne, "tensor_div") == 1 or mlg_span_is(m, ns, ne, "tensor_scale") == 1 or mlg_span_is(m, ns, ne, "tensor_add_scalar") == 1 {
+        # Python never declares its tensor elementwise intrinsics.
         return
     }
     let k: i32 = mlg_find_fn(m, ns, ne)
@@ -18280,7 +18643,22 @@ function mao_is_var(m: ptr<Mlg>, vars: ptr<i32>, nv: i32, e: i32) -> i32 {
     return 0
 }
 
-function mao_expr(m: ptr<Mlg>, e: i32, st: i32, vars: ptr<i32>, nv: i32) -> i32 {
+function mao_var_extent(extents: ptr<i32>, vars: ptr<i32>, nv: i32, m: ptr<Mlg>, e: i32) -> i32 {
+    if mlg_kind(m, e) != AST_IDENT {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < nv {
+        let d: i32 = vars[i]
+        if mlg_span_eq(m, mlg_ns(m, d), mlg_ne(m, d), mlg_ns(m, e), mlg_ne(m, e)) == 1 {
+            return extents[i]
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+function mao_expr(m: ptr<Mlg>, e: i32, st: i32, swizzle: i32, vars: ptr<i32>, extents: ptr<i32>, nv: i32) -> i32 {
     if e == AST_NONE or e < 0 {
         return e
     }
@@ -18299,33 +18677,98 @@ function mao_expr(m: ptr<Mlg>, e: i32, st: i32, vars: ptr<i32>, nv: i32) -> i32 
                 m[0].arena.nodes[fa].name_end = m[0].arena.nodes[e].name_end
                 let ix: i32 = mlg_new_node(m, AST_INDEX, m[0].arena.nodes[o].start)
                 m[0].arena.nodes[ix].a = fa
-                m[0].arena.nodes[ix].b = mao_expr(m, m[0].arena.nodes[o].b, st, vars, nv)
+                let index: i32 = mao_expr(m, m[0].arena.nodes[o].b, st, swizzle, vars, extents, nv)
+                let extent: i32 = mao_var_extent(extents, vars, nv, m, m[0].arena.nodes[o].a)
+                m[0].arena.nodes[ix].b = mao_swizzle_index(m, index, swizzle, extent)
                 return ix
             }
         }
     }
-    m[0].arena.nodes[e].a = mao_chain(m, m[0].arena.nodes[e].a, st, vars, nv)
+    m[0].arena.nodes[e].a = mao_chain(m, m[0].arena.nodes[e].a, st, swizzle, vars, extents, nv)
     if k != AST_CALL and k != AST_CAST and k != AST_LET {
-        m[0].arena.nodes[e].b = mao_chain(m, m[0].arena.nodes[e].b, st, vars, nv)
+        m[0].arena.nodes[e].b = mao_chain(m, m[0].arena.nodes[e].b, st, swizzle, vars, extents, nv)
     }
     if k == AST_INDEX or k == AST_IF_EXPR {
-        m[0].arena.nodes[e].c = mao_expr(m, m[0].arena.nodes[e].c, st, vars, nv)
+        m[0].arena.nodes[e].c = mao_expr(m, m[0].arena.nodes[e].c, st, swizzle, vars, extents, nv)
     }
     return e
 }
 
-function mao_chain(m: ptr<Mlg>, head: i32, st: i32, vars: ptr<i32>, nv: i32) -> i32 {
+function mao_chain(m: ptr<Mlg>, head: i32, st: i32, swizzle: i32, vars: ptr<i32>, extents: ptr<i32>, nv: i32) -> i32 {
     if head == AST_NONE or head < 0 {
         return head
     }
     let nx: i32 = m[0].arena.nodes[head].next
-    let h2: i32 = mao_expr(m, head, st, vars, nv)
-    m[0].arena.nodes[h2].next = mao_chain(m, nx, st, vars, nv)
+    let h2: i32 = mao_expr(m, head, st, swizzle, vars, extents, nv)
+    m[0].arena.nodes[h2].next = mao_chain(m, nx, st, swizzle, vars, extents, nv)
     return h2
 }
 
 # The SoA struct for size n (made once), whose name is set in *ns/*ne.
-function mao_soa(m: ptr<Mlg>, st: i32, n: i32, made: ptr<i32>, nmade: ptr<i32>) -> i32 {
+# FLOWC_MLIR_AOSOA_PAD=N gives each generated field array N extra storage
+# elements.  Source-level indexing keeps the logical extent n.
+function mlg_aosoa_pad() -> i32 {
+    return mlg_env_bounded_positive(getenv("FLOWC_MLIR_AOSOA_PAD"), 1, 64)
+}
+
+function mlg_aosoa_auto_pad() -> i32 {
+    let v: string = getenv("FLOWC_MLIR_AOSOA_AUTO_PAD")
+    let p: ptr<u8> = v
+    if p == null or p[0] == 0 { return 0 }
+    if p[0] == 49 and p[1] == 0 { return 1 }
+    return -1
+}
+
+function mlg_aosoa_swizzle() -> i32 {
+    let n: i32 = mlg_env_bounded_positive(getenv("FLOWC_MLIR_AOSOA_SWIZZLE"), 2, 32)
+    if n == 0 { return 0 }
+    let mut w: i32 = 1
+    let mut shift: i32 = 0
+    while w < n {
+        w = w * 2
+        shift = shift + 1
+    }
+    if w != n {
+        return 0
+    }
+    return shift
+}
+
+function mao_swizzle_index(m: ptr<Mlg>, e: i32, shift: i32, extent: i32) -> i32 {
+    if e == AST_NONE or e < 0 or shift <= 0 or extent <= 0 {
+        return e
+    }
+    let mut power: i32 = 1
+    while power < extent {
+        power = power * 2
+    }
+    if power != extent {
+        return e
+    }
+    let ec: i32 = mn_copy(m, e)
+    let sh: i32 = mlg_new_node(m, AST_INT, m[0].arena.nodes[e].start)
+    m[0].arena.nodes[sh].ival = shift
+    let hi: i32 = mlg_new_node(m, AST_BINOP, m[0].arena.nodes[e].start)
+    m[0].arena.nodes[hi].ival = TOK_SHR
+    m[0].arena.nodes[hi].a = ec
+    m[0].arena.nodes[hi].b = sh
+    let out: i32 = mlg_new_node(m, AST_BINOP, m[0].arena.nodes[e].start)
+    m[0].arena.nodes[out].ival = TOK_CARET
+    m[0].arena.nodes[out].a = e
+    m[0].arena.nodes[out].b = hi
+    return out
+}
+
+function mao_conflict_pad(n: i32, pad: i32, auto_pad: i32) -> i32 {
+    if pad > 0 { return pad }
+    if auto_pad == 0 or n <= 0 { return 0 }
+    let mut power: i32 = 1
+    while power < n { power = power * 2 }
+    if power == n { return 1 }
+    return 0
+}
+
+function mao_soa(m: ptr<Mlg>, st: i32, n: i32, pad: i32, auto_pad: i32, made: ptr<i32>, nmade: ptr<i32>) -> i32 {
     let mut i: i32 = 0
     while i < nmade[0] {
         let s: i32 = made[i]
@@ -18345,6 +18788,7 @@ function mao_soa(m: ptr<Mlg>, st: i32, n: i32, made: ptr<i32>, nmade: ptr<i32>) 
     let arr_s: i32 = mlg_xput(m, arr_lit, 5)
     let mut fh: i32 = AST_NONE
     let mut ft: i32 = AST_NONE
+    let extra: i32 = mao_conflict_pad(n, pad, auto_pad)
     let mut f: i32 = m[0].arena.nodes[st].a
     while f != AST_NONE {
         let at: i32 = mlg_new_node(m, AST_TYPE, arr_s)
@@ -18352,7 +18796,7 @@ function mao_soa(m: ptr<Mlg>, st: i32, n: i32, made: ptr<i32>, nmade: ptr<i32>) 
         m[0].arena.nodes[at].name_start = arr_s
         m[0].arena.nodes[at].name_end = arr_s + 5
         m[0].arena.nodes[at].a = m[0].arena.nodes[f].a
-        m[0].arena.nodes[at].ival = n
+        m[0].arena.nodes[at].ival = n + extra
         let fd: i32 = mn_copy(m, f)
         m[0].arena.nodes[fd].a = at
         if fh == AST_NONE {
@@ -18371,7 +18815,7 @@ function mao_soa(m: ptr<Mlg>, st: i32, n: i32, made: ptr<i32>, nmade: ptr<i32>) 
     return sd
 }
 
-function mao_block(m: ptr<Mlg>, blk: i32, st: i32, vars: ptr<i32>, nv: ptr<i32>, made: ptr<i32>, nmade: ptr<i32>) {
+function mao_block(m: ptr<Mlg>, blk: i32, st: i32, pad: i32, auto_pad: i32, swizzle: i32, vars: ptr<i32>, extents: ptr<i32>, nv: ptr<i32>, made: ptr<i32>, nmade: ptr<i32>) {
     if blk == AST_NONE or blk < 0 or mlg_kind(m, blk) != AST_BLOCK {
         return
     }
@@ -18380,43 +18824,44 @@ function mao_block(m: ptr<Mlg>, blk: i32, st: i32, vars: ptr<i32>, nv: ptr<i32>,
         let k: i32 = mlg_kind(m, s)
         if k == AST_LET and mao_is_target(m, m[0].arena.nodes[s].a) == 1 {
             let n: i32 = m[0].arena.nodes[m[0].arena.nodes[s].a].ival
-            let sd: i32 = mao_soa(m, st, n, made, nmade)
+            let sd: i32 = mao_soa(m, st, n, pad, auto_pad, made, nmade)
             let ty: i32 = mn_flat(m, mlg_ns(m, sd), mlg_ne(m, sd))
             m[0].arena.nodes[s].a = ty
             if nv[0] < 64 {
                 vars[nv[0]] = s
+                extents[nv[0]] = n
                 nv[0] = nv[0] + 1
             }
         } else {
             if k == AST_IF or k == AST_WHILE or k == AST_FOR or k == AST_BLOCK or k == AST_HANDLE or k == AST_MATCH {
                 if k == AST_IF or k == AST_WHILE {
-                    m[0].arena.nodes[s].a = mao_expr(m, m[0].arena.nodes[s].a, st, vars, nv[0])
-                    mao_block(m, m[0].arena.nodes[s].b, st, vars, nv, made, nmade)
+                    m[0].arena.nodes[s].a = mao_expr(m, m[0].arena.nodes[s].a, st, swizzle, vars, extents, nv[0])
+                    mao_block(m, m[0].arena.nodes[s].b, st, pad, auto_pad, swizzle, vars, extents, nv, made, nmade)
                     if k == AST_IF {
-                        mao_block(m, m[0].arena.nodes[s].c, st, vars, nv, made, nmade)
+                        mao_block(m, m[0].arena.nodes[s].c, st, pad, auto_pad, swizzle, vars, extents, nv, made, nmade)
                     }
                 }
                 if k == AST_FOR {
-                    m[0].arena.nodes[s].a = mao_expr(m, m[0].arena.nodes[s].a, st, vars, nv[0])
-                    m[0].arena.nodes[s].b = mao_expr(m, m[0].arena.nodes[s].b, st, vars, nv[0])
-                    mao_block(m, m[0].arena.nodes[s].c, st, vars, nv, made, nmade)
+                    m[0].arena.nodes[s].a = mao_expr(m, m[0].arena.nodes[s].a, st, swizzle, vars, extents, nv[0])
+                    m[0].arena.nodes[s].b = mao_expr(m, m[0].arena.nodes[s].b, st, swizzle, vars, extents, nv[0])
+                    mao_block(m, m[0].arena.nodes[s].c, st, pad, auto_pad, swizzle, vars, extents, nv, made, nmade)
                 }
                 if k == AST_BLOCK {
-                    mao_block(m, s, st, vars, nv, made, nmade)
+                    mao_block(m, s, st, pad, auto_pad, swizzle, vars, extents, nv, made, nmade)
                 }
                 if k == AST_HANDLE {
-                    mao_block(m, m[0].arena.nodes[s].a, st, vars, nv, made, nmade)
+                    mao_block(m, m[0].arena.nodes[s].a, st, pad, auto_pad, swizzle, vars, extents, nv, made, nmade)
                 }
                 if k == AST_MATCH {
-                    m[0].arena.nodes[s].a = mao_expr(m, m[0].arena.nodes[s].a, st, vars, nv[0])
+                    m[0].arena.nodes[s].a = mao_expr(m, m[0].arena.nodes[s].a, st, swizzle, vars, extents, nv[0])
                 }
             } else {
                 if k == AST_LET {
-                    m[0].arena.nodes[s].b = mao_expr(m, m[0].arena.nodes[s].b, st, vars, nv[0])
+                    m[0].arena.nodes[s].b = mao_expr(m, m[0].arena.nodes[s].b, st, swizzle, vars, extents, nv[0])
                 } else {
-                    m[0].arena.nodes[s].a = mao_expr(m, m[0].arena.nodes[s].a, st, vars, nv[0])
+                    m[0].arena.nodes[s].a = mao_expr(m, m[0].arena.nodes[s].a, st, swizzle, vars, extents, nv[0])
                     if k == AST_ASSIGN {
-                        m[0].arena.nodes[s].b = mao_expr(m, m[0].arena.nodes[s].b, st, vars, nv[0])
+                        m[0].arena.nodes[s].b = mao_expr(m, m[0].arena.nodes[s].b, st, swizzle, vars, extents, nv[0])
                     }
                 }
             }
@@ -18439,14 +18884,30 @@ function mlg_aosoa(m: ptr<Mlg>, root: i32) {
         return
     }
     let vars: ptr<i32> = mlg_alloc_i32(64)
+    let extents: ptr<i32> = mlg_alloc_i32(64)
     let nv: array<i32, 1> = [0]
     let made: ptr<i32> = mlg_alloc_i32(64)
     let nmade: array<i32, 1> = [0]
+    let pad: i32 = mlg_aosoa_pad()
+    let auto_pad: i32 = mlg_aosoa_auto_pad()
+    let swizzle: i32 = mlg_aosoa_swizzle()
+    if pad < 0 {
+        mlg_refuse(m, root, "FLOWC_MLIR_AOSOA_PAD must be a positive integer")
+        return
+    }
+    if auto_pad < 0 {
+        mlg_refuse(m, root, "FLOWC_MLIR_AOSOA_AUTO_PAD must be 1")
+        return
+    }
+    if swizzle < 0 {
+        mlg_refuse(m, root, "FLOWC_MLIR_AOSOA_SWIZZLE must be a power of two")
+        return
+    }
     item = m[0].arena.nodes[root].a
     while item != AST_NONE {
         let d2: i32 = mlg_unwrap(m, item)
         if mlg_kind(m, d2) == AST_FN {
-            mao_block(m, m[0].arena.nodes[d2].c, st, vars, &nv[0] as ptr<i32>, made, &nmade[0] as ptr<i32>)
+            mao_block(m, m[0].arena.nodes[d2].c, st, pad, auto_pad, swizzle, vars, extents, &nv[0] as ptr<i32>, made, &nmade[0] as ptr<i32>)
         }
         item = m[0].arena.nodes[item].next
     }

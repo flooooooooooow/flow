@@ -27,12 +27,17 @@ mlir_print_logic mlir compiler/fixtures/mlir/print_logic.flow --lenient
 mlir_record_update mlir compiler/fixtures/mlir/record_update.flow --lenient
 mlir_spans_data mlir compiler/fixtures/mlir/spans_data.flow --lenient
 mlir_structs mlir compiler/fixtures/mlir/structs.flow --lenient
+mlir_aosoa_padding aosoa-pad compiler/fixtures/mlir_opt/aosoa_padding.flow --lenient --aosoa-pad
+mlir_aosoa_swizzle aosoa-swizzle compiler/fixtures/mlir_opt/aosoa_padding.flow --lenient --aosoa-swizzle
 mlir_basic_arith mlir tests/mlir/basic_arith.flow --lenient
+mlir_tensor_value mlir compiler/fixtures/mlir_opt/tensor_value.flow --lenient
 mlir_affine_loop affine tests/mlir/affine_loop.flow --lenient
 mlir_tiled_loop tile tests/mlir/affine_loop.flow --lenient
+mlir_multitiled_loop tile2 tests/mlir/affine_loop.flow --lenient
 mlir_matmul mlir examples/bench/matmul_mlir.flow --lenient
 mlir_tensor_bench mlir examples/ml/mlir_tensor_bench.flow --lenient
 mlir_register_tiles mlir compiler/fixtures/mlir_opt/register_tile_probe.flow --lenient --register-tiles
+mlir_register_tiles_nested mlir compiler/fixtures/mlir_opt/register_tile_nested.flow --lenient --register-tiles
 mlir_gpu_dialect mlir compiler/fixtures/mlir/gpu_kernels.flow --lenient --mlir-gpu
 mlir_gpu_dialect_stdlib mlir lib/stdlib/gpu_kernels.flow --lenient --mlir-gpu
 
@@ -66,6 +71,9 @@ pipe_no_fusion pipeline --no-loop-fusion
 pipe_no_m2r_sccp pipeline --no-mem2reg --no-sccp
 pipe_no_cse_dce_inline pipeline --no-cse --no-dce --no-inline
 pipe_o1_nolicm_nodce pipeline --opt-level O1 --no-licm --no-dce
+pipe_async pipeline --enable-loop-pipelining --enable-multi-buffering
+pipe_affine_tile pipeline --enable-affine-tiling --affine-tile-size 8
+pipe_gpu_async pipeline --enable-async-copy --async-copy-target gpu
 
 # --emit-spirv (fails at mlir-opt on the Python generator's GPU module too).
 spirv_gpu_kernels spirv lib/stdlib/gpu_kernels.flow --mlir-gpu --emit-spirv --spirv-out @WORK@/k.spv
@@ -94,3 +102,5 @@ audio_bus out compile-audio examples/audio/bus_graph_demo.flow --mlir
 audio_hot_cross_buns out compile-audio examples/audio/hot_cross_buns.flow --mlir
 audio_loopback out compile-audio examples/audio/loopback_effects.flow --mlir
 audio_gpu_gain out compile-audio examples/audio/gpu_gain_demo.flow --mlir
+mlir_tensor_scalars mlir compiler/fixtures/mlir_opt/tensor_scalars.flow --lenient
+mlir_tensor_boundary mlir compiler/fixtures/mlir_opt/tensor_boundary.flow --lenient
