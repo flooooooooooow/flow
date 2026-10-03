@@ -1,0 +1,24 @@
+// vgpu FFT ocean simulation case using typed GPU frame graph
+gpu resource {
+    texture h0_spectrum: rg32f(256, 256)
+    texture ht_spectrum: rg32f(256, 256) ping_pong
+    texture displacement: rgba16f(256, 256)
+    texture normal_map: rgba8unorm(256, 256)
+}
+
+gpu frame ocean_sim {
+    compute update_spectrum[256, 256, 1](h0_spectrum.read, ht_spectrum.write)
+    compute iffft_horizontal[256, 256, 1](ht_spectrum.read, ht_spectrum.write)
+    ht_spectrum.swap()
+    compute iffft_vertical[256, 256, 1](ht_spectrum.read, displacement.write)
+    compute calculate_normals[256, 256, 1](displacement.read, normal_map.write)
+
+    render surface {
+        draw ocean_render(displacement.read, normal_map.read)
+    }
+}
+
+function main() -> i32 {
+    println("vgpu FFT ocean simulation initialized")
+    return 0
+}

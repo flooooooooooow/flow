@@ -1,0 +1,26 @@
+// vgpu fluid simulation case using typed GPU frame graph
+gpu resource {
+    texture velocity: rgba16f(128, 128) ping_pong
+    texture pressure: r16f(128, 128) ping_pong
+    texture divergence: r16f(128, 128) transient
+    texture dye: rgba8unorm(128, 128) ping_pong
+}
+
+gpu frame fluid_sim {
+    compute advect[128, 128, 1](velocity.read, velocity.write)
+    compute divergence[128, 128, 1](velocity.read, divergence.write)
+
+    repeat 20 {
+        compute pressure[128, 128, 1](pressure.read, divergence.read, pressure.write)
+        pressure.swap()
+    }
+
+    render surface {
+        draw fluid_display(velocity.read, dye.read)
+    }
+}
+
+function main() -> i32 {
+    println("vgpu fluid simulation initialized")
+    return 0
+}

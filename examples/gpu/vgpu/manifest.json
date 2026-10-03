@@ -20,6 +20,38 @@
       ]
     },
     {
+      "id": "fluid",
+      "upstream": "https://vgpu.sh/examples/fluid",
+      "source": "examples/gpu/vgpu/fluid.flow",
+      "frame": "fluid_sim",
+      "width": 128,
+      "height": 128,
+      "comparison": {
+        "mode": "numerical",
+        "tolerance": 1e-4
+      },
+      "backends": [
+        "metal",
+        "webgpu"
+      ]
+    },
+    {
+      "id": "fft_ocean",
+      "upstream": "https://vgpu.sh/examples/ocean",
+      "source": "examples/gpu/vgpu/fft_ocean.flow",
+      "frame": "ocean_sim",
+      "width": 256,
+      "height": 256,
+      "comparison": {
+        "mode": "numerical",
+        "tolerance": 1e-4
+      },
+      "backends": [
+        "metal",
+        "webgpu"
+      ]
+    },
+    {
       "id": "mnist",
       "upstream": "https://vgpu.sh/examples/mnist",
       "source": "examples/gpu/vgpu/mnist.flow",

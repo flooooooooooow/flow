@@ -22,36 +22,28 @@ A compatibility case is complete only when:
 
 ## Backend model
 
-Fullscreen FSL now has two source generators from the same parsed AST:
+Fullscreen FSL and multi-pass GPU graph rendering now share a unified resource and pass graph (`src/flow/gpu_graph.py`):
 
 ```text
-"shader fill"
-    -> shader_dsl.py
-       -> shader_codegen.py       -> MSL / Metal
-       -> shader_codegen_wgsl.py  -> WGSL / WebGPU
+"gpu frame / gpu resource"
+    -> gpu_graph.py
+       -> generate_metal()       -> MSL / Metal Orchestration
+       -> generate_webgpu_js()   -> WGSL / WebGPU JS Orchestration
 ```
 
 Flow already has a separate `@gpu` compute path with Metal and WGSL backends. The
-compatibility work should converge these surfaces around shared resources and
-pipeline declarations rather than create another shader language.
-
-The browser host renders FSL WGSL into an offscreen `rgba8unorm` texture, copies it
-to a readback buffer and removes WebGPU row padding before comparison. This keeps
-the conformance bytes independent of canvas DPR, swap-chain format and browser
-compositing. `compareRgba` then provides an exact byte comparison primitive.
+compatibility work converges these surfaces around shared resources, ping-pong targets,
+storage textures/buffers, and pipeline declarations rather than creating another shader language.
 
 ## Cases
 
 | Case | Flow source | Metal | WGSL | Reference comparison |
 | --- | --- | --- | --- | --- |
 | Gradient | `gradient.flow` | source-ready | offscreen renderer ready | upstream reference bytes pending |
+| Fluid | `fluid.flow` | graph-ready | graph-ready | numerical tolerance (1e-4) |
+| FFT Ocean | `fft_ocean.flow` | graph-ready | graph-ready | numerical tolerance (1e-4) |
 
-The next tranche should deliberately exercise missing capabilities instead of
-adding only fragment effects: textures/samplers, vertex and index buffers,
-instancing, storage textures, multi-pass compute, depth/stencil, cubemaps,
-workgroup memory/barriers, and tensor/model execution.
-
-## Run the first case
+## Run the cases
 
 Metal uses the existing FSL command:
 
