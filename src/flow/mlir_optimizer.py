@@ -10,14 +10,7 @@ import tempfile
 import re
 import sys
 from pathlib import Path
-from typing import List, Optional, Dict, Any
-
-from .mlir_outerproduct_tile import (
-    synthesize_gemm_microkernel,
-    OuterProductTiler,
-    RegisterPressureAnalyzer,
-    HardwareMatrixLowering,
-)
+from typing import List, Optional
 
 
 class MLIROptimizer:
@@ -61,13 +54,7 @@ class MLIROptimizer:
         enable_inline: bool = True,
         enable_loop_pipelining: bool = False,
         enable_multi_buffering: bool = False,
-        enable_outerproduct_tiling: bool = False,
-        target_arch: str = "avx512",
-        tile_m: int = 16,
-        tile_n: int = 4,
-        tile_k: int = 4,
         optimization_level: str = "O2",
-        **kwargs,
     ) -> str:
         """
         Build an mlir-opt --pass-pipeline string from flags and O-level.
@@ -208,25 +195,6 @@ class MLIROptimizer:
             Path(probe_out).unlink(missing_ok=True)
         return self._opt_capable
 
-    def synthesize_gemm_microkernel(
-        self,
-        m: int = 128,
-        n: int = 128,
-        k: int = 128,
-        tile_m: int = 16,
-        tile_n: int = 4,
-        tile_k: int = 4,
-        target_arch: str = "avx512",
-        dtype: str = "f32",
-        function_name: str = "gemm_microkernel",
-    ) -> str:
-        """Synthesize hardware-exact GEMM micro-kernel using vector.outerproduct tiles."""
-        return synthesize_gemm_microkernel(
-            m=m, n=n, k=k,
-            tile_m=tile_m, tile_n=tile_n, tile_k=tile_k,
-            target_arch=target_arch, dtype=dtype, function_name=function_name
-        )
-
     def optimize(self, input_mlir: str, output_mlir: str,
                  enable_vectorization: bool = True,
                  enable_loop_fusion: bool = False,
@@ -238,11 +206,6 @@ class MLIROptimizer:
                  enable_inline: bool = True,
                  enable_loop_pipelining: bool = False,
                  enable_multi_buffering: bool = False,
-                 enable_outerproduct_tiling: bool = False,
-                 target_arch: str = "avx512",
-                 tile_m: int = 16,
-                 tile_n: int = 4,
-                 tile_k: int = 4,
                  optimization_level: str = "O2") -> int:
         """
         Apply MLIR optimization passes.
@@ -251,10 +214,14 @@ class MLIROptimizer:
             input_mlir: Path to input MLIR file
             output_mlir: Path to output MLIR file
             enable_vectorization: Enable loop vectorization (O3; needs affine/scf)
-            enable_loop_fusion: Enable affine loop fusion
-            enable_outerproduct_tiling: Lower matrix contractions to vector.outerproduct tiles
-            target_arch: avx512, arm_neon, intel_amx, arm_sme, or nvvm_tma
-            tile_m, tile_n, tile_k: Tile dimensions for register outerproduct
+            enable_loop_fusion: Enable affine loop fusion (O2+; disabled by
+                default since the generator emits scf/cf, not affine. See flow#466.)
+            enable_mem2reg: Enable memory-to-register promotion (O2+)
+            enable_sccp: Enable sparse conditional constant propagation (O2+)
+            enable_licm: Enable loop invariant code motion (O2+)
+            enable_gvn: Enable CSE as GVN stand-in (O1+; no MLIR gvn pass)
+            enable_dce: Enable symbol-dce + canonicalize round (O1+)
+            enable_inline: Enable module inliner (O2+; default True)
             optimization_level: O0, O1, O2, or O3
         
         Returns:
@@ -271,25 +238,11 @@ class MLIROptimizer:
             enable_inline=enable_inline,
             enable_loop_pipelining=enable_loop_pipelining,
             enable_multi_buffering=enable_multi_buffering,
-            enable_outerproduct_tiling=enable_outerproduct_tiling,
-            target_arch=target_arch,
-            tile_m=tile_m,
-            tile_n=tile_n,
-            tile_k=tile_k,
             optimization_level=optimization_level,
         )
 
-        input_code = Path(input_mlir).read_text()
-        if enable_outerproduct_tiling:
-            if "vector.outerproduct" in input_code:
-                lowering = HardwareMatrixLowering(target_arch=target_arch)
-                input_code = lowering.lower_outerproduct_to_accelerator(input_code)
-                with tempfile.NamedTemporaryFile(mode="w", suffix=".mlir", delete=False) as tmp:
-                    tmp.write(input_code)
-                    input_mlir = tmp.name
-
         if not self._toolchain_supports_flow_mlir():
-            Path(output_mlir).write_text(input_code)
+            self._copy_if_different(input_mlir, output_mlir)
             return 0
 
         # Run mlir-opt with optimization pipeline
@@ -306,8 +259,9 @@ class MLIROptimizer:
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:
                 err = result.stderr or ""
+                # Ubuntu mlir-14 packages sometimes ship mlir-opt without the Func dialect.
                 if "func.func" in err and "unknown" in err:
-                    Path(output_mlir).write_text(input_code)
+                    self._copy_if_different(input_mlir, output_mlir)
                     self._opt_capable = False
                     return 0
                 print(f"MLIR optimization failed: {err}", file=sys.stderr)
@@ -450,9 +404,7 @@ if __name__ == "__main__":
             "[--O0|--O1|--O2|--O3] [--no-vectorization] [--no-loop-fusion] "
             "[--no-mem2reg] [--no-sccp] [--no-licm] [--no-cse] [--no-dce] "
             "[--no-inline] [--enable-loop-pipelining] "
-            "[--enable-multi-buffering] [--enable-outerproduct-tiling] "
-            "[--target-arch=avx512|arm_neon|intel_amx|arm_sme|nvvm_tma] "
-            "[--print-pass-pipeline]"
+            "[--enable-multi-buffering] [--print-pass-pipeline]"
         )
         sys.exit(1)
     
@@ -470,12 +422,6 @@ if __name__ == "__main__":
     enable_inline = "--no-inline" not in argv
     enable_loop_pipelining = "--enable-loop-pipelining" in argv
     enable_multi_buffering = "--enable-multi-buffering" in argv
-    enable_outerproduct_tiling = "--enable-outerproduct-tiling" in argv
-    target_arch = "avx512"
-    for arg in argv:
-        if arg.startswith("--target-arch="):
-            target_arch = arg.split("=", 1)[1]
-
     optimization_level = "O2"
     
     for arg in argv:
@@ -493,8 +439,6 @@ if __name__ == "__main__":
         enable_inline=enable_inline,
         enable_loop_pipelining=enable_loop_pipelining,
         enable_multi_buffering=enable_multi_buffering,
-        enable_outerproduct_tiling=enable_outerproduct_tiling,
-        target_arch=target_arch,
         optimization_level=optimization_level,
     )
 

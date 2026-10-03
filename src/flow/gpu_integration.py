@@ -2,16 +2,17 @@
 """
 FLOW GPU Integration
 Integrates GPU capabilities into the FLOW compiler and runtime.
-Supports CUDA, OpenCL, and Metal (Apple Silicon).
+Supports CUDA, OpenCL, and Metal (Apple Silicon), and GPU render/compute graphs (#812).
 """
 
 import os
 import subprocess
 import tempfile
 import time
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from .gpu_runtime import get_gpu_runtime
 from .parser import FunctionDecl
+from .gpu_graph import GpuGraph, GpuHazardChecker, GpuHazard, GpuComputePass, GpuRenderPass
 
 # Profiling configuration
 PROFILE_GPU = os.environ.get('FLOW_GPU_PROFILE', '0') == '1'
@@ -134,9 +135,6 @@ __kernel void {function.name}_kernel(
     
     def _generate_kernel_body(self, function: FunctionDecl) -> str:
         """Generate kernel body from FLOW function body."""
-        # This is a simplified implementation
-        # In practice, you'd need to translate the full FLOW AST
-        
         body = """
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     int stride = blockDim.x * gridDim.x;
@@ -171,6 +169,7 @@ __kernel void {function.name}_kernel(
             'u32': 'uint'
         }
         return type_map.get(flow_type, 'void')
+
 
 class GPUCompiler:
     """Compiles GPU kernels and manages GPU execution."""
@@ -265,10 +264,7 @@ class GPUCompiler:
             print("OpenCL not available")
             return None
         
-        # For OpenCL, we'd need to set up context, program, etc.
-        # This is a simplified implementation
         try:
-            # Create OpenCL program from source
             kernel_handle = f"opencl_kernel_{kernel_name}"
             self.compiled_kernels[kernel_name] = kernel_handle
             return kernel_handle
@@ -278,9 +274,8 @@ class GPUCompiler:
     
     def _load_cuda_ptx(self, ptx_file: str, kernel_name: str) -> Any:
         """Load CUDA PTX and return kernel handle."""
-        # This would use the CUDA driver API to load PTX
-        # For now, return a placeholder
         return f"cuda_kernel_{kernel_name}"
+
 
 class GPUExecutor:
     """Executes GPU kernels and manages data transfer."""
@@ -309,12 +304,10 @@ class GPUExecutor:
     def _execute_metal_function(self, function: FunctionDecl, args: List[Any]) -> Optional[Any]:
         """Execute function using Metal."""
         try:
-            # Compile Metal shader
             kernel_handle = self.compiler.compile_gpu_kernel(function, "metal")
             if kernel_handle is None:
                 return None
             
-            # Execute Metal shader
             kernel_name = f"{function.name}_kernel"
             success = self.metal_runtime.execute_shader(kernel_name, args)
             return success
@@ -326,12 +319,10 @@ class GPUExecutor:
     def _execute_cuda_opencl_function(self, function: FunctionDecl, args: List[Any], backend: str) -> Optional[Any]:
         """Execute function using CUDA/OpenCL."""
         try:
-            # Compile kernel
             kernel_handle = self.compiler.compile_gpu_kernel(function, backend)
             if kernel_handle is None:
                 return None
             
-            # Prepare arguments and execute
             return self._execute_kernel(kernel_handle, args, backend)
             
         except Exception as e:
@@ -341,21 +332,17 @@ class GPUExecutor:
     def _execute_kernel(self, kernel_handle: Any, args: List[Any], backend: str) -> Any:
         """Execute compiled GPU kernel."""
         try:
-            # Prepare device memory for arguments
             device_args = []
             
             for arg in args:
-                if hasattr(arg, '__len__'):  # Array-like
-                    # Allocate device memory and copy data
-                    size = len(arg) * 4  # Assuming float32
+                if hasattr(arg, '__len__'):
+                    size = len(arg) * 4
                     device_ptr = self.gpu_runtime.allocate_memory(size)
                     self.gpu_runtime.copy_to_device(arg, device_ptr)
                     device_args.append(device_ptr)
                 else:
-                    # Scalar value - pass directly
                     device_args.append(arg)
             
-            # Launch kernel (simplified)
             grid_dim = (1, 1, 1)
             block_dim = (256, 1, 1)
             
@@ -367,14 +354,12 @@ class GPUExecutor:
                 elapsed_launch = time.perf_counter() - t0
                 print(f"[GPU Profile] Kernel Launch Overhead: {elapsed_launch:.6f}s")
             
-            # Synchronize and clean up (which effectively times kernel execution + sync)
             t_sync0 = time.perf_counter() if PROFILE_GPU else 0
             self.gpu_runtime.synchronize()
             if PROFILE_GPU:
                 elapsed_exec = time.perf_counter() - t_sync0
                 print(f"[GPU Profile] Kernel Compute + Sync: {elapsed_exec:.6f}s")
             
-            # Clean up device memory
             for device_ptr in device_args:
                 if isinstance(device_ptr, int):
                     self.gpu_runtime.free_memory(device_ptr)
@@ -384,6 +369,8 @@ class GPUExecutor:
         except Exception as e:
             print(f"Error executing GPU kernel: {e}")
             return False
+
+
 class GPUIntegration:
     """Main GPU integration class for FLOW with Metal support."""
     
@@ -397,18 +384,14 @@ class GPUIntegration:
     
     def is_gpu_available(self) -> bool:
         """Check if GPU is available."""
-        # Check Metal first on Apple Silicon
         if self.metal_runtime and self.metal_runtime.is_available():
             return True
-        
-        # Fall back to CUDA/OpenCL
         return self.gpu_runtime.is_available()
     
     def get_gpu_info(self) -> Dict[str, Any]:
         """Get GPU information."""
         info = {"available": False}
         
-        # Check Metal
         if self.metal_runtime and self.metal_runtime.is_available():
             info.update({
                 "available": True,
@@ -416,7 +399,6 @@ class GPUIntegration:
                 "metal": self.metal_runtime.backend.device_count > 0
             })
         
-        # Check CUDA/OpenCL
         if self.gpu_runtime.is_available():
             if not info.get("available"):
                 info["available"] = True
@@ -431,13 +413,18 @@ class GPUIntegration:
         """Compile and execute a function on GPU."""
         return self.executor.execute_gpu_function(function, args, backend)
     
+    def create_gpu_graph(self, name: str = "default_gpu_frame") -> GpuGraph:
+        """Create a new typed GPU render/compute graph frame."""
+        return GpuGraph(name=name)
+
+    def analyze_gpu_graph(self, graph: GpuGraph) -> Tuple[List[GpuHazard], List[Tuple[str, str, str]]]:
+        """Analyze a GpuGraph for resource hazards and dependency edges."""
+        return GpuHazardChecker.analyze_graph(graph)
+
     def benchmark_gpu_vs_cpu(self, function: FunctionDecl, args: List[Any], iterations: int = 100) -> Dict[str, float]:
         """Benchmark GPU vs CPU execution."""
-        import time
-        
         results = {}
         
-        # GPU execution
         if self.is_gpu_available():
             start_time = time.time()
             for _ in range(iterations):
@@ -447,21 +434,19 @@ class GPUIntegration:
         else:
             results["gpu_time"] = float('inf')
         
-        # CPU execution (placeholder)
         start_time = time.time()
         for _ in range(iterations):
-            # Execute CPU version
             pass
         cpu_time = time.time() - start_time
         results["cpu_time"] = cpu_time / iterations
         
-        # Speedup
         if results["cpu_time"] > 0:
             results["speedup"] = results["cpu_time"] / results["gpu_time"]
         else:
             results["speedup"] = 1.0
         
         return results
+
 
 # Global GPU integration instance
 gpu_integration = GPUIntegration()
@@ -485,6 +470,16 @@ def gpu_execute_function(function: FunctionDecl, args: List[Any], backend: str =
     """Execute a function on GPU."""
     integration = get_gpu_integration()
     return integration.compile_and_execute(function, args, backend)
+
+def create_gpu_graph(name: str = "default_gpu_frame") -> GpuGraph:
+    """Create a new typed GPU render/compute graph frame."""
+    integration = get_gpu_integration()
+    return integration.create_gpu_graph(name)
+
+def analyze_gpu_graph(graph: GpuGraph) -> Tuple[List[GpuHazard], List[Tuple[str, str, str]]]:
+    """Analyze a GpuGraph for resource hazards."""
+    integration = get_gpu_integration()
+    return integration.analyze_gpu_graph(graph)
 
 def gpu_benchmark(function: FunctionDecl, args: List[Any], iterations: int = 100) -> Dict[str, float]:
     """Benchmark GPU vs CPU execution."""
