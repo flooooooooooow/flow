@@ -29,6 +29,20 @@ function check_target_metadata() -> i32 {
     return T_PASS
 }
 
+function check_cli_target_selection() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--register-tiles")
+    sl_push(argv, "--register-tile-target=nvvm")
+    sl_push(argv, "--register-tile-max-lanes=32")
+    sl_push(argv, "compiler/fixtures/mlir_opt/register_tile_nested.flow")
+    sl_push(argv, t_tmp() + "/cli-target.mlir")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    if t_run(c) != 0 { return T_FAIL }
+    let output: string = read_text(t_tmp() + "/cli-target.mlir")
+    if not a_contains(output, "flow.register_tile_target = \"nvvm\"") { return T_FAIL }
+    if not a_contains(output, "flow.register_tile_max_lanes = 32") { return T_FAIL }
+    return T_PASS
+}
+
 function check_target_lowering_families() -> i32 {
     let targets: ptr<ProcStrs> = sl_of3("amx", "sme", "nvvm")
     let expected: ptr<ProcStrs> = sl_of3("amx.tile_mulf", "arm_sme.outerproduct", "nvvm.wgmma")
@@ -85,6 +99,7 @@ function main() -> i32 {
     t_end("nested_outer_product", check_nested_outer_product())
     t_start()
     t_end("target_metadata", check_target_metadata())
+    t_end("cli_target_selection", check_cli_target_selection())
     t_end("target_lowering_families", check_target_lowering_families())
     t_start()
     t_end("invalid_target", check_rejects_unknown_target())
