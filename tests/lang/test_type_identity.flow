@@ -1,0 +1,84 @@
+# Tests for compiler/src/type_identity.flow.
+
+import "compiler/src/type_identity.flow"
+
+extern {
+    function strcmp(a: ptr<u8>, b: ptr<u8>) -> i32
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    let buf: array<u8, 128>
+
+    # 1. Test 64-bit FNV-1a deterministic type identity hashes
+    let hash_i32: u64 = flowc_type_identity_hash_64("i32")
+    let hash_i32_again: u64 = flowc_type_identity_hash_64("i32")
+    if hash_i32 != hash_i32_again {
+        puts("FAIL: hash_64 non-deterministic for i32")
+        return 1
+    }
+
+    let hash_f64: u64 = flowc_type_identity_hash_64("f64")
+    if hash_i32 == hash_f64 {
+        puts("FAIL: hash_64 collision between i32 and f64")
+        return 2
+    }
+
+    let hash_array: u64 = flowc_type_identity_hash_64("array_10_f32")
+    if hash_array == 0 {
+        puts("FAIL: hash_64 zero for array_10_f32")
+        return 3
+    }
+
+    # 2. Test 32-bit FNV-1a type identity hashes
+    let hash32_i32: u32 = flowc_type_identity_hash_32("i32")
+    let hash32_f64: u32 = flowc_type_identity_hash_32("f64")
+    if hash32_i32 == hash32_f64 {
+        puts("FAIL: hash32 collision between i32 and f64")
+        return 4
+    }
+
+    # 3. Test cross-target type category reflection
+    if flowc_type_category("i32") != TYPE_CAT_PRIMITIVE {
+        puts("FAIL: i32 category")
+        return 5
+    }
+    if flowc_type_category("f64") != TYPE_CAT_PRIMITIVE {
+        puts("FAIL: f64 category")
+        return 6
+    }
+    if flowc_type_category("ptr_i32") != TYPE_CAT_POINTER {
+        puts("FAIL: ptr_i32 category")
+        return 7
+    }
+    if flowc_type_category("span_const_u8") != TYPE_CAT_SPAN {
+        puts("FAIL: span_const_u8 category")
+        return 8
+    }
+    if flowc_type_category("array_4_f32") != TYPE_CAT_ARRAY {
+        puts("FAIL: array_4_f32 category")
+        return 9
+    }
+    if flowc_type_category("Point") != TYPE_CAT_STRUCT {
+        puts("FAIL: Point struct category")
+        return 10
+    }
+    if flowc_type_category("struct_Point") != TYPE_CAT_STRUCT {
+        puts("FAIL: struct_Point category")
+        return 11
+    }
+
+    # 4. Test schema formatting reflection
+    let len: i32 = flowc_type_schema_format("array_4_f32", &buf[0], 128)
+    if len != 11 {
+        puts("FAIL: schema format length")
+        return 12
+    }
+    if strcmp(&buf[0], "array_4_f32" as ptr<u8>) != 0 {
+        puts("FAIL: schema format string")
+        return 13
+    }
+
+    puts("All type identity and reflection tests passed")
+    return 0
+}

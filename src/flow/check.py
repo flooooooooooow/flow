@@ -26,7 +26,7 @@ def main(argv: list[str] | None = None) -> int:
     file_args = []
     
     for arg in args_list:
-        if arg in ("--idioms", "--remarks", "--perf-remarks"):
+        if arg == "--idioms":
             check_idioms = True
         elif arg.startswith("--format="):
             output_format = arg.split("=")[1]

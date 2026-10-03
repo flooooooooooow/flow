@@ -1,0 +1,103 @@
+# @module flowc.type_identity
+# @means  Stable type identity hashing and cross-target runtime schema reflection.
+
+import .type_name { flowc_type_name_into }
+import .wcet { flowc_type_size }
+
+export const TYPE_CAT_UNKNOWN: i32 = 0
+export const TYPE_CAT_PRIMITIVE: i32 = 1
+export const TYPE_CAT_POINTER: i32 = 2
+export const TYPE_CAT_SPAN: i32 = 3
+export const TYPE_CAT_ARRAY: i32 = 4
+export const TYPE_CAT_STRUCT: i32 = 5
+
+function streq(a: string, b: string) -> i32 {
+    let pa: ptr<u8> = a as ptr<u8>
+    let pb: ptr<u8> = b as ptr<u8>
+    let mut i: i32 = 0
+    while pa[i] != 0 and pb[i] != 0 {
+        if pa[i] != pb[i] { return 0 }
+        i = i + 1
+    }
+    if pa[i] == 0 and pb[i] == 0 { return 1 }
+    return 0
+}
+
+function starts_with(str: string, prefix: string) -> i32 {
+    let pstr: ptr<u8> = str as ptr<u8>
+    let ppre: ptr<u8> = prefix as ptr<u8>
+    let mut i: i32 = 0
+    while ppre[i] != 0 {
+        if pstr[i] == 0 or pstr[i] != ppre[i] { return 0 }
+        i = i + 1
+    }
+    return 1
+}
+
+# 64-bit FNV-1a hash of a type name string for deterministic cross-target type identity
+export function flowc_type_identity_hash_64(type_name: string) -> u64 {
+    let p: ptr<u8> = type_name as ptr<u8>
+    let mut hash: u64 = 14695981039346656037
+    let prime: u64 = 1099511628211
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        hash = (hash ^ (p[i] as u64)) * prime
+        i = i + 1
+    }
+    return hash
+}
+
+# 32-bit FNV-1a hash of a type name string
+export function flowc_type_identity_hash_32(type_name: string) -> u32 {
+    let p: ptr<u8> = type_name as ptr<u8>
+    let mut hash: u32 = 2166136261
+    let prime: u32 = 16777619
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        hash = (hash ^ (p[i] as u32)) * prime
+        i = i + 1
+    }
+    return hash
+}
+
+# Classifies type name into a cross-target runtime schema category
+export function flowc_type_category(type_name: string) -> i32 {
+    let p: ptr<u8> = type_name as ptr<u8>
+    if streq(type_name, "i8") == 1 or streq(type_name, "u8") == 1 or streq(type_name, "bool") == 1 or
+       streq(type_name, "i16") == 1 or streq(type_name, "u16") == 1 or
+       streq(type_name, "i32") == 1 or streq(type_name, "u32") == 1 or streq(type_name, "f32") == 1 or
+       streq(type_name, "i64") == 1 or streq(type_name, "u64") == 1 or streq(type_name, "f64") == 1 or
+       streq(type_name, "i128") == 1 or streq(type_name, "u128") == 1 or streq(type_name, "string") == 1 {
+        return TYPE_CAT_PRIMITIVE
+    }
+    if starts_with(type_name, "ptr_") == 1 or streq(type_name, "ptr") == 1 {
+        return TYPE_CAT_POINTER
+    }
+    if starts_with(type_name, "span_") == 1 or starts_with(type_name, "span_const_") == 1 or starts_with(type_name, "span_mut_") == 1 {
+        return TYPE_CAT_SPAN
+    }
+    if starts_with(type_name, "array_") == 1 {
+        return TYPE_CAT_ARRAY
+    }
+    if starts_with(type_name, "struct_") == 1 or (p[0] >= 65 and p[0] <= 90) {
+        return TYPE_CAT_STRUCT
+    }
+    return TYPE_CAT_UNKNOWN
+}
+
+# Formats a cross-target schema descriptor string for reflection
+export function flowc_type_schema_format(type_name: string, out: ptr<u8>, cap: i32) -> i32 {
+    let pName: ptr<u8> = type_name as ptr<u8>
+    let mut len: i32 = 0
+    while pName[len] != 0 { len = len + 1 }
+
+    if cap <= len { return 0 - 1 }
+
+    let mut i: i32 = 0
+    while i < len {
+        out[i] = pName[i]
+        i = i + 1
+    }
+    out[i] = 0
+    return i
+}
