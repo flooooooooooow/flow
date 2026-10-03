@@ -871,6 +871,10 @@
         {
           "label": "Linguist Registration",
           "path": "project/linguist.md"
+        },
+        {
+          "label": "Pygments Support",
+          "path": "project/pygments.md"
         }
       ]
     },
@@ -1016,6 +1020,7 @@
     "project/dangling-claude-agents.md": "internal note on agent housekeeping",
     "project/linguist/PR_TEMPLATE.md": "template body for the upstream github-linguist PR, not a wiki page",
     "project/linguist/UPSTREAM.md": "maintainer procedure for registering the language with GitHub Linguist",
+    "project/pygments/UPSTREAM.md": "maintainer procedure for registering the language with Pygments",
     "project/vgpu-parity.md": "internal tracking table for GPU backend parity work in progress",
     "project/MLIR_AUTOTUNING.md": "report on the MLIR transform-dialect auto-tuner and what remains (Issue #668)",
     "research/cutlass_evaluation.md": "internal evaluation of CUTLASS, kept for the record rather than as a guide",
