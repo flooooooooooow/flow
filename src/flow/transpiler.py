@@ -49,7 +49,7 @@ def _active_modes(args, backend: str) -> set[str]:
 
 
 def mlir_opt_kwargs_from_args(args) -> dict:
-    """Map CLI `--no-*` / `--opt-level` flags to MLIROptimizer.optimize kwargs."""
+    """Map CLI `--no-*` / `--opt-level` / layout flags to MLIROptimizer.optimize kwargs."""
     return {
         "enable_vectorization": not getattr(args, "no_vectorization", False),
         # loop_fusion is opt-in (--loop-fusion) since the generator emits
@@ -61,6 +61,9 @@ def mlir_opt_kwargs_from_args(args) -> dict:
         "enable_gvn": not getattr(args, "no_cse", False),
         "enable_dce": not getattr(args, "no_dce", False),
         "enable_inline": not getattr(args, "no_inline", False),
+        "enable_aosoa": getattr(args, "enable_aosoa", False),
+        "enable_conflict_padding": getattr(args, "enable_conflict_padding", False),
+        "enable_swizzling": getattr(args, "enable_swizzling", False),
         "optimization_level": getattr(args, "opt_level", "O2"),
     }
 
@@ -165,7 +168,20 @@ def main():
         "--no-inline", action="store_true", help="Disable module inliner (O2+)"
     )
     parser.add_argument(
+        "--enable-aosoa", action="store_true", help="Enable automatic AoSoA layout transforms"
+    )
+    parser.add_argument(
         "--no-aosoa", action="store_true", help="Disable automatic AoSoA layout transforms"
+    )
+    parser.add_argument(
+        "--enable-conflict-padding",
+        action="store_true",
+        help="Enable conflict-free memory padding for 2D/3D tile strides",
+    )
+    parser.add_argument(
+        "--enable-swizzling",
+        action="store_true",
+        help="Enable XOR swizzled memory indexing on non-major dimensions",
     )
     parser.add_argument(
         "--print-pass-pipeline",
