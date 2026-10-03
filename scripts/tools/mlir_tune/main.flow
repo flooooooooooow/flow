@@ -18,6 +18,9 @@ function valid_tiles(s: string) -> bool {
         let mut value: i32 = 0
         let mut digits: i32 = 0
         while i < n and ft_digit(ft_byte(s, i)) {
+            if value > 409 or (value == 409 and ft_byte(s, i) > 54) {
+                return false
+            }
             value = value * 10 + ft_byte(s, i) - 48
             digits = digits + 1
             i = i + 1
