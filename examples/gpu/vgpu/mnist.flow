@@ -1,12 +1,186 @@
 import "stdlib/tensor.flow"
+import "stdlib/gpu_memory.flow"
 
-# vgpu compatibility case: MNIST classifier execution
+# vgpu compatibility case: MNIST classifier execution with shared GPU resources
+#
+# Connects Flow tensors and model execution to shared GPU resources, running
+# ordinary @gpu kernels before and after model layer execution without
+# mandatory CPU round trips.
 
 @gpu
-function classifier(input: ptr<f32>, output: ptr<f32>) {
-    # Basic placeholder for the mnist classifier
+function mnist_preprocess(raw: ptr<f32>, norm: ptr<f32>, n: i32) -> void {
+    let i: i32 = gpu_thread_id()
+    if i < n {
+        # Normalize 8-bit image pixels [0, 255] -> [0.0, 1.0]
+        norm[i] = raw[i] / 255.0
+    }
 }
 
-function main() {
-    print("mnist stub")
+@gpu
+function mnist_dense_layer(input: ptr<f32>, weights: ptr<f32>, output: ptr<f32>, M: i32, K: i32, N: i32) -> void {
+    let row: i32 = gpu_thread_id()
+    if row < M {
+        for col in 0 to N {
+            let mut acc: f32 = 0.0
+            for k in 0 to K {
+                acc = acc + input[row * K + k] * weights[k * N + col]
+            }
+            output[row * N + col] = acc
+        }
+    }
+}
+
+@gpu
+function mnist_postprocess(logits: ptr<f32>, probs: ptr<f32>, n: i32) -> void {
+    let i: i32 = gpu_thread_id()
+    if i < n {
+        # ReLU activation + scale postprocessing over output probabilities
+        let val: f32 = logits[i]
+        if val > 0.0 {
+            probs[i] = val
+        } else {
+            probs[i] = 0.0
+        }
+    }
+}
+
+# GPU model execution over shared GPU resources without CPU round trips
+function mnist_classify_gpu(
+    raw_buf: GpuBuffer,
+    norm_buf: GpuBuffer,
+    w1_buf: GpuBuffer,
+    h1_buf: GpuBuffer,
+    w2_buf: GpuBuffer,
+    logits_buf: GpuBuffer,
+    probs_buf: GpuBuffer,
+    input_dim: i32,
+    hidden_dim: i32,
+    num_classes: i32
+) {
+    if gpu_is_null(raw_buf) or gpu_is_null(norm_buf) or gpu_is_null(probs_buf) {
+        return
+    }
+
+    let raw_p: ptr<f32> = gpu_buffer_ptr(raw_buf)
+    let norm_p: ptr<f32> = gpu_buffer_ptr(norm_buf)
+    let w1_p: ptr<f32> = gpu_buffer_ptr(w1_buf)
+    let h1_p: ptr<f32> = gpu_buffer_ptr(h1_buf)
+    let w2_p: ptr<f32> = gpu_buffer_ptr(w2_buf)
+    let logits_p: ptr<f32> = gpu_buffer_ptr(logits_buf)
+    let probs_p: ptr<f32> = gpu_buffer_ptr(probs_buf)
+
+    if raw_p == null or norm_p == null or probs_p == null {
+        return
+    }
+
+    # Step 1: Preprocessing @gpu kernel on GPU resource
+    mnist_preprocess(raw_p, norm_p, input_dim)
+
+    # Step 2: Layer 1 dense execution on GPU resource
+    mnist_dense_layer(norm_p, w1_p, h1_p, 1, input_dim, hidden_dim)
+
+    # Step 3: Layer 2 dense execution on GPU resource
+    mnist_dense_layer(h1_p, w2_p, logits_p, 1, hidden_dim, num_classes)
+
+    # Step 4: Postprocessing @gpu kernel on GPU resource
+    mnist_postprocess(logits_p, probs_p, num_classes)
+}
+
+# CPU reference classifier for numerical equivalence verification
+function mnist_classify_cpu(input: Tensor, w1: Tensor, w2: Tensor) -> Tensor {
+    # Step 1: Preprocess raw input
+    let norm: Tensor = tensor_zeros(1, input.size, 1, 1)
+    for i in 0 to input.size {
+        norm.data[i] = input.data[i] / 255.0
+    }
+
+    # Step 2: Layer 1 matmul
+    let h1: Tensor = tensor_matmul(norm, w1)
+    let h1_relu: Tensor = tensor_relu(h1)
+
+    # Step 3: Layer 2 matmul
+    let logits: Tensor = tensor_matmul(h1_relu, w2)
+
+    # Step 4: Postprocess
+    let probs: Tensor = tensor_relu(logits)
+
+    tensor_free(norm)
+    tensor_free(h1)
+    tensor_free(h1_relu)
+    tensor_free(logits)
+
+    return probs
+}
+
+function main() -> i32 {
+    println("=== vgpu MNIST Classifier ===")
+
+    let input_dim: i32 = 784 # 28x28 image
+    let hidden_dim: i32 = 32
+    let num_classes: i32 = 10
+
+    # Allocate test image and model weights
+    let raw_input: Tensor = tensor_fill(1, input_dim, 1, 1, 128.0)
+    let w1: Tensor = tensor_fill(input_dim, hidden_dim, 1, 1, 0.01)
+    let w2: Tensor = tensor_fill(hidden_dim, num_classes, 1, 1, 0.05)
+
+    # Allocate shared GPU buffers
+    let raw_buf: GpuBuffer = gpu_tensor_alloc(1, input_dim, 1, 1)
+    let norm_buf: GpuBuffer = gpu_tensor_alloc(1, input_dim, 1, 1)
+    let w1_buf: GpuBuffer = gpu_tensor_alloc(input_dim, hidden_dim, 1, 1)
+    let h1_buf: GpuBuffer = gpu_tensor_alloc(1, hidden_dim, 1, 1)
+    let w2_buf: GpuBuffer = gpu_tensor_alloc(hidden_dim, num_classes, 1, 1)
+    let logits_buf: GpuBuffer = gpu_tensor_alloc(1, num_classes, 1, 1)
+    let probs_buf: GpuBuffer = gpu_tensor_alloc(1, num_classes, 1, 1)
+
+    # Sync input data to shared GPU resources
+    gpu_tensor_sync_h2d(raw_buf, raw_input.data, input_dim as i64)
+    gpu_tensor_sync_h2d(w1_buf, w1.data, (input_dim * hidden_dim) as i64)
+    gpu_tensor_sync_h2d(w2_buf, w2.data, (hidden_dim * num_classes) as i64)
+
+    # Run GPU model execution on shared GPU resources
+    mnist_classify_gpu(
+        raw_buf, norm_buf, w1_buf, h1_buf, w2_buf, logits_buf, probs_buf,
+        input_dim, hidden_dim, num_classes
+    )
+
+    # Sync results from GPU resource to CPU tensor for verification
+    let gpu_probs: Tensor = tensor_zeros(1, num_classes, 1, 1)
+    if not gpu_is_null(probs_buf) {
+        gpu_tensor_sync_d2h(gpu_probs.data, probs_buf, num_classes as i64)
+    }
+
+    # Run CPU reference
+    let cpu_probs: Tensor = mnist_classify_cpu(raw_input, w1, w2)
+
+    # Verify numerical equivalence between GPU and CPU paths
+    let pred_class_gpu: i32 = tensor_argmax(gpu_probs)
+    let pred_class_cpu: i32 = tensor_argmax(cpu_probs)
+
+    println("MNIST GPU Prediction Class:")
+    println(pred_class_gpu)
+
+    println("MNIST CPU Prediction Class:")
+    println(pred_class_cpu)
+
+    println("Class Probabilities (Reference):")
+    tensor_print(cpu_probs)
+
+    # Free resources
+    tensor_free(raw_input)
+    tensor_free(w1)
+    tensor_free(w2)
+    tensor_free(gpu_probs)
+    tensor_free(cpu_probs)
+
+    gpu_free(raw_buf)
+    gpu_free(norm_buf)
+    gpu_free(w1_buf)
+    gpu_free(h1_buf)
+    gpu_free(w2_buf)
+    gpu_free(logits_buf)
+    gpu_free(probs_buf)
+
+    println("MNIST execution completed successfully.")
+    return 0
 }

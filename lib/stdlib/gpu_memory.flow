@@ -117,6 +117,14 @@ export function gpu_is_unified(buf: GpuBuffer) -> bool {
     return gpu_host_ptr(buf) != null
 }
 
+export function gpu_buffer_ptr(buf: GpuBuffer) -> ptr<f32> {
+    let host_p: ptr<void> = gpu_host_ptr(buf)
+    if host_p != null {
+        return host_p as ptr<f32>
+    }
+    return buf.device as ptr<f32>
+}
+
 export function gpu_copy_h2d(dst: GpuBuffer, src: ptr<void>, nbytes: i64) -> i32 {
     if dst.device == null or src == null or nbytes <= 0 {
         return 0 - 1
@@ -206,4 +214,34 @@ export function gpu_copy_device_to_device(dst: GpuBuffer, src: GpuBuffer, nbytes
 
 export function unified_allocate(size: i64) -> GpuBuffer {
     return gpu_alloc_unified(size)
+}
+
+# Tensor <-> GpuBuffer resource bridge helpers (issue #814)
+export function gpu_tensor_alloc(d0: i32, d1: i32, d2: i32, d3: i32) -> GpuBuffer {
+    let count: i64 = (d0 as i64) * (d1 as i64) * (d2 as i64) * (d3 as i64)
+    return gpu_alloc_f32(count)
+}
+
+export function gpu_tensor_check_shape(buf: GpuBuffer, d0: i32, d1: i32, d2: i32, d3: i32) -> bool {
+    if buf.device == null {
+        return false
+    }
+    let required_bytes: i64 = (d0 as i64) * (d1 as i64) * (d2 as i64) * (d3 as i64) * 4
+    return gpu_size(buf) >= required_bytes
+}
+
+export function gpu_tensor_sync_h2d(dst: GpuBuffer, src_data: ptr<f32>, n_floats: i64) -> i32 {
+    if dst.device == null or src_data == null or n_floats <= 0 {
+        return 0 - 1
+    }
+    let nbytes: i64 = n_floats * 4
+    return gpu_copy_h2d_f32(dst, src_data, nbytes)
+}
+
+export function gpu_tensor_sync_d2h(dst_data: ptr<f32>, src: GpuBuffer, n_floats: i64) -> i32 {
+    if dst_data == null or src.device == null or n_floats <= 0 {
+        return 0 - 1
+    }
+    let nbytes: i64 = n_floats * 4
+    return gpu_copy_d2h_f32(dst_data, src, nbytes)
 }
