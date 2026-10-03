@@ -51,10 +51,11 @@ function emit_view(out: string, arena: i32, index: i32, offset: i32, size: i32, 
         " to " + view_type + "\n"
 }
 
-function emit_module(items: array<StaticBuffer, 64>, plan: StaticMemoryPlan, target: string, space: string) -> string {
+function emit_module(items: array<StaticBuffer, 64>, plan: StaticMemoryPlan, target: string, space: string, alignment: i32) -> string {
     let mut out: string = "module attributes {flow.static_arena_bytes = " +
         ft_itoa(plan.arena_size) + ", flow.static_buffer_count = " +
-        ft_itoa(plan.count) + ", flow.static_memory_target = \"" + target +
+        ft_itoa(plan.count) + ", flow.static_arena_alignment = " +
+        ft_itoa(alignment) + ", flow.static_memory_target = \"" + target +
         "\", flow.static_memory_space = \"" + space + "\"} {\n  func.func @flow_static_buffers() {\n"
     let mut arena_type: string = "memref<" + ft_itoa(plan.arena_size) + "xi8>"
     if ft_eq(space, "shared") {
@@ -111,6 +112,6 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     items[1] = StaticBuffer { size: sizes[1], start: 3, end: 5, alignment: 16 }
     items[2] = StaticBuffer { size: sizes[2], start: 1, end: 4, alignment: 16 }
     let plan: StaticMemoryPlan = flowc_static_memory_plan(items, 3, 16)
-    ft_outln(emit_module(items, plan, target, space))
+    ft_outln(emit_module(items, plan, target, space, 16))
     return 0
 }
