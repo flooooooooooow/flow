@@ -122,9 +122,10 @@ The token graph emitter follows the same contract:
   --stages=3 --buffers=4 --target=nvptx
 ```
 
-It emits an explicit chain of `async.execute` dependencies and allocates one
+It emits an explicit slot dependency graph and allocates one
 source and destination pair per circular buffer slot. Stages reuse the pair
-for `stage % buffers`. The module records the selected target in
+for `stage % buffers`. A stage waits for the previous stage that used its
+slot, so independent slots can overlap. The module records the selected target in
 `flow.async_target`. The module also records
 `flow.async_buffer_slots`, `flow.async_stage_count`, and
 `flow.async_schedule = "circular"`. Each stage carries an
