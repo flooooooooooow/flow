@@ -1,0 +1,179 @@
+# Benchmark CPU multicore scaling, scheduler overhead and false sharing
+# Run: ./flow run benchmarks/concurrency/multicore_scaling.flow
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function flow_rt_par_workers() -> i32
+    function sqrt(x: f64) -> f64
+    function bench_fixed_c(v: f64, decimals: i32) -> string
+    function bench_now_us_c() -> i64
+    function printf(fmt: string, s: string) -> i32
+    function printf_1(fmt: string) -> i32
+    function printf_f64(fmt: string, v: f64) -> i32
+    function flow_parallel_for_i32(start: i32, end: i32, stride: i32, body: ptr<void>, ctx: ptr<void>) -> void
+}
+
+@cEmbed("#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+static const char bench_fmt_f[] = {'%', '.', '*', 'f', 0};
+static const char *bench_fixed_c(double v, int32_t decimals) {
+  char *b = (char *)malloc(64);
+  snprintf(b, 64, bench_fmt_f, (int)decimals, v);
+  return b;
+}
+static int64_t bench_now_us_c(void) {
+  struct timespec ts;
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  return (int64_t)ts.tv_sec * 1000000 + (int64_t)(ts.tv_nsec / 1000);
+}
+int32_t printf_1(const char* fmt) { return printf(\"%s\", fmt); }
+int32_t printf_f64(const char* fmt, double v) { return printf(fmt, v); }
+")
+
+const N_ELEMENTS: i32 = 80000000
+
+function prevent_optimize_away_i32(arr: ptr<i32>) -> void {
+    let volatile_val: ptr<i32> = malloc(4) as ptr<i32>
+    volatile_val[0] = arr[N_ELEMENTS - 1]
+    free(volatile_val as ptr<void>)
+}
+
+function prevent_optimize_away_f64(arr: ptr<f64>) -> void {
+    let volatile_val: ptr<f64> = malloc(8) as ptr<f64>
+    volatile_val[0] = arr[N_ELEMENTS - 1]
+    free(volatile_val as ptr<void>)
+}
+
+@flow_api
+function fill_body(i: i32, ctx: ptr<void>) -> void {
+    let arr: ptr<i32> = ctx as ptr<i32>
+    arr[i] = i
+}
+
+function run_fill_benchmark(workers: i32) -> void {
+    let arr: ptr<i32> = malloc(N_ELEMENTS as i64 * 4) as ptr<i32>
+
+    let t0: i64 = bench_now_us_c()
+    flow_parallel_for_i32(0, N_ELEMENTS, 1, fill_body, arr as ptr<void>)
+    let t1: i64 = bench_now_us_c()
+    let ms_par: f64 = (t1 - t0) as f64 / 1000.0
+    prevent_optimize_away_i32(arr)
+
+    let t2: i64 = bench_now_us_c()
+    for i in 0 to N_ELEMENTS {
+        arr[i] = i
+    }
+    let t3: i64 = bench_now_us_c()
+    let ms_single: f64 = (t3 - t2) as f64 / 1000.0
+    prevent_optimize_away_i32(arr)
+
+    free(arr as ptr<void>)
+
+    printf_1("flow_multicore_scaling_fill_ms_single ")
+    printf_f64("%.3f\n", ms_single)
+    printf_1("flow_multicore_scaling_fill_ms_parallel ")
+    printf_f64("%.3f\n", ms_par)
+}
+
+@flow_api
+function compute_body(i: i32, ctx: ptr<void>) -> void {
+    let arr: ptr<f64> = ctx as ptr<f64>
+    let mut sum: f64 = 0.0
+    let mut j: i32 = 0
+    while j < 50 {
+        sum = sum + sqrt(((i + j) % 100) as f64)
+        j = j + 1
+    }
+    arr[i] = sum
+}
+
+function run_compute_benchmark(workers: i32) -> void {
+    let arr: ptr<f64> = malloc(N_ELEMENTS as i64 * 8) as ptr<f64>
+
+    let t0: i64 = bench_now_us_c()
+    flow_parallel_for_i32(0, N_ELEMENTS, 1, compute_body, arr as ptr<void>)
+    let t1: i64 = bench_now_us_c()
+    let ms_par: f64 = (t1 - t0) as f64 / 1000.0
+    prevent_optimize_away_f64(arr)
+
+    let t2: i64 = bench_now_us_c()
+    for i in 0 to N_ELEMENTS {
+        let mut sum: f64 = 0.0
+        let mut j: i32 = 0
+        while j < 50 {
+            sum = sum + sqrt(((i + j) % 100) as f64)
+            j = j + 1
+        }
+        arr[i] = sum
+    }
+    let t3: i64 = bench_now_us_c()
+    let ms_single: f64 = (t3 - t2) as f64 / 1000.0
+    prevent_optimize_away_f64(arr)
+
+    free(arr as ptr<void>)
+
+    printf_1("flow_multicore_scaling_compute_ms_single ")
+    printf_f64("%.3f\n", ms_single)
+    printf_1("flow_multicore_scaling_compute_ms_parallel ")
+    printf_f64("%.3f\n", ms_par)
+}
+
+@flow_api
+function fs_unpadded_body(i: i32, ctx: ptr<void>) -> void {
+    let count_arr: ptr<i32> = ctx as ptr<i32>
+    let mut c: i32 = 0
+    while c < 10000000 {
+        count_arr[i] = count_arr[i] + 1
+        c = c + 1
+    }
+}
+
+@flow_api
+function fs_padded_body(i: i32, ctx: ptr<void>) -> void {
+    let padded_arr: ptr<i32> = ctx as ptr<i32>
+    let mut c: i32 = 0
+    while c < 10000000 {
+        padded_arr[i * 16] = padded_arr[i * 16] + 1
+        c = c + 1
+    }
+}
+
+function run_false_sharing_benchmark(workers: i32) -> void {
+    let count_arr: ptr<i32> = malloc((workers as i64) * 4) as ptr<i32>
+    let padded_arr: ptr<i32> = malloc((workers as i64) * 64) as ptr<i32>
+
+    for i in 0 to workers {
+        count_arr[i] = 0
+        padded_arr[i * 16] = 0
+    }
+
+    let t0: i64 = bench_now_us_c()
+    flow_parallel_for_i32(0, workers, 1, fs_unpadded_body, count_arr as ptr<void>)
+    let t1: i64 = bench_now_us_c()
+    let ms_fs: f64 = (t1 - t0) as f64 / 1000.0
+
+    let t2: i64 = bench_now_us_c()
+    flow_parallel_for_i32(0, workers, 1, fs_padded_body, padded_arr as ptr<void>)
+    let t3: i64 = bench_now_us_c()
+    let ms_pad: f64 = (t3 - t2) as f64 / 1000.0
+
+    free(count_arr as ptr<void>)
+    free(padded_arr as ptr<void>)
+
+    printf_1("flow_multicore_scaling_fs_unpadded_ms ")
+    printf_f64("%.3f\n", ms_fs)
+    printf_1("flow_multicore_scaling_fs_padded_ms ")
+    printf_f64("%.3f\n", ms_pad)
+}
+
+function main() -> i32 {
+    let workers: i32 = flow_rt_par_workers()
+
+    run_fill_benchmark(workers)
+    run_compute_benchmark(workers)
+    run_false_sharing_benchmark(workers)
+
+    return 0
+}
