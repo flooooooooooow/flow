@@ -46,6 +46,14 @@ supports loop interchange for three-dimensional structured operations:
 
 The permutation must contain each loop position from 0 through 2 once.
 
+Use `--strategy=fuse` with `--fuse-with=` to generate a structured producer
+fusion schedule:
+
+```
+./flow tool scripts/tools/mlir_tune/main.flow \
+  --strategy=fuse --op=linalg.matmul --fuse-with=linalg.generic
+```
+
 Affine tiling is opt-in and requires a positive tile size:
 
 ```bash

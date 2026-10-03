@@ -95,6 +95,30 @@ function check_interchange_rejects_invalid_permutation() -> i32 {
     return T_PASS
 }
 
+function check_fusion_schedule() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv, "--strategy=fuse")
+    sl_push(argv, "--op=linalg.matmul")
+    sl_push(argv, "--fuse-with=linalg.generic")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "flow.tune_strategy = \"fuse\"") { return T_FAIL }
+    if not a_contains(output, "ops{[\"linalg.generic\"]}") { return T_FAIL }
+    if not a_contains(output, "transform.structured.fuse_into_containing_op") { return T_FAIL }
+    if not a_contains(output, "into %matmul") { return T_FAIL }
+    if a_contains(output, "tile_using_for") { return T_FAIL }
+    return T_PASS
+}
+
+function check_fusion_rejects_empty_producer() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv, "--strategy=fuse")
+    sl_push(argv, "--fuse-with=")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--fuse-with must not be empty") { return T_FAIL }
+    return T_PASS
+}
+
 function check_rejects_unknown_strategy() -> i32 {
     let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
     sl_push(argv, "--strategy=warp")
@@ -135,6 +159,10 @@ function main() -> i32 {
     t_end("interchange_schedule", check_interchange_schedule())
     t_start()
     t_end("invalid_interchange", check_interchange_rejects_invalid_permutation())
+    t_start()
+    t_end("fusion_schedule", check_fusion_schedule())
+    t_start()
+    t_end("invalid_fusion", check_fusion_rejects_empty_producer())
     t_start()
     t_end("invalid_strategy", check_rejects_unknown_strategy())
     t_start()
