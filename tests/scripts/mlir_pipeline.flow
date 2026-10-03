@@ -235,6 +235,15 @@ function check_affine_parallelize() -> i32 {
     return T_PASS
 }
 
+function check_affine_interchange() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    sl_push(argv, "--enable-affine-interchange")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    if not a_contains(read_text(t_out()), "affine-loop-interchange") { return T_FAIL }
+    return T_PASS
+}
+
 function check_affine_skewing() -> i32 {
     let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
     sl_push(argv, "--opt-level=O2")
@@ -308,6 +317,8 @@ function main() -> i32 {
     t_end("affine_coalescing", check_affine_coalescing())
     t_start()
     t_end("affine_parallelize", check_affine_parallelize())
+    t_start()
+    t_end("affine_interchange", check_affine_interchange())
     t_start()
     t_end("affine_skewing", check_affine_skewing())
     t_end("skewing_requires_factor", check_skewing_requires_factor())
