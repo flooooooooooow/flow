@@ -54,7 +54,9 @@ function check_target_lowering_families() -> i32 {
         let c: ptr<ProcCmd> = t_cmd(argv)
         cmd_env(c, "FLOWC_MLIR_REGISTER_TILE_TARGET", sl_get(targets, i))
         if t_run(c) != 0 { return T_FAIL }
-        if not a_contains(read_text(t_tmp() + "/target-" + sl_get(targets, i) + ".mlir"), "flow.register_tile_lowering = \"" + sl_get(expected, i) + "\"") { return T_FAIL }
+        let output: string = read_text(t_tmp() + "/target-" + sl_get(targets, i) + ".mlir")
+        if not a_contains(output, "flow.register_tile_lowering = \"" + sl_get(expected, i) + "\"") { return T_FAIL }
+        if not a_contains(output, "flow.register_tile_target = \"" + sl_get(targets, i) + "\"") { return T_FAIL }
         i = i + 1
     }
     return T_PASS
