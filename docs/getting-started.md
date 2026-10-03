@@ -12,39 +12,28 @@ brew install flow
 flow version
 ```
 
-### Nix / NixOS
+### Packaging development
 
-Run directly using Flakes:
-```bash
-nix run github:flooooooooooow/flow
-```
-Or install into your Nix profile from `packaging/nix/default.nix`:
-```bash
-nix-env -f packaging/nix/default.nix -i
-```
+The repository also carries packaging definitions under `packaging/`. These are
+build-from-checkout specifications, not claims that Flow is published in those
+external package repositories.
 
-### Debian / Ubuntu (APT)
+From a source checkout, the Nix package can be built with:
 
-Build and install the `.deb` package:
 ```bash
-./packaging/deb/build-deb.sh
-sudo dpkg -i /tmp/flow_1.0.2-1_amd64.deb
+nix build ./packaging/nix#flow
+./result/bin/flow version
 ```
 
-### Arch Linux (pacman / AUR)
+A Debian package can be built from the same checkout with:
 
-Build and install via PKGBUILD:
 ```bash
-cd packaging/arch
-makepkg -si
+./flow tool build_deb
 ```
 
-### Windows (Scoop)
-
-Install using Scoop:
-```bash
-scoop install https://raw.githubusercontent.com/flooooooooooow/flow/main/packaging/scoop/flow.json
-```
+Arch/AUR and Windows/Scoop publication are deferred until Flow has the matching
+supported release artifacts. See [Packaging and distribution](../packaging/README.md)
+for status.
 
 ### From source
 
