@@ -257,6 +257,8 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             f.vectorization = false
         } elif ft_eq(a, "--loop-fusion") {
             f.loop_fusion = true
+        } elif ft_eq(a, "--no-loop-fusion") {
+            f.loop_fusion = false
         } elif ft_eq(a, "--no-mem2reg") {
             f.mem2reg = false
         } elif ft_eq(a, "--no-sccp") {
