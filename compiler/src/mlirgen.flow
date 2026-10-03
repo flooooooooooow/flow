@@ -18808,6 +18808,13 @@ function mlg_aosoa_swizzle() -> i32 {
     return shift
 }
 
+# FLOWC_MLIR_AOSOA_BANK_COUNT selects the conflict domain used by automatic
+# padding. A positive count pads any extent that is an exact multiple of the
+# target's bank or cache-set width. Zero keeps the power-of-two heuristic.
+function mlg_aosoa_bank_count() -> i32 {
+    return mlg_env_bounded_positive(getenv("FLOWC_MLIR_AOSOA_BANK_COUNT"), 1, 128)
+}
+
 function mao_swizzle_index(m: ptr<Mlg>, e: i32, shift: i32, extent: i32) -> i32 {
     if e == AST_NONE or e < 0 or shift <= 0 or extent <= 0 {
         return e
@@ -18833,16 +18840,17 @@ function mao_swizzle_index(m: ptr<Mlg>, e: i32, shift: i32, extent: i32) -> i32 
     return out
 }
 
-function mao_conflict_pad(n: i32, pad: i32, auto_pad: i32) -> i32 {
+function mao_conflict_pad(n: i32, pad: i32, auto_pad: i32, banks: i32) -> i32 {
     if pad > 0 { return pad }
     if auto_pad == 0 or n <= 0 { return 0 }
+    if banks > 0 and n % banks == 0 { return 1 }
     let mut power: i32 = 1
     while power < n { power = power * 2 }
     if power == n { return 1 }
     return 0
 }
 
-function mao_soa(m: ptr<Mlg>, st: i32, n: i32, pad: i32, auto_pad: i32, made: ptr<i32>, nmade: ptr<i32>) -> i32 {
+function mao_soa(m: ptr<Mlg>, st: i32, n: i32, pad: i32, auto_pad: i32, banks: i32, made: ptr<i32>, nmade: ptr<i32>) -> i32 {
     let mut i: i32 = 0
     while i < nmade[0] {
         let s: i32 = made[i]
@@ -18862,7 +18870,7 @@ function mao_soa(m: ptr<Mlg>, st: i32, n: i32, pad: i32, auto_pad: i32, made: pt
     let arr_s: i32 = mlg_xput(m, arr_lit, 5)
     let mut fh: i32 = AST_NONE
     let mut ft: i32 = AST_NONE
-    let extra: i32 = mao_conflict_pad(n, pad, auto_pad)
+    let extra: i32 = mao_conflict_pad(n, pad, auto_pad, banks)
     let mut f: i32 = m[0].arena.nodes[st].a
     while f != AST_NONE {
         let at: i32 = mlg_new_node(m, AST_TYPE, arr_s)
@@ -18889,7 +18897,7 @@ function mao_soa(m: ptr<Mlg>, st: i32, n: i32, pad: i32, auto_pad: i32, made: pt
     return sd
 }
 
-function mao_block(m: ptr<Mlg>, blk: i32, st: i32, pad: i32, auto_pad: i32, swizzle: i32, vars: ptr<i32>, extents: ptr<i32>, nv: ptr<i32>, made: ptr<i32>, nmade: ptr<i32>) {
+function mao_block(m: ptr<Mlg>, blk: i32, st: i32, pad: i32, auto_pad: i32, banks: i32, swizzle: i32, vars: ptr<i32>, extents: ptr<i32>, nv: ptr<i32>, made: ptr<i32>, nmade: ptr<i32>) {
     if blk == AST_NONE or blk < 0 or mlg_kind(m, blk) != AST_BLOCK {
         return
     }
@@ -18898,7 +18906,7 @@ function mao_block(m: ptr<Mlg>, blk: i32, st: i32, pad: i32, auto_pad: i32, swiz
         let k: i32 = mlg_kind(m, s)
         if k == AST_LET and mao_is_target(m, m[0].arena.nodes[s].a) == 1 {
             let n: i32 = m[0].arena.nodes[m[0].arena.nodes[s].a].ival
-            let sd: i32 = mao_soa(m, st, n, pad, auto_pad, made, nmade)
+            let sd: i32 = mao_soa(m, st, n, pad, auto_pad, banks, made, nmade)
             let ty: i32 = mn_flat(m, mlg_ns(m, sd), mlg_ne(m, sd))
             m[0].arena.nodes[s].a = ty
             if nv[0] < 64 {
@@ -18910,21 +18918,21 @@ function mao_block(m: ptr<Mlg>, blk: i32, st: i32, pad: i32, auto_pad: i32, swiz
             if k == AST_IF or k == AST_WHILE or k == AST_FOR or k == AST_BLOCK or k == AST_HANDLE or k == AST_MATCH {
                 if k == AST_IF or k == AST_WHILE {
                     m[0].arena.nodes[s].a = mao_expr(m, m[0].arena.nodes[s].a, st, swizzle, vars, extents, nv[0])
-                    mao_block(m, m[0].arena.nodes[s].b, st, pad, auto_pad, swizzle, vars, extents, nv, made, nmade)
+                    mao_block(m, m[0].arena.nodes[s].b, st, pad, auto_pad, banks, swizzle, vars, extents, nv, made, nmade)
                     if k == AST_IF {
-                        mao_block(m, m[0].arena.nodes[s].c, st, pad, auto_pad, swizzle, vars, extents, nv, made, nmade)
+                        mao_block(m, m[0].arena.nodes[s].c, st, pad, auto_pad, banks, swizzle, vars, extents, nv, made, nmade)
                     }
                 }
                 if k == AST_FOR {
                     m[0].arena.nodes[s].a = mao_expr(m, m[0].arena.nodes[s].a, st, swizzle, vars, extents, nv[0])
                     m[0].arena.nodes[s].b = mao_expr(m, m[0].arena.nodes[s].b, st, swizzle, vars, extents, nv[0])
-                    mao_block(m, m[0].arena.nodes[s].c, st, pad, auto_pad, swizzle, vars, extents, nv, made, nmade)
+                    mao_block(m, m[0].arena.nodes[s].c, st, pad, auto_pad, banks, swizzle, vars, extents, nv, made, nmade)
                 }
                 if k == AST_BLOCK {
-                    mao_block(m, s, st, pad, auto_pad, swizzle, vars, extents, nv, made, nmade)
+                    mao_block(m, s, st, pad, auto_pad, banks, swizzle, vars, extents, nv, made, nmade)
                 }
                 if k == AST_HANDLE {
-                    mao_block(m, m[0].arena.nodes[s].a, st, pad, auto_pad, swizzle, vars, extents, nv, made, nmade)
+                    mao_block(m, m[0].arena.nodes[s].a, st, pad, auto_pad, banks, swizzle, vars, extents, nv, made, nmade)
                 }
                 if k == AST_MATCH {
                     m[0].arena.nodes[s].a = mao_expr(m, m[0].arena.nodes[s].a, st, swizzle, vars, extents, nv[0])
@@ -18965,6 +18973,7 @@ function mlg_aosoa(m: ptr<Mlg>, root: i32) {
     let pad: i32 = mlg_aosoa_pad()
     let auto_pad: i32 = mlg_aosoa_auto_pad()
     let swizzle: i32 = mlg_aosoa_swizzle()
+    let banks: i32 = mlg_aosoa_bank_count()
     if pad < 0 {
         mlg_refuse(m, root, "FLOWC_MLIR_AOSOA_PAD must be a positive integer")
         return
@@ -18977,11 +18986,15 @@ function mlg_aosoa(m: ptr<Mlg>, root: i32) {
         mlg_refuse(m, root, "FLOWC_MLIR_AOSOA_SWIZZLE must be a power of two")
         return
     }
+    if banks < 0 {
+        mlg_refuse(m, root, "FLOWC_MLIR_AOSOA_BANK_COUNT must be a positive integer")
+        return
+    }
     item = m[0].arena.nodes[root].a
     while item != AST_NONE {
         let d2: i32 = mlg_unwrap(m, item)
         if mlg_kind(m, d2) == AST_FN {
-            mao_block(m, m[0].arena.nodes[d2].c, st, pad, auto_pad, swizzle, vars, extents, &nv[0] as ptr<i32>, made, &nmade[0] as ptr<i32>)
+            mao_block(m, m[0].arena.nodes[d2].c, st, pad, auto_pad, banks, swizzle, vars, extents, &nv[0] as ptr<i32>, made, &nmade[0] as ptr<i32>)
         }
         item = m[0].arena.nodes[item].next
     }
