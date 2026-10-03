@@ -12,7 +12,7 @@ import std.process { ProcCmd, ProcStrs }
 
 const KERNEL: string = "module attributes {transform.with_named_sequence} {\n  func.func @matmul_kernel(%A: memref<128x128xf32>, %B: memref<128x128xf32>, %C: memref<128x128xf32>) attributes {llvm.emit_c_interface} {\n    linalg.matmul ins(%A, %B: memref<128x128xf32>, memref<128x128xf32>)\n                  outs(%C: memref<128x128xf32>)\n    func.return\n  }\n}\n"
 
-const HARNESS: string = "#include <stdio.h>\n#include <stdlib.h>\n#include <time.h>\n\nstruct MemRefDescriptor {\n  float *allocated;\n  float *aligned;\n  long offset;\n  long sizes[2];\n  long strides[2];\n};\n\nextern void _mlir_ciface_matmul_kernel(struct MemRefDescriptor *A, struct MemRefDescriptor *B, struct MemRefDescriptor *C);\n\nstatic double get_time(void) {\n    struct timespec ts;\n    clock_gettime(CLOCK_MONOTONIC, &ts);\n    return ts.tv_sec + ts.tv_nsec * 1e-9;\n}\n\nint main(void) {\n    int N = 128;\n    int size = N * N * sizeof(float);\n    float *A_data = malloc(size);\n    float *B_data = malloc(size);\n    float *C_data = malloc(size);\n    for (int i = 0; i < N * N; i++) {\n        A_data[i] = 1.0f;\n        B_data[i] = 2.0f;\n        C_data[i] = 0.0f;\n    }\n    struct MemRefDescriptor A = {A_data, A_data, 0, {N, N}, {N, 1}};\n    struct MemRefDescriptor B = {B_data, B_data, 0, {N, N}, {N, 1}};\n    struct MemRefDescriptor C = {C_data, C_data, 0, {N, N}, {N, 1}};\n    _mlir_ciface_matmul_kernel(&A, &B, &C);\n    double start = get_time();\n    for (int i = 0; i < 100; i++) {\n        _mlir_ciface_matmul_kernel(&A, &B, &C);\n    }\n    double end = get_time();\n    printf(\"%f\\n\", end - start);\n    free(A_data);\n    free(B_data);\n    free(C_data);\n    return 0;\n}\n"
+const HARNESS: string = "#include <stdio.h>\n#include <stdlib.h>\n#include <time.h>\n\nstruct MemRefDescriptor {\n  float *allocated;\n  float *aligned;\n  long offset;\n  long sizes[2];\n  long strides[2];\n};\n\nextern void _mlir_ciface_matmul_kernel(struct MemRefDescriptor *A, struct MemRefDescriptor *B, struct MemRefDescriptor *C);\n\nstatic double get_time(void) {\n    struct timespec ts;\n    clock_gettime(CLOCK_MONOTONIC, &ts);\n    return ts.tv_sec + ts.tv_nsec * 1e-9;\n}\n\nstatic int correct(const float *C, int N) {\n    return C[0] == 256.0f && C[N * N - 1] == 256.0f;\n}\n\nint main(void) {\n    int N = 128;\n    int size = N * N * sizeof(float);\n    float *A_data = malloc(size);\n    float *B_data = malloc(size);\n    float *C_data = malloc(size);\n    for (int i = 0; i < N * N; i++) {\n        A_data[i] = 1.0f;\n        B_data[i] = 2.0f;\n        C_data[i] = 0.0f;\n    }\n    struct MemRefDescriptor A = {A_data, A_data, 0, {N, N}, {N, 1}};\n    struct MemRefDescriptor B = {B_data, B_data, 0, {N, N}, {N, 1}};\n    struct MemRefDescriptor C = {C_data, C_data, 0, {N, N}, {N, 1}};\n    _mlir_ciface_matmul_kernel(&A, &B, &C);\n    if (!correct(C_data, N)) {\n        fprintf(stderr, \"matmul correctness check failed\\n\");\n        return 2;\n    }\n    double start = get_time();\n    for (int i = 0; i < 100; i++) {\n        _mlir_ciface_matmul_kernel(&A, &B, &C);\n    }\n    double end = get_time();\n    printf(\"%f\\n\", end - start);\n    free(A_data);\n    free(B_data);\n    free(C_data);\n    return 0;\n}\n"
 
 # The transform script that tiles the matmul by a three-dimensional schedule.
 function transform_of(tiles: string) -> string {
@@ -45,6 +45,24 @@ function tool_line(text: string, name: string) -> string {
     return ""
 }
 
+function bounded_int(s: string, hi: i32) -> i32 {
+    let n: i32 = s_len(s)
+    if n == 0 { return -1 }
+    let mut value: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = s[i] as i32
+        if c < 48 or c > 57 { return -1 }
+        let digit: i32 = c - 48
+        if value > hi / 10 or (value == hi / 10 and digit > hi % 10) {
+            return -1
+        }
+        value = value * 10 + digit
+        i = i + 1
+    }
+    return value
+}
+
 function valid_candidate(s: string) -> bool {
     let fields: ptr<ProcStrs> = s_split(s, 44)
     let n: i32 = sl_len(fields)
@@ -52,8 +70,7 @@ function valid_candidate(s: string) -> bool {
     let mut i: i32 = 0
     while i < n {
         let field: string = sl_get(fields, i)
-        if not s_is_digits(field) { return false }
-        let value: i32 = s_atoi(field, 0)
+        let value: i32 = bounded_int(field, 4096)
         if value <= 0 or value > 4096 { return false }
         i = i + 1
     }
@@ -73,8 +90,7 @@ function candidate_space(spec: string) -> ptr<ProcStrs> {
 }
 
 function valid_repetitions(s: string) -> bool {
-    if not s_is_digits(s) { return false }
-    let n: i32 = s_atoi(s, 0)
+    let n: i32 = bounded_int(s, 16)
     return n >= 1 and n <= 16
 }
 
@@ -142,13 +158,19 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
                 return 2
             }
             tiles = parsed
+        } elif arg == "--candidates" {
+            errln("transform_tuning_benchmark: --candidates requires a value")
+            return 2
         } elif s_starts(arg, "--repetitions=") {
             let spec: string = s_from(arg, 14)
             if not valid_repetitions(spec) {
                 errln("transform_tuning_benchmark: --repetitions expects an integer from one to sixteen")
                 return 2
             }
-            repetitions = s_atoi(spec, 0)
+            repetitions = bounded_int(spec, 16)
+        } elif arg == "--repetitions" {
+            errln("transform_tuning_benchmark: --repetitions requires a value")
+            return 2
         }
         i = i + 1
     }
