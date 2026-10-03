@@ -317,7 +317,16 @@ function dispatch(c: string, args: ptr<ProcStrs>) -> i32 {
         check_deps()
         check_mlir_deps()
         info("JIT compiling " + program + "...")
-        return run_flow_jit(program)
+        let mut shape_spec: string = ""
+        let mut i: i32 = 0
+        while i < sl_len(args) {
+            let a: string = sl_get(args, i)
+            if s_starts(a, "--shape-spec=") {
+                shape_spec = a
+            }
+            i = i + 1
+        }
+        return run_flow_jit(program, shape_spec)
     } elif is(c, "ml") {
         return cmd_ml(args)
     } elif is(c, "transpile") {

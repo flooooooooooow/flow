@@ -1,0 +1,20 @@
+import "tests/scripts/harness.flow"
+
+function check_shape_spec_flag() -> i32 {
+    let program: string = t_tmp() + "/test_program.flow"
+    let _w1: bool = write_text(program, "function main() -> i32 { return 0 }\n")
+    
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "jit", program)
+    sl_push(argv, "--shape-spec=memref<?xf32>=memref<1024xf32>")
+    
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("mlir_shape_spec")
+    t_start()
+    t_end("accepts_shape_spec_flag", check_shape_spec_flag())
+    t_done()
+    return 0
+}

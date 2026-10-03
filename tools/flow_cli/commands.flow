@@ -892,7 +892,7 @@ export function cmd_ml(args: ptr<ProcStrs>) -> i32 {
             info("Running benchmark...")
             return run_argv(sl_of3("/usr/bin/time", "-p", b + "_mlir"))
         }
-        return run_flow_jit(program)
+        return run_flow_jit(program, "")
     }
     if s_eq(sub, "test") {
         check_deps()
@@ -926,7 +926,7 @@ export function cmd_ml(args: ptr<ProcStrs>) -> i32 {
                 let nm: string = sl_get(jits, k)
                 k = k + 1
                 info("  MLIR JIT smoke: " + nm)
-                check(run_flow_jit(root() + "/tests/stdlib/" + nm + ".flow"))
+                check(run_flow_jit(root() + "/tests/stdlib/" + nm + ".flow", ""))
             }
             info("  MLIR AOT smoke: mlir_tensor_bench")
             sink_push(SINK_NULL, SINK_FD)
