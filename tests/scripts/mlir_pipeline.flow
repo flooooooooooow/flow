@@ -56,6 +56,15 @@ function check_tiling_rejects_overflow_size() -> i32 {
     return T_PASS
 }
 
+function check_tiling_rejects_wrapped_overflow_size() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--enable-affine-tiling")
+    sl_push(argv, "--affine-tile-size=4294967297")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--affine-tile-size must be a positive integer") { return T_FAIL }
+    return T_PASS
+}
+
 function check_hierarchical_tiling() -> i32 {
     let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
     sl_push(argv, "--opt-level=O2")
@@ -98,6 +107,17 @@ function check_loop_fusion_o1_gate() -> i32 {
     return T_PASS
 }
 
+function check_loop_fusion_can_be_disabled() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    sl_push(argv, "--loop-fusion")
+    sl_push(argv, "--no-loop-fusion")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    if a_contains(read_text(t_out()), "affine-loop-fusion") { return T_FAIL }
+    if a_contains(read_text(t_out()), "linalg-fuse-elementwise-ops") { return T_FAIL }
+    return T_PASS
+}
+
 function check_multi_buffering_factor() -> i32 {
     let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
     sl_push(argv, "--opt-level=O2")
@@ -114,6 +134,15 @@ function check_multi_buffering_factor_rejects_out_of_range() -> i32 {
     sl_push(argv, "--multi-buffering-factor=1")
     if t_run(t_cmd(argv)) == 0 { return T_FAIL }
     if not a_contains(read_text(t_err()), "must be between 2 and 8") { return T_FAIL }
+    return T_PASS
+}
+
+function check_multi_buffering_factor_requires_value() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--enable-multi-buffering")
+    sl_push(argv, "--multi-buffering-factor")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--multi-buffering-factor must be between 2 and 8") { return T_FAIL }
     return T_PASS
 }
 
@@ -153,12 +182,31 @@ function check_unroll_jam_requires_factor() -> i32 {
     return T_PASS
 }
 
+function check_unroll_jam_rejects_malformed_factor() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    sl_push(argv, "--enable-affine-unroll-jam")
+    sl_push(argv, "--affine-unroll-jam-factor=2oops")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--affine-unroll-jam-factor must be a positive integer") { return T_FAIL }
+    return T_PASS
+}
+
 function check_affine_coalescing() -> i32 {
     let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
     sl_push(argv, "--opt-level=O2")
     sl_push(argv, "--enable-affine-coalescing")
     if t_run(t_cmd(argv)) != 0 { return T_FAIL }
     if not a_contains(read_text(t_out()), "affine-loop-coalescing") { return T_FAIL }
+    return T_PASS
+}
+
+function check_affine_parallelize() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    sl_push(argv, "--enable-affine-parallelize")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    if not a_contains(read_text(t_out()), "affine-parallelize") { return T_FAIL }
     return T_PASS
 }
 
@@ -203,6 +251,7 @@ function main() -> i32 {
     t_start()
     t_end("tiling_rejects_malformed_size", check_tiling_rejects_malformed_size())
     t_end("tiling_rejects_overflow_size", check_tiling_rejects_overflow_size())
+    t_end("tiling_rejects_wrapped_overflow_size", check_tiling_rejects_wrapped_overflow_size())
     t_start()
     t_end("hierarchical_tiling", check_hierarchical_tiling())
     t_start()
@@ -212,9 +261,13 @@ function main() -> i32 {
     t_start()
     t_end("loop_fusion_o1_gate", check_loop_fusion_o1_gate())
     t_start()
+    t_end("loop_fusion_disabled", check_loop_fusion_can_be_disabled())
+    t_start()
     t_end("multi_buffering_factor", check_multi_buffering_factor())
     t_start()
     t_end("multi_buffering_factor_range", check_multi_buffering_factor_rejects_out_of_range())
+    t_start()
+    t_end("multi_buffering_factor_value", check_multi_buffering_factor_requires_value())
     t_start()
     t_end("affine_unrolling", check_affine_unrolling())
     t_start()
@@ -224,7 +277,11 @@ function main() -> i32 {
     t_start()
     t_end("unroll_jam_requires_factor", check_unroll_jam_requires_factor())
     t_start()
+    t_end("unroll_jam_malformed_factor", check_unroll_jam_rejects_malformed_factor())
+    t_start()
     t_end("affine_coalescing", check_affine_coalescing())
+    t_start()
+    t_end("affine_parallelize", check_affine_parallelize())
     t_start()
     t_end("affine_skewing", check_affine_skewing())
     t_end("skewing_requires_factor", check_skewing_requires_factor())
