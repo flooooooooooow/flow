@@ -213,6 +213,33 @@ function norm_runtime_key(s: string) -> string {
 }
 
 # s#\("[a-z_]*_s": \)[0-9.]*#\1N#g
+# s#jit-phase [a-z]* [0-9]*#jit-phase NAME N#g
+function norm_jit_phase(s: string) -> string {
+    let key: string = "jit-phase "
+    let n: i32 = s_len(s)
+    let mut out: string = ""
+    let mut pos: i32 = 0
+    let mut i: i32 = s_find(s, key, 0)
+    while i >= 0 {
+        let mut j: i32 = i + s_len(key)
+        while j < n and ((s_byte(s, j) >= 97 and s_byte(s, j) <= 122) or s_byte(s, j) == 95) {
+            j = j + 1
+        }
+        if j < n and s_byte(s, j) == 32 {
+            let mut k: i32 = j + 1
+            while k < n and is_digit(s_byte(s, k)) {
+                k = k + 1
+            }
+            out = out + s_slice(s, pos, j + 1) + "N"
+            pos = k
+            i = s_find(s, key, pos)
+        } else {
+            i = s_find(s, key, i + 1)
+        }
+    }
+    return out + s_from(s, pos)
+}
+
 function norm_seconds(s: string) -> string {
     let n: i32 = s_len(s)
     let mut out: string = ""
@@ -252,6 +279,7 @@ function normalize(text: string) -> string {
     s = norm_mktemp_tmp(s)
     s = norm_object(s)
     s = norm_runtime_key(s)
+    s = norm_jit_phase(s)
     return norm_seconds(s)
 }
 

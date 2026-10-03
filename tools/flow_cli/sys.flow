@@ -46,6 +46,11 @@ static int64_t flow_cli_mtime_ns(const char *p) {
   return (int64_t)st.st_mtim.tv_sec * 1000000000LL + (int64_t)st.st_mtim.tv_nsec;
 #endif
 }
+static int64_t flow_cli_now_ns(void) {
+  struct timespec ts;
+  if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) { return -1; }
+  return (int64_t)ts.tv_sec * 1000000000LL + (int64_t)ts.tv_nsec;
+}
 static int64_t flow_cli_size(const char *p) {
   struct stat st;
   if (stat(p, &st) != 0) { return -1; }
@@ -131,6 +136,7 @@ extern {
     function flow_cli_is_link(p: string) -> i32
     function flow_cli_lexists(p: string) -> i32
     function flow_cli_mtime_ns(p: string) -> i64
+    function flow_cli_now_ns() -> i64
     function flow_cli_size(p: string) -> i64
     function flow_cli_access(p: string, mode: i32) -> i32
     function flow_cli_mkdir(p: string) -> i32
@@ -970,6 +976,10 @@ export function is_exec(p: string) -> bool {
 # [ -w p ]
 export function is_writable(p: string) -> bool {
     return flow_cli_access(p, 2) == 1
+}
+
+export function now_ns() -> i64 {
+    return flow_cli_now_ns()
 }
 
 # [ -s p ]: exists and is not empty.
