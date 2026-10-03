@@ -1191,7 +1191,7 @@ export function generate_mlir(args: ptr<ProcStrs>) -> i32 {
             sl_push(o, "--opt-report")
         }
         sl_push2(o, mlir_file, mlir_file)
-        if mlir_optimize(o) != 0 {
+    if mlir_optimize(o) != 0 {
             errln("MLIR optimization failed")
             error("MLIR generation failed")
             cli_exit(1)
@@ -1251,8 +1251,16 @@ function jit_is_crash(code: i32) -> bool {
 }
 
 function flow_jit_once(program: string, work: string) -> i32 {
+    let time_on: bool = s_eq(env("FLOW_JIT_TIMINGS"), "1")
+    let t_start: i64 = now_ns()
+    let mut t_last: i64 = t_start
     sink_push(SINK_FD, SINK_BUF)
     let erc: i32 = flow_emit_mlir(sl_of3("--jit", program, work + "/jit_module.mlir"))
+    if time_on {
+        let t_now: i64 = now_ns()
+        errln("jit-phase mlirgen " + s_itoa((t_now - t_last) / 1000))
+        t_last = t_now
+    }
     let _eo: string = sink_pop()
     if erc != 0 {
         errs(sink_err())
@@ -1262,12 +1270,21 @@ function flow_jit_once(program: string, work: string) -> i32 {
     let o: ptr<ProcStrs> = sl_of2("--opt-level", "O2")
     sl_push2(o, work + "/jit_module.mlir", work + "/jit_module.mlir")
     if mlir_optimize(o) != 0 {
-        errln("MLIR optimization failed")
         return 1
+    }
+    if time_on {
+        let t_now: i64 = now_ns()
+        errln("jit-phase optimize " + s_itoa((t_now - t_last) / 1000))
+        t_last = t_now
     }
     let mut ok: bool = true
     sink_push(SINK_FD, SINK_BUF)
     let lrc: i32 = mlir_lower(sl_of2(work + "/jit_module.mlir", work + "/jit_module.ll"))
+    if time_on {
+        let t_now: i64 = now_ns()
+        errln("jit-phase lower " + s_itoa((t_now - t_last) / 1000))
+        t_last = t_now
+    }
     let _lo: string = sink_pop()
     if lrc != 0 {
         outln("MLIR lowering (mlir-opt) failed: " + s_chomp_all(sink_err()))
@@ -1325,6 +1342,11 @@ function flow_jit_once(program: string, work: string) -> i32 {
                 outln("LLVM executable build failed: " + s_chomp_all(read_text(work + "/cc.err")))
                 continue
             }
+            if time_on {
+                let t_now: i64 = now_ns()
+                errln("jit-phase compile " + s_itoa((t_now - t_last) / 1000))
+                t_last = t_now
+            }
             let has_timeout: bool = have("timeout")
             let mut rargv: ptr<ProcStrs> = sl_of1(exe)
             if has_timeout {
@@ -1333,6 +1355,11 @@ function flow_jit_once(program: string, work: string) -> i32 {
             let rc: ptr<ProcCmd> = cmd(rargv)
             cmd_no_stdin(rc)
             let mut code: i32 = run(rc)
+            if time_on {
+                let t_now: i64 = now_ns()
+                errln("jit-phase run " + s_itoa((t_now - t_last) / 1000))
+                t_last = t_now
+            }
             if code == 124 and has_timeout {
                 outln("❌ JIT execution timed out after " + timeout_s + "s")
                 code = 0 - 1
@@ -1366,7 +1393,11 @@ function flow_jit_once(program: string, work: string) -> i32 {
     if s_eq(env_or("FLOW_JIT_RAW", "0"), "1") {
         return code & 255
     }
-    if code != 0 {
+    if time_on {
+        let t_now: i64 = now_ns()
+        errln("jit-phase total " + s_itoa((t_now - t_start) / 1000))
+    }
+        if code != 0 {
         outln("❌ JIT finished with exit code: " + result)
         return 1
     }

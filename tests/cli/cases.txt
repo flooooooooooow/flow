@@ -185,3 +185,4 @@ run_native_proj cwd=proj -- run-native
 pkg_install_proj cwd=proj files=flow.lock -- pkg install
 test_gpu -- test-gpu
 test_interop -- test-interop
+jit_timing env=FLOW_JIT_TIMINGS=1 -- jit tests/cli/fixtures/hello.flow
