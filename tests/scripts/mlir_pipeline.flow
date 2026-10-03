@@ -47,6 +47,28 @@ function check_tiling_rejects_malformed_size() -> i32 {
     return T_PASS
 }
 
+function check_hierarchical_tiling() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    sl_push(argv, "--enable-affine-tiling")
+    sl_push(argv, "--affine-tile-sizes=64,32,8")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "affine-loop-tile{tile-size=64}") { return T_FAIL }
+    if not a_contains(output, "affine-loop-tile{tile-size=32}") { return T_FAIL }
+    if not a_contains(output, "affine-loop-tile{tile-size=8}") { return T_FAIL }
+    return T_PASS
+}
+
+function check_hierarchical_tiling_rejects_malformed_sizes() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--enable-affine-tiling")
+    sl_push(argv, "--affine-tile-sizes=64,0,8")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "two to four positive integers") { return T_FAIL }
+    return T_PASS
+}
+
 function check_loop_fusion() -> i32 {
     let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
     sl_push(argv, "--opt-level=O2")
@@ -97,6 +119,10 @@ function main() -> i32 {
     t_end("tiling_requires_size", check_tiling_requires_size())
     t_start()
     t_end("tiling_rejects_malformed_size", check_tiling_rejects_malformed_size())
+    t_start()
+    t_end("hierarchical_tiling", check_hierarchical_tiling())
+    t_start()
+    t_end("hierarchical_tiling_invalid", check_hierarchical_tiling_rejects_malformed_sizes())
     t_start()
     t_end("loop_fusion", check_loop_fusion())
     t_start()
