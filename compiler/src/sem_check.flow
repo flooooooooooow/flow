@@ -2084,8 +2084,25 @@ function sem_check_span_arguments(c: ptr<Sem>, name: string, args: ptr<SemIntVec
 # (for location suffixes), `stmt` the statement it forms, or -1.
 function sem_check_function_call(c: ptr<Sem>, name: string, args: ptr<SemIntVec>, node: i32, stmt: i32) -> i32 {
     let tys: ptr<SemTys> = c.t
-    sem_resolved_calls_add(c, name)
-    sem_check_rt_safe_call(c, name)
+
+    # Check if this is an indirect call via a variable with an `rt_safe` contract.
+    let mut ok_dynamic: bool = false
+    let sym: i32 = sem_lookup(c, name)
+    if sym >= 0 and sem_tkind(c, sem_sym_type(c, sym)) == TK_FUNCTION {
+        let sty: i32 = sem_sym_type(c, sym)
+        let mut ri: i32 = 0
+        while ri < sem_ty_neffects(c.t, sty) {
+            if sem_s_eq(sem_ty_effect(c.t, sty, ri), "rt_safe") {
+                ok_dynamic = true
+            }
+            ri = ri + 1
+        }
+    }
+
+    if ok_dynamic == false {
+        sem_resolved_calls_add(c, name)
+        sem_check_rt_safe_call(c, name)
+    }
     sem_check_safe_call(c, name)
     sem_check_domain_call(c, name)
     if sem_s_eq(name, "__flow_dbg") {
@@ -2193,7 +2210,10 @@ function sem_check_function_call(c: ptr<Sem>, name: string, args: ptr<SemIntVec>
         }
         let mut r3: i32 = 0
         while r3 < sem_ty_neffects(c.t, sty) {
-            sem_sv_add(needed, sem_ty_effect(c.t, sty, r3))
+            let eff_name: string = sem_ty_effect(c.t, sty, r3)
+            if sem_s_eq(eff_name, "rt_safe") == false {
+                sem_sv_add(needed, eff_name)
+            }
             r3 = r3 + 1
         }
         if needed.len > 0 {
@@ -2446,8 +2466,22 @@ function sem_check_method_call(c: ptr<Sem>, e: i32, stmt: i32) -> i32 {
         sem_resolved_calls_add(c, im)
         return sem_check_function_call(c, im, all, e, stmt)
     }
-    sem_resolved_calls_add(c, "__unresolved_dynamic_call")
-    sem_check_rt_safe_call(c, "__unresolved_dynamic_call")
+    let mut ok_dynamic: bool = false
+    let method_ty: i32 = sem_lookup(c, method)
+    if method_ty >= 0 and sem_tkind(c, sem_sym_type(c, method_ty)) == TK_FUNCTION {
+        let sty: i32 = sem_sym_type(c, method_ty)
+        let mut ri: i32 = 0
+        while ri < sem_ty_neffects(c.t, sty) {
+            if sem_s_eq(sem_ty_effect(c.t, sty, ri), "rt_safe") {
+                ok_dynamic = true
+            }
+            ri = ri + 1
+        }
+    }
+    if ok_dynamic == false {
+        sem_resolved_calls_add(c, "__unresolved_dynamic_call")
+        sem_check_rt_safe_call(c, "__unresolved_dynamic_call")
+    }
     return sem_check_function_call(c, method, all, e, stmt)
 }
 
@@ -2489,7 +2523,27 @@ function sem_check_call(c: ptr<Sem>, e: i32, stmt: i32) -> i32 {
     if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "sizeof") and sem_lookup(c, "sizeof") < 0 {
         return sem_tmk(c, TK_I64)
     }
-    return sem_check_function_call(c, sem_call_name(c, e), sem_call_args(c, sem_na(c, e)), e, stmt)
+    let nm: string = sem_call_name(c, e)
+    let sym: i32 = sem_lookup(c, nm)
+    if sym >= 0 and sem_tkind(c, sem_sym_type(c, sym)) == TK_FUNCTION {
+        let sty: i32 = sem_sym_type(c, sym)
+        let mut ri: i32 = 0
+        let mut is_rt_safe: bool = false
+        while ri < sem_ty_neffects(c.t, sty) {
+            if sem_s_eq(sem_ty_effect(c.t, sty, ri), "rt_safe") {
+                is_rt_safe = true
+            }
+            ri = ri + 1
+        }
+        if is_rt_safe {
+            # This is an indirect call via a variable with an `rt_safe` contract.
+            # Do not track it as an unresolved dynamic call.
+            let all: ptr<SemIntVec> = sem_call_args(c, sem_na(c, e))
+            # Just type check arguments since it's already considered safe.
+            return sem_check_function_call(c, nm, all, e, stmt)
+        }
+    }
+    return sem_check_function_call(c, nm, sem_call_args(c, sem_na(c, e)), e, stmt)
 }
 
 # ---------------------------------------------------------------------------
