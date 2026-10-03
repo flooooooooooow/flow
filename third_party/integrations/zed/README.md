@@ -17,3 +17,7 @@ directory. The `flow` command must be available on `PATH`.
 
 The grammar source is https://github.com/flooooooooooow/tree-sitter-flow.
 Release `v0.1.0` corresponds to the pinned commit above.
+
+## Publishing Status
+
+Upstream publish of the Zed extension is currently blocked on #899 because Zed language extensions require a Tree-sitter grammar repository pinned to a Git revision.
