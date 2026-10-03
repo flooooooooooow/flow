@@ -20,9 +20,13 @@ function main() -> i32 {
     
     outln("Building Debian package for Flow...")
     
-    let dirs: ptr<ProcStrs> = sl_of3("src", "lib", "runtime")
-    sl_push(dirs, "compiler")
+    let dirs: ptr<ProcStrs> = sl_of3("compiler", "lib", "runtime")
+    sl_push(dirs, "tools")
+    sl_push(dirs, "scripts")
+    sl_push(dirs, "registry")
     sl_push(dirs, "flow")
+    sl_push(dirs, "flow.toml")
+    sl_push(dirs, "VERSION")
     
     let mut i: i32 = 0
     while i < sl_len(dirs) {
