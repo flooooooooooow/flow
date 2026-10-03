@@ -131,6 +131,8 @@ export struct CgenBuf {
     plan_seen: ptr<i32>,
     # 1 under FLOWC_EXPLAIN=1: each site's plan record goes to stderr.
     explain: i32,
+    # 1 under FLOWC_PERF_REPORT=1: performance remarks for codegen optimizations.
+    perf_report: i32,
     # Enclosing `handle` statement ids, innermost last. Inside them an effect
     # operation calls the handler's method directly (#1056). handle_len can
     # pass FLOWC_HANDLE_MAX; deeper blocks then keep the vtable dispatch.
@@ -155,7 +157,7 @@ export struct CgenBuf {
 }
 
 function flowc_cgen_buf_init(out: ptr<u8>, cap: i32) -> CgenBuf {
-    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null as string, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0, handle_ids: null, handle_len: 0, bounds_loop_start: -1, bounds_loop_end: -1, bounds_span_start: -1, bounds_span_end: -1, len_hoist_span_start: -1, len_hoist_span_end: -1, len_hoist_id: AST_NONE, root: AST_NONE }
+    return CgenBuf { out: out, cap: cap, len: 0, err: 0, sigs: null, sigs_len: 0, cembed_names: null, cembed_offs: null, cembed_lens: null, cembed_count: 0, cap_starts: null, cap_ends: null, cap_count: 0, in_lambda: 0, lambda_cap_lambda: null, lambda_cap_start: null, lambda_cap_end: null, lambda_cap_count: 0, mono_tp_starts: null, mono_tp_ends: null, mono_tp_concrete: null, mono_ntp: 0, cur_fn: AST_NONE, defer_ids: null, defer_len: 0, loop_defer_base: 0, tail_fn: AST_NONE, eff: null, eff_len: 0, fiber_main: 0, checks: 0, lval: 0, dbg_file: null as string, dbg_pos: 0, dbg_line: 1, plan_order: null, plan_has: null, plan_lo: null, plan_hi: null, plan_seen: null, explain: 0, perf_report: 0, handle_ids: null, handle_len: 0, bounds_loop_start: -1, bounds_loop_end: -1, bounds_span_start: -1, bounds_span_end: -1, len_hoist_span_start: -1, len_hoist_span_end: -1, len_hoist_id: AST_NONE, root: AST_NONE }
 }
 
 function flowc_cgen_putc(w: ptr<CgenBuf>, c: i32) {
@@ -169,6 +171,26 @@ function flowc_cgen_putc(w: ptr<CgenBuf>, c: i32) {
     w[0].out[w[0].len] = c
     w[0].len = w[0].len + 1
 }
+
+# Emit a performance remark if the perf_report flag is on.
+# We embed it directly in the C output.
+function flowc_cgen_perf_remark(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32, remark: string, detail: string, fact: i32) {
+    if w[0].perf_report == 0 {
+        return
+    }
+    flowc_cgen_puts(w, "\n/* perf[")
+    flowc_cgen_puts(w, remark)
+    flowc_cgen_puts(w, "]: ")
+    if id != AST_NONE {
+        flowc_cgen_puts(w, "`")
+        flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+        flowc_cgen_puts(w, "` ")
+    }
+    flowc_cgen_puts(w, detail)
+    if fact == 1 { flowc_cgen_puts(w, " (fact)") } else { flowc_cgen_puts(w, " (heuristic)") }
+    flowc_cgen_puts(w, " */\n")
+}
+
 
 function flowc_cgen_puts(w: ptr<CgenBuf>, s: string) {
     let p: ptr<u8> = s
@@ -6665,6 +6687,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                 return
             }
             if flowc_cgen_checked_is_span(w, arena, src, arena.nodes[id].a) == 1 {
+                flowc_cgen_perf_remark(w, arena, src, arena.nodes[id].a, "span-bounds-check-retained", "index not proven in range", 1)
                 flowc_cgen_emit_checked_index(w, arena, src, id, 0)
                 return
             }
@@ -7057,6 +7080,12 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             if fn_id != AST_NONE or flowc_cgen_is_libc_fn(arena, src, id) == 1 {
                 if flowc_cgen_is_libc_fn(arena, src, id) == 1 and flowc_cgen_call_user_libc(w, arena, src, id, fn_id) == 1 {
                     flowc_cgen_puts(w, "__flowc_libc_")
+                }
+                if flowc_cgen_is_vec_math_call(src, arena.nodes[id].name_start, arena.nodes[id].name_end) == 1 and arena.nodes[id].a != AST_NONE {
+                    let p1t: i32 = flowc_cgen_expr_type_node(w, arena, src, arena.nodes[id].a)
+                    if flowc_cgen_ty_is_float_name(arena, src, p1t) == 1 and flowc_cgen_span_is(src, arena.nodes[p1t].name_start, arena.nodes[p1t].name_end, "f32") == 1 {
+                        flowc_cgen_perf_remark(w, arena, src, id, "f32-math-widened-to-f64", "argument widened to f64", 1)
+                    }
                 }
                 flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
             } elif flowc_cgen_put_imported_overload(w, arena, src, id) == 1 {
@@ -8920,6 +8949,8 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         if flowc_cgen_loop_body_is_simple(arena, src, arena.nodes[id].c) == 1 {
             flowc_cgen_puts(w, "  #pragma clang loop vectorize(enable) interleave(enable)\n")
             flowc_cgen_puts(w, "  #pragma GCC ivdep\n")
+        } else {
+            flowc_cgen_perf_remark(w, arena, src, id, "loop-not-vectorized", "loop stays scalar", 0)
         }
         # A step that is not a literal takes its direction from its sign at
         # run time, as on the Python host (#1053). Literal steps keep the
@@ -11246,6 +11277,12 @@ export function flowc_cgen_emit_sigs(
     if chk != null {
         if chk[0] == 49 and chk[1] == 0 {
             w.checks = 1
+        }
+    }
+    let prf: ptr<u8> = getenv("FLOWC_PERF_REPORT") as ptr<u8>
+    if prf != null {
+        if prf[0] == 49 and prf[1] == 0 {
+            w.perf_report = 1
         }
     }
     # A library unit (FLOWC_LIBRARY=1, #1030) carries no runtime checks and

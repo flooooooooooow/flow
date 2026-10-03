@@ -1,0 +1,5 @@
+env FLOWC_PERF_REPORT=1
++ /* perf[span-bounds-check-retained]: `v` index not proven in range (fact) */
++ /* perf[loop-not-vectorized]: `i` loop stays scalar (heuristic) */
++ /* perf[f32-math-widened-to-f64]: `sqrt` argument widened to f64 (fact) */
+exit 0
