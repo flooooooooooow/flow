@@ -59,6 +59,9 @@ function compile_patterns() {
     sl_push(RX_DROP, "^(real|user|sys) +[0-9.]+$")
     sl_push(RX_DROP, "^-{20,}$")
     sl_push(RX_DROP, "overriding the module target triple|^[0-9]+ warnings? generated\\.$")
+    sl_push(RX_DROP, "^== timings ==$")
+    sl_push(RX_DROP, "^  (emit|optimize|lower|link|run):")
+    sl_push(RX_DROP, "^  \\(warm cache, compilation skipped\\)$")
     DROP = malloc((sl_len(RX_DROP) as i64) * 8) as ptr<ptr<Regex>>
     let mut i: i32 = 0
     while i < sl_len(RX_DROP) {
@@ -77,7 +80,8 @@ function filter(text: string) -> string {
     let a: string = tr_sed(text, RX_ANSI, "", 0)
     let b: string = s_replace(s_replace(a, ROOT, "<ROOT>"), WORK, "<WORK>")
     let c: string = tr_sed(b, RX_RUNDIR, "/build/run.X/", 0)
-    let lines: ptr<ProcStrs> = s_lines(c)
+    let c2: string = s_replace(c, "🔥 JIT running cached ", "🔥 JIT compiling ")
+    let lines: ptr<ProcStrs> = s_lines(c2)
 
     # The MLIR module a command echoes, up to the dashed line after it.
     let s1: ptr<ProcStrs> = sl_new()
