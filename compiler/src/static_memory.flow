@@ -18,7 +18,10 @@ export struct StaticMemoryPlan {
 
 function align_up(value: i32, alignment: i32) -> i32 {
     if alignment <= 1 { return value }
-    return ((value + alignment - 1) / alignment) * alignment
+    let aligned: i64 = (((value as i64) + (alignment as i64) - 1) /
+                        (alignment as i64)) * (alignment as i64)
+    if aligned > 2147483647 { return -1 }
+    return aligned as i32
 }
 
 function overlaps(a: StaticBuffer, b: StaticBuffer) -> i32 {
@@ -38,10 +41,10 @@ function block_fits(
     let mut j: i32 = 0
     while j < count {
         if placed[j] == 1 and overlaps(item, items[j]) == 1 {
-            let left: i32 = candidate
-            let right: i32 = candidate + size
-            let other_left: i32 = offsets[j]
-            let other_right: i32 = other_left + items[j].size
+            let left: i64 = candidate as i64
+            let right: i64 = (candidate as i64) + (size as i64)
+            let other_left: i64 = offsets[j] as i64
+            let other_right: i64 = (other_left) + (items[j].size as i64)
             if left < other_right and other_left < right { return 0 }
         }
         j = j + 1
@@ -75,16 +78,24 @@ export function flowc_static_memory_plan(
         let alignment: i32 = item.alignment * 1
         let step: i32 = if alignment > arena_alignment { alignment } else { arena_alignment }
         let mut candidate: i32 = 0
-        while candidate < out.arena_size + item.size + step {
+        let limit: i64 = (out.arena_size as i64) + (item.size as i64) + (step as i64)
+        while (candidate as i64) < limit {
             candidate = align_up(candidate, step)
+            if candidate < 0 { break }
             if block_fits(candidate, item.size, items, out.offsets, placed, item, count) == 1 {
                 out.offsets[i] = candidate
                 placed[i] = 1
-                let end: i32 = candidate + item.size
-                if end > out.arena_size { out.arena_size = end }
+                let end: i64 = (candidate as i64) + (item.size as i64)
+                if end > 2147483647 {
+                    placed[i] = 0
+                    break
+                }
+                if (end as i32) > out.arena_size { out.arena_size = end as i32 }
                 break
             }
-            candidate = candidate + step
+            let next: i64 = (candidate as i64) + (step as i64)
+            if next > 2147483647 { break }
+            candidate = next as i32
         }
         i = i + 1
     }
