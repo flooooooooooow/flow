@@ -60,20 +60,23 @@ export function flowc_static_memory_plan(
     count: i32,
     arena_alignment: i32
 ) -> StaticMemoryPlan {
+    let mut n: i32 = count
+    if n < 0 { n = 0 }
+    if n > FLOWC_STATIC_MEMORY_MAX_BUFFERS { n = FLOWC_STATIC_MEMORY_MAX_BUFFERS }
     let mut out: StaticMemoryPlan = StaticMemoryPlan {
         offsets: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         arena_size: 0,
-        count: count
+        count: n
     }
     let mut placed: array<i32, 64> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     let mut i: i32 = 0
-    while i < count and i < FLOWC_STATIC_MEMORY_MAX_BUFFERS {
+    while i < n {
         let item: StaticBuffer = items[i]
         let alignment: i32 = item.alignment * 1
         let step: i32 = if alignment > arena_alignment { alignment } else { arena_alignment }
@@ -82,7 +85,7 @@ export function flowc_static_memory_plan(
         while (candidate as i64) < limit {
             candidate = align_up(candidate, step)
             if candidate < 0 { break }
-            if block_fits(candidate, item.size, items, out.offsets, placed, item, count) == 1 {
+            if block_fits(candidate, item.size, items, out.offsets, placed, item, n) == 1 {
                 out.offsets[i] = candidate
                 placed[i] = 1
                 let end: i64 = (candidate as i64) + (item.size as i64)
