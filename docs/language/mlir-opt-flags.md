@@ -86,6 +86,9 @@ Use `--enable-affine-unroll-jam --affine-unroll-jam-factor N` to apply affine
 unroll-and-jam with an explicit factor. The transform is opt-in and requires a
 positive factor.
 
+Use `--enable-affine-coalescing` to coalesce compatible nested affine loops.
+The pass is opt-in and runs inside the function pipeline.
+
 Use `--enable-affine-tiling --affine-tile-sizes 64,32,8` for hierarchical
 tiling. Two through four positive sizes up to 4096 are accepted. The matching
 affine tiling passes are emitted in the listed order.

@@ -9,6 +9,7 @@
 #       [--enable-affine-normalization]
 #       [--enable-affine-unrolling --affine-unroll-factor N]
 #       [--enable-affine-unroll-jam --affine-unroll-jam-factor N]
+#       [--enable-affine-coalescing]
 #       [--enable-async-copy --async-copy-target gpu|nvptx|amdgpu]
 #
 # prints the --pass-pipeline string, as MLIROptimizer.build_pass_pipeline in
@@ -91,6 +92,7 @@ struct PipeFlags {
     affine_unroll_factor: i32,
     affine_unroll_jam: bool,
     affine_unroll_jam_factor: i32,
+    affine_coalescing: bool,
     async_copy: bool,
     async_target: i32
 }
@@ -191,6 +193,7 @@ function build_pipeline(f: PipeFlags) -> string {
         if f.affine_normalization { fn_passes = add(fn_passes, "affine-loop-normalize") }
         if f.affine_unrolling { fn_passes = add(fn_passes, "affine-loop-unroll{unroll-factor=" + ft_itoa(f.affine_unroll_factor) + "}") }
         if f.affine_unroll_jam { fn_passes = add(fn_passes, "affine-loop-unroll-jam{unroll-factor=" + ft_itoa(f.affine_unroll_jam_factor) + "}") }
+        if f.affine_coalescing { fn_passes = add(fn_passes, "affine-loop-coalescing") }
         if f.affine_tiling {
             if f.affine_tile_levels > 0 {
                 let mut ti: i32 = 0
@@ -230,6 +233,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         affine_normalization: false, affine_unrolling: false,
         affine_unroll_factor: 0, async_copy: false,
         affine_unroll_jam: false, affine_unroll_jam_factor: 0,
+        affine_coalescing: false,
         async_target: 0
     }
     let mut i: i32 = 1
@@ -322,6 +326,8 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             f.affine_unrolling = true
         } elif ft_eq(a, "--enable-affine-unroll-jam") {
             f.affine_unroll_jam = true
+        } elif ft_eq(a, "--enable-affine-coalescing") {
+            f.affine_coalescing = true
         } elif ft_eq(a, "--affine-unroll-jam-factor") {
             if i + 1 < argc {
                 f.affine_unroll_jam_factor = positive_int(argv[i + 1] as string)
