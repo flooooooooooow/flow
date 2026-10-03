@@ -4636,6 +4636,32 @@ function sem_unsafe_reason(c: ptr<Sem>, frame: bool, m: ptr<SemStrMap>, name: st
     return sem_sv_get(c.reason_pool, k)
 }
 
+function sem_verify_rt_safe_bindings(c: ptr<Sem>) {
+    let seen: ptr<SemStrVec> = sem_sv_new()
+    let mut i: i32 = 0
+    while i < sem_sv_len(c.rt_binding_fn) {
+        let target: string = sem_sv_get(c.rt_binding_target, i)
+        let fnm: string = sem_sv_get(c.rt_binding_fn, i)
+        let key: string = target + "\x01" + fnm
+        if sem_sv_has(seen, key) == false {
+            sem_sv_push(seen, key)
+            if sem_s_eq(fnm, "<anonymous function>") {
+                sem_err(c, "RT-safety violation: an anonymous function is bound to an rt_safe contract but its RT safety cannot be proven")
+            } else {
+                let reason: string = sem_unsafe_reason(c, false, c.rt_unsafe_reason, fnm)
+                if reason as ptr<u8> != null {
+                    if sem_s_eq(reason, fnm) {
+                        sem_err(c, "RT-safety violation: '" + fnm + "' is bound to an rt_safe contract but calls '" + fnm + "', which is forbidden on an RT-safe path")
+                    } else {
+                        sem_err(c, "RT-safety violation: '" + fnm + "' is bound to an rt_safe contract but calls '" + reason + "', which is forbidden on an RT-safe path")
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+}
+
 function sem_verify_rt_safe_calls(c: ptr<Sem>) {
     let mut i: i32 = 0
     while i < sem_sv_len(c.rt_site_fn) {
@@ -4989,6 +5015,7 @@ export function sem_check_program(c: ptr<Sem>) {
     sem_verify_parameter_escapes(c)
     sem_compute_unsafe(c, false, c.rt_unsafe_reason)
     sem_compute_unsafe(c, true, c.heap_unsafe_reason)
+    sem_verify_rt_safe_bindings(c)
     sem_verify_rt_safe_calls(c)
     sem_verify_domain_calls(c)
     if c.safety_profile {
