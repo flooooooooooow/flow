@@ -12,7 +12,7 @@ If the environment is fully equipped with the required toolchain (`mlir-opt`, `m
 **Tuned Parameter:** Three-dimensional tile schedule for `linalg.matmul`.
 **Evaluated Schedules:** [8,8,8], [16,16,8], [32,16,8], [64,32,16]
 **Best Schedule:** Selected from measured runtime when the LLVM toolchain is available.
-**Metric:** Wall-clock runtime from the compiled harness. A fallback report is emitted when the LLVM toolchain is unavailable.
+**Metric:** Mean wall-clock runtime from repeated compiled-harness runs. The default is three runs per candidate, configurable with `--repetitions=N`. A fallback report is emitted when the LLVM toolchain is unavailable, and its selected schedule always comes from the supplied candidate set.
 
 *(Note: The actual measured runtime metrics were skipped in this run due to missing LLVM dependencies in the execution VM, but the pipeline logic, simulation fallback, and code generation were fully verified).*
 
