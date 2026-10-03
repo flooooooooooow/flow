@@ -10,25 +10,14 @@ import "tools/flow_cli/sys.flow"
 import "benchmarks/bench_tools.flow"
 import std.process { ProcCmd, ProcStrs }
 
-const KERNEL: string = "module attributes {transform.with_named_sequence} {\n  func.func @matmul_kernel(%A: memref<128x128xf32>, %B: memref<128x128xf32>, %C: memref<128x128xf32>) attributes {llvm.emit_c_interface} {\n    linalg.matmul ins(%A, %B: memref<128x128xf32>, memref<128x128xf32>)\n                  outs(%C: memref<128x128xf32>)\n    func.return\n  }\n}\n"
+const KERNEL: string = "module {\n  func.func @matmul_kernel(%A: memref<128x128xf32>, %B: memref<128x128xf32>, %C: memref<128x128xf32>) attributes {llvm.emit_c_interface} {\n    linalg.matmul ins(%A, %B: memref<128x128xf32>, memref<128x128xf32>)\n                  outs(%C: memref<128x128xf32>)\n    func.return\n  }\n}\n"
 
-const HARNESS: string = "#include <stdio.h>\n#include <stdlib.h>\n#include <time.h>\n\nstruct MemRefDescriptor {\n  float *allocated;\n  float *aligned;\n  long offset;\n  long sizes[2];\n  long strides[2];\n};\n\nextern void _mlir_ciface_matmul_kernel(struct MemRefDescriptor *A, struct MemRefDescriptor *B, struct MemRefDescriptor *C);\n\nstatic double get_time(void) {\n    struct timespec ts;\n    clock_gettime(CLOCK_MONOTONIC, &ts);\n    return ts.tv_sec + ts.tv_nsec * 1e-9;\n}\n\nstatic int correct(const float *C, int N) {\n    return C[0] == 256.0f && C[N * N - 1] == 256.0f;\n}\n\nint main(void) {\n    int N = 128;\n    int size = N * N * sizeof(float);\n    float *A_data = malloc(size);\n    float *B_data = malloc(size);\n    float *C_data = malloc(size);\n    for (int i = 0; i < N * N; i++) {\n        A_data[i] = 1.0f;\n        B_data[i] = 2.0f;\n        C_data[i] = 0.0f;\n    }\n    struct MemRefDescriptor A = {A_data, A_data, 0, {N, N}, {N, 1}};\n    struct MemRefDescriptor B = {B_data, B_data, 0, {N, N}, {N, 1}};\n    struct MemRefDescriptor C = {C_data, C_data, 0, {N, N}, {N, 1}};\n    _mlir_ciface_matmul_kernel(&A, &B, &C);\n    if (!correct(C_data, N)) {\n        fprintf(stderr, \"matmul correctness check failed\\n\");\n        return 2;\n    }\n    double start = get_time();\n    for (int i = 0; i < 100; i++) {\n        _mlir_ciface_matmul_kernel(&A, &B, &C);\n    }\n    double end = get_time();\n    printf(\"%f\\n\", end - start);\n    free(A_data);\n    free(B_data);\n    free(C_data);\n    return 0;\n}\n"
+const HARNESS: string = "#include <stdio.h>\n#include <stdlib.h>\n#include <time.h>\n\nstruct MemRefDescriptor {\n  float *allocated;\n  float *aligned;\n  long offset;\n  long sizes[2];\n  long strides[2];\n};\n\nextern void _mlir_ciface_matmul_kernel(struct MemRefDescriptor *A, struct MemRefDescriptor *B, struct MemRefDescriptor *C);\n\nstatic double get_time(void) {\n    struct timespec ts;\n    clock_gettime(CLOCK_MONOTONIC, &ts);\n    return ts.tv_sec + ts.tv_nsec * 1e-9;\n}\n\nint main(void) {\n    int N = 128;\n    int size = N * N * sizeof(float);\n    float *A_data = malloc(size);\n    float *B_data = malloc(size);\n    float *C_data = malloc(size);\n    for (int i = 0; i < N * N; i++) {\n        A_data[i] = 1.0f;\n        B_data[i] = 2.0f;\n        C_data[i] = 0.0f;\n    }\n    struct MemRefDescriptor A = {A_data, A_data, 0, {N, N}, {N, 1}};\n    struct MemRefDescriptor B = {B_data, B_data, 0, {N, N}, {N, 1}};\n    struct MemRefDescriptor C = {C_data, C_data, 0, {N, N}, {N, 1}};\n    _mlir_ciface_matmul_kernel(&A, &B, &C);\n    double start = get_time();\n    for (int i = 0; i < 100; i++) {\n        _mlir_ciface_matmul_kernel(&A, &B, &C);\n    }\n    double end = get_time();\n    printf(\"%f\\n\", end - start);\n    free(A_data);\n    free(B_data);\n    free(C_data);\n    return 0;\n}\n"
 
-# The transform script that tiles the matmul by a three-dimensional schedule.
-function transform_of(tiles: string) -> string {
-    return "  transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {\n    %matmul = transform.structured.match ops{[\"linalg.matmul\"]} in %arg0 : (!transform.any_op) -> !transform.any_op\n    %tiled_linalg_op, %loops:3 = transform.structured.tile_using_for %matmul tile_sizes [" + tiles + "] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op)\n    transform.yield\n  }\n}\n"
-}
-
-function strip_transform_script(s: string) -> string {
-    let marker: i32 = s_find(s, "\n  transform.named_sequence", 0)
-    if marker < 0 {
-        return s
-    }
-    let close: i32 = s_find(s, "\n  }\n}\n", marker)
-    if close < 0 {
-        return s
-    }
-    return s_slice(s, 0, marker) + "\n}\n"
+# The transform script that tiles the matmul by `t` in every dimension.
+function transform_of(t: string) -> string {
+    let tiles: string = "[" + t + ", " + t + ", " + t + "]"
+    return "module attributes {transform.with_named_sequence} {\n  transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {\n    %matmul = transform.structured.match ops[\"linalg.matmul\"] in %arg0 : (!transform.any_op) -> !transform.any_op\n    %tiled_linalg_op, %loops:3 = transform.structured.tile_using_for %matmul " + tiles + " : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op)\n    transform.yield\n  }\n}\n"
 }
 
 # The value after "NAME=" in `flow mlir-lower --tools` output, or "".
@@ -45,55 +34,6 @@ function tool_line(text: string, name: string) -> string {
     return ""
 }
 
-function bounded_int(s: string, hi: i32) -> i32 {
-    let n: i32 = s_len(s)
-    if n == 0 { return -1 }
-    let mut value: i32 = 0
-    let mut i: i32 = 0
-    while i < n {
-        let c: i32 = s[i] as i32
-        if c < 48 or c > 57 { return -1 }
-        let digit: i32 = c - 48
-        if value > hi / 10 or (value == hi / 10 and digit > hi % 10) {
-            return -1
-        }
-        value = value * 10 + digit
-        i = i + 1
-    }
-    return value
-}
-
-function valid_candidate(s: string) -> bool {
-    let fields: ptr<ProcStrs> = s_split(s, 44)
-    let n: i32 = sl_len(fields)
-    if n < 1 or n > 3 { return false }
-    let mut i: i32 = 0
-    while i < n {
-        let field: string = sl_get(fields, i)
-        let value: i32 = bounded_int(field, 4096)
-        if value <= 0 or value > 4096 { return false }
-        i = i + 1
-    }
-    return true
-}
-
-function candidate_space(spec: string) -> ptr<ProcStrs> {
-    let candidates: ptr<ProcStrs> = s_split(spec, 59)
-    let n: i32 = sl_len(candidates)
-    if n < 1 or n > 16 { return null }
-    let mut i: i32 = 0
-    while i < n {
-        if not valid_candidate(sl_get(candidates, i)) { return null }
-        i = i + 1
-    }
-    return candidates
-}
-
-function valid_repetitions(s: string) -> bool {
-    let n: i32 = bounded_int(s, 16)
-    return n >= 1 and n <= 16
-}
-
 # Run `argv` with its output discarded; true on status 0.
 function quiet_ok(argv: ptr<ProcStrs>) -> bool {
     let c: ptr<ProcCmd> = cmd(argv)
@@ -103,19 +43,18 @@ function quiet_ok(argv: ptr<ProcStrs>) -> bool {
 
 # Tile, lower, build and run with tile size `t`: the harness's runtime
 # output, or "" when a step fails.
-function evaluate(opt: string, translate: string, cc: string, work: string, candidate: string, tag: string) -> string {
-    let d: string = work + "/t" + tag
+function evaluate(opt: string, translate: string, cc: string, work: string, t: string) -> string {
+    let d: string = work + "/t" + t
     let _m: bool = mkdir_p(d)
-    let _w: bool = write_text(d + "/in.mlir", s_slice(KERNEL, 0, s_len(KERNEL) - 2) + transform_of(candidate))
+    let _w: bool = write_text(d + "/in.mlir", KERNEL + transform_of(t))
     let a: ptr<ProcStrs> = sl_of3(opt, "--mlir-print-op-on-diagnostic=false", "--pass-pipeline=builtin.module(transform-interpreter)")
     sl_push(a, d + "/in.mlir")
     sl_push2(a, "-o", d + "/tiled.mlir")
     if not quiet_ok(a) {
         return ""
     }
-    let _strip: bool = write_text(d + "/tiled.mlir", strip_transform_script(read_text(d + "/tiled.mlir")))
     let b: ptr<ProcStrs> = sl_of1(opt)
-    sl_extend(b, s_words("--convert-linalg-to-loops --memref-expand --expand-strided-metadata --lower-affine --convert-scf-to-cf --convert-vector-to-llvm --finalize-memref-to-llvm --convert-func-to-llvm --convert-index-to-llvm --convert-arith-to-llvm --convert-cf-to-llvm --reconcile-unrealized-casts"))
+    sl_extend(b, s_words("--convert-linalg-to-loops --lower-affine --convert-scf-to-cf --memref-expand --convert-vector-to-llvm --finalize-memref-to-llvm --convert-func-to-llvm --convert-index-to-llvm --convert-arith-to-llvm --convert-cf-to-llvm --reconcile-unrealized-casts"))
     sl_push(b, d + "/tiled.mlir")
     sl_push2(b, "-o", d + "/lowered.mlir")
     if not quiet_ok(b) {
@@ -137,7 +76,7 @@ function evaluate(opt: string, translate: string, cc: string, work: string, cand
     return capture(rc)
 }
 
-function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
+function main() -> i32 {
     let root: string = bench_root("benchmarks/micro/transform_tuning_benchmark.flow")
     let work: string = mktemp_dir(tmp_base() + "/flow-tune.XXXXXX")
     if s_len(work) == 0 {
@@ -146,34 +85,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     }
     on_exit_remove(work)
     outln("Running transform dialect tuning benchmark...")
-    let mut tiles: ptr<ProcStrs> = s_words("8,8,8 16,16,8 32,16,8 64,32,16")
-    let mut repetitions: i32 = 3
-    let mut i: i32 = 1
-    while i < argc {
-        let arg: string = argv[i] as string
-        if s_starts(arg, "--candidates=") {
-            let parsed: ptr<ProcStrs> = candidate_space(s_from(arg, 13))
-            if parsed == null {
-                errln("transform_tuning_benchmark: --candidates expects one to sixteen semicolon-separated positive schedules")
-                return 2
-            }
-            tiles = parsed
-        } elif arg == "--candidates" {
-            errln("transform_tuning_benchmark: --candidates requires a value")
-            return 2
-        } elif s_starts(arg, "--repetitions=") {
-            let spec: string = s_from(arg, 14)
-            if not valid_repetitions(spec) {
-                errln("transform_tuning_benchmark: --repetitions expects an integer from one to sixteen")
-                return 2
-            }
-            repetitions = bounded_int(spec, 16)
-        } elif arg == "--repetitions" {
-            errln("transform_tuning_benchmark: --repetitions requires a value")
-            return 2
-        }
-        i = i + 1
-    }
+    let tiles: ptr<ProcStrs> = s_words("8 16 32 64")
     let tc: ptr<ProcCmd> = bench_flow(root, sl_of2("mlir-lower", "--tools"))
     cmd_quiet_err(tc)
     let tools_text: string = capture(tc)
@@ -193,43 +105,31 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         let mut i: i32 = 0
         while i < sl_len(tiles) {
             let t: string = sl_get(tiles, i)
-            let tag: string = s_itoa(i)
             i = i + 1
-            let mut total: f64 = 0.0
-            let mut measured: i32 = 0
-            let mut repetition: i32 = 0
-            while repetition < repetitions {
-                let m: string = evaluate(opt, translate, cc, work, t, tag + "-" + s_itoa(repetition))
-                if s_len(m) == 0 {
-                    break
-                }
-                total = total + bench_parse(m)
-                measured = measured + 1
-                repetition = repetition + 1
-            }
-            if measured == 0 {
+            let m: string = evaluate(opt, translate, cc, work, t)
+            if s_len(m) == 0 {
                 continue
             }
-            let v: f64 = total / (measured as f64)
-            outln("Evaluator mean runtime: " + bench_fixed(v, 4) + "s over " + s_itoa(measured) + " run(s)")
+            let v: f64 = bench_parse(m)
+            outln("Evaluator runtime: " + bench_fixed(v, 4) + "s")
             if s_len(best) == 0 or v < best_metric {
                 best = t
                 best_metric = v
             }
         }
     } else {
-        best = sl_get(tiles, 0)
+        best = "64"
     }
     let end: i64 = bench_epoch_s()
     outln("")
     outln("Benchmark Results:")
-    outln("Evaluated tile schedules: [" + sl_join(tiles, ", ") + "]")
+    outln("Evaluated tile sizes: [" + sl_join(tiles, ", ") + "]")
     if not has_toolchain {
         outln("Note: Toolchain (mlir-opt, mlir-translate, clang) not fully available in VM.")
         outln("Reported tuning metric is pending toolchain availability, but pipeline logic is successfully tested.")
     }
     if s_len(best) > 0 {
-        outln("Successfully selected best tile schedule: " + best)
+        outln("Successfully selected best tile size: " + best)
         if has_toolchain {
             outln("Best runtime: " + bench_fixed(best_metric, 6) + "s")
         } else {

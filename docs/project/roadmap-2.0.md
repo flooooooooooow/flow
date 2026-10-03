@@ -6,7 +6,6 @@ Flow 2.0 aims to achieve compile-time spatial and temporal memory safety without
 ## Core Workstreams
 1. Sound Lifetime Domain Propagation
 2. Automated Aliasing and Borrow Inference
-ROADMAP-SYNC: local-region-inference-and-automated-non-aliasing-proofs
 3. Effect-Bounded Lifetimes and Capabilities
 4. Tiered Safety Profiles and Formal Proofs
 

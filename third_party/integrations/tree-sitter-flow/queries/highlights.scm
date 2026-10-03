@@ -61,7 +61,7 @@
 (flow_declaration name: (identifier) @type.definition)
 
 (function_declaration name: (identifier) @function)
-(call_expression function: (expression (identifier) @function.call))
+(call_expression function: (identifier) @function.call)
 
 (parameter name: (identifier) @variable.parameter)
 (field_declaration name: (identifier) @property)

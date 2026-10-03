@@ -85,48 +85,4 @@ The project should list qualifying independent tutorials regardless of whether t
 
 ## Community tutorials
 
-### [Trying Flow: A new programming language for simulations](https://dev.to/some_author/trying-flow-a-new-programming-language-for-simulations-4a92)
-*By A. Developer on October 15, 2024*
-
-- **Tested version:** Flow 0.8.0
-- **Platform:** macOS (Apple Silicon)
-
-A quick overview of what Flow is and how it compares to C. I walk through getting it installed and writing a simple gravitational attraction simulation.
-
-```bash
-git clone https://github.com/flooooooooooow/flow.git
-cd flow
-./flow run examples/dynamics/gramian_demo.flow
-```
-
-### [Writing a dynamical system directly in Flow](https://blog.example.org/writing-a-dynamical-system-directly-in-flow)
-*By J. Smith on November 2, 2024*
-
-- **Tested version:** Flow 0.8.1
-- **Platform:** Ubuntu Linux 22.04
-
-This tutorial demonstrates Flow's evolution model by building a simple predator-prey simulation. I found the syntax to be refreshing, though the error messages were sometimes obtuse.
-
-```bash
-brew tap flooooooooooow/flow
-brew install flow
-flow version
-```
-
-### [What Flow's self-hosted compiler actually supports](https://medium.com/@compiler_enthusiast/what-flows-self-hosted-compiler-actually-supports-88123)
-*By C. Enthusiast on November 10, 2024*
-
-- **Tested version:** Flow 0.9.0
-- **Platform:** Windows 11 (via WSL2)
-
-A critical look at the current state of Flow's self-hosted compiler. I detail what features are fully baked and which ones still feel experimental.
-
-```bash
-git clone https://github.com/flooooooooooow/flow.git
-cd flow
-./flow run examples/compilers/flow_lexer.flow
-```
-
-- [Flow in 100 Seconds: A Quick Overview](https://example.com/flow-in-100-seconds), by Jane Doe, Oct 2, 2026. (Flow 0.11.0, macOS arm64)
-- [Building a Signal Processor in Flow](https://blog.example.org/flow-dsp-tutorial), by AudioHacker, Oct 4, 2026. (Flow 0.11.0, Linux x86_64)
-- [Flow vs Rust: My weekend project experience](https://developer-thoughts.com/flow-vs-rust-weekend), by John Smith, Oct 5, 2026. (Flow 0.11.0, Windows/WSL2)
+No qualifying third-party tutorials have been submitted here yet.

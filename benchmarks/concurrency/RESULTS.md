@@ -15,8 +15,6 @@ Strategy: [docs/language/replace-go.md](../../docs/language/replace-go.md)
 | Fiber channel ping-pong (asm M:1) | 1M, buf=64 | **~8–14 ms** | ~21–26 ms | **Flow (~2×)** |
 | Fiber fan-out sum (M:N, 256 fibers) | 50M | **~1–7 ms** | ~10 ms | **Flow** |
 | Parallel fill | 8M | ~tie | ~tie | noise |
-| Multicore scaling (compute) | 80M | **~3.5× speedup** | - | Flow |
-| False sharing mitigation | 100M | **~2× faster** | - | Flow |
 | HTTP server (loopback GET) | 2k | ~11.6k rps | ~13.7k rps | Go (thin accept loop vs `net/http`) |
 
 ### Ping-pong progression (Flow)

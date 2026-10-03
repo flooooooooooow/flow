@@ -9,7 +9,3 @@ file-types = ["flow"]
 comment-token = "#"
 language-servers = ["flow-lsp"]
 indent = { tab-width = 4, unit = "    " }
-
-[[grammar]]
-name = "flow"
-source = { git = "https://github.com/flooooooooooow/tree-sitter-flow", rev = "2e0cfb80a52a72d08a00b9ac9afc5889c31fe71c" }
