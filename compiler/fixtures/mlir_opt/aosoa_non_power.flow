@@ -1,0 +1,15 @@
+struct Particle {
+    x: f32,
+    y: f32
+}
+
+function update() -> i32 {
+    let mut pts: [Particle; 3]
+    let mut i: i32 = 0
+    while i < 3 {
+        pts[i].x = 1.0
+        pts[i].y = 2.0
+        i = i + 1
+    }
+    return i
+}
