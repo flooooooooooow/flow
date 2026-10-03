@@ -1,0 +1,7 @@
+function roots(a: ptr<f64>, n: i32) -> void {
+    for k in 0 to n step 1 {
+        let t: f64 = a[k] * 2.0
+        a[k] = t
+    }
+}
+function main() -> i32 { return 0 }
