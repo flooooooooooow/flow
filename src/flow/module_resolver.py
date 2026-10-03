@@ -6,14 +6,18 @@ Resolves dot-path imports (verify.nat) and legacy string imports.
 
 from __future__ import annotations
 
+import dataclasses
+import enum
+import inspect
+import json
 import os
 import hashlib
-import pickle
 import warnings
 from itertools import product
 from pathlib import Path
 from typing import List, Dict, Set, Any, Optional, Tuple, Iterator
 
+from . import parser as flow_parser
 from .dynamics_dsl import expand_dynamics_dsl, has_dynamics_dsl
 from .parser import (
     Lexer,
@@ -30,6 +34,71 @@ from .parser import (
 )
 from .project_config import load_project_config
 from .shader_dsl import extract_shader_module, has_fill_shader_dsl
+
+
+# Explicit allowlist of allowed AST node and Enum classes from parser module
+_ALLOWED_AST_CLASSES: Dict[str, Any] = {
+    name: obj
+    for name, obj in inspect.getmembers(flow_parser, inspect.isclass)
+    if (dataclasses.is_dataclass(obj) or (isinstance(obj, type) and issubclass(obj, enum.Enum)))
+    and obj.__module__ == flow_parser.__name__
+}
+
+
+def ast_to_dict(obj: Any) -> Any:
+    """Recursively convert AST node objects into JSON-serializable structures."""
+    if obj is None or isinstance(obj, (int, float, str, bool)):
+        return obj
+    if isinstance(obj, list):
+        return [ast_to_dict(item) for item in obj]
+    if isinstance(obj, tuple):
+        return {"__tuple__": [ast_to_dict(item) for item in obj]}
+    if isinstance(obj, dict):
+        return {"__dict__": {str(k): ast_to_dict(v) for k, v in obj.items()}}
+    if isinstance(obj, enum.Enum):
+        return {
+            "__enum__": obj.__class__.__name__,
+            "value": obj.value,
+        }
+    if dataclasses.is_dataclass(obj):
+        d = {"__class__": obj.__class__.__name__}
+        for field in dataclasses.fields(obj):
+            d[field.name] = ast_to_dict(getattr(obj, field.name))
+        return d
+    raise TypeError(f"Cannot serialize AST node of type {type(obj)}: {obj}")
+
+
+def dict_to_ast(obj: Any) -> Any:
+    """Recursively reconstruct AST node objects from JSON-deserialized structures."""
+    if obj is None or isinstance(obj, (int, float, str, bool)):
+        return obj
+    if isinstance(obj, list):
+        return [dict_to_ast(item) for item in obj]
+    if isinstance(obj, dict):
+        if "__tuple__" in obj:
+            return tuple(dict_to_ast(item) for item in obj["__tuple__"])
+        if "__dict__" in obj:
+            return {
+                int(k) if k.isdigit() else k: dict_to_ast(v)
+                for k, v in obj["__dict__"].items()
+            }
+        if "__enum__" in obj:
+            enum_name = str(obj["__enum__"]).rsplit(".", 1)[-1]
+            cls = _ALLOWED_AST_CLASSES.get(enum_name)
+            if cls is None or not (isinstance(cls, type) and issubclass(cls, enum.Enum)):
+                raise ValueError(f"Unauthorized enum type in cache: {obj['__enum__']}")
+            return cls(obj["value"])
+        if "__class__" in obj:
+            class_name = str(obj["__class__"]).rsplit(".", 1)[-1]
+            cls = _ALLOWED_AST_CLASSES.get(class_name)
+            if cls is None or not dataclasses.is_dataclass(cls):
+                raise ValueError(f"Unauthorized class type in cache: {obj['__class__']}")
+            kwargs = {}
+            for field in dataclasses.fields(cls):
+                if field.name in obj:
+                    kwargs[field.name] = dict_to_ast(obj[field.name])
+            return cls(**kwargs)
+    raise ValueError(f"Cannot deserialize AST structure: {obj}")
 
 
 def _fill_shader_host_stub() -> List[Any]:
@@ -145,18 +214,14 @@ class ModuleResolver:
             code = f.read()
 
         file_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
-        cache_path = os.path.join(cache_dir, f"{file_hash}.pkl")
+        cache_path = os.path.join(cache_dir, f"{file_hash}.json")
 
         declarations = None
         if os.path.exists(cache_path):
             try:
-                with open(cache_path, "rb") as f:
-                    # The compiler is the only writer of this file. The name is
-                    # the SHA-256 of the source it was parsed from, so a cache
-                    # entry is reachable only by compiling that exact source,
-                    # and a corrupted or foreign file falls through to a reparse
-                    # below rather than being trusted.
-                    declarations = pickle.load(f)  # nosec B301
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    declarations = dict_to_ast(data)
             except Exception:
                 pass
 
@@ -183,8 +248,8 @@ class ModuleResolver:
                 declarations = parser.parse()
 
             try:
-                with open(cache_path, "wb") as f:
-                    pickle.dump(declarations, f)
+                with open(cache_path, "w", encoding="utf-8") as f:
+                    json.dump(ast_to_dict(declarations), f)
             except Exception:
                 pass
 

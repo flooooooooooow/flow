@@ -19,6 +19,7 @@ import textwrap
 from pathlib import Path
 
 import pytest
+from src.flow.transpiler import flow_to_c
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -58,7 +59,8 @@ def built(tmp_path_factory):
         cwd=ROOT, capture_output=True, text=True,
         env={**os.environ, "FLOW_HOST": "python"},
     )
-    return run, (ROOT / "build" / "m.c").read_text()
+    c_code = flow_to_c(str(src))
+    return run, c_code
 
 
 def test_every_arm_still_dispatches_to_its_own_variant(built):

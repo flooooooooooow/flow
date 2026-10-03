@@ -10,6 +10,8 @@ Independent does not mean unverified. Authors should link to the exact Flow vers
 
 ## Recommended tutorial shape
 
+A ready-to-use template with runnable code examples is available in the [Independent Tutorial Scaffold](../tutorials/independent-tutorial-scaffold.md).
+
 A useful first tutorial can be short:
 
 1. What Flow is.

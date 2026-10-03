@@ -337,6 +337,10 @@
           "path": "tutorials/flow-in-one-hour.md"
         },
         {
+          "label": "Independent Tutorial Scaffold",
+          "path": "tutorials/independent-tutorial-scaffold.md"
+        },
+        {
           "label": "Interactive App",
           "path": "tutorials/index.html",
           "external": true
@@ -886,6 +890,10 @@
         {
           "label": "Independent Tutorial Author Kit",
           "path": "community/tutorial-author-kit.md"
+        },
+        {
+          "label": "Independent Tutorial Scaffold",
+          "path": "tutorials/independent-tutorial-scaffold.md"
         }
       ]
     },
