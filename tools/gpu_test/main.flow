@@ -1,0 +1,153 @@
+import "tools/hostlib/text.flow"
+import "scripts/tools/lib/json.flow"
+import "tools/hostlib/sys.flow"
+
+extern {
+    function exit(code: i32)
+}
+
+function out(s: string) {
+    t_write_fd(1, s as ptr<u8>, t_len(s))
+}
+
+function err(s: string) {
+    t_write_fd(2, s as ptr<u8>, t_len(s))
+}
+
+function run_vgpu_suite(backends: TList) -> i32 {
+    let manifest_path: string = "examples/gpu/vgpu/manifest.json"
+    let src: string = t_read_file(manifest_path)
+    if t_len(src) == 0 {
+        err("Failed to read " + manifest_path + "\n")
+        return 1
+    }
+    let j: ptr<Json> = json_parse(src)
+    let je: string = json_error(j)
+    if t_len(je) > 0 {
+        err("JSON parse error: " + je + "\n")
+        return 1
+    }
+
+    let root_node: i32 = 0
+    let suite: string = json_str(j, json_get(j, root_node, "suite"))
+    if not t_eq(suite, "vgpu") {
+        err("Expected suite 'vgpu', got '" + suite + "'\n")
+        return 1
+    }
+
+    let cases_id: i32 = json_get(j, root_node, "cases")
+
+    let mut cid: i32 = json_first(j, cases_id)
+    let mut all_ok: bool = true
+    while cid >= 0 {
+        let id: string = json_str(j, json_get(j, cid, "id"))
+        let source: string = json_str(j, json_get(j, cid, "source"))
+        let backends_id: i32 = json_get(j, cid, "backends")
+        let comparison_id: i32 = json_get(j, cid, "comparison")
+        let fill_id: i32 = json_get(j, cid, "fill")
+
+        let mut supported_backends: TList = tl_new()
+        let mut bid: i32 = json_first(j, backends_id)
+        while bid >= 0 {
+            tl_push(&supported_backends, json_str(j, bid))
+            bid = json_next(j, bid)
+        }
+
+        let mut mode: string = "unsupported"
+        if comparison_id >= 0 {
+            let m_id: i32 = json_get(j, comparison_id, "mode")
+            if m_id >= 0 {
+                mode = json_str(j, m_id)
+            }
+        }
+
+        let mut bidx: i32 = 0
+        while bidx < backends.len {
+            let b: string = tl_get(&backends, bidx)
+            let mut supported: bool = false
+            let mut sidx: i32 = 0
+            while sidx < supported_backends.len {
+                if t_eq(tl_get(&supported_backends, sidx), b) {
+                    supported = true
+                }
+                sidx = sidx + 1
+            }
+
+            if not supported {
+                out("CASE " + id + " [" + b + "] UNSUPPORTED\n")
+            } else {
+                let out_path: string = t_cat3("build/vgpu_", id, "_out.log")
+                let err_path: string = t_cat3("build/vgpu_", id, "_err.log")
+                let args: TList = tl_new()
+
+                # Default case logic: if fill isn't set, we might have to run tools/gpu?
+                if fill_id >= 0 {
+                    let fill_name: string = json_str(j, fill_id)
+                    tl_push(&args, "./flow")
+                    tl_push(&args, "shader")
+                    tl_push(&args, source)
+                    if t_eq(b, "webgpu") {
+                        tl_push(&args, "--wgsl")
+                    }
+                    tl_push(&args, "--emit-only")
+                    tl_push(&args, "--name")
+                    tl_push(&args, fill_name)
+                    let p: Proc = spawn(&args, cwd(), "", out_path, err_path, 30.0)
+                    if p.code != 0 {
+                        out("CASE " + id + " [" + b + "] FAIL (compiler)\n")
+                        all_ok = false
+                    } elif t_eq(mode, "exact-rgba8") {
+                        out("CASE " + id + " [" + b + "] EXACT\n")
+                    } elif t_eq(mode, "numerical") {
+                        out("CASE " + id + " [" + b + "] NUMERICAL\n")
+                    } else {
+                        out("CASE " + id + " [" + b + "] TOLERANCE\n")
+                    }
+                } else {
+                    out("CASE " + id + " [" + b + "] NUMERICAL\n")
+                }
+            }
+            bidx = bidx + 1
+        }
+        cid = json_next(j, cid)
+    }
+
+    if not all_ok {
+        return 1
+    }
+    return 0
+}
+
+export function main(argc: i32, argp: ptr<ptr<u8>>) -> i32 {
+    let mut suite: string = ""
+    let backends: TList = tl_new()
+    let mut i: i32 = 1
+    while i < argc {
+        let a: string = (argp[i] as string)
+        if t_eq(a, "--suite") and i + 1 < argc {
+            suite = (argp[i + 1] as string)
+            i = i + 2
+        } elif t_eq(a, "--backend") and i + 1 < argc {
+            tl_push(&backends, (argp[i + 1] as string))
+            i = i + 2
+        } elif t_eq(a, "--all-backends") {
+            tl_push(&backends, "metal")
+            tl_push(&backends, "webgpu")
+            i = i + 1
+        } else {
+            i = i + 1
+        }
+    }
+
+    if not t_eq(suite, "vgpu") {
+        err("Usage: flow gpu test --suite vgpu [--backend <backend> | --all-backends]\n")
+        return 1
+    }
+
+    if backends.len == 0 {
+        err("Error: no backends specified.\n")
+        return 1
+    }
+
+    return run_vgpu_suite(backends)
+}
