@@ -3042,6 +3042,15 @@ function mlg_register_tile_lowering(target: string) -> string {
     return "vector.outerproduct"
 }
 
+function mlg_register_tile_intrinsics_enabled() -> i32 {
+    let v: string = getenv("FLOWC_MLIR_REGISTER_TILE_INTRINSICS")
+    let p: ptr<u8> = v
+    if p != null and p[0] == 49 and p[1] == 0 {
+        return 1
+    }
+    return 0
+}
+
 # Emit one hardware-shaped register tile. The operation stays in the vector
 # dialect so targets can select AMX, SME, or a GPU matrix instruction later.
 function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
@@ -3097,14 +3106,29 @@ function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
     mlg_s(m, "\n")
     mlg_line(m)
     mlg_v(m, r)
-    mlg_s(m, " = vector.outerproduct ")
-    mlg_v(m, av)
-    mlg_s(m, ", ")
-    mlg_v(m, bv)
-    mlg_s(m, " : ")
-    mlg_put_type(m, at)
-    mlg_s(m, ", ")
-    mlg_put_type(m, bt)
+    if target != "generic" and mlg_register_tile_intrinsics_enabled() == 1 {
+        mlg_s(m, " = \"")
+        mlg_s(m, mlg_register_tile_lowering(target))
+        mlg_s(m, "\"(")
+        mlg_v(m, av)
+        mlg_s(m, ", ")
+        mlg_v(m, bv)
+        mlg_s(m, ") : (")
+        mlg_put_type(m, at)
+        mlg_s(m, ", ")
+        mlg_put_type(m, bt)
+        mlg_s(m, ") -> ")
+        mlg_put_type(m, rt)
+    } else {
+        mlg_s(m, " = vector.outerproduct ")
+        mlg_v(m, av)
+        mlg_s(m, ", ")
+        mlg_v(m, bv)
+        mlg_s(m, " : ")
+        mlg_put_type(m, at)
+        mlg_s(m, ", ")
+        mlg_put_type(m, bt)
+    }
     if target != "generic" {
         mlg_s(m, " {flow.register_tile_target = \"")
         mlg_s(m, target)
