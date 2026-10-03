@@ -37,6 +37,16 @@ function parse_csv3(s: string, out: ptr<i32>) -> i32 {
     return 3
 }
 
+function valid_alignment(v: i32) -> bool {
+    if v <= 0 or v > 4096 { return false }
+    let mut n: i32 = v
+    while n > 1 {
+        if n % 2 != 0 { return false }
+        n = n / 2
+    }
+    return true
+}
+
 function emit_view(out: string, arena: i32, index: i32, offset: i32, size: i32, space: string) -> string {
     let mut arena_type: string = "memref<" + ft_itoa(arena) + "xi8>"
     let mut view_type: string = "memref<" + ft_itoa(size) +
@@ -75,6 +85,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     let mut sizes: array<i32, 3> = [64, 32, 48]
     let mut target: string = "cpu"
     let mut space: string = "stack"
+    let mut alignment: i32 = 16
     let mut i: i32 = 1
     while i < argc {
         let arg: string = argv[i] as string
@@ -87,11 +98,17 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             target = ft_from(arg, 9)
         } elif ft_starts(arg, "--memory-space=") {
             space = ft_from(arg, 15)
+        } elif ft_starts(arg, "--alignment=") {
+            alignment = parse_num(ft_from(arg, 12))
         }
         i = i + 1
     }
     if sizes[0] <= 0 or sizes[1] <= 0 or sizes[2] <= 0 {
         ft_errln("mlir_static_memory: sizes must be positive")
+        return 2
+    }
+    if not valid_alignment(alignment) {
+        ft_errln("mlir_static_memory: --alignment must be a power of two from 1 to 4096")
         return 2
     }
     if not ft_eq(target, "cpu") and not ft_eq(target, "gpu") and
@@ -108,10 +125,10 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         return 2
     }
     let mut items: array<StaticBuffer, 64> = []
-    items[0] = StaticBuffer { size: sizes[0], start: 0, end: 2, alignment: 16 }
-    items[1] = StaticBuffer { size: sizes[1], start: 3, end: 5, alignment: 16 }
-    items[2] = StaticBuffer { size: sizes[2], start: 1, end: 4, alignment: 16 }
-    let plan: StaticMemoryPlan = flowc_static_memory_plan(items, 3, 16)
-    ft_outln(emit_module(items, plan, target, space, 16))
+    items[0] = StaticBuffer { size: sizes[0], start: 0, end: 2, alignment: alignment }
+    items[1] = StaticBuffer { size: sizes[1], start: 3, end: 5, alignment: alignment }
+    items[2] = StaticBuffer { size: sizes[2], start: 1, end: 4, alignment: alignment }
+    let plan: StaticMemoryPlan = flowc_static_memory_plan(items, 3, alignment)
+    ft_outln(emit_module(items, plan, target, space, alignment))
     return 0
 }

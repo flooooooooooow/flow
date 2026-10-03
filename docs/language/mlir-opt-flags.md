@@ -122,6 +122,10 @@ target. It also records `flow.static_arena_alignment`, the byte alignment used
 for the arena and every planned view. The current emitter keeps the allocation
 and offset plan explicit for the target lowering that consumes it.
 
+Pass `--alignment=N` to choose a power-of-two arena alignment from 1 through
+4096 bytes. The selected value is applied to every planned buffer and recorded
+as `flow.static_arena_alignment`.
+
 ## Register tiles
 
 `--register-tiles` enables the opt-in `register_tile_outer_product(a, b)`
