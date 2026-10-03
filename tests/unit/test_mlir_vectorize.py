@@ -74,3 +74,51 @@ def test_iaxpy_emits_i32_vector_transfer():
     assert "vector.transfer_read" in mlir
     assert "vector<4xi32>" in mlir
     assert "arith.muli" in mlir or "arith.addi" in mlir
+
+
+RBF_GAUSSIAN = """
+function rbf_gaussian(gamma: f32, x: memref_f32, y: memref_f32, out: memref_f32, n: i32) -> i32 {
+    for i in 0 to n {
+        out[i] = exp(-gamma * (x[i] - y[i]) * (x[i] - y[i]))
+    }
+    return 0
+}
+
+function main() -> i32 {
+    return 0
+}
+"""
+
+
+def test_rbf_gaussian_emits_vector_math_exp():
+    """Verify Gaussian RBF kernel lowers to vectorized math.exp in MLIR."""
+    mlir = _gen(RBF_GAUSSIAN)
+    assert "vector.transfer_read" in mlir
+    assert "vector.transfer_write" in mlir
+    assert "vector<4xf32>" in mlir
+    assert "math.exp" in mlir
+
+
+TRANSCENDENTAL = """
+function trans_kernel(x: memref_f32, y: memref_f32, out: memref_f32, n: i32) -> i32 {
+    for i in 0 to n {
+        out[i] = sin(x[i]) + sqrt(abs(y[i]))
+    }
+    return 0
+}
+
+function main() -> i32 {
+    return 0
+}
+"""
+
+
+def test_transcendental_math_vectorized():
+    """Verify elementwise loops with sin/sqrt/abs lower to MLIR vector math ops."""
+    mlir = _gen(TRANSCENDENTAL)
+    assert "vector.transfer_read" in mlir
+    assert "vector.transfer_write" in mlir
+    assert "vector<4xf32>" in mlir
+    assert "math.sin" in mlir
+    assert "math.sqrt" in mlir
+    assert "math.absf" in mlir

@@ -1,0 +1,75 @@
+extern {
+    function printf(fmt: string, val: f64) -> i32
+    function clock() -> i64
+}
+
+const CLOCKS_PER_SEC: f64 = 1000000.0
+
+function benchmark_rbf(gamma: f32, a: memref_f32, b: memref_f32, out: memref_f32, n: i32) {
+    for i in 0 to n step 1 {
+        let diff: f32 = a[i] - b[i]
+        out[i] = exp(-gamma * diff * diff)
+    }
+}
+
+function benchmark_transcendental(a: memref_f32, b: memref_f32, out: memref_f32, n: i32) {
+    for i in 0 to n step 1 {
+        out[i] = sin(a[i]) + sqrt(fabs(b[i]))
+    }
+}
+
+function main() -> i32 {
+    let size: i32 = 1000
+    let iters: i32 = 500
+
+    let a: array<f32, 1000>
+    let b: array<f32, 1000>
+    let out: array<f32, 1000>
+
+    for i in 0 to size {
+        a[i] = (i as f32) * 0.001
+        b[i] = (i as f32) * 0.0005
+    }
+
+    # Warmup
+    benchmark_rbf(0.5, a, b, out, size)
+    benchmark_transcendental(a, b, out, size)
+
+    let t0: i64 = clock()
+    for _ in 0 to iters {
+        benchmark_rbf(0.5, a, b, out, size)
+    }
+    let t1: i64 = clock()
+
+    let time_rbf: f64 = ((t1 - t0) as f64) / CLOCKS_PER_SEC
+    let mops_rbf: f64 = ((size as f64) * (iters as f64)) / (time_rbf * 1e6)
+
+    print("RBF Kernel: ")
+    printf("%.3f", time_rbf)
+    print(" s, ")
+    printf("%.2f", mops_rbf)
+    println(" MOPS")
+
+    let t2: i64 = clock()
+    for _ in 0 to iters {
+        benchmark_transcendental(a, b, out, size)
+    }
+    let t3: i64 = clock()
+
+    let time_trans: f64 = ((t3 - t2) as f64) / CLOCKS_PER_SEC
+    let mops_trans: f64 = ((size as f64) * (iters as f64)) / (time_trans * 1e6)
+
+    print("Transcendental Kernel: ")
+    printf("%.3f", time_trans)
+    print(" s, ")
+    printf("%.2f", mops_trans)
+    println(" MOPS")
+
+    # Prevent DCE
+    let check: f32 = out[size / 2]
+    if check == 0.0 {
+        return 1
+    }
+
+    return 0
+}

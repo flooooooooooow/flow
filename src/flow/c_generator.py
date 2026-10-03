@@ -3243,7 +3243,13 @@ class CGenerator:
             return True
         def _check_expr(expr) -> bool:
             if isinstance(expr, FunctionCall):
-                math_functions = {'sin', 'cos', 'tan', 'sqrt', 'fabs', 'abs', 'log', 'exp', 'pow', 'tanh'}
+                math_functions = {
+                    'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2',
+                    'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh',
+                    'exp', 'exp2', 'expm1', 'log', 'log2', 'log10', 'log1p',
+                    'sqrt', 'cbrt', 'pow', 'abs', 'fabs', 'erf', 'fma',
+                    'ceil', 'floor', 'round', 'hypot', 'fmin', 'fmax',
+                }
                 if expr.name not in math_functions:
                     return False
             elif isinstance(expr, MethodCall):

@@ -59,6 +59,35 @@ def test_vectorization_regression_scalar():
     c_code = to_c(code)
     assert "#pragma clang loop vectorize(enable)" not in c_code
 
+def test_vectorization_rbf_kernel():
+    """Verify that a Gaussian RBF kernel loop emits vectorization pragmas."""
+    code = """
+    function rbf(gamma: f32, x: memref_f32, y: memref_f32, out: memref_f32, n: i32) -> i32 {
+        for i in 0 to n step 1 {
+            let diff: f32 = x[i] - y[i]
+            out[i] = exp(-gamma * diff * diff)
+        }
+        return 0
+    }
+    """
+    c_code = to_c(code)
+    assert "#pragma clang loop vectorize(enable) interleave(enable)" in c_code
+    assert "#pragma GCC ivdep" in c_code
+
+def test_vectorization_transcendental_math():
+    """Verify that a loop with math intrinsics emits vectorization pragmas."""
+    code = """
+    function trans(x: memref_f32, out: memref_f32, n: i32) -> i32 {
+        for i in 0 to n step 1 {
+            out[i] = sin(x[i]) + sqrt(fabs(x[i]))
+        }
+        return 0
+    }
+    """
+    c_code = to_c(code)
+    assert "#pragma clang loop vectorize(enable) interleave(enable)" in c_code
+    assert "#pragma GCC ivdep" in c_code
+
 def test_vectorization_no_step_is_scalar():
     """Verify that a loop without an explicit step does not emit vectorization hints."""
     code = """

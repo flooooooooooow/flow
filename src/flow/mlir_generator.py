@@ -2527,6 +2527,20 @@ class MLIRGenerator:
                 self._vectorizable_scalar_rhs(expr.left, iv_name, allowed_bases, elem)
                 and self._vectorizable_scalar_rhs(expr.right, iv_name, allowed_bases, elem)
             )
+        if isinstance(expr, FunctionCall):
+            math_functions = {
+                'sin', 'cos', 'tan', 'asin', 'acos', 'atan', 'atan2',
+                'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh',
+                'exp', 'exp2', 'expm1', 'log', 'log2', 'log10', 'log1p',
+                'sqrt', 'cbrt', 'pow', 'abs', 'fabs', 'erf', 'fma',
+                'ceil', 'floor', 'round'
+            }
+            if expr.name not in math_functions:
+                return False
+            return all(
+                self._vectorizable_scalar_rhs(arg, iv_name, allowed_bases, elem)
+                for arg in expr.arguments
+            )
         if isinstance(expr, UnaryOperation) and expr.operator == "-":
             return self._vectorizable_scalar_rhs(expr.operand, iv_name, allowed_bases, elem)
         return False
@@ -2583,6 +2597,35 @@ class MLIRGenerator:
             )
             self._ssa_types[vec] = vty
             return vec
+        if isinstance(expr, FunctionCall):
+            math_intrinsics = {
+                'sin': 'math.sin', 'cos': 'math.cos', 'tan': 'math.tan',
+                'asin': 'math.asin', 'acos': 'math.acos', 'atan': 'math.atan', 'atan2': 'math.atan2',
+                'sinh': 'math.sinh', 'cosh': 'math.cosh', 'tanh': 'math.tanh',
+                'asinh': 'math.asinh', 'acosh': 'math.acosh', 'atanh': 'math.atanh',
+                'exp': 'math.exp', 'exp2': 'math.exp2', 'expm1': 'math.expm1',
+                'log': 'math.log', 'log2': 'math.log2', 'log10': 'math.log10', 'log1p': 'math.log1p',
+                'sqrt': 'math.sqrt', 'cbrt': 'math.cbrt', 'pow': 'math.powf',
+                'abs': 'math.absf', 'fabs': 'math.absf', 'erf': 'math.erf', 'fma': 'math.fma',
+                'ceil': 'math.ceil', 'floor': 'math.floor', 'round': 'math.round'
+            }
+            if expr.name in math_intrinsics:
+                arg_vectors = []
+                for arg in expr.arguments:
+                    v_arg = self._emit_vector_scalar_expr(arg, iv_name, iv_ssa, ops, elem)
+                    if v_arg is None:
+                        return None
+                    arg_vectors.append(v_arg)
+                out = f"%{self.function_counter}"
+                self.function_counter += 1
+                op_name = math_intrinsics[expr.name]
+                args_str = ", ".join(arg_vectors)
+                ops.append(
+                    f"{self.indent()}{out} = {op_name} {args_str} : {vty}"
+                )
+                self._ssa_types[out] = vty
+                return out
+            return None
         if isinstance(expr, UnaryOperation) and expr.operator == "-":
             inner = self._emit_vector_scalar_expr(expr.operand, iv_name, iv_ssa, ops, elem)
             if inner is None:
@@ -2756,6 +2799,9 @@ class MLIRGenerator:
                 if b:
                     bases.add(b)
                 walk(e.index)
+            elif isinstance(e, FunctionCall):
+                for arg in e.arguments:
+                    walk(arg)
             elif isinstance(e, BinaryOperation):
                 walk(e.left)
                 walk(e.right)
@@ -2858,7 +2904,7 @@ class MLIRGenerator:
             self.symbol_table.pop(iv, None)
         else:
             self.symbol_table[iv] = saved_iv
-        ops.insert(0, f"{self.indent()}// flow: vectorized elementwise f32 loop (VF=4)")
+        ops.insert(0, f"{self.indent()}// flow: vectorized elementwise {elem} loop (VF=4)")
         return "\n".join(ops)
 
     def _constant_step(self, for_stmt: ForStatement) -> Optional[int]:
@@ -5955,21 +6001,40 @@ class MLIRGenerator:
         if func_call.name == '__flow_dbg' and len(func_call.arguments) == 1:
             return self.generate_expression(func_call.arguments[0])
             
-        math_intrinsics = {'sin': 'math.sin', 'cos': 'math.cos', 'tan': 'math.tan',
-                           'exp': 'math.exp', 'log': 'math.log', 'sqrt': 'math.sqrt',
-                           'abs': 'math.absf', 'fabs': 'math.absf', 'tanh': 'math.tanh'}
+        math_intrinsics = {
+            'sin': 'math.sin', 'cos': 'math.cos', 'tan': 'math.tan',
+            'asin': 'math.asin', 'acos': 'math.acos', 'atan': 'math.atan', 'atan2': 'math.atan2',
+            'sinh': 'math.sinh', 'cosh': 'math.cosh', 'tanh': 'math.tanh',
+            'asinh': 'math.asinh', 'acosh': 'math.acosh', 'atanh': 'math.atanh',
+            'exp': 'math.exp', 'exp2': 'math.exp2', 'expm1': 'math.expm1',
+            'log': 'math.log', 'log2': 'math.log2', 'log10': 'math.log10', 'log1p': 'math.log1p',
+            'sqrt': 'math.sqrt', 'cbrt': 'math.cbrt', 'pow': 'math.powf',
+            'abs': 'math.absf', 'fabs': 'math.absf', 'erf': 'math.erf', 'fma': 'math.fma',
+            'ceil': 'math.ceil', 'floor': 'math.floor', 'round': 'math.round',
+        }
         is_user_defined = func_call.name in self.symbol_table
-        if func_call.name in math_intrinsics and not is_user_defined and len(func_call.arguments) == 1:
-            arg = func_call.arguments[0]
-            arg_type = self.get_expression_type(arg)
-            if arg_type in ('f32', 'f64') or arg_type.startswith('tensor<') or arg_type.startswith('vector<'):
+        if func_call.name in math_intrinsics and not is_user_defined:
+            arg_ssas = []
+            arg_ops_all = []
+            arg_types = []
+            all_valid = True
+            for arg in func_call.arguments:
                 arg_ssa, arg_ops = self.generate_expression(arg)
-                ops = list(arg_ops)
+                arg_ops_all.extend(arg_ops)
+                arg_ssas.append(arg_ssa)
+                arg_type = self.get_expression_type(arg)
+                arg_types.append(arg_type)
+                if not (arg_type in ('f32', 'f64') or arg_type.startswith('tensor<') or arg_type.startswith('vector<')):
+                    all_valid = False
+            if all_valid and arg_ssas:
+                ops = list(arg_ops_all)
                 result_ssa = f"%{self.function_counter}"
                 self.function_counter += 1
                 op_name = math_intrinsics[func_call.name]
-                ops.append(f"{self.indent()}{result_ssa} = {op_name} {arg_ssa} : {arg_type}")
-                self._ssa_types[result_ssa] = arg_type
+                arg0_type = arg_types[0]
+                args_str = ", ".join(arg_ssas)
+                ops.append(f"{self.indent()}{result_ssa} = {op_name} {args_str} : {arg0_type}")
+                self._ssa_types[result_ssa] = arg0_type
                 return result_ssa, ops
 
         if func_call.name == 'tensor_add' and len(func_call.arguments) == 2:
