@@ -1651,40 +1651,6 @@ function sem_effects_subset(c: ptr<Sem>, a: i32, e: i32) -> bool {
         i = i + 1
     }
 
-    # Check if the expected type requires rt_safe but the actual type is missing it.
-    let mut expected_rt_safe: bool = false
-    let mut j2: i32 = 0
-    while j2 < sem_ty_neffects(c.t, e) {
-        if sem_s_eq(sem_ty_effect(c.t, e, j2), "rt_safe") {
-            expected_rt_safe = true
-        }
-        j2 = j2 + 1
-    }
-
-    if expected_rt_safe {
-        let mut actual_rt_safe: bool = false
-        let mut i2: i32 = 0
-        while i2 < sem_ty_neffects(c.t, a) {
-            if sem_s_eq(sem_ty_effect(c.t, a, i2), "rt_safe") {
-                actual_rt_safe = true
-            }
-            i2 = i2 + 1
-        }
-        if actual_rt_safe == false {
-            # Actual function type doesn't have the rt_safe contract.
-            # If the actual type is a plain named function, we record this binding
-            # to verify its full call graph safety later in sem_check.
-            let a_name: string = sem_ty_name(c.t, a)
-            if a_name as ptr<u8> != null and sem_s_len(a_name) > 0 {
-                sem_sv_push(c.rt_binding_target, sem_ty_name(c.t, e))
-                sem_sv_push(c.rt_binding_fn, a_name)
-            } else {
-                # Anonymous or no known function name
-                sem_sv_push(c.rt_binding_target, "function pointer")
-                sem_sv_push(c.rt_binding_fn, "<anonymous function>")
-            }
-        }
-    }
 
     return true
 }
