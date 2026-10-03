@@ -276,15 +276,17 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         } elif ft_eq(a, "--enable-multi-buffering") {
             f.multi_buffering = true
         } elif ft_eq(a, "--multi-buffering-factor") {
-            if i + 1 < argc {
-                let factor: i32 = positive_int(argv[i + 1] as string)
-                if factor < 2 or factor > 8 {
-                    ft_errln("mlir_pipeline: --multi-buffering-factor must be between 2 and 8")
-                    return 2
-                }
-                f.multi_buffering_factor = factor
-                i = i + 1
+            if i + 1 >= argc {
+                ft_errln("mlir_pipeline: --multi-buffering-factor must be between 2 and 8")
+                return 2
             }
+            let factor: i32 = positive_int(argv[i + 1] as string)
+            if factor < 2 or factor > 8 {
+                ft_errln("mlir_pipeline: --multi-buffering-factor must be between 2 and 8")
+                return 2
+            }
+            f.multi_buffering_factor = factor
+            i = i + 1
         } elif ft_starts(a, "--multi-buffering-factor=") {
             let factor: i32 = positive_int(ft_from(a, 25))
             if factor < 2 or factor > 8 {
