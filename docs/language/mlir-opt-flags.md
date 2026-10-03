@@ -115,6 +115,10 @@ The default lane budget is 256 scalar lanes. Set
 `FLOWC_MLIR_REGISTER_TILE_MAX_LANES` to a smaller target budget when a tile
 must fit a particular register file.
 
+Set `FLOWC_MLIR_REGISTER_TILE_TARGET` to `amx`, `sme`, or `nvvm` to attach the
+hardware selection metadata used by a later target lowering. The default is
+`generic`.
+
 ```bash
 ./flow mlir compiler/fixtures/mlir/register_tile_probe.flow --register-tiles
 ```

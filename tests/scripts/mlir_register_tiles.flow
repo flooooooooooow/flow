@@ -13,6 +13,28 @@ function check_nested_outer_product() -> i32 {
     return T_PASS
 }
 
+function check_target_metadata() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--register-tiles")
+    sl_push(argv, "compiler/fixtures/mlir_opt/register_tile_nested.flow")
+    sl_push(argv, t_tmp() + "/target.mlir")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    cmd_env(c, "FLOWC_MLIR_REGISTER_TILE_TARGET", "amx")
+    if t_run(c) != 0 { return T_FAIL }
+    if not a_contains(read_text(t_tmp() + "/target.mlir"), "flow.register_tile_target = \"amx\"") { return T_FAIL }
+    return T_PASS
+}
+
+function check_rejects_unknown_target() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--register-tiles")
+    sl_push(argv, "compiler/fixtures/mlir_opt/register_tile_nested.flow")
+    sl_push(argv, t_tmp() + "/unknown-target.mlir")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    cmd_env(c, "FLOWC_MLIR_REGISTER_TILE_TARGET", "x86")
+    if t_run(c) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "FLOWC_MLIR_REGISTER_TILE_TARGET must be one of") { return T_FAIL }
+    return T_PASS
+}
+
 function check_lane_budget_refuses_tile() -> i32 {
     let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--register-tiles")
     sl_push(argv, "compiler/fixtures/mlir_opt/register_tile_nested.flow")
@@ -39,6 +61,10 @@ function main() -> i32 {
     t_begin("mlir_register_tiles")
     t_start()
     t_end("nested_outer_product", check_nested_outer_product())
+    t_start()
+    t_end("target_metadata", check_target_metadata())
+    t_start()
+    t_end("invalid_target", check_rejects_unknown_target())
     t_start()
     t_end("lane_budget", check_lane_budget_refuses_tile())
     t_start()
