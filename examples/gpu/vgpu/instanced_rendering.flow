@@ -1,0 +1,32 @@
+# vgpu compatibility case: Instanced rendering
+# https://vgpu.sh/examples/instanced-rendering
+
+struct Vertex {
+    position: vec3,
+    uv: vec2,
+}
+
+struct RasterVertex {
+    position: vec4,
+    uv: vec2,
+    color: vec4,
+}
+
+shader vertex instanced_vert(v: Vertex, instance_id: u32) -> RasterVertex {
+    var out: RasterVertex;
+    let offset = vec3(f32(instance_id % 10) * 0.2 - 0.9, f32(instance_id / 10) * 0.2 - 0.9, 0.0);
+    out.position = vec4(v.position * 0.1 + offset, 1.0);
+    out.uv = v.uv;
+    out.color = vec4(f32(instance_id % 5) * 0.2, f32(instance_id / 5) * 0.2, 0.8, 1.0);
+    return out;
+}
+
+shader fragment instanced_frag(in: RasterVertex) -> vec4 {
+    color = in.color;
+    return color;
+}
+
+shader pipeline instanced_pipeline {
+    vertex: instanced_vert
+    fragment: instanced_frag
+}

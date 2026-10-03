@@ -1,0 +1,32 @@
+# vgpu compatibility case: Batch rendering
+# https://vgpu.sh/examples/batch-rendering
+
+struct BatchVertex {
+    position: vec3,
+    uv: vec2,
+    color: vec4,
+}
+
+struct RasterVertex {
+    position: vec4,
+    uv: vec2,
+    color: vec4,
+}
+
+shader vertex batch_vert(v: BatchVertex) -> RasterVertex {
+    var out: RasterVertex;
+    out.position = vec4(v.position, 1.0);
+    out.uv = v.uv;
+    out.color = v.color;
+    return out;
+}
+
+shader fragment batch_frag(in: RasterVertex) -> vec4 {
+    color = in.color;
+    return color;
+}
+
+shader pipeline batch_pipeline {
+    vertex: batch_vert
+    fragment: batch_frag
+}

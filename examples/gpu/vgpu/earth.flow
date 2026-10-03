@@ -1,0 +1,42 @@
+# vgpu compatibility case: Earth Multi-texture shader
+# https://vgpu.sh/examples/earth
+
+struct EarthVertex {
+    position: vec3,
+    normal: vec3,
+    uv: vec2,
+}
+
+struct RasterEarthVertex {
+    position: vec4,
+    normal: vec3,
+    uv: vec2,
+}
+
+resource texture2d<f32> day_texture
+resource texture2d<f32> night_texture
+resource texture2d<f32> specular_map
+resource sampler earth_sampler
+
+shader vertex earth_vert(v: EarthVertex) -> RasterEarthVertex {
+    var out: RasterEarthVertex;
+    out.position = vec4(v.position, 1.0);
+    out.normal = v.normal;
+    out.uv = v.uv;
+    return out;
+}
+
+shader fragment earth_frag(in: RasterEarthVertex) -> vec4 {
+    let day_col = sample(day_texture, earth_sampler, in.uv);
+    let night_col = sample(night_texture, earth_sampler, in.uv);
+    let spec = sample(specular_map, earth_sampler, in.uv).x;
+    let light_dir = normalize(vec3(1.0, 0.5, 1.0));
+    let n_dot_l = max(dot(normalize(in.normal), light_dir), 0.0);
+    color = mix(night_col, day_col + vec4(spec * 0.5), n_dot_l);
+    return color;
+}
+
+shader pipeline earth_pipeline {
+    vertex: earth_vert
+    fragment: earth_frag
+}

@@ -1,8 +1,7 @@
-"""Lower Flow Shader Language (FSL) fullscreen shaders to WGSL.
+"""Lower Flow Shader Language (FSL) vertex, fragment, and fill shaders to WGSL.
 
 This is the WebGPU sibling of :mod:`flow.shader_codegen`. Both backends consume
-exactly the same FSL AST from ``shader_dsl.py`` so a ``shader fill`` program is
-not tied to Metal.
+the same FSL AST from ``shader_dsl.py``.
 """
 
 from __future__ import annotations
@@ -15,8 +14,10 @@ from .shader_dsl import (
     Binary,
     Call,
     Cast,
+    DiscardStmt,
     FillShader,
     ForStmt,
+    FragmentShader,
     IfStmt,
     LetStmt,
     Name,
@@ -24,9 +25,11 @@ from .shader_dsl import (
     ReturnStmt,
     ShaderFunc,
     ShaderModule,
+    ShaderStruct,
     Stmt,
     Swizzle,
     Unary,
+    VertexShader,
     extract_shader_module,
     parse_shader_body,
 )
@@ -35,6 +38,7 @@ from .shader_dsl import (
 _WGSL_TYPES = {
     "f32": "f32",
     "i32": "i32",
+    "u32": "u32",
     "bool": "bool",
     "vec2": "vec2<f32>",
     "vec3": "vec3<f32>",
@@ -50,6 +54,7 @@ _BUILTINS = {
     "sqrt", "inverseSqrt", "exp", "exp2", "log", "log2", "pow",
     "min", "max", "clamp", "mix", "step", "smoothstep",
     "length", "distance", "dot", "cross", "normalize", "reflect", "refract",
+    "clip", "discard",
 }
 
 _PRELUDE = r"""
@@ -140,12 +145,25 @@ class _Emitter:
     def map_type(self, typ: Optional[str]) -> str:
         if not typ:
             return "f32"
-        mapped = _WGSL_TYPES.get(typ)
-        if mapped is None:
-            raise SyntaxError(f"Unsupported WGSL shader type '{typ}'")
-        return mapped
+        if typ in _WGSL_TYPES:
+            return _WGSL_TYPES[typ]
+        if typ.startswith("texture2d"):
+            return "texture_2d<f32>"
+        if typ.startswith("texture_cube"):
+            return "texture_cube<f32>"
+        if typ.startswith("storage_texture"):
+            return "texture_storage_2d<rgba8unorm, write>"
+        if typ == "sampler":
+            return "sampler"
+        if typ.startswith("buffer<"):
+            elem = typ[7:-1].strip()
+            elem_mapped = _WGSL_TYPES.get(elem, elem)
+            return f"array<{elem_mapped}>"
+        return typ
 
     def emit_expr(self, expr) -> str:
+        if expr is None:
+            return ""
         if isinstance(expr, Number):
             return expr.value
         if isinstance(expr, Name):
@@ -167,10 +185,23 @@ class _Emitter:
         if isinstance(expr, Cast):
             return f"{self.map_type(expr.typ)}({self.emit_expr(expr.expr)})"
         if isinstance(expr, Call):
-            args = [self.emit_expr(arg) for arg in expr.args]
-            joined = ", ".join(args)
+            args_list = [self.emit_expr(arg) for arg in expr.args]
+            joined = ", ".join(args_list)
             if expr.name in ("vec2", "vec3", "vec4"):
                 return f"{_WGSL_TYPES[expr.name]}({joined})"
+            if expr.name in ("sample", "texture_sample"):
+                if len(expr.args) == 3:
+                    return f"textureSample({args_list[0]}, {args_list[1]}, {args_list[2]})"
+            if expr.name in ("sample_cube", "texture_sample_cube"):
+                if len(expr.args) == 3:
+                    return f"textureSample({args_list[0]}, {args_list[1]}, {args_list[2]})"
+            if expr.name == "texture_store":
+                if len(expr.args) == 3:
+                    return f"textureStore({args_list[0]}, {args_list[1]}, {args_list[2]})"
+            if expr.name == "clip":
+                return f"if (({joined}) < 0.0) {{ discard; }}"
+            if expr.name in ("discard", "discard_fragment"):
+                return "discard"
             if expr.name == "hash":
                 if len(expr.args) != 1:
                     raise SyntaxError("hash() expects one argument")
@@ -185,21 +216,23 @@ class _Emitter:
             if expr.name == "palette":
                 return f"fsl_palette({joined})"
             if expr.name in ("mod", "fmod"):
-                if len(args) != 2:
+                if len(args_list) != 2:
                     raise SyntaxError(f"{expr.name}() expects two arguments")
-                return f"({args[0]} % {args[1]})"
+                return f"({args_list[0]} % {args_list[1]})"
             if expr.name == "saturate":
-                if len(args) != 1:
+                if len(args_list) != 1:
                     raise SyntaxError("saturate() expects one argument")
-                return f"clamp({args[0]}, 0.0, 1.0)"
+                return f"clamp({args_list[0]}, 0.0, 1.0)"
             if expr.name == "rsqrt":
                 return f"inverseSqrt({joined})"
-            if expr.name in _BUILTINS or expr.name in self.functions:
+            if expr.name in _BUILTINS or expr.name in self.functions or "." in expr.name:
                 return f"{expr.name}({joined})"
             raise SyntaxError(f"Unknown shader function '{expr.name}'")
         raise SyntaxError(f"Unsupported shader expr {type(expr)}")
 
     def guess_type(self, expr) -> str:
+        if expr is None:
+            return "f32"
         if isinstance(expr, Number):
             return "f32"
         if isinstance(expr, Name):
@@ -217,7 +250,7 @@ class _Emitter:
                 return "vec2<f32>"
             if expr.name in ("vec3", "palette", "cross"):
                 return "vec3<f32>"
-            if expr.name == "vec4":
+            if expr.name in ("vec4", "sample", "texture_sample", "sample_cube"):
                 return "vec4<f32>"
             if expr.name in self.functions:
                 return self.map_type(self.functions[expr.name])
@@ -262,10 +295,15 @@ class _Emitter:
                 typ = self.map_type(stmt.typ) if stmt.typ else self.guess_type(stmt.expr)
                 self.env[stmt.name] = typ
                 keyword = "var" if stmt.mutable else "let"
-                lines.append(f"{pad}{keyword} {stmt.name}: {typ} = {self.emit_expr(stmt.expr)};")
+                if stmt.expr is not None:
+                    lines.append(f"{pad}{keyword} {stmt.name}: {typ} = {self.emit_expr(stmt.expr)};")
+                else:
+                    lines.append(f"{pad}var {stmt.name}: {typ};")
             elif isinstance(stmt, AssignStmt):
                 target = "color" if stmt.name == "color" else stmt.name
                 lines.append(f"{pad}{target} = {self.emit_expr(stmt.expr)};")
+            elif isinstance(stmt, DiscardStmt):
+                lines.append(f"{pad}discard;")
             elif isinstance(stmt, ReturnStmt):
                 if stmt.expr is None:
                     lines.append(f"{pad}return;")
@@ -321,16 +359,107 @@ def _emit_fn(fn: ShaderFunc, functions: Dict[str, str]) -> str:
     )
 
 
-def generate_wgsl_for_module(mod: ShaderModule) -> str:
-    """Generate one WGSL source module containing every FSL fill entry."""
-    if not mod.fills:
-        raise ValueError("No `shader fill` blocks in module")
+def _emit_struct_wgsl(st: ShaderStruct) -> str:
+    lines = [f"struct {st.name} {{"]
+    loc_idx = 0
+    for f_name, f_type in st.fields:
+        w_type = _WGSL_TYPES.get(f_type, f_type)
+        if f_name == "position" and w_type == "vec4<f32>":
+            lines.append(f"    @builtin(position) {f_name}: {w_type},")
+        else:
+            lines.append(f"    @location({loc_idx}) {f_name}: {w_type},")
+            loc_idx += 1
+    lines.append("};")
+    return "\n".join(lines)
 
+
+def _emit_vertex_shader_wgsl(vs: VertexShader, functions: Dict[str, str]) -> str:
+    emitter = _Emitter(functions)
+    params = []
+    for p_name, p_type in vs.params:
+        w_type = emitter.map_type(p_type)
+        if p_type in ("u32", "i32", "uint", "int") and p_name in ("instance_id", "instance_index"):
+            params.append(f"@builtin(instance_index) {p_name}: u32")
+        elif p_type in ("u32", "i32", "uint", "int") and p_name in ("vertex_id", "vertex_index"):
+            params.append(f"@builtin(vertex_index) {p_name}: u32")
+        else:
+            params.append(f"{p_name}: {w_type}")
+
+    ret_type = emitter.map_type(vs.return_type)
+    body = emitter.emit_stmts(parse_shader_body(vs.body), indent=1)
+    return (
+        f"@vertex\nfn {vs.name}(\n    "
+        + ",\n    ".join(params)
+        + f"\n) -> {ret_type} {{\n"
+        + "\n".join(body)
+        + "\n}\n"
+    )
+
+
+def _emit_fragment_shader_wgsl(fs: FragmentShader, functions: Dict[str, str]) -> str:
+    emitter = _Emitter(functions)
+    params = []
+    for p_name, p_type in fs.params:
+        w_type = emitter.map_type(p_type)
+        params.append(f"{p_name}: {w_type}")
+
+    ret_type = emitter.map_type(fs.return_type)
+    if ret_type == "vec4<f32>" or ret_type == "f32":
+        ret_annotation = f"@location(0) {ret_type}"
+    else:
+        ret_annotation = ret_type
+
+    body = emitter.emit_stmts(parse_shader_body(fs.body), indent=1)
+    return (
+        f"@fragment\nfn {fs.name}(\n    "
+        + ",\n    ".join(params)
+        + f"\n) -> {ret_annotation} {{\n"
+        + "    var color: vec4<f32> = vec4<f32>(0.0, 0.0, 0.0, 1.0);\n"
+        + "\n".join(body)
+        + "\n}\n"
+    )
+
+
+def generate_wgsl_for_module(mod: ShaderModule) -> str:
+    """Generate one WGSL source module containing all FSL constructs."""
     functions = {fn.name: fn.return_type for fn in mod.funcs}
     parts = [_PRELUDE, ""]
 
+    # Global resource bindings
+    binding_idx = 1
+    for r in mod.resources:
+        if "texture2d" in r.resource_type:
+            parts.append(f"@group(0) @binding({binding_idx}) var {r.name}: texture_2d<f32>;")
+            binding_idx += 1
+        elif "texture_cube" in r.resource_type:
+            parts.append(f"@group(0) @binding({binding_idx}) var {r.name}: texture_cube<f32>;")
+            binding_idx += 1
+        elif "storage_texture" in r.resource_type:
+            parts.append(f"@group(0) @binding({binding_idx}) var {r.name}: texture_storage_2d<rgba8unorm, write>;")
+            binding_idx += 1
+        elif "sampler" in r.resource_type:
+            parts.append(f"@group(0) @binding({binding_idx}) var {r.name}: sampler;")
+            binding_idx += 1
+        elif "buffer" in r.resource_type:
+            elem = r.resource_type[7:-1].strip()
+            w_elem = _WGSL_TYPES.get(elem, elem)
+            parts.append(f"@group(0) @binding({binding_idx}) var<storage, read> {r.name}: array<{w_elem}>;")
+            binding_idx += 1
+
+    for st in mod.structs:
+        parts.append(_emit_struct_wgsl(st))
+        parts.append("")
+
     for fn in mod.funcs:
         parts.append(_emit_fn(fn, functions))
+        parts.append("")
+
+    for vs in mod.vertices:
+        parts.append(_emit_vertex_shader_wgsl(vs, functions))
+        parts.append("")
+
+    for fs in mod.fragments:
+        parts.append(_emit_fragment_shader_wgsl(fs, functions))
         parts.append("")
 
     for fill in mod.fills:
@@ -366,17 +495,17 @@ def compile_shader_file_wgsl(
     out_dir: str,
     shader_name: Optional[str] = None,
 ) -> Path:
-    """Compile all, or one named, FSL fills from a ``.flow`` file to WGSL."""
+    """Compile all, or one named, shaders from a ``.flow`` file to WGSL."""
     text = Path(source_path).read_text(encoding="utf-8")
     mod = extract_shader_module(text)
-    if not mod.fills:
-        raise ValueError("No `shader fill Name { ... }` blocks found")
+    if not mod.fills and not mod.vertices and not mod.fragments:
+        raise ValueError("No shader blocks found")
 
     if shader_name:
         fills = [fill for fill in mod.fills if fill.name == shader_name]
-        if not fills:
-            raise ValueError(f"Shader '{shader_name}' not found")
-        mod = ShaderModule(funcs=mod.funcs, fills=fills)
+        vertices = [v for v in mod.vertices if v.name == shader_name]
+        fragments = [fr for fr in mod.fragments if fr.name == shader_name]
+        mod = ShaderModule(funcs=mod.funcs, fills=fills, structs=mod.structs, resources=mod.resources, vertices=vertices, fragments=fragments, pipelines=mod.pipelines)
 
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -389,6 +518,6 @@ def compile_shader_file_wgsl(
         output = out / f"{stem}_gallery.wgsl"
     output.write_text(source, encoding="utf-8")
 
-    entries = [f"{fill.name}_frag" for fill in mod.fills]
+    entries = [f"{fill.name}_frag" for fill in mod.fills] + [v.name for v in mod.vertices] + [fr.name for fr in mod.fragments]
     (out / f"{stem}_gallery.wgsl.entries").write_text("\n".join(entries), encoding="utf-8")
     return output

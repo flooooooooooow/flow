@@ -1,0 +1,37 @@
+# vgpu compatibility case: Environment map reflection / refraction
+# https://vgpu.sh/examples/environment-map
+
+struct Vertex {
+    position: vec3,
+    normal: vec3,
+    uv: vec2,
+}
+
+struct RasterVertex {
+    position: vec4,
+    normal: vec3,
+    view_dir: vec3,
+}
+
+resource texture_cube<f32> env_map
+resource sampler env_sampler
+
+shader vertex env_map_vert(v: Vertex) -> RasterVertex {
+    var out: RasterVertex;
+    out.position = vec4(v.position, 1.0);
+    out.normal = v.normal;
+    out.view_dir = normalize(v.position);
+    return out;
+}
+
+shader fragment env_map_frag(in: RasterVertex) -> vec4 {
+    let refl_dir = reflect(in.view_dir, normalize(in.normal));
+    let env_color = sample_cube(env_map, env_sampler, refl_dir);
+    color = env_color;
+    return color;
+}
+
+shader pipeline env_map_pipeline {
+    vertex: env_map_vert
+    fragment: env_map_frag
+}

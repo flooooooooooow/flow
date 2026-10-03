@@ -1,4 +1,4 @@
-"""Lower FLOW Shader Language (FSL) to Metal fragment sources."""
+"""Lower FLOW Shader Language (FSL) to Metal vertex and fragment sources."""
 
 from __future__ import annotations
 
@@ -10,8 +10,10 @@ from .shader_dsl import (
     Binary,
     Call,
     Cast,
+    DiscardStmt,
     FillShader,
     ForStmt,
+    FragmentShader,
     IfStmt,
     LetStmt,
     Name,
@@ -19,9 +21,11 @@ from .shader_dsl import (
     ReturnStmt,
     ShaderFunc,
     ShaderModule,
+    ShaderStruct,
     Stmt,
     Swizzle,
     Unary,
+    VertexShader,
     extract_shader_module,
     parse_shader_body,
 )
@@ -29,6 +33,7 @@ from .shader_dsl import (
 _METAL_TYPES = {
     "f32": "float",
     "i32": "int",
+    "u32": "uint",
     "bool": "bool",
     "vec2": "float2",
     "vec3": "float3",
@@ -44,7 +49,7 @@ _BUILTINS = {
     "sqrt", "rsqrt", "exp", "exp2", "log", "log2", "pow",
     "min", "max", "clamp", "saturate", "mix", "step", "smoothstep",
     "length", "distance", "dot", "cross", "normalize", "reflect", "refract",
-    "mod", "fmod",
+    "mod", "fmod", "clip", "discard",
 }
 
 _PRELUDE = r"""
@@ -128,9 +133,25 @@ class _Emitter:
     def map_type(self, typ: Optional[str]) -> str:
         if not typ:
             return "float"
-        return _METAL_TYPES.get(typ, typ)
+        if typ in _METAL_TYPES:
+            return _METAL_TYPES[typ]
+        if typ.startswith("texture2d"):
+            return "texture2d<float>"
+        if typ.startswith("texture_cube"):
+            return "texturecube<float>"
+        if typ.startswith("storage_texture"):
+            return "texture2d<float, access::write>"
+        if typ == "sampler":
+            return "sampler"
+        if typ.startswith("buffer<"):
+            elem = typ[7:-1].strip()
+            elem_mapped = _METAL_TYPES.get(elem, elem)
+            return f"constant {elem_mapped}*"
+        return typ
 
     def emit_expr(self, expr) -> str:
+        if expr is None:
+            return ""
         if isinstance(expr, Number):
             return expr.value
         if isinstance(expr, Name):
@@ -156,9 +177,23 @@ class _Emitter:
             mt = self.map_type(expr.typ)
             return f"{mt}({self.emit_expr(expr.expr)})"
         if isinstance(expr, Call):
-            args = ", ".join(self.emit_expr(a) for a in expr.args)
+            args_list = [self.emit_expr(a) for a in expr.args]
+            args = ", ".join(args_list)
             if expr.name in ("vec2", "vec3", "vec4"):
                 return f"{_METAL_TYPES[expr.name]}({args})"
+            if expr.name in ("sample", "texture_sample"):
+                if len(expr.args) == 3:
+                    return f"{args_list[0]}.sample({args_list[1]}, {args_list[2]})"
+            if expr.name in ("sample_cube", "texture_sample_cube"):
+                if len(expr.args) == 3:
+                    return f"{args_list[0]}.sample({args_list[1]}, {args_list[2]})"
+            if expr.name == "texture_store":
+                if len(expr.args) == 3:
+                    return f"{args_list[0]}.write({args_list[2]}, {args_list[1]})"
+            if expr.name == "clip":
+                return f"if (({args}) < 0.0) discard_fragment()"
+            if expr.name in ("discard", "discard_fragment"):
+                return "discard_fragment()"
             if expr.name == "hash":
                 if len(expr.args) == 1:
                     at = self.guess_type(expr.args[0])
@@ -174,16 +209,18 @@ class _Emitter:
                 return f"fsl_palette({args})"
             if expr.name == "mod":
                 return f"fmod({args})"
-            if expr.name in _BUILTINS or expr.name in self.user_fns:
+            if expr.name in _BUILTINS or expr.name in self.user_fns or "." in expr.name:
                 return f"{expr.name}({args})"
             raise SyntaxError(f"Unknown shader function '{expr.name}'")
         raise SyntaxError(f"Unsupported shader expr {type(expr)}")
 
     def guess_type(self, expr) -> str:
+        if expr is None:
+            return "float"
         if isinstance(expr, Number):
             return "float"
         if isinstance(expr, Name):
-            if expr.value == "uv" or expr.value == "resolution":
+            if expr.value in ("uv", "resolution"):
                 return "float2"
             if expr.value in ("time",):
                 return "float"
@@ -197,12 +234,12 @@ class _Emitter:
                 return "float2"
             if expr.name in ("vec3", "palette", "normalize", "cross", "reflect"):
                 return "float3"
-            if expr.name in ("vec4",):
+            if expr.name in ("vec4", "sample", "texture_sample", "sample_cube"):
                 return "float4"
             if expr.name in ("noise", "fbm", "hash", "length", "dot", "sin", "cos", "atan2"):
                 return "float"
             if expr.name in self.user_fns:
-                return "float"  # refined when emitting fns
+                return "float"
             if expr.args:
                 return self.guess_type(expr.args[0])
         if isinstance(expr, Swizzle):
@@ -228,12 +265,17 @@ class _Emitter:
             if isinstance(st, LetStmt):
                 et = self.map_type(st.typ) if st.typ else self.guess_type(st.expr)
                 self.env[st.name] = et
-                lines.append(f"{pad}{et} {st.name} = {self.emit_expr(st.expr)};")
+                if st.expr is not None:
+                    lines.append(f"{pad}{et} {st.name} = {self.emit_expr(st.expr)};")
+                else:
+                    lines.append(f"{pad}{et} {st.name};")
             elif isinstance(st, AssignStmt):
                 if st.name == "color":
                     lines.append(f"{pad}color = {self.emit_expr(st.expr)};")
                 else:
                     lines.append(f"{pad}{st.name} = {self.emit_expr(st.expr)};")
+            elif isinstance(st, DiscardStmt):
+                lines.append(f"{pad}discard_fragment();")
             elif isinstance(st, ReturnStmt):
                 if st.expr is None:
                     lines.append(f"{pad}return;")
@@ -247,7 +289,6 @@ class _Emitter:
                     lines.extend(self.emit_stmts(st.else_body, indent + 1))
                 lines.append(f"{pad}}}")
             elif isinstance(st, ForStmt):
-                # Metal for-loop; start/end as int
                 self.env[st.var] = "int"
                 lines.append(
                     f"{pad}for (int {st.var} = int({self.emit_expr(st.start)}); "
@@ -277,6 +318,94 @@ def _emit_fn(fn: ShaderFunc, user_fns: Set[str]) -> str:
     )
 
 
+def _emit_struct(st: ShaderStruct) -> str:
+    lines = [f"struct {st.name} {{"]
+    is_vertex_input = "Raster" not in st.name and "Out" not in st.name and "Varying" not in st.name
+    for idx, (f_name, f_type) in enumerate(st.fields):
+        m_type = _METAL_TYPES.get(f_type, f_type)
+        if f_name == "position" and m_type == "float4":
+            lines.append(f"    {m_type} {f_name} [[position]];")
+        elif is_vertex_input:
+            lines.append(f"    {m_type} {f_name} [[attribute({idx})]];")
+        else:
+            lines.append(f"    {m_type} {f_name};")
+    lines.append("};")
+    return "\n".join(lines)
+
+
+def _emit_vertex_shader(vs: VertexShader, user_fns: Set[str]) -> str:
+    em = _Emitter(user_fns)
+    ret_type = em.map_type(vs.return_type)
+    params = []
+    tex_idx = 0
+    smp_idx = 0
+    buf_idx = 0
+
+    for p_name, p_type in vs.params:
+        m_type = em.map_type(p_type)
+        em.env[p_name] = m_type
+        if p_type in ("u32", "i32", "uint", "int") and p_name in ("instance_id", "instance_index"):
+            params.append(f"uint {p_name} [[instance_id]]")
+        elif p_type in ("u32", "i32", "uint", "int") and p_name in ("vertex_id", "vertex_index"):
+            params.append(f"uint {p_name} [[vertex_id]]")
+        elif "texture" in p_type:
+            params.append(f"{m_type} {p_name} [[texture({tex_idx})]]")
+            tex_idx += 1
+        elif "sampler" in p_type:
+            params.append(f"{m_type} {p_name} [[sampler({smp_idx})]]")
+            smp_idx += 1
+        elif "buffer" in p_type:
+            params.append(f"{m_type} {p_name} [[buffer({buf_idx})]]")
+            buf_idx += 1
+        else:
+            params.append(f"{m_type} {p_name} [[stage_in]]")
+
+    stmts = parse_shader_body(vs.body)
+    body = em.emit_stmts(stmts, indent=1)
+    return (
+        f"vertex {ret_type} {vs.name}(\n    "
+        + ",\n    ".join(params)
+        + "\n) {\n"
+        + "\n".join(body)
+        + "\n}\n"
+    )
+
+
+def _emit_fragment_shader(fs: FragmentShader, user_fns: Set[str]) -> str:
+    em = _Emitter(user_fns)
+    ret_type = em.map_type(fs.return_type)
+    params = []
+    tex_idx = 0
+    smp_idx = 0
+    buf_idx = 0
+
+    for p_name, p_type in fs.params:
+        m_type = em.map_type(p_type)
+        em.env[p_name] = m_type
+        if "texture" in p_type:
+            params.append(f"{m_type} {p_name} [[texture({tex_idx})]]")
+            tex_idx += 1
+        elif "sampler" in p_type:
+            params.append(f"{m_type} {p_name} [[sampler({smp_idx})]]")
+            smp_idx += 1
+        elif "buffer" in p_type:
+            params.append(f"{m_type} {p_name} [[buffer({buf_idx})]]")
+            buf_idx += 1
+        else:
+            params.append(f"{m_type} {p_name} [[stage_in]]")
+
+    stmts = parse_shader_body(fs.body)
+    body = em.emit_stmts(stmts, indent=1)
+    return (
+        f"fragment {ret_type} {fs.name}(\n    "
+        + ",\n    ".join(params)
+        + "\n) {\n"
+        + "    float4 color = float4(0.0, 0.0, 0.0, 1.0);\n"
+        + "\n".join(body)
+        + "\n}\n"
+    )
+
+
 def _has_color_assign(stmts: List[Stmt]) -> bool:
     for s in stmts:
         if isinstance(s, AssignStmt) and s.name == "color":
@@ -291,13 +420,25 @@ def _has_color_assign(stmts: List[Stmt]) -> bool:
 
 
 def generate_metal_for_module(mod: ShaderModule) -> str:
-    if not mod.fills:
-        raise ValueError("No `shader fill` blocks in module")
     user_fns = {f.name for f in mod.funcs}
     parts = [_PRELUDE, ""]
+
+    for st in mod.structs:
+        parts.append(_emit_struct(st))
+        parts.append("")
+
     for fn in mod.funcs:
         parts.append(_emit_fn(fn, user_fns))
         parts.append("")
+
+    for vs in mod.vertices:
+        parts.append(_emit_vertex_shader(vs, user_fns))
+        parts.append("")
+
+    for fs in mod.fragments:
+        parts.append(_emit_fragment_shader(fs, user_fns))
+        parts.append("")
+
     for fill in mod.fills:
         stmts = parse_shader_body(fill.body)
         if not _has_color_assign(stmts):
@@ -330,26 +471,25 @@ def compile_shader_file(
     out_dir: str,
     shader_name: Optional[str] = None,
 ) -> Path:
-    """Compile all (or one named) fill shaders from a .flow file.
+    """Compile all (or one named) shaders from a .flow file.
 
     Writes:
-      - `<stem>_gallery.metal` — combined library (all fills + fns)
-      - `<name>_fill.metal` — per-shader (still useful)
-      - `<stem>_gallery.entries` — newline list of fragment entry names
-    Returns path to the gallery metal file (or single metal if one named).
+      - `<stem>_gallery.metal` — combined library
+      - `<name>_fill.metal` — per-shader
+      - `<stem>_gallery.entries` — newline list of entry names
     """
     text = Path(source_path).read_text(encoding="utf-8")
     mod = extract_shader_module(text)
-    if not mod.fills:
+    if not mod.fills and not mod.vertices and not mod.fragments:
         raise ValueError(
-            "No `shader fill Name { ... }` blocks found.\n"
+            "No shader blocks found.\n"
             "See docs/language/shaders.md"
         )
     if shader_name:
         fills = [f for f in mod.fills if f.name == shader_name]
-        if not fills:
-            raise ValueError(f"Shader '{shader_name}' not found")
-        mod = ShaderModule(funcs=mod.funcs, fills=fills)
+        vertices = [v for v in mod.vertices if v.name == shader_name]
+        fragments = [fr for fr in mod.fragments if fr.name == shader_name]
+        mod = ShaderModule(funcs=mod.funcs, fills=fills, structs=mod.structs, resources=mod.resources, vertices=vertices, fragments=fragments, pipelines=mod.pipelines)
 
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -358,13 +498,7 @@ def compile_shader_file(
     gallery_metal = generate_metal_for_module(mod)
     gallery_path = out / f"{stem}_gallery.metal"
     gallery_path.write_text(gallery_metal, encoding="utf-8")
-    entries = [f"{f.name}_frag" for f in mod.fills]
+    entries = [f"{f.name}_frag" for f in mod.fills] + [f.name for f in mod.vertices] + [f.name for f in mod.fragments]
     (out / f"{stem}_gallery.entries").write_text("\n".join(entries) + "\n", encoding="utf-8")
-
-    for fill in mod.fills:
-        single = ShaderModule(funcs=mod.funcs, fills=[fill])
-        path = out / f"{fill.name}_fill.metal"
-        path.write_text(generate_metal_for_module(single), encoding="utf-8")
-        (out / f"{fill.name}_fill.entry").write_text(f"{fill.name}_frag\n", encoding="utf-8")
 
     return gallery_path

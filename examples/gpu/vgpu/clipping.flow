@@ -1,0 +1,33 @@
+# vgpu compatibility case: Clipping plane / discard
+# https://vgpu.sh/examples/clipping
+
+struct Vertex {
+    position: vec3,
+    uv: vec2,
+}
+
+struct RasterVertex {
+    position: vec4,
+    world_pos: vec3,
+    uv: vec2,
+}
+
+shader vertex clip_vert(v: Vertex) -> RasterVertex {
+    var out: RasterVertex;
+    out.position = vec4(v.position, 1.0);
+    out.world_pos = v.position;
+    out.uv = v.uv;
+    return out;
+}
+
+shader fragment clip_frag(in: RasterVertex) -> vec4 {
+    let clip_plane_dist = in.world_pos.y - 0.0;
+    clip(clip_plane_dist)
+    color = vec4(in.uv.x, in.uv.y, 0.8, 1.0);
+    return color;
+}
+
+shader pipeline clip_pipeline {
+    vertex: clip_vert
+    fragment: clip_frag
+}

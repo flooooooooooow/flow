@@ -1,36 +1,66 @@
-"""FLOW Shader Language (FSL) — fragment fill shaders.
+"""FLOW Shader Language (FSL) — fragment, vertex, and typed GPU resources.
 
 A small but real shading language embedded in `.flow` files:
 
 ```flow
-fn palette(t: f32) -> vec3 {
-    return vec3(0.5) + vec3(0.5) * cos(6.28318 * (vec3(1.0, 0.7, 0.4) * t + vec3(0.0, 0.15, 0.2)))
+struct Vertex {
+    position: vec3,
+    uv: vec2,
+    normal: vec3,
 }
 
-shader fill plasma {
-    let p: vec2 = uv * 2.0 - vec2(1.0)
-    let t: f32 = time * 0.4
-    var col: vec3 = vec3(0.0)
-    for i in 0 to 4 {
-        col = col + palette(length(p) + f32(i) * 0.1 + t) * 0.25
-    }
-    color = vec4(col, 1.0)
+struct RasterVertex {
+    position: vec4,
+    uv: vec2,
+    normal: vec3,
+}
+
+shader vertex scene_vert(v: Vertex) -> RasterVertex {
+    var out: RasterVertex;
+    out.position = vec4(v.position, 1.0);
+    out.uv = v.uv;
+    out.normal = v.normal;
+    return out;
+}
+
+shader fragment scene_frag(in: RasterVertex, albedo: texture2d<f32>, linear: sampler) -> vec4 {
+    let col = sample(albedo, linear, in.uv);
+    color = col;
+    return color;
 }
 ```
 
-Builtins: `uv`, `time`, `resolution`, `color` (out).
+Builtins & Resources: `uv`, `time`, `resolution`, `color` (out), `texture2d`, `texture_cube`, `storage_texture`, `sampler`, `buffer`.
 """
 
 from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 
 @dataclass
 class FillShader:
     name: str
+    body: str
+    line: int = 1
+
+
+@dataclass
+class VertexShader:
+    name: str
+    params: List[tuple]  # (name, type_str)
+    return_type: str
+    body: str
+    line: int = 1
+
+
+@dataclass
+class FragmentShader:
+    name: str
+    params: List[tuple]  # (name, type_str)
+    return_type: str
     body: str
     line: int = 1
 
@@ -45,9 +75,40 @@ class ShaderFunc:
 
 
 @dataclass
+class ShaderStruct:
+    name: str
+    fields: List[tuple]  # (field_name, type_str)
+    line: int = 1
+
+
+@dataclass
+class GpuResource:
+    name: str
+    resource_type: str
+    options: Dict[str, str] = field(default_factory=dict)
+    line: int = 1
+
+
+@dataclass
+class ShaderPipeline:
+    name: str
+    vertex_stage: str
+    fragment_stage: str
+    depth_stencil: Optional[str] = None
+    msaa_samples: int = 1
+    cull_mode: str = "none"
+    line: int = 1
+
+
+@dataclass
 class ShaderModule:
     funcs: List[ShaderFunc] = field(default_factory=list)
     fills: List[FillShader] = field(default_factory=list)
+    structs: List[ShaderStruct] = field(default_factory=list)
+    resources: List[GpuResource] = field(default_factory=list)
+    vertices: List[VertexShader] = field(default_factory=list)
+    fragments: List[FragmentShader] = field(default_factory=list)
+    pipelines: List[ShaderPipeline] = field(default_factory=list)
 
 
 def _extract_brace_block(source: str, open_brace_index: int) -> tuple:
@@ -71,8 +132,28 @@ _FN_HEAD = re.compile(
     r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*->\s*([A-Za-z0-9_<>,\s]+)\s*\{",
     re.MULTILINE,
 )
-_SHADER_HEAD = re.compile(
+_SHADER_FILL_HEAD = re.compile(
     r"\bshader\s+fill\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{",
+    re.MULTILINE,
+)
+_SHADER_VERTEX_HEAD = re.compile(
+    r"\bshader\s+vertex\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*->\s*([A-Za-z0-9_<>,\s]+)\s*\{",
+    re.MULTILINE,
+)
+_SHADER_FRAGMENT_HEAD = re.compile(
+    r"\bshader\s+fragment\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*->\s*([A-Za-z0-9_<>,\s]+)\s*\{",
+    re.MULTILINE,
+)
+_STRUCT_HEAD = re.compile(
+    r"\bstruct\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{",
+    re.MULTILINE,
+)
+_PIPELINE_HEAD = re.compile(
+    r"\bshader\s+pipeline\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{",
+    re.MULTILINE,
+)
+_RESOURCE_HEAD = re.compile(
+    r"\bresource\s+([A-Za-z0-9_<>,\s]+)\s+([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(([^)]*)\))?",
     re.MULTILINE,
 )
 
@@ -87,21 +168,72 @@ def _parse_params(raw: str) -> List[tuple]:
         if not part:
             continue
         if ":" not in part:
-            raise SyntaxError(f"Shader fn param needs name: type, got '{part}'")
+            raise SyntaxError(f"Shader param needs name: type, got '{part}'")
         name, typ = part.split(":", 1)
         params.append((name.strip(), typ.strip()))
     return params
 
 
+def _parse_struct_fields(body: str) -> List[tuple]:
+    fields = []
+    lines = body.replace(",", "\n").splitlines()
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" in line:
+            name, typ = line.split(":", 1)
+            fields.append((name.strip(), typ.strip()))
+    return fields
+
+
+def validate_shader_module(mod: ShaderModule) -> None:
+    """Validate structural varyings and resource constraints."""
+    struct_map = {s.name: s for s in mod.structs}
+
+    for v_shader in mod.vertices:
+        v_ret = v_shader.return_type.strip()
+        if v_ret in struct_map:
+            v_struct = struct_map[v_ret]
+            v_fields = dict(v_struct.fields)
+            for f_shader in mod.fragments:
+                for p_name, p_type in f_shader.params:
+                    p_type_clean = p_type.strip()
+                    if p_type_clean in struct_map:
+                        f_struct = struct_map[p_type_clean]
+                        for f_field_name, f_field_type in f_struct.fields:
+                            if f_field_name not in v_fields:
+                                raise SyntaxError(
+                                    f"Structural varying mismatch: field '{f_field_name}' in "
+                                    f"fragment input '{f_struct.name}' is missing from "
+                                    f"vertex output '{v_struct.name}'"
+                                )
+                            if v_fields[f_field_name] != f_field_type:
+                                raise SyntaxError(
+                                    f"Structural varying mismatch: field '{f_field_name}' in "
+                                    f"fragment input '{f_struct.name}' has type {f_field_type}, but "
+                                    f"vertex output '{v_struct.name}' has type {v_fields[f_field_name]}"
+                                )
+
+
 def extract_shader_module(source: str) -> ShaderModule:
-    """Extract top-level `fn` helpers and `shader fill` blocks."""
+    """Extract all FSL constructs from source."""
     mod = ShaderModule()
-    # Find all heads with positions, process in order so nested braces work
     events = []
+
     for m in _FN_HEAD.finditer(source):
         events.append(("fn", m))
-    for m in _SHADER_HEAD.finditer(source):
+    for m in _SHADER_FILL_HEAD.finditer(source):
         events.append(("fill", m))
+    for m in _SHADER_VERTEX_HEAD.finditer(source):
+        events.append(("vertex", m))
+    for m in _SHADER_FRAGMENT_HEAD.finditer(source):
+        events.append(("fragment", m))
+    for m in _STRUCT_HEAD.finditer(source):
+        events.append(("struct", m))
+    for m in _PIPELINE_HEAD.finditer(source):
+        events.append(("pipeline", m))
+
     events.sort(key=lambda e: e[1].start())
 
     occupied_until = -1
@@ -112,6 +244,7 @@ def extract_shader_module(source: str) -> ShaderModule:
         body, end = _extract_brace_block(source, brace_at)
         occupied_until = end
         line = source.count("\n", 0, m.start()) + 1
+
         if kind == "fn":
             mod.funcs.append(
                 ShaderFunc(
@@ -122,8 +255,81 @@ def extract_shader_module(source: str) -> ShaderModule:
                     line=line,
                 )
             )
-        else:
+        elif kind == "fill":
             mod.fills.append(FillShader(name=m.group(1), body=body, line=line))
+        elif kind == "vertex":
+            mod.vertices.append(
+                VertexShader(
+                    name=m.group(1),
+                    params=_parse_params(m.group(2)),
+                    return_type=m.group(3).strip(),
+                    body=body,
+                    line=line,
+                )
+            )
+        elif kind == "fragment":
+            mod.fragments.append(
+                FragmentShader(
+                    name=m.group(1),
+                    params=_parse_params(m.group(2)),
+                    return_type=m.group(3).strip(),
+                    body=body,
+                    line=line,
+                )
+            )
+        elif kind == "struct":
+            mod.structs.append(
+                ShaderStruct(
+                    name=m.group(1),
+                    fields=_parse_struct_fields(body),
+                    line=line,
+                )
+            )
+        elif kind == "pipeline":
+            v_stage = ""
+            f_stage = ""
+            depth = None
+            msaa = 1
+            for p_line in body.splitlines():
+                p_line = p_line.strip()
+                if ":" in p_line:
+                    k, v = [x.strip() for x in p_line.split(":", 1)]
+                    if k == "vertex":
+                        v_stage = v
+                    elif k == "fragment":
+                        f_stage = v
+                    elif k == "depth":
+                        depth = v
+                    elif k == "msaa":
+                        msaa = int(v)
+            mod.pipelines.append(
+                ShaderPipeline(
+                    name=m.group(1),
+                    vertex_stage=v_stage,
+                    fragment_stage=f_stage,
+                    depth_stencil=depth,
+                    msaa_samples=msaa,
+                    line=line,
+                )
+            )
+
+    for m in _RESOURCE_HEAD.finditer(source):
+        opts = {}
+        if m.group(3):
+            for opt in m.group(3).split(","):
+                if ":" in opt:
+                    ok, ov = opt.split(":", 1)
+                    opts[ok.strip()] = ov.strip()
+        mod.resources.append(
+            GpuResource(
+                name=m.group(2),
+                resource_type=m.group(1).strip(),
+                options=opts,
+                line=source.count("\n", 0, m.start()) + 1,
+            )
+        )
+
+    validate_shader_module(mod)
     return mod
 
 
@@ -132,8 +338,8 @@ def extract_fill_shaders(source: str) -> List[FillShader]:
 
 
 def has_fill_shader_dsl(source: str) -> bool:
-    """True when the source is a fill-shader (FSL) module, not host Flow."""
-    return bool(_SHADER_HEAD.search(source))
+    """True when source contains FSL shader blocks."""
+    return bool(_SHADER_FILL_HEAD.search(source) or _SHADER_VERTEX_HEAD.search(source) or _SHADER_FRAGMENT_HEAD.search(source))
 
 
 # ── Lexer / parser ──────────────────────────────────────────────────
@@ -231,7 +437,7 @@ Expr = Union[Number, Name, Unary, Binary, Call, Swizzle, Cast]
 class LetStmt:
     name: str
     typ: Optional[str]
-    expr: Expr
+    expr: Optional[Expr] = None
     mutable: bool = False
 
 
@@ -244,6 +450,11 @@ class AssignStmt:
 @dataclass
 class ReturnStmt:
     expr: Optional[Expr]
+
+
+@dataclass
+class DiscardStmt:
+    pass
 
 
 @dataclass
@@ -261,7 +472,7 @@ class ForStmt:
     body: List["Stmt"]
 
 
-Stmt = Union[LetStmt, AssignStmt, ReturnStmt, IfStmt, ForStmt]
+Stmt = Union[LetStmt, AssignStmt, ReturnStmt, DiscardStmt, IfStmt, ForStmt]
 
 
 class _Parser:
@@ -325,6 +536,17 @@ class _Parser:
             return self.parse_if()
         if t.kind == "IDENT" and t.value == "for":
             return self.parse_for()
+        if t.kind == "IDENT" and t.value == "discard":
+            self.advance()
+            if self.match("LPAREN"):
+                self.match("RPAREN")
+            return DiscardStmt()
+        if t.kind == "IDENT" and t.value == "clip":
+            self.advance()
+            self.expect("LPAREN")
+            expr = self.parse_expr()
+            self.expect("RPAREN")
+            return AssignStmt("clip", expr)
         if t.kind == "IDENT" and t.value == "return":
             self.advance()
             if self.cur().kind in ("NEWLINE", "SEMI", "RBRACE", "EOF"):
@@ -340,13 +562,32 @@ class _Parser:
         name = self.expect("IDENT").value
         typ = None
         if self.match("COLON"):
-            typ = self.expect("IDENT").value
-        self.expect("ASSIGN")
-        expr = self.parse_expr()
+            typ_token = self.expect("IDENT").value
+            if self.match("COMPARE", "<"):
+                sub_tokens = []
+                depth = 1
+                while depth > 0:
+                    st = self.advance()
+                    if st.kind == "COMPARE" and st.value == "<":
+                        depth += 1
+                    elif st.kind == "COMPARE" and st.value == ">":
+                        depth -= 1
+                        if depth == 0:
+                            break
+                    sub_tokens.append(st.value)
+                typ = f"{typ_token}<{','.join(sub_tokens)}>"
+            else:
+                typ = typ_token
+        expr = None
+        if self.match("ASSIGN"):
+            expr = self.parse_expr()
         return LetStmt(name, typ, expr, mutable=mut)
 
     def parse_assign(self) -> AssignStmt:
         name = self.expect("IDENT").value
+        while self.match("DOT"):
+            field_name = self.expect("IDENT").value
+            name = f"{name}.{field_name}"
         self.expect("ASSIGN")
         return AssignStmt(name, self.parse_expr())
 
@@ -372,7 +613,6 @@ class _Parser:
         return IfStmt(cond, then_body, else_body)
 
     def parse_for(self) -> ForStmt:
-        # for i in 0 to 10 { ... }
         self.expect("IDENT", "for")
         var = self.expect("IDENT").value
         if not (self.cur().kind == "IDENT" and self.cur().value == "in"):
@@ -438,8 +678,22 @@ class _Parser:
         expr = self.parse_primary()
         while self.cur().kind == "DOT":
             self.advance()
-            fields = self.expect("IDENT").value
-            expr = Swizzle(expr, fields)
+            field_or_method = self.expect("IDENT").value
+            if self.match("LPAREN"):
+                args: List[Expr] = []
+                self.skip_nl()
+                if not self.match("RPAREN"):
+                    while True:
+                        self.skip_nl()
+                        args.append(self.parse_expr())
+                        self.skip_nl()
+                        if self.match("COMMA"):
+                            continue
+                        self.expect("RPAREN")
+                        break
+                expr = Call(f"{field_or_method}", [expr] + args)
+            else:
+                expr = Swizzle(expr, field_or_method)
         return expr
 
     def parse_primary(self) -> Expr:
@@ -453,7 +707,6 @@ class _Parser:
             return Number(val)
         if t.kind == "IDENT":
             name = self.advance().value
-            # cast form: f32(expr) / vec2(...) already via Call
             if self.match("LPAREN"):
                 args: List[Expr] = []
                 self.skip_nl()
@@ -466,7 +719,7 @@ class _Parser:
                             continue
                         self.expect("RPAREN")
                         break
-                if name in ("f32", "i32", "bool") and len(args) == 1:
+                if name in ("f32", "i32", "u32", "bool") and len(args) == 1:
                     return Cast(name, args[0])
                 return Call(name, args)
             return Name(name)

@@ -25,15 +25,15 @@ A compatibility case is complete only when:
 Fullscreen FSL now has two source generators from the same parsed AST:
 
 ```text
-"shader fill"
+"shader fill / vertex / fragment"
     -> shader_dsl.py
        -> shader_codegen.py       -> MSL / Metal
        -> shader_codegen_wgsl.py  -> WGSL / WebGPU
 ```
 
 Flow already has a separate `@gpu` compute path with Metal and WGSL backends. The
-compatibility work should converge these surfaces around shared resources and
-pipeline declarations rather than create another shader language.
+compatibility work converges these surfaces around shared resources and
+pipeline declarations rather than creating another shader language.
 
 The browser host renders FSL WGSL into an offscreen `rgba8unorm` texture, copies it
 to a readback buffer and removes WebGPU row padding before comparison. This keeps
@@ -44,14 +44,16 @@ compositing. `compareRgba` then provides an exact byte comparison primitive.
 
 | Case | Flow source | Metal | WGSL | Reference comparison |
 | --- | --- | --- | --- | --- |
-| Gradient | `gradient.flow` | source-ready | offscreen renderer ready | upstream reference bytes pending |
+| Gradient | `gradient.flow` | ready | ready | upstream reference bytes pending |
+| Instanced Rendering | `instanced_rendering.flow` | ready | ready | upstream reference bytes pending |
+| Batch Rendering | `batch_rendering.flow` | ready | ready | upstream reference bytes pending |
+| Environment Map | `environment_map.flow` | ready | ready | upstream reference bytes pending |
+| Earth | `earth.flow` | ready | ready | upstream reference bytes pending |
+| Anti-Aliasing | `anti_aliasing.flow` | ready | ready | upstream reference bytes pending |
+| Clipping | `clipping.flow` | ready | ready | upstream reference bytes pending |
+| Transmission Material | `transmission_material.flow` | ready | ready | upstream reference bytes pending |
 
-The next tranche should deliberately exercise missing capabilities instead of
-adding only fragment effects: textures/samplers, vertex and index buffers,
-instancing, storage textures, multi-pass compute, depth/stencil, cubemaps,
-workgroup memory/barriers, and tensor/model execution.
-
-## Run the first case
+## Run a case
 
 Metal uses the existing FSL command:
 
@@ -73,6 +75,4 @@ python3 wasm/flow_webgpu_shader.py examples/gpu/vgpu/gradient.flow \
 python3 -m http.server -d build/webgpu-shader 8000
 ```
 
-The generated WebGPU entry points are `flow_shader_vertex` and
-`vgpu_gradient_frag`. The suite parameters used for reference comparisons live in
-`manifest.json`.
+The suite parameters used for reference comparisons live in `manifest.json`.

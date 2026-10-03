@@ -1,0 +1,30 @@
+# vgpu compatibility case: Anti-aliasing MSAA render pipeline
+# https://vgpu.sh/examples/anti-aliasing
+
+struct Vertex {
+    position: vec3,
+    color: vec4,
+}
+
+struct RasterVertex {
+    position: vec4,
+    color: vec4,
+}
+
+shader vertex aa_vert(v: Vertex) -> RasterVertex {
+    var out: RasterVertex;
+    out.position = vec4(v.position, 1.0);
+    out.color = v.color;
+    return out;
+}
+
+shader fragment aa_frag(in: RasterVertex) -> vec4 {
+    color = in.color;
+    return color;
+}
+
+shader pipeline aa_pipeline {
+    vertex: aa_vert
+    fragment: aa_frag
+    msaa: 4
+}

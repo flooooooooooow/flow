@@ -1,0 +1,42 @@
+# vgpu compatibility case: Transmission / PBR Material shader
+# https://vgpu.sh/examples/transmission
+
+struct MaterialVertex {
+    position: vec3,
+    normal: vec3,
+    uv: vec2,
+}
+
+struct RasterMaterialVertex {
+    position: vec4,
+    normal: vec3,
+    view_dir: vec3,
+    uv: vec2,
+}
+
+resource texture2d<f32> albedo_texture
+resource texture_cube<f32> env_cubemap
+resource sampler mat_sampler
+
+shader vertex mat_vert(v: MaterialVertex) -> RasterMaterialVertex {
+    var out: RasterMaterialVertex;
+    out.position = vec4(v.position, 1.0);
+    out.normal = v.normal;
+    out.view_dir = normalize(v.position);
+    out.uv = v.uv;
+    return out;
+}
+
+shader fragment mat_frag(in: RasterMaterialVertex) -> vec4 {
+    let base_color = sample(albedo_texture, mat_sampler, in.uv);
+    let refr_dir = refract(in.view_dir, normalize(in.normal), 0.66);
+    let env_transmission = sample_cube(env_cubemap, mat_sampler, refr_dir);
+    let fresnel = pow(1.0 - max(dot(-in.view_dir, normalize(in.normal)), 0.0), 3.0);
+    color = mix(env_transmission, base_color, fresnel);
+    return color;
+}
+
+shader pipeline mat_pipeline {
+    vertex: mat_vert
+    fragment: mat_frag
+}

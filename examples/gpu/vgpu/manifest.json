@@ -20,6 +20,83 @@
       ]
     },
     {
+      "id": "instanced-rendering",
+      "upstream": "https://vgpu.sh/examples/instanced-rendering",
+      "source": "examples/gpu/vgpu/instanced_rendering.flow",
+      "vertexEntry": "instanced_vert",
+      "fragmentEntry": "instanced_frag",
+      "backends": [
+        "metal",
+        "webgpu"
+      ]
+    },
+    {
+      "id": "batch-rendering",
+      "upstream": "https://vgpu.sh/examples/batch-rendering",
+      "source": "examples/gpu/vgpu/batch_rendering.flow",
+      "vertexEntry": "batch_vert",
+      "fragmentEntry": "batch_frag",
+      "backends": [
+        "metal",
+        "webgpu"
+      ]
+    },
+    {
+      "id": "environment-map",
+      "upstream": "https://vgpu.sh/examples/environment-map",
+      "source": "examples/gpu/vgpu/environment_map.flow",
+      "vertexEntry": "env_map_vert",
+      "fragmentEntry": "env_map_frag",
+      "backends": [
+        "metal",
+        "webgpu"
+      ]
+    },
+    {
+      "id": "earth",
+      "upstream": "https://vgpu.sh/examples/earth",
+      "source": "examples/gpu/vgpu/earth.flow",
+      "vertexEntry": "earth_vert",
+      "fragmentEntry": "earth_frag",
+      "backends": [
+        "metal",
+        "webgpu"
+      ]
+    },
+    {
+      "id": "anti-aliasing",
+      "upstream": "https://vgpu.sh/examples/anti-aliasing",
+      "source": "examples/gpu/vgpu/anti_aliasing.flow",
+      "vertexEntry": "aa_vert",
+      "fragmentEntry": "aa_frag",
+      "backends": [
+        "metal",
+        "webgpu"
+      ]
+    },
+    {
+      "id": "clipping",
+      "upstream": "https://vgpu.sh/examples/clipping",
+      "source": "examples/gpu/vgpu/clipping.flow",
+      "vertexEntry": "clip_vert",
+      "fragmentEntry": "clip_frag",
+      "backends": [
+        "metal",
+        "webgpu"
+      ]
+    },
+    {
+      "id": "transmission-material",
+      "upstream": "https://vgpu.sh/examples/transmission",
+      "source": "examples/gpu/vgpu/transmission_material.flow",
+      "vertexEntry": "mat_vert",
+      "fragmentEntry": "mat_frag",
+      "backends": [
+        "metal",
+        "webgpu"
+      ]
+    },
+    {
       "id": "mnist",
       "upstream": "https://vgpu.sh/examples/mnist",
       "source": "examples/gpu/vgpu/mnist.flow",
