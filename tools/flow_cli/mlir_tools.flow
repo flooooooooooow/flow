@@ -295,6 +295,9 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
     if env_isset("FLOWC_MLIR_AOSOA_SWIZZLE") {
         cmd_env(c, "FLOWC_MLIR_AOSOA_SWIZZLE", env("FLOWC_MLIR_AOSOA_SWIZZLE"))
     }
+    if env_isset("FLOWC_MLIR_AOSOA_BANK_COUNT") {
+        cmd_env(c, "FLOWC_MLIR_AOSOA_BANK_COUNT", env("FLOWC_MLIR_AOSOA_BANK_COUNT"))
+    }
     # FLOWC_BACKEND=bpf|wasm (compiler/src/bpf_gen.flow, wasm_gen.flow) reach
     # here through flow-to-llvm; the inner flowc must not inherit that mode,
     # nor FLOWC_LENIENT unless --lenient asked for it.
