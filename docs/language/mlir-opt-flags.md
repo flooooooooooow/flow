@@ -59,6 +59,10 @@ fusion schedule:
   --strategy=fuse --op=linalg.matmul --fuse-with=linalg.generic
 ```
 
+`--strategy=hierarchical_tile` emits an outer tile followed by an inner tile.
+Set the outer schedule with `--tiles=` and the inner schedule with
+`--inner-tiles=`. The default inner schedule is `8,8,8`.
+
 Affine tiling is opt-in and requires a positive tile size:
 
 ```bash
