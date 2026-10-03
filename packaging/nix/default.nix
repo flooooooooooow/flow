@@ -1,31 +1,30 @@
-{ pkgs ? import <nixpkgs> {} }:
+{ pkgs ? import <nixpkgs> {}, src ? ../.. }:
 
-pkgs.stdenv.mkDerivation rec {
+let
+  version = pkgs.lib.removeSuffix "\n" (builtins.readFile "${src}/VERSION");
+  runtimePath = pkgs.lib.makeBinPath [ pkgs.clang pkgs.coreutils pkgs.findutils ];
+in
+pkgs.stdenvNoCC.mkDerivation {
   pname = "flow";
-  version = "1.0.2";
+  inherit version src;
 
-  src = pkgs.fetchFromGitHub {
-    owner = "flooooooooooow";
-    repo = "flow";
-    rev = "v${version}";
-    sha256 = "0000000000000000000000000000000000000000000000000000000000000000";
-  };
-
-  nativeBuildInputs = [
-    pkgs.clang
-    pkgs.python3
-  ];
-
-  buildInputs = [
-    pkgs.zlib
-  ];
+  dontBuild = true;
 
   installPhase = ''
     runHook preInstall
-    mkdir -p $out/bin $out/lib/flow
-    cp -r src lib runtime compiler $out/lib/flow/
-    cp flow $out/bin/flow
-    chmod +x $out/bin/flow
+
+    mkdir -p "$out/lib/flow" "$out/bin"
+    cp -R compiler lib runtime tools scripts registry flow flow.toml VERSION "$out/lib/flow/"
+    chmod +x "$out/lib/flow/flow"
+    patchShebangs "$out/lib/flow/flow"
+
+    cat > "$out/bin/flow" <<EOF
+#!${pkgs.runtimeShell}
+export PATH="${runtimePath}:\$PATH"
+exec "$out/lib/flow/flow" "\$@"
+EOF
+    chmod +x "$out/bin/flow"
+
     runHook postInstall
   '';
 
@@ -33,7 +32,7 @@ pkgs.stdenv.mkDerivation rec {
     description = "Flow programming language toolchain and runtime";
     homepage = "https://github.com/flooooooooooow/flow";
     license = licenses.mit;
-    platforms = platforms.all;
+    platforms = platforms.unix;
     mainProgram = "flow";
   };
 }
