@@ -1,0 +1,54 @@
+import "compiler/src/semantic_facts.flow"
+import "compiler/src/fir_opts.flow"
+import "compiler/src/recognition_ssa.flow"
+import "compiler/src/recognition_ssa_gate.flow"
+import "compiler/src/recognition_ssa_dce.flow"
+
+function candidate(kind: i32) -> FlowcOptCandidate {
+    return FlowcOptCandidate {
+        kind: kind,
+        target_id: 7,
+        score: 12.0,
+        caller_id: 0 - 1,
+        callee_ops: 2,
+        call_sites: 0,
+        is_pure: 1
+    }
+}
+
+function main() -> i32 {
+    let contracts: array<FlowcRecognitionContract, 2> = [
+        flowc_rssa_contract(FLOWC_RECOGNITION_NUMERICAL, 0.0),
+        flowc_rssa_contract(FLOWC_RECOGNITION_SAFETY, 0.0)
+    ]
+
+    let mut accepted: FlowcRssaGateResult
+    if flowc_rssa_gate_exact_dead_elim(candidate(0), 0, 0, &contracts[0], 2, &accepted) != FLOWC_RSSA_OK {
+        return 1
+    }
+    if accepted.allowed != 1 or accepted.certificate.witness_count != 2 {
+        return 2
+    }
+    if accepted.certificate.witnesses[0].distance != 0.0 or accepted.certificate.witnesses[1].distance != 0.0 {
+        return 3
+    }
+
+    let mut reachable: FlowcRssaGateResult
+    if flowc_rssa_gate_exact_dead_elim(candidate(0), 1, 0, &contracts[0], 2, &reachable) != FLOWC_RSSA_GATE_REJECTED {
+        return 4
+    }
+    if reachable.allowed != 0 {
+        return 5
+    }
+
+    let mut main_fn: FlowcRssaGateResult
+    if flowc_rssa_gate_exact_dead_elim(candidate(0), 0, 1, &contracts[0], 2, &main_fn) != FLOWC_RSSA_GATE_REJECTED {
+        return 6
+    }
+
+    let mut inline_candidate: FlowcRssaGateResult
+    if flowc_rssa_gate_exact_dead_elim(candidate(1), 0, 0, &contracts[0], 2, &inline_candidate) != FLOWC_RSSA_GATE_REJECTED {
+        return 7
+    }
+    return 0
+}
