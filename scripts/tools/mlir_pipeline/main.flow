@@ -194,8 +194,19 @@ function build_pipeline(f: PipeFlags) -> string {
             fn_passes = add(fn_passes, "affine-loop-fusion")
             fn_passes = add(fn_passes, "linalg-fuse-elementwise-ops")
         }
-        if f.multi_buffering { fn_passes = add(fn_passes, "test-multi-buffering{multiplier=" + ft_itoa(f.multi_buffering_factor) + "}") }
-        if f.pipelining { fn_passes = add(fn_passes, "test-scf-pipelining") }
+        # Async copies need staging storage and an overlapped loop schedule.
+        # Supply the conservative two-buffer schedule when callers enable the
+        # async path without spelling out its supporting passes.
+        if f.async_copy and not f.multi_buffering {
+            fn_passes = add(fn_passes, "test-multi-buffering{multiplier=2}")
+        } elif f.multi_buffering {
+            fn_passes = add(fn_passes, "test-multi-buffering{multiplier=" + ft_itoa(f.multi_buffering_factor) + "}")
+        }
+        if f.async_copy and not f.pipelining {
+            fn_passes = add(fn_passes, "test-scf-pipelining")
+        } elif f.pipelining {
+            fn_passes = add(fn_passes, "test-scf-pipelining")
+        }
         if f.affine_normalization { fn_passes = add(fn_passes, "affine-loop-normalize") }
         if f.affine_unrolling { fn_passes = add(fn_passes, "affine-loop-unroll{unroll-factor=" + ft_itoa(f.affine_unroll_factor) + "}") }
         if f.affine_unroll_jam { fn_passes = add(fn_passes, "affine-loop-unroll-jam{unroll-factor=" + ft_itoa(f.affine_unroll_jam_factor) + "}") }
