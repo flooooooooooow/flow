@@ -6,13 +6,22 @@ import "tests/scripts/harness.flow"
 function check_tensor_value_destination() -> i32 {
     let emit: ptr<ProcStrs> = sl_of3("./flow", "mlir", "compiler/fixtures/mlir_opt/tensor_boundary.flow")
     sl_push(emit, "--lenient")
-    if t_run_argv(emit) != 0 { return T_FAIL }
+    if t_run_argv(emit) != 0 {
+        outln("flow mlir failed: " + t_err())
+        return T_FAIL
+    }
     let input: string = "build/tensor_boundary.mlir"
-    if not exists(input) { return T_FAIL }
+    if not exists(input) {
+        outln("flow mlir did not write " + input)
+        return T_FAIL
+    }
     let emitted: string = read_text(input)
     if not a_contains(emitted, "tensor.empty") { return T_FAIL }
     if not a_contains(emitted, "linalg.generic") { return T_FAIL }
-    if count_of(emitted, "func.call @add_once") != 2 { return T_FAIL }
+    if count_of(emitted, "func.call @add_once") != 2 {
+        outln("expected two tensor-valued calls")
+        return T_FAIL
+    }
     if a_contains(emitted, "outs(%arg0") { return T_FAIL }
     return T_PASS
 }
