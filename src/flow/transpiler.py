@@ -261,6 +261,12 @@ def main():
         help="Module name for WASM/Python package (default: input filename stem). "
         "Sets the Emscripten MODULARIZE name and the --export prefix.",
     )
+    parser.add_argument(
+        "--perf-remarks",
+        "--remarks",
+        action="store_true",
+        help="Emit compiler performance remarks explaining missed optimizations in idiomatic Flow",
+    )
 
     args = parser.parse_args()
 
@@ -369,6 +375,19 @@ def main():
             f"Parsed {len(functions)} functions, {len(structs)} structs, {len(effects)} effects, {len(capabilities)} capabilities",
             file=sys.stderr,
         )
+
+        # Performance remarks analysis
+        if getattr(args, "perf_remarks", False):
+            from .idioms import IdiomAdvisor
+            advisor = IdiomAdvisor()
+            advisor.analyze_program(declarations)
+            if advisor.findings:
+                print("Compiler Performance Remarks:", file=sys.stderr)
+                for finding in advisor.findings:
+                    print(
+                        f"  [{finding.rule_id}] line {finding.line}:{finding.column}: {finding.title} - {finding.rationale}",
+                        file=sys.stderr,
+                    )
 
         # Show module information if requested
         if args.module_info:
