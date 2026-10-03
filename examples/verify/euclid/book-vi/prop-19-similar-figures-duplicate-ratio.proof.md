@@ -2,13 +2,13 @@
 
 *Similar rectilineal figures are to one another in the duplicate ratio of the corresponding sides.*
 
-**Source.** euclid — Elements, Book VI, Proposition 19
+**Source.** euclid: Elements, Book VI, Proposition 19
 
-## Derived fact 1 — Similar rectilineal figures are to one another in the duplicate ratio of the corresponding sides
+## Derived fact 1: Similar rectilineal figures are to one another in the duplicate ratio of the corresponding sides
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 19: similar rectilineal figures are in duplicate ratio of corresponding sides · **Derived fact**
 
-*Source: euclid — Elements, Book VI, Proposition 19*
+*Source: euclid: Elements, Book VI, Proposition 19*
 
 *Built on: proposition 4: equiangular triangles have proportional corresponding sides, for Euclid Book VI on the Euclidean plane, proposition 18: ex aequali proportion from three magnitudes, for Euclid Book V on the Euclidean plane*
 

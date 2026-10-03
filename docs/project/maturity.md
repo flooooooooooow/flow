@@ -3,7 +3,7 @@
 This page maps FLOW against a fifteen-stage checklist for what an "official"
 programming language needs. It is the single source of truth for readiness:
 what is done, what is partial, and what has not started yet. The signal is
-meant to be honest, not promotional.
+meant to be honest rather than promotional.
 
 Legend: **DONE** means implemented and exercised. **PARTIAL** means it exists
 but is not complete or not fully machine-tested. **GAP** means it is not done.
@@ -12,7 +12,7 @@ but is not complete or not fully machine-tested. **GAP** means it is not done.
 
 The critical transition is showing FLOW 1.0. A language does not need ISO's
 permission to be official; Python, Rust and Go are defined primarily by their
-own stable specification, conformance suite and compatibility commitment, not
+own stable specification, conformance suite and compatibility commitment rather than
 by an international standard.
 
 Today the language has a compiler and a specification (v0.11.0), but the spec is
@@ -43,7 +43,7 @@ in stages 1 to 12 runs up to that line.
 | --- | --- |
 | x86-64 | DONE. Coveraged by CI on Linux and macOS. |
 | ARM64 (Apple Silicon) | DONE. Native and CI-covered on macOS. |
-| ARM64 (Linux) | PARTIAL. Supported in the toolchain, not systematically covered. |
+| ARM64 (Linux) | PARTIAL. Supported in the toolchain but not systematically covered. |
 
 CI builds and exercises FLOW on `ubuntu-latest`, `macos-14` and a
 `windows-latest` gfx-stub smoke job. The self-hosted `flowc` toolchain is
@@ -58,7 +58,7 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 | Domain / site | DONE | GitHub Pages site at `flooooooooooow.github.io/flow/`; no custom domain yet. |
 | Repository | DONE | Public canonical repo on GitHub. |
 | Branding / file extension | DONE | `.flow` extension, editor themes, naming conventions. |
-| License | DONE | MIT; `LICENSE`, `CITATION.cff`. |
+| License | DONE | Proprietary from 2.0.0; MIT through 1.0.2. `LICENSE`, `LICENSE-1.x-MIT`, `CITATION.cff`. |
 
 ### 2. Language definition
 | Item | Status | Note |
@@ -68,7 +68,7 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 | Semantics | PARTIAL | `docs/LANGUAGE_SPEC.md` covers it; not yet treated as frozen. |
 | Type system | DONE | Spec incl. inference, conversions, generics. |
 | Memory model | PARTIAL | Spans, `let mut`, lifetime domains; no Rust-style borrow checker. |
-| Evaluation model | PARTIAL | Documented in the spec, not fully pinned. |
+| Evaluation model | PARTIAL | Documented in the spec but not fully pinned. |
 | Error model | PARTIAL | Stable strict and lenient diagnostics exist. |
 | Concurrency model | PARTIAL | Async effects, threads documented; not fully pinned. |
 | FFI / ABI | DONE | `extern "C"` including variadic externs documented and tested. |
@@ -78,7 +78,7 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 ### 3. Specification
 | Item | Status | Note |
 | --- | --- | --- |
-| Language Specification | PARTIAL | `docs/LANGUAGE_SPEC.md` exists at 0.3, not a frozen 1.0. |
+| Language Specification | PARTIAL | `docs/LANGUAGE_SPEC.md` exists at 0.3. It is not yet a frozen 1.0. |
 | Versioning rules | PARTIAL | Semver on toolchain; spec version does not define minor/patch meanings. |
 | Compatibility policy | PARTIAL | Some backward-compat claims; no written/official policy. |
 | Feature lifecycle | PARTIAL | Experimental markers partial; no deprecation stage markers. |
@@ -87,7 +87,7 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 ### 4. Reference implementation
 | Item | Status | Note |
 | --- | --- | --- |
-| Compiler | DONE | `src/flow` (Python) plus self-hosted `flowc` in `compiler/`. |
+| Compiler | DONE | Self-hosted `flowc` in `compiler/` is the only C compiler; `src/flow` (Python) keeps the MLIR generator fallback and some tools. |
 | Bootstrap | DONE | Three-generation fixed-point proof builds `flowc` from a single-C bootstrap. |
 | Targets | PARTIAL | C primary; Wasm, JIT, SPIR-V partial; architecture matrix above. |
 | Diagnostics | PARTIAL | Strict / lenient diagnostics and LSP intellisense exist. |
@@ -110,7 +110,7 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 | Item | Status | Note |
 | --- | --- | --- |
 | Core (collections, strings, math, I/O) | DONE | `lib/stdlib` 82 modules; `lib/runtime` always-linked. |
-| Stability policy | PARTIAL | Public API versioning is implied, not an explicit archive policy. |
+| Stability policy | PARTIAL | Public API versioning is implied. There is no explicit archive policy. |
 | Documentation | DONE | `docs/library/*` reference. |
 | Tests | DONE | `tests/stdlib` has 54 `.flow` test files. |
 | Platform behaviour | PARTIAL | Cross-platform gaps noted; GPU examples require Metal/Vulkan. |
@@ -118,7 +118,7 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 ### 7. Toolchain
 | Feature | Status | Note |
 | --- | --- | --- |
-| Package manager | DONE | `flow add`, `flow pkg`, `src/flow/package.py`, registry. |
+| Package manager | DONE | `flow add`, `flow pkg`, `compiler/src/pkg.flow`, registry. |
 | Build system | DONE | `flow build`, `build-native`. |
 | Runner | DONE | `flow run`. |
 | Tests | DONE | `flow test --tier1/--tier2`. |
@@ -127,7 +127,7 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 | Documentation gen | DONE | `flow doc` and * wiki site builder. |
 | REPL | DONE | `flow repl`. |
 | LSP | DONE | `flow-lsp` (VS Code / Neovim intelligence). |
-| Debugger | PARTIAL | Debug plumbing, not a full source-level debugger story. |
+| Debugger | PARTIAL | Debug plumbing exists. A full source-level debugger story does not. |
 | Safety profile | DONE | `--profile safety` (`-Werror -pedantic` C flags). Literal div-by-zero and shift UB rejected at type-check time. UBSan/ASan/TSan via env vars. |
 
 ### 8. Distribution
@@ -176,7 +176,7 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 | Item | Status | Note |
 | --- | --- | --- |
 | RFC / change process | GAP | No formal RFC/design-doc directory or gate. |
-| Language team | PARTIAL | maintainership implied, not a named team model. |
+| Language team | PARTIAL | maintainership implied. There is no named team model. |
 | Contribution policy | DONE | `CONTRIBUTING.md`. |
 | Code of conduct | DONE | `CODE_OF_CONDUCT.md`. |
 | Security policy | DONE | `SECURITY.md`. |
@@ -195,10 +195,12 @@ built on Linux and macOS. Toolchain version is 0.11. spec version is 0.11.0.
 | Item | Status | Note |
 | --- | --- | --- |
 | Linguist detection | PARTIAL | `.gitattributes` opts in; upstream `github-linguist` does not know Flow yet. |
-| Syntax highlighting (editors) | DONE | VS Code extension + TextMate grammar; syntax-oriented referencing. |
-| Tree-sitter | GAP | No tree-sitter grammar yet. |
-| Pygments | GAP | Not upstreamed. |
-| Language servers | DONE | `flow-lsp`. |
+| Syntax highlighting (editors) | DONE | VS Code extension + TextMate grammar; Vim syntax; Tree-sitter source; Helix/Vim/Neovim integration assets. |
+| Tree-sitter | PARTIAL | Grammar and highlight queries are checked in under `third_party/integrations/tree-sitter-flow`; dedicated release/upstream consumers remain. |
+| Pygments | PARTIAL | Installable local plugin is checked in under `third_party/integrations/pygments-flow`; upstream merge remains. |
+| Language servers | DONE | `flow-lsp`; VS Code plus checked-in Neovim/Helix launch configuration. |
+| Rosetta Code | PARTIAL | Submission pack is checked in; external category/tasks still need publishing. |
+| Independent tutorials | PARTIAL | First-party tutorial corpus and external-author kit exist; qualifying third-party tutorials remain the acceptance condition. |
 | Benchmark suites | PARTIAL | `tests/benchmarks`; no external comparative matrix. |
 | Package ecosystems | PARTIAL | Homebrew tap + Open VSX + registry catalogues. |
 

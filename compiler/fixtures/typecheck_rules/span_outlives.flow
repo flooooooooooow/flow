@@ -1,0 +1,9 @@
+# expect: span outlives borrowed storage `local` at line 4, column 5
+function view() -> span<i32> {
+    let mut local: array<i32, 4> = [0; 4]
+    return local[0..2]
+}
+
+function main() -> i32 {
+    return 0
+}

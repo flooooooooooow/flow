@@ -1,0 +1,1289 @@
+# Local native compile API for the Flow playground (GitHub #132, Option B).
+#
+# Binds to 127.0.0.1 only. The playground's "Run (native local)" button
+# POSTs source here; the server transpiles it with the real Flow toolchain
+# (compiler/scripts/flowc_emit.flow), optionally compiles and runs it with
+# clang, and returns stdout/stderr as JSON.
+#
+# Security (keep this localhost-only):
+#   - bind address is loopback (override only via --host for advanced use)
+#   - request body capped (64 KiB of source)
+#   - child process time limits (default 15s transpile / 10s run); the
+#     whole process group is killed on timeout
+#   - no shell; argv goes straight to execvp; temp dir wiped per request
+#   - CORS answers only local origins
+#
+# Usage (from the repository root):
+#   ./flow tool playground_server
+#   ./flow tool playground_server --port 8765 --no-run   # transpile only
+#   ./flow playground [PORT]
+#
+# Routes:
+#   GET  / and /health     service description
+#   GET  /pyodide          docs/playground/pyodide.html
+#   GET  /flow-src/<rel>   files under src/flow (for the Pyodide page)
+#   POST /compile          {"source": "...", "target": "native"|"c"|"wasm"}
+#   OPTIONS *              CORS preflight
+#
+# Each connection is served by a forked child, so a long compile does not
+# block /health. HTTP/1.0: one request per connection.
+
+import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_starts, ft_from, ft_slice, ft_find, ft_contains, ft_ascii_lower, ft_read_file, ft_write_file, ft_list_new, ft_list_push, StrList }
+import .proc { pr_quote, pr_run, pr_cwd, pr_is_file, pr_resolve }
+import .json { Json, json_parse, json_error, json_kind, json_kind_string, json_kind_object, json_get, json_str, json_quote }
+import .bench { bn_py_repr, bn_parse_float }
+import .net { nt_listen, nt_wait_readable, nt_accept, nt_peer_new, nt_peer_ip, nt_write_all, nt_write_str, nt_read, nt_close, nt_fork, nt_exit, nt_reap, nt_run_timed }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function getenv(name: string) -> string
+    function strtol(s: string, end: ptr<void>, base: i32) -> i64
+    function time(t: ptr<i64>) -> i64
+    function gmtime(t: ptr<i64>) -> ptr<void>
+    function strftime(buf: ptr<u8>, n: i64, fmt: string, tm: ptr<void>) -> i64
+    function mkdir(path: string, mode: i32) -> i32
+    function getpid() -> i32
+    function access(path: string, mode: i32) -> i32
+}
+
+const MAX_SOURCE_BYTES: i32 = 65536
+const TIMED_OUT: i32 = -1000
+
+struct Config {
+    root: string
+    do_run: bool
+    transpile_timeout: f64
+    run_timeout: f64
+}
+
+# ---------------------------------------------------------------------------
+# Text as Python's subprocess text mode reads it
+# ---------------------------------------------------------------------------
+
+# Length of the valid UTF-8 sequence at p[i], or 0 when it is not valid.
+function utf8_seq(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    let c: i32 = p[i] as i32
+    if c < 128 {
+        return 1
+    }
+    let mut need: i32 = 0
+    let mut lo: i32 = 128
+    let mut hi: i32 = 191
+    if c >= 194 and c <= 223 {
+        need = 1
+    } elif c == 224 {
+        need = 2
+        lo = 160
+    } elif c >= 225 and c <= 236 {
+        need = 2
+    } elif c == 237 {
+        need = 2
+        hi = 159
+    } elif c >= 238 and c <= 239 {
+        need = 2
+    } elif c == 240 {
+        need = 3
+        lo = 144
+    } elif c >= 241 and c <= 243 {
+        need = 3
+    } elif c == 244 {
+        need = 3
+        hi = 143
+    } else {
+        return 0
+    }
+    let mut k: i32 = 1
+    while k <= need {
+        if i + k >= n {
+            return 0
+        }
+        let b: i32 = p[i + k] as i32
+        if k == 1 {
+            if b < lo or b > hi {
+                return 0
+            }
+        } elif b < 128 or b > 191 {
+            return 0
+        }
+        k = k + 1
+    }
+    return need + 1
+}
+
+function is_utf8(s: string) -> bool {
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = ft_len(s)
+    let mut i: i32 = 0
+    while i < n {
+        let l: i32 = utf8_seq(p, i, n)
+        if l == 0 {
+            return false
+        }
+        i = i + l
+    }
+    return true
+}
+
+# Universal newlines (\r\n and \r become \n), and each byte that is not
+# valid UTF-8 becomes U+FFFD, so the text can always go into JSON.
+function text_mode(s: string) -> string {
+    if s as ptr<u8> == null {
+        return ""
+    }
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = ft_len(s)
+    let out: ptr<u8> = malloc((n * 3 + 1) as i64) as ptr<u8>
+    let mut o: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = p[i] as i32
+        if c == 13 {
+            out[o] = 10
+            o = o + 1
+            if i + 1 < n and p[i + 1] == 10 {
+                i = i + 1
+            }
+            i = i + 1
+        } else {
+            let l: i32 = utf8_seq(p, i, n)
+            if l == 0 {
+                out[o] = 239
+                out[o + 1] = 191
+                out[o + 2] = 189
+                o = o + 3
+                i = i + 1
+            } else {
+                let mut k: i32 = 0
+                while k < l {
+                    out[o + k] = p[i + k]
+                    k = k + 1
+                }
+                o = o + l
+                i = i + l
+            }
+        }
+    }
+    out[o] = 0
+    return out as string
+}
+
+# The last `count` code points of valid UTF-8 text (Python s[-count:]).
+function cp_tail(s: string, count: i32) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = ft_len(s)
+    let mut i: i32 = n
+    let mut seen: i32 = 0
+    while i > 0 and seen < count {
+        i = i - 1
+        while i > 0 and ((p[i] as i32) & 192) == 128 {
+            i = i - 1
+        }
+        seen = seen + 1
+    }
+    return ft_from(s, i)
+}
+
+# The first `count` code points of valid UTF-8 text (Python s[:count]).
+function cp_head(s: string, count: i32) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = ft_len(s)
+    let mut i: i32 = 0
+    let mut seen: i32 = 0
+    while i < n and seen < count {
+        i = i + 1
+        while i < n and ((p[i] as i32) & 192) == 128 {
+            i = i + 1
+        }
+        seen = seen + 1
+    }
+    return ft_slice(s, 0, i)
+}
+
+# Python str.strip() is empty: only whitespace.
+function is_blank(s: string) -> bool {
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = ft_len(s)
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = p[i] as i32
+        if (c == 32 or (c >= 9 and c <= 13) or (c >= 28 and c <= 31)) == false {
+            # U+0085 and U+00A0 as UTF-8
+            if c == 194 and i + 1 < n and (p[i + 1] == 133 or p[i + 1] == 160) {
+                i = i + 1
+            } else {
+                return false
+            }
+        }
+        i = i + 1
+    }
+    return true
+}
+
+function strip_ws(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut a: i32 = 0
+    let mut b: i32 = ft_len(s)
+    while a < b and (p[a] == 32 or p[a] == 9) {
+        a = a + 1
+    }
+    while b > a and (p[b - 1] == 32 or p[b - 1] == 9) {
+        b = b - 1
+    }
+    return ft_slice(s, a, b)
+}
+
+# ---------------------------------------------------------------------------
+# Files, paths and programs
+# ---------------------------------------------------------------------------
+
+function read_or_empty(path: string) -> string {
+    let t: string = ft_read_file(path)
+    if t as ptr<u8> == null {
+        return ""
+    }
+    return t
+}
+
+# shutil.which(): the first executable regular file named `name` on PATH,
+# or "" when there is none.
+function which(name: string) -> string {
+    let path: string = getenv("PATH")
+    if path as ptr<u8> == null {
+        return ""
+    }
+    let p: ptr<u8> = path as ptr<u8>
+    let n: i32 = ft_len(path)
+    let mut s: i32 = 0
+    while s <= n {
+        let mut e: i32 = s
+        while e < n and p[e] != 58 {
+            e = e + 1
+        }
+        let mut dir: string = ft_slice(path, s, e)
+        if ft_len(dir) == 0 {
+            dir = "."
+        }
+        let cand: string = dir + "/" + name
+        if access(cand, 1) == 0 and pr_is_file(cand) {
+            return cand
+        }
+        s = e + 1
+    }
+    return ""
+}
+
+# A fresh private directory, as tempfile.mkdtemp(prefix="flow-playground-").
+function make_temp_dir() -> string {
+    let mut base: string = getenv("TMPDIR")
+    if base as ptr<u8> == null or ft_len(base) == 0 {
+        base = "/tmp"
+    }
+    while ft_len(base) > 1 and ft_starts(ft_from(base, ft_len(base) - 1), "/") {
+        base = ft_slice(base, 0, ft_len(base) - 1)
+    }
+    let t: ptr<i64> = malloc(8) as ptr<i64>
+    let now: i64 = time(t)
+    let mut attempt: i32 = 0
+    while attempt < 100 {
+        let v: i64 = (now * 7919 + (getpid() as i64) * 104729 + (attempt as i64) * 15485863) % 2176782336
+        let dir: string = base + "/flow-playground-" + base36(v)
+        if mkdir(dir, 448) == 0 {
+            return dir
+        }
+        attempt = attempt + 1
+    }
+    return null as string
+}
+
+function base36(v0: i64) -> string {
+    let digits: ptr<u8> = "0123456789abcdefghijklmnopqrstuvwxyz" as ptr<u8>
+    let out: ptr<u8> = malloc(16) as ptr<u8>
+    let mut v: i64 = v0
+    if v < 0 {
+        v = 0 - v
+    }
+    let mut k: i32 = 0
+    while k < 8 {
+        out[7 - k] = digits[v % 36]
+        v = v / 36
+        k = k + 1
+    }
+    out[8] = 0
+    return out as string
+}
+
+function remove_tree(dir: string) -> void {
+    let _r: i32 = pr_run("rm -rf " + pr_quote(dir))
+}
+
+# ---------------------------------------------------------------------------
+# JSON results, keys in the order the playground has always sent them
+# ---------------------------------------------------------------------------
+
+struct Result {
+    ok: bool
+    body: string
+}
+
+function kv(key: string, value: string) -> string {
+    return json_quote(key) + ": " + json_quote(value)
+}
+
+function kb(key: string, value: bool) -> string {
+    if value {
+        return json_quote(key) + ": true"
+    }
+    return json_quote(key) + ": false"
+}
+
+function ki(key: string, value: i32) -> string {
+    return json_quote(key) + ": " + ft_itoa(value)
+}
+
+function result(ok: bool, fields: string) -> ptr<Result> {
+    let r: ptr<Result> = malloc(16) as ptr<Result>
+    r[0].ok = ok
+    r[0].body = "{" + kb("ok", ok) + ", " + fields + "}"
+    return r
+}
+
+function failure(mode: string, error: string) -> ptr<Result> {
+    return result(false, kv("mode", mode) + ", " + kv("error", error))
+}
+
+function failure_c(mode: string, error: string, c_preview: string) -> ptr<Result> {
+    return result(false, kv("mode", mode) + ", " + kv("error", error) + ", " + kv("c_preview", c_preview))
+}
+
+# ---------------------------------------------------------------------------
+# Compile and run
+# ---------------------------------------------------------------------------
+
+function argv3(a: string, b: string, c: string) -> ptr<StrList> {
+    let l: ptr<StrList> = ft_list_new()
+    ft_list_push(l, a)
+    ft_list_push(l, b)
+    ft_list_push(l, c)
+    return l
+}
+
+function compile_in(cfg: ptr<Config>, tmp: string, source: string, do_run: bool, target: string) -> ptr<Result> {
+    let root: string = cfg[0].root
+    let tt: f64 = cfg[0].transpile_timeout
+    let rt: f64 = cfg[0].run_timeout
+    let flow_path: string = tmp + "/main.flow"
+    let c_path: string = tmp + "/main.c"
+    let bin_path: string = tmp + "/main"
+    let out_path: string = tmp + "/.stdout"
+    let err_path: string = tmp + "/.stderr"
+    let _w: bool = ft_write_file(flow_path, source)
+
+    # Flow to C goes through flowc.
+    let tp_argv: ptr<StrList> = ft_list_new()
+    ft_list_push(tp_argv, root + "/flow")
+    ft_list_push(tp_argv, "tool")
+    ft_list_push(tp_argv, root + "/compiler/scripts/flowc_emit.flow")
+    ft_list_push(tp_argv, "--lenient")
+    ft_list_push(tp_argv, flow_path)
+    ft_list_push(tp_argv, c_path)
+    let tp: i32 = nt_run_timed(tp_argv, root, tt, out_path, err_path)
+    if tp == TIMED_OUT {
+        return failure("native-local", "transpile exceeded " + bn_py_repr(tt) + "s")
+    }
+    if tp != 0 or pr_is_file(c_path) == false {
+        let err: string = cp_tail(text_mode(read_or_empty(err_path)), 4000)
+        let out: string = cp_tail(text_mode(read_or_empty(out_path)), 2000)
+        return result(false, kv("mode", "native-local") + ", " + kv("error", "transpile failed") + ", " + kv("stderr", err) + ", " + kv("stdout", out))
+    }
+
+    let c_preview: string = cp_head(text_mode(read_or_empty(c_path)), 6000)
+
+    if ft_eq(target, "c") or (do_run == false and ft_eq(target, "wasm") == false) {
+        return result(true, kv("mode", "transpile-c") + ", " + kv("stdout", "Transpile OK (C only).\n") + ", " + kv("c_preview", c_preview))
+    }
+
+    if ft_eq(target, "wasm") {
+        let emcc: string = which("emcc")
+        if ft_len(emcc) == 0 {
+            return failure_c("wasm-local", "emcc not on PATH (install emsdk)", c_preview)
+        }
+        let js_out: string = tmp + "/main.js"
+        let em_argv: ptr<StrList> = ft_list_new()
+        ft_list_push(em_argv, emcc)
+        ft_list_push(em_argv, c_path)
+        ft_list_push(em_argv, "-O1")
+        ft_list_push(em_argv, "-s")
+        ft_list_push(em_argv, "WASM=1")
+        ft_list_push(em_argv, "-s")
+        ft_list_push(em_argv, "EXPORTED_FUNCTIONS=['_main']")
+        ft_list_push(em_argv, "-o")
+        ft_list_push(em_argv, js_out)
+        let cp: i32 = nt_run_timed(em_argv, tmp, tt + 30.0, out_path, err_path)
+        if cp == TIMED_OUT {
+            return failure_c("wasm-local", "emcc exceeded timeout", c_preview)
+        }
+        if cp != 0 or pr_is_file(js_out) == false {
+            let em_err: string = cp_tail(text_mode(read_or_empty(err_path)), 4000)
+            return result(false, kv("mode", "wasm-local") + ", " + kv("error", "emcc failed") + ", " + kv("stderr", em_err) + ", " + kv("c_preview", c_preview))
+        }
+        # Node can execute the non-modularized emcc output.
+        let node: string = which("node")
+        if ft_len(node) == 0 or do_run == false {
+            return result(true, kv("mode", "wasm-local") + ", " + kv("stdout", "WASM build OK (run skipped or node missing).\n") + ", " + kv("c_preview", c_preview))
+        }
+        let node_argv: ptr<StrList> = ft_list_new()
+        ft_list_push(node_argv, node)
+        ft_list_push(node_argv, js_out)
+        let rp: i32 = nt_run_timed(node_argv, tmp, rt, out_path, err_path)
+        if rp == TIMED_OUT {
+            return failure_c("wasm-local", "wasm run exceeded " + bn_py_repr(rt) + "s", c_preview)
+        }
+        let w_out: string = cp_tail(text_mode(read_or_empty(out_path)), 8000)
+        let w_err: string = cp_tail(text_mode(read_or_empty(err_path)), 4000)
+        return result(rp == 0, kv("mode", "wasm-local") + ", " + ki("exit_code", rp) + ", " + kv("stdout", w_out) + ", " + kv("stderr", w_err) + ", " + kv("c_preview", c_preview))
+    }
+
+    let mut clang: string = which("clang")
+    if ft_len(clang) == 0 {
+        clang = which("cc")
+    }
+    if ft_len(clang) == 0 {
+        return failure_c("native-local", "clang/cc not found on PATH", c_preview)
+    }
+    let cc_argv: ptr<StrList> = ft_list_new()
+    ft_list_push(cc_argv, clang)
+    ft_list_push(cc_argv, "-O0")
+    ft_list_push(cc_argv, "-D_DEFAULT_SOURCE")
+    ft_list_push(cc_argv, "-I" + root + "/runtime")
+    ft_list_push(cc_argv, "-o")
+    ft_list_push(cc_argv, bin_path)
+    ft_list_push(cc_argv, c_path)
+    ft_list_push(cc_argv, "-lm")
+    let cc: i32 = nt_run_timed(cc_argv, tmp, tt, out_path, err_path)
+    if cc == TIMED_OUT {
+        return failure_c("native-local", "clang exceeded timeout", c_preview)
+    }
+    if cc != 0 or pr_is_file(bin_path) == false {
+        let cc_err: string = cp_tail(text_mode(read_or_empty(err_path)), 4000)
+        return result(false, kv("mode", "native-local") + ", " + kv("error", "C compile failed") + ", " + kv("stderr", cc_err) + ", " + kv("c_preview", c_preview))
+    }
+
+    let run_argv: ptr<StrList> = ft_list_new()
+    ft_list_push(run_argv, bin_path)
+    let run: i32 = nt_run_timed(run_argv, tmp, rt, out_path, err_path)
+    if run == TIMED_OUT {
+        return failure_c("native-local", "program exceeded " + bn_py_repr(rt) + "s runtime limit", c_preview)
+    }
+    let r_out: string = cp_tail(text_mode(read_or_empty(out_path)), 8000)
+    let r_err: string = cp_tail(text_mode(read_or_empty(err_path)), 4000)
+    return result(run == 0, kv("mode", "native-local") + ", " + ki("exit_code", run) + ", " + kv("stdout", r_out) + ", " + kv("stderr", r_err) + ", " + kv("c_preview", c_preview))
+}
+
+function compile_and_maybe_run(cfg: ptr<Config>, source: string, do_run: bool, target: string) -> ptr<Result> {
+    if ft_len(source) > MAX_SOURCE_BYTES {
+        return failure("native-local", "source exceeds " + ft_itoa(MAX_SOURCE_BYTES) + " byte limit")
+    }
+    let tmp: string = make_temp_dir()
+    if tmp as ptr<u8> == null {
+        return failure("native-local", "cannot create a temporary directory")
+    }
+    let r: ptr<Result> = compile_in(cfg, tmp, source, do_run, target)
+    remove_tree(tmp)
+    return r
+}
+
+# ---------------------------------------------------------------------------
+# HTTP
+# ---------------------------------------------------------------------------
+
+struct Request {
+    fd: i32
+    client: string
+    method: string
+    path: string
+    line: string
+    origin: string
+    content_length: string
+    body_start: ptr<u8>
+    body_have: i32
+    # HTTP/0.9: the reply is the body alone, with no status line or headers.
+    # Also how errors found before the version is known are sent.
+    bare: bool
+}
+
+function http_date() -> string {
+    let t: ptr<i64> = malloc(8) as ptr<i64>
+    let _n: i64 = time(t)
+    let buf: ptr<u8> = malloc(64) as ptr<u8>
+    let _f: i64 = strftime(buf, 64, "%a, %d %b %Y %H:%M:%S GMT", gmtime(t))
+    return buf as string
+}
+
+function log_request(req: ptr<Request>, code: i32) -> void {
+    ft_errln(req[0].client + " - \"" + req[0].line + "\" " + ft_itoa(code) + " -")
+}
+
+function is_scheme_char(c: i32) -> bool {
+    return (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 43 or c == 45 or c == 46
+}
+
+# urllib.parse.urlparse(origin).hostname, or "" when there is none.
+function url_hostname(url: string) -> string {
+    let p: ptr<u8> = url as ptr<u8>
+    let n: i32 = ft_len(url)
+    let mut rest: string = url
+    let mut c: i32 = 0
+    while c < n and p[c] != 58 {
+        c = c + 1
+    }
+    if c < n and c > 0 and (((p[0] as i32) >= 65 and (p[0] as i32) <= 90) or ((p[0] as i32) >= 97 and (p[0] as i32) <= 122)) {
+        let mut ok: bool = true
+        let mut k: i32 = 0
+        while k < c {
+            if is_scheme_char(p[k] as i32) == false {
+                ok = false
+            }
+            k = k + 1
+        }
+        if ok {
+            rest = ft_from(url, c + 1)
+        }
+    }
+    if ft_starts(rest, "//") == false {
+        return ""
+    }
+    let rp: ptr<u8> = rest as ptr<u8>
+    let rn: i32 = ft_len(rest)
+    let mut e: i32 = 2
+    while e < rn and rp[e] != 47 and rp[e] != 63 and rp[e] != 35 {
+        e = e + 1
+    }
+    let netloc: string = ft_slice(rest, 2, e)
+    let np: ptr<u8> = netloc as ptr<u8>
+    let nn: i32 = ft_len(netloc)
+    let mut at: i32 = -1
+    let mut i: i32 = 0
+    while i < nn {
+        if np[i] == 64 {
+            at = i
+        }
+        i = i + 1
+    }
+    let hostinfo: string = ft_from(netloc, at + 1)
+    let hp: ptr<u8> = hostinfo as ptr<u8>
+    let hn: i32 = ft_len(hostinfo)
+    let mut host: string = hostinfo
+    if hn > 0 and hp[0] == 91 {
+        let close: i32 = ft_find(hostinfo, "]", 0)
+        if close < 0 {
+            return ""
+        }
+        host = ft_slice(hostinfo, 1, close)
+    } else {
+        let colon: i32 = ft_find(hostinfo, ":", 0)
+        if colon >= 0 {
+            host = ft_slice(hostinfo, 0, colon)
+        }
+    }
+    return ft_ascii_lower(host)
+}
+
+function cors_origin(req: ptr<Request>) -> string {
+    let origin: string = req[0].origin
+    if ft_eq(origin, "http://127.0.0.1:8777") or ft_eq(origin, "http://localhost:8777") or ft_eq(origin, "http://127.0.0.1:8000") or ft_eq(origin, "http://localhost:8000") or ft_eq(origin, "http://127.0.0.1:8765") or ft_eq(origin, "http://localhost:8765") or ft_eq(origin, "null") {
+        return origin
+    }
+    # Allow any localhost / 127.0.0.1 port for local wiki servers.
+    let host: string = url_hostname(origin)
+    if ft_eq(host, "127.0.0.1") or ft_eq(host, "localhost") {
+        return origin
+    }
+    return "http://127.0.0.1:8777"
+}
+
+function reason(code: i32) -> string {
+    if code == 200 {
+        return "OK"
+    } elif code == 204 {
+        return "No Content"
+    } elif code == 400 {
+        return "Bad Request"
+    } elif code == 404 {
+        return "Not Found"
+    } elif code == 413 {
+        return "Request Entity Too Large"
+    } elif code == 422 {
+        return "Unprocessable Entity"
+    }
+    return "Error"
+}
+
+function head_lines(code: i32, reason_text: string) -> string {
+    return "HTTP/1.0 " + ft_itoa(code) + " " + reason_text + "\r\nServer: flow-playground\r\nDate: " + http_date() + "\r\n"
+}
+
+# Write a reply. A bare (HTTP/0.9) reply is the body alone.
+function emit(req: ptr<Request>, head: string, body: string) -> void {
+    if req[0].bare {
+        let _b: bool = nt_write_str(req[0].fd, body)
+        return
+    }
+    let _w: bool = nt_write_str(req[0].fd, head + body)
+}
+
+function send_json(req: ptr<Request>, code: i32, body: string) -> void {
+    log_request(req, code)
+    let head: string = head_lines(code, reason(code)) + "Content-Type: application/json; charset=utf-8\r\nContent-Length: " + ft_itoa(ft_len(body)) + "\r\nAccess-Control-Allow-Origin: " + cors_origin(req) + "\r\nAccess-Control-Allow-Methods: POST, OPTIONS, GET\r\nAccess-Control-Allow-Headers: Content-Type\r\n\r\n"
+    emit(req, head, body)
+}
+
+function send_file(req: ptr<Request>, data: string, ctype: string) -> void {
+    log_request(req, 200)
+    let head: string = head_lines(200, "OK") + "Content-Type: " + ctype + "\r\nContent-Length: " + ft_itoa(ft_len(data)) + "\r\nAccess-Control-Allow-Origin: " + cors_origin(req) + "\r\n\r\n"
+    emit(req, head, data)
+}
+
+function html_escape(s: string) -> string {
+    let mut out: string = ""
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = ft_len(s)
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = p[i] as i32
+        if c == 38 {
+            out = out + "&amp;"
+        } elif c == 60 {
+            out = out + "&lt;"
+        } elif c == 62 {
+            out = out + "&gt;"
+        } else {
+            out = out + ft_slice(s, i, i + 1)
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# BaseHTTPRequestHandler.send_error(): an HTML page, Connection: close.
+function send_error_page(req: ptr<Request>, code: i32, message: string, explain: string) -> void {
+    ft_errln(req[0].client + " - code " + ft_itoa(code) + ", message " + message)
+    if ft_len(req[0].line) > 0 {
+        log_request(req, code)
+    }
+    let body: string = "<!DOCTYPE HTML>\n<html lang=\"en\">\n    <head>\n        <meta charset=\"utf-8\">\n        <title>Error response</title>\n    </head>\n    <body>\n        <h1>Error response</h1>\n        <p>Error code: " + ft_itoa(code) + "</p>\n        <p>Message: " + html_escape(message) + ".</p>\n        <p>Error code explanation: " + ft_itoa(code) + " - " + explain + ".</p>\n    </body>\n</html>\n"
+    let head: string = head_lines(code, message) + "Connection: close\r\nContent-Type: text/html;charset=utf-8\r\nContent-Length: " + ft_itoa(ft_len(body)) + "\r\n\r\n"
+    if ft_eq(req[0].method, "HEAD") {
+        # No body for HEAD; the headers still give its length.
+        emit(req, head, "")
+        return
+    }
+    emit(req, head, body)
+}
+
+function url_path(target: string) -> string {
+    let p: ptr<u8> = target as ptr<u8>
+    let n: i32 = ft_len(target)
+    let mut e: i32 = 0
+    while e < n and p[e] != 63 and p[e] != 35 {
+        e = e + 1
+    }
+    return ft_slice(target, 0, e)
+}
+
+function health_body(cfg: ptr<Config>) -> string {
+    return "{" + kb("ok", true) + ", " + kv("service", "flow-playground-compile") + ", " + kb("run", cfg[0].do_run) + ", \"targets\": [\"native\", \"c\", \"wasm\"], " + ki("max_source_bytes", MAX_SOURCE_BYTES) + ", " + kv("pyodide", "/pyodide") + "}"
+}
+
+function do_get(cfg: ptr<Config>, req: ptr<Request>) -> void {
+    let path: string = url_path(req[0].path)
+    if ft_eq(path, "/") or ft_eq(path, "/health") {
+        send_json(req, 200, health_body(cfg))
+        return
+    }
+    # Flow Python sources for the in-browser Pyodide transpile.
+    if ft_starts(path, "/flow-src/") {
+        let rel: string = ft_from(path, 10)
+        if ft_contains(rel, "..") or ft_starts(rel, "/") {
+            send_json(req, 400, "{\"ok\": false, \"error\": \"bad path\"}")
+            return
+        }
+        let root: string = pr_resolve(cfg[0].root + "/src/flow")
+        let target: string = pr_resolve(root + "/" + rel)
+        if ft_starts(target, root) == false or pr_is_file(target) == false {
+            send_json(req, 404, "{\"ok\": false, \"error\": \"not found\"}")
+            return
+        }
+        send_file(req, read_or_empty(target), "text/plain; charset=utf-8")
+        return
+    }
+    if ft_eq(path, "/pyodide") {
+        let page: string = cfg[0].root + "/docs/playground/pyodide.html"
+        if pr_is_file(page) == false {
+            send_json(req, 404, "{\"ok\": false, \"error\": \"pyodide.html missing\"}")
+            return
+        }
+        send_file(req, read_or_empty(page), "text/html; charset=utf-8")
+        return
+    }
+    send_json(req, 404, "{\"ok\": false, \"error\": \"not found\"}")
+}
+
+# int() of a Content-Length value; -1 marks text that is not an integer.
+function parse_length(s: string) -> i64 {
+    let t: string = strip_ws(s)
+    let p: ptr<u8> = t as ptr<u8>
+    let n: i32 = ft_len(t)
+    if n == 0 {
+        return 0
+    }
+    let mut i: i32 = 0
+    if p[0] == 43 or p[0] == 45 {
+        i = 1
+    }
+    if i >= n {
+        return -1
+    }
+    let mut k: i32 = i
+    while k < n {
+        if p[k] < 48 or p[k] > 57 {
+            return -1
+        }
+        k = k + 1
+    }
+    let v: i64 = strtol(t, null, 10)
+    if p[0] == 45 {
+        # A negative length is "empty" to the size check below.
+        return 0
+    }
+    return v
+}
+
+function do_post(cfg: ptr<Config>, req: ptr<Request>) -> void {
+    let mut p: string = req[0].path
+    while ft_len(p) > 0 and ft_starts(ft_from(p, ft_len(p) - 1), "/") {
+        p = ft_slice(p, 0, ft_len(p) - 1)
+    }
+    if ft_eq(p, "/compile") == false {
+        send_json(req, 404, "{\"ok\": false, \"error\": \"not found\"}")
+        return
+    }
+    let length: i64 = parse_length(req[0].content_length)
+    if length < 0 {
+        # int() raised: the handler dies and the connection closes unanswered.
+        ft_errln(req[0].client + " - invalid Content-Length: " + req[0].content_length)
+        return
+    }
+    if length <= 0 or length > ((MAX_SOURCE_BYTES + 2048) as i64) {
+        send_json(req, 413, "{\"ok\": false, \"error\": \"body too large or empty\"}")
+        return
+    }
+    let body: ptr<u8> = malloc(length + 1) as ptr<u8>
+    let mut have: i64 = 0
+    let mut k: i32 = 0
+    while have < length and k < req[0].body_have {
+        body[have] = req[0].body_start[k]
+        have = have + 1
+        k = k + 1
+    }
+    while have < length {
+        let got: i64 = nt_read(req[0].fd, body + have, length - have)
+        if got <= 0 {
+            break
+        }
+        have = have + got
+    }
+    body[have] = 0
+    let text: string = body as string
+    if (ft_len(text) as i64) != have or is_utf8(text) == false {
+        send_json(req, 400, "{\"ok\": false, \"error\": \"invalid JSON\"}")
+        return
+    }
+    let j: ptr<Json> = json_parse(text)
+    if ft_len(json_error(j)) > 0 {
+        send_json(req, 400, "{\"ok\": false, \"error\": \"invalid JSON\"}")
+        return
+    }
+    if json_kind(j, 0) != json_kind_object() {
+        # data.get() raised on a non-object: no answer, as before.
+        ft_errln(req[0].client + " - request body is not a JSON object")
+        return
+    }
+    let sid: i32 = json_get(j, 0, "source")
+    if sid < 0 or json_kind(j, sid) != json_kind_string() or is_blank(json_str(j, sid)) {
+        send_json(req, 400, "{\"ok\": false, \"error\": \"missing source string\"}")
+        return
+    }
+    let source: string = json_str(j, sid)
+    let mut target: string = "native"
+    let tid: i32 = json_get(j, 0, "target")
+    if tid >= 0 and json_kind(j, tid) == json_kind_string() {
+        let t: string = json_str(j, tid)
+        if ft_eq(t, "c") or ft_eq(t, "wasm") {
+            target = t
+        }
+    }
+    let mut do_run: bool = cfg[0].do_run
+    if ft_eq(target, "c") {
+        do_run = false
+    }
+    let r: ptr<Result> = compile_and_maybe_run(cfg, source, do_run, target)
+    if r[0].ok {
+        send_json(req, 200, r[0].body)
+    } else {
+        send_json(req, 422, r[0].body)
+    }
+}
+
+# Value of the first header named `name` (lower case), or "".
+function header_value(lines: string, name: string) -> string {
+    let p: ptr<u8> = lines as ptr<u8>
+    let n: i32 = ft_len(lines)
+    let mut i: i32 = 0
+    while i < n {
+        let mut j: i32 = i
+        while j < n and p[j] != 10 {
+            j = j + 1
+        }
+        let mut line: string = ft_slice(lines, i, j)
+        if ft_len(line) > 0 and ft_starts(ft_from(line, ft_len(line) - 1), "\r") {
+            line = ft_slice(line, 0, ft_len(line) - 1)
+        }
+        let colon: i32 = ft_find(line, ":", 0)
+        if colon > 0 and ft_eq(ft_ascii_lower(ft_slice(line, 0, colon)), name) {
+            # Leading whitespace goes, trailing stays, as in email.parser.
+            let v: string = ft_from(line, colon + 1)
+            let vp: ptr<u8> = v as ptr<u8>
+            let mut a: i32 = 0
+            while vp[a] == 32 or vp[a] == 9 {
+                a = a + 1
+            }
+            return ft_from(v, a)
+        }
+        i = j + 1
+    }
+    return ""
+}
+
+function all_digits(s: string) -> bool {
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = ft_len(s)
+    if n == 0 {
+        return false
+    }
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] < 48 or p[i] > 57 {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+function is_space_byte(c: i32) -> bool {
+    return c == 32 or (c >= 9 and c <= 13) or (c >= 28 and c <= 31)
+}
+
+# Read the request line and headers, then answer, following the rules of
+# BaseHTTPRequestHandler.parse_request.
+function serve(cfg: ptr<Config>, fd: i32, client: string) -> void {
+    let cap: i64 = 131072
+    let buf: ptr<u8> = malloc(cap + 1) as ptr<u8>
+    let mut len: i64 = 0
+    # End of the request line, and the offset where the body starts.
+    let mut line_end: i64 = -1
+    let mut body_at: i64 = -1
+    while body_at < 0 {
+        let got: i64 = nt_read(fd, buf + len, cap - len)
+        if got <= 0 {
+            if len == 0 {
+                return
+            }
+            # The peer stopped sending: take what came as the whole head.
+            body_at = len
+            if line_end < 0 {
+                line_end = len
+            }
+            break
+        }
+        len = len + got
+        # Lines end in \n (an optional \r before it); a blank line ends the
+        # head.
+        let mut k: i64 = 0
+        let mut start: i64 = 0
+        while k < len {
+            if buf[k] == 10 {
+                if line_end < 0 {
+                    line_end = k
+                } elif k == start or (k == start + 1 and buf[start] == 13) {
+                    body_at = k + 1
+                    break
+                }
+                start = k + 1
+            }
+            k = k + 1
+        }
+        if body_at < 0 and len >= cap {
+            return
+        }
+    }
+    let mut le: i64 = line_end
+    while le > 0 and (buf[le - 1] == 13 or buf[le - 1] == 10) {
+        le = le - 1
+    }
+    let head_copy: ptr<u8> = malloc(body_at + 1) as ptr<u8>
+    let mut c: i64 = 0
+    while c < body_at {
+        head_copy[c] = buf[c]
+        c = c + 1
+    }
+    head_copy[body_at] = 0
+    let head: string = head_copy as string
+    let line: string = ft_slice(head, 0, le as i32)
+    let rest: string = ft_from(head, (line_end + 1) as i32)
+
+    let req: ptr<Request> = malloc(96) as ptr<Request>
+    req[0].fd = fd
+    req[0].client = client
+    req[0].line = line
+    req[0].method = ""
+    req[0].path = ""
+    req[0].origin = header_value(rest, "origin")
+    req[0].content_length = header_value(rest, "content-length")
+    req[0].body_start = buf + body_at
+    req[0].body_have = (len - body_at) as i32
+    req[0].bare = true
+
+    # Request line: METHOD TARGET HTTP/x.y, split on any whitespace.
+    let lp: ptr<u8> = line as ptr<u8>
+    let ln: i32 = ft_len(line)
+    let mut s: i32 = 0
+    let mut count: i32 = 0
+    let mut w0: string = ""
+    let mut w1: string = ""
+    let mut last: string = ""
+    while s < ln {
+        while s < ln and is_space_byte(lp[s] as i32) {
+            s = s + 1
+        }
+        if s >= ln {
+            break
+        }
+        let mut e: i32 = s
+        while e < ln and is_space_byte(lp[e] as i32) == false {
+            e = e + 1
+        }
+        let word: string = ft_slice(line, s, e)
+        if count == 0 {
+            w0 = word
+        } elif count == 1 {
+            w1 = word
+        }
+        last = word
+        count = count + 1
+        s = e
+    }
+    if count == 0 {
+        return
+    }
+    if count >= 3 {
+        let mut ok: bool = ft_starts(last, "HTTP/")
+        let base: string = ft_from(last, 5)
+        let dot: i32 = ft_find(base, ".", 0)
+        let mut major: string = ""
+        let mut minor: string = ""
+        if ok and dot >= 0 {
+            major = ft_slice(base, 0, dot)
+            minor = ft_from(base, dot + 1)
+            if ft_contains(minor, ".") or all_digits(major) == false or all_digits(minor) == false or ft_len(major) > 10 or ft_len(minor) > 10 {
+                ok = false
+            }
+        } else {
+            ok = false
+        }
+        if ok == false {
+            send_error_page(req, 400, "Bad request version (" + py_str_repr(last) + ")", "Bad request syntax or unsupported method")
+            return
+        }
+        if strtol(major, null, 10) >= 2 {
+            send_error_page(req, 505, "Invalid HTTP version (" + base + ")", "Cannot fulfill request")
+            return
+        }
+        req[0].bare = false
+    }
+    if count > 3 {
+        send_error_page(req, 400, "Bad request syntax (" + py_str_repr(line) + ")", "Bad request syntax or unsupported method")
+        return
+    }
+    if count == 1 {
+        send_error_page(req, 400, "Bad request syntax (" + py_str_repr(line) + ")", "Bad request syntax or unsupported method")
+        return
+    }
+    if count == 2 and ft_eq(w0, "GET") == false {
+        send_error_page(req, 400, "Bad HTTP/0.9 request type (" + py_str_repr(w0) + ")", "Bad request syntax or unsupported method")
+        return
+    }
+    req[0].method = w0
+    # "//x" is reduced to "/x", as http.server does against open redirects.
+    let mut path: string = w1
+    if ft_starts(path, "//") {
+        let pp: ptr<u8> = path as ptr<u8>
+        let mut q: i32 = 0
+        while pp[q] == 47 {
+            q = q + 1
+        }
+        path = "/" + ft_from(path, q)
+    }
+    req[0].path = path
+    if ft_eq(w0, "GET") {
+        do_get(cfg, req)
+    } elif ft_eq(w0, "POST") {
+        do_post(cfg, req)
+    } elif ft_eq(w0, "OPTIONS") {
+        send_json(req, 204, "{}")
+    } else {
+        send_error_page(req, 501, "Unsupported method (" + py_str_repr(w0) + ")", "Server does not support this operation")
+    }
+}
+
+# repr() of a str without quotes or backslashes in it, as the error pages
+# show the method and request line.
+function py_str_repr(s: string) -> string {
+    if ft_contains(s, "'") and ft_contains(s, "\"") == false {
+        return "\"" + s + "\""
+    }
+    return "'" + s + "'"
+}
+
+# ---------------------------------------------------------------------------
+# Command line
+# ---------------------------------------------------------------------------
+
+function usage() -> string {
+    return "usage: playground_server [-h] [--host HOST] [--port PORT] [--no-run]\n                         [--transpile-timeout TRANSPILE_TIMEOUT]\n                         [--run-timeout RUN_TIMEOUT]\n"
+}
+
+function help_text() -> string {
+    return usage() + "\nLocal native compile API for the Flow playground (GitHub #132, Option B).\n\noptions:\n  -h, --help            show this help message and exit\n  --host HOST           bind address (default loopback)\n  --port PORT\n  --no-run              transpile only (do not clang + execute)\n  --transpile-timeout TRANSPILE_TIMEOUT\n  --run-timeout RUN_TIMEOUT\n"
+}
+
+function arg_error(msg: string) -> i32 {
+    ft_err(usage())
+    ft_errln("playground_server: error: " + msg)
+    return 2
+}
+
+# The long option `arg` names, allowing unique prefixes as argparse does.
+# "" when it names none, "?" when the prefix is ambiguous.
+function long_option(arg: string) -> string {
+    let names: ptr<string> = malloc(6 * 8) as ptr<string>
+    names[0] = "--host"
+    names[1] = "--port"
+    names[2] = "--no-run"
+    names[3] = "--transpile-timeout"
+    names[4] = "--run-timeout"
+    names[5] = "--help"
+    let mut hit: string = ""
+    let mut hits: i32 = 0
+    let mut i: i32 = 0
+    while i < 6 {
+        if ft_eq(arg, names[i]) {
+            return names[i]
+        }
+        if ft_starts(names[i], arg) {
+            hit = names[i]
+            hits = hits + 1
+        }
+        i = i + 1
+    }
+    if hits == 1 {
+        return hit
+    }
+    if hits > 1 {
+        return "?"
+    }
+    return ""
+}
+
+function is_int_text(s: string) -> bool {
+    let t: string = strip_ws(s)
+    let p: ptr<u8> = t as ptr<u8>
+    let n: i32 = ft_len(t)
+    let mut i: i32 = 0
+    if n > 0 and (p[0] == 43 or p[0] == 45) {
+        i = 1
+    }
+    if i >= n {
+        return false
+    }
+    while i < n {
+        if p[i] < 48 or p[i] > 57 {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+# float(): decimal or exponent notation, or inf / nan spelled out.
+function is_float_text(s: string) -> bool {
+    let t: string = ft_ascii_lower(strip_ws(s))
+    let p: ptr<u8> = t as ptr<u8>
+    let n: i32 = ft_len(t)
+    let mut i: i32 = 0
+    if n > 0 and (p[0] == 43 or p[0] == 45) {
+        i = 1
+    }
+    let body: string = ft_from(t, i)
+    if ft_eq(body, "inf") or ft_eq(body, "infinity") or ft_eq(body, "nan") {
+        return true
+    }
+    let mut digits: i32 = 0
+    while i < n and p[i] >= 48 and p[i] <= 57 {
+        i = i + 1
+        digits = digits + 1
+    }
+    if i < n and p[i] == 46 {
+        i = i + 1
+        while i < n and p[i] >= 48 and p[i] <= 57 {
+            i = i + 1
+            digits = digits + 1
+        }
+    }
+    if digits == 0 {
+        return false
+    }
+    if i < n and p[i] == 101 {
+        i = i + 1
+        if i < n and (p[i] == 43 or p[i] == 45) {
+            i = i + 1
+        }
+        let mut ed: i32 = 0
+        while i < n and p[i] >= 48 and p[i] <= 57 {
+            i = i + 1
+            ed = ed + 1
+        }
+        if ed == 0 {
+            return false
+        }
+    }
+    return i == n
+}
+
+function repo_root() -> string {
+    let r: string = getenv("FLOW_REPO_ROOT")
+    if r as ptr<u8> == null or ft_len(r) == 0 {
+        return pr_cwd()
+    }
+    return r
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    let mut host: string = "127.0.0.1"
+    let mut port: i64 = 8765
+    let mut no_run: bool = false
+    let mut tt: f64 = 15.0
+    let mut rt: f64 = 10.0
+    let mut i: i32 = 1
+    while i < argc {
+        let arg: string = argv[i]
+        let mut name: string = arg
+        let mut value: string = null as string
+        if ft_starts(arg, "--") {
+            let eq: i32 = ft_find(arg, "=", 0)
+            if eq > 0 {
+                value = ft_from(arg, eq + 1)
+                name = ft_slice(arg, 0, eq)
+            }
+            let full: string = long_option(name)
+            if ft_eq(full, "?") {
+                return arg_error("ambiguous option: " + name)
+            }
+            if ft_len(full) > 0 {
+                name = full
+            }
+        }
+        if ft_eq(name, "-h") or ft_eq(name, "--help") {
+            ft_out(help_text())
+            return 0
+        } elif ft_eq(name, "--no-run") {
+            if value as ptr<u8> != null {
+                return arg_error("argument --no-run: ignored explicit argument '" + value + "'")
+            }
+            no_run = true
+        } elif ft_eq(name, "--host") or ft_eq(name, "--port") or ft_eq(name, "--transpile-timeout") or ft_eq(name, "--run-timeout") {
+            if value as ptr<u8> == null {
+                if i + 1 >= argc {
+                    return arg_error("argument " + name + ": expected one argument")
+                }
+                i = i + 1
+                value = argv[i]
+            }
+            if ft_eq(name, "--host") {
+                host = value
+            } elif ft_eq(name, "--port") {
+                if is_int_text(value) == false {
+                    return arg_error("argument --port: invalid int value: '" + value + "'")
+                }
+                port = strtol(strip_ws(value), null, 10)
+            } else {
+                if is_float_text(value) == false {
+                    return arg_error("argument " + name + ": invalid float value: '" + value + "'")
+                }
+                if ft_eq(name, "--transpile-timeout") {
+                    tt = bn_parse_float(strip_ws(value))
+                } else {
+                    rt = bn_parse_float(strip_ws(value))
+                }
+            }
+        } else {
+            return arg_error("unrecognized arguments: " + arg)
+        }
+        i = i + 1
+    }
+
+    if (ft_eq(host, "127.0.0.1") or ft_eq(host, "localhost") or ft_eq(host, "::1") or ft_eq(host, "0.0.0.0")) == false {
+        ft_errln("WARNING: binding outside loopback exposes a compile endpoint. Prefer 127.0.0.1.")
+    }
+
+    let cfg: ptr<Config> = malloc(40) as ptr<Config>
+    cfg[0].root = repo_root()
+    cfg[0].do_run = no_run == false
+    cfg[0].transpile_timeout = tt
+    cfg[0].run_timeout = rt
+
+    let lfd: i32 = nt_listen("playground_server", host, port as i32, 5)
+    if lfd < 0 {
+        return 1
+    }
+    let mut run_word: string = "on"
+    if no_run {
+        run_word = "off"
+    }
+    let base: string = "http://" + host + ":" + ft_itoa(port as i32)
+    ft_outln("FLOW playground compile API on " + base + "/compile\n  health: " + base + "/health\n  run=" + run_word + "  max_source=" + ft_itoa(MAX_SOURCE_BYTES) + "B\nOpen the wiki playground and use Run (native local).")
+
+    let fds: ptr<i32> = malloc(4) as ptr<i32>
+    fds[0] = lfd
+    let peer: ptr<u8> = nt_peer_new()
+    while true {
+        nt_reap()
+        if nt_wait_readable(fds, 1, 500) < 0 {
+            continue
+        }
+        let conn: i32 = nt_accept(lfd, peer)
+        if conn < 0 {
+            continue
+        }
+        let client: string = nt_peer_ip(peer)
+        let pid: i32 = nt_fork()
+        if pid == 0 {
+            nt_close(lfd)
+            serve(cfg, conn, client)
+            nt_close(conn)
+            nt_exit(0)
+        }
+        nt_close(conn)
+    }
+    return 0
+}

@@ -2,9 +2,9 @@
 
 *Choosing eighteen from a successor set.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — choose(succ(n), 18) = choose(n, 17) + choose(n, 18)
+## Derived fact 1: choose(succ(n), 18) = choose(n, 17) + choose(n, 18)
 
 **Coordinate.** Comb · choose · choosing eighteen from a successor derived · **Derived fact**
 

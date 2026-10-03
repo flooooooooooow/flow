@@ -1,0 +1,10 @@
+# expect: RT-safety violation: 'process' is marked '@rt_safe' but calls 'malloc', which is forbidden on an RT-safe path (heap, device/file I/O, GPU, or blocking lock; see docs/library/rt-safety.md)
+@rt_safe
+function process(n: i32) -> i32 {
+    let p: ptr<void> = malloc(64)
+    return n
+}
+
+function main() -> i32 {
+    return process(1)
+}

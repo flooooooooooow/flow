@@ -2,9 +2,9 @@
 
 *The 6-8-10 triangle satisfies the Pythagorean relation.*
 
-**Source.** euclid — Elements, Book I, Proposition 47
+**Source.** euclid: Elements, Book I, Proposition 47
 
-## Derived fact 1 — 10 squared equals 6 squared plus 8 squared
+## Derived fact 1: 10 squared equals 6 squared plus 8 squared
 
 **Coordinate.** the Euclidean plane · right triangle · six eight ten satisfies Pythagoras · **Derived fact**
 

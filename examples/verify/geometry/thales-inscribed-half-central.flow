@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  Thales configuration gives inscribed angle half the central angle.
-# @from   euclid — Elements, Book III, Propositions 20 and 31
+# @from   euclid: Elements, Book III, Propositions 20 and 31
 # @tier   derived
 
 # @means  angle ACB equals half of angle AOB on diameter AB.

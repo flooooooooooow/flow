@@ -1,0 +1,5 @@
+# expect: Division/modulo by zero is undefined (MISRA Rule 12.5 / CERT INT33-C)
+function main() -> i32 {
+    let x: i32 = 7
+    return x / 0
+}

@@ -11,20 +11,20 @@ Domain README: [examples/planet](../../examples/planet/README.md).
 Run any example natively:
 
 ```bash
-FLOW_HOST=python ./flow gfx examples/planet/planet_evidence.flow
+./flow gfx examples/planet/planet_evidence.flow
 ```
 
 Record one headlessly, no display needed:
 
 ```bash
-FLOW_HOST=python ./flow record examples/planet/planet_evidence.flow \
+./flow record examples/planet/planet_evidence.flow \
   --frames 4 --out /tmp/pl
 ```
 
 Regenerate every GIF on this page:
 
 ```bash
-python3 scripts/record_demos.py --group planet
+./flow tool record_demos --group planet
 ```
 
 `./flow run` does not link a graphics backend, so it cannot build these; use

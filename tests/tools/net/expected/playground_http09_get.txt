@@ -1,0 +1,1 @@
+{"ok": true, "service": "flow-playground-compile", "run": true, "targets": ["native", "c", "wasm"], "max_source_bytes": 65536, "pyodide": "/pyodide"}

@@ -2,9 +2,9 @@
 
 *The right angle on a diameter is unique up to the semicircle choice.*
 
-**Source.** euclid — Elements, Book III, Proposition 31
+**Source.** euclid: Elements, Book III, Proposition 31
 
-## Derived fact 1 — angle ACB equals one right angle for C on the semicircle
+## Derived fact 1: angle ACB equals one right angle for C on the semicircle
 
 **Coordinate.** the Euclidean plane · circle · right angle on diameter is unique witness · **Derived fact**
 

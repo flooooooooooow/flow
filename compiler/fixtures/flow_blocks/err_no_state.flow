@@ -1,0 +1,3 @@
+flow Empty {
+    param k : f64 = 1.0
+}

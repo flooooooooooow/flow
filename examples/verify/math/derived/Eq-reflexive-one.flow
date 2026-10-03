@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  One equals itself.
-# @from   leibniz — https://en.wikipedia.org/wiki/Law_of_identity
+# @from   leibniz: https://en.wikipedia.org/wiki/Law_of_identity
 # @tier   derived
 
 # @means  1 = 1.

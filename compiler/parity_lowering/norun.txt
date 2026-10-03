@@ -1,0 +1,3 @@
+# Files built but not run by parity_lowering.flow, with the reason.
+benchmarks/ordering/adaptive_sort_bench.flow	prints timings
+benchmarks/aosoa.flow	runs for minutes

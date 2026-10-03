@@ -1,0 +1,18 @@
+Stack depth analysis: examples/generics_traits/traits_demo.flow
+============================================================
+Function                                  Max depth Chain
+------------------------------------------------------------
+main                                           96 bytes  main → printf
+Point_Display_show                             64 bytes  Point_Display_show → printf
+Rectangle_Display_show                         64 bytes  Rectangle_Display_show → printf
+Rectangle_HasArea_area                          0 bytes  Rectangle_HasArea_area
+
+WCET analysis: examples/generics_traits/traits_demo.flow
+============================================================
+Function                                   Max cost Chain
+------------------------------------------------------------
+main                                          194 inst  main → Point_Display_show → printf (extern)
+Point_Display_show                            110 inst  Point_Display_show → printf (extern)
+Rectangle_Display_show                        110 inst  Rectangle_Display_show → printf (extern)
+Rectangle_HasArea_area                          2 inst  Rectangle_HasArea_area
+

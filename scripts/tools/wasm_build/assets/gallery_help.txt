@@ -1,0 +1,15 @@
+usage: flow tool wasm_build gallery [-h] [--out OUT] [--category CATEGORY]
+                                    [--only [ONLY ...]] [--list] [-j JOBS] [-O OPT]
+                                    [--timeout TIMEOUT]
+
+Compile a list of Flow examples to WebAssembly and build the gallery.
+
+options:
+  -h, --help            show this help message and exit
+  --out OUT             output root (default site/wasm)
+  --category CATEGORY   restrict to a category id
+  --only [ONLY ...]     restrict to these example names
+  --list                print the target list and exit
+  -j JOBS, --jobs JOBS
+  -O OPT
+  --timeout TIMEOUT

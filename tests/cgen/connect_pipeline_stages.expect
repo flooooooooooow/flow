@@ -1,0 +1,9 @@
+# From tests/unit/test_connect_composition.py::test_lowered_pipeline_wiring_and_order
+# and ::test_override_applied_in_init
++ Gain __result_stage0;
++ Limiter __result_stage1;
++ (self->__result_stage0).x = self->signal;
++ (self->__result_stage1).w = (self->__result_stage0).out;
++ self->result = (self->__result_stage1).out;
++ (self->__result_stage0).k = 3.0;
+exit 0

@@ -1,0 +1,6 @@
+flow P {
+    state a : f64 = 0.0
+    represent phase_portrait(a, b) {
+        trail 0
+    }
+}

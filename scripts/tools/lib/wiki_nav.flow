@@ -1,0 +1,350 @@
+# @module tools.wiki_nav
+# @means  The wiki sidebar, loaded from docs/nav.json and validated.
+#
+# docs/nav.json is the single source of truth for the sidebar, the search
+# categories and llms.txt. Two things are validated on every build, both as
+# failures: every nav path resolves to a real page, and every page under
+# docs/ is either in the nav or listed in `unlisted` with a written reason.
+
+import .text { ft_eq, ft_len, ft_starts, ft_from, ft_repr, ft_exists, ft_read_file, ft_itoa, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_set_new, ft_set_add, ft_set_has, ft_find_byte, ft_slice, StrList, StrSet }
+import .unicode { uc_strip }
+import .json { json_parse, json_error, json_kind, json_str, json_key, json_first, json_next, json_get, json_pyrepr, json_quote, Json }
+import .proc { pr_quote }
+import .wiki_util { wb_add, wu_dump, wu_pad, wu_truthy, wu_sort, wu_lines_of, WBuf }
+
+# Top-level directories under docs/ that are not sidebar-indexed pages.
+function wn_skip_dir(name: string) -> bool {
+    return ft_eq(name, "formal") or ft_eq(name, "playground") or ft_eq(name, "assets") or ft_eq(name, "stylesheets") or ft_eq(name, "generated") or ft_eq(name, "demos") or ft_eq(name, "comparisons")
+}
+
+# Pages written into build/wiki from sources outside docs/.
+function wn_build_generated(path: string) -> bool {
+    return ft_eq(path, "releases.md") or ft_eq(path, "project/language-roadmap.md") or ft_eq(path, "project/benchmark-results.md") or ft_eq(path, "third-party/flow-verify-catalog.md") or ft_eq(path, "project/example-status.md")
+}
+
+# Parse the manifest. Returns null and prints to stderr when it is unusable.
+export function wn_load(path: string) -> ptr<Json> {
+    let text: string = ft_read_file(path)
+    if text as ptr<u8> == null {
+        return null
+    }
+    let j: ptr<Json> = json_parse(text)
+    if ft_len(json_error(j)) > 0 {
+        return null
+    }
+    return j
+}
+
+# Item.get(key) as a string, or "" when absent or not a string.
+function wn_sget(j: ptr<Json>, obj: i32, key: string) -> string {
+    let id: i32 = json_get(j, obj, key)
+    if id < 0 or json_kind(j, id) != 4 {
+        return ""
+    }
+    return json_str(j, id)
+}
+
+# str() of a value for messages.
+function wn_text(j: ptr<Json>, id: i32) -> string {
+    if id < 0 {
+        return "None"
+    }
+    if json_kind(j, id) == 4 {
+        return json_str(j, id)
+    }
+    if json_kind(j, id) == 2 {
+        return "True"
+    }
+    if json_kind(j, id) == 1 {
+        return "False"
+    }
+    return json_pyrepr(j, id)
+}
+
+# repr() of a value for messages.
+function wn_repr(j: ptr<Json>, id: i32) -> string {
+    if id >= 0 and json_kind(j, id) == 4 {
+        return ft_repr(json_str(j, id))
+    }
+    return wn_text(j, id)
+}
+
+# Every docs-relative path the sidebar points at, external links aside.
+export function wn_nav_paths(j: ptr<Json>) -> ptr<StrSet> {
+    let out: ptr<StrSet> = ft_set_new()
+    let sections: i32 = json_get(j, 0, "sections")
+    let mut s: i32 = json_first(j, sections)
+    while s >= 0 {
+        let items: i32 = json_get(j, s, "items")
+        if items >= 0 {
+            let mut it: i32 = json_first(j, items)
+            while it >= 0 {
+                let pid: i32 = json_get(j, it, "path")
+                if wu_truthy(j, pid) and wu_truthy(j, json_get(j, it, "external")) == false {
+                    ft_set_add(out, json_str(j, pid))
+                }
+                it = json_next(j, it)
+            }
+        }
+        s = json_next(j, s)
+    }
+    return out
+}
+
+export function wn_nav_path_count(j: ptr<Json>) -> i32 {
+    let seen: ptr<StrSet> = ft_set_new()
+    let mut count: i32 = 0
+    let sections: i32 = json_get(j, 0, "sections")
+    let mut s: i32 = json_first(j, sections)
+    while s >= 0 {
+        let items: i32 = json_get(j, s, "items")
+        if items >= 0 {
+            let mut it: i32 = json_first(j, items)
+            while it >= 0 {
+                let pid: i32 = json_get(j, it, "path")
+                if wu_truthy(j, pid) and wu_truthy(j, json_get(j, it, "external")) == false {
+                    if ft_set_has(seen, json_str(j, pid)) == false {
+                        ft_set_add(seen, json_str(j, pid))
+                        count = count + 1
+                    }
+                }
+                it = json_next(j, it)
+            }
+        }
+        s = json_next(j, s)
+    }
+    return count
+}
+
+# Every markdown page under `docs` a reader could be sent to, sorted.
+export function wn_doc_pages(docs: string) -> ptr<StrList> {
+    let found: ptr<StrList> = wu_lines_of("find " + pr_quote(docs) + " -mindepth 1 -name '*.md' 2>/dev/null")
+    let out: ptr<StrList> = ft_list_new()
+    let seen: ptr<StrSet> = ft_set_new()
+    let mut i: i32 = 0
+    while i < ft_list_len(found) {
+        let rel: string = ft_from(ft_list_get(found, i), ft_len(docs) + 1)
+        let slash: i32 = ft_find_byte(rel, 47, 0)
+        let mut top: string = rel
+        if slash >= 0 {
+            top = ft_slice(rel, 0, slash)
+        }
+        let hidden: bool = wn_has_hidden_part(rel)
+        if wn_skip_dir(top) == false and hidden == false and ft_set_has(seen, rel) == false {
+            ft_set_add(seen, rel)
+            ft_list_push(out, rel)
+        }
+        i = i + 1
+    }
+    wu_sort(out, false)
+    return out
+}
+
+function wn_has_hidden_part(rel: string) -> bool {
+    let p: ptr<u8> = rel as ptr<u8>
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        if p[i] == 46 and (i == 0 or p[i - 1] == 47) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# Every problem with the manifest; empty means it is consistent.
+# `docs` is the docs directory and `parent` its parent directory.
+export function wn_validate(j: ptr<Json>, docs: string, parent: string) -> ptr<StrList> {
+    let problems: ptr<StrList> = ft_list_new()
+    let tab_ids: ptr<StrSet> = ft_set_new()
+    let tabs: i32 = json_get(j, 0, "tabs")
+    let mut t: i32 = json_first(j, tabs)
+    while t >= 0 {
+        ft_set_add(tab_ids, wn_text(j, json_get(j, t, "id")))
+        t = json_next(j, t)
+    }
+    let seen_sections: ptr<StrSet> = ft_set_new()
+    let sections: i32 = json_get(j, 0, "sections")
+    let mut s: i32 = json_first(j, sections)
+    while s >= 0 {
+        let sid: i32 = json_get(j, s, "id")
+        let stab: i32 = json_get(j, s, "tab")
+        if ft_set_has(tab_ids, wn_text(j, stab)) == false {
+            ft_list_push(problems, "section " + wn_repr(j, sid) + " names tab " + wn_repr(j, stab) + ", which does not exist")
+        }
+        if ft_set_has(seen_sections, wn_text(j, sid)) {
+            ft_list_push(problems, "duplicate section id " + wn_repr(j, sid))
+        }
+        ft_set_add(seen_sections, wn_text(j, sid))
+        if json_get(j, s, "items") < 0 and json_get(j, s, "generated") < 0 {
+            ft_list_push(problems, "section " + wn_repr(j, sid) + " has neither items nor a generated source")
+        }
+        s = json_next(j, s)
+    }
+
+    s = json_first(j, sections)
+    while s >= 0 {
+        let items: i32 = json_get(j, s, "items")
+        if items >= 0 {
+            let mut it: i32 = json_first(j, items)
+            while it >= 0 {
+                let pid: i32 = json_get(j, it, "path")
+                if wu_truthy(j, pid) and wu_truthy(j, json_get(j, it, "external")) == false {
+                    let path: string = json_str(j, pid)
+                    if wn_build_generated(path) == false {
+                        if ft_exists(docs + "/" + path) == false and ft_exists(parent + "/" + path) == false {
+                            ft_list_push(problems, "section " + wn_repr(j, json_get(j, s, "id")) + " points at " + ft_repr(path) + ", which does not exist")
+                        }
+                    }
+                }
+                it = json_next(j, it)
+            }
+        }
+        s = json_next(j, s)
+    }
+
+    let listed: ptr<StrSet> = wn_nav_paths(j)
+    let unlisted_keys: ptr<StrSet> = ft_set_new()
+    let unlisted: i32 = json_get(j, 0, "unlisted")
+    if unlisted >= 0 {
+        let mut u: i32 = json_first(j, unlisted)
+        while u >= 0 {
+            let upath: string = json_key(j, u)
+            ft_set_add(unlisted_keys, upath)
+            if ft_exists(docs + "/" + upath) == false {
+                ft_list_push(problems, "unlisted entry " + ft_repr(upath) + " does not exist")
+            } elif ft_len(uc_strip(wn_text(j, u))) == 0 {
+                ft_list_push(problems, "unlisted entry " + ft_repr(upath) + " needs a written reason")
+            } elif ft_set_has(listed, upath) {
+                ft_list_push(problems, ft_repr(upath) + " is both in the nav and marked unlisted")
+            }
+            u = json_next(j, u)
+        }
+    }
+
+    let pages: ptr<StrList> = wn_doc_pages(docs)
+    let mut k: i32 = 0
+    while k < ft_list_len(pages) {
+        let page: string = ft_list_get(pages, k)
+        if ft_set_has(listed, page) == false and ft_set_has(unlisted_keys, page) == false {
+            ft_list_push(problems, ft_repr(page) + " is in no nav section and has no unlisted reason")
+        }
+        k = k + 1
+    }
+
+    let dflt: i32 = json_get(j, 0, "default")
+    if ft_set_has(listed, wn_text(j, dflt)) == false or json_kind(j, dflt) != 4 {
+        ft_list_push(problems, "default page " + wn_repr(j, dflt) + " is not in the nav")
+    }
+    return problems
+}
+
+# The sidebar sections as json.dumps(indent=2) at nesting `level`, with the
+# "generated" sections filled in. `euclid` and `proofs` are pre-rendered
+# JSON arrays at level + 2 (the items value inside a section object).
+export function wn_dump_sections(b: ptr<WBuf>, j: ptr<Json>, level: i32, euclid: string, proofs: string) -> void {
+    let sections: i32 = json_get(j, 0, "sections")
+    let mut s: i32 = json_first(j, sections)
+    if s < 0 {
+        wb_add(b, "[]")
+        return
+    }
+    wb_add(b, "[\n")
+    let mut first: bool = true
+    while s >= 0 {
+        if first == false {
+            wb_add(b, ",\n")
+        }
+        first = false
+        wu_pad(b, level + 1)
+        let gen: i32 = json_get(j, s, "generated")
+        let mut filled: string = null as string
+        if gen >= 0 {
+            let which: string = wn_text(j, gen)
+            if ft_eq(which, "euclid") {
+                filled = euclid
+            } elif ft_eq(which, "proofs") {
+                filled = proofs
+            } else {
+                filled = "[]"
+            }
+        }
+        wb_add(b, "{")
+        let mut any: bool = false
+        let mut has_items: bool = false
+        let mut m: i32 = json_first(j, s)
+        while m >= 0 {
+            let key: string = json_key(j, m)
+            if ft_eq(key, "generated") == false {
+                if any {
+                    wb_add(b, ",")
+                }
+                any = true
+                wb_add(b, "\n")
+                wu_pad(b, level + 2)
+                wb_add(b, json_quote(key) + ": ")
+                if ft_eq(key, "items") and filled as ptr<u8> != null {
+                    wb_add(b, filled)
+                    has_items = true
+                } else {
+                    wu_dump(b, j, m, level + 2)
+                }
+            }
+            m = json_next(j, m)
+        }
+        if filled as ptr<u8> != null and has_items == false {
+            if any {
+                wb_add(b, ",")
+            }
+            any = true
+            wb_add(b, "\n")
+            wu_pad(b, level + 2)
+            wb_add(b, "\"items\": " + filled)
+        }
+        if any {
+            wb_add(b, "\n")
+            wu_pad(b, level + 1)
+            wb_add(b, "}")
+        } else {
+            wb_add(b, "}")
+        }
+        s = json_next(j, s)
+    }
+    wb_add(b, "\n")
+    wu_pad(b, level)
+    wb_add(b, "]")
+}
+
+# Pagefind category, from the tab the page sits under.
+export function wn_category_for(j: ptr<Json>, path: string) -> string {
+    let sections: i32 = json_get(j, 0, "sections")
+    let mut s: i32 = json_first(j, sections)
+    while s >= 0 {
+        let items: i32 = json_get(j, s, "items")
+        if items >= 0 {
+            let mut it: i32 = json_first(j, items)
+            while it >= 0 {
+                let pid: i32 = json_get(j, it, "path")
+                if pid >= 0 and json_kind(j, pid) == 4 and ft_eq(json_str(j, pid), path) {
+                    let tab: string = wn_text(j, json_get(j, s, "tab"))
+                    if ft_eq(tab, "tutorials") {
+                        return "tutorial"
+                    }
+                    if ft_eq(tab, "lang") or ft_eq(tab, "stdlib") {
+                        return "reference"
+                    }
+                    if ft_eq(tab, "tooling") {
+                        return "tooling"
+                    }
+                    if ft_eq(tab, "thirdparty") {
+                        return "proof"
+                    }
+                    return "guide"
+                }
+                it = json_next(j, it)
+            }
+        }
+        s = json_next(j, s)
+    }
+    return "guide"
+}

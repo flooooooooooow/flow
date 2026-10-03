@@ -2,9 +2,9 @@
 
 *Equal reals can be subtracted from the left of both sides.*
 
-**Source.** landau — *Foundations of Analysis*
+**Source.** landau: *Foundations of Analysis*
 
-## Derived fact 1 — z + x = z + y implies x = y
+## Derived fact 1: z + x = z + y implies x = y
 
 **Coordinate.** the real numbers · addition · left cancellation holds · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that left cancellation holds for addition on the real numbers. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose z + x  equals  z + y. |  |  |
 | ④ | We invoke the derived fact governing addition on the real numbers: right cancellation holds, for addition on the real numbers (instantiated for x, y, z). |  |  |
 | ⑤ | We invoke the derived fact governing addition on the real numbers: order does not matter, for addition on the real numbers (instantiated for z, x). |  |  |

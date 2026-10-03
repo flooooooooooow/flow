@@ -1,0 +1,5 @@
+[0;34mℹ️  Running FLOW language tests (tests/lang/, strict)...[0m
+[0;34mℹ️  flowc: <ROOT>/compiler/build/flowc_bootstrap[0m
+[0;32m✅ ✓ tests/lang/test_arithmetic.flow[0m
+----------------------------------------
+[0;32m✅ All 1 language tests passed![0m

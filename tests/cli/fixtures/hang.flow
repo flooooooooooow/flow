@@ -1,0 +1,11 @@
+# Sleeps far past any test limit, so the test runners' per-program timeout
+# has to stop it (#1174).
+
+extern {
+    function sleep(seconds: i32) -> i32
+}
+
+function main() -> i32 {
+    let _s: i32 = sleep(600)
+    return 0
+}

@@ -61,7 +61,7 @@ function sum_below_4() -> i32 {
 }
 ```
 
-The range is half-open: `0 to 4` contains `0`, `1`, `2`, and `3`, not `4`.
+The range is half-open: `0 to 4` contains `0`, `1`, `2`, and `3`. It excludes `4`.
 
 A step may be stated explicitly:
 
@@ -131,7 +131,7 @@ function main() -> i32 {
 Source: [`examples/book/03_control.flow`](../../examples/book/03_control.flow)
 
 ```bash
-FLOW_HOST=python ./flow run examples/book/03_control.flow
+./flow run examples/book/03_control.flow
 ```
 
 ## 3.5 Choosing a loop

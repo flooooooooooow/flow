@@ -1,0 +1,81 @@
+# @module benchmarks.concurrency.run
+# @means  Flow against Go concurrency microbenchmarks: each Flow program
+#         through `./flow run` (its flow_* result lines, or the last 20
+#         lines when it prints none), and its Go twin through `go run` when
+#         Go is installed.
+#
+#   ./flow tool benchmarks/concurrency/run.flow
+#
+# Results: benchmarks/concurrency/RESULTS.md and docs/language/replace-go.md.
+
+import "tools/flow_cli/sys.flow"
+import "benchmarks/bench_tools.flow"
+import std.process { ProcCmd, ProcStrs }
+
+function run_flow(root: string, name: string) {
+    outln("--- Flow: " + name + " ---")
+    let c: ptr<ProcCmd> = cmd(sl_of3("./flow", "run", "benchmarks/concurrency/" + name + ".flow"))
+    cmd_cwd(c, root)
+    cmd_env(c, "FLOW_CFLAGS", "-O2 -fno-omit-frame-pointer")
+    let text: string = capture_merged(c)
+    let lines: ptr<ProcStrs> = s_lines(text + "\n")
+    let mut hits: i32 = 0
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        if s_starts(sl_get(lines, i), "flow_") {
+            outln(sl_get(lines, i))
+            hits = hits + 1
+        }
+        i = i + 1
+    }
+    if hits == 0 {
+        let mut from: i32 = sl_len(lines) - 20
+        if from < 0 {
+            from = 0
+        }
+        while from < sl_len(lines) {
+            outln(sl_get(lines, from))
+            from = from + 1
+        }
+    }
+    outln("")
+}
+
+function run_go(dir: string, name: string) {
+    if not have("go") {
+        outln("--- Go: " + name + " (skipped: go not installed) ---")
+        outln("")
+        return
+    }
+    outln("--- Go: " + name + " ---")
+    let c: ptr<ProcCmd> = cmd(sl_of3("go", "run", name + ".go"))
+    cmd_cwd(c, dir)
+    let rc: i32 = run(c)
+    if rc != 0 {
+        cli_exit(rc)
+    }
+    outln("")
+}
+
+function main() -> i32 {
+    let root: string = bench_root("benchmarks/concurrency/run.flow")
+    let dir: string = root + "/benchmarks/concurrency"
+    outln("=== Flow vs Go concurrency benches ===")
+    outln("Machine: " + uname_m() + " " + uname_s())
+    outln("Date: " + bench_utc_date())
+    outln("")
+    run_flow(root, "channel_throughput")
+    run_go(dir, "channel_throughput")
+    run_flow(root, "chan_pingpong")
+    run_flow(root, "chan_pingpong_fiber")
+    run_go(dir, "chan_pingpong")
+    run_flow(root, "fiber_fanout")
+    run_go(dir, "fiber_fanout")
+    run_flow(root, "parallel_sum")
+    run_go(dir, "parallel_sum")
+    run_flow(root, "http_server")
+    run_go(dir, "http_server")
+    outln("Done. See benchmarks/concurrency/RESULTS.md + docs/language/replace-go.md")
+    cli_exit(0)
+    return 0
+}

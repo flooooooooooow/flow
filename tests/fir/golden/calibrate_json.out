@@ -1,0 +1,39 @@
+{
+  "bulk_backend": "cpu",
+  "min_funcs": 1000000000,
+  "min_edges": 1000000000,
+  "host": "HOST",
+  "samples": [],
+  "saved_to": "build/fir-gate/calibrate_json.json"
+}
+{
+  "summary": "FIR-G: funcs=2 blocks=5 ops=24 values=18 operands=16 types=2",
+  "call_edges": [
+    {
+      "caller": "fibonacci",
+      "callee": "fibonacci",
+      "op": 2
+    },
+    {
+      "caller": "main",
+      "callee": "fibonacci",
+      "op": 1
+    }
+  ],
+  "effects": {
+    "fibonacci": 0,
+    "main": 0
+  },
+  "pure": {
+    "fibonacci": true,
+    "main": true
+  },
+  "reachable": [
+    "fibonacci",
+    "main"
+  ],
+  "dead": [],
+  "num_call_ops": 3,
+  "device_requested": "cpu",
+  "device_chosen": "cpu"
+}

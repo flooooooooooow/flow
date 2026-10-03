@@ -2,9 +2,9 @@
 
 *Undecuple cons ending in nil has length eleven.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len of eleven cons ending in nil equals 11
+## Derived fact 1: len of eleven cons ending in nil equals 11
 
 **Coordinate.** List · length · undecuple cons nil has length eleven · **Derived fact**
 

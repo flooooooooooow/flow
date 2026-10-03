@@ -1,0 +1,11 @@
+FIR-G: funcs=2 blocks=2 ops=31 values=26 operands=24 types=3
+call ops: 1
+reachable: compute, main
+dead: (none)
+applied: const_fold folded=5
+call graph:
+  main -> compute  (op 1)
+effects / pure:
+  compute: effects=0x0000 pure=True
+  main: effects=0x0000 pure=True
+device: requested=cpu chosen=cpu

@@ -2,9 +2,9 @@
 
 *Intersection cardinality is bounded by union cardinality.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — card(s ∩ t) <= card(s ∪ t)
+## Derived fact 1: card(s ∩ t) <= card(s ∪ t)
 
 **Coordinate.** Finset · cardinality · intersection card at most union card · **Derived fact**
 

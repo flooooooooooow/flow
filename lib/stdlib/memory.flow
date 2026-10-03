@@ -1,4 +1,4 @@
-# Manual memory management — real libc heap (C backend)
+# Manual memory management: real libc heap (C backend)
 #
 # Flow has no GC. Heap memory is yours to allocate and free.
 # Prefer arenas in hot paths; always free what you malloc.

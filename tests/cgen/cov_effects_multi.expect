@@ -1,0 +1,18 @@
+# handle Log, Audit with Both installs both vtables and restores both.
++ _current_Log_handler = &_Both_Log_vtable;
++ _current_Audit_handler = &_Both_Audit_vtable;
++ _current_Log_handler = &_Console_Log_vtable;
++ _current_Audit_handler = &_Ledger_Audit_vtable;
++ _current_Log_handler = _prev_Log_handler;
++ _current_Audit_handler = _prev_Audit_handler;
+exit 0
+stdout [both/i] a
+stdout [both/r] b
+stdout [console] x
+stdout [ledger] y
+stdout [console] loop
+stdout [console] then
+stdout [console] deep
+stdout [console] both bound
+stdout [ledger] both bound
+stdout [console] after inner

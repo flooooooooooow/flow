@@ -1,0 +1,659 @@
+# @module flowc.effects
+# @means  Effect table for algebraic effects: what each module declares, in a
+#         form the typecheck and cgen can carry across a bundle (#675, #996).
+#
+# The table is a byte buffer of `key\0value\0` entries, the same layout as the
+# cgen signature table, so it can ride along in that table between modules.
+# Keys start with a byte no Flow name can start with:
+#
+#   @E       -> "e"                                   effect E
+#   @E.op    -> "<arity>|<ret>|<p1>,<p2>,..."         operation op of E
+#   #C       -> "<E1>,<E2>,...|<m1>,<m2>,..."         capability C
+#   !f       -> "<E1>,<E2>,..."                       `with` row of function f
+#
+# <ret> and <pN> are the Flow source text of the declared types ("void" when an
+# operation declares no return type).
+
+import .ast {
+    AstArena, AST_NONE, AST_PROGRAM, AST_EXPORT, AST_FN, AST_TYPE,
+    AST_EFFECT, AST_CAPABILITY, AST_EFFECT_OP, AST_CAP_METHOD, AST_EFFECT_ROW
+}
+
+extern {
+    function strlen(s: string) -> i64
+    function printf(fmt: string, ...) -> i32
+}
+
+export const FLOWC_EFF_EFFECT: i32 = 64
+export const FLOWC_EFF_CAP: i32 = 35
+export const FLOWC_EFF_ROW: i32 = 33
+
+# Append one byte; -1 once the buffer is full (and stays -1).
+function flowc_eff_byte(buf: ptr<u8>, cap: i32, n: i32, c: i32) -> i32 {
+    if n < 0 or n + 1 >= cap {
+        return 0 - 1
+    }
+    buf[n] = c
+    return n + 1
+}
+
+function flowc_eff_span(buf: ptr<u8>, cap: i32, n: i32, src: ptr<u8>, s: i32, e: i32) -> i32 {
+    let mut m: i32 = n
+    let mut i: i32 = s
+    while i < e {
+        m = flowc_eff_byte(buf, cap, m, src[i])
+        i = i + 1
+    }
+    return m
+}
+
+function flowc_eff_lit(buf: ptr<u8>, cap: i32, n: i32, lit: string) -> i32 {
+    let p: ptr<u8> = lit
+    let k: i32 = strlen(lit) as i32
+    let mut m: i32 = n
+    let mut i: i32 = 0
+    while i < k {
+        m = flowc_eff_byte(buf, cap, m, p[i])
+        i = i + 1
+    }
+    return m
+}
+
+function flowc_eff_int(buf: ptr<u8>, cap: i32, n: i32, v: i32) -> i32 {
+    if v >= 10 {
+        let m: i32 = flowc_eff_int(buf, cap, n, v / 10)
+        return flowc_eff_byte(buf, cap, m, 48 + v % 10)
+    }
+    return flowc_eff_byte(buf, cap, n, 48 + v)
+}
+
+# Source text of a type node with blanks removed ("ptr<u8>", "string").
+function flowc_eff_type_text(buf: ptr<u8>, cap: i32, n: i32, arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    if ty == AST_NONE {
+        return flowc_eff_lit(buf, cap, n, "void")
+    }
+    let mut s: i32 = arena.nodes[ty].start
+    let mut e: i32 = arena.nodes[ty].end
+    if arena.nodes[ty].kind == AST_TYPE and arena.nodes[ty].a == AST_NONE and arena.nodes[ty].name_end > arena.nodes[ty].name_start {
+        s = arena.nodes[ty].name_start
+        e = arena.nodes[ty].name_end
+    }
+    let mut m: i32 = n
+    let mut i: i32 = s
+    while i < e {
+        let c: i32 = src[i]
+        if c != 32 and c != 9 and c != 10 and c != 13 {
+            m = flowc_eff_byte(buf, cap, m, c)
+        }
+        i = i + 1
+    }
+    return m
+}
+
+function flowc_eff_unwrap(arena: AstArena, item: i32, want: i32) -> i32 {
+    if item == AST_NONE {
+        return AST_NONE
+    }
+    if arena.nodes[item].kind == want {
+        return item
+    }
+    if arena.nodes[item].kind == AST_EXPORT {
+        let inner: i32 = arena.nodes[item].a
+        if inner != AST_NONE and arena.nodes[inner].kind == want {
+            return inner
+        }
+    }
+    return AST_NONE
+}
+
+# Effect row node owned by `owner` (an AST_FN or function AST_TYPE), else AST_NONE.
+export function flowc_eff_row_of(arena: AstArena, owner: i32) -> i32 {
+    if owner == AST_NONE {
+        return AST_NONE
+    }
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_EFFECT_ROW and arena.nodes[i].b == owner {
+            return i
+        }
+        i = i + 1
+    }
+    return AST_NONE
+}
+
+# Append this module's effects, capabilities and function rows. Returns the
+# new length; an entry that does not fit is dropped whole.
+export function flowc_eff_collect(arena: AstArena, root: i32, src: ptr<u8>, buf: ptr<u8>, cap: i32, len: i32) -> i32 {
+    if buf == null or root == AST_NONE or root < 0 {
+        return len
+    }
+    if arena.nodes[root].kind != AST_PROGRAM {
+        return len
+    }
+    let mut n: i32 = len
+    let mut item: i32 = arena.nodes[root].a
+    while item != AST_NONE {
+        let ef: i32 = flowc_eff_unwrap(arena, item, AST_EFFECT)
+        if ef != AST_NONE {
+            let es: i32 = arena.nodes[ef].name_start
+            let ee: i32 = arena.nodes[ef].name_end
+            let mut m: i32 = flowc_eff_byte(buf, cap, n, FLOWC_EFF_EFFECT)
+            m = flowc_eff_span(buf, cap, m, src, es, ee)
+            m = flowc_eff_byte(buf, cap, m, 0)
+            m = flowc_eff_lit(buf, cap, m, "e")
+            m = flowc_eff_byte(buf, cap, m, 0)
+            if m > 0 {
+                n = m
+            }
+            let mut op: i32 = arena.nodes[ef].a
+            while op != AST_NONE {
+                let mut k: i32 = flowc_eff_byte(buf, cap, n, FLOWC_EFF_EFFECT)
+                k = flowc_eff_span(buf, cap, k, src, es, ee)
+                k = flowc_eff_byte(buf, cap, k, 46)
+                k = flowc_eff_span(buf, cap, k, src, arena.nodes[op].name_start, arena.nodes[op].name_end)
+                k = flowc_eff_byte(buf, cap, k, 0)
+                let mut arity: i32 = 0
+                let mut prm: i32 = arena.nodes[op].a
+                while prm != AST_NONE {
+                    arity = arity + 1
+                    prm = arena.nodes[prm].next
+                }
+                k = flowc_eff_int(buf, cap, k, arity)
+                k = flowc_eff_byte(buf, cap, k, 124)
+                k = flowc_eff_type_text(buf, cap, k, arena, src, arena.nodes[op].b)
+                k = flowc_eff_byte(buf, cap, k, 124)
+                prm = arena.nodes[op].a
+                let mut first: i32 = 1
+                while prm != AST_NONE {
+                    if first == 0 {
+                        k = flowc_eff_byte(buf, cap, k, 44)
+                    }
+                    first = 0
+                    k = flowc_eff_type_text(buf, cap, k, arena, src, arena.nodes[prm].a)
+                    prm = arena.nodes[prm].next
+                }
+                k = flowc_eff_byte(buf, cap, k, 0)
+                if k > 0 {
+                    n = k
+                }
+                op = arena.nodes[op].next
+            }
+        }
+        let cp: i32 = flowc_eff_unwrap(arena, item, AST_CAPABILITY)
+        if cp != AST_NONE {
+            let mut m: i32 = flowc_eff_byte(buf, cap, n, FLOWC_EFF_CAP)
+            m = flowc_eff_span(buf, cap, m, src, arena.nodes[cp].name_start, arena.nodes[cp].name_end)
+            m = flowc_eff_byte(buf, cap, m, 0)
+            let mut en: i32 = arena.nodes[cp].a
+            let mut first: i32 = 1
+            while en != AST_NONE {
+                if first == 0 {
+                    m = flowc_eff_byte(buf, cap, m, 44)
+                }
+                first = 0
+                m = flowc_eff_span(buf, cap, m, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
+                en = arena.nodes[en].next
+            }
+            m = flowc_eff_byte(buf, cap, m, 124)
+            let mut mt: i32 = arena.nodes[cp].b
+            first = 1
+            while mt != AST_NONE {
+                if first == 0 {
+                    m = flowc_eff_byte(buf, cap, m, 44)
+                }
+                first = 0
+                m = flowc_eff_span(buf, cap, m, src, arena.nodes[mt].name_start, arena.nodes[mt].name_end)
+                mt = arena.nodes[mt].next
+            }
+            m = flowc_eff_byte(buf, cap, m, 0)
+            if m > 0 {
+                n = m
+            }
+        }
+        let fn: i32 = flowc_eff_unwrap(arena, item, AST_FN)
+        if fn != AST_NONE {
+            let row: i32 = flowc_eff_row_of(arena, fn)
+            if row != AST_NONE and arena.nodes[fn].name_end > arena.nodes[fn].name_start {
+                let mut m: i32 = flowc_eff_byte(buf, cap, n, FLOWC_EFF_ROW)
+                m = flowc_eff_span(buf, cap, m, src, arena.nodes[fn].name_start, arena.nodes[fn].name_end)
+                m = flowc_eff_byte(buf, cap, m, 0)
+                let mut en: i32 = arena.nodes[row].a
+                let mut first: i32 = 1
+                while en != AST_NONE {
+                    if first == 0 {
+                        m = flowc_eff_byte(buf, cap, m, 44)
+                    }
+                    first = 0
+                    m = flowc_eff_span(buf, cap, m, src, arena.nodes[en].name_start, arena.nodes[en].name_end)
+                    en = arena.nodes[en].next
+                }
+                m = flowc_eff_byte(buf, cap, m, 0)
+                if m > 0 {
+                    n = m
+                }
+            }
+        }
+        item = arena.nodes[item].next
+    }
+    return n
+}
+
+# Copy the effect entries (keys starting @, # or !) of a `key\0value\0` table.
+export function flowc_eff_copy_entries(tab: ptr<u8>, flen: i32, buf: ptr<u8>, cap: i32, len: i32) -> i32 {
+    if tab == null or buf == null {
+        return len
+    }
+    let mut n: i32 = len
+    let mut p: i32 = 0
+    while p < flen {
+        let ks: i32 = p
+        while p < flen and tab[p] != 0 {
+            p = p + 1
+        }
+        p = p + 1
+        while p < flen and tab[p] != 0 {
+            p = p + 1
+        }
+        p = p + 1
+        let c0: i32 = tab[ks]
+        if c0 == FLOWC_EFF_EFFECT or c0 == FLOWC_EFF_CAP or c0 == FLOWC_EFF_ROW {
+            let mut m: i32 = n
+            let mut i: i32 = ks
+            while i < p and i < flen {
+                m = flowc_eff_byte(buf, cap, m, tab[i])
+                i = i + 1
+            }
+            if m > 0 {
+                n = m
+            }
+        }
+    }
+    return n
+}
+
+# Value offset for key `<prefix><src[s1..e1]>` (s2 < 0) or
+# `<prefix><src[s1..e1]>.<src[s2..e2]>`, else -1. The last match wins, so a
+# module's own declaration shadows an imported one.
+export function flowc_eff_find(buf: ptr<u8>, len: i32, prefix: i32, src: ptr<u8>, s1: i32, e1: i32, s2: i32, e2: i32) -> i32 {
+    if buf == null or len <= 0 or e1 <= s1 {
+        return 0 - 1
+    }
+    let n1: i32 = e1 - s1
+    let mut klen: i32 = 1 + n1
+    if s2 >= 0 {
+        klen = klen + 1 + (e2 - s2)
+    }
+    let mut found: i32 = 0 - 1
+    let mut p: i32 = 0
+    while p < len {
+        let ks: i32 = p
+        while p < len and buf[p] != 0 {
+            p = p + 1
+        }
+        let kl: i32 = p - ks
+        p = p + 1
+        let vs: i32 = p
+        while p < len and buf[p] != 0 {
+            p = p + 1
+        }
+        p = p + 1
+        if kl == klen and buf[ks] == prefix {
+            let mut hit: i32 = 1
+            let mut j: i32 = 0
+            while j < n1 and hit == 1 {
+                if buf[ks + 1 + j] != src[s1 + j] {
+                    hit = 0
+                }
+                j = j + 1
+            }
+            if hit == 1 and s2 >= 0 {
+                if buf[ks + 1 + n1] != 46 {
+                    hit = 0
+                }
+                j = 0
+                while j < e2 - s2 and hit == 1 {
+                    if buf[ks + 2 + n1 + j] != src[s2 + j] {
+                        hit = 0
+                    }
+                    j = j + 1
+                }
+            }
+            if hit == 1 {
+                found = vs
+            }
+        }
+    }
+    return found
+}
+
+# Offset of field `field` (0-based, '|'-separated) of the value at `off`.
+export function flowc_eff_field(buf: ptr<u8>, off: i32, fld: i32) -> i32 {
+    let mut p: i32 = off
+    let mut f: i32 = 0
+    while f < fld {
+        while buf[p] != 0 and buf[p] != 124 {
+            p = p + 1
+        }
+        if buf[p] == 0 {
+            return p
+        }
+        p = p + 1
+        f = f + 1
+    }
+    return p
+}
+
+# Integer at the start of field `field`.
+export function flowc_eff_field_int(buf: ptr<u8>, off: i32, fld: i32) -> i32 {
+    let mut p: i32 = flowc_eff_field(buf, off, fld)
+    let mut v: i32 = 0
+    while buf[p] >= 48 and buf[p] <= 57 {
+        v = v * 10 + (buf[p] - 48)
+        p = p + 1
+    }
+    return v
+}
+
+function flowc_eff_item_end(buf: ptr<u8>, p: i32) -> i32 {
+    let mut q: i32 = p
+    while buf[q] != 0 and buf[q] != 124 and buf[q] != 44 {
+        q = q + 1
+    }
+    return q
+}
+
+# Offset of item `idx` of the comma list in field `field`, or -1.
+export function flowc_eff_item(buf: ptr<u8>, off: i32, fld: i32, idx: i32) -> i32 {
+    let mut p: i32 = flowc_eff_field(buf, off, fld)
+    if buf[p] == 0 or buf[p] == 124 {
+        return 0 - 1
+    }
+    let mut i: i32 = 0
+    while i < idx {
+        p = flowc_eff_item_end(buf, p)
+        if buf[p] != 44 {
+            return 0 - 1
+        }
+        p = p + 1
+        i = i + 1
+    }
+    return p
+}
+
+# Length of the list item starting at `p`.
+export function flowc_eff_item_len(buf: ptr<u8>, p: i32) -> i32 {
+    return flowc_eff_item_end(buf, p) - p
+}
+
+# 1 if the item at `p` spells src[s..e].
+export function flowc_eff_item_is(buf: ptr<u8>, p: i32, src: ptr<u8>, s: i32, e: i32) -> i32 {
+    if p < 0 {
+        return 0
+    }
+    if flowc_eff_item_len(buf, p) != e - s {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < e - s {
+        if buf[p + i] != src[s + i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+# 1 if the item at `p` spells the literal.
+export function flowc_eff_item_is_lit(buf: ptr<u8>, p: i32, lit: string) -> i32 {
+    if p < 0 {
+        return 0
+    }
+    let q: ptr<u8> = lit
+    let k: i32 = strlen(lit) as i32
+    if flowc_eff_item_len(buf, p) != k {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < k {
+        if buf[p + i] != q[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+# 1 if the comma list in field `field` holds src[s..e].
+export function flowc_eff_list_has(buf: ptr<u8>, off: i32, fld: i32, src: ptr<u8>, s: i32, e: i32) -> i32 {
+    let mut i: i32 = 0
+    let mut p: i32 = flowc_eff_item(buf, off, fld, 0)
+    while p >= 0 {
+        if flowc_eff_item_is(buf, p, src, s, e) == 1 {
+            return 1
+        }
+        i = i + 1
+        p = flowc_eff_item(buf, off, fld, i)
+    }
+    return 0
+}
+
+# 1 if src[s..e] names an effect in the table.
+export function flowc_eff_is_effect(buf: ptr<u8>, len: i32, src: ptr<u8>, s: i32, e: i32) -> i32 {
+    if flowc_eff_find(buf, len, FLOWC_EFF_EFFECT, src, s, e, 0 - 1, 0 - 1) >= 0 {
+        return 1
+    }
+    return 0
+}
+
+# 1 if src[s..e] names a capability in the table.
+export function flowc_eff_is_cap(buf: ptr<u8>, len: i32, src: ptr<u8>, s: i32, e: i32) -> i32 {
+    if flowc_eff_find(buf, len, FLOWC_EFF_CAP, src, s, e, 0 - 1, 0 - 1) >= 0 {
+        return 1
+    }
+    return 0
+}
+
+# 1 if capability src[cs..ce] defines a method named src[ms..me]. A handle
+# block uses it to call that method directly (#1056).
+export function flowc_eff_cap_has_method(buf: ptr<u8>, len: i32, src: ptr<u8>, cs: i32, ce: i32, ms: i32, me: i32) -> i32 {
+    let off: i32 = flowc_eff_find(buf, len, FLOWC_EFF_CAP, src, cs, ce, 0 - 1, 0 - 1)
+    if off < 0 {
+        return 0
+    }
+    return flowc_eff_list_has(buf, off, 1, src, ms, me)
+}
+
+# Local AST_EFFECT declaration named src[s..e], else AST_NONE.
+export function flowc_eff_local_effect(arena: AstArena, src: ptr<u8>, s: i32, e: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_EFFECT {
+            let ns: i32 = arena.nodes[i].name_start
+            let ne: i32 = arena.nodes[i].name_end
+            if ne - ns == e - s {
+                let mut hit: i32 = 1
+                let mut j: i32 = 0
+                while j < e - s and hit == 1 {
+                    if src[ns + j] != src[s + j] {
+                        hit = 0
+                    }
+                    j = j + 1
+                }
+                if hit == 1 {
+                    return i
+                }
+            }
+        }
+        i = i + 1
+    }
+    return AST_NONE
+}
+
+# Local AST_CAPABILITY declaration named src[s..e], else AST_NONE.
+export function flowc_eff_local_cap(arena: AstArena, src: ptr<u8>, s: i32, e: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_CAPABILITY {
+            let ns: i32 = arena.nodes[i].name_start
+            let ne: i32 = arena.nodes[i].name_end
+            if ne - ns == e - s {
+                let mut hit: i32 = 1
+                let mut j: i32 = 0
+                while j < e - s and hit == 1 {
+                    if src[ns + j] != src[s + j] {
+                        hit = 0
+                    }
+                    j = j + 1
+                }
+                if hit == 1 {
+                    return i
+                }
+            }
+        }
+        i = i + 1
+    }
+    return AST_NONE
+}
+
+# Operation `op` of local effect node `ef`, else AST_NONE.
+export function flowc_eff_local_op(arena: AstArena, src: ptr<u8>, ef: i32, s: i32, e: i32) -> i32 {
+    if ef == AST_NONE {
+        return AST_NONE
+    }
+    let mut op: i32 = arena.nodes[ef].a
+    while op != AST_NONE {
+        let ns: i32 = arena.nodes[op].name_start
+        let ne: i32 = arena.nodes[op].name_end
+        if ne - ns == e - s {
+            let mut hit: i32 = 1
+            let mut j: i32 = 0
+            while j < e - s and hit == 1 {
+                if src[ns + j] != src[s + j] {
+                    hit = 0
+                }
+                j = j + 1
+            }
+            if hit == 1 {
+                return op
+            }
+        }
+        op = arena.nodes[op].next
+    }
+    return AST_NONE
+}
+
+# Method named src[s..e] of local capability `cp`, else AST_NONE.
+export function flowc_eff_local_method(arena: AstArena, src: ptr<u8>, cp: i32, s: i32, e: i32) -> i32 {
+    if cp == AST_NONE {
+        return AST_NONE
+    }
+    let mut m: i32 = arena.nodes[cp].b
+    while m != AST_NONE {
+        let ns: i32 = arena.nodes[m].name_start
+        let ne: i32 = arena.nodes[m].name_end
+        if ne - ns == e - s {
+            let mut hit: i32 = 1
+            let mut j: i32 = 0
+            while j < e - s and hit == 1 {
+                if src[ns + j] != src[s + j] {
+                    hit = 0
+                }
+                j = j + 1
+            }
+            if hit == 1 {
+                return m
+            }
+        }
+        m = arena.nodes[m].next
+    }
+    return AST_NONE
+}
+
+# --- diagnostics -------------------------------------------------------------
+# `<path>:<line>:<col>: error: <message>` on stdout, built in pieces. The
+# message text matches the Python host's type checker word for word.
+
+export function flowc_eff_diag_begin(path: string, src: ptr<u8>, pos: i32) {
+    let mut line: i32 = 1
+    let mut col: i32 = 1
+    let mut i: i32 = 0
+    while i < pos and src[i] != 0 {
+        if src[i] == 10 {
+            line = line + 1
+            col = 1
+        } else {
+            col = col + 1
+        }
+        i = i + 1
+    }
+    let pp: ptr<u8> = path as ptr<u8>
+    if pp != null and pp[0] != 0 {
+        printf("%s:%d:%d: error: ", path, line, col)
+    } else {
+        printf("flowc tc:%d:%d: error: ", line, col)
+    }
+}
+
+export function flowc_eff_diag_s(s: string) {
+    printf("%s", s)
+}
+
+export function flowc_eff_diag_span(src: ptr<u8>, s: i32, e: i32) {
+    printf("%.*s", e - s, src + s)
+}
+
+export function flowc_eff_diag_buf(buf: ptr<u8>, p: i32, n: i32) {
+    printf("%.*s", n, buf + p)
+}
+
+export function flowc_eff_diag_int(v: i32) {
+    printf("%d", v)
+}
+
+export function flowc_eff_diag_end() {
+    printf("\n")
+}
+
+# 1 if key `#<lit>` names a capability in the table.
+function flowc_eff_has_cap_lit(buf: ptr<u8>, len: i32, lit: string) -> i32 {
+    let q: ptr<u8> = lit
+    let k: i32 = strlen(lit) as i32
+    let mut p: i32 = 0
+    while p < len {
+        let ks: i32 = p
+        while p < len and buf[p] != 0 {
+            p = p + 1
+        }
+        let kl: i32 = p - ks
+        p = p + 1
+        while p < len and buf[p] != 0 {
+            p = p + 1
+        }
+        p = p + 1
+        if kl == k + 1 and buf[ks] == FLOWC_EFF_CAP {
+            let mut hit: i32 = 1
+            let mut j: i32 = 0
+            while j < k {
+                if buf[ks + 1 + j] != q[j] {
+                    hit = 0
+                }
+                j = j + 1
+            }
+            if hit == 1 {
+                return 1
+            }
+        }
+    }
+    return 0
+}
+
+# 1 if the program has a FiberAsync or FiberCont capability.
+export function flowc_eff_has_fiber_cap(buf: ptr<u8>, len: i32) -> i32 {
+    if buf == null {
+        return 0
+    }
+    if flowc_eff_has_cap_lit(buf, len, "FiberAsync") == 1 {
+        return 1
+    }
+    return flowc_eff_has_cap_lit(buf, len, "FiberCont")
+}

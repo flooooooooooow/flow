@@ -1,0 +1,6 @@
+# expect: find target has type string but the array holds i32
+function main() -> i32 {
+    let xs: array<i32, 3> = [1, 2, 3]
+    let i: i32 = xs |> find("two")
+    return 0
+}

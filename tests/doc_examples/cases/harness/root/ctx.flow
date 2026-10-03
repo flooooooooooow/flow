@@ -1,0 +1,3 @@
+struct Sample {
+    value: f64
+}

@@ -1,6 +1,6 @@
 # Independent Flow tutorial author kit
 
-Flow needs third-party explanations, not more first-party claims. This page exists to make independent tutorials easy to write without requiring an author to reverse-engineer the language.
+Flow needs third-party explanations more than it needs further first-party claims. This page exists to make independent tutorials easy to write without requiring an author to reverse-engineer the language.
 
 ## What counts
 

@@ -1,0 +1,13 @@
+$ flow init
+[93mProject already initialized (flow.toml exists)[0m
+[exit 0]
+== files
+F ./flow.toml
+  | [package]
+  | name = "already"
+  | version = "0.3.1"
+  | description = "Test package already"
+  | license = "Apache-2.0"
+  | entry = "src/main.flow"
+  | 
+  | 

@@ -2,9 +2,9 @@
 
 *The two acute angles in a right triangle sum to one right angle.*
 
-**Source.** euclid — Elements, Book I, Proposition 32
+**Source.** euclid: Elements, Book I, Proposition 32
 
-## Derived fact 1 — angle A plus angle B equals one right angle when angle C is right
+## Derived fact 1: angle A plus angle B equals one right angle when angle C is right
 
 **Coordinate.** the Euclidean plane · right triangle · acute angles sum to one right angle · **Derived fact**
 

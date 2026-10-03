@@ -6,13 +6,13 @@ The full series is printed as Chapter 19 of
 List the challenges:
 
 ```bash
-python3 challenges/flow-specific/check.py list
+./flow tool challenge_check list
 ```
 
 Check a submission:
 
 ```bash
-python3 challenges/flow-specific/check.py check F01 path/to/answer.flow
+./flow tool challenge_check check F01 path/to/answer.flow
 ```
 
 The checker removes line comments before checking syntax. A required token in a
@@ -23,8 +23,14 @@ the submission with the compiler host and environment listed in
 Use `--syntax-only` for a target that is unavailable on the current machine:
 
 ```bash
-python3 challenges/flow-specific/check.py check F31 kernel.flow --syntax-only
+./flow tool challenge_check check F31 kernel.flow --syntax-only
 ```
+
+The checker is written in Flow (`scripts/tools/challenge_check`).
+`./flow tool challenge_check` builds it with the Stage-A compiler on first
+use, so it needs only `cc`. `./flow tool challenge_check self-test` runs its
+unit checks, and `./flow tool challenge_check scan file.flow...` prints the
+syntax verdict of every challenge for each file.
 
 Syntax checks prevent ordinary shortcut solutions, but they do not prove that
 the required construct performs the main work. Course runners should add hidden

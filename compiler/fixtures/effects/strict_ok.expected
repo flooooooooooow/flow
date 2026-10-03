@@ -1,0 +1,4 @@
+run exit=0
+[console] world
+[metric] calls 2
+v=4

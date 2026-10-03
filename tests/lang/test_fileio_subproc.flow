@@ -1,6 +1,6 @@
 # Test for fileio.flow subprocess operations.
 # Tests popen_read and system.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_fileio_subproc.flow
+# Run with: ./flow run tests/lang/test_fileio_subproc.flow
 
 import "compiler/src/fileio.flow"
 

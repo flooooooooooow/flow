@@ -2,9 +2,9 @@
 
 *Eighteen times one is eighteen.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 18 * 1 = 18
+## Derived fact 1: 18 * 1 = 18
 
 **Coordinate.** the natural numbers · multiplication · eighteen times one is eighteen · **Derived fact**
 

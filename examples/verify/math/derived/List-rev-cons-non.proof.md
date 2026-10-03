@@ -2,9 +2,9 @@
 
 *Reversing a nonuple cons list.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Reverse_(list)
+**Source.** church: https://en.wikipedia.org/wiki/Reverse_(list)
 
-## Derived fact 1 — rev of nine cons ending in nil reverses element order
+## Derived fact 1: rev of nine cons ending in nil reverses element order
 
 **Coordinate.** List · reverse · reverse of nonuple cons · **Derived fact**
 

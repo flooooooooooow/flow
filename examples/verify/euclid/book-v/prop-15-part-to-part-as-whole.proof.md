@@ -2,13 +2,13 @@
 
 *A part has to a part the same ratio which the corresponding whole has to the corresponding whole.*
 
-**Source.** euclid — Elements, Book V, Proposition 15
+**Source.** euclid: Elements, Book V, Proposition 15
 
-## Derived fact 1 — A part has to a part the same ratio which the corresponding whole has to the corresponding whole
+## Derived fact 1: A part has to a part the same ratio which the corresponding whole has to the corresponding whole
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 15: a part has the same ratio to its part as the whole to its whole · **Derived fact**
 
-*Source: euclid — Elements, Book V, Proposition 15*
+*Source: euclid: Elements, Book V, Proposition 15*
 
 *Built on: proposition 6: magnitudes with the same ratio to a third are proportional to one another, for Euclid Book V on the Euclidean plane*
 

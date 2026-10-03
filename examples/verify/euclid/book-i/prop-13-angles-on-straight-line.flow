@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-i
 # @means  If a straight line stands on a straight line, the adjacent angles equal two right angles.
-# @from   euclid — Elements, Book I, Proposition 13
+# @from   euclid: Elements, Book I, Proposition 13
 # @tier   axiom
 
 theorem «Geometry» «Euclid Book I» «Proposition 13: adjacent angles on a straight line sum to two right angles» () {

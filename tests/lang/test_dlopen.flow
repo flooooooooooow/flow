@@ -1,6 +1,6 @@
 # Test for dlopen + cfn function pointer call pattern.
 # Loads libm via dlopen, looks up sqrt via dlsym, casts to cfn, and calls it.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_dlopen.flow
+# Run with: ./flow run tests/lang/test_dlopen.flow
 # Exit 0 on success.
 
 extern type DynLib
@@ -16,10 +16,14 @@ extern {
 }
 
 function main() -> i32 {
-    # RTLD_LAZY = 1 on macOS
-    let lib: ptr<DynLib> = dlopen("libm.dylib", 1)
+    # RTLD_LAZY is 1 on macOS and Linux. libm is libm.dylib on macOS and
+    # libm.so.6 on glibc Linux.
+    let mut lib: ptr<DynLib> = dlopen("libm.dylib", 1)
     if lib == null as ptr<DynLib> {
-        puts("FAIL: could not dlopen libm.dylib")
+        lib = dlopen("libm.so.6", 1)
+    }
+    if lib == null as ptr<DynLib> {
+        puts("FAIL: could not dlopen libm (libm.dylib or libm.so.6)")
         return 1
     }
 

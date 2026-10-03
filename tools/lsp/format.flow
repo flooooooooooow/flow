@@ -1,0 +1,51 @@
+# @module tools.lsp.format
+# @means  Document formatting for the language server.
+#
+# The server formats with flowc's formatter (compiler/src/fmt.flow), the
+# same pass as `flow fmt`. It rewrites whitespace only and keeps every
+# token and comment; compiler/scripts/fmt_check.flow checks that, and that
+# the result is a fixed point, over every tracked .flow file. A document
+# flowc cannot parse gets no edit.
+
+import "tools/hostlib/text.flow"
+import "tools/lsp/text.flow"
+import "compiler/src/parser.flow"
+import "compiler/src/fmt.flow"
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
+}
+
+# fmt.flow output, or "" when flowc cannot parse or print the text.
+function flowc_format(text: string) -> string {
+    let n: i32 = t_len(text)
+    let src: ptr<u8> = calloc((n + 1) as i64, 1) as ptr<u8>
+    memcpy(src as ptr<void>, text as ptr<void>, n as i64)
+    let mut p: Parser = flowc_parser_new(src, n, n + 4096)
+    let root: i32 = flowc_parse_program(&p)
+    let mut result: string = ""
+    if root >= 0 and p.err == 0 {
+        let cap: i32 = n * 4 + 65536
+        let out: ptr<u8> = calloc((cap + 1) as i64, 1) as ptr<u8>
+        let written: i32 = flowc_fmt_source(src, n, out, cap)
+        if written > 0 {
+            out[written] = 0
+            result = out as string
+        }
+    }
+    flowc_parser_free(p)
+    return result
+}
+
+# Formatted text, or "" when there is nothing to change.
+export function format_text(text: string) -> string {
+    if t_len(text) == 0 {
+        return ""
+    }
+    let out: string = flowc_format(text)
+    if t_len(out) == 0 or t_eq(out, text) {
+        return ""
+    }
+    return out
+}

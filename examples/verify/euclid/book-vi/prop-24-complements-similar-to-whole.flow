@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-vi
 # @means  In any parallelogram the complements of the parallelograms about the diameter are similar both to the whole and to one another.
-# @from   euclid — Elements, Book VI, Proposition 24
+# @from   euclid: Elements, Book VI, Proposition 24
 # @tier   derived
 # @needs  «Geometry» «Euclid Book I» «Proposition 34: complements of parallelograms about the diameter are equal», «Geometry» «Euclid Book VI» «Proposition 4: equiangular triangles have proportional corresponding sides»
 

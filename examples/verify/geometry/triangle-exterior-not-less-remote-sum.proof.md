@@ -2,9 +2,9 @@
 
 *An exterior angle is at least each remote interior angle.*
 
-**Source.** euclid — Elements, Book I, Proposition 16
+**Source.** euclid: Elements, Book I, Proposition 16
 
-## Derived fact 1 — exterior at C is at least angle B
+## Derived fact 1: exterior at C is at least angle B
 
 **Coordinate.** the Euclidean plane · triangle · exterior at least each remote interior · **Derived fact**
 

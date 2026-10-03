@@ -1,0 +1,106 @@
+# MLIR command goldens: one case per line, `<name> <kind> <args...>`.
+# Recorded from the Python MLIR stack at bb23f19f (origin/main before it was
+# deleted) with ./flow tool tests/mlir_commands/run.flow --record. Kinds:
+#   mlir      `flow mlir <args>`; the MLIR file, normalized (normalize.flow)
+#   raw       `flow mlir <args>`; the output file as written (LLVM IR, mlir-opt output)
+#   spirv     `flow mlir <args>` with --emit-spirv; exit status and SPIR-V bytes
+#   pipeline  the mlir-opt --pass-pipeline for the flags (--print-pass-pipeline)
+#   out       `flow <args>`; filtered stdout and stderr, and the exit status
+# @WORK@ is replaced by the case's scratch directory.
+
+# flow mlir: the MLIR text of every fixture and the demo programs.
+mlir_arith mlir compiler/fixtures/mlir/arith.flow --lenient
+mlir_arrays mlir compiler/fixtures/mlir/arrays.flow --lenient
+mlir_closures mlir compiler/fixtures/mlir/closures.flow --lenient
+mlir_consts_calls mlir compiler/fixtures/mlir/consts_calls.flow --lenient
+mlir_control mlir compiler/fixtures/mlir/control.flow --lenient
+mlir_data mlir compiler/fixtures/mlir/data.flow --lenient
+mlir_defer_addr mlir compiler/fixtures/mlir/defer_addr.flow --lenient
+mlir_effects mlir compiler/fixtures/mlir/effects.flow --lenient
+mlir_gpu_kernels mlir compiler/fixtures/mlir/gpu_kernels.flow --lenient
+mlir_imports_statics mlir compiler/fixtures/mlir/imports_statics.flow --lenient
+mlir_loops mlir compiler/fixtures/mlir/loops.flow --lenient
+mlir_match_enums mlir compiler/fixtures/mlir/match_enums.flow --lenient
+mlir_merges mlir compiler/fixtures/mlir/merges.flow --lenient
+mlir_mlir_dep mlir compiler/fixtures/mlir/mlir_dep.flow --lenient
+mlir_print_logic mlir compiler/fixtures/mlir/print_logic.flow --lenient
+mlir_record_update mlir compiler/fixtures/mlir/record_update.flow --lenient
+mlir_spans_data mlir compiler/fixtures/mlir/spans_data.flow --lenient
+mlir_structs mlir compiler/fixtures/mlir/structs.flow --lenient
+mlir_aosoa_padding aosoa-pad compiler/fixtures/mlir_opt/aosoa_padding.flow --lenient --aosoa-pad
+mlir_aosoa_swizzle aosoa-swizzle compiler/fixtures/mlir_opt/aosoa_padding.flow --lenient --aosoa-swizzle
+mlir_basic_arith mlir tests/mlir/basic_arith.flow --lenient
+mlir_tensor_value mlir compiler/fixtures/mlir_opt/tensor_value.flow --lenient
+mlir_affine_loop affine tests/mlir/affine_loop.flow --lenient
+mlir_tiled_loop tile tests/mlir/affine_loop.flow --lenient
+mlir_multitiled_loop tile2 tests/mlir/affine_loop.flow --lenient
+mlir_matmul mlir examples/bench/matmul_mlir.flow --lenient
+mlir_tensor_bench mlir examples/ml/mlir_tensor_bench.flow --lenient
+mlir_register_tiles mlir compiler/fixtures/mlir_opt/register_tile_probe.flow --lenient --register-tiles
+mlir_register_tiles_nested mlir compiler/fixtures/mlir_opt/register_tile_nested.flow --lenient --register-tiles
+mlir_gpu_dialect mlir compiler/fixtures/mlir/gpu_kernels.flow --lenient --mlir-gpu
+mlir_gpu_dialect_stdlib mlir lib/stdlib/gpu_kernels.flow --lenient --mlir-gpu
+
+# flow mlir --llvm: lowered LLVM IR (deterministic: mlir-translate numbers it).
+llvm_arith raw compiler/fixtures/mlir/arith.flow --lenient --llvm
+llvm_control raw compiler/fixtures/mlir/control.flow --lenient --llvm
+llvm_loops raw compiler/fixtures/mlir/loops.flow --lenient --llvm
+llvm_structs raw compiler/fixtures/mlir/structs.flow --lenient --llvm
+llvm_closures raw compiler/fixtures/mlir/closures.flow --lenient --llvm
+llvm_effects raw compiler/fixtures/mlir/effects.flow --lenient --llvm
+llvm_spans_data raw compiler/fixtures/mlir/spans_data.flow --lenient --llvm
+llvm_match_enums raw compiler/fixtures/mlir/match_enums.flow --lenient --llvm
+llvm_matmul raw examples/bench/matmul_mlir.flow --lenient --llvm
+
+# flow mlir --optimize: mlir-opt output of the selected pipeline.
+opt_arith_o2 raw compiler/fixtures/mlir/arith.flow --lenient --optimize
+opt_control_o1 raw compiler/fixtures/mlir/control.flow --lenient --optimize --opt-level O1
+opt_loops_o3 raw compiler/fixtures/mlir/loops.flow --lenient --optimize --opt-level O3
+opt_loops_o0 raw compiler/fixtures/mlir/loops.flow --lenient --optimize --opt-level O0
+opt_matmul_o3 raw examples/bench/matmul_mlir.flow --lenient --optimize --opt-level O3
+opt_structs_flags raw compiler/fixtures/mlir/structs.flow --lenient --optimize --no-inline --no-licm --no-cse
+
+# --print-pass-pipeline for flag combinations.
+pipe_default pipeline
+pipe_o0 pipeline --opt-level O0
+pipe_o1 pipeline --opt-level O1
+pipe_o3 pipeline --opt-level O3
+pipe_o3_novec pipeline --opt-level O3 --no-vectorization
+pipe_fusion pipeline --loop-fusion
+pipe_no_fusion pipeline --no-loop-fusion
+pipe_no_m2r_sccp pipeline --no-mem2reg --no-sccp
+pipe_no_cse_dce_inline pipeline --no-cse --no-dce --no-inline
+pipe_o1_nolicm_nodce pipeline --opt-level O1 --no-licm --no-dce
+pipe_async pipeline --enable-loop-pipelining --enable-multi-buffering
+pipe_affine_tile pipeline --enable-affine-tiling --affine-tile-size 8
+pipe_gpu_async pipeline --enable-async-copy --async-copy-target gpu
+
+# --emit-spirv (fails at mlir-opt on the Python generator's GPU module too).
+spirv_gpu_kernels spirv lib/stdlib/gpu_kernels.flow --mlir-gpu --emit-spirv --spirv-out @WORK@/k.spv
+
+# Commands that build and run.
+run_mlir_arith out mlir-run compiler/fixtures/mlir/arith.flow
+run_mlir_control out mlir-run compiler/fixtures/mlir/control.flow
+run_mlir_loops out mlir-run compiler/fixtures/mlir/loops.flow
+run_mlir_closures out mlir-run compiler/fixtures/mlir/closures.flow
+run_mlir_effects out mlir-run compiler/fixtures/mlir/effects.flow
+run_mlir_match out mlir-run compiler/fixtures/mlir/match_enums.flow
+jit_control out jit compiler/fixtures/mlir/control.flow
+jit_arith out jit compiler/fixtures/mlir/arith.flow
+jit_closures out jit compiler/fixtures/mlir/closures.flow
+jit_spans out jit compiler/fixtures/mlir/spans_data.flow
+jit_control_rt out jit compiler/fixtures/mlir/control.flow
+jit_closures_rt out jit compiler/fixtures/mlir/closures.flow
+ml_run out ml run
+ml_bench out ml bench
+ml_test out ml test
+test_mlir out test-mlir
+test_matmul out test-matmul --no-asm --no-mlir
+audio_offline out compile-audio examples/audio/offline_graph_demo.flow --mlir @RUN@
+audio_sine out compile-audio examples/audio/sine_playback.flow --mlir
+audio_bus out compile-audio examples/audio/bus_graph_demo.flow --mlir
+audio_hot_cross_buns out compile-audio examples/audio/hot_cross_buns.flow --mlir
+audio_loopback out compile-audio examples/audio/loopback_effects.flow --mlir
+audio_gpu_gain out compile-audio examples/audio/gpu_gain_demo.flow --mlir
+mlir_tensor_scalars mlir compiler/fixtures/mlir_opt/tensor_scalars.flow --lenient
+mlir_tensor_boundary mlir compiler/fixtures/mlir_opt/tensor_boundary.flow --lenient

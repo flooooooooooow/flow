@@ -2,9 +2,9 @@
 
 *Appending five singletons gives length five.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len(cons(a, nil) ++ cons(b, nil) ++ cons(c, nil) ++ cons(d, nil) ++ cons(e, nil)) = 5
+## Derived fact 1: len(cons(a, nil) ++ cons(b, nil) ++ cons(c, nil) ++ cons(d, nil) ++ cons(e, nil)) = 5
 
 **Coordinate.** List · length · append of five singletons has length five · **Derived fact**
 

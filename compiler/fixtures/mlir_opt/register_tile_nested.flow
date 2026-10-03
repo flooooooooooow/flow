@@ -1,0 +1,7 @@
+extern {
+    function register_tile_outer_product(a: vec4<f32>, b: vec4<f32>) -> vec4<vec4<f32>>
+}
+
+function probe(a: vec4<f32>, b: vec4<f32>) -> vec4<vec4<f32>> {
+    return register_tile_outer_product(a, b)
+}

@@ -1,0 +1,53 @@
+# Check that the formula in packaging/homebrew/Formula/flow.rb matches the
+# one in the tap checkout (flooooooooooow/homebrew-flow).
+#
+#   ./flow tool packaging/homebrew/check-formula-sync.flow [TAP_FORMULA]
+#
+# TAP_FORMULA defaults to $FLOW_HOMEBREW_TAP_FORMULA, then
+# ../homebrew-flow/Formula/flow.rb next to the repository. Exit 0 when the
+# files are identical, 1 when they differ (with a unified diff), 2 when one
+# is missing.
+
+import "tools/flow_cli/sys.flow"
+import std.process { proc_argv, ProcStrs, proc_args }
+
+function main() -> i32 {
+    tool_only("packaging/homebrew/check-formula-sync.flow")
+    let repo_root: string = abs_dir(env_or("FLOW_REPO_ROOT", cwd_logical()))
+    env_unset("FLOW_REPO_ROOT")
+    let source_formula: string = repo_root + "/packaging/homebrew/Formula/flow.rb"
+    let args: ptr<ProcStrs> = proc_args()
+    let mut tap_formula: string = env_or("FLOW_HOMEBREW_TAP_FORMULA", repo_root + "/../homebrew-flow/Formula/flow.rb")
+    if sl_len(args) > 0 and s_len(sl_get(args, 0)) > 0 {
+        tap_formula = sl_get(args, 0)
+    }
+
+    if not is_file(source_formula) {
+        errln("missing source formula: " + source_formula)
+        return 2
+    }
+    if not is_file(tap_formula) {
+        errln("missing tap formula: " + tap_formula)
+        errln("pass the tap formula path explicitly, e.g. ./flow tool packaging/homebrew/check-formula-sync.flow ../homebrew-flow/Formula/flow.rb")
+        return 2
+    }
+    if same_bytes(source_formula, tap_formula) {
+        outln("Homebrew formulas are synchronized.")
+        return 0
+    }
+    errln("Homebrew formulas differ:")
+    let d: ptr<ProcStrs> = sl_of3("diff", "-u", source_formula)
+    sl_push(d, tap_formula)
+    let _d: i32 = run_argv(d)
+    return 1
+}
+
+# These programs change files, run builds and publish, so they run only
+# as `./flow tool PATH.flow` (from build/flow-tools), never from a plain
+# `flow run` such as the corpus checks do.
+function tool_only(path: string) {
+    if not s_contains(proc_argv(0), "/flow-tools/") {
+        errln("run this with ./flow tool " + path)
+        cli_exit(2)
+    }
+}

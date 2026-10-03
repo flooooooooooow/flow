@@ -2,13 +2,13 @@
 
 *To apply a gnomon equal to the rectangle contained by two unequal straight lines.*
 
-**Source.** euclid — Elements, Book II, Proposition 13
+**Source.** euclid: Elements, Book II, Proposition 13
 
-## Derived fact 1 — To apply a gnomon equal to the rectangle contained by two unequal straight lines
+## Derived fact 1: To apply a gnomon equal to the rectangle contained by two unequal straight lines
 
 **Coordinate.** the Euclidean plane · Euclid Book II · Proposition 13: a gnomon equals the rectangle by two unequal segments · **Derived fact**
 
-*Source: euclid — Elements, Book II, Proposition 13*
+*Source: euclid: Elements, Book II, Proposition 13*
 
 *Built on: proposition 11: a gnomon equals the rectangle by the segments, for Euclid Book II on the Euclidean plane, proposition 5: the rectangle by unequal parts plus the square on the midpoint equals the square on the half, for Euclid Book II on the Euclidean plane*
 

@@ -1,0 +1,79 @@
+# Forms the WGSL emitter accepts.
+extern {
+    function sqrtf(x: f32) -> f32
+    function fabsf(x: f32) -> f32
+}
+
+@gpu
+function control(a: ptr<f32>, out: ptr<f32>, n: i32, flag: bool) -> void {
+    let i: i32 = gpu_thread_id()
+    let mut acc: f32 = 0.0
+    let mut k: i32 = 0
+    let h: i32 = 0x10
+    let t: bool = true
+    if i < n and flag {
+        acc = acc + a[i]
+    } elif i == n or not flag {
+        acc = 1.5e3
+    } elif !t {
+        acc = -acc
+    } else {
+        acc = 2.0
+    }
+    if i >= n {
+        return
+    }
+    while k < 4 {
+        k += 1
+        acc *= 2.0
+    }
+    for s in 0 to n step 2 {
+        acc = acc - 0.25
+    }
+    for q in 1..10 {
+        acc = acc + 1.0
+    }
+    out[i] = sqrtf(fabsf(acc)) + sin(acc) + floorf(acc) + fmaxf(acc, 1.0)
+    gpu_barrier()
+    let x: i32 = gpu_thread_id_x + gpu_block_id_y + gpu_local_id + gpu_block_size
+}
+
+@gpu
+function five_scalars(data: array<f32>, alpha: f32, beta: f32, n: i32, m: u32, flag: bool) -> void {
+    let i: i32 = gpu_thread_id()
+    data[i] = data[i] * alpha + beta
+}
+
+@gpu
+function reserved_names(loop: ptr<f32>, ref: ptr<f32>, target: i32, __tmp: i32, switch: i32) -> void {
+    let filter: i32 = target + __tmp
+    let mut self_: f32 = 0.0
+    ref[filter] = loop[filter + switch]
+}
+
+@gpu
+function nested_write(bufs: ptr<f32>, src: ptr<f32>, n: i32) -> void {
+    let mut v: f32
+    v = src[0]
+    if n > 0 {
+        while n > 1 {
+            for i in 0 to n {
+                bufs[i] = v
+            }
+        }
+    }
+}
+
+@gpu
+function no_scalars(a: ptr<i32>, b: ptr<u32>) -> void {
+    b[0] = b[1]
+}
+
+@gpu
+function four_scalars(a: ptr<f32>, w: f32, x: f32, y: f32, z: f32) -> void {
+    a[0] = w + x + y + z
+}
+
+function main() -> i32 {
+    return 0
+}

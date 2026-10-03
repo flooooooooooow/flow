@@ -1,0 +1,1 @@
+analyze c lqr: missing `-> k0 k1 …` gain bindings

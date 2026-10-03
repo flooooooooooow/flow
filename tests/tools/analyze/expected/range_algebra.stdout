@@ -1,0 +1,36 @@
+Stack depth analysis: tests/lang/test_range_algebra.flow
+============================================================
+Function                                  Max depth Chain
+------------------------------------------------------------
+main                                          272 bytes  main → __flow_sum_range_union → __flow_sum_range_isect → __flow_range_modinv
+__flow_sum_range_union                        228 bytes  __flow_sum_range_union → __flow_sum_range_isect → __flow_range_modinv
+__flow_sum_range_isect                        216 bytes  __flow_sum_range_isect → __flow_range_modinv
+calloc                                         64 bytes  calloc
+__flow_range_modinv                            64 bytes  __flow_range_modinv
+__flow_range_gcd                               24 bytes  __flow_range_gcd
+brute_union                                    16 bytes  brute_union → in_range
+brute_isect                                    12 bytes  brute_isect → in_range
+__flow_sum_range                                8 bytes  __flow_sum_range
+__flow_range_count                              8 bytes  __flow_range_count
+__flow_progression_sum                          8 bytes  __flow_progression_sum
+in_range                                        4 bytes  in_range
+bound                                           0 bytes  bound
+
+WCET analysis: tests/lang/test_range_algebra.flow
+============================================================
+Function                                   Max cost Chain
+------------------------------------------------------------
+main                                        20198 inst  main → brute_union → in_range
+brute_union                                 15036 inst  brute_union → in_range
+brute_isect                                 10031 inst  brute_isect → in_range
+__flow_sum_range_union                       5198 inst  __flow_sum_range_union → __flow_sum_range_isect → __flow_range_modinv
+__flow_sum_range_isect                       5163 inst  __flow_sum_range_isect → __flow_range_modinv
+__flow_range_modinv                          5033 inst  __flow_range_modinv
+__flow_range_gcd                             5019 inst  __flow_range_gcd
+in_range                                     5010 inst  in_range
+calloc                                        100 inst  calloc (extern)
+__flow_sum_range                               31 inst  __flow_sum_range
+__flow_range_count                             23 inst  __flow_range_count
+__flow_progression_sum                         13 inst  __flow_progression_sum
+bound                                           4 inst  bound
+

@@ -1,0 +1,27 @@
+dsys cart {
+    discrete
+    dt 0.02
+    n 2 m 1 p 1
+    A 1.0 0.02 0.0 1.0
+    B 0.0 0.02
+    C 1.0 0.0
+}
+analyze cart {
+    lqr {
+        Q 10.0 1.0
+        R 0.1
+        max_iter 300
+        -> k0 k1
+    }
+}
+analyze cart {
+    lqr
+    {
+        Q 1 1
+        R 2
+        -> a b
+    }
+}
+function main() -> i32 {
+    return 0
+}

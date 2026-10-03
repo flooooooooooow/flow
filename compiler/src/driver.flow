@@ -10,10 +10,13 @@
 # Keeps the hand-written C host (host/stage_a_driver.c) as a CLI fallback.
 
 import .fileio { flowc_read_file, flowc_write_file }
-import .parser { flowc_parser_new, flowc_parser_free, flowc_parse_program, Parser }
+import .parser { flowc_parser_new, flowc_parser_free, flowc_parse_program, flowc_parser_print_error, Parser }
 import .cgen { flowc_cgen_emit }
 import .typecheck { flowc_typecheck, flowc_typecheck_ex }
-import .resolve { flowc_bundle_emit, flowc_bundle_typecheck, flowc_resolve_dirname }
+import .resolve {
+    flowc_bundle_emit, flowc_bundle_typecheck, flowc_resolve_dirname,
+    flowc_expand_all_in_place
+}
 
 extern {
     function printf(fmt: string, val: i32) -> i32
@@ -65,8 +68,8 @@ function flowc_driver_want_typecheck() -> i32 {
 }
 
 function flowc_driver_run(in_path: string, out_path: string) -> i32 {
-    # 1MB: parser bundle (token+ast+lexer+parser) needs headroom beyond 512K.
-    let out_cap: i32 = 1048576
+    # 4 MiB, as in main.flow: the self-hosted bundle passed 1 MiB of C.
+    let out_cap: i32 = 4194304
     let out: ptr<u8> = malloc(out_cap as i64)
     if out == null {
         puts("stage_a_driver_flow: malloc out failed")
@@ -97,7 +100,7 @@ function flowc_driver_run(in_path: string, out_path: string) -> i32 {
         } else {
             let dlen: i32 = flowc_resolve_dirname(in_path, dir_buf, 256)
             if dlen > 0 {
-                search_dir = dir_buf
+                search_dir = dir_buf as string
             }
         }
         # Bundle typecheck (deps-first + export seed) when typecheck wanted.
@@ -127,7 +130,7 @@ function flowc_driver_run(in_path: string, out_path: string) -> i32 {
         return 0
     }
 
-    let src_cap: i32 = 262144
+    let src_cap: i32 = 1048576
     let src: ptr<u8> = malloc(src_cap as i64)
     if src == null {
         puts("stage_a_driver_flow: malloc src failed")
@@ -139,7 +142,7 @@ function flowc_driver_run(in_path: string, out_path: string) -> i32 {
         src[zi] = 0
         zi = zi + 1
     }
-    let nsrc: i32 = flowc_read_file(in_path, src, src_cap - 1)
+    let mut nsrc: i32 = flowc_read_file(in_path, src, src_cap - 1)
     if nsrc <= 0 {
         puts("stage_a_driver_flow: read input failed")
         free(src)
@@ -148,11 +151,37 @@ function flowc_driver_run(in_path: string, out_path: string) -> i32 {
     }
     src[nsrc] = 0
 
+    # DSLs expand before parse, as the Python host does.
+    nsrc = flowc_expand_all_in_place(src, nsrc, src_cap - 1)
+    if nsrc < 0 {
+        free(src)
+        free(out)
+        return 1
+    }
+
+    # FLOWC_EXPAND_ONLY=1: write the expanded source instead of C.
+    if flowc_driver_env_set("FLOWC_EXPAND_ONLY") == 1 {
+        let mut xrc: i32 = 0
+        if nsrc >= src_cap - 1 {
+            puts("stage_a_driver_flow: source too large for expand-only")
+            free(src)
+            free(out)
+            return 1
+        }
+        if flowc_write_file(out_path, src, nsrc) != 0 {
+            puts("stage_a_driver_flow: write output failed")
+            xrc = 1
+        }
+        free(src)
+        free(out)
+        return xrc
+    }
+
     let mut p: Parser = flowc_parser_new(src, nsrc, 262144)
     let root: i32 = flowc_parse_program(&p)
     if root < 0 or p.err != 0 {
         puts("stage_a_driver_flow: parse failed")
-        printf("stage_a_driver_flow: at %d\n", p.cur.start)
+        flowc_parser_print_error(p, in_path)
         printf("stage_a_driver_flow: arena_len=%d\n", p.arena.len)
         flowc_parser_free(p)
         free(src)

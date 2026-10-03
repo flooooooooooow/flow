@@ -1,0 +1,52 @@
+# MLIR parity fixture: module consts (loaded through llvm globals), a
+# trivial accessor inlined at its call site, recursion, void calls and
+# libc externs.
+
+extern {
+    function abs(x: i32) -> i32
+    function puts(s: string) -> i32
+}
+
+const LIMIT: i32 = 12
+const SCALE: f64 = 0.5
+const WIDE: i64 = -9000000000
+const NAME: string = "consts"
+const MASK: u32 = 0xF0
+
+function limit() -> i32 {
+    return LIMIT
+}
+
+function fib(n: i32) -> i64 {
+    if n < 2 {
+        return n as i64
+    }
+    return fib(n - 1) + fib(n - 2)
+}
+
+function gcd(a: i32, b: i32) -> i32 {
+    if b == 0 {
+        return a
+    }
+    return gcd(b, a % b)
+}
+
+function report(v: i32) {
+    println(v)
+}
+
+function main() -> i32 {
+    println(fib(limit()))
+    println(gcd(84, 36))
+    report(abs(0 - 17))
+    puts(NAME)
+    println(WIDE)
+    println(SCALE * 3.0)
+    println(MASK as i32)
+    let mut acc: i32 = 0
+    for i in 0 to LIMIT {
+        acc = acc + i
+    }
+    report(acc)
+    return 0
+}

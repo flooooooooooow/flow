@@ -2,9 +2,9 @@
 
 *In a right triangle each leg is shorter than the hypotenuse.*
 
-**Source.** euclid — Elements, Book I, Proposition 47
+**Source.** euclid: Elements, Book I, Proposition 47
 
-## Derived fact 1 — a < c and b < c in a right triangle with hypotenuse c
+## Derived fact 1: a < c and b < c in a right triangle with hypotenuse c
 
 **Coordinate.** the Euclidean plane · right triangle · each leg is shorter than hypotenuse · **Derived fact**
 

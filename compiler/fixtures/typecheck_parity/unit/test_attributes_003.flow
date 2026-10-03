@@ -1,0 +1,5 @@
+
+function main() -> i32 {
+    expect 1 + 1
+    return 0
+}

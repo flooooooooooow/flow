@@ -2,9 +2,9 @@
 
 *Choosing two items relates to choosing one by Pascal.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — choose(n, 2) = choose(n, 1) + choose(n - 1, 1) for n > 1
+## Derived fact 1: choose(n, 2) = choose(n, 1) + choose(n - 1, 1) for n > 1
 
 **Coordinate.** Comb · choose · choosing two via Pascal · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that choosing two via Pascal for choose on Comb. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose n is zero. |  |  |
 | ④ | We invoke the derived fact governing choose on Comb: choosing one gives the count, for choose on Comb (instantiated for 0). |  |  |
 | ⑤ | From step 3 and step 4, this implies choose(n, 2) equals choose(n, 1) plus choose(pred(n), 1) in this case. | ⑤ | $choose(n, 2) = choose(n, 1) + choose(pred(n), 1)$ |

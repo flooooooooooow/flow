@@ -1,0 +1,35 @@
+FIR-G: funcs=12 blocks=23 ops=123 values=90 operands=70 types=8
+call ops: 13
+reachable: classify, compiled, describe, identity_f64, kernel, later, main, malloc, puts
+dead: first_i32_bool, identity_i32, later
+call graph:
+  classify -> puts  (op 1)
+  describe -> puts  (op 1)
+  later -> compiled  (op 1)
+  later -> kernel  (op 1)
+  main -> describe  (op 1)
+  main -> identity_f64  (op 1)
+  main -> classify  (op 1)
+  main -> later  (op 1)
+  main -> malloc  (op 1)
+effects / pure:
+  first_i32_bool: effects=0x0000 pure=True
+  identity_f64: effects=0x0000 pure=True
+  identity_i32: effects=0x0000 pure=True
+  puts: effects=0x0018 pure=False
+  malloc: effects=0x0016 pure=False
+  compiled: effects=0x0000 pure=True
+  kernel: effects=0x0100 pure=False
+  later: effects=0x0100 pure=False
+  classify: effects=0x0018 pure=False
+  describe: effects=0x8018 pure=False
+  main: effects=0x811e pure=False
+device: requested=cpu chosen=cpu
+opt candidates: total=7 by_kind={'inline': 4, 'dead_elim': 3}
+  [inline] identity_f64 score=42.0 (callee_ops=3 sites=1 pure=True) caller=main
+  [inline] compiled score=36.0 (callee_ops=5 sites=1 pure=True) caller=later
+  [inline] kernel score=24.0 (callee_ops=5 sites=1 pure=False) caller=later
+  [inline] later score=20.0 (callee_ops=7 sites=1 pure=False) caller=main
+  [dead_elim] first_i32_bool score=14.0 (unreachable from roots)
+  [dead_elim] identity_i32 score=13.0 (unreachable from roots)
+  [dead_elim] later score=10.0 (unreachable from roots)

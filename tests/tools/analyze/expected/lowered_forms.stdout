@@ -1,0 +1,30 @@
+Stack depth analysis: tests/lang/test_lowered_forms.flow
+============================================================
+Function                                  Max depth Chain
+------------------------------------------------------------
+main                                          212 bytes  main → pick → twice
+pick                                           68 bytes  pick → twice
+add_one                                         4 bytes  add_one
+square                                          0 bytes  square
+triple                                          0 bytes  triple
+sub                                             0 bytes  sub
+classify                                        0 bytes  classify
+nested                                          0 bytes  nested
+ok                                              0 bytes  ok
+fail                                            0 bytes  fail
+
+WCET analysis: tests/lang/test_lowered_forms.flow
+============================================================
+Function                                   Max cost Chain
+------------------------------------------------------------
+main                                          333 inst  main → pick → twice (extern)
+pick                                          127 inst  pick → twice (extern)
+add_one                                        15 inst  add_one → ok
+classify                                        8 inst  classify
+nested                                          8 inst  nested
+square                                          2 inst  square
+triple                                          2 inst  triple
+sub                                             2 inst  sub
+ok                                              2 inst  ok
+fail                                            2 inst  fail
+

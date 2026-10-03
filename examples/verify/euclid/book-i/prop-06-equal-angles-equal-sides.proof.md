@@ -2,13 +2,13 @@
 
 *If two angles of a triangle are equal, the sides opposite them are equal.*
 
-**Source.** euclid — Elements, Book I, Proposition 6
+**Source.** euclid: Elements, Book I, Proposition 6
 
-## Derived fact 1 — If two angles of a triangle are equal, the sides opposite them are equal
+## Derived fact 1: If two angles of a triangle are equal, the sides opposite them are equal
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 6: equal angles imply equal opposite sides · **Derived fact**
 
-*Source: euclid — Elements, Book I, Proposition 6*
+*Source: euclid: Elements, Book I, Proposition 6*
 
 *Built on: proposition 5: base angles of an isosceles triangle are equal, for Book I of the Elements in on the Euclidean plane*
 

@@ -2,9 +2,9 @@
 
 *Appending eleven singletons gives length eleven.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len of eleven appended singletons equals 11
+## Derived fact 1: len of eleven appended singletons equals 11
 
 **Coordinate.** List · length · append of eleven singletons has length eleven · **Derived fact**
 

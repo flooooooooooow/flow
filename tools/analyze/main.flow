@@ -1,0 +1,1455 @@
+# @module tools.analyze
+# @means  `flow analyze`, written in Flow.
+#
+# Two analyses, picked by the first argument the launcher passes:
+#
+#   flow-analyze wcet  <args>   WCET and stack depth over a .flow file
+#                               (was src/flow/wcet_analysis.py, #282)
+#   flow-analyze misra <args>   MISRA/CERT pattern scan over generated C
+#                               (was src/flow/misra_scan.py, #277)
+#
+# Both keep the Python commands' flags, report text and exit codes,
+# including the argparse usage and error lines. tests/tools/analyze/run.flow
+# checks the output against goldens recorded from the Python versions.
+#
+# The WCET analysis parses with the flowc front end (compiler/src/parser.flow)
+# and walks its AST the way the Python version walked the Python parser's
+# dataclasses: every call, `let`, assignment, return, `if`, `for` and `while`
+# anywhere in a function body counts, including inside lambdas. The type
+# sizes and statement costs are the tables in compiler/src/wcet.flow.
+#
+# One deliberate difference: the Python version kept each function's callees
+# in a set, so when two callees tied for the deepest chain, the chain it
+# printed depended on the interpreter's string hash seed. This version keeps
+# callees in first-call order, which is one of those outcomes, every time.
+
+import "tools/hostlib/text.flow"
+import "compiler/src/ast.flow"
+import "compiler/src/token.flow"
+import "compiler/src/parser.flow"
+import "compiler/src/flow_blocks.flow"
+import "compiler/src/resolve.flow"
+import "compiler/src/wcet.flow"
+import "compiler/src/misra_scan.flow"
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function realloc(p: ptr<void>, size: i64) -> ptr<void>
+    function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
+    function fflush(fp: ptr<void>) -> i32
+    function dup(fd: i32) -> i32
+    function dup2(a: i32, b: i32) -> i32
+    function open(path: string, flags: i32) -> i32
+    function close(fd: i32) -> i32
+    function stat(path: string, buf: ptr<u8>) -> i32
+    function opendir(path: string) -> ptr<void>
+    function closedir(d: ptr<void>) -> i32
+}
+
+# ── Output ──────────────────────────────────────────────────────
+
+function out_str(s: string) {
+    t_write_fd(1, s as ptr<u8>, t_len(s))
+}
+
+function err_str(s: string) {
+    t_write_fd(2, s as ptr<u8>, t_len(s))
+}
+
+function i64_str(v: i64) -> string {
+    let buf: ptr<u8> = calloc(32, 1) as ptr<u8>
+    snprintf(buf, 32, "%lld", v)
+    return buf as string
+}
+
+# Python str.ljust / f"{s:<w}" (ASCII names).
+function pad_right(s: string, w: i32) -> string {
+    let mut tb: TBuf = tb_new()
+    tb_puts(&tb, s)
+    let mut n: i32 = t_len(s)
+    while n < w {
+        tb_putc(&tb, 32)
+        n = n + 1
+    }
+    return tb.data as string
+}
+
+function pad_left(s: string, w: i32) -> string {
+    let mut tb: TBuf = tb_new()
+    let mut n: i32 = t_len(s)
+    while n < w {
+        tb_putc(&tb, 32)
+        n = n + 1
+    }
+    tb_puts(&tb, s)
+    return tb.data as string
+}
+
+# ── Pointer list ────────────────────────────────────────────────
+
+struct PVec {
+    items: ptr<ptr<u8>>,
+    len: i32,
+    cap: i32
+}
+
+function pv_new() -> PVec {
+    return PVec { items: calloc(16, 8) as ptr<ptr<u8>>, len: 0, cap: 16 }
+}
+
+function pv_push(v: ptr<PVec>, p: ptr<u8>) {
+    if v.len >= v.cap {
+        v.cap = v.cap * 2
+        v.items = realloc(v.items as ptr<void>, (8 * v.cap) as i64) as ptr<ptr<u8>>
+    }
+    let it: ptr<ptr<u8>> = v.items
+    it[v.len] = p
+    v.len = v.len + 1
+}
+
+function pv_get(v: ptr<PVec>, i: i32) -> ptr<u8> {
+    let it: ptr<ptr<u8>> = v.items
+    return it[i]
+}
+
+function pv_set(v: ptr<PVec>, i: i32, p: ptr<u8>) {
+    let it: ptr<ptr<u8>> = v.items
+    it[i] = p
+}
+
+# ── Paths ───────────────────────────────────────────────────────
+
+# str(pathlib.Path(s)): collapse repeated slashes, drop `.` components and
+# a trailing slash. `..` stays.
+function py_path_str(s: string) -> string {
+    let n: i32 = t_len(s)
+    if n == 0 {
+        return "."
+    }
+    let absolute: bool = t_at(s, 0) == 47
+    let mut parts: TList = tl_new()
+    let mut i: i32 = 0
+    while i < n {
+        while i < n and t_at(s, i) == 47 {
+            i = i + 1
+        }
+        let st: i32 = i
+        while i < n and t_at(s, i) != 47 {
+            i = i + 1
+        }
+        if i > st {
+            let part: string = t_sub(s, st, i)
+            if not t_eq(part, ".") {
+                tl_push(&parts, part)
+            }
+        }
+    }
+    let mut tb: TBuf = tb_new()
+    if absolute {
+        tb_putc(&tb, 47)
+        # POSIX keeps a leading `//` but not `///`.
+        if n >= 2 and t_at(s, 1) == 47 and (n == 2 or t_at(s, 2) != 47) {
+            tb_putc(&tb, 47)
+        }
+    }
+    let mut k: i32 = 0
+    while k < parts.len {
+        if k > 0 {
+            tb_putc(&tb, 47)
+        }
+        tb_puts(&tb, tl_get(&parts, k))
+        k = k + 1
+    }
+    if tb.len == 0 {
+        return "."
+    }
+    return tb.data as string
+}
+
+function path_exists(path: string) -> bool {
+    let st: ptr<u8> = calloc(1, 512) as ptr<u8>
+    return stat(path, st) == 0
+}
+
+function is_dir(path: string) -> bool {
+    let d: ptr<void> = opendir(path)
+    if d == null {
+        return false
+    }
+    closedir(d)
+    return true
+}
+
+# ── argparse emulation ──────────────────────────────────────────
+
+# Python int(): optional sign, digits, single underscores between digits,
+# surrounding whitespace. ok = false when it would raise ValueError.
+struct IntParse {
+    value: i64,
+    ok: bool
+}
+
+function py_int(s0: string) -> IntParse {
+    let s: string = t_strip(s0)
+    let n: i32 = t_len(s)
+    let mut i: i32 = 0
+    let mut neg: bool = false
+    if i < n and (t_at(s, i) == 43 or t_at(s, i) == 45) {
+        neg = t_at(s, i) == 45
+        i = i + 1
+    }
+    if i >= n {
+        return IntParse { value: 0, ok: false }
+    }
+    let mut v: i64 = 0
+    let mut prev_digit: bool = false
+    while i < n {
+        let c: i32 = t_at(s, i)
+        if c >= 48 and c <= 57 {
+            v = v * 10 + ((c - 48) as i64)
+            prev_digit = true
+        } elif c == 95 and prev_digit and i + 1 < n and t_at(s, i + 1) >= 48 and t_at(s, i + 1) <= 57 {
+            prev_digit = false
+        } else {
+            return IntParse { value: 0, ok: false }
+        }
+        i = i + 1
+    }
+    if neg {
+        v = 0 - v
+    }
+    return IntParse { value: v, ok: true }
+}
+
+# argparse treats "-5" / "-1.5" as a negative number, not an option.
+function looks_negative_number(s: string) -> bool {
+    let n: i32 = t_len(s)
+    if n < 2 or t_at(s, 0) != 45 {
+        return false
+    }
+    let mut i: i32 = 1
+    let mut digits: i32 = 0
+    let mut dots: i32 = 0
+    while i < n {
+        let c: i32 = t_at(s, i)
+        if c >= 48 and c <= 57 {
+            digits = digits + 1
+        } elif c == 46 {
+            dots = dots + 1
+        } else {
+            return false
+        }
+        i = i + 1
+    }
+    return digits > 0 and dots <= 1
+}
+
+# Resolve a `--long` option against the known names, allowing unique
+# prefixes as argparse does. Returns the full name, "" when unknown, or
+# "?" + candidates when ambiguous.
+function match_long(arg: string, names: ptr<TList>) -> string {
+    let mut i: i32 = 0
+    while i < names.len {
+        if t_eq(tl_get(names, i), arg) {
+            return arg
+        }
+        i = i + 1
+    }
+    let mut hits: TList = tl_new()
+    i = 0
+    while i < names.len {
+        if t_starts_with(tl_get(names, i), arg) {
+            tl_push(&hits, tl_get(names, i))
+        }
+        i = i + 1
+    }
+    if hits.len == 1 {
+        return tl_get(&hits, 0)
+    }
+    if hits.len > 1 {
+        let mut tb: TBuf = tb_new()
+        tb_puts(&tb, "?")
+        let mut k: i32 = 0
+        while k < hits.len {
+            if k > 0 {
+                tb_puts(&tb, ", ")
+            }
+            tb_puts(&tb, tl_get(&hits, k))
+            k = k + 1
+        }
+        return tb.data as string
+    }
+    return ""
+}
+
+const WCET_USAGE: string = "usage: flow-analyze-wcet [-h] [--wcet] [--stack-depth] [--budget BUDGET] input\n"
+
+const WCET_HELP: string = "\nWCET and stack depth analysis for Flow programs (#282).\n\npositional arguments:\n  input            Input .flow file\n\noptions:\n  -h, --help       show this help message and exit\n  --wcet           Estimate worst-case execution time from loop bounds and\n                   call graph\n  --stack-depth    Compute maximum stack depth from the call graph\n  --budget BUDGET  Fail if any function exceeds this budget (bytes for\n                   --stack-depth, instructions for --wcet)\n"
+
+const MISRA_USAGE: string = "usage: flow-analyze [-h] [--standard {misra-c-2024,cert-c}]\n                    [--fail-on-violation]\n                    input\n"
+
+const MISRA_HELP: string = "\nScan generated C for MISRA/CERT patterns\n\npositional arguments:\n  input                 Generated .c file (or - for stdin)\n\noptions:\n  -h, --help            show this help message and exit\n  --standard {misra-c-2024,cert-c}\n                        Compliance standard label for the report\n  --fail-on-violation   Exit 1 when any VIOLATION is reported\n"
+
+function usage_error(usage: string, prog: string, msg: string) -> i32 {
+    err_str(usage)
+    err_str(prog)
+    err_str(": error: ")
+    err_str(msg)
+    err_str("\n")
+    return 2
+}
+
+# ── WCET: per-function facts ────────────────────────────────────
+
+struct FnInfo {
+    name: string,
+    local_bytes: i64,
+    stmt_cost: i64,
+    callees: TList,
+    is_extern: bool,
+    has_body: bool,
+    # DFS state, one slot per analysis.
+    visiting: bool,
+    cached: bool,
+    cache_value: i64,
+    cache_chain: ptr<u8>
+}
+
+# A call chain, shared tails.
+struct Chain {
+    label: string,
+    next: ptr<Chain>
+}
+
+function chain_cons(label: string, rest: ptr<Chain>) -> ptr<Chain> {
+    let c: ptr<Chain> = calloc(1, 16) as ptr<Chain>
+    c.label = label
+    c.next = rest
+    return c
+}
+
+struct Walk {
+    src: ptr<u8>,
+    arena: AstArena,
+    fi: ptr<FnInfo>,
+    root: i32,
+    # Set by sum(range) calls that became helper calls (range_sums.py).
+    need_sum: bool,
+    need_set: bool,
+    # First desugaring error the Python parser would have raised.
+    err: string
+}
+
+# The helpers range_sums.py appended to a module whose sum(a..b) calls
+# could not fold to a literal.
+const RANGE_SUM_HELPER: string = "\nfunction __flow_sum_range(start: i32, limit: i32, step: i32) -> i32 {\n    if step == 0 {\n        return 0\n    }\n    let mut count: i32 = 0\n    if step > 0 {\n        if start >= limit {\n            return 0\n        }\n        count = (limit - start + step - 1) / step\n    } else {\n        if start <= limit {\n            return 0\n        }\n        count = (start - limit + (0 - step) - 1) / (0 - step)\n    }\n    let endpoints: i32 = 2 * start + (count - 1) * step\n    if count % 2 == 0 {\n        return (count / 2) * endpoints\n    }\n    return count * (endpoints / 2)\n}\n"
+
+const RANGE_SET_HELPERS: string = "\nfunction __flow_range_gcd(a: i64, b: i64) -> i64 {\n    let mut x: i64 = a\n    let mut y: i64 = b\n    if x < 0 { x = 0 - x }\n    if y < 0 { y = 0 - y }\n    while y != 0 {\n        let t: i64 = x % y\n        x = y\n        y = t\n    }\n    return x\n}\n\nfunction __flow_range_modinv(a: i64, m: i64) -> i64 {\n    if m <= 1 {\n        return 0\n    }\n    let mut old_r: i64 = a % m\n    if old_r < 0 {\n        old_r = old_r + m\n    }\n    let mut r: i64 = m\n    let mut old_s: i64 = 1\n    let mut s: i64 = 0\n    while r != 0 {\n        let q: i64 = old_r / r\n        let next_r: i64 = old_r - q * r\n        old_r = r\n        r = next_r\n        let next_s: i64 = old_s - q * s\n        old_s = s\n        s = next_s\n    }\n    let mut inv: i64 = old_s % m\n    if inv < 0 {\n        inv = inv + m\n    }\n    return inv\n}\n\nfunction __flow_range_count(start: i64, limit: i64, stride: i64) -> i64 {\n    if stride == 0 {\n        return 0\n    }\n    if stride > 0 {\n        if start >= limit {\n            return 0\n        }\n        return (limit - start + stride - 1) / stride\n    }\n    let up: i64 = 0 - stride\n    if start <= limit {\n        return 0\n    }\n    return (start - limit + up - 1) / up\n}\n\nfunction __flow_progression_sum(first: i64, count: i64, stride: i64) -> i64 {\n    if count <= 0 {\n        return 0\n    }\n    let endpoints: i64 = 2 * first + (count - 1) * stride\n    if count % 2 == 0 {\n        return (count / 2) * endpoints\n    }\n    return count * (endpoints / 2)\n}\n\nfunction __flow_sum_range_isect(sa: i32, ea: i32, pa: i32, sb: i32, eb: i32, pb: i32) -> i32 {\n    let count_a: i64 = __flow_range_count(sa as i64, ea as i64, pa as i64)\n    let count_b: i64 = __flow_range_count(sb as i64, eb as i64, pb as i64)\n    if count_a <= 0 {\n        return 0\n    }\n    if count_b <= 0 {\n        return 0\n    }\n\n    let mut first_a: i64 = sa as i64\n    let mut step_a: i64 = pa as i64\n    if step_a < 0 {\n        first_a = first_a + (count_a - 1) * step_a\n        step_a = 0 - step_a\n    }\n    let mut first_b: i64 = sb as i64\n    let mut step_b: i64 = pb as i64\n    if step_b < 0 {\n        first_b = first_b + (count_b - 1) * step_b\n        step_b = 0 - step_b\n    }\n\n    let common: i64 = __flow_range_gcd(step_a, step_b)\n    let offset: i64 = first_b - first_a\n    if offset % common != 0 {\n        return 0\n    }\n\n    let modulus: i64 = step_b / common\n    let step: i64 = step_a * modulus\n    let mut index: i64 = 0\n    if modulus > 1 {\n        let inverse: i64 = __flow_range_modinv((step_a / common) % modulus, modulus)\n        let mut scaled: i64 = (offset / common) % modulus\n        if scaled < 0 {\n            scaled = scaled + modulus\n        }\n        index = (scaled * inverse) % modulus\n    }\n    let mut value: i64 = first_a + index * step_a\n\n    let mut low: i64 = first_a\n    if first_b > low {\n        low = first_b\n    }\n    let mut high: i64 = first_a + (count_a - 1) * step_a\n    let last_b: i64 = first_b + (count_b - 1) * step_b\n    if last_b < high {\n        high = last_b\n    }\n\n    if value < low {\n        let gap: i64 = low - value\n        value = value + ((gap + step - 1) / step) * step\n    }\n    if value > high {\n        return 0\n    }\n\n    let count: i64 = (high - value) / step + 1\n    return __flow_progression_sum(value, count, step) as i32\n}\n\nfunction __flow_sum_range_union(sa: i32, ea: i32, pa: i32, sb: i32, eb: i32, pb: i32) -> i32 {\n    let only_a: i32 = __flow_sum_range(sa, ea, pa)\n    let only_b: i32 = __flow_sum_range(sb, eb, pb)\n    let both: i32 = __flow_sum_range_isect(sa, ea, pa, sb, eb, pb)\n    return only_a + only_b - both\n}\n"
+
+
+function span_text(w: ptr<Walk>, s: i32, e: i32) -> string {
+    return t_span(w.src, s, e)
+}
+
+function valid(w: ptr<Walk>, id: i32) -> bool {
+    return id >= 0 and id < w.arena.len
+}
+
+function add_callee(fi: ptr<FnInfo>, name: string) {
+    if tl_index(&fi.callees, name) < 0 {
+        tl_push(&fi.callees, name)
+    }
+}
+
+# Size of a `let` type, as _type_size saw the Python parser's type name.
+function let_type_size(w: ptr<Walk>, ty: i32) -> i32 {
+    if not valid(w, ty) {
+        # `let x = ...`: the Python parser's type is `auto`.
+        return 16
+    }
+    let node: AstNode = w.arena.nodes[ty]
+    if node.kind != AST_TYPE {
+        return 16
+    }
+    if node.name_end <= node.name_start {
+        # [T], [T; N], &[T], function types.
+        return 16
+    }
+    if node.c == AST_TYPE_CAPABILITY or node.ival < 0 {
+        return 16
+    }
+    let base: string = span_text(w, node.name_start, node.name_end)
+    if t_eq(base, "ptr") {
+        return 8
+    }
+    if node.a != AST_NONE {
+        # Generic application: Name_args. Only Ptr_* reads as a pointer.
+        if t_eq(base, "Ptr") {
+            return 8
+        }
+        return 16
+    }
+    return flowc_type_size(base)
+}
+
+function set_err(w: ptr<Walk>, msg: string) {
+    if t_len(w.err) == 0 {
+        w.err = msg
+    }
+}
+
+# An integer bound as range_sums._literal_int saw it: an int literal,
+# optionally under unary - or +.
+function is_int_literal(w: ptr<Walk>, id: i32) -> bool {
+    if not valid(w, id) {
+        return false
+    }
+    let node: AstNode = w.arena.nodes[id]
+    if node.kind == AST_INT {
+        return true
+    }
+    if node.kind == AST_UNARY and (node.ival == TOK_MINUS or node.ival == TOK_PLUS) {
+        return is_int_literal(w, node.a)
+    }
+    return false
+}
+
+function nth(w: ptr<Walk>, head: i32, k: i32) -> i32 {
+    let mut cur: i32 = head
+    let mut i: i32 = 0
+    while valid(w, cur) and i < k {
+        cur = w.arena.nodes[cur].next
+        i = i + 1
+    }
+    return cur
+}
+
+# A pipeline stage: the call's first argument was piped in, so it starts at
+# or before the callee's name.
+function is_piped_call(w: ptr<Walk>, node: AstNode) -> bool {
+    if not valid(w, node.a) {
+        return false
+    }
+    return w.arena.nodes[node.a].start <= node.name_start and node.name_end > node.name_start
+}
+
+# fork_records._is_trivial: a variable, a literal, or a field of one.
+function is_trivial(w: ptr<Walk>, id: i32) -> bool {
+    if not valid(w, id) {
+        return true
+    }
+    let k: i32 = w.arena.nodes[id].kind
+    if k == AST_IDENT or k == AST_INT or k == AST_FLOAT or k == AST_STRING or k == AST_BOOL {
+        return true
+    }
+    if k == AST_FIELD_ACCESS {
+        return is_trivial(w, w.arena.nodes[id].a)
+    }
+    return false
+}
+
+# Return type node of the top-level function `name`, as fork_records'
+# _return_type_map saw it (the first declaration wins). -2 when there is no
+# such function, AST_NONE when it declares no return type.
+function return_type_of(w: ptr<Walk>, name: string) -> i32 {
+    let mut item: i32 = w.arena.nodes[w.root].a
+    while valid(w, item) {
+        let node: AstNode = w.arena.nodes[item]
+        let mut f: i32 = AST_NONE
+        if in_module(w, node.start) {
+            # Not a top-level declaration in the Python AST.
+        } elif node.kind == AST_FN {
+            f = item
+        } elif node.kind == AST_EXPORT and valid(w, node.a) and w.arena.nodes[node.a].kind == AST_FN {
+            f = node.a
+        }
+        if f != AST_NONE {
+            let fnode: AstNode = w.arena.nodes[f]
+            if t_eq(span_text(w, fnode.name_start, fnode.name_end), name) {
+                return fnode.b
+            }
+        } elif node.kind == AST_EXTERN {
+            let mut e: i32 = node.a
+            while valid(w, e) {
+                let en: AstNode = w.arena.nodes[e]
+                if en.kind == AST_FN and t_eq(span_text(w, en.name_start, en.name_end), name) {
+                    return en.b
+                }
+                e = en.next
+            }
+        }
+        item = node.next
+    }
+    return -2
+}
+
+# The callee a call node named in the Python AST (`f<T>(x)` was `f_T`).
+function call_name(w: ptr<Walk>, node: AstNode) -> string {
+    let mut callee: string = span_text(w, node.name_start, node.name_end)
+    let mut ta: i32 = node.b
+    while valid(w, ta) {
+        let tn: AstNode = w.arena.nodes[ta]
+        callee = t_cat3(callee, "_", py_type_name(span_text(w, tn.start, tn.end)))
+        ta = tn.next
+    }
+    return callee
+}
+
+# Type of a fork field or choose arm: the return type of the function the
+# pipeline ends in. -2 when unknown.
+function template_type(w: ptr<Walk>, id: i32) -> i32 {
+    if not valid(w, id) or w.arena.nodes[id].kind != AST_CALL {
+        return -2
+    }
+    return return_type_of(w, call_name(w, w.arena.nodes[id]))
+}
+
+function add_local(w: ptr<Walk>, bytes: i32) {
+    let fi: ptr<FnInfo> = w.fi
+    fi.local_bytes = fi.local_bytes + (bytes as i64)
+    fi.stmt_cost = fi.stmt_cost + (flowc_stmt_cost("declare") as i64)
+}
+
+# Fork and choose blocks, as fork_records.desugar_forks rewrote them.
+function walk_pipe_block(w: ptr<Walk>, node: AstNode) {
+    let fi: ptr<FnInfo> = w.fi
+    if node.ival == PIPE_BLOCK_STAGE {
+        set_err(w, "flow stage params are only valid for a flow used as a pipeline stage inside a flow output")
+        return
+    }
+    if node.ival == PIPE_BLOCK_CHOOSE {
+        # let mut __choose_N: T, then match sel { P => { __choose_N = arm } }
+        walk_chain(w, node.c)
+        if not is_trivial(w, node.a) {
+            add_local(w, 16)
+            walk_chain(w, node.a)
+        }
+        let mut result: i32 = -2
+        let mut arm: i32 = node.b
+        while valid(w, arm) and result == -2 {
+            result = template_type(w, w.arena.nodes[arm].b)
+            arm = w.arena.nodes[arm].next
+        }
+        if result == -2 {
+            set_err(w, "cannot infer the result type of a choose block")
+            return
+        }
+        add_local(w, let_type_size(w, result))
+        arm = node.b
+        while valid(w, arm) {
+            fi.stmt_cost = fi.stmt_cost + (flowc_stmt_cost("assignment") as i64)
+            walk_node(w, w.arena.nodes[arm].b, false)
+            arm = w.arena.nodes[arm].next
+        }
+        return
+    }
+    # A fork block became a struct literal of the branch pipelines, with a
+    # non-trivial source bound once in a `let`.
+    walk_chain(w, node.a)
+    let mut f: i32 = node.b
+    while valid(w, f) {
+        walk_chain(w, w.arena.nodes[f].a)
+        f = w.arena.nodes[f].next
+    }
+    if not is_trivial(w, node.a) {
+        add_local(w, 16)
+    }
+    if node.name_end <= node.name_start {
+        f = node.b
+        while valid(w, f) {
+            if template_type(w, w.arena.nodes[f].a) == -2 {
+                set_err(w, "cannot infer the type of an anonymous fork record field")
+            }
+            f = w.arena.nodes[f].next
+        }
+    }
+}
+
+
+function walk_chain(w: ptr<Walk>, head: i32) {
+    let mut cur: i32 = head
+    let mut guard: i32 = 0
+    while valid(w, cur) and guard < 1000000 {
+        walk_node(w, cur, false)
+        cur = w.arena.nodes[cur].next
+        guard = guard + 1
+    }
+}
+
+function walk_node(w: ptr<Walk>, n: i32, is_elif: bool) {
+    let node: AstNode = w.arena.nodes[n]
+    let k: i32 = node.kind
+    let fi: ptr<FnInfo> = w.fi
+    if k == AST_TYPE or k == AST_EFFECT_ROW or k == AST_FIXED_ARRAY_TYPE or k == AST_CAPABILITY_TYPE {
+        return
+    }
+    if k == AST_CALL {
+        let name: string = span_text(w, node.name_start, node.name_end)
+        if node.ival >= 2 and node.ival <= 4 and t_eq(name, "sum") {
+            # sum(a..b step s), optionally `| c..d step t` or `& c..d step t`,
+            # as range_sums.lower_range_sum lowered it: all-literal bounds fold
+            # to a literal, anything else calls a helper.
+            let mut n_bounds: i32 = 3
+            if node.ival > 2 {
+                n_bounds = 6
+            }
+            let mut all_lit: bool = true
+            let mut q: i32 = 0
+            while q < n_bounds {
+                if not is_int_literal(w, nth(w, node.a, q)) {
+                    all_lit = false
+                }
+                q = q + 1
+            }
+            if all_lit {
+                return
+            }
+            if node.ival == 2 {
+                add_callee(fi, "__flow_sum_range")
+                w.need_sum = true
+            } elif node.ival == 3 {
+                add_callee(fi, "__flow_sum_range_union")
+                w.need_set = true
+            } else {
+                add_callee(fi, "__flow_sum_range_isect")
+                w.need_set = true
+            }
+            fi.stmt_cost = fi.stmt_cost + (flowc_stmt_cost("call") as i64)
+            walk_chain(w, node.a)
+            return
+        }
+        if is_piped_call(w, node) and (t_eq(name, "find") or t_eq(name, "sort") or t_eq(name, "sortBy") or t_eq(name, "order")) {
+            # `xs |> find(t)` and `xs |> sort ...` were FindExpr and SortExpr,
+            # not calls. A sort's other arguments are its modifier words.
+            walk_node(w, node.a, false)
+            if t_eq(name, "find") {
+                walk_chain(w, w.arena.nodes[node.a].next)
+            }
+            return
+        }
+        add_callee(fi, call_name(w, node))
+        fi.stmt_cost = fi.stmt_cost + (flowc_stmt_cost("call") as i64)
+        walk_chain(w, node.a)
+        return
+    }
+    if k == AST_UNARY and node.ival == KW_DBG {
+        # `dbg e` was FunctionCall("__flow_dbg", [e]).
+        add_callee(fi, "__flow_dbg")
+        fi.stmt_cost = fi.stmt_cost + (flowc_stmt_cost("call") as i64)
+        walk_chain(w, node.a)
+        return
+    }
+    if k == AST_SORT_BY {
+        walk_chain(w, node.a)
+        return
+    }
+    if k == AST_PIPE_BLOCK {
+        walk_pipe_block(w, node)
+        return
+    }
+    if k == AST_MATCH_ARM or k == AST_MATCH_ARM_EXT {
+        # Patterns hold no calls in the Python AST: body, then guard.
+        walk_chain(w, node.b)
+        if k == AST_MATCH_ARM_EXT {
+            walk_chain(w, node.c)
+        }
+        return
+    }
+    if k == AST_LET {
+        fi.local_bytes = fi.local_bytes + (let_type_size(w, node.a) as i64)
+        fi.stmt_cost = fi.stmt_cost + (flowc_stmt_cost("declare") as i64)
+        walk_chain(w, node.b)
+        return
+    }
+    if k == AST_ASSIGN {
+        fi.stmt_cost = fi.stmt_cost + (flowc_stmt_cost("assignment") as i64)
+        # Python's Assignment lists the value before the target expression.
+        walk_chain(w, node.b)
+        walk_chain(w, node.a)
+        return
+    }
+    if k == AST_RETURN {
+        fi.stmt_cost = fi.stmt_cost + (flowc_stmt_cost("return") as i64)
+        walk_chain(w, node.a)
+        return
+    }
+    if k == AST_IF {
+        # An `elif` arm was a tuple in the Python IfStatement, not an
+        # IfStatement of its own, so it costs nothing extra.
+        if not is_elif {
+            fi.stmt_cost = fi.stmt_cost + (flowc_stmt_cost("if") as i64)
+        }
+        walk_chain(w, node.a)
+        walk_chain(w, node.b)
+        let els: i32 = node.c
+        if valid(w, els) and w.arena.nodes[els].kind == AST_BLOCK and w.arena.nodes[els].start == node.start {
+            # flowc wraps an elif arm in a block that starts where the whole
+            # `if` starts.
+            let mut s: i32 = w.arena.nodes[els].a
+            while valid(w, s) {
+                let sn: AstNode = w.arena.nodes[s]
+                walk_node(w, s, sn.kind == AST_IF and sn.start == node.start)
+                s = sn.next
+            }
+        } else {
+            walk_chain(w, els)
+        }
+        return
+    }
+    if k == AST_FOR {
+        fi.stmt_cost = fi.stmt_cost + (flowc_stmt_cost("for") as i64)
+        walk_chain(w, node.a)
+        walk_chain(w, node.b)
+        if node.ival > 0 and valid(w, node.ival) {
+            walk_chain(w, node.ival)
+        }
+        walk_chain(w, node.c)
+        return
+    }
+    if k == AST_WHILE {
+        let mut bound: i64 = node.ival as i64
+        if bound == 0 {
+            bound = FLOWC_DEFAULT_LOOP_BOUND as i64
+        }
+        fi.stmt_cost = fi.stmt_cost + (flowc_stmt_cost("while") as i64) * bound
+        walk_chain(w, node.a)
+        walk_chain(w, node.b)
+        return
+    }
+    if k == AST_FN {
+        # A lambda: its body counts toward the enclosing function.
+        walk_chain(w, node.c)
+        return
+    }
+    walk_chain(w, node.a)
+    walk_chain(w, node.b)
+    walk_chain(w, node.c)
+}
+
+struct Program {
+    fns: PVec
+}
+
+function find_fn(prog: ptr<Program>, name: string) -> i32 {
+    let mut i: i32 = 0
+    while i < prog.fns.len {
+        let fi: ptr<FnInfo> = pv_get(&prog.fns, i) as ptr<FnInfo>
+        if t_eq(fi.name, name) {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+# register(): a later declaration replaces an earlier one of the same name
+# but keeps its place, as assigning to a Python dict key does.
+function register_fn(prog: ptr<Program>, w: ptr<Walk>, name: string, body: i32, is_extern: bool) {
+    let fi: ptr<FnInfo> = calloc(1, 128) as ptr<FnInfo>
+    fi.name = name
+    fi.local_bytes = 0
+    fi.stmt_cost = 0
+    fi.callees = tl_new()
+    fi.is_extern = is_extern
+    fi.has_body = is_extern or valid(w, body)
+    fi.visiting = false
+    fi.cached = false
+    if valid(w, body) {
+        w.fi = fi
+        walk_chain(w, body)
+    }
+    let at: i32 = find_fn(prog, name)
+    if at >= 0 {
+        pv_set(&prog.fns, at, fi as ptr<u8>)
+    } else {
+        pv_push(&prog.fns, fi as ptr<u8>)
+    }
+}
+
+# Silence the parser's own diagnostics on stdout while it runs.
+function quiet_begin() -> i32 {
+    fflush(null)
+    let saved: i32 = dup(1)
+    let dn: i32 = open("/dev/null", 1)
+    if dn >= 0 {
+        dup2(dn, 1)
+        close(dn)
+    }
+    return saved
+}
+
+function quiet_end(saved: i32) {
+    fflush(null)
+    if saved >= 0 {
+        dup2(saved, 1)
+        close(saved)
+    }
+}
+
+struct Parsed {
+    ok: bool,
+    root: i32,
+    arena: AstArena,
+    src: ptr<u8>,
+    err_line: i32,
+    err_col: i32
+}
+
+# The Python parser expanded `flow` blocks into functions itself, and
+# named each `impl Trait for Type` method Type_Trait_method; flowc does
+# both as source rewrites before parsing.
+function parse_text(text: string) -> Parsed {
+    let n0: i32 = t_len(text)
+    let cap: i32 = n0 * 2 + 65536
+    let buf: ptr<u8> = calloc((cap + 1) as i64, 1) as ptr<u8>
+    memcpy(buf as ptr<void>, text as ptr<void>, n0 as i64)
+    let saved: i32 = quiet_begin()
+    let mut n: i32 = flowc_flow_blocks_expand_in_place(buf, n0, cap)
+    if n >= 0 {
+        n = flowc_impl_expand_in_place(buf, n, cap)
+    }
+    if n < 0 {
+        quiet_end(saved)
+        return Parsed { ok: false, root: AST_NONE, arena: flowc_ast_new(1), src: buf, err_line: 0, err_col: 0 }
+    }
+    buf[n] = 0
+    let mut p: Parser = flowc_parser_new(buf, n, n + 4096)
+    let root: i32 = flowc_parse_program(&p)
+    quiet_end(saved)
+    if root < 0 or p.err != 0 {
+        let mut t: Token = p.cur
+        if p.err != 0 {
+            t = p.err_tok
+        }
+        return Parsed { ok: false, root: AST_NONE, arena: p.arena, src: buf, err_line: t.line, err_col: t.col }
+    }
+    return Parsed { ok: true, root: root, arena: p.arena, src: buf, err_line: 0, err_col: 0 }
+}
+
+function skip_ws(s: string, i0: i32) -> i32 {
+    let mut i: i32 = i0
+    let n: i32 = t_len(s)
+    while i < n {
+        let c: i32 = t_at(s, i)
+        if c == 32 or c == 9 or c == 10 or c == 13 {
+            i = i + 1
+        } elif c == 35 {
+            while i < n and t_at(s, i) != 10 {
+                i = i + 1
+            }
+        } else {
+            return i
+        }
+    }
+    return i
+}
+
+function scan_ident(s: string, i0: i32) -> i32 {
+    let mut i: i32 = i0
+    while i < t_len(s) and t_is_ident_char(t_at(s, i)) {
+        i = i + 1
+    }
+    return i
+}
+
+# The Python parser's name for a type written `text` (Box<T> is Box_T,
+# ptr<T> is ptr_T, array<T, N> is array_N_T).
+function py_type_name(text: string) -> string {
+    let s: string = t_strip(text)
+    let i0: i32 = skip_ws(s, 0)
+    let e: i32 = scan_ident(s, i0)
+    let base: string = t_sub(s, i0, e)
+    let j: i32 = skip_ws(s, e)
+    if j >= t_len(s) or t_at(s, j) != 60 {
+        return base
+    }
+    # Split the top-level generic arguments.
+    let mut args: TList = tl_new()
+    let mut depth: i32 = 0
+    let mut st: i32 = j + 1
+    let mut k: i32 = j + 1
+    while k < t_len(s) {
+        let c: i32 = t_at(s, k)
+        if c == 60 {
+            depth = depth + 1
+        } elif c == 62 {
+            if depth == 0 {
+                tl_push(&args, t_sub(s, st, k))
+                k = t_len(s)
+            } else {
+                depth = depth - 1
+            }
+        } elif c == 44 and depth == 0 {
+            tl_push(&args, t_sub(s, st, k))
+            st = k + 1
+        }
+        k = k + 1
+    }
+    if t_eq(base, "array") and args.len == 2 {
+        return t_cat3("array_", t_strip(tl_get(&args, 1)), t_cat("_", py_type_name(tl_get(&args, 0))))
+    }
+    let mut tb: TBuf = tb_new()
+    tb_puts(&tb, base)
+    let mut a: i32 = 0
+    while a < args.len {
+        tb_puts(&tb, "_")
+        tb_puts(&tb, py_type_name(tl_get(&args, a)))
+        a = a + 1
+    }
+    return tb.data as string
+}
+
+# Register every top-level function in declaration order. Returns the
+# walk state, which records the range-sum helpers the module needs and the
+# first desugaring error.
+# flowc joins a `module Name { ... }` block's declarations to the top
+# level; the Python analysis saw only the ModuleDecl and skipped them.
+function in_module(w: ptr<Walk>, pos: i32) -> bool {
+    let mut i: i32 = 0
+    while i < w.arena.len {
+        let n: AstNode = w.arena.nodes[i]
+        if n.kind == AST_MODULE and pos >= n.start and pos < n.end {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+function register_all(prog: ptr<Program>, parsed: ptr<Parsed>) -> Walk {
+    let mut w: Walk = Walk { src: parsed.src, arena: parsed.arena, fi: null, root: parsed.root, need_sum: false, need_set: false, err: "" }
+    let has_modules: bool = flowc_ast_count_kind(parsed.arena, AST_MODULE) > 0
+    let mut item: i32 = parsed.arena.nodes[parsed.root].a
+    while item != AST_NONE {
+        let node: AstNode = parsed.arena.nodes[item]
+        if has_modules and in_module(&w, node.start) {
+            # Declared inside a module block.
+        } elif node.kind == AST_FN {
+            register_fn(prog, &w, span_text(&w, node.name_start, node.name_end), node.c, false)
+        } elif node.kind == AST_EXPORT and valid(&w, node.a) and parsed.arena.nodes[node.a].kind == AST_FN {
+            let f: AstNode = parsed.arena.nodes[node.a]
+            register_fn(prog, &w, span_text(&w, f.name_start, f.name_end), f.c, false)
+        } elif node.kind == AST_EXTERN {
+            let mut f: i32 = node.a
+            while valid(&w, f) {
+                let fnode: AstNode = parsed.arena.nodes[f]
+                if fnode.kind == AST_FN {
+                    register_fn(prog, &w, span_text(&w, fnode.name_start, fnode.name_end), AST_NONE, true)
+                }
+                f = fnode.next
+            }
+        }
+        item = node.next
+    }
+    return w
+}
+
+# Returns "" or the error the Python parser raised while desugaring.
+function collect_functions(prog: ptr<Program>, parsed: ptr<Parsed>) -> string {
+    let w: Walk = register_all(prog, parsed)
+    if t_len(w.err) > 0 {
+        return w.err
+    }
+    let mut helpers: string = ""
+    if w.need_set {
+        helpers = t_cat(RANGE_SUM_HELPER, RANGE_SET_HELPERS)
+    } elif w.need_sum {
+        helpers = RANGE_SUM_HELPER
+    }
+    if t_len(helpers) > 0 {
+        let mut hp: Parsed = parse_text(helpers)
+        if hp.ok {
+            let _hw: Walk = register_all(prog, &hp)
+        }
+    }
+    return ""
+}
+
+# ── WCET: call-graph DFS ────────────────────────────────────────
+
+struct DfsResult {
+    value: i64,
+    chain: ptr<Chain>
+}
+
+function reset_dfs(prog: ptr<Program>) {
+    let mut i: i32 = 0
+    while i < prog.fns.len {
+        let fi: ptr<FnInfo> = pv_get(&prog.fns, i) as ptr<FnInfo>
+        fi.visiting = false
+        fi.cached = false
+        i = i + 1
+    }
+}
+
+# mode 0: stack depth (bytes), mode 1: WCET (instructions).
+function dfs(prog: ptr<Program>, name: string, mode: i32) -> DfsResult {
+    let at: i32 = find_fn(prog, name)
+    if at >= 0 {
+        let fi0: ptr<FnInfo> = pv_get(&prog.fns, at) as ptr<FnInfo>
+        if fi0.cached {
+            return DfsResult { value: fi0.cache_value, chain: fi0.cache_chain as ptr<Chain> }
+        }
+    }
+    if at < 0 {
+        return unknown_result(name, mode)
+    }
+    let fi: ptr<FnInfo> = pv_get(&prog.fns, at) as ptr<FnInfo>
+    if fi.is_extern or not fi.has_body {
+        return unknown_result(name, mode)
+    }
+    if fi.visiting {
+        return DfsResult { value: 0, chain: chain_cons(t_cat(name, " (recursive)"), null) }
+    }
+    fi.visiting = true
+    let mut best: i64 = 0
+    let mut best_chain: ptr<Chain> = null
+    let mut i: i32 = 0
+    while i < fi.callees.len {
+        let r: DfsResult = dfs(prog, tl_get(&fi.callees, i), mode)
+        if r.value > best {
+            best = r.value
+            best_chain = r.chain
+        }
+        i = i + 1
+    }
+    fi.visiting = false
+    let mut own: i64 = fi.local_bytes
+    if mode == 1 {
+        own = fi.stmt_cost
+    }
+    fi.cached = true
+    fi.cache_value = own + best
+    fi.cache_chain = chain_cons(name, best_chain) as ptr<u8>
+    return DfsResult { value: fi.cache_value, chain: fi.cache_chain as ptr<Chain> }
+}
+
+function unknown_result(name: string, mode: i32) -> DfsResult {
+    if mode == 0 {
+        return DfsResult { value: 64, chain: chain_cons(name, null) }
+    }
+    return DfsResult { value: 100, chain: chain_cons(t_cat(name, " (extern)"), null) }
+}
+
+struct Row {
+    name: string,
+    value: i64,
+    chain: ptr<Chain>
+}
+
+# A field read through `(p as ptr<Row>).value` emits `.` in C, so read
+# through a typed local.
+function row_value(p: ptr<u8>) -> i64 {
+    let r: ptr<Row> = p as ptr<Row>
+    return r.value
+}
+
+# One row per function, sorted by value descending; ties keep declaration
+# order (Python's sort is stable).
+function compute(prog: ptr<Program>, mode: i32) -> PVec {
+    reset_dfs(prog)
+    let mut rows: PVec = pv_new()
+    let mut i: i32 = 0
+    while i < prog.fns.len {
+        let fi: ptr<FnInfo> = pv_get(&prog.fns, i) as ptr<FnInfo>
+        # Each top-level call starts with an empty visiting set.
+        let mut j: i32 = 0
+        while j < prog.fns.len {
+            let fj: ptr<FnInfo> = pv_get(&prog.fns, j) as ptr<FnInfo>
+            fj.visiting = false
+            j = j + 1
+        }
+        let r: DfsResult = dfs(prog, fi.name, mode)
+        let row: ptr<Row> = calloc(1, 32) as ptr<Row>
+        row.name = fi.name
+        row.value = r.value
+        row.chain = r.chain
+        pv_push(&rows, row as ptr<u8>)
+        i = i + 1
+    }
+    # Stable insertion sort, descending.
+    let mut a: i32 = 1
+    while a < rows.len {
+        let cur: ptr<u8> = pv_get(&rows, a)
+        let cur_row: ptr<Row> = cur as ptr<Row>
+        let cv: i64 = cur_row.value
+        let mut b: i32 = a - 1
+        while b >= 0 and row_value(pv_get(&rows, b)) < cv {
+            pv_set(&rows, b + 1, pv_get(&rows, b))
+            b = b - 1
+        }
+        pv_set(&rows, b + 1, cur)
+        a = a + 1
+    }
+    return rows
+}
+
+function chain_str(c0: ptr<Chain>) -> string {
+    let mut tb: TBuf = tb_new()
+    let mut c: ptr<Chain> = c0
+    let mut n: i32 = 0
+    while c != null and n < 5 {
+        if n > 0 {
+            tb_puts(&tb, " → ")
+        }
+        tb_puts(&tb, c.label)
+        c = c.next
+        n = n + 1
+    }
+    if c != null {
+        tb_puts(&tb, " → ...")
+    }
+    return tb.data as string
+}
+
+function format_report(rows: ptr<PVec>, source: string, mode: i32) -> string {
+    let mut tb: TBuf = tb_new()
+    if mode == 0 {
+        tb_puts(&tb, "Stack depth analysis: ")
+    } else {
+        tb_puts(&tb, "WCET analysis: ")
+    }
+    tb_puts(&tb, source)
+    tb_puts(&tb, "\n============================================================\n")
+    tb_puts(&tb, pad_right("Function", 40))
+    tb_puts(&tb, " ")
+    if mode == 0 {
+        tb_puts(&tb, pad_left("Max depth", 10))
+    } else {
+        tb_puts(&tb, pad_left("Max cost", 10))
+    }
+    tb_puts(&tb, " Chain\n------------------------------------------------------------\n")
+    let mut i: i32 = 0
+    while i < rows.len and i < 20 {
+        let r: ptr<Row> = pv_get(rows, i) as ptr<Row>
+        tb_puts(&tb, pad_right(r.name, 40))
+        tb_puts(&tb, " ")
+        tb_puts(&tb, pad_left(i64_str(r.value), 8))
+        if mode == 0 {
+            tb_puts(&tb, " bytes  ")
+        } else {
+            tb_puts(&tb, " inst  ")
+        }
+        tb_puts(&tb, chain_str(r.chain))
+        tb_puts(&tb, "\n")
+        i = i + 1
+    }
+    if rows.len > 20 {
+        tb_puts(&tb, "  ... and ")
+        tb_puts(&tb, i64_str((rows.len - 20) as i64))
+        tb_puts(&tb, " more\n")
+    }
+    return tb.data as string
+}
+
+function wcet_main(argc: i32, argv: ptr<string>) -> i32 {
+    let prog_name: string = "flow-analyze-wcet"
+    let mut names: TList = tl_new()
+    tl_push(&names, "--help")
+    tl_push(&names, "--wcet")
+    tl_push(&names, "--stack-depth")
+    tl_push(&names, "--budget")
+    let mut want_wcet: bool = false
+    let mut want_stack: bool = false
+    let mut has_budget: bool = false
+    let mut budget: i64 = 0
+    let mut input: string = ""
+    let mut have_input: bool = false
+    let mut extras: TList = tl_new()
+    let mut only_positional: bool = false
+    let mut i: i32 = 2
+    while i < argc {
+        let arg: string = argv[i]
+        if only_positional or t_len(arg) < 2 or t_at(arg, 0) != 45 or looks_negative_number(arg) {
+            if t_eq(arg, "--") and not only_positional {
+                only_positional = true
+            } elif not have_input {
+                input = arg
+                have_input = true
+            } else {
+                tl_push(&extras, arg)
+            }
+            i = i + 1
+            continue
+        }
+        if t_eq(arg, "-h") {
+            out_str(WCET_USAGE)
+            out_str(WCET_HELP)
+            return 0
+        }
+        let mut opt: string = arg
+        let mut inline_val: string = ""
+        let mut has_inline: bool = false
+        let eq: i32 = t_find_char(arg, 61)
+        if t_starts_with(arg, "--") and eq > 0 {
+            opt = t_sub(arg, 0, eq)
+            inline_val = t_from(arg, eq + 1)
+            has_inline = true
+        }
+        let full: string = match_long(opt, &names)
+        if t_starts_with(arg, "--") == false or t_len(full) == 0 {
+            tl_push(&extras, arg)
+            i = i + 1
+            continue
+        }
+        if t_at(full, 0) == 63 {
+            return usage_error(WCET_USAGE, prog_name, t_cat3("ambiguous option: ", opt, t_cat(" could match ", t_from(full, 1))))
+        }
+        if t_eq(full, "--help") {
+            out_str(WCET_USAGE)
+            out_str(WCET_HELP)
+            return 0
+        }
+        if t_eq(full, "--budget") {
+            let mut val: string = ""
+            if has_inline {
+                val = inline_val
+            } elif i + 1 < argc and (t_len(argv[i + 1]) == 0 or t_at(argv[i + 1], 0) != 45 or looks_negative_number(argv[i + 1])) {
+                val = argv[i + 1]
+                i = i + 1
+            } else {
+                return usage_error(WCET_USAGE, prog_name, "argument --budget: expected one argument")
+            }
+            let pi: IntParse = py_int(val)
+            if not pi.ok {
+                return usage_error(WCET_USAGE, prog_name, t_cat3("argument --budget: invalid int value: '", val, "'"))
+            }
+            budget = pi.value
+            has_budget = true
+            i = i + 1
+            continue
+        }
+        if has_inline {
+            return usage_error(WCET_USAGE, prog_name, t_cat3("argument ", full, t_cat3(": ignored explicit argument '", inline_val, "'")))
+        }
+        if t_eq(full, "--wcet") {
+            want_wcet = true
+        } else {
+            want_stack = true
+        }
+        i = i + 1
+    }
+    if not have_input {
+        return usage_error(WCET_USAGE, prog_name, "the following arguments are required: input")
+    }
+    if extras.len > 0 {
+        let mut tb: TBuf = tb_new()
+        tb_puts(&tb, "unrecognized arguments:")
+        let mut e: i32 = 0
+        while e < extras.len {
+            tb_puts(&tb, " ")
+            tb_puts(&tb, tl_get(&extras, e))
+            e = e + 1
+        }
+        return usage_error(WCET_USAGE, prog_name, tb.data as string)
+    }
+    if not want_wcet and not want_stack {
+        return usage_error(WCET_USAGE, prog_name, "at least one of --wcet or --stack-depth is required")
+    }
+    let source: string = py_path_str(input)
+    if not path_exists(input) {
+        err_str(t_cat3("Error: ", source, " not found\n"))
+        return 1
+    }
+    if is_dir(input) {
+        err_str(t_cat3("Error: ", source, ": Is a directory\n"))
+        return 1
+    }
+    let text: string = t_read_file(input)
+    let mut parsed: Parsed = parse_text(text)
+    if not parsed.ok {
+        err_str(t_cat3("Error: ", source, t_cat3(":", t_int(parsed.err_line), t_cat3(":", t_int(parsed.err_col), ": parse error\n"))))
+        return 1
+    }
+    # The Python parser had no `shader` declarations (the Shader DSL was a
+    # module-level rewrite it never saw), so a file with one did not parse.
+    let mut top: i32 = parsed.arena.nodes[parsed.root].a
+    while top != AST_NONE {
+        if parsed.arena.nodes[top].kind == AST_SHADER {
+            err_str(t_cat3("Error: ", source, ": unexpected declaration: shader\n"))
+            return 1
+        }
+        top = parsed.arena.nodes[top].next
+    }
+    let mut prog: Program = Program { fns: pv_new() }
+    let desugar_err: string = collect_functions(&prog, &parsed)
+    if t_len(desugar_err) > 0 {
+        err_str(t_cat3("Error: ", source, t_cat3(": ", desugar_err, "\n")))
+        return 1
+    }
+    let mut rc: i32 = 0
+    if want_stack {
+        let mut rows: PVec = compute(&prog, 0)
+        out_str(format_report(&rows, source, 0))
+        out_str("\n")
+        if has_budget {
+            let mut r: i32 = 0
+            while r < rows.len {
+                let row: ptr<Row> = pv_get(&rows, r) as ptr<Row>
+                if row.value > budget {
+                    err_str(t_cat3("BUDGET EXCEEDED: ", row.name, t_cat3(" uses ", i64_str(row.value), t_cat3(" bytes (limit: ", i64_str(budget), ")\n"))))
+                    rc = 1
+                }
+                r = r + 1
+            }
+        }
+    }
+    if want_wcet {
+        let mut rows: PVec = compute(&prog, 1)
+        out_str(format_report(&rows, source, 1))
+        out_str("\n")
+        if has_budget and not want_stack {
+            let mut r: i32 = 0
+            while r < rows.len {
+                let row: ptr<Row> = pv_get(&rows, r) as ptr<Row>
+                if row.value > budget {
+                    err_str(t_cat3("BUDGET EXCEEDED: ", row.name, t_cat3(" costs ", i64_str(row.value), t_cat3(" (limit: ", i64_str(budget), ")\n"))))
+                    rc = 1
+                }
+                r = r + 1
+            }
+        }
+    }
+    return rc
+}
+
+# ── MISRA scan ──────────────────────────────────────────────────
+
+function read_stdin() -> string {
+    let mut r: TReader = tr_new()
+    let mut tb: TBuf = tb_new()
+    let mut c: i32 = tr_getc(&r)
+    while c >= 0 {
+        tb_putc(&tb, c)
+        c = tr_getc(&r)
+    }
+    return tb.data as string
+}
+
+function misra_main(argc: i32, argv: ptr<string>) -> i32 {
+    let prog_name: string = "flow-analyze"
+    let mut names: TList = tl_new()
+    tl_push(&names, "--help")
+    tl_push(&names, "--standard")
+    tl_push(&names, "--fail-on-violation")
+    let mut standard: string = "misra-c-2024"
+    let mut fail_on: bool = false
+    let mut input: string = ""
+    let mut have_input: bool = false
+    let mut extras: TList = tl_new()
+    let mut only_positional: bool = false
+    let mut i: i32 = 2
+    while i < argc {
+        let arg: string = argv[i]
+        # A lone `-` is the stdin positional.
+        if only_positional or t_len(arg) < 2 or t_at(arg, 0) != 45 or looks_negative_number(arg) {
+            if t_eq(arg, "--") and not only_positional {
+                only_positional = true
+            } elif not have_input {
+                input = arg
+                have_input = true
+            } else {
+                tl_push(&extras, arg)
+            }
+            i = i + 1
+            continue
+        }
+        if t_eq(arg, "-h") {
+            out_str(MISRA_USAGE)
+            out_str(MISRA_HELP)
+            return 0
+        }
+        let mut opt: string = arg
+        let mut inline_val: string = ""
+        let mut has_inline: bool = false
+        let eq: i32 = t_find_char(arg, 61)
+        if t_starts_with(arg, "--") and eq > 0 {
+            opt = t_sub(arg, 0, eq)
+            inline_val = t_from(arg, eq + 1)
+            has_inline = true
+        }
+        let full: string = match_long(opt, &names)
+        if t_starts_with(arg, "--") == false or t_len(full) == 0 {
+            tl_push(&extras, arg)
+            i = i + 1
+            continue
+        }
+        if t_at(full, 0) == 63 {
+            return usage_error(MISRA_USAGE, prog_name, t_cat3("ambiguous option: ", opt, t_cat(" could match ", t_from(full, 1))))
+        }
+        if t_eq(full, "--help") {
+            out_str(MISRA_USAGE)
+            out_str(MISRA_HELP)
+            return 0
+        }
+        if t_eq(full, "--standard") {
+            let mut val: string = ""
+            if has_inline {
+                val = inline_val
+            } elif i + 1 < argc and (t_len(argv[i + 1]) == 0 or t_at(argv[i + 1], 0) != 45 or looks_negative_number(argv[i + 1])) {
+                val = argv[i + 1]
+                i = i + 1
+            } else {
+                return usage_error(MISRA_USAGE, prog_name, "argument --standard: expected one argument")
+            }
+            if not t_eq(val, "misra-c-2024") and not t_eq(val, "cert-c") {
+                return usage_error(MISRA_USAGE, prog_name, t_cat3("argument --standard: invalid choice: '", val, "' (choose from misra-c-2024, cert-c)"))
+            }
+            standard = val
+            i = i + 1
+            continue
+        }
+        if has_inline {
+            return usage_error(MISRA_USAGE, prog_name, t_cat3("argument ", full, t_cat3(": ignored explicit argument '", inline_val, "'")))
+        }
+        fail_on = true
+        i = i + 1
+    }
+    if not have_input {
+        return usage_error(MISRA_USAGE, prog_name, "the following arguments are required: input")
+    }
+    if extras.len > 0 {
+        let mut tb: TBuf = tb_new()
+        tb_puts(&tb, "unrecognized arguments:")
+        let mut e: i32 = 0
+        while e < extras.len {
+            tb_puts(&tb, " ")
+            tb_puts(&tb, tl_get(&extras, e))
+            e = e + 1
+        }
+        return usage_error(MISRA_USAGE, prog_name, tb.data as string)
+    }
+    let mut text: string = ""
+    let mut source: string = "<stdin>"
+    if t_eq(input, "-") {
+        text = read_stdin()
+    } else {
+        source = py_path_str(input)
+        if not path_exists(input) {
+            err_str(t_cat3("flow-analyze: error: ", source, ": No such file or directory\n"))
+            return 1
+        }
+        if is_dir(input) {
+            err_str(t_cat3("flow-analyze: error: ", source, ": Is a directory\n"))
+            return 1
+        }
+        text = t_read_file(input)
+    }
+    let report: MisraReport = flowc_misra_report(text, standard, source)
+    out_str(report.text)
+    if fail_on and report.violations > 0 {
+        return 1
+    }
+    return 0
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    if argc >= 2 and t_eq(argv[1], "wcet") {
+        return wcet_main(argc, argv)
+    }
+    if argc >= 2 and t_eq(argv[1], "misra") {
+        return misra_main(argc, argv)
+    }
+    err_str("usage: flow-analyze wcet|misra [args...]\n")
+    return 2
+}

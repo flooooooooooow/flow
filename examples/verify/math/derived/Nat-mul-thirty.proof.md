@@ -2,9 +2,9 @@
 
 *Twenty-nine times one is twenty-nine.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 29 * 1 = 29
+## Derived fact 1: 29 * 1 = 29
 
 **Coordinate.** the natural numbers · multiplication · twenty nine times one is twenty nine · **Derived fact**
 

@@ -92,9 +92,9 @@
       "id": "formatter",
       "kind": "cli",
       "classification": "experimental",
-      "source": "src/flow/formatter.py",
+      "source": "compiler/src/fmt.flow",
       "owner_issue": 651,
-      "note": "flow fmt remains Experimental in 1.0. The current formatter does not yet round-trip the full Stable grammar; promotion requires deterministic/idempotent parse-format-parse qualification without dropping declarations or changing semantics."
+      "note": "flow fmt remains Experimental in 1.0. It is the flowc token-stream formatter; compiler/scripts/fmt_check.flow checks token and comment preservation, idempotence and identical emitted C over every tracked .flow file. Promotion to Stable is a separate decision."
     },
     {
       "id": "cli-extended",
@@ -116,7 +116,7 @@
       "id": "manifest-extensions",
       "kind": "manifest",
       "classification": "experimental",
-      "source": "src/flow/package.py",
+      "source": "compiler/src/pkg.flow",
       "owner_issue": 651,
       "note": "Dependency acquisition/source forms, dev dependencies, native linking, publication metadata and development-policy tables remain Experimental pending package/security qualification."
     },

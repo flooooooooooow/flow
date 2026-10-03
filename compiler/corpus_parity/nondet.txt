@@ -1,0 +1,6 @@
+# Files whose stdout depends on the clock or the machine, although two
+# back-to-back Python runs printed the same. corpus_parity.flow compares their
+# build and exit code only. One path per line.
+tests/lang/test_c_import_string_time.flow
+# Prints st_size of ".", which depends on what else is in the checkout.
+tests/lang/test_c_import_struct.flow

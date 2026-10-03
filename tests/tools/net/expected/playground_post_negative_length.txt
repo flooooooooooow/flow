@@ -1,0 +1,7 @@
+HTTP/1.0 413 Request Entity Too Large
+Content-Type: application/json; charset=utf-8
+Access-Control-Allow-Origin: http://127.0.0.1:8777
+Access-Control-Allow-Methods: POST, OPTIONS, GET
+Access-Control-Allow-Headers: Content-Type
+
+{"ok": false, "error": "body too large or empty"}

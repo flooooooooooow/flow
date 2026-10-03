@@ -2,9 +2,9 @@
 
 *Left multiplying by an inverse yields the identity.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §1.1
+**Source.** dummit-foote: *Abstract Algebra*, §1.1
 
-## Derived fact 1 — inv(g) * g = 1
+## Derived fact 1: inv(g) * g = 1
 
 **Coordinate.** Group · inverse · left inverse multiplied on the left yields one · **Derived fact**
 

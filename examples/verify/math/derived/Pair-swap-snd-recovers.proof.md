@@ -2,9 +2,9 @@
 
 *Swapping recovers the second component as first.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Product_type
+**Source.** church: https://en.wikipedia.org/wiki/Product_type
 
-## Derived fact 1 — snd(swap(pair(a, b))) = a
+## Derived fact 1: snd(swap(pair(a, b))) = a
 
 **Coordinate.** Pair · swap · swap recovers second as first · **Derived fact**
 

@@ -1,3 +1,4 @@
+# effects-mode: permissive
 # Flow-native language test: effects, capabilities and handler scoping.
 #
 # Inside `handle Log with Console { … }` the handler is known at compile time,

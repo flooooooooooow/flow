@@ -1,0 +1,52 @@
+Stack depth analysis: tests/lang/test_hybrid_events.flow
+============================================================
+Function                                  Max depth Chain
+------------------------------------------------------------
+main                                          264 bytes  main → fabs
+fabs                                           64 bytes  fabs
+TwoWhens_step                                  40 bytes  TwoWhens_step
+Ball_step                                      40 bytes  Ball_step
+Swap_step                                      32 bytes  Swap_step
+Counter_step                                   24 bytes  Counter_step
+Tiny_step                                      24 bytes  Tiny_step
+Cross_step                                     24 bytes  Cross_step
+Approach_step                                  24 bytes  Approach_step
+Swap_new                                       16 bytes  Swap_new
+TwoWhens_new                                   16 bytes  TwoWhens_new
+Counter_new                                    16 bytes  Counter_new
+Tiny_new                                       16 bytes  Tiny_new
+Cross_new                                      16 bytes  Cross_new
+Approach_new                                   16 bytes  Approach_new
+Linear_new                                     16 bytes  Linear_new
+Ball_new                                       16 bytes  Ball_new
+Linear_step                                     8 bytes  Linear_step
+Swap_init                                       0 bytes  Swap_init
+Swap_derivs                                     0 bytes  Swap_derivs
+  ... and 22 more
+
+WCET analysis: tests/lang/test_hybrid_events.flow
+============================================================
+Function                                   Max cost Chain
+------------------------------------------------------------
+main                                         5476 inst  main → fabs (extern)
+fabs                                          100 inst  fabs (extern)
+TwoWhens_step                                  33 inst  TwoWhens_step → TwoWhens_derivs
+Ball_step                                      32 inst  Ball_step → Ball_derivs
+Swap_step                                      27 inst  Swap_step → Swap_derivs
+Counter_step                                   24 inst  Counter_step → Counter_derivs
+Tiny_step                                      24 inst  Tiny_step → Tiny_derivs
+Cross_step                                     24 inst  Cross_step → Cross_derivs
+Approach_step                                  24 inst  Approach_step → Approach_derivs
+TwoWhens_new                                   23 inst  TwoWhens_new → TwoWhens_init
+Ball_new                                       23 inst  Ball_new → Ball_init
+Swap_new                                       21 inst  Swap_new → Swap_init
+Counter_new                                    19 inst  Counter_new → Counter_init
+Tiny_new                                       19 inst  Tiny_new → Tiny_init
+Cross_new                                      19 inst  Cross_new → Cross_init
+Approach_new                                   19 inst  Approach_new → Approach_init
+Linear_new                                     17 inst  Linear_new → Linear_init
+Linear_step                                    15 inst  Linear_step → Linear_derivs
+TwoWhens_init                                  10 inst  TwoWhens_init
+Ball_init                                      10 inst  Ball_init
+  ... and 22 more
+

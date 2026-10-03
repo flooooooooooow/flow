@@ -1,0 +1,4 @@
+# Metal takes two arguments (fsl_hash21); WGSL rejects them.
+shader fill h {
+    color = vec4(hash(1.0, 2.0))
+}

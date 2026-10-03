@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 # Build the Stage-A flowc driver from the checked-in bootstrap C.
-# Needs a C compiler and nothing else — no Python, no pip, no network.
+# Needs a C compiler and nothing else: no Python, no pip, no network.
 #
 #   ./compiler/scripts/bootstrap_from_c.sh           # build compiler/build/flowc_bootstrap
 #   ./compiler/scripts/bootstrap_from_c.sh --verify  # + check the C still matches compiler/src
 #   ./compiler/scripts/bootstrap_from_c.sh --regen   # rewrite the checked-in C from compiler/src
+#
+# --regen needs no Python. The binary built from the checked-in C compiles
+# compiler/src/main.flow; the result compiles it again, and so on until two
+# consecutive generations emit the same C (a fixed point, usually the second
+# generation). That C replaces the checked-in file, so --verify then holds.
 #
 # compiler/bootstrap/flowc_stage_a.c is `main.flow` plus every module it
 # imports, emitted by flowc as one translation unit. It is how a user gets a
@@ -26,7 +31,7 @@ if [[ ! -f "$BOOT_C" ]]; then
 fi
 
 echo "=== cc ${BOOT_C} -> ${BOOT_BIN} ==="
-$CC $CFLAGS -o "$BOOT_BIN" "$BOOT_C"
+$CC $CFLAGS -o "$BOOT_BIN" "$BOOT_C" -lm
 
 # Smoke: the bootstrap compiler compiles an ordinary Stage-A program.
 # Positional argv runs the self-test suite; emit needs FLOWC_IN / FLOWC_OUT.
@@ -44,41 +49,44 @@ if [[ "$sum_code" -ne 45 ]]; then
 fi
 echo "PASS bootstrap compiles stage_a_sum (exit 45)"
 
-# Regenerate with the freshest compiler available, so a cgen change lands in
-# the checked-in C in one step rather than converging over several runs.
-pick_emitter() {
-    local cand
-    for cand in \
-        compiler/build/stage_a_driver_flow_self \
-        compiler/build/stage_a_driver_flow_g2 \
-        compiler/build/stage_a_driver_flow \
-        "$BOOT_BIN"
-    do
-        if [[ -x "$cand" ]]; then
-            printf '%s\n' "$cand"
-            return 0
-        fi
-    done
-    return 1
+# Emit compiler/src/main.flow in bundle mode with the flowc binary $1 into $2.
+emit_main() {
+    FLOWC_PERMISSIVE_EFFECTS=1 FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
+    FLOWC_IN=compiler/src/main.flow FLOWC_OUT="$2" \
+        "$1"
+    [[ -s "$2" ]]
 }
 
 if [[ "$mode" == "--regen" ]]; then
-    emitter="$(pick_emitter)"
-    echo "=== regen with ${emitter} ==="
-    # Checked-in bootstrap C is the main.flow bundle (includes self-tests).
-    FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
-    FLOWC_IN=compiler/src/main.flow FLOWC_OUT="$BOOT_C" \
-        "$emitter"
-    echo "REGEN ${BOOT_C} ($(wc -c <"$BOOT_C") bytes)"
-    exit 0
+    emitter="$BOOT_BIN"
+    prev=""
+    gen=1
+    while (( gen <= 4 )); do
+        out="compiler/build/bootstrap_regen_gen${gen}.c"
+        echo "=== regen gen${gen}: ${emitter} compiles compiler/src ==="
+        emit_main "$emitter" "$out"
+        if [[ -n "$prev" ]] && cmp -s "$prev" "$out"; then
+            cp "$out" "$BOOT_C"
+            echo "FIXED POINT at gen${gen}"
+            echo "REGEN ${BOOT_C} ($(wc -c <"$BOOT_C") bytes)"
+            # The checked-in binary beside it, and the local build.
+            $CC $CFLAGS -w -o compiler/bootstrap/flowc_stage_a "$BOOT_C" -lm
+            $CC $CFLAGS -w -o "$BOOT_BIN" "$BOOT_C" -lm
+            exit 0
+        fi
+        $CC $CFLAGS -w -o "compiler/build/bootstrap_regen_gen${gen}" "$out" -lm
+        emitter="compiler/build/bootstrap_regen_gen${gen}"
+        prev="$out"
+        gen=$(( gen + 1 ))
+    done
+    echo "FAIL regen: no fixed point after 4 generations" >&2
+    exit 1
 fi
 
 if [[ "$mode" == "--verify" ]]; then
-    emitter="$(pick_emitter)"
+    emitter="$BOOT_BIN"
     echo "=== verify against ${emitter} emit of compiler/src ==="
-    FLOWC_BUNDLE=1 FLOWC_DIR=compiler/src \
-    FLOWC_IN=compiler/src/main.flow FLOWC_OUT=compiler/build/bootstrap_regen.c \
-        "$emitter"
+    emit_main "$emitter" compiler/build/bootstrap_regen.c
     if ! cmp -s "$BOOT_C" compiler/build/bootstrap_regen.c; then
         echo "FAIL bootstrap drift: ${BOOT_C} != flowc emit of compiler/src" >&2
         echo "  regenerate with: ./compiler/scripts/bootstrap_from_c.sh --regen" >&2

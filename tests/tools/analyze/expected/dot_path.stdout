@@ -1,0 +1,7 @@
+WCET analysis: examples/basics/power.flow
+============================================================
+Function                                   Max cost Chain
+------------------------------------------------------------
+main                                         5033 inst  main → power
+power                                        5018 inst  power
+

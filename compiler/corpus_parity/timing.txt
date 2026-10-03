@@ -1,0 +1,14 @@
+# Files whose run depends on how loaded the machine is, not on the
+# compiler: the corpus runs seven programs at once with a 10s limit, and
+# these either time out under that load (concurrency, nbody) or timed out
+# when the Python golden was recorded. corpus_parity.flow compares their
+# build only; both hosts must build them. One path per line.
+examples/concurrency/cont_flow_resume.flow
+examples/concurrency/fiber_async.flow
+examples/concurrency/fiber_suspend.flow
+examples/concurrency/gomaxprocs.flow
+examples/concurrency/http_middleware.flow
+tests/benchmarks/suite/flow/02_nbody.flow
+tests/runtime/test_fiber_async.flow
+examples/ai/flowlm_charlm.flow
+examples/evolution/chemostat.flow

@@ -1,0 +1,36 @@
+# Ceilings for compiler/scripts/parity_typecheck.flow --check, per OS
+# (`uname -s`): OS class strict lenient. Lower them as differences close;
+# never raise them. Every remaining difference is intended:
+#
+#   py-only 6: flowc features the Python checker never typed.
+#     sizeof<T>() (#952): compiler/fixtures/stage_a_sizeof.flow
+#     chained assignment (#1036): tests/lang/test_chained_assign.flow,
+#       tests/cgen/chained_assign.flow
+#     generic struct literal inference: tests/lang/test_generic_struct_infer.flow,
+#       tests/cgen/generic_struct_infer.flow
+#     a module alias used as a value: tests/lang/test_import_alias.flow
+#     string module statics (#1103): tests/lang/test_module_string_static.flow
+#   agree-diff 1: compiler/fixtures/typecheck_rules/chained_assign_mismatch.flow,
+#     where Python typed the inner assignment unknown.
+#   flowc-only 1: the modules-namespacing.md block that defines `gain` twice.
+#     Python kept both as overloads and clang rejected the redefinition.
+Darwin py-only 7 0
+Darwin agree-diff 1 0
+Darwin flowc-only 1 0
+#   warnings (#678): flowc prints the checker's warnings; none differ from
+#     the Python checker's (warnings.txt).
+Darwin warn-diff 0 0
+Darwin warn-py-only 0 0
+Darwin warn-flowc-only 0 0
+#
+# Linux, recorded on the ubuntu-latest CI runner: the same differences, and
+# two more py-only cases. lib/stdlib/net.flow calls htons, which glibc declares
+# as a macro; the Python checker's @cImport did not see it as a function
+# ("Undefined function 'htons'"), and flowc does. The second case is the
+# string module static introduced by #1103.
+Linux py-only 8 0
+Linux agree-diff 1 0
+Linux flowc-only 1 0
+Linux warn-diff 0 0
+Linux warn-py-only 0 0
+Linux warn-flowc-only 0 0

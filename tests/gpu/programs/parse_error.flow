@@ -1,0 +1,4 @@
+@gpu
+function k(a: ptr<f32> -> void {
+    a[0] = 1.0
+}

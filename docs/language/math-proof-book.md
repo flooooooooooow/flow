@@ -1,9 +1,9 @@
-# Flow Math Proof Book — Plan & Completeness Roadmap
+# Flow Math Proof Book: Plan & Completeness Roadmap
 
 > **Status:** Living plan  
-> **Goal:** A single, numbered, cross-referenced proof book in the math domain — every step traces to earlier steps or named Claim Paths.
+> **Goal:** A single, numbered, cross-referenced proof book in the math domain. Every step traces to earlier steps or named Claim Paths.
 
-**Master TOC (Mathlib equivalence):** [mathlib-equivalence-toc.md](mathlib-equivalence-toc.md) — full 12-phase roadmap, ~150k theorem target, Mathlib module map. Machine-readable manifest: [mathlib-toc.yaml](mathlib-toc.yaml).
+**Master TOC (Mathlib equivalence):** [mathlib-equivalence-toc.md](mathlib-equivalence-toc.md): full 12-phase roadmap, ~150k theorem target, Mathlib module map. Machine-readable manifest: [mathlib-toc.yaml](mathlib-toc.yaml).
 
 This document is the **book contract + Phase 1 chapter detail** for the foundational spine (Peano → Landau → Gries & Schneider scale, without Mathlib bloat).
 
@@ -12,15 +12,15 @@ This document is the **book contract + Phase 1 chapter detail** for the foundati
 ## Design rules (the book contract)
 
 1. **Every proof step is numbered** (①②③…) in generated `.proof.md` / `.proof.tex`.
-2. **Every deductive step cites step numbers** — `From ③ and ⑤, we can deduce…` — never free-floating “combining these facts”.
-3. **Every `assume` cites a Claim Path** — `Nat/+.zero-left` — with book section anchor once the registry exists.
+2. **Every deductive step cites step numbers**, as in `From ③ and ⑤, we can deduce…`. Never free-floating "combining these facts".
+3. **Every `assume` cites a Claim Path**, such as `Nat/+.zero-left`, with book section anchor once the registry exists.
 4. **Trace table** at the bottom of each proof: `⑤ ← ③, ④`.
-5. **Tier boundaries are visible** — definition / axiom / derived never blurred.
-6. **No synonym creep** — one facet per fingerprint; `flow know --lint-duplicates` in CI.
+5. **Tier boundaries are visible**: definition / axiom / derived never blurred.
+6. **No synonym creep**: one facet per fingerprint; `flow know --lint-duplicates` in CI.
 
 ---
 
-## Book structure (Phase 1 chapters — see master TOC for full corpus)
+## Book structure (Phase 1 chapters: see master TOC for full corpus)
 
 | Ch | Domain | Morphisms | Target theorems | Status |
 |----|--------|-----------|-----------------|--------|
@@ -34,30 +34,30 @@ This document is the **book contract + Phase 1 chapter detail** for the foundati
 | 7 | `Pair`, `Prod` | `fst`, `snd`, `×` | 10 | **0 / 10** |
 | 8 | `List` | `append`, `len`, `rev` | 14 | **0 / 14** |
 | 9 | `Comb` finite | `card`, `choose` | 12 | **0 / 12** |
-| — | Euclid Book I | constructions, congruence | 48 | **48 stubs** |
-| — | Analysis appendix | Taylor, derivatives | 2 | **2 stubs** |
+| - | Euclid Book I | constructions, congruence | 48 | **48 stubs** |
+| - | Analysis appendix | Taylor, derivatives | 2 | **2 stubs** |
 | **Σ (in book today)** | | | **123** | **Part I (54) + Part II (19) + Euclid I (48 stepped) + Appendix (2)** |
 | **Σ (Phase 1 target)** | | | **200** | |
 | **Σ (Mathlib parity)** | | | **~150,000** | see [mathlib-equivalence-toc.md](mathlib-equivalence-toc.md) |
 
 ---
 
-## Chapter 0 — Logic & equality
+## Chapter 0: Logic & equality
 
 **Ontology:** propositional glue used by all later chapters.  
 **Literature:** Leibniz (identity), Stoll *Set Theory and Logic* Ch. 2.
 
 | § | Claim Path | Tier | therefore (fingerprint) | needs | Status |
 |---|------------|------|-------------------------|-------|--------|
-| 0.1 | `Eq/=.reflexive` | axiom | `x = x` | — | ✅ `lib/verify/Eq.flow` |
+| 0.1 | `Eq/=.reflexive` | axiom | `x = x` | - | ✅ `lib/verify/Eq.flow` |
 | 0.2 | `Eq/=.symmetric` | derived | `x = y → y = x` | 0.1 | ✅ `Eq-symmetric.flow` |
 | 0.3 | `Eq/=.transitive` | derived | `x = y ∧ y = z → x = z` | 0.1 | ✅ `Eq-transitive.flow` |
 | 0.4 | `Eq/=.subst` | derived | equal terms substitute in `+` | 0.3 | ✅ `Eq-subst-add-right.flow` |
-| 0.5 | `Bool/||.commutes` | derived | `a ∨ b = b ∨ a` | — | ✅ `lib/verify/Bool.flow` |
+| 0.5 | `Bool/||.commutes` | derived | `a ∨ b = b ∨ a` | - | ✅ `lib/verify/Bool.flow` |
 | 0.6 | `Bool/&&.commutes` | derived | `a ∧ b = b ∧ a` | 0.5 | ✅ `lib/verify/Bool.flow` |
 | 0.7 | `Bool/||.assoc` | derived | `(a∨b)∨c = a∨(b∨c)` | 0.5 | ✅ `Bool-or-assoc.flow` |
 | 0.8 | `Bool/&&.assoc` | derived | `(a∧b)∧c = a∧(b∧c)` | 0.6 | ✅ `Bool-and-assoc.flow` |
-| 0.9 | `Bool/!.involution` | derived | `!!a = a` | — | ✅ `Bool-not-involution.flow` |
+| 0.9 | `Bool/!.involution` | derived | `!!a = a` | - | ✅ `Bool-not-involution.flow` |
 | 0.10 | `Bool/||.identity` | derived | `a ∨ false = a` | 0.5 | ✅ `lib/verify/Bool.flow` |
 | 0.11 | `Bool/&&.identity` | derived | `a ∧ true = a` | 0.6 | ✅ `lib/verify/Bool.flow` |
 | 0.12 | `Bool/de-morgan.&&-or` | derived | `!(a∧b) = !a ∨ !b` | 0.7–0.9 | ✅ `Bool-de-morgan.flow` |
@@ -66,9 +66,9 @@ This document is the **book contract + Phase 1 chapter detail** for the foundati
 
 ---
 
-## Chapter 1 — Natural numbers (Peano core)
+## Chapter 1: Natural numbers (Peano core)
 
-**Ontology:** `Nat` as inductive type — not set-theoretic ω.  
+**Ontology:** `Nat` as inductive type rather than set-theoretic ω.  
 **Literature:** Peano axioms; Landau *Foundations of Analysis* §1.
 
 | § | Claim Path | Tier | claim | Status |
@@ -86,7 +86,7 @@ This document is the **book contract + Phase 1 chapter detail** for the foundati
 
 ---
 
-## Chapter 2 — Addition on ℕ
+## Chapter 2: Addition on ℕ
 
 **Literature:** Peano recursion; Gries & Schneider Ch. 3.
 
@@ -107,7 +107,7 @@ This document is the **book contract + Phase 1 chapter detail** for the foundati
 
 ---
 
-## Chapter 3 — Multiplication on ℕ
+## Chapter 3: Multiplication on ℕ
 
 | § | Claim Path | Tier | claim | needs |
 |---|------------|------|-------|-------|
@@ -128,7 +128,7 @@ This document is the **book contract + Phase 1 chapter detail** for the foundati
 
 ---
 
-## Chapter 4 — Order on ℕ
+## Chapter 4: Order on ℕ
 
 | § | Claim Path | claim |
 |---|------------|-------|
@@ -144,7 +144,7 @@ This document is the **book contract + Phase 1 chapter detail** for the foundati
 
 ---
 
-## Chapter 5 — Boolean algebra (full)
+## Chapter 5: Boolean algebra (full)
 
 Extends Ch 0 with distributivity, absorption, completeness of case splits.
 
@@ -154,7 +154,7 @@ Extends Ch 0 with distributivity, absorption, completeness of case splits.
 
 ---
 
-## Chapter 6 — Integers
+## Chapter 6: Integers
 
 | § | Claim Path | Status |
 |---|------------|--------|
@@ -166,7 +166,7 @@ Extends Ch 0 with distributivity, absorption, completeness of case splits.
 
 ---
 
-## Chapter 7 — Pairs & products
+## Chapter 7: Pairs & products
 
 `Pair/fst.project`, `Pair/snd.project`, `Prod/×.assoc`, etc.
 
@@ -174,7 +174,7 @@ Extends Ch 0 with distributivity, absorption, completeness of case splits.
 
 ---
 
-## Chapter 8 — Lists
+## Chapter 8: Lists
 
 `List/append.assoc`, `List/len.append`, `List/rev.rev`, induction on structure.
 
@@ -182,9 +182,9 @@ Extends Ch 0 with distributivity, absorption, completeness of case splits.
 
 ---
 
-## Chapter 9 — Finite combinatorics
+## Chapter 9: Finite combinatorics
 
-`Comb/card.union`, `Comb/choose.sym`, Pascal recurrence — all derived from Ch 2–4.
+`Comb/card.union`, `Comb/choose.sym`, Pascal recurrence: all derived from Ch 2–4.
 
 **File:** `lib/verify/Comb.flow`
 
@@ -203,36 +203,36 @@ Extends Ch 0 with distributivity, absorption, completeness of case splits.
 
 ## Completeness roadmap (6 phases)
 
-### Phase A — Traceable prose (**now**)
+### Phase A: Traceable prose (**now**)
 - [x] Step numbers in proof tables
 - [x] Cross-references in English (`From ③ and ⑤…`)
 - [x] Trace legend (`⑤ ← ③, ④`)
 - [ ] Book § anchors in `assume` lines (`invoking 2.1 Nat/+.zero-left`)
 
-### Phase B — Chapter 0 + 1 (logic & Nat core) — **2 weeks**
-- [ ] `lib/verify/Eq.flow` — symmetric, transitive, subst
-- [ ] `lib/verify/Nat-core.flow` — pred/succ lemmas
+### Phase B: Chapter 0 + 1 (logic & Nat core), **2 weeks**
+- [ ] `lib/verify/Eq.flow`: symmetric, transitive, subst
+- [ ] `lib/verify/Nat-core.flow`: pred/succ lemmas
 - [ ] Header lint: every theorem has `means`, `from`, `tier`, `needs`
 - [ ] `flow know --lint-duplicates` in CI
 
-### Phase C — Finish Ch 2–3 (addition & multiplication) — **3 weeks**
+### Phase C: Finish Ch 2–3 (addition & multiplication), **3 weeks**
 - [ ] `Nat/+.assoc`, `Nat/+.succ-left`
 - [ ] Full `Nat-mul.flow` definition block + derived tree
 - [ ] `flow verify` checker (SMT for small steps, induction scaffold)
 
-### Phase D — Order & Bool (Ch 4–5) — **3 weeks**
+### Phase D: Order & Bool (Ch 4–5), **3 weeks**
 - [ ] `Nat-order.flow` with trichotomy
 - [ ] Complete Bool algebra chapter
 - [ ] Case-split proofs auto-number branches (done for `||.commutes`)
 
-### Phase E — Int, Pair, List (Ch 6–8) — **4 weeks**
+### Phase E: Int, Pair, List (Ch 6–8), **4 weeks**
 - [ ] Int as derived from Nat pairs
 - [ ] List induction library
 - [ ] `has property` on `function` for runtime specs
 
-### Phase F — Book build & pedagogy — **2 weeks**
-- [ ] `flow doc book` — continuous theorem numbering across chapters
-- [ ] Internal cross-book refs: `assume Nat/+.zero-left` → “see **Theorem 2.1**”
+### Phase F: Book build & pedagogy, **2 weeks**
+- [ ] `flow doc book`: continuous theorem numbering across chapters
+- [ ] Internal cross-book refs: `assume Nat/+.zero-left` → "see **Theorem 2.1**"
 - [ ] Single PDF: `build/proofs/flow-math-book.pdf`
 - [ ] VS Code: click ③ → jump to step ③ in `.flow` source
 
@@ -263,22 +263,22 @@ examples/verify/math/derived/
 
 ---
 
-## Chapter 10 — Euclidean geometry (diagram-backed)
+## Chapter 10: Euclidean geometry (diagram-backed)
 
-**Ontology:** the Euclidean plane — points, lines, circles, angles.  
+**Ontology:** the Euclidean plane: points, lines, circles, angles.  
 **Literature:** Euclid *Elements* Books I & III; Heath translation.  
 **Artifacts:** every theorem ships `.proof.md`, `.proof.tex`, `.proof.svg`, and `.proof-diagram.tex` via `flow doc proof`.  
 **Bundle PDF:** `flow doc geometry-bundle` → `build/proofs/geometry-proofs-side-by-side.pdf`.
 
 | § | Claim Coordinate | Tier | therefore (fingerprint) | needs | Status |
 |---|------------------|------|-------------------------|-------|--------|
-| 10.1 | `«Geometry» «parallel lines» «alternate angles are equal»` | axiom | alternate interior angles equal | — | ✅ `parallel-lines-alternate.flow` |
-| 10.2 | `«Geometry» «triangle congruence» «side-angle-side implies congruence»` | axiom | SAS ⇒ congruence | — | ✅ `triangle-congruence-sas.flow` |
-| 10.3 | `«Geometry» «intersecting lines» «vertical angles are equal»` | derived | vertical angles equal | — | ✅ `vertical-angles.flow` |
+| 10.1 | `«Geometry» «parallel lines» «alternate angles are equal»` | axiom | alternate interior angles equal | - | ✅ `parallel-lines-alternate.flow` |
+| 10.2 | `«Geometry» «triangle congruence» «side-angle-side implies congruence»` | axiom | SAS ⇒ congruence | - | ✅ `triangle-congruence-sas.flow` |
+| 10.3 | `«Geometry» «intersecting lines» «vertical angles are equal»` | derived | vertical angles equal | - | ✅ `vertical-angles.flow` |
 | 10.4 | `«Geometry» «isosceles triangle» «base angles are equal»` | derived | base angles equal | 10.2 | ✅ `isosceles-base-angles.flow` |
 | 10.5 | `«Geometry» «triangle» «interior angles sum to two right angles»` | derived | α + β + γ = 180° | 10.1 | ✅ `triangle-angle-sum.flow` |
-| 10.6 | `«Geometry» «right triangle» «the Pythagorean relation holds»` | derived | c² = a² + b² | — | ✅ `pythagoras.flow` |
-| 10.7 | `«Geometry» «circle» «radii from the centre are equal»` | definition | OA = OB | — | ✅ `circle-radii-equal.flow` |
+| 10.6 | `«Geometry» «right triangle» «the Pythagorean relation holds»` | derived | c² = a² + b² | - | ✅ `pythagoras.flow` |
+| 10.7 | `«Geometry» «circle» «radii from the centre are equal»` | definition | OA = OB | - | ✅ `circle-radii-equal.flow` |
 | 10.8 | `«Geometry» «circle» «inscribed angle is half the central angle»` | derived | ∠APB = ½∠AOB | 10.7 | ✅ `inscribed-angle-half-central.flow` |
 | 10.9 | `«Geometry» «circle» «Thales right angle in semicircle»` | derived | ∠ACB = 90° | 10.5 | ✅ `thales-right-angle.flow` |
 
@@ -297,7 +297,7 @@ examples/verify/geometry/
   thales-right-angle.flow
 ```
 
-**Diagram registry** (`src/flow/geometry_diagram.py`): `parallel-lines-alternate`, `triangle-congruence-sas`, `vertical-angles`, `isosceles-base-angles`, `triangle-angle-sum`, `right-triangle-pythagoras`, `thales-right-angle`, `inscribed-angle-half-central`.
+**Diagram registry** (`compiler/src/geometry_diagram.flow`): `parallel-lines-alternate`, `triangle-congruence-sas`, `vertical-angles`, `isosceles-base-angles`, `triangle-angle-sum`, `right-triangle-pythagoras`, `thales-right-angle`, `inscribed-angle-half-central`.
 
 ---
 
@@ -351,7 +351,7 @@ flowchart TD
 
 ---
 
-## What “complete” means
+## What "complete" means
 
 | Criterion | Target |
 |-----------|--------|
@@ -368,4 +368,4 @@ flowchart TD
 
 ## One sentence
 
-**The Flow proof book ships today as one PDF — `flow doc bundle` — with Part I (logic and arithmetic, 7 theorems), Euclid Book I (48 propositions), and an analysis appendix (2 theorems); the master build order for Mathlib equivalence lives in [mathlib-equivalence-toc.md](mathlib-equivalence-toc.md).**
+**The Flow proof book ships today as one PDF (`flow doc bundle`) with Part I (logic and arithmetic, 7 theorems), Euclid Book I (48 propositions), and an analysis appendix (2 theorems); the master build order for Mathlib equivalence lives in [mathlib-equivalence-toc.md](mathlib-equivalence-toc.md).**

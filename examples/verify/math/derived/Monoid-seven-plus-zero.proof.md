@@ -2,9 +2,9 @@
 
 *Seven plus zero is seven in a monoid witness.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §1.1
+**Source.** dummit-foote: *Abstract Algebra*, §1.1
 
-## Derived fact 1 — 7 + 0 = 7
+## Derived fact 1: 7 + 0 = 7
 
 **Coordinate.** Monoid · addition · seven plus zero is seven · **Derived fact**
 

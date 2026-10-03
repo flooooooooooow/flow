@@ -1,6 +1,6 @@
 # Test for fileio.flow extended operations.
 # Tests remove, mkdir, exists, and file_size.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_fileio_ext.flow
+# Run with: ./flow run tests/lang/test_fileio_ext.flow
 
 import "compiler/src/fileio.flow"
 

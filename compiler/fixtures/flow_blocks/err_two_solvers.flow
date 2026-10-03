@@ -1,0 +1,5 @@
+flow Osc {
+    state x : f64 = 1.0
+    solver { dt 1 ms }
+    solver { dt 2 ms }
+}

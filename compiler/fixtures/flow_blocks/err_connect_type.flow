@@ -1,0 +1,17 @@
+flow A {
+    state x : f64 = 0.0
+    input u : f64
+    output y : f64 = u
+    param g : f64 = 1.0
+}
+flow Q {
+    state z : f32 = 0.0
+    input w : f32
+}
+flow B {
+    a : A
+    q : Q
+    connect {
+        a.y -> q.w
+    }
+}

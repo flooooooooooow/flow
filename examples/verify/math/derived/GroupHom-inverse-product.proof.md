@@ -2,9 +2,9 @@
 
 *Homomorphisms send inverse products to one.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §1.6
+**Source.** dummit-foote: *Abstract Algebra*, §1.6
 
-## Derived fact 1 — f(g) * f(inv(g)) = 1
+## Derived fact 1: f(g) * f(inv(g)) = 1
 
 **Coordinate.** GroupHom · multiplication · products with inverses map to one · **Derived fact**
 

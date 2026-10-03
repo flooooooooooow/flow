@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Binomial coefficients are symmetric in k and n-k.
-# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @from   graham-knuth-patashnik: *Concrete Mathematics*
 # @tier   derived
 
 # @means  choose(n, k) = choose(n, n - k).

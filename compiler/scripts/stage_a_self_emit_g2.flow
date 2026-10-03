@@ -1,0 +1,139 @@
+# Gen2 mini self-host: link the C driver against flowc_frontend_self.o,
+# then re-emit every frontend module to g2_*.c / g2_*.o and link
+# flowc_frontend_g2.o. Then: self_*.c must equal g2_*.c (fixed point), the
+# stage_a_driver_g2 and stage_a_driver_flow_g2 smokes must return 45, and
+# a gen3 emit of token.flow must match self_token.c and g2_token.c.
+# Needs compiler/build/flowc_frontend_self.o (and self_driver.o for the
+# Flow g2 driver): run stage_a_self_emit.flow first.
+#
+#   ./flow tool compiler/scripts/stage_a_self_emit_g2.flow
+#
+# Env: C_TO_HDR=<path> reuses a built header deriver (roundtrip sets it).
+
+import "tools/flow_cli/sys.flow"
+import "compiler/scripts/gate_lib.flow"
+import std.process { ProcCmd, ProcStrs, proc_arg }
+
+function main() -> i32 {
+    let root: string = gate_enter()
+    let hdr: string = gate_c_to_hdr(root)
+    gate_mkdir("compiler/build")
+
+    if not is_file("compiler/build/flowc_frontend_self.o") {
+        gate_fail("FAIL stage_a_self_emit_g2: missing compiler/build/flowc_frontend_self.o (run stage_a_self_emit.flow first)")
+    }
+
+    # Headers for the C host ABI (same layouts as the host-emitted *_flowc.h).
+    let host_mods: ptr<ProcStrs> = s_words("token ast lexer parser sort_plans cgen typecheck resolve")
+    let mut i: i32 = 0
+    while i < sl_len(host_mods) {
+        let base: string = "compiler/build/" + sl_get(host_mods, i) + "_flowc"
+        if not is_file(base + ".h") {
+            if not is_file(base + ".c") {
+                gate_fail("FAIL stage_a_self_emit_g2: missing " + base + ".c")
+            }
+            gate_hdr(hdr, base + ".c", base + ".h")
+        }
+        i = i + 1
+    }
+
+    outln("=== stage_a_driver_self build ===")
+    let b1: ptr<ProcStrs> = sl_of3("-O0", "-I", "compiler/build")
+    sl_push2(b1, "-I", "compiler/host")
+    sl_push2(b1, "-o", "compiler/build/stage_a_driver_self")
+    sl_push2(b1, "compiler/host/stage_a_driver.c", "compiler/build/flowc_frontend_self.o")
+    sl_push(b1, "-lm")
+    gate_cc(b1)
+
+    # Smoke: the self.o-backed driver on stage_a_sum returns 45.
+    outln("=== stage_a_driver_self smoke (stage_a_sum → exit 45) ===")
+    sum_smoke("./compiler/build/stage_a_driver_self", "compiler/build/driven_sum_self.c", "./compiler/build/driven_sum_self", "driven_sum_self")
+    outln("PASS stage_a_driver_self")
+
+    # Order mirrors stage_a_self_emit; the g2_* headers play the self_* role.
+    run_self_emit_plan("./compiler/build/stage_a_driver_self", "g2_", "g2_emit", hdr)
+
+    # Relocatable link: proves driver_self-emitted frontend objects resolve together.
+    link_frontend("compiler/build/flowc_frontend_g2.o", "g2_", "")
+    check_frontend_symbols("compiler/build/flowc_frontend_g2.o", "FAIL stage_a_self_emit_g2: ", " missing from flowc_frontend_g2.o")
+
+    outln("=== self vs g2 object sizes ===")
+    let wc: ptr<ProcStrs> = sl_of3("wc", "-c", "compiler/build/flowc_frontend_self.o")
+    sl_push(wc, "compiler/build/flowc_frontend_g2.o")
+    gate_run(wc)
+
+    # The fixed point is emitted C identity, not relocatable .o bytes:
+    # objects can differ in include-path or toolchain metadata while the C
+    # matches.
+    outln("=== fixed-point cmp self_*.c vs g2_*.c ===")
+    let mut fp_fail: bool = false
+    let fp_mods: ptr<ProcStrs> = s_words("token ast lexer fileio bytebuf field_dsl dynamics_dsl flow_blocks shader_dsl effects attributes ordering_hints sort_plans sort_sites parser proof_lower cgen typecheck strutil sem_util sem_types sem_cheader sem_model sem_check resolve")
+    let mut k: i32 = 0
+    while k < sl_len(fp_mods) {
+        let m: string = sl_get(fp_mods, k)
+        let a: string = "compiler/build/self_" + m + ".c"
+        let b: string = "compiler/build/g2_" + m + ".c"
+        if not same_bytes(a, b) {
+            errln("FAIL C drift: " + m)
+            let d: ptr<ProcCmd> = cmd(sl_of3("diff", "-u", a))
+            proc_arg(d, b)
+            errs(head_text(capture_raw(d), 80))
+            fp_fail = true
+        } else {
+            outln("PASS C fixed-point: " + m)
+        }
+        k = k + 1
+    }
+    if fp_fail {
+        gate_fail("FAIL stage_a_self_emit_g2: self/g2 C emit not fixed-point")
+    }
+    outln("PASS fixed-point self_*.c == g2_*.c")
+
+    if not same_bytes("compiler/build/flowc_frontend_self.o", "compiler/build/flowc_frontend_g2.o") {
+        errln("WARN object bytes differ (self.o vs g2.o); C fixed-point still holds")
+    } else {
+        outln("PASS object bytes also match self.o == g2.o")
+    }
+
+    # Gen2 driver: C host + flowc_frontend_g2.o parses and emits the fixture.
+    outln("=== stage_a_driver_g2 build ===")
+    let b2: ptr<ProcStrs> = sl_of3("-O0", "-I", "compiler/build")
+    sl_push2(b2, "-I", "compiler/host")
+    sl_push2(b2, "-o", "compiler/build/stage_a_driver_g2")
+    sl_push2(b2, "compiler/host/stage_a_driver.c", "compiler/build/flowc_frontend_g2.o")
+    sl_push(b2, "-lm")
+    gate_cc(b2)
+
+    outln("=== stage_a_driver_g2 smoke (stage_a_sum → exit 45) ===")
+    sum_smoke("./compiler/build/stage_a_driver_g2", "compiler/build/driven_sum_g2.c", "./compiler/build/driven_sum_g2", "driven_sum_g2")
+    outln("PASS stage_a_driver_g2")
+
+    # Flow driver + g2 frontend: the Stage-A-emitted self_driver.o linked
+    # against flowc_frontend_g2.o.
+    if not is_file("compiler/build/self_driver.o") {
+        gate_fail("FAIL stage_a_driver_flow_g2: missing compiler/build/self_driver.o (run stage_a_self_emit.flow first)")
+    }
+    outln("=== stage_a_driver_flow_g2 build ===")
+    let b3: ptr<ProcStrs> = sl_of3("-O0", "-o", "compiler/build/stage_a_driver_flow_g2")
+    sl_push2(b3, "compiler/build/self_driver.o", "compiler/build/flowc_frontend_g2.o")
+    sl_push(b3, "-lm")
+    gate_cc(b3)
+    outln("=== stage_a_driver_flow_g2 smoke (stage_a_sum → exit 45) ===")
+    sum_smoke("./compiler/build/stage_a_driver_flow_g2", "compiler/build/driven_sum_flow_g2.c", "./compiler/build/driven_sum_flow_g2", "driven_sum_flow_g2")
+    outln("PASS stage_a_driver_flow_g2")
+
+    # Gen3 probe: driver_g2 re-emits token; it must match the self and g2
+    # token C (the emit is deterministic).
+    outln("=== gen3 token emit (driver_g2) ===")
+    gate_run(sl_of3("./compiler/build/stage_a_driver_g2", "compiler/src/token.flow", "compiler/build/gen3_token.c"))
+    if not same_bytes("compiler/build/gen3_token.c", "compiler/build/g2_token.c") {
+        gate_fail("FAIL stage_a_self_emit_g2: gen3_token.c != g2_token.c")
+    }
+    if not same_bytes("compiler/build/gen3_token.c", "compiler/build/self_token.c") {
+        gate_fail("FAIL stage_a_self_emit_g2: gen3_token.c != self_token.c")
+    }
+    outln("PASS gen3 token == g2_token == self_token")
+
+    outln("PASS stage_a_self_emit_g2 flowc_frontend_g2.o")
+    return 0
+}

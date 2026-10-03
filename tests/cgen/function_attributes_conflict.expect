@@ -1,0 +1,3 @@
+# #1028
+flags --strict
+reject Function 'f' cannot be both '@noinline' and '@inline'/'@always_inline'

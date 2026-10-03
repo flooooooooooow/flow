@@ -1,0 +1,5 @@
+# The source is bound to one temp and every branch reads the temp.
+~ __flowc_fork_src_[0-9]+ = frames\(7\);
+~ \.a = twice\(__flowc_fork_src_[0-9]+\)
+~ \.b = square\(__flowc_fork_src_[0-9]+\)
+exit 0

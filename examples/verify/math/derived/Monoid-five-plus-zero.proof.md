@@ -2,9 +2,9 @@
 
 *Five plus zero is five in a monoid witness.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §1.1
+**Source.** dummit-foote: *Abstract Algebra*, §1.1
 
-## Derived fact 1 — 5 + 0 = 5
+## Derived fact 1: 5 + 0 = 5
 
 **Coordinate.** Monoid · addition · five plus zero is five · **Derived fact**
 

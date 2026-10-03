@@ -1,3 +1,4 @@
+# ACTIONS-INTENDED: public repository; its CI runs on GitHub Actions.
 name: Wiki
 
 on:
@@ -6,9 +7,11 @@ on:
     paths:
       - 'docs/**'
       - 'site/**'
-      - 'scripts/build_wiki.py'
-      - 'scripts/check_wiki_links.py'
-      - 'scripts/deploy_wiki.py'
+      - 'tools/flow_cli/**'
+      - 'scripts/tools/build_wiki/**'
+      - 'scripts/tools/wiki_links/**'
+      - 'scripts/tools/lib/**'
+      - 'scripts/tools/deploy_wiki/**'
       - 'lib/verify/**'
       - 'examples/verify/**'
       - 'ROADMAP.md'
@@ -19,9 +22,11 @@ on:
     paths:
       - 'docs/**'
       - 'site/**'
-      - 'scripts/build_wiki.py'
-      - 'scripts/check_wiki_links.py'
-      - 'scripts/deploy_wiki.py'
+      - 'tools/flow_cli/**'
+      - 'scripts/tools/build_wiki/**'
+      - 'scripts/tools/wiki_links/**'
+      - 'scripts/tools/lib/**'
+      - 'scripts/tools/deploy_wiki/**'
       - 'lib/verify/**'
       - 'examples/verify/**'
       - 'ROADMAP.md'
@@ -46,7 +51,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Build static wiki
-        run: python3 scripts/build_wiki.py
+        run: ./flow tool build_wiki
 
       - name: Verify wiki artifacts
         run: |
@@ -61,7 +66,7 @@ jobs:
           echo "Wiki artifacts OK ($(du -sh build/wiki | cut -f1))"
 
       - name: Check internal links
-        run: python3 scripts/check_wiki_links.py
+        run: ./flow tool wiki_links
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v7

@@ -1,14 +1,14 @@
 # One Flow kernel, two backends: WGSL on the browser's GPU and C on the CPU.
 #
 #   ./flow gpu examples/wasm/gpu_vector_add.flow      # Metal shaders
-#   python3 wasm/flow_wasm_gpu.py                     # WGSL + WASM CPU reference
+#   ./flow tool wasm_crossings gpu                    # WGSL + WASM CPU reference
 #
 # The @gpu bodies below are the ones from lib/stdlib/gpu_kernels.flow. Two
 # things read the same AST:
 #
-#   src/flow/wgsl_codegen.py   emits a WGSL compute shader, dispatched by the
+#   tools/gpu/main.flow        emits a WGSL compute shader, dispatched by the
 #                              browser through WebGPU
-#   src/flow/c_generator.py    emits ordinary C, compiled into the WASM module
+#   flowc                      emits ordinary C, compiled into the WASM module
 #
 # On the GPU, gpu_thread_id() is the invocation index and every element runs at
 # once. On the CPU the same call reads a variable that cpu_* advances, so the
@@ -116,6 +116,6 @@ export function fill_pattern(buf: ptr<f32>, n: i32, seed: i32) -> void {
 }
 
 function main() -> i32 {
-    println("gpu_vector_add: kernels for WGSL + CPU reference (see wasm/flow_wasm_gpu.py)")
+    println("gpu_vector_add: kernels for WGSL + CPU reference (see ./flow tool wasm_crossings gpu)")
     return 0
 }

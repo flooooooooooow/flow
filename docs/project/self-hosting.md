@@ -1,6 +1,6 @@
-# Self-Hosting Plan — Rewrite the Compiler in Flow
+# Self-Hosting Plan: Rewrite the Compiler in Flow
 
-> **Status:** Active · Phases A–D done · Phase E landing (packaging + release CI) · **Tracker:** GitHub issues labeled `self-hosting` · **Bootstrap tree:** [`compiler/`](../../compiler/)
+> **Status:** Active · Phases A-D done · Phase E landing (packaging + release CI) · **Tracker:** GitHub issues labeled `self-hosting` · **Bootstrap tree:** [`compiler/`](../../compiler/)
 >
 > Goal: retire `src/flow/*.py` as the production compiler and make **`flowc`** (Flow→C, written in Flow) the sole host.
 
@@ -8,9 +8,9 @@
 
 ## Why
 
-1. **Dogfood** — the language’s best stress test is compiling itself.
-2. **Ship shape** — one toolchain story for users (no Python runtime required to build Flow programs long-term).
-3. **Closer to the metal** — Stage-A already emits C; self-hosting forces the subset that systems code actually needs.
+1. **Dogfood**: the language's best stress test is compiling itself.
+2. **Ship shape**: one toolchain story for users (no Python runtime required to build Flow programs long-term).
+3. **Closer to the metal**: Stage-A already emits C; self-hosting forces the subset that systems code actually needs.
 
 Python remains acceptable for **tooling** (wiki build, LSP glue, benches) until those are ported; it must not remain on the compile critical path.
 
@@ -31,47 +31,36 @@ Python remains acceptable for **tooling** (wiki build, LSP glue, benches) until 
 
 | Piece | Today |
 |-------|--------|
-| Production compiler | Python under `src/flow/` for the full language surface; `flowc` is the default host for Stage-A |
-| Flow-written bootstrap | `compiler/` — lexer, parser, AST arena, Stage-A cgen/jsgen/fmt, typecheck, multi-file bundle, self-emit fixed-point scripts |
-| Can `flowc` compile `flowc` end-to-end? | **Yes, for the Stage-A subset the compiler is written in.** All 17 modules of `compiler/src` bundle-emit C that `cc` accepts with zero diagnostics; the resulting binary passes flowc's own self-tests and reproduces itself for three generations ([`self_host_full.sh`](../../compiler/scripts/self_host_full.sh)) |
-| Getting a compiler with no Python | `./compiler/scripts/bootstrap_from_c.sh` — `cc` on the checked-in [`compiler/bootstrap/flowc_stage_a.c`](../../compiler/bootstrap/flowc_stage_a.c) |
-| Entry | `./flow run examples/...` (flowc host) · `FLOW_HOST=python ./flow run compiler/src/main.flow` for the Flow source directly |
+| Production compiler | `flowc`, the only C compiler. The Python C backend is retired; `FLOW_HOST=python` stops with an error. On the corpus flowc matches the retired backend on 1037 of 1053 programs with `main()` ([`report.txt`](../../compiler/corpus_parity/report.txt)) |
+| Flow-written bootstrap | `compiler/`: lexer, parser, AST arena, Stage-A cgen/jsgen/fmt, typecheck, multi-file bundle, self-emit fixed-point scripts |
+| Can `flowc` compile `flowc` end-to-end? | **Yes, for the Stage-A subset the compiler is written in.** All 17 modules of `compiler/src` bundle-emit C that `cc` accepts with zero diagnostics; the resulting binary passes flowc's own self-tests and reproduces itself for three generations ([`self_host_full.flow`](../../compiler/scripts/self_host_full.flow)) |
+| Getting a compiler with no Python | `./compiler/scripts/bootstrap_from_c.sh`: `cc` on the checked-in [`compiler/bootstrap/flowc_stage_a.c`](../../compiler/bootstrap/flowc_stage_a.c) |
+| Entry | `./flow run examples/...` (flowc host) · `./flow run compiler/src/main.flow` for the Flow source directly |
 
 Detail: [`compiler/README.md`](../../compiler/README.md).
 
-### Bootstrap language suite: 79 pass, 11 fail
+### Backends
 
-The 90 `.flow` files in `tests/lang/` are the regression target for
-self-hosted parity with the Python compiler. Run with `FLOWC_IN`/`FLOWC_OUT`
-environment variables (positional arguments trigger the self-test, not
-compilation):
+Every backend is a module of `compiler/src`:
 
-```bash
-BOOT=compiler/build/flowc_bootstrap
-pass=0; fail=0
-for f in $(find tests/lang -name "*.flow" | sort); do
-  if FLOWC_BUNDLE=1 FLOWC_DIR=. "$BOOT" "$f" "/tmp/out.c" \
-     && cc -O0 -o /tmp/out "/tmp/out.c" && /tmp/out; then
-    pass=$((pass + 1))
-  else
-    fail=$((fail + 1)); echo "  FAIL $f"
-  fi
-done
-echo "pass=$pass fail=$fail"
-```
+| Module | Output |
+|--------|--------|
+| `cgen` | C, the default path |
+| `jsgen` | JavaScript |
+| `mlirgen` | MLIR (`FLOWC_EMIT=mlir`), lowered by `flow mlir-lower` |
+| `metal_codegen` | Metal shaders for `@gpu` functions |
+| `wgsl_codegen` | WGSL shaders for `@gpu` functions |
+| `bpf_target` | eBPF subset checks |
+| `bpf_gen` | eBPF bytecode |
+| `wasm_gen` | WebAssembly |
 
-Current result: `pass=79 fail=11`.
+### Language suite
 
-The 11 failures, by root cause:
-
-| Category | Tests | What is missing |
-|----------|-------|-----------------|
-| DSL keywords | `test_effects`, `test_hybrid_events`, `test_time_blocks` | Parser does not recognize `effect`, `capability`, `flow`, `state`, `solver`, `evolves`, `every` |
-| Generic monomorphization | `test_generics`, `test_generic_channels` | Parser accepts `struct Box<T>` and `box_make<i32>(7)` but the monomorphizer that replaces `T` with concrete types is not ported |
-| Overload resolution | `test_unsigned_ints` | Type checker rejects duplicate function names; the Python compiler resolves overloads by signature |
-| Closure snapshots | `test_closures` | Captured variables are hoisted to file-scope globals; the value at closure creation time is not snapshotted |
-| Stdlib codegen | `test_gif_encoder`, `test_fir_opts` | LZW encoder in `lib/stdlib/gif.flow` emits a variable name where a function call is expected; FIR inline-pure bonus constant truncates float to int |
-| External C headers | `test_c_import_julia`, `test_c_import_python` | Julia and Python embedding headers are not installed in the test environment |
+The `.flow` files in `tests/lang/` are the language regression target. Run
+them with `./flow test-lang`. The C output goldens are `./flow tool tests/cgen/run.flow`.
+The bare bootstrap loop over `tests/lang/` (no runtime libraries linked) is
+in [`AGENTS.md`](../../AGENTS.md#bootstrap-suite), with its current count and
+the remaining failures.
 
 Features landed in the self-hosted compiler that closed earlier gaps:
 
@@ -104,29 +93,29 @@ Features landed in the self-hosted compiler that closed earlier gaps:
 
 Bootstrap ladder (classic):
 
-1. **Gen0** — Python compiles `compiler/src/*.flow` → C → `flowc` objects/driver  
-2. **Gen1** — Gen0 `flowc` re-emits frontend → `flowc_frontend_self.o`  
-3. **Gen2** — Gen1 re-emits; `cmp` fixed-point with Gen1  
-4. **Cutover** — `./flow` invokes GenN `flowc` by default; Python behind `FLOW_HOST=python`
+1. **Gen0**: `cc` builds `flowc` from the checked-in `compiler/bootstrap/flowc_stage_a.c`. (Before that C existed, Gen0 came from the Python compiler.)  
+2. **Gen1**: Gen0 `flowc` compiles `compiler/src` → C → binary  
+3. **Gen2**: Gen1 re-emits; `cmp` fixed-point with Gen1  
+4. **Cutover**: `./flow` invokes GenN `flowc` for every C command. The Python C backend is retired
 
 ---
 
 ## Phased plan
 
-### Phase A — Land & CI the bootstrap  *(near-term)*
+### Phase A: Land & CI the bootstrap  *(near-term)*
 
 - Merge `compiler/` + Stage-A scripts onto `main`.
-- CI job: `./compiler/scripts/roundtrip.sh` (and self-emit when stable).
+- CI job: `./flow tool compiler/scripts/roundtrip.flow` (and self-emit when stable).
 - Document supported subset vs Python gaps in `compiler/README.md` (keep honest).
 
 **Exit:** green CI roundtrip on every PR that touches `compiler/` or C codegen.
 
-### Phase B — Close the Stage-A language gap  *(done)*
+### Phase B: Close the Stage-A language gap  *(done)*
 
 **Exit:** `FLOWC_BUNDLE=1` builds all of `compiler/src` without `FLOWC_TYPECHECK=0`
 hacks except documented externs. ✅
 
-Gated by [`selfcompile_audit.sh`](../../compiler/scripts/selfcompile_audit.sh),
+Gated by [`selfcompile_audit.flow`](../../compiler/scripts/selfcompile_audit.flow),
 a roundtrip step: every module under `compiler/src` bundle-emits C that the C
 compiler accepts with **zero** diagnostics. All 17 pass.
 
@@ -149,7 +138,7 @@ do not lower AST_MATCH yet.
 
 **Progress (2026-08-06, the two gaps that actually blocked self-compile):**
 
-An audit of the emitted C — `FLOWC_BUNDLE=1` on each module, then `cc` — found
+An audit of the emitted C (`FLOWC_BUNDLE=1` on each module, then `cc`) found
 exactly two causes behind every failure.
 
 1. *Inferred `let` had no type inference.* `let x = expr` with no annotation
@@ -169,27 +158,29 @@ exactly two causes behind every failure.
    the compiler's other arenas). Detection is syntactic and conservative: a
    literal, a `+` chain containing one, a cast to `string`, or a call declared
    `-> string`. Two string values with neither a literal nor a call between
-   them still emit `+` and are rejected by `cc` — loud, never wrong.
+   them still emit `+` and are rejected by `cc`. The failure is loud and never wrong.
 
 Fixtures that run and check their exit code: `stage_a_infer_struct` (42),
 `bundle_infer_main` (42, cross-module), `stage_a_strcat` (42, reads every
 result back through `strcmp`/`strlen`).
 
-Still outside Stage-A and therefore outside `flowc`: generics, effects, the
-DSLs, `jsgen`/`fmt` lowering of `match`, and everything `src/flow/*.py`
-supports beyond the subset the compiler itself is written in.
+Since then flowc has gained generics, effects, the Field and dynamics DSLs,
+flow blocks and the shader DSL, and it is now the only C compiler.
 
-### Phase C — `flowc` replaces Python for `./flow run|build`  *(done — soft cutover)*
+### Phase C: `flowc` replaces Python for `./flow run|build`  *(done: hard cutover)*
 
-- Thin `./flow` shim: `FLOW_HOST=flowc` (default) | `python` | `auto`.
-- Resolve driver via `compiler/scripts/ensure_flowc.sh` (prefers
-  `stage_a_driver_flow_self`, bootstraps Gen0 with Phase-A roundtrip if needed).
-- CI: after `roundtrip.sh`, smoke `FLOW_HOST=flowc` on Stage-A basics.
-- Example/benchmark jobs keep `FLOW_HOST=python` until broader surface coverage.
+- Thin `./flow` shim. `FLOW_HOST=flowc` is the only value; `auto` is treated
+  as flowc, and `python` stops with an error pointing to flowc.
+  `FLOWC_BIN=<path>` picks a flowc binary.
+- Resolve driver via `compiler/scripts/ensure_flowc.flow`, which builds flowc
+  from the checked-in bootstrap C. `compiler/scripts/flowc_host.flow` prints a
+  flowc built from the current `compiler/src`.
+- CI: after `roundtrip.flow`, smoke `FLOW_HOST=flowc` on Stage-A basics.
+- Example and benchmark jobs run on flowc.
 
 **Exit:** default `./flow run examples/basics/hello_world.flow` does not import `src/flow/parser.py`. ✅
 
-### Phase D — Retire Python from the compile path  *(done)*
+### Phase D: Retire Python from the compile path  *(done)*
 
 **Exit:** CI user-compile jobs have no `pip install` for the compiler itself. ✅
 
@@ -210,10 +201,9 @@ supports beyond the subset the compiler itself is written in.
   under the same shims. CI job `flowc self-host (no Python)` has no
   `setup-python` step and repeats both checks.
 
-  `ensure_flowc.sh` builds this before falling back to the Python Gen0
-  roundtrip. (That fallback was also broken: it passed `FLOWC_PHASE_A_ONLY=1`,
-  which exits before any driver is linked, so on a clean tree the default
-  `FLOW_HOST=flowc` path could not bootstrap at all.)
+  `ensure_flowc.flow` builds this. It once fell back to a Python Gen0
+  roundtrip; that fallback is gone, and `flowc_host.flow` builds a flowc from
+  the current `compiler/src` with the bootstrap binary.
 
   The checked-in C cannot drift: `bootstrap_from_c.sh --verify` runs in
   roundtrip and requires it to be byte-for-byte what flowc emits from
@@ -223,25 +213,38 @@ supports beyond the subset the compiler itself is written in.
 
 | Thing | Why |
 |-------|-----|
-| Full language surface (`FLOW_HOST=python`) | Stage-A is a subset — generics, effects, MLIR/GPU, DSLs |
-| `./flow test`, benchmarks, wiki build, LSP glue | tooling, not compilation |
-| `compiler/scripts/flowc_c_to_hdr.py` | roundtrip's per-module `.o` dogfood only; the bundle path needs no headers |
-| Gen0 from source without the checked-in C | only if you distrust `compiler/bootstrap/` and want to re-derive it from Python |
+| `flow python` wheel build | the Flow tool writes the extension source, `setup.py` and `pyproject.toml`; `pip wheel` with setuptools builds the Python artifact |
+| `benchmarks/baselines/python/` | benchmark subjects that measure CPython and NumPy; Flow and bash harnesses run them and skip them when there is no python3 |
+| `examples/interop/python/` | the Python modules Flow programs call through `lib/stdlib/python_embed.flow` |
 
-### Phase E — Packaging & polish  *(in progress)*
+No other tracked `.py` file exists. `./flow tool python_ratchet` excludes only
+those two directories (and vendored trees) and fails on any other `.py`.
+
+`flow check`, `flow analyze`, `flow fir-g`, `flow gpu`, `flow dap`, `flow bpf`,
+`flow wasm32`, project-mode `flow test`, `flow run --json`, the package
+commands (`init`, `publish`, `build`, `build-native`, `run-native`, `clean`)
+and the doc example checkers are Flow tools. Each has a parity gate recorded
+from the Python version it replaced.
+
+### Phase E: Packaging & polish  *(in progress)*
 
 - **Done:** three consecutive generation fixed-points in
-  [`self_host_full.sh`](../../compiler/scripts/self_host_full.sh), run by
+  [`self_host_full.flow`](../../compiler/scripts/self_host_full.flow), run by
   roundtrip and by CI. gen1 = the bootstrap driver compiling all of
   `compiler/src`; gen2 = gen1 compiling it; gen3 = gen2 compiling it. Each
   generation must pass flowc's self-tests and compile an ordinary program, and
   `gen1.c == gen2.c == gen3.c` with `gen2.o == gen3.o`.
-- **Done:** [`package_flowc.sh`](../../compiler/scripts/package_flowc.sh) →
+- **Done:** [`package_flowc.flow`](../../compiler/scripts/package_flowc.flow) →
   `dist/flowc-<version>-<os>-<arch>.tar.gz` with the binary, the bootstrap C,
   a `build.sh` that rebuilds it with `cc` alone, a LICENSE, and examples.
 - **Done:** [`flowc-release.yml`](../../.github/workflows/flowc-release.yml) on
-  `flowc-v*` tags — linux + macos, self-compile audit, fixed point, package,
+  `flowc-v*` tags: linux + macos, self-compile audit, fixed point, package,
   unpack and use the archive as a user would, publish with checksums.
+- **Done (#695):** the `flow` command is a Flow program,
+  [`tools/flow_cli`](../../tools/flow_cli/main.flow). `./flow` is a POSIX sh
+  stub that builds it from the bootstrap C with `cc` on first use and execs
+  it. The 4,311-line bash `flow-driver` is deleted; `tests/cli/run.flow` holds
+  the CLI to goldens recorded from it.
 - **Remaining:** Homebrew formula; a published release to point people at;
   optional MLIR/GPU as separate tracks.
 
@@ -254,9 +257,9 @@ supports beyond the subset the compiler itself is written in.
 | Lexer / parser / AST | `compiler/src/{token,lexer,parser,ast}.flow` |
 | Typecheck / resolve | `compiler/src/{typecheck,resolve}.flow` |
 | C emit | `compiler/src/cgen.flow` |
-| Driver / CLI | `compiler/src/{main,driver}.flow` + tiny C host until argv is pure Flow |
+| Driver / CLI | `compiler/src/{main,driver}.flow` (flowc) and `tools/flow_cli` (the `flow` command) |
 | Host escape / FFI | `compiler/host/` shrink over time |
-| Python parity tests | `tests/` + `compiler/scripts/roundtrip.sh` |
+| Python parity tests | `tests/` + `compiler/scripts/roundtrip.flow` |
 
 ---
 
@@ -264,8 +267,8 @@ supports beyond the subset the compiler itself is written in.
 
 | Risk | Mitigation |
 |------|------------|
-| Subset forever | Track “blocks self-host” gaps as issues; refuse feature creep in Python without Flow twin |
-| Bootstrap loops | Always keep a known-good Gen0 artifact in CI cache |
+| Subset forever | Track "blocks self-host" gaps as issues; refuse feature creep in Python without Flow twin |
+| Bootstrap loops | The checked-in bootstrap C is the known-good Gen0; `bootstrap_from_c.sh --verify` keeps it at a fixed point |
 | Perf of Flow-hosted compiler | Profile after cutover; Stage-A is already C |
 | DSLs block cutover | Allow Python pre-pass plugins with explicit `flow.toml` opt-in |
 
@@ -273,15 +276,15 @@ supports beyond the subset the compiler itself is written in.
 
 ## Success metrics
 
-1. Three consecutive generation fixed-points — ✅ `self_host_full.sh`, in roundtrip and CI.
-2. Default `./flow` host is `flowc` for ≥90% of `examples/STATUS.md` pass set — partial; `emit_basics.sh` is 10/10 and the default host is flowc, but the wider example set still needs `FLOW_HOST=python`.
-3. No Python import on the hot path of `flow build` — ✅ proven with `python`/`python3` shimmed to exit 127.
-4. Contributors edit `compiler/src/*.flow` for language bugs, not only `src/flow/*.py` — ongoing.
+1. Three consecutive generation fixed-points: ✅ `self_host_full.flow`, in roundtrip and CI.
+2. Default `./flow` host is `flowc` for ≥90% of `examples/STATUS.md` pass set: ✅ flowc is the only C host, and on the corpus it matches the retired Python backend on 98.5% of programs with `main()`.
+3. No Python import on the hot path of `flow build`: ✅ proven with `python`/`python3` shimmed to exit 127.
+4. Contributors edit `compiler/src/*.flow` for language bugs as well as `src/flow/*.py`: ongoing.
 
 ---
 
 ## Related
 
-- Roadmap §5.1 — [ROADMAP.md](../../ROADMAP.md)
-- Bootstrap README — [compiler/README.md](../../compiler/README.md)
-- Issues — label `self-hosting` on GitHub
+- Roadmap §5.1: [ROADMAP.md](../../ROADMAP.md)
+- Bootstrap README: [compiler/README.md](../../compiler/README.md)
+- Issues: label `self-hosting` on GitHub

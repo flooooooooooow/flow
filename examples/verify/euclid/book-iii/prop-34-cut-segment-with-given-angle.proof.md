@@ -2,13 +2,13 @@
 
 *To cut off from a circle a segment containing an angle equal to a given rectilineal angle.*
 
-**Source.** euclid — Elements, Book III, Proposition 34
+**Source.** euclid: Elements, Book III, Proposition 34
 
-## Derived fact 1 — To cut off from a circle a segment containing an angle equal to a given rectilineal angle
+## Derived fact 1: To cut off from a circle a segment containing an angle equal to a given rectilineal angle
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 34: to cut off a segment containing an angle equal to a given rectilineal angle · **Derived fact**
 
-*Source: euclid — Elements, Book III, Proposition 34*
+*Source: euclid: Elements, Book III, Proposition 34*
 
 *Built on: proposition 33: to construct on a given straight line a segment similar to a given segment, for Euclid Book III on the Euclidean plane*
 

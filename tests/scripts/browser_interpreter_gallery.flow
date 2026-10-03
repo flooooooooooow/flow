@@ -1,0 +1,292 @@
+# Every program in the Flow Way gallery runs in the browser interpreter.
+#
+# The gallery teaches idioms, and a reader should be able to press Run on each
+# one. Four of the five could not: effects, a pipeline fork into a struct,
+# enums with `choose`, and a flow block were all outside the subset.
+#
+# Each case is checked against the native compiler's own output where the
+# program prints something, because agreeing with `./flow run` is the only
+# standard that matters for an interpreter that exists to preview it.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcCmd, ProcResult, proc_arg, proc_stdout, proc_stderr, PROC_CAPTURE }
+
+function engine_path() -> string {
+    return t_root() + "/site/flow-compile.js"
+}
+
+function gallery_path() -> string {
+    return t_root() + "/examples/flow_way/README.md"
+}
+
+# Text from a list of lines, each ended by a newline.
+function text_of(lines: ptr<ProcStrs>) -> string {
+    return sl_join(lines, "\n") + "\n"
+}
+
+# Execute one program file through site/flow-compile.js under node. Leaves
+# {ok, output, exit, detail} as JSON in <tmp>/result.json; false (after
+# printing the end of node's stderr) when node failed.
+function run_in_browser_engine(program: string) -> bool {
+    let js: ptr<ProcStrs> = sl_new()
+    sl_push(js, "const fs=require('fs'); global.window={};")
+    sl_push(js, "eval(fs.readFileSync(" + tj_quote(engine_path()) + ",'utf8'));")
+    sl_push(js, "const src=fs.readFileSync(process.argv[2],'utf8');")
+    sl_push(js, "const r=window.FlowCompile.run(src);")
+    sl_push(js, "process.stdout.write(JSON.stringify({ok:r.ok,output:r.output,exit:r.exitCode,detail:r.construct||String(r.error||'')}));")
+    let driver: string = t_tmp() + "/d.js"
+    let _w: bool = write_text(driver, text_of(js))
+    let c: ptr<ProcCmd> = cmd(sl_of3("node", driver, program))
+    proc_stdout(c, PROC_CAPTURE)
+    proc_stderr(c, PROC_CAPTURE)
+    let r: ptr<ProcResult> = run_result(c)
+    let _o: bool = write_text(t_tmp() + "/result.json", r.stdout)
+    let _e: bool = write_text(t_tmp() + "/node.err", r.stderr)
+    if r.exit_code != 0 {
+        out(s_from(r.stderr, s_len(r.stderr) - 500))
+        return false
+    }
+    return true
+}
+
+# `jq -r FIELD result.json`, without the newline.
+function result(field: string) -> string {
+    let j: ptr<Json> = tj_load(t_tmp() + "/result.json")
+    if not tj_ok(j) {
+        return ""
+    }
+    return tj_raw(j, tj_get(j, 0, field))
+}
+
+# `result .detail | head -c 200`
+function show_detail() {
+    out(s_slice(result("detail") + "\n", 0, 200))
+}
+
+function is_ws(c: i32) -> bool {
+    return c == 32 or (c >= 9 and c <= 13)
+}
+
+# The jq test `function\s+main\s*\(`.
+function defines_main(code: string) -> bool {
+    let mut at: i32 = s_find(code, "function", 0)
+    while at >= 0 {
+        let mut i: i32 = at + 8
+        let ws_start: i32 = i
+        while i < s_len(code) and is_ws(s_byte(code, i)) {
+            i = i + 1
+        }
+        if i > ws_start and s_eq(s_slice(code, i, i + 4), "main") {
+            i = i + 4
+            while i < s_len(code) and is_ws(s_byte(code, i)) {
+                i = i + 1
+            }
+            if s_byte(code, i) == 40 {
+                return true
+            }
+        }
+        at = s_find(code, "function", at + 1)
+    }
+    return false
+}
+
+# The runnable gallery programs. Uses the repository's own extractor: a
+# regex over fences mispairs a closing fence with the next opening one,
+# which is why tools/doc_examples/blocks.flow exists.
+function gallery_programs() -> ptr<ProcStrs> {
+    let c: ptr<ProcCmd> = cmd(sl_of3("./flow", "tool", "doc_examples"))
+    proc_arg(c, "blocks")
+    proc_arg(c, gallery_path())
+    let mut text: string = capture_raw(c)
+    let json_start: i32 = s_find(text, "[", 0)
+    if json_start > 0 {
+        text = s_from(text, json_start)
+    }
+    let _w: bool = write_text(t_tmp() + "/blocks.json", text)
+    let j: ptr<Json> = tj_parse(text)
+    let programs: ptr<ProcStrs> = sl_new()
+    if not tj_ok(j) {
+        return programs
+    }
+    let mut b: i32 = tj_first(j, 0)
+    while b >= 0 {
+        let code: string = tj_raw(j, tj_get(j, b, "code"))
+        if s_eq(tj_raw(j, tj_get(j, b, "lang")), "flow") and tj_is_string(j, tj_get(j, b, "code")) and defines_main(code) {
+            sl_push(programs, code)
+        }
+        b = tj_next(j, b)
+    }
+    return programs
+}
+
+# A guard: if the gallery grows, this file should see the new ones.
+function check_the_gallery_has_the_programs_this_asserts_about() -> i32 {
+    let need: i32 = t_need("node")
+    if need != T_PASS {
+        return need
+    }
+    if not a_eq(s_itoa(sl_len(gallery_programs())), "5", "number of gallery programs") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+# Each gallery program returns 1 on a failed assertion, so exit 0 means the
+# program checked itself and passed.
+function check_gallery_program_runs_and_exits_zero(index: i32) -> i32 {
+    let need: i32 = t_need("node")
+    if need != T_PASS {
+        return need
+    }
+    let programs: ptr<ProcStrs> = gallery_programs()
+    let mut code: string = "null"
+    if index < sl_len(programs) {
+        code = sl_get(programs, index)
+    }
+    let program: string = t_tmp() + "/p.flow"
+    let _w: bool = write_text(program, code)
+    if not run_in_browser_engine(program) {
+        return T_FAIL
+    }
+    if not s_eq(result("ok"), "true") {
+        show_detail()
+        return T_FAIL
+    }
+    if not s_eq(result("exit"), "0") {
+        outln(result("output"))
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function thermostat() -> string {
+    let p: ptr<ProcStrs> = sl_new()
+    sl_push(p, "")
+    sl_push(p, "function bang(temp: f64, heater: f64, low: f64, high: f64) -> f64 {")
+    sl_push(p, "    if temp < low { return 1.0 }")
+    sl_push(p, "    if temp > high { return 0.0 }")
+    sl_push(p, "    return heater")
+    sl_push(p, "}")
+    sl_push(p, "")
+    sl_push(p, "flow Thermostat {")
+    sl_push(p, "    state temperature : f64 = 12.0")
+    sl_push(p, "    state heater      : f64 = 1.0")
+    sl_push(p, "    param ambient     : f64 = 8.0")
+    sl_push(p, "    param leak        : f64 = 0.12")
+    sl_push(p, "    param power       : f64 = 1.8")
+    sl_push(p, "    param low         : f64 = 19.5")
+    sl_push(p, "    param high        : f64 = 20.5")
+    sl_push(p, "")
+    sl_push(p, "    solver { dt 1 ms  method euler }")
+    sl_push(p, "")
+    sl_push(p, "    temperature evolves as (ambient - temperature) * leak + heater * power")
+    sl_push(p, "")
+    sl_push(p, "    every 100 ms {")
+    sl_push(p, "        heater becomes bang(temperature, heater, low, high)")
+    sl_push(p, "    }")
+    sl_push(p, "}")
+    sl_push(p, "")
+    sl_push(p, "function main() -> i32 {")
+    sl_push(p, "    let mut room: Thermostat = Thermostat_new()")
+    sl_push(p, "    let mut i: i32 = 0")
+    sl_push(p, "    while i < 20000 {")
+    sl_push(p, "        Thermostat_step(&room, 0.001)")
+    sl_push(p, "        i = i + 1")
+    sl_push(p, "    }")
+    sl_push(p, "    printf(\"temp=%.3f heater=%.1f\\n\", room.temperature, room.heater)")
+    sl_push(p, "    return 0")
+    sl_push(p, "}")
+    return text_of(p)
+}
+
+# 20000 Euler steps with an every-block firing 200 times. A stepper that is
+# close is not the same as one that agrees, so this compares the printed
+# state against `./flow run` rather than a tolerance.
+function check_a_flow_block_integrates_the_same_as_the_native_compiler() -> i32 {
+    let need: i32 = t_need("node")
+    if need != T_PASS {
+        return need
+    }
+    let program: string = t_tmp() + "/p.flow"
+    let _w: bool = write_text(program, thermostat())
+    if not run_in_browser_engine(program) {
+        return T_FAIL
+    }
+    if not s_eq(result("ok"), "true") {
+        show_detail()
+        return T_FAIL
+    }
+    if not a_eq(s_trim(result("output")), "temp=20.414 heater=1.0", "printed state") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_an_unimplemented_solver_method_says_which_one() -> i32 {
+    let need: i32 = t_need("node")
+    if need != T_PASS {
+        return need
+    }
+    let p: ptr<ProcStrs> = sl_new()
+    sl_push(p, "")
+    sl_push(p, "flow F {")
+    sl_push(p, "    state x : f64 = 0.0")
+    sl_push(p, "    solver { dt 1 ms  method rk4 }")
+    sl_push(p, "    x evolves as 1.0")
+    sl_push(p, "}")
+    sl_push(p, "function main() -> i32 { return 0 }")
+    let program: string = t_tmp() + "/p.flow"
+    let _w: bool = write_text(program, text_of(p))
+    if not run_in_browser_engine(program) {
+        return T_FAIL
+    }
+    if not a_eq(result("ok"), "false", "ok") {
+        return T_FAIL
+    }
+    if not a_contains(result("detail"), "rk4") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+# Constants were parsed and then never installed as globals.
+function check_a_top_level_const_is_available() -> i32 {
+    let need: i32 = t_need("node")
+    if need != T_PASS {
+        return need
+    }
+    let program: string = t_tmp() + "/p.flow"
+    let _w: bool = write_text(program, "const LIMIT: i32 = 7\nfunction main() -> i32 { printf(\"%d\\n\", LIMIT * 2) return 0 }")
+    if not run_in_browser_engine(program) {
+        return T_FAIL
+    }
+    if not s_eq(result("ok"), "true") {
+        show_detail()
+        return T_FAIL
+    }
+    if not a_eq(s_trim(result("output")), "14", "printed value") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("browser_interpreter_gallery")
+    t_start()
+    t_end("the_gallery_has_the_programs_this_asserts_about", check_the_gallery_has_the_programs_this_asserts_about())
+    let mut index: i32 = 0
+    while index < 5 {
+        t_start()
+        t_end("every_gallery_program_runs_and_exits_zero[" + s_itoa(index) + "]", check_gallery_program_runs_and_exits_zero(index))
+        index = index + 1
+    }
+    t_start()
+    t_end("a_flow_block_integrates_the_same_as_the_native_compiler", check_a_flow_block_integrates_the_same_as_the_native_compiler())
+    t_start()
+    t_end("an_unimplemented_solver_method_says_which_one", check_an_unimplemented_solver_method_says_which_one())
+    t_start()
+    t_end("a_top_level_const_is_available", check_a_top_level_const_is_available())
+    t_done()
+    return 0
+}

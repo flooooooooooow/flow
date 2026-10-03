@@ -2,9 +2,9 @@
 
 *One plus one is two in an ideal witness.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.1
+**Source.** dummit-foote: *Abstract Algebra*, §7.1
 
-## Derived fact 1 — 1 + 1 = 2 in an ideal
+## Derived fact 1: 1 + 1 = 2 in an ideal
 
 **Coordinate.** Ideal · addition · one plus one in ideal · **Derived fact**
 

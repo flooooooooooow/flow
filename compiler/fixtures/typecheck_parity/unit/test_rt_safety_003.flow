@@ -1,0 +1,14 @@
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function calloc(nmemb: i64, size: i64) -> ptr<void>
+    function realloc(p: ptr<void>, size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+@rt_safe
+function grow(p: ptr<void>) -> i32 {
+    let q: ptr<void> = calloc(4, 16)
+    let r: ptr<void> = realloc(p, 128)
+    return 0
+}

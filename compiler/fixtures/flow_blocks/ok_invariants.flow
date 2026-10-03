@@ -1,0 +1,11 @@
+flow Guarded {
+    state x : f64 = 0.0
+    x evolves as 1.0
+    always {
+        x < 10.0   # "quoted" \ backslash
+        x >= 0.0 and
+            x == x
+    }
+    never { x > 100.0 }
+    always { true }
+}

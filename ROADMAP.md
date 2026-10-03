@@ -1,13 +1,13 @@
 # FLOW Roadmap
 
 > Last updated: 2026-08-13  
-> Current version: 0.11.0  
+> Current version: 2.0.0  
 > Source: ~391,000 physical lines tracked (see README project statistics)
 
 This document tracks what we're building next and why.
 
 > **Vision:** the destination this roadmap points at is laid out in
-> [VISION.md](VISION.md) — a language where the primary abstraction is the
+> [VISION.md](VISION.md): a language where the primary abstraction is the
 > evolution of systems through time.
 >
 > **Product thesis / beachhead:** Flow describes **physical computational
@@ -19,14 +19,14 @@ This document tracks what we're building next and why.
 > (local kanban at `http://127.0.0.1:9470/app?project=flow`). This document stays
 > the strategic overview; the board is the source of truth for in-flight work.
 > Open items here mirror to GitHub issues as `[roadmap]` labels via
-> `scripts/sync_roadmap.py` (creates missing issues, closes + checks ones marked
-> done); `scripts/sync_issues.sh` then rounds trip state with `issues-checklist.md`.
+> `./flow tool roadmap_sync` (creates missing issues, closes + checks ones marked
+> done); `./flow tool issues_sync` then rounds trip state with `issues-checklist.md`.
 
 ---
 
 ## Physical systems beachhead (RF → satellite)
 
-Strategic cut: do **not** pitch “safer embedded.” Pitch a compiler that understands
+Strategic cut: do **not** pitch "safer embedded." Pitch a compiler that understands
 units + rates + timing + memory topology + hardware + precision. Phase map below;
 grammar cards in [north-star.md](docs/vision/north-star.md).
 
@@ -38,7 +38,7 @@ grammar cards in [north-star.md](docs/vision/north-star.md).
 | **W3** | Bare-metal/RTOS, interrupts, state machines | 🔲 |
 | **W4** | Sim ↔ deploy identical code; digital twin | 🔲 |
 | **W5** | `@hardware` → RTL; CDC; deploy partitions | 🔲 |
-| **W6** | Fault/radiation; `Flow Safety` / `--profile flight` | 🔨 partial — Phase 0+overflow+arena+control: flags/sanitizers, checked +/−/*, strcat/closure temp arena (#267/#268), recursion reject (#271), `@max_iterations` (#272), [safety-profiles.md](docs/language/safety-profiles.md). Null/fault handler: #288. |
+| **W6** | Fault/radiation; `Flow Safety` / `--profile flight` | 🔨 partial: Phase 0+overflow+arena+control: flags/sanitizers, checked +/−/*, strcat/closure temp arena (#267/#268), recursion reject (#271), `@max_iterations` (#272), [safety-profiles.md](docs/language/safety-profiles.md). Null/fault handler: #288. |
 
 Audio `@rt_safe` / lifetime domains remain the proving ground for the same contracts.
 
@@ -46,7 +46,7 @@ Audio `@rt_safe` / lifetime domains remain the proving ground for the same contr
 
 1. **Working > Perfect** - Ship incrementally, iterate based on use
 2. **Explicit > Implicit** - Clear syntax, obvious behavior
-3. **Unique > Clone** - Physical-system compile-time model (plus effects/autodiff) — not a Rust clone
+3. **Unique > Clone** - Physical-system compile-time model (plus effects/autodiff) rather than a Rust clone
 4. **Portable > Fast** - C backend means runs anywhere; zero-cost escape hatches required
 
 ### Decision Authority
@@ -62,9 +62,9 @@ Audio `@rt_safe` / lifetime domains remain the proving ground for the same contr
 
 ## Examples & domains roadmap
 
-Tourist-facing demos and domain coverage. Canonical “one entrypoint per domain”
+Tourist-facing demos and domain coverage. Canonical "one entrypoint per domain"
 lives in [examples/README.md](examples/README.md). The `examples/verify/` tree is
-a proof corpus, not the showcase.
+a proof corpus rather than the showcase.
 
 ### Further structure
 
@@ -79,7 +79,7 @@ a proof corpus, not the showcase.
 - [ ] Concurrency pipeline example once channel send/recv is exposed
 - [x] RF beachhead examples under `examples/rf/` (W0: `dft.flow`, `iq_mixer.flow`)
 
-### Tier 0 — Minimum domains
+### Tier 0: Minimum domains
 
 | Domain | Entrypoint / note | Status |
 |--------|-------------------|--------|
@@ -92,11 +92,11 @@ a proof corpus, not the showcase.
 | Errors / Result | `examples/basics/result_pipeline.flow` | ✅ |
 | Match | `examples/basics/match_enums.flow` | ✅ |
 | RT audio `@rt_safe` | `examples/audio/lattice_allpass_phase_engine.flow` | ✅ |
-| Verify repair | `examples/verify/circuits/full_adder.flow` (+ `.proof.md`) — corpus ahead of checker | partial |
+| Verify repair | `examples/verify/circuits/full_adder.flow` (+ `.proof.md`); corpus ahead of checker | partial |
 | UI layout | `examples/ui/layout_hello.flow` | ✅ |
-| Concurrency pipeline | deferred — `Channel_i32` in stdlib lacks send/recv | 🔲 |
+| Concurrency pipeline | deferred: `Channel_i32` in stdlib lacks send/recv | 🔲 |
 
-### Tier 1 — Vision domains
+### Tier 1: Vision domains
 
 | Domain | Intent | Status |
 |--------|--------|--------|
@@ -104,11 +104,11 @@ a proof corpus, not the showcase.
 | Control + plant `dsys` flagship | `evolution/spring_mass_control.flow` / dynamics suite | ✅ |
 | Units | Typed units / dimensional analysis showcase | ✅ (`units_kinematics`; RF in W0) |
 | Digital twin lite | Small plant + observer narrative | 🔲 |
-| Embedded RT | Constrained / no-alloc RT path beyond audio policy | partial (`@rt_safe`; W0–W3) |
+| Embedded RT | Constrained / no-alloc RT path beyond audio policy | partial (`@rt_safe`; W0-W3) |
 | RF / SDR beachhead | Quantity literals, IQ, rate-typed signals | 🔨 W0: `c64`/`c128` shipped, DFT + IQ mixer examples |
 | Shader × sim | Couple shader fill with a sim loop (not catalog stubs) | 🔲 |
 
-### Tier 2 — Competitive completeness
+### Tier 2: Competitive completeness
 
 | Domain | Intent | Status |
 |--------|--------|--------|
@@ -128,7 +128,7 @@ a proof corpus, not the showcase.
 | `\|>` pipe | docs + add a basics demo when surface is stable |
 | `parallel for` | concurrency / GPU examples when API lands |
 | `handle` / `with` | `examples/effects/showcase.flow` |
-| Shader fill | real shader path (not catalog stub) — keep `shader_demo.flow` honest |
+| Shader fill | real shader path (not catalog stub); keep `shader_demo.flow` honest |
 | `dsys` | `examples/dynamics/ga_dsys_syntax.flow` |
 | Postfix chaining | recovered systems examples (`ring_buffer`, …) |
 | Closures | `examples/generics_traits/closures_demo.flow` |
@@ -155,7 +155,7 @@ a proof corpus, not the showcase.
 
 ## Shipped through v0.11.0
 
-### 🎯 Immediate Priorities (This Week)
+### Immediate Priorities (This Week)
 
 | Task | Status | Impact |
 |------|--------|--------|
@@ -166,34 +166,34 @@ a proof corpus, not the showcase.
 | Strict-clean test corpus | ✅ | `./flow test --strict --tier2` passes all 215 tracked corpus files; `# flow:lenient - <reason>` pragma for intentional exceptions |
 | Targeted fuzzing harness | ✅ | `tests/fuzz/` (mutation/grammar/pipeline targets, seeded, auto-shrink); known crashes fixed as clean `SyntaxError` regressions |
 | Wiki live at GitHub Pages + tutorials | ✅ | marked wiki, **257** interactive lessons, proof catalog; deploy via `.github/workflows/wiki.yml` → [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/) (VPS deploy disabled) |
-| Manual memory stdlib (real heap) | ✅ | `lib/stdlib/memory.flow` — libc malloc/calloc/realloc/free + arena; docs + tutorials |
-| Fuzz parse crashes (array size / nesting) | ✅ | Depth limit + `parse_array_size()` — see `tests/fuzz/test_crash_regressions.py` |
-| Declarative ordering Phase 1 | ✅ | `xs \|\> sort` / `sortBy [asc .f, …]` — [docs/language/ordering.md](docs/language/ordering.md); example `examples/basics/declarative_sort.flow` |
-| First-class GPU / unified memory | ✅ | `lib/stdlib/gpu_memory.flow` + Metal runtime — [docs/library/gpu-memory.md](docs/library/gpu-memory.md) |
-| Fill-shader surface language | ✅ | `shader fill` → Metal fragment + `./flow shader` — [docs/language/shaders.md](docs/language/shaders.md) |
+| Manual memory stdlib (real heap) | ✅ | `lib/stdlib/memory.flow`: libc malloc/calloc/realloc/free + arena; docs + tutorials |
+| Fuzz parse crashes (array size / nesting) | ✅ | Depth limit + `parse_array_size()`; see `tests/fuzz/test_crash_regressions.py` |
+| Declarative ordering Phase 1 | ✅ | `xs \|\> sort` / `sortBy [asc .f, …]`; [docs/language/ordering.md](docs/language/ordering.md); example `examples/basics/declarative_sort.flow` |
+| First-class GPU / unified memory | ✅ | `lib/stdlib/gpu_memory.flow` + Metal runtime; [docs/library/gpu-memory.md](docs/library/gpu-memory.md) |
+| Fill-shader surface language | ✅ | `shader fill` → Metal fragment + `./flow shader`; [docs/language/shaders.md](docs/language/shaders.md) |
 
-### 📅 Short Term (This Month)
+### Short Term (This Month)
 
 | Task | Status | Impact |
 |------|--------|--------|
 | Python package target | ✅ | Python interop |
-| Cross-platform graphics (Linux) | ✅ — [docs/language/graphics.md](docs/language/graphics.md) | `gfx_linux.c` SDL2 backend (stub fallback without headers); Windows tracked separately below |
-| Package registry design | ✅ | Deferred — [docs/project/package-registry.md](docs/project/package-registry.md); git deps until 3+ third-party packages |
+| Cross-platform graphics (Linux) | ✅ [docs/language/graphics.md](docs/language/graphics.md) | `gfx_linux.c` SDL2 backend (stub fallback without headers); Windows tracked separately below |
+| Package registry design | ✅ | Deferred: [docs/project/package-registry.md](docs/project/package-registry.md); git deps until 3+ third-party packages |
 | Effect system showcase | ✅ | `examples/effects/showcase.flow` + [docs/effects-showcase.md](docs/effects-showcase.md) with honest limitations |
-| Benchmark vs C comparison | ✅ | Performance credibility — see `benchmarks/suite/RESULTS.md` |
+| Benchmark vs C comparison | ✅ | Performance credibility; see `benchmarks/suite/RESULTS.md` |
 | Documentation enhancements (comparisons with C and MOJO) | ✅ | Clear positioning |
 | Live DSP standard (single graph + buffer layout) | ✅ | Audio consistency |
 | Live plugin ABI registry | ✅ | Extensible DSP |
 | Live graph hot-swap handle | ✅ | Live coding |
-| RT-safety policy (no-alloc audio thread) | ✅ partial — [docs/library/rt-safety.md](docs/library/rt-safety.md) | Policy + checklist documented; `@rt_safe` attribute now compile-time enforces no direct/transitive `malloc`/`calloc`/`realloc`/`free`/`arena_create`/`arena_destroy` calls (#134); device/file/GPU/lock policy still unchecked |
-| FIR-G program graph (Phases 1–4) | ✅ partial — [docs/project/fir-g.md](docs/project/fir-g.md) | SoA store, CPU oracles, MLX/NumPy bulk + diffs, measured `--calibrate` routing, deterministic `--opts` candidates (no IR rewrite yet) |
+| RT-safety policy (no-alloc audio thread) | ✅ partial: [docs/library/rt-safety.md](docs/library/rt-safety.md) | Policy + checklist documented; `@rt_safe` attribute now compile-time enforces no direct/transitive `malloc`/`calloc`/`realloc`/`free`/`arena_create`/`arena_destroy` calls (#134); device/file/GPU/lock policy still unchecked |
+| FIR-G program graph (Phases 1-4) | ✅ partial: [docs/project/fir-g.md](docs/project/fir-g.md) | SoA store, CPU oracles, MLX/NumPy bulk + diffs, measured `--calibrate` routing, deterministic `--opts` candidates (no IR rewrite yet) |
 
 ### ✨ Pattern adoption (less code, cooler surfaces)
 
 Canonical demos should use shipped `flow` / `evolves` / AD / BLAS instead of
 hand-rolled C-shaped loops. API sketches live in
 [pattern-adoption.md](docs/project/pattern-adoption.md). Open items below sync to GitHub
-`[roadmap]` issues via `scripts/sync_roadmap.py`.
+`[roadmap]` issues via `./flow tool roadmap_sync`.
 
 | Task | Status | Impact |
 |------|--------|--------|
@@ -208,20 +208,20 @@ hand-rolled C-shaped loops. API sketches live in
 | Dual + Tensor operators + mutable params | ✅ [#161](https://github.com/flooooooooooow/flow/issues/161) | Dual ops + mut nn + Tensor `+ - * /` / scale; `loss.grad` optional |
 | Closed-loop plant.step from dsys/connect | ✅ [#160](https://github.com/flooooooooooow/flow/issues/160) | DSL exposes `plant` alias; spring_mass uses `plant_step(plant, …)` |
 
-### 🧹 Repository Cleanup
+### Repository Cleanup
 
 The repo has accumulated stray files, empty stubs, and misplaced artifacts. This section tracks the cleanup plan.
 
-#### High Priority — Delete or Move
+#### High Priority: Delete or Move
 
 | File | Problem | Action | Status |
 |------|---------|--------|--------|
-| `/bench.sh` | Empty (0 bytes), superseded by `scripts/bench.sh` | Deleted | ✅ |
+| `/bench.sh` | Empty (0 bytes), superseded by the benchmark harness (`./flow tool bench_harness`) | Deleted | ✅ |
 | `/run_bench.py` | Empty (0 bytes), superseded by `scripts/run_bench.py` | Deleted | ✅ |
-| `/flow_wasm.py` | Suspected duplicate of `wasm/flow_to_wasm.py` | Kept — inspection showed it is NOT a duplicate | ✅ |
-| `/test_ci_locally.sh` | Dev utility loose at repo root | Moved to `scripts/test_ci_locally.sh` | ✅ |
+| `/flow_wasm.py` | Suspected duplicate of `wasm/flow_to_wasm.py` | Kept: inspection showed it is NOT a duplicate | ✅ |
+| `/test_ci_locally.sh` | Dev utility loose at repo root | Moved to `scripts/test_ci_locally.flow` | ✅ |
 
-#### Medium Priority — Remove Empty Stubs
+#### Medium Priority: Remove Empty Stubs
 
 | File | Problem | Action | Status |
 |------|---------|--------|--------|
@@ -230,7 +230,7 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 | `tests/test_graphics.flow` | Empty (0 bytes) | Deleted | ✅ |
 | `tests/test_const_comprehensive.flow` | Empty (0 bytes) | Deleted | ✅ |
 
-#### Medium Priority — Misplaced Files
+#### Medium Priority: Misplaced Files
 
 | File | Problem | Action | Status |
 |------|---------|--------|--------|
@@ -238,20 +238,20 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 | `tools/srir_demo.mlir` | Demo data in tools dir | Relocated out of `tools/` | ✅ |
 | 21 `.flow` test files in `tests/` root | `tests/core/` subdir already exists | Organized into `tests/{arrays,simd,memory,core}/`; 5 exact duplicates of existing `core/`/`misc/` copies deleted | ✅ |
 
-#### Low Priority — Empty Directories & Structure
+#### Low Priority: Empty Directories & Structure
 
 | Item | Problem | Action | Status |
 |------|---------|--------|--------|
 | `challenges/` | Empty directory | Removed | ✅ |
 | `editors/` | Empty directory | Removed | ✅ |
 | `tools/` flat structure | Mixed-purpose files (debug, grad, JIT, SIMD, test) | Organized into subdirs: `audio/`, `debug/`, `doc/`, `euclid/`, `grad/`, `jit/`, `simd/`, `test/` | ✅ |
-| `lib/` → `lib/stdlib/` | Has two children (`stdlib/`, `verify/`) | Kept as-is — structure is appropriate | ✅ |
+| `lib/` → `lib/stdlib/` | Has two children (`stdlib/`, `verify/`) | Kept as-is: structure is appropriate | ✅ |
 
-### 🔮 Medium Term (This Quarter)
+### Medium Term (This Quarter)
 
 | Task | Status | Impact |
 |------|--------|--------|
-| Windows graphics support | ✅ partial — [docs/language/graphics.md](docs/language/graphics.md) | `runtime/gfx_windows.c` shares SDL2 impl with Linux (`gfx_sdl_impl.inc`); `./flow gfx` picks it up on MSYS2/Git Bash/Cygwin; needs MSVC/clang smoke on real Windows |
+| Windows graphics support | ✅ partial: [docs/language/graphics.md](docs/language/graphics.md) | `runtime/gfx_windows.c` shares SDL2 impl with Linux (`gfx_sdl_impl.inc`); `./flow gfx` picks it up on MSYS2/Git Bash/Cygwin; needs MSVC/clang smoke on real Windows |
 | Self-hosting components | 🔲 | Dogfooding |
 | WASM target | ✅ Flow→C\|MLIR→emscripten, plus direct MLIR→LLVM→wasm32 with no Emscripten ([docs/language/wasm.md](docs/language/wasm.md), `#221`); native Flow-in-WASM deferred | Web deployment |
 | Tier-0 tourist examples | ✅ [#169](https://github.com/flooooooooooow/flow/issues/169) | Canonical table in examples/README; UI/WASM/packages present; concurrency pipeline deferred |
@@ -287,7 +287,7 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 - ✅ **NEW:** Unified postfix chaining (`ptr[0].field`, `f()[1].x`, `pts[0].method()`)
 - ✅ **NEW:** Strict-clean corpus (`./flow test --strict --tier2`, 215/215) with `# flow:lenient` pragma
 - ✅ **NEW:** Fuzzing harness (`tests/fuzz/run_fuzz.py`) wired into CI
-- ✅ **NEW:** LSP inline diagnostics, find references, rename (39-test harness in `scripts/test_lsp_server.py`)
+- ✅ **NEW:** LSP inline diagnostics, find references, rename (transcript test in `tests/tools/lsp/run.flow`)
 
 **What's broken/missing:**
 - ✅ **FIXED (#124):** MLIR backend exercised against chained postfix AST shapes
@@ -296,7 +296,7 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
   field stores lower via GEP chains; struct arrays use `!llvm.array` alloca
   (memref cannot hold `!llvm.struct`). See `tests/unit/test_mlir_chained_ast.py`.
 - ✅ **FIXED (#117):** `break`/`continue` now have dedicated `BreakStatement`/
-  `ContinueStatement` AST nodes (their own lexer keywords, not identifiers).
+  `ContinueStatement` AST nodes (their own lexer keywords rather than identifiers).
   The C generator emits `break;`/`continue;` directly from those nodes; the
   old "surfaces as a bare `Variable`" special-case is gone. See
   `tests/unit/test_parser.py` and `tests/runtime/test_control_flow.flow`.
@@ -304,7 +304,7 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
   (`dependency_injection`, `state_effects`, `async_effects`) used the older
   `capability EffectName` **parameter** style, where `Effect.op(...)` calls
   always dispatch through the effect's *global* handler regardless of what
-  was passed as an argument — with no `handle ... with ...` block installed,
+  was passed as an argument. With no `handle ... with ...` block installed,
   every call silently fell back to its zeroed default (one demo printed
   `(null)`/`0` everywhere; another looped forever). All three now use the
   `capability { ... }` + `handle ... with ...` style (see
@@ -313,12 +313,12 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
 - Example C-codegen failures previously listed in the sweep are cleared;
   see [examples/STATUS.md](examples/STATUS.md) for the latest pass/fail totals
 - ~270 of the parser failures in that sweep are under `examples/verify/`
-  (the third-party `flow-verify` proof corpus) — **not core-Flow bugs**. That
+  (the third-party `flow-verify` proof corpus). These are **not core-Flow bugs**. That
   corpus is written ahead of the verification-keyword parser/checker and
   intentionally explores notation (`\`/`∩`/`∪` set operators, `++` append,
   `in` membership, Euclidean ratios, `has property`/`ghost type` contracts)
-  that [verification.md](docs/language/verification.md) lists as design-spec,
-  not shipped syntax. Categorized breakdown + triage tool:
+  that [verification.md](docs/language/verification.md) lists as design-spec
+  rather than shipped syntax. Categorized breakdown + triage tool:
   [docs/third-party/flow-verify-parser-status.md](docs/third-party/flow-verify-parser-status.md),
   `scripts/triage_verify_failures.py`
 - Match guards, `|` alternation (literal-only), nested literal patterns
@@ -327,24 +327,24 @@ The repo has accumulated stray files, empty stubs, and misplaced artifacts. This
   `bool` (both inhabitants trackable) and now also for enum/ADT variant
   coverage via path/const patterns (a bare identifier that names a known
   `enum` variant constant, e.g. `Color_Red`, is now a value-equality check
-  rather than always binding — matching directly on the enum value or on
+  rather than always binding; matching directly on the enum value or on
   its `.tag` field both work end-to-end in the C backend). Integer literal
   matches get range/gap analysis (gaps inside `[min, max]` covered values,
   plus a note that the rest of the integer domain still needs `_`/`default`)
-- Manual memory stdlib is done (`lib/stdlib/memory.flow` — malloc/arena + docs)
+- Manual memory stdlib is done (`lib/stdlib/memory.flow`: malloc/arena + docs)
 
 **Recently completed:**
-- ✅ Enums / ADTs — Tagged unions in C
-- ✅ Trait bounds — `<T: Display>` stored in AST
-- ✅ MLIR backend — Co-equal CPU path: FLOW → MLIR → LLVM → native (`--backend=mlir` / `FLOW_CPU_BACKEND=mlir`; default remains C)
-- ✅ LSP — go-to-definition, hover, autocomplete
-- ✅ Closures — Automatic by-value capture (`|x| …` + env/closure structs); MLIR lowers non-capturing lambdas
-- ✅ REPL — `flow repl` for interactive development
-- ✅ JIT — `flow jit` for fast execution via MLIR (links Flow runtime when `FLOW_JIT_LINK_RUNTIME=1`)
-- ✅ Package manager — `flow init`, `flow add`, `flow build`
-- ✅ GPU codegen — Dual targets: Metal/WGSL (`./flow gpu`) + MLIR→SPIR-V emit (`--mlir-gpu --emit-spirv`)
-- ✅ Stdlib expansion — POSIX, collections, networking, concurrency, strings
-- ✅ Documentation — Tutorials, getting started, stdlib reference
+- ✅ Enums / ADTs: Tagged unions in C
+- ✅ Trait bounds: `<T: Display>` stored in AST
+- ✅ MLIR backend: Co-equal CPU path: FLOW → MLIR → LLVM → native (`--backend=mlir` / `FLOW_CPU_BACKEND=mlir`; default remains C)
+- ✅ LSP: go-to-definition, hover, autocomplete
+- ✅ Closures: Automatic by-value capture (`|x| …` + env/closure structs); MLIR lowers non-capturing lambdas
+- ✅ REPL: `flow repl` for interactive development
+- ✅ JIT: `flow jit` for fast execution via MLIR (links Flow runtime when `FLOW_JIT_LINK_RUNTIME=1`)
+- ✅ Package manager: `flow init`, `flow add`, `flow build`
+- ✅ GPU codegen: Dual targets: Metal/WGSL (`./flow gpu`) + MLIR→SPIR-V emit (`--mlir-gpu --emit-spirv`)
+- ✅ Stdlib expansion: POSIX, collections, networking, concurrency, strings
+- ✅ Documentation: Tutorials, getting started, stdlib reference
 
 ---
 
@@ -498,7 +498,7 @@ let x = 42      # Inferred as i32
 let y = 3.14    # Inferred as f32
 ```
 
-**Decision needed:** Do we want inference? It trades explicitness for convenience. The epistemic contract says "what you see is what you get" — inference hides information.
+**Decision needed:** Do we want inference? It trades explicitness for convenience. The epistemic contract says "what you see is what you get", and inference hides information.
 
 **Current leaning:** No inference for v1.0. Explicit types align with project philosophy.
 
@@ -533,10 +533,10 @@ match point {
 
 **Tasks:**
 - [x] Add `StructPattern` with field destructuring
-- [x] Add guard clauses (`if condition`) — parse → AST → C for literal, variable, and struct patterns; guard-fails fall through to the next arm; struct-pattern bindings are visible inside the guard
-- [x] Add nested patterns — literal values in struct-pattern field positions, e.g. `Point(0, y)` requires field 0 == 0 and binds field 1 to `y`; **and** struct-in-struct nesting to arbitrary depth, e.g. `Outer(Inner(x), y)` recursively matches/binds through nested structs (parser: `StructPattern.field_patterns`; codegen: recursive `_gen_struct_pattern_match`; type checker: recursive `_bind_struct_pattern`). See `tests/core/test_match_nested.flow`. Struct nesting also works inside `|` when every alternative is the same struct with agreeing binding names (`Outer(Inner(0), tag) | Outer(Inner(1), tag)`). Enum-variant patterns in nesting still follow the exhaustiveness note below.
-- [x] Add `|` for multiple patterns — literal alternation (`1 | 2 | 3 => ...`) and same-struct alternation with agreeing bindings; combines with guards; literal-only arms still lower to stacked C `switch` cases
-- [x] Exhaustiveness checking — **real** for `bool` and enum/ADT path/const patterns (see earlier notes). **Integer range/gap analysis**: unguarded integer literal / `|` arms contribute covered values; warnings name gaps inside `[min, max]` (e.g. `0 | 1 | 3` → gap at `2`) and note that values outside that span still need `_`/`default` (full `i32` listing is impossible). Guarded arms do not count as covering. See `tests/unit/test_match_exhaustiveness.py`.
+- [x] Add guard clauses (`if condition`): parse → AST → C for literal, variable, and struct patterns; guard-fails fall through to the next arm; struct-pattern bindings are visible inside the guard
+- [x] Add nested patterns: literal values in struct-pattern field positions, e.g. `Point(0, y)` requires field 0 == 0 and binds field 1 to `y`; **and** struct-in-struct nesting to arbitrary depth, e.g. `Outer(Inner(x), y)` recursively matches/binds through nested structs (parser: `StructPattern.field_patterns`; codegen: recursive `_gen_struct_pattern_match`; type checker: recursive `_bind_struct_pattern`). See `tests/core/test_match_nested.flow`. Struct nesting also works inside `|` when every alternative is the same struct with agreeing binding names (`Outer(Inner(0), tag) | Outer(Inner(1), tag)`). Enum-variant patterns in nesting still follow the exhaustiveness note below.
+- [x] Add `|` for multiple patterns: literal alternation (`1 | 2 | 3 => ...`) and same-struct alternation with agreeing bindings; combines with guards; literal-only arms still lower to stacked C `switch` cases
+- [x] Exhaustiveness checking: **real** for `bool` and enum/ADT path/const patterns (see earlier notes). **Integer range/gap analysis**: unguarded integer literal / `|` arms contribute covered values; warnings name gaps inside `[min, max]` (e.g. `0 | 1 | 3` → gap at `2`) and note that values outside that span still need `_`/`default` (full `i32` listing is impossible). Guarded arms do not count as covering. See `tests/unit/test_match_exhaustiveness.py`.
 
 ### 2.2 Enums / Algebraic Data Types
 **Priority:** High  
@@ -597,7 +597,7 @@ function print<T: Printable>(x: T) -> void {
 - [x] Parse trait and impl syntax
 - [x] Implement trait bounds on generics
 - [x] Generate vtables or monomorphize
-- [x] Decide: traits vs effects — when to use which?
+- [x] Decide: traits vs effects. When to use which?
 
 ### 2.4 Closures (Full)
 **Priority:** Medium  
@@ -645,7 +645,7 @@ Make `flow-lsp` actually useful.
 - [x] Inline error diagnostics (publishDiagnostics on didOpen/didChange, debounced)
 - [x] Rename symbol (with prepareRename validation and keyword rejection)
 
-Covered by the scripted harness `scripts/test_lsp_server.py` (39 tests).
+Covered by the transcript test `tests/tools/lsp/run.flow`, which drives the native server (`tools/lsp/main.flow`) through recorded JSON-RPC sessions.
 
 ### 3.2 REPL (Complete ✅)
 **Priority:** Medium  
@@ -681,7 +681,7 @@ math = "1.0"
 json = { git = "https://github.com/..." }
 ```
 
-**Future:** Registry/lockfiles/semantic version resolution once there’s real third-party package demand.
+**Future:** Registry/lockfiles/semantic version resolution once there's real third-party package demand.
 
 ### 3.4 Debugger Integration
 **Priority:** Low  
@@ -740,7 +740,7 @@ let c: f32x4 = simd_add(a, b)  # (6.0, 8.0, 10.0, 12.0)
 
 ## Phase 5: Ecosystem (Long-term)
 
-### 5.1 Self-Hosting — rewrite Python → Flow
+### 5.1 Self-Hosting: rewrite Python → Flow
 **Priority:** High (strategic)  
 **Plan:** [docs/project/self-hosting.md](docs/project/self-hosting.md)  
 **Issues:** GitHub label `self-hosting`
@@ -751,11 +751,11 @@ Replace `src/flow/*.py` as the production compiler with **`flowc`** (Flow→C wr
 |-------|------|--------|
 | **A** | Land `compiler/` + Stage-A roundtrip/self-emit on `main` + CI | ✅ |
 | **B** | Close Stage-A gaps so `flowc` sources compile under `flowc` | ✅ |
-| **C** | `./flow` defaults to `flowc`; Python via `FLOW_HOST=python` | ✅ |
-| **D** | Retire Python from the compile critical path | 🔨 in progress — `flowc` surface catch-up (0.11.0) |
+| **C** | `./flow` uses `flowc` for every C command; `FLOW_HOST=python` retired | ✅ |
+| **D** | Retire Python from the compile critical path | ✅ Python C backend deleted; flowc matches it on 1037 of 1053 corpus programs |
 | **E** | Packaging, optional MLIR/GPU as separate tracks | 🔨 landing |
 
-Bootstrap already exists locally in many worktrees (`compiler/src/{lexer,parser,cgen,…}.flow`, fixed-point scripts). This roadmap item tracks **merge + cutover**, not a greenfield rewrite.
+Bootstrap already exists locally in many worktrees (`compiler/src/{lexer,parser,cgen,…}.flow`, fixed-point scripts). This roadmap item tracks **merge + cutover** rather than a greenfield rewrite.
 
 ### 5.2 Standard Library Expansion (Complete ✅)
 See **Standard Library Expansion (Complete ✅)** below for the module list.
@@ -800,7 +800,7 @@ These are explicitly out of scope:
 | **0.10.0** | tagged | MLIR/WASM epic #221, `flowc` three-generation self-compile, lifetime domains, safety profiles |
 | **0.11.0** | **current** | Zero-bridge C interop (`@cImport`/`@cInclude`/`@cEmbed`/`extern type`/`cfn`), BLAS bindings, RF W0 + DSP W1, `flowc` surface catch-up |
 | **0.12.0** | next | `flowc` covers the full surface; Python off the compile critical path (self-hosting Phase E) |
-| **1.0.0** | when earned | “Boring” stability + physical-systems phases W2–W4 |
+| **1.0.0** | when earned | "Boring" stability + physical-systems phases W2-W4 |
 
 ---
 
@@ -810,7 +810,7 @@ These are explicitly out of scope:
 1. [x] Strict type enforcement (turn warnings → errors)
    - `--strict` is default, `--lenient` for backwards compatibility
    - Run `./flow test --strict` to validate strict mode
-2. [x] Parse generic syntax (`<T>`) — parsed + monomorphized
+2. [x] Parse generic syntax (`<T>`): parsed + monomorphized
    - `function foo<T>(...)` and `struct Bar<T> { ... }` work
    - Type bounds `<T: Trait>` parsed (ignored for now)
 3. [x] Add `Option<T>` and `Result<T, E>` types to stdlib
@@ -859,9 +859,9 @@ These are explicitly out of scope:
 6. [x] MLIR backend ✅ (co-equal CPU flag: `--backend=mlir` / `FLOW_CPU_BACKEND`; default C; runtime-linked)
 7. [x] Docs wiki deploy + interactive tutorials ✅ (`/flow/`, `/transpile/`)
 8. [x] Clear remaining example cgen failures (`examples/STATUS.md`) ✅
-9. [x] Match guards + `|` alternation + nested literal & struct-in-struct patterns ✅ (bool/enum exhaustiveness real; integer range/gap analysis shipped — see Phase 2.1)
+9. [x] Match guards + `|` alternation + nested literal & struct-in-struct patterns ✅ (bool/enum exhaustiveness real; integer range/gap analysis shipped; see Phase 2.1)
 10. [x] Manual memory stdlib (real heap) ✅ (`lib/stdlib/memory.flow`)
-11. [x] RT-safety policy for audio thread (no-alloc contract) ✅ partial — [docs/library/rt-safety.md](docs/library/rt-safety.md) (policy documented; `@rt_safe` attribute compile-time enforces no heap calls, direct or transitive, #134; device/file/GPU/lock policy still open)
+11. [x] RT-safety policy for audio thread (no-alloc contract) ✅ partial: [docs/library/rt-safety.md](docs/library/rt-safety.md) (policy documented; `@rt_safe` attribute compile-time enforces no heap calls, direct or transitive, #134; device/file/GPU/lock policy still open)
 
 ---
 

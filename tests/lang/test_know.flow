@@ -1,5 +1,5 @@
 # Test for know.flow port of know.py helpers.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_know.flow
+# Run with: ./flow run tests/lang/test_know.flow
 # Exit 0 on success.
 
 import "compiler/src/know.flow"

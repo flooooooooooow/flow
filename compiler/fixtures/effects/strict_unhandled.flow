@@ -1,0 +1,18 @@
+# Effects parity fixture: performing with no handler, under strict effects.
+# effects-mode: strict
+
+effect Log {
+    info(msg: string) -> void,
+}
+
+capability Console {
+    effect Log,
+    function info(msg: string) -> void {
+        printf("[console] %s\n", msg)
+    },
+}
+
+function main() -> i32 {
+    Log.info("no handler")
+    return 0
+}

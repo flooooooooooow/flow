@@ -1,3 +1,4 @@
+# ACTIONS-INTENDED: public repository; its CI runs on GitHub Actions.
 name: Changelog
 
 on:
@@ -6,16 +7,20 @@ on:
     paths:
       - 'CHANGELOG.md'
       - 'docs/project/CHANGELOG.md'
-      - 'src/flow/version.py'
-      - 'scripts/check_changelog.py'
+      - 'VERSION'
+      - 'tools/flow_cli/**'
+      - 'scripts/tools/changelog_check/**'
+      - 'scripts/tools/lib/**'
       - '.github/workflows/changelog.yml'
   pull_request:
     branches: [main, master]
     paths:
       - 'CHANGELOG.md'
       - 'docs/project/CHANGELOG.md'
-      - 'src/flow/version.py'
-      - 'scripts/check_changelog.py'
+      - 'VERSION'
+      - 'tools/flow_cli/**'
+      - 'scripts/tools/changelog_check/**'
+      - 'scripts/tools/lib/**'
       - '.github/workflows/changelog.yml'
 
 permissions:
@@ -27,4 +32,4 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Require current version in canonical changelog
-        run: python3 scripts/check_changelog.py
+        run: ./flow tool changelog_check

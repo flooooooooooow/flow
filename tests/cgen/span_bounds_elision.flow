@@ -1,0 +1,14 @@
+# An ascending loop bounded by the span's own length proves its element reads.
+
+function sum(xs: &[i32]) -> i32 {
+    let mut total: i32 = 0
+    for i in 0 to xs.len {
+        total = total + xs[i]
+    }
+    return total
+}
+
+function main() -> i32 {
+    let values: [i32; 3] = [4, 5, 6]
+    return sum(values)
+}

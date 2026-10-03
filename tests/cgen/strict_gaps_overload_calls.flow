@@ -1,0 +1,43 @@
+# Calls that must reach their definition: an unsuffixed literal for an
+# unsigned parameter, a sole overload with an untyped constant argument, an
+# indexed argument, a cast argument, and an exact signed overload that wins
+# over an unsigned one.
+const LIMIT: i32 = 10
+const KEY_ESC: i32 = 53
+
+function take_u32(x: u32) -> u32 {
+    return x + 1
+}
+
+function fly(x: u32, cap: i32) -> f32 {
+    return 0.0
+}
+
+function classify(value: i32) -> i32 {
+    return value
+}
+
+function take_f32(value: f32) -> f32 {
+    return value
+}
+
+function pick(x: i32) -> i32 {
+    return 1
+}
+
+function pick(x: u32) -> i32 {
+    return 2
+}
+
+function main() -> i32 {
+    if take_u32(1234) != 1235 { return 10 }
+    let v: f32 = fly(424242, LIMIT)
+    if v != 0.0 { return 11 }
+    let values: array<i32, 1> = [42]
+    if classify(values[0]) != 42 { return 12 }
+    let fs: array<f32, 1> = [1.0]
+    if take_f32(fs[0] as f32) != 1.0 { return 13 }
+    if classify(KEY_ESC) != 53 { return 14 }
+    if pick(5) != 1 { return 15 }
+    return 0
+}

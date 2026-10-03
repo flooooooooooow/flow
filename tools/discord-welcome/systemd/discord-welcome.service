@@ -8,7 +8,7 @@ Type=simple
 User=discord-welcome
 WorkingDirectory=/opt/discord-welcome
 EnvironmentFile=/etc/discord-welcome.env
-ExecStart=/opt/discord-welcome/.venv/bin/python3 /opt/discord-welcome/bot.py
+ExecStart=/opt/discord-welcome/discord-welcome
 Restart=on-failure
 RestartSec=10
 

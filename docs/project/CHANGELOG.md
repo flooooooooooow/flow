@@ -4,6 +4,57 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+### Type checker diagnostics
+
+- flowc prints the checker's warnings as `FILE:LINE:COL: warning: ...`: non-exhaustive `match`, the address of a pointer, an unknown `handle` handler (#678). `FLOWC_WARNINGS=0` (`flowc_emit.sh --no-warnings`) silences them and `FLOWC_WERROR=1` (`--Werror`) makes them errors. Warnings inside `lib/stdlib` and `lib/runtime` show only with `FLOWC_WARNINGS=all`.
+- A string import with a `..` component, an absolute path or a `~` path is refused: `Unsafe import path: ../x.flow`, as the Python host refused it.
+- An escape in a string that C has no meaning for (`"\xZZ"`, `"\q"`) is refused: `Invalid escape sequence: \x`.
+- `--strict` refuses a literal `step 0` in a `for` range.
+- Record update `Name { ..base, f: v }` compiles on the C backend (#996). Flow-stage parameters `x |> Stage { k: v }` outside a flow `output` are refused with the Python host's message.
+
+### C backend: flowc only
+
+- flowc is the only C compiler. `flow run`, `compile`, `test`, `test-lang`, `test-runtime`, `gfx`, `record`, `window`, `audio`, `debug`, `patch` and `ml test` all build through it. On the corpus it matches the Python host on 1037 of 1053 programs with `main()` and builds 6 the Python host could not (`compiler/corpus_parity/report.txt`).
+- The Python C backend is deleted: `src/flow/c_generator.py` and the modules only it used (`overload.py`, `ordering_plans.py`, `plan_selector.py`, `general_plans.py`, `constraints.py`). `FLOW_HOST=python` stops with a pointer to flowc, and `python3 -m flow.transpiler --c` exits with the same pointer. `compiler/scripts/flowc_emit.sh IN.flow OUT.c` is the C-only command for scripts and tools.
+- `flow debug` keeps its source mapping: with `FLOWC_DEBUG_INFO=1` flowc writes a `#line` directive before every statement.
+- flowc selects sort and find plans by cost, as the Python host did (`compiler/src/sort_plans.flow`, #1054), and `flow explain` prints the same report from flowc (#1055).
+- The bootstrap C regenerates without Python. `compiler/scripts/bootstrap_from_c.sh --regen` self-emits from the previous bootstrap until the C reaches a fixed point, and `compiler/scripts/flowc_host.sh` builds a flowc from the current `compiler/src` for `roundtrip.sh` and `ensure_flowc.sh`.
+- C output goldens live in `tests/cgen` (`tests/cgen/run.sh`). They replace the pytest tests that asserted on the Python backend's C.
+- flowc lowers `@inline`, `@always_inline`, `@noinline` and `@target("...")` to the same C specifiers the Python host emitted, on the prototype and the definition (#1028). The type checker reports an unknown attribute, a malformed `@target` and `@noinline` with `@inline`.
+- Inside `handle E with C { ... }` flowc emits an operation written in the block as a direct call `C_op(args)`, as the Python host did (#1056). Lambda bodies and functions called from the block keep the vtable dispatch `E_op(args)`. A lambda that performs an effect no longer captures the effect name (#1057).
+- flowc applies `@only` / `@guard` build-mode guards: a function whose modes are all off is dropped, so two definitions under different guards compile to one (#1029). `FLOWC_MODE` replaces `--mode`.
+
+### Language server
+
+- `flow lsp` and `./flow-lsp` run a language server written in Flow (`tools/lsp/main.flow`), built with the Stage-A compiler on first use. Diagnostics come from the flowc parser and Stage-A type checker in process. It serves hover, completion, definition, references, highlight, rename, document symbols, formatting and idiom quick fixes. The VS Code extension starts it by default.
+- The Python server (`src/flow/lsp_server.py` and its `lsp_intel`, `lsp_syntax`, `lsp_dynamics` and `lsp_ordering` helpers) is deleted. `tests/tools/lsp/run.sh` replays recorded sessions against the native server and checks it differs from the Python server's recorded answers only in the ways listed in `tests/tools/lsp/ACCEPTED.md`.
+- Documents with non-ASCII text are framed by bytes. The Python server lost the message after any such document.
+
+### Formatter
+
+- `flow fmt` runs flowc's formatter (`compiler/src/fmt.flow`) and no longer needs Python. It works on the token stream and changes whitespace only: indentation, spacing between tokens, trailing blanks and runs of blank lines. Comments, imports, extern blocks, parentheses, untyped `let`s and commas are kept as written. `flow fmt --check` lists files that would change.
+- `compiler/scripts/fmt_check.sh` checks, for every tracked `.flow` file flowc parses, that the token and comment stream is unchanged, that formatting is idempotent, and that files which compile emit the same C after formatting.
+- The language server formats with the same pass and no longer falls back to re-indenting.
+- The Python formatter (`src/flow/formatter.py`) is deleted.
+
+## [2.0.0] - 2026-09-27
+
+Flow 2.0.0 changes the license and marks a new major version.
+
+### License
+
+- Version 2.0.0 and later are proprietary. All rights reserved. See `LICENSE`.
+- Version 1.0.2 and all earlier versions remain available under the MIT License, preserved as `LICENSE-1.x-MIT`. Rights already granted under MIT for the 1.x line are unaffected.
+- The repository stays public.
+
+### Version
+
+- Canonical version and every mirror bumped to 2.0.0. The `flow-driver` CLI banner now reports 2.0.0, and `scripts/sync_version.py` tracks it so the banner stays in sync with the canonical version.
+
+### Documentation
+
+- README license badge, facts table, and License section updated for the relicense. Self-hosting status condensed with a link to the full breakdown. Version-pinned framing removed from the intro.
+
 ## [1.0.2] - 2026-08-24
 
 Flow 1.0.2 is a patch release over the Flow 1.x compatibility contract. It does not promote, remove, or incompatibly change any Stable 1.x syntax or API, and the runtime ABI remains version 1.
@@ -85,7 +136,7 @@ documentation. `./flow test --tier2` covers `tests/` and `examples/`, and
 nothing in either returns a fixed-size array, concatenates a string with an
 i64, or reads a value past a `defer`.
 
-### Added — range algebra
+### Added: range algebra
 
 Two ranges compose with `|` for union and `&` for intersection inside `sum`:
 
@@ -104,7 +155,7 @@ Limits are compile errors with a message rather than silent truncation: eight
 ranges folded, one operator between two ranges at runtime. Ranges are still
 not values. See [Ranges and range algebra](../language/ranges.md). (#476)
 
-### Fixed — wrong answers
+### Fixed: wrong answers
 
 - **Returning `array<T, N>` returned garbage.** The C backend lowered it to
   `T*` over automatic storage, so the caller read a frame that no longer
@@ -116,7 +167,7 @@ not values. See [Ranges and range algebra](../language/ranges.md). (#476)
   frame that built them. It is now a real 2D array behind a row typedef,
   which also makes `rows[0][0]` one load instead of two. (#575)
 - **`defer` ran before the return value was read**, so `return data[3] - 40`
-  after `defer free(data)` read freed memory: deterministically wrong, not
+  after `defer free(data)` read freed memory: deterministically wrong rather than
   intermittently. A return inside a nested block skipped defers altogether.
   Both defects were in the C and the MLIR backend. (#594)
 - **String concatenation inferred a numeric type.** `"i64=" + v` printed the
@@ -127,7 +178,7 @@ not values. See [Ranges and range algebra](../language/ranges.md). (#476)
   `"sql" + (buf as string)` formatted the buffer pointer with `%d` into a
   64-byte stack buffer. (#577)
 
-### Fixed — misleading diagnostics
+### Fixed: misleading diagnostics
 
 - An undeclared type reported as a type failing to match itself: `Variable
   'p' initialized with Point but annotated as Point`. It now says the
@@ -161,7 +212,7 @@ Patch release. 0.11.0 shipped its headline feature broken on Linux: every
 was unaffected and its own tests could not catch it, for the reason in the
 last bullet below.
 
-### Fixed — @cImport on Linux
+### Fixed: @cImport on Linux
 
 `@cImport` emitted C that clang rejected on glibc, so every `@cImport` test
 failed in CI while macOS stayed green. Four defects, each hiding the next:
@@ -377,9 +428,9 @@ host on real language surface:
 
 ### Standard library
 
-- `render3d` — software 3D renderer with pipeline documentation and measured
+- `render3d`: software 3D renderer with pipeline documentation and measured
   rates.
-- `psychstats` and `experiment` — the analysis and presentation halves of
+- `psychstats` and `experiment`: the analysis and presentation halves of
   experiment support; `automata` cellular-automaton framework.
 - Audio safety chain, WAV render target, and DSP fixes.
 
@@ -406,7 +457,7 @@ host on real language surface:
   pipeline (cubesphere, tectonics, elevation).
 - Games: physics3d, raycast_shooter, Icy Tower, The Falling Sand Game,
   billboard particles; software-3D clips recorded offline.
-- Numerical: Carrier–Greengard–Rokhlin adaptive FMM.
+- Numerical: Carrier-Greengard-Rokhlin adaptive FMM.
 
 ### Branding, editor, CI
 
@@ -622,7 +673,7 @@ host on real language surface:
 
 ## [0.5.0] - 2026-01-08
 
-### 🎉 Major Release - Project Cleanup & Documentation Overhaul
+### Major Release - Project Cleanup & Documentation Overhaul
 
 ### Added
 - **Complete Documentation System**
@@ -740,7 +791,7 @@ docs/
 
 ## [0.6.0] - 2026-01-08
 
-### 🚀 Major Release - Import/Export System & GPU Integration
+### Major Release - Import/Export System & GPU Integration
 
 ### Added
 - **Complete Import/Export System**
@@ -826,15 +877,15 @@ Every open branch, worktree, stash, and PR merged into `main`; the repository
 now has a single branch tagged `v0.9.0`.
 
 ### Added
-- **Go-style concurrency runtime** — fibers, channels (`Chan<T>` with monomorphization), select, work stealing, netpoll, multi-shot continuations, TLS/HTTPS accept loop, HTTP over fibers. C kernels under `runtime/`, Flow wrappers under `lib/runtime/`, 25 examples under `examples/concurrency/`.
-- **Package registry** — `registry/` with 16 seed packages and ecosystem demo projects.
-- **Pipeline `choose`** — state-driven stage selection: `x |> choose sel { A => f, B => g }`.
-- **VS Code extension 0.3.0** — debug adapter, test explorer, snippets, file icon, published under the `quilio` Open VSX namespace; `flow-pack` and `flow-themes` companions.
-- **Recorded demo gallery** — headless `./flow record` backend and GIFs regenerated from the real programs.
+- **Go-style concurrency runtime**: fibers, channels (`Chan<T>` with monomorphization), select, work stealing, netpoll, multi-shot continuations, TLS/HTTPS accept loop, HTTP over fibers. C kernels under `runtime/`, Flow wrappers under `lib/runtime/`, 25 examples under `examples/concurrency/`.
+- **Package registry**: `registry/` with 16 seed packages and ecosystem demo projects.
+- **Pipeline `choose`**: state-driven stage selection: `x |> choose sel { A => f, B => g }`.
+- **VS Code extension 0.3.0**: debug adapter, test explorer, snippets, file icon, published under the `quilio` Open VSX namespace; `flow-pack` and `flow-themes` companions.
+- **Recorded demo gallery**: headless `./flow record` backend and GIFs regenerated from the real programs.
 - Runtime-in-Flow build wiring (`flow_runtime_flow_sources`), `FLOW_CFLAGS` / `FLOW_TSAN` overrides, OpenSSL and OpenMP probes.
 
 ### Changed
-- **Stricter type checking** — `let` immutability enforced (use `let mut`), bool vs i32 distinction, overload arity checks; corpus updated.
+- **Stricter type checking**: `let` immutability enforced (use `let mut`), bool vs i32 distinction, overload arity checks; corpus updated.
 - LANGUAGE_SPEC refreshed to match shipped surfaces; spec version now tracks the release.
 - Version metadata aligned to **0.9.0** (`flow.toml`, `pyproject.toml`, wiki hero).
 
@@ -850,8 +901,8 @@ First annotated git tags and GitHub Releases for Flow. Documentation ships from
 [GitHub Pages](https://flooooooooooow.github.io/flow/). VPS wiki deploy is disabled.
 
 ### Added
-- **Self-hosting bootstrap (`flowc`)** — Flow-written Stage-A compiler under `compiler/` (lexer, parser, AST, cgen, typecheck, resolve, roundtrip/self-emit). Plan: `docs/project/self-hosting.md`.
-- **Declarative ordering** — `xs |> sort` / `sortBy` (Phase 1).
+- **Self-hosting bootstrap (`flowc`)**: Flow-written Stage-A compiler under `compiler/` (lexer, parser, AST, cgen, typecheck, resolve, roundtrip/self-emit). Plan: `docs/project/self-hosting.md`.
+- **Declarative ordering**: `xs |> sort` / `sortBy` (Phase 1).
 - **GPU / unified memory** + fill-shader surface language.
 - **Dynamics namespaces**, connect composition, `always`/`never` constraints, units, RK4 solver path.
 - **GitHub Pages** wiki deploy (`.github/workflows/wiki.yml`); community files (`CODE_OF_CONDUCT`, `SECURITY`, `CITATION.cff`).
@@ -861,7 +912,7 @@ First annotated git tags and GitHub Releases for Flow. Documentation ships from
 - Version metadata aligned to **0.8.0** (`flow.toml`, `pyproject.toml`, wiki hero).
 
 ### Notes
-- Production compiler remains Python (`src/flow/`) with `flowc` as the self-host ladder (Phases A–E on the roadmap).
+- Production compiler remains Python (`src/flow/`) with `flowc` as the self-host ladder (Phases A-E on the roadmap).
 - Prior unreleased notes below are folded into this cut.
 
 ## [0.7.0] - 2026-02-09
@@ -929,6 +980,6 @@ See the [GitHub Issues](https://github.com/flooooooooooow/flow/issues) page for 
 ## [Unreleased]
 
 ### Planned
-- Self-hosting Phases B–E (`flowc` default host)
+- Self-hosting Phases B-E (`flowc` default host)
 - Package registry beyond git deps
 - Custom domain for docs

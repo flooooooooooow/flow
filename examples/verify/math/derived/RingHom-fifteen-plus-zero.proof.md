@@ -2,9 +2,9 @@
 
 *Fifteen plus zero maps to fifteen under a ring homomorphism.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.3
+**Source.** dummit-foote: *Abstract Algebra*, §7.3
 
-## Derived fact 1 — f(15 + 0) = 15
+## Derived fact 1: f(15 + 0) = 15
 
 **Coordinate.** RingHom · preservation · fifteen plus zero maps to fifteen · **Derived fact**
 

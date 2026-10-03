@@ -2,9 +2,9 @@
 
 *Four plus zero maps to four under a ring homomorphism.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.3
+**Source.** dummit-foote: *Abstract Algebra*, §7.3
 
-## Derived fact 1 — f(4 + 0) = 4
+## Derived fact 1: f(4 + 0) = 4
 
 **Coordinate.** RingHom · preservation · four plus zero maps to four · **Derived fact**
 

@@ -1,0 +1,3 @@
+[0;31m❌ FLOW_HOST=python is retired: the Python C backend was removed.[0m
+[0;34mℹ️  flowc compiles every program now. Unset FLOW_HOST (or set FLOW_HOST=flowc).[0m
+[0;34mℹ️  C only: ./flow tool compiler/scripts/flowc_emit.flow <in.flow> <out.c>[0m

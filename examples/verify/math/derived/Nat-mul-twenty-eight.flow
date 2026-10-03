@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Twenty-seven times one is twenty-seven.
-# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @from   peano: https://en.wikipedia.org/wiki/Peano_axioms
 # @tier   derived
 
 # @means  27 * 1 = 27.

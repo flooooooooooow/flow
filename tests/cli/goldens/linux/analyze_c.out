@@ -1,0 +1,7 @@
+Flow analyze (cert-c)
+Source: tests/cli/fixtures/sample.c
+------------------------------------------------------------
+[NOTE] MISRA 21.6:8  stdio I/O: printf("%d\n", x);
+------------------------------------------------------------
+Summary: 0 violation(s), 1 note(s)
+See docs/certification/ for the full compliance matrix.

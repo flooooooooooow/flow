@@ -1,0 +1,93 @@
+# MLIR parity fixture: spans (parameters, locals, `.len`, indexing, stores,
+# slices of pointers and spans, borrows at call sites), `[v; N]` repeat
+# literals, array literals as memref values, the array<T>(n) constructor,
+# the vector<4xf32> rewrite of an elementwise memref loop, list patterns,
+# and consts Python folds (cast-wrapped, negated, integer expressions).
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+const K: i32 = 3 as i32
+const MASK: i32 = 1 << 4
+const NEG: i64 = -(5)
+const ZERO_F: f64 = 1.5 * 2.0
+
+let mut counter: i32 = 2 * 21
+
+function total(xs: span<f64>) -> f64 {
+    let mut acc: f64 = 0.0
+    let mut i: i32 = 0
+    while i < xs.len {
+        acc = acc + xs[i]
+        i = i + 1
+    }
+    return acc
+}
+
+function fill(xs: span<mut f64>, v: f64) {
+    let mut i: i64 = 0
+    while i < xs.len {
+        xs[i] = v
+        i = i + 1
+    }
+}
+
+function make(n: i32) -> span<mut f64> {
+    let raw: ptr<f64> = malloc(n as i64 * 8)
+    return raw[0..n]
+}
+
+function first4(v: &[i32]) -> i32 {
+    return v[0] + v[3]
+}
+
+function scale(a: array<f32>, b: array<f32>, n: i32, s: f32) {
+    for i in 0 to n {
+        a[i] = -b[i] * s + 2.0 - a[i] / 4.0
+    }
+}
+
+function dot(a: array<f32>, b: array<f32>, n: i32) -> f32 {
+    let mut s: f32 = 0.0
+    for i in 0 to n {
+        s = s + a[i] * b[i]
+    }
+    return s
+}
+
+function main() -> i32 {
+    let a: span<mut f64> = make(4)
+    fill(a, 2.5)
+    let b: span<f64> = a[1..3]
+    let mut e: span<f64> = make(2)
+    e = a
+    println(total(b))
+    println(e.len)
+    println(total(a[0..2]))
+
+    let r: array<i32, 4> = [7; 4]
+    println(r[2] + first4([7; 4]))
+
+    let mut fa: array<f32> = array<f32>(8)
+    let mut fb: array<f32> = array<f32>(8)
+    for i in 0 to 8 {
+        fb[i] = 1.5
+        fa[i] = 2.0
+    }
+    scale(fa, fb, 8, 0.5)
+    println(fa[3])
+    println(dot([1.0, 2.0, 3.0], [4.0, 5.0, 6.0], 3))
+
+    let xs: array<i32, 3> = [1, 2, 3]
+    let mut lr: i32 = 0
+    match xs {
+        [1, c, d] => { lr = c + d }
+        default { lr = 99 }
+    }
+    println(lr)
+    println(K + MASK + counter)
+    println(NEG)
+    println(ZERO_F)
+    return 0
+}

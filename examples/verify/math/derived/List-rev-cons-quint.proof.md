@@ -2,9 +2,9 @@
 
 *Reversing a quintuple cons list.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Reverse_(list)
+**Source.** church: https://en.wikipedia.org/wiki/Reverse_(list)
 
-## Derived fact 1 — rev(cons(a, cons(b, cons(c, cons(d, cons(e, nil)))))) = cons(e, cons(d, cons(c, cons(b, cons(a, nil)))))
+## Derived fact 1: rev(cons(a, cons(b, cons(c, cons(d, cons(e, nil)))))) = cons(e, cons(d, cons(c, cons(b, cons(a, nil)))))
 
 **Coordinate.** List · reverse · reverse of quintuple cons · **Derived fact**
 

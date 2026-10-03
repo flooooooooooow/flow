@@ -2,9 +2,9 @@
 
 *Double reverse restores a quadruple cons list.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Reverse_(list)
+**Source.** church: https://en.wikipedia.org/wiki/Reverse_(list)
 
-## Derived fact 1 — rev(rev(cons(a, cons(b, cons(c, cons(d, xs)))))) = cons(a, cons(b, cons(c, cons(d, xs))))
+## Derived fact 1: rev(rev(cons(a, cons(b, cons(c, cons(d, xs)))))) = cons(a, cons(b, cons(c, cons(d, xs))))
 
 **Coordinate.** List · reverse · double reverse of quadruple cons · **Derived fact**
 

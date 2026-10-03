@@ -1,0 +1,47 @@
+# A user-defined function named like a math intrinsic is called as written,
+# instead of lowering to the math dialect. Regression test for #874.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+
+# A raw newline in a string literal emits invalid C (#1106), so the program
+# is spelled with \n.
+function program() -> string {
+    return "\n" + "function exp(x: f32) -> f32 {\n" + "    return 42.0;\n" + "}\n" + "\n" + "function main() -> i32 {\n" + "    let result = exp(0.0);\n" + "    if result == 42.0 {\n" + "        return 0;\n" + "    }\n" + "    return 1;\n" + "}\n"
+}
+
+function run_backend(prog: string, backend: string) -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "run", prog)
+    sl_push2(argv, "--backend=" + backend, "--json")
+    return t_run_argv(argv)
+}
+
+function check_math_intrinsic_override() -> i32 {
+    let need: i32 = t_need("mlir-opt mlir-translate clang")
+    if need != T_PASS {
+        return need
+    }
+    let prog: string = t_tmp() + "/math_override.flow"
+    let _w: bool = write_text(prog, program())
+    if run_backend(prog, "c") != 0 {
+        outln("C backend failed math override test")
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if run_backend(prog, "mlir") != 0 {
+        outln("MLIR backend failed math override test")
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("mlir_math_override")
+    t_start()
+    t_end("math_intrinsic_override", check_math_intrinsic_override())
+    t_done()
+    return 0
+}

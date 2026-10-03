@@ -1,0 +1,5 @@
+# Files compiler/scripts/fmt_check.flow --check lets miss preservation,
+# idempotence or semantics, one path per line, each under a comment that
+# says why. The list is empty: every tracked .flow file flowc parses
+# formats losslessly, formats to a fixed point, and (when it compiles)
+# emits the same C after formatting.

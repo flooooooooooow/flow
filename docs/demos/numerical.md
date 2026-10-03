@@ -13,8 +13,8 @@ Measurements print before the window opens and gate the exit code.
 Library: [`lib/stdlib/fmm2d.flow`](../library/fmm2d.md).
 
 ```bash
-FLOW_HOST=python ./flow gfx examples/numerical/fmm_adaptive.flow
-FLOW_HOST=python ./flow record examples/numerical/fmm_adaptive.flow \
+./flow gfx examples/numerical/fmm_adaptive.flow
+./flow record examples/numerical/fmm_adaptive.flow \
   --frames 4 --out /tmp/fmm
-python3 scripts/record_demos.py --group numerical
+./flow tool record_demos --group numerical
 ```

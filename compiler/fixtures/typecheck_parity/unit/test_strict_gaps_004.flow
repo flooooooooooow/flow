@@ -1,0 +1,19 @@
+
+extern {
+    function malloc(n: i64) -> ptr<u8>
+}
+
+function main() -> i32 {
+    let buf: ptr<u8> = malloc(8)
+    buf[0] = 104
+    buf[1] = 0
+    let from_ptr: string = buf as string
+
+    let mut arr: array<u8, 8> = []
+    arr[0] = 111
+    arr[1] = 0
+    let from_array: string = arr as string
+
+    let back_to_ptr: ptr<u8> = from_ptr
+    return 0
+}

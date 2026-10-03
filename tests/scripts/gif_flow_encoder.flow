@@ -1,0 +1,244 @@
+# End-to-end check of the pure-Flow GIF89a encoder (lib/stdlib/gif.flow).
+#
+# Compiles and runs examples/graphics/gif_writer.flow, then decodes the GIF it
+# produced with scripts/tools/gif_check, a GIF89a reader written in Flow. The
+# decode is the ground truth: format, frame count, dimensions, loop metadata,
+# and real pixel change between the first and last frame (the animation is
+# not a stack of identical frames).
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcCmd, ProcResult, proc_arg, proc_stdout, proc_stderr, PROC_CAPTURE, PROC_MERGE }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+const WIDTH: string = "128"
+const HEIGHT: string = "128"
+const FRAMES: string = "24"
+const DELAY_CS: string = "5"
+
+# Build and run the example once, then decode it once. The report is
+# key=value lines; `err` says why there is none.
+struct Fixture {
+    err: string,
+    report: string,
+    report_err: string,
+    rc: i32
+}
+
+let mut FIX: ptr<Fixture> = null
+
+# Run `c` with stdout and stderr into `log`; the status.
+function run_logged(c: ptr<ProcCmd>, log: string) -> i32 {
+    proc_stdout(c, PROC_CAPTURE)
+    proc_stderr(c, PROC_MERGE)
+    let r: ptr<ProcResult> = run_result(c)
+    let _w: bool = write_text(log, r.stdout)
+    return r.exit_code
+}
+
+# "$(tail -n 5 FILE)"
+function tail5(path: string) -> string {
+    let lines: ptr<ProcStrs> = s_lines(read_text(path))
+    let mut from: i32 = sl_len(lines) - 5
+    if from < 0 {
+        from = 0
+    }
+    return s_chomp_all(sl_join(sl_tail(lines, from), "\n"))
+}
+
+function build_fixture(f: ptr<Fixture>) {
+    let example: string = t_root() + "/examples/graphics/gif_writer.flow"
+    let td: string = t_work() + "/gif_demo"
+    let _m: bool = mkdir_p(td)
+    let emit_args: ptr<ProcStrs> = sl_of3(t_root() + "/flow", "tool", "compiler/scripts/flowc_emit.flow")
+    sl_push(emit_args, "--strict")
+    sl_push2(emit_args, example, td + "/gif_writer.c")
+    let emit: ptr<ProcCmd> = cmd(emit_args)
+    if run_logged(emit, td + "/emit.log") != 0 {
+        f.err = "flowc_emit failed: " + tail5(td + "/emit.log")
+        return
+    }
+    if not exists(td + "/gif_writer.c") {
+        f.err = "no C output"
+        return
+    }
+    let cc: ptr<ProcCmd> = cmd(sl_of3("clang", "-Wno-everything", td + "/gif_writer.c"))
+    proc_arg(cc, "-o")
+    proc_arg(cc, td + "/gif_writer")
+    proc_arg(cc, "-lm")
+    if run_logged(cc, td + "/cc.log") != 0 {
+        f.err = "clang failed: " + tail5(td + "/cc.log")
+        return
+    }
+    # The example writes build/gif_demo.gif relative to its cwd.
+    let w: ptr<ProcCmd> = cmd(sl_of1("./gif_writer"))
+    cmd_cwd(w, td)
+    if run_logged(w, td + "/run.log") != 0 {
+        f.err = "gif_writer failed: " + s_chomp_all(read_text(td + "/run.log"))
+        return
+    }
+    if not s_contains(read_text(td + "/run.log"), "bytes") {
+        f.err = "gif_writer did not report its size"
+        return
+    }
+    let gif: string = td + "/build/gif_demo.gif"
+    if not exists(gif) {
+        f.err = "no build/gif_demo.gif"
+        return
+    }
+
+    let tool: ptr<ProcCmd> = cmd(sl_of3("./flow", "tool", "--path"))
+    proc_arg(tool, "gif_check")
+    proc_stdout(tool, PROC_CAPTURE)
+    proc_stderr(tool, PROC_CAPTURE)
+    let tr: ptr<ProcResult> = run_result(tool)
+    if tr.exit_code != 0 {
+        let _l: bool = write_text(td + "/tool.log", tr.stderr)
+        f.err = "could not build gif_check: " + tail5(td + "/tool.log")
+        return
+    }
+    # Frame 0 pixel (12, 12) is inside the moving square.
+    let chk: ptr<ProcCmd> = cmd(sl_of3(s_chomp_all(tr.stdout), gif, "12"))
+    proc_arg(chk, "12")
+    proc_stdout(chk, PROC_CAPTURE)
+    proc_stderr(chk, PROC_CAPTURE)
+    let r: ptr<ProcResult> = run_result(chk)
+    f.report = r.stdout
+    f.report_err = r.stderr
+    f.rc = r.exit_code
+}
+
+function setup() {
+    let f: ptr<Fixture> = malloc(32) as ptr<Fixture>
+    f.err = ""
+    f.report = ""
+    f.report_err = ""
+    f.rc = 0
+    FIX = f
+    if have("clang") {
+        build_fixture(f)
+    }
+}
+
+function fixture() -> i32 {
+    let need: i32 = t_need("clang")
+    if need != T_PASS {
+        return need
+    }
+    let f: ptr<Fixture> = FIX
+    if s_len(f.err) > 0 {
+        outln(f.err)
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+# sed -n "s/^NAME=//p" on the report.
+function field(name: string) -> string {
+    let f: ptr<Fixture> = FIX
+    let lines: ptr<ProcStrs> = s_lines(f.report)
+    let found: ptr<ProcStrs> = sl_new()
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        if s_starts(sl_get(lines, i), name + "=") {
+            sl_push(found, s_from(sl_get(lines, i), s_len(name) + 1))
+        }
+        i = i + 1
+    }
+    return sl_join(found, "\n")
+}
+
+function check_the_full_animation_decodes() -> i32 {
+    let fx: i32 = fixture()
+    if fx != T_PASS {
+        return fx
+    }
+    if not a_eq(field("format"), "GIF", "format") {
+        return T_FAIL
+    }
+    if not a_eq(field("width") + "x" + field("height"), WIDTH + "x" + HEIGHT, "size") {
+        return T_FAIL
+    }
+    if not a_eq(field("frames"), FRAMES, "frame count") {
+        return T_FAIL
+    }
+    # Every frame must decode to exactly width*height pixels.
+    if not a_eq(field("decoded"), FRAMES, "frames that decode") {
+        return T_FAIL
+    }
+    let f: ptr<Fixture> = FIX
+    if f.rc != 0 {
+        out(f.report_err)
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_loop_and_delay_metadata() -> i32 {
+    let fx: i32 = fixture()
+    if fx != T_PASS {
+        return fx
+    }
+    # NETSCAPE2.0: loop forever.
+    if not a_eq(field("loop"), "0", "loop count") {
+        return T_FAIL
+    }
+    # Pillow reported this as duration 50 ms.
+    if not a_eq(field("delay_cs"), DELAY_CS, "frame delay in centiseconds") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_animation_actually_moves() -> i32 {
+    let fx: i32 = fixture()
+    if fx != T_PASS {
+        return fx
+    }
+    # The encoder writes disposal 1 (keep) and full frames, so each
+    # composited frame is the frame itself.
+    if not a_eq(field("disposal"), "1", "disposal method") {
+        return T_FAIL
+    }
+    let differing: string = field("first_last_diff")
+    if not a_true("some pixels differ between the first and last frame", s_atoi(differing, 0) > 0) {
+        return T_FAIL
+    }
+    # The moving square is 24x24; two disjoint positions differ in exactly
+    # 2 * 576 pixels on this fixture.
+    if not a_eq(differing, "1152", "pixels that differ") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_square_color_survives_quantization() -> i32 {
+    let fx: i32 = fixture()
+    if fx != T_PASS {
+        return fx
+    }
+    # Frame 0 square sits at (8, 8)..(31, 31); fill is (255, 210, 40),
+    # nearest 6x7x6 cube entry is (255, 212, 51).
+    if not a_eq(field("pixel"), "255,212,51", "frame 0 pixel (12, 12)") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("gif_flow_encoder")
+    setup()
+    t_start()
+    t_end("the_full_animation_decodes", check_the_full_animation_decodes())
+    t_start()
+    t_end("loop_and_delay_metadata", check_loop_and_delay_metadata())
+    t_start()
+    t_end("animation_actually_moves", check_animation_actually_moves())
+    t_start()
+    t_end("square_color_survives_quantization", check_square_color_survives_quantization())
+    t_done()
+    return 0
+}

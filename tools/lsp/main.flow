@@ -1,0 +1,2191 @@
+# @module tools.lsp
+# @means  `flow lsp`: the Flow language server, written in Flow.
+#
+# Speaks JSON-RPC 2.0 over stdin/stdout with Content-Length framing.
+# Diagnostics come from the flowc front end in process (parser, Stage-A
+# type checker, idiom hints); hover, completion, definition, references,
+# rename, highlight and symbols come from the analysis in
+# tools/lsp/analyze.flow; formatting uses compiler/src/fmt.flow.
+#
+# This replaces src/flow/lsp_server.py. Responses keep that server's JSON
+# layout, so tests/tools/lsp/run.flow can diff the two.
+#
+# The launcher (the flow CLI, tools/flow_cli) passes FLOW_ROOT, the repository root, which
+# locates lib/stdlib for stdlib hover, completion and definition.
+
+import "tools/hostlib/text.flow"
+import "tools/lsp/text.flow"
+import "tools/lsp/json.flow"
+import "tools/lsp/catalog.flow"
+import "tools/lsp/analyze.flow"
+import "tools/lsp/imports.flow"
+import "tools/lsp/diag.flow"
+import "tools/lsp/format.flow"
+import "compiler/src/ast.flow"
+import "compiler/src/token.flow"
+import "compiler/src/lexer.flow"
+import "compiler/src/parser.flow"
+import "compiler/src/fmt.flow"
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function exit(code: i32)
+    function poll(fds: ptr<u8>, n: i64, timeout: i32) -> i32
+    function atoi(s: string) -> i32
+    function dup(fd: i32) -> i32
+    function dup2(a: i32, b: i32) -> i32
+}
+
+const DEBOUNCE_MS: i32 = 200
+
+# The JSON-RPC channel. main() moves the original stdout here and points
+# fd 1 at stderr, so anything the compiler front end prints stays out of
+# the protocol stream.
+let mut OUT_FD: i32 = 1
+
+struct Doc {
+    uri: string,
+    text: string,
+    an: ptr<Analysis>,
+    syms: PList,
+    imports: PList
+}
+
+struct Server {
+    root: string,
+    docs: PList,
+    stdlib: PList,
+    stdlib_done: bool,
+    keywords: TList,
+    types: TList,
+    builtins: TList,
+    reserved: TList,
+    dyn_items: TList,
+    ord_items: TList,
+    pending: TList,
+    shutdown: bool
+}
+
+# ── Output ──────────────────────────────────────────────────────
+
+function send(body: string) {
+    let n: i32 = t_len(body)
+    let head: string = t_cat3("Content-Length: ", t_int(n), "\r\n\r\n")
+    t_write_fd(OUT_FD, head as ptr<u8>, t_len(head))
+    t_write_fd(OUT_FD, body as ptr<u8>, n)
+}
+
+# {"jsonrpc": "2.0", "id": <id>, "result": <result>}
+function respond(id_raw: string, result: string) {
+    let mut tb: TBuf = tb_new()
+    tb_puts(&tb, "{\"jsonrpc\": \"2.0\", \"id\": ")
+    tb_puts(&tb, id_raw)
+    tb_puts(&tb, ", \"result\": ")
+    tb_puts(&tb, result)
+    tb_putc(&tb, 125)
+    send(tb.data as string)
+}
+
+function respond_error(id_raw: string, code: i32, message: string) {
+    let mut w: JW = jw_new()
+    jw_obj(&w)
+    jw_kstr(&w, "jsonrpc", "2.0")
+    jw_key(&w, "id")
+    jw_raw(&w, id_raw)
+    jw_key(&w, "error")
+    jw_obj(&w)
+    jw_kint(&w, "code", code)
+    jw_kstr(&w, "message", message)
+    jw_end(&w)
+    jw_end(&w)
+    send(jw_text(&w))
+}
+
+function notify(method: string, params: string) {
+    let mut tb: TBuf = tb_new()
+    tb_puts(&tb, "{\"jsonrpc\": \"2.0\", \"method\": ")
+    jw_escape(&tb, method)
+    tb_puts(&tb, ", \"params\": ")
+    tb_puts(&tb, params)
+    tb_putc(&tb, 125)
+    send(tb.data as string)
+}
+
+function w_pos(w: ptr<JW>, line: i32, ch: i32) {
+    jw_obj(w)
+    jw_kint(w, "line", line)
+    jw_kint(w, "character", ch)
+    jw_end(w)
+}
+
+function w_range(w: ptr<JW>, l1: i32, c1: i32, l2: i32, c2: i32) {
+    jw_obj(w)
+    jw_key(w, "start")
+    w_pos(w, l1, c1)
+    jw_key(w, "end")
+    w_pos(w, l2, c2)
+    jw_end(w)
+}
+
+function markdown(value: string) -> string {
+    let mut w: JW = jw_new()
+    jw_obj(&w)
+    jw_key(&w, "contents")
+    jw_obj(&w)
+    jw_kstr(&w, "kind", "markdown")
+    jw_kstr(&w, "value", value)
+    jw_end(&w)
+    jw_end(&w)
+    return jw_text(&w)
+}
+
+# ── Documents ───────────────────────────────────────────────────
+
+function doc_at(s: ptr<Server>, i: i32) -> ptr<Doc> {
+    return pl_get(&s.docs, i) as ptr<Doc>
+}
+
+function find_doc(s: ptr<Server>, uri: string) -> ptr<Doc> {
+    let mut i: i32 = 0
+    while i < s.docs.len {
+        let d: ptr<Doc> = doc_at(s, i)
+        if t_eq(d.uri, uri) {
+            return d
+        }
+        i = i + 1
+    }
+    return null
+}
+
+function doc_text(s: ptr<Server>, uri: string) -> string {
+    let d: ptr<Doc> = find_doc(s, uri)
+    if d == null {
+        return ""
+    }
+    return d.text
+}
+
+function empty_analysis() -> ptr<Analysis> {
+    return analyze_text("", false)
+}
+
+function open_doc(s: ptr<Server>, uri: string, text: string) -> ptr<Doc> {
+    let mut d: ptr<Doc> = find_doc(s, uri)
+    if d == null {
+        d = calloc(1, 256) as ptr<Doc>
+        d.uri = uri
+        d.an = null
+        d.syms = pl_new()
+        d.imports = pl_new()
+        pl_push(&s.docs, d as ptr<u8>)
+    }
+    d.text = text
+    return d
+}
+
+function project_for(s: ptr<Server>, path: string) -> Project {
+    if t_len(path) == 0 {
+        return load_project(path_join(s.root, "x.flow"), s.root)
+    }
+    return load_project(path, s.root)
+}
+
+# Local and imported symbols, parameters and locals, inferred local types.
+function analyze_doc(s: ptr<Server>, d: ptr<Doc>) {
+    let a: ptr<Analysis> = analyze_text(d.text, false)
+    d.an = a
+    d.imports = pl_new()
+    let path: string = uri_to_path(d.uri)
+    if a.parsed and t_len(path) > 0 and is_file(path) {
+        let mut pr: Project = project_for(s, path)
+        let base: string = dirname(path)
+        let mut seen_files: TList = tl_new()
+        let mut i: i32 = 0
+        while i < a.imports.len {
+            let id: i32 = atoi_s(tl_get(&a.imports, i))
+            let dep: string = resolve_import(a, id, base, &pr)
+            if t_len(dep) > 0 and tl_index(&seen_files, dep) < 0 {
+                tl_push(&seen_files, dep)
+                let wanted: TList = import_wanted(a, id)
+                let mut ex: PList = pl_new()
+                let mut chain: TList = tl_new()
+                module_exports(dep, &pr, &ex, &chain, 0)
+                let mut k: i32 = 0
+                while k < ex.len {
+                    let sym: ptr<Sym> = sym_at(&ex, k)
+                    if wanted.len == 0 or tl_index(&wanted, sym.name) >= 0 {
+                        sym_put(&d.imports, sym)
+                    }
+                    k = k + 1
+                }
+            }
+            i = i + 1
+        }
+    }
+    let mut merged: PList = pl_new()
+    let mut i: i32 = 0
+    while i < d.imports.len {
+        pl_push(&merged, pl_get(&d.imports, i))
+        i = i + 1
+    }
+    i = 0
+    while i < a.syms.len {
+        sym_put(&merged, sym_at(&a.syms, i))
+        i = i + 1
+    }
+    d.syms = merged
+    if a.parsed {
+        infer_bindings(s, d)
+    }
+}
+
+# ── Local type inference (the Python checker typed every binding) ─
+
+function binding_type_before(d: ptr<Doc>, name: string, container: string, upto: i32) -> string {
+    let mut best: string = ""
+    let mut i: i32 = 0
+    while i < upto {
+        let b: ptr<Bind> = bind_at(&d.an.binds, i)
+        if t_eq(b.name, name) and t_eq(b.container, container) {
+            best = b.typ
+        }
+        i = i + 1
+    }
+    return best
+}
+
+function fn_return(s: ptr<Server>, d: ptr<Doc>, name: string) -> string {
+    let sym: ptr<Sym> = sym_find(&d.syms, name)
+    if sym != null and t_eq(sym.kind, "function") {
+        return sym.ret
+    }
+    let r: string = builtin_function_return(name)
+    if t_len(r) > 0 {
+        return r
+    }
+    return "unknown"
+}
+
+function infer_expr(s: ptr<Server>, d: ptr<Doc>, e: i32, container: string, upto: i32) -> string {
+    let a: ptr<Analysis> = d.an
+    if e == AST_NONE {
+        return "unknown"
+    }
+    let k: i32 = a.arena.nodes[e].kind
+    if k == AST_INT {
+        return "i32"
+    }
+    if k == AST_FLOAT {
+        return "f64"
+    }
+    if k == AST_BOOL {
+        return "bool"
+    }
+    if k == AST_STRING {
+        return "string"
+    }
+    if k == AST_STRUCT_LIT {
+        return name_of(a, e)
+    }
+    if k == AST_CALL {
+        return fn_return(s, d, name_of(a, e))
+    }
+    if k == AST_CAST {
+        return type_str(a, a.arena.nodes[e].b)
+    }
+    if k == AST_IDENT {
+        let name: string = name_of(a, e)
+        let t: string = binding_type_before(d, name, container, upto)
+        if t_len(t) > 0 {
+            return t
+        }
+        let sym: ptr<Sym> = sym_find(&d.syms, name)
+        if sym != null and t_eq(sym.kind, "const") {
+            return sym.tstr
+        }
+        return "unknown"
+    }
+    if k == AST_BINOP {
+        let op: i32 = a.arena.nodes[e].ival
+        if op == TOK_EQEQ or op == TOK_NE or op == TOK_LT or op == TOK_LE or op == TOK_GT or op == TOK_GE or op == TOK_AMPAMP or op == TOK_BARBAR {
+            return "bool"
+        }
+        return infer_expr(s, d, a.arena.nodes[e].a, container, upto)
+    }
+    if k == AST_UNARY {
+        if a.arena.nodes[e].ival == TOK_BANG {
+            return "bool"
+        }
+        return infer_expr(s, d, a.arena.nodes[e].a, container, upto)
+    }
+    if k == AST_FIELD_ACCESS {
+        let base: string = infer_expr(s, d, a.arena.nodes[e].a, container, upto)
+        let st: ptr<Sym> = sym_find(&d.syms, strip_ptr(base))
+        if st != null and t_eq(st.kind, "struct") {
+            let fi: i32 = tl_index(&st.fnames, name_of(a, e))
+            if fi >= 0 {
+                return tl_get(&st.ftypes, fi)
+            }
+        }
+        return "unknown"
+    }
+    return "unknown"
+}
+
+function infer_bindings(s: ptr<Server>, d: ptr<Doc>) {
+    let mut i: i32 = 0
+    while i < d.an.binds.len {
+        let b: ptr<Bind> = bind_at(&d.an.binds, i)
+        b.typed = true
+        if b.init != AST_NONE {
+            b.typ = infer_expr(s, d, b.init, b.container, i)
+        }
+        i = i + 1
+    }
+}
+
+function strip_ptr(t: string) -> string {
+    let s0: string = t_strip(t)
+    if t_starts_with(s0, "ptr") {
+        let j: i32 = skip_ws(s0, 3)
+        if j < t_len(s0) and t_at(s0, j) == 60 {
+            let k: i32 = skip_ws(s0, j + 1)
+            let e: i32 = ident_run_after(s0, k)
+            let m: i32 = skip_ws(s0, e)
+            if e > k and m < t_len(s0) and t_at(s0, m) == 62 {
+                return t_sub(s0, k, e)
+            }
+        }
+    }
+    let e2: i32 = ident_run_after(s0, 0)
+    return t_sub(s0, 0, e2)
+}
+
+# ── Stdlib index ────────────────────────────────────────────────
+
+function stdlib_rank(sym: ptr<Sym>) -> i32 {
+    let base: string = basename(sym.stdlib_path)
+    let mut rank: i32 = 10
+    if t_eq(base, "math.flow") {
+        rank = 100
+    } elif t_eq(base, "vec.flow") {
+        rank = 90
+    } elif t_eq(base, "blas.flow") {
+        rank = 80
+    } elif t_eq(base, "tensor.flow") {
+        rank = 70
+    } elif t_eq(base, "array.flow") {
+        rank = 60
+    } elif t_eq(base, "collections.flow") {
+        rank = 50
+    }
+    let doc: string = t_strip(sym.doc)
+    if t_len(doc) == 0 {
+        return 0
+    }
+    if t_starts_with(doc, "===") or t_starts_with(doc, "---") {
+        rank = rank - 40
+    }
+    if ulen(doc) > 400 {
+        rank = rank - 20
+    }
+    return rank
+}
+
+function ensure_stdlib(s: ptr<Server>) {
+    if s.stdlib_done {
+        return
+    }
+    s.stdlib_done = true
+    # sorted(rglob): compare path parts, so a directory's files sort before
+    # a sibling file that shares its name as a prefix.
+    let cmd: string = t_cat3("cd ", t_shq(s.root), " && find lib/stdlib -name '*.flow' -type f 2>/dev/null | tr '/' '\\001' | LC_ALL=C sort | tr '\\001' '/'")
+    let pr: TProc = t_run(cmd)
+    let files: TList = t_split_lines(pr.out)
+    let mut i: i32 = 0
+    while i < files.len {
+        let rel: string = tl_get(&files, i)
+        if t_len(rel) > 0 {
+            let full: string = path_join(s.root, rel)
+            let a: ptr<Analysis> = analyze_text(t_read_file(full), true)
+            let mut k: i32 = 0
+            while k < a.syms.len {
+                let info: ptr<Sym> = sym_copy(sym_at(&a.syms, k))
+                info.stdlib_path = rel
+                info.uri = path_to_uri(real(full))
+                let old: ptr<Sym> = sym_find(&s.stdlib, info.name)
+                if old == null {
+                    pl_push(&s.stdlib, info as ptr<u8>)
+                } else {
+                    let nd0: string = t_strip(info.doc)
+                    let od: string = t_strip(old.doc)
+                    if t_len(nd0) > 0 and (t_len(od) == 0 or stdlib_rank(info) >= stdlib_rank(old)) {
+                        sym_put(&s.stdlib, info)
+                    }
+                }
+                k = k + 1
+            }
+        }
+        i = i + 1
+    }
+}
+
+# ── Words and positions ─────────────────────────────────────────
+
+# Python _get_word_at_position (split('\n'); "" past the end).
+function word_at_pos(text: string, line: i32, ch: i32) -> string {
+    let rows: TList = t_split_lines(text)
+    if line >= rows.len or line < 0 {
+        return ""
+    }
+    let row: string = tl_get(&rows, line)
+    if ch >= ulen(row) or ch < 0 {
+        return ""
+    }
+    let b: i32 = ubyte(row, ch)
+    let st: i32 = ident_run_before(row, b, false)
+    let en: i32 = ident_run_after(row, b)
+    return t_sub(row, st, en)
+}
+
+# Python str.splitlines() row (no trailing empty row), or "".
+function splitlines_row(text: string, line: i32) -> string {
+    let rows: TList = t_split_lines(text)
+    let mut n: i32 = rows.len
+    if n > 0 and t_len(tl_get(&rows, n - 1)) == 0 {
+        n = n - 1
+    }
+    if line < 0 or line >= n {
+        return ""
+    }
+    let row: string = tl_get(&rows, line)
+    if t_ends_with(row, "\r") {
+        return t_sub(row, 0, t_len(row) - 1)
+    }
+    return row
+}
+
+function completion_prefix(text: string, line: i32, ch: i32) -> string {
+    let row: string = splitlines_row(text, line)
+    let mut b: i32 = ubyte(row, ch)
+    if b > t_len(row) {
+        b = t_len(row)
+    }
+    let st: i32 = ident_run_before(row, b, true)
+    return t_sub(row, st, b)
+}
+
+# `ident.` or `ident.partial` before the cursor -> ident, else "".
+function receiver_before_dot(text: string, line: i32, ch: i32) -> string {
+    let rows: TList = t_split_lines(text)
+    if line < 0 or line >= rows.len {
+        return ""
+    }
+    let full: string = tl_get(&rows, line)
+    let mut b: i32 = ubyte(full, ch)
+    if b > t_len(full) {
+        b = t_len(full)
+    }
+    let row: string = t_sub(full, 0, b)
+    let mut i: i32 = t_len(row)
+    # optional partial field
+    let fs: i32 = ident_run_before(row, i, false)
+    if fs < i and t_is_ident_start(t_at(row, fs)) {
+        i = fs
+    }
+    while i > 0 and t_is_space(t_at(row, i - 1)) {
+        i = i - 1
+    }
+    if i == 0 or t_at(row, i - 1) != 46 {
+        return ""
+    }
+    i = i - 1
+    while i > 0 and t_is_space(t_at(row, i - 1)) {
+        i = i - 1
+    }
+    let rs: i32 = ident_run_before(row, i, false)
+    if rs == i {
+        return ""
+    }
+    # The receiver must start like an identifier.
+    let mut s0: i32 = rs
+    while s0 < i and not t_is_ident_start(t_at(row, s0)) {
+        s0 = s0 + 1
+    }
+    if s0 >= i {
+        return ""
+    }
+    return t_sub(row, s0, i)
+}
+
+# Cursor on `recv.field` -> "recv\tfield", else "".
+function field_access_at(text: string, line: i32, ch: i32) -> string {
+    let rows: TList = t_split_lines(text)
+    if line < 0 or line >= rows.len {
+        return ""
+    }
+    let row: string = tl_get(&rows, line)
+    let mut b: i32 = ubyte(row, ch)
+    if b > t_len(row) {
+        b = t_len(row)
+    }
+    let st: i32 = ident_run_before(row, b, false)
+    let en: i32 = ident_run_after(row, b)
+    if en == st {
+        return ""
+    }
+    let field: string = t_sub(row, st, en)
+    let mut i: i32 = st
+    while i > 0 and t_is_space(t_at(row, i - 1)) {
+        i = i - 1
+    }
+    if i == 0 or t_at(row, i - 1) != 46 {
+        return ""
+    }
+    i = i - 1
+    while i > 0 and t_is_space(t_at(row, i - 1)) {
+        i = i - 1
+    }
+    let rs: i32 = ident_run_before(row, i, false)
+    let mut s0: i32 = rs
+    while s0 < i and not t_is_ident_start(t_at(row, s0)) {
+        s0 = s0 + 1
+    }
+    if s0 >= i {
+        return ""
+    }
+    return t_cat3(t_sub(row, s0, i), "\t", field)
+}
+
+function is_multi_op(tok: string) -> bool {
+    let ops: array<string, 12> = ["|>", "->", "=>", "==", "!=", "<=", ">=", "&&", "||", "..", "<<", ">>"]
+    let mut i: i32 = 0
+    while i < 12 {
+        if t_eq(tok, ops[i]) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# Python syntax_token_at_position: operator, @attribute or word.
+function syntax_token_at(text: string, line: i32, ch: i32) -> string {
+    let rows: TList = t_split_lines(text)
+    if line < 0 or line >= rows.len {
+        return ""
+    }
+    let row: string = tl_get(&rows, line)
+    let len: i32 = ulen(row)
+    if len == 0 or ch < 0 or ch > len {
+        return ""
+    }
+    let mut col: i32 = ch
+    if col == len {
+        col = len - 1
+    }
+    let c: i32 = ubyte(row, col)
+    let n: i32 = t_len(row)
+    let ops: array<string, 12> = ["|>", "->", "=>", "==", "!=", "<=", ">=", "&&", "||", "..", "<<", ">>"]
+    let mut oi: i32 = 0
+    while oi < 12 {
+        let op: string = ops[oi]
+        let mut st: i32 = c - 1
+        if st < 0 {
+            st = 0
+        }
+        while st <= c {
+            if st + 2 <= n and prefix_at(row, st, op) and st <= c and c < st + 2 {
+                return op
+            }
+            st = st + 1
+        }
+        oi = oi + 1
+    }
+    let at_c: i32 = t_at(row, c)
+    let mut name_start: i32 = c
+    while name_start > 0 and is_word(t_at(row, name_start - 1)) {
+        name_start = name_start - 1
+    }
+    let in_attr: bool = name_start > 0 and t_at(row, name_start - 1) == 64
+    if at_c == 64 or (c > 0 and t_at(row, c - 1) == 64) or in_attr {
+        let mut i: i32 = c
+        let mut found: bool = true
+        if t_at(row, i) != 64 {
+            while i > 0 and t_at(row, i) != 64 {
+                if not is_word(t_at(row, i)) {
+                    break
+                }
+                i = i - 1
+            }
+            if t_at(row, i) != 64 {
+                let mut j: i32 = c
+                while j > 0 and is_word(t_at(row, j - 1)) {
+                    j = j - 1
+                }
+                if j > 0 and t_at(row, j - 1) == 64 {
+                    i = j - 1
+                } else {
+                    found = false
+                }
+            }
+        }
+        if found {
+            let mut e: i32 = i + 1
+            while e < n and is_word(t_at(row, e)) {
+                e = e + 1
+            }
+            if e == i + 1 {
+                return "@"
+            }
+            return t_sub(row, i, e)
+        }
+    }
+    if is_word(at_c) {
+        let st: i32 = ident_run_before(row, c, false)
+        let en: i32 = ident_run_after(row, c)
+        return t_sub(row, st, en)
+    }
+    return ""
+}
+
+function syntax_hover(tok: string) -> string {
+    if t_len(tok) == 0 {
+        return ""
+    }
+    let v: string = syntax_hover_text(tok)
+    if t_len(v) > 0 {
+        return v
+    }
+    return syntax_hover_text(t_cat("@", tok))
+}
+
+function dynamics_hover(word: string) -> string {
+    let v: string = dynamics_hover_text(word)
+    if t_len(v) > 0 {
+        return v
+    }
+    let dot: i32 = t_find_char(word, 46)
+    if dot >= 0 {
+        let mut last: i32 = t_len(word) - 1
+        while last >= 0 and t_at(word, last) != 46 {
+            last = last - 1
+        }
+        return dynamics_hover_text(t_from(word, last + 1))
+    }
+    return ""
+}
+
+function is_valid_identifier(name: string) -> bool {
+    let n: i32 = t_len(name)
+    if n == 0 or not t_is_ident_start(t_at(name, 0)) {
+        return false
+    }
+    let mut i: i32 = 1
+    while i < n {
+        if not is_word(t_at(name, i)) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+# ── Bindings and symbols ────────────────────────────────────────
+
+function find_binding(d: ptr<Doc>, word: string, line: i32) -> ptr<Bind> {
+    if d == null or d.an == null {
+        return null
+    }
+    let mut best: ptr<Bind> = null
+    let mut i: i32 = 0
+    while i < d.an.binds.len {
+        let b: ptr<Bind> = bind_at(&d.an.binds, i)
+        if t_eq(b.name, word) and b.line <= line {
+            if best == null or b.line >= best.line {
+                best = b
+            }
+        }
+        i = i + 1
+    }
+    return best
+}
+
+function params_text(sym: ptr<Sym>) -> string {
+    let mut tb: TBuf = tb_new()
+    let mut i: i32 = 0
+    while i < sym.pnames.len {
+        if i > 0 {
+            tb_puts(&tb, ", ")
+        }
+        tb_puts(&tb, tl_get(&sym.pnames, i))
+        tb_puts(&tb, ": ")
+        tb_puts(&tb, tl_get(&sym.ptypes, i))
+        i = i + 1
+    }
+    return tb.data as string
+}
+
+function fn_type_text(sym: ptr<Sym>) -> string {
+    let mut tb: TBuf = tb_new()
+    tb_putc(&tb, 40)
+    tb_puts(&tb, join(&sym.ptypes, ", "))
+    tb_puts(&tb, ") -> ")
+    tb_puts(&tb, sym.ret)
+    return tb.data as string
+}
+
+# Markdown for a symbol (Python _get_hover_for_symbol), "" when none.
+function symbol_hover(word: string, sym: ptr<Sym>) -> string {
+    if sym == null {
+        return ""
+    }
+    let doc: string = t_strip(sym.doc)
+    let mut note: string = ""
+    if t_len(sym.stdlib_path) > 0 {
+        note = t_cat3("\n\n*stdlib:* `", sym.stdlib_path, "`")
+    }
+    let mut tb: TBuf = tb_new()
+    let k: string = sym.kind
+    let mut with_note: bool = false
+    if t_eq(k, "function") {
+        tb_puts(&tb, "```flow\nfunction ")
+        tb_puts(&tb, word)
+        tb_putc(&tb, 40)
+        tb_puts(&tb, params_text(sym))
+        tb_puts(&tb, ") -> ")
+        tb_puts(&tb, sym.ret)
+        tb_puts(&tb, "\n```")
+        with_note = true
+    } elif t_eq(k, "theorem") {
+        tb_puts(&tb, "```flow\ntheorem ")
+        tb_puts(&tb, word)
+        tb_putc(&tb, 40)
+        tb_puts(&tb, params_text(sym))
+        tb_puts(&tb, ")\n```")
+    } elif t_eq(k, "struct") {
+        tb_puts(&tb, "```flow\nstruct ")
+        tb_puts(&tb, word)
+        tb_puts(&tb, " {\n")
+        let mut i: i32 = 0
+        while i < sym.fnames.len {
+            if i > 0 {
+                tb_putc(&tb, 10)
+            }
+            tb_puts(&tb, "    ")
+            tb_puts(&tb, tl_get(&sym.fnames, i))
+            tb_puts(&tb, ": ")
+            tb_puts(&tb, tl_get(&sym.ftypes, i))
+            i = i + 1
+        }
+        tb_puts(&tb, "\n}\n```")
+        with_note = true
+    } elif t_eq(k, "enum") {
+        tb_puts(&tb, "```flow\nenum ")
+        tb_puts(&tb, word)
+        tb_puts(&tb, " { ")
+        tb_puts(&tb, join(&sym.items, ", "))
+        tb_puts(&tb, " }\n```")
+    } elif t_eq(k, "trait") {
+        tb_puts(&tb, "```flow\ntrait ")
+        tb_puts(&tb, word)
+        tb_puts(&tb, " {\n  # methods: ")
+        tb_puts(&tb, join(&sym.items, ", "))
+        tb_puts(&tb, "\n}\n```")
+    } elif t_eq(k, "const") {
+        tb_puts(&tb, "```flow\nconst ")
+        tb_puts(&tb, word)
+        tb_puts(&tb, ": ")
+        tb_puts(&tb, sym.tstr)
+        tb_puts(&tb, "\n```")
+        with_note = true
+    } elif t_eq(k, "effect") {
+        tb_puts(&tb, "```flow\neffect ")
+        tb_puts(&tb, word)
+        tb_puts(&tb, " { ")
+        tb_puts(&tb, join(&sym.items, ", "))
+        tb_puts(&tb, " }\n```")
+    } elif t_eq(k, "type") {
+        tb_puts(&tb, "```flow\ntype ")
+        tb_puts(&tb, word)
+        tb_puts(&tb, " = ")
+        tb_puts(&tb, sym.tstr)
+        tb_puts(&tb, "\n```")
+        with_note = true
+    } elif t_eq(k, "capability") {
+        tb_puts(&tb, "```flow\ncapability ")
+        tb_puts(&tb, word)
+        tb_puts(&tb, " { ")
+        tb_puts(&tb, join(&sym.items, ", "))
+        tb_puts(&tb, " }\n```")
+    } else {
+        return ""
+    }
+    if t_len(doc) > 0 {
+        tb_puts(&tb, "\n\n")
+        tb_puts(&tb, doc)
+    }
+    if with_note {
+        tb_puts(&tb, note)
+    }
+    return tb.data as string
+}
+
+# Python _enrich_hover_with_type: functions of a type-checked document
+# carry their checked signature (and imported ones their origin).
+function enrich(d: ptr<Doc>, word: string, sym: ptr<Sym>, value: string) -> string {
+    if d.an == null or not d.an.parsed or not t_eq(sym.kind, "function") {
+        return value
+    }
+    let typ: string = fn_type_text(sym)
+    let mut out: string = value
+    if not t_contains(value, typ) {
+        out = t_cat(out, t_cat3("\n\n*typechecked function:* `", typ, "`"))
+    }
+    let imp: ptr<Sym> = sym_find(&d.imports, word)
+    if imp != null and t_len(imp.uri) > 0 and not t_contains(value, "imported from") {
+        out = t_cat(out, t_cat3("\n\n*imported from:* `", imp.uri, "`"))
+    }
+    return out
+}
+
+function binding_hover(b: ptr<Bind>) -> string {
+    let mut tb: TBuf = tb_new()
+    if t_eq(b.kind, "parameter") {
+        tb_puts(&tb, "```flow\n")
+        tb_puts(&tb, b.name)
+        tb_puts(&tb, ": ")
+        tb_puts(&tb, b.typ)
+        tb_puts(&tb, "\n```\n\nParameter")
+    } else {
+        tb_puts(&tb, "```flow\nlet ")
+        if b.mutable {
+            tb_puts(&tb, "mut ")
+        }
+        tb_puts(&tb, b.name)
+        tb_puts(&tb, ": ")
+        tb_puts(&tb, b.typ)
+        tb_puts(&tb, "\n```\n\nLocal variable")
+    }
+    if b.typed {
+        tb_puts(&tb, " *(typechecked)*")
+    }
+    if t_len(b.detail) > 0 {
+        tb_puts(&tb, " (")
+        tb_puts(&tb, b.detail)
+        tb_puts(&tb, ")")
+    }
+    if t_len(b.container) > 0 {
+        tb_puts(&tb, " in `")
+        tb_puts(&tb, b.container)
+        tb_puts(&tb, "`")
+    }
+    return tb.data as string
+}
+
+# Struct named by a receiver type string, when the document knows it.
+function struct_for_type(d: ptr<Doc>, type_text: string) -> ptr<Sym> {
+    if t_len(t_strip(type_text)) == 0 {
+        return null
+    }
+    let name: string = strip_ptr(type_text)
+    let sym: ptr<Sym> = sym_find(&d.syms, name)
+    if sym != null and t_eq(sym.kind, "struct") {
+        return sym
+    }
+    return null
+}
+
+function receiver_type(d: ptr<Doc>, recv: string, line: i32) -> string {
+    let b: ptr<Bind> = find_binding(d, recv, line)
+    if b != null {
+        return b.typ
+    }
+    let sym: ptr<Sym> = sym_find(&d.syms, recv)
+    if sym != null and d.an != null and d.an.parsed {
+        if t_eq(sym.kind, "const") {
+            return sym.tstr
+        }
+        if t_eq(sym.kind, "function") {
+            return fn_type_text(sym)
+        }
+    }
+    return ""
+}
+
+# ── Handlers: lifecycle and sync ────────────────────────────────
+
+function capabilities() -> string {
+    let mut w: JW = jw_new()
+    jw_obj(&w)
+    jw_key(&w, "capabilities")
+    jw_obj(&w)
+    jw_key(&w, "textDocumentSync")
+    jw_obj(&w)
+    jw_key(&w, "openClose")
+    jw_bool(&w, true)
+    jw_kint(&w, "change", 1)
+    jw_end(&w)
+    jw_key(&w, "completionProvider")
+    jw_obj(&w)
+    jw_key(&w, "triggerCharacters")
+    jw_arr(&w)
+    jw_str(&w, ".")
+    jw_str(&w, ":")
+    jw_str(&w, "<")
+    jw_end(&w)
+    jw_key(&w, "resolveProvider")
+    jw_bool(&w, false)
+    jw_end(&w)
+    jw_key(&w, "hoverProvider")
+    jw_bool(&w, true)
+    jw_key(&w, "definitionProvider")
+    jw_bool(&w, true)
+    jw_key(&w, "documentSymbolProvider")
+    jw_bool(&w, true)
+    jw_key(&w, "referencesProvider")
+    jw_bool(&w, true)
+    jw_key(&w, "renameProvider")
+    jw_obj(&w)
+    jw_key(&w, "prepareProvider")
+    jw_bool(&w, true)
+    jw_end(&w)
+    jw_key(&w, "documentFormattingProvider")
+    jw_bool(&w, true)
+    jw_key(&w, "documentRangeFormattingProvider")
+    jw_bool(&w, true)
+    jw_key(&w, "documentHighlightProvider")
+    jw_bool(&w, true)
+    jw_key(&w, "codeActionProvider")
+    jw_bool(&w, true)
+    jw_end(&w)
+    jw_key(&w, "serverInfo")
+    jw_obj(&w)
+    jw_kstr(&w, "name", "flow-lsp")
+    jw_kstr(&w, "version", "0.3.0")
+    jw_end(&w)
+    jw_end(&w)
+    return jw_text(&w)
+}
+
+function publish(s: ptr<Server>, d: ptr<Doc>) {
+    let path: string = uri_to_path(d.uri)
+    let mut pr: Project = project_for(s, path)
+    let diags: PList = compute_diagnostics(d.an, d.text, path, &pr)
+    let mut w: JW = jw_new()
+    jw_obj(&w)
+    jw_kstr(&w, "uri", d.uri)
+    jw_key(&w, "diagnostics")
+    jw_arr(&w)
+    let mut i: i32 = 0
+    while i < diags.len {
+        let g: ptr<Diag> = diag_at(&diags, i)
+        jw_obj(&w)
+        jw_key(&w, "range")
+        w_range(&w, g.line, g.col, g.end_line, g.end_col)
+        jw_kint(&w, "severity", g.severity)
+        jw_kstr(&w, "source", g.source)
+        if t_len(g.code) > 0 {
+            jw_kstr(&w, "code", g.code)
+        }
+        jw_kstr(&w, "message", g.message)
+        if t_len(g.replacement) > 0 {
+            jw_key(&w, "data")
+            jw_obj(&w)
+            jw_kstr(&w, "replacement", g.replacement)
+            jw_kstr(&w, "rule_id", g.code)
+            jw_end(&w)
+        }
+        jw_end(&w)
+        i = i + 1
+    }
+    jw_end(&w)
+    jw_end(&w)
+    notify("textDocument/publishDiagnostics", jw_text(&w))
+}
+
+function publish_empty(uri: string) {
+    let mut w: JW = jw_new()
+    jw_obj(&w)
+    jw_kstr(&w, "uri", uri)
+    jw_key(&w, "diagnostics")
+    jw_arr(&w)
+    jw_end(&w)
+    jw_end(&w)
+    notify("textDocument/publishDiagnostics", jw_text(&w))
+}
+
+function did_open(s: ptr<Server>, j: ptr<JDoc>, params: i32) {
+    let td: i32 = jget(j, params, "textDocument")
+    let uri: string = jstr(j, jget(j, td, "uri"))
+    let text: string = jstr(j, jget(j, td, "text"))
+    let d: ptr<Doc> = open_doc(s, uri, text)
+    analyze_doc(s, d)
+    publish(s, d)
+}
+
+function did_change(s: ptr<Server>, j: ptr<JDoc>, params: i32) {
+    let uri: string = jstr(j, jget2(j, params, "textDocument", "uri"))
+    let changes: i32 = jget(j, params, "contentChanges")
+    if jkind(j, changes) != J_ARR {
+        return
+    }
+    let first: i32 = j.nodes[changes].child
+    if first == J_NONE {
+        return
+    }
+    open_doc(s, uri, jstr(j, jget(j, first, "text")))
+    # Debounced: analysis and diagnostics wait until edits pause.
+    if tl_index(&s.pending, uri) < 0 {
+        tl_push(&s.pending, uri)
+    }
+}
+
+function drop_pending(s: ptr<Server>, uri: string) {
+    let at: i32 = tl_index(&s.pending, uri)
+    if at < 0 {
+        return
+    }
+    let mut k: i32 = at
+    while k + 1 < s.pending.len {
+        tl_set(&s.pending, k, tl_get(&s.pending, k + 1))
+        k = k + 1
+    }
+    s.pending.len = s.pending.len - 1
+}
+
+function did_close(s: ptr<Server>, j: ptr<JDoc>, params: i32) {
+    let uri: string = jstr(j, jget2(j, params, "textDocument", "uri"))
+    drop_pending(s, uri)
+    let mut i: i32 = 0
+    while i < s.docs.len {
+        let cur: ptr<Doc> = doc_at(s, i)
+        if t_eq(cur.uri, uri) {
+            pl_remove(&s.docs, i)
+            break
+        }
+        i = i + 1
+    }
+    publish_empty(uri)
+}
+
+function flush_pending(s: ptr<Server>) {
+    let mut i: i32 = 0
+    while i < s.pending.len {
+        let d: ptr<Doc> = find_doc(s, tl_get(&s.pending, i))
+        if d != null {
+            analyze_doc(s, d)
+            publish(s, d)
+        }
+        i = i + 1
+    }
+    s.pending.len = 0
+}
+
+# ── Hover ───────────────────────────────────────────────────────
+
+function field_hover(s: ptr<Server>, d: ptr<Doc>, line: i32, recv: string, field: string) -> string {
+    let type_text: string = receiver_type(d, recv, line)
+    let st: ptr<Sym> = struct_for_type(d, type_text)
+    if st == null {
+        return ""
+    }
+    let fi: i32 = tl_index(&st.fnames, field)
+    if fi < 0 {
+        return ""
+    }
+    let mut tb: TBuf = tb_new()
+    tb_puts(&tb, "```flow\n")
+    tb_puts(&tb, field)
+    tb_puts(&tb, ": ")
+    tb_puts(&tb, tl_get(&st.ftypes, fi))
+    tb_puts(&tb, "\n```\n\nField of `")
+    tb_puts(&tb, st.name)
+    tb_puts(&tb, "` (receiver `")
+    tb_puts(&tb, recv)
+    tb_puts(&tb, ": ")
+    tb_puts(&tb, type_text)
+    tb_puts(&tb, "`)")
+    return tb.data as string
+}
+
+function hover(s: ptr<Server>, uri: string, line: i32, ch: i32) -> string {
+    let d0: ptr<Doc> = find_doc(s, uri)
+    let text: string = doc_text(s, uri)
+    let word: string = word_at_pos(text, line, ch)
+    let tok: string = syntax_token_at(text, line, ch)
+    if is_multi_op(tok) {
+        let v: string = syntax_hover(tok)
+        if t_len(v) > 0 {
+            return markdown(v)
+        }
+    }
+    let fa: string = field_access_at(text, line, ch)
+    if t_len(fa) > 0 and d0 != null and d0.an != null {
+        let tab: i32 = t_find_char(fa, 9)
+        let v: string = field_hover(s, d0, line, t_sub(fa, 0, tab), t_from(fa, tab + 1))
+        if t_len(v) > 0 {
+            return markdown(v)
+        }
+    }
+    if t_len(word) > 0 {
+        if d0 != null and d0.an != null {
+            let b: ptr<Bind> = find_binding(d0, word, line)
+            if b != null {
+                return markdown(binding_hover(b))
+            }
+            let sym: ptr<Sym> = sym_find(&d0.syms, word)
+            let v: string = symbol_hover(word, sym)
+            if t_len(v) > 0 {
+                return markdown(enrich(d0, word, sym, v))
+            }
+            let imp: string = symbol_hover(word, sym_find(&d0.imports, word))
+            if t_len(imp) > 0 {
+                return markdown(imp)
+            }
+        }
+        let dv: string = dynamics_hover(word)
+        if t_len(dv) > 0 {
+            return markdown(dv)
+        }
+        let ov: string = ordering_hover_text(word)
+        if t_len(ov) > 0 {
+            return markdown(ov)
+        }
+        let ret: string = builtin_function_return(word)
+        if t_len(ret) > 0 {
+            let mut prose: string = builtin_function_doc(word)
+            ensure_stdlib(s)
+            let std: ptr<Sym> = sym_find(&s.stdlib, word)
+            let mut sdoc: string = ""
+            if std != null {
+                sdoc = t_strip(std.doc)
+            }
+            if t_len(sdoc) > 0 and (t_len(prose) == 0 or ulen(sdoc) > ulen(prose)) {
+                prose = sdoc
+            }
+            let mut tb: TBuf = tb_new()
+            tb_puts(&tb, "```flow\nfunction ")
+            tb_puts(&tb, word)
+            tb_putc(&tb, 40)
+            tb_puts(&tb, builtin_function_params(word))
+            tb_puts(&tb, ") -> ")
+            tb_puts(&tb, ret)
+            tb_puts(&tb, "\n```")
+            if t_len(prose) > 0 {
+                tb_puts(&tb, "\n\n")
+                tb_puts(&tb, prose)
+            }
+            if std != null and t_len(std.stdlib_path) > 0 {
+                tb_puts(&tb, "\n\n*stdlib:* `")
+                tb_puts(&tb, std.stdlib_path)
+                tb_puts(&tb, "`")
+            }
+            return markdown(tb.data as string)
+        }
+        let mut i: i32 = 0
+        while i < s.docs.len {
+            let od: ptr<Doc> = doc_at(s, i)
+            if not t_eq(od.uri, uri) and od.an != null {
+                let v: string = symbol_hover(word, sym_find(&od.syms, word))
+                if t_len(v) > 0 {
+                    return markdown(v)
+                }
+            }
+            i = i + 1
+        }
+        ensure_stdlib(s)
+        let sv: string = symbol_hover(word, sym_find(&s.stdlib, word))
+        if t_len(sv) > 0 {
+            return markdown(sv)
+        }
+    }
+    let mut key: string = tok
+    if t_len(key) == 0 {
+        key = word
+    }
+    if t_len(key) > 0 {
+        let v: string = syntax_hover(key)
+        if t_len(v) > 0 {
+            return markdown(v)
+        }
+    }
+    if t_len(word) > 0 and tl_index(&s.types, word) >= 0 {
+        return markdown(t_cat3("**", word, "**\n\nBuilt-in type"))
+    }
+    return "null"
+}
+
+# ── Completion ──────────────────────────────────────────────────
+
+function completion_item(w: ptr<JW>, name: string, sym: ptr<Sym>) -> bool {
+    let k: string = sym.kind
+    let mut kind: i32 = 0
+    let mut detail: string = ""
+    if t_eq(k, "function") {
+        kind = 3
+        detail = t_cat3("(", params_text(sym), t_cat(") -> ", sym.ret))
+    } elif t_eq(k, "struct") {
+        kind = 22
+        detail = "struct"
+    } elif t_eq(k, "enum") {
+        kind = 10
+        detail = "enum"
+    } elif t_eq(k, "trait") {
+        kind = 8
+        detail = "trait"
+    } elif t_eq(k, "theorem") {
+        kind = 12
+        detail = "theorem"
+    } elif t_eq(k, "const") {
+        kind = 21
+        detail = t_cat("const ", sym.tstr)
+    } elif t_eq(k, "effect") {
+        kind = 8
+        detail = "effect"
+    } elif t_eq(k, "type") or t_eq(k, "capability") {
+        kind = 21
+        detail = k
+    } else {
+        return false
+    }
+    jw_obj(w)
+    jw_kstr(w, "label", name)
+    jw_kint(w, "kind", kind)
+    jw_kstr(w, "detail", detail)
+    if t_len(sym.stdlib_path) > 0 {
+        let doc: string = t_strip(t_cat3(t_strip(sym.doc), "\n\nstdlib: ", sym.stdlib_path))
+        jw_kstr(w, "documentation", doc)
+    }
+    jw_end(w)
+    return true
+}
+
+function complete_fields(s: ptr<Server>, d: ptr<Doc>, recv: string, line: i32, prefix: string) -> string {
+    let mut w: JW = jw_new()
+    jw_arr(&w)
+    if d == null or d.an == null {
+        jw_end(&w)
+        return jw_text(&w)
+    }
+    let mut type_text: string = receiver_type(d, recv, line)
+    let mut st: ptr<Sym> = struct_for_type(d, type_text)
+    if st == null {
+        let rs: ptr<Sym> = sym_find(&d.syms, recv)
+        if rs != null and t_eq(rs.kind, "struct") {
+            st = rs
+        }
+    }
+    let mut fp: string = prefix
+    let mut last: i32 = t_len(prefix) - 1
+    while last >= 0 and t_at(prefix, last) != 46 {
+        last = last - 1
+    }
+    if last >= 0 {
+        fp = t_from(prefix, last + 1)
+    }
+    if st != null {
+        let mut i: i32 = 0
+        while i < st.fnames.len {
+            let f: string = tl_get(&st.fnames, i)
+            if t_len(fp) == 0 or t_starts_with(f, fp) {
+                jw_obj(&w)
+                jw_kstr(&w, "label", f)
+                jw_kint(&w, "kind", 5)
+                jw_kstr(&w, "detail", tl_get(&st.ftypes, i))
+                jw_kstr(&w, "documentation", t_cat3("Field of `", st.name, "`"))
+                jw_kstr(&w, "insertText", f)
+                jw_end(&w)
+            }
+            i = i + 1
+        }
+    }
+    jw_end(&w)
+    return jw_text(&w)
+}
+
+function dyn_keep(label: string, insert: string, prefix: string) -> bool {
+    if t_len(prefix) == 0 {
+        return true
+    }
+    let p: string = t_lower(prefix)
+    let l: string = t_lower(label)
+    if t_starts_with(l, p) or t_contains(l, p) {
+        return true
+    }
+    if not t_eq(insert, "\001") and t_starts_with(t_lower(insert), p) {
+        return true
+    }
+    return false
+}
+
+function completion(s: ptr<Server>, uri: string, line: i32, ch: i32) -> string {
+    let d: ptr<Doc> = find_doc(s, uri)
+    let text: string = doc_text(s, uri)
+    let prefix: string = completion_prefix(text, line, ch)
+    let recv: string = receiver_before_dot(text, line, ch)
+    if t_len(recv) > 0 {
+        return complete_fields(s, d, recv, line, prefix)
+    }
+    let mut w: JW = jw_new()
+    let mut seen: TList = tl_new()
+    jw_arr(&w)
+    # Dynamics DSL items (label, kind, detail, documentation, insertText).
+    let mut i: i32 = 0
+    while i < s.dyn_items.len {
+        let label: string = tl_get(&s.dyn_items, i)
+        let ins: string = tl_get(&s.dyn_items, i + 3)
+        if dyn_keep(label, ins, prefix) {
+            jw_obj(&w)
+            jw_kstr(&w, "label", label)
+            jw_kint(&w, "kind", atoi(tl_get(&s.dyn_items, i + 1)))
+            jw_kstr(&w, "detail", tl_get(&s.dyn_items, i + 2))
+            jw_kstr(&w, "documentation", tl_get(&s.dyn_items, i + 4))
+            if not t_eq(ins, "\001") {
+                jw_kstr(&w, "insertText", ins)
+                jw_kint(&w, "insertTextFormat", 2)
+            }
+            jw_end(&w)
+            tl_push(&seen, label)
+        }
+        i = i + 5
+    }
+    # Ordering items (label, kind, detail, insertText, documentation).
+    let mut ord_labels: TList = tl_new()
+    i = 0
+    while i < s.ord_items.len {
+        let label: string = tl_get(&s.ord_items, i)
+        let ins: string = tl_get(&s.ord_items, i + 3)
+        let snippet: bool = not t_eq(ins, "\001")
+        let mut keep: bool = false
+        if snippet {
+            keep = t_len(prefix) == 0 or t_starts_with(label, prefix) or t_contains(label, prefix)
+        } else {
+            keep = (t_len(prefix) == 0 or t_starts_with(label, prefix)) and tl_index(&ord_labels, label) < 0
+        }
+        if keep {
+            jw_obj(&w)
+            jw_kstr(&w, "label", label)
+            jw_kint(&w, "kind", atoi(tl_get(&s.ord_items, i + 1)))
+            jw_kstr(&w, "detail", tl_get(&s.ord_items, i + 2))
+            if snippet {
+                jw_kstr(&w, "insertText", ins)
+                jw_kint(&w, "insertTextFormat", 2)
+            }
+            jw_kstr(&w, "documentation", tl_get(&s.ord_items, i + 4))
+            jw_end(&w)
+            tl_push(&ord_labels, label)
+            if tl_index(&seen, label) < 0 {
+                tl_push(&seen, label)
+            }
+        }
+        i = i + 5
+    }
+    i = 0
+    while i < s.keywords.len {
+        let kw: string = tl_get(&s.keywords, i)
+        if tl_index(&seen, kw) < 0 and (t_len(prefix) == 0 or t_starts_with(kw, prefix)) {
+            jw_obj(&w)
+            jw_kstr(&w, "label", kw)
+            jw_kint(&w, "kind", 14)
+            jw_kstr(&w, "detail", "keyword")
+            jw_end(&w)
+            tl_push(&seen, kw)
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < s.types.len {
+        let t: string = tl_get(&s.types, i)
+        if tl_index(&seen, t) < 0 and (t_len(prefix) == 0 or t_starts_with(t, prefix)) {
+            jw_obj(&w)
+            jw_kstr(&w, "label", t)
+            jw_kint(&w, "kind", 21)
+            jw_kstr(&w, "detail", "type")
+            jw_end(&w)
+            tl_push(&seen, t)
+        }
+        i = i + 1
+    }
+    i = 0
+    while i < s.builtins.len {
+        let name: string = tl_get(&s.builtins, i)
+        if tl_index(&seen, name) < 0 and (t_len(prefix) == 0 or t_starts_with(name, prefix)) {
+            jw_obj(&w)
+            jw_kstr(&w, "label", name)
+            jw_kint(&w, "kind", 3)
+            jw_kstr(&w, "detail", t_cat(t_cat3("(", builtin_function_params(name), ") -> "), builtin_function_return(name)))
+            jw_kstr(&w, "documentation", builtin_function_doc(name))
+            jw_end(&w)
+            tl_push(&seen, name)
+        }
+        i = i + 1
+    }
+    if d != null and d.an != null {
+        i = 0
+        while i < d.an.binds.len {
+            let b: ptr<Bind> = bind_at(&d.an.binds, i)
+            if tl_index(&seen, b.name) < 0 and (t_len(prefix) == 0 or t_starts_with(b.name, prefix)) {
+                let mut detail: string = b.detail
+                if t_len(detail) == 0 {
+                    if b.mutable {
+                        detail = t_cat("mut ", b.typ)
+                    } else {
+                        detail = b.typ
+                    }
+                }
+                jw_obj(&w)
+                jw_kstr(&w, "label", b.name)
+                jw_kint(&w, "kind", 6)
+                jw_kstr(&w, "detail", detail)
+                jw_kstr(&w, "documentation", t_cat(t_cat3(b.kind, " in `", b.container), "`"))
+                jw_end(&w)
+                tl_push(&seen, b.name)
+            }
+            i = i + 1
+        }
+        i = 0
+        while i < d.syms.len {
+            let sym: ptr<Sym> = sym_at(&d.syms, i)
+            if tl_index(&seen, sym.name) < 0 and (t_len(prefix) == 0 or t_starts_with(sym.name, prefix)) {
+                if completion_item(&w, sym.name, sym) {
+                    tl_push(&seen, sym.name)
+                }
+            }
+            i = i + 1
+        }
+    }
+    let mut di: i32 = 0
+    while di < s.docs.len {
+        let od: ptr<Doc> = doc_at(s, di)
+        if not t_eq(od.uri, uri) and od.an != null {
+            i = 0
+            while i < od.syms.len {
+                let sym: ptr<Sym> = sym_at(&od.syms, i)
+                if tl_index(&seen, sym.name) < 0 and (t_len(prefix) == 0 or t_starts_with(sym.name, prefix)) {
+                    if completion_item(&w, sym.name, sym) {
+                        tl_push(&seen, sym.name)
+                    }
+                }
+                i = i + 1
+            }
+        }
+        di = di + 1
+    }
+    if t_len(prefix) > 0 {
+        ensure_stdlib(s)
+        i = 0
+        while i < s.stdlib.len {
+            let sym: ptr<Sym> = sym_at(&s.stdlib, i)
+            if tl_index(&seen, sym.name) < 0 and t_starts_with(sym.name, prefix) {
+                if completion_item(&w, sym.name, sym) {
+                    tl_push(&seen, sym.name)
+                }
+            }
+            i = i + 1
+        }
+    }
+    jw_end(&w)
+    return jw_text(&w)
+}
+
+# ── Definition ──────────────────────────────────────────────────
+
+function location(uri: string, word: string, line: i32, col: i32, end_line: i32, end_col: i32, has_end: bool) -> string {
+    let mut el: i32 = line
+    let mut ec: i32 = col + ulen(word)
+    if has_end {
+        if end_line != 0 {
+            el = end_line
+        }
+        ec = end_col
+    }
+    if ec <= col {
+        ec = col + ulen(word)
+    }
+    let mut w: JW = jw_new()
+    jw_obj(&w)
+    jw_kstr(&w, "uri", uri)
+    jw_key(&w, "range")
+    w_range(&w, line, col, el, ec)
+    jw_end(&w)
+    return jw_text(&w)
+}
+
+function sym_location(uri: string, word: string, sym: ptr<Sym>) -> string {
+    return location(uri, word, sym.line, sym.column, sym.end_line, sym.end_column, sym.has_end)
+}
+
+function bind_location(uri: string, word: string, b: ptr<Bind>) -> string {
+    return location(uri, word, b.line, b.column, b.line, b.end_column, true)
+}
+
+function field_definition(s: ptr<Server>, d: ptr<Doc>, line: i32, recv: string, field: string) -> string {
+    let st: ptr<Sym> = struct_for_type(d, receiver_type(d, recv, line))
+    if st == null {
+        return ""
+    }
+    let mut target: string = st.uri
+    if t_len(target) == 0 {
+        target = d.uri
+    }
+    let mut ttext: string = ""
+    let td: ptr<Doc> = find_doc(s, target)
+    if td != null {
+        ttext = td.text
+    } else {
+        let p: string = uri_to_path(target)
+        if t_len(p) > 0 and is_file(p) {
+            ttext = t_read_file(p)
+        }
+    }
+    if t_len(ttext) > 0 {
+        let rows: TList = t_split_lines(ttext)
+        let mut i: i32 = 0
+        while i < rows.len {
+            let row: string = tl_get(&rows, i)
+            let at: i32 = find_name_colon(row, field)
+            if at >= 0 {
+                let c: i32 = ucol(row, at)
+                return location(target, field, i, c, i, c + ulen(field), true)
+            }
+            i = i + 1
+        }
+    }
+    return sym_location(target, st.name, st)
+}
+
+function definition(s: ptr<Server>, uri: string, line: i32, ch: i32) -> string {
+    let d: ptr<Doc> = find_doc(s, uri)
+    let text: string = doc_text(s, uri)
+    let word: string = word_at_pos(text, line, ch)
+    if t_len(word) == 0 {
+        return "null"
+    }
+    if d != null and d.an != null {
+        let b: ptr<Bind> = find_binding(d, word, line)
+        if b != null {
+            return bind_location(uri, word, b)
+        }
+        let fa: string = field_access_at(text, line, ch)
+        if t_len(fa) > 0 {
+            let tab: i32 = t_find_char(fa, 9)
+            let loc: string = field_definition(s, d, line, t_sub(fa, 0, tab), t_from(fa, tab + 1))
+            if t_len(loc) > 0 {
+                return loc
+            }
+        }
+        let sym: ptr<Sym> = sym_find(&d.syms, word)
+        if sym != null {
+            if sym.imported and t_len(sym.uri) > 0 {
+                return sym_location(sym.uri, word, sym)
+            }
+            return sym_location(uri, word, sym)
+        }
+    }
+    let mut i: i32 = 0
+    while i < s.docs.len {
+        let od: ptr<Doc> = doc_at(s, i)
+        if not t_eq(od.uri, uri) and od.an != null {
+            let sym: ptr<Sym> = sym_find(&od.syms, word)
+            if sym != null {
+                let mut target: string = sym.uri
+                if t_len(target) == 0 {
+                    target = od.uri
+                }
+                return sym_location(target, word, sym)
+            }
+        }
+        i = i + 1
+    }
+    ensure_stdlib(s)
+    let std: ptr<Sym> = sym_find(&s.stdlib, word)
+    if std != null {
+        return sym_location(std.uri, word, std)
+    }
+    return "null"
+}
+
+# ── Document symbols ────────────────────────────────────────────
+
+function symbol_kind(kind: string) -> i32 {
+    if t_eq(kind, "function") or t_eq(kind, "theorem") {
+        return 12
+    }
+    if t_eq(kind, "struct") {
+        return 23
+    }
+    if t_eq(kind, "enum") {
+        return 10
+    }
+    if t_eq(kind, "trait") or t_eq(kind, "effect") or t_eq(kind, "capability") {
+        return 11
+    }
+    if t_eq(kind, "const") {
+        return 14
+    }
+    if t_eq(kind, "type") {
+        return 5
+    }
+    return 12
+}
+
+function document_symbols(s: ptr<Server>, uri: string) -> string {
+    let d: ptr<Doc> = find_doc(s, uri)
+    let mut w: JW = jw_new()
+    jw_arr(&w)
+    if d != null and d.an != null {
+        let mut i: i32 = 0
+        while i < d.syms.len {
+            let sym: ptr<Sym> = sym_at(&d.syms, i)
+            if not sym.imported {
+                let line: i32 = sym.line
+                let col: i32 = sym.column
+                let nl: i32 = ulen(sym.name)
+                let mut el: i32 = line
+                let mut ec: i32 = col + nl
+                if sym.has_end {
+                    if sym.end_line != 0 {
+                        el = sym.end_line
+                    }
+                    if sym.end_column != 0 {
+                        ec = sym.end_column
+                    }
+                }
+                if ec <= col {
+                    let mut m: i32 = nl
+                    if m < 1 {
+                        m = 1
+                    }
+                    ec = col + m
+                }
+                jw_obj(&w)
+                jw_kstr(&w, "name", sym.name)
+                jw_kint(&w, "kind", symbol_kind(sym.kind))
+                jw_kstr(&w, "detail", sym.kind)
+                jw_key(&w, "range")
+                w_range(&w, line, col, el, ec)
+                jw_key(&w, "selectionRange")
+                w_range(&w, line, col, line, col + nl)
+                jw_end(&w)
+            }
+            i = i + 1
+        }
+    }
+    jw_end(&w)
+    return jw_text(&w)
+}
+
+# ── References, highlight, rename ───────────────────────────────
+
+# Identifier tokens equal to word (comments and strings excluded), as
+# "line\tcol" pairs in code points.
+function occurrences(s: ptr<Server>, text: string, word: string) -> TList {
+    let mut out: TList = tl_new()
+    let rows: TList = t_split_lines(text)
+    let p: ptr<u8> = text as ptr<u8>
+    let mut lex: Lexer = flowc_lexer_new(p, t_len(text))
+    let mut tok: Token = flowc_lexer_next(&lex)
+    let mut guard: i32 = 0
+    while tok.kind != TOK_EOF and guard < 10000000 {
+        if tok.kind == TOK_IDENT or tok.kind == TOK_KEYWORD {
+            let n: i32 = tok.end - tok.start
+            if n == t_len(word) {
+                let tt: string = t_span(p, tok.start, tok.end)
+                if t_eq(tt, word) and (t_eq(tt, "test") or tl_index(&s.reserved, tt) < 0) {
+                    let line: i32 = tok.line - 1
+                    let row: string = row_at(&rows, line)
+                    let mut ls: i32 = tok.start
+                    while ls > 0 and (p[ls - 1] as i32) != 10 {
+                        ls = ls - 1
+                    }
+                    let col: i32 = ucol(row, tok.start - ls)
+                    tl_push(&out, t_cat3(t_int(line), "\t", t_int(col)))
+                }
+            }
+        }
+        let before: i32 = lex.pos
+        tok = flowc_lexer_next(&lex)
+        if lex.pos == before and tok.kind != TOK_EOF {
+            break
+        }
+        guard = guard + 1
+    }
+    return out
+}
+
+function occ_line(o: string) -> i32 {
+    return atoi(o)
+}
+
+function occ_col(o: string) -> i32 {
+    return atoi(t_from(o, t_find_char(o, 9) + 1))
+}
+
+# Where `word` is declared: "uri\tline" or "" (Python _resolve_symbol).
+function resolve_decl(s: ptr<Server>, uri: string, word: string) -> string {
+    let d: ptr<Doc> = find_doc(s, uri)
+    if d != null and d.an != null {
+        let sym: ptr<Sym> = sym_find(&d.syms, word)
+        if sym != null {
+            return t_cat3(uri, "\t", t_int(sym.line))
+        }
+    }
+    let mut i: i32 = 0
+    while i < s.docs.len {
+        let od: ptr<Doc> = doc_at(s, i)
+        if not t_eq(od.uri, uri) and od.an != null {
+            let sym: ptr<Sym> = sym_find(&od.syms, word)
+            if sym != null {
+                return t_cat3(od.uri, "\t", t_int(sym.line))
+            }
+        }
+        i = i + 1
+    }
+    ensure_stdlib(s)
+    let std: ptr<Sym> = sym_find(&s.stdlib, word)
+    if std != null {
+        return t_cat3(std.uri, "\t", t_int(std.line))
+    }
+    return ""
+}
+
+# Every occurrence as "uri\tline\tcol": all open documents for a declared
+# symbol, the current one for a local name.
+function reference_list(s: ptr<Server>, uri: string, word: string, decl: string) -> TList {
+    let mut out: TList = tl_new()
+    let mut i: i32 = 0
+    while i < s.docs.len {
+        let od: ptr<Doc> = doc_at(s, i)
+        if t_len(decl) > 0 or t_eq(od.uri, uri) {
+            let occ: TList = occurrences(s, od.text, word)
+            let mut k: i32 = 0
+            while k < occ.len {
+                tl_push(&out, t_cat3(od.uri, "\t", tl_get(&occ, k)))
+                k = k + 1
+            }
+        }
+        i = i + 1
+    }
+    return out
+}
+
+function ref_uri(r: string) -> string {
+    return t_sub(r, 0, t_find_char(r, 9))
+}
+
+function ref_rest(r: string) -> string {
+    return t_from(r, t_find_char(r, 9) + 1)
+}
+
+function references(s: ptr<Server>, j: ptr<JDoc>, params: i32, uri: string, line: i32, ch: i32) -> string {
+    let text: string = doc_text(s, uri)
+    let word: string = word_at_pos(text, line, ch)
+    let mut w: JW = jw_new()
+    jw_arr(&w)
+    if t_len(word) == 0 {
+        jw_end(&w)
+        return jw_text(&w)
+    }
+    let include: bool = jbool(j, jget2(j, params, "context", "includeDeclaration"), true)
+    let decl: string = resolve_decl(s, uri, word)
+    let refs: TList = reference_list(s, uri, word, decl)
+    let mut i: i32 = 0
+    while i < refs.len {
+        let r: string = tl_get(&refs, i)
+        let ru: string = ref_uri(r)
+        let rest: string = ref_rest(r)
+        let rl: i32 = occ_line(rest)
+        let rc: i32 = occ_col(rest)
+        let mut skip: bool = false
+        if not include and t_len(decl) > 0 {
+            let du: string = ref_uri(decl)
+            let dl: i32 = atoi(ref_rest(decl))
+            if t_eq(du, ru) and dl == rl {
+                skip = true
+            }
+        }
+        if not skip {
+            jw_obj(&w)
+            jw_kstr(&w, "uri", ru)
+            jw_key(&w, "range")
+            w_range(&w, rl, rc, rl, rc + ulen(word))
+            jw_end(&w)
+        }
+        i = i + 1
+    }
+    jw_end(&w)
+    return jw_text(&w)
+}
+
+function highlight(s: ptr<Server>, uri: string, line: i32, ch: i32) -> string {
+    let text: string = doc_text(s, uri)
+    let mut w: JW = jw_new()
+    jw_arr(&w)
+    if t_len(text) == 0 {
+        jw_end(&w)
+        return jw_text(&w)
+    }
+    let word: string = word_at_pos(text, line, ch)
+    if t_len(word) == 0 or not is_valid_identifier(word) or tl_index(&s.reserved, word) >= 0 {
+        jw_end(&w)
+        return jw_text(&w)
+    }
+    let occ: TList = occurrences(s, text, word)
+    let mut i: i32 = 0
+    while i < occ.len {
+        let o: string = tl_get(&occ, i)
+        jw_obj(&w)
+        jw_key(&w, "range")
+        w_range(&w, occ_line(o), occ_col(o), occ_line(o), occ_col(o) + ulen(word))
+        jw_kint(&w, "kind", 1)
+        jw_end(&w)
+        i = i + 1
+    }
+    jw_end(&w)
+    return jw_text(&w)
+}
+
+# "" when the position is not on a renameable identifier token, else
+# "word\tline\tcol".
+function prepare_rename_info(s: ptr<Server>, uri: string, line: i32, ch: i32) -> string {
+    let text: string = doc_text(s, uri)
+    let word: string = word_at_pos(text, line, ch)
+    if t_len(word) == 0 or not is_valid_identifier(word) or tl_index(&s.reserved, word) >= 0 {
+        return ""
+    }
+    let occ: TList = occurrences(s, text, word)
+    let mut i: i32 = 0
+    while i < occ.len {
+        let o: string = tl_get(&occ, i)
+        let c: i32 = occ_col(o)
+        if occ_line(o) == line and c <= ch and ch <= c + ulen(word) {
+            return t_cat3(word, "\t", o)
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+function prepare_rename(s: ptr<Server>, uri: string, line: i32, ch: i32) -> string {
+    let info: string = prepare_rename_info(s, uri, line, ch)
+    if t_len(info) == 0 {
+        return "null"
+    }
+    let word: string = ref_uri(info)
+    let rest: string = ref_rest(info)
+    let mut w: JW = jw_new()
+    jw_obj(&w)
+    jw_key(&w, "range")
+    let l: i32 = occ_line(rest)
+    let c: i32 = occ_col(rest)
+    w_range(&w, l, c, l, c + ulen(word))
+    jw_kstr(&w, "placeholder", word)
+    jw_end(&w)
+    return jw_text(&w)
+}
+
+# Returns the WorkspaceEdit, or "!message" for a JSON-RPC error.
+function rename_symbol(s: ptr<Server>, uri: string, line: i32, ch: i32, new_name: string) -> string {
+    let info: string = prepare_rename_info(s, uri, line, ch)
+    if t_len(info) == 0 {
+        return "!Cannot rename this element: not a renameable symbol"
+    }
+    if not is_valid_identifier(new_name) {
+        return t_cat3("!Cannot rename to '", new_name, "': not a valid Flow identifier")
+    }
+    if tl_index(&s.reserved, new_name) >= 0 {
+        return t_cat3("!Cannot rename to '", new_name, "': reserved Flow keyword")
+    }
+    let word: string = ref_uri(info)
+    let decl: string = resolve_decl(s, uri, word)
+    let refs: TList = reference_list(s, uri, word, decl)
+    let mut uris: TList = tl_new()
+    let mut i: i32 = 0
+    while i < refs.len {
+        let ru: string = ref_uri(tl_get(&refs, i))
+        if tl_index(&uris, ru) < 0 {
+            tl_push(&uris, ru)
+        }
+        i = i + 1
+    }
+    let mut w: JW = jw_new()
+    jw_obj(&w)
+    jw_key(&w, "changes")
+    jw_obj(&w)
+    let mut u: i32 = 0
+    while u < uris.len {
+        let cu: string = tl_get(&uris, u)
+        jw_key(&w, cu)
+        jw_arr(&w)
+        i = 0
+        while i < refs.len {
+            let r: string = tl_get(&refs, i)
+            if t_eq(ref_uri(r), cu) {
+                let rest: string = ref_rest(r)
+                jw_obj(&w)
+                jw_key(&w, "range")
+                w_range(&w, occ_line(rest), occ_col(rest), occ_line(rest), occ_col(rest) + ulen(word))
+                jw_kstr(&w, "newText", new_name)
+                jw_end(&w)
+            }
+            i = i + 1
+        }
+        jw_end(&w)
+        u = u + 1
+    }
+    jw_end(&w)
+    jw_end(&w)
+    return jw_text(&w)
+}
+
+# ── Formatting ──────────────────────────────────────────────────
+
+# One edit replacing the whole document, or [] when nothing changes.
+# Range formatting formats the whole document too, as before.
+function formatting(s: ptr<Server>, uri: string) -> string {
+    let text: string = doc_text(s, uri)
+    let mut w: JW = jw_new()
+    jw_arr(&w)
+    let formatted: string = format_text(text)
+    if t_len(formatted) > 0 {
+        let rows: TList = t_split_lines(text)
+        let last: i32 = rows.len - 1
+        jw_obj(&w)
+        jw_key(&w, "range")
+        w_range(&w, 0, 0, last, ulen(tl_get(&rows, last)))
+        jw_kstr(&w, "newText", formatted)
+        jw_end(&w)
+    }
+    jw_end(&w)
+    return jw_text(&w)
+}
+
+# ── Code actions ────────────────────────────────────────────────
+
+function code_actions(j: ptr<JDoc>, params: i32, uri: string) -> string {
+    let mut w: JW = jw_new()
+    jw_arr(&w)
+    let diags: i32 = jget2(j, params, "context", "diagnostics")
+    if jkind(j, diags) == J_ARR {
+        let mut dn: i32 = j.nodes[diags].child
+        while dn != J_NONE {
+            let data: i32 = jget(j, dn, "data")
+            if t_eq(jstr(j, jget(j, dn, "source")), "flow-idiom") and data != J_NONE {
+                let repl: string = jstr(j, jget(j, data, "replacement"))
+                if t_len(repl) > 0 {
+                    jw_obj(&w)
+                    jw_kstr(&w, "title", t_cat("Apply fix for ", jstr(j, jget(j, data, "rule_id"))))
+                    jw_kstr(&w, "kind", "quickfix")
+                    jw_key(&w, "diagnostics")
+                    jw_arr(&w)
+                    jw_raw(&w, reserialize(j, dn))
+                    jw_end(&w)
+                    jw_key(&w, "edit")
+                    jw_obj(&w)
+                    jw_key(&w, "changes")
+                    jw_obj(&w)
+                    jw_key(&w, uri)
+                    jw_arr(&w)
+                    jw_obj(&w)
+                    jw_key(&w, "range")
+                    jw_raw(&w, reserialize(j, jget(j, dn, "range")))
+                    jw_kstr(&w, "newText", repl)
+                    jw_end(&w)
+                    jw_end(&w)
+                    jw_end(&w)
+                    jw_end(&w)
+                    jw_end(&w)
+                }
+            }
+            dn = j.nodes[dn].next
+        }
+    }
+    jw_end(&w)
+    return jw_text(&w)
+}
+
+# A parsed value written back in json.dumps layout.
+function reserialize(j: ptr<JDoc>, id: i32) -> string {
+    let mut w: JW = jw_new()
+    reser(&w, j, id)
+    return jw_text(&w)
+}
+
+function reser(w: ptr<JW>, j: ptr<JDoc>, id: i32) {
+    let k: i32 = jkind(j, id)
+    if k == J_OBJ {
+        jw_obj(w)
+        let mut c: i32 = j.nodes[id].child
+        while c != J_NONE {
+            jw_key(w, t_span(j.src, j.nodes[c].key_start, j.nodes[c].key_end))
+            reser(w, j, c)
+            c = j.nodes[c].next
+        }
+        jw_end(w)
+    } elif k == J_ARR {
+        jw_arr(w)
+        let mut c: i32 = j.nodes[id].child
+        while c != J_NONE {
+            reser(w, j, c)
+            c = j.nodes[c].next
+        }
+        jw_end(w)
+    } elif k == J_STR {
+        jw_str(w, jstr(j, id))
+    } else {
+        jw_raw(w, jraw(j, id))
+    }
+}
+
+# ── Dispatch ────────────────────────────────────────────────────
+
+function pos_line(j: ptr<JDoc>, params: i32) -> i32 {
+    return jint(j, jget2(j, params, "position", "line"), 0)
+}
+
+function pos_char(j: ptr<JDoc>, params: i32) -> i32 {
+    return jint(j, jget2(j, params, "position", "character"), 0)
+}
+
+function handle(s: ptr<Server>, body: string) {
+    let mut j: JDoc = json_parse(body as ptr<u8>, t_len(body))
+    if j.err != 0 or jkind(&j, j.root) != J_OBJ {
+        return
+    }
+    let method: string = jstr(&j, jget(&j, j.root, "method"))
+    let params: i32 = jget(&j, j.root, "params")
+    let idn: i32 = jget(&j, j.root, "id")
+    let has_id: bool = idn != J_NONE and jkind(&j, idn) != J_NULL
+    let id_raw: string = reserialize(&j, idn)
+    let uri: string = jstr(&j, jget2(&j, params, "textDocument", "uri"))
+    let mut result: string = "null"
+    if t_eq(method, "initialize") {
+        result = capabilities()
+    } elif t_eq(method, "shutdown") {
+        s.shutdown = true
+    } elif t_eq(method, "exit") {
+        exit(0)
+    } elif t_eq(method, "textDocument/didOpen") {
+        did_open(s, &j, params)
+    } elif t_eq(method, "textDocument/didChange") {
+        did_change(s, &j, params)
+    } elif t_eq(method, "textDocument/didClose") {
+        did_close(s, &j, params)
+    } elif t_eq(method, "textDocument/completion") {
+        result = completion(s, uri, pos_line(&j, params), pos_char(&j, params))
+    } elif t_eq(method, "textDocument/hover") {
+        result = hover(s, uri, pos_line(&j, params), pos_char(&j, params))
+    } elif t_eq(method, "textDocument/definition") {
+        result = definition(s, uri, pos_line(&j, params), pos_char(&j, params))
+    } elif t_eq(method, "textDocument/documentSymbol") {
+        result = document_symbols(s, uri)
+    } elif t_eq(method, "textDocument/references") {
+        result = references(s, &j, params, uri, pos_line(&j, params), pos_char(&j, params))
+    } elif t_eq(method, "textDocument/prepareRename") {
+        result = prepare_rename(s, uri, pos_line(&j, params), pos_char(&j, params))
+    } elif t_eq(method, "textDocument/rename") {
+        result = rename_symbol(s, uri, pos_line(&j, params), pos_char(&j, params), jstr(&j, jget(&j, params, "newName")))
+        if t_starts_with(result, "!") {
+            if has_id {
+                respond_error(id_raw, -32803, t_from(result, 1))
+            }
+            json_free(&j)
+            return
+        }
+    } elif t_eq(method, "textDocument/formatting") or t_eq(method, "textDocument/rangeFormatting") {
+        result = formatting(s, uri)
+    } elif t_eq(method, "textDocument/documentHighlight") {
+        result = highlight(s, uri, pos_line(&j, params), pos_char(&j, params))
+    } elif t_eq(method, "textDocument/codeAction") {
+        result = code_actions(&j, params, uri)
+    }
+    if has_id {
+        respond(id_raw, result)
+    }
+    json_free(&j)
+}
+
+# ── Transport ───────────────────────────────────────────────────
+
+# Wait up to ms for input. True when a byte is ready (or already buffered).
+function input_ready(r: ptr<TReader>, ms: i32) -> bool {
+    if r.pos < r.len {
+        return true
+    }
+    let fds: ptr<u8> = calloc(8, 1) as ptr<u8>
+    fds[4] = 1 as u8
+    let n: i32 = poll(fds, 1, ms)
+    return n > 0
+}
+
+# Read one framed message body; "" with ok = false at end of input.
+function read_message(r: ptr<TReader>) -> TLine {
+    let mut length: i32 = -1
+    while true {
+        let ln: TLine = tr_line(r)
+        if not ln.ok {
+            return TLine { text: "", ok: false }
+        }
+        let mut h: string = ln.text
+        if t_ends_with(h, "\r") {
+            h = t_sub(h, 0, t_len(h) - 1)
+        }
+        if t_len(h) == 0 {
+            if length >= 0 {
+                break
+            }
+        } elif t_starts_with(t_lower(h), "content-length:") {
+            length = atoi(t_strip(t_from(h, 15)))
+        }
+    }
+    let mut tb: TBuf = tb_new()
+    let mut i: i32 = 0
+    while i < length {
+        let c: i32 = tr_getc(r)
+        if c < 0 {
+            return TLine { text: "", ok: false }
+        }
+        tb_putc(&tb, c)
+        i = i + 1
+    }
+    return TLine { text: tb.data as string, ok: true }
+}
+
+
+function main() -> i32 {
+    let mut s: Server = Server {
+        root: real(t_env("FLOW_ROOT", ".")),
+        docs: pl_new(),
+        stdlib: pl_new(),
+        stdlib_done: false,
+        keywords: tl_new(),
+        types: tl_new(),
+        builtins: tl_new(),
+        reserved: tl_new(),
+        dyn_items: tl_new(),
+        ord_items: tl_new(),
+        pending: tl_new(),
+        shutdown: false
+    }
+    keyword_list(&s.keywords)
+    builtin_type_list(&s.types)
+    builtin_function_names(&s.builtins)
+    reserved_name_list(&s.reserved)
+    dynamics_completion_table(&s.dyn_items)
+    ordering_completion_table(&s.ord_items)
+    OUT_FD = dup(1)
+    dup2(2, 1)
+    let mut r: TReader = tr_new()
+    while true {
+        if s.pending.len > 0 and not input_ready(&r, DEBOUNCE_MS) {
+            flush_pending(&s)
+        }
+        let msg: TLine = read_message(&r)
+        if not msg.ok {
+            break
+        }
+        handle(&s, msg.text)
+    }
+    return 0
+}

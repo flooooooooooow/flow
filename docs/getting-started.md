@@ -54,7 +54,7 @@ cd flow
 ./flow version
 ```
 
-Requirements are Clang or GCC and Python 3.9+ for the full compiler host. `flow run` and `flow compile` default to the self-hosted Stage-A `flowc`; the examples below use `FLOW_HOST=python` because they intentionally exercise the full language surface, including `println` and `flow` evolution blocks.
+The requirement is Clang or GCC. `flow run` and `flow compile` use `flowc`, the self-hosted compiler, which `./flow` builds from checked-in C on first use. Python 3.9+ is needed only for the MLIR backend (`--backend=mlir`) and for the wheel build step of `flow python`.
 
 If you installed from source, replace `flow` with `./flow` in the commands below.
 
@@ -83,7 +83,7 @@ function main() -> i32 {
 Run it:
 
 ```bash
-FLOW_HOST=python flow run hello.flow
+flow run hello.flow
 ```
 
 You now have a Flow source file compiled through the Flow frontend, emitted as C, compiled to a native executable, and run.
@@ -118,7 +118,7 @@ function main() -> i32 {
 ```
 
 ```bash
-FLOW_HOST=python flow run basics.flow
+flow run basics.flow
 ```
 
 ## 4. Functions and structs
@@ -143,7 +143,7 @@ function main() -> i32 {
 ```
 
 ```bash
-FLOW_HOST=python flow run point.flow
+flow run point.flow
 ```
 
 ## 5. The Flow part: describe evolution directly
@@ -171,7 +171,7 @@ function main() -> i32 {
 ```
 
 ```bash
-FLOW_HOST=python flow run decay.flow
+flow run decay.flow
 ```
 
 The `flow` declaration is the model. The compiler generates the state representation and `Decay_step`; your program only decides when to advance it.
@@ -179,16 +179,16 @@ The `flow` declaration is the model. The compiler generates the state representa
 For a larger shipped example:
 
 ```bash
-FLOW_HOST=python flow run examples/evolution/pendulum_evolves.flow
+flow run examples/evolution/pendulum_evolves.flow
 ```
 
 ## 6. Useful commands
 
 ```bash
 flow version
-FLOW_HOST=python flow run file.flow
-FLOW_HOST=python flow compile file.flow
-FLOW_HOST=python flow test
+flow run file.flow
+flow compile file.flow
+flow test
 flow fmt file.flow
 ```
 
@@ -211,4 +211,4 @@ New to programming entirely? [Start here](start-here.md) gives a slower terminal
 
 If `flow` is not found after a source checkout, use `./flow`. If Clang/GCC is missing, install Xcode Command Line Tools on macOS with `xcode-select --install`, or `build-essential` on Debian/Ubuntu.
 
-If a full-language example reports a Stage-A subset error, make sure the command begins with `FLOW_HOST=python`.
+`FLOW_HOST=python` is retired. If an old command or shell profile sets it, `./flow` stops with an error. Remove the setting and run the command again.

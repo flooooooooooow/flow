@@ -2,13 +2,13 @@
 
 *If two straight lines from a point touch a circle, the straight lines are equal.*
 
-**Source.** euclid — Elements, Book III, Proposition 35
+**Source.** euclid: Elements, Book III, Proposition 35
 
-## Derived fact 1 — If two straight lines from a point touch a circle, the straight lines are equal
+## Derived fact 1: If two straight lines from a point touch a circle, the straight lines are equal
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 35: tangents drawn from a point to a circle are equal · **Derived fact**
 
-*Source: euclid — Elements, Book III, Proposition 35*
+*Source: euclid: Elements, Book III, Proposition 35*
 
 *Built on: proposition 8: the rectangle on a secant and its exterior segment equals the square on the tangent, for Euclid Book III on the Euclidean plane*
 

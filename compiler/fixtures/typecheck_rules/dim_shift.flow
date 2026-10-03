@@ -1,0 +1,8 @@
+# expect: dimensional error: operator '<<' is not defined for unit types (Meter << i32)
+unit Meter
+
+function main() -> i32 {
+    let a: Meter = 1.0 as Meter
+    let c: Meter = a << 2
+    return 0
+}

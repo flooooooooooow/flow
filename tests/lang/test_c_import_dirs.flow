@@ -1,6 +1,6 @@
 # Test for @cImport with -I include path support.
 # Preprocesses a local header using flowc_cparser_preprocess_with_dirs.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_import_dirs.flow
+# Run with: ./flow run tests/lang/test_c_import_dirs.flow
 # Exit 0 on success.
 
 import "compiler/src/c_parser.flow"
@@ -23,14 +23,14 @@ function main() -> i32 {
         return 1
     }
 
-    # Build include dirs buffer: "/tmp/flow_test_inc\0"
+    # Build include dirs buffer for the checked-in C header.
     let dir_buf: ptr<u8> = malloc(256)
     if dir_buf == null {
         puts("FAIL: could not allocate dir_buf")
         free(pp_buf)
         return 2
     }
-    let dir: string = "/tmp/flow_test_inc"
+    let dir: string = "tests/fixtures/c_headers"
     let dir_ptr: ptr<u8> = dir as ptr<u8>
     let dir_len: i32 = strlen(dir_ptr) as i32
     let mut i: i32 = 0
@@ -41,7 +41,7 @@ function main() -> i32 {
     dir_buf[dir_len] = 0  # null terminator
     let dirs_total: i32 = dir_len + 1
 
-    # Preprocess "myheader.h" with -I /tmp/flow_test_inc
+    # Preprocess "myheader.h" with the fixture include directory.
     let header: string = "myheader.h"
     let header_ptr: ptr<u8> = header as ptr<u8>
     let pp_len: i32 = flowc_cparser_preprocess_with_dirs(header_ptr, 10, dir_buf, dirs_total, pp_buf, 65536)

@@ -2,9 +2,9 @@
 
 *An exterior angle strictly exceeds each remote interior angle.*
 
-**Source.** euclid — Elements, Book I, Proposition 16
+**Source.** euclid: Elements, Book I, Proposition 16
 
-## Derived fact 1 — exterior strictly greater than each remote interior
+## Derived fact 1: exterior strictly greater than each remote interior
 
 **Coordinate.** the Euclidean plane · triangle · exterior strict each remote · **Derived fact**
 

@@ -2,9 +2,9 @@
 
 *Choosing one element from a successor set.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — choose(succ(n), 1) = succ(n)
+## Derived fact 1: choose(succ(n), 1) = succ(n)
 
 **Coordinate.** Comb · choose · choosing one from a successor · **Derived fact**
 

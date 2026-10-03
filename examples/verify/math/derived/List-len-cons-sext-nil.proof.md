@@ -2,9 +2,9 @@
 
 *Sextuple cons ending in nil has length six.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, nil))))))) = 6
+## Derived fact 1: len(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, nil))))))) = 6
 
 **Coordinate.** List · length · sextuple cons nil has length six · **Derived fact**
 

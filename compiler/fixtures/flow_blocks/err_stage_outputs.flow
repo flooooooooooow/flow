@@ -1,0 +1,8 @@
+flow None0 {
+    input a : f64
+    state z : f64 = 0.0
+}
+flow C {
+    input s : f64
+    output r : f64 = s |> None0
+}

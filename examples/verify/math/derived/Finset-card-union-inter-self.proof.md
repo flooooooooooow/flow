@@ -2,9 +2,9 @@
 
 *Cardinality of union intersected with self is bounded.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — card((s ∪ t) ∩ s) <= card(s ∪ t)
+## Derived fact 1: card((s ∪ t) ∩ s) <= card(s ∪ t)
 
 **Coordinate.** Finset · cardinality · union intersect self card bound · **Derived fact**
 

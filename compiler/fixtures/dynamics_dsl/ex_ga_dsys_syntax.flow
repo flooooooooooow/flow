@@ -1,0 +1,104 @@
+# GA + control analysis via the dsys surface syntax
+#
+# Declarative blocks below expand before parse into stdlib dynamics calls.
+# Compare with ga_full_analysis.flow — same analysis, zero boilerplate matrices.
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+dsys plant {
+    discrete
+    dt 0.1
+    n 2 m 1 p 1
+    A 1.0 0.1 0.0 1.0
+    B 0.0 0.1
+    C 1.0 0.0
+}
+
+horizon rollout finite 50
+horizon asymptotic infinite gamma 0.99
+
+sense on plant {
+    controllable -> plant_ok
+    spectral -> rho_open
+    gramian finite rollout trace -> wc_fin
+    gramian infinite asymptotic trace -> wc_inf
+}
+
+ga evolve on plant over rollout -> k1 k2 {
+    population 12
+    generations 30
+    mutation 0.3
+}
+
+closed plant with k1 k2 {
+    spectral -> rho_cl
+    energy over rollout -> E_cl
+    stable -> stable_cl
+}
+
+analyze plant ga k1 k2 over rollout -> report {
+    full
+}
+
+function main() -> i32 {
+    println("")
+    println("=== dsys syntax: GA + dynamical systems ===")
+    println("")
+    println("--- Plant (sense block) ---")
+    print("  Controllable:      ")
+    if plant_ok == 1 {
+        println("yes")
+    } else {
+        println("NO")
+    }
+    print("  Open-loop spectral radius: ")
+    printf("%.4f", rho_open)
+    println("")
+    print("  Gramian trace (N): ")
+    printf("%.6f", wc_fin)
+    println("")
+    print("  Gramian trace (inf): ")
+    printf("%.6f", wc_inf)
+    println("")
+    println("--- GA evolved gains ---")
+    print("  k1 = ")
+    printf("%.4f", k1)
+    print("  k2 = ")
+    printf("%.4f", k2)
+    println("")
+    println("--- Closed loop (closed block) ---")
+    print("  spectral radius: ")
+    printf("%.4f", rho_cl)
+    println("")
+    if stable_cl == 1 {
+        println("  Stable attractor: yes")
+    } else {
+        println("  Stable attractor: NO")
+    }
+    print("  State energy:      ")
+    printf("%.6f", E_cl)
+    println("")
+    println("--- Unified report (analyze block) ---")
+    print("  Fitness drop:      ")
+    printf("%.4f", report.fitness_drop)
+    println("")
+    print("  Closed spectral radius: ")
+    printf("%.4f", report.closed_spectral_radius)
+    println("")
+
+    if plant_ok != 1 {
+        return 1
+    }
+    if report.fitness_drop <= 0.0 {
+        return 2
+    }
+    if stable_cl != 1 {
+        return 3
+    }
+    if rho_cl >= rho_open {
+        return 4
+    }
+    return 0
+}

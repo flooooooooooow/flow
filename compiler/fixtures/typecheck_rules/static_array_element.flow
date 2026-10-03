@@ -1,0 +1,6 @@
+# expect: Module static 'names' has unsupported array element type 'string': static arrays may only hold primitives (i32/i64/u8/u32/f32/f64/c64/c128/bool)
+let mut names: array<string, 2> = ["a", "b"]
+
+function main() -> i32 {
+    return 0
+}

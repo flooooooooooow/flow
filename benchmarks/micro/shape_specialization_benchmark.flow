@@ -1,0 +1,61 @@
+# @module benchmarks.micro.shape_specialization_benchmark
+# @means  Shape specialization: lower one kernel with a dynamic
+#         memref<?xf32> shape and again with the shape fixed at 1000000
+#         elements (the replacement specialize_shapes made in the retired
+#         mlir_optimizer.py), and report the size of the LLVM IR each
+#         produces. Lowering is `flow mlir-lower`.
+#
+#   ./flow tool benchmarks/micro/shape_specialization_benchmark.flow
+
+import "tools/flow_cli/sys.flow"
+import "benchmarks/bench_tools.flow"
+import std.process { ProcCmd, ProcStrs }
+
+const GENERIC: string = "module {\n  func.func @compute(%arg0: memref<?xf32>, %arg1: memref<?xf32>, %arg2: memref<?xf32>, %size: index) attributes { llvm.emit_c_interface } {\n    %c0 = arith.constant 0 : index\n    %c1 = arith.constant 1 : index\n    scf.for %i = %c0 to %size step %c1 {\n      %a = memref.load %arg0[%i] : memref<?xf32>\n      %b = memref.load %arg1[%i] : memref<?xf32>\n      %c = arith.mulf %a, %b : f32\n      %d = arith.addf %c, %a : f32\n      memref.store %d, %arg2[%i] : memref<?xf32>\n    }\n    func.return\n  }\n}\n"
+
+# The line count of a non-empty file, else 0.
+function lines_of(p: string) -> string {
+    if nonempty(p) {
+        return s_itoa(bench_wc_l(p))
+    }
+    return "0"
+}
+
+# `flow mlir-lower IN OUT 2>/dev/null`
+function lower(root: string, input: string, output: string) {
+    let c: ptr<ProcCmd> = bench_flow(root, sl_of3("mlir-lower", input, output))
+    cmd_quiet_err(c)
+    let _r: i32 = run(c)
+}
+
+function main() -> i32 {
+    let root: string = bench_root("benchmarks/micro/shape_specialization_benchmark.flow")
+    let work: string = mktemp_dir(tmp_base() + "/flow-shape.XXXXXX")
+    if s_len(work) == 0 {
+        errln("shape_specialization_benchmark: cannot create a temporary directory")
+        return 1
+    }
+    on_exit_remove(work)
+    let _g: bool = write_text(work + "/generic.mlir", GENERIC)
+    outln("--- MLIR Shape Specialization Benchmark ---")
+    let tc: ptr<ProcCmd> = bench_flow(root, sl_of2("mlir-lower", "--tools"))
+    cmd_quiet(tc)
+    if run(tc) != 0 {
+        outln("Skipping real benchmark: LLVM/MLIR toolchain not found.")
+        cli_exit(0)
+    }
+    outln("Toolchain found, JIT execution supported.")
+    let size: string = "1000000"
+    outln("")
+    outln("--- Real Performance Validation --")
+    outln("[1] JIT Compiling Generic Kernel (memref<?xf32>)...")
+    lower(root, work + "/generic.mlir", work + "/generic.ll")
+    outln("    -> Emitted " + lines_of(work + "/generic.ll") + " lines of LLVM IR.")
+    outln("")
+    outln("[2] JIT Compiling Specialized Kernel (memref<" + size + "xf32>)...")
+    let _s: bool = write_text(work + "/special.mlir", s_replace(GENERIC, "memref<?xf32>", "memref<" + size + "xf32>"))
+    lower(root, work + "/special.mlir", work + "/special.ll")
+    outln("    -> Emitted " + lines_of(work + "/special.ll") + " lines of LLVM IR.")
+    cli_exit(0)
+    return 0
+}

@@ -2,9 +2,9 @@
 
 *Three plus zero is three in an ideal witness.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.1
+**Source.** dummit-foote: *Abstract Algebra*, §7.1
 
-## Derived fact 1 — 3 + 0 = 3 in an ideal
+## Derived fact 1: 3 + 0 = 3 in an ideal
 
 **Coordinate.** Ideal · addition · three plus zero in ideal · **Derived fact**
 

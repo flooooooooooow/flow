@@ -1,0 +1,17 @@
+# Effect handler pointers are thread local, and a handle block saves the
+# previous handler and restores it on exit.
+effect Log {
+    write(msg: i32) -> void,
+}
+
+capability Sink {
+    effect Log,
+    function write(msg: i32) -> void { return },
+}
+
+function main() -> i32 {
+    handle Log with Sink {
+        Log.write(1)
+    }
+    return 0
+}

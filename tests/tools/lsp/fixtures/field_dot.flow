@@ -1,0 +1,6 @@
+struct Point { x: f32, y: f32 }
+
+function main() -> f32 {
+    let p: Point = Point { x: 1.0, y: 2.0 }
+    return p.
+}

@@ -1,0 +1,23 @@
+# Elided flow members carry a unit and start at zero. They integrate like f64.
+unit Angle
+unit AngularVelocity
+
+flow Pendulum {
+    angle : Angle
+    velocity : AngularVelocity
+    solver { dt 100 ms  method euler }
+
+    angle evolves as 2.0
+    velocity evolves as 0.0 - 9.81
+}
+
+function main() -> i32 {
+    let mut p: Pendulum = Pendulum_new()
+    let mut i: i32 = 0
+    while i < 10 {
+        Pendulum_step(&p, Pendulum_default_dt())
+        i = i + 1
+    }
+    printf("%.3f %.3f\n", p.angle, p.velocity)
+    return 0
+}

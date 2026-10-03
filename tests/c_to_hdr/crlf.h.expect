@@ -1,0 +1,11 @@
+#include <stdio.h>
+#include <stdint.h>
+
+typedef struct A {
+    int32_t x;
+} A;
+
+extern const int32_t K;
+extern const int32_t M;
+
+int32_t f(int32_t a);

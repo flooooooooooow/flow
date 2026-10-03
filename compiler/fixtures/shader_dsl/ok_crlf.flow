@@ -1,0 +1,4 @@
+shader fill crlf {
+    let a: f32 = uv.x
+    color = vec4(a, a, a, 1.0)
+}

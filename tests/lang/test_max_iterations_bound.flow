@@ -1,0 +1,25 @@
+# @max_iterations(N) on a while loop: a loop inside the bound runs to the
+# end, a loop past it aborts with a diagnostic (#940, Stage-A).
+# The expected exit code is in the sibling .exitcode file and the
+# diagnostic in .expected-stderr.
+
+function within(limit: i32) -> i32 {
+    let mut i: i32 = 0
+    @max_iterations(5)
+    while i < limit {
+        i = i + 1
+    }
+    return i
+}
+
+function main() -> i32 {
+    if within(5) != 5 {
+        return 1
+    }
+    let mut j: i32 = 0
+    @max_iterations(3)
+    while j < 1000000 {
+        j = j + 1
+    }
+    return 2
+}

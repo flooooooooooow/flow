@@ -2,13 +2,13 @@
 
 *One is the right multiplicative identity.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — m * succ(0) = m, i
+## Derived fact 1: m * succ(0) = m, i
 
 **Coordinate.** the natural numbers · multiplication · one is the right identity · **Derived fact**
 
-*Source: peano/induction — Gries & Schneider, Ch. 3*
+*Source: peano/induction: Gries & Schneider, Ch. 3*
 
 *Built on: one is the left identity, for multiplication on the natural numbers, order does not matter, for multiplication on the natural numbers*
 

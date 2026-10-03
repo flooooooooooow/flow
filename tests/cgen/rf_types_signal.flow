@@ -1,0 +1,16 @@
+# IQ, IQSample and Signal<R> from stdlib/rf.flow lower to C complex and a struct.
+import "stdlib/rf.flow"
+
+function main() -> i32 {
+    let z: IQ = iq(1.0, 2.0)
+    let s: IQSample = iq_sample(1.0, 2.0)
+    let sig: Signal<Hz1000> = signal_new<Hz1000>(8, 1000)
+    signal_set<Hz1000>(sig, 0, c64(3.0, 4.0))
+    let v: c64 = signal_get<Hz1000>(sig, 0)
+    let len: i32 = signal_length<Hz1000>(sig)
+    signal_free<Hz1000>(sig)
+    if len != 8 {
+        return 1
+    }
+    return 0
+}

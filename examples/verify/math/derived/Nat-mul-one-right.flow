@@ -1,10 +1,10 @@
 # @module examples.verify.math.derived
 # @means  One is the right multiplicative identity.
-# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @from   peano: https://en.wikipedia.org/wiki/Peano_axioms
 # @tier   derived
 
 # @means  m * succ(0) = m, i.e. m * 1 = m.
-# @from   peano/induction — Gries & Schneider, Ch. 3
+# @from   peano/induction: Gries & Schneider, Ch. 3
 # @tier   derived
 # @needs  «Nat» «multiplication» «one is the left identity», «Nat» «multiplication» «order does not matter»
 

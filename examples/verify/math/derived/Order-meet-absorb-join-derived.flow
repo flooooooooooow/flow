@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Meet absorbs into join in a lattice witness.
-# @from   davey-priestley — *Introduction to Lattices and Order*
+# @from   davey-priestley: *Introduction to Lattices and Order*
 # @tier   derived
 
 # @means  meet(a, join(a, b)) = meet(a, b).

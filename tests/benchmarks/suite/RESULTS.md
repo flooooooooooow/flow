@@ -15,7 +15,7 @@
 
 *Python N-body uses 1M iterations (100x smaller) due to speed constraints.
 
-### 🎯 Key Result: Flow matches or beats C performance
+### Key Result: Flow matches or beats C performance
 
 ## Detailed Comparison Table
 
@@ -42,11 +42,11 @@
 
 ## Key Findings
 
-### 🚀 Flow matches C performance
+### Flow matches C performance
 
 Flow compiles to C, so both languages generate nearly identical machine code when using the same optimization flags. The ~3% variance is within measurement noise.
 
-### 📊 Flow is 50-100x faster than Python
+### Flow is 50-100x faster than Python
 
 For compute-intensive tasks, Flow's compiled nature provides massive speedups over interpreted Python.
 
@@ -158,8 +158,7 @@ Headroom              5298 µs     5311 µs    99% margin
 ## Reproduction
 
 ```bash
-cd tests/benchmarks/suite
-./run_benchmarks.sh all
+./flow tool benchmarks/suite/run_benchmarks.flow all
 ```
 
 ## Methodology Notes

@@ -1,0 +1,12 @@
+# One module reached through two string-path spellings is bundled once
+# (#1073). Here x/c.flow is imported directly and as dotpath/./x/c.flow from
+# m/a.flow; the bundle used to emit it twice (redefinition of c_val). A `..`
+# spelling is refused as an unsafe import path (#678), so the second
+# spelling uses an interior `./`.
+
+import "tests/fixtures/modules/dotpath/x/c.flow"
+import "tests/fixtures/modules/dotpath/m/a.flow"
+
+function main() -> i32 {
+    return a_val() + c_val() - 14
+}

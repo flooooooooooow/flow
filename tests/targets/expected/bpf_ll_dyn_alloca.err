@@ -1,0 +1,1 @@
+error: bpfel requires statically bounded stack allocation; found dynamic alloca count '%n'

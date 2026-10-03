@@ -6,7 +6,7 @@ mechanism. Updated with Phase 0–2 work (#285 epic).
 | Rule | Summary | Flow status | Generated C | Evidence |
 |------|---------|-------------|-------------|----------|
 | 8.1 | Prototypes required | PARTIAL | PARTIAL | Extern decls emit prototypes; `#283` `-Werror=implicit-function-declaration` under safety |
-| 8.7 | External linkage unused | OPEN | OPEN | — |
+| 8.7 | External linkage unused | OPEN | OPEN | - |
 | 11.8 | Null deref | PARTIAL | PARTIAL | PR #288 `FLOW_NONNULL` (pending merge) |
 | 12.1 | Signed overflow | DEVIATION | DEVIATION | Runtime overflow codegen removed; UBSan via `FLOW_UBSAN=1` for testing (#275) |
 | 12.2 | Shift UB | PROVEN | PROVEN | Literal shift UB rejected at type-check time (#265) |
@@ -22,11 +22,11 @@ mechanism. Updated with Phase 0–2 work (#285 epic).
 
 ## Deviations
 
-1. **Rule 21.6 (stdio)** — `println` and diagnostics default to `printf`/`fprintf`
+1. **Rule 21.6 (stdio)**: `println` and diagnostics default to `printf`/`fprintf`
    via the `FLOW_LOG` and `FLOW_DIAG` macros. Safety-critical builds override
    these with `-DFLOW_LOG(fmt, ...)=...` and `-DFLOW_DIAG(msg)=...` to route
    through a certified I/O abstraction. Justification: host tooling visibility.
-2. **Rule 21.3 (heap)** — default/`safety` profiles may still emit `malloc` for
+2. **Rule 21.3 (heap)**: default/`safety` profiles may still emit `malloc` for
    strcat/closures until the temp-arena PR merges and flight forbids heap.
 
 ## Related

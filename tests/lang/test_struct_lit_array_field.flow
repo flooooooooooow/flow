@@ -1,0 +1,32 @@
+# A struct literal may set an array field from an array variable. C cannot
+# initialize an array member from an array lvalue, so flowc copies it in
+# after building the literal (corpus parity: stdlib/audio/safety Limiter).
+
+struct Window {
+    taps: array<f32, 4>,
+    gain: f32,
+    spare: array<f32, 4>
+}
+
+function make(g: f32) -> Window {
+    let z: array<f32, 4> = [1.0, 2.0, 3.0, 4.0]
+    return Window {
+        taps: z,
+        gain: g,
+        spare: z
+    }
+}
+
+function main() -> i32 {
+    let w: Window = make(0.5)
+    if w.gain != 0.5 {
+        return 1
+    }
+    if w.taps[0] != 1.0 or w.taps[3] != 4.0 {
+        return 2
+    }
+    if w.spare[2] != 3.0 {
+        return 3
+    }
+    return 0
+}

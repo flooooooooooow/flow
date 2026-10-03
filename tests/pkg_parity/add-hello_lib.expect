@@ -1,0 +1,51 @@
+$ flow_pkg add hello_lib
+[exit 0]
+== stdout
+[94mResolved hello_lib@0.1.0 from flow-packages[0m
+[92m✓ Added hello_lib = "0.1.0"[0m
+[94m↓ hello_lib@0.1.0 from registry[0m
+[92m✓ Installed hello_lib from @ROOT@/registry/packages/hello_lib[0m
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+description = ""
+author = ""
+license = "MIT"
+entry = "src/main.flow"
+
+[dependencies]
+hello_lib = "0.1.0"
+
+[dev-dependencies]
+
+[build]
+host = "flowc"
+# test_command = "flow run tests/test_main.flow"
+
+[conventions]
+# avoid = [
+#   { pattern = "reverse for loop", reason = "generates incorrect step direction (#410)", workaround = "use while with explicit decrement" },
+# ]
+
+[patterns]
+# math = "use fabs((x) as f64) as f32 for single-precision abs"
+== flow.lock
+{
+  "version": 1,
+  "packages": {
+    "hello_lib": {
+      "version": "0.1.0",
+      "source": "registry",
+      "resolved": {
+        "path": "@ROOT@/registry/packages/hello_lib"
+      }
+    }
+  }
+}
+== flow_packages
+D flow_packages
+D flow_packages/hello_lib
+F flow_packages/hello_lib/flow.toml -rw-r--r-- 4026651674 206
+D flow_packages/hello_lib/src
+F flow_packages/hello_lib/src/lib.flow -rw-r--r-- 3973085612 213

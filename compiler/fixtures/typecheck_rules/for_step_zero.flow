@@ -1,0 +1,8 @@
+# expect: for range step must not be zero
+function main() -> i32 {
+    let mut total: i32 = 0
+    for i in 0..10 step 0 {
+        total = total + i
+    }
+    return total
+}

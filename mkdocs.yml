@@ -91,6 +91,10 @@ nav:
   - Standard Library:
     - API Reference: library/stdlib-reference.md
     - Core: library/core.md
+    - Processes: library/process.md
+    - Regular Expressions: library/regex.md
+    - errno and Signals: library/os.md
+    - Byte Buffer: library/bytebuf.md
     - Autodiff: library/autodiff.md
     - Dynamics: library/dynamics.md
     - Audio: library/audio.md

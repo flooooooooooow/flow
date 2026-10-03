@@ -1028,8 +1028,15 @@
 
   /* ---- expressions ---- */
 
+  // `|>` binds loosest, as in the native parser: `-5 |> f(0, _)` is
+  // f(0, -5) and `a + b |> f()` is f(a + b).
   Parser.prototype.parseExpression = function () {
-    return this.parseLogicalOr();
+    var expr = this.parseLogicalOr();
+    while (this.at('PIPELINE')) {
+      var t = this.next();
+      expr = this.parsePipelineStage(expr, t.line);
+    }
+    return expr;
   };
 
   function binaryLevel(nextFn, types) {
@@ -1200,9 +1207,6 @@
         this.next();
         var f = this.expect('IDENT', 'field name');
         expr = { kind: 'Field', base: expr, field: f.value, line: t.line };
-      } else if (t.type === 'PIPELINE') {
-        this.next();
-        expr = this.parsePipelineStage(expr, t.line);
       } else {
         return expr;
       }
@@ -1320,7 +1324,7 @@
     if (name === 'sort' || name === 'sortBy' || name === 'order' ||
         name === 'find') {
       throw new Unsupported(
-        "'|> " + name + "' (use ./flow run — see tutorials/pipelines.md)", line);
+        "'|> " + name + "' (use ./flow run, see tutorials/pipelines.md)", line);
     }
     if (name === 'choose') {
       this.next();

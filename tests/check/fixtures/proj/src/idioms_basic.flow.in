@@ -1,0 +1,62 @@
+# Idiom hints: unused mut, compound assignment, loops, suppression.
+# TODO: this comment trips the TODO avoid pattern.
+
+struct Point {
+    x: i32,
+    y: i32
+}
+
+function copy_point(p: Point) -> Point {
+    return Point { x: p.x, y: p.y }
+}
+
+function swap_point(p: Point) -> Point {
+    return Point { x: p.y, y: p.x }
+}
+
+function mixed(p: Point, q: Point) -> Point {
+    return Point { x: p.x, y: q.y }
+}
+
+export function counters() -> i32 {
+    let mut unused: i32 = 3
+    let mut total: i32 = 0
+    let mut step: i32 = 1
+    step += 2
+    for i in 0 to 4 {
+        let mut inner: i32 = i
+        total = total + inner
+    }
+    let mut w: i32 = 5
+    while w > 10 {
+        let mut deep: i32 = w
+        w = deep - 1
+    }
+    # flow-idiom: allow FIDIOM001
+    let mut quiet: i32 = 1
+    return total + unused + step + quiet
+}
+
+function shadowed() -> i32 {
+    let mut a: i32 = 1
+    let mut a: i32 = 2
+    return a
+}
+
+function spaced() -> i32 {
+    let s: string = "Grüße, wörld"; let mut after_unicode: i32 = 1
+
+    let mut after_blank_spaces: i32 = 2
+	let mut tabbed: i32 = 3
+    let t: string = "tab\tinside"
+    let mut after_string: i32 = 4
+    return after_unicode + after_blank_spaces + tabbed + after_string
+}
+
+function main() -> i32 {
+    let mut arr: array<i32, 2> = [1, 2]
+    arr[0] = 5
+    let mut pt: Point = Point { x: 1, y: 2 }
+    pt.x = 3
+    return counters() + shadowed() + spaced() + arr[0] + pt.x
+}

@@ -1,0 +1,23 @@
+# One file reached by two spellings of its path is one module.
+#
+# std.bytebuf re-exports "../../compiler/src/bytebuf.flow", which resolves
+# to lib/stdlib/../../compiler/src/bytebuf.flow. This program also imports
+# compiler/src/bytebuf.flow directly, and as ./compiler/src/./bytebuf.flow
+# (a program may not write `..` itself). The resolver folds `name/..` and
+# `.` segments, so all three name the same module and ByteBuf is defined
+# once. It used to be loaded twice: "Struct 'ByteBuf' already defined".
+# Exit 0 on success.
+
+import std.bytebuf { ByteBuf, bb_new, bb_puts, bb_len, bb_free }
+import "compiler/src/bytebuf.flow"
+import "./compiler/src/./bytebuf.flow"
+
+function main() -> i32 {
+    let b: ptr<ByteBuf> = bb_new(8)
+    bb_puts(b, "one module")
+    if bb_len(b) != 10 {
+        return 1
+    }
+    bb_free(b)
+    return 0
+}

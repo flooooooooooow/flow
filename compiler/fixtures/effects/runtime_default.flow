@@ -1,0 +1,50 @@
+# Effects parity fixture: permissive mode keeps the legacy zero/no-op fallback.
+# An unhandled operation returns zero, a called
+# function sees the installed handler, a nested handle overrides and then
+# restores, and an operation the handler lacks falls back to zero.
+# effects-mode: permissive
+
+effect Log {
+    info(msg: string) -> void,
+    metric(name: string, value: i32) -> i32,
+}
+
+capability Console {
+    effect Log,
+    function info(msg: string) -> void {
+        printf("[console] %s\n", msg)
+    },
+    function metric(name: string, value: i32) -> i32 {
+        printf("[metric] %s %d\n", name, value)
+        return value + 100
+    },
+}
+
+capability Quiet {
+    effect Log,
+    function info(msg: string) -> void {
+        let unused: i32 = 0
+    },
+}
+
+function helper() -> i32 {
+    return Log.metric("helper", 7)
+}
+
+function main() -> i32 {
+    Log.info("dropped")
+    let a: i32 = Log.metric("unhandled", 5)
+    printf("a=%d\n", a)
+    handle Log with Console {
+        let b: i32 = helper()
+        printf("b=%d\n", b)
+        handle Log with Quiet {
+            Log.info("quiet")
+            let c: i32 = Log.metric("quiet has no metric", 3)
+            printf("c=%d\n", c)
+        }
+        Log.info("restored")
+    }
+    Log.info("dropped again")
+    return 0
+}

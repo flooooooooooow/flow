@@ -1,0 +1,24 @@
+import "stdlib/dynamics/lqr.flow"
+import "stdlib/dynamics/ga_analysis.flow"
+
+function main() -> i32 {
+    # --- dsys DSL expansion (auto-generated) ---
+    let __dsys_cart_A: array<f64, 4> = [1.0, 0.02, 0.0, 1.0]
+    let __dsys_cart_B: array<f64, 2> = [0.0, 0.02]
+    let __dsys_cart_C: array<f64, 2> = [1.0, 0.0]
+    let __dsys_cart: DynamicalSystem = dsys_discrete(2, 1, 1, 0.02, Matrix { data: __dsys_cart_A, rows: 2, cols: 2 }, Matrix { data: __dsys_cart_B, rows: 2, cols: 1 }, Matrix { data: __dsys_cart_C, rows: 1, cols: 2 })
+    let cart: DynamicalSystem = __dsys_cart
+    let __lqr_0_q: array<f64, 2> = [10.0, 1.0]
+    let mut __lqr_0_k: array<f64, 2> = [0.0, 0.0]
+    let __lqr_0_iters: i32 = dlqr_diag_q_scalar_u(__dsys_cart.A.data, __dsys_cart.B.data, __lqr_0_q, 0.10000000000000001, 2, __lqr_0_k, 300)
+    let k0: f64 = __lqr_0_k[0]
+    let k1: f64 = __lqr_0_k[1]
+    let __lqr_1_q: array<f64, 2> = [1.0, 1.0]
+    let mut __lqr_1_k: array<f64, 2> = [0.0, 0.0]
+    let __lqr_1_iters: i32 = dlqr_diag_q_scalar_u(__dsys_cart.A.data, __dsys_cart.B.data, __lqr_1_q, 2.0, 2, __lqr_1_k, 200)
+    let a: f64 = __lqr_1_k[0]
+    let b: f64 = __lqr_1_k[1]
+    # --- end dsys DSL expansion ---
+
+    return 0
+}

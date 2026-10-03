@@ -2,9 +2,9 @@
 
 *One times one is one for natural numbers.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 1 * 1 = 1, i
+## Derived fact 1: 1 * 1 = 1, i
 
 **Coordinate.** the natural numbers · multiplication · one times one is one · **Derived fact**
 

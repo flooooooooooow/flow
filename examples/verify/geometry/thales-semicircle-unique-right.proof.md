@@ -2,9 +2,9 @@
 
 *The right angle on a semicircle is the unique inscribed right angle on that diameter.*
 
-**Source.** euclid — Elements, Book III, Proposition 31
+**Source.** euclid: Elements, Book III, Proposition 31
 
-## Derived fact 1 — angle ACB equals one right angle for C on semicircle AB uniquely
+## Derived fact 1: angle ACB equals one right angle for C on semicircle AB uniquely
 
 **Coordinate.** the Euclidean plane · circle · semicircle unique right inscribed · **Derived fact**
 

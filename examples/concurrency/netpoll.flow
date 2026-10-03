@@ -1,3 +1,4 @@
+# effects-mode: permissive
 # NetpollAsyncIO — real kqueue/epoll (Go netpoller analogue)
 # Run: ./flow run examples/concurrency/netpoll.flow
 

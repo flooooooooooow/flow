@@ -1,0 +1,18 @@
+# One i64 accumulator per every block, zeroed at init.
++ int64_t __every_0_acc;
++ self->__every_0_acc = 0;
+# dt converts to nanoseconds once per step.
++ int64_t __dt_ns = (int64_t)((dt * 1000000000.0));
+# Firing loop with the catch-up cap.
++ self->__every_0_acc = (self->__every_0_acc + __dt_ns);
++ while (self->__every_0_acc >= 10000000 && __every_0_n < 1024) {
++ self->__every_0_acc = (self->__every_0_acc - 10000000);
+# Writes are staged, then assigned.
++ double __tick_0_ticks = (self->ticks + 1.0);
++ self->ticks = __tick_0_ticks;
+# The solver pins a default dt; dt stays caller-supplied.
++ void Counter_step(Counter* self, double dt)
+~ ^double Counter_default_dt\(\) \{$
++ return 0.001;
+~ ^double Plain_default_dt\(\) \{$
+exit 0

@@ -2,9 +2,9 @@
 
 *Zero on the right annihilates integer multiplication.*
 
-**Source.** landau — *Foundations of Analysis*, Ch. 1
+**Source.** landau: *Foundations of Analysis*, Ch. 1
 
-## Derived fact 1 — m * 0 = 0
+## Derived fact 1: m * 0 = 0
 
 **Coordinate.** the integers · multiplication · zero on the right gives zero · **Derived fact**
 

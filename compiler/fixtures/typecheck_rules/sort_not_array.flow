@@ -1,0 +1,6 @@
+# expect: Declarative sort requires a sized array, got i32
+function main() -> i32 {
+    let x: i32 = 3
+    let y: i32 = x |> sort
+    return 0
+}

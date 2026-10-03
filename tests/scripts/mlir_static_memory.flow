@@ -1,0 +1,136 @@
+import "scripts/tools/lib/testrun.flow"
+import "tests/scripts/harness.flow"
+
+function check_static_views() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_static_memory/main.flow")
+    sl_push(argv, "--sizes=64,32,48")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "flow.static_arena_bytes = 112") { return T_FAIL }
+    if not a_contains(output, "flow.static_arena_alignment = 16") { return T_FAIL }
+    if not a_contains(output, "flow.static_buffer_lifetimes = \"0:2,3:5,1:4\"") { return T_FAIL }
+    if not a_contains(output, "flow.static_buffer_offsets = \"0,0,64\"") { return T_FAIL }
+    if not a_contains(output, "flow.static_buffer_interference = \"0:2,1:2\"") { return T_FAIL }
+    if not a_contains(output, "flow.static_memory_target = \"cpu\"") { return T_FAIL }
+    if not a_contains(output, "flow.static_memory_space = \"stack\"") { return T_FAIL }
+    if not a_contains(output, "%arena = memref.alloca() : memref<112xi8>") { return T_FAIL }
+    if not a_contains(output, "memref.subview %arena[64][48][1]") { return T_FAIL }
+    if not a_contains(output, "offset: 64") { return T_FAIL }
+    return T_PASS
+}
+
+function check_shared_target() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_static_memory/main.flow")
+    sl_push(argv, "--target=nvptx")
+    sl_push(argv, "--memory-space=shared")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "flow.static_memory_target = \"nvptx\"") { return T_FAIL }
+    if not a_contains(output, "flow.static_arena_alignment = 16") { return T_FAIL }
+    if not a_contains(output, "flow.static_buffer_lifetimes = \"0:2,3:5,1:4\"") { return T_FAIL }
+    if not a_contains(output, "flow.static_memory_space = \"shared\"") { return T_FAIL }
+    if not a_contains(output, "%arena = memref.alloca() : memref<112xi8, 3>") { return T_FAIL }
+    if not a_contains(output, "to memref<48xi8, strided<[1], offset: 64>, 3>") { return T_FAIL }
+    return T_PASS
+}
+
+function check_all_gpu_targets_support_shared_memory() -> i32 {
+    let targets: ptr<ProcStrs> = sl_of2("gpu", "amdgpu")
+    let mut i: i32 = 0
+    while i < 2 {
+        let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_static_memory/main.flow")
+        sl_push(argv, "--target=" + sl_get(targets, i))
+        sl_push(argv, "--memory-space=shared")
+        if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+        let output: string = read_text(t_out())
+        if not a_contains(output, "flow.static_memory_target = \"" + sl_get(targets, i) + "\"") { return T_FAIL }
+        if not a_contains(output, "flow.static_memory_space = \"shared\"") { return T_FAIL }
+        if not a_contains(output, "memref<112xi8, 3>") { return T_FAIL }
+        i = i + 1
+    }
+    return T_PASS
+}
+
+function check_configurable_alignment() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_static_memory/main.flow")
+    sl_push(argv, "--alignment=32")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "flow.static_arena_alignment = 32") { return T_FAIL }
+    return T_PASS
+}
+
+function check_rejects_non_power_of_two_alignment() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_static_memory/main.flow")
+    sl_push(argv, "--alignment=24")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "power of two") { return T_FAIL }
+    return T_PASS
+}
+
+function check_shared_requires_gpu() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_static_memory/main.flow")
+    sl_push(argv, "--target=cpu")
+    sl_push(argv, "--memory-space=shared")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "shared memory requires a GPU target") { return T_FAIL }
+    return T_PASS
+}
+
+function check_rejects_unknown_memory_space() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_static_memory/main.flow")
+    sl_push(argv, "--memory-space=register")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--memory-space must be 'stack' or 'shared'") { return T_FAIL }
+    return T_PASS
+}
+
+function check_rejects_malformed_sizes() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_static_memory/main.flow")
+    sl_push(argv, "--sizes=64,32,48oops")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--sizes expects a,b,c") { return T_FAIL }
+    return T_PASS
+}
+
+function check_rejects_overflow_sizes() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_static_memory/main.flow")
+    sl_push(argv, "--sizes=2147483648,32,48")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--sizes expects a,b,c") { return T_FAIL }
+    return T_PASS
+}
+
+function check_rejects_unknown_target() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_static_memory/main.flow")
+    sl_push(argv, "--target=tpu")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--target must be one of") { return T_FAIL }
+    return T_PASS
+}
+
+function check_rejects_non_positive_sizes() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_static_memory/main.flow")
+    sl_push(argv, "--sizes=64,0,48")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "sizes must be positive") { return T_FAIL }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("mlir_static_memory")
+    t_start()
+    t_end("scratchpad_views", check_static_views())
+    t_end("gpu_shared_target", check_shared_target())
+    t_end("all_gpu_shared_targets", check_all_gpu_targets_support_shared_memory())
+    t_end("configurable_alignment", check_configurable_alignment())
+    t_end("invalid_alignment", check_rejects_non_power_of_two_alignment())
+    t_end("shared_target_gate", check_shared_requires_gpu())
+    t_end("unknown_memory_space_rejected", check_rejects_unknown_memory_space())
+    t_end("malformed_sizes_rejected", check_rejects_malformed_sizes())
+    t_end("overflow_sizes_rejected", check_rejects_overflow_sizes())
+    t_end("unknown_target_rejected", check_rejects_unknown_target())
+    t_end("non_positive_sizes_rejected", check_rejects_non_positive_sizes())
+    t_done()
+    return 0
+}

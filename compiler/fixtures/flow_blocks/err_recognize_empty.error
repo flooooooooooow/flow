@@ -1,0 +1,2 @@
+Error: 'recognize' block in flow 'Osc' needs at least one domain at line 4, column 1
+write 'recognize { numerical realtime causal safety memory }'

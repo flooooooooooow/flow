@@ -1,0 +1,70 @@
+import "stdlib/dynamics/wfc_ga_coupling.flow"
+
+function main() -> i32 {
+    # --- dsys DSL expansion (auto-generated) ---
+    let h_rollout: Horizon = horizon_finite(20)
+    let __dsys_plant_A: array<f64, 4> = [1.0, 0.10000000000000001, 0.0, 1.0]
+    let __dsys_plant_B: array<f64, 2> = [0.0, 0.10000000000000001]
+    let __dsys_plant_C: array<f64, 2> = [1.0, 0.0]
+    let __dsys_plant: DynamicalSystem = dsys_discrete(2, 1, 1, 0.10000000000000001, Matrix { data: __dsys_plant_A, rows: 2, cols: 2 }, Matrix { data: __dsys_plant_B, rows: 2, cols: 1 }, Matrix { data: __dsys_plant_C, rows: 1, cols: 2 })
+    let plant: DynamicalSystem = __dsys_plant
+    let __wfc_layout_cells: array<i32, 6> = [-1, -1, -1, -1, -1, -1]
+    let __wfc_layout_opts: array<i32, 12> = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+    for __wfc_i in 0 to 6 {
+        __wfc_layout_cells[__wfc_i] = -1
+    }
+    for __wfc_j in 0 to 12 {
+        __wfc_layout_opts[__wfc_j] = 1
+    }
+    __wfc_layout_cells[1] = 0
+    let __wfc_layout: WFCGrid = WFCGrid { width: 3, height: 2, cells: __wfc_layout_cells, options: __wfc_layout_opts }
+    let mut report: GAAnalysisReport = GAAnalysisReport {
+        plant_controllable: 0, plant_spectral_radius: 0.0,
+        closed_spectral_radius: 0.0, gramian_open_finite: 0.0,
+        gramian_open_infinite: 0.0, closed_loop_energy: 0.0,
+        baseline_cost: 0.0, evolved_cost: 0.0, fitness_drop: 0.0,
+        convergence_gen: 0, stable_closed_loop: 0
+    }
+    let __ga_a0_k1: array<f64, 12> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let __ga_a0_k2: array<f64, 12> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let __ga_a0_fit: array<f64, 12> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let __ga_a0_bk1: array<f64, 1> = [0.0]
+    let __ga_a0_bk2: array<f64, 1> = [0.0]
+    let __ga_a0_hist: array<f64, 30> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let __dsys_b0: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b1: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b2: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b3: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b4: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b5: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b6: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b7: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b8: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b9: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b10: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b11: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __ga_a0_cfg: GAConfig = GAConfig { population: 12, generations: 30, horizon: 20, mutation: 0.29999999999999999 }
+    report = ga_analyze_control_search(__dsys_plant, 20, __ga_a0_cfg, __ga_a0_k1, __ga_a0_k2, __ga_a0_fit, __ga_a0_bk1, __ga_a0_bk2, __ga_a0_hist, __dsys_b0, __dsys_b1, __dsys_b2, __dsys_b3, __dsys_b4, __dsys_b5, __dsys_b6, __dsys_b7, __dsys_b8, __dsys_b9, __dsys_b10, __dsys_b11)
+    let mut k1: f64 = 0.0
+    let mut k2: f64 = 0.0
+    k1 = __ga_a0_bk1[0]
+    k2 = __ga_a0_bk2[0]
+    let g: CoupledGuidance = couple_ga_wfc_guidance(report, k1, k2, 11, 9)
+    let __wfc_rep_layout: WFCRunReport = wfc_run_guided(__wfc_layout, 2, g)
+    let mut wfc_collapsed: i32 = __wfc_rep_layout.collapsed
+    let mut wf: f64 = __wfc_rep_layout.wall_fraction
+    let mut ent: f64 = __wfc_rep_layout.mean_entropy
+    let __dsys_b12: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b13: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b14: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __guide_ev_0: GuidedEvolutionReport = guide_state_evolution(__dsys_plant, k1, k2, g, __wfc_rep_layout, 20, __dsys_b12, __dsys_b13, __dsys_b14)
+    let mut B_scale: f64 = __guide_ev_0.input_scale
+    let mut E_guided: f64 = __guide_ev_0.layout_energy
+    let mut rho_guided: f64 = __guide_ev_0.guided_spectral_radius
+    let mut stable_guided: i32 = __guide_ev_0.stable_guided
+    let mut cc: i32 = __guide_ev_0.collapsed_cells
+    let mut wfr: f64 = __wfc_rep_layout.wall_fraction
+    # --- end dsys DSL expansion ---
+
+    return 0
+}

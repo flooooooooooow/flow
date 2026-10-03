@@ -1,0 +1,11 @@
+FIR-G: funcs=2 blocks=4 ops=16 values=11 operands=5 types=4
+call ops: 0
+reachable: main
+dead: saxpy
+call graph:
+effects / pure:
+  saxpy: effects=0x0000 pure=True
+  main: effects=0x0000 pure=True
+device: requested=cpu chosen=cpu
+opt candidates: total=1 by_kind={'dead_elim': 1}
+  [dead_elim] saxpy score=24.0 (unreachable from roots)

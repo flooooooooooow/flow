@@ -2,9 +2,9 @@
 
 *Zero is the left additive identity in a ring.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.1
+**Source.** dummit-foote: *Abstract Algebra*, §7.1
 
-## Derived fact 1 — 0 + r = r
+## Derived fact 1: 0 + r = r
 
 **Coordinate.** Ring · addition · zero is the left additive identity · **Derived fact**
 

@@ -1,0 +1,13 @@
+<!DOCTYPE HTML>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>Error response</title>
+    </head>
+    <body>
+        <h1>Error response</h1>
+        <p>Error code: 400</p>
+        <p>Message: Bad request version ('FOO/1.0').</p>
+        <p>Error code explanation: 400 - Bad request syntax or unsupported method.</p>
+    </body>
+</html>

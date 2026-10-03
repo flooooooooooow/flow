@@ -1,0 +1,4 @@
+# Ported from tests/unit/test_c_generator_abi.py.
++ typedef struct Point {
++ Point pts[2] = { (Point){ .x = 1, .y = 2 }, (Point){ .x = 3, .y = 4 } };
+exit 13

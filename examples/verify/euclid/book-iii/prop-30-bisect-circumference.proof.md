@@ -2,13 +2,13 @@
 
 *To bisect a given circumference of a circle.*
 
-**Source.** euclid — Elements, Book III, Proposition 30
+**Source.** euclid: Elements, Book III, Proposition 30
 
-## Derived fact 1 — To bisect a given circumference of a circle
+## Derived fact 1: To bisect a given circumference of a circle
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 30: to bisect a given circumference of a circle · **Derived fact**
 
-*Source: euclid — Elements, Book III, Proposition 30*
+*Source: euclid: Elements, Book III, Proposition 30*
 
 *Built on: proposition 2: a perpendicular from the center bisects the chord, for Euclid Book III on the Euclidean plane, proposition 10: bisect a given segment, for Book I of the Elements in on the Euclidean plane*
 

@@ -19,7 +19,7 @@
 #   R reseed   P pause   Esc quit
 #
 # Run (headless, gated):
-#   FLOW_HOST=python ./flow record examples/procgen/domain_warp.flow \
+#   ./flow record examples/procgen/domain_warp.flow \
 #       --frames 4 --out /tmp/pg_domain_warp
 # Run (windowed):
 #   ./flow gfx examples/procgen/domain_warp.flow

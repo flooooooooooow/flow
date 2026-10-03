@@ -2,9 +2,9 @@
 
 *Join associates on the lattice order.*
 
-**Source.** davey-priestley — *Introduction to Lattices and Order*
+**Source.** davey-priestley: *Introduction to Lattices and Order*
 
-## Derived fact 1 — (a ∨ b) ∨ c = a ∨ (b ∨ c)
+## Derived fact 1: (a ∨ b) ∨ c = a ∨ (b ∨ c)
 
 **Coordinate.** Order · join · parentheses do not matter · **Derived fact**
 

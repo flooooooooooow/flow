@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  The 5-12-13 triangle satisfies the Pythagorean relation.
-# @from   euclid — Elements, Book I, Proposition 47
+# @from   euclid: Elements, Book I, Proposition 47
 # @tier   derived
 
 # @means  13 squared equals 5 squared plus 12 squared.

@@ -1,0 +1,105 @@
+# Sync packaging/homebrew/Formula to the Homebrew tap
+# (flooooooooooow/homebrew-flow): clone the tap, copy the formula and the
+# README, commit, push. Creates the public tap repository when it does not
+# exist yet.
+#
+#   ./flow tool packaging/homebrew/sync-tap.flow
+#
+# FLOW_TAP_OWNER and FLOW_TAP_REPO override the tap's owner and name.
+
+import "tools/flow_cli/sys.flow"
+import std.process { proc_argv, ProcCmd, ProcStrs, proc_arg }
+
+function git_in(dir: string, args: string) -> ptr<ProcStrs> {
+    let argv: ptr<ProcStrs> = sl_of3("git", "-C", dir)
+    sl_extend(argv, s_words(args))
+    return argv
+}
+
+function main() -> i32 {
+    tool_only("packaging/homebrew/sync-tap.flow")
+    let root: string = abs_dir(env_or("FLOW_REPO_ROOT", cwd_logical()))
+    env_unset("FLOW_REPO_ROOT")
+    let src_formula: string = root + "/packaging/homebrew/Formula/flow.rb"
+    let tap_owner: string = env_or("FLOW_TAP_OWNER", "flooooooooooow")
+    let tap_repo: string = env_or("FLOW_TAP_REPO", "homebrew-flow")
+    let tap_full: string = tap_owner + "/" + tap_repo
+
+    if not is_file(src_formula) {
+        errln("missing formula: " + src_formula)
+        return 1
+    }
+    if not have("gh") {
+        errln("gh CLI required")
+        return 1
+    }
+
+    # Create the public tap repo if it does not exist.
+    let view: ptr<ProcCmd> = cmd(sl_of3("gh", "repo", "view"))
+    proc_arg(view, tap_full)
+    cmd_quiet(view)
+    if run(view) != 0 {
+        outln("Creating GitHub repo " + tap_full + " ...")
+        let mk: ptr<ProcStrs> = sl_of3("gh", "repo", "create")
+        sl_push2(mk, tap_full, "--public")
+        sl_push2(mk, "--description", "Homebrew tap for the Flow programming language")
+        sl_push2(mk, "--homepage", "https://github.com/flooooooooooow/flow")
+        check(run_argv(mk))
+    }
+
+    let tmp: string = mktemp_dir_default()
+    if s_len(tmp) == 0 {
+        return 1
+    }
+    on_exit_remove(tmp)
+    let tap: string = tmp + "/tap"
+
+    outln("Cloning " + tap_full + " ...")
+    let clone: ptr<ProcStrs> = sl_of3("gh", "repo", "clone")
+    sl_push2(clone, tap_full, tap)
+    let cl: ptr<ProcCmd> = cmd(clone)
+    cmd_quiet_err(cl)
+    if run(cl) != 0 {
+        # Empty brand-new repo: init locally and set the remote.
+        mkdir_p_or_exit(tap)
+        check(run_argv(git_in(tap, "init -b main")))
+        let ra: ptr<ProcStrs> = git_in(tap, "remote add origin")
+        sl_push(ra, "https://github.com/" + tap_full + ".git")
+        check(run_argv(ra))
+    }
+
+    mkdir_p_or_exit(tap + "/Formula")
+    if not copy_file(src_formula, tap + "/Formula/flow.rb") {
+        cli_exit(1)
+    }
+    let readme: string = "# homebrew-flow\n\nHomebrew tap for [Flow](https://github.com/flooooooooooow/flow).\n\n```bash\nbrew tap flooooooooooow/flow\nbrew install flow\nflow help\n```\n\nFormula source of truth lives in the main repo at\n`packaging/homebrew/Formula/flow.rb`.\n"
+    let _w: bool = write_text(tap + "/README.md", readme)
+
+    check(run_argv(git_in(tap, "add Formula/flow.rb README.md")))
+    if run_argv(git_in(tap, "diff --cached --quiet")) == 0 {
+        outln("Tap already up to date.")
+        cli_exit(0)
+    }
+
+    let commit: ptr<ProcStrs> = git_in(tap, "-c user.email=flow-bot@users.noreply.github.com")
+    sl_push2(commit, "-c", "user.name=Flow Homebrew sync")
+    sl_push2(commit, "commit", "-m")
+    sl_push(commit, "Update flow formula from flooooooooooow/flow")
+    check(run_argv(commit))
+
+    check(run_argv(git_in(tap, "push -u origin HEAD:main")))
+    outln("Pushed tap: https://github.com/" + tap_full)
+    outln("Install with: brew tap flooooooooooow/flow && brew install flow")
+    cli_exit(0)
+    return 0
+}
+
+# These programs change files, run builds and publish, so they run only
+# as `./flow tool PATH.flow` (from build/flow-tools), never from a plain
+# `flow run` such as the corpus checks do.
+function tool_only(path: string) {
+    if not s_contains(proc_argv(0), "/flow-tools/") {
+        errln("run this with ./flow tool " + path)
+        cli_exit(2)
+    }
+}

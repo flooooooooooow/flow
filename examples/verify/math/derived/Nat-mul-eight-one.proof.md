@@ -2,9 +2,9 @@
 
 *Eight times one is eight.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 8 * 1 = 8
+## Derived fact 1: 8 * 1 = 8
 
 **Coordinate.** the natural numbers · multiplication · eight times one is eight · **Derived fact**
 

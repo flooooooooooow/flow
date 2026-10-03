@@ -2,9 +2,9 @@
 
 *The hypotenuse square equals the sum of leg squares explicitly.*
 
-**Source.** euclid — Elements, Book I, Proposition 47
+**Source.** euclid: Elements, Book I, Proposition 47
 
-## Derived fact 1 — c squared equals a squared plus b squared
+## Derived fact 1: c squared equals a squared plus b squared
 
 **Coordinate.** the Euclidean plane · right triangle · c squared equals sum of leg squares · **Derived fact**
 

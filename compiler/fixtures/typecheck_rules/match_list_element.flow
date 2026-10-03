@@ -1,0 +1,9 @@
+# expect: List pattern element string incompatible with array element type i32
+function main() -> i32 {
+    let xs: array<i32, 2> = [1, 2]
+    match xs {
+        ["a", b] => { return b }
+        _ => { return 0 }
+    }
+    return 0
+}

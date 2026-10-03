@@ -1,0 +1,4 @@
+analyze c {
+    lqr
+    Q 1
+}

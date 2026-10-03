@@ -2,9 +2,9 @@
 
 *The inscribed-to-central angle ratio is one half.*
 
-**Source.** euclid — Elements, Book III, Proposition 20
+**Source.** euclid: Elements, Book III, Proposition 20
 
-## Derived fact 1 — angle APB times two equals angle AOB
+## Derived fact 1: angle APB times two equals angle AOB
 
 **Coordinate.** the Euclidean plane · circle · inscribed central ratio is half · **Derived fact**
 

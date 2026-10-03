@@ -2,9 +2,9 @@
 
 *A ring homomorphism squares zero to zero.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.3
+**Source.** dummit-foote: *Abstract Algebra*, §7.3
 
-## Derived fact 1 — f(0) * f(0) = 0
+## Derived fact 1: f(0) * f(0) = 0
 
 **Coordinate.** RingHom · multiplication · zero squared maps to zero · **Derived fact**
 

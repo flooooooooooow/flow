@@ -1,4 +1,4 @@
-# Flow — Vision
+# Flow: Vision
 
 > A programming language where the primary abstraction is the evolution of systems through time.
 
@@ -46,7 +46,7 @@ Flow removes those boundaries. **The mathematical model is the executable progra
 
 ## Philosophy
 
-Programming should describe behavior, not implementation.
+Programming should describe behavior rather than implementation.
 
 A programmer should write:
 
@@ -489,13 +489,13 @@ An honest mapping from vision pillars to the current implementation (2026-07):
 
 | Vision pillar | Status today |
 |---|---|
-| General-purpose core (functions, generics, ADTs, pattern matching, traits) | **Shipped** — statically-typed language compiling to C via `./flow` |
-| Dynamical systems | **Seed exists** — `dsys` declarative surface syntax for linear systems (`examples/dynamics/`), stdlib dynamics module |
-| Analysis (controllability, spectral, gramians) | **Seed exists** — `sense on <plant>` blocks over `dsys` systems |
-| Control synthesis | **Seed exists** — GA-based gain search over rollout horizons (`ga evolve on`) |
-| Automatic differentiation | **Shipped** — native autodiff |
-| Algebraic effects | **Shipped** — see `docs/effects-showcase.md` |
-| `evolves as` continuous dynamics, ODE solvers as codegen | Not yet — the flagship gap |
+| General-purpose core (functions, generics, ADTs, pattern matching, traits) | **Shipped**: statically-typed language compiling to C via `./flow` |
+| Dynamical systems | **Seed exists**: `dsys` declarative surface syntax for linear systems (`examples/dynamics/`), stdlib dynamics module |
+| Analysis (controllability, spectral, gramians) | **Seed exists**: `sense on <plant>` blocks over `dsys` systems |
+| Control synthesis | **Seed exists**: GA-based gain search over rollout horizons (`ga evolve on`) |
+| Automatic differentiation | **Shipped**: native autodiff |
+| Algebraic effects | **Shipped**: see `docs/effects-showcase.md` |
+| `evolves as` continuous dynamics, ODE solvers as codegen | Not yet: the flagship gap |
 | Units in the type system / dimensional analysis | Not yet |
 | Explicit time (`every 1 ms`, `after`, `within`), scheduling | Not yet |
 | Hybrid events (`when x reaches 0 { x becomes ... }`) | Not yet |

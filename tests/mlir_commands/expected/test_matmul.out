@@ -1,0 +1,36 @@
+Matrix Multiplication Optimizations (Flow)
+Size: 4x4 x 4x2 (A: 4x4, B: 4x2, C: 4x2)
+Naive:
+<GFLOPS>
+Input A:
+1.0000002.0000003.0000004.000000
+5.0000006.0000007.0000008.000000
+9.00000010.00000011.00000012.000000
+13.00000014.00000015.00000016.000000
+Input B:
+1.0000002.000000
+3.0000004.000000
+5.0000006.000000
+7.0000008.000000
+Output C (naive):
+50.00000060.000000
+114.000000140.000000
+178.000000220.000000
+242.000000300.000000
+Vectorized (unroll):
+<GFLOPS>
+Vectorized (auto):
+<GFLOPS>
+Parallelized:
+<GFLOPS>
+Tiled + parallelized:
+<GFLOPS>
+Tiled + unrolled + parallelized:
+<GFLOPS>
+Baseline (Flow naive GFLOP/s):
+<GFLOPS>
+✅ Program finished
+Exit code: 0
+Assembly: <ROOT>/build/matmul_optimizations.s
+<ASM>
+MLIR: <ROOT>/build/matmul_mlir.mlir

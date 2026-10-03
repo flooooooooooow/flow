@@ -1,0 +1,5 @@
+Project examples
+----------------
+  greet                src/main.flow
+
+Run: flow examples run <name>

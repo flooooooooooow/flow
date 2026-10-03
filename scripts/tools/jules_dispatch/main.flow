@@ -1,0 +1,991 @@
+# Open a Jules session for every open issue that does not already have one.
+#
+# Run it as `./flow tool jules_dispatch`. Older dispatchers read
+# `jules_sessions.json`, which drifts: sessions get deleted server side and
+# the file still lists them, so issues get skipped that have no live
+# session. This asks Jules what actually exists instead, and only
+# dispatches the difference.
+#
+# Capacity is finite. A refused create is retried rather than dropped, and
+# the issue stays in the queue until it lands.
+#
+# State lives in jules_dispatch_state.json in the working directory:
+# {"dispatched": {"<n>": {...}}, "failed": {"<n>": "<detail>"}}, written with
+# sorted keys and two-space indents as Python's json.dump wrote it.
+#
+# JULES_DISPATCH_NO_SLEEP=1 skips the waits (for testing with fake CLIs).
+
+import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_at, ft_find, ft_contains, ft_slice, ft_from, ft_read_file, ft_write_file, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_sort, StrList }
+import .json { json_parse, json_error, json_kind, json_str, json_key, json_first, json_next, json_get, json_is_int, json_int, json_quote, json_kind_null, json_kind_true, json_kind_false, json_kind_number, json_kind_string, json_kind_array, json_kind_object, Json }
+import .unicode { uc_strip, uc_lower_str, uc_decode, uc_len, uc_is_space }
+import .proc { pr_quote, pr_run }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function getenv(name: string) -> string
+    function getpid() -> i32
+    function sleep(secs: u32) -> u32
+    function unlink(path: string) -> i32
+}
+
+const REPO: string = "flooooooooooow/flow"
+const STATE_PATH: string = "jules_dispatch_state.json"
+const RETRY_SECONDS: i32 = 45
+const MAX_CONSECUTIVE_REFUSALS: i32 = 40
+# Sessions finish on their own schedule, so poll for a free slot slowly.
+const CAPACITY_WAIT_SECONDS: i32 = 300
+const DEFAULT_MAX_ACTIVE: i32 = 8
+const DEFAULT_MAX_AGENT_PRS: i32 = 12
+const DECISION_LOG_PATH: string = "jules_dispatch_decisions.jsonl"
+
+# ---------------------------------------------------------------------------
+# An ordered string map of already-serialised JSON values
+# ---------------------------------------------------------------------------
+
+struct Obj {
+    keys: ptr<StrList>
+    vals: ptr<StrList>
+}
+
+function obj_new() -> ptr<Obj> {
+    let o: ptr<Obj> = malloc(16) as ptr<Obj>
+    o[0].keys = ft_list_new()
+    o[0].vals = ft_list_new()
+    return o
+}
+
+function obj_find(o: ptr<Obj>, key: string) -> i32 {
+    let mut i: i32 = 0
+    while i < ft_list_len(o[0].keys) {
+        if ft_eq(ft_list_get(o[0].keys, i), key) {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+function obj_set(o: ptr<Obj>, key: string, val: string) -> void {
+    let at: i32 = obj_find(o, key)
+    if at >= 0 {
+        let vals: ptr<StrList> = o[0].vals
+        let items: ptr<string> = vals[0].items
+        items[at] = val
+        return
+    }
+    ft_list_push(o[0].keys, key)
+    ft_list_push(o[0].vals, val)
+}
+
+function obj_len(o: ptr<Obj>) -> i32 {
+    return ft_list_len(o[0].keys)
+}
+
+function spaces(n: i32) -> string {
+    let mut s: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        s = s + " "
+        i = i + 1
+    }
+    return s
+}
+
+# json.dumps(obj, indent=2, sort_keys=True) at nesting `depth`, with each
+# value already serialised for depth + 1.
+function obj_dump(o: ptr<Obj>, depth: i32) -> string {
+    let n: i32 = obj_len(o)
+    if n == 0 {
+        return "{}"
+    }
+    let sorted: ptr<StrList> = ft_list_new()
+    let mut i: i32 = 0
+    while i < n {
+        ft_list_push(sorted, ft_list_get(o[0].keys, i))
+        i = i + 1
+    }
+    ft_list_sort(sorted)
+    let pad: string = spaces((depth + 1) * 2)
+    let mut out: string = "{\n"
+    i = 0
+    while i < n {
+        let k: string = ft_list_get(sorted, i)
+        if i > 0 {
+            out = out + ",\n"
+        }
+        out = out + pad + json_quote(k) + ": " + ft_list_get(o[0].vals, obj_find(o, k))
+        i = i + 1
+    }
+    return out + "\n" + spaces(depth * 2) + "}"
+}
+
+# Re-serialise a parsed value as json.dump(indent=2, sort_keys=True) would.
+function dump_value(j: ptr<Json>, id: i32, depth: i32) -> string {
+    let k: i32 = json_kind(j, id)
+    if k == json_kind_null() {
+        return "null"
+    }
+    if k == json_kind_true() {
+        return "true"
+    }
+    if k == json_kind_false() {
+        return "false"
+    }
+    if k == json_kind_number() {
+        return json_str(j, id)
+    }
+    if k == json_kind_string() {
+        return json_quote(json_str(j, id))
+    }
+    if k == json_kind_array() {
+        let mut c: i32 = json_first(j, id)
+        if c < 0 {
+            return "[]"
+        }
+        let pad: string = spaces((depth + 1) * 2)
+        let mut out: string = "[\n"
+        let mut first: bool = true
+        while c >= 0 {
+            if first == false {
+                out = out + ",\n"
+            }
+            first = false
+            out = out + pad + dump_value(j, c, depth + 1)
+            c = json_next(j, c)
+        }
+        return out + "\n" + spaces(depth * 2) + "]"
+    }
+    return obj_dump(obj_from(j, id, depth), depth)
+}
+
+function obj_from(j: ptr<Json>, id: i32, depth: i32) -> ptr<Obj> {
+    let o: ptr<Obj> = obj_new()
+    let mut c: i32 = json_first(j, id)
+    while c >= 0 {
+        obj_set(o, json_key(j, c), dump_value(j, c, depth + 1))
+        c = json_next(j, c)
+    }
+    return o
+}
+
+# ---------------------------------------------------------------------------
+# State
+# ---------------------------------------------------------------------------
+
+struct State {
+    top: ptr<Obj>
+    dispatched: ptr<Obj>
+    failed: ptr<Obj>
+}
+
+function load_state() -> ptr<State> {
+    let st: ptr<State> = malloc(24) as ptr<State>
+    st[0].top = obj_new()
+    st[0].dispatched = obj_new()
+    st[0].failed = obj_new()
+    let text: string = ft_read_file(STATE_PATH)
+    let mut j: ptr<Json> = null
+    if text as ptr<u8> != null {
+        j = json_parse(text)
+    }
+    if text as ptr<u8> == null or ft_len(json_error(j)) > 0 or json_kind(j, 0) != json_kind_object() {
+        obj_set(st[0].top, "dispatched", "")
+        obj_set(st[0].top, "failed", "")
+        return st
+    }
+    let mut c: i32 = json_first(j, 0)
+    while c >= 0 {
+        let key: string = json_key(j, c)
+        if ft_eq(key, "dispatched") and json_kind(j, c) == json_kind_object() {
+            st[0].dispatched = obj_from(j, c, 1)
+            obj_set(st[0].top, key, "")
+        } elif ft_eq(key, "failed") and json_kind(j, c) == json_kind_object() {
+            st[0].failed = obj_from(j, c, 1)
+            obj_set(st[0].top, key, "")
+        } else {
+            obj_set(st[0].top, key, dump_value(j, c, 1))
+        }
+        c = json_next(j, c)
+    }
+    return st
+}
+
+# Only the keys the state had are written back, as json.dump(state) would.
+function save_state(st: ptr<State>) -> void {
+    if obj_find(st[0].top, "dispatched") >= 0 {
+        obj_set(st[0].top, "dispatched", obj_dump(st[0].dispatched, 1))
+    }
+    if obj_find(st[0].top, "failed") >= 0 {
+        obj_set(st[0].top, "failed", obj_dump(st[0].failed, 1))
+    }
+    let _w: bool = ft_write_file(STATE_PATH, obj_dump(st[0].top, 0))
+}
+
+# ---------------------------------------------------------------------------
+# Processes
+# ---------------------------------------------------------------------------
+
+function tmp_path(tag: string) -> string {
+    return "/tmp/jules_dispatch." + ft_itoa(getpid()) + "." + tag
+}
+
+function slurp_and_remove(path: string) -> string {
+    let s: string = ft_read_file(path)
+    let _u: i32 = unlink(path)
+    if s as ptr<u8> == null {
+        return ""
+    }
+    return s
+}
+
+function nap(secs: i32) -> void {
+    let skip: string = getenv("JULES_DISPATCH_NO_SLEEP")
+    if skip as ptr<u8> != null and ft_eq(skip, "1") {
+        return
+    }
+    let _s: u32 = sleep(secs as u32)
+}
+
+# Run `cmd` under a 180 s limit when coreutils timeout exists.
+function limited(cmd: string) -> string {
+    return "if command -v timeout >/dev/null 2>&1; then timeout -k 5 180 " + cmd + "; else " + cmd + "; fi"
+}
+
+function is_digit(c: i32) -> bool {
+    return c >= 48 and c <= 57
+}
+
+# Issue numbers that already have a live Jules session for this repo.
+function covered_issue_numbers() -> ptr<StrList> {
+    let outp: string = tmp_path("list")
+    let rc: i32 = pr_run(limited("jules remote list --session") + " > " + pr_quote(outp) + " 2>/dev/null")
+    let text: string = slurp_and_remove(outp)
+    if rc == 127 {
+        ft_errln("dispatch_uncovered_jules: jules: command not found")
+        return null
+    }
+    let covered: ptr<StrList> = ft_list_new()
+    let lines: ptr<StrList> = ft_split_lines(text)
+    let mut i: i32 = 0
+    while i < ft_list_len(lines) {
+        let line: string = ft_list_get(lines, i)
+        if ft_contains(line, REPO) {
+            # re.search(r"issue #(\d+)")
+            let p: ptr<u8> = line as ptr<u8>
+            let mut at: i32 = ft_find(line, "issue #", 0)
+            while at >= 0 {
+                let s: i32 = at + 7
+                let mut e: i32 = s
+                while is_digit(p[e] as i32) {
+                    e = e + 1
+                }
+                if e > s {
+                    let num: string = strip_zeros(ft_slice(line, s, e))
+                    if list_has(covered, num) == false {
+                        ft_list_push(covered, num)
+                    }
+                    at = -1
+                } else {
+                    at = ft_find(line, "issue #", at + 1)
+                }
+            }
+        }
+        i = i + 1
+    }
+    return covered
+}
+
+# int(str) then str() again: drop leading zeros.
+function strip_zeros(s: string) -> string {
+    let mut i: i32 = 0
+    while i < ft_len(s) - 1 and ft_at(s, i, "0") {
+        i = i + 1
+    }
+    return ft_from(s, i)
+}
+
+function list_has(l: ptr<StrList>, s: string) -> bool {
+    let mut i: i32 = 0
+    while i < ft_list_len(l) {
+        if ft_eq(ft_list_get(l, i), s) {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+function env_int(name: string, fallback: i32) -> i32 {
+    let raw: string = getenv(name)
+    if raw as ptr<u8> == null or ft_len(raw) == 0 {
+        return fallback
+    }
+    let p: ptr<u8> = raw as ptr<u8>
+    let mut value: i32 = 0
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        let c: i32 = p[i] as i32
+        if c < 48 or c > 57 {
+            return fallback
+        }
+        value = value * 10 + (c - 48)
+        i = i + 1
+    }
+    if value <= 0 {
+        return fallback
+    }
+    return value
+}
+
+function is_word_byte(c: i32) -> bool {
+    return (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or
+           (c >= 97 and c <= 122) or c == 95 or c == 46 or c == 47 or c == 45
+}
+
+function is_stopword(word: string) -> bool {
+    return ft_eq(word, "the") or ft_eq(word, "and") or ft_eq(word, "for") or
+           ft_eq(word, "with") or ft_eq(word, "from") or ft_eq(word, "into") or
+           ft_eq(word, "flow") or ft_eq(word, "test") or ft_eq(word, "tests") or
+           ft_eq(word, "issue") or ft_eq(word, "add") or ft_eq(word, "fix") or
+           ft_eq(word, "update") or ft_eq(word, "improve") or ft_eq(word, "code")
+}
+
+function has_word(text: string, word: string) -> bool {
+    let tp: ptr<u8> = text as ptr<u8>
+    let mut at: i32 = ft_find(text, word, 0)
+    while at >= 0 {
+        let before_ok: bool = at == 0 or is_word_byte(tp[at - 1] as i32) == false
+        let after: i32 = at + ft_len(word)
+        let after_ok: bool = tp[after] == 0 or is_word_byte(tp[after] as i32) == false
+        if before_ok and after_ok {
+            return true
+        }
+        at = ft_find(text, word, at + 1)
+    }
+    return false
+}
+
+function title_overlap(a: string, b: string) -> bool {
+    let aa: string = uc_lower_str(a)
+    let bb: string = uc_lower_str(b)
+    if ft_len(aa) >= 18 and ft_contains(bb, aa) {
+        return true
+    }
+    if ft_len(bb) >= 18 and ft_contains(aa, bb) {
+        return true
+    }
+
+    let p: ptr<u8> = aa as ptr<u8>
+    let mut start: i32 = -1
+    let mut i: i32 = 0
+    let mut shared: i32 = 0
+    let mut distinctive: bool = false
+    while true {
+        let c: i32 = p[i] as i32
+        if c != 0 and is_word_byte(c) {
+            if start < 0 {
+                start = i
+            }
+        } else {
+            if start >= 0 {
+                let word: string = ft_slice(aa, start, i)
+                if ft_len(word) >= 4 and is_stopword(word) == false and has_word(bb, word) {
+                    shared = shared + 1
+                    if ft_contains(word, "/") or ft_contains(word, ".") or ft_contains(word, "_") {
+                        distinctive = true
+                    }
+                }
+                start = -1
+            }
+            if c == 0 {
+                break
+            }
+        }
+        i = i + 1
+    }
+    return shared >= 4 or (shared >= 2 and distinctive)
+}
+
+function contains_issue_ref(text: string, number: string) -> bool {
+    if text as ptr<u8> == null {
+        return false
+    }
+    let needle: string = "#" + number
+    let p: ptr<u8> = text as ptr<u8>
+    let mut at: i32 = ft_find(text, needle, 0)
+    while at >= 0 {
+        let after: i32 = at + ft_len(needle)
+        let c: i32 = p[after] as i32
+        if c < 48 or c > 57 {
+            return true
+        }
+        at = ft_find(text, needle, at + 1)
+    }
+    return false
+}
+
+# ---------------------------------------------------------------------------
+# Issues
+# ---------------------------------------------------------------------------
+
+struct Issue {
+    number: i64
+    title: string
+    body: string
+    labels: string
+}
+
+function task_text(arr: ptr<Issue>, k: i32) -> string {
+    let mut body: string = arr[k].body
+    if body as ptr<u8> == null or ft_len(body) == 0 {
+        body = "(no description)"
+    }
+    return "Work on issue #" + i64_str(arr[k].number) + ": " + arr[k].title + "\n\nLabels: " + arr[k].labels + "\n\n## Issue\n" + body + "\n\n## How this repository expects work to be done\n- Follow Flow's own idioms. Read neighbouring code before adding a pattern.\n- Anything under compiler/src changes the self-hosted compiler. The generated\n  bootstrap C must be regenerated so it matches, and the three self-host\n  scripts have to stay green: bootstrap_from_c.sh, selfcompile_audit.flow and\n  roundtrip.flow.\n- Run the suites that cover what you touched. `python3 -m pytest tests/unit`\n  for the Python host, `./flow test --tier2 --strict` for the language.\n- A test that cannot fail proves nothing. Where you add one, check it fails\n  without your change.\n- If the issue turns out to be already fixed, say so and show what proves it\n  rather than inventing a change.\n"
+}
+
+function i64_str(n: i64) -> string {
+    if n == 0 {
+        return "0"
+    }
+    let digits: string = "0123456789"
+    let mut v: i64 = n
+    let mut neg: bool = false
+    if v < 0 {
+        neg = true
+        v = 0 - v
+    }
+    let mut s: string = ""
+    while v > 0 {
+        let d: i32 = (v % 10) as i32
+        s = ft_slice(digits, d, d + 1) + s
+        v = v / 10
+    }
+    if neg {
+        return "-" + s
+    }
+    return s
+}
+
+# `gh issue list` as a sorted issue array; null when gh failed.
+function open_issues(count: ptr<i32>) -> ptr<Issue> {
+    let outp: string = tmp_path("issues")
+    let rc: i32 = pr_run("gh issue list --repo " + REPO + " --state open --limit 300 --json number,title,body,labels > " + pr_quote(outp))
+    let text: string = slurp_and_remove(outp)
+    if rc != 0 {
+        ft_errln("dispatch_uncovered_jules: gh issue list exited with status " + ft_itoa(rc))
+        return null
+    }
+    let j: ptr<Json> = json_parse(text)
+    if ft_len(json_error(j)) > 0 {
+        ft_errln("dispatch_uncovered_jules: cannot parse gh output: " + json_error(j))
+        return null
+    }
+    let mut n: i32 = 0
+    let mut c: i32 = json_first(j, 0)
+    while c >= 0 {
+        n = n + 1
+        c = json_next(j, c)
+    }
+    let arr: ptr<Issue> = malloc(((n + 1) * 32) as i64) as ptr<Issue>
+    let mut i: i32 = 0
+    c = json_first(j, 0)
+    while c >= 0 {
+        arr[i].number = json_int(j, json_get(j, c, "number"))
+        arr[i].title = json_str(j, json_get(j, c, "title"))
+        let b: i32 = json_get(j, c, "body")
+        if b >= 0 and json_kind(j, b) == json_kind_string() {
+            arr[i].body = json_str(j, b)
+        } else {
+            arr[i].body = null
+        }
+        let mut labels: string = ""
+        let ls: i32 = json_get(j, c, "labels")
+        if ls >= 0 {
+            let mut l: i32 = json_first(j, ls)
+            let mut first: bool = true
+            while l >= 0 {
+                if first == false {
+                    labels = labels + ", "
+                }
+                first = false
+                labels = labels + json_str(j, json_get(j, l, "name"))
+                l = json_next(j, l)
+            }
+        }
+        if ft_len(labels) == 0 {
+            labels = "None"
+        }
+        arr[i].labels = labels
+        i = i + 1
+        c = json_next(j, c)
+    }
+    # Stable insertion sort by number, as list.sort(key=number).
+    let mut a: i32 = 1
+    while a < n {
+        let num: i64 = arr[a].number
+        let t: string = arr[a].title
+        let bd: string = arr[a].body
+        let lb: string = arr[a].labels
+        let mut b2: i32 = a - 1
+        while b2 >= 0 and arr[b2].number > num {
+            arr[b2 + 1].number = arr[b2].number
+            arr[b2 + 1].title = arr[b2].title
+            arr[b2 + 1].body = arr[b2].body
+            arr[b2 + 1].labels = arr[b2].labels
+            b2 = b2 - 1
+        }
+        arr[b2 + 1].number = num
+        arr[b2 + 1].title = t
+        arr[b2 + 1].body = bd
+        arr[b2 + 1].labels = lb
+        a = a + 1
+    }
+    count[0] = n
+    return arr
+}
+
+# ---------------------------------------------------------------------------
+# Pull requests / backpressure
+# ---------------------------------------------------------------------------
+
+struct Pull {
+    number: i64
+    title: string
+    body: string
+    head: string
+    draft: bool
+}
+
+function open_pulls(count: ptr<i32>) -> ptr<Pull> {
+    let outp: string = tmp_path("prs")
+    let cmd: string = "gh pr list --repo " + REPO + " --state open --limit 200 --json number,title,body,headRefName,isDraft > " + pr_quote(outp)
+    let rc: i32 = pr_run(cmd)
+    let text: string = slurp_and_remove(outp)
+    if rc != 0 {
+        ft_errln("dispatch_uncovered_jules: gh pr list exited with status " + ft_itoa(rc))
+        return null
+    }
+    let j: ptr<Json> = json_parse(text)
+    if ft_len(json_error(j)) > 0 {
+        ft_errln("dispatch_uncovered_jules: cannot parse gh pr output: " + json_error(j))
+        return null
+    }
+    let mut n: i32 = 0
+    let mut c: i32 = json_first(j, 0)
+    while c >= 0 {
+        n = n + 1
+        c = json_next(j, c)
+    }
+    let arr: ptr<Pull> = malloc(((n + 1) * 48) as i64) as ptr<Pull>
+    let mut i: i32 = 0
+    c = json_first(j, 0)
+    while c >= 0 {
+        arr[i].number = json_int(j, json_get(j, c, "number"))
+        arr[i].title = json_str(j, json_get(j, c, "title"))
+        let body_id: i32 = json_get(j, c, "body")
+        if body_id >= 0 and json_kind(j, body_id) == json_kind_string() {
+            arr[i].body = json_str(j, body_id)
+        } else {
+            arr[i].body = ""
+        }
+        let head_id: i32 = json_get(j, c, "headRefName")
+        if head_id >= 0 and json_kind(j, head_id) == json_kind_string() {
+            arr[i].head = json_str(j, head_id)
+        } else {
+            arr[i].head = ""
+        }
+        let draft_id: i32 = json_get(j, c, "isDraft")
+        arr[i].draft = draft_id >= 0 and json_kind(j, draft_id) == json_kind_true()
+        i = i + 1
+        c = json_next(j, c)
+    }
+    count[0] = n
+    return arr
+}
+
+function main_ci_failed() -> bool {
+    let outp: string = tmp_path("main-ci")
+    let cmd: string = "gh run list --repo " + REPO +
+        " --branch main --workflow CI --limit 1 --json status,conclusion > " +
+        pr_quote(outp) + " 2>/dev/null"
+    let rc: i32 = pr_run(cmd)
+    let text: string = slurp_and_remove(outp)
+    if rc != 0 or text as ptr<u8> == null or ft_len(text) == 0 {
+        return false
+    }
+    let j: ptr<Json> = json_parse(text)
+    if ft_len(json_error(j)) > 0 {
+        return false
+    }
+    let first: i32 = json_first(j, 0)
+    if first < 0 {
+        return false
+    }
+    let status_id: i32 = json_get(j, first, "status")
+    let conclusion_id: i32 = json_get(j, first, "conclusion")
+    if status_id < 0 or conclusion_id < 0 {
+        return false
+    }
+    if json_kind(j, status_id) != json_kind_string() or
+       json_kind(j, conclusion_id) != json_kind_string() {
+        return false
+    }
+    return ft_eq(json_str(j, status_id), "completed") and
+           ft_eq(json_str(j, conclusion_id), "failure")
+}
+
+function is_agent_pr(pulls: ptr<Pull>, i: i32) -> bool {
+    let body: string = uc_lower_str(pulls[i].body)
+    let head: string = uc_lower_str(pulls[i].head)
+    return ft_contains(body, "jules.google.com") or
+           ft_contains(body, "created automatically by jules") or
+           ft_contains(head, "jules/") or ft_contains(head, "jules-")
+}
+
+function agent_pr_count(pulls: ptr<Pull>, n: i32) -> i32 {
+    let mut total: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if is_agent_pr(pulls, i) {
+            total = total + 1
+        }
+        i = i + 1
+    }
+    return total
+}
+
+function overlapping_pr(pulls: ptr<Pull>, n: i32, issues: ptr<Issue>, k: i32) -> i64 {
+    let number: string = i64_str(issues[k].number)
+    let mut i: i32 = 0
+    while i < n {
+        if contains_issue_ref(pulls[i].body, number) or
+           contains_issue_ref(pulls[i].head, number) or
+           title_overlap(issues[k].title, pulls[i].title) {
+            return pulls[i].number
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+function issue_priority(issues: ptr<Issue>, k: i32) -> i32 {
+    let text: string = uc_lower_str(issues[k].title + " " + issues[k].labels)
+    let mut score: i32 = 0
+    if ft_contains(text, "security") {
+        score = score + 1000
+    }
+    if ft_contains(text, "regression") or ft_contains(text, "correctness") or ft_contains(text, "bug") {
+        score = score + 800
+    }
+    if ft_contains(text, "ci") or ft_contains(text, "build") {
+        score = score + 700
+    }
+    if ft_contains(text, "release") {
+        score = score + 600
+    }
+    if ft_contains(text, "compiler") or ft_contains(text, "self-host") {
+        score = score + 400
+    }
+    if ft_contains(text, "cleanup") or ft_contains(text, "refactor") or
+       ft_contains(text, "optimize") or ft_contains(text, "optimization") or
+       ft_contains(text, "unused import") or ft_contains(text, "coverage") {
+        score = score - 200
+    }
+    return score
+}
+
+function sort_queue(issues: ptr<Issue>, queue: ptr<i32>, n: i32) -> void {
+    let mut i: i32 = 1
+    while i < n {
+        let item: i32 = queue[i]
+        let score: i32 = issue_priority(issues, item)
+        let num: i64 = issues[item].number
+        let mut j: i32 = i - 1
+        while j >= 0 {
+            let prev: i32 = queue[j]
+            let prev_score: i32 = issue_priority(issues, prev)
+            if prev_score > score or (prev_score == score and issues[prev].number < num) {
+                break
+            }
+            queue[j + 1] = queue[j]
+            j = j - 1
+        }
+        queue[j + 1] = item
+        i = i + 1
+    }
+}
+
+function decision_line(number: i64, decision: string, reason: string) -> string {
+    return "{\"issue\":" + i64_str(number) +
+           ",\"decision\":" + json_quote(decision) +
+           ",\"reason\":" + json_quote(reason) + "}\n"
+}
+
+function publish_claim(number: string, session: string, url: string) -> void {
+    let body: string = "<!-- flow-agent-claim provider=jules -->\n" +
+        "Jules implementation claim for issue #" + number + ": session " + session +
+        ". Lease is valid while the session appears in jules remote list --session." +
+        "\n" + url
+    let cmd: string = "gh issue comment " + number + " --repo " + REPO +
+        " --body " + pr_quote(body) + " >/dev/null 2>&1"
+    let _rc: i32 = pr_run(cmd)
+}
+
+# ---------------------------------------------------------------------------
+# Sessions
+# ---------------------------------------------------------------------------
+
+# Code point prefix of `s`, as s[:n].
+function cp_prefix(s: string, n: i32) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    let mut k: i32 = 0
+    while p[i] != 0 and k < n {
+        i = i + uc_len(p[i] as i32)
+        k = k + 1
+    }
+    return ft_slice(s, 0, i)
+}
+
+# End of a run of Unicode whitespace at `at`.
+function ws_end(p: ptr<u8>, at: i32) -> i32 {
+    let mut q: i32 = at
+    while p[q] != 0 and uc_is_space(uc_decode(p, q)) {
+        q = q + uc_len(p[q] as i32)
+    }
+    return q
+}
+
+# re.search(label + r"\s*" + rest); `digits` picks (\d+) over (https://\S+).
+function find_field(s: string, label: string, digits: bool) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut at: i32 = ft_find(s, label, 0)
+    while at >= 0 {
+        let v: i32 = ws_end(p, at + ft_len(label))
+        if digits {
+            let mut e: i32 = v
+            while is_digit(p[e] as i32) {
+                e = e + 1
+            }
+            if e > v {
+                return ft_slice(s, v, e)
+            }
+        } elif ft_at(s, v, "https://") {
+            let mut e2: i32 = v + 8
+            while p[e2] != 0 and uc_is_space(uc_decode(p, e2)) == false {
+                e2 = e2 + uc_len(p[e2] as i32)
+            }
+            if e2 > v + 8 {
+                return ft_slice(s, v, e2)
+            }
+        }
+        at = ft_find(s, label, at + 1)
+    }
+    return null as string
+}
+
+# Returns the session id (detail in out[0]) or null with the reason in out[0].
+function create_session(arr: ptr<Issue>, k: i32, out: ptr<string>) -> string {
+    let inp: string = tmp_path("in")
+    let outp: string = tmp_path("out")
+    let errp: string = tmp_path("err")
+    let _w: bool = ft_write_file(inp, task_text(arr, k))
+    let rc: i32 = pr_run(limited("jules remote new --repo " + REPO) + " < " + pr_quote(inp) + " > " + pr_quote(outp) + " 2> " + pr_quote(errp))
+    let _u: i32 = unlink(inp)
+    let stdout: string = slurp_and_remove(outp)
+    let stderr: string = slurp_and_remove(errp)
+    if rc == 124 or rc == 137 {
+        out[0] = "timeout"
+        return null as string
+    }
+    let session: string = find_field(stdout, "ID:", true)
+    if session as ptr<u8> != null {
+        let url: string = find_field(stdout, "URL:", false)
+        if url as ptr<u8> == null {
+            out[0] = ""
+        } else {
+            out[0] = url
+        }
+        return session
+    }
+    let mut src: string = stderr
+    if ft_len(src) == 0 {
+        src = stdout
+    }
+    out[0] = cp_prefix(uc_strip(src), 200)
+    return null as string
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    let st: ptr<State> = load_state()
+    let covered: ptr<StrList> = covered_issue_numbers()
+    if covered == null {
+        return 1
+    }
+
+    let pr_count: ptr<i32> = malloc(4) as ptr<i32>
+    pr_count[0] = 0
+    let pulls: ptr<Pull> = open_pulls(pr_count)
+    if pulls == null {
+        return 1
+    }
+
+    let count: ptr<i32> = malloc(4) as ptr<i32>
+    count[0] = 0
+    let issues: ptr<Issue> = open_issues(count)
+    if issues == null {
+        return 1
+    }
+
+    let max_active: i32 = env_int("JULES_MAX_ACTIVE", DEFAULT_MAX_ACTIVE)
+    let max_agent_prs: i32 = env_int("JULES_MAX_AGENT_PRS", DEFAULT_MAX_AGENT_PRS)
+    let active: i32 = ft_list_len(covered)
+    let agent_prs: i32 = agent_pr_count(pulls, pr_count[0])
+    let mut decisions: string = ""
+
+    let queue: ptr<i32> = malloc(((count[0] + 1) * 4) as i64) as ptr<i32>
+    let mut qn: i32 = 0
+    let mut i: i32 = 0
+    while i < count[0] {
+        let num: string = i64_str(issues[i].number)
+        if list_has(covered, num) {
+            decisions = decisions + decision_line(issues[i].number, "covered", "live Jules session")
+        } else {
+            let overlap: i64 = overlapping_pr(pulls, pr_count[0], issues, i)
+            if overlap > 0 {
+                decisions = decisions + decision_line(
+                    issues[i].number, "deferred",
+                    "overlaps open PR #" + i64_str(overlap)
+                )
+            } else {
+                queue[qn] = i
+                qn = qn + 1
+            }
+        }
+        i = i + 1
+    }
+
+    sort_queue(issues, queue, qn)
+
+    # A red required main CI is repository-wide backpressure. Keep only
+    # correctness/security/CI/build work until the baseline is healthy.
+    if main_ci_failed() {
+        let mut keep: i32 = 0
+        i = 0
+        while i < qn {
+            let k0: i32 = queue[i]
+            if issue_priority(issues, k0) >= 700 {
+                queue[keep] = k0
+                keep = keep + 1
+            } else {
+                decisions = decisions + decision_line(
+                    issues[k0].number, "deferred",
+                    "main CI is red; low-priority work paused"
+                )
+            }
+            i = i + 1
+        }
+        qn = keep
+        ft_outln("Backpressure: main CI is red; only repair-class work is eligible.")
+    }
+
+    ft_outln(ft_itoa(active) + " issues already have a live session.")
+    ft_outln(ft_itoa(agent_prs) + " open Jules PRs.")
+    ft_outln(ft_itoa(qn) + " eligible after overlap checks.")
+
+    if agent_prs >= max_agent_prs {
+        i = 0
+        while i < qn {
+            let k: i32 = queue[i]
+            decisions = decisions + decision_line(
+                issues[k].number, "backpressure",
+                "agent PR WIP limit " + ft_itoa(max_agent_prs) + " reached"
+            )
+            i = i + 1
+        }
+        let _w0: bool = ft_write_file(DECISION_LOG_PATH, decisions)
+        ft_outln("Backpressure: agent PR WIP limit reached; dispatch paused.")
+        return 0
+    }
+
+    let slots: i32 = max_active - active
+    if slots <= 0 {
+        i = 0
+        while i < qn {
+            let k2: i32 = queue[i]
+            decisions = decisions + decision_line(
+                issues[k2].number, "backpressure",
+                "active session limit " + ft_itoa(max_active) + " reached"
+            )
+            i = i + 1
+        }
+        let _w1: bool = ft_write_file(DECISION_LOG_PATH, decisions)
+        ft_outln("Backpressure: active Jules session limit reached; dispatch paused.")
+        return 0
+    }
+
+    let mut dispatch_n: i32 = qn
+    if dispatch_n > slots {
+        dispatch_n = slots
+    }
+    i = dispatch_n
+    while i < qn {
+        let deferred: i32 = queue[i]
+        decisions = decisions + decision_line(
+            issues[deferred].number, "backpressure",
+            "no active-session slot in this dispatch cycle"
+        )
+        i = i + 1
+    }
+
+    let detail: ptr<string> = malloc(8) as ptr<string>
+    let mut head: i32 = 0
+    let mut refusals: i32 = 0
+    while head < dispatch_n {
+        let k: i32 = queue[head]
+        let number: string = i64_str(issues[k].number)
+        detail[0] = ""
+        let session: string = create_session(issues, k, detail)
+        if session as ptr<u8> != null {
+            let entry: ptr<Obj> = obj_new()
+            obj_set(entry, "issue", number)
+            obj_set(entry, "title", json_quote(issues[k].title))
+            obj_set(entry, "session", json_quote(session))
+            obj_set(entry, "url", json_quote(detail[0]))
+            obj_set(st[0].dispatched, number, obj_dump(entry, 2))
+            save_state(st)
+            publish_claim(number, session, detail[0])
+            decisions = decisions + decision_line(issues[k].number, "dispatched", "session " + session)
+            head = head + 1
+            refusals = 0
+            ft_outln("  #" + number + " -> session " + session + "  (" + ft_itoa(dispatch_n - head) + " slots left)")
+            nap(3)
+            continue
+        }
+
+        if ft_contains(detail[0], "all sessions failed to create") or ft_contains(uc_lower_str(detail[0]), "quota") {
+            decisions = decisions + decision_line(issues[k].number, "backpressure", "provider capacity")
+            let _wc: bool = ft_write_file(DECISION_LOG_PATH, decisions)
+            ft_outln("  provider at capacity; stopping dispatch instead of spinning")
+            return 0
+        }
+
+        refusals = refusals + 1
+        if refusals >= MAX_CONSECUTIVE_REFUSALS {
+            obj_set(st[0].failed, number, json_quote(detail[0]))
+            save_state(st)
+            decisions = decisions + decision_line(issues[k].number, "failed", detail[0])
+            ft_outln("  #" + number + " giving up after " + ft_itoa(refusals) + " refusals: " + detail[0])
+            head = head + 1
+            refusals = 0
+            continue
+        }
+        ft_outln("  #" + number + " refused (" + detail[0] + "); retry " + ft_itoa(refusals) + " in " + ft_itoa(RETRY_SECONDS) + "s")
+        nap(RETRY_SECONDS)
+    }
+
+    let _w: bool = ft_write_file(DECISION_LOG_PATH, decisions)
+    ft_outln("Done. " + ft_itoa(head) + " dispatched this cycle, " +
+             ft_itoa(obj_len(st[0].failed)) + " total failures recorded.")
+    return 0
+}

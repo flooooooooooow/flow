@@ -1,0 +1,79 @@
+{
+  "summary": "FIR-G: funcs=8 blocks=28 ops=333 values=283 operands=230 types=7",
+  "call_edges": [
+    {
+      "caller": "pendulum_deriv",
+      "callee": "sin",
+      "op": 1
+    },
+    {
+      "caller": "pendulum_rk4",
+      "callee": "pendulum_deriv",
+      "op": 4
+    },
+    {
+      "caller": "pendulum_energy",
+      "callee": "cos",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "pendulum_energy",
+      "op": 3
+    },
+    {
+      "caller": "main",
+      "callee": "printf",
+      "op": 7
+    },
+    {
+      "caller": "main",
+      "callee": "pendulum_rk4",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "fabs",
+      "op": 2
+    }
+  ],
+  "effects": {
+    "printf": 24,
+    "sin": 16,
+    "cos": 16,
+    "fabs": 16,
+    "pendulum_deriv": 16,
+    "pendulum_rk4": 16,
+    "pendulum_energy": 16,
+    "main": 24
+  },
+  "pure": {
+    "printf": false,
+    "sin": false,
+    "cos": false,
+    "fabs": false,
+    "pendulum_deriv": false,
+    "pendulum_rk4": false,
+    "pendulum_energy": false,
+    "main": false
+  },
+  "reachable": [
+    "cos",
+    "fabs",
+    "main",
+    "pendulum_deriv",
+    "pendulum_energy",
+    "pendulum_rk4",
+    "printf",
+    "sin"
+  ],
+  "dead": [],
+  "num_call_ops": 40,
+  "device_requested": "cpu",
+  "device_chosen": "cpu",
+  "opt_candidates": {
+    "total": 0,
+    "by_kind": {},
+    "top": []
+  }
+}

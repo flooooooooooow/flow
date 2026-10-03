@@ -52,7 +52,7 @@ Build it with:
 ./flow wasm examples/wasm/parallel_sum.flow --threads --workers 8
 ```
 
-which is `wasm/flow_wasm_threads.py`. It compiles the program twice from one
+which is `./flow tool wasm_crossings threads`. It compiles the program twice from one
 source: once with `-pthread`, once without, and writes both plus the page into
 `site/wasm-crossings/threads/`.
 
@@ -126,7 +126,7 @@ available`, served over plain HTTP by `python3 -m http.server`. Console clean.
 Three things worth reading off that table:
 
 * 7.78x on 8 workers is near-linear. The threads are real OS threads on real
-  cores, not a scheduler trick.
+  cores. No scheduler trick is involved.
 * Both builds agree on the serial pass (78.57 vs 77.89 ms), so the threaded
   build costs nothing per-thread once V8 has tiered up.
 * All four passes produce a bit-identical sum. Shards touch disjoint memory
@@ -140,7 +140,7 @@ Emscripten thread out of a prewarmed pool.
 That 7.78x is the best of several runs on an otherwise idle machine. Repeating
 it later with a load average around 6 gave 2.64x to 2.89x, and the *serial*
 pass moved from 78 ms to 190 ms at the same time, which is the tell: the
-machine got slower, not the threading. Every run produced the same sum and the
+machine got slower. The threading did not change. Every run produced the same sum and the
 same PASS. Quote the speedup only alongside the serial baseline it was measured
 against.
 
@@ -150,7 +150,7 @@ That 19 microseconds is roughly 20x what a native `pthread_create` costs, and
 it is the whole story for fine-grained work. `examples/ml/digits_mlp_parallel.flow`
 splits every minibatch across 8 shards. With its original 250-sample batch that
 was 5,760 spawn-join round trips over a full 3-rep run, and compiled to WASM
-the parallel pass lost to its own dispatch — a shard was worth ~16
+the parallel pass lost to its own dispatch: a shard was worth ~16
 microseconds of work and cost ~19 microseconds to hand over, so the measured
 speedup was 0.46x while the runs still agreed to the last bit. The gallery's
 threaded build of the same example raises the batch to 1000 (60 parallel-for
@@ -159,8 +159,8 @@ Chrome.
 
 The parallel build is always *correct* under WASM; the grain just has to clear
 the dispatch threshold. Coarsen the shards and the speedup comes back, which is
-what `parallel_sum.flow` demonstrates — it is also a gallery card now, at
-~6.1–6.5x in Chrome with a ~0.4 ms floor for 8 empty spawn+join round trips.
+what `parallel_sum.flow` demonstrates. It is also a gallery card now, at
+~6.1 to 6.5x in Chrome with a ~0.4 ms floor for 8 empty spawn+join round trips.
 `examples/wasm/parallel_scaling.flow` is the same lesson as a whole speedup
 curve: one threaded gallery card that times the same Monte Carlo work at 2, 4
 and 8 workers against per-count serial baselines, measuring ~3.8x → ~7.5x →
@@ -181,9 +181,9 @@ measuring the baseline compiler.
 
 ### Mechanism
 
-Flow owns its shader codegen. `src/flow/metal_codegen.py` walks an `@gpu`
-function's AST and prints Metal Shading Language. `src/flow/wgsl_codegen.py`
-is its sibling: same AST, same walk, WGSL out. There is no LLVM, no SPIR-V and
+Flow owns its shader codegen. `tools/gpu/main.flow` walks an `@gpu`
+function's syntax tree and prints Metal Shading Language or WGSL from the
+same walk. There is no LLVM, no SPIR-V and
 no vendor compiler in between, so adding a shading language costs one file.
 
 ```
@@ -191,14 +191,14 @@ no vendor compiler in between, so adding a shading language costs one file.
 ./flow gpu lib/stdlib/gpu_kernels.flow --wgsl    # WGSL, same AST
 ```
 
-`wasm/flow_wasm_gpu.py` builds the demo. It takes one Flow file and produces
+`./flow tool wasm_crossings gpu` builds the demo. It takes one Flow file and produces
 two things from it:
 
 * a `.wgsl` per `@gpu` function, plus a small JSON reflection (binding indices,
   storage access modes, uniform layout, workgroup size) so the JavaScript host
   never has to re-parse Flow;
-* the same file through `src/flow/c_generator.py` into WASM, where the kernel
-  bodies become ordinary C.
+* the same file through flowc (`compiler/scripts/flowc_emit.flow`) into WASM,
+  where the kernel bodies become ordinary C.
 
 The CPU reference is not a re-implementation. Flow's C generator already emits
 a `gpu_thread_id()` stub, so `wasm/crossing_assets/gpu_thread_id_shim.c`
@@ -208,7 +208,7 @@ come from the same AST.
 
 ### Where WGSL forced a different structure from Metal
 
-Two things in `wgsl_codegen.py` are not a transliteration of the Metal backend:
+Two things in the WGSL emitter are not a transliteration of the Metal one:
 
 * **Buffers carry an access mode.** Metal binds everything as `device T*`.
   WGSL needs `var<storage, read>` or `var<storage, read_write>` declared up
@@ -301,22 +301,24 @@ subprotocol, and every `send`/`recv` becomes a binary WebSocket frame. Flow's
 this maps onto.
 
 ```
-python3 scripts/ws_echo_relay.py --port 9505 --tcp-port 9506
-python3 wasm/flow_wasm_sockets.py
+./flow tool ws_echo_relay --port 9505 --tcp-port 9506
+./flow tool wasm_crossings sockets
 ```
 
 ### The constraint people trip over
 
-**A browser cannot open a raw TCP socket.** Not to localhost, not to anywhere.
+**A browser cannot open a raw TCP socket.** That holds for localhost and for every other host.
 There is no API for it and there will not be one, because a page that could
 speak arbitrary TCP could port-scan your intranet. Whatever is on the far end
 has to speak WebSocket. This is a browser security rule and it is not a Flow
 limitation; the same wall stops every language.
 
-`scripts/ws_echo_relay.py` is the far end, written against the Python standard
-library so the demo has no dependencies: an HTTP upgrade handshake, a frame
-codec, and an echo. It also serves plain TCP on a second port so the identical
-Flow program can be run natively for comparison.
+`./flow tool ws_echo_relay` is the far end. It runs the Flow program in
+`scripts/tools/ws_echo_relay`, written on libc sockets so the demo has no
+dependencies: an HTTP upgrade handshake (SHA-1 and base64 from
+`scripts/tools/lib/digest.flow`), a frame codec, and an echo. It also serves
+plain TCP on a second port so the identical Flow program can be run natively
+for comparison.
 
 **Nothing may block.** Emscripten's `connect()` cannot wait for the handshake,
 so it returns success immediately and finishes later; `recv()` reports EAGAIN
@@ -348,8 +350,8 @@ saw eight 32-byte binary frames and sent eight back. Console clean.
 
 The browser is roughly 24x slower per round trip, and almost all of that is
 the poll loop's own granularity: `emscripten_sleep` is a `setTimeout`, whose
-floor in a foreground tab is about 4 ms. It is measuring the browser's timer,
-not the network.
+floor in a foreground tab is about 4 ms. It is measuring the browser's timer.
+The network barely registers.
 
 ### Background tabs distort this badly
 
@@ -379,10 +381,10 @@ file. Three backends matter:
 ./flow wasm examples/wasm/fs_counter.flow --fs idbfs
 ./flow wasm examples/wasm/fs_preload.flow --fs memfs --preload examples/wasm/data@/data
 
-# Same preload without the MEMFS/IDBFS crossing page — works for --backend=c|mlir:
+# Same preload without the MEMFS/IDBFS crossing page, works for --backend=c|mlir:
 ./flow wasm examples/wasm/hello_wasm.flow --backend=mlir \
   --preload examples/wasm/data@/data --out build/wasm/hello-preload
-python3 wasm/flow_wasm_fs.py          # builds all three demos and the page
+./flow tool wasm_crossings fs         # builds all three demos and the page
 ```
 
 ### The constraints people trip over
@@ -517,14 +519,16 @@ Two smaller ones. An Emscripten JS library only gets the runtime helpers it
 declares, so `python_last_error` has to name `$stringToNewUTF8` and `free` in
 its `__deps` or it fails at the first error with `stringToNewUTF8 is not
 defined`. And Pyodide's Python needs the module to exist in *its* filesystem,
-so the page writes `flow_demo.py` into `/home/pyodide/python/` before the run;
+so the page writes `flow_demo.py` into `/home/pyodide/python/` before the run,
+taking the text from the listing it already shows (no second copy is served);
 `python_add_to_path("python")` then appends to the real `sys.path` inside
-Pyodide.
+Pyodide. The program's second path, `../interop/python`, is where a native
+run from `examples/wasm` finds the same file.
 
 ### Measured, in Chrome
 
 `examples/wasm/python_embed.flow` against
-`examples/wasm/python/flow_demo.py`, both unchanged between the native and
+`examples/interop/python/flow_demo.py`, both unchanged between the native and
 browser builds. Pyodide 0.27.2 from jsDelivr, reporting **CPython 3.12.7**,
 `sys.platform` `emscripten`, loaded in 597 ms (cached).
 
@@ -570,7 +574,7 @@ possible and costs about 10 MB.
 
 Flow's concurrency story leans on stackful fibers (`lib/runtime/fiber_async.flow`
 over `runtime/flow_fiber.c`): `main` runs as a fiber so `async_delay` and
-`join` can suspend a Flow frame *mid-function* — locals intact — and the
+`join` can suspend a Flow frame *mid-function*, locals intact, and the
 scheduler resumes it later. Natively the context switch is assembly
 (`runtime/flow_fctx_*.S`). WebAssembly has no instruction to switch the stack
 pointer, so the obvious port does not exist. The crossing is the Emscripten
@@ -615,7 +619,7 @@ trace: T100:0 T101:0 T102:0 T100:1 T101:1 T102:1 T100:2 T101:2 T102:2 (done 100)
 join(100)+join(101)+join(102) = 3039 (expect 1003+1013+1023 = 3039)
 ```
 
-Strict round-robin — every task's step `k` lands before any step `k+1` — with
+Strict round-robin (every task's step `k` lands before any step `k+1`) with
 `main returned 0` and zero console errors. The same binary shape runs
 identically under node and natively (`./flow run`, M:1 pinned). The demo's
 pass gate is the join sum; the trace is the interleaving proof.

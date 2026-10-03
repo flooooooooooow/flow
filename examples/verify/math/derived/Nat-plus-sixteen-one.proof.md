@@ -2,9 +2,9 @@
 
 *Sixteen plus one is seventeen.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 16 + 1 = 17
+## Derived fact 1: 16 + 1 = 17
 
 **Coordinate.** the natural numbers · addition · sixteen plus one is seventeen · **Derived fact**
 

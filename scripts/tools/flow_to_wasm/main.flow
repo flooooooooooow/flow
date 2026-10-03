@@ -1,0 +1,446 @@
+# The legacy Flow to WebAssembly converter behind `flow wasm --legacy`.
+#
+#   flow tool flow_to_wasm <file.flow> [outdir]   convert one program
+#   flow tool flow_to_wasm --all                  convert the example list
+#
+# For each program it writes <name>.c (flowc through
+# compiler/scripts/flowc_emit.flow), tries emcc for <name>.js and <name>.wasm,
+# and writes <name>.html showing the Flow source, the C, and a run button
+# when the WebAssembly build worked. The default output directory is
+# wasm/wasm_examples. --all also writes an index.html there.
+#
+# The page text lives in scripts/tools/flow_to_wasm/assets. `flow tool` sets
+# FLOW_REPO_ROOT; without it the current directory is the repository root.
+# The current builder is `flow wasm` (scripts/tools/wasm_build).
+
+import .text { ft_out, ft_outln, ft_errln, ft_eq, ft_len, ft_read_file, ft_write_file, ft_exists, ft_starts, ft_ends, ft_replace, ft_slice, ft_from, ft_at, ft_rfind_byte, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_itoa, StrList }
+import .proc { pr_quote, pr_run, pr_capture, pr_chomp, pr_cwd, pr_is_dir }
+import .unicode { uc_len, uc_strip }
+
+extern {
+    function getenv(name: string) -> string
+    function malloc(size: i64) -> ptr<void>
+}
+
+function root() -> string {
+    let r: string = getenv("FLOW_REPO_ROOT")
+    if r as ptr<u8> == null or ft_len(r) == 0 {
+        return pr_cwd()
+    }
+    return r
+}
+
+function asset(name: string) -> string {
+    let text: string = ft_read_file(root() + "/scripts/tools/flow_to_wasm/assets/" + name)
+    if text as ptr<u8> == null {
+        ft_errln("flow_to_wasm: missing asset " + name)
+        return ""
+    }
+    return text
+}
+
+# str(PurePosixPath(s)): drop empty and "." parts and a trailing slash.
+# Exactly two leading slashes are kept, as POSIX paths do.
+function pnorm(s: string) -> string {
+    if ft_len(s) == 0 {
+        return "."
+    }
+    let p: ptr<u8> = s as ptr<u8>
+    let mut lead: string = ""
+    if p[0] == 47 {
+        lead = "/"
+        if p[1] == 47 and p[2] != 47 {
+            lead = "//"
+        }
+    }
+    let mut acc: string = ""
+    let n: i32 = ft_len(s)
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i <= n {
+        if i == n or p[i] == 47 {
+            let part: string = ft_slice(s, start, i)
+            if ft_len(part) > 0 and ft_eq(part, ".") == false {
+                if ft_len(acc) > 0 {
+                    acc = acc + "/"
+                }
+                acc = acc + part
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    if ft_len(lead) > 0 {
+        return lead + acc
+    }
+    if ft_len(acc) == 0 {
+        return "."
+    }
+    return acc
+}
+
+# Path(dir) / name, printed as Python prints it.
+function pjoin(dir: string, name: string) -> string {
+    if ft_eq(dir, ".") {
+        return name
+    }
+    if ft_ends(dir, "/") {
+        return dir + name
+    }
+    return dir + "/" + name
+}
+
+# Path(s).absolute(): prefix the working directory, no symlink resolution.
+function pabsolute(s: string) -> string {
+    let n: string = pnorm(s)
+    if ft_starts(n, "/") {
+        return n
+    }
+    if ft_eq(n, ".") {
+        return pr_cwd()
+    }
+    return pjoin(pr_cwd(), n)
+}
+
+function pname(path: string) -> string {
+    return ft_from(path, ft_rfind_byte(path, 47) + 1)
+}
+
+# Path.stem.
+function pstem(path: string) -> string {
+    let name: string = pname(path)
+    let dot: i32 = ft_rfind_byte(name, 46)
+    if dot <= 0 or dot == ft_len(name) - 1 {
+        return name
+    }
+    return ft_slice(name, 0, dot)
+}
+
+# Python's text-mode read: "\r\n" and a lone "\r" become "\n".
+function universal_newlines(s: string) -> string {
+    if ft_rfind_byte(s, 13) < 0 {
+        return s
+    }
+    return ft_replace(ft_replace(s, "\r\n", "\n"), "\r", "\n")
+}
+
+# The first `count` code points of `s`, as a Python slice s[:count].
+function first_chars(s: string, count: i32) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let n: i32 = ft_len(s)
+    let mut i: i32 = 0
+    let mut k: i32 = 0
+    while i < n and k < count {
+        i = i + uc_len(p[i] as i32)
+        k = k + 1
+    }
+    if i > n {
+        i = n
+    }
+    return ft_slice(s, 0, i)
+}
+
+function html_escape(s: string) -> string {
+    return ft_replace(ft_replace(ft_replace(s, "&", "&amp;"), "<", "&lt;"), ">", "&gt;")
+}
+
+# Replace each @KEY@ in `tpl` in one pass, so substituted text is never
+# scanned again.
+function fill(tpl: string, keys: ptr<StrList>, vals: ptr<StrList>) -> string {
+    let p: ptr<u8> = tpl as ptr<u8>
+    let n: i32 = ft_len(tpl)
+    let mut out: string = ""
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let mut hit: i32 = -1
+        if p[i] == 64 {
+            let mut k: i32 = 0
+            while k < ft_list_len(keys) and hit < 0 {
+                if ft_at(tpl, i, ft_list_get(keys, k)) {
+                    hit = k
+                }
+                k = k + 1
+            }
+        }
+        if hit >= 0 {
+            out = out + ft_slice(tpl, start, i) + ft_list_get(vals, hit)
+            i = i + ft_len(ft_list_get(keys, hit))
+            start = i
+        } else {
+            i = i + 1
+        }
+    }
+    return out + ft_from(tpl, start)
+}
+
+function make_tmpdir() -> string {
+    let mut base: string = getenv("TMPDIR")
+    if base as ptr<u8> == null or ft_len(base) == 0 {
+        base = "/tmp"
+    }
+    if ft_ends(base, "/") {
+        base = ft_slice(base, 0, ft_len(base) - 1)
+    }
+    return pr_chomp(pr_capture("mktemp -d " + pr_quote(base + "/flow_to_wasm_XXXXXXXX") + " 2>/dev/null"))
+}
+
+function remove_tree(path: string) -> void {
+    if ft_len(path) > 0 {
+        let _r: i32 = pr_run("rm -rf " + pr_quote(path))
+    }
+}
+
+function read_or_empty(path: string) -> string {
+    let t: string = ft_read_file(path)
+    if t as ptr<u8> == null {
+        return ""
+    }
+    return universal_newlines(t)
+}
+
+# Flow to C through compiler/scripts/flowc_emit.flow; null on failure.
+function flow_to_c(flow_file: string) -> string {
+    let tmp: string = make_tmpdir()
+    if ft_len(tmp) == 0 {
+        ft_outln("Error compiling FLOW to C: cannot create a temporary directory")
+        return null as string
+    }
+    let emit: string = pr_quote(root() + "/flow") + " tool " + pr_quote(root() + "/compiler/scripts/flowc_emit.flow")
+    let c_path: string = tmp + "/" + pstem(flow_file) + ".c"
+    let cmd: string = emit + " " + pr_quote(flow_file) + " " + pr_quote(c_path) + " >" + pr_quote(tmp + "/.stdout") + " 2>" + pr_quote(tmp + "/.stderr")
+    let rc: i32 = pr_run(cmd)
+    if rc != 0 or ft_exists(c_path) == false {
+        let mut detail: string = uc_strip(read_or_empty(tmp + "/.stderr"))
+        if ft_len(detail) == 0 {
+            detail = uc_strip(read_or_empty(tmp + "/.stdout"))
+        }
+        ft_outln("Error compiling FLOW to C: " + detail)
+        remove_tree(tmp)
+        return null as string
+    }
+    let c_code: string = read_or_empty(c_path)
+    remove_tree(tmp)
+    return c_code
+}
+
+# emcc, when it is there. True when <name>.js and <name>.wasm were built.
+function compile_wasm(c_file: string, out_dir: string, name: string) -> bool {
+    if pr_run("command -v emcc >/dev/null 2>&1") != 0 {
+        ft_outln("⚠️  Emscripten not installed - C file only")
+        return false
+    }
+    if pr_run("emcc --version >/dev/null 2>&1") != 0 {
+        ft_outln("⚠️  Emscripten not found - C file generated, WASM skipped")
+        return false
+    }
+    ft_outln("🔧 Compiling to WebAssembly...")
+    let tmp: string = make_tmpdir()
+    let err_file: string = tmp + "/emcc.stderr"
+    let args: ptr<StrList> = ft_list_new()
+    ft_list_push(args, c_file)
+    ft_list_push(args, "-o")
+    ft_list_push(args, pjoin(out_dir, name + ".js"))
+    ft_list_push(args, "-s")
+    ft_list_push(args, "WASM=1")
+    ft_list_push(args, "-s")
+    ft_list_push(args, "EXPORTED_FUNCTIONS=['_main']")
+    ft_list_push(args, "-s")
+    ft_list_push(args, "EXPORTED_RUNTIME_METHODS=['ccall','cwrap']")
+    ft_list_push(args, "-s")
+    ft_list_push(args, "ALLOW_MEMORY_GROWTH=1")
+    ft_list_push(args, "-O3")
+    let mut cmd: string = "emcc"
+    let mut i: i32 = 0
+    while i < ft_list_len(args) {
+        cmd = cmd + " " + pr_quote(ft_list_get(args, i))
+        i = i + 1
+    }
+    let rc: i32 = pr_run(cmd + " >/dev/null 2>" + pr_quote(err_file))
+    let err: string = read_or_empty(err_file)
+    remove_tree(tmp)
+    if rc == 0 {
+        ft_outln("🎯 Generated: " + pjoin(out_dir, name + ".wasm"))
+        return true
+    }
+    ft_outln("⚠️  WASM compilation failed: " + first_chars(err, 200))
+    return false
+}
+
+function generate_html(name: string, out_dir: string, flow_file: string, c_code: string, has_wasm: bool) -> bool {
+    let mut flow_code: string = ft_read_file(flow_file)
+    if flow_code as ptr<u8> == null {
+        flow_code = "// Could not read source"
+    }
+    flow_code = universal_newlines(flow_code)
+    let mut script: string = asset("script_c_only.txt")
+    if has_wasm {
+        let k0: ptr<StrList> = ft_list_new()
+        let v0: ptr<StrList> = ft_list_new()
+        ft_list_push(k0, "@NAME@")
+        ft_list_push(v0, name)
+        script = fill(asset("script_wasm.txt"), k0, v0)
+    }
+    let keys: ptr<StrList> = ft_list_new()
+    let vals: ptr<StrList> = ft_list_new()
+    ft_list_push(keys, "@NAME@")
+    ft_list_push(vals, name)
+    ft_list_push(keys, "@FLOW@")
+    ft_list_push(vals, html_escape(flow_code))
+    ft_list_push(keys, "@C@")
+    ft_list_push(vals, html_escape(c_code))
+    ft_list_push(keys, "@SCRIPT@")
+    ft_list_push(vals, script)
+    let html: string = fill(asset("page.html"), keys, vals)
+    let html_file: string = pjoin(out_dir, name + ".html")
+    if ft_write_file(html_file, html) == false {
+        ft_outln("❌ Error converting " + pname(flow_file) + ": cannot write " + html_file)
+        return false
+    }
+    ft_outln("📄 Generated: " + html_file)
+    return true
+}
+
+# One program. `out_dir` is already normalised and exists.
+function convert_file(arg: string, out_dir: string) -> bool {
+    let flow_file: string = pabsolute(arg)
+    let name: string = pstem(flow_file)
+    ft_outln("🔨 Converting " + pname(flow_file) + " to WebAssembly...")
+    let c_code: string = flow_to_c(flow_file)
+    if c_code as ptr<u8> == null or ft_len(c_code) == 0 {
+        return false
+    }
+    let c_file: string = pjoin(out_dir, name + ".c")
+    if ft_write_file(c_file, c_code) == false {
+        ft_outln("❌ Error converting " + pname(flow_file) + ": cannot write " + c_file)
+        return false
+    }
+    ft_outln("📝 Generated: " + c_file)
+    let wasm_ok: bool = compile_wasm(c_file, out_dir, name)
+    if generate_html(name, out_dir, flow_file, c_code, wasm_ok) == false {
+        return false
+    }
+    ft_outln("✅ Successfully converted " + pname(flow_file))
+    return true
+}
+
+# Path.mkdir(parents=True, exist_ok=True). An existing non-directory is an
+# error, reported by mkdir(1) on stderr.
+function ensure_dir(path: string) -> bool {
+    if pr_is_dir(path) {
+        return true
+    }
+    return pr_run("mkdir -p " + pr_quote(path)) == 0
+}
+
+function default_out() -> string {
+    return root() + "/wasm/wasm_examples"
+}
+
+function priority_examples() -> ptr<StrList> {
+    let l: ptr<StrList> = ft_list_new()
+    ft_list_push(l, "fibonacci.flow")
+    ft_list_push(l, "factorial.flow")
+    ft_list_push(l, "gcd.flow")
+    ft_list_push(l, "hello_world.flow")
+    ft_list_push(l, "loops.flow")
+    ft_list_push(l, "power.flow")
+    ft_list_push(l, "palindrome.flow")
+    ft_list_push(l, "bubble_sort.flow")
+    ft_list_push(l, "simple_search.flow")
+    ft_list_push(l, "effects_working.flow")
+    return l
+}
+
+function generate_index(out_dir: string, examples: ptr<StrList>) -> bool {
+    let mut links: string = ""
+    let mut first: bool = true
+    let mut i: i32 = 0
+    while i < ft_list_len(examples) {
+        let name: string = ft_replace(ft_list_get(examples, i), ".flow", "")
+        if ft_exists(out_dir + "/" + name + ".html") {
+            if first == false {
+                links = links + "\n"
+            }
+            links = links + "<a href=\"" + name + ".html\" class=\"example-card\"><span class=\"icon\">📄</span>" + name + "</a>"
+            first = false
+        }
+        i = i + 1
+    }
+    let keys: ptr<StrList> = ft_list_new()
+    let vals: ptr<StrList> = ft_list_new()
+    ft_list_push(keys, "@LINKS@")
+    ft_list_push(vals, links)
+    let index_file: string = out_dir + "/index.html"
+    if ft_write_file(index_file, fill(asset("index.html"), keys, vals)) == false {
+        ft_errln("flow_to_wasm: cannot write " + index_file)
+        return false
+    }
+    ft_outln("📄 Generated: " + index_file)
+    return true
+}
+
+function build_all() -> i32 {
+    let out_dir: string = default_out()
+    let examples: ptr<StrList> = priority_examples()
+    let mut ok: i32 = 0
+    let mut failed: i32 = 0
+    let mut i: i32 = 0
+    while i < ft_list_len(examples) {
+        let path: string = root() + "/examples/" + ft_list_get(examples, i)
+        if ft_exists(path) {
+            if ensure_dir(out_dir) == false {
+                return 1
+            }
+            if convert_file(path, out_dir) {
+                ok = ok + 1
+            } else {
+                failed = failed + 1
+            }
+        }
+        i = i + 1
+    }
+    ft_outln("\n==================================================")
+    ft_outln("✅ Converted: " + ft_itoa(ok))
+    ft_outln("❌ Failed: " + ft_itoa(failed))
+    if generate_index(out_dir, examples) == false {
+        return 1
+    }
+    return 0
+}
+
+function usage() -> i32 {
+    ft_outln("Usage:")
+    ft_outln("  ./flow tool flow_to_wasm <flow_file>    # Convert single file")
+    ft_outln("  ./flow tool flow_to_wasm --all          # Convert all examples")
+    ft_outln("")
+    ft_outln("Example:")
+    ft_outln("  ./flow tool flow_to_wasm examples/basics/fibonacci.flow")
+    return 1
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    if argc < 2 {
+        return usage()
+    }
+    if ft_eq(argv[1], "--all") {
+        return build_all()
+    }
+    let flow_file: string = argv[1]
+    if ft_exists(flow_file) == false {
+        ft_outln("❌ File not found: " + flow_file)
+        return 1
+    }
+    let mut out_dir: string = default_out()
+    if argc > 2 {
+        out_dir = pnorm(argv[2])
+    }
+    if ensure_dir(out_dir) == false {
+        return 1
+    }
+    if convert_file(flow_file, out_dir) {
+        ft_outln("\n🎉 Done! Open the HTML file in your browser.")
+        return 0
+    }
+    return 1
+}

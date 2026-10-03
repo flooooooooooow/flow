@@ -2,9 +2,9 @@
 
 *One plus one maps to two under a ring homomorphism.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.3
+**Source.** dummit-foote: *Abstract Algebra*, §7.3
 
-## Derived fact 1 — f(1 + 1) = 2
+## Derived fact 1: f(1 + 1) = 2
 
 **Coordinate.** RingHom · preservation · one plus one maps to two · **Derived fact**
 

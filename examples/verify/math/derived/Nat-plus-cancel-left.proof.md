@@ -2,13 +2,13 @@
 
 *Equal left summands can be cancelled from both sides of an equation.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Cancellation_property
+**Source.** peano: https://en.wikipedia.org/wiki/Cancellation_property
 
-## Derived fact 1 — From a + b = a + c we deduce b = c
+## Derived fact 1: From a + b = a + c we deduce b = c
 
 **Coordinate.** the natural numbers · addition · left cancellation holds · **Derived fact**
 
-*Source: peano/induction — Gries & Schneider, Ch. 3*
+*Source: peano/induction: Gries & Schneider, Ch. 3*
 
 *Built on: adding zero on the left does not change the number, successor on the left steps the sum, for addition on the natural numbers, successor is injective, for successor on the natural numbers*
 

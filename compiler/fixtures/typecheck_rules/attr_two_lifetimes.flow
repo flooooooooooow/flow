@@ -1,0 +1,10 @@
+# expect: 'f' declares more than one '@lifetime' domain; a declaration lives in exactly one domain
+@lifetime(frame)
+@lifetime(session)
+function f() -> i32 {
+    return 1
+}
+
+function main() -> i32 {
+    return f()
+}

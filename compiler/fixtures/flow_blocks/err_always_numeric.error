@@ -1,0 +1,2 @@
+Error: 'always' clause in flow 'Osc' must be a boolean expression at line 4
+write a comparison or logical expression, e.g. 'x < 1.0'

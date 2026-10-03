@@ -1,0 +1,101 @@
+# `defer` runs after the return value is read, on every return path, and
+# innermost first (#594, #947). Supersedes tests/integration/test_defer_ordering.py.
+# Events are logged into a buffer: log[0] is the count, log[1..] the events.
+
+extern {
+    function calloc(count: i64, size: i64) -> ptr<i32>
+    function free(p: ptr<i32>) -> void
+}
+
+function note(log: ptr<i32>, v: i32) -> i32 {
+    let n: i32 = log[0] + 1
+    log[0] = n
+    log[n] = v
+    return 0
+}
+
+# The return expression reads data[3] before free runs.
+function read_then_free(log: ptr<i32>) -> i32 {
+    let data: ptr<i32> = calloc(4, 4)
+    if data == null {
+        return 1
+    }
+    defer note(log, 9)
+    for i in 0 to 4 {
+        data[i] = (i + 1) * 10
+    }
+    let before: i32 = log[0]
+    defer note(log, before)
+    return data[3] - 40 + log[0] - before
+}
+
+# A return inside a nested block still runs the enclosing defer.
+function nested_return(log: ptr<i32>, n: i32) -> i32 {
+    defer note(log, 100)
+    if n > 0 {
+        note(log, 1)
+        return 1
+    }
+    return 0
+}
+
+# Innermost scope's defer runs first.
+function inner_outer(log: ptr<i32>) -> i32 {
+    defer note(log, 20)
+    if true {
+        defer note(log, 10)
+        return 0
+    }
+    return 1
+}
+
+# Falling off the end of a block runs its defers once, LIFO.
+function fall_through(log: ptr<i32>) -> i32 {
+    let mut total: i32 = 0
+    if true {
+        defer note(log, 1)
+        defer note(log, 2)
+        note(log, 3)
+        total = 7
+    }
+    return total
+}
+
+function reset(log: ptr<i32>) -> i32 {
+    log[0] = 0
+    return 0
+}
+
+function main() -> i32 {
+    let log: ptr<i32> = calloc(32, 4)
+    if read_then_free(log) != 0 {
+        return 1
+    }
+    # Both defers ran, the later one first.
+    if log[0] != 2 or log[2] != 9 {
+        return 2
+    }
+    reset(log)
+    if nested_return(log, 1) != 1 {
+        return 3
+    }
+    if log[0] != 2 or log[1] != 1 or log[2] != 100 {
+        return 4
+    }
+    reset(log)
+    if inner_outer(log) != 0 {
+        return 5
+    }
+    if log[0] != 2 or log[1] != 10 or log[2] != 20 {
+        return 6
+    }
+    reset(log)
+    if fall_through(log) != 7 {
+        return 7
+    }
+    if log[0] != 3 or log[1] != 3 or log[2] != 2 or log[3] != 1 {
+        return 8
+    }
+    free(log)
+    return 0
+}

@@ -1,0 +1,3 @@
+[0;34mℹ️  Generating GPU shaders from @ROOT@/examples/gpu/vgpu/mnist.flow (wgsl)...[0m
+Generated WGSL shader: @ROOT@/build/wgsl/classifier.wgsl
+Generated 1 GPU shader(s)

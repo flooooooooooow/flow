@@ -2,13 +2,13 @@
 
 *In equal parallelograms which have the same base the sides opposite the base are in the same straight lines.*
 
-**Source.** euclid — Elements, Book VI, Proposition 29
+**Source.** euclid: Elements, Book VI, Proposition 29
 
-## Derived fact 1 — In equal parallelograms which have the same base the sides opposite the base are in the same straight lines
+## Derived fact 1: In equal parallelograms which have the same base the sides opposite the base are in the same straight lines
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 29: equal parallelograms on the same base are in the same parallels · **Derived fact**
 
-*Source: euclid — Elements, Book VI, Proposition 29*
+*Source: euclid: Elements, Book VI, Proposition 29*
 
 *Built on: proposition 39: equal triangles on same base and same side are in same parallels, for Book I of the Elements in on the Euclidean plane*
 

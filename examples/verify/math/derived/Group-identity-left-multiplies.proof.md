@@ -2,9 +2,9 @@
 
 *The identity acts as a left multiplier.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §1.1
+**Source.** dummit-foote: *Abstract Algebra*, §1.1
 
-## Derived fact 1 — 1 * g = g
+## Derived fact 1: 1 * g = g
 
 **Coordinate.** Group · identity · identity multiplies on the left · **Derived fact**
 

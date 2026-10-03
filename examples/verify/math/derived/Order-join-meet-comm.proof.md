@@ -2,9 +2,9 @@
 
 *Join above meet commutes in arguments.*
 
-**Source.** davey-priestley — *Introduction to Lattices and Order*
+**Source.** davey-priestley: *Introduction to Lattices and Order*
 
-## Derived fact 1 — join(a, b) >= meet(a, b) and join(b, a) >= meet(b, a)
+## Derived fact 1: join(a, b) >= meet(a, b) and join(b, a) >= meet(b, a)
 
 **Coordinate.** Order · lattice · join above meet commutes · **Derived fact**
 

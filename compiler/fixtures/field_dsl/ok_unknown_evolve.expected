@@ -1,0 +1,15 @@
+import "stdlib/dynamics/pde.flow"
+S evolves as laplacian(S)
+
+# generated from field T : f64[8] on Line
+const T_field_n: i32 = 8
+
+function T_field_step(
+    u: ptr<f64>,
+    next: ptr<f64>,
+    r: f64
+) -> void {
+    heat_euler_step_1d(u, next, 8, r, 0.0, 0.0)
+}
+
+function main() -> i32 { return 0 }

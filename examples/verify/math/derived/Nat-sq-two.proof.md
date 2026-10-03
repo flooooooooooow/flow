@@ -2,9 +2,9 @@
 
 *Squaring two is four-fold self-multiplication.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Square_(algebra)
+**Source.** peano: https://en.wikipedia.org/wiki/Square_(algebra)
 
-## Derived fact 1 — sq(2) = 2 * 2
+## Derived fact 1: sq(2) = 2 * 2
 
 **Coordinate.** the natural numbers · square · squaring two is self multiplication · **Derived fact**
 

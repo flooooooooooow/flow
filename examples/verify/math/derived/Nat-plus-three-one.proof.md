@@ -2,9 +2,9 @@
 
 *Three plus one is four for natural numbers.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 3 + 1 = 4
+## Derived fact 1: 3 + 1 = 4
 
 **Coordinate.** the natural numbers · addition · three plus one is four · **Derived fact**
 

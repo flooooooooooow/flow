@@ -1,3 +1,4 @@
+# ACTIONS-INTENDED: public repository; its CI runs on GitHub Actions.
 name: Prepare release PR
 
 on:
@@ -46,7 +47,7 @@ jobs:
             echo "::error::Missing $NOTES"
             exit 1
           }
-          python3 scripts/prepare_release.py \
+          ./flow tool prepare_release \
             --version "$VERSION" \
             --release-date "$(date -u +%Y-%m-%d)" \
             --notes "$NOTES"

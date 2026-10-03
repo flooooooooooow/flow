@@ -1,0 +1,2 @@
+usage: flow wasm32 [-h] -o OUTPUT [--export EXPORT] [-O {O0,O1,O2,O3,Os,Oz}] input
+flow wasm32: error: the following arguments are required: input, -o/--output

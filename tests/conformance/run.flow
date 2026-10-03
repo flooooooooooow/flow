@@ -1,0 +1,140 @@
+# Stable conformance corpus (see README.md).
+#
+#   ./flow tool tests/conformance/run.flow
+#
+# Each positive fixture NN_*.flow must compile with flowc, build with cc and
+# exit 42. Each negative fixture negative/NN_*.flow.txt must be rejected by
+# flowc --strict. Every fixture starts with a `# spec:` line naming the
+# docs/LANGUAGE_SPEC.md section it covers. The release rule is zero failures.
+#
+# Negative fixtures do not end in `.flow`, because `./flow test --tier2`
+# treats every tracked `.flow` file as a program that must compile.
+
+import "tools/flow_cli/sys.flow"
+import "scripts/tools/lib/testrun.flow"
+import std.process { ProcCmd, ProcStrs, proc_arg }
+
+let mut FAILS: i32 = 0
+
+function bad(name: string, why: string) {
+    outln("FAIL " + name + ": " + why)
+    FAILS = FAILS + 1
+}
+
+# The first line that is not blank starts with "# spec:" (after leading
+# blanks).
+function spec_marker(path: string) -> bool {
+    let lines: ptr<ProcStrs> = s_lines(read_text(path))
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let l: string = sl_get(lines, i)
+        i = i + 1
+        let mut k: i32 = 0
+        while k < s_len(l) and s_is_space(s_byte(l, k)) {
+            k = k + 1
+        }
+        if k == s_len(l) {
+            continue
+        }
+        return s_starts(s_from(l, k), "# spec:")
+    }
+    return false
+}
+
+# NN_*SUFFIX in `dir`, sorted.
+function fixtures(dir: string, suffix: string) -> ptr<ProcStrs> {
+    let all: ptr<ProcStrs> = glob_suffix(dir, suffix)
+    let keep: ptr<ProcStrs> = sl_new()
+    let mut i: i32 = 0
+    while i < sl_len(all) {
+        let b: string = path_basename(sl_get(all, i))
+        if s_len(b) >= 3 and s_byte(b, 0) >= 48 and s_byte(b, 0) <= 57 and s_byte(b, 1) >= 48 and s_byte(b, 1) <= 57 and s_byte(b, 2) == 95 {
+            sl_push(keep, sl_get(all, i))
+        }
+        i = i + 1
+    }
+    return keep
+}
+
+function emit(args: ptr<ProcStrs>, log: string) -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "compiler/scripts/flowc_emit.flow")
+    sl_extend(argv, args)
+    return run_to_file(cmd(argv), log, true)
+}
+
+function main() -> i32 {
+    let root: string = tr_enter_root()
+    let here: string = root + "/tests/conformance"
+    if s_len(env("FLOWC_BIN")) == 0 {
+        let f: string = capture(cmd(sl_of3("./flow", "tool", "compiler/scripts/ensure_flowc.flow")))
+        if last_status() != 0 {
+            cli_exit(1)
+        }
+        env_set("FLOWC_BIN", root + "/" + f)
+    }
+    let work: string = tr_workdir("flow-conformance")
+    let mut pass: i32 = 0
+
+    let positives: ptr<ProcStrs> = fixtures(here, ".flow")
+    let negatives: ptr<ProcStrs> = fixtures(here + "/negative", ".flow.txt")
+    if sl_len(positives) == 0 or sl_len(negatives) == 0 {
+        outln("FAIL corpus is empty")
+        cli_exit(1)
+    }
+
+    let mut i: i32 = 0
+    while i < sl_len(positives) {
+        let f: string = sl_get(positives, i)
+        i = i + 1
+        let name: string = path_stem(f, ".flow")
+        if not spec_marker(f) {
+            bad(name, "no '# spec:' marker")
+            continue
+        }
+        let log: string = work + "/" + name + ".log"
+        if emit(sl_of2(f, work + "/" + name + ".c"), log) != 0 {
+            bad(name, "flowc failed")
+            out(tr_head(tr_indent(read_text(log), "  | "), 5))
+            continue
+        }
+        let ccl: ptr<ProcStrs> = sl_of3(env_or("CC", "cc"), "-O0", "-o")
+        sl_push2(ccl, work + "/" + name, work + "/" + name + ".c")
+        sl_push(ccl, "-lm")
+        let cclog: string = work + "/" + name + ".cc"
+        if run_to_file(cmd(ccl), cclog, true) != 0 {
+            bad(name, "the C flowc emitted did not compile")
+            out(tr_head(read_text(cclog), 5))
+            continue
+        }
+        let p: ptr<ProcCmd> = cmd(sl_of1(work + "/" + name))
+        cmd_quiet(p)
+        let rc: i32 = run(p)
+        if rc != 42 {
+            bad(name, "expected exit 42, got " + s_itoa(rc))
+            continue
+        }
+        pass = pass + 1
+    }
+
+    let mut j: i32 = 0
+    while j < sl_len(negatives) {
+        let f: string = sl_get(negatives, j)
+        j = j + 1
+        let name: string = "negative/" + path_stem(f, ".flow.txt")
+        if not spec_marker(f) {
+            bad(name, "no '# spec:' marker")
+            continue
+        }
+        let _c: bool = copy_file(f, work + "/neg.flow")
+        let args: ptr<ProcStrs> = sl_of3("--strict", work + "/neg.flow", work + "/neg.c")
+        if emit(args, work + "/neg.log") == 0 {
+            bad(name, "flowc --strict accepts it")
+            continue
+        }
+        pass = pass + 1
+    }
+
+    outln("conformance: pass=" + s_itoa(pass) + " fail=" + s_itoa(FAILS))
+    tr_exit(FAILS)
+    return 0
+}

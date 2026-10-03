@@ -1,0 +1,8 @@
+function pick(c: i32) -> i32 {
+    let x: i32 = if c != 0 { 10 } else { 20 }
+    return x
+}
+
+function main() -> i32 {
+    return pick(1) + pick(0) - 30
+}

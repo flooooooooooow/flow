@@ -2,13 +2,13 @@
 
 *The square of a natural number is never negative.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Square_(algebra)
+**Source.** peano: https://en.wikipedia.org/wiki/Square_(algebra)
 
-## Derived fact 1 — n * n ≥ 0 for every natural n
+## Derived fact 1: n * n ≥ 0 for every natural n
 
 **Coordinate.** the natural numbers · square · squaring never yields a negative · **Derived fact**
 
-*Source: peano — https://en.wikipedia.org/wiki/Ordered_ring*
+*Source: peano: https://en.wikipedia.org/wiki/Ordered_ring*
 
 *Built on: squaring is self-multiplication, for square on the natural numbers, less-or-equal is reflexive, for order on the natural numbers*
 

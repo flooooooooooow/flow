@@ -1,0 +1,3 @@
+function broken( -> i32 {
+    let mut x: i32 = 0
+    return x

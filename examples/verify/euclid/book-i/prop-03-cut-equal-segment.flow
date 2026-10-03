@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-i
 # @means  Given two unequal straight lines, to cut off from the greater a part equal to the less.
-# @from   euclid — Elements, Book I, Proposition 3
+# @from   euclid: Elements, Book I, Proposition 3
 # @tier   derived
 # @needs  «Geometry» «Euclid Book I» «Proposition 1: equilateral triangle on a segment», «Geometry» «Euclid Book I» «Proposition 2: a segment equal to a given segment»
 

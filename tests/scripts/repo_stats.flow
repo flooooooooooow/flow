@@ -1,0 +1,385 @@
+# Repository statistics formatting and path classification.
+#
+# The counter is the Flow program in scripts/tools/repo_stats/main.flow. These
+# tests build it with `./flow tool --path repo_stats` and run it in a scratch
+# tree with a hand-written file list (--inputs), so no git is involved. The
+# formatting rules are pinned here because a truncating Flow counter once
+# published 72.5k against a README that said 72.6k.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcCmd, ProcResult, proc_arg, proc_stdout, proc_stderr, PROC_CAPTURE }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+const START: string = "<!-- repo-stats:start -->"
+const END: string = "<!-- repo-stats:end -->"
+const NO_LINES: string = "-"
+
+# The counter, built once for the whole file.
+struct Counter {
+    bin: string,
+    err: string
+}
+
+let mut COUNTER: ptr<Counter> = null
+
+function build_counter() {
+    let k: ptr<Counter> = malloc(16) as ptr<Counter>
+    k.bin = ""
+    k.err = ""
+    if have("cc") or have("clang") {
+        let c: ptr<ProcCmd> = cmd(sl_of3("./flow", "tool", "--path"))
+        proc_arg(c, "repo_stats")
+        proc_stdout(c, PROC_CAPTURE)
+        proc_stderr(c, PROC_CAPTURE)
+        let r: ptr<ProcResult> = run_result(c)
+        if r.exit_code == 0 {
+            k.bin = s_chomp_all(r.stdout)
+        } else {
+            k.err = s_chomp_all(r.stderr)
+        }
+    }
+    COUNTER = k
+}
+
+function counter() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    let k: ptr<Counter> = COUNTER
+    if s_len(k.bin) == 0 {
+        outln("flow tool repo_stats failed: " + k.err)
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+# `n` lines of "x".
+function x_lines(n: i32) -> string {
+    let buf: ptr<u8> = malloc((2 * n + 1) as i64) as ptr<u8>
+    let mut i: i32 = 0
+    while i < n {
+        buf[2 * i] = 120
+        buf[2 * i + 1] = 10
+        i = i + 1
+    }
+    buf[2 * n] = 0
+    return buf as string
+}
+
+function tree() -> string {
+    return t_tmp() + "/tree"
+}
+
+function stats_path() -> string {
+    return tree() + "/docs/generated/repository-stats.json"
+}
+
+# Lay out files ("path:lines" entries) in <tmp>/tree and run the counter
+# over them in MODE (write or check), with README.md holding `readme` (or
+# the default two-marker README when `readme` is null). Leaves t_rc(),
+# t_out() and t_err().
+function run_counter_with(specs: ptr<ProcStrs>, mode: string, has_readme: bool, readme: string) -> i32 {
+    let root: string = tree()
+    let _a: bool = mkdir_p(root + "/build/repo-stats")
+    let _b: bool = mkdir_p(root + "/docs/generated")
+    let mut files: string = ""
+    let mut i: i32 = 0
+    while i < sl_len(specs) {
+        let spec: string = sl_get(specs, i)
+        let colon: i32 = s_rfind_byte(spec, 58)
+        let rel: string = s_slice(spec, 0, colon)
+        let n: i32 = s_atoi(s_from(spec, colon + 1), 0)
+        let _d: bool = mkdir_p(path_dirname(root + "/" + rel))
+        let _f: bool = write_text(root + "/" + rel, x_lines(n))
+        files = files + rel + "\n"
+        i = i + 1
+    }
+    let _l: bool = write_text(root + "/build/repo-stats/files.txt", files)
+    # The repository's stats tool creates docs/generated before running the
+    # counter.
+    let _m: bool = write_text(root + "/build/repo-stats/meta.txt", "commit=abcdef123456\ngenerated_at=2026-01-01T00:00:00+00:00\n")
+    let _o: bool = write_text(root + "/build/repo-stats/mode.txt", mode + "\n")
+    if has_readme {
+        let _r: bool = write_text(root + "/README.md", readme)
+    } else {
+        let _r2: bool = write_text(root + "/README.md", "# Title\n\n" + START + "\nold\n" + END + "\n\ntail\n")
+    }
+    let k: ptr<Counter> = COUNTER
+    let c: ptr<ProcCmd> = cmd(sl_of3(k.bin, "--inputs", "build/repo-stats"))
+    cmd_cwd(c, root)
+    return t_run(c)
+}
+
+function run_counter(specs: ptr<ProcStrs>) -> i32 {
+    return run_counter_with(specs, "write", false, "")
+}
+
+# `jq -r EXPR` on the stats file; "" when it cannot be read.
+function stats_raw(path: string) -> string {
+    let j: ptr<Json> = tj_load(stats_path())
+    if not tj_ok(j) {
+        return ""
+    }
+    return tj_raw(j, tj_path(j, path))
+}
+
+function stat_compact(path: string) -> string {
+    let j: ptr<Json> = tj_load(stats_path())
+    if not tj_ok(j) {
+        return ""
+    }
+    return tj_compact(j, tj_path(j, path))
+}
+
+function show_err_unless_ok() -> bool {
+    if t_rc() != 0 {
+        t_cat(t_err())
+        return false
+    }
+    return true
+}
+
+# Badge text: plain below 1k, one rounded decimal below 100k, then k.
+function check_compact(value: string, expected: string) -> i32 {
+    let k: i32 = counter()
+    if k != T_PASS {
+        return k
+    }
+    let _r: i32 = run_counter(sl_of1("lib/stdlib/a.flow:" + value))
+    if not show_err_unless_ok() {
+        return T_FAIL
+    }
+    if not a_eq(stats_raw("badges.flow"), expected + " Flow LOC", "flow badge") {
+        return T_FAIL
+    }
+    if not a_eq(stats_raw("badges.loc"), expected + " LOC", "loc badge") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+# Areas match whole path components, never bare string prefixes.
+function check_directory_prefix_and_partial_component() -> i32 {
+    let k: i32 = counter()
+    if k != T_PASS {
+        return k
+    }
+    let specs: ptr<ProcStrs> = sl_of3("src/flow/parser.py:5", "src/flowers/parser.py:7", "runtime:3")
+    sl_push(specs, "docs/index.md:2")
+    let _r: i32 = run_counter(specs)
+    if not show_err_unless_ok() {
+        return T_FAIL
+    }
+    if not a_eq(stat_compact("areas.python_compiler"), "{\"files\":1,\"lines\":5}", "python_compiler area") {
+        return T_FAIL
+    }
+    if not a_eq(stats_raw("areas.runtime.files"), "0", "runtime area files") {
+        return T_FAIL
+    }
+    if not a_eq(stat_compact("languages.Python"), "{\"files\":2,\"lines\":12}", "Python language") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+# The rendered block is delimited and uses grouped numbers. Writes it to
+# <tmp>/block; "" when there is none.
+function markdown_block() -> i32 {
+    let k: i32 = counter()
+    if k != T_PASS {
+        return k
+    }
+    let _r: i32 = run_counter(sl_of3("lib/stdlib/big.flow:2000", "src/flow/a.py:1500", "registry/packages/x/flow.toml:4"))
+    if not show_err_unless_ok() {
+        return T_FAIL
+    }
+    # sed -n "/START/,/END/p"
+    let lines: ptr<ProcStrs> = s_lines(read_text(tree() + "/README.md"))
+    let mut block: string = ""
+    let mut inside: bool = false
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let line: string = sl_get(lines, i)
+        if inside {
+            block = block + line + "\n"
+            if s_contains(line, END) {
+                inside = false
+            }
+        } elif s_contains(line, START) {
+            block = block + line + "\n"
+            inside = true
+        }
+        i = i + 1
+    }
+    let _w: bool = write_text(t_tmp() + "/block", block)
+    if s_len(block) == 0 {
+        outln("no stats block in README.md")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function block_contains(needle: string) -> i32 {
+    let rc: i32 = markdown_block()
+    if rc != T_PASS {
+        return rc
+    }
+    if not a_file_contains(t_tmp() + "/block", needle) {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_numbers_are_grouped() -> i32 {
+    return block_contains("| **Tracked source** | 2 | 3,500 |")
+}
+
+function check_registry_packages_reports_no_line_count() -> i32 {
+    return block_contains("| **Registry packages** | 1 | " + NO_LINES + " |")
+}
+
+# 1-based number of the first line holding `needle`, or 0.
+function line_of(lines: ptr<ProcStrs>, needle: string) -> i32 {
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        if s_contains(sl_get(lines, i), needle) {
+            return i + 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+function check_languages_ordered_by_lines_descending() -> i32 {
+    let rc: i32 = markdown_block()
+    if rc != T_PASS {
+        return rc
+    }
+    let text: string = read_text(t_tmp() + "/block")
+    let lines: ptr<ProcStrs> = s_lines(text)
+    let flow_at: i32 = line_of(lines, "| Flow |")
+    let python_at: i32 = line_of(lines, "| Python |")
+    if flow_at == 0 or python_at == 0 {
+        out(text)
+        return T_FAIL
+    }
+    if not a_true("Flow row (" + s_itoa(flow_at) + ") before Python row (" + s_itoa(python_at) + ")", flow_at < python_at) {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_footnote_credits_the_flow_counter() -> i32 {
+    return block_contains("scripts/tools/repo_stats/main.flow")
+}
+
+# The markers have to survive edits, or every refresh fails.
+function check_readme_has_both_markers() -> i32 {
+    let readme: string = read_text("README.md")
+    if not a_eq(s_itoa(count_of(readme, START)), "1", "start markers in README.md") {
+        return T_FAIL
+    }
+    if not a_eq(s_itoa(count_of(readme, END)), "1", "end markers in README.md") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_update_replaces_only_the_block() -> i32 {
+    let k: i32 = counter()
+    if k != T_PASS {
+        return k
+    }
+    let _r: i32 = run_counter(sl_of1("a.flow:1"))
+    if not show_err_unless_ok() {
+        return T_FAIL
+    }
+    let readme: string = read_text(tree() + "/README.md")
+    let want_head: string = "# Title\n\n" + START + "\n"
+    let want_tail: string = END + "\n\ntail\n"
+    let got_head: string = s_slice(readme, 0, s_len(want_head))
+    let got_tail: string = s_from(readme, s_len(readme) - s_len(want_tail))
+    if not a_true("README.md starts with the title and the start marker", s_eq(got_head, want_head)) {
+        return T_FAIL
+    }
+    if not a_true("README.md ends with the end marker and the tail", s_eq(got_tail, want_tail)) {
+        return T_FAIL
+    }
+    if has_line(readme, "old") {
+        outln("the old block body survived")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_missing_markers_fail() -> i32 {
+    let k: i32 = counter()
+    if k != T_PASS {
+        return k
+    }
+    let _r: i32 = run_counter_with(sl_of1("a.flow:1"), "write", true, "no markers\n")
+    if not a_eq_int(t_rc(), 1, "exit status") {
+        return T_FAIL
+    }
+    if not a_file_contains(t_err(), "missing repository-stat markers") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_check_mode_reports_stale_files() -> i32 {
+    let k: i32 = counter()
+    if k != T_PASS {
+        return k
+    }
+    let _r: i32 = run_counter_with(sl_of1("a.flow:1"), "check", false, "")
+    if not a_eq_int(t_rc(), 1, "exit status") {
+        return T_FAIL
+    }
+    if not a_file_is(t_out(), "Repository statistics are stale: docs/generated/repository-stats.json, README.md\n") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function compact_case(value: string, expected: string) {
+    t_start()
+    t_end("compact[" + value + "]", check_compact(value, expected))
+}
+
+function main() -> i32 {
+    t_begin("repo_stats")
+    build_counter()
+    compact_case("999", "999")
+    compact_case("1000", "1.0k")
+    compact_case("72586", "72.6k")
+    compact_case("99960", "100.0k")
+    compact_case("100000", "100k")
+    compact_case("171889", "172k")
+    compact_case("1234000", "1,234k")
+    t_start()
+    t_end("under/directory_prefix_and_partial_component", check_directory_prefix_and_partial_component())
+    t_start()
+    t_end("markdown/numbers_are_grouped", check_numbers_are_grouped())
+    t_start()
+    t_end("markdown/registry_packages_reports_no_line_count", check_registry_packages_reports_no_line_count())
+    t_start()
+    t_end("markdown/languages_ordered_by_lines_descending", check_languages_ordered_by_lines_descending())
+    t_start()
+    t_end("markdown/footnote_credits_the_flow_counter", check_footnote_credits_the_flow_counter())
+    t_start()
+    t_end("readme/has_both_markers", check_readme_has_both_markers())
+    t_start()
+    t_end("readme/update_replaces_only_the_block", check_update_replaces_only_the_block())
+    t_start()
+    t_end("readme/missing_markers_fail", check_missing_markers_fail())
+    t_start()
+    t_end("readme/check_mode_reports_stale_files", check_check_mode_reports_stale_files())
+    t_done()
+    return 0
+}

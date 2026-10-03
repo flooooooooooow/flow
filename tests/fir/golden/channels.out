@@ -1,0 +1,183 @@
+FIR-G: funcs=104 blocks=292 ops=1344 values=995 operands=604 types=26
+call ops: 180
+reachable: channel_i32_bind, channel_i32_close, channel_i32_destroy, channel_i32_new, channel_i32_recv, channel_i32_send, channel_i32_try_recv, channel_i32_try_send, free, main
+dead: flow_thread_spawn, flow_thread_join, flow_thread_yield, flow_async_spawn, flow_async_join, flow_async_delay, malloc, flow_atomic_load_i32, flow_atomic_store_i32, flow_atomic_fetch_add_i32, flow_atomic_fetch_sub_i32, flow_atomic_cas_i32, flow_race_mutex_lock, flow_race_mutex_unlock, flow_race_read, flow_race_write, __atomic_load_n_i64, __atomic_store_n_i64, __atomic_fetch_add_i64, __atomic_fetch_sub_i64, __atomic_compare_exchange_n_i64, __atomic_load_n_bool, __atomic_store_n_bool, __atomic_compare_exchange_n_bool, thread_new, thread_is_running, thread_spawn, thread_join, mutex_new, mutex_bind, mutex_lock, mutex_unlock, mutex_trylock, mutex_destroy, mutex_is_locked, condvar_new, condvar_bind, condvar_wait, condvar_signal, condvar_broadcast, condvar_destroy, rwlock_new, rwlock_bind, rwlock_rdlock, rwlock_wrlock, rwlock_unlock, rwlock_destroy, semaphore_new, semaphore_bind, semaphore_wait, semaphore_post, semaphore_count, channel_i32_is_empty, channel_i32_is_full, channel_i32_is_closed, channel_i32_len, channel_i32_select2_try, channel_i32_select2, channel_i32_select4_try, channel_i32_select4, channel_i64_new, channel_i64_bind, channel_i64_try_send, channel_i64_send, channel_i64_try_recv, channel_i64_recv, channel_i64_close, channel_i64_destroy, channel_i64_select2_try, channel_i64_select2, atomic_i32_new, atomic_i64_new, atomic_bool_new, atomic_i32_load, atomic_i32_store, atomic_i64_load, atomic_i64_store, atomic_bool_load, atomic_bool_store, spinlock_new, spinlock_lock, spinlock_unlock, spinlock_is_locked, once_new, once_bind, once_is_done, once_call_begin, once_call_end, waitgroup_new, waitgroup_bind, waitgroup_add, waitgroup_done, waitgroup_count, waitgroup_wait
+call graph:
+  thread_spawn -> flow_thread_spawn  (op 1)
+  thread_join -> flow_thread_join  (op 1)
+  mutex_lock -> mutex_bind  (op 1)
+  mutex_lock -> flow_race_mutex_lock  (op 1)
+  mutex_unlock -> flow_race_mutex_unlock  (op 1)
+  mutex_trylock -> mutex_bind  (op 1)
+  condvar_wait -> condvar_bind  (op 1)
+  condvar_wait -> mutex_bind  (op 1)
+  condvar_signal -> condvar_bind  (op 1)
+  condvar_broadcast -> condvar_bind  (op 1)
+  rwlock_rdlock -> rwlock_bind  (op 1)
+  rwlock_wrlock -> rwlock_bind  (op 1)
+  semaphore_wait -> semaphore_bind  (op 1)
+  semaphore_post -> semaphore_bind  (op 1)
+  channel_i32_try_send -> channel_i32_bind  (op 1)
+  channel_i32_send -> channel_i32_bind  (op 1)
+  channel_i32_try_recv -> channel_i32_bind  (op 1)
+  channel_i32_recv -> channel_i32_bind  (op 1)
+  channel_i32_close -> channel_i32_bind  (op 1)
+  channel_i32_destroy -> free  (op 1)
+  channel_i32_select2_try -> channel_i32_try_recv  (op 2)
+  channel_i32_select2 -> channel_i32_select2_try  (op 2)
+  channel_i32_select2 -> flow_thread_yield  (op 1)
+  channel_i32_select4_try -> channel_i32_try_recv  (op 4)
+  channel_i32_select4 -> channel_i32_select4_try  (op 1)
+  channel_i32_select4 -> flow_thread_yield  (op 1)
+  channel_i64_try_send -> channel_i64_bind  (op 1)
+  channel_i64_send -> channel_i64_bind  (op 1)
+  channel_i64_try_recv -> channel_i64_bind  (op 1)
+  channel_i64_recv -> channel_i64_bind  (op 1)
+  channel_i64_close -> channel_i64_bind  (op 1)
+  channel_i64_destroy -> free  (op 1)
+  channel_i64_select2_try -> channel_i64_try_recv  (op 2)
+  channel_i64_select2 -> channel_i64_select2_try  (op 1)
+  channel_i64_select2 -> flow_thread_yield  (op 1)
+  atomic_i32_load -> flow_atomic_load_i32  (op 1)
+  atomic_i32_store -> flow_atomic_store_i32  (op 1)
+  atomic_i64_load -> __atomic_load_n_i64  (op 1)
+  atomic_i64_store -> __atomic_store_n_i64  (op 1)
+  atomic_bool_load -> __atomic_load_n_bool  (op 1)
+  atomic_bool_store -> __atomic_store_n_bool  (op 1)
+  spinlock_lock -> __atomic_compare_exchange_n_bool  (op 1)
+  spinlock_unlock -> __atomic_store_n_bool  (op 1)
+  spinlock_is_locked -> __atomic_load_n_bool  (op 1)
+  once_is_done -> __atomic_load_n_bool  (op 1)
+  once_call_begin -> __atomic_load_n_bool  (op 2)
+  once_call_begin -> once_bind  (op 1)
+  once_call_end -> __atomic_store_n_bool  (op 1)
+  waitgroup_add -> waitgroup_bind  (op 1)
+  waitgroup_done -> waitgroup_bind  (op 1)
+  waitgroup_count -> waitgroup_bind  (op 1)
+  waitgroup_wait -> waitgroup_bind  (op 1)
+  main -> channel_i32_new  (op 1)
+  main -> channel_i32_send  (op 3)
+  main -> channel_i32_try_send  (op 1)
+  main -> channel_i32_recv  (op 3)
+  main -> channel_i32_try_recv  (op 1)
+  main -> channel_i32_close  (op 1)
+  main -> channel_i32_destroy  (op 1)
+effects / pure:
+  flow_thread_spawn: effects=0x0010 pure=False
+  flow_thread_join: effects=0x0010 pure=False
+  flow_thread_yield: effects=0x0010 pure=False
+  flow_async_spawn: effects=0x0010 pure=False
+  flow_async_join: effects=0x0010 pure=False
+  flow_async_delay: effects=0x0010 pure=False
+  malloc: effects=0x0016 pure=False
+  free: effects=0x0016 pure=False
+  flow_atomic_load_i32: effects=0x0010 pure=False
+  flow_atomic_store_i32: effects=0x0010 pure=False
+  flow_atomic_fetch_add_i32: effects=0x0010 pure=False
+  flow_atomic_fetch_sub_i32: effects=0x0010 pure=False
+  flow_atomic_cas_i32: effects=0x0010 pure=False
+  flow_race_mutex_lock: effects=0x0010 pure=False
+  flow_race_mutex_unlock: effects=0x0010 pure=False
+  flow_race_read: effects=0x0010 pure=False
+  flow_race_write: effects=0x0010 pure=False
+  __atomic_load_n_i64: effects=0x0010 pure=False
+  __atomic_store_n_i64: effects=0x0010 pure=False
+  __atomic_fetch_add_i64: effects=0x0010 pure=False
+  __atomic_fetch_sub_i64: effects=0x0010 pure=False
+  __atomic_compare_exchange_n_i64: effects=0x0010 pure=False
+  __atomic_load_n_bool: effects=0x0010 pure=False
+  __atomic_store_n_bool: effects=0x0010 pure=False
+  __atomic_compare_exchange_n_bool: effects=0x0010 pure=False
+  thread_new: effects=0x0000 pure=True
+  thread_is_running: effects=0x0000 pure=True
+  thread_spawn: effects=0x0010 pure=False
+  thread_join: effects=0x0010 pure=False
+  mutex_new: effects=0x0000 pure=True
+  mutex_bind: effects=0x8000 pure=False
+  mutex_lock: effects=0x8010 pure=False
+  mutex_unlock: effects=0x8010 pure=False
+  mutex_trylock: effects=0x8000 pure=False
+  mutex_destroy: effects=0x8000 pure=False
+  mutex_is_locked: effects=0x0000 pure=True
+  condvar_new: effects=0x0000 pure=True
+  condvar_bind: effects=0x8000 pure=False
+  condvar_wait: effects=0x8000 pure=False
+  condvar_signal: effects=0x8000 pure=False
+  condvar_broadcast: effects=0x8000 pure=False
+  condvar_destroy: effects=0x8000 pure=False
+  rwlock_new: effects=0x0000 pure=True
+  rwlock_bind: effects=0x8000 pure=False
+  rwlock_rdlock: effects=0x8000 pure=False
+  rwlock_wrlock: effects=0x8000 pure=False
+  rwlock_unlock: effects=0x8000 pure=False
+  rwlock_destroy: effects=0x8000 pure=False
+  semaphore_new: effects=0x0000 pure=True
+  semaphore_bind: effects=0x8000 pure=False
+  semaphore_wait: effects=0x8000 pure=False
+  semaphore_post: effects=0x8000 pure=False
+  semaphore_count: effects=0x0000 pure=True
+  channel_i32_new: effects=0x0000 pure=True
+  channel_i32_bind: effects=0x8000 pure=False
+  channel_i32_is_empty: effects=0x0000 pure=True
+  channel_i32_is_full: effects=0x0000 pure=True
+  channel_i32_is_closed: effects=0x0000 pure=True
+  channel_i32_len: effects=0x0000 pure=True
+  channel_i32_try_send: effects=0x8000 pure=False
+  channel_i32_send: effects=0x8000 pure=False
+  channel_i32_try_recv: effects=0x8000 pure=False
+  channel_i32_recv: effects=0x8000 pure=False
+  channel_i32_close: effects=0x8000 pure=False
+  channel_i32_destroy: effects=0x8016 pure=False
+  channel_i32_select2_try: effects=0x8000 pure=False
+  channel_i32_select2: effects=0x8010 pure=False
+  channel_i32_select4_try: effects=0x8000 pure=False
+  channel_i32_select4: effects=0x8010 pure=False
+  channel_i64_new: effects=0x0000 pure=True
+  channel_i64_bind: effects=0x8000 pure=False
+  channel_i64_try_send: effects=0x8000 pure=False
+  channel_i64_send: effects=0x8000 pure=False
+  channel_i64_try_recv: effects=0x8000 pure=False
+  channel_i64_recv: effects=0x8000 pure=False
+  channel_i64_close: effects=0x8000 pure=False
+  channel_i64_destroy: effects=0x8016 pure=False
+  channel_i64_select2_try: effects=0x8000 pure=False
+  channel_i64_select2: effects=0x8010 pure=False
+  atomic_i32_new: effects=0x0000 pure=True
+  atomic_i64_new: effects=0x0000 pure=True
+  atomic_bool_new: effects=0x0000 pure=True
+  atomic_i32_load: effects=0x0010 pure=False
+  atomic_i32_store: effects=0x0010 pure=False
+  atomic_i64_load: effects=0x0010 pure=False
+  atomic_i64_store: effects=0x0010 pure=False
+  atomic_bool_load: effects=0x0010 pure=False
+  atomic_bool_store: effects=0x0010 pure=False
+  spinlock_new: effects=0x0000 pure=True
+  spinlock_lock: effects=0x0010 pure=False
+  spinlock_unlock: effects=0x0010 pure=False
+  spinlock_is_locked: effects=0x0010 pure=False
+  once_new: effects=0x0000 pure=True
+  once_bind: effects=0x8000 pure=False
+  once_is_done: effects=0x0010 pure=False
+  once_call_begin: effects=0x8010 pure=False
+  once_call_end: effects=0x8010 pure=False
+  waitgroup_new: effects=0x0000 pure=True
+  waitgroup_bind: effects=0x8000 pure=False
+  waitgroup_add: effects=0x8000 pure=False
+  waitgroup_done: effects=0x8000 pure=False
+  waitgroup_count: effects=0x8000 pure=False
+  waitgroup_wait: effects=0x8000 pure=False
+  main: effects=0x801e pure=False
+device: requested=cpu chosen=cpu
+opt candidates: total=96 by_kind={'dead_elim': 94, 'inline': 2}
+  [dead_elim] channel_i32_select2 score=85.0 (unreachable from roots)
+  [dead_elim] channel_i32_select4 score=71.0 (unreachable from roots)
+  [dead_elim] channel_i64_recv score=54.0 (unreachable from roots)
+  [dead_elim] channel_i64_send score=52.0 (unreachable from roots)
+  [dead_elim] channel_i64_select2 score=51.0 (unreachable from roots)
+  [dead_elim] channel_i32_select4_try score=49.0 (unreachable from roots)
+  [dead_elim] channel_i64_try_send score=45.0 (unreachable from roots)
+  [dead_elim] channel_i64_try_recv score=43.0 (unreachable from roots)
+  [dead_elim] once_call_begin score=35.0 (unreachable from roots)
+  [dead_elim] mutex_trylock score=33.0 (unreachable from roots)
+  [dead_elim] waitgroup_done score=32.0 (unreachable from roots)
+  [dead_elim] channel_i32_select2_try score=31.0 (unreachable from roots)

@@ -1,3 +1,4 @@
+# effects-mode: permissive
 # Effects-native concurrency — ThreadedAsync over real pthreads
 # Run: ./flow run examples/concurrency/threaded_async.flow
 

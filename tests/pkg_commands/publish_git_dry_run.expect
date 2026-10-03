@@ -1,0 +1,15 @@
+$ flow publish --git https://example.com/gitdry.git --tag v0.3.1 --dry-run
+[94mPublishing gitdry@0.3.1…[0m
+  source: https://example.com/gitdry.git
+[93mdry-run: index not written[0m
+[exit 0]
+== files
+F ./flow.toml
+  | [package]
+  | name = "gitdry"
+  | version = "0.3.1"
+  | description = "Test package gitdry"
+  | license = "Apache-2.0"
+  | entry = "src/main.flow"
+  | 
+  | 

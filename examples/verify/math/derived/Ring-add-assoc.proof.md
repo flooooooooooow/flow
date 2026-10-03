@@ -2,9 +2,9 @@
 
 *Ring addition associates.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.1
+**Source.** dummit-foote: *Abstract Algebra*, §7.1
 
-## Derived fact 1 — (a + b) + c = a + (b + c)
+## Derived fact 1: (a + b) + c = a + (b + c)
 
 **Coordinate.** Ring · addition · parentheses do not matter · **Derived fact**
 

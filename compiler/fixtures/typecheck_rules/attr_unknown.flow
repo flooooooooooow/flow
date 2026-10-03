@@ -1,0 +1,9 @@
+# expect: Unknown attribute '@fast' on function 'f'. Known attributes: @always_inline, @c, @compile, @flow_api, @gpu, @guard, @hot, @inline, @interp, @jit, @libm, @lifetime, @mlir, @monomorphized, @noinline, @only, @python, @rt_safe, @safe, @target, @test, @unsafe
+@fast
+function f() -> i32 {
+    return 1
+}
+
+function main() -> i32 {
+    return f()
+}

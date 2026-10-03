@@ -3,7 +3,7 @@
 ## A formal operating handbook for building, testing, and extending Flow programs
 
 **Edition:** 1.0  
-**Repository baseline:** Flow 0.11.1, August 2026  
+**Repository baseline:** live repository; verify the current version and CI before acting  
 **Language:** simplified technical English
 
 ---
@@ -17,8 +17,9 @@ Its main content is instructions, process, reference data, and practical know-ho
 The book is based on the present construction of Flow:
 
 - a small, statically typed language;
-- a self-hosted Stage-A compiler, called `flowc`, for the stable core;
-- a Python compiler host for the full language surface;
+- a self-hosted compiler, called `flowc`, which is the only C compiler;
+- Python tooling that remains for the MLIR generator fallback, `flow check`,
+  wheels and some scripts;
 - C as the default portable CPU target;
 - optional MLIR, Metal, WGSL, SPIR-V, WebAssembly, graphics, audio, and native
   runtime paths;
@@ -27,6 +28,11 @@ The book is based on the present construction of Flow:
 
 Flow changes quickly. This book shows how to check the current repository. The
 repository is the final source for current behavior.
+
+The canonical repository-agent contract is `AGENTS.md` plus
+`docs/project/agentic-loop.md`. Repository placement rules are in
+`docs/project/repository-structure.md`. This handbook explains techniques; it
+must not override those live operating contracts.
 
 ### Intended reader
 
@@ -78,8 +84,8 @@ The formal terms have these meanings:
 ## 1. Give the AI a work contract
 
 An AI works best when the request states the outcome, the reason, the limits,
-and the proof of completion. A request such as “add support for X” is incomplete.
-It does not say which compiler host, which backend, which syntax limits, or which
+and the proof of completion. A request such as "add support for X" is incomplete.
+It does not say which backend, which syntax limits, or which
 tests define success.
 
 Use this contract:
@@ -101,7 +107,7 @@ Goal: Add a fixed-size moving average example in Flow.
 Why it matters: It will be the first audio tutorial example.
 In scope: One example, one runtime test, and a short tutorial section.
 Out of scope: New syntax, heap allocation, and MLIR-specific optimization.
-Required compatibility: C backend on the Python host; real-time-safe style.
+Required compatibility: C backend (flowc); real-time-safe style.
 Required evidence: The example compiles, runs, returns 0, and the runtime test
 passes.
 Files or areas to preserve: Do not change unrelated compiler code.
@@ -124,7 +130,7 @@ language meaning, syntax, public API, architecture, or project scope.
 | Documentation | Judge clarity and truth | Draft, link, and keep examples runnable |
 | Scope | Approve expansion | Prevent accidental expansion |
 
-### 1.2 Define “done” before code changes
+### 1.2 Define "done" before code changes
 
 A Flow task is done only when all required layers agree. For a normal program,
 this often means:
@@ -142,10 +148,10 @@ For a compiler feature, add these conditions:
 
 9. Invalid input has a clear diagnostic.
 10. Other backends either support the feature or reject it honestly.
-11. The self-hosted and Python hosts have an explicit parity decision.
+11. The C (flowc) and MLIR paths have an explicit parity decision.
 12. A regression test fixes the behavior in place.
 
-Do not let “the patch is written” mean “the task is done.”
+Do not let "the patch is written" mean "the task is done."
 
 ---
 
@@ -157,42 +163,36 @@ model is a pipeline with several possible routes.
 ```text
 .flow source
     |
-    +--> flowc host (default, Stage-A subset) --> C --> cc/clang --> program
+    +--> flowc (the only C compiler) --> C --> cc/clang --> program
+    |                                     |
+    |                                     +--> Emscripten --> WebAssembly
     |
-    +--> Python host (full surface)
-             |
-             +--> C ---------------------------> cc/clang --> program
-             +--> MLIR --> LLVM tools ----------------------> program/JIT
-             +--> Metal / WGSL / SPIR-V --------------------> GPU artifact
-             +--> C or MLIR --> Emscripten -----------------> WebAssembly
+    +--> MLIR: flowc emitter, Python generator as fallback
+    |         --> LLVM tools ---------------------------> program/JIT
+    |
+    +--> Metal / WGSL / SPIR-V ---------------------------> GPU artifact
 ```
 
 This layout affects how the AI must work.
 
-### 2.1 There are two compiler hosts
+### 2.1 There is one C compiler
 
-`FLOW_HOST=flowc` is the default for `run` and `compile`. It uses the
-self-hosted Stage-A compiler. Stage-A is intentionally smaller than the full
-language. It covers the core needed to compile the compiler itself.
+`flowc`, the self-hosted compiler in `compiler/src/`, is the only C compiler.
+`run`, `compile`, `test`, `test-lang`, `gfx`, `record`, `window`, `audio`,
+`debug` and `patch` all use it. It is built with `cc` from the checked-in
+`compiler/bootstrap/flowc_stage_a.c`.
 
-`FLOW_HOST=python` uses the Python implementation under `src/flow/`. Use it for
-the broader language surface, including many DSLs, effects, tests, MLIR, GPU,
-and graphics operations.
+The Python C backend is retired. `FLOW_HOST=python` stops with an error,
+`FLOW_HOST=auto` is treated as flowc, and `FLOWC_BIN=<path>` picks a flowc
+binary. A flowc failure is a Flow failure: there is no second C compiler to
+check against. Report it with the smallest program that shows it.
 
-The AI MUST choose the host explicitly when a feature is outside Stage-A. It
-MUST NOT report a Stage-A failure as a general Flow failure until it checks the
-Python host.
-
-Basic core command:
+For C only, without linking, use
+`./flow tool compiler/scripts/flowc_emit.flow [--strict|--lenient] [--no-checks] IN.flow OUT.c`.
 
 ```bash
 ./flow run examples/basics/fibonacci.flow
-```
-
-Full-surface command:
-
-```bash
-FLOW_HOST=python ./flow run examples/evolution/pendulum_evolves.flow
+./flow run examples/evolution/pendulum_evolves.flow
 ```
 
 ### 2.2 C is the default portable backend
@@ -214,31 +214,30 @@ the default C path inconsistent.
 Use:
 
 ```bash
-FLOW_HOST=python ./flow run program.flow --backend=mlir
-FLOW_HOST=python ./flow mlir program.flow --optimize
-FLOW_HOST=python ./flow mlir-run program.flow
+./flow run program.flow --backend=mlir
+./flow mlir program.flow --optimize
+./flow mlir-run program.flow
 ```
 
 The AI MUST state when MLIR or LLVM tools are required and unavailable.
 
 ### 2.4 The front end has ordinary compiler stages
 
-For the Python host, the main files are:
+The compiler sources are under `compiler/src/`:
 
 | Stage | Main implementation | Purpose |
 |---|---|---|
-| Parse | `src/flow/parser.py` | Tokens, grammar, AST construction |
-| Resolve | `src/flow/module_resolver.py` | Modules and imported declarations |
-| Check | `src/flow/type_checker.py` | Names, types, effects, semantic rules |
-| Special lowering | `src/flow/flow_blocks.py` and DSL modules | Convert higher forms to ordinary AST |
-| Generic expansion | `src/flow/monomorphize.py` | Produce concrete generic instances |
-| C output | `src/flow/c_generator.py` | Portable C generation |
-| MLIR output | `src/flow/mlir_generator.py` | MLIR generation |
-| Other targets | target-specific generator modules | Metal, WGSL, SPIR-V, Python, JavaScript |
+| Parse | `lexer.flow`, `parser.flow`, `ast.flow` | Tokens, grammar, AST construction |
+| Resolve | `resolve.flow` | Modules, bundles, DSL expansion of every source read |
+| Check | `typecheck.flow` | Names, types, effects, semantic rules |
+| Special lowering | `field_dsl.flow`, `dynamics_dsl.flow`, `flow_blocks.flow`, `shader_dsl.flow` | Convert higher forms to ordinary AST |
+| Generic expansion | `monomorphize.flow` and `mono_*.flow` | Produce concrete generic instances |
+| C output | `cgen.flow` | Portable C generation |
+| MLIR output | `mlirgen.flow` | MLIR text (`FLOWC_EMIT=mlir`) |
 
-For the self-hosted compiler, the corresponding sources are under
-`compiler/src/`, including `lexer.flow`, `parser.flow`, `ast.flow`,
-`typecheck.flow`, `resolve.flow`, and `cgen.flow`.
+The Python modules under `src/flow/` still hold the MLIR generator fallback
+(`mlir_generator.py`), `flow check` (`type_checker.py`) and the GPU and WGSL
+generators. `flow python` is the Flow tool `tools/pywheel`.
 
 ### 2.5 Higher-level forms use two implementation channels
 
@@ -353,7 +352,7 @@ If the task overlaps an already modified file, instruct the AI to:
 3. make the smallest compatible edit;
 4. report the overlap in the handoff.
 
-### 4.2 Recover the project’s current direction
+### 4.2 Recover the project's current direction
 
 Use these files for different questions:
 
@@ -362,10 +361,10 @@ Use these files for different questions:
 | Why does Flow exist? | `VISION.md` |
 | What is presented to users? | `README.md` |
 | What is planned? | `ROADMAP.md` and `docs/NEXT.md` |
-| What needs a human decision? | `Questions.md` |
+| What needs a human decision? | `docs/project/Questions.md` |
 | What is the formal language surface? | `docs/LANGUAGE_SPEC.md` |
 | How do the compiler paths fit? | `docs/project/architecture-writeup.md` |
-| What does Stage-A support? | `compiler/README.md` |
+| What does flowc support? | `compiler/README.md` |
 | What patterns should examples use? | `docs/project/pattern-adoption.md` |
 | What is known to work? | `tests/`, `examples/`, and CI configuration |
 
@@ -383,7 +382,6 @@ which evidence must be returned.
 
 ```text
 Create a Flow program that [behavior].
-Use [Stage-A core / Python full surface].
 Target [C / MLIR / WASM / gfx / audio].
 Start from [named example or library module].
 Do not add new syntax or runtime APIs.
@@ -410,7 +408,6 @@ Implement [feature] as one vertical compiler slice.
 First find the approved syntax and semantic decision.
 Cover lexer/parser, AST, type checking, lowering/code generation, formatter or
 LSP when applicable, valid tests, invalid tests, and documentation.
-State the parity decision for flowc and the Python host.
 State the parity decision for C, MLIR, and other affected backends.
 Stop for human direction if the semantics are not already decided.
 ```
@@ -473,7 +470,7 @@ Examples:
 - two compiler generations produce identical output;
 - a backend parity test returns the same result on C and MLIR.
 
-The repository’s evolution demonstrations use this practice: they print a
+The repository's evolution demonstrations use this practice: they print a
 measured quantity, compare it with theory, and return a failure code if the
 relationship is broken.
 
@@ -487,17 +484,16 @@ Before writing source, make the AI fill this table:
 
 | Decision | Common choices | Default rule |
 |---|---|---|
-| Compiler host | `flowc`, `python` | Use `flowc` for Stage-A core; Python for full surface |
 | CPU backend | C, MLIR | Use C unless MLIR is part of the goal |
 | Program mode | run, compile, gfx, audio, wasm, shader | Use the mode closest to the final environment |
 | Safety level | default, safety, flight | Use default during early work; add the required production profile |
 | Test level | parser, unit, compile, runtime, parity, end-to-end | Start focused; expand by risk |
 
-### 7.1 Stage-A core is useful for portable, simple programs
+### 7.1 Start with the portable core
 
-Use Stage-A when the program can stay within ordinary functions, structs,
-fixed arrays, pointers, loops, basic `match`, imports supported by Stage-A,
-and direct C interoperability.
+Prefer ordinary functions, structs, fixed arrays, pointers, loops, `match`,
+imports and direct C interoperability when they are enough. They work on every
+backend.
 
 ```flow
 function sum_to(n: i32) -> i32 {
@@ -522,33 +518,32 @@ Run:
 ./flow run program.flow
 ```
 
-### 7.2 Use the Python host for Flow’s broader forms
+### 7.2 Use Flow's broader forms on the same compiler
 
-Select the Python host for algebraic effects, generics beyond Stage-A,
-declarative dynamics, specialised DSLs, broad module behavior, MLIR, GPU, or
-other full compiler facilities.
+flowc compiles algebraic effects, generics, declarative dynamics, the Field and
+shader DSLs, and flow blocks with the same command:
 
 ```bash
-FLOW_HOST=python ./flow run program.flow
+./flow run program.flow
 ```
 
-Do not hide this requirement. Put it in the example header, tutorial command,
-or project script when users need it.
+MLIR and GPU routes have their own limits. When a program needs one, put the
+route in the example header, tutorial command, or project script.
 
 ### 7.3 Keep the route repeatable
 
 The AI SHOULD return the exact command it used. Environment variables are part
-of the command’s meaning. “It works with Flow” is less useful than:
+of the command's meaning. "It works with Flow" is less useful than:
 
 ```bash
-FLOW_HOST=python FLOW_PROFILE=safety ./flow compile program.flow
+FLOW_PROFILE=safety ./flow compile program.flow
 ```
 
 ---
 
 ## 8. Build ordinary Flow code first
 
-Flow’s core surface is deliberately readable. Ask the AI to prefer explicit
+Flow's core surface is deliberately readable. Ask the AI to prefer explicit
 types and direct control flow until a higher-level form clearly improves the
 model.
 
@@ -598,7 +593,7 @@ Ask the AI to:
 
 ### 8.4 Use C interoperability deliberately
 
-Flow’s C target makes native integration practical. Declare only the native
+Flow's C target makes native integration practical. Declare only the native
 surface that is needed.
 
 ```flow
@@ -614,8 +609,8 @@ MUST NOT assume that a parser-accepted extern is correctly linked.
 
 ## 9. Express evolution as evolution
 
-Flow’s main distinction is that a changing system can be stated directly. The
-project’s successful adoption rule is: use the declarative Flow form in the
+Flow's main distinction is that a changing system can be stated directly. The
+project's successful adoption rule is: use the declarative Flow form in the
 canonical example, and keep hand-written numerical code only when it teaches
 the lowering or a specialised numerical method.
 
@@ -708,7 +703,7 @@ Effects are useful when core logic needs an operation but should not know its
 implementation. A request to the AI should name both the operation contract
 and the handler contexts.
 
-```flow
+```flow expect-error
 effect Log {
     info(msg: string) -> void,
 }
@@ -746,7 +741,6 @@ Ask the AI to use effects when all these conditions are true:
 - the call site should state what it needs;
 - production and test behavior should differ;
 - dynamic scoping is acceptable;
-- the full Python compiler host is available;
 - current effect-row and backend limits are understood.
 
 Do not use effects only to make an ordinary pure function look advanced.
@@ -759,7 +753,7 @@ production handlers, test handlers, nested replacement, and composed handlers.
 
 ## 11. Organise modules and packages by logical name
 
-The module rule is simple: imports name modules, not file-system traversal.
+The module rule is simple: imports name modules rather than file-system traversal.
 
 Preferred forms include:
 
@@ -781,7 +775,7 @@ Ask the AI to follow this process:
 4. Keep public exports intentional and small.
 5. Use re-export only for a deliberate package surface.
 6. Test resolution from the real project root.
-7. Check Stage-A support separately if the default host must accept the module.
+7. Compile the module with flowc through `./flow run` or `./flow test-lang`.
 
 The AI MUST NOT replace a module import with a chain of `../../..` paths merely
 to make one local command pass.
@@ -816,11 +810,11 @@ answer:
 - Is the native declaration or link command incomplete?
 - Is the runtime contract being violated?
 
-Use compilation and preservation options that keep the artifact. For the
-Python runner, structured execution can keep intermediates:
+Use compilation and preservation options that keep the artifact. The
+one-process runner can keep intermediates:
 
 ```bash
-python3 -m flow.run program.flow --json --keep build/investigation
+./flow run program.flow --json --keep build/investigation
 ```
 
 For ordinary debugging:
@@ -861,7 +855,7 @@ noise and makes the first failure easier to understand.
 5. Add a negative diagnostic case.
 6. Run all tests for the touched compiler stage.
 7. Run backend parity when shared semantics changed.
-8. Run Stage-A roundtrip or self-host checks when `compiler/src/` changed.
+8. Run `roundtrip.flow` and `self_host_full.flow` when `compiler/src/` changed.
 
 ### 13.3 Common commands
 
@@ -869,7 +863,7 @@ noise and makes the first failure easier to understand.
 ./flow test --tier1
 ./flow test --strict --verbose
 ./flow test-runtime
-./flow test-python
+./flow test-scripts
 ./flow test-mlir
 ./flow test-gpu
 ./flow test-all
@@ -879,10 +873,10 @@ Use a focused path when supported:
 
 ```bash
 ./flow test-runtime tests/runtime/test_arithmetic.flow
-PYTHONPATH=src pytest tests/unit/test_specific_area.py -q
+./flow test-scripts doc_anchors
 ```
 
-The AI MUST report what it actually ran. It MUST NOT say “all tests pass” when
+The AI MUST report what it actually ran. It MUST NOT say "all tests pass" when
 it ran only a focused test.
 
 ### 13.4 Runtime test contract
@@ -918,8 +912,8 @@ source
   -> runtime state and output
 ```
 
-For each stage, ask one question: “Is the representation correct here?” Stop at
-the first “no.” The defect normally belongs at that boundary or immediately
+For each stage, ask one question: "Is the representation correct here?" Stop at
+the first "no." The defect normally belongs at that boundary or immediately
 before it.
 
 ### 14.1 Classify failures before editing
@@ -988,7 +982,7 @@ function bounded_iteration(limit: i32) -> i32 {
 ```
 
 Counted `for` loops are already bounded. The AI SHOULD choose a bound that
-comes from the system contract, not a large arbitrary number.
+comes from the system contract rather than a large arbitrary number.
 
 ### 15.2 Sanitizers
 
@@ -1029,8 +1023,8 @@ facilities.
 Run the audio commands and tests. An ordinary CPU test is not sufficient:
 
 ```bash
-FLOW_HOST=python ./flow audio program.flow
-FLOW_HOST=python ./flow compile-audio program.flow
+./flow audio program.flow
+./flow compile-audio program.flow
 ```
 
 Read `docs/library/audio-safety.md` and `docs/library/rt-safety.md` before
@@ -1052,7 +1046,7 @@ Performance claims MUST have:
 Use `flow explain` when a declarative selection is unexpectedly slow:
 
 ```bash
-FLOW_HOST=python ./flow explain program.flow
+./flow explain program.flow
 ```
 
 The report shows candidate implementations, applicability, estimated cost,
@@ -1083,8 +1077,8 @@ Use this slice checklist:
 11. **Tests:** Add positive, negative, edge, and regression coverage.
 12. **Example:** Add one canonical use that checks a real result.
 13. **Documentation:** State behavior and limits without future-tense ambiguity.
-14. **Self-hosting:** Decide whether Stage-A needs the feature now, later, or
-    never.
+14. **Self-hosting:** Implement the feature in `compiler/src/` and
+    regenerate the bootstrap C.
 
 ### 16.1 Use contextual keywords carefully
 
@@ -1096,7 +1090,7 @@ ordinary identifier where allowed.
 
 ### 16.2 Lower to existing, well-tested constructs
 
-Flow’s successful additions often lower to ordinary structs, functions, loops,
+Flow's successful additions often lower to ordinary structs, functions, loops,
 and calls. This has several benefits:
 
 - every backend can share more behavior;
@@ -1119,7 +1113,7 @@ Never leave this behavior as an accident of declaration order.
 
 ### 16.4 Give unsupported paths a clear failure
 
-If a new form works on C but not MLIR, or on the Python host but not Stage-A,
+If a new form works on C but not MLIR,
 the AI MUST take one of these actions:
 
 - implement parity;
@@ -1147,10 +1141,11 @@ The present ladder is:
 The key commands are:
 
 ```bash
+./compiler/scripts/bootstrap_from_c.sh --regen    # after editing compiler/src
 ./compiler/scripts/bootstrap_from_c.sh --verify
-./compiler/scripts/selfcompile_audit.sh
-./compiler/scripts/self_host_full.sh
-./compiler/scripts/roundtrip.sh
+./flow tool compiler/scripts/selfcompile_audit.flow
+./flow tool compiler/scripts/self_host_full.flow
+./flow tool compiler/scripts/roundtrip.flow
 ```
 
 After an intentional compiler-source change, bootstrap C may require
@@ -1168,13 +1163,13 @@ report:
 - which artifacts were compared;
 - whether compiler self-tests passed;
 - whether a normal program compiled and ran under the generated compiler;
-- whether any step used the Python escape hatch.
+- whether any step used Python (none should: `bootstrap_from_c.sh --regen` needs only `cc`).
 
 ### 17.3 Keep the subset honest
 
-Stage-A deliberately lacks much of the full Python-host surface. The AI SHOULD
-add only what self-hosting or approved user goals require. It MUST update the
-Stage-A support table when behavior changes. It MUST avoid describing partial
+flowc is the only C compiler, so its support table in `compiler/README.md`
+is the language's support table. The AI MUST update it when behavior
+changes. It MUST avoid describing partial
 name checking as a complete semantic type system.
 
 ---
@@ -1185,7 +1180,7 @@ name checking as a complete semantic type system.
 
 Use C as the semantic reference for portable CPU work, but do not make C
 syntax leak into the Flow surface without need. Test generated C with the
-project’s normal C standard and warnings. Preserve ABI behavior and runtime
+project's normal C standard and warnings. Preserve ABI behavior and runtime
 link lists.
 
 ### 18.2 MLIR backend
@@ -1204,7 +1199,7 @@ Flow has several GPU-related routes with different maturity:
 - MLIR GPU to SPIR-V provides an emit route;
 - some SPIR-V execution support depends on external loaders or platform work.
 
-The AI MUST name the exact route. “GPU support” is too broad to be a useful
+The AI MUST name the exact route. "GPU support" is too broad to be a useful
 verification claim.
 
 ### 18.4 WebAssembly
@@ -1213,7 +1208,7 @@ WebAssembly can use C or MLIR before Emscripten. Browser facilities need
 explicit crossings and stubs. Use:
 
 ```bash
-FLOW_HOST=python ./flow wasm program.flow --backend=c --out build/wasm
+./flow wasm program.flow --backend=c --out build/wasm
 ```
 
 Add only the required preloaded directory, linked object, threading mode, or
@@ -1225,13 +1220,13 @@ when browser behavior is part of the task.
 Use the high-level command that assembles the correct runtime:
 
 ```bash
-FLOW_HOST=python ./flow gfx program.flow
+./flow gfx program.flow
 ```
 
 For deterministic visual evidence, use the headless recorder:
 
 ```bash
-FLOW_HOST=python ./flow record program.flow --frames 120 --out build/frames
+./flow record program.flow --frames 120 --out build/frames
 ```
 
 The AI SHOULD also add non-visual checks for model state, layout, collision,
@@ -1244,8 +1239,8 @@ only evidence.
 
 ## 19. Use adoption before invention
 
-One of the clearest lessons in the repository is “adoption first; new sugar
-second.” When a good feature already exists but examples bypass it, the first
+One of the clearest lessons in the repository is "adoption first; new sugar
+second." When a good feature already exists but examples bypass it, the first
 task is to route canonical examples through it.
 
 The method works for these reasons:
@@ -1314,7 +1309,7 @@ The AI MUST prefer:
 
 - a parser diagnostic over ambiguous recovery;
 - a type error over an invented default type;
-- a backend “not supported” message over silently dropped behavior;
+- a backend "not supported" message over silently dropped behavior;
 - a runtime failure code over a plausible but unchecked printout;
 - a failed fixed-point comparison over updating the expected artifact without
   investigation.
@@ -1354,8 +1349,9 @@ be rediscovered and may be reversed accidentally.
 ## 25. Use explainability as a feature
 
 Declarative source lets the compiler choose an implementation. That choice
-must remain inspectable. Flow’s plan selector records each candidate, its
-constraints, estimated cost, scratch use, rejection reason, and winner.
+must remain inspectable. Flow's plan selector (`compiler/src/sort_plans.flow`)
+records each candidate, its constraints, estimated cost, scratch use,
+rejection reason, and winner.
 
 Use the same principle for new adaptive systems:
 
@@ -1382,7 +1378,7 @@ A Flow example SHOULD have five parts:
 
 For a visual example, add recorded frames. For a numerical example, print a
 small table. For a performance example, add a reproducible benchmark. The
-program should still be able to say “wrong” without a person judging the
+program should still be able to say "wrong" without a person judging the
 picture.
 
 ---
@@ -1402,14 +1398,15 @@ Correction:
 4. Run the current command.
 5. State the verified limit.
 
-## 28. Do not use the wrong compiler host
+## 28. Do not rewrite around a compiler bug
 
-Problem: a declarative or effect example fails under default Stage-A, and the
-AI rewrites it into lower-level code.
+Problem: a declarative or effect example fails under flowc, and the AI
+rewrites it into lower-level code.
 
-Correction: rerun on `FLOW_HOST=python`, then decide whether Stage-A parity is
-actually in scope. Do not remove useful language features to satisfy the wrong
-route.
+Correction: reduce the failure to the smallest program, report it or fix it
+in `compiler/src/`, and keep the example in its intended form. There is no
+second C compiler to fall back to; `FLOW_HOST=python` is retired. Do not
+remove useful language features to hide a compiler gap.
 
 ## 29. Do not patch only generated output
 
@@ -1450,7 +1447,7 @@ separate task with behavior-preserving evidence.
 ## 34. Do not use AI consensus as design authority
 
 Multiple AI views can reveal risks and dependencies. They cannot decide human
-product intent. Weighted votes are input to a decision, not the decision.
+product intent. Weighted votes are input to a decision. They are not the decision.
 Use human authority for syntax, public meaning, priorities, and acceptable
 trade-offs.
 
@@ -1462,8 +1459,8 @@ trade-offs.
 
 1. Select the correct example domain.
 2. Read `examples/README.md` and the nearest canonical example.
-3. Decide Stage-A or Python host.
-4. Decide command mode and backend.
+3. Decide command mode and backend.
+4. Check that flowc accepts the forms you plan to use.
 5. Reuse the standard library and declarative surface.
 6. Write the smallest complete program.
 7. Add a measurable result and invariant.
@@ -1556,7 +1553,7 @@ Recommended next action, if any:
 ```
 
 The final report MUST be accurate even if some checks could not run. A blocked
-tool is a reported limit, not a passing result.
+tool is a reported limit rather than a passing result.
 
 ---
 
@@ -1573,7 +1570,7 @@ Goal: [goal]
 Reason: [reason]
 Scope: [included work]
 Not in scope: [excluded work]
-Required route: [FLOW_HOST, backend, command mode]
+Required route: [backend, command mode]
 Done when: [observable behavior and tests]
 
 Use current Flow patterns and standard-library facilities before creating new
@@ -1645,22 +1642,22 @@ Run the documentation link or example checks relevant to the edited files.
 |---|---|
 | Show version | `./flow version` |
 | Show command help | `./flow help` |
-| Run Stage-A core | `./flow run file.flow` |
-| Run full surface | `FLOW_HOST=python ./flow run file.flow` |
+| Run a program | `./flow run file.flow` |
+| Emit C only | `./flow tool compiler/scripts/flowc_emit.flow file.flow out.c` |
 | Compile only | `./flow compile file.flow` |
-| Use MLIR CPU | `FLOW_HOST=python ./flow run file.flow --backend=mlir` |
-| Emit MLIR | `FLOW_HOST=python ./flow mlir file.flow` |
-| JIT | `FLOW_HOST=python ./flow jit file.flow` |
-| Explain a plan | `FLOW_HOST=python ./flow explain file.flow` |
+| Use MLIR CPU | `./flow run file.flow --backend=mlir` |
+| Emit MLIR | `./flow mlir file.flow` |
+| JIT | `./flow jit file.flow` |
+| Explain a plan | `./flow explain file.flow` |
 | Format | `./flow fmt file.flow` |
 | Debug | `./flow debug file.flow` |
-| Run graphics | `FLOW_HOST=python ./flow gfx file.flow` |
-| Record graphics | `FLOW_HOST=python ./flow record file.flow --frames 120 --out build/frames` |
-| Run audio | `FLOW_HOST=python ./flow audio file.flow` |
-| Build WASM | `FLOW_HOST=python ./flow wasm file.flow --backend=c --out build/wasm` |
+| Run graphics | `./flow gfx file.flow` |
+| Record graphics | `./flow record file.flow --frames 120 --out build/frames` |
+| Run audio | `./flow audio file.flow` |
+| Build WASM | `./flow wasm file.flow --backend=c --out build/wasm` |
 | Focused Flow tests | `./flow test --strict --verbose` |
 | Runtime tests | `./flow test-runtime` |
-| Python unit tests | `./flow test-python` |
+| Shell tests (tools and scripts) | `./flow test-scripts` |
 | MLIR tests | `./flow test-mlir` |
 | GPU tests | `./flow test-gpu` |
 | All main tests | `./flow test-all` |
@@ -1671,7 +1668,7 @@ Run the documentation link or example checks relevant to the edited files.
 | Build project | `./flow build` |
 
 Always confirm the current form with `./flow help`. This table is a starting
-point, not a replacement for the executable help.
+point. It does not replace the executable help.
 
 ## 48. Repository map
 
@@ -1680,7 +1677,7 @@ point, not a replacement for the executable help.
 | `flow` | Main command driver |
 | `flow.toml` | Root project and path configuration |
 | `src/flow/` | Full Python compiler and tooling |
-| `compiler/src/` | Self-hosted Stage-A compiler in Flow |
+| `compiler/src/` | flowc, the self-hosted compiler in Flow |
 | `compiler/bootstrap/` | Checked-in C bootstrap |
 | `runtime/` | Native runtime support |
 | `lib/stdlib/` | Standard library modules |
@@ -1720,16 +1717,16 @@ Before accepting AI work, check:
 
 ## 50. How completeness is defined
 
-This part is the coverage ledger for the handbook. “Every feature” means every
+This part is the coverage ledger for the handbook. "Every feature" means every
 user-facing feature family that can be found in these sources
-at this edition’s repository baseline:
+at this edition's repository baseline:
 
-- executable `./flow help` and the command dispatch in `flow`;
+- executable `./flow help` and the command table in `tools/flow_cli/main.flow`;
 - the language specification and its implementation matrix;
 - focused language and library documents;
 - the standard-library module tree;
 - compiler, runtime, example, test, and tool directories;
-- `VISION.md`, `ROADMAP.md`, `docs/NEXT.md`, and `Questions.md`;
+- `VISION.md`, `ROADMAP.md`, `docs/NEXT.md`, and `docs/project/Questions.md`;
 - the AI collaboration rules in `CONTRIBUTING.md`.
 
 This definition does not mean that every standard-library function receives a
@@ -1749,8 +1746,8 @@ Use these status words throughout this part:
 | **Planned** | Named as future work; details may still require human authority |
 | **External** | Requires a native tool, library, platform, or third-party package |
 
-The AI MUST attach a route to a status. For example, “closures are shipped on
-the C backend and unsupported by MLIR” is useful. “Closures are supported” is
+The AI MUST attach a route to a status. For example, "closures are shipped on
+the C backend and unsupported by MLIR" is useful. "Closures are supported" is
 not complete enough.
 
 ### 50.1 Coverage rule for future versions
@@ -1763,7 +1760,7 @@ rg -n '^#{1,4} ' docs/LANGUAGE_SPEC.md docs/language docs/library
 find lib/stdlib -type f -name '*.flow' | sort
 find examples -type f -name '*.flow' | sort
 find tests -type f | sort
-rg -n '🔲|partial|^- \[ \]' ROADMAP.md docs/NEXT.md Questions.md
+rg -n '🔲|partial|^- \[ \]' ROADMAP.md docs/NEXT.md docs/project/Questions.md
 ```
 
 Any new command, module, status row, or open decision must either be added to
@@ -1799,7 +1796,7 @@ this ledger or explicitly declared internal.
 | Bitwise | `& \| ^ ~ << >>` | Shipped. Safety checking covers invalid literal shifts; signed rules still need care. |
 | Assignment | `=` and supported compound forms | Mutation requires a mutable binding or valid mutable target. |
 | Range | `to` and `..`; optional `step` | `to` is preferred. Test negative and non-unit steps. |
-| Pipeline | `|>` with optional `_` placeholder | Shipped on the Python host; used by ordering and DSP pipelines. |
+| Pipeline | `|>` with optional `_` placeholder | Shipped; used by ordering and DSP pipelines. |
 | Address/pointer | unary `&` and `*` | Shipped mainly on C; inspect ABI and lifetime. |
 | Access | `.`, `[]`, postfix chains | Shipped; includes forms such as `ptr[0].field`. |
 | Arrows | `->`, `=>` | Return/function types and match arms. |
@@ -1819,7 +1816,7 @@ The list covers the keyword families in the specification.
 | Interfaces | `trait`, `impl` | Limited backend surface. Confirm method resolution and codegen. |
 | Type naming | `type`, `distinct` | Transparent alias versus nominal boundary. |
 | FFI | `extern` and optional ABI string | Shipped on C. Linkage is a separate required check. |
-| Modules | `import`, `export`, `module` | Imports/exports ship; `module` blocks are flattened, not namespaces. |
+| Modules | `import`, `export`, `module` | Imports/exports ship; `module` blocks are flattened rather than namespaced. |
 | Branching | `if`, `elif`, `else` | Statements and shipped if-expressions. |
 | Loops | `while`, `for`, `in`, `to`, `step`, `parallel` | Parallel uses OpenMP when available and serial fallback otherwise. |
 | Loop control | `break`, `continue` | Shipped, with a known C mismatch for `break` inside a match inside a loop. |
@@ -2067,7 +2064,7 @@ Use the capability that matches the evidence goal:
 
 Resumable continuation semantics and full cross-platform epoll/kqueue/IOCP
 coverage remain limited. Never infer non-blocking behavior from the word
-“async”; inspect the installed handler.
+"async"; inspect the installed handler.
 
 ---
 
@@ -2189,8 +2186,7 @@ Flow compilation.
 
 | Route | Construction | Status rule |
 |---|---|---|
-| Stage-A C | Flow source → self-hosted `flowc` → C → native compiler | Default core route; subset is documented in `compiler/README.md`. |
-| Python-host C | full parser/check/lowering → C → native compiler | Broadest general route and normal semantic baseline. |
+| C | Flow source → self-hosted `flowc` → C → native compiler | The only C route and the semantic baseline; limits are in `compiler/README.md`. |
 | MLIR CPU | Flow AST → MLIR → LLVM conversions/link | Co-equal but incomplete; require parity tests. |
 | JIT | MLIR-oriented generation and runtime execution | External LLVM tools; use for iteration and ML workloads. |
 | ML workflow | `ml run`, `jit`, `bench`, `test` | MLIR-first convenience surface; state exact subcommand. |
@@ -2201,7 +2197,7 @@ Flow compilation.
 | WebAssembly C | Flow → C → Emscripten | Default browser build route where Emscripten is installed. |
 | WebAssembly MLIR | Flow → MLIR/LLVM → Emscripten | More external tools and narrower feature coverage. |
 | Python package | Flow → C extension bindings → wheel | macOS/Linux documented; ABI-compatible exports only. |
-| JavaScript | Stage-A or browser-oriented JS generation | Limited surface; match/other parity differs. |
+| JavaScript | flowc `jsgen` or browser-oriented JS generation | Limited surface; match/other parity differs. |
 | Native mixed project | Flow plus `[native]` sources/libs | Package build-native/run-native route. |
 | Audio | Flow C plus miniaudio/runtime | Device and callback constraints apply. |
 | Graphics | Flow C plus Cocoa/CoreGraphics/Metal or SDL2 | Platform-specific runtime selection. |
@@ -2271,13 +2267,13 @@ families in the current driver.
 | `gpu` | Generate GPU compute kernels, especially Metal sources. |
 | `fir-g` | Dump/analyze the FIR-G program graph; calibrate routes or list opt candidates. |
 | `explain` | Print declarative implementation selection records. |
-| `transpile` | Enter the advanced transpiler flag surface directly. |
+| `transpile` | Run the Python MLIR transpiler directly (advanced flags); its `--c` is retired. |
 | `fmt` | Format Flow files. |
 | `test` | Tiered Flow transpile/native validation. |
 | `test-strict` | Strict test shortcut. |
 | `test-runtime` | Compile and execute runtime tests. |
 | `test-lang` | Strict language tests that compile and run. |
-| `test-python` | Python compiler/tool unit tests. |
+| `test-scripts` | Flow programs that drive `./flow`, the tools and the docs as subprocesses (`tests/scripts`). |
 | `test-interop` | Native interoperability tests. |
 | `test-gpu` | GPU feature and code-generation tests. |
 | `test-mlir` | MLIR verification tests. |
@@ -2300,7 +2296,7 @@ families in the current driver.
 | `repl` | Start the interactive read/evaluate loop. |
 | `examples` | List example programs. |
 | `playground` | Start the local compile API and open the playground. |
-| `know` | Query or maintain Flow’s knowledge/claim tooling where supported. |
+| `know` | Query or maintain Flow's knowledge/claim tooling where supported. |
 | `doc proof` | Generate one proof document or recursively process a directory. |
 | `doc bundle` | Build the combined proof book. |
 | `doc kernel` | Emit a parameterized proof kernel and optional plot. |
@@ -2314,15 +2310,15 @@ implementation before constructing a production command.
 
 Important environment families include:
 
-- `FLOW_HOST=flowc|python|auto`;
+- `FLOW_HOST=flowc` (the only value; `python` is retired) and `FLOWC_BIN`;
 - `FLOW_CPU_BACKEND=c|mlir`;
 - `FLOW_PROFILE=default|safety|flight`;
 - `FLOW_SANITIZE` and individual UBSan/ASan/TSan switches;
 - `FLOW_STRICT_EFFECTS`;
-- `FLOW_RUN_PYTHON` for the shell-independent runner;
+- `FLOW_RUN_DIRECT` for the one-process runner;
 - `FLOW_LDFLAGS` and relevant native compiler flags;
 - `FLOW_REGISTRY_PATH`, `FLOW_REGISTRY_URL`, and `FLOW_HOME`;
-- Stage-A `FLOWC_*` controls for input, output, bundle, backend, and checking;
+- flowc `FLOWC_*` controls for input, output, bundle, backend, and checking;
 - `FLOW_FIR_G_THRESHOLDS` for calibrated graph routing;
 - target-specific audio, GPU, WASM, and recorder variables documented near
   those workflows.
@@ -2346,7 +2342,7 @@ Correctness and profitability are separate:
 
 ### 57.2 C and native compiler optimisation
 
-Flow’s C route can use ordinary native optimisation levels and platform
+Flow's C route can use ordinary native optimisation levels and platform
 libraries. Function attributes provide `@inline`, `@noinline`,
 `@always_inline`, and `@target("features")`. `@always_inline` may fail when
 the caller cannot legally absorb a target-specific body. Exported symbols and
@@ -2394,9 +2390,10 @@ different shapes, and aliasing-sensitive operations remain separate.
 
 ### 57.6 Declarative selection optimisation
 
-Sort, search, selected matmul, and selected reduce operations use registered
-implementations, applicability predicates, scratch claims, and static cost
-models. `flow explain` is the audit surface.
+Sort and search use registered implementations, applicability predicates,
+scratch claims, and static cost models (`compiler/src/sort_plans.flow`).
+`flow explain` is the audit surface. Matmul and reduce have cost models
+(`compiler/src/general_plans.flow`) that no lowering consults yet.
 
 Optimisation facts include element count, element kind/size, key range,
 ordering provenance, direction, keys, stability, expected runs, policies, and
@@ -2522,7 +2519,7 @@ fault/radiation handling, formal certification, and target-measured WCET.
 
 For exact signatures, use `docs/library/stdlib-api.md`, generated from the
 current module sources. These groups name the full module surface
-visible in `lib/stdlib` at this edition’s audit.
+visible in `lib/stdlib` at this edition's audit.
 
 ### 59.1 Core data, math, and system modules
 
@@ -2648,7 +2645,7 @@ checkboxes.
 | Phase-portrait representation | Helpers and a representation path exist; verify how much grammar is current before extending. |
 | LQR beyond small fixed systems | Stdlib/DSL support has grown, but general LAPACK DARE and broader dimensions remain follow-on work. |
 | Field/Laplacian | 1D helper and grammar MVP ship; 2D/general domains remain open. |
-| Self-host cutover | Stage-A is default for the subset; Python remains the full-surface escape hatch. Hard removal is not complete. |
+| Self-host cutover | Done for C: flowc is the only C compiler and the Python C backend is deleted. The MLIR generator fallback, `flow check` and some tools remain Python. |
 | Ordering `unique` result | Fixed array compacts the prefix and leaves stale tail; a length-bearing result remains a design choice. |
 | Ordering copy versus mutate | Current surface is in-place; a pure sorted-copy default remains undecided. |
 | Entropy | Syntax is reserved/parsed; effect versus seed API remains open. |
@@ -2658,7 +2655,7 @@ checkboxes.
 | Module blocks | Currently flattened; real namespace semantics require a separate approved design. |
 | Multi-implementation constraints | Programmatic selector exists; user attribute syntax and real-unit cost IR remain open. |
 
-Some entries in `Questions.md` still say pending even where later pattern
+Some entries in `docs/project/Questions.md` still say pending even where later pattern
 adoption documents report an MVP as shipped. The AI MUST reconcile by running
 the named example and test, then update stale status in a dedicated task.
 
@@ -2722,7 +2719,7 @@ These require human authority and often external coordination.
 Current documents explicitly avoid or defer several large claims: a full
 compiler reverse-mode tape, universal GPU reverse mode, exact event-time
 refinement, a complete resumable effect-based TCP stack, immediate deletion of
-the Python compiler, MLX in the correctness core, a hosted package service,
+the remaining Python tooling, MLX in the correctness core, a hosted package service,
 and a frozen formal standard. The AI SHOULD preserve these boundaries unless
 the human changes them.
 
@@ -2736,8 +2733,8 @@ This table lists the recurring types of AI work in this handbook.
 |---|---|---|
 | Explain or answer | implementation, test, focused document | sourced status with limits; no unrequested edit |
 | Audit a claim | truth hierarchy and exact route | shipped/limited/designed split and reproduction |
-| Write a core program | nearest Stage-A example | compile, run, invariant, exit code |
-| Write a full-surface program | canonical Python-host example | explicit host/backend plus runtime check |
+| Write a core program | nearest canonical example | compile, run, invariant, exit code |
+| Write a full-surface program | canonical example of the form | explicit backend plus runtime check |
 | Numerical/scientific model | equations, units, reference quantity | stability/tolerance evidence and measured invariant |
 | Evolution/hybrid system | north-star status and canonical flow | step/event semantics plus theory check |
 | Audio/real-time work | RT boundary and audio safety docs | no forbidden calls, offline render, device/path check |
@@ -2795,20 +2792,20 @@ Every change workflow follows this sequence:
 - The AI may choose ordinary local implementation details established by
   precedent.
 - The AI must ask when an unresolved choice changes user-visible semantics.
-- The AI must not expand authority from “diagnose” to “fix,” or from “write” to
-  “publish,” without the request supporting that action.
+- The AI must not expand authority from "diagnose" to "fix," or from "write" to
+  "publish," without the request supporting that action.
 - Read-only inspection is preferred for uncertainty.
 - Reversible, narrow changes are preferred for implementation.
 - Destructive changes require exact target resolution and explicit authority.
 - A dirty worktree is protected human work.
 - Passing focused tests must never be reported as a full-suite pass.
-- An unavailable dependency or backend is reported as unverified, not assumed.
+- An unavailable dependency or backend is reported as unverified rather than assumed.
 
 ### 61.3 AI communication rules
 
 During work, the AI SHOULD provide short updates when the work changes stage:
 inventory complete, cause found, implementation complete, verification result,
-or blocker. Updates state evidence and next action, not generic reassurance.
+or blocker. Updates state evidence and next action rather than generic reassurance.
 
 The final response is self-contained and includes:
 
@@ -2828,7 +2825,7 @@ integration pass.
 
 Agent voting may reveal consensus, disagreement, dependencies, and blind spots.
 It does not replace human design authority or executable evidence. Random,
-persona, and “chaos” opinions are exploratory inputs only.
+persona, and "chaos" opinions are exploratory inputs only.
 
 ---
 
@@ -2837,7 +2834,7 @@ persona, and “chaos” opinions are exploratory inputs only.
 Before saying that this handbook covers a new repository state, run this audit:
 
 1. Capture `./flow help` and diff every command against chapter 56.
-2. Diff the spec implementation matrix against chapters 51–55.
+2. Diff the spec implementation matrix against chapters 51-55.
 3. Diff all `lib/stdlib/**/*.flow` modules against chapter 59.
 4. Diff focused language/library page names against the contents and matrix.
 5. Diff example top-level domains against chapter 59.7.
@@ -2899,8 +2896,7 @@ The AI may choose among variations such as:
 - direct sorting or searching, or declarative selection among plans;
 - ordinary error returns, option/result values, assertions, or effect handling;
 - a compact program or a more explicit program with intermediate values;
-- the self-hosted Stage-A route or the broader Python-host route when the
-  feature requires it.
+- the C route or the MLIR route when the feature requires it.
 
 The user states the invariant, input range, performance target, platform, and
 safety boundary. The AI chooses an established form that meets those terms.
@@ -3093,9 +3089,9 @@ Many Flow programs can satisfy one request. Control the choices by stating:
 - evidence needed for acceptance;
 - freedom the AI may use.
 
-For example: “You may choose loops, pipelines, or an existing library operation.
+For example: "You may choose loops, pipelines, or an existing library operation.
 The result must be deterministic. Do not allocate memory in the audio callback.
-Process each block within the measured deadline.” The AI can choose the code,
+Process each block within the measured deadline." The AI can choose the code,
 but it cannot change these requirements.
 
 Do not require familiar syntax without a technical reason. Require a specific
@@ -3115,8 +3111,8 @@ Use more delegation when the evidence supports it:
 
 Move to a lower level when the AI finds ambiguity, new language behavior, weak
 coverage, backend disagreement, unexplained performance, or a failed invariant.
-Move to a higher level after repeated successful checks. Judge the evidence,
-not the confidence of the response.
+Move to a higher level after repeated successful checks. Judge the evidence
+rather than the confidence of the response.
 
 ### 63.9 Rule
 
@@ -3140,7 +3136,7 @@ the language, program, or model toward the human goal. A large amount of code
 is not a useful target by itself.
 
 Direct the AI with clear intent. Make it study the current construction. Keep
-the execution route explicit. Prefer the language’s existing patterns. Make
+the execution route explicit. Prefer the language's existing patterns. Make
 each important claim inspectable. Test the model and the syntax. Record
 decisions in the repository. Then repeat in narrow, complete increments.
 
@@ -3151,7 +3147,7 @@ executable evidence in one loop.
 
 ## Source notes
 
-This handbook was derived from the repository’s current executable help,
+This handbook was derived from the repository's current executable help,
 compiler and runtime structure, contribution protocol, architecture and
 self-hosting documents, pattern-adoption record, language documents, tests,
 canonical examples, and generated repository statistics. Important companion
@@ -3165,7 +3161,7 @@ sources are:
 - [Compiler architecture](project/architecture-writeup.md)
 - [Pattern adoption](project/pattern-adoption.md)
 - [Self-hosting](project/self-hosting.md)
-- [Stage-A compiler](../compiler/README.md)
+- [flowc compiler](../compiler/README.md)
 - [Evolution grammar map](vision/north-star.md)
 - [Explainable compilation](language/explainable-compilation.md)
 - [Safety profiles](language/safety-profiles.md)

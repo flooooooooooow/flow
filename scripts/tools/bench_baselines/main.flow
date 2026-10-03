@@ -1,0 +1,254 @@
+# Performance baselines: compile the programs in benchmarks/baselines, time
+# each one end to end, and write baseline_results.md and .json. A median over
+# the limit in contracts.json fails the run.
+#
+# Run it as `./flow tool bench_baselines`, which passes the
+# repository root in FLOW_REPO_ROOT.
+
+import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_read_file, ft_write_file, ft_exists, ft_starts, ft_find, ft_slice, ft_from, ft_join, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
+import .json { json_parse, json_error, json_get, json_str, json_quote, Json }
+import .proc { pr_quote, pr_run, pr_capture, pr_chomp, pr_mkdir_p }
+import .bench { bn_now, bn_fixed, bn_py_repr, bn_median, bn_min, bn_max, bn_run, bn_code, bn_out, bn_wall, bn_result, bn_parse_float, BenchRun }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function getenv(name: string) -> string
+    function exit(code: i32) -> void
+}
+
+const CLANG_FLAGS: string = "-O3 -march=native -lm"
+
+function root() -> string {
+    let r: string = getenv("FLOW_REPO_ROOT")
+    if r as ptr<u8> == null or ft_len(r) == 0 {
+        return "."
+    }
+    return r
+}
+
+function bench_name(i: i32) -> string {
+    if i == 0 {
+        return "numeric"
+    }
+    if i == 1 {
+        return "string_io"
+    }
+    return "startup"
+}
+
+# Run a command with output captured; on failure show it and stop, as the
+# Python runner's sh() did.
+function sh(display: string, cmd: string) -> void {
+    let dir: string = ft_join(root(), "benchmarks/baselines/build")
+    let out_f: string = dir + "/.cmd.out"
+    let err_f: string = dir + "/.cmd.err"
+    let rc: i32 = pr_run(cmd + " >" + pr_quote(out_f) + " 2>" + pr_quote(err_f))
+    if rc != 0 {
+        ft_outln("Command failed: " + display)
+        let o: string = ft_read_file(out_f)
+        let e: string = ft_read_file(err_f)
+        if o as ptr<u8> != null {
+            ft_outln(o)
+        } else {
+            ft_outln("")
+        }
+        if e as ptr<u8> != null {
+            ft_outln(e)
+        } else {
+            ft_outln("")
+        }
+        ft_errln("run_baselines: command exited " + bn_fixed(rc as f64, 0))
+        exit(1)
+    }
+}
+
+function compile_all() -> void {
+    let base: string = ft_join(root(), "benchmarks/baselines")
+    let build: string = base + "/build"
+    let _m: bool = pr_mkdir_p(build)
+    let emit: string = pr_quote(ft_join(root(), "flow")) + " tool " + pr_quote(ft_join(root(), "compiler/scripts/flowc_emit.flow"))
+    let mut i: i32 = 0
+    while i < 3 {
+        let b: string = bench_name(i)
+        let src: string = base + "/" + b + ".flow"
+        let gen_c: string = build + "/" + b + ".c"
+        let exe: string = build + "/" + b
+        sh("flowc_emit --lenient " + src + " " + gen_c,
+           "cd " + pr_quote(root()) + " && " + emit + " --lenient " + pr_quote(src) + " " + pr_quote(gen_c))
+        sh("clang " + CLANG_FLAGS + " " + gen_c + " -o " + exe,
+           "cd " + pr_quote(root()) + " && clang " + CLANG_FLAGS + " " + pr_quote(gen_c) + " -o " + pr_quote(exe))
+        i = i + 1
+    }
+}
+
+function one_run(exe: string) -> ptr<BenchRun> {
+    let argv: ptr<StrList> = ft_list_new()
+    ft_list_push(argv, exe)
+    let r: ptr<BenchRun> = bn_run(argv)
+    if bn_code(r) != 0 {
+        ft_errln("run_baselines: " + exe + " exited with a failure")
+        exit(1)
+    }
+    if bn_result(r) as ptr<u8> == null {
+        ft_errln("bad output from " + exe + ": " + bn_out(r))
+        exit(1)
+    }
+    return r
+}
+
+function version() -> string {
+    # VERSION holds one line, the canonical version.
+    let text: string = ft_read_file(ft_join(root(), "VERSION"))
+    if text as ptr<u8> == null {
+        return "unknown"
+    }
+    let lines: ptr<StrList> = ft_split_lines(text)
+    if ft_list_len(lines) == 0 or ft_len(ft_list_get(lines, 0)) == 0 {
+        return "unknown"
+    }
+    return ft_list_get(lines, 0)
+}
+
+function git_sha() -> string {
+    let sha: string = pr_chomp(pr_capture("cd " + pr_quote(root()) + " && git rev-parse HEAD 2>/dev/null"))
+    if ft_len(sha) == 0 {
+        return "unknown"
+    }
+    return sha
+}
+
+function contract_limit(contracts: ptr<Json>, b: string) -> string {
+    if contracts == null {
+        return null as string
+    }
+    let item: i32 = json_get(contracts, 0, b)
+    if item < 0 {
+        return null as string
+    }
+    let lim: i32 = json_get(contracts, item, "max_median_s")
+    if lim < 0 {
+        return null as string
+    }
+    return json_str(contracts, lim)
+}
+
+function main() -> i32 {
+    ft_outln("Compiling...")
+    compile_all()
+
+    ft_outln("Measuring...")
+    let base: string = ft_join(root(), "benchmarks/baselines")
+    let secs: ptr<ptr<f64>> = malloc(3 * 8) as ptr<ptr<f64>>
+    let counts: ptr<i32> = malloc(3 * 4) as ptr<i32>
+    let results: ptr<string> = malloc(3 * 8) as ptr<string>
+    let mut i: i32 = 0
+    while i < 3 {
+        let b: string = bench_name(i)
+        let exe: string = base + "/build/" + b
+        ft_outln("Running " + b + "...")
+        let _w: ptr<BenchRun> = one_run(exe)
+        let mut reps: i32 = 5
+        if ft_eq(b, "startup") {
+            reps = 20
+        }
+        let xs: ptr<f64> = malloc((reps as i64) * 8) as ptr<f64>
+        let mut k: i32 = 0
+        while k < reps {
+            let r: ptr<BenchRun> = one_run(exe)
+            xs[k] = bn_wall(r)
+            results[i] = bn_result(r)
+            k = k + 1
+        }
+        secs[i] = xs
+        counts[i] = reps
+        i = i + 1
+    }
+
+    let arch: string = pr_chomp(pr_capture("uname -m"))
+    let system: string = pr_chomp(pr_capture("uname -s"))
+    let cores: string = pr_chomp(pr_capture("getconf _NPROCESSORS_ONLN"))
+    let ver: string = version()
+    let sha: string = git_sha()
+    let host_py: string = pr_chomp(pr_capture("python3 --version 2>&1"))
+    let flags: string = "clang " + CLANG_FLAGS
+    let today: string = pr_chomp(pr_capture("date +%Y-%m-%d"))
+
+    ft_outln("Arch: " + arch + ", OS: " + system + ", Cores: " + cores + ", Flow: " + ver + " (" + sha + ")")
+
+    let mut md: string = "# Flow Performance Baselines\n\n"
+    md = md + "Date: " + today + "\n"
+    md = md + "OS: " + system + "\n"
+    md = md + "Arch: " + arch + "\n"
+    md = md + "Cores: " + cores + "\n"
+    md = md + "Flow Version: " + ver + "\n"
+    md = md + "Git SHA: " + sha + "\n"
+    md = md + "Host: " + host_py + "\n"
+    md = md + "Flags: `" + flags + "`\n\n"
+    md = md + "| Benchmark | Median (s) | Min (s) | Max (s) | Result |\n"
+    md = md + "|---|---|---|---|---|\n"
+
+    let mut contracts: ptr<Json> = null
+    let ctext: string = ft_read_file(base + "/contracts.json")
+    if ctext as ptr<u8> != null {
+        contracts = json_parse(ctext)
+        if ft_len(json_error(contracts)) > 0 {
+            ft_errln("run_baselines: contracts.json: " + json_error(contracts))
+            return 1
+        }
+    }
+
+    let mut js: string = "{\n  \"metadata\": {\n"
+    js = js + "    \"date\": " + json_quote(today) + ",\n"
+    js = js + "    \"os\": " + json_quote(system) + ",\n"
+    js = js + "    \"arch\": " + json_quote(arch) + ",\n"
+    js = js + "    \"cores\": " + cores + ",\n"
+    js = js + "    \"flow_version\": " + json_quote(ver) + ",\n"
+    js = js + "    \"git_sha\": " + json_quote(sha) + ",\n"
+    js = js + "    \"host\": " + json_quote(host_py) + ",\n"
+    js = js + "    \"flags\": " + json_quote(flags) + "\n"
+    js = js + "  },\n  \"benchmarks\": {\n"
+
+    let mut failed: bool = false
+    i = 0
+    while i < 3 {
+        let b: string = bench_name(i)
+        let med: f64 = bn_median(secs[i], counts[i])
+        let lo: f64 = bn_min(secs[i], counts[i])
+        let hi: f64 = bn_max(secs[i], counts[i])
+        md = md + "| " + b + " | " + bn_fixed(med, 6) + " | " + bn_fixed(lo, 6) + " | " + bn_fixed(hi, 6) + " | " + results[i] + " |\n"
+        js = js + "    " + json_quote(b) + ": {\n"
+        js = js + "      \"median_s\": " + bn_py_repr(med) + ",\n"
+        js = js + "      \"min_s\": " + bn_py_repr(lo) + ",\n"
+        js = js + "      \"max_s\": " + bn_py_repr(hi) + ",\n"
+        js = js + "      \"result\": " + json_quote(results[i]) + "\n"
+        if i < 2 {
+            js = js + "    },\n"
+        } else {
+            js = js + "    }\n"
+        }
+        let limit: string = contract_limit(contracts, b)
+        if limit as ptr<u8> != null and med > bn_parse_float(limit) {
+            ft_outln("ERROR: " + b + " median " + bn_fixed(med, 6) + "s exceeds contract " + bn_py_repr(bn_parse_float(limit)) + "s")
+            failed = true
+        }
+        i = i + 1
+    }
+    js = js + "  }\n}"
+
+    let out_md: string = base + "/baseline_results.md"
+    let out_json: string = base + "/baseline_results.json"
+    if ft_write_file(out_md, md) == false {
+        ft_errln("run_baselines: cannot write " + out_md)
+        return 1
+    }
+    ft_outln("Wrote " + out_md)
+    if ft_write_file(out_json, js) == false {
+        ft_errln("run_baselines: cannot write " + out_json)
+        return 1
+    }
+    ft_outln("Wrote " + out_json)
+    if failed {
+        return 1
+    }
+    return 0
+}

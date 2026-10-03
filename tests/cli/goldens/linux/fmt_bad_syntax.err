@@ -1,0 +1,1 @@
+tests/cli/fixtures/bad_syntax.flow:2:16: parse error: unexpected token '->' (byte 55)

@@ -1,8 +1,8 @@
 # Compare Flow
 
-Flow is easiest to understand beside languages you already know. These pages compare **complete implementations and programming models**, not isolated punctuation.
+Flow is easiest to understand beside languages you already know. These pages compare **complete implementations and programming models** rather than isolated punctuation.
 
-The question is not “can Flow write this expression with fewer characters?” It is: **how much code and machinery does the programmer have to maintain before the source says what the system actually does?**
+The question is not "can Flow write this expression with fewer characters?" It is: **how much code and machinery does the programmer have to maintain before the source says what the system actually does?**
 
 ## Pick a language
 
@@ -27,7 +27,7 @@ The question is not “can Flow write this expression with fewer characters?” 
 
 Every comparison follows the same rules:
 
-1. Compare the **same semantics**, not vaguely similar snippets.
+1. Compare the **same semantics** rather than vaguely similar snippets.
 2. Prefer complete, runnable implementations over syntax fragments.
 3. Do not hide required helpers or framework machinery outside the shown code.
 4. Do not claim Flow is shorter where the other language is genuinely just as direct.
@@ -101,7 +101,7 @@ The important rule for this section is simple: **shorter source does not imply f
 
 ## What should be added next
 
-These pages are the foundation, not the finish line. The comparison corpus should grow toward larger equivalent programs: parsers, concurrent services, DSP graphs, GPU kernels, simulations, embedded state machines, error-heavy systems code and complete small applications. Those are the examples where language design differences become much harder to fake with clever formatting.
+These pages are the foundation. They are not the finish line. The comparison corpus should grow toward larger equivalent programs: parsers, concurrent services, DSP graphs, GPU kernels, simulations, embedded state machines, error-heavy systems code and complete small applications. Those are the examples where language design differences become much harder to fake with clever formatting.
 
 ## See also
 

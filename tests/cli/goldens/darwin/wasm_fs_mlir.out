@@ -1,0 +1,2 @@
+[0;31m❌ --fs currently requires --backend=c (MEMFS/IDBFS crossings are C-only)[0m
+[0;34mℹ️    For MLIR, use --preload HOST@/mount without --fs (FORCE_FILESYSTEM)[0m

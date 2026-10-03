@@ -1,0 +1,28 @@
+usage: flow fir-g [-h] [--json] [--device {cpu,numpy,mlx,auto}] [--bench]
+                  [--calibrate] [--thresholds THRESHOLDS] [--opts]
+                  [--apply PASSES] [program]
+
+Flow FIR-G: program graph + CPU/MLX analyses
+
+positional arguments:
+  program               .flow source file (optional with --calibrate alone)
+
+options:
+  -h, --help            show this help message and exit
+  --json                machine-readable report
+  --device {cpu,numpy,mlx,auto}
+                        analysis device (default: cpu). auto uses measured
+                        thresholds (uncalibrated → cpu)
+  --bench               print rough CPU vs bulk wall times for this program
+  --calibrate           sweep synthetic graph sizes, measure break-even, save
+                        thresholds
+  --thresholds THRESHOLDS
+                        path to fir_g_route.json (default:
+                        $FLOW_FIR_G_THRESHOLDS or
+                        ~/.cache/flow/fir_g_route.json)
+  --opts                list deterministic optimisation candidates (dead_elim
+                        / inline)
+  --apply PASSES        apply optimisation passes and report the rewritten
+                        graph. PASSES is a comma list from
+                        {dead_elim, const_fold, dce, inline, all}.
+                        With --opts, candidates reflect the post-pass graph

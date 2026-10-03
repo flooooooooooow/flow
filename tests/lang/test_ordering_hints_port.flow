@@ -1,5 +1,5 @@
 # Test for compiler/src/ordering_hints.flow.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_ordering_hints_port.flow
+# Run with: ./flow run tests/lang/test_ordering_hints_port.flow
 
 import "compiler/src/ordering_hints.flow"
 

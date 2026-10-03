@@ -1,0 +1,20 @@
+# Effects parity fixture: a capability passed as a value.
+
+effect Log {
+    info(msg: string) -> void,
+}
+
+capability Console {
+    effect Log,
+    function info(msg: string) -> void {
+        printf("[console] %s\n", msg)
+    },
+}
+
+function run(c: i32) -> i32 {
+    return c
+}
+
+function main() -> i32 {
+    return run(Console)
+}

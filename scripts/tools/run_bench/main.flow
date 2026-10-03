@@ -1,0 +1,156 @@
+# Build a Flow program through MLIR and call one of its functions.
+#
+#   flow tool run_bench PROGRAM.flow [FUNCTION]
+#
+# FUNCTION defaults to run_demo for a path with "demo" or "test" in it,
+# run_bench for one with "main", else main. The program is emitted with the
+# Flow MLIR emitter (`flow flow-to-mlir`), lowered with `flow mlir-lower`,
+# and linked at -O3 -march=native with a small C runner that
+# calls FUNCTION and supplies the JIT runtime helpers (jit_print, jit_time,
+# jit_reload_check). PROGRAM is read relative to the working directory.
+
+import .text { ft_outln, ft_errln, ft_eq, ft_len, ft_contains, ft_slice, ft_write_file }
+import .repo { rp_root }
+import std.process { ProcCmd, ProcResult, proc_cmd, proc_arg, proc_stdin, proc_stdout, proc_stderr, proc_run, proc_getenv, proc_argc, proc_argv, PROC_INHERIT, PROC_CAPTURE }
+
+function status_of(r: ptr<ProcResult>) -> i32 {
+    if ft_len(r.error) > 0 {
+        ft_errln("run_bench: " + r.error)
+        return 127
+    }
+    if r.exit_code < 0 {
+        return 128 - r.exit_code
+    }
+    return r.exit_code
+}
+
+# Run with every stream passed through; the exit status.
+function run3(prog: string, a: string, b: string, c3: string) -> i32 {
+    let c: ptr<ProcCmd> = proc_cmd(prog)
+    proc_arg(c, a)
+    proc_arg(c, b)
+    if ft_len(c3) > 0 {
+        proc_arg(c, c3)
+    }
+    proc_stdin(c, PROC_INHERIT)
+    proc_stdout(c, PROC_INHERIT)
+    proc_stderr(c, PROC_INHERIT)
+    return status_of(proc_run(c))
+}
+
+# `$(...)`: drop trailing newlines.
+function chomp(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut n: i32 = ft_len(s)
+    while n > 0 and p[n - 1] == 10 {
+        n = n - 1
+    }
+    return ft_slice(s, 0, n)
+}
+
+function rm_rf(path: string) -> void {
+    let c: ptr<ProcCmd> = proc_cmd("rm")
+    proc_arg(c, "-rf")
+    proc_arg(c, path)
+    let _r: ptr<ProcResult> = proc_run(c)
+}
+
+# The C runner: the JIT helpers and, unless FUNCTION is the program's own
+# main, a main that calls it.
+function runner_c(func: string) -> string {
+    let mut s: string = "#include <stdio.h>\n#include <time.h>\n\n"
+    s = s + "/* Runtime helpers for Flow JIT programs. */\n"
+    s = s + "void jit_print(const char *message) { printf(\"%s\\n\", message); }\n"
+    s = s + "double jit_time(void) { return (double)clock() / CLOCKS_PER_SEC; }\n"
+    s = s + "int jit_reload_check(void) { return 1; }\n\n"
+    if ft_eq(func, "main") {
+        return s
+    }
+    s = s + "extern int " + func + "(void);\n\n"
+    s = s + "int main(void) {\n    return " + func + "();\n}\n"
+    return s
+}
+
+function main() -> i32 {
+    if proc_argc() < 2 or ft_len(proc_argv(1)) == 0 {
+        ft_errln("usage: flow tool run_bench PROGRAM.flow [FUNCTION]")
+        return 1
+    }
+    let input: string = proc_argv(1)
+    let mut func: string = ""
+    if proc_argc() > 2 {
+        func = proc_argv(2)
+    }
+    if ft_len(func) == 0 {
+        if ft_contains(input, "demo") or ft_contains(input, "test") {
+            func = "run_demo"
+        } elif ft_contains(input, "main") {
+            func = "run_bench"
+        } else {
+            func = "main"
+        }
+    }
+    ft_outln("Reading " + input + "...")
+
+    let mut tmp: string = proc_getenv("TMPDIR")
+    if ft_len(tmp) == 0 {
+        tmp = "/tmp"
+    }
+    let mk: ptr<ProcCmd> = proc_cmd("mktemp")
+    proc_arg(mk, "-d")
+    proc_arg(mk, tmp + "/flow-bench.XXXXXX")
+    proc_stdout(mk, PROC_CAPTURE)
+    proc_stderr(mk, PROC_INHERIT)
+    let mr: ptr<ProcResult> = proc_run(mk)
+    if status_of(mr) != 0 {
+        return 1
+    }
+    let work: string = chomp(mr.stdout)
+
+    let root: string = rp_root()
+    let rc1: i32 = run3(root + "/flow", "flow-to-mlir", input, work + "/bench.mlir")
+    if rc1 != 0 {
+        rm_rf(work)
+        return rc1
+    }
+    ft_outln("Lowering MLIR to LLVM...")
+    let rc2: i32 = run3(root + "/flow", "mlir-lower", work + "/bench.mlir", work + "/bench.ll")
+    if rc2 != 0 {
+        rm_rf(work)
+        return rc2
+    }
+    if ft_write_file(work + "/runner.c", runner_c(func)) == false {
+        ft_errln("run_bench: cannot write " + work + "/runner.c")
+        rm_rf(work)
+        return 1
+    }
+
+    ft_outln("Compiling benchmark...")
+    let cc: ptr<ProcCmd> = proc_cmd("clang")
+    proc_arg(cc, "-march=native")
+    proc_arg(cc, "-O3")
+    proc_arg(cc, "-Wno-override-module")
+    proc_arg(cc, work + "/bench.ll")
+    proc_arg(cc, work + "/runner.c")
+    proc_arg(cc, "-o")
+    proc_arg(cc, work + "/bench")
+    proc_arg(cc, "-lm")
+    proc_stdin(cc, PROC_INHERIT)
+    proc_stdout(cc, PROC_INHERIT)
+    proc_stderr(cc, PROC_INHERIT)
+    let rc3: i32 = status_of(proc_run(cc))
+    if rc3 != 0 {
+        rm_rf(work)
+        return rc3
+    }
+    ft_outln("🚀 Running " + func + "...")
+    ft_outln("----------------------------------------")
+    let b: ptr<ProcCmd> = proc_cmd(work + "/bench")
+    proc_stdin(b, PROC_INHERIT)
+    proc_stdout(b, PROC_INHERIT)
+    proc_stderr(b, PROC_INHERIT)
+    let rc: i32 = status_of(proc_run(b))
+    ft_outln("----------------------------------------")
+    rm_rf(work)
+    return rc
+}

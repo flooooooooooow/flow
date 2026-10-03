@@ -2,9 +2,9 @@
 
 *Inscribed angles on the same arc are equal.*
 
-**Source.** euclid — Elements, Book III, Proposition 21
+**Source.** euclid: Elements, Book III, Proposition 21
 
-## Derived fact 1 — angle APB equals angle AQB on the same arc AB
+## Derived fact 1: angle APB equals angle AQB on the same arc AB
 
 **Coordinate.** the Euclidean plane · circle · inscribed angles on same arc are equal · **Derived fact**
 

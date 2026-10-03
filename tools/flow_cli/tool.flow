@@ -1,0 +1,354 @@
+# @module tools.flow_cli.tool
+# @means  `flow tool`: build a repository Flow program with the Stage-A
+#         flowc and run it.
+#
+#   flow tool NAME [args...]          scripts/tools/NAME/main.flow, or
+#                                     tools/NAME/main.flow
+#   flow tool PATH.flow [args...]     any Flow program in the repository,
+#                                     such as compiler/scripts/roundtrip.flow
+#   flow tool --path NAME|PATH.flow   build only; print the binary's path
+#
+# This replaced the build_tool.sh script and the one-line shell shims
+# that called it. The flowc is the one the stub builds from the checked-in
+# bootstrap C (compiler/build/flowc_bootstrap), so nothing here needs
+# Python or a previous build of flowc.
+#
+# Programs under scripts/tools compile with FLOWC_DIR=scripts/tools/lib, so
+# `import .text { ... }` finds the shared helpers. Every other program
+# compiles with FLOWC_DIR at the repository root, so it imports by path
+# (`import "scripts/tools/lib/text.flow"`). Binaries are cached in
+# build/flow-tools and rebuilt when the bootstrap C, the program, or any
+# module it imports (followed transitively) changes.
+#
+# The program runs in the caller's working directory with FLOW_REPO_ROOT
+# set to the repository root. Exit status is the program's own.
+
+import "tools/flow_cli/sys.flow"
+import "tools/flow_cli/toolchain.flow"
+import std.process { ProcCmd, ProcStrs, proc_arg, proc_env_clear, proc_environ }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+# Where a tool's source lives and how it is compiled.
+struct ToolSpec {
+    src: string
+    lib: string
+    name: string
+}
+
+# "compiler/scripts/roundtrip.flow" -> "compiler_scripts_roundtrip".
+function tool_cache_name(rel: string) -> string {
+    let mut s: string = rel
+    if s_ends(s, ".flow") {
+        s = s_slice(s, 0, s_len(s) - 5)
+    }
+    return s_replace(s_replace(s, "/", "_"), ".", "_")
+}
+
+# The source for `spec`, or a ToolSpec with src "" when there is none.
+function tool_resolve(spec: string) -> ptr<ToolSpec> {
+    let t: ptr<ToolSpec> = malloc(24) as ptr<ToolSpec>
+    t.src = ""
+    t.lib = root()
+    t.name = spec
+    if s_ends(spec, ".flow") {
+        let mut abs: string = spec
+        if not is_abs(abs) {
+            if is_file(cwd_logical() + "/" + spec) {
+                abs = cwd_logical() + "/" + spec
+            } else {
+                abs = root() + "/" + spec
+            }
+        }
+        if not is_file(abs) {
+            return t
+        }
+        abs = abs_file_physical(abs)
+        let r: string = abs_dir_physical(root())
+        let mut rel: string = abs
+        if s_starts(abs, r + "/") {
+            rel = s_from(abs, s_len(r) + 1)
+        }
+        t.src = abs
+        t.name = tool_cache_name(rel)
+        return t
+    }
+    if s_contains(spec, "/") or s_len(spec) == 0 {
+        return t
+    }
+    if is_file(root() + "/scripts/tools/" + spec + "/main.flow") {
+        t.src = root() + "/scripts/tools/" + spec + "/main.flow"
+        t.lib = root() + "/scripts/tools/lib"
+        return t
+    }
+    if is_file(root() + "/tools/" + spec + "/main.flow") {
+        t.src = root() + "/tools/" + spec + "/main.flow"
+        t.name = "tools_" + spec
+        return t
+    }
+    return t
+}
+
+# `s` without leading spaces and tabs.
+function ltrim(s: string) -> string {
+    let mut i: i32 = 0
+    while i < s_len(s) and (s_byte(s, i) == 32 or s_byte(s, i) == 9) {
+        i = i + 1
+    }
+    return s_from(s, i)
+}
+
+# The module named by an import line ("tools/flow_cli/sys.flow", ".text",
+# "std.process"), or "" when `line` is not an import.
+function import_spec(line: string) -> string {
+    let mut s: string = ltrim(line)
+    if s_starts(s, "export ") {
+        s = ltrim(s_from(s, 7))
+    }
+    if not s_starts(s, "import ") {
+        return ""
+    }
+    s = ltrim(s_from(s, 7))
+    if s_starts(s, "\"") {
+        let q: i32 = s_find_byte(s, 34, 1)
+        if q < 0 {
+            return ""
+        }
+        return s_slice(s, 0, q + 1)
+    }
+    let mut e: i32 = 0
+    while e < s_len(s) {
+        let c: i32 = s_byte(s, e)
+        if c == 32 or c == 9 or c == 123 {
+            break
+        }
+        e = e + 1
+    }
+    return s_slice(s, 0, e)
+}
+
+# The first of `cands` that is a file, or "".
+function first_file(cands: ptr<ProcStrs>) -> string {
+    let mut i: i32 = 0
+    while i < sl_len(cands) {
+        if is_file(sl_get(cands, i)) {
+            return sl_get(cands, i)
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+# The file an import resolves to, from a module in `dir`, or "". Unresolved
+# names (a C header, a module flowc finds some other way) are skipped: this
+# only decides when to rebuild, and flowc reports real errors.
+function import_file(spec: string, dir: string, lib: string) -> string {
+    let r: string = root()
+    let c: ptr<ProcStrs> = sl_new()
+    if s_starts(spec, "\"") {
+        let p: string = s_slice(spec, 1, s_len(spec) - 1)
+        sl_push(c, dir + "/" + p)
+        sl_push(c, r + "/" + p)
+        sl_push(c, lib + "/" + p)
+        sl_push(c, r + "/lib/" + p)
+        return first_file(c)
+    }
+    if s_starts(spec, ".") {
+        let n: string = s_replace(s_from(spec, 1), ".", "/") + ".flow"
+        sl_push(c, dir + "/" + n)
+        sl_push(c, lib + "/" + n)
+        return first_file(c)
+    }
+    if s_starts(spec, "std.") or s_starts(spec, "stdlib.") {
+        let dot: i32 = s_find_byte(spec, 46, 0)
+        sl_push(c, r + "/lib/stdlib/" + s_replace(s_from(spec, dot + 1), ".", "/") + ".flow")
+        return first_file(c)
+    }
+    let n: string = s_replace(spec, ".", "/") + ".flow"
+    sl_push(c, r + "/" + n)
+    sl_push(c, lib + "/" + n)
+    sl_push(c, dir + "/" + n)
+    return first_file(c)
+}
+
+# True when `src` or any module it imports, directly or not, is newer than
+# `bin`.
+function deps_newer(src: string, lib: string, bin: string) -> bool {
+    let seen: ptr<ProcStrs> = sl_of1(src)
+    let mut k: i32 = 0
+    while k < sl_len(seen) {
+        let f: string = sl_get(seen, k)
+        if newer(f, bin) {
+            return true
+        }
+        let lines: ptr<ProcStrs> = s_lines(read_text(f))
+        let mut i: i32 = 0
+        while i < sl_len(lines) {
+            let spec: string = import_spec(sl_get(lines, i))
+            if s_len(spec) > 0 {
+                let dep: string = import_file(spec, path_dirname(f), lib)
+                if s_len(dep) > 0 and not sl_has(seen, dep) {
+                    sl_push(seen, dep)
+                }
+            }
+            i = i + 1
+        }
+        k = k + 1
+    }
+    return false
+}
+
+# The Stage-A flowc built from the checked-in bootstrap C, or "".
+function tool_flowc() -> string {
+    let fb: string = env("FLOW_TOOL_FLOWC")
+    if s_len(fb) > 0 and is_exec(fb) {
+        return fb
+    }
+    let dir: string = root() + "/build/flow-tools"
+    let flowc: string = dir + "/flowc"
+    let boot_c: string = root() + "/compiler/bootstrap/flowc_stage_a.c"
+    if is_exec(flowc) and not newer(boot_c, flowc) {
+        return flowc
+    }
+    if not mkdir_p(dir) {
+        errln("flow tool: cannot create " + dir)
+        return ""
+    }
+    let tmp: string = flowc + ".tmp." + s_itoa(pid())
+    let c: ptr<ProcCmd> = cmd(sl_of3(cc_default(), "-O1", "-w"))
+    proc_arg(c, "-o")
+    proc_arg(c, tmp)
+    proc_arg(c, boot_c)
+    proc_arg(c, "-lm")
+    if run(c) != 0 {
+        rm_f(tmp)
+        errln("flow tool: cc could not build " + boot_c)
+        return ""
+    }
+    if not move_file(tmp, flowc) {
+        return ""
+    }
+    return flowc
+}
+
+# Give `c` this program's environment without any FLOWC_* variable.
+function clean_flowc_env(c: ptr<ProcCmd>) {
+    proc_env_clear(c)
+    let all: ptr<ProcStrs> = proc_environ()
+    let mut i: i32 = 0
+    while i < sl_len(all) {
+        let kv: string = sl_get(all, i)
+        let eq: i32 = s_find_byte(kv, 61, 0)
+        if eq > 0 and not s_starts(kv, "FLOWC_") {
+            cmd_env(c, s_slice(kv, 0, eq), s_from(kv, eq + 1))
+        }
+        i = i + 1
+    }
+}
+
+# Build the tool; the binary's path, or "" after printing why.
+export function tool_build(spec: string) -> string {
+    let t: ptr<ToolSpec> = tool_resolve(spec)
+    if s_len(t.src) == 0 {
+        errln("flow tool: no such tool: " + spec)
+        return ""
+    }
+    let flowc: string = tool_flowc()
+    if s_len(flowc) == 0 {
+        return ""
+    }
+    let dir: string = root() + "/build/flow-tools"
+    let bin: string = dir + "/" + t.name
+    # Rebuilt when the bootstrap flowc, the program or any module it imports
+    # (followed through every import, as flowc's bundle does) changed.
+    let stale: bool = not is_exec(bin) or newer(flowc, bin) or deps_newer(t.src, t.lib, bin)
+    if not stale {
+        return bin
+    }
+    if not mkdir_p(dir) {
+        errln("flow tool: cannot create " + dir)
+        return ""
+    }
+    let tmp: string = bin + ".tmp." + s_itoa(pid())
+    let log: string = dir + "/" + t.name + ".flowc.log"
+    let fc: ptr<ProcCmd> = cmd(sl_of1(flowc))
+    cmd_cwd(fc, root())
+    # The caller's FLOWC_* settings (FLOWC_CHECK_ONLY=1 ./flow tool ...)
+    # are meant for the program, not for building it.
+    clean_flowc_env(fc)
+    cmd_env(fc, "FLOWC_BUNDLE", "1")
+    cmd_env(fc, "FLOWC_DIR", t.lib)
+    cmd_env(fc, "FLOWC_TYPECHECK", "1")
+    cmd_env(fc, "FLOWC_IN", t.src)
+    cmd_env(fc, "FLOWC_OUT", tmp + ".c")
+    cmd_no_stdin(fc)
+    if run_to_file(fc, log, true) != 0 {
+        errs(read_text(log))
+        errln("flow tool: flowc could not compile " + t.src)
+        rm_f(tmp + ".c")
+        return ""
+    }
+    let cc: ptr<ProcCmd> = cmd(sl_of3(cc_default(), "-O2", "-w"))
+    proc_arg(cc, "-o")
+    proc_arg(cc, tmp)
+    proc_arg(cc, tmp + ".c")
+    proc_arg(cc, "-lm")
+    if run(cc) != 0 {
+        rm_f(tmp)
+        errln("flow tool: cc could not compile " + tmp + ".c")
+        return ""
+    }
+    rm_f(tmp + ".c")
+    if not move_file(tmp, bin) {
+        errln("flow tool: cannot write " + bin)
+        return ""
+    }
+    return bin
+}
+
+# The argv that runs tool `spec` with `args`, with FLOW_REPO_ROOT exported as
+# `flow tool` exports it. Exits 2 when the tool cannot be built. The CLI
+# commands that hand work to a repository tool (`flow bpf`, `flow wasm`,
+# `flow playground`, `flow record --gif`) run it through this.
+export function tool_argv(spec: string, args: ptr<ProcStrs>) -> ptr<ProcStrs> {
+    let bin: string = tool_build(spec)
+    if s_len(bin) == 0 {
+        cli_exit(2)
+    }
+    env_set("FLOW_REPO_ROOT", root())
+    let argv: ptr<ProcStrs> = sl_of1(bin)
+    sl_extend(argv, args)
+    return argv
+}
+
+# `flow tool ...`
+export function cmd_tool(args: ptr<ProcStrs>) -> i32 {
+    let first: string = sl_get(args, 0)
+    if s_len(first) == 0 or s_eq(first, "--help") or s_eq(first, "-h") {
+        errln("Usage: flow tool NAME|PATH.flow [args...]")
+        errln("       flow tool --path NAME|PATH.flow")
+        errln("  NAME is scripts/tools/NAME/main.flow or tools/NAME/main.flow.")
+        if s_len(first) == 0 {
+            return 2
+        }
+        return 0
+    }
+    if s_eq(first, "--path") {
+        let bin: string = tool_build(sl_get(args, 1))
+        if s_len(bin) == 0 {
+            return 2
+        }
+        outln(bin)
+        return 0
+    }
+    let bin: string = tool_build(first)
+    if s_len(bin) == 0 {
+        return 2
+    }
+    env_set("FLOW_REPO_ROOT", root())
+    let argv: ptr<ProcStrs> = sl_of1(bin)
+    sl_extend(argv, sl_tail(args, 1))
+    return exec_argv(argv)
+}

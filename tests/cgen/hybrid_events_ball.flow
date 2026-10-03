@@ -1,0 +1,38 @@
+# `when x reaches L` lowers to guard memory in the struct, a guard check after
+# integration, staged resets, and a guard memory update after the reset.
+# Events run before outputs.
+flow Ball {
+    state height      : f64 = 2.0
+    state velocity    : f64 = 0.0
+    param gravity     : f64 = 9.81
+    param restitution : f64 = 0.8
+
+    height evolves as velocity
+    velocity evolves as -gravity
+
+    when height reaches 0.0 {
+        velocity becomes -restitution * velocity
+        height becomes 0.0
+    }
+}
+
+flow Gauge {
+    state level : f64 = 1.0
+    output display : f64 = level * 100.0
+    level evolves as -0.1
+    when level reaches 0.0 {
+        level becomes 1.0
+    }
+}
+
+function main() -> i32 {
+    let mut b: Ball = Ball_new()
+    let mut g: Gauge = Gauge_new()
+    let mut i: i32 = 0
+    while i < 100 {
+        Ball_step(&b, 0.01)
+        Gauge_step(&g, 0.5)
+        i = i + 1
+    }
+    return 0
+}

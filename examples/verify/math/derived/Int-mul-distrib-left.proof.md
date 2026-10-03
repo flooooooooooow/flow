@@ -2,9 +2,9 @@
 
 *Integer multiplication distributes over addition on the left.*
 
-**Source.** landau — *Foundations of Analysis*, Ch. 1
+**Source.** landau: *Foundations of Analysis*, Ch. 1
 
-## Derived fact 1 — a * (b + c) = a * b + a * c
+## Derived fact 1: a * (b + c) = a * b + a * c
 
 **Coordinate.** the integers · multiplication · left distribution over addition holds · **Derived fact**
 

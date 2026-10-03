@@ -1,6 +1,8 @@
 # Governance
 
-Flow is an open-source programming language under the MIT license.
+Flow version 2.0.0 and later are proprietary. All rights reserved. See the
+[LICENSE](LICENSE) for terms. Version 1.0.2 and earlier remain available under
+the MIT License ([LICENSE-1.x-MIT](LICENSE-1.x-MIT)).
 
 ## Decision authority
 
@@ -12,7 +14,7 @@ Flow is an open-source programming language under the MIT license.
 | Releases & version tags | Maintainer |
 
 Design questions that need a human call are logged in
-[`Questions.md`](Questions.md).
+[`docs/project/Questions.md`](docs/project/Questions.md).
 
 ## Roadmap
 

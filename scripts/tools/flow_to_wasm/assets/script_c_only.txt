@@ -1,0 +1,9 @@
+<script>
+        document.getElementById('status').textContent = '⚠️ WASM not available - showing generated C code';
+        document.getElementById('runBtn').style.display = 'none';
+        document.getElementById('output').textContent = 'Install Emscripten to compile and run in browser:\n\n' +
+            'brew install emscripten\n' +
+            '# or\n' +
+            'git clone https://github.com/emscripten-core/emsdk.git\n' +
+            'cd emsdk && ./emsdk install latest && ./emsdk activate latest';
+    </script>

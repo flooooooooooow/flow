@@ -2,9 +2,9 @@
 
 *Nine plus zero is nine in an ideal witness.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.1
+**Source.** dummit-foote: *Abstract Algebra*, §7.1
 
-## Derived fact 1 — 9 + 0 = 9 in an ideal
+## Derived fact 1: 9 + 0 = 9 in an ideal
 
 **Coordinate.** Ideal · addition · nine plus zero in ideal · **Derived fact**
 

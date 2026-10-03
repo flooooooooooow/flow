@@ -1,0 +1,198 @@
+# @module flowc.recognition
+# @means  Flow-native recognition-relative projections over Flow denotations and facts.
+
+import .token { Token, Lexer, TOK_EOF, TOK_IDENT }
+import .lexer { flowc_lexer_new, flowc_lexer_next }
+import .ast {
+    AstArena, AST_NONE, AST_FLOW_DECL,
+    FLOW_ITEM_RECOGNIZE
+}
+import .denotation {
+    FlowcDenotation, flowc_den_mix
+}
+import .semantic_facts {
+    FlowcSemanticFact,
+    FLOWC_RECOGNITION_NUMERICAL, FLOWC_RECOGNITION_REALTIME,
+    FLOWC_RECOGNITION_CAUSAL, FLOWC_RECOGNITION_SAFETY,
+    FLOWC_RECOGNITION_MEMORY,
+    flowc_fact_visible
+}
+
+extern {
+    function strlen(s: string) -> i64
+}
+
+function flowc_rec_token_is(
+    input: ptr<u8>,
+    tok: Token,
+    lit: string
+) -> i32 {
+    let n: i32 = strlen(lit) as i32
+    if tok.end - tok.start != n {
+        return 0
+    }
+    let p: ptr<u8> = lit
+    let mut i: i32 = 0
+    while i < n {
+        if input[tok.start + i] != p[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function flowc_rec_mask_span(
+    src: ptr<u8>,
+    start: i32,
+    end: i32
+) -> i32 {
+    if end <= start {
+        return 0
+    }
+    let input: ptr<u8> = src + start
+    let mut lex: Lexer = flowc_lexer_new(input, end - start)
+    let mut mask: i32 = 0
+    let mut tok: Token = flowc_lexer_next(&lex)
+    while tok.kind != TOK_EOF {
+        if tok.kind == TOK_IDENT {
+            if flowc_rec_token_is(input, tok, "numerical") == 1 {
+                mask = mask | FLOWC_RECOGNITION_NUMERICAL
+            } elif flowc_rec_token_is(input, tok, "realtime") == 1 {
+                mask = mask | FLOWC_RECOGNITION_REALTIME
+            } elif flowc_rec_token_is(input, tok, "causal") == 1 {
+                mask = mask | FLOWC_RECOGNITION_CAUSAL
+            } elif flowc_rec_token_is(input, tok, "safety") == 1 {
+                mask = mask | FLOWC_RECOGNITION_SAFETY
+            } elif flowc_rec_token_is(input, tok, "memory") == 1 {
+                mask = mask | FLOWC_RECOGNITION_MEMORY
+            }
+        }
+        tok = flowc_lexer_next(&lex)
+    }
+    return mask
+}
+
+export function flowc_recognition_contract_mask(
+    arena: AstArena,
+    flow_id: i32,
+    src: ptr<u8>
+) -> i32 {
+    if flow_id == AST_NONE or arena.nodes[flow_id].kind != AST_FLOW_DECL {
+        return 0
+    }
+    let mut mask: i32 = 0
+    let mut item: i32 = arena.nodes[flow_id].a
+    while item != AST_NONE {
+        if arena.nodes[item].ival == FLOW_ITEM_RECOGNIZE {
+            mask = mask | flowc_rec_mask_span(
+                src,
+                arena.nodes[item].start,
+                arena.nodes[item].end
+            )
+        }
+        item = arena.nodes[item].next
+    }
+    return mask
+}
+
+function flowc_rec_add(h: u64, v: u64) -> u64 {
+    return flowc_den_mix(h, v)
+}
+
+export function flowc_recognition_signature(
+    d: FlowcDenotation,
+    domain: i32
+) -> u64 {
+    let mut h: u64 = 1469598103934665603
+
+    if domain == FLOWC_RECOGNITION_NUMERICAL {
+        h = flowc_rec_add(h, d.state_schema)
+        h = flowc_rec_add(h, d.input_schema)
+        h = flowc_rec_add(h, d.output_schema)
+        h = flowc_rec_add(h, d.param_schema)
+        h = flowc_rec_add(h, d.initial_state)
+        h = flowc_rec_add(h, d.param_defaults)
+        h = flowc_rec_add(h, d.dynamics)
+        h = flowc_rec_add(h, d.output_maps)
+        h = flowc_rec_add(h, d.timing)
+        h = flowc_rec_add(h, d.events)
+        h = flowc_rec_add(h, d.discrete_updates)
+        return h
+    }
+    if domain == FLOWC_RECOGNITION_REALTIME {
+        h = flowc_rec_add(h, d.state_schema)
+        h = flowc_rec_add(h, d.input_schema)
+        h = flowc_rec_add(h, d.output_schema)
+        h = flowc_rec_add(h, d.param_schema)
+        h = flowc_rec_add(h, d.timing)
+        h = flowc_rec_add(h, d.events)
+        h = flowc_rec_add(h, d.discrete_updates)
+        h = flowc_rec_add(h, d.composition)
+        return h
+    }
+    if domain == FLOWC_RECOGNITION_CAUSAL {
+        h = flowc_rec_add(h, d.state_schema)
+        h = flowc_rec_add(h, d.input_schema)
+        h = flowc_rec_add(h, d.output_schema)
+        h = flowc_rec_add(h, d.dynamics)
+        h = flowc_rec_add(h, d.output_maps)
+        h = flowc_rec_add(h, d.events)
+        h = flowc_rec_add(h, d.discrete_updates)
+        h = flowc_rec_add(h, d.composition)
+        return h
+    }
+    if domain == FLOWC_RECOGNITION_SAFETY {
+        h = flowc_rec_add(h, d.state_schema)
+        h = flowc_rec_add(h, d.input_schema)
+        h = flowc_rec_add(h, d.param_schema)
+        h = flowc_rec_add(h, d.dynamics)
+        h = flowc_rec_add(h, d.events)
+        h = flowc_rec_add(h, d.discrete_updates)
+        h = flowc_rec_add(h, d.constraints)
+        return h
+    }
+    if domain == FLOWC_RECOGNITION_MEMORY {
+        h = flowc_rec_add(h, d.state_schema)
+        h = flowc_rec_add(h, d.input_schema)
+        h = flowc_rec_add(h, d.output_schema)
+        h = flowc_rec_add(h, d.param_schema)
+        h = flowc_rec_add(h, d.event_count as u64)
+        h = flowc_rec_add(h, d.update_count as u64)
+        h = flowc_rec_add(h, d.composition)
+        return h
+    }
+    return 0
+}
+
+export function flowc_recognition_preserved(
+    before: FlowcDenotation,
+    after: FlowcDenotation,
+    domain_mask: i32
+) -> i32 {
+    let domains: array<i32, 5> = [
+        FLOWC_RECOGNITION_NUMERICAL,
+        FLOWC_RECOGNITION_REALTIME,
+        FLOWC_RECOGNITION_CAUSAL,
+        FLOWC_RECOGNITION_SAFETY,
+        FLOWC_RECOGNITION_MEMORY
+    ]
+    let mut i: i32 = 0
+    while i < 5 {
+        let domain: i32 = domains[i]
+        if (domain_mask & domain) != 0 {
+            if flowc_recognition_signature(before, domain) != flowc_recognition_signature(after, domain) {
+                return 0
+            }
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+export function flowc_recognition_fact_visible(
+    fact: FlowcSemanticFact,
+    domain_mask: i32
+) -> i32 {
+    return flowc_fact_visible(fact, domain_mask)
+}

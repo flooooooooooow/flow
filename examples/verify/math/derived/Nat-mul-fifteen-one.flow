@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Fifteen times one is fifteen.
-# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
+# @from   peano: https://en.wikipedia.org/wiki/Peano_axioms
 # @tier   derived
 
 # @means  15 * 1 = 15.

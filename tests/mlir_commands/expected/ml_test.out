@@ -1,0 +1,25 @@
+✅   ✓ test_tensor.flow
+✅   ✓ test_ml_autograd.flow
+✅   ✓ test_matmul_backward.flow
+✅   ✓ test_ml_nn.flow
+✅   ✓ test_dense_backward.flow
+✅   ✓ test_mlp2_backward.flow
+✅   ✓ test_ml_opt.flow
+✅   ✓ mlp_xor.flow
+✅   ✓ mlp_xor_adam.flow
+🔥 JIT compiling test_tensor.flow...
+✅ JIT finished with exit code: 0
+🔥 JIT compiling test_ml_autograd.flow...
+✅ JIT finished with exit code: 0
+🔥 JIT compiling test_matmul_backward.flow...
+✅ JIT finished with exit code: 0
+🔥 JIT compiling test_dense_backward.flow...
+✅ JIT finished with exit code: 0
+🔥 JIT compiling test_dense_create_only.flow...
+✅ JIT finished with exit code: 0
+🔥 JIT compiling test_backward_a_from_layer.flow...
+✅ JIT finished with exit code: 0
+🔥 JIT compiling test_mlp2_backward.flow...
+✅ JIT finished with exit code: 0
+⚠️    SPIR-V lowering WIP (GPU MLIR codegen ok)
+✅ ML tests passed

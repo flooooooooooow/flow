@@ -2,13 +2,13 @@
 
 *If a straight line is cut, the rectangle by the whole and the other segment equals the rectangle by the segments together with the square on the other segment.*
 
-**Source.** euclid — Elements, Book II, Proposition 3
+**Source.** euclid: Elements, Book II, Proposition 3
 
-## Derived fact 1 — If a straight line is cut, the rectangle by the whole and the other segment equals the rectangle by the segments together with the square on the other segment
+## Derived fact 1: If a straight line is cut, the rectangle by the whole and the other segment equals the rectangle by the segments together with the square on the other segment
 
 **Coordinate.** the Euclidean plane · Euclid Book II · Proposition 3: the rectangle by the whole and the other part equals the parts plus a square · **Derived fact**
 
-*Source: euclid — Elements, Book II, Proposition 3*
+*Source: euclid: Elements, Book II, Proposition 3*
 
 *Built on: proposition 2: the rectangle by the whole and one part equals the parts plus a square, for Euclid Book II on the Euclidean plane, proposition 34: complements of parallelograms about the diameter are equal, for Book I of the Elements in on the Euclidean plane*
 

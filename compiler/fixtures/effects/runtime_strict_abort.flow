@@ -1,0 +1,21 @@
+# Effects parity fixture: with FLOW_STRICT_EFFECTS=1 in the environment an
+# unhandled operation aborts with a message on stderr.
+# effects-mode: runtime-strict
+# stdout is flushed before the abort: a pipe is fully buffered on Linux, and
+# abort() does not flush it.
+
+extern {
+    function fflush(f: ptr<void>) -> i32
+}
+
+effect Log {
+    info(msg: string) -> void,
+}
+
+function main() -> i32 {
+    printf("before\n")
+    fflush(null)
+    Log.info("no handler")
+    printf("after\n")
+    return 0
+}

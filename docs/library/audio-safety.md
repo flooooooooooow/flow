@@ -9,7 +9,7 @@ The default teaching chain guards NaN/infinity, removes DC, flushes denormals, a
 The canonical usage, including `SampleRate`, `SafetyChain`, frame input, sink handling, reporting, and teardown, is kept in complete source rather than repeated here with undeclared `left`/`right` samples:
 
 ```bash
-FLOW_HOST=python ./flow run tests/stdlib/audio/test_safety.flow
+./flow run tests/stdlib/audio/test_safety.flow
 ```
 
 The implementation is `lib/stdlib/audio/safety.flow`; offline rendered-file checks are in `lib/stdlib/audio/verify.flow`.
@@ -60,13 +60,13 @@ The chain exposes input/output sample peak, true peak, RMS, maximum gain reducti
 `verify_run` checks a WAV's format, duration, ceiling, non-silence, finite samples, fades, and expected dominant partial. Render all repository audio examples with:
 
 ```bash
-scripts/render_audio_examples.sh
+./flow tool scripts/render_audio_examples.flow
 ```
 
 The script does not open an audio device; examples are rendered twice and the outputs must be byte-identical.
 
 ## Boundaries of the guarantee
 
-The library controls digital signal level, not hardware volume. It cannot protect gain inserted downstream, a wrongly selected output device, or listening fatigue from a sustained signal that remains under the peak ceiling.
+The library controls digital signal level. It does not control hardware volume. It cannot protect gain inserted downstream, a wrongly selected output device, or listening fatigue from a sustained signal that remains under the peak ceiling.
 
 See `lib/stdlib/audio/safety.flow`, `lib/stdlib/audio/verify.flow`, `tests/stdlib/audio/test_safety.flow`, [audio basics](../tutorials/audio-basics.md), and [RT safety](rt-safety.md).

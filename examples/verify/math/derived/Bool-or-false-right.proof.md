@@ -2,9 +2,9 @@
 
 *False on the right is a disjunctive identity.*
 
-**Source.** boole — https://en.wikipedia.org/wiki/Boolean_algebra
+**Source.** boole: https://en.wikipedia.org/wiki/Boolean_algebra
 
-## Derived fact 1 — a or false = a
+## Derived fact 1: a or false = a
 
 **Coordinate.** boolean truth values · disjunction · false is the right identity from the left · **Derived fact**
 

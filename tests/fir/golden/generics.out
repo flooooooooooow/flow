@@ -1,0 +1,116 @@
+{
+  "summary": "FIR-G: funcs=6 blocks=27 ops=88 values=57 operands=45 types=8",
+  "call_edges": [
+    {
+      "caller": "main",
+      "callee": "box_make_i32",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "box_get_i32",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "box_make_f32",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "box_get_f32",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "identity_i32",
+      "op": 1
+    }
+  ],
+  "effects": {
+    "identity_i32": 0,
+    "box_get_f32": 0,
+    "box_make_f32": 0,
+    "box_get_i32": 0,
+    "box_make_i32": 0,
+    "main": 0
+  },
+  "pure": {
+    "identity_i32": true,
+    "box_get_f32": true,
+    "box_make_f32": true,
+    "box_get_i32": true,
+    "box_make_i32": true,
+    "main": true
+  },
+  "reachable": [
+    "box_get_f32",
+    "box_get_i32",
+    "box_make_f32",
+    "box_make_i32",
+    "identity_i32",
+    "main"
+  ],
+  "dead": [],
+  "num_call_ops": 5,
+  "device_requested": "cpu",
+  "device_chosen": "cpu",
+  "opt_candidates": {
+    "total": 5,
+    "by_kind": {
+      "inline": 5
+    },
+    "top": [
+      {
+        "kind": "inline",
+        "target": "box_get_f32",
+        "score": 42.0,
+        "reason": "callee_ops=3 sites=1 pure=True",
+        "caller": "main",
+        "callsite_op": 45,
+        "callee_ops": 3,
+        "call_sites": 1
+      },
+      {
+        "kind": "inline",
+        "target": "box_get_i32",
+        "score": 42.0,
+        "reason": "callee_ops=3 sites=1 pure=True",
+        "caller": "main",
+        "callsite_op": 21,
+        "callee_ops": 3,
+        "call_sites": 1
+      },
+      {
+        "kind": "inline",
+        "target": "box_make_f32",
+        "score": 42.0,
+        "reason": "callee_ops=3 sites=1 pure=True",
+        "caller": "main",
+        "callsite_op": 29,
+        "callee_ops": 3,
+        "call_sites": 1
+      },
+      {
+        "kind": "inline",
+        "target": "box_make_i32",
+        "score": 42.0,
+        "reason": "callee_ops=3 sites=1 pure=True",
+        "caller": "main",
+        "callsite_op": 16,
+        "callee_ops": 3,
+        "call_sites": 1
+      },
+      {
+        "kind": "inline",
+        "target": "identity_i32",
+        "score": 42.0,
+        "reason": "callee_ops=3 sites=1 pure=True",
+        "caller": "main",
+        "callsite_op": 79,
+        "callee_ops": 3,
+        "call_sites": 1
+      }
+    ]
+  }
+}

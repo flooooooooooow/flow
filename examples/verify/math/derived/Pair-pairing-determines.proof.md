@@ -2,9 +2,9 @@
 
 *Pairing is determined by its components.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Product_type
+**Source.** church: https://en.wikipedia.org/wiki/Product_type
 
-## Derived fact 1 — pair(a, b) determines a and b
+## Derived fact 1: pair(a, b) determines a and b
 
 **Coordinate.** Pair · pairing · pairing is determined by components · **Derived fact**
 

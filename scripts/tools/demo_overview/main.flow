@@ -1,0 +1,297 @@
+# Generate the Wiki demo showcase, docs/demos/overview.md, from
+# docs/demos/catalog.json.
+#
+# Run it as `./flow tool demo_overview` from anywhere in the repository; it
+# works from the repository root:
+#
+#   flow tool demo_overview                    rewrite overview.md
+#   flow tool demo_overview --check            exit 1 if overview.md is stale
+#   flow tool demo_overview --check-previews   require every preview asset
+#
+# Output is byte-identical to the Python script this replaces.
+
+import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_repr, ft_read_file, ft_write_file, ft_exists, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_has, StrList }
+import .json { json_parse, json_error, json_get, json_kind, json_str, json_first, json_next, json_kind_number, json_kind_string, json_kind_true, json_kind_false, json_kind_null, Json }
+import .demogen { dg_html_escape, dg_flags, dg_truthy }
+import .repo { rp_enter_root }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+const PROG: string = "flow tool demo_overview"
+const CATALOG: string = "docs/demos/catalog.json"
+const OUTPUT: string = "docs/demos/overview.md"
+
+function usage_line() -> string {
+    return "usage: flow tool demo_overview [-h] [--check] [--check-previews]\n"
+}
+
+function help_text() -> string {
+    return usage_line() + "\noptions:\n  -h, --help        show this help message and exit\n  --check\n  --check-previews\n"
+}
+
+# str(value) for a scalar JSON value.
+function py_str(j: ptr<Json>, id: i32) -> string {
+    let k: i32 = json_kind(j, id)
+    if k == json_kind_true() {
+        return "True"
+    }
+    if k == json_kind_false() {
+        return "False"
+    }
+    if k == json_kind_null() {
+        return "None"
+    }
+    return json_str(j, id)
+}
+
+function val(j: ptr<Json>, item: i32, name: string) -> string {
+    return py_str(j, json_get(j, item, name))
+}
+
+# The key a card() call would fail on first, or null.
+function card_missing(j: ptr<Json>, item: i32) -> string {
+    let keys: ptr<StrList> = ft_list_new()
+    ft_list_push(keys, "title")
+    ft_list_push(keys, "description")
+    ft_list_push(keys, "page")
+    ft_list_push(keys, "preview")
+    ft_list_push(keys, "runtime")
+    ft_list_push(keys, "count")
+    ft_list_push(keys, "count_label")
+    ft_list_push(keys, "section")
+    let mut ki: i32 = 0
+    while ki < ft_list_len(keys) {
+        if json_get(j, item, ft_list_get(keys, ki)) < 0 {
+            return ft_list_get(keys, ki)
+        }
+        ki = ki + 1
+    }
+    return null as string
+}
+
+function card(j: ptr<Json>, item: i32, featured: bool) -> string {
+    let mut cls: string = "demo-collection-card"
+    if featured {
+        cls = "demo-collection-card demo-collection-featured"
+    }
+    let title: string = dg_html_escape(val(j, item, "title"))
+    let description: string = dg_html_escape(val(j, item, "description"))
+    let page: string = dg_html_escape(val(j, item, "page"))
+    let preview: string = dg_html_escape(val(j, item, "preview"))
+    let runtime: string = dg_html_escape(val(j, item, "runtime"))
+    let count: string = dg_html_escape(val(j, item, "count"))
+    let count_label: string = dg_html_escape(val(j, item, "count_label"))
+    let section: string = dg_html_escape(val(j, item, "section"))
+    let mut s: string = "<article class=\"" + cls + "\">\n"
+    s = s + "  <a class=\"demo-collection-media\" href=\"" + page + "\" aria-label=\"Open " + title + " gallery\">\n"
+    s = s + "    <img src=\"" + preview + "\" alt=\"Preview of the " + title + " gallery\" loading=\"lazy\">\n"
+    s = s + "  </a>\n"
+    s = s + "  <div class=\"demo-collection-body\">\n"
+    s = s + "    <div class=\"demo-collection-kicker\">" + section + "</div>\n"
+    s = s + "    <h3><a href=\"" + page + "\">" + title + "</a></h3>\n"
+    s = s + "    <p>" + description + "</p>\n"
+    s = s + "    <div class=\"demo-collection-meta\"><span><strong>" + count + "</strong> " + count_label + "</span><span>" + runtime + "</span></div>\n"
+    s = s + "    <a class=\"demo-collection-open\" href=\"" + page + "\">Open gallery →</a>\n"
+    s = s + "  </div>\n"
+    s = s + "</article>"
+    return s
+}
+
+function build(j: ptr<Json>, coll: i32) -> string {
+    let sections: ptr<StrList> = ft_list_new()
+    let mut n: i32 = 0
+    let mut c: i32 = json_first(j, coll)
+    while c >= 0 {
+        let sec: string = val(j, c, "section")
+        if ft_list_has(sections, sec) == false {
+            ft_list_push(sections, sec)
+        }
+        n = n + 1
+        c = json_next(j, c)
+    }
+    let mut out: string = "# Demo Showcase\n\n"
+    out = out + "Flow's visual output is organised in three layers: a **demo** is one runnable thing; \n"
+    out = out + "a **gallery** collects related demos; this **showcase** is the curated cross-section. \n"
+    out = out + "That separation keeps the Wiki useful when the example corpus grows instead of turning \n"
+    out = out + "every page into one enormous list.\n\n"
+    out = out + "<div class=\"demo-gallery-summary\">\n"
+    out = out + "  <span><strong>" + ft_itoa(n) + "</strong> visual collections</span>\n"
+    out = out + "  <span><strong>GPU + CPU</strong> rendering paths</span>\n"
+    out = out + "  <span><strong>Recorded + live</strong> output</span>\n"
+    out = out + "  <span><strong>Source-linked</strong> demos</span>\n"
+    out = out + "</div>\n\n"
+    out = out + "## Start here\n\n"
+    out = out + "Six collections that show the range of the language without making you understand the \n"
+    out = out + "documentation hierarchy first.\n\n"
+    out = out + "<div class=\"demo-showcase-grid\">\n"
+    c = json_first(j, coll)
+    while c >= 0 {
+        if dg_truthy(j, json_get(j, c, "featured")) {
+            out = out + card(j, c, true) + "\n"
+        }
+        c = json_next(j, c)
+    }
+    out = out + "</div>\n\n## Browse every gallery\n\n"
+    let mut si: i32 = 0
+    while si < ft_list_len(sections) {
+        let name: string = ft_list_get(sections, si)
+        out = out + "### " + name + "\n\n<div class=\"demo-collection-grid\">\n"
+        c = json_first(j, coll)
+        while c >= 0 {
+            if ft_eq(val(j, c, "section"), name) {
+                out = out + card(j, c, false) + "\n"
+            }
+            c = json_next(j, c)
+        }
+        out = out + "</div>\n\n"
+        si = si + 1
+    }
+    out = out + "## Run and record\n\n"
+    out = out + "CPU `gfx` demos use the cross-platform headless recorder; FSL shaders use the \n"
+    out = out + "offscreen Metal recorder so the published GIFs are produced by the real shader pipeline.\n\n"
+    out = out + "```bash\n"
+    out = out + "./flow gfx examples/games/tetris_gfx.flow\n"
+    out = out + "./flow record examples/morphogenesis/gray_scott.flow --frames 240 --gif out.gif\n"
+    out = out + "./flow shader examples/gpu/shader_photoreal.flow --name photoreal_glass\n"
+    out = out + "./flow tool shader_record --group photoreal\n"
+    out = out + "```\n\n"
+    out = out + "For problem-first code examples rather than visual output, use \n"
+    out = out + "[Solve It the Flow Way](../../examples/flow_way/README.md). For interactive browser \n"
+    out = out + "builds, open the [WebAssembly gallery](wasm.md). Recording internals and regeneration \n"
+    out = out + "commands live in the [demos README](README.md).\n"
+    return out
+}
+
+function key_error(k: string) -> i32 {
+    ft_errln("KeyError: " + ft_repr(k))
+    return 1
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    if rp_enter_root() == false {
+        ft_errln("demo_overview: cannot enter the repository root")
+        return 1
+    }
+    let names: ptr<StrList> = ft_list_new()
+    ft_list_push(names, "--check")
+    ft_list_push(names, "--check-previews")
+    let on: ptr<i32> = malloc(8) as ptr<i32>
+    on[0] = 0
+    on[1] = 0
+    let rc: i32 = dg_flags(argc, argv, names, on, PROG, usage_line(), help_text())
+    if rc >= 0 {
+        return rc
+    }
+
+    let text: string = ft_read_file(CATALOG)
+    if text as ptr<u8> == null {
+        ft_errln("FileNotFoundError: [Errno 2] No such file or directory: " + ft_repr(CATALOG))
+        return 1
+    }
+    let j: ptr<Json> = json_parse(text)
+    if ft_len(json_error(j)) > 0 {
+        ft_errln("json.decoder.JSONDecodeError: " + json_error(j))
+        return 1
+    }
+    let coll: i32 = json_get(j, 0, "collections")
+    if coll < 0 {
+        return key_error("collections")
+    }
+
+    # Duplicate ids.
+    let ids: ptr<StrList> = ft_list_new()
+    let mut dup: bool = false
+    let mut c: i32 = json_first(j, coll)
+    while c >= 0 {
+        if json_get(j, c, "id") < 0 {
+            return key_error("id")
+        }
+        let id: string = val(j, c, "id")
+        if ft_list_has(ids, id) {
+            dup = true
+        }
+        ft_list_push(ids, id)
+        c = json_next(j, c)
+    }
+    if dup {
+        ft_errln("duplicate demo collection id in docs/demos/catalog.json")
+        return 1
+    }
+
+    if on[1] == 1 {
+        let missing: ptr<StrList> = ft_list_new()
+        c = json_first(j, coll)
+        while c >= 0 {
+            if json_get(j, c, "preview") < 0 {
+                return key_error("preview")
+            }
+            let pv: string = val(j, c, "preview")
+            if ft_exists("docs/demos/" + pv) == false {
+                ft_list_push(missing, pv)
+            }
+            c = json_next(j, c)
+        }
+        if ft_list_len(missing) > 0 {
+            let mut msg: string = "missing gallery preview assets: "
+            let mut mi: i32 = 0
+            while mi < ft_list_len(missing) {
+                if mi > 0 {
+                    msg = msg + ", "
+                }
+                msg = msg + ft_list_get(missing, mi)
+                mi = mi + 1
+            }
+            ft_errln(msg)
+            return 1
+        }
+    }
+
+    # build() reads every section first, then each featured card, then every card.
+    c = json_first(j, coll)
+    while c >= 0 {
+        if json_get(j, c, "section") < 0 {
+            return key_error("section")
+        }
+        c = json_next(j, c)
+    }
+    c = json_first(j, coll)
+    while c >= 0 {
+        if dg_truthy(j, json_get(j, c, "featured")) {
+            let miss: string = card_missing(j, c)
+            if miss as ptr<u8> != null {
+                return key_error(miss)
+            }
+        }
+        c = json_next(j, c)
+    }
+    c = json_first(j, coll)
+    while c >= 0 {
+        let miss2: string = card_missing(j, c)
+        if miss2 as ptr<u8> != null {
+            return key_error(miss2)
+        }
+        c = json_next(j, c)
+    }
+
+    let generated: string = build(j, coll)
+    if on[0] == 1 {
+        let mut current: string = ft_read_file(OUTPUT)
+        if current as ptr<u8> == null {
+            current = ""
+        }
+        if ft_eq(current, generated) == false {
+            ft_errln("docs/demos/overview.md is stale; run ./flow tool demo_overview")
+            return 1
+        }
+        ft_outln("demo overview is current")
+        return 0
+    }
+    if ft_write_file(OUTPUT, generated) == false {
+        ft_errln("build_demo_overview: cannot write " + OUTPUT)
+        return 1
+    }
+    ft_outln("wrote " + OUTPUT + " from " + CATALOG)
+    return 0
+}

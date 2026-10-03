@@ -1,0 +1,9 @@
+struct Long { x: f64, y: f64 }
+@flow_api function Long_new() -> Long { let mut __self: Long = Long { x: 0.0, y: 0.0 }; Long_init(&__self); return __self; }
+@flow_api function Long_init(self: ptr<Long>) -> void { self.x = 1.0; self.y = 2.0; }
+@flow_api function Long_derivs(self: ptr<Long>, d_x: ptr<f64>, d_y: ptr<f64>) -> void { d_x[0] = -self.x + self.y * 0.5; d_y[0] = (self.x - self.y); }
+@flow_api function Long_step(self: ptr<Long>, dt: f64) -> void { let mut d_x: f64 = 0.0; let mut d_y: f64 = 0.0; Long_derivs(self, &d_x, &d_y); self.x = self.x + d_x * dt; self.y = self.y + d_y * dt; }
+@flow_api function Long_default_dt() -> f64 { return 0.001; }
+
+
+

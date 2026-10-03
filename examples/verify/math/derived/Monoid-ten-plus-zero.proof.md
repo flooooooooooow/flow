@@ -2,9 +2,9 @@
 
 *Ten plus zero is ten in a monoid witness.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §1.1
+**Source.** dummit-foote: *Abstract Algebra*, §1.1
 
-## Derived fact 1 — 10 + 0 = 10
+## Derived fact 1: 10 + 0 = 10
 
 **Coordinate.** Monoid · addition · ten plus zero is ten · **Derived fact**
 

@@ -3,7 +3,7 @@
 #         completion. Port of receiver_before_dot and field_access_at
 #         from src/flow/lsp_intel.py. The Python original uses regex;
 #         the Flow port does manual character scanning.
-#         URI parsing, source parsing, and type checking stay in Python.
+#         The language server itself is tools/lsp/main.flow.
 
 extern {
     function strcmp(a: string, b: string) -> i32

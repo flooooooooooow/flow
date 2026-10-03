@@ -2,9 +2,9 @@
 
 *True is absorbing for disjunction on the left.*
 
-**Source.** boole — https://en.wikipedia.org/wiki/Boolean_algebra
+**Source.** boole: https://en.wikipedia.org/wiki/Boolean_algebra
 
-## Derived fact 1 — true or a = true
+## Derived fact 1: true or a = true
 
 **Coordinate.** boolean truth values · disjunction · true is absorbing on the left · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that true is absorbing on the left for disjunction on boolean truth values. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | We invoke the derived fact governing disjunction on boolean truth values: order does not matter for "or" (instantiated for true, a). | ③ | $\mathsf{true} \lor a = a \lor \mathsf{true}$ |
 | ④ | Case 1 (see step 2): suppose a holds. |  |  |
 | ⑤ | From step 4, this implies the disjunction of true and a equals true in this case. | ⑤ | $\mathsf{true} \lor a = \mathsf{true}$ |

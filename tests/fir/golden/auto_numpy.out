@@ -1,0 +1,31 @@
+{
+  "summary": "FIR-G: funcs=2 blocks=5 ops=24 values=18 operands=16 types=2",
+  "call_edges": [
+    {
+      "caller": "fibonacci",
+      "callee": "fibonacci",
+      "op": 2
+    },
+    {
+      "caller": "main",
+      "callee": "fibonacci",
+      "op": 1
+    }
+  ],
+  "effects": {
+    "fibonacci": 0,
+    "main": 0
+  },
+  "pure": {
+    "fibonacci": true,
+    "main": true
+  },
+  "reachable": [
+    "fibonacci",
+    "main"
+  ],
+  "dead": [],
+  "num_call_ops": 3,
+  "device_requested": "auto",
+  "device_chosen": "cpu"
+}

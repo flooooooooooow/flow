@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-iii
 # @means  In equal circles circumferences subtending equal angles at the centers or circumferences are equal.
-# @from   euclid — Elements, Book III, Proposition 27
+# @from   euclid: Elements, Book III, Proposition 27
 # @tier   derived
 # @needs  «Geometry» «Euclid Book III» «Proposition 26: in equal circles equal angles stand on equal arcs»
 

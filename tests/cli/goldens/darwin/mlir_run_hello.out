@@ -1,0 +1,23 @@
+[0;32m✅ Generated MLIR: <ROOT>/build/hello.mlir[0m
+----------------------------------------
+module {
+  llvm.func @printf(!llvm.ptr, ...) -> i32
+  llvm.mlir.global internal constant @str_0("hello from the cli goldens\0A\00") {addr_space = 0 : i32} : !llvm.array<28 x i8>
+  func.func @main() -> i32 {
+    %0 = llvm.mlir.addressof @str_0 : !llvm.ptr
+    %1 = llvm.call @printf(%0) vararg(!llvm.func<i32 (ptr, ...)>) : (!llvm.ptr) -> i32
+    %2 = arith.constant 0 : i32
+    %3 = arith.constant 0 : i32
+    func.return %3 : i32
+  }
+}
+----------------------------------------
+[0;34mℹ️  Lowering MLIR to LLVM IR...[0m
+[0;32m✅ MLIR → LLVM IR → Object[0m
+[0;34mℹ️  Linking executable (Flow runtime)...[0m
+[0;32m✅ Built: <ROOT>/build/hello_mlir[0m
+[0;34mℹ️  Running...[0m
+----------------------------------------
+hello from the cli goldens
+----------------------------------------
+[0;32m✅ Program finished with exit code: 0[0m

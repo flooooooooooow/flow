@@ -1,0 +1,297 @@
+# Derive a C header from Stage-A flowc emit output (multi-module dogfood).
+#
+# Keeps includes and typedef structs, turns int32_t consts into extern
+# declarations and function definitions into prototypes. This replaces
+# compiler/scripts/flowc_c_to_hdr.py; the output is byte-identical to it.
+# The Python matched three regular expressions; each is hand-matched here:
+#   typedef struct \w+ \{.*?\n\} \w+;          (re.S, non-overlapping)
+#   ^(?:static )?const int32_t (\w+) = [^;]+;  (re.M)
+#   ^[A-Za-z_].*\(.*\) \{$                     (per line)
+#
+# Usage: c_to_hdr IN.c OUT.h
+
+import .text { ft_err, ft_errln, ft_eq, ft_len, ft_starts, ft_ends, ft_at, ft_slice, ft_read_file, ft_write_file, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function memcpy(dst: ptr<u8>, src: ptr<u8>, n: i64) -> ptr<u8>
+}
+
+function is_word(c: i32) -> bool {
+    if c >= 48 and c <= 57 { return true }
+    if c >= 65 and c <= 90 { return true }
+    if c >= 97 and c <= 122 { return true }
+    return c == 95
+}
+
+# Python str.isspace for the ASCII range.
+function is_space(c: i32) -> bool {
+    if c == 32 { return true }
+    if c >= 9 and c <= 13 { return true }
+    return c >= 28 and c <= 31
+}
+
+# Length of the line break at `i` for str.splitlines, or 0.
+function break_len(p: ptr<u8>, i: i32) -> i32 {
+    let c: i32 = p[i] as i32
+    if c == 13 {
+        if p[i + 1] == 10 { return 2 }
+        return 1
+    }
+    if c == 10 or c == 11 or c == 12 { return 1 }
+    if c >= 28 and c <= 30 { return 1 }
+    if c == 194 and p[i + 1] == 133 { return 2 }
+    if c == 226 and p[i + 1] == 128 and (p[i + 2] == 168 or p[i + 2] == 169) { return 3 }
+    return 0
+}
+
+# str.splitlines(): no trailing empty entry.
+function split_lines(text: string) -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    let p: ptr<u8> = text as ptr<u8>
+    let n: i32 = ft_len(text)
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let b: i32 = break_len(p, i)
+        if b > 0 {
+            ft_list_push(out, ft_slice(text, start, i))
+            i = i + b
+            start = i
+        } else {
+            i = i + 1
+        }
+    }
+    if start < n {
+        ft_list_push(out, ft_slice(text, start, n))
+    }
+    return out
+}
+
+# End of a \w+ run at `i` (== i when there is none).
+function word_end(p: ptr<u8>, i: i32) -> i32 {
+    let mut q: i32 = i
+    while p[q] != 0 and is_word(p[q] as i32) {
+        q = q + 1
+    }
+    return q
+}
+
+# typedef struct \w+ \{.*?\n\} \w+;  at `i`: end offset, or -1.
+function match_typedef(src: string, i: i32) -> i32 {
+    let p: ptr<u8> = src as ptr<u8>
+    if not ft_at(src, i, "typedef struct ") {
+        return -1
+    }
+    let name_end: i32 = word_end(p, i + 15)
+    if name_end == i + 15 {
+        return -1
+    }
+    if not ft_at(src, name_end, " {") {
+        return -1
+    }
+    let mut q: i32 = name_end + 2
+    while p[q] != 0 {
+        if p[q] == 10 and p[q + 1] == 125 and p[q + 2] == 32 {
+            let we: i32 = word_end(p, q + 3)
+            if we > q + 3 and p[we] == 59 {
+                return we + 1
+            }
+        }
+        q = q + 1
+    }
+    return -1
+}
+
+# ^(?:static )?const int32_t (\w+) = [^;]+;  at line start `i`: the name,
+# or null. The match end goes to end_out[0].
+function match_const(src: string, i: i32, end_out: ptr<i32>) -> string {
+    let p: ptr<u8> = src as ptr<u8>
+    let mut q: i32 = i
+    if ft_at(src, q, "static const int32_t ") {
+        q = q + 7
+    }
+    if not ft_at(src, q, "const int32_t ") {
+        return null as string
+    }
+    q = q + 14
+    let ne: i32 = word_end(p, q)
+    if ne == q {
+        return null as string
+    }
+    if not ft_at(src, ne, " = ") {
+        return null as string
+    }
+    let mut v: i32 = ne + 3
+    if p[v] == 0 or p[v] == 59 {
+        return null as string
+    }
+    while p[v] != 0 and p[v] != 59 {
+        v = v + 1
+    }
+    if p[v] != 59 {
+        return null as string
+    }
+    end_out[0] = v + 1
+    return ft_slice(src, q, ne)
+}
+
+# ^[A-Za-z_].*\(.*\) \{$ on a line already known to end with ") {".
+function is_function_head(line: string) -> bool {
+    let p: ptr<u8> = line as ptr<u8>
+    let n: i32 = ft_len(line)
+    let c: i32 = p[0] as i32
+    let alpha: bool = (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95
+    if not alpha {
+        return false
+    }
+    let mut i: i32 = 1
+    while i <= n - 4 {
+        if p[i] == 40 {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+function lstrip(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    while p[i] != 0 and is_space(p[i] as i32) {
+        i = i + 1
+    }
+    return ft_slice(s, i, ft_len(s))
+}
+
+function rstrip(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut e: i32 = ft_len(s)
+    while e > 0 and is_space(p[e - 1] as i32) {
+        e = e - 1
+    }
+    return ft_slice(s, 0, e)
+}
+
+# "\n".join(parts) + "\n"
+function join_lines(parts: ptr<StrList>) -> string {
+    let n: i32 = ft_list_len(parts)
+    let mut total: i64 = 1
+    let mut i: i32 = 0
+    while i < n {
+        total = total + (ft_len(ft_list_get(parts, i)) as i64) + 1
+        i = i + 1
+    }
+    let buf: ptr<u8> = malloc(total + 1) as ptr<u8>
+    let mut at: i64 = 0
+    i = 0
+    while i < n {
+        let s: string = ft_list_get(parts, i)
+        let l: i64 = ft_len(s) as i64
+        let _m: ptr<u8> = memcpy(buf + at, s as ptr<u8>, l)
+        at = at + l
+        if i < n - 1 {
+            buf[at as i32] = 10
+            at = at + 1
+        }
+        i = i + 1
+    }
+    buf[at as i32] = 10
+    buf[(at + 1) as i32] = 0
+    return buf as string
+}
+
+# Python's text-mode read: universal newlines turn "\r\n" and "\r" into "\n".
+function universal_newlines(raw: string) -> string {
+    let p: ptr<u8> = raw as ptr<u8>
+    let n: i32 = ft_len(raw)
+    let buf: ptr<u8> = malloc((n as i64) + 1) as ptr<u8>
+    let mut i: i32 = 0
+    let mut o: i32 = 0
+    while i < n {
+        if p[i] == 13 {
+            buf[o] = 10
+            if p[i + 1] == 10 {
+                i = i + 1
+            }
+        } else {
+            buf[o] = p[i]
+        }
+        o = o + 1
+        i = i + 1
+    }
+    buf[o] = 0
+    return buf as string
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    if argc != 3 {
+        ft_errln("usage: " + argv[0] + " in.c out.h")
+        return 2
+    }
+    let raw: string = ft_read_file(argv[1])
+    if raw as ptr<u8> == null {
+        ft_errln("c_to_hdr: cannot read " + argv[1])
+        return 1
+    }
+    let src: string = universal_newlines(raw)
+    let p: ptr<u8> = src as ptr<u8>
+    let n: i32 = ft_len(src)
+    let out: ptr<StrList> = ft_list_new()
+    let lines: ptr<StrList> = split_lines(src)
+    let mut i: i32 = 0
+    while i < ft_list_len(lines) {
+        let line: string = ft_list_get(lines, i)
+        if ft_starts(line, "#include") {
+            ft_list_push(out, line)
+        }
+        i = i + 1
+    }
+    ft_list_push(out, "")
+    i = 0
+    while i < n {
+        let e: i32 = match_typedef(src, i)
+        if e > 0 {
+            ft_list_push(out, ft_slice(src, i, e))
+            ft_list_push(out, "")
+            i = e
+        } else {
+            i = i + 1
+        }
+    }
+    let end_box: ptr<i32> = malloc(4) as ptr<i32>
+    i = 0
+    while i < n {
+        let at_line_start: bool = i == 0 or p[i - 1] == 10
+        let mut advanced: bool = false
+        if at_line_start {
+            let name: string = match_const(src, i, end_box)
+            if name as ptr<u8> != null {
+                ft_list_push(out, "extern const int32_t " + name + ";")
+                i = end_box[0]
+                advanced = true
+            }
+        }
+        if not advanced {
+            i = i + 1
+        }
+    }
+    ft_list_push(out, "")
+    i = 0
+    while i < ft_list_len(lines) {
+        let line: string = ft_list_get(lines, i)
+        if ft_ends(line, ") {") {
+            let s: string = lstrip(line)
+            let skip: bool = ft_starts(s, "if ") or ft_starts(s, "while ") or ft_starts(s, "for ") or ft_starts(s, "else ") or ft_starts(s, "switch ")
+            if not skip and is_function_head(line) {
+                ft_list_push(out, rstrip(ft_slice(line, 0, ft_len(line) - 2)) + ";")
+            }
+        }
+        i = i + 1
+    }
+    if not ft_write_file(argv[2], join_lines(out)) {
+        ft_errln("c_to_hdr: cannot write " + argv[2])
+        return 1
+    }
+    return 0
+}

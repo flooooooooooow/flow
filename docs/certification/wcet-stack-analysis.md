@@ -11,11 +11,8 @@ flow analyze prog.flow --stack-depth --budget 4096
 flow analyze prog.flow --wcet --budget 10000
 ```
 
-Or directly:
-
-```
-python3 -m flow.wcet_analysis prog.flow --wcet --stack-depth
-```
+The analysis is the Flow program `tools/analyze/main.flow`, which
+`flow analyze` builds on first use. It needs no Python.
 
 ## Stack depth analysis
 
@@ -86,7 +83,7 @@ helper                                          3 inst  helper
 
 ## Certification notes
 
-These are static estimates, not measured values. For certification:
+These are static estimates rather than measured values. For certification:
 
 1. Run under `--profile safety` to ensure no recursion and bounded loops.
 2. Use `--budget` to enforce timing and stack limits in CI.

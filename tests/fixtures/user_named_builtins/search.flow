@@ -1,0 +1,27 @@
+# Helper module for tests/lang/test_user_named_builtins_import.flow (#1045):
+# functions named like the flowc `find` builtin and libc's `bsearch`.
+
+export function find(xs: ptr<i32>, n: i32, target: i32) -> i32 {
+    for i in 0 to n {
+        if xs[i] == target {
+            return i
+        }
+    }
+    return -1
+}
+
+export function bsearch(xs: ptr<i32>, n: i32, target: i32) -> i32 {
+    let mut lo: i32 = 0
+    let mut hi: i32 = n - 1
+    while lo <= hi {
+        let mid: i32 = (lo + hi) / 2
+        if xs[mid] == target {
+            return mid
+        } elif xs[mid] < target {
+            lo = mid + 1
+        } else {
+            hi = mid - 1
+        }
+    }
+    return -1
+}

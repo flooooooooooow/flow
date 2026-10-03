@@ -1,0 +1,521 @@
+# Parity gate for flow-block lowering (compiler/src/flow_blocks.flow).
+#
+# The Flow port replaced src/flow/flow_blocks.py, which lowered a parsed
+# FlowDecl to AST. flowc lowers the same block to Flow source before parse,
+# so parity is checked on the parsed result: the Python parser from a git
+# revision lowers the original source, parses flowc's expansion, and the
+# two declaration lists must be equal (locations and `has_self` aside; the
+# latter only gates tail-call rewriting, and flow functions never call
+# themselves). Diagnostics must match the Python text: message, line,
+# column and hint.
+#
+# Goldens beside each fixture in compiler/fixtures/flow_blocks/:
+#   ok_*.flow   -> .expected  flowc's expansion, recorded after the tree
+#                             check against Python passed
+#   err_*.flow  -> .error     the Python message (first line) and hint
+#   run_*.flow  -> .out       stdout, exit code and stderr of the program
+#                             built by the Python host
+#
+#   ./flow tool compiler/scripts/parity_flow_blocks.flow
+#       flowc vs goldens, the run fixtures and tests/lang flow tests on
+#       flowc, passthrough of every tracked .flow without a flow block,
+#       then one example end to end with python stubbed out on PATH.
+#
+#   ./flow tool compiler/scripts/parity_flow_blocks.flow --python <rev>
+#       also the tree check against the Python at <rev> over the fixtures
+#       and every tracked .flow. Needs python3 and git.
+#
+#   ./flow tool compiler/scripts/parity_flow_blocks.flow --write-golden <rev>
+#       re-record the goldens from the Python at <rev>.
+#
+# The last Python revision is 7527ab37.
+#
+# Env: FLOWC_BIN=<path> tests that binary instead of building
+# compiler/build/flowc_bootstrap from the checked-in bootstrap C.
+
+import "tools/flow_cli/sys.flow"
+import "compiler/scripts/parity_lib.flow"
+import std.process { ProcCmd, ProcStrs, proc_arg, proc_stdin, PROC_NULL }
+
+const USAGE: string = "usage: ./flow tool compiler/scripts/parity_flow_blocks.flow"
+const FIX: string = "compiler/fixtures/flow_blocks"
+const WORK: string = "compiler/build/parity_flow_blocks"
+const E2E: string = "examples/evolution/bouncing_ball_evolves.flow"
+
+let mut BIN_P: ptr<u8> = null
+
+function bin() -> string {
+    return BIN_P as string
+}
+
+function golden_base(f: string) -> string {
+    return FIX + "/" + path_stem(f, ".flow")
+}
+
+# The flow-block expansion of `input` (or the given FLOWC_EXPAND_ONLY
+# stages) in `out`, or the diagnostic in `err`: the message, then the hint
+# on a second line.
+function flowc_expand(input: string, out: string, err: string, stages: string) {
+    rm_f(out)
+    rm_f(err)
+    let c: ptr<ProcCmd> = pl_cmd1(bin())
+    cmd_env(c, "FLOWC_EXPAND_ONLY", stages)
+    cmd_env(c, "FLOWC_IN", input)
+    cmd_env(c, "FLOWC_OUT", out)
+    let log: string = pl_capture_merged(c)
+    if last_status() != 0 {
+        rm_f(out)
+        let msg: string = pl_strip_prefixed(log + "\n", "flowc flow: ") + pl_strip_prefixed(log + "\n", "flowc flow hint: ")
+        if s_len(msg) > 0 {
+            let _w: bool = write_text(err, msg)
+        } else {
+            let _w2: bool = write_text(err, log + "\n")
+        }
+    }
+}
+
+# Build `src` on flowc, run it, and record stdout, the exit code and
+# stderr in `out`.
+function run_program(src: string, out: string) {
+    let key: string = path_basename(out)
+    let base: string = WORK + "/run/" + key
+    rm_f(out)
+    rm_f(base + ".c")
+    rm_f(base + ".bin")
+    let e: ptr<ProcCmd> = pl_cmd1(bin())
+    cmd_env(e, "FLOWC_BUNDLE", "1")
+    cmd_env(e, "FLOWC_DIR", ".")
+    cmd_env(e, "FLOWC_IN", src)
+    cmd_env(e, "FLOWC_OUT", base + ".c")
+    let _e: i32 = pl_run(e, base + ".emit", "&", 0)
+    if not nonempty(base + ".c") {
+        let lines: ptr<ProcStrs> = pl_read_lines(base + ".emit")
+        let mut kept: string = ""
+        let mut n: i32 = 0
+        let mut i: i32 = 0
+        while i < sl_len(lines) and n < 5 {
+            if not s_starts(sl_get(lines, i), "bundle_") {
+                kept = kept + sl_get(lines, i) + "\n"
+                n = n + 1
+            }
+            i = i + 1
+        }
+        let _w: bool = write_text(out, kept + "build failed\n")
+        return
+    }
+    let c: ptr<ProcCmd> = cmd(sl_of3(pl_cc(), "-O1", "-w"))
+    proc_arg(c, "-o")
+    proc_arg(c, base + ".bin")
+    proc_arg(c, base + ".c")
+    proc_arg(c, "-lm")
+    if pl_run(c, "", base + ".cc", 0) != 0 {
+        let _w2: bool = write_text(out, pl_head(read_text(base + ".cc"), 5) + "cc failed\n")
+        return
+    }
+    let r: ptr<ProcCmd> = pl_cmd1(base + ".bin")
+    proc_stdin(r, PROC_NULL)
+    let code: i32 = pl_run(r, out, base + ".stderr", 0)
+    let _a: bool = append_text(out, "exit=" + s_itoa(code) + "\n" + read_text(base + ".stderr"))
+}
+
+# The Python at <rev> against flowc, per file listed in `list`. Writes
+# "OK <path>", "ERR <path> <text>", "SKIP <path>" or "FAIL <path> <why>"
+# lines to `report`.
+function tree_check(rev: string, list: string, report: string) {
+    rm_rf(WORK + "/pyref")
+    mkdir_p_or_exit(WORK + "/pyref")
+    check(pl_git_archive(rev, sl_of1("src/flow"), WORK + "/pyref"))
+    let args: ptr<ProcStrs> = sl_of3(WORK + "/pyref/src", bin(), list)
+    sl_push(args, report)
+    check(pl_python(py_tree_check(), args))
+}
+
+# Lines of the report that start with `prefix`.
+function report_lines(report: ptr<ProcStrs>, prefix: string) -> ptr<ProcStrs> {
+    let out: ptr<ProcStrs> = sl_new()
+    let mut i: i32 = 0
+    while i < sl_len(report) {
+        if s_starts(sl_get(report, i), prefix) {
+            sl_push(out, sl_get(report, i))
+        }
+        i = i + 1
+    }
+    return out
+}
+
+function write_golden(rev: string, expand_fixtures: ptr<ProcStrs>, run_fixtures: ptr<ProcStrs>) {
+    if s_len(rev) == 0 {
+        errln(USAGE + " --write-golden <rev>")
+        cli_exit(2)
+    }
+    let _f: bool = write_text(WORK + "/fixtures.txt", pl_lines_text(expand_fixtures))
+    tree_check(rev, WORK + "/fixtures.txt", WORK + "/tree.txt")
+    let tree: ptr<ProcStrs> = pl_read_lines(WORK + "/tree.txt")
+    let mut bad: i32 = 0
+    let mut i: i32 = 0
+    while i < sl_len(expand_fixtures) {
+        let f: string = sl_get(expand_fixtures, i)
+        i = i + 1
+        let base: string = golden_base(f)
+        let key: string = pl_key(f)
+        rm_f(base + ".expected")
+        rm_f(base + ".error")
+        let mut line: string = ""
+        let mut j: i32 = 0
+        while j < sl_len(tree) {
+            if s_contains(sl_get(tree, j), " " + f) {
+                line = sl_get(tree, j)
+                break
+            }
+            j = j + 1
+        }
+        if s_starts(line, "OK ") {
+            flowc_expand(f, WORK + "/flowc/" + key + ".flow", WORK + "/flowc/" + key + ".err", "flow")
+            let _c: bool = copy_file(WORK + "/flowc/" + key + ".flow", base + ".expected")
+        } elif s_starts(line, "ERR ") {
+            flowc_expand(f, WORK + "/flowc/" + key + ".flow", WORK + "/flowc/" + key + ".err", "flow")
+            let _c2: bool = copy_file(WORK + "/flowc/" + key + ".err", base + ".error")
+        } else {
+            bad = bad + 1
+            errln("not recorded: " + line)
+        }
+    }
+    # Run fixtures: the program built by the Python host at <rev>.
+    let pyrev: string = WORK + "/pyrev"
+    rm_rf(pyrev)
+    mkdir_p_or_exit(pyrev)
+    check(pl_git_archive(rev, sl_new(), pyrev))
+    i = 0
+    while i < sl_len(run_fixtures) {
+        let f: string = sl_get(run_fixtures, i)
+        i = i + 1
+        let base: string = golden_base(f)
+        let name: string = path_stem(f, ".flow")
+        let _c3: bool = copy_file(f, pyrev + "/" + name + ".flow")
+        let fc: ptr<ProcCmd> = cmd(sl_of3("./flow", "compile", name + ".flow"))
+        cmd_cwd(fc, pyrev)
+        cmd_env(fc, "FLOW_HOST", "python")
+        let _r: i32 = pl_run(fc, "-", "-", 0)
+        if not is_exec(pyrev + "/build/" + name) {
+            bad = bad + 1
+            errln("not recorded: " + f + " does not build on the Python host at " + rev)
+            continue
+        }
+        let r: ptr<ProcCmd> = pl_cmd1(pyrev + "/build/" + name)
+        proc_stdin(r, PROC_NULL)
+        let code: i32 = pl_run(r, base + ".out", WORK + "/run/" + name + ".pyerr", 0)
+        let _a: bool = append_text(base + ".out", "exit=" + s_itoa(code) + "\n" + read_text(WORK + "/run/" + name + ".pyerr"))
+    }
+    outln("wrote goldens from " + rev + " (" + s_itoa(bad) + " not recorded)")
+    if bad != 0 {
+        cli_exit(1)
+    }
+    cli_exit(0)
+}
+
+function main() -> i32 {
+    let root: string = pl_enter()
+    let args: ptr<ProcStrs> = pl_args()
+    let mode: string = sl_get(args, 0)
+    let rev: string = sl_get(args, 1)
+    pl_fresh(WORK, sl_of2("flowc", "run"))
+    BIN_P = pl_flowc("", false, true) as ptr<u8>
+    outln("=== parity_flow_blocks: flowc = " + bin() + " ===")
+
+    let expand_fixtures: ptr<ProcStrs> = sl_new()
+    let run_fixtures: ptr<ProcStrs> = sl_new()
+    let all_fix: ptr<ProcStrs> = glob_suffix(FIX, ".flow")
+    let mut i: i32 = 0
+    while i < sl_len(all_fix) {
+        let f: string = sl_get(all_fix, i)
+        if s_starts(path_basename(f), "run_") {
+            sl_push(run_fixtures, f)
+        } else {
+            sl_push(expand_fixtures, f)
+        }
+        i = i + 1
+    }
+
+    if s_eq(mode, "--write-golden") {
+        write_golden(rev, expand_fixtures, run_fixtures)
+    }
+
+    let mut fail: i32 = 0
+    let mut pass: i32 = 0
+
+    # 1. Expansion fixtures vs goldens.
+    i = 0
+    while i < sl_len(expand_fixtures) {
+        let f: string = sl_get(expand_fixtures, i)
+        let key: string = pl_key(f)
+        flowc_expand(f, WORK + "/flowc/" + key + ".flow", WORK + "/flowc/" + key + ".err", "flow")
+        if pl_golden_check(f, golden_base(f), WORK + "/flowc/" + key + ".flow", WORK + "/flowc/" + key + ".err") {
+            pass = pass + 1
+        } else {
+            fail = fail + 1
+        }
+        i = i + 1
+    }
+    outln("fixtures: pass=" + s_itoa(pass) + " fail=" + s_itoa(fail))
+
+    # 2. Programs: the run fixtures against the Python host's output, and the
+    # tests/lang flow tests, which check themselves and exit 0.
+    let mut run_pass: i32 = 0
+    let mut run_fail: i32 = 0
+    i = 0
+    while i < sl_len(run_fixtures) {
+        let f: string = sl_get(run_fixtures, i)
+        i = i + 1
+        let base: string = golden_base(f)
+        let res: string = WORK + "/run/" + path_stem(f, ".flow") + ".out"
+        run_program(f, res)
+        if same_bytes(base + ".out", res) {
+            run_pass = run_pass + 1
+        } else {
+            run_fail = run_fail + 1
+            errln("FAIL run " + f + ": output differs from " + base + ".out")
+            errs(pl_diff_head(base + ".out", res, 10, false))
+        }
+    }
+    let lang: ptr<ProcStrs> = sl_of2("tests/lang/test_time_blocks.flow", "tests/lang/test_hybrid_events.flow")
+    i = 0
+    while i < sl_len(lang) {
+        let f: string = sl_get(lang, i)
+        i = i + 1
+        let res: string = WORK + "/run/" + path_stem(f, ".flow") + ".out"
+        run_program(f, res)
+        if sl_has(pl_read_lines(res), "exit=0") {
+            run_pass = run_pass + 1
+        } else {
+            run_fail = run_fail + 1
+            errln("FAIL run " + f + ":")
+            errs(pl_tail(read_text(res), 5))
+        }
+    }
+    outln("programs: pass=" + s_itoa(run_pass) + " fail=" + s_itoa(run_fail))
+    fail = fail + run_fail
+
+    # 3. Every tracked .flow, through every stage (the dynamics DSL strips
+    # `represent` blocks out of flows first): without a DSL it passes through
+    # untouched.
+    let tracked: ptr<ProcStrs> = pl_ls_files("*.flow")
+    let corpus: ptr<ProcStrs> = sl_new()
+    i = 0
+    while i < sl_len(tracked) {
+        if not s_starts(sl_get(tracked, i), FIX + "/") {
+            sl_push(corpus, sl_get(tracked, i))
+        }
+        i = i + 1
+    }
+    let _w: bool = write_text(WORK + "/corpus.txt", pl_lines_text(corpus))
+    let mut same_n: i32 = 0
+    let mut flow_n: i32 = 0
+    let mut err_n: i32 = 0
+    i = 0
+    while i < sl_len(corpus) {
+        let f: string = sl_get(corpus, i)
+        i = i + 1
+        if not is_file(f) {
+            continue
+        }
+        let key: string = pl_key(f)
+        let got: string = WORK + "/flowc/" + key + ".flow"
+        flowc_expand(f, got, WORK + "/flowc/" + key + ".err", "all")
+        if is_file(got) and same_bytes(f, got) {
+            same_n = same_n + 1
+        } elif is_file(got) {
+            flow_n = flow_n + 1
+        } else {
+            err_n = err_n + 1
+            let first: string = s_chomp_all(pl_head(read_text(WORK + "/flowc/" + key + ".err"), 1))
+            let _a: bool = append_text(WORK + "/corpus_errors.txt", f + ": " + first + "\n")
+        }
+    }
+    outln("corpus: untouched=" + s_itoa(same_n) + " lowered=" + s_itoa(flow_n) + " diagnosed=" + s_itoa(err_n))
+
+    # 4. Optional: the tree check against the Python at <rev>.
+    if s_eq(mode, "--python") {
+        if s_len(rev) == 0 {
+            errln(USAGE + " --python <rev>")
+            cli_exit(2)
+        }
+        let all: ptr<ProcStrs> = sl_copy(expand_fixtures)
+        sl_extend(all, corpus)
+        let _a2: bool = write_text(WORK + "/all.txt", pl_lines_text(all))
+        tree_check(rev, WORK + "/all.txt", WORK + "/tree.txt")
+        let tree: ptr<ProcStrs> = pl_read_lines(WORK + "/tree.txt")
+        let fails: ptr<ProcStrs> = report_lines(tree, "FAIL ")
+        errs(pl_lines_text(fails))
+        let live_fail: i32 = sl_len(fails)
+        outln("live python@" + rev + ": same trees=" + s_itoa(sl_len(report_lines(tree, "OK "))) + " same errors=" + s_itoa(sl_len(report_lines(tree, "ERR "))) + " skipped=" + s_itoa(sl_len(report_lines(tree, "SKIP "))) + " fail=" + s_itoa(live_fail))
+        fail = fail + live_fail
+    } elif nonempty(WORK + "/corpus_errors.txt") {
+        # Without Python these cannot be told apart from regressions; the
+        # --python run checks each against the Python diagnostic.
+        out(read_text(WORK + "/corpus_errors.txt"))
+    }
+
+    # 5. End to end: an example with flow blocks, built by `./flow compile` on
+    # the flowc host with python and python3 stubbed out on PATH.
+    let nopy: string = WORK + "/nopy"
+    mkdir_p_or_exit(nopy)
+    let stub: string = "#!/bin/sh\necho \"python called: $*\" >> \"" + root + "/" + nopy + "/calls.log\"\nexit 127\n"
+    pl_write_exec(nopy + "/python3", stub)
+    pl_write_exec(nopy + "/python", stub)
+    let path: string = root + "/" + nopy + ":" + env("PATH")
+    let name: string = path_stem(E2E, ".flow")
+    rm_f("build/" + name)
+    let fc: ptr<ProcCmd> = cmd(sl_of3("./flow", "compile", E2E))
+    cmd_env(fc, "PATH", path)
+    cmd_env(fc, "FLOWC_BIN", root + "/" + bin())
+    let _c: i32 = pl_run(fc, WORK + "/e2e_compile.log", "&", 0)
+    let r: ptr<ProcCmd> = pl_cmd1("build/" + name)
+    cmd_env(r, "PATH", path)
+    let code: i32 = pl_run(r, WORK + "/e2e_run.log", "&", 0)
+    if code == 0 and not nonempty(nopy + "/calls.log") {
+        outln("e2e: " + name + " built by ./flow compile on flowc, exit 0, no python call")
+    } else {
+        fail = fail + 1
+        errln("FAIL e2e: " + name + " exit " + s_itoa(code))
+        errs(pl_tail_files(sl_of2(WORK + "/e2e_compile.log", WORK + "/e2e_run.log"), 5))
+        errs(read_text(nopy + "/calls.log"))
+    }
+
+    if fail != 0 {
+        outln("parity_flow_blocks: FAIL (" + s_itoa(fail) + ")")
+        cli_exit(1)
+    }
+    outln("parity_flow_blocks: PASS")
+    cli_exit(0)
+    return 0
+}
+
+function py_tree_check() -> string {
+    return "import os, subprocess, sys, tempfile\n" +
+        "\n" +
+        "ref_src, flowc, listfile, report = sys.argv[1:5]\n" +
+        "sys.path.insert(0, ref_src)\n" +
+        "from flow import parser as P  # noqa: E402\n" +
+        "\n" +
+        "# Positions and metadata. The comparison covers the lowered program only.\n" +
+        "SKIP = {\n" +
+        "    \"location\", \"line\", \"column\", \"end_line\", \"end_column\", \"is_exported\",\n" +
+        "    \"flow_decl\", \"recognition_manifest\", \"op_line\", \"captures\", \"text\",\n" +
+        "    \"has_self\",\n" +
+        "}\n" +
+        "\n" +
+        "\n" +
+        "def lit(v):\n" +
+        "    s = str(v)\n" +
+        "    try:\n" +
+        "        if any(ch in s for ch in \".eE\") and not s.startswith(\"0x\"):\n" +
+        "            return repr(float(s))\n" +
+        "        return str(int(s, 0))\n" +
+        "    except ValueError:\n" +
+        "        return s\n" +
+        "\n" +
+        "\n" +
+        "def norm(o):\n" +
+        "    if isinstance(o, (list, tuple)):\n" +
+        "        return [norm(x) for x in o]\n" +
+        "    if o is None or isinstance(o, (str, int, float, bool)):\n" +
+        "        # Name_new's local: `self` is a keyword in source, so the\n" +
+        "        # expansion spells it `__self`.\n" +
+        "        return \"self\" if o == \"__self\" else o\n" +
+        "    cls = type(o).__name__\n" +
+        "    if cls == \"Type\":\n" +
+        "        el = getattr(o, \"element_type\", None)\n" +
+        "        return (\"T\", o.name, bool(getattr(o, \"is_pointer\", False)),\n" +
+        "                el.name if el is not None else None)\n" +
+        "    if cls == \"Literal\":\n" +
+        "        return (\"Literal\", lit(o.value))\n" +
+        "    if cls == \"ExpressionStatement\":\n" +
+        "        return norm(o.expression)\n" +
+        "    if not hasattr(o, \"__dict__\"):\n" +
+        "        return repr(o)\n" +
+        "    d = {}\n" +
+        "    for k, v in vars(o).items():\n" +
+        "        if k in SKIP or k.startswith(\"_\"):\n" +
+        "            continue\n" +
+        "        d[k] = norm(v)\n" +
+        "    return (cls, sorted(d.items()))\n" +
+        "\n" +
+        "\n" +
+        "def diag(e):\n" +
+        "    lines = str(e).split(\"\\n\")\n" +
+        "    out = lines[0]\n" +
+        "    for ln in lines:\n" +
+        "        if ln.strip().startswith(\"Hint: \"):\n" +
+        "            out += \"\\n\" + ln.strip()[len(\"Hint: \"):]\n" +
+        "            break\n" +
+        "    return out\n" +
+        "\n" +
+        "\n" +
+        "def run(env_extra, path):\n" +
+        "    env = dict(os.environ, FLOWC_IN=path, **env_extra)\n" +
+        "    env.pop(\"FLOWC_BUNDLE\", None)\n" +
+        "    return subprocess.run([flowc], env=env, capture_output=True)\n" +
+        "\n" +
+        "\n" +
+        "rep = open(report, \"w\", encoding=\"utf-8\")\n" +
+        "for path in open(listfile).read().split(\"\\n\"):\n" +
+        "    if not path:\n" +
+        "        continue\n" +
+        "    with tempfile.TemporaryDirectory() as td:\n" +
+        "        # Field and dynamics DSLs expand first, on flowc (each has its own\n" +
+        "        # gate), so both sides start from the same source.\n" +
+        "        pre_path = os.path.join(td, \"pre.flow\")\n" +
+        "        pre = run({\"FLOWC_EXPAND_ONLY\": \"field,dynamics\", \"FLOWC_OUT\": pre_path}, path)\n" +
+        "        if pre.returncode != 0:\n" +
+        "            rep.write(f\"SKIP {path}\\n\")\n" +
+        "            continue\n" +
+        "        code = open(pre_path, encoding=\"utf-8\", newline=\"\").read()\n" +
+        "        out_path = os.path.join(td, \"out.flow\")\n" +
+        "        fc = run({\"FLOWC_EXPAND_ONLY\": \"flow\", \"FLOWC_OUT\": out_path}, pre_path)\n" +
+        "        fc_err = None\n" +
+        "        text = None\n" +
+        "        if fc.returncode != 0:\n" +
+        "            so = fc.stdout.decode(\"utf-8\", \"replace\").splitlines()\n" +
+        "            msg = [ln[len(\"flowc flow: \"):] for ln in so if ln.startswith(\"flowc flow: \")]\n" +
+        "            hint = [ln[len(\"flowc flow hint: \"):] for ln in so if ln.startswith(\"flowc flow hint: \")]\n" +
+        "            fc_err = (msg[0] if msg else \"flowc failed\") + (\"\\n\" + hint[0] if hint else \"\")\n" +
+        "        else:\n" +
+        "            text = open(out_path, encoding=\"utf-8\", newline=\"\").read()\n" +
+        "    py_err = None\n" +
+        "    try:\n" +
+        "        py = P.Parser(P.Lexer(code)).parse()\n" +
+        "    except Exception as e:  # noqa: BLE001\n" +
+        "        py_err = diag(e)\n" +
+        "    if py_err is not None:\n" +
+        "        if fc_err == py_err:\n" +
+        "            rep.write(f\"ERR {path} {py_err!r}\\n\")\n" +
+        "            continue\n" +
+        "        if fc_err is None:\n" +
+        "            # Python fails outside the flow blocks: flowc's expansion must\n" +
+        "            # fail the same way when Python parses it.\n" +
+        "            try:\n" +
+        "                P.Parser(P.Lexer(text)).parse(expand_flows=False)\n" +
+        "                rep.write(f\"FAIL {path} python error {py_err!r}, flowc expanded\\n\")\n" +
+        "            except Exception as e2:  # noqa: BLE001\n" +
+        "                a = diag(e2).split(\" at line\")[0]\n" +
+        "                if a == py_err.split(\" at line\")[0]:\n" +
+        "                    rep.write(f\"OK {path}\\n\")\n" +
+        "                else:\n" +
+        "                    rep.write(f\"FAIL {path} python {py_err!r} vs {diag(e2)!r}\\n\")\n" +
+        "            continue\n" +
+        "        rep.write(f\"FAIL {path} python {py_err!r} flowc {fc_err!r}\\n\")\n" +
+        "        continue\n" +
+        "    if fc_err is not None:\n" +
+        "        rep.write(f\"FAIL {path} flowc error {fc_err!r}, python lowered it\\n\")\n" +
+        "        continue\n" +
+        "    try:\n" +
+        "        got = P.Parser(P.Lexer(text)).parse(expand_flows=False)\n" +
+        "    except Exception as e:  # noqa: BLE001\n" +
+        "        rep.write(f\"FAIL {path} expansion does not parse: {diag(e)!r}\\n\")\n" +
+        "        continue\n" +
+        "    if norm(py) == norm(got):\n" +
+        "        rep.write(f\"OK {path}\\n\")\n" +
+        "    else:\n" +
+        "        rep.write(f\"FAIL {path} declaration trees differ\\n\")\n" +
+        "rep.close()\n"
+}

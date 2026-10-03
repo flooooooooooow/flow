@@ -4,17 +4,19 @@ Safety certification expects the same Flow source to emit byte-identical C.
 
 ## Guarantee (Phase 2)
 
-For a single translation unit processed by the Python C backend
-(`FLOW_HOST=python`):
+For a single translation unit emitted by flowc, the only C compiler:
 
 ```bash
-FLOW_HOST=python ./flow transpile prog.flow --c -o a.c
-FLOW_HOST=python ./flow transpile prog.flow --c -o b.c
+./flow tool compiler/scripts/flowc_emit.flow prog.flow a.c
+./flow tool compiler/scripts/flowc_emit.flow prog.flow b.c
 diff -u a.c b.c   # must be empty
 ```
 
-The unit test `tests/unit/test_reproducible_c.py` asserts this for a
-representative program.
+`./compiler/scripts/bootstrap_from_c.sh --verify` checks this on the largest
+program in the repository: flowc must reproduce its own C byte for byte. The
+C output goldens in `tests/cgen` (`./flow tool tests/cgen/run.flow`) fail on any change to
+the emitted C. The Python test `test_reproducible_c_emit` covered the retired
+Python C backend and is gone.
 
 ## Sources of nondeterminism (mitigated)
 
@@ -27,5 +29,5 @@ representative program.
 ## Limits
 
 - Parallel OpenMP / link order is outside this guarantee.
-- `flowc` host and MLIR paths are not yet covered by the same test.
+- The MLIR path is not yet covered by the same checks.
 - Third-party `#include` expansion is environment-dependent and out of scope.

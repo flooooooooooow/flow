@@ -14,5 +14,5 @@ Generated files (do not edit by hand):
 
 Regenerate:
 ```
-python3 scripts/gen_abi_bindings.py examples/demos/vulkan_abi/renderer.abi
+./flow tool abi_bindings examples/demos/vulkan_abi/renderer.abi
 ```

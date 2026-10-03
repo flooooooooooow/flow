@@ -1,0 +1,11 @@
+# Regression for cEmbed text containing a C string literal.
+@cEmbed("static const char *flow_c_quote = \"a\\\"b\";")
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    puts("cEmbed quote passed")
+    return 0
+}

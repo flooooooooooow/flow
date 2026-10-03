@@ -1,0 +1,930 @@
+# Keep every version string in the tree in sync with one canonical value.
+#
+# The canonical version is the one line of VERSION at the repository root.
+# Every other surface (manifests, docs headers, the CLI banner, the Homebrew
+# formula) mirrors it. Historically those drifted: 0.11.0 shipped with the
+# canonical file (then src/flow/version.py) still reading
+# 0.3.3 and three hardcoded 0.10.0 strings in the `flow` driver.
+#
+# Run it as `./flow tool sync_version` from anywhere in the repository; it
+# works from the repository root:
+#
+#   flow tool sync_version                  rewrite mirrors from canonical
+#   flow tool sync_version --check          exit 1 if any mirror drifted
+#   flow tool sync_version --set 0.12.0     bump canonical, then rewrite
+#   flow tool sync_version --set v0.12.0 --release-date 2026-09-01
+#
+# The Homebrew formula is only touched with --homebrew: its url and sha256
+# point at a release tarball that does not exist until the tag is published.
+# Qualify and publish the release first, then run --homebrew --sha256 <digest>.
+# --sha256-from-release downloads the tarball with curl and hashes it with
+# sha256sum (or shasum -a 256) before anything is written.
+#
+# Each mirror pattern is a line-anchored sequence of literal text and one
+# character-class run holding the version. The matcher below follows Python
+# `re` semantics for exactly those shapes (greedy runs with backtracking,
+# `^` and `$` in MULTILINE mode), so output is unchanged from the Python
+# script this replaces.
+
+import .repo { rp_enter_root, rp_capture, rp_status, rp_argv2, rp_argv3 }
+import std.process { proc_which, proc_pid, proc_getenv }
+import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_repr, ft_read_file, ft_write_file, ft_exists, ft_starts, ft_ends, ft_slice, ft_from, ft_byte, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function getcwd(buf: ptr<i8>, size: i64) -> ptr<i8>
+}
+
+const PROG: string = "flow tool sync_version"
+const CANONICAL: string = "VERSION"
+
+# Character classes a version run can use.
+const CLS_NOT_QUOTE: i32 = 0
+const CLS_NOT_SPACE: i32 = 1
+const CLS_NOT_STAR: i32 = 2
+const CLS_NOT_RPAREN: i32 = 3
+const CLS_NOT_SLASH: i32 = 4
+const CLS_HEX_LOWER: i32 = 5
+
+const SEG_LIT: i32 = 0
+const SEG_CLASS: i32 = 1
+
+struct Pat {
+    src: string
+    kinds: ptr<i32>
+    lits: ptr<string>
+    cls: ptr<i32>
+    mins: ptr<i32>
+    maxs: ptr<i32>
+    caps: ptr<i32>
+    n: i32
+    eol: i32
+    cap_s: i32
+    cap_e: i32
+}
+
+# ---------------------------------------------------------------------------
+# Pattern construction
+# ---------------------------------------------------------------------------
+
+# `src` is the Python pattern text, kept for the "has no match" warning.
+function pat_new(src: string) -> ptr<Pat> {
+    let pt: ptr<Pat> = malloc(128) as ptr<Pat>
+    pt[0].src = src
+    pt[0].kinds = malloc(64) as ptr<i32>
+    pt[0].lits = malloc(128) as ptr<string>
+    pt[0].cls = malloc(64) as ptr<i32>
+    pt[0].mins = malloc(64) as ptr<i32>
+    pt[0].maxs = malloc(64) as ptr<i32>
+    pt[0].caps = malloc(64) as ptr<i32>
+    pt[0].n = 0
+    pt[0].eol = 0
+    pt[0].cap_s = -1
+    pt[0].cap_e = -1
+    return pt
+}
+
+function pat_lit(pt: ptr<Pat>, text: string) -> void {
+    let i: i32 = pt[0].n
+    let kinds: ptr<i32> = pt[0].kinds
+    let lits: ptr<string> = pt[0].lits
+    let caps: ptr<i32> = pt[0].caps
+    kinds[i] = SEG_LIT
+    lits[i] = text
+    caps[i] = 0
+    pt[0].n = i + 1
+}
+
+# A run of `cls` characters, between lo and hi long (hi < 0: unbounded).
+function pat_run(pt: ptr<Pat>, cls: i32, lo: i32, hi: i32, capture: i32) -> void {
+    let i: i32 = pt[0].n
+    let kinds: ptr<i32> = pt[0].kinds
+    let clss: ptr<i32> = pt[0].cls
+    let mins: ptr<i32> = pt[0].mins
+    let maxs: ptr<i32> = pt[0].maxs
+    let caps: ptr<i32> = pt[0].caps
+    kinds[i] = SEG_CLASS
+    clss[i] = cls
+    mins[i] = lo
+    maxs[i] = hi
+    caps[i] = capture
+    pt[0].n = i + 1
+}
+
+function pat_eol(pt: ptr<Pat>) -> void {
+    pt[0].eol = 1
+}
+
+# ---------------------------------------------------------------------------
+# Matching
+# ---------------------------------------------------------------------------
+
+# Byte length of the UTF-8 sequence starting with lead byte `c`.
+function utf8_len(c: i32) -> i32 {
+    if c >= 240 { return 4 }
+    if c >= 224 { return 3 }
+    if c >= 192 { return 2 }
+    return 1
+}
+
+function utf8_cp(p: ptr<u8>, at: i32) -> i32 {
+    let c: i32 = p[at] as i32
+    if c >= 240 {
+        return (c % 8) * 262144 + ((p[at + 1] as i32) % 64) * 4096 + ((p[at + 2] as i32) % 64) * 64 + (p[at + 3] as i32) % 64
+    }
+    if c >= 224 {
+        return (c % 16) * 4096 + ((p[at + 1] as i32) % 64) * 64 + (p[at + 2] as i32) % 64
+    }
+    if c >= 192 {
+        return (c % 32) * 64 + (p[at + 1] as i32) % 64
+    }
+    return c
+}
+
+# str.isspace() / regex \s for a code point.
+function is_space_cp(c: i32) -> bool {
+    if c == 32 or (c >= 9 and c <= 13) or (c >= 28 and c <= 31) {
+        return true
+    }
+    if c == 133 or c == 160 or c == 5760 or (c >= 8192 and c <= 8202) {
+        return true
+    }
+    return c == 8232 or c == 8233 or c == 8239 or c == 8287 or c == 12288
+}
+
+# Bytes consumed by one `cls` character at `at`, or 0 when it does not match.
+function class_step(p: ptr<u8>, at: i32, cls: i32) -> i32 {
+    let c: i32 = p[at] as i32
+    if c == 0 {
+        return 0
+    }
+    let n: i32 = utf8_len(c)
+    if cls == CLS_NOT_QUOTE {
+        if c == 34 { return 0 }
+        return n
+    }
+    if cls == CLS_NOT_STAR {
+        if c == 42 { return 0 }
+        return n
+    }
+    if cls == CLS_NOT_RPAREN {
+        if c == 41 { return 0 }
+        return n
+    }
+    if cls == CLS_NOT_SLASH {
+        if c == 47 { return 0 }
+        return n
+    }
+    if cls == CLS_NOT_SPACE {
+        if is_space_cp(utf8_cp(p, at)) { return 0 }
+        return n
+    }
+    if (c >= 48 and c <= 57) or (c >= 97 and c <= 102) {
+        return 1
+    }
+    return 0
+}
+
+# Match segments [seg, n) at byte `pos`. Returns the end offset or -1.
+function pat_match_from(pt: ptr<Pat>, p: ptr<u8>, seg: i32, pos: i32) -> i32 {
+    if seg == pt[0].n {
+        if pt[0].eol == 1 and p[pos] != 0 and p[pos] != 10 {
+            return -1
+        }
+        return pos
+    }
+    let kinds: ptr<i32> = pt[0].kinds
+    if kinds[seg] == SEG_LIT {
+        let lits: ptr<string> = pt[0].lits
+        let lp: ptr<u8> = lits[seg] as ptr<u8>
+        let mut i: i32 = 0
+        while lp[i] != 0 {
+            if p[pos + i] != lp[i] {
+                return -1
+            }
+            i = i + 1
+        }
+        return pat_match_from(pt, p, seg + 1, pos + i)
+    }
+    let clss: ptr<i32> = pt[0].cls
+    let mins: ptr<i32> = pt[0].mins
+    let maxs: ptr<i32> = pt[0].maxs
+    let caps: ptr<i32> = pt[0].caps
+    # Greedy: collect every end position, then back off one character at a time.
+    let mut cap: i32 = 64
+    let mut ends: ptr<i32> = malloc(64 * 4) as ptr<i32>
+    let mut count: i32 = 0
+    let mut at: i32 = pos
+    while maxs[seg] < 0 or count < maxs[seg] {
+        let step: i32 = class_step(p, at, clss[seg])
+        if step == 0 {
+            break
+        }
+        at = at + step
+        if count == cap {
+            let bigger: ptr<i32> = malloc((cap as i64) * 8) as ptr<i32>
+            let mut k: i32 = 0
+            while k < count {
+                bigger[k] = ends[k]
+                k = k + 1
+            }
+            ends = bigger
+            cap = cap * 2
+        }
+        ends[count] = at
+        count = count + 1
+    }
+    while count >= mins[seg] and count > 0 {
+        let end_here: i32 = ends[count - 1]
+        let rest: i32 = pat_match_from(pt, p, seg + 1, end_here)
+        if rest >= 0 {
+            if caps[seg] == 1 {
+                pt[0].cap_s = pos
+                pt[0].cap_e = end_here
+            }
+            return rest
+        }
+        count = count - 1
+    }
+    return -1
+}
+
+function at_line_start(p: ptr<u8>, pos: i32) -> bool {
+    return pos == 0 or p[pos - 1] == 10
+}
+
+# pattern.search(text) is not None
+function pat_search(pt: ptr<Pat>, text: string) -> bool {
+    let p: ptr<u8> = text as ptr<u8>
+    let n: i32 = ft_len(text)
+    let mut pos: i32 = 0
+    while pos <= n {
+        if at_line_start(p, pos) and pat_match_from(pt, p, 0, pos) >= 0 {
+            return true
+        }
+        pos = pos + 1
+    }
+    return false
+}
+
+# Result of a substitution pass.
+struct SubResult {
+    text: string
+    count: i32
+}
+
+# Replace only the captured group of every match with `value`, leaving the
+# rest of each match intact. Counts matches whose group differed.
+function pat_substitute(pt: ptr<Pat>, text: string, value: string) -> ptr<SubResult> {
+    let p: ptr<u8> = text as ptr<u8>
+    let n: i32 = ft_len(text)
+    let mut out: string = ""
+    let mut copied: i32 = 0
+    let mut replaced: i32 = 0
+    let mut pos: i32 = 0
+    while pos <= n {
+        if at_line_start(p, pos) {
+            let end: i32 = pat_match_from(pt, p, 0, pos)
+            if end >= 0 {
+                let current: string = ft_slice(text, pt[0].cap_s, pt[0].cap_e)
+                if ft_eq(current, value) == false {
+                    replaced = replaced + 1
+                    out = out + ft_slice(text, copied, pt[0].cap_s) + value
+                    copied = pt[0].cap_e
+                }
+                if end > pos {
+                    pos = end
+                } else {
+                    pos = pos + 1
+                }
+            } else {
+                pos = pos + 1
+            }
+        } else {
+            pos = pos + 1
+        }
+    }
+    out = out + ft_from(text, copied)
+    let r: ptr<SubResult> = malloc(16) as ptr<SubResult>
+    r[0].text = out
+    r[0].count = replaced
+    return r
+}
+
+# ---------------------------------------------------------------------------
+# Mirrors
+# ---------------------------------------------------------------------------
+
+function version_eq_pat() -> ptr<Pat> {
+    let pt: ptr<Pat> = pat_new("^version = \"(?P<version>[^\"]+)\"$")
+    pat_lit(pt, "version = \"")
+    pat_run(pt, CLS_NOT_QUOTE, 1, -1, 1)
+    pat_lit(pt, "\"")
+    pat_eol(pt)
+    return pt
+}
+
+# Patterns for mirror `m`, in the order Python applies them.
+function mirror_path(m: i32) -> string {
+    if m == 0 { return "flow.toml" }
+    if m == 1 { return "CITATION.cff" }
+    if m == 2 { return "README.md" }
+    if m == 3 { return "docs/wiki-home.md" }
+    if m == 4 { return "docs/LANGUAGE_SPEC.md" }
+    if m == 5 { return "tools/flow_cli/help.flow" }
+    return "packaging/homebrew/Formula/flow.rb"
+}
+
+const MIRROR_N: i32 = 7
+
+function mirror_release_only(m: i32) -> bool {
+    return m == 6
+}
+
+function mirror_pattern_count(m: i32) -> i32 {
+    if m == 3 { return 2 }
+    if m == 4 { return 2 }
+    if m == 5 { return 3 }
+    if m == 6 { return 3 }
+    return 1
+}
+
+function mirror_pattern(m: i32, k: i32) -> ptr<Pat> {
+    if m == 0 {
+        return version_eq_pat()
+    }
+    if m == 1 {
+        let pt2: ptr<Pat> = pat_new("^version: (?P<version>\\S+)$")
+        pat_lit(pt2, "version: ")
+        pat_run(pt2, CLS_NOT_SPACE, 1, -1, 1)
+        pat_eol(pt2)
+        return pt2
+    }
+    if m == 2 {
+        let pt3: ptr<Pat> = pat_new("^\\| Version \\| (?P<version>\\S+) \\|$")
+        pat_lit(pt3, "| Version | ")
+        pat_run(pt3, CLS_NOT_SPACE, 1, -1, 1)
+        pat_lit(pt3, " |")
+        pat_eol(pt3)
+        return pt3
+    }
+    if m == 3 {
+        if k == 0 {
+            let pt4: ptr<Pat> = pat_new("^<p class=\"wiki-hero-eyebrow\">v(?P<version>\\S+) ·")
+            pat_lit(pt4, "<p class=\"wiki-hero-eyebrow\">v")
+            pat_run(pt4, CLS_NOT_SPACE, 1, -1, 1)
+            pat_lit(pt4, " ·")
+            return pt4
+        }
+        let pt5: ptr<Pat> = pat_new("^\\| Version \\| (?P<version>\\S+) ·")
+        pat_lit(pt5, "| Version | ")
+        pat_run(pt5, CLS_NOT_SPACE, 1, -1, 1)
+        pat_lit(pt5, " ·")
+        return pt5
+    }
+    if m == 4 {
+        if k == 0 {
+            let pt6: ptr<Pat> = pat_new("^> \\*\\*Version\\*\\*: (?P<version>\\S+)$")
+            pat_lit(pt6, "> **Version**: ")
+            pat_run(pt6, CLS_NOT_SPACE, 1, -1, 1)
+            pat_eol(pt6)
+            return pt6
+        }
+        let pt7: ptr<Pat> = pat_new("^\\*Version: (?P<version>[^*]+)\\*$")
+        pat_lit(pt7, "*Version: ")
+        pat_run(pt7, CLS_NOT_STAR, 1, -1, 1)
+        pat_lit(pt7, "*")
+        pat_eol(pt7)
+        return pt7
+    }
+    if m == 5 {
+        if k == 0 {
+            let pt8: ptr<Pat> = pat_new("^    outln\\(\"Flow Programming Language v(?P<version>[^\"]+)\"\\)$")
+            pat_lit(pt8, "    outln(\"Flow Programming Language v")
+            pat_run(pt8, CLS_NOT_QUOTE, 1, -1, 1)
+            pat_lit(pt8, "\")")
+            pat_eol(pt8)
+            return pt8
+        }
+        if k == 1 {
+            let pt9: ptr<Pat> = pat_new("^    outln\\(\"  version           Print Flow version \\((?P<version>[^)]+)\\)\"\\)$")
+            pat_lit(pt9, "    outln(\"  version           Print Flow version (")
+            pat_run(pt9, CLS_NOT_RPAREN, 1, -1, 1)
+            pat_lit(pt9, ")\")")
+            pat_eol(pt9)
+            return pt9
+        }
+        let pt10: ptr<Pat> = pat_new("^export const FLOW_VERSION_LINE: string = \"Flow (?P<version>[^\"]+)\"$")
+        pat_lit(pt10, "export const FLOW_VERSION_LINE: string = \"Flow ")
+        pat_run(pt10, CLS_NOT_QUOTE, 1, -1, 1)
+        pat_lit(pt10, "\"")
+        pat_eol(pt10)
+        return pt10
+    }
+    # Homebrew formula. The url carries the version twice, in the tag path and
+    # again in the tarball filename, so the two are matched apart.
+    if k == 0 {
+        let pt11: ptr<Pat> = pat_new("^  url \"https://github\\.com/flooooooooooow/flow/releases/download/v(?P<version>[^/]+)/flow-v[^\"]+\\.tar\\.gz\"$")
+        pat_lit(pt11, "  url \"https://github.com/flooooooooooow/flow/releases/download/v")
+        pat_run(pt11, CLS_NOT_SLASH, 1, -1, 1)
+        pat_lit(pt11, "/flow-v")
+        pat_run(pt11, CLS_NOT_QUOTE, 1, -1, 0)
+        pat_lit(pt11, ".tar.gz\"")
+        pat_eol(pt11)
+        return pt11
+    }
+    if k == 1 {
+        let pt12: ptr<Pat> = pat_new("^  url \"https://github\\.com/flooooooooooow/flow/releases/download/v[^/]+/flow-v(?P<version>[^\"]+)\\.tar\\.gz\"$")
+        pat_lit(pt12, "  url \"https://github.com/flooooooooooow/flow/releases/download/v")
+        pat_run(pt12, CLS_NOT_SLASH, 1, -1, 0)
+        pat_lit(pt12, "/flow-v")
+        pat_run(pt12, CLS_NOT_QUOTE, 1, -1, 1)
+        pat_lit(pt12, ".tar.gz\"")
+        pat_eol(pt12)
+        return pt12
+    }
+    let pt13: ptr<Pat> = pat_new("^  version \"(?P<version>[^\"]+)\"$")
+    pat_lit(pt13, "  version \"")
+    pat_run(pt13, CLS_NOT_QUOTE, 1, -1, 1)
+    pat_lit(pt13, "\"")
+    pat_eol(pt13)
+    return pt13
+}
+
+# Release-date pattern for a mirror path, or null.
+function date_pattern(path: string) -> ptr<Pat> {
+    if ft_eq(path, "CITATION.cff") {
+        let pd: ptr<Pat> = pat_new("^date-released: \"(?P<date>[^\"]+)\"$")
+        pat_lit(pd, "date-released: \"")
+        pat_run(pd, CLS_NOT_QUOTE, 1, -1, 1)
+        pat_lit(pd, "\"")
+        pat_eol(pd)
+        return pd
+    }
+    if ft_eq(path, "docs/LANGUAGE_SPEC.md") {
+        let pd2: ptr<Pat> = pat_new("^> \\*\\*Last Updated\\*\\*: (?P<date>\\S+)$")
+        pat_lit(pd2, "> **Last Updated**: ")
+        pat_run(pd2, CLS_NOT_SPACE, 1, -1, 1)
+        pat_eol(pd2)
+        return pd2
+    }
+    return null
+}
+
+function sha_pattern() -> ptr<Pat> {
+    let ps: ptr<Pat> = pat_new("^  sha256 \"(?P<version>[0-9a-f]{64})\"$")
+    pat_lit(ps, "  sha256 \"")
+    pat_run(ps, CLS_HEX_LOWER, 64, 64, 1)
+    pat_lit(ps, "\"")
+    pat_eol(ps)
+    return ps
+}
+
+function canonical_pattern() -> ptr<Pat> {
+    let pc: ptr<Pat> = pat_new("^(?P<version>\\S+)$")
+    pat_run(pc, CLS_NOT_SPACE, 1, -1, 1)
+    pat_eol(pc)
+    return pc
+}
+
+# ---------------------------------------------------------------------------
+# Canonical version
+# ---------------------------------------------------------------------------
+
+function abs_canonical() -> string {
+    let buf: ptr<i8> = malloc(4096) as ptr<i8>
+    let got: ptr<i8> = getcwd(buf, 4096)
+    if got == null {
+        return CANONICAL
+    }
+    let cwd: string = buf as string
+    return cwd + "/" + CANONICAL
+}
+
+# First match of the canonical pattern, or null.
+function read_canonical(text: string) -> string {
+    let pc: ptr<Pat> = canonical_pattern()
+    let p: ptr<u8> = text as ptr<u8>
+    let n: i32 = ft_len(text)
+    let mut pos: i32 = 0
+    while pos <= n {
+        if at_line_start(p, pos) and pat_match_from(pc, p, 0, pos) >= 0 {
+            return ft_slice(text, pc[0].cap_s, pc[0].cap_e)
+        }
+        pos = pos + 1
+    }
+    return null as string
+}
+
+# Replace the first whole canonical assignment line.
+function write_canonical(text: string, version: string) -> string {
+    let pc: ptr<Pat> = canonical_pattern()
+    let p: ptr<u8> = text as ptr<u8>
+    let n: i32 = ft_len(text)
+    let mut pos: i32 = 0
+    while pos <= n {
+        if at_line_start(p, pos) {
+            let end: i32 = pat_match_from(pc, p, 0, pos)
+            if end >= 0 {
+                return ft_slice(text, 0, pos) + version + ft_from(text, end)
+            }
+        }
+        pos = pos + 1
+    }
+    return text
+}
+
+function is_digit(c: i32) -> bool {
+    return c >= 48 and c <= 57
+}
+
+# ^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.\-]+)?$  ($ also matches before a final \n)
+function is_semver(v: string) -> bool {
+    let p: ptr<u8> = v as ptr<u8>
+    let mut n: i32 = ft_len(v)
+    if n > 0 and p[n - 1] == 10 {
+        n = n - 1
+    }
+    let mut i: i32 = 0
+    let mut part: i32 = 0
+    while part < 3 {
+        let start: i32 = i
+        while i < n and is_digit(p[i] as i32) {
+            i = i + 1
+        }
+        if i == start {
+            return false
+        }
+        if part < 2 {
+            if i >= n or p[i] != 46 {
+                return false
+            }
+            i = i + 1
+        }
+        part = part + 1
+    }
+    if i == n {
+        return true
+    }
+    if p[i] != 45 and p[i] != 43 {
+        return false
+    }
+    i = i + 1
+    let tail: i32 = i
+    while i < n {
+        let c: i32 = p[i] as i32
+        if (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 46 or c == 45 {
+            i = i + 1
+        } else {
+            return false
+        }
+    }
+    return i > tail
+}
+
+# ---------------------------------------------------------------------------
+# Command line
+# ---------------------------------------------------------------------------
+
+function usage() -> string {
+    return "usage: " + PROG + " [-h] [--check] [--set NEW_VERSION] [--homebrew]\n                             [--sha256 SHA256] [--sha256-from-release]\n                             [--release-date RELEASE_DATE]\n"
+}
+
+function arg_error(msg: string) -> i32 {
+    ft_err(usage() + PROG + ": error: " + msg + "\n")
+    return 2
+}
+
+function help_text() -> string {
+    let mut h: string = usage() + "\nKeep every version string in the tree in sync with one canonical value.\n\n"
+    h = h + "options:\n"
+    h = h + "  -h, --help            show this help message and exit\n"
+    h = h + "  --check               verify only; exit 1 if any mirror is out of date\n"
+    h = h + "  --set NEW_VERSION     set the canonical version first (leading 'v' is\n                        stripped)\n"
+    h = h + "  --homebrew            also update the Homebrew formula (release time only)\n"
+    h = h + "  --sha256 SHA256       tarball digest for the Homebrew formula; implies\n                        --homebrew\n"
+    h = h + "  --sha256-from-release\n                        download the release tarball and compute its digest\n"
+    h = h + "  --release-date RELEASE_DATE\n                        ISO date for CITATION.cff and the spec header\n"
+    return h
+}
+
+# Long options in argparse order.
+function opt_name(i: i32) -> string {
+    if i == 0 { return "--help" }
+    if i == 1 { return "--check" }
+    if i == 2 { return "--set" }
+    if i == 3 { return "--homebrew" }
+    if i == 4 { return "--sha256" }
+    if i == 5 { return "--sha256-from-release" }
+    return "--release-date"
+}
+
+function opt_takes_value(i: i32) -> bool {
+    return i == 2 or i == 4 or i == 6
+}
+
+function opt_metavar(i: i32) -> string {
+    if i == 2 { return "--set" }
+    if i == 4 { return "--sha256" }
+    return "--release-date"
+}
+
+# The first line of VERSION as it stands (`head -n 1 VERSION`).
+function canonical_first_line() -> string {
+    let text: string = ft_read_file(CANONICAL)
+    if text as ptr<u8> == null {
+        return ""
+    }
+    let mut n: i32 = 0
+    while ft_byte(text, n) != 0 and ft_byte(text, n) != 10 {
+        n = n + 1
+    }
+    return ft_slice(text, 0, n)
+}
+
+# Download the release tarball of `version` and return its SHA-256, or null
+# after printing why.
+function release_digest(version: string) -> string {
+    let url: string = "https://github.com/flooooooooooow/flow/releases/download/v" + version + "/flow-v" + version + ".tar.gz"
+    let mut tmp_dir: string = proc_getenv("TMPDIR")
+    if ft_len(tmp_dir) == 0 {
+        tmp_dir = "/tmp"
+    }
+    let tarball: string = tmp_dir + "/flow-release-" + ft_itoa(proc_pid()) + ".tar.gz"
+    let curl: ptr<StrList> = rp_argv3("curl", "-fsSL", "-o")
+    ft_list_push(curl, tarball)
+    ft_list_push(curl, url)
+    let mut ok: bool = ft_len(proc_which("curl")) > 0
+    if ok {
+        let _c: string = rp_capture(curl)
+        ok = rp_status() == 0
+    }
+    if ok == false {
+        let _r: string = rp_capture(rp_argv3("rm", "-f", tarball))
+        ft_errln("error: could not download " + url)
+        return null as string
+    }
+    let mut out: string = ""
+    if ft_len(proc_which("sha256sum")) > 0 {
+        out = rp_capture(rp_argv2("sha256sum", tarball))
+    } else {
+        let sh: ptr<StrList> = rp_argv3("shasum", "-a", "256")
+        ft_list_push(sh, tarball)
+        out = rp_capture(sh)
+    }
+    let _r2: string = rp_capture(rp_argv3("rm", "-f", tarball))
+    let mut n: i32 = 0
+    while ft_byte(out, n) != 0 and ft_byte(out, n) != 32 and ft_byte(out, n) != 10 {
+        n = n + 1
+    }
+    return ft_slice(out, 0, n)
+}
+
+function strip_leading_v(s: string) -> string {
+    let mut i: i32 = 0
+    while ft_byte(s, i) == 118 {
+        i = i + 1
+    }
+    return ft_from(s, i)
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    if rp_enter_root() == false {
+        ft_errln(PROG + ": cannot enter the repository root")
+        return 1
+    }
+    let mut check: bool = false
+    let mut homebrew_flag: bool = false
+    let mut from_release: bool = false
+    let mut new_version: string = null as string
+    let mut sha256: string = null as string
+    let mut release_date: string = null as string
+    let mut prefetched: string = null as string
+    let unknown: ptr<StrList> = ft_list_new()
+
+    let mut i: i32 = 1
+    while i < argc {
+        let arg: string = argv[i]
+        if ft_eq(arg, "-h") {
+            ft_out(help_text())
+            return 0
+        }
+        if ft_starts(arg, "--") and ft_len(arg) > 2 {
+            let eqpos: i32 = ft_find_eq(arg)
+            let mut name: string = arg
+            let mut inline_val: string = null as string
+            if eqpos > 0 {
+                name = ft_slice(arg, 0, eqpos)
+                inline_val = ft_from(arg, eqpos + 1)
+            }
+            let mut which: i32 = -1
+            let mut k: i32 = 0
+            while k < 7 {
+                if ft_eq(opt_name(k), name) {
+                    which = k
+                }
+                k = k + 1
+            }
+            if which < 0 {
+                let mut hits: string = ""
+                let mut nhits: i32 = 0
+                k = 0
+                while k < 7 {
+                    if ft_starts(opt_name(k), name) {
+                        if nhits > 0 {
+                            hits = hits + ", "
+                        }
+                        hits = hits + opt_name(k)
+                        nhits = nhits + 1
+                        which = k
+                    }
+                    k = k + 1
+                }
+                if nhits > 1 {
+                    return arg_error("ambiguous option: " + name + " could match " + hits)
+                }
+            }
+            if which < 0 {
+                ft_list_push(unknown, arg)
+                i = i + 1
+                continue
+            }
+            let mut value: string = null as string
+            if opt_takes_value(which) {
+                if inline_val as ptr<u8> != null {
+                    value = inline_val
+                } else {
+                    if i + 1 >= argc or (ft_starts(argv[i + 1], "-") and ft_len(argv[i + 1]) > 1) {
+                        return arg_error("argument " + opt_metavar(which) + ": expected one argument")
+                    }
+                    value = argv[i + 1]
+                    i = i + 1
+                }
+            } elif inline_val as ptr<u8> != null {
+                return arg_error("argument " + opt_name(which) + ": ignored explicit argument " + ft_repr(inline_val))
+            }
+            if which == 0 {
+                ft_out(help_text())
+                return 0
+            }
+            if which == 1 { check = true }
+            if which == 2 { new_version = value }
+            if which == 3 { homebrew_flag = true }
+            if which == 4 { sha256 = value }
+            if which == 5 { from_release = true }
+            if which == 6 { release_date = value }
+        } else {
+            ft_list_push(unknown, arg)
+        }
+        i = i + 1
+    }
+    if ft_list_len(unknown) > 0 {
+        let mut joined: string = ""
+        let mut u: i32 = 0
+        while u < ft_list_len(unknown) {
+            if u > 0 {
+                joined = joined + " "
+            }
+            joined = joined + ft_list_get(unknown, u)
+            u = u + 1
+        }
+        return arg_error("unrecognized arguments: " + joined)
+    }
+
+    if check and new_version as ptr<u8> != null {
+        return arg_error("--check and --set are mutually exclusive")
+    }
+
+    # The digest is fetched before anything is written, so a missing
+    # release changes nothing.
+    if from_release and sha256 as ptr<u8> == null {
+        let mut fetch_version: string = canonical_first_line()
+        if new_version as ptr<u8> != null {
+            fetch_version = strip_leading_v(new_version)
+        }
+        prefetched = release_digest(fetch_version)
+        if prefetched as ptr<u8> == null {
+            return 1
+        }
+    }
+
+    let mut version: string = ""
+    if new_version as ptr<u8> != null {
+        version = strip_leading_v(new_version)
+        if is_semver(version) == false {
+            return arg_error("not a semantic version: " + ft_repr(version))
+        }
+        let ctext: string = ft_read_file(CANONICAL)
+        if ctext as ptr<u8> == null {
+            ft_errln("error: cannot read " + abs_canonical())
+            return 1
+        }
+        if ft_write_file(CANONICAL, write_canonical(ctext, version)) == false {
+            ft_errln("error: cannot write " + abs_canonical())
+            return 1
+        }
+        ft_outln("canonical: " + CANONICAL + " -> " + version)
+    } else {
+        let ctext2: string = ft_read_file(CANONICAL)
+        let mut found: string = null as string
+        if ctext2 as ptr<u8> != null {
+            found = read_canonical(ctext2)
+        }
+        if found as ptr<u8> == null {
+            ft_errln("error: no version line found in " + abs_canonical())
+            return 1
+        }
+        version = found
+        ft_outln("canonical: " + version)
+    }
+
+    let homebrew: bool = homebrew_flag or sha256 as ptr<u8> != null or from_release
+    if from_release and sha256 as ptr<u8> == null {
+        let url: string = "https://github.com/flooooooooooow/flow/releases/download/v" + version + "/flow-v" + version + ".tar.gz"
+        ft_outln("fetching " + url)
+        sha256 = prefetched
+        ft_outln("sha256: " + sha256)
+    }
+
+    let drifted: ptr<StrList> = ft_list_new()
+    let mut m: i32 = 0
+    while m < MIRROR_N {
+        let path: string = mirror_path(m)
+        if mirror_release_only(m) and homebrew == false {
+            m = m + 1
+            continue
+        }
+        if ft_exists(path) == false {
+            ft_outln("warning: " + path + " is missing, skipping")
+            m = m + 1
+            continue
+        }
+        let original: string = ft_read_file(path)
+        let mut text: string = original
+        let mut total: i32 = 0
+        let mut k2: i32 = 0
+        while k2 < mirror_pattern_count(m) {
+            let pt: ptr<Pat> = mirror_pattern(m, k2)
+            if pat_search(pt, text) == false {
+                ft_outln("warning: " + path + " has no match for " + ft_repr(pt[0].src))
+            } else {
+                let r: ptr<SubResult> = pat_substitute(pt, text, version)
+                text = r[0].text
+                total = total + r[0].count
+            }
+            k2 = k2 + 1
+        }
+        if release_date as ptr<u8> != null {
+            let dp: ptr<Pat> = date_pattern(path)
+            if dp != null {
+                let rd: ptr<SubResult> = pat_substitute(dp, text, release_date)
+                text = rd[0].text
+                total = total + rd[0].count
+            }
+        }
+        if sha256 as ptr<u8> != null and ft_ends(path, "flow.rb") {
+            let rs: ptr<SubResult> = pat_substitute(sha_pattern(), text, sha256)
+            text = rs[0].text
+            total = total + rs[0].count
+        }
+        if ft_eq(text, original) == false {
+            ft_list_push(drifted, path)
+            if check {
+                ft_outln("drift: " + path + " (" + ft_itoa(total) + " occurrence(s) out of date)")
+            } else {
+                if ft_write_file(path, text) == false {
+                    ft_errln("error: cannot write " + path)
+                    return 1
+                }
+                ft_outln("updated: " + path + " (" + ft_itoa(total) + " occurrence(s))")
+            }
+        }
+        m = m + 1
+    }
+
+    if ft_list_len(drifted) == 0 {
+        ft_outln("all version references are in sync")
+        return 0
+    }
+    if check {
+        ft_outln("")
+        ft_outln(ft_itoa(ft_list_len(drifted)) + " file(s) disagree with " + version + ".")
+        ft_outln("Fix with: ./flow tool sync_version")
+        return 1
+    }
+    ft_outln("")
+    ft_outln("synced " + ft_itoa(ft_list_len(drifted)) + " file(s) to " + version)
+    return 0
+}
+
+function ft_find_eq(s: string) -> i32 {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    while p[i] != 0 {
+        if p[i] == 61 {
+            return i
+        }
+        i = i + 1
+    }
+    return -1
+}

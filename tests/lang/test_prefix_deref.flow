@@ -1,0 +1,38 @@
+# Prefix `*p` dereferences a pointer, for reads and for stores (#1046).
+# The Python host accepted it; flowc stopped with "unexpected token '*'".
+
+struct Pair {
+    a: i32
+    b: i32
+}
+
+function read_through(p: ptr<i32>) -> i32 {
+    return *p
+}
+
+# A `*p` store right after a line that ends in an expression opens a new
+# statement; it used to continue that line as `&x * p = 7`.
+function store_after_let() -> i32 {
+    let mut x: i32 = 42
+    let p: ptr<i32> = &x
+    *p = 7
+    let q: i32 = x
+        * 2
+    return *p + q
+}
+
+function main() -> i32 {
+    if store_after_let() != 21 { return 6 }
+    let mut x: i32 = 42
+    let p: ptr<i32> = &x
+    let v: i32 = *p
+    if v != 42 { return 1 }
+    *p = 7
+    if x != 7 { return 2 }
+    if read_through(&x) != 7 { return 3 }
+    if *p * 2 != 14 { return 4 }
+    let mut pair: Pair = Pair { a: 1, b: 2 }
+    let pp: ptr<Pair> = &pair
+    if (*pp).b != 2 { return 5 }
+    return 0
+}

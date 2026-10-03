@@ -2,9 +2,9 @@
 
 *Central and inscribed angles on a diameter satisfy the half relation.*
 
-**Source.** euclid — Elements, Book III, Propositions 20 and 31
+**Source.** euclid: Elements, Book III, Propositions 20 and 31
 
-## Derived fact 1 — angle ACB equals half of angle AOB on diameter AB
+## Derived fact 1: angle ACB equals half of angle AOB on diameter AB
 
 **Coordinate.** the Euclidean plane · circle · central inscribed diameter witness · **Derived fact**
 

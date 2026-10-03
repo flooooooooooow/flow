@@ -2,9 +2,9 @@
 
 *Inverse times inverse gives identity in a group.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §1.1
+**Source.** dummit-foote: *Abstract Algebra*, §1.1
 
-## Derived fact 1 — inv(a) * inv(a) = 1 when a * inv(a) = 1
+## Derived fact 1: inv(a) * inv(a) = 1 when a * inv(a) = 1
 
 **Coordinate.** Group · inverse · inverse times inverse is identity · **Derived fact**
 

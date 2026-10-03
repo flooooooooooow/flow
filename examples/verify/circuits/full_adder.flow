@@ -1,5 +1,5 @@
 # @means  The full adder output matches binary addition with carry.
-# @from   patterson — Patterson & Hennessy, *Computer Organization and Design*, §A.5
+# @from   patterson: Patterson & Hennessy, *Computer Organization and Design*, §A.5
 # @tier   derived
 #
 # Circuit bits are i32 in {0,1} until a distinct `bit` type lands in codegen.

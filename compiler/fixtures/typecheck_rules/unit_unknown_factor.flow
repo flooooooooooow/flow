@@ -1,0 +1,7 @@
+# expect: line 3: unknown unit 'Second' in declaration of 'Speed' (units must be declared before use)
+unit Meter
+unit Speed = Meter / Second
+
+function main() -> i32 {
+    return 0
+}

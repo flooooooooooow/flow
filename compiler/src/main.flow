@@ -16,18 +16,25 @@ import .ast {
     AST_CALL, AST_BINOP, AST_INT, AST_IDENT, AST_MATCH, AST_MATCH_ARM,
     flowc_ast_count_kind, flowc_ast_chain_len
 }
-import .parser { flowc_parser_new, flowc_parser_free, flowc_parse_program, Parser }
-import .fileio { flowc_read_file, flowc_write_file }
+import .parser { flowc_parser_new, flowc_parser_free, flowc_parse_program, flowc_parser_print_error, Parser }
+import .fileio { flowc_read_file, flowc_write_file, flowc_io_file_size }
 import .pipeline_fusion { flowc_fuse_pipelines }
+import .proof_doc { flowc_proof_doc_mode }
 import .cgen { flowc_cgen_emit }
+import .sort_plans { PlanText, flowc_plan_text_new, flowc_plan_report_header, flowc_plan_report_footer }
 import .jsgen { flowc_jsgen_emit }
-import .fmt { flowc_fmt_emit }
+import .mlirgen { flowc_mlirgen_emit }
+import .mlir_bundle { flowc_mlir_emit_program, flowc_mlir_wants_modules }
+import .fmt { flowc_fmt_emit, flowc_fmt_source, flowc_fmt_token_dump }
 import .wasm_gen { flowc_wasm_gen_compile }
 import .bpf_gen { flowc_bpf_gen_compile }
-import .typecheck { flowc_typecheck }
+import .shader_emit { flowc_shader_mode }
+import .typecheck { flowc_typecheck, flowc_typecheck_fatal, flowc_typecheck_fatal_sem }
+import .sem_check { flowc_semcheck_single }
 import .resolve {
-    flowc_resolve_sibling_path, flowc_bundle_emit, flowc_bundle_typecheck,
-    flowc_resolve_dirname
+    flowc_resolve_sibling_path, flowc_bundle_emit, flowc_bundle_typecheck, flowc_bundle_typecheck_fatal,
+    flowc_resolve_dirname, flowc_expand_all_in_place, flowc_expand_stages_in_place,
+    flowc_semcheck_imports, flowc_expand_for_mlir_in_place
 }
 
 extern {
@@ -38,6 +45,9 @@ extern {
     function strlen(s: string) -> i64
     function getenv(name: string) -> string
     function strcmp(a: string, b: string) -> i32
+    function setenv(name: string, value: string, overwrite: i32) -> i32
+    function atoi(s: string) -> i32
+    function write(fd: i32, buf: string, n: i64) -> i64
 }
 
 # Non-null and non-empty getenv result → 1, else 0.
@@ -96,8 +106,146 @@ function flowc_want_typecheck() -> i32 {
     return 1
 }
 
+# FLOWC_LENIENT=1 is the Python host's `--lenient`, which `flow compile`
+# uses: type errors are printed as warnings and the program is emitted
+# anyway, except the errors that stay fatal there too (a capability used as
+# a value, a construct Stage-A cannot lower). Returns 1 when emission may
+# go on despite `errs` type errors, `fatal` of them fatal.
+function flowc_tc_lenient_ok(errs: i32, fatal: i32) -> i32 {
+    if flowc_env_eq("FLOWC_LENIENT", "1") == 0 or fatal > 0 {
+        return 0
+    }
+    printf("flowc: %d type warning(s) (lenient mode)\n", errs)
+    return 1
+}
+
+# FLOWC_EXPAND_ONLY: write FLOWC_IN after DSL pre-expansion to FLOWC_OUT,
+# or stdout. Source without a DSL is copied as is. `1` or `all` runs every
+# stage; otherwise the value names the stages to run: `field`, `dynamics`,
+# `flow`, in any combination (`field,dynamics`). The Python host calls this
+# through src/flow/field_dsl.py, dynamics_dsl.py and flow_blocks.py.
+function flowc_expand_only_stages() -> i32 {
+    let v: string = getenv("FLOWC_EXPAND_ONLY")
+    if v as ptr<u8> == null {
+        return 7
+    }
+    let vp: ptr<u8> = v as ptr<u8>
+    let mut mask: i32 = 0
+    let mut i: i32 = 0
+    while vp[i] != 0 {
+        # Match whole words separated by commas.
+        let mut j: i32 = i
+        while vp[j] != 0 and vp[j] != 44 {
+            j = j + 1
+        }
+        let wl: i32 = j - i
+        if wl == 5 and vp[i] == 102 and vp[i + 1] == 105 {
+            mask = mask | 1
+        }
+        if wl == 8 and vp[i] == 100 {
+            mask = mask | 2
+        }
+        if wl == 4 and vp[i] == 102 and vp[i + 1] == 108 {
+            mask = mask | 4
+        }
+        i = j
+        if vp[i] == 44 {
+            i = i + 1
+        }
+    }
+    if mask == 0 {
+        return 7
+    }
+    return mask
+}
+
+function flowc_expand_only_mode(in_path: string, out_path: string) -> i32 {
+    # Sized from the file, so large sources pass through whole, with room
+    # for the generated helpers (at most 64 fields of a few hundred bytes).
+    let fsize: i64 = flowc_io_file_size(in_path)
+    if fsize < 0 {
+        puts("flowc expand: read FLOWC_IN failed")
+        return 1
+    }
+    let src_cap: i32 = (fsize as i32) * 4 + 65536
+    let src: ptr<u8> = malloc(src_cap as i64)
+    if src == null {
+        puts("flowc expand: malloc src failed")
+        return 1
+    }
+    let mut nsrc: i32 = flowc_read_file(in_path, src, src_cap - 1)
+    if nsrc < 0 {
+        puts("flowc expand: read FLOWC_IN failed")
+        free(src)
+        return 1
+    }
+    src[nsrc] = 0
+    nsrc = flowc_expand_stages_in_place(src, nsrc, src_cap, flowc_expand_only_stages())
+    if nsrc < 0 {
+        free(src)
+        return 1
+    }
+    let mut rc: i32 = 0
+    if flowc_env_set("FLOWC_OUT") == 1 {
+        if flowc_write_file(out_path, src, nsrc) != 0 {
+            puts("flowc expand: write FLOWC_OUT failed")
+            rc = 1
+        }
+    } else {
+        src[nsrc] = 0
+        puts(src as string)
+    }
+    free(src)
+    return rc
+}
+
+# FLOWC_EMIT=mlir (or FLOWC_BACKEND=mlir) selects the MLIR text emitter.
+function flowc_want_mlir() -> i32 {
+    if flowc_env_eq("FLOWC_EMIT", "mlir") == 1 {
+        return 1
+    }
+    if flowc_env_eq("FLOWC_BACKEND", "mlir") == 1 {
+        return 1
+    }
+    return 0
+}
+
+# FLOWC_EXPLAIN=1: the `flow explain` report goes to stderr. The header names
+# FLOWC_EXPLAIN_SOURCE, else FLOWC_IN; cgen writes one record per sort or
+# search site and counts them in FLOWC_EXPLAIN_SITES (#146).
+function flowc_explain_begin() {
+    if flowc_env_eq("FLOWC_EXPLAIN", "1") == 0 {
+        return
+    }
+    let _s: i32 = setenv("FLOWC_EXPLAIN_SITES", "0", 1)
+    let mut source: string = getenv("FLOWC_IN")
+    if flowc_env_set("FLOWC_EXPLAIN_SOURCE") == 1 {
+        source = getenv("FLOWC_EXPLAIN_SOURCE")
+    }
+    if source as ptr<u8> == null {
+        source = ""
+    }
+    let mut t: PlanText = flowc_plan_text_new()
+    flowc_plan_report_header(&t, source)
+    let _w: i64 = write(2, t.buf as string, t.len as i64)
+}
+
+function flowc_explain_end() {
+    if flowc_env_eq("FLOWC_EXPLAIN", "1") == 0 {
+        return
+    }
+    let mut sites: i32 = 0
+    if flowc_env_set("FLOWC_EXPLAIN_SITES") == 1 {
+        sites = atoi(getenv("FLOWC_EXPLAIN_SITES"))
+    }
+    let mut t: PlanText = flowc_plan_text_new()
+    flowc_plan_report_footer(&t, sites)
+    let _w: i64 = write(2, t.buf as string, t.len as i64)
+}
+
 # FLOWC_IN / FLOWC_OUT emit path: read .flow, Stage-A emit, write (or stdout).
-# FLOWC_BACKEND=js → flowc_jsgen_emit; =fmt → flowc_fmt_emit; else cgen (C).
+# FLOWC_BACKEND=js → flowc_jsgen_emit; =fmt or =tokens → flowc_fmt_mode;
+# else cgen (C).
 # FLOWC_BUNDLE=1 → flowc_bundle_emit (entry + relative imports, one C TU).
 # Returns 0 on success, 1 on failure. Does not run self-tests.
 function flowc_emit_mode() -> i32 {
@@ -105,23 +253,45 @@ function flowc_emit_mode() -> i32 {
     let out_path: string = getenv("FLOWC_OUT")
 
     if flowc_env_eq("FLOWC_BACKEND", "wasm") == 1 {
-        if out_path == null {
+        if out_path as ptr<u8> == null {
             puts("flowc emit: wasm requires FLOWC_OUT")
             return 1
         }
         return flowc_wasm_gen_compile(in_path, out_path, "2")
     }
 
+    # FLOWC_SHADER=metal|wgsl|list|expand: fill-shader (FSL) programs.
+    if flowc_env_set("FLOWC_SHADER") == 1 {
+        return flowc_shader_mode(getenv("FLOWC_SHADER"), in_path, out_path, getenv("FLOWC_SHADER_NAME"))
+    }
+
     if flowc_env_eq("FLOWC_BACKEND", "bpf") == 1 {
-        if out_path == null {
+        if out_path as ptr<u8> == null {
             puts("flowc emit: bpf requires FLOWC_OUT")
             return 1
         }
         return flowc_bpf_gen_compile(in_path, out_path, "2")
     }
 
-    # 1MB: parser bundle (token+ast+lexer+parser) needs headroom beyond 512K.
-    let out_cap: i32 = 1048576
+    if flowc_env_set("FLOWC_EXPAND_ONLY") == 1 {
+        return flowc_expand_only_mode(in_path, out_path)
+    }
+
+    if flowc_env_eq("FLOWC_BACKEND", "fmt") == 1 {
+        return flowc_fmt_mode(in_path, 0)
+    }
+    if flowc_env_eq("FLOWC_BACKEND", "tokens") == 1 {
+        return flowc_fmt_mode(in_path, 1)
+    }
+
+    # 4 MiB: the self-hosted compiler bundle passed 1 MiB of C once the
+    # dynamics, flow-block, shader, package, effects and proof modules joined it.
+    # MLIR text runs larger: Python writes a `[v; N]` literal out N times
+    # (the evoleco grids reach 104 MB).
+    let mut out_cap: i32 = 4194304
+    if flowc_want_mlir() == 1 {
+        out_cap = 268435456
+    }
     let out: ptr<u8> = malloc(out_cap as i64)
     if out == null {
         puts("flowc emit: malloc out failed")
@@ -134,6 +304,24 @@ function flowc_emit_mode() -> i32 {
     }
 
     let mut nout: i32 = 0
+    let want_mlir: i32 = flowc_want_mlir()
+    if want_mlir == 0 and flowc_env_set("FLOWC_BACKEND") == 0 {
+        flowc_explain_begin()
+    }
+    # A program with imports takes Python's module order (mlir_bundle.flow).
+    let mut mlir_modules: i32 = 0
+    if want_mlir == 1 {
+        if flowc_env_set("FLOWC_BUNDLE") == 1 or flowc_mlir_wants_modules(in_path) == 1 {
+            mlir_modules = 1
+        }
+    }
+    if mlir_modules == 1 {
+        nout = flowc_mlir_emit_program(in_path, out, out_cap, flowc_want_typecheck())
+        if nout <= 0 {
+            free(out)
+            return 1
+        }
+    } else {
     if flowc_env_set("FLOWC_BUNDLE") == 1 {
         let mut search_dir: string = "compiler/src"
         let dir_buf: ptr<u8> = malloc(256)
@@ -152,19 +340,27 @@ function flowc_emit_mode() -> i32 {
         } else {
             let dlen: i32 = flowc_resolve_dirname(in_path, dir_buf, 256)
             if dlen > 0 {
-                search_dir = dir_buf
+                search_dir = dir_buf as string
             }
         }
         # Bundle typecheck (deps-first + export seed) when typecheck wanted.
         if flowc_want_typecheck() == 1 {
-            let tc_errs: i32 = flowc_bundle_typecheck(in_path, search_dir)
-            if tc_errs > 0 {
+            let bfatal: array<i32, 1> = [0]
+            let tc_errs: i32 = flowc_bundle_typecheck_fatal(in_path, search_dir, &bfatal[0] as ptr<i32>)
+            if tc_errs > 0 and flowc_tc_lenient_ok(tc_errs, bfatal[0]) == 0 {
                 puts("flowc emit: bundle typecheck failed")
                 printf("flowc emit: tc_errs=%d\n", tc_errs)
                 free(dir_buf)
                 free(out)
                 return 1
             }
+        }
+        # FLOWC_CHECK_ONLY=1: stop after the type check (the parity gates).
+        if flowc_env_eq("FLOWC_CHECK_ONLY", "1") == 1 {
+            puts("flowc: type check passed")
+            free(dir_buf)
+            free(out)
+            return 0
         }
         nout = flowc_bundle_emit(in_path, search_dir, out, out_cap)
         free(dir_buf)
@@ -174,7 +370,7 @@ function flowc_emit_mode() -> i32 {
             return 1
         }
     } else {
-        let src_cap: i32 = 262144
+        let src_cap: i32 = 1048576
         let src: ptr<u8> = malloc(src_cap as i64)
         if src == null {
             puts("flowc emit: malloc src failed")
@@ -186,8 +382,9 @@ function flowc_emit_mode() -> i32 {
             src[zi] = 0
             zi = zi + 1
         }
-        let nsrc: i32 = flowc_read_file(in_path, src, src_cap - 1)
-        if nsrc <= 0 {
+        let mut nsrc: i32 = flowc_read_file(in_path, src, src_cap - 1)
+        # An empty file is an empty program, as on the Python host.
+        if nsrc < 0 {
             puts("flowc emit: read FLOWC_IN failed")
             free(src)
             free(out)
@@ -195,12 +392,24 @@ function flowc_emit_mode() -> i32 {
         }
         src[nsrc] = 0
 
+        # DSLs expand before parse, as the Python host does.
+        if want_mlir == 1 {
+            nsrc = flowc_expand_for_mlir_in_place(src, nsrc, src_cap)
+        } else {
+            nsrc = flowc_expand_all_in_place(src, nsrc, src_cap)
+        }
+        if nsrc < 0 {
+            free(src)
+            free(out)
+            return 1
+        }
+
         # Modules like ast.flow need a large arena (nested index/field assigns).
         let mut p: Parser = flowc_parser_new(src, nsrc, 262144)
         let root: i32 = flowc_parse_program(&p)
         if root < 0 or p.err != 0 {
             puts("flowc emit: parse failed")
-            printf("flowc emit: at %d\n", p.cur.start)
+            flowc_parser_print_error(p, in_path)
             printf("flowc emit: arena_len=%d\n", p.arena.len)
             flowc_parser_free(p)
             free(src)
@@ -211,9 +420,27 @@ function flowc_emit_mode() -> i32 {
         # Stage-A typecheck ON by default. Opt-out for intentional bad fixtures:
         # FLOWC_TYPECHECK=0 or FLOWC_NO_TYPECHECK=1.
         if flowc_want_typecheck() == 1 {
-            flowc_fuse_pipelines(&p.arena, src)
-            let tc_errs: i32 = flowc_typecheck(p.arena, root, src)
-            if tc_errs > 0 {
+            # The semantic check (the Python host's type checker) sees the
+            # program before pipeline fusion rewrites it.
+            let sem: array<i32, 2> = [0, 0]
+            # A module with imports is checked with them resolved.
+            let mut sem_done: bool = false
+            if flowc_ast_count_kind(p.arena, AST_IMPORT) > 0 {
+                sem_done = flowc_semcheck_imports(getenv("FLOWC_IN"), &sem[0] as ptr<i32>) == 0
+            }
+            if sem_done == false {
+                sem[0] = 0
+                sem[1] = 0
+                flowc_semcheck_single(p.arena, root, src, getenv("FLOWC_IN"), &sem[0] as ptr<i32>)
+            }
+            # The Python MLIR generator does not fuse pipeline stages.
+            if want_mlir == 0 {
+                flowc_fuse_pipelines(&p.arena, src)
+            }
+            let sfatal: array<i32, 1> = [0]
+            let tc_errs: i32 = flowc_typecheck_fatal_sem(p.arena, root, src, getenv("FLOWC_IN"), &sfatal[0] as ptr<i32>, 1) + sem[0]
+            sfatal[0] = sfatal[0] + sem[1]
+            if tc_errs > 0 and flowc_tc_lenient_ok(tc_errs, sfatal[0]) == 0 {
                 puts("flowc emit: typecheck failed")
                 printf("flowc emit: tc_errs=%d\n", tc_errs)
                 flowc_parser_free(p)
@@ -221,22 +448,28 @@ function flowc_emit_mode() -> i32 {
                 free(out)
                 return 1
             }
+            if flowc_env_eq("FLOWC_CHECK_ONLY", "1") == 1 {
+                puts("flowc: type check passed")
+                flowc_parser_free(p)
+                free(src)
+                free(out)
+                return 0
+            }
         }
 
-        if flowc_env_eq("FLOWC_BACKEND", "js") == 1 {
-            nout = flowc_jsgen_emit(p.arena, root, src, out, out_cap)
+        if want_mlir == 1 {
+            nout = flowc_mlirgen_emit(p.arena, root, src, nsrc, src_cap, out, out_cap)
             if nout <= 0 {
-                puts("flowc emit: jsgen failed")
                 free(out)
                 flowc_parser_free(p)
                 free(src)
                 return 1
             }
         } else {
-            if flowc_env_eq("FLOWC_BACKEND", "fmt") == 1 {
-                nout = flowc_fmt_emit(p.arena, root, src, out, out_cap)
+            if flowc_env_eq("FLOWC_BACKEND", "js") == 1 {
+                nout = flowc_jsgen_emit(p.arena, root, src, out, out_cap)
                 if nout <= 0 {
-                    puts("flowc emit: fmt failed")
+                    puts("flowc emit: jsgen failed")
                     free(out)
                     flowc_parser_free(p)
                     free(src)
@@ -256,7 +489,11 @@ function flowc_emit_mode() -> i32 {
         flowc_parser_free(p)
         free(src)
     }
+    }
 
+    if want_mlir == 0 and flowc_env_set("FLOWC_BACKEND") == 0 {
+        flowc_explain_end()
+    }
     let mut rc: i32 = 0
     if flowc_env_set("FLOWC_OUT") == 1 {
         let out_path: string = getenv("FLOWC_OUT")
@@ -268,10 +505,106 @@ function flowc_emit_mode() -> i32 {
         if nout < out_cap {
             out[nout] = 0
         }
-        puts(out)
+        puts(out as string)
     }
 
     free(out)
+    return rc
+}
+
+# FLOWC_BACKEND=fmt: format FLOWC_IN as written (no DSL expansion, no
+# typecheck) and write it to FLOWC_OUT, or stdout. The source must parse;
+# a file flowc cannot parse is left alone and the mode returns 1.
+# FLOWC_BACKEND=tokens (`dump` = 1): write the token and comment stream the
+# formatter keeps instead, without parsing (compiler/scripts/fmt_check.flow).
+function flowc_fmt_mode(in_path: string, dump: i32) -> i32 {
+    let src_cap: i32 = 8388608
+    let src: ptr<u8> = malloc(src_cap as i64)
+    if src == null {
+        puts("flowc fmt: malloc src failed")
+        return 1
+    }
+    let nsrc: i32 = flowc_read_file(in_path, src, src_cap - 1)
+    if nsrc < 0 {
+        puts("flowc fmt: read FLOWC_IN failed")
+        free(src)
+        return 1
+    }
+    src[nsrc] = 0
+    if dump == 0 {
+        let mut p: Parser = flowc_parser_new(src, nsrc, nsrc + 4096)
+        let root: i32 = flowc_parse_program(&p)
+        if root < 0 or p.err != 0 {
+            flowc_parser_print_error(p, in_path)
+            flowc_parser_free(p)
+            free(src)
+            return 1
+        }
+        flowc_parser_free(p)
+    }
+    # Indentation can grow a line; every token keeps its bytes.
+    let out_cap: i32 = nsrc * 4 + 65536
+    let out: ptr<u8> = malloc(out_cap as i64)
+    if out == null {
+        puts("flowc fmt: malloc out failed")
+        free(src)
+        return 1
+    }
+    let mut nout: i32 = 0
+    if dump == 1 {
+        nout = flowc_fmt_token_dump(src, nsrc, out, out_cap)
+    } else {
+        nout = flowc_fmt_source(src, nsrc, out, out_cap)
+    }
+    free(src)
+    if nout < 0 {
+        puts("flowc fmt: output overflow")
+        free(out)
+        return 1
+    }
+    let mut rc: i32 = 0
+    let mut dest: string = "/dev/stdout"
+    if flowc_env_set("FLOWC_OUT") == 1 {
+        dest = getenv("FLOWC_OUT")
+    }
+    if flowc_write_file(dest, out, nout) != 0 {
+        puts("flowc fmt: write failed")
+        rc = 1
+    }
+    free(out)
+    return rc
+}
+
+# FLOWC_PARSE_ONLY=1 with FLOWC_IN: run the lexer and parser only. Prints
+# `ok <path>` and returns 0, or prints `<path>:<line>:<col>: parse error: ...`
+# and returns 1. Used by compiler/scripts/parse_coverage.flow.
+function flowc_parse_only_mode() -> i32 {
+    let in_path: string = getenv("FLOWC_IN")
+    let src_cap: i32 = 8388608
+    let src: ptr<u8> = malloc(src_cap as i64)
+    if src == null {
+        puts("flowc parse: malloc src failed")
+        return 2
+    }
+    let nsrc: i32 = flowc_read_file(in_path, src, src_cap - 1)
+    if nsrc < 0 {
+        puts("flowc parse: read FLOWC_IN failed")
+        free(src)
+        return 2
+    }
+    src[nsrc] = 0
+    # One node per source byte is more than any Flow program needs.
+    let mut p: Parser = flowc_parser_new(src, nsrc, nsrc + 4096)
+    let root: i32 = flowc_parse_program(&p)
+    let mut rc: i32 = 0
+    if root < 0 or p.err != 0 {
+        flowc_parser_print_error(p, in_path)
+        rc = 1
+    } else {
+        puts("ok")
+    }
+    flowc_parser_free(p)
+    free(src)
     return rc
 }
 
@@ -627,7 +960,7 @@ function test_cgen_for() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 8192
+    let cap: i32 = 32768
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_for: malloc failed")
@@ -645,8 +978,10 @@ function test_cgen_for() -> i32 {
     if n <= 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "for (") == 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "int32_t i") == 0 { ok = 0 }
-    if flowc_bytes_contains(bp, n, "i = i + 1") == 0 { ok = 0 }
+    # Literal bounds: one ascending loop with a constant step (#1004).
+    if flowc_bytes_contains(bp, n, "i = i + 1)") == 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "i < ") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "__flowc_up_") == 1 { ok = 0 }
 
     free(bp)
     flowc_parser_free(p)
@@ -681,7 +1016,7 @@ function test_cgen_logic() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 8192
+    let cap: i32 = 32768
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_logic: malloc failed")
@@ -727,7 +1062,7 @@ function test_cgen_string() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 8192
+    let cap: i32 = 32768
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_string: malloc failed")
@@ -779,7 +1114,7 @@ function test_cgen_emit() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 8192
+    let cap: i32 = 32768
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen: malloc failed")
@@ -804,7 +1139,7 @@ function test_cgen_emit() -> i32 {
     if n > 0 and n < cap {
         bp[n] = 0
         puts("--- cgen output ---")
-        puts(bp)
+        puts(bp as string)
         puts("--- end cgen ---")
     }
 
@@ -1097,7 +1432,7 @@ function test_cgen_const() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 8192
+    let cap: i32 = 32768
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_const: malloc failed")
@@ -1156,7 +1491,7 @@ function test_cgen_struct() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 8192
+    let cap: i32 = 32768
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_struct: malloc failed")
@@ -1201,7 +1536,7 @@ function test_cgen_ptr() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 8192
+    let cap: i32 = 32768
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_ptr: malloc failed")
@@ -1320,7 +1655,7 @@ function test_cgen_cast() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 8192
+    let cap: i32 = 32768
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_cast: malloc failed")
@@ -1361,7 +1696,7 @@ function test_cgen_void() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 8192
+    let cap: i32 = 32768
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_void: malloc failed")
@@ -1450,7 +1785,7 @@ function test_jsgen_emit() -> i32 {
     if n > 0 and n < cap {
         bp[n] = 0
         puts("--- jsgen output ---")
-        puts(bp)
+        puts(bp as string)
         puts("--- end jsgen ---")
     }
 
@@ -1937,7 +2272,7 @@ function test_cgen_match() -> i32 {
     let mut ok: i32 = 1
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
-    let cap: i32 = 8192
+    let cap: i32 = 32768
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_match: malloc failed")
@@ -2049,6 +2384,12 @@ function test_typecheck_match_catchall() -> i32 {
 }
 
 function main() -> i32 {
+    if flowc_env_set("FLOWC_PROOF_DOC") == 1 {
+        return flowc_proof_doc_mode()
+    }
+    if flowc_env_set("FLOWC_IN") == 1 and flowc_env_set("FLOWC_PARSE_ONLY") == 1 {
+        return flowc_parse_only_mode()
+    }
     if flowc_env_set("FLOWC_IN") == 1 {
         return flowc_emit_mode()
     }

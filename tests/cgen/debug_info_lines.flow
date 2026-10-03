@@ -1,0 +1,10 @@
+# FLOWC_DEBUG_INFO=1 maps the C back to Flow source lines with #line.
+function add(a: i32, b: i32) -> i32 {
+    let s: i32 = a + b
+    return s
+}
+
+function main() -> i32 {
+    let x: i32 = add(1, 2)
+    return x
+}

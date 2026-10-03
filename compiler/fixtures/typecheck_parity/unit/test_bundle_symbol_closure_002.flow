@@ -1,0 +1,4 @@
+
+export function overload_func(x: i32) -> i32 { return x; }
+export function overload_func(x: f32) -> f32 { return x; }
+    

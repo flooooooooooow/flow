@@ -2,9 +2,9 @@
 
 *Equal integers can be subtracted from both sides of an equation.*
 
-**Source.** landau — *Foundations of Analysis*, Ch. 1
+**Source.** landau: *Foundations of Analysis*, Ch. 1
 
-## Derived fact 1 — a + c = b + c implies a = b
+## Derived fact 1: a + c = b + c implies a = b
 
 **Coordinate.** the integers · addition · right cancellation holds · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that right cancellation holds for addition on the integers. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose a + c  equals  b + c. |  |  |
 | ④ | We invoke the derived fact governing addition on the integers: parentheses do not matter, for addition on the integers (instantiated for a, c, -c). |  |  |
 | ⑤ | We invoke the derived fact governing negation on the integers: negation distributes over addition, for negation on the integers (instantiated for a, c). |  |  |

@@ -2,9 +2,9 @@
 
 *Choosing four from a successor derived from Pascal.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — choose(succ(n), 4) = choose(n, 3) + choose(n, 4)
+## Derived fact 1: choose(succ(n), 4) = choose(n, 3) + choose(n, 4)
 
 **Coordinate.** Comb · choose · choosing four from a successor derived · **Derived fact**
 

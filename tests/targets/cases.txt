@@ -1,0 +1,52 @@
+# Cases for compiler/scripts/parity_targets.flow.
+#
+#   name | tool | compare | arguments
+#
+# tool     bpf (flow bpf) or wasm32 (flow wasm32)
+# compare  full: stderr must match exactly; first: only the first line of
+#          stderr must match (the rest is lowering diagnostics)
+# @OUT@ is the case's output file, @SP@ a space inside one argument.
+# Goldens: tests/targets/expected/<name>.{rc,err,sha}, captured from the
+# Python modules this replaces (src/flow/bpf_target.py and
+# src/flow/wasm_compiler.py at e6a7f046).
+
+bpf_answer | bpf | full | tests/fixtures/bpf/answer.flow --target bpfel -O 2 -o @OUT@
+bpf_socket | bpf | full | tests/fixtures/bpf/socket_filter.flow --target bpfel --entry socket_filter --section socket --license GPL -O 2 -o @OUT@
+bpf_socket_o0 | bpf | full | tests/fixtures/bpf/socket_filter.flow --entry socket_filter --section xdp --license Dual@SP@BSD/GPL-\xc3\xa9"q\\ -O 0 -o @OUT@
+bpf_answer_o3 | bpf | full | tests/fixtures/bpf/answer.flow -O 3 -o @OUT@
+bpf_ll_host_header | bpf | full | tests/targets/ir/host_header.ll -o @OUT@
+bpf_ll_alias | bpf | full | tests/targets/ir/export_alias.ll --entry answer --section socket -o @OUT@
+bpf_ll_static_alloca | bpf | full | tests/targets/ir/static_alloca.ll -O 1 -o @OUT@
+bpf_ll_malloc | bpf | full | tests/targets/ir/malloc.ll -o @OUT@
+bpf_ll_free | bpf | full | tests/targets/ir/free.ll -o @OUT@
+bpf_ll_invoke | bpf | full | tests/targets/ir/invoke.ll -o @OUT@
+bpf_ll_landingpad | bpf | full | tests/targets/ir/landingpad.ll -o @OUT@
+bpf_ll_unwind | bpf | full | tests/targets/ir/unwind.ll -o @OUT@
+bpf_ll_dyn_alloca | bpf | full | tests/targets/ir/dyn_alloca.ll -o @OUT@
+bpf_ll_no_entry | bpf | full | tests/targets/ir/no_entry.ll --entry missing --section socket -o @OUT@
+bpf_ll_dup_entry | bpf | full | tests/targets/ir/dup_entry.ll --entry answer --section socket -o @OUT@
+bpf_ll_multiline | bpf | full | tests/targets/ir/multiline.ll --entry answer --section socket -o @OUT@
+bpf_ll_bad_ir | bpf | full | tests/targets/ir/bad_ir.ll -o @OUT@
+bpf_entry_only | bpf | full | tests/fixtures/bpf/answer.flow --entry answer -o @OUT@
+bpf_section_only | bpf | full | tests/fixtures/bpf/answer.flow --section socket -o @OUT@
+bpf_missing_flow | bpf | full | tests/targets/ir/missing.flow -o @OUT@
+bpf_missing_ll | bpf | full | tests/targets/ir/missing.ll -o @OUT@
+bpf_bad_target | bpf | full | tests/fixtures/bpf/answer.flow --target bpfeb -o @OUT@
+bpf_bad_opt | bpf | full | tests/fixtures/bpf/answer.flow -O 5 -o @OUT@
+bpf_no_output | bpf | full | tests/fixtures/bpf/answer.flow
+bpf_no_input | bpf | full | -o @OUT@
+wasm_main_42 | wasm32 | full | tests/fixtures/wasm/main_42.flow -o @OUT@ --export answer -O O2
+wasm_sum_pair | wasm32 | full | tests/fixtures/wasm/sum_pair.flow -o @OUT@ --export sum_pair -O O2
+wasm_main_42_all | wasm32 | full | tests/fixtures/wasm/main_42.flow -o @OUT@
+wasm_sum_pair_oz | wasm32 | full | tests/fixtures/wasm/sum_pair.flow -o @OUT@ --opt-level Oz
+wasm_two_exports | wasm32 | full | tests/targets/two_exports.flow -o @OUT@ --export add --export mul -O O1
+wasm_missing_export | wasm32 | full | tests/fixtures/wasm/main_42.flow -o @OUT@ --export missing
+wasm_missing_input | wasm32 | full | tests/targets/missing.flow -o @OUT@
+wasm_parse_error | wasm32 | first | tests/targets/parse_error.flow -o @OUT@
+wasm_bad_opt | wasm32 | full | tests/fixtures/wasm/main_42.flow -o @OUT@ -O O9
+wasm_no_output | wasm32 | full | tests/fixtures/wasm/main_42.flow
+# LLVM IR input is new in the Flow version; these goldens come from
+# wasm_compiler.llvm_to_wasm, the function main() called after lowering.
+wasm_ll_add | wasm32 | full | tests/targets/ir/wasm_quoted.ll -o @OUT@ --export add
+wasm_ll_quoted | wasm32 | full | tests/targets/ir/wasm_quoted.ll -o @OUT@ --export quoted.name -O O3
+wasm_ll_missing | wasm32 | full | tests/targets/ir/wasm_quoted.ll -o @OUT@ --export add --export nope

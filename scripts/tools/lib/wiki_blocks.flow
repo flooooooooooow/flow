@@ -1,0 +1,276 @@
+# @module tools.wiki_blocks
+# @means  Fenced code blocks in the tutorials, extracted the way
+#         tools/doc_examples/blocks.flow does for the interactive lessons.
+#
+# Lines are walked with the CommonMark rule: a fence opened with N backticks
+# (or tildes) closes on the next line of N or more of the same character
+# with an empty info string. The info string is split like shlex.split and
+# validated against the words tools/doc_examples/blocks.flow knows.
+
+import .text { ft_eq, ft_len, ft_starts, ft_contains, ft_find_byte, ft_slice, ft_from, ft_repr, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
+import .unicode { uc_decode, uc_len, uc_is_space, uc_strip, uc_lower_str }
+import .wiki_util { wb_new, wb_add, wb_str, wu_read_text, wu_splitlines, wu_strip_set, WBuf }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function strlen(s: string) -> i64
+}
+
+struct WkBlocks {
+    codes: ptr<StrList>
+    sections: ptr<StrList>
+    titles: ptr<StrList>
+    paths: ptr<StrList>
+    error: string
+}
+
+export function wk_new() -> ptr<WkBlocks> {
+    let bl: ptr<WkBlocks> = malloc(40) as ptr<WkBlocks>
+    bl[0].codes = ft_list_new()
+    bl[0].sections = ft_list_new()
+    bl[0].titles = ft_list_new()
+    bl[0].paths = ft_list_new()
+    bl[0].error = null
+    return bl
+}
+
+export function wk_count(bl: ptr<WkBlocks>) -> i32 {
+    return ft_list_len(bl[0].codes)
+}
+
+export function wk_code(bl: ptr<WkBlocks>, i: i32) -> string {
+    return ft_list_get(bl[0].codes, i)
+}
+
+# Nearest preceding `## ` heading, or null.
+export function wk_section(bl: ptr<WkBlocks>, i: i32) -> string {
+    return ft_list_get(bl[0].sections, i)
+}
+
+# Nearest preceding `### ` heading, or null.
+export function wk_title(bl: ptr<WkBlocks>, i: i32) -> string {
+    return ft_list_get(bl[0].titles, i)
+}
+
+export function wk_path(bl: ptr<WkBlocks>, i: i32) -> string {
+    return ft_list_get(bl[0].paths, i)
+}
+
+export function wk_error(bl: ptr<WkBlocks>) -> string {
+    return bl[0].error
+}
+
+# _FENCE.match(line): fills fm[0] = fence char, fm[1] = width,
+# fm[2] = byte offset of the info string. False when the line is no fence.
+function wk_fence(line: string, fm: ptr<i32>) -> bool {
+    let p: ptr<u8> = line as ptr<u8>
+    let mut q: i32 = 0
+    let mut spaces: i32 = 0
+    while spaces < 3 and p[q] != 0 and uc_is_space(uc_decode(p, q)) {
+        q = q + uc_len(p[q] as i32)
+        spaces = spaces + 1
+    }
+    let ch: i32 = p[q] as i32
+    if ch != 96 and ch != 126 {
+        return false
+    }
+    let mut e: i32 = q
+    while (p[e] as i32) == ch {
+        e = e + 1
+    }
+    if e - q < 3 {
+        return false
+    }
+    fm[0] = ch
+    fm[1] = e - q
+    fm[2] = e
+    return true
+}
+
+# shlex.split(info) in POSIX mode. Null on a quoting error, with the
+# message in err[0].
+function wk_shlex(info: string, err: ptr<string>) -> ptr<StrList> {
+    let words: ptr<StrList> = ft_list_new()
+    let p: ptr<u8> = info as ptr<u8>
+    let n: i32 = ft_len(info)
+    let cur: ptr<u8> = malloc((n + 1) as i64) as ptr<u8>
+    let mut clen: i32 = 0
+    let mut have: bool = false
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = p[i] as i32
+        if c == 32 or c == 9 or c == 13 or c == 10 {
+            if have {
+                cur[clen] = 0
+                ft_list_push(words, ft_slice(cur as string, 0, clen))
+                clen = 0
+                have = false
+            }
+            i = i + 1
+        } elif c == 92 {
+            if i + 1 >= n {
+                err[0] = "No escaped character"
+                return null
+            }
+            cur[clen] = p[i + 1]
+            clen = clen + 1
+            have = true
+            i = i + 2
+        } elif c == 39 {
+            have = true
+            i = i + 1
+            while i < n and p[i] != 39 {
+                cur[clen] = p[i]
+                clen = clen + 1
+                i = i + 1
+            }
+            if i >= n {
+                err[0] = "No closing quotation"
+                return null
+            }
+            i = i + 1
+        } elif c == 34 {
+            have = true
+            i = i + 1
+            while i < n and p[i] != 34 {
+                if p[i] == 92 and i + 1 < n and (p[i + 1] == 34 or p[i + 1] == 92) {
+                    cur[clen] = p[i + 1]
+                    clen = clen + 1
+                    i = i + 2
+                } else {
+                    cur[clen] = p[i]
+                    clen = clen + 1
+                    i = i + 1
+                }
+            }
+            if i >= n {
+                err[0] = "No closing quotation"
+                return null
+            }
+            i = i + 1
+        } else {
+            cur[clen] = c as u8
+            clen = clen + 1
+            have = true
+            i = i + 1
+        }
+    }
+    if have {
+        cur[clen] = 0
+        ft_list_push(words, ft_slice(cur as string, 0, clen))
+    }
+    return words
+}
+
+function wk_known_key(key: string) -> bool {
+    return ft_eq(key, "ignore") or ft_eq(key, "preamble") or ft_eq(key, "from") or ft_eq(key, "id") or ft_eq(key, "uses")
+}
+
+function wk_known_flag(flag: string) -> bool {
+    return ft_eq(flag, "run") or ft_eq(flag, "interactive") or ft_eq(flag, "expect-error") or ft_eq(flag, "no-harness")
+}
+
+# parse_info(): the language, or null with bl.error set.
+function wk_parse_info(bl: ptr<WkBlocks>, info: string) -> string {
+    let err: ptr<string> = malloc(8) as ptr<string>
+    err[0] = null
+    let words: ptr<StrList> = wk_shlex(info, err)
+    if words == null {
+        bl[0].error = "InfoStringError: cannot parse info string " + ft_repr(info) + ": " + err[0]
+        return null as string
+    }
+    if ft_list_len(words) == 0 {
+        return ""
+    }
+    let lang: string = uc_lower_str(ft_list_get(words, 0))
+    let mut ignore_reason: string = null as string
+    let mut w: i32 = 1
+    while w < ft_list_len(words) {
+        let word: string = ft_list_get(words, w)
+        let eq: i32 = ft_find_byte(word, 61, 0)
+        if eq >= 0 {
+            let key: string = uc_lower_str(ft_slice(word, 0, eq))
+            let value: string = ft_from(word, eq + 1)
+            if wk_known_key(key) == false {
+                bl[0].error = "InfoStringError: unknown option " + ft_repr(key) + " in " + ft_repr(info)
+                return null as string
+            }
+            if ft_len(value) == 0 {
+                bl[0].error = "InfoStringError: option " + ft_repr(key) + " needs a value in " + ft_repr(info)
+                return null as string
+            }
+            if ft_eq(key, "ignore") {
+                ignore_reason = value
+            }
+        } elif wk_known_flag(uc_lower_str(word)) == false {
+            bl[0].error = "InfoStringError: unknown flag " + ft_repr(word) + " in " + ft_repr(info)
+            return null as string
+        }
+        w = w + 1
+    }
+    if ignore_reason as ptr<u8> != null and ft_len(uc_strip(ignore_reason)) == 0 {
+        bl[0].error = "InfoStringError: ignore= needs a written reason in " + ft_repr(info)
+        return null as string
+    }
+    return lang
+}
+
+# Add every block of `lang` with a non-blank body in `text` (from `path`)
+# that contains "function main". False when an info string is invalid.
+export function wk_collect_file(bl: ptr<WkBlocks>, path: string, text: string, want_lang: string) -> bool {
+    let lines: ptr<StrList> = wu_splitlines(text)
+    let nl: i32 = ft_list_len(lines)
+    let fm: ptr<i32> = malloc(12) as ptr<i32>
+    let cm: ptr<i32> = malloc(12) as ptr<i32>
+    let mut section: string = null as string
+    let mut title: string = null as string
+    let mut i: i32 = 0
+    while i < nl {
+        let line: string = ft_list_get(lines, i)
+        if wk_fence(line, fm) == false {
+            if ft_starts(line, "## ") {
+                section = uc_strip(ft_from(line, 3))
+                title = null as string
+            } elif ft_starts(line, "### ") {
+                title = uc_strip(ft_from(line, 4))
+            }
+            i = i + 1
+            continue
+        }
+        let ch: i32 = fm[0]
+        let width: i32 = fm[1]
+        let info: string = uc_strip(ft_from(line, fm[2]))
+        if ch == 96 and ft_contains(info, "`") {
+            i = i + 1
+            continue
+        }
+        let body: ptr<WBuf> = wb_new()
+        let mut first: bool = true
+        i = i + 1
+        while i < nl {
+            let inner: string = ft_list_get(lines, i)
+            if wk_fence(inner, cm) and cm[0] == ch and cm[1] >= width and ft_len(uc_strip(ft_from(inner, cm[2]))) == 0 {
+                break
+            }
+            if first == false {
+                wb_add(body, "\n")
+            }
+            first = false
+            wb_add(body, inner)
+            i = i + 1
+        }
+        i = i + 1
+        let lang: string = wk_parse_info(bl, info)
+        if lang as ptr<u8> == null {
+            return false
+        }
+        let code: string = wu_strip_set(wb_str(body), "\n")
+        if ft_len(uc_strip(code)) > 0 and ft_eq(lang, want_lang) and ft_contains(code, "function main") {
+            ft_list_push(bl[0].codes, code)
+            ft_list_push(bl[0].sections, section)
+            ft_list_push(bl[0].titles, title)
+            ft_list_push(bl[0].paths, path)
+        }
+    }
+    return true
+}

@@ -1,0 +1,42 @@
+# MLIR parity fixture: print, println and printf; short-circuit logic,
+# `not`, if-expressions and bool returns.
+
+extern {
+    function printf(fmt: string, ...) -> i32
+}
+
+function is_even(n: i32) -> bool {
+    return n % 2 == 0
+}
+
+function pick(c: bool, a: i32, b: i32) -> i32 {
+    let r: i32 = if c { a } else { b }
+    return r
+}
+
+function main() -> i32 {
+    print("no newline, ")
+    println("with newline")
+    println("tab\tquote\" backslash\\ end")
+    let name: string = "flow"
+    println(name)
+    printf("%s has %d letters and pi is %.3f\n", name, 4, 3.14159)
+    printf("plain\n")
+    let t: bool = true
+    println(t)
+    let x: i32 = 6
+    if is_even(x) and x > 4 {
+        println("even and big")
+    }
+    if not is_even(x) or x == 6 {
+        println("odd or six")
+    }
+    if !(x < 0) {
+        println("non-negative")
+    }
+    println(pick(x > 3, 10, 20))
+    println(pick(is_even(7), 10, 20))
+    let both: bool = is_even(2) and is_even(4)
+    println(both)
+    return 0
+}

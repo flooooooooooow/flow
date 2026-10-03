@@ -2,13 +2,13 @@
 
 *Triangles and parallelograms under the same height are to one another as their bases.*
 
-**Source.** euclid — Elements, Book VI, Proposition 1
+**Source.** euclid: Elements, Book VI, Proposition 1
 
-## Derived fact 1 — Triangles and parallelograms under the same height are to one another as their bases
+## Derived fact 1: Triangles and parallelograms under the same height are to one another as their bases
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 1: triangles and parallelograms of the same height are as their bases · **Derived fact**
 
-*Source: euclid — Elements, Book VI, Proposition 1*
+*Source: euclid: Elements, Book VI, Proposition 1*
 
 *Built on: proposition 1: equimultiples of equimultiples are equimultiple of the originals, for Euclid Book V on the Euclidean plane*
 

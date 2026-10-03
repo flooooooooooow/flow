@@ -2,9 +2,9 @@
 
 *Three plus zero is three in a monoid witness.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §1.1
+**Source.** dummit-foote: *Abstract Algebra*, §1.1
 
-## Derived fact 1 — 3 + 0 = 3
+## Derived fact 1: 3 + 0 = 3
 
 **Coordinate.** Monoid · addition · three plus zero is three · **Derived fact**
 

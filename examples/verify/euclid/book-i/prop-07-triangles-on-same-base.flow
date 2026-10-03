@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-i
 # @means  On the same base and on the same side, equal-sided triangles cannot have distinct vertices.
-# @from   euclid — Elements, Book I, Proposition 7
+# @from   euclid: Elements, Book I, Proposition 7
 # @tier   derived
 # @needs  «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence», «Geometry» «Euclid Book I» «Proposition 5: base angles of an isosceles triangle are equal»
 

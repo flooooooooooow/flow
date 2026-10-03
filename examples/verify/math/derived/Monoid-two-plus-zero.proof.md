@@ -2,9 +2,9 @@
 
 *Two plus zero is two in a monoid witness.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §1.1
+**Source.** dummit-foote: *Abstract Algebra*, §1.1
 
-## Derived fact 1 — 2 + 0 = 2
+## Derived fact 1: 2 + 0 = 2
 
 **Coordinate.** Monoid · addition · two plus zero is two · **Derived fact**
 

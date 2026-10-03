@@ -2,13 +2,13 @@
 
 *Conjunction associates: regrouping ands does not change the result.*
 
-**Source.** boole — https://en.wikipedia.org/wiki/Associative_property
+**Source.** boole: https://en.wikipedia.org/wiki/Associative_property
 
-## Derived fact 1 — (a ∧ b) ∧ c = a ∧ (b ∧ c)
+## Derived fact 1: (a ∧ b) ∧ c = a ∧ (b ∧ c)
 
 **Coordinate.** boolean truth values · conjunction · parentheses do not matter · **Derived fact**
 
-*Source: boole — https://en.wikipedia.org/wiki/Boolean_algebra*
+*Source: boole: https://en.wikipedia.org/wiki/Boolean_algebra*
 
 *Built on: order does not matter, for conjunction on boolean truth values*
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that parentheses do not matter for conjunction on boolean truth values. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose a holds. |  |  |
 | ④ | Case 2 (see step 2): suppose b holds. |  |  |
 | ⑤ | From step 4, this implies (the conjunction of a and b) and c equals a and (the conjunction of b and c) in this case. | ⑤ | $(a \land b) \land c = a \land (b \land c)$ |

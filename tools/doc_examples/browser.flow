@@ -1,0 +1,610 @@
+# @module tools.doc_examples.browser
+# @means  Verify site/flow-compile.js against the native Flow compiler.
+#
+# Every tutorial lesson (the `lessons` rule: docs/tutorials/*.md except the
+# README, flow blocks with a `function main`) runs twice:
+#
+#   native   flowc -> C -> clang -> execute, capture stdout
+#   browser  node shim around site/flow-compile.js, capture stdout
+#
+# Each lesson lands in one bucket:
+#
+#   PASS         both ran and stdout matched byte for byte
+#   UNSUPPORTED  the browser interpreter declined the snippet by name
+#   REJECTED     the native compiler rejects the snippet and so does the
+#                interpreter (the tutorial source itself is broken)
+#   NATIVE-FAIL  native cannot build it but the interpreter produced output,
+#                so there is nothing to check the output against
+#   FAIL         a real mismatch: different stdout, or the interpreter
+#                errored on a snippet the native compiler runs
+#
+# FAIL must always be zero.
+
+import "scripts/tools/lib/text.flow"
+import "scripts/tools/lib/unicode.flow"
+import "scripts/tools/lib/proc.flow"
+import "scripts/tools/lib/json.flow"
+import "tools/doc_examples/blocks.flow"
+import "tools/doc_examples/verify.flow"
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function strtol(s: string, end: ptr<void>, base: i32) -> i64
+}
+
+struct Snip {
+    id: string,
+    track: string,
+    title: string,
+    code: string,
+    # native
+    stage: string,
+    error: string,
+    stdout: string,
+    exit: i32,
+    has_exit: bool,
+    # browser (node id in the parsed report, or -1)
+    br: i32,
+    verdict: string,
+    note: string
+}
+
+function node_shim() -> string {
+    let mut s: string = "\n'use strict';\n"
+    s = s + "const fs = require('fs');\n"
+    s = s + "require(process.argv[2]);\n"
+    s = s + "const files = JSON.parse(fs.readFileSync(process.argv[3], 'utf8'));\n"
+    s = s + "const out = {};\n"
+    s = s + "for (const [id, path] of Object.entries(files)) {\n"
+    s = s + "  const code = fs.readFileSync(path, 'utf8');\n"
+    s = s + "  let res;\n"
+    s = s + "  const started = Date.now();\n"
+    s = s + "  try {\n"
+    s = s + "    res = FlowCompile.run(code);\n"
+    s = s + "  } catch (err) {\n"
+    s = s + "    res = { ok: false, error: 'engine threw: ' + (err && err.stack || err), output: '' };\n"
+    s = s + "  }\n"
+    s = s + "  out[id] = {\n"
+    s = s + "    ok: !!res.ok,\n"
+    s = s + "    unsupported: !!res.unsupported,\n"
+    s = s + "    construct: res.construct || null,\n"
+    s = s + "    error: res.error || null,\n"
+    s = s + "    output: res.output || '',\n"
+    s = s + "    exitCode: res.exitCode === undefined ? null : res.exitCode,\n"
+    s = s + "    steps: res.steps || 0,\n"
+    s = s + "    ms: Date.now() - started,\n"
+    s = s + "    astLen: (res.ast || '').length,\n"
+    s = s + "  };\n"
+    s = s + "}\n"
+    s = s + "process.stdout.write(JSON.stringify(out));\n"
+    return s
+}
+
+# The last `n` code points of s, as Python's s[-n:].
+function py_suffix(s: string, n: i32) -> string {
+    let total: i32 = uc_count(s)
+    if total <= n {
+        return s
+    }
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    let mut k: i32 = 0
+    while k < total - n {
+        i = i + uc_len(p[i] as i32)
+        k = k + 1
+    }
+    return ft_from(s, i)
+}
+
+function read0(path: string) -> string {
+    let s: string = ft_read_file(path)
+    if s as ptr<u8> == null {
+        return ""
+    }
+    return s
+}
+
+# Run `cmd` with a watchdog. Returns the exit status, or -1000 on timeout;
+# a death by signal comes back negative, as subprocess reports it.
+function run_timed(cmd: string, seconds: i32, marker: string) -> i32 {
+    let script: string = cmd + " & pid=$!; ( trap 'kill $s 2>/dev/null; exit 0' TERM; sleep " + ft_itoa(seconds) + " & s=$!; wait $s; kill -9 $pid 2>/dev/null && : > " + pr_quote(marker) + " ) & w=$!; wait $pid; rc=$?; kill $w 2>/dev/null; wait $w 2>/dev/null; exit $rc"
+    let rc: i32 = pr_run("bash -c " + pr_quote(script) + " 2>/dev/null")
+    if ft_exists(marker) {
+        return -1000
+    }
+    if rc > 128 {
+        return 128 - rc
+    }
+    return rc
+}
+
+function run_native(env: ptr<Env>, sn: ptr<Snip>, work: string) {
+    let src: string = work + "/" + sn.id + ".flow"
+    let cfile: string = work + "/" + sn.id + ".c"
+    let binf: string = work + "/" + sn.id + ".bin"
+    let _w: bool = ft_write_file(src, sn.code + "\n")
+    let emit: string = "cd " + pr_quote(env.repo) + " && FLOWC_BIN=" + pr_quote(env.flowc) + " " + pr_quote(env.repo + "/flow") + " tool " + pr_quote(env.repo + "/compiler/scripts/flowc_emit.flow") + " " + pr_quote(src) + " " + pr_quote(cfile) + " >" + pr_quote(work + "/o.txt") + " 2>" + pr_quote(work + "/e.txt")
+    if pr_run(emit) != 0 {
+        sn.stage = "transpile"
+        sn.error = py_suffix(uc_strip(read0(work + "/o.txt") + read0(work + "/e.txt")), 600)
+        return
+    }
+    let build: string = "clang -w -D_DEFAULT_SOURCE " + pr_quote("-I" + env.repo + "/runtime") + " " + pr_quote(cfile) + " -o " + pr_quote(binf) + " -lm >" + pr_quote(work + "/o.txt") + " 2>" + pr_quote(work + "/e.txt")
+    if pr_run(build) != 0 {
+        sn.stage = "clang"
+        sn.error = py_suffix(uc_strip(read0(work + "/o.txt") + read0(work + "/e.txt")), 600)
+        return
+    }
+    let out: string = work + "/" + sn.id + ".stdout"
+    let rc: i32 = run_timed(pr_quote(binf) + " >" + pr_quote(out) + " 2>/dev/null </dev/null", 30, work + "/" + sn.id + ".timeout")
+    if rc == -1000 {
+        sn.stage = "timeout"
+        return
+    }
+    sn.stage = "run"
+    sn.stdout = read0(out)
+    sn.exit = rc
+    sn.has_exit = true
+}
+
+function jget(j: ptr<Json>, obj: i32, name: string) -> i32 {
+    if obj < 0 {
+        return -1
+    }
+    return json_get(j, obj, name)
+}
+
+function jtrue(j: ptr<Json>, obj: i32, name: string) -> bool {
+    let v: i32 = jget(j, obj, name)
+    return v >= 0 and json_kind(j, v) == json_kind_true()
+}
+
+# The member as a string; "" for null or absent.
+function jstr(j: ptr<Json>, obj: i32, name: string) -> string {
+    let v: i32 = jget(j, obj, name)
+    if v < 0 or json_kind(j, v) != json_kind_string() {
+        return ""
+    }
+    return json_str(j, v)
+}
+
+function classify(j: ptr<Json>, sn: ptr<Snip>) {
+    let br: i32 = sn.br
+    let native_ran: bool = sn.stage as ptr<u8> != null and ft_eq(sn.stage, "run")
+    if jtrue(j, br, "unsupported") {
+        sn.verdict = "UNSUPPORTED"
+        let c: string = jstr(j, br, "construct")
+        if ft_len(c) > 0 {
+            sn.note = c
+        } else {
+            sn.note = py_prefix(jstr(j, br, "error"), 70)
+        }
+        return
+    }
+    if native_ran == false {
+        let mut stage: string = "missing"
+        if sn.stage as ptr<u8> != null {
+            stage = sn.stage
+        }
+        if jtrue(j, br, "ok") {
+            sn.verdict = "NATIVE-FAIL"
+            sn.note = "native " + stage + "; interpreter produced output"
+        } else {
+            sn.verdict = "REJECTED"
+            sn.note = "native " + stage + "; interpreter also rejects it"
+        }
+        return
+    }
+    if jtrue(j, br, "ok") == false {
+        let mut e: string = jstr(j, br, "error")
+        if ft_len(e) == 0 {
+            e = "unknown"
+        }
+        sn.verdict = "FAIL"
+        sn.note = "interpreter error: " + e
+        return
+    }
+    if ft_eq(jstr(j, br, "output"), sn.stdout) == false {
+        sn.verdict = "FAIL"
+        sn.note = "stdout mismatch"
+        return
+    }
+    let ec: i32 = jget(j, br, "exitCode")
+    if ec >= 0 and json_kind(j, ec) == json_kind_number() and sn.has_exit {
+        let b: i32 = strtol(json_str(j, ec), null, 10) as i32
+        if b != sn.exit {
+            sn.verdict = "FAIL"
+            sn.note = "exit code " + json_str(j, ec) + " vs native " + ft_itoa(sn.exit)
+            return
+        }
+    }
+    sn.verdict = "PASS"
+    sn.note = ""
+}
+
+# Python repr() of a str, escaping the control characters it escapes.
+function py_repr(s: string) -> string {
+    let mut quote: i32 = 39
+    if ft_find_byte(s, 39, 0) >= 0 and ft_find_byte(s, 34, 0) < 0 {
+        quote = 34
+    }
+    let p: ptr<u8> = s as ptr<u8>
+    let mut out: string = ""
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    let n: i32 = ft_len(s)
+    let mut q: string = "'"
+    if quote == 34 {
+        q = "\""
+    }
+    while i < n {
+        let c: i32 = p[i] as i32
+        let mut esc: string = null as string
+        if c == 92 {
+            esc = "\\\\"
+        } elif c == quote {
+            esc = "\\" + q
+        } elif c == 10 {
+            esc = "\\n"
+        } elif c == 13 {
+            esc = "\\r"
+        } elif c == 9 {
+            esc = "\\t"
+        } elif c < 32 or c == 127 {
+            let hex: string = "0123456789abcdef"
+            esc = "\\x" + ft_slice(hex, c / 16, c / 16 + 1) + ft_slice(hex, c % 16, c % 16 + 1)
+        }
+        if esc as ptr<u8> != null {
+            out = out + ft_slice(s, start, i) + esc
+            start = i + 1
+        }
+        i = i + 1
+    }
+    return q + out + ft_from(s, start) + q
+}
+
+function split_nl(s: string) -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    let n: i32 = ft_len(s)
+    let p: ptr<u8> = s as ptr<u8>
+    while i < n {
+        if (p[i] as i32) == 10 {
+            ft_list_push(out, ft_slice(s, start, i))
+            start = i + 1
+        }
+        i = i + 1
+    }
+    ft_list_push(out, ft_from(s, start))
+    return out
+}
+
+function diff_text(expected: string, got: string) {
+    let exp: ptr<StrList> = split_nl(expected)
+    let act: ptr<StrList> = split_nl(got)
+    let mut m: i32 = ft_list_len(exp)
+    if ft_list_len(act) > m {
+        m = ft_list_len(act)
+    }
+    let mut lines: i32 = 0
+    let mut i: i32 = 0
+    while i < m {
+        let mut e: string = "<missing>"
+        let mut a: string = "<missing>"
+        if i < ft_list_len(exp) {
+            e = ft_list_get(exp, i)
+        }
+        if i < ft_list_len(act) {
+            a = ft_list_get(act, i)
+        }
+        if ft_eq(e, a) == false {
+            ft_outln("      line " + ft_itoa(i + 1) + ": native " + py_repr(e))
+            ft_outln("              browser " + py_repr(a))
+            lines = lines + 2
+        }
+        if lines >= 24 {
+            ft_outln("      ...")
+            return
+        }
+        i = i + 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# --json: the full report, as json.dumps(..., indent=1) wrote it
+# ---------------------------------------------------------------------------
+
+function pad(depth: i32) -> string {
+    let mut s: string = "\n"
+    let mut i: i32 = 0
+    while i < depth {
+        s = s + " "
+        i = i + 1
+    }
+    return s
+}
+
+function dump_node(j: ptr<Json>, id: i32, depth: i32) -> string {
+    let k: i32 = json_kind(j, id)
+    if k == json_kind_null() { return "null" }
+    if k == json_kind_true() { return "true" }
+    if k == json_kind_false() { return "false" }
+    if k == json_kind_number() { return json_str(j, id) }
+    if k == json_kind_string() { return json_quote(json_str(j, id)) }
+    let is_obj: bool = k == json_kind_object()
+    let mut c: i32 = json_first(j, id)
+    if c < 0 {
+        if is_obj {
+            return "{}"
+        }
+        return "[]"
+    }
+    let mut out: string = "["
+    if is_obj {
+        out = "{"
+    }
+    let mut first: bool = true
+    while c >= 0 {
+        if first == false {
+            out = out + ","
+        }
+        first = false
+        out = out + pad(depth + 1)
+        if is_obj {
+            out = out + json_quote(json_key(j, c)) + ": "
+        }
+        out = out + dump_node(j, c, depth + 1)
+        c = json_next(j, c)
+    }
+    if is_obj {
+        return out + pad(depth) + "}"
+    }
+    return out + pad(depth) + "]"
+}
+
+function native_json(sn: ptr<Snip>, depth: i32) -> string {
+    let mut out: string = "{" + pad(depth + 1) + "\"id\": " + json_quote(sn.id)
+    out = out + "," + pad(depth + 1) + "\"stage\": " + json_quote(sn.stage)
+    if ft_eq(sn.stage, "transpile") or ft_eq(sn.stage, "clang") {
+        out = out + "," + pad(depth + 1) + "\"error\": " + json_quote(sn.error)
+    }
+    if ft_eq(sn.stage, "run") {
+        out = out + "," + pad(depth + 1) + "\"stdout\": " + json_quote(sn.stdout)
+        out = out + "," + pad(depth + 1) + "\"exit\": " + ft_itoa(sn.exit)
+    }
+    return out + pad(depth) + "}"
+}
+
+function row_json(sn: ptr<Snip>, depth: i32) -> string {
+    let d: string = pad(depth + 1)
+    let mut out: string = "{" + d + "\"id\": " + json_quote(sn.id)
+    out = out + "," + d + "\"track\": " + json_quote(sn.track)
+    out = out + "," + d + "\"title\": " + json_quote(sn.title)
+    out = out + "," + d + "\"code\": " + json_quote(sn.code)
+    out = out + "," + d + "\"verdict\": " + json_quote(sn.verdict)
+    out = out + "," + d + "\"note\": " + json_quote(sn.note)
+    return out + pad(depth) + "}"
+}
+
+function write_report(path: string, snips: ptr<ptr<Snip>>, n: i32, j: ptr<Json>) {
+    let mut out: string = "{" + pad(1) + "\"rows\": ["
+    let mut i: i32 = 0
+    while i < n {
+        if i > 0 {
+            out = out + ","
+        }
+        out = out + pad(2) + row_json(snips[i], 2)
+        i = i + 1
+    }
+    if n > 0 {
+        out = out + pad(1)
+    }
+    out = out + "]," + pad(1) + "\"native\": {"
+    i = 0
+    while i < n {
+        if i > 0 {
+            out = out + ","
+        }
+        let sn: ptr<Snip> = snips[i]
+        out = out + pad(2) + json_quote(sn.id) + ": " + native_json(sn, 2)
+        i = i + 1
+    }
+    if n > 0 {
+        out = out + pad(1)
+    }
+    out = out + "}," + pad(1) + "\"browser\": " + dump_node(j, 0, 1) + "\n}"
+    let _w: bool = ft_write_file(path, out)
+}
+
+# ---------------------------------------------------------------------------
+# Command
+# ---------------------------------------------------------------------------
+
+function have(cmd: string) -> bool {
+    return pr_run("command -v " + cmd + " >/dev/null 2>&1") == 0
+}
+
+export function browser_main(env: ptr<Env>, lessons: ptr<BlkList>, filter: string, verbose: bool, keep: bool, json_path: string) -> i32 {
+    if have("node") == false {
+        ft_errln("node is required to run the browser interpreter")
+        return 2
+    }
+    if have("clang") == false {
+        ft_errln("clang is required to build the native reference")
+        return 2
+    }
+    let snips: ptr<ptr<Snip>> = malloc(8 * (lessons.len + 1) as i64) as ptr<ptr<Snip>>
+    let tracks: ptr<StrList> = ft_list_new()
+    let counts: ptr<StrMap> = ft_map_new()
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < lessons.len {
+        let b: ptr<Blk> = bl_get(lessons, i)
+        let track: string = ft_stem(b.path)
+        let c: i32 = ft_map_get(counts, track, 0) + 1
+        ft_map_put(counts, track, c)
+        let id: string = track + "-" + ft_itoa(c)
+        if filter as ptr<u8> == null or ft_contains(id, filter) {
+            let sn: ptr<Snip> = calloc(1, 128) as ptr<Snip>
+            sn.id = id
+            sn.track = track
+            sn.title = "Exercise"
+            if b.title as ptr<u8> != null and ft_len(b.title) > 0 {
+                sn.title = b.title
+            }
+            sn.code = b.code
+            sn.stage = null
+            sn.br = -1
+            snips[n] = sn
+            n = n + 1
+            if ft_list_has(tracks, track) == false {
+                ft_list_push(tracks, track)
+            }
+        }
+        i = i + 1
+    }
+    if n == 0 {
+        ft_outln("no snippets matched")
+        return 1
+    }
+    let work: string = env.work + "/interp"
+    let _m: bool = pr_mkdir_p(work)
+    ft_outln("Running " + ft_itoa(n) + " tutorial snippets natively ...")
+    i = 0
+    while i < n {
+        run_native(env, snips[i], work)
+        i = i + 1
+    }
+    ft_outln("Running the same snippets through site/flow-compile.js under node ...")
+    let shim: string = work + "/_shim.js"
+    let _s: bool = ft_write_file(shim, node_shim())
+    let mut index: string = "{"
+    i = 0
+    while i < n {
+        if i > 0 {
+            index = index + ", "
+        }
+        let sn: ptr<Snip> = snips[i]
+        index = index + json_quote(sn.id) + ": " + json_quote(work + "/" + sn.id + ".flow")
+        i = i + 1
+    }
+    let _x: bool = ft_write_file(work + "/_index.json", index + "}")
+    let node_cmd: string = "node " + pr_quote(shim) + " " + pr_quote(env.repo + "/site/flow-compile.js") + " " + pr_quote(work + "/_index.json") + " >" + pr_quote(work + "/_node.out") + " 2>" + pr_quote(work + "/_node.err")
+    if pr_run(node_cmd) != 0 {
+        ft_errln("node shim failed:\n" + read0(work + "/_node.out") + "\n" + read0(work + "/_node.err"))
+        return 1
+    }
+    let j: ptr<Json> = json_parse(read0(work + "/_node.out"))
+    i = 0
+    while i < n {
+        let sn: ptr<Snip> = snips[i]
+        sn.br = jget(j, 0, sn.id)
+        classify(j, sn)
+        i = i + 1
+    }
+    let buckets: ptr<StrList> = ft_list_new()
+    ft_list_push(buckets, "PASS")
+    ft_list_push(buckets, "UNSUPPORTED")
+    ft_list_push(buckets, "REJECTED")
+    ft_list_push(buckets, "NATIVE-FAIL")
+    ft_list_push(buckets, "FAIL")
+    let mut width: i32 = 0
+    i = 0
+    while i < ft_list_len(tracks) {
+        if ft_len(ft_list_get(tracks, i)) > width {
+            width = ft_len(ft_list_get(tracks, i))
+        }
+        i = i + 1
+    }
+    width = width + 2
+    ft_outln("")
+    let mut header: string = ft_ljust("tutorial", width)
+    let mut b: i32 = 0
+    while b < 5 {
+        header = header + ft_rjust(ft_list_get(buckets, b), 13)
+        b = b + 1
+    }
+    ft_outln(header)
+    let mut rule: string = ""
+    i = 0
+    while i < ft_len(header) {
+        rule = rule + "-"
+        i = i + 1
+    }
+    ft_outln(rule)
+    let totals: ptr<i32> = calloc(5, 4) as ptr<i32>
+    let mut t: i32 = 0
+    while t < ft_list_len(tracks) {
+        let track: string = ft_list_get(tracks, t)
+        let mut line: string = ft_ljust(track, width)
+        b = 0
+        while b < 5 {
+            let mut c: i32 = 0
+            i = 0
+            while i < n {
+                let sn: ptr<Snip> = snips[i]
+                if ft_eq(sn.track, track) and ft_eq(sn.verdict, ft_list_get(buckets, b)) {
+                    c = c + 1
+                }
+                i = i + 1
+            }
+            totals[b] = totals[b] + c
+            line = line + ft_rjust(ft_itoa(c), 13)
+            b = b + 1
+        }
+        ft_outln(line)
+        t = t + 1
+    }
+    ft_outln(rule)
+    let mut total_line: string = ft_ljust("TOTAL", width)
+    b = 0
+    while b < 5 {
+        total_line = total_line + ft_rjust(ft_itoa(totals[b]), 13)
+        b = b + 1
+    }
+    ft_outln(total_line)
+    ft_outln("")
+    i = 0
+    while i < n {
+        let sn: ptr<Snip> = snips[i]
+        if ft_eq(sn.verdict, "PASS") == false {
+            ft_outln("  " + ft_ljust(sn.verdict, 12) + " " + ft_ljust(sn.id, 22) + " " + sn.note)
+            if verbose and ft_eq(sn.verdict, "FAIL") {
+                if ft_eq(sn.note, "stdout mismatch") {
+                    diff_text(sn.stdout, jstr(j, sn.br, "output"))
+                } else {
+                    let err: i32 = jget(j, sn.br, "error")
+                    if err >= 0 and json_kind(j, err) == json_kind_string() {
+                        ft_outln("      " + json_str(j, err))
+                    } else {
+                        ft_outln("      None")
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    if json_path as ptr<u8> != null {
+        write_report(json_path, snips, n, j)
+    }
+    let fails: i32 = totals[4]
+    ft_outln("")
+    if keep {
+        let kept: string = env.work + "-kept"
+        let _k: i32 = pr_run("cp -R " + pr_quote(work) + " " + pr_quote(kept))
+    }
+    if fails > 0 {
+        ft_outln("FAILED: " + ft_itoa(fails) + " snippet(s) disagree with the native compiler.")
+        if keep {
+            ft_outln("scratch kept at " + env.work + "-kept")
+        }
+        return 1
+    }
+    ft_outln("OK: no snippet disagrees with the native compiler.")
+    if keep {
+        ft_outln("scratch kept at " + env.work + "-kept")
+    }
+    return 0
+}

@@ -1,0 +1,8 @@
+# A user `find` wins over the builtin and a 3-parameter `bsearch` is not
+# libc's (#1045). The Python host emitted find_ptr_i32_i32_i32 and
+# bsearch_ptr_i32_i32_i32.
+- flowc_find_i32(xs
++ find(xs, 5, 15)
++ #define bsearch __flowc_libc_bsearch
++ __flowc_libc_bsearch(xs, 5, 23)
+exit 0

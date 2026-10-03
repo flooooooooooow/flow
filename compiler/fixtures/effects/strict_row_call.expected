@@ -1,0 +1,2 @@
+reject
+Call to 'greet' from 'main' requires effect(s) Audit, Log: handle them or declare `with Audit, Log` on the caller

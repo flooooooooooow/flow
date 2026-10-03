@@ -336,7 +336,7 @@ export function random_pivot_quick_sort(xs: &mut [i32]) -> void {
 # quickselect
 #   NOT stable, and it permutes the input
 #   best O(n)   average O(n)   worst O(n^2)
-#   extra space O(1) — the recursion is eliminated entirely
+#   extra space O(1): the recursion is eliminated entirely
 #
 #   Leaves the element that would be at index `k` after a full sort at
 #   `xs[k]`, with everything smaller before it and everything larger after.

@@ -2,9 +2,9 @@
 
 *An isosceles triangle is symmetric across the apex median.*
 
-**Source.** euclid — Elements, Book I, Proposition 5
+**Source.** euclid: Elements, Book I, Proposition 5
 
-## Derived fact 1 — reflection across apex median swaps B and C
+## Derived fact 1: reflection across apex median swaps B and C
 
 **Coordinate.** the Euclidean plane · isosceles triangle · reflection across apex median swaps base · **Derived fact**
 

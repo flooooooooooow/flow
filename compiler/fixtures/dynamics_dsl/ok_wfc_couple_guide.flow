@@ -1,0 +1,37 @@
+dsys plant {
+    discrete
+    dt 0.1
+    n 2 m 1 p 1
+    A 1.0 0.1 0.0 1.0
+    B 0.0 0.1
+    C 1.0 0.0
+}
+horizon rollout finite 20
+analyze plant ga k1 k2 over rollout -> report {
+    full
+}
+wfc field layout {
+    size 3 2
+    tiles 2
+    seed 11
+    pin 1 0
+    collapse 9
+}
+couple plant field layout using report k1 k2 {
+    guidance -> g
+    collapsed -> wfc_collapsed
+    wall_fraction -> wf
+    entropy -> ent
+    other -> nothing
+}
+guide plant with k1 k2 through layout using g over rollout {
+    input_scale -> B_scale
+    energy -> E_guided
+    spectral -> rho_guided
+    stable -> stable_guided
+    collapsed -> cc
+    wall_fraction -> wfr
+}
+function main() -> i32 {
+    return 0
+}

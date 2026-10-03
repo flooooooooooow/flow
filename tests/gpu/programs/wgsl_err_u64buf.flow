@@ -1,0 +1,4 @@
+@gpu
+function k(a: ptr<u64>) -> void {
+    a[0] = 1
+}

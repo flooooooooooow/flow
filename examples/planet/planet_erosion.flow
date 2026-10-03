@@ -8,7 +8,7 @@
 # KEYS
 #   P pause   Esc quit
 #
-# Run: FLOW_HOST=python ./flow gfx examples/planet/planet_erosion.flow
+# Run: ./flow gfx examples/planet/planet_erosion.flow
 
 import "stdlib/gfx.flow"
 import "stdlib/text.flow"

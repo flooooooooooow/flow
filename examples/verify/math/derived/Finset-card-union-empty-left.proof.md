@@ -2,9 +2,9 @@
 
 *Empty left union preserves cardinality bound.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — card(empty ∪ s) <= card(s)
+## Derived fact 1: card(empty ∪ s) <= card(s)
 
 **Coordinate.** Finset · cardinality · empty left union size is bounded · **Derived fact**
 

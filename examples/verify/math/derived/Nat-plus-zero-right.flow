@@ -1,10 +1,10 @@
 # @module examples.verify.math.derived
 # @means  n + 0 = n, derived by induction.
-# @from   peano/induction — Gries & Schneider, Ch. 3
+# @from   peano/induction: Gries & Schneider, Ch. 3
 # @tier   derived
 
 # @means  Adding zero on the right gives the same number.  (12 + 0 = 12)
-# @from   peano/induction — https://en.wikipedia.org/wiki/Mathematical_induction
+# @from   peano/induction: https://en.wikipedia.org/wiki/Mathematical_induction
 # @tier   derived
 # @needs  «Nat» «addition» «zero is the left identity», «Nat» «addition» «successor on the right steps the sum»
 # @used-by «Nat» «addition» «order does not matter»

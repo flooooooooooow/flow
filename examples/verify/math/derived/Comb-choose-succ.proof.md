@@ -2,9 +2,9 @@
 
 *Pascal recurrence at a successor index.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — choose(succ(n), succ(k)) = choose(n, k) + choose(n, succ(k))
+## Derived fact 1: choose(succ(n), succ(k)) = choose(n, k) + choose(n, succ(k))
 
 **Coordinate.** Comb · choose · Pascal recurrence at successors · **Derived fact**
 

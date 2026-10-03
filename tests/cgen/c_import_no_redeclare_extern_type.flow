@@ -1,0 +1,12 @@
+# A plain `extern type` has no #include behind it, so it still needs its
+# own C declaration. The @cImport skip must not apply to it.
+extern type MyHandle
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    puts("ok")
+    return 0
+}

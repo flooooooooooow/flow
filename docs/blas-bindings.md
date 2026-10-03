@@ -122,8 +122,8 @@ Run it yourself: `FLOW_LDFLAGS="-framework Accelerate" ./flow run benchmarks/bla
 
 ## Why This Beats MATLAB
 
-1. **Same BLAS backend** — Both call vendor-optimized BLAS (Accelerate/MKL)
-2. **No interpreter** — Flow compiles to native code
-3. **Zero startup** — No 2-5 second MATLAB launch time
-4. **Tiny binaries** — ~100KB vs 2GB MATLAB Runtime
-5. **Real-time safe** — Can use in audio/embedded (MATLAB can't)
+1. **Same BLAS backend**: Both call vendor-optimized BLAS (Accelerate/MKL)
+2. **No interpreter**: Flow compiles to native code
+3. **Zero startup**: No 2-5 second MATLAB launch time
+4. **Tiny binaries**: ~100KB vs 2GB MATLAB Runtime
+5. **Real-time safe**: Can use in audio/embedded (MATLAB can't)

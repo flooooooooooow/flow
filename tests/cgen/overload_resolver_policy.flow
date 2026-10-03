@@ -1,0 +1,13 @@
+# Stage-A fallback overload resolution must reject an arity-incompatible
+# candidate before scoring types (#725).
+function choose(x: i32, y: i32) -> i32 {
+    return 11
+}
+
+function choose(x: u32) -> i32 {
+    return 22
+}
+
+function main() -> i32 {
+    return choose(3)
+}

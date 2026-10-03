@@ -1,0 +1,8 @@
+fn outer(x: f32) -> f32 {
+    # shader fill inner { color = vec4(1.0) }
+    return x
+}
+
+shader fill outer_fill {
+    color = vec4(outer(0.5))
+}

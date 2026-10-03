@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Self-union intersected with empty is empty.
-# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @from   graham-knuth-patashnik: *Concrete Mathematics*
 # @tier   derived
 
 # @means  (s ∪ s) ∩ empty = empty.

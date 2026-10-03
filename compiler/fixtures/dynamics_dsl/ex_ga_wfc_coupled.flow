@@ -1,0 +1,116 @@
+# GA + WFC coupled pipeline via dsys syntax
+#
+#   1. GA evolves control gains on the plant
+#   2. Unified analysis measures stability / fitness
+#   3. Analysis biases WFC collapse (spatial constraint field)
+#   4. Layout statistics guide scaled state-space evolution
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+dsys plant {
+    discrete
+    dt 0.1
+    n 2 m 1 p 1
+    A 1.0 0.1 0.0 1.0
+    B 0.0 0.1
+    C 1.0 0.0
+}
+
+horizon rollout finite 50
+
+ga evolve on plant over rollout -> k1 k2 {
+    population 12
+    generations 30
+    mutation 0.3
+}
+
+analyze plant ga k1 k2 over rollout -> report {
+    full
+}
+
+wfc field layout {
+    size 4 4
+    tiles 3
+    seed 7
+    pin 0 1
+    collapse 20
+}
+
+couple plant field layout using report k1 k2 {
+    guidance -> guide
+    collapsed -> wfc_collapsed
+    wall_fraction -> wfc_walls
+}
+
+guide plant with k1 k2 through layout using guide over rollout {
+    input_scale -> B_scale
+    energy -> E_guided
+    spectral -> rho_guided
+    stable -> stable_guided
+}
+
+function main() -> i32 {
+    println("")
+    println("=== GA + WFC coupled dynamical pipeline ===")
+    println("")
+    println("--- GA analysis ---")
+    print("  Fitness drop:      ")
+    printf("%.4f", report.fitness_drop)
+    println("")
+    print("  Closed spectral:   ")
+    printf("%.4f", report.closed_spectral_radius)
+    println("")
+    print("  Evolved gains:     ")
+    printf("%.4f", k1)
+    print(", ")
+    printf("%.4f", k2)
+    println("")
+    println("--- WFC (GA-guided collapse) ---")
+    print("  Guided seed:       ")
+    print(guide.seed)
+    println("")
+    print("  Collapsed cells:   ")
+    print(wfc_collapsed)
+    println("")
+    print("  Wall fraction:     ")
+    printf("%.4f", wfc_walls)
+    println("")
+    println("--- Guided state evolution ---")
+    print("  Input scale B:     ")
+    printf("%.4f", B_scale)
+    println("")
+    print("  Layout energy:     ")
+    printf("%.6f", E_guided)
+    println("")
+    print("  Guided spectral:   ")
+    printf("%.4f", rho_guided)
+    println("")
+    if stable_guided == 1 {
+        println("  Guided attractor:  stable")
+    } else {
+        println("  Guided attractor:  unstable")
+    }
+    println("")
+
+    if report.plant_controllable != 1 {
+        return 1
+    }
+    if report.fitness_drop <= 0.0 {
+        return 2
+    }
+    if wfc_collapsed < 8 {
+        return 3
+    }
+    if stable_guided != 1 {
+        return 4
+    }
+    if B_scale <= 1.0 {
+        return 5
+    }
+    if E_guided <= 0.0 {
+        return 6
+    }
+    return 0
+}

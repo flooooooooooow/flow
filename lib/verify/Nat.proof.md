@@ -2,9 +2,9 @@
 
 *Peano definitions for addition on natural numbers.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Definition 1 — Adding zero on the left gives the other number
+## Definition 1: Adding zero on the left gives the other number
 
 **Coordinate.** the natural numbers · addition · zero is the left identity · **Definition**
 
@@ -16,12 +16,12 @@
 
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
-| ① | We stipulate zero is the left identity for addition on the natural numbers — this is a definition, not a derived fact. |  |  |
+| ① | We stipulate zero is the left identity for addition on the natural numbers. This is a definition rather than a derived fact. |  |  |
 | ② | This follows directly from the definition: 0 plus m equals m. Hence proven. | ② | $0 + m = m$ |
 
 `the natural numbers · addition · zero is the left identity`
 
-## Definition 2 — Adding one more on the right steps the sum by one
+## Definition 2: Adding one more on the right steps the sum by one
 
 **Coordinate.** the natural numbers · addition · successor on the right steps the sum · **Definition**
 
@@ -33,7 +33,7 @@
 
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
-| ① | We stipulate successor on the right steps the sum for addition on the natural numbers — this is a definition, not a derived fact. |  |  |
+| ① | We stipulate successor on the right steps the sum for addition on the natural numbers. This is a definition rather than a derived fact. |  |  |
 | ② | This follows directly from the definition: n plus the successor of m equals the successor of n plus m. Hence proven. | ② | $n + \mathrm{succ}(m) = \mathrm{succ}(n + m)$ |
 
 `the natural numbers · addition · successor on the right steps the sum`

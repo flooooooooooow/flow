@@ -2,9 +2,9 @@
 
 *One is the left multiplicative identity for integers.*
 
-**Source.** landau — *Foundations of Analysis*, Ch. 1
+**Source.** landau: *Foundations of Analysis*, Ch. 1
 
-## Derived fact 1 — 1 * m = m
+## Derived fact 1: 1 * m = m
 
 **Coordinate.** the integers · multiplication · one is the left identity · **Derived fact**
 

@@ -1,0 +1,18 @@
+# Flow-native language test: a selective import links and runs.
+#
+# `import mod { name }` pulls one function out of a sibling module. The
+# bundle must carry that function's definition along with the call, or the
+# program does not link.
+#
+# Supersedes (behavioral parts of):
+#   tests/unit/test_bundle_symbol_closure.py::test_compile_bundle_symbol_closure
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+import tests.fixtures.modules.testlib.alpha { alpha_two }
+
+function main() -> i32 {
+    if alpha_two() != 2 {
+        return 1
+    }
+    return 0
+}

@@ -1,0 +1,13 @@
+# Files where flowc and the Python host at the golden revision differ for a
+# reason outside the #996 lowering, with that reason. The gate skips them.
+compiler/fixtures/stage_a_match.flow	Python host bug: a binding arm `other => { ... }` declares `other` inside the condition, so its C does not compile; flowc binds it in the body
+demos/ui_layout_flow/src/main.flow	Python host cannot resolve `stdlib/ui_layout.flow` from the repo root
+demos/ui_layout_window_flow/src/main.flow	Python host cannot resolve `stdlib/ui_layout.flow` from the repo root
+demos/vulkan_2048_flow/src/main.flow	Python host refuses the `../../vulkan_abi` import path
+demos/vulkan_layout_dsl_flow/src/main.flow	Python host refuses the `../../vulkan_abi` import path
+demos/vulkan_tetris_flow/src/main.flow	Python host refuses the `../../vulkan_abi` import path
+examples/demos/ui_layout_flow/src/main.flow	Python host cannot resolve `stdlib/ui_layout.flow` from the repo root
+examples/demos/ui_layout_window_flow/src/main.flow	Python host cannot resolve `stdlib/ui_layout.flow` from the repo root
+examples/demos/vulkan_2048_flow/src/main.flow	Python host cannot resolve `stdlib/vulkan_abi_renderer.flow` from the repo root
+examples/demos/vulkan_layout_dsl_flow/src/main.flow	Python host cannot resolve `stdlib/vulkan_abi_renderer.flow` from the repo root
+examples/demos/vulkan_tetris_flow/src/main.flow	Python host cannot resolve `stdlib/vulkan_abi_renderer.flow` from the repo root

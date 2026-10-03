@@ -1,0 +1,664 @@
+# Stage-A round trip: emit each fixture with flowc, build it with cc, run
+# it and check the exit code; compile every frontend module to an object
+# and link them; then run the self-emit, gen2, self-compile audit,
+# bootstrap and whole-compiler self-host gates.
+#
+#   ./flow tool compiler/scripts/roundtrip.flow
+#
+# Env:
+#   FLOWC_FORCE_HOST=1     emit fixtures with the flowc built from
+#                          compiler/src even when a Stage-A driver exists
+#   FLOWC_PHASE_A_ONLY=1   stop after the Phase-A checks
+#
+# It leaves stage_a_driver, stage_a_driver_flow and the self-emitted
+# drivers in compiler/build for the gates and packaging that follow.
+
+import "tools/flow_cli/sys.flow"
+import "compiler/scripts/gate_lib.flow"
+import std.process { ProcCmd, ProcStrs, proc_arg }
+
+# Emit Flow to C. Prefer the Stage-A Flow driver when built (fast, low
+# memory), else the flowc built from the current compiler/src (`host`).
+# `force` (or FLOWC_FORCE_HOST=1) picks the latter, for when compiler/src
+# changed and the driver is stale. `envs` are NAME=value pairs for the
+# emitter. With `log` set, stdout and stderr go to that file. The status.
+function stage_a_emit(host: string, src: string, c_out: string, force: bool, envs: ptr<ProcStrs>, log: string) -> i32 {
+    let have_main: bool = is_file("compiler/src/main.flow")
+    let forced: bool = force or s_eq(env("FLOWC_FORCE_HOST"), "1")
+    let mut argv: ptr<ProcStrs> = sl_new()
+    if forced and have_main {
+        argv = sl_of1(host)
+    } elif is_exec("compiler/build/stage_a_driver_flow") {
+        argv = sl_of3("./compiler/build/stage_a_driver_flow", src, c_out)
+    } elif is_exec("compiler/build/stage_a_driver") {
+        argv = sl_of3("./compiler/build/stage_a_driver", src, c_out)
+    } elif have_main {
+        argv = sl_of1(host)
+    } else {
+        let msg: string = "FAIL stage_a_emit: no emitter (compiler/src/main.flow or stage_a_driver*)"
+        if s_len(log) > 0 {
+            let _w: bool = write_text(log, msg + "\n")
+        } else {
+            errln(msg)
+        }
+        return 1
+    }
+    if sl_len(argv) == 1 {
+        # The script exported these, so later steps saw them too.
+        env_set("FLOWC_IN", src)
+        env_set("FLOWC_OUT", c_out)
+    }
+    let c: ptr<ProcCmd> = cmd(argv)
+    if force {
+        cmd_env(c, "FLOWC_FORCE_HOST", "1")
+    }
+    let mut i: i32 = 0
+    while i < sl_len(envs) {
+        let kv: string = sl_get(envs, i)
+        let eq: i32 = s_find_byte(kv, 61, 0)
+        cmd_env(c, s_slice(kv, 0, eq), s_from(kv, eq + 1))
+        i = i + 1
+    }
+    if s_len(log) > 0 {
+        return run_to_file(c, log, true)
+    }
+    return run(c)
+}
+
+# stage_a_emit that stops the run when it fails.
+function emit(host: string, src: string, c_out: string, force: bool, envs: ptr<ProcStrs>) {
+    check(stage_a_emit(host, src, c_out, force, envs, ""))
+}
+
+# Emit compiler/fixtures/NAME.flow, build and run it, expect `want`.
+function run_case(host: string, name: string, want: i32) {
+    let c_out: string = "compiler/build/" + name + ".c"
+    let bin: string = "compiler/build/" + name
+    outln("=== " + name + " ===")
+    emit(host, "compiler/fixtures/" + name + ".flow", c_out, false, sl_new())
+    let args: ptr<ProcStrs> = sl_of3("-O0", "-o", bin)
+    sl_push(args, c_out)
+    gate_cc(args)
+    let code: i32 = gate_status("./" + bin)
+    outln("exit=" + s_itoa(code))
+    if code != want {
+        cli_exit(1)
+    }
+    outln("PASS " + name)
+}
+
+# Compile a real flowc module to a C object (modules have no main, so no
+# link or run). `deps` names the modules whose NAME_flowc.h headers are
+# force-included, in order. Always host-emitted, so edits to compiler/src
+# are picked up even when a stale stage_a_driver_flow exists.
+function compile_module(host: string, name: string, deps: string) {
+    let c_out: string = "compiler/build/" + name + "_flowc.c"
+    outln("=== compile_module " + name + " ===")
+    emit(host, "compiler/src/" + name + ".flow", c_out, true, sl_new())
+    let args: ptr<ProcStrs> = sl_of2("-O0", "-c")
+    let d: ptr<ProcStrs> = s_words(deps)
+    let mut i: i32 = 0
+    while i < sl_len(d) {
+        sl_push2(args, "-include", "compiler/build/" + sl_get(d, i) + "_flowc.h")
+        i = i + 1
+    }
+    sl_push(args, c_out)
+    sl_push2(args, "-o", "compiler/build/" + name + "_flowc.o")
+    gate_cc(args)
+    outln("PASS compile_module " + name)
+}
+
+# Derive compiler/build/NAME_flowc.h from NAME_flowc.c for each NAME.
+function hdrs(tool: string, names: string) {
+    let n: ptr<ProcStrs> = s_words(names)
+    let mut i: i32 = 0
+    while i < sl_len(n) {
+        let base: string = "compiler/build/" + sl_get(n, i) + "_flowc"
+        gate_hdr(tool, base + ".c", base + ".h")
+        i = i + 1
+    }
+}
+
+# Stop with `msg` unless FILE contains NEEDLE.
+function need(file: string, needle: string, msg: string) {
+    if not has(file, needle) {
+        gate_fail(msg)
+    }
+}
+
+# Stop with `msg` when FILE contains NEEDLE.
+function refuse(file: string, needle: string, msg: string) {
+    if has(file, needle) {
+        gate_fail(msg)
+    }
+}
+
+# Each needle must be in the module's emitted C.
+function module_needs(name: string, needles: ptr<ProcStrs>) {
+    let file: string = "compiler/build/" + name + "_flowc.c"
+    let mut i: i32 = 0
+    while i < sl_len(needles) {
+        let n: string = sl_get(needles, i)
+        need(file, n, "FAIL compile_module " + name + ": missing '" + n + "' in emitted C")
+        i = i + 1
+    }
+}
+
+# `grep -n PATTERN FILE >&2 || true`
+function show_matches(file: string, needle: string) {
+    let lines: ptr<ProcStrs> = s_lines(read_text(file))
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        if s_contains(sl_get(lines, i), needle) {
+            errln(s_itoa(i + 1) + ":" + sl_get(lines, i))
+        }
+        i = i + 1
+    }
+}
+
+# Exactly one `#include <stdint.h>` in a bundled unit.
+function one_stdint(file: string, label: string) {
+    let n: i32 = count_lines(file, "#include <stdint.h>")
+    if n != 1 {
+        gate_fail("FAIL " + label + ": expected exactly one stdint include, got " + s_itoa(n))
+    }
+}
+
+# Every symbol must appear in `nm OBJ`.
+function nm_needs(obj: string, syms: string, before: string, after: string) {
+    let s: ptr<ProcStrs> = s_words(syms)
+    let mut i: i32 = 0
+    while i < sl_len(s) {
+        if not nm_has(obj, sl_get(s, i)) {
+            gate_fail(before + sl_get(s, i) + after)
+        }
+        i = i + 1
+    }
+}
+
+# `./flow tool compiler/scripts/NAME.flow` with optional NAME=value env.
+function sub_gate(root: string, name: string, envs: ptr<ProcStrs>) {
+    let c: ptr<ProcCmd> = cmd(sl_of3(root + "/flow", "tool", "compiler/scripts/" + name + ".flow"))
+    let mut i: i32 = 0
+    while i < sl_len(envs) {
+        let kv: string = sl_get(envs, i)
+        let eq: i32 = s_find_byte(kv, 61, 0)
+        cmd_env(c, s_slice(kv, 0, eq), s_from(kv, eq + 1))
+        i = i + 1
+    }
+    check(run(c))
+}
+
+# FLOWC_BUNDLE=1 FLOWC_DIR=DIR, plus `more`.
+function bundle_env(dir: string, more: string) -> ptr<ProcStrs> {
+    let e: ptr<ProcStrs> = sl_of2("FLOWC_BUNDLE=1", "FLOWC_DIR=" + dir)
+    if s_len(more) > 0 {
+        sl_push(e, more)
+    }
+    return e
+}
+
+function main() -> i32 {
+    let root: string = gate_enter()
+    gate_mkdir("compiler/build")
+    # flowc built from the current compiler/src by the checked-in bootstrap.
+    let host: string = gate_flowc_host(root)
+    # Header derivation for the per-module objects (scripts/tools/c_to_hdr),
+    # built once here and passed on to the nested gates.
+    let hdr: string = gate_c_to_hdr(root)
+    env_set("C_TO_HDR", hdr)
+
+    run_case(host, "stage_a_sum", 45)
+    run_case(host, "stage_a_for_sum", 45)
+    run_case(host, "stage_a_const", 12)
+    run_case(host, "stage_a_struct", 42)
+    # Dogfood: the token.flow const subset (needs the AST_CONST=31 emit).
+    # Export consts are non-static `const int32_t` for multi-module linkage.
+    run_case(host, "stage_a_token_consts", 29)
+    need("compiler/build/stage_a_token_consts.c", "const int32_t", "FAIL stage_a_token_consts: const emit missing (expected const int32_t; AST_CONST=31)")
+    refuse("compiler/build/stage_a_token_consts.c", "static const int32_t", "FAIL stage_a_token_consts: export const should be non-static")
+    # String `+` is concatenation (__flowc_str_concat), not pointer arithmetic.
+    run_case(host, "stage_a_strcat", 42)
+    if not has("compiler/build/stage_a_strcat.c", "__flowc_str_concat(__flowc_str_concat(\"hello, \", name), \"!\")") {
+        errln("FAIL stage_a_strcat: expected nested __flowc_str_concat for the literal chain")
+        show_matches("compiler/build/stage_a_strcat.c", "hello")
+        cli_exit(1)
+    }
+    refuse("compiler/build/stage_a_strcat.c", "(\"hello, \" + ", "FAIL stage_a_strcat: string operands emitted as C addition")
+    need("compiler/build/stage_a_strcat.c", "const char* joined = __flowc_str_concat", "FAIL stage_a_strcat: inferred let over a concat should be const char*")
+
+    # Inferred `let` (no `: Type`): struct-returning call, cast, struct literal.
+    run_case(host, "stage_a_infer_struct", 42)
+    if not has("compiler/build/stage_a_infer_struct.c", "Pair p = make_pair(20, 22);") {
+        errln("FAIL stage_a_infer_struct: inferred let should be typed Pair")
+        show_matches("compiler/build/stage_a_infer_struct.c", "make_pair(20")
+        cli_exit(1)
+    }
+    refuse("compiler/build/stage_a_infer_struct.c", "int32_t p = make_pair", "FAIL stage_a_infer_struct: struct return inferred as int32_t")
+    need("compiler/build/stage_a_infer_struct.c", "int64_t wide = (int64_t)(7);", "FAIL stage_a_infer_struct: cast init should infer int64_t")
+    need("compiler/build/stage_a_infer_struct.c", "Pair lit = (Pair){", "FAIL stage_a_infer_struct: struct literal init should infer Pair")
+    # Dogfood: Token struct + flowc_make_tok (struct return type).
+    run_case(host, "stage_a_token_struct", 26)
+    # ptr<i32> params and lets, unary &, index (exit 40+2).
+    run_case(host, "stage_a_ptr", 42)
+    # `expr as Type` casts.
+    run_case(host, "stage_a_cast", 42)
+    # Indexed assignment p[0] = n.
+    run_case(host, "stage_a_index_assign", 42)
+    # Array init, while, %, if/else and puts("...").
+    run_case(host, "stage_a_array_else", 42)
+    need("compiler/build/stage_a_array_else.c", "} else {", "FAIL stage_a_array_else: expected clean '} else {' emit")
+    need("compiler/build/stage_a_array_else.c", "int32_t a[4] = { 10, 20, 30, 5 };", "FAIL stage_a_array_else: array local init missing")
+    need("compiler/build/stage_a_array_else.c", "puts(\"ok\")", "FAIL stage_a_array_else: string literal in call missing")
+    need("compiler/build/stage_a_array_else.c", " % ", "FAIL stage_a_array_else: modulo emit missing")
+    # Recursive fibonacci (the examples/basics/fibonacci.flow twin): 55.
+    run_case(host, "stage_a_fib", 55)
+
+    # First real module: compiler/src/token.flow to an object (export
+    # struct/function unwrap, ptr<u8> field types).
+    compile_module(host, "token", "")
+    module_needs("token", sl_of3("typedef struct Token", "flowc_make_tok", "uint8_t* input"))
+    outln("PASS compile_module token greps")
+
+    # Second module: ast.flow (casts, indexed field assign, void returns).
+    compile_module(host, "ast", "")
+    module_needs("ast", sl_of3("flowc_ast_new", "typedef struct AstNode", "AstArena"))
+    outln("PASS compile_module ast greps")
+
+    # Third module: lexer.flow (imports .token, skipped at emit; the token
+    # header is force-included).
+    hdrs(hdr, "token")
+    compile_module(host, "lexer", "token")
+    # 'NULL' covers the null literal lowering, which fileio.flow no longer
+    # exercises now that its io wrappers are emitted as builtin shims.
+    let lex: ptr<ProcStrs> = sl_of3("flowc_lexer_new", "flowc_lexer_next", "flowc_lex_classify_keyword")
+    sl_push(lex, "NULL")
+    module_needs("lexer", lex)
+    # Linkability smoke: both objects resolve (no main: relocatable link).
+    gate_cc(s_words("-r -o compiler/build/token_lexer_flowc.o compiler/build/token_flowc.o compiler/build/lexer_flowc.o"))
+    if not nm_has("compiler/build/lexer_flowc.o", "flowc_lexer_next") {
+        gate_fail("FAIL compile_module lexer: flowc_lexer_next missing from object")
+    }
+    if not nm_has("compiler/build/token_flowc.o", "TOK_EOF") {
+        gate_fail("FAIL compile_module lexer: TOK_EOF missing from token object")
+    }
+    outln("PASS compile_module lexer greps+link")
+
+    # Fourth module: fileio.flow (extern gives #include <stdio.h>; string is
+    # const char*). Its io wrappers lower to the builtin shims, so the NULL
+    # lowering is checked on lexer.flow above.
+    compile_module(host, "fileio", "")
+    let fio: ptr<ProcStrs> = sl_of3("flowc_read_file", "flowc_write_file", "#include <stdio.h>")
+    sl_push(fio, "const char*")
+    module_needs("fileio", fio)
+    need("compiler/build/fileio_flowc.c", "static const int32_t FLOWC_IO_SEEK_SET", "FAIL compile_module fileio: non-export const should be static")
+    outln("PASS compile_module fileio greps")
+
+    # Field DSL expander: a leaf module every source read goes through.
+    compile_module(host, "field_dsl", "")
+    hdrs(hdr, "field_dsl")
+    # Shared byte buffer (#985), a leaf the DSL expanders import.
+    compile_module(host, "bytebuf", "")
+    hdrs(hdr, "bytebuf")
+    compile_module(host, "dynamics_dsl", "bytebuf")
+    hdrs(hdr, "dynamics_dsl")
+    compile_module(host, "flow_blocks", "bytebuf")
+    hdrs(hdr, "flow_blocks")
+    # Shader DSL: a leaf module every source read goes through (host stub).
+    compile_module(host, "shader_dsl", "bytebuf")
+    hdrs(hdr, "shader_dsl")
+
+    # Fifth module: parser.flow (imports token/ast/lexer: their headers).
+    hdrs(hdr, "ast lexer")
+    # Effect table shared by cgen, typecheck and resolve (#675).
+    compile_module(host, "effects", "ast")
+    hdrs(hdr, "effects")
+    # Function attribute vocabulary: parser guards, typecheck checks, cgen
+    # lowering (#1028, #1029).
+    compile_module(host, "attributes", "")
+    hdrs(hdr, "attributes")
+    # Sort and find plan selection used by cgen (#1054).
+    compile_module(host, "ordering_hints", "")
+    hdrs(hdr, "ordering_hints")
+    compile_module(host, "sort_plans", "")
+    hdrs(hdr, "sort_plans")
+    compile_module(host, "sort_sites", "token ast ordering_hints")
+    hdrs(hdr, "sort_sites")
+    compile_module(host, "parser", "token ast lexer attributes")
+    module_needs("parser", sl_of3("flowc_parser_new", "flowc_parse_program", "typedef struct Parser"))
+    # Prototypes for mutual-recursion forward declarations.
+    need("compiler/build/parser_flowc.c", "int32_t flowc_parse_expr(Parser* p);", "FAIL compile_module parser: forward-decl prototype missing")
+    outln("PASS compile_module parser greps")
+
+    # Proof-layer erasure (theorem / assume / therefore / claim refs), run by
+    # cgen, jsgen and the typecheck before they read the tree (#996).
+    compile_module(host, "proof_lower", "ast")
+    hdrs(hdr, "proof_lower")
+
+    # Sixth module: cgen.flow (imports token/ast; extern gives string.h).
+    compile_module(host, "cgen", "token ast effects proof_lower attributes sort_plans sort_sites")
+    let cg: ptr<ProcStrs> = sl_of3("flowc_cgen_emit", "flowc_cgen_emit_ex", "typedef struct CgenBuf")
+    sl_push2(cg, "#include <string.h>", " % ")
+    module_needs("cgen", cg)
+    # Prototypes for mutual-recursion forward declarations (emit_expr/stmt/block).
+    need("compiler/build/cgen_flowc.c", "void flowc_cgen_emit_expr(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);", "FAIL compile_module cgen: forward-decl prototype missing")
+    outln("PASS compile_module cgen greps")
+
+    # typecheck.flow resolves calls through the native overload modules, so
+    # those come first, in dependency order, and their headers follow.
+    compile_module(host, "overload", "")
+    compile_module(host, "overload_table", "")
+    compile_module(host, "type_name", "ast")
+    compile_module(host, "expr_type", "ast")
+    hdrs(hdr, "overload overload_table type_name expr_type")
+    compile_module(host, "overload_args", "ast expr_type type_name")
+    compile_module(host, "overload_select", "ast overload_table overload type_name")
+    compile_module(host, "overload_registry", "ast overload_table")
+    hdrs(hdr, "overload_args overload_select overload_registry")
+    # Header order matters: -include applies in sequence, and the select
+    # header names FlowcOverloadTable, so the table header comes first.
+    compile_module(host, "overload_call", "ast overload_table overload_args overload_select")
+    hdrs(hdr, "overload_call")
+
+    # Seventh module: typecheck.flow (imports ast and the overload modules).
+    compile_module(host, "typecheck", "ast attributes effects proof_lower overload_table overload_call overload_registry overload_select")
+    let tc: ptr<ProcStrs> = sl_of3("flowc_typecheck", "flowc_tc_init", "flowc_tc_seed_export")
+    sl_push(tc, "flowc_tc_check_program")
+    sl_push2(tc, "typedef struct TcCtx", "seed_nlen")
+    module_needs("typecheck", tc)
+    outln("PASS compile_module typecheck greps")
+
+    # Eighth module: resolve.flow (imports ast/parser/fileio/cgen/typecheck).
+    hdrs(hdr, "parser fileio cgen typecheck")
+    # The type checker (sem_*, the port of the Python checker) and strutil,
+    # which resolve calls.
+    compile_module(host, "strutil", "")
+    compile_module(host, "sem_util", "")
+    hdrs(hdr, "strutil sem_util")
+    compile_module(host, "sem_types", "sem_util")
+    hdrs(hdr, "sem_types")
+    compile_module(host, "sem_cheader", "sem_util")
+    hdrs(hdr, "sem_cheader")
+    compile_module(host, "sem_model", "token ast lexer sem_util sem_types")
+    hdrs(hdr, "sem_model")
+    compile_module(host, "sem_check", "token ast lexer parser sem_util sem_types sem_model sem_cheader")
+    hdrs(hdr, "sem_check")
+
+    compile_module(host, "pipeline_fusion", "ast")
+    hdrs(hdr, "pipeline_fusion")
+    compile_module(host, "resolve", "token ast lexer parser fileio field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl effects sort_plans cgen overload_table overload_call typecheck strutil sem_util sem_types sem_model sem_check pipeline_fusion")
+    let rs: ptr<ProcStrs> = sl_of3("flowc_bundle_emit", "flowc_bundle_typecheck", "flowc_resolve_sibling_path")
+    sl_push(rs, "flowc_resolve_dirname")
+    module_needs("resolve", rs)
+    outln("PASS compile_module resolve greps")
+
+    # Optional backends, kept out of flowc_frontend.o and the self-host
+    # fixed point: jsgen.flow and fmt.flow are emitted, compiled, and linked
+    # with token/ast in a separate relocatable object.
+    compile_module(host, "jsgen", "token ast proof_lower")
+    module_needs("jsgen", sl_of2("flowc_jsgen_emit", "typedef struct JsgenBuf"))
+    outln("PASS compile_module jsgen greps")
+
+    compile_module(host, "fmt", "token lexer ast")
+    module_needs("fmt", sl_of3("flowc_fmt_emit", "flowc_fmt_source", "typedef struct FmtBuf"))
+    outln("PASS compile_module fmt greps")
+
+    gate_cc(s_words("-r -o compiler/build/flowc_jsgen_fmt.o compiler/build/token_flowc.o compiler/build/ast_flowc.o compiler/build/proof_lower_flowc.o compiler/build/jsgen_flowc.o compiler/build/fmt_flowc.o"))
+    nm_needs("compiler/build/flowc_jsgen_fmt.o", "flowc_jsgen_emit flowc_fmt_emit", "FAIL jsgen/fmt link smoke: ", " missing from flowc_jsgen_fmt.o")
+    outln("PASS link smoke flowc_jsgen_fmt.o")
+
+    # FLOWC_BACKEND=js and fmt fixture smokes (host emit via main.flow).
+    outln("=== jsgen fixture smoke (FLOWC_BACKEND=js) ===")
+    let js: ptr<ProcCmd> = cmd(sl_of1(host))
+    cmd_env(js, "FLOWC_BACKEND", "js")
+    cmd_env(js, "FLOWC_IN", "compiler/fixtures/stage_a_sum.flow")
+    cmd_env(js, "FLOWC_OUT", "compiler/build/stage_a_sum.js")
+    check(run(js))
+    need("compiler/build/stage_a_sum.js", "function", "FAIL jsgen fixture: missing 'function' in stage_a_sum.js")
+    need("compiler/build/stage_a_sum.js", "return", "FAIL jsgen fixture: missing 'return' in stage_a_sum.js")
+    if have("node") {
+        # Syntax check only (JS has no top-level call of main).
+        gate_run(sl_of3("node", "--check", "compiler/build/stage_a_sum.js"))
+    }
+    outln("PASS jsgen fixture smoke")
+
+    outln("=== fmt fixture smoke (FLOWC_BACKEND=fmt) ===")
+    let fm: ptr<ProcCmd> = cmd(sl_of1(host))
+    cmd_env(fm, "FLOWC_BACKEND", "fmt")
+    cmd_env(fm, "FLOWC_IN", "compiler/fixtures/stage_a_sum.flow")
+    cmd_env(fm, "FLOWC_OUT", "compiler/build/stage_a_sum.fmt.flow")
+    check(run(fm))
+    need("compiler/build/stage_a_sum.fmt.flow", "function", "FAIL fmt fixture: missing pretty-printed 'function'")
+    outln("PASS fmt fixture smoke")
+
+    # Multi-file link smoke: emit math.flow + main.flow (import skipped), 42.
+    sub_gate(root, "stage_a_link_two", sl_of1("FLOWC_RESOLVE_IMPORTS=1"))
+
+    # Phase A's stable bootstrap boundary ends here. The bundle, typecheck,
+    # self-emit and fixed-point checks below exercise Phase B work.
+    if s_eq(env("FLOWC_PHASE_A_ONLY"), "1") {
+        outln("PASS flowc Phase-A roundtrip")
+        return 0
+    }
+
+    # Multi-file bundle: FLOWC_BUNDLE=1 resolves .bundle_lib into one TU,
+    # exit 42. The default typecheck runs flowc_bundle_typecheck (deps
+    # first, export seed). Host emit: a stale driver may predate bundle TC.
+    outln("=== FLOWC_BUNDLE fixtures ===")
+    emit(host, "compiler/fixtures/bundle_main.flow", "compiler/build/bundle_main.c", true, bundle_env("compiler/fixtures", ""))
+    need("compiler/build/bundle_main.c", "twice", "FAIL FLOWC_BUNDLE: expected twice from bundle_lib in bundled C")
+    need("compiler/build/bundle_main.c", "int32_t N", "FAIL FLOWC_BUNDLE: expected const N from bundle_lib")
+    # Includes only once (deps after the first use emit_ex flags&1).
+    one_stdint("compiler/build/bundle_main.c", "FLOWC_BUNDLE")
+    gate_cc(s_words("-O0 -o compiler/build/bundle_main compiler/build/bundle_main.c"))
+    gate_expect_exit("bundle_main", "./compiler/build/bundle_main", 42)
+
+    # bundle_tc_ok: same shape as bundle_main; default typecheck + bundle emit.
+    emit(host, "compiler/fixtures/bundle_tc_ok.flow", "compiler/build/bundle_tc_ok.c", true, bundle_env("compiler/fixtures", ""))
+    if not is_file("compiler/build/bundle_tc_ok.c") {
+        gate_fail("FAIL FLOWC_BUNDLE: bundle_tc_ok should emit with default typecheck")
+    }
+
+    # bundle_tc_bad: undefined no_such, so the bundle typecheck fails and no
+    # C is written.
+    rm_f("compiler/build/bundle_tc_bad.c")
+    let bad_rc: i32 = stage_a_emit(host, "compiler/fixtures/bundle_tc_bad.flow", "compiler/build/bundle_tc_bad.c", true, bundle_env("compiler/fixtures", ""), "")
+    outln("bundle_tc_bad emit rc=" + s_itoa(bad_rc))
+    if bad_rc == 0 {
+        cli_exit(1)
+    }
+    if is_file("compiler/build/bundle_tc_bad.c") {
+        gate_fail("FAIL FLOWC_BUNDLE: bundle_tc_bad should not write C when typecheck on")
+    }
+    # The opt-out still emits the bad fixture (bundle typecheck skipped).
+    emit(host, "compiler/fixtures/bundle_tc_bad.flow", "compiler/build/bundle_tc_bad_optout.c", true, bundle_env("compiler/fixtures", "FLOWC_TYPECHECK=0"))
+    if not is_file("compiler/build/bundle_tc_bad_optout.c") {
+        gate_fail("FAIL FLOWC_TYPECHECK=0: expected bundle_tc_bad opt-out emit to write C")
+    }
+    # bundle_infer_main: `let p = make_pair(...)` where make_pair lives in
+    # the sibling module: the type comes from the bundle signature table.
+    emit(host, "compiler/fixtures/bundle_infer_main.flow", "compiler/build/bundle_infer_main.c", true, bundle_env("compiler/fixtures", ""))
+    if not has("compiler/build/bundle_infer_main.c", "Pair p = make_pair(20, 22);") {
+        errln("FAIL bundle_infer: cross-module inferred let should be typed Pair")
+        show_matches("compiler/build/bundle_infer_main.c", "make_pair(20")
+        cli_exit(1)
+    }
+    refuse("compiler/build/bundle_infer_main.c", "int32_t p = make_pair", "FAIL bundle_infer: cross-module struct return inferred as int32_t")
+    gate_cc(s_words("-O0 -o compiler/build/bundle_infer_main compiler/build/bundle_infer_main.c"))
+    gate_expect_exit("bundle_infer_main", "./compiler/build/bundle_infer_main", 42)
+
+    outln("PASS FLOWC_BUNDLE fixtures")
+
+    # Real frontend pair: FLOWC_BUNDLE=1 emits token.flow then lexer.flow in
+    # one TU (deps first). No header derivation: Token and TOK_* are in the
+    # same file.
+    outln("=== FLOWC_BUNDLE lexer (token+lexer one TU) ===")
+    emit(host, "compiler/src/lexer.flow", "compiler/build/bundle_lexer.c", true, bundle_env("compiler/src", ""))
+    need("compiler/build/bundle_lexer.c", "typedef struct Token", "FAIL FLOWC_BUNDLE lexer: expected Token from token.flow in bundled C")
+    need("compiler/build/bundle_lexer.c", "flowc_lexer_next", "FAIL FLOWC_BUNDLE lexer: expected flowc_lexer_next from lexer.flow")
+    one_stdint("compiler/build/bundle_lexer.c", "FLOWC_BUNDLE lexer")
+    gate_cc(s_words("-O0 -c compiler/build/bundle_lexer.c -o compiler/build/bundle_lexer.o"))
+    if not nm_has("compiler/build/bundle_lexer.o", "flowc_lexer_next") {
+        gate_fail("FAIL FLOWC_BUNDLE lexer: flowc_lexer_next missing from object")
+    }
+    if not nm_has("compiler/build/bundle_lexer.o", "TOK_EOF") {
+        gate_fail("FAIL FLOWC_BUNDLE lexer: TOK_EOF missing from object")
+    }
+    outln("PASS FLOWC_BUNDLE lexer (token+lexer one TU)")
+
+    # Frontend parser bundle: token+ast+lexer+parser in one TU (deps first).
+    # Needs the 1MB out_cap in main/driver.
+    outln("=== FLOWC_BUNDLE parser (token+ast+lexer+parser one TU) ===")
+    emit(host, "compiler/src/parser.flow", "compiler/build/bundle_parser.c", true, bundle_env("compiler/src", ""))
+    need("compiler/build/bundle_parser.c", "flowc_parse_program", "FAIL FLOWC_BUNDLE parser: expected flowc_parse_program from parser.flow")
+    need("compiler/build/bundle_parser.c", "typedef struct AstNode", "FAIL FLOWC_BUNDLE parser: expected AstNode from ast.flow in bundled C")
+    need("compiler/build/bundle_parser.c", "typedef struct Token", "FAIL FLOWC_BUNDLE parser: expected Token from token.flow in bundled C")
+    need("compiler/build/bundle_parser.c", "flowc_lexer_next", "FAIL FLOWC_BUNDLE parser: expected flowc_lexer_next from lexer.flow")
+    one_stdint("compiler/build/bundle_parser.c", "FLOWC_BUNDLE parser")
+    gate_cc(s_words("-O0 -c compiler/build/bundle_parser.c -o compiler/build/bundle_parser.o"))
+    if not nm_has("compiler/build/bundle_parser.o", "flowc_parse_program") {
+        gate_fail("FAIL FLOWC_BUNDLE parser: flowc_parse_program missing from object")
+    }
+    if not nm_has("compiler/build/bundle_parser.o", "flowc_lexer_next") {
+        gate_fail("FAIL FLOWC_BUNDLE parser: flowc_lexer_next missing from object")
+    }
+    outln("PASS FLOWC_BUNDLE parser (token+ast+lexer+parser one TU)")
+
+    # Default-on typecheck fixtures (host emit picks up the latest main.flow
+    # semantics before stage_a_driver_flow is rebuilt below).
+    outln("=== FLOWC_TYPECHECK fixtures (default on) ===")
+    emit(host, "compiler/fixtures/typecheck_ok.flow", "compiler/build/typecheck_ok.c", true, sl_new())
+    gate_cc(s_words("-O0 -o compiler/build/typecheck_ok compiler/build/typecheck_ok.c"))
+    gate_expect_exit("typecheck_ok", "./compiler/build/typecheck_ok", 42)
+    rm_f("compiler/build/typecheck_undef.c")
+    let undef_log: string = "compiler/build/typecheck_undef.log"
+    let tc_bad_rc: i32 = stage_a_emit(host, "compiler/fixtures/typecheck_undef.flow", "compiler/build/typecheck_undef.c", true, sl_new(), undef_log)
+    outln("typecheck_undef emit rc=" + s_itoa(tc_bad_rc))
+    if tc_bad_rc == 0 {
+        cli_exit(1)
+    }
+    if is_file("compiler/build/typecheck_undef.c") {
+        gate_fail("FAIL FLOWC_TYPECHECK: undef fixture should not write C")
+    }
+    if not has(undef_log, "error: Undefined variable 'y'") {
+        errln("FAIL FLOWC_TYPECHECK: expected unbound ident diagnostic")
+        errs(read_text(undef_log))
+        cli_exit(1)
+    }
+    # `return y` is on line 5 of typecheck_undef.flow (1-based).
+    if not has(undef_log, "typecheck_undef.flow:5:") {
+        errln("FAIL FLOWC_TYPECHECK: expected location-rich diagnostic (at 5:…)")
+        errs(read_text(undef_log))
+        cli_exit(1)
+    }
+    if not has(undef_log, "compiler/fixtures/typecheck_undef.flow") {
+        errln("FAIL FLOWC_TYPECHECK: expected file path in diagnostic")
+        errs(read_text(undef_log))
+        cli_exit(1)
+    }
+    # The opt-out still emits the undef fixture (typecheck skipped).
+    emit(host, "compiler/fixtures/typecheck_undef.flow", "compiler/build/typecheck_undef_optout.c", true, sl_of1("FLOWC_TYPECHECK=0"))
+    if not is_file("compiler/build/typecheck_undef_optout.c") {
+        gate_fail("FAIL FLOWC_TYPECHECK=0: expected opt-out emit to write C")
+    }
+    outln("PASS FLOWC_TYPECHECK fixtures")
+
+    # Link smoke: all frontend modules resolve into one relocatable object.
+    link_frontend("compiler/build/flowc_frontend.o", "", "_flowc")
+    check_frontend_symbols("compiler/build/flowc_frontend.o", "FAIL link smoke: ", " missing from flowc_frontend.o")
+    outln("PASS link smoke flowc_frontend.o")
+
+    # Headers for the small C host (Parser / AstArena layouts from the
+    # Stage-A emit).
+    hdrs(hdr, "parser cgen fileio typecheck resolve")
+
+    # Stage-A driver: C main + flowc_frontend.o parses and emits the fixture.
+    outln("=== stage_a_driver ===")
+    gate_cc(s_words("-O0 -I compiler/build -I compiler/host -o compiler/build/stage_a_driver compiler/host/stage_a_driver.c compiler/build/flowc_frontend.o -lm"))
+    sum_smoke("./compiler/build/stage_a_driver", "compiler/build/driven_sum.c", "compiler/build/driven_sum", "driven_sum")
+    outln("PASS stage_a_driver")
+
+    # Flow-written Stage-A driver: emit driver.flow (imports skipped) and
+    # link it with the frontend. It prefers argv; FLOWC_IN / FLOWC_OUT
+    # still work.
+    outln("=== stage_a_driver_flow ===")
+    let dh: ptr<ProcStrs> = driver_headers()
+    compile_module(host, "driver", sl_join(dh, " "))
+    need("compiler/build/driver_flowc.c", "int main(int argc, char **argv)", "FAIL stage_a_driver_flow: expected int main(int argc, char **argv) in emitted C")
+    # Imports skipped: parse/cgen bodies must not appear in the driver TU.
+    if has_line_start("compiler/build/driver_flowc.c", "int32_t flowc_parse_program") {
+        gate_fail("FAIL stage_a_driver_flow: parse symbols must come from frontend, not driver emit")
+    }
+    gate_cc(s_words("-O0 -o compiler/build/stage_a_driver_flow compiler/build/driver_flowc.o compiler/build/flowc_frontend.o -lm"))
+    # The argv path (preferred).
+    sum_smoke("./compiler/build/stage_a_driver_flow", "compiler/build/driven_sum_flow_cli.c", "compiler/build/driven_sum_flow_cli", "driven_sum_flow_cli")
+    # The getenv path (compatibility).
+    let ge: ptr<ProcCmd> = cmd(sl_of1("./compiler/build/stage_a_driver_flow"))
+    cmd_env(ge, "FLOWC_IN", "compiler/fixtures/stage_a_sum.flow")
+    cmd_env(ge, "FLOWC_OUT", "compiler/build/driven_sum_flow.c")
+    check(run(ge))
+    gate_cc(s_words("-O0 -o compiler/build/driven_sum_flow compiler/build/driven_sum_flow.c"))
+    gate_expect_exit("driven_sum_flow", "./compiler/build/driven_sum_flow", 45)
+    outln("PASS stage_a_driver_flow")
+
+    # f32/f64 and float literals, after the frontend rebuild so the Stage-A
+    # driver can parse TOK_FLOAT.
+    run_case(host, "stage_a_float", 42)
+    need("compiler/build/stage_a_float.c", "float x = 40.5f;", "FAIL stage_a_float: expected f32 let with 40.5f")
+    need("compiler/build/stage_a_float.c", "double y = 1.5;", "FAIL stage_a_float: expected f64 let with 1.5")
+    need("compiler/build/stage_a_float.c", "(int32_t)(z)", "FAIL stage_a_float: expected cast to i32")
+
+    # match, after the frontend rebuild so the Stage-A driver can parse it.
+    # Arms: int literals (negative too), the `_` wildcard, a binding catch-all.
+    run_case(host, "stage_a_match", 42)
+    need("compiler/build/stage_a_match.c", "int32_t __flowc_match = v;", "FAIL stage_a_match: expected scrutinee temp __flowc_match")
+    need("compiler/build/stage_a_match.c", "} else if (__flowc_match == -1) {", "FAIL stage_a_match: expected else-if chain with negative literal")
+    need("compiler/build/stage_a_match.c", "int32_t other = __flowc_match;", "FAIL stage_a_match: expected binding arm decl")
+    # Or-patterns, guards, nested struct patterns and enum-value matches
+    # (#996, #678).
+    run_case(host, "stage_a_match_ext", 42)
+    need("compiler/build/stage_a_match_ext.c", "__typeof__(o) __flowc_match = o;", "FAIL stage_a_match_ext: expected typed scrutinee temp")
+    outln("PASS stage_a_match fixtures")
+
+    # A parse error names the file, line, column and token (#970).
+    let kw_log: string = "compiler/build/keyword_param.log"
+    let kw_rc: i32 = stage_a_emit(host, "compiler/fixtures/keyword_param.flow", "compiler/build/keyword_param.c", false, sl_new(), kw_log)
+    if kw_rc == 0 {
+        cli_exit(1)
+    }
+    if not has(kw_log, "keyword_param.flow:4:27: parse error: unexpected keyword 'while'") or not has(kw_log, "'while' is a reserved word") {
+        errln("FAIL keyword_param: expected a located parse diagnostic")
+        errs(read_text(kw_log))
+        cli_exit(1)
+    }
+    outln("PASS keyword_param diagnostic")
+
+    # sizeof<T>() lowers to the C sizeof of the type.
+    run_case(host, "stage_a_sizeof", 42)
+
+    # Mini self-host with the Flow driver built above; it ends with
+    # stage_a_driver_flow_self (Flow driver + self-emitted frontend).
+    sub_gate(root, "stage_a_self_emit", sl_new())
+
+    # Gen2: the driver linked against self.o re-emits the frontend into
+    # flowc_frontend_g2.o; then the fixed-point compare, the g2 driver
+    # smokes and the gen3 token compare.
+    sub_gate(root, "stage_a_self_emit_g2", sl_new())
+
+    # Phase-B exit gate: every module under compiler/src must bundle-emit C
+    # that the C compiler accepts with no diagnostics.
+    sub_gate(root, "selfcompile_audit", sl_new())
+
+    # Checked-in bootstrap: a cc-only path to a working flowc, and the C in
+    # compiler/bootstrap/ must still be exactly what flowc emits from
+    # compiler/src.
+    gate_run(sl_of2("./compiler/scripts/bootstrap_from_c.sh", "--verify"))
+
+    # Whole-compiler self-host: bundle all of compiler/src through flowc, run
+    # its self-tests, and check three consecutive generations are
+    # byte-identical.
+    sub_gate(root, "self_host_full", sl_new())
+
+    outln("ALL PASS")
+    return 0
+}

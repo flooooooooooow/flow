@@ -1,0 +1,536 @@
+# Verify that every .flow file under examples/ (and apps/, benchmarks/)
+# compiles, and regenerate the status table in examples/STATUS.md.
+#
+# Each file goes through the same pipeline as `./flow test --tier2`:
+#   1. transpile: compiler/scripts/flowc_emit.flow --lenient <file> <tmp>.c
+#   2. cgen check: clang -fsyntax-only -Wno-everything <tmp>.c
+#
+# Run it as `./flow tool verify_examples` from anywhere:
+#
+#   flow tool verify_examples                 sweep and rewrite examples/STATUS.md
+#   flow tool verify_examples --roots examples
+#   flow tool verify_examples --json out.json --no-write
+#
+# The repository root is VERIFY_ROOT, else FLOW_REPO_ROOT. flowc is resolved
+# once (compiler/scripts/ensure_flowc.flow unless FLOWC_BIN is set) and passed
+# to every worker in FLOWC_BIN. Files are checked in
+# parallel by re-running this program as `--worker` under xargs -P; the
+# report is built from the per-file results in path order, so it does not
+# depend on which worker finished first.
+
+import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_starts, ft_find, ft_contains, ft_slice, ft_from, ft_replace, ft_repr, ft_itoa, ft_read_file, ft_write_file, ft_exists, ft_split_lines, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_sort, ft_map_new, ft_map_get, ft_map_put, StrList, StrMap }
+import .unicode { uc_lower_str, uc_strip }
+import .json { json_quote }
+import .mdtext { md_splitlines }
+import .proc { pr_quote, pr_run, pr_capture, pr_resolve }
+import .verify_run { vr_env, vr_root, vr_ensure_flowc, vr_fixed1, vr_parse_int, vr_cpu_count, vr_discover, vr_shorten, vr_pick_line, vr_run_stage, vr_transpile_cmd, vr_c_name, vr_fan_out, vr_usage_error, vr_resolve_opt, vr_is_optlike }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function chdir(path: string) -> i32
+}
+
+const PROG: string = "flow tool verify_examples"
+
+function usage_text() -> string {
+    return "usage: flow tool verify_examples [-h] [--roots ROOTS [ROOTS ...]]\n                                 [--timeout TIMEOUT] [--jobs JOBS] [--no-clang]\n                                 [--json PATH] [--no-write]\n"
+}
+
+function help_text() -> string {
+    return "\nVerify that every .flow file under examples/ (and apps/, benchmarks/)\ncompiles.\n\noptions:\n  -h, --help            show this help message and exit\n  --roots ROOTS [ROOTS ...]\n  --timeout TIMEOUT\n  --jobs JOBS\n  --no-clang            skip the clang -fsyntax-only stage (tier1 only)\n  --json PATH           also dump raw results as JSON\n  --no-write            do not rewrite examples/STATUS.md\n"
+}
+
+# ---------------------------------------------------------------------------
+# Worker: one file, both stages, result to <tmp>/res.<index>
+# ---------------------------------------------------------------------------
+
+# (category, reason) for a failed transpile, joined by a newline.
+function categorize(output: string) -> string {
+    let tb: ptr<i32> = malloc(4) as ptr<i32>
+    let line: string = vr_pick_line(output, tb)
+    if tb[0] == 1 {
+        return "internal error\n" + vr_shorten(line, 110, true)
+    }
+    let low: string = uc_lower_str(line)
+    let short: string = vr_shorten(line, 110, true)
+    if ft_contains(low, "parse") or ft_contains(low, "unexpected") or ft_contains(low, "syntax") or ft_contains(low, "tokentype") or ft_contains(low, "expected token") {
+        return "parser\n" + short
+    }
+    if ft_contains(low, "type") {
+        return "typecheck\n" + short
+    }
+    if ft_contains(low, "module") or ft_contains(low, "import") {
+        return "module resolution\n" + short
+    }
+    return "transpile error\n" + short
+}
+
+# re.sub(r"^.*\.flow\.c:", "generated C ", line)
+function strip_c_prefix(line: string) -> string {
+    let mut last: i32 = -1
+    let mut at: i32 = ft_find(line, ".flow.c:", 0)
+    while at >= 0 {
+        last = at
+        at = ft_find(line, ".flow.c:", at + 1)
+    }
+    if last < 0 {
+        return line
+    }
+    return "generated C " + ft_from(line, last + 8)
+}
+
+function check_one(root: string, tmp: string, rel: string, timeout: i32, run_clang: bool) -> string {
+    let c_file: string = vr_c_name(tmp, rel)
+    let out_path: string = c_file + ".out"
+    let err_path: string = c_file + ".err"
+    let flow_file: string = root + "/" + rel
+    let rc: i32 = vr_run_stage(root, vr_transpile_cmd(root, flow_file, c_file), timeout, out_path, err_path)
+    if rc == -1 {
+        return "fail\ntimeout\ntranspile exceeded " + ft_itoa(timeout) + "s"
+    }
+    if rc != 0 or ft_exists(c_file) == false {
+        let mut so: string = ft_read_file(out_path)
+        let mut se: string = ft_read_file(err_path)
+        if so as ptr<u8> == null {
+            so = ""
+        }
+        if se as ptr<u8> == null {
+            se = ""
+        }
+        return "fail\n" + categorize(se + "\n" + so)
+    }
+    if run_clang {
+        let crc: i32 = vr_run_stage(root, "clang -fsyntax-only -Wno-everything " + pr_quote(c_file), timeout, out_path, err_path)
+        if crc == -1 {
+            return "fail\ntimeout\nclang exceeded " + ft_itoa(timeout) + "s"
+        }
+        if crc != 0 {
+            let mut cerr: string = ft_read_file(err_path)
+            if cerr as ptr<u8> == null {
+                cerr = ""
+            }
+            let clines: ptr<StrList> = md_splitlines(cerr)
+            let mut first_err: string = ""
+            let mut i: i32 = 0
+            while i < ft_list_len(clines) {
+                let ln: string = ft_list_get(clines, i)
+                if ft_contains(ln, "error:") {
+                    first_err = strip_c_prefix(uc_strip(ln))
+                    break
+                }
+                i = i + 1
+            }
+            if ft_len(first_err) == 0 {
+                first_err = uc_strip(cerr)
+            }
+            return "fail\ncgen (invalid C)\n" + vr_shorten(first_err, 110, true)
+        }
+    }
+    return "pass\n\n"
+}
+
+function worker(argc: i32, argv: ptr<string>) -> i32 {
+    # --worker <tmp> <timeout> <clang 0|1> <index>
+    let tmp: string = argv[2]
+    let ok: ptr<i32> = malloc(4) as ptr<i32>
+    let timeout: i32 = vr_parse_int(argv[3], ok)
+    let run_clang: bool = ft_eq(argv[4], "1")
+    let idx: i32 = vr_parse_int(argv[5], ok)
+    let root: string = vr_root()
+    let files: ptr<StrList> = ft_split_lines(ft_read_file(tmp + "/files.txt"))
+    let rel: string = ft_list_get(files, idx)
+    let res: string = check_one(root, tmp, rel, timeout, run_clang)
+    let _w: bool = ft_write_file(tmp + "/res." + ft_itoa(idx), res + "\n")
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# Report
+# ---------------------------------------------------------------------------
+
+# datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"). date(1) does
+# it: an extern time() is not declared in the generated C.
+function utc_now() -> string {
+    return uc_strip(pr_capture("date -u '+%Y-%m-%d %H:%M UTC'"))
+}
+
+# f"flow {version} @ {commit}"
+function compiler_version() -> string {
+    let commit: string = uc_strip(pr_capture("git rev-parse --short HEAD 2>/dev/null"))
+    # VERSION holds one line, the canonical version.
+    let mut version: string = "unknown"
+    let text: string = ft_read_file("VERSION")
+    if text as ptr<u8> != null {
+        let lines: ptr<StrList> = ft_split_lines(text)
+        if ft_list_len(lines) > 0 and ft_len(uc_strip(ft_list_get(lines, 0))) > 0 {
+            version = uc_strip(ft_list_get(lines, 0))
+        }
+    }
+    return "flow " + version + " @ " + commit
+}
+
+function dir_key(file: string) -> string {
+    let first: i32 = ft_find(file, "/", 0)
+    if first < 0 {
+        return file
+    }
+    let second: i32 = ft_find(file, "/", first + 1)
+    if second < 0 {
+        return ft_slice(file, 0, first)
+    }
+    return ft_slice(file, 0, second)
+}
+
+function write_status_md(files: ptr<StrList>, status: ptr<StrList>, cats: ptr<StrList>, reasons: ptr<StrList>, roots: ptr<StrList>, timeout: i32) -> void {
+    let total: i32 = ft_list_len(files)
+    let mut npass: i32 = 0
+    let mut nfail: i32 = 0
+    let cat_keys: ptr<StrList> = ft_list_new()
+    let cat_counts: ptr<StrMap> = ft_map_new()
+    let dir_keys: ptr<StrList> = ft_list_new()
+    let dir_pass: ptr<StrMap> = ft_map_new()
+    let dir_fail: ptr<StrMap> = ft_map_new()
+    let mut verify_failed: i32 = 0
+    let mut i: i32 = 0
+    while i < total {
+        let file: string = ft_list_get(files, i)
+        let key: string = dir_key(file)
+        if ft_map_get(dir_pass, key, -1) < 0 {
+            ft_list_push(dir_keys, key)
+            ft_map_put(dir_pass, key, 0)
+            ft_map_put(dir_fail, key, 0)
+        }
+        if ft_eq(ft_list_get(status, i), "pass") {
+            npass = npass + 1
+            ft_map_put(dir_pass, key, ft_map_get(dir_pass, key, 0) + 1)
+        } else {
+            nfail = nfail + 1
+            ft_map_put(dir_fail, key, ft_map_get(dir_fail, key, 0) + 1)
+            let cat: string = ft_list_get(cats, i)
+            let seen: i32 = ft_map_get(cat_counts, cat, -1)
+            if seen < 0 {
+                ft_list_push(cat_keys, cat)
+                ft_map_put(cat_counts, cat, 1)
+            } else {
+                ft_map_put(cat_counts, cat, seen + 1)
+            }
+            if ft_starts(file, "examples/verify/") {
+                verify_failed = verify_failed + 1
+            }
+        }
+        i = i + 1
+    }
+
+    let mut md: string = "# Flow Examples Compile Status\n\n"
+    md = md + "> Generated by `./flow tool verify_examples` on " + utc_now() + " with " + compiler_version() + ".\n"
+    md = md + "> Regenerate with: `./flow tool verify_examples`\n\n"
+    let mut swept: string = ""
+    i = 0
+    while i < ft_list_len(roots) {
+        if i > 0 {
+            swept = swept + ", "
+        }
+        swept = swept + "`" + ft_list_get(roots, i) + "/`"
+        i = i + 1
+    }
+    md = md + "Each file is compile-checked (not executed) with the same pipeline as `./flow test --tier2`: Flow -> C via flowc (`compiler/scripts/flowc_emit.flow --lenient`), then `clang -fsyntax-only` on the generated C. Per-stage timeout: " + ft_itoa(timeout) + "s. Roots swept: " + swept + ".\n\n"
+    if verify_failed > 0 {
+        md = md + "> **Note:** " + ft_itoa(verify_failed) + " of the failures below are under `examples/verify/`, the `flow-verify` proof corpus. That corpus is written *ahead of* the verification-keyword parser/checker (see [verification.md](../docs/language/verification.md)) and intentionally explores notation (set operators, Euclidean ratios, ghost contracts) that isn't implemented yet. These are not core-Flow regressions. See [flow-verify-parser-status.md](../docs/third-party/flow-verify-parser-status.md) for a categorized breakdown, or regenerate it with `./flow tool triage_verify_failures`.\n\n"
+    }
+    md = md + "## Totals\n\n"
+    let pct: f64 = (100.0 * (npass as f64)) / (total as f64)
+    md = md + "- **" + ft_itoa(total) + "** files checked, **" + ft_itoa(npass) + "** pass (" + vr_fixed1(pct) + "%), **" + ft_itoa(nfail) + "** fail\n"
+
+    # Categories by count, descending; ties keep first-seen order.
+    let nc: i32 = ft_list_len(cat_keys)
+    let order: ptr<i32> = malloc(((nc + 1) as i64) * 4) as ptr<i32>
+    i = 0
+    while i < nc {
+        order[i] = i
+        i = i + 1
+    }
+    i = 1
+    while i < nc {
+        let cur: i32 = order[i]
+        let cur_n: i32 = ft_map_get(cat_counts, ft_list_get(cat_keys, cur), 0)
+        let mut j: i32 = i - 1
+        while j >= 0 and ft_map_get(cat_counts, ft_list_get(cat_keys, order[j]), 0) < cur_n {
+            order[j + 1] = order[j]
+            j = j - 1
+        }
+        order[j + 1] = cur
+        i = i + 1
+    }
+    i = 0
+    while i < nc {
+        let ck: string = ft_list_get(cat_keys, order[i])
+        md = md + "  - " + ck + ": " + ft_itoa(ft_map_get(cat_counts, ck, 0)) + "\n"
+        i = i + 1
+    }
+    md = md + "\n## By directory\n\n| Directory | Pass | Fail |\n|---|---:|---:|\n"
+    let sorted_dirs: ptr<StrList> = ft_list_new()
+    i = 0
+    while i < ft_list_len(dir_keys) {
+        ft_list_push(sorted_dirs, ft_list_get(dir_keys, i))
+        i = i + 1
+    }
+    ft_list_sort(sorted_dirs)
+    i = 0
+    while i < ft_list_len(sorted_dirs) {
+        let dk: string = ft_list_get(sorted_dirs, i)
+        md = md + "| `" + dk + "/` | " + ft_itoa(ft_map_get(dir_pass, dk, 0)) + " | " + ft_itoa(ft_map_get(dir_fail, dk, 0)) + " |\n"
+        i = i + 1
+    }
+    md = md + "\n"
+    if nfail > 0 {
+        md = md + "## Failures\n\n| File | Category | Reason |\n|---|---|---|\n"
+        i = 0
+        while i < total {
+            if ft_eq(ft_list_get(status, i), "fail") {
+                md = md + "| `" + ft_list_get(files, i) + "` | " + ft_list_get(cats, i) + " | " + ft_list_get(reasons, i) + " |\n"
+            }
+            i = i + 1
+        }
+        md = md + "\n"
+    }
+    md = md + "## All files\n\n<details>\n<summary>Full per-file table (" + ft_itoa(total) + " files)</summary>\n\n| File | Status | Failure reason |\n|---|---|---|\n"
+    i = 0
+    while i < total {
+        if ft_eq(ft_list_get(status, i), "pass") {
+            md = md + "| `" + ft_list_get(files, i) + "` | pass |  |\n"
+        } else {
+            md = md + "| `" + ft_list_get(files, i) + "` | FAIL | " + ft_list_get(cats, i) + ": " + ft_list_get(reasons, i) + " |\n"
+        }
+        i = i + 1
+    }
+    md = md + "\n</details>\n"
+    let _w: bool = ft_write_file("examples/STATUS.md", md)
+}
+
+function json_results(files: ptr<StrList>, status: ptr<StrList>, cats: ptr<StrList>, reasons: ptr<StrList>) -> string {
+    let n: i32 = ft_list_len(files)
+    if n == 0 {
+        return "[]"
+    }
+    let mut js: string = "[\n"
+    let mut i: i32 = 0
+    while i < n {
+        js = js + "  {\n    \"file\": " + json_quote(ft_list_get(files, i)) + ",\n    \"status\": " + json_quote(ft_list_get(status, i)) + ",\n    \"category\": " + json_quote(ft_list_get(cats, i)) + ",\n    \"reason\": " + json_quote(ft_list_get(reasons, i)) + "\n  }"
+        if i + 1 < n {
+            js = js + ","
+        }
+        js = js + "\n"
+        i = i + 1
+    }
+    return js + "]"
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    if argc >= 6 and ft_eq(argv[1], "--worker") {
+        return worker(argc, argv)
+    }
+    let flowc_rc: i32 = vr_ensure_flowc(vr_root())
+    if flowc_rc != 0 {
+        return flowc_rc
+    }
+    let opts: ptr<StrList> = ft_list_new()
+    ft_list_push(opts, "--help")
+    ft_list_push(opts, "--roots")
+    ft_list_push(opts, "--timeout")
+    ft_list_push(opts, "--jobs")
+    ft_list_push(opts, "--no-clang")
+    ft_list_push(opts, "--json")
+    ft_list_push(opts, "--no-write")
+
+    let mut roots: ptr<StrList> = ft_list_new()
+    ft_list_push(roots, "examples")
+    ft_list_push(roots, "apps")
+    ft_list_push(roots, "benchmarks")
+    let mut timeout: i32 = 30
+    let mut jobs: i32 = vr_cpu_count()
+    let mut no_clang: bool = false
+    let mut json_arg: string = null as string
+    let mut no_write: bool = false
+    let extras: ptr<StrList> = ft_list_new()
+    let ok: ptr<i32> = malloc(4) as ptr<i32>
+
+    let mut i: i32 = 1
+    while i < argc {
+        let arg: string = argv[i]
+        if ft_eq(arg, "-h") {
+            ft_out(usage_text() + help_text())
+            return 0
+        }
+        if ft_starts(arg, "--") and ft_len(arg) > 2 {
+            let eq: i32 = ft_find(arg, "=", 0)
+            let mut name: string = arg
+            let mut value: string = null as string
+            if eq >= 0 {
+                name = ft_slice(arg, 0, eq)
+                value = ft_from(arg, eq + 1)
+            }
+            let full: string = vr_resolve_opt(opts, name)
+            if ft_starts(full, "?") {
+                return vr_usage_error(usage_text(), PROG, ft_from(full, 1))
+            }
+            if ft_eq(full, "") {
+                ft_list_push(extras, arg)
+                i = i + 1
+                continue
+            }
+            if ft_eq(full, "--help") or ft_eq(full, "--no-clang") or ft_eq(full, "--no-write") {
+                if value as ptr<u8> != null {
+                    return vr_usage_error(usage_text(), PROG, "argument " + full + ": ignored explicit argument " + ft_repr(value))
+                }
+                if ft_eq(full, "--help") {
+                    ft_out(usage_text() + help_text())
+                    return 0
+                }
+                if ft_eq(full, "--no-clang") {
+                    no_clang = true
+                } else {
+                    no_write = true
+                }
+                i = i + 1
+                continue
+            }
+            if ft_eq(full, "--roots") {
+                let got: ptr<StrList> = ft_list_new()
+                if value as ptr<u8> != null {
+                    ft_list_push(got, value)
+                } else {
+                    while i + 1 < argc and vr_is_optlike(argv[i + 1]) == false {
+                        ft_list_push(got, argv[i + 1])
+                        i = i + 1
+                    }
+                }
+                if ft_list_len(got) == 0 {
+                    return vr_usage_error(usage_text(), PROG, "argument --roots: expected at least one argument")
+                }
+                roots = got
+                i = i + 1
+                continue
+            }
+            if value as ptr<u8> == null {
+                if i + 1 >= argc or vr_is_optlike(argv[i + 1]) {
+                    return vr_usage_error(usage_text(), PROG, "argument " + full + ": expected one argument")
+                }
+                value = argv[i + 1]
+                i = i + 1
+            }
+            if ft_eq(full, "--json") {
+                json_arg = value
+            } else {
+                let n: i32 = vr_parse_int(value, ok)
+                if ok[0] == 0 {
+                    return vr_usage_error(usage_text(), PROG, "argument " + full + ": invalid int value: " + ft_repr(value))
+                }
+                if ft_eq(full, "--timeout") {
+                    timeout = n
+                } else {
+                    jobs = n
+                }
+            }
+        } else {
+            ft_list_push(extras, arg)
+        }
+        i = i + 1
+    }
+    if ft_list_len(extras) > 0 {
+        let mut msg: string = "unrecognized arguments:"
+        let mut k: i32 = 0
+        while k < ft_list_len(extras) {
+            msg = msg + " " + ft_list_get(extras, k)
+            k = k + 1
+        }
+        return vr_usage_error(usage_text(), PROG, msg)
+    }
+
+    let mut json_path: string = null as string
+    if json_arg as ptr<u8> != null {
+        json_path = pr_resolve(json_arg)
+    }
+    let root: string = vr_root()
+    let _cd: i32 = chdir(root)
+
+    let files: ptr<StrList> = vr_discover(roots, false, true)
+    let total: i32 = ft_list_len(files)
+    if total == 0 {
+        ft_errln("No .flow files found")
+        return 1
+    }
+    ft_outln("Checking " + ft_itoa(total) + " .flow files with " + ft_itoa(jobs) + " workers...")
+    if jobs <= 0 {
+        ft_errln("ValueError: max_workers must be greater than 0")
+        return 1
+    }
+
+    let tmpbase: string = vr_env("TMPDIR")
+    let mut tdir: string = "/tmp"
+    if ft_len(tmpbase) > 0 {
+        tdir = tmpbase
+    }
+    let tmp: string = uc_strip(pr_capture("mktemp -d " + pr_quote(tdir + "/flow-verify-XXXXXXXX")))
+    let mut listing: string = ""
+    i = 0
+    while i < total {
+        listing = listing + ft_list_get(files, i) + "\n"
+        i = i + 1
+    }
+    let _wl: bool = ft_write_file(tmp + "/files.txt", listing)
+    let mut clang_flag: string = "1"
+    if no_clang {
+        clang_flag = "0"
+    }
+    let _fan: i32 = vr_fan_out(argv[0], pr_quote(tmp) + " " + ft_itoa(timeout) + " " + clang_flag, total, jobs)
+
+    let status: ptr<StrList> = ft_list_new()
+    let cats: ptr<StrList> = ft_list_new()
+    let reasons: ptr<StrList> = ft_list_new()
+    let mut npass: i32 = 0
+    i = 0
+    while i < total {
+        let res: string = ft_read_file(tmp + "/res." + ft_itoa(i))
+        let mut st: string = "fail"
+        let mut cat: string = "internal error"
+        let mut why: string = "worker produced no result"
+        if res as ptr<u8> != null {
+            let parts: ptr<StrList> = ft_split_lines(res)
+            st = ft_list_get(parts, 0)
+            cat = ""
+            why = ""
+            if ft_list_len(parts) > 1 {
+                cat = ft_list_get(parts, 1)
+            }
+            if ft_list_len(parts) > 2 {
+                why = ft_list_get(parts, 2)
+            }
+        }
+        if ft_eq(st, "pass") {
+            npass = npass + 1
+        }
+        ft_list_push(status, st)
+        ft_list_push(cats, cat)
+        ft_list_push(reasons, why)
+        if (i + 1) % 100 == 0 {
+            ft_outln("  " + ft_itoa(i + 1) + "/" + ft_itoa(total))
+        }
+        i = i + 1
+    }
+    let _rm: i32 = pr_run("rm -rf " + pr_quote(tmp))
+
+    ft_outln("\n" + ft_itoa(npass) + " pass / " + ft_itoa(total - npass) + " fail out of " + ft_itoa(total))
+    if json_path as ptr<u8> != null {
+        let _wj: bool = ft_write_file(json_path, json_results(files, status, cats, reasons))
+        ft_outln("JSON written to " + json_arg)
+    }
+    if no_write == false {
+        write_status_md(files, status, cats, reasons, roots, timeout)
+        ft_outln("Status table written to examples/STATUS.md")
+    }
+    return 0
+}

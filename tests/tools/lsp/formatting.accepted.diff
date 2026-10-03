@@ -1,0 +1,28 @@
+1c1
+< {"jsonrpc": "2.0", "id": 1, "result": {"capabilities": {"textDocumentSync": {"openClose": true, "change": 1}, "completionProvider": {"triggerCharacters": [".", ":", "<"], "resolveProvider": false}, "hoverProvider": true, "definitionProvider": true, "documentSymbolProvider": true, "referencesProvider": true, "renameProvider": {"prepareProvider": true}, "documentFormattingProvider": true, "documentRangeFormattingProvider": true, "documentHighlightProvider": true}, "serverInfo": {"name": "flow-lsp", "version": "0.2.0"}}}
+---
+> {"jsonrpc": "2.0", "id": 1, "result": {"capabilities": {"textDocumentSync": {"openClose": true, "change": 1}, "completionProvider": {"triggerCharacters": [".", ":", "<"], "resolveProvider": false}, "hoverProvider": true, "definitionProvider": true, "documentSymbolProvider": true, "referencesProvider": true, "renameProvider": {"prepareProvider": true}, "documentFormattingProvider": true, "documentRangeFormattingProvider": true, "documentHighlightProvider": true, "codeActionProvider": true}, "serverInfo": {"name": "flow-lsp", "version": "0.3.0"}}}
+3,5c3,5
+< {"jsonrpc": "2.0", "id": 2, "result": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 11, "character": 0}}, "newText": "function add(a: i32, b: i32) -> i32 {\n    return a + b\n}\n\nstruct P {\n    x: f64\n    y: f64\n}\n\nfunction main() -> i32 {\n    let mut s: i32 = 0\n    <expr>\n    if s > 2 {\n        return 1\n    } else {\n        return 0\n    }\n}\n"}]}
+< {"jsonrpc": "2.0", "id": 3, "result": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 11, "character": 0}}, "newText": "function add(a: i32, b: i32) -> i32 {\n    return a + b\n}\n\nstruct P {\n    x: f64\n    y: f64\n}\n\nfunction main() -> i32 {\n    let mut s: i32 = 0\n    <expr>\n    if s > 2 {\n        return 1\n    } else {\n        return 0\n    }\n}\n"}]}
+< {"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": {"uri": "file:///t/broken.flow", "diagnostics": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 8}}, "severity": 1, "source": "flow-parser", "message": "Unterminated block: expected '}' before end of file"}]}}
+---
+> {"jsonrpc": "2.0", "id": 2, "result": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 11, "character": 0}}, "newText": "function add(a: i32, b: i32) -> i32 {\n    return a + b\n}\n\nstruct P { x: f64, y: f64 }\nfunction main() -> i32 {\n    let mut s: i32 = 0\n    for i in 0 to 3 {\n        s = s + add(i, 1)\n    }\n    if s > 2 { return 1 } else { return 0 }\n}\n"}]}
+> {"jsonrpc": "2.0", "id": 3, "result": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 11, "character": 0}}, "newText": "function add(a: i32, b: i32) -> i32 {\n    return a + b\n}\n\nstruct P { x: f64, y: f64 }\nfunction main() -> i32 {\n    let mut s: i32 = 0\n    for i in 0 to 3 {\n        s = s + add(i, 1)\n    }\n    if s > 2 { return 1 } else { return 0 }\n}\n"}]}
+> {"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": {"uri": "file:///t/broken.flow", "diagnostics": [{"range": {"start": {"line": 2, "character": 0}, "end": {"line": 2, "character": 1}}, "severity": 1, "source": "flow-parser", "message": "parse error: unexpected end of file"}]}}
+8c8
+< {"jsonrpc": "2.0", "id": 5, "result": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 14, "character": 0}}, "newText": "struct Point {\n    x: f64\n    y: f64\n}\n\nfunction norm(p: Point) -> f64 {\n    return sqrt(<expr> * <expr> + <expr> * <expr>)\n}\n\nfunction main() -> i32 {\n    let p: auto = Point { x: 3.0, y: 4.0 }\n    let n: auto = norm(p)\n    return 0\n}\n"}]}
+---
+> {"jsonrpc": "2.0", "id": 5, "result": []}
+10c10
+< {"jsonrpc": "2.0", "id": 6, "result": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 5, "character": 0}}, "newText": "function add(a: i32, b: i32) -> i32 {\n    let mut total: i32 = a\n    <expr>\n    return total\n}\n"}]}
+---
+> {"jsonrpc": "2.0", "id": 6, "result": []}
+12c12
+< {"jsonrpc": "2.0", "id": 10, "result": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 11, "character": 0}}, "newText": "function scaled(a: i32, b: i32) -> i32 {\n    let s: i32 = a + b * 2\n    if s > 10 {\n        return s\n    }\n    return 0\n}\n"}]}
+---
+> {"jsonrpc": "2.0", "id": 10, "result": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 11, "character": 0}}, "newText": "# Scale a sum.\nfunction scaled(a: i32, b: i32) -> i32 {\n    let s: i32 = (a + b) * 2   # keep the parens\n    if s > 10 {\n        return s\n    }\n\n    return 0\n}\n"}]}
+16c16
+< {"jsonrpc": "2.0", "id": 8, "result": [{"range": {"start": {"line": 0, "character": 0}, "end": {"line": 19, "character": 0}}, "newText": "function gcd(a: i32, b: i32) -> i32 {\n    let mut x: i32 = a\n    let mut y: i32 = b\n    <expr>\n    return x\n}\n\nfunction main() -> i32 {\n    let a: i32 = 56\n    let b: i32 = 98\n    let result: i32 = gcd(a, b)\n    return result\n}\n"}]}
+---
+> {"jsonrpc": "2.0", "id": 8, "result": []}

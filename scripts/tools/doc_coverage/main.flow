@@ -1,0 +1,947 @@
+# Does the documentation cover every part of the language?
+#
+# The feature list is read out of the compiler, never hand-maintained, so it
+# cannot quietly fall behind the implementation:
+#
+#   keywords        tools/lsp/catalog.flow, reserved_name_list (the lexer
+#                   keyword map)
+#   attributes      compiler/src/attributes.flow, flowc_is_known_attr
+#   CLI commands    the `flow` driver's dispatch table
+#   stdlib modules  lib/stdlib/**/*.flow
+#   backends        compiler/src/*gen.flow, *_codegen.flow, *_target.flow
+#
+# docs/coverage.json maps each feature to the page that documents it. A
+# mapping is only accepted when the named page exists and actually mentions
+# the feature, so an entry cannot be a promise nobody kept. Features that
+# genuinely have no home carry a written reason instead.
+#
+# Run it as `./flow tool doc_coverage` from anywhere in the repository. It
+# works from the repository root and lists the stdlib with `git ls-files`:
+#
+#   flow tool doc_coverage                    report and gate
+#   flow tool doc_coverage --propose          suggest homes for gaps
+#   flow tool doc_coverage --write-proposal   write docs/coverage.json from them
+#
+# Options used by the unit tests:
+#
+#   --inventory                  print category:name for every feature
+#   --map FILE                   check against another coverage map
+#   --mentions CAT FEATURE FILE  print True or False
+#   --is-backend NAME            print True or False for a compiler/src file stem
+
+import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_read_file, ft_write_file, ft_exists, ft_starts, ft_ends, ft_at, ft_find, ft_slice, ft_from, ft_find_byte, ft_split_lines, ft_basename, ft_stem, ft_ljust, ft_rjust, ft_repr, ft_list_new, ft_list_push, ft_list_len, ft_list_get, ft_list_sort, ft_list_sorted_unique, ft_set_new, ft_set_add, ft_set_has, StrList, StrSet }
+import .unicode { uc_decode, uc_len, uc_prev, uc_is_word, uc_is_space, uc_strip }
+import .mdtext { md_sanitize }
+import .repo { rp_enter_root, rp_git_ls, rp_lines, rp_argv2 }
+import .json { json_parse, json_error, json_get, json_kind, json_str, json_key, json_first, json_next, json_quote, json_kind_string, json_kind_object, json_kind_array, json_kind_null, json_kind_true, json_kind_false, Json }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+const PROG: string = "flow tool doc_coverage"
+const KEYWORD_SOURCE: string = "tools/lsp/catalog.flow"
+const ATTR_SOURCE: string = "compiler/src/attributes.flow"
+const CLI_SOURCE: string = "tools/flow_cli/main.flow"
+const CAT_N: i32 = 5
+
+# Categories in sorted order, as Python iterates sorted(inventory.items()).
+function category(i: i32) -> string {
+    if i == 0 { return "attribute" }
+    if i == 1 { return "backend" }
+    if i == 2 { return "cli" }
+    if i == 3 { return "keyword" }
+    return "stdlib"
+}
+
+# ---------------------------------------------------------------------------
+# Inventory
+# ---------------------------------------------------------------------------
+
+# Keywords whose whole job is to be part of another construct, or which read
+# as ordinary English often enough that a bare word search proves nothing.
+function uninteresting_keyword(k: string) -> bool {
+    if ft_eq(k, "true") or ft_eq(k, "false") or ft_eq(k, "null") or ft_eq(k, "self") or ft_eq(k, "in") {
+        return true
+    }
+    if ft_eq(k, "to") or ft_eq(k, "as") or ft_eq(k, "with") or ft_eq(k, "and") or ft_eq(k, "or") {
+        return true
+    }
+    return ft_eq(k, "not") or ft_eq(k, "default") or ft_eq(k, "void") or ft_eq(k, "step")
+}
+
+function is_ws_byte(c: i32) -> bool {
+    return c == 32 or (c >= 9 and c <= 13) or (c >= 28 and c <= 31)
+}
+
+# Skip \s* at `i`.
+function skip_ws(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    let mut k: i32 = i
+    while k < n and uc_is_space(uc_decode(p, k)) {
+        k = k + uc_len(p[k] as i32)
+    }
+    return k
+}
+
+function is_lower_ident(c: i32) -> bool {
+    return (c >= 97 and c <= 122) or c == 95
+}
+
+# The reserved words: the `tl_push(out, "word")` lines of
+# reserved_name_list in tools/lsp/catalog.flow, which carries the lexer
+# keyword map. Type names (i32, f64, ...) have digits and drop out, as they
+# did when this read the Python lexer.
+function keywords(out: ptr<StrList>) -> bool {
+    let text: string = ft_read_file(KEYWORD_SOURCE)
+    if text as ptr<u8> == null {
+        return false
+    }
+    let head: string = "export function reserved_name_list("
+    let at: i32 = ft_find(text, head, 0)
+    if at < 0 {
+        return false
+    }
+    let mut end: i32 = ft_find(text, "\n}", at)
+    if end < 0 {
+        end = ft_len(text)
+    }
+    let body: string = ft_slice(text, at, end)
+    let push: string = "tl_push(out, \""
+    let mut i: i32 = ft_find(body, push, 0)
+    let mut any: bool = false
+    while i >= 0 {
+        let start: i32 = i + ft_len(push)
+        let close: i32 = ft_find_byte(body, 34, start)
+        if close < 0 {
+            return false
+        }
+        let word: string = ft_slice(body, start, close)
+        let wp: ptr<u8> = word as ptr<u8>
+        let mut ok: bool = ft_len(word) > 0
+        let mut k: i32 = 0
+        while ok and k < ft_len(word) {
+            ok = is_lower_ident(wp[k] as i32)
+            k = k + 1
+        }
+        if ok and uninteresting_keyword(word) == false {
+            ft_list_push(out, word)
+        }
+        any = true
+        i = ft_find(body, push, close)
+    }
+    return any
+}
+
+function ft_byte_at(s: string, i: i32) -> i32 {
+    let p: ptr<u8> = s as ptr<u8>
+    return p[i] as i32
+}
+
+# `streq(name, "x")` inside one attribute-set function of
+# compiler/src/attributes.flow.
+function attr_set_members(text: string, fname: string, out: ptr<StrList>) -> bool {
+    let at: i32 = ft_find(text, "\nfunction " + fname + "(", 0)
+    if at < 0 {
+        return false
+    }
+    let mut end: i32 = ft_find(text, "\n}", at)
+    if end < 0 {
+        end = ft_len(text)
+    }
+    let body: string = ft_slice(text, at, end)
+    let probe: string = "streq(name, \""
+    let mut i: i32 = ft_find(body, probe, 0)
+    let mut any: bool = false
+    while i >= 0 {
+        let start: i32 = i + ft_len(probe)
+        let close: i32 = ft_find_byte(body, 34, start)
+        if close < 0 {
+            return false
+        }
+        ft_list_push(out, ft_slice(body, start, close))
+        any = true
+        i = ft_find(body, probe, close)
+    }
+    return any
+}
+
+# The known attributes: flowc_is_known_attr in compiler/src/attributes.flow
+# is the union of is_codegen_attr, is_guard_attr and is_semantic_attr.
+function attributes(out: ptr<StrList>) -> bool {
+    let text: string = ft_read_file(ATTR_SOURCE)
+    if text as ptr<u8> == null {
+        return false
+    }
+    let known: i32 = ft_find(text, "export function flowc_is_known_attr(", 0)
+    if known < 0 {
+        return false
+    }
+    let mut kend: i32 = ft_find(text, "\n}", known)
+    if kend < 0 {
+        kend = ft_len(text)
+    }
+    let body: string = ft_slice(text, known, kend)
+    let mut any: bool = false
+    let mut i: i32 = ft_find(body, "if is_", 0)
+    while i >= 0 {
+        let start: i32 = i + 3
+        let paren: i32 = ft_find_byte(body, 40, start)
+        if paren < 0 {
+            return false
+        }
+        if attr_set_members(text, ft_slice(body, start, paren), out) == false {
+            return false
+        }
+        any = true
+        i = ft_find(body, "if is_", paren)
+    }
+    return any
+}
+
+# Subcommands the CLI dispatches on, read from the command table in
+# tools/flow_cli/main.flow rather than the help text: every `is(c, "NAME")`
+# test in the body of `function dispatch`. Names starting with "-" are
+# flags, not commands.
+function cli_commands(out: ptr<StrList>) -> i32 {
+    let text: string = ft_read_file(CLI_SOURCE)
+    if text as ptr<u8> == null {
+        return 1
+    }
+    let start: i32 = ft_find(text, "\nfunction dispatch(", 0)
+    if start < 0 {
+        return 2
+    }
+    let end: i32 = ft_find(text, "\n}\n", start)
+    if end < 0 {
+        return 3
+    }
+    let body: string = ft_slice(text, start, end)
+    let needle: string = "is(c, \""
+    let mut pos: i32 = ft_find(body, needle, 0)
+    while pos >= 0 {
+        let name_start: i32 = pos + ft_len(needle)
+        let close: i32 = ft_find_byte(body, 34, name_start)
+        if close < 0 {
+            return 4
+        }
+        let name: string = ft_slice(body, name_start, close)
+        if ft_len(name) > 0 and ft_starts(name, "-") == false {
+            ft_list_push(out, name)
+        }
+        pos = ft_find(body, needle, close)
+    }
+    return 0
+}
+
+# find(1) output for `args`, or an empty list when it failed.
+function find_lines(args: ptr<StrList>) -> ptr<StrList> {
+    let argv: ptr<StrList> = ft_list_new()
+    ft_list_push(argv, "find")
+    let mut i: i32 = 0
+    while i < ft_list_len(args) {
+        ft_list_push(argv, ft_list_get(args, i))
+        i = i + 1
+    }
+    let lines: ptr<StrList> = rp_lines(argv)
+    if lines == null {
+        return ft_list_new()
+    }
+    return lines
+}
+
+function stdlib_modules(out: ptr<StrList>) -> bool {
+    let lines: ptr<StrList> = rp_git_ls(rp_argv2("lib/stdlib/*.flow", "lib/stdlib/**/*.flow"))
+    if lines == null {
+        return false
+    }
+    let mut i: i32 = 0
+    while i < ft_list_len(lines) {
+        let line: string = ft_list_get(lines, i)
+        if ft_len(line) > 0 and has_test_part(line) == false {
+            ft_list_push(out, ft_stem(line))
+        }
+        i = i + 1
+    }
+    return true
+}
+
+# "test" in Path(line).parts
+function has_test_part(path: string) -> bool {
+    return ft_eq(path, "test") or ft_starts(path, "test/") or ft_ends(path, "/test") or ft_find(path, "/test/", 0) >= 0
+}
+
+# Suffixes a backend module of compiler/src can carry: cgen, jsgen, mlirgen,
+# wasm_gen, metal_codegen, bpf_target.
+function is_backend(stem: string) -> bool {
+    return ft_ends(stem, "gen") or ft_ends(stem, "_generator") or ft_ends(stem, "_codegen") or ft_ends(stem, "_compiler") or ft_ends(stem, "_target") or ft_ends(stem, "_backend")
+}
+
+function backends(out: ptr<StrList>) -> bool {
+    let args: ptr<StrList> = rp_argv2("compiler/src", "-maxdepth")
+    ft_list_push(args, "1")
+    ft_list_push(args, "-name")
+    ft_list_push(args, "*.flow")
+    let lines: ptr<StrList> = find_lines(args)
+    let mut i: i32 = 0
+    while i < ft_list_len(lines) {
+        let stem: string = ft_stem(ft_list_get(lines, i))
+        if ft_len(ft_list_get(lines, i)) > 0 and is_backend(stem) {
+            ft_list_push(out, stem)
+        }
+        i = i + 1
+    }
+    return true
+}
+
+# Sorted, de-duplicated feature names per category, or null after printing
+# the reason.
+function inventory() -> ptr<ptr<StrList>> {
+    let inv: ptr<ptr<StrList>> = malloc(8 * 5) as ptr<ptr<StrList>>
+    let raw_kw: ptr<StrList> = ft_list_new()
+    if keywords(raw_kw) == false {
+        ft_errln("could not read reserved_name_list from " + KEYWORD_SOURCE)
+        return null
+    }
+    let raw_attr: ptr<StrList> = ft_list_new()
+    if attributes(raw_attr) == false {
+        ft_errln("could not read flowc_is_known_attr from " + ATTR_SOURCE)
+        return null
+    }
+    let raw_cli: ptr<StrList> = ft_list_new()
+    let cli_rc: i32 = cli_commands(raw_cli)
+    if cli_rc != 0 {
+        ft_errln("could not read the dispatch table from " + CLI_SOURCE + "")
+        return null
+    }
+    let raw_std: ptr<StrList> = ft_list_new()
+    if stdlib_modules(raw_std) == false {
+        ft_errln(PROG + ": git ls-files could not list lib/stdlib")
+        return null
+    }
+    let raw_back: ptr<StrList> = ft_list_new()
+    if backends(raw_back) == false {
+        ft_errln(PROG + ": could not list compiler/src")
+        return null
+    }
+    inv[0] = ft_list_sorted_unique(raw_attr)
+    inv[1] = ft_list_sorted_unique(raw_back)
+    inv[2] = ft_list_sorted_unique(raw_cli)
+    inv[3] = ft_list_sorted_unique(raw_kw)
+    inv[4] = ft_list_sorted_unique(raw_std)
+    return inv
+}
+
+# ---------------------------------------------------------------------------
+# Does a page mention a feature?
+# ---------------------------------------------------------------------------
+
+function word_before(p: ptr<u8>, at: i32) -> bool {
+    if at == 0 {
+        return false
+    }
+    return uc_is_word(uc_decode(p, uc_prev(p, at)))
+}
+
+function word_at(p: ptr<u8>, at: i32) -> bool {
+    if p[at] == 0 {
+        return false
+    }
+    return uc_is_word(uc_decode(p, at))
+}
+
+# re's \b at byte offset `at`.
+function boundary(p: ptr<u8>, at: i32) -> bool {
+    return word_before(p, at) != word_at(p, at)
+}
+
+# len(re.findall(rf"\b{re.escape(feature)}\b", text))
+function count_bounded(text: string, feature: string, stop_at_one: bool) -> i32 {
+    let p: ptr<u8> = text as ptr<u8>
+    let flen: i32 = ft_len(feature)
+    let mut count: i32 = 0
+    let mut at: i32 = ft_find(text, feature, 0)
+    while at >= 0 {
+        if boundary(p, at) and boundary(p, at + flen) {
+            count = count + 1
+            if stop_at_one {
+                return count
+            }
+            at = ft_find(text, feature, at + flen)
+        } else {
+            at = ft_find(text, feature, at + 1)
+        }
+    }
+    return count
+}
+
+# re.search(rf"(?:flow|\$)\s+{re.escape(feature)}\b", text)
+function cli_mentioned(text: string, feature: string) -> bool {
+    let p: ptr<u8> = text as ptr<u8>
+    let n: i32 = ft_len(text)
+    let flen: i32 = ft_len(feature)
+    let mut i: i32 = 0
+    while i < n {
+        let mut after: i32 = -1
+        if ft_at(text, i, "flow") {
+            after = i + 4
+        } elif p[i] == 36 {
+            after = i + 1
+        }
+        if after >= 0 and after < n and uc_is_space(uc_decode(p, after)) {
+            let w: i32 = skip_ws(p, after, n)
+            if ft_at(text, w, feature) and boundary(p, w + flen) {
+                return true
+            }
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# Non-overlapping occurrences, as str.count.
+function count_plain(text: string, needle: string) -> i32 {
+    let n: i32 = ft_len(needle)
+    let mut count: i32 = 0
+    let mut at: i32 = ft_find(text, needle, 0)
+    while at >= 0 {
+        count = count + 1
+        at = ft_find(text, needle, at + n)
+    }
+    return count
+}
+
+function doc_text(docs: string, rel: string) -> string {
+    let mut path: string = rel
+    if ft_starts(rel, "/") == false {
+        path = docs + "/" + rel
+    }
+    let t: string = ft_read_file(path)
+    if t as ptr<u8> == null {
+        return ""
+    }
+    return md_sanitize(t)
+}
+
+# Deliberately literal. A mapping that points at a page which never names the
+# thing is worse than an admitted gap, because it reads as covered.
+function mentions_text(text: string, cat: string, feature: string) -> bool {
+    if ft_len(text) == 0 {
+        return false
+    }
+    if ft_eq(cat, "attribute") {
+        return ft_find(text, "@" + feature, 0) >= 0
+    }
+    if ft_eq(cat, "cli") {
+        return cli_mentioned(text, feature)
+    }
+    if ft_eq(cat, "stdlib") {
+        return ft_find(text, feature, 0) >= 0
+    }
+    return count_bounded(text, feature, true) > 0
+}
+
+# ---------------------------------------------------------------------------
+# Check
+# ---------------------------------------------------------------------------
+
+# Python truthiness of a JSON value.
+function json_truthy(j: ptr<Json>, id: i32) -> bool {
+    if id < 0 {
+        return false
+    }
+    let k: i32 = json_kind(j, id)
+    if k == json_kind_null() or k == json_kind_false() {
+        return false
+    }
+    if k == json_kind_string() {
+        return ft_len(json_str(j, id)) > 0
+    }
+    if k == json_kind_array() or k == json_kind_object() {
+        return json_first(j, id) >= 0
+    }
+    if k == json_kind_true() {
+        return true
+    }
+    let s: string = json_str(j, id)
+    return ft_eq(s, "0") == false and ft_eq(s, "-0") == false and ft_eq(s, "0.0") == false and ft_eq(s, "-0.0") == false
+}
+
+# Keys of a JSON object, sorted and unique.
+function object_keys(j: ptr<Json>, id: i32) -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    if id < 0 or json_kind(j, id) != json_kind_object() {
+        return out
+    }
+    let mut c: i32 = json_first(j, id)
+    while c >= 0 {
+        ft_list_push(out, json_key(j, c))
+        c = json_next(j, c)
+    }
+    return ft_list_sorted_unique(out)
+}
+
+function has_key(keys: ptr<StrList>, k: string) -> bool {
+    let mut lo: i32 = 0
+    let mut hi: i32 = ft_list_len(keys)
+    while lo < hi {
+        let mid: i32 = (lo + hi) / 2
+        let c: i32 = ft_cmp_bytes(ft_list_get(keys, mid), k)
+        if c == 0 {
+            return true
+        }
+        if c < 0 {
+            lo = mid + 1
+        } else {
+            hi = mid
+        }
+    }
+    return false
+}
+
+function ft_cmp_bytes(a: string, b: string) -> i32 {
+    let pa: ptr<u8> = a as ptr<u8>
+    let pb: ptr<u8> = b as ptr<u8>
+    let mut i: i32 = 0
+    while pa[i] != 0 and pa[i] == pb[i] {
+        i = i + 1
+    }
+    return (pa[i] as i32) - (pb[i] as i32)
+}
+
+function load_map(path: string) -> ptr<Json> {
+    let text: string = ft_read_file(path)
+    if text as ptr<u8> == null {
+        return json_parse("{\"covered\": {}, \"exempt\": {}}")
+    }
+    return json_parse(text)
+}
+
+function run_check(inv: ptr<ptr<StrList>>, map_path: string, docs: string) -> i32 {
+    let j: ptr<Json> = load_map(map_path)
+    if ft_len(json_error(j)) > 0 {
+        ft_errln(PROG + ": invalid JSON in " + map_path + ": " + json_error(j))
+        return 1
+    }
+    let covered: i32 = json_get(j, 0, "covered")
+    let exempt: i32 = json_get(j, 0, "exempt")
+    let problems: ptr<StrList> = ft_list_new()
+    let stats: ptr<i32> = malloc(4 * 4 * 5) as ptr<i32>
+    let known: ptr<StrSet> = ft_set_new()
+
+    let mut ci: i32 = 0
+    while ci < CAT_N {
+        let cat: string = category(ci)
+        let names: ptr<StrList> = inv[ci]
+        let mut n_cov: i32 = 0
+        let mut n_ex: i32 = 0
+        let mut n_broken: i32 = 0
+        let mut n_unc: i32 = 0
+        let mut ni: i32 = 0
+        while ni < ft_list_len(names) {
+            let name: string = ft_list_get(names, ni)
+            let key: string = cat + ":" + name
+            ft_set_add(known, key)
+            let ex: i32 = json_get(j, exempt, key)
+            if ex >= 0 {
+                if json_kind(j, ex) == json_kind_string() and ft_len(uc_strip(json_str(j, ex))) == 0 {
+                    ft_list_push(problems, key + " is exempt with no written reason")
+                }
+                n_ex = n_ex + 1
+                ni = ni + 1
+                continue
+            }
+            let page_node: i32 = json_get(j, covered, key)
+            if json_truthy(j, page_node) == false {
+                n_unc = n_unc + 1
+                ft_list_push(problems, key + " has no documented home")
+                ni = ni + 1
+                continue
+            }
+            let page: string = json_str(j, page_node)
+            let mut page_path: string = page
+            if ft_starts(page, "/") == false {
+                page_path = docs + "/" + page
+            }
+            if ft_exists(page_path) == false {
+                ft_list_push(problems, key + " maps to " + ft_repr(page) + ", which does not exist")
+                n_broken = n_broken + 1
+                ni = ni + 1
+                continue
+            }
+            if mentions_text(doc_text(docs, page), cat, name) == false {
+                ft_list_push(problems, key + " maps to " + ft_repr(page) + ", which never mentions it")
+                n_broken = n_broken + 1
+                ni = ni + 1
+                continue
+            }
+            n_cov = n_cov + 1
+            ni = ni + 1
+        }
+        stats[ci * 4] = n_cov
+        stats[ci * 4 + 1] = n_ex
+        stats[ci * 4 + 2] = n_broken
+        stats[ci * 4 + 3] = n_unc
+        ci = ci + 1
+    }
+
+    let mapped: ptr<StrList> = ft_list_new()
+    let ck: ptr<StrList> = object_keys(j, covered)
+    let ek: ptr<StrList> = object_keys(j, exempt)
+    let mut a: i32 = 0
+    while a < ft_list_len(ck) {
+        ft_list_push(mapped, ft_list_get(ck, a))
+        a = a + 1
+    }
+    a = 0
+    while a < ft_list_len(ek) {
+        ft_list_push(mapped, ft_list_get(ek, a))
+        a = a + 1
+    }
+    let all_keys: ptr<StrList> = ft_list_sorted_unique(mapped)
+    a = 0
+    while a < ft_list_len(all_keys) {
+        let k: string = ft_list_get(all_keys, a)
+        if ft_set_has(known, k) == false {
+            ft_list_push(problems, k + " is mapped but no longer exists in the compiler")
+        }
+        a = a + 1
+    }
+
+    ft_outln("\nCoverage:")
+    ci = 0
+    while ci < CAT_N {
+        let total: i32 = stats[ci * 4] + stats[ci * 4 + 1] + stats[ci * 4 + 2] + stats[ci * 4 + 3]
+        ft_outln("  " + ft_ljust(category(ci), 10) + " " + ft_rjust(ft_itoa(stats[ci * 4]), 4) + "/" + ft_ljust(ft_itoa(total), 4) + " covered   exempt " + ft_rjust(ft_itoa(stats[ci * 4 + 1]), 3) + "   problems " + ft_rjust(ft_itoa(stats[ci * 4 + 2]), 3) + "   uncovered " + ft_rjust(ft_itoa(stats[ci * 4 + 3]), 3))
+        ci = ci + 1
+    }
+
+    let np: i32 = ft_list_len(problems)
+    if np > 0 {
+        ft_outln("\n" + ft_itoa(np) + " problem(s):")
+        let mut pi: i32 = 0
+        while pi < np and pi < 60 {
+            ft_outln("  " + ft_list_get(problems, pi))
+            pi = pi + 1
+        }
+        if np > 60 {
+            ft_outln("  ... and " + ft_itoa(np - 60) + " more")
+        }
+        return 1
+    }
+    ft_outln("\nevery feature has a documented home")
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# Proposal
+# ---------------------------------------------------------------------------
+
+# Pages under docs/, sorted, skipping formal/ and dot-directories.
+function doc_pages() -> ptr<StrList> {
+    let out: ptr<StrList> = ft_list_new()
+    let args: ptr<StrList> = rp_argv2("docs", "-name")
+    ft_list_push(args, "*.md")
+    let lines: ptr<StrList> = find_lines(args)
+    let mut i: i32 = 0
+    while i < ft_list_len(lines) {
+        let line: string = ft_list_get(lines, i)
+        if ft_starts(line, "docs/") {
+            let rel: string = ft_from(line, 5)
+            let full: string = "/" + rel + "/"
+            if ft_find(full, "/formal/", 0) < 0 and ft_find(full, "/.", 0) < 0 {
+                ft_list_push(out, rel)
+            }
+        }
+        i = i + 1
+    }
+    ft_list_sort(out)
+    return out
+}
+
+# The best page for a feature: highest (score, page), or null.
+function propose(cat: string, feature: string, pages: ptr<StrList>, texts: ptr<string>) -> string {
+    let mut best: string = null as string
+    let mut best_score: i32 = -1
+    let mut i: i32 = 0
+    while i < ft_list_len(pages) {
+        let rel: string = ft_list_get(pages, i)
+        let text: string = texts[i]
+        if mentions_text(text, cat, feature) {
+            let mut score: i32 = 0
+            if ft_eq(cat, "attribute") {
+                score = count_plain(text, "@" + feature)
+            } else {
+                score = count_bounded(text, feature, false)
+            }
+            # A dedicated reference page beats a passing mention in a changelog.
+            if ft_starts(rel, "language/") or ft_starts(rel, "library/") {
+                score = score + 3
+            }
+            if score > best_score or (score == best_score and ft_cmp_bytes(rel, best) > 0) {
+                best = rel
+                best_score = score
+            }
+        }
+        i = i + 1
+    }
+    return best
+}
+
+# json.dumps(value, indent=2, sort_keys=True) at nesting `depth`.
+function dump_json(j: ptr<Json>, id: i32, depth: i32) -> string {
+    let k: i32 = json_kind(j, id)
+    if k == json_kind_null() { return "null" }
+    if k == json_kind_true() { return "true" }
+    if k == json_kind_false() { return "false" }
+    if k == json_kind_string() { return json_quote(json_str(j, id)) }
+    if k != json_kind_array() and k != json_kind_object() {
+        return json_str(j, id)
+    }
+    if json_first(j, id) < 0 {
+        if k == json_kind_array() {
+            return "[]"
+        }
+        return "{}"
+    }
+    let mut pad: string = ""
+    let mut d: i32 = 0
+    while d <= depth {
+        pad = pad + "  "
+        d = d + 1
+    }
+    let outer: string = ft_slice(pad, 2, ft_len(pad))
+    if k == json_kind_array() {
+        let mut out: string = "[\n"
+        let mut c: i32 = json_first(j, id)
+        let mut first: bool = true
+        while c >= 0 {
+            if first == false {
+                out = out + ",\n"
+            }
+            first = false
+            out = out + pad + dump_json(j, c, depth + 1)
+            c = json_next(j, c)
+        }
+        return out + "\n" + outer + "]"
+    }
+    let keys: ptr<StrList> = object_keys(j, id)
+    let mut out2: string = "{\n"
+    let mut ki: i32 = 0
+    while ki < ft_list_len(keys) {
+        if ki > 0 {
+            out2 = out2 + ",\n"
+        }
+        let key: string = ft_list_get(keys, ki)
+        out2 = out2 + pad + json_quote(key) + ": " + dump_json(j, json_get(j, id, key), depth + 1)
+        ki = ki + 1
+    }
+    return out2 + "\n" + outer + "}"
+}
+
+function run_propose(inv: ptr<ptr<StrList>>, write: bool, map_path: string, docs: string) -> i32 {
+    let pages: ptr<StrList> = doc_pages()
+    let texts: ptr<string> = malloc(((ft_list_len(pages) + 1) as i64) * 8) as ptr<string>
+    let mut t: i32 = 0
+    while t < ft_list_len(pages) {
+        texts[t] = doc_text(docs, ft_list_get(pages, t))
+        t = t + 1
+    }
+    let cov_keys: ptr<StrList> = ft_list_new()
+    let cov_pages: ptr<StrList> = ft_list_new()
+    let gaps: ptr<StrList> = ft_list_new()
+    let mut ci: i32 = 0
+    while ci < CAT_N {
+        let names: ptr<StrList> = inv[ci]
+        let mut ni: i32 = 0
+        while ni < ft_list_len(names) {
+            let key: string = category(ci) + ":" + ft_list_get(names, ni)
+            let best: string = propose(category(ci), ft_list_get(names, ni), pages, texts)
+            if best as ptr<u8> != null {
+                ft_list_push(cov_keys, key)
+                ft_list_push(cov_pages, best)
+            } else {
+                ft_list_push(gaps, key)
+            }
+            ni = ni + 1
+        }
+        ci = ci + 1
+    }
+    ft_outln("\nproposed homes : " + ft_itoa(ft_list_len(cov_keys)))
+    ft_outln("no page mentions them at all : " + ft_itoa(ft_list_len(gaps)))
+    let mut g: i32 = 0
+    while g < ft_list_len(gaps) {
+        ft_outln("    " + ft_list_get(gaps, g))
+        g = g + 1
+    }
+    if write {
+        let j: ptr<Json> = load_map(map_path)
+        if ft_len(json_error(j)) > 0 {
+            ft_errln(PROG + ": invalid JSON in " + map_path + ": " + json_error(j))
+            return 1
+        }
+        # Rebuild the top level with "covered" replaced and "exempt" kept.
+        let mut covered_json: string = "{}"
+        if ft_list_len(cov_keys) > 0 {
+            covered_json = "{\n"
+            let order: ptr<StrList> = ft_list_new()
+            let mut c: i32 = 0
+            while c < ft_list_len(cov_keys) {
+                ft_list_push(order, ft_list_get(cov_keys, c) + "\t" + ft_list_get(cov_pages, c))
+                c = c + 1
+            }
+            ft_list_sort(order)
+            c = 0
+            while c < ft_list_len(order) {
+                let row: string = ft_list_get(order, c)
+                let tab: i32 = ft_find_byte(row, 9, 0)
+                if c > 0 {
+                    covered_json = covered_json + ",\n"
+                }
+                covered_json = covered_json + "    " + json_quote(ft_slice(row, 0, tab)) + ": " + json_quote(ft_from(row, tab + 1))
+                c = c + 1
+            }
+            covered_json = covered_json + "\n  }"
+        }
+        let keys: ptr<StrList> = object_keys(j, 0)
+        let all: ptr<StrList> = ft_list_new()
+        let mut a: i32 = 0
+        while a < ft_list_len(keys) {
+            ft_list_push(all, ft_list_get(keys, a))
+            a = a + 1
+        }
+        ft_list_push(all, "covered")
+        ft_list_push(all, "exempt")
+        let top: ptr<StrList> = ft_list_sorted_unique(all)
+        let mut out: string = "{\n"
+        a = 0
+        while a < ft_list_len(top) {
+            let key: string = ft_list_get(top, a)
+            if a > 0 {
+                out = out + ",\n"
+            }
+            out = out + "  " + json_quote(key) + ": "
+            if ft_eq(key, "covered") {
+                out = out + covered_json
+            } elif ft_eq(key, "exempt") and json_get(j, 0, "exempt") < 0 {
+                out = out + "{}"
+            } else {
+                out = out + dump_json(j, json_get(j, 0, key), 1)
+            }
+            a = a + 1
+        }
+        out = out + "\n}\n"
+        if ft_write_file(map_path, out) == false {
+            ft_errln(PROG + ": cannot write " + map_path)
+            return 1
+        }
+        ft_outln("\nwrote " + map_path)
+    }
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+function usage() -> string {
+    return "usage: " + PROG + " [-h] [--propose] [--write-proposal]\n"
+}
+
+function arg_error(msg: string) -> i32 {
+    ft_err(usage() + PROG + ": error: " + msg + "\n")
+    return 2
+}
+
+function print_bool(b: bool) -> void {
+    if b {
+        ft_outln("True")
+    } else {
+        ft_outln("False")
+    }
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    if rp_enter_root() == false {
+        ft_errln(PROG + ": cannot enter the repository root")
+        return 1
+    }
+    let mut do_propose: bool = false
+    let mut do_write: bool = false
+    let mut do_inventory: bool = false
+    let mut map_path: string = "docs/coverage.json"
+    let docs: string = "docs"
+    let unknown: ptr<StrList> = ft_list_new()
+    let mut i: i32 = 1
+    while i < argc {
+        let arg: string = argv[i]
+        if ft_eq(arg, "-h") or ft_eq(arg, "--help") {
+            ft_out(usage() + "\nDoes the documentation cover every part of the language?\n\noptions:\n  -h, --help        show this help message and exit\n  --propose         suggest a home for every uncovered feature\n  --write-proposal  write docs/coverage.json from the proposal\n")
+            return 0
+        } elif ft_eq(arg, "--write-proposal") or (ft_len(arg) > 2 and ft_starts("--write-proposal", arg)) {
+            do_write = true
+        } elif ft_eq(arg, "--propose") or (ft_len(arg) > 2 and ft_starts("--propose", arg)) {
+            do_propose = true
+        } elif ft_eq(arg, "--inventory") {
+            do_inventory = true
+        } elif ft_eq(arg, "--map") and i + 1 < argc {
+            map_path = argv[i + 1]
+            i = i + 1
+        } elif ft_eq(arg, "--is-backend") and i + 1 < argc {
+            print_bool(is_backend(argv[i + 1]))
+            return 0
+        } elif ft_eq(arg, "--mentions") and i + 3 < argc {
+            let text: string = ft_read_file(argv[i + 3])
+            let mut body: string = ""
+            if text as ptr<u8> != null {
+                body = md_sanitize(text)
+            }
+            print_bool(mentions_text(body, argv[i + 1], argv[i + 2]))
+            return 0
+        } else {
+            ft_list_push(unknown, arg)
+        }
+        i = i + 1
+    }
+    if ft_list_len(unknown) > 0 {
+        let mut joined: string = ""
+        let mut u: i32 = 0
+        while u < ft_list_len(unknown) {
+            if u > 0 {
+                joined = joined + " "
+            }
+            joined = joined + ft_list_get(unknown, u)
+            u = u + 1
+        }
+        return arg_error("unrecognized arguments: " + joined)
+    }
+
+    let inv: ptr<ptr<StrList>> = inventory()
+    if inv == null {
+        return 1
+    }
+    if do_inventory {
+        let mut ci: i32 = 0
+        while ci < CAT_N {
+            let names: ptr<StrList> = inv[ci]
+            let mut ni: i32 = 0
+            while ni < ft_list_len(names) {
+                ft_outln(category(ci) + ":" + ft_list_get(names, ni))
+                ni = ni + 1
+            }
+            ci = ci + 1
+        }
+        return 0
+    }
+
+    ft_outln("Feature inventory, read from the compiler:")
+    let mut c2: i32 = 0
+    while c2 < CAT_N {
+        ft_outln("  " + ft_ljust(category(c2), 10) + " " + ft_rjust(ft_itoa(ft_list_len(inv[c2])), 4))
+        c2 = c2 + 1
+    }
+
+    if do_propose or do_write {
+        return run_propose(inv, do_write, map_path, docs)
+    }
+    return run_check(inv, map_path, docs)
+}

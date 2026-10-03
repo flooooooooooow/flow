@@ -1,5 +1,5 @@
 # Test for proof_document.flow port of proof_document.py.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_proof_document.flow
+# Run with: ./flow run tests/lang/test_proof_document.flow
 # Exit 0 on success.
 
 import "compiler/src/proof_document.flow"

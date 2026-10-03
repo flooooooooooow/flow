@@ -1,0 +1,11 @@
+
+function main() -> i32 {
+    let ns: i32 = 1
+    let us: i32 = 2
+    let ms: i32 = 3
+    let s: i32 = 4
+    let min: i32 = 5
+    let every: i32 = 6
+    let solver: i32 = 7
+    return ns + us + ms + s + min + every + solver - 28
+}

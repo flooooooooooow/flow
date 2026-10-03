@@ -22,7 +22,7 @@
 #   1 b=1.2 PERSIST   2 b=1.6 MIXED   3 b=2.5 EXTINCT
 #   R reseed   P pause   Esc quit
 #
-# Run: FLOW_HOST=python ./flow record examples/evoleco/spatial_pd.flow --frames 4
+# Run: ./flow record examples/evoleco/spatial_pd.flow --frames 4
 
 import "stdlib/gfx.flow"
 import "stdlib/text.flow"

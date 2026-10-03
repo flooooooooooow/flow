@@ -48,7 +48,7 @@ function main() -> i32 {
 Source: [`examples/book/07_decay.flow`](../../examples/book/07_decay.flow)
 
 ```bash
-FLOW_HOST=python ./flow run examples/book/07_decay.flow
+./flow run examples/book/07_decay.flow
 ```
 
 ## 7.3 Declaring evolution
@@ -64,7 +64,7 @@ flow Decay {
 }
 ```
 
-The right-hand side is a derivative, not the next value. The compiler generates state storage, a derivative function, and `Decay_step`.
+The right-hand side is a derivative rather than the next value. The compiler generates state storage, a derivative function, and `Decay_step`.
 
 ## 7.4 Coupled state: a pendulum
 
@@ -88,7 +88,7 @@ flow PendulumBook {
 All derivatives are evaluated from a consistent pre-step state. Run the complete repository example with:
 
 ```bash
-FLOW_HOST=python ./flow run examples/evolution/pendulum_evolves.flow
+./flow run examples/evolution/pendulum_evolves.flow
 ```
 
 ## 7.5 Solver choice

@@ -2,9 +2,9 @@
 
 *Reversing the empty list yields the empty list.*
 
-**Source.** church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
+**Source.** church: https://en.wikipedia.org/wiki/List_(abstract_data_type)
 
-## Derived fact 1 — rev(nil) = nil
+## Derived fact 1: rev(nil) = nil
 
 **Coordinate.** List · reverse · reversing empty yields empty · **Derived fact**
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Flow in the browser — WebAssembly gallery</title>
+<title>Flow in the browser: WebAssembly gallery</title>
 <style>
 :root { color-scheme: dark; }
 * { box-sizing: border-box; }
@@ -1619,7 +1619,7 @@ footer a { color: #6b7ca8; }
       <div class="card">
         <h3>Digits MLP (Metal)</h3>
         <p>Metal GPU status check for the digits MLP: what runs on the GPU today</p>
-        <div class="degrade">The Metal GPU is CPU-emulated on wasm: buffers are plain memory and flow_gpu_mul_f32 runs an elementwise CPU loop, so the relu-gate correctness check runs and passes, but the 'gpu ms' timing rows measure a CPU loop, not a GPU dispatch.</div>
+        <div class="degrade">The Metal GPU is CPU-emulated on wasm: buffers are plain memory and flow_gpu_mul_f32 runs an elementwise CPU loop, so the relu-gate correctness check runs and passes, but the 'gpu ms' timing rows measure a CPU loop rather than a GPU dispatch.</div>
         <div class="row">
           <button data-run="digits_mlp_metal/index.html" data-title="Digits MLP (Metal)">Run</button>
           <span class="tag">console</span>
@@ -1899,7 +1899,7 @@ footer a { color: #6b7ca8; }
     </div>
 
   <h2>What runs, and what is still being crossed</h2>
-  <p class="blurb">Rows marked “runs” are verified in a browser. The
+  <p class="blurb">Rows marked "runs" are verified in a browser. The
   threads row needs the card opened in a tab (an iframe cannot become
   cross-origin isolated on its own). The rest name the mechanism and say
   plainly that it is not built here yet.</p>

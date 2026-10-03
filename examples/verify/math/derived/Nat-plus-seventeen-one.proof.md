@@ -2,9 +2,9 @@
 
 *Seventeen plus one is eighteen.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 17 + 1 = 18
+## Derived fact 1: 17 + 1 = 18
 
 **Coordinate.** the natural numbers · addition · seventeen plus one is eighteen · **Derived fact**
 

@@ -1,0 +1,36 @@
+# Flow-native language test: quantity literals.
+# A number followed on the same line by a capitalized unit name
+# (`1000.0 Hertz`, `3 Meter`) is that number cast to the unit, for a unit
+# declared here or in an imported module, as on the Python host. A
+# capitalized name on the next line is not a unit.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+import "stdlib/units_si.flow"
+
+unit Furlong
+
+const LIMIT: i32 = 3
+
+function main() -> i32 {
+    let f: Hertz = 1000.0 Hertz
+    if f as f64 != 1000.0 {
+        return 1
+    }
+    let d: Furlong = 3 Furlong
+    if d as f64 != 3.0 {
+        return 2
+    }
+    let mut n: i32 = 0
+    for i in 0 to LIMIT {
+        n = n + i
+    }
+    if n != 3 {
+        return 3
+    }
+    let x: i32 = 2
+    let y: i32 = LIMIT
+    if x + y != 5 {
+        return 4
+    }
+    return 0
+}

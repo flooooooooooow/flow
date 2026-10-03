@@ -1,0 +1,14 @@
+[0;34mℹ️  Generating Python package from overloads.flow...[0m
+
+============================================================
+Python Export Analysis: overloads
+============================================================
+
+✅ Exported (2 symbols):
+   twice: Public function with ABI-compatible signature
+   twice: Public function with ABI-compatible signature
+
+⚠️  Excluded (1 symbols):
+   main: Entry point 'main' not exported
+
+✅ Generated: dist/overloads_ext.c

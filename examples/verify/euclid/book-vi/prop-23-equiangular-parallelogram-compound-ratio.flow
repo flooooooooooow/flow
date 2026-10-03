@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-vi
 # @means  Equiangular parallelograms have to one another the ratio compounded of the ratios of their sides.
-# @from   euclid — Elements, Book VI, Proposition 23
+# @from   euclid: Elements, Book VI, Proposition 23
 # @tier   derived
 # @needs  «Geometry» «Euclid Book VI» «Proposition 14: equal equiangular parallelograms have reciprocally proportional sides», «Geometry» «Euclid Book V» «Proposition 23: chained proportion yields ex aequali»
 

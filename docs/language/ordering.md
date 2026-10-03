@@ -1,6 +1,6 @@
 # Declarative Ordering
 
-Sorting in FLOW is an **intent** surface, not an algorithm call.
+Sorting in FLOW is an **intent** surface rather than an algorithm call.
 
 ```flow-pseudocode
 xs |> sort
@@ -10,7 +10,7 @@ xs |> find(target)
 ```
 
 You say what must hold. The compiler picks how to realize it, from a registry
-of implementations with cost models, and `--explain` prints the choice. See
+of implementations with cost models, and `flow explain` prints the choice. See
 [Explainable compilation](explainable-compilation.md).
 
 ## Surface
@@ -76,7 +76,7 @@ Three options were on the table.
 
 **Reject NaN at runtime.** Costs a branch per comparison and turns ordering
 into an operation that can abort. Flow's ordering is used inside dynamics and
-evolution steps where a NaN is a diagnostic, not a reason to kill the process.
+evolution steps where a NaN is a diagnostic and no reason to kill the process.
 
 **NaN-last.** Simpler to explain, and it is what several languages do. It
 still needs an invented rule for the sign of NaN and another for `-0.0`
@@ -108,7 +108,7 @@ with the same payload collapse to one, and `-0.0` and `+0.0` both survive.
 
 The compiler chooses among six sort lowerings. Each declares when it applies,
 how much scratch it needs, and what it costs; the cheapest applicable one
-wins. `src/flow/ordering_plans.py` holds the declarations.
+wins. `compiler/src/sort_plans.flow` holds the declarations.
 
 | Plan | Applies when | Cost model |
 |------|--------------|-----------|
@@ -124,7 +124,7 @@ because reversing a run of equal keys would not be.
 
 Compiler-introduced scratch is capped at 256 KiB, because the merge plans put
 their buffer on the C stack. Past that they are rejected and insertion takes
-over. `--explain` names the budget when that happens.
+over. `flow explain` names the budget when that happens.
 
 Search has two lowerings on the same machinery:
 
@@ -140,7 +140,7 @@ Two kinds of fact reach the selector.
 **From the type.** A `u8` array bounds every key to `[0, 255]`, a `bool` array
 to `[0, 1]`. That is enough for the counting plan with no analysis at all.
 
-**From provenance.** `src/flow/ordering_hints.py` walks a function body in
+**From provenance.** `compiler/src/sort_sites.flow` walks a function body in
 source order and tracks, per array variable, the order it is known to be in
 and the integer range of its elements. Two things create a fact: an array
 literal whose elements are all numeric literals, and a `|> sort` in
@@ -157,7 +157,7 @@ let i = xs |> find(t) # so this is a binary search, not a scan
 ```
 
 Insert a call taking `xs` between those two lines and the fact is gone, the
-search drops back to a linear scan, and `--explain` says why.
+search drops back to a linear scan, and `flow explain` says why.
 
 ## Measured
 
@@ -170,4 +170,4 @@ the counting plan on `u8`.
 
 GPU / SIMD / distributed backends, entropy as a first-class effect, `order { }`
 blocks, composable primitives (`split` / `partition` / `merge`), latency and
-memory objectives (`sort under 2ms`). Tracked in `Questions.md`.
+memory objectives (`sort under 2ms`). Tracked in [project Questions](../project/Questions.md).

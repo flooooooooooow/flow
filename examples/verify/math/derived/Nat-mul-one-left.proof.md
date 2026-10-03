@@ -2,13 +2,13 @@
 
 *One is the left multiplicative identity.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — succ(0) * m = m, i
+## Derived fact 1: succ(0) * m = m, i
 
 **Coordinate.** the natural numbers · multiplication · one is the left identity · **Derived fact**
 
-*Source: peano/induction — Gries & Schneider, Ch. 3*
+*Source: peano/induction: Gries & Schneider, Ch. 3*
 
 *Built on: zero is the right annihilator, for multiplication on the natural numbers, successor on the right distributes, for multiplication on the natural numbers, adding zero on the left does not change the number, successor on the left steps the sum, for addition on the natural numbers*
 

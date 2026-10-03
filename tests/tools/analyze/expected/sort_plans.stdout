@@ -1,0 +1,22 @@
+Stack depth analysis: tests/lang/test_sort_plans.flow
+============================================================
+Function                                  Max depth Chain
+------------------------------------------------------------
+main                                          152 bytes  main
+fill_descending                                 0 bytes  fill_descending
+fill_sawtooth                                   0 bytes  fill_sawtooth
+fill_bytes                                      0 bytes  fill_bytes
+ascending_i32                                   0 bytes  ascending_i32
+ascending_u8                                    0 bytes  ascending_u8
+
+WCET analysis: tests/lang/test_sort_plans.flow
+============================================================
+Function                                   Max cost Chain
+------------------------------------------------------------
+main                                          240 inst  main → ascending_i32
+ascending_i32                                  12 inst  ascending_i32
+ascending_u8                                   12 inst  ascending_u8
+fill_descending                                 9 inst  fill_descending
+fill_sawtooth                                   9 inst  fill_sawtooth
+fill_bytes                                      9 inst  fill_bytes
+

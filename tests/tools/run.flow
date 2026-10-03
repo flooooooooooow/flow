@@ -1,0 +1,131 @@
+# Transcript tests for the native host tools written in Flow (flow repl,
+# flow lsp, flow analyze, flow wasm --legacy, the playground compile
+# server and the WebSocket echo relay), plus the GIF encoder for recordings.
+#
+# Each case is an input file fed to the tool on stdin and the exact bytes
+# the tool is expected to write back. Nothing here needs Python.
+#
+# Usage: ./flow tool tests/tools/run.flow [--update]
+
+import "tools/flow_cli/sys.flow"
+import std.process { ProcCmd, ProcResult, ProcStrs, proc_cmd, proc_arg, proc_input, proc_stdin, proc_stdout, proc_stderr, proc_run, proc_chdir, PROC_CAPTURE, PROC_NULL, PROC_INHERIT }
+
+function status_of(r: ptr<ProcResult>) -> i32 {
+    if s_len(r.error) > 0 {
+        return 127
+    }
+    if r.exit_code < 0 {
+        return 128 - r.exit_code
+    }
+    return r.exit_code
+}
+
+# `diff -u a b | head -60`
+function show_diff(a: string, b: string) {
+    let d: ptr<ProcCmd> = proc_cmd("diff")
+    proc_arg(d, "-u")
+    proc_arg(d, a)
+    proc_arg(d, b)
+    proc_stdout(d, PROC_CAPTURE)
+    proc_stderr(d, PROC_INHERIT)
+    let r: ptr<ProcResult> = proc_run(d)
+    let lines: ptr<ProcStrs> = s_lines(r.stdout)
+    let mut i: i32 = 0
+    while i < sl_len(lines) and i < 60 {
+        outln(sl_get(lines, i))
+        i = i + 1
+    }
+}
+
+# One sub-runner, its output passed through; its exit status.
+function sub(path: string, update: bool) -> i32 {
+    let c: ptr<ProcCmd> = proc_cmd("./flow")
+    proc_arg(c, "tool")
+    proc_arg(c, path)
+    if update {
+        proc_arg(c, "--update")
+    }
+    proc_stdin(c, PROC_INHERIT)
+    proc_stdout(c, PROC_INHERIT)
+    proc_stderr(c, PROC_INHERIT)
+    return status_of(proc_run(c))
+}
+
+function main() -> i32 {
+    let root: string = env_or("FLOW_REPO_ROOT", cwd_logical())
+    let _cd: bool = proc_chdir(root)
+    env_set("PWD", root)
+    let args: ptr<ProcStrs> = proc_args()
+    let update: bool = sl_len(args) > 0 and s_eq(sl_get(args, 0), "--update")
+    let mut pass: i32 = 0
+    let mut fail: i32 = 0
+    let work: string = mktemp_dir(env_or("TMPDIR", "/tmp") + "/flow-tool-tests.XXXXXX")
+    on_exit_remove(work)
+
+    # REPL sessions: tests/tools/repl/<case>.in -> <case>.expected
+    let inputs: ptr<ProcStrs> = glob_suffix("tests/tools/repl", ".in")
+    let mut i: i32 = 0
+    while i < sl_len(inputs) {
+        let input: string = sl_get(inputs, i)
+        i = i + 1
+        let base: string = path_stem(input, ".in")
+        let name: string = "repl/" + base
+        let outp: string = work + "/" + base + ".out"
+        let expected: string = s_slice(input, 0, s_len(input) - 3) + ".expected"
+        # stderr carries one-time build chatter (flowc, the tool itself), so
+        # only stdout is compared; stderr is shown when a case fails.
+        let c: ptr<ProcCmd> = proc_cmd("./flow")
+        proc_arg(c, "repl")
+        proc_input(c, read_text(input))
+        proc_stdout(c, PROC_CAPTURE)
+        proc_stderr(c, PROC_CAPTURE)
+        let r: ptr<ProcResult> = proc_run(c)
+        let _w1: bool = write_text(outp, r.stdout)
+        let _w2: bool = write_text(outp + ".err", r.stderr)
+        if status_of(r) != 0 {
+            cli_exit(status_of(r))
+        }
+        if update {
+            let _c: bool = copy_file(outp, expected)
+            outln("updated " + name)
+            pass = pass + 1
+        } elif same_bytes(expected, outp) {
+            outln("PASS " + name)
+            pass = pass + 1
+        } else {
+            outln("FAIL " + name)
+            show_diff(expected, outp)
+            fail = fail + 1
+            out(r.stderr)
+        }
+    }
+
+    outln("tool transcripts: " + s_itoa(pass) + " passed, " + s_itoa(fail) + " failed")
+
+    # Language server sessions (flow lsp).
+    let lsp_status: i32 = sub("tests/tools/lsp/run.flow", update)
+    # flow analyze (WCET, stack depth, MISRA scan).
+    let analyze_status: i32 = sub("tests/tools/analyze/run.flow", update)
+    # The legacy wasm converter (flow wasm --legacy).
+    let wasm_legacy_status: i32 = sub("tests/tools/flow_to_wasm/run.flow", update)
+    # Playground compile server and WebSocket echo relay.
+    let net_status: i32 = sub("tests/tools/net/run.flow", update)
+    # GIF encoding for recordings: no goldens to update, the checker decodes
+    # the GIF it writes.
+    let gif_status: i32 = sub("tests/tools/frames_to_gif/run.flow", false)
+    # Schur-lattice audio demo and figures (tools/audio). There is nothing
+    # to update; the references come from the replaced scripts.
+    let mut audio_status: i32 = 0
+    # Discord welcome bot (tools/discord-welcome).
+    let mut welcome_status: i32 = 0
+    if not update {
+        audio_status = sub("tests/tools/audio/run.flow", false)
+        welcome_status = sub("tests/tools/discord_welcome/run.flow", false)
+    }
+
+    if fail == 0 and lsp_status == 0 and analyze_status == 0 and wasm_legacy_status == 0 and net_status == 0 and gif_status == 0 and audio_status == 0 and welcome_status == 0 {
+        cli_exit(0)
+    }
+    cli_exit(1)
+    return 1
+}

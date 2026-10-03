@@ -1,0 +1,44 @@
+# Two spellings the Python host accepts and flowc once rejected
+# (corpus parity):
+#   - a function named like a libc function with another signature
+#     (heapsort is in macOS <stdlib.h>, index in <strings.h>);
+#   - `return void` in a void function.
+
+function heapsort(xs: ptr<i32>, n: i32) {
+    # Tiny insertion sort; the name is the point.
+    let mut i: i32 = 1
+    while i < n {
+        let v: i32 = xs[i]
+        let mut j: i32 = i - 1
+        while j >= 0 and xs[j] > v {
+            xs[j + 1] = xs[j]
+            j = j - 1
+        }
+        xs[j + 1] = v
+        i = i + 1
+    }
+    return void
+}
+
+function index(xs: ptr<i32>, n: i32, want: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < n {
+        if xs[i] == want {
+            return i
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+function main() -> i32 {
+    let mut xs: array<i32, 4> = [3, 1, 4, 2]
+    heapsort(&xs[0], 4)
+    if xs[0] != 1 or xs[3] != 4 {
+        return 1
+    }
+    if index(&xs[0], 4, 3) != 2 {
+        return 2
+    }
+    return 0
+}

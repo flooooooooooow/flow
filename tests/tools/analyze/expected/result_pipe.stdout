@@ -1,0 +1,22 @@
+Stack depth analysis: examples/basics/result_pipeline.flow
+============================================================
+Function                                  Max depth Chain
+------------------------------------------------------------
+main                                          152 bytes  main → pipeline → double_checked → err_i32
+pipeline                                      100 bytes  pipeline → double_checked → err_i32
+double_checked                                 68 bytes  double_checked → err_i32
+printf                                         64 bytes  printf
+parse_positive                                 64 bytes  parse_positive → ok_i32
+clamp_under                                    64 bytes  clamp_under → err_i32
+
+WCET analysis: examples/basics/result_pipeline.flow
+============================================================
+Function                                   Max cost Chain
+------------------------------------------------------------
+main                                          333 inst  main → pipeline → double_checked → err_i32 (extern)
+pipeline                                      212 inst  pipeline → double_checked → err_i32 (extern)
+double_checked                                128 inst  double_checked → err_i32 (extern)
+parse_positive                                127 inst  parse_positive → ok_i32 (extern)
+clamp_under                                   127 inst  clamp_under → err_i32 (extern)
+printf                                        100 inst  printf (extern)
+

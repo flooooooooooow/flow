@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flow crossing 4: CPython in the browser, via Pyodide</title>
+<link rel="stylesheet" href="crossing.css">
+</head>
+<body>
+<main>
+<h1>Crossing 4 &mdash; embedded CPython</h1>
+<p class="lede">
+<code>runtime/flow_python_embed.c</code> drives libpython through the CPython C
+API, and it cannot cross: there is no <code>libpython.so</code> to
+<code>dlopen</code> in a browser. What crosses is the surface Flow actually
+exposes, thirteen C-ABI functions in
+<code>lib/stdlib/python_embed.flow</code>. This build drops the C file and
+supplies those thirteen symbols from a JavaScript library that routes them to
+Pyodide.
+</p>
+
+<div class="facts">
+  <div class="fact"><span class="k">Pyodide</span><span class="v" id="f-pyodide">loading&hellip;</span></div>
+  <div class="fact"><span class="k">interpreter</span><span class="v" id="f-impl">&hellip;</span></div>
+  <div class="fact"><span class="k">bridge symbols</span><span class="v">13</span></div>
+  <div class="fact"><span class="k">flow_python_embed.c</span><span class="v">not linked</span></div>
+</div>
+
+<h2>Run</h2>
+<div class="panel">
+  <button id="run" disabled>Run the Flow program</button>
+  <button id="clear" class="secondary">Clear</button>
+</div>
+
+<h2>Checks</h2>
+<div class="panel">
+<table>
+  <thead><tr><th>call</th><th>route</th><th>observed</th><th>verdict</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+</div>
+
+<h2>Program output</h2>
+<pre id="out">waiting for Pyodide</pre>
+
+<h2>Flow source</h2>
+<pre class="source">@@flow_src@@</pre>
+
+<h2>Python module (examples/interop/python/flow_demo.py)</h2>
+<pre class="source" id="py-src">@@py_src@@</pre>
+
+<h2>The bridge (head of wasm/crossing_assets/pyodide_bridge.js)</h2>
+<pre class="source">@@bridge_src@@</pre>
+
+<footer>
+Built by <code>./flow tool wasm_crossings python</code>. Pyodide @@PYODIDE_VERSION@@ from
+jsDelivr, so this page needs network. Mechanism:
+<code>docs/language/wasm-crossings.md</code>.
+</footer>
+</main>
+
+<script src="@@PYODIDE_CDN@@pyodide.js"></script>
+<script src="@@stem@@.js"></script>
+<script>
+const out = document.getElementById("out");
+const log = (s) => { out.textContent += s + "\n"; out.scrollTop = out.scrollHeight; };
+globalThis.flowPyLog = log;
+const setFact = (id, text, cls) => {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.className = "v" + (cls ? " " + cls : "");
+};
+function addRow(call, route, observed, ok) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `<td><code>${call}</code></td><td>${route}</td><td>${observed}</td>` +
+                 `<td style="color:${ok ? "var(--ok)" : "var(--bad)"}">${ok ? "ok" : "FAIL"}</td>`;
+  document.getElementById("rows").appendChild(tr);
+}
+
+// python_init() is synchronous and loadPyodide() is not, so Pyodide is brought
+// up first and parked on a global. The Flow program is unchanged; only the
+// order of operations on this side had to move.
+(async () => {
+  out.textContent = "";
+  log("loading Pyodide " + "@@PYODIDE_VERSION@@" + " ...");
+  const t0 = performance.now();
+  const pyodide = await loadPyodide({ indexURL: "@@PYODIDE_CDN@@" });
+  globalThis.flowPyodide = pyodide;
+  const loadMs = performance.now() - t0;
+
+  // Give the Flow program something to import. It asks for sys.path entry
+  // "python", so the module goes there inside Pyodide's own filesystem.
+  // The module text is the listing above; textContent undoes the HTML escaping.
+  const source = document.getElementById("py-src").textContent;
+  pyodide.FS.mkdir("/home/pyodide/python");
+  pyodide.FS.writeFile("/home/pyodide/python/flow_demo.py", source);
+
+  const impl = pyodide.runPython(
+    "import platform, sys; platform.python_implementation() + ' ' + sys.version.split()[0]"
+  );
+  setFact("f-pyodide", "loaded in " + loadMs.toFixed(0) + " ms", "ok");
+  setFact("f-impl", impl, "ok");
+  log("Pyodide ready: " + impl + " (" + loadMs.toFixed(0) + " ms)");
+  log("wrote /home/pyodide/python/flow_demo.py into Pyodide's filesystem");
+  log("");
+  document.getElementById("run").disabled = false;
+})().catch((e) => {
+  setFact("f-pyodide", "failed", "bad");
+  log("Pyodide failed to load: " + e);
+});
+
+async function runProgram() {
+  document.getElementById("run").disabled = true;
+  document.getElementById("rows").innerHTML = "";
+  log("=== python_embed ===");
+  const before = out.textContent.length;
+
+  const m = await createFlowPython({
+    print: (s) => log(s),
+    printErr: (s) => log("stderr: " + s),
+    noInitialRun: true,
+  });
+  // Pyodide writes Python's own stdout through its stdout handler; point it
+  // at the same log so interleaving is visible.
+  globalThis.flowPyodide.setStdout({ batched: (s) => log(s) });
+
+  const t0 = performance.now();
+  const rc = m.callMain([]);
+  const ms = performance.now() - t0;
+  const text = out.textContent.slice(before);
+
+  const has = (re) => re.test(text);
+  addRow("python_import_module", "pyodide.pyimport", has(/imported flow_demo/) ? "flow_demo imported" : "not imported", has(/imported flow_demo/));
+  addRow("python_call0", "banner()", has(/\[python\] CPython/) ? text.match(/\[python\] (CPython [0-9.]+)/)[1] : "no output", has(/\[python\] CPython/));
+  addRow("python_call1_str", "greet(\"Flow\")", has(/hello, Flow/) ? "hello, Flow" : "no output", has(/hello, Flow/));
+  addRow("python_call1_i32", "square(12)", has(/12 squared is 144/) ? "144" : "no output", has(/12 squared is 144/));
+  addRow("python_call1_f32", "scale(1.5)", has(/1\.5000 \* 3 = 4\.5000/) ? "4.5000" : "no output", has(/1\.5000 \* 3 = 4\.5000/));
+  addRow("python_call1_bool", "toggle(True)", has(/not True is False/) ? "False" : "no output", has(/not True is False/));
+  const hyp = text.match(/hypot3\(3, 4, 12\) returned ([0-9.]+)/);
+  addRow("python_call3_i32_f64", "math.sqrt in Python", hyp ? hyp[1] : "no value", !!hyp && Math.abs(parseFloat(hyp[1]) - 13) < 1e-6);
+  const evc = text.match(/recorded (\d+) calls/);
+  addRow("module state", "list on the Python module", evc ? evc[1] + " calls remembered" : "none", !!evc && parseInt(evc[1]) >= 6);
+  const boom = text.match(/boom\(\) reported error code (\d+)/);
+  addRow("raised exception", "ValueError -> error code", boom ? "code " + boom[1] + ", message returned" : "not caught", !!boom);
+  const miss = text.match(/missing attribute reported error code (\d+)/);
+  addRow("missing attribute", "AttributeError -> error code", miss ? "code " + miss[1] : "not caught", !!miss);
+
+  const pass = rc === 0 && /\bPASS\b/.test(text);
+  addRow("program exit", "main()", "rc " + rc + ", " + ms.toFixed(1) + " ms", pass);
+  log(`  exit ${rc} in ${ms.toFixed(1)} ms`);
+  document.getElementById("run").disabled = false;
+  return pass;
+}
+
+document.getElementById("run").onclick = runProgram;
+document.getElementById("clear").onclick = () => { out.textContent = ""; };
+window.runProgram = runProgram;
+</script>
+</body>
+</html>

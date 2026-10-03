@@ -1,0 +1,8 @@
+# Both sites pick insertion (#1054); no merge buffer or bucket array.
++ /* plan: insertion -- cheapest applicable plan: 6.25 vs 17 for bottom_up_merge (62% less work) */
++ /* plan: insertion -- cheapest applicable plan: 4.00 vs 12 for bottom_up_merge (67% less work) */
++ __typeof__(__flowc_sa[0]) __flowc_skey = __flowc_sa[__flowc_si];
++ while (__flowc_sj >= 0 && (__flowc_ord(__flowc_sa[__flowc_sj], __flowc_skey)) > 0)
+- __flowc_sb[
+- __flowc_scounts[
+exit 0

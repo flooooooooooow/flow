@@ -1,0 +1,39 @@
+# A self tail call runs in constant stack, so a million-deep recursion
+# finishes (#951). Supersedes
+# tests/unit/test_tco_shim.py::test_deep_tail_recursion_runs_without_stack_overflow.
+
+function down_to(n: i32) -> i32 {
+    if n <= 0 {
+        return 0
+    } else {
+        return down_to(n - 1)
+    }
+}
+
+# Arguments are evaluated before any parameter is rebound.
+function gcd(a: i32, b: i32) -> i32 {
+    if b == 0 {
+        return a
+    }
+    return gcd(b, a % b)
+}
+
+function count_up(i: i32, limit: i32, acc: i64) -> i64 {
+    if i >= limit {
+        return acc
+    }
+    return count_up(i + 1, limit, acc + (i as i64))
+}
+
+function main() -> i32 {
+    if down_to(1000000) != 0 {
+        return 1
+    }
+    if gcd(1071, 462) != 21 {
+        return 2
+    }
+    if count_up(0, 2000000, 0) != 1999999000000 {
+        return 3
+    }
+    return 0
+}

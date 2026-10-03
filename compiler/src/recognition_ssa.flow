@@ -1,0 +1,352 @@
+# @module flowc.recognition_ssa
+# @means  Recognition-indexed refinement (RSSA) certificates for SSA transformations.
+#
+# IR-agnostic. An SSA, FIR-G or MLIR adapter supplies the ordinary discrete
+# refinement judgement and, for each protected recognition domain, the
+# attractor signature observed before and after the transformation. With no
+# continuous contracts, legality is exactly the supplied discrete judgement.
+#
+# Legality of P -> P' is: the discrete SSA/effect refinement holds, and for
+# every contract q, d_q(R_q(P), R_q(P')) <= epsilon_q. A change of basin
+# topology is a hard violation (distance +inf). See
+# docs/research/recognition-ssa.md.
+
+import .ast { AstArena }
+import .semantic_facts {
+    FLOWC_RECOGNITION_NUMERICAL, FLOWC_RECOGNITION_REALTIME,
+    FLOWC_RECOGNITION_CAUSAL, FLOWC_RECOGNITION_SAFETY,
+    FLOWC_RECOGNITION_MEMORY
+}
+import .recognition { flowc_recognition_contract_mask }
+
+export const FLOWC_RSSA_OK: i32 = 0
+export const FLOWC_RSSA_BAD_EPSILON: i32 = 1
+export const FLOWC_RSSA_BAD_WEIGHT: i32 = 2
+export const FLOWC_RSSA_UNDECLARED_DOMAIN: i32 = 3
+export const FLOWC_RSSA_TOO_MANY_CONTRACTS: i32 = 4
+
+export const FLOWC_RSSA_MAX_CONTRACTS: i32 = 5
+
+# Finite representatives of a domain's continuous behaviour.
+# fixed_points holds point_count points of point_dim coordinates, row-major.
+export struct FlowcAttractorSignature {
+    fixed_points: ptr<f64>,
+    point_count: i32,
+    point_dim: i32,
+    basin_labels: ptr<i32>,
+    basin_count: i32,
+    stability: ptr<f64>,
+    stability_count: i32,
+    invariants: ptr<f64>,
+    invariant_count: i32
+}
+
+# One protected recognition domain (a FLOWC_RECOGNITION_* bit), its drift
+# budget, and weights for (fixed points, basins, stability, invariants).
+export struct FlowcRecognitionContract {
+    domain: i32,
+    epsilon: f64,
+    w_points: f64,
+    w_basins: f64,
+    w_stability: f64,
+    w_invariants: f64
+}
+
+export struct FlowcRecognitionWitness {
+    domain: i32,
+    distance: f64,
+    epsilon: f64
+}
+
+export struct FlowcRefinementCertificate {
+    discrete_refinement: i32,
+    witnesses: array<FlowcRecognitionWitness, 5>,
+    witness_count: i32
+}
+
+export function flowc_rssa_inf() -> f64 {
+    let big: f64 = 1.0e308
+    return big * 10.0
+}
+
+# 1 when x is neither NaN nor infinite.
+export function flowc_rssa_finite(x: f64) -> i32 {
+    if x != x {
+        return 0
+    }
+    if x - x != 0.0 {
+        return 0
+    }
+    return 1
+}
+
+export function flowc_rssa_empty_signature() -> FlowcAttractorSignature {
+    return FlowcAttractorSignature {
+        fixed_points: null,
+        point_count: 0,
+        point_dim: 0,
+        basin_labels: null,
+        basin_count: 0,
+        stability: null,
+        stability_count: 0,
+        invariants: null,
+        invariant_count: 0
+    }
+}
+
+export function flowc_rssa_contract(domain: i32, epsilon: f64) -> FlowcRecognitionContract {
+    return FlowcRecognitionContract {
+        domain: domain,
+        epsilon: epsilon,
+        w_points: 1.0,
+        w_basins: 1.0,
+        w_stability: 1.0,
+        w_invariants: 1.0
+    }
+}
+
+# FLOWC_RSSA_OK, or the reason the contract is malformed.
+export function flowc_rssa_contract_check(c: FlowcRecognitionContract) -> i32 {
+    if flowc_rssa_finite(c.epsilon) == 0 or c.epsilon < 0.0 {
+        return FLOWC_RSSA_BAD_EPSILON
+    }
+    if flowc_rssa_finite(c.w_points) == 0 or c.w_points < 0.0 {
+        return FLOWC_RSSA_BAD_WEIGHT
+    }
+    if flowc_rssa_finite(c.w_basins) == 0 or c.w_basins < 0.0 {
+        return FLOWC_RSSA_BAD_WEIGHT
+    }
+    if flowc_rssa_finite(c.w_stability) == 0 or c.w_stability < 0.0 {
+        return FLOWC_RSSA_BAD_WEIGHT
+    }
+    if flowc_rssa_finite(c.w_invariants) == 0 or c.w_invariants < 0.0 {
+        return FLOWC_RSSA_BAD_WEIGHT
+    }
+    return FLOWC_RSSA_OK
+}
+
+function flowc_rssa_abs(x: f64) -> f64 {
+    if x < 0.0 {
+        return 0.0 - x
+    }
+    return x
+}
+
+# Chebyshev distance; +inf when the lengths differ.
+export function flowc_rssa_vector_distance(a: ptr<f64>, na: i32, b: ptr<f64>, nb: i32) -> f64 {
+    if na != nb {
+        return flowc_rssa_inf()
+    }
+    let mut d: f64 = 0.0
+    let mut i: i32 = 0
+    while i < na {
+        let x: f64 = flowc_rssa_abs(a[i] - b[i])
+        if x > d {
+            d = x
+        }
+        i = i + 1
+    }
+    return d
+}
+
+function flowc_rssa_directed(a: FlowcAttractorSignature, b: FlowcAttractorSignature) -> f64 {
+    let dim: i32 = a.point_dim
+    let mut worst: f64 = 0.0
+    let mut i: i32 = 0
+    while i < a.point_count {
+        let mut best: f64 = flowc_rssa_inf()
+        let mut j: i32 = 0
+        while j < b.point_count {
+            let d: f64 = flowc_rssa_vector_distance(
+                a.fixed_points + i * dim, dim,
+                b.fixed_points + j * b.point_dim, b.point_dim
+            )
+            if d < best {
+                best = d
+            }
+            j = j + 1
+        }
+        if best > worst {
+            worst = best
+        }
+        i = i + 1
+    }
+    return worst
+}
+
+# Hausdorff distance between the two fixed-point sets.
+export function flowc_rssa_point_set_distance(a: FlowcAttractorSignature, b: FlowcAttractorSignature) -> f64 {
+    if a.point_count == 0 and b.point_count == 0 {
+        return 0.0
+    }
+    if a.point_count == 0 or b.point_count == 0 {
+        return flowc_rssa_inf()
+    }
+    let ab: f64 = flowc_rssa_directed(a, b)
+    let ba: f64 = flowc_rssa_directed(b, a)
+    if ab > ba {
+        return ab
+    }
+    return ba
+}
+
+function flowc_rssa_same_basins(a: FlowcAttractorSignature, b: FlowcAttractorSignature) -> i32 {
+    if a.basin_count != b.basin_count {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < a.basin_count {
+        if a.basin_labels[i] != b.basin_labels[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function flowc_rssa_weighted(w: f64, d: f64) -> f64 {
+    if w == 0.0 {
+        return 0.0
+    }
+    return w * d
+}
+
+export function flowc_rssa_attractor_distance(
+    before: FlowcAttractorSignature,
+    after: FlowcAttractorSignature,
+    c: FlowcRecognitionContract
+) -> f64 {
+    if flowc_rssa_same_basins(before, after) == 0 {
+        return flowc_rssa_inf()
+    }
+    let mut d: f64 = flowc_rssa_weighted(c.w_points, flowc_rssa_point_set_distance(before, after))
+    let s: f64 = flowc_rssa_weighted(c.w_stability, flowc_rssa_vector_distance(
+        before.stability, before.stability_count,
+        after.stability, after.stability_count
+    ))
+    if s > d {
+        d = s
+    }
+    let v: f64 = flowc_rssa_weighted(c.w_invariants, flowc_rssa_vector_distance(
+        before.invariants, before.invariant_count,
+        after.invariants, after.invariant_count
+    ))
+    if v > d {
+        d = v
+    }
+    return d
+}
+
+export function flowc_rssa_witness_preserved(w: FlowcRecognitionWitness) -> i32 {
+    if w.distance <= w.epsilon {
+        return 1
+    }
+    return 0
+}
+
+# Build the certificate. before[i] and after[i] are the observations for
+# contracts[i]. Returns FLOWC_RSSA_OK or the first malformed contract's code.
+export function flowc_rssa_check(
+    discrete_refines: i32,
+    contracts: ptr<FlowcRecognitionContract>,
+    contract_count: i32,
+    before: ptr<FlowcAttractorSignature>,
+    after: ptr<FlowcAttractorSignature>,
+    out: ptr<FlowcRefinementCertificate>
+) -> i32 {
+    out[0].discrete_refinement = discrete_refines
+    out[0].witness_count = 0
+    if contract_count > FLOWC_RSSA_MAX_CONTRACTS {
+        return FLOWC_RSSA_TOO_MANY_CONTRACTS
+    }
+    let mut i: i32 = 0
+    while i < contract_count {
+        let code: i32 = flowc_rssa_contract_check(contracts[i])
+        if code != FLOWC_RSSA_OK {
+            return code
+        }
+        out[0].witnesses[i] = FlowcRecognitionWitness {
+            domain: contracts[i].domain,
+            distance: flowc_rssa_attractor_distance(before[i], after[i], contracts[i]),
+            epsilon: contracts[i].epsilon
+        }
+        out[0].witness_count = i + 1
+        i = i + 1
+    }
+    return FLOWC_RSSA_OK
+}
+
+export function flowc_rssa_preserved(cert: FlowcRefinementCertificate) -> i32 {
+    if cert.discrete_refinement == 0 {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < cert.witness_count {
+        if flowc_rssa_witness_preserved(cert.witnesses[i]) == 0 {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+# Mask of the domains whose witnesses exceed their budget.
+export function flowc_rssa_violations(cert: FlowcRefinementCertificate) -> i32 {
+    let mut mask: i32 = 0
+    let mut i: i32 = 0
+    while i < cert.witness_count {
+        if flowc_rssa_witness_preserved(cert.witnesses[i]) == 0 {
+            mask = mask | cert.witnesses[i].domain
+        }
+        i = i + 1
+    }
+    return mask
+}
+
+# Lower a source-level `recognize { ... }` declaration into RSSA obligations,
+# one per declared domain in FLOWC_RECOGNITION_* order. override_mask selects
+# the domains whose budget comes from override_eps (indexed by the same
+# order: numerical, realtime, causal, safety, memory); every other domain
+# gets `epsilon`. Writes the contracts to out and their count to count.
+export function flowc_rssa_contracts_from_flow(
+    arena: AstArena,
+    flow_id: i32,
+    src: ptr<u8>,
+    epsilon: f64,
+    override_mask: i32,
+    override_eps: ptr<f64>,
+    out: ptr<FlowcRecognitionContract>,
+    count: ptr<i32>
+) -> i32 {
+    count[0] = 0
+    let declared: i32 = flowc_recognition_contract_mask(arena, flow_id, src)
+    if (override_mask & (0 - 1 - declared)) != 0 {
+        return FLOWC_RSSA_UNDECLARED_DOMAIN
+    }
+    let domains: array<i32, 5> = [
+        FLOWC_RECOGNITION_NUMERICAL,
+        FLOWC_RECOGNITION_REALTIME,
+        FLOWC_RECOGNITION_CAUSAL,
+        FLOWC_RECOGNITION_SAFETY,
+        FLOWC_RECOGNITION_MEMORY
+    ]
+    let mut i: i32 = 0
+    while i < 5 {
+        let dom: i32 = domains[i]
+        if (declared & dom) != 0 {
+            let mut eps: f64 = epsilon
+            if (override_mask & dom) != 0 {
+                eps = override_eps[i]
+            }
+            let c: FlowcRecognitionContract = flowc_rssa_contract(dom, eps)
+            let code: i32 = flowc_rssa_contract_check(c)
+            if code != FLOWC_RSSA_OK {
+                return code
+            }
+            out[count[0]] = c
+            count[0] = count[0] + 1
+        }
+        i = i + 1
+    }
+    return FLOWC_RSSA_OK
+}

@@ -1,0 +1,9 @@
+# Effect handler slots are thread local, so each thread installs its own
+# handler. An effect declaration alone is enough to emit the slot.
+effect Log {
+    write(msg: i32) -> void,
+}
+
+function main() -> i32 {
+    return 0
+}

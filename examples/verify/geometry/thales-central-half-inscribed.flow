@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  Half the central angle on a diameter gives the inscribed angle.
-# @from   euclid — Elements, Book III, Propositions 20 and 31
+# @from   euclid: Elements, Book III, Propositions 20 and 31
 # @tier   derived
 
 # @means  half of angle AOB equals angle ACB.

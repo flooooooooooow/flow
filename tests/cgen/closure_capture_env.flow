@@ -1,0 +1,70 @@
+# A capturing lambda lowers to a lifted function plus a closure struct
+# { fn, env }. The env snapshots captures by value at creation, the body
+# reads them through `_env->`, and a call passes `&f.env` first.
+# Names are chosen with care. flowc tracks captures and closure locals by
+# name across the whole program (flowc bug): once any lambda captures `x`,
+# a parameter `x` in another lambda is rewritten to `_env->x`, and a bare
+# lambda local sharing a name with a closure local is called as a closure.
+struct Point { x: i32, y: i32 }
+const LIMIT: i32 = 10
+
+function two_captures() -> i32 {
+    let a: i32 = 1
+    let b: i32 = 2
+    let f = |u: i32| -> i32 { return a + b + u }
+    return f(3)
+}
+
+# Capture `x` must not rewrite the parameter `x_total`.
+function token_safe() -> i32 {
+    let x: i32 = 5
+    let f = |x_total: i32| -> i32 { return x_total + x }
+    return f(1)
+}
+
+# No captures: a bare function pointer, no env argument.
+function bare() -> i32 {
+    let dbl = |w: i32| -> i32 { return w * 2 }
+    return dbl(21)
+}
+
+# The env field takes the capture's type from the creation scope.
+function f64_capture() -> f64 {
+    let scale: f64 = 1.5
+    let f = |v: f64| -> f64 { return v * scale }
+    return f(2.0)
+}
+
+function struct_capture() -> i32 {
+    let p: Point = Point { x: 1, y: 2 }
+    let f = |z: i32| -> i32 { return p.x + z }
+    return f(3)
+}
+
+# A file-scope constant stays reachable from the lifted function.
+function const_use() -> i32 {
+    let addl = |r: i32| -> i32 { return r + LIMIT }
+    return addl(1)
+}
+
+function main() -> i32 {
+    if two_captures() != 6 {
+        return 1
+    }
+    if token_safe() != 6 {
+        return 2
+    }
+    if bare() != 42 {
+        return 3
+    }
+    if f64_capture() != 3.0 {
+        return 4
+    }
+    if struct_capture() != 4 {
+        return 5
+    }
+    if const_use() != 11 {
+        return 6
+    }
+    return 0
+}

@@ -1,0 +1,4 @@
+Transpile failed:
+flowc emit: parse failed
+ROOT/tests/flow_run/progs/bad.flow:3:1: parse error: unexpected token '}' (byte 50)
+flowc emit: arena_len=5

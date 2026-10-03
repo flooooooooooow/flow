@@ -1,6 +1,6 @@
 # Flow-Style Vulkan (Complex Example)
 
-The first block below is intentionally a **Flow-inspired design sketch**, not current runnable Flow. It mirrors the lower-level renderer architecture while making ownership and lifecycle intent explicit.
+The first block below is intentionally a **Flow-inspired design sketch**. It is not current runnable Flow. It mirrors the lower-level renderer architecture while making ownership and lifecycle intent explicit.
 
 ```flow-pseudocode
 struct Renderer {

@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Eleven plus zero maps to eleven under a ring homomorphism.
-# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @from   dummit-foote: *Abstract Algebra*, §7.3
 # @tier   derived
 
 # @means  f(11 + 0) = 11.

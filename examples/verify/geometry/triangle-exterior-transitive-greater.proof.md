@@ -2,9 +2,9 @@
 
 *Exterior angle comparison is transitive over remote interiors.*
 
-**Source.** euclid — Elements, Book I, Proposition 16
+**Source.** euclid: Elements, Book I, Proposition 16
 
-## Derived fact 1 — if exterior exceeds angle A and angle A is positive then exterior exceeds angle B
+## Derived fact 1: if exterior exceeds angle A and angle A is positive then exterior exceeds angle B
 
 **Coordinate.** the Euclidean plane · triangle · exterior greater is transitive over remote · **Derived fact**
 

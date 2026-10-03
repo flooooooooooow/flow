@@ -1,0 +1,8 @@
+function helper(x: i32) -> i32 {
+    return x
+}
+
+@gpu
+function k(a: ptr<i32>) -> void {
+    a[0] = helper(1)
+}

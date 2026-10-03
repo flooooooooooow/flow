@@ -2,9 +2,9 @@
 
 *The apex median is perpendicular to the base in an isosceles triangle.*
 
-**Source.** euclid — Elements, Book I, Proposition 5
+**Source.** euclid: Elements, Book I, Proposition 5
 
-## Derived fact 1 — apex median meets base at a right angle
+## Derived fact 1: apex median meets base at a right angle
 
 **Coordinate.** the Euclidean plane · isosceles triangle · apex median perpendicular to base · **Derived fact**
 

@@ -1,0 +1,102 @@
+# The bootstrap suite command in AGENTS.md ("### Bootstrap suite") must
+# compile, link and run the programs that need the concurrency runtime. A
+# hand-written FLOWC_IN/cc loop documented there linked no runtime, so three
+# tests/lang programs failed with undefined flow_thread_* and __atomic_*_n
+# symbols although the compiler handles them. These checks read the
+# documented command and run it on those programs.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+
+# Command lines of the first ```bash block after the "### Bootstrap suite"
+# heading, without blank and comment lines.
+function suite_commands() -> ptr<ProcStrs> {
+    let cmds: ptr<ProcStrs> = sl_new()
+    let lines: ptr<ProcStrs> = s_lines(read_text("AGENTS.md"))
+    let mut in_section: bool = false
+    let mut in_block: bool = false
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let line: string = sl_get(lines, i)
+        i = i + 1
+        if not in_section {
+            if s_eq(line, "### Bootstrap suite") {
+                in_section = true
+            }
+            continue
+        }
+        if not in_block {
+            if s_starts(line, "#") {
+                break
+            }
+            if s_starts(line, "```bash") {
+                in_block = true
+            }
+            continue
+        }
+        if s_starts(line, "```") {
+            break
+        }
+        let t: string = s_trim(line)
+        if s_len(t) > 0 and not s_starts(t, "#") {
+            sl_push(cmds, t)
+        }
+    }
+    return cmds
+}
+
+# The section documents one command, the test-lang entry point.
+function check_the_suite_is_one_entry_point_command() -> i32 {
+    let cmds: ptr<ProcStrs> = suite_commands()
+    if sl_len(cmds) != 1 {
+        outln("expected one command in the Bootstrap suite block, found " + s_itoa(sl_len(cmds)) + ":")
+        let mut i: i32 = 0
+        while i < sl_len(cmds) {
+            outln("  " + sl_get(cmds, i))
+            i = i + 1
+        }
+        return T_FAIL
+    }
+    if not s_starts(sl_get(cmds, 0), "./flow test-lang") {
+        outln("the Bootstrap suite command is not ./flow test-lang: " + sl_get(cmds, 0))
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+# The documented command passes the programs that need the runtime.
+function check_the_suite_links_the_concurrency_runtime() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    let cmds: ptr<ProcStrs> = suite_commands()
+    if sl_len(cmds) != 1 {
+        outln("no single Bootstrap suite command to run")
+        return T_FAIL
+    }
+    let argv: ptr<ProcStrs> = s_words(sl_get(cmds, 0))
+    sl_push(argv, "tests/lang/test_generic_channels.flow")
+    sl_push(argv, "tests/lang/test_concurrent_link.flow")
+    sl_push(argv, "tests/lang/test_import_stdlib_bare.flow")
+    if t_run_argv(argv) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_file_contains(t_out(), "All 3 language tests passed") {
+        t_cat(t_err())
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("bootstrap_suite_doc")
+    t_start()
+    t_end("the_suite_is_one_entry_point_command", check_the_suite_is_one_entry_point_command())
+    t_start()
+    t_end("the_suite_links_the_concurrency_runtime", check_the_suite_links_the_concurrency_runtime())
+    t_done()
+    return 0
+}

@@ -2,9 +2,9 @@
 
 *Decuple swap returns the original pair.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Product_type
+**Source.** church: https://en.wikipedia.org/wiki/Product_type
 
-## Derived fact 1 — ten nested swaps on a pair returns the pair
+## Derived fact 1: ten nested swaps on a pair returns the pair
 
 **Coordinate.** Pair · swap · decuple swap returns pair · **Derived fact**
 

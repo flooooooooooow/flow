@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  Exterior angle comparison is transitive over remote interiors.
-# @from   euclid — Elements, Book I, Proposition 16
+# @from   euclid: Elements, Book I, Proposition 16
 # @tier   derived
 
 # @means  if exterior exceeds angle A and angle A is positive then exterior exceeds angle B.

@@ -1,0 +1,28 @@
+# Effects parity fixture: a call whose `with` row no handler covers, under
+# strict effects.
+# effects-mode: strict
+
+effect Log {
+    info(msg: string) -> void,
+}
+
+effect Audit {
+    record(what: string) -> void,
+}
+
+capability Console {
+    effect Log,
+    function info(msg: string) -> void {
+        printf("[console] %s\n", msg)
+    },
+}
+
+function greet() -> void with Log, Audit {
+    Log.info("hi")
+    Audit.record("greeted")
+}
+
+function main() -> i32 {
+    greet()
+    return 0
+}

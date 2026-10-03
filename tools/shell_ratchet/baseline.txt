@@ -1,0 +1,3 @@
+total 12
+apps/plugins/SchurPhaser/tests/run.sh
+plugins/SchurPhaser/tests/run.sh

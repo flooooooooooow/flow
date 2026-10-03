@@ -1,0 +1,2 @@
+Error: flow 'Osc' has two 'solver' blocks; a flow pins at most one default step at line 4, column 5
+merge the settings into one solver block

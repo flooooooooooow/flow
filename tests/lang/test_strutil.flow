@@ -1,5 +1,5 @@
 # Test for strutil.flow string utility functions.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_strutil.flow
+# Run with: ./flow run tests/lang/test_strutil.flow
 
 import "compiler/src/strutil.flow"
 

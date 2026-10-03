@@ -1,0 +1,187 @@
+# Cases for tests/cli/run.flow, one per line:
+#   NAME [cwd=root|proj|empty] [env=K=V]... [files=a,b] [stdin=FILE] -- ARGS...
+# Fields are split on spaces. cwd=proj runs in a fresh copy of
+# tests/cli/fixtures/proj, cwd=empty in a fresh empty directory; the
+# default is the repository root. @ROOT in an argument is the repository
+# root. files= lists paths, relative to the case's directory, whose state
+# is recorded after the run. stdin= is a file relative to the root.
+
+# Help, version, unknown commands
+help -- help
+help_noargs --
+help_unknown -- frobnicate
+version -- version
+version_flag -- --version
+version_V -- -V
+host_python_version env=FLOW_HOST=python -- version
+host_bad_version env=FLOW_HOST=weird -- version
+host_auto_version env=FLOW_HOST=auto -- version
+
+# run
+run_hello -- run tests/cli/fixtures/hello.flow
+run_exit3 -- run tests/cli/fixtures/exit3.flow
+run_noargs -- run
+run_missing -- run tests/cli/fixtures/missing.flow
+run_notflow -- run tests/cli/fixtures/notflow.txt
+run_nomain -- run tests/cli/fixtures/nomain.flow
+run_bad_syntax -- run tests/cli/fixtures/bad_syntax.flow
+run_bad_backend -- run --backend=zzz tests/cli/fixtures/hello.flow
+run_backend_noval -- run tests/cli/fixtures/hello.flow --backend
+run_unknown_opt -- run --bogus tests/cli/fixtures/hello.flow
+run_extra_arg -- run tests/cli/fixtures/hello.flow tests/cli/fixtures/exit3.flow
+run_show_flags -- run --show-flags tests/cli/fixtures/hello.flow
+run_host_python env=FLOW_HOST=python -- run tests/cli/fixtures/hello.flow
+run_cpu_backend_bad env=FLOW_CPU_BACKEND=zzz -- run tests/cli/fixtures/hello.flow
+run_json -- run tests/cli/fixtures/hello.flow --json
+run_sanitize_bad -- run --sanitize=bogus tests/cli/fixtures/hello.flow
+run_mlir -- run --backend=mlir tests/cli/fixtures/hello.flow
+run_project cwd=proj -- run src/main.flow
+
+# compile / show-flags
+compile_hello files=build/hello.c,build/hello -- compile tests/cli/fixtures/hello.flow
+compile_noargs -- compile
+compile_bad_syntax -- compile tests/cli/fixtures/bad_syntax.flow
+compile_show_flags -- compile --show-flags
+compile_profile_safety -- compile --profile=safety --show-flags
+show_flags -- show-flags
+show_flags_safety -- show-flags --profile=safety --sanitize=ub,asan
+show_flags_space -- show-flags --profile safety --sanitize tsan
+show_flags_env env=FLOW_UBSAN=1 env=FLOW_CFLAGS=-DX=1 env=FLOW_OPT_LEVEL=3 -- show-flags
+show_flags_bad_sanitizer -- show-flags --sanitize=bogus
+compile_isolated_root env=FLOW_BUILD_ROOT=build/cli_golden_root files=build/cli_golden_root/hello.c -- compile tests/cli/fixtures/hello.flow
+
+# fmt
+fmt_noargs -- fmt
+fmt_check_clean -- fmt --check tests/cli/fixtures/hello.flow
+fmt_check_dirty -- fmt --check tests/cli/fixtures/badfmt.flow
+fmt_missing -- fmt tests/cli/fixtures/missing.flow
+fmt_bad_syntax -- fmt --check tests/cli/fixtures/bad_syntax.flow
+fmt_rewrite cwd=empty -- fmt ../../missing_dir/none.flow
+
+# explain / know / doc
+explain_hello -- explain tests/cli/fixtures/hello.flow
+explain_noargs -- explain
+know_noargs -- know
+know_help -- know --help
+know_claim -- know Nat/+.zero-right
+doc_noargs -- doc
+doc_proof_missing -- doc proof tests/cli/fixtures/missing.flow
+doc_proof_noargs -- doc proof
+doc_kernel_noargs -- doc kernel
+
+# analyze / check / lsp / tools
+analyze_noargs -- analyze
+analyze_flow -- analyze tests/cli/fixtures/hello.flow
+check_file -- check tests/cli/fixtures/hello.flow
+lsp_bad_stdin -- lsp --version
+
+# mlir / jit / gpu / shader
+mlir_noargs -- mlir
+mlir_missing -- mlir tests/cli/fixtures/missing.flow
+mlir_hello -- mlir tests/cli/fixtures/hello.flow
+mlir_bad_opt -- mlir tests/cli/fixtures/hello.flow --frob
+mlir_gpu_retired -- mlir tests/cli/fixtures/hello.flow --gpu
+mlir_print_pipeline -- mlir tests/cli/fixtures/hello.flow --print-pass-pipeline
+mlir_run_noargs -- mlir-run
+jit_noargs -- jit
+jit_hello -- jit tests/cli/fixtures/hello.flow
+gpu_noargs -- gpu
+gpu_hello -- gpu tests/cli/fixtures/hello.flow
+shader_noargs -- shader
+shader_bad_opt -- shader tests/cli/fixtures/hello.flow --frob
+ml_bad -- ml zzz
+fir_noargs -- fir-g
+fir_bad -- fir-g notaflag
+
+# debug / window / gfx / record / audio / dap / patch
+debug_help -- debug --help
+debug_noargs -- debug
+debug_bad_opt -- debug tests/cli/fixtures/hello.flow --frob
+debug_bad_break -- debug tests/cli/fixtures/hello.flow --break
+debug_no_launch files=build/hello.debug -- debug tests/cli/fixtures/hello.flow --no-launch
+window_noargs -- window
+gfx_noargs -- gfx
+gfx_missing -- gfx tests/cli/fixtures/missing.flow
+record_bad_flag -- record tests/cli/fixtures/hello.flow --frob
+record_frames_noval -- record tests/cli/fixtures/hello.flow --frames
+audio_noargs -- audio
+compile_audio_noargs -- compile-audio
+dap_noargs -- dap
+dap_missing -- dap tests/cli/fixtures/missing.flow
+patch_noargs -- patch
+
+# demos
+demo_noargs -- demo
+demo_unknown -- demo nope
+demo_vulkan_bad -- demo vulkan zzz
+demo_vulkan_flow_bad -- demo vulkan-flow zzz
+transpile_retired -- transpile tests/cli/fixtures/hello.flow
+
+# test tiers
+test_lang_one -- test-lang tests/lang/test_arithmetic.flow
+test_lang_missing -- test-lang tests/cli/fixtures/none_here
+test_runtime_one -- test-runtime tests/runtime/test_arithmetic.flow
+test_runtime_timeout -- test-runtime --timeout=1 tests/cli/fixtures/hang.flow
+test_lang_timeout -- test-lang --timeout=1 tests/cli/fixtures/hang.flow
+test_runtime_timeout_ms env=FLOW_RUNTIME_TEST_TIMEOUT_MS=500 -- test-runtime tests/cli/fixtures/hang.flow
+test_runtime_timeout_bad -- test-runtime --timeout=0 tests/runtime/test_arithmetic.flow
+test_lang_timeout_env env=FLOW_TEST_TIMEOUT=soon -- test-lang tests/lang/test_arithmetic.flow
+test_scripts_none -- test-scripts no_such_script_test
+test_project_help cwd=proj -- test --help
+test_project_list cwd=proj -- test --list
+
+# packages and projects
+pkg_noargs -- pkg
+info_noargs -- info
+add_noargs -- add
+init_empty cwd=empty files=flow.toml,src/main.flow -- init
+init_named cwd=empty files=flow.toml,src/main.flow,demo -- init demo
+sync_proj cwd=proj files=flow.lock -- sync
+build_proj cwd=proj -- build
+clean_proj cwd=proj -- clean
+install_proj cwd=proj -- install
+search_local -- search hello
+examples_proj cwd=proj -- examples
+examples_run_proj cwd=proj -- examples run greet
+examples_run_missing cwd=proj -- examples run nope
+examples_run_noname cwd=proj -- examples run
+
+# python / wasm / wasm32 / bpf
+python_noargs -- python
+python_source cwd=empty files=dist,dist/hello_ext.c -- python @ROOT/tests/cli/fixtures/hello.flow --source
+wasm_noargs -- wasm
+wasm_help -- wasm --help
+wasm_fs_mlir -- wasm tests/cli/fixtures/hello.flow --fs memfs --backend=mlir
+wasm_threads_mlir -- wasm tests/cli/fixtures/hello.flow --threads --backend mlir
+wasm32_noargs -- wasm32
+bpf_noargs -- bpf
+
+# Heavier paths: the MLIR pipeline, proofs, shaders, the recorder, tools
+mlir_optimize -- mlir tests/cli/fixtures/hello.flow --optimize --opt-report
+mlir_llvm_out files=build/cli_golden/hello.ll -- mlir tests/cli/fixtures/hello.flow --llvm -o build/cli_golden/hello.ll
+mlir_run_hello -- mlir-run tests/cli/fixtures/hello.flow
+jit_raw_exit3 env=FLOW_JIT_RAW=1 -- jit tests/cli/fixtures/exit3.flow
+test_mlir -- test-mlir
+compile_no_runtime env=FLOWC_NO_RUNTIME=1 files=build/hello -- compile tests/cli/fixtures/hello.flow
+compile_audio_hello -- compile-audio tests/cli/fixtures/hello.flow
+run_sanitize_ub -- run --sanitize=ub tests/cli/fixtures/hello.flow
+debug_break_word -- debug tests/cli/fixtures/hello.flow --break nowhere
+patch_lib cwd=proj files=build/patches/patchlib_smoke.flow -- patch patchlib.flow
+doc_proof_file -- doc proof examples/verify/math/derived/Nat-plus-zero-right.flow
+doc_kernel_dot cwd=empty files=zero.dot,kernel.json -- doc kernel @ROOT/examples/verify/math/derived/Nat-plus-zero-right.flow --param n=0 --plot zero.dot -o kernel.json
+know_lint -- know --lint-duplicates
+shader_emit_only -- shader examples/gpu/shader_plasma.flow --emit-only
+shader_wgsl -- shader examples/gpu/shader_plasma.flow --wgsl
+gpu_wgsl files=build/wgsl -- gpu examples/gpu/vector_add_gpu.flow --wgsl
+record_two_frames cwd=empty files=frames -- record @ROOT/examples/basics/mouse_probe.flow --frames 2 --out frames
+analyze_c -- analyze tests/cli/fixtures/sample.c --standard=cert-c
+fir_hello -- fir-g tests/cli/fixtures/hello.flow
+check_idioms -- check --idioms tests/cli/fixtures/badfmt.flow
+repl_session stdin=tests/tools/repl/session.in -- repl
+install_tools -- install --tools
+search_none -- search zzzz_no_such_package
+info_hello_lib -- info hello_lib
+run_native_proj cwd=proj -- run-native
+pkg_install_proj cwd=proj files=flow.lock -- pkg install
+test_gpu -- test-gpu
+test_interop -- test-interop

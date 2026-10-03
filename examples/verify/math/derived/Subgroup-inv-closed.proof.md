@@ -2,9 +2,9 @@
 
 *Subgroup inverse closure follows from group laws.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §2.2
+**Source.** dummit-foote: *Abstract Algebra*, §2.2
 
-## Derived fact 1 — If g in H then inv(g) in H when H is a subgroup
+## Derived fact 1: If g in H then inv(g) in H when H is a subgroup
 
 **Coordinate.** Subgroup · inverse · subgroup inverses stay in the subgroup · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that subgroup inverses stay in the subgroup for inverse on Subgroup. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose g in H. |  |  |
 | ④ | We invoke the definitional clause governing inverse on Subgroup: closed under inverses, for inverse on Subgroup (instantiated for H, g). |  |  |
 | ⑤ | We invoke the definitional clause governing inverse on Group: left inverse recovers the identity, for inverse on Group (instantiated for g). |  |  |

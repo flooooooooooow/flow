@@ -1,0 +1,39 @@
+{
+  "summary": "FIR-G: funcs=3 blocks=18 ops=97 values=69 operands=52 types=4",
+  "call_edges": [
+    {
+      "caller": "main",
+      "callee": "heapsort",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "index",
+      "op": 1
+    }
+  ],
+  "effects": {
+    "heapsort": 0,
+    "index": 0,
+    "main": 0
+  },
+  "pure": {
+    "heapsort": true,
+    "index": true,
+    "main": true
+  },
+  "reachable": [
+    "heapsort",
+    "index",
+    "main"
+  ],
+  "dead": [],
+  "num_call_ops": 2,
+  "device_requested": "cpu",
+  "device_chosen": "cpu",
+  "opt_candidates": {
+    "total": 0,
+    "by_kind": {},
+    "top": []
+  }
+}

@@ -1,0 +1,2 @@
+[0;31m❌ This Flow file does not define main() and cannot be run directly.[0m
+[0;34mℹ️  If it is a library or patch, use: flow patch tests/cli/fixtures/nomain.flow[0m

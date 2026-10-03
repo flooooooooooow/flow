@@ -1,0 +1,1148 @@
+# @module flowc.field_dsl
+# @means  Field / boundary PDE surface expander (#163), the whole of
+#         src/flow/field_dsl.py. Runs before parse on every source flowc
+#         reads, so `field T : f64[N] on Line`, `T evolves as laplacian(T)`
+#         and `boundary T { left = A  right = B }` compile without Python.
+#
+# Output is byte-identical to `expand_field_dsl` in src/flow/field_dsl.py,
+# including its quirks, and compiler/scripts/parity_field_dsl.flow holds the
+# two to that. Quirks kept on purpose:
+#
+#   * The result is the kept lines joined by "\n", so a trailing newline is
+#     dropped (Python `"\n".join(source.splitlines())`).
+#   * A one-line `boundary T { ... }` also consumes the line after it
+#     (`_extract_brace_block` only returns once it is past the start line).
+#   * `#` starts a comment anywhere, including inside a string.
+#
+# Regex has no Stage-A equivalent. Each pattern is a hand-written scan; the
+# comments beside each one say why its greedy parts cannot backtrack into a
+# different match. Whitespace is Python's ASCII `str.isspace` set
+# (9..13, 28..31, 32). A byte >= 128 counts as a word character, which
+# approximates Python's Unicode `\w` for UTF-8 identifiers.
+#
+# Leaf module: externs only, so it links into flowc_frontend.o without
+# pulling anything else in.
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function strlen(s: string) -> i64
+    function puts(s: string) -> i32
+}
+
+const FX_MAX_FIELDS: i32 = 64
+# Per-field record in an i32 table, FX_REC slots per field.
+const FX_REC: i32 = 9
+const FX_NAME_S: i32 = 0
+const FX_NAME_E: i32 = 1
+const FX_N_S: i32 = 2
+const FX_N_E: i32 = 3
+const FX_L_S: i32 = 4
+const FX_L_E: i32 = 5
+const FX_R_S: i32 = 6
+const FX_R_E: i32 = 7
+const FX_EVOLVED: i32 = 8
+
+# Growable-free output buffer: writes past `cap` set `err` and are dropped.
+export struct FxBuf {
+    buf: ptr<u8>,
+    cap: i32,
+    len: i32,
+    err: i32
+}
+
+function fx_putc(w: ptr<FxBuf>, c: u8) {
+    if w[0].len >= w[0].cap {
+        w[0].err = 1
+        return
+    }
+    w[0].buf[w[0].len] = c
+    w[0].len = w[0].len + 1
+}
+
+function fx_puts(w: ptr<FxBuf>, s: string) {
+    let p: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let mut i: i32 = 0
+    while i < n {
+        fx_putc(w, p[i])
+        i = i + 1
+    }
+}
+
+function fx_put_span(w: ptr<FxBuf>, src: ptr<u8>, s: i32, e: i32) {
+    let mut i: i32 = s
+    while i < e {
+        fx_putc(w, src[i])
+        i = i + 1
+    }
+}
+
+# ── Character classes ────────────────────────────────────────────
+
+# Python str.isspace() over ASCII, which is also what `\s` matches.
+function fx_is_space(c: u8) -> i32 {
+    if c == 32 { return 1 }
+    if c >= 9 and c <= 13 { return 1 }
+    if c >= 28 and c <= 31 { return 1 }
+    return 0
+}
+
+function fx_is_word(c: u8) -> i32 {
+    if c >= 48 and c <= 57 { return 1 }
+    if c >= 65 and c <= 90 { return 1 }
+    if c >= 97 and c <= 122 { return 1 }
+    if c == 95 { return 1 }
+    if c >= 128 { return 1 }
+    return 0
+}
+
+function fx_is_digit(c: u8) -> i32 {
+    if c >= 48 and c <= 57 { return 1 }
+    return 0
+}
+
+# `[+\-\d.eE]` from _LAP_MUL_RE.
+function fx_is_numch(c: u8) -> i32 {
+    if fx_is_digit(c) == 1 { return 1 }
+    if c == 43 or c == 45 or c == 46 or c == 101 or c == 69 { return 1 }
+    return 0
+}
+
+function fx_skip_ws(p: ptr<u8>, i: i32, e: i32) -> i32 {
+    let mut k: i32 = i
+    while k < e and fx_is_space(p[k]) == 1 {
+        k = k + 1
+    }
+    return k
+}
+
+function fx_word_end(p: ptr<u8>, i: i32, e: i32) -> i32 {
+    let mut k: i32 = i
+    while k < e and fx_is_word(p[k]) == 1 {
+        k = k + 1
+    }
+    return k
+}
+
+function fx_numch_end(p: ptr<u8>, i: i32, e: i32) -> i32 {
+    let mut k: i32 = i
+    while k < e and fx_is_numch(p[k]) == 1 {
+        k = k + 1
+    }
+    return k
+}
+
+# 1 when the literal `lit` sits at p[i..e).
+function fx_lit_at(p: ptr<u8>, i: i32, e: i32, lit: string) -> i32 {
+    let lp: ptr<u8> = lit
+    let n: i32 = strlen(lit) as i32
+    if i + n > e {
+        return 0
+    }
+    let mut k: i32 = 0
+    while k < n {
+        if p[i + k] != lp[k] {
+            return 0
+        }
+        k = k + 1
+    }
+    return 1
+}
+
+function fx_span_eq(p: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i32 {
+    if a1 - a0 != b1 - b0 {
+        return 0
+    }
+    let mut k: i32 = 0
+    while k < a1 - a0 {
+        if p[a0 + k] != p[b0 + k] {
+            return 0
+        }
+        k = k + 1
+    }
+    return 1
+}
+
+function fx_span_has(p: ptr<u8>, s: i32, e: i32, c: u8) -> i32 {
+    let mut k: i32 = s
+    while k < e {
+        if p[k] == c {
+            return 1
+        }
+        k = k + 1
+    }
+    return 0
+}
+
+function fx_span_count(p: ptr<u8>, s: i32, e: i32, c: u8) -> i32 {
+    let mut n: i32 = 0
+    let mut k: i32 = s
+    while k < e {
+        if p[k] == c {
+            n = n + 1
+        }
+        k = k + 1
+    }
+    return n
+}
+
+function fx_span_find(p: ptr<u8>, s: i32, e: i32, c: u8) -> i32 {
+    let mut k: i32 = s
+    while k < e {
+        if p[k] == c {
+            return k
+        }
+        k = k + 1
+    }
+    return 0 - 1
+}
+
+# str.strip(): shrink [s, e) past whitespace on both ends. se[0]/se[1] in/out.
+function fx_strip(p: ptr<u8>, se: ptr<i32>) {
+    let mut s: i32 = se[0]
+    let mut e: i32 = se[1]
+    while s < e and fx_is_space(p[s]) == 1 {
+        s = s + 1
+    }
+    while e > s and fx_is_space(p[e - 1]) == 1 {
+        e = e - 1
+    }
+    se[0] = s
+    se[1] = e
+}
+
+# _strip_comments: cut at the first `#`, then strip.
+function fx_strip_comments(p: ptr<u8>, se: ptr<i32>) {
+    let hash: i32 = fx_span_find(p, se[0], se[1], 35)
+    if hash >= 0 {
+        se[1] = hash
+    }
+    fx_strip(p, se)
+}
+
+# ── Line splitting (str.splitlines) ──────────────────────────────
+
+# Length of the line terminator starting at p[i], or 0. Covers \n, \r, \r\n,
+# \v, \f, \x1c, \x1d, \x1e and the UTF-8 forms of U+0085, U+2028, U+2029.
+function fx_eol_len(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    let c: u8 = p[i]
+    if c == 13 {
+        if i + 1 < n and p[i + 1] == 10 {
+            return 2
+        }
+        return 1
+    }
+    if c == 10 or c == 11 or c == 12 or c == 28 or c == 29 or c == 30 {
+        return 1
+    }
+    if c == 194 and i + 1 < n and p[i + 1] == 133 {
+        return 2
+    }
+    if c == 226 and i + 2 < n and p[i + 1] == 128 and (p[i + 2] == 168 or p[i + 2] == 169) {
+        return 3
+    }
+    return 0
+}
+
+# Fill ls/le with line spans; returns the line count. A final terminator
+# does not start an extra empty line, matching str.splitlines().
+function fx_split_lines(p: ptr<u8>, n: i32, ls: ptr<i32>, le: ptr<i32>) -> i32 {
+    let mut count: i32 = 0
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let t: i32 = fx_eol_len(p, i, n)
+        if t > 0 {
+            ls[count] = start
+            le[count] = i
+            count = count + 1
+            i = i + t
+            start = i
+        } else {
+            i = i + 1
+        }
+    }
+    if start < n {
+        ls[count] = start
+        le[count] = n
+        count = count + 1
+    }
+    return count
+}
+
+# ── has_field_dsl ────────────────────────────────────────────────
+
+# `^\s*field\s+\w+\s*:` or `^\s*boundary\s+\w+\s*\{` at some position where
+# MULTILINE `^` matches (0 or just after "\n"). `\s` spans newlines here,
+# exactly as in the Python regex. Every greedy run is followed by a byte it
+# cannot contain, so no backtracking is needed.
+function fx_dsl_head_at(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    let k: i32 = fx_skip_ws(p, i, n)
+    let mut j: i32 = 0 - 1
+    let mut close: u8 = 58
+    if fx_lit_at(p, k, n, "field") == 1 {
+        j = k + 5
+    } else {
+        if fx_lit_at(p, k, n, "boundary") == 1 {
+            j = k + 8
+            close = 123
+        }
+    }
+    if j < 0 {
+        return 0
+    }
+    let w: i32 = fx_skip_ws(p, j, n)
+    if w == j {
+        return 0
+    }
+    let we: i32 = fx_word_end(p, w, n)
+    if we == w {
+        return 0
+    }
+    let c: i32 = fx_skip_ws(p, we, n)
+    if c < n and p[c] == close {
+        return 1
+    }
+    return 0
+}
+
+export function flowc_field_has_dsl(p: ptr<u8>, n: i32) -> i32 {
+    let mut i: i32 = 0
+    while i <= n {
+        if i == 0 or p[i - 1] == 10 {
+            if fx_dsl_head_at(p, i, n) == 1 {
+                return 1
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# ── Error text ───────────────────────────────────────────────────
+
+function fx_err_name(err: ptr<FxBuf>, p: ptr<u8>, pre: string, s: i32, e: i32, post: string) {
+    fx_puts(err, pre)
+    fx_put_span(err, p, s, e)
+    fx_puts(err, post)
+}
+
+# ── Line matchers ────────────────────────────────────────────────
+
+# _FIELD_RE: `^field\s+(\w+)\s*:\s*f64\s*\[\s*(\d+)\s*\]\s+on\s+(\w+)\s*$`.
+# caps: 0/1 name, 2/3 digits, 4/5 domain.
+function fx_match_field(p: ptr<u8>, s: i32, e: i32, caps: ptr<i32>) -> i32 {
+    if fx_lit_at(p, s, e, "field") == 0 {
+        return 0
+    }
+    let mut i: i32 = s + 5
+    let mut k: i32 = fx_skip_ws(p, i, e)
+    if k == i {
+        return 0
+    }
+    let ne: i32 = fx_word_end(p, k, e)
+    if ne == k {
+        return 0
+    }
+    caps[0] = k
+    caps[1] = ne
+    i = fx_skip_ws(p, ne, e)
+    if i >= e or p[i] != 58 {
+        return 0
+    }
+    i = fx_skip_ws(p, i + 1, e)
+    if fx_lit_at(p, i, e, "f64") == 0 {
+        return 0
+    }
+    i = fx_skip_ws(p, i + 3, e)
+    if i >= e or p[i] != 91 {
+        return 0
+    }
+    i = fx_skip_ws(p, i + 1, e)
+    let mut d: i32 = i
+    while d < e and fx_is_digit(p[d]) == 1 {
+        d = d + 1
+    }
+    if d == i {
+        return 0
+    }
+    caps[2] = i
+    caps[3] = d
+    i = fx_skip_ws(p, d, e)
+    if i >= e or p[i] != 93 {
+        return 0
+    }
+    i = i + 1
+    k = fx_skip_ws(p, i, e)
+    if k == i {
+        return 0
+    }
+    if fx_lit_at(p, k, e, "on") == 0 {
+        return 0
+    }
+    i = k + 2
+    k = fx_skip_ws(p, i, e)
+    if k == i {
+        return 0
+    }
+    let de: i32 = fx_word_end(p, k, e)
+    if de == k {
+        return 0
+    }
+    caps[4] = k
+    caps[5] = de
+    if fx_skip_ws(p, de, e) != e {
+        return 0
+    }
+    return 1
+}
+
+# _BOUNDARY_HEAD_RE: `^boundary\s+(\w+)\s*\{`. caps: 0/1 name.
+function fx_match_boundary_head(p: ptr<u8>, s: i32, e: i32, caps: ptr<i32>) -> i32 {
+    if fx_lit_at(p, s, e, "boundary") == 0 {
+        return 0
+    }
+    let i: i32 = s + 8
+    let k: i32 = fx_skip_ws(p, i, e)
+    if k == i {
+        return 0
+    }
+    let ne: i32 = fx_word_end(p, k, e)
+    if ne == k {
+        return 0
+    }
+    let b: i32 = fx_skip_ws(p, ne, e)
+    if b >= e or p[b] != 123 {
+        return 0
+    }
+    caps[0] = k
+    caps[1] = ne
+    return 1
+}
+
+# _EVOLVE_RE: `^(\w+)\s+evolves\s+as\s+(.+)$`. caps: 0/1 name, 2/3 rhs.
+# The line is already stripped, so the greedy `\s+` before `(.+)` leaves a
+# non-empty remainder exactly when the line continues past `as`.
+function fx_match_evolve(p: ptr<u8>, s: i32, e: i32, caps: ptr<i32>) -> i32 {
+    let ne: i32 = fx_word_end(p, s, e)
+    if ne == s {
+        return 0
+    }
+    let mut k: i32 = fx_skip_ws(p, ne, e)
+    if k == ne {
+        return 0
+    }
+    if fx_lit_at(p, k, e, "evolves") == 0 {
+        return 0
+    }
+    let mut i: i32 = k + 7
+    k = fx_skip_ws(p, i, e)
+    if k == i {
+        return 0
+    }
+    if fx_lit_at(p, k, e, "as") == 0 {
+        return 0
+    }
+    i = k + 2
+    k = fx_skip_ws(p, i, e)
+    if k == i or k >= e {
+        return 0
+    }
+    caps[0] = s
+    caps[1] = ne
+    caps[2] = k
+    caps[3] = e
+    return 1
+}
+
+# Tail of _LAP_MUL_RE from `laplacian`:
+#   `laplacian\s*\(\s*(\w+)\s*\)(?:\s*\*\s*([+\-\d.eE]+|\w+))?\s*$`
+# caps: 0/1 name, 2/3 post multiplier (2 = -1 when absent).
+# The optional group can only match a token that runs to the end of the
+# string, and both alternatives capture the same bytes when both fit.
+function fx_match_lap_tail(p: ptr<u8>, s: i32, e: i32, caps: ptr<i32>) -> i32 {
+    if fx_lit_at(p, s, e, "laplacian") == 0 {
+        return 0
+    }
+    let mut i: i32 = fx_skip_ws(p, s + 9, e)
+    if i >= e or p[i] != 40 {
+        return 0
+    }
+    i = fx_skip_ws(p, i + 1, e)
+    let ne: i32 = fx_word_end(p, i, e)
+    if ne == i {
+        return 0
+    }
+    let name_s: i32 = i
+    i = fx_skip_ws(p, ne, e)
+    if i >= e or p[i] != 41 {
+        return 0
+    }
+    i = i + 1
+    caps[0] = name_s
+    caps[1] = ne
+    caps[2] = 0 - 1
+    caps[3] = 0 - 1
+    # Try the optional `\s*\*\s*TOKEN` group first (regex `?` is greedy).
+    let st: i32 = fx_skip_ws(p, i, e)
+    if st < e and p[st] == 42 {
+        let q: i32 = fx_skip_ws(p, st + 1, e)
+        let n1: i32 = fx_numch_end(p, q, e)
+        if n1 > q and fx_skip_ws(p, n1, e) == e {
+            caps[2] = q
+            caps[3] = n1
+            return 1
+        }
+        let n2: i32 = fx_word_end(p, q, e)
+        if n2 > q and fx_skip_ws(p, n2, e) == e {
+            caps[2] = q
+            caps[3] = n2
+            return 1
+        }
+    }
+    if fx_skip_ws(p, i, e) == e {
+        return 1
+    }
+    return 0
+}
+
+# Full _LAP_MUL_RE on rhs [s, e):
+#   `^(?:([+\-\d.eE]+|\w+)\s*\*\s*)?laplacian...`
+# caps: 0/1 name, 2/3 post, 4/5 pre (4 = -1 when absent).
+# A prefix alternative can only succeed with its maximal run, because a
+# shorter run is followed by a byte that is neither whitespace nor `*`.
+function fx_match_lap(p: ptr<u8>, s: i32, e: i32, caps: ptr<i32>) -> i32 {
+    let n1: i32 = fx_numch_end(p, s, e)
+    if n1 > s {
+        let st: i32 = fx_skip_ws(p, n1, e)
+        if st < e and p[st] == 42 {
+            if fx_match_lap_tail(p, fx_skip_ws(p, st + 1, e), e, caps) == 1 {
+                caps[4] = s
+                caps[5] = n1
+                return 1
+            }
+        }
+    }
+    let n2: i32 = fx_word_end(p, s, e)
+    if n2 > s {
+        let st2: i32 = fx_skip_ws(p, n2, e)
+        if st2 < e and p[st2] == 42 {
+            if fx_match_lap_tail(p, fx_skip_ws(p, st2 + 1, e), e, caps) == 1 {
+                caps[4] = s
+                caps[5] = n2
+                return 1
+            }
+        }
+    }
+    if fx_match_lap_tail(p, s, e, caps) == 1 {
+        caps[4] = 0 - 1
+        caps[5] = 0 - 1
+        return 1
+    }
+    return 0
+}
+
+# _BOUNDARY_ASSIGN_RE: `^(left|right)\s*=\s*(.+)$` on an item.
+# Returns 1 for left, 2 for right, 0 for no match; caps 0/1 = value
+# (before the Python `.strip()`, which the caller applies).
+function fx_match_assign(p: ptr<u8>, s: i32, e: i32, caps: ptr<i32>) -> i32 {
+    let mut side: i32 = 0
+    let mut i: i32 = s
+    if fx_lit_at(p, s, e, "left") == 1 {
+        side = 1
+        i = s + 4
+    } else {
+        if fx_lit_at(p, s, e, "right") == 1 {
+            side = 2
+            i = s + 5
+        }
+    }
+    if side == 0 {
+        return 0
+    }
+    i = fx_skip_ws(p, i, e)
+    if i >= e or p[i] != 61 {
+        return 0
+    }
+    i = i + 1
+    let k: i32 = fx_skip_ws(p, i, e)
+    if k < e {
+        caps[0] = k
+        caps[1] = e
+        return side
+    }
+    # Only whitespace after `=`: `.+` backtracks into the `\s*` run and
+    # captures one whitespace byte, which strips to an empty value.
+    if k > i {
+        caps[0] = k - 1
+        caps[1] = e
+        return side
+    }
+    return 0
+}
+
+# Split point test for `(?=\b(?:left|right)\s*=)` at position k in [s, e).
+function fx_is_side_start(p: ptr<u8>, s: i32, e: i32, k: i32) -> i32 {
+    if k > s and fx_is_word(p[k - 1]) == 1 {
+        return 0
+    }
+    let mut j: i32 = 0 - 1
+    if fx_lit_at(p, k, e, "left") == 1 {
+        j = k + 4
+    } else {
+        if fx_lit_at(p, k, e, "right") == 1 {
+            j = k + 5
+        }
+    }
+    if j < 0 {
+        return 0
+    }
+    let q: i32 = fx_skip_ws(p, j, e)
+    if q < e and p[q] == 61 {
+        return 1
+    }
+    return 0
+}
+
+# ── Boundary block ───────────────────────────────────────────────
+
+# _extract_brace_block over raw lines. Appends body spans to bs/be and
+# returns the index of the first line after the block; body count in cnt[0].
+function fx_extract_block(
+    p: ptr<u8>, ls: ptr<i32>, le: ptr<i32>, nlines: i32, start: i32,
+    bs: ptr<i32>, be: ptr<i32>, cnt: ptr<i32>
+) -> i32 {
+    let mut depth: i32 = 0
+    let mut i: i32 = start
+    let mut nb: i32 = 0
+    while i < nlines {
+        let s: i32 = ls[i]
+        let e: i32 = le[i]
+        depth = depth + fx_span_count(p, s, e, 123) - fx_span_count(p, s, e, 125)
+        let has_open: i32 = fx_span_has(p, s, e, 123)
+        if i > start or has_open == 1 {
+            if depth > 0 or (i == start and has_open == 1) {
+                let mut its: i32 = s
+                if i == start {
+                    its = fx_span_find(p, s, e, 123) + 1
+                }
+                if depth > 0 {
+                    # inner.rstrip("}").strip()
+                    let mut ite: i32 = e
+                    while ite > its and p[ite - 1] == 125 {
+                        ite = ite - 1
+                    }
+                    bs[nb] = its
+                    be[nb] = ite
+                    nb = nb + 1
+                } else {
+                    if fx_span_has(p, s, e, 125) == 1 {
+                        # inner.split("}", 1)[0].strip()
+                        let mut ie2: i32 = fx_span_find(p, its, e, 125)
+                        if ie2 < 0 {
+                            ie2 = e
+                        }
+                        bs[nb] = its
+                        be[nb] = ie2
+                        nb = nb + 1
+                    }
+                }
+            }
+        }
+        if depth <= 0 and i > start {
+            cnt[0] = nb
+            return i + 1
+        }
+        i = i + 1
+    }
+    cnt[0] = nb
+    return i
+}
+
+# ── Expander ─────────────────────────────────────────────────────
+
+function fx_emit_int_span(w: ptr<FxBuf>, p: ptr<u8>, s: i32, e: i32) {
+    # f"{int(digits)}": drop leading zeros, keep one digit.
+    let mut k: i32 = s
+    while k < e - 1 and p[k] == 48 {
+        k = k + 1
+    }
+    fx_put_span(w, p, k, e)
+}
+
+# int(digits) <= 1 over an arbitrary-length digit run.
+function fx_int_le_one(p: ptr<u8>, s: i32, e: i32) -> i32 {
+    let mut k: i32 = s
+    while k < e - 1 and p[k] == 48 {
+        k = k + 1
+    }
+    if e - k == 1 and (p[k] == 48 or p[k] == 49) {
+        return 1
+    }
+    return 0
+}
+
+function fx_find_field(p: ptr<u8>, rec: ptr<i32>, nf: i32, s: i32, e: i32) -> i32 {
+    let mut f: i32 = 0
+    while f < nf {
+        let b: i32 = f * FX_REC
+        if fx_span_eq(p, rec[b + FX_NAME_S], rec[b + FX_NAME_E], s, e) == 1 {
+            return f
+        }
+        f = f + 1
+    }
+    return 0 - 1
+}
+
+# compile_fields(): one helper chunk per field, joined by "\n", then .strip()
+# (which only drops the final newline, since every chunk starts with `#`).
+function fx_emit_helpers(w: ptr<FxBuf>, p: ptr<u8>, rec: ptr<i32>, nf: i32) {
+    let mut f: i32 = 0
+    while f < nf {
+        let b: i32 = f * FX_REC
+        let ns: i32 = rec[b + FX_NAME_S]
+        let ne: i32 = rec[b + FX_NAME_E]
+        if f > 0 {
+            fx_puts(w, "\n")
+        }
+        fx_puts(w, "# generated from field ")
+        fx_put_span(w, p, ns, ne)
+        fx_puts(w, " : f64[")
+        fx_emit_int_span(w, p, rec[b + FX_N_S], rec[b + FX_N_E])
+        fx_puts(w, "] on Line\nconst ")
+        fx_put_span(w, p, ns, ne)
+        fx_puts(w, "_field_n: i32 = ")
+        fx_emit_int_span(w, p, rec[b + FX_N_S], rec[b + FX_N_E])
+        fx_puts(w, "\n\nfunction ")
+        fx_put_span(w, p, ns, ne)
+        fx_puts(w, "_field_step(\n    u: ptr<f64>,\n    next: ptr<f64>,\n    r: f64\n) -> void {\n    heat_euler_step_1d(u, next, ")
+        fx_emit_int_span(w, p, rec[b + FX_N_S], rec[b + FX_N_E])
+        fx_puts(w, ", r, ")
+        if rec[b + FX_L_S] < 0 {
+            fx_puts(w, "0.0")
+        } else {
+            fx_put_span(w, p, rec[b + FX_L_S], rec[b + FX_L_E])
+        }
+        fx_puts(w, ", ")
+        if rec[b + FX_R_S] < 0 {
+            fx_puts(w, "0.0")
+        } else {
+            fx_put_span(w, p, rec[b + FX_R_S], rec[b + FX_R_E])
+        }
+        fx_puts(w, ")\n}")
+        if f + 1 < nf {
+            fx_puts(w, "\n")
+        }
+        f = f + 1
+    }
+}
+
+# re.search(r"\nfunction\s+main\s*\(", m): offset of the "\n", or -1.
+function fx_find_main(m: ptr<u8>, n: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < n {
+        if m[i] == 10 and fx_lit_at(m, i + 1, n, "function") == 1 {
+            let j: i32 = i + 9
+            let k: i32 = fx_skip_ws(m, j, n)
+            if k > j and fx_lit_at(m, k, n, "main") == 1 {
+                let q: i32 = fx_skip_ws(m, k + 4, n)
+                if q < n and m[q] == 40 {
+                    return i
+                }
+            }
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+function fx_contains(m: ptr<u8>, n: i32, lit: string) -> i32 {
+    let mut i: i32 = 0
+    while i < n {
+        if fx_lit_at(m, i, n, lit) == 1 {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+# Parse field/boundary/evolves lines, keep the rest. Returns the field
+# count, or -1 with the message in `err`. keep[i] = 1 for kept lines.
+function fx_parse(
+    p: ptr<u8>, ls: ptr<i32>, le: ptr<i32>, nlines: i32, keep: ptr<i32>,
+    rec: ptr<i32>, err: ptr<FxBuf>
+) -> i32 {
+    let caps: ptr<i32> = malloc(64) as ptr<i32>
+    let se: ptr<i32> = malloc(16) as ptr<i32>
+    let cnt: ptr<i32> = malloc(16) as ptr<i32>
+    let bs: ptr<i32> = malloc(((nlines + 1) as i64) * 4) as ptr<i32>
+    let be: ptr<i32> = malloc(((nlines + 1) as i64) * 4) as ptr<i32>
+    let its: ptr<i32> = malloc(((nlines + 1) as i64) * 4) as ptr<i32>
+    let ite: ptr<i32> = malloc(((nlines + 1) as i64) * 4) as ptr<i32>
+    let mut nf: i32 = 0
+    let mut rc: i32 = 0
+    let mut i: i32 = 0
+    while i < nlines and rc == 0 {
+        keep[i] = 0
+        se[0] = ls[i]
+        se[1] = le[i]
+        fx_strip_comments(p, se)
+        let s: i32 = se[0]
+        let e: i32 = se[1]
+        let mut handled: i32 = 0
+        if e > s and fx_match_field(p, s, e, caps) == 1 {
+            handled = 1
+            if fx_lit_at(p, caps[4], caps[5], "Line") == 0 or caps[5] - caps[4] != 4 {
+                fx_err_name(err, p, "field '", caps[0], caps[1], "': only `on Line` is supported in Stage-1 (got '")
+                fx_put_span(err, p, caps[4], caps[5])
+                fx_puts(err, "')")
+                rc = 0 - 1
+            } else {
+                if fx_int_le_one(p, caps[2], caps[3]) == 1 {
+                    fx_err_name(err, p, "field '", caps[0], caps[1], "': size must be > 1")
+                    rc = 0 - 1
+                } else {
+                    if fx_find_field(p, rec, nf, caps[0], caps[1]) >= 0 {
+                        fx_err_name(err, p, "duplicate field '", caps[0], caps[1], "'")
+                        rc = 0 - 1
+                    } else {
+                        if nf >= FX_MAX_FIELDS {
+                            fx_puts(err, "too many fields (flowc limit 64)")
+                            rc = 0 - 1
+                        } else {
+                            let b: i32 = nf * FX_REC
+                            rec[b + FX_NAME_S] = caps[0]
+                            rec[b + FX_NAME_E] = caps[1]
+                            rec[b + FX_N_S] = caps[2]
+                            rec[b + FX_N_E] = caps[3]
+                            rec[b + FX_L_S] = 0 - 1
+                            rec[b + FX_L_E] = 0 - 1
+                            rec[b + FX_R_S] = 0 - 1
+                            rec[b + FX_R_E] = 0 - 1
+                            rec[b + FX_EVOLVED] = 0
+                            nf = nf + 1
+                        }
+                    }
+                }
+            }
+            i = i + 1
+        }
+        if handled == 0 and e > s and fx_match_boundary_head(p, s, e, caps) == 1 {
+            handled = 1
+            let bn_s: i32 = caps[0]
+            let bn_e: i32 = caps[1]
+            let fi: i32 = fx_find_field(p, rec, nf, bn_s, bn_e)
+            if fi < 0 {
+                fx_err_name(err, p, "boundary '", bn_s, bn_e, "': declare `field ")
+                fx_put_span(err, p, bn_s, bn_e)
+                fx_puts(err, " : …` first")
+                rc = 0 - 1
+            } else {
+                let next_i: i32 = fx_extract_block(p, ls, le, nlines, i, bs, be, cnt)
+                # Split each stripped body line into `left = ...` / `right = ...` items.
+                let mut ni: i32 = 0
+                let mut bi: i32 = 0
+                while bi < cnt[0] {
+                    se[0] = bs[bi]
+                    se[1] = be[bi]
+                    fx_strip(p, se)
+                    fx_strip_comments(p, se)
+                    let b0: i32 = se[0]
+                    let b1: i32 = se[1]
+                    if b1 > b0 {
+                        let mut ps: i32 = b0
+                        let mut k: i32 = b0 + 1
+                        while k <= b1 {
+                            let mut cut: i32 = 0
+                            if k == b1 {
+                                cut = 1
+                            } else {
+                                if fx_is_side_start(p, b0, b1, k) == 1 {
+                                    cut = 1
+                                }
+                            }
+                            if cut == 1 {
+                                se[0] = ps
+                                se[1] = k
+                                fx_strip(p, se)
+                                if se[1] > se[0] {
+                                    its[ni] = se[0]
+                                    ite[ni] = se[1]
+                                    ni = ni + 1
+                                }
+                                ps = k
+                            }
+                            k = k + 1
+                        }
+                    }
+                    bi = bi + 1
+                }
+                let mut l_s: i32 = 0 - 1
+                let mut l_e: i32 = 0 - 1
+                let mut r_s: i32 = 0 - 1
+                let mut r_e: i32 = 0 - 1
+                let mut ii: i32 = 0
+                while ii < ni and rc == 0 {
+                    let side: i32 = fx_match_assign(p, its[ii], ite[ii], caps)
+                    if side == 0 {
+                        fx_err_name(err, p, "boundary '", bn_s, bn_e, "': expected `left = …` / `right = …`, got '")
+                        fx_put_span(err, p, its[ii], ite[ii])
+                        fx_puts(err, "'")
+                        rc = 0 - 1
+                    } else {
+                        se[0] = caps[0]
+                        se[1] = caps[1]
+                        fx_strip(p, se)
+                        if se[1] <= se[0] {
+                            if side == 1 {
+                                fx_err_name(err, p, "boundary '", bn_s, bn_e, "': empty left value")
+                            } else {
+                                fx_err_name(err, p, "boundary '", bn_s, bn_e, "': empty right value")
+                            }
+                            rc = 0 - 1
+                        } else {
+                            if side == 1 {
+                                l_s = se[0]
+                                l_e = se[1]
+                            } else {
+                                r_s = se[0]
+                                r_e = se[1]
+                            }
+                        }
+                    }
+                    ii = ii + 1
+                }
+                if rc == 0 {
+                    if l_s < 0 or r_s < 0 {
+                        fx_err_name(err, p, "boundary '", bn_s, bn_e, "': need both left and right")
+                        rc = 0 - 1
+                    } else {
+                        let fb: i32 = fi * FX_REC
+                        rec[fb + FX_L_S] = l_s
+                        rec[fb + FX_L_E] = l_e
+                        rec[fb + FX_R_S] = r_s
+                        rec[fb + FX_R_E] = r_e
+                    }
+                }
+                # Lines i+1 .. next_i-1 were consumed by the block.
+                let mut z: i32 = i + 1
+                while z < next_i and z < nlines {
+                    keep[z] = 0
+                    z = z + 1
+                }
+                i = next_i
+            }
+        }
+        if handled == 0 and e > s and fx_match_evolve(p, s, e, caps) == 1 {
+            let ev: i32 = fx_find_field(p, rec, nf, caps[0], caps[1])
+            if ev >= 0 {
+                handled = 1
+                let en_s: i32 = caps[0]
+                let en_e: i32 = caps[1]
+                se[0] = caps[2]
+                se[1] = caps[3]
+                fx_strip(p, se)
+                let ok: i32 = fx_match_lap(p, se[0], se[1], caps)
+                if ok == 0 or fx_span_eq(p, caps[0], caps[1], en_s, en_e) == 0 {
+                    fx_err_name(err, p, "field '", en_s, en_e, "' evolves: Stage-1 expects `")
+                    fx_put_span(err, p, en_s, en_e)
+                    fx_puts(err, " evolves as laplacian(")
+                    fx_put_span(err, p, en_s, en_e)
+                    fx_puts(err, ")` or `c * laplacian(")
+                    fx_put_span(err, p, en_s, en_e)
+                    fx_puts(err, ")`")
+                    rc = 0 - 1
+                } else {
+                    if caps[4] >= 0 and caps[2] >= 0 {
+                        fx_err_name(err, p, "field '", en_s, en_e, "' evolves: use at most one multiplier")
+                        rc = 0 - 1
+                    } else {
+                        # The multiplier only feeds r_literal, which never
+                        # reaches the generated helper.
+                        rec[ev * FX_REC + FX_EVOLVED] = 1
+                    }
+                }
+                i = i + 1
+            }
+        }
+        if handled == 0 {
+            keep[i] = 1
+            i = i + 1
+        }
+    }
+    if rc == 0 {
+        let mut f: i32 = 0
+        while f < nf and rc == 0 {
+            let b: i32 = f * FX_REC
+            if rec[b + FX_EVOLVED] == 0 {
+                let ms: i32 = rec[b + FX_NAME_S]
+                let me: i32 = rec[b + FX_NAME_E]
+                fx_err_name(err, p, "field '", ms, me, "': missing `")
+                fx_put_span(err, p, ms, me)
+                fx_puts(err, " evolves as laplacian(")
+                fx_put_span(err, p, ms, me)
+                fx_puts(err, ")`")
+                rc = 0 - 1
+            }
+            f = f + 1
+        }
+    }
+    free(caps as ptr<u8>)
+    free(se as ptr<u8>)
+    free(cnt as ptr<u8>)
+    free(bs as ptr<u8>)
+    free(be as ptr<u8>)
+    free(its as ptr<u8>)
+    free(ite as ptr<u8>)
+    if rc != 0 {
+        return 0 - 1
+    }
+    return nf
+}
+
+# expand_field_dsl(). Writes the expanded source to `out` and returns its
+# length. Source without the DSL is copied unchanged. Returns -1 on a DSL
+# error (message in `err`, not NUL-terminated; err[0].len bytes) and -2 when
+# `out` is too small.
+export function flowc_field_expand(p: ptr<u8>, n: i32, out: ptr<FxBuf>, err: ptr<FxBuf>) -> i32 {
+    if flowc_field_has_dsl(p, n) == 0 {
+        fx_put_span(out, p, 0, n)
+        if out[0].err != 0 {
+            return 0 - 2
+        }
+        return out[0].len
+    }
+    let ls: ptr<i32> = malloc(((n + 2) as i64) * 4) as ptr<i32>
+    let le: ptr<i32> = malloc(((n + 2) as i64) * 4) as ptr<i32>
+    let keep: ptr<i32> = malloc(((n + 2) as i64) * 4) as ptr<i32>
+    let rec: ptr<i32> = malloc(((FX_MAX_FIELDS * FX_REC) as i64) * 4) as ptr<i32>
+    let nlines: i32 = fx_split_lines(p, n, ls, le)
+    let nf: i32 = fx_parse(p, ls, le, nlines, keep, rec, err)
+    let mut rc: i32 = 0
+    if nf < 0 {
+        rc = 0 - 1
+    } else {
+        # stripped = "\n".join(kept lines)
+        let mcap: i32 = n + 64
+        let mut mw: FxBuf = FxBuf { buf: malloc((mcap + 1) as i64), cap: mcap, len: 0, err: 0 }
+        if nf > 0 {
+            # Checked against `stripped` (before the import is added).
+            let mut sw: FxBuf = FxBuf { buf: malloc((mcap + 1) as i64), cap: mcap, len: 0, err: 0 }
+            let mut first0: i32 = 1
+            let mut j0: i32 = 0
+            while j0 < nlines {
+                if keep[j0] == 1 {
+                    if first0 == 0 {
+                        fx_putc(&sw, 10)
+                    }
+                    fx_put_span(&sw, p, ls[j0], le[j0])
+                    first0 = 0
+                }
+                j0 = j0 + 1
+            }
+            if fx_contains(sw.buf, sw.len, "import \"stdlib/dynamics/pde.flow\"") == 0 {
+                fx_puts(&mw, "import \"stdlib/dynamics/pde.flow\"\n")
+            }
+            fx_put_span(&mw, sw.buf, 0, sw.len)
+            free(sw.buf)
+        } else {
+            let mut first: i32 = 1
+            let mut j: i32 = 0
+            while j < nlines {
+                if keep[j] == 1 {
+                    if first == 0 {
+                        fx_putc(&mw, 10)
+                    }
+                    fx_put_span(&mw, p, ls[j], le[j])
+                    first = 0
+                }
+                j = j + 1
+            }
+        }
+        if nf == 0 {
+            fx_put_span(out, mw.buf, 0, mw.len)
+        } else {
+            # inject_before_main()
+            let at: i32 = fx_find_main(mw.buf, mw.len)
+            if at < 0 {
+                # flow_source.rstrip() + "\n\n" + helpers + "\n"
+                let mut te: i32 = mw.len
+                while te > 0 and fx_is_space(mw.buf[te - 1]) == 1 {
+                    te = te - 1
+                }
+                fx_put_span(out, mw.buf, 0, te)
+                fx_puts(out, "\n\n")
+                fx_emit_helpers(out, p, rec, nf)
+                fx_puts(out, "\n")
+            } else {
+                fx_put_span(out, mw.buf, 0, at)
+                fx_puts(out, "\n\n")
+                fx_emit_helpers(out, p, rec, nf)
+                fx_puts(out, "\n")
+                fx_put_span(out, mw.buf, at, mw.len)
+            }
+        }
+        free(mw.buf)
+        if out[0].err != 0 {
+            rc = 0 - 2
+        } else {
+            rc = out[0].len
+        }
+    }
+    free(ls as ptr<u8>)
+    free(le as ptr<u8>)
+    free(keep as ptr<u8>)
+    free(rec as ptr<u8>)
+    return rc
+}
+
+# Expand `buf[0..n)` in place for the compile path. Returns the new length,
+# or -1 after printing `flowc field: <message>` on stdout. NUL-terminates
+# when there is room. Source without the DSL is left untouched.
+export function flowc_field_expand_in_place(buf: ptr<u8>, n: i32, cap: i32) -> i32 {
+    if n < 0 {
+        return n
+    }
+    if flowc_field_has_dsl(buf, n) == 0 {
+        return n
+    }
+    # Helpers add a few hundred bytes per field, at most 64 fields.
+    let ocap: i32 = n * 2 + 65536
+    let mut ow: FxBuf = FxBuf { buf: malloc((ocap + 1) as i64), cap: ocap, len: 0, err: 0 }
+    let mut ew: FxBuf = FxBuf { buf: malloc(1024), cap: 1023, len: 0, err: 0 }
+    let rc: i32 = flowc_field_expand(buf, n, &ow, &ew)
+    if rc < 0 {
+        if rc == 0 - 2 {
+            puts("flowc field: expanded source too large")
+        } else {
+            let head: string = "flowc field: "
+            let hp: ptr<u8> = head
+            let mut line: FxBuf = FxBuf { buf: malloc(1100), cap: 1099, len: 0, err: 0 }
+            fx_put_span(&line, hp, 0, 13)
+            fx_put_span(&line, ew.buf, 0, ew.len)
+            line.buf[line.len] = 0
+            puts(line.buf as string)
+            free(line.buf)
+        }
+        free(ow.buf)
+        free(ew.buf)
+        return 0 - 1
+    }
+    if rc >= cap {
+        puts("flowc field: expanded source exceeds the source buffer")
+        free(ow.buf)
+        free(ew.buf)
+        return 0 - 1
+    }
+    let mut k: i32 = 0
+    while k < rc {
+        buf[k] = ow.buf[k]
+        k = k + 1
+    }
+    buf[rc] = 0
+    free(ow.buf)
+    free(ew.buf)
+    return rc
+}

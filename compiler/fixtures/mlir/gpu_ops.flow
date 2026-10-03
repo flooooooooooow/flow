@@ -1,0 +1,27 @@
+# MLIR fixture for the GPU dialect (FLOWC_MLIR_GPU=1): integer negation is
+# 0 - x with a materialized zero, `!` on a bool flips it and on an integer
+# tests x == 0, and an `elif` is a nested scf.if in the else region (#1061).
+# The gate compares text only for gpu_* fixtures; the host main runs.
+
+@gpu
+function bands(out: array<i32>, a: i32, b: i32) {
+    let i = gpu_thread_id()
+    let neg = -i
+    let zero = !i
+    let small = i < a
+    if !small {
+        out[i] = neg
+    }
+    if i < a {
+        out[i] = 1
+    } elif i < b {
+        out[i] = 2
+    } else {
+        out[i] = 3
+    }
+}
+
+function main() -> i32 {
+    println(5)
+    return 0
+}

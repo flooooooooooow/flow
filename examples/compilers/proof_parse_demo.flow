@@ -1,13 +1,11 @@
 # proof_document parsing dogfood: meta block, brace bodies, proof steps,
 # and LaTeX escaping.
 #
-# Prints one `KIND|input|result` line per case. The companion parity script
-# feeds the same corpus through src/flow/proof_document.py and fails if the
-# two disagree:
+# Prints one `KIND|input|result` line per case. The full proof documents
+# (compiler/src/proof_doc.flow) are held to the former Python by
+# compiler/scripts/parity_proofs.flow.
 #
-#   python3 compiler/scripts/parity_proof_parse.py
-#
-# Run directly:  FLOW_HOST=python ./flow run examples/compilers/proof_parse_demo.flow
+# Run directly:  ./flow run examples/compilers/proof_parse_demo.flow
 
 import "compiler/src/proof_document.flow"
 

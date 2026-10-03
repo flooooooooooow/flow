@@ -1,0 +1,49 @@
+# Flow-native language test: a user function named like a flowc builtin
+# (`find`) or like a libc function with another signature (`bsearch`) is
+# the one the program calls, as on the Python host, which mangled user
+# functions by parameter types (#1045). The two bodies are the ones in
+# docs/tutorials/arrays.md and docs/tutorials/algorithms.md.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+function find(xs: ptr<i32>, n: i32, target: i32) -> i32 {
+    for i in 0 to n {
+        if xs[i] == target {
+            return i
+        }
+    }
+    return -1
+}
+
+function bsearch(xs: ptr<i32>, n: i32, target: i32) -> i32 {
+    let mut lo: i32 = 0
+    let mut hi: i32 = n - 1
+    while lo <= hi {
+        let mid: i32 = (lo + hi) / 2
+        if xs[mid] == target {
+            return mid
+        } elif xs[mid] < target {
+            lo = mid + 1
+        } else {
+            hi = mid - 1
+        }
+    }
+    return -1
+}
+
+function main() -> i32 {
+    let xs: [i32; 5] = [4, 8, 15, 16, 23]
+    if find(xs, 5, 15) != 2 {
+        return 1
+    }
+    if find(xs, 5, 99) != -1 {
+        return 2
+    }
+    let ys: [i32; 7] = [1, 3, 4, 7, 9, 12, 15]
+    if bsearch(ys, 7, 9) != 4 {
+        return 3
+    }
+    if bsearch(ys, 7, 8) != -1 {
+        return 4
+    }
+    return 0
+}

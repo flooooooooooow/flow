@@ -1,0 +1,9 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "my_math"
+version = "2.0.0"
+description = "Flow-generated Python extension"
+requires-python = ">=3.8"

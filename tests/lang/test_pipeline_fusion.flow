@@ -1,5 +1,5 @@
 # Test for pipeline_fusion.flow port of pipeline_fusion.py.
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_pipeline_fusion.flow
+# Run with: ./flow run tests/lang/test_pipeline_fusion.flow
 # Exit 0 on success.
 
 import "compiler/src/pipeline_fusion.flow"
@@ -43,14 +43,63 @@ function main() -> i32 {
     arena.nodes[id_n2].next = id_3
     arena.nodes[id_3].next = -1
 
-    # create a dummy src
-    let src: string = "dummy"
+    # A third stage checks that the pass reaches a fixed point.
+    let id_n3: i32 = flowc_ast_alloc(&arena, 12, 0, 0)
+    let id_4: i32 = flowc_ast_alloc(&arena, 34, 0, 0)
+    let outer2_call: i32 = flowc_ast_alloc(&arena, 11, 0, 0)
+    arena.nodes[outer2_call].name_start = 0
+    arena.nodes[outer2_call].name_end = 9
+    arena.nodes[outer2_call].a = outer_call
+    arena.nodes[outer_call].next = id_n3
+    arena.nodes[id_n3].next = id_4
+    arena.nodes[id_4].next = -1
+
+    # A different nine-character function name must remain untouched.
+    let bad_buf: i32 = flowc_ast_alloc(&arena, 12, 0, 0)
+    let bad_n1: i32 = flowc_ast_alloc(&arena, 12, 0, 0)
+    let bad_v1: i32 = flowc_ast_alloc(&arena, 34, 0, 0)
+    let bad_inner: i32 = flowc_ast_alloc(&arena, 11, 0, 0)
+    arena.nodes[bad_inner].name_start = 9
+    arena.nodes[bad_inner].name_end = 18
+    arena.nodes[bad_inner].a = bad_buf
+    arena.nodes[bad_buf].next = bad_n1
+    arena.nodes[bad_n1].next = bad_v1
+    let bad_n2: i32 = flowc_ast_alloc(&arena, 12, 0, 0)
+    let bad_v2: i32 = flowc_ast_alloc(&arena, 34, 0, 0)
+    let bad_outer: i32 = flowc_ast_alloc(&arena, 11, 0, 0)
+    arena.nodes[bad_outer].name_start = 9
+    arena.nodes[bad_outer].name_end = 18
+    arena.nodes[bad_outer].a = bad_inner
+    arena.nodes[bad_inner].next = bad_n2
+    arena.nodes[bad_n2].next = bad_v2
+
+    # A f64 outer stage must not fuse with an f32 inner stage.
+    let f64_buf: i32 = flowc_ast_alloc(&arena, 12, 0, 0)
+    let f64_n1: i32 = flowc_ast_alloc(&arena, 12, 0, 0)
+    let f64_v1: i32 = flowc_ast_alloc(&arena, 34, 0, 0)
+    let f64_inner: i32 = flowc_ast_alloc(&arena, 11, 0, 0)
+    arena.nodes[f64_inner].name_start = 0
+    arena.nodes[f64_inner].name_end = 9
+    arena.nodes[f64_inner].a = f64_buf
+    arena.nodes[f64_buf].next = f64_n1
+    arena.nodes[f64_n1].next = f64_v1
+    let f64_n2: i32 = flowc_ast_alloc(&arena, 12, 0, 0)
+    let f64_v2: i32 = flowc_ast_alloc(&arena, 34, 0, 0)
+    let f64_outer: i32 = flowc_ast_alloc(&arena, 11, 0, 0)
+    arena.nodes[f64_outer].name_start = 18
+    arena.nodes[f64_outer].name_end = 27
+    arena.nodes[f64_outer].a = f64_inner
+    arena.nodes[f64_inner].next = f64_n2
+    arena.nodes[f64_n2].next = f64_v2
+
+    let src: string = "scale_f32other_funscale_f64"
 
     # fuse
+    let affine_src: string = "scale_f32map_f32offset_f32x"
     flowc_fuse_pipelines(&arena, src as ptr<u8>)
 
     # verify
-    if arena.nodes[outer_call].a != id_buf {
+    if arena.nodes[outer2_call].a != id_buf {
         puts("FAIL: outer_call.a should be buf")
         return 1
     }
@@ -64,13 +113,99 @@ function main() -> i32 {
         puts("FAIL: third arg should be BINOP")
         return 3
     }
-    if arena.nodes[binop_node].a != id_2 {
-        puts("FAIL: binop left should be 2.0")
+    let first_binop: i32 = arena.nodes[binop_node].a
+    if arena.nodes[first_binop].kind != 9 or arena.nodes[first_binop].a != id_2 {
+        puts("FAIL: first fused operation should start with 2.0")
         return 4
     }
-    if arena.nodes[binop_node].b != id_3 {
-        puts("FAIL: binop right should be 3.0")
+    if arena.nodes[first_binop].b != id_3 or arena.nodes[binop_node].b != id_4 {
+        puts("FAIL: fused operations should retain 3.0 and 4.0")
         return 5
+    }
+    if arena.nodes[bad_outer].a != bad_inner {
+        puts("FAIL: unrelated nine-character function was fused")
+        return 6
+    }
+    if arena.nodes[f64_outer].a != f64_inner {
+        puts("FAIL: f32 and f64 stages were fused")
+        return 7
+    }
+
+    # map_f32(scale_f32(buf, n, 2.0), n, |x| -> f32 { return x })
+    # becomes map_f32(buf, n, |x| -> f32 { return x * 2.0 }).
+    let a_buf: i32 = flowc_ast_alloc(&arena, 12, 0, 0)
+    let a_n: i32 = flowc_ast_alloc(&arena, 12, 0, 0)
+    let a_gain: i32 = flowc_ast_alloc(&arena, 34, 0, 0)
+    let a_scale: i32 = flowc_ast_alloc(&arena, 11, 0, 0)
+    let a_map_n: i32 = flowc_ast_alloc(&arena, 12, 0, 0)
+    let a_param: i32 = flowc_ast_alloc(&arena, 3, 0, 0)
+    let a_x: i32 = flowc_ast_alloc(&arena, 12, 0, 0)
+    let a_ret: i32 = flowc_ast_alloc(&arena, 6, 0, 0)
+    let a_block: i32 = flowc_ast_alloc(&arena, 4, 0, 0)
+    let a_lam: i32 = flowc_ast_alloc(&arena, 2, 0, 0)
+    let a_map: i32 = flowc_ast_alloc(&arena, 11, 0, 0)
+    arena.nodes[a_scale].name_start = 0
+    arena.nodes[a_scale].name_end = 9
+    arena.nodes[a_scale].a = a_buf
+    arena.nodes[a_buf].next = a_n
+    arena.nodes[a_n].next = a_gain
+    arena.nodes[a_gain].next = -1
+    arena.nodes[a_param].name_start = 26
+    arena.nodes[a_param].name_end = 27
+    arena.nodes[a_param].a = -1
+    arena.nodes[a_param].b = -1
+    arena.nodes[a_x].name_start = 26
+    arena.nodes[a_x].name_end = 27
+    arena.nodes[a_ret].a = a_x
+    arena.nodes[a_ret].next = -1
+    arena.nodes[a_block].a = a_ret
+    arena.nodes[a_lam].a = a_param
+    arena.nodes[a_lam].b = -1
+    arena.nodes[a_lam].c = a_block
+    arena.nodes[a_map].name_start = 9
+    arena.nodes[a_map].name_end = 16
+    arena.nodes[a_map].a = a_scale
+    arena.nodes[a_scale].next = a_map_n
+    arena.nodes[a_map_n].next = a_lam
+    arena.nodes[a_lam].next = -1
+    flowc_fuse_pipelines(&arena, affine_src as ptr<u8>)
+    if arena.nodes[a_map].a != a_buf or arena.nodes[a_map].name_start != 9 {
+        puts("FAIL: affine stage did not fuse into map")
+        return 8
+    }
+    let fused_lam: i32 = arena.nodes[a_n].next
+    if arena.nodes[fused_lam].kind != 2 or arena.nodes[arena.nodes[fused_lam].c].kind != 4 {
+        puts("FAIL: affine fusion did not produce a lambda")
+        return 9
+    }
+    let fused_ret: i32 = arena.nodes[arena.nodes[fused_lam].c].a
+    let fused_expr: i32 = arena.nodes[fused_ret].a
+    if arena.nodes[fused_expr].kind != 9 or arena.nodes[arena.nodes[fused_expr].b].kind != 34 {
+        puts("FAIL: affine fusion produced the wrong map body")
+        return 10
+    }
+
+    # scale_f32(map_f32(buf, n, f), n, 3.0) also becomes one map stage.
+    let b_scalar: i32 = flowc_ast_alloc(&arena, 34, 0, 0)
+    let b_outer_n: i32 = flowc_ast_alloc(&arena, 12, 0, 0)
+    let b_outer: i32 = flowc_ast_alloc(&arena, 11, 0, 0)
+    arena.nodes[b_outer].name_start = 0
+    arena.nodes[b_outer].name_end = 9
+    arena.nodes[b_outer].a = a_map
+    arena.nodes[a_map].next = b_outer_n
+    arena.nodes[b_outer_n].next = b_scalar
+    arena.nodes[b_scalar].next = -1
+    flowc_fuse_pipelines(&arena, affine_src as ptr<u8>)
+    if arena.nodes[b_outer].a != a_buf or arena.nodes[b_outer].name_start != 9 {
+        puts("FAIL: map stage did not fuse into affine stage")
+        return 11
+    }
+    let reverse_lam: i32 = arena.nodes[a_n].next
+    let reverse_ret: i32 = arena.nodes[arena.nodes[reverse_lam].c].a
+    let reverse_expr: i32 = arena.nodes[reverse_ret].a
+    if arena.nodes[reverse_expr].kind != 9 or arena.nodes[arena.nodes[reverse_expr].b].kind != 34 {
+        puts("FAIL: reverse affine fusion produced the wrong map body")
+        return 12
     }
 
     flowc_ast_free(arena)

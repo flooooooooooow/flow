@@ -1,0 +1,115 @@
+Flow Programming Language v2.0.0
+
+Usage: flow [OPTIONS] <program.flow>
+
+Options:
+  run <program> [--backend=c|mlir] [--sanitize=ub,asan,tsan] [--profile=safety]
+                    Compile and run program
+  compile <program> [--backend=c|mlir] [--sanitize=...] [--profile=safety] [--show-flags]
+                    Compile program only; --show-flags prints clang flags
+  show-flags [--profile=safety] [--sanitize=...]  Print clang CFLAGS for current profile
+  analyze <file.c> [--standard=misra-c-2024|cert-c] [--fail-on-violation]
+                    Scan generated C for MISRA/CERT patterns (#277)
+  Compiler: flowc (compiler/src); FLOWC_BIN=<path> picks a flowc binary
+  CPU backend: FLOW_CPU_BACKEND=c|mlir or --backend= (default c; mlir needs LLVM)
+  C flags: -std=c11 -Wall -Wextra (MISRA Phase 0); FLOW_PROFILE=safety adds -Werror
+  Sanitizers: FLOW_UBSAN=1 FLOW_ASAN=1 FLOW_TSAN=1 or FLOW_SANITIZE=ub,asan,tsan
+  audio <program> [--mlir]   Compile and run with audio backend
+  compile-audio <program> [--mlir]  Compile with audio backend
+  debug <program> [--break N|--break main] [--no-launch]  Debug build (+ optional LLDB/GDB)
+  window <program>  Run with SDL2 window backend
+  gfx <program>     Run with native FLOW gfx backend (macOS/Linux/Windows via SDL2)
+  record <program> [--frames N] [--skip N] [--out DIR] [--gif [PATH]] [--keys SPEC] [--mouse SPEC]
+                   [--fps N] [--stride N] [--width PX]
+                    Run a gfx program headless; write PPM frames, or a GIF with --gif
+  shader <program>  Run fill-shader demo (Metal window on macOS; --emit-only, --wgsl; see docs/language/shaders.md)
+  demo vulkan [basic|advanced]  Vulkan triangle / scene demos (macOS + MoltenVK)
+  demo vulkan-flow [basic|advanced|2048|tetris|snake|pong|breakout|layout|layout-dsl]
+  demo ui-layout[|-window]  UI layout demos (SDL2 for -window)
+  Compat aliases (same as demo …): vulkan-demo[-basic|-advanced], vulkan-2048,
+    vulkan-tetris, vulkan-snake, vulkan-pong, vulkan-breakout,
+    vulkan-layout[-dsl], ui-layout[-window]
+  mlir <program> [flags]  Generate MLIR (pass --optimize / --opt-level / --no-*)
+  mlir-run <program> Compile via MLIR and run
+  fir-g <program>    Dump FIR-G graph + analyses; --calibrate / --opts
+  jit <program>      JIT compile and run (fastest)
+  ml [run|jit|bench|test] [program]  MLIR-first ML workloads (tensors, matmul)
+  gpu <program>      Generate @gpu compute kernels as Metal sources
+  shader <program>   Run fill-shader demo (Metal; macOS)
+  explain <program>  Print the compilation plan for every declarative
+                    construct: implementations considered, their costs,
+                    the choice, and what each rejected candidate failed
+                    (flowc with FLOWC_EXPLAIN=1)
+  transpile <program> [args...]  Run the Python MLIR transpiler (advanced flags)
+  fmt [--check] <files...>  Format FLOW source files in place
+                    (--check: list files that would change, exit 1)
+
+Testing:
+  test [flags]      Run FLOW tests (flowc + clang validate)
+                    --strict    Fail on type errors
+                    --lenient   Warnings only (default)
+                    --tier1     Transpile only (fast)
+                    --tier2     Transpile + clang (default)
+                    --verbose   Show error details
+                    --sanitize=ub,asan,tsan  Enable sanitizers for compile/run tests
+  test-strict       Shortcut for: test --strict
+  test-runtime      Run runtime tests (compile + execute)
+  test-lang         Run tests/lang/ language tests (strict flowc + compile + execute)
+                    --timeout=SECONDS  Per-program limit for test-runtime and test-lang
+                    (default 120, or FLOW_TEST_TIMEOUT); a timeout is a failure
+  test-mlir         Run MLIR verification (requires LLVM)
+  test-scripts      Run the Flow tests in tests/scripts
+  test-interop      Run interop runtime tests
+  test-gpu          Run GPU feature + codegen tests
+  test-matmul       Run matmul optimization demo + print assembly
+  test-all          Run FLOW + Python tests
+
+Project / packages:
+  init [name]       Initialize a new project (flow.toml)
+  add <package>     Add dependency (name, name@^1.0, --git, --path)
+  patch <file.flow>  Compile and run a corpus patch smoke harness
+  sync [--program FILE]  Synchronize the nearest project's dependencies
+  pkg install       Install flow.toml dependencies → flow_packages/
+  search [query]    Search the Flow package registry
+  info <package>    Show package versions / source
+  publish           Register package in local registry/index.json
+  build             Build the project
+  build-native      Build with native sources (uses flow.toml)
+  run-native        Build and run with native sources
+  clean             Clean build artifacts
+  install           Install project deps if flow.toml exists; else LLVM tools
+  setup             Install LLVM / compiler tooling
+  python <program>  Generate Python package (wheel)
+  wasm <program> [--backend=c|mlir] [--preload DIR@/MOUNT] [--link PATH]
+                    [--threads] [--fs memfs|idbfs] [--out DIR]
+                    Compile to WebAssembly + a runnable page
+  wasm32 <in.flow|in.ll> -o OUT.wasm [--export NAME] [-O O0..Oz]
+                    Freestanding wasm32 module through MLIR (no libc)
+  bpf <in.flow|in.ll> -o OUT.o [--entry NAME --section SEC] [-O 0..3]
+                    eBPF ELF object (bpfel) through MLIR
+  tool NAME|PATH.flow [args]  Build and run a repository Flow program
+                    (scripts/tools/NAME, tools/NAME, or a .flow path)
+  repl              Start interactive REPL
+  lsp               Start the language server on stdio
+  examples          List project examples (or compiler examples outside a project)
+  examples run NAME Run a packaged project example from the current root
+  playground        Start native-local compile API + open playground docs
+  dap <file>        Debug Adapter (IDE) / opens flow debug on TTY
+  version           Print Flow version (2.0.0)
+  help              Show this help
+
+Environment:
+  FLOWC_PERMISSIVE_EFFECTS=1  Compile with legacy zero defaults
+  FLOW_PERMISSIVE_EFFECTS=1   Run with legacy zero/no-op defaults
+  FLOW_CPU_BACKEND=c|mlir  Select CPU codegen (default c; same as --backend)
+  FLOWC_BIN=<path>       flowc binary for the C path (default: built from compiler/bootstrap)
+
+Examples:
+  flow run examples/fibonacci.flow
+  flow run --backend=mlir examples/basics/hello_world.flow
+  flow compile examples/loops.flow
+  flow test --strict --verbose
+  flow test-runtime --verbose
+  flow test-interop
+  flow test-gpu --verbose
+  flow test-matmul [--no-asm] [--no-mlir]

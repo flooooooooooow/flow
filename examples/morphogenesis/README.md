@@ -127,7 +127,7 @@ compiled program:
 variants are captured without a display. `--skip N` keeps every Nth presented
 frame; `--fps`, `--stride` and `--width` size the GIF.
 
-The committed clips come from `python3 scripts/record_demos.py --group
+The committed clips come from `./flow tool record_demos --group
 morphogenesis`, which carries a tuned frame budget per example. See the
 [gallery](../../docs/demos/morphogenesis.md) for how those budgets were chosen.
 

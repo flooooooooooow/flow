@@ -1,0 +1,18 @@
+
+struct Box<T> {
+    value: T
+}
+
+function box_make<T>(v: T) -> Box<T> {
+    return Box<T> { value: v }
+}
+
+function box_get<T>(b: ptr<Box<T> >) -> T {
+    return b.value
+}
+
+function main() -> i32 {
+    let mut b: Box<i32> = box_make<i32>(7)
+    let v: i32 = box_get<i32>(&b)
+    return v - 7
+}

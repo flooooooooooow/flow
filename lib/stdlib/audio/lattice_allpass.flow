@@ -1,4 +1,4 @@
-# Many-pole lattice all-pass — Schur reflections, fast per-sample modulation
+# Many-pole lattice all-pass: Schur reflections, fast per-sample modulation
 # Import: import "stdlib/audio/lattice_allpass.flow"
 #
 # Gray-Markel ladder driven by Schur coefficients; |k_i|<1 guarantees stability

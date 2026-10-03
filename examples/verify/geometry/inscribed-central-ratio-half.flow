@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  The inscribed-to-central angle ratio is one half.
-# @from   euclid — Elements, Book III, Proposition 20
+# @from   euclid: Elements, Book III, Proposition 20
 # @tier   derived
 
 # @means  angle APB times two equals angle AOB.

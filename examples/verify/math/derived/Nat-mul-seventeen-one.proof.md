@@ -2,9 +2,9 @@
 
 *Seventeen times one is seventeen.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 17 * 1 = 17
+## Derived fact 1: 17 * 1 = 17
 
 **Coordinate.** the natural numbers · multiplication · seventeen times one is seventeen · **Derived fact**
 

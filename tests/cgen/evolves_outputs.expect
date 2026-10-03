@@ -1,0 +1,5 @@
++ void Motor_outputs(Motor* self)
++ self->torque = (0.6 * self->speed);
++ Motor_outputs(self);
+# torque reads the integrated speed, so outputs runs after the update.
+exit 0

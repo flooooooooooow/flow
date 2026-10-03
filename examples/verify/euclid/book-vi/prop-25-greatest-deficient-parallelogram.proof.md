@@ -2,13 +2,13 @@
 
 *Of all parallelograms applied to a given straight line and deficient by parallelograms similar to a given one, the greatest is that applied to the half of the line.*
 
-**Source.** euclid — Elements, Book VI, Proposition 25
+**Source.** euclid: Elements, Book VI, Proposition 25
 
-## Derived fact 1 — Of all parallelograms applied to a given straight line and deficient by parallelograms similar to a given one, the greatest is that applied to the half of the line
+## Derived fact 1: Of all parallelograms applied to a given straight line and deficient by parallelograms similar to a given one, the greatest is that applied to the half of the line
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 25: the greatest parallelogram on half the line with deficiency is similar to the given one · **Derived fact**
 
-*Source: euclid — Elements, Book VI, Proposition 25*
+*Source: euclid: Elements, Book VI, Proposition 25*
 
 *Built on: proposition 11: to apply a parallelogram equal to a figure and deficient by a similar parallelogram, for Euclid Book VI on the Euclidean plane*
 

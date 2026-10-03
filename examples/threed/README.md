@@ -26,7 +26,7 @@ clips are in [docs/demos/threed/](../../docs/demos/threed/).
 
 Frame cost is 600 presented frames through the headless recorder with frame
 writeout disabled, at 480 x 360 on an Apple M4 Max with `clang -O2`. It is a
-compute cost, not a display rate. Every example also shows its own measured
+compute cost rather than a display rate. Every example also shows its own measured
 frame time on the HUD.
 
 ## Shared controls

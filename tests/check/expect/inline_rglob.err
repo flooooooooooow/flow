@@ -1,0 +1,4 @@
+
+2 warning(s)/suggestion(s) in 2 files.
+ROOT/a.flow: avoid 'abc' - inline table
+ROOT/b.flow: avoid 'x+y' (workaround: 3)

@@ -2,9 +2,9 @@
 
 *The identity cubed stays in a subgroup.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §2.2
+**Source.** dummit-foote: *Abstract Algebra*, §2.2
 
-## Derived fact 1 — If 1 in H and 1 * 1 in H then 1 * 1 * 1 in H
+## Derived fact 1: If 1 in H and 1 * 1 in H then 1 * 1 * 1 in H
 
 **Coordinate.** Subgroup · multiplication · identity cubed stays in the subgroup · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that identity cubed stays in the subgroup for multiplication on Subgroup. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose 1 in H. |  |  |
 | ④ | Case 2 (see step 2): suppose 1 * 1 in H. |  |  |
 | ⑤ | We invoke the derived fact governing multiplication on Subgroup: subgroup products stay in the subgroup, for multiplication on Subgroup (instantiated for H, 1 * 1, 1). |  |  |

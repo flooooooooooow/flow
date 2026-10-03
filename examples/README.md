@@ -48,7 +48,7 @@ examples/
 
 > **Note:** `verify/` is a large proof / theorem corpus written ahead of the
 > verification checker. Prefer the **Canonical entrypoints** tables below for
-> “show me Flow” demos — not random files under `verify/`.
+> "show me Flow" demos over random files under `verify/`.
 
 ## Canonical entrypoints (Tier-0)
 
@@ -57,13 +57,13 @@ examples/
 | Basics / hello | `examples/basics/hello_world.flow` | `./flow run examples/basics/hello_world.flow` |
 | Effects | `examples/effects/showcase.flow` | `./flow run examples/effects/showcase.flow` |
 | ML (XOR net) | `examples/ml/models/mlp_xor.flow` | `./flow run examples/ml/models/mlp_xor.flow` |
-| ML (digits trainer) | `examples/ml/digits_mlp.flow` | `FLOW_HOST=python ./flow run examples/ml/digits_mlp.flow` |
+| ML (digits trainer) | `examples/ml/digits_mlp.flow` | `./flow run examples/ml/digits_mlp.flow` |
 | Audio / `@rt_safe` | `examples/audio/rt_safe_callback.flow` | `./flow run examples/audio/rt_safe_callback.flow` |
 | Audio / DSP | `examples/audio/lattice_allpass_phase_engine.flow` | `./flow run examples/audio/lattice_allpass_phase_engine.flow` |
 | UI layout | `examples/ui/layout_hello.flow` | `./flow run examples/ui/layout_hello.flow` |
 | UI (windowed) | `demos/ui_layout_flow` | `./flow demo ui-layout` |
 | HTTP slice | `examples/net/http_hello.flow` | `./flow run examples/net/http_hello.flow` |
-| Packages | `examples/packages/use_hello_lib/` | `python3 -m flow.package install` then `./flow run …/src/main.flow` |
+| Packages | `examples/packages/use_hello_lib/` | `./flow sync` in the project, then `./flow run …/src/main.flow` |
 | WASM | `examples/wasm/hello_wasm.flow` | `./flow run` / `./flow wasm examples/wasm/hello_wasm.flow` |
 | Concurrency | `examples/concurrency/channels.flow` | `./flow run examples/concurrency/channels.flow` |
 | Morphogenesis | `examples/morphogenesis/gray_scott.flow` | `./flow gfx examples/morphogenesis/gray_scott.flow` |
@@ -111,7 +111,7 @@ One tourist-facing entrypoint per domain. Prefer these when demoing or linking f
 | Interop / FFI | `examples/interop/python_embed.flow` | `./flow run examples/interop/python_embed.flow` |
 | Audio / RT | `examples/audio/lattice_allpass_phase_engine.flow` | `./flow run examples/audio/lattice_allpass_phase_engine.flow` |
 | Generics / traits | `examples/generics_traits/generics_demo.flow` | `./flow run examples/generics_traits/generics_demo.flow` |
-| Verify (repair) | `examples/verify/circuits/full_adder.flow` | proof corpus — see `full_adder.proof.md` |
+| Verify (repair) | `examples/verify/circuits/full_adder.flow` | proof corpus, see `full_adder.proof.md` |
 | HTTP slice | `apps/flow-http/http.flow` | `./flow run apps/flow-http/http.flow` |
 | Concurrency | `examples/concurrency/channels.flow` | `./flow run examples/concurrency/channels.flow` |
 
@@ -183,11 +183,11 @@ per-example table: [examples/threed/README.md](threed/README.md)):
 Registry package demos (`./flow install` then `./flow run` or `./flow run-native`):
 - Pure Flow: `json_demo`, `toml_demo`, `serde_demo`, `strings_demo`, `cli_demo`, `log_demo`, `testing_demo`, `collectionsx_demo`
 - Native: `http_get`, `sqlite_demo`, `sqlkit_demo`, `compress_demo`, `dns_demo`, `image_demo`, `ffi_demo`
-- End-to-end: `app_cache/` — cli + log + json + sqlite + sqlkit (offline; `USE_HTTP=0`)
+- End-to-end: `app_cache/`: cli + log + json + sqlite + sqlkit (offline; `USE_HTTP=0`)
 
 ### Compilers (`compilers/` + `compiler/`)
-Self-hosting bootstrap (not a full compiler yet — see [compiler/README.md](../compiler/README.md)):
-- **`compiler/` (`flowc`)** — Flow-in-Flow front-end: token + lexer + AST + subset parser (no C emitter) — `./flow run compiler/src/main.flow`
+Self-hosting bootstrap (not a full compiler yet, see [compiler/README.md](../compiler/README.md)):
+- **`compiler/` (`flowc`)**: Flow-in-Flow front-end with token + lexer + AST + subset parser (no C emitter). Run `./flow run compiler/src/main.flow`
 - `compilers/calculator.flow` - Recursive-descent expression parser
 - `compilers/flow_identifier_lexer.flow` / `flow_lexer.flow` - historical lexer seeds
 
@@ -207,7 +207,7 @@ Neural network framework + autodiff:
 - `optimizers.flow` - SGD, Adam, RMSprop
 - `models/mlp_xor.flow` - XOR via grad codegen (`nn_autogen`)
 - `models/mlp_xor_from_scratch.flow` - pedagogical hand backprop
-- `digits_mlp.flow` - 10-class 8x8 digits MLP, synthetic dataset generated in Flow, minibatch SGD + momentum, 90% accuracy gate (`FLOW_HOST=python ./flow run`)
+- `digits_mlp.flow` - 10-class 8x8 digits MLP, synthetic dataset generated in Flow, minibatch SGD + momentum, 90% accuracy gate (`./flow run`)
 - `digits_mlp_parallel.flow` - same model with pthread gradient-accumulation shards; prints measured serial vs parallel speedup
 - `digits_mlp_metal.flow` - Metal GPU status: unified buffers, elementwise kernel parity + CPU/GPU crossover timings
 - `autodiff/` - Autodiff benchmarks, backprop, `nn_xor.flow` (merged from `neural_networks/`)
@@ -221,14 +221,14 @@ See the walkthrough with measured timings: [docs/tutorials/ml-on-macbook.md](../
 - `tcp_echo.flow` - TCP listener shape demo (full echo loop planned)
 
 ### Evolution (`evolution/`)
-The flagship suite for Flow's founding vision — systems that evolve through time
+The flagship suite for Flow's founding vision: systems that evolve through time
 (see [evolution/README.md](evolution/README.md)). Prefer declarative files:
-- `pendulum_evolves.flow` / `pendulum_rk4.flow` / `pendulum_always.flow` — `flow` + `evolves`
-- `bouncing_ball_evolves.flow` — `when … reaches` hybrid bounce
-- `robot_connect.flow` — `connect` composition
-- `spring_mass_control.flow` — Model → analyze → control (`dsys` DSL)
-- `lorenz_gfx.flow` — `flow Lorenz` live in a window (`./flow gfx`)
-- `pendulum.flow` / `bouncing_ball.flow` — pedagogical hand integrators only
+- `pendulum_evolves.flow` / `pendulum_rk4.flow` / `pendulum_always.flow`: `flow` + `evolves`
+- `bouncing_ball_evolves.flow`: `when … reaches` hybrid bounce
+- `robot_connect.flow`: `connect` composition
+- `spring_mass_control.flow`: Model → analyze → control (`dsys` DSL)
+- `lorenz_gfx.flow`: `flow Lorenz` live in a window (`./flow gfx`)
+- `pendulum.flow` / `bouncing_ball.flow`: pedagogical hand integrators only
 
 ### Circuits (`circuits/`)
 Twelve circuit-simulation programs plus a SPICE-subset netlist front end (see
@@ -279,11 +279,11 @@ resets are `when v reaches threshold { v becomes reset }`.
 Run them with `./flow record examples/neuro/<name>.flow --frames 90 --out
 build/frames --gif build/<name>.gif`, or windowed with `./flow gfx`.
 Gallery: [docs/demos/neuro.md](../docs/demos/neuro.md); regenerate with
-`python3 scripts/record_demos.py --group neuro`.
+`./flow tool record_demos --group neuro`.
 
 ### Evolutionary biology (`evoleco/`)
-Fifteen live graphics simulations for evolutionary biologists — population
-genetics, evolutionary games, and ecology companions — the chemistry/biology
+Fifteen live graphics simulations for evolutionary biologists (population
+genetics, evolutionary games, and ecology companions), the chemistry/biology
 domain of [the Example Atlas](../docs/project/example-atlas.md) (see
 [evoleco/README.md](evoleco/README.md)). Each one gates a closed-form or
 textbook measurement before the window opens.
@@ -295,7 +295,7 @@ textbook measurement before the window opens.
 
 Run with `./flow gfx examples/evoleco/<name>.flow` or headless
 `./flow record`. Gallery: [docs/demos/evoleco.md](../docs/demos/evoleco.md);
-regenerate with `python3 scripts/record_demos.py --group evoleco`.
+regenerate with `./flow tool record_demos --group evoleco`.
 
 ### Planet (`planet/`)
 Seven staged gfx demos of the cubesphere planet pipeline in
@@ -306,9 +306,9 @@ gates a stage measurement before the window opens.
 - `planet_erosion.flow` / `planet_climate.flow` - stream power; orographic precip
 - `planet_biomes.flow` / `planet_spin.flow` - Whittaker map; shaded globe + determinism
 
-Run with `FLOW_HOST=python ./flow gfx examples/planet/<name>.flow` or headless
+Run with `./flow gfx examples/planet/<name>.flow` or headless
 `./flow record`. Gallery: [docs/demos/planet.md](../docs/demos/planet.md);
-regenerate with `python3 scripts/record_demos.py --group planet`.
+regenerate with `./flow tool record_demos --group planet`.
 
 ### Procedural generation (`procgen/`)
 Eight gated gfx demos of noise, heightmaps, caves, WFC dungeons, Voronoi
@@ -320,9 +320,9 @@ regions, islands, and biome tile maps (see
 - `cave_worms.flow` / `wfc_dungeon.flow` - 3D porosity band; 16-tile pipe WFC
 - `voronoi_sites.flow` / `island_mask.flow` / `tile_map.flow` - sites, island, biomes
 
-Run with `FLOW_HOST=python ./flow gfx examples/procgen/<name>.flow` or headless
+Run with `./flow gfx examples/procgen/<name>.flow` or headless
 `./flow record`. Gallery: [docs/demos/procgen.md](../docs/demos/procgen.md);
-regenerate with `python3 scripts/record_demos.py --group procgen`.
+regenerate with `./flow tool record_demos --group procgen`.
 
 ### Dynamics (`dynamics/`)
 Dynamical systems, analysis, and control via `stdlib/dynamics` and the
@@ -334,7 +334,7 @@ declarative `dsys` surface syntax (see [dynamics/README.md](dynamics/README.md))
 - `lorenz_attractor.flow` - Chaos detection via Lyapunov separation proxy
 
 ### Concurrency (`concurrency/`)
-Beat-Go track — see `docs/language/concurrency-vs-go.md`:
+Beat-Go track, see `docs/language/concurrency-vs-go.md`:
 - `channels.flow` - Real buffered channel send/recv/close
 - `select.flow` - Two-channel `select2` / `select2_try`
 - `parallel_for.flow` - Data-parallel loop (OpenMP when available)
@@ -346,7 +346,7 @@ Beat-Go track — see `docs/language/concurrency-vs-go.md`:
 ### Effects (`effects/`)
 Flow's unique algebraic effects (not available in Mojo/Julia):
 - `showcase.flow` - One business function, four handler stacks (production/test/nested/composed)
-- `effect_rows.flow` - Signature effect rows (`with E`) under `--strict-effects`
+- `effect_rows.flow` - Signature effect rows (`with E`) under Stable checking
 - `dependency_injection.flow` - DI without frameworks
 - `state_effects.flow` - Swappable policy effects with explicitly-threaded state
 - `async_primitives.flow` - stdlib `Async`/`AsyncIO` via `handle`/`with`
@@ -401,7 +401,7 @@ Generic programming:
 
 ### Verify (`verify/`)
 Proof corpus for `flow-verify` (theorems, circuits, derived claims). Not the
-primary showcase — see [verify/circuits/full_adder.proof.md](verify/circuits/full_adder.proof.md).
+primary showcase. See [verify/circuits/full_adder.proof.md](verify/circuits/full_adder.proof.md).
 
 
 ### WASM (`wasm/`)
@@ -451,4 +451,3 @@ A few examples known to compile *and run* successfully:
 2. Include a `main() -> i32` function
 3. Test with `./flow run path/to/example.flow`
 4. Update this README (and the canonical entrypoints table when adding a domain)
-

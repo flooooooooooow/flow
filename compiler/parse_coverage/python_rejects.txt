@@ -1,0 +1,227 @@
+# Tracked .flow files the Python reference parser (flow.parser.parse_flow_code)
+# rejects. compiler/scripts/parse_coverage.flow leaves them out of the flowc
+# coverage count. Each entry is classified below (#997); none is a broken
+# program. When a file starts parsing, drop it here and raise the floor.
+
+# Negative fixtures: inputs that must be rejected. The parser fuzz
+# regressions (expression nesting past the limit of 50, a float array size),
+# a reserved word as a parameter name, the Field DSL error cases, and the
+# fork and choose records whose types cannot be inferred (the Python parser
+# infers fork records, so it rejects these while parsing; flowc parses them
+# and rejects them in its typecheck).
+compiler/fixtures/choose_uninferrable.flow
+compiler/fixtures/field_dsl/err_bad_item.flow
+compiler/fixtures/field_dsl/err_boundary_first.flow
+compiler/fixtures/field_dsl/err_domain.flow
+compiler/fixtures/field_dsl/err_duplicate.flow
+compiler/fixtures/field_dsl/err_half_boundary.flow
+compiler/fixtures/field_dsl/err_missing_evolve.flow
+compiler/fixtures/field_dsl/err_size.flow
+compiler/fixtures/field_dsl/err_swallow_main.flow
+compiler/fixtures/field_dsl/err_two_mul.flow
+compiler/fixtures/field_dsl/err_wrong_name.flow
+compiler/fixtures/fork_uninferrable.flow
+compiler/fixtures/keyword_param.flow
+tests/fuzz/crashes/parse-recursionerror-parser-parse-expression-without-assign.flow
+tests/fuzz/crashes/parse-valueerror-parser-parse-type.flow
+
+# Source for a pre-parse expansion: the dynamics DSL (dsys, dynamics), the
+# Field DSL (field), flow-block representations (represent) and the Shader
+# DSL (fn). `flow run` and `flow gfx` expand these before parsing; the
+# examples build in examples/STATUS.md. Neither parser reads them raw.
+compiler/fixtures/field_dsl/ok_basic.flow
+compiler/fixtures/field_dsl/ok_block_boundary.flow
+compiler/fixtures/field_dsl/ok_boundary_swallow.flow
+compiler/fixtures/field_dsl/ok_crlf.flow
+compiler/fixtures/field_dsl/ok_export_main.flow
+compiler/fixtures/field_dsl/ok_no_fields.flow
+compiler/fixtures/field_dsl/ok_post_mul.flow
+compiler/fixtures/field_dsl/ok_two_fields_no_main.flow
+compiler/fixtures/field_dsl/ok_unknown_evolve.flow
+examples/dynamics/ga_dsys_namespaced.flow
+examples/dynamics/ga_dsys_syntax.flow
+examples/dynamics/ga_wfc_coupled.flow
+examples/evolution/chain4_lqr.flow
+examples/evolution/heat_diffusion.flow
+examples/evolution/lorenz_gfx.flow
+examples/evolution/pendulum_represent_linear.flow
+examples/evolution/spring_mass_control.flow
+examples/evolution/spring_mass_lqr.flow
+examples/gpu/shader_photoreal.flow
+examples/gpu/shader_photoreal_materials.flow
+examples/gpu/shader_plasma.flow
+examples/gpu/shader_ripple.flow
+examples/gpu/shader_showcase.flow
+examples/gpu/vgpu/gradient.flow
+
+# Flow-only syntax: `\x` string escapes, which flowc passes to C and the
+# Python lexer refuses (it accepts only \n \t \r \\ \" and \0).
+tools/repl/main.flow
+
+# docs/vision: design sketches of flow-block syntax (represent, typed
+# connect arrows) that no parser implements yet.
+docs/vision/examples/pendulum.flow
+docs/vision/examples/robot.flow
+
+# The flow-verify proof corpus and its library. It is written ahead of the
+# verification-keyword parser and uses notation neither parser has: set
+# difference `\`, list append `++`, Euclidean ratios, assume and therefore
+# inside argument lists. See docs/third-party/flow-verify-parser-status.md.
+examples/verify/euclid/book-i/prop-01-equilateral-triangle.flow
+examples/verify/euclid/book-i/prop-02-copy-segment.flow
+examples/verify/euclid/book-i/prop-04-side-angle-side.flow
+examples/verify/euclid/book-i/prop-05-isosceles-base-angles.flow
+examples/verify/euclid/book-i/prop-06-equal-angles-equal-sides.flow
+examples/verify/euclid/book-i/prop-07-triangles-on-same-base.flow
+examples/verify/euclid/book-i/prop-08-side-side-side.flow
+examples/verify/euclid/book-i/prop-13-angles-on-straight-line.flow
+examples/verify/euclid/book-i/prop-14-lines-meet-if-angles-less-than-two-right.flow
+examples/verify/euclid/book-vi/prop-01-triangles-parallelograms-same-height.flow
+examples/verify/math/derived/Finset-card-diff-empty.flow
+examples/verify/math/derived/Finset-card-diff-inter-empty.flow
+examples/verify/math/derived/Finset-card-diff-self-zero.flow
+examples/verify/math/derived/Finset-card-diff-union-empty.flow
+examples/verify/math/derived/Finset-card-empty-inter-right.flow
+examples/verify/math/derived/Finset-card-empty-union.flow
+examples/verify/math/derived/Finset-card-inter-diff-empty.flow
+examples/verify/math/derived/Finset-card-inter-empty-left.flow
+examples/verify/math/derived/Finset-card-inter-empty.flow
+examples/verify/math/derived/Finset-card-inter-monotone.flow
+examples/verify/math/derived/Finset-card-inter-right.flow
+examples/verify/math/derived/Finset-card-inter-self-bound.flow
+examples/verify/math/derived/Finset-card-inter-self.flow
+examples/verify/math/derived/Finset-card-inter-union-bound.flow
+examples/verify/math/derived/Finset-card-inter-union-diff-empty.flow
+examples/verify/math/derived/Finset-card-inter.flow
+examples/verify/math/derived/Finset-card-monotone.flow
+examples/verify/math/derived/Finset-card-union-diff-empty.flow
+examples/verify/math/derived/Finset-card-union-diff-inter-empty.flow
+examples/verify/math/derived/Finset-card-union-empty-left.flow
+examples/verify/math/derived/Finset-card-union-empty-right.flow
+examples/verify/math/derived/Finset-card-union-inter-bound.flow
+examples/verify/math/derived/Finset-card-union-inter-empty.flow
+examples/verify/math/derived/Finset-card-union-inter-self.flow
+examples/verify/math/derived/Finset-card-union-monotone-right.flow
+examples/verify/math/derived/Finset-card-union-self-derived.flow
+examples/verify/math/derived/Finset-card-union-self.flow
+examples/verify/math/derived/Finset-card-union.flow
+examples/verify/math/derived/Finset-diff-empty-card-zero.flow
+examples/verify/math/derived/Finset-diff-inter-empty.flow
+examples/verify/math/derived/Finset-diff-self-empty.flow
+examples/verify/math/derived/Finset-diff-union-empty.flow
+examples/verify/math/derived/Finset-diff-union-inter-self.flow
+examples/verify/math/derived/Finset-diff-union-self.flow
+examples/verify/math/derived/Finset-inter-assoc.flow
+examples/verify/math/derived/Finset-inter-comm-derived.flow
+examples/verify/math/derived/Finset-inter-comm.flow
+examples/verify/math/derived/Finset-inter-diff-empty.flow
+examples/verify/math/derived/Finset-inter-diff-self.flow
+examples/verify/math/derived/Finset-inter-empty-card-zero.flow
+examples/verify/math/derived/Finset-inter-empty-left.flow
+examples/verify/math/derived/Finset-inter-empty-right.flow
+examples/verify/math/derived/Finset-inter-idem.flow
+examples/verify/math/derived/Finset-inter-self-card-bound.flow
+examples/verify/math/derived/Finset-inter-self-card-zero.flow
+examples/verify/math/derived/Finset-inter-self-empty-derived.flow
+examples/verify/math/derived/Finset-inter-union-card-bound.flow
+examples/verify/math/derived/Finset-inter-union-card-zero.flow
+examples/verify/math/derived/Finset-inter-union-diff-self.flow
+examples/verify/math/derived/Finset-inter-union-empty.flow
+examples/verify/math/derived/Finset-inter-union-right.flow
+examples/verify/math/derived/Finset-inter-union-self.flow
+examples/verify/math/derived/Finset-inter-union.flow
+examples/verify/math/derived/Finset-union-assoc.flow
+examples/verify/math/derived/Finset-union-comm-derived.flow
+examples/verify/math/derived/Finset-union-diff-empty.flow
+examples/verify/math/derived/Finset-union-diff-inter-self.flow
+examples/verify/math/derived/Finset-union-diff-self.flow
+examples/verify/math/derived/Finset-union-empty-card.flow
+examples/verify/math/derived/Finset-union-empty-inter.flow
+examples/verify/math/derived/Finset-union-empty-left.flow
+examples/verify/math/derived/Finset-union-empty-right.flow
+examples/verify/math/derived/Finset-union-idem.flow
+examples/verify/math/derived/Finset-union-inter-diff-empty.flow
+examples/verify/math/derived/Finset-union-inter-diff-self.flow
+examples/verify/math/derived/Finset-union-inter-empty-derived.flow
+examples/verify/math/derived/Finset-union-inter-empty-self.flow
+examples/verify/math/derived/Finset-union-inter-empty.flow
+examples/verify/math/derived/Finset-union-inter-self-card.flow
+examples/verify/math/derived/Finset-union-self-card-bound-derived.flow
+examples/verify/math/derived/Finset-union-self-card.flow
+examples/verify/math/derived/Finset-union-self-inter-empty.flow
+examples/verify/math/derived/Ideal-one-times-one.flow
+examples/verify/math/derived/List-append-assoc-derived.flow
+examples/verify/math/derived/List-append-assoc.flow
+examples/verify/math/derived/List-append-comm.flow
+examples/verify/math/derived/List-append-cons-distributes.flow
+examples/verify/math/derived/List-append-empty-left-derived.flow
+examples/verify/math/derived/List-append-empty-right.flow
+examples/verify/math/derived/List-append-nil-nil.flow
+examples/verify/math/derived/List-append-singleton-right.flow
+examples/verify/math/derived/List-len-append-decem-singleton.flow
+examples/verify/math/derived/List-len-append-double-singleton.flow
+examples/verify/math/derived/List-len-append-duodec-singleton.flow
+examples/verify/math/derived/List-len-append-nil-right.flow
+examples/verify/math/derived/List-len-append-non-singleton.flow
+examples/verify/math/derived/List-len-append-oct-singleton.flow
+examples/verify/math/derived/List-len-append-quad-singleton.flow
+examples/verify/math/derived/List-len-append-quattuordec-singleton.flow
+examples/verify/math/derived/List-len-append-quint-singleton.flow
+examples/verify/math/derived/List-len-append-sept-singleton.flow
+examples/verify/math/derived/List-len-append-sext-singleton.flow
+examples/verify/math/derived/List-len-append-singleton.flow
+examples/verify/math/derived/List-len-append-tredec-singleton.flow
+examples/verify/math/derived/List-len-append-triple-singleton.flow
+examples/verify/math/derived/List-len-append-undec-singleton.flow
+examples/verify/math/derived/List-len-append.flow
+examples/verify/math/derived/List-len-cons-oct-nil.flow
+examples/verify/math/derived/List-len-cons-quindec-nil.flow
+examples/verify/math/derived/List-len-cons-sedec-nil.flow
+examples/verify/math/derived/List-len-cons-sept-nil.flow
+examples/verify/math/derived/List-len-cons-septendec-nil.flow
+examples/verify/math/derived/List-len-empty-append.flow
+examples/verify/math/derived/List-len-nil-append-both.flow
+examples/verify/math/derived/List-len-rev-append-nil.flow
+examples/verify/math/derived/List-len-rev-duodec-cons.flow
+examples/verify/math/derived/List-len-rev-empty-left.flow
+examples/verify/math/derived/List-len-rev-quattuordec-cons.flow
+examples/verify/math/derived/List-len-rev-quindec-cons.flow
+examples/verify/math/derived/List-len-rev-sept-cons.flow
+examples/verify/math/derived/List-len-rev-sext-cons.flow
+examples/verify/math/derived/List-len-rev-undec-cons.flow
+examples/verify/math/derived/List-rev-append-nil-right.flow
+examples/verify/math/derived/List-rev-append-singleton.flow
+examples/verify/math/derived/List-rev-append.flow
+examples/verify/math/derived/List-rev-cons-decem.flow
+examples/verify/math/derived/List-rev-cons-duodec.flow
+examples/verify/math/derived/List-rev-cons-quindec.flow
+examples/verify/math/derived/List-rev-cons-sedec.flow
+examples/verify/math/derived/List-rev-cons-sept.flow
+examples/verify/math/derived/List-rev-cons-septendec.flow
+examples/verify/math/derived/List-rev-cons-tredec.flow
+examples/verify/math/derived/List-rev-cons-undec.flow
+examples/verify/math/derived/List-rev-cons.flow
+examples/verify/math/derived/List-rev-nil-append.flow
+examples/verify/math/derived/List-rev-rev-decem-cons.flow
+examples/verify/math/derived/List-rev-rev-duodec-cons.flow
+examples/verify/math/derived/List-rev-rev-non-cons.flow
+examples/verify/math/derived/List-rev-rev-quattuordec-cons.flow
+examples/verify/math/derived/List-rev-rev-quindec-cons.flow
+examples/verify/math/derived/List-rev-rev-sedec-cons.flow
+examples/verify/math/derived/List-rev-rev-sept-cons.flow
+examples/verify/math/derived/List-rev-rev-septendec-cons.flow
+examples/verify/math/derived/List-rev-rev-sext-cons.flow
+examples/verify/math/derived/List-rev-rev-tredec-cons.flow
+examples/verify/math/derived/List-rev-rev-undec-cons.flow
+examples/verify/math/derived/Monoid-identity-left.flow
+examples/verify/math/derived/Nat-mul-seven-one.flow
+examples/verify/math/derived/Nat-plus-seven-one.flow
+examples/verify/math/derived/Pair-swap-duodec-roundtrip.flow
+examples/verify/math/derived/Pair-swap-tredec-roundtrip.flow
+examples/verify/math/derived/Pair-swap-undec-roundtrip.flow
+examples/verify/math/derived/Ring-one-right-identity.flow
+examples/verify/math/derived/Subgroup-identity-hept.flow
+examples/verify/systems/ring_buffer_fifo.flow
+examples/verify/transforms/matmul_vectorize.flow
+lib/verify/Finset.flow
+lib/verify/List.flow

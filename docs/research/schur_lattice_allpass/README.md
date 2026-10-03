@@ -1,6 +1,6 @@
 # arXiv preprint: Schur–Lattice Colligations for Many-Pole All-Pass Filters
 
-**PDF:** `schur_lattice_allpass.pdf` — perturbation-theoretic framing (structured $\delta k$ vs unstructured $\Delta a$ on the Schur disk)
+**PDF:** `schur_lattice_allpass.pdf`: perturbation-theoretic framing (structured $\delta k$ vs unstructured $\Delta a$ on the Schur disk)
 
 ## Files
 
@@ -19,30 +19,36 @@ pdflatex schur_lattice_allpass.tex
 ## Verification plots
 
 ```bash
-python3.12 tools/plot_lattice_allpass.py
-open build/plots/schur_lattice_allpass/schur_lattice_novel_demo.png
+./flow tool lattice_allpass plot                 # add --skip-lean to skip lake build
+open build/plots/schur_lattice_allpass/schur_lattice_novel_demo.svg
 ```
+
+Both scripts run the Flow program `scripts/tools/lattice_allpass`. The DSP is
+`lib/stdlib/audio/lattice_allpass.flow`; figures are written as SVG.
 
 | Figure | What it proves |
 |--------|----------------|
-| `schur_lattice_novel_demo.png` | **Hero figure** — pipeline, lattice vs naive coeff wobble, phase sculpting, 16-pole O(n), Givens colligation, 60 Hz per-sample k retune |
-| `schur_lattice_allpass_overview.png` | Lean + Flow verification dashboard |
+| `schur_lattice_novel_demo.svg` | **Hero figure**: pipeline, lattice vs naive coeff wobble, phase sculpting, 16-pole O(n), Givens colligation, 60 Hz per-sample k retune |
+| `schur_lattice_allpass_overview.svg` | Lean + Flow verification dashboard |
 | `flow_python_magnitude_check.png` | Runtime matches reference (legacy) |
-| `dsp_bode_pz_groupdelay.png` | Bode magnitude/phase, group delay, pole–zero |
-| `dsp_impulse_step.png` | Impulse + step response |
-| `audio_waveforms.png` | Real audio: input vs static vs modulated |
-| `audio_rms_envelope.png` | RMS envelope preserved (all-pass energy) |
-| `audio_spectrograms.png` | Spectral content under modulation |
-| `audio_modulation_proof.png` | Cross-correlation lag + k₁(t) LFO |
+| `dsp_bode_pz_groupdelay.svg` | Bode magnitude/phase, group delay, pole-zero |
+| `dsp_impulse_step.svg` | Impulse + step response |
+| `audio_waveforms.svg` | Real audio: input vs static vs modulated |
+| `audio_rms_envelope.svg` | RMS envelope preserved (all-pass energy) |
+| `audio_spectrograms.svg` | Spectral content under modulation |
+| `audio_modulation_proof.svg` | Cross-correlation lag + k₁(t) LFO |
 
 Audio WAV outputs: `build/audio/lattice_allpass/` (`input.wav`, `output_static_allpass.wav`, `output_modulated_allpass.wav`)
 
 ```bash
-python3.12 tools/lattice_allpass_audio_demo.py
+./flow tool lattice_allpass demo
 afplay build/audio/lattice_allpass/output_modulated_allpass.wav
 ```
 
-Figures are copied to `figures/` after running the plot script.
+Figures are copied to `figures/` after running either script. pdflatex cannot
+include SVG, so the paper keeps the three PNG figures it embeds
+(`dsp_bode_pz_groupdelay.png`, `audio_rms_envelope.png`,
+`audio_modulation_proof.png`), rendered earlier from the same data.
 
 ## arXiv deposit checklist
 

@@ -1,0 +1,10 @@
+# expect: lifetime domain escape: `scratch` lives in the `frame` domain but is returned from 'view', which outlives it (a returned reference may not point into the frame that produced it) at line 5, column 5
+@lifetime(frame)
+function view() -> ptr<f32> {
+    let mut scratch: array<f32, 4> = [0.0; 4]
+    return scratch
+}
+
+function main() -> i32 {
+    return 0
+}

@@ -1,0 +1,7 @@
+# Shell scripts that stay shell. One per line: PATH, then the reason.
+# These are outside the line total in baseline.txt. Every other tracked
+# shell script counts against it. See AGENTS.md, section "Flow first".
+flow  the command stub: builds flowc and the Flow CLI with cc on first use, before any Flow program exists
+flow-lsp  editor launcher: an executable path for editors, which execs `flow lsp`
+compiler/scripts/bootstrap_from_c.sh  root of trust: proves the checked-in bootstrap C rebuilds itself using cc alone, so it cannot depend on a binary built from that C
+tools/hooks/no_new_python.sh  agent pre-write hook named in .claude/settings.json; it runs on every file write and must work before any build, and switching it means changing agent configuration

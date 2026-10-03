@@ -1,0 +1,21 @@
+$ flow pkg build --release
+[94mBuilding relbuild...[0m
+[92m✓ Built relbuild[0m
+[exit 0]
+== files
+D ./build
+F ./flow.toml
+  | [package]
+  | name = "relbuild"
+  | version = "0.3.1"
+  | description = "Test package relbuild"
+  | license = "Apache-2.0"
+  | entry = "src/main.flow"
+  | 
+  | 
+D ./src
+F ./src/main.flow
+  | function main() -> i32 {
+  |     printf("hello from the project\n")
+  |     return 0
+  | }

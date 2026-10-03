@@ -1,0 +1,5 @@
+flow R {
+    state x : f64 = 1.0
+    recognize { numerical, realtime causal }
+    x evolves as -x
+}

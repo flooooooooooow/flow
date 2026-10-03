@@ -2,13 +2,13 @@
 
 *In a given circle to inscribe a regular hexagon.*
 
-**Source.** euclid — Elements, Book IV, Proposition 15
+**Source.** euclid: Elements, Book IV, Proposition 15
 
-## Derived fact 1 — In a given circle to inscribe a regular hexagon
+## Derived fact 1: In a given circle to inscribe a regular hexagon
 
 **Coordinate.** the Euclidean plane · Euclid Book IV · Proposition 15: in a circle to inscribe a regular hexagon · **Derived fact**
 
-*Source: euclid — Elements, Book IV, Proposition 15*
+*Source: euclid: Elements, Book IV, Proposition 15*
 
 *Built on: proposition 14: in a circle to inscribe a regular polygon, for Euclid Book IV on the Euclidean plane, proposition 1: equilateral triangle on a segment, for Book I of the Elements in on the Euclidean plane*
 

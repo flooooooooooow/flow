@@ -1,0 +1,11 @@
+# expect: record update: field 'x' expects i32, got string
+struct Point {
+    x: i32,
+    y: i32
+}
+
+function main() -> i32 {
+    let p: Point = Point { x: 1, y: 2 }
+    let q: Point = Point { ..p, x: "one" }
+    return q.x
+}

@@ -1,0 +1,551 @@
+# Golden check for the package commands of the Flow package manager
+# (compiler/src/pkg.flow): init, publish, build, build-native, run-native,
+# clean, and `flow pkg` for the same commands plus `run`.
+#
+# Each case builds a small project, runs one command in it and records
+# stdout, the exit status and the files the command wrote (flow.toml, the
+# scaffold, a registry index, the build/ listing). Goldens live in
+# tests/pkg_commands/<case>.expect with the repository path written as @ROOT@
+# and the scratch directory outside the repository as @OUT@. They were
+# recorded from the Python package manager this replaced (src/flow/package.py
+# at e6a7f046), with one deliberate difference: `flow init` writes
+# host = "flowc" in [build] where the Python version wrote host = "python".
+#
+#   ./flow tool scripts/check_pkg_commands.flow            run the commands
+#                                   with python and python3 stubbed out and
+#                                   compare against the goldens
+#   ./flow tool scripts/check_pkg_commands.flow --record   write the goldens
+#                                   from the commands as they are now
+
+import "tools/flow_cli/sys.flow"
+import "scripts/check_lib.flow"
+import std.process { proc_argv, ProcCmd, ProcResult, ProcStrs, proc_args, proc_stdout, proc_stderr, PROC_CAPTURE, PROC_NULL }
+
+let mut ROOT: string = ""
+let mut RECORD: bool = false
+let mut GOLD: string = ""
+let mut WORK: string = ""
+let mut OUT_DIR: string = ""
+let mut CASE_DIR: string = ""
+let mut CURRENT: string = ""
+let mut RESULT: string = ""
+let mut PASS: i32 = 0
+let mut FAIL: i32 = 0
+
+# ---------------------------------------------------------------------------
+# Normalizing and snapshots
+# ---------------------------------------------------------------------------
+
+function is_alnum(c: i32) -> bool {
+    return (c >= 48 and c <= 57) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122)
+}
+
+# s#/run\.[A-Za-z0-9]{6}/#/run.XXXXXX/#g
+function mask_run_dirs(line: string) -> string {
+    let mut out: string = ""
+    let mut pos: i32 = 0
+    let n: i32 = s_len(line)
+    while true {
+        let at: i32 = s_find(line, "/run.", pos)
+        if at < 0 {
+            break
+        }
+        let mut ok: bool = at + 12 <= n and s_byte(line, at + 11) == 47
+        let mut k: i32 = 0
+        while ok and k < 6 {
+            if not is_alnum(s_byte(line, at + 5 + k)) {
+                ok = false
+            }
+            k = k + 1
+        }
+        if ok {
+            out = out + s_slice(line, pos, at) + "/run.XXXXXX/"
+            pos = at + 12
+        } else {
+            out = out + s_slice(line, pos, at + 1)
+            pos = at + 1
+        }
+    }
+    return out + s_from(line, pos)
+}
+
+# s#flowc emit via [^ ]*flowc[^ ]*#flowc emit via FLOWC#
+function mask_flowc(line: string) -> string {
+    let key: string = "flowc emit via "
+    let mut from: i32 = 0
+    while true {
+        let at: i32 = s_find(line, key, from)
+        if at < 0 {
+            return line
+        }
+        let start: i32 = at + s_len(key)
+        let mut end: i32 = start
+        while end < s_len(line) and s_byte(line, end) != 32 {
+            end = end + 1
+        }
+        if s_contains(s_slice(line, start, end), "flowc") {
+            return s_slice(line, 0, at) + key + "FLOWC" + s_from(line, end)
+        }
+        from = at + 1
+    }
+    return line
+}
+
+function normalize_line(line: string) -> string {
+    let a: string = s_replace(line, OUT_DIR, "@OUT@")
+    let b: string = s_replace(a, ROOT, "@ROOT@")
+    return mask_flowc(mask_run_dirs(b))
+}
+
+# The sed filter the goldens were recorded through.
+function normalize(text: string) -> string {
+    if s_len(text) == 0 {
+        return ""
+    }
+    let lines: ptr<ProcStrs> = s_split(text, 10)
+    let n: i32 = sl_len(lines)
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        let ln: string = sl_get(lines, i)
+        let last: bool = i == n - 1
+        if last and s_len(ln) == 0 {
+            break
+        }
+        if not s_starts(ln, "ensure_flowc: compiler/src has local edits") {
+            out = out + normalize_line(ln)
+            if not last {
+                out = out + "\n"
+            }
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# `find .` below `base`, without ./flow_packages and *.dSYM bundles.
+function walk(base: string, rel: string, acc: ptr<ProcStrs>) {
+    let names: ptr<ProcStrs> = list_dir(base + "/" + rel)
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        let name: string = sl_get(names, i)
+        let p: string = rel + "/" + name
+        if not s_eq(p, "./flow_packages") and not s_ends(name, ".dSYM") {
+            sl_push(acc, p)
+            let full: string = base + "/" + p
+            if is_dir(full) and not is_link(full) {
+                walk(base, p, acc)
+            }
+        }
+        i = i + 1
+    }
+}
+
+# The files a command may have written, relative to the project directory.
+# A debug build on macOS also leaves a .dSYM bundle next to the binary;
+# other hosts have none, so the snapshot leaves them out.
+function snapshot(dir: string) -> string {
+    let paths: ptr<ProcStrs> = sl_new()
+    walk(dir, ".", paths)
+    sl_sort(paths, false)
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < sl_len(paths) {
+        let p: string = sl_get(paths, i)
+        let full: string = dir + "/" + p
+        if is_dir(full) {
+            out = out + "D " + p + "\n"
+        } elif s_starts(p, "./build/") {
+            out = out + "F " + p + "\n"
+        } else {
+            out = out + "F " + p + "\n" + chk_prefix(read_text(full), "  | ")
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# ---------------------------------------------------------------------------
+# Cases
+# ---------------------------------------------------------------------------
+
+# A fresh project directory (CASE_DIR) under the repository, or outside it.
+function begin_case(name: string, outside: bool) {
+    CURRENT = name
+    if outside {
+        CASE_DIR = OUT_DIR + "/" + name
+    } else {
+        CASE_DIR = WORK + "/" + name
+    }
+    rm_rf(CASE_DIR)
+    mkdir_p_or_exit(CASE_DIR)
+    RESULT = WORK + "/" + name + ".result"
+    let _w: bool = write_text(RESULT, "")
+}
+
+function begin(name: string) {
+    begin_case(name, false)
+}
+
+function begin_outside(name: string) {
+    begin_case(name, true)
+}
+
+# Run `flow ARGS` in CASE_DIR with the extra environment `envs` (NAME=VALUE
+# entries) and log the command, its stdout and its exit status.
+function run_flow(envs: ptr<ProcStrs>, args: ptr<ProcStrs>) {
+    let _h: bool = append_text(RESULT, normalize("$ flow " + sl_join(args, " ") + "\n"))
+    let mut wd: string = CASE_DIR
+    let argv: ptr<ProcStrs> = sl_of1(ROOT + "/flow")
+    if s_eq(sl_get(args, 0), "demo-run-native") {
+        # The demo launchers: cd CASE_DIR, then run-native ENTRY.
+        wd = sl_get(args, 1)
+        sl_push2(argv, "run-native", sl_get(args, 2))
+    } else {
+        sl_extend(argv, args)
+    }
+    let c: ptr<ProcCmd> = cmd(argv)
+    cmd_cwd(c, wd)
+    cmd_env(c, "PWD", wd)
+    let mut i: i32 = 0
+    while i < sl_len(envs) {
+        let e: string = sl_get(envs, i)
+        let eq: i32 = s_find_byte(e, 61, 0)
+        cmd_env(c, s_slice(e, 0, eq), s_from(e, eq + 1))
+        i = i + 1
+    }
+    proc_stdout(c, PROC_CAPTURE)
+    proc_stderr(c, PROC_NULL)
+    let r: ptr<ProcResult> = run_result(c)
+    let _s: bool = write_text(WORK + "/" + CURRENT + ".stdout", r.stdout)
+    let _o: bool = append_text(RESULT, normalize(r.stdout))
+    let _x: bool = append_text(RESULT, "[exit " + s_itoa(r.exit_code) + "]\n")
+}
+
+function run0(args: ptr<ProcStrs>) {
+    run_flow(sl_new(), args)
+}
+
+function run_reg(index: string, args: ptr<ProcStrs>) {
+    run_flow(sl_of1("FLOW_REGISTRY_PATH=" + index), args)
+}
+
+# Record the files and compare (or store) the golden.
+function finish_with(extra: string) {
+    let mut text: string = "== files\n" + normalize(snapshot(CASE_DIR))
+    if s_len(extra) > 0 and is_file(extra) {
+        text = text + "== " + path_basename(extra) + "\n" + normalize(read_text(extra))
+    }
+    let _a: bool = append_text(RESULT, text)
+    let gold: string = GOLD + "/" + CURRENT + ".expect"
+    if RECORD {
+        let _c: bool = copy_file(RESULT, gold)
+        outln("recorded " + CURRENT)
+        return
+    }
+    if same_bytes(RESULT, gold) {
+        outln("PASS " + CURRENT)
+        PASS = PASS + 1
+    } else {
+        outln("FAIL " + CURRENT)
+        out(chk_prefix(chk_head(chk_diff(gold, RESULT), 40), "     "))
+        FAIL = FAIL + 1
+    }
+}
+
+function finish() {
+    finish_with("")
+}
+
+function put(rel: string, text: string) {
+    let p: string = CASE_DIR + "/" + rel
+    mkdir_p_or_exit(path_dirname(p))
+    let _w: bool = write_text(p, text)
+}
+
+function hello_main() {
+    put("src/main.flow", "function main() -> i32 {\n    printf(\"hello from the project\\n\")\n    return 0\n}\n")
+}
+
+# flow.toml for package NAME, then the `extra` TOML lines (each ending in a
+# newline; an empty `extra` leaves one blank line).
+function manifest(name: string, extra: string) {
+    let mut tail: string = extra
+    if s_len(tail) == 0 {
+        tail = "\n"
+    }
+    put("flow.toml", "[package]\nname = \"" + name + "\"\nversion = \"0.3.1\"\ndescription = \"Test package " + name + "\"\nlicense = \"Apache-2.0\"\nentry = \"src/main.flow\"\n\n" + tail)
+}
+
+function args1(a: string) -> ptr<ProcStrs> {
+    return sl_of1(a)
+}
+
+function argsw(s: string) -> ptr<ProcStrs> {
+    return s_words(s)
+}
+
+# A project with a C source, a dependency with native sources and flags,
+# and one missing source on each side.
+function native_project(name: string) {
+    manifest(name, "[dependencies]\ndep1 = { path = \"../dep1\" }\nnodep = \"1.0\"\n\n[native]\nsources = [\"native/add.c\", \"native/missing.c\"]\nlibs = [\"m\", \"m\"]\ncflags = [\"-DPROJECT_FLAG=1\"]\nldflags = [\"-L.\"]\n")
+    mkdir_p_or_exit(CASE_DIR + "/flow_packages/dep1")
+    put("src/main.flow", "extern {\n    function native_add(a: i32, b: i32) -> i32\n    function dep_mul(a: i32, b: i32) -> i32\n}\n\nfunction main() -> i32 {\n    printf(\"sum %d product %d\\n\", native_add(2, 3), dep_mul(4, 5))\n    return 3\n}\n")
+    put("native/add.c", "#ifndef PROJECT_FLAG\n#error project cflags missing\n#endif\nint native_add(int a, int b) { return a + b; }\n")
+    put("flow_packages/dep1/flow.toml", "[package]\nname = \"dep1\"\n\n[native]\nsources = [\"dep.c\", \"gone.c\", \"dep.c\"]\nlibs = [\"m\"]\ncflags = [\"-DDEP_FLAG=2\"]\n")
+    put("flow_packages/dep1/dep.c", "#if DEP_FLAG != 2\n#error dep cflags missing\n#endif\nint dep_mul(int a, int b) { return a * b; }\n")
+}
+
+function broken_main() {
+    put("src/main.flow", "function main() -> i32 { return }}\n")
+}
+
+function cases_init() {
+    begin("init_default")
+    run0(args1("init"))
+    finish()
+
+    begin("init_named")
+    run0(argsw("init coolname"))
+    finish()
+
+    begin("init_existing")
+    manifest("already", "")
+    run0(args1("init"))
+    finish()
+
+    begin("init_keeps_files")
+    put("src/main.flow", "# mine\n")
+    put(".gitignore", "mine/\n")
+    run0(argsw("init keep"))
+    finish()
+
+    begin("init_extra_args")
+    run0(argsw("init one two"))
+    finish()
+
+    begin("pkg_init")
+    run0(argsw("pkg init viapkg"))
+    finish()
+}
+
+function cases_publish() {
+    begin("publish_no_toml")
+    run0(argsw("publish --dry-run"))
+    finish()
+
+    begin_outside("publish_outside_repo")
+    manifest("outsider", "")
+    run0(args1("publish"))
+    finish()
+
+    begin("publish_inside_dry_run")
+    manifest("insider", "")
+    run0(argsw("publish --dry-run"))
+    finish()
+
+    begin_outside("publish_git_dry_run")
+    manifest("gitdry", "")
+    run0(argsw("publish --git https://example.com/gitdry.git --tag v0.3.1 --dry-run"))
+    finish()
+
+    begin_outside("publish_git_new_index")
+    manifest("gitpkg", "")
+    run_reg(OUT_DIR + "/publish_git_new_index/reg/index.json", argsw("publish --git https://example.com/gitpkg.git --tag v0.3.1"))
+    finish()
+
+    begin("publish_inside_repo")
+    manifest("insidepkg", "")
+    let idx: string = WORK + "/publish_inside_repo.index.json"
+    let _i: bool = write_text(idx, "{\n  \"version\": 1,\n  \"name\": \"test-index\",\n  \"packages\": {\n    \"other\": {\n      \"description\": \"Other\",\n      \"homepage\": \"https://example.com\",\n      \"license\": \"MIT\",\n      \"versions\": [\n        {\"version\": \"1.0.0\", \"yanked\": false, \"path\": \"x\"}\n      ]\n    },\n    \"insidepkg\": {\n      \"description\": \"Old description\",\n      \"homepage\": \"https://example.com/insidepkg\",\n      \"license\": \"MIT\",\n      \"versions\": [\n        {\"version\": \"0.1.0\", \"yanked\": false, \"path\": \"old\"},\n        {\"version\": \"0.3.1\", \"yanked\": true, \"path\": \"stale\"},\n        {\"version\": \"1.0.0-beta\", \"yanked\": false, \"git\": \"g\", \"tag\": \"t\"},\n        {\"version\": \"0.10.0\", \"yanked\": false, \"path\": \"ten\"},\n        {\"version\": \"v0.3.1+meta\", \"yanked\": false, \"path\": \"meta\"}\n      ]\n    }\n  }\n}\n")
+    run_reg(idx, args1("publish"))
+    finish_with(idx)
+
+    begin_outside("publish_path_legacy_index")
+    manifest("legacy", "")
+    let legacy: string = OUT_DIR + "/legacy_index.json"
+    let _l: bool = write_text(legacy, "{\"version\": 1, \"crates\": {\"legacy\": {\"description\": \"\", \"license\": \"\", \"versions\": [{\"version\": \"0.3.1\"}]}}}\n")
+    run_reg(legacy, argsw("publish --path packages/legacy"))
+    finish_with(legacy)
+
+    begin_outside("publish_git_path_both")
+    manifest("both", "")
+    let both: string = OUT_DIR + "/both_index.json"
+    run_reg(both, argsw("publish --path p/both --git https://example.com/both.git"))
+    finish_with(both)
+
+    begin_outside("publish_pkg_git_no_tag")
+    manifest("notag", "")
+    let notag: string = OUT_DIR + "/notag_index.json"
+    run_reg(notag, argsw("pkg publish --git https://example.com/notag.git"))
+    finish_with(notag)
+}
+
+function cases_build() {
+    begin("build_no_toml")
+    run0(args1("build"))
+    finish()
+
+    begin("build_missing_entry")
+    manifest("nobuild", "")
+    run0(args1("build"))
+    finish()
+
+    begin("build_ok")
+    manifest("builds", "")
+    hello_main()
+    run0(args1("build"))
+    finish()
+
+    begin("build_fail")
+    manifest("broken", "")
+    broken_main()
+    run0(args1("build"))
+    finish()
+
+    begin("pkg_build_release")
+    manifest("relbuild", "")
+    hello_main()
+    run0(argsw("pkg build --release"))
+    finish()
+
+    begin("pkg_run")
+    manifest("runs", "")
+    hello_main()
+    run0(argsw("pkg run"))
+    finish()
+
+    begin("pkg_unknown")
+    run0(argsw("pkg frobnicate"))
+    finish()
+}
+
+function cases_native() {
+    begin("build_native_c")
+    native_project("nativec")
+    run0(args1("build-native"))
+    finish()
+
+    begin("run_native_c")
+    native_project("runc")
+    run0(args1("run-native"))
+    finish()
+
+    begin("build_native_entry_arg")
+    native_project("entryarg")
+    let _c: bool = copy_file(CASE_DIR + "/src/main.flow", CASE_DIR + "/other.flow")
+    run0(argsw("build-native other.flow"))
+    finish()
+
+    begin("build_native_missing_entry")
+    native_project("missingentry")
+    run0(argsw("build-native nosuch.flow"))
+    finish()
+
+    begin("build_native_no_toml")
+    run0(args1("build-native"))
+    finish()
+
+    begin("build_native_flowc_fail")
+    manifest("flowcfail", "")
+    broken_main()
+    run0(args1("build-native"))
+    finish()
+
+    begin("build_native_cc_fail")
+    manifest("ccfail", "[native]\nsources = [\"bad.c\"]\n")
+    hello_main()
+    put("bad.c", "int broken( {\n")
+    run0(args1("build-native"))
+    finish()
+
+    begin("build_native_cxx")
+    manifest("cxx", "[native]\nsources = [\"native/add.cpp\"]\ncflags = [\"-std=c++17\", \"-DCXX_FLAG=1\"]\n")
+    put("src/main.flow", "extern {\n    function native_add(a: i32, b: i32) -> i32\n}\n\nfunction main() -> i32 {\n    printf(\"cxx sum %d\\n\", native_add(20, 22))\n    return 0\n}\n")
+    put("native/add.cpp", "#include <vector>\nextern \"C\" int native_add(int a, int b) { std::vector<int> v{a, b}; return v[0] + v[1]; }\n")
+    run0(args1("run-native"))
+    finish()
+
+    begin("pkg_build_native_release")
+    manifest("pkgrel", "")
+    hello_main()
+    run0(argsw("pkg build-native --release"))
+    finish()
+
+    begin("demo_run_native")
+    native_project("demo")
+    run0(sl_of3("demo-run-native", CASE_DIR, CASE_DIR + "/src/main.flow"))
+    finish()
+}
+
+function cases_clean() {
+    begin("clean_build")
+    manifest("cleaner", "")
+    put("build/sub/file", "x\n")
+    run0(args1("clean"))
+    finish()
+
+    begin("clean_nothing")
+    run0(args1("clean"))
+    finish()
+}
+
+function main() -> i32 {
+    tool_only("scripts/check_pkg_commands.flow")
+    ROOT = chk_enter()
+    GOLD = ROOT + "/tests/pkg_commands"
+    let args: ptr<ProcStrs> = proc_args()
+    if sl_len(args) > 0 and s_eq(sl_get(args, 0), "--record") {
+        RECORD = true
+    }
+    WORK = ROOT + "/build/pkg-commands"
+    rm_rf(WORK)
+    mkdir_p_or_exit(WORK)
+    mkdir_p_or_exit(GOLD)
+    OUT_DIR = chk_mktemp("flow-pkg-cmds")
+    on_exit_remove(OUT_DIR)
+    env_unset("FLOW_REGISTRY_URL")
+    env_unset("FLOW_REGISTRY_PATH")
+    env_unset("FLOW_HOST")
+    env_unset("FLOW_RUN_PYTHON")
+
+    let stub_log: string = OUT_DIR + "/python-calls.log"
+    chk_stub_python(OUT_DIR + "/stub-bin", stub_log)
+    # Build the package manager once, outside the cases.
+    let warm: ptr<ProcCmd> = cmd(sl_of3(ROOT + "/flow", "info", "hello_lib"))
+    cmd_cwd(warm, OUT_DIR)
+    cmd_env(warm, "PWD", OUT_DIR)
+    cmd_quiet(warm)
+    let _w: i32 = run(warm)
+
+    cases_init()
+    cases_publish()
+    cases_build()
+    cases_native()
+    cases_clean()
+
+    if RECORD {
+        cli_exit(0)
+    }
+    if nonempty(stub_log) {
+        outln("FAIL python was called:")
+        out(chk_prefix(read_text(stub_log), "     "))
+        FAIL = FAIL + 1
+    }
+    outln("check_pkg_commands: " + s_itoa(PASS) + " passed, " + s_itoa(FAIL) + " failed")
+    if FAIL != 0 {
+        cli_exit(1)
+    }
+    cli_exit(0)
+    return 0
+}
+
+# These programs change files, run builds and publish, so they run only
+# as `./flow tool PATH.flow` (from build/flow-tools), never from a plain
+# `flow run` such as the corpus checks do.
+function tool_only(path: string) {
+    if not s_contains(proc_argv(0), "/flow-tools/") {
+        errln("run this with ./flow tool " + path)
+        cli_exit(2)
+    }
+}

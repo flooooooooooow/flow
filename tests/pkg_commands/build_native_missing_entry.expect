@@ -1,0 +1,38 @@
+$ flow build-native nosuch.flow
+[91mEntry file not found: nosuch.flow[0m
+[exit 0]
+== files
+F ./flow.toml
+  | [package]
+  | name = "missingentry"
+  | version = "0.3.1"
+  | description = "Test package missingentry"
+  | license = "Apache-2.0"
+  | entry = "src/main.flow"
+  | 
+  | [dependencies]
+  | dep1 = { path = "../dep1" }
+  | nodep = "1.0"
+  | 
+  | [native]
+  | sources = ["native/add.c", "native/missing.c"]
+  | libs = ["m", "m"]
+  | cflags = ["-DPROJECT_FLAG=1"]
+  | ldflags = ["-L."]
+D ./native
+F ./native/add.c
+  | #ifndef PROJECT_FLAG
+  | #error project cflags missing
+  | #endif
+  | int native_add(int a, int b) { return a + b; }
+D ./src
+F ./src/main.flow
+  | extern {
+  |     function native_add(a: i32, b: i32) -> i32
+  |     function dep_mul(a: i32, b: i32) -> i32
+  | }
+  | 
+  | function main() -> i32 {
+  |     printf("sum %d product %d\n", native_add(2, 3), dep_mul(4, 5))
+  |     return 3
+  | }

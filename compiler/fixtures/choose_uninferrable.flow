@@ -1,0 +1,14 @@
+# Negative parity fixture (#996): a choose needs an arm whose call has a
+# known return type.
+
+enum Mode { A, B }
+
+function main() -> i32 {
+    let m: Mode = Mode { tag: Mode_A }
+    let x: i32 = 2
+    let y: i32 = x |> choose m.tag {
+        Mode_A => g1,
+        Mode_B => g2,
+    }
+    return 0
+}

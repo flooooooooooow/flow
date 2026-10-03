@@ -1,0 +1,10 @@
+run exit=0
+default_level=2
+[INFO] hello from log
+[WARN] something odd
+[ERROR] something broke
+[INFO] answer 42
+level_now=1
+[DEBUG] visible at DEBUG
+[INFO] still visible
+[ERROR] only errors

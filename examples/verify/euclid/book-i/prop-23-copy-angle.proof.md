@@ -2,13 +2,13 @@
 
 *On a given straight line at a given point, to construct an angle equal to a given angle.*
 
-**Source.** euclid — Elements, Book I, Proposition 23
+**Source.** euclid: Elements, Book I, Proposition 23
 
-## Derived fact 1 — On a given straight line at a given point, to construct an angle equal to a given angle
+## Derived fact 1: On a given straight line at a given point, to construct an angle equal to a given angle
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 23: copy a given angle onto a line at a point · **Derived fact**
 
-*Source: euclid — Elements, Book I, Proposition 23*
+*Source: euclid: Elements, Book I, Proposition 23*
 
 *Built on: proposition 8: side-side-side angle equality, for Book I of the Elements in on the Euclidean plane, proposition 22: construct a triangle from three lines, for Book I of the Elements in on the Euclidean plane*
 

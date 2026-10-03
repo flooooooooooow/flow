@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Choosing twenty-three from a successor set.
-# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @from   graham-knuth-patashnik: *Concrete Mathematics*
 # @tier   derived
 
 # @means  choose(succ(n), 23) = choose(n, 22) + choose(n, 23).

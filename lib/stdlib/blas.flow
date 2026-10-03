@@ -322,7 +322,7 @@ export function getrf(A: Mat, pivots: ptr<i32>) -> i32 {
     return info
 }
 
-# Alias for getrf — matches pattern-adoption sketch naming.
+# Alias for getrf. It matches pattern-adoption sketch naming.
 export function lu_factor(A: Mat, pivots: ptr<i32>) -> i32 {
     return getrf(A, pivots)
 }

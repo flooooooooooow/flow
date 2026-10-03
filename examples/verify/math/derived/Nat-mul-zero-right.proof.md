@@ -2,9 +2,9 @@
 
 *Zero on the right annihilates natural multiplication.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — n * 0 = 0
+## Derived fact 1: n * 0 = 0
 
 **Coordinate.** the natural numbers · multiplication · zero on the right gives zero · **Derived fact**
 

@@ -1,7 +1,7 @@
 # Adaptive ordering: measured results
 
 Source: `benchmarks/ordering/adaptive_sort_bench.flow`
-Runner: `benchmarks/ordering/run.sh 5`
+Runner: `./flow tool benchmarks/ordering/run.flow 5`
 
 Machine: Apple M4 Max, macOS 26.2, Apple clang 17.0.0, `-O2`.
 Measured 2026-08-06. Five runs, median reported, copy baseline subtracted.
@@ -34,7 +34,7 @@ detector something to work with but not much, and it lands 20 to 30 percent
 ahead. Random input has nothing to detect, and the run detector still came
 out 12 percent ahead because building 32-element runs by insertion stays in
 cache while a merge pass streams the whole array. That result is why
-`RUN_EXTENSION_WEIGHT` in `src/flow/ordering_plans.py` is calibrated the way
+the run-extension weight in `compiler/src/sort_plans.flow` is calibrated the way
 it is, and why the run-detecting merge is the default above the insertion
 crossover rather than something the `adaptive` policy has to ask for.
 
@@ -47,7 +47,7 @@ there is nothing left to time.
 ## Reproducing
 
 ```
-benchmarks/ordering/run.sh 5
+./flow tool benchmarks/ordering/run.flow 5
 ```
 
 It prints the selected plan for every site before the timings, from the same

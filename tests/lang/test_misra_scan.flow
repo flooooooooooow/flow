@@ -1,5 +1,5 @@
 # Test for misra_scan.flow port of misra_scan.py (#277).
-# Run with: FLOW_HOST=python ./flow run tests/lang/test_misra_scan.flow
+# Run with: ./flow run tests/lang/test_misra_scan.flow
 # Exit 0 on success.
 
 import "compiler/src/misra_scan.flow"

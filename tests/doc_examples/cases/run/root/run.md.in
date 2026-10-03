@@ -1,0 +1,51 @@
+# Running examples
+
+A crash is a failure.
+
+```flow
+extern {
+    function raise(sig: i32) -> i32
+}
+
+function main() -> i32 {
+    let _r: i32 = raise(11)
+    return 0
+}
+```
+
+A hang is a failure.
+
+```flow
+function main() -> i32 {
+    let mut n: i32 = 0
+    while true {
+        n = n + 1
+    }
+    return n
+}
+```
+
+A deliberate non-zero exit is not.
+
+```flow
+function main() -> i32 {
+    return 2
+}
+```
+
+A clean program stays verified.
+
+```flow
+function main() -> i32 {
+    println("ok")
+    return 0
+}
+```
+
+A block without a main is not run.
+
+```flow
+function helper() -> i32 {
+    return 0
+}
+```

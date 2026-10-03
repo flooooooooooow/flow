@@ -1,0 +1,3 @@
++ int32_t usleep(int32_t usec);
++ int32_t sleep(int32_t seconds);
+exit 0

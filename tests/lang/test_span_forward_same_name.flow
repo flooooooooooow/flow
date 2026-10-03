@@ -1,0 +1,12 @@
+function quicksort(xs: span<mut i32>, lo: i32, hi: i32) {
+    if lo >= hi {
+        return
+    }
+    quicksort(xs, lo, hi - 1)
+}
+
+function main() -> i32 {
+    let mut xs: array<i32, 10> = [9, 3, 7, 1, 8, 2, 6, 5, 0, 4]
+    quicksort(xs, 0, 9)
+    return 0
+}

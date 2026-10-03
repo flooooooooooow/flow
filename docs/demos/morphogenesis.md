@@ -48,7 +48,7 @@ Record one headlessly, no display needed:
 Regenerate every GIF on this page:
 
 ```bash
-python3 scripts/record_demos.py --group morphogenesis
+./flow tool record_demos --group morphogenesis
 ```
 
 Every example labels itself on screen with `stdlib/text.flow`: title, the
@@ -120,7 +120,7 @@ the header.
 
 `runtime/gfx_record.c` plus `lib/runtime/gfx_record.flow` implement the same API
 as the windowed backends, drawing into an off-screen buffer and writing each
-presented frame as a PPM. `scripts/record_demos.py` then assembles the frames
+presented frame as a PPM. `./flow tool record_demos` then assembles the frames
 into the GIFs on this page.
 
 These clips take no input at all, so the tuning is entirely in the frame budget.
@@ -129,7 +129,7 @@ to reach past the point where the pattern is finished. `--skip` keeps every Nth
 presented frame, which sets both the pace and the file size. Several examples
 finish, hold for a couple of seconds, and then reseed themselves; for those the
 budget stops inside the hold, so the clip loops on the finished form instead of
-cutting to a restart. The per-clip numbers in `record_demos.py` were read off a
+cutting to a restart. The per-clip numbers in `scripts/tools/record_demos/main.flow` were read off a
 change-over-time curve of the recorded frames: mean absolute pixel difference
 against the first frame, which flattens when the pattern stops forming, and
 against the previous frame, which spikes when the example restarts.

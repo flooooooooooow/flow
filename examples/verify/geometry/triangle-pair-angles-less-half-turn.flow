@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  Any pair of triangle angles sums to less than half a turn.
-# @from   euclid — Elements, Book I, Proposition 17
+# @from   euclid: Elements, Book I, Proposition 17
 # @tier   derived
 
 # @means  angle A plus angle B is less than two right angles.

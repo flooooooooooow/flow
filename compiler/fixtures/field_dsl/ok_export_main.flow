@@ -1,0 +1,6 @@
+field Q : f64[3] on Line
+Q evolves as 2 * laplacian(Q)
+
+export function main() -> i32 {
+    return 0
+}

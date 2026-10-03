@@ -1,0 +1,17 @@
+exit=0
+--- stdout
+tests/bad.flow
+tests/badexit.flow
+tests/exits.flow
+tests/mismatch.flow
+tests/native.flow::answer is right
+tests/native.flow::answer is wrong
+tests/native.flow::Delay: "quoted" name!
+tests/native.flow::answer is right
+tests/native_golden.flow::prints things
+tests/prog.flow
+tests/sub/deeper.flow
+tests/wrong_exit.flow
+
+12 test case(s)
+--- stderr

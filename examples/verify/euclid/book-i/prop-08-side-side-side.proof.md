@@ -2,13 +2,13 @@
 
 *If two triangles have three sides equal, the included angles are equal.*
 
-**Source.** euclid — Elements, Book I, Proposition 8
+**Source.** euclid: Elements, Book I, Proposition 8
 
-## Derived fact 1 — If two triangles have three sides equal, the included angles are equal
+## Derived fact 1: If two triangles have three sides equal, the included angles are equal
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 8: side-side-side angle equality · **Derived fact**
 
-*Source: euclid — Elements, Book I, Proposition 8*
+*Source: euclid: Elements, Book I, Proposition 8*
 
 *Built on: proposition 4: side-angle-side congruence, for Book I of the Elements in on the Euclidean plane, proposition 7: two triangles on the same base cannot meet above it, for Book I of the Elements in on the Euclidean plane*
 

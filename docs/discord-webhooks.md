@@ -92,7 +92,7 @@ webhook/author/footer icon across all three workflows.
 
 - `#ci-releases` gets one message per CI run on pushes to `main`, plus PR
   lifecycle notices from `discord-pr.yml`. CI does **not** post for PR runs
-  unless a required job failed, so opening a PR produces one message, not two.
+  unless a required job failed, so opening a PR produces one message instead of two.
 - `#announcements` carries release and docs-deploy pings; `#changelog` carries
   the changelog body; `#projects` carries one thread per announcement.
 - A new post belongs in exactly one channel. If a notification seems to land

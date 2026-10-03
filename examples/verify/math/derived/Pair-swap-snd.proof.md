@@ -2,9 +2,9 @@
 
 *Swapping exchanges the second projection.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Product_type
+**Source.** church: https://en.wikipedia.org/wiki/Product_type
 
-## Derived fact 1 — snd(swap(pair(a, b))) = a
+## Derived fact 1: snd(swap(pair(a, b))) = a
 
 **Coordinate.** Pair · swap · swap exchanges the second projection · **Derived fact**
 

@@ -11,5 +11,5 @@
 <text x="100.0" y="206.0" text-anchor="middle" font-weight="bold">A</text>
 <circle cx="380.0" cy="140.0" r="4.5" fill="#2c3e50"/>
 <text x="380.0" y="126.0" text-anchor="middle" font-weight="bold">B</text>
-<text x="240" y="344" text-anchor="middle" font-size="13" fill="#555">Circle with centre O — radii OA and OB are equal.</text>
+<text x="240" y="344" text-anchor="middle" font-size="13" fill="#555">Circle with centre O: radii OA and OB are equal.</text>
 </svg>

@@ -1,0 +1,523 @@
+# @module tests.scripts.harness
+# @means  The shared harness for the tests in tests/scripts: one Flow
+#         program per file, one function per check.
+#
+# A test program calls t_begin with its name, runs each check between
+# t_start and t_end, and ends with t_done:
+#
+#     t_start()
+#     t_end("name", check_name())
+#
+# A check returns T_PASS, T_FAIL or T_SKIP (77, what t_skip and t_need
+# return). Everything it prints, and everything the commands it runs print,
+# goes to the check's log. t_end prints one line, PASS/FAIL/SKIP
+# <file>/<name>: a skip shows the log's last line as its reason, and a
+# failure shows the last 40 lines of the log, indented.
+#
+#   t_tmp()                     the check's own scratch directory
+#   t_run(cmd)                  run a command; its status is t_rc() and its
+#                               stdout and stderr are the files t_out() and
+#                               t_err()
+#   t_need("a b")               T_SKIP unless every command is on PATH
+#   a_eq, a_contains, a_not_contains, a_file_is, a_file_contains,
+#   a_exists, a_true            assertions: true when they hold, else they
+#                               print what they expected and return false
+#   tj_*                        reading JSON (scripts/tools/lib/json.flow)
+
+import "tools/flow_cli/sys.flow"
+import "scripts/tools/lib/json.flow"
+import std.process { ProcCmd, ProcResult, ProcStrs, proc_cmd, proc_arg, proc_input, proc_stdin, proc_stdout, proc_stderr, proc_run, proc_chdir, PROC_CAPTURE, PROC_INHERIT, PROC_NULL }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+export const T_PASS: i32 = 0
+export const T_FAIL: i32 = 1
+export const T_SKIP: i32 = 77
+
+# Run state, read and written through a local copy of the pointer (#1078).
+struct Harness {
+    root: string,
+    name: string,
+    work: string,
+    tmp: string,
+    out: string,
+    err: string,
+    seq: i32,
+    runs: i32,
+    rc: i32,
+    pass: i32,
+    fail: i32,
+    skip: i32
+}
+
+let mut TH: ptr<Harness> = null
+
+# Start the file: cd to the repository root and make the scratch area.
+export function t_begin(name: string) {
+    let h: ptr<Harness> = malloc(96) as ptr<Harness>
+    h.root = env_or("FLOW_REPO_ROOT", cwd_logical())
+    let _cd: bool = proc_chdir(h.root)
+    env_set("PWD", h.root)
+    h.name = name
+    h.work = mktemp_dir(env_or("TMPDIR", "/tmp") + "/flow-script-tests.XXXXXX")
+    if s_len(h.work) == 0 {
+        errln(name + ": cannot create a scratch directory")
+        cli_exit(1)
+    }
+    on_exit_remove(h.work)
+    h.tmp = h.work
+    h.out = ""
+    h.err = ""
+    h.seq = 0
+    h.runs = 0
+    h.rc = 0
+    h.pass = 0
+    h.fail = 0
+    h.skip = 0
+    TH = h
+}
+
+export function t_root() -> string {
+    let h: ptr<Harness> = TH
+    return h.root
+}
+
+# Scratch space shared by the whole file (fixtures built once).
+export function t_work() -> string {
+    let h: ptr<Harness> = TH
+    return h.work
+}
+
+export function t_tmp() -> string {
+    let h: ptr<Harness> = TH
+    return h.tmp
+}
+
+export function t_rc() -> i32 {
+    let h: ptr<Harness> = TH
+    return h.rc
+}
+
+export function t_out() -> string {
+    let h: ptr<Harness> = TH
+    return h.out
+}
+
+export function t_err() -> string {
+    let h: ptr<Harness> = TH
+    return h.err
+}
+
+# Begin a check: a fresh scratch directory, and output into its log.
+export function t_start() {
+    let h: ptr<Harness> = TH
+    h.seq = h.seq + 1
+    h.tmp = h.work + "/check" + s_itoa(h.seq)
+    let _m: bool = mkdir_p(h.tmp)
+    sink_push(SINK_BUF, SINK_SAME)
+}
+
+# The last `n` lines of `text`, each with a newline.
+function tail_lines(text: string, n: i32) -> ptr<ProcStrs> {
+    let all: ptr<ProcStrs> = s_lines(text)
+    let mut from: i32 = sl_len(all) - n
+    if from < 0 {
+        from = 0
+    }
+    return sl_tail(all, from)
+}
+
+# End a check with the status its function returned.
+export function t_end(name: string, rc: i32) {
+    let log: string = sink_pop()
+    let h: ptr<Harness> = TH
+    let id: string = h.name + "/" + name
+    if rc == T_PASS {
+        outln("PASS " + id)
+        h.pass = h.pass + 1
+    } elif rc == T_SKIP {
+        let last: ptr<ProcStrs> = tail_lines(log, 1)
+        let mut reason: string = ""
+        if sl_len(last) > 0 {
+            reason = sl_get(last, 0)
+        }
+        outln("SKIP " + id + " (" + reason + ")")
+        h.skip = h.skip + 1
+    } else {
+        outln("FAIL " + id)
+        let lines: ptr<ProcStrs> = tail_lines(log, 40)
+        let mut i: i32 = 0
+        while i < sl_len(lines) {
+            outln("    " + sl_get(lines, i))
+            i = i + 1
+        }
+        h.fail = h.fail + 1
+    }
+}
+
+# The summary line; exits 1 when a check failed.
+export function t_done() {
+    let h: ptr<Harness> = TH
+    outln(h.name + ": " + s_itoa(h.pass) + " passed, " + s_itoa(h.fail) + " failed, " + s_itoa(h.skip) + " skipped")
+    if h.fail > 0 {
+        cli_exit(1)
+    }
+    cli_exit(0)
+}
+
+export function t_skip(reason: string) -> i32 {
+    outln(reason)
+    return T_SKIP
+}
+
+# T_SKIP ("requires CMD") unless every space-separated command is on PATH.
+export function t_need(cmds: string) -> i32 {
+    let names: ptr<ProcStrs> = s_words(cmds)
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        if not have(sl_get(names, i)) {
+            return t_skip("requires " + sl_get(names, i))
+        }
+        i = i + 1
+    }
+    return T_PASS
+}
+
+# T_SKIP unless a C compiler (cc or clang) is on PATH.
+export function t_need_cc() -> i32 {
+    if have("cc") or have("clang") {
+        return T_PASS
+    }
+    return t_skip("no C compiler")
+}
+
+# A command from a space-free argument list.
+export function t_cmd(argv: ptr<ProcStrs>) -> ptr<ProcCmd> {
+    return cmd(argv)
+}
+
+# Run `c` with stdout and stderr into fresh files under the check's
+# scratch directory. Sets t_rc(), t_out() and t_err(); returns the status.
+export function t_run(c: ptr<ProcCmd>) -> i32 {
+    let h: ptr<Harness> = TH
+    h.runs = h.runs + 1
+    h.out = h.tmp + "/.out." + s_itoa(h.runs)
+    h.err = h.tmp + "/.err." + s_itoa(h.runs)
+    proc_stdout(c, PROC_CAPTURE)
+    proc_stderr(c, PROC_CAPTURE)
+    let r: ptr<ProcResult> = run_result(c)
+    let _o: bool = write_text(h.out, r.stdout)
+    let _e: bool = write_text(h.err, r.stderr)
+    h.rc = r.exit_code
+    return h.rc
+}
+
+export function t_run_argv(argv: ptr<ProcStrs>) -> i32 {
+    return t_run(cmd(argv))
+}
+
+# Run with output passing to the log; the status.
+export function t_sh(argv: ptr<ProcStrs>) -> i32 {
+    return run_argv(argv)
+}
+
+# `cat FILE` into the log.
+export function t_cat(path: string) {
+    out(read_text(path))
+}
+
+# ---------------------------------------------------------------------------
+# Assertions
+# ---------------------------------------------------------------------------
+
+# printf '%s\n' TEXT | head -n N
+function print_head(text: string, n: i32) {
+    let lines: ptr<ProcStrs> = s_split(text, 10)
+    let mut i: i32 = 0
+    while i < sl_len(lines) and i < n {
+        outln(sl_get(lines, i))
+        i = i + 1
+    }
+}
+
+# The first `n` lines of `text`, as `head -n N` writes them.
+export function head_text(text: string, n: i32) -> string {
+    let tp: ptr<u8> = text as ptr<u8>
+    let len: i32 = s_len(text)
+    let mut seen: i32 = 0
+    let mut i: i32 = 0
+    while i < len and seen < n {
+        if tp[i] == 10 {
+            seen = seen + 1
+        }
+        i = i + 1
+    }
+    return s_slice(text, 0, i)
+}
+
+export function a_eq(actual: string, expected: string, what: string) -> bool {
+    if s_eq(actual, expected) {
+        return true
+    }
+    outln("expected " + what + " to be [" + expected + "], got [" + actual + "]")
+    return false
+}
+
+export function a_eq_int(actual: i32, expected: i32, what: string) -> bool {
+    return a_eq(s_itoa(actual), s_itoa(expected), what)
+}
+
+export function a_contains(hay: string, needle: string) -> bool {
+    if s_contains(hay, needle) {
+        return true
+    }
+    outln("expected to find [" + needle + "] in:")
+    print_head(hay, 20)
+    return false
+}
+
+export function a_not_contains(hay: string, needle: string) -> bool {
+    if not s_contains(hay, needle) {
+        return true
+    }
+    outln("did not expect [" + needle + "] in:")
+    print_head(hay, 20)
+    return false
+}
+
+# `od -c` of a file, or of `text` when path is "", first 10 lines.
+function od_head(path: string, text: string) {
+    let c: ptr<ProcCmd> = proc_cmd("od")
+    proc_arg(c, "-c")
+    if s_len(path) > 0 {
+        proc_arg(c, path)
+        proc_stdin(c, PROC_NULL)
+    } else {
+        proc_input(c, text)
+    }
+    proc_stdout(c, PROC_CAPTURE)
+    proc_stderr(c, PROC_INHERIT)
+    let r: ptr<ProcResult> = run_result(c)
+    out(head_text(r.stdout, 10))
+}
+
+# The file holds exactly `text` (bytes).
+export function a_file_is(path: string, text: string) -> bool {
+    let b: Bytes = read_bytes(path)
+    let n: i32 = s_len(text)
+    let mut same: bool = b.len == n as i64
+    if same {
+        let tp: ptr<u8> = text as ptr<u8>
+        let mut i: i32 = 0
+        while i < n and same {
+            if b.data[i] != tp[i] {
+                same = false
+            }
+            i = i + 1
+        }
+    }
+    if same {
+        return true
+    }
+    outln("expected " + path + " to hold exactly:")
+    od_head("", text)
+    outln("it holds:")
+    od_head(path, "")
+    return false
+}
+
+export function a_file_contains(path: string, needle: string) -> bool {
+    if not is_file(path) {
+        outln("grep: " + path + ": No such file or directory")
+        outln("expected to find [" + needle + "] in " + path + ":")
+        outln("head: " + path + ": No such file or directory")
+        return false
+    }
+    let text: string = read_text(path)
+    if s_contains(text, needle) {
+        return true
+    }
+    outln("expected to find [" + needle + "] in " + path + ":")
+    out(head_text(text, 20))
+    return false
+}
+
+export function a_exists(path: string) -> bool {
+    if exists(path) {
+        return true
+    }
+    outln("expected " + path + " to exist")
+    return false
+}
+
+export function a_true(what: string, ok: bool) -> bool {
+    if ok {
+        return true
+    }
+    outln("expected: " + what)
+    return false
+}
+
+# ---------------------------------------------------------------------------
+# Text helpers
+# ---------------------------------------------------------------------------
+
+# Lines of a file with a fixed-string match on the whole line (grep -qxF).
+export function has_line(text: string, line: string) -> bool {
+    let lines: ptr<ProcStrs> = s_lines(text)
+    return sl_has(lines, line)
+}
+
+# Occurrences of `needle` (grep -oF | wc -l, for needles without newlines).
+export function count_of(hay: string, needle: string) -> i32 {
+    let mut n: i32 = 0
+    let mut at: i32 = s_find(hay, needle, 0)
+    while at >= 0 {
+        n = n + 1
+        at = s_find(hay, needle, at + s_len(needle))
+    }
+    return n
+}
+
+# Strip leading and trailing whitespace.
+export function s_trim(s: string) -> string {
+    let n: i32 = s_len(s)
+    let mut a: i32 = 0
+    while a < n and s_is_space(s_byte(s, a)) {
+        a = a + 1
+    }
+    let mut b: i32 = n
+    while b > a and s_is_space(s_byte(s, b - 1)) {
+        b = b - 1
+    }
+    return s_slice(s, a, b)
+}
+
+# ---------------------------------------------------------------------------
+# JSON
+# ---------------------------------------------------------------------------
+
+export function tj_parse(text: string) -> ptr<Json> {
+    return json_parse(text)
+}
+
+export function tj_load(path: string) -> ptr<Json> {
+    return json_parse(read_text(path))
+}
+
+export function tj_ok(j: ptr<Json>) -> bool {
+    return s_len(json_error(j)) == 0
+}
+
+# Member `name` of object `id`, or -1.
+export function tj_get(j: ptr<Json>, id: i32, name: string) -> i32 {
+    return json_get(j, id, name)
+}
+
+# Follow a dotted path of member names from the root, or -1.
+export function tj_path(j: ptr<Json>, path: string) -> i32 {
+    if not tj_ok(j) {
+        return -1
+    }
+    let mut id: i32 = 0
+    if s_len(path) == 0 {
+        return id
+    }
+    let parts: ptr<ProcStrs> = s_split(path, 46)
+    let mut i: i32 = 0
+    while i < sl_len(parts) and id >= 0 {
+        id = json_get(j, id, sl_get(parts, i))
+        i = i + 1
+    }
+    return id
+}
+
+export function tj_first(j: ptr<Json>, id: i32) -> i32 {
+    if id < 0 {
+        return -1
+    }
+    return json_first(j, id)
+}
+
+export function tj_next(j: ptr<Json>, id: i32) -> i32 {
+    return json_next(j, id)
+}
+
+export function tj_key(j: ptr<Json>, id: i32) -> string {
+    return json_key(j, id)
+}
+
+export function tj_len(j: ptr<Json>, id: i32) -> i32 {
+    if id < 0 {
+        return 0
+    }
+    return json_len(j, id)
+}
+
+export function tj_is_string(j: ptr<Json>, id: i32) -> bool {
+    return id >= 0 and json_kind(j, id) == json_kind_string()
+}
+
+export function tj_is_true(j: ptr<Json>, id: i32) -> bool {
+    return id >= 0 and json_kind(j, id) == json_kind_true()
+}
+
+# `jq -c`: compact JSON text of a value ("null" for a missing one).
+export function tj_compact(j: ptr<Json>, id: i32) -> string {
+    if id < 0 {
+        return "null"
+    }
+    let k: i32 = json_kind(j, id)
+    if k == json_kind_null() {
+        return "null"
+    }
+    if k == json_kind_true() {
+        return "true"
+    }
+    if k == json_kind_false() {
+        return "false"
+    }
+    if k == json_kind_number() {
+        return json_str(j, id)
+    }
+    if k == json_kind_string() {
+        return json_quote(json_str(j, id))
+    }
+    let obj: bool = k == json_kind_object()
+    let mut text: string = "["
+    if obj {
+        text = "{"
+    }
+    let mut c: i32 = json_first(j, id)
+    let mut first: bool = true
+    while c >= 0 {
+        if not first {
+            text = text + ","
+        }
+        first = false
+        if obj {
+            text = text + json_quote(json_key(j, c)) + ":"
+        }
+        text = text + tj_compact(j, c)
+        c = json_next(j, c)
+    }
+    if obj {
+        return text + "}"
+    }
+    return text + "]"
+}
+
+# `jq -r`: a string's text, anything else as compact JSON.
+export function tj_raw(j: ptr<Json>, id: i32) -> string {
+    if tj_is_string(j, id) {
+        return json_str(j, id)
+    }
+    return tj_compact(j, id)
+}
+
+# A JSON string literal.
+export function tj_quote(s: string) -> string {
+    return json_quote(s)
+}

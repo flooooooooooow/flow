@@ -1,0 +1,3365 @@
+# @module flowc.proof_doc
+# @means  Proof documents: `.proof.md` (English) and `.proof.tex` (numbered
+#         LaTeX) for a verification file, and the geometry figures beside
+#         them. Port of the single-file half of src/flow/proof_document.py
+#         (parse_proof_file, build_tutorial_lines, render_english,
+#         render_latex, write_proof_artifacts, write_proof_artifacts_tree).
+#
+# The Python parses the proof file with regular expressions. Stage-A has no
+# regex, so each pattern is a hand-written scan with the same matching
+# rules; the comments name the pattern each scan stands for.
+#
+# Entry point: flowc_proof_doc_mode (FLOWC_PROOF_DOC=1, see main.flow).
+
+import .claim_address {
+    FlowcClaimAddress,
+    flowc_claim_try_parse,
+    flowc_claim_address_phrase,
+    flowc_claim_slug,
+    flowc_claim_guillemets,
+    flowc_claim_display,
+    flowc_claim_to_legacy_path
+}
+import .claim_path {
+    flowc_claim_path_tier_label,
+    flowc_claim_path_normalize_tier
+}
+import .math_prose {
+    flowc_flow_expr_to_mathematical_english,
+    flowc_flow_expr_to_latex,
+    flowc_mathematical_case_condition,
+    flowc_tier_opening_mathematical,
+    flowc_invoke_premise_mathematical,
+    flowc_addr_coordinate_display,
+    flowc_addr_coordinate_latex,
+    flowc_claim_path_latex,
+    flowc_type_latex,
+    flowc_type_latex_known
+}
+import .fileio {
+    flowc_read_file,
+    flowc_write_file,
+    flowc_io_file_size,
+    flowc_io_mkdir,
+    flowc_io_popen_read
+}
+import .geometry_diagram {
+    FlowcGeomDiagram,
+    flowc_geom_render_svg,
+    flowc_geom_render_tikz
+}
+import .geometry_script { flowc_geom_for_theorem }
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function memcpy(dst: ptr<u8>, src: ptr<u8>, n: i64) -> ptr<u8>
+    function getenv(name: string) -> string
+    function puts(s: string) -> i32
+    function printf(fmt: string, ...) -> i32
+    function atoi(s: string) -> i32
+    function write(fd: i32, buf: string, n: i64) -> i64
+}
+
+const PDG_IF: i32 = 1
+const PDG_CASE: i32 = 2
+const PDG_ASSUME: i32 = 3
+const PDG_THEREFORE: i32 = 4
+const PDG_LET: i32 = 5
+
+export struct PdgStep {
+    kind: i32,
+    text: string,
+    detail: string
+}
+
+export struct PdgThm {
+    claim_path: string,
+    params: string,
+    means: string,
+    from_source: string,
+    tier: string,
+    needs: string,
+    used_by: string,
+    diagram: string,
+    diagram_script: string,
+    claim_expr: string,
+    step0: i32,
+    nsteps: i32,
+    number: i32,
+    diagram_svg: string
+}
+
+export struct PdgDoc {
+    modname: string,
+    means: string,
+    from_source: string,
+    tier: string,
+    thms: ptr<PdgThm>,
+    nthm: i32,
+    cap_thm: i32,
+    steps: ptr<PdgStep>,
+    nstep: i32,
+    cap_step: i32
+}
+
+# One numbered line of a textbook proof (TutorialLine). `math` "" is None.
+export struct PdgLine {
+    number: i32,
+    english: string,
+    math: string,
+    is_goal: i32,
+    refs: ptr<i32>,
+    nrefs: i32
+}
+
+# claim path -> tier, with the insertion order of a Python dict.
+export struct PdgMap {
+    keys: ptr<string>,
+    vals: ptr<string>,
+    n: i32,
+    cap: i32,
+    slots: ptr<i32>,
+    nslots: i32
+}
+
+# ── String helpers ───────────────────────────────────────────────
+
+# An indexed string as a plain value, so `+` sees a string operand.
+function pdg_sidx(s: string) -> string {
+    return s
+}
+
+# A line on stderr.
+function pdg_err(msg: string) -> void {
+    let line: string = msg + "\n"
+    let _w: i64 = write(2, line, strlen(line))
+}
+
+function pdg_len(s: string) -> i32 {
+    return strlen(s) as i32
+}
+
+function pdg_eq(a: string, b: string) -> i32 {
+    if strcmp(a, b) == 0 {
+        return 1
+    }
+    return 0
+}
+
+function pdg_sub(s: string, a: i32, b: i32) -> string {
+    let n: i32 = pdg_len(s)
+    let mut lo: i32 = a
+    let mut hi: i32 = b
+    if lo < 0 { lo = 0 }
+    if hi > n { hi = n }
+    if hi <= lo { return "" }
+    let buf: ptr<u8> = malloc((hi - lo + 1) as i64)
+    let p: ptr<u8> = s
+    memcpy(buf, p + lo, (hi - lo) as i64)
+    buf[hi - lo] = 0
+    return buf as string
+}
+
+function pdg_is_ws(c: i32) -> i32 {
+    if c == 32 or c == 9 or c == 10 or c == 13 or c == 11 or c == 12 {
+        return 1
+    }
+    return 0
+}
+
+# \w over UTF-8 bytes: ASCII word characters, and any non-ASCII byte except
+# the guillemets and the typographic marks the corpus uses as punctuation.
+function pdg_is_word(c: i32) -> i32 {
+    if c >= 48 and c <= 57 { return 1 }
+    if c >= 65 and c <= 90 { return 1 }
+    if c >= 97 and c <= 122 { return 1 }
+    if c == 95 { return 1 }
+    if c >= 128 { return 1 }
+    return 0
+}
+
+function pdg_strip(s: string) -> string {
+    let n: i32 = pdg_len(s)
+    let p: ptr<u8> = s
+    let mut a: i32 = 0
+    while a < n and pdg_is_ws(p[a]) == 1 { a = a + 1 }
+    let mut b: i32 = n
+    while b > a and pdg_is_ws(p[b - 1]) == 1 { b = b - 1 }
+    if a == 0 and b == n { return s }
+    return pdg_sub(s, a, b)
+}
+
+function pdg_at(s: string, i: i32, lit: string) -> i32 {
+    let n: i32 = pdg_len(s)
+    let m: i32 = pdg_len(lit)
+    if i < 0 or i + m > n { return 0 }
+    let p: ptr<u8> = s
+    let q: ptr<u8> = lit
+    let mut k: i32 = 0
+    while k < m {
+        if p[i + k] != q[k] { return 0 }
+        k = k + 1
+    }
+    return 1
+}
+
+function pdg_starts(s: string, lit: string) -> i32 {
+    return pdg_at(s, 0, lit)
+}
+
+function pdg_find(s: string, needle: string, from: i32) -> i32 {
+    let n: i32 = pdg_len(s)
+    let m: i32 = pdg_len(needle)
+    let mut i: i32 = from
+    if i < 0 { i = 0 }
+    while i + m <= n {
+        if pdg_at(s, i, needle) == 1 { return i }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+function pdg_contains(s: string, needle: string) -> i32 {
+    if pdg_find(s, needle, 0) >= 0 { return 1 }
+    return 0
+}
+
+function pdg_find_char(s: string, c: i32, from: i32) -> i32 {
+    let n: i32 = pdg_len(s)
+    let p: ptr<u8> = s
+    let mut i: i32 = from
+    while i < n {
+        if p[i] == c { return i }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+function pdg_rfind_char(s: string, c: i32) -> i32 {
+    let p: ptr<u8> = s
+    let mut i: i32 = pdg_len(s) - 1
+    while i >= 0 {
+        if p[i] == c { return i }
+        i = i - 1
+    }
+    return 0 - 1
+}
+
+function pdg_replace(s: string, needle: string, repl: string) -> string {
+    let m: i32 = pdg_len(needle)
+    if m == 0 { return s }
+    let mut first: i32 = pdg_find(s, needle, 0)
+    if first < 0 { return s }
+    let mut out: string = ""
+    let mut pos: i32 = 0
+    while first >= 0 {
+        out = out + pdg_sub(s, pos, first) + repl
+        pos = first + m
+        first = pdg_find(s, needle, pos)
+    }
+    return out + pdg_sub(s, pos, pdg_len(s))
+}
+
+function pdg_lower(s: string) -> string {
+    let n: i32 = pdg_len(s)
+    let p: ptr<u8> = s
+    let buf: ptr<u8> = malloc((n + 1) as i64)
+    let mut i: i32 = 0
+    while i < n {
+        let c: u8 = p[i]
+        if c >= 65 and c <= 90 {
+            buf[i] = c + 32
+        } else {
+            buf[i] = c
+        }
+        i = i + 1
+    }
+    buf[n] = 0
+    return buf as string
+}
+
+function pdg_itoa(v: i32) -> string {
+    if v == 0 { return "0" }
+    let buf: ptr<u8> = malloc(16)
+    let mut x: i32 = v
+    let mut neg: i32 = 0
+    if x < 0 {
+        neg = 1
+        x = 0 - x
+    }
+    let tmp: ptr<u8> = malloc(16)
+    let mut k: i32 = 0
+    while x > 0 {
+        tmp[k] = (x % 10) + 48
+        x = x / 10
+        k = k + 1
+    }
+    let mut o: i32 = 0
+    if neg == 1 {
+        buf[0] = 45
+        o = 1
+    }
+    while k > 0 {
+        k = k - 1
+        buf[o] = tmp[k]
+        o = o + 1
+    }
+    buf[o] = 0
+    return buf as string
+}
+
+# First character upper-cased (ASCII), as body[0].upper() + body[1:].
+function pdg_upper_first(s: string) -> string {
+    let n: i32 = pdg_len(s)
+    if n == 0 { return s }
+    let p: ptr<u8> = s
+    if p[0] >= 97 and p[0] <= 122 {
+        let buf: ptr<u8> = malloc((n + 1) as i64)
+        memcpy(buf, p, (n + 1) as i64)
+        buf[0] = p[0] - 32
+        return buf as string
+    }
+    return s
+}
+
+function pdg_lower_first(s: string) -> string {
+    let n: i32 = pdg_len(s)
+    if n == 0 { return s }
+    let p: ptr<u8> = s
+    if p[0] >= 65 and p[0] <= 90 {
+        let buf: ptr<u8> = malloc((n + 1) as i64)
+        memcpy(buf, p, (n + 1) as i64)
+        buf[0] = p[0] + 32
+        return buf as string
+    }
+    return s
+}
+
+# str.capitalize(): first character upper, the rest lower (ASCII).
+function pdg_capitalize(s: string) -> string {
+    return pdg_upper_first(pdg_lower(s))
+}
+
+# s.rstrip(".")
+function pdg_rstrip_dots(s: string) -> string {
+    let p: ptr<u8> = s
+    let mut b: i32 = pdg_len(s)
+    while b > 0 and p[b - 1] == 46 { b = b - 1 }
+    return pdg_sub(s, 0, b)
+}
+
+# re.sub(r"\s+", " ", s)
+function pdg_collapse_ws(s: string) -> string {
+    let n: i32 = pdg_len(s)
+    let p: ptr<u8> = s
+    let buf: ptr<u8> = malloc((n + 1) as i64)
+    let mut o: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if pdg_is_ws(p[i]) == 1 {
+            while i < n and pdg_is_ws(p[i]) == 1 { i = i + 1 }
+            buf[o] = 32
+            o = o + 1
+        } else {
+            buf[o] = p[i]
+            o = o + 1
+            i = i + 1
+        }
+    }
+    buf[o] = 0
+    return buf as string
+}
+
+# ── Lines ────────────────────────────────────────────────────────
+
+# str.splitlines(): split on \n, \r\n and \r; a final newline adds no line.
+# Returns the number of lines; starts[i] / ends[i] bound line i in `s`.
+function pdg_split_lines(s: string, starts: ptr<i32>, ends: ptr<i32>, cap: i32) -> i32 {
+    let n: i32 = pdg_len(s)
+    let p: ptr<u8> = s
+    let mut count: i32 = 0
+    let mut i: i32 = 0
+    let mut ls: i32 = 0
+    while i < n {
+        let c: i32 = p[i]
+        if c == 10 or c == 13 {
+            if count < cap {
+                starts[count] = ls
+                ends[count] = i
+            }
+            count = count + 1
+            if c == 13 and i + 1 < n and p[i + 1] == 10 {
+                i = i + 1
+            }
+            i = i + 1
+            ls = i
+        } else {
+            i = i + 1
+        }
+    }
+    if ls < n {
+        if count < cap {
+            starts[count] = ls
+            ends[count] = n
+        }
+        count = count + 1
+    }
+    return count
+}
+
+function pdg_count_lines(s: string) -> i32 {
+    let n: i32 = pdg_len(s)
+    let p: ptr<u8> = s
+    let mut c: i32 = 2
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 10 or p[i] == 13 { c = c + 1 }
+        i = i + 1
+    }
+    return c
+}
+
+# ── Meta lines ───────────────────────────────────────────────────
+
+# META_LINE = ^\s*#\s*@(?P<key>[a-z-]+)\s+(?P<value>.+?)\s*$  (re.I)
+# Returns 1 and fills key (lower-cased, '-' to '_', from -> from_source) and
+# value, or 0 when the line is not a meta line.
+function pdg_meta_line(line: string, key_out: ptr<string>, val_out: ptr<string>) -> i32 {
+    let n: i32 = pdg_len(line)
+    let p: ptr<u8> = line
+    let mut i: i32 = 0
+    while i < n and pdg_is_ws(p[i]) == 1 { i = i + 1 }
+    if i >= n or p[i] != 35 { return 0 }
+    i = i + 1
+    while i < n and pdg_is_ws(p[i]) == 1 { i = i + 1 }
+    if i >= n or p[i] != 64 { return 0 }
+    i = i + 1
+    let ks: i32 = i
+    while i < n and ((p[i] >= 97 and p[i] <= 122) or (p[i] >= 65 and p[i] <= 90) or p[i] == 45) {
+        i = i + 1
+    }
+    let ke: i32 = i
+    if ke == ks { return 0 }
+    # \s+ then .+? then \s*$ : the value is the rest, less surrounding space.
+    if i >= n or pdg_is_ws(p[i]) == 0 { return 0 }
+    while i < n and pdg_is_ws(p[i]) == 1 { i = i + 1 }
+    let vs: i32 = i
+    let mut ve: i32 = n
+    while ve > vs and pdg_is_ws(p[ve - 1]) == 1 { ve = ve - 1 }
+    if ve <= vs and i - ke < 2 {
+        # `.+?` needs a character; with only one space after the key there
+        # is none to give back from \s+.
+        return 0
+    }
+    let mut key: string = pdg_replace(pdg_lower(pdg_sub(line, ks, ke)), "-", "_")
+    if pdg_eq(key, "from") == 1 {
+        key = "from_source"
+    }
+    key_out[0] = key
+    val_out[0] = pdg_strip(pdg_sub(line, vs, ve))
+    return 1
+}
+
+# Set the meta field `key` on `thm` (later lines win, as in a dict).
+function pdg_meta_set(t: ptr<PdgThm>, key: string, val: string) -> void {
+    if pdg_eq(key, "means") == 1 { t[0].means = val }
+    if pdg_eq(key, "from_source") == 1 { t[0].from_source = val }
+    if pdg_eq(key, "tier") == 1 { t[0].tier = val }
+    if pdg_eq(key, "needs") == 1 { t[0].needs = val }
+    if pdg_eq(key, "used_by") == 1 { t[0].used_by = val }
+    if pdg_eq(key, "diagram") == 1 { t[0].diagram = val }
+    if pdg_eq(key, "diagram_script") == 1 { t[0].diagram_script = val }
+}
+
+# ── Steps ────────────────────────────────────────────────────────
+
+function pdg_push_step(d: ptr<PdgDoc>, kind: i32, text: string, detail: string) -> void {
+    if d[0].nstep >= d[0].cap_step {
+        let ncap: i32 = d[0].cap_step * 2 + 16
+        let nb: ptr<PdgStep> = malloc((ncap as i64) * 24) as ptr<PdgStep>
+        let mut i: i32 = 0
+        while i < d[0].nstep {
+            nb[i] = d[0].steps[i]
+            i = i + 1
+        }
+        d[0].steps = nb
+        d[0].cap_step = ncap
+    }
+    let k: i32 = d[0].nstep
+    d[0].steps[k].kind = kind
+    d[0].steps[k].text = text
+    d[0].steps[k].detail = detail
+    d[0].nstep = k + 1
+}
+
+# `^\s*\}?\s*<kw>\s+(.+?)\s*\{` on a stripped line. Returns the condition
+# span through cond_s / cond_e, or 0 when the line does not match.
+function pdg_block_line(line: string, kw: string, cond_s: ptr<i32>, cond_e: ptr<i32>) -> i32 {
+    let n: i32 = pdg_len(line)
+    let p: ptr<u8> = line
+    let mut i: i32 = 0
+    while i < n and pdg_is_ws(p[i]) == 1 { i = i + 1 }
+    if i < n and p[i] == 125 { i = i + 1 }
+    while i < n and pdg_is_ws(p[i]) == 1 { i = i + 1 }
+    if pdg_at(line, i, kw) == 0 { return 0 }
+    i = i + pdg_len(kw)
+    if i >= n or pdg_is_ws(p[i]) == 0 { return 0 }
+    let ws0: i32 = i + 1
+    while i < n and pdg_is_ws(p[i]) == 1 { i = i + 1 }
+    # Greedy \s+, backtracking one space at a time if nothing follows.
+    let mut st: i32 = i
+    while st >= ws0 {
+        let j: i32 = pdg_find_char(line, 123, st + 1)
+        if j >= 0 {
+            let mut e: i32 = j
+            while e > st + 1 and pdg_is_ws(p[e - 1]) == 1 { e = e - 1 }
+            cond_s[0] = st
+            cond_e[0] = e
+            return 1
+        }
+        st = st - 1
+    }
+    return 0
+}
+
+# ELSE_LINE = ^\s*\}?\s*else\s*\{
+function pdg_else_line(line: string) -> i32 {
+    let n: i32 = pdg_len(line)
+    let p: ptr<u8> = line
+    let mut i: i32 = 0
+    while i < n and pdg_is_ws(p[i]) == 1 { i = i + 1 }
+    if i < n and p[i] == 125 { i = i + 1 }
+    while i < n and pdg_is_ws(p[i]) == 1 { i = i + 1 }
+    if pdg_at(line, i, "else") == 0 { return 0 }
+    i = i + 4
+    while i < n and pdg_is_ws(p[i]) == 1 { i = i + 1 }
+    if i < n and p[i] == 123 { return 1 }
+    return 0
+}
+
+# `<kw>\s+(.+)` anchored at the start: the rest of the line, or "" if the
+# line does not match.
+function pdg_kw_rest(line: string, kw: string, ok: ptr<i32>) -> string {
+    ok[0] = 0
+    let n: i32 = pdg_len(line)
+    let p: ptr<u8> = line
+    if pdg_starts(line, kw) == 0 { return "" }
+    let mut i: i32 = pdg_len(kw)
+    if i >= n or pdg_is_ws(p[i]) == 0 { return "" }
+    while i < n and pdg_is_ws(p[i]) == 1 { i = i + 1 }
+    if i >= n {
+        # (.+) needs a character: backtrack \s+ by one when there are two.
+        if i - 1 > pdg_len(kw) {
+            ok[0] = 1
+            return pdg_sub(line, i - 1, n)
+        }
+        return ""
+    }
+    ok[0] = 1
+    return pdg_sub(line, i, n)
+}
+
+# LET_LINE = let\s+(?:mut\s+)?(\w+)\s*=\s*(.+). Returns "name = rest" or "".
+function pdg_let_line(line: string) -> string {
+    let n: i32 = pdg_len(line)
+    let p: ptr<u8> = line
+    if pdg_starts(line, "let") == 0 { return "" }
+    let mut i: i32 = 3
+    if i >= n or pdg_is_ws(p[i]) == 0 { return "" }
+    while i < n and pdg_is_ws(p[i]) == 1 { i = i + 1 }
+    let after_let: i32 = i
+    let mut tries: i32 = 0
+    while tries < 2 {
+        let mut j: i32 = after_let
+        let mut good: i32 = 1
+        if tries == 0 {
+            # (?:mut\s+) taken
+            if pdg_at(line, j, "mut") == 1 and j + 3 < n and pdg_is_ws(p[j + 3]) == 1 {
+                j = j + 3
+                while j < n and pdg_is_ws(p[j]) == 1 { j = j + 1 }
+            } else {
+                good = 0
+            }
+        }
+        if good == 1 {
+            let ns: i32 = j
+            while j < n and pdg_is_word(p[j]) == 1 { j = j + 1 }
+            let ne: i32 = j
+            if ne > ns {
+                while j < n and pdg_is_ws(p[j]) == 1 { j = j + 1 }
+                if j < n and p[j] == 61 {
+                    j = j + 1
+                    while j < n and pdg_is_ws(p[j]) == 1 { j = j + 1 }
+                    let mut rs: i32 = j
+                    if rs >= n and rs > ne + 1 and pdg_is_ws(p[rs - 1]) == 1 {
+                        rs = rs - 1
+                    }
+                    if rs < n {
+                        return pdg_sub(line, ns, ne) + " = " + pdg_strip(pdg_sub(line, rs, n))
+                    }
+                }
+            }
+        }
+        tries = tries + 1
+    }
+    return ""
+}
+
+# _parse_steps over body text. Returns the claim (the last therefore's
+# expression before " by ").
+function pdg_parse_steps(d: ptr<PdgDoc>, body: string) -> string {
+    let cap: i32 = pdg_count_lines(body)
+    let starts: ptr<i32> = malloc((cap as i64) * 4) as ptr<i32>
+    let ends: ptr<i32> = malloc((cap as i64) * 4) as ptr<i32>
+    let nl: i32 = pdg_split_lines(body, starts, ends, cap)
+    let mut claim: string = ""
+    let cs: ptr<i32> = malloc(8) as ptr<i32>
+    let ok: ptr<i32> = malloc(8) as ptr<i32>
+    let mut li: i32 = 0
+    while li < nl {
+        let line: string = pdg_strip(pdg_sub(body, starts[li], ends[li]))
+        let lp: ptr<u8> = line
+        if pdg_len(line) > 0 and lp[0] != 35 {
+            let mut done: i32 = 0
+            if pdg_block_line(line, "if", cs, cs + 1) == 1 {
+                let cond: string = pdg_sub(line, cs[0], cs[1])
+                pdg_push_step(d, PDG_IF, pdg_strip(cond), cond)
+                done = 1
+            }
+            if done == 0 and pdg_block_line(line, "elif", cs, cs + 1) == 1 {
+                let cond: string = pdg_sub(line, cs[0], cs[1])
+                pdg_push_step(d, PDG_CASE, "case " + pdg_strip(cond), cond)
+                done = 1
+            }
+            if done == 0 and pdg_else_line(line) == 1 {
+                pdg_push_step(d, PDG_CASE, "inductive step", "else")
+                done = 1
+            }
+            if done == 0 {
+                let rest: string = pdg_kw_rest(line, "assume", ok)
+                if ok[0] == 1 {
+                    pdg_push_step(d, PDG_ASSUME, pdg_strip(rest), "")
+                    done = 1
+                }
+            }
+            if done == 0 {
+                let rest: string = pdg_kw_rest(line, "therefore", ok)
+                if ok[0] == 1 {
+                    let expr: string = pdg_strip(rest)
+                    pdg_push_step(d, PDG_THEREFORE, expr, "")
+                    let by: i32 = pdg_find(expr, " by ", 0)
+                    if by >= 0 {
+                        claim = pdg_strip(pdg_sub(expr, 0, by))
+                    } else {
+                        claim = pdg_strip(expr)
+                    }
+                    done = 1
+                }
+            }
+            if done == 0 {
+                let lt: string = pdg_let_line(line)
+                if pdg_len(lt) > 0 {
+                    pdg_push_step(d, PDG_LET, lt, "")
+                }
+            }
+        }
+        li = li + 1
+    }
+    return claim
+}
+
+# ── Theorem headers ──────────────────────────────────────────────
+
+# 1 at a guillemet open (« = C2 AB) / close (» = C2 BB).
+function pdg_guil_open(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    if i + 1 < n and p[i] == 194 and p[i + 1] == 171 { return 1 }
+    return 0
+}
+
+function pdg_guil_close(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    if i + 1 < n and p[i] == 194 and p[i + 1] == 187 { return 1 }
+    return 0
+}
+
+# «[^»]+» at i: returns the index after », or -1.
+function pdg_guil_term(p: ptr<u8>, i: i32, n: i32) -> i32 {
+    if pdg_guil_open(p, i, n) == 0 { return 0 - 1 }
+    let mut j: i32 = i + 2
+    let body0: i32 = j
+    while j < n and pdg_guil_close(p, j, n) == 0 { j = j + 1 }
+    if j >= n or j == body0 { return 0 - 1 }
+    return j + 2
+}
+
+# THEOREM_HEADER.search(text, pos):
+#   theorem\s+(?P<path>«[^»]+»\s*«[^»]+»\s*«[^»]+»|[^\s(]+)
+#   \s*\((?P<params>[^)]*)\)\s*\{
+# On a match, out[0..6] = match start, path start, path end, params start,
+# params end, and the index of `{`. Returns 1, or 0 when nothing matches.
+function pdg_theorem_search(text: string, pos: i32, out: ptr<i32>) -> i32 {
+    let n: i32 = pdg_len(text)
+    let p: ptr<u8> = text
+    let mut s: i32 = pdg_find(text, "theorem", pos)
+    while s >= 0 {
+        let mut i: i32 = s + 7
+        if i < n and pdg_is_ws(p[i]) == 1 {
+            while i < n and pdg_is_ws(p[i]) == 1 { i = i + 1 }
+            let ps: i32 = i
+            let mut alt: i32 = 0
+            while alt < 2 {
+                let mut pe: i32 = 0 - 1
+                if alt == 0 {
+                    let a: i32 = pdg_guil_term(p, ps, n)
+                    if a >= 0 {
+                        let mut b: i32 = a
+                        while b < n and pdg_is_ws(p[b]) == 1 { b = b + 1 }
+                        let c: i32 = pdg_guil_term(p, b, n)
+                        if c >= 0 {
+                            let mut d: i32 = c
+                            while d < n and pdg_is_ws(p[d]) == 1 { d = d + 1 }
+                            pe = pdg_guil_term(p, d, n)
+                        }
+                    }
+                } else {
+                    let mut j: i32 = ps
+                    while j < n and pdg_is_ws(p[j]) == 0 and p[j] != 40 { j = j + 1 }
+                    if j > ps { pe = j }
+                }
+                if pe >= 0 {
+                    let mut j: i32 = pe
+                    while j < n and pdg_is_ws(p[j]) == 1 { j = j + 1 }
+                    if j < n and p[j] == 40 {
+                        let qs: i32 = j + 1
+                        let qe: i32 = pdg_find_char(text, 41, qs)
+                        if qe >= 0 {
+                            let mut k: i32 = qe + 1
+                            while k < n and pdg_is_ws(p[k]) == 1 { k = k + 1 }
+                            if k < n and p[k] == 123 {
+                                out[0] = s
+                                out[1] = ps
+                                out[2] = pe
+                                out[3] = qs
+                                out[4] = qe
+                                out[5] = k
+                                return 1
+                            }
+                        }
+                    }
+                }
+                alt = alt + 1
+            }
+        }
+        s = pdg_find(text, "theorem", s + 1)
+    }
+    return 0
+}
+
+# _extract_brace_body: returns the end index (after the matching `}`), and
+# the body through body_out.
+function pdg_brace_body(text: string, open: i32, body_out: ptr<string>) -> i32 {
+    let n: i32 = pdg_len(text)
+    let p: ptr<u8> = text
+    let mut depth: i32 = 0
+    let mut i: i32 = open
+    while i < n {
+        if p[i] == 123 {
+            depth = depth + 1
+        } else {
+            if p[i] == 125 {
+                depth = depth - 1
+                if depth == 0 {
+                    body_out[0] = pdg_sub(text, open + 1, i)
+                    return i + 1
+                }
+            }
+        }
+        i = i + 1
+    }
+    body_out[0] = pdg_sub(text, open + 1, n)
+    return n
+}
+
+function pdg_push_thm(d: ptr<PdgDoc>) -> i32 {
+    if d[0].nthm >= d[0].cap_thm {
+        let ncap: i32 = d[0].cap_thm * 2 + 8
+        let nb: ptr<PdgThm> = malloc((ncap as i64) * 112) as ptr<PdgThm>
+        let mut i: i32 = 0
+        while i < d[0].nthm {
+            nb[i] = d[0].thms[i]
+            i = i + 1
+        }
+        d[0].thms = nb
+        d[0].cap_thm = ncap
+    }
+    let k: i32 = d[0].nthm
+    d[0].thms[k].claim_path = ""
+    d[0].thms[k].params = ""
+    d[0].thms[k].means = ""
+    d[0].thms[k].from_source = ""
+    d[0].thms[k].tier = ""
+    d[0].thms[k].needs = ""
+    d[0].thms[k].used_by = ""
+    d[0].thms[k].diagram = ""
+    d[0].thms[k].diagram_script = ""
+    d[0].thms[k].claim_expr = ""
+    d[0].thms[k].step0 = d[0].nstep
+    d[0].thms[k].nsteps = 0
+    d[0].thms[k].number = 0
+    d[0].thms[k].diagram_svg = ""
+    d[0].nthm = k + 1
+    return k
+}
+
+# parse_proof_file over the file text.
+export function flowc_proof_parse_text(text: string) -> PdgDoc {
+    let mut d: PdgDoc = PdgDoc {
+        modname: "",
+        means: "",
+        from_source: "",
+        tier: "",
+        thms: malloc(8 * 112) as ptr<PdgThm>,
+        nthm: 0,
+        cap_thm: 8,
+        steps: malloc(64 * 24) as ptr<PdgStep>,
+        nstep: 0,
+        cap_step: 64
+    }
+    let key: ptr<string> = malloc(16) as ptr<string>
+    let val: ptr<string> = malloc(16) as ptr<string>
+
+    let cap: i32 = pdg_count_lines(text)
+    let starts: ptr<i32> = malloc((cap as i64) * 4) as ptr<i32>
+    let ends: ptr<i32> = malloc((cap as i64) * 4) as ptr<i32>
+    let nl: i32 = pdg_split_lines(text, starts, ends, cap)
+    let mut li: i32 = 0
+    let mut more: i32 = 1
+    while li < nl and more == 1 {
+        if pdg_meta_line(pdg_sub(text, starts[li], ends[li]), key, val) == 1 {
+            if pdg_eq(key[0], "module") == 1 { d.modname = val[0] }
+            if pdg_eq(key[0], "means") == 1 { d.means = val[0] }
+            if pdg_eq(key[0], "from_source") == 1 { d.from_source = val[0] }
+            if pdg_eq(key[0], "tier") == 1 { d.tier = val[0] }
+            li = li + 1
+        } else {
+            more = 0
+        }
+    }
+
+    let m: ptr<i32> = malloc(32) as ptr<i32>
+    let body: ptr<string> = malloc(16) as ptr<string>
+    let n: i32 = pdg_len(text)
+    let mut pos: i32 = 0
+    while pos < n and pdg_theorem_search(text, pos, m) == 1 {
+        let k: i32 = pdg_push_thm(&d)
+        # Meta lines directly above the header, skipping blanks, comments
+        # and imports.
+        let pre: string = pdg_sub(text, 0, m[0])
+        let pcap: i32 = pdg_count_lines(pre)
+        let ps: ptr<i32> = malloc((pcap as i64) * 4) as ptr<i32>
+        let pe: ptr<i32> = malloc((pcap as i64) * 4) as ptr<i32>
+        let pn: i32 = pdg_split_lines(pre, ps, pe, pcap)
+        let mut first_meta: i32 = pn
+        let mut j: i32 = pn - 1
+        let mut scanning: i32 = 1
+        while j >= 0 and scanning == 1 {
+            let ln: string = pdg_sub(pre, ps[j], pe[j])
+            let st: string = pdg_strip(ln)
+            if pdg_meta_line(ln, key, val) == 1 {
+                first_meta = j
+            } else {
+                let sp: ptr<u8> = st
+                if pdg_len(st) == 0 or pdg_starts(st, "import ") == 1 or sp[0] == 35 {
+                    # skip
+                } else {
+                    scanning = 0
+                }
+            }
+            j = j - 1
+        }
+        # Apply the meta lines in source order (later ones win).
+        let mut q: i32 = first_meta
+        while q < pn {
+            let ln: string = pdg_sub(pre, ps[q], pe[q])
+            if pdg_meta_line(ln, key, val) == 1 {
+                pdg_meta_set(&d.thms[k], key[0], val[0])
+            }
+            q = q + 1
+        }
+        let end_pos: i32 = pdg_brace_body(text, m[5], body)
+        let step0: i32 = d.nstep
+        let claim: string = pdg_parse_steps(&d, body[0])
+        d.thms[k].claim_path = pdg_strip(pdg_sub(text, m[1], m[2]))
+        d.thms[k].params = pdg_strip(pdg_sub(text, m[3], m[4]))
+        d.thms[k].claim_expr = claim
+        d.thms[k].step0 = step0
+        d.thms[k].nsteps = d.nstep - step0
+        pos = end_pos
+    }
+    return d
+}
+
+# ── Claim index (flow.know.scan_claim_index) and tiers ───────────
+
+function pdg_hash(s: string) -> i32 {
+    let n: i32 = pdg_len(s)
+    let p: ptr<u8> = s
+    let mut h: i32 = 5381
+    let mut i: i32 = 0
+    while i < n {
+        h = ((h * 33) + p[i]) % 1000003
+        i = i + 1
+    }
+    if h < 0 { h = 0 - h }
+    return h
+}
+
+export function flowc_pdg_map_new(cap: i32) -> PdgMap {
+    let nslots: i32 = cap * 2 + 1
+    let slots: ptr<i32> = malloc((nslots as i64) * 4) as ptr<i32>
+    let mut i: i32 = 0
+    while i < nslots {
+        slots[i] = 0 - 1
+        i = i + 1
+    }
+    return PdgMap {
+        keys: malloc((cap as i64) * 8) as ptr<string>,
+        vals: malloc((cap as i64) * 8) as ptr<string>,
+        n: 0,
+        cap: cap,
+        slots: slots,
+        nslots: nslots
+    }
+}
+
+# Index of `key`, or -1.
+function pdg_map_find(m: ptr<PdgMap>, key: string) -> i32 {
+    let mut h: i32 = pdg_hash(key) % m[0].nslots
+    while m[0].slots[h] >= 0 {
+        if pdg_eq(m[0].keys[m[0].slots[h]], key) == 1 {
+            return m[0].slots[h]
+        }
+        h = (h + 1) % m[0].nslots
+    }
+    return 0 - 1
+}
+
+# dict[key] = val: overwrite in place, or append (grows the table).
+function pdg_map_set(m: ptr<PdgMap>, key: string, val: string) -> void {
+    let at: i32 = pdg_map_find(m, key)
+    if at >= 0 {
+        m[0].vals[at] = val
+        return
+    }
+    if m[0].n >= m[0].cap {
+        let mut bigger: PdgMap = flowc_pdg_map_new(m[0].cap * 2 + 16)
+        let mut i: i32 = 0
+        while i < m[0].n {
+            pdg_map_set(&bigger, m[0].keys[i], m[0].vals[i])
+            i = i + 1
+        }
+        m[0] = bigger
+    }
+    let k: i32 = m[0].n
+    m[0].keys[k] = key
+    m[0].vals[k] = val
+    m[0].n = k + 1
+    let mut h: i32 = pdg_hash(key) % m[0].nslots
+    while m[0].slots[h] >= 0 {
+        h = (h + 1) % m[0].nslots
+    }
+    m[0].slots[h] = k
+}
+
+function pdg_map_get(m: ptr<PdgMap>, key: string, dflt: string) -> string {
+    let at: i32 = pdg_map_find(m, key)
+    if at < 0 { return dflt }
+    return m[0].vals[at]
+}
+
+# know._package_prefix
+function pdg_package_prefix(modname: string) -> string {
+    if pdg_len(modname) == 0 or pdg_find_char(modname, 47, 0) < 0 {
+        return modname
+    }
+    let mut out: string = ""
+    let mut first: i32 = 1
+    let mut s: i32 = 0
+    let n: i32 = pdg_len(modname)
+    let mut i: i32 = 0
+    while i <= n {
+        let p: ptr<u8> = modname
+        if i == n or p[i] == 46 {
+            let seg: string = pdg_sub(modname, s, i)
+            if pdg_find_char(seg, 47, 0) < 0 {
+                if first == 0 { out = out + "." }
+                out = out + seg
+                first = 0
+            }
+            s = i + 1
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# know._qualify
+function pdg_qualify(modname: string, claim_path: string) -> string {
+    let prefix: string = pdg_package_prefix(modname)
+    if pdg_len(prefix) > 0 {
+        return prefix + "." + claim_path
+    }
+    return claim_path
+}
+
+# Entries are identified by a string "<file>#<k>" -> "<claim path>\n<tier>".
+# scan_claim_index keeps key -> entry in first-insertion order; the global
+# tier index is then {entry.claim_path: entry.tier for entry in values}.
+function pdg_index_add(idx: ptr<PdgMap>, key: string, entry: string, seen: ptr<PdgMap>) -> void {
+    if pdg_map_find(seen, key) >= 0 {
+        return
+    }
+    pdg_map_set(seen, key, "")
+    pdg_map_set(idx, key, entry)
+}
+
+# Read a whole file into a NUL-terminated string, or "" on failure.
+export function flowc_proof_read(path: string) -> string {
+    let size: i64 = flowc_io_file_size(path)
+    if size < 0 {
+        return ""
+    }
+    let cap: i32 = (size as i32) + 1
+    let buf: ptr<u8> = malloc((cap + 1) as i64)
+    let n: i32 = flowc_read_file(path, buf, cap)
+    if n < 0 {
+        buf[0] = 0
+        return buf as string
+    }
+    buf[n] = 0
+    return buf as string
+}
+
+# Sorted list of *.flow under `root` (Path.rglob order: by path components).
+function pdg_list_flow(root: string, out_n: ptr<i32>) -> ptr<string> {
+    let cap: i32 = 4194304
+    let buf: ptr<u8> = malloc(cap as i64)
+    let cmd: string = "if [ -d '" + root + "' ]; then find '" + root + "' -name '*.flow' -type f | tr '/' '\\001' | LC_ALL=C sort | tr '\\001' '/'; fi"
+    let n: i32 = flowc_io_popen_read(cmd, buf, cap - 1)
+    let mut count: i32 = 0
+    if n <= 0 {
+        out_n[0] = 0
+        return malloc(8) as ptr<string>
+    }
+    buf[n] = 0
+    let text: string = buf as string
+    let lc: i32 = pdg_count_lines(text)
+    let starts: ptr<i32> = malloc((lc as i64) * 4) as ptr<i32>
+    let ends: ptr<i32> = malloc((lc as i64) * 4) as ptr<i32>
+    let nl: i32 = pdg_split_lines(text, starts, ends, lc)
+    let files: ptr<string> = malloc(((nl + 1) as i64) * 8) as ptr<string>
+    let mut i: i32 = 0
+    while i < nl {
+        if ends[i] > starts[i] {
+            files[count] = pdg_sub(text, starts[i], ends[i])
+            count = count + 1
+        }
+        i = i + 1
+    }
+    out_n[0] = count
+    return files
+}
+
+# proof_document._global_tier_index over <root>/lib/verify and
+# <root>/examples/verify.
+export function flowc_proof_global_tiers(root: string) -> PdgMap {
+    let mut idx: PdgMap = flowc_pdg_map_new(4096)
+    let mut tiers: PdgMap = flowc_pdg_map_new(2048)
+    let cnt: ptr<i32> = malloc(8) as ptr<i32>
+    let mut r: i32 = 0
+    while r < 2 {
+        let mut dir: string = root + "/lib/verify"
+        if r == 1 { dir = root + "/examples/verify" }
+        let files: ptr<string> = pdg_list_flow(dir, cnt)
+        let nf: i32 = cnt[0]
+        let mut fi: i32 = 0
+        while fi < nf {
+            let text: string = flowc_proof_read(files[fi])
+            let mut d: PdgDoc = flowc_proof_parse_text(text)
+            let mut k: i32 = 0
+            while k < d.nthm {
+                let cp: string = d.thms[k].claim_path
+                let entry: string = cp + "\n" + d.thms[k].tier
+                let mut seen: PdgMap = flowc_pdg_map_new(16)
+                pdg_index_add(&idx, cp, entry, &seen)
+                pdg_index_add(&idx, pdg_qualify(d.modname, cp), entry, &seen)
+                let addr: FlowcClaimAddress = flowc_claim_try_parse(cp)
+                if addr.ok == 1 {
+                    let g: string = flowc_claim_guillemets(addr)
+                    let leg: string = flowc_claim_to_legacy_path(addr)
+                    pdg_index_add(&idx, g, entry, &seen)
+                    pdg_index_add(&idx, flowc_claim_slug(addr), entry, &seen)
+                    pdg_index_add(&idx, flowc_claim_display(addr), entry, &seen)
+                    pdg_index_add(&idx, leg, entry, &seen)
+                    pdg_index_add(&idx, pdg_qualify(d.modname, g), entry, &seen)
+                    pdg_index_add(&idx, pdg_qualify(d.modname, leg), entry, &seen)
+                }
+                k = k + 1
+            }
+            fi = fi + 1
+        }
+        r = r + 1
+    }
+    let mut i: i32 = 0
+    while i < idx.n {
+        let e: string = idx.vals[i]
+        let nlp: i32 = pdg_find_char(e, 10, 0)
+        let tier: string = pdg_sub(e, nlp + 1, pdg_len(e))
+        if pdg_len(tier) > 0 {
+            pdg_map_set(&tiers, pdg_sub(e, 0, nlp), tier)
+        }
+        i = i + 1
+    }
+    return tiers
+}
+
+# _merged_tier_index: the global index updated with this file's tiers.
+function pdg_merged_tiers(global: ptr<PdgMap>, d: ptr<PdgDoc>) -> PdgMap {
+    let mut m: PdgMap = flowc_pdg_map_new(global[0].n + d[0].nthm + 16)
+    let mut i: i32 = 0
+    while i < global[0].n {
+        pdg_map_set(&m, global[0].keys[i], global[0].vals[i])
+        i = i + 1
+    }
+    let mut k: i32 = 0
+    while k < d[0].nthm {
+        if pdg_len(d[0].thms[k].tier) > 0 {
+            pdg_map_set(&m, d[0].thms[k].claim_path, d[0].thms[k].tier)
+        }
+        k = k + 1
+    }
+    return m
+}
+
+# ── Prose pieces ─────────────────────────────────────────────────
+
+# _CIRCLED: ① .. ⑳ (U+2460 + n - 1), else "(n)".
+function pdg_circled(n: i32) -> string {
+    if n >= 1 and n <= 20 {
+        let buf: ptr<u8> = malloc(4)
+        let cp: i32 = 9312 + n - 1
+        buf[0] = 224 + (cp / 4096)
+        buf[1] = 128 + ((cp / 64) % 64)
+        buf[2] = 128 + (cp % 64)
+        buf[3] = 0
+        return buf as string
+    }
+    return "(" + pdg_itoa(n) + ")"
+}
+
+# sorted(set(nums))
+function pdg_sorted_unique(nums: ptr<i32>, n: i32, out: ptr<i32>) -> i32 {
+    let mut m: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let v: i32 = nums[i]
+        let mut dup: i32 = 0
+        let mut j: i32 = 0
+        while j < m {
+            if out[j] == v { dup = 1 }
+            j = j + 1
+        }
+        if dup == 0 {
+            let mut k: i32 = m
+            while k > 0 and out[k - 1] > v {
+                out[k] = out[k - 1]
+                k = k - 1
+            }
+            out[k] = v
+            m = m + 1
+        }
+        i = i + 1
+    }
+    return m
+}
+
+# "a", "a and b", "a, b, and c"
+function pdg_join_labels(labels: ptr<string>, n: i32) -> string {
+    if n == 0 { return "" }
+    if n == 1 { return labels[0] }
+    if n == 2 { return pdg_sidx(labels[0]) + " and " + pdg_sidx(labels[1]) }
+    let mut s: string = ""
+    let mut i: i32 = 0
+    while i < n - 1 {
+        if i > 0 { s = s + ", " }
+        s = s + pdg_sidx(labels[i])
+        i = i + 1
+    }
+    return s + ", and " + pdg_sidx(labels[n - 1])
+}
+
+# _fmt_refs
+function pdg_fmt_refs(nums: ptr<i32>, n: i32) -> string {
+    let u: ptr<i32> = malloc(((n + 1) as i64) * 4) as ptr<i32>
+    let m: i32 = pdg_sorted_unique(nums, n, u)
+    let labels: ptr<string> = malloc(((m + 1) as i64) * 8) as ptr<string>
+    let mut i: i32 = 0
+    while i < m {
+        labels[i] = "step " + pdg_itoa(u[i])
+        i = i + 1
+    }
+    return pdg_join_labels(labels, m)
+}
+
+# _under_refs
+function pdg_under_refs(nums: ptr<i32>, n: i32) -> string {
+    if n == 0 { return "" }
+    if n == 1 { return "Under the supposition in step " + pdg_itoa(nums[0]) + ", " }
+    return "Under the suppositions in " + pdg_fmt_refs(nums, n) + ", "
+}
+
+# _claim_path_phrase
+function pdg_claim_phrase(path: string) -> string {
+    let addr: FlowcClaimAddress = flowc_claim_try_parse(path)
+    if addr.ok == 1 {
+        return flowc_claim_address_phrase(addr)
+    }
+    return path
+}
+
+# proof_document._latex_escape (replacement order is load-bearing).
+function pdg_latex_escape(text: string) -> string {
+    let mut s: string = text
+    s = pdg_replace(s, "\\", "\\textbackslash{}")
+    s = pdg_replace(s, "&", "\\&")
+    s = pdg_replace(s, "%", "\\%")
+    s = pdg_replace(s, "$", "\\$")
+    s = pdg_replace(s, "#", "\\#")
+    s = pdg_replace(s, "_", "\\_")
+    s = pdg_replace(s, "{", "\\{")
+    s = pdg_replace(s, "}", "\\}")
+    s = pdg_replace(s, "~", "\\textasciitilde{}")
+    s = pdg_replace(s, "^", "\\textasciicircum{}")
+    s = pdg_replace(s, "·", "\\textperiodcentered{}")
+    s = pdg_replace(s, "«", "\\guillemotleft{}")
+    s = pdg_replace(s, "»", "\\guillemotright{}")
+    s = pdg_replace(s, "α", "$\\alpha$")
+    s = pdg_replace(s, "β", "$\\beta$")
+    s = pdg_replace(s, "γ", "$\\gamma$")
+    s = pdg_replace(s, "′", "$'$")
+    return s
+}
+
+# _slug_label
+function pdg_slug_label(path: string) -> string {
+    let addr: FlowcClaimAddress = flowc_claim_try_parse(path)
+    if addr.ok == 1 {
+        return pdg_replace(flowc_claim_slug(addr), ".", "-")
+    }
+    let mut s: string = pdg_replace(path, "/", "-")
+    s = pdg_replace(s, "+", "plus")
+    s = pdg_replace(s, "*", "star")
+    s = pdg_replace(s, "|", "or")
+    s = pdg_replace(s, ".", "-")
+    s = pdg_replace(s, "=", "eq")
+    s = pdg_replace(s, "«", "")
+    s = pdg_replace(s, "»", "")
+    s = pdg_replace(s, " ", "-")
+    return s
+}
+
+# _facet_title
+function pdg_facet_title(claim_path: string, means: string) -> string {
+    if pdg_len(means) > 0 {
+        let dot: i32 = pdg_find_char(means, 46, 0)
+        let mut first: string = means
+        if dot >= 0 { first = pdg_sub(means, 0, dot) }
+        first = pdg_strip(first)
+        if pdg_starts(pdg_lower(first), "adding") == 1 {
+            return pdg_upper_first(first)
+        }
+        return first
+    }
+    let mut facet: string = claim_path
+    let dot: i32 = pdg_rfind_char(claim_path, 46)
+    if dot >= 0 { facet = pdg_sub(claim_path, dot + 1, pdg_len(claim_path)) }
+    return pdg_capitalize(pdg_replace(facet, "-", " "))
+}
+
+function pdg_tier_or_derived(tier: string) -> string {
+    if pdg_len(tier) == 0 { return "derived" }
+    return tier
+}
+
+# _natural_claim_sentence
+function pdg_claim_sentence(t: ptr<PdgThm>) -> string {
+    if pdg_len(t[0].means) > 0 {
+        return pdg_rstrip_dots(t[0].means)
+    }
+    if pdg_len(t[0].claim_expr) > 0 {
+        let key: string = pdg_collapse_ws(flowc_flow_expr_to_mathematical_english(t[0].claim_expr))
+        # The gloss table's keys are source expressions, so none can equal
+        # the converted text; the Python lookup always falls through.
+        return "We're showing that " + key + "."
+    }
+    return "We're showing this claim holds."
+}
+
+# _claim_math_latex
+function pdg_claim_math_latex(t: ptr<PdgThm>) -> string {
+    let mut src: string = t[0].claim_expr
+    if pdg_len(src) == 0 { src = t[0].means }
+    let claim: string = flowc_flow_expr_to_latex(src)
+    let params: string = t[0].params
+    if pdg_len(params) == 0 { return claim }
+    let mut quants: string = ""
+    let mut nq: i32 = 0
+    let n: i32 = pdg_len(params)
+    let p: ptr<u8> = params
+    let mut s: i32 = 0
+    let mut i: i32 = 0
+    while i <= n {
+        if i == n or p[i] == 44 {
+            let chunk: string = pdg_strip(pdg_sub(params, s, i))
+            let colon: i32 = pdg_find_char(chunk, 58, 0)
+            if pdg_len(chunk) > 0 and colon >= 0 {
+                let var: string = pdg_strip(pdg_sub(chunk, 0, colon))
+                let dom: string = pdg_strip(pdg_sub(chunk, colon + 1, pdg_len(chunk)))
+                let mut dom_tex: string = pdg_latex_escape(dom)
+                if flowc_type_latex_known(dom) == 1 { dom_tex = flowc_type_latex(dom) }
+                if nq > 0 { quants = quants + " " }
+                quants = quants + "\\forall " + var + " \\in " + dom_tex
+                nq = nq + 1
+            }
+            s = i + 1
+        }
+        i = i + 1
+    }
+    if nq > 0 {
+        return quants + "\\quad " + claim
+    }
+    return claim
+}
+
+# `text.split("(")[0].strip()` and the argument text between the first `(`
+# and the last `)`.
+function pdg_assume_ref(text: string) -> string {
+    let lp: i32 = pdg_find_char(text, 40, 0)
+    if lp < 0 { return pdg_strip(text) }
+    return pdg_strip(pdg_sub(text, 0, lp))
+}
+
+function pdg_assume_args(text: string) -> string {
+    let lp: i32 = pdg_find_char(text, 40, 0)
+    if lp < 0 { return "" }
+    let rp: i32 = pdg_rfind_char(text, 41)
+    return pdg_strip(pdg_sub(text, lp + 1, rp))
+}
+
+# Split `args` on commas, stripping each ([] for blank args).
+function pdg_split_args(args: string, out: ptr<string>, cap: i32) -> i32 {
+    if pdg_len(pdg_strip(args)) == 0 { return 0 }
+    let n: i32 = pdg_len(args)
+    let p: ptr<u8> = args
+    let mut c: i32 = 0
+    let mut s: i32 = 0
+    let mut i: i32 = 0
+    while i <= n {
+        if i == n or p[i] == 44 {
+            if c < cap { out[c] = pdg_strip(pdg_sub(args, s, i)) }
+            c = c + 1
+            s = i + 1
+        }
+        i = i + 1
+    }
+    return c
+}
+
+function pdg_count_commas(s: string) -> i32 {
+    let n: i32 = pdg_len(s)
+    let p: ptr<u8> = s
+    let mut c: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 44 { c = c + 1 }
+        i = i + 1
+    }
+    return c
+}
+
+# PREMISE_EXPR templates (proof_substitution.py).
+function pdg_premise_template(addr: FlowcClaimAddress) -> string {
+    let c: string = addr.carrier
+    let s: string = addr.structure
+    let l: string = addr.law
+    if pdg_eq(c, "Nat") == 1 and pdg_eq(s, "addition") == 1 {
+        if pdg_eq(l, "zero is the left identity") == 1 { return "0 + {0} == {0}" }
+        if pdg_eq(l, "successor on the right steps the sum") == 1 { return "{0} + succ({1}) == succ({0} + {1})" }
+        if pdg_eq(l, "zero is the right identity") == 1 { return "{0} + 0 == {0}" }
+        if pdg_eq(l, "order does not matter") == 1 { return "{0} + {1} == {1} + {0}" }
+    }
+    if pdg_eq(c, "Eq") == 1 and pdg_eq(s, "equality") == 1 and pdg_eq(l, "everything equals itself") == 1 {
+        return "{0} == {0}"
+    }
+    if pdg_eq(c, "Bool") == 1 and pdg_eq(s, "disjunction") == 1 and pdg_eq(l, "order does not matter") == 1 {
+        return "{0} or {1} == {1} or {0}"
+    }
+    if pdg_eq(c, "Int") == 1 and pdg_eq(s, "multiplication") == 1 and pdg_eq(l, "squaring never yields a negative") == 1 {
+        return "{0} * {0} >= 0"
+    }
+    return ""
+}
+
+# re.sub(rf"\b{re.escape(name)}\b", value, out)
+function pdg_sub_word(s: string, name: string, value: string) -> string {
+    let n: i32 = pdg_len(s)
+    let m: i32 = pdg_len(name)
+    if m == 0 { return s }
+    let p: ptr<u8> = s
+    let q: ptr<u8> = name
+    let name_w0: i32 = pdg_is_word(q[0])
+    let name_w1: i32 = pdg_is_word(q[m - 1])
+    let mut out: string = ""
+    let mut pos: i32 = 0
+    let mut i: i32 = 0
+    while i + m <= n {
+        let mut hit: i32 = 0
+        if pdg_at(s, i, name) == 1 {
+            let mut before: i32 = 0
+            if i > 0 { before = pdg_is_word(p[i - 1]) }
+            let mut after: i32 = 0
+            if i + m < n { after = pdg_is_word(p[i + m]) }
+            # \b holds where word-ness changes.
+            if before != name_w0 and after != name_w1 {
+                hit = 1
+            }
+        }
+        if hit == 1 {
+            out = out + pdg_sub(s, pos, i) + value
+            i = i + m
+            pos = i
+        } else {
+            i = i + 1
+        }
+    }
+    return out + pdg_sub(s, pos, n)
+}
+
+# instantiate_premise_latex; "" for None.
+function pdg_premise_latex(ref: string, args: string, claim_expr: string, params: string) -> string {
+    let vals: ptr<string> = malloc(((pdg_count_commas(args) + 2) as i64) * 8) as ptr<string>
+    let addr: FlowcClaimAddress = flowc_claim_try_parse(ref)
+    if addr.ok == 1 {
+        let tmpl: string = pdg_premise_template(addr)
+        if pdg_len(tmpl) > 0 {
+            let nv: i32 = pdg_split_args(args, vals, pdg_count_commas(args) + 1)
+            let mut filled: string = tmpl
+            let mut i: i32 = 0
+            while i < nv {
+                filled = pdg_replace(filled, "{" + pdg_itoa(i) + "}", vals[i])
+                i = i + 1
+            }
+            return flowc_flow_expr_to_latex(filled)
+        }
+    }
+    if pdg_len(claim_expr) > 0 and pdg_len(params) > 0 {
+        let names: ptr<string> = malloc(((pdg_count_commas(params) + 2) as i64) * 8) as ptr<string>
+        let mut nn: i32 = 0
+        let np: i32 = pdg_len(params)
+        let pp: ptr<u8> = params
+        let mut s: i32 = 0
+        let mut i: i32 = 0
+        while i <= np {
+            if i == np or pp[i] == 44 {
+                let chunk: string = pdg_strip(pdg_sub(params, s, i))
+                if pdg_len(chunk) > 0 {
+                    let colon: i32 = pdg_find_char(chunk, 58, 0)
+                    if colon >= 0 {
+                        names[nn] = pdg_strip(pdg_sub(chunk, 0, colon))
+                    } else {
+                        names[nn] = chunk
+                    }
+                    nn = nn + 1
+                }
+                s = i + 1
+            }
+            i = i + 1
+        }
+        let nv: i32 = pdg_split_args(args, vals, pdg_count_commas(args) + 1)
+        if nn > 0 and nv > 0 and nn == nv {
+            let mut out: string = claim_expr
+            let mut k: i32 = 0
+            while k < nn {
+                out = pdg_sub_word(out, names[k], vals[k])
+                k = k + 1
+            }
+            return flowc_flow_expr_to_latex(out)
+        }
+    }
+    return ""
+}
+
+# claim_path.assume_premise (the non-hypothesis form).
+function pdg_assume_premise(ref: string, phrase: string, args: string, ref_tier: string, theorem_ref: string) -> string {
+    let t: string = flowc_claim_path_normalize_tier(ref_tier)
+    let mut kind: string = "prior claim"
+    if pdg_eq(t, "definition") == 1 { kind = "definitional clause" }
+    if pdg_eq(t, "axiom") == 1 { kind = "axiom" }
+    if pdg_eq(t, "derived") == 1 { kind = "derived fact" }
+    let addr: FlowcClaimAddress = flowc_claim_try_parse(ref)
+    if addr.ok == 1 {
+        return flowc_invoke_premise_mathematical(addr, phrase, args, kind, theorem_ref)
+    }
+    if pdg_len(args) > 0 {
+        return "We invoke the " + kind + ": " + phrase + " (instantiated for " + args + ")."
+    }
+    return "We invoke the " + kind + ": " + phrase + "."
+}
+
+# The theorem catalog (build_theorem_catalog_from_docs): claim path ->
+# "<tier>\n<number>". An empty catalog stands for None.
+function pdg_catalog_add(cat: ptr<PdgMap>, d: ptr<PdgDoc>) -> void {
+    let mut k: i32 = 0
+    while k < d[0].nthm {
+        let t: PdgThm = d[0].thms[k]
+        pdg_map_set(cat, t.claim_path, pdg_tier_or_derived(t.tier) + "\n" + pdg_itoa(t.number))
+        k = k + 1
+    }
+}
+
+# _lookup_theorem_ref: "<Tier label> <number>", or "".
+function pdg_catalog_ref(cat: ptr<PdgMap>, ref: string) -> string {
+    if cat[0].n == 0 { return "" }
+    let e: string = pdg_map_get(cat, ref, "")
+    if pdg_len(e) == 0 { return "" }
+    let nl: i32 = pdg_find_char(e, 10, 0)
+    return flowc_claim_path_tier_label(pdg_sub(e, 0, nl)) + " " + pdg_sub(e, nl + 1, pdg_len(e))
+}
+
+# _natural_assume
+function pdg_natural_assume(d: ptr<PdgDoc>, t: ptr<PdgThm>, text: string, tiers: ptr<PdgMap>, cat: ptr<PdgMap>, ctx: ptr<i32>, nctx: i32) -> string {
+    let ref: string = pdg_assume_ref(text)
+    let phrase: string = pdg_claim_phrase(ref)
+    let args: string = pdg_assume_args(text)
+    if pdg_eq(ref, t[0].claim_path) == 1 {
+        let mut var: string = "n"
+        if pdg_len(args) > 0 {
+            let c: i32 = pdg_find_char(args, 44, 0)
+            if c >= 0 {
+                var = pdg_strip(pdg_sub(args, 0, c))
+            } else {
+                var = pdg_strip(args)
+            }
+        } else {
+            if pdg_len(t[0].params) > 0 {
+                let c: i32 = pdg_find_char(t[0].params, 58, 0)
+                if c >= 0 {
+                    var = pdg_strip(pdg_sub(t[0].params, 0, c))
+                } else {
+                    var = pdg_strip(t[0].params)
+                }
+            }
+        }
+        let lead: string = pdg_under_refs(ctx, nctx)
+        let body: string = "We cross the inductive boundary: assume the claim holds for " + var + " (the induction hypothesis)."
+        if pdg_len(lead) > 0 {
+            return lead + pdg_lower_first(body)
+        }
+        return body
+    }
+    let ref_tier: string = pdg_map_get(tiers, ref, "derived")
+    return pdg_assume_premise(ref, phrase, args, ref_tier, pdg_catalog_ref(cat, ref))
+}
+
+# _natural_let
+function pdg_natural_let(text: string, ctx: ptr<i32>, nctx: i32) -> string {
+    let lead: string = pdg_under_refs(ctx, nctx)
+    let t: string = pdg_strip(text)
+    let n: i32 = pdg_len(t)
+    let p: ptr<u8> = t
+    let mut body: string = ""
+    # re.match(r"(\w+)\s*=\s*pred\((\w+)\)", t)
+    let mut i: i32 = 0
+    while i < n and pdg_is_word(p[i]) == 1 { i = i + 1 }
+    let ne: i32 = i
+    if ne > 0 {
+        while i < n and pdg_is_ws(p[i]) == 1 { i = i + 1 }
+        if i < n and p[i] == 61 {
+            i = i + 1
+            while i < n and pdg_is_ws(p[i]) == 1 { i = i + 1 }
+            if pdg_at(t, i, "pred(") == 1 {
+                let a0: i32 = i + 5
+                let mut j: i32 = a0
+                while j < n and pdg_is_word(p[j]) == 1 { j = j + 1 }
+                if j > a0 and j < n and p[j] == 41 {
+                    body = "let " + pdg_sub(t, 0, ne) + " denote the predecessor of " + pdg_sub(t, a0, j) + "."
+                }
+            }
+        }
+    }
+    if pdg_len(body) == 0 {
+        if pdg_contains(text, "pred(n)") == 1 {
+            body = "let k denote the predecessor of n."
+        } else {
+            body = "let " + text + "."
+        }
+    }
+    if pdg_len(lead) > 0 {
+        return lead + body
+    }
+    return pdg_upper_first(body)
+}
+
+# GEOMETRY_DIRECT
+function pdg_geometry_direct(claim_path: string) -> string {
+    if pdg_eq(claim_path, "«Geometry» «intersecting lines» «vertical angles are equal»") == 1 {
+        return "α and β form a straight angle, and so do β and α′, hence α equals α′"
+    }
+    if pdg_eq(claim_path, "«Geometry» «right triangle» «the Pythagorean relation holds»") == 1 {
+        return "the square on the hypotenuse decomposes into the two squares on the legs"
+    }
+    return ""
+}
+
+# GEOMETRY_DEDUCTION
+function pdg_geometry_deduction(claim_path: string, prem: string) -> string {
+    if pdg_eq(claim_path, "«Geometry» «isosceles triangle» «base angles are equal»") == 1 and pdg_eq(prem, "«Geometry» «triangle congruence» «side-angle-side implies congruence»") == 1 {
+        return "the two halves of the isosceles triangle are congruent by SAS, so the base angles match"
+    }
+    if pdg_eq(claim_path, "«Geometry» «triangle» «interior angles sum to two right angles»") == 1 and pdg_eq(prem, "«Geometry» «parallel lines» «alternate angles are equal»") == 1 {
+        return "a line through the apex parallel to the base makes alternate angles with the sides, so the three interior angles line up on a straight line"
+    }
+    if pdg_eq(claim_path, "«Geometry» «circle» «Thales right angle in semicircle»") == 1 and pdg_eq(prem, "«Geometry» «triangle» «interior angles sum to two right angles»") == 1 {
+        return "triangle ABC has two equal base angles at A and B because OA = OB, so the angle at C is the remaining half of two right angles"
+    }
+    if pdg_eq(claim_path, "«Geometry» «circle» «inscribed angle is half the central angle»") == 1 and pdg_eq(prem, "«Geometry» «circle» «radii from the centre are equal»") == 1 {
+        return "the two radii OA and OB form an isosceles triangle, so the inscribed angle at P is half the central angle at O"
+    }
+    if pdg_eq(claim_path, "«Analysis» «Taylor series» «sin equals its Maclaurin series near zero»") == 1 and pdg_eq(prem, "«Analysis» «smooth functions» «derivatives of sine are known»") == 1 {
+        return "the Maclaurin coefficients match the known derivatives of sine at zero, so each partial sum agrees with sin(x) to the next order"
+    }
+    return ""
+}
+
+# _natural_therefore
+function pdg_natural_therefore(
+    text: string,
+    is_base: i32,
+    is_final: i32,
+    npremise: i32,
+    premise_nums: ptr<i32>,
+    premise_ref_str: string,
+    tier: string,
+    in_case: i32,
+    case_close: ptr<i32>,
+    ncase_close: i32,
+    claim_path: string,
+    premise_claims: ptr<string>,
+    nclaims: i32
+) -> string {
+    let plain: string = flowc_flow_expr_to_mathematical_english(text)
+    let mut from_phrase: string = ""
+    if pdg_len(premise_ref_str) > 0 { from_phrase = "From " + premise_ref_str + ", " }
+    if npremise == 0 {
+        let mut body: string = ""
+        let direct: string = pdg_geometry_direct(claim_path)
+        if pdg_eq(tier, "definition") == 1 {
+            body = "This follows directly from the definition: " + plain + "."
+        } else {
+            if pdg_eq(tier, "axiom") == 1 {
+                body = "This holds immediately by the stated axiom: " + plain + "."
+            } else {
+                if in_case == 1 and is_final == 0 {
+                    body = "In this case, we can deduce that " + plain + "."
+                } else {
+                    if in_case == 1 and is_final == 1 {
+                        body = "In this case, this implies " + plain + "."
+                    } else {
+                        if is_final == 1 and pdg_len(direct) > 0 {
+                            body = direct + ", so " + plain + "."
+                        } else {
+                            body = "We can deduce that " + plain + "."
+                        }
+                    }
+                }
+            }
+        }
+        if is_final == 1 { return body + " Hence proven." }
+        return body
+    }
+    if nclaims > 0 and pdg_len(claim_path) > 0 {
+        let mut i: i32 = 0
+        while i < nclaims {
+            let bridge: string = pdg_geometry_deduction(claim_path, premise_claims[i])
+            if pdg_len(bridge) > 0 and is_final == 1 and in_case == 0 {
+                return from_phrase + bridge + ", so " + plain + ". Hence proven."
+            }
+            i = i + 1
+        }
+        if is_final == 1 and in_case == 0 and pdg_contains(claim_path, "«Euclid Book I»") == 1 and pdg_len(premise_ref_str) > 0 {
+            return from_phrase + "by the chain of results established in Book I (" + premise_ref_str + "), we obtain " + plain + ". Hence proven."
+        }
+    }
+    if is_base == 1 {
+        let mut base_refs: string = premise_ref_str
+        if pdg_len(base_refs) == 0 { base_refs = pdg_fmt_refs(premise_nums, npremise) }
+        return from_phrase + "we can deduce that " + plain + ". This establishes the base case (see " + base_refs + "). Hence proven."
+    }
+    if is_final == 1 and in_case == 1 and ncase_close > 0 {
+        return from_phrase + "this implies " + plain + ". Together with the other cases (" + pdg_fmt_refs(case_close, ncase_close) + "), the goal is discharged. Hence proven."
+    }
+    if is_final == 1 {
+        return from_phrase + "this implies " + plain + ". Hence proven."
+    }
+    if in_case == 1 {
+        return from_phrase + "this implies " + plain + " in this case."
+    }
+    return from_phrase + "we can deduce that " + plain + "."
+}
+
+# ── Tutorial lines ───────────────────────────────────────────────
+
+function pdg_add_line(lines: ptr<PdgLine>, n: ptr<i32>, number: i32, english: string, math: string, refs: ptr<i32>, nrefs: i32) -> void {
+    let k: i32 = n[0]
+    lines[k].number = number
+    lines[k].english = english
+    lines[k].math = math
+    lines[k].is_goal = 0
+    let r: ptr<i32> = malloc(((nrefs + 1) as i64) * 4) as ptr<i32>
+    let mut i: i32 = 0
+    while i < nrefs {
+        r[i] = refs[i]
+        i = i + 1
+    }
+    lines[k].refs = r
+    lines[k].nrefs = nrefs
+    n[0] = k + 1
+}
+
+function pdg_step_kind(d: ptr<PdgDoc>, t: ptr<PdgThm>, i: i32) -> i32 {
+    return d[0].steps[t[0].step0 + i].kind
+}
+
+# _is_induction_proof
+function pdg_is_induction(d: ptr<PdgDoc>, t: ptr<PdgThm>) -> i32 {
+    let mut has_if: i32 = 0
+    let mut has_else: i32 = 0
+    let mut recursive: i32 = 0
+    let lp: i32 = pdg_find_char(t[0].claim_path, 40, 0)
+    let mut head: string = t[0].claim_path
+    if lp >= 0 { head = pdg_sub(head, 0, lp) }
+    let mut i: i32 = 0
+    while i < t[0].nsteps {
+        let s: PdgStep = d[0].steps[t[0].step0 + i]
+        if s.kind == PDG_IF { has_if = 1 }
+        if s.kind == PDG_CASE and pdg_eq(s.detail, "else") == 1 { has_else = 1 }
+        if s.kind == PDG_ASSUME and pdg_contains(s.text, head) == 1 { recursive = 1 }
+        i = i + 1
+    }
+    if has_if == 1 and has_else == 1 and recursive == 1 { return 1 }
+    return 0
+}
+
+function pdg_is_case_analysis(d: ptr<PdgDoc>, t: ptr<PdgThm>) -> i32 {
+    let mut has_if: i32 = 0
+    let mut i: i32 = 0
+    while i < t[0].nsteps {
+        if pdg_step_kind(d, t, i) == PDG_IF { has_if = 1 }
+        i = i + 1
+    }
+    if has_if == 1 and pdg_is_induction(d, t) == 0 { return 1 }
+    return 0
+}
+
+function pdg_one(v: i32) -> ptr<i32> {
+    let r: ptr<i32> = malloc(8) as ptr<i32>
+    r[0] = v
+    return r
+}
+
+# build_tutorial_lines. Returns the line count; lines[0] is the goal.
+function pdg_tutorial(d: ptr<PdgDoc>, t: ptr<PdgThm>, tiers: ptr<PdgMap>, cat: ptr<PdgMap>, lines: ptr<PdgLine>) -> i32 {
+    let nl: ptr<i32> = malloc(8) as ptr<i32>
+    nl[0] = 0
+    let none: ptr<i32> = malloc(8) as ptr<i32>
+    lines[0].number = 0
+    lines[0].english = pdg_claim_sentence(t)
+    lines[0].math = pdg_claim_math_latex(t)
+    lines[0].is_goal = 1
+    lines[0].refs = none
+    lines[0].nrefs = 0
+    nl[0] = 1
+    let mut step_num: i32 = 1
+
+    let claim: FlowcClaimAddress = flowc_claim_try_parse(t[0].claim_path)
+    if claim.ok == 1 and pdg_len(t[0].tier) > 0 {
+        pdg_add_line(lines, nl, step_num, flowc_tier_opening_mathematical(t[0].tier, claim), "", none, 0)
+        step_num = step_num + 1
+    }
+
+    let induction: i32 = pdg_is_induction(d, t)
+    let case_analysis: i32 = pdg_is_case_analysis(d, t)
+    if case_analysis == 1 {
+        pdg_add_line(lines, nl, step_num, "We split into exhaustive cases. The claim must hold in each one.", "", none, 0)
+        step_num = step_num + 1
+    }
+    let mut case_num: i32 = 0
+    if induction == 1 {
+        let mut var: string = "n"
+        if pdg_len(t[0].params) > 0 {
+            let c: i32 = pdg_find_char(t[0].params, 58, 0)
+            if c >= 0 {
+                var = pdg_strip(pdg_sub(t[0].params, 0, c))
+            } else {
+                var = pdg_strip(t[0].params)
+            }
+        }
+        pdg_add_line(lines, nl, step_num, "We proceed by induction on " + var + ": first the base case, then the inductive step.", "", none, 0)
+        step_num = step_num + 1
+    }
+
+    let mut in_base: i32 = induction
+    let mut seen_else: i32 = 0
+    let cap: i32 = t[0].nsteps + 8
+    let pending: ptr<i32> = malloc((cap as i64) * 4) as ptr<i32>
+    let mut npending: i32 = 0
+    let mut therefore_count: i32 = 0
+    let mut total_therefore: i32 = 0
+    let mut i0: i32 = 0
+    while i0 < t[0].nsteps {
+        if pdg_step_kind(d, t, i0) == PDG_THEREFORE { total_therefore = total_therefore + 1 }
+        i0 = i0 + 1
+    }
+    let mut current_case_step: i32 = 0 - 1
+    let case_open: ptr<i32> = malloc((cap as i64) * 4) as ptr<i32>
+    let mut ncase_open: i32 = 0
+    let mut inductive_step_num: i32 = 0
+    let mut base_case_step_num: i32 = 0
+    let mut split_step_num: i32 = 0
+    # assume_meta: step number -> (ref, args); stored by step number.
+    let meta_cap: i32 = cap * 2 + 8
+    let meta_ref: ptr<string> = malloc((meta_cap as i64) * 8) as ptr<string>
+    let meta_has: ptr<i32> = malloc((meta_cap as i64) * 4) as ptr<i32>
+    let mut z: i32 = 0
+    while z < meta_cap {
+        meta_has[z] = 0
+        z = z + 1
+    }
+    if case_analysis == 1 and nl[0] > 0 and lines[nl[0] - 1].is_goal == 0 {
+        split_step_num = lines[nl[0] - 1].number
+    }
+
+    let premise: ptr<i32> = malloc((cap as i64) * 4 + 8) as ptr<i32>
+    let prem_labels: ptr<string> = malloc((cap as i64) * 8 + 8) as ptr<string>
+    let prem_claims: ptr<string> = malloc((cap as i64) * 8 + 8) as ptr<string>
+    let uniq: ptr<i32> = malloc((cap as i64) * 4 + 8) as ptr<i32>
+
+    let mut si: i32 = 0
+    while si < t[0].nsteps {
+        let st: PdgStep = d[0].steps[t[0].step0 + si]
+        if st.kind == PDG_IF and case_analysis == 1 {
+            case_num = case_num + 1
+            let cond: string = flowc_mathematical_case_condition(st.detail)
+            if split_step_num != 0 {
+                let r: ptr<i32> = pdg_one(split_step_num)
+                pdg_add_line(lines, nl, step_num, "Case " + pdg_itoa(case_num) + " (see " + pdg_fmt_refs(r, 1) + "): suppose " + cond + ".", "", r, 1)
+            } else {
+                pdg_add_line(lines, nl, step_num, "Case " + pdg_itoa(case_num) + ": suppose " + cond + ".", "", none, 0)
+            }
+            current_case_step = step_num
+            case_open[ncase_open] = step_num
+            ncase_open = ncase_open + 1
+            npending = 0
+            step_num = step_num + 1
+        } else {
+            if st.kind == PDG_IF and induction == 1 {
+                let cond: string = flowc_mathematical_case_condition(st.detail)
+                pdg_add_line(lines, nl, step_num, "Consider the base case in which " + cond + ".", "", none, 0)
+                base_case_step_num = step_num
+                current_case_step = step_num
+                npending = 0
+                step_num = step_num + 1
+                in_base = 1
+            } else {
+                if st.kind == PDG_CASE and case_analysis == 1 and induction == 0 {
+                    npending = 0
+                    case_num = case_num + 1
+                    let mut refs: ptr<i32> = none
+                    let mut nrefs: i32 = 0
+                    if split_step_num != 0 {
+                        refs = pdg_one(split_step_num)
+                        nrefs = 1
+                    }
+                    let see: string = pdg_fmt_refs(refs, nrefs)
+                    if pdg_eq(st.detail, "else") == 1 {
+                        pdg_add_line(lines, nl, step_num, "Case " + pdg_itoa(case_num) + " (see " + see + "): neither disjunct holds.", "", refs, nrefs)
+                    } else {
+                        let cond: string = flowc_mathematical_case_condition(pdg_replace(st.detail, "case ", ""))
+                        pdg_add_line(lines, nl, step_num, "Case " + pdg_itoa(case_num) + " (see " + see + "): suppose " + cond + ".", "", refs, nrefs)
+                    }
+                    current_case_step = step_num
+                    case_open[ncase_open] = step_num
+                    ncase_open = ncase_open + 1
+                    step_num = step_num + 1
+                } else {
+                    if st.kind == PDG_CASE and pdg_eq(st.detail, "else") == 1 and induction == 1 {
+                        if seen_else == 0 {
+                            pdg_add_line(lines, nl, step_num, "For the inductive step, suppose the claim holds for all smaller values.", "", none, 0)
+                            inductive_step_num = step_num
+                            current_case_step = step_num
+                            npending = 0
+                            step_num = step_num + 1
+                            seen_else = 1
+                            in_base = 0
+                        }
+                    } else {
+                        if st.kind == PDG_ASSUME {
+                            let ref: string = pdg_assume_ref(st.text)
+                            let args: string = pdg_assume_args(st.text)
+                            let mut ctx: ptr<i32> = none
+                            let mut nctx: i32 = 0
+                            if pdg_eq(ref, t[0].claim_path) == 1 and inductive_step_num != 0 {
+                                ctx = pdg_one(inductive_step_num)
+                                nctx = 1
+                            } else {
+                                if in_base == 1 and base_case_step_num != 0 and pdg_eq(ref, t[0].claim_path) == 0 {
+                                    ctx = pdg_one(base_case_step_num)
+                                    nctx = 1
+                                }
+                            }
+                            let mut ce: string = ""
+                            let mut pa: string = ""
+                            if pdg_eq(ref, t[0].claim_path) == 1 {
+                                ce = t[0].claim_expr
+                                pa = t[0].params
+                            }
+                            let premise_latex: string = pdg_premise_latex(ref, args, ce, pa)
+                            let english: string = pdg_natural_assume(d, t, st.text, tiers, cat, ctx, nctx)
+                            pdg_add_line(lines, nl, step_num, english, premise_latex, ctx, nctx)
+                            if step_num < meta_cap {
+                                meta_ref[step_num] = ref
+                                meta_has[step_num] = 1
+                            }
+                            pending[npending] = step_num
+                            npending = npending + 1
+                            step_num = step_num + 1
+                        } else {
+                            if st.kind == PDG_LET {
+                                let mut ctx: ptr<i32> = none
+                                let mut nctx: i32 = 0
+                                if inductive_step_num != 0 and in_base == 0 {
+                                    ctx = pdg_one(inductive_step_num)
+                                    nctx = 1
+                                }
+                                pdg_add_line(lines, nl, step_num, pdg_natural_let(st.text, ctx, nctx), "", ctx, nctx)
+                                pending[npending] = step_num
+                                npending = npending + 1
+                                step_num = step_num + 1
+                            } else {
+                                if st.kind == PDG_THEREFORE {
+                                    therefore_count = therefore_count + 1
+                                    let mut np: i32 = 0
+                                    if current_case_step >= 0 {
+                                        premise[np] = current_case_step
+                                        np = np + 1
+                                    }
+                                    let mut q: i32 = 0
+                                    while q < npending {
+                                        premise[np] = pending[q]
+                                        np = np + 1
+                                        q = q + 1
+                                    }
+                                    let mut is_final: i32 = 0
+                                    if therefore_count == total_therefore { is_final = 1 }
+                                    # _format_premise_refs
+                                    let nu: i32 = pdg_sorted_unique(premise, np, uniq)
+                                    let mut u: i32 = 0
+                                    while u < nu {
+                                        let pn: i32 = uniq[u]
+                                        let mut lab: string = "step " + pdg_itoa(pn)
+                                        if pn >= 0 and pn < meta_cap and meta_has[pn] == 1 {
+                                            if pdg_eq(meta_ref[pn], t[0].claim_path) == 0 {
+                                                let tr: string = pdg_catalog_ref(cat, meta_ref[pn])
+                                                if pdg_len(tr) > 0 { lab = tr }
+                                            }
+                                        }
+                                        prem_labels[u] = lab
+                                        u = u + 1
+                                    }
+                                    let premise_ref_str: string = pdg_join_labels(prem_labels, nu)
+                                    let mut nclaims: i32 = 0
+                                    let mut w: i32 = 0
+                                    while w < np {
+                                        let pn: i32 = premise[w]
+                                        if pn >= 0 and pn < meta_cap and meta_has[pn] == 1 and pdg_eq(meta_ref[pn], t[0].claim_path) == 0 {
+                                            prem_claims[nclaims] = meta_ref[pn]
+                                            nclaims = nclaims + 1
+                                        }
+                                        w = w + 1
+                                    }
+                                    let mut is_base: i32 = 0
+                                    if in_base == 1 and induction == 1 { is_base = 1 }
+                                    let mut ncc: i32 = 0
+                                    if is_final == 1 and case_analysis == 1 { ncc = ncase_open }
+                                    let english: string = pdg_natural_therefore(st.text, is_base, is_final, np, premise, premise_ref_str, t[0].tier, case_analysis, case_open, ncc, t[0].claim_path, prem_claims, nclaims)
+                                    pdg_add_line(lines, nl, step_num, english, flowc_flow_expr_to_latex(st.text), premise, np)
+                                    step_num = step_num + 1
+                                    npending = 0
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        si = si + 1
+    }
+
+    if step_num == 1 and pdg_len(t[0].claim_expr) > 0 {
+        let plain: string = flowc_flow_expr_to_mathematical_english(t[0].claim_expr)
+        pdg_add_line(lines, nl, 1, "The claim follows immediately: " + plain + ". Hence proven.", flowc_flow_expr_to_latex(t[0].claim_expr), none, 0)
+    }
+    return nl[0]
+}
+
+# ── Rendering ────────────────────────────────────────────────────
+
+# Split @needs into its entries: [s.strip() for s in needs.split(",") if s.strip()]
+function pdg_needs(needs: string, out: ptr<string>) -> i32 {
+    let n: i32 = pdg_len(needs)
+    let p: ptr<u8> = needs
+    let mut c: i32 = 0
+    let mut s: i32 = 0
+    let mut i: i32 = 0
+    while i <= n {
+        if i == n or p[i] == 44 {
+            let part: string = pdg_strip(pdg_sub(needs, s, i))
+            if pdg_len(part) > 0 {
+                out[c] = part
+                c = c + 1
+            }
+            s = i + 1
+        }
+        i = i + 1
+    }
+    return c
+}
+
+function pdg_lines_cap(t: ptr<PdgThm>) -> i32 {
+    return t[0].nsteps * 2 + 16
+}
+
+# _render_theorem_markdown
+function pdg_render_thm_md(d: ptr<PdgDoc>, t: ptr<PdgThm>, tiers: ptr<PdgMap>) -> string {
+    let mut out: string = ""
+    let claim: FlowcClaimAddress = flowc_claim_try_parse(t[0].claim_path)
+    if claim.ok == 1 {
+        out = out + "**Coordinate.** " + flowc_addr_coordinate_display(claim) + " · **" + flowc_claim_path_tier_label(pdg_tier_or_derived(t[0].tier)) + "**\n\n"
+    }
+    if pdg_len(t[0].from_source) > 0 {
+        out = out + "*Source: " + t[0].from_source + "*\n\n"
+    }
+    let needs: ptr<string> = malloc(((pdg_count_commas(t[0].needs) + 2) as i64) * 8) as ptr<string>
+    let nn: i32 = pdg_needs(t[0].needs, needs)
+    if nn > 0 {
+        let mut s: string = ""
+        let mut i: i32 = 0
+        while i < nn {
+            if i > 0 { s = s + ", " }
+            s = s + pdg_claim_phrase(needs[i])
+            i = i + 1
+        }
+        out = out + "*Built on: " + s + "*\n\n"
+    }
+    let lines: ptr<PdgLine> = malloc((pdg_lines_cap(t) as i64) * 48) as ptr<PdgLine>
+    let mut none: PdgMap = flowc_pdg_map_new(4)
+    let n: i32 = pdg_tutorial(d, t, tiers, &none, lines)
+    if n > 0 and lines[0].is_goal == 1 {
+        out = out + "> **Goal.** " + lines[0].english + "\n"
+        if pdg_len(lines[0].math) > 0 {
+            out = out + ">\n> $$" + lines[0].math + "$$\n"
+        }
+        out = out + "\n"
+    }
+    if pdg_len(t[0].diagram_svg) > 0 {
+        out = out + "**Figure.**\n\n![" + t[0].diagram_svg + "](" + t[0].diagram_svg + ")\n\n"
+    }
+    out = out + "| | **Proof** | | **Math** |\n|:---:|:---|:---:|:---|\n"
+    let mut i: i32 = 0
+    let mut ntraced: i32 = 0
+    while i < n {
+        if lines[i].is_goal == 0 {
+            let c: string = pdg_circled(lines[i].number)
+            let mut mc: string = ""
+            let mut c2: string = ""
+            if pdg_len(lines[i].math) > 0 {
+                mc = "$" + lines[i].math + "$"
+                c2 = c
+            }
+            out = out + "| " + c + " | " + lines[i].english + " | " + c2 + " | " + mc + " |\n"
+            if lines[i].nrefs > 0 { ntraced = ntraced + 1 }
+        }
+        i = i + 1
+    }
+    if ntraced > 0 {
+        out = out + "\n**Trace.** Each step lists the earlier steps it depends on.\n\n| Step | Uses |\n|:---:|:---|\n"
+        let mut j: i32 = 0
+        while j < n {
+            if lines[j].is_goal == 0 and lines[j].nrefs > 0 {
+                out = out + "| " + pdg_circled(lines[j].number) + " | " + pdg_fmt_refs(lines[j].refs, lines[j].nrefs) + " |\n"
+            }
+            j = j + 1
+        }
+    }
+    out = out + "\n"
+    if claim.ok == 1 {
+        out = out + "`" + flowc_addr_coordinate_display(claim) + "`"
+    } else {
+        out = out + "`" + t[0].claim_path + "`"
+    }
+    return out
+}
+
+# rstrip() of trailing whitespace.
+function pdg_rstrip(s: string) -> string {
+    let p: ptr<u8> = s
+    let mut b: i32 = pdg_len(s)
+    while b > 0 and pdg_is_ws(p[b - 1]) == 1 { b = b - 1 }
+    return pdg_sub(s, 0, b)
+}
+
+# render_english
+export function flowc_proof_render_md(d: ptr<PdgDoc>, stem: string, tiers: ptr<PdgMap>) -> string {
+    let mut title: string = d[0].modname
+    if pdg_len(title) == 0 { title = stem }
+    let mut out: string = "# " + title + "\n\n"
+    if pdg_len(d[0].means) > 0 {
+        out = out + "*" + d[0].means + "*\n\n"
+    }
+    if pdg_len(d[0].from_source) > 0 {
+        out = out + "**Source.** " + d[0].from_source + "\n\n"
+    }
+    let mut k: i32 = 0
+    while k < d[0].nthm {
+        let t: ptr<PdgThm> = &d[0].thms[k]
+        let title2: string = pdg_facet_title(t[0].claim_path, t[0].means)
+        let label: string = flowc_claim_path_tier_label(pdg_tier_or_derived(t[0].tier))
+        out = out + "## " + label + " " + pdg_itoa(t[0].number) + ": " + title2 + "\n\n"
+        out = out + pdg_render_thm_md(d, t, tiers) + "\n\n"
+        k = k + 1
+    }
+    return pdg_rstrip(out) + "\n"
+}
+
+# _render_theorem_latex_block (catalog = this document's theorems)
+function pdg_render_thm_tex(d: ptr<PdgDoc>, t: ptr<PdgThm>, tiers: ptr<PdgMap>, cat: ptr<PdgMap>, book_mode: i32) -> string {
+    let label: string = pdg_slug_label(t[0].claim_path)
+    let title: string = pdg_facet_title(t[0].claim_path, t[0].means)
+    let tier: string = flowc_claim_path_tier_label(pdg_tier_or_derived(t[0].tier))
+    let mut out: string = "\\bigskip\n"
+    out = out + "\\noindent{\\large \\textbf{" + tier + " " + pdg_itoa(t[0].number) + ".} \\textit{" + pdg_latex_escape(title) + "} \\hfill " + flowc_claim_path_latex(t[0].claim_path) + "}\\par\n"
+    if book_mode == 1 {
+        out = out + "\\addcontentsline{toc}{subsection}{" + pdg_latex_escape(tier + " " + pdg_itoa(t[0].number) + ": " + title) + "}\n"
+    }
+    let claim: FlowcClaimAddress = flowc_claim_try_parse(t[0].claim_path)
+    if claim.ok == 1 {
+        out = out + "\\smallskip\\noindent\\textit{Coordinate: " + flowc_addr_coordinate_latex(claim) + "}\\par\n"
+    }
+    if pdg_len(t[0].from_source) > 0 {
+        out = out + "\\smallskip\\noindent\\textit{Source: " + pdg_latex_escape(t[0].from_source) + "}\\par\n"
+    }
+    let needs: ptr<string> = malloc(((pdg_count_commas(t[0].needs) + 2) as i64) * 8) as ptr<string>
+    let nn: i32 = pdg_needs(t[0].needs, needs)
+    if cat[0].n > 0 and nn > 0 {
+        let mut s: string = ""
+        let mut i: i32 = 0
+        while i < nn {
+            if i > 0 { s = s + ", " }
+            let need: string = needs[i]
+            let e: string = pdg_map_get(cat, need, "")
+            if pdg_len(e) > 0 {
+                let nl: i32 = pdg_find_char(e, 10, 0)
+                s = s + "\\hyperref[thm:" + pdg_slug_label(need) + "]{" + flowc_claim_path_tier_label(pdg_sub(e, 0, nl)) + " " + pdg_sub(e, nl + 1, pdg_len(e)) + "}"
+            } else {
+                s = s + pdg_latex_escape(pdg_claim_phrase(needs[i]))
+            }
+            i = i + 1
+        }
+        out = out + "\\smallskip\\noindent\\textit{Built on: " + s + "}\\par\n"
+    }
+    let lines: ptr<PdgLine> = malloc((pdg_lines_cap(t) as i64) * 48) as ptr<PdgLine>
+    let n: i32 = pdg_tutorial(d, t, tiers, cat, lines)
+    if n > 0 and lines[0].is_goal == 1 {
+        out = out + "\\medskip\n"
+        out = out + "\\noindent\\textbf{Goal.} " + pdg_latex_escape(lines[0].english) + "\\par\n"
+        if pdg_len(lines[0].math) > 0 {
+            out = out + "\\noindent$\\displaystyle " + lines[0].math + "$\\par\n"
+        }
+    }
+    out = out + "\\medskip\n\\noindent\n"
+    out = out + "\\begin{tabular}{@{} >{\\raggedright\\arraybackslash}p{0.06\\textwidth} >{\\raggedright\\arraybackslash}p{0.47\\textwidth} >{\\raggedleft\\arraybackslash}p{0.41\\textwidth} @{}}\n"
+    out = out + "\\textbf{\\#} & \\textbf{Proof} & \\textbf{Mathematics} \\\\\n"
+    out = out + "\\midrule\n"
+    let mut i: i32 = 0
+    while i < n {
+        if lines[i].is_goal == 0 {
+            let mut right: string = "&"
+            if pdg_len(lines[i].math) > 0 {
+                right = "& $\\displaystyle " + lines[i].math + "$"
+            }
+            out = out + "\\textbf{" + pdg_itoa(lines[i].number) + ".} & " + pdg_latex_escape(lines[i].english) + " " + right + " \\\\[0.45em]\n"
+        }
+        i = i + 1
+    }
+    out = out + "\\bottomrule\n\\end{tabular}\n"
+    out = out + "\\label{thm:" + label + "}\n"
+    out = out + "\\par\\medskip\\hrule"
+    return out
+}
+
+# render_latex
+export function flowc_proof_render_tex(d: ptr<PdgDoc>, stem: string, tiers: ptr<PdgMap>) -> string {
+    let mut out: string = "\\documentclass[11pt]{article}\n"
+    out = out + "\\usepackage[T1]{fontenc}\n"
+    out = out + "\\usepackage{textcomp}\n"
+    out = out + "\\usepackage[margin=0.75in]{geometry}\n"
+    out = out + "\\usepackage{amsmath,amssymb,amsthm}\n"
+    out = out + "\\usepackage{array,booktabs}\n"
+    out = out + "\\usepackage{hyperref}\n"
+    out = out + "\\setlength{\\parindent}{0pt}\n"
+    out = out + "\\newtheorem{theorem}{Theorem}\n"
+    out = out + "\\theoremstyle{definition}\n"
+    out = out + "\\newtheorem{definition}{Definition}\n"
+    out = out + "\\title{" + pdg_latex_escape("Flow Proof Artifact: " + stem) + "}\n"
+    out = out + "\\author{Generated by \\texttt{flow doc proof}}\n"
+    out = out + "\\date{Flow Proof Book}\n"
+    out = out + "\\begin{document}\n"
+    out = out + "\\maketitle\n"
+    if pdg_len(d[0].means) > 0 {
+        out = out + pdg_latex_escape(d[0].means) + "\\\\[0.5em]\n"
+    }
+    if pdg_len(d[0].from_source) > 0 {
+        out = out + "\\textbf{Source.} " + pdg_latex_escape(d[0].from_source) + "\\\\[0.5em]\n"
+    }
+    let mut cat: PdgMap = flowc_pdg_map_new(d[0].nthm + 8)
+    pdg_catalog_add(&cat, d)
+    let mut k: i32 = 0
+    while k < d[0].nthm {
+        out = out + pdg_render_thm_tex(d, &d[0].thms[k], tiers, &cat, 0) + "\n"
+        k = k + 1
+    }
+    return out + "\\end{document}\n"
+}
+
+# ── Artifacts ────────────────────────────────────────────────────
+
+function pdg_write(path: string, text: string) -> i32 {
+    let rc: i32 = flowc_write_file(path, text as ptr<u8>, pdg_len(text))
+    if rc != 0 {
+        printf("flowc proof: cannot write %s\n", path)
+    }
+    return rc
+}
+
+# mkdir -p
+function pdg_mkdir_p(dir: string) -> void {
+    let n: i32 = pdg_len(dir)
+    let p: ptr<u8> = dir
+    let mut i: i32 = 1
+    while i <= n {
+        if i == n or p[i] == 47 {
+            let _r: i32 = flowc_io_mkdir(pdg_sub(dir, 0, i))
+        }
+        i = i + 1
+    }
+}
+
+# Path(dir) / name, as pathlib prints it: no "./" prefix, no doubled "/".
+function pdg_join(dir: string, name: string) -> string {
+    let mut d: string = dir
+    let dp: ptr<u8> = d
+    let mut n: i32 = pdg_len(d)
+    while n > 1 and dp[n - 1] == 47 { n = n - 1 }
+    d = pdg_sub(d, 0, n)
+    while pdg_starts(d, "./") == 1 { d = pdg_sub(d, 2, pdg_len(d)) }
+    if pdg_len(d) == 0 or pdg_eq(d, ".") == 1 { return name }
+    if pdg_eq(d, "/") == 1 { return "/" + name }
+    return d + "/" + name
+}
+
+function pdg_dirname(path: string) -> string {
+    let s: i32 = pdg_rfind_char(path, 47)
+    if s < 0 { return "." }
+    if s == 0 { return "/" }
+    return pdg_sub(path, 0, s)
+}
+
+# Path(path).stem
+function pdg_stem(path: string) -> string {
+    let s: i32 = pdg_rfind_char(path, 47)
+    let base: string = pdg_sub(path, s + 1, pdg_len(path))
+    let dot: i32 = pdg_rfind_char(base, 46)
+    if dot <= 0 { return base }
+    return pdg_sub(base, 0, dot)
+}
+
+# write_proof_artifacts for one file, numbering from `start`. Figures are
+# written beside the documents. verbose 0 prints nothing, 1 prints what
+# flow doc proof prints for a file, 2 what it prints per file of a tree.
+# Returns the number of theorems, or -1 on an error.
+export function flowc_proof_write_artifacts(path: string, out_dir: string, start: i32, global: ptr<PdgMap>, root: string, verbose: i32) -> i32 {
+    let text: string = flowc_proof_read(path)
+    let mut d: PdgDoc = flowc_proof_parse_text(text)
+    let mut k: i32 = 0
+    while k < d.nthm {
+        d.thms[k].number = start + k
+        k = k + 1
+    }
+    let stem: string = pdg_stem(path)
+    pdg_mkdir_p(out_dir)
+    let src_dir: string = pdg_dirname(path)
+
+    # _attach_geometry_diagrams
+    let mut diagrams: string = ""
+    k = 0
+    while k < d.nthm {
+        let t: PdgThm = d.thms[k]
+        let mut g: FlowcGeomDiagram = flowc_geom_for_theorem(t.claim_path, t.diagram, t.diagram_script, src_dir, root)
+        if g.ok == 1 {
+            let mut suffix: string = ""
+            if d.nthm != 1 { suffix = "-" + pdg_itoa(k + 1) }
+            let svg_name: string = stem + suffix + ".proof.svg"
+            let svg_path: string = pdg_join(out_dir, svg_name)
+            let tex_path: string = pdg_join(out_dir, stem + suffix + ".proof-diagram.tex")
+            if pdg_write(svg_path, flowc_geom_render_svg(&g)) != 0 { return 0 - 1 }
+            if pdg_write(tex_path, flowc_geom_render_tikz(&g) + "\n") != 0 { return 0 - 1 }
+            d.thms[k].diagram_svg = svg_name
+            diagrams = diagrams + "Wrote " + svg_path + "\nWrote " + tex_path + "\n"
+        } else {
+            if g.ok < 0 {
+                printf("flowc proof: %s: bad diagram script\n", path)
+                return 0 - 1
+            }
+        }
+        k = k + 1
+    }
+
+    let mut tiers: PdgMap = pdg_merged_tiers(global, &d)
+    let md_path: string = pdg_join(out_dir, stem + ".proof.md")
+    let tex_path: string = pdg_join(out_dir, stem + ".proof.tex")
+    if pdg_write(md_path, flowc_proof_render_md(&d, stem, &tiers)) != 0 { return 0 - 1 }
+    if pdg_write(tex_path, flowc_proof_render_tex(&d, stem, &tiers)) != 0 { return 0 - 1 }
+    if verbose == 1 {
+        printf("Wrote %s\nWrote %s\n%s", md_path, tex_path, diagrams)
+    }
+    if verbose == 2 {
+        printf("%s\n  -> %s\n  -> %s\n", path, md_path, tex_path)
+        # Python globs `{stem}*.proof.svg` then `{stem}*.proof-diagram.tex`.
+        let cmd: string = "cd '" + out_dir + "' 2>/dev/null && { ls -1 -- '" + stem + "'*.proof.svg 2>/dev/null | LC_ALL=C sort; ls -1 -- '" + stem + "'*.proof-diagram.tex 2>/dev/null | LC_ALL=C sort; }"
+        let buf: ptr<u8> = malloc(1048576)
+        let got: i32 = flowc_io_popen_read(cmd, buf, 1048575)
+        if got > 0 {
+            buf[got] = 0
+            let listing: string = buf as string
+            let cap: i32 = pdg_count_lines(listing)
+            let ls: ptr<i32> = malloc((cap as i64) * 4) as ptr<i32>
+            let le: ptr<i32> = malloc((cap as i64) * 4) as ptr<i32>
+            let nl: i32 = pdg_split_lines(listing, ls, le, cap)
+            let mut j: i32 = 0
+            while j < nl {
+                if le[j] > ls[j] {
+                    printf("  -> %s\n", pdg_join(out_dir, pdg_sub(listing, ls[j], le[j])))
+                }
+                j = j + 1
+            }
+        }
+    }
+    return d.nthm
+}
+
+function pdg_env(name: string) -> string {
+    let v: string = getenv(name)
+    if (v as ptr<u8>) == null { return "" }
+    return v
+}
+
+# FLOWC_PROOF_DOC=1: `flow doc proof`.
+#   FLOWC_IN          one .flow file, or
+#   FLOWC_PROOF_LIST  a file listing .flow paths, one per line
+#   FLOWC_PROOF_OUT   output directory (default: beside each source)
+#   FLOWC_PROOF_MIRROR=1  with FLOWC_PROOF_OUT, keep each file's directory
+#   FLOWC_PROOF_TREE=1    number theorems across the list and skip files
+#                         without theorems (write_proof_artifacts_tree)
+#   FLOWC_PROOF_ROOT  repository root for the claim index (default ".")
+#   FLOWC_PROOF_BOOK  book | basic | geometry: see flowc_proof_book_mode
+export function flowc_proof_doc_mode() -> i32 {
+    if pdg_len(pdg_env("FLOWC_PROOF_BOOK")) > 0 {
+        return flowc_proof_book_mode()
+    }
+    if pdg_len(pdg_env("FLOWC_PROOF_KERNEL")) > 0 {
+        return flowc_proof_kernel_mode()
+    }
+    if pdg_len(pdg_env("FLOWC_KNOW")) > 0 or pdg_len(pdg_env("FLOWC_KNOW_LINT")) > 0 {
+        return flowc_proof_know_mode()
+    }
+    let mut root: string = pdg_env("FLOWC_PROOF_ROOT")
+    if pdg_len(root) == 0 { root = "." }
+    let mut global: PdgMap = flowc_proof_global_tiers(root)
+    let out: string = pdg_env("FLOWC_PROOF_OUT")
+    let mirror: i32 = pdg_len(pdg_env("FLOWC_PROOF_MIRROR"))
+    let tree: i32 = pdg_len(pdg_env("FLOWC_PROOF_TREE"))
+
+    let mut files: ptr<string> = malloc(16) as ptr<string>
+    let mut nf: i32 = 0
+    let list: string = pdg_env("FLOWC_PROOF_LIST")
+    if pdg_len(list) > 0 {
+        let text: string = flowc_proof_read(list)
+        let cap: i32 = pdg_count_lines(text)
+        let starts: ptr<i32> = malloc((cap as i64) * 4) as ptr<i32>
+        let ends: ptr<i32> = malloc((cap as i64) * 4) as ptr<i32>
+        let nl: i32 = pdg_split_lines(text, starts, ends, cap)
+        files = malloc(((nl + 1) as i64) * 8) as ptr<string>
+        let mut i: i32 = 0
+        while i < nl {
+            let f: string = pdg_strip(pdg_sub(text, starts[i], ends[i]))
+            if pdg_len(f) > 0 {
+                files[nf] = f
+                nf = nf + 1
+            }
+            i = i + 1
+        }
+    } else {
+        files[0] = pdg_env("FLOWC_IN")
+        nf = 1
+    }
+
+    let mut counter: i32 = 1
+    let mut failed: i32 = 0
+    let mut written: i32 = 0
+    let mut i: i32 = 0
+    while i < nf {
+        let f: string = files[i]
+        let mut skip: i32 = 0
+        if tree > 0 {
+            let text: string = flowc_proof_read(f)
+            if pdg_contains(text, "theorem ") == 0 {
+                skip = 1
+            } else {
+                let d: PdgDoc = flowc_proof_parse_text(text)
+                if d.nthm == 0 { skip = 1 }
+            }
+        }
+        if skip == 0 {
+            let mut dir: string = pdg_dirname(f)
+            if pdg_len(out) > 0 {
+                dir = out
+                if mirror > 0 { dir = out + "/" + pdg_dirname(f) }
+            }
+            let mut start: i32 = 1
+            if tree > 0 { start = counter }
+            let mut verbose: i32 = 1
+            if tree > 0 { verbose = 2 }
+            if pdg_len(pdg_env("FLOWC_PROOF_QUIET")) > 0 { verbose = 0 }
+            let n: i32 = flowc_proof_write_artifacts(f, dir, start, &global, root, verbose)
+            if n < 0 {
+                failed = failed + 1
+            } else {
+                counter = counter + n
+                written = written + 1
+            }
+        }
+        i = i + 1
+    }
+    if tree > 0 and pdg_len(pdg_env("FLOWC_PROOF_QUIET")) == 0 {
+        if written == 0 and failed == 0 {
+            pdg_err("No theorem files found.")
+            return 1
+        }
+        printf("\nGenerated %d proof artifact pair(s).\n", written)
+    }
+    if failed > 0 { return 1 }
+    return 0
+}
+
+# ── The proof book (flow doc bundle / basic-bundle / geometry-bundle) ──
+
+# The files of a book part: its lines, or for `@manifest <dir>` the
+# lines of <dir>/MANIFEST.txt (or the sorted prop-*.flow files in <dir>).
+function pdg_expand_manifest(root: string, dir: string, out: ptr<string>, n: i32) -> i32 {
+    let mf: string = root + "/" + dir + "/MANIFEST.txt"
+    let mut count: i32 = n
+    if flowc_io_file_size(mf) >= 0 {
+        let text: string = flowc_proof_read(mf)
+        let cap: i32 = pdg_count_lines(text)
+        let starts: ptr<i32> = malloc((cap as i64) * 4) as ptr<i32>
+        let ends: ptr<i32> = malloc((cap as i64) * 4) as ptr<i32>
+        let nl: i32 = pdg_split_lines(text, starts, ends, cap)
+        let mut i: i32 = 0
+        while i < nl {
+            let f: string = pdg_strip(pdg_sub(text, starts[i], ends[i]))
+            if pdg_len(f) > 0 {
+                out[count] = f
+                count = count + 1
+            }
+            i = i + 1
+        }
+        return count
+    }
+    let buf: ptr<u8> = malloc(1048576)
+    let cmd: string = "cd '" + root + "/" + dir + "' 2>/dev/null && ls prop-*.flow 2>/dev/null | LC_ALL=C sort"
+    let got: i32 = flowc_io_popen_read(cmd, buf, 1048575)
+    if got <= 0 { return count }
+    buf[got] = 0
+    let text: string = buf as string
+    let cap: i32 = pdg_count_lines(text)
+    let starts: ptr<i32> = malloc((cap as i64) * 4) as ptr<i32>
+    let ends: ptr<i32> = malloc((cap as i64) * 4) as ptr<i32>
+    let nl: i32 = pdg_split_lines(text, starts, ends, cap)
+    let mut i: i32 = 0
+    while i < nl {
+        let f: string = pdg_strip(pdg_sub(text, starts[i], ends[i]))
+        if pdg_len(f) > 0 {
+            out[count] = dir + "/" + f
+            count = count + 1
+        }
+        i = i + 1
+    }
+    return count
+}
+
+# Parse the book manifest. part_id / part_title / part_start get one entry
+# per part (part_start[k] indexes `files`); part_start[nparts] = file count.
+# Returns the number of parts, or -1 when the manifest cannot be read.
+function pdg_read_book(root: string, manifest: string, part_id: ptr<string>, part_title: ptr<string>, part_start: ptr<i32>, files: ptr<string>) -> i32 {
+    if flowc_io_file_size(manifest) < 0 {
+        printf("flowc proof: cannot read %s\n", manifest)
+        return 0 - 1
+    }
+    let text: string = flowc_proof_read(manifest)
+    let cap: i32 = pdg_count_lines(text)
+    let starts: ptr<i32> = malloc((cap as i64) * 4) as ptr<i32>
+    let ends: ptr<i32> = malloc((cap as i64) * 4) as ptr<i32>
+    let nl: i32 = pdg_split_lines(text, starts, ends, cap)
+    let mut np: i32 = 0
+    let mut nf: i32 = 0
+    let mut i: i32 = 0
+    while i < nl {
+        let line: string = pdg_strip(pdg_sub(text, starts[i], ends[i]))
+        let lp: ptr<u8> = line
+        if pdg_len(line) > 0 and lp[0] != 35 {
+            if pdg_starts(line, "== ") == 1 {
+                let rest: string = pdg_strip(pdg_sub(line, 3, pdg_len(line)))
+                let sp: i32 = pdg_find_char(rest, 32, 0)
+                part_id[np] = pdg_sub(rest, 0, sp)
+                part_title[np] = pdg_strip(pdg_sub(rest, sp + 1, pdg_len(rest)))
+                part_start[np] = nf
+                np = np + 1
+            } else {
+                if pdg_starts(line, "@manifest ") == 1 {
+                    nf = pdg_expand_manifest(root, pdg_strip(pdg_sub(line, 10, pdg_len(line))), files, nf)
+                } else {
+                    files[nf] = line
+                    nf = nf + 1
+                }
+            }
+        }
+        i = i + 1
+    }
+    part_start[np] = nf
+    return np
+}
+
+function pdg_part_heading(title: string, first: i32) -> string {
+    let mut out: string = ""
+    if first == 0 { out = "\\clearpage\n" }
+    let pt: string = pdg_latex_escape(title)
+    out = out + "\\section*{" + pt + "}\n"
+    out = out + "\\addcontentsline{toc}{section}{" + pt + "}\n"
+    return out + "\\medskip\\par\n"
+}
+
+# render_side_by_side_bundle. With nparts > 0 the docs are grouped into
+# parts (the full book, with a table of contents); with nparts == 0 they
+# are one run (basic-bundle, geometry-bundle).
+function pdg_render_bundle(docs: ptr<PdgDoc>, ndocs: i32, doc_part: ptr<i32>, part_title: ptr<string>, nparts: i32, title: string, global: ptr<PdgMap>) -> string {
+    let mut out: string = "\\documentclass[11pt]{article}\n"
+    out = out + "\\usepackage[T1]{fontenc}\n"
+    out = out + "\\usepackage{textcomp}\n"
+    out = out + "\\usepackage[margin=0.75in]{geometry}\n"
+    out = out + "\\usepackage{amsmath,amssymb,amsthm}\n"
+    out = out + "\\usepackage{array,booktabs}\n"
+    out = out + "\\usepackage{hyperref}\n"
+    out = out + "\\setlength{\\parindent}{0pt}\n"
+    out = out + "\\newtheorem{theorem}{Theorem}\n"
+    out = out + "\\theoremstyle{definition}\n"
+    out = out + "\\newtheorem{definition}{Definition}\n"
+    out = out + "\\title{" + pdg_latex_escape(title) + "}\n"
+    out = out + "\\author{Generated by \\texttt{flow doc proof}}\n"
+    out = out + "\\date{Flow Proof Book}\n"
+    out = out + "\\begin{document}\n"
+    out = out + "\\maketitle\n"
+    if nparts > 0 {
+        out = out + "\\tableofcontents\n\\bigskip\\par\n"
+    }
+    out = out + "\\noindent\\textit{Each proof step is numbered. English reasoning is on the left; the matching equation is on the right. Prerequisite facts are cited by number (e.g.\\ Definition 2, Axiom 9).}\\par\n"
+    out = out + "\\medskip\n"
+    out = out + "\\noindent\\textbf{Labels.} \\textit{Axiom} = accepted without proof; \\textit{Definition} = stipulation; \\textit{Derived fact} = proved from prior claims.\\par\n"
+    out = out + "\\bigskip\\par\n"
+
+    let mut cat: PdgMap = flowc_pdg_map_new(4096)
+    let mut i: i32 = 0
+    while i < ndocs {
+        pdg_catalog_add(&cat, &docs[i])
+        i = i + 1
+    }
+    let mut cur_part: i32 = 0 - 1
+    i = 0
+    while i < ndocs {
+        if nparts > 0 {
+            while cur_part < doc_part[i] {
+                cur_part = cur_part + 1
+                let pt: string = part_title[cur_part]
+                out = out + pdg_part_heading(pt, pdg_eq_i(cur_part, 0))
+            }
+        }
+        let mut tiers: PdgMap = pdg_merged_tiers(global, &docs[i])
+        let mut k: i32 = 0
+        while k < docs[i].nthm {
+            out = out + pdg_render_thm_tex(&docs[i], &docs[i].thms[k], &tiers, &cat, 1) + "\n"
+            k = k + 1
+        }
+        i = i + 1
+    }
+    # Parts after the last document still get their headings.
+    while nparts > 0 and cur_part < nparts - 1 {
+        cur_part = cur_part + 1
+        let pt: string = part_title[cur_part]
+        out = out + pdg_part_heading(pt, pdg_eq_i(cur_part, 0))
+    }
+    return out + "\\end{document}\n"
+}
+
+function pdg_eq_i(a: i32, b: i32) -> i32 {
+    if a == b { return 1 }
+    return 0
+}
+
+# FLOWC_PROOF_BOOK=book|basic|geometry: write the bundle's LaTeX to
+# FLOWC_PROOF_OUT (default <root>/build/proofs), then refresh each file's
+# .proof.md / .proof.tex beside its source unless FLOWC_PROOF_NO_REFRESH
+# is set. The driver compiles the PDF. FLOWC_PROOF_MANIFEST overrides
+# tools/doc/proof_book.txt.
+export function flowc_proof_book_mode() -> i32 {
+    let mut root: string = pdg_env("FLOWC_PROOF_ROOT")
+    if pdg_len(root) == 0 { root = "." }
+    let which: string = pdg_env("FLOWC_PROOF_BOOK")
+    let mut out_dir: string = pdg_env("FLOWC_PROOF_OUT")
+    if pdg_len(out_dir) == 0 { out_dir = root + "/build/proofs" }
+    let mut manifest: string = pdg_env("FLOWC_PROOF_MANIFEST")
+    if pdg_len(manifest) == 0 { manifest = root + "/tools/doc/proof_book.txt" }
+
+    let part_id: ptr<string> = malloc(64 * 8) as ptr<string>
+    let part_title: ptr<string> = malloc(64 * 8) as ptr<string>
+    let part_start: ptr<i32> = malloc(65 * 4) as ptr<i32>
+    let all_files: ptr<string> = malloc(16384 * 8) as ptr<string>
+    let nparts: i32 = pdg_read_book(root, manifest, part_id, part_title, part_start, all_files)
+    if nparts < 0 { return 1 }
+
+    let mut want: string = ""
+    let mut title: string = "Flow Proof Book"
+    let mut tex_name: string = "flow-proof-book.tex"
+    if pdg_eq(which, "basic") == 1 {
+        want = "basic"
+        title = "Flow Basic Proofs"
+        tex_name = "basic-proofs-side-by-side.tex"
+    } else {
+        if pdg_eq(which, "geometry") == 1 {
+            want = "euclid-i"
+            title = "Flow Euclidean Geometry"
+            tex_name = "geometry-proofs-side-by-side.tex"
+        } else {
+            if pdg_eq(which, "book") == 0 {
+                printf("flowc proof: FLOWC_PROOF_BOOK must be book, basic or geometry, got %s\n", which)
+                return 1
+            }
+        }
+    }
+
+    # The files of the chosen bundle, with the part each belongs to.
+    let files: ptr<string> = malloc(16384 * 8) as ptr<string>
+    let doc_part: ptr<i32> = malloc(16384 * 4) as ptr<i32>
+    let mut nf: i32 = 0
+    let mut p: i32 = 0
+    while p < nparts {
+        if pdg_len(want) == 0 or pdg_eq(part_id[p], want) == 1 {
+            let mut f: i32 = part_start[p]
+            while f < part_start[p + 1] {
+                files[nf] = all_files[f]
+                doc_part[nf] = p
+                nf = nf + 1
+                f = f + 1
+            }
+        }
+        p = p + 1
+    }
+
+    let mut global: PdgMap = flowc_proof_global_tiers(root)
+    let docs: ptr<PdgDoc> = malloc(((nf + 1) as i64) * 80) as ptr<PdgDoc>
+    let mut counter: i32 = 1
+    let mut i: i32 = 0
+    while i < nf {
+        let path: string = root + "/" + pdg_sidx(files[i])
+        if flowc_io_file_size(path) < 0 {
+            printf("flowc proof: proof file missing: %s\n", path)
+            return 1
+        }
+        docs[i] = flowc_proof_parse_text(flowc_proof_read(path))
+        let mut k: i32 = 0
+        while k < docs[i].nthm {
+            docs[i].thms[k].number = counter + k
+            k = k + 1
+        }
+        counter = counter + docs[i].nthm
+        i = i + 1
+    }
+    let mut ngroups: i32 = 0
+    if pdg_len(want) == 0 { ngroups = nparts }
+    let tex: string = pdg_render_bundle(docs, nf, doc_part, part_title, ngroups, title, &global)
+    pdg_mkdir_p(out_dir)
+    let tex_path: string = out_dir + "/" + tex_name
+    if pdg_write(tex_path, tex) != 0 { return 1 }
+    printf("Wrote %s\n", tex_path)
+
+    if pdg_len(pdg_env("FLOWC_PROOF_NO_REFRESH")) == 0 {
+        i = 0
+        while i < nf {
+            let path: string = root + "/" + pdg_sidx(files[i])
+            let n: i32 = flowc_proof_write_artifacts(path, pdg_dirname(path), 1, &global, root, 0)
+            if n < 0 { return 1 }
+            i = i + 1
+        }
+    }
+    return 0
+}
+
+# ── Proof kernels (flow doc kernel; port of src/flow/proof_kernel.py) ──
+
+# json.dumps string: quotes, backslash escapes, and \uXXXX for every
+# non-ASCII code point (ensure_ascii), with surrogate pairs above U+FFFF.
+function pdg_hex4(v: i32) -> string {
+    let digits: string = "0123456789abcdef"
+    let dp: ptr<u8> = digits
+    let buf: ptr<u8> = malloc(8)
+    buf[0] = dp[(v / 4096) % 16]
+    buf[1] = dp[(v / 256) % 16]
+    buf[2] = dp[(v / 16) % 16]
+    buf[3] = dp[v % 16]
+    buf[4] = 0
+    return buf as string
+}
+
+function pdg_json_str(s: string) -> string {
+    let n: i32 = pdg_len(s)
+    let p: ptr<u8> = s
+    let mut out: string = "\""
+    let mut run: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = p[i]
+        let mut esc: string = ""
+        let mut adv: i32 = 1
+        if c == 34 { esc = "\\\"" }
+        if c == 92 { esc = "\\\\" }
+        if c == 10 { esc = "\\n" }
+        if c == 13 { esc = "\\r" }
+        if c == 9 { esc = "\\t" }
+        if c == 8 { esc = "\\b" }
+        if c == 12 { esc = "\\f" }
+        if pdg_len(esc) == 0 and c < 32 { esc = "\\u" + pdg_hex4(c) }
+        if c >= 128 {
+            let mut cp: i32 = 0
+            if c >= 240 and i + 3 < n {
+                cp = ((c % 8) * 262144) + ((p[i + 1] % 64) * 4096) + ((p[i + 2] % 64) * 64) + (p[i + 3] % 64)
+                adv = 4
+            } else {
+                if c >= 224 and i + 2 < n {
+                    cp = ((c % 16) * 4096) + ((p[i + 1] % 64) * 64) + (p[i + 2] % 64)
+                    adv = 3
+                } else {
+                    if i + 1 < n {
+                        cp = ((c % 32) * 64) + (p[i + 1] % 64)
+                        adv = 2
+                    } else {
+                        cp = c
+                    }
+                }
+            }
+            if cp >= 65536 {
+                let v: i32 = cp - 65536
+                esc = "\\u" + pdg_hex4(55296 + (v / 1024)) + "\\u" + pdg_hex4(56320 + (v % 1024))
+            } else {
+                esc = "\\u" + pdg_hex4(cp)
+            }
+        }
+        if pdg_len(esc) > 0 {
+            out = out + pdg_sub(s, run, i) + esc
+            i = i + adv
+            run = i
+        } else {
+            i = i + 1
+        }
+    }
+    return out + pdg_sub(s, run, n) + "\""
+}
+
+# _node_kind
+function pdg_node_kind(english: string, has_math: i32) -> string {
+    let lower: string = pdg_lower(english)
+    if has_math == 1 and pdg_contains(lower, "hence proven") == 1 { return "conclude" }
+    if has_math == 1 { return "deduce" }
+    if pdg_contains(lower, "case ") == 1 { return "case" }
+    if pdg_contains(lower, "invoke") == 1 or pdg_contains(lower, "inductive boundary") == 1 { return "invoke" }
+    if pdg_contains(lower, "let ") == 1 or pdg_contains(lower, "denote") == 1 { return "bind" }
+    if pdg_contains(lower, "induction") == 1 or pdg_contains(lower, "split into") == 1 { return "frame" }
+    if pdg_contains(lower, "stipulate") == 1 or pdg_contains(lower, "axiom") == 1 or pdg_contains(lower, "prove this derived") == 1 { return "frame" }
+    if pdg_contains(lower, "consider the base") == 1 or pdg_contains(lower, "inductive step") == 1 { return "frame" }
+    return "step"
+}
+
+# _activate_branch: 1 per line index when active.
+function pdg_activate(lines: ptr<PdgLine>, n: i32, keys: ptr<string>, vals: ptr<string>, ninst: i32, active: ptr<i32>) -> void {
+    let mut i: i32 = 0
+    let mut maxn: i32 = 0
+    while i < n {
+        active[i] = 1
+        if lines[i].is_goal == 0 and lines[i].number > maxn { maxn = lines[i].number }
+        i = i + 1
+    }
+    if ninst == 0 { return }
+    i = 0
+    while i < n {
+        if lines[i].is_goal == 0 and lines[i].number > 0 {
+            let lower: string = pdg_lower(lines[i].english)
+            let mut v: i32 = 0
+            while v < ninst {
+                let var: string = keys[v]
+                let val: string = vals[v]
+                let vl: string = pdg_lower(val)
+                let mut skip: i32 = 0
+                if pdg_contains(lower, "suppose " + var + "  is  true") == 1 or pdg_contains(lower, "suppose " + var + " is true") == 1 {
+                    if pdg_eq(vl, "true") == 0 and pdg_eq(vl, "false") == 0 {
+                        skip = 1
+                    } else {
+                        if pdg_eq(vl, "false") == 1 { active[i] = 0 }
+                    }
+                }
+                if skip == 0 {
+                    if pdg_contains(lower, "where " + var + "  =  0") == 1 or pdg_contains(lower, "where " + var + " = 0") == 1 {
+                        if pdg_eq(val, "0") == 0 { active[i] = 0 }
+                    }
+                    if pdg_contains(pdg_replace(lower, "=", " = "), "where " + var + "  =  0") == 1 and pdg_eq(val, "0") == 0 {
+                        active[i] = 0
+                    }
+                }
+                v = v + 1
+            }
+        }
+        i = i + 1
+    }
+    # A case header that is off turns off the lines up to the next case.
+    let starts: ptr<i32> = malloc(((n + 1) as i64) * 4) as ptr<i32>
+    let mut ns: i32 = 0
+    i = 0
+    while i < n {
+        if lines[i].is_goal == 0 and pdg_starts(pdg_lower(lines[i].english), "case ") == 1 {
+            starts[ns] = lines[i].number
+            ns = ns + 1
+        }
+        i = i + 1
+    }
+    let sorted: ptr<i32> = malloc(((ns + 1) as i64) * 4) as ptr<i32>
+    let m: i32 = pdg_sorted_unique(starts, ns, sorted)
+    let mut k: i32 = 0
+    while k < m {
+        let start: i32 = sorted[k]
+        let mut start_on: i32 = 1
+        let mut j: i32 = 0
+        while j < n {
+            if lines[j].is_goal == 0 and lines[j].number == start and active[j] == 0 { start_on = 0 }
+            j = j + 1
+        }
+        if start_on == 0 {
+            let mut end: i32 = maxn + 1
+            if k + 1 < m { end = sorted[k + 1] }
+            j = 0
+            while j < n {
+                if lines[j].is_goal == 0 and lines[j].number > start and lines[j].number < end {
+                    active[j] = 0
+                }
+                j = j + 1
+            }
+        }
+        k = k + 1
+    }
+}
+
+# _parse_params
+function pdg_param_names(params: string, out: ptr<string>) -> i32 {
+    if pdg_len(pdg_strip(params)) == 0 { return 0 }
+    let n: i32 = pdg_len(params)
+    let p: ptr<u8> = params
+    let mut c: i32 = 0
+    let mut s: i32 = 0
+    let mut i: i32 = 0
+    while i <= n {
+        if i == n or p[i] == 44 {
+            let part: string = pdg_strip(pdg_sub(params, s, i))
+            let colon: i32 = pdg_find_char(part, 58, 0)
+            let mut name: string = part
+            if colon >= 0 { name = pdg_strip(pdg_sub(part, 0, colon)) }
+            if pdg_len(name) > 0 {
+                out[c] = name
+                c = c + 1
+            }
+            s = i + 1
+        }
+        i = i + 1
+    }
+    return c
+}
+
+# compile_proof_kernel as JSON (json.dumps(..., indent=2)) and as DOT.
+function pdg_kernel(path: string, root: string, keys: ptr<string>, vals: ptr<string>, ninst: i32, json_out: ptr<string>, dot_out: ptr<string>) -> i32 {
+    let text: string = flowc_proof_read(path)
+    let mut d: PdgDoc = flowc_proof_parse_text(text)
+    if d.nthm == 0 {
+        printf("flowc proof: No theorems in %s\n", path)
+        return 1
+    }
+    let mut global: PdgMap = flowc_proof_global_tiers(root)
+    let mut tiers: PdgMap = pdg_merged_tiers(&global, &d)
+    let mut none: PdgMap = flowc_pdg_map_new(4)
+    let t: ptr<PdgThm> = &d.thms[0]
+    let lines: ptr<PdgLine> = malloc((pdg_lines_cap(t) as i64) * 48) as ptr<PdgLine>
+    let n: i32 = pdg_tutorial(&d, t, &tiers, &none, lines)
+    let active: ptr<i32> = malloc(((n + 1) as i64) * 4) as ptr<i32>
+    pdg_activate(lines, n, keys, vals, ninst, active)
+
+    let addr: FlowcClaimAddress = flowc_claim_try_parse(t[0].claim_path)
+    let mut display: string = t[0].claim_path
+    if addr.ok == 1 { display = flowc_addr_coordinate_display(addr) }
+    let mut js: string = "{\n  \"claim\": " + pdg_json_str(t[0].claim_path) + ",\n  \"claim_display\": " + pdg_json_str(display) + ",\n  \"parameters\": "
+    let names: ptr<string> = malloc(((pdg_count_commas(t[0].params) + 2) as i64) * 8) as ptr<string>
+    let nn: i32 = pdg_param_names(t[0].params, names)
+    if nn == 0 {
+        js = js + "[]"
+    } else {
+        js = js + "["
+        let mut i: i32 = 0
+        while i < nn {
+            if i > 0 { js = js + "," }
+            js = js + "\n    " + pdg_json_str(names[i])
+            i = i + 1
+        }
+        js = js + "\n  ]"
+    }
+    js = js + ",\n  \"instantiation\": "
+    if ninst == 0 {
+        js = js + "{}"
+    } else {
+        js = js + "{"
+        let mut i: i32 = 0
+        while i < ninst {
+            if i > 0 { js = js + "," }
+            js = js + "\n    " + pdg_json_str(keys[i]) + ": " + pdg_json_str(vals[i])
+            i = i + 1
+        }
+        js = js + "\n  }"
+    }
+    js = js + ",\n  \"nodes\": "
+    let mut dot: string = "digraph ProofKernel {\n  rankdir=TB; node [shape=box, fontname=\"Helvetica\"];"
+    let mut edges: string = ""
+    let mut dot_edges: string = ""
+    let mut nnodes: i32 = 0
+    let mut nedges: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let l: PdgLine = lines[i]
+        if l.is_goal == 0 and l.number > 0 {
+            let mut has_math: i32 = 0
+            if pdg_len(l.math) > 0 { has_math = 1 }
+            let kind: string = pdg_node_kind(l.english, has_math)
+            if nnodes == 0 { js = js + "[" } else { js = js + "," }
+            js = js + "\n    {\n      \"step\": " + pdg_itoa(l.number) + ",\n      \"kind\": " + pdg_json_str(kind) + ",\n      \"text\": " + pdg_json_str(l.english) + ",\n      \"math\": "
+            if has_math == 1 { js = js + pdg_json_str(l.math) } else { js = js + "null" }
+            js = js + ",\n      \"refs\": "
+            if l.nrefs == 0 {
+                js = js + "[]"
+            } else {
+                js = js + "["
+                let mut r: i32 = 0
+                while r < l.nrefs {
+                    if r > 0 { js = js + "," }
+                    js = js + "\n        " + pdg_itoa(l.refs[r])
+                    r = r + 1
+                }
+                js = js + "\n      ]"
+            }
+            js = js + ",\n      \"active\": "
+            if active[i] == 1 { js = js + "true" } else { js = js + "false" }
+            js = js + "\n    }"
+            nnodes = nnodes + 1
+            let mut color: string = "#eeeeee"
+            if active[i] == 1 { color = "#c8e6c9" }
+            let esc_kind: string = pdg_replace(pdg_replace(kind, "\\", "\\\\"), "\"", "\\\"")
+            dot = dot + "\n  n" + pdg_itoa(l.number) + " [label=\"" + pdg_itoa(l.number) + ": " + esc_kind + "\", style=filled, fillcolor=\"" + color + "\"];"
+            let mut r2: i32 = 0
+            while r2 < l.nrefs {
+                if nedges > 0 { edges = edges + "," }
+                edges = edges + "\n    {\n      \"from\": " + pdg_itoa(l.refs[r2]) + ",\n      \"to\": " + pdg_itoa(l.number) + "\n    }"
+                dot_edges = dot_edges + "\n  n" + pdg_itoa(l.refs[r2]) + " -> n" + pdg_itoa(l.number) + ";"
+                nedges = nedges + 1
+                r2 = r2 + 1
+            }
+        }
+        i = i + 1
+    }
+    if nnodes == 0 { js = js + "[]" } else { js = js + "\n  ]" }
+    js = js + ",\n  \"edges\": "
+    if nedges == 0 { js = js + "[]" } else { js = js + "[" + edges + "\n  ]" }
+    js = js + "\n}"
+    json_out[0] = js
+    dot_out[0] = dot + dot_edges + "\n}"
+    return 0
+}
+
+# Path.with_suffix(suffix)
+function pdg_with_suffix(path: string, suffix: string) -> string {
+    let slash: i32 = pdg_rfind_char(path, 47)
+    let dot: i32 = pdg_rfind_char(path, 46)
+    if dot > slash + 1 {
+        return pdg_sub(path, 0, dot) + suffix
+    }
+    return path + suffix
+}
+
+function pdg_suffix(path: string) -> string {
+    let slash: i32 = pdg_rfind_char(path, 47)
+    let dot: i32 = pdg_rfind_char(path, 46)
+    if dot > slash + 1 {
+        return pdg_sub(path, dot, pdg_len(path))
+    }
+    return ""
+}
+
+# FLOWC_PROOF_KERNEL=1 (flow doc kernel):
+#   FLOWC_IN             the theorem file (its first theorem)
+#   FLOWC_KERNEL_OUT     JSON path (default <file>.proof.kernel.json)
+#   FLOWC_KERNEL_PARAMS  NAME=VALUE pairs, one per line
+#   FLOWC_KERNEL_PLOT    also write the DAG as Graphviz DOT (the .dot
+#                        suffix replaces any other)
+export function flowc_proof_kernel_mode() -> i32 {
+    let mut root: string = pdg_env("FLOWC_PROOF_ROOT")
+    if pdg_len(root) == 0 { root = "." }
+    let path: string = pdg_env("FLOWC_IN")
+    if flowc_io_file_size(path) < 0 {
+        printf("flowc proof: cannot read %s\n", path)
+        return 1
+    }
+    let params: string = pdg_env("FLOWC_KERNEL_PARAMS")
+    let cap: i32 = pdg_count_lines(params)
+    let keys: ptr<string> = malloc(((cap + 1) as i64) * 8) as ptr<string>
+    let vals: ptr<string> = malloc(((cap + 1) as i64) * 8) as ptr<string>
+    let starts: ptr<i32> = malloc(((cap + 1) as i64) * 4) as ptr<i32>
+    let ends: ptr<i32> = malloc(((cap + 1) as i64) * 4) as ptr<i32>
+    let nl: i32 = pdg_split_lines(params, starts, ends, cap)
+    let mut ninst: i32 = 0
+    let mut i: i32 = 0
+    while i < nl {
+        let pair: string = pdg_sub(params, starts[i], ends[i])
+        let eq: i32 = pdg_find_char(pair, 61, 0)
+        if eq >= 0 {
+            let k: string = pdg_strip(pdg_sub(pair, 0, eq))
+            let v: string = pdg_strip(pdg_sub(pair, eq + 1, pdg_len(pair)))
+            let mut found: i32 = 0 - 1
+            let mut j: i32 = 0
+            while j < ninst {
+                if pdg_eq(keys[j], k) == 1 { found = j }
+                j = j + 1
+            }
+            if found >= 0 {
+                vals[found] = v
+            } else {
+                keys[ninst] = k
+                vals[ninst] = v
+                ninst = ninst + 1
+            }
+        }
+        i = i + 1
+    }
+    let js: ptr<string> = malloc(16) as ptr<string>
+    let dot: ptr<string> = malloc(16) as ptr<string>
+    if pdg_kernel(path, root, keys, vals, ninst, js, dot) != 0 { return 1 }
+    let mut out: string = pdg_env("FLOWC_KERNEL_OUT")
+    if pdg_len(out) == 0 { out = pdg_with_suffix(path, ".proof.kernel.json") }
+    if pdg_write(out, js[0]) != 0 { return 1 }
+    printf("Wrote %s\n", out)
+    let plot: string = pdg_env("FLOWC_KERNEL_PLOT")
+    if pdg_len(plot) > 0 {
+        let mut dp: string = plot
+        if pdg_eq(pdg_suffix(plot), ".dot") == 0 { dp = pdg_with_suffix(plot, ".dot") }
+        if pdg_write(dp, dot[0]) != 0 { return 1 }
+        printf("Wrote %s\n", dp)
+    }
+    return 0
+}
+
+# ── flow know (port of src/flow/know.py) ─────────────────────────
+
+# scan_claim_index over the verify roots: key -> "<doc>\n<theorem>".
+function pdg_scan_index(root: string, docs: ptr<PdgDoc>, paths: ptr<string>, ndocs: ptr<i32>) -> PdgMap {
+    let mut idx: PdgMap = flowc_pdg_map_new(8192)
+    let cnt: ptr<i32> = malloc(8) as ptr<i32>
+    let mut nd: i32 = 0
+    let mut r: i32 = 0
+    while r < 2 {
+        let mut dir: string = root + "/lib/verify"
+        if r == 1 { dir = root + "/examples/verify" }
+        let files: ptr<string> = pdg_list_flow(dir, cnt)
+        let mut fi: i32 = 0
+        while fi < cnt[0] {
+            docs[nd] = flowc_proof_parse_text(flowc_proof_read(files[fi]))
+            paths[nd] = files[fi]
+            let d: PdgDoc = docs[nd]
+            let mut k: i32 = 0
+            while k < d.nthm {
+                let cp: string = d.thms[k].claim_path
+                let entry: string = pdg_itoa(nd) + "\n" + pdg_itoa(k)
+                pdg_map_set(&idx, cp, entry)
+                pdg_map_set(&idx, pdg_qualify(d.modname, cp), entry)
+                let addr: FlowcClaimAddress = flowc_claim_try_parse(cp)
+                if addr.ok == 1 {
+                    let g: string = flowc_claim_guillemets(addr)
+                    let leg: string = flowc_claim_to_legacy_path(addr)
+                    pdg_map_set(&idx, g, entry)
+                    pdg_map_set(&idx, flowc_claim_slug(addr), entry)
+                    pdg_map_set(&idx, flowc_claim_display(addr), entry)
+                    pdg_map_set(&idx, leg, entry)
+                    pdg_map_set(&idx, pdg_qualify(d.modname, g), entry)
+                    pdg_map_set(&idx, pdg_qualify(d.modname, leg), entry)
+                }
+                k = k + 1
+            }
+            nd = nd + 1
+            fi = fi + 1
+        }
+        r = r + 1
+    }
+    ndocs[0] = nd
+    return idx
+}
+
+function pdg_ends_with(s: string, suffix: string) -> i32 {
+    let n: i32 = pdg_len(s)
+    let m: i32 = pdg_len(suffix)
+    if m > n { return 0 }
+    return pdg_at(s, n - m, suffix)
+}
+
+function pdg_join_list(raw: string) -> string {
+    let items: ptr<string> = malloc(((pdg_count_commas(raw) + 2) as i64) * 8) as ptr<string>
+    let n: i32 = pdg_needs(raw, items)
+    let mut s: string = ""
+    let mut i: i32 = 0
+    while i < n {
+        if i > 0 { s = s + ", " }
+        s = s + pdg_sidx(items[i])
+        i = i + 1
+    }
+    return s
+}
+
+# os.path.abspath for a path under an absolute or cwd-relative root.
+function pdg_abspath(path: string) -> string {
+    let p: ptr<u8> = path
+    if pdg_len(path) > 0 and p[0] == 47 { return path }
+    let buf: ptr<u8> = malloc(4096)
+    let n: i32 = flowc_io_popen_read("pwd", buf, 4095)
+    if n <= 0 { return path }
+    buf[n] = 0
+    let cwd: string = pdg_strip(buf as string)
+    let mut rel: string = path
+    while pdg_starts(rel, "./") == 1 { rel = pdg_sub(rel, 2, pdg_len(rel)) }
+    return cwd + "/" + rel
+}
+
+# format_know
+function pdg_format_know(d: ptr<PdgDoc>, t: ptr<PdgThm>, file_path: string) -> string {
+    let mut out: string = pdg_qualify(d[0].modname, t[0].claim_path) + "\n"
+    let addr: FlowcClaimAddress = flowc_claim_try_parse(t[0].claim_path)
+    if addr.ok == 1 {
+        out = out + "\n  coordinate: " + flowc_claim_display(addr)
+        out = out + "\n  syntax:     " + flowc_claim_guillemets(addr)
+    }
+    if pdg_len(t[0].means) > 0 { out = out + "\n  means:   " + t[0].means }
+    if pdg_len(t[0].claim_expr) > 0 {
+        out = out + "\n  claim:   " + flowc_flow_expr_to_mathematical_english(t[0].claim_expr)
+        out = out + "\n           $" + flowc_flow_expr_to_latex(t[0].claim_expr) + "$"
+    }
+    if pdg_len(t[0].tier) > 0 {
+        out = out + "\n  tier:    " + flowc_claim_path_tier_label(t[0].tier) + " (" + t[0].tier + ")"
+    }
+    if pdg_len(t[0].from_source) > 0 { out = out + "\n  from:    " + t[0].from_source }
+    let needs: string = pdg_join_list(t[0].needs)
+    if pdg_len(needs) > 0 { out = out + "\n  needs:   " + needs }
+    let used: string = pdg_join_list(t[0].used_by)
+    if pdg_len(used) > 0 { out = out + "\n  used-by: " + used }
+    out = out + "\n\n  source:  " + pdg_abspath(file_path)
+    out = out + "\n\n  proof:   run `flow doc proof` on the source file for the full trace"
+    return out
+}
+
+# know.claim_fingerprint
+function pdg_fingerprint(expr: string) -> string {
+    let mut s: string = pdg_strip(expr)
+    # re.sub(r"\s+by\s+\w+.*$", "", s): the first " by <word>" clause.
+    let n: i32 = pdg_len(s)
+    let p: ptr<u8> = s
+    let mut i: i32 = 0
+    let mut cut: i32 = 0 - 1
+    while i < n and cut < 0 {
+        if pdg_is_ws(p[i]) == 1 {
+            let mut j: i32 = i
+            while j < n and pdg_is_ws(p[j]) == 1 { j = j + 1 }
+            if pdg_at(s, j, "by") == 1 and j + 2 < n and pdg_is_ws(p[j + 2]) == 1 {
+                let mut k: i32 = j + 2
+                while k < n and pdg_is_ws(p[k]) == 1 { k = k + 1 }
+                if k < n and pdg_is_word(p[k]) == 1 { cut = i }
+            }
+            i = j
+        } else {
+            i = i + 1
+        }
+    }
+    if cut >= 0 { s = pdg_sub(s, 0, cut) }
+    s = pdg_replace(s, "==", "=")
+    # re.sub(r"\s+", "", s)
+    let m: i32 = pdg_len(s)
+    let q: ptr<u8> = s
+    let buf: ptr<u8> = malloc((m + 1) as i64)
+    let mut o: i32 = 0
+    let mut z: i32 = 0
+    while z < m {
+        if pdg_is_ws(q[z]) == 0 {
+            buf[o] = q[z]
+            o = o + 1
+        }
+        z = z + 1
+    }
+    buf[o] = 0
+    s = buf as string
+    # \bone more than\b cannot match once the spaces are gone.
+    return pdg_lower(s)
+}
+
+# repr() of a str: single quotes unless the text holds ' and no ".
+function pdg_py_repr(s: string) -> string {
+    let mut quote: string = "'"
+    if pdg_contains(s, "'") == 1 and pdg_contains(s, "\"") == 0 { quote = "\"" }
+    let mut body: string = pdg_replace(s, "\\", "\\\\")
+    body = pdg_replace(body, quote, "\\" + quote)
+    return quote + body + quote
+}
+
+# FLOWC_KNOW=<claim> or FLOWC_KNOW_LINT=1 (flow know).
+export function flowc_proof_know_mode() -> i32 {
+    let mut root: string = pdg_env("FLOWC_PROOF_ROOT")
+    if pdg_len(root) == 0 { root = "." }
+    let docs: ptr<PdgDoc> = malloc(8192 * 80) as ptr<PdgDoc>
+    let paths: ptr<string> = malloc(8192 * 8) as ptr<string>
+    let nd: ptr<i32> = malloc(8) as ptr<i32>
+    if pdg_len(pdg_env("FLOWC_KNOW_LINT")) > 0 {
+        let cnt: ptr<i32> = malloc(8) as ptr<i32>
+        let mut seen: PdgMap = flowc_pdg_map_new(4096)
+        let mut nerr: i32 = 0
+        let mut r: i32 = 0
+        while r < 2 {
+            let mut dir: string = root + "/lib/verify"
+            if r == 1 { dir = root + "/examples/verify" }
+            let files: ptr<string> = pdg_list_flow(dir, cnt)
+            let mut fi: i32 = 0
+            while fi < cnt[0] {
+                let d: PdgDoc = flowc_proof_parse_text(flowc_proof_read(files[fi]))
+                let mut k: i32 = 0
+                while k < d.nthm {
+                    let t: PdgThm = d.thms[k]
+                    let mut expr: string = t.claim_expr
+                    if pdg_len(expr) == 0 {
+                        let mut s: i32 = 0
+                        while s < t.nsteps and pdg_len(expr) == 0 {
+                            if d.steps[t.step0 + s].kind == PDG_THEREFORE { expr = d.steps[t.step0 + s].text }
+                            s = s + 1
+                        }
+                    }
+                    if pdg_len(expr) > 0 {
+                        let addr: FlowcClaimAddress = flowc_claim_try_parse(t.claim_path)
+                        if addr.ok == 1 {
+                            let fp: string = pdg_fingerprint(expr)
+                            let key: string = addr.carrier + "/" + addr.structure + "#" + fp
+                            let prev: string = pdg_map_get(&seen, key, "")
+                            if pdg_len(prev) > 0 and pdg_eq(prev, t.claim_path) == 0 {
+                                let fp_repr: string = pdg_py_repr(fp)
+                                printf("Duplicate claim: `%s` and `%s` say the same thing (%s, fingerprint %s); see %s\n", t.claim_path, prev, flowc_claim_display(addr), fp_repr, pdg_abspath(files[fi]))
+                                nerr = nerr + 1
+                            } else {
+                                pdg_map_set(&seen, key, t.claim_path)
+                            }
+                        }
+                    }
+                    k = k + 1
+                }
+                fi = fi + 1
+            }
+            r = r + 1
+        }
+        if nerr == 0 {
+            puts("No duplicate claims found.")
+            return 0
+        }
+        return 1
+    }
+    let query: string = pdg_env("FLOWC_KNOW")
+    let mut idx: PdgMap = pdg_scan_index(root, docs, paths, nd)
+    # _normalize_query
+    let mut q: string = pdg_strip(query)
+    if pdg_starts(q, "verify.") == 1 { q = pdg_sub(q, 7, pdg_len(q)) }
+    if pdg_starts(q, "examples.verify.") == 1 { q = pdg_sub(q, 16, pdg_len(q)) }
+    if pdg_starts(q, "lib.verify.") == 1 { q = pdg_sub(q, 11, pdg_len(q)) }
+    let mut entry: string = pdg_map_get(&idx, q, "")
+    if pdg_len(entry) == 0 {
+        let mut i: i32 = 0
+        while i < idx.n and pdg_len(entry) == 0 {
+            let e: string = idx.vals[i]
+            let nl: i32 = pdg_find_char(e, 10, 0)
+            let di: i32 = atoi(pdg_sub(e, 0, nl))
+            let ti: i32 = atoi(pdg_sub(e, nl + 1, pdg_len(e)))
+            let key: string = idx.keys[i]
+            if pdg_ends_with(key, q) == 1 or pdg_ends_with(q, docs[di].thms[ti].claim_path) == 1 {
+                entry = e
+            }
+            i = i + 1
+        }
+    }
+    if pdg_len(entry) == 0 {
+        pdg_err("Unknown Claim Path: " + query)
+        pdg_err("Try: Nat/+.zero-right, Bool/||.commutes, Eq/=.reflexive")
+        return 1
+    }
+    let nl: i32 = pdg_find_char(entry, 10, 0)
+    let di: i32 = atoi(pdg_sub(entry, 0, nl))
+    let ti: i32 = atoi(pdg_sub(entry, nl + 1, pdg_len(entry)))
+    puts(pdg_format_know(&docs[di], &docs[di].thms[ti], paths[di]))
+    return 0
+}

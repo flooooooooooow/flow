@@ -1,0 +1,681 @@
+# @module tools.fir.mono
+# @means  Monomorphization for `flow fir-g`, following
+#         src/flow/monomorphize.py where it decides the graph: which
+#         specializations of generic functions exist, their names, the order
+#         they are generated in (a LIFO worklist), the type names their
+#         parameters and locals take, and the calls renamed inside them.
+#         Types are modelled as the Python parser's Type records (name,
+#         pointer, size, element, type arguments) so mangled names use the
+#         same MonomorphRequest._type_to_str encoding.
+
+import "tools/hostlib/text.flow"
+import "tools/fir/graph.flow"
+import "compiler/src/ast.flow"
+
+extern {
+    function calloc(n: i64, size: i64) -> ptr<void>
+    function realloc(p: ptr<void>, size: i64) -> ptr<void>
+}
+
+# ── Python parser Types ─────────────────────────────────────────
+
+export struct PType {
+    name: string,
+    is_ptr: bool,
+    is_cap: bool,
+    has_size: bool,
+    size: i32,
+    elem: ptr<PType>,
+    args: ptr<ptr<u8>>,
+    nargs: i32
+}
+
+export function pt_new(name: string) -> ptr<PType> {
+    let t: ptr<PType> = calloc(1, 64) as ptr<PType>
+    t.name = name
+    t.is_ptr = false
+    t.is_cap = false
+    t.has_size = false
+    t.size = 0
+    t.elem = null
+    t.args = null
+    t.nargs = 0
+    return t
+}
+
+function pt_add_arg(t: ptr<PType>, a: ptr<PType>) {
+    t.args = realloc(t.args as ptr<void>, ((t.nargs + 1) as i64) * 8) as ptr<ptr<u8>>
+    let as_: ptr<ptr<PType>> = t.args as ptr<ptr<PType>>
+    as_[t.nargs] = a
+    t.nargs = t.nargs + 1
+}
+
+export function pt_arg(t: ptr<PType>, i: i32) -> ptr<PType> {
+    let as_: ptr<ptr<PType>> = t.args as ptr<ptr<PType>>
+    return as_[i]
+}
+
+function span(m_src: ptr<u8>, s: i32, e: i32) -> string {
+    return t_span(m_src, s, e)
+}
+
+# The Python Type for a flowc AST_TYPE (parser.parse_type).
+export function pt_from_ast(arena: AstArena, src: ptr<u8>, ty: i32) -> ptr<PType> {
+    if ty == AST_NONE {
+        return pt_new("void")
+    }
+    let n: AstNode = arena.nodes[ty]
+    if n.kind != AST_TYPE {
+        return pt_new("unknown")
+    }
+    if n.ival == -1 or n.ival == -2 {
+        let mut params: TList = tl_new()
+        let t: ptr<PType> = pt_new("")
+        let mut a: i32 = n.a
+        while a != AST_NONE {
+            let pa: ptr<PType> = pt_from_ast(arena, src, a)
+            pt_add_arg(t, pa)
+            tl_push(&params, pa.name)
+            a = arena.nodes[a].next
+        }
+        let ret: ptr<PType> = pt_from_ast(arena, src, n.b)
+        t.elem = ret
+        let mut tb: TBuf = tb_new()
+        if n.ival == -1 {
+            tb_puts(&tb, "fn_")
+        } else {
+            tb_puts(&tb, "cfn_")
+        }
+        if params.len == 0 {
+            tb_puts(&tb, "void")
+        }
+        let mut i: i32 = 0
+        while i < params.len {
+            if i > 0 {
+                tb_putc(&tb, 95)
+            }
+            tb_puts(&tb, tl_get(&params, i))
+            i = i + 1
+        }
+        tb_puts(&tb, "__")
+        tb_puts(&tb, ret.name)
+        t.name = tb.data as string
+        return t
+    }
+    if n.c == AST_TYPE_CAPABILITY {
+        let t: ptr<PType> = pt_new(t_cat("capability_", span(src, n.name_start, n.name_end)))
+        t.is_cap = true
+        return t
+    }
+    if n.c == AST_TYPE_FIXED_ARRAY {
+        let el: ptr<PType> = pt_from_ast(arena, src, n.a)
+        let mut tb: TBuf = tb_new()
+        tb_puts(&tb, "array_")
+        tb_put_int(&tb, n.ival)
+        tb_putc(&tb, 95)
+        tb_puts(&tb, el.name)
+        let t: ptr<PType> = pt_new(tb.data as string)
+        t.has_size = true
+        t.size = n.ival
+        t.elem = el
+        return t
+    }
+    let name: string = span(src, n.name_start, n.name_end)
+    if n.a == AST_NONE {
+        return pt_new(name)
+    }
+    if n.name_end == n.name_start or t_eq(name, "span") {
+        let el: ptr<PType> = pt_from_ast(arena, src, n.a)
+        let mut t: ptr<PType> = pt_new("")
+        if n.c == AST_TYPE_SPAN_MUTABLE {
+            t.name = t_cat("span_mut_", el.name)
+        } else {
+            t.name = t_cat("span_const_", el.name)
+        }
+        if n.ival > 0 {
+            t.has_size = true
+            t.size = n.ival
+        }
+        t.elem = el
+        return t
+    }
+    if t_eq(name, "ptr") {
+        let el: ptr<PType> = pt_from_ast(arena, src, n.a)
+        let t: ptr<PType> = pt_new(t_cat("ptr_", el.name))
+        t.is_ptr = true
+        t.elem = el
+        return t
+    }
+    if t_eq(name, "array") {
+        let el: ptr<PType> = pt_from_ast(arena, src, n.a)
+        let mut tb: TBuf = tb_new()
+        tb_puts(&tb, "array_")
+        if n.ival > 0 {
+            tb_put_int(&tb, n.ival)
+            tb_putc(&tb, 95)
+        }
+        tb_puts(&tb, el.name)
+        let t: ptr<PType> = pt_new(tb.data as string)
+        if n.ival > 0 {
+            t.has_size = true
+            t.size = n.ival
+        }
+        t.elem = el
+        return t
+    }
+    # vecN<T>: size N and an element type.
+    if t_starts_with(name, "vec") and t_len(name) > 3 and t_is_digit(t_at(name, 3)) and arena.nodes[n.a].next == AST_NONE {
+        let el: ptr<PType> = pt_from_ast(arena, src, n.a)
+        let t: ptr<PType> = pt_new(t_cat3(name, "_", el.name))
+        t.has_size = true
+        t.elem = el
+        return t
+    }
+    # Generic application X<A, B>: X_A_B with type arguments.
+    let t: ptr<PType> = pt_new("")
+    let mut tb: TBuf = tb_new()
+    tb_puts(&tb, name)
+    let mut a: i32 = n.a
+    while a != AST_NONE {
+        let pa: ptr<PType> = pt_from_ast(arena, src, a)
+        pt_add_arg(t, pa)
+        tb_putc(&tb, 95)
+        tb_puts(&tb, pa.name)
+        a = arena.nodes[a].next
+    }
+    t.name = tb.data as string
+    return t
+}
+
+function pt_is_plain(t: ptr<PType>) -> bool {
+    return t_len(t.name) > 0 and not t.is_ptr and not t.is_cap and not t.has_size and t.elem == null and t.nargs == 0
+}
+
+# MonomorphRequest._type_to_str.
+export function pt_enc(t: ptr<PType>) -> string {
+    if pt_is_plain(t) {
+        return t.name
+    }
+    let mut parts: TList = tl_new()
+    if t.is_ptr {
+        tl_push(&parts, "P")
+    }
+    if t.is_cap {
+        tl_push(&parts, "C")
+    }
+    let mut tb: TBuf = tb_new()
+    tb_puts(&tb, "N")
+    tb_put_int(&tb, t_len(t.name))
+    tb_puts(&tb, "_")
+    tb_puts(&tb, t.name)
+    tl_push(&parts, tb.data as string)
+    if t.has_size {
+        let mut sb: TBuf = tb_new()
+        tb_puts(&sb, "S")
+        tb_put_int(&sb, t.size)
+        tl_push(&parts, sb.data as string)
+    }
+    if t.elem != null {
+        tl_push(&parts, t_cat("E", pt_enc(t.elem)))
+    }
+    if t.nargs > 0 {
+        let mut ab: TBuf = tb_new()
+        tb_puts(&ab, "T")
+        tb_put_int(&ab, t.nargs)
+        tb_puts(&ab, "_")
+        let mut i: i32 = 0
+        while i < t.nargs {
+            if i > 0 {
+                tb_putc(&ab, 95)
+            }
+            tb_puts(&ab, pt_enc(pt_arg(t, i)))
+            i = i + 1
+        }
+        tl_push(&parts, ab.data as string)
+    }
+    let mut out: TBuf = tb_new()
+    let mut i: i32 = 0
+    while i < parts.len {
+        if i > 0 {
+            tb_puts(&out, "__")
+        }
+        tb_puts(&out, tl_get(&parts, i))
+        i = i + 1
+    }
+    return out.data as string
+}
+
+# ── Type maps (type parameter -> concrete Type) ─────────────────
+
+export struct TMap {
+    names: TList,
+    types: ptr<ptr<PType>>,
+    cap: i32
+}
+
+export function tm_new() -> TMap {
+    return TMap { names: tl_new(), types: calloc(16, 8) as ptr<ptr<PType>>, cap: 16 }
+}
+
+export function tm_put(m: ptr<TMap>, name: string, t: ptr<PType>) {
+    if m.names.len >= m.cap {
+        m.cap = m.cap * 2
+        m.types = realloc(m.types as ptr<void>, (m.cap as i64) * 8) as ptr<ptr<PType>>
+    }
+    let ts: ptr<ptr<PType>> = m.types
+    ts[m.names.len] = t
+    tl_push(&m.names, name)
+}
+
+export function tm_get(m: ptr<TMap>, name: string) -> ptr<PType> {
+    let i: i32 = tl_index(&m.names, name)
+    if i < 0 {
+        return null
+    }
+    let ts: ptr<ptr<PType>> = m.types
+    return ts[i]
+}
+
+export function tm_len(m: ptr<TMap>) -> i32 {
+    return m.names.len
+}
+
+export function tm_type_at(m: ptr<TMap>, i: i32) -> ptr<PType> {
+    let ts: ptr<ptr<PType>> = m.types
+    return ts[i]
+}
+
+# The type parameters in the order sorted(key=-len(name)) visits them:
+# longest first, ties in declaration order.
+export function tm_by_len(m: ptr<TMap>) -> IVec {
+    let mut order: IVec = iv_new()
+    let n: i32 = m.names.len
+    let mut i: i32 = 0
+    while i < n {
+        iv_push(&order, i)
+        i = i + 1
+    }
+    i = 1
+    while i < n {
+        let cur: i32 = iv_get(&order, i)
+        let cl: i32 = t_len(tl_get(&m.names, cur))
+        let mut j: i32 = i - 1
+        while j >= 0 and t_len(tl_get(&m.names, iv_get(&order, j))) < cl {
+            iv_set(&order, j + 1, iv_get(&order, j))
+            j = j - 1
+        }
+        iv_set(&order, j + 1, cur)
+        i = i + 1
+    }
+    return order
+}
+
+function split_us(s: string) -> TList {
+    let mut l: TList = tl_new()
+    let n: i32 = t_len(s)
+    let mut st: i32 = 0
+    let mut i: i32 = 0
+    while i <= n {
+        if i == n or t_at(s, i) == 95 {
+            tl_push(&l, t_sub(s, st, i))
+            st = i + 1
+        }
+        i = i + 1
+    }
+    return l
+}
+
+function join_us(l: ptr<TList>, from: i32, upto: i32) -> string {
+    let mut tb: TBuf = tb_new()
+    let mut i: i32 = from
+    while i < upto {
+        if i > from {
+            tb_putc(&tb, 95)
+        }
+        tb_puts(&tb, tl_get(l, i))
+        i = i + 1
+    }
+    return tb.data as string
+}
+
+# _rewrite_mangled_type_name: replace whole `_`-separated segments.
+function rewrite_segments(name: string, m: ptr<TMap>) -> string {
+    if t_len(name) == 0 or tm_len(m) == 0 {
+        return name
+    }
+    let mut cur: string = name
+    let mut order: IVec = tm_by_len(m)
+    let mut k: i32 = 0
+    while k < order.len {
+        let idx: i32 = iv_get(&order, k)
+        let tp: string = tl_get(&m.names, idx)
+        let conc: ptr<PType> = tm_type_at(m, idx)
+        let mut cname: string = "void"
+        if conc != null and t_len(conc.name) > 0 {
+            cname = conc.name
+        }
+        let mut parts: TList = split_us(cur)
+        let mut i: i32 = 0
+        while i < parts.len {
+            if t_eq(tl_get(&parts, i), tp) {
+                tl_set(&parts, i, cname)
+            }
+            i = i + 1
+        }
+        cur = join_us(&parts, 0, parts.len)
+        k = k + 1
+    }
+    return cur
+}
+
+# ── Generic definitions ─────────────────────────────────────────
+
+export struct Mono {
+    gfn_names: TList,
+    gfn_decl: IVec,
+    gfn_tparams: ptr<TList>,
+    gstruct_names: TList,
+    gstruct_n: IVec,
+    concrete: SMap,
+    req_names: TList,
+    req_gfn: IVec,
+    req_maps: ptr<TMap>,
+    req_cap: i32,
+    generated: TList,
+    gen_req: IVec,
+    resolved: SMap
+}
+
+export function mono_new() -> ptr<Mono> {
+    let mo: ptr<Mono> = calloc(1, 512) as ptr<Mono>
+    mo.gfn_names = tl_new()
+    mo.gfn_decl = iv_new()
+    mo.gfn_tparams = calloc(256, 16) as ptr<TList>
+    mo.gstruct_names = tl_new()
+    mo.gstruct_n = iv_new()
+    mo.concrete = sm_new()
+    mo.req_names = tl_new()
+    mo.req_gfn = iv_new()
+    mo.req_maps = calloc(16, 32) as ptr<TMap>
+    mo.req_cap = 16
+    mo.generated = tl_new()
+    mo.gen_req = iv_new()
+    mo.resolved = sm_new()
+    return mo
+}
+
+# Register a generic function (a later definition of a name replaces the
+# earlier one but keeps its place, as a dict does).
+export function mono_add_gfn(mo: ptr<Mono>, name: string, decl: i32, tparams: TList) {
+    let i: i32 = tl_index(&mo.gfn_names, name)
+    if i >= 0 {
+        iv_set(&mo.gfn_decl, i, decl)
+        let tps: ptr<TList> = mo.gfn_tparams
+        tps[i] = tparams
+        return
+    }
+    let n: i32 = mo.gfn_names.len
+    if n >= 256 {
+        return
+    }
+    tl_push(&mo.gfn_names, name)
+    iv_push(&mo.gfn_decl, decl)
+    let tps: ptr<TList> = mo.gfn_tparams
+    tps[n] = tparams
+}
+
+export function mono_add_gstruct(mo: ptr<Mono>, name: string, nparams: i32) {
+    let i: i32 = tl_index(&mo.gstruct_names, name)
+    if i >= 0 {
+        iv_set(&mo.gstruct_n, i, nparams)
+        return
+    }
+    tl_push(&mo.gstruct_names, name)
+    iv_push(&mo.gstruct_n, nparams)
+}
+
+export function mono_gfn_index(mo: ptr<Mono>, name: string) -> i32 {
+    return tl_index(&mo.gfn_names, name)
+}
+
+export function mono_gfn_tparams(mo: ptr<Mono>, g: i32) -> ptr<TList> {
+    let tps: ptr<TList> = mo.gfn_tparams
+    return &tps[g]
+}
+
+export function mono_gstruct_n(mo: ptr<Mono>, name: string) -> i32 {
+    let i: i32 = tl_index(&mo.gstruct_names, name)
+    if i < 0 {
+        return -1
+    }
+    return iv_get(&mo.gstruct_n, i)
+}
+
+export function mono_req_map(mo: ptr<Mono>, r: i32) -> ptr<TMap> {
+    let ms: ptr<TMap> = mo.req_maps
+    return &ms[r]
+}
+
+# Record a request unless one of that mangled name exists. Returns its index.
+export function mono_request(mo: ptr<Mono>, g: i32, map: TMap) -> i32 {
+    let gname: string = tl_get(&mo.gfn_names, g)
+    let mut tb: TBuf = tb_new()
+    tb_puts(&tb, gname)
+    let tps: ptr<TList> = mono_gfn_tparams(mo, g)
+    let mut i: i32 = 0
+    let mut m2: TMap = map
+    if tm_len(&m2) > 0 {
+        tb_putc(&tb, 95)
+    }
+    while i < tm_len(&m2) {
+        if i > 0 {
+            tb_putc(&tb, 95)
+        }
+        tb_puts(&tb, pt_enc(tm_type_at(&m2, i)))
+        i = i + 1
+    }
+    let mangled: string = tb.data as string
+    let at: i32 = tl_index(&mo.req_names, mangled)
+    if at >= 0 {
+        return at
+    }
+    if mo.req_names.len >= mo.req_cap {
+        mo.req_cap = mo.req_cap * 2
+        mo.req_maps = realloc(mo.req_maps as ptr<void>, (mo.req_cap as i64) * 32) as ptr<TMap>
+    }
+    let ms: ptr<TMap> = mo.req_maps
+    ms[mo.req_names.len] = map
+    tl_push(&mo.req_names, mangled)
+    iv_push(&mo.req_gfn, g)
+    let _tps: ptr<TList> = tps
+    return mo.req_names.len - 1
+}
+
+# _match_generic_function: exact name, else the longest generic name that
+# prefixes `name_` with a suffix of the right arity. Returns the generic's
+# index and fills `args` from the suffix (empty for an exact match); -1
+# when nothing matches.
+export function mono_match(mo: ptr<Mono>, name: string, args: ptr<TMap>) -> i32 {
+    let exact: i32 = tl_index(&mo.gfn_names, name)
+    if exact >= 0 {
+        return exact
+    }
+    let mut best: i32 = -1
+    let mut best_len: i32 = -1
+    let mut best_parts: TList = tl_new()
+    let mut g: i32 = 0
+    while g < mo.gfn_names.len {
+        let gname: string = tl_get(&mo.gfn_names, g)
+        let prefix: string = t_cat(gname, "_")
+        if t_starts_with(name, prefix) and t_len(gname) > best_len {
+            let suffix: string = t_from(name, t_len(prefix))
+            let gtp: ptr<TList> = mono_gfn_tparams(mo, g)
+            let np: i32 = gtp.len
+            if np == 1 and t_len(suffix) > 0 {
+                best = g
+                best_len = t_len(gname)
+                best_parts = tl_new()
+                tl_push(&best_parts, suffix)
+            } elif np > 1 and t_len(suffix) > 0 {
+                let parts: TList = split_us(suffix)
+                if parts.len == np {
+                    best = g
+                    best_len = t_len(gname)
+                    best_parts = parts
+                }
+            }
+        }
+        g = g + 1
+    }
+    if best >= 0 {
+        let tps: ptr<TList> = mono_gfn_tparams(mo, best)
+        let mut i: i32 = 0
+        while i < best_parts.len {
+            tm_put(args, tl_get(tps, i), pt_new(tl_get(&best_parts, i)))
+            i = i + 1
+        }
+    }
+    return best
+}
+
+# _substitute_type, for the name it gives.
+export function mono_subst_name(mo: ptr<Mono>, t: ptr<PType>, m: ptr<TMap>) -> string {
+    let direct: ptr<PType> = tm_get(m, t.name)
+    if direct != null {
+        return direct.name
+    }
+    if t_len(t.name) > 0 and tm_len(m) > 0 {
+        let rw: string = rewrite_segments(t.name, m)
+        if not t_eq(rw, t.name) {
+            let parts: TList = split_us(rw)
+            let base: string = tl_get(&parts, 0)
+            let n: i32 = mono_gstruct_n(mo, base)
+            if n >= 0 and t_find_char(rw, 95) >= 0 {
+                let mut rest: TList = split_us(t_from(rw, t_len(base) + 1))
+                if rest.len >= n {
+                    let mut tb: TBuf = tb_new()
+                    tb_puts(&tb, base)
+                    tb_putc(&tb, 95)
+                    tb_puts(&tb, join_us(&rest, 0, n))
+                    return tb.data as string
+                }
+            }
+            return rw
+        }
+    }
+    if t.nargs > 0 {
+        let parts: TList = split_us(t.name)
+        let base: string = tl_get(&parts, 0)
+        if mono_gstruct_n(mo, base) >= 0 {
+            let mut tb: TBuf = tb_new()
+            tb_puts(&tb, base)
+            tb_putc(&tb, 95)
+            let mut i: i32 = 0
+            while i < t.nargs {
+                if i > 0 {
+                    tb_putc(&tb, 95)
+                }
+                tb_puts(&tb, pt_enc(mono_subst_type(mo, pt_arg(t, i), m)))
+                i = i + 1
+            }
+            return tb.data as string
+        }
+    }
+    return t.name
+}
+
+# _substitute_type as a Type (for encoding nested arguments).
+export function mono_subst_type(mo: ptr<Mono>, t: ptr<PType>, m: ptr<TMap>) -> ptr<PType> {
+    let direct: ptr<PType> = tm_get(m, t.name)
+    if direct != null {
+        return direct
+    }
+    let name: string = mono_subst_name(mo, t, m)
+    if t_eq(name, t.name) and t.nargs == 0 and t.elem == null {
+        return t
+    }
+    let r: ptr<PType> = pt_new(name)
+    r.is_ptr = t.is_ptr
+    r.is_cap = t.is_cap
+    r.has_size = t.has_size
+    r.size = t.size
+    let rw: string = rewrite_segments(t.name, m)
+    let parts: TList = split_us(rw)
+    let base: string = tl_get(&parts, 0)
+    if not t_eq(rw, t.name) and mono_gstruct_n(mo, base) >= 0 and t_find_char(rw, 95) >= 0 {
+        # Specialized struct: no element or arguments.
+        return r
+    }
+    if t.elem != null {
+        r.elem = mono_subst_type(mo, t.elem, m)
+    }
+    let nparts: TList = split_us(t.name)
+    if t.nargs > 0 and mono_gstruct_n(mo, nparts.items[0] as string) < 0 {
+        let mut i: i32 = 0
+        while i < t.nargs {
+            pt_add_arg(r, mono_subst_type(mo, pt_arg(t, i), m))
+            i = i + 1
+        }
+    }
+    return r
+}
+
+# _rewrite_type in non-generic functions: a generic struct applied to
+# arguments becomes its specialization's mangled name.
+export function mono_rewrite_name(mo: ptr<Mono>, t: ptr<PType>) -> string {
+    if t.nargs > 0 {
+        let parts: TList = split_us(t.name)
+        let base: string = tl_get(&parts, 0)
+        if mono_gstruct_n(mo, base) >= 0 {
+            let mut tb: TBuf = tb_new()
+            tb_puts(&tb, base)
+            tb_putc(&tb, 95)
+            let mut i: i32 = 0
+            while i < t.nargs {
+                if i > 0 {
+                    tb_putc(&tb, 95)
+                }
+                tb_puts(&tb, pt_enc(pt_arg(t, i)))
+                i = i + 1
+            }
+            return tb.data as string
+        }
+    }
+    return t.name
+}
+
+# The call name after _substitute_expression's `_T` suffix rewrite; with
+# `request` set, records the request it makes.
+export function mono_rename_call(mo: ptr<Mono>, name: string, m: ptr<TMap>, request: bool) -> string {
+    let mut order: IVec = tm_by_len(m)
+    let mut k: i32 = 0
+    while k < order.len {
+        let idx: i32 = iv_get(&order, k)
+        let tp: string = tl_get(&m.names, idx)
+        let token: string = t_cat("_", tp)
+        if t_ends_with(name, token) {
+            let base: string = t_sub(name, 0, t_len(name) - t_len(token))
+            let conc: ptr<PType> = tm_type_at(m, idx)
+            let mut cname: string = "void"
+            if conc != null and t_len(conc.name) > 0 {
+                cname = conc.name
+            }
+            if request {
+                let g: i32 = tl_index(&mo.gfn_names, base)
+                if g >= 0 {
+                    let mut one: TMap = tm_new()
+                    let tps: ptr<TList> = mono_gfn_tparams(mo, g)
+                    let mut pname: string = tp
+                    if tps.len > 0 {
+                        pname = tl_get(tps, 0)
+                    }
+                    tm_put(&one, pname, conc)
+                    let _r: i32 = mono_request(mo, g, one)
+                }
+            }
+            return t_cat3(base, "_", cname)
+        }
+        k = k + 1
+    }
+    return name
+}

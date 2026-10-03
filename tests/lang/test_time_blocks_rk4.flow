@@ -1,0 +1,50 @@
+# Flow-native language test: the rk4 solver.
+#
+# A linear spring (x'' = -x) stepped 100 times at dt = 0.01 must match a
+# classic RK4 reference computed outside the compiler (in Python, once):
+# x = 0.5403023059378852, v = -0.8414709847622888. A constant-rate ODE is
+# exact under RK4, so eight steps of 0.25 move the ramp to exactly 2.0.
+#
+# Supersedes:
+#   tests/unit/test_time_blocks.py::TestEndToEnd::test_rk4_matches_reference_and_moves_state
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+extern {
+    function fabs(x: f64) -> f64
+}
+
+flow Spring {
+    state x : f64 = 1.0
+    state v : f64 = 0.0
+    solver { dt 1 ms  method rk4 }
+    x evolves as v
+    v evolves as 0.0 - x
+}
+
+flow Ramp {
+    state x : f64 = 0.0
+    solver { dt 1 ms  method rk4 }
+    x evolves as 1.0
+}
+
+function main() -> i32 {
+    let mut s: Spring = Spring_new()
+    for k in 0 to 100 {
+        Spring_step(&s, 0.01)
+    }
+    if fabs(s.x - 0.5403023059378852) > 1e-9 {
+        return 1
+    }
+    if fabs(s.v - -0.8414709847622888) > 1e-9 {
+        return 2
+    }
+
+    let mut r: Ramp = Ramp_new()
+    for k in 0 to 8 {
+        Ramp_step(&r, 0.25)
+    }
+    if fabs(r.x - 2.0) > 1e-12 {
+        return 3
+    }
+    return 0
+}

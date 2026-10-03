@@ -17,7 +17,7 @@ To achieve 100% test coverage across the Flow compiler (`src/flow/*.py`), the fo
    - Create synthetic IR and AST graphs that trigger each optimization pass, verifying both the condition checks and the transformation logic.
 5. **DSL Implementations (`physics_dsl.py`, `shader_dsl.py`)**:
    - Write tests specifically parsing and analyzing DSL blocks.
-6. **Execution Pipeline (`run.py`, `repl.py`, `test_runner.py`)**:
+6. **Execution Pipeline (`run.py`)**:
    - Use `unittest.mock` to simulate CLI interactions, subprocess execution, and standard library loading.
 
 **Continuous Integration**:

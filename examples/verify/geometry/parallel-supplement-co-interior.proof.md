@@ -2,9 +2,9 @@
 
 *Co-interior supplementary pairs follow from the complete transversal chain.*
 
-**Source.** euclid — Elements, Book I, Proposition 29
+**Source.** euclid: Elements, Book I, Proposition 29
 
-## Derived fact 1 — co-interior beta equals two right angles minus co-interior alpha
+## Derived fact 1: co-interior beta equals two right angles minus co-interior alpha
 
 **Coordinate.** the Euclidean plane · parallel lines · co-interior supplement witness · **Derived fact**
 

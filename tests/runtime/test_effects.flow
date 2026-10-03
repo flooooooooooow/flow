@@ -1,3 +1,4 @@
+# effects-mode: permissive
 # Runtime test: Effect system basics
 # Returns 0 if all tests pass, non-zero otherwise
 

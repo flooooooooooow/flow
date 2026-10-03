@@ -1,0 +1,137 @@
+import .text { at_outln, at_errln, at_starts, at_from, at_itoa, at_eq }
+
+function parse_bounded(s: string, lo: i32, hi: i32) -> i32 {
+    let n: i32 = strlen(s) as i32
+    if n == 0 { return -1 }
+    let mut value: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = s[i]
+        if c < 48 or c > 57 { return -1 }
+        if value > hi / 10 { return -1 }
+        value = value * 10 + c - 48
+        if value > hi { return -1 }
+        i = i + 1
+    }
+    if value < lo { return -1 }
+    return value
+}
+
+function target_id(s: string) -> i32 {
+    if at_eq(s, "gpu") { return 1 }
+    if at_eq(s, "nvptx") { return 2 }
+    if at_eq(s, "amdgpu") { return 3 }
+    return -1
+}
+
+function async_engine(s: string) -> string {
+    if at_eq(s, "gpu") { return "gpu.async" }
+    if at_eq(s, "amdgpu") { return "amdgpu.async" }
+    return "nvgpu.device_async_copy"
+}
+
+function async_header(buffers: i32, stages: i32, target: string, engine: string) -> string {
+    return "module attributes {flow.async_buffers = " + at_itoa(buffers) + ", flow.async_buffer_slots = " + at_itoa(buffers) + ", flow.async_stage_count = " + at_itoa(stages) + ", flow.async_schedule = \"circular\", flow.async_target = \"" + target + "\", flow.async_copy_engine = \"" + engine + "\"} {\n"
+}
+
+function async_module(stages: i32, buffers: i32, op: string, target: string) -> string {
+    let mut out: string = async_header(buffers, stages, target, async_engine(target))
+    out = out + "  func.func @flow_async_pipeline() -> !async.token {\n"
+    let mut slot: i32 = 0
+    while slot < buffers {
+        out = out + "    %src_slot" + at_itoa(slot) + " = memref.alloc() : memref<16xf32>\n"
+        out = out + "    %dst_slot" + at_itoa(slot) + " = memref.alloc() : memref<16xf32, 3>\n"
+        slot = slot + 1
+    }
+    let mut i: i32 = 0
+    while i < stages {
+        let name: string = "%stage" + at_itoa(i)
+        if i == 0 {
+            out = out + "    " + name + " = async.execute {\n"
+        } elif i < buffers {
+            out = out + "    " + name + " = async.execute {\n"
+        } else {
+            out = out + "    " + name + " = async.execute [%stage" + at_itoa(i - buffers) + "] {\n"
+        }
+        out = out + "      // async.copy stage " + at_itoa(i) + " for " + op + "\n"
+        out = out + "      // async.buffer_slot " + at_itoa(i % buffers) + "\n"
+        let slot_name: string = at_itoa(i % buffers)
+        out = out + "      memref.copy %src_slot" + slot_name + ", %dst_slot" + slot_name + " : memref<16xf32> to memref<16xf32, 3>\n"
+        out = out + "      async.yield\n"
+        out = out + "    } : !async.token\n"
+        i = i + 1
+    }
+    out = out + "    func.return %stage" + at_itoa(stages - 1) + " : !async.token\n  }\n}\n"
+    return out
+}
+
+function nvgpu_module(stages: i32, buffers: i32, op: string) -> string {
+    let mut out: string = async_header(buffers, stages, "nvptx", "nvgpu.device_async_copy")
+    out = out + "  func.func @flow_async_pipeline() -> !nvgpu.device.async.token {\n"
+    out = out + "    %c0 = arith.constant 0 : index\n"
+    let mut slot: i32 = 0
+    while slot < buffers {
+        out = out + "    %src_slot" + at_itoa(slot) + " = memref.alloc() : memref<16xf32>\n"
+        out = out + "    %dst_slot" + at_itoa(slot) + " = memref.alloc() : memref<16xf32, 3>\n"
+        slot = slot + 1
+    }
+    let mut i: i32 = 0
+    while i < stages {
+        let slot_name: string = at_itoa(i % buffers)
+        if i >= buffers {
+            out = out + "    nvgpu.device_async_wait %group" + at_itoa(i - buffers) + "\n"
+        }
+        out = out + "    // async.copy stage " + at_itoa(i) + " for " + op + "\n"
+        out = out + "    // async.buffer_slot " + slot_name + "\n"
+        out = out + "    %copy" + at_itoa(i) + " = nvgpu.device_async_copy %src_slot" + slot_name + "[%c0], %dst_slot" + slot_name + "[%c0], 16 : memref<16xf32> to memref<16xf32, 3>\n"
+        out = out + "    %group" + at_itoa(i) + " = nvgpu.device_async_create_group %copy" + at_itoa(i) + "\n"
+        i = i + 1
+    }
+    i = stages - buffers
+    if i < 0 { i = 0 }
+    while i < stages {
+        out = out + "    nvgpu.device_async_wait %group" + at_itoa(i) + "\n"
+        i = i + 1
+    }
+    out = out + "    func.return %group" + at_itoa(stages - 1) + " : !nvgpu.device.async.token\n  }\n}\n"
+    return out
+}
+
+function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
+    let mut stages: i32 = 2
+    let mut buffers: i32 = 2
+    let mut op: string = "linalg.matmul"
+    let mut target: string = ""
+    let mut i: i32 = 1
+    while i < argc {
+        let arg: string = argv[i] as string
+        if at_starts(arg, "--stages=") {
+            stages = parse_bounded(at_from(arg, 9), 1, 32)
+        } elif at_starts(arg, "--buffers=") {
+            buffers = parse_bounded(at_from(arg, 10), 2, 16)
+        } elif at_starts(arg, "--op=") {
+            op = at_from(arg, 5)
+        } elif at_starts(arg, "--target=") {
+            target = at_from(arg, 9)
+        }
+        i = i + 1
+    }
+    if stages < 1 or buffers < 2 {
+        at_errln("mlir_async: stages must be 1..32 and buffers must be 2..16")
+        return 2
+    }
+    if target_id(target) < 0 {
+        at_errln("mlir_async: --target is required and must be one of 'gpu', 'nvptx', 'amdgpu'")
+        return 2
+    }
+    if at_eq(op, "") {
+        at_errln("mlir_async: --op must not be empty")
+        return 2
+    }
+    if at_eq(target, "nvptx") {
+        at_outln(nvgpu_module(stages, buffers, op))
+    } else {
+        at_outln(async_module(stages, buffers, op, target))
+    }
+    return 0
+}

@@ -20,7 +20,7 @@
 #   1 u/s=0.01   2 u/s=0.02   3 u/s=0.05   R reseed   P pause   Esc quit
 #
 # Run (headless, gated):
-#   FLOW_HOST=python ./flow record examples/evoleco/mutation_selection.flow \
+#   ./flow record examples/evoleco/mutation_selection.flow \
 #       --frames 4 --out /tmp/eco_mutation_selection
 # Run (windowed):
 #   ./flow gfx examples/evoleco/mutation_selection.flow

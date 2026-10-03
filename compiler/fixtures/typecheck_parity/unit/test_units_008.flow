@@ -1,0 +1,17 @@
+
+unit Meter
+unit Second
+unit Kilogram
+unit Radian
+unit Velocity = Meter / Second
+unit Accel = Meter / Second^2
+
+        extern {
+            function sin(x: f64) -> f64
+        }
+        function main() -> i32 {
+            let angle: Radian = 1.57 as Radian
+            let s: f64 = sin(angle)
+            return 0
+        }
+        

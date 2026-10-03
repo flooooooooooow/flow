@@ -2,13 +2,13 @@
 
 *In a right triangle, the square on the hypotenuse equals the sum of squares on the legs.*
 
-**Source.** euclid — Elements, Book I, Proposition 47
+**Source.** euclid: Elements, Book I, Proposition 47
 
-## Derived fact 1 — In a right triangle, the square on the hypotenuse equals the sum of squares on the legs
+## Derived fact 1: In a right triangle, the square on the hypotenuse equals the sum of squares on the legs
 
 **Coordinate.** the Euclidean plane · right triangle · the Pythagorean relation holds · **Derived fact**
 
-*Source: euclid — Elements, Book I, Proposition 47*
+*Source: euclid: Elements, Book I, Proposition 47*
 
 > **Goal.** In a right triangle, the square on the hypotenuse equals the sum of squares on the legs
 >

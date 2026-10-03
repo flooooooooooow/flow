@@ -1,6 +1,6 @@
 # @module verify.Rat
 # @means  Rational numbers as normalized pair quotients.
-# @from   landau — *Foundations of Analysis*
+# @from   landau: *Foundations of Analysis*
 # @tier   definitions-only
 
 # @means  Zero is the left additive identity for rationals.

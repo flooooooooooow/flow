@@ -1,0 +1,58 @@
+$ flow_pkg add flowlm
+[exit 0]
+== stdout
+[94mResolved flowlm@0.1.0 from flow-packages[0m
+[92m✓ Added flowlm = "0.1.0"[0m
+[94m↓ flowlm@0.1.0 from registry[0m
+[92m✓ Installed flowlm from @ROOT@/registry/packages/flowlm[0m
+== flow.toml
+[package]
+name = "app"
+version = "0.1.0"
+description = ""
+author = ""
+license = "MIT"
+entry = "src/main.flow"
+
+[dependencies]
+flowlm = "0.1.0"
+
+[dev-dependencies]
+
+[build]
+host = "flowc"
+# test_command = "flow run tests/test_main.flow"
+
+[conventions]
+# avoid = [
+#   { pattern = "reverse for loop", reason = "generates incorrect step direction (#410)", workaround = "use while with explicit decrement" },
+# ]
+
+[patterns]
+# math = "use fabs((x) as f64) as f32 for single-precision abs"
+== flow.lock
+{
+  "version": 1,
+  "packages": {
+    "flowlm": {
+      "version": "0.1.0",
+      "source": "registry",
+      "resolved": {
+        "path": "@ROOT@/registry/packages/flowlm"
+      }
+    }
+  }
+}
+== flow_packages
+D flow_packages
+D flow_packages/flowlm
+F flow_packages/flowlm/README.md -rw-r--r-- 1872789559 16729
+F flow_packages/flowlm/flow.toml -rw-r--r-- 2923341359 291
+D flow_packages/flowlm/src
+F flow_packages/flowlm/src/corpus.flow -rw-r--r-- 2038780479 7715
+F flow_packages/flowlm/src/gradcheck.flow -rw-r--r-- 3211391825 5759
+F flow_packages/flowlm/src/lib.flow -rw-r--r-- 3459455446 1508
+F flow_packages/flowlm/src/model.flow -rw-r--r-- 2944475256 27166
+F flow_packages/flowlm/src/tokenizer.flow -rw-r--r-- 1400287855 9703
+F flow_packages/flowlm/src/train.flow -rw-r--r-- 1793480905 8645
+F flow_packages/flowlm/src/util.flow -rw-r--r-- 2726050453 4638

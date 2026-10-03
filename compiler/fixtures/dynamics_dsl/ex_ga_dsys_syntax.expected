@@ -1,0 +1,158 @@
+import "stdlib/dynamics/ga_analysis.flow"
+
+# GA + control analysis via the dsys surface syntax
+#
+# Declarative blocks below expand before parse into stdlib dynamics calls.
+# Compare with ga_full_analysis.flow — same analysis, zero boilerplate matrices.
+
+extern {
+    function printf(fmt: string, val: f64) -> i32
+}
+
+
+
+
+
+
+
+function main() -> i32 {
+    # --- dsys DSL expansion (auto-generated) ---
+    let h_rollout: Horizon = horizon_finite(50)
+    let h_asymptotic: Horizon = horizon_infinite(0.98999999999999999)
+    let __dsys_plant_A: array<f64, 4> = [1.0, 0.10000000000000001, 0.0, 1.0]
+    let __dsys_plant_B: array<f64, 2> = [0.0, 0.10000000000000001]
+    let __dsys_plant_C: array<f64, 2> = [1.0, 0.0]
+    let __dsys_plant: DynamicalSystem = dsys_discrete(2, 1, 1, 0.10000000000000001, Matrix { data: __dsys_plant_A, rows: 2, cols: 2 }, Matrix { data: __dsys_plant_B, rows: 2, cols: 1 }, Matrix { data: __dsys_plant_C, rows: 1, cols: 2 })
+    let plant: DynamicalSystem = __dsys_plant
+    let __dsys_b0: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b1: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b2: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b3: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b4: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let mut plant_ok: i32 = 0
+    plant_ok = is_controllable(__dsys_plant, __dsys_b0, __dsys_b1, __dsys_b2, __dsys_b3, __dsys_b4)
+    let mut rho_open: f64 = 0.0
+    rho_open = matrix_spectral_radius_2x2(__dsys_plant.A)
+    let __dsys_b5: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b6: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b7: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b8: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let mut wc_fin: f64 = 0.0
+    let __W_wc_fin: Matrix = gramian_finite_horizon(__dsys_plant, h_rollout, __dsys_b5, __dsys_b6, __dsys_b7, __dsys_b8)
+    wc_fin = matrix_trace(__W_wc_fin)
+    let __dsys_b9: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b10: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b11: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b12: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let mut wc_inf: f64 = 0.0
+    let __W_wc_inf: Matrix = gramian_infinite_horizon(__dsys_plant, h_asymptotic, __dsys_b9, __dsys_b10, __dsys_b11, __dsys_b12)
+    wc_inf = matrix_trace(__W_wc_inf)
+    let mut k1: f64 = 0.0
+    let mut k2: f64 = 0.0
+    let __ga_e0_k1: array<f64, 12> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let __ga_e0_k2: array<f64, 12> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let __ga_e0_fit: array<f64, 12> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let __ga_e0_bk1: array<f64, 1> = [0.0]
+    let __ga_e0_bk2: array<f64, 1> = [0.0]
+    let __ga_e0_hist: array<f64, 30> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let __ga_e0_cfg: GAConfig = GAConfig { population: 12, generations: 30, horizon: 50, mutation: 0.29999999999999999 }
+    ga_evolve_traced(__dsys_plant, 50, __ga_e0_cfg, __ga_e0_k1, __ga_e0_k2, __ga_e0_fit, __ga_e0_bk1, __ga_e0_bk2, __ga_e0_hist)
+    k1 = __ga_e0_bk1[0]
+    k2 = __ga_e0_bk2[0]
+    let __dsys_b13: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b14: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __cl_plant: DynamicalSystem = ga_closed_loop_matrix(__dsys_plant, k1, k2, __dsys_b13, __dsys_b14)
+    let mut rho_cl: f64 = matrix_spectral_radius_2x2(__cl_plant.A)
+    let mut E_cl: f64 = ga_closed_loop_energy(__cl_plant, 50)
+    let mut stable_cl: i32 = 0
+    if matrix_spectral_radius_2x2(__cl_plant.A) < 1.0 { stable_cl = 1 }
+    let mut report: GAAnalysisReport = GAAnalysisReport {
+        plant_controllable: 0, plant_spectral_radius: 0.0,
+        closed_spectral_radius: 0.0, gramian_open_finite: 0.0,
+        gramian_open_infinite: 0.0, closed_loop_energy: 0.0,
+        baseline_cost: 0.0, evolved_cost: 0.0, fitness_drop: 0.0,
+        convergence_gen: 0, stable_closed_loop: 0
+    }
+    let __ga_a0_k1: array<f64, 12> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let __ga_a0_k2: array<f64, 12> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let __ga_a0_fit: array<f64, 12> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let __ga_a0_bk1: array<f64, 1> = [0.0]
+    let __ga_a0_bk2: array<f64, 1> = [0.0]
+    let __ga_a0_hist: array<f64, 30> = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    let __dsys_b15: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b16: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b17: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b18: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b19: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b20: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b21: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b22: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b23: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b24: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b25: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __dsys_b26: array<f64, 4> = [0.0, 0.0, 0.0, 0.0]
+    let __ga_a0_cfg: GAConfig = GAConfig { population: 12, generations: 30, horizon: 50, mutation: 0.29999999999999999 }
+    report = ga_analyze_control_search(__dsys_plant, 50, __ga_a0_cfg, __ga_a0_k1, __ga_a0_k2, __ga_a0_fit, __ga_a0_bk1, __ga_a0_bk2, __ga_a0_hist, __dsys_b15, __dsys_b16, __dsys_b17, __dsys_b18, __dsys_b19, __dsys_b20, __dsys_b21, __dsys_b22, __dsys_b23, __dsys_b24, __dsys_b25, __dsys_b26)
+    k1 = __ga_a0_bk1[0]
+    k2 = __ga_a0_bk2[0]
+    # --- end dsys DSL expansion ---
+
+    println("")
+    println("=== dsys syntax: GA + dynamical systems ===")
+    println("")
+    println("--- Plant (sense block) ---")
+    print("  Controllable:      ")
+    if plant_ok == 1 {
+        println("yes")
+    } else {
+        println("NO")
+    }
+    print("  Open-loop spectral radius: ")
+    printf("%.4f", rho_open)
+    println("")
+    print("  Gramian trace (N): ")
+    printf("%.6f", wc_fin)
+    println("")
+    print("  Gramian trace (inf): ")
+    printf("%.6f", wc_inf)
+    println("")
+    println("--- GA evolved gains ---")
+    print("  k1 = ")
+    printf("%.4f", k1)
+    print("  k2 = ")
+    printf("%.4f", k2)
+    println("")
+    println("--- Closed loop (closed block) ---")
+    print("  spectral radius: ")
+    printf("%.4f", rho_cl)
+    println("")
+    if stable_cl == 1 {
+        println("  Stable attractor: yes")
+    } else {
+        println("  Stable attractor: NO")
+    }
+    print("  State energy:      ")
+    printf("%.6f", E_cl)
+    println("")
+    println("--- Unified report (analyze block) ---")
+    print("  Fitness drop:      ")
+    printf("%.4f", report.fitness_drop)
+    println("")
+    print("  Closed spectral radius: ")
+    printf("%.4f", report.closed_spectral_radius)
+    println("")
+
+    if plant_ok != 1 {
+        return 1
+    }
+    if report.fitness_drop <= 0.0 {
+        return 2
+    }
+    if stable_cl != 1 {
+        return 3
+    }
+    if rho_cl >= rho_open {
+        return 4
+    }
+    return 0
+}

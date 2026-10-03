@@ -1,0 +1,2 @@
+Error: 'solver' block in flow 'Osc' needs a 'dt' setting at line 4, column 1
+write 'solver { dt 1 ms }'

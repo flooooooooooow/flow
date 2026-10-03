@@ -1,0 +1,4 @@
+dynamics {
+    horizon h finite 3
+    let x: i32 = 1
+}

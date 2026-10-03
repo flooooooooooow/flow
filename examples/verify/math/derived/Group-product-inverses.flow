@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  The inverse of a product reverses the factors.
-# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @from   dummit-foote: *Abstract Algebra*, §1.1
 # @tier   derived
 
 # @means  inv(a * b) = inv(b) * inv(a).

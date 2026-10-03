@@ -1,0 +1,37 @@
+[package]
+name = "check-fixture"
+version = "0.1.0"
+
+[build]
+host = "flowc"
+test_command = "flow run tests/test_main.flow"
+
+[[conventions.avoid]]
+pattern = "reverse for loop"
+reason = "generates incorrect step direction (#410)"
+workaround = "use while with explicit decrement"
+
+[[conventions.avoid]]
+pattern = "TODO"
+reason = "track work in issues"
+
+[[conventions.avoid]]
+pattern = "let mut \\w+ = 0"
+workaround = "start from a named constant"
+
+[[conventions.avoid]]
+pattern = "unbalanced (group"
+
+[[conventions.avoid]]
+pattern = ""
+reason = "an empty pattern is skipped"
+
+[[conventions.avoid]]
+pattern = "^function main"
+
+[[conventions.avoid]]
+pattern = "Grüße"
+reason = "non-ASCII text"
+
+[patterns]
+math = "use fabs"

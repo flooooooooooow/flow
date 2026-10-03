@@ -1,0 +1,5 @@
+Resolving modules...
+@WORK@/typeerr.flow:3:1: error: Function 'bad' returns string but should return i32
+flowc emit: typecheck failed
+flowc emit: tc_errs=1
+Python generation error: flowc could not compile typeerr.flow

@@ -14,7 +14,7 @@
 #   1 ELEV    2 BIOME    3 FLOW
 #   Esc quit
 #
-# Run: FLOW_HOST=python ./flow gfx examples/planet/planet_evidence.flow
+# Run: ./flow gfx examples/planet/planet_evidence.flow
 
 import "stdlib/gfx.flow"
 import "stdlib/text.flow"

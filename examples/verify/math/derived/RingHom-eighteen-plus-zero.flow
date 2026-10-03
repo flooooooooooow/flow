@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Eighteen plus zero maps to eighteen under a ring homomorphism.
-# @from   dummit-foote — *Abstract Algebra*, §7.3
+# @from   dummit-foote: *Abstract Algebra*, §7.3
 # @tier   derived
 
 # @means  f(18 + 0) = 18.

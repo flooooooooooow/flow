@@ -1,0 +1,384 @@
+# @module flowc.shader_emit
+# @means  FLOWC_SHADER mode: build a fill-shader (FSL) program to Metal or
+#         WGSL files, as compile_shader_file / compile_shader_file_wgsl in
+#         the former Python did. The language itself is shader_dsl.flow.
+#
+#   FLOWC_SHADER=metal  FLOWC_IN=prog.flow FLOWC_OUT=<dir> [FLOWC_SHADER_NAME=n]
+#       <dir>/<stem>_gallery.metal, <stem>_gallery.entries, and per fill
+#       <name>_fill.metal and <name>_fill.entry. Prints the gallery path.
+#   FLOWC_SHADER=wgsl   FLOWC_IN=prog.flow FLOWC_OUT=<dir> [FLOWC_SHADER_NAME=n]
+#       <dir>/<stem>_gallery.wgsl (or <name>_fill.wgsl when named) and
+#       <stem>_gallery.wgsl.entries. Prints the WGSL path.
+#   FLOWC_SHADER=list   FLOWC_IN=prog.flow
+#       Prints each fill name, one per line.
+#   FLOWC_SHADER=expand FLOWC_IN=prog.flow FLOWC_OUT=<file>
+#       Writes the host source (the stub `main` for a fill-shader module,
+#       other source unchanged).
+#
+# Errors print `flowc shader: <message>` on stdout and return 1. The
+# output directory is created with its parents.
+
+import .fileio { flowc_read_file, flowc_write_file, flowc_io_file_size, flowc_io_mkdir }
+import .bytebuf { ByteBuf }
+import .shader_dsl {
+    ShCtx, SH_METAL, SH_WGSL,
+    flowc_shader_buf_new, flowc_shader_buf_free, flowc_shader_putc, flowc_shader_ctx_new,
+    flowc_shader_ctx_free, flowc_shader_ctx_msg, flowc_shader_extract,
+    flowc_shader_fill_count, flowc_shader_put_fill_name,
+    flowc_shader_fill_named, flowc_shader_gen, flowc_shader_expand_in_place
+}
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+    function puts(s: string) -> i32
+}
+
+function se_putc(w: ptr<ByteBuf>, c: u8) {
+    flowc_shader_putc(w, c)
+}
+
+function se_puts(w: ptr<ByteBuf>, s: string) {
+    let p: ptr<u8> = s
+    let n: i32 = strlen(s) as i32
+    let mut i: i32 = 0
+    while i < n {
+        se_putc(w, p[i])
+        i = i + 1
+    }
+}
+
+function se_cstr(w: ptr<ByteBuf>) -> string {
+    w[0].p[w[0].len] = 0
+    return w[0].p as string
+}
+
+function se_error(head: string, tail: string) {
+    let w: ptr<ByteBuf> = flowc_shader_buf_new(4096)
+    se_puts(w, "flowc shader: ")
+    se_puts(w, head)
+    se_puts(w, tail)
+    puts(se_cstr(w))
+    flowc_shader_buf_free(w)
+}
+
+function se_ctx_error(c: ptr<ShCtx>) {
+    let m: ptr<ByteBuf> = flowc_shader_ctx_msg(c)
+    let w: ptr<ByteBuf> = flowc_shader_buf_new(m[0].len + 64)
+    se_puts(w, "flowc shader: ")
+    let mut i: i32 = 0
+    while i < m[0].len {
+        se_putc(w, m[0].p[i])
+        i = i + 1
+    }
+    puts(se_cstr(w))
+    flowc_shader_buf_free(w)
+}
+
+# out_dir + "/" + a + b + c into a fresh buffer.
+function se_path(dir: string, a: ptr<ByteBuf>, b: string) -> ptr<ByteBuf> {
+    let w: ptr<ByteBuf> = flowc_shader_buf_new(4096)
+    se_puts(w, dir)
+    if w[0].len > 0 and w[0].p[w[0].len - 1] != 47 {
+        se_putc(w, 47)
+    }
+    let mut i: i32 = 0
+    while i < a[0].len {
+        se_putc(w, a[0].p[i])
+        i = i + 1
+    }
+    se_puts(w, b)
+    return w
+}
+
+# mkdir -p: each parent, then the directory. Failures (already exists)
+# are ignored; a directory that cannot be made fails the first write.
+function se_mkdirs(dir: string) {
+    let w: ptr<ByteBuf> = flowc_shader_buf_new(4096)
+    se_puts(w, dir)
+    let n: i32 = w[0].len
+    let mut i: i32 = 1
+    while i < n {
+        if w[0].p[i] == 47 {
+            w[0].p[i] = 0
+            flowc_io_mkdir(w[0].p as string)
+            w[0].p[i] = 47
+        }
+        i = i + 1
+    }
+    flowc_io_mkdir(se_cstr(w))
+    flowc_shader_buf_free(w)
+}
+
+# Path(source).stem: the base name without its last suffix.
+function se_stem(path: string) -> ptr<ByteBuf> {
+    let p: ptr<u8> = path
+    let n: i32 = strlen(path) as i32
+    let mut b: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 47 {
+            b = i + 1
+        }
+        i = i + 1
+    }
+    let mut e: i32 = n
+    let mut k: i32 = n - 1
+    while k > b {
+        if p[k] == 46 {
+            e = k
+            k = b
+        }
+        k = k - 1
+    }
+    let w: ptr<ByteBuf> = flowc_shader_buf_new(n + 8)
+    i = b
+    while i < e {
+        se_putc(w, p[i])
+        i = i + 1
+    }
+    return w
+}
+
+function se_write(path: ptr<ByteBuf>, data: ptr<ByteBuf>) -> i32 {
+    if flowc_write_file(se_cstr(path), data[0].p, data[0].len) != 0 {
+        se_error("cannot write ", se_cstr(path))
+        return 1
+    }
+    return 0
+}
+
+function se_fill_name(c: ptr<ShCtx>, k: i32) -> ptr<ByteBuf> {
+    let w: ptr<ByteBuf> = flowc_shader_buf_new(64)
+    flowc_shader_put_fill_name(c, w, k)
+    return w
+}
+
+# Metal: gallery, entries, and one library per fill.
+function se_metal(c: ptr<ShCtx>, in_path: string, out_dir: string, name: ptr<u8>, nlen: i32) -> i32 {
+    se_mkdirs(out_dir)
+    let stem: ptr<ByteBuf> = se_stem(in_path)
+    let src: ptr<ByteBuf> = flowc_shader_buf_new(65536)
+    if flowc_shader_gen(c, src, SH_METAL, name, nlen, 0 - 1) != 0 {
+        se_ctx_error(c)
+        return 1
+    }
+    let gallery: ptr<ByteBuf> = se_path(out_dir, stem, "_gallery.metal")
+    let mut rc: i32 = se_write(gallery, src)
+    let entries: ptr<ByteBuf> = flowc_shader_buf_new(4096)
+    let nfl: i32 = flowc_shader_fill_count(c)
+    let mut k: i32 = 0
+    while k < nfl {
+        if nlen < 0 or flowc_shader_fill_named(c, k, name, nlen) == 1 {
+            flowc_shader_put_fill_name(c, entries, k)
+            se_puts(entries, "_frag\n")
+        }
+        k = k + 1
+    }
+    let epath: ptr<ByteBuf> = se_path(out_dir, stem, "_gallery.entries")
+    if rc == 0 {
+        rc = se_write(epath, entries)
+    }
+    k = 0
+    while k < nfl and rc == 0 {
+        if nlen < 0 or flowc_shader_fill_named(c, k, name, nlen) == 1 {
+            let one: ptr<ByteBuf> = flowc_shader_buf_new(65536)
+            flowc_shader_gen(c, one, SH_METAL, name, nlen, k)
+            let fname: ptr<ByteBuf> = se_fill_name(c, k)
+            let mpath: ptr<ByteBuf> = se_path(out_dir, fname, "_fill.metal")
+            rc = se_write(mpath, one)
+            let entry: ptr<ByteBuf> = flowc_shader_buf_new(128)
+            flowc_shader_put_fill_name(c, entry, k)
+            se_puts(entry, "_frag\n")
+            let ypath: ptr<ByteBuf> = se_path(out_dir, fname, "_fill.entry")
+            if rc == 0 {
+                rc = se_write(ypath, entry)
+            }
+            flowc_shader_buf_free(one)
+            flowc_shader_buf_free(fname)
+            flowc_shader_buf_free(mpath)
+            flowc_shader_buf_free(entry)
+            flowc_shader_buf_free(ypath)
+        }
+        k = k + 1
+    }
+    if rc == 0 {
+        puts(se_cstr(gallery))
+    }
+    flowc_shader_buf_free(stem)
+    flowc_shader_buf_free(src)
+    flowc_shader_buf_free(gallery)
+    flowc_shader_buf_free(entries)
+    flowc_shader_buf_free(epath)
+    return rc
+}
+
+# WGSL: one module for the selection, and the entries list.
+function se_wgsl(c: ptr<ShCtx>, in_path: string, out_dir: string, name: ptr<u8>, nlen: i32) -> i32 {
+    se_mkdirs(out_dir)
+    let stem: ptr<ByteBuf> = se_stem(in_path)
+    let src: ptr<ByteBuf> = flowc_shader_buf_new(65536)
+    if flowc_shader_gen(c, src, SH_WGSL, name, nlen, 0 - 1) != 0 {
+        se_ctx_error(c)
+        return 1
+    }
+    let mut out: ptr<ByteBuf> = se_path(out_dir, stem, "_gallery.wgsl")
+    if nlen >= 0 {
+        flowc_shader_buf_free(out)
+        let nb: ptr<ByteBuf> = flowc_shader_buf_new(nlen + 8)
+        let mut i: i32 = 0
+        while i < nlen {
+            se_putc(nb, name[i])
+            i = i + 1
+        }
+        out = se_path(out_dir, nb, "_fill.wgsl")
+        flowc_shader_buf_free(nb)
+    }
+    let mut rc: i32 = se_write(out, src)
+    let entries: ptr<ByteBuf> = flowc_shader_buf_new(4096)
+    let nfl: i32 = flowc_shader_fill_count(c)
+    let mut first: i32 = 1
+    let mut k: i32 = 0
+    while k < nfl {
+        if nlen < 0 or flowc_shader_fill_named(c, k, name, nlen) == 1 {
+            if first == 0 {
+                se_putc(entries, 10)
+            }
+            flowc_shader_put_fill_name(c, entries, k)
+            se_puts(entries, "_frag")
+            first = 0
+        }
+        k = k + 1
+    }
+    let epath: ptr<ByteBuf> = se_path(out_dir, stem, "_gallery.wgsl.entries")
+    if rc == 0 {
+        rc = se_write(epath, entries)
+    }
+    if rc == 0 {
+        puts(se_cstr(out))
+    }
+    flowc_shader_buf_free(stem)
+    flowc_shader_buf_free(src)
+    flowc_shader_buf_free(out)
+    flowc_shader_buf_free(entries)
+    flowc_shader_buf_free(epath)
+    return rc
+}
+
+function se_mode_is(mode: string, want: string) -> i32 {
+    if strcmp(mode, want) == 0 {
+        return 1
+    }
+    return 0
+}
+
+# Entry point for FLOWC_SHADER=<mode>. `name` may be null or empty.
+export function flowc_shader_mode(mode: string, in_path: string, out_path: string, name: string) -> i32 {
+    let known: i32 = se_mode_is(mode, "metal") + se_mode_is(mode, "wgsl") + se_mode_is(mode, "list") + se_mode_is(mode, "expand")
+    if known == 0 {
+        se_error("unknown FLOWC_SHADER mode ", mode)
+        return 1
+    }
+    let ip: ptr<u8> = in_path
+    if ip == null {
+        se_error("FLOWC_IN is required", "")
+        return 1
+    }
+    let op: ptr<u8> = out_path
+    if op == null and se_mode_is(mode, "list") == 0 {
+        se_error("FLOWC_OUT is required", "")
+        return 1
+    }
+    let fsize: i64 = flowc_io_file_size(in_path)
+    if fsize < 0 {
+        se_error("cannot read ", in_path)
+        return 1
+    }
+    let cap: i32 = (fsize as i32) + 256
+    let buf: ptr<u8> = malloc((cap + 1) as i64)
+    let n: i32 = flowc_read_file(in_path, buf, cap)
+    if n < 0 {
+        se_error("cannot read ", in_path)
+        free(buf)
+        return 1
+    }
+    buf[n] = 0
+
+    if se_mode_is(mode, "expand") == 1 {
+        let xn: i32 = flowc_shader_expand_in_place(buf, n, cap)
+        let mut xrc: i32 = 1
+        if xn >= 0 {
+            xrc = 0
+            if flowc_write_file(out_path, buf, xn) != 0 {
+                se_error("cannot write ", out_path)
+                xrc = 1
+            }
+        }
+        free(buf)
+        return xrc
+    }
+
+    let c: ptr<ShCtx> = flowc_shader_ctx_new(buf, n)
+    free(buf)
+    if flowc_shader_extract(c) != 0 {
+        se_ctx_error(c)
+        flowc_shader_ctx_free(c)
+        return 1
+    }
+    let nfl: i32 = flowc_shader_fill_count(c)
+    if se_mode_is(mode, "list") == 1 {
+        let mut k: i32 = 0
+        while k < nfl {
+            let nm: ptr<ByteBuf> = se_fill_name(c, k)
+            puts(se_cstr(nm))
+            flowc_shader_buf_free(nm)
+            k = k + 1
+        }
+        flowc_shader_ctx_free(c)
+        return 0
+    }
+    if nfl == 0 {
+        if se_mode_is(mode, "metal") == 1 {
+            se_error("No `shader fill Name ", "{ ... }` blocks found.\nSee docs/language/shaders.md")
+        } else {
+            se_error("No `shader fill Name ", "{ ... }` blocks found")
+        }
+        flowc_shader_ctx_free(c)
+        return 1
+    }
+    let np: ptr<u8> = name
+    let mut nlen: i32 = 0 - 1
+    if np != null {
+        if strlen(name) > 0 {
+            nlen = strlen(name) as i32
+        }
+    }
+    if nlen >= 0 {
+        let mut hit: i32 = 0
+        let mut k2: i32 = 0
+        while k2 < nfl {
+            hit = hit + flowc_shader_fill_named(c, k2, np, nlen)
+            k2 = k2 + 1
+        }
+        if hit == 0 {
+            let w: ptr<ByteBuf> = flowc_shader_buf_new(nlen + 32)
+            se_puts(w, "Shader '")
+            se_puts(w, name)
+            se_puts(w, "' not found")
+            se_error(se_cstr(w), "")
+            flowc_shader_buf_free(w)
+            flowc_shader_ctx_free(c)
+            return 1
+        }
+    }
+    let mut rc: i32 = 0
+    if se_mode_is(mode, "metal") == 1 {
+        rc = se_metal(c, in_path, out_path, np, nlen)
+    } else {
+        rc = se_wgsl(c, in_path, out_path, np, nlen)
+    }
+    flowc_shader_ctx_free(c)
+    return rc
+}

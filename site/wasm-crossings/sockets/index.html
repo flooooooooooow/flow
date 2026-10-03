@@ -19,7 +19,7 @@ calling the ordinary socket API round-trips bytes from inside this tab.
 The far end has to speak WebSocket, because a browser cannot open a raw TCP
 socket to an arbitrary host and port. That is a browser security rule.
 Start the relay first:
-<code>python3 scripts/ws_echo_relay.py --port 9505</code>
+<code>./flow tool ws_echo_relay --port 9505</code>
 </p>
 
 <div class="facts">
@@ -53,9 +53,9 @@ Start the relay first:
 <h2>Flow source</h2>
 <pre class="source"># A TCP round trip from inside a browser tab.
 #
-#   python3 scripts/ws_echo_relay.py --port 9505 --tcp-port 9506 &amp;
+#   ./flow tool ws_echo_relay --port 9505 --tcp-port 9506 &amp;
 #   ./flow run examples/wasm/tcp_echo.flow          # native, plain TCP
-#   python3 wasm/flow_wasm_sockets.py               # browser, over WebSocket
+#   ./flow tool wasm_crossings sockets              # browser, over WebSocket
 #
 # This calls Flow&#x27;s ordinary socket API: flow_rt_tcp_connect / send / recv /
 # close in runtime/flow_tcp.c, which are BSD sockets and nothing else. The
@@ -226,57 +226,38 @@ function main() -&gt; i32 {
 }
 </pre>
 
-<h2>The relay (head of scripts/ws_echo_relay.py)</h2>
-<pre class="source">#!/usr/bin/env python3
-&quot;&quot;&quot;A WebSocket echo relay, in the standard library, for the WASM sockets demo.
+<h2>The relay (head of scripts/tools/ws_echo_relay/main.flow)</h2>
+<pre class="source"># A WebSocket echo relay for the WASM sockets demo.
+#
+# A browser cannot open a TCP socket. It can open a WebSocket, which is an
+# HTTP request that upgrades into a framed, bidirectional byte stream.
+# Emscripten bridges BSD sockets onto exactly that: `connect(fd,
+# 127.0.0.1:9505)` inside a WASM module opens `ws://127.0.0.1:9505/`, and
+# every `send`/`recv` becomes a binary WebSocket frame.
+#
+# So a Flow program calling the ordinary socket API reaches this relay,
+# which sends every frame straight back. Nothing here is Flow-specific; any
+# WebSocket echo server works. It is in the tree so the demo has no
+# dependencies.
+#
+#     ./flow tool ws_echo_relay --port 9505
+#
+# Also speaks plain TCP echo on --tcp-port, so the same Flow program can be
+# run natively against the same relay for comparison.
+#
+# The handshake is RFC 6455 section 4.2.2: the reply carries
+# base64(SHA-1(Sec-WebSocket-Key + GUID)). Frames from the client are masked;
+# frames back are not. Each connection is served by its own forked child.
 
-A browser cannot open a TCP socket. It can open a WebSocket, which is an HTTP
-request that upgrades into a framed, bidirectional byte stream. Emscripten
-bridges BSD sockets onto exactly that: `connect(fd, 127.0.0.1:9505)` inside a
-WASM module opens `ws://127.0.0.1:9505/`, and every `send`/`recv` becomes a
-binary WebSocket frame.
+import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_itoa, ft_starts, ft_from, ft_slice, ft_ascii_lower }
+import .net { nt_listen, nt_wait_readable, nt_accept, nt_peer_new, nt_peer_ip, nt_peer_port, nt_nodelay, nt_write_all, nt_write_str, nt_read, nt_read_exact, nt_close, nt_fork, nt_exit, nt_reap }
+import .digest { dg_base64, dg_sha1 }
 
-So a Flow program calling the ordinary socket API reaches this relay, which
-sends every frame straight back. Nothing here is Flow-specific; any WebSocket
-echo server works. It is in the tree so the demo has no dependencies.
-
-    python3 scripts/ws_echo_relay.py --port 9505
-
-Also speaks plain TCP echo on --tcp-port, so the same Flow program can be run
-natively against the same relay for comparison.
-&quot;&quot;&quot;
-
-from __future__ import annotations
-
-import argparse
-import base64
-import hashlib
-import socket
-import struct
-import threading
-
-WS_GUID = b&quot;258EAFA5-E914-47DA-95CA-C5AB0DC85B11&quot;
-
-OP_CONT = 0x0
-OP_TEXT = 0x1
-OP_BINARY = 0x2
-OP_CLOSE = 0x8
-OP_PING = 0x9
-OP_PONG = 0xA
-
-
-def recv_exactly(conn: socket.socket, count: int) -&gt; bytes:
-    &quot;&quot;&quot;Read exactly `count` bytes, or return short on a closed connection.&quot;&quot;&quot;
-    chunks = []
-    got = 0
-    while got &lt; count:
-        chunk = conn.recv(count - got)
-        if not chunk:
-            break
-        chunks.append(ch</pre>
+extern {
+    function </pre>
 
 <footer>
-Built by <code>wasm/flow_wasm_sockets.py</code>. Mechanism:
+Built by <code>./flow tool wasm_crossings sockets</code>. Mechanism:
 <code>docs/language/wasm-crossings.md</code>.
 </footer>
 </main>
@@ -308,7 +289,7 @@ function probe() {
       if (settled) return;   // onopen and the timeout can both fire
       settled = true;
       setFact("f-relay", ok ? "reachable" : "not running", ok ? "ok" : "bad");
-      if (!ok) log("relay not reachable: start it with  python3 scripts/ws_echo_relay.py --port 9505");
+      if (!ok) log("relay not reachable: start it with  ./flow tool ws_echo_relay --port 9505");
       try { ws.close(); } catch (e) { /* already closed */ }
       resolve(ok);
     };

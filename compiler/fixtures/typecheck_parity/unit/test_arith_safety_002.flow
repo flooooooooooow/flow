@@ -1,0 +1,5 @@
+
+        function main() -> i32 {
+            return 10 % 0
+        }
+        

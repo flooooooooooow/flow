@@ -46,8 +46,8 @@ Pyodide.
 <h2>Flow source</h2>
 <pre class="source"># Flow calling Python, in a browser.
 #
-#   ./flow run examples/wasm/python_embed.flow      # native, libpython
-#   python3 wasm/flow_wasm_python.py                # browser, Pyodide
+#   cd examples/wasm &amp;&amp; ../../flow run python_embed.flow   # native, libpython
+#   ./flow tool wasm_crossings python                      # browser, Pyodide
 #
 # Nothing below is browser-aware. It is the ordinary embedding surface from
 # lib/stdlib/python_embed.flow: init, extend sys.path, import a module, call
@@ -55,7 +55,11 @@ Pyodide.
 # drives libpython through the CPython C API. Under WASM they land in
 # wasm/crossing_assets/pyodide_bridge.js, which drives Pyodide.
 #
-# The Python module (examples/wasm/python/flow_demo.py) is also unchanged.
+# The Python module (examples/interop/python/flow_demo.py) is also unchanged.
+#
+# sys.path gets two entries, both relative to the working directory:
+# &quot;python&quot;, where the browser page writes the module inside Pyodide&#x27;s
+# filesystem, and &quot;../interop/python&quot; for a native run from examples/wasm.
 
 import &quot;stdlib/python_embed.flow&quot;
 
@@ -66,7 +70,7 @@ extern {
 function main() -&gt; i32 {
     print_line(&quot;python_embed: Flow calling CPython&quot;)
 
-    let ctx0: PythonContext = python_begin(&quot;.&quot;, &quot;python&quot;)
+    let ctx0: PythonContext = python_begin(&quot;python&quot;, &quot;../interop/python&quot;)
     if !ctx0.ok {
         print_line(python_last_error())
         return ctx0.error
@@ -142,8 +146,8 @@ function main() -&gt; i32 {
 }
 </pre>
 
-<h2>Python module (examples/wasm/python/flow_demo.py)</h2>
-<pre class="source">&quot;&quot;&quot;Python called from Flow, unchanged between CPython and Pyodide.
+<h2>Python module (examples/interop/python/flow_demo.py)</h2>
+<pre class="source" id="py-src">&quot;&quot;&quot;Python called from Flow, unchanged between CPython and Pyodide.
 
 Flow reaches these through lib/stdlib/python_embed.flow. Natively that is
 libpython in-process; in a browser it is Pyodide, and this file does not know
@@ -286,7 +290,7 @@ addToLibrary({
         // Every</pre>
 
 <footer>
-Built by <code>wasm/flow_wasm_python.py</code>. Pyodide 0.27.2 from
+Built by <code>./flow tool wasm_crossings python</code>. Pyodide 0.27.2 from
 jsDelivr, so this page needs network. Mechanism:
 <code>docs/language/wasm-crossings.md</code>.
 </footer>
@@ -323,7 +327,8 @@ function addRow(call, route, observed, ok) {
 
   // Give the Flow program something to import. It asks for sys.path entry
   // "python", so the module goes there inside Pyodide's own filesystem.
-  const source = await (await fetch("flow_demo.py")).text();
+  // The module text is the listing above; textContent undoes the HTML escaping.
+  const source = document.getElementById("py-src").textContent;
   pyodide.FS.mkdir("/home/pyodide/python");
   pyodide.FS.writeFile("/home/pyodide/python/flow_demo.py", source);
 

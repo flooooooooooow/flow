@@ -1,0 +1,20 @@
+# always / never invariants lower to Name_check, called from Name_step
+# after the outputs are refreshed. A violation prints and exits 1.
+flow Bound {
+    state x : f64 = 0.0
+    output y : f64 = x
+    x evolves as 1.0
+    always {
+        x < 10.0
+        x > -1.0
+    }
+    never {
+        x < -0.5
+    }
+}
+
+function main() -> i32 {
+    let mut b: Bound = Bound_new()
+    Bound_step(&b, 0.5)
+    return 0
+}

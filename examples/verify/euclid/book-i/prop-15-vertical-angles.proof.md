@@ -2,13 +2,13 @@
 
 *If two straight lines cut one another, the vertical angles are equal.*
 
-**Source.** euclid — Elements, Book I, Proposition 15
+**Source.** euclid: Elements, Book I, Proposition 15
 
-## Derived fact 1 — If two straight lines cut one another, the vertical angles are equal
+## Derived fact 1: If two straight lines cut one another, the vertical angles are equal
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 15: vertical angles are equal · **Derived fact**
 
-*Source: euclid — Elements, Book I, Proposition 15*
+*Source: euclid: Elements, Book I, Proposition 15*
 
 *Built on: proposition 13: adjacent angles on a straight line sum to two right angles, for Book I of the Elements in on the Euclidean plane*
 

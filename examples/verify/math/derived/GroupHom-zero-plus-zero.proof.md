@@ -2,9 +2,9 @@
 
 *A group homomorphism sends zero plus zero to zero.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §3.1
+**Source.** dummit-foote: *Abstract Algebra*, §3.1
 
-## Derived fact 1 — f(0 + 0) = 0
+## Derived fact 1: f(0 + 0) = 0
 
 **Coordinate.** GroupHom · preservation · zero plus zero maps to identity · **Derived fact**
 

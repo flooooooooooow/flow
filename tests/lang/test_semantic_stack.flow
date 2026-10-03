@@ -1,0 +1,249 @@
+# End-to-end test for the Flow semantic stack:
+# static semantics -> denotation -> dynamic discovery -> recognition -> residual.
+# Exit 0 on success; nonzero identifies the failing layer.
+
+import "compiler/src/ast.flow"
+import "compiler/src/parser.flow"
+import "compiler/src/semantic_facts.flow"
+import "compiler/src/static_semantics.flow"
+import "compiler/src/denotation.flow"
+import "compiler/src/recognition.flow"
+import "compiler/src/dynamic_invariants.flow"
+import "compiler/src/residual.flow"
+import "compiler/src/semantic_pipeline.flow"
+
+extern {
+    function strlen(s: string) -> i64
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    # 1. Parse an actual flow declaration and form its Flow-native denotation.
+    let source_text: string =
+        "flow Controller { " +
+        "state x : i32 = 0 " +
+        "input u : i32 " +
+        "output y : i32 = x " +
+        "param k : i32 = 2 " +
+        "x evolves as k * u " +
+        "always { x < 100 } " +
+        "recognize { numerical safety } " +
+        "}"
+    let source: ptr<u8> = source_text
+    let mut parser: Parser = flowc_parser_new(
+        source,
+        strlen(source_text) as i32,
+        4096
+    )
+    let root: i32 = flowc_parse_program(&parser)
+    if root == AST_NONE or parser.err != 0 {
+        return 1
+    }
+    let flow_id: i32 = parser.arena.nodes[root].a
+    if flow_id == AST_NONE or parser.arena.nodes[flow_id].kind != AST_FLOW_DECL {
+        return 2
+    }
+
+    let before: FlowcDenotation = flowc_denotation_from_flow(
+        parser.arena, flow_id, source
+    )
+    if before.state_schema == 0 or before.dynamics == 0 or before.constraints == 0 {
+        return 3
+    }
+
+    # 2. The declared recognition contract is available in the self-hosted compiler.
+    let mask: i32 = flowc_recognition_contract_mask(
+        parser.arena, flow_id, source
+    )
+    let expected_mask: i32 =
+        FLOWC_RECOGNITION_NUMERICAL | FLOWC_RECOGNITION_SAFETY
+    if mask != expected_mask {
+        return 4
+    }
+
+    # Constraints are visible to safety but not numerical recognition.
+    let mut after: FlowcDenotation = before
+    after.constraints = before.constraints ^ 1
+    if flowc_recognition_preserved(
+        before, after, FLOWC_RECOGNITION_NUMERICAL
+    ) != 1 {
+        return 5
+    }
+    if flowc_recognition_preserved(
+        before, after, FLOWC_RECOGNITION_SAFETY
+    ) != 0 {
+        return 6
+    }
+
+    # 3. Existing AST/static semantics can emit PROVEN facts into the ledger.
+    let mut static_storage: array<FlowcSemanticFact, 16> = [
+        flowc_fact_none(), flowc_fact_none(), flowc_fact_none(), flowc_fact_none(),
+        flowc_fact_none(), flowc_fact_none(), flowc_fact_none(), flowc_fact_none(),
+        flowc_fact_none(), flowc_fact_none(), flowc_fact_none(), flowc_fact_none(),
+        flowc_fact_none(), flowc_fact_none(), flowc_fact_none(), flowc_fact_none()
+    ]
+    let static_n: i32 = flowc_static_collect_literal_facts(
+        parser.arena,
+        FLOWC_RECOGNITION_NUMERICAL,
+        static_storage,
+        16
+    )
+    if static_n < 3 {
+        return 7
+    }
+    if static_storage[0].status != FLOWC_FACT_STATUS_PROVEN {
+        return 8
+    }
+
+    # 4. Runtime discovery observes a regular stride family.
+    let mut stride: FlowcDynScalar = flowc_dyn_scalar_new(77)
+    flowc_dyn_scalar_observe(&stride, 16)
+    flowc_dyn_scalar_observe(&stride, 20)
+    flowc_dyn_scalar_observe(&stride, 24)
+    flowc_dyn_scalar_observe(&stride, 28)
+
+    let mut dynamic_storage: array<FlowcSemanticFact, 8> = [
+        flowc_fact_none(), flowc_fact_none(), flowc_fact_none(), flowc_fact_none(),
+        flowc_fact_none(), flowc_fact_none(), flowc_fact_none(), flowc_fact_none()
+    ]
+    let dynamic_n: i32 = flowc_dyn_scalar_facts(
+        stride,
+        4,
+        FLOWC_RECOGNITION_NUMERICAL,
+        dynamic_storage,
+        8
+    )
+    if dynamic_n != 6 {
+        return 9
+    }
+
+    let mut congruence: FlowcSemanticFact = flowc_fact_none()
+    let mut di: i32 = 0
+    while di < dynamic_n {
+        if dynamic_storage[di].kind == FLOWC_FACT_CONGRUENCE {
+            congruence = dynamic_storage[di]
+        }
+        di = di + 1
+    }
+    if flowc_fact_valid(congruence) == 0 {
+        return 10
+    }
+    if congruence.provenance != FLOWC_FACT_SOURCE_DYNAMIC {
+        return 11
+    }
+    if congruence.status != FLOWC_FACT_STATUS_OBSERVED {
+        return 12
+    }
+
+    # 5. Build the recogniser's represented model. It knows range/sign/alignment
+    # but not the modular relation x == 16 (mod 4).
+    let mut represented_storage: array<FlowcSemanticFact, 8> = [
+        flowc_fact_none(), flowc_fact_none(), flowc_fact_none(), flowc_fact_none(),
+        flowc_fact_none(), flowc_fact_none(), flowc_fact_none(), flowc_fact_none()
+    ]
+    let mut represented: FlowcSemanticLedger = flowc_semantic_ledger_new(
+        represented_storage, 8
+    )
+    if flowc_semantic_ledger_add(
+        &represented,
+        flowc_static_range_fact(77, 16, 28, FLOWC_RECOGNITION_NUMERICAL)
+    ) == 0 { return 13 }
+    if flowc_semantic_ledger_add(
+        &represented,
+        flowc_static_unary_fact(
+            FLOWC_FACT_NONZERO, 77, FLOWC_RECOGNITION_NUMERICAL
+        )
+    ) == 0 { return 14 }
+    if flowc_semantic_ledger_add(
+        &represented,
+        flowc_static_unary_fact(
+            FLOWC_FACT_NONNEGATIVE, 77, FLOWC_RECOGNITION_NUMERICAL
+        )
+    ) == 0 { return 15 }
+    if flowc_semantic_ledger_add(
+        &represented,
+        flowc_static_unary_fact(
+            FLOWC_FACT_POSITIVE, 77, FLOWC_RECOGNITION_NUMERICAL
+        )
+    ) == 0 { return 16 }
+    if flowc_semantic_ledger_add(
+        &represented,
+        flowc_static_alignment_fact(
+            77, 4, FLOWC_RECOGNITION_NUMERICAL
+        )
+    ) == 0 { return 17 }
+
+    let mut observed: FlowcSemanticLedger = flowc_semantic_ledger_new(
+        dynamic_storage, 8
+    )
+    observed.len = dynamic_n
+
+    let mut residual_storage: array<FlowcSemanticFact, 8> = [
+        flowc_fact_none(), flowc_fact_none(), flowc_fact_none(), flowc_fact_none(),
+        flowc_fact_none(), flowc_fact_none(), flowc_fact_none(), flowc_fact_none()
+    ]
+    let residual_n: i32 = flowc_semantic_residuals(
+        observed,
+        represented,
+        FLOWC_RECOGNITION_NUMERICAL,
+        residual_storage,
+        8
+    )
+    if residual_n != 1 {
+        return 18
+    }
+    if residual_storage[0].kind != FLOWC_FACT_CONGRUENCE {
+        return 19
+    }
+
+    # The same observation is invisible outside its recognition domain.
+    let safety_residual_n: i32 = flowc_semantic_residuals(
+        observed,
+        represented,
+        FLOWC_RECOGNITION_SAFETY,
+        residual_storage,
+        8
+    )
+    if safety_residual_n != 0 {
+        return 20
+    }
+
+    # 6. Persistence + predictive retention makes it a structured residual
+    # candidate, but does not make it a proof.
+    let mut rs: FlowcResidualState = flowc_residual_state_new()
+    flowc_residual_observe_window(&rs, congruence, 1, 1)
+    flowc_residual_observe_window(&rs, congruence, 1, 1)
+    flowc_residual_observe_window(&rs, congruence, 0, 1)
+
+    if flowc_residual_is_structured(rs, 3, 4, 600000) != 1 {
+        return 21
+    }
+
+    let unguarded: FlowcSemanticFact = flowc_residual_promote(
+        rs, 3, 4, 600000, 0, 0
+    )
+    if flowc_fact_can_optimize(unguarded) != 0 {
+        return 22
+    }
+
+    let guarded: FlowcSemanticFact = flowc_residual_promote(
+        rs, 3, 4, 600000, 0, 1
+    )
+    if guarded.status != FLOWC_FACT_STATUS_GUARDED {
+        return 23
+    }
+    if flowc_fact_can_optimize(guarded) != 1 {
+        return 24
+    }
+
+    let proven: FlowcSemanticFact = flowc_residual_promote(
+        rs, 3, 4, 600000, 1, 0
+    )
+    if proven.status != FLOWC_FACT_STATUS_PROVEN {
+        return 25
+    }
+
+    flowc_parser_free(parser)
+    puts("semantic stack tests passed")
+    return 0
+}

@@ -1,0 +1,4 @@
+Flow analyze (misra-c-2024)
+Source: tests/tools/analyze/fixtures/clean.c
+------------------------------------------------------------
+No flagged patterns.

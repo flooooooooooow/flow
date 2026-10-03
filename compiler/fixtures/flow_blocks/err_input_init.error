@@ -1,0 +1,2 @@
+Error: input 'u' in flow 'Osc' cannot have an initializer; inputs are written by the embedder at line 4, column 1
+remove the '= ...' part

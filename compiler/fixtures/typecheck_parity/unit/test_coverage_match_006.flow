@@ -1,0 +1,15 @@
+
+            enum Direction {
+                North,
+                South,
+                East,
+                West
+            }
+
+            function f(d: Direction) -> i32 {
+                match d.tag {
+                    Direction_North => { return 1 }
+                }
+                return -1
+            }
+            

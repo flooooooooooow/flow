@@ -1,0 +1,23 @@
+# Helper module for tests/lang/test_overload_import.flow and
+# tests/cgen/overload_import.flow (#1044): overloads by parameter type and
+# by parameter count.
+
+export function area(r: f64) -> f64 {
+    return r * r * 3.0
+}
+
+export function area(w: i32, h: i32) -> i32 {
+    return w * h
+}
+
+export function show(x: i32) -> i32 {
+    return x + 1
+}
+
+export function show(x: f64) -> i32 {
+    return 100
+}
+
+export function show(s: string) -> i32 {
+    return 200
+}

@@ -1,0 +1,9 @@
+exit=2
+--- stdout
+--- stderr
+usage: flow test [-h] [--filter FILTER] [--list] [--backend {c,mlir,all}]
+                 [--sanitize SANITIZE] [--profile {safety,flight}]
+                 [--host {flowc,python,auto}] [--timeout TIMEOUT]
+                 [--fail-fast] [--keep] [-v]
+                 [paths ...]
+flow test: error: ambiguous option: --f could match --filter, --fail-fast

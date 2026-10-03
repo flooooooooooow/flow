@@ -1,0 +1,101 @@
+# @module benchmarks.ordering.run
+# @means  Build and run the adaptive ordering benchmark (issue #145).
+#
+#   ./flow tool benchmarks/ordering/run.flow          three runs, plans first
+#   ./flow tool benchmarks/ordering/run.flow 5        five runs
+#
+# The plan report comes from flowc's `flow explain` output
+# (FLOWC_EXPLAIN=1), so the timings and the plans that produced them always
+# come from the same build.
+
+import "tools/flow_cli/sys.flow"
+import "benchmarks/bench_tools.flow"
+import "tools/flow_cli/flowc_build.flow"
+import std.process { ProcCmd, ProcStrs, proc_arg, proc_args }
+
+# A plan line: `[N] sort...`, or a `chose` line indented six spaces (printed
+# without the indent).
+function plan_line(l: string) -> string {
+    let indent: string = "      chose "
+    if s_starts(l, indent) {
+        return s_from(l, 6)
+    }
+    if not s_starts(l, "[") {
+        return ""
+    }
+    let mut i: i32 = 1
+    while i < s_len(l) and s_byte(l, i) >= 48 and s_byte(l, i) <= 57 {
+        i = i + 1
+    }
+    if i > 1 and s_starts(s_from(l, i), "] sort") {
+        return l
+    }
+    return ""
+}
+
+function main() -> i32 {
+    let root: string = bench_root("benchmarks/ordering/run.flow")
+    let args: ptr<ProcStrs> = proc_args()
+    let mut runs: string = sl_get(args, 0)
+    if s_len(runs) == 0 {
+        runs = "3"
+    }
+    let src: string = root + "/benchmarks/ordering/adaptive_sort_bench.flow"
+    let work: string = mktemp_dir_default()
+    if s_len(work) == 0 {
+        errln("ordering: cannot create a temporary directory")
+        return 1
+    }
+    outln("== plans ==")
+    # FLOWC_EXPLAIN=1 flowc_emit --strict SRC OUT 2>plans >/dev/null
+    sink_push(SINK_NULL, SINK_BUF)
+    let call: ptr<EmitCall> = flowc_emit_call(root, sl_of3("--strict", src, work + "/bench.c"), sl_of1("FLOWC_EXPLAIN=1"))
+    let _s: string = sink_pop()
+    let planned: string = sink_err()
+    if call.rc != 0 {
+        let _w: bool = write_text(work + "/plans", planned)
+        cli_exit(call.rc)
+    }
+    cmd_quiet_out(call.cmd)
+    let erc: i32 = run_err_to_file(call.cmd, work + "/plans")
+    if erc != 0 {
+        cli_exit(erc)
+    }
+    let lines: ptr<ProcStrs> = s_lines(read_text(work + "/plans"))
+    let mut hits: i32 = 0
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let p: string = plan_line(sl_get(lines, i))
+        if s_len(p) > 0 {
+            outln(p)
+            hits = hits + 1
+        }
+        i = i + 1
+    }
+    if hits == 0 {
+        cli_exit(1)
+    }
+    outln("")
+    outln("== timings (seconds for 100 sorts of 32768 elements, plus one copy each) ==")
+    let cc: ptr<ProcStrs> = sl_of3("clang", "-O2", "-Wno-everything")
+    sl_push2(cc, "-D_DEFAULT_SOURCE", "-I" + root + "/runtime")
+    sl_push2(cc, work + "/bench.c", "-o")
+    sl_push2(cc, work + "/bench", "-lm")
+    let crc: i32 = run_argv(cc)
+    if crc != 0 {
+        cli_exit(crc)
+    }
+    let n: i32 = s_atoi(runs, 0)
+    let mut k: i32 = 1
+    while k <= n {
+        outln("-- run " + s_itoa(k))
+        let rc: i32 = run_argv(sl_of1(work + "/bench"))
+        if rc != 0 {
+            cli_exit(rc)
+        }
+        k = k + 1
+    }
+    rm_rf(work)
+    cli_exit(0)
+    return 0
+}

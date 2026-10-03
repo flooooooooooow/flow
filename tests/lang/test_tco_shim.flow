@@ -1,0 +1,34 @@
+# Flow-native language test: a tail call into an extern shim.
+#
+# The TCO pass once matched self-calls by name prefix, so a wrapper whose
+# shim started with the wrapper's own name (`bar_get` calling `bar_get_c_c`)
+# became an empty `for(;;)` loop that never called the shim (#517). The shim
+# must be called and its value returned.
+#
+# Not superseded: test_deep_tail_recursion_runs_without_stack_overflow. The
+# Stage-A compiler emits tail self-calls as plain recursion, so a million
+# frames overflow the stack there. That test stays host-side until Stage-A
+# gains the TCO rewrite.
+#
+# Supersedes (behavioral parts of):
+#   tests/unit/test_tco_shim.py::test_shim_tail_call_runs_correctly
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+@cEmbed("static inline int32_t bar_get_c_c(int32_t i) { return i * 3; }")
+extern {
+    function bar_get_c_c(i: i32) -> i32
+}
+
+function bar_get(i: i32) -> i32 {
+    return bar_get_c_c(i)
+}
+
+function main() -> i32 {
+    if bar_get_c_c(7) != 21 {
+        return 1
+    }
+    if bar_get(7) != 21 {
+        return 2
+    }
+    return 0
+}

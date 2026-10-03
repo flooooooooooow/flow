@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Reversing a two-element cons list swaps endpoints.
-# @from   church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
+# @from   church: https://en.wikipedia.org/wiki/List_(abstract_data_type)
 # @tier   derived
 
 # @means  rev(cons(x, cons(y, nil))) = cons(y, cons(x, nil)).

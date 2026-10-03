@@ -40,7 +40,7 @@ function count_until(limit: i32) -> i32 {
 }
 ```
 
-Whether a particular execution terminates is a property of the program and input, not of the syntax.
+Whether a particular execution terminates is a property of the program and input. It is not a property of the syntax.
 
 ## Random-access memory
 

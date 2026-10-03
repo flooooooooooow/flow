@@ -1,0 +1,14 @@
+# Chained scale_f32 and offset_f32 pipeline stages give the composed result.
+import "stdlib/dsp.flow"
+
+function main() -> i32 {
+    let buf: array<f32, 4> = [1.0, 2.0, 3.0, 4.0]
+    let out: ptr<f32> = buf |> scale_f32(4, 2.0) |> scale_f32(4, 3.0)
+    let total: f32 = sum_f32(out, 4)
+    println(total)
+    let buf2: array<f32, 4> = [1.0, 2.0, 3.0, 4.0]
+    let out2: ptr<f32> = buf2 |> offset_f32(4, 1.0) |> offset_f32(4, 2.0)
+    let total2: f32 = sum_f32(out2, 4)
+    println(total2)
+    return 0
+}

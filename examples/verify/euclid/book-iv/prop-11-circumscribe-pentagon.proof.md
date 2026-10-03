@@ -2,13 +2,13 @@
 
 *About a given circle to circumscribe a regular pentagon.*
 
-**Source.** euclid — Elements, Book IV, Proposition 11
+**Source.** euclid: Elements, Book IV, Proposition 11
 
-## Derived fact 1 — About a given circle to circumscribe a regular pentagon
+## Derived fact 1: About a given circle to circumscribe a regular pentagon
 
 **Coordinate.** the Euclidean plane · Euclid Book IV · Proposition 11: about a circle to circumscribe a regular pentagon · **Derived fact**
 
-*Source: euclid — Elements, Book IV, Proposition 11*
+*Source: euclid: Elements, Book IV, Proposition 11*
 
 *Built on: proposition 9: in a circle to inscribe a regular pentagon, for Euclid Book IV on the Euclidean plane, proposition 35: tangents drawn from a point to a circle are equal, for Euclid Book III on the Euclidean plane*
 

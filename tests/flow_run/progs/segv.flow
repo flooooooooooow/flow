@@ -1,0 +1,7 @@
+extern {
+    function raise(sig: i32) -> i32
+}
+function main() -> i32 {
+    let _r: i32 = raise(11)
+    return 0
+}

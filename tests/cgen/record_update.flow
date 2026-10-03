@@ -1,0 +1,45 @@
+# Record update `Name { ..base, field: value }` on the C backend (#996): a
+# copy of the base with the listed fields set, as the Python C host and the
+# MLIR emitter lower it.
+
+struct Point {
+    x: i32,
+    y: i32,
+    w: f64
+}
+
+struct Samples {
+    n: i32,
+    v: array<i32, 3>
+}
+
+function moved(p: Point, dx: i32) -> Point {
+    return Point { ..p, x: p.x + dx }
+}
+
+function make() -> Point {
+    return Point { x: 1, y: 2, w: 0.5 }
+}
+
+function main() -> i32 {
+    let p: Point = Point { x: 3, y: 4, w: 1.5 }
+    let q: Point = Point { ..p, y: 40 }
+    let r: Point = moved(q, 10)
+    let s: Point = Point { ..make(), w: 2, y: r.y + 1 }
+    if p.y != 4 or q.x != 3 or q.y != 40 or q.w != 1.5 {
+        return 1
+    }
+    if r.x != 13 or r.y != 40 {
+        return 2
+    }
+    if s.x != 1 or s.y != 41 or s.w != 2.0 {
+        return 3
+    }
+    let a: Samples = Samples { n: 1, v: [1, 2, 3] }
+    let fresh: array<i32, 3> = [7, 8, 9]
+    let b: Samples = Samples { ..a, v: fresh }
+    if a.v[0] != 1 or b.v[0] != 7 or b.v[2] != 9 or b.n != 1 {
+        return 4
+    }
+    return 0
+}

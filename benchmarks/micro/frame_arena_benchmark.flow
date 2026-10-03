@@ -12,7 +12,7 @@
 # It is inlined so the benchmark is a single translation unit and its numbers
 # are not affected by module resolution.
 #
-# Run: FLOW_HOST=python ./flow run benchmarks/micro/frame_arena_benchmark.flow
+# Run: ./flow run benchmarks/micro/frame_arena_benchmark.flow
 
 extern {
     function clock() -> i64

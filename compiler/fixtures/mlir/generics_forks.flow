@@ -1,0 +1,51 @@
+# MLIR parity fixture: monomorphization (generic structs and functions,
+# explicit instantiations), a pipeline fork block, and range sums (folded
+# literals and the runtime helper). Choose blocks match on an enum, which
+# Python's MLIR stores into a struct slot; the corpus covers their text.
+
+struct Box<T> {
+    value: T
+}
+
+struct Pair<A, B> {
+    first: A,
+    second: B
+}
+
+struct Stats {
+    doubled: i32,
+    squared: i32
+}
+
+function box_make<T>(v: T) -> Box<T> {
+    return Box<T> { value: v }
+}
+
+function identity<T>(x: T) -> T {
+    return x
+}
+
+function twice(x: i32) -> i32 { return x * 2 }
+function square(x: i32) -> i32 { return x * x }
+
+function span_sum(lo: i32, hi: i32, step: i32) -> i32 {
+    return sum(lo..hi step step)
+}
+
+function main() -> i32 {
+    let b: Box<i32> = box_make<i32>(7)
+    println(b.value)
+    let p: Pair<i32, f32> = Pair<i32, f32> { first: 3, second: 1.5 }
+    println(p.first)
+    println(identity<i32>(41) + 1)
+
+    let n: i32 = 6
+    let s: Stats = n |> Stats { doubled = twice, squared = square }
+    println(s.doubled)
+    println(s.squared)
+
+    println(sum(0..10 step 3))
+    println(sum(0..100 step 3 | 0..100 step 5))
+    println(span_sum(1, 20, 4))
+    return 0
+}

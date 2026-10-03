@@ -2,13 +2,13 @@
 
 *If a straight line is cut into equal and unequal segments, the rectangle by the unequal segments together with the square on the line between the points of section equals the square on the half.*
 
-**Source.** euclid — Elements, Book II, Proposition 5
+**Source.** euclid: Elements, Book II, Proposition 5
 
-## Derived fact 1 — If a straight line is cut into equal and unequal segments, the rectangle by the unequal segments together with the square on the line between the points of section equals the square on the half
+## Derived fact 1: If a straight line is cut into equal and unequal segments, the rectangle by the unequal segments together with the square on the line between the points of section equals the square on the half
 
 **Coordinate.** the Euclidean plane · Euclid Book II · Proposition 5: the rectangle by unequal parts plus the square on the midpoint equals the square on the half · **Derived fact**
 
-*Source: euclid — Elements, Book II, Proposition 5*
+*Source: euclid: Elements, Book II, Proposition 5*
 
 *Built on: proposition 4: the square on the whole equals the squares on the parts plus twice their rectangle, for Euclid Book II on the Euclidean plane*
 

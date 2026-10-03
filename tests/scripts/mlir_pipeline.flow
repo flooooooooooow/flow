@@ -1,0 +1,234 @@
+import "scripts/tools/lib/testrun.flow"
+import "tests/scripts/harness.flow"
+
+function check_affine_normalization() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    sl_push(argv, "--enable-affine-normalization")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "affine-loop-normalize") { return T_FAIL }
+    return T_PASS
+}
+
+function check_normalization_stays_opt_in() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    if a_contains(read_text(t_out()), "affine-loop-normalize") { return T_FAIL }
+    return T_PASS
+}
+
+function check_affine_tiling() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    sl_push(argv, "--enable-affine-tiling")
+    sl_push(argv, "--affine-tile-size=32")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    if not a_contains(read_text(t_out()), "affine-loop-tile{tile-size=32}") { return T_FAIL }
+    return T_PASS
+}
+
+function check_tiling_requires_size() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--enable-affine-tiling")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "requires --affine-tile-size") { return T_FAIL }
+    return T_PASS
+}
+
+function check_tiling_rejects_malformed_size() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    sl_push(argv, "--enable-affine-tiling")
+    sl_push(argv, "--affine-tile-size=32junk")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "must be a positive integer") { return T_FAIL }
+    return T_PASS
+}
+
+function check_tiling_rejects_overflow_size() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--enable-affine-tiling")
+    sl_push(argv, "--affine-tile-size=2147483648")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--affine-tile-size must be a positive integer") { return T_FAIL }
+    return T_PASS
+}
+
+function check_hierarchical_tiling() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    sl_push(argv, "--enable-affine-tiling")
+    sl_push(argv, "--affine-tile-sizes=64,32,8")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "affine-loop-tile{tile-size=64}") { return T_FAIL }
+    if not a_contains(output, "affine-loop-tile{tile-size=32}") { return T_FAIL }
+    if not a_contains(output, "affine-loop-tile{tile-size=8}") { return T_FAIL }
+    return T_PASS
+}
+
+function check_hierarchical_tiling_rejects_malformed_sizes() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--enable-affine-tiling")
+    sl_push(argv, "--affine-tile-sizes=64,0,8")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "two to four positive integers") { return T_FAIL }
+    return T_PASS
+}
+
+function check_loop_fusion() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    sl_push(argv, "--loop-fusion")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "affine-loop-fusion") { return T_FAIL }
+    if not a_contains(output, "linalg-fuse-elementwise-ops") { return T_FAIL }
+    return T_PASS
+}
+
+function check_loop_fusion_o1_gate() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O1")
+    sl_push(argv, "--loop-fusion")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    if a_contains(read_text(t_out()), "affine-loop-fusion") { return T_FAIL }
+    return T_PASS
+}
+
+function check_multi_buffering_factor() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    sl_push(argv, "--enable-multi-buffering")
+    sl_push(argv, "--multi-buffering-factor=4")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    if not a_contains(read_text(t_out()), "test-multi-buffering{multiplier=4}") { return T_FAIL }
+    return T_PASS
+}
+
+function check_multi_buffering_factor_rejects_out_of_range() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--enable-multi-buffering")
+    sl_push(argv, "--multi-buffering-factor=1")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "must be between 2 and 8") { return T_FAIL }
+    return T_PASS
+}
+
+function check_affine_unrolling() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    sl_push(argv, "--enable-affine-unrolling")
+    sl_push(argv, "--affine-unroll-factor=4")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    if not a_contains(read_text(t_out()), "affine-loop-unroll{unroll-factor=4}") { return T_FAIL }
+    return T_PASS
+}
+
+function check_unrolling_requires_factor() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--enable-affine-unrolling")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "requires --affine-unroll-factor") { return T_FAIL }
+    return T_PASS
+}
+
+function check_affine_unroll_jam() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    sl_push(argv, "--enable-affine-unroll-jam")
+    sl_push(argv, "--affine-unroll-jam-factor=4")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    if not a_contains(read_text(t_out()), "affine-loop-unroll-jam{unroll-factor=4}") { return T_FAIL }
+    return T_PASS
+}
+
+function check_unroll_jam_requires_factor() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--enable-affine-unroll-jam")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "requires --affine-unroll-jam-factor") { return T_FAIL }
+    return T_PASS
+}
+
+function check_affine_coalescing() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    sl_push(argv, "--enable-affine-coalescing")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    if not a_contains(read_text(t_out()), "affine-loop-coalescing") { return T_FAIL }
+    return T_PASS
+}
+
+function check_affine_skewing() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    sl_push(argv, "--enable-affine-skewing")
+    sl_push(argv, "--affine-skew-factor=2")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    if not a_contains(read_text(t_out()), "affine-loop-skew{skew-factor=2}") { return T_FAIL }
+    return T_PASS
+}
+
+function check_skewing_requires_factor() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--enable-affine-skewing")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "requires --affine-skew-factor") { return T_FAIL }
+    return T_PASS
+}
+
+function check_skewing_rejects_malformed_factor() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv, "--opt-level=O2")
+    sl_push(argv, "--enable-affine-skewing")
+    sl_push(argv, "--affine-skew-factor=2oops")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--affine-skew-factor must be a positive integer") { return T_FAIL }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("mlir_pipeline")
+    t_start()
+    t_end("affine_normalization", check_affine_normalization())
+    t_start()
+    t_end("normalization_opt_in", check_normalization_stays_opt_in())
+    t_start()
+    t_end("affine_tiling", check_affine_tiling())
+    t_start()
+    t_end("tiling_requires_size", check_tiling_requires_size())
+    t_start()
+    t_end("tiling_rejects_malformed_size", check_tiling_rejects_malformed_size())
+    t_end("tiling_rejects_overflow_size", check_tiling_rejects_overflow_size())
+    t_start()
+    t_end("hierarchical_tiling", check_hierarchical_tiling())
+    t_start()
+    t_end("hierarchical_tiling_invalid", check_hierarchical_tiling_rejects_malformed_sizes())
+    t_start()
+    t_end("loop_fusion", check_loop_fusion())
+    t_start()
+    t_end("loop_fusion_o1_gate", check_loop_fusion_o1_gate())
+    t_start()
+    t_end("multi_buffering_factor", check_multi_buffering_factor())
+    t_start()
+    t_end("multi_buffering_factor_range", check_multi_buffering_factor_rejects_out_of_range())
+    t_start()
+    t_end("affine_unrolling", check_affine_unrolling())
+    t_start()
+    t_end("unrolling_requires_factor", check_unrolling_requires_factor())
+    t_start()
+    t_end("affine_unroll_jam", check_affine_unroll_jam())
+    t_start()
+    t_end("unroll_jam_requires_factor", check_unroll_jam_requires_factor())
+    t_start()
+    t_end("affine_coalescing", check_affine_coalescing())
+    t_start()
+    t_end("affine_skewing", check_affine_skewing())
+    t_end("skewing_requires_factor", check_skewing_requires_factor())
+    t_end("skewing_malformed_factor", check_skewing_rejects_malformed_factor())
+    t_done()
+    return 0
+}

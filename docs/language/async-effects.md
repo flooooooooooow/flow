@@ -6,7 +6,7 @@ Flow models asynchronous / concurrent work with **algebraic effects**, not with
 `BlockingAsyncIO`, or `NetpollAsyncIO`).
 
 This matches the comparison table in [docs/comparison.md](../comparison.md):
-async is “modeled via effects (no `async` keyword).”
+async is "modeled via effects (no `async` keyword)."
 
 Umbrella + measured Go comparison:
 [concurrency-vs-go.md](concurrency-vs-go.md) ·
@@ -14,7 +14,7 @@ Umbrella + measured Go comparison:
 
 ## Intent
 
-```flow
+```flow expect-error
 import "stdlib/async.flow"
 
 function fetch_user(user_id: i32) -> i32 {
@@ -31,7 +31,7 @@ function main() -> i32 {
 }
 ```
 
-Business logic depends only on the effect — swap `SimulatedAsync`,
+Business logic depends only on the effect. Swap `SimulatedAsync`,
 `ThreadedAsync`, or `FiberAsync` without changing call sites. Swap
 `BlockingAsyncIO` vs `NetpollAsyncIO` the same way for `AsyncIO`.
 
@@ -39,15 +39,15 @@ Business logic depends only on the effect — swap `SimulatedAsync`,
 
 | Piece | Status |
 |-------|--------|
-| `lib/stdlib/async.flow` — `Async` effect (`delay`, `spawn`, `join`) | ✅ |
+| `lib/stdlib/async.flow`: `Async` effect (`delay`, `spawn`, `join`) | ✅ |
 | Helpers `async_delay` / `async_spawn` / `async_join` / `async_sleep_ms` / `async_poll_read` | ✅ |
 | `async_set_maxprocs` / `async_maxprocs` (`FLOW_MAXPROCS` env) | ✅ |
-| `SimulatedAsync` — deterministic sync stand-in | ✅ |
-| `ThreadedAsync` — real pthreads via `runtime/flow_concurrency.c` | ✅ |
-| `FiberAsync` — **M:N** cooperative fibers via `runtime/flow_fiber.c` | ✅ |
+| `SimulatedAsync`: deterministic sync stand-in | ✅ |
+| `ThreadedAsync`: real pthreads via `runtime/flow_concurrency.c` | ✅ |
+| `FiberAsync`: **M:N** cooperative fibers via `runtime/flow_fiber.c` | ✅ |
 | Asm context switch (`flow_fctx_arm64.S` / `x86_64.S`) | ✅ |
 | `AsyncIO` + `BlockingAsyncIO` (`sleep_ms` → `usleep`; poll stubs return ready) | ✅ |
-| `NetpollAsyncIO` — real kqueue (Darwin) / epoll (Linux) | ✅ |
+| `NetpollAsyncIO`: real kqueue (Darwin) / epoll (Linux) | ✅ |
 | Fiber channel ping-pong + fan-out benches (beat Go) | ✅ |
 | `TcpEffect` + `BlockingTcp` (loopback connect/send/recv) | ✅ `runtime/flow_tcp.c` |
 | Demos: `examples/effects/async_primitives.flow`, `examples/concurrency/*` | ✅ |
@@ -59,11 +59,11 @@ Business logic depends only on the effect — swap `SimulatedAsync`,
 - **FiberAsync runs `main` on a fiber** so `Async.delay` / netpoll park
   suspend real Flow frames mid-function (see `examples/concurrency/fiber_suspend.flow`).
   Delimited `shift`/`reset` that capture and restore an arbitrary Flow frame
-  are still a C scaffold (`flow_cont_*`) — not a full compiler rewrite yet.
+  are still a C scaffold (`flow_cont_*`), short of a full compiler rewrite.
   `ThreadedAsync` runs registered C tasks on OS threads.
 - **`FiberAsync` is M:N.** Workers = `FLOW_MAXPROCS` / CPU count by default
-  (`async_set_maxprocs(n)` before first spawn; values `< 1` clamp to **1**,
-  not “auto”). Ready work uses **per-worker deques + work-stealing**; effect
+  (`async_set_maxprocs(n)` before first spawn; values `< 1` clamp to **1**
+  rather than "auto"). Ready work uses **per-worker deques + work-stealing**; effect
   handlers are **fiber-local** so fibers can migrate OS threads safely.
   The ping-pong microbench forces `maxprocs=1` for a fair switch measurement.
 - **`SimulatedAsync` is stateless.** `spawn` is a no-op marker; `join(task_id)`
@@ -73,8 +73,9 @@ Business logic depends only on the effect — swap `SimulatedAsync`,
 - **`NetpollAsyncIO`** uses real kqueue/epoll. On a fiber, `poll_read` /
   `poll_write` **park the fiber** (`flow_netpoll_fiber_*`); off-fiber they
   block the OS thread. `sleep_ms` still uses the blocking timer path.
-- **Unhandled ops** still default to zero / no-op unless `--strict-effects` /
-  `FLOW_STRICT_EFFECTS=1` is set. The three ways to treat an unhandled effect are
+- **Unhandled ops** fail loudly in Stable mode. Set `FLOWC_PERMISSIVE_EFFECTS=1`
+  while compiling and `FLOW_PERMISSIVE_EFFECTS=1` while running to use the
+  legacy zero / no-op behavior. The three ways to treat an unhandled effect are
   recipes 13-15 of the
   [Effects Showcase](../effects-showcase.md#13-turn-unhandled-effects-into-compile-time-errors).
 
@@ -87,16 +88,16 @@ Business logic depends only on the effect — swap `SimulatedAsync`,
 | M:N work-stealing | ✅ per-worker deques (`work_steal.flow`) |
 | Fiber-aware netpoll | ✅ `flow_netpoll_fiber_*` via `NetpollAsyncIO` |
 | Fiber-aware nonblocking TCP | `BlockingTcp` is sync sockets; park-on-poll still via `NetpollAsyncIO` |
-| `Cont` + `FiberCont` (Flow-frame resume) | ✅ `Cont.shift` parks fiber (M:N-safe); `cont_arm_resume` — `cont_flow_resume.flow` |
+| `Cont` + `FiberCont` (Flow-frame resume) | ✅ `Cont.shift` parks fiber (M:N-safe); `cont_arm_resume` in `cont_flow_resume.flow` |
 | Fiber-per-conn HTTP + auth mw | ✅ `http_fiber.flow` (`Bearer flow` on `/api`) |
 | HTTPS accept-loop (OpenSSL) | ✅ PEM + ALPN `http/1.1` + minimal HTTP/2 `h2` (`http_tls.flow`) |
 | Cont multi-shot scaffold | ✅ `resume_multi` + `clone`/stack-blob (`cont_multishot.flow`, `cont_stackcopy.flow`) |
 | N-way `select` / `default` | ✅ `select2` + `select4` (+ `_try`) |
-| `async` / `await` syntax sugar | Only after the runtime model is solid — do **not** add keywords first |
+| `async` / `await` syntax sugar | Only after the runtime model is solid; do **not** add keywords first |
 | Stateful handlers (`capability` with mutable task tables) | Capabilities are currently stateless; use struct+`impl` workarounds elsewhere |
 
-Effect-row typing (`function f() -> T with E1, E2`) and `--strict-effects` already
-ship — see [LANGUAGE_SPEC §6.3.1](../LANGUAGE_SPEC.md#631-signature-effect-rows)
+Effect-row typing (`function f() -> T with E1, E2`) ships in Stable mode. See
+[LANGUAGE_SPEC §6.3.1](../LANGUAGE_SPEC.md#631-signature-effect-rows)
 and recipes 10-12 of the
 [Effects Showcase](../effects-showcase.md#10-declare-an-effect-row-on-a-function).
 
@@ -104,7 +105,7 @@ and recipes 10-12 of the
 
 `examples/effects/async_effects.flow` sketches Timeout/Retry as policy
 effects (`handle ... with ...`, stateless capabilities, state threaded
-through `let mut` locals — see [#119](https://github.com/flooooooooooow/flow/issues/119),
+through `let mut` locals; see [#119](https://github.com/flooooooooooow/flow/issues/119),
 it previously used the broken `capability Async` **parameter** style).
 Prefer `examples/effects/async_primitives.flow` for the stdlib `Async` /
 `AsyncIO` handle/with path; `async_effects.flow` is still the place to look
@@ -114,17 +115,17 @@ for Timeout/Retry, which the stdlib doesn't cover yet.
 
 1. Keep new async demos on `handle`/`with` + `lib/stdlib/async.flow`.
 2. Decide whether async needs **delimited continuations** (or an explicit
-   fiber/runtime API). Without that, Flow-level “suspend here” stays unavailable.
+   fiber/runtime API). Without that, Flow-level "suspend here" stays unavailable.
 3. Grow `NetpollAsyncIO` toward fiber-parked IO; keep call sites on `AsyncIO.*`.
-4. Optional later: surface sugar that desugars to effects — only if the runtime
+4. Optional later: surface sugar that desugars to effects, only if the runtime
    model is solid.
 
 ## Related
 
-- [concurrency-vs-go.md](concurrency-vs-go.md) — tracks + Go comparison
-- [replace-go.md](replace-go.md) — scorecard for replacing Go
-- [Effects Showcase](../effects-showcase.md) — runnable effect demo + limitations
-- [LANGUAGE_SPEC §6](../LANGUAGE_SPEC.md#6-effect-system) — effect grammar
-- `lib/stdlib/async.flow` — effect declarations + capabilities
-- `examples/effects/async_primitives.flow` — runnable stdlib demo
-- `examples/concurrency/` — fibers, channels, netpoll, `parallel for`
+- [concurrency-vs-go.md](concurrency-vs-go.md): tracks + Go comparison
+- [replace-go.md](replace-go.md): scorecard for replacing Go
+- [Effects Showcase](../effects-showcase.md): runnable effect demo + limitations
+- [LANGUAGE_SPEC §6](../LANGUAGE_SPEC.md#6-effect-system): effect grammar
+- `lib/stdlib/async.flow`: effect declarations + capabilities
+- `examples/effects/async_primitives.flow`: runnable stdlib demo
+- `examples/concurrency/`: fibers, channels, netpoll, `parallel for`

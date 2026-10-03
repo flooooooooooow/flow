@@ -1,0 +1,14 @@
+Stack depth analysis: examples/basics/prime_numbers.flow
+============================================================
+Function                                  Max depth Chain
+------------------------------------------------------------
+main                                           16 bytes  main → is_prime
+is_prime                                        4 bytes  is_prime
+
+WCET analysis: examples/basics/prime_numbers.flow
+============================================================
+Function                                   Max cost Chain
+------------------------------------------------------------
+main                                        10047 inst  main → is_prime
+is_prime                                     5025 inst  is_prime
+

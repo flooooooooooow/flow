@@ -1,6 +1,6 @@
 # @module verify.Finset
 # @means  Finite set algebra on Finset carriers.
-# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @from   graham-knuth-patashnik: *Concrete Mathematics*
 # @tier   definitions-only
 
 # @means  Union with the empty set changes nothing.

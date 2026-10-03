@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-iii
 # @means  If a straight line touches a circle and a chord is drawn from the point of contact, the angles with the tangent equal the angles in the alternate segments.
-# @from   euclid — Elements, Book III, Proposition 32
+# @from   euclid: Elements, Book III, Proposition 32
 # @tier   derived
 # @needs  «Geometry» «Euclid Book III» «Proposition 19: the tangent is perpendicular to the diameter at the point of contact», «Geometry» «Euclid Book III» «Proposition 21: angles in the same segment are equal»
 

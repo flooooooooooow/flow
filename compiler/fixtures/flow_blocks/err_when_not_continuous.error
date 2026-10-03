@@ -1,0 +1,2 @@
+Error: 'when x reaches' in flow 'Osc' requires 'x' to be a continuous state at line 3
+give 'x' an 'x evolves as ...' declaration

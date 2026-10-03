@@ -1,17 +1,17 @@
-# Flow vs Go — Concurrency Microbenchmarks
+# Flow vs Go: Concurrency Microbenchmarks
 
 **Machine:** Apple Silicon arm64 (Darwin)  
 **Date:** 2026-08-04  
 **Flow:** `FLOW_CFLAGS='-O2'` · **Go:** `go run`
 
-Re-run: `benchmarks/concurrency/run.sh`  
+Re-run: `./flow tool benchmarks/concurrency/run.flow`  
 Strategy: [docs/language/replace-go.md](../../docs/language/replace-go.md)
 
 ## Results
 
 | Bench | N | Flow | Go | Winner |
 |-------|---|------|-----|--------|
-| Buffered channel throughput | 200k | **~2× faster** | — | Flow |
+| Buffered channel throughput | 200k | **~2× faster** | - | Flow |
 | Fiber channel ping-pong (asm M:1) | 1M, buf=64 | **~8–14 ms** | ~21–26 ms | **Flow (~2×)** |
 | Fiber fan-out sum (M:N, 256 fibers) | 50M | **~1–7 ms** | ~10 ms | **Flow** |
 | Parallel fill | 8M | ~tie | ~tie | noise |
@@ -34,7 +34,7 @@ Strategy: [docs/language/replace-go.md](../../docs/language/replace-go.md)
   microbench against Go.
 - **Fan-out** uses default maxprocs (true M:N; steals show up under load).
 - Fiber channels used by these benches live in `runtime/flow_fiber.c` and are
-  **not** yet a Flow stdlib API — pthread `channel_i32_*` is the public surface.
+  **not** yet a Flow stdlib API; pthread `channel_i32_*` is the public surface.
 - HTTP routed server: `/`, `/api`, `/health`, 404 + `X-Request-Id` middleware
   (`examples/concurrency/http_middleware.flow`).
 - HTTPS accept-loop (OpenSSL PEM + ALPN http/1.1 + minimal h2): `examples/concurrency/http_tls.flow`.

@@ -1,0 +1,13 @@
+@gpu
+export function lib_scale(a: ptr<f32>, s: f32) -> void {
+    let i: i32 = gpu_thread_id()
+    a[i] = a[i] * s
+}
+
+export function lib_helper() -> i32 {
+    return 1
+}
+
+function main() -> i32 {
+    return 0
+}

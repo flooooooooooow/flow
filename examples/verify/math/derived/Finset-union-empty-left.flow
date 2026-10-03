@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Union with the empty set on the left changes nothing.
-# @from   graham-knuth-patashnik — *Concrete Mathematics*
+# @from   graham-knuth-patashnik: *Concrete Mathematics*
 # @tier   derived
 
 # @means  empty ∪ s = s.

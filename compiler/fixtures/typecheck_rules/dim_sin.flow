@@ -1,0 +1,8 @@
+# expect: dimensional error: sin() requires a dimensionless or Radian argument, got Meter
+unit Meter
+
+function main() -> i32 {
+    let a: Meter = 1.0 as Meter
+    let s: f64 = sin(a)
+    return 0
+}

@@ -1,0 +1,123 @@
+# Script reference check, written in Flow.
+#
+# Every `scripts/...` or `compiler/scripts/...` path named in a tracked
+# .flow file, a workflow under .github/workflows or the Makefile, in code
+# or in a comment, must exist in the checkout. A
+# reference to a deleted script fails here instead of at run time.
+#
+#   ./flow tool script_refs            check; list each missing path
+#
+# A path is the longest run of path characters (letters, digits, `_`, `.`,
+# `/`, `-`) that starts with one of the two prefixes, with trailing dots and
+# slashes dropped. A path with an upper-case segment is a placeholder
+# (`scripts/tools/NAME/main.flow`) and is skipped, as is a path that ends
+# in a slash or `_` (a prefix the program completes at run time) and a
+# `.py` path (the Python is retired; comments name what a port replaced).
+# A path is also found relative to the directory of the file naming it.
+#
+# Exit codes: 0 every path exists, 1 some do not, 2 git failed.
+
+import "tools/flow_cli/sys.flow"
+import std.process { ProcCmd, ProcStrs }
+
+function is_path_byte(c: i32) -> bool {
+    return (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or (c >= 48 and c <= 57) or c == 95 or c == 46 or c == 47 or c == 45
+}
+
+function has_upper(s: string) -> bool {
+    let mut i: i32 = 0
+    while i < s_len(s) {
+        let c: i32 = s_byte(s, i)
+        if c >= 65 and c <= 90 {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# The path that starts at `at`, without trailing dots.
+function path_at(text: string, at: i32) -> string {
+    let mut end: i32 = at
+    while end < s_len(text) and is_path_byte(s_byte(text, end)) {
+        end = end + 1
+    }
+    while end > at and s_byte(text, end - 1) == 46 {
+        end = end - 1
+    }
+    return s_slice(text, at, end)
+}
+
+# True when `at` begins a reference: `prefix` there, and the byte before
+# is not a path byte (so `tests/scripts/NAME` is not `scripts/NAME`), or is the
+# slash that opens a string.
+function starts_ref(text: string, at: i32, prefix: string) -> bool {
+    # `root() + "/scripts/NAME"`: a string that starts with a slash.
+    let quoted_slash: bool = at > 1 and s_byte(text, at - 1) == 47 and s_byte(text, at - 2) == 34
+    if at > 0 and is_path_byte(s_byte(text, at - 1)) and not quoted_slash {
+        return false
+    }
+    return s_starts(s_from(text, at), prefix)
+}
+
+function check_file(root: string, rel: string, missing: ptr<ProcStrs>) -> i32 {
+    let text: string = read_text(root + "/" + rel)
+    let mut bad: i32 = 0
+    let mut i: i32 = s_find(text, "scripts/", 0)
+    while i >= 0 {
+        let mut at: i32 = -1
+        if i >= 9 and starts_ref(text, i - 9, "compiler/scripts/") {
+            at = i - 9
+        } elif starts_ref(text, i, "scripts/") {
+            at = i
+        }
+        if at >= 0 {
+            let p: string = path_at(text, at)
+            let ok: bool = s_ends(p, "/") or s_ends(p, "_") or s_ends(p, ".py") or has_upper(p) or exists(root + "/" + p) or exists(root + "/" + path_dirname(rel) + "/" + p)
+            if not ok {
+                let line: string = rel + ": " + p
+                if not sl_has(missing, line) {
+                    sl_push(missing, line)
+                    bad = bad + 1
+                }
+            }
+        }
+        i = s_find(text, "scripts/", i + 8)
+    }
+    return bad
+}
+
+function main() -> i32 {
+    let mut root: string = env("FLOW_REPO_ROOT")
+    if s_len(root) == 0 {
+        root = cwd_physical()
+    }
+    let ga: ptr<ProcStrs> = sl_of3("git", "ls-files", "*.flow")
+    sl_push2(ga, ".github/workflows/*.yml", "Makefile")
+    let g: ptr<ProcCmd> = cmd(ga)
+    cmd_cwd(g, root)
+    let listing: string = capture(g)
+    if last_status() != 0 {
+        errln("script_refs: git ls-files failed")
+        return 2
+    }
+    let files: ptr<ProcStrs> = s_lines(listing)
+    let missing: ptr<ProcStrs> = sl_new()
+    let mut bad: i32 = 0
+    let mut k: i32 = 0
+    while k < sl_len(files) {
+        bad = bad + check_file(root, sl_get(files, k), missing)
+        k = k + 1
+    }
+    if bad > 0 {
+        let mut j: i32 = 0
+        while j < sl_len(missing) {
+            errln("missing " + sl_get(missing, j))
+            j = j + 1
+        }
+        errln("script_refs: " + s_itoa(bad) + " reference(s) to scripts that do not exist")
+        return 1
+    }
+    outln("script_refs: every scripts/ path named in " + s_itoa(sl_len(files)) + " files exists")
+    return 0
+}

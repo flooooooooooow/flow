@@ -1,0 +1,5 @@
+# expect: Shift amount 40 out of range for i32 (MISRA Rule 12.2 / CERT INT34-C)
+function main() -> i32 {
+    let x: i32 = 1
+    return x << 40
+}

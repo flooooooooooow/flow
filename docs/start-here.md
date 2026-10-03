@@ -76,25 +76,15 @@ instead.
 
 ---
 
-## 4. Turn on the full language
+## 4. Clear an old setting
 
-Flow ships two compilers. A small fast one written in Flow itself, and a larger
-one that supports the whole language, including printing text to the screen.
-The small one is the default, which surprises people on their first program.
+Flow has one compiler, `flowc`, written in Flow itself. There is nothing to
+turn on.
 
-Turn on the full one, once, for good:
-
-```bash
-echo 'export FLOW_HOST=python' >> ~/.zshrc
-source ~/.zshrc
-```
-
-If your terminal uses bash rather than zsh, replace `~/.zshrc` with
-`~/.bashrc`.
-
-Skip this step and your first program will fail with
-`flowc emit failed (Stage-A subset?)`. That message means the small compiler
-was asked for something it does not have yet.
+Older versions of this guide asked you to add `export FLOW_HOST=python` to
+your shell profile. That compiler is retired, and the setting now makes
+`./flow` stop with an error. If you added it, delete that line from
+`~/.zshrc` (or `~/.bashrc`) and open a new terminal.
 
 ---
 
@@ -283,7 +273,8 @@ flow gfx examples/games/snake_gfx.flow
 
 | What you see | What it means | What to do |
 |---|---|---|
-| `flowc emit failed (Stage-A subset?)` | The small compiler does not support this program | Do step 4, or put `FLOW_HOST=python` in front of the command |
+| An error that mentions `FLOW_HOST=python` | An old setting asks for the retired compiler | Do step 4 |
+| `flowc emit failed` | The compiler rejected the program | Read the error above it. If the program looks right, ask on Discord |
 | `command not found: flow` | Flow is not on your path | Use `./flow` from inside the `flow` folder, or reinstall with Homebrew |
 | `clang: command not found` | No C compiler | Do step 2 |
 | The program compiles but the numbers look wrong | Usually the model, rarely the compiler | Ask the assistant to check the result against a closed-form answer or a smaller time step |

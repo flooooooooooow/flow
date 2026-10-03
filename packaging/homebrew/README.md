@@ -11,7 +11,7 @@ brew install flooooooooooow/flow/flow
 flow help
 ```
 
-This is a **formula** (CLI / language toolchain), not a **cask**. Casks are for
+This is a **formula** (CLI / language toolchain) rather than a **cask**. Casks are for
 GUI `.app` / binary app distributions; Flow ships as source + a `flow` driver.
 
 ## Tap repository
@@ -46,7 +46,7 @@ After cutting a new release:
 
 ## Publishing / updating the tap
 
-`packaging/homebrew/sync-tap.sh` **clones the tap and `git push`es** to
+`./flow tool packaging/homebrew/sync-tap.flow` **clones the tap and `git push`es** to
 `flooooooooooow/homebrew-flow`. Only run it when you intend to publish.
 
 Local formula edits in this monorepo do **not** require running sync-tap.
@@ -54,7 +54,7 @@ Local formula edits in this monorepo do **not** require running sync-tap.
 From the Flow repo root (needs `gh` auth), when ready to publish:
 
 ```bash
-./packaging/homebrew/sync-tap.sh
+./flow tool packaging/homebrew/sync-tap.flow
 ```
 
 Or manually copy `Formula/flow.rb` into the `homebrew-flow` repo and push.

@@ -2,9 +2,9 @@
 
 *F-angles are equal when parallel lines meet a transversal.*
 
-**Source.** euclid — Elements, Book I, Proposition 29
+**Source.** euclid: Elements, Book I, Proposition 29
 
-## Derived fact 1 — f-angle alpha equals f-angle beta
+## Derived fact 1: f-angle alpha equals f-angle beta
 
 **Coordinate.** the Euclidean plane · parallel lines · f angles are equal · **Derived fact**
 

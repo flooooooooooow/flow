@@ -1,0 +1,400 @@
+# Parity gate for the project test runner (`flow test` outside the Flow
+# repository), tools/project_test/main.flow.
+#
+# The runner was src/flow/project_test_runner.py. This gate builds a set of
+# small projects under compiler/build/parity_project_test and runs `flow test`
+# in each with a list of argument sets, covering discovery, native `test`
+# blocks, program tests, goldens (.expected, .expected-stderr, .exitcode),
+# compile failures, timeouts, filters, [test] configuration, --list,
+# --verbose, --fail-fast, --keep and argument errors. Each result is the
+# normalised stdout, stderr and exit code, compared with the goldens in
+# tests/project_test/golden/.
+#
+#   ./flow tool compiler/scripts/parity_project_test.flow
+#       run the Flow runner with python and python3 stubbed out on PATH.
+#
+#   ./flow tool compiler/scripts/parity_project_test.flow --write-golden <rev>
+#       rewrite the goldens from the Python runner at git revision <rev>
+#       (the last one is e6a7f046).
+#
+# Normalised: durations (N.NNNs), the random part of native-test wrapper
+# names, and the absolute path of the work directory.
+
+import "tools/flow_cli/sys.flow"
+import "compiler/scripts/parity_lib.flow"
+import std.process { ProcCmd, ProcStrs, proc_arg }
+import std.regex { Regex, rx_sub }
+
+const USAGE: string = "usage: ./flow tool compiler/scripts/parity_project_test.flow"
+
+# name|project|args (args split on spaces; no quoting needed)
+function cases_text() -> string {
+    return "list|p_main|--list\n" +
+        "list_all|p_main|--list --backend all\n" +
+        "run|p_main|\n" +
+        "verbose|p_main|-v tests/prog.flow tests/native_golden.flow\n" +
+        "failfast|p_main|--fail-fast tests/wrong_exit.flow tests/prog.flow\n" +
+        "filter_sub|p_main|--filter ANSWER\n" +
+        "filter_short|p_main|-f prog\n" +
+        "filter_eq|p_main|--filter=deeper\n" +
+        "filter_glob|p_main|-f tests/n*::*right\n" +
+        "filter_none|p_main|-f nothing_matches\n" +
+        "explicit_dir|p_main|other\n" +
+        "explicit_missing|p_main|nowhere\n" +
+        "keep|p_main|--keep -f quoted\n" +
+        "config_timeout|p_config|\n" +
+        "config_cli_timeout|p_config|--timeout 2.5 -f slow\n" +
+        "paths_array|p_paths|\n" +
+        "paths_list|p_paths|--list\n" +
+        "empty|p_empty|\n" +
+        "empty_list|p_empty|--list\n" +
+        "rename|p_rename|\n" +
+        "cfg_backend|p_cfg_backend|\n" +
+        "cfg_timeout|p_cfg_timeout|\n" +
+        "cfg_paths|p_cfg_paths|\n" +
+        "abbrev|p_main|--fil prog --verb\n" +
+        "ambiguous|p_main|--f prog\n" +
+        "dashdash|p_main|-- tests/prog.flow\n" +
+        "help|p_main|-h\n" +
+        "bogus|p_main|--bogus\n" +
+        "bad_backend|p_main|--backend x\n" +
+        "bad_profile|p_main|--profile none\n" +
+        "bad_timeout|p_main|--timeout abc\n" +
+        "missing_value|p_main|--filter\n"
+}
+
+# Strings the whole gate shares (module statics cannot be strings).
+struct Gate {
+    root: string,
+    work: string,
+    gold: string,
+    stub_dir: string,
+    pysrc: string
+}
+
+let mut G: ptr<Gate> = null
+
+function mk(path: string, text: string) {
+    mkdir_p_or_exit(path_dirname(path))
+    let _w: bool = write_text(path, text)
+}
+
+# ---------------------------------------------------------------- projects
+function build_projects(work: string) {
+    let mut p: string = ""
+
+    # p_main: every kind of case in one tests/ directory.
+    p = work + "/p_main"
+    mk(p + "/flow.toml", "[package]\n" +
+            "name = \"p_main\"\n" +
+            "version = \"0.1.0\"\n")
+    mk(p + "/tests/native.flow", "function helper() -> i32 { return 42 }\n" +
+            "\n" +
+            "test \"answer is right\" {\n" +
+            "    expect helper() == 42\n" +
+            "}\n" +
+            "\n" +
+            "test \"answer is wrong\" {\n" +
+            "    expect helper() == 41\n" +
+            "}\n" +
+            "\n" +
+            "  test \"Delay: \\\"quoted\\\" name!\" {\n" +
+            "    expect helper() > 0\n" +
+            "}\n" +
+            "\n" +
+            "test \"answer is right\" {\n" +
+            "    expect helper() != 0\n" +
+            "}\n")
+    mk(p + "/tests/prog.flow", "function main() -> i32 {\n" +
+            "    println(\"hello\")\n" +
+            "    return 0\n" +
+            "}\n")
+    mk(p + "/tests/prog.expected", "hello\n")
+    # The second "answer is right" has the slug answer_is_right_2.
+    mk(p + "/tests/native.answer_is_right_2.expected", "not printed\n")
+    mk(p + "/tests/mismatch.flow", "function main() -> i32 {\n" +
+            "    println(\"actual line\")\n" +
+            "    return 0\n" +
+            "}\n")
+    mk(p + "/tests/mismatch.expected", "expected line\n")
+    mk(p + "/tests/exits.flow", "function main() -> i32 {\n" +
+            "    println(\"three\")\n" +
+            "    return 3\n" +
+            "}\n")
+    mk(p + "/tests/exits.exitcode", "3\n")
+    mk(p + "/tests/wrong_exit.flow", "function main() -> i32 {\n" +
+            "    println(\"line one\")\n" +
+            "    println(\"line two\")\n" +
+            "    return 7\n" +
+            "}\n")
+    # flowc rejects it, so the output holds no C compiler text (clang and gcc
+    # word their errors differently).
+    mk(p + "/tests/bad.flow", "function main( -> i32 {\n" +
+            "    return 0\n" +
+            "}\n")
+    mk(p + "/tests/native_golden.flow", "test \"prints things\" {\n" +
+            "    println(\"from test\")\n" +
+            "    expect 1 == 1\n" +
+            "}\n")
+    mk(p + "/tests/native_golden.prints_things.expected", "from test\n")
+    mk(p + "/tests/badexit.flow", "function main() -> i32 {\n" +
+            "    return 0\n" +
+            "}\n")
+    mk(p + "/tests/badexit.exitcode", "abc\n")
+    mk(p + "/tests/_helper.flow", "function main() -> i32 { return 1 }\n")
+    mk(p + "/tests/wip/later.flow", "function main() -> i32 { return 1 }\n")
+    mk(p + "/tests/build/skip.flow", "function main() -> i32 { return 1 }\n")
+    mk(p + "/tests/sub/deeper.flow", "function main() -> i32 {\n" +
+            "    println(\"deep\")\n" +
+            "    return 0\n" +
+            "}\n")
+    mk(p + "/tests/library.flow", "function not_a_test() -> i32 { return 1 }\n")
+    mk(p + "/other/extra.flow", "function main() -> i32 { return 0 }\n")
+
+    # p_config: [test] paths as a string, a timeout, a program that loops.
+    p = work + "/p_config"
+    mk(p + "/flow.toml", "[package]\n" +
+            "name = \"p_config\"\n" +
+            "\n" +
+            "[test]\n" +
+            "paths = \"checks\"\n" +
+            "timeout = 4\n")
+    mk(p + "/checks/fast.flow", "function main() -> i32 {\n" +
+            "    return 0\n" +
+            "}\n")
+    mk(p + "/checks/slow.flow", "extern {\n" +
+            "    function usleep(us: i32) -> i32\n" +
+            "}\n" +
+            "\n" +
+            "function main() -> i32 {\n" +
+            "    println(\"before the loop\")\n" +
+            "    let mut i: i64 = 0\n" +
+            "    while i >= 0 {\n" +
+            "        usleep(1000)\n" +
+            "        i = i + 1\n" +
+            "        if i > 1000000 {\n" +
+            "            i = 1\n" +
+            "        }\n" +
+            "    }\n" +
+            "    return 0\n" +
+            "}\n")
+
+    # p_paths: [test] paths as an array, one missing directory.
+    p = work + "/p_paths"
+    mk(p + "/flow.toml", "[package]\n" +
+            "name = \"p_paths\"\n" +
+            "\n" +
+            "[test]\n" +
+            "paths = [\"unit\", \"missing\", \"integration\"]\n" +
+            "backend = \"c\"\n")
+    mk(p + "/unit/u.flow", "test \"unit ok\" {\n" +
+            "    expect 2 + 2 == 4\n" +
+            "}\n")
+    mk(p + "/integration/i.flow", "extern {\n" +
+            "    function write(fd: i32, buf: string, n: i64) -> i64\n" +
+            "}\n" +
+            "\n" +
+            "function main() -> i32 {\n" +
+            "    write(2, \"to stderr\\n\", 10)\n" +
+            "    return 0\n" +
+            "}\n")
+    mk(p + "/integration/i.expected-stderr", "to stderr\n")
+
+    # p_empty: no tests at all.
+    p = work + "/p_empty"
+    mk(p + "/flow.toml", "[package]\n" +
+            "name = \"p_empty\"\n")
+    mkdir_p_or_exit(p + "/src")
+
+    # Bad [test] values.
+    mk(work + "/p_cfg_backend/flow.toml", "[package]\n" +
+            "name = \"p_cfg_backend\"\n" +
+            "\n" +
+            "[test]\n" +
+            "backend = \"x\"  # not a backend\n")
+    mk(work + "/p_cfg_timeout/flow.toml", "[test]\n" +
+            "timeout = \"abc\"\n")
+    mk(work + "/p_cfg_paths/flow.toml", "[package]\n" +
+            "name = \"p_cfg_paths\"\n" +
+            "[test]\n" +
+            "paths = 5\n" +
+            "[other]\n" +
+            "paths = \"x\"\n")
+
+    # p_main_rename: a native test file that also defines main().
+    p = work + "/p_rename"
+    mk(p + "/flow.toml", "[package]\n" +
+            "name = \"p_rename\"\n")
+    mk(p + "/tests/both.flow", "function main() -> i32 {\n" +
+            "    return 9\n" +
+            "}\n" +
+            "\n" +
+            "test \"still runs\" {\n" +
+            "    expect 1 == 1\n" +
+            "}\n")
+}
+
+# The work directory and the checkout as <WORK> and <ROOT>, durations as
+# N.NNNs, and the random part of native-test wrapper names as RAND.
+function normalise(text: string) -> string {
+    let g: ptr<Gate> = G
+    let mut t: string = s_replace(text, g.work, "<WORK>")
+    t = s_replace(t, g.root, "<ROOT>")
+    t = rx_sub(pl_rx("[0-9]+\\.[0-9]{3}s"), "N.NNNs", t, 0)
+    t = rx_sub(pl_rx("(\\.flow_test_[A-Za-z0-9_]+_[0-9]+_)[A-Za-z0-9_]+\\.flow"), "\\1RAND.flow", t, 0)
+    return t
+}
+
+# Paths under `dir` (as `rel/...`) whose name starts with .flow_test_, in
+# directory order (`find REL -name '.flow_test_*'`).
+function find_wrappers(dir: string, rel: string, out: ptr<ProcStrs>) {
+    let names: ptr<ProcStrs> = list_dir(dir)
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        let n: string = sl_get(names, i)
+        let p: string = dir + "/" + n
+        if s_starts(n, ".flow_test_") {
+            sl_push(out, rel + "/" + n)
+        }
+        if is_dir(p) and not is_link(p) {
+            find_wrappers(p, rel + "/" + n, out)
+        }
+        i = i + 1
+    }
+}
+
+function run_case(name: string, proj: string, args: string) {
+    let g: ptr<Gate> = G
+    let out: string = g.work + "/out/" + name
+    mkdir_p_or_exit(out)
+    let argv: ptr<ProcStrs> = s_words(args)
+    let mut c: ptr<ProcCmd> = null
+    if s_len(g.pysrc) > 0 {
+        c = cmd(sl_of3("python3", "-m", "flow.project_test_runner"))
+        cmd_env(c, "FLOW_TEST_DRIVER", g.root + "/flow")
+        cmd_env(c, "FLOW_TEST_BUILD_DIR", g.root + "/build")
+        cmd_env(c, "PYTHONPATH", g.pysrc + "/src")
+    } else {
+        c = cmd(sl_of2(g.root + "/flow", "test"))
+        cmd_env(c, "PATH", g.stub_dir + ":" + env("PATH"))
+    }
+    let mut i: i32 = 0
+    while i < sl_len(argv) {
+        proc_arg(c, sl_get(argv, i))
+        i = i + 1
+    }
+    cmd_cwd(c, g.work + "/" + proj)
+    let rc: i32 = pl_run(c, out + "/stdout", out + "/stderr", 0)
+    let mut res: string = "exit=" + s_itoa(rc) + "\n--- stdout\n" + normalise(read_text(out + "/stdout")) + "--- stderr\n" + normalise(read_text(out + "/stderr"))
+    if s_eq(name, "keep") {
+        let pdir: string = g.work + "/" + proj
+        let kept: ptr<ProcStrs> = sl_new()
+        if is_dir(pdir + "/tests") {
+            find_wrappers(pdir + "/tests", "tests", kept)
+        }
+        let norm: ptr<ProcStrs> = s_lines(normalise(pl_lines_text(kept)))
+        sl_sort(norm, false)
+        res = res + "--- kept wrappers\n" + pl_lines_text(norm) + "--- wrapper text\n"
+        let all: ptr<ProcStrs> = sl_new()
+        find_wrappers(pdir, pdir, all)
+        i = 0
+        while i < sl_len(all) {
+            if is_file(sl_get(all, i)) {
+                res = res + read_text(sl_get(all, i))
+            }
+            i = i + 1
+        }
+        i = 0
+        while i < sl_len(all) {
+            rm_rf(sl_get(all, i))
+            i = i + 1
+        }
+    }
+    let _w: bool = write_text(out + "/result", res)
+}
+
+function main() -> i32 {
+    G = malloc(40) as ptr<Gate>
+    let g: ptr<Gate> = G
+    g.root = pl_enter()
+    g.gold = g.root + "/tests/project_test/golden"
+    g.work = g.root + "/compiler/build/parity_project_test"
+    g.pysrc = ""
+    let args: ptr<ProcStrs> = pl_args()
+    let mode: string = sl_get(args, 0)
+    let rev: string = sl_get(args, 1)
+    rm_rf(g.work)
+    mkdir_p_or_exit(g.work)
+    build_projects(g.work)
+
+    g.stub_dir = g.work + "/stubbin"
+    mkdir_p_or_exit(g.stub_dir)
+    let pys: ptr<ProcStrs> = sl_of2("python", "python3")
+    let mut i: i32 = 0
+    while i < 2 {
+        let name: string = sl_get(pys, i)
+        pl_write_exec(g.stub_dir + "/" + name, "#!/bin/sh\necho \"" + name + " $*\" >> \"" + g.work + "/python-calls.log\"\nexit 127\n")
+        i = i + 1
+    }
+
+    if s_eq(mode, "--write-golden") {
+        if s_len(rev) == 0 {
+            errln(USAGE + " --write-golden <rev>")
+            cli_exit(2)
+        }
+        g.pysrc = g.work + "/pysrc"
+        mkdir_p_or_exit(g.pysrc)
+        check(pl_git_archive(rev, sl_of1("src/flow"), g.pysrc))
+        mkdir_p_or_exit(g.gold)
+    }
+
+    # Build flowc (and the runner tool) outside the cases, so no case sees the
+    # one-time build messages.
+    let pre: ptr<ProcCmd> = cmd(sl_of3(g.root + "/flow", "compile", g.work + "/p_main/tests/prog.flow"))
+    let _p: i32 = pl_run(pre, "-", "-", 0)
+    if s_len(g.pysrc) == 0 {
+        let pre2: ptr<ProcCmd> = cmd(sl_of3(g.root + "/flow", "test", "--list"))
+        cmd_cwd(pre2, g.work + "/p_empty")
+        cmd_env(pre2, "PATH", g.stub_dir + ":" + env("PATH"))
+        let _p2: i32 = pl_run(pre2, "-", "-", 0)
+    }
+
+    let mut fail: i32 = 0
+    let mut pass: i32 = 0
+    let cases: ptr<ProcStrs> = s_lines(cases_text())
+    i = 0
+    while i < sl_len(cases) {
+        let row: string = sl_get(cases, i)
+        i = i + 1
+        let a: i32 = s_find_byte(row, 124, 0)
+        let b: i32 = s_find_byte(row, 124, a + 1)
+        let name: string = s_slice(row, 0, a)
+        run_case(name, s_slice(row, a + 1, b), s_from(row, b + 1))
+        let result: string = g.work + "/out/" + name + "/result"
+        if s_len(g.pysrc) > 0 {
+            let _c: bool = copy_file(result, g.gold + "/" + name + ".txt")
+            outln("wrote " + name)
+        } elif same_bytes(result, g.gold + "/" + name + ".txt") {
+            pass = pass + 1
+        } else {
+            fail = fail + 1
+            outln("FAIL " + name)
+            out(pl_diff_head(g.gold + "/" + name + ".txt", result, 40, true))
+        }
+    }
+
+    if s_len(g.pysrc) > 0 {
+        cli_exit(0)
+    }
+    if nonempty(g.work + "/python-calls.log") {
+        errln("FAIL python was called:")
+        errs(read_text(g.work + "/python-calls.log"))
+        cli_exit(1)
+    }
+    outln("parity_project_test: " + s_itoa(pass) + " passed, " + s_itoa(fail) + " failed")
+    if fail != 0 {
+        cli_exit(1)
+    }
+    cli_exit(0)
+    return 0
+}

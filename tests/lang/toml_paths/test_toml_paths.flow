@@ -1,0 +1,17 @@
+# Flow-native language test: flow.toml [paths] import roots.
+# This directory's flow.toml maps `shapes` to a directory elsewhere in the
+# repository, so `import shapes.geom.area` loads
+# tests/fixtures/toml_paths_lib/geom/area.flow, as on the Python host.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+import shapes.geom.area { rect_area, square_area }
+
+function main() -> i32 {
+    if rect_area(3, 4) != 12 {
+        return 1
+    }
+    if square_area(5) != 25 {
+        return 2
+    }
+    return 0
+}

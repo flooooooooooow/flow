@@ -1,0 +1,635 @@
+# @module tools.repl
+# @means  `flow repl`: the interactive Flow prompt, written in Flow.
+#
+# Each expression is wrapped in a small program together with the
+# structs, functions and variables defined so far, compiled with the
+# Stage-A flowc driver and the C compiler, and run. The printed result
+# is read back and remembered for later lines.
+#
+# The launcher (the flow CLI, tools/flow_cli) passes:
+#   FLOW_ROOT      repository root
+#   FLOW_REPL_DIR  scratch directory for snippets (default FLOW_ROOT/build/repl)
+#   FLOWC_BIN      flowc driver used to compile each snippet
+#   FLOW_VERSION   version shown in the banner
+#   CC             C compiler (default cc)
+
+import "tools/hostlib/text.flow"
+
+extern {
+    function printf(fmt: string, ...) -> i32
+    function puts(s: string) -> i32
+    function fflush(fp: ptr<void>) -> i32
+    function strtod(s: string, end: ptr<void>) -> f64
+    function atoi(s: string) -> i32
+    function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
+    function malloc(size: i64) -> ptr<void>
+    function remove(path: string) -> i32
+    function mkdir(path: string, mode: i32) -> i32
+}
+
+const GREEN: string = "\x1b[92m"
+const BLUE: string = "\x1b[94m"
+const YELLOW: string = "\x1b[93m"
+const RED: string = "\x1b[91m"
+const RESET: string = "\x1b[0m"
+const BOLD: string = "\x1b[1m"
+
+struct Repl {
+    var_names: TList,
+    var_types: TList,
+    var_values: TList,
+    functions: TList,
+    structs: TList,
+    counter: i32,
+    build_dir: string,
+    flowc: string,
+    cc: string,
+    quit: bool
+}
+
+# Result of one compile-and-run: ok = false means nothing to print.
+struct Eval {
+    value: string,
+    ok: bool
+}
+
+function flush() {
+    fflush(null)
+}
+
+function prompt(p: string) {
+    printf("%s", p)
+    flush()
+}
+
+function print_banner(version: string) {
+    printf("%sFLOW REPL v%s%s\n", BOLD, version, RESET)
+    printf("Type expressions, statements, or %s:help%s for commands\n", YELLOW, RESET)
+    printf("Press %sCtrl+D%s or type %s:quit%s to exit\n", YELLOW, RESET, YELLOW, RESET)
+    printf("\n")
+}
+
+function print_help() {
+    printf("\n%sREPL Commands:%s\n", BOLD, RESET)
+    printf("  %s:help%s      Show this help\n", YELLOW, RESET)
+    printf("  %s:quit%s      Exit the REPL\n", YELLOW, RESET)
+    printf("  %s:vars%s      Show defined variables\n", YELLOW, RESET)
+    printf("  %s:funcs%s     Show defined functions\n", YELLOW, RESET)
+    printf("  %s:clear%s     Clear all definitions\n", YELLOW, RESET)
+    printf("  %s:type <expr>%s  Show the type of an expression\n", YELLOW, RESET)
+    printf("\n%sExamples:%s\n", BOLD, RESET)
+    printf("  %slet x = 42%s              Define a variable\n", GREEN, RESET)
+    printf("  %sx * 2%s                   Evaluate expression\n", GREEN, RESET)
+    printf("  %sfunction add(a: i32, b: i32) -> i32 { return a + b }%s\n", GREEN, RESET)
+    printf("  %sadd(1, 2)%s               Call function\n", GREEN, RESET)
+    printf("\n")
+}
+
+# ── Reading input ───────────────────────────────────────────────
+
+# Keep reading "...>" lines until the braces balance.
+function read_multiline(r: ptr<TReader>, first: string) -> string {
+    let mut tb: TBuf = tb_new()
+    tb_puts(&tb, first)
+    let mut depth: i32 = t_count_char(first, 123) - t_count_char(first, 125)
+    while depth > 0 {
+        prompt(t_cat3(BLUE, "...>", RESET))
+        printf(" ")
+        flush()
+        let ln: TLine = tr_line(r)
+        if not ln.ok {
+            return tb.data as string
+        }
+        tb_putc(&tb, 10)
+        tb_puts(&tb, ln.text)
+        depth = depth + t_count_char(ln.text, 123) - t_count_char(ln.text, 125)
+    }
+    return tb.data as string
+}
+
+# ── Signatures for the "Defined ..." messages ───────────────────
+
+# Split a parameter or field list on top-level commas and newlines,
+# normalizing each entry to "name: type".
+function normalize_fields(body: string) -> string {
+    let mut out: TBuf = tb_new()
+    let mut cur: TBuf = tb_new()
+    let n: i32 = t_len(body)
+    let mut depth: i32 = 0
+    let mut first: bool = true
+    let mut i: i32 = 0
+    while i <= n {
+        let mut c: i32 = 44
+        if i < n {
+            c = t_at(body, i)
+        }
+        if c == 60 or c == 40 or c == 91 {
+            depth = depth + 1
+        }
+        if c == 62 or c == 41 or c == 93 {
+            depth = depth - 1
+        }
+        if (c == 44 or c == 10) and depth <= 0 {
+            let item: string = t_strip(cur.data as string)
+            if t_len(item) > 0 {
+                let colon: i32 = t_find_char(item, 58)
+                if not first {
+                    tb_puts(&out, ", ")
+                }
+                first = false
+                if colon >= 0 {
+                    tb_puts(&out, t_strip(t_sub(item, 0, colon)))
+                    tb_puts(&out, ": ")
+                    tb_puts(&out, t_strip(t_from(item, colon + 1)))
+                } else {
+                    tb_puts(&out, item)
+                }
+            }
+            tb_clear(&cur)
+        } else {
+            tb_putc(&cur, c)
+        }
+        i = i + 1
+    }
+    return out.data as string
+}
+
+# "function add(a: i32, b: i32) -> i32 { ... }" -> "add(a: i32, b: i32) -> i32".
+# Returns "" when the text does not look like a function definition.
+function function_signature(code: string) -> string {
+    let s: string = t_strip(code)
+    let mut i: i32 = t_len("function")
+    let n: i32 = t_len(s)
+    while i < n and t_is_space(t_at(s, i)) {
+        i = i + 1
+    }
+    let ns: i32 = i
+    while i < n and t_is_ident_char(t_at(s, i)) {
+        i = i + 1
+    }
+    if i == ns {
+        return ""
+    }
+    let name: string = t_sub(s, ns, i)
+    let open: i32 = t_find_from(s, "(", i)
+    if open < 0 {
+        return ""
+    }
+    let mut depth: i32 = 0
+    let mut j: i32 = open
+    let mut close: i32 = -1
+    while j < n and close < 0 {
+        let c: i32 = t_at(s, j)
+        if c == 40 {
+            depth = depth + 1
+        }
+        if c == 41 {
+            depth = depth - 1
+            if depth == 0 {
+                close = j
+            }
+        }
+        j = j + 1
+    }
+    if close < 0 {
+        return ""
+    }
+    let brace: i32 = t_find_from(s, "{", close)
+    if brace < 0 {
+        return ""
+    }
+    let params: string = normalize_fields(t_sub(s, open + 1, close))
+    let tail: string = t_strip(t_sub(s, close + 1, brace))
+    let mut ret: string = "void"
+    if t_starts_with(tail, "->") {
+        ret = t_strip(t_from(tail, 2))
+    }
+    let mut tb: TBuf = tb_new()
+    tb_puts(&tb, name)
+    tb_puts(&tb, "(")
+    tb_puts(&tb, params)
+    tb_puts(&tb, ") -> ")
+    tb_puts(&tb, ret)
+    return tb.data as string
+}
+
+# "struct Point { x: i32, y: i32 }" -> "Point { x: i32, y: i32 }".
+function struct_signature(code: string) -> string {
+    let s: string = t_strip(code)
+    let mut i: i32 = t_len("struct")
+    let n: i32 = t_len(s)
+    while i < n and t_is_space(t_at(s, i)) {
+        i = i + 1
+    }
+    let ns: i32 = i
+    while i < n and t_is_ident_char(t_at(s, i)) {
+        i = i + 1
+    }
+    if i == ns {
+        return ""
+    }
+    let name: string = t_sub(s, ns, i)
+    let open: i32 = t_find_from(s, "{", i)
+    let close: i32 = t_find_from(s, "}", open)
+    if open < 0 or close < 0 {
+        return ""
+    }
+    let fields: string = normalize_fields(t_sub(s, open + 1, close))
+    let mut tb: TBuf = tb_new()
+    tb_puts(&tb, name)
+    tb_puts(&tb, " { ")
+    tb_puts(&tb, fields)
+    tb_puts(&tb, " }")
+    return tb.data as string
+}
+
+# ── Compile and run ─────────────────────────────────────────────
+
+function is_float_type(t: string) -> bool {
+    return t_eq(t, "f32") or t_eq(t, "f64")
+}
+
+# Python float repr for a value printed with "%.6f": the shortest
+# round-trip digits, with ".0" kept on whole numbers.
+function float_repr(text: string) -> string {
+    let v: f64 = strtod(text, null)
+    let buf: ptr<u8> = malloc(64) as ptr<u8>
+    let mut p: i32 = 1
+    while p <= 17 {
+        snprintf(buf, 64, "%.*g", p, v)
+        if strtod(buf as string, null) == v {
+            p = 99
+        } else {
+            p = p + 1
+        }
+    }
+    let s: string = buf as string
+    if t_contains(s, ".") or t_contains(s, "e") or t_contains(s, "n") {
+        return t_dup(s)
+    }
+    return t_cat(s, ".0")
+}
+
+function is_int_text(s: string) -> bool {
+    let n: i32 = t_len(s)
+    if n == 0 {
+        return false
+    }
+    let mut i: i32 = 0
+    if t_at(s, 0) == 45 or t_at(s, 0) == 43 {
+        i = 1
+    }
+    if i >= n {
+        return false
+    }
+    while i < n {
+        if not t_is_digit(t_at(s, i)) {
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+function is_float_text(s: string) -> bool {
+    if not t_contains(s, ".") {
+        return false
+    }
+    let n: i32 = t_len(s)
+    let mut i: i32 = 0
+    let mut digits: i32 = 0
+    if n > 0 and (t_at(s, 0) == 45 or t_at(s, 0) == 43) {
+        i = 1
+    }
+    while i < n {
+        let c: i32 = t_at(s, i)
+        if t_is_digit(c) {
+            digits = digits + 1
+        } else {
+            if c != 46 {
+                return false
+            }
+        }
+        i = i + 1
+    }
+    return digits > 0
+}
+
+# Python: float(out) if '.' in out else int(out), falling back to the text.
+function interpret_output(out: string) -> string {
+    if t_contains(out, ".") {
+        if is_float_text(out) {
+            return float_repr(out)
+        }
+        return out
+    }
+    if is_int_text(out) {
+        return t_int(atoi(out))
+    }
+    return out
+}
+
+function build_program(st: ptr<Repl>, expr: string) -> string {
+    let mut tb: TBuf = tb_new()
+    tb_puts(&tb, "extern {\n")
+    tb_puts(&tb, "    function printf(fmt: string, ...) -> i32\n")
+    tb_puts(&tb, "    function alarm(seconds: u32) -> u32\n")
+    tb_puts(&tb, "    function sqrt(x: f64) -> f64\n")
+    tb_puts(&tb, "    function sin(x: f64) -> f64\n")
+    tb_puts(&tb, "    function cos(x: f64) -> f64\n")
+    tb_puts(&tb, "    function tan(x: f64) -> f64\n")
+    tb_puts(&tb, "    function exp(x: f64) -> f64\n")
+    tb_puts(&tb, "    function log(x: f64) -> f64\n")
+    tb_puts(&tb, "    function log2(x: f64) -> f64\n")
+    tb_puts(&tb, "    function log10(x: f64) -> f64\n")
+    tb_puts(&tb, "    function pow(x: f64, y: f64) -> f64\n")
+    tb_puts(&tb, "    function fabs(x: f64) -> f64\n")
+    tb_puts(&tb, "    function floor(x: f64) -> f64\n")
+    tb_puts(&tb, "    function ceil(x: f64) -> f64\n")
+    tb_puts(&tb, "    function atan2(y: f64, x: f64) -> f64\n")
+    tb_puts(&tb, "    function fmod(x: f64, y: f64) -> f64\n")
+    tb_puts(&tb, "}\n")
+    let mut i: i32 = 0
+    while i < st.structs.len {
+        tb_puts(&tb, tl_get(&st.structs, i))
+        tb_putc(&tb, 10)
+        i = i + 1
+    }
+    i = 0
+    while i < st.functions.len {
+        tb_puts(&tb, tl_get(&st.functions, i))
+        tb_putc(&tb, 10)
+        i = i + 1
+    }
+    tb_puts(&tb, "function main() -> i32 {\n")
+    tb_puts(&tb, "    alarm(5)\n")
+    i = 0
+    while i < st.var_names.len {
+        let val: string = tl_get(&st.var_values, i)
+        let typ: string = tl_get(&st.var_types, i)
+        tb_puts(&tb, "    let ")
+        tb_puts(&tb, tl_get(&st.var_names, i))
+        if is_float_type(typ) or is_float_text(val) {
+            tb_puts(&tb, ": f64 = ")
+        } else {
+            tb_puts(&tb, ": i32 = ")
+        }
+        tb_puts(&tb, val)
+        tb_putc(&tb, 10)
+        i = i + 1
+    }
+    let is_float: bool = t_contains(expr, ".") or t_contains(expr, "sin") or t_contains(expr, "cos") or t_contains(expr, "sqrt") or t_contains(expr, "exp") or t_contains(expr, "log")
+    if is_float {
+        tb_puts(&tb, "    let _result: f64 = (")
+        tb_puts(&tb, expr)
+        tb_puts(&tb, ")\n    printf(\"%.6f\\n\", _result)\n")
+    } else {
+        tb_puts(&tb, "    let _result: i32 = (")
+        tb_puts(&tb, expr)
+        tb_puts(&tb, ")\n    printf(\"%d\\n\", _result)\n")
+    }
+    tb_puts(&tb, "    return 0\n}\n")
+    return tb.data as string
+}
+
+function compile_and_run(st: ptr<Repl>, expr: string) -> Eval {
+    st.counter = st.counter + 1
+    let stem: string = t_cat3(st.build_dir, "/repl_", t_int(st.counter))
+    let flow_path: string = t_cat(stem, ".flow")
+    let c_path: string = t_cat(stem, ".c")
+    let exe_path: string = stem
+    let program: string = build_program(st, expr)
+    let mut result: Eval = Eval { value: "", ok: false }
+    if not t_write_file(flow_path, program) {
+        printf("%sError: cannot write %s%s\n", RED, flow_path, RESET)
+        return result
+    }
+    let mut cmd: TBuf = tb_new()
+    tb_puts(&cmd, "FLOWC_TYPECHECK=1 FLOWC_IN=")
+    tb_puts(&cmd, t_shq(flow_path))
+    tb_puts(&cmd, " FLOWC_OUT=")
+    tb_puts(&cmd, t_shq(c_path))
+    tb_puts(&cmd, " ")
+    tb_puts(&cmd, t_shq(st.flowc))
+    tb_puts(&cmd, " 2>&1")
+    let emit: TProc = t_run(cmd.data as string)
+    if emit.status != 0 {
+        printf("%sCompilation error:%s\n", RED, RESET)
+        printf("%s\n", emit.out)
+    } else {
+        let mut cc: TBuf = tb_new()
+        tb_puts(&cc, st.cc)
+        tb_puts(&cc, " -O2 -w ")
+        tb_puts(&cc, t_shq(c_path))
+        tb_puts(&cc, " -o ")
+        tb_puts(&cc, t_shq(exe_path))
+        tb_puts(&cc, " -lm 2>&1")
+        let link: TProc = t_run(cc.data as string)
+        if link.status != 0 {
+            printf("%sCompilation error:%s\n", RED, RESET)
+            printf("%s\n", link.out)
+        } else {
+            let run: TProc = t_run(t_cat3("exec ", t_shq(exe_path), " 2>/dev/null"))
+            let sig: i32 = run.status % 256
+            let code: i32 = run.status / 256
+            if sig == 14 or code == 142 {
+                printf("%sExecution timed out%s\n", RED, RESET)
+            } else {
+                result = Eval { value: interpret_output(t_strip(run.out)), ok: true }
+            }
+        }
+    }
+    remove(flow_path)
+    remove(c_path)
+    remove(exe_path)
+    return result
+}
+
+# ── Definitions ─────────────────────────────────────────────────
+
+function add_function(st: ptr<Repl>, code: string) {
+    let sig: string = function_signature(code)
+    if t_len(sig) == 0 {
+        printf("%sError parsing function: expected 'function name(params) {'%s\n", RED, RESET)
+        return
+    }
+    tl_push(&st.functions, code)
+    printf("%sDefined function %s%s\n", GREEN, sig, RESET)
+}
+
+function add_struct(st: ptr<Repl>, code: string) {
+    let sig: string = struct_signature(code)
+    if t_len(sig) == 0 {
+        printf("%sError parsing struct: expected 'struct Name { fields }'%s\n", RED, RESET)
+        return
+    }
+    tl_push(&st.structs, code)
+    printf("%sDefined struct %s%s\n", GREEN, sig, RESET)
+}
+
+function set_variable(st: ptr<Repl>, name: string, typ: string, value: string) {
+    let at: i32 = tl_index(&st.var_names, name)
+    if at >= 0 {
+        tl_set(&st.var_types, at, typ)
+        tl_set(&st.var_values, at, value)
+        return
+    }
+    tl_push(&st.var_names, name)
+    tl_push(&st.var_types, typ)
+    tl_push(&st.var_values, value)
+}
+
+function add_variable(st: ptr<Repl>, code: string) {
+    let rest: string = t_strip(t_from(code, 4))
+    let eq: i32 = t_find_char(rest, 61)
+    if eq < 0 {
+        printf("%sVariable declaration needs an initializer%s\n", RED, RESET)
+        return
+    }
+    let mut left: string = t_strip(t_sub(rest, 0, eq))
+    let right: string = t_strip(t_from(rest, eq + 1))
+    if t_starts_with(left, "mut ") {
+        left = t_strip(t_from(left, 4))
+    }
+    let mut name: string = left
+    let mut typ: string = "auto"
+    let colon: i32 = t_find_char(left, 58)
+    if colon >= 0 {
+        name = t_strip(t_sub(left, 0, colon))
+        typ = t_strip(t_from(left, colon + 1))
+    }
+    let r: Eval = compile_and_run(st, right)
+    if r.ok {
+        set_variable(st, name, typ, r.value)
+        printf("%s%s%s = %s\n", GREEN, name, RESET, r.value)
+    }
+}
+
+# ── Commands ────────────────────────────────────────────────────
+
+function handle_command(st: ptr<Repl>, line: string) {
+    let cmd: string = t_lower(line)
+    if t_eq(cmd, ":quit") or t_eq(cmd, ":q") or t_eq(cmd, ":exit") {
+        st.quit = true
+        return
+    }
+    if t_eq(cmd, ":help") or t_eq(cmd, ":h") or t_eq(cmd, ":?") {
+        print_help()
+        return
+    }
+    if t_eq(cmd, ":vars") {
+        if st.var_names.len == 0 {
+            printf("No variables defined\n")
+            return
+        }
+        printf("%sVariables:%s\n", BOLD, RESET)
+        let mut i: i32 = 0
+        while i < st.var_names.len {
+            printf("  %s%s%s: %s = %s\n", GREEN, tl_get(&st.var_names, i), RESET, tl_get(&st.var_types, i), tl_get(&st.var_values, i))
+            i = i + 1
+        }
+        return
+    }
+    if t_eq(cmd, ":funcs") {
+        if st.functions.len == 0 {
+            printf("No functions defined\n")
+            return
+        }
+        printf("%sFunctions:%s\n", BOLD, RESET)
+        let mut i: i32 = 0
+        while i < st.functions.len {
+            let f: string = tl_get(&st.functions, i)
+            let brace: i32 = t_find_char(f, 123)
+            let mut head: string = f
+            if brace >= 0 {
+                head = t_sub(f, 0, brace)
+            }
+            printf("  %s%s%s\n", GREEN, t_strip(head), RESET)
+            i = i + 1
+        }
+        return
+    }
+    if t_eq(cmd, ":clear") {
+        st.var_names = tl_new()
+        st.var_types = tl_new()
+        st.var_values = tl_new()
+        st.functions = tl_new()
+        st.structs = tl_new()
+        printf("Cleared all definitions\n")
+        return
+    }
+    if t_starts_with(cmd, ":type ") {
+        printf("%sType inference not fully implemented yet%s\n", YELLOW, RESET)
+        return
+    }
+    printf("%sUnknown command: %s%s\n", RED, cmd, RESET)
+}
+
+function process_input(st: ptr<Repl>, line: string) {
+    let s: string = t_strip(line)
+    if t_starts_with(s, "function ") {
+        add_function(st, line)
+        return
+    }
+    if t_starts_with(s, "struct ") {
+        add_struct(st, line)
+        return
+    }
+    if t_starts_with(s, "let ") {
+        add_variable(st, line)
+        return
+    }
+    let r: Eval = compile_and_run(st, line)
+    if r.ok {
+        printf("%s\n", r.value)
+    }
+}
+
+function main() -> i32 {
+    let root: string = t_env("FLOW_ROOT", ".")
+    let mut build_dir: string = t_env("FLOW_REPL_DIR", "")
+    if t_len(build_dir) == 0 {
+        build_dir = t_cat(root, "/build/repl")
+        mkdir(t_cat(root, "/build"), 493)
+        mkdir(build_dir, 493)
+    }
+    let mut st: Repl = Repl {
+        var_names: tl_new(),
+        var_types: tl_new(),
+        var_values: tl_new(),
+        functions: tl_new(),
+        structs: tl_new(),
+        counter: 0,
+        build_dir: build_dir,
+        flowc: t_env("FLOWC_BIN", t_cat(root, "/compiler/build/flowc_bootstrap")),
+        cc: t_env("CC", "cc"),
+        quit: false
+    }
+    let mut reader: TReader = tr_new()
+    print_banner(t_env("FLOW_VERSION", "unknown"))
+    while not st.quit {
+        prompt(t_cat3(BLUE, "flow>", RESET))
+        printf(" ")
+        flush()
+        let ln: TLine = tr_line(&reader)
+        if not ln.ok {
+            st.quit = true
+        } else {
+            let mut line: string = t_strip(ln.text)
+            if t_len(line) > 0 {
+                if t_starts_with(line, ":") {
+                    handle_command(&st, line)
+                } else {
+                    if t_starts_with(line, "function ") or t_starts_with(line, "struct ") {
+                        line = read_multiline(&reader, line)
+                    }
+                    process_input(&st, line)
+                }
+            }
+        }
+        flush()
+    }
+    printf("\n%sGoodbye!%s\n", YELLOW, RESET)
+    flush()
+    return 0
+}

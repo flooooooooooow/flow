@@ -2,9 +2,9 @@
 
 *Corresponding and F-angle equalities chain along a transversal.*
 
-**Source.** euclid — Elements, Book I, Proposition 29
+**Source.** euclid: Elements, Book I, Proposition 29
 
-## Derived fact 1 — corresponding alpha equals f-angle beta
+## Derived fact 1: corresponding alpha equals f-angle beta
 
 **Coordinate.** the Euclidean plane · parallel lines · corresponding and f angles chain · **Derived fact**
 

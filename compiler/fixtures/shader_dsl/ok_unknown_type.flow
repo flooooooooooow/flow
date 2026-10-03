@@ -1,0 +1,8 @@
+fn f(a: foo) -> bar {
+    return a
+}
+
+shader fill typed {
+    let v: vec2 = vec2(f(1.0))
+    color = vec4(v, 0.0, 1.0)
+}

@@ -1,0 +1,8 @@
+FIR-G: funcs=1 blocks=1 ops=4 values=3 operands=2 types=3
+call ops: 1
+reachable: main
+dead: (none)
+call graph:
+effects / pure:
+  main: effects=0x0008 pure=False
+device: requested=cpu chosen=cpu

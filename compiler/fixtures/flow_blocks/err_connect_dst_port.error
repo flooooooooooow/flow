@@ -1,0 +1,2 @@
+Error: 'b.nope' in flow 'B' is not a port of 'A' at line 11
+connection destinations must be an input of 'A'

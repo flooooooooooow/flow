@@ -2,9 +2,9 @@
 
 *Thirteen plus zero is thirteen in a monoid witness.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §1.1
+**Source.** dummit-foote: *Abstract Algebra*, §1.1
 
-## Derived fact 1 — 13 + 0 = 13
+## Derived fact 1: 13 + 0 = 13
 
 **Coordinate.** Monoid · addition · thirteen plus zero is thirteen · **Derived fact**
 

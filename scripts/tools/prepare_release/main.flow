@@ -1,0 +1,542 @@
+# Prepare a Flow release branch from one small release-notes file.
+#
+# Run it as `./flow tool prepare_release`:
+#
+#   flow tool prepare_release --version 1.0.2 --release-date 2026-09-20 \
+#       --notes .github/releases/1.0.2.md [--root DIR]
+#
+# Steps: bump the canonical version with `flow tool sync_version`, add the
+# notes body to docs/project/CHANGELOG.md under "## Unreleased", rewrite the
+# current release paragraph and the release-history table in CHANGELOG.md,
+# then verify with `flow tool sync_version --check` and
+# `flow tool changelog_check`, all run through the root's own ./flow.
+#
+# The root is --root, else PREPARE_RELEASE_ROOT, else FLOW_REPO_ROOT (set by
+# `flow tool`). --root and a relative --notes resolve the way the Python
+# script did (--root against the caller's directory, --notes against the
+# root).
+
+import .text { ft_out, ft_outln, ft_err, ft_errln, ft_eq, ft_len, ft_byte, ft_at, ft_starts, ft_find, ft_contains, ft_slice, ft_from, ft_replace, ft_repr, ft_read_file, ft_write_file, ft_itoa, ft_list_new, ft_list_push, ft_list_len, ft_list_get, StrList }
+import .unicode { uc_strip, uc_decode, uc_is_space }
+import .mdtext { md_splitlines }
+import .proc { pr_quote, pr_run, pr_resolve }
+
+extern {
+    function getenv(name: string) -> string
+}
+
+const PROG: string = "flow tool prepare_release"
+function usage_text() -> string {
+    return "usage: flow tool prepare_release [-h] --version VERSION\n                                 --release-date RELEASE_DATE --notes NOTES\n                                 [--root ROOT]\n"
+}
+
+# Const strings joined with + compile to pointer addition (#967).
+function help_body() -> string {
+    return "\nPrepare a Flow release branch from one small release-notes file.\n\noptions:\n  -h, --help            show this help message and exit\n  --version VERSION\n  --release-date RELEASE_DATE\n  --notes NOTES\n  --root ROOT\n"
+}
+
+function is_digit(c: i32) -> bool {
+    return c >= 48 and c <= 57
+}
+
+function is_suffix_char(c: i32) -> bool {
+    return is_digit(c) or (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 46 or c == 45
+}
+
+# Match \d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)? at `at`. Returns the end, or -1.
+function semver_at(p: ptr<u8>, at: i32) -> i32 {
+    let mut q: i32 = at
+    let mut part: i32 = 0
+    while part < 3 {
+        let s: i32 = q
+        while is_digit(p[q] as i32) {
+            q = q + 1
+        }
+        if q == s {
+            return -1
+        }
+        if part < 2 {
+            if p[q] != 46 {
+                return -1
+            }
+            q = q + 1
+        }
+        part = part + 1
+    }
+    return q
+}
+
+# End of the optional [-+][0-9A-Za-z.-]+ suffix at `q` (q when absent).
+function suffix_end(p: ptr<u8>, q: i32) -> i32 {
+    if p[q] == 45 or p[q] == 43 {
+        let mut e: i32 = q + 1
+        while is_suffix_char(p[e] as i32) {
+            e = e + 1
+        }
+        if e > q + 1 {
+            return e
+        }
+    }
+    return q
+}
+
+function is_semver(v: string) -> bool {
+    let p: ptr<u8> = v as ptr<u8>
+    let q: i32 = semver_at(p, 0)
+    if q < 0 {
+        return false
+    }
+    # The suffix is optional; either the bare triple or triple+suffix must
+    # reach the end of the string.
+    if p[q] == 0 {
+        return true
+    }
+    let e: i32 = suffix_end(p, q)
+    return e > q and p[e] == 0
+}
+
+function fail(msg: string) -> i32 {
+    ft_errln(msg)
+    return 1
+}
+
+# Headline and body of the notes file; `error` is set when it is unusable.
+struct Notes {
+    headline: string
+    body: string
+    error: string
+}
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+function read_notes(path: string) -> ptr<Notes> {
+    let nt: ptr<Notes> = malloc(24) as ptr<Notes>
+    nt[0].headline = null
+    nt[0].body = null
+    nt[0].error = null
+    let raw: string = ft_read_file(path)
+    if raw as ptr<u8> == null {
+        nt[0].error = "[Errno 2] No such file or directory: " + ft_repr(path)
+        return nt
+    }
+    let text: string = uc_strip(raw)
+    let lines: ptr<StrList> = md_splitlines(text)
+    if ft_list_len(lines) == 0 {
+        nt[0].error = "release notes are empty: " + path
+        return nt
+    }
+    let first: string = ft_list_get(lines, 0)
+    let fp: ptr<u8> = first as ptr<u8>
+    # ^#\s+(.+?)\s*$ as a fullmatch: '#', one whitespace char, one more char.
+    let mut ok: bool = false
+    if ft_byte(first, 0) == 35 and ft_len(first) >= 3 {
+        if uc_is_space(uc_decode(fp, 1)) {
+            ok = true
+        }
+    }
+    # The ws char at 1 may be multi-byte; one more char must follow it.
+    if ok {
+        let c: i32 = fp[1] as i32
+        let mut w: i32 = 1
+        if c >= 240 {
+            w = 4
+        } elif c >= 224 {
+            w = 3
+        } elif c >= 192 {
+            w = 2
+        }
+        if fp[1 + w] == 0 {
+            ok = false
+        }
+    }
+    if ok == false {
+        nt[0].error = "release notes must start with one '# headline': " + path
+        return nt
+    }
+    nt[0].headline = uc_strip(ft_from(first, 1))
+    let mut rest: string = ""
+    let mut i: i32 = 1
+    while i < ft_list_len(lines) {
+        if i > 1 {
+            rest = rest + "\n"
+        }
+        rest = rest + ft_list_get(lines, i)
+        i = i + 1
+    }
+    let body: string = uc_strip(rest)
+    if ft_len(body) == 0 {
+        nt[0].error = "release notes have no body: " + path
+        return nt
+    }
+    nt[0].body = body
+    return nt
+}
+
+# str.rstrip(chars) for a single character.
+function rstrip_char(s: string, ch: i32) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut n: i32 = ft_len(s)
+    while n > 0 and (p[n - 1] as i32) == ch {
+        n = n - 1
+    }
+    return ft_slice(s, 0, n)
+}
+
+# str.rstrip() with no arguments.
+function rstrip_ws(s: string) -> string {
+    let p: ptr<u8> = s as ptr<u8>
+    let mut n: i32 = ft_len(s)
+    let mut i: i32 = 0
+    let mut keep: i32 = 0
+    while i < n {
+        let c: i32 = p[i] as i32
+        let mut w: i32 = 1
+        if c >= 240 {
+            w = 4
+        } elif c >= 224 {
+            w = 3
+        } elif c >= 192 {
+            w = 2
+        }
+        if uc_is_space(uc_decode(p, i)) == false {
+            keep = i + w
+        }
+        i = i + w
+    }
+    return ft_slice(s, 0, keep)
+}
+
+# Expand a re.sub replacement template: backslash escapes only.
+function expand_template(t: string) -> string {
+    if ft_contains(t, "\\") == false {
+        return t
+    }
+    let p: ptr<u8> = t as ptr<u8>
+    let n: i32 = ft_len(t)
+    let mut out: string = ""
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 92 and i + 1 < n {
+            let c: i32 = p[i + 1] as i32
+            let mut rep: string = null as string
+            if c == 92 {
+                rep = "\\"
+            } elif c == 110 {
+                rep = "\n"
+            } elif c == 116 {
+                rep = "\t"
+            } elif c == 114 {
+                rep = "\r"
+            }
+            if rep as ptr<u8> != null {
+                out = out + ft_slice(t, start, i) + rep
+                i = i + 2
+                start = i
+            } else {
+                i = i + 1
+            }
+        } else {
+            i = i + 1
+        }
+    }
+    return out + ft_from(t, start)
+}
+
+function run_in(root: string, cmd: string) -> i32 {
+    return pr_run("cd " + pr_quote(root) + " && " + cmd)
+}
+
+function update_detailed_changelog(root: string, version: string, date: string, body: string) -> i32 {
+    let path: string = root + "/docs/project/CHANGELOG.md"
+    let text: string = ft_read_file(path)
+    if text as ptr<u8> == null {
+        return fail("[Errno 2] No such file or directory: " + ft_repr(path))
+    }
+    let heading: string = "## [" + version + "] - " + date
+    if ft_contains(text, heading) {
+        return 0
+    }
+    let marker: string = "## Unreleased\n"
+    let at: i32 = ft_find(text, marker, 0)
+    if at < 0 {
+        return fail("docs/project/CHANGELOG.md has no Unreleased section")
+    }
+    let entry: string = heading + "\n\n" + rstrip_ws(body) + "\n"
+    let out: string = ft_slice(text, 0, at) + marker + "\n" + entry + "\n" + ft_from(text, at + ft_len(marker))
+    let _w: bool = ft_write_file(path, out)
+    return 0
+}
+
+# First match of \*\*Flow <semver>\*\*.*?\n\n (DOTALL); start in se[0], end in se[1].
+function find_current_release(text: string, se: ptr<i32>) -> bool {
+    let p: ptr<u8> = text as ptr<u8>
+    let mut i: i32 = ft_find(text, "**Flow ", 0)
+    while i >= 0 {
+        let q: i32 = semver_at(p, i + 7)
+        if q >= 0 {
+            let mut e: i32 = -1
+            let sfx: i32 = suffix_end(p, q)
+            if sfx > q and ft_at(text, sfx, "**") {
+                e = sfx + 2
+            } elif ft_at(text, q, "**") {
+                e = q + 2
+            }
+            if e >= 0 {
+                let nn: i32 = ft_find(text, "\n\n", e)
+                if nn >= 0 {
+                    se[0] = i
+                    se[1] = nn + 2
+                    return true
+                }
+            }
+        }
+        i = ft_find(text, "**Flow ", i + 1)
+    }
+    return false
+}
+
+# First line matching ^\| <semver> \| ; returns its start or -1.
+function find_history_row(text: string) -> i32 {
+    let p: ptr<u8> = text as ptr<u8>
+    let n: i32 = ft_len(text)
+    let mut i: i32 = 0
+    while i < n {
+        if (i == 0 or p[i - 1] == 10) and ft_at(text, i, "| ") {
+            let q: i32 = semver_at(p, i + 2)
+            if q >= 0 {
+                let sfx: i32 = suffix_end(p, q)
+                if sfx > q and ft_at(text, sfx, " |") {
+                    return i
+                }
+                if ft_at(text, q, " |") {
+                    return i
+                }
+            }
+        }
+        i = i + 1
+    }
+    return -1
+}
+
+function update_root_changelog(root: string, version: string, date: string, headline: string) -> i32 {
+    let path: string = root + "/CHANGELOG.md"
+    let mut text: string = ft_read_file(path)
+    if text as ptr<u8> == null {
+        return fail("[Errno 2] No such file or directory: " + ft_repr(path))
+    }
+    let head: string = rstrip_char(headline, 46)
+    let current: string = ft_replace("**Flow " + version + "** is the current release on the explicit 1.x compatibility contract in [`STABILITY.md`](STABILITY.md). " + head + " .\n\n", " .", ".")
+    let se: ptr<i32> = malloc(8) as ptr<i32>
+    let found: bool = find_current_release(text, se)
+    if found == false and ft_contains(text, "**Flow " + version + "**") == false {
+        return fail("could not replace current-release paragraph in CHANGELOG.md")
+    }
+    if found {
+        text = ft_slice(text, 0, se[0]) + expand_template(current) + ft_from(text, se[1])
+    }
+    if ft_contains(text, "| " + version + " |") == false {
+        let at: i32 = find_history_row(text)
+        if at < 0 {
+            return fail("could not find release-history rows in CHANGELOG.md")
+        }
+        let row: string = "| " + version + " | " + date + " | " + head + " |\n"
+        text = ft_slice(text, 0, at) + row + ft_from(text, at)
+    }
+    let _w: bool = ft_write_file(path, text)
+    return 0
+}
+
+function called_process_error(cmd: string, code: i32) -> i32 {
+    ft_errln(PROG + ": command " + cmd + " returned non-zero exit status " + ft_itoa(code) + ".")
+    return 1
+}
+
+function usage_error(msg: string) -> i32 {
+    ft_err(usage_text() + PROG + ": error: " + msg + "\n")
+    return 2
+}
+
+# Resolve an option name the way argparse does, prefixes included.
+# Returns the full name, "" when unknown, or "?..." for an ambiguity message.
+function resolve_opt(name: string) -> string {
+    let opts: ptr<StrList> = ft_list_new()
+    ft_list_push(opts, "--help")
+    ft_list_push(opts, "--version")
+    ft_list_push(opts, "--release-date")
+    ft_list_push(opts, "--notes")
+    ft_list_push(opts, "--root")
+    let mut i: i32 = 0
+    while i < ft_list_len(opts) {
+        if ft_eq(ft_list_get(opts, i), name) {
+            return name
+        }
+        i = i + 1
+    }
+    let hits: ptr<StrList> = ft_list_new()
+    i = 0
+    while i < ft_list_len(opts) {
+        if ft_starts(ft_list_get(opts, i), name) {
+            ft_list_push(hits, ft_list_get(opts, i))
+        }
+        i = i + 1
+    }
+    if ft_list_len(hits) == 1 {
+        return ft_list_get(hits, 0)
+    }
+    if ft_list_len(hits) > 1 {
+        let mut m: string = "?ambiguous option: " + name + " could match "
+        i = 0
+        while i < ft_list_len(hits) {
+            if i > 0 {
+                m = m + ", "
+            }
+            m = m + ft_list_get(hits, i)
+            i = i + 1
+        }
+        return m
+    }
+    return ""
+}
+
+function main(argc: i32, argv: ptr<string>) -> i32 {
+    let mut version_arg: string = null as string
+    let mut date: string = null as string
+    let mut notes_arg: string = null as string
+    let mut root_arg: string = getenv("PREPARE_RELEASE_ROOT")
+    if root_arg as ptr<u8> == null or ft_len(root_arg) == 0 {
+        root_arg = getenv("FLOW_REPO_ROOT")
+    }
+    if root_arg as ptr<u8> == null or ft_len(root_arg) == 0 {
+        root_arg = "."
+    }
+    let extras: ptr<StrList> = ft_list_new()
+    let mut i: i32 = 1
+    while i < argc {
+        let arg: string = argv[i]
+        if ft_eq(arg, "-h") {
+            ft_out(usage_text() + help_body())
+            return 0
+        }
+        if ft_starts(arg, "--") and ft_len(arg) > 2 {
+            let eq: i32 = ft_find(arg, "=", 0)
+            let mut name: string = arg
+            let mut value: string = null as string
+            if eq >= 0 {
+                name = ft_slice(arg, 0, eq)
+                value = ft_from(arg, eq + 1)
+            }
+            let full: string = resolve_opt(name)
+            if ft_starts(full, "?") {
+                return usage_error(ft_from(full, 1))
+            }
+            if ft_eq(full, "--help") {
+                ft_out(usage_text() + help_body())
+                return 0
+            }
+            if ft_eq(full, "") {
+                ft_list_push(extras, arg)
+                i = i + 1
+                continue
+            }
+            if value as ptr<u8> == null {
+                if i + 1 >= argc or (ft_starts(argv[i + 1], "-") and ft_len(argv[i + 1]) > 1) {
+                    return usage_error("argument " + full + ": expected one argument")
+                }
+                value = argv[i + 1]
+                i = i + 1
+            }
+            if ft_eq(full, "--version") {
+                version_arg = value
+            } elif ft_eq(full, "--release-date") {
+                date = value
+            } elif ft_eq(full, "--notes") {
+                notes_arg = value
+            } else {
+                root_arg = pr_resolve(value)
+            }
+        } else {
+            ft_list_push(extras, arg)
+        }
+        i = i + 1
+    }
+    let missing: ptr<StrList> = ft_list_new()
+    if version_arg as ptr<u8> == null {
+        ft_list_push(missing, "--version")
+    }
+    if date as ptr<u8> == null {
+        ft_list_push(missing, "--release-date")
+    }
+    if notes_arg as ptr<u8> == null {
+        ft_list_push(missing, "--notes")
+    }
+    if ft_list_len(missing) > 0 {
+        let mut m: string = "the following arguments are required: "
+        let mut k: i32 = 0
+        while k < ft_list_len(missing) {
+            if k > 0 {
+                m = m + ", "
+            }
+            m = m + ft_list_get(missing, k)
+            k = k + 1
+        }
+        return usage_error(m)
+    }
+    if ft_list_len(extras) > 0 {
+        let mut m2: string = "unrecognized arguments:"
+        let mut k2: i32 = 0
+        while k2 < ft_list_len(extras) {
+            m2 = m2 + " " + ft_list_get(extras, k2)
+            k2 = k2 + 1
+        }
+        return usage_error(m2)
+    }
+
+    let mut vs: i32 = 0
+    while ft_byte(version_arg, vs) == 118 {
+        vs = vs + 1
+    }
+    let version: string = ft_from(version_arg, vs)
+    if is_semver(version) == false {
+        return usage_error("not a semantic version: " + ft_repr(version_arg))
+    }
+
+    let root: string = root_arg
+    let mut notes: string = notes_arg
+    if ft_starts(notes_arg, "/") == false {
+        notes = root + "/" + notes_arg
+    }
+    let nt: ptr<Notes> = read_notes(notes)
+    if nt[0].error as ptr<u8> != null {
+        return fail(nt[0].error)
+    }
+
+    let flow: string = pr_quote(root + "/flow")
+    let sv_cmd: string = flow + " tool sync_version --set " + pr_quote(version) + " --release-date " + pr_quote(date)
+    let rc1: i32 = run_in(root, sv_cmd)
+    if rc1 != 0 {
+        return called_process_error("flow tool sync_version --set", rc1)
+    }
+    if update_detailed_changelog(root, version, date, nt[0].body) != 0 {
+        return 1
+    }
+    if update_root_changelog(root, version, date, nt[0].headline) != 0 {
+        return 1
+    }
+    let rc2: i32 = run_in(root, flow + " tool sync_version --check")
+    if rc2 != 0 {
+        return called_process_error("flow tool sync_version --check", rc2)
+    }
+    let rc3: i32 = run_in(root, flow + " tool changelog_check")
+    if rc3 != 0 {
+        return called_process_error("flow tool changelog_check", rc3)
+    }
+    let vtext: string = ft_read_file(root + "/VERSION")
+    if vtext as ptr<u8> == null or (ft_eq(vtext, version + "\n") == false and ft_eq(vtext, version) == false) {
+        return fail("canonical version did not update")
+    }
+    ft_outln("prepared Flow " + version + " (" + date + ")")
+    return 0
+}

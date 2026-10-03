@@ -1,0 +1,510 @@
+# Transcript test for the native language server (`flow lsp`,
+# tools/lsp/main.flow).
+#
+# Each session in tests/tools/lsp/sessions/<case>.lsp is a list of
+# JSON-RPC messages. This program frames them with Content-Length headers,
+# pipes them into the server, splits the reply stream back into one JSON
+# body per line and compares it with:
+#
+#   <case>.expected      the native server's output (exact bytes)
+#   <case>.python        what the retired Python server (src/flow/lsp_server.py)
+#                        answered to the same session, recorded before it was
+#                        deleted
+#   <case>.accepted.diff `diff` of the two after the normalization below; every
+#                        hunk is explained in tests/tools/lsp/ACCEPTED.md
+#
+# A case passes when the native output equals <case>.expected and the diff
+# against the Python recording equals <case>.accepted.diff, so the native
+# server can only differ from the Python one in the ways that were reviewed.
+#
+# Session syntax, one item per line:
+#   # comment                       ignored
+#   @sleep                          wait until every request sent so far is
+#                                   answered, then 0.5 s (lets a debounced
+#                                   publish land)
+#   @open <uri> <file>              didOpen with the file's text
+#   @change <uri> <file> <version>  didChange (full text) with the file's text
+#   {...}                           any other message, sent as written
+# In every item, @ROOT@ stands for the repository root, and <file> is a path
+# relative to it.
+#
+# Usage:
+#   ./flow tool tests/tools/lsp/run.flow              check
+#   ./flow tool tests/tools/lsp/run.flow --update     rewrite <case>.expected and
+#                                                     <case>.accepted.diff from the
+#                                                     current native output
+#   FLOW_LSP_CMD="..." ./flow tool tests/tools/lsp/run.flow --record <suffix>
+#                                                     run the sessions through another
+#                                                     server command (a bash command
+#                                                     line) and save <case>.<suffix>
+#   FLOW_LSP_ONLY=<glob>  run only the matching sessions
+#   FLOW_LSP_KEEP=<dir>   keep each session's output and stderr there
+
+import "tools/flow_cli/sys.flow"
+import "scripts/tools/lib/bgproc.flow"
+import std.process { ProcCmd, ProcResult, ProcStrs, proc_cmd, proc_arg, proc_stdin, proc_stdout, proc_stderr, proc_run, proc_chdir, proc_sleep_ms, PROC_CAPTURE, PROC_NULL, PROC_INHERIT, PROC_MERGE }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+const USAGE: string = "usage: ./flow tool tests/tools/lsp/run.flow [--update | --record <suffix>]"
+
+struct Ctx {
+    root: string,
+    server: ptr<ProcStrs>
+}
+
+let mut CTX: ptr<Ctx> = null
+
+# ---------------------------------------------------------------------------
+# JSON
+# ---------------------------------------------------------------------------
+
+# A JSON string literal for `s`, escaped as `jq -c` writes it.
+function json_string(s: string) -> string {
+    let n: i32 = s_len(s)
+    let p: ptr<u8> = s as ptr<u8>
+    let hex: string = "0123456789abcdef"
+    let mut out_s: string = "\""
+    let mut start: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        let c: i32 = p[i] as i32
+        let mut esc: string = ""
+        if c == 34 {
+            esc = "\\\""
+        } elif c == 92 {
+            esc = "\\\\"
+        } elif c == 10 {
+            esc = "\\n"
+        } elif c == 9 {
+            esc = "\\t"
+        } elif c == 13 {
+            esc = "\\r"
+        } elif c == 8 {
+            esc = "\\b"
+        } elif c == 12 {
+            esc = "\\f"
+        } elif c < 32 or c == 127 {
+            esc = "\\u00" + s_slice(hex, c / 16, c / 16 + 1) + s_slice(hex, c % 16, c % 16 + 1)
+        }
+        if s_len(esc) > 0 {
+            out_s = out_s + s_slice(s, start, i) + esc
+            start = i + 1
+        }
+        i = i + 1
+    }
+    return out_s + s_slice(s, start, n) + "\""
+}
+
+# Index just past the JSON string starting at `i` (a double quote).
+function skip_string(s: string, i: i32) -> i32 {
+    let n: i32 = s_len(s)
+    let mut k: i32 = i + 1
+    while k < n {
+        let c: i32 = s_byte(s, k)
+        if c == 92 {
+            k = k + 2
+        } elif c == 34 {
+            return k + 1
+        } else {
+            k = k + 1
+        }
+    }
+    return n
+}
+
+function is_ws(c: i32) -> bool {
+    return c == 32 or c == 9 or c == 10 or c == 13
+}
+
+# The request id of a message that has both "id" and "method" at its top
+# level, as text (`jq -c .id`); "" for anything else.
+function request_id(body: string) -> string {
+    let n: i32 = s_len(body)
+    let mut i: i32 = 0
+    while i < n and is_ws(s_byte(body, i)) {
+        i = i + 1
+    }
+    if i >= n or s_byte(body, i) != 123 {
+        return ""
+    }
+    i = i + 1
+    let mut id: string = ""
+    let mut has_id: bool = false
+    let mut has_method: bool = false
+    while i < n {
+        while i < n and (is_ws(s_byte(body, i)) or s_byte(body, i) == 44) {
+            i = i + 1
+        }
+        if i >= n or s_byte(body, i) != 34 {
+            break
+        }
+        let kend: i32 = skip_string(body, i)
+        let key: string = s_slice(body, i + 1, kend - 1)
+        i = kend
+        while i < n and (is_ws(s_byte(body, i)) or s_byte(body, i) == 58) {
+            i = i + 1
+        }
+        # The value: a string, a nested object or array, or a bare word.
+        let vstart: i32 = i
+        let mut depth: i32 = 0
+        while i < n {
+            let c: i32 = s_byte(body, i)
+            if c == 34 {
+                i = skip_string(body, i)
+                if depth == 0 {
+                    break
+                }
+                continue
+            }
+            if c == 123 or c == 91 {
+                depth = depth + 1
+            } elif c == 125 or c == 93 {
+                if depth == 0 {
+                    break
+                }
+                depth = depth - 1
+                if depth == 0 {
+                    i = i + 1
+                    break
+                }
+            } elif depth == 0 and (c == 44 or is_ws(c)) {
+                break
+            }
+            i = i + 1
+        }
+        if s_eq(key, "id") {
+            has_id = true
+            id = s_slice(body, vstart, i)
+        } elif s_eq(key, "method") {
+            has_method = true
+        }
+    }
+    if has_id and has_method {
+        return id
+    }
+    return ""
+}
+
+# ---------------------------------------------------------------------------
+# Framing
+# ---------------------------------------------------------------------------
+
+function frame(body: string) -> string {
+    return "Content-Length: " + s_itoa(s_len(body)) + "\r\n\r\n" + body
+}
+
+# Wait until the reply stream in `replies` answers request `id` (JSON form),
+# for up to a minute.
+function await_reply(replies: string, id: string) {
+    if s_len(id) == 0 {
+        return
+    }
+    let needle: string = "\"id\": " + id + ", "
+    let mut tries: i32 = 0
+    while not s_contains(read_text(replies), needle) {
+        tries = tries + 1
+        if tries > 1200 {
+            return
+        }
+        proc_sleep_ms(50)
+    }
+}
+
+# Fields of `line` split on blanks; the last of `n` fields keeps the rest
+# of the line, as `read -r a b c` does.
+function read_fields(line: string, n: i32) -> ptr<ProcStrs> {
+    let out_l: ptr<ProcStrs> = sl_new()
+    let len: i32 = s_len(line)
+    let mut i: i32 = 0
+    while sl_len(out_l) < n {
+        while i < len and (s_byte(line, i) == 32 or s_byte(line, i) == 9) {
+            i = i + 1
+        }
+        if sl_len(out_l) == n - 1 {
+            let mut e: i32 = len
+            while e > i and (s_byte(line, e - 1) == 32 or s_byte(line, e - 1) == 9) {
+                e = e - 1
+            }
+            sl_push(out_l, s_slice(line, i, e))
+            break
+        }
+        let start: i32 = i
+        while i < len and s_byte(line, i) != 32 and s_byte(line, i) != 9 {
+            i = i + 1
+        }
+        sl_push(out_l, s_slice(line, start, i))
+    }
+    return out_l
+}
+
+# Session file -> framed JSON-RPC messages written to the server's stdin
+# (fd), pausing at @sleep as an editor would. `replies` is the file the
+# server writes.
+function feed(session: string, fd: i32, replies: string) {
+    let c: ptr<Ctx> = CTX
+    let lines: ptr<ProcStrs> = s_lines(read_text(session))
+    let mut last_id: string = ""
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let line: string = s_replace(sl_get(lines, i), "@ROOT@", c.root)
+        i = i + 1
+        if s_len(line) == 0 or s_starts(line, "#") {
+            continue
+        }
+        if s_eq(line, "@sleep") {
+            await_reply(replies, last_id)
+            proc_sleep_ms(500)
+            continue
+        }
+        let mut body: string = line
+        if s_starts(line, "@open ") {
+            let f: ptr<ProcStrs> = read_fields(line, 3)
+            body = "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didOpen\",\"params\":{\"textDocument\":{\"uri\":" + json_string(sl_get(f, 1)) + ",\"languageId\":\"flow\",\"version\":1,\"text\":" + json_string(read_text(sl_get(f, 2))) + "}}}"
+        } elif s_starts(line, "@change ") {
+            let g: ptr<ProcStrs> = read_fields(line, 4)
+            body = "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/didChange\",\"params\":{\"textDocument\":{\"uri\":" + json_string(sl_get(g, 1)) + ",\"version\":" + sl_get(g, 3) + "},\"contentChanges\":[{\"text\":" + json_string(read_text(sl_get(g, 2))) + "}]}}"
+        } else {
+            let id: string = request_id(body)
+            if s_len(id) > 0 {
+                last_id = id
+            }
+        }
+        let fr: string = frame(body)
+        if not bg_write(fd, fr as ptr<u8>, s_len(fr) as i64) {
+            return
+        }
+        # Hold `exit` until everything before it is answered.
+        if s_contains(body, "\"method\":\"shutdown\"") {
+            await_reply(replies, last_id)
+        }
+    }
+}
+
+# True when `s` is "Content-Length: " and one or more digits.
+function is_length_header(s: string) -> bool {
+    return s_starts(s, "Content-Length: ") and s_is_digits(s_from(s, 16))
+}
+
+# Framed reply stream -> one JSON body per line, with a FRAMING ERROR line
+# wherever a Content-Length does not match its body.
+function deframe(raw: string) -> string {
+    let text: string = s_replace(raw, "\r", "")
+    let lines: ptr<ProcStrs> = s_lines(text)
+    let mut out_s: string = ""
+    let mut want: i32 = 0 - 1
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let line: string = sl_get(lines, i)
+        i = i + 1
+        let mut rest: string = line
+        if want >= 0 {
+            if s_len(line) == 0 {
+                continue
+            }
+            let body: string = s_slice(line, 0, want)
+            if s_len(body) != want {
+                out_s = out_s + "FRAMING ERROR: short body\n"
+            }
+            out_s = out_s + body + "\n"
+            rest = s_from(line, s_len(body))
+            want = 0 - 1
+        }
+        if is_length_header(rest) {
+            want = s_atoi(s_from(rest, 16), 0)
+        } elif s_len(rest) > 0 {
+            out_s = out_s + "FRAMING ERROR: " + rest + "\n"
+        }
+    }
+    return out_s
+}
+
+# Run one session; its normalised reply lines go to `out`, the server's
+# stderr to `out`.err.
+function run_session(session: string, out_path: string) {
+    let c: ptr<Ctx> = CTX
+    let framed: string = out_path + ".framed"
+    let _t: bool = write_text(framed, "")
+    let srv: ptr<ProcStrs> = sl_copy(c.server)
+    let p: BgProc = bg_start(srv.items, "", true, framed, out_path + ".err")
+    if p.pid > 0 {
+        feed(session, p.stdin_fd, framed)
+        bg_close(p.stdin_fd)
+        let _s: i32 = bg_wait(p.pid)
+    }
+    let raw: string = deframe(read_text(framed))
+    let _w1: bool = write_text(out_path + ".raw", raw)
+    let _w2: bool = write_text(out_path, s_replace(raw, c.root, "@ROOT@"))
+}
+
+# `diff a b`: its output, and nothing when the files are the same.
+function diff_text(a: string, b: string) -> string {
+    let d: ptr<ProcCmd> = proc_cmd("diff")
+    proc_arg(d, a)
+    proc_arg(d, b)
+    proc_stdout(d, PROC_CAPTURE)
+    proc_stderr(d, PROC_INHERIT)
+    let r: ptr<ProcResult> = proc_run(d)
+    return r.stdout
+}
+
+function first_lines(text: string, n: i32) -> string {
+    let lines: ptr<ProcStrs> = s_lines(text)
+    let mut out_s: string = ""
+    let mut i: i32 = 0
+    while i < sl_len(lines) and i < n {
+        out_s = out_s + sl_get(lines, i) + "\n"
+        i = i + 1
+    }
+    return out_s
+}
+
+# fnmatch with * and ?, for FLOW_LSP_ONLY.
+function glob_match(pat: string, s: string, pi: i32, si: i32) -> bool {
+    if pi == s_len(pat) {
+        return si == s_len(s)
+    }
+    let c: i32 = s_byte(pat, pi)
+    if c == 42 {
+        let mut k: i32 = si
+        while k <= s_len(s) {
+            if glob_match(pat, s, pi + 1, k) {
+                return true
+            }
+            k = k + 1
+        }
+        return false
+    }
+    if si >= s_len(s) {
+        return false
+    }
+    if c == 63 or c == s_byte(s, si) {
+        return glob_match(pat, s, pi + 1, si + 1)
+    }
+    return false
+}
+
+function main() -> i32 {
+    let c: ptr<Ctx> = malloc(16) as ptr<Ctx>
+    CTX = c
+    let root: string = abs_dir_physical(env_or("FLOW_REPO_ROOT", cwd_logical()))
+    c.root = root
+    let _cd: bool = proc_chdir(root)
+    env_set("PWD", root)
+    bg_ignore_sigpipe()
+    let here: string = "tests/tools/lsp"
+    let args: ptr<ProcStrs> = proc_args()
+    let a0: string = sl_get(args, 0)
+    let mut mode: string = "check"
+    let mut suffix: string = ""
+    if s_eq(a0, "--update") {
+        mode = "update"
+    } elif s_eq(a0, "--record") {
+        mode = "record"
+        suffix = sl_get(args, 1)
+        if sl_len(args) < 2 or s_len(suffix) == 0 {
+            errln("tests/tools/lsp/run.flow: --record needs a suffix")
+            cli_exit(127)
+        }
+    } elif sl_len(args) > 0 and s_len(a0) > 0 {
+        errln(USAGE)
+        cli_exit(2)
+    }
+
+    let work: string = mktemp_dir(env_or("TMPDIR", "/tmp") + "/flow-lsp-tests.XXXXXX")
+    on_exit_remove(work)
+
+    # Server under test. The native server is built once, up front, so its
+    # build chatter stays out of the timing of the first session.
+    let lsp_cmd: string = env("FLOW_LSP_CMD")
+    if s_len(lsp_cmd) > 0 {
+        c.server = sl_of3("bash", "-c", lsp_cmd)
+    } else {
+        let b: ptr<ProcCmd> = proc_cmd("./flow")
+        proc_arg(b, "lsp")
+        proc_arg(b, "--build")
+        proc_stdout(b, PROC_NULL)
+        proc_stderr(b, PROC_INHERIT)
+        let br: ptr<ProcResult> = proc_run(b)
+        if br.exit_code != 0 {
+            cli_exit(br.exit_code)
+        }
+        c.server = sl_of2("./flow", "lsp")
+    }
+
+    let only: string = env_or("FLOW_LSP_ONLY", "*")
+    let keep: string = env("FLOW_LSP_KEEP")
+    let sessions: ptr<ProcStrs> = glob_suffix(here + "/sessions", ".lsp")
+    let mut pass: i32 = 0
+    let mut fail: i32 = 0
+    let mut si: i32 = 0
+    while si < sl_len(sessions) {
+        let session: string = sl_get(sessions, si)
+        si = si + 1
+        let name: string = path_stem(session, ".lsp")
+        if not glob_match(only, name, 0, 0) {
+            continue
+        }
+        let base: string = here + "/" + name
+        let out_path: string = work + "/" + name + ".out"
+        run_session(session, out_path)
+        if s_len(keep) > 0 {
+            let _m: bool = mkdir_p(keep)
+            let _k1: bool = copy_file(out_path, keep + "/" + name + ".out")
+            let _k2: bool = copy_file(out_path + ".err", keep + "/" + name + ".out.err")
+        }
+        if s_eq(mode, "record") {
+            let _r: bool = copy_file(out_path, base + "." + suffix)
+            outln("recorded " + name + "." + suffix)
+            continue
+        }
+        # Python wrote U+2014 in its hover prose; the Flow catalogs use a plain
+        # hyphen. Normalize that one spelling before diffing (ACCEPTED.md).
+        let accepted: string = work + "/" + name + ".accepted"
+        let has_py: bool = is_file(base + ".python")
+        if has_py {
+            let py: string = s_replace(s_replace(read_text(base + ".python"), " \\u2014 ", " - "), "\\u2014", "-")
+            let _p: bool = write_text(work + "/" + name + ".py", py)
+            let _a: bool = write_text(accepted, diff_text(work + "/" + name + ".py", out_path))
+        }
+        if s_eq(mode, "update") {
+            let _u1: bool = copy_file(out_path, base + ".expected")
+            if has_py {
+                let _u2: bool = copy_file(accepted, base + ".accepted.diff")
+            }
+            outln("updated " + name)
+            pass = pass + 1
+            continue
+        }
+        let mut ok: bool = true
+        if not same_bytes(base + ".expected", out_path) {
+            outln("FAIL " + name + ": output differs from " + name + ".expected")
+            out(first_lines(diff_text(base + ".expected", out_path), 40))
+            out(first_lines(read_text(out_path + ".err"), 20))
+            ok = false
+        }
+        if has_py and not same_bytes(base + ".accepted.diff", accepted) {
+            outln("FAIL " + name + ": difference from the Python recording changed")
+            out(first_lines(diff_text(base + ".accepted.diff", accepted), 40))
+            ok = false
+        }
+        if ok {
+            outln("PASS " + name)
+            pass = pass + 1
+        } else {
+            fail = fail + 1
+        }
+    }
+
+    if s_eq(mode, "record") {
+        cli_exit(0)
+    }
+    outln("lsp transcripts: " + s_itoa(pass) + " passed, " + s_itoa(fail) + " failed")
+    if fail > 0 {
+        cli_exit(1)
+    }
+    cli_exit(0)
+    return 0
+}

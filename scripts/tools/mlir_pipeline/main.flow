@@ -1,0 +1,433 @@
+# The mlir-opt optimization pipeline for a set of `flow mlir` flags.
+#
+#   mlir_pipeline [--opt-level O0|O1|O2|O3] [--no-vectorization]
+#       [--loop-fusion] [--no-loop-fusion] [--no-mem2reg] [--no-sccp]
+#       [--no-licm] [--no-cse] [--no-dce] [--no-inline]
+#       [--enable-loop-pipelining] [--enable-multi-buffering]
+#       [--multi-buffering-factor N]
+#       [--enable-affine-tiling --affine-tile-size N]
+#       [--enable-affine-normalization]
+#       [--enable-affine-unrolling --affine-unroll-factor N]
+#       [--enable-affine-unroll-jam --affine-unroll-jam-factor N]
+#       [--enable-affine-coalescing]
+#       [--enable-affine-skewing --affine-skew-factor N]
+#       [--enable-async-copy --async-copy-target gpu|nvptx|amdgpu]
+#
+# prints the --pass-pipeline string, as MLIROptimizer.build_pass_pipeline in
+# the retired src/flow/mlir_optimizer.py built it from the transpiler flags
+# (mlir_opt_kwargs_from_args). Other arguments are ignored, so a caller can
+# pass the whole `flow mlir` flag list. `flow mlir-optimize`
+# (tools/flow_cli/mlir_tools.flow) runs mlir-opt with the result.
+#
+# Nesting: `inline` and `symbol-dce` are module passes (they need a symbol
+# table); the rest nest under func.func(...). affine-super-vectorize (O3)
+# and affine-loop-fusion only act on affine loops, which the Flow emitter
+# does not produce; loop fusion stays opt-in because it can hang mlir-opt on
+# large non-affine modules (flow#466). MLIR has no GVN pass: --no-cse turns
+# off `cse`, its stand-in.
+#
+# Exit status: 0, or 2 for an unknown optimization level.
+
+@cEmbed("#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <unistd.h>")
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+    function strncmp(a: string, b: string, n: i64) -> i32
+    function write(fd: i32, buf: string, n: i64) -> i64
+    function snprintf(buf: ptr<i8>, size: i64, fmt: string, value: i32) -> i32
+}
+
+function ft_outln(s: string) {
+    let _w: i64 = write(1, s + "\n", strlen(s) + 1)
+}
+
+function ft_errln(s: string) {
+    let _w: i64 = write(2, s + "\n", strlen(s) + 1)
+}
+
+function ft_eq(a: string, b: string) -> bool { return strcmp(a, b) == 0 }
+function ft_len(s: string) -> i32 { return strlen(s) as i32 }
+function ft_starts(s: string, prefix: string) -> bool {
+    return strncmp(s, prefix, strlen(prefix)) == 0
+}
+
+function ft_from(s: string, start: i32) -> string {
+    let n: i32 = (strlen(s) as i32) - start
+    let out: ptr<u8> = malloc((n + 1) as i64) as ptr<u8>
+    let src: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = 0
+    while i < n {
+        out[i] = src[start + i]
+        i = i + 1
+    }
+    out[n] = 0
+    return out as string
+}
+
+function ft_itoa(n: i32) -> string {
+    let buf: ptr<i8> = malloc(32) as ptr<i8>
+    let _n: i32 = snprintf(buf, 32, "%d", n)
+    return buf as string
+}
+
+struct PipeFlags {
+    level: i32,
+    vectorization: bool,
+    loop_fusion: bool,
+    mem2reg: bool,
+    sccp: bool,
+    licm: bool,
+    gvn: bool,
+    dce: bool,
+    inliner: bool,
+    pipelining: bool,
+    multi_buffering: bool,
+    multi_buffering_factor: i32,
+    affine_tiling: bool,
+    affine_tile_size: i32,
+    affine_tile_levels: i32,
+    affine_tile_sizes: array<i32, 4>,
+    affine_normalization: bool,
+    affine_unrolling: bool,
+    affine_unroll_factor: i32,
+    affine_unroll_jam: bool,
+    affine_unroll_jam_factor: i32,
+    affine_coalescing: bool,
+    affine_skewing: bool,
+    affine_skew_factor: i32,
+    async_copy: bool,
+    async_target: i32
+}
+
+# Target capability ids. An async-copy transform needs an explicit GPU
+# capability because the generic CPU pipeline has no async copy engine.
+function async_target_of(s: string) -> i32 {
+    if ft_eq(s, "gpu") { return 1 }
+    if ft_eq(s, "nvptx") { return 2 }
+    if ft_eq(s, "amdgpu") { return 3 }
+    return -1
+}
+
+# "O0".."O3" -> 0..3, else -1.
+function level_of(s: string) -> i32 {
+    if ft_eq(s, "O0") { return 0 }
+    if ft_eq(s, "O1") { return 1 }
+    if ft_eq(s, "O2") { return 2 }
+    if ft_eq(s, "O3") { return 3 }
+    return -1
+}
+
+function parse_tile_sizes(s: string, out: ptr<i32>) -> i32 {
+    let n: i32 = ft_len(s)
+    let mut i: i32 = 0
+    let mut count: i32 = 0
+    let mut value: i32 = 0
+    let mut digits: i32 = 0
+    while i <= n {
+        if i == n or s[i] == 44 {
+            if digits == 0 or value <= 0 or value > 4096 or count >= 4 {
+                return -1
+            }
+            out[count] = value
+            count = count + 1
+            value = 0
+            digits = 0
+            i = i + 1
+        } else {
+            let c: i32 = s[i]
+            if c < 48 or c > 57 { return -1 }
+            if value > 409 or (value == 409 and c > 54) { return -1 }
+            value = value * 10 + c - 48
+            digits = digits + 1
+            i = i + 1
+        }
+    }
+    if count < 2 { return -1 }
+    return count
+}
+
+function positive_int(s: string) -> i32 {
+    let mut i: i32 = 0
+    let mut n: i32 = 0
+    while i < ft_len(s) {
+        let c: i32 = s[i]
+        if c < 48 or c > 57 { return -1 }
+        n = n * 10 + c - 48
+        i = i + 1
+    }
+    if n <= 0 { return -1 }
+    return n
+}
+
+# Append `pass` to a comma-separated list.
+function add(list: string, pass: string) -> string {
+    if ft_len(list) == 0 {
+        return pass
+    }
+    return list + "," + pass
+}
+
+function build_pipeline(f: PipeFlags) -> string {
+    let o1: bool = f.level >= 1
+    let o2: bool = f.level >= 2
+    let o3: bool = f.level == 3
+    let mut prefix: string = ""
+    let mut fn_passes: string = ""
+    let mut suffix: string = ""
+    if o1 {
+        fn_passes = add(fn_passes, "canonicalize")
+        if f.gvn {
+            fn_passes = add(fn_passes, "cse")
+        }
+        prefix = add(prefix, "one-shot-bufferize{bufferize-function-boundaries=1}")
+    }
+    if o2 {
+        if f.inliner { prefix = add(prefix, "inline") }
+        if f.sccp { fn_passes = add(fn_passes, "sccp") }
+        if f.mem2reg { fn_passes = add(fn_passes, "mem2reg") }
+        if f.licm { fn_passes = add(fn_passes, "loop-invariant-code-motion") }
+        if f.loop_fusion {
+            fn_passes = add(fn_passes, "affine-loop-fusion")
+            fn_passes = add(fn_passes, "linalg-fuse-elementwise-ops")
+        }
+        if f.multi_buffering { fn_passes = add(fn_passes, "test-multi-buffering{multiplier=" + ft_itoa(f.multi_buffering_factor) + "}") }
+        if f.pipelining { fn_passes = add(fn_passes, "test-scf-pipelining") }
+        if f.affine_normalization { fn_passes = add(fn_passes, "affine-loop-normalize") }
+        if f.affine_unrolling { fn_passes = add(fn_passes, "affine-loop-unroll{unroll-factor=" + ft_itoa(f.affine_unroll_factor) + "}") }
+        if f.affine_unroll_jam { fn_passes = add(fn_passes, "affine-loop-unroll-jam{unroll-factor=" + ft_itoa(f.affine_unroll_jam_factor) + "}") }
+        if f.affine_coalescing { fn_passes = add(fn_passes, "affine-loop-coalescing") }
+        if f.affine_skewing { fn_passes = add(fn_passes, "affine-loop-skew{skew-factor=" + ft_itoa(f.affine_skew_factor) + "}") }
+        if f.affine_tiling {
+            if f.affine_tile_levels > 0 {
+                let mut ti: i32 = 0
+                while ti < f.affine_tile_levels {
+                    fn_passes = add(fn_passes, "affine-loop-tile{tile-size=" + ft_itoa(f.affine_tile_sizes[ti]) + "}")
+                    ti = ti + 1
+                }
+            } else {
+                fn_passes = add(fn_passes, "affine-loop-tile{tile-size=" + ft_itoa(f.affine_tile_size) + "}")
+            }
+        }
+        if f.async_copy { fn_passes = add(fn_passes, "gpu-async-region") }
+    }
+    if o3 and f.vectorization {
+        fn_passes = add(fn_passes, "affine-super-vectorize")
+    }
+    if f.dce and o1 {
+        suffix = add(suffix, "symbol-dce")
+        suffix = add(suffix, "canonicalize")
+    }
+    let mut parts: string = prefix
+    if ft_len(fn_passes) > 0 {
+        parts = add(parts, "func.func(" + fn_passes + ")")
+    }
+    if ft_len(suffix) > 0 {
+        parts = add(parts, suffix)
+    }
+    return "builtin.module(" + parts + ")"
+}
+
+function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
+    let mut f: PipeFlags = PipeFlags {
+        level: 2, vectorization: true, loop_fusion: false, mem2reg: true,
+        sccp: true, licm: true, gvn: true, dce: true, inliner: true,
+        pipelining: false, multi_buffering: false, multi_buffering_factor: 2, affine_tiling: false,
+        affine_tile_size: 0, affine_tile_levels: 0, affine_tile_sizes: [0, 0, 0, 0],
+        affine_normalization: false, affine_unrolling: false,
+        affine_unroll_factor: 0, async_copy: false,
+        affine_unroll_jam: false, affine_unroll_jam_factor: 0,
+        affine_coalescing: false,
+        affine_skewing: false, affine_skew_factor: 0,
+        async_target: 0
+    }
+    let mut i: i32 = 1
+    while i < argc {
+        let a: string = argv[i] as string
+        let mut lv: string = ""
+        if ft_eq(a, "--opt-level") {
+            if i + 1 < argc {
+                lv = argv[i + 1] as string
+                i = i + 1
+            }
+        } elif ft_starts(a, "--opt-level=") {
+            lv = ft_from(a, 12)
+        } elif ft_eq(a, "--no-vectorization") {
+            f.vectorization = false
+        } elif ft_eq(a, "--loop-fusion") {
+            f.loop_fusion = true
+        } elif ft_eq(a, "--no-mem2reg") {
+            f.mem2reg = false
+        } elif ft_eq(a, "--no-sccp") {
+            f.sccp = false
+        } elif ft_eq(a, "--no-licm") {
+            f.licm = false
+        } elif ft_eq(a, "--no-cse") {
+            f.gvn = false
+        } elif ft_eq(a, "--no-dce") {
+            f.dce = false
+        } elif ft_eq(a, "--no-inline") {
+            f.inliner = false
+        } elif ft_eq(a, "--enable-loop-pipelining") {
+            f.pipelining = true
+        } elif ft_eq(a, "--enable-multi-buffering") {
+            f.multi_buffering = true
+        } elif ft_eq(a, "--multi-buffering-factor") {
+            if i + 1 < argc {
+                let factor: i32 = positive_int(argv[i + 1] as string)
+                if factor < 2 or factor > 8 {
+                    ft_errln("mlir_pipeline: --multi-buffering-factor must be between 2 and 8")
+                    return 2
+                }
+                f.multi_buffering_factor = factor
+                i = i + 1
+            }
+        } elif ft_starts(a, "--multi-buffering-factor=") {
+            let factor: i32 = positive_int(ft_from(a, 25))
+            if factor < 2 or factor > 8 {
+                ft_errln("mlir_pipeline: --multi-buffering-factor must be between 2 and 8")
+                return 2
+            }
+            f.multi_buffering_factor = factor
+        } elif ft_eq(a, "--enable-affine-tiling") {
+            f.affine_tiling = true
+        } elif ft_eq(a, "--enable-affine-normalization") {
+            f.affine_normalization = true
+        } elif ft_eq(a, "--affine-tile-size") {
+            if i + 1 < argc {
+                let tile: i32 = positive_int(argv[i + 1] as string)
+                if tile < 0 {
+                    ft_errln("mlir_pipeline: --affine-tile-size must be a positive integer")
+                    return 2
+                }
+                f.affine_tile_size = tile
+                i = i + 1
+            }
+        } elif ft_starts(a, "--affine-tile-size=") {
+            let tile: i32 = positive_int(ft_from(a, 19))
+            if tile < 0 {
+                ft_errln("mlir_pipeline: --affine-tile-size must be a positive integer")
+                return 2
+            }
+            f.affine_tile_size = tile
+        } elif ft_eq(a, "--affine-tile-sizes") {
+            if i + 1 < argc {
+                let levels: i32 = parse_tile_sizes(argv[i + 1] as string, &f.affine_tile_sizes[0])
+                if levels < 0 {
+                    ft_errln("mlir_pipeline: --affine-tile-sizes must contain two to four positive integers up to 4096")
+                    return 2
+                }
+                f.affine_tile_levels = levels
+                i = i + 1
+            }
+        } elif ft_starts(a, "--affine-tile-sizes=") {
+            let levels: i32 = parse_tile_sizes(ft_from(a, 20), &f.affine_tile_sizes[0])
+            if levels < 0 {
+                ft_errln("mlir_pipeline: --affine-tile-sizes must contain two to four positive integers up to 4096")
+                return 2
+            }
+            f.affine_tile_levels = levels
+        } elif ft_eq(a, "--enable-affine-unrolling") {
+            f.affine_unrolling = true
+        } elif ft_eq(a, "--enable-affine-unroll-jam") {
+            f.affine_unroll_jam = true
+        } elif ft_eq(a, "--enable-affine-coalescing") {
+            f.affine_coalescing = true
+        } elif ft_eq(a, "--enable-affine-skewing") {
+            f.affine_skewing = true
+        } elif ft_eq(a, "--affine-skew-factor") {
+            if i + 1 < argc {
+                let factor: i32 = positive_int(argv[i + 1] as string)
+                if factor < 1 {
+                    ft_errln("mlir_pipeline: --affine-skew-factor must be a positive integer")
+                    return 2
+                }
+                f.affine_skew_factor = factor
+                i = i + 1
+            }
+        } elif ft_starts(a, "--affine-skew-factor=") {
+            let factor: i32 = positive_int(ft_from(a, 21))
+            if factor < 1 {
+                ft_errln("mlir_pipeline: --affine-skew-factor must be a positive integer")
+                return 2
+            }
+            f.affine_skew_factor = factor
+        } elif ft_eq(a, "--affine-unroll-jam-factor") {
+            if i + 1 < argc {
+                f.affine_unroll_jam_factor = positive_int(argv[i + 1] as string)
+                i = i + 1
+            }
+        } elif ft_starts(a, "--affine-unroll-jam-factor=") {
+            f.affine_unroll_jam_factor = positive_int(ft_from(a, 27))
+        } elif ft_eq(a, "--affine-unroll-factor") {
+            if i + 1 < argc {
+                let factor: i32 = positive_int(argv[i + 1] as string)
+                if factor < 0 {
+                    ft_errln("mlir_pipeline: --affine-unroll-factor must be a positive integer")
+                    return 2
+                }
+                f.affine_unroll_factor = factor
+                i = i + 1
+            }
+        } elif ft_starts(a, "--affine-unroll-factor=") {
+            let factor: i32 = positive_int(ft_from(a, 23))
+            if factor < 0 {
+                ft_errln("mlir_pipeline: --affine-unroll-factor must be a positive integer")
+                return 2
+            }
+            f.affine_unroll_factor = factor
+        } elif ft_eq(a, "--enable-async-copy") {
+            f.async_copy = true
+        } elif ft_eq(a, "--async-copy-target") {
+            if i + 1 < argc {
+                let target: string = argv[i + 1] as string
+                let target_id: i32 = async_target_of(target)
+                if target_id < 0 {
+                    ft_errln("mlir_pipeline: --async-copy-target: invalid choice: '" + target + "' (choose from 'gpu', 'nvptx', 'amdgpu')")
+                    return 2
+                }
+                f.async_target = target_id
+                i = i + 1
+            }
+        } elif ft_starts(a, "--async-copy-target=") {
+            let target: string = ft_from(a, 20)
+            let target_id: i32 = async_target_of(target)
+            if target_id < 0 {
+                ft_errln("mlir_pipeline: --async-copy-target: invalid choice: '" + target + "' (choose from 'gpu', 'nvptx', 'amdgpu')")
+                return 2
+            }
+            f.async_target = target_id
+        }
+        if ft_len(lv) > 0 {
+            let n: i32 = level_of(lv)
+            if n < 0 {
+                ft_errln("mlir_pipeline: --opt-level: invalid choice: '" + lv + "' (choose from 'O0', 'O1', 'O2', 'O3')")
+                return 2
+            }
+            f.level = n
+        }
+        i = i + 1
+    }
+    if f.async_copy and f.async_target == 0 {
+        ft_errln("mlir_pipeline: --enable-async-copy requires --async-copy-target")
+        return 2
+    }
+    if f.affine_tiling and f.affine_tile_size == 0 and f.affine_tile_levels == 0 {
+        ft_errln("mlir_pipeline: --enable-affine-tiling requires --affine-tile-size or --affine-tile-sizes")
+        return 2
+    }
+    if f.affine_unrolling and f.affine_unroll_factor == 0 {
+        ft_errln("mlir_pipeline: --enable-affine-unrolling requires --affine-unroll-factor")
+        return 2
+    }
+    if f.affine_unroll_jam and f.affine_unroll_jam_factor == 0 {
+        ft_errln("mlir_pipeline: --enable-affine-unroll-jam requires --affine-unroll-jam-factor")
+        return 2
+    }
+    if f.affine_skewing and f.affine_skew_factor == 0 {
+        ft_errln("mlir_pipeline: --enable-affine-skewing requires --affine-skew-factor")
+        return 2
+    }
+    ft_outln(build_pipeline(f))
+    return 0
+}

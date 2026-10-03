@@ -1,0 +1,682 @@
+# @module compiler.scripts.parity_lib
+# @means  The parts the flowc parity gates share: the repository root, the
+#         flowc under test, running a command with its streams sent to
+#         files, golden comparison and the shell text tools the gates used
+#         (head, tail, diff, grep, md5).
+#
+# Each gate is a Flow program beside this module, run with
+# `./flow tool compiler/scripts/parity_<name>.flow [flags]`. They replaced
+# shell scripts of the same name and keep their flags, report lines, exit
+# codes and the files they write under compiler/build.
+
+import "tools/flow_cli/sys.flow"
+import std.process { ProcCmd, ProcResult, ProcStrs, ProcHandle, proc_spawn, proc_wait_any, proc_arg, proc_stdin, proc_stdout, proc_stderr, proc_timeout_ms, proc_input, proc_run, proc_args, proc_chdir, PROC_CAPTURE, PROC_INHERIT, PROC_NULL, PROC_MERGE }
+import std.regex { Regex, RxMatch, rx_compile, rx_search }
+import "tools/doc_examples/sha256.flow"
+
+extern {
+    function sin(x: f64) -> f64
+    function fabs(x: f64) -> f64
+    function floor(x: f64) -> f64
+}
+
+# ---------------------------------------------------------------------------
+# Setup
+# ---------------------------------------------------------------------------
+
+# Change to the repository root (FLOW_REPO_ROOT, which `flow tool` sets)
+# and return it.
+export function pl_enter() -> string {
+    let mut r: string = env("FLOW_REPO_ROOT")
+    if s_len(r) == 0 {
+        r = cwd_logical()
+    }
+    let _c: bool = proc_chdir(r)
+    env_set("PWD", r)
+    return r
+}
+
+# The arguments after the program name.
+export function pl_args() -> ptr<ProcStrs> {
+    return proc_args()
+}
+
+# ${CC:-cc}
+export function pl_cc() -> string {
+    return env_or("CC", "cc")
+}
+
+# "${f//\//__}"
+export function pl_key(f: string) -> string {
+    return s_replace(f, "/", "__")
+}
+
+# The flowc under test: $FLOWC_BIN, or compiler/build/flowc_bootstrap built
+# from the checked-in bootstrap C. `prefix` is "" or "<root>/" (the gates
+# differ in whether they print the path relative or absolute), `nowarn`
+# adds -w, and `quiet` sends cc's stderr to /dev/null. A failed build stops
+# the gate with cc's status, as `set -e` did.
+export function pl_flowc(prefix: string, nowarn: bool, quiet: bool) -> string {
+    let fb: string = env("FLOWC_BIN")
+    if s_len(fb) > 0 {
+        return fb
+    }
+    let bin: string = prefix + "compiler/build/flowc_bootstrap"
+    let _m: bool = mkdir_p(path_dirname(bin))
+    let c: ptr<ProcCmd> = cmd(sl_of2(pl_cc(), "-O2"))
+    if nowarn {
+        proc_arg(c, "-w")
+    }
+    proc_arg(c, "-o")
+    proc_arg(c, bin)
+    proc_arg(c, "compiler/bootstrap/flowc_stage_a.c")
+    proc_arg(c, "-lm")
+    let mut err: string = ""
+    if quiet {
+        err = "-"
+    }
+    check(pl_run(c, "", err, 0))
+    return bin
+}
+
+# rm -rf DIR; mkdir -p DIR/<each sub>
+export function pl_fresh(dir: string, subs: ptr<ProcStrs>) {
+    rm_rf(dir)
+    mkdir_p_or_exit(dir)
+    let mut i: i32 = 0
+    while i < sl_len(subs) {
+        mkdir_p_or_exit(dir + "/" + sl_get(subs, i))
+        i = i + 1
+    }
+}
+
+# A command connected like a shell command (stdin, stdout and stderr are
+# this program's).
+export function pl_cmd1(prog: string) -> ptr<ProcCmd> {
+    return cmd(sl_of1(prog))
+}
+
+# ---------------------------------------------------------------------------
+# Running commands
+# ---------------------------------------------------------------------------
+
+# Run `c` with its streams sent where the shell would:
+#   out: "" this program's stdout, "-" /dev/null, "PATH" (> PATH) or
+#        "+PATH" (>> PATH)
+#   err: as out, or "&" for 2>&1 (stderr joins stdout, wherever it goes)
+# `timeout_s` > 0 kills the child after that many seconds; the status is
+# then 142, what `perl -e 'alarm N; exec @ARGV'` gave the shell gates.
+# Returns the shell's status for the command.
+export function pl_run(c: ptr<ProcCmd>, out: string, err: string, timeout_s: i32) -> i32 {
+    let merge: bool = s_eq(err, "&")
+    if s_len(out) == 0 {
+        proc_stdout(c, PROC_INHERIT)
+    } elif s_eq(out, "-") {
+        proc_stdout(c, PROC_NULL)
+    } else {
+        proc_stdout(c, PROC_CAPTURE)
+    }
+    if merge {
+        proc_stderr(c, PROC_MERGE)
+    } elif s_len(err) == 0 {
+        proc_stderr(c, PROC_INHERIT)
+    } elif s_eq(err, "-") {
+        proc_stderr(c, PROC_NULL)
+    } else {
+        proc_stderr(c, PROC_CAPTURE)
+    }
+    if timeout_s > 0 {
+        proc_timeout_ms(c, (timeout_s as i64) * 1000)
+    }
+    let r: ptr<ProcResult> = proc_run(c)
+    let mut code: i32 = shell_status(c, r)
+    if r.timed_out {
+        code = 142
+    }
+    if s_len(out) > 0 and not s_eq(out, "-") {
+        pl_put(out, r.stdout)
+    }
+    if not merge and s_len(err) > 0 and not s_eq(err, "-") {
+        pl_put(err, r.stderr)
+    }
+    return code
+}
+
+# The worker count for a gate's parallel steps: $JOBS, else
+# $FLOW_GATE_JOBS, else 2.
+export function pl_jobs() -> i32 {
+    let n: i32 = s_atoi(env_or("JOBS", env_or("FLOW_GATE_JOBS", "2")), 2)
+    if n < 1 {
+        return 1
+    }
+    return n
+}
+
+# Run every command in `cmds`, at most `jobs` at a time, each with stdout
+# and stderr merged into the file logs[i] (`cmd > LOG 2>&1`). Returns the
+# shell status of each command, by index.
+export function pl_run_pool(cmds: ptr<ptr<ProcCmd>>, logs: ptr<ProcStrs>, jobs: i32) -> ptr<i32> {
+    let n: i32 = sl_len(logs)
+    let status: ptr<i32> = malloc(((n + 1) * 4) as i64) as ptr<i32>
+    let slots: ptr<ptr<ProcHandle>> = malloc(((jobs + 1) * 8) as i64) as ptr<ptr<ProcHandle>>
+    let owner: ptr<i32> = malloc(((jobs + 1) * 4) as i64) as ptr<i32>
+    let at: ptr<i32> = malloc(4) as ptr<i32>
+    let mut next: i32 = 0
+    let mut active: i32 = 0
+    while next < n or active > 0 {
+        while active < jobs and next < n {
+            let c: ptr<ProcCmd> = cmds[next]
+            proc_stdout(c, PROC_CAPTURE)
+            proc_stderr(c, PROC_MERGE)
+            slots[active] = proc_spawn(c)
+            owner[active] = next
+            active = active + 1
+            next = next + 1
+        }
+        let r: ptr<ProcResult> = proc_wait_any(slots, active, at)
+        let k: i32 = at[0]
+        let i: i32 = owner[k]
+        status[i] = shell_status(cmds[i], r)
+        let _w: bool = write_text(sl_get(logs, i), r.stdout)
+        active = active - 1
+        slots[k] = slots[active]
+        owner[k] = owner[active]
+    }
+    return status
+}
+
+# Write (PATH) or append (+PATH) text.
+function pl_put(dest: string, text: string) {
+    if s_starts(dest, "+") {
+        let _a: bool = append_text(s_from(dest, 1), text)
+    } else {
+        let _w: bool = write_text(dest, text)
+    }
+}
+
+# "$(cmd 2>&1)": the merged output without trailing newlines, and the
+# status in last_status().
+export function pl_capture_merged(c: ptr<ProcCmd>) -> string {
+    return capture_merged(c)
+}
+
+# Run `python3 - ARGS` with `script` on stdin, as a heredoc did. stdout
+# and stderr are this program's. The gates hold their Python as one
+# `"...\n" +` piece per line.
+export function pl_python(script: string, args: ptr<ProcStrs>) -> i32 {
+    let c: ptr<ProcCmd> = cmd(sl_of2("python3", "-"))
+    let mut i: i32 = 0
+    while i < sl_len(args) {
+        proc_arg(c, sl_get(args, i))
+        i = i + 1
+    }
+    proc_input(c, script)
+    return run(c)
+}
+
+# `git archive REV PATHS | tar -x -C DIR`, through a tar file in DIR.
+export function pl_git_archive(rev: string, paths: ptr<ProcStrs>, dir: string) -> i32 {
+    let tarf: string = dir + "/.parity_archive.tar"
+    let g: ptr<ProcCmd> = cmd(sl_of3("git", "archive", "-o"))
+    proc_arg(g, tarf)
+    proc_arg(g, rev)
+    let mut i: i32 = 0
+    while i < sl_len(paths) {
+        proc_arg(g, sl_get(paths, i))
+        i = i + 1
+    }
+    let rc: i32 = run(g)
+    if rc != 0 {
+        rm_f(tarf)
+        return rc
+    }
+    let t: ptr<ProcCmd> = cmd(sl_of3("tar", "-x", "-f"))
+    proc_arg(t, tarf)
+    proc_arg(t, "-C")
+    proc_arg(t, dir)
+    let rc2: i32 = run(t)
+    rm_f(tarf)
+    return rc2
+}
+
+# `git show REV:PATH > OUT`
+export function pl_git_show(spec: string, out: string) -> i32 {
+    return pl_run(cmd(sl_of3("git", "show", spec)), out, "", 0)
+}
+
+# `git ls-files PATTERN | LC_ALL=C sort`
+export function pl_ls_files(pattern: string) -> ptr<ProcStrs> {
+    let l: ptr<ProcStrs> = s_lines(capture_raw(cmd(sl_of3("git", "ls-files", pattern))))
+    sl_sort(l, false)
+    return l
+}
+
+# `find DIR -name '*SUFFIX' -type f` into `out`: regular files, symlinks
+# neither listed nor followed.
+function find_into(dir: string, suffix: string, out: ptr<ProcStrs>) {
+    let names: ptr<ProcStrs> = list_dir(dir)
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        let p: string = dir + "/" + sl_get(names, i)
+        if not is_link(p) {
+            if is_dir(p) {
+                find_into(p, suffix, out)
+            } elif is_file(p) and s_ends(p, suffix) {
+                sl_push(out, p)
+            }
+        }
+        i = i + 1
+    }
+}
+
+# `find D1 D2 ... -name '*SUFFIX' -type f | LC_ALL=C sort`
+export function pl_find(dirs: ptr<ProcStrs>, suffix: string) -> ptr<ProcStrs> {
+    let out: ptr<ProcStrs> = sl_new()
+    let mut i: i32 = 0
+    while i < sl_len(dirs) {
+        find_into(sl_get(dirs, i), suffix, out)
+        i = i + 1
+    }
+    sl_sort(out, false)
+    return out
+}
+
+# A list as lines, each ending in a newline (printf '%s\n' "${list[@]}").
+export function pl_lines_text(l: ptr<ProcStrs>) -> string {
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < sl_len(l) {
+        out = out + sl_get(l, i) + "\n"
+        i = i + 1
+    }
+    return out
+}
+
+# The lines of a file.
+export function pl_read_lines(path: string) -> ptr<ProcStrs> {
+    return s_lines(read_text(path))
+}
+
+# "$(cat FILE)"
+export function pl_cat(path: string) -> string {
+    return s_chomp_all(read_text(path))
+}
+
+# An executable stub at `path` (a fake python, a fake lldb-dap).
+export function pl_write_exec(path: string, text: string) {
+    let _w: bool = write_text(path, text)
+    let _m: bool = set_mode(path, 493)
+}
+
+# ---------------------------------------------------------------------------
+# Text tools
+# ---------------------------------------------------------------------------
+
+# `head -n N`: the first n lines of text, as written.
+export function pl_head(text: string, n: i32) -> string {
+    let p: ptr<u8> = text as ptr<u8>
+    let len: i32 = s_len(text)
+    let mut seen: i32 = 0
+    let mut i: i32 = 0
+    while i < len and seen < n {
+        if p[i] == 10 {
+            seen = seen + 1
+        }
+        i = i + 1
+    }
+    return s_slice(text, 0, i)
+}
+
+# `tail -n N`: the last n lines of text, as written.
+export function pl_tail(text: string, n: i32) -> string {
+    let p: ptr<u8> = text as ptr<u8>
+    let len: i32 = s_len(text)
+    if len == 0 {
+        return ""
+    }
+    let mut i: i32 = len - 1
+    if p[i] == 10 {
+        i = i - 1
+    }
+    let mut seen: i32 = 0
+    while i >= 0 {
+        if p[i] == 10 {
+            seen = seen + 1
+            if seen == n {
+                return s_from(text, i + 1)
+            }
+        }
+        i = i - 1
+    }
+    return text
+}
+
+# `tail -n N A B ...` over several files: each under a "==> F <==" header,
+# with a blank line between them. Files that cannot be read are left out
+# (tail reports them on stderr).
+export function pl_tail_files(files: ptr<ProcStrs>, n: i32) -> string {
+    if sl_len(files) == 1 {
+        return pl_tail(read_text(sl_get(files, 0)), n)
+    }
+    let mut out: string = ""
+    let mut first: bool = true
+    let mut i: i32 = 0
+    while i < sl_len(files) {
+        let f: string = sl_get(files, i)
+        if is_file(f) {
+            if not first {
+                out = out + "\n"
+            }
+            first = false
+            out = out + "==> " + f + " <==\n" + pl_tail(read_text(f), n)
+        } else {
+            errln("tail: " + f + ": No such file or directory")
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# `diff [-u] A B | head -n N`: the first N lines of the diff.
+export function pl_diff_head(a: string, b: string, n: i32, unified: bool) -> string {
+    let c: ptr<ProcCmd> = pl_cmd1("diff")
+    if unified {
+        proc_arg(c, "-u")
+    }
+    proc_arg(c, a)
+    proc_arg(c, b)
+    return pl_head(capture_raw(c), n)
+}
+
+# A compiled grep -E pattern; null (after a message) when it does not
+# compile.
+export function pl_rx(pattern: string) -> ptr<Regex> {
+    return rx_compile(pattern, 0)
+}
+
+# `grep -q PATTERN` over the lines of text.
+export function pl_grep_text(r: ptr<Regex>, text: string) -> bool {
+    let lines: ptr<ProcStrs> = s_lines(text)
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        if rx_search(r, sl_get(lines, i)) != null {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+# `grep -q PATTERN FILE`
+export function pl_grep_file(r: ptr<Regex>, path: string) -> bool {
+    return pl_grep_text(r, read_text(path))
+}
+
+# The first line of text that starts with `prefix`, without it; "" when
+# there is none.
+export function pl_line_after(text: string, prefix: string) -> string {
+    let lines: ptr<ProcStrs> = s_lines(text)
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let l: string = sl_get(lines, i)
+        if s_starts(l, prefix) {
+            return s_from(l, s_len(prefix))
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+# `sed -n 's/^PREFIX//p'`: every line that starts with `prefix`, without
+# it, each with a newline.
+export function pl_strip_prefixed(text: string, prefix: string) -> string {
+    let lines: ptr<ProcStrs> = s_lines(text)
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let l: string = sl_get(lines, i)
+        if s_starts(l, prefix) {
+            out = out + s_from(l, s_len(prefix)) + "\n"
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# The non-empty lines of a file that do not start with "#"
+# (`grep -v '^#' F | sed '/^$/d'`).
+export function pl_data_lines(path: string) -> ptr<ProcStrs> {
+    let lines: ptr<ProcStrs> = pl_read_lines(path)
+    let out: ptr<ProcStrs> = sl_new()
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let l: string = sl_get(lines, i)
+        if s_len(l) > 0 and not s_starts(l, "#") {
+            sl_push(out, l)
+        }
+        i = i + 1
+    }
+    return out
+}
+
+# The text before the first tab (`cut -f1`).
+export function pl_field1(line: string) -> string {
+    let t: i32 = s_find_byte(line, 9, 0)
+    if t < 0 {
+        return line
+    }
+    return s_slice(line, 0, t)
+}
+
+# ---------------------------------------------------------------------------
+# Golden comparison
+# ---------------------------------------------------------------------------
+
+# Compare an expander's result for fixture `f` with the golden next to
+# `base`: `base`.error holds the expected diagnostic, `base`.expected the
+# expected source. `got` is the expansion flowc wrote, `got_err` its
+# diagnostic (only one of them exists). Prints the gate's FAIL lines to
+# stderr; true when it matches.
+export function pl_golden_check(f: string, base: string, got: string, got_err: string) -> bool {
+    if is_file(base + ".error") {
+        if is_file(got_err) and same_bytes(base + ".error", got_err) {
+            return true
+        }
+        errln("FAIL " + f + ": want error: " + pl_cat(base + ".error"))
+        if is_file(got_err) {
+            errln("     got error:  " + pl_cat(got_err))
+        }
+        return false
+    }
+    if is_file(base + ".expected") {
+        if is_file(got) and same_bytes(base + ".expected", got) {
+            return true
+        }
+        errln("FAIL " + f + ": expansion differs from " + base + ".expected")
+        if is_file(got) {
+            errs(pl_diff_head(base + ".expected", got, 20, false))
+        } else {
+            errln("     flowc error: " + pl_cat(got_err))
+        }
+        return false
+    }
+    errln("FAIL " + f + ": no golden (.expected or .error)")
+    return false
+}
+
+# ---------------------------------------------------------------------------
+# MD5 (the digest parity_lowering records for program output)
+# ---------------------------------------------------------------------------
+
+const MD5_M32: i64 = 4294967295
+
+function md5_rotl(x: i64, c: i64) -> i64 {
+    return ((x << c) | (x >> (32 - c))) & MD5_M32
+}
+
+function md5_shift(i: i32) -> i64 {
+    let r: i32 = i % 4
+    if i < 16 {
+        if r == 0 {
+            return 7
+        } elif r == 1 {
+            return 12
+        } elif r == 2 {
+            return 17
+        }
+        return 22
+    } elif i < 32 {
+        if r == 0 {
+            return 5
+        } elif r == 1 {
+            return 9
+        } elif r == 2 {
+            return 14
+        }
+        return 20
+    } elif i < 48 {
+        if r == 0 {
+            return 4
+        } elif r == 1 {
+            return 11
+        } elif r == 2 {
+            return 16
+        }
+        return 23
+    }
+    if r == 0 {
+        return 6
+    } elif r == 1 {
+        return 10
+    } elif r == 2 {
+        return 15
+    }
+    return 21
+}
+
+function hex_byte(out: ptr<u8>, at: i32, v: i64) {
+    let digits: string = "0123456789abcdef"
+    let d: ptr<u8> = digits as ptr<u8>
+    out[at] = d[(v >> 4) & 15]
+    out[at + 1] = d[v & 15]
+}
+
+# MD5 of n bytes, as 32 lowercase hex digits.
+export function pl_md5_hex(data: ptr<u8>, n: i64) -> string {
+    let k: ptr<i64> = malloc(64 * 8) as ptr<i64>
+    let mut t: i32 = 0
+    while t < 64 {
+        k[t] = floor(fabs(sin((t + 1) as f64)) * 4294967296.0) as i64
+        t = t + 1
+    }
+    let total: i64 = ((n + 8) / 64 + 1) * 64
+    let msg: ptr<u8> = malloc(total) as ptr<u8>
+    let mut i: i64 = 0
+    while i < total {
+        msg[i] = 0
+        i = i + 1
+    }
+    i = 0
+    while i < n {
+        msg[i] = data[i]
+        i = i + 1
+    }
+    msg[n] = 128
+    let bits: i64 = n * 8
+    let mut b: i64 = 0
+    while b < 8 {
+        msg[total - 8 + b] = ((bits >> (b * 8)) & 255) as u8
+        b = b + 1
+    }
+    let mut a0: i64 = 1732584193
+    let mut b0: i64 = 4023233417
+    let mut c0: i64 = 2562383102
+    let mut d0: i64 = 271733878
+    let w: ptr<i64> = malloc(16 * 8) as ptr<i64>
+    let mut off: i64 = 0
+    while off < total {
+        let mut j: i32 = 0
+        while j < 16 {
+            let q: i64 = off + (j as i64) * 4
+            w[j] = (msg[q] as i64) | ((msg[q + 1] as i64) << 8) | ((msg[q + 2] as i64) << 16) | ((msg[q + 3] as i64) << 24)
+            j = j + 1
+        }
+        let mut aa: i64 = a0
+        let mut bb: i64 = b0
+        let mut cc: i64 = c0
+        let mut dd: i64 = d0
+        let mut s: i32 = 0
+        while s < 64 {
+            let mut f: i64 = 0
+            let mut g: i32 = 0
+            if s < 16 {
+                f = (bb & cc) | ((bb ^ MD5_M32) & dd)
+                g = s
+            } elif s < 32 {
+                f = (dd & bb) | ((dd ^ MD5_M32) & cc)
+                g = (5 * s + 1) % 16
+            } elif s < 48 {
+                f = bb ^ cc ^ dd
+                g = (3 * s + 5) % 16
+            } else {
+                f = cc ^ (bb | (dd ^ MD5_M32))
+                g = (7 * s) % 16
+            }
+            f = (f + aa + k[s] + w[g]) & MD5_M32
+            aa = dd
+            dd = cc
+            cc = bb
+            bb = (bb + md5_rotl(f, md5_shift(s))) & MD5_M32
+            s = s + 1
+        }
+        a0 = (a0 + aa) & MD5_M32
+        b0 = (b0 + bb) & MD5_M32
+        c0 = (c0 + cc) & MD5_M32
+        d0 = (d0 + dd) & MD5_M32
+        off = off + 64
+    }
+    let out: ptr<u8> = malloc(33) as ptr<u8>
+    let words: ptr<i64> = malloc(4 * 8) as ptr<i64>
+    words[0] = a0
+    words[1] = b0
+    words[2] = c0
+    words[3] = d0
+    let mut wi: i32 = 0
+    while wi < 4 {
+        let mut by: i32 = 0
+        while by < 4 {
+            hex_byte(out, wi * 8 + by * 2, (words[wi] >> ((by * 8) as i64)) & 255)
+            by = by + 1
+        }
+        wi = wi + 1
+    }
+    out[32] = 0
+    return out as string
+}
+
+# md5sum of a file, "" when it cannot be read.
+export function pl_md5_file(path: string) -> string {
+    let b: Bytes = read_bytes(path)
+    if b.len < 0 {
+        return ""
+    }
+    return pl_md5_hex(b.data, b.len)
+}
+
+# ---------------------------------------------------------------------------
+# SHA-256 (the digest parity_shader_dsl records for the Metal galleries), on
+# bytes: tools/doc_examples/sha256.flow, shared with gate_lib.
+# ---------------------------------------------------------------------------
+
+export function pl_sha256_hex(src: ptr<u8>, n: i64) -> string {
+    return sha256_hex_bytes(src, n)
+}
+
+# shasum -a 256 of a file, "" when it cannot be read.
+export function pl_sha256_file(path: string) -> string {
+    let b: Bytes = read_bytes(path)
+    if b.len < 0 {
+        return ""
+    }
+    return pl_sha256_hex(b.data, b.len)
+}

@@ -1,9 +1,9 @@
 {
   "_note": [
-    "Single source of truth for the wiki sidebar. scripts/build_wiki.py reads",
-    "this; page_category, llms.txt and the mkdocs nav are all derived from it.",
-    "JSON rather than YAML because the wiki CI job runs bare `python3` with no",
-    "setup-python and no pip install, so build_wiki.py must stay stdlib-only.",
+    "Single source of truth for the wiki sidebar. ./flow tool build_wiki reads",
+    "this; the search categories, llms.txt and the mkdocs nav derive from it.",
+    "JSON rather than YAML because the wiki builder is a Flow program with a",
+    "small JSON reader (scripts/tools/lib/json.flow) and no YAML parser.",
     "Sections marked \"generated\" are filled in at build time from the proof corpus.",
     "Every page under docs/ must appear here or in \"unlisted\" below."
   ],
@@ -581,6 +581,14 @@
           "path": "language/recognition-semantics.md"
         },
         {
+          "label": "Semantic Stack",
+          "path": "language/semantic-stack.md"
+        },
+        {
+          "label": "Dynamic Invariant Discovery",
+          "path": "language/dynamic-invariants.md"
+        },
+        {
           "label": "Design Notes",
           "path": "language/language_design.md"
         }
@@ -667,6 +675,22 @@
         {
           "label": "API (generated)",
           "path": "library/stdlib-api.md"
+        },
+        {
+          "label": "Processes",
+          "path": "library/process.md"
+        },
+        {
+          "label": "Regular Expressions",
+          "path": "library/regex.md"
+        },
+        {
+          "label": "errno and Signals",
+          "path": "library/os.md"
+        },
+        {
+          "label": "Byte Buffer",
+          "path": "library/bytebuf.md"
         },
         {
           "label": "Memory",
@@ -833,6 +857,14 @@
           "path": "project/architecture-writeup.md"
         },
         {
+          "label": "Agentic Loop",
+          "path": "project/agentic-loop.md"
+        },
+        {
+          "label": "Repository Structure",
+          "path": "project/repository-structure.md"
+        },
+        {
           "label": "Maturity",
           "path": "project/maturity.md"
         },
@@ -861,12 +893,24 @@
           "path": "project/python-in-flow.md"
         },
         {
+          "label": "MLIR in Flow",
+          "path": "design/mlir-in-flow.md"
+        },
+        {
+          "label": "Denotational MLIR",
+          "path": "design/denotational-mlir.md"
+        },
+        {
           "label": "Tests in Flow",
           "path": "project/tests-in-flow.md"
         },
         {
           "label": "Runtime in Flow",
           "path": "project/runtime-in-flow.md"
+        },
+        {
+          "label": "Ecosystem Recognition",
+          "path": "project/ecosystem-recognition.md"
         },
         {
           "label": "Linguist Registration",
@@ -886,6 +930,10 @@
         {
           "label": "Independent Tutorial Author Kit",
           "path": "community/tutorial-author-kit.md"
+        },
+        {
+          "label": "Community Projects",
+          "path": "community/projects.md"
         }
       ]
     },
@@ -928,6 +976,10 @@
         {
           "label": "Compiler Architecture",
           "path": "research/flow_compiler_architecture/README.md"
+        },
+        {
+          "label": "Recognition-Indexed SSA",
+          "path": "research/recognition-ssa.md"
         },
         {
           "label": "Schur Lattice Allpass",
@@ -1008,6 +1060,7 @@
     "coverage_plan.md": "internal test-coverage plan for src/flow, not reader documentation",
     "discord-webhooks.md": "operations runbook for the project's Discord integration",
     "project/ISSUE_CLOSEOUT.md": "internal issue-closure process",
+    "project/archive-tags.md": "maintainer index of archive/* git tags, not reader documentation",
     "project/SIZE_REPORT.md": "generated binary-size measurements, regenerated per run rather than written for a reader",
     "project/archive/AUDIT_2026-02-10.md": "archived; kept for history",
     "project/flow-3-0-feature-request-tracker.md": "issue tracker for Flow 3.0 feature requests, not reader documentation",
@@ -1020,6 +1073,8 @@
     "project/MLIR_AUTOTUNING.md": "report on the MLIR transform-dialect auto-tuner and what remains (Issue #668)",
     "research/cutlass_evaluation.md": "internal evaluation of CUTLASS, kept for the record rather than as a guide",
     "project/roadmap-2.0.md": "design tracker for Epic #679, tracked internally in ROADMAP.md",
-    "research/rfc_effects_continuations.md": "rfc doc for effects continuations"
+    "research/rfc_effects_continuations.md": "rfc doc for effects continuations",
+    "project/archive/ROADMAP-1.0.md": "archived Flow 1.0 stabilisation roadmap; preserved for history",
+    "project/archive/RELEASE-1.0.md": "archived Flow 1.0 release-cut checklist; preserved for history"
   }
 }

@@ -2,9 +2,9 @@
 
 *True disjoined with itself is true.*
 
-**Source.** boole — https://en.wikipedia.org/wiki/Boolean_algebra
+**Source.** boole: https://en.wikipedia.org/wiki/Boolean_algebra
 
-## Derived fact 1 — true or true = true
+## Derived fact 1: true or true = true
 
 **Coordinate.** boolean truth values · disjunction · true disjoined with itself is true · **Derived fact**
 

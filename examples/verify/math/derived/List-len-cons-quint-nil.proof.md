@@ -2,9 +2,9 @@
 
 *Quintuple cons ending in nil has length five.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1 — len(cons(a, cons(b, cons(c, cons(d, cons(e, nil)))))) = 5
+## Derived fact 1: len(cons(a, cons(b, cons(c, cons(d, cons(e, nil)))))) = 5
 
 **Coordinate.** List · length · quintuple cons nil has length five · **Derived fact**
 

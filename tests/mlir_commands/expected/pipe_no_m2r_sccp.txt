@@ -1,0 +1,1 @@
+builtin.module(one-shot-bufferize{bufferize-function-boundaries=1},inline,func.func(canonicalize,cse,loop-invariant-code-motion),symbol-dce,canonicalize)

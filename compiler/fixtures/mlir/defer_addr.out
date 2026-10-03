@@ -1,0 +1,11 @@
+defer 2
+defer 2
+defer 2
+defer 3
+defer 1
+20
+42
+2
+3
+5
+exit=0

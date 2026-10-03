@@ -1,0 +1,27 @@
+# Nested arrays returned from a function keep their values (#573).
+function consume(rows: array<array<i32, 3>, 4>) -> i32 {
+    return rows[0][0] + rows[3][2]
+}
+
+function build(root: i32) -> array<array<i32, 3>, 4> {
+    return [[root, root + 1, root + 2], [root + 3, root + 4, root + 5],
+            [root + 6, root + 7, root + 8], [root + 9, root + 10, root + 11]]
+}
+
+function row_of(base: i32) -> array<i32, 3> {
+    return [base, base + 1, base + 2]
+}
+
+function from_rows(root: i32) -> array<array<i32, 3>, 4> {
+    let a: array<i32, 3> = row_of(root)
+    let b: array<i32, 3> = row_of(root + 10)
+    return [a, b, a, b]
+}
+
+function main() -> i32 {
+    let rows: array<array<i32, 3>, 4> = build(10)
+    printf("built %d %d %d\n", rows[0][0], rows[1][1], consume(rows))
+    let joined: array<array<i32, 3>, 4> = from_rows(1)
+    printf("joined %d %d %d\n", joined[0][0], joined[1][0], joined[3][2])
+    return 0
+}

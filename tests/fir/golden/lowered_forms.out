@@ -1,0 +1,233 @@
+{
+  "summary": "FIR-G: funcs=11 blocks=38 ops=194 values=146 operands=121 types=10",
+  "call_edges": [
+    {
+      "caller": "add_one",
+      "callee": "ok",
+      "op": 1
+    },
+    {
+      "caller": "main",
+      "callee": "classify",
+      "op": 3
+    },
+    {
+      "caller": "main",
+      "callee": "nested",
+      "op": 3
+    },
+    {
+      "caller": "main",
+      "callee": "pick",
+      "op": 2
+    },
+    {
+      "caller": "main",
+      "callee": "sub",
+      "op": 1
+    }
+  ],
+  "effects": {
+    "twice": 0,
+    "square": 0,
+    "triple": 0,
+    "sub": 0,
+    "classify": 0,
+    "nested": 0,
+    "pick": 0,
+    "ok": 0,
+    "fail": 0,
+    "add_one": 0,
+    "main": 0
+  },
+  "pure": {
+    "twice": true,
+    "square": true,
+    "triple": true,
+    "sub": true,
+    "classify": true,
+    "nested": true,
+    "pick": true,
+    "ok": true,
+    "fail": true,
+    "add_one": true,
+    "main": true
+  },
+  "reachable": [
+    "classify",
+    "main",
+    "nested",
+    "pick",
+    "sub"
+  ],
+  "dead": [
+    "twice",
+    "square",
+    "triple",
+    "ok",
+    "fail",
+    "add_one"
+  ],
+  "num_call_ops": 10,
+  "device_requested": "cpu",
+  "device_chosen": "cpu",
+  "opt_candidates": {
+    "total": 15,
+    "by_kind": {
+      "inline": 9,
+      "dead_elim": 6
+    },
+    "top": [
+      {
+        "kind": "inline",
+        "target": "sub",
+        "score": 33.0,
+        "reason": "callee_ops=6 sites=1 pure=True",
+        "caller": "main",
+        "callsite_op": 130,
+        "callee_ops": 6,
+        "call_sites": 1
+      },
+      {
+        "kind": "dead_elim",
+        "target": "add_one",
+        "score": 19.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 9,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "square",
+        "score": 15.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 5,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "triple",
+        "score": 15.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 5,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "twice",
+        "score": 15.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 5,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "ok",
+        "score": 13.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 3,
+        "call_sites": null
+      },
+      {
+        "kind": "dead_elim",
+        "target": "fail",
+        "score": 12.0,
+        "reason": "unreachable from roots",
+        "caller": null,
+        "callsite_op": null,
+        "callee_ops": 2,
+        "call_sites": null
+      },
+      {
+        "kind": "inline",
+        "target": "pick",
+        "score": 9.0,
+        "reason": "callee_ops=5 sites=2 pure=True",
+        "caller": "main",
+        "callsite_op": 115,
+        "callee_ops": 5,
+        "call_sites": 2
+      },
+      {
+        "kind": "inline",
+        "target": "pick",
+        "score": 9.0,
+        "reason": "callee_ops=5 sites=2 pure=True",
+        "caller": "main",
+        "callsite_op": 120,
+        "callee_ops": 5,
+        "call_sites": 2
+      },
+      {
+        "kind": "inline",
+        "target": "classify",
+        "score": 6.5,
+        "reason": "callee_ops=4 sites=3 pure=True",
+        "caller": "main",
+        "callsite_op": 49,
+        "callee_ops": 4,
+        "call_sites": 3
+      },
+      {
+        "kind": "inline",
+        "target": "classify",
+        "score": 6.5,
+        "reason": "callee_ops=4 sites=3 pure=True",
+        "caller": "main",
+        "callsite_op": 53,
+        "callee_ops": 4,
+        "call_sites": 3
+      },
+      {
+        "kind": "inline",
+        "target": "classify",
+        "score": 6.5,
+        "reason": "callee_ops=4 sites=3 pure=True",
+        "caller": "main",
+        "callsite_op": 58,
+        "callee_ops": 4,
+        "call_sites": 3
+      },
+      {
+        "kind": "inline",
+        "target": "nested",
+        "score": 6.5,
+        "reason": "callee_ops=4 sites=3 pure=True",
+        "caller": "main",
+        "callsite_op": 76,
+        "callee_ops": 4,
+        "call_sites": 3
+      },
+      {
+        "kind": "inline",
+        "target": "nested",
+        "score": 6.5,
+        "reason": "callee_ops=4 sites=3 pure=True",
+        "caller": "main",
+        "callsite_op": 80,
+        "callee_ops": 4,
+        "call_sites": 3
+      },
+      {
+        "kind": "inline",
+        "target": "nested",
+        "score": 6.5,
+        "reason": "callee_ops=4 sites=3 pure=True",
+        "caller": "main",
+        "callsite_op": 85,
+        "callee_ops": 4,
+        "call_sites": 3
+      }
+    ]
+  }
+}

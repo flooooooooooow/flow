@@ -2,9 +2,9 @@
 
 *List append associativity as a derived law.*
 
-**Source.** church — https://en.wikipedia.org/wiki/Associative_property
+**Source.** church: https://en.wikipedia.org/wiki/Associative_property
 
-## Derived fact 1 — (xs ++ ys) ++ zs = xs ++ (ys ++ zs)
+## Derived fact 1: (xs ++ ys) ++ zs = xs ++ (ys ++ zs)
 
 **Coordinate.** List · append · append associativity derived · **Derived fact**
 

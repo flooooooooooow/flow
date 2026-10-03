@@ -1,0 +1,5 @@
+# mentions closed forms only in prose
+function main() -> i32 {
+    return 0
+}
+

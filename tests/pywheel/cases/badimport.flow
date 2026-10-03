@@ -1,0 +1,7 @@
+# An import that names no file stops generation.
+
+import "lib/no_such_module.flow"
+
+function main() -> i32 {
+    return 0
+}

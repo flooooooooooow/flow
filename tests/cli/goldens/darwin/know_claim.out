@@ -1,0 +1,15 @@
+examples.verify.math.derived.«Nat» «addition» «zero is the right identity»
+
+  coordinate: Nat › addition › zero is the right identity
+  syntax:     «Nat» «addition» «zero is the right identity»
+  means:   Adding zero on the right gives the same number.  (12 + 0 = 12)
+  claim:   n plus 0 equals n
+           $n + 0 = n$
+  tier:    Derived fact (derived)
+  from:    peano/induction: https://en.wikipedia.org/wiki/Mathematical_induction
+  needs:   «Nat» «addition» «zero is the left identity», «Nat» «addition» «successor on the right steps the sum»
+  used-by: «Nat» «addition» «order does not matter»
+
+  source:  <ROOT>/examples/verify/math/derived/Nat-plus-zero-right.flow
+
+  proof:   run `flow doc proof` on the source file for the full trace

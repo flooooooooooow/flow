@@ -1,0 +1,7 @@
+field C : f64[5] on Line
+C evolves as laplacian(C)
+boundary C { left = 1.0  right = 2.0 }
+
+function main() -> i32 {
+    return 0
+}

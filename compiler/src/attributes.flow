@@ -18,6 +18,7 @@ extern {
     function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
     function printf(fmt: string, ...) -> i32
     function puts(s: string) -> i32
+    function getenv(name: string) -> string
 }
 
 # ── Structs ──────────────────────────────────────────────────────
@@ -188,6 +189,12 @@ function is_semantic_attr(name: string) -> i32 {
     if streq(name, "lifetime") == 1 {
         return 1
     }
+    if streq(name, "python") == 1 {
+        return 1
+    }
+    if streq(name, "libm") == 1 {
+        return 1
+    }
     return 0
 }
 
@@ -217,6 +224,9 @@ export function flowc_attr_takes_args(name: string) -> i32 {
         return 1
     }
     if streq(name, "lifetime") == 1 {
+        return 1
+    }
+    if streq(name, "python") == 1 {
         return 1
     }
     return 0
@@ -357,6 +367,13 @@ function is_target_char(c: i32) -> i32 {
     return 0
 }
 
+function is_value_char(c: i32) -> i32 {
+    if is_word_char(c) == 1 or c == 43 {
+        return 1
+    }
+    return 0
+}
+
 # Validate one comma-separated item of a @target(...) spec.
 # Accepts: bare feature (avx2), signed feature (+avx2, -sse, no-sse),
 # key=value (arch=haswell, tune=native).
@@ -395,31 +412,22 @@ function validate_target_item(item: string) -> i32 {
     }
 
     # Optional =value
+    # Value groups are [A-Za-z0-9_.+]+ joined by '-', as in the Python
+    # regex (arch=x86-64+avx2, branch-protection=standard).
     if i < n and p[i] == 61 {
         i = i + 1
-        if i >= n or is_word_char(p[i]) == 0 {
+        if i >= n or is_value_char(p[i]) == 0 {
             return 0
         }
-        while i < n and is_word_char(p[i]) == 1 {
+        while i < n and is_value_char(p[i]) == 1 {
             i = i + 1
         }
-        # Allow hyphenated values
         while i < n and p[i] == 45 {
             i = i + 1
-            if i >= n or is_word_char(p[i]) == 0 {
+            if i >= n or is_value_char(p[i]) == 0 {
                 return 0
             }
-            while i < n and is_word_char(p[i]) == 1 {
-                i = i + 1
-            }
-        }
-        # Allow + in values (e.g. arch=x86-64+avx2)
-        while i < n and p[i] == 43 {
-            i = i + 1
-            if i >= n or is_word_char(p[i]) == 0 {
-                return 0
-            }
-            while i < n and is_word_char(p[i]) == 1 {
+            while i < n and is_value_char(p[i]) == 1 {
                 i = i + 1
             }
         }
@@ -500,4 +508,153 @@ export function flowc_normalize_target_spec(spec: string) -> string {
         i = i + 1
     }
     return result
+}
+
+# ── Attributes read from source spans ────────────────────────────
+
+# The parser keeps an attribute as source spans (AST_ATTR in ast.flow):
+# the name and the text between the parentheses. This flattens the
+# argument text the way the Python parser did: split on commas outside
+# string literals, strip whitespace and one pair of surrounding quotes.
+# `"avx2", fma` -> "avx2,fma".
+export function flowc_attr_args_from_span(src: ptr<u8>, s: i32, e: i32) -> string {
+    let mut result: string = ""
+    let mut count: i32 = 0
+    let mut start: i32 = s
+    let mut in_str: i32 = 0
+    let mut i: i32 = s
+    while i <= e {
+        let mut split: i32 = 0
+        if i == e {
+            split = 1
+        } else {
+            let c: i32 = src[i] as i32
+            if in_str != 0 {
+                if c == 92 {
+                    i = i + 1
+                } elif c == in_str {
+                    in_str = 0
+                }
+            } elif c == 34 or c == 39 {
+                in_str = c
+            } elif c == 44 {
+                split = 1
+            }
+        }
+        if split == 1 {
+            let mut a: i32 = start
+            while a < i and is_space(src[a] as i32) == 1 {
+                a = a + 1
+            }
+            let mut b: i32 = i
+            while b > a and is_space(src[b - 1] as i32) == 1 {
+                b = b - 1
+            }
+            if b - a >= 2 and (src[a] == 34 or src[a] == 39) and src[b - 1] == src[a] {
+                a = a + 1
+                b = b - 1
+            }
+            if a < b {
+                let len: i32 = b - a
+                let buf: ptr<u8> = malloc((len + 1) as i64) as ptr<u8>
+                memcpy(buf, src + a, len as i64)
+                buf[len] = 0
+                if count > 0 {
+                    result = str_append(result, ",")
+                }
+                result = str_append(result, buf as string)
+                count = count + 1
+            }
+            start = i + 1
+        }
+        i = i + 1
+    }
+    return result
+}
+
+# 1 when src[s..e] spells `lit`.
+export function flowc_attr_span_is(src: ptr<u8>, s: i32, e: i32, lit: string) -> i32 {
+    let n: i32 = strlen(lit) as i32
+    if e - s != n {
+        return 0
+    }
+    let p: ptr<u8> = lit
+    let mut i: i32 = 0
+    while i < n {
+        if src[s + i] != p[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+# ── Build-mode guards ────────────────────────────────────────────
+
+# 1 when `mode` is active for this build. Port of `_active_modes` in the
+# Python transpiler for its C and MLIR backends: `compile` is always on,
+# the backend name (`c`, or `mlir` under FLOWC_EMIT=mlir or
+# FLOWC_BACKEND=mlir) is on, and FLOWC_MODE adds one more (the Python
+# `--mode` flag: compile, jit, hot, interp, mlir or c).
+export function flowc_attr_mode_active(mode: string) -> i32 {
+    if streq(mode, "compile") == 1 {
+        return 1
+    }
+    let mut backend: string = "c"
+    let emit: string = getenv("FLOWC_EMIT")
+    if emit as ptr<u8> != null and streq(emit, "mlir") == 1 {
+        backend = "mlir"
+    }
+    let be: string = getenv("FLOWC_BACKEND")
+    if be as ptr<u8> != null and streq(be, "mlir") == 1 {
+        backend = "mlir"
+    }
+    if streq(mode, backend) == 1 {
+        return 1
+    }
+    let extra: string = getenv("FLOWC_MODE")
+    if extra as ptr<u8> != null and streq(mode, extra) == 1 {
+        return 1
+    }
+    return 0
+}
+
+# Fold one attribute into a guard decision. Port of `_function_allowed`:
+# `@only(m, ...)` and `@guard(m, ...)` list modes, and a bare `@compile`,
+# `@jit`, `@hot`, `@interp`, `@mlir` or `@c` names one. Returns the
+# updated state: 0 = no guard seen yet, 1 = guarded and no listed mode is
+# active so far, 2 = some listed mode is active. A function is kept when
+# the final state is 0 or 2.
+export function flowc_attr_guard_step(state: i32, name: string, args: string) -> i32 {
+    let mut st: i32 = state
+    if streq(name, "only") == 1 or streq(name, "guard") == 1 {
+        if st == 0 {
+            st = 1
+        }
+        let p: ptr<u8> = args
+        let n: i32 = strlen(args) as i32
+        let mut start: i32 = 0
+        let mut i: i32 = 0
+        while i <= n {
+            if i == n or p[i] == 44 {
+                if i > start {
+                    if flowc_attr_mode_active(substr(args, start, i)) == 1 {
+                        st = 2
+                    }
+                }
+                start = i + 1
+            }
+            i = i + 1
+        }
+        return st
+    }
+    if is_guard_attr(name) == 1 {
+        if st == 0 {
+            st = 1
+        }
+        if flowc_attr_mode_active(name) == 1 {
+            st = 2
+        }
+    }
+    return st
 }

@@ -2,9 +2,9 @@
 
 *Thirty-three plus one is thirty-four.*
 
-**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1 — 33 + 1 = 34
+## Derived fact 1: 33 + 1 = 34
 
 **Coordinate.** the natural numbers · addition · thirty three plus one is thirty four · **Derived fact**
 

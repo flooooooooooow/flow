@@ -2,9 +2,9 @@
 
 *Union then intersecting with empty yields empty.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — (a ∪ b) ∩ empty = empty
+## Derived fact 1: (a ∪ b) ∩ empty = empty
 
 **Coordinate.** Finset · intersection · union with empty on the right annihilates · **Derived fact**
 

@@ -1,0 +1,3 @@
++ int32_t dprintf(int32_t fd, const char* fmt, ...);
+exit 0
+stdout va 42 ok

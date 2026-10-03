@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Multiplying two by itself equals its square.
-# @from   peano — https://en.wikipedia.org/wiki/Square_(algebra)
+# @from   peano: https://en.wikipedia.org/wiki/Square_(algebra)
 # @tier   derived
 
 # @means  2 * 2 = sq(2).

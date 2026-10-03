@@ -17,7 +17,7 @@
 #   1 SPATIAL coexistence   2 WELL-MIXED extinction (drawn as bars)
 #   R reseed   P pause   Esc quit
 #
-# Run: FLOW_HOST=python ./flow record examples/evoleco/rock_paper_scissors.flow --frames 4
+# Run: ./flow record examples/evoleco/rock_paper_scissors.flow --frames 4
 
 import "stdlib/gfx.flow"
 import "stdlib/text.flow"

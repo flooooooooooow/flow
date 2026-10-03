@@ -1,0 +1,46 @@
+# Sort DSL modifier words are ordinary names outside `|> sort` (#968, #994).
+# Stage-A used to emit every identifier named desc, descending, unique, ...
+# as the literal 0.
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+}
+
+struct Span {
+    lo: i32,
+    valid: i32
+}
+
+function pick(asc: i32, desc: i32) -> i32 {
+    return asc * 10 + desc
+}
+
+function main() -> i32 {
+    let desc: string = "hello"
+    let s: string = "[" + desc + "]"
+    if strcmp(s, "[hello]") != 0 {
+        return 1
+    }
+    let descending: Span = Span { lo: 4, valid: 1 }
+    if descending.valid != 1 {
+        return 2
+    }
+    let mut ascending: i32 = 3
+    ascending = ascending + 1
+    let unique: i32 = 5
+    let adaptive: i32 = 6
+    let general: i32 = 7
+    if ascending + unique + adaptive + general != 22 {
+        return 3
+    }
+    if pick(2, 9) != 29 {
+        return 4
+    }
+    # The pipeline modifiers still work.
+    let mut xs: array<i32, 4> = [3, 1, 4, 2]
+    xs |> sort descending
+    if xs[0] != 4 or xs[3] != 1 {
+        return 5
+    }
+    return 0
+}

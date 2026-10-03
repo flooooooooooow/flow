@@ -2,9 +2,9 @@
 
 *The 7-24-25 triangle satisfies the Pythagorean relation.*
 
-**Source.** euclid — Elements, Book I, Proposition 47
+**Source.** euclid: Elements, Book I, Proposition 47
 
-## Derived fact 1 — 25 squared equals 7 squared plus 24 squared
+## Derived fact 1: 25 squared equals 7 squared plus 24 squared
 
 **Coordinate.** the Euclidean plane · right triangle · seven twenty four twenty five satisfies Pythagoras · **Derived fact**
 

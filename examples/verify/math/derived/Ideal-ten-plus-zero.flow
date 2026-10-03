@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Ten plus zero is ten in an ideal witness.
-# @from   dummit-foote — *Abstract Algebra*, §7.1
+# @from   dummit-foote: *Abstract Algebra*, §7.1
 # @tier   derived
 
 # @means  10 + 0 = 10 in an ideal.

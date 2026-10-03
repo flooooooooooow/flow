@@ -1,8 +1,8 @@
 # A TCP round trip from inside a browser tab.
 #
-#   python3 scripts/ws_echo_relay.py --port 9505 --tcp-port 9506 &
+#   ./flow tool ws_echo_relay --port 9505 --tcp-port 9506 &
 #   ./flow run examples/wasm/tcp_echo.flow          # native, plain TCP
-#   python3 wasm/flow_wasm_sockets.py               # browser, over WebSocket
+#   ./flow tool wasm_crossings sockets              # browser, over WebSocket
 #
 # This calls Flow's ordinary socket API: flow_rt_tcp_connect / send / recv /
 # close in runtime/flow_tcp.c, which are BSD sockets and nothing else. The

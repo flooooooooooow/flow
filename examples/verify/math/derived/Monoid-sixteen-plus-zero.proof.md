@@ -2,9 +2,9 @@
 
 *Sixteen plus zero is sixteen in a monoid witness.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §1.1
+**Source.** dummit-foote: *Abstract Algebra*, §1.1
 
-## Derived fact 1 — 16 + 0 = 16
+## Derived fact 1: 16 + 0 = 16
 
 **Coordinate.** Monoid · addition · sixteen plus zero is sixteen · **Derived fact**
 

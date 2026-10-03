@@ -2,9 +2,9 @@
 
 *Right multiplying by an inverse yields the identity.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §1.1
+**Source.** dummit-foote: *Abstract Algebra*, §1.1
 
-## Derived fact 1 — g * inv(g) = 1
+## Derived fact 1: g * inv(g) = 1
 
 **Coordinate.** Group · inverse · right inverse multiplied on the right yields one · **Derived fact**
 

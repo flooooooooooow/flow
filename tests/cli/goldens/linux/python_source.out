@@ -1,0 +1,12 @@
+[0;34mℹ️  Generating Python package from <ROOT>/tests/cli/fixtures/hello.flow...[0m
+
+============================================================
+Python Export Analysis: hello
+============================================================
+
+✅ Exported (0 symbols):
+
+⚠️  Excluded (1 symbols):
+   main: Entry point 'main' not exported
+
+✅ Generated: dist/hello_ext.c

@@ -14,20 +14,20 @@ Cubesphere planet pipeline (separate gallery):
 Run any example natively:
 
 ```bash
-FLOW_HOST=python ./flow gfx examples/procgen/noise_atlas.flow
+./flow gfx examples/procgen/noise_atlas.flow
 ```
 
 Record one headlessly, no display needed:
 
 ```bash
-FLOW_HOST=python ./flow record examples/procgen/noise_atlas.flow \
+./flow record examples/procgen/noise_atlas.flow \
   --frames 4 --out /tmp/pg
 ```
 
 Regenerate every GIF on this page:
 
 ```bash
-python3 scripts/record_demos.py --group procgen
+./flow tool record_demos --group procgen
 ```
 
 `./flow run` does not link a graphics backend, so it cannot build these; use

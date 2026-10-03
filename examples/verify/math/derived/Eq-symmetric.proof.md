@@ -2,13 +2,13 @@
 
 *If two naturals are equal, the equality reads either way.*
 
-**Source.** leibniz — https://en.wikipedia.org/wiki/Identity_(mathematics)#Equality
+**Source.** leibniz: https://en.wikipedia.org/wiki/Identity_(mathematics)#Equality
 
-## Derived fact 1 — Equality reverses: from x = y we obtain y = x
+## Derived fact 1: Equality reverses: from x = y we obtain y = x
 
 **Coordinate.** equality · equality · equality reverses · **Derived fact**
 
-*Source: leibniz — https://en.wikipedia.org/wiki/Symmetric_relation*
+*Source: leibniz: https://en.wikipedia.org/wiki/Symmetric_relation*
 
 *Built on: anything is always equal to itself*
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that equality reverses for equality on equality. |  |  |
-| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose x  equals  y. |  |  |
 | ④ | We invoke the axiom governing equality on equality: anything is always equal to itself (instantiated for x). | ④ | $x = x$ |
 | ⑤ | We invoke the axiom governing equality on equality: anything is always equal to itself (instantiated for y). | ⑤ | $y = y$ |

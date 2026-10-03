@@ -1,6 +1,6 @@
 # @module verify.Group
 # @means  Group axioms for an abstract multiplication operation.
-# @from   dummit-foote — *Abstract Algebra*, §1.1
+# @from   dummit-foote: *Abstract Algebra*, §1.1
 # @tier   definitions-only
 
 # @means  Group multiplication associates.

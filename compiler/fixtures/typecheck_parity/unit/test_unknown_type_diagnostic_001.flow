@@ -1,0 +1,4 @@
+function main() -> i32 {
+    let p: Point = Point { x: 3, y: 4 }
+    return 0
+}

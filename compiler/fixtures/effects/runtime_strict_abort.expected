@@ -1,0 +1,3 @@
+run exit=134
+before
+flow: unhandled effect Log.info (set FLOW_PERMISSIVE_EFFECTS=1 to allow zero defaults)

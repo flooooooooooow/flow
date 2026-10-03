@@ -1,0 +1,8 @@
+Usage:
+  ./flow tool flow_to_wasm <flow_file>    # Convert single file
+  ./flow tool flow_to_wasm --all          # Convert all examples
+
+Example:
+  ./flow tool flow_to_wasm examples/basics/fibonacci.flow
+--- exit 1
+--- emcc

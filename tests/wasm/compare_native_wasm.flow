@@ -1,0 +1,74 @@
+# Compare tests/fixtures/wasm/alloc_sum.flow compiled natively through MLIR
+# with the same function compiled to wasm32 and run under Node.
+#
+# The native build lowers the program with `flow flow-to-llvm`
+# and links it into a small C caller; the wasm build is `flow wasm32`
+# (`./flow wasm32`), run with runtime/wasm/flow_runtime.mjs. The
+# results must agree to 1e-6. Prints one JSON line:
+#   {"abs_error": ..., "native_mlir": ..., "source": ..., "wasm32": ...}
+#
+# Usage: ./flow tool tests/wasm/compare_native_wasm.flow
+
+import "tools/flow_cli/sys.flow"
+import "scripts/tools/lib/testrun.flow"
+import std.process { ProcCmd, ProcStrs, proc_arg }
+
+const SOURCE: string = "tests/fixtures/wasm/alloc_sum.flow"
+
+const CALLER: string = "#include <stdio.h>\nfloat alloc_sum(void);\nint main(void) {\n    printf(\"%.17g\\n\", (double)alloc_sum());\n    return 0;\n}\n"
+
+# The Node side: instantiate the module with the Flow wasm runtime, call
+# alloc_sum, compare with the native result and print the JSON line.
+# "$" + "{" keeps the template literals away from Flow's interpolation check.
+function node_script() -> string {
+    let d: string = "$" + "{"
+    return "\nimport fs from \"node:fs\";\n" +
+        "import {createFlowWasmRuntime} from \"./runtime/wasm/flow_runtime.mjs\";\n" +
+        "const [wasmPath, source, nativeText] = process.argv.slice(1);\n" +
+        "const bytes = fs.readFileSync(wasmPath);\n" +
+        "const module = new WebAssembly.Module(bytes);\n" +
+        "const runtime = createFlowWasmRuntime();\n" +
+        "const instance = await WebAssembly.instantiate(module, runtime.imports);\n" +
+        "runtime.attach(instance);\n" +
+        "const wasm = Number(instance.exports.alloc_sum());\n" +
+        "const native = Number(nativeText);\n" +
+        "const err = Math.abs(native - wasm);\n" +
+        "// Python float repr: integral values keep \".0\".\n" +
+        "const repr = (x) => { const s = String(x); return /[.eEn]/.test(s) ? s : s + \".0\"; };\n" +
+        "if (!(err <= 1e-6)) {\n" +
+        "  console.error(`native MLIR result " + d + "repr(native)} != wasm result " + d + "repr(wasm)}`);\n" +
+        "  process.exit(1);\n" +
+        "}\n" +
+        "console.log(`{\"abs_error\": " + d + "repr(err)}, \"native_mlir\": " + d + "repr(native)}, \"source\": " + d + "JSON.stringify(source)}, \"wasm32\": " + d + "repr(wasm)}}`);\n"
+}
+
+function main() -> i32 {
+    let _root: string = tr_enter_root()
+    let work: string = tr_workdir("flow_wasm_parity_")
+
+    let llvm: ptr<ProcStrs> = sl_of3("./flow", "flow-to-llvm", SOURCE)
+    sl_push(llvm, work + "/alloc_sum_native.ll")
+    check(run_argv(llvm))
+    let _c: bool = write_text(work + "/caller.c", CALLER)
+    let cl: ptr<ProcStrs> = sl_of3("clang", "-O2", "-Wno-override-module")
+    sl_push2(cl, work + "/caller.c", work + "/alloc_sum_native.ll")
+    sl_push2(cl, "-lm", "-o")
+    sl_push(cl, work + "/native")
+    check(run_argv(cl))
+    let native: string = capture(cmd(sl_of1(work + "/native")))
+    check(last_status())
+
+    let wv: ptr<ProcStrs> = sl_of3("./flow", "wasm32", SOURCE)
+    sl_push2(wv, "-o", work + "/alloc_sum.wasm")
+    sl_push(wv, "--export")
+    sl_push2(wv, "alloc_sum", "-O")
+    sl_push(wv, "O2")
+    check(run_argv(wv))
+
+    let nv: ptr<ProcStrs> = sl_of3("node", "--input-type=module", "-e")
+    sl_push(nv, node_script())
+    sl_push2(nv, work + "/alloc_sum.wasm", SOURCE)
+    sl_push(nv, native)
+    cli_exit(run_argv(nv))
+    return 0
+}

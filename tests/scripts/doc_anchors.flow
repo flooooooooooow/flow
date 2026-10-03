@@ -1,0 +1,213 @@
+# Heading-id generation and the anchor half of the link checker
+# (`./flow tool doc_links`).
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcCmd, ProcResult, proc_stdout, proc_stderr, PROC_CAPTURE, PROC_MERGE }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+function checker(args: ptr<ProcStrs>) -> ptr<ProcStrs> {
+    let argv: ptr<ProcStrs> = sl_of3(t_root() + "/flow", "tool", "doc_links")
+    sl_extend(argv, args)
+    return argv
+}
+
+# heading_slug follows GitHub, including where that looks odd.
+function check_slug(heading: string, slug: string) -> i32 {
+    if t_run_argv(checker(sl_of2("--slug", heading))) != 0 {
+        t_cat(t_err())
+        return T_FAIL
+    }
+    # The slug and one trailing newline, nothing else.
+    if not a_file_is(t_out(), slug + "\n") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+# site/wiki.js must not collapse dash runs either.
+#
+# The two implementations are in different languages, so the only thing
+# holding them together is that neither collapses. Pin the JS source.
+function check_the_published_wiki_slugger_agrees_with_this_one() -> i32 {
+    let lines: ptr<ProcStrs> = s_lines(read_text("site/wiki.js"))
+    let mut body: string = ""
+    let mut found: bool = false
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let mut line: string = sl_get(lines, i)
+        i = i + 1
+        if not found {
+            let at: i32 = s_find(line, "function headingSlug", 0)
+            if at < 0 {
+                continue
+            }
+            found = true
+            line = s_from(line, at)
+        }
+        if s_starts(line, "}") {
+            break
+        }
+        body = body + line + "\n"
+    }
+    let _w: bool = write_text(t_tmp() + "/body.js", body)
+    if s_len(body) == 0 {
+        outln("function headingSlug not found in site/wiki.js")
+        return T_FAIL
+    }
+    if s_contains(body, "/-+/g") {
+        outln("site/wiki.js collapses runs of dashes again; that breaks every anchor into a heading containing punctuation")
+        return T_FAIL
+    }
+    if not s_contains(body, "replace(/\\s/g, '-')") and not s_contains(body, "replace(/\\s/g, \"-\")") {
+        outln("headingSlug no longer replaces each whitespace character with a dash")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+# Anchors the checker finds in a page, one per line; null after a failure.
+function anchors_in(page: string) -> ptr<ProcStrs> {
+    if t_run_argv(checker(sl_of2("--anchors", page))) != 0 {
+        t_cat(t_err())
+        return null
+    }
+    return s_lines(read_text(t_out()))
+}
+
+function has_anchors(page: string, want: string) -> i32 {
+    let anchors: ptr<ProcStrs> = anchors_in(page)
+    if anchors == null {
+        return T_FAIL
+    }
+    let names: ptr<ProcStrs> = s_words(want)
+    let mut i: i32 = 0
+    while i < sl_len(names) {
+        if not a_true("anchor " + sl_get(names, i), sl_has(anchors, sl_get(names, i))) {
+            return T_FAIL
+        }
+        i = i + 1
+    }
+    return T_PASS
+}
+
+function check_anchors_come_from_headings() -> i32 {
+    let page: string = t_tmp() + "/p.md"
+    let _w: bool = write_text(page, "# Title\n\n## A Section\n\ntext\n\n### Deep One\n")
+    return has_anchors(page, "title a-section deep-one")
+}
+
+function check_repeated_headings_are_numbered() -> i32 {
+    let page: string = t_tmp() + "/p.md"
+    let _w: bool = write_text(page, "## Notes\n\n## Notes\n\n## Notes\n")
+    return has_anchors(page, "notes notes-1 notes-2")
+}
+
+function check_explicit_html_ids_count_as_anchors() -> i32 {
+    let page: string = t_tmp() + "/p.md"
+    let _w: bool = write_text(page, "# T\n\n<a id=\"hand-written\"></a>\n")
+    return has_anchors(page, "hand-written")
+}
+
+# The repository as it stands. One run of the checker serves both checks.
+struct Full {
+    out: string,
+    rc: i32
+}
+
+let mut FULL: ptr<Full> = null
+
+function run_full() {
+    let f: ptr<Full> = malloc(16) as ptr<Full>
+    let c: ptr<ProcCmd> = cmd(checker(sl_new()))
+    proc_stdout(c, PROC_CAPTURE)
+    proc_stderr(c, PROC_MERGE)
+    let r: ptr<ProcResult> = run_result(c)
+    f.out = t_work() + "/full.out"
+    let _w: bool = write_text(f.out, r.stdout)
+    f.rc = r.exit_code
+    FULL = f
+}
+
+# The whole point: no link points at a heading that is not there.
+function check_every_documented_anchor_resolves() -> i32 {
+    let f: ptr<Full> = FULL
+    if f.rc != 0 {
+        t_cat(f.out)
+        return T_FAIL
+    }
+    if not a_file_contains(f.out, "all relative links and fragments resolve") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function is_digit(c: i32) -> bool {
+    return c >= 48 and c <= 57
+}
+
+# The number in the first "checked N link fragment", or -1.
+function fragments_checked(text: string) -> i32 {
+    let mut at: i32 = s_find(text, "checked ", 0)
+    while at >= 0 {
+        let start: i32 = at + 8
+        let mut e: i32 = start
+        while e < s_len(text) and is_digit(s_byte(text, e)) {
+            e = e + 1
+        }
+        if e > start and s_eq(s_slice(text, e, e + 14), " link fragment") {
+            return s_atoi(s_slice(text, start, e), 0)
+        }
+        at = s_find(text, "checked ", at + 1)
+    }
+    return 0 - 1
+}
+
+# `#` used to sit in the external-skip list, so 55 anchors went unchecked.
+function check_same_page_anchors_are_actually_checked() -> i32 {
+    let f: ptr<Full> = FULL
+    let n: i32 = fragments_checked(read_text(f.out))
+    if n <= 100 {
+        t_cat(f.out)
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function slug_case(group: string, heading: string, slug: string) {
+    t_start()
+    t_end(group + "[" + heading + "]", check_slug(heading, slug))
+}
+
+function main() -> i32 {
+    t_begin("doc_anchors")
+    run_full()
+    slug_case("heading_slug_matches_github", "Overview", "overview")
+    slug_case("heading_slug_matches_github", "1. Lexical Structure", "1-lexical-structure")
+    slug_case("heading_slug_matches_github", "3.6 Attributes", "36-attributes")
+    slug_case("heading_slug_matches_github", "`flow` blocks", "flow-blocks")
+    slug_case("heading_slug_matches_github", "Types & Values", "types--values")
+    # A removed punctuation mark leaves the spaces either side, and GitHub
+    # turns each into its own dash. Collapsing them is what made 11 anchors
+    # resolve on GitHub and die on the published wiki.
+    slug_case("runs_of_dashes_are_preserved", "10. Domain / DSL Surfaces", "10-domain--dsl-surfaces")
+    slug_case("runs_of_dashes_are_preserved", "4.4 Lambdas / Closures", "44-lambdas--closures")
+    slug_case("runs_of_dashes_are_preserved", "5.6 Concurrency (language + stdlib)", "56-concurrency-language--stdlib")
+    t_start()
+    t_end("the_published_wiki_slugger_agrees_with_this_one", check_the_published_wiki_slugger_agrees_with_this_one())
+    t_start()
+    t_end("anchors_come_from_headings", check_anchors_come_from_headings())
+    t_start()
+    t_end("repeated_headings_are_numbered", check_repeated_headings_are_numbered())
+    t_start()
+    t_end("explicit_html_ids_count_as_anchors", check_explicit_html_ids_count_as_anchors())
+    t_start()
+    t_end("every_documented_anchor_resolves", check_every_documented_anchor_resolves())
+    t_start()
+    t_end("same_page_anchors_are_actually_checked", check_same_page_anchors_are_actually_checked())
+    t_done()
+    return 0
+}

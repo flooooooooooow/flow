@@ -1,0 +1,267 @@
+# Smoke test for the transform-dialect schedule generator.
+
+import "scripts/tools/lib/testrun.flow"
+import "tests/scripts/harness.flow"
+
+function check_transform_schedule() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv, "--op=linalg.matmul")
+    sl_push(argv, "--tiles=32,32,8")
+    if t_run(t_cmd(argv)) != 0 {
+        outln("mlir_tune exited with " + s_itoa(t_rc()))
+        return T_FAIL
+    }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "transform.with_named_sequence") {
+        outln("missing transform module attribute")
+        return T_FAIL
+    }
+    if not a_contains(output, "flow.tune_target = \"cpu\"") {
+        outln("missing target metadata")
+        return T_FAIL
+    }
+    if not a_contains(output, "linalg.matmul") {
+        outln("missing operation match")
+        return T_FAIL
+    }
+    if not a_contains(output, "[32,32,8]") {
+        outln("missing tile sizes")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_rejects_unknown_target() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv, "--target=wasm")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "must be one of 'cpu', 'gpu', 'nvptx', 'amdgpu'") { return T_FAIL }
+    return T_PASS
+}
+
+function check_rejects_invalid_tiles() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv, "--tiles=0,32,8")
+    if t_run(t_cmd(argv)) == 0 {
+        outln("accepted a zero tile size")
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_err()), "positive integers") {
+        outln("missing invalid tile diagnostic")
+        return T_FAIL
+    }
+
+    let argv2: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv2, "--tiles=8,8,8,8")
+    if t_run(t_cmd(argv2)) == 0 {
+        outln("accepted a four-dimensional schedule")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_rejects_overflow_tiles() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv, "--tiles=4294971392")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--tiles expects one to three positive integers") { return T_FAIL }
+    return T_PASS
+}
+
+function check_vector_schedule() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv, "--strategy=vector")
+    sl_push(argv, "--tiles=8,8,4")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "flow.tune_strategy = \"vector\"") { return T_FAIL }
+    if not a_contains(output, "transform.structured.vectorize") { return T_FAIL }
+    if a_contains(output, "tile_using_for") { return T_FAIL }
+    if not a_contains(output, "vector_sizes [8,8,4]") { return T_FAIL }
+    return T_PASS
+}
+
+function check_interchange_schedule() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv, "--strategy=interchange")
+    sl_push(argv, "--permutation=1,2,0")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "flow.tune_strategy = \"interchange\"") { return T_FAIL }
+    if not a_contains(output, "transform.structured.interchange") { return T_FAIL }
+    if not a_contains(output, "iterator_interchange = [1,2,0]") { return T_FAIL }
+    if a_contains(output, "tile_using_for") { return T_FAIL }
+    return T_PASS
+}
+
+function check_interchange_rejects_invalid_permutation() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv, "--strategy=interchange")
+    sl_push(argv, "--permutation=0,0,1")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "permutation of 0,1,2") { return T_FAIL }
+    return T_PASS
+}
+
+function check_fusion_schedule() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv, "--strategy=fuse")
+    sl_push(argv, "--op=linalg.matmul")
+    sl_push(argv, "--fuse-with=linalg.generic")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "flow.tune_strategy = \"fuse\"") { return T_FAIL }
+    if not a_contains(output, "ops{[\"linalg.generic\"]}") { return T_FAIL }
+    if not a_contains(output, "transform.structured.fuse_into_containing_op") { return T_FAIL }
+    if not a_contains(output, "into %matmul") { return T_FAIL }
+    if a_contains(output, "tile_using_for") { return T_FAIL }
+    return T_PASS
+}
+
+function check_fusion_rejects_empty_producer() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv, "--strategy=fuse")
+    sl_push(argv, "--fuse-with=")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--fuse-with must not be empty") { return T_FAIL }
+    return T_PASS
+}
+
+function check_hierarchical_tile_schedule() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv, "--strategy=hierarchical_tile")
+    sl_push(argv, "--tiles=64,64,64")
+    sl_push(argv, "--inner-tiles=8,8,4")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "flow.tune_strategy = \"hierarchical_tile\"") { return T_FAIL }
+    if not a_contains(output, "tile_sizes [64,64,64]") { return T_FAIL }
+    if not a_contains(output, "tile_sizes [8,8,4]") { return T_FAIL }
+    if not a_contains(output, "tile_using_for %outer") { return T_FAIL }
+    return T_PASS
+}
+
+function check_hierarchical_tile_rejects_invalid_inner_schedule() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv, "--strategy=hierarchical_tile")
+    sl_push(argv, "--inner-tiles=8,0,4")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--inner-tiles expects one to three") { return T_FAIL }
+    return T_PASS
+}
+
+function check_hierarchical_vector_schedule() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv, "--strategy=hierarchical_vector")
+    sl_push(argv, "--tiles=64,64,64")
+    sl_push(argv, "--inner-tiles=8,8,4")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "flow.tune_strategy = \"hierarchical_vector\"") { return T_FAIL }
+    if not a_contains(output, "tile_sizes [64,64,64]") { return T_FAIL }
+    if not a_contains(output, "vector_sizes [8,8,4]") { return T_FAIL }
+    if a_contains(output, "tile_using_for %outer") { return T_FAIL }
+    return T_PASS
+}
+
+function check_rejects_unknown_strategy() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv, "--strategy=warp")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "must be one of 'tile', 'vector'") { return T_FAIL }
+    return T_PASS
+}
+
+function check_benchmark_candidate_space() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "benchmarks/micro/transform_tuning_benchmark.flow")
+    sl_push(argv, "--candidates=8,8,8;16,16,8")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "Evaluated tile schedules: [8,8,8, 16,16,8]") { return T_FAIL }
+    if not a_contains(output, "Successfully selected best tile schedule:") { return T_FAIL }
+    if not a_contains(output, "Successfully selected best tile schedule: 8,8,8") and
+       not a_contains(output, "Successfully selected best tile schedule: 16,16,8") { return T_FAIL }
+    return T_PASS
+}
+
+function check_benchmark_repetitions() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "benchmarks/micro/transform_tuning_benchmark.flow")
+    sl_push(argv, "--candidates=8,8,8")
+    sl_push(argv, "--repetitions=2")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "over 2 run(s)") and not a_contains(output, "pending toolchain") { return T_FAIL }
+    return T_PASS
+}
+
+function check_benchmark_rejects_invalid_repetitions() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "benchmarks/micro/transform_tuning_benchmark.flow")
+    sl_push(argv, "--repetitions=0")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--repetitions expects an integer") { return T_FAIL }
+    return T_PASS
+}
+
+function check_benchmark_accepts_max_repetitions() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "benchmarks/micro/transform_tuning_benchmark.flow")
+    sl_push(argv, "--candidates=8,8,8")
+    sl_push(argv, "--repetitions=16")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "over 16 run(s)") and not a_contains(output, "pending toolchain") { return T_FAIL }
+    return T_PASS
+}
+
+function check_benchmark_rejects_repetitions_above_max() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "benchmarks/micro/transform_tuning_benchmark.flow")
+    sl_push(argv, "--repetitions=17")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--repetitions expects an integer from one to sixteen") { return T_FAIL }
+    return T_PASS
+}
+
+function check_benchmark_rejects_invalid_candidate_space() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "benchmarks/micro/transform_tuning_benchmark.flow")
+    sl_push(argv, "--candidates=8,8,8;0,16,8")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--candidates expects one to sixteen") { return T_FAIL }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("mlir_tune")
+    t_start()
+    t_end("transform_schedule", check_transform_schedule())
+    t_start()
+    t_end("invalid_tiles", check_rejects_invalid_tiles())
+    t_end("overflow_tiles", check_rejects_overflow_tiles())
+    t_start()
+    t_end("invalid_target", check_rejects_unknown_target())
+    t_start()
+    t_end("vector_schedule", check_vector_schedule())
+    t_start()
+    t_end("interchange_schedule", check_interchange_schedule())
+    t_start()
+    t_end("invalid_interchange", check_interchange_rejects_invalid_permutation())
+    t_start()
+    t_end("fusion_schedule", check_fusion_schedule())
+    t_start()
+    t_end("invalid_fusion", check_fusion_rejects_empty_producer())
+    t_start()
+    t_end("hierarchical_tile_schedule", check_hierarchical_tile_schedule())
+    t_start()
+    t_end("invalid_hierarchical_tile", check_hierarchical_tile_rejects_invalid_inner_schedule())
+    t_end("hierarchical_vector_schedule", check_hierarchical_vector_schedule())
+    t_start()
+    t_end("invalid_strategy", check_rejects_unknown_strategy())
+    t_start()
+    t_end("benchmark_candidate_space", check_benchmark_candidate_space())
+    t_end("benchmark_repetitions", check_benchmark_repetitions())
+    t_end("benchmark_invalid_repetitions", check_benchmark_rejects_invalid_repetitions())
+    t_end("benchmark_max_repetitions", check_benchmark_accepts_max_repetitions())
+    t_end("benchmark_repetitions_above_max", check_benchmark_rejects_repetitions_above_max())
+    t_start()
+    t_end("benchmark_invalid_candidate_space", check_benchmark_rejects_invalid_candidate_space())
+    t_done()
+    return 0
+}

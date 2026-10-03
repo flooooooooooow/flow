@@ -2,9 +2,9 @@
 
 *Dual join above meet antisymmetric witness.*
 
-**Source.** davey-priestley — *Introduction to Lattices and Order*
+**Source.** davey-priestley: *Introduction to Lattices and Order*
 
-## Derived fact 1 — join(b, a) >= meet(b, a)
+## Derived fact 1: join(b, a) >= meet(b, a)
 
 **Coordinate.** Order · lattice · dual join above meet antisymmetric witness · **Derived fact**
 

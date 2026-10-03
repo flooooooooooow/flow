@@ -2,9 +2,9 @@
 
 *Eleven plus zero maps to eleven under a ring homomorphism.*
 
-**Source.** dummit-foote — *Abstract Algebra*, §7.3
+**Source.** dummit-foote: *Abstract Algebra*, §7.3
 
-## Derived fact 1 — f(11 + 0) = 11
+## Derived fact 1: f(11 + 0) = 11
 
 **Coordinate.** RingHom · preservation · eleven plus zero maps to eleven · **Derived fact**
 

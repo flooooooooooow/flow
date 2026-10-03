@@ -1,0 +1,247 @@
+# Parity gate for the Field DSL expander (compiler/src/field_dsl.flow).
+#
+# The Flow port replaced src/flow/field_dsl.py. Its output was recorded from
+# that Python reference as goldens beside each fixture in
+# compiler/fixtures/field_dsl/: `<name>.expected` for the expanded source, or
+# `<name>.error` for the SyntaxError text. This gate holds flowc to them.
+#
+#   ./flow tool compiler/scripts/parity_field_dsl.flow
+#       flowc vs goldens, passthrough of every non-DSL .flow in the repo,
+#       then heat_diffusion end to end (flowc bundle, cc, run, exit 0).
+#
+#   ./flow tool compiler/scripts/parity_field_dsl.flow --python <rev>
+#       also run the original Python expander from git revision <rev> over
+#       the fixtures and every .flow under examples/, tests/ and lib/, and
+#       require byte-identical output from flowc. Needs python3 and git.
+#
+#   ./flow tool compiler/scripts/parity_field_dsl.flow --write-golden <rev>
+#       rewrite the goldens from the Python expander at <rev>.
+#
+# The last Python revision is 3dbbac87 (origin/main before the port).
+#
+# Env: FLOWC_BIN=<path> tests that binary instead of building
+# compiler/build/flowc_bootstrap from the checked-in bootstrap C.
+
+import "tools/flow_cli/sys.flow"
+import "compiler/scripts/parity_lib.flow"
+import std.process { ProcCmd, ProcStrs, proc_arg }
+
+const USAGE: string = "usage: ./flow tool compiler/scripts/parity_field_dsl.flow"
+const FIX: string = "compiler/fixtures/field_dsl"
+const WORK: string = "compiler/build/parity_field_dsl"
+const HEAT: string = "examples/evolution/heat_diffusion.flow"
+
+let mut BIN_P: ptr<u8> = null
+
+function bin() -> string {
+    return BIN_P as string
+}
+
+function golden_base(f: string) -> string {
+    return FIX + "/" + path_stem(f, ".flow")
+}
+
+# The expanded source in `out`, or the message in `err`.
+function flowc_expand(input: string, out: string, err: string) {
+    rm_f(out)
+    rm_f(err)
+    let c: ptr<ProcCmd> = pl_cmd1(bin())
+    cmd_env(c, "FLOWC_EXPAND_ONLY", "field")
+    cmd_env(c, "FLOWC_IN", input)
+    cmd_env(c, "FLOWC_OUT", out)
+    let log: string = pl_capture_merged(c)
+    if last_status() != 0 {
+        rm_f(out)
+        let msg: string = pl_strip_prefixed(log + "\n", "flowc field: ")
+        if s_len(msg) > 0 {
+            let _w: bool = write_text(err, msg)
+        } else {
+            let _w2: bool = write_text(err, "flowc failed without a field diagnostic: " + log + "\n")
+        }
+    }
+}
+
+# Run the Python reference at <rev> over the files listed in `list`.
+function python_expand(rev: string, list: string, outdir: string) {
+    mkdir_p_or_exit(WORK + "/pyref/flow")
+    check(pl_git_show(rev + ":src/flow/field_dsl.py", WORK + "/pyref/flow/field_dsl_ref.py"))
+    check(pl_python(py_field_ref(), sl_of3(WORK + "/pyref/flow", list, outdir)))
+}
+
+function py_field_ref() -> string {
+    return "import importlib.util, os, sys\n" +
+        "ref_path = os.path.join(sys.argv[1], \"field_dsl_ref.py\")\n" +
+        "spec = importlib.util.spec_from_file_location(\"field_dsl_ref\", ref_path)\n" +
+        "mod = importlib.util.module_from_spec(spec)\n" +
+        "sys.modules[\"field_dsl_ref\"] = mod\n" +
+        "spec.loader.exec_module(mod)\n" +
+        "outdir = sys.argv[3]\n" +
+        "for path in open(sys.argv[2]).read().split(\"\\n\"):\n" +
+        "    if not path:\n" +
+        "        continue\n" +
+        "    key = path.replace(\"/\", \"__\")\n" +
+        "    with open(path, encoding=\"utf-8\", newline=\"\") as f:\n" +
+        "        text = f.read()\n" +
+        "    try:\n" +
+        "        out = mod.expand_field_dsl(text)\n" +
+        "    except SyntaxError as e:\n" +
+        "        with open(os.path.join(outdir, key + \".err\"), \"w\", encoding=\"utf-8\") as f:\n" +
+        "            f.write(str(e) + \"\\n\")\n" +
+        "        continue\n" +
+        "    with open(os.path.join(outdir, key + \".flow\"), \"w\", encoding=\"utf-8\", newline=\"\") as f:\n" +
+        "        f.write(out)\n"
+}
+
+function main() -> i32 {
+    let root: string = pl_enter()
+    let args: ptr<ProcStrs> = pl_args()
+    let mode: string = sl_get(args, 0)
+    let rev: string = sl_get(args, 1)
+    pl_fresh(WORK, sl_of2("flowc", "python"))
+    BIN_P = pl_flowc("", false, true) as ptr<u8>
+    outln("=== parity_field_dsl: flowc = " + bin() + " ===")
+
+    # Fixture corpus: the fixtures plus the one example that uses the DSL.
+    let fixtures: ptr<ProcStrs> = glob_suffix(FIX, ".flow")
+    sl_push(fixtures, HEAT)
+
+    if s_eq(mode, "--write-golden") {
+        if s_len(rev) == 0 {
+            errln(USAGE + " --write-golden <rev>")
+            cli_exit(2)
+        }
+        let _f: bool = write_text(WORK + "/fixtures.txt", pl_lines_text(fixtures))
+        python_expand(rev, WORK + "/fixtures.txt", WORK + "/python")
+        let mut i: i32 = 0
+        while i < sl_len(fixtures) {
+            let f: string = sl_get(fixtures, i)
+            let key: string = pl_key(f)
+            let base: string = golden_base(f)
+            rm_f(base + ".expected")
+            rm_f(base + ".error")
+            if is_file(WORK + "/python/" + key + ".err") {
+                let _c: bool = copy_file(WORK + "/python/" + key + ".err", base + ".error")
+            } else {
+                let _c2: bool = copy_file(WORK + "/python/" + key + ".flow", base + ".expected")
+            }
+            i = i + 1
+        }
+        outln("wrote goldens for " + s_itoa(sl_len(fixtures)) + " fixtures from " + rev)
+        cli_exit(0)
+    }
+
+    let mut fail: i32 = 0
+    let mut pass: i32 = 0
+
+    # 1. Fixtures vs goldens.
+    let mut i: i32 = 0
+    while i < sl_len(fixtures) {
+        let f: string = sl_get(fixtures, i)
+        let key: string = pl_key(f)
+        flowc_expand(f, WORK + "/flowc/" + key + ".flow", WORK + "/flowc/" + key + ".err")
+        if pl_golden_check(f, golden_base(f), WORK + "/flowc/" + key + ".flow", WORK + "/flowc/" + key + ".err") {
+            pass = pass + 1
+        } else {
+            fail = fail + 1
+        }
+        i = i + 1
+    }
+    outln("fixtures: pass=" + s_itoa(pass) + " fail=" + s_itoa(fail))
+
+    # 2. Every other .flow in the repo: no DSL, so flowc must leave it untouched.
+    let corpus: ptr<ProcStrs> = pl_find(sl_of3("examples", "tests", "lib"), ".flow")
+    let _w: bool = write_text(WORK + "/corpus.txt", pl_lines_text(corpus))
+    let mut corpus_n: i32 = 0
+    let mut corpus_fail: i32 = 0
+    i = 0
+    while i < sl_len(corpus) {
+        let f: string = sl_get(corpus, i)
+        i = i + 1
+        if s_eq(f, HEAT) {
+            continue
+        }
+        let key: string = pl_key(f)
+        corpus_n = corpus_n + 1
+        flowc_expand(f, WORK + "/flowc/" + key + ".flow", WORK + "/flowc/" + key + ".err")
+        if not is_file(WORK + "/flowc/" + key + ".flow") or not same_bytes(f, WORK + "/flowc/" + key + ".flow") {
+            corpus_fail = corpus_fail + 1
+            errln("FAIL passthrough " + f)
+        }
+    }
+    outln("passthrough: files=" + s_itoa(corpus_n) + " fail=" + s_itoa(corpus_fail))
+    fail = fail + corpus_fail
+
+    # 3. Optional: live diff against the Python reference at <rev>.
+    if s_eq(mode, "--python") {
+        if s_len(rev) == 0 {
+            errln(USAGE + " --python <rev>")
+            cli_exit(2)
+        }
+        let all: ptr<ProcStrs> = sl_copy(fixtures)
+        sl_extend(all, corpus)
+        let _a: bool = write_text(WORK + "/all.txt", pl_lines_text(all))
+        python_expand(rev, WORK + "/all.txt", WORK + "/python")
+        let mut live_n: i32 = 0
+        let mut live_fail: i32 = 0
+        i = 0
+        while i < sl_len(all) {
+            let f: string = sl_get(all, i)
+            i = i + 1
+            if s_len(f) == 0 {
+                continue
+            }
+            let key: string = pl_key(f)
+            live_n = live_n + 1
+            if is_file(WORK + "/python/" + key + ".err") {
+                if not same_bytes(WORK + "/python/" + key + ".err", WORK + "/flowc/" + key + ".err") {
+                    live_fail = live_fail + 1
+                    errln("FAIL live " + f + ": python error differs")
+                }
+            } elif not same_bytes(WORK + "/python/" + key + ".flow", WORK + "/flowc/" + key + ".flow") {
+                live_fail = live_fail + 1
+                errln("FAIL live " + f + ": python output differs")
+            }
+        }
+        outln("live python@" + rev + ": files=" + s_itoa(live_n) + " fail=" + s_itoa(live_fail))
+        fail = fail + live_fail
+    }
+
+    # 4. End to end: the DSL example compiles on flowc alone and runs clean.
+    let e: ptr<ProcCmd> = pl_cmd1(bin())
+    cmd_env(e, "FLOWC_BUNDLE", "1")
+    cmd_env(e, "FLOWC_DIR", "examples/evolution")
+    cmd_env(e, "FLOWC_IN", HEAT)
+    cmd_env(e, "FLOWC_OUT", WORK + "/heat.c")
+    let _e: i32 = pl_run(e, WORK + "/heat_emit.log", "&", 0)
+    let mut built: bool = false
+    if nonempty(WORK + "/heat.c") {
+        let c: ptr<ProcCmd> = cmd(sl_of2(pl_cc(), "-O1"))
+        proc_arg(c, "-o")
+        proc_arg(c, WORK + "/heat")
+        proc_arg(c, WORK + "/heat.c")
+        proc_arg(c, "-lm")
+        built = pl_run(c, "", WORK + "/heat_cc.log", 0) == 0
+    }
+    if built {
+        let code: i32 = pl_run(pl_cmd1(WORK + "/heat"), WORK + "/heat_run.log", "", 0)
+        if code == 0 and s_contains(read_text(WORK + "/heat_run.log"), "OK: field T / boundary / T_field_step") {
+            outln("e2e: heat_diffusion exit 0 on flowc")
+        } else {
+            fail = fail + 1
+            errln("FAIL e2e: heat_diffusion exit " + s_itoa(code))
+            errs(pl_tail(read_text(WORK + "/heat_run.log"), 5))
+        }
+    } else {
+        fail = fail + 1
+        errln("FAIL e2e: heat_diffusion did not build on flowc")
+        errs(pl_head(read_text(WORK + "/heat_emit.log") + read_text(WORK + "/heat_cc.log"), 20))
+    }
+
+    if fail != 0 {
+        outln("parity_field_dsl: FAIL (" + s_itoa(fail) + ")")
+        cli_exit(1)
+    }
+    outln("parity_field_dsl: PASS")
+    cli_exit(0)
+    return 0
+}

@@ -1,0 +1,151 @@
+# One negative program per rule of the type checker (compiler/src/sem_check.flow,
+# the port of src/flow/type_checker.py), and the message it must print.
+#
+#   ./flow tool compiler/scripts/typecheck_rules.flow
+#
+# Each compiler/fixtures/typecheck_rules/NAME.flow starts with
+#
+#   # expect: <the first error message>     (or `ok`: no type error)
+#   # warn: <the first warning message>     (the check passes and warns)
+#   # env: VAR=value ...                    (optional: FLOW_PROFILE=safety,
+#                                            FLOWC_STRICT_EFFECTS=1,
+#                                            FLOWC_WERROR=1)
+#
+# and is compiled the way `flowc_emit.flow --strict` compiles it, stopping after
+# the type check. The expected messages were recorded from the Python checker
+# (its dash and ellipsis spelled ": " and "...", as flowc prints them).
+# The warnings are the checker's TypeCheckResult.warnings, which the Python
+# host never printed and flowc prints as `FILE:LINE:COL: warning: ...`.
+#
+# Env: FLOWC_BIN=<path> tests that binary; by default the checked-in
+# bootstrap C is compiled to compiler/build/flowc_bootstrap.
+
+import "tools/flow_cli/sys.flow"
+import "compiler/scripts/gate_lib.flow"
+import "compiler/scripts/corpus_lib.flow"
+import std.process { ProcCmd, ProcStrs, proc_env }
+
+const RULES_DIR: string = "compiler/fixtures/typecheck_rules"
+
+# What follows `prefix` on line `n` (from 1) of the file, or "".
+function header_value(lines: ptr<ProcStrs>, n: i32, prefix: string) -> string {
+    let l: string = sl_get(lines, n - 1)
+    if s_starts(l, prefix) {
+        return s_from(l, s_len(prefix))
+    }
+    return ""
+}
+
+# The first message after `FILE:LINE:COL: kind: ` in the log, or "".
+function first_diag(log: string, kind: string) -> string {
+    let pattern: string = "^.*:[0-9]+:[0-9]+: " + kind + ": "
+    let lines: ptr<ProcStrs> = gl_file_lines(log)
+    let mut i: i32 = 0
+    while i < sl_len(lines) {
+        let l: string = sl_get(lines, i)
+        if s_contains(l, ": " + kind + ": ") and cl_matches(l, pattern) {
+            return cl_sub(l, pattern, "", 1)
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+function main() -> i32 {
+    let root: string = gl_enter_root()
+    let work: string = root + "/compiler/build/typecheck_rules"
+    rm_rf(work)
+    mkdir_p_or_exit(work)
+
+    let mut bin: string = env("FLOWC_BIN")
+    if s_empty(bin) {
+        bin = root + "/compiler/build/flowc_bootstrap"
+        check(gl_build_flowc(bin, true, false))
+    }
+    if not is_abs(bin) {
+        bin = root + "/" + bin
+    }
+
+    let files: ptr<ProcStrs> = glob_suffix(RULES_DIR, ".flow")
+    gl_sort_locale(files)
+    let mut pass: i32 = 0
+    let mut fail: i32 = 0
+    let mut i: i32 = 0
+    while i < sl_len(files) {
+        let f: string = sl_get(files, i)
+        i = i + 1
+        let name: string = path_stem(f, ".flow")
+        let head: ptr<ProcStrs> = gl_lines(head_lines(f, 2))
+        let want_msg: string = header_value(head, 1, "# expect: ")
+        let envline: string = header_value(head, 2, "# env: ")
+        let log: string = work + "/" + name + ".log"
+        let argv: ptr<ProcStrs> = sl_of3(gl_flowc_emit_bin(), "--strict", f)
+        sl_push(argv, work + "/" + name + ".c")
+        let c: ptr<ProcCmd> = gl_cmd(argv)
+        let envs: ptr<ProcStrs> = s_words(envline)
+        let mut e: i32 = 0
+        while e < sl_len(envs) {
+            let kv: string = sl_get(envs, e)
+            let eq: i32 = s_find_byte(kv, 61, 0)
+            if eq > 0 {
+                proc_env(c, s_slice(kv, 0, eq), s_from(kv, eq + 1))
+            }
+            e = e + 1
+        }
+        proc_env(c, "FLOWC_CHECK_ONLY", "1")
+        proc_env(c, "FLOWC_BIN", bin)
+        let rc: i32 = gl_run_log(c, log, 0)
+        let got: string = first_diag(log, "error")
+        let warn: string = header_value(head, 1, "# warn: ")
+        if not s_empty(warn) {
+            let got_warn: string = first_diag(log, "warning")
+            if rc == 0 and s_empty(got) and s_eq(got_warn, warn) {
+                pass = pass + 1
+            } else {
+                fail = fail + 1
+                let mut shown: string = got_warn
+                if s_empty(shown) {
+                    shown = "none"
+                }
+                let mut err_part: string = ""
+                if not s_empty(got) {
+                    err_part = "error: " + got + ", "
+                }
+                outln("FAIL " + name)
+                outln("  expected warning: " + warn)
+                outln("  got:              " + shown + " (" + err_part + "exit " + s_itoa(rc) + ")")
+            }
+            continue
+        }
+        if s_eq(want_msg, "ok") {
+            if rc == 0 and s_empty(got) {
+                pass = pass + 1
+            } else {
+                fail = fail + 1
+                let mut shown2: string = got
+                if s_empty(shown2) {
+                    shown2 = "exit " + s_itoa(rc)
+                }
+                outln("FAIL " + name + ": expected no type error, got: " + shown2)
+            }
+            continue
+        }
+        if rc != 0 and s_eq(got, want_msg) {
+            pass = pass + 1
+        } else {
+            fail = fail + 1
+            let mut shown3: string = got
+            if s_empty(shown3) {
+                shown3 = "exit " + s_itoa(rc) + ", no error line"
+            }
+            outln("FAIL " + name)
+            outln("  expected: " + want_msg)
+            outln("  got:      " + shown3)
+        }
+    }
+    outln("typecheck_rules: " + s_itoa(pass) + " passed, " + s_itoa(fail) + " failed")
+    if fail == 0 {
+        return 0
+    }
+    return 1
+}

@@ -2,9 +2,9 @@
 
 *Intersection difference with empty is the intersection.*
 
-**Source.** graham-knuth-patashnik — *Concrete Mathematics*
+**Source.** graham-knuth-patashnik: *Concrete Mathematics*
 
-## Derived fact 1 — (s ∩ t) \ empty = s ∩ t
+## Derived fact 1: (s ∩ t) \ empty = s ∩ t
 
 **Coordinate.** Finset · difference · intersection diff empty derived · **Derived fact**
 

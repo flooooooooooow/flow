@@ -1,0 +1,15 @@
+FIR-G: funcs=3 blocks=15 ops=56 values=37 operands=31 types=6
+call ops: 4
+reachable: identity_f64, identity_i32, main
+dead: (none)
+call graph:
+  main -> identity_f64  (op 1)
+  main -> identity_i32  (op 1)
+effects / pure:
+  identity_f64: effects=0x0000 pure=True
+  identity_i32: effects=0x0000 pure=True
+  main: effects=0x8000 pure=False
+device: requested=cpu chosen=cpu
+opt candidates: total=2 by_kind={'inline': 2}
+  [inline] identity_f64 score=42.0 (callee_ops=3 sites=1 pure=True) caller=main
+  [inline] identity_i32 score=42.0 (callee_ops=3 sites=1 pure=True) caller=main

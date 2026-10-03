@@ -63,9 +63,10 @@ Historical Vulkan and UI command aliases remain accepted.
 |---|---|
 | `flow fmt FILES...` | format source |
 | `flow repl` | interactive core-language session |
+| `flow lsp` | language server on stdio, for editors |
 | `flow debug FILE` | debug build and LLDB/GDB launch |
 | `flow dap FILE` | Debug Adapter Protocol server |
-| `flow explain FILE` | show declarative candidate plans and selection |
+| `flow explain FILE` | unavailable: flowc has no plan selector yet |
 | `flow fir-g FILE` | dump FIR-G and analyses |
 | `flow show-flags` | print C flags for profile/sanitizer settings |
 | `flow analyze FILE.c` | scan C for MISRA or CERT patterns |
@@ -105,7 +106,7 @@ test "answer" {
 | `flow test-runtime` | legacy compiler-repository runtime corpus |
 | `flow test-lang` | legacy strict language regression programs |
 | `flow test-mlir` | compiler-repository MLIR verification |
-| `flow test-python` | compiler Python unit tests |
+| `flow test-scripts` | shell tests that drive `flow` and the repository scripts |
 | `flow test-interop` | compiler interoperation runtime tests |
 | `flow test-gpu` | compiler GPU feature/code-generation tests |
 | `flow test-matmul` | matrix optimisation and assembly demonstration |
@@ -118,6 +119,37 @@ zero remain valid. Exact output/expected-failure tests can use sibling
 
 See [`../language/testing.md`](../language/testing.md) for the complete project
 testing contract.
+
+## Repository tools
+
+| Command | Purpose |
+|---|---|
+| `flow tool NAME [args...]` | build and run `scripts/tools/NAME/main.flow` or `tools/NAME/main.flow` |
+| `flow tool PATH.flow [args...]` | build and run any Flow program in the repository |
+| `flow tool --path NAME` | build only and print the cached binary's path |
+
+The program is compiled with the Stage-A flowc built from the checked-in
+bootstrap C, cached in `build/flow-tools`, and run in the current directory
+with `FLOW_REPO_ROOT` set to the repository root. The repository's checks,
+gates and generators are Flow programs run this way; for example
+`./flow tool shell_ratchet` and `./flow tool python_ratchet`.
+
+## MLIR toolchain steps
+
+`flow mlir`, `mlir-run`, `jit` and `--backend=mlir` are built from these
+steps. Each one is also a command, for CI, benchmarks and scripts that need
+a single step.
+
+| Command | Purpose |
+|---|---|
+| `flow flow-to-mlir [--gpu] [--wasm32] [--jit] [--lenient] IN.flow OUT.mlir` | emit MLIR with flowc (`FLOWC_EMIT=mlir`); @cEmbed C goes to `OUT.mlir.c` |
+| `flow flow-to-llvm [--wasm32] [--optimize OLEVEL] IN.flow OUT.ll` | `flow-to-mlir`, then `mlir-lower` |
+| `flow mlir-lower IN.mlir OUT.ll` | lower to LLVM IR with mlir-opt and mlir-translate; `--tools` prints their paths |
+| `flow mlir-optimize [FLAGS] [--opt-report] IN.mlir OUT.mlir` | run the `--optimize` pass pipeline; `--print-pass-pipeline` prints it |
+| `flow mlir-spirv spirv\|msl\|metallib\|mlir-msl\|mlir-metallib IN OUT` | lower a GPU module to SPIR-V, Metal Shading Language or a .metallib |
+
+The tools are found through `MLIR_OPT`, `MLIR_TRANSLATE`, `SPIRV_CROSS` and
+`XCRUN`, then `LLVM_PATH`, `PATH` and Homebrew. `FLOWC_BIN` picks the flowc.
 
 ## Projects and packages
 
@@ -152,9 +184,11 @@ flow wasm FILE \
 
 | Variable | Meaning |
 |---|---|
-| <code>FLOW_HOST=flowc&#124;python&#124;auto</code> | choose compiler host |
+| `FLOW_HOST=flowc` | the only compiler host; `python` is retired and stops with an error, `auto` means flowc |
+| `FLOWC_BIN=PATH` | use this flowc binary |
 | <code>FLOW_CPU_BACKEND=c&#124;mlir</code> | choose CPU backend |
-| `FLOW_STRICT_EFFECTS=1` | reject uncovered effect operations |
+| `FLOWC_PERMISSIVE_EFFECTS=1` | compile with legacy zero defaults |
+| `FLOW_PERMISSIVE_EFFECTS=1` | run with legacy zero/no-op defaults |
 | `FLOW_PROFILE=safety` | select safety C flags |
 | `FLOW_SANITIZE=ub,asan,tsan` | combined sanitizer selection |
 | `FLOW_UBSAN=1` | undefined-behaviour sanitizer |

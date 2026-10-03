@@ -1,0 +1,7 @@
+
+    @unsafe
+    function evil() -> i32 { return 0 }
+    @safe
+    function good() -> i32 { return evil() }
+    function main() -> i32 { return good() }
+    

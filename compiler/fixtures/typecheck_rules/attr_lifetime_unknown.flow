@@ -1,0 +1,9 @@
+# expect: Unknown lifetime domain 'forever' on 'f'. Known domains: callback, frame, session, application (see docs/language/lifetime-domains.md)
+@lifetime(forever)
+function f() -> i32 {
+    return 1
+}
+
+function main() -> i32 {
+    return f()
+}

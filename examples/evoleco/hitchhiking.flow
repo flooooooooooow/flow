@@ -30,7 +30,7 @@
 #   1 low rho   2 mid rho   3 high rho
 #   R reseed   P pause   Esc quit
 #
-# Run: FLOW_HOST=python ./flow record examples/evoleco/hitchhiking.flow --frames 4
+# Run: ./flow record examples/evoleco/hitchhiking.flow --frames 4
 
 import "stdlib/gfx.flow"
 import "stdlib/text.flow"

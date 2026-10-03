@@ -1,0 +1,56 @@
+MLIR backend against the C backend
+
+programs with main():   1496
+C backend builds:       1156
+MLIR builds too:        1090 of 1156 (94.3%)
+same run:               1018 of 1156 (88.1%)
+nondeterministic:       47
+
+by status:
+  same             1018
+  c-fail            311
+  mlir-emit          52
+  nondet             47
+  c-fail-mlir        29
+  run-exit           16
+  run-stdout          9
+  mlir-lower          9
+  mlir-link           5
+
+failure causes, ranked (count, status, first diagnostic):
+     16  mlir-emit flowc mlir: unsupported: unknown type name at line N of lib/stdlib/concurrent.flow 
+     12  mlir-emit flowc mlir: unsupported: unknown type name at line N 
+      7  mlir-emit flowc mlir: unsupported: import that does not resolve at line N 
+      6  mlir-lower error: use of value 'X' expects different type than prior uses: 'X' vs 'X' 
+      5  mlir-link clang: error: linker command failed with exit code N (use -v to see invocation) 
+      3  run-exit exit code differs (C 139, MLIR 0) 
+      3  mlir-emit flowc mlir: unsupported: extern type at line N 
+      2  run-stdout stdout differs at line 4 
+      2  run-stdout stdout differs at line 11 
+      2  run-exit exit code differs (C timeout, MLIR 1) 
+      2  run-exit exit code differs (C timeout, MLIR 0) 
+      2  run-exit exit code differs (C 132, MLIR 0) 
+      2  mlir-lower error: custom op 'X' is unknown 
+      2  mlir-emit flowc mlir: unsupported: unknown type name at line N of lib/stdlib/rf.flow 
+      2  mlir-emit flowc mlir: unsupported: field of a value whose type is not known at line N 
+      2  mlir-emit flowc mlir: unsupported: expression form at line N 
+      2  mlir-emit flowc mlir: unsupported: argument of this type to an undeclared function at line N 
+      1  run-stdout stdout differs at line 7 
+      1  run-stdout stdout differs at line 58 
+      1  run-stdout stdout differs at line 33 
+      1  run-stdout stdout differs at line 3 
+      1  run-stdout stdout differs at line 10 
+      1  run-exit exit code differs (C timeout, MLIR 139) 
+      1  run-exit exit code differs (C 144, MLIR 16) 
+      1  run-exit exit code differs (C 139, MLIR 133) 
+      1  run-exit exit code differs (C 132, MLIR 32) 
+      1  run-exit exit code differs (C 0, MLIR 3) 
+      1  run-exit exit code differs (C 0, MLIR 24) 
+      1  run-exit exit code differs (C 0, MLIR 133) 
+      1  mlir-lower error: 'X' op along control flow edge from Operation scf.yield to parent: successor operand type #N 'X' should match successor input type #N 'X' 
+      1  mlir-emit flowc mlir: unsupported: unknown type name at line N of lib/stdlib/complex_linalg.flow 
+      1  mlir-emit flowc mlir: unsupported: sort or find key of this type at line N 
+      1  mlir-emit flowc mlir: unsupported: slice of a value that is not a pointer, array or span at line N 
+      1  mlir-emit flowc mlir: unsupported: nested, struct or list pattern in an or-pattern or guarded arm at line N 
+      1  mlir-emit flowc mlir: unsupported: generic call or range sum at line N 
+      1  mlir-emit flowc mlir: unsupported: field through a pointer static at line N 

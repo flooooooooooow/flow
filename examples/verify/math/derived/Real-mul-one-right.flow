@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  One is the right multiplicative identity for reals.
-# @from   landau — *Foundations of Analysis*
+# @from   landau: *Foundations of Analysis*
 # @tier   derived
 
 # @means  x * 1 = x.

@@ -1,0 +1,32 @@
+# A bare source names a port of the parent: `signal -> g.x` copies the
+# parent input into the child input before the child steps.
+flow Gain {
+    state y : f64 = 0.0
+    input x : f64
+    output out : f64 = y
+    param k : f64 = 2.0
+    y evolves as k * x - y
+}
+
+flow Chain {
+    input signal : f64
+    g : Gain
+
+    connect {
+        signal -> g.x
+    }
+}
+
+function main() -> i32 {
+    let mut c: Chain = Chain_new()
+    c.signal = 3.0
+    Chain_step(&c, 0.5)
+    if c.g.x != 3.0 {
+        return 1
+    }
+    # y = 0 + (2 * 3 - 0) * 0.5 only if the copy ran before the step.
+    if c.g.y != 3.0 {
+        return 2
+    }
+    return 0
+}

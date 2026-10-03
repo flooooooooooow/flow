@@ -129,7 +129,7 @@ function main() -> i32 {
 Source: [`examples/book/02_values.flow`](../../examples/book/02_values.flow)
 
 ```bash
-FLOW_HOST=python ./flow run examples/book/02_values.flow
+./flow run examples/book/02_values.flow
 ```
 
 ## 2.6 Casts

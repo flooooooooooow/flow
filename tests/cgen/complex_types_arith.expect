@@ -1,0 +1,7 @@
+# From tests/unit/test_complex_types.py::test_complex_c_codegen and
+# ::test_complex_mul_real_codegen_no_mulsc3 (behaviour part).
++ #include <complex.h>
++ typedef float complex c64;
++ (float)(4.0) * _Complex_I
++ #undef I
+exit 0

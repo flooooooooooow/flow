@@ -2,9 +2,9 @@
 
 *One is the left multiplicative identity for reals.*
 
-**Source.** landau — *Foundations of Analysis*
+**Source.** landau: *Foundations of Analysis*
 
-## Derived fact 1 — 1 * x = x
+## Derived fact 1: 1 * x = x
 
 **Coordinate.** the real numbers · multiplication · one on the left gives the value · **Derived fact**
 

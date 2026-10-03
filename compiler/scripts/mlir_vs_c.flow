@@ -1,0 +1,468 @@
+# The MLIR backend against the C backend, program by program.
+#
+# Every tracked .flow file that defines main() is built twice the way `flow
+# run` builds it: `flow compile` (the C backend) and `flow compile
+# --backend=mlir` (compiler/src/mlirgen.flow, flow mlir-lower,
+# clang). Both executables run from the repository root with stdin closed
+# and a timeout. A program is "same" when both build and the runs agree on
+# exit code and stdout. The C backend is the reference: a program it does
+# not build is counted apart and never gates.
+#
+#   ./flow tool compiler/scripts/mlir_vs_c.flow
+#       run the corpus and print the report
+#   --check          fail when fewer programs are "same" than the floor
+#   --update         write compiler/mlir_vs_c/report.txt and the floor
+#   --failures       list every program the C backend builds that is not same
+#   --jobs N         parallel builds (default: FLOW_GATE_JOBS, else half the CPUs)
+#   --timeout S      seconds per program run (default 10)
+#   --build-timeout S  seconds per build, either backend (default 300)
+#   --only REGEX     restrict the corpus to paths matching REGEX
+#   --save PATH      also write the per-program table to PATH
+#
+# Statuses, for programs the C backend builds:
+#   same          same exit code and stdout
+#   nondet        stdout differs, but so does a second run of either build
+#                 (clocks, addresses); exit codes still agree
+#   mlir-emit     flowc emits no MLIR (a refusal or a type error)
+#   mlir-lower    mlir-opt or mlir-translate rejects the MLIR
+#   mlir-link     clang cannot compile or link the lowered LLVM IR
+#   mlir-slow     the MLIR build takes longer than --build-timeout
+#   run-exit      both build, the exit codes differ
+#   run-stdout    both build, same exit code, stdout differs
+#   run-timeout   the MLIR build times out and the C build does not
+# and for the rest:
+#   c-fail        the C backend does not build it (not gated)
+#   c-fail-mlir   the C backend does not build it, the MLIR backend does
+#
+# Failure causes are clustered by the first diagnostic line with file names,
+# positions, numbers and quoted names replaced, and ranked by count.
+# compiler/mlir_vs_c/nondet.txt lists programs whose stdout depends on the
+# clock or the machine; their stdout is not compared.
+#
+# Needs mlir-opt and mlir-translate (LLVM 22; Homebrew llvm on macOS). The
+# floor is kept per OS (`uname -s`).
+#
+# Env: FLOWC_BIN=<path> tests that binary; by default the checked-in
+# bootstrap C is compiled to compiler/build/flowc_bootstrap.
+
+import "tools/flow_cli/sys.flow"
+import "compiler/scripts/gate_lib.flow"
+import "compiler/scripts/corpus_lib.flow"
+import std.process { ProcCmd, ProcResult, ProcStrs, proc_args, proc_run }
+
+const DATA: string = "compiler/mlir_vs_c"
+const FLOOR_FILE: string = "compiler/mlir_vs_c/floor.txt"
+const REPORT: string = "compiler/mlir_vs_c/report.txt"
+const SELF_SRC: string = "compiler/scripts/mlir_vs_c.flow"
+
+let mut SECS: i32 = 10
+let mut BUILD_SECS: i32 = 300
+
+# First diagnostic line, normalized for clustering.
+function normalize_cause(line: string, root: string) -> string {
+    let exts: string = "(flow|c|h|mlir|ll)"
+    let mut s: string = cl_sub(line, "\x1b\\[[0-9;]*m", "", 0)
+    s = s_replace(s, root + "/", "")
+    s = cl_sub(s, "^[^ :]*\\." + exts + ":[0-9]+:[0-9]+: ", "", 1)
+    s = cl_sub(s, "^[^ :]*\\." + exts + ":[0-9]+: ", "", 1)
+    s = cl_sub(s, "[^ ]*\\." + exts + "\\b", "<file>", 0)
+    s = cl_sub(s, "%[A-Za-z0-9_]+", "%v", 0)
+    s = cl_sub(s, "@[A-Za-z_][A-Za-z0-9_.$]*", "@f", 0)
+    s = cl_sub(s, "'[^']*'", "'X'", 0)
+    s = cl_sub(s, "\"[^\"]*\"", "\"S\"", 0)
+    s = cl_sub(s, "[0-9]+", "N", 0)
+    return cl_cause_tail(s)
+}
+
+# The line that says why a build failed.
+function pick_cause(log: string, stage: string, root: string) -> string {
+    let plain: ptr<ProcStrs> = cl_plain_lines(log)
+    let mut line: string = ""
+    if s_eq(stage, "mlir-emit") {
+        line = cl_first_match(plain, "unsupported|error")
+    } elif s_eq(stage, "mlir-lower") {
+        line = cl_first_match(plain, "error:")
+    } else {
+        line = cl_first_match(plain, "(fatal )?error:")
+        if s_empty(line) {
+            let sym: string = cl_undefined_symbol(plain)
+            if not s_empty(sym) {
+                line = "link: undefined symbol " + sym
+            }
+        }
+    }
+    if s_empty(line) {
+        line = cl_first_nonblank(plain)
+    }
+    if s_empty(line) {
+        line = "no diagnostic"
+    }
+    return normalize_cause(line, root)
+}
+
+# Build <file> with one backend into <dir>: "" when <dir>/<base> is an
+# executable, the stage that failed otherwise.
+function build(backend: string, file: string, dir: string) -> string {
+    let base: string = path_stem(file, ".flow")
+    env_set("FLOW_BUILD_ROOT", dir)
+    let argv: ptr<ProcStrs> = sl_of2("./flow", "compile")
+    if s_eq(backend, "mlir") {
+        sl_push(argv, "--backend=mlir")
+    }
+    sl_push(argv, file)
+    let rc: i32 = gl_run_file(argv, dir + "/build.log", GL_ERR_TO_OUT, BUILD_SECS)
+    if rc == 0 and is_exec(dir + "/" + base) {
+        return ""
+    }
+    if s_eq(backend, "c") {
+        return "c-fail"
+    }
+    if rc == 124 or rc == 137 {
+        return "mlir-slow"
+    }
+    let log: string = read_text(dir + "/build.log")
+    if s_contains(log, "FLOW MLIR compilation failed") {
+        return "mlir-emit"
+    }
+    if s_contains(log, "MLIR lowering failed") {
+        return "mlir-lower"
+    }
+    return "mlir-link"
+}
+
+# Run once; the exit code ("timeout" on a timeout).
+function run_one(exe: string, out: string) -> string {
+    let ec: i32 = gl_run_file(sl_of1(exe), out, GL_ERR_NULL, SECS)
+    if ec == 124 or ec == 137 {
+        return "timeout"
+    }
+    return s_itoa(ec)
+}
+
+# The line `cmp a b` names for the first difference, or "" when one file
+# is a prefix of the other.
+function first_diff_line(a: string, b: string) -> string {
+    let x: Bytes = read_bytes(a)
+    let y: Bytes = read_bytes(b)
+    if x.len < 0 or y.len < 0 {
+        return ""
+    }
+    let mut line: i32 = 1
+    let mut i: i64 = 0
+    while i < x.len and i < y.len {
+        if x.data[i] != y.data[i] {
+            return s_itoa(line)
+        }
+        if x.data[i] == 10 {
+            line = line + 1
+        }
+        i = i + 1
+    }
+    return ""
+}
+
+# One TSV record: path status c-exit mlir-exit cause.
+function worker(file: string, work: string, nondet: ptr<GlMap>, root: string) -> string {
+    let dir: string = mktemp_dir(work + "/job.XXXXXX")
+    mkdir_p_or_exit(dir + "/c")
+    mkdir_p_or_exit(dir + "/m")
+    let base: string = path_stem(file, ".flow")
+    let c_stage: string = build("c", file, dir + "/c")
+    let m_stage: string = build("mlir", file, dir + "/m")
+    if not s_empty(c_stage) {
+        let mut st: string = "c-fail"
+        if s_empty(m_stage) {
+            st = "c-fail-mlir"
+        }
+        let rec: string = file + "\t" + st + "\t-\t-\t" + pick_cause(dir + "/c/build.log", "c", root) + "\n"
+        rm_rf(dir)
+        return rec
+    }
+    if not s_empty(m_stage) {
+        let rec2: string = file + "\t" + m_stage + "\t-\t-\t" + pick_cause(dir + "/m/build.log", m_stage, root) + "\n"
+        rm_rf(dir)
+        return rec2
+    }
+    let ce: string = run_one(dir + "/c/" + base, dir + "/c.out")
+    let me: string = run_one(dir + "/m/" + base, dir + "/m.out")
+    let mut st: string = ""
+    let mut why: string = "-"
+    if s_eq(me, "timeout") and not s_eq(ce, "timeout") {
+        st = "run-timeout"
+        why = "MLIR build times out (C exit " + ce + ")"
+    } elif not s_eq(ce, me) {
+        st = "run-exit"
+        why = "exit code differs (C " + ce + ", MLIR " + me + ")"
+    } elif same_bytes(dir + "/c.out", dir + "/m.out") or gl_map_has(nondet, file) {
+        st = "same"
+    } else {
+        # A second run of each: output that changes from run to run is
+        # not comparable.
+        let _c2: string = run_one(dir + "/c/" + base, dir + "/c.out2")
+        let _m2: string = run_one(dir + "/m/" + base, dir + "/m.out2")
+        if not same_bytes(dir + "/c.out", dir + "/c.out2") or not same_bytes(dir + "/m.out", dir + "/m.out2") {
+            st = "nondet"
+        } else {
+            st = "run-stdout"
+            why = "stdout differs at line " + first_diff_line(dir + "/c.out", dir + "/m.out")
+            if s_eq(why, "stdout differs at line ") {
+                why = "stdout differs (one is a prefix of the other)"
+            }
+        }
+    }
+    rm_rf(dir)
+    return file + "\t" + st + "\t" + ce + "\t" + me + "\t" + why + "\n"
+}
+
+# --worker <work> <secs> <build secs> <chunk>: one worker's files.
+function worker_main(args: ptr<ProcStrs>, root: string) -> i32 {
+    let work: string = sl_get(args, 1)
+    SECS = s_atoi(sl_get(args, 2), 10)
+    BUILD_SECS = s_atoi(sl_get(args, 3), 300)
+    let files: ptr<ProcStrs> = gl_file_lines(sl_get(args, 4))
+    let nondet: ptr<GlMap> = gl_set_of(gl_file_lines(work + "/nondet"))
+    let results: string = work + "/results." + s_itoa(pid())
+    let mut i: i32 = 0
+    while i < sl_len(files) {
+        let _a: bool = append_text(results, worker(sl_get(files, i), work, nondet, root))
+        i = i + 1
+    }
+    return 0
+}
+
+function count_status(rows: ptr<ProcStrs>, st: string) -> i32 {
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < sl_len(rows) {
+        if s_eq(gl_field(sl_get(rows, i), 1), st) {
+            n = n + 1
+        }
+        i = i + 1
+    }
+    return n
+}
+
+function is_failure(st: string) -> bool {
+    return not (s_eq(st, "same") or s_eq(st, "nondet") or s_eq(st, "c-fail") or s_eq(st, "c-fail-mlir"))
+}
+
+# The header comment of this program.
+function help_text(root: string) -> string {
+    let lines: ptr<ProcStrs> = gl_file_lines(root + "/" + SELF_SRC)
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < sl_len(lines) and s_starts(sl_get(lines, i), "#") {
+        out = out + sl_get(lines, i) + "\n"
+        i = i + 1
+    }
+    return out
+}
+
+function finish(code: i32) -> i32 {
+    cli_exit(code)
+    return code
+}
+
+function main() -> i32 {
+    let root: string = gl_enter_root()
+    let env_build: string = env("BUILD_SECS")
+    if not s_empty(env_build) {
+        BUILD_SECS = s_atoi(env_build, 300)
+    }
+    let args: ptr<ProcStrs> = proc_args()
+    if s_eq(sl_get(args, 0), "--worker") {
+        return worker_main(args, root)
+    }
+    let mut do_check: bool = false
+    let mut update: bool = false
+    let mut failures: bool = false
+    let mut only: string = ""
+    let mut save: string = ""
+    let mut jobs: i32 = cl_default_jobs()
+    let mut i: i32 = 0
+    while i < sl_len(args) {
+        let a: string = sl_get(args, i)
+        let needs_value: bool = s_eq(a, "--jobs") or s_eq(a, "--timeout") or s_eq(a, "--build-timeout") or s_eq(a, "--only") or s_eq(a, "--save")
+        if needs_value and i + 1 >= sl_len(args) {
+            errln("mlir_vs_c: " + a + " needs a value")
+            return 1
+        }
+        if s_eq(a, "--check") {
+            do_check = true
+        } elif s_eq(a, "--update") {
+            update = true
+        } elif s_eq(a, "--failures") {
+            failures = true
+        } elif s_eq(a, "--jobs") {
+            i = i + 1
+            jobs = s_atoi(sl_get(args, i), 1)
+        } elif s_eq(a, "--timeout") {
+            i = i + 1
+            SECS = s_atoi(sl_get(args, i), 10)
+        } elif s_eq(a, "--build-timeout") {
+            i = i + 1
+            BUILD_SECS = s_atoi(sl_get(args, i), 300)
+        } elif s_eq(a, "--only") {
+            i = i + 1
+            only = sl_get(args, i)
+        } elif s_eq(a, "--save") {
+            i = i + 1
+            save = sl_get(args, i)
+        } elif s_eq(a, "-h") or s_eq(a, "--help") {
+            out(help_text(root))
+            return 0
+        } else {
+            errln("mlir_vs_c: unknown argument " + a)
+            return 2
+        }
+        i = i + 1
+    }
+    if jobs < 1 {
+        jobs = 1
+    }
+
+    let tools: ptr<ProcStrs> = sl_of3("./flow", "mlir-lower", "--tools")
+    if gl_run_file(tools, "", GL_ERR_NULL, 0) != 0 {
+        errln("mlir_vs_c: mlir-opt / mlir-translate not found (brew install llvm, or set LLVM_PATH)")
+        return 2
+    }
+
+    let mut flowc: string = env("FLOWC_BIN")
+    if s_empty(flowc) {
+        mkdir_p_or_exit("compiler/build")
+        flowc = root + "/compiler/build/flowc_bootstrap"
+        if not is_exec(flowc) or newer("compiler/bootstrap/flowc_stage_a.c", flowc) {
+            let tmp: string = flowc + ".tmp." + s_itoa(pid())
+            check(gl_build_flowc(tmp, true, false))
+            let _m: bool = move_file(tmp, flowc)
+        }
+    }
+    if not is_abs(flowc) {
+        flowc = root + "/" + flowc
+    }
+    env_set("FLOWC_BIN", flowc)
+
+    mkdir_p_or_exit(root + "/build")
+    let work: string = mktemp_dir(root + "/build/mlir_vs_c.XXXXXX")
+    on_exit_remove(work)
+
+    let mut files: ptr<ProcStrs> = cl_corpus("")
+    if not s_empty(only) {
+        files = cl_grep(files, only)
+    }
+    let _n: bool = write_text(work + "/nondet", gl_join_lines(gl_list_file(DATA + "/nondet.txt")))
+    let total: i32 = sl_len(files)
+    let before: ptr<ProcStrs> = cl_untracked()
+    errln("mlir_vs_c: " + s_itoa(total) + " programs, jobs: " + s_itoa(jobs) + ", timeout: " + s_itoa(SECS) + "s")
+
+    let wargs: ptr<ProcStrs> = sl_of3("--worker", work, s_itoa(SECS))
+    sl_push(wargs, s_itoa(BUILD_SECS))
+    cl_run_workers(files, jobs, work, wargs)
+
+    let joined: ptr<ProcStrs> = cl_collect(work, "results.")
+    gl_sort(joined)
+    cl_report_left_behind("mlir_vs_c", before)
+
+    let same: i32 = count_status(joined, "same")
+    let nondet: i32 = count_status(joined, "nondet")
+    let mut c_built: i32 = 0
+    let mut m_built: i32 = 0
+    let statuses: ptr<ProcStrs> = sl_new()
+    let causes: ptr<ProcStrs> = sl_new()
+    let mut k: i32 = 0
+    while k < sl_len(joined) {
+        let row: string = sl_get(joined, k)
+        let st: string = gl_field(row, 1)
+        sl_push(statuses, st)
+        if not (s_eq(st, "c-fail") or s_eq(st, "c-fail-mlir")) {
+            c_built = c_built + 1
+        }
+        if s_eq(st, "same") or s_eq(st, "nondet") or s_starts(st, "run-") {
+            m_built = m_built + 1
+        }
+        if is_failure(st) {
+            sl_push(causes, st + "\t" + gl_field(row, 4))
+        }
+        k = k + 1
+    }
+
+    let mut report: string = "MLIR backend against the C backend\n\n"
+    report = report + "programs with main():   " + s_itoa(total) + "\n"
+    report = report + "C backend builds:       " + s_itoa(c_built) + "\n"
+    report = report + "MLIR builds too:        " + s_itoa(m_built) + " of " + s_itoa(c_built) + " (" + gl_pct(m_built, c_built) + "%)\n"
+    report = report + "same run:               " + s_itoa(same) + " of " + s_itoa(c_built) + " (" + gl_pct(same, c_built) + "%)\n"
+    report = report + "nondeterministic:       " + s_itoa(nondet) + "\n\n"
+    report = report + "by status:\n" + cl_status_table(statuses) + "\n"
+    report = report + "failure causes, ranked (count, status, first diagnostic):\n" + cl_cause_table(causes, 12)
+    out(report)
+
+    if not s_empty(save) {
+        let _s: bool = write_text(save, gl_join_lines(joined))
+    }
+    if failures {
+        outln("")
+        outln("programs the C backend builds that are not same:")
+        let mut f: i32 = 0
+        while f < sl_len(joined) {
+            let row: string = sl_get(joined, f)
+            if is_failure(gl_field(row, 1)) {
+                outln("  " + pad_right(gl_field(row, 1), 12) + " " + gl_field(row, 0) + "  (" + gl_field(row, 4) + ")")
+            }
+            f = f + 1
+        }
+    }
+
+    let os: string = uname_s()
+    let margin: i32 = s_atoi(env_or("FLOOR_MARGIN", "5"), 5)
+    if update {
+        mkdir_p_or_exit(DATA)
+        let _r: bool = write_text(REPORT, report)
+        let mut floor_text: string = "# Programs built by both backends with the same run, per OS (uname -s).\n"
+        floor_text = floor_text + "# mlir_vs_c.flow --check fails below it. --update sets it FLOOR_MARGIN\n"
+        floor_text = floor_text + "# (default 5) under the run, for timing programs that are flaky in parallel.\n"
+        let old: ptr<ProcStrs> = gl_file_lines(FLOOR_FILE)
+        let mut o: i32 = 0
+        while o < sl_len(old) {
+            let l: string = sl_get(old, o)
+            if not (s_starts(l, "#") or s_starts(l, os + " ")) {
+                floor_text = floor_text + l + "\n"
+            }
+            o = o + 1
+        }
+        floor_text = floor_text + os + " " + s_itoa(same - margin) + "\n"
+        let _f: bool = write_text(FLOOR_FILE, floor_text)
+        outln("")
+        outln("wrote " + REPORT + " and floor " + os + " " + s_itoa(same - margin) + " (" + s_itoa(same) + " same)")
+    }
+
+    if do_check {
+        let mut floor: string = ""
+        let fl: ptr<ProcStrs> = gl_file_lines(FLOOR_FILE)
+        let mut q: i32 = 0
+        while q < sl_len(fl) {
+            let w: ptr<ProcStrs> = s_words(sl_get(fl, q))
+            if s_eq(sl_get(w, 0), os) {
+                if not s_empty(floor) {
+                    floor = floor + "\n"
+                }
+                floor = floor + sl_get(w, 1)
+            }
+            q = q + 1
+        }
+        outln("")
+        if not s_empty(only) {
+            outln("mlir_vs_c: --only runs part of the corpus; the floor is not checked")
+        } elif s_empty(floor) {
+            outln("mlir_vs_c: no floor recorded for " + os + "; " + s_itoa(same) + " same (not gated)")
+        } elif same < s_atoi(floor, 0) {
+            errln("mlir_vs_c regressed: " + s_itoa(same) + " < floor " + floor + " on " + os)
+            return finish(1)
+        } else {
+            outln("mlir_vs_c OK: " + s_itoa(same) + " >= floor " + floor + " on " + os)
+            if same > s_atoi(floor, 0) + margin {
+                outln("(run ./flow tool compiler/scripts/mlir_vs_c.flow --update to raise the floor)")
+            }
+        }
+    }
+    return finish(0)
+}
