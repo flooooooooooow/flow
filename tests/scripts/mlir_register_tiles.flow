@@ -61,7 +61,7 @@ function check_target_lowering_families() -> i32 {
     let mut i: i32 = 0
     while i < 3 {
         let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--register-tiles")
-        sl_push(argv, "compiler/fixtures/mlir_opt/register_tile_nested.flow")
+        sl_push(argv, "compiler/fixtures/mlir_opt/register_tile_3d.flow")
         sl_push(argv, t_tmp() + "/target-" + sl_get(targets, i) + ".mlir")
         let c: ptr<ProcCmd> = t_cmd(argv)
         cmd_env(c, "FLOWC_MLIR_REGISTER_TILE_TARGET", sl_get(targets, i))
@@ -69,6 +69,7 @@ function check_target_lowering_families() -> i32 {
         let output: string = read_text(t_tmp() + "/target-" + sl_get(targets, i) + ".mlir")
         if not a_contains(output, "flow.register_tile_lowering = \"" + sl_get(expected, i) + "\"") { return T_FAIL }
         if not a_contains(output, "flow.register_tile_target = \"" + sl_get(targets, i) + "\"") { return T_FAIL }
+        if not a_contains(output, "flow.register_tile_lanes = 24") { return T_FAIL }
         i = i + 1
     }
     return T_PASS
