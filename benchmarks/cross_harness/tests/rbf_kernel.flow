@@ -1,0 +1,16 @@
+extern { function exp(x: f64) -> f64 }
+extern { function pow(x: f64, y: f64) -> f64 }
+
+function main() -> i32 {
+    let mut dists: [f64; 4] = [0.0, 1.0, 4.0, 9.0]
+    let gamma: f64 = -0.5
+    for i in 0 to 4 step 1 {
+        dists[i] = exp(gamma * pow(dists[i], 2.0))
+    }
+
+    let mut ans: i32 = 1
+    if dists[0] > 0.99 and dists[0] < 1.01 {
+        ans = 0
+    }
+    return ans
+}
