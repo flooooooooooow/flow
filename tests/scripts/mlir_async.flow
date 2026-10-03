@@ -37,7 +37,7 @@ function check_target_engines() -> i32 {
     let gpu: string = read_text(t_out())
     if not a_contains(gpu, "flow.async_copy_engine = \"gpu.async\"") { return T_FAIL }
     if a_contains(gpu, "nvgpu.device_async_copy") { return T_FAIL }
-    if not a_contains(gpu, "memref.copy %src0, %dst0") { return T_FAIL }
+    if not a_contains(gpu, "memref.copy %src_slot0, %dst_slot0") { return T_FAIL }
 
     let argv2: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_async/main.flow")
     sl_push(argv2, "--target=amdgpu")
@@ -45,7 +45,7 @@ function check_target_engines() -> i32 {
     let amd: string = read_text(t_out())
     if not a_contains(amd, "flow.async_copy_engine = \"amdgpu.async\"") { return T_FAIL }
     if a_contains(amd, "nvgpu.device_async_copy") { return T_FAIL }
-    if not a_contains(amd, "memref.copy %src0, %dst0") { return T_FAIL }
+    if not a_contains(amd, "memref.copy %src_slot0, %dst_slot0") { return T_FAIL }
     return T_PASS
 }
 
@@ -59,6 +59,9 @@ function check_circular_buffer_slots() -> i32 {
     if not a_contains(output, "flow.async_buffer_slots = 2") { return T_FAIL }
     if not a_contains(output, "flow.async_stage_count = 5") { return T_FAIL }
     if not a_contains(output, "flow.async_schedule = \"circular\"") { return T_FAIL }
+    if count_of(output, "memref.alloc") != 4 { return T_FAIL }
+    if count_of(output, "memref.copy %src_slot0, %dst_slot0") != 3 { return T_FAIL }
+    if count_of(output, "memref.copy %src_slot1, %dst_slot1") != 2 { return T_FAIL }
     if count_of(output, "// async.buffer_slot 0") != 3 { return T_FAIL }
     if count_of(output, "// async.buffer_slot 1") != 2 { return T_FAIL }
     return T_PASS

@@ -37,6 +37,12 @@ function async_header(buffers: i32, stages: i32, target: string, engine: string)
 function async_module(stages: i32, buffers: i32, op: string, target: string) -> string {
     let mut out: string = async_header(buffers, stages, target, async_engine(target))
     out = out + "  func.func @flow_async_pipeline() -> !async.token {\n"
+    let mut slot: i32 = 0
+    while slot < buffers {
+        out = out + "    %src_slot" + at_itoa(slot) + " = memref.alloc() : memref<16xf32>\n"
+        out = out + "    %dst_slot" + at_itoa(slot) + " = memref.alloc() : memref<16xf32, 3>\n"
+        slot = slot + 1
+    }
     let mut i: i32 = 0
     let mut previous: string = ""
     while i < stages {
@@ -48,9 +54,8 @@ function async_module(stages: i32, buffers: i32, op: string, target: string) -> 
         }
         out = out + "      // async.copy stage " + at_itoa(i) + " for " + op + "\n"
         out = out + "      // async.buffer_slot " + at_itoa(i % buffers) + "\n"
-        out = out + "      %src" + at_itoa(i) + " = memref.alloc() : memref<16xf32>\n"
-        out = out + "      %dst" + at_itoa(i) + " = memref.alloc() : memref<16xf32, 3>\n"
-        out = out + "      memref.copy %src" + at_itoa(i) + ", %dst" + at_itoa(i) + " : memref<16xf32> to memref<16xf32, 3>\n"
+        let slot_name: string = at_itoa(i % buffers)
+        out = out + "      memref.copy %src_slot" + slot_name + ", %dst_slot" + slot_name + " : memref<16xf32> to memref<16xf32, 3>\n"
         out = out + "      async.yield\n"
         out = out + "    } : !async.token\n"
         previous = name
@@ -64,13 +69,18 @@ function nvgpu_module(stages: i32, buffers: i32, op: string) -> string {
     let mut out: string = async_header(buffers, stages, "nvptx", "nvgpu.device_async_copy")
     out = out + "  func.func @flow_async_pipeline() -> !nvgpu.device.async.token {\n"
     out = out + "    %c0 = arith.constant 0 : index\n"
+    let mut slot: i32 = 0
+    while slot < buffers {
+        out = out + "    %src_slot" + at_itoa(slot) + " = memref.alloc() : memref<16xf32>\n"
+        out = out + "    %dst_slot" + at_itoa(slot) + " = memref.alloc() : memref<16xf32, 3>\n"
+        slot = slot + 1
+    }
     let mut i: i32 = 0
     while i < stages {
+        let slot_name: string = at_itoa(i % buffers)
         out = out + "    // async.copy stage " + at_itoa(i) + " for " + op + "\n"
-        out = out + "    // async.buffer_slot " + at_itoa(i % buffers) + "\n"
-        out = out + "    %src" + at_itoa(i) + " = memref.alloc() : memref<16xf32>\n"
-        out = out + "    %dst" + at_itoa(i) + " = memref.alloc() : memref<16xf32, 3>\n"
-        out = out + "    %copy" + at_itoa(i) + " = nvgpu.device_async_copy %src" + at_itoa(i) + "[%c0], %dst" + at_itoa(i) + "[%c0], 16 : memref<16xf32> to memref<16xf32, 3>\n"
+        out = out + "    // async.buffer_slot " + slot_name + "\n"
+        out = out + "    %copy" + at_itoa(i) + " = nvgpu.device_async_copy %src_slot" + slot_name + "[%c0], %dst_slot" + slot_name + "[%c0], 16 : memref<16xf32> to memref<16xf32, 3>\n"
         out = out + "    %group" + at_itoa(i) + " = nvgpu.device_async_create_group %copy" + at_itoa(i) + "\n"
         i = i + 1
     }
