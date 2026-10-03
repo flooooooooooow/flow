@@ -5,6 +5,8 @@ Real JIT compilation and execution of MLIR code
 """
 
 import ctypes
+import functools
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -16,7 +18,11 @@ import os
 import shutil
 
 class MLIRJIT:
-    def _find_mlir_opt(self) -> Optional[str]:
+    _exe_cache: Dict[str, Path] = {}
+
+    @staticmethod
+    @functools.lru_cache(maxsize=1)
+    def _find_mlir_opt() -> Optional[str]:
         override = os.environ.get("MLIR_OPT")
         if override:
             return override
@@ -45,7 +51,9 @@ class MLIRJIT:
 
         return None
 
-    def _find_mlir_translate(self) -> Optional[str]:
+    @staticmethod
+    @functools.lru_cache(maxsize=1)
+    def _find_mlir_translate() -> Optional[str]:
         override = os.environ.get("MLIR_TRANSLATE")
         if override:
             return override
@@ -81,7 +89,7 @@ class MLIRJIT:
         self._module_seq = 0
         
     def compile_mlir_to_llvm(self, mlir_code: str, module_name: str = "jit_module", shape_replacements: Optional[dict[str, str]] = None) -> str:
-        """Compile MLIR to LLVM IR using mlir-opt"""
+        """Compile MLIR to LLVM IR using in-memory mlir-opt -> mlir-translate pipeline"""
         mlir_opt = self._find_mlir_opt()
         if mlir_opt is None:
             raise RuntimeError(
@@ -90,87 +98,63 @@ class MLIRJIT:
                 f"Current PATH: {os.environ.get('PATH','')}"
             )
 
-
         if shape_replacements:
             # We assume the main entry point name is known, e.g., 'main' or passed as a replacement key '__func__'
             func_name = shape_replacements.pop('__func__', 'main')
             mlir_code = specialize_shapes(mlir_code, func_name, shape_replacements)
+
         mlir_translate = self._find_mlir_translate()
         if mlir_translate is None:
             raise RuntimeError(
                 "mlir-translate not found on PATH. It is required to convert LLVM-dialect MLIR to LLVM IR. "
                 "On macOS (Homebrew): `brew install llvm` then add LLVM bin to PATH (see `brew info llvm`)."
             )
-        mlir_file = Path(self.temp_dir) / f"{module_name}.mlir"
-        lowered_mlir_file = Path(self.temp_dir) / f"{module_name}.lowered.mlir"
-        llvm_file = Path(self.temp_dir) / f"{module_name}.ll"
-        
-        # Write MLIR to file
-        mlir_file.write_text(mlir_code)
-        
-        # 1) Lower MLIR to LLVM dialect MLIR
+
+        passes = [
+            "--convert-linalg-to-loops",
+            "--convert-vector-to-scf",
+            "--convert-math-to-llvm",
+            "--convert-scf-to-cf",
+            "--memref-expand",
+            "--convert-vector-to-llvm",
+            "--convert-arith-to-llvm",
+            "--convert-index-to-llvm",
+            "--convert-cf-to-llvm",
+            "--convert-func-to-llvm",
+            "--finalize-memref-to-llvm",
+            "--reconcile-unrealized-casts",
+        ]
+
         try:
-            # Keep this pipeline conservative and widely supported.
-            # The goal for SIMD-first (implicit) is: emit LLVM-friendly IR,
-            # then rely on LLVM/Clang -O2 for stable codegen (-O3 miscompiles some tensor loops).
-            result = subprocess.run(
-                [
-                    mlir_opt,
-                    # vector.transfer_* -> scf/vector.load-store must run before
-                    # scf-to-cf, and convert-vector-to-llvm before func-to-llvm.
-                    "--convert-linalg-to-loops",
-                    "--convert-vector-to-scf",
-                    "--convert-math-to-llvm",
-                    "--convert-scf-to-cf",
-                    "--memref-expand",
-                    "--convert-vector-to-llvm",
-                    "--convert-arith-to-llvm",
-                    "--convert-index-to-llvm",
-                    "--convert-cf-to-llvm",
-                    "--convert-func-to-llvm",
-                    "--finalize-memref-to-llvm",
-                    "--reconcile-unrealized-casts",
-                    str(mlir_file),
-                    "-o",
-                    str(lowered_mlir_file),
-                ],
-                capture_output=True,
+            p1 = subprocess.Popen(
+                [mlir_opt] + passes,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                stdin=subprocess.DEVNULL,
                 env=os.environ.copy(),
             )
-            
-            if result.returncode != 0:
-                print(f"MLIR lowering (mlir-opt) failed: {result.stderr}")
+            lowered_mlir, opt_err = p1.communicate(input=mlir_code)
+            if p1.returncode != 0:
+                print(f"MLIR lowering (mlir-opt) failed: {opt_err}")
                 return ""
 
-        except FileNotFoundError:
-            raise RuntimeError("mlir-opt could not be executed. Check that it exists and is executable.")
-
-        # 2) Translate LLVM dialect MLIR -> LLVM IR (.ll)
-        try:
-            result2 = subprocess.run(
-                [
-                    mlir_translate,
-                    "--mlir-to-llvmir",
-                    str(lowered_mlir_file),
-                    "-o",
-                    str(llvm_file),
-                ],
-                capture_output=True,
+            p2 = subprocess.Popen(
+                [mlir_translate, "--mlir-to-llvmir"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                stdin=subprocess.DEVNULL,
                 env=os.environ.copy(),
             )
-
-            if result2.returncode != 0:
-                print(f"MLIR translation (mlir-translate) failed: {result2.stderr}")
+            llvm_ir, translate_err = p2.communicate(input=lowered_mlir)
+            if p2.returncode != 0:
+                print(f"MLIR translation (mlir-translate) failed: {translate_err}")
                 return ""
 
-            return llvm_file.read_text()
-            
+            return llvm_ir
         except FileNotFoundError:
-            raise RuntimeError("mlir-translate could not be executed. Check that it exists and is executable.")
+            raise RuntimeError("mlir-opt or mlir-translate could not be executed. Check that it exists and is executable.")
     
     @staticmethod
     def _asan_preferred() -> bool:
@@ -272,9 +256,18 @@ class MLIRJIT:
         When link_runtime is True (or FLOW_JIT_LINK_RUNTIME=1), also link the
         core Flow C runtime so extern symbols resolve like ./flow mlir-run.
         """
+        ir_key = hashlib.sha256(
+            f"{llvm_ir}:{asan}:{link_runtime}:{extra_sources}:{extra_ldflags}".encode()
+        ).hexdigest()
+        cache_dir = Path(tempfile.gettempdir()) / "flow_jit_exe_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cached_exe = cache_dir / f"jit_{ir_key}"
+        if cached_exe.exists():
+            return cached_exe
+
         module_name = self._unique_module_name(module_name)
         llvm_file = Path(self.temp_dir) / f"{module_name}.ll"
-        exe_file = Path(self.temp_dir) / module_name
+        exe_file = cached_exe
         llvm_file.write_text(llvm_ir)
 
         sources: List[str] = list(extra_sources or [])
@@ -303,6 +296,7 @@ class MLIRJIT:
             if result.returncode != 0:
                 print(f"LLVM executable build failed: {result.stderr}")
                 return None
+            self._exe_cache[ir_key] = exe_file
             return exe_file
         except FileNotFoundError:
             print("❌ clang not found. Install Clang for JIT compilation.")

@@ -388,6 +388,7 @@ class MLIRGenerator:
         self.inside_scf_for = False  # Track if we're inside scf.for
         self.declarations = []  # Store declarations for type lookup
         self.struct_layouts = {}  # Maps struct name to field offsets and types
+        self.struct_sizes = {}  # Maps struct name to total size in bytes
         self._ssa_types: Dict[str, str] = {}  # Maps SSA name -> MLIR type string
         # SSA values that originated as Flow unsigned ints (u8/…). MLIR only has
         # signed iN, so we track this to pick arith.extui vs extsi on widen.
@@ -561,6 +562,8 @@ class MLIRGenerator:
             }
             offset += field_size
         self.struct_layouts[decl.name] = layout 
+        self.struct_sizes[decl.name] = offset
+
     def _is_array_flow_type(self, flow_type) -> bool:
         """True for fixed-size Flow arrays (not pointers, which also have element_type)."""
         if flow_type is None or self._is_pointer_flow_type(flow_type):
@@ -617,8 +620,8 @@ class MLIRGenerator:
             return self._pointer_bytes()
         else:
             # For struct types, calculate recursively
-            if type_name in self.struct_layouts:
-                return sum(field['size'] for field in self.struct_layouts[type_name].values())
+            if type_name in self.struct_sizes:
+                return self.struct_sizes[type_name]
             return 4  # Default size
 
     def _resolve_type_alias(self, flow_type: Type) -> Type:
@@ -878,6 +881,7 @@ class MLIRGenerator:
         self._struct_llvm_building = set()
         self._declared_externs: Set[str] = set()
         self.symbol_table = {}
+        self.struct_sizes = {}
         self._synthetic_structs = {}
         self._enum_variant_owner = {}
         self._enums = {}
@@ -4777,7 +4781,7 @@ class MLIRGenerator:
             return ssa_name, ops
         
         layout = self.struct_layouts[obj_type.name]
-        total_size = sum(field['size'] for field in layout.values())
+        total_size = self.struct_sizes.get(obj_type.name, 0)
         if field_access.field not in layout:
             # Field not found
             ssa_name = f"%{self.function_counter}"
@@ -5667,7 +5671,7 @@ class MLIRGenerator:
         
         # Get struct layout
         layout = self.struct_layouts[struct_name]
-        total_size = sum(field['size'] for field in layout.values())
+        total_size = self.struct_sizes.get(struct_name, 0)
         
         ops = []
         
@@ -6991,8 +6995,8 @@ class MLIRGenerator:
             struct_ty = self._struct_llvm_type(expr.struct_name)
             if struct_ty:
                 return struct_ty
-            if expr.struct_name in self.struct_layouts:
-                total_size = sum(field['size'] for field in self.struct_layouts[expr.struct_name].values())
+            if expr.struct_name in self.struct_sizes:
+                total_size = self.struct_sizes[expr.struct_name]
                 return f"memref<{total_size}xi8>"
             return 'i32'
         elif isinstance(expr, SliceExpr):
@@ -7097,7 +7101,7 @@ class MLIRGenerator:
                 llvm_struct = self._struct_llvm_type(flow_type.name)
                 if llvm_struct:
                     return llvm_struct
-                total_size = sum(field['size'] for field in self.struct_layouts[flow_type.name].values())
+                total_size = self.struct_sizes.get(flow_type.name, 0)
                 return f"memref<{total_size}xi8>"  # Use byte array for struct storage
             return "memref<16xi8>"  # Default struct size (4 fields * 4 bytes)
 
