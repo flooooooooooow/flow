@@ -1,0 +1,104 @@
+# CPU scaling micro-benchmark for #741.
+#
+# The parallel phase partitions the array into disjoint chunks, so each worker
+# owns one contiguous range and the result has no reduction race. Wall time is
+# measured around identical serial and partitioned passes.
+
+import std.process { proc_now_ms }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function printf(fmt: string, ...) -> i32
+}
+
+const N: i32 = 8000000
+const MAX_PARTS: i32 = 8
+const PASSES: i32 = 4
+const REPS: i32 = 3
+
+function mix(v: i32) -> i32 {
+    let wide: i64 = (v as i64) * 1103515245 + 12345
+    return (wide % 32768) as i32
+}
+
+function fill(data: ptr<i32>) -> void {
+    for i in 0 to N {
+        data[i] = mix(i)
+    }
+}
+
+function pass_range(data: ptr<i32>, lo: i32, hi: i32) -> void {
+    for _p in 0 to PASSES {
+        for i in lo to hi {
+            data[i] = mix(data[i])
+        }
+    }
+}
+
+function checksum(data: ptr<i32>) -> i64 {
+    let mut sum: i64 = 0
+    for i in 0 to N {
+        sum = sum + data[i] as i64
+    }
+    return sum
+}
+
+function serial_ms(data: ptr<i32>) -> i64 {
+    let t0: i64 = proc_now_ms()
+    pass_range(data, 0, N)
+    return proc_now_ms() - t0
+}
+
+function parallel_ms(data: ptr<i32>, parts: i32) -> i64 {
+    let t0: i64 = proc_now_ms()
+    parallel for part in 0 to parts {
+        let lo: i32 = part * (N / parts)
+        let mut hi: i32 = lo + N / parts
+        if part == parts - 1 {
+            hi = N
+        }
+        pass_range(data, lo, hi)
+    }
+    return proc_now_ms() - t0
+}
+
+function best_parallel(data: ptr<i32>, parts: i32) -> i64 {
+    let mut best: i64 = 9223372036854775807
+    for r in 0 to REPS {
+        let p: i64 = parallel_ms(data, parts)
+        if p < best {
+            best = p
+        }
+    }
+    return best
+}
+
+function main() -> i32 {
+    let data: ptr<i32> = malloc((N as i64) * 4) as ptr<i32>
+    if data as ptr<u8> == null {
+        return 2
+    }
+    fill(data)
+
+    let mut serial_best: i64 = 9223372036854775807
+    for r in 0 to REPS {
+        let s: i64 = serial_ms(data)
+        if s < serial_best {
+            serial_best = s
+        }
+    }
+    let p1: i64 = best_parallel(data, 1)
+    let p2: i64 = best_parallel(data, 2)
+    let p4: i64 = best_parallel(data, 4)
+    let p8: i64 = best_parallel(data, MAX_PARTS)
+
+    let sum: i64 = checksum(data)
+    free(data as ptr<void>)
+    if sum <= 0 {
+        return 3
+    }
+
+    printf("{\"benchmark\":\"parallel_scaling\",\"n\":%d,\"passes\":%d,\"reps\":%d,\"serial_ms\":%lld,\"parallel_ms\":{\"1\":%lld,\"2\":%lld,\"4\":%lld,\"8\":%lld},\"efficiency_x100\":{\"1\":%lld,\"2\":%lld,\"4\":%lld,\"8\":%lld},\"checksum\":%lld}\n", N, PASSES, REPS, serial_best, p1, p2, p4, p8, serial_best * 100 / p1, serial_best * 100 / (p2 * 2), serial_best * 100 / (p4 * 4), serial_best * 100 / (p8 * 8), sum)
+    return 0
+}
