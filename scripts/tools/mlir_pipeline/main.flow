@@ -355,11 +355,21 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             f.affine_skew_factor = factor
         } elif ft_eq(a, "--affine-unroll-jam-factor") {
             if i + 1 < argc {
-                f.affine_unroll_jam_factor = positive_int(argv[i + 1] as string)
+                let factor: i32 = positive_int(argv[i + 1] as string)
+                if factor < 1 {
+                    ft_errln("mlir_pipeline: --affine-unroll-jam-factor must be a positive integer")
+                    return 2
+                }
+                f.affine_unroll_jam_factor = factor
                 i = i + 1
             }
         } elif ft_starts(a, "--affine-unroll-jam-factor=") {
-            f.affine_unroll_jam_factor = positive_int(ft_from(a, 27))
+            let factor: i32 = positive_int(ft_from(a, 27))
+            if factor < 1 {
+                ft_errln("mlir_pipeline: --affine-unroll-jam-factor must be a positive integer")
+                return 2
+            }
+            f.affine_unroll_jam_factor = factor
         } elif ft_eq(a, "--affine-unroll-factor") {
             if i + 1 < argc {
                 let factor: i32 = positive_int(argv[i + 1] as string)
