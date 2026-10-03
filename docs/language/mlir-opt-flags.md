@@ -63,6 +63,15 @@ fusion schedule:
 Set the outer schedule with `--tiles=` and the inner schedule with
 `--inner-tiles=`. The default inner schedule is `8,8,8`.
 
+`--strategy=hierarchical_vector` emits the same outer tile and vectorizes the
+inner tile. This keeps the cache-sized outer schedule separate from the
+register-sized vector schedule:
+
+```bash
+./flow tool scripts/tools/mlir_tune/main.flow \
+  --strategy=hierarchical_vector --tiles=64,64,64 --inner-tiles=8,8,4
+```
+
 Affine tiling is opt-in and requires a positive tile size:
 
 ```bash

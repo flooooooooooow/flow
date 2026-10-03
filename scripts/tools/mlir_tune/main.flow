@@ -48,7 +48,7 @@ function valid_target(s: string) -> bool {
 function valid_strategy(s: string) -> bool {
     return ft_eq(s, "tile") or ft_eq(s, "vector") or
            ft_eq(s, "interchange") or ft_eq(s, "fuse") or
-           ft_eq(s, "hierarchical_tile")
+           ft_eq(s, "hierarchical_tile") or ft_eq(s, "hierarchical_vector")
 }
 
 function valid_permutation(s: string) -> bool {
@@ -69,6 +69,9 @@ function transform_of(op: string, fuse_with: string, tiles: string, permutation:
     } elif ft_eq(strategy, "hierarchical_tile") {
         action = "    %outer, %outer_loops:3 = transform.structured.tile_using_for %matmul tile_sizes [" + tiles + "] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op)\n" +
                  "    %inner, %inner_loops:3 = transform.structured.tile_using_for %outer tile_sizes [" + inner_tiles + "] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op)\n"
+    } elif ft_eq(strategy, "hierarchical_vector") {
+        action = "    %outer, %outer_loops:3 = transform.structured.tile_using_for %matmul tile_sizes [" + tiles + "] : (!transform.any_op) -> (!transform.any_op, !transform.any_op, !transform.any_op, !transform.any_op)\n" +
+                 "    %vectorized = transform.structured.vectorize %outer vector_sizes [" + inner_tiles + "] : (!transform.any_op) -> !transform.any_op\n"
     }
     return "module attributes {transform.with_named_sequence, flow.tune_target = \"" + target + "\", flow.tune_strategy = \"" + strategy + "\"} {\n" +
            "  transform.named_sequence @__transform_main(%arg0: !transform.any_op {transform.readonly}) {\n" +
@@ -125,7 +128,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         return 2
     }
     if not valid_strategy(strategy) {
-        ft_errln("mlir_tune: --strategy must be one of 'tile', 'vector', 'interchange', 'fuse', 'hierarchical_tile'")
+        ft_errln("mlir_tune: --strategy must be one of 'tile', 'vector', 'interchange', 'fuse', 'hierarchical_tile', 'hierarchical_vector'")
         return 2
     }
     if ft_eq(strategy, "interchange") and not valid_permutation(permutation) {
