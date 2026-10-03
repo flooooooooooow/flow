@@ -12,7 +12,7 @@ import .ast {
     AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_TYPE_ALIAS, AST_SHADER, AST_IDENT_SORT_MOD, AST_MATCH_ARM_EXT, AST_LAYOUT, AST_PIPE_BLOCK, PIPE_BLOCK_CHOOSE, AST_IDENT_FORK_SRC, AST_SORT_BY, AST_TRY, AST_VECTOR_LIT,
     AST_HANDLE, AST_CAPABILITY, AST_CAP_METHOD, AST_TYPE_CAPABILITY,
     AST_ATTR, AST_ATTR_HAS_ARGS,
-    flowc_ast_chain_len, flowc_ast_reject_unsupported, flowc_ast_reject_unsupported_but, flowc_ast_enum_of_const, AST_RECORD_UPDATE
+    flowc_ast_chain_len, flowc_ast_reject_unsupported, flowc_ast_reject_unsupported_but, flowc_ast_enum_of_const, AST_RECORD_UPDATE, AST_GPU_FRAME
 }
 import .attributes {
     flowc_attr_args_from_span, flowc_attr_span_is, flowc_is_known_attr,
@@ -1632,6 +1632,10 @@ function flowc_tc_check_stmt(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         flowc_tc_check_expr(ctx, arena, arena.nodes[id].a)
         flowc_tc_check_block(ctx, arena, arena.nodes[id].b)
         flowc_tc_check_block(ctx, arena, arena.nodes[id].c)
+        return
+    }
+    if kind == AST_GPU_FRAME {
+        flowc_tc_check_block(ctx, arena, arena.nodes[id].b)
         return
     }
     if kind == AST_LAYOUT {
@@ -3745,6 +3749,10 @@ function ut_stmt(u: ptr<UCtx>, arena: AstArena, id: i32) {
     }
     if kind == AST_IF_EXPR {
         ut_expr(u, arena, id)
+        return
+    }
+    if kind == AST_GPU_FRAME {
+        ut_block(u, arena, arena.nodes[id].b)
         return
     }
     if kind == AST_LAYOUT {
