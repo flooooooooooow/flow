@@ -17,10 +17,110 @@ function check_non_power_of_two_extent() -> i32 {
     return T_PASS
 }
 
+function check_padding_adds_storage() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-pad")
+    sl_push(argv, "compiler/fixtures/mlir_opt/aosoa_padding.flow")
+    sl_push(argv, t_tmp() + "/aosoa-padded.mlir")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    cmd_env(c, "FLOWC_MLIR_AOSOA_PAD", "1")
+    if t_run(c) != 0 {
+        return T_FAIL
+    }
+    let output: string = read_text(t_tmp() + "/aosoa-padded.mlir")
+    if not a_contains(output, "memref<5xf32>") { return T_FAIL }
+    if not a_contains(output, "Particle_SoA_4") { return T_FAIL }
+    return T_PASS
+}
+
+function check_auto_padding_targets_power_of_two() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-pad-auto")
+    sl_push(argv, "compiler/fixtures/mlir_opt/aosoa_padding.flow")
+    sl_push(argv, t_tmp() + "/aosoa-auto.mlir")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    if t_run(c) != 0 { return T_FAIL }
+    let output: string = read_text(t_tmp() + "/aosoa-auto.mlir")
+    if not a_contains(output, "memref<5xf32>") { return T_FAIL }
+    if not a_contains(output, "Particle_SoA_4") { return T_FAIL }
+    return T_PASS
+}
+
+function check_auto_padding_leaves_irregular_extent() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-pad-auto")
+    sl_push(argv, "compiler/fixtures/mlir_opt/aosoa_non_power.flow")
+    sl_push(argv, t_tmp() + "/aosoa-auto-irregular.mlir")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    if t_run(c) != 0 { return T_FAIL }
+    let output: string = read_text(t_tmp() + "/aosoa-auto-irregular.mlir")
+    if not a_contains(output, "memref<3xf32>") { return T_FAIL }
+    if a_contains(output, "memref<4xf32>") { return T_FAIL }
+    return T_PASS
+}
+
+function check_padding_rejects_malformed_value() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-pad")
+    sl_push(argv, "compiler/fixtures/mlir_opt/aosoa_padding.flow")
+    sl_push(argv, t_tmp() + "/aosoa-invalid-pad.mlir")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    cmd_env(c, "FLOWC_MLIR_AOSOA_PAD", "1junk")
+    if t_run(c) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "FLOWC_MLIR_AOSOA_PAD must be a positive integer") { return T_FAIL }
+    return T_PASS
+}
+
+function check_padding_rejects_overflow_value() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-pad")
+    sl_push(argv, "compiler/fixtures/mlir_opt/aosoa_padding.flow")
+    sl_push(argv, t_tmp() + "/aosoa-overflow-pad.mlir")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    cmd_env(c, "FLOWC_MLIR_AOSOA_PAD", "999999999999999999999999")
+    if t_run(c) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "FLOWC_MLIR_AOSOA_PAD must be a positive integer") { return T_FAIL }
+    return T_PASS
+}
+
+function check_power_of_two_swizzle() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-swizzle")
+    sl_push(argv, "compiler/fixtures/mlir_opt/aosoa_padding.flow")
+    sl_push(argv, t_tmp() + "/aosoa-swizzled.mlir")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    cmd_env(c, "FLOWC_MLIR_AOSOA_SWIZZLE", "4")
+    if t_run(c) != 0 { return T_FAIL }
+    let output: string = read_text(t_tmp() + "/aosoa-swizzled.mlir")
+    if not a_contains(output, "memref<4xf32>") { return T_FAIL }
+    if not a_contains(output, "arith.xori") { return T_FAIL }
+    return T_PASS
+}
+
+function check_padding_and_swizzle_compose() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-pad")
+    sl_push(argv, "--aosoa-swizzle")
+    sl_push(argv, "compiler/fixtures/mlir_opt/aosoa_padding.flow")
+    sl_push(argv, t_tmp() + "/aosoa-composed.mlir")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    cmd_env(c, "FLOWC_MLIR_AOSOA_PAD", "1")
+    cmd_env(c, "FLOWC_MLIR_AOSOA_SWIZZLE", "4")
+    if t_run(c) != 0 { return T_FAIL }
+    let output: string = read_text(t_tmp() + "/aosoa-composed.mlir")
+    if not a_contains(output, "memref<5xf32>") { return T_FAIL }
+    if not a_contains(output, "arith.xori") { return T_FAIL }
+    return T_PASS
+}
+
 function main() -> i32 {
     t_begin("mlir_aosoa")
     t_start()
     t_end("non_power_of_two_extent", check_non_power_of_two_extent())
+    t_end("padding_adds_storage", check_padding_adds_storage())
+    t_end("auto_padding_targets_power_of_two", check_auto_padding_targets_power_of_two())
+    t_end("auto_padding_leaves_irregular_extent", check_auto_padding_leaves_irregular_extent())
+    t_start()
+    t_end("padding_rejects_malformed_value", check_padding_rejects_malformed_value())
+    t_start()
+    t_end("padding_rejects_overflow_value", check_padding_rejects_overflow_value())
+    t_start()
+    t_end("power_of_two_swizzle", check_power_of_two_swizzle())
+    t_start()
+    t_end("padding_and_swizzle_compose", check_padding_and_swizzle_compose())
     t_done()
     return 0
 }

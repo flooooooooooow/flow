@@ -11,6 +11,12 @@ function parse_num(s: string) -> i32 {
     let mut n: i32 = 0
     let mut i: i32 = 0
     while s[i] != 0 {
+        if s[i] < 48 or s[i] > 57 {
+            return -1
+        }
+        if n > 214748364 or (n == 214748364 and s[i] > 55) {
+            return -1
+        }
         n = n * 10 + (s[i] - 48)
         i = i + 1
     }
@@ -25,26 +31,96 @@ function parse_csv3(s: string, out: ptr<i32>) -> i32 {
     out[0] = parse_num(ft_slice(s, 0, first))
     out[1] = parse_num(ft_slice(s, first + 1, second))
     out[2] = parse_num(ft_from(s, second + 1))
+    if out[0] < 0 or out[1] < 0 or out[2] < 0 {
+        return 0
+    }
     return 3
 }
 
-function emit_view(out: string, arena: i32, index: i32, offset: i32, size: i32) -> string {
-    return out + "    %buf" + ft_itoa(index) + " = memref.subview %arena[" +
-        ft_itoa(offset) + "][" + ft_itoa(size) + "][1] : memref<" +
-        ft_itoa(arena) + "xi8> to memref<" + ft_itoa(size) +
-        "xi8, strided<[1], offset: " + ft_itoa(offset) + ">>\n"
+function valid_alignment(v: i32) -> bool {
+    if v <= 0 or v > 4096 { return false }
+    let mut n: i32 = v
+    while n > 1 {
+        if n % 2 != 0 { return false }
+        n = n / 2
+    }
+    return true
 }
 
-function emit_module(items: array<StaticBuffer, 64>, plan: StaticMemoryPlan, target: string, space: string) -> string {
-    let mut out: string = "module attributes {flow.static_arena_bytes = " +
-        ft_itoa(plan.arena_size) + ", flow.static_buffer_count = " +
-        ft_itoa(plan.count) + ", flow.static_memory_target = \"" + target +
-        "\", flow.static_memory_space = \"" + space + "\"} {\n  func.func @flow_static_buffers() {\n"
-    out = out + "    %arena = memref.alloca() : memref<" +
-        ft_itoa(plan.arena_size) + "xi8>\n"
+function emit_view(out: string, arena: i32, index: i32, offset: i32, size: i32, space: string) -> string {
+    let mut arena_type: string = "memref<" + ft_itoa(arena) + "xi8>"
+    let mut view_type: string = "memref<" + ft_itoa(size) +
+        "xi8, strided<[1], offset: " + ft_itoa(offset) + ">>"
+    if ft_eq(space, "shared") {
+        arena_type = "memref<" + ft_itoa(arena) + "xi8, 3>"
+        view_type = "memref<" + ft_itoa(size) +
+            "xi8, strided<[1], offset: " + ft_itoa(offset) + ">, 3>"
+    }
+    return out + "    %buf" + ft_itoa(index) + " = memref.subview %arena[" +
+        ft_itoa(offset) + "][" + ft_itoa(size) + "][1] : " + arena_type +
+        " to " + view_type + "\n"
+}
+
+function lifetime_contract(items: array<StaticBuffer, 64>, count: i32) -> string {
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < count {
+        if i > 0 { out = out + "," }
+        out = out + ft_itoa(items[i].start) + ":" + ft_itoa(items[i].end)
+        i = i + 1
+    }
+    return out
+}
+
+function offset_contract(plan: StaticMemoryPlan) -> string {
+    let mut out: string = ""
     let mut i: i32 = 0
     while i < plan.count {
-        out = emit_view(out, plan.arena_size, i, plan.offsets[i], items[i].size)
+        if i > 0 { out = out + "," }
+        out = out + ft_itoa(plan.offsets[i])
+        i = i + 1
+    }
+    return out
+}
+
+function buffers_overlap(a: StaticBuffer, b: StaticBuffer) -> bool {
+    return a.start <= b.end and b.start <= a.end
+}
+
+function interference_contract(items: array<StaticBuffer, 64>, count: i32) -> string {
+    let mut out: string = ""
+    let mut i: i32 = 0
+    while i < count {
+        let mut j: i32 = i + 1
+        while j < count {
+            if buffers_overlap(items[i], items[j]) {
+                if ft_len(out) > 0 { out = out + "," }
+                out = out + ft_itoa(i) + ":" + ft_itoa(j)
+            }
+            j = j + 1
+        }
+        i = i + 1
+    }
+    return out
+}
+
+function emit_module(items: array<StaticBuffer, 64>, plan: StaticMemoryPlan, target: string, space: string, alignment: i32) -> string {
+    let mut out: string = "module attributes {flow.static_arena_bytes = " +
+        ft_itoa(plan.arena_size) + ", flow.static_buffer_count = " +
+        ft_itoa(plan.count) + ", flow.static_arena_alignment = " +
+        ft_itoa(alignment) + ", flow.static_buffer_lifetimes = \"" +
+        lifetime_contract(items, plan.count) + "\", flow.static_buffer_offsets = \"" +
+        offset_contract(plan) + "\", flow.static_buffer_interference = \"" +
+        interference_contract(items, plan.count) + "\", flow.static_memory_target = \"" + target +
+        "\", flow.static_memory_space = \"" + space + "\"} {\n  func.func @flow_static_buffers() {\n"
+    let mut arena_type: string = "memref<" + ft_itoa(plan.arena_size) + "xi8>"
+    if ft_eq(space, "shared") {
+        arena_type = "memref<" + ft_itoa(plan.arena_size) + "xi8, 3>"
+    }
+    out = out + "    %arena = memref.alloca() : " + arena_type + "\n"
+    let mut i: i32 = 0
+    while i < plan.count {
+        out = emit_view(out, plan.arena_size, i, plan.offsets[i], items[i].size, space)
         i = i + 1
     }
     out = out + "    return\n  }\n}\n"
@@ -55,6 +131,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     let mut sizes: array<i32, 3> = [64, 32, 48]
     let mut target: string = "cpu"
     let mut space: string = "stack"
+    let mut alignment: i32 = 16
     let mut i: i32 = 1
     while i < argc {
         let arg: string = argv[i] as string
@@ -67,11 +144,17 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             target = ft_from(arg, 9)
         } elif ft_starts(arg, "--memory-space=") {
             space = ft_from(arg, 15)
+        } elif ft_starts(arg, "--alignment=") {
+            alignment = parse_num(ft_from(arg, 12))
         }
         i = i + 1
     }
     if sizes[0] <= 0 or sizes[1] <= 0 or sizes[2] <= 0 {
         ft_errln("mlir_static_memory: sizes must be positive")
+        return 2
+    }
+    if not valid_alignment(alignment) {
+        ft_errln("mlir_static_memory: --alignment must be a power of two from 1 to 4096")
         return 2
     }
     if not ft_eq(target, "cpu") and not ft_eq(target, "gpu") and
@@ -88,10 +171,14 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         return 2
     }
     let mut items: array<StaticBuffer, 64> = []
-    items[0] = StaticBuffer { size: sizes[0], start: 0, end: 2, alignment: 16 }
-    items[1] = StaticBuffer { size: sizes[1], start: 3, end: 5, alignment: 16 }
-    items[2] = StaticBuffer { size: sizes[2], start: 1, end: 4, alignment: 16 }
-    let plan: StaticMemoryPlan = flowc_static_memory_plan(items, 3, 16)
-    ft_outln(emit_module(items, plan, target, space))
+    items[0] = StaticBuffer { size: sizes[0], start: 0, end: 2, alignment: alignment }
+    items[1] = StaticBuffer { size: sizes[1], start: 3, end: 5, alignment: alignment }
+    items[2] = StaticBuffer { size: sizes[2], start: 1, end: 4, alignment: alignment }
+    let plan: StaticMemoryPlan = flowc_static_memory_plan(items, 3, alignment)
+    if plan.arena_size < 0 {
+        ft_errln("mlir_static_memory: planned arena exceeds the supported i32 size")
+        return 2
+    }
+    ft_outln(emit_module(items, plan, target, space, alignment))
     return 0
 }
