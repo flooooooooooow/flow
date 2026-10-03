@@ -241,7 +241,14 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     let mut best: string = ""
     let mut best_metric: f64 = 0.0
     let perf: string = if s_len(pmu_event) > 0 { proc_which("perf") } else { "" }
-    let mut use_pmu: bool = s_len(perf) > 0
+    let mut use_pmu: bool = false
+    if s_len(perf) > 0 {
+        let probe: string = proc_which("true")
+        if s_len(probe) > 0 {
+            let probe_text: string = evaluate_pmu(perf, pmu_event, probe)
+            use_pmu = s_len(probe_text) > 0 and pmu_value(probe_text, pmu_event) > 0.0
+        }
+    }
     if has_toolchain {
         let mut i: i32 = 0
         while i < sl_len(tiles) {
@@ -261,11 +268,11 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
                 if use_pmu {
                     let pmu: string = evaluate_pmu(perf, pmu_event, work + "/t" + bench_tag + "/bench")
                     let measured_pmu: f64 = pmu_value(pmu, pmu_event)
-                    if s_len(pmu) > 0 and measured_pmu > 0.0 {
-                        metric = measured_pmu
-                    } else {
-                        use_pmu = false
+                    if s_len(pmu) == 0 or measured_pmu <= 0.0 {
+                        errln("transform_tuning_benchmark: PMU measurement failed after a successful preflight; refusing to mix PMU counts with wall-time measurements")
+                        return 1
                     }
+                    metric = measured_pmu
                 }
                 total = total + metric
                 measured = measured + 1
@@ -297,7 +304,7 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         outln("Reported tuning metric is pending toolchain availability, but pipeline logic is successfully tested.")
     }
     if s_len(pmu_event) > 0 and not use_pmu {
-        outln("Note: perf is unavailable; reported tuning metric uses wall time.")
+        outln("Note: perf or the requested PMU event is unavailable; reported tuning metric uses wall time.")
     }
     if s_len(best) > 0 {
         outln("Successfully selected best tile schedule: " + best)
