@@ -94,9 +94,12 @@ The token graph emitter follows the same contract:
 ```
 
 It emits an explicit chain of `async.execute` dependencies and records the
-selected target in `flow.async_target`. The emitter rejects a missing or
-unknown target. A backend can consume this contract when it supplies a real
-async-copy operation and its completion token.
+selected target in `flow.async_target`. The module also records
+`flow.async_buffer_slots`, `flow.async_stage_count`, and
+`flow.async_schedule = "circular"`. Each stage carries an
+`async.buffer_slot` comment whose value is `stage % buffers`. A backend can
+consume this contract when it supplies a real async-copy operation and its
+completion token.
 
 For `nvptx`, the emitter produces `nvgpu.device_async_copy`,
 `nvgpu.device_async_create_group`, and `nvgpu.device_async_wait` operations

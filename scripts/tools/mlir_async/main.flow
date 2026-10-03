@@ -30,8 +30,12 @@ function async_engine(s: string) -> string {
     return "nvgpu.device_async_copy"
 }
 
+function async_header(buffers: i32, stages: i32, target: string, engine: string) -> string {
+    return "module attributes {flow.async_buffers = " + at_itoa(buffers) + ", flow.async_buffer_slots = " + at_itoa(buffers) + ", flow.async_stage_count = " + at_itoa(stages) + ", flow.async_schedule = \"circular\", flow.async_target = \"" + target + "\", flow.async_copy_engine = \"" + engine + "\"} {\n"
+}
+
 function async_module(stages: i32, buffers: i32, op: string, target: string) -> string {
-    let mut out: string = "module attributes {flow.async_buffers = " + at_itoa(buffers) + ", flow.async_target = \"" + target + "\", flow.async_copy_engine = \"" + async_engine(target) + "\"} {\n"
+    let mut out: string = async_header(buffers, stages, target, async_engine(target))
     out = out + "  func.func @flow_async_pipeline() -> !async.token {\n"
     let mut i: i32 = 0
     let mut previous: string = ""
@@ -43,6 +47,7 @@ function async_module(stages: i32, buffers: i32, op: string, target: string) -> 
             out = out + "    " + name + " = async.execute [" + previous + "] {\n"
         }
         out = out + "      // async.copy stage " + at_itoa(i) + " for " + op + "\n"
+        out = out + "      // async.buffer_slot " + at_itoa(i % buffers) + "\n"
         out = out + "      %src" + at_itoa(i) + " = memref.alloc() : memref<16xf32>\n"
         out = out + "      %dst" + at_itoa(i) + " = memref.alloc() : memref<16xf32, 3>\n"
         out = out + "      memref.copy %src" + at_itoa(i) + ", %dst" + at_itoa(i) + " : memref<16xf32> to memref<16xf32, 3>\n"
@@ -56,12 +61,13 @@ function async_module(stages: i32, buffers: i32, op: string, target: string) -> 
 }
 
 function nvgpu_module(stages: i32, buffers: i32, op: string) -> string {
-    let mut out: string = "module attributes {flow.async_buffers = " + at_itoa(buffers) + ", flow.async_target = \"nvptx\", flow.async_copy_engine = \"nvgpu.device_async_copy\"} {\n"
+    let mut out: string = async_header(buffers, stages, "nvptx", "nvgpu.device_async_copy")
     out = out + "  func.func @flow_async_pipeline() -> !nvgpu.device.async.token {\n"
     out = out + "    %c0 = arith.constant 0 : index\n"
     let mut i: i32 = 0
     while i < stages {
         out = out + "    // async.copy stage " + at_itoa(i) + " for " + op + "\n"
+        out = out + "    // async.buffer_slot " + at_itoa(i % buffers) + "\n"
         out = out + "    %src" + at_itoa(i) + " = memref.alloc() : memref<16xf32>\n"
         out = out + "    %dst" + at_itoa(i) + " = memref.alloc() : memref<16xf32, 3>\n"
         out = out + "    %copy" + at_itoa(i) + " = nvgpu.device_async_copy %src" + at_itoa(i) + "[%c0], %dst" + at_itoa(i) + "[%c0], 16 : memref<16xf32> to memref<16xf32, 3>\n"
