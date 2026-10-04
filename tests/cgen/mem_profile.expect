@@ -6,5 +6,5 @@
 + flow_mem_note_temp
 + (deferred, needs #669)
 + __flowc_str_concat
-- malloc(32)
+- (malloc(32)
 exit 0
