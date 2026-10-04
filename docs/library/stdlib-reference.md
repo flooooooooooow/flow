@@ -102,13 +102,24 @@ String manipulation.
 | `to_upper` | `(i32) -> i32` | Convert to uppercase |
 | `to_lower` | `(i32) -> i32` | Convert to lowercase |
 
-### Parsing
+### Parsing and formatting
+
+Integer parse and format stay on the caller's buffer: no per-character or
+per-token heap. `ParseI64.ok` is false on empty input, a lone sign, trailing
+junk (full-string parse), or i64 overflow — the same cases Python's `int()`
+rejects on ASCII, without wrapping.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `parse_int` | `(string) -> i32` | Parse integer |
-| `parse_long` | `(string) -> i64` | Parse long |
-| `parse_float` | `(string) -> f64` | Parse float |
+| `str_parse_i64` | `(string) -> ParseI64` | Parse a whole string like Python `int()` |
+| `str_parse_i64_at` | `(string, i32) -> ParseI64` | Parse one token from a byte offset |
+| `str_parse_i32` | `(string) -> ParseI64` | Same, then reject values outside i32 |
+| `str_format_i64` | `(ptr<u8>, i32, i64) -> i32` | Write decimal into a caller buffer |
+| `str_line_end` / `str_line_next` | `(string, i32) -> i32` | Walk lines without allocating |
+
+Buffered file I/O lives in `io.flow`: `io_read_file`, `io_write_file`,
+`io_write_bytes`, `io_read_into`. A missing file is `ok = false`, matching
+Python `open()`.
 
 ---
 

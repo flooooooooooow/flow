@@ -1,4 +1,104 @@
+# Buffered file I/O for short jobs (#747).
+#
+# Reads and writes use fread/fwrite of a known size, not per-character
+# fgetc/fputc. Errors are explicit: FileRead.ok is false on open, seek,
+# allocation or short-read failure. A missing file is an error, matching
+# Python open(), not an empty string.
+
+# Print a benchmark name and elapsed time. Kept for existing callers.
 export function print_benchmark(name: string, time: f64) -> void {
     print(name)
     print(time)
+}
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fclose(fp: ptr<void>) -> i32
+    function fread(buf: ptr<u8>, size: i64, count: i64, fp: ptr<void>) -> i64
+    function fwrite(buf: ptr<u8>, size: i64, count: i64, fp: ptr<void>) -> i64
+    function fseek(fp: ptr<void>, offset: i64, whence: i32) -> i32
+    function ftell(fp: ptr<void>) -> i64
+    function strlen(s: string) -> i64
+}
+
+export struct FileRead {
+    data: string,
+    len: i64,
+    ok: bool
+}
+
+function io_read_fail() -> FileRead {
+    return FileRead { data: "" , len: 0, ok: false }
+}
+
+# Read the whole file at `path` in one buffered fread. The result is
+# NUL-terminated. Files larger than 2^31-1 bytes are refused (ok = false)
+# rather than silently truncated. A directory open is treated as empty
+# on both Linux and macOS, matching the tool helper.
+export function io_read_file(path: string) -> FileRead {
+    let fp: ptr<void> = fopen(path, "rb")
+    if fp == null {
+        return io_read_fail()
+    }
+    let _s: i32 = fseek(fp, 0, 2)
+    let size: i64 = ftell(fp)
+    let _r: i32 = fseek(fp, 0, 0)
+    if size < 0 {
+        let _c0: i32 = fclose(fp)
+        return io_read_fail()
+    }
+    let mut want: i64 = size
+    if want > 2147483647 {
+        let _c1: i32 = fclose(fp)
+        return io_read_fail()
+    }
+    let buf: ptr<u8> = malloc(want + 1) as ptr<u8>
+    if buf == null {
+        let _c2: i32 = fclose(fp)
+        return io_read_fail()
+    }
+    let got: i64 = fread(buf, 1, want, fp)
+    let _c: i32 = fclose(fp)
+    if got < 0 {
+        return io_read_fail()
+    }
+    buf[got as i32] = 0
+    return FileRead { data: buf as string, len: got, ok: true }
+}
+
+# Write `n` bytes from `buf` to `path`, replacing the file. False when the
+# open or the write fails (including a short write).
+export function io_write_bytes(path: string, buf: ptr<u8>, n: i64) -> bool {
+    let fp: ptr<void> = fopen(path, "wb")
+    if fp == null {
+        return false
+    }
+    let mut wrote: i64 = 0
+    if n > 0 {
+        wrote = fwrite(buf, 1, n, fp)
+    }
+    let _c: i32 = fclose(fp)
+    return wrote == n
+}
+
+# Write a NUL-terminated string. The terminator is not written.
+export function io_write_file(path: string, text: string) -> bool {
+    return io_write_bytes(path, text as ptr<u8>, strlen(text))
+}
+
+# Read up to `cap` bytes into a caller-owned buffer. Returns the number of
+# bytes stored, or -1 on open failure. The buffer is not NUL-terminated.
+export function io_read_into(path: string, buf: ptr<u8>, cap: i64) -> i64 {
+    if buf == null or cap <= 0 {
+        return 0 - 1
+    }
+    let fp: ptr<void> = fopen(path, "rb")
+    if fp == null {
+        return 0 - 1
+    }
+    let got: i64 = fread(buf, 1, cap, fp)
+    let _c: i32 = fclose(fp)
+    return got
 }
