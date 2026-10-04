@@ -1,0 +1,26 @@
+extern { function exp(x: f64) -> f64 }
+extern { function pow(x: f64, y: f64) -> f64 }
+extern { function log(x: f64) -> f64 }
+
+function main() -> i32 {
+    let mut log_prob: f64 = 0.0
+    let var: f64 = 2.0
+    let diff: f64 = 3.0
+    let pi_part: f64 = 1.8378770664093453 # log(2 * pi)
+
+    # -0.5 * log(2 * pi * var) - 0.5 * (diff^2 / var)
+    log_prob = -0.5 * (pi_part + log(var)) - 0.5 * (pow(diff, 2.0) / var)
+
+    # Approx check, GaussianNB formula
+    let expected: f64 = -3.5140
+    let mut diff_ans: f64 = log_prob - expected
+    if diff_ans < 0.0 {
+        diff_ans = -diff_ans
+    }
+
+    let mut ans: i32 = 1
+    if diff_ans < 0.01 {
+        ans = 0
+    }
+    return ans
+}
