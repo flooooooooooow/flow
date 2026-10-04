@@ -8484,6 +8484,12 @@ function flowc_cgen_for_literal_dir(arena: AstArena, src: ptr<u8>, lo: i32, hi: 
 # One direction of a stepless range loop, with a constant step:
 # `for (int32_t i = lo; i < (hi); i = i + 1)` up, `i > (hi); i = i + (-1)` down.
 function flowc_cgen_emit_for_dir(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32, dir: i32) {
+    # Ascending unit-stride `dst[i] = src[i]` becomes memmove (#739).
+    if dir > 0 {
+        if flowc_cgen_try_emit_contiguous_copy(w, arena, src, id) == 1 {
+            return
+        }
+    }
     let saved_loop_start: i32 = w[0].bounds_loop_start
     let saved_loop_end: i32 = w[0].bounds_loop_end
     let saved_span_start: i32 = w[0].bounds_span_start
@@ -8517,6 +8523,17 @@ function flowc_cgen_emit_for_dir(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>,
         w[0].len_hoist_span_start = -1
         w[0].len_hoist_span_end = -1
         w[0].len_hoist_id = AST_NONE
+    }
+    # Stepless `for i in 0 to n` is the usual numeric form (scale, axpy,
+    # sum, dot). It was unhinted because the Python host only marked
+    # stepped loops; the C auto-vectorizer still needs the same portable
+    # hints on the ascending body (#739).
+    if dir > 0 {
+        if flowc_cgen_loop_body_is_simple(arena, src, arena.nodes[id].c) == 1 {
+            flowc_cgen_emit_simd_pragmas(w, arena, src, arena.nodes[id].c)
+        } else {
+            flowc_cgen_perf_remark(w, arena, src, id, "loop-not-vectorized", "loop stays scalar", 0)
+        }
     }
     flowc_cgen_puts(w, "  for (int32_t ")
     flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
@@ -8663,6 +8680,295 @@ function flowc_cgen_loop_body_is_simple(arena: AstArena, src: ptr<u8>, body: i32
         }
         st = arena.nodes[st].next
     }
+    return 1
+}
+
+# 1 when `id` and `other` are the same identifier spelling.
+function flowc_cgen_ident_same(arena: AstArena, src: ptr<u8>, id: i32, other: i32) -> i32 {
+    if id == AST_NONE or other == AST_NONE {
+        return 0
+    }
+    if arena.nodes[id].kind != AST_IDENT or arena.nodes[other].kind != AST_IDENT {
+        return 0
+    }
+    return flowc_cgen_span_eq(src, arena.nodes[id].name_start, arena.nodes[id].name_end, arena.nodes[other].name_start, arena.nodes[other].name_end)
+}
+
+# TOK_PLUS / TOK_MINUS / TOK_STAR when `st` is `acc = acc ⊕ expr` (or the
+# commutative `acc = expr ⊕ acc` for + and *). 0 otherwise. Used for
+# `#pragma omp simd reduction(...)` (#739).
+function flowc_cgen_reduction_op(arena: AstArena, src: ptr<u8>, st: i32) -> i32 {
+    if st == AST_NONE or arena.nodes[st].kind != AST_ASSIGN {
+        return 0
+    }
+    let lhs: i32 = arena.nodes[st].a
+    let rhs: i32 = arena.nodes[st].b
+    if lhs == AST_NONE or rhs == AST_NONE {
+        return 0
+    }
+    if arena.nodes[lhs].kind != AST_IDENT or arena.nodes[rhs].kind != AST_BINOP {
+        return 0
+    }
+    let op: i32 = arena.nodes[rhs].ival
+    if op != TOK_PLUS and op != TOK_MINUS and op != TOK_STAR {
+        return 0
+    }
+    let left: i32 = arena.nodes[rhs].a
+    let right: i32 = arena.nodes[rhs].b
+    let left_same: i32 = flowc_cgen_ident_same(arena, src, left, lhs)
+    let right_same: i32 = flowc_cgen_ident_same(arena, src, right, lhs)
+    if left_same == 1 and right_same == 0 {
+        return op
+    }
+    if left_same == 0 and right_same == 1 {
+        if op == TOK_MINUS {
+            return 0
+        }
+        return op
+    }
+    return 0
+}
+
+# 1 when `st` stores through `base[index]` (not a slice).
+function flowc_cgen_assign_is_index_store(arena: AstArena, st: i32) -> i32 {
+    if st == AST_NONE or arena.nodes[st].kind != AST_ASSIGN {
+        return 0
+    }
+    let lhs: i32 = arena.nodes[st].a
+    if lhs == AST_NONE or arena.nodes[lhs].kind != AST_INDEX {
+        return 0
+    }
+    if arena.nodes[lhs].ival == 1 {
+        return 0
+    }
+    return 1
+}
+
+# 1 when a simple body is safe for `#pragma omp simd` / `GCC ivdep`: every
+# assignment is an indexed store or a recognized reduction. Scalar
+# loop-carried updates such as `acc = acc * 10 + i` stay off that path so
+# the C compiler's dependence analysis is not overridden (#739).
+function flowc_cgen_loop_omp_safe(arena: AstArena, src: ptr<u8>, body: i32) -> i32 {
+    if body == AST_NONE {
+        return 1
+    }
+    if arena.nodes[body].kind != AST_BLOCK {
+        return 0
+    }
+    let mut st: i32 = arena.nodes[body].a
+    while st != AST_NONE {
+        let k: i32 = arena.nodes[st].kind
+        if k == AST_LET {
+            st = arena.nodes[st].next
+            continue
+        }
+        if k != AST_ASSIGN {
+            return 0
+        }
+        if flowc_cgen_reduction_op(arena, src, st) == 0 and flowc_cgen_assign_is_index_store(arena, st) == 0 {
+            return 0
+        }
+        st = arena.nodes[st].next
+    }
+    return 1
+}
+
+# 1 when an earlier statement in `body` is already a reduction of `st`'s
+# accumulator with the same operator.
+function flowc_cgen_reduction_seen_before(arena: AstArena, src: ptr<u8>, body: i32, st: i32, op: i32) -> i32 {
+    if body == AST_NONE or arena.nodes[body].kind != AST_BLOCK {
+        return 0
+    }
+    let mut p: i32 = arena.nodes[body].a
+    while p != AST_NONE and p != st {
+        if flowc_cgen_reduction_op(arena, src, p) == op {
+            if flowc_cgen_ident_same(arena, src, arena.nodes[p].a, arena.nodes[st].a) == 1 {
+                return 1
+            }
+        }
+        p = arena.nodes[p].next
+    }
+    return 0
+}
+
+function flowc_cgen_emit_omp_reduction_op(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, body: i32, op: i32, opch: string) {
+    if body == AST_NONE or arena.nodes[body].kind != AST_BLOCK {
+        return
+    }
+    let mut any: i32 = 0
+    let mut st: i32 = arena.nodes[body].a
+    while st != AST_NONE {
+        if flowc_cgen_reduction_op(arena, src, st) == op {
+            if flowc_cgen_reduction_seen_before(arena, src, body, st, op) == 0 {
+                if any == 0 {
+                    flowc_cgen_puts(w, " reduction(")
+                    flowc_cgen_puts(w, opch)
+                    flowc_cgen_puts(w, ":")
+                    any = 1
+                } else {
+                    flowc_cgen_puts(w, ",")
+                }
+                flowc_cgen_put_span(w, src, arena.nodes[arena.nodes[st].a].name_start, arena.nodes[arena.nodes[st].a].name_end)
+            }
+        }
+        st = arena.nodes[st].next
+    }
+    if any == 1 {
+        flowc_cgen_puts(w, ")")
+    }
+}
+
+function flowc_cgen_emit_omp_reductions(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, body: i32) {
+    flowc_cgen_emit_omp_reduction_op(w, arena, src, body, TOK_PLUS, "+")
+    flowc_cgen_emit_omp_reduction_op(w, arena, src, body, TOK_MINUS, "-")
+    flowc_cgen_emit_omp_reduction_op(w, arena, src, body, TOK_STAR, "*")
+}
+
+# Portable SIMD hints for a straight-line counted loop (#739): OpenMP simd
+# (with reduction clauses when the body is a reduction) when the compiler
+# defines `_OPENMP`, else clang loop hints or GCC ivdep. A simple body that
+# is not OpenMP-safe keeps only the clang hint so loop-carried scalar
+# updates are not promised independent.
+function flowc_cgen_emit_simd_pragmas(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, body: i32) {
+    if flowc_cgen_loop_omp_safe(arena, src, body) == 1 {
+        flowc_cgen_puts(w, "#if defined(_OPENMP)\n")
+        flowc_cgen_puts(w, "#pragma omp simd")
+        flowc_cgen_emit_omp_reductions(w, arena, src, body)
+        flowc_cgen_puts(w, "\n#elif defined(__clang__)\n")
+        flowc_cgen_puts(w, "#pragma clang loop vectorize(enable) interleave(enable)\n")
+        flowc_cgen_puts(w, "#elif defined(__GNUC__)\n")
+        flowc_cgen_puts(w, "#pragma GCC ivdep\n")
+        flowc_cgen_puts(w, "#endif\n")
+        return
+    }
+    flowc_cgen_puts(w, "#if defined(__clang__)\n")
+    flowc_cgen_puts(w, "#pragma clang loop vectorize(enable) interleave(enable)\n")
+    flowc_cgen_puts(w, "#endif\n")
+}
+
+# 1 when `e` is safe to evaluate more than once: an identifier, an integer
+# literal, or `-N`.
+function flowc_cgen_expr_is_simple_bound(arena: AstArena, e: i32) -> i32 {
+    if e == AST_NONE {
+        return 0
+    }
+    let k: i32 = arena.nodes[e].kind
+    if k == AST_IDENT or k == AST_INT {
+        return 1
+    }
+    if k == AST_UNARY and arena.nodes[e].ival == TOK_MINUS {
+        let op: i32 = arena.nodes[e].a
+        if op != AST_NONE and arena.nodes[op].kind == AST_INT {
+            return 1
+        }
+    }
+    return 0
+}
+
+# 1 when `idx` is `base[loop_var]` (not a slice) and `base` is an identifier.
+function flowc_cgen_index_is_loop_var(arena: AstArena, src: ptr<u8>, idx: i32, loop_id: i32) -> i32 {
+    if idx == AST_NONE or arena.nodes[idx].kind != AST_INDEX {
+        return 0
+    }
+    if arena.nodes[idx].ival == 1 {
+        return 0
+    }
+    let base: i32 = arena.nodes[idx].a
+    let ix: i32 = arena.nodes[idx].b
+    if base == AST_NONE or arena.nodes[base].kind != AST_IDENT {
+        return 0
+    }
+    if ix == AST_NONE or arena.nodes[ix].kind != AST_IDENT {
+        return 0
+    }
+    return flowc_cgen_span_eq(src, arena.nodes[ix].name_start, arena.nodes[ix].name_end, arena.nodes[loop_id].name_start, arena.nodes[loop_id].name_end)
+}
+
+# 1 when the for-step is missing or the integer literal 1.
+function flowc_cgen_step_is_unit(arena: AstArena, step: i32) -> i32 {
+    if step == AST_NONE or step == 0 {
+        return 1
+    }
+    if arena.nodes[step].kind == AST_INT and arena.nodes[step].ival == 1 {
+        return 1
+    }
+    return 0
+}
+
+# Contiguous `dst[i] = src[i]` over `i in lo to hi` with unit stride: emit
+# `memmove` instead of a scalar loop. The C compiler already maps that to a
+# vector or libc copy. Skip when runtime checks would have guarded a sized
+# array or span, or when the bases may be spans (those index through `.data`).
+function flowc_cgen_try_emit_contiguous_copy(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if flowc_cgen_step_is_unit(arena, arena.nodes[id].ival) == 0 {
+        return 0
+    }
+    if flowc_cgen_expr_is_simple_bound(arena, arena.nodes[id].a) == 0 {
+        return 0
+    }
+    if flowc_cgen_expr_is_simple_bound(arena, arena.nodes[id].b) == 0 {
+        return 0
+    }
+    let body: i32 = arena.nodes[id].c
+    if body == AST_NONE or arena.nodes[body].kind != AST_BLOCK {
+        return 0
+    }
+    let st: i32 = arena.nodes[body].a
+    if st == AST_NONE or arena.nodes[st].next != AST_NONE {
+        return 0
+    }
+    if arena.nodes[st].kind != AST_ASSIGN {
+        return 0
+    }
+    let lhs: i32 = arena.nodes[st].a
+    let rhs: i32 = arena.nodes[st].b
+    if flowc_cgen_index_is_loop_var(arena, src, lhs, id) == 0 {
+        return 0
+    }
+    if flowc_cgen_index_is_loop_var(arena, src, rhs, id) == 0 {
+        return 0
+    }
+    let dst: i32 = arena.nodes[lhs].a
+    let srcb: i32 = arena.nodes[rhs].a
+    if flowc_cgen_ident_same(arena, src, dst, srcb) == 1 {
+        return 0
+    }
+    if flowc_cgen_is_span_var(arena, src, dst) == 1 or flowc_cgen_is_span_var(arena, src, srcb) == 1 {
+        return 0
+    }
+    if w[0].checks == 1 {
+        if flowc_cgen_checked_array_size(w, arena, src, dst) > 0 {
+            return 0
+        }
+        if flowc_cgen_checked_array_size(w, arena, src, srcb) > 0 {
+            return 0
+        }
+        if flowc_cgen_checked_is_span(w, arena, src, dst) == 1 {
+            return 0
+        }
+        if flowc_cgen_checked_is_span(w, arena, src, srcb) == 1 {
+            return 0
+        }
+    }
+    flowc_cgen_puts(w, "  if ((")
+    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+    flowc_cgen_puts(w, ") > (")
+    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+    flowc_cgen_puts(w, ")) {\n    memmove((void*)(&(")
+    flowc_cgen_emit_expr(w, arena, src, dst)
+    flowc_cgen_puts(w, ")[")
+    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+    flowc_cgen_puts(w, "]), (void*)(&(")
+    flowc_cgen_emit_expr(w, arena, src, srcb)
+    flowc_cgen_puts(w, ")[")
+    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+    flowc_cgen_puts(w, "]), (size_t)((")
+    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].b)
+    flowc_cgen_puts(w, ") - (")
+    flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+    flowc_cgen_puts(w, ")) * sizeof((")
+    flowc_cgen_emit_expr(w, arena, src, dst)
+    flowc_cgen_puts(w, ")[0]));\n  }\n")
     return 1
 }
 
@@ -9363,11 +9669,14 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             w[0].loop_defer_base = saved_dbase
             return
         }
-        # A stepped loop with a straight-line body gets the vectorize hints
-        # the Python host emitted (#113, #414, #1031).
+        # A stepped loop with a straight-line body gets portable SIMD hints
+        # (#113, #414, #1031, #739). Unit-stride `dst[i] = src[i]` is
+        # memmove; other simple bodies get OpenMP simd / clang / GCC ivdep.
+        if flowc_cgen_try_emit_contiguous_copy(w, arena, src, id) == 1 {
+            return
+        }
         if flowc_cgen_loop_body_is_simple(arena, src, arena.nodes[id].c) == 1 {
-            flowc_cgen_puts(w, "  #pragma clang loop vectorize(enable) interleave(enable)\n")
-            flowc_cgen_puts(w, "  #pragma GCC ivdep\n")
+            flowc_cgen_emit_simd_pragmas(w, arena, src, arena.nodes[id].c)
         } else {
             flowc_cgen_perf_remark(w, arena, src, id, "loop-not-vectorized", "loop stays scalar", 0)
         }

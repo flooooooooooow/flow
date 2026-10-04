@@ -1,0 +1,145 @@
+# Portable SIMD-aware C lowering for the #739 hot-loop forms: axpy,
+# reductions, dots, squared distance / RBF, class-likelihood, centroid
+# accumulation and contiguous copies. Scalar results stay exact.
+
+extern {
+    function exp(x: f64) -> f64
+    function log(x: f64) -> f64
+}
+
+function axpy(y: ptr<f32>, x: ptr<f32>, a: f32, n: i32) -> void {
+    for i in 0 to n {
+        y[i] = y[i] + a * x[i]
+    }
+}
+
+function fill(a: ptr<i32>, n: i32, v: i32) -> void {
+    for i in 0 to n {
+        a[i] = v
+    }
+}
+
+function sum_f32(x: ptr<f32>, n: i32) -> f32 {
+    let mut s: f32 = 0.0
+    for i in 0 to n {
+        s = s + x[i]
+    }
+    return s
+}
+
+function prod_i32(x: ptr<i32>, n: i32) -> i32 {
+    let mut p: i32 = 1
+    for i in 0 to n {
+        p = p * x[i]
+    }
+    return p
+}
+
+function nsum_i32(x: ptr<i32>, n: i32) -> i32 {
+    let mut s: i32 = 0
+    for i in 0 to n {
+        s = s - x[i]
+    }
+    return s
+}
+
+function dot_f32(a: ptr<f32>, b: ptr<f32>, n: i32) -> f32 {
+    let mut s: f32 = 0.0
+    for i in 0 to n {
+        s = s + a[i] * b[i]
+    }
+    return s
+}
+
+function copy_f32(dst: ptr<f32>, src: ptr<f32>, n: i32) -> void {
+    for i in 0 to n {
+        dst[i] = src[i]
+    }
+}
+
+function copy_step(dst: ptr<f32>, src: ptr<f32>, n: i32) -> void {
+    for i in 0 to n step 1 {
+        dst[i] = src[i]
+    }
+}
+
+function sqdist(out: ptr<f64>, x: ptr<f64>, y: ptr<f64>, n: i32) -> void {
+    for i in 0 to n {
+        let d: f64 = x[i] - y[i]
+        out[i] = d * d
+    }
+}
+
+function rbf(out: ptr<f64>, x: ptr<f64>, y: ptr<f64>, n: i32) -> void {
+    for i in 0 to n {
+        let d: f64 = x[i] - y[i]
+        out[i] = exp(0.0 - d * d)
+    }
+}
+
+function centroid(x: ptr<f32>, y: ptr<f32>, n: i32, out_x: ptr<f32>, out_y: ptr<f32>) -> void {
+    let mut cx: f32 = 0.0
+    let mut cy: f32 = 0.0
+    for i in 0 to n {
+        cx = cx + x[i]
+        cy = cy + y[i]
+    }
+    out_x[0] = cx
+    out_y[0] = cy
+}
+
+function class_ll(w: ptr<f64>, p: ptr<f64>, n: i32) -> f64 {
+    let mut ll: f64 = 0.0
+    for i in 0 to n {
+        ll = ll + w[i] * log(p[i])
+    }
+    return ll
+}
+
+function main() -> i32 {
+    let mut x: [f32; 4] = [1.0, 2.0, 3.0, 4.0]
+    let mut y: [f32; 4] = [0.0, 0.0, 0.0, 0.0]
+    axpy(&y[0], &x[0], 2.0, 4)
+    if y[0] != 2.0 { return 1 }
+    if y[3] != 8.0 { return 2 }
+    if sum_f32(&x[0], 4) != 10.0 { return 3 }
+    if dot_f32(&x[0], &y[0], 4) != 60.0 { return 4 }
+
+    let mut dst: [f32; 4] = [0.0, 0.0, 0.0, 0.0]
+    copy_f32(&dst[0], &x[0], 4)
+    if dst[1] != 2.0 { return 5 }
+    let mut dst2: [f32; 4] = [0.0, 0.0, 0.0, 0.0]
+    copy_step(&dst2[0], &x[0], 4)
+    if dst2[2] != 3.0 { return 6 }
+
+    let mut iv: [i32; 4] = [1, 2, 3, 4]
+    if prod_i32(&iv[0], 4) != 24 { return 7 }
+    if nsum_i32(&iv[0], 3) != 0 - 6 { return 8 }
+    fill(&iv[0], 4, 9)
+    if iv[0] != 9 { return 9 }
+    if iv[3] != 9 { return 10 }
+
+    let xa: [f64; 2] = [1.0, 2.0]
+    let ya: [f64; 2] = [0.0, 0.0]
+    let mut sd: [f64; 2] = [0.0, 0.0]
+    sqdist(&sd[0], &xa[0], &ya[0], 2)
+    if sd[0] != 1.0 { return 11 }
+    if sd[1] != 4.0 { return 12 }
+
+    let zb: [f64; 2] = [1.0, 2.0]
+    let mut rb: [f64; 2] = [0.0, 0.0]
+    rbf(&rb[0], &xa[0], &zb[0], 2)
+    if rb[0] != 1.0 { return 13 }
+    if rb[1] != 1.0 { return 14 }
+
+    let mut cx: [f32; 1] = [0.0]
+    let mut cy: [f32; 1] = [0.0]
+    centroid(&x[0], &y[0], 4, &cx[0], &cy[0])
+    if cx[0] != 10.0 { return 15 }
+    if cy[0] != 20.0 { return 16 }
+
+    let ww: [f64; 2] = [1.0, 1.0]
+    let pp: [f64; 2] = [1.0, 1.0]
+    if class_ll(&ww[0], &pp[0], 2) != 0.0 { return 17 }
+    return 0
+}

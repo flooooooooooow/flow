@@ -1,0 +1,11 @@
+# Elementwise / reduction loops get portable SIMD hints; copies become memmove.
++ #if defined(_OPENMP)
++ #pragma omp simd
++ #pragma omp simd reduction(+:
++ reduction(*:
++ reduction(-:
++ #pragma clang loop vectorize(enable) interleave(enable)
++ #pragma GCC ivdep
++ memmove((void*)(&(
++ for (int32_t i = 0; i < (n); i = i + 1) {
+exit 0
