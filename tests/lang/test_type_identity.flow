@@ -1,0 +1,90 @@
+# Stable compiler-derived type identity and target layout (#775).
+#
+# family_id is nominal (public name / constructor). schema_id digests the
+# target-independent public schema. sizeof / alignof are the target ABI.
+# TransportSafe admits fixed-width scalars, fixed arrays, and structs of
+# those; pointers are rejected. IDs are compile-time u64 constants, not
+# runtime string reflection.
+
+struct Point {
+    x: f32
+    y: f32
+}
+
+struct Point3 {
+    x: f32
+    y: f32
+    z: f32
+}
+
+struct Sample {
+    left: f32
+    right: f32
+    frame: i64
+}
+
+struct RecXY {
+    x: f32
+    y: f32
+}
+
+struct RecYX {
+    y: f32
+    x: f32
+}
+
+struct Pair {
+    a: i64
+    b: i32
+}
+
+struct HasPtr {
+    p: ptr<i32>
+    n: i32
+}
+
+function main() -> i32 {
+    let fa: u64 = type_family_id<Point>()
+    let fb: u64 = type_family_id<Point>()
+    if fa != fb { return 1 }
+    if fa == (0 as u64) { return 2 }
+
+    let sa: u64 = type_schema_id<Point>()
+    let sb: u64 = type_schema_id<Point>()
+    if sa != sb { return 3 }
+    if sa == (0 as u64) { return 4 }
+
+    if type_family_id<Point>() == type_family_id<Point3>() { return 5 }
+    if type_schema_id<Point>() == type_schema_id<Point3>() { return 6 }
+    if type_schema_id<Point>() == type_schema_id<Sample>() { return 7 }
+    if type_family_id<i32>() == type_family_id<i64>() { return 8 }
+    if type_schema_id<i32>() == type_schema_id<i64>() { return 9 }
+
+    # Field order is part of the schema, not of the family constructor name.
+    if type_schema_id<RecXY>() == type_schema_id<RecYX>() { return 10 }
+
+    if type_family_id<Point>() == type_family_id<ptr<Point>>() { return 11 }
+    if type_schema_id<Point>() == type_schema_id<ptr<Point>>() { return 12 }
+
+    if sizeof<i32>() != 4 { return 13 }
+    if sizeof<i64>() != 8 { return 14 }
+    if sizeof<Point>() != 8 { return 15 }
+    if sizeof<Pair>() != 16 { return 16 }
+
+    if alignof<i8>() != 1 { return 17 }
+    if alignof<i32>() != 4 { return 18 }
+    if alignof<i64>() != 8 { return 19 }
+    if alignof<Point>() != 4 { return 20 }
+    if alignof<Pair>() != 8 { return 21 }
+    if alignof<Pair>() > sizeof<Pair>() { return 22 }
+
+    if !type_transport_safe<i32>() { return 23 }
+    if !type_transport_safe<f32>() { return 24 }
+    if !type_transport_safe<Point>() { return 25 }
+    if !type_transport_safe<Sample>() { return 26 }
+    if type_transport_safe<ptr<i32>>() { return 27 }
+    if type_transport_safe<HasPtr>() { return 28 }
+    if type_transport_safe<string>() { return 29 }
+
+    return 0
+}

@@ -229,6 +229,64 @@ distinct type IQSample = c64
 
 First-class function-value syntax, tuple returns, union types such as `i32 | f32`, and generic optional types are not part of the current stable type surface. When design documents discuss those forms, their fences are labelled `flow-future` rather than `flow`.
 
+## Type identity and layout
+
+Ordinary Flow types have a compiler-defined description that libraries can
+embed in generated metadata (audio endpoints, versioned patch state) without
+hand-assigned `type_key` values and without runtime string reflection on an
+RT path.
+
+Identity is target-independent: the same public type yields the same IDs
+whether the program is lowered to C, MLIR, or Wasm. Size and alignment are
+the target ABI and may differ across native64 and wasm32, so they are not
+folded into the identity.
+
+| Builtin | Result | Meaning |
+|---------|--------|---------|
+| `type_family_id<T>()` | `u64` | Nominal family (public name / constructor). Stable across schema revisions of the same named type. |
+| `type_schema_id<T>()` | `u64` | FNV-1a 64 of the v1 canonical public schema: field names and order, semantic field types, extents, enum variants, generic args. No C/MLIR/Wasm layout. |
+| `type_transport_safe<T>()` | `bool` | Conservative `TransportSafe(T)`: fixed-width scalars, fixed arrays, and structs composed from them. Pointers, spans, strings, and extern/fn types are rejected. |
+| `sizeof<T>()` | `i64` | Target ABI size in bytes. |
+| `alignof<T>()` | `i64` | Target ABI alignment in bytes. |
+
+```flow
+struct EndpointSample {
+    left: f32
+    right: f32
+}
+
+function sample_ids() -> i32 {
+    let family: u64 = type_family_id<EndpointSample>()
+    let schema: u64 = type_schema_id<EndpointSample>()
+    if family == (0 as u64) or schema == (0 as u64) {
+        return 1
+    }
+    if family == schema {
+        return 2
+    }
+    if !type_transport_safe<EndpointSample>() {
+        return 3
+    }
+    if sizeof<EndpointSample>() != 8 {
+        return 4
+    }
+    if alignof<EndpointSample>() != 4 {
+        return 5
+    }
+    return 0
+}
+```
+
+Compatibility lattice:
+
+- family equal → same migration family
+- schema equal → same exact semantic schema revision
+- schema equal and `TransportSafe` → cross-target schema payload compatibility
+- schema equal and layout equal → same ABI representation (address-space ownership is still checked separately)
+
+Scheme v1 prefixes the canonical string with `v1;` so a later digest can
+change without silently reusing old keys.
+
 ## Type safety
 
 The compiler checks struct fields, function parameter and return types, array element types, pointer targets, units, distinct types, effects, and lifetime-domain constraints. Deliberately invalid examples belong in `flow expect-error` fences so CI verifies that the compiler continues to reject them.
