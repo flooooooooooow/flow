@@ -1045,6 +1045,23 @@ function flowc_tc_eff_check_row_call(ctx: ptr<TcCtx>, arena: AstArena, call: i32
             let plen: i32 = flowc_eff_item_len(ctx[0].eff, p)
             # Handled? Compare against the handler stack spans.
             let mut handled: i32 = 0
+
+            # `rt_safe` is checked in sem_check.flow
+            if plen == 7 {
+                let mut is_rt_safe: bool = true
+                let rt_safe_str: ptr<u8> = "rt_safe" as ptr<u8>
+                let mut c_idx: i32 = 0
+                while c_idx < 7 {
+                    if ctx[0].eff[p + c_idx] != rt_safe_str[c_idx] {
+                        is_rt_safe = false
+                    }
+                    c_idx = c_idx + 1
+                }
+                if is_rt_safe {
+                    handled = 1
+                }
+            }
+
             let mut h: i32 = 0
             while h < ctx[0].hlen {
                 if flowc_eff_item_is(ctx[0].eff, p, src, ctx[0].hs_s[h], ctx[0].hs_e[h]) == 1 {
@@ -1075,15 +1092,18 @@ function flowc_tc_eff_check_row_call(ctx: ptr<TcCtx>, arena: AstArena, call: i32
             while en != AST_NONE {
                 let es: i32 = arena.nodes[en].name_start
                 let ee: i32 = arena.nodes[en].name_end
-                if flowc_tc_eff_active(ctx[0], es, ee) == 0 and nlen + (ee - es) + 1 < 1024 {
-                    let mut j: i32 = 0
-                    while j < ee - es {
-                        names[nlen + j] = src[es + j]
-                        j = j + 1
+                # Skip the special `rt_safe` contract check here since it's enforced by sem_check.
+                if flowc_tc_span_is(src, es, ee, "rt_safe") == 0 {
+                    if flowc_tc_eff_active(ctx[0], es, ee) == 0 and nlen + (ee - es) + 1 < 1024 {
+                        let mut j: i32 = 0
+                        while j < ee - es {
+                            names[nlen + j] = src[es + j]
+                            j = j + 1
+                        }
+                        names[nlen + ee - es] = 0
+                        nlen = nlen + (ee - es) + 1
+                        count = count + 1
                     }
-                    names[nlen + ee - es] = 0
-                    nlen = nlen + (ee - es) + 1
-                    count = count + 1
                 }
                 en = arena.nodes[en].next
             }
