@@ -1,0 +1,64 @@
+# Test for FFI zero-copy buffer handoff ABI
+# Run with: ./flow run tests/lang/test_ffi_buffer.flow
+# Exit 0 on success.
+
+import "registry/packages/ffi/src/buffer_handoff.flow"
+import "registry/packages/ffi/src/lib.flow"
+
+@cEmbed("
+#include <stdint.h>
+int64_t flow_ffi_sizeof_ptr(void) { return sizeof(void*); }
+")
+
+function test_instrumentation() -> i32 {
+    let mut inst: FFIInstrumentation = ffi_instrumentation_new()
+    let p_inst: ptr<FFIInstrumentation> = &inst
+
+    ffi_record_copy(p_inst, 1024)
+    ffi_record_zero_copy(p_inst, 2048)
+
+    if inst.total_copies != 1 { return 1 }
+    if inst.total_bytes_copied != 1024 { return 2 }
+    if inst.total_zero_copy != 1 { return 3 }
+    if inst.total_bytes_zero_copy != 2048 { return 4 }
+
+    return 0
+}
+
+function test_borrowed() -> i32 {
+    let mut v: i32 = 42
+    let p: ptr<i32> = &v
+
+    let buf: FFIBuffer = ffi_buffer_borrowed(p as ptr<void>, 1, 4)
+    if buf.ownership != 0 { return 1 }
+    if buf.len != 1 { return 2 }
+    if buf.item_size != 4 { return 3 }
+
+    return 0
+}
+
+function test_owned() -> i32 {
+    let p: ptr<i8> = ffi_alloc(4)
+    let buf: FFIBuffer = ffi_buffer_owned(p as ptr<void>, 1, 4, 12345 as ptr<void>) # 12345 as dummy deallocator
+
+    if buf.ownership != 1 { return 1 }
+    if buf.len != 1 { return 2 }
+    if buf.item_size != 4 { return 3 }
+    if (buf.deallocator as i64) != 12345 { return 4 }
+
+    ffi_free(p)
+    return 0
+}
+
+function main() -> i32 {
+    let r1: i32 = test_instrumentation()
+    if r1 != 0 { return r1 }
+
+    let r2: i32 = test_borrowed()
+    if r2 != 0 { return r2 + 10 }
+
+    let r3: i32 = test_owned()
+    if r3 != 0 { return r3 + 20 }
+
+    return 0
+}

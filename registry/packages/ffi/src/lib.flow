@@ -7,6 +7,8 @@ extern {
     function free(p: ptr<i8>) -> void
 }
 
+export import "buffer_handoff.flow"
+
 export function ffi_alloc(size: i64) -> ptr<i8> {
     return malloc(size)
 }

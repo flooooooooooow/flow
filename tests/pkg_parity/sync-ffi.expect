@@ -32,9 +32,11 @@ ffi = "^0.1"
 == flow_packages
 D flow_packages
 D flow_packages/ffi
+F flow_packages/ffi/README.md -rw-r--r-- 717681149 1065
 F flow_packages/ffi/flow.toml -rw-r--r-- 3817549184 268
 D flow_packages/ffi/native
 F flow_packages/ffi/native/flow_ffi.c -rw-r--r-- 1038404449 118
 F flow_packages/ffi/native/flow_ffi.h -rw-r--r-- 286042432 253
 D flow_packages/ffi/src
-F flow_packages/ffi/src/lib.flow -rw-r--r-- 2984440564 1796
+F flow_packages/ffi/src/buffer_handoff.flow -rw-r--r-- 185724773 2535
+F flow_packages/ffi/src/lib.flow -rw-r--r-- 1421758579 1833
