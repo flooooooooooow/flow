@@ -175,7 +175,7 @@ function import_file(spec: string, dir: string, lib: string) -> string {
 
 # True when `src` or any module it imports, directly or not, is newer than
 # `bin`.
-function deps_newer(src: string, lib: string, bin: string) -> bool {
+export function deps_newer(src: string, lib: string, bin: string) -> bool {
     let seen: ptr<ProcStrs> = sl_of1(src)
     let mut k: i32 = 0
     while k < sl_len(seen) {
