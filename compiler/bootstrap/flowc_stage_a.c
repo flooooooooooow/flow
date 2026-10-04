@@ -4156,6 +4156,345 @@ int32_t flowc_type_id_hash_selftest() {
 }
 
 
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#define FLOWC_PROF_N 8
+static int64_t flowc_prof_ns[FLOWC_PROF_N];
+static int64_t flowc_prof_process_start;
+static int32_t flowc_prof_ast;
+static int32_t flowc_prof_loc;
+static int32_t flowc_prof_mode_cache;
+static int32_t flowc_prof_mode_ready;
+static int32_t flowc_prof_startup_done;
+static int64_t flowc_prof_now_ns_c(void) {
+  struct timespec ts;
+  if (clock_gettime(CLOCK_MONOTONIC_RAW, &ts) != 0) {
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+      return 0;
+    }
+  }
+  return (int64_t)ts.tv_sec * 1000000000LL + (int64_t)ts.tv_nsec;
+}
+#ifdef __GNUC__
+__attribute__((constructor))
+static void flowc_prof_ctor(void) {
+  flowc_prof_process_start = flowc_prof_now_ns_c();
+}
+#endif
+static int32_t flowc_prof_mode_c(void) {
+  const char *v;
+  if (flowc_prof_mode_ready) {
+    return flowc_prof_mode_cache;
+  }
+  flowc_prof_mode_ready = 1;
+  v = getenv("FLOWC_PROFILE");
+  if (v == 0 || v[0] == 0 || v[0] == '0') {
+    flowc_prof_mode_cache = 0;
+    return 0;
+  }
+  if ((v[0] == 'f' || v[0] == 'F') && (v[1] == 'a' || v[1] == 'A')) {
+    flowc_prof_mode_cache = 0;
+    return 0;
+  }
+  if ((v[0] == 'o' || v[0] == 'O') && (v[1] == 'f' || v[1] == 'F')) {
+    flowc_prof_mode_cache = 0;
+    return 0;
+  }
+  if ((v[0] == 'n' || v[0] == 'N') && (v[1] == 'o' || v[1] == 'O')) {
+    flowc_prof_mode_cache = 0;
+    return 0;
+  }
+  if ((v[0] == 'j' || v[0] == 'J')) {
+    flowc_prof_mode_cache = 2;
+    return 2;
+  }
+  flowc_prof_mode_cache = 1;
+  return 1;
+}
+int32_t flowc_prof_mode_raw(void) { return flowc_prof_mode_c(); }
+int64_t flowc_prof_now_raw(void) { return flowc_prof_now_ns_c(); }
+void flowc_prof_add_raw(int32_t id, int64_t ns) {
+  if (flowc_prof_mode_c() == 0) { return; }
+  if (id < 0 || id >= FLOWC_PROF_N) { return; }
+  if (ns < 0) { ns = 0; }
+  flowc_prof_ns[id] += ns;
+}
+int64_t flowc_prof_get_raw(int32_t id) {
+  if (id < 0 || id >= FLOWC_PROF_N) { return 0; }
+  return flowc_prof_ns[id];
+}
+void flowc_prof_add_ast_raw(int32_t n) {
+  if (n > 0) { flowc_prof_ast += n; }
+}
+void flowc_prof_set_loc_raw(int32_t n) {
+  if (n > 0) { flowc_prof_loc = n; }
+}
+int32_t flowc_prof_ast_raw(void) { return flowc_prof_ast; }
+int32_t flowc_prof_loc_raw(void) { return flowc_prof_loc; }
+void flowc_prof_mark_startup_raw(void) {
+  int64_t now;
+  if (flowc_prof_mode_c() == 0 || flowc_prof_startup_done) { return; }
+  now = flowc_prof_now_ns_c();
+  if (flowc_prof_process_start == 0) {
+    flowc_prof_process_start = now;
+  }
+  flowc_prof_ns[0] += now - flowc_prof_process_start;
+  if (flowc_prof_ns[0] < 0) { flowc_prof_ns[0] = 0; }
+  flowc_prof_startup_done = 1;
+}
+void flowc_prof_write_line_raw(const char *s) {
+  fputs(s, stderr);
+  fputc(10, stderr);
+}
+
+const int32_t FLOWC_PROF_STARTUP = 0;
+const int32_t FLOWC_PROF_SOURCE_READ = 1;
+const int32_t FLOWC_PROF_PARSE = 2;
+const int32_t FLOWC_PROF_IMPORT = 3;
+const int32_t FLOWC_PROF_TYPECHECK = 4;
+const int32_t FLOWC_PROF_MONO = 5;
+const int32_t FLOWC_PROF_LOWERING = 6;
+const int32_t FLOWC_PROF_CODEGEN = 7;
+int32_t flowc_prof_mode_raw();
+int64_t flowc_prof_now_raw();
+int64_t flowc_prof_get_raw(int32_t id);
+int32_t flowc_prof_ast_raw();
+int32_t flowc_prof_loc_raw();
+int32_t flowc_prof_enabled();
+int64_t flowc_prof_span_begin();
+void flowc_prof_span_end(int32_t id, int64_t start);
+void flowc_prof_mark_startup();
+void flowc_prof_add_ast(int32_t n);
+void flowc_prof_set_loc(int32_t n);
+int32_t flowc_prof_count_loc(uint8_t* src, int32_t n);
+void flowc_prof_note_path(const char* path);
+void flowc_prof_note_source(uint8_t* src, int32_t n, int32_t ast);
+const char* flowc_prof_name(int32_t id);
+const char* flowc_prof_i64_str(int64_t v);
+int64_t flowc_prof_ns_to_ms(int64_t ns);
+int64_t flowc_prof_ns_to_us(int64_t ns);
+int64_t flowc_prof_total_ns();
+int32_t flowc_prof_format_json(uint8_t* buf, int32_t cap);
+void flowc_prof_write_line(const char* s);
+void flowc_prof_emit();
+int32_t flowc_prof_selftest_format(uint8_t* buf, int32_t cap);
+int32_t flowc_prof_enabled() {
+  if (flowc_prof_mode_raw() == 0) {
+  return 0;
+}
+  return 1;
+}
+
+int64_t flowc_prof_span_begin() {
+  if (flowc_prof_mode_raw() == 0) {
+  return (0 - 1);
+}
+  return flowc_prof_now_raw();
+}
+
+void flowc_prof_span_end(int32_t id, int64_t start) {
+  if (start < 0) {
+  return;
+}
+  flowc_prof_add_raw(id, (flowc_prof_now_raw() - start));
+}
+
+void flowc_prof_mark_startup() {
+  flowc_prof_mark_startup_raw();
+}
+
+void flowc_prof_add_ast(int32_t n) {
+  flowc_prof_add_ast_raw(n);
+}
+
+void flowc_prof_set_loc(int32_t n) {
+  flowc_prof_set_loc_raw(n);
+}
+
+int32_t flowc_prof_count_loc(uint8_t* src, int32_t n) {
+  int32_t lines = 0;
+  int32_t i = 0;
+  while (i < n) {
+  if (src[i] == 10) {
+  lines = (lines + 1);
+}
+  i = (i + 1);
+}
+  if (n > 0 && src[(n - 1)] != 10) {
+  lines = (lines + 1);
+}
+  return lines;
+}
+
+void flowc_prof_note_path(const char* path) {
+  if (flowc_prof_mode_raw() == 0) {
+  return;
+}
+  if (flowc_prof_loc_raw() > 0) {
+  return;
+}
+  if ((uint8_t*)(path) == NULL) {
+  return;
+}
+  int32_t cap = 1048576;
+  uint8_t* src = (uint8_t*)(flow_mem_malloc((int64_t)(cap)));
+  if (src == NULL) {
+  return;
+}
+  int32_t n = flowc_read_file(path, src, (cap - 1));
+  if (n > 0) {
+  flowc_prof_set_loc_raw(flowc_prof_count_loc(src, n));
+}
+}
+
+void flowc_prof_note_source(uint8_t* src, int32_t n, int32_t ast) {
+  if (flowc_prof_mode_raw() == 0) {
+  return;
+}
+  if (ast > 0) {
+  flowc_prof_add_ast_raw(ast);
+}
+}
+
+const char* flowc_prof_name(int32_t id) {
+  if (id == 0) {
+  return "startup";
+}
+  if (id == 1) {
+  return "source_read";
+}
+  if (id == 2) {
+  return "parse";
+}
+  if (id == 3) {
+  return "import_resolution";
+}
+  if (id == 4) {
+  return "typecheck";
+}
+  if (id == 5) {
+  return "monomorphize";
+}
+  if (id == 6) {
+  return "lowering";
+}
+  if (id == 7) {
+  return "codegen";
+}
+  return "other";
+}
+
+const char* flowc_prof_i64_str(int64_t v) {
+  uint8_t* b = (uint8_t*)(flow_mem_malloc(32));
+  int32_t _n = snprintf(b, 32, "%lld", v);
+  return (const char*)(b);
+}
+
+int64_t flowc_prof_ns_to_ms(int64_t ns) {
+  if (ns <= 0) {
+  return 0;
+}
+  return ((ns + 500000) / 1000000);
+}
+
+int64_t flowc_prof_ns_to_us(int64_t ns) {
+  if (ns <= 0) {
+  return 0;
+}
+  return ((ns + 500) / 1000);
+}
+
+int64_t flowc_prof_total_ns() {
+  int64_t t = 0;
+  int32_t i = 0;
+  while (i < 8) {
+  t = (t + flowc_prof_get_raw(i));
+  i = (i + 1);
+}
+  return t;
+}
+
+int32_t flowc_prof_format_json(uint8_t* buf, int32_t cap) {
+  int64_t loc = (int64_t)(flowc_prof_loc_raw());
+  int64_t ast = (int64_t)(flowc_prof_ast_raw());
+  int64_t total_ns = flowc_prof_total_ns();
+  int64_t total_ms = flowc_prof_ns_to_ms(total_ns);
+  int64_t startup_ms = flowc_prof_ns_to_ms(flowc_prof_get_raw(0));
+  int64_t loc_s = 0;
+  int64_t ast_s = 0;
+  if (total_ms > 0) {
+  loc_s = ((loc * 1000) / total_ms);
+  ast_s = ((ast * 1000) / total_ms);
+}
+  int32_t n = snprintf(buf, (int64_t)(cap), "{\"schema\": \"flow-compile-profile/1\"");
+  n = (n + snprintf((buf + n), (int64_t)((cap - n)), ", \"phases\": ["));
+  int32_t i = 0;
+  while (i < 8) {
+  if (i > 0) {
+  n = (n + snprintf((buf + n), (int64_t)((cap - n)), ", "));
+}
+  n = (n + snprintf((buf + n), (int64_t)((cap - n)), "{\"name\": \"%s\", \"ms\": %lld, \"us\": %lld}", flowc_prof_name(i), flowc_prof_ns_to_ms(flowc_prof_get_raw(i)), flowc_prof_ns_to_us(flowc_prof_get_raw(i))));
+  i = (i + 1);
+}
+  n = (n + snprintf((buf + n), (int64_t)((cap - n)), "], \"source_loc\": %lld, \"ast_nodes\": %lld", loc, ast));
+  n = (n + snprintf((buf + n), (int64_t)((cap - n)), ", \"total_ms\": %lld, \"startup_ms\": %lld", total_ms, startup_ms));
+  n = (n + snprintf((buf + n), (int64_t)((cap - n)), ", \"loc_per_s\": %lld, \"ast_nodes_per_s\": %lld}", loc_s, ast_s));
+  if (n < cap) {
+  buf[n] = 0;
+}
+  return n;
+}
+
+void flowc_prof_write_line(const char* s) {
+  flowc_prof_write_line_raw(s);
+}
+
+void flowc_prof_emit() {
+  int32_t mode = flowc_prof_mode_raw();
+  if (mode == 0) {
+  return;
+}
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc(2048));
+  if (buf == NULL) {
+  return;
+}
+  int32_t n = flowc_prof_format_json(buf, 2048);
+  if (n <= 0) {
+  return;
+}
+  if (mode == 1) {
+  flowc_prof_write_line("Compile profile (per-phase wall time):");
+  int64_t total_ns = flowc_prof_total_ns();
+  int32_t i = 0;
+  while (i < 8) {
+  int64_t ns = flowc_prof_get_raw(i);
+  int64_t ms = flowc_prof_ns_to_ms(ns);
+  int64_t pct = 0;
+  if (total_ns > 0) {
+  pct = ((ns * 100) / total_ns);
+}
+  uint8_t* line = (uint8_t*)(flow_mem_malloc(96));
+  int32_t _ln = snprintf(line, 96, "  %-18s %6lld ms  %3lld%%", flowc_prof_name(i), ms, pct);
+  flowc_prof_write_line((const char*)(line));
+  i = (i + 1);
+}
+  uint8_t* tot = (uint8_t*)(flow_mem_malloc(64));
+  int32_t _tn = snprintf(tot, 64, "  %-18s %6lld ms", "total", flowc_prof_ns_to_ms(total_ns));
+  flowc_prof_write_line((const char*)(tot));
+}
+  uint8_t* marker = (uint8_t*)(flow_mem_malloc(2080));
+  int32_t _mn = snprintf(marker, 2080, "[flow-profile] %s", (const char*)(buf));
+  flowc_prof_write_line((const char*)(marker));
+}
+
+int32_t flowc_prof_selftest_format(uint8_t* buf, int32_t cap) {
+  return flowc_prof_format_json(buf, cap);
+}
+
+
 typedef struct FlowcParsedAttr {
   const char* name;
   const char* args;
@@ -5553,7 +5892,7 @@ const char* flowc_claim_law_phrase(const char* law) {
 }
 
 
-#define str_append __flowc_m11_str_append
+#define str_append __flowc_m12_str_append
 typedef struct FlowcClaimPath {
   const char* domain;
   const char* morphism;
@@ -5843,7 +6182,7 @@ int32_t flowc_is_duplicate_claim(const char* path_a, const char* expr_a, const c
 
 
 #undef str_append
-#define is_space __flowc_m12_is_space
+#define is_space __flowc_m13_is_space
 const char* mp_strip_ws(const char* s);
 const char* flowc_carrier_mathematical(const char* raw);
 const char* flowc_structure_mathematical(const char* raw);
@@ -7320,7 +7659,7 @@ const char* flowc_invoke_premise_mathematical(FlowcClaimAddress addr, const char
 
 
 #undef is_space
-#define str_append __flowc_m13_str_append
+#define str_append __flowc_m14_str_append
 typedef struct FlowcGeomCurve {
   double* xs;
   double* ys;
@@ -89058,7 +89397,9 @@ int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, 
   src[zi] = 0;
   zi = (zi + 1);
 }
+  int64_t t_read = flowc_prof_span_begin();
   int32_t own = flowc_resolve_read_source(path, src, (FLOWC_RESOLVE_SRC_CAP - 1));
+  flowc_prof_span_end(FLOWC_PROF_SOURCE_READ, t_read);
   if (own <= 0) {
   flow_mem_free(src);
   return (0 - 1);
@@ -89073,22 +89414,27 @@ int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, 
   nsrc = (nsrc + tpl_len[0]);
 }
   src[nsrc] = 0;
+  int64_t t_parse = flowc_prof_span_begin();
   Parser p = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP);
   int32_t root = flowc_parse_cached((&p), src, nsrc);
+  flowc_prof_span_end(FLOWC_PROF_PARSE, t_parse);
   if (root < 0 || (p).err != 0) {
   flowc_parser_free(p);
   flow_mem_free(src);
   return (0 - 1);
 }
+  flowc_prof_note_source(src, nsrc, ((p).arena).len);
   if (tpl != NULL) {
-  { __typeof__(tpl_len[0]) __flowc_st11212 = flowc_resolve_add_templates((p).arena, root, src, own, tpl, tpl_cap, tpl_len[0]); tpl_len[0] = __flowc_st11212; }
+  { __typeof__(tpl_len[0]) __flowc_st11242 = flowc_resolve_add_templates((p).arena, root, src, own, tpl, tpl_cap, tpl_len[0]); tpl_len[0] = __flowc_st11242; }
 }
   flowc_fuse_pipelines((&(p).arena), src);
   int32_t _setf = setenv("FLOWC_CGEN_FILE", path, 1);
+  int64_t t_gen = flowc_prof_span_begin();
   int32_t n = flowc_cgen_emit_sigs((p).arena, root, src, out, out_cap, flags, sigs, siglen[0]);
+  flowc_prof_span_end(FLOWC_PROF_CODEGEN, t_gen);
   if (sigs != NULL) {
-  { __typeof__(siglen[0]) __flowc_st11257 = flowc_cgen_collect_sigs((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st11257; }
-  { __typeof__(siglen[0]) __flowc_st11271 = flowc_eff_collect((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st11271; }
+  { __typeof__(siglen[0]) __flowc_st11294 = flowc_cgen_collect_sigs((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st11294; }
+  { __typeof__(siglen[0]) __flowc_st11308 = flowc_eff_collect((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st11308; }
 }
   flowc_parser_free(p);
   flow_mem_free(src);
@@ -89362,8 +89708,8 @@ int32_t flowc_bundle_semcheck(uint8_t* all_store, int32_t all_n, const char* sea
 }
   sem_check_program(c);
   sem_report(c);
-  { __typeof__(counts[0]) __flowc_st12708 = sem_error_count(c); counts[0] = __flowc_st12708; }
-  { __typeof__(counts[1]) __flowc_st12714 = sem_fatal_count(c); counts[1] = __flowc_st12714; }
+  { __typeof__(counts[0]) __flowc_st12745 = sem_error_count(c); counts[0] = __flowc_st12745; }
+  { __typeof__(counts[1]) __flowc_st12751 = sem_fatal_count(c); counts[1] = __flowc_st12751; }
   return 0;
 }
 
@@ -89399,14 +89745,17 @@ int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_
   uint8_t* proj_buf = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
   int32_t _proj_len = flowc_resolve_project_root(entry_path, proj_buf, FLOWC_RESOLVE_PATH_CAP);
   const char* project_root = (const char*)(proj_buf);
+  int64_t t_imp = flowc_prof_span_begin();
   int32_t nmods = flowc_resolve_gather(entry_path, search_dir, project_root, path_store);
   if (nmods <= 0) {
+  flowc_prof_span_end(FLOWC_PROF_IMPORT, t_imp);
   puts("flowc bundle tc: gather failed");
   flow_mem_free(path_store);
   return 1;
 }
   uint8_t* order_store = (uint8_t*)(flow_mem_malloc((int64_t)((FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP))));
   if (order_store == NULL) {
+  flowc_prof_span_end(FLOWC_PROF_IMPORT, t_imp);
   flow_mem_free(path_store);
   return 1;
 }
@@ -89416,6 +89765,7 @@ int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_
   zi = (zi + 1);
 }
   int32_t norder = flowc_resolve_topo(path_store, nmods, search_dir, project_root, order_store);
+  flowc_prof_span_end(FLOWC_PROF_IMPORT, t_imp);
   if (norder <= 0) {
   puts("flowc bundle tc: topo failed");
   flow_mem_free(order_store);
@@ -89449,7 +89799,9 @@ int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_
   src[zi] = 0;
   zi = (zi + 1);
 }
+  int64_t t_read = flowc_prof_span_begin();
   int32_t nsrc = flowc_resolve_read_source(mpath, src, (FLOWC_RESOLVE_SRC_CAP - 1));
+  flowc_prof_span_end(FLOWC_PROF_SOURCE_READ, t_read);
   if (nsrc <= 0) {
   puts("flowc bundle tc: read failed");
   flow_mem_free(src);
@@ -89459,8 +89811,10 @@ int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_
   return 1;
 }
   src[nsrc] = 0;
+  int64_t t_parse = flowc_prof_span_begin();
   Parser p = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP);
   int32_t root = flowc_parse_program((&p));
+  flowc_prof_span_end(FLOWC_PROF_PARSE, t_parse);
   if (root < 0 || (p).err != 0) {
   flowc_parser_print_error(p, mpath);
   flowc_parser_free(p);
@@ -89470,9 +89824,12 @@ int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_
   flow_mem_free(path_store);
   return 1;
 }
+  flowc_prof_note_source(src, nsrc, ((p).arena).len);
+  int64_t t_tc = flowc_prof_span_begin();
   flowc_tc_reset_module((&ctx), src);
   flowc_tc_set_path((&ctx), mpath);
   int32_t errs = flowc_tc_check_program((&ctx), (p).arena, root);
+  flowc_prof_span_end(FLOWC_PROF_TYPECHECK, t_tc);
   if (errs > 0) {
   puts("flowc bundle tc: module check failed");
   printf("flowc bundle tc: module_errs=%d\n", errs);
@@ -89484,11 +89841,13 @@ int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_
   mi = (mi + 1);
 }
   ctx_fatal = (ctx).fatal;
+  int64_t t_sem = flowc_prof_span_begin();
   int32_t sc[2] = { 0, 0 };
   if (flowc_bundle_semcheck(path_store, nmods, search_dir, project_root, (int32_t*)((&sc[0]))) != 0) {
   ctx_fatal = (ctx_fatal + 1);
   total_err = (total_err + 1);
 }
+  flowc_prof_span_end(FLOWC_PROF_TYPECHECK, t_sem);
   total_err = (total_err + sc[0]);
   ctx_fatal = (ctx_fatal + sc[1]);
   flow_mem_free(src);
@@ -89543,13 +89902,16 @@ int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_
   uint8_t* proj_buf = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
   int32_t _proj_len = flowc_resolve_project_root(entry_path, proj_buf, FLOWC_RESOLVE_PATH_CAP);
   const char* project_root = (const char*)(proj_buf);
+  int64_t t_imp = flowc_prof_span_begin();
   int32_t nmods = flowc_resolve_gather(entry_path, search_dir, project_root, path_store);
   if (nmods <= 0) {
+  flowc_prof_span_end(FLOWC_PROF_IMPORT, t_imp);
   flow_mem_free(path_store);
   return (0 - 1);
 }
   uint8_t* order_store = (uint8_t*)(flow_mem_malloc((int64_t)((FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP))));
   if (order_store == NULL) {
+  flowc_prof_span_end(FLOWC_PROF_IMPORT, t_imp);
   flow_mem_free(path_store);
   return (0 - 1);
 }
@@ -89559,6 +89921,7 @@ int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_
   zi = (zi + 1);
 }
   int32_t norder = flowc_resolve_topo(path_store, nmods, search_dir, project_root, order_store);
+  flowc_prof_span_end(FLOWC_PROF_IMPORT, t_imp);
   if (norder <= 0) {
   flow_mem_free(order_store);
   flow_mem_free(path_store);
@@ -90421,6 +90784,7 @@ int32_t flowc_want_mlir();
 void flowc_explain_begin();
 void flowc_explain_end();
 int32_t flowc_emit_mode();
+int32_t flowc_emit_body();
 int32_t flowc_fmt_mode(const char* in_path, int32_t dump);
 int32_t flowc_parse_only_mode();
 int32_t flowc_bytes_contains(uint8_t* hay, int32_t hay_len, const char* needle);
@@ -90470,6 +90834,7 @@ int32_t test_parse_elif();
 int32_t test_typecheck_match_catchall();
 int32_t test_type_id_find_type(AstArena arena, uint8_t* src, const char* lit);
 int32_t test_type_id();
+int32_t test_profile_report();
 int32_t main();
 int32_t flowc_env_set(const char* name) {
   const char* v = getenv(name);
@@ -90641,6 +91006,14 @@ void flowc_explain_end() {
 }
 
 int32_t flowc_emit_mode() {
+  flowc_prof_mark_startup();
+  flowc_prof_note_path(getenv("FLOWC_IN"));
+  int32_t rc = flowc_emit_body();
+  flowc_prof_emit();
+  return rc;
+}
+
+int32_t flowc_emit_body() {
   const char* in_path = getenv("FLOWC_IN");
   const char* out_path = getenv("FLOWC_OUT");
   if (flowc_env_eq("FLOWC_BACKEND", "wasm") == 1) {
@@ -90759,7 +91132,9 @@ int32_t flowc_emit_mode() {
   src[zi] = 0;
   zi = (zi + 1);
 }
+  int64_t t_read = flowc_prof_span_begin();
   int32_t nsrc = flowc_read_file(in_path, src, (src_cap - 1));
+  flowc_prof_span_end(FLOWC_PROF_SOURCE_READ, t_read);
   if (nsrc < 0) {
   puts("flowc emit: read FLOWC_IN failed");
   flow_mem_free(src);
@@ -90767,18 +91142,24 @@ int32_t flowc_emit_mode() {
   return 1;
 }
   src[nsrc] = 0;
+  int64_t t_parse = flowc_prof_span_begin();
   if (want_mlir == 1) {
   nsrc = flowc_expand_for_mlir_in_place(src, nsrc, src_cap);
 } else {
   nsrc = flowc_expand_all_in_place(src, nsrc, src_cap);
 }
   if (nsrc < 0) {
+  flowc_prof_span_end(FLOWC_PROF_PARSE, t_parse);
   flow_mem_free(src);
   flow_mem_free(out);
   return 1;
 }
   Parser p = flowc_parser_new(src, nsrc, 262144);
   int32_t root = flowc_parse_program((&p));
+  flowc_prof_span_end(FLOWC_PROF_PARSE, t_parse);
+  if (root >= 0 && (p).err == 0) {
+  flowc_prof_note_source(src, nsrc, ((p).arena).len);
+}
   if (root < 0 || (p).err != 0) {
   puts("flowc emit: parse failed");
   flowc_parser_print_error(p, in_path);
@@ -90789,6 +91170,7 @@ int32_t flowc_emit_mode() {
   return 1;
 }
   if (flowc_want_typecheck() == 1) {
+  int64_t t_tc = flowc_prof_span_begin();
   int32_t sem[2] = { 0, 0 };
   bool sem_done = 0;
   if (flowc_ast_count_kind((p).arena, AST_IMPORT) > 0) {
@@ -90805,6 +91187,7 @@ int32_t flowc_emit_mode() {
   int32_t sfatal[1] = { 0 };
   int32_t tc_errs = (flowc_typecheck_fatal_sem((p).arena, root, src, getenv("FLOWC_IN"), (int32_t*)((&sfatal[0])), 1) + sem[0]);
   sfatal[0] = (sfatal[0] + sem[1]);
+  flowc_prof_span_end(FLOWC_PROF_TYPECHECK, t_tc);
   if (tc_errs > 0 && flowc_tc_lenient_ok(tc_errs, sfatal[0]) == 0) {
   puts("flowc emit: typecheck failed");
   printf("flowc emit: tc_errs=%d\n", tc_errs);
@@ -90821,8 +91204,10 @@ int32_t flowc_emit_mode() {
   return 0;
 }
 }
+  int64_t t_gen = flowc_prof_span_begin();
   if (want_mlir == 1) {
   nout = flowc_mlirgen_emit((p).arena, root, src, nsrc, src_cap, out, out_cap);
+  flowc_prof_span_end(FLOWC_PROF_CODEGEN, t_gen);
   if (nout <= 0) {
   flow_mem_free(out);
   flowc_parser_free(p);
@@ -90832,6 +91217,7 @@ int32_t flowc_emit_mode() {
 } else {
   if (flowc_env_eq("FLOWC_BACKEND", "js") == 1) {
   nout = flowc_jsgen_emit((p).arena, root, src, out, out_cap);
+  flowc_prof_span_end(FLOWC_PROF_CODEGEN, t_gen);
   if (nout <= 0) {
   puts("flowc emit: jsgen failed");
   flow_mem_free(out);
@@ -90841,6 +91227,7 @@ int32_t flowc_emit_mode() {
 }
 } else {
   nout = flowc_cgen_emit((p).arena, root, src, out, out_cap);
+  flowc_prof_span_end(FLOWC_PROF_CODEGEN, t_gen);
   if (nout <= 0) {
   puts("flowc emit: cgen failed");
   flow_mem_free(out);
@@ -90932,31 +91319,41 @@ int32_t flowc_fmt_mode(const char* in_path, int32_t dump) {
 }
 
 int32_t flowc_parse_only_mode() {
+  flowc_prof_mark_startup();
   const char* in_path = getenv("FLOWC_IN");
+  flowc_prof_note_path(in_path);
   int32_t src_cap = 8388608;
   uint8_t* src = (uint8_t*)(flow_mem_malloc((int64_t)(src_cap)));
   if (src == NULL) {
   puts("flowc parse: malloc src failed");
+  flowc_prof_emit();
   return 2;
 }
+  int64_t t_read = flowc_prof_span_begin();
   int32_t nsrc = flowc_read_file(in_path, src, (src_cap - 1));
+  flowc_prof_span_end(FLOWC_PROF_SOURCE_READ, t_read);
   if (nsrc < 0) {
   puts("flowc parse: read FLOWC_IN failed");
   flow_mem_free(src);
+  flowc_prof_emit();
   return 2;
 }
   src[nsrc] = 0;
+  int64_t t_parse = flowc_prof_span_begin();
   Parser p = flowc_parser_new(src, nsrc, (nsrc + 4096));
   int32_t root = flowc_parse_program((&p));
+  flowc_prof_span_end(FLOWC_PROF_PARSE, t_parse);
   int32_t rc = 0;
   if (root < 0 || (p).err != 0) {
   flowc_parser_print_error(p, in_path);
   rc = 1;
 } else {
+  flowc_prof_note_source(src, nsrc, ((p).arena).len);
   puts("ok");
 }
   flowc_parser_free(p);
   flow_mem_free(src);
+  flowc_prof_emit();
   return rc;
 }
 
@@ -92763,6 +93160,30 @@ int32_t test_type_id() {
   return ok;
 }
 
+int32_t test_profile_report() {
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc(2048));
+  if (buf == NULL) {
+  return 0;
+}
+  int32_t n = flowc_prof_selftest_format(buf, 2048);
+  if (n < 40) {
+  return 0;
+}
+  if (flowc_bytes_contains(buf, n, "flow-compile-profile/1") == 0) {
+  return 0;
+}
+  if (flowc_bytes_contains(buf, n, "\"name\": \"parse\"") == 0) {
+  return 0;
+}
+  if (flowc_bytes_contains(buf, n, "\"name\": \"typecheck\"") == 0) {
+  return 0;
+}
+  if (flowc_bytes_contains(buf, n, "\"name\": \"codegen\"") == 0) {
+  return 0;
+}
+  return 1;
+}
+
 int32_t main() {
   if (flowc_env_set("FLOWC_PROOF_DOC") == 1) {
   return flowc_proof_doc_mode();
@@ -92862,7 +93283,9 @@ int32_t main() {
   printf("type_id_ok=%d\n", type_id_ok);
   int32_t rt_sum_ok = test_rt_summary();
   printf("rt_summary_ok=%d\n", rt_sum_ok);
-  if (lex_ok == 1 && parse_ok == 1 && for_ok == 1 && struct_ok == 1 && extern_ok == 1 && ie_ok == 1 && bare_ok == 1 && fixture_ok == 1 && ty_ok == 1 && fi_ok == 1 && lit_ok == 1 && bc_ok == 1 && str_ok == 1 && const_ok == 1 && cgen_ok == 1 && for_cgen_ok == 1 && logic_ok == 1 && string_cgen_ok == 1 && cgen_const_ok == 1 && cgen_struct_ok == 1 && cgen_ptr_ok == 1 && cast_ok == 1 && idx_as_ok == 1 && cgen_cast_ok == 1 && cgen_void_ok == 1 && jsgen_ok == 1 && tc_ok == 1 && tc_bad == 1 && tc_av == 1 && tc_dl == 1 && tc_dc == 1 && tc_au == 1 && tc_bo == 1 && tc_bf == 1 && match_ok == 1 && cgen_match_ok == 1 && tc_mc == 1 && elif_ok == 1 && fmt_ok == 1 && resolve_ok == 1 && bundle_tc_ok == 1 && bundle_ok == 1 && type_id_ok == 1 && rt_sum_ok == 1) {
+  int32_t profile_ok = test_profile_report();
+  printf("profile_ok=%d\n", profile_ok);
+  if (lex_ok == 1 && parse_ok == 1 && for_ok == 1 && struct_ok == 1 && extern_ok == 1 && ie_ok == 1 && bare_ok == 1 && fixture_ok == 1 && ty_ok == 1 && fi_ok == 1 && lit_ok == 1 && bc_ok == 1 && str_ok == 1 && const_ok == 1 && cgen_ok == 1 && for_cgen_ok == 1 && logic_ok == 1 && string_cgen_ok == 1 && cgen_const_ok == 1 && cgen_struct_ok == 1 && cgen_ptr_ok == 1 && cast_ok == 1 && idx_as_ok == 1 && cgen_cast_ok == 1 && cgen_void_ok == 1 && jsgen_ok == 1 && tc_ok == 1 && tc_bad == 1 && tc_av == 1 && tc_dl == 1 && tc_dc == 1 && tc_au == 1 && tc_bo == 1 && tc_bf == 1 && match_ok == 1 && cgen_match_ok == 1 && tc_mc == 1 && elif_ok == 1 && fmt_ok == 1 && resolve_ok == 1 && bundle_tc_ok == 1 && bundle_ok == 1 && type_id_ok == 1 && rt_sum_ok == 1 && profile_ok == 1) {
   puts("flowc: PASS");
   return 0;
 }
