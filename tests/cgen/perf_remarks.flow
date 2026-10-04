@@ -1,0 +1,15 @@
+function reads(v: span<i32>) -> i32 { return v[0] }
+
+function work(x: i32) -> i32 { return x }
+
+function scalar_loop() -> i32 {
+    let mut acc: i32 = 0
+    for i in 0 to 10 step 1 {
+        acc = work(i)
+    }
+    return acc
+}
+
+function main() -> i32 {
+    return 0
+}

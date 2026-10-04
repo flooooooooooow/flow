@@ -1,0 +1,11 @@
+# f32 math intrinsics lower to libm's float spellings (#734).
+import "stdlib/math.flow"
+
+function main() -> i32 {
+    let x: f32 = 0.5
+    let y: f32 = sin(x) + cos(x) + sqrt(x) + fabs(-x) + exp(0.1) + log(2.0) + tan(0.1) + abs(-0.25)
+    if y < 4.5 or y > 4.9 {
+        return 1
+    }
+    return 0
+}
