@@ -1,3 +1,4 @@
+import "tools/flow_cli/shape_specializer.flow"
 # @module tools.flow_cli.mlir_tools
 # @means  The MLIR toolchain steps of the `flow` command line: emit MLIR
 #         with flowc, optimize it with mlir-opt, lower it to LLVM IR, and
@@ -26,6 +27,7 @@
 #   --aosoa-swizzle  enable four-way AoSoA index swizzling
 #   --register-tiles  enable vector.outerproduct register-tile lowering
 #   --jit     guard modes jit, mlir and compile (FLOWC_MODE=jit), as the JIT
+#   --shape-spec=<SHAPE_STR> (e.g. "memref<?xf32>=memref<1024xf32>")
 #             runner used; it also implies --lenient
 #   --lenient type errors that are not fatal are warnings (FLOWC_LENIENT=1);
 #             otherwise any type error fails the program
@@ -198,6 +200,7 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
     let mut aosoa_pad_auto: bool = false
     let mut aosoa_swizzle: bool = false
     let mut jit: bool = false
+    let mut shape_spec: string = ""
     let mut lenient: bool = false
     let mut i: i32 = 0
     while i < sl_len(args) {
@@ -221,6 +224,8 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
         } elif s_eq(a, "--jit") {
             jit = true
             lenient = true
+        } elif s_starts(a, "--shape-spec=") {
+            shape_spec = s_from(a, 13)
         } elif s_eq(a, "--lenient") {
             lenient = true
         } else {
@@ -313,6 +318,15 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
     if rc == 0 and s_starts(head_lines(mlir, 1), "module") {
         mkdir_parent(output)
         let _c: bool = copy_file(mlir, output)
+        if s_len(shape_spec) > 0 {
+            let mut idx: i32 = s_find(shape_spec, "=", 0)
+            if idx > 0 {
+                let dyn_s: string = s_slice(shape_spec, 0, idx)
+                let stat_s: string = s_slice(shape_spec, idx + 1, s_len(shape_spec))
+                flow_jit_specialize_file(output, output, "tensor_matmul", dyn_s, stat_s)
+                flow_jit_specialize_file(output, output, "main", dyn_s, stat_s)
+            }
+        }
         # @cEmbed C, compiled and linked next to the lowered MLIR.
         if is_file(work + "/program.c") {
             let _e: bool = copy_file(work + "/program.c", output + ".c")
@@ -405,6 +419,7 @@ function lower_mlir_opt() -> string {
 # Lower IN.flow to OUT.ll through MLIR. `args` are flow-to-llvm's arguments.
 export function flow_to_llvm(args: ptr<ProcStrs>) -> i32 {
     let emit: ptr<ProcStrs> = sl_new()
+    let mut shape_spec: string = ""
     let mut i: i32 = 0
     while i < sl_len(args) {
         let a: string = sl_get(args, i)
@@ -413,12 +428,16 @@ export function flow_to_llvm(args: ptr<ProcStrs>) -> i32 {
             i = i + 1
         } elif s_eq(a, "--optimize") {
             i = i + 2
+        } elif s_starts(a, "--shape-spec=") {
+            shape_spec = s_from(a, 13)
+            sl_push(emit, a)
+            i = i + 1
         } else {
             break
         }
     }
     if i > sl_len(args) or sl_len(args) - i != 2 {
-        errln("usage: flow flow-to-llvm [--wasm32] [--optimize OLEVEL] IN.flow OUT.ll")
+        errln("usage: flow flow-to-llvm [--wasm32] [--optimize OLEVEL] [--shape-spec=SPEC] IN.flow OUT.ll")
         return 2
     }
     let input: string = sl_get(args, i)
@@ -434,8 +453,20 @@ export function flow_to_llvm(args: ptr<ProcStrs>) -> i32 {
         return 1
     }
     let rc: i32 = mlir_lower(sl_of2(work + "/program.mlir", output))
+    if s_len(shape_spec) > 0 {
+        let mut idx: i32 = s_find(shape_spec, "=", 0)
+        if idx > 0 {
+            let dyn_s: string = s_slice(shape_spec, 0, idx)
+            let stat_s: string = s_slice(shape_spec, idx + 1, s_len(shape_spec))
+            let work_dir: string = mktemp_dir(tmp_base() + "/flow_shape_XXXXXX")
+            flow_jit_specialize_file(output, work_dir + "/spec.mlir", "tensor_matmul", dyn_s, stat_s)
+            let _cf: bool = copy_file(work_dir + "/spec.mlir", output)
+            rm_rf(work_dir)
+        }
+    }
     rm_rf(work)
     return rc
+
 }
 
 # ---------------------------------------------------------------------------
