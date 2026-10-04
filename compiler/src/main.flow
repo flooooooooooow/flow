@@ -48,6 +48,11 @@ import .type_id {
     flowc_type_family_id, flowc_type_schema_id, flowc_type_transport_safe,
     flowc_type_id_hash_selftest
 }
+import .profile {
+    flowc_prof_span_begin, flowc_prof_span_end, flowc_prof_mark_startup,
+    flowc_prof_note_source, flowc_prof_note_path, flowc_prof_emit, flowc_prof_selftest_format,
+    FLOWC_PROF_SOURCE_READ, FLOWC_PROF_PARSE, FLOWC_PROF_TYPECHECK, FLOWC_PROF_CODEGEN
+}
 
 extern {
     function printf(fmt: string, val: i32) -> i32
@@ -260,7 +265,16 @@ function flowc_explain_end() {
 # else cgen (C).
 # FLOWC_BUNDLE=1 → flowc_bundle_emit (entry + relative imports, one C TU).
 # Returns 0 on success, 1 on failure. Does not run self-tests.
+# FLOWC_PROFILE=1|json: per-phase timings on stderr (#735).
 function flowc_emit_mode() -> i32 {
+    flowc_prof_mark_startup()
+    flowc_prof_note_path(getenv("FLOWC_IN"))
+    let rc: i32 = flowc_emit_body()
+    flowc_prof_emit()
+    return rc
+}
+
+function flowc_emit_body() -> i32 {
     let in_path: string = getenv("FLOWC_IN")
     let out_path: string = getenv("FLOWC_OUT")
 
@@ -394,7 +408,9 @@ function flowc_emit_mode() -> i32 {
             src[zi] = 0
             zi = zi + 1
         }
+        let t_read: i64 = flowc_prof_span_begin()
         let mut nsrc: i32 = flowc_read_file(in_path, src, src_cap - 1)
+        flowc_prof_span_end(FLOWC_PROF_SOURCE_READ, t_read)
         # An empty file is an empty program, as on the Python host.
         if nsrc < 0 {
             puts("flowc emit: read FLOWC_IN failed")
@@ -405,12 +421,14 @@ function flowc_emit_mode() -> i32 {
         src[nsrc] = 0
 
         # DSLs expand before parse, as the Python host does.
+        let t_parse: i64 = flowc_prof_span_begin()
         if want_mlir == 1 {
             nsrc = flowc_expand_for_mlir_in_place(src, nsrc, src_cap)
         } else {
             nsrc = flowc_expand_all_in_place(src, nsrc, src_cap)
         }
         if nsrc < 0 {
+            flowc_prof_span_end(FLOWC_PROF_PARSE, t_parse)
             free(src)
             free(out)
             return 1
@@ -419,6 +437,10 @@ function flowc_emit_mode() -> i32 {
         # Modules like ast.flow need a large arena (nested index/field assigns).
         let mut p: Parser = flowc_parser_new(src, nsrc, 262144)
         let root: i32 = flowc_parse_program(&p)
+        flowc_prof_span_end(FLOWC_PROF_PARSE, t_parse)
+        if root >= 0 and p.err == 0 {
+            flowc_prof_note_source(src, nsrc, p.arena.len)
+        }
         if root < 0 or p.err != 0 {
             puts("flowc emit: parse failed")
             flowc_parser_print_error(p, in_path)
@@ -434,6 +456,7 @@ function flowc_emit_mode() -> i32 {
         if flowc_want_typecheck() == 1 {
             # The semantic check (the Python host's type checker) sees the
             # program before pipeline fusion rewrites it.
+            let t_tc: i64 = flowc_prof_span_begin()
             let sem: array<i32, 2> = [0, 0]
             # A module with imports is checked with them resolved.
             let mut sem_done: bool = false
@@ -452,6 +475,7 @@ function flowc_emit_mode() -> i32 {
             let sfatal: array<i32, 1> = [0]
             let tc_errs: i32 = flowc_typecheck_fatal_sem(p.arena, root, src, getenv("FLOWC_IN"), &sfatal[0] as ptr<i32>, 1) + sem[0]
             sfatal[0] = sfatal[0] + sem[1]
+            flowc_prof_span_end(FLOWC_PROF_TYPECHECK, t_tc)
             if tc_errs > 0 and flowc_tc_lenient_ok(tc_errs, sfatal[0]) == 0 {
                 puts("flowc emit: typecheck failed")
                 printf("flowc emit: tc_errs=%d\n", tc_errs)
@@ -469,8 +493,10 @@ function flowc_emit_mode() -> i32 {
             }
         }
 
+        let t_gen: i64 = flowc_prof_span_begin()
         if want_mlir == 1 {
             nout = flowc_mlirgen_emit(p.arena, root, src, nsrc, src_cap, out, out_cap)
+            flowc_prof_span_end(FLOWC_PROF_CODEGEN, t_gen)
             if nout <= 0 {
                 free(out)
                 flowc_parser_free(p)
@@ -480,6 +506,7 @@ function flowc_emit_mode() -> i32 {
         } else {
             if flowc_env_eq("FLOWC_BACKEND", "js") == 1 {
                 nout = flowc_jsgen_emit(p.arena, root, src, out, out_cap)
+                flowc_prof_span_end(FLOWC_PROF_CODEGEN, t_gen)
                 if nout <= 0 {
                     puts("flowc emit: jsgen failed")
                     free(out)
@@ -489,6 +516,7 @@ function flowc_emit_mode() -> i32 {
                 }
             } else {
                 nout = flowc_cgen_emit(p.arena, root, src, out, out_cap)
+                flowc_prof_span_end(FLOWC_PROF_CODEGEN, t_gen)
                 if nout <= 0 {
                     puts("flowc emit: cgen failed")
                     free(out)
@@ -591,32 +619,42 @@ function flowc_fmt_mode(in_path: string, dump: i32) -> i32 {
 # `ok <path>` and returns 0, or prints `<path>:<line>:<col>: parse error: ...`
 # and returns 1. Used by compiler/scripts/parse_coverage.flow.
 function flowc_parse_only_mode() -> i32 {
+    flowc_prof_mark_startup()
     let in_path: string = getenv("FLOWC_IN")
+    flowc_prof_note_path(in_path)
     let src_cap: i32 = 8388608
     let src: ptr<u8> = malloc(src_cap as i64)
     if src == null {
         puts("flowc parse: malloc src failed")
+        flowc_prof_emit()
         return 2
     }
+    let t_read: i64 = flowc_prof_span_begin()
     let nsrc: i32 = flowc_read_file(in_path, src, src_cap - 1)
+    flowc_prof_span_end(FLOWC_PROF_SOURCE_READ, t_read)
     if nsrc < 0 {
         puts("flowc parse: read FLOWC_IN failed")
         free(src)
+        flowc_prof_emit()
         return 2
     }
     src[nsrc] = 0
     # One node per source byte is more than any Flow program needs.
+    let t_parse: i64 = flowc_prof_span_begin()
     let mut p: Parser = flowc_parser_new(src, nsrc, nsrc + 4096)
     let root: i32 = flowc_parse_program(&p)
+    flowc_prof_span_end(FLOWC_PROF_PARSE, t_parse)
     let mut rc: i32 = 0
     if root < 0 or p.err != 0 {
         flowc_parser_print_error(p, in_path)
         rc = 1
     } else {
+        flowc_prof_note_source(src, nsrc, p.arena.len)
         puts("ok")
     }
     flowc_parser_free(p)
     free(src)
+    flowc_prof_emit()
     return rc
 }
 
@@ -2533,6 +2571,31 @@ function test_type_id() -> i32 {
     return ok
 }
 
+# FLOWC_PROFILE JSON schema is stable even with empty timings.
+function test_profile_report() -> i32 {
+    let buf: ptr<u8> = malloc(2048)
+    if buf == null {
+        return 0
+    }
+    let n: i32 = flowc_prof_selftest_format(buf, 2048)
+    if n < 40 {
+        return 0
+    }
+    if flowc_bytes_contains(buf, n, "flow-compile-profile/1") == 0 {
+        return 0
+    }
+    if flowc_bytes_contains(buf, n, "\"name\": \"parse\"") == 0 {
+        return 0
+    }
+    if flowc_bytes_contains(buf, n, "\"name\": \"typecheck\"") == 0 {
+        return 0
+    }
+    if flowc_bytes_contains(buf, n, "\"name\": \"codegen\"") == 0 {
+        return 0
+    }
+    return 1
+}
+
 function main() -> i32 {
     if flowc_env_set("FLOWC_PROOF_DOC") == 1 {
         return flowc_proof_doc_mode()
@@ -2633,7 +2696,9 @@ function main() -> i32 {
     printf("type_id_ok=%d\n", type_id_ok)
     let rt_sum_ok: i32 = test_rt_summary()
     printf("rt_summary_ok=%d\n", rt_sum_ok)
-    if lex_ok == 1 and parse_ok == 1 and for_ok == 1 and struct_ok == 1 and extern_ok == 1 and ie_ok == 1 and bare_ok == 1 and fixture_ok == 1 and ty_ok == 1 and fi_ok == 1 and lit_ok == 1 and bc_ok == 1 and str_ok == 1 and const_ok == 1 and cgen_ok == 1 and for_cgen_ok == 1 and logic_ok == 1 and string_cgen_ok == 1 and cgen_const_ok == 1 and cgen_struct_ok == 1 and cgen_ptr_ok == 1 and cast_ok == 1 and idx_as_ok == 1 and cgen_cast_ok == 1 and cgen_void_ok == 1 and jsgen_ok == 1 and tc_ok == 1 and tc_bad == 1 and tc_av == 1 and tc_dl == 1 and tc_dc == 1 and tc_au == 1 and tc_bo == 1 and tc_bf == 1 and match_ok == 1 and cgen_match_ok == 1 and tc_mc == 1 and elif_ok == 1 and fmt_ok == 1 and resolve_ok == 1 and bundle_tc_ok == 1 and bundle_ok == 1 and type_id_ok == 1 and rt_sum_ok == 1 {
+    let profile_ok: i32 = test_profile_report()
+    printf("profile_ok=%d\n", profile_ok)
+    if lex_ok == 1 and parse_ok == 1 and for_ok == 1 and struct_ok == 1 and extern_ok == 1 and ie_ok == 1 and bare_ok == 1 and fixture_ok == 1 and ty_ok == 1 and fi_ok == 1 and lit_ok == 1 and bc_ok == 1 and str_ok == 1 and const_ok == 1 and cgen_ok == 1 and for_cgen_ok == 1 and logic_ok == 1 and string_cgen_ok == 1 and cgen_const_ok == 1 and cgen_struct_ok == 1 and cgen_ptr_ok == 1 and cast_ok == 1 and idx_as_ok == 1 and cgen_cast_ok == 1 and cgen_void_ok == 1 and jsgen_ok == 1 and tc_ok == 1 and tc_bad == 1 and tc_av == 1 and tc_dl == 1 and tc_dc == 1 and tc_au == 1 and tc_bo == 1 and tc_bf == 1 and match_ok == 1 and cgen_match_ok == 1 and tc_mc == 1 and elif_ok == 1 and fmt_ok == 1 and resolve_ok == 1 and bundle_tc_ok == 1 and bundle_ok == 1 and type_id_ok == 1 and rt_sum_ok == 1 and profile_ok == 1 {
         puts("flowc: PASS")
         return 0
     }
