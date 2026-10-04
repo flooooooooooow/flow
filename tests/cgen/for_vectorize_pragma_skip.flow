@@ -1,6 +1,6 @@
-# Loops the vectorize hints must not reach (#414, #1031): a branch, a call
-# outside the math set, a call statement, a nested loop, and a loop without
-# a step. for_vectorize_pragma has the hinted forms.
+# Loops the vectorize hints must not reach (#414, #1031, #739): a branch, a
+# call outside the math set, a call statement, or a nested loop.
+# for_vectorize_pragma and for_simd_hot_loops have the hinted forms.
 
 function helper(x: i32) -> i32 {
     return x + 1
@@ -40,18 +40,11 @@ function nested(a: ptr<i32>, n: i32) -> void {
     }
 }
 
-function no_step(a: ptr<i32>, n: i32) -> void {
-    for i in 0 to n {
-        a[i] = 0
-    }
-}
-
 function main() -> i32 {
     let mut buf: [i32; 4] = [1, 2, 3, 4]
     call_value(&buf[0], 4)
     call_stmt(&buf[0], 2)
     nested(&buf[0], 4)
-    no_step(&buf[0], 1)
-    # buf = [0, 3, 4, 5]; the even indices sum to 4.
+    # buf = [4, 3, 4, 5]; the even indices sum to 8.
     return branch(&buf[0], 4)
 }

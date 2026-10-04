@@ -1,5 +1,11 @@
-# Both stepped loops are hinted, as on the Python host (#1031).
+# Both stepped loops are hinted (#1031, #739): OpenMP simd when available,
+# else clang / GCC. The bodies are elementwise, so the OpenMP form has no
+# reduction clause.
++ #if defined(_OPENMP)
++ #pragma omp simd
++ #elif defined(__clang__)
 + #pragma clang loop vectorize(enable) interleave(enable)
++ #elif defined(__GNUC__)
 + #pragma GCC ivdep
 + for (int32_t i = 0; i < n; i = i + 1) {
 + for (int32_t k = 0; k < n; k = k + 1) {
