@@ -75,7 +75,9 @@ the fix that caused it.
   released; arguments are evaluated left to right; an array returned by
   value is copied to the heap, and assigning to a sized array copies;
   `array<T>(n)` zeroes its elements.
-* Intrinsics the C backend provides: `sizeof<T>()`, `flow_panic`,
+* Intrinsics the C backend provides: `sizeof<T>()`, `alignof<T>()`,
+  `type_family_id<T>()`, `type_schema_id<T>()`, `type_transport_safe<T>()`,
+  `flow_panic`,
   `i32_to_f32`, `str` as the string type.
 * C interop: libc and `<math.h>` functions without a declaration are
   declared with their C signatures, and a Flow declaration of one (the

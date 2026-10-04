@@ -1,0 +1,142 @@
+# Cross-compilation stability of compiler-derived type identity (#775).
+# The same public type yields the same family/schema IDs regardless of
+# surrounding declaration order. Field order and field types change the
+# schema; the family stays with the public name.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcStrs }
+
+function write_prog(path: string, body: string) -> bool {
+    return write_text(path, body)
+}
+
+function ids_of(body: string) -> string {
+    let dir: string = t_tmp()
+    let src: string = dir + "/prog.flow"
+    let cpath: string = dir + "/prog.c"
+    let bin: string = dir + "/prog"
+    let _w: bool = write_prog(src, body)
+    let emit: ptr<ProcStrs> = sl_of3(t_root() + "/flow", "tool", "compiler/scripts/flowc_emit.flow")
+    sl_push2(emit, src, cpath)
+    if t_run_argv(emit) != 0 {
+        outln("flowc_emit failed")
+        t_cat(t_out())
+        t_cat(t_err())
+        return ""
+    }
+    let mut cc: string = "cc"
+    if have("clang") {
+        cc = "clang"
+    }
+    let compile: ptr<ProcStrs> = sl_of3(cc, "-std=c11", "-D_DEFAULT_SOURCE")
+    sl_push2(compile, "-O2", "-o")
+    sl_push2(compile, bin, cpath)
+    sl_push(compile, "-lm")
+    if t_run_argv(compile) != 0 {
+        outln("cc failed")
+        t_cat(t_out())
+        t_cat(t_err())
+        return ""
+    }
+    if t_run_argv(sl_of1(bin)) != 0 {
+        outln("program failed")
+        t_cat(t_out())
+        t_cat(t_err())
+        return ""
+    }
+    return read_text(t_out())
+}
+
+function printer(prefix: string, suffix: string) -> string {
+    return prefix + "function main() -> i32 {\n    printf(\"%llu %llu\\n\", type_family_id<Rec>(), type_schema_id<Rec>())\n    return 0\n}\n" + suffix
+}
+
+function check_declaration_order_does_not_change_ids() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    let a: string = ids_of(printer(
+        "struct Other { a: i32 }\nstruct Rec { x: f32, y: f32 }\n",
+        ""
+    ))
+    let b: string = ids_of(printer(
+        "struct Rec { x: f32, y: f32 }\nstruct Other { a: i32 }\n",
+        ""
+    ))
+    if s_len(a) == 0 or s_len(b) == 0 {
+        return T_FAIL
+    }
+    if not a_eq(a, b, "Point/Rec IDs across declaration order") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_field_order_changes_schema_not_family() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    let xy: string = ids_of(printer("struct Rec { x: f32, y: f32 }\n", ""))
+    let yx: string = ids_of(printer("struct Rec { y: f32, x: f32 }\n", ""))
+    if s_len(xy) == 0 or s_len(yx) == 0 {
+        return T_FAIL
+    }
+    if a_eq(xy, yx, "field-order IDs should differ") {
+        outln("field order left both IDs unchanged")
+        return T_FAIL
+    }
+    let xy_parts: ptr<ProcStrs> = s_words(xy)
+    let yx_parts: ptr<ProcStrs> = s_words(yx)
+    if sl_len(xy_parts) < 2 or sl_len(yx_parts) < 2 {
+        outln("expected two IDs per program")
+        return T_FAIL
+    }
+    if not a_eq(sl_get(xy_parts, 0), sl_get(yx_parts, 0), "family_id of Rec") {
+        return T_FAIL
+    }
+    if a_eq(sl_get(xy_parts, 1), sl_get(yx_parts, 1), "schema_id of Rec") {
+        outln("schema_id ignored field order")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_field_type_changes_schema() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    let f32s: string = ids_of(printer("struct Rec { x: f32, y: f32 }\n", ""))
+    let i32s: string = ids_of(printer("struct Rec { x: f32, y: i32 }\n", ""))
+    if s_len(f32s) == 0 or s_len(i32s) == 0 {
+        return T_FAIL
+    }
+    let a: ptr<ProcStrs> = s_words(f32s)
+    let b: ptr<ProcStrs> = s_words(i32s)
+    if sl_len(a) < 2 or sl_len(b) < 2 {
+        return T_FAIL
+    }
+    if not a_eq(sl_get(a, 0), sl_get(b, 0), "family_id after field type change") {
+        return T_FAIL
+    }
+    if a_eq(sl_get(a, 1), sl_get(b, 1), "schema_id after field type change") {
+        outln("schema_id ignored field type")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("type_identity")
+    t_start()
+    t_end("declaration_order_does_not_change_ids", check_declaration_order_does_not_change_ids())
+    t_start()
+    t_end("field_order_changes_schema_not_family", check_field_order_changes_schema_not_family())
+    t_start()
+    t_end("field_type_changes_schema", check_field_type_changes_schema())
+    t_done()
+    return 0
+}
