@@ -4,13 +4,36 @@ Get from installation to a real Flow program in a few minutes. Every fenced bloc
 
 ## 1. Install Flow
 
-### Homebrew
+### Homebrew (macOS / Linux)
 
 ```bash
 brew tap flooooooooooow/flow
 brew install flow
 flow version
 ```
+
+### Packaging development
+
+The repository also carries packaging definitions under `packaging/`. These are
+build-from-checkout specifications, not claims that Flow is published in those
+external package repositories.
+
+From a source checkout, the Nix package can be built with:
+
+```bash
+nix build ./packaging/nix#flow
+./result/bin/flow version
+```
+
+A Debian package can be built from the same checkout with:
+
+```bash
+./flow tool build_deb
+```
+
+Arch/AUR and Windows/Scoop publication are deferred until Flow has the matching
+supported release artifacts. See [Packaging and distribution](../packaging/README.md)
+for status.
 
 ### From source
 
