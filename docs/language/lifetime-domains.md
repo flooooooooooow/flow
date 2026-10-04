@@ -236,12 +236,19 @@ checked. None of it is partially checked.
 - **Pointer laundering.** Casts, integer round-trips, and pointer arithmetic
   that leaves the tracked expression shapes (variable, slice, address-of,
   field/index under address-of).
-- **Extern functions.** An `extern` C call is assumed to have no domain and to
-  allocate nothing unless it is on the RT-unsafe name list.
-- **Extern functions.** An `extern` C call is assumed to have no domain and to
-  allocate nothing unless it is on the RT-unsafe name list.
-- **Cross-module domains.** Annotations are checked within one type-checking
-  unit. An imported function's domain is not consulted.
+- **Extern functions.** An `extern` C call is assumed to have no domain. A
+  known RT-unsafe name (heap, lock, device/file I/O) is recorded on its
+  compact summary; any other extern carries an explicit `unknown` bit
+  rather than an empty summary. This slice still rejects only the known
+  unsafe names from `@rt_safe` / `callback`, matching the previous
+  allow-list. Tightening `unknown` is future work.
+- **Cross-module domains.** Public functions emit a compact effect/lifetime
+  summary (`$fname` in the module effect table): callback-safe / frame-safe
+  bits, may allocate/free, may block/lock, may do device/file/network I/O,
+  declared lifetime domain, and one provenance edge per newly introduced
+  bit. Importers consult that summary as a leaf during type checking
+  ([#765](https://github.com/flooooooooooow/flow/issues/765)). The
+  annotation is still erased before codegen.
 
 ## Interaction with spans
 
@@ -370,6 +377,8 @@ error: lifetime domain violation: 'process_block' is in the `frame` domain but
 | `request` / `persistent` domains | ❌ |
 | `domain frame { ... }` blocks | ❌ |
 | Domains in the MLIR / JS / Python backends | n/a: the annotation is checked, then erased |
+| Cross-module summaries for public functions | ✅ first slice (#765): bitset + domain + one provenance edge |
+| Cross-module `unknown` externs rejected from `@rt_safe` | ❌ recorded on the summary; not yet a hard error |
 
 The annotation leaves no trace in generated code. Every domain lowers to the
 same C as the unannotated function.
@@ -381,7 +390,8 @@ same C as the unannotated function.
 - Domains on parameters and in types (`ptr<f32> @ frame`), which is what would
   close the escape-through-a-call gap.
 
-- Cross-module domain checking.
+- Reject the `unknown` summary bit from `@rt_safe` / `callback` once
+  a known-safe extern allow-list exists.
 - Lowering defaults: choosing stack, arena or heap automatically from the
   domain rather than from the call the programmer wrote.
 

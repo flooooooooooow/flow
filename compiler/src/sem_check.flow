@@ -56,6 +56,11 @@ import .sem_types {
     sem_dims_new, sem_dims_combine, sem_dims_scale, sem_dims_eq, sem_dims_key,
     sem_pt_mk, sem_pt_name, sem_pt_nargs, sem_pt_arg, sem_pt_add_arg
 }
+import .rt_summary {
+    FLOWC_RT_UNKNOWN,
+    FLOWC_RT_DOM_CALLBACK, FLOWC_RT_DOM_FRAME, FLOWC_RT_DOM_NONE,
+    flowc_rt_forbidden, flowc_rt_name_bits
+}
 import .sem_model {
     Sem, DK_FUNC, DK_STRUCT, DK_ENUM, DK_ALIAS, DK_DISTINCT, DK_UNIT, DK_EXTERN_TYPE,
     DK_EFFECT, DK_CAPABILITY, DK_TRAIT, DK_IMPL, DK_CONST, DK_STATIC,
@@ -1246,7 +1251,13 @@ function sem_check_domain_call(c: ptr<Sem>, name: string) {
     if caller < 0 {
         return
     }
-    let callee: i32 = sem_sm_get(c.function_domains, name)
+    let mut callee: i32 = sem_sm_get(c.function_domains, name)
+    if callee < 0 {
+        callee = sem_sm_get(c.rt_sum_dom, name)
+        if callee == FLOWC_RT_DOM_NONE {
+            callee = 0 - 1
+        }
+    }
     if callee >= 0 and callee > caller {
         sem_err(c, "lifetime domain violation: '" + c.current_function_name + "' is in the `" + sem_domain_name(caller) + "` domain but calls '" + name + "', which is in the `" + sem_domain_name(callee) + "` domain (a shorter-lived domain may not call into a longer-lived one; see docs/language/lifetime-domains.md)")
         return
@@ -4662,6 +4673,105 @@ function sem_is_frame_unsafe(n: string) -> bool {
     return sem_s_eq(n, "audio_buffer_alloc_f32") or sem_s_eq(n, "audio_buffer_free_f32") or sem_s_eq(n, "delay_line_new") or sem_s_eq(n, "flow_gpu_alloc") or sem_s_eq(n, "flow_gpu_free") or sem_s_eq(n, "gpu_alloc_flags") or sem_s_eq(n, "gpu_alloc") or sem_s_eq(n, "gpu_alloc_unified") or sem_s_eq(n, "gpu_alloc_private") or sem_s_eq(n, "gpu_alloc_f32") or sem_s_eq(n, "gpu_alloc_f64") or sem_s_eq(n, "gpu_alloc_i32") or sem_s_eq(n, "gpu_allocate") or sem_s_eq(n, "gpu_free") or sem_s_eq(n, "metal_create_buffer")
 }
 
+function sem_sum_put(c: ptr<Sem>, name: string, bits: i32, domain: i32, prov: string) {
+    sem_sm_put(c.rt_sum_bits, name, bits)
+    sem_sm_put(c.rt_sum_dom, name, domain)
+    if prov as ptr<u8> != null {
+        sem_sm_put(c.rt_sum_prov, name, sem_sv_len(c.reason_pool))
+        sem_sv_push(c.reason_pool, prov)
+    }
+}
+
+# Declared domain and local/extern bits before the call-graph walk. Imported
+# summaries that were seeded into a later module are not visible here; the
+# whole-program call graph fills those bits in sem_compute_rt_summaries.
+function sem_init_rt_summaries(c: ptr<Sem>) {
+    let mut i: i32 = 0
+    while i < sem_iv_len(c.d_kind) {
+        if sem_decl_kind(c, i) == DK_FUNC {
+            let fi: i32 = sem_iv_get(c.d_info, i)
+            let mut name: string = sem_sv_get(c.fi_mangled, fi)
+            if sem_s_len(name) == 0 {
+                name = sem_sv_get(c.fi_name, fi)
+            }
+            let mut domain: i32 = sem_lifetime_domain(c, sem_iv_get(c.fi_astart, fi), sem_iv_get(c.fi_alen, fi))
+            if domain < 0 {
+                domain = FLOWC_RT_DOM_NONE
+            }
+            let mut bits: i32 = 0
+            let mut prov: string = null as string
+            if sem_iv_get(c.fi_extern, fi) == 1 {
+                bits = flowc_rt_name_bits(name)
+                if bits == 0 {
+                    bits = FLOWC_RT_UNKNOWN
+                }
+                prov = name
+            }
+            sem_sum_put(c, name, bits, domain, prov)
+            let plain: string = sem_sv_get(c.fi_name, fi)
+            if sem_s_eq(plain, name) == false {
+                sem_sum_put(c, plain, bits, domain, prov)
+            }
+        }
+        i = i + 1
+    }
+}
+
+# Least fixed point E_f = L_f ∪ ⋃ E_callee. A callee in another module is a
+# leaf: its already-computed summary is unioned and not re-walked (#765).
+function sem_compute_rt_summaries(c: ptr<Sem>) {
+    let mut changed: bool = true
+    let mut guard: i32 = 0
+    let nfn: i32 = sem_sv_len(c.rdc_names)
+    while changed and guard < 5 * nfn + 1 {
+        changed = false
+        guard = guard + 1
+        let mut i: i32 = 0
+        while i < nfn {
+            let name: string = sem_sv_get(c.rdc_names, i)
+            let callees: ptr<SemStrVec> = sem_pv_get(c.rdc_sets, i) as ptr<SemStrVec>
+            let mut bits: i32 = sem_sm_get(c.rt_sum_bits, name)
+            if bits < 0 {
+                bits = 0
+            }
+            let mut j: i32 = 0
+            while j < callees.len {
+                let callee: string = sem_sv_get(callees, j)
+                let mut add: i32 = flowc_rt_name_bits(callee)
+                if add == 0 {
+                    add = sem_sm_get(c.rt_sum_bits, callee)
+                    if add < 0 {
+                        add = 0
+                    }
+                }
+                if add != 0 and (bits & add) != add {
+                    if bits == 0 {
+                        let mut domain: i32 = sem_sm_get(c.rt_sum_dom, name)
+                        if domain < 0 {
+                            domain = FLOWC_RT_DOM_NONE
+                        }
+                        sem_sum_put(c, name, bits | add, domain, callee)
+                    } else {
+                        sem_sm_put(c.rt_sum_bits, name, bits | add)
+                    }
+                    bits = bits | add
+                    changed = true
+                }
+                j = j + 1
+            }
+            i = i + 1
+        }
+    }
+}
+
+function sem_summary_prov(c: ptr<Sem>, name: string) -> string {
+    let k: i32 = sem_sm_get(c.rt_sum_prov, name)
+    if k < 0 {
+        return null as string
+    }
+    return sem_sv_get(c.reason_pool, k)
+}
+
 # _compute_rt_unsafe_functions: name -> the closest banned name it reaches.
 function sem_compute_unsafe(c: ptr<Sem>, frame: bool, out: ptr<SemStrMap>) {
     let mut changed: bool = true
@@ -4739,7 +4849,20 @@ function sem_verify_rt_safe_calls(c: ptr<Sem>) {
     while i < sem_sv_len(c.rt_site_fn) {
         let fnm: string = sem_sv_get(c.rt_site_fn, i)
         let name: string = sem_sv_get(c.rt_site_name, i)
-        let reason: string = sem_unsafe_reason(c, false, c.rt_unsafe_reason, name)
+        let mut reason: string = sem_unsafe_reason(c, false, c.rt_unsafe_reason, name)
+        if reason as ptr<u8> == null {
+            let need: i32 = FLOWC_RT_DOM_CALLBACK
+            let mut bits: i32 = sem_sm_get(c.rt_sum_bits, name)
+            if bits < 0 {
+                bits = flowc_rt_name_bits(name)
+            }
+            if flowc_rt_forbidden(need, bits) != 0 {
+                reason = sem_summary_prov(c, name)
+                if reason as ptr<u8> == null {
+                    reason = name
+                }
+            }
+        }
         if reason as ptr<u8> != null {
             let mut marked: string = "is marked '@rt_safe'"
             let mut doc: string = "docs/library/rt-safety.md"
@@ -4768,7 +4891,19 @@ function sem_verify_domain_calls(c: ptr<Sem>) {
     while i < sem_sv_len(c.dom_site_fn) {
         let fnm: string = sem_sv_get(c.dom_site_fn, i)
         let name: string = sem_sv_get(c.dom_site_name, i)
-        let reason: string = sem_unsafe_reason(c, true, c.heap_unsafe_reason, name)
+        let mut reason: string = sem_unsafe_reason(c, true, c.heap_unsafe_reason, name)
+        if reason as ptr<u8> == null {
+            let mut bits: i32 = sem_sm_get(c.rt_sum_bits, name)
+            if bits < 0 {
+                bits = flowc_rt_name_bits(name)
+            }
+            if flowc_rt_forbidden(FLOWC_RT_DOM_FRAME, bits) != 0 {
+                reason = sem_summary_prov(c, name)
+                if reason as ptr<u8> == null {
+                    reason = name
+                }
+            }
+        }
         if reason as ptr<u8> != null {
             if sem_s_eq(reason, name) {
                 sem_err(c, "lifetime domain violation: '" + fnm + "' is in the `frame` domain but calls '" + name + "', which allocates or frees heap memory. Frame-domain code allocates by bumping a frame arena (frame_alloc_*); see docs/language/lifetime-domains.md")
@@ -5082,11 +5217,13 @@ export function sem_check_program(c: ptr<Sem>) {
     sem_collect_types(c)
     sem_collect_symbols(c)
     sem_collect_lifetime_domains(c)
+    sem_init_rt_summaries(c)
     sem_check_declarations(c)
     sem_compute_parameter_escapes(c)
     sem_verify_parameter_escapes(c)
     sem_compute_unsafe(c, false, c.rt_unsafe_reason)
     sem_compute_unsafe(c, true, c.heap_unsafe_reason)
+    sem_compute_rt_summaries(c)
     sem_verify_rt_safe_bindings(c)
     sem_verify_rt_safe_calls(c)
     sem_verify_domain_calls(c)

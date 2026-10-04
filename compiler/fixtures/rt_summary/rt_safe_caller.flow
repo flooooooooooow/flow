@@ -1,0 +1,13 @@
+# @rt_safe caller of an imported allocator. Must be rejected with a
+# call-chain diagnostic that names the imported helper.
+
+import .alloc_helper { heap_touch }
+
+@rt_safe
+function process(n: i32) -> i32 {
+    return heap_touch(n)
+}
+
+function main() -> i32 {
+    return process(1)
+}

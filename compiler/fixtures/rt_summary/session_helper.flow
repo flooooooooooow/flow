@@ -1,0 +1,7 @@
+# Longer-lived imported domain. A callback caller must see this domain
+# on the seeded summary (#765 LD4).
+
+@lifetime(session)
+export function reload_preset(id: i32) -> i32 {
+    return id
+}

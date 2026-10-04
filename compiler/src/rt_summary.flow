@@ -1,0 +1,564 @@
+# @module flowc.rt_summary
+# @means  Compact RT-safety / lifetime-domain summaries for public callables
+#         (#765). The table rides with the algebraic-effect table as
+#         `$fname\0<bits>|<domain>|<prov>\0` and is erased before codegen.
+#
+# bits is a may-effect bitset:
+#   1  ALLOC    may allocate heap / GPU / audio buffers
+#   2  FREE     may free that storage
+#   4  BLOCK    may block or take a lock
+#   8  IO       may do device / file / network I/O
+#   16 UNKNOWN  unprovable imported or extern callable
+#
+# domain is the declared @lifetime rank, or 4 when unannotated:
+#   0 callback < 1 frame < 2 session < 3 application
+#
+# prov is one provenance edge: the callee that first introduced a new
+# forbidden bit, so diagnostics can keep a call-chain explanation.
+#
+# Local summaries are the least fixed point E_f = L_f ∪ ⋃ E_callee.
+# Imported `$` entries already in the buffer are leaves. Because the
+# lattice is finite the worklist terminates after at most 5|F| bit
+# insertions.
+
+import .ast {
+    AstArena, AST_NONE, AST_PROGRAM, AST_EXPORT, AST_FN, AST_CALL,
+    AST_EXTERN, AST_ATTR, AST_ATTR_HAS_ARGS
+}
+import .effects { flowc_eff_find, flowc_eff_field, flowc_eff_field_int }
+
+extern {
+    function strlen(s: string) -> i64
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>)
+    function printf(fmt: string, ...) -> i32
+}
+
+export const FLOWC_RT_SUM: i32 = 36
+
+export const FLOWC_RT_ALLOC: i32 = 1
+export const FLOWC_RT_FREE: i32 = 2
+export const FLOWC_RT_BLOCK: i32 = 4
+export const FLOWC_RT_IO: i32 = 8
+export const FLOWC_RT_UNKNOWN: i32 = 16
+
+export const FLOWC_RT_DOM_CALLBACK: i32 = 0
+export const FLOWC_RT_DOM_FRAME: i32 = 1
+export const FLOWC_RT_DOM_SESSION: i32 = 2
+export const FLOWC_RT_DOM_APPLICATION: i32 = 3
+export const FLOWC_RT_DOM_NONE: i32 = 4
+
+const RT_MAX_FN: i32 = 256
+const RT_MAX_CALLS: i32 = 48
+
+function rt_span_is(src: ptr<u8>, s: i32, e: i32, lit: string) -> i32 {
+    let p: ptr<u8> = lit
+    let n: i32 = strlen(lit) as i32
+    if e - s != n {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < n {
+        if src[s + i] != p[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+# Classify a callee name span. 0 when the name is not a known may-effect.
+export function flowc_rt_span_bits(src: ptr<u8>, s: i32, e: i32) -> i32 {
+    if e <= s {
+        return 0
+    }
+    if rt_span_is(src, s, e, "malloc") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "calloc") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "realloc") == 1 { return FLOWC_RT_ALLOC + FLOWC_RT_FREE }
+    if rt_span_is(src, s, e, "free") == 1 { return FLOWC_RT_FREE }
+    if rt_span_is(src, s, e, "alloc") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "dealloc") == 1 { return FLOWC_RT_FREE }
+    if rt_span_is(src, s, e, "alloc_bytes") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "alloc_zeroed") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "alloc_i32") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "alloc_f32") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "alloc_f64") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "arena_create") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "arena_destroy") == 1 { return FLOWC_RT_FREE }
+    if rt_span_is(src, s, e, "frame_arena_create") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "frame_arena_destroy") == 1 { return FLOWC_RT_FREE }
+    if rt_span_is(src, s, e, "audio_buffer_alloc_f32") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "audio_buffer_free_f32") == 1 { return FLOWC_RT_FREE }
+    if rt_span_is(src, s, e, "delay_line_new") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "flow_gpu_alloc") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "flow_gpu_free") == 1 { return FLOWC_RT_FREE }
+    if rt_span_is(src, s, e, "gpu_alloc_flags") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "gpu_alloc") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "gpu_alloc_unified") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "gpu_alloc_private") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "gpu_alloc_f32") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "gpu_alloc_f64") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "gpu_alloc_i32") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "gpu_allocate") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "gpu_free") == 1 { return FLOWC_RT_FREE }
+    if rt_span_is(src, s, e, "metal_create_buffer") == 1 { return FLOWC_RT_ALLOC }
+    if rt_span_is(src, s, e, "audio_device_open") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "audio_device_start") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "audio_device_stop") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "audio_device_close") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "flow_audio_open") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "flow_audio_start") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "flow_audio_stop") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "flow_audio_close") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "audio_probe_devices") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "flow_audio_probe_devices") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "file_open") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "file_close") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "fopen") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "fread") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "fwrite") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "fclose") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "flow_gpu_copy_h2d") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "flow_gpu_copy_d2h") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "flow_gpu_copy_d2d") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "flow_gpu_sync") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "gpu_copy_h2d") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "gpu_copy_d2h") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "gpu_copy_d2d") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "gpu_copy_h2d_i32") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "gpu_copy_d2h_i32") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "gpu_copy_h2d_f32") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "gpu_copy_d2h_f32") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "gpu_copy_to_device") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "gpu_copy_from_device") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "gpu_copy_device_to_device") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "gpu_sync") == 1 { return FLOWC_RT_IO }
+    if rt_span_is(src, s, e, "mutex_new") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "mutex_bind") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "mutex_lock") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "mutex_unlock") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "mutex_trylock") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "mutex_destroy") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "pthread_mutex_init") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "pthread_mutex_lock") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "pthread_mutex_unlock") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "pthread_mutex_trylock") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "pthread_mutex_destroy") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "pthread_create") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "pthread_join") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "flow_thread_spawn") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "flow_thread_join") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "flow_race_mutex_lock") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "flow_race_mutex_unlock") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "pthread_cond_wait") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "pthread_cond_timedwait") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "pthread_rwlock_rdlock") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "pthread_rwlock_wrlock") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "condvar_wait") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "rwlock_rdlock") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "rwlock_wrlock") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "rwlock_read_lock") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "rwlock_write_lock") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "sem_wait") == 1 { return FLOWC_RT_BLOCK }
+    if rt_span_is(src, s, e, "semaphore_wait") == 1 { return FLOWC_RT_BLOCK }
+    return 0
+}
+
+export function flowc_rt_name_bits(name: string) -> i32 {
+    if name as ptr<u8> == null {
+        return 0
+    }
+    return flowc_rt_span_bits(name as ptr<u8>, 0, strlen(name) as i32)
+}
+
+# Known may-effects that today's @rt_safe / callback domain already reject.
+export function flowc_rt_known_unsafe(bits: i32) -> i32 {
+    return bits & (FLOWC_RT_ALLOC + FLOWC_RT_FREE + FLOWC_RT_BLOCK + FLOWC_RT_IO)
+}
+
+export function flowc_rt_is_callback_safe(bits: i32) -> i32 {
+    if (bits & (FLOWC_RT_ALLOC + FLOWC_RT_FREE + FLOWC_RT_BLOCK + FLOWC_RT_IO + FLOWC_RT_UNKNOWN)) != 0 {
+        return 0
+    }
+    return 1
+}
+
+export function flowc_rt_is_frame_safe(bits: i32) -> i32 {
+    if (bits & (FLOWC_RT_ALLOC + FLOWC_RT_FREE + FLOWC_RT_UNKNOWN)) != 0 {
+        return 0
+    }
+    return 1
+}
+
+export function flowc_rt_domain_name(d: i32) -> string {
+    if d == FLOWC_RT_DOM_CALLBACK { return "callback" }
+    if d == FLOWC_RT_DOM_FRAME { return "frame" }
+    if d == FLOWC_RT_DOM_SESSION { return "session" }
+    if d == FLOWC_RT_DOM_APPLICATION { return "application" }
+    return ""
+}
+
+export function flowc_rt_domain_of_span(src: ptr<u8>, s: i32, e: i32) -> i32 {
+    if rt_span_is(src, s, e, "callback") == 1 { return FLOWC_RT_DOM_CALLBACK }
+    if rt_span_is(src, s, e, "frame") == 1 { return FLOWC_RT_DOM_FRAME }
+    if rt_span_is(src, s, e, "session") == 1 { return FLOWC_RT_DOM_SESSION }
+    if rt_span_is(src, s, e, "application") == 1 { return FLOWC_RT_DOM_APPLICATION }
+    return FLOWC_RT_DOM_NONE
+}
+
+function rt_byte(buf: ptr<u8>, cap: i32, n: i32, c: i32) -> i32 {
+    if n < 0 or n + 1 >= cap {
+        return 0 - 1
+    }
+    buf[n] = c
+    return n + 1
+}
+
+function rt_span(buf: ptr<u8>, cap: i32, n: i32, src: ptr<u8>, s: i32, e: i32) -> i32 {
+    let mut m: i32 = n
+    let mut i: i32 = s
+    while i < e {
+        m = rt_byte(buf, cap, m, src[i])
+        i = i + 1
+    }
+    return m
+}
+
+function rt_int(buf: ptr<u8>, cap: i32, n: i32, v: i32) -> i32 {
+    if v >= 10 {
+        let m: i32 = rt_int(buf, cap, n, v / 10)
+        return rt_byte(buf, cap, m, 48 + v % 10)
+    }
+    return rt_byte(buf, cap, n, 48 + v)
+}
+
+function rt_unwrap_fn(arena: AstArena, item: i32) -> i32 {
+    if item == AST_NONE or item < 0 {
+        return AST_NONE
+    }
+    if arena.nodes[item].kind == AST_FN {
+        return item
+    }
+    if arena.nodes[item].kind == AST_EXPORT {
+        let inner: i32 = arena.nodes[item].a
+        if inner != AST_NONE and arena.nodes[inner].kind == AST_FN {
+            return inner
+        }
+    }
+    return AST_NONE
+}
+
+function rt_fn_lifetime(arena: AstArena, src: ptr<u8>, fn: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_ATTR and arena.nodes[i].b == fn {
+            if rt_span_is(src, arena.nodes[i].name_start, arena.nodes[i].name_end, "lifetime") == 1 {
+                if (arena.nodes[i].ival & AST_ATTR_HAS_ARGS) != 0 {
+                    return flowc_rt_domain_of_span(src, arena.nodes[i].start, arena.nodes[i].end)
+                }
+            }
+        }
+        i = i + 1
+    }
+    return FLOWC_RT_DOM_NONE
+}
+
+export function flowc_rt_fn_domain(arena: AstArena, src: ptr<u8>, fn: i32) -> i32 {
+    return rt_fn_lifetime(arena, src, fn)
+}
+
+export function flowc_rt_fn_has_attr(arena: AstArena, src: ptr<u8>, fn: i32, lit: string) -> i32 {
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_ATTR and arena.nodes[i].b == fn {
+            if rt_span_is(src, arena.nodes[i].name_start, arena.nodes[i].name_end, lit) == 1 {
+                return 1
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+function rt_collect_calls(arena: AstArena, node: i32, cs: ptr<i32>, ce: ptr<i32>, ncalls: i32) -> i32 {
+    if node < 0 or node == AST_NONE {
+        return ncalls
+    }
+    let mut n: i32 = ncalls
+    if arena.nodes[node].kind == AST_CALL {
+        if n < RT_MAX_CALLS {
+            cs[n] = arena.nodes[node].name_start
+            ce[n] = arena.nodes[node].name_end
+            n = n + 1
+        }
+    }
+    n = rt_collect_calls(arena, arena.nodes[node].a, cs, ce, n)
+    n = rt_collect_calls(arena, arena.nodes[node].b, cs, ce, n)
+    n = rt_collect_calls(arena, arena.nodes[node].c, cs, ce, n)
+    if arena.nodes[node].kind != AST_FN {
+        n = rt_collect_calls(arena, arena.nodes[node].next, cs, ce, n)
+    }
+    return n
+}
+
+function rt_local_index(src: ptr<u8>, ns: ptr<i32>, ne: ptr<i32>, nfn: i32, s: i32, e: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < nfn {
+        if ne[i] - ns[i] == e - s {
+            let mut hit: i32 = 1
+            let mut j: i32 = 0
+            while j < e - s and hit == 1 {
+                if src[ns[i] + j] != src[s + j] {
+                    hit = 0
+                }
+                j = j + 1
+            }
+            if hit == 1 {
+                return i
+            }
+        }
+        i = i + 1
+    }
+    return 0 - 1
+}
+
+# Value offset of `$src[s..e]`, else -1. Last match wins.
+export function flowc_rt_summary_find(buf: ptr<u8>, len: i32, src: ptr<u8>, s: i32, e: i32) -> i32 {
+    return flowc_eff_find(buf, len, FLOWC_RT_SUM, src, s, e, 0 - 1, 0 - 1)
+}
+
+export function flowc_rt_summary_bits(buf: ptr<u8>, off: i32) -> i32 {
+    if off < 0 {
+        return 0
+    }
+    return flowc_eff_field_int(buf, off, 0)
+}
+
+export function flowc_rt_summary_domain(buf: ptr<u8>, off: i32) -> i32 {
+    if off < 0 {
+        return FLOWC_RT_DOM_NONE
+    }
+    return flowc_eff_field_int(buf, off, 1)
+}
+
+# Offset of the provenance name in the value, or -1 when empty.
+export function flowc_rt_summary_prov(buf: ptr<u8>, off: i32) -> i32 {
+    if off < 0 {
+        return 0 - 1
+    }
+    let p: i32 = flowc_eff_field(buf, off, 2)
+    if buf[p] == 0 {
+        return 0 - 1
+    }
+    return p
+}
+
+export function flowc_rt_summary_prov_len(buf: ptr<u8>, poff: i32) -> i32 {
+    if poff < 0 {
+        return 0
+    }
+    let mut n: i32 = 0
+    while buf[poff + n] != 0 {
+        n = n + 1
+    }
+    return n
+}
+
+function rt_put_one(buf: ptr<u8>, cap: i32, n: i32, src: ptr<u8>, ns: i32, ne: i32, bits: i32, domain: i32, ps: i32, pe: i32) -> i32 {
+    let mut m: i32 = rt_byte(buf, cap, n, FLOWC_RT_SUM)
+    m = rt_span(buf, cap, m, src, ns, ne)
+    m = rt_byte(buf, cap, m, 0)
+    m = rt_int(buf, cap, m, bits)
+    m = rt_byte(buf, cap, m, 124)
+    m = rt_int(buf, cap, m, domain)
+    m = rt_byte(buf, cap, m, 124)
+    if pe > ps {
+        m = rt_span(buf, cap, m, src, ps, pe)
+    }
+    m = rt_byte(buf, cap, m, 0)
+    if m > 0 {
+        return m
+    }
+    return n
+}
+
+function rt_add_fn(arena: AstArena, src: ptr<u8>, fn: i32, is_extern: i32, ns: ptr<i32>, ne: ptr<i32>, bits: ptr<i32>, domain: ptr<i32>, ps: ptr<i32>, pe: ptr<i32>, ncall: ptr<i32>, call_s: ptr<i32>, call_e: ptr<i32>, nfn: i32) -> i32 {
+    if nfn >= RT_MAX_FN {
+        return nfn
+    }
+    if arena.nodes[fn].name_end <= arena.nodes[fn].name_start {
+        return nfn
+    }
+    if rt_span_is(src, arena.nodes[fn].name_start, arena.nodes[fn].name_end, "main") == 1 {
+        return nfn
+    }
+    ns[nfn] = arena.nodes[fn].name_start
+    ne[nfn] = arena.nodes[fn].name_end
+    domain[nfn] = rt_fn_lifetime(arena, src, fn)
+    bits[nfn] = 0
+    ps[nfn] = 0
+    pe[nfn] = 0
+    ncall[nfn] = 0
+    if is_extern == 1 {
+        let direct: i32 = flowc_rt_span_bits(src, ns[nfn], ne[nfn])
+        if direct != 0 {
+            bits[nfn] = direct
+            ps[nfn] = ns[nfn]
+            pe[nfn] = ne[nfn]
+        } else {
+            bits[nfn] = FLOWC_RT_UNKNOWN
+            ps[nfn] = ns[nfn]
+            pe[nfn] = ne[nfn]
+        }
+        return nfn + 1
+    }
+    let body: i32 = arena.nodes[fn].c
+    let cs: ptr<i32> = call_s + (nfn * RT_MAX_CALLS)
+    let ce: ptr<i32> = call_e + (nfn * RT_MAX_CALLS)
+    let nc: i32 = rt_collect_calls(arena, body, cs, ce, 0)
+    ncall[nfn] = nc
+    let mut i: i32 = 0
+    while i < nc {
+        let b: i32 = flowc_rt_span_bits(src, cs[i], ce[i])
+        if b != 0 and (bits[nfn] & b) != b {
+            if bits[nfn] == 0 {
+                ps[nfn] = cs[i]
+                pe[nfn] = ce[i]
+            }
+            bits[nfn] = bits[nfn] | b
+        }
+        i = i + 1
+    }
+    return nfn + 1
+}
+
+# Append this module's `$fname` summaries. `buf[0, len)` may already hold
+# imported summaries, which are treated as leaves. Returns the new length.
+export function flowc_rt_summary_collect(arena: AstArena, root: i32, src: ptr<u8>, buf: ptr<u8>, cap: i32, len: i32) -> i32 {
+    if buf == null or src == null or root == AST_NONE or root < 0 {
+        return len
+    }
+    if arena.nodes[root].kind != AST_PROGRAM {
+        return len
+    }
+    let raw_ns: ptr<u8> = malloc((RT_MAX_FN * 4) as i64)
+    let raw_ne: ptr<u8> = malloc((RT_MAX_FN * 4) as i64)
+    let raw_bits: ptr<u8> = malloc((RT_MAX_FN * 4) as i64)
+    let raw_dom: ptr<u8> = malloc((RT_MAX_FN * 4) as i64)
+    let raw_ps: ptr<u8> = malloc((RT_MAX_FN * 4) as i64)
+    let raw_pe: ptr<u8> = malloc((RT_MAX_FN * 4) as i64)
+    let raw_nc: ptr<u8> = malloc((RT_MAX_FN * 4) as i64)
+    let raw_cs: ptr<u8> = malloc((RT_MAX_FN * RT_MAX_CALLS * 4) as i64)
+    let raw_ce: ptr<u8> = malloc((RT_MAX_FN * RT_MAX_CALLS * 4) as i64)
+    if raw_ns == null or raw_ne == null or raw_bits == null or raw_dom == null or raw_ps == null or raw_pe == null or raw_nc == null or raw_cs == null or raw_ce == null {
+        if raw_ns != null { free(raw_ns) }
+        if raw_ne != null { free(raw_ne) }
+        if raw_bits != null { free(raw_bits) }
+        if raw_dom != null { free(raw_dom) }
+        if raw_ps != null { free(raw_ps) }
+        if raw_pe != null { free(raw_pe) }
+        if raw_nc != null { free(raw_nc) }
+        if raw_cs != null { free(raw_cs) }
+        if raw_ce != null { free(raw_ce) }
+        return len
+    }
+    let ns: ptr<i32> = raw_ns as ptr<i32>
+    let ne: ptr<i32> = raw_ne as ptr<i32>
+    let bits: ptr<i32> = raw_bits as ptr<i32>
+    let domain: ptr<i32> = raw_dom as ptr<i32>
+    let ps: ptr<i32> = raw_ps as ptr<i32>
+    let pe: ptr<i32> = raw_pe as ptr<i32>
+    let ncall: ptr<i32> = raw_nc as ptr<i32>
+    let call_s: ptr<i32> = raw_cs as ptr<i32>
+    let call_e: ptr<i32> = raw_ce as ptr<i32>
+    let mut nfn: i32 = 0
+    let mut item: i32 = arena.nodes[root].a
+    while item != AST_NONE {
+        let fn: i32 = rt_unwrap_fn(arena, item)
+        if fn != AST_NONE and arena.nodes[fn].ival == 0 {
+            nfn = rt_add_fn(arena, src, fn, 0, ns, ne, bits, domain, ps, pe, ncall, call_s, call_e, nfn)
+        }
+        let mut ext: i32 = item
+        if arena.nodes[item].kind == AST_EXPORT {
+            ext = arena.nodes[item].a
+        }
+        if ext != AST_NONE and arena.nodes[ext].kind == AST_EXTERN {
+            let mut f: i32 = arena.nodes[ext].a
+            while f != AST_NONE {
+                if arena.nodes[f].kind == AST_FN {
+                    nfn = rt_add_fn(arena, src, f, 1, ns, ne, bits, domain, ps, pe, ncall, call_s, call_e, nfn)
+                }
+                f = arena.nodes[f].next
+            }
+        }
+        item = arena.nodes[item].next
+    }
+    let mut changed: i32 = 1
+    let mut guard: i32 = 0
+    while changed == 1 and guard < 5 * nfn + 1 {
+        changed = 0
+        guard = guard + 1
+        let mut i: i32 = 0
+        while i < nfn {
+            let cs: ptr<i32> = call_s + (i * RT_MAX_CALLS)
+            let ce: ptr<i32> = call_e + (i * RT_MAX_CALLS)
+            let mut j: i32 = 0
+            while j < ncall[i] {
+                let mut add: i32 = 0
+                let loc: i32 = rt_local_index(src, ns, ne, nfn, cs[j], ce[j])
+                if loc >= 0 {
+                    add = bits[loc]
+                } else {
+                    let off: i32 = flowc_rt_summary_find(buf, len, src, cs[j], ce[j])
+                    if off >= 0 {
+                        add = flowc_rt_summary_bits(buf, off)
+                    }
+                }
+                if add != 0 and (bits[i] & add) != add {
+                    if bits[i] == 0 {
+                        ps[i] = cs[j]
+                        pe[i] = ce[j]
+                    }
+                    bits[i] = bits[i] | add
+                    changed = 1
+                }
+                j = j + 1
+            }
+            i = i + 1
+        }
+    }
+    let mut n: i32 = len
+    let mut k: i32 = 0
+    while k < nfn {
+        n = rt_put_one(buf, cap, n, src, ns[k], ne[k], bits[k], domain[k], ps[k], pe[k])
+        k = k + 1
+    }
+    free(raw_ns)
+    free(raw_ne)
+    free(raw_bits)
+    free(raw_dom)
+    free(raw_ps)
+    free(raw_pe)
+    free(raw_nc)
+    free(raw_cs)
+    free(raw_ce)
+    return n
+}
+
+# Bits that a caller in `need` (0 = @rt_safe/callback, 1 = frame) forbids.
+export function flowc_rt_forbidden(need: i32, bits: i32) -> i32 {
+    if need == FLOWC_RT_DOM_FRAME {
+        return bits & (FLOWC_RT_ALLOC + FLOWC_RT_FREE)
+    }
+    return flowc_rt_known_unsafe(bits)
+}
+
+# Human label for the first set bit in `bits` (for diagnostics).
+export function flowc_rt_bit_name(bits: i32) -> string {
+    if (bits & FLOWC_RT_ALLOC) != 0 { return "allocate" }
+    if (bits & FLOWC_RT_FREE) != 0 { return "free" }
+    if (bits & FLOWC_RT_BLOCK) != 0 { return "block" }
+    if (bits & FLOWC_RT_IO) != 0 { return "do device/file/network I/O" }
+    if (bits & FLOWC_RT_UNKNOWN) != 0 { return "do something the checker cannot prove" }
+    return "have effects"
+}

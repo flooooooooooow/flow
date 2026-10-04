@@ -134,7 +134,7 @@ The analysis does not prove a worst-case execution time and cannot fully reason 
 
 ## 10.8 Known limits
 
-The current lifetime analysis does not soundly follow references through arbitrary calls, struct fields, closure environments, heap cells, pointer/integer laundering, or imported domain metadata. Those limits are explicit parts of the contract rather than implied guarantees.
+The current lifetime analysis does not soundly follow references through arbitrary calls, struct fields, closure environments, heap cells, or pointer/integer laundering. Imported public functions do carry a compact effect/lifetime summary that type checking consults (#765). Those remaining limits are explicit parts of the contract rather than implied guarantees.
 
 ## Exercises
 
