@@ -76815,6 +76815,7 @@ bool sem_check_span_arguments(Sem* c, const char* name, SemIntVec* args, int32_t
 int32_t sem_check_function_call(Sem* c, const char* name, SemIntVec* args, int32_t node, int32_t stmt) {
   SemTys* tys = (SemTys*)(c->t);
   bool ok_dynamic = 0;
+  bool unresolved_dynamic = 0;
   int32_t sym = sem_lookup(c, name);
   if (sym >= 0 && sem_tkind(c, sem_sym_type(c, sym)) == TK_FUNCTION) {
   int32_t sty = sem_sym_type(c, sym);
@@ -76825,10 +76826,18 @@ int32_t sem_check_function_call(Sem* c, const char* name, SemIntVec* args, int32
 }
   ri = (ri + 1);
 }
+  if (ok_dynamic == 0 && sem_sym_kind(c, sym) != SK_FUNCTION) {
+  unresolved_dynamic = 1;
+}
 }
   if (ok_dynamic == 0) {
+  if (unresolved_dynamic) {
+  sem_resolved_calls_add(c, "__unresolved_dynamic_call");
+  sem_check_rt_safe_call(c, "__unresolved_dynamic_call");
+} else {
   sem_resolved_calls_add(c, name);
   sem_check_rt_safe_call(c, name);
+}
 }
   sem_check_safe_call(c, name);
   sem_check_domain_call(c, name);
@@ -77597,7 +77606,7 @@ int32_t sem_check_slice_expr(Sem* c, int32_t e) {
 }
   int32_t sp = sem_ty_named(c->t, TK_SPAN, __flowc_str_concat(prefix, sem_tstr(c, el)));
   tys->elem[sp] = el;
-  { __typeof__(tys->size[sp]) __flowc_st13652 = sem_static_length(c, e); tys->size[sp] = __flowc_st13652; }
+  { __typeof__(tys->size[sp]) __flowc_st13681 = sem_static_length(c, e); tys->size[sp] = __flowc_st13681; }
   return sp;
 }
 
@@ -77671,14 +77680,14 @@ int32_t sem_check_lambda(Sem* c, int32_t e) {
   p = sem_nnext(c, p);
 }
   SemIntVec* saved_sink = (SemIntVec*)(c->return_sink);
-  { __typeof__(c->return_sink) __flowc_st14001 = sem_iv_new(); c->return_sink = __flowc_st14001; }
+  { __typeof__(c->return_sink) __flowc_st14030 = sem_iv_new(); c->return_sink = __flowc_st14030; }
   sem_check_block(c, sem_ncc(c, e));
   c->return_sink = saved_sink;
   sem_pop_scope(c);
   if (sem_nb(c, e) != AST_NONE) {
-  { __typeof__(tys->ret[f]) __flowc_st14031 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e))); tys->ret[f] = __flowc_st14031; }
+  { __typeof__(tys->ret[f]) __flowc_st14060 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e))); tys->ret[f] = __flowc_st14060; }
 } else {
-  { __typeof__(tys->ret[f]) __flowc_st14040 = sem_tmk(c, TK_VOID); tys->ret[f] = __flowc_st14040; }
+  { __typeof__(tys->ret[f]) __flowc_st14069 = sem_tmk(c, TK_VOID); tys->ret[f] = __flowc_st14069; }
 }
   return f;
 }
@@ -79040,9 +79049,9 @@ void sem_check_function(Sem* c, int32_t fi) {
   SemStrVec* prev_storage = (SemStrVec*)(c->local_storage);
   SemStrMap* prev_origin = (SemStrMap*)(c->span_origin);
   int32_t prev_ret = c->current_return_type;
-  { __typeof__(c->local_storage) __flowc_st19848 = sem_sv_new(); c->local_storage = __flowc_st19848; }
-  { __typeof__(c->span_origin) __flowc_st19852 = sem_sm_new(); c->span_origin = __flowc_st19852; }
-  { __typeof__(c->current_return_type) __flowc_st19861 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); c->current_return_type = __flowc_st19861; }
+  { __typeof__(c->local_storage) __flowc_st19877 = sem_sv_new(); c->local_storage = __flowc_st19877; }
+  { __typeof__(c->span_origin) __flowc_st19881 = sem_sm_new(); c->span_origin = __flowc_st19881; }
+  { __typeof__(c->current_return_type) __flowc_st19890 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); c->current_return_type = __flowc_st19890; }
   i = 0;
   while (i < sem_fi_nparams(c, fi)) {
   int32_t pt = sem_parse_type(c, sem_fi_param_type(c, fi, i));
@@ -79050,7 +79059,7 @@ void sem_check_function(Sem* c, int32_t fi) {
   i = (i + 1);
 }
   SemIntVec* prev_sink = (SemIntVec*)(c->return_sink);
-  { __typeof__(c->return_sink) __flowc_st19904 = sem_iv_new(); c->return_sink = __flowc_st19904; }
+  { __typeof__(c->return_sink) __flowc_st19933 = sem_iv_new(); c->return_sink = __flowc_st19933; }
   sem_check_block(c, sem_iv_get(c->fi_body, fi));
   SemIntVec* returns = (SemIntVec*)(c->return_sink);
   c->return_sink = prev_sink;
