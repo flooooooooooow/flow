@@ -2128,7 +2128,7 @@ function test_rt_summary() -> i32 {
         zi = zi + 1
     }
     let n: i32 = flowc_rt_summary_collect(p.arena, root, sp, buf, cap, 0)
-    let hs: i32 = 0
+    let mut hs: i32 = 0
     while hs < nsrc and (sp[hs] != 104 or sp[hs + 1] != 101) {
         hs = hs + 1
     }
@@ -2137,7 +2137,7 @@ function test_rt_summary() -> i32 {
     let hoff: i32 = flowc_rt_summary_find(buf, n, sp, hs, he)
     let hbits: i32 = flowc_rt_summary_bits(buf, hoff)
     if hoff < 0 or (hbits & FLOWC_RT_ALLOC) == 0 { ok = 0 }
-    let ps: i32 = hs
+    let mut ps: i32 = hs
     while ps < nsrc and (sp[ps] != 112 or sp[ps + 1] != 114 or sp[ps + 2] != 111) {
         ps = ps + 1
     }
@@ -2149,7 +2149,7 @@ function test_rt_summary() -> i32 {
     let pprov: i32 = flowc_rt_summary_prov(buf, poff)
     let plen: i32 = flowc_rt_summary_prov_len(buf, pprov)
     if plen != 6 { ok = 0 }
-    let ts: i32 = ps
+    let mut ts: i32 = ps
     while ts < nsrc and (sp[ts] != 116 or sp[ts + 1] != 105 or sp[ts + 2] != 99 or sp[ts + 3] != 107) {
         ts = ts + 1
     }

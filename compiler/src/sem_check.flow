@@ -4690,16 +4690,16 @@ function sem_init_rt_summaries(c: ptr<Sem>) {
     while i < sem_iv_len(c.d_kind) {
         if sem_decl_kind(c, i) == DK_FUNC {
             let fi: i32 = sem_iv_get(c.d_info, i)
-            let name: string = sem_sv_get(c.fi_mangled, fi)
+            let mut name: string = sem_sv_get(c.fi_mangled, fi)
             if sem_s_len(name) == 0 {
                 name = sem_sv_get(c.fi_name, fi)
             }
-            let domain: i32 = sem_lifetime_domain(c, sem_iv_get(c.fi_astart, fi), sem_iv_get(c.fi_alen, fi))
+            let mut domain: i32 = sem_lifetime_domain(c, sem_iv_get(c.fi_astart, fi), sem_iv_get(c.fi_alen, fi))
             if domain < 0 {
                 domain = FLOWC_RT_DOM_NONE
             }
             let mut bits: i32 = 0
-            let mut prov: string = null
+            let mut prov: string = null as string
             if sem_iv_get(c.fi_extern, fi) == 1 {
                 bits = flowc_rt_name_bits(name)
                 if bits == 0 {
@@ -4746,7 +4746,7 @@ function sem_compute_rt_summaries(c: ptr<Sem>) {
                 }
                 if add != 0 and (bits & add) != add {
                     if bits == 0 {
-                        let domain: i32 = sem_sm_get(c.rt_sum_dom, name)
+                        let mut domain: i32 = sem_sm_get(c.rt_sum_dom, name)
                         if domain < 0 {
                             domain = FLOWC_RT_DOM_NONE
                         }
@@ -4852,7 +4852,7 @@ function sem_verify_rt_safe_calls(c: ptr<Sem>) {
         let mut reason: string = sem_unsafe_reason(c, false, c.rt_unsafe_reason, name)
         if reason as ptr<u8> == null {
             let need: i32 = FLOWC_RT_DOM_CALLBACK
-            let bits: i32 = sem_sm_get(c.rt_sum_bits, name)
+            let mut bits: i32 = sem_sm_get(c.rt_sum_bits, name)
             if bits < 0 {
                 bits = flowc_rt_name_bits(name)
             }
@@ -4893,7 +4893,7 @@ function sem_verify_domain_calls(c: ptr<Sem>) {
         let name: string = sem_sv_get(c.dom_site_name, i)
         let mut reason: string = sem_unsafe_reason(c, true, c.heap_unsafe_reason, name)
         if reason as ptr<u8> == null {
-            let bits: i32 = sem_sm_get(c.rt_sum_bits, name)
+            let mut bits: i32 = sem_sm_get(c.rt_sum_bits, name)
             if bits < 0 {
                 bits = flowc_rt_name_bits(name)
             }
