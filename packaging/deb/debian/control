@@ -1,0 +1,14 @@
+Source: flow
+Section: devel
+Priority: optional
+Maintainer: Flow Language Team <team@flow-lang.org>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Homepage: https://github.com/flooooooooooow/flow
+
+Package: flow
+Architecture: all
+Depends: ${misc:Depends}, clang | gcc, libc6-dev
+Description: Flow programming language toolchain and runtime
+ Flow is a statically typed language for systems that evolve through time,
+ with algebraic effects, autodiff, and C/MLIR backends.
