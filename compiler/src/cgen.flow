@@ -3672,6 +3672,17 @@ function flowc_cgen_ty_is_int_name(arena: AstArena, src: ptr<u8>, ty: i32) -> i3
 }
 
 # 1 when type node `ty` names f32 or f64.
+# 1 when type node `ty` names c64 or c128.
+function flowc_cgen_ty_is_complex_name(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    if ty == AST_NONE or ty < 0 or arena.nodes[ty].kind != AST_TYPE or arena.nodes[ty].a != AST_NONE {
+        return 0
+    }
+    let s: i32 = arena.nodes[ty].name_start
+    let e: i32 = arena.nodes[ty].name_end
+    if flowc_cgen_span_is(src, s, e, "c64") == 1 or flowc_cgen_span_is(src, s, e, "c128") == 1 { return 1 }
+    return 0
+}
+
 function flowc_cgen_ty_is_float_name(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
     if ty == AST_NONE or ty < 0 or arena.nodes[ty].kind != AST_TYPE or arena.nodes[ty].a != AST_NONE {
         return 0
@@ -6387,6 +6398,54 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                 return
             }
         }
+        # Complex * real scalar multiplication and division (#630).
+        # A * R -> c64(crealf(A) * R, cimagf(A) * R) to avoid C99 complex promotion.
+        if op == TOK_STAR or op == TOK_SLASH {
+            let lt: i32 = flowc_cgen_expr_type_node(w, arena, src, arena.nodes[id].a)
+            let rt: i32 = flowc_cgen_expr_type_node(w, arena, src, arena.nodes[id].b)
+            let lc: i32 = flowc_cgen_ty_is_complex_name(arena, src, lt)
+            let rc: i32 = flowc_cgen_ty_is_complex_name(arena, src, rt)
+            let lr: i32 = flowc_cgen_ty_is_float_name(arena, src, lt) | flowc_cgen_ty_is_int_name(arena, src, lt)
+            let rr: i32 = flowc_cgen_ty_is_float_name(arena, src, rt) | flowc_cgen_ty_is_int_name(arena, src, rt)
+            if (lc == 1 and rr == 1) or (lr == 1 and rc == 1 and op == TOK_STAR) {
+                let mut cty: i32 = lt
+                let mut is_c64: i32 = 0
+                if lc == 1 {
+                    if flowc_cgen_span_is(src, arena.nodes[lt].name_start, arena.nodes[lt].name_end, "c64") == 1 { is_c64 = 1 }
+                } else {
+                    cty = rt
+                    if flowc_cgen_span_is(src, arena.nodes[rt].name_start, arena.nodes[rt].name_end, "c64") == 1 { is_c64 = 1 }
+                }
+                let c_expr: i32 = if lc == 1 { arena.nodes[id].a } else { arena.nodes[id].b }
+                let r_expr: i32 = if lc == 1 { arena.nodes[id].b } else { arena.nodes[id].a }
+                let f_suffix: string = if is_c64 == 1 { "f" } else { "" }
+                let c_cast: string = if is_c64 == 1 { "float" } else { "double" }
+
+                flowc_cgen_puts(w, "(__extension__ ({ __typeof__(")
+                flowc_cgen_emit_expr(w, arena, src, c_expr)
+                flowc_cgen_puts(w, ") __c = (")
+                flowc_cgen_emit_expr(w, arena, src, c_expr)
+                flowc_cgen_puts(w, "); __typeof__(")
+                flowc_cgen_emit_expr(w, arena, src, r_expr)
+                flowc_cgen_puts(w, ") __r = (")
+                flowc_cgen_emit_expr(w, arena, src, r_expr)
+                flowc_cgen_puts(w, "); ((")
+                flowc_cgen_puts(w, c_cast)
+                flowc_cgen_puts(w, ")(creal")
+                flowc_cgen_puts(w, f_suffix)
+                flowc_cgen_puts(w, "(__c) ")
+                flowc_cgen_emit_binop_op(w, op)
+                flowc_cgen_puts(w, " __r) + (")
+                flowc_cgen_puts(w, c_cast)
+                flowc_cgen_puts(w, ")(cimag")
+                flowc_cgen_puts(w, f_suffix)
+                flowc_cgen_puts(w, "(__c) ")
+                flowc_cgen_emit_binop_op(w, op)
+                flowc_cgen_puts(w, " __r) * _Complex_I); }))")
+                return
+            }
+        }
+
         # Tensor operator sugar (#161), as on the Python host: `+ - * /` of
         # two Tensors is tensor_add/sub/mul/div, `t * s` and `s * t` are
         # tensor_scale(t, s), `t + s` and `s + t` are tensor_add_scalar(t, s).
@@ -6750,6 +6809,17 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                 return
             }
         }
+        # cabs(c64) -> cabsf, cabs(c128) -> cabs (#630).
+        if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "cabs") == 1 and arena.nodes[id].a != AST_NONE {
+            let arg_ty: i32 = flowc_cgen_expr_type_node(w, arena, src, arena.nodes[id].a)
+            if arg_ty != AST_NONE and flowc_cgen_span_is(src, arena.nodes[arg_ty].name_start, arena.nodes[arg_ty].name_end, "c64") == 1 {
+                flowc_cgen_puts(w, "cabsf(")
+                flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].a)
+                flowc_cgen_puts(w, ")")
+                return
+            }
+        }
+
         # ui_layout_bind(p) binds the implicit UI layout state pointer.
         if flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "ui_layout_bind") == 1 and arena.nodes[id].a != AST_NONE {
             flowc_cgen_puts(w, "(_ui_state = (void*)")
