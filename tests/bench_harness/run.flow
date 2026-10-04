@@ -150,6 +150,8 @@ function main() -> i32 {
     sl_push2(want_keys, "\"python_metrics\": {", "\"median\": ")
     sl_push2(want_keys, "\"p95\": ", "\"dispersion\": ")
     sl_push2(want_keys, "\"allocations\": 0", "\"copies\": 0")
+    sl_push2(want_keys, "\"heap_bytes\": 0", "\"peak_live_heap\": 0")
+    sl_push(want_keys, "\"temp_bytes\": 0")
     let mut k: i32 = 0
     while k < sl_len(want_keys) {
         let key: string = sl_get(want_keys, k)

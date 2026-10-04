@@ -972,7 +972,7 @@ function test_cgen_for() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 32768
+    let cap: i32 = 65536
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_for: malloc failed")
@@ -1028,7 +1028,7 @@ function test_cgen_logic() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 32768
+    let cap: i32 = 65536
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_logic: malloc failed")
@@ -1074,7 +1074,7 @@ function test_cgen_string() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 32768
+    let cap: i32 = 65536
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_string: malloc failed")
@@ -1126,7 +1126,7 @@ function test_cgen_emit() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 32768
+    let cap: i32 = 65536
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen: malloc failed")
@@ -1147,6 +1147,8 @@ function test_cgen_emit() -> i32 {
     if flowc_bytes_contains(bp, n, "return") == 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "#include <stdint.h>") == 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "if (") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "flow_mem_profile_init") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "FLOW_MEM_PROFILE") == 0 { ok = 0 }
 
     if n > 0 and n < cap {
         bp[n] = 0
@@ -1444,7 +1446,7 @@ function test_cgen_const() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 32768
+    let cap: i32 = 65536
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_const: malloc failed")
@@ -1503,7 +1505,7 @@ function test_cgen_struct() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 32768
+    let cap: i32 = 65536
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_struct: malloc failed")
@@ -1548,7 +1550,7 @@ function test_cgen_ptr() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 32768
+    let cap: i32 = 65536
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_ptr: malloc failed")
@@ -1667,7 +1669,7 @@ function test_cgen_cast() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 32768
+    let cap: i32 = 65536
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_cast: malloc failed")
@@ -1708,7 +1710,7 @@ function test_cgen_void() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 32768
+    let cap: i32 = 65536
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_void: malloc failed")
@@ -2351,7 +2353,7 @@ function test_cgen_match() -> i32 {
     let mut ok: i32 = 1
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
-    let cap: i32 = 32768
+    let cap: i32 = 65536
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_match: malloc failed")

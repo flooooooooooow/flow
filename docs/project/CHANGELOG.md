@@ -13,6 +13,7 @@ All notable changes to FLOW will be documented in this file.
   introduced bit so cross-module diagnostics still name the call chain
   (#765). Summaries are erased before codegen. Unprovable externs carry an
   `unknown` bit; this slice still rejects only the known unsafe names.
+- Runtime: opt-in memory profiler (`FLOW_MEM_PROFILE` / `FLOW_MEM_PROFILE_OUT`) reports heap count/bytes, peak live heap, peak RSS, compiler-temp bytes and copy volume. The #728 harness records those fields without workload source rewrites. (#740)
 - FFI: Zero-copy contiguous buffer ABI (`ffi_buffer_handoff`), boundary instrumentation, and benchmarks. (#737)
 
 ### Type checker diagnostics
