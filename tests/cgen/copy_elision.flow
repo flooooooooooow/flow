@@ -1,0 +1,95 @@
+# Copy elision for record updates on the C backend (#732).
+#
+# `Name { ..base, f: v }` used to lower to a statement expression that copied
+# the base into `__flowc_sl` and then copied that temporary into the
+# destination. A let, a distinct assignment, and a last-use return now
+# construct in place. An update that reads the destination keeps the
+# temporary so value semantics stay intact.
+
+struct Vec8 {
+    a: i32,
+    b: i32,
+    c: i32,
+    d: i32,
+    e: i32,
+    f: i32,
+    g: i32,
+    h: i32
+}
+
+struct Grid {
+    cells: array<i32, 4>,
+    tag: i32
+}
+
+function let_bound(p: Vec8) -> i32 {
+    let q: Vec8 = Vec8 { ..p, a: 9 }
+    return q.a + p.b
+}
+
+function assign_distinct(p: Vec8) -> i32 {
+    let mut q: Vec8 = Vec8 { a: 0, b: 0, c: 0, d: 0, e: 0, f: 0, g: 0, h: 0 }
+    q = Vec8 { ..p, a: 3 }
+    return q.a + p.b
+}
+
+function assign_same(p: Vec8) -> Vec8 {
+    let mut q: Vec8 = p
+    q = Vec8 { ..q, a: 4 }
+    return q
+}
+
+function move_return(p: Vec8) -> Vec8 {
+    return Vec8 { ..p, a: 5 }
+}
+
+function keep_copy(p: Vec8) -> Vec8 {
+    return Vec8 { ..p, a: p.b }
+}
+
+function take_vec(v: Vec8) -> i32 {
+    return v.a + v.b
+}
+
+function arg_keeps_temp(p: Vec8) -> i32 {
+    return take_vec(Vec8 { ..p, a: 1 })
+}
+
+function relabel(g: Grid) -> i32 {
+    let fresh: array<i32, 4> = [9, 8, 7, 6]
+    let h: Grid = Grid { ..g, cells: fresh, tag: 7 }
+    return h.tag + h.cells[0]
+}
+
+function main() -> i32 {
+    let p: Vec8 = Vec8 { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7, h: 8 }
+    if let_bound(p) != 11 {
+        return 1
+    }
+    if assign_distinct(p) != 5 {
+        return 2
+    }
+    let r: Vec8 = assign_same(p)
+    if r.a != 4 or r.b != 2 {
+        return 3
+    }
+    let m: Vec8 = move_return(p)
+    if m.a != 5 or m.b != 2 {
+        return 4
+    }
+    let k: Vec8 = keep_copy(p)
+    if k.a != 2 or k.b != 2 {
+        return 5
+    }
+    if arg_keeps_temp(p) != 3 {
+        return 6
+    }
+    let g: Grid = Grid { cells: [1, 2, 3, 4], tag: 1 }
+    if relabel(g) != 16 {
+        return 7
+    }
+    if p.a != 1 or p.b != 2 {
+        return 8
+    }
+    return 0
+}
