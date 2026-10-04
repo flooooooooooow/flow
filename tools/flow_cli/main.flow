@@ -322,7 +322,7 @@ function dispatch(c: string, args: ptr<ProcStrs>) -> i32 {
         while i < sl_len(args) {
             let a: string = sl_get(args, i)
             if s_starts(a, "--shape-spec=") {
-                shape_spec = a
+                shape_spec = s_from(a, 13)
             }
             i = i + 1
         }

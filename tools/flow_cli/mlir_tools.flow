@@ -318,6 +318,15 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
     if rc == 0 and s_starts(head_lines(mlir, 1), "module") {
         mkdir_parent(output)
         let _c: bool = copy_file(mlir, output)
+        if s_len(shape_spec) > 0 {
+            let mut idx: i32 = s_find(shape_spec, "=", 0)
+            if idx > 0 {
+                let dyn_s: string = s_slice(shape_spec, 0, idx)
+                let stat_s: string = s_slice(shape_spec, idx + 1, s_len(shape_spec))
+                flow_jit_specialize_file(output, output, "tensor_matmul", dyn_s, stat_s)
+                flow_jit_specialize_file(output, output, "main", dyn_s, stat_s)
+            }
+        }
         # @cEmbed C, compiled and linked next to the lowered MLIR.
         if is_file(work + "/program.c") {
             let _e: bool = copy_file(work + "/program.c", output + ".c")

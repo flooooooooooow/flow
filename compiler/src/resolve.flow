@@ -18,7 +18,9 @@ import .token { TOK_MINUS }
 import .parser {
     flowc_parser_new, flowc_parser_free, flowc_parse_program, flowc_parser_print_error, Parser
 }
-import .fileio { flowc_read_file, flowc_io_exists }
+import .fileio { flowc_read_file, flowc_write_file, flowc_io_exists, flowc_io_mkdir, flowc_io_fopen, flowc_io_fread, flowc_io_fwrite, flowc_io_fclose }
+import .denotation { flowc_den_hash_bytes, flowc_den_mix }
+import .version { FLOWC_VERSION_MAJOR, FLOWC_VERSION_MINOR, FLOWC_VERSION_PATCH }
 import .field_dsl { flowc_field_expand_in_place }
 import .dynamics_dsl { flowc_dynamics_expand_in_place }
 import .flow_blocks { flowc_flow_blocks_expand_in_place }
@@ -2319,6 +2321,108 @@ function flowc_resolve_deps_ready(
     return 1
 }
 
+function flowc_u64_to_hex(v: u64, buf: ptr<u8>) {
+    let hex: ptr<u8> = "0123456789abcdef"
+    let mut i: i32 = 0
+    let mut val: u64 = v
+    while i < 16 {
+        buf[15 - i] = hex[(val & 15) as i32]
+        val = val >> 4
+        i = i + 1
+    }
+    buf[16] = 0
+}
+
+# Returns root node index or -1 on error.
+function flowc_parse_cached(
+    p: ptr<Parser>,
+    src: ptr<u8>,
+    nsrc: i32
+) -> i32 {
+    let mut salt: u64 = 736
+    salt = flowc_den_mix(salt, FLOWC_VERSION_MAJOR as u64)
+    salt = flowc_den_mix(salt, FLOWC_VERSION_MINOR as u64)
+    salt = flowc_den_mix(salt, FLOWC_VERSION_PATCH as u64)
+    let env_salt: string = getenv("FLOW_CACHE_SALT")
+    if env_salt as ptr<u8> != null {
+        salt = flowc_den_mix(salt, flowc_den_hash_bytes(env_salt as ptr<u8>, 0, strlen(env_salt) as i32))
+    }
+
+    let content_hash: u64 = flowc_den_hash_bytes(src, 0, nsrc)
+    let cache_key: u64 = flowc_den_mix(salt, content_hash)
+
+    let cache_dir: ptr<u8> = malloc(512)
+    let mut clen: i32 = 0
+    let home: string = getenv("HOME")
+    if home as ptr<u8> != null {
+        clen = flowc_resolve_copy_cstr(home, cache_dir, 512)
+        if clen > 0 {
+            let s1: string = "/.cache"
+            let _s1: i32 = flowc_resolve_copy_cstr(s1, cache_dir + clen, 512 - clen)
+            clen = clen + strlen(s1) as i32
+            let _mkdir2: i32 = flowc_io_mkdir(cache_dir as string)
+            let s2: string = "/flow"
+            let _s2: i32 = flowc_resolve_copy_cstr(s2, cache_dir + clen, 512 - clen)
+            clen = clen + strlen(s2) as i32
+            let _mkdir3: i32 = flowc_io_mkdir(cache_dir as string)
+            let s3: string = "/ast"
+            let _s3: i32 = flowc_resolve_copy_cstr(s3, cache_dir + clen, 512 - clen)
+            clen = clen + strlen(s3) as i32
+            let _mkdir4: i32 = flowc_io_mkdir(cache_dir as string)
+        }
+    }
+
+    if clen == 0 {
+        free(cache_dir)
+        return flowc_parse_program(p)
+    }
+
+    cache_dir[clen] = 47 # '/'
+    clen = clen + 1
+    flowc_u64_to_hex(cache_key, cache_dir + clen)
+    clen = clen + 16
+    let s4: string = ".ast"
+    let _s4: i32 = flowc_resolve_copy_cstr(s4, cache_dir + clen, 512 - clen)
+
+    let cache_file: string = cache_dir as string
+
+    # Try reading
+    let fp: ptr<void> = flowc_io_fopen(cache_file, "rb")
+    if fp != null {
+        let mut header: array<i32, 3> = [0, 0, 0]
+        if flowc_io_fread(&header[0] as ptr<u8>, 4, 3, fp) == 3 {
+            if header[0] == 736 {
+                let ast_len: i32 = header[1]
+                let root: i32 = header[2]
+                if ast_len > 0 and ast_len <= p[0].arena.cap {
+                    if flowc_io_fread(p[0].arena.nodes as ptr<u8>, 44, ast_len, fp) == ast_len {
+                        p[0].arena.len = ast_len
+                        p[0].cur.start = nsrc
+                        flowc_io_fclose(fp)
+                        free(cache_dir)
+                        return root
+                    }
+                }
+            }
+        }
+        flowc_io_fclose(fp)
+    }
+
+    let root: i32 = flowc_parse_program(p)
+    if root >= 0 and p[0].err == 0 {
+        let fpo: ptr<void> = flowc_io_fopen(cache_file, "wb")
+        if fpo != null {
+            let mut header_out: array<i32, 3> = [736, p[0].arena.len, root]
+            let _w1: i32 = flowc_io_fwrite(&header_out[0] as ptr<u8>, 4, 3, fpo)
+            let _w2: i32 = flowc_io_fwrite(p[0].arena.nodes as ptr<u8>, 44, p[0].arena.len, fpo)
+            let _c2: i32 = flowc_io_fclose(fpo)
+        }
+    }
+
+    free(cache_dir)
+    return root
+}
+
 # Convert BFS discovery order into deps-first order (Kahn / repeated ready scan).
 # Writes into out_store; returns count or -1 on cycle/failure.
 function flowc_resolve_topo(
@@ -2472,7 +2576,7 @@ function flowc_resolve_emit_one(
     src[nsrc] = 0
 
     let mut p: Parser = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP)
-    let root: i32 = flowc_parse_program(&p)
+    let root: i32 = flowc_parse_cached(&p, src, nsrc)
     if root < 0 or p.err != 0 {
         flowc_parser_free(p)
         free(src)
@@ -2524,7 +2628,7 @@ function flowc_resolve_list_fns(path: string, mi: i32, buf: ptr<u8>, cap: i32, l
     }
     src[nsrc] = 0
     let mut p: Parser = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP)
-    let root: i32 = flowc_parse_program(&p)
+    let root: i32 = flowc_parse_cached(&p, src, nsrc)
     if root < 0 or p.err != 0 {
         flowc_parser_free(p)
         free(src)
