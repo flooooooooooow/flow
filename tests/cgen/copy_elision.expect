@@ -1,0 +1,19 @@
+# Let-bound record update constructs into the variable: one base copy, no
+# `__flowc_sl` temporary for that binding (#732).
++ Vec8 q = (p);
++ q.a = 9;
+# Distinct assignment is destination-passing: copy the base into q, then write.
++   q = (p);
++ q.a = 3;
+# Same-storage assignment with no dest read is just the field write.
++ q.a = 4;
+# Last-use return of a local/parameter base is a move: mutate and return it.
++ p.a = 5;
++ return p;
+# An update value that reads the base keeps the statement-expression copy.
+~ Vec8 __flowc_sl[0-9]+ = \(p\);
+# Array-field update memcpys into the declared variable, not a temporary.
++ memcpy(&h.cells,
++ Grid h = (g);
++ h.tag = 7;
+exit 0

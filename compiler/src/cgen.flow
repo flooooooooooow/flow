@@ -570,6 +570,94 @@ function flowc_cgen_calls_name(arena: AstArena, src: ptr<u8>, id: i32, ns: i32, 
     return 0
 }
 
+# 1 when `id` is `Name { ..base, f: v }` (AST_STRUCT_LIT.c holds the base).
+function flowc_cgen_is_record_update(arena: AstArena, id: i32) -> i32 {
+    if id == AST_NONE or id < 0 {
+        return 0
+    }
+    if arena.nodes[id].kind != AST_STRUCT_LIT {
+        return 0
+    }
+    if arena.nodes[id].c == AST_NONE {
+        return 0
+    }
+    return 1
+}
+
+# 1 when src[ns..ne] is read as a variable anywhere inside expression `id`.
+# Unknown forms are treated as reads so copy elision stays conservative.
+function flowc_cgen_expr_uses_name(arena: AstArena, src: ptr<u8>, id: i32, ns: i32, ne: i32) -> i32 {
+    if id == AST_NONE or id < 0 {
+        return 0
+    }
+    let k: i32 = arena.nodes[id].kind
+    if k == AST_IDENT {
+        return flowc_cgen_span_eq(src, ns, ne, arena.nodes[id].name_start, arena.nodes[id].name_end)
+    }
+    if k == AST_INT or k == AST_FLOAT or k == AST_BOOL or k == AST_STRING {
+        return 0
+    }
+    if k == AST_CALL {
+        let mut arg: i32 = arena.nodes[id].a
+        while arg != AST_NONE {
+            if flowc_cgen_expr_uses_name(arena, src, arg, ns, ne) == 1 {
+                return 1
+            }
+            arg = arena.nodes[arg].next
+        }
+        return 0
+    }
+    if k == AST_BINOP or k == AST_INDEX {
+        if flowc_cgen_expr_uses_name(arena, src, arena.nodes[id].a, ns, ne) == 1 { return 1 }
+        if flowc_cgen_expr_uses_name(arena, src, arena.nodes[id].b, ns, ne) == 1 { return 1 }
+        if k == AST_INDEX {
+            return flowc_cgen_expr_uses_name(arena, src, arena.nodes[id].c, ns, ne)
+        }
+        return 0
+    }
+    if k == AST_UNARY or k == AST_CAST or k == AST_FIELD_ACCESS or k == AST_FIELD {
+        return flowc_cgen_expr_uses_name(arena, src, arena.nodes[id].a, ns, ne)
+    }
+    if k == AST_IF_EXPR {
+        if flowc_cgen_expr_uses_name(arena, src, arena.nodes[id].a, ns, ne) == 1 { return 1 }
+        if flowc_cgen_expr_uses_name(arena, src, arena.nodes[id].b, ns, ne) == 1 { return 1 }
+        return flowc_cgen_expr_uses_name(arena, src, arena.nodes[id].c, ns, ne)
+    }
+    if k == AST_STRUCT_LIT or k == AST_ARRAY_LIT {
+        let mut el: i32 = arena.nodes[id].a
+        while el != AST_NONE {
+            let mut e: i32 = el
+            if k == AST_STRUCT_LIT {
+                e = arena.nodes[el].a
+            }
+            if flowc_cgen_expr_uses_name(arena, src, e, ns, ne) == 1 { return 1 }
+            el = arena.nodes[el].next
+        }
+        if k == AST_ARRAY_LIT {
+            return flowc_cgen_expr_uses_name(arena, src, arena.nodes[id].b, ns, ne)
+        }
+        return flowc_cgen_expr_uses_name(arena, src, arena.nodes[id].c, ns, ne)
+    }
+    return 1
+}
+
+# 1 when a listed field value of record-update `lit` reads src[ns..ne].
+# The spread base is not searched: an in-place write is only unsafe when an
+# update expression would observe a field after that field was overwritten.
+function flowc_cgen_rupdate_values_use_name(arena: AstArena, src: ptr<u8>, lit: i32, ns: i32, ne: i32) -> i32 {
+    if lit == AST_NONE {
+        return 0
+    }
+    let mut f: i32 = arena.nodes[lit].a
+    while f != AST_NONE {
+        if flowc_cgen_expr_uses_name(arena, src, arena.nodes[f].a, ns, ne) == 1 {
+            return 1
+        }
+        f = arena.nodes[f].next
+    }
+    return 0
+}
+
 # 1 when struct literal field value `v` is a named array (a variable, field
 # or element whose type is array<T, N>): C cannot initialize an array member
 # from it, so the literal copies it in with memcpy.
@@ -801,6 +889,162 @@ function flowc_cgen_emit_sl_member(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
     flowc_cgen_put_i32(w, id)
     flowc_cgen_putc(w, 46)
     flowc_cgen_put_span(w, src, arena.nodes[field].name_start, arena.nodes[field].name_end)
+}
+
+# Destination of a record-update field write. dest_kind 0 is the expression-
+# position temporary `__flowc_sl<dest_id>`; dest_kind 1 is the identifier
+# src[dest_ns..dest_ne] (a let, assignment target, or last-use local).
+function flowc_cgen_emit_rupdate_dest(w: ptr<CgenBuf>, src: ptr<u8>, dest_kind: i32, dest_id: i32, dest_ns: i32, dest_ne: i32) {
+    if dest_kind == 0 {
+        flowc_cgen_puts(w, "__flowc_sl")
+        flowc_cgen_put_i32(w, dest_id)
+        return
+    }
+    flowc_cgen_put_ident(w, src, dest_ns, dest_ne)
+}
+
+function flowc_cgen_emit_rupdate_member(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, dest_kind: i32, dest_id: i32, dest_ns: i32, dest_ne: i32, field: i32) {
+    flowc_cgen_emit_rupdate_dest(w, src, dest_kind, dest_id, dest_ns, dest_ne)
+    flowc_cgen_putc(w, 46)
+    flowc_cgen_put_span(w, src, arena.nodes[field].name_start, arena.nodes[field].name_end)
+}
+
+# Write each listed field of record-update `lit` onto dest. as_stmt 1 emits
+# indented C statements; 0 keeps the GNU statement-expression `"; "` form.
+function flowc_cgen_emit_rupdate_writes(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, lit: i32, dest_kind: i32, dest_id: i32, dest_ns: i32, dest_ne: i32, as_stmt: i32) {
+    let mut uf: i32 = arena.nodes[lit].a
+    while uf != AST_NONE {
+        let uv: i32 = arena.nodes[uf].a
+        if as_stmt == 1 {
+            flowc_cgen_puts(w, "  ")
+        }
+        if flowc_cgen_sl_array_copy(w, arena, src, uv) == 1 {
+            # As for a struct literal: a pointer field takes the decayed
+            # array, an array field its elements.
+            flowc_cgen_puts(w, "memcpy(&")
+            flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
+            flowc_cgen_puts(w, ", __builtin_choose_expr(__builtin_types_compatible_p(__typeof__(")
+            flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
+            flowc_cgen_puts(w, "), __typeof__(&")
+            flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
+            flowc_cgen_puts(w, "[0])), (void*)&(__typeof__(&(")
+            flowc_cgen_emit_expr(w, arena, src, uv)
+            flowc_cgen_puts(w, ")[0])){ (")
+            flowc_cgen_emit_expr(w, arena, src, uv)
+            flowc_cgen_puts(w, ") }, (void*)(")
+            flowc_cgen_emit_expr(w, arena, src, uv)
+            flowc_cgen_puts(w, ")), sizeof(")
+            flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
+            flowc_cgen_puts(w, "))")
+        } else {
+            flowc_cgen_emit_rupdate_member(w, arena, src, dest_kind, dest_id, dest_ns, dest_ne, uf)
+            flowc_cgen_puts(w, " = ")
+            flowc_cgen_emit_expr(w, arena, src, uv)
+        }
+        if as_stmt == 1 {
+            flowc_cgen_puts(w, ";\n")
+        } else {
+            flowc_cgen_puts(w, "; ")
+        }
+        uf = arena.nodes[uf].next
+    }
+}
+
+# `let q = Name { ..base, f: v }`: `T q` has already been written. Copy the
+# base into q and apply field writes there. That elides the `__flowc_sl`
+# temporary and the extra full-struct copy into q (#732). 0 if the
+# initializer is not a safe in-place record update.
+function flowc_cgen_try_rupdate_let(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, let_id: i32, init: i32) -> i32 {
+    if flowc_cgen_is_record_update(arena, init) == 0 {
+        return 0
+    }
+    let dns: i32 = arena.nodes[let_id].name_start
+    let dne: i32 = arena.nodes[let_id].name_end
+    # A mention of the new name (as the spread base or in a field value)
+    # would read the binding while it is being initialized.
+    if flowc_cgen_expr_uses_name(arena, src, init, dns, dne) == 1 {
+        return 0
+    }
+    flowc_cgen_puts(w, " = (")
+    flowc_cgen_emit_expr(w, arena, src, arena.nodes[init].c)
+    flowc_cgen_puts(w, ");\n")
+    flowc_cgen_emit_rupdate_writes(w, arena, src, init, 1, 0, dns, dne, 1)
+    return 1
+}
+
+# `return Name { ..local, f: v }` when `local` is a function-scoped binding
+# and no update value reads it: mutate the dead base and return it. C still
+# copies into the caller's return slot, so value semantics hold. Withheld
+# when the base is captured, a module static, or a pending defer could
+# observe the mutation (#732, related #696).
+function flowc_cgen_try_rupdate_return(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, ret_expr: i32) -> i32 {
+    if flowc_cgen_is_record_update(arena, ret_expr) == 0 {
+        return 0
+    }
+    if w[0].in_lambda != 0 or w[0].defer_len > 0 {
+        return 0
+    }
+    let base: i32 = arena.nodes[ret_expr].c
+    if base == AST_NONE or arena.nodes[base].kind != AST_IDENT {
+        return 0
+    }
+    let bns: i32 = arena.nodes[base].name_start
+    let bne: i32 = arena.nodes[base].name_end
+    if flowc_cgen_is_captured(w, src, bns, bne) == 1 {
+        return 0
+    }
+    let decl: i32 = flowc_cgen_scoped_decl(w, arena, src, base)
+    if decl == AST_NONE {
+        return 0
+    }
+    if arena.nodes[decl].kind != AST_LET and arena.nodes[decl].kind != AST_PARAM {
+        return 0
+    }
+    if flowc_cgen_rupdate_values_use_name(arena, src, ret_expr, bns, bne) == 1 {
+        return 0
+    }
+    flowc_cgen_emit_rupdate_writes(w, arena, src, ret_expr, 1, 0, bns, bne, 1)
+    flowc_cgen_puts(w, "  return ")
+    flowc_cgen_emit_expr(w, arena, src, base)
+    flowc_cgen_puts(w, ";\n")
+    return 1
+}
+
+# `q = Name { ..base, f: v }` onto a plain identifier. When no update value
+# reads q, construct into q: `q = base; q.f = v;` if q is distinct from
+# base, or just the field writes when q is the base (the unlisted fields
+# already hold). An update that reads q keeps the temporary so it sees the
+# old value (#732).
+function flowc_cgen_try_rupdate_assign(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, st: i32) -> i32 {
+    let lhs: i32 = arena.nodes[st].a
+    let rhs: i32 = arena.nodes[st].b
+    if lhs == AST_NONE or arena.nodes[lhs].kind != AST_IDENT {
+        return 0
+    }
+    if flowc_cgen_is_record_update(arena, rhs) == 0 {
+        return 0
+    }
+    let dns: i32 = arena.nodes[lhs].name_start
+    let dne: i32 = arena.nodes[lhs].name_end
+    if flowc_cgen_rupdate_values_use_name(arena, src, rhs, dns, dne) == 1 {
+        return 0
+    }
+    let base: i32 = arena.nodes[rhs].c
+    let mut same: i32 = 0
+    if base != AST_NONE and arena.nodes[base].kind == AST_IDENT {
+        if flowc_cgen_span_eq(src, dns, dne, arena.nodes[base].name_start, arena.nodes[base].name_end) == 1 {
+            same = 1
+        }
+    }
+    if same == 0 {
+        flowc_cgen_puts(w, "  ")
+        flowc_cgen_put_ident(w, src, dns, dne)
+        flowc_cgen_puts(w, " = (")
+        flowc_cgen_emit_expr(w, arena, src, base)
+        flowc_cgen_puts(w, ");\n")
+    }
+    flowc_cgen_emit_rupdate_writes(w, arena, src, rhs, 1, 0, dns, dne, 1)
+    return 1
 }
 
 # Check if a source span is a C reserved word. If so, emit the mangled
@@ -7510,9 +7754,9 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         return
     }
     if kind == AST_STRUCT_LIT and arena.nodes[id].c != AST_NONE {
-        # Record update `Name { ..base, f: v }`, as the Python C host wrote
-        # it: `({ Name t = base; t.f = v; t; })`. An array field is copied
-        # in with memcpy, since C cannot assign an array.
+        # Record update in expression position: `({ Name t = base; t.f = v; t; })`.
+        # A `let` initializer, a plain assignment target, or a last-use return
+        # skips this temporary and writes the destination directly (#732).
         flowc_cgen_puts(w, "({ ")
         flowc_cgen_put_struct_lit_name(w, arena, src, id)
         flowc_cgen_puts(w, " __flowc_sl")
@@ -7520,35 +7764,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         flowc_cgen_puts(w, " = (")
         flowc_cgen_emit_expr(w, arena, src, arena.nodes[id].c)
         flowc_cgen_puts(w, "); ")
-        let mut uf: i32 = arena.nodes[id].a
-        while uf != AST_NONE {
-            let uv: i32 = arena.nodes[uf].a
-            if flowc_cgen_sl_array_copy(w, arena, src, uv) == 1 {
-                # As for a struct literal: a pointer field takes the decayed
-                # array, an array field its elements.
-                flowc_cgen_puts(w, "memcpy(&")
-                flowc_cgen_emit_sl_member(w, arena, src, id, uf)
-                flowc_cgen_puts(w, ", __builtin_choose_expr(__builtin_types_compatible_p(__typeof__(")
-                flowc_cgen_emit_sl_member(w, arena, src, id, uf)
-                flowc_cgen_puts(w, "), __typeof__(&")
-                flowc_cgen_emit_sl_member(w, arena, src, id, uf)
-                flowc_cgen_puts(w, "[0])), (void*)&(__typeof__(&(")
-                flowc_cgen_emit_expr(w, arena, src, uv)
-                flowc_cgen_puts(w, ")[0])){ (")
-                flowc_cgen_emit_expr(w, arena, src, uv)
-                flowc_cgen_puts(w, ") }, (void*)(")
-                flowc_cgen_emit_expr(w, arena, src, uv)
-                flowc_cgen_puts(w, ")), sizeof(")
-                flowc_cgen_emit_sl_member(w, arena, src, id, uf)
-                flowc_cgen_puts(w, ")); ")
-            } else {
-                flowc_cgen_emit_sl_member(w, arena, src, id, uf)
-                flowc_cgen_puts(w, " = ")
-                flowc_cgen_emit_expr(w, arena, src, uv)
-                flowc_cgen_puts(w, "; ")
-            }
-            uf = arena.nodes[uf].next
-        }
+        flowc_cgen_emit_rupdate_writes(w, arena, src, id, 0, id, 0, 0, 0)
         flowc_cgen_puts(w, "__flowc_sl")
         flowc_cgen_put_i32(w, id)
         flowc_cgen_puts(w, "; })")
@@ -8908,6 +9124,11 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
             flowc_cgen_puts(w, ";\n")
             return
         }
+        # `let q = Name { ..base, f: v }`: construct into q. Skipped when
+        # the initializer was already evaluated into `__flowc_pre` (#732).
+        if pre == 0 and flowc_cgen_try_rupdate_let(w, arena, src, id, init) == 1 {
+            return
+        }
         flowc_cgen_puts(w, " = ")
         let mut cast_ptr: i32 = 0
         if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE {
@@ -8959,6 +9180,11 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 flowc_cgen_puts(w, "  return;\n")
                 return
             }
+        }
+        # Last-use record update of a local or by-value parameter: write
+        # fields onto the dead base and return it (#732).
+        if flowc_cgen_try_rupdate_return(w, arena, src, ret_expr) == 1 {
+            return
         }
         # Self tail call: evaluate every argument, then rebind the
         # parameters and jump back to the top of the body (#951).
@@ -9507,6 +9733,11 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
         return
     }
     if kind == AST_ASSIGN {
+        # `q = Name { ..base, f: v }` onto a plain identifier: construct
+        # into q when no update value reads it (#732).
+        if flowc_cgen_try_rupdate_assign(w, arena, src, id) == 1 {
+            return
+        }
         # a = lhs expr, b = rhs expr
         flowc_cgen_puts(w, "  ")
         # A local sized array takes the value by copy: C arrays are not

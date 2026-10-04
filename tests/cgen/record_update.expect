@@ -1,6 +1,10 @@
-# The base is copied into a temporary, then each listed field is set.
-~ Point __flowc_sl[0-9]+ = \(p\); __flowc_sl[0-9]+\.y = 40; __flowc_sl[0-9]+;
-~ Point __flowc_sl[0-9]+ = \(make\(\)\);
-# An array field is copied in with memcpy.
-~ memcpy\(&__flowc_sl[0-9]+\.v,
+# Let-bound record updates construct into the variable (#732).
+~ Point q = \(p\);
+~ q\.y = 40;
+# A returned update that reads the base still uses a temporary.
+~ Point __flowc_sl[0-9]+ = \(p\); __flowc_sl[0-9]+\.x =
+# Call result is copied into the binding, then listed fields are written.
+~ Point s = \(make\(\)\);
+# An array field update copies into the declared variable.
+~ memcpy\(&b\.v,
 exit 0
