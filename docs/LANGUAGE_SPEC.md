@@ -1138,7 +1138,9 @@ same C.
 
 **Not checked** (documented rather than half-enforced): escape through a call,
 a struct field, a closure, or heap storage; the domain of arena-allocated
-memory; domains on parameters or in types.
+memory; domains on parameters or in types. Cross-module calls consult a
+compact effect/lifetime summary for each public function (#765); see
+[lifetime-domains.md](language/lifetime-domains.md).
 
 **Status:** ✅ C-backend type checker. Tests: `tests/unit/test_lifetime_domains.py`,
 `tests/lang/test_lifetime_domains.flow`. Example:

@@ -202,6 +202,10 @@ export struct Sem {
     rt_site_fn: ptr<SemStrVec>,
     rt_site_name: ptr<SemStrVec>,
     rt_site_dom: ptr<SemIntVec>,
+    # Compact RT/lifetime summaries (#765): name -> bits / domain / provenance.
+    rt_sum_bits: ptr<SemStrMap>,
+    rt_sum_dom: ptr<SemStrMap>,
+    rt_sum_prov: ptr<SemStrMap>,
     rt_binding_target: ptr<SemStrVec>,
     rt_binding_fn: ptr<SemStrVec>,
     dom_site_fn: ptr<SemStrVec>,
@@ -382,6 +386,9 @@ export function sem_new(strict: bool) -> ptr<Sem> {
     c.rt_site_fn = sem_sv_new()
     c.rt_site_name = sem_sv_new()
     c.rt_site_dom = sem_iv_new()
+    c.rt_sum_bits = sem_sm_new()
+    c.rt_sum_dom = sem_sm_new()
+    c.rt_sum_prov = sem_sm_new()
     c.rt_binding_target = sem_sv_new()
     c.rt_binding_fn = sem_sv_new()
     c.dom_site_fn = sem_sv_new()

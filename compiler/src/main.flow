@@ -31,6 +31,13 @@ import .wasm_gen { flowc_wasm_gen_compile }
 import .bpf_gen { flowc_bpf_gen_compile }
 import .shader_emit { flowc_shader_mode }
 import .typecheck { flowc_typecheck, flowc_typecheck_fatal, flowc_typecheck_fatal_sem }
+import .rt_summary {
+    FLOWC_RT_ALLOC, FLOWC_RT_BLOCK, FLOWC_RT_DOM_CALLBACK, FLOWC_RT_DOM_NONE,
+    FLOWC_RT_UNKNOWN, flowc_rt_is_callback_safe, flowc_rt_is_frame_safe,
+    flowc_rt_name_bits, flowc_rt_summary_bits, flowc_rt_summary_collect,
+    flowc_rt_summary_domain, flowc_rt_summary_find, flowc_rt_summary_prov,
+    flowc_rt_summary_prov_len
+}
 import .sem_check { flowc_semcheck_single }
 import .resolve {
     flowc_resolve_sibling_path, flowc_bundle_emit, flowc_bundle_typecheck, flowc_bundle_typecheck_fatal,
@@ -2089,6 +2096,73 @@ function test_resolve_sibling() -> i32 {
     return ok
 }
 
+# Compact RT/lifetime summaries: name bits, worklist, imported-leaf consult.
+function test_rt_summary() -> i32 {
+    let mut ok: i32 = 1
+    if flowc_rt_name_bits("malloc") != FLOWC_RT_ALLOC { ok = 0 }
+    if flowc_rt_name_bits("mutex_lock") != FLOWC_RT_BLOCK { ok = 0 }
+    if flowc_rt_is_callback_safe(FLOWC_RT_ALLOC) != 0 { ok = 0 }
+    if flowc_rt_is_frame_safe(FLOWC_RT_BLOCK) != 1 { ok = 0 }
+    if flowc_rt_is_callback_safe(FLOWC_RT_UNKNOWN) != 0 { ok = 0 }
+    # helper calls malloc; process (@rt_safe) calls helper. The worklist
+    # must put ALLOC on both, with one provenance edge to the callee.
+    let src: string = "function helper() -> i32 {\n    return malloc(8)\n}\n@rt_safe\nfunction process() -> i32 {\n    return helper()\n}\n@lifetime(callback)\nfunction tick() -> i32 {\n    return process()\n}\n"
+    let sp: ptr<u8> = src
+    let nsrc: i32 = strlen(src) as i32
+    let mut p: Parser = flowc_parser_new(sp, nsrc, 512)
+    let root: i32 = flowc_parse_program(&p)
+    if root < 0 or p.err != 0 {
+        printf("rt_summary_parse=%d\n", p.err)
+        flowc_parser_free(p)
+        return 0
+    }
+    let cap: i32 = 4096
+    let buf: ptr<u8> = malloc(cap as i64)
+    if buf == null {
+        flowc_parser_free(p)
+        return 0
+    }
+    let mut zi: i32 = 0
+    while zi < cap {
+        buf[zi] = 0
+        zi = zi + 1
+    }
+    let n: i32 = flowc_rt_summary_collect(p.arena, root, sp, buf, cap, 0)
+    let hs: i32 = 0
+    while hs < nsrc and (sp[hs] != 104 or sp[hs + 1] != 101) {
+        hs = hs + 1
+    }
+    # "helper" starts at the first function name.
+    let he: i32 = hs + 6
+    let hoff: i32 = flowc_rt_summary_find(buf, n, sp, hs, he)
+    let hbits: i32 = flowc_rt_summary_bits(buf, hoff)
+    if hoff < 0 or (hbits & FLOWC_RT_ALLOC) == 0 { ok = 0 }
+    let ps: i32 = hs
+    while ps < nsrc and (sp[ps] != 112 or sp[ps + 1] != 114 or sp[ps + 2] != 111) {
+        ps = ps + 1
+    }
+    let pe: i32 = ps + 7
+    let poff: i32 = flowc_rt_summary_find(buf, n, sp, ps, pe)
+    let pbits: i32 = flowc_rt_summary_bits(buf, poff)
+    if poff < 0 or (pbits & FLOWC_RT_ALLOC) == 0 { ok = 0 }
+    if flowc_rt_summary_domain(buf, poff) != FLOWC_RT_DOM_NONE { ok = 0 }
+    let pprov: i32 = flowc_rt_summary_prov(buf, poff)
+    let plen: i32 = flowc_rt_summary_prov_len(buf, pprov)
+    if plen != 6 { ok = 0 }
+    let ts: i32 = ps
+    while ts < nsrc and (sp[ts] != 116 or sp[ts + 1] != 105 or sp[ts + 2] != 99 or sp[ts + 3] != 107) {
+        ts = ts + 1
+    }
+    let te: i32 = ts + 4
+    let toff: i32 = flowc_rt_summary_find(buf, n, sp, ts, te)
+    if toff < 0 or flowc_rt_summary_domain(buf, toff) != FLOWC_RT_DOM_CALLBACK { ok = 0 }
+    if toff < 0 or (flowc_rt_summary_bits(buf, toff) & FLOWC_RT_ALLOC) == 0 { ok = 0 }
+    printf("rt_summary_n=%d helper_bits=%d process_bits=%d tick_dom=%d ok=%d\n", n, hbits, pbits, flowc_rt_summary_domain(buf, toff), ok)
+    free(buf)
+    flowc_parser_free(p)
+    return ok
+}
+
 # Stage-A bundle typecheck: bundle_tc_ok → 0 errs.
 # Bundle mode is lenient for cross-module calls, so we only check the ok case.
 function test_bundle_typecheck() -> i32 {
@@ -2555,7 +2629,9 @@ function main() -> i32 {
     printf("bundle_ok=%d\n", bundle_ok)
     let type_id_ok: i32 = test_type_id()
     printf("type_id_ok=%d\n", type_id_ok)
-    if lex_ok == 1 and parse_ok == 1 and for_ok == 1 and struct_ok == 1 and extern_ok == 1 and ie_ok == 1 and bare_ok == 1 and fixture_ok == 1 and ty_ok == 1 and fi_ok == 1 and lit_ok == 1 and bc_ok == 1 and str_ok == 1 and const_ok == 1 and cgen_ok == 1 and for_cgen_ok == 1 and logic_ok == 1 and string_cgen_ok == 1 and cgen_const_ok == 1 and cgen_struct_ok == 1 and cgen_ptr_ok == 1 and cast_ok == 1 and idx_as_ok == 1 and cgen_cast_ok == 1 and cgen_void_ok == 1 and jsgen_ok == 1 and tc_ok == 1 and tc_bad == 1 and tc_av == 1 and tc_dl == 1 and tc_dc == 1 and tc_au == 1 and tc_bo == 1 and tc_bf == 1 and match_ok == 1 and cgen_match_ok == 1 and tc_mc == 1 and elif_ok == 1 and fmt_ok == 1 and resolve_ok == 1 and bundle_tc_ok == 1 and bundle_ok == 1 and type_id_ok == 1 {
+    let rt_sum_ok: i32 = test_rt_summary()
+    printf("rt_summary_ok=%d\n", rt_sum_ok)
+    if lex_ok == 1 and parse_ok == 1 and for_ok == 1 and struct_ok == 1 and extern_ok == 1 and ie_ok == 1 and bare_ok == 1 and fixture_ok == 1 and ty_ok == 1 and fi_ok == 1 and lit_ok == 1 and bc_ok == 1 and str_ok == 1 and const_ok == 1 and cgen_ok == 1 and for_cgen_ok == 1 and logic_ok == 1 and string_cgen_ok == 1 and cgen_const_ok == 1 and cgen_struct_ok == 1 and cgen_ptr_ok == 1 and cast_ok == 1 and idx_as_ok == 1 and cgen_cast_ok == 1 and cgen_void_ok == 1 and jsgen_ok == 1 and tc_ok == 1 and tc_bad == 1 and tc_av == 1 and tc_dl == 1 and tc_dc == 1 and tc_au == 1 and tc_bo == 1 and tc_bf == 1 and match_ok == 1 and cgen_match_ok == 1 and tc_mc == 1 and elif_ok == 1 and fmt_ok == 1 and resolve_ok == 1 and bundle_tc_ok == 1 and bundle_ok == 1 and type_id_ok == 1 and rt_sum_ok == 1 {
         puts("flowc: PASS")
         return 0
     }
