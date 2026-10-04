@@ -283,7 +283,7 @@ export function string_smoke(src: string, default_out: string, need: ptr<ProcStr
 # The frontend objects in link order (the `cc -r` that makes
 # flowc_frontend*.o).
 export function frontend_modules() -> ptr<ProcStrs> {
-    return s_words("token ast lexer parser fileio version denotation field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl effects proof_lower attributes ordering_hints sort_plans sort_sites type_id cgen overload overload_table type_name expr_type overload_args overload_select overload_registry overload_call rt_summary typecheck strutil sem_util sem_types sem_cheader sem_model sem_check pipeline_fusion profile resolve")
+    return s_words("token ast lexer parser fileio version denotation field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl effects proof_lower attributes ordering_hints sort_plans sort_sites type_id noalias cgen overload overload_table type_name expr_type overload_args overload_select overload_registry overload_call rt_summary typecheck strutil sem_util sem_types sem_cheader sem_model sem_check pipeline_fusion profile resolve")
 }
 
 # Symbols the linked frontend has to provide.
@@ -333,7 +333,9 @@ export function self_emit_plan() -> ptr<ProcStrs> {
     sl_push(p, "H proof_lower")
     sl_push(p, "E type_id ast")
     sl_push(p, "H type_id")
-    sl_push(p, "E cgen token ast effects proof_lower attributes sort_plans sort_sites type_id")
+    sl_push(p, "E noalias token ast")
+    sl_push(p, "H noalias")
+    sl_push(p, "E cgen token ast effects proof_lower attributes sort_plans sort_sites type_id noalias")
     sl_push(p, "E overload")
     sl_push(p, "E overload_table")
     sl_push(p, "E type_name ast")
