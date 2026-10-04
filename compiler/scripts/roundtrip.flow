@@ -365,8 +365,12 @@ function main() -> i32 {
     compile_module(host, "overload_call", "ast overload_table overload_args overload_select")
     hdrs(hdr, "overload_call")
 
+    # Cross-module RT/lifetime summaries consulted by typecheck (#765).
+    compile_module(host, "rt_summary", "ast effects")
+    hdrs(hdr, "rt_summary")
+
     # Seventh module: typecheck.flow (imports ast and the overload modules).
-    compile_module(host, "typecheck", "ast attributes effects proof_lower overload_table overload_call overload_registry overload_select")
+    compile_module(host, "typecheck", "ast attributes effects proof_lower overload_table overload_call overload_registry overload_select rt_summary")
     let tc: ptr<ProcStrs> = sl_of3("flowc_typecheck", "flowc_tc_init", "flowc_tc_seed_export")
     sl_push(tc, "flowc_tc_check_program")
     sl_push2(tc, "typedef struct TcCtx", "seed_nlen")
@@ -388,7 +392,7 @@ function main() -> i32 {
     hdrs(hdr, "sem_cheader")
     compile_module(host, "sem_model", "token ast lexer sem_util sem_types")
     hdrs(hdr, "sem_model")
-    compile_module(host, "sem_check", "token ast lexer parser sem_util sem_types sem_model sem_cheader")
+    compile_module(host, "sem_check", "token ast lexer parser sem_util sem_types sem_model sem_cheader rt_summary")
     hdrs(hdr, "sem_check")
 
     compile_module(host, "pipeline_fusion", "ast")
