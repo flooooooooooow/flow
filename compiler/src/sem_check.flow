@@ -3339,13 +3339,13 @@ function sem_check_expression(c: ptr<Sem>, e: i32) -> i32 {
 }
 
 # True when a function type carries a callable contract/effect name.
-function sem_function_type_has_effect(c: ptr<Sem>, ty: i32, effect: string) -> bool {
+function sem_function_type_has_effect(c: ptr<Sem>, ty: i32, eff_name: string) -> bool {
     if ty < 0 or sem_tkind(c, ty) != TK_FUNCTION {
         return false
     }
     let mut i: i32 = 0
     while i < sem_ty_neffects(c.t, ty) {
-        if sem_s_eq(sem_ty_effect(c.t, ty, i), effect) {
+        if sem_s_eq(sem_ty_effect(c.t, ty, i), eff_name) {
             return true
         }
         i = i + 1
