@@ -1,0 +1,4 @@
+env FLOWC_PERF_REPORT=1
++ /* perf[span-bounds-check-retained]: `v` index not proven in range (fact) */
++ /* perf[loop-not-vectorized]: `i` loop stays scalar (heuristic) */
+exit 0
