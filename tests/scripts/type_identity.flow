@@ -11,15 +11,36 @@ function write_prog(path: string, body: string) -> bool {
     return write_text(path, body)
 }
 
-function run_prog(path: string) -> i32 {
-    return t_run_argv(sl_of3(t_root() + "/flow", "run", path))
-}
-
 function ids_of(body: string) -> string {
-    let path: string = t_tmp() + "/prog.flow"
-    let _w: bool = write_prog(path, body)
-    if run_prog(path) != 0 {
-        outln("flow run failed")
+    let dir: string = t_tmp()
+    let src: string = dir + "/prog.flow"
+    let cpath: string = dir + "/prog.c"
+    let bin: string = dir + "/prog"
+    let _w: bool = write_prog(src, body)
+    let emit: ptr<ProcStrs> = sl_of3(t_root() + "/flow", "tool", "compiler/scripts/flowc_emit.flow")
+    sl_push2(emit, src, cpath)
+    if t_run_argv(emit) != 0 {
+        outln("flowc_emit failed")
+        t_cat(t_out())
+        t_cat(t_err())
+        return ""
+    }
+    let cc: string = "cc"
+    if have("clang") {
+        cc = "clang"
+    }
+    let compile: ptr<ProcStrs> = sl_of3(cc, "-std=c11", "-D_DEFAULT_SOURCE")
+    sl_push2(compile, "-O2", "-o")
+    sl_push2(compile, bin, cpath)
+    sl_push(compile, "-lm")
+    if t_run_argv(compile) != 0 {
+        outln("cc failed")
+        t_cat(t_out())
+        t_cat(t_err())
+        return ""
+    }
+    if t_run_argv(sl_of1(bin)) != 0 {
+        outln("program failed")
         t_cat(t_out())
         t_cat(t_err())
         return ""
