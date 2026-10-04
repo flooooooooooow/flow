@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdarg.h>
 #include <math.h>
 #include <complex.h>
 #undef I
@@ -24,6 +25,24 @@ static inline const char* __flowc_str_concat(const char* a, const char* b) {
   r = (char*)malloc(la + lb + 1);
   if (r == 0) { return ""; }
   memcpy(r, a, la); memcpy(r + la, b, lb); r[la + lb] = 0;
+  return r;
+}
+
+__attribute__((unused)) static const char* __flowc_str_concatn(int n, ...) {
+  va_list ap; size_t total = 0; int i; const char* s; char* r; size_t off; size_t l;
+  va_start(ap, n);
+  for (i = 0; i < n; i++) { s = va_arg(ap, const char*); if (s != 0) { total += strlen(s); } }
+  va_end(ap);
+  r = (char*)malloc(total + 1);
+  if (r == 0) { return ""; }
+  off = 0;
+  va_start(ap, n);
+  for (i = 0; i < n; i++) {
+    s = va_arg(ap, const char*);
+    if (s != 0) { l = strlen(s); if (l != 0) { memcpy(r + off, s, l); off += l; } }
+  }
+  va_end(ap);
+  r[off] = 0;
   return r;
 }
 
@@ -4366,21 +4385,21 @@ const char* flowc_claim_law_facet(const char* law) {
 }
 
 const char* flowc_claim_slug(FlowcClaimAddress addr) {
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat((addr).carrier, "."), (addr).structure), "."), flowc_claim_slug_phrase((addr).law));
+  return __flowc_str_concatn(5, (addr).carrier, ".", (addr).structure, ".", flowc_claim_slug_phrase((addr).law));
 }
 
 const char* flowc_claim_guillemets(FlowcClaimAddress addr) {
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("«", (addr).carrier), "» «"), (addr).structure), "» «"), (addr).law), "»");
+  return __flowc_str_concatn(7, "«", (addr).carrier, "» «", (addr).structure, "» «", (addr).law, "»");
 }
 
 const char* flowc_claim_display(FlowcClaimAddress addr) {
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat((addr).carrier, " › "), (addr).structure), " › "), (addr).law);
+  return __flowc_str_concatn(5, (addr).carrier, " › ", (addr).structure, " › ", (addr).law);
 }
 
 const char* flowc_claim_to_legacy_path(FlowcClaimAddress addr) {
   const char* sym = flowc_claim_structure_sym((addr).structure);
   const char* facet = flowc_claim_law_facet((addr).law);
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat((addr).carrier, "/"), sym), "."), facet);
+  return __flowc_str_concatn(5, (addr).carrier, "/", sym, ".", facet);
 }
 
 FlowcClaimAddress flowc_claim_legacy_to_address(const char* carrier, const char* structure_sym, const char* facet) {
@@ -4704,7 +4723,7 @@ const char* flowc_claim_address_phrase(FlowcClaimAddress addr) {
   return "the derivatives of sine at zero follow the alternating pattern of the Maclaurin series";
 }
 }
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(flowc_claim_law_phrase((addr).law), ", for "), flowc_claim_structure_math((addr).structure)), " on "), flowc_claim_carrier_math((addr).carrier));
+  return __flowc_str_concatn(5, flowc_claim_law_phrase((addr).law), ", for ", flowc_claim_structure_math((addr).structure), " on ", flowc_claim_carrier_math((addr).carrier));
 }
 
 const char* flowc_claim_carrier_math(const char* raw) {
@@ -5261,9 +5280,9 @@ const char* flowc_on_structure_carrier(const char* structure, const char* carrie
   const char* st = flowc_structure_mathematical(structure);
   const char* car = flowc_carrier_mathematical(carrier);
   if (strcmp(mp_strip_ws(carrier), "Geometry") == 0) {
-  return __flowc_str_concat(__flowc_str_concat(st, " "), car);
+  return __flowc_str_concatn(3, st, " ", car);
 }
-  return __flowc_str_concat(__flowc_str_concat(st, " on "), car);
+  return __flowc_str_concatn(3, st, " on ", car);
 }
 
 const char* flowc_law_phrase(const char* law) {
@@ -5271,7 +5290,7 @@ const char* flowc_law_phrase(const char* law) {
 }
 
 const char* flowc_addr_prose(FlowcClaimAddress addr) {
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(flowc_law_phrase((addr).law), ", for "), flowc_structure_mathematical((addr).structure)), " on "), flowc_carrier_mathematical((addr).carrier));
+  return __flowc_str_concatn(5, flowc_law_phrase((addr).law), ", for ", flowc_structure_mathematical((addr).structure), " on ", flowc_carrier_mathematical((addr).carrier));
 }
 
 const char* flowc_tier_opening_mathematical(const char* tier, FlowcClaimAddress addr) {
@@ -5279,12 +5298,12 @@ const char* flowc_tier_opening_mathematical(const char* tier, FlowcClaimAddress 
   const char* ctx = flowc_on_structure_carrier((addr).structure, (addr).carrier);
   const char* law = flowc_law_phrase((addr).law);
   if (strcmp(t, "definition") == 0) {
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("We stipulate ", law), " for "), ctx), ". This is a definition rather than a derived fact.");
+  return __flowc_str_concatn(5, "We stipulate ", law, " for ", ctx, ". This is a definition rather than a derived fact.");
 }
   if (strcmp(t, "axiom") == 0) {
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("We accept ", law), " for "), ctx), " without proof. This is an ontological commitment rather than a lemma.");
+  return __flowc_str_concatn(5, "We accept ", law, " for ", ctx, " without proof. This is an ontological commitment rather than a lemma.");
 }
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("We prove that ", law), " for "), ctx), ".");
+  return __flowc_str_concatn(5, "We prove that ", law, " for ", ctx, ".");
 }
 
 const char* flowc_tier_opening_parse(const char* tier, const char* claim_text) {
@@ -5346,11 +5365,11 @@ const char* flowc_structure_coordinate_display(const char* raw) {
 }
 
 const char* flowc_addr_coordinate_display(FlowcClaimAddress addr) {
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(flowc_carrier_mathematical((addr).carrier), " · "), flowc_structure_coordinate_display((addr).structure)), " · "), (addr).law);
+  return __flowc_str_concat(__flowc_str_concatn(4, flowc_carrier_mathematical((addr).carrier), " · ", flowc_structure_coordinate_display((addr).structure), " · "), (addr).law);
 }
 
 const char* flowc_addr_coordinate_latex(FlowcClaimAddress addr) {
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(flowc_carrier_mathematical((addr).carrier), " \\cdot "), flowc_structure_coordinate_display((addr).structure)), " \\cdot "), escape_underscores((addr).law));
+  return __flowc_str_concatn(5, flowc_carrier_mathematical((addr).carrier), " \\cdot ", flowc_structure_coordinate_display((addr).structure), " \\cdot ", escape_underscores((addr).law));
 }
 
 int32_t is_ident_char(int32_t c) {
@@ -7109,7 +7128,7 @@ const char* geom_arc_path(double vx, double vy, double a1x, double a1y, double a
   if (da > pi) {
   large = "1";
 }
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("M ", f1(sx)), " "), f1(sy)), " A "), f1(radius)), " "), f1(radius)), " 0 "), large), " 1 "), f1(ex)), " "), f1(ey));
+  return __flowc_str_concatn(14, "M ", f1(sx), " ", f1(sy), " A ", f1(radius), " ", f1(radius), " 0 ", large, " 1 ", f1(ex), " ", f1(ey));
 }
 
 const char* geom_polyline(double* xs, double* ys, int32_t n) {
@@ -7119,7 +7138,7 @@ const char* geom_polyline(double* xs, double* ys, int32_t n) {
   if (i > 0) {
   s = __flowc_str_concat(s, " ");
 }
-  s = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(s, f1(xs[i])), ","), f1(ys[i]));
+  s = __flowc_str_concatn(4, s, f1(xs[i]), ",", f1(ys[i]));
   i = (i + 1);
 }
   return s;
@@ -7158,7 +7177,7 @@ const char* flowc_geom_render_svg(FlowcGeomDiagram* g) {
   const char* w = geom_itoa((g[0]).width);
   const char* h = geom_itoa((g[0]).height);
   const char* out = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 "), w), " "), h), "\" width=\""), w), "\" height=\""), h), "\">\n");
+  out = __flowc_str_concatn(10, out, "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 ", w, " ", h, "\" width=\"", w, "\" height=\"", h, "\">\n");
   out = __flowc_str_concat(out, "<style>text{font-family:Georgia,serif;font-size:15px;fill:#1a1a1a}</style>\n");
   out = __flowc_str_concat(out, "<rect width=\"100%\" height=\"100%\" fill=\"#faf9f6\"/>");
   if ((g[0]).has_axes == 1) {
@@ -7168,15 +7187,15 @@ const char* flowc_geom_render_svg(FlowcGeomDiagram* g) {
   double y1 = ((g[0]).ax_oy - ((g[0]).ax_ymax * (g[0]).ax_scale));
   double ox = (g[0]).ax_ox;
   double oy = (g[0]).ax_oy;
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<line x1=\""), f1(x0)), "\" y1=\""), f1(oy)), "\" x2=\""), f1(x1)), "\" y2=\""), f1(oy)), "\" stroke=\"#bdc3c7\" stroke-width=\"1.2\"/>");
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<line x1=\""), f1(ox)), "\" y1=\""), f1(y0)), "\" x2=\""), f1(ox)), "\" y2=\""), f1(y1)), "\" stroke=\"#bdc3c7\" stroke-width=\"1.2\"/>");
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<text x=\""), f1((x1 - 8.0))), "\" y=\""), f1((oy + 16.0))), "\" font-size=\"12\" fill=\"#7f8c8d\">x</text>");
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<text x=\""), f1((ox + 6.0))), "\" y=\""), f1((y1 + 4.0))), "\" font-size=\"12\" fill=\"#7f8c8d\">y</text>");
+  out = __flowc_str_concatn(10, out, "\n<line x1=\"", f1(x0), "\" y1=\"", f1(oy), "\" x2=\"", f1(x1), "\" y2=\"", f1(oy), "\" stroke=\"#bdc3c7\" stroke-width=\"1.2\"/>");
+  out = __flowc_str_concatn(10, out, "\n<line x1=\"", f1(ox), "\" y1=\"", f1(y0), "\" x2=\"", f1(ox), "\" y2=\"", f1(y1), "\" stroke=\"#bdc3c7\" stroke-width=\"1.2\"/>");
+  out = __flowc_str_concatn(6, out, "\n<text x=\"", f1((x1 - 8.0)), "\" y=\"", f1((oy + 16.0)), "\" font-size=\"12\" fill=\"#7f8c8d\">x</text>");
+  out = __flowc_str_concatn(6, out, "\n<text x=\"", f1((ox + 6.0)), "\" y=\"", f1((y1 + 4.0)), "\" font-size=\"12\" fill=\"#7f8c8d\">y</text>");
 }
   int32_t i = 0;
   while (i < (g[0]).nfill) {
   FlowcGeomFill f = (g[0]).fills[i];
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<polygon points=\""), geom_polyline((f).xs, (f).ys, (f).n)), "\" fill=\""), (f).fill), "\" fill-opacity=\""), geom_fmt("%.2f", (f).opacity)), "\" stroke=\"none\"/>");
+  out = __flowc_str_concatn(8, out, "\n<polygon points=\"", geom_polyline((f).xs, (f).ys, (f).n), "\" fill=\"", (f).fill, "\" fill-opacity=\"", geom_fmt("%.2f", (f).opacity), "\" stroke=\"none\"/>");
   i = (i + 1);
 }
   i = 0;
@@ -7186,24 +7205,24 @@ const char* flowc_geom_render_svg(FlowcGeomDiagram* g) {
   if ((c).dashed == 1) {
   dash = " stroke-dasharray=\"7 5\"";
 }
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<polyline points=\""), geom_polyline((c).xs, (c).ys, (c).n)), "\" fill=\"none\" stroke=\""), (c).stroke), "\" stroke-width=\""), f1((c).width)), "\" stroke-linecap=\"round\""), dash), "/>");
+  out = __flowc_str_concatn(10, out, "\n<polyline points=\"", geom_polyline((c).xs, (c).ys, (c).n), "\" fill=\"none\" stroke=\"", (c).stroke, "\" stroke-width=\"", f1((c).width), "\" stroke-linecap=\"round\"", dash, "/>");
   if (strlen((c).label) > 0 && (c).n > 0) {
   int32_t k = ((c).n / 3);
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<text x=\""), f1((c).xs[k])), "\" y=\""), f1(((c).ys[k] - 8.0))), "\" font-size=\"12\" fill=\""), (c).stroke), "\">"), flowc_svg_escape((c).label)), "</text>");
+  out = __flowc_str_concatn(10, out, "\n<text x=\"", f1((c).xs[k]), "\" y=\"", f1(((c).ys[k] - 8.0)), "\" font-size=\"12\" fill=\"", (c).stroke, "\">", flowc_svg_escape((c).label), "</text>");
 }
   i = (i + 1);
 }
   i = 0;
   while (i < (g[0]).ncirc) {
   int32_t ci = geom_find(g, (g[0]).circ_c[i]);
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<circle cx=\""), f1((g[0]).pt_x[ci])), "\" cy=\""), f1((g[0]).pt_y[ci])), "\" r=\""), f1((g[0]).circ_r[i])), "\" fill=\"none\" stroke=\"#95a5a6\" stroke-width=\"1.8\"/>");
+  out = __flowc_str_concatn(8, out, "\n<circle cx=\"", f1((g[0]).pt_x[ci]), "\" cy=\"", f1((g[0]).pt_y[ci]), "\" r=\"", f1((g[0]).circ_r[i]), "\" fill=\"none\" stroke=\"#95a5a6\" stroke-width=\"1.8\"/>");
   i = (i + 1);
 }
   i = 0;
   while (i < (g[0]).nseg) {
   int32_t a = geom_find(g, (g[0]).seg_a[i]);
   int32_t b = geom_find(g, (g[0]).seg_b[i]);
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<line x1=\""), f1((g[0]).pt_x[a])), "\" y1=\""), f1((g[0]).pt_y[a])), "\" x2=\""), f1((g[0]).pt_x[b])), "\" y2=\""), f1((g[0]).pt_y[b])), "\" stroke=\"#2c3e50\" stroke-width=\"2.2\" stroke-linecap=\"round\"/>");
+  out = __flowc_str_concatn(10, out, "\n<line x1=\"", f1((g[0]).pt_x[a]), "\" y1=\"", f1((g[0]).pt_y[a]), "\" x2=\"", f1((g[0]).pt_x[b]), "\" y2=\"", f1((g[0]).pt_y[b]), "\" stroke=\"#2c3e50\" stroke-width=\"2.2\" stroke-linecap=\"round\"/>");
   i = (i + 1);
 }
   i = 0;
@@ -7231,7 +7250,7 @@ const char* flowc_geom_render_svg(FlowcGeomDiagram* g) {
 }
   double cx = (mx + (ux * offset));
   double cy = (my + (uy * offset));
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<line x1=\""), f1((cx + (px * 6.0)))), "\" y1=\""), f1((cy + (py * 6.0)))), "\" x2=\""), f1((cx - (px * 6.0)))), "\" y2=\""), f1((cy - (py * 6.0)))), "\" stroke=\"#7f8c8d\" stroke-width=\"1.4\"/>");
+  out = __flowc_str_concatn(10, out, "\n<line x1=\"", f1((cx + (px * 6.0))), "\" y1=\"", f1((cy + (py * 6.0))), "\" x2=\"", f1((cx - (px * 6.0))), "\" y2=\"", f1((cy - (py * 6.0))), "\" stroke=\"#7f8c8d\" stroke-width=\"1.4\"/>");
   o = (o + 1);
 }
 }
@@ -7247,7 +7266,7 @@ const char* flowc_geom_render_svg(FlowcGeomDiagram* g) {
   double vx = (g[0]).pt_x[v];
   double vy = (g[0]).pt_y[v];
   const char* path = geom_arc_path(vx, vy, (g[0]).pt_x[a1], (g[0]).pt_y[a1], (g[0]).pt_x[a2], (g[0]).pt_y[a2]);
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<path d=\""), path), "\" fill=\"none\" stroke=\"#c0392b\" stroke-width=\"1.6\"/>");
+  out = __flowc_str_concatn(4, out, "\n<path d=\"", path, "\" fill=\"none\" stroke=\"#c0392b\" stroke-width=\"1.6\"/>");
   double u1x = geom_unit_x(((g[0]).pt_x[a1] - vx), ((g[0]).pt_y[a1] - vy));
   double u1y = geom_unit_y(((g[0]).pt_x[a1] - vx), ((g[0]).pt_y[a1] - vy));
   double u2x = geom_unit_x(((g[0]).pt_x[a2] - vx), ((g[0]).pt_y[a2] - vy));
@@ -7256,7 +7275,7 @@ const char* flowc_geom_render_svg(FlowcGeomDiagram* g) {
   double by = (u1y + u2y);
   double lx = (vx + (geom_unit_x(bx, by) * 42.0));
   double ly = (vy + (geom_unit_y(bx, by) * 42.0));
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<text x=\""), f1(lx)), "\" y=\""), f1(ly)), "\" text-anchor=\"middle\">"), geom_sidx((g[0]).ang_label[i])), "</text>");
+  out = __flowc_str_concatn(8, out, "\n<text x=\"", f1(lx), "\" y=\"", f1(ly), "\" text-anchor=\"middle\">", geom_sidx((g[0]).ang_label[i]), "</text>");
   i = (i + 1);
 }
   const char** arms = (const char**)((const char**)(malloc(((int64_t)((((g[0]).nseg * 2) + 2)) * 8))));
@@ -7280,30 +7299,30 @@ const char* flowc_geom_render_svg(FlowcGeomDiagram* g) {
   double p2y = (vy + (u2y * size));
   double p3x = (p1x + (u2x * size));
   double p3y = (p1y + (u2y * size));
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<path d=\"M "), f1(p1x)), " "), f1(p1y)), " L "), f1(p3x)), " "), f1(p3y)), " L "), f1(p2x)), " "), f1(p2y)), "\" fill=\"none\" stroke=\"#2c3e50\" stroke-width=\"1.5\"/>");
+  out = __flowc_str_concatn(14, out, "\n<path d=\"M ", f1(p1x), " ", f1(p1y), " L ", f1(p3x), " ", f1(p3y), " L ", f1(p2x), " ", f1(p2y), "\" fill=\"none\" stroke=\"#2c3e50\" stroke-width=\"1.5\"/>");
 }
   i = (i + 1);
 }
   i = 0;
   while (i < (g[0]).nlabel) {
   FlowcGeomLabel lab = (g[0]).labels[i];
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<text x=\""), f1((lab).x)), "\" y=\""), f1((lab).y)), "\" text-anchor=\"middle\" font-size=\""), geom_itoa((lab).size)), "\" fill=\"#2c3e50\">"), flowc_svg_escape((lab).text)), "</text>");
+  out = __flowc_str_concatn(10, out, "\n<text x=\"", f1((lab).x), "\" y=\"", f1((lab).y), "\" text-anchor=\"middle\" font-size=\"", geom_itoa((lab).size), "\" fill=\"#2c3e50\">", flowc_svg_escape((lab).text), "</text>");
   i = (i + 1);
 }
   i = 0;
   while (i < (g[0]).npt) {
   double x = (g[0]).pt_x[i];
   double y = (g[0]).pt_y[i];
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<circle cx=\""), f1(x)), "\" cy=\""), f1(y)), "\" r=\"4.5\" fill=\"#2c3e50\"/>");
+  out = __flowc_str_concatn(6, out, "\n<circle cx=\"", f1(x), "\" cy=\"", f1(y), "\" r=\"4.5\" fill=\"#2c3e50\"/>");
   double oy = (0.0 - 14.0);
   if (y < 120.0) {
   oy = 20.0;
 }
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<text x=\""), f1(x)), "\" y=\""), f1((y + oy))), "\" text-anchor=\"middle\" font-weight=\"bold\">"), geom_sidx((g[0]).pt_name[i])), "</text>");
+  out = __flowc_str_concatn(8, out, "\n<text x=\"", f1(x), "\" y=\"", f1((y + oy)), "\" text-anchor=\"middle\" font-weight=\"bold\">", geom_sidx((g[0]).pt_name[i]), "</text>");
   i = (i + 1);
 }
   if (strlen((g[0]).caption) > 0) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n<text x=\""), geom_fmt("%.0f", ((double)((g[0]).width) / 2.0))), "\" y=\""), geom_itoa(((g[0]).height - 16))), "\" text-anchor=\"middle\" font-size=\"13\" fill=\"#555\">"), flowc_svg_escape((g[0]).caption)), "</text>");
+  out = __flowc_str_concatn(8, out, "\n<text x=\"", geom_fmt("%.0f", ((double)((g[0]).width) / 2.0)), "\" y=\"", geom_itoa(((g[0]).height - 16)), "\" text-anchor=\"middle\" font-size=\"13\" fill=\"#555\">", flowc_svg_escape((g[0]).caption), "</text>");
 }
   return __flowc_str_concat(out, "\n</svg>");
 }
@@ -7412,7 +7431,7 @@ const char* geom_coords(FlowcGeomDiagram* g, double* xs, double* ys, int32_t n) 
   if (i > 0) {
   s = __flowc_str_concat(s, " ");
 }
-  s = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(s, "("), f1(xs[i])), ","), f1((h - ys[i]))), ")");
+  s = __flowc_str_concatn(6, s, "(", f1(xs[i]), ",", f1((h - ys[i])), ")");
   i = (i + 1);
 }
   return s;
@@ -7448,38 +7467,38 @@ const char* flowc_geom_render_tikz(FlowcGeomDiagram* g) {
   const char* hex = names[i];
   uint8_t* hp = (uint8_t*)(hex);
   const char* rest = (const char*)((hp + 1));
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\definecolor{geomc"), geom_itoa(i)), "}{HTML}{"), rest), "}");
+  out = __flowc_str_concatn(6, out, "\n  \\definecolor{geomc", geom_itoa(i), "}{HTML}{", rest, "}");
   i = (i + 1);
 }
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\fill[fill=gray!4] (-10,-10) rectangle ("), geom_itoa(((g[0]).width + 20))), ","), geom_itoa(((g[0]).height + 10))), ");");
+  out = __flowc_str_concatn(6, out, "\n  \\fill[fill=gray!4] (-10,-10) rectangle (", geom_itoa(((g[0]).width + 20)), ",", geom_itoa(((g[0]).height + 10)), ");");
   if ((g[0]).has_axes == 1) {
   double x0 = ((g[0]).ax_ox + ((g[0]).ax_xmin * (g[0]).ax_scale));
   double x1 = ((g[0]).ax_ox + ((g[0]).ax_xmax * (g[0]).ax_scale));
   double y0 = (h - ((g[0]).ax_oy - ((g[0]).ax_ymin * (g[0]).ax_scale)));
   double y1 = (h - ((g[0]).ax_oy - ((g[0]).ax_ymax * (g[0]).ax_scale)));
   double oy = (h - (g[0]).ax_oy);
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\draw[gray!60] ("), f1(x0)), ","), f1(oy)), ") -- ("), f1(x1)), ","), f1(oy)), ");");
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\draw[gray!60] ("), f1((g[0]).ax_ox)), ","), f1(y0)), ") -- ("), f1((g[0]).ax_ox)), ","), f1(y1)), ");");
+  out = __flowc_str_concatn(10, out, "\n  \\draw[gray!60] (", f1(x0), ",", f1(oy), ") -- (", f1(x1), ",", f1(oy), ");");
+  out = __flowc_str_concatn(10, out, "\n  \\draw[gray!60] (", f1((g[0]).ax_ox), ",", f1(y0), ") -- (", f1((g[0]).ax_ox), ",", f1(y1), ");");
 }
   i = 0;
   while (i < (g[0]).nfill) {
   FlowcGeomFill f = (g[0]).fills[i];
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\fill[fill="), geom_tikz_color(names, nc, (f).fill)), ", opacity="), geom_fmt("%.2f", (f).opacity)), "] "), geom_coords(g, (f).xs, (f).ys, (f).n)), " -- cycle;");
+  out = __flowc_str_concatn(8, out, "\n  \\fill[fill=", geom_tikz_color(names, nc, (f).fill), ", opacity=", geom_fmt("%.2f", (f).opacity), "] ", geom_coords(g, (f).xs, (f).ys, (f).n), " -- cycle;");
   i = (i + 1);
 }
   i = 0;
   while (i < (g[0]).npt) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\coordinate ("), geom_sidx((g[0]).pt_name[i])), ") at ("), f1((g[0]).pt_x[i])), ","), f1((h - (g[0]).pt_y[i]))), ");");
+  out = __flowc_str_concatn(8, out, "\n  \\coordinate (", geom_sidx((g[0]).pt_name[i]), ") at (", f1((g[0]).pt_x[i]), ",", f1((h - (g[0]).pt_y[i])), ");");
   i = (i + 1);
 }
   i = 0;
   while (i < (g[0]).ncirc) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\draw[gray] ("), geom_sidx((g[0]).circ_c[i])), ") circle ("), f1((g[0]).circ_r[i])), ");");
+  out = __flowc_str_concatn(6, out, "\n  \\draw[gray] (", geom_sidx((g[0]).circ_c[i]), ") circle (", f1((g[0]).circ_r[i]), ");");
   i = (i + 1);
 }
   i = 0;
   while (i < (g[0]).nseg) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\draw[thick] ("), geom_sidx((g[0]).seg_a[i])), ") -- ("), geom_sidx((g[0]).seg_b[i])), ");");
+  out = __flowc_str_concatn(6, out, "\n  \\draw[thick] (", geom_sidx((g[0]).seg_a[i]), ") -- (", geom_sidx((g[0]).seg_b[i]), ");");
   i = (i + 1);
 }
   i = 0;
@@ -7507,7 +7526,7 @@ const char* flowc_geom_render_tikz(FlowcGeomDiagram* g) {
 }
   double cx = (mx + (ux * offset));
   double cy = (my + (uy * offset));
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\draw[gray] ("), f1((cx + (px * 6.0)))), ","), f1((cy + (py * 6.0)))), ") -- ("), f1((cx - (px * 6.0)))), ","), f1((cy - (py * 6.0)))), ");");
+  out = __flowc_str_concatn(10, out, "\n  \\draw[gray] (", f1((cx + (px * 6.0))), ",", f1((cy + (py * 6.0))), ") -- (", f1((cx - (px * 6.0))), ",", f1((cy - (py * 6.0))), ");");
   o = (o + 1);
 }
 }
@@ -7520,13 +7539,13 @@ const char* flowc_geom_render_tikz(FlowcGeomDiagram* g) {
   while (i < (g[0]).nright) {
   int32_t na = geom_arms(g, (g[0]).right[i], arms);
   if (na >= 2) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\pic [draw, angle radius=3.5mm] {right angle = "), geom_sidx(arms[0])), "--"), geom_sidx((g[0]).right[i])), "--"), geom_sidx(arms[1])), "};");
+  out = __flowc_str_concatn(8, out, "\n  \\pic [draw, angle radius=3.5mm] {right angle = ", geom_sidx(arms[0]), "--", geom_sidx((g[0]).right[i]), "--", geom_sidx(arms[1]), "};");
 }
   i = (i + 1);
 }
   i = 0;
   while (i < (g[0]).nang) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\pic [draw, angle radius=5mm, \""), geom_angle_label_tex((g[0]).ang_label[i])), "\"] {angle = "), geom_sidx((g[0]).ang_a1[i])), "--"), geom_sidx((g[0]).ang_v[i])), "--"), geom_sidx((g[0]).ang_a2[i])), "};");
+  out = __flowc_str_concatn(10, out, "\n  \\pic [draw, angle radius=5mm, \"", geom_angle_label_tex((g[0]).ang_label[i]), "\"] {angle = ", geom_sidx((g[0]).ang_a1[i]), "--", geom_sidx((g[0]).ang_v[i]), "--", geom_sidx((g[0]).ang_a2[i]), "};");
   i = (i + 1);
 }
   i = 0;
@@ -7537,32 +7556,32 @@ const char* flowc_geom_render_tikz(FlowcGeomDiagram* g) {
   style = "dashed, thick";
 }
   const char* stroke = geom_tikz_color(names, nc, (c).stroke);
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\draw["), style), ", draw="), stroke), "] plot[smooth] coordinates {"), geom_coords(g, (c).xs, (c).ys, (c).n)), "};");
+  out = __flowc_str_concatn(8, out, "\n  \\draw[", style, ", draw=", stroke, "] plot[smooth] coordinates {", geom_coords(g, (c).xs, (c).ys, (c).n), "};");
   if (strlen((c).label) > 0 && (c).n > 0) {
   int32_t k = ((c).n / 3);
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\node[font=\\scriptsize, text="), stroke), "] at ("), f1((c).xs[k])), ","), f1((h - (c).ys[k]))), ") {"), geom_latex_escape((c).label)), "};");
+  out = __flowc_str_concatn(10, out, "\n  \\node[font=\\scriptsize, text=", stroke, "] at (", f1((c).xs[k]), ",", f1((h - (c).ys[k])), ") {", geom_latex_escape((c).label), "};");
 }
   i = (i + 1);
 }
   i = 0;
   while (i < (g[0]).nlabel) {
   FlowcGeomLabel lab = (g[0]).labels[i];
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\node[font=\\small] at ("), f1((lab).x)), ","), f1((h - (lab).y))), ") {"), geom_latex_escape((lab).text)), "};");
+  out = __flowc_str_concatn(8, out, "\n  \\node[font=\\small] at (", f1((lab).x), ",", f1((h - (lab).y)), ") {", geom_latex_escape((lab).text), "};");
   i = (i + 1);
 }
   i = 0;
   while (i < (g[0]).npt) {
   const char* name = (g[0]).pt_name[i];
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\fill ("), name), ") circle (6pt);");
+  out = __flowc_str_concatn(4, out, "\n  \\fill (", name, ") circle (6pt);");
   const char* oy = "-14";
   if ((g[0]).pt_y[i] < 120.0) {
   oy = "20";
 }
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\node[font=\\bfseries] at ($( "), name), " ) + (0,"), oy), ")$) {"), name), "};");
+  out = __flowc_str_concatn(8, out, "\n  \\node[font=\\bfseries] at ($( ", name, " ) + (0,", oy, ")$) {", name, "};");
   i = (i + 1);
 }
   if (strlen((g[0]).caption) > 0) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  \\node[below, text width=14cm, align=center, font=\\small] at (240,20) {"), geom_latex_escape((g[0]).caption)), "};");
+  out = __flowc_str_concatn(4, out, "\n  \\node[below, text width=14cm, align=center, font=\\small] at (240,20) {", geom_latex_escape((g[0]).caption), "};");
 }
   return __flowc_str_concat(out, "\n\\end{tikzpicture}\n\\end{center}");
 }
@@ -8631,7 +8650,7 @@ const char* gs_replace_all(const char* s, const char* needle, const char* repl) 
   int32_t pos = 0;
   int32_t i = gs_find(s, needle, 0);
   while (i >= 0) {
-  out = __flowc_str_concat(__flowc_str_concat(out, gs_sub(s, pos, i)), repl);
+  out = __flowc_str_concatn(3, out, gs_sub(s, pos, i), repl);
   pos = (i + m);
   i = gs_find(s, needle, pos);
 }
@@ -9218,12 +9237,12 @@ FlowcGeomDiagram gs_load_script(const char* meta, const char* flow_dir, const ch
   uint8_t* sp = (uint8_t*)(src);
   const char* path = src;
   if (sp[0] != 47 && gs_len(flow_dir) > 0) {
-  path = __flowc_str_concat(__flowc_str_concat(flow_dir, "/"), src);
+  path = __flowc_str_concatn(3, flow_dir, "/", src);
 }
   if (flowc_io_exists(path) == 1) {
   return flowc_geom_run_script(gs_read(path));
 }
-  const char* alt = __flowc_str_concat(__flowc_str_concat(root, "/examples/verify/geometry/scripts/"), src);
+  const char* alt = __flowc_str_concatn(3, root, "/examples/verify/geometry/scripts/", src);
   if (flowc_io_exists(alt) == 1) {
   return flowc_geom_run_script(gs_read(alt));
 }
@@ -14011,9 +14030,9 @@ const char* sem_format_span_type(const char* name, int32_t extent) {
   inner = __flowc_str_concat("mut ", inner);
 }
   if (extent != NO_SIZE) {
-  inner = __flowc_str_concat(__flowc_str_concat(inner, ", "), sem_s_itoa((int64_t)(extent)));
+  inner = __flowc_str_concatn(3, inner, ", ", sem_s_itoa((int64_t)(extent)));
 }
-  return __flowc_str_concat(__flowc_str_concat("span<", inner), ">");
+  return __flowc_str_concatn(3, "span<", inner, ">");
 }
 
 const char* sem_ty_str(SemTys* t, int32_t id) {
@@ -14029,15 +14048,15 @@ const char* sem_ty_str(SemTys* t, int32_t id) {
 }
   if (k == TK_ARRAY) {
   if (t->size[id] != NO_SIZE) {
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("array<", sem_ty_str(t, t->elem[id])), ", "), sem_s_itoa((int64_t)(t->size[id]))), ">");
+  return __flowc_str_concatn(5, "array<", sem_ty_str(t, t->elem[id]), ", ", sem_s_itoa((int64_t)(t->size[id])), ">");
 }
-  return __flowc_str_concat(__flowc_str_concat("array<", sem_ty_str(t, t->elem[id])), ">");
+  return __flowc_str_concatn(3, "array<", sem_ty_str(t, t->elem[id]), ">");
 }
   if (k == TK_SPAN) {
   return sem_format_span_type(t->name[id], t->size[id]);
 }
   if (k == TK_POINTER) {
-  return __flowc_str_concat(__flowc_str_concat("ptr<", sem_ty_str(t, t->elem[id])), ">");
+  return __flowc_str_concatn(3, "ptr<", sem_ty_str(t, t->elem[id]), ">");
 }
   if (k == TK_FUNCTION) {
   const char* ps = "";
@@ -14050,9 +14069,9 @@ const char* sem_ty_str(SemTys* t, int32_t id) {
   ps = __flowc_str_concat(ps, sem_ty_str(t, sem_ty_param(t, id, i)));
   i = (i + 1);
 }
-  const char* b = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("(", ps), ") -> "), sem_ty_str(t, t->ret[id]));
+  const char* b = __flowc_str_concatn(4, "(", ps, ") -> ", sem_ty_str(t, t->ret[id]));
   if (sem_ty_neffects(t, id) > 0) {
-  return __flowc_str_concat(__flowc_str_concat(b, " with "), sem_sv_join(t->effects[id], ", "));
+  return __flowc_str_concatn(3, b, " with ", sem_sv_join(t->effects[id], ", "));
 }
   return b;
 }
@@ -14062,7 +14081,7 @@ const char* sem_ty_str(SemTys* t, int32_t id) {
 }
   return "unknown";
 }
-  return __flowc_str_concat(__flowc_str_concat("<unknown:TypeKind.", sem_tk_enum_name(k)), ">");
+  return __flowc_str_concatn(3, "<unknown:TypeKind.", sem_tk_enum_name(k), ">");
 }
 
 bool sem_ty_eq(SemTys* t, int32_t a, int32_t b) {
@@ -15273,7 +15292,7 @@ int32_t sem_pt_of_ast(Sem* c, int32_t ty) {
   if (args->len > 0) {
   key = sem_pt_join_names(c, args);
 }
-  int32_t id = sem_pt_mk(t, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("fn_", key), "__"), sem_pt_name(t, ret)));
+  int32_t id = sem_pt_mk(t, __flowc_str_concatn(4, "fn_", key, "__", sem_pt_name(t, ret)));
   t->pt_args[id] = args;
   t->pt_elem[id] = ret;
   int32_t row = sem_row_of(c, ty);
@@ -15298,7 +15317,7 @@ int32_t sem_pt_of_ast(Sem* c, int32_t ty) {
   if (args->len > 0) {
   key = sem_pt_join_names(c, args);
 }
-  int32_t id = sem_pt_mk(t, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("cfn_", key), "__"), sem_pt_name(t, ret)));
+  int32_t id = sem_pt_mk(t, __flowc_str_concatn(4, "cfn_", key, "__", sem_pt_name(t, ret)));
   t->pt_args[id] = args;
   t->pt_elem[id] = ret;
   t->pt_cfn[id] = 1;
@@ -15311,7 +15330,7 @@ int32_t sem_pt_of_ast(Sem* c, int32_t ty) {
 }
   if (cc == AST_TYPE_FIXED_ARRAY) {
   int32_t el = sem_pt_of_ast(c, inner);
-  int32_t id = sem_pt_mk(t, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("array_", sem_s_itoa((int64_t)(iv))), "_"), sem_pt_name(t, el)));
+  int32_t id = sem_pt_mk(t, __flowc_str_concatn(4, "array_", sem_s_itoa((int64_t)(iv)), "_", sem_pt_name(t, el)));
   t->pt_size[id] = iv;
   t->pt_elem[id] = el;
   return id;
@@ -15349,7 +15368,7 @@ int32_t sem_pt_of_ast(Sem* c, int32_t ty) {
   if (sem_s_eq(name, "array")) {
   int32_t el = sem_pt_of_ast(c, inner);
   if (iv > 0) {
-  int32_t id = sem_pt_mk(t, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("array_", sem_s_itoa((int64_t)(iv))), "_"), sem_pt_name(t, el)));
+  int32_t id = sem_pt_mk(t, __flowc_str_concatn(4, "array_", sem_s_itoa((int64_t)(iv)), "_", sem_pt_name(t, el)));
   t->pt_size[id] = iv;
   t->pt_elem[id] = el;
   return id;
@@ -15367,7 +15386,7 @@ int32_t sem_pt_of_ast(Sem* c, int32_t ty) {
 }
   if (sem_s_starts(name, "vec") && sem_s_len(name) > 3 && sem_s_is_digit(sem_s_byte(name, 3))) {
   int32_t el = sem_pt_of_ast(c, inner);
-  int32_t id = sem_pt_mk(t, __flowc_str_concat(__flowc_str_concat(name, "_"), sem_pt_name(t, el)));
+  int32_t id = sem_pt_mk(t, __flowc_str_concatn(3, name, "_", sem_pt_name(t, el)));
   int32_t k = 3;
   int32_t n = 0;
   while (k < sem_s_len(name) && sem_s_is_digit(sem_s_byte(name, k))) {
@@ -15384,7 +15403,7 @@ int32_t sem_pt_of_ast(Sem* c, int32_t ty) {
   sem_iv_push(args, sem_pt_of_ast(c, p));
   p = ((c->ar).nodes[p]).next;
 }
-  int32_t id = sem_pt_mk(t, __flowc_str_concat(__flowc_str_concat(name, "_"), sem_pt_join_names(c, args)));
+  int32_t id = sem_pt_mk(t, __flowc_str_concatn(3, name, "_", sem_pt_join_names(c, args)));
   t->pt_args[id] = args;
   return id;
 }
@@ -15775,7 +15794,7 @@ const char* sem_format_dims(Sem* c, SemIntVec* d) {
 }
   const char* part = base;
   if (mag != 1) {
-  part = __flowc_str_concat(__flowc_str_concat(base, "^"), sem_s_itoa((int64_t)(mag)));
+  part = __flowc_str_concatn(3, base, "^", sem_s_itoa((int64_t)(mag)));
 }
   if (e > 0) {
   sem_sv_push(num, part);
@@ -15791,7 +15810,7 @@ const char* sem_format_dims(Sem* c, SemIntVec* d) {
 }
   i = 0;
   while (i < den->len) {
-  text = __flowc_str_concat(__flowc_str_concat(text, "/"), sem_sv_get(den, i));
+  text = __flowc_str_concatn(3, text, "/", sem_sv_get(den, i));
   i = (i + 1);
 }
   return text;
@@ -16457,7 +16476,7 @@ int32_t sem_scan_attributes(Sem* c, int32_t lo, int32_t hi) {
   args = __flowc_str_concat(args, cur);
 }
   if (sem_s_eq(name, "cInclude") == 0 && sem_s_eq(name, "cImport") == 0 && sem_s_eq(name, "cEmbed") == 0) {
-  sem_sv_push(c->attr_pool, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(name, "("), args), ")"));
+  sem_sv_push(c->attr_pool, __flowc_str_concatn(4, name, "(", args, ")"));
   n = (n + 1);
 }
 } else {
@@ -16645,10 +16664,10 @@ const char* sem_validate_target_spec(const char* spec) {
   while (i < items->len) {
   const char* item = sem_s_strip(sem_sv_get(items, i));
   if (sem_s_len(item) == 0) {
-  return __flowc_str_concat(__flowc_str_concat("@target(\"", spec), "\") has an empty component");
+  return __flowc_str_concatn(3, "@target(\"", spec, "\") has an empty component");
 }
   if (sem_target_item_ok(item) == 0) {
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("@target(\"", spec), "\") component '"), item), "' is not a valid target feature; expected forms are 'avx2', '+avx2', '-sse', 'no-sse', 'arch=haswell' or 'tune=native'");
+  return __flowc_str_concatn(5, "@target(\"", spec, "\") component '", item, "' is not a valid target feature; expected forms are 'avx2', '+avx2', '-sse', 'no-sse', 'arch=haswell' or 'tune=native'");
 }
   i = (i + 1);
 }
@@ -16670,37 +16689,37 @@ void sem_attribute_errors(Sem* c, const char* fn_name, int32_t start, int32_t n)
   if (k > 0) {
   ks = __flowc_str_concat(ks, ", ");
 }
-  ks = __flowc_str_concat(__flowc_str_concat(ks, "@"), sem_sv_get(known, k));
+  ks = __flowc_str_concatn(3, ks, "@", sem_sv_get(known, k));
   k = (k + 1);
 }
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Unknown attribute '@", name), "' on function '"), fn_name), "'. Known attributes: "), ks));
+  sem_err(c, __flowc_str_concatn(6, "Unknown attribute '@", name, "' on function '", fn_name, "'. Known attributes: ", ks));
 } else {
   sem_sv_add(seen, name);
   if (args->len > 0 && sem_takes_args(name) == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Attribute '@", name), "' on function '"), fn_name), "' takes no arguments"));
+  sem_err(c, __flowc_str_concatn(5, "Attribute '@", name, "' on function '", fn_name, "' takes no arguments"));
 } else {
   if (sem_s_eq(name, "lifetime")) {
   const char* known2 = "callback, frame, session, application";
   if (lifetime_seen) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("'", fn_name), "' declares more than one '@lifetime' domain; a declaration lives in exactly one domain"));
+  sem_err(c, __flowc_str_concatn(3, "'", fn_name, "' declares more than one '@lifetime' domain; a declaration lives in exactly one domain"));
 } else {
   lifetime_seen = 1;
   if (args->len != 1) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Attribute '@lifetime' on '", fn_name), "' takes exactly one domain: "), known2));
+  sem_err(c, __flowc_str_concatn(4, "Attribute '@lifetime' on '", fn_name, "' takes exactly one domain: ", known2));
 } else {
   if (sem_lifetime_index(sem_sv_get(args, 0)) < 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Unknown lifetime domain '", sem_sv_get(args, 0)), "' on '"), fn_name), "'. Known domains: "), known2), " (see docs/language/lifetime-domains.md)"));
+  sem_err(c, __flowc_str_concatn(7, "Unknown lifetime domain '", sem_sv_get(args, 0), "' on '", fn_name, "'. Known domains: ", known2, " (see docs/language/lifetime-domains.md)"));
 }
 }
 }
 } else {
   if (sem_s_eq(name, "target")) {
   if (args->len == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Attribute '@target' on function '", fn_name), "' requires a target string, e.g. @target(\"avx2\")"));
+  sem_err(c, __flowc_str_concatn(3, "Attribute '@target' on function '", fn_name, "' requires a target string, e.g. @target(\"avx2\")"));
 } else {
   const char* problem = sem_validate_target_spec(sem_sv_join(args, ","));
   if (sem_s_len(problem) > 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(problem, " (on function '"), fn_name), "')"));
+  sem_err(c, __flowc_str_concatn(4, problem, " (on function '", fn_name, "')"));
 }
 }
 }
@@ -16710,10 +16729,10 @@ void sem_attribute_errors(Sem* c, const char* fn_name, int32_t start, int32_t n)
   i = (i + 1);
 }
   if (sem_sv_has(seen, "noinline") && (sem_sv_has(seen, "inline") || sem_sv_has(seen, "always_inline"))) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Function '", fn_name), "' cannot be both '@noinline' and '@inline'/'@always_inline'"));
+  sem_err(c, __flowc_str_concatn(3, "Function '", fn_name, "' cannot be both '@noinline' and '@inline'/'@always_inline'"));
 }
   if (sem_sv_has(seen, "safe") && sem_sv_has(seen, "unsafe")) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Function '", fn_name), "' cannot be both '@safe' and '@unsafe'"));
+  sem_err(c, __flowc_str_concatn(3, "Function '", fn_name, "' cannot be both '@safe' and '@unsafe'"));
 }
 }
 
@@ -35909,7 +35928,7 @@ const char* pdg_replace(const char* s, const char* needle, const char* repl) {
   const char* out = "";
   int32_t pos = 0;
   while (first >= 0) {
-  out = __flowc_str_concat(__flowc_str_concat(out, pdg_sub(s, pos, first)), repl);
+  out = __flowc_str_concatn(3, out, pdg_sub(s, pos, first), repl);
   pos = (first + m);
   first = pdg_find(s, needle, pos);
 }
@@ -36311,7 +36330,7 @@ const char* pdg_let_line(const char* line) {
   rs = (rs - 1);
 }
   if (rs < n) {
-  return __flowc_str_concat(__flowc_str_concat(pdg_sub(line, ns, ne), " = "), pdg_strip(pdg_sub(line, rs, n)));
+  return __flowc_str_concatn(3, pdg_sub(line, ns, ne), " = ", pdg_strip(pdg_sub(line, rs, n)));
 }
 }
 }
@@ -36716,7 +36735,7 @@ const char* pdg_package_prefix(const char* modname) {
 const char* pdg_qualify(const char* modname, const char* claim_path) {
   const char* prefix = pdg_package_prefix(modname);
   if (pdg_len(prefix) > 0) {
-  return __flowc_str_concat(__flowc_str_concat(prefix, "."), claim_path);
+  return __flowc_str_concatn(3, prefix, ".", claim_path);
 }
   return claim_path;
 }
@@ -36748,7 +36767,7 @@ const char* flowc_proof_read(const char* path) {
 const char** pdg_list_flow(const char* root, int32_t* out_n) {
   int32_t cap = 4194304;
   uint8_t* buf = (uint8_t*)(malloc((int64_t)(cap)));
-  const char* cmd = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("if [ -d '", root), "' ]; then find '"), root), "' -name '*.flow' -type f | tr '/' '\\001' | LC_ALL=C sort | tr '\\001' '/'; fi");
+  const char* cmd = __flowc_str_concatn(5, "if [ -d '", root, "' ]; then find '", root, "' -name '*.flow' -type f | tr '/' '\\001' | LC_ALL=C sort | tr '\\001' '/'; fi");
   int32_t n = flowc_io_popen_read(cmd, buf, (cap - 1));
   int32_t count = 0;
   if (n <= 0) {
@@ -36793,7 +36812,7 @@ PdgMap flowc_proof_global_tiers(const char* root) {
   int32_t k = 0;
   while (k < (d).nthm) {
   const char* cp = ((d).thms[k]).claim_path;
-  const char* entry = __flowc_str_concat(__flowc_str_concat(cp, "\n"), ((d).thms[k]).tier);
+  const char* entry = __flowc_str_concatn(3, cp, "\n", ((d).thms[k]).tier);
   PdgMap seen = flowc_pdg_map_new(16);
   pdg_index_add((&idx), cp, entry, (&seen));
   pdg_index_add((&idx), pdg_qualify((d).modname, cp), entry, (&seen));
@@ -36854,7 +36873,7 @@ const char* pdg_circled(int32_t n) {
   buf[3] = 0;
   return (const char*)(buf);
 }
-  return __flowc_str_concat(__flowc_str_concat("(", pdg_itoa(n)), ")");
+  return __flowc_str_concatn(3, "(", pdg_itoa(n), ")");
 }
 
 int32_t pdg_sorted_unique(int32_t* nums, int32_t n, int32_t* out) {
@@ -36892,7 +36911,7 @@ const char* pdg_join_labels(const char** labels, int32_t n) {
   return labels[0];
 }
   if (n == 2) {
-  return __flowc_str_concat(__flowc_str_concat(pdg_sidx(labels[0]), " and "), pdg_sidx(labels[1]));
+  return __flowc_str_concatn(3, pdg_sidx(labels[0]), " and ", pdg_sidx(labels[1]));
 }
   const char* s = "";
   int32_t i = 0;
@@ -36903,7 +36922,7 @@ const char* pdg_join_labels(const char** labels, int32_t n) {
   s = __flowc_str_concat(s, pdg_sidx(labels[i]));
   i = (i + 1);
 }
-  return __flowc_str_concat(__flowc_str_concat(s, ", and "), pdg_sidx(labels[(n - 1)]));
+  return __flowc_str_concatn(3, s, ", and ", pdg_sidx(labels[(n - 1)]));
 }
 
 const char* pdg_fmt_refs(int32_t* nums, int32_t n) {
@@ -36923,9 +36942,9 @@ const char* pdg_under_refs(int32_t* nums, int32_t n) {
   return "";
 }
   if (n == 1) {
-  return __flowc_str_concat(__flowc_str_concat("Under the supposition in step ", pdg_itoa(nums[0])), ", ");
+  return __flowc_str_concatn(3, "Under the supposition in step ", pdg_itoa(nums[0]), ", ");
 }
-  return __flowc_str_concat(__flowc_str_concat("Under the suppositions in ", pdg_fmt_refs(nums, n)), ", ");
+  return __flowc_str_concatn(3, "Under the suppositions in ", pdg_fmt_refs(nums, n), ", ");
 }
 
 const char* pdg_claim_phrase(const char* path) {
@@ -37009,7 +37028,7 @@ const char* pdg_claim_sentence(PdgThm* t) {
 }
   if (pdg_len((t[0]).claim_expr) > 0) {
   const char* key = pdg_collapse_ws(flowc_flow_expr_to_mathematical_english((t[0]).claim_expr));
-  return __flowc_str_concat(__flowc_str_concat("We're showing that ", key), ".");
+  return __flowc_str_concatn(3, "We're showing that ", key, ".");
 }
   return "We're showing this claim holds.";
 }
@@ -37044,7 +37063,7 @@ const char* pdg_claim_math_latex(PdgThm* t) {
   if (nq > 0) {
   quants = __flowc_str_concat(quants, " ");
 }
-  quants = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(quants, "\\forall "), var), " \\in "), dom_tex);
+  quants = __flowc_str_concatn(5, quants, "\\forall ", var, " \\in ", dom_tex);
   nq = (nq + 1);
 }
   s = (i + 1);
@@ -37052,7 +37071,7 @@ const char* pdg_claim_math_latex(PdgThm* t) {
   i = (i + 1);
 }
   if (nq > 0) {
-  return __flowc_str_concat(__flowc_str_concat(quants, "\\quad "), claim);
+  return __flowc_str_concatn(3, quants, "\\quad ", claim);
 }
   return claim;
 }
@@ -37169,7 +37188,7 @@ const char* pdg_sub_word(const char* s, const char* name, const char* value) {
 }
 }
   if (hit == 1) {
-  out = __flowc_str_concat(__flowc_str_concat(out, pdg_sub(s, pos, i)), value);
+  out = __flowc_str_concatn(3, out, pdg_sub(s, pos, i), value);
   i = (i + m);
   pos = i;
 } else {
@@ -37189,7 +37208,7 @@ const char* pdg_premise_latex(const char* ref, const char* args, const char* cla
   const char* filled = tmpl;
   int32_t i = 0;
   while (i < nv) {
-  filled = pdg_replace(filled, __flowc_str_concat(__flowc_str_concat("{", pdg_itoa(i)), "}"), vals[i]);
+  filled = pdg_replace(filled, __flowc_str_concatn(3, "{", pdg_itoa(i), "}"), vals[i]);
   i = (i + 1);
 }
   return flowc_flow_expr_to_latex(filled);
@@ -37249,16 +37268,16 @@ const char* pdg_assume_premise(const char* ref, const char* phrase, const char* 
   return flowc_invoke_premise_mathematical(addr, phrase, args, kind, theorem_ref);
 }
   if (pdg_len(args) > 0) {
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("We invoke the ", kind), ": "), phrase), " (instantiated for "), args), ").");
+  return __flowc_str_concatn(7, "We invoke the ", kind, ": ", phrase, " (instantiated for ", args, ").");
 }
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("We invoke the ", kind), ": "), phrase), ".");
+  return __flowc_str_concatn(5, "We invoke the ", kind, ": ", phrase, ".");
 }
 
 void pdg_catalog_add(PdgMap* cat, PdgDoc* d) {
   int32_t k = 0;
   while (k < (d[0]).nthm) {
   PdgThm t = (d[0]).thms[k];
-  pdg_map_set(cat, (t).claim_path, __flowc_str_concat(__flowc_str_concat(pdg_tier_or_derived((t).tier), "\n"), pdg_itoa((t).number)));
+  pdg_map_set(cat, (t).claim_path, __flowc_str_concatn(3, pdg_tier_or_derived((t).tier), "\n", pdg_itoa((t).number)));
   k = (k + 1);
 }
 }
@@ -37272,7 +37291,7 @@ const char* pdg_catalog_ref(PdgMap* cat, const char* ref) {
   return "";
 }
   int32_t nl = pdg_find_char(e, 10, 0);
-  return __flowc_str_concat(__flowc_str_concat(flowc_claim_path_tier_label(pdg_sub(e, 0, nl)), " "), pdg_sub(e, (nl + 1), pdg_len(e)));
+  return __flowc_str_concatn(3, flowc_claim_path_tier_label(pdg_sub(e, 0, nl)), " ", pdg_sub(e, (nl + 1), pdg_len(e)));
 }
 
 const char* pdg_natural_assume(PdgDoc* d, PdgThm* t, const char* text, PdgMap* tiers, PdgMap* cat, int32_t* ctx, int32_t nctx) {
@@ -37299,7 +37318,7 @@ const char* pdg_natural_assume(PdgDoc* d, PdgThm* t, const char* text, PdgMap* t
 }
 }
   const char* lead = pdg_under_refs(ctx, nctx);
-  const char* body = __flowc_str_concat(__flowc_str_concat("We cross the inductive boundary: assume the claim holds for ", var), " (the induction hypothesis).");
+  const char* body = __flowc_str_concatn(3, "We cross the inductive boundary: assume the claim holds for ", var, " (the induction hypothesis).");
   if (pdg_len(lead) > 0) {
   return __flowc_str_concat(lead, pdg_lower_first(body));
 }
@@ -37336,7 +37355,7 @@ const char* pdg_natural_let(const char* text, int32_t* ctx, int32_t nctx) {
   j = (j + 1);
 }
   if (j > a0 && j < n && p[j] == 41) {
-  body = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("let ", pdg_sub(t, 0, ne)), " denote the predecessor of "), pdg_sub(t, a0, j)), ".");
+  body = __flowc_str_concatn(5, "let ", pdg_sub(t, 0, ne), " denote the predecessor of ", pdg_sub(t, a0, j), ".");
 }
 }
 }
@@ -37345,7 +37364,7 @@ const char* pdg_natural_let(const char* text, int32_t* ctx, int32_t nctx) {
   if (pdg_contains(text, "pred(n)") == 1) {
   body = "let k denote the predecessor of n.";
 } else {
-  body = __flowc_str_concat(__flowc_str_concat("let ", text), ".");
+  body = __flowc_str_concatn(3, "let ", text, ".");
 }
 }
   if (pdg_len(lead) > 0) {
@@ -37387,27 +37406,27 @@ const char* pdg_natural_therefore(const char* text, int32_t is_base, int32_t is_
   const char* plain = flowc_flow_expr_to_mathematical_english(text);
   const char* from_phrase = "";
   if (pdg_len(premise_ref_str) > 0) {
-  from_phrase = __flowc_str_concat(__flowc_str_concat("From ", premise_ref_str), ", ");
+  from_phrase = __flowc_str_concatn(3, "From ", premise_ref_str, ", ");
 }
   if (npremise == 0) {
   const char* body = "";
   const char* direct = pdg_geometry_direct(claim_path);
   if (pdg_eq(tier, "definition") == 1) {
-  body = __flowc_str_concat(__flowc_str_concat("This follows directly from the definition: ", plain), ".");
+  body = __flowc_str_concatn(3, "This follows directly from the definition: ", plain, ".");
 } else {
   if (pdg_eq(tier, "axiom") == 1) {
-  body = __flowc_str_concat(__flowc_str_concat("This holds immediately by the stated axiom: ", plain), ".");
+  body = __flowc_str_concatn(3, "This holds immediately by the stated axiom: ", plain, ".");
 } else {
   if (in_case == 1 && is_final == 0) {
-  body = __flowc_str_concat(__flowc_str_concat("In this case, we can deduce that ", plain), ".");
+  body = __flowc_str_concatn(3, "In this case, we can deduce that ", plain, ".");
 } else {
   if (in_case == 1 && is_final == 1) {
-  body = __flowc_str_concat(__flowc_str_concat("In this case, this implies ", plain), ".");
+  body = __flowc_str_concatn(3, "In this case, this implies ", plain, ".");
 } else {
   if (is_final == 1 && pdg_len(direct) > 0) {
-  body = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(direct, ", so "), plain), ".");
+  body = __flowc_str_concatn(4, direct, ", so ", plain, ".");
 } else {
-  body = __flowc_str_concat(__flowc_str_concat("We can deduce that ", plain), ".");
+  body = __flowc_str_concatn(3, "We can deduce that ", plain, ".");
 }
 }
 }
@@ -37423,12 +37442,12 @@ const char* pdg_natural_therefore(const char* text, int32_t is_base, int32_t is_
   while (i < nclaims) {
   const char* bridge = pdg_geometry_deduction(claim_path, premise_claims[i]);
   if (pdg_len(bridge) > 0 && is_final == 1 && in_case == 0) {
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(from_phrase, bridge), ", so "), plain), ". Hence proven.");
+  return __flowc_str_concatn(5, from_phrase, bridge, ", so ", plain, ". Hence proven.");
 }
   i = (i + 1);
 }
   if (is_final == 1 && in_case == 0 && pdg_contains(claim_path, "«Euclid Book I»") == 1 && pdg_len(premise_ref_str) > 0) {
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(from_phrase, "by the chain of results established in Book I ("), premise_ref_str), "), we obtain "), plain), ". Hence proven.");
+  return __flowc_str_concatn(6, from_phrase, "by the chain of results established in Book I (", premise_ref_str, "), we obtain ", plain, ". Hence proven.");
 }
 }
   if (is_base == 1) {
@@ -37436,18 +37455,18 @@ const char* pdg_natural_therefore(const char* text, int32_t is_base, int32_t is_
   if (pdg_len(base_refs) == 0) {
   base_refs = pdg_fmt_refs(premise_nums, npremise);
 }
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(from_phrase, "we can deduce that "), plain), ". This establishes the base case (see "), base_refs), "). Hence proven.");
+  return __flowc_str_concatn(6, from_phrase, "we can deduce that ", plain, ". This establishes the base case (see ", base_refs, "). Hence proven.");
 }
   if (is_final == 1 && in_case == 1 && ncase_close > 0) {
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(from_phrase, "this implies "), plain), ". Together with the other cases ("), pdg_fmt_refs(case_close, ncase_close)), "), the goal is discharged. Hence proven.");
+  return __flowc_str_concatn(6, from_phrase, "this implies ", plain, ". Together with the other cases (", pdg_fmt_refs(case_close, ncase_close), "), the goal is discharged. Hence proven.");
 }
   if (is_final == 1) {
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(from_phrase, "this implies "), plain), ". Hence proven.");
+  return __flowc_str_concatn(4, from_phrase, "this implies ", plain, ". Hence proven.");
 }
   if (in_case == 1) {
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(from_phrase, "this implies "), plain), " in this case.");
+  return __flowc_str_concatn(4, from_phrase, "this implies ", plain, " in this case.");
 }
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(from_phrase, "we can deduce that "), plain), ".");
+  return __flowc_str_concatn(4, from_phrase, "we can deduce that ", plain, ".");
 }
 
 void pdg_add_line(PdgLine* lines, int32_t* n, int32_t number, const char* english, const char* math, int32_t* refs, int32_t nrefs) {
@@ -37555,7 +37574,7 @@ int32_t pdg_tutorial(PdgDoc* d, PdgThm* t, PdgMap* tiers, PdgMap* cat, PdgLine* 
   var = pdg_strip((t[0]).params);
 }
 }
-  pdg_add_line(lines, nl, step_num, __flowc_str_concat(__flowc_str_concat("We proceed by induction on ", var), ": first the base case, then the inductive step."), "", none, 0);
+  pdg_add_line(lines, nl, step_num, __flowc_str_concatn(3, "We proceed by induction on ", var, ": first the base case, then the inductive step."), "", none, 0);
   step_num = (step_num + 1);
 }
   int32_t in_base = induction;
@@ -37601,9 +37620,9 @@ int32_t pdg_tutorial(PdgDoc* d, PdgThm* t, PdgMap* tiers, PdgMap* cat, PdgLine* 
   const char* cond = flowc_mathematical_case_condition((st).detail);
   if (split_step_num != 0) {
   int32_t* r = (int32_t*)(pdg_one(split_step_num));
-  pdg_add_line(lines, nl, step_num, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Case ", pdg_itoa(case_num)), " (see "), pdg_fmt_refs(r, 1)), "): suppose "), cond), "."), "", r, 1);
+  pdg_add_line(lines, nl, step_num, __flowc_str_concatn(7, "Case ", pdg_itoa(case_num), " (see ", pdg_fmt_refs(r, 1), "): suppose ", cond, "."), "", r, 1);
 } else {
-  pdg_add_line(lines, nl, step_num, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Case ", pdg_itoa(case_num)), ": suppose "), cond), "."), "", none, 0);
+  pdg_add_line(lines, nl, step_num, __flowc_str_concatn(5, "Case ", pdg_itoa(case_num), ": suppose ", cond, "."), "", none, 0);
 }
   current_case_step = step_num;
   case_open[ncase_open] = step_num;
@@ -37613,7 +37632,7 @@ int32_t pdg_tutorial(PdgDoc* d, PdgThm* t, PdgMap* tiers, PdgMap* cat, PdgLine* 
 } else {
   if ((st).kind == PDG_IF && induction == 1) {
   const char* cond = flowc_mathematical_case_condition((st).detail);
-  pdg_add_line(lines, nl, step_num, __flowc_str_concat(__flowc_str_concat("Consider the base case in which ", cond), "."), "", none, 0);
+  pdg_add_line(lines, nl, step_num, __flowc_str_concatn(3, "Consider the base case in which ", cond, "."), "", none, 0);
   base_case_step_num = step_num;
   current_case_step = step_num;
   npending = 0;
@@ -37631,10 +37650,10 @@ int32_t pdg_tutorial(PdgDoc* d, PdgThm* t, PdgMap* tiers, PdgMap* cat, PdgLine* 
 }
   const char* see = pdg_fmt_refs(refs, nrefs);
   if (pdg_eq((st).detail, "else") == 1) {
-  pdg_add_line(lines, nl, step_num, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Case ", pdg_itoa(case_num)), " (see "), see), "): neither disjunct holds."), "", refs, nrefs);
+  pdg_add_line(lines, nl, step_num, __flowc_str_concatn(5, "Case ", pdg_itoa(case_num), " (see ", see, "): neither disjunct holds."), "", refs, nrefs);
 } else {
   const char* cond = flowc_mathematical_case_condition(pdg_replace((st).detail, "case ", ""));
-  pdg_add_line(lines, nl, step_num, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Case ", pdg_itoa(case_num)), " (see "), see), "): suppose "), cond), "."), "", refs, nrefs);
+  pdg_add_line(lines, nl, step_num, __flowc_str_concatn(7, "Case ", pdg_itoa(case_num), " (see ", see, "): suppose ", cond, "."), "", refs, nrefs);
 }
   current_case_step = step_num;
   case_open[ncase_open] = step_num;
@@ -37762,7 +37781,7 @@ int32_t pdg_tutorial(PdgDoc* d, PdgThm* t, PdgMap* tiers, PdgMap* cat, PdgLine* 
 }
   if (step_num == 1 && pdg_len((t[0]).claim_expr) > 0) {
   const char* plain = flowc_flow_expr_to_mathematical_english((t[0]).claim_expr);
-  pdg_add_line(lines, nl, 1, __flowc_str_concat(__flowc_str_concat("The claim follows immediately: ", plain), ". Hence proven."), flowc_flow_expr_to_latex((t[0]).claim_expr), none, 0);
+  pdg_add_line(lines, nl, 1, __flowc_str_concatn(3, "The claim follows immediately: ", plain, ". Hence proven."), flowc_flow_expr_to_latex((t[0]).claim_expr), none, 0);
 }
   return nl[0];
 }
@@ -37795,10 +37814,10 @@ const char* pdg_render_thm_md(PdgDoc* d, PdgThm* t, PdgMap* tiers) {
   const char* out = "";
   FlowcClaimAddress claim = flowc_claim_try_parse((t[0]).claim_path);
   if ((claim).ok == 1) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "**Coordinate.** "), flowc_addr_coordinate_display(claim)), " · **"), flowc_claim_path_tier_label(pdg_tier_or_derived((t[0]).tier))), "**\n\n");
+  out = __flowc_str_concatn(6, out, "**Coordinate.** ", flowc_addr_coordinate_display(claim), " · **", flowc_claim_path_tier_label(pdg_tier_or_derived((t[0]).tier)), "**\n\n");
 }
   if (pdg_len((t[0]).from_source) > 0) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "*Source: "), (t[0]).from_source), "*\n\n");
+  out = __flowc_str_concatn(4, out, "*Source: ", (t[0]).from_source, "*\n\n");
 }
   const char** needs = (const char**)((const char**)(malloc(((int64_t)((pdg_count_commas((t[0]).needs) + 2)) * 8))));
   int32_t nn = pdg_needs((t[0]).needs, needs);
@@ -37812,20 +37831,20 @@ const char* pdg_render_thm_md(PdgDoc* d, PdgThm* t, PdgMap* tiers) {
   s = __flowc_str_concat(s, pdg_claim_phrase(needs[i]));
   i = (i + 1);
 }
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "*Built on: "), s), "*\n\n");
+  out = __flowc_str_concatn(4, out, "*Built on: ", s, "*\n\n");
 }
   PdgLine* lines = (PdgLine*)((PdgLine*)(malloc(((int64_t)(pdg_lines_cap(t)) * 48))));
   PdgMap none = flowc_pdg_map_new(4);
   int32_t n = pdg_tutorial(d, t, tiers, (&none), lines);
   if (n > 0 && (lines[0]).is_goal == 1) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "> **Goal.** "), (lines[0]).english), "\n");
+  out = __flowc_str_concatn(4, out, "> **Goal.** ", (lines[0]).english, "\n");
   if (pdg_len((lines[0]).math) > 0) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, ">\n> $$"), (lines[0]).math), "$$\n");
+  out = __flowc_str_concatn(4, out, ">\n> $$", (lines[0]).math, "$$\n");
 }
   out = __flowc_str_concat(out, "\n");
 }
   if (pdg_len((t[0]).diagram_svg) > 0) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "**Figure.**\n\n!["), (t[0]).diagram_svg), "]("), (t[0]).diagram_svg), ")\n\n");
+  out = __flowc_str_concatn(6, out, "**Figure.**\n\n![", (t[0]).diagram_svg, "](", (t[0]).diagram_svg, ")\n\n");
 }
   out = __flowc_str_concat(out, "| | **Proof** | | **Math** |\n|:---:|:---|:---:|:---|\n");
   int32_t i = 0;
@@ -37836,10 +37855,10 @@ const char* pdg_render_thm_md(PdgDoc* d, PdgThm* t, PdgMap* tiers) {
   const char* mc = "";
   const char* c2 = "";
   if (pdg_len((lines[i]).math) > 0) {
-  mc = __flowc_str_concat(__flowc_str_concat("$", (lines[i]).math), "$");
+  mc = __flowc_str_concatn(3, "$", (lines[i]).math, "$");
   c2 = c;
 }
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "| "), c), " | "), (lines[i]).english), " | "), c2), " | "), mc), " |\n");
+  out = __flowc_str_concatn(10, out, "| ", c, " | ", (lines[i]).english, " | ", c2, " | ", mc, " |\n");
   if ((lines[i]).nrefs > 0) {
   ntraced = (ntraced + 1);
 }
@@ -37851,16 +37870,16 @@ const char* pdg_render_thm_md(PdgDoc* d, PdgThm* t, PdgMap* tiers) {
   int32_t j = 0;
   while (j < n) {
   if ((lines[j]).is_goal == 0 && (lines[j]).nrefs > 0) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "| "), pdg_circled((lines[j]).number)), " | "), pdg_fmt_refs((lines[j]).refs, (lines[j]).nrefs)), " |\n");
+  out = __flowc_str_concatn(6, out, "| ", pdg_circled((lines[j]).number), " | ", pdg_fmt_refs((lines[j]).refs, (lines[j]).nrefs), " |\n");
 }
   j = (j + 1);
 }
 }
   out = __flowc_str_concat(out, "\n");
   if ((claim).ok == 1) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "`"), flowc_addr_coordinate_display(claim)), "`");
+  out = __flowc_str_concatn(4, out, "`", flowc_addr_coordinate_display(claim), "`");
 } else {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "`"), (t[0]).claim_path), "`");
+  out = __flowc_str_concatn(4, out, "`", (t[0]).claim_path, "`");
 }
   return out;
 }
@@ -37879,20 +37898,20 @@ const char* flowc_proof_render_md(PdgDoc* d, const char* stem, PdgMap* tiers) {
   if (pdg_len(title) == 0) {
   title = stem;
 }
-  const char* out = __flowc_str_concat(__flowc_str_concat("# ", title), "\n\n");
+  const char* out = __flowc_str_concatn(3, "# ", title, "\n\n");
   if (pdg_len((d[0]).means) > 0) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "*"), (d[0]).means), "*\n\n");
+  out = __flowc_str_concatn(4, out, "*", (d[0]).means, "*\n\n");
 }
   if (pdg_len((d[0]).from_source) > 0) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "**Source.** "), (d[0]).from_source), "\n\n");
+  out = __flowc_str_concatn(4, out, "**Source.** ", (d[0]).from_source, "\n\n");
 }
   int32_t k = 0;
   while (k < (d[0]).nthm) {
   PdgThm* t = (PdgThm*)((&(d[0]).thms[k]));
   const char* title2 = pdg_facet_title((t[0]).claim_path, (t[0]).means);
   const char* label = flowc_claim_path_tier_label(pdg_tier_or_derived((t[0]).tier));
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "## "), label), " "), pdg_itoa((t[0]).number)), ": "), title2), "\n\n");
-  out = __flowc_str_concat(__flowc_str_concat(out, pdg_render_thm_md(d, t, tiers)), "\n\n");
+  out = __flowc_str_concatn(8, out, "## ", label, " ", pdg_itoa((t[0]).number), ": ", title2, "\n\n");
+  out = __flowc_str_concatn(3, out, pdg_render_thm_md(d, t, tiers), "\n\n");
   k = (k + 1);
 }
   return __flowc_str_concat(pdg_rstrip(out), "\n");
@@ -37903,16 +37922,16 @@ const char* pdg_render_thm_tex(PdgDoc* d, PdgThm* t, PdgMap* tiers, PdgMap* cat,
   const char* title = pdg_facet_title((t[0]).claim_path, (t[0]).means);
   const char* tier = flowc_claim_path_tier_label(pdg_tier_or_derived((t[0]).tier));
   const char* out = "\\bigskip\n";
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\noindent{\\large \\textbf{"), tier), " "), pdg_itoa((t[0]).number)), ".} \\textit{"), pdg_latex_escape(title)), "} \\hfill "), flowc_claim_path_latex((t[0]).claim_path)), "}\\par\n");
+  out = __flowc_str_concatn(10, out, "\\noindent{\\large \\textbf{", tier, " ", pdg_itoa((t[0]).number), ".} \\textit{", pdg_latex_escape(title), "} \\hfill ", flowc_claim_path_latex((t[0]).claim_path), "}\\par\n");
   if (book_mode == 1) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\addcontentsline{toc}{subsection}{"), pdg_latex_escape(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(tier, " "), pdg_itoa((t[0]).number)), ": "), title))), "}\n");
+  out = __flowc_str_concatn(4, out, "\\addcontentsline{toc}{subsection}{", pdg_latex_escape(__flowc_str_concatn(5, tier, " ", pdg_itoa((t[0]).number), ": ", title)), "}\n");
 }
   FlowcClaimAddress claim = flowc_claim_try_parse((t[0]).claim_path);
   if ((claim).ok == 1) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\smallskip\\noindent\\textit{Coordinate: "), flowc_addr_coordinate_latex(claim)), "}\\par\n");
+  out = __flowc_str_concatn(4, out, "\\smallskip\\noindent\\textit{Coordinate: ", flowc_addr_coordinate_latex(claim), "}\\par\n");
 }
   if (pdg_len((t[0]).from_source) > 0) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\smallskip\\noindent\\textit{Source: "), pdg_latex_escape((t[0]).from_source)), "}\\par\n");
+  out = __flowc_str_concatn(4, out, "\\smallskip\\noindent\\textit{Source: ", pdg_latex_escape((t[0]).from_source), "}\\par\n");
 }
   const char** needs = (const char**)((const char**)(malloc(((int64_t)((pdg_count_commas((t[0]).needs) + 2)) * 8))));
   int32_t nn = pdg_needs((t[0]).needs, needs);
@@ -37927,21 +37946,21 @@ const char* pdg_render_thm_tex(PdgDoc* d, PdgThm* t, PdgMap* tiers, PdgMap* cat,
   const char* e = pdg_map_get(cat, need, "");
   if (pdg_len(e) > 0) {
   int32_t nl = pdg_find_char(e, 10, 0);
-  s = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(s, "\\hyperref[thm:"), pdg_slug_label(need)), "]{"), flowc_claim_path_tier_label(pdg_sub(e, 0, nl))), " "), pdg_sub(e, (nl + 1), pdg_len(e))), "}");
+  s = __flowc_str_concatn(8, s, "\\hyperref[thm:", pdg_slug_label(need), "]{", flowc_claim_path_tier_label(pdg_sub(e, 0, nl)), " ", pdg_sub(e, (nl + 1), pdg_len(e)), "}");
 } else {
   s = __flowc_str_concat(s, pdg_latex_escape(pdg_claim_phrase(needs[i])));
 }
   i = (i + 1);
 }
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\smallskip\\noindent\\textit{Built on: "), s), "}\\par\n");
+  out = __flowc_str_concatn(4, out, "\\smallskip\\noindent\\textit{Built on: ", s, "}\\par\n");
 }
   PdgLine* lines = (PdgLine*)((PdgLine*)(malloc(((int64_t)(pdg_lines_cap(t)) * 48))));
   int32_t n = pdg_tutorial(d, t, tiers, cat, lines);
   if (n > 0 && (lines[0]).is_goal == 1) {
   out = __flowc_str_concat(out, "\\medskip\n");
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\noindent\\textbf{Goal.} "), pdg_latex_escape((lines[0]).english)), "\\par\n");
+  out = __flowc_str_concatn(4, out, "\\noindent\\textbf{Goal.} ", pdg_latex_escape((lines[0]).english), "\\par\n");
   if (pdg_len((lines[0]).math) > 0) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\noindent$\\displaystyle "), (lines[0]).math), "$\\par\n");
+  out = __flowc_str_concatn(4, out, "\\noindent$\\displaystyle ", (lines[0]).math, "$\\par\n");
 }
 }
   out = __flowc_str_concat(out, "\\medskip\n\\noindent\n");
@@ -37953,14 +37972,14 @@ const char* pdg_render_thm_tex(PdgDoc* d, PdgThm* t, PdgMap* tiers, PdgMap* cat,
   if ((lines[i]).is_goal == 0) {
   const char* right = "&";
   if (pdg_len((lines[i]).math) > 0) {
-  right = __flowc_str_concat(__flowc_str_concat("& $\\displaystyle ", (lines[i]).math), "$");
+  right = __flowc_str_concatn(3, "& $\\displaystyle ", (lines[i]).math, "$");
 }
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\textbf{"), pdg_itoa((lines[i]).number)), ".} & "), pdg_latex_escape((lines[i]).english)), " "), right), " \\\\[0.45em]\n");
+  out = __flowc_str_concatn(8, out, "\\textbf{", pdg_itoa((lines[i]).number), ".} & ", pdg_latex_escape((lines[i]).english), " ", right, " \\\\[0.45em]\n");
 }
   i = (i + 1);
 }
   out = __flowc_str_concat(out, "\\bottomrule\n\\end{tabular}\n");
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\label{thm:"), label), "}\n");
+  out = __flowc_str_concatn(4, out, "\\label{thm:", label, "}\n");
   out = __flowc_str_concat(out, "\\par\\medskip\\hrule");
   return out;
 }
@@ -37977,22 +37996,22 @@ const char* flowc_proof_render_tex(PdgDoc* d, const char* stem, PdgMap* tiers) {
   out = __flowc_str_concat(out, "\\newtheorem{theorem}{Theorem}\n");
   out = __flowc_str_concat(out, "\\theoremstyle{definition}\n");
   out = __flowc_str_concat(out, "\\newtheorem{definition}{Definition}\n");
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\title{"), pdg_latex_escape(__flowc_str_concat("Flow Proof Artifact: ", stem))), "}\n");
+  out = __flowc_str_concatn(4, out, "\\title{", pdg_latex_escape(__flowc_str_concat("Flow Proof Artifact: ", stem)), "}\n");
   out = __flowc_str_concat(out, "\\author{Generated by \\texttt{flow doc proof}}\n");
   out = __flowc_str_concat(out, "\\date{Flow Proof Book}\n");
   out = __flowc_str_concat(out, "\\begin{document}\n");
   out = __flowc_str_concat(out, "\\maketitle\n");
   if (pdg_len((d[0]).means) > 0) {
-  out = __flowc_str_concat(__flowc_str_concat(out, pdg_latex_escape((d[0]).means)), "\\\\[0.5em]\n");
+  out = __flowc_str_concatn(3, out, pdg_latex_escape((d[0]).means), "\\\\[0.5em]\n");
 }
   if (pdg_len((d[0]).from_source) > 0) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\textbf{Source.} "), pdg_latex_escape((d[0]).from_source)), "\\\\[0.5em]\n");
+  out = __flowc_str_concatn(4, out, "\\textbf{Source.} ", pdg_latex_escape((d[0]).from_source), "\\\\[0.5em]\n");
 }
   PdgMap cat = flowc_pdg_map_new(((d[0]).nthm + 8));
   pdg_catalog_add((&cat), d);
   int32_t k = 0;
   while (k < (d[0]).nthm) {
-  out = __flowc_str_concat(__flowc_str_concat(out, pdg_render_thm_tex(d, (&(d[0]).thms[k]), tiers, (&cat), 0)), "\n");
+  out = __flowc_str_concatn(3, out, pdg_render_thm_tex(d, (&(d[0]).thms[k]), tiers, (&cat), 0), "\n");
   k = (k + 1);
 }
   return __flowc_str_concat(out, "\\end{document}\n");
@@ -38035,7 +38054,7 @@ const char* pdg_join(const char* dir, const char* name) {
   if (pdg_eq(d, "/") == 1) {
   return __flowc_str_concat("/", name);
 }
-  return __flowc_str_concat(__flowc_str_concat(d, "/"), name);
+  return __flowc_str_concatn(3, d, "/", name);
 }
 
 const char* pdg_dirname(const char* path) {
@@ -38080,9 +38099,9 @@ int32_t flowc_proof_write_artifacts(const char* path, const char* out_dir, int32
   if ((d).nthm != 1) {
   suffix = __flowc_str_concat("-", pdg_itoa((k + 1)));
 }
-  const char* svg_name = __flowc_str_concat(__flowc_str_concat(stem, suffix), ".proof.svg");
+  const char* svg_name = __flowc_str_concatn(3, stem, suffix, ".proof.svg");
   const char* svg_path = pdg_join(out_dir, svg_name);
-  const char* tex_path = pdg_join(out_dir, __flowc_str_concat(__flowc_str_concat(stem, suffix), ".proof-diagram.tex"));
+  const char* tex_path = pdg_join(out_dir, __flowc_str_concatn(3, stem, suffix, ".proof-diagram.tex"));
   if (pdg_write(svg_path, flowc_geom_render_svg((&g))) != 0) {
   return (0 - 1);
 }
@@ -38090,7 +38109,7 @@ int32_t flowc_proof_write_artifacts(const char* path, const char* out_dir, int32
   return (0 - 1);
 }
   ((d).thms[k]).diagram_svg = svg_name;
-  diagrams = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(diagrams, "Wrote "), svg_path), "\nWrote "), tex_path), "\n");
+  diagrams = __flowc_str_concatn(6, diagrams, "Wrote ", svg_path, "\nWrote ", tex_path, "\n");
 } else {
   if ((g).ok < 0) {
   printf("flowc proof: %s: bad diagram script\n", path);
@@ -38113,7 +38132,7 @@ int32_t flowc_proof_write_artifacts(const char* path, const char* out_dir, int32
 }
   if (verbose == 2) {
   printf("%s\n  -> %s\n  -> %s\n", path, md_path, tex_path);
-  const char* cmd = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("cd '", out_dir), "' 2>/dev/null && { ls -1 -- '"), stem), "'*.proof.svg 2>/dev/null | LC_ALL=C sort; ls -1 -- '"), stem), "'*.proof-diagram.tex 2>/dev/null | LC_ALL=C sort; }");
+  const char* cmd = __flowc_str_concatn(7, "cd '", out_dir, "' 2>/dev/null && { ls -1 -- '", stem, "'*.proof.svg 2>/dev/null | LC_ALL=C sort; ls -1 -- '", stem, "'*.proof-diagram.tex 2>/dev/null | LC_ALL=C sort; }");
   uint8_t* buf = (uint8_t*)(malloc(1048576));
   int32_t got = flowc_io_popen_read(cmd, buf, 1048575);
   if (got > 0) {
@@ -38207,7 +38226,7 @@ int32_t flowc_proof_doc_mode() {
   if (pdg_len(out) > 0) {
   dir = out;
   if (mirror > 0) {
-  dir = __flowc_str_concat(__flowc_str_concat(out, "/"), pdg_dirname(f));
+  dir = __flowc_str_concatn(3, out, "/", pdg_dirname(f));
 }
 }
   int32_t start = 1;
@@ -38245,7 +38264,7 @@ int32_t flowc_proof_doc_mode() {
 }
 
 int32_t pdg_expand_manifest(const char* root, const char* dir, const char** out, int32_t n) {
-  const char* mf = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(root, "/"), dir), "/MANIFEST.txt");
+  const char* mf = __flowc_str_concatn(4, root, "/", dir, "/MANIFEST.txt");
   int32_t count = n;
   if (flowc_io_file_size(mf) >= 0) {
   const char* text = flowc_proof_read(mf);
@@ -38265,7 +38284,7 @@ int32_t pdg_expand_manifest(const char* root, const char* dir, const char** out,
   return count;
 }
   uint8_t* buf = (uint8_t*)(malloc(1048576));
-  const char* cmd = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("cd '", root), "/"), dir), "' 2>/dev/null && ls prop-*.flow 2>/dev/null | LC_ALL=C sort");
+  const char* cmd = __flowc_str_concatn(5, "cd '", root, "/", dir, "' 2>/dev/null && ls prop-*.flow 2>/dev/null | LC_ALL=C sort");
   int32_t got = flowc_io_popen_read(cmd, buf, 1048575);
   if (got <= 0) {
   return count;
@@ -38280,7 +38299,7 @@ int32_t pdg_expand_manifest(const char* root, const char* dir, const char** out,
   while (i < nl) {
   const char* f = pdg_strip(pdg_sub(text, starts[i], ends[i]));
   if (pdg_len(f) > 0) {
-  out[count] = __flowc_str_concat(__flowc_str_concat(dir, "/"), f);
+  out[count] = __flowc_str_concatn(3, dir, "/", f);
   count = (count + 1);
 }
   i = (i + 1);
@@ -38333,8 +38352,8 @@ const char* pdg_part_heading(const char* title, int32_t first) {
   out = "\\clearpage\n";
 }
   const char* pt = pdg_latex_escape(title);
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\section*{"), pt), "}\n");
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\addcontentsline{toc}{section}{"), pt), "}\n");
+  out = __flowc_str_concatn(4, out, "\\section*{", pt, "}\n");
+  out = __flowc_str_concatn(4, out, "\\addcontentsline{toc}{section}{", pt, "}\n");
   return __flowc_str_concat(out, "\\medskip\\par\n");
 }
 
@@ -38350,7 +38369,7 @@ const char* pdg_render_bundle(PdgDoc* docs, int32_t ndocs, int32_t* doc_part, co
   out = __flowc_str_concat(out, "\\newtheorem{theorem}{Theorem}\n");
   out = __flowc_str_concat(out, "\\theoremstyle{definition}\n");
   out = __flowc_str_concat(out, "\\newtheorem{definition}{Definition}\n");
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\\title{"), pdg_latex_escape(title)), "}\n");
+  out = __flowc_str_concatn(4, out, "\\title{", pdg_latex_escape(title), "}\n");
   out = __flowc_str_concat(out, "\\author{Generated by \\texttt{flow doc proof}}\n");
   out = __flowc_str_concat(out, "\\date{Flow Proof Book}\n");
   out = __flowc_str_concat(out, "\\begin{document}\n");
@@ -38381,7 +38400,7 @@ const char* pdg_render_bundle(PdgDoc* docs, int32_t ndocs, int32_t* doc_part, co
   PdgMap tiers = pdg_merged_tiers(global, (&docs[i]));
   int32_t k = 0;
   while (k < (docs[i]).nthm) {
-  out = __flowc_str_concat(__flowc_str_concat(out, pdg_render_thm_tex((&docs[i]), (&(docs[i]).thms[k]), (&tiers), (&cat), 1)), "\n");
+  out = __flowc_str_concatn(3, out, pdg_render_thm_tex((&docs[i]), (&(docs[i]).thms[k]), (&tiers), (&cat), 1), "\n");
   k = (k + 1);
 }
   i = (i + 1);
@@ -38463,7 +38482,7 @@ int32_t flowc_proof_book_mode() {
   int32_t counter = 1;
   int32_t i = 0;
   while (i < nf) {
-  const char* path = __flowc_str_concat(__flowc_str_concat(root, "/"), pdg_sidx(files[i]));
+  const char* path = __flowc_str_concatn(3, root, "/", pdg_sidx(files[i]));
   if (flowc_io_file_size(path) < 0) {
   printf("flowc proof: proof file missing: %s\n", path);
   return 1;
@@ -38483,7 +38502,7 @@ int32_t flowc_proof_book_mode() {
 }
   const char* tex = pdg_render_bundle(docs, nf, doc_part, part_title, ngroups, title, (&global));
   pdg_mkdir_p(out_dir);
-  const char* tex_path = __flowc_str_concat(__flowc_str_concat(out_dir, "/"), tex_name);
+  const char* tex_path = __flowc_str_concatn(3, out_dir, "/", tex_name);
   if (pdg_write(tex_path, tex) != 0) {
   return 1;
 }
@@ -38491,7 +38510,7 @@ int32_t flowc_proof_book_mode() {
   if (pdg_len(pdg_env("FLOWC_PROOF_NO_REFRESH")) == 0) {
   i = 0;
   while (i < nf) {
-  const char* path = __flowc_str_concat(__flowc_str_concat(root, "/"), pdg_sidx(files[i]));
+  const char* path = __flowc_str_concatn(3, root, "/", pdg_sidx(files[i]));
   int32_t n = flowc_proof_write_artifacts(path, pdg_dirname(path), 1, (&global), root, 0);
   if (n < 0) {
   return 1;
@@ -38568,20 +38587,20 @@ const char* pdg_json_str(const char* s) {
 }
   if (cp >= 65536) {
   int32_t v = (cp - 65536);
-  esc = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("\\u", pdg_hex4((55296 + (v / 1024)))), "\\u"), pdg_hex4((56320 + (v % 1024))));
+  esc = __flowc_str_concatn(4, "\\u", pdg_hex4((55296 + (v / 1024))), "\\u", pdg_hex4((56320 + (v % 1024))));
 } else {
   esc = __flowc_str_concat("\\u", pdg_hex4(cp));
 }
 }
   if (pdg_len(esc) > 0) {
-  out = __flowc_str_concat(__flowc_str_concat(out, pdg_sub(s, run, i)), esc);
+  out = __flowc_str_concatn(3, out, pdg_sub(s, run, i), esc);
   i = (i + adv);
   run = i;
 } else {
   i = (i + 1);
 }
 }
-  return __flowc_str_concat(__flowc_str_concat(out, pdg_sub(s, run, n)), "\"");
+  return __flowc_str_concatn(3, out, pdg_sub(s, run, n), "\"");
 }
 
 const char* pdg_node_kind(const char* english, int32_t has_math) {
@@ -38636,7 +38655,7 @@ void pdg_activate(PdgLine* lines, int32_t n, const char** keys, const char** val
   const char* val = vals[v];
   const char* vl = pdg_lower(val);
   int32_t skip = 0;
-  if (pdg_contains(lower, __flowc_str_concat(__flowc_str_concat("suppose ", var), "  is  true")) == 1 || pdg_contains(lower, __flowc_str_concat(__flowc_str_concat("suppose ", var), " is true")) == 1) {
+  if (pdg_contains(lower, __flowc_str_concatn(3, "suppose ", var, "  is  true")) == 1 || pdg_contains(lower, __flowc_str_concatn(3, "suppose ", var, " is true")) == 1) {
   if (pdg_eq(vl, "true") == 0 && pdg_eq(vl, "false") == 0) {
   skip = 1;
 } else {
@@ -38646,12 +38665,12 @@ void pdg_activate(PdgLine* lines, int32_t n, const char** keys, const char** val
 }
 }
   if (skip == 0) {
-  if (pdg_contains(lower, __flowc_str_concat(__flowc_str_concat("where ", var), "  =  0")) == 1 || pdg_contains(lower, __flowc_str_concat(__flowc_str_concat("where ", var), " = 0")) == 1) {
+  if (pdg_contains(lower, __flowc_str_concatn(3, "where ", var, "  =  0")) == 1 || pdg_contains(lower, __flowc_str_concatn(3, "where ", var, " = 0")) == 1) {
   if (pdg_eq(val, "0") == 0) {
   active[i] = 0;
 }
 }
-  if (pdg_contains(pdg_replace(lower, "=", " = "), __flowc_str_concat(__flowc_str_concat("where ", var), "  =  0")) == 1 && pdg_eq(val, "0") == 0) {
+  if (pdg_contains(pdg_replace(lower, "=", " = "), __flowc_str_concatn(3, "where ", var, "  =  0")) == 1 && pdg_eq(val, "0") == 0) {
   active[i] = 0;
 }
 }
@@ -38748,7 +38767,7 @@ int32_t pdg_kernel(const char* path, const char* root, const char** keys, const 
   if ((addr).ok == 1) {
   display = flowc_addr_coordinate_display(addr);
 }
-  const char* js = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("{\n  \"claim\": ", pdg_json_str((t[0]).claim_path)), ",\n  \"claim_display\": "), pdg_json_str(display)), ",\n  \"parameters\": ");
+  const char* js = __flowc_str_concatn(5, "{\n  \"claim\": ", pdg_json_str((t[0]).claim_path), ",\n  \"claim_display\": ", pdg_json_str(display), ",\n  \"parameters\": ");
   const char** names = (const char**)((const char**)(malloc(((int64_t)((pdg_count_commas((t[0]).params) + 2)) * 8))));
   int32_t nn = pdg_param_names((t[0]).params, names);
   if (nn == 0) {
@@ -38760,7 +38779,7 @@ int32_t pdg_kernel(const char* path, const char* root, const char** keys, const 
   if (i > 0) {
   js = __flowc_str_concat(js, ",");
 }
-  js = __flowc_str_concat(__flowc_str_concat(js, "\n    "), pdg_json_str(names[i]));
+  js = __flowc_str_concatn(3, js, "\n    ", pdg_json_str(names[i]));
   i = (i + 1);
 }
   js = __flowc_str_concat(js, "\n  ]");
@@ -38775,7 +38794,7 @@ int32_t pdg_kernel(const char* path, const char* root, const char** keys, const 
   if (i > 0) {
   js = __flowc_str_concat(js, ",");
 }
-  js = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(js, "\n    "), pdg_json_str(keys[i])), ": "), pdg_json_str(vals[i]));
+  js = __flowc_str_concatn(5, js, "\n    ", pdg_json_str(keys[i]), ": ", pdg_json_str(vals[i]));
   i = (i + 1);
 }
   js = __flowc_str_concat(js, "\n  }");
@@ -38800,7 +38819,7 @@ int32_t pdg_kernel(const char* path, const char* root, const char** keys, const 
 } else {
   js = __flowc_str_concat(js, ",");
 }
-  js = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(js, "\n    {\n      \"step\": "), pdg_itoa((l).number)), ",\n      \"kind\": "), pdg_json_str(kind)), ",\n      \"text\": "), pdg_json_str((l).english)), ",\n      \"math\": ");
+  js = __flowc_str_concatn(8, js, "\n    {\n      \"step\": ", pdg_itoa((l).number), ",\n      \"kind\": ", pdg_json_str(kind), ",\n      \"text\": ", pdg_json_str((l).english), ",\n      \"math\": ");
   if (has_math == 1) {
   js = __flowc_str_concat(js, pdg_json_str((l).math));
 } else {
@@ -38816,7 +38835,7 @@ int32_t pdg_kernel(const char* path, const char* root, const char** keys, const 
   if (r > 0) {
   js = __flowc_str_concat(js, ",");
 }
-  js = __flowc_str_concat(__flowc_str_concat(js, "\n        "), pdg_itoa((l).refs[r]));
+  js = __flowc_str_concatn(3, js, "\n        ", pdg_itoa((l).refs[r]));
   r = (r + 1);
 }
   js = __flowc_str_concat(js, "\n      ]");
@@ -38834,14 +38853,14 @@ int32_t pdg_kernel(const char* path, const char* root, const char** keys, const 
   color = "#c8e6c9";
 }
   const char* esc_kind = pdg_replace(pdg_replace(kind, "\\", "\\\\"), "\"", "\\\"");
-  dot = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(dot, "\n  n"), pdg_itoa((l).number)), " [label=\""), pdg_itoa((l).number)), ": "), esc_kind), "\", style=filled, fillcolor=\""), color), "\"];");
+  dot = __flowc_str_concatn(10, dot, "\n  n", pdg_itoa((l).number), " [label=\"", pdg_itoa((l).number), ": ", esc_kind, "\", style=filled, fillcolor=\"", color, "\"];");
   int32_t r2 = 0;
   while (r2 < (l).nrefs) {
   if (nedges > 0) {
   edges = __flowc_str_concat(edges, ",");
 }
-  edges = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(edges, "\n    {\n      \"from\": "), pdg_itoa((l).refs[r2])), ",\n      \"to\": "), pdg_itoa((l).number)), "\n    }");
-  dot_edges = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(dot_edges, "\n  n"), pdg_itoa((l).refs[r2])), " -> n"), pdg_itoa((l).number)), ";");
+  edges = __flowc_str_concatn(6, edges, "\n    {\n      \"from\": ", pdg_itoa((l).refs[r2]), ",\n      \"to\": ", pdg_itoa((l).number), "\n    }");
+  dot_edges = __flowc_str_concatn(6, dot_edges, "\n  n", pdg_itoa((l).refs[r2]), " -> n", pdg_itoa((l).number), ";");
   nedges = (nedges + 1);
   r2 = (r2 + 1);
 }
@@ -38857,11 +38876,11 @@ int32_t pdg_kernel(const char* path, const char* root, const char** keys, const 
   if (nedges == 0) {
   js = __flowc_str_concat(js, "[]");
 } else {
-  js = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(js, "["), edges), "\n  ]");
+  js = __flowc_str_concatn(4, js, "[", edges, "\n  ]");
 }
   js = __flowc_str_concat(js, "\n}");
   json_out[0] = js;
-  dot_out[0] = __flowc_str_concat(__flowc_str_concat(dot, dot_edges), "\n}");
+  dot_out[0] = __flowc_str_concatn(3, dot, dot_edges, "\n}");
   return 0;
 }
 
@@ -38972,7 +38991,7 @@ PdgMap pdg_scan_index(const char* root, PdgDoc* docs, const char** paths, int32_
   int32_t k = 0;
   while (k < (d).nthm) {
   const char* cp = ((d).thms[k]).claim_path;
-  const char* entry = __flowc_str_concat(__flowc_str_concat(pdg_itoa(nd), "\n"), pdg_itoa(k));
+  const char* entry = __flowc_str_concatn(3, pdg_itoa(nd), "\n", pdg_itoa(k));
   pdg_map_set((&idx), cp, entry);
   pdg_map_set((&idx), pdg_qualify((d).modname, cp), entry);
   FlowcClaimAddress addr = flowc_claim_try_parse(cp);
@@ -39037,38 +39056,38 @@ const char* pdg_abspath(const char* path) {
   while (pdg_starts(rel, "./") == 1) {
   rel = pdg_sub(rel, 2, pdg_len(rel));
 }
-  return __flowc_str_concat(__flowc_str_concat(cwd, "/"), rel);
+  return __flowc_str_concatn(3, cwd, "/", rel);
 }
 
 const char* pdg_format_know(PdgDoc* d, PdgThm* t, const char* file_path) {
   const char* out = __flowc_str_concat(pdg_qualify((d[0]).modname, (t[0]).claim_path), "\n");
   FlowcClaimAddress addr = flowc_claim_try_parse((t[0]).claim_path);
   if ((addr).ok == 1) {
-  out = __flowc_str_concat(__flowc_str_concat(out, "\n  coordinate: "), flowc_claim_display(addr));
-  out = __flowc_str_concat(__flowc_str_concat(out, "\n  syntax:     "), flowc_claim_guillemets(addr));
+  out = __flowc_str_concatn(3, out, "\n  coordinate: ", flowc_claim_display(addr));
+  out = __flowc_str_concatn(3, out, "\n  syntax:     ", flowc_claim_guillemets(addr));
 }
   if (pdg_len((t[0]).means) > 0) {
-  out = __flowc_str_concat(__flowc_str_concat(out, "\n  means:   "), (t[0]).means);
+  out = __flowc_str_concatn(3, out, "\n  means:   ", (t[0]).means);
 }
   if (pdg_len((t[0]).claim_expr) > 0) {
-  out = __flowc_str_concat(__flowc_str_concat(out, "\n  claim:   "), flowc_flow_expr_to_mathematical_english((t[0]).claim_expr));
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n           $"), flowc_flow_expr_to_latex((t[0]).claim_expr)), "$");
+  out = __flowc_str_concatn(3, out, "\n  claim:   ", flowc_flow_expr_to_mathematical_english((t[0]).claim_expr));
+  out = __flowc_str_concatn(4, out, "\n           $", flowc_flow_expr_to_latex((t[0]).claim_expr), "$");
 }
   if (pdg_len((t[0]).tier) > 0) {
-  out = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(out, "\n  tier:    "), flowc_claim_path_tier_label((t[0]).tier)), " ("), (t[0]).tier), ")");
+  out = __flowc_str_concatn(6, out, "\n  tier:    ", flowc_claim_path_tier_label((t[0]).tier), " (", (t[0]).tier, ")");
 }
   if (pdg_len((t[0]).from_source) > 0) {
-  out = __flowc_str_concat(__flowc_str_concat(out, "\n  from:    "), (t[0]).from_source);
+  out = __flowc_str_concatn(3, out, "\n  from:    ", (t[0]).from_source);
 }
   const char* needs = pdg_join_list((t[0]).needs);
   if (pdg_len(needs) > 0) {
-  out = __flowc_str_concat(__flowc_str_concat(out, "\n  needs:   "), needs);
+  out = __flowc_str_concatn(3, out, "\n  needs:   ", needs);
 }
   const char* used = pdg_join_list((t[0]).used_by);
   if (pdg_len(used) > 0) {
-  out = __flowc_str_concat(__flowc_str_concat(out, "\n  used-by: "), used);
+  out = __flowc_str_concatn(3, out, "\n  used-by: ", used);
 }
-  out = __flowc_str_concat(__flowc_str_concat(out, "\n\n  source:  "), pdg_abspath(file_path));
+  out = __flowc_str_concatn(3, out, "\n\n  source:  ", pdg_abspath(file_path));
   out = __flowc_str_concat(out, "\n\n  proof:   run `flow doc proof` on the source file for the full trace");
   return out;
 }
@@ -39127,7 +39146,7 @@ const char* pdg_py_repr(const char* s) {
 }
   const char* body = pdg_replace(s, "\\", "\\\\");
   body = pdg_replace(body, quote, __flowc_str_concat("\\", quote));
-  return __flowc_str_concat(__flowc_str_concat(quote, body), quote);
+  return __flowc_str_concatn(3, quote, body, quote);
 }
 
 int32_t flowc_proof_know_mode() {
@@ -61512,13 +61531,13 @@ const char* ch_include_line(const char* header) {
   return __flowc_str_concat("#include ", header);
 }
   if (sem_s_starts(header, "/") || sem_s_starts(header, "./") || sem_s_starts(header, "../")) {
-  return __flowc_str_concat(__flowc_str_concat("#include \"", header), "\"");
+  return __flowc_str_concatn(3, "#include \"", header, "\"");
 }
-  return __flowc_str_concat(__flowc_str_concat("#include <", header), ">");
+  return __flowc_str_concatn(3, "#include <", header, ">");
 }
 
 const char* ch_command(const char* pre, const char* header, const char* dir) {
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("printf '%s\\n' '", ch_include_line(header)), "' | "), pre), " -I '"), dir), "' -I /usr/include -I /usr/local/include - 2>/dev/null");
+  return __flowc_str_concatn(7, "printf '%s\\n' '", ch_include_line(header), "' | ", pre, " -I '", dir, "' -I /usr/include -I /usr/local/include - 2>/dev/null");
 }
 
 int32_t ch_scan(const char* cmd, SemStrMap* names, bool defines) {
@@ -61790,6 +61809,8 @@ void flowc_cgen_emit_store_via_temp(CgenBuf* w, AstArena arena, uint8_t* src, in
 int32_t flowc_cgen_expr_is_string(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_ident_is_string(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_is_str_concat(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
+int32_t flowc_cgen_is_concat_node(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
+int32_t flowc_cgen_flatten_pure_concat(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id, int32_t* out, int32_t out_cap);
 int32_t flowc_cgen_prim_of_type(AstArena arena, uint8_t* src, int32_t ty);
 int32_t flowc_cgen_prim_of_span(uint8_t* src, int32_t s, int32_t e);
 int32_t flowc_cgen_sig_ctype_is(CgenBuf* w, int32_t off, const char* lit);
@@ -61797,6 +61818,7 @@ int32_t flowc_cgen_ident_prim(CgenBuf* w, AstArena arena, uint8_t* src, int32_t 
 int32_t flowc_cgen_expr_prim(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 const char* flowc_cgen_prim_fmt(int32_t k);
 void flowc_cgen_emit_concat_operand(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
+void flowc_cgen_emit_str_concat(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_index_elem_prim(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_sig_put(AstArena arena, uint8_t* src, uint8_t* buf, int32_t cap, int32_t len, int32_t fn, int32_t rt);
 int32_t flowc_cgen_sig_put_spans(AstArena arena, uint8_t* src, uint8_t* buf, int32_t cap, int32_t len, int32_t fn);
@@ -64611,6 +64633,53 @@ int32_t flowc_cgen_is_str_concat(CgenBuf* w, AstArena arena, uint8_t* src, int32
   return flowc_cgen_expr_is_string(w, arena, src, ((arena).nodes[id]).b);
 }
 
+int32_t flowc_cgen_is_concat_node(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
+  if (id == AST_NONE) {
+  return 0;
+}
+  if (((arena).nodes[id]).kind != AST_BINOP) {
+  return 0;
+}
+  if (((arena).nodes[id]).ival != TOK_PLUS) {
+  return 0;
+}
+  return flowc_cgen_is_str_concat(w, arena, src, id);
+}
+
+int32_t flowc_cgen_flatten_pure_concat(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id, int32_t* out, int32_t out_cap) {
+  int32_t stack[64] = {  };
+  int32_t sp = 1;
+  stack[0] = id;
+  int32_t n = 0;
+  int32_t all_str = 1;
+  while (sp > 0) {
+  sp = (sp - 1);
+  int32_t cur = stack[sp];
+  if (flowc_cgen_is_concat_node(w, arena, src, cur) == 1) {
+  if ((sp + 2) > 64) {
+  return 0;
+}
+  stack[sp] = ((arena).nodes[cur]).b;
+  sp = (sp + 1);
+  stack[sp] = ((arena).nodes[cur]).a;
+  sp = (sp + 1);
+} else {
+  if (n >= out_cap) {
+  return 0;
+}
+  out[n] = cur;
+  n = (n + 1);
+  if (flowc_cgen_expr_is_string(w, arena, src, cur) == 0) {
+  all_str = 0;
+}
+}
+}
+  if (all_str == 1 && n > 2) {
+  return n;
+}
+  return 0;
+}
+
 int32_t flowc_cgen_prim_of_type(AstArena arena, uint8_t* src, int32_t ty) {
   if (ty == AST_NONE) {
   return FLOWC_PRIM_UNKNOWN;
@@ -64911,6 +64980,29 @@ void flowc_cgen_emit_concat_operand(CgenBuf* w, AstArena arena, uint8_t* src, in
 }
 }
   flowc_cgen_emit_expr(w, arena, src, id);
+}
+
+void flowc_cgen_emit_str_concat(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
+  int32_t leaves[32] = {  };
+  int32_t n = flowc_cgen_flatten_pure_concat(w, arena, src, id, (&leaves[0]), 32);
+  if (n > 2) {
+  flowc_cgen_perf_remark(w, arena, src, id, "str_concatn", "pure-string chain joined in one allocation", 1);
+  flowc_cgen_puts(w, "__flowc_str_concatn(");
+  flowc_cgen_put_i32(w, n);
+  int32_t i = 0;
+  while (i < n) {
+  flowc_cgen_puts(w, ", ");
+  flowc_cgen_emit_concat_operand(w, arena, src, leaves[i]);
+  i = (i + 1);
+}
+  flowc_cgen_putc(w, 41);
+  return;
+}
+  flowc_cgen_puts(w, "__flowc_str_concat(");
+  flowc_cgen_emit_concat_operand(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_puts(w, ", ");
+  flowc_cgen_emit_concat_operand(w, arena, src, ((arena).nodes[id]).b);
+  flowc_cgen_putc(w, 41);
 }
 
 int32_t flowc_cgen_index_elem_prim(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
@@ -66272,11 +66364,11 @@ void flowc_cgen_plan_init(CgenBuf* w, AstArena arena, uint8_t* src) {
   return;
 }
   int32_t n = (arena).len;
-  { __typeof__((w[0]).plan_order) __flowc_st20234 = (int32_t*)(malloc((n * 4))); (w[0]).plan_order = __flowc_st20234; }
-  { __typeof__((w[0]).plan_has) __flowc_st20246 = (int32_t*)(malloc((n * 4))); (w[0]).plan_has = __flowc_st20246; }
-  { __typeof__((w[0]).plan_seen) __flowc_st20258 = (int32_t*)(malloc((n * 4))); (w[0]).plan_seen = __flowc_st20258; }
-  { __typeof__((w[0]).plan_lo) __flowc_st20270 = (int64_t*)(malloc((n * 8))); (w[0]).plan_lo = __flowc_st20270; }
-  { __typeof__((w[0]).plan_hi) __flowc_st20282 = (int64_t*)(malloc((n * 8))); (w[0]).plan_hi = __flowc_st20282; }
+  { __typeof__((w[0]).plan_order) __flowc_st20536 = (int32_t*)(malloc((n * 4))); (w[0]).plan_order = __flowc_st20536; }
+  { __typeof__((w[0]).plan_has) __flowc_st20548 = (int32_t*)(malloc((n * 4))); (w[0]).plan_has = __flowc_st20548; }
+  { __typeof__((w[0]).plan_seen) __flowc_st20560 = (int32_t*)(malloc((n * 4))); (w[0]).plan_seen = __flowc_st20560; }
+  { __typeof__((w[0]).plan_lo) __flowc_st20572 = (int64_t*)(malloc((n * 8))); (w[0]).plan_lo = __flowc_st20572; }
+  { __typeof__((w[0]).plan_hi) __flowc_st20584 = (int64_t*)(malloc((n * 8))); (w[0]).plan_hi = __flowc_st20584; }
   if ((w[0]).plan_order == NULL || (w[0]).plan_has == NULL || (w[0]).plan_seen == NULL || (w[0]).plan_lo == NULL || (w[0]).plan_hi == NULL) {
   (w[0]).plan_order = NULL;
   (w[0]).plan_has = NULL;
@@ -68037,11 +68129,7 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   int32_t op = ((arena).nodes[id]).ival;
   if (op == TOK_PLUS) {
   if (flowc_cgen_is_str_concat(w, arena, src, id) == 1) {
-  flowc_cgen_puts(w, "__flowc_str_concat(");
-  flowc_cgen_emit_concat_operand(w, arena, src, ((arena).nodes[id]).a);
-  flowc_cgen_puts(w, ", ");
-  flowc_cgen_emit_concat_operand(w, arena, src, ((arena).nodes[id]).b);
-  flowc_cgen_putc(w, 41);
+  flowc_cgen_emit_str_concat(w, arena, src, id);
   return;
 }
 }
@@ -73377,6 +73465,7 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_puts((&w), "#include <stdlib.h>\n");
   flowc_cgen_puts((&w), "#include <stdio.h>\n");
   flowc_cgen_puts((&w), "#include <string.h>\n");
+  flowc_cgen_puts((&w), "#include <stdarg.h>\n");
   flowc_cgen_puts((&w), "#include <math.h>\n");
   flowc_cgen_puts((&w), "#include <complex.h>\n");
   flowc_cgen_puts((&w), "#undef I\n");
@@ -73398,6 +73487,24 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_puts((&w), "  r = (char*)malloc(la + lb + 1);\n");
   flowc_cgen_puts((&w), "  if (r == 0) { return \"\"; }\n");
   flowc_cgen_puts((&w), "  memcpy(r, a, la); memcpy(r + la, b, lb); r[la + lb] = 0;\n");
+  flowc_cgen_puts((&w), "  return r;\n");
+  flowc_cgen_puts((&w), "}\n");
+  flowc_cgen_putc((&w), 10);
+  flowc_cgen_puts((&w), "__attribute__((unused)) static const char* __flowc_str_concatn(int n, ...) {\n");
+  flowc_cgen_puts((&w), "  va_list ap; size_t total = 0; int i; const char* s; char* r; size_t off; size_t l;\n");
+  flowc_cgen_puts((&w), "  va_start(ap, n);\n");
+  flowc_cgen_puts((&w), "  for (i = 0; i < n; i++) { s = va_arg(ap, const char*); if (s != 0) { total += strlen(s); } }\n");
+  flowc_cgen_puts((&w), "  va_end(ap);\n");
+  flowc_cgen_puts((&w), "  r = (char*)malloc(total + 1);\n");
+  flowc_cgen_puts((&w), "  if (r == 0) { return \"\"; }\n");
+  flowc_cgen_puts((&w), "  off = 0;\n");
+  flowc_cgen_puts((&w), "  va_start(ap, n);\n");
+  flowc_cgen_puts((&w), "  for (i = 0; i < n; i++) {\n");
+  flowc_cgen_puts((&w), "    s = va_arg(ap, const char*);\n");
+  flowc_cgen_puts((&w), "    if (s != 0) { l = strlen(s); if (l != 0) { memcpy(r + off, s, l); off += l; } }\n");
+  flowc_cgen_puts((&w), "  }\n");
+  flowc_cgen_puts((&w), "  va_end(ap);\n");
+  flowc_cgen_puts((&w), "  r[off] = 0;\n");
   flowc_cgen_puts((&w), "  return r;\n");
   flowc_cgen_puts((&w), "}\n");
   flowc_cgen_putc((&w), 10);
@@ -74751,7 +74858,7 @@ int32_t sem_tsize(Sem* c, int32_t ty) {
 }
 
 const char* sem_q(const char* s) {
-  return __flowc_str_concat(__flowc_str_concat("'", s), "'");
+  return __flowc_str_concatn(3, "'", s, "'");
 }
 
 const char* sem_location_suffix(Sem* c, int32_t node) {
@@ -74759,7 +74866,7 @@ const char* sem_location_suffix(Sem* c, int32_t node) {
   return "";
 }
   int32_t p = sem_nstart(c, node);
-  return __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(" at line ", sem_s_itoa((int64_t)(sem_py_pos(c, c->cm, p, 0)))), ", column "), sem_s_itoa((int64_t)(sem_py_pos(c, c->cm, p, 1))));
+  return __flowc_str_concatn(4, " at line ", sem_s_itoa((int64_t)(sem_py_pos(c, c->cm, p, 0))), ", column ", sem_s_itoa((int64_t)(sem_py_pos(c, c->cm, p, 1))));
 }
 
 void sem_set_pos(Sem* c, int32_t node) {
@@ -74999,7 +75106,7 @@ void sem_build_module(Sem* c, int32_t m, bool is_root) {
 }
   bool in_impl = 0;
   if (mk >= 0) {
-  const char* prefix = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(sem_sv_get(mtypes, mk), "_"), sem_sv_get(mtraits, mk)), "_");
+  const char* prefix = __flowc_str_concatn(4, sem_sv_get(mtypes, mk), "_", sem_sv_get(mtraits, mk), "_");
   if (sem_s_starts(name, prefix)) {
   in_impl = 1;
   if (cur_marker != mk) {
@@ -75007,7 +75114,7 @@ void sem_build_module(Sem* c, int32_t m, bool is_root) {
   sem_sv_push(c->im_type, sem_sv_get(mtypes, mk));
   sem_sv_push(c->im_trait, sem_sv_get(mtraits, mk));
   sem_pv_push(c->im_methods, (void*)(sem_iv_new()));
-  cur_impl = sem_decl_add(c, DK_IMPL, m, d, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(sem_sv_get(mtypes, mk), "_"), sem_sv_get(mtraits, mk)), "_impl"), im);
+  cur_impl = sem_decl_add(c, DK_IMPL, m, d, __flowc_str_concatn(4, sem_sv_get(mtypes, mk), "_", sem_sv_get(mtraits, mk), "_impl"), im);
   cur_marker = mk;
 }
   int32_t fi = sem_build_function(c, d, sem_s_from(name, sem_s_len(prefix)), astart, an, 0);
@@ -75137,10 +75244,10 @@ SemIntVec* sem_register_unit(Sem* c, int32_t d) {
   int32_t node = sem_decl_node(c, d);
   const char* name = sem_decl_name(c, d);
   int32_t line = sem_py_pos(c, c->cm, sem_nstart(c, node), 0);
-  const char* loc = __flowc_str_concat(__flowc_str_concat("line ", sem_s_itoa((int64_t)(line))), ": ");
+  const char* loc = __flowc_str_concatn(3, "line ", sem_s_itoa((int64_t)(line)), ": ");
   SemIntVec* existing = (SemIntVec*)(sem_unit_dims_of_name(c, name));
   if (existing != NULL) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(loc, "unit '"), name), "' is already declared"));
+  sem_err(c, __flowc_str_concatn(4, loc, "unit '", name, "' is already declared"));
   return existing;
 }
   uint8_t* src = (uint8_t*)(c->src);
@@ -75197,7 +75304,7 @@ SemIntVec* sem_register_unit(Sem* c, int32_t d) {
 }
   SemIntVec* fd = (SemIntVec*)(sem_unit_dims_of_name(c, fname));
   if (fd == NULL) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(loc, "unknown unit '"), fname), "' in declaration of '"), name), "' (units must be declared before use)"));
+  sem_err(c, __flowc_str_concatn(6, loc, "unknown unit '", fname, "' in declaration of '", name, "' (units must be declared before use)"));
 } else {
   acc = sem_dims_combine(acc, sem_dims_scale(fd, (sign * ex)), 1);
 }
@@ -75264,7 +75371,7 @@ void sem_collect_types(Sem* c) {
   int32_t node = sem_decl_node(c, i);
   if (k == DK_STRUCT) {
   if (sem_sm_has(c->struct_types, name)) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Struct '", name), "' already defined"));
+  sem_err(c, __flowc_str_concatn(3, "Struct '", name, "' already defined"));
 } else {
   int32_t se = sem_se_new(c, name, SE_STRUCT, i);
   sem_struct_fields_from_ast(c, se, node);
@@ -75290,7 +75397,7 @@ void sem_collect_types(Sem* c) {
   sem_sm_put(c->enum_decls, name, i);
   int32_t v = sem_na(c, node);
   while (v != AST_NONE) {
-  const char* vname = __flowc_str_concat(__flowc_str_concat(name, "_"), sem_nname(c, v));
+  const char* vname = __flowc_str_concatn(3, name, "_", sem_nname(c, v));
   int32_t s = sem_sym_new(c, vname, sem_tmk(c, TK_I32), SK_CONST);
   sem_scope_define_global(c, s);
   sem_sm_put(c->enum_variant_owner, vname, i);
@@ -75335,21 +75442,21 @@ void sem_collect_types(Sem* c) {
 } else {
   if (k == DK_EFFECT) {
   if (sem_sm_has(c->effect_types, name)) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Effect '", name), "' already defined"));
+  sem_err(c, __flowc_str_concatn(3, "Effect '", name, "' already defined"));
 } else {
   sem_sm_put(c->effect_types, name, i);
 }
 } else {
   if (k == DK_CAPABILITY) {
   if (sem_sm_has(c->capability_types, name)) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Capability '", name), "' already defined"));
+  sem_err(c, __flowc_str_concatn(3, "Capability '", name, "' already defined"));
 } else {
   sem_sm_put(c->capability_types, name, i);
 }
 } else {
   if (k == DK_TRAIT) {
   if (sem_sm_has(c->trait_types, name)) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Trait '", name), "' already defined"));
+  sem_err(c, __flowc_str_concatn(3, "Trait '", name, "' already defined"));
 } else {
   sem_sm_put(c->trait_types, name, i);
 }
@@ -75358,12 +75465,12 @@ void sem_collect_types(Sem* c) {
   int32_t im = sem_iv_get(c->d_info, i);
   const char* ty = sem_sv_get(c->im_type, im);
   const char* tr = sem_sv_get(c->im_trait, im);
-  sem_sm_put(c->impl_pairs, __flowc_str_concat(__flowc_str_concat(ty, "\x01"), tr), 1);
+  sem_sm_put(c->impl_pairs, __flowc_str_concatn(3, ty, "\x01", tr), 1);
   SemIntVec* ml = (SemIntVec*)((SemIntVec*)(sem_pv_get(c->im_methods, im)));
   int32_t j = 0;
   while (j < ml->len) {
   int32_t fi = ml->data[j];
-  const char* key = __flowc_str_concat(__flowc_str_concat(ty, "\x01"), sem_sv_get(c->fi_name, fi));
+  const char* key = __flowc_str_concatn(3, ty, "\x01", sem_sv_get(c->fi_name, fi));
   int32_t li = sem_sm_get(c->impl_methods, key);
   if (li < 0) {
   li = sem_pv_len(c->impl_method_lists);
@@ -75371,7 +75478,7 @@ void sem_collect_types(Sem* c) {
   sem_sm_put(c->impl_methods, key, li);
 }
   SemStrVec* lst = (SemStrVec*)((SemStrVec*)(sem_pv_get(c->impl_method_lists, li)));
-  sem_sv_push(lst, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(ty, "_"), tr), "_"), sem_sv_get(c->fi_name, fi)));
+  sem_sv_push(lst, __flowc_str_concatn(5, ty, "_", tr, "_", sem_sv_get(c->fi_name, fi)));
   j = (j + 1);
 }
 }
@@ -75417,7 +75524,7 @@ void sem_define_function(Sem* c, const char* name, int32_t fi) {
   while (i < row->len) {
   const char* en = sem_sv_get(row, i);
   if (sem_sm_has(c->effect_types, en) == 0 && c->strict) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Function '", name), "' declares unknown effect '"), en), "' in its `with` row"));
+  sem_err(c, __flowc_str_concatn(5, "Function '", name, "' declares unknown effect '", en, "' in its `with` row"));
 }
   i = (i + 1);
 }
@@ -75667,7 +75774,7 @@ const char* sem_call_name(Sem* c, int32_t e) {
   if (targs != AST_NONE) {
   int32_t t = targs;
   while (t != AST_NONE) {
-  nm = __flowc_str_concat(__flowc_str_concat(nm, "_"), sem_pt_name(c->t, sem_pt_of_ast(c, t)));
+  nm = __flowc_str_concatn(3, nm, "_", sem_pt_name(c->t, sem_pt_of_ast(c, t)));
   t = sem_nnext(c, t);
 }
 }
@@ -75835,14 +75942,14 @@ int32_t sem_root_parameter_index(Sem* c, int32_t e) {
 }
 
 const char* sem_node_key(Sem* c, int32_t node) {
-  return __flowc_str_concat(__flowc_str_concat(sem_s_itoa((int64_t)(c->cm)), ":"), sem_s_itoa((int64_t)(node)));
+  return __flowc_str_concatn(3, sem_s_itoa((int64_t)(c->cm)), ":", sem_s_itoa((int64_t)(node)));
 }
 
 bool sem_domain_escape_to_static(Sem* c, int32_t stmt, int32_t value, const char* target, int32_t target_type) {
   if (sem_sm_has(c->static_names, target) && sem_is_reference_type(c, target_type)) {
   int32_t pi = sem_root_parameter_index(c, value);
   if (pi >= 0 && (uint8_t*)(c->current_function_name) != NULL) {
-  sem_sm_put(c->esc_static, __flowc_str_concat(__flowc_str_concat(c->current_function_name, "\x01"), sem_s_itoa((int64_t)(pi))), 1);
+  sem_sm_put(c->esc_static, __flowc_str_concatn(3, c->current_function_name, "\x01", sem_s_itoa((int64_t)(pi))), 1);
 }
 }
   if (c->current_domain < 0 || sem_sm_has(c->static_names, target) == 0) {
@@ -75860,7 +75967,7 @@ bool sem_domain_escape_to_static(Sem* c, int32_t stmt, int32_t value, const char
   return 0;
 }
   sem_sm_put(c->domain_reported, sem_node_key(c, stmt), 1);
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("lifetime domain escape: `", origin), "` lives in the `"), sem_domain_name(c->current_domain)), "` domain but is stored in `"), target), "`, which lives in the `"), sem_domain_name(td)), "` domain (a longer-lived domain may not hold a reference to a shorter-lived one)"), sem_location_suffix(c, stmt)));
+  sem_err(c, __flowc_str_concatn(10, "lifetime domain escape: `", origin, "` lives in the `", sem_domain_name(c->current_domain), "` domain but is stored in `", target, "`, which lives in the `", sem_domain_name(td), "` domain (a longer-lived domain may not hold a reference to a shorter-lived one)", sem_location_suffix(c, stmt)));
   return 1;
 }
 
@@ -75868,7 +75975,7 @@ bool sem_domain_escape_by_return(Sem* c, int32_t stmt, int32_t value) {
   if ((uint8_t*)(c->current_function_name) != NULL && sem_is_reference_type(c, c->current_return_type)) {
   int32_t pi = sem_root_parameter_index(c, value);
   if (pi >= 0) {
-  sem_sm_put(c->esc_return, __flowc_str_concat(__flowc_str_concat(c->current_function_name, "\x01"), sem_s_itoa((int64_t)(pi))), 1);
+  sem_sm_put(c->esc_return, __flowc_str_concatn(3, c->current_function_name, "\x01", sem_s_itoa((int64_t)(pi))), 1);
 }
 }
   if (c->current_domain < 0 || value < 0) {
@@ -75882,7 +75989,7 @@ bool sem_domain_escape_by_return(Sem* c, int32_t stmt, int32_t value) {
   return 0;
 }
   sem_sm_put(c->domain_reported, sem_node_key(c, stmt), 1);
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("lifetime domain escape: `", origin), "` lives in the `"), sem_domain_name(c->current_domain)), "` domain but is returned from '"), c->current_function_name), "', which outlives it (a returned reference may not point into the frame that produced it)"), sem_location_suffix(c, stmt)));
+  sem_err(c, __flowc_str_concatn(8, "lifetime domain escape: `", origin, "` lives in the `", sem_domain_name(c->current_domain), "` domain but is returned from '", c->current_function_name, "', which outlives it (a returned reference may not point into the frame that produced it)", sem_location_suffix(c, stmt)));
   return 1;
 }
 
@@ -75929,11 +76036,11 @@ void sem_check_safe_call(Sem* c, const char* name) {
 }
 }
   if (bad) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Safety boundary violation: '", c->current_safe_fn), "' is marked '@safe' but calls '"), name), "', which is '@unsafe' or an extern declaration (see docs/language/safety-profiles.md)"));
+  sem_err(c, __flowc_str_concatn(5, "Safety boundary violation: '", c->current_safe_fn, "' is marked '@safe' but calls '", name, "', which is '@unsafe' or an extern declaration (see docs/language/safety-profiles.md)"));
   return;
 }
   if (sem_is_dangerous_extern(name)) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Safety boundary violation: '", c->current_safe_fn), "' is marked '@safe' but calls dangerous FFI '"), name), "'"));
+  sem_err(c, __flowc_str_concatn(5, "Safety boundary violation: '", c->current_safe_fn, "' is marked '@safe' but calls dangerous FFI '", name, "'"));
 }
 }
 
@@ -75944,7 +76051,7 @@ void sem_check_domain_call(Sem* c, const char* name) {
 }
   int32_t callee = sem_sm_get(c->function_domains, name);
   if (callee >= 0 && callee > caller) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("lifetime domain violation: '", c->current_function_name), "' is in the `"), sem_domain_name(caller)), "` domain but calls '"), name), "', which is in the `"), sem_domain_name(callee)), "` domain (a shorter-lived domain may not call into a longer-lived one; see docs/language/lifetime-domains.md)"));
+  sem_err(c, __flowc_str_concatn(9, "lifetime domain violation: '", c->current_function_name, "' is in the `", sem_domain_name(caller), "` domain but calls '", name, "', which is in the `", sem_domain_name(callee), "` domain (a shorter-lived domain may not call into a longer-lived one; see docs/language/lifetime-domains.md)"));
   return;
 }
   if (caller != 1) {
@@ -76087,7 +76194,7 @@ int32_t sem_check_variable(Sem* c, int32_t e) {
   int32_t s = sem_lookup(c, name);
   if (s < 0) {
   if (sem_sm_has(c->capability_types, name)) {
-  const char* msg = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Capability '", name), "' is not a value and cannot be passed as an argument. Install it for the call instead: handle <Effect> with "), name), " { ... }");
+  const char* msg = __flowc_str_concatn(5, "Capability '", name, "' is not a value and cannot be passed as an argument. Install it for the call instead: handle <Effect> with ", name, " { ... }");
   sem_err(c, msg);
   sem_sv_push(c->fatal, msg);
 } else {
@@ -76095,7 +76202,7 @@ int32_t sem_check_variable(Sem* c, int32_t e) {
   return (0 - 1);
 } else {
   if (c->strict) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Undefined variable '", name), "'"));
+  sem_err(c, __flowc_str_concatn(3, "Undefined variable '", name, "'"));
 }
 }
 }
@@ -76177,7 +76284,7 @@ bool sem_is_compare_op(const char* op) {
 int32_t sem_check_dimensioned_op(Sem* c, int32_t e, const char* op, int32_t lt, int32_t rt, SemIntVec* ld, SemIntVec* rd) {
   const char* loc = "";
   if (e >= 0 && sem_binop_has_line(op)) {
-  loc = __flowc_str_concat(__flowc_str_concat("line ", sem_s_itoa((int64_t)(sem_py_pos(c, c->cm, sem_nstart(c, e), 0)))), ": ");
+  loc = __flowc_str_concatn(3, "line ", sem_s_itoa((int64_t)(sem_py_pos(c, c->cm, sem_nstart(c, e), 0))), ": ");
 }
   if (sem_s_eq(op, "*") || sem_s_eq(op, "/")) {
   if (ld == NULL && sem_is_numeric(c, lt) == 0) {
@@ -76200,11 +76307,11 @@ int32_t sem_check_dimensioned_op(Sem* c, int32_t e, const char* op, int32_t lt, 
   if (ld != NULL) {
   shown = lt;
 }
-  hint = __flowc_str_concat(__flowc_str_concat("a dimensionless value needs an explicit cast, e.g. `x as ", sem_tstr(c, shown)), "`");
+  hint = __flowc_str_concatn(3, "a dimensionless value needs an explicit cast, e.g. `x as ", sem_tstr(c, shown), "`");
 } else {
-  hint = __flowc_str_concat(__flowc_str_concat("operands of '", op), "' must have the same dimension");
+  hint = __flowc_str_concatn(3, "operands of '", op, "' must have the same dimension");
 }
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(loc, "dimensional error: "), sem_tstr(c, lt)), " "), op), " "), sem_tstr(c, rt)), " ("), hint), ")"));
+  sem_err(c, __flowc_str_concatn(10, loc, "dimensional error: ", sem_tstr(c, lt), " ", op, " ", sem_tstr(c, rt), " (", hint, ")"));
 }
   if (ld != NULL) {
   return lt;
@@ -76213,11 +76320,11 @@ int32_t sem_check_dimensioned_op(Sem* c, int32_t e, const char* op, int32_t lt, 
 }
   if (sem_is_compare_op(op) || sem_s_eq(op, "in")) {
   if (ld == NULL || rd == NULL || sem_dims_eq(ld, rd) == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(loc, "dimensional error: "), sem_tstr(c, lt)), " "), op), " "), sem_tstr(c, rt)), " (comparison requires both operands to have the same dimension)"));
+  sem_err(c, __flowc_str_concatn(8, loc, "dimensional error: ", sem_tstr(c, lt), " ", op, " ", sem_tstr(c, rt), " (comparison requires both operands to have the same dimension)"));
 }
   return sem_tmk(c, TK_BOOL);
 }
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(loc, "dimensional error: operator '"), op), "' is not defined for unit types ("), sem_tstr(c, lt)), " "), op), " "), sem_tstr(c, rt)), ")"));
+  sem_err(c, __flowc_str_concatn(10, loc, "dimensional error: operator '", op, "' is not defined for unit types (", sem_tstr(c, lt), " ", op, " ", sem_tstr(c, rt), ")"));
   if (ld != NULL) {
   return lt;
 }
@@ -76328,7 +76435,7 @@ int32_t sem_binary_types(Sem* c, int32_t e, const char* op, int32_t lt, int32_t 
   common = sem_numeric_common_type(c, lt, rt);
 } else {
   if (sem_ty_eq(c->t, lt, rt) == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Binary operator '", op), "' requires matching types, got "), sem_tstr(c, lt)), " and "), sem_tstr(c, rt)));
+  sem_err(c, __flowc_str_concatn(6, "Binary operator '", op, "' requires matching types, got ", sem_tstr(c, lt), " and ", sem_tstr(c, rt)));
 }
 }
   if (e >= 0 && (sem_s_eq(op, "/") || sem_s_eq(op, "%"))) {
@@ -76347,7 +76454,7 @@ int32_t sem_binary_types(Sem* c, int32_t e, const char* op, int32_t lt, int32_t 
 }
   if (ok2[0] == 1) {
   if (amount < 0 || width > 0 && amount >= (int64_t)(width)) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Shift amount ", sem_s_itoa(amount)), " out of range for "), sem_tstr(c, lt)), " (MISRA Rule 12.2 / CERT INT34-C)"));
+  sem_err(c, __flowc_str_concatn(5, "Shift amount ", sem_s_itoa(amount), " out of range for ", sem_tstr(c, lt), " (MISRA Rule 12.2 / CERT INT34-C)"));
 }
 }
   if (sem_s_eq(op, "<<")) {
@@ -76422,7 +76529,7 @@ int32_t sem_check_unary_op(Sem* c, int32_t e) {
 }
   if (sem_s_eq(op, "&")) {
   if (ok == TK_POINTER) {
-  sem_warn(c, __flowc_str_concat(__flowc_str_concat("Taking the address of a pointer (got ", sem_tstr(c, ot)), "); this produces ptr<ptr<T>> - ensure the callee expects a pointer-to-pointer"));
+  sem_warn(c, __flowc_str_concatn(3, "Taking the address of a pointer (got ", sem_tstr(c, ot), "); this produces ptr<ptr<T>> - ensure the callee expects a pointer-to-pointer"));
 }
   return sem_ty_ptr(c->t, ot);
 }
@@ -76622,7 +76729,7 @@ int32_t sem_check_effect_call(Sem* c, const char* eff, const char* op, SemIntVec
   i = (i + 1);
 }
   if (c->strict) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Unknown effect '", eff), "'"));
+  sem_err(c, __flowc_str_concatn(3, "Unknown effect '", eff, "'"));
 }
   return sem_tmk(c, TK_UNKNOWN);
 }
@@ -76634,7 +76741,7 @@ int32_t sem_check_effect_call(Sem* c, const char* eff, const char* op, SemIntVec
   i2 = (i2 + 1);
 }
   if (c->strict) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Effect '", eff), "' has no operation '"), op), "'"));
+  sem_err(c, __flowc_str_concatn(5, "Effect '", eff, "' has no operation '", op, "'"));
 }
   return sem_tmk(c, TK_UNKNOWN);
 }
@@ -76654,23 +76761,23 @@ int32_t sem_check_effect_call(Sem* c, const char* eff, const char* op, SemIntVec
 }
   if (arg_types->len != ptys->len) {
   if (c->strict) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Effect operation '", eff), "."), op), "' expects "), sem_s_itoa((int64_t)(ptys->len))), " argument(s), got "), sem_s_itoa((int64_t)(arg_types->len))));
+  sem_err(c, __flowc_str_concatn(8, "Effect operation '", eff, ".", op, "' expects ", sem_s_itoa((int64_t)(ptys->len)), " argument(s), got ", sem_s_itoa((int64_t)(arg_types->len))));
 }
   return sem_parse_type(c, ret_pt);
 }
   j = 0;
   while (j < arg_types->len) {
   if (sem_can_coerce(c, arg_types->data[j], ptys->data[j]) == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Effect operation '", eff), "."), op), "' argument "), sem_s_itoa((int64_t)((j + 1)))), " expects "), sem_tstr(c, ptys->data[j])), ", got "), sem_tstr(c, arg_types->data[j])));
+  sem_err(c, __flowc_str_concatn(10, "Effect operation '", eff, ".", op, "' argument ", sem_s_itoa((int64_t)((j + 1))), " expects ", sem_tstr(c, ptys->data[j]), ", got ", sem_tstr(c, arg_types->data[j])));
 }
   j = (j + 1);
 }
   if (c->check_effect_rows && sem_sv_has(sem_active_handlers(c), eff) == 0) {
   const char* whr = "";
   if ((uint8_t*)(c->current_function_name) != NULL) {
-  whr = __flowc_str_concat(__flowc_str_concat(" in '", c->current_function_name), "'");
+  whr = __flowc_str_concatn(3, " in '", c->current_function_name, "'");
 }
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Unhandled effect '", eff), "."), op), "'"), whr), ": wrap in `handle "), eff), " with ...`, declare `with "), eff), "` on the function, or omit --strict-effects to allow zero defaults"));
+  sem_err(c, __flowc_str_concatn(11, "Unhandled effect '", eff, ".", op, "'", whr, ": wrap in `handle ", eff, " with ...`, declare `with ", eff, "` on the function, or omit --strict-effects to allow zero defaults"));
 }
   return sem_parse_type(c, ret_pt);
 }
@@ -76834,7 +76941,7 @@ bool sem_check_span_arguments(Sem* c, const char* name, SemIntVec* args, int32_t
   if ((uint8_t*)(root) == NULL) {
   root = "p";
 }
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("cannot borrow ", sem_tstr(c, actual)), " into "), sem_tstr(c, expected)), " for parameter '"), pname), "' of '"), name), "': a pointer has no length. Slice it instead, e.g. `"), root), "[0..n]`"));
+  sem_err(c, __flowc_str_concatn(11, "cannot borrow ", sem_tstr(c, actual), " into ", sem_tstr(c, expected), " for parameter '", pname, "' of '", name, "': a pointer has no length. Slice it instead, e.g. `", root, "[0..n]`"));
 } else {
   bool skip = 0;
   if (sem_span_is_mutable(sem_tname(c, expected))) {
@@ -76844,17 +76951,17 @@ bool sem_check_span_arguments(Sem* c, const char* name, SemIntVec* args, int32_t
   if ((uint8_t*)(binding) == NULL) {
   binding = pname;
 }
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("cannot borrow `", binding), "` mutably; it is declared with `let`"));
+  sem_err(c, __flowc_str_concatn(3, "cannot borrow `", binding, "` mutably; it is declared with `let`"));
   skip = 1;
 }
 }
   if (skip == 0 && sem_tsize(c, expected) != NO_SIZE) {
   int32_t length = sem_static_length(c, arg);
   if (length == NO_SIZE) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("static extent mismatch: parameter '", pname), "' of '"), name), "' expects "), sem_tstr(c, expected)), ", but the argument length is not known at compile time; a static-extent span cannot be formed from a dynamic length"));
+  sem_err(c, __flowc_str_concatn(7, "static extent mismatch: parameter '", pname, "' of '", name, "' expects ", sem_tstr(c, expected), ", but the argument length is not known at compile time; a static-extent span cannot be formed from a dynamic length"));
 } else {
   if (length != sem_tsize(c, expected)) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("static extent mismatch: parameter '", pname), "' of '"), name), "' expects "), sem_tstr(c, expected)), " but the argument has length "), sem_s_itoa((int64_t)(length))), " (expected "), sem_s_itoa((int64_t)(sem_tsize(c, expected)))), ", got "), sem_s_itoa((int64_t)(length))), ")"));
+  sem_err(c, __flowc_str_concatn(13, "static extent mismatch: parameter '", pname, "' of '", name, "' expects ", sem_tstr(c, expected), " but the argument has length ", sem_s_itoa((int64_t)(length)), " (expected ", sem_s_itoa((int64_t)(sem_tsize(c, expected))), ", got ", sem_s_itoa((int64_t)(length)), ")"));
 }
 }
 }
@@ -76920,7 +77027,7 @@ int32_t sem_check_function_call(Sem* c, const char* name, SemIntVec* args, int32
   while (i < ats->len) {
   int32_t at2 = ats->data[i];
   if (sem_dims_of(c, at2) != NULL && sem_is_radian(c, at2) == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("dimensional error: ", name), "() requires a dimensionless or Radian argument, got "), sem_tstr(c, at2)));
+  sem_err(c, __flowc_str_concatn(4, "dimensional error: ", name, "() requires a dimensionless or Radian argument, got ", sem_tstr(c, at2)));
 }
   i = (i + 1);
 }
@@ -76968,7 +77075,7 @@ int32_t sem_check_function_call(Sem* c, const char* name, SemIntVec* args, int32
   ai = (ai + 1);
 }
   if ((uint8_t*)(found) != NULL) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("effect operation '", name), "' must be called as '"), found), "."), name), "'"));
+  sem_err(c, __flowc_str_concatn(7, "effect operation '", name, "' must be called as '", found, ".", name, "'"));
 } else {
   if (sem_cimport_knows(c, name)) {
   int32_t i3 = 0;
@@ -76979,7 +77086,7 @@ int32_t sem_check_function_call(Sem* c, const char* name, SemIntVec* args, int32
   return (0 - 1);
 } else {
   if (c->strict) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Undefined function '", name), "'"));
+  sem_err(c, __flowc_str_concatn(3, "Undefined function '", name, "'"));
 }
 }
 }
@@ -76987,7 +77094,7 @@ int32_t sem_check_function_call(Sem* c, const char* name, SemIntVec* args, int32
 }
   int32_t sty = sem_sym_type(c, s);
   if (sem_tkind(c, sty) != TK_FUNCTION) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("'", name), "' is not a function"));
+  sem_err(c, __flowc_str_concatn(3, "'", name, "' is not a function"));
   return sem_tmk(c, TK_VOID);
 }
   if (c->check_effect_rows) {
@@ -77022,9 +77129,9 @@ int32_t sem_check_function_call(Sem* c, const char* name, SemIntVec* args, int32
   if (missing->len > 0) {
   const char* whr = "";
   if ((uint8_t*)(c->current_function_name) != NULL) {
-  whr = __flowc_str_concat(__flowc_str_concat(" from '", c->current_function_name), "'");
+  whr = __flowc_str_concatn(3, " from '", c->current_function_name, "'");
 }
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Call to '", name), "'"), whr), " requires effect(s) "), sem_sv_join(missing, ", ")), ": handle them or declare `with "), sem_sv_join(missing, ", ")), "` on the caller"));
+  sem_err(c, __flowc_str_concatn(9, "Call to '", name, "'", whr, " requires effect(s) ", sem_sv_join(missing, ", "), ": handle them or declare `with ", sem_sv_join(missing, ", "), "` on the caller"));
 }
 }
 }
@@ -77103,7 +77210,7 @@ int32_t sem_check_function_call(Sem* c, const char* name, SemIntVec* args, int32
   int32_t arg = args->data[idx];
   int32_t pi = sem_root_parameter_index(c, arg);
   if (pi >= 0) {
-  const char* ck = __flowc_str_concat(__flowc_str_concat(name, "\x01"), sem_s_itoa((int64_t)(idx)));
+  const char* ck = __flowc_str_concatn(3, name, "\x01", sem_s_itoa((int64_t)(idx)));
   int32_t pk = sem_sm_get(c->prop_index, ck);
   if (pk < 0) {
   pk = sem_sv_len(c->prop_keys);
@@ -77111,11 +77218,11 @@ int32_t sem_check_function_call(Sem* c, const char* name, SemIntVec* args, int32
   sem_pv_push(c->prop_sets, (void*)(sem_sv_new()));
   sem_sm_put(c->prop_index, ck, pk);
 }
-  sem_sv_add((SemStrVec*)(sem_pv_get(c->prop_sets, pk)), __flowc_str_concat(__flowc_str_concat(c->current_function_name, "\x01"), sem_s_itoa((int64_t)(pi))));
+  sem_sv_add((SemStrVec*)(sem_pv_get(c->prop_sets, pk)), __flowc_str_concatn(3, c->current_function_name, "\x01", sem_s_itoa((int64_t)(pi))));
 }
   const char* origin = sem_local_borrow_origin(c, arg);
   if ((uint8_t*)(origin) != NULL && sem_sv_has(c->local_storage, origin)) {
-  const char* rk = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(sem_node_key(c, node), "\x01"), c->current_function_name), "\x01"), name), "\x01"), sem_s_itoa((int64_t)(idx))), "\x01"), origin);
+  const char* rk = __flowc_str_concatn(9, sem_node_key(c, node), "\x01", c->current_function_name, "\x01", name, "\x01", sem_s_itoa((int64_t)(idx)), "\x01", origin);
   if (sem_sm_has(c->ref_seen, rk) == 0) {
   sem_sm_put(c->ref_seen, rk, 1);
   sem_sv_push(c->ref_key, sem_node_key(c, node));
@@ -77168,7 +77275,7 @@ int32_t sem_check_function_call(Sem* c, const char* name, SemIntVec* args, int32
   shown = __flowc_str_concat(shown, sem_tstr(c, arg_types->data[a2]));
   a2 = (a2 + 1);
 }
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("No matching overload for function '", name), "' with arguments ("), shown), ")"));
+  sem_err(c, __flowc_str_concatn(5, "No matching overload for function '", name, "' with arguments (", shown, ")"));
   return tys->ret[cands->data[0]];
 }
 
@@ -77207,7 +77314,7 @@ const char* sem_impl_method_for_receiver(Sem* c, int32_t recv_type, const char* 
   if ((uint8_t*)(sname) == NULL || sem_s_len(sname) == 0) {
   return (const char*)(NULL);
 }
-  int32_t li = sem_sm_get(c->impl_methods, __flowc_str_concat(__flowc_str_concat(sname, "\x01"), method));
+  int32_t li = sem_sm_get(c->impl_methods, __flowc_str_concatn(3, sname, "\x01", method));
   if (li < 0) {
   return (const char*)(NULL);
 }
@@ -77216,7 +77323,7 @@ const char* sem_impl_method_for_receiver(Sem* c, int32_t recv_type, const char* 
   return sem_sv_get(lst, 0);
 }
   if (lst->len > 1) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Ambiguous method '", method), "' for type '"), sname), "' ("), sem_sv_join(lst, ", ")), ")"));
+  sem_err(c, __flowc_str_concatn(7, "Ambiguous method '", method, "' for type '", sname, "' (", sem_sv_join(lst, ", "), ")"));
 }
   return (const char*)(NULL);
 }
@@ -77337,7 +77444,7 @@ const char* sem_struct_lit_name(Sem* c, int32_t e) {
   const char* nm = sem_nname(c, e);
   int32_t t = sem_nb(c, e);
   while (t != AST_NONE) {
-  nm = __flowc_str_concat(__flowc_str_concat(nm, "_"), sem_pt_name(c->t, sem_pt_of_ast(c, t)));
+  nm = __flowc_str_concatn(3, nm, "_", sem_pt_name(c->t, sem_pt_of_ast(c, t)));
   t = sem_nnext(c, t);
 }
   return nm;
@@ -77384,13 +77491,13 @@ int32_t sem_check_record_update(Sem* c, int32_t e) {
 }
   int32_t expected = sem_tmk(c, TK_UNKNOWN);
   if (last < 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("record update: struct '", sname), "' has no field '"), fname), "'"));
+  sem_err(c, __flowc_str_concatn(5, "record update: struct '", sname, "' has no field '", fname, "'"));
 } else {
   expected = sem_parse_type(c, sem_se_field_type(c, se, last));
 }
   int32_t actual = sem_check_expression(c, sem_na(c, f));
   if (sem_can_coerce(c, actual, expected) == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("record update: field '", fname), "' expects "), sem_tstr(c, expected)), ", got "), sem_tstr(c, actual)));
+  sem_err(c, __flowc_str_concatn(6, "record update: field '", fname, "' expects ", sem_tstr(c, expected), ", got ", sem_tstr(c, actual)));
 }
   f = sem_nnext(c, f);
 }
@@ -77459,11 +77566,11 @@ int32_t sem_check_struct_fields(Sem* c, const char* name, int32_t first) {
   const char* declared = sem_pt_name(c->t, sem_se_field_type(c, se, last));
   bool from_header = sem_tkind(c, expected) == TK_UNKNOWN && sem_cimport_knows(c, declared);
   if (sem_sm_has(c->opaque_c_types, declared) == 0 && from_header == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Struct '", name), "' missing field '"), fname2), "'"));
+  sem_err(c, __flowc_str_concatn(5, "Struct '", name, "' missing field '", fname2, "'"));
 }
 } else {
   if (sem_can_coerce(c, ptypes->data[pi], expected) == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Struct '", name), "' field '"), fname2), "' expects "), sem_tstr(c, expected)), ", got "), sem_tstr(c, ptypes->data[pi])));
+  sem_err(c, __flowc_str_concatn(8, "Struct '", name, "' field '", fname2, "' expects ", sem_tstr(c, expected), ", got ", sem_tstr(c, ptypes->data[pi])));
 }
 }
 }
@@ -77485,7 +77592,7 @@ int32_t sem_check_field_access(Sem* c, int32_t e) {
   if (sem_s_eq(field, "data")) {
   return sem_ty_ptr(c->t, sem_telem(c, ot));
 }
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("span has no field '", field), "'; a span exposes `.len`, `.data` and element access `[i]`"));
+  sem_err(c, __flowc_str_concatn(3, "span has no field '", field, "'; a span exposes `.len`, `.data` and element access `[i]`"));
   return sem_tmk(c, TK_UNKNOWN);
 }
   const char* sname = (const char*)(NULL);
@@ -77511,7 +77618,7 @@ int32_t sem_check_field_access(Sem* c, int32_t e) {
 }
 }
   if (c->strict) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Field '", field), "' not found on type "), sem_tstr(c, ot)));
+  sem_err(c, __flowc_str_concatn(4, "Field '", field, "' not found on type ", sem_tstr(c, ot)));
 }
   return sem_tmk(c, TK_UNKNOWN);
 }
@@ -77543,7 +77650,7 @@ int32_t sem_check_sort_expr(Sem* c, int32_t e) {
   int32_t se = sem_struct_entry(c, sem_tname(c, el));
   if (se < 0) {
   if (c->strict) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Unknown struct type '", sem_tname(c, el)), "' in sort"));
+  sem_err(c, __flowc_str_concatn(3, "Unknown struct type '", sem_tname(c, el), "' in sort"));
 }
   return at;
 }
@@ -77559,11 +77666,11 @@ int32_t sem_check_sort_expr(Sem* c, int32_t e) {
   i = (i + 1);
 }
   if (sem_s_len(kf) == 0 || fi < 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Sort key '.", kf), "' is not a field of "), sem_tname(c, el)));
+  sem_err(c, __flowc_str_concatn(4, "Sort key '.", kf, "' is not a field of ", sem_tname(c, el)));
 } else {
   int32_t ft = sem_parse_type(c, sem_se_field_type(c, se, fi));
   if (sem_sortable_kind(sem_tkind(c, ft)) == 0 && sem_tkind(c, ft) != TK_STRING) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Sort key '.", kf), "' has unsupported type "), sem_tstr(c, ft)), " (need numeric or string)"));
+  sem_err(c, __flowc_str_concatn(5, "Sort key '.", kf, "' has unsupported type ", sem_tstr(c, ft), " (need numeric or string)"));
 }
 }
   k = sem_nnext(c, k);
@@ -77573,7 +77680,7 @@ int32_t sem_check_sort_expr(Sem* c, int32_t e) {
   sem_err(c, "Sorting an array of structs requires `sort by .field` (or `sortBy [.field, ...]`)");
 } else {
   if (sem_sortable_kind(sem_tkind(c, el)) == 0 && sem_tkind(c, el) != TK_STRING) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Cannot sort array of ", sem_tstr(c, el)), " (need numeric or string elements)"));
+  sem_err(c, __flowc_str_concatn(3, "Cannot sort array of ", sem_tstr(c, el), " (need numeric or string elements)"));
 }
 }
 }
@@ -77596,11 +77703,11 @@ int32_t sem_check_find_expr(Sem* c, int32_t arr, int32_t target) {
   return sem_tmk(c, TK_I32);
 }
   if (sem_sortable_kind(sem_tkind(c, el)) == 0 && sem_tkind(c, el) != TK_STRING) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Cannot find in array of ", sem_tstr(c, el)), " (need numeric or string elements)"));
+  sem_err(c, __flowc_str_concatn(3, "Cannot find in array of ", sem_tstr(c, el), " (need numeric or string elements)"));
   return sem_tmk(c, TK_I32);
 }
   if (sem_tkind(c, tt) != TK_UNKNOWN && sem_tkind(c, tt) != sem_tkind(c, el) && (sem_is_numeric(c, tt) && sem_is_numeric(c, el)) == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("find target has type ", sem_tstr(c, tt)), " but the array holds "), sem_tstr(c, el)));
+  sem_err(c, __flowc_str_concatn(4, "find target has type ", sem_tstr(c, tt), " but the array holds ", sem_tstr(c, el)));
 }
   return sem_tmk(c, TK_I32);
 }
@@ -77636,7 +77743,7 @@ int32_t sem_check_slice_expr(Sem* c, int32_t e) {
   int32_t bty = sem_check_expression(c, bound);
   int32_t bk = sem_tkind(c, bty);
   if (bk != TK_UNKNOWN && bk != TK_VOID && sem_is_integer(c, bty) == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("slice ", what), " bound must be an integer, got "), sem_tstr(c, bty)));
+  sem_err(c, __flowc_str_concatn(4, "slice ", what, " bound must be an integer, got ", sem_tstr(c, bty)));
 }
 }
   which = (which + 1);
@@ -77644,7 +77751,7 @@ int32_t sem_check_slice_expr(Sem* c, int32_t e) {
   int32_t bk2 = sem_tkind(c, bt);
   if (bk2 != TK_ARRAY && bk2 != TK_SPAN && bk2 != TK_POINTER) {
   if (c->strict) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("cannot slice ", sem_tstr(c, bt)), ": a slice needs contiguous storage (array<T, N>, span, or ptr<T>)"));
+  sem_err(c, __flowc_str_concatn(3, "cannot slice ", sem_tstr(c, bt), ": a slice needs contiguous storage (array<T, N>, span, or ptr<T>)"));
 }
   return sem_tmk(c, TK_UNKNOWN);
 }
@@ -77667,7 +77774,7 @@ int32_t sem_check_cast(Sem* c, int32_t e) {
   int32_t st = sem_check_expression(c, sem_na(c, e));
   int32_t tt = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e)));
   if (sem_can_cast(c, st, tt) == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Cannot cast ", sem_tstr(c, st)), " to "), sem_tstr(c, tt)));
+  sem_err(c, __flowc_str_concatn(4, "Cannot cast ", sem_tstr(c, st), " to ", sem_tstr(c, tt)));
 }
   return tt;
 }
@@ -77688,7 +77795,7 @@ int32_t sem_check_if_expr(Sem* c, int32_t e) {
   int32_t ek = sem_tkind(c, et);
   if (tk != ek && tk != TK_UNKNOWN && ek != TK_UNKNOWN) {
   if ((sem_is_numeric(c, tt) && sem_is_numeric(c, et)) == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("if-expression branches must have the same type, got ", sem_tstr(c, tt)), " and "), sem_tstr(c, et)));
+  sem_err(c, __flowc_str_concatn(4, "if-expression branches must have the same type, got ", sem_tstr(c, tt), " and ", sem_tstr(c, et)));
 }
 }
   return tt;
@@ -77772,7 +77879,7 @@ int32_t sem_check_vector_literal(Sem* c, int32_t e) {
   if (any_float) {
   el = "f32";
 }
-  return sem_ty_named(c->t, TK_UNKNOWN, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("vec", sem_s_itoa((int64_t)(n))), "_"), el));
+  return sem_ty_named(c->t, TK_UNKNOWN, __flowc_str_concatn(4, "vec", sem_s_itoa((int64_t)(n)), "_", el));
 }
 
 int32_t sem_check_interpolation(Sem* c, int32_t e) {
@@ -78004,7 +78111,7 @@ int32_t sem_check_pipe_block(Sem* c, int32_t e) {
   int32_t kind = sem_nival(c, e);
   if (kind == PIPE_BLOCK_STAGE) {
   sem_check_expression(c, sem_na(c, e));
-  const char* msg = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("flow stage params `", sem_nname(c, e)), " { ... }` (line "), sem_s_itoa((int64_t)(sem_py_pos(c, c->cm, sem_nstart(c, e), 0)))), ") are only valid for a flow used as a pipeline stage inside a flow `output`");
+  const char* msg = __flowc_str_concatn(5, "flow stage params `", sem_nname(c, e), " { ... }` (line ", sem_s_itoa((int64_t)(sem_py_pos(c, c->cm, sem_nstart(c, e), 0))), ") are only valid for a flow used as a pipeline stage inside a flow `output`");
   sem_err(c, msg);
   sem_sv_push(c->fatal, msg);
   return sem_tmk(c, TK_UNKNOWN);
@@ -78045,10 +78152,10 @@ int32_t sem_check_pipe_block(Sem* c, int32_t e) {
   if (pt < 0) {
   return sem_tmk(c, TK_UNKNOWN);
 }
-  sig = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(sig, sem_nname(c, f)), ":"), sem_pt_name(c->t, pt)), ";");
+  sig = __flowc_str_concatn(5, sig, sem_nname(c, f), ":", sem_pt_name(c->t, pt), ";");
   f = sem_nnext(c, f);
 }
-  const char* key = __flowc_str_concat(__flowc_str_concat(sem_s_itoa((int64_t)(c->cm)), "|"), sig);
+  const char* key = __flowc_str_concatn(3, sem_s_itoa((int64_t)(c->cm)), "|", sig);
   int32_t idx = sem_sm_get(c->fork_sigs, key);
   if (idx < 0) {
   const char* ck = __flowc_str_concat(sem_s_itoa((int64_t)(c->cm)), "#count");
@@ -78159,9 +78266,9 @@ int32_t sem_check_var_decl(Sem* c, int32_t s) {
   if (sem_can_coerce(c, et, expected2) == 0) {
   const char* und = sem_undeclared_type_name(c, expected2, et);
   if (sem_s_len(und) > 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Variable '", name), "' is annotated with unknown type '"), und), "', which is not declared in this scope"));
+  sem_err(c, __flowc_str_concatn(5, "Variable '", name, "' is annotated with unknown type '", und, "', which is not declared in this scope"));
 } else {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Variable '", name), "' initialized with "), sem_tstr(c, et)), " but annotated as "), sem_tstr(c, expected2)));
+  sem_err(c, __flowc_str_concatn(6, "Variable '", name, "' initialized with ", sem_tstr(c, et), " but annotated as ", sem_tstr(c, expected2)));
 }
 }
 }
@@ -78218,7 +78325,7 @@ int32_t sem_check_return_stmt(Sem* c, int32_t s) {
   if (reported == 0 && sem_is_span(c, c->current_return_type)) {
   const char* origin = sem_local_borrow_origin(c, v);
   if ((uint8_t*)(origin) != NULL) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("span outlives borrowed storage `", origin), "`"), sem_location_suffix(c, s)));
+  sem_err(c, __flowc_str_concatn(4, "span outlives borrowed storage `", origin, "`", sem_location_suffix(c, s)));
 }
 }
 } else {
@@ -78241,7 +78348,7 @@ int32_t sem_check_assignment(Sem* c, int32_t s) {
   if ((uint8_t*)(binding) == NULL) {
   binding = "span";
 }
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("cannot write through `", binding), "`: "), sem_tstr(c, bt)), " is an immutable view (declare it "), sem_format_span_type(__flowc_str_concat("span_mut_", sem_span_element_name(sem_tname(c, bt))), NO_SIZE)), ")"));
+  sem_err(c, __flowc_str_concatn(7, "cannot write through `", binding, "`: ", sem_tstr(c, bt), " is an immutable view (declare it ", sem_format_span_type(__flowc_str_concat("span_mut_", sem_span_element_name(sem_tname(c, bt))), NO_SIZE), ")"));
 }
 }
   int32_t et = sem_check_expression(c, value);
@@ -78253,7 +78360,7 @@ int32_t sem_check_assignment(Sem* c, int32_t s) {
   if (reported == 0 && sem_is_reference_type(c, tt)) {
   const char* origin = sem_local_borrow_origin(c, value);
   if ((uint8_t*)(origin) != NULL) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("span outlives borrowed storage `", origin), "`"), sem_location_suffix(c, s)));
+  sem_err(c, __flowc_str_concatn(4, "span outlives borrowed storage `", origin, "`", sem_location_suffix(c, s)));
 }
 }
 }
@@ -78263,12 +78370,12 @@ int32_t sem_check_assignment(Sem* c, int32_t s) {
   const char* target = sem_nname(c, lhs);
   int32_t sym = sem_lookup(c, target);
   if (sym < 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Undefined variable '", target), "'"));
+  sem_err(c, __flowc_str_concatn(3, "Undefined variable '", target, "'"));
   return sem_tmk(c, TK_VOID);
 }
   if (sem_iv_get(c->sy_mut, sym) == 0) {
   if (c->strict) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Cannot assign to immutable variable '", target), "' (use 'let mut')"));
+  sem_err(c, __flowc_str_concatn(3, "Cannot assign to immutable variable '", target, "' (use 'let mut')"));
   return sem_tmk(c, TK_VOID);
 }
   sem_iv_set(c->sy_mut, sym, 1);
@@ -78279,12 +78386,12 @@ int32_t sem_check_assignment(Sem* c, int32_t s) {
   if (reported2 == 0 && sem_is_reference_type(c, st) && sem_sm_has(c->static_names, target)) {
   const char* origin2 = sem_local_borrow_origin(c, value);
   if ((uint8_t*)(origin2) != NULL) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("span outlives borrowed storage `", origin2), "`"), sem_location_suffix(c, s)));
+  sem_err(c, __flowc_str_concatn(4, "span outlives borrowed storage `", origin2, "`", sem_location_suffix(c, s)));
 }
 }
   sem_record_rt_safe_binding(c, value, et2, st);
   if (sem_can_coerce(c, et2, st) == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Cannot assign ", sem_tstr(c, et2)), " to variable '"), target), "' of type "), sem_tstr(c, st)));
+  sem_err(c, __flowc_str_concatn(6, "Cannot assign ", sem_tstr(c, et2), " to variable '", target, "' of type ", sem_tstr(c, st)));
 }
   return et2;
 }
@@ -78293,7 +78400,7 @@ void sem_check_condition(Sem* c, int32_t cond, const char* what) {
   int32_t ct = sem_check_expression(c, cond);
   if (ct >= 0 && sem_tkind(c, ct) != TK_BOOL) {
   if (c->strict || sem_is_numeric(c, ct) == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(what, " condition must be bool, got "), sem_tstr(c, ct)));
+  sem_err(c, __flowc_str_concatn(3, what, " condition must be bool, got ", sem_tstr(c, ct)));
 }
 }
 }
@@ -78353,7 +78460,7 @@ int32_t sem_check_handle_stmt(Sem* c, int32_t s) {
   const char* en = sem_nname(c, e);
   if (sem_sm_has(c->effect_types, en) == 0) {
   if (c->strict) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Unknown effect '", en), "' in handle statement"));
+  sem_err(c, __flowc_str_concatn(3, "Unknown effect '", en, "' in handle statement"));
 }
 } else {
   sem_sv_add(installed, en);
@@ -78364,7 +78471,7 @@ int32_t sem_check_handle_stmt(Sem* c, int32_t s) {
   while (h != AST_NONE) {
   const char* hn = sem_nname(c, h);
   if (sem_sm_has(c->capability_types, hn) == 0 && sem_lookup(c, hn) < 0 && c->strict) {
-  sem_warn(c, __flowc_str_concat(__flowc_str_concat("Handle handler '", hn), "' is not a known capability"));
+  sem_warn(c, __flowc_str_concatn(3, "Handle handler '", hn, "' is not a known capability"));
 }
   h = sem_nnext(c, h);
 }
@@ -78433,7 +78540,7 @@ void sem_bind_struct_pattern(Sem* c, int32_t pat) {
   int32_t lt = sem_check_literal(c, a);
   if (sem_can_coerce(c, ft, lt) == 0 && sem_can_coerce(c, lt, ft) == 0) {
   if (c->strict) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Match pattern field ", sem_s_itoa((int64_t)(i))), " of "), sname), " expects "), sem_tstr(c, ft)), ", got literal "), sem_tstr(c, lt)));
+  sem_err(c, __flowc_str_concatn(8, "Match pattern field ", sem_s_itoa((int64_t)(i)), " of ", sname, " expects ", sem_tstr(c, ft), ", got literal ", sem_tstr(c, lt)));
 }
 }
 }
@@ -78483,7 +78590,7 @@ void sem_literal_pattern_check(Sem* c, int32_t lit, int32_t value_type) {
   int32_t pt = sem_check_literal(c, lit);
   if (sem_can_coerce(c, value_type, pt) == 0 && sem_can_coerce(c, pt, value_type) == 0) {
   if (c->strict) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Match pattern ", sem_tstr(c, pt)), " incompatible with value type "), sem_tstr(c, value_type)));
+  sem_err(c, __flowc_str_concatn(4, "Match pattern ", sem_tstr(c, pt), " incompatible with value type ", sem_tstr(c, value_type)));
 }
 }
 }
@@ -78491,7 +78598,7 @@ void sem_literal_pattern_check(Sem* c, int32_t lit, int32_t value_type) {
 void sem_list_pattern_check(Sem* c, int32_t first, int32_t value_type) {
   if (sem_tkind(c, value_type) != TK_ARRAY) {
   if (c->strict) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("List pattern ", sem_list_pattern_repr(c, first)), " requires an array value, got "), sem_tstr(c, value_type)));
+  sem_err(c, __flowc_str_concatn(4, "List pattern ", sem_list_pattern_repr(c, first), " requires an array value, got ", sem_tstr(c, value_type)));
 }
   return;
 }
@@ -78508,7 +78615,7 @@ void sem_list_pattern_check(Sem* c, int32_t first, int32_t value_type) {
   int32_t lt = sem_check_literal(c, x);
   if (sem_can_coerce(c, lt, el) == 0 && sem_can_coerce(c, el, lt) == 0) {
   if (c->strict) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat("List pattern element ", sem_tstr(c, lt)), " incompatible with array element type "), sem_tstr(c, el)));
+  sem_err(c, __flowc_str_concatn(4, "List pattern element ", sem_tstr(c, lt), " incompatible with array element type ", sem_tstr(c, el)));
 }
 }
 }
@@ -78526,10 +78633,10 @@ const char* sem_list_pattern_repr(Sem* c, int32_t first) {
   s = __flowc_str_concat(s, ", ");
 }
   if (sem_is_variable(c, x)) {
-  s = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(s, "Variable(name='"), sem_nname(c, x)), "')");
+  s = __flowc_str_concatn(4, s, "Variable(name='", sem_nname(c, x), "')");
 } else {
   const char* lit = sem_s_span(c->src, ((c->ar).nodes[x]).name_start, ((c->ar).nodes[x]).name_end);
-  s = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(s, "Literal(value='"), lit), "', type=Type(name='i32', is_pointer=False, is_reference=False, is_capability=False, size=None, element_type=None, type_args=None, effects=[], is_cfn=False))");
+  s = __flowc_str_concatn(4, s, "Literal(value='", lit, "', type=Type(name='i32', is_pointer=False, is_reference=False, is_capability=False, size=None, element_type=None, type_args=None, effects=[], is_cfn=False))");
 }
   i = (i + 1);
   x = sem_nnext(c, x);
@@ -78547,7 +78654,7 @@ void sem_variable_pattern(Sem* c, const char* name, int32_t value_type) {
   int32_t pt = sem_sym_type(c, cs);
   if (sem_can_coerce(c, compare, pt) == 0 && sem_can_coerce(c, pt, compare) == 0) {
   if (c->strict) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Match pattern '", name), "' has type "), sem_tstr(c, pt)), " incompatible with value type "), sem_tstr(c, value_type)));
+  sem_err(c, __flowc_str_concatn(6, "Match pattern '", name, "' has type ", sem_tstr(c, pt), " incompatible with value type ", sem_tstr(c, value_type)));
 }
 }
 } else {
@@ -78753,7 +78860,7 @@ const char* sem_format_int_gaps(SemIntVec* covered, int32_t lo, int32_t hi) {
   if (start == end) {
   sem_sv_push(gaps, sem_s_itoa((int64_t)(start)));
 } else {
-  sem_sv_push(gaps, __flowc_str_concat(__flowc_str_concat(sem_s_itoa((int64_t)(start)), ".."), sem_s_itoa((int64_t)(end))));
+  sem_sv_push(gaps, __flowc_str_concatn(3, sem_s_itoa((int64_t)(start)), "..", sem_s_itoa((int64_t)(end))));
 }
 }
   int32_t remaining = 0;
@@ -78764,7 +78871,7 @@ const char* sem_format_int_gaps(SemIntVec* covered, int32_t lo, int32_t hi) {
   x = (x + 1);
 }
   if (remaining > 0) {
-  sem_sv_push(gaps, __flowc_str_concat(__flowc_str_concat("+", sem_s_itoa((int64_t)(remaining))), " more"));
+  sem_sv_push(gaps, __flowc_str_concatn(3, "+", sem_s_itoa((int64_t)(remaining)), " more"));
 }
   return sem_sv_join(gaps, ", ");
 }
@@ -78831,7 +78938,7 @@ void sem_warn_enum_exhaustiveness(Sem* c, int32_t s, const char* enum_name) {
 }
   sem_sv_sort(missing);
   if (missing->len > 0) {
-  sem_warn(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Non-exhaustive match: enum '", enum_name), "' patterns do not cover variant(s) "), sem_sv_join(missing, ", ")), " (add the missing variant(s) or `_`/`default`)"));
+  sem_warn(c, __flowc_str_concatn(5, "Non-exhaustive match: enum '", enum_name, "' patterns do not cover variant(s) ", sem_sv_join(missing, ", "), " (add the missing variant(s) or `_`/`default`)"));
 }
 }
 
@@ -78917,9 +79024,9 @@ void sem_warn_match_exhaustiveness(Sem* c, int32_t s, int32_t value_type) {
   int32_t span = ((hi - lo) + 1);
   const char* msg = "Non-exhaustive match: integer literal patterns do not cover all values";
   if ((span - uniq->len) > 0) {
-  msg = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(msg, "; gaps in ["), sem_s_itoa((int64_t)(lo))), ", "), sem_s_itoa((int64_t)(hi))), "]: "), sem_format_int_gaps(uniq, lo, hi));
+  msg = __flowc_str_concatn(7, msg, "; gaps in [", sem_s_itoa((int64_t)(lo)), ", ", sem_s_itoa((int64_t)(hi)), "]: ", sem_format_int_gaps(uniq, lo, hi));
 } else {
-  msg = __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(msg, "; contiguous cover ["), sem_s_itoa((int64_t)(lo))), ", "), sem_s_itoa((int64_t)(hi))), "]");
+  msg = __flowc_str_concatn(6, msg, "; contiguous cover [", sem_s_itoa((int64_t)(lo)), ", ", sem_s_itoa((int64_t)(hi)), "]");
 }
   sem_warn(c, __flowc_str_concat(msg, "; values outside that span also uncovered (add `_` or `default`)"));
 }
@@ -79035,7 +79142,7 @@ void sem_check_trait_bounds(Sem* c, int32_t fi) {
   const char* b = sem_fi_tbound(c, fi, i);
   if (sem_s_len(b) > 0 && c->strict) {
   if (sem_sm_has(c->trait_types, b) == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Unknown trait bound '", b), "' on type parameter '"), sem_fi_tparam(c, fi, i)), "'"));
+  sem_err(c, __flowc_str_concatn(5, "Unknown trait bound '", b, "' on type parameter '", sem_fi_tparam(c, fi, i), "'"));
 }
 }
   i = (i + 1);
@@ -79049,10 +79156,10 @@ void sem_check_function(Sem* c, int32_t fi) {
   sem_attribute_errors(c, fname, sem_iv_get(c->fi_astart, fi), sem_iv_get(c->fi_alen, fi));
   if (sem_iv_get(c->fi_extern, fi) == 1) {
   if (c->safety_profile && sem_fi_has_attr(c, fi, "unsafe") == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("safety profile requires '@unsafe' on extern declaration '", fname), "' (MISRA/CERT FFI boundary; see docs/language/safety-profiles.md)"));
+  sem_err(c, __flowc_str_concatn(3, "safety profile requires '@unsafe' on extern declaration '", fname, "' (MISRA/CERT FFI boundary; see docs/language/safety-profiles.md)"));
 }
   if (sem_is_dangerous_extern(fname) && sem_fi_has_attr(c, fi, "unsafe") == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Dangerous FFI '", fname), "' must be declared under '@unsafe extern' (CERT / #276)"));
+  sem_err(c, __flowc_str_concatn(3, "Dangerous FFI '", fname, "' must be declared under '@unsafe extern' (CERT / #276)"));
 }
   return;
 }
@@ -79124,9 +79231,9 @@ void sem_check_function(Sem* c, int32_t fi) {
   if (sem_can_coerce(c, rt, expected) == 0) {
   const char* und = sem_undeclared_type_name(c, expected, rt);
   if (sem_s_len(und) > 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Function '", fname), "' is declared to return unknown type '"), und), "', which is not declared in this scope"));
+  sem_err(c, __flowc_str_concatn(5, "Function '", fname, "' is declared to return unknown type '", und, "', which is not declared in this scope"));
 } else {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Function '", fname), "' returns "), sem_tstr(c, rt)), " but should return "), sem_tstr(c, expected)));
+  sem_err(c, __flowc_str_concatn(6, "Function '", fname, "' returns ", sem_tstr(c, rt), " but should return ", sem_tstr(c, expected)));
 }
 }
   i = (i + 1);
@@ -79152,7 +79259,7 @@ void sem_check_const(Sem* c, int32_t d) {
   int32_t et = sem_check_expression(c, sem_nb(c, node));
   int32_t xt = sem_parse_type(c, sem_pt_of_ast(c, sem_na(c, node)));
   if (sem_can_coerce(c, et, xt) == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Const '", sem_decl_name(c, d)), "' has type "), sem_tstr(c, et)), " but should be "), sem_tstr(c, xt)));
+  sem_err(c, __flowc_str_concatn(6, "Const '", sem_decl_name(c, d), "' has type ", sem_tstr(c, et), " but should be ", sem_tstr(c, xt)));
 }
 }
 
@@ -79188,7 +79295,7 @@ void sem_check_static(Sem* c, int32_t d) {
   aname = sem_s_strip(sem_s_slice(full, 0, lp));
 }
   if (sem_s_eq(aname, "lifetime") == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Attribute '@", aname), "' is not allowed on module static '"), name), "'; only '@lifetime(...)' is"));
+  sem_err(c, __flowc_str_concatn(5, "Attribute '@", aname, "' is not allowed on module static '", name, "'; only '@lifetime(...)' is"));
 }
   i = (i + 1);
 }
@@ -79201,35 +79308,35 @@ void sem_check_static(Sem* c, int32_t d) {
   bool value_is_null = sem_nk(c, value) == AST_IDENT && sem_nname_is(c, value, "null");
   if (sem_is_span_type_name(tn)) {
   if (value_is_null == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Module static '", name), "' of span type must be initialized to null"));
+  sem_err(c, __flowc_str_concatn(3, "Module static '", name, "' of span type must be initialized to null"));
 }
   return;
 }
   if (is_pointer) {
   if (value_is_null == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Module static '", name), "' of pointer type must be initialized to null"));
+  sem_err(c, __flowc_str_concatn(3, "Module static '", name, "' of pointer type must be initialized to null"));
 }
   return;
 }
   if (is_fixed) {
   const char* en = sem_pt_name(c->t, tys->pt_elem[pt]);
   if (sem_is_static_primitive(en) == 0 || sem_s_eq(en, "string")) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Module static '", name), "' has unsupported array element type '"), en), "': static arrays may only hold primitives (i32/i64/u8/u32/f32/f64/c64/c128/bool)"));
+  sem_err(c, __flowc_str_concatn(5, "Module static '", name, "' has unsupported array element type '", en, "': static arrays may only hold primitives (i32/i64/u8/u32/f32/f64/c64/c128/bool)"));
   return;
 }
   if (sem_nk(c, value) != AST_ARRAY_LIT) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Module static '", name), "' initializer must be a full array literal of compile-time constants"));
+  sem_err(c, __flowc_str_concatn(3, "Module static '", name, "' initializer must be a full array literal of compile-time constants"));
   return;
 }
   int32_t n = sem_array_lit_len(c, value);
   if (n > tys->pt_size[pt]) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Module static '", name), "' array initializer has "), sem_s_itoa((int64_t)(n))), " elements but the type declares "), sem_s_itoa((int64_t)(tys->pt_size[pt]))));
+  sem_err(c, __flowc_str_concatn(6, "Module static '", name, "' array initializer has ", sem_s_itoa((int64_t)(n)), " elements but the type declares ", sem_s_itoa((int64_t)(tys->pt_size[pt]))));
   return;
 }
   int32_t x = sem_na(c, value);
   while (x != AST_NONE) {
   if (sem_is_const_scalar(c, x) == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Module static '", name), "' array initializer must contain only compile-time constant literals"));
+  sem_err(c, __flowc_str_concatn(3, "Module static '", name, "' array initializer must contain only compile-time constant literals"));
   return;
 }
   x = sem_nnext(c, x);
@@ -79237,18 +79344,18 @@ void sem_check_static(Sem* c, int32_t d) {
 } else {
   if (sem_is_static_primitive(tn)) {
   if (sem_is_const_scalar(c, value) == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("Module static '", name), "' initializer must be a compile-time constant literal"));
+  sem_err(c, __flowc_str_concatn(3, "Module static '", name, "' initializer must be a compile-time constant literal"));
   return;
 }
 } else {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Module static '", name), "' has unsupported type '"), tn), "': module statics must be a primitive (i32/i64/u8/u32/f32/f64/c64/c128/bool/string), a fixed array of primitives, or ptr<T>"));
+  sem_err(c, __flowc_str_concatn(5, "Module static '", name, "' has unsupported type '", tn, "': module statics must be a primitive (i32/i64/u8/u32/f32/f64/c64/c128/bool/string), a fixed array of primitives, or ptr<T>"));
   return;
 }
 }
   int32_t et = sem_check_expression(c, value);
   int32_t xt = sem_parse_type(c, pt);
   if (sem_can_coerce(c, et, xt) == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("Module static '", name), "' has type "), sem_tstr(c, et)), " but should be "), sem_tstr(c, xt)));
+  sem_err(c, __flowc_str_concatn(6, "Module static '", name, "' has type ", sem_tstr(c, et), " but should be ", sem_tstr(c, xt)));
 }
 }
 
@@ -79314,12 +79421,12 @@ void sem_compute_parameter_escapes(Sem* c) {
 void sem_verify_parameter_escapes(Sem* c) {
   int32_t i = 0;
   while (i < sem_sv_len(c->ref_key)) {
-  const char* key = __flowc_str_concat(__flowc_str_concat(sem_sv_get(c->ref_callee, i), "\x01"), sem_s_itoa((int64_t)(sem_iv_get(c->ref_idx, i))));
+  const char* key = __flowc_str_concatn(3, sem_sv_get(c->ref_callee, i), "\x01", sem_s_itoa((int64_t)(sem_iv_get(c->ref_idx, i))));
   if (sem_sm_has(c->esc_static, key)) {
   const char* ck = sem_sv_get(c->ref_key, i);
   if (sem_sm_has(c->domain_reported, ck) == 0) {
   sem_sm_put(c->domain_reported, ck, 1);
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("lifetime domain escape: local `", sem_sv_get(c->ref_origin, i)), "` is passed to parameter of '"), sem_sv_get(c->ref_callee, i)), "', which escapes to a static/global scope"), sem_sv_get(c->ref_loc, i)));
+  sem_err(c, __flowc_str_concatn(6, "lifetime domain escape: local `", sem_sv_get(c->ref_origin, i), "` is passed to parameter of '", sem_sv_get(c->ref_callee, i), "', which escapes to a static/global scope", sem_sv_get(c->ref_loc, i)));
 }
 }
   i = (i + 1);
@@ -79433,7 +79540,7 @@ void sem_verify_rt_safe_bindings(Sem* c) {
   while (i < sem_sv_len(c->rt_binding_fn)) {
   const char* target = sem_sv_get(c->rt_binding_target, i);
   const char* fnm = sem_sv_get(c->rt_binding_fn, i);
-  const char* key = __flowc_str_concat(__flowc_str_concat(target, "\x01"), fnm);
+  const char* key = __flowc_str_concatn(3, target, "\x01", fnm);
   if (sem_sv_has(seen, key) == 0) {
   sem_sv_push(seen, key);
   if (sem_s_eq(fnm, "<anonymous function>")) {
@@ -79442,9 +79549,9 @@ void sem_verify_rt_safe_bindings(Sem* c) {
   const char* reason = sem_unsafe_reason(c, 0, c->rt_unsafe_reason, fnm);
   if ((uint8_t*)(reason) != NULL) {
   if (sem_s_eq(reason, fnm)) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("RT-safety violation: '", fnm), "' is bound to an rt_safe contract but calls '"), fnm), "', which is forbidden on an RT-safe path"));
+  sem_err(c, __flowc_str_concatn(5, "RT-safety violation: '", fnm, "' is bound to an rt_safe contract but calls '", fnm, "', which is forbidden on an RT-safe path"));
 } else {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("RT-safety violation: '", fnm), "' is bound to an rt_safe contract but calls '"), reason), "', which is forbidden on an RT-safe path"));
+  sem_err(c, __flowc_str_concatn(5, "RT-safety violation: '", fnm, "' is bound to an rt_safe contract but calls '", reason, "', which is forbidden on an RT-safe path"));
 }
 }
 }
@@ -79468,15 +79575,15 @@ void sem_verify_rt_safe_calls(Sem* c) {
 }
   if (sem_s_eq(reason, "__unresolved_dynamic_call")) {
   if (sem_s_eq(reason, name)) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("RT-safety violation: '", fnm), "' "), marked), " but makes an unresolved dynamic call (forbidden on an RT-safe path because its safety cannot be proven; see "), doc), ")"));
+  sem_err(c, __flowc_str_concatn(7, "RT-safety violation: '", fnm, "' ", marked, " but makes an unresolved dynamic call (forbidden on an RT-safe path because its safety cannot be proven; see ", doc, ")"));
 } else {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("RT-safety violation: '", fnm), "' "), marked), " but calls '"), name), "', which makes an unresolved dynamic call (forbidden on an RT-safe path; see "), doc), ")"));
+  sem_err(c, __flowc_str_concatn(9, "RT-safety violation: '", fnm, "' ", marked, " but calls '", name, "', which makes an unresolved dynamic call (forbidden on an RT-safe path; see ", doc, ")"));
 }
 } else {
   if (sem_s_eq(reason, name)) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("RT-safety violation: '", fnm), "' "), marked), " but calls '"), name), "', which is forbidden on an RT-safe path (heap, device/file I/O, GPU, or blocking lock; see "), doc), ")"));
+  sem_err(c, __flowc_str_concatn(9, "RT-safety violation: '", fnm, "' ", marked, " but calls '", name, "', which is forbidden on an RT-safe path (heap, device/file I/O, GPU, or blocking lock; see ", doc, ")"));
 } else {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("RT-safety violation: '", fnm), "' "), marked), " but calls '"), name), "', which is not RT-safe because it calls '"), reason), "' (forbidden on an RT-safe path; see "), doc), ")"));
+  sem_err(c, __flowc_str_concatn(11, "RT-safety violation: '", fnm, "' ", marked, " but calls '", name, "', which is not RT-safe because it calls '", reason, "' (forbidden on an RT-safe path; see ", doc, ")"));
 }
 }
 }
@@ -79492,9 +79599,9 @@ void sem_verify_domain_calls(Sem* c) {
   const char* reason = sem_unsafe_reason(c, 1, c->heap_unsafe_reason, name);
   if ((uint8_t*)(reason) != NULL) {
   if (sem_s_eq(reason, name)) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("lifetime domain violation: '", fnm), "' is in the `frame` domain but calls '"), name), "', which allocates or frees heap memory. Frame-domain code allocates by bumping a frame arena (frame_alloc_*); see docs/language/lifetime-domains.md"));
+  sem_err(c, __flowc_str_concatn(5, "lifetime domain violation: '", fnm, "' is in the `frame` domain but calls '", name, "', which allocates or frees heap memory. Frame-domain code allocates by bumping a frame arena (frame_alloc_*); see docs/language/lifetime-domains.md"));
 } else {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat(__flowc_str_concat("lifetime domain violation: '", fnm), "' is in the `frame` domain but calls '"), name), "', which allocates or frees heap memory because it calls '"), reason), "'. Frame-domain code allocates by bumping a frame arena (frame_alloc_*); see docs/language/lifetime-domains.md"));
+  sem_err(c, __flowc_str_concatn(7, "lifetime domain violation: '", fnm, "' is in the `frame` domain but calls '", name, "', which allocates or frees heap memory because it calls '", reason, "'. Frame-domain code allocates by bumping a frame arena (frame_alloc_*); see docs/language/lifetime-domains.md"));
 }
 }
   i = (i + 1);
@@ -79528,7 +79635,7 @@ void sem_scan_while_loops(Sem* c, int32_t node, const char* fn_name) {
   return;
 }
   if (sem_nk(c, node) == AST_WHILE && sem_nival(c, node) == 0) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("--profile safety rejects unbounded 'while' loop (MISRA 17.4): use '@max_iterations(N)' or a counted 'for' loop in '", fn_name), "'"));
+  sem_err(c, __flowc_str_concatn(3, "--profile safety rejects unbounded 'while' loop (MISRA 17.4): use '@max_iterations(N)' or a counted 'for' loop in '", fn_name, "'"));
 }
   sem_scan_while_loops(c, sem_na(c, node), fn_name);
   sem_scan_while_loops(c, sem_nb(c, node), fn_name);
@@ -79587,7 +79694,7 @@ void sem_check_recursion(Sem* c) {
   sem_sv_sort(recursive);
   i = 0;
   while (i < recursive->len) {
-  sem_err(c, __flowc_str_concat(__flowc_str_concat("--profile safety rejects unbounded recursion (MISRA 17.2): '", sem_sv_get(recursive, i)), "' is recursive"));
+  sem_err(c, __flowc_str_concatn(3, "--profile safety rejects unbounded recursion (MISRA 17.2): '", sem_sv_get(recursive, i), "' is recursive"));
   i = (i + 1);
 }
 }
