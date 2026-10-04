@@ -1,6 +1,8 @@
 # From tests/unit/test_attributes.py::test_unknown_attribute_is_not_silently_accepted_by_codegen,
 # ::test_target_string_cannot_escape_the_c_attribute (C part) and
 # ::test_test_block_is_emitted_but_never_invoked (run part).
+# The #740 prelude uses __attribute__((constructor)); the splice payload is
+# constructor" from @target("x\")) __attribute__((constructor").
 - fastcall
-- constructor
+- constructor"
 exit 0

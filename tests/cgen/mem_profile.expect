@@ -1,0 +1,10 @@
++ flow_mem_profile_init
++ flow_mem_note_alloc
++ FLOW_MEM_PROFILE
++ flow_mem_malloc
++ flow_mem_free
++ flow_mem_note_temp
++ (deferred, needs #669)
++ __flowc_str_concat
+- (malloc(32)
+exit 0

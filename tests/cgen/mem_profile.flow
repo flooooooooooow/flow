@@ -1,0 +1,18 @@
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+}
+
+function main() -> i32 {
+    let p: ptr<u8> = malloc(32)
+    if p == null {
+        return 1
+    }
+    p[0] = 7 as u8
+    let s: string = "hi" + "!"
+    free(p)
+    if s == "hi!" {
+        return 0
+    }
+    return 2
+}

@@ -34,6 +34,13 @@ benchmarks/
 └── runner.flow              # Benchmark runner with statistics
 ```
 
+## Memory instrumentation
+
+`./flow tool bench_harness` sets `FLOW_MEM_PROFILE=1` on every subject.
+Compiled Flow programs then write heap count/bytes, peak live heap, peak
+RSS, compiler-temp bytes and copy volume into the schema (issue #740).
+No workload source rewrite is required. See [docs/library/memory.md](../docs/library/memory.md).
+
 ## Running Benchmarks
 
 ### Individual Benchmarks

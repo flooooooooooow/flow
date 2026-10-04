@@ -1,3 +1,22 @@
+# Heap allocate/free churn for the #728 harness. The #740 profiler
+# counts these without the program printing its own counters.
+
+extern {
+    function malloc(size: i64) -> ptr<u8>
+    function free(p: ptr<u8>) -> void
+}
+
 function main() -> i32 {
-    return 0;
+    let mut i: i32 = 0
+    while i < 1000 {
+        let p: ptr<u8> = malloc(64)
+        if p == null {
+            return 1
+        }
+        p[0] = 1 as u8
+        p[63] = 2 as u8
+        free(p)
+        i = i + 1
+    }
+    return 0
 }
