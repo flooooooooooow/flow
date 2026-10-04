@@ -1,5 +1,6 @@
 # None of these loops is straight-line, so none is hinted (#414, #1031).
 - vectorize(enable)
 - #pragma GCC ivdep
+- #pragma omp simd
 + for (int32_t i = 0; i < n; i = i + 2) {
-exit 4
+exit 8

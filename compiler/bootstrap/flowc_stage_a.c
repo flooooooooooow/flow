@@ -62662,6 +62662,18 @@ int32_t flowc_cgen_step_is_literal(AstArena arena, int32_t step);
 int32_t flowc_cgen_is_vec_math_call(uint8_t* src, int32_t ns, int32_t ne);
 int32_t flowc_cgen_vec_expr_ok(AstArena arena, uint8_t* src, int32_t id, int32_t depth);
 int32_t flowc_cgen_loop_body_is_simple(AstArena arena, uint8_t* src, int32_t body);
+int32_t flowc_cgen_ident_same(AstArena arena, uint8_t* src, int32_t id, int32_t other);
+int32_t flowc_cgen_reduction_op(AstArena arena, uint8_t* src, int32_t st);
+int32_t flowc_cgen_assign_is_index_store(AstArena arena, int32_t st);
+int32_t flowc_cgen_loop_omp_safe(AstArena arena, uint8_t* src, int32_t body);
+int32_t flowc_cgen_reduction_seen_before(AstArena arena, uint8_t* src, int32_t body, int32_t st, int32_t op);
+void flowc_cgen_emit_omp_reduction_op(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body, int32_t op, const char* opch);
+void flowc_cgen_emit_omp_reductions(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body);
+void flowc_cgen_emit_simd_pragmas(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body);
+int32_t flowc_cgen_expr_is_simple_bound(AstArena arena, int32_t e);
+int32_t flowc_cgen_index_is_loop_var(AstArena arena, uint8_t* src, int32_t idx, int32_t loop_id);
+int32_t flowc_cgen_step_is_unit(AstArena arena, int32_t step);
+int32_t flowc_cgen_try_emit_contiguous_copy(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_span_is_variant_const(uint8_t* src, int32_t ps, int32_t pe, int32_t es, int32_t ee, int32_t vs, int32_t ve);
 int32_t flowc_cgen_match_is_exhaustive(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_layout_explicit(CgenBuf* w, AstArena arena, uint8_t* src, int32_t arg);
@@ -70934,6 +70946,11 @@ int32_t flowc_cgen_for_literal_dir(AstArena arena, uint8_t* src, int32_t lo, int
 }
 
 void flowc_cgen_emit_for_dir(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id, int32_t dir) {
+  if (dir > 0) {
+  if (flowc_cgen_try_emit_contiguous_copy(w, arena, src, id) == 1) {
+  return;
+}
+}
   int32_t saved_loop_start = (w[0]).bounds_loop_start;
   int32_t saved_loop_end = (w[0]).bounds_loop_end;
   int32_t saved_span_start = (w[0]).bounds_span_start;
@@ -70967,6 +70984,13 @@ void flowc_cgen_emit_for_dir(CgenBuf* w, AstArena arena, uint8_t* src, int32_t i
   (w[0]).len_hoist_span_start = (-1);
   (w[0]).len_hoist_span_end = (-1);
   (w[0]).len_hoist_id = AST_NONE;
+}
+  if (dir > 0) {
+  if (flowc_cgen_loop_body_is_simple(arena, src, ((arena).nodes[id]).c) == 1) {
+  flowc_cgen_emit_simd_pragmas(w, arena, src, ((arena).nodes[id]).c);
+} else {
+  flowc_cgen_perf_remark(w, arena, src, id, "loop-not-vectorized", "loop stays scalar", 0);
+}
 }
   flowc_cgen_puts(w, "  for (int32_t ");
   flowc_cgen_put_span(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
@@ -71126,6 +71150,271 @@ int32_t flowc_cgen_loop_body_is_simple(AstArena arena, uint8_t* src, int32_t bod
 }
   st = ((arena).nodes[st]).next;
 }
+  return 1;
+}
+
+int32_t flowc_cgen_ident_same(AstArena arena, uint8_t* src, int32_t id, int32_t other) {
+  if (id == AST_NONE || other == AST_NONE) {
+  return 0;
+}
+  if (((arena).nodes[id]).kind != AST_IDENT || ((arena).nodes[other]).kind != AST_IDENT) {
+  return 0;
+}
+  return flowc_cgen_span_eq(src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end, ((arena).nodes[other]).name_start, ((arena).nodes[other]).name_end);
+}
+
+int32_t flowc_cgen_reduction_op(AstArena arena, uint8_t* src, int32_t st) {
+  if (st == AST_NONE || ((arena).nodes[st]).kind != AST_ASSIGN) {
+  return 0;
+}
+  int32_t lhs = ((arena).nodes[st]).a;
+  int32_t rhs = ((arena).nodes[st]).b;
+  if (lhs == AST_NONE || rhs == AST_NONE) {
+  return 0;
+}
+  if (((arena).nodes[lhs]).kind != AST_IDENT || ((arena).nodes[rhs]).kind != AST_BINOP) {
+  return 0;
+}
+  int32_t op = ((arena).nodes[rhs]).ival;
+  if (op != TOK_PLUS && op != TOK_MINUS && op != TOK_STAR) {
+  return 0;
+}
+  int32_t left = ((arena).nodes[rhs]).a;
+  int32_t right = ((arena).nodes[rhs]).b;
+  int32_t left_same = flowc_cgen_ident_same(arena, src, left, lhs);
+  int32_t right_same = flowc_cgen_ident_same(arena, src, right, lhs);
+  if (left_same == 1 && right_same == 0) {
+  return op;
+}
+  if (left_same == 0 && right_same == 1) {
+  if (op == TOK_MINUS) {
+  return 0;
+}
+  return op;
+}
+  return 0;
+}
+
+int32_t flowc_cgen_assign_is_index_store(AstArena arena, int32_t st) {
+  if (st == AST_NONE || ((arena).nodes[st]).kind != AST_ASSIGN) {
+  return 0;
+}
+  int32_t lhs = ((arena).nodes[st]).a;
+  if (lhs == AST_NONE || ((arena).nodes[lhs]).kind != AST_INDEX) {
+  return 0;
+}
+  if (((arena).nodes[lhs]).ival == 1) {
+  return 0;
+}
+  return 1;
+}
+
+int32_t flowc_cgen_loop_omp_safe(AstArena arena, uint8_t* src, int32_t body) {
+  if (body == AST_NONE) {
+  return 1;
+}
+  if (((arena).nodes[body]).kind != AST_BLOCK) {
+  return 0;
+}
+  int32_t st = ((arena).nodes[body]).a;
+  while (st != AST_NONE) {
+  int32_t k = ((arena).nodes[st]).kind;
+  if (k == AST_LET) {
+  st = ((arena).nodes[st]).next;
+  continue;
+}
+  if (k != AST_ASSIGN) {
+  return 0;
+}
+  if (flowc_cgen_reduction_op(arena, src, st) == 0 && flowc_cgen_assign_is_index_store(arena, st) == 0) {
+  return 0;
+}
+  st = ((arena).nodes[st]).next;
+}
+  return 1;
+}
+
+int32_t flowc_cgen_reduction_seen_before(AstArena arena, uint8_t* src, int32_t body, int32_t st, int32_t op) {
+  if (body == AST_NONE || ((arena).nodes[body]).kind != AST_BLOCK) {
+  return 0;
+}
+  int32_t p = ((arena).nodes[body]).a;
+  while (p != AST_NONE && p != st) {
+  if (flowc_cgen_reduction_op(arena, src, p) == op) {
+  if (flowc_cgen_ident_same(arena, src, ((arena).nodes[p]).a, ((arena).nodes[st]).a) == 1) {
+  return 1;
+}
+}
+  p = ((arena).nodes[p]).next;
+}
+  return 0;
+}
+
+void flowc_cgen_emit_omp_reduction_op(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body, int32_t op, const char* opch) {
+  if (body == AST_NONE || ((arena).nodes[body]).kind != AST_BLOCK) {
+  return;
+}
+  int32_t any = 0;
+  int32_t st = ((arena).nodes[body]).a;
+  while (st != AST_NONE) {
+  if (flowc_cgen_reduction_op(arena, src, st) == op) {
+  if (flowc_cgen_reduction_seen_before(arena, src, body, st, op) == 0) {
+  if (any == 0) {
+  flowc_cgen_puts(w, " reduction(");
+  flowc_cgen_puts(w, opch);
+  flowc_cgen_puts(w, ":");
+  any = 1;
+} else {
+  flowc_cgen_puts(w, ",");
+}
+  flowc_cgen_put_span(w, src, ((arena).nodes[((arena).nodes[st]).a]).name_start, ((arena).nodes[((arena).nodes[st]).a]).name_end);
+}
+}
+  st = ((arena).nodes[st]).next;
+}
+  if (any == 1) {
+  flowc_cgen_puts(w, ")");
+}
+}
+
+void flowc_cgen_emit_omp_reductions(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body) {
+  flowc_cgen_emit_omp_reduction_op(w, arena, src, body, TOK_PLUS, "+");
+  flowc_cgen_emit_omp_reduction_op(w, arena, src, body, TOK_MINUS, "-");
+  flowc_cgen_emit_omp_reduction_op(w, arena, src, body, TOK_STAR, "*");
+}
+
+void flowc_cgen_emit_simd_pragmas(CgenBuf* w, AstArena arena, uint8_t* src, int32_t body) {
+  if (flowc_cgen_loop_omp_safe(arena, src, body) == 1) {
+  flowc_cgen_puts(w, "#if defined(_OPENMP)\n");
+  flowc_cgen_puts(w, "#pragma omp simd");
+  flowc_cgen_emit_omp_reductions(w, arena, src, body);
+  flowc_cgen_puts(w, "\n#elif defined(__clang__)\n");
+  flowc_cgen_puts(w, "#pragma clang loop vectorize(enable) interleave(enable)\n");
+  flowc_cgen_puts(w, "#elif defined(__GNUC__)\n");
+  flowc_cgen_puts(w, "#pragma GCC ivdep\n");
+  flowc_cgen_puts(w, "#endif\n");
+  return;
+}
+  flowc_cgen_puts(w, "#if defined(__clang__)\n");
+  flowc_cgen_puts(w, "#pragma clang loop vectorize(enable) interleave(enable)\n");
+  flowc_cgen_puts(w, "#endif\n");
+}
+
+int32_t flowc_cgen_expr_is_simple_bound(AstArena arena, int32_t e) {
+  if (e == AST_NONE) {
+  return 0;
+}
+  int32_t k = ((arena).nodes[e]).kind;
+  if (k == AST_IDENT || k == AST_INT) {
+  return 1;
+}
+  if (k == AST_UNARY && ((arena).nodes[e]).ival == TOK_MINUS) {
+  int32_t op = ((arena).nodes[e]).a;
+  if (op != AST_NONE && ((arena).nodes[op]).kind == AST_INT) {
+  return 1;
+}
+}
+  return 0;
+}
+
+int32_t flowc_cgen_index_is_loop_var(AstArena arena, uint8_t* src, int32_t idx, int32_t loop_id) {
+  if (idx == AST_NONE || ((arena).nodes[idx]).kind != AST_INDEX) {
+  return 0;
+}
+  if (((arena).nodes[idx]).ival == 1) {
+  return 0;
+}
+  int32_t base = ((arena).nodes[idx]).a;
+  int32_t ix = ((arena).nodes[idx]).b;
+  if (base == AST_NONE || ((arena).nodes[base]).kind != AST_IDENT) {
+  return 0;
+}
+  if (ix == AST_NONE || ((arena).nodes[ix]).kind != AST_IDENT) {
+  return 0;
+}
+  return flowc_cgen_span_eq(src, ((arena).nodes[ix]).name_start, ((arena).nodes[ix]).name_end, ((arena).nodes[loop_id]).name_start, ((arena).nodes[loop_id]).name_end);
+}
+
+int32_t flowc_cgen_step_is_unit(AstArena arena, int32_t step) {
+  if (step == AST_NONE || step == 0) {
+  return 1;
+}
+  if (((arena).nodes[step]).kind == AST_INT && ((arena).nodes[step]).ival == 1) {
+  return 1;
+}
+  return 0;
+}
+
+int32_t flowc_cgen_try_emit_contiguous_copy(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) {
+  if (flowc_cgen_step_is_unit(arena, ((arena).nodes[id]).ival) == 0) {
+  return 0;
+}
+  if (flowc_cgen_expr_is_simple_bound(arena, ((arena).nodes[id]).a) == 0) {
+  return 0;
+}
+  if (flowc_cgen_expr_is_simple_bound(arena, ((arena).nodes[id]).b) == 0) {
+  return 0;
+}
+  int32_t body = ((arena).nodes[id]).c;
+  if (body == AST_NONE || ((arena).nodes[body]).kind != AST_BLOCK) {
+  return 0;
+}
+  int32_t st = ((arena).nodes[body]).a;
+  if (st == AST_NONE || ((arena).nodes[st]).next != AST_NONE) {
+  return 0;
+}
+  if (((arena).nodes[st]).kind != AST_ASSIGN) {
+  return 0;
+}
+  int32_t lhs = ((arena).nodes[st]).a;
+  int32_t rhs = ((arena).nodes[st]).b;
+  if (flowc_cgen_index_is_loop_var(arena, src, lhs, id) == 0) {
+  return 0;
+}
+  if (flowc_cgen_index_is_loop_var(arena, src, rhs, id) == 0) {
+  return 0;
+}
+  int32_t dst = ((arena).nodes[lhs]).a;
+  int32_t srcb = ((arena).nodes[rhs]).a;
+  if (flowc_cgen_ident_same(arena, src, dst, srcb) == 1) {
+  return 0;
+}
+  if (flowc_cgen_is_span_var(arena, src, dst) == 1 || flowc_cgen_is_span_var(arena, src, srcb) == 1) {
+  return 0;
+}
+  if ((w[0]).checks == 1) {
+  if (flowc_cgen_checked_array_size(w, arena, src, dst) > 0) {
+  return 0;
+}
+  if (flowc_cgen_checked_array_size(w, arena, src, srcb) > 0) {
+  return 0;
+}
+  if (flowc_cgen_checked_is_span(w, arena, src, dst) == 1) {
+  return 0;
+}
+  if (flowc_cgen_checked_is_span(w, arena, src, srcb) == 1) {
+  return 0;
+}
+}
+  flowc_cgen_puts(w, "  if ((");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).b);
+  flowc_cgen_puts(w, ") > (");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_puts(w, ")) {\n    memmove((void*)(&(");
+  flowc_cgen_emit_expr(w, arena, src, dst);
+  flowc_cgen_puts(w, ")[");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_puts(w, "]), (void*)(&(");
+  flowc_cgen_emit_expr(w, arena, src, srcb);
+  flowc_cgen_puts(w, ")[");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_puts(w, "]), (size_t)((");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).b);
+  flowc_cgen_puts(w, ") - (");
+  flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
+  flowc_cgen_puts(w, ")) * sizeof((");
+  flowc_cgen_emit_expr(w, arena, src, dst);
+  flowc_cgen_puts(w, ")[0]));\n  }\n");
   return 1;
 }
 
@@ -71762,9 +72051,11 @@ void flowc_cgen_emit_stmt(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id) 
   (w[0]).loop_defer_base = saved_dbase;
   return;
 }
+  if (flowc_cgen_try_emit_contiguous_copy(w, arena, src, id) == 1) {
+  return;
+}
   if (flowc_cgen_loop_body_is_simple(arena, src, ((arena).nodes[id]).c) == 1) {
-  flowc_cgen_puts(w, "  #pragma clang loop vectorize(enable) interleave(enable)\n");
-  flowc_cgen_puts(w, "  #pragma GCC ivdep\n");
+  flowc_cgen_emit_simd_pragmas(w, arena, src, ((arena).nodes[id]).c);
 } else {
   flowc_cgen_perf_remark(w, arena, src, id, "loop-not-vectorized", "loop stays scalar", 0);
 }
