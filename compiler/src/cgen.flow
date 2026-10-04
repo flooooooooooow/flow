@@ -7063,8 +7063,9 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             if fn_id != AST_NONE or flowc_cgen_is_libc_fn(arena, src, id) == 1 {
                 let mut is_f32_math: i32 = 0
                 let mut is_c64_math: i32 = 0
-                # stdlib math is declared f32/c64. Expression types miss
-                # literals and unary minus, so also read the callee (#734).
+                # stdlib math is declared f32/c64. A bundle emits each
+                # module in its own arena, so imported callees are not in
+                # fn_id; their C return type is in the sig table (#734).
                 if fn_id != AST_NONE {
                     let pty: i32 = flowc_cgen_fn_param_type(arena, fn_id, 0)
                     if pty != AST_NONE {
@@ -7076,8 +7077,23 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
                         }
                     }
                 }
+                if is_f32_math == 0 and is_c64_math == 0 {
+                    let soff: i32 = flowc_cgen_sig_find(w[0].sigs, w[0].sigs_len, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+                    if soff >= 0 {
+                        if flowc_cgen_sig_ctype_is(w, soff, "float") == 1 {
+                            is_f32_math = 1
+                        }
+                        if flowc_cgen_sig_ctype_is(w, soff, "c64") == 1 {
+                            is_c64_math = 1
+                        }
+                    }
+                }
                 if flowc_cgen_is_libc_fn(arena, src, id) == 1 {
-                    let first_arg: i32 = arena.nodes[id].a
+                    let mut first_arg: i32 = arena.nodes[id].a
+                    # Unary minus is not a typed ident; walk through to the operand.
+                    while first_arg != AST_NONE and arena.nodes[first_arg].kind == AST_UNARY and arena.nodes[first_arg].ival == TOK_MINUS {
+                        first_arg = arena.nodes[first_arg].a
+                    }
                     if first_arg != AST_NONE {
                         let arg_ty: i32 = flowc_cgen_expr_type_node(w, arena, src, first_arg)
                         if arg_ty != AST_NONE {
