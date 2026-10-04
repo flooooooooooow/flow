@@ -7063,6 +7063,19 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             if fn_id != AST_NONE or flowc_cgen_is_libc_fn(arena, src, id) == 1 {
                 let mut is_f32_math: i32 = 0
                 let mut is_c64_math: i32 = 0
+                # stdlib math is declared f32/c64. Expression types miss
+                # literals and unary minus, so also read the callee (#734).
+                if fn_id != AST_NONE {
+                    let pty: i32 = flowc_cgen_fn_param_type(arena, fn_id, 0)
+                    if pty != AST_NONE {
+                        if flowc_cgen_span_is(src, arena.nodes[pty].name_start, arena.nodes[pty].name_end, "f32") == 1 {
+                            is_f32_math = 1
+                        }
+                        if flowc_cgen_span_is(src, arena.nodes[pty].name_start, arena.nodes[pty].name_end, "c64") == 1 {
+                            is_c64_math = 1
+                        }
+                    }
+                }
                 if flowc_cgen_is_libc_fn(arena, src, id) == 1 {
                     let first_arg: i32 = arena.nodes[id].a
                     if first_arg != AST_NONE {
