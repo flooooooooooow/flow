@@ -1,0 +1,66 @@
+# ffi_buffer_handoff — zero-copy ABI for contiguous data
+#
+# Rules for buffer lifetime and ownership across the FFI boundary:
+# - Owned Buffer (`ffi_buffer_owned`): The receiver takes responsibility for freeing the buffer using the provided deallocator callback.
+# - Borrowed Buffer (`ffi_buffer_borrowed`): The sender retains ownership. The receiver MUST NOT use the buffer after the function call returns. No copies are made.
+# - Safe Fallback: If layouts are incompatible or unaligned, a fallback copy must be made manually by the user, but the ABI types here guarantee a single contiguous representation.
+#
+# Break-even guidance for batching:
+# Calling across FFI has a baseline overhead. For O(1) buffer handoffs, the overhead is fixed regardless of buffer size. Small operations (e.g., < 1000 elements) may see FFI overhead dominate, while batching operations on large buffers effectively amortizes this cost to zero.
+
+export struct FFIBuffer {
+    data: ptr<void>,
+    len: i64,
+    item_size: i64,
+    ownership: i32,
+    deallocator: ptr<void>
+}
+
+export function ffi_buffer_borrowed(data: ptr<void>, len: i64, item_size: i64) -> FFIBuffer {
+    return FFIBuffer {
+        data: data,
+        len: len,
+        item_size: item_size,
+        ownership: 0,
+        deallocator: 0 as ptr<void>
+    }
+}
+
+export function ffi_buffer_owned(data: ptr<void>, len: i64, item_size: i64, deallocator: ptr<void>) -> FFIBuffer {
+    return FFIBuffer {
+        data: data,
+        len: len,
+        item_size: item_size,
+        ownership: 1,
+        deallocator: deallocator
+    }
+}
+
+# ---------------------------------------------------------
+# FFI boundary metrics and copy instrumentation
+# ---------------------------------------------------------
+export struct FFIInstrumentation {
+    total_copies: i64,
+    total_bytes_copied: i64,
+    total_zero_copy: i64,
+    total_bytes_zero_copy: i64
+}
+
+export function ffi_instrumentation_new() -> FFIInstrumentation {
+    return FFIInstrumentation {
+        total_copies: 0,
+        total_bytes_copied: 0,
+        total_zero_copy: 0,
+        total_bytes_zero_copy: 0
+    }
+}
+
+export function ffi_record_copy(inst: ptr<FFIInstrumentation>, bytes: i64) {
+    inst[0].total_copies = inst[0].total_copies + 1
+    inst[0].total_bytes_copied = inst[0].total_bytes_copied + bytes
+}
+
+export function ffi_record_zero_copy(inst: ptr<FFIInstrumentation>, bytes: i64) {
+    inst[0].total_zero_copy = inst[0].total_zero_copy + 1
+    inst[0].total_bytes_zero_copy = inst[0].total_bytes_zero_copy + bytes
+}
