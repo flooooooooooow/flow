@@ -25,7 +25,7 @@ function ids_of(body: string) -> string {
         t_cat(t_err())
         return ""
     }
-    let cc: string = "cc"
+    let mut cc: string = "cc"
     if have("clang") {
         cc = "clang"
     }
