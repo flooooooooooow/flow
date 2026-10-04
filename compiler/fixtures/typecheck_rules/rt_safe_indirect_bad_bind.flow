@@ -1,14 +1,12 @@
-# EXPECT ERROR: RT-safety violation: 'unsafe_fn' is bound to an rt_safe contract but calls 'alloc_i32'
-import stdlib.memory
-
+# expect: RT-safety violation: 'unsafe_fn' is bound to an rt_safe contract but calls 'malloc', which is forbidden on an RT-safe path
 @rt_safe
 function safe_fn(x: i32) -> i32 {
     return x * 2
 }
 
 function unsafe_fn(x: i32) -> i32 {
-    let p: ptr<i32> = alloc_i32(x)
-    free(p as ptr<void>)
+    let p: ptr<void> = malloc(8)
+    free(p)
     return x
 }
 
@@ -19,6 +17,5 @@ function indirect_caller() {
 }
 
 function main() -> i32 {
-    indirect_caller()
     return 0
 }

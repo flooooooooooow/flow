@@ -2086,7 +2086,10 @@ function sem_check_function_call(c: ptr<Sem>, name: string, args: ptr<SemIntVec>
     let tys: ptr<SemTys> = c.t
 
     # Check if this is an indirect call via a variable with an `rt_safe` contract.
+    # A function-typed variable or parameter without that contract is an
+    # unresolved dynamic call: its callee is not known at the call site.
     let mut ok_dynamic: bool = false
+    let mut unresolved_dynamic: bool = false
     let sym: i32 = sem_lookup(c, name)
     if sym >= 0 and sem_tkind(c, sem_sym_type(c, sym)) == TK_FUNCTION {
         let sty: i32 = sem_sym_type(c, sym)
@@ -2097,11 +2100,19 @@ function sem_check_function_call(c: ptr<Sem>, name: string, args: ptr<SemIntVec>
             }
             ri = ri + 1
         }
+        if ok_dynamic == false and sem_sym_kind(c, sym) != SK_FUNCTION {
+            unresolved_dynamic = true
+        }
     }
 
     if ok_dynamic == false {
-        sem_resolved_calls_add(c, name)
-        sem_check_rt_safe_call(c, name)
+        if unresolved_dynamic {
+            sem_resolved_calls_add(c, "__unresolved_dynamic_call")
+            sem_check_rt_safe_call(c, "__unresolved_dynamic_call")
+        } else {
+            sem_resolved_calls_add(c, name)
+            sem_check_rt_safe_call(c, name)
+        }
     }
     sem_check_safe_call(c, name)
     sem_check_domain_call(c, name)
