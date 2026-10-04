@@ -1,0 +1,22 @@
+# Distinct local arrays at an internal call: both pointer params qualify.
++ int32_t add_into(int32_t* restrict dst, int32_t* restrict src, int32_t n);
++ int32_t add_into(int32_t* restrict dst, int32_t* restrict src, int32_t n) {
+# Unique access paths to those arrays: local pointers qualify.
++ int32_t* restrict pa
++ int32_t* restrict pb
+# Same buffer twice: must stay aliasable.
+- alias_copy(int32_t* restrict
++ int32_t alias_copy(int32_t* dst, int32_t* src, int32_t n);
+# Overlapping same-root views: must stay aliasable.
+- overlap_copy(int32_t* restrict
++ int32_t overlap_copy(int32_t* dst, int32_t* src, int32_t n);
+# Exported function: a proof in this file does not license the ABI.
+- exported_add(int32_t* restrict
++ int32_t exported_add(int32_t* dst, int32_t* src, int32_t n);
+# Span parameters are structs; they are never restrict-qualified.
+- span_add(flowc_span_int32_t restrict
++ int32_t span_add(flowc_span_int32_t to
+# Pointer copied from a parameter inherits unknown provenance.
+- restrict q
++ int32_t* q =
+exit 0

@@ -1,0 +1,88 @@
+# Proven noalias / restrict emission (#731).
+#
+# Distinct local arrays at an internal call, and non-overlapping constant
+# slices of one array, may qualify. Overlapping views, a buffer passed
+# twice, an exported function, and a pointer copied from a parameter must
+# stay unqualified.
+
+function add_into(dst: ptr<i32>, src: ptr<i32>, n: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = dst[i] + src[i]
+        i = i + 1
+    }
+    return dst[0]
+}
+
+function alias_copy(dst: ptr<i32>, src: ptr<i32>, n: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = src[i]
+        i = i + 1
+    }
+    return dst[0]
+}
+
+function overlap_copy(dst: ptr<i32>, src: ptr<i32>, n: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = src[i]
+        i = i + 1
+    }
+    return dst[0]
+}
+
+export function exported_add(dst: ptr<i32>, src: ptr<i32>, n: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = dst[i] + src[i]
+        i = i + 1
+    }
+    return dst[0]
+}
+
+function span_add(to: span<mut i32>, from: span<i32>) -> i32 {
+    let mut i: i32 = 0
+    while i < 4 {
+        to[i] = to[i] + from[i]
+        i = i + 1
+    }
+    return to[0]
+}
+
+function from_param(base: ptr<i32>) -> i32 {
+    let q: ptr<i32> = base
+    return q[0]
+}
+
+function main() -> i32 {
+    let mut a: array<i32, 4> = [1, 2, 3, 4]
+    let mut b: array<i32, 4> = [5, 6, 7, 8]
+    let pa: ptr<i32> = a
+    let pb: ptr<i32> = b
+    let r1: i32 = add_into(pa, pb, 4)
+
+    let mut y: array<i32, 4> = [1, 2, 3, 4]
+    let r3: i32 = alias_copy(y, y, 4)
+
+    let mut z: array<i32, 4> = [1, 2, 3, 4]
+    let r4: i32 = overlap_copy(&z[1], &z[0], 3)
+
+    let mut e0: array<i32, 4> = [1, 2, 3, 4]
+    let mut e1: array<i32, 4> = [5, 6, 7, 8]
+    let r5: i32 = exported_add(e0, e1, 4)
+    let mut halves: array<i32, 8> = [1, 2, 3, 4, 5, 6, 7, 8]
+    let r6: i32 = span_add(halves[4..8], halves[0..4])
+    let r7: i32 = from_param(pb)
+    if r1 != 6 { return 1 }
+    if r3 != 1 { return 2 }
+    if r4 != 1 { return 3 }
+    if z[0] != 1 { return 4 }
+    if z[1] != 1 { return 5 }
+    if z[2] != 1 { return 6 }
+    if z[3] != 1 { return 7 }
+    if r5 != 6 { return 8 }
+    if r6 != 6 { return 9 }
+    if r7 != 5 { return 10 }
+    return 0
+}
