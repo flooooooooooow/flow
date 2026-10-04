@@ -1,22 +1,22 @@
-# One-shot file transform using buffered stdlib I/O (#747).
-# Matches the Python twin's write / uppercase / write work without
-# per-character fgetc/fputc or a heap string per line.
+# Buffered file transform: one fread, in-place ASCII scan, one fwrite (#747).
+# No per-character fgetc/fputc and no per-line heap string.
 
 import std.io { FileRead, io_read_file, io_write_bytes }
-import std.bytebuf { ByteBuf, bb_new, bb_free, bb_puts, bb_putc, bb_len }
+import std.bytebuf { ByteBuf, bb_new, bb_free, bb_puts, bb_putc, bb_len, bb_cstr }
 
 extern {
     function remove(path: string) -> i32
 }
 
 function main() -> i32 {
-    let in_path: string = "/tmp/flow_file_transform_in.txt"
-    let out_path: string = "/tmp/flow_file_transform_out.txt"
+    let in_path: string = "/tmp/flow_buffered_io_in.txt"
+    let out_path: string = "/tmp/flow_buffered_io_out.txt"
 
-    let b: ptr<ByteBuf> = bb_new(8192)
+    let b: ptr<ByteBuf> = bb_new(65536)
     let mut line: i32 = 0
-    while line < 200 {
+    while line < 2000 {
         bb_puts(b, "key_")
+        bb_putc(b, (48 + (line / 1000) % 10) as u8)
         bb_putc(b, (48 + (line / 100) % 10) as u8)
         bb_putc(b, (48 + (line / 10) % 10) as u8)
         bb_putc(b, (48 + line % 10) as u8)
@@ -31,20 +31,20 @@ function main() -> i32 {
     bb_free(b)
 
     let rd: FileRead = io_read_file(in_path)
-    if rd.ok == false or (rd.len as i32) != written {
+    if rd.ok == false or rd.len != (written as i64) {
         return 2
     }
 
     let p: ptr<u8> = rd.data as ptr<u8>
     let mut i: i64 = 0
-    let mut total_bytes: i32 = 0
+    let mut checksum: i32 = 0
     while i < rd.len {
         let mut c: i32 = p[i as i32] as i32
         if c >= 97 and c <= 122 {
             c = c - 32
             p[i as i32] = c as u8
         }
-        total_bytes = total_bytes + 1
+        checksum = checksum + c
         i = i + 1
     }
 
@@ -54,7 +54,7 @@ function main() -> i32 {
 
     let _a: i32 = remove(in_path)
     let _b: i32 = remove(out_path)
-    if total_bytes <= 0 {
+    if checksum <= 0 {
         return 4
     }
     return 0

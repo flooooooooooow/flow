@@ -1,4 +1,9 @@
 # FLOW String Utilities
+#
+# Linear scans stay on the caller's buffer: parse, format and line walking
+# do not allocate per character or per token. Concatenation of two strings
+# is `a + b` (or `concat`); a pure-string chain of three or more parts is
+# joined in one allocation by the compiler (#747).
 
 extern {
     function snprintf(buf: ptr<i8>, size: i64, fmt: string, val: i32) -> i32
@@ -30,4 +35,210 @@ function str_eq(a: string, b: string) -> bool {
 
 function concat(a: string, b: string) -> string {
     return a + b
+}
+
+# Result of parsing a signed decimal integer from a byte string.
+# `ok` is false when the text is not a valid i64 (empty, junk, overflow).
+# `end` is the first byte not consumed; on success for a full-string parse
+# it equals the string length after trailing ASCII whitespace.
+export struct ParseI64 {
+    value: i64,
+    ok: bool,
+    end: i32
+}
+
+# ASCII whitespace that Python's int() accepts: space, tab, LF, VT, FF, CR.
+export function str_is_ascii_ws(c: u8) -> bool {
+    return c == 32 or (c >= 9 and c <= 13)
+}
+
+export function str_is_ascii_digit(c: u8) -> bool {
+    return c >= 48 and c <= 57
+}
+
+# Exclusive end of the line starting at `start` (index of '\n', or length).
+# Does not allocate. `start` past the end yields the length.
+export function str_line_end(s: string, start: i32) -> i32 {
+    let n: i32 = strlen(s) as i32
+    if start < 0 or start >= n {
+        return n
+    }
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = start
+    while i < n {
+        if p[i] == 10 {
+            return i
+        }
+        i = i + 1
+    }
+    return n
+}
+
+# Start of the next line after a line that ended at `end`, or -1 if done.
+# A newline at `end` advances one byte; otherwise the scan is finished.
+export function str_line_next(s: string, end: i32) -> i32 {
+    let n: i32 = strlen(s) as i32
+    if end < 0 or end >= n {
+        return 0 - 1
+    }
+    let p: ptr<u8> = s as ptr<u8>
+    if p[end] == 10 {
+        return end + 1
+    }
+    return 0 - 1
+}
+
+# Parse one signed decimal token starting at `start`. Leading ASCII
+# whitespace is skipped, matching Python int(). The token is an optional
+# sign and one or more digits. Overflow of i64 is an error (ok = false),
+# not wraparound. Trailing junk is left in `end` for the caller to inspect.
+export function str_parse_i64_at(s: string, start: i32) -> ParseI64 {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = start
+    if i < 0 {
+        i = 0
+    }
+    while i < n and str_is_ascii_ws(p[i]) {
+        i = i + 1
+    }
+    if i >= n {
+        return ParseI64 { value: 0, ok: false, end: i }
+    }
+    let mut neg: bool = false
+    if p[i] == 45 {
+        neg = true
+        i = i + 1
+    } elif p[i] == 43 {
+        i = i + 1
+    }
+    if i >= n or str_is_ascii_digit(p[i]) == false {
+        return ParseI64 { value: 0, ok: false, end: i }
+    }
+    let mut value: i64 = 0
+    let mut min_mag: bool = false
+    while i < n and str_is_ascii_digit(p[i]) {
+        let d: i64 = (p[i] as i64) - 48
+        if min_mag {
+            return ParseI64 { value: 0, ok: false, end: i }
+        }
+        if value > 922337203685477580 {
+            return ParseI64 { value: 0, ok: false, end: i }
+        }
+        if value == 922337203685477580 {
+            if d > 7 {
+                if neg and d == 8 {
+                    min_mag = true
+                    i = i + 1
+                    continue
+                }
+                return ParseI64 { value: 0, ok: false, end: i }
+            }
+        }
+        value = value * 10 + d
+        i = i + 1
+    }
+    if min_mag {
+        return ParseI64 { value: 0 - 9223372036854775807 - 1, ok: true, end: i }
+    }
+    if neg {
+        value = 0 - value
+    }
+    return ParseI64 { value: value, ok: true, end: i }
+}
+
+# Parse `s` as a whole, like Python int() on ASCII: leading and trailing
+# whitespace allowed, anything else is an error.
+export function str_parse_i64(s: string) -> ParseI64 {
+    let r: ParseI64 = str_parse_i64_at(s, 0)
+    if r.ok == false {
+        return r
+    }
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = r.end
+    while i < n and str_is_ascii_ws(p[i]) {
+        i = i + 1
+    }
+    if i != n {
+        return ParseI64 { value: 0, ok: false, end: r.end }
+    }
+    return ParseI64 { value: r.value, ok: true, end: i }
+}
+
+export function str_parse_i32(s: string) -> ParseI64 {
+    let r: ParseI64 = str_parse_i64(s)
+    if r.ok == false {
+        return r
+    }
+    if r.value > 2147483647 or r.value < (0 - 2147483647 - 1) {
+        return ParseI64 { value: 0, ok: false, end: r.end }
+    }
+    return r
+}
+
+# Write decimal `v` into `buf[0 .. cap)` as a NUL-terminated string.
+# Returns the number of characters written (excluding NUL), or -1 if `cap`
+# is too small. No heap allocation.
+export function str_format_i64(buf: ptr<u8>, cap: i32, v: i64) -> i32 {
+    if buf == null or cap < 2 {
+        return 0 - 1
+    }
+    let mut digits: array<u8, 32> = []
+    let mut n: i32 = 0
+    let mut neg: bool = false
+    let mut x: i64 = v
+    if x < 0 {
+        neg = true
+        if x == (0 - 9223372036854775807 - 1) {
+            # -9223372036854775808: digits of the magnitude that does not
+            # fit in a positive i64.
+            let min_digits: string = "9223372036854775808"
+            let mp: ptr<u8> = min_digits as ptr<u8>
+            let mut k: i32 = 0
+            while k < 19 {
+                digits[k] = mp[18 - k]
+                k = k + 1
+            }
+            n = 19
+            x = 0
+        } else {
+            x = 0 - x
+        }
+    }
+    if n == 0 {
+        if x == 0 {
+            digits[0] = 48
+            n = 1
+        }
+        while x > 0 {
+            digits[n] = (48 + (x % 10)) as u8
+            x = x / 10
+            n = n + 1
+        }
+    }
+    let need: i32 = n
+    if neg {
+        need = need + 1
+    }
+    if need + 1 > cap {
+        return 0 - 1
+    }
+    let mut o: i32 = 0
+    if neg {
+        buf[0] = 45
+        o = 1
+    }
+    let mut i: i32 = n
+    while i > 0 {
+        i = i - 1
+        buf[o] = digits[i]
+        o = o + 1
+    }
+    buf[o] = 0
+    return o
+}
+
+export function str_format_i32(buf: ptr<u8>, cap: i32, v: i32) -> i32 {
+    return str_format_i64(buf, cap, v as i64)
 }

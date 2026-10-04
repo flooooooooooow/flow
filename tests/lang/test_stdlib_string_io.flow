@@ -1,0 +1,94 @@
+# std.string parse/format/line scan and std.io buffered file I/O (#747).
+# Linear scans do not allocate per character or per token. Errors are
+# explicit: bad digits, overflow, trailing junk, and a missing file fail
+# rather than returning a silent zero or empty string.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+import std.string {
+    ParseI64, str_parse_i64, str_parse_i64_at, str_parse_i32,
+    str_format_i64, str_line_end, str_line_next, str_is_ascii_digit
+}
+import std.io { FileRead, io_read_file, io_write_file, io_write_bytes, io_read_into }
+
+extern {
+    function strcmp(a: string, b: string) -> i32
+    function strlen(s: string) -> i64
+    function remove(path: string) -> i32
+}
+
+function check_ok(s: string, want: i64) -> i32 {
+    let r: ParseI64 = str_parse_i64(s)
+    if r.ok == false {
+        return 1
+    }
+    if r.value != want {
+        return 2
+    }
+    return 0
+}
+
+function main() -> i32 {
+    if check_ok("0", 0) != 0 { return 1 }
+    if check_ok("42", 42) != 0 { return 2 }
+    if check_ok("  -17  ", 0 - 17) != 0 { return 3 }
+    if check_ok("+8", 8) != 0 { return 4 }
+    if check_ok("9223372036854775807", 9223372036854775807) != 0 { return 5 }
+    if check_ok("-9223372036854775808", 0 - 9223372036854775807 - 1) != 0 { return 6 }
+
+    # Python int() rejects junk, empty, a lone sign, and overflow.
+    if str_parse_i64("").ok { return 7 }
+    if str_parse_i64("-").ok { return 8 }
+    if str_parse_i64("12x").ok { return 9 }
+    if str_parse_i64("9223372036854775808").ok { return 10 }
+    if str_parse_i64("-9223372036854775809").ok { return 11 }
+    if str_parse_i32("2147483648").ok { return 12 }
+
+    # Token parse leaves trailing text in `end` and does not allocate.
+    let tok: ParseI64 = str_parse_i64_at("  99,100", 0)
+    if tok.ok == false or tok.value != 99 { return 13 }
+    let rest: ptr<u8> = "  99,100" as ptr<u8>
+    if rest[tok.end] != 44 { return 14 }
+    let tok2: ParseI64 = str_parse_i64_at("  99,100", tok.end + 1)
+    if tok2.ok == false or tok2.value != 100 { return 15 }
+
+    let mut buf: array<u8, 32> = []
+    if str_format_i64(&buf[0], 32, 0) != 1 or buf[0] != 48 or buf[1] != 0 { return 16 }
+    if str_format_i64(&buf[0], 32, 0 - 42) != 3 { return 17 }
+    if buf[0] != 45 or buf[1] != 52 or buf[2] != 50 or buf[3] != 0 { return 18 }
+    if str_format_i64(&buf[0], 32, 9223372036854775807) != 19 { return 19 }
+    if str_format_i64(&buf[0], 2, 100) != 0 - 1 { return 20 }
+    if str_format_i64(&buf[0], 32, 0 - 9223372036854775807 - 1) != 20 { return 21 }
+    if buf[0] != 45 or buf[1] != 57 or buf[19] != 56 or buf[20] != 0 { return 22 }
+
+    # Line walking: no per-line heap. "a\nb\n" is two lines then done.
+    let lines: string = "a\nbc\n"
+    let e0: i32 = str_line_end(lines, 0)
+    if e0 != 1 { return 23 }
+    let n1: i32 = str_line_next(lines, e0)
+    if n1 != 2 { return 24 }
+    let e1: i32 = str_line_end(lines, n1)
+    if e1 != 4 { return 25 }
+    if str_line_next(lines, e1) != 5 { return 26 }
+    if str_line_end(lines, 5) != 5 { return 27 }
+    if str_line_next(lines, 5) != 0 - 1 { return 28 }
+    if str_is_ascii_digit(47 as u8) or str_is_ascii_digit(48 as u8) == false { return 29 }
+
+    let path: string = "/tmp/flow_test_stdlib_string_io.txt"
+    if io_write_file(path, "hello\nworld\n") == false { return 30 }
+    let rd: FileRead = io_read_file(path)
+    if rd.ok == false or rd.len != 12 { return 31 }
+    if strcmp(rd.data, "hello\nworld\n") != 0 { return 32 }
+
+    let mut into: array<u8, 8> = []
+    let got: i64 = io_read_into(path, &into[0], 5)
+    if got != 5 or into[0] != 104 or into[4] != 10 { return 33 }
+
+    if io_write_bytes(path, "xy" as ptr<u8>, 2) == false { return 34 }
+    let rd2: FileRead = io_read_file(path)
+    if rd2.ok == false or rd2.len != 2 or strcmp(rd2.data, "xy") != 0 { return 35 }
+
+    let missing: FileRead = io_read_file("/tmp/flow_test_stdlib_string_io_missing.txt")
+    if missing.ok { return 36 }
+    let _rm: i32 = remove(path)
+    return 0
+}

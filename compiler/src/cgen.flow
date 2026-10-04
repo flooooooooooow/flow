@@ -2217,12 +2217,19 @@ function flowc_cgen_write_lit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
 
 # --- string concatenation -------------------------------------------------
 # `a + b` is C addition unless an operand is a string, in which case Stage-A
-# lowers it to __flowc_str_concat (emitted in the preamble). Detection is
-# syntactic and deliberately conservative: a string literal, a `+` chain that
-# already contains one, a cast to `string`, or a call to a function declared
-# `-> string` (this module's arena first, then the bundle signature table).
-# Two string values with no literal and no call between them are still emitted
-# as `+` and rejected by the C compiler: a loud failure, never wrong output.
+# lowers it to __flowc_str_concat (emitted in the preamble). A pure-string
+# chain of three or more parts (`a + b + c + d`) is one __flowc_str_concatn
+# call: one length pass, one allocation, each part copied once (#747). Nested
+# pairwise joins would allocate n-1 buffers and recopy every prefix.
+# Detection is syntactic and deliberately conservative: a string literal, a
+# `+` chain that already contains one, a cast to `string`, or a call to a
+# function declared `-> string` (this module's arena first, then the bundle
+# signature table). Two string values with no literal and no call between
+# them are still emitted as `+` and rejected by the C compiler: a loud
+# failure, never wrong output. Chains that stringify a numeric operand keep
+# the nested pairwise path: each __flowc_str_of_* result is a heap string
+# today, but the pairwise copy is the conservative lifetime if that helper
+# later uses a reused stack buffer.
 
 # 1 when `ty` is a span: `span<T>`, or the nameless `&[T]` / `&mut [T]` the
 # parser records as an element type with no name. A span is a struct in C, so
@@ -2771,6 +2778,58 @@ function flowc_cgen_is_str_concat(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
     return flowc_cgen_expr_is_string(w, arena, src, arena.nodes[id].b)
 }
 
+# 1 if `id` is a string `+` node that should flatten into a concat chain.
+function flowc_cgen_is_concat_node(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) -> i32 {
+    if id == AST_NONE {
+        return 0
+    }
+    if arena.nodes[id].kind != AST_BINOP {
+        return 0
+    }
+    if arena.nodes[id].ival != TOK_PLUS {
+        return 0
+    }
+    return flowc_cgen_is_str_concat(w, arena, src, id)
+}
+
+# Flatten a pure-string concat chain into `out[0 .. n)` in left-to-right
+# order. Returns n when n > 2 and every leaf is already a string; otherwise
+# 0, and the caller keeps the nested pairwise join. Bounded and iterative
+# so a long chain cannot recurse (#271).
+function flowc_cgen_flatten_pure_concat(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32, out: ptr<i32>, out_cap: i32) -> i32 {
+    let mut stack: array<i32, 64> = []
+    let mut sp: i32 = 1
+    stack[0] = id
+    let mut n: i32 = 0
+    let mut all_str: i32 = 1
+    while sp > 0 {
+        sp = sp - 1
+        let cur: i32 = stack[sp]
+        if flowc_cgen_is_concat_node(w, arena, src, cur) == 1 {
+            if sp + 2 > 64 {
+                return 0
+            }
+            stack[sp] = arena.nodes[cur].b
+            sp = sp + 1
+            stack[sp] = arena.nodes[cur].a
+            sp = sp + 1
+        } else {
+            if n >= out_cap {
+                return 0
+            }
+            out[n] = cur
+            n = n + 1
+            if flowc_cgen_expr_is_string(w, arena, src, cur) == 0 {
+                all_str = 0
+            }
+        }
+    }
+    if all_str == 1 and n > 2 {
+        return n
+    }
+    return 0
+}
+
 # --- primitive kind of an expression ------------------------------------
 # print/println and string `+` need a printf conversion for the operand.
 # The classification is syntactic, like the string test above: literals,
@@ -3086,6 +3145,31 @@ function flowc_cgen_emit_concat_operand(w: ptr<CgenBuf>, arena: AstArena, src: p
     # Unknown: keep the historical pass-through (a string-typed value the
     # classifier could not see, such as a field or an index).
     flowc_cgen_emit_expr(w, arena, src, id)
+}
+
+# Emit a string `+` as one N-way join, or a pairwise join when the chain is
+# two parts or contains a stringified non-string leaf.
+function flowc_cgen_emit_str_concat(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
+    let mut leaves: array<i32, 32> = []
+    let n: i32 = flowc_cgen_flatten_pure_concat(w, arena, src, id, &leaves[0], 32)
+    if n > 2 {
+        flowc_cgen_perf_remark(w, arena, src, id, "str_concatn", "pure-string chain joined in one allocation", 1)
+        flowc_cgen_puts(w, "__flowc_str_concatn(")
+        flowc_cgen_put_i32(w, n)
+        let mut i: i32 = 0
+        while i < n {
+            flowc_cgen_puts(w, ", ")
+            flowc_cgen_emit_concat_operand(w, arena, src, leaves[i])
+            i = i + 1
+        }
+        flowc_cgen_putc(w, 41)
+        return
+    }
+    flowc_cgen_puts(w, "__flowc_str_concat(")
+    flowc_cgen_emit_concat_operand(w, arena, src, arena.nodes[id].a)
+    flowc_cgen_puts(w, ", ")
+    flowc_cgen_emit_concat_operand(w, arena, src, arena.nodes[id].b)
+    flowc_cgen_putc(w, 41)
 }
 
 # Kind of the element `base[i]` reads, from the declared type of `base`:
@@ -6331,11 +6415,7 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
         # `a + b` on strings is concatenation, not pointer arithmetic.
         if op == TOK_PLUS {
             if flowc_cgen_is_str_concat(w, arena, src, id) == 1 {
-                flowc_cgen_puts(w, "__flowc_str_concat(")
-                flowc_cgen_emit_concat_operand(w, arena, src, arena.nodes[id].a)
-                flowc_cgen_puts(w, ", ")
-                flowc_cgen_emit_concat_operand(w, arena, src, arena.nodes[id].b)
-                flowc_cgen_putc(w, 41)
+                flowc_cgen_emit_str_concat(w, arena, src, id)
                 return
             }
         }
@@ -11550,6 +11630,7 @@ export function flowc_cgen_emit_sigs(
         # the libc headers used by Stage-A externs (FILE*/strlen/puts).
         flowc_cgen_puts(&w, "#include <stdio.h>\n")
         flowc_cgen_puts(&w, "#include <string.h>\n")
+        flowc_cgen_puts(&w, "#include <stdarg.h>\n")
         flowc_cgen_puts(&w, "#include <math.h>\n")
         flowc_cgen_puts(&w, "#include <complex.h>\n")
         # complex.h defines the macro I. A Flow field or variable may be
@@ -11578,6 +11659,28 @@ export function flowc_cgen_emit_sigs(
         flowc_cgen_puts(&w, "  r = (char*)malloc(la + lb + 1);\n")
         flowc_cgen_puts(&w, "  if (r == 0) { return \"\"; }\n")
         flowc_cgen_puts(&w, "  memcpy(r, a, la); memcpy(r + la, b, lb); r[la + lb] = 0;\n")
+        flowc_cgen_puts(&w, "  return r;\n")
+        flowc_cgen_puts(&w, "}\n")
+        flowc_cgen_putc(&w, 10)
+        # N-way string concat (#747). A chain like `a + b + c + d` used to emit
+        # nested pairwise joins, which allocate a fresh buffer per join and
+        # recopy every prefix. concatn sums the lengths once, allocates once,
+        # and copies each part once. NULL parts count as empty, matching concat.
+        flowc_cgen_puts(&w, "__attribute__((unused)) static const char* __flowc_str_concatn(int n, ...) {\n")
+        flowc_cgen_puts(&w, "  va_list ap; size_t total = 0; int i; const char* s; char* r; size_t off; size_t l;\n")
+        flowc_cgen_puts(&w, "  va_start(ap, n);\n")
+        flowc_cgen_puts(&w, "  for (i = 0; i < n; i++) { s = va_arg(ap, const char*); if (s != 0) { total += strlen(s); } }\n")
+        flowc_cgen_puts(&w, "  va_end(ap);\n")
+        flowc_cgen_puts(&w, "  r = (char*)malloc(total + 1);\n")
+        flowc_cgen_puts(&w, "  if (r == 0) { return \"\"; }\n")
+        flowc_cgen_puts(&w, "  off = 0;\n")
+        flowc_cgen_puts(&w, "  va_start(ap, n);\n")
+        flowc_cgen_puts(&w, "  for (i = 0; i < n; i++) {\n")
+        flowc_cgen_puts(&w, "    s = va_arg(ap, const char*);\n")
+        flowc_cgen_puts(&w, "    if (s != 0) { l = strlen(s); if (l != 0) { memcpy(r + off, s, l); off += l; } }\n")
+        flowc_cgen_puts(&w, "  }\n")
+        flowc_cgen_puts(&w, "  va_end(ap);\n")
+        flowc_cgen_puts(&w, "  r[off] = 0;\n")
         flowc_cgen_puts(&w, "  return r;\n")
         flowc_cgen_puts(&w, "}\n")
         flowc_cgen_putc(&w, 10)

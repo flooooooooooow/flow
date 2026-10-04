@@ -1,0 +1,30 @@
+# Idiomatic multi-part string `+` for #747. Eight already-string parts,
+# joined per row. A pure-string chain is one allocation in flowc.
+
+function main() -> i32 {
+    let a: string = "key_"
+    let b: string = "000"
+    let c: string = "=value_"
+    let d: string = "payload"
+    let e: string = "_line_"
+    let f: string = "data"
+    let g: string = "_end"
+    let h: string = "\n"
+
+    let mut checksum: i32 = 0
+    let mut i: i32 = 0
+    while i < 50000 {
+        let s: string = a + b + c + d + e + f + g + h
+        let p: ptr<u8> = s as ptr<u8>
+        let mut n: i32 = 0
+        while p[n] != 0 {
+            checksum = checksum + (p[n] as i32)
+            n = n + 1
+        }
+        i = i + 1
+    }
+    if checksum != 172550000 {
+        return 1
+    }
+    return 0
+}

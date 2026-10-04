@@ -4,6 +4,7 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+- Strings / I/O (#747, first slice): a pure-string `+` chain of three or more parts lowers to one `__flowc_str_concatn` allocation instead of nested pairwise joins. `std.string` parses and formats integers on the caller's buffer with explicit overflow/junk errors; `std.io` reads and writes files with `fread`/`fwrite` of a known size. Cross-harness rows: `runtime_string_concat`, `runtime_parse_format`, `runtime_buffered_io`, and the existing `cold_file_transform` now uses the buffered path.
 - FFI: Zero-copy contiguous buffer ABI (`ffi_buffer_handoff`), boundary instrumentation, and benchmarks. (#737)
 
 ### Type checker diagnostics
