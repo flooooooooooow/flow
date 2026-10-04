@@ -1052,6 +1052,13 @@ export function cmd_fir(args: ptr<ProcStrs>) -> i32 {
 }
 
 export function cmd_gpu(args0: ptr<ProcStrs>) -> i32 {
+    if s_eq(sl_get(args0, 0), "test") {
+        let bin: string = flow_native_tool("gpu_test")
+        if s_len(bin) == 0 {
+            return 1
+        }
+        return exec_tool(bin, sl_tail(args0, 1), true)
+    }
     if s_eq(sl_get(args0, 0), "--build") {
         let b: string = flow_native_tool("gpu")
         if s_len(b) == 0 {

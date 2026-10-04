@@ -1,0 +1,16 @@
+function do_sum(s: span<i32>) -> i32 {
+    let mut sum: i32 = 0
+    for i in 0 to s.len {
+        sum = sum + s[i]
+    }
+    return sum
+}
+
+function main() -> i32 {
+    let arr: array<i32, 3> = [1, 2, 3]
+    let sum: i32 = do_sum(arr)
+    if sum != 6 {
+        return 1
+    }
+    return 0
+}
