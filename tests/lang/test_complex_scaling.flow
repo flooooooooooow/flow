@@ -1,0 +1,21 @@
+function main() -> i32 {
+    let mut a: c64 = c64(1.0, 2.0)
+    let b: f32 = 3.0
+    let c: c64 = a * b
+    if creal(c) != 3.0 or cimag(c) != 6.0 {
+        return 1
+    }
+
+    let d: c128 = c128(1.0, 2.0)
+    let e: f64 = 3.0
+    let f: c128 = d * e
+    if creal(f) != 3.0 or cimag(f) != 6.0 {
+        return 1
+    }
+
+    let g: c64 = a / b
+    if cabs(g) < 0.0 {
+        return 1
+    }
+    return 0
+}
