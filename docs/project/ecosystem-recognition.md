@@ -10,7 +10,7 @@ The rule is deliberately strict: a local integration is not marked upstream unti
 |---|---|---|---|
 | GitHub Linguist | TextMate grammar, samples, PR template, issue #172 | Blocked on independent public usage evidence | Upstream Linguist release identifies `.flow` as Flow |
 | Tree-sitter | Grammar + highlight queries in `third_party/integrations/tree-sitter-flow` | Local integration · #899 | Dedicated grammar repository, generated parser, tagged release, external consumers |
-| Pygments | Installable lexer plugin in `third_party/integrations/pygments-flow` | Local integration · #900 | Lexer merged into Pygments and released |
+| Pygments | Installable lexer plugin in `third_party/integrations/pygments-flow` | Verified and ready; blocked on external community size · #900 | Lexer merged into Pygments and released |
 | VS Code / Cursor | Extension and TextMate grammar | Published project integration | Keep extension compatible with current syntax |
 | Vim | Filetype + syntax files in `third_party/integrations/vim-flow` | Local integration | Upstream runtime files or a standalone community plugin with users |
 | Neovim | Vim syntax + `flow lsp` bootstrap | Local integration | Community plugin / upstream ecosystem listing using Flow LSP |
@@ -54,6 +54,7 @@ python test_lexer.py
 ```
 
 The upstream contribution should preserve the `*.flow` filename mapping, `flow` / `flowlang` aliases, and regression examples covering ordinary code plus Flow's evolution syntax.
+Note: Upstreaming is currently blocked. The plugin has been verified green over the entire repository corpus, but we must wait until Flow has a reasonably sized external community (per Pygments guidelines) before opening the upstream PR.
 
 ## Editor integrations
 

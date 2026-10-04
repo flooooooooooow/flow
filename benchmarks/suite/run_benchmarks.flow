@@ -186,6 +186,68 @@ function pick(a: string) -> string {
     return ""
 }
 
+function out_or_unknown(c: ptr<ProcCmd>) -> string {
+    cmd_quiet(c)
+    if run(c) != 0 {
+        return "unknown"
+    }
+    let s: string = capture_raw(c)
+    let mut i: i32 = s_len(s) - 1
+    while i >= 0 {
+        if s_byte(s, i) != 10 and s_byte(s, i) != 13 and s_byte(s, i) != 32 {
+            return s_slice(s, 0, i + 1)
+        }
+        i = i - 1
+    }
+    return s
+}
+
+function first_line(s: string) -> string {
+    let mut i: i32 = 0
+    while i < s_len(s) {
+        if s_byte(s, i) == 10 {
+            return s_slice(s, 0, i)
+        }
+        i = i + 1
+    }
+    return s
+}
+
+function write_metadata(root: string, suite: string, have_py: bool) {
+    let mut git_sha: string = out_or_unknown(cmd(s_words("git rev-parse HEAD")))
+    if not s_eq(git_sha, "unknown") {
+        git_sha = first_line(git_sha)
+    }
+    let flow_v: string = out_or_unknown(cmd(s_words(root + "/flow --version")))
+    let clang_v: string = out_or_unknown(cmd(s_words("clang --version")))
+    
+    let mut py_v: string = "not installed"
+    if have_py {
+        py_v = out_or_unknown(cmd(s_words("python3 --version")))
+    }
+    
+    let path: string = suite + "/build/metadata.json"
+    let mut j: string = "{
+"
+    j = j + "  \"environment\": {
+"
+    j = j + "    \"source_sha\": \"" + git_sha + "\",
+"
+    j = j + "    \"flow_version\": \"" + first_line(flow_v) + "\",
+"
+    j = j + "    \"c_compiler\": \"" + first_line(clang_v) + "\",
+"
+    j = j + "    \"python\": \"" + first_line(py_v) + "\",
+"
+    j = j + "    \"flags\": \"" + C_FLAGS + "\"
+"
+    j = j + "  }
+}
+"
+    
+    let _b: bool = write_text(path, j)
+}
+
 function main() -> i32 {
     let root: string = bench_root(PROGRAM)
     let suite: string = root + "/benchmarks/suite"
@@ -195,6 +257,7 @@ function main() -> i32 {
     outln("")
     let _m: bool = mkdir_p(suite + "/build")
     let have_py: bool = python_works()
+    write_metadata(root, suite, have_py)
     let args: ptr<ProcStrs> = proc_args()
     let which_one: string = pick(sl_get(args, 0))
     if s_len(which_one) == 0 {
