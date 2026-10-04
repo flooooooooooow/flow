@@ -65,6 +65,31 @@ function check_tiling_rejects_wrapped_overflow_size() -> i32 {
     return T_PASS
 }
 
+function check_affine_value_flags_reject_missing_values() -> i32 {
+    let names: ptr<ProcStrs> = sl_of3("--affine-tile-size", "--affine-tile-sizes", "--affine-skew-factor")
+    let mut i: i32 = 0
+    while i < 3 {
+        let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+        sl_push(argv, sl_get(names, i))
+        if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+        if not a_contains(read_text(t_err()), "requires a value") { return T_FAIL }
+        i = i + 1
+    }
+    let argv2: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv2, "--affine-unroll-factor")
+    if t_run(t_cmd(argv2)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "requires a value") { return T_FAIL }
+    let argv3: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv3, "--affine-unroll-jam-factor")
+    if t_run(t_cmd(argv3)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "requires a value") { return T_FAIL }
+    let argv4: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
+    sl_push(argv4, "--async-copy-target")
+    if t_run(t_cmd(argv4)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "requires a value") { return T_FAIL }
+    return T_PASS
+}
+
 function check_hierarchical_tiling() -> i32 {
     let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_pipeline/main.flow")
     sl_push(argv, "--opt-level=O2")
@@ -252,6 +277,7 @@ function main() -> i32 {
     t_end("tiling_rejects_malformed_size", check_tiling_rejects_malformed_size())
     t_end("tiling_rejects_overflow_size", check_tiling_rejects_overflow_size())
     t_end("tiling_rejects_wrapped_overflow_size", check_tiling_rejects_wrapped_overflow_size())
+    t_end("affine_value_flags_reject_missing_values", check_affine_value_flags_reject_missing_values())
     t_start()
     t_end("hierarchical_tiling", check_hierarchical_tiling())
     t_start()

@@ -303,15 +303,17 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         } elif ft_eq(a, "--enable-affine-normalization") {
             f.affine_normalization = true
         } elif ft_eq(a, "--affine-tile-size") {
-            if i + 1 < argc {
-                let tile: i32 = positive_int(argv[i + 1] as string)
-                if tile < 0 {
-                    ft_errln("mlir_pipeline: --affine-tile-size must be a positive integer")
-                    return 2
-                }
-                f.affine_tile_size = tile
-                i = i + 1
+            if i + 1 >= argc {
+                ft_errln("mlir_pipeline: --affine-tile-size requires a value")
+                return 2
             }
+            let tile: i32 = positive_int(argv[i + 1] as string)
+            if tile < 0 {
+                ft_errln("mlir_pipeline: --affine-tile-size must be a positive integer")
+                return 2
+            }
+            f.affine_tile_size = tile
+            i = i + 1
         } elif ft_starts(a, "--affine-tile-size=") {
             let tile: i32 = positive_int(ft_from(a, 19))
             if tile < 0 {
@@ -320,15 +322,17 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             }
             f.affine_tile_size = tile
         } elif ft_eq(a, "--affine-tile-sizes") {
-            if i + 1 < argc {
-                let levels: i32 = parse_tile_sizes(argv[i + 1] as string, &f.affine_tile_sizes[0])
-                if levels < 0 {
-                    ft_errln("mlir_pipeline: --affine-tile-sizes must contain two to four positive integers up to 4096")
-                    return 2
-                }
-                f.affine_tile_levels = levels
-                i = i + 1
+            if i + 1 >= argc {
+                ft_errln("mlir_pipeline: --affine-tile-sizes requires a value")
+                return 2
             }
+            let levels: i32 = parse_tile_sizes(argv[i + 1] as string, &f.affine_tile_sizes[0])
+            if levels < 0 {
+                ft_errln("mlir_pipeline: --affine-tile-sizes must contain two to four positive integers up to 4096")
+                return 2
+            }
+            f.affine_tile_levels = levels
+            i = i + 1
         } elif ft_starts(a, "--affine-tile-sizes=") {
             let levels: i32 = parse_tile_sizes(ft_from(a, 20), &f.affine_tile_sizes[0])
             if levels < 0 {
@@ -347,15 +351,17 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         } elif ft_eq(a, "--enable-affine-skewing") {
             f.affine_skewing = true
         } elif ft_eq(a, "--affine-skew-factor") {
-            if i + 1 < argc {
-                let factor: i32 = positive_int(argv[i + 1] as string)
-                if factor < 1 {
-                    ft_errln("mlir_pipeline: --affine-skew-factor must be a positive integer")
-                    return 2
-                }
-                f.affine_skew_factor = factor
-                i = i + 1
+            if i + 1 >= argc {
+                ft_errln("mlir_pipeline: --affine-skew-factor requires a value")
+                return 2
             }
+            let factor: i32 = positive_int(argv[i + 1] as string)
+            if factor < 1 {
+                ft_errln("mlir_pipeline: --affine-skew-factor must be a positive integer")
+                return 2
+            }
+            f.affine_skew_factor = factor
+            i = i + 1
         } elif ft_starts(a, "--affine-skew-factor=") {
             let factor: i32 = positive_int(ft_from(a, 21))
             if factor < 1 {
@@ -364,15 +370,17 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             }
             f.affine_skew_factor = factor
         } elif ft_eq(a, "--affine-unroll-jam-factor") {
-            if i + 1 < argc {
-                let factor: i32 = positive_int(argv[i + 1] as string)
-                if factor < 1 {
-                    ft_errln("mlir_pipeline: --affine-unroll-jam-factor must be a positive integer")
-                    return 2
-                }
-                f.affine_unroll_jam_factor = factor
-                i = i + 1
+            if i + 1 >= argc {
+                ft_errln("mlir_pipeline: --affine-unroll-jam-factor requires a value")
+                return 2
             }
+            let factor: i32 = positive_int(argv[i + 1] as string)
+            if factor < 1 {
+                ft_errln("mlir_pipeline: --affine-unroll-jam-factor must be a positive integer")
+                return 2
+            }
+            f.affine_unroll_jam_factor = factor
+            i = i + 1
         } elif ft_starts(a, "--affine-unroll-jam-factor=") {
             let factor: i32 = positive_int(ft_from(a, 27))
             if factor < 1 {
@@ -381,15 +389,17 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             }
             f.affine_unroll_jam_factor = factor
         } elif ft_eq(a, "--affine-unroll-factor") {
-            if i + 1 < argc {
-                let factor: i32 = positive_int(argv[i + 1] as string)
-                if factor < 0 {
-                    ft_errln("mlir_pipeline: --affine-unroll-factor must be a positive integer")
-                    return 2
-                }
-                f.affine_unroll_factor = factor
-                i = i + 1
+            if i + 1 >= argc {
+                ft_errln("mlir_pipeline: --affine-unroll-factor requires a value")
+                return 2
             }
+            let factor: i32 = positive_int(argv[i + 1] as string)
+            if factor < 0 {
+                ft_errln("mlir_pipeline: --affine-unroll-factor must be a positive integer")
+                return 2
+            }
+            f.affine_unroll_factor = factor
+            i = i + 1
         } elif ft_starts(a, "--affine-unroll-factor=") {
             let factor: i32 = positive_int(ft_from(a, 23))
             if factor < 0 {
@@ -400,16 +410,18 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
         } elif ft_eq(a, "--enable-async-copy") {
             f.async_copy = true
         } elif ft_eq(a, "--async-copy-target") {
-            if i + 1 < argc {
-                let target: string = argv[i + 1] as string
-                let target_id: i32 = async_target_of(target)
-                if target_id < 0 {
-                    ft_errln("mlir_pipeline: --async-copy-target: invalid choice: '" + target + "' (choose from 'gpu', 'nvptx', 'amdgpu')")
-                    return 2
-                }
-                f.async_target = target_id
-                i = i + 1
+            if i + 1 >= argc {
+                ft_errln("mlir_pipeline: --async-copy-target requires a value")
+                return 2
             }
+            let target: string = argv[i + 1] as string
+            let target_id: i32 = async_target_of(target)
+            if target_id < 0 {
+                ft_errln("mlir_pipeline: --async-copy-target: invalid choice: '" + target + "' (choose from 'gpu', 'nvptx', 'amdgpu')")
+                return 2
+            }
+            f.async_target = target_id
+            i = i + 1
         } elif ft_starts(a, "--async-copy-target=") {
             let target: string = ft_from(a, 20)
             let target_id: i32 = async_target_of(target)
