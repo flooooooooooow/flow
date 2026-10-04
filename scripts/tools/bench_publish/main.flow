@@ -326,6 +326,11 @@ function write_report(d: ptr<Data>, have_rust: bool, path: string) -> void {
     if have_rust {
         rust_v = out_or_unknown("rustc --version")
     }
+    let flow_v: string = out_or_unknown(root() + "/flow --version")
+    let mut git_sha: string = out_or_unknown("git rev-parse HEAD")
+    if ft_eq(git_sha, "unknown") == false {
+        git_sha = first_line(git_sha)
+    }
     let today: string = pr_chomp(pr_capture("date +%Y-%m-%d"))
 
     let order: ptr<i32> = malloc(16) as ptr<i32>
@@ -343,12 +348,22 @@ function write_report(d: ptr<Data>, have_rust: bool, path: string) -> void {
         n = n + 1
     }
 
-    let mut o: string = "# Flow benchmark results\n\n"
-    o = o + "Date: " + today + "\n\n"
-    o = o + "Flow compiles to C. The comparison that matters is Flow against\n"
-    o = o + "hand-written C built by the same clang with the same flags. Rust and\n"
-    o = o + "plain CPython run the same algorithms at the same sizes for context.\n\n"
-    o = o + "## Summary\n\n"
+    let mut o: string = "# Flow benchmark results
+
+"
+    o = o + "Date: " + today + "
+
+"
+    o = o + "Flow compiles to C. The comparison that matters is Flow against
+"
+    o = o + "hand-written C built by the same clang with the same flags. Rust and
+"
+    o = o + "plain CPython run the same algorithms at the same sizes for context.
+
+"
+    o = o + "## Summary
+
+"
     let mut header: string = "| Benchmark | "
     let mut i: i32 = 0
     while i < n {
@@ -358,14 +373,16 @@ function write_report(d: ptr<Data>, have_rust: bool, path: string) -> void {
         header = header + lang_name(order[i]) + " median (s)"
         i = i + 1
     }
-    o = o + header + " | Flow / C |\n"
+    o = o + header + " | Flow / C |
+"
     let mut sep: string = "|"
     i = 0
     while i < n + 2 {
         sep = sep + "---|"
         i = i + 1
     }
-    o = o + sep + "\n"
+    o = o + sep + "
+"
     let mut b: i32 = 0
     while b < NB {
         let ratio: f64 = median_of(d, b, L_FLOW) / median_of(d, b, L_C)
@@ -378,38 +395,62 @@ function write_report(d: ptr<Data>, have_rust: bool, path: string) -> void {
             row = row + bn_fixed(median_of(d, b, order[i]), 4)
             i = i + 1
         }
-        o = o + row + " | " + bn_fixed(ratio, 2) + "x |\n"
+        o = o + row + " | " + bn_fixed(ratio, 2) + "x |
+"
         b = b + 1
     }
-    o = o + "\n"
-    o = o + "Flow / C below 1.00x means the Flow binary was faster on that run.\n"
-    o = o + "Differences within a few percent are run-to-run noise.\n\n"
+    o = o + "
+"
+    o = o + "Flow / C below 1.00x means the Flow binary was faster on that run.
+"
+    o = o + "Differences within a few percent are run-to-run noise.
+
+"
     o = o + ft_read_file_or(ft_join(root(), "scripts/tools/bench_publish/notes.md"))
-    o = o + "## Benchmarks\n\n"
+    o = o + "## Benchmarks
+
+"
     b = 0
     while b < NB {
-        o = o + "### " + bench(b) + "\n\n" + description(b) + "\n\n"
-        o = o + "| Language | Median (s) | Min (s) | Max (s) | Result |\n"
-        o = o + "|---|---|---|---|---|\n"
+        o = o + "### " + bench(b) + "
+
+" + description(b) + "
+
+"
+        o = o + "| Language | Median (s) | Min (s) | Max (s) | Result |
+"
+        o = o + "|---|---|---|---|---|
+"
         i = 0
         while i < n {
             let l: i32 = order[i]
             let xs: ptr<f64> = d[0].secs[b * NL + l]
-            o = o + "| " + lang_name(l) + " | " + bn_fixed(bn_median(xs, d[0].reps), 4) + " | " + bn_fixed(bn_min(xs, d[0].reps), 4) + " | " + bn_fixed(bn_max(xs, d[0].reps), 4) + " | " + d[0].results[b * NL + l] + " |\n"
+            o = o + "| " + lang_name(l) + " | " + bn_fixed(bn_median(xs, d[0].reps), 4) + " | " + bn_fixed(bn_min(xs, d[0].reps), 4) + " | " + bn_fixed(bn_max(xs, d[0].reps), 4) + " | " + d[0].results[b * NL + l] + " |
+"
             i = i + 1
         }
-        o = o + "\n"
+        o = o + "
+"
         b = b + 1
     }
-    o = o + "## Compile time\n\n"
-    o = o + "Measured once per benchmark. Compile time is excluded from every\n"
-    o = o + "workload number.\n\n"
+    o = o + "## Compile time
+
+"
+    o = o + "Measured once per benchmark. Compile time is excluded from every
+"
+    o = o + "workload number.
+
+"
     if have_rust {
-        o = o + "| Benchmark | Flow transpile (s) | clang on generated C (s) | clang on hand C (s) | rustc (s) |\n"
-        o = o + "|---|---|---|---|---|\n"
+        o = o + "| Benchmark | Flow transpile (s) | clang on generated C (s) | clang on hand C (s) | rustc (s) |
+"
+        o = o + "|---|---|---|---|---|
+"
     } else {
-        o = o + "| Benchmark | Flow transpile (s) | clang on generated C (s) | clang on hand C (s) |\n"
-        o = o + "|---|---|---|---|\n"
+        o = o + "| Benchmark | Flow transpile (s) | clang on generated C (s) | clang on hand C (s) |
+"
+        o = o + "|---|---|---|---|
+"
     }
     b = 0
     while b < NB {
@@ -417,41 +458,164 @@ function write_report(d: ptr<Data>, have_rust: bool, path: string) -> void {
         if have_rust {
             row2 = row2 + " | " + bn_fixed(d[0].t_rust[b], 2)
         }
-        o = o + row2 + " |\n"
+        o = o + row2 + " |
+"
         b = b + 1
     }
-    o = o + "\n## Method\n\n"
-    o = o + "- Each program times only its workload with a monotonic clock and\n"
-    o = o + "  prints the elapsed seconds itself. Compiler time, transpile time,\n"
-    o = o + "  and process startup are excluded.\n"
-    o = o + "- One warmup run, then " + bn_fixed(d[0].reps as f64, 0) + " timed repetitions per program.\n"
-    o = o + "  Median, min, and max of the timed repetitions are reported.\n"
-    o = o + "- Identical algorithms, data sizes, and double precision floats in\n"
-    o = o + "  every language. Sources live in benchmarks/publish/, and the Python\n"
-    o = o + "  ones in benchmarks/baselines/python/publish/.\n"
-    o = o + "- Flow-generated C and hand-written C are compiled by the same\n"
-    o = o + "  clang with the same flags: `-O3 -march=native`.\n"
-    o = o + "  `-ffast-math` is not used.\n"
+    o = o + "
+## Method
+
+"
+    o = o + "- Each program times only its workload with a monotonic clock and
+"
+    o = o + "  prints the elapsed seconds itself. Compiler time, transpile time,
+"
+    o = o + "  and process startup are excluded.
+"
+    o = o + "- One warmup run, then " + bn_fixed(d[0].reps as f64, 0) + " timed repetitions per program.
+"
+    o = o + "  Median, min, and max of the timed repetitions are reported.
+"
+    o = o + "- Identical algorithms, data sizes, and double precision floats in
+"
+    o = o + "  every language. Sources live in benchmarks/publish/, and the Python
+"
+    o = o + "  ones in benchmarks/baselines/python/publish/.
+"
+    o = o + "- Flow-generated C and hand-written C are compiled by the same
+"
+    o = o + "  clang with the same flags: `-O3 -march=native`.
+"
+    o = o + "  `-ffast-math` is not used.
+"
     if have_rust {
-        o = o + "- Rust: `rustc -C opt-level=3 -C target-cpu=native`, one source file per\n"
-        o = o + "  benchmark, compiled directly with rustc.\n"
+        o = o + "- Rust: `rustc -C opt-level=3 -C target-cpu=native`, one source file per
+"
+        o = o + "  benchmark, compiled directly with rustc.
+"
     }
     if d[0].have_py {
-        o = o + "- Python is plain CPython without numpy.\n"
+        o = o + "- Python is plain CPython without numpy.
+"
     }
-    o = o + "- Result values are printed by every program and checked for\n"
-    o = o + "  agreement across languages before this report is written.\n"
-    o = o + "- The machine was otherwise idle.\n\n"
-    o = o + "## Environment\n\n"
-    o = o + "- CPU: " + cpu + ", " + ncpu + " cores, " + mem_gb + " GB RAM\n"
-    o = o + "- C compiler: " + clang_v + "\n"
-    o = o + "- Python: " + python_v + "\n"
-    o = o + "- Rust: " + rust_v + "\n\n"
-    o = o + "## Reproduce\n\n"
-    o = o + "```bash\n./flow tool bench_publish\n```\n\n"
-    o = o + "This regenerates benchmarks/RESULTS.md in place. A full run takes\n"
-    o = o + "a few minutes; most of that is the Python repetitions.\n"
+    o = o + "- Result values are printed by every program and checked for
+"
+    o = o + "  agreement across languages before this report is written.
+"
+    o = o + "- The machine was otherwise idle.
+
+"
+    o = o + "## Environment
+
+"
+    o = o + "- Source SHA: " + git_sha + "
+"
+    o = o + "- Flow: " + first_line(flow_v) + "
+"
+    o = o + "- CPU: " + cpu + ", " + ncpu + " cores, " + mem_gb + " GB RAM
+"
+    o = o + "- C compiler: " + clang_v + "
+"
+    o = o + "- Python: " + python_v + "
+"
+    o = o + "- Rust: " + rust_v + "
+"
+    o = o + "- Flags: clang -O3 -march=native
+
+"
+    o = o + "## Reproduce
+
+"
+    o = o + "```bash
+./flow tool bench_publish
+```
+
+"
+    o = o + "This regenerates benchmarks/RESULTS.md in place. A full run takes
+"
+    o = o + "a few minutes; most of that is the Python repetitions.
+"
+
+    # Generate JSON artifact
+    let json_path: string = ft_join(root(), "benchmarks/publish_results.json")
+    let mut j: string = "{
+"
+    j = j + "  \"environment\": {
+"
+    j = j + "    \"source_sha\": \"" + git_sha + "\",
+"
+    j = j + "    \"flow_version\": \"" + first_line(flow_v) + "\",
+"
+    j = j + "    \"cpu\": \"" + cpu + "\",
+"
+    j = j + "    \"ncpu\": " + ncpu + ",
+"
+    j = j + "    \"mem_gb\": " + mem_gb + ",
+"
+    j = j + "    \"c_compiler\": \"" + clang_v + "\",
+"
+    j = j + "    \"python\": \"" + python_v + "\",
+"
+    j = j + "    \"rust\": \"" + rust_v + "\",
+"
+    j = j + "    \"flags\": \"clang -O3 -march=native\"
+"
+    j = j + "  },
+"
+    j = j + "  \"results\": [
+"
+    
+    b = 0
+    while b < NB {
+        j = j + "    {
+"
+        j = j + "      \"benchmark\": \"" + bench(b) + "\",
+"
+        
+        let mut l3: i32 = 0
+        let mut add_comma: bool = false
+        while l3 < n {
+            let l4: i32 = order[l3]
+            if (l4 != L_RUST or have_rust) and (l4 != L_PY or d[0].have_py) {
+                if add_comma {
+                    j = j + ",
+"
+                }
+                j = j + "      \"" + lang_key(l4) + "\": {
+"
+                j = j + "        \"median\": " + bn_fixed(median_of(d, b, l4), 4) + ",
+"
+                j = j + "        \"min\": " + bn_fixed(bn_min(d[0].secs[b * NL + l4], d[0].reps), 4) + ",
+"
+                j = j + "        \"max\": " + bn_fixed(bn_max(d[0].secs[b * NL + l4], d[0].reps), 4) + "
+"
+                j = j + "      }"
+                add_comma = true
+            }
+            l3 = l3 + 1
+        }
+        j = j + "
+    }"
+        if b < NB - 1 {
+            j = j + ",
+"
+        } else {
+            j = j + "
+"
+        }
+        b = b + 1
+    }
+    j = j + "  ]
+}
+"
+    if ft_write_file(json_path, j) == false {
+        ft_errln("run_publish: cannot write " + json_path)
+    } else {
+        ft_outln("wrote " + json_path)
+    }
+    
     if ft_write_file(path, o) == false {
+
         ft_errln("run_publish: cannot write " + path)
         exit(1)
     }
@@ -490,7 +654,8 @@ function check_run(c: ptr<ProcCmd>, merge: bool, text: ptr<string>) -> i32 {
         got = r.stdout
     }
     if ft_len(r.error) > 0 {
-        got = got + r.error + "\n"
+        got = got + r.error + "
+"
     }
     text[0] = got
     if ft_len(r.error) > 0 {
@@ -515,7 +680,8 @@ function indented_lines(text: string, head: bool) -> string {
     let mut out: string = ""
     let mut i: i32 = start
     while i < end {
-        out = out + "     " + ft_list_get(lines, i) + "\n"
+        out = out + "     " + ft_list_get(lines, i) + "
+"
         i = i + 1
     }
     return out
@@ -529,7 +695,8 @@ function lines_with(text: string, prefix: string) -> string {
     while i < ft_list_len(lines) {
         if ft_starts(ft_list_get(lines, i), prefix) {
             if ft_len(out) > 0 {
-                out = out + "\n"
+                out = out + "
+"
             }
             out = out + ft_list_get(lines, i)
         }

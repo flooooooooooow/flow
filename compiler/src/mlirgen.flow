@@ -5159,8 +5159,82 @@ function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
         # doubles, whatever the argument type).
         return mlg_emit_unknown_call(m, e, want_value)
     }
+    if k >= 0 and m[0].fn_ext[k] == 1 {
+        let nargs2: i32 = mlg_chain_len(m, m[0].arena.nodes[e].a)
+        if nargs2 == 1 {
+            let mut math_name: string = ""
+            if mlg_span_is(m, ns, ne, "exp") == 1 { math_name = "math.exp" }
+            elif mlg_span_is(m, ns, ne, "exp2") == 1 { math_name = "math.exp2" }
+            elif mlg_span_is(m, ns, ne, "log") == 1 { math_name = "math.log" }
+            elif mlg_span_is(m, ns, ne, "log2") == 1 { math_name = "math.log2" }
+            elif mlg_span_is(m, ns, ne, "log10") == 1 { math_name = "math.log10" }
+            elif mlg_span_is(m, ns, ne, "sqrt") == 1 { math_name = "math.sqrt" }
+            elif mlg_span_is(m, ns, ne, "cbrt") == 1 { math_name = "math.cbrt" }
+            elif mlg_span_is(m, ns, ne, "sin") == 1 { math_name = "math.sin" }
+            elif mlg_span_is(m, ns, ne, "cos") == 1 { math_name = "math.cos" }
+            elif mlg_span_is(m, ns, ne, "tan") == 1 { math_name = "math.tan" }
+            elif mlg_span_is(m, ns, ne, "asin") == 1 { math_name = "math.asin" }
+            elif mlg_span_is(m, ns, ne, "acos") == 1 { math_name = "math.acos" }
+            elif mlg_span_is(m, ns, ne, "atan") == 1 { math_name = "math.atan" }
+            elif mlg_span_is(m, ns, ne, "sinh") == 1 { math_name = "math.sinh" }
+            elif mlg_span_is(m, ns, ne, "cosh") == 1 { math_name = "math.cosh" }
+            elif mlg_span_is(m, ns, ne, "tanh") == 1 { math_name = "math.tanh" }
+            elif mlg_span_is(m, ns, ne, "fabs") == 1 { math_name = "math.absf" }
+            elif mlg_span_is(m, ns, ne, "floor") == 1 { math_name = "math.floor" }
+            elif mlg_span_is(m, ns, ne, "ceil") == 1 { math_name = "math.ceil" }
+            elif mlg_span_is(m, ns, ne, "round") == 1 { math_name = "math.round" }
+            elif mlg_span_is(m, ns, ne, "trunc") == 1 { math_name = "math.trunc" }
+            if strlen(math_name) > 0 {
+                let an1: i32 = mlg_chain_at(m, m[0].arena.nodes[e].a, 0)
+                let mut v: i32 = mlg_emit_expr(m, an1)
+                let vt: i32 = mlg_val_mt(m, v, an1)
+                if mlg_is_float_mt(vt) == 1 {
+                    let r: i32 = mlg_new_val(m, vt)
+                    mlg_line(m)
+                    mlg_v(m, r)
+                    mlg_s(m, " = ")
+                    mlg_s(m, math_name)
+                    mlg_s(m, " ")
+                    mlg_v(m, v)
+                    mlg_s(m, " : ")
+                    mlg_put_type(m, vt)
+                    mlg_nl(m)
+                    return r
+                }
+            }
+        } elif nargs2 == 2 {
+            let mut math_name2: string = ""
+            if mlg_span_is(m, ns, ne, "pow") == 1 { math_name2 = "math.powf" }
+            elif mlg_span_is(m, ns, ne, "atan2") == 1 { math_name2 = "math.atan2" }
+            elif mlg_span_is(m, ns, ne, "copysign") == 1 { math_name2 = "math.copysign" }
+            if strlen(math_name2) > 0 {
+                let an1: i32 = mlg_chain_at(m, m[0].arena.nodes[e].a, 0)
+                let an2: i32 = mlg_chain_at(m, m[0].arena.nodes[e].a, 1)
+                let v1: i32 = mlg_emit_expr(m, an1)
+                let v2: i32 = mlg_emit_expr(m, an2)
+                let vt1: i32 = mlg_val_mt(m, v1, an1)
+                let vt2: i32 = mlg_val_mt(m, v2, an2)
+                if mlg_is_float_mt(vt1) == 1 and vt1 == vt2 {
+                    let r: i32 = mlg_new_val(m, vt1)
+                    mlg_line(m)
+                    mlg_v(m, r)
+                    mlg_s(m, " = ")
+                    mlg_s(m, math_name2)
+                    mlg_s(m, " ")
+                    mlg_v(m, v1)
+                    mlg_s(m, ", ")
+                    mlg_v(m, v2)
+                    mlg_s(m, " : ")
+                    mlg_put_type(m, vt1)
+                    mlg_nl(m)
+                    return r
+                }
+            }
+        }
+    }
     let fnode: i32 = m[0].fn_node[k]
     if m[0].fn_ext[k] == 0 and m[0].arena.nodes[e].a == AST_NONE {
+
         let acc: i32 = mlg_accessor_target(m, fnode)
         if acc != AST_NONE {
             return mlg_emit_expr(m, acc)
