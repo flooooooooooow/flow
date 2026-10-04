@@ -2539,6 +2539,19 @@ function sem_check_call(c: ptr<Sem>, e: i32, stmt: i32) -> i32 {
     if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "sizeof") and sem_lookup(c, "sizeof") < 0 {
         return sem_tmk(c, TK_I64)
     }
+    # Target ABI alignment and stable type identity (#775).
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "alignof") and sem_lookup(c, "alignof") < 0 {
+        return sem_tmk(c, TK_I64)
+    }
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_family_id") and sem_lookup(c, "type_family_id") < 0 {
+        return sem_tmk(c, TK_U64)
+    }
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_schema_id") and sem_lookup(c, "type_schema_id") < 0 {
+        return sem_tmk(c, TK_U64)
+    }
+    if sem_nb(c, e) != AST_NONE and sem_na(c, e) == AST_NONE and sem_nname_is(c, e, "type_transport_safe") and sem_lookup(c, "type_transport_safe") < 0 {
+        return sem_tmk(c, TK_BOOL)
+    }
     let nm: string = sem_call_name(c, e)
     let sym: i32 = sem_lookup(c, nm)
     if sym >= 0 and sem_tkind(c, sem_sym_type(c, sym)) == TK_FUNCTION {

@@ -21,6 +21,11 @@
 
 import .fileio { flowc_write_file }
 import .proof_lower { flowc_proof_erase }
+import .type_id {
+    flowc_type_id_builtin_kind, flowc_type_family_id, flowc_type_schema_id,
+    flowc_type_transport_safe, FLOWC_TID_FAMILY, FLOWC_TID_SCHEMA,
+    FLOWC_TID_TRANSPORT, FLOWC_TID_ALIGNOF, FLOWC_TID_NONE
+}
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_BANG,
@@ -4272,6 +4277,113 @@ function mlg_emit_sizeof(m: ptr<Mlg>, t: i32) -> i32 {
     return r
 }
 
+function mlg_put_u64_hex(m: ptr<Mlg>, val: u64) {
+    let hex: array<u8, 16> = [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102]
+    let mut digits: array<u8, 16> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let mut v: u64 = val
+    let mut n: i32 = 0
+    if v == 0 {
+        mlg_putc(m, 48)
+        return
+    }
+    while v > 0 {
+        digits[n] = hex[(v & 15) as i32]
+        v = v >> 4
+        n = n + 1
+    }
+    let mut i: i32 = n
+    while i > 0 {
+        i = i - 1
+        mlg_putc(m, digits[i])
+    }
+}
+
+function mlg_const_u64(m: ptr<Mlg>, val: u64) -> i32 {
+    let r: i32 = mlg_new_val(m, MT_I64)
+    mlg_line(m)
+    mlg_v(m, r)
+    mlg_s(m, " = llvm.mlir.constant(0x")
+    mlg_put_u64_hex(m, val)
+    mlg_s(m, " : i64) : i64")
+    mlg_nl(m)
+    return r
+}
+
+function mlg_alignof_ty(m: ptr<Mlg>, ty: i32) -> i64 {
+    if ty == AST_NONE or ty < 0 or ty >= m[0].arena.len {
+        return 1
+    }
+    if m[0].arena.nodes[ty].kind != AST_TYPE {
+        return 1
+    }
+    let ns: i32 = m[0].arena.nodes[ty].name_start
+    let ne: i32 = m[0].arena.nodes[ty].name_end
+    if mlg_span_is(m, ns, ne, "i8") == 1 or mlg_span_is(m, ns, ne, "u8") == 1 or mlg_span_is(m, ns, ne, "bool") == 1 {
+        return 1
+    }
+    if mlg_span_is(m, ns, ne, "i16") == 1 or mlg_span_is(m, ns, ne, "u16") == 1 {
+        return 2
+    }
+    if mlg_span_is(m, ns, ne, "i32") == 1 or mlg_span_is(m, ns, ne, "u32") == 1 or mlg_span_is(m, ns, ne, "f32") == 1 {
+        return 4
+    }
+    if mlg_span_is(m, ns, ne, "i64") == 1 or mlg_span_is(m, ns, ne, "u64") == 1 or mlg_span_is(m, ns, ne, "f64") == 1 or mlg_span_is(m, ns, ne, "c64") == 1 {
+        return 8
+    }
+    if mlg_span_is(m, ns, ne, "i128") == 1 or mlg_span_is(m, ns, ne, "u128") == 1 or mlg_span_is(m, ns, ne, "c128") == 1 {
+        return 16
+    }
+    if mlg_span_is(m, ns, ne, "ptr") == 1 or mlg_span_is(m, ns, ne, "string") == 1 {
+        return 8
+    }
+    if mlg_span_is(m, ns, ne, "array") == 1 or m[0].arena.nodes[ty].c == AST_TYPE_FIXED_ARRAY {
+        return mlg_alignof_ty(m, m[0].arena.nodes[ty].a)
+    }
+    let k: i32 = mlg_struct_index(m, ns, ne)
+    if k >= 0 {
+        let st: i32 = m[0].st_node[k]
+        let mut best: i64 = 1
+        let mut f: i32 = m[0].arena.nodes[st].a
+        while f != AST_NONE {
+            if m[0].arena.nodes[f].kind == AST_FIELD {
+                let a: i64 = mlg_alignof_ty(m, m[0].arena.nodes[f].a)
+                if a > best {
+                    best = a
+                }
+            }
+            f = m[0].arena.nodes[f].next
+        }
+        return best
+    }
+    return 1
+}
+
+# type_family_id / type_schema_id / type_transport_safe / alignof<T>() (#775).
+# Identity is the same u64 the C backend emits; alignof is host ABI.
+function mlg_emit_type_meta(m: ptr<Mlg>, e: i32) -> i32 {
+    let ty: i32 = m[0].arena.nodes[e].b
+    if ty == AST_NONE {
+        return V_NONE
+    }
+    let kind: i32 = flowc_type_id_builtin_kind(m[0].src, mlg_ns(m, e), mlg_ne(m, e))
+    if kind == FLOWC_TID_NONE {
+        return V_NONE
+    }
+    if kind == FLOWC_TID_FAMILY {
+        return mlg_const_u64(m, flowc_type_family_id(m[0].arena, m[0].src, ty))
+    }
+    if kind == FLOWC_TID_SCHEMA {
+        return mlg_const_u64(m, flowc_type_schema_id(m[0].arena, m[0].src, ty))
+    }
+    if kind == FLOWC_TID_TRANSPORT {
+        return mlg_const_int(m, flowc_type_transport_safe(m[0].arena, m[0].src, ty), MT_I1)
+    }
+    if kind == FLOWC_TID_ALIGNOF {
+        return mlg_const_int(m, mlg_alignof_ty(m, ty) as i32, MT_I64)
+    }
+    return V_NONE
+}
+
 # The signature noted for undeclared callee src[ns..ne], or -1.
 function mlg_uk_find(m: ptr<Mlg>, ns: i32, ne: i32) -> i32 {
     let mut i: i32 = 0
@@ -5143,6 +5255,10 @@ function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
         let szt: i32 = mlg_sizeof_mt(m, e)
         if szt != MT_NONE {
             return mlg_emit_sizeof(m, szt)
+        }
+        let tmv: i32 = mlg_emit_type_meta(m, e)
+        if tmv != V_NONE {
+            return tmv
         }
         if mlg_span_is(m, ns, ne, "flow_panic") == 1 and mlg_chain_len(m, m[0].arena.nodes[e].a) == 1 {
             # The trap an invariant lowers to: the message on stderr, exit 1.

@@ -36,6 +36,11 @@ import .effects {
     flowc_eff_is_effect, flowc_eff_is_cap, flowc_eff_cap_has_method
 }
 import .proof_lower { flowc_proof_erase }
+import .type_id {
+    flowc_type_id_builtin_kind, flowc_type_family_id, flowc_type_schema_id,
+    flowc_type_transport_safe, FLOWC_TID_FAMILY, FLOWC_TID_SCHEMA,
+    FLOWC_TID_TRANSPORT
+}
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_BANG, TOK_AMP,
@@ -1169,6 +1174,10 @@ function flowc_cgen_put_ident(w: ptr<CgenBuf>, src: ptr<u8>, start: i32, end: i3
     }
     if flowc_cgen_span_is(src, start, end, "sizeof") == 1 {
         flowc_cgen_puts(w, "_flow_sizeof")
+        return
+    }
+    if flowc_cgen_span_is(src, start, end, "alignof") == 1 {
+        flowc_cgen_puts(w, "_flow_alignof")
         return
     }
     if flowc_cgen_span_is(src, start, end, "return") == 1 {
@@ -7383,6 +7392,37 @@ function flowc_cgen_emit_expr_inner(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u
             flowc_cgen_emit_type(w, arena, src, arena.nodes[id].b)
             flowc_cgen_puts(w, "))")
             return
+        }
+        # alignof<T>() is the target ABI alignment (#775).
+        if arena.nodes[id].b != AST_NONE and flowc_cgen_span_is(src, arena.nodes[id].name_start, arena.nodes[id].name_end, "alignof") == 1 {
+            flowc_cgen_puts(w, "((int64_t)_Alignof(")
+            flowc_cgen_emit_type(w, arena, src, arena.nodes[id].b)
+            flowc_cgen_puts(w, "))")
+            return
+        }
+        # Target-independent type identity: compile-time u64 / bool constants (#775).
+        if arena.nodes[id].b != AST_NONE {
+            let tidk: i32 = flowc_type_id_builtin_kind(src, arena.nodes[id].name_start, arena.nodes[id].name_end)
+            if tidk == FLOWC_TID_FAMILY or tidk == FLOWC_TID_SCHEMA {
+                let mut key: u64 = 0
+                if tidk == FLOWC_TID_FAMILY {
+                    key = flowc_type_family_id(arena, src, arena.nodes[id].b)
+                } else {
+                    key = flowc_type_schema_id(arena, src, arena.nodes[id].b)
+                }
+                flowc_cgen_puts(w, "((uint64_t)0x")
+                flowc_cgen_put_u64_hex(w, key)
+                flowc_cgen_puts(w, "ULL)")
+                return
+            }
+            if tidk == FLOWC_TID_TRANSPORT {
+                if flowc_type_transport_safe(arena, src, arena.nodes[id].b) == 1 {
+                    flowc_cgen_puts(w, "1")
+                } else {
+                    flowc_cgen_puts(w, "0")
+                }
+                return
+            }
         }
         # array<T>(N) with no Flow `array` is calloc(N, sizeof(T)), as on the
         # Python host (#270).
