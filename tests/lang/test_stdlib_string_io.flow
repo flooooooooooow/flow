@@ -81,7 +81,7 @@ function main() -> i32 {
 
     let mut into: array<u8, 8> = []
     let got: i64 = io_read_into(path, &into[0], 5)
-    if got != 5 or into[0] != 104 or into[4] != 10 { return 33 }
+    if got != 5 or into[0] != 104 or into[4] != 111 { return 33 }
 
     if io_write_bytes(path, "xy" as ptr<u8>, 2) == false { return 34 }
     let rd2: FileRead = io_read_file(path)

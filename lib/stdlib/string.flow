@@ -49,7 +49,10 @@ export struct ParseI64 {
 
 # ASCII whitespace that Python's int() accepts: space, tab, LF, VT, FF, CR.
 export function str_is_ascii_ws(c: u8) -> bool {
-    return c == 32 or (c >= 9 and c <= 13)
+    if c == 32 {
+        return true
+    }
+    return c >= 9 and c <= 13
 }
 
 export function str_is_ascii_digit(c: u8) -> bool {
@@ -217,7 +220,7 @@ export function str_format_i64(buf: ptr<u8>, cap: i32, v: i64) -> i32 {
             n = n + 1
         }
     }
-    let need: i32 = n
+    let mut need: i32 = n
     if neg {
         need = need + 1
     }

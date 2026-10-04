@@ -1716,11 +1716,19 @@ GPU simulation layer (CPU-backed) to model DeviceContext/Queue/Buffer/Layouts. T
 
 ### `io.flow`
 
+Buffered file I/O for short jobs (#747).  Reads and writes use fread/fwrite of a known size, not per-character
+
+**Structs:** `FileRead`
+
 **Functions:**
 
 | Name | Signature | Docs |
 |------|-----------|------|
-| `print_benchmark` | `(name: string, time: f64) -> void` | - |
+| `print_benchmark` | `(name: string, time: f64) -> void` | Print a benchmark name and elapsed time. Kept for existing callers. |
+| `io_read_file` | `(path: string) -> FileRead` | Read the whole file at `path` in one buffered fread. The result is NUL-terminated. Files larger than 2^31-1 bytes are refused (ok = false) rather than silently truncated. A directory open is treated as empty on both Linux and macOS, matching the tool helper. |
+| `io_write_bytes` | `(path: string, buf: ptr<u8>, n: i64) -> bool` | Write `n` bytes from `buf` to `path`, replacing the file. False when the open or the write fails (including a short write). |
+| `io_write_file` | `(path: string, text: string) -> bool` | Write a NUL-terminated string. The terminator is not written. |
+| `io_read_into` | `(path: string, buf: ptr<u8>, cap: i64) -> i64` | Read up to `cap` bytes into a caller-owned buffer. Returns the number of bytes stored, or -1 on open failure. The buffer is not NUL-terminated. |
 
 ### `keys.flow`
 
@@ -2637,9 +2645,23 @@ SPICE NETLIST FRONT END: a subset parser that builds stdlib/circuit.flow structu
 
 ### `string.flow`
 
-FLOW String Utilities
+FLOW String Utilities  Linear scans stay on the caller's buffer: parse, format and line walking
 
-*No `export` items found (internal / extern-only module).*
+**Structs:** `ParseI64`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `str_is_ascii_ws` | `(c: u8) -> bool` | ASCII whitespace that Python's int() accepts: space, tab, LF, VT, FF, CR. |
+| `str_is_ascii_digit` | `(c: u8) -> bool` | - |
+| `str_line_end` | `(s: string, start: i32) -> i32` | Exclusive end of the line starting at `start` (index of '\n', or length). Does not allocate. `start` past the end yields the length. |
+| `str_line_next` | `(s: string, end: i32) -> i32` | Start of the next line after a line that ended at `end`, or -1 if done. A newline at `end` advances one byte; otherwise the scan is finished. |
+| `str_parse_i64_at` | `(s: string, start: i32) -> ParseI64` | Parse one signed decimal token starting at `start`. Leading ASCII whitespace is skipped, matching Python int(). The token is an optional sign and one or more digits. Overflow of i64 is an error (ok = false), not wraparound. Trailing junk is left in `end` for the caller to inspect. |
+| `str_parse_i64` | `(s: string) -> ParseI64` | Parse `s` as a whole, like Python int() on ASCII: leading and trailing whitespace allowed, anything else is an error. |
+| `str_parse_i32` | `(s: string) -> ParseI64` | - |
+| `str_format_i64` | `(buf: ptr<u8>, cap: i32, v: i64) -> i32` | Write decimal `v` into `buf[0 .. cap)` as a NUL-terminated string. Returns the number of characters written (excluding NUL), or -1 if `cap` is too small. No heap allocation. |
+| `str_format_i32` | `(buf: ptr<u8>, cap: i32, v: i32) -> i32` | - |
 
 ### `sys_info.flow`
 
