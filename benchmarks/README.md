@@ -56,6 +56,7 @@ benchmarks/
 | `nbody` | N-body gravitational simulation | M interactions/sec |
 | `fft` | Cooley-Tukey FFT | GFLOPS |
 | `sort` | Quicksort, heapsort, insertion sort | Time (ms) |
+| `ffi_boundary_benchmark` | FFI boundary zero-copy buffer handoff vs scalar and batched copies | Time (ms) |
 
 ## Performance Targets
 
