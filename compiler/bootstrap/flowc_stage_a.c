@@ -68485,12 +68485,6 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   if (flowc_cgen_is_libc_fn(arena, src, id) == 1 && flowc_cgen_call_user_libc(w, arena, src, id, fn_id) == 1) {
   flowc_cgen_puts(w, "__flowc_libc_");
 }
-  if (flowc_cgen_is_vec_math_call(src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end) == 1 && ((arena).nodes[id]).a != AST_NONE) {
-  int32_t p1t = flowc_cgen_expr_type_node(w, arena, src, ((arena).nodes[id]).a);
-  if (flowc_cgen_ty_is_float_name(arena, src, p1t) == 1 && flowc_cgen_span_is(src, ((arena).nodes[p1t]).name_start, ((arena).nodes[p1t]).name_end, "f32") == 1) {
-  flowc_cgen_perf_remark(w, arena, src, id, "f32-math-widened-to-f64", "argument widened to f64", 1);
-}
-}
   flowc_cgen_put_ident(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
 } else {
   if (flowc_cgen_put_imported_overload(w, arena, src, id) == 1) {
