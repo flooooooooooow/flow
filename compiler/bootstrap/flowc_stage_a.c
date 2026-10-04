@@ -17,13 +17,117 @@
 typedef float complex c64;
 typedef double complex c128;
 
+#include <sys/resource.h>
+#ifndef FLOWC_MEM_PROFILE
+#define FLOWC_MEM_PROFILE
+static int flow_mem_profile_on = 0;
+static int flow_mem_inited = 0;
+static int flow_mem_report_set = 0;
+static unsigned long long flow_mem_alloc_count = 0ULL;
+static unsigned long long flow_mem_alloc_bytes = 0ULL;
+static unsigned long long flow_mem_temp_bytes = 0ULL;
+static unsigned long long flow_mem_copy_bytes = 0ULL;
+static long long flow_mem_live_bytes = 0;
+static long long flow_mem_peak_live = 0;
+#define FLOW_MEM_MAP 1024
+static void* flow_mem_ptrs[FLOW_MEM_MAP];
+static size_t flow_mem_sz[FLOW_MEM_MAP];
+static inline void flow_mem_map_put(void* p, size_t n) {
+  int i; if (!flow_mem_profile_on || p == 0) return;
+  for (i = 0; i < FLOW_MEM_MAP; i++) { if (flow_mem_ptrs[i] == 0) { flow_mem_ptrs[i] = p; flow_mem_sz[i] = n; return; } }
+}
+static inline size_t flow_mem_map_take(void* p) {
+  int i; if (!flow_mem_profile_on || p == 0) return 0;
+  for (i = 0; i < FLOW_MEM_MAP; i++) { if (flow_mem_ptrs[i] == p) { size_t n = flow_mem_sz[i]; flow_mem_ptrs[i] = 0; return n; } }
+  return 0;
+}
+static void flow_mem_profile_init(void);
+static inline void flow_mem_note_alloc(size_t n) {
+  if (!flow_mem_inited) flow_mem_profile_init();
+  if (!flow_mem_profile_on) return;
+  flow_mem_alloc_count++; flow_mem_alloc_bytes += (unsigned long long)n;
+  flow_mem_live_bytes += (long long)n;
+  if (flow_mem_live_bytes > flow_mem_peak_live) flow_mem_peak_live = flow_mem_live_bytes;
+}
+static inline void flow_mem_note_free(size_t n) {
+  if (!flow_mem_profile_on) return;
+  flow_mem_live_bytes -= (long long)n; if (flow_mem_live_bytes < 0) flow_mem_live_bytes = 0;
+}
+static inline void flow_mem_note_temp(size_t n) {
+  if (!flow_mem_inited) flow_mem_profile_init();
+  if (!flow_mem_profile_on) return;
+  flow_mem_temp_bytes += (unsigned long long)n;
+}
+static inline void flow_mem_note_copy(size_t n) {
+  if (!flow_mem_inited) flow_mem_profile_init();
+  if (!flow_mem_profile_on) return;
+  flow_mem_copy_bytes += (unsigned long long)n;
+}
+static inline void* flow_mem_malloc(size_t n) {
+  void* p = malloc(n); if (p) { flow_mem_note_alloc(n); flow_mem_map_put(p, n); } return p;
+}
+static inline void* flow_mem_calloc(size_t c, size_t s) {
+  void* p = calloc(c, s); if (p) { size_t n = c * s; flow_mem_note_alloc(n); flow_mem_map_put(p, n); } return p;
+}
+static inline void* flow_mem_realloc(void* p, size_t n) {
+  size_t old = flow_mem_map_take(p); void* q = realloc(p, n);
+  if (q) { if (old) flow_mem_note_free(old); flow_mem_note_alloc(n); flow_mem_map_put(q, n); }
+  else if (old) flow_mem_map_put(p, old); return q;
+}
+static inline void flow_mem_free(void* p) {
+  size_t n; if (p == 0) return; n = flow_mem_map_take(p); if (n) flow_mem_note_free(n); free(p);
+}
+static inline void* flow_mem_memcpy(void* d, const void* s, size_t n) {
+  flow_mem_note_copy(n); return memcpy(d, s, n);
+}
+static void flow_mem_report(void) {
+  FILE* fp; const char* path; struct rusage ru; long long peak_rss_kb;
+  if (!flow_mem_profile_on) return;
+  peak_rss_kb = 0; if (getrusage(0, &ru) == 0) {
+#if defined(__APPLE__)
+    peak_rss_kb = (long long)ru.ru_maxrss / 1024;
+#else
+    peak_rss_kb = (long long)ru.ru_maxrss;
+#endif
+  }
+  path = getenv("FLOW_MEM_PROFILE_OUT"); fp = stderr;
+  if (path != 0 && path[0] != 0) { FILE* out = fopen(path, "w"); if (out) fp = out; }
+  fprintf(fp, "\n=== Flow memory profile (#740) ===\n");
+  fprintf(fp, "heap allocations      : %llu\n", flow_mem_alloc_count);
+  fprintf(fp, "heap bytes requested  : %llu\n", flow_mem_alloc_bytes);
+  fprintf(fp, "peak live heap (bytes): %lld\n", flow_mem_peak_live);
+  fprintf(fp, "peak RSS (kB)         : %lld\n", peak_rss_kb);
+  fprintf(fp, "temp lifetime bytes   : %llu\n", flow_mem_temp_bytes);
+  fprintf(fp, "copy volume (bytes)   : %llu\n", flow_mem_copy_bytes);
+  fprintf(fp, "stack/arena promotion : (deferred, needs #669)\n");
+  fprintf(fp, "copy volume by site   : (deferred, needs #669)\n");
+  fprintf(fp, "==================================\n");
+  fprintf(fp, "allocations: %llu\n", flow_mem_alloc_count);
+  fprintf(fp, "heap_bytes: %llu\n", flow_mem_alloc_bytes);
+  fprintf(fp, "peak_live_heap: %lld\n", flow_mem_peak_live);
+  fprintf(fp, "peak_rss_kb: %lld\n", peak_rss_kb);
+  fprintf(fp, "temp_bytes: %llu\n", flow_mem_temp_bytes);
+  fprintf(fp, "copies: %llu\n", flow_mem_copy_bytes);
+  if (fp != stderr) fclose(fp);
+}
+static void flow_mem_profile_init(void) {
+  const char* e; if (flow_mem_inited) return; flow_mem_inited = 1;
+  e = getenv("FLOW_MEM_PROFILE");
+  flow_mem_profile_on = (e != 0 && e[0] != 0 && !(e[0] == '0' && e[1] == 0));
+  if (flow_mem_profile_on && !flow_mem_report_set) { flow_mem_report_set = 1; atexit(flow_mem_report); }
+}
+#if defined(__GNUC__)
+__attribute__((constructor)) static void flow_mem_profile_ctor(void) { flow_mem_profile_init(); }
+#endif
+#endif
 static inline const char* __flowc_str_concat(const char* a, const char* b) {
   size_t la; size_t lb; char* r;
   if (a == 0) { a = ""; }
   if (b == 0) { b = ""; }
   la = strlen(a); lb = strlen(b);
-  r = (char*)malloc(la + lb + 1);
+  r = (char*)flow_mem_malloc(la + lb + 1);
   if (r == 0) { return ""; }
+  flow_mem_note_temp(la + lb + 1); flow_mem_note_copy(la + lb);
   memcpy(r, a, la); memcpy(r + la, b, lb); r[la + lb] = 0;
   return r;
 }
@@ -33,8 +137,9 @@ __attribute__((unused)) static const char* __flowc_str_concatn(int n, ...) {
   va_start(ap, n);
   for (i = 0; i < n; i++) { s = va_arg(ap, const char*); if (s != 0) { total += strlen(s); } }
   va_end(ap);
-  r = (char*)malloc(total + 1);
+  r = (char*)flow_mem_malloc(total + 1);
   if (r == 0) { return ""; }
+  flow_mem_note_temp(total + 1); flow_mem_note_copy(total);
   off = 0;
   va_start(ap, n);
   for (i = 0; i < n; i++) {
@@ -88,16 +193,16 @@ static inline int64_t __flowc_range_sum_union(int64_t s1, int64_t e1, int64_t d1
   return __flowc_range_sum(s1, e1, d1) + __flowc_range_sum(s2, e2, d2) - __flowc_range_sum_isect(s1, e1, d1, s2, e2, d2);
 }
 static inline const char* __flowc_str_of_i64(int64_t v) {
-  char* r = (char*)malloc(32); if (r == 0) { return ""; }
-  snprintf(r, 32, "%lld", (long long)v); return r;
+  char* r = (char*)flow_mem_malloc(32); if (r == 0) { return ""; }
+  flow_mem_note_temp(32); snprintf(r, 32, "%lld", (long long)v); return r;
 }
 static inline const char* __flowc_str_of_u64(uint64_t v) {
-  char* r = (char*)malloc(32); if (r == 0) { return ""; }
-  snprintf(r, 32, "%llu", (unsigned long long)v); return r;
+  char* r = (char*)flow_mem_malloc(32); if (r == 0) { return ""; }
+  flow_mem_note_temp(32); snprintf(r, 32, "%llu", (unsigned long long)v); return r;
 }
 static inline const char* __flowc_str_of_f64(double v) {
-  char* r = (char*)malloc(64); if (r == 0) { return ""; }
-  snprintf(r, 64, "%f", v); return r;
+  char* r = (char*)flow_mem_malloc(64); if (r == 0) { return ""; }
+  flow_mem_note_temp(64); snprintf(r, 64, "%f", v); return r;
 }
 
 #define __flow_in_arr(arr, val) __extension__ ({ \
@@ -184,7 +289,7 @@ static int flowc_cmp_f64(const void* a, const void* b) { double x = *(const doub
 static int flowc_cmp_f32(const void* a, const void* b) { float x = *(const float*)a; float y = *(const float*)b; if (x != x) return 1; if (y != y) return -1; return (x > y) - (x < y); }
 static int32_t flowc_sort_dispatch(void* a, int32_t n, int32_t sz, int32_t desc) { if (sz == 1) qsort(a, n, 1, flowc_cmp_u8); else if (sz == 4) qsort(a, n, 4, flowc_cmp_i32); else if (sz == 8) qsort(a, n, 8, flowc_cmp_f64); else qsort(a, n, sz, flowc_cmp_i32); if (desc) { int32_t i = 0, j = n - 1; while (i < j) { char tmp[8]; memcpy(tmp, (char*)a + i * sz, sz); memcpy((char*)a + i * sz, (char*)a + j * sz, sz); memcpy((char*)a + j * sz, tmp, sz); i++; j--; } } return 0; }
 static int32_t flowc_find_i32(int32_t* a, int32_t n, int32_t target) { for (int32_t i = 0; i < n; i++) { if (a[i] == target) return i; } return -1; }
-static int32_t flowc_sort_struct(void* a, int32_t n, int32_t sz, int32_t desc) { char* base = (char*)a; char* tmp = (char*)malloc(sz); for (int32_t i = 1; i < n; i++) { memcpy(tmp, base + i * sz, sz); int32_t j = i; while (j > 0) { int32_t cmp = *(int32_t*)(base + (j-1) * sz) - *(int32_t*)tmp; if (desc ? (cmp <= 0) : (cmp > 0)) { memcpy(base + j * sz, base + (j-1) * sz, sz); j--; } else break; } memcpy(base + j * sz, tmp, sz); } free(tmp); return 0; }
+static int32_t flowc_sort_struct(void* a, int32_t n, int32_t sz, int32_t desc) { char* base = (char*)a; char* tmp = (char*)flow_mem_malloc(sz); for (int32_t i = 1; i < n; i++) { memcpy(tmp, base + i * sz, sz); int32_t j = i; while (j > 0) { int32_t cmp = *(int32_t*)(base + (j-1) * sz) - *(int32_t*)tmp; if (desc ? (cmp <= 0) : (cmp > 0)) { memcpy(base + j * sz, base + (j-1) * sz, sz); j--; } else break; } memcpy(base + j * sz, tmp, sz); } flow_mem_free(tmp); return 0; }
 #endif
 
 typedef struct Token {
@@ -1275,7 +1380,7 @@ int32_t flowc_ast_chain_push(AstArena* arena, int32_t head, int32_t node);
 int32_t flowc_ast_chain_len(AstArena arena, int32_t head);
 AstArena flowc_ast_new(int32_t cap) {
   int64_t size = ((int64_t)(cap) * 44);
-  uint8_t* raw = (uint8_t*)(malloc(size));
+  uint8_t* raw = (uint8_t*)(flow_mem_malloc(size));
   AstNode* nodes = (AstNode*)(raw);
   int32_t i = 0;
   while (i < cap) {
@@ -1297,7 +1402,7 @@ AstArena flowc_ast_new(int32_t cap) {
 
 void flowc_ast_free(AstArena arena) {
   uint8_t* raw = (uint8_t*)((arena).nodes);
-  free(raw);
+  flow_mem_free(raw);
 }
 
 int32_t flowc_ast_alloc(AstArena* arena, int32_t kind, int32_t start, int32_t end) {
@@ -2031,7 +2136,7 @@ void flowc_plan_report_header(PlanText* t, const char* source);
 void flowc_plan_report_footer(PlanText* t, int32_t sites);
 PlanText flowc_plan_text_new() {
   int32_t cap = 1024;
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)(cap)));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)(cap)));
   if (buf != NULL) {
   buf[0] = 0;
 }
@@ -2044,7 +2149,7 @@ void flowc_plan_putc(PlanText* t, int32_t c) {
 }
   if (((t[0]).len + 2) > (t[0]).cap) {
   int32_t ncap = ((t[0]).cap * 2);
-  uint8_t* nb = (uint8_t*)(realloc((t[0]).buf, (int64_t)(ncap)));
+  uint8_t* nb = (uint8_t*)(flow_mem_realloc((t[0]).buf, (int64_t)(ncap)));
   if (nb == NULL) {
   return;
 }
@@ -2437,7 +2542,7 @@ int64_t plan_scratch(PlanFacts f, int32_t plan) {
 }
 
 const char* plan_fmt_f64(const char* fmt, double v) {
-  uint8_t* buf = (uint8_t*)(malloc(48));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc(48));
   if (buf == NULL) {
   return "";
 }
@@ -3359,16 +3464,16 @@ void flowc_fmt_layout(FmtBuf* w, uint8_t* src, int32_t* els, int32_t count, int3
 }
 
 int32_t flowc_fmt_source(uint8_t* src, int32_t n, uint8_t* out, int32_t out_cap) {
-  int32_t* els = (int32_t*)((int32_t*)(malloc((int64_t)((((n + 1) * FMT_REC) * 4)))));
-  int32_t* stack = (int32_t*)((int32_t*)(malloc((int64_t)((((n + 1) * FMT_SREC) * 4)))));
+  int32_t* els = (int32_t*)((int32_t*)(flow_mem_malloc((int64_t)((((n + 1) * FMT_REC) * 4)))));
+  int32_t* stack = (int32_t*)((int32_t*)(flow_mem_malloc((int64_t)((((n + 1) * FMT_SREC) * 4)))));
   if (els == NULL || stack == NULL) {
   return (0 - 1);
 }
   int32_t count = flowc_fmt_scan(src, n, els);
   FmtBuf w = flowc_fmt_buf_init(out, out_cap);
   flowc_fmt_layout((&w), src, els, count, stack);
-  free((uint8_t*)(els));
-  free((uint8_t*)(stack));
+  flow_mem_free((uint8_t*)(els));
+  flow_mem_free((uint8_t*)(stack));
   if ((w).err != 0) {
   return (0 - 1);
 }
@@ -3376,7 +3481,7 @@ int32_t flowc_fmt_source(uint8_t* src, int32_t n, uint8_t* out, int32_t out_cap)
 }
 
 int32_t flowc_fmt_token_dump(uint8_t* src, int32_t n, uint8_t* out, int32_t out_cap) {
-  int32_t* els = (int32_t*)((int32_t*)(malloc((int64_t)((((n + 1) * FMT_REC) * 4)))));
+  int32_t* els = (int32_t*)((int32_t*)(flow_mem_malloc((int64_t)((((n + 1) * FMT_REC) * 4)))));
   if (els == NULL) {
   return (0 - 1);
 }
@@ -3397,7 +3502,7 @@ int32_t flowc_fmt_token_dump(uint8_t* src, int32_t n, uint8_t* out, int32_t out_
   flowc_fmt_putc((&w), 10);
   k = (k + 1);
 }
-  free((uint8_t*)(els));
+  flow_mem_free((uint8_t*)(els));
   if ((w).err != 0) {
   return (0 - 1);
 }
@@ -3417,7 +3522,7 @@ int32_t flowc_fmt_emit(AstArena arena, int32_t root, uint8_t* src, uint8_t* out,
 
 int32_t flowc_wasm_gen_compile(const char* in_path, const char* out_path, const char* optimize);
 int32_t flowc_wasm_gen_compile(const char* in_path, const char* out_path, const char* optimize) {
-  uint8_t* cmd = (uint8_t*)(malloc(4096));
+  uint8_t* cmd = (uint8_t*)(flow_mem_malloc(4096));
   if (cmd == NULL) {
   return 1;
 }
@@ -3425,17 +3530,17 @@ int32_t flowc_wasm_gen_compile(const char* in_path, const char* out_path, const 
   int32_t rc1 = flowc_io_system((const char*)(cmd));
   if (rc1 != 0) {
   puts("error: Flow -> LLVM IR lowering failed");
-  free(cmd);
+  flow_mem_free(cmd);
   return 1;
 }
   int32_t _s2 = sprintf(cmd, (uint8_t*)("clang --target=wasm32-unknown-unknown -x ir -O%s -nostdlib build/flow_wasm_tmp.ll -Wl,--no-entry -Wl,--export-all -Wl,--allow-undefined -Wl,--export-memory -o %s"), (uint8_t*)(optimize), (uint8_t*)(out_path), (uint8_t*)(""));
   int32_t rc2 = flowc_io_system((const char*)(cmd));
   if (rc2 != 0) {
   puts("error: LLVM IR -> WebAssembly compilation failed");
-  free(cmd);
+  flow_mem_free(cmd);
   return 1;
 }
-  free(cmd);
+  flow_mem_free(cmd);
   return 0;
 }
 
@@ -4133,9 +4238,9 @@ const char* substr(const char* src, int32_t start, int32_t end) {
   return "";
 }
   int32_t len = (e - s);
-  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc((int64_t)((len + 1)))));
+  uint8_t* buf = (uint8_t*)((uint8_t*)(flow_mem_malloc((int64_t)((len + 1)))));
   uint8_t* p = (uint8_t*)(src);
-  memcpy(buf, (p + s), (int64_t)(len));
+  flow_mem_memcpy(buf, (p + s), (int64_t)(len));
   buf[len] = 0;
   return (const char*)(buf);
 }
@@ -4144,12 +4249,12 @@ const char* str_append(const char* a, const char* b) {
   int32_t la = (int32_t)(strlen(a));
   int32_t lb = (int32_t)(strlen(b));
   int32_t total = (la + lb);
-  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc((int64_t)((total + 1)))));
+  uint8_t* buf = (uint8_t*)((uint8_t*)(flow_mem_malloc((int64_t)((total + 1)))));
   if (la > 0) {
-  memcpy(buf, a, (int64_t)(la));
+  flow_mem_memcpy(buf, a, (int64_t)(la));
 }
   if (lb > 0) {
-  memcpy((buf + la), b, (int64_t)(lb));
+  flow_mem_memcpy((buf + la), b, (int64_t)(lb));
 }
   buf[total] = 0;
   return (const char*)(buf);
@@ -4547,8 +4652,8 @@ const char* flowc_attr_args_from_span(uint8_t* src, int32_t s, int32_t e) {
 }
   if (a < b) {
   int32_t len = (b - a);
-  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc((int64_t)((len + 1)))));
-  memcpy(buf, (src + a), (int64_t)(len));
+  uint8_t* buf = (uint8_t*)((uint8_t*)(flow_mem_malloc((int64_t)((len + 1)))));
+  flow_mem_memcpy(buf, (src + a), (int64_t)(len));
   buf[len] = 0;
   if (count > 0) {
   result = str_append(result, ",");
@@ -4751,7 +4856,7 @@ const char* flowc_claim_substr(const char* s, int32_t start, int32_t end) {
 }
   uint8_t* src = (uint8_t*)(s);
   int32_t n = (end - start);
-  uint8_t* buf = (uint8_t*)(malloc(((int64_t)(n) + 1)));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc(((int64_t)(n) + 1)));
   int32_t i = 0;
   while (i < n) {
   buf[i] = src[(start + i)];
@@ -4794,7 +4899,7 @@ const char* flowc_claim_slug_phrase(const char* text) {
   const char* s = flowc_claim_strip(text);
   uint8_t* p = (uint8_t*)(s);
   int32_t n = (int32_t)(strlen(s));
-  uint8_t* buf = (uint8_t*)(malloc(((int64_t)(n) + 1)));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc(((int64_t)(n) + 1)));
   int32_t j = 0;
   int32_t i = 0;
   while (i < n) {
@@ -4891,7 +4996,7 @@ const char* flowc_claim_facet_law(const char* facet) {
 }
   uint8_t* p = (uint8_t*)(facet);
   int32_t n = (int32_t)(strlen(facet));
-  uint8_t* buf = (uint8_t*)(malloc(((int64_t)(n) + 1)));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc(((int64_t)(n) + 1)));
   int32_t i = 0;
   while (i < n) {
   if (p[i] == 45) {
@@ -4980,7 +5085,7 @@ const char* flowc_claim_law_facet(const char* law) {
   const char* slug = flowc_claim_slug_phrase(law);
   uint8_t* p = (uint8_t*)(slug);
   int32_t n = (int32_t)(strlen(slug));
-  uint8_t* buf = (uint8_t*)(malloc(((int64_t)(n) + 1)));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc(((int64_t)(n) + 1)));
   int32_t i = 0;
   while (i < n) {
   if (p[i] == 95) {
@@ -5217,7 +5322,7 @@ FlowcClaimAddress flowc_claim_parse_slug(const char* raw) {
   const char* law_slug = flowc_claim_substr(raw, (d2 + 1), n);
   uint8_t* lp = (uint8_t*)(law_slug);
   int32_t ln = (int32_t)(strlen(law_slug));
-  uint8_t* buf = (uint8_t*)(malloc(((int64_t)(ln) + 1)));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc(((int64_t)(ln) + 1)));
   int32_t j = 0;
   while (j < ln) {
   if (lp[j] == 95) {
@@ -5435,7 +5540,7 @@ const char* flowc_claim_law_phrase(const char* law) {
 }
   uint8_t* p = (uint8_t*)(law);
   if (p[0] >= 65 && p[0] <= 90) {
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)((n + 1))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)((n + 1))));
   int32_t i = 0;
   while (i <= n) {
   buf[i] = p[i];
@@ -5521,7 +5626,7 @@ const char* flowc_claim_path_normalize_tier(const char* raw) {
   while (b > a && (p[(b - 1)] == 32 || p[(b - 1)] == 9 || p[(b - 1)] == 10 || p[(b - 1)] == 13)) {
   b = (b - 1);
 }
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)(((b - a) + 1))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)(((b - a) + 1))));
   int32_t i = 0;
   while ((a + i) < b) {
   uint8_t c = p[(a + i)];
@@ -5571,7 +5676,7 @@ const char* flowc_claim_fingerprint(const char* expr) {
   while (i < n && (p[i] == 32 || p[i] == 9)) {
   i = (i + 1);
 }
-  uint8_t* buf = (uint8_t*)(malloc(((int64_t)(n) + 1)));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc(((int64_t)(n) + 1)));
   int32_t w = 0;
   while (i < n) {
   if ((i + 3) < n && p[i] == 32 && p[(i + 1)] == 98 && p[(i + 2)] == 121 && p[(i + 3)] == 32) {
@@ -5623,12 +5728,12 @@ const char* str_append(const char* a, const char* b) {
   int32_t la = (int32_t)(strlen(a));
   int32_t lb = (int32_t)(strlen(b));
   int32_t total = (la + lb);
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)((total + 1))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)((total + 1))));
   if (la > 0) {
-  memcpy(buf, a, (int64_t)(la));
+  flow_mem_memcpy(buf, a, (int64_t)(la));
 }
   if (lb > 0) {
-  memcpy((buf + la), b, (int64_t)(lb));
+  flow_mem_memcpy((buf + la), b, (int64_t)(lb));
 }
   buf[total] = 0;
   return (const char*)(buf);
@@ -5818,7 +5923,7 @@ const char* mp_strip_ws(const char* s) {
   if (a == 0 && b == n) {
   return s;
 }
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)(((b - a) + 1))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)(((b - a) + 1))));
   int32_t i = 0;
   while ((a + i) < b) {
   buf[i] = p[(a + i)];
@@ -5929,12 +6034,12 @@ const char* mp_str_append(const char* a, const char* b) {
   int32_t la = (int32_t)(strlen(a));
   int32_t lb = (int32_t)(strlen(b));
   int32_t total = (la + lb);
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)((total + 1))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)((total + 1))));
   if (la > 0) {
-  memcpy(buf, a, (int64_t)(la));
+  flow_mem_memcpy(buf, a, (int64_t)(la));
 }
   if (lb > 0) {
-  memcpy((buf + la), b, (int64_t)(lb));
+  flow_mem_memcpy((buf + la), b, (int64_t)(lb));
 }
   buf[total] = 0;
   return (const char*)(buf);
@@ -6016,7 +6121,7 @@ const char* extract_ident(const char* s, int32_t start) {
   if (i == start) {
   return "";
 }
-  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc((int64_t)(((i - start) + 1)))));
+  uint8_t* buf = (uint8_t*)((uint8_t*)(flow_mem_malloc((int64_t)(((i - start) + 1)))));
   int32_t j = 0;
   int32_t k = start;
   while (k < i) {
@@ -6167,7 +6272,7 @@ const char* flowc_replace_eq(const char* s) {
   if (start >= end) {
   return "";
 }
-  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc((int64_t)(((end - start) + 1)))));
+  uint8_t* buf = (uint8_t*)((uint8_t*)(flow_mem_malloc((int64_t)(((end - start) + 1)))));
   int32_t k = 0;
   int32_t m = start;
   while (m < end) {
@@ -6340,7 +6445,7 @@ const char* mp_substr(const char* s, int32_t start, int32_t end) {
 }
   uint8_t* p = (uint8_t*)(s);
   int32_t n = (end - start);
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)((n + 1))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)((n + 1))));
   int32_t i = 0;
   while (i < n) {
   buf[i] = p[(start + i)];
@@ -7329,12 +7434,12 @@ const char* str_append(const char* a, const char* b) {
   int32_t la = (int32_t)(strlen(a));
   int32_t lb = (int32_t)(strlen(b));
   int32_t total = (la + lb);
-  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc((int64_t)((total + 1)))));
+  uint8_t* buf = (uint8_t*)((uint8_t*)(flow_mem_malloc((int64_t)((total + 1)))));
   if (la > 0) {
-  memcpy(buf, a, (int64_t)(la));
+  flow_mem_memcpy(buf, a, (int64_t)(la));
 }
   if (lb > 0) {
-  memcpy((buf + la), b, (int64_t)(lb));
+  flow_mem_memcpy((buf + la), b, (int64_t)(lb));
 }
   buf[total] = 0;
   return (const char*)(buf);
@@ -7407,7 +7512,7 @@ const char* geom_sidx(const char* s) {
 
 FlowcGeomDiagram flowc_geom_new(const char* title) {
   int64_t c = (int64_t)(GEOM_CAP);
-  return (FlowcGeomDiagram){ .ok = 1, .title = title, .caption = "", .width = 480, .height = 360, .pt_name = (const char**)(malloc((c * 8))), .pt_x = (double*)(malloc((c * 8))), .pt_y = (double*)(malloc((c * 8))), .npt = 0, .seg_a = (const char**)(malloc((c * 8))), .seg_b = (const char**)(malloc((c * 8))), .nseg = 0, .ang_v = (const char**)(malloc((c * 8))), .ang_a1 = (const char**)(malloc((c * 8))), .ang_a2 = (const char**)(malloc((c * 8))), .ang_label = (const char**)(malloc((c * 8))), .nang = 0, .right = (const char**)(malloc((c * 8))), .nright = 0, .par_a = (const char**)(malloc((c * 8))), .par_b = (const char**)(malloc((c * 8))), .npar = 0, .circ_c = (const char**)(malloc((c * 8))), .circ_r = (double*)(malloc((c * 8))), .ncirc = 0, .curves = (FlowcGeomCurve*)(malloc(((int64_t)(GEOM_CURVE_CAP) * 64))), .ncurve = 0, .fills = (FlowcGeomFill*)(malloc(((int64_t)(GEOM_CURVE_CAP) * 48))), .nfill = 0, .labels = (FlowcGeomLabel*)(malloc(((int64_t)(GEOM_CURVE_CAP) * 32))), .nlabel = 0, .has_axes = 0, .ax_ox = 0.0, .ax_oy = 0.0, .ax_scale = 0.0, .ax_xmin = 0.0, .ax_xmax = 0.0, .ax_ymin = 0.0, .ax_ymax = 0.0 };
+  return (FlowcGeomDiagram){ .ok = 1, .title = title, .caption = "", .width = 480, .height = 360, .pt_name = (const char**)(flow_mem_malloc((c * 8))), .pt_x = (double*)(flow_mem_malloc((c * 8))), .pt_y = (double*)(flow_mem_malloc((c * 8))), .npt = 0, .seg_a = (const char**)(flow_mem_malloc((c * 8))), .seg_b = (const char**)(flow_mem_malloc((c * 8))), .nseg = 0, .ang_v = (const char**)(flow_mem_malloc((c * 8))), .ang_a1 = (const char**)(flow_mem_malloc((c * 8))), .ang_a2 = (const char**)(flow_mem_malloc((c * 8))), .ang_label = (const char**)(flow_mem_malloc((c * 8))), .nang = 0, .right = (const char**)(flow_mem_malloc((c * 8))), .nright = 0, .par_a = (const char**)(flow_mem_malloc((c * 8))), .par_b = (const char**)(flow_mem_malloc((c * 8))), .npar = 0, .circ_c = (const char**)(flow_mem_malloc((c * 8))), .circ_r = (double*)(flow_mem_malloc((c * 8))), .ncirc = 0, .curves = (FlowcGeomCurve*)(flow_mem_malloc(((int64_t)(GEOM_CURVE_CAP) * 64))), .ncurve = 0, .fills = (FlowcGeomFill*)(flow_mem_malloc(((int64_t)(GEOM_CURVE_CAP) * 48))), .nfill = 0, .labels = (FlowcGeomLabel*)(flow_mem_malloc(((int64_t)(GEOM_CURVE_CAP) * 32))), .nlabel = 0, .has_axes = 0, .ax_ox = 0.0, .ax_oy = 0.0, .ax_scale = 0.0, .ax_xmin = 0.0, .ax_xmax = 0.0, .ax_ymin = 0.0, .ax_ymax = 0.0 };
 }
 
 FlowcGeomDiagram flowc_geom_none() {
@@ -7612,7 +7717,7 @@ FlowcGeomDiagram flowc_geom_template(const char* key) {
 const char* geom_lower(const char* s) {
   int32_t n = (int32_t)(strlen(s));
   uint8_t* p = (uint8_t*)(s);
-  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc((int64_t)((n + 1)))));
+  uint8_t* buf = (uint8_t*)((uint8_t*)(flow_mem_malloc((int64_t)((n + 1)))));
   int32_t i = 0;
   while (i < n) {
   uint8_t c = p[i];
@@ -7676,7 +7781,7 @@ const char* flowc_geom_infer_id(const char* claim_path) {
 }
 
 const char* geom_fmt(const char* fmt, double v) {
-  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc(64)));
+  uint8_t* buf = (uint8_t*)((uint8_t*)(flow_mem_malloc(64)));
   int32_t _n = snprintf(buf, 64, fmt, v);
   return (const char*)(buf);
 }
@@ -7686,7 +7791,7 @@ const char* f1(double v) {
 }
 
 const char* geom_itoa(int32_t v) {
-  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc(32)));
+  uint8_t* buf = (uint8_t*)((uint8_t*)(flow_mem_malloc(32)));
   int32_t _n = snprintf(buf, 32, "%d", v);
   return (const char*)(buf);
 }
@@ -7777,7 +7882,7 @@ int32_t geom_arms(FlowcGeomDiagram* g, const char* vertex, const char** out) {
 }
 
 const char* geom_char(const char* s, int32_t i) {
-  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc(2)));
+  uint8_t* buf = (uint8_t*)((uint8_t*)(flow_mem_malloc(2)));
   uint8_t* p = (uint8_t*)(s);
   buf[0] = p[i];
   buf[1] = 0;
@@ -7889,7 +7994,7 @@ const char* flowc_geom_render_svg(FlowcGeomDiagram* g) {
   out = __flowc_str_concatn(8, out, "\n<text x=\"", f1(lx), "\" y=\"", f1(ly), "\" text-anchor=\"middle\">", geom_sidx((g[0]).ang_label[i]), "</text>");
   i = (i + 1);
 }
-  const char** arms = (const char**)((const char**)(malloc(((int64_t)((((g[0]).nseg * 2) + 2)) * 8))));
+  const char** arms = (const char**)((const char**)(flow_mem_malloc(((int64_t)((((g[0]).nseg * 2) + 2)) * 8))));
   i = 0;
   while (i < (g[0]).nright) {
   int32_t v = geom_find(g, (g[0]).right[i]);
@@ -7941,7 +8046,7 @@ const char* flowc_geom_render_svg(FlowcGeomDiagram* g) {
 const char* geom_latex_escape(const char* text) {
   int32_t n = (int32_t)(strlen(text));
   uint8_t* p = (uint8_t*)(text);
-  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc((int64_t)(((n * 16) + 1)))));
+  uint8_t* buf = (uint8_t*)((uint8_t*)(flow_mem_malloc((int64_t)(((n * 16) + 1)))));
   int32_t o = 0;
   int32_t i = 0;
   while (i < n) {
@@ -8049,7 +8154,7 @@ const char* geom_coords(FlowcGeomDiagram* g, double* xs, double* ys, int32_t n) 
 }
 
 const char* flowc_geom_render_tikz(FlowcGeomDiagram* g) {
-  const char** names = (const char**)((const char**)(malloc(((int64_t)((((g[0]).nfill + (g[0]).ncurve) + 2)) * 8))));
+  const char** names = (const char**)((const char**)(flow_mem_malloc(((int64_t)((((g[0]).nfill + (g[0]).ncurve) + 2)) * 8))));
   int32_t nc = 0;
   int32_t i = 0;
   while (i < (g[0]).nfill) {
@@ -8145,7 +8250,7 @@ const char* flowc_geom_render_tikz(FlowcGeomDiagram* g) {
 }
   i = (i + 1);
 }
-  const char** arms = (const char**)((const char**)(malloc(((int64_t)((((g[0]).nseg * 2) + 2)) * 8))));
+  const char** arms = (const char**)((const char**)(flow_mem_malloc(((int64_t)((((g[0]).nseg * 2) + 2)) * 8))));
   i = 0;
   while (i < (g[0]).nright) {
   int32_t na = geom_arms(g, (g[0]).right[i], arms);
@@ -8360,9 +8465,9 @@ const char* gs_sub(const char* s, int32_t a, int32_t b) {
   if (hi <= lo) {
   return "";
 }
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)(((hi - lo) + 1))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)(((hi - lo) + 1))));
   uint8_t* p = (uint8_t*)(s);
-  memcpy(buf, (p + lo), (int64_t)((hi - lo)));
+  flow_mem_memcpy(buf, (p + lo), (int64_t)((hi - lo)));
   buf[(hi - lo)] = 0;
   return (const char*)(buf);
 }
@@ -8502,7 +8607,7 @@ GsVal gs_num(double v) {
 }
 
 GsEnv gs_env_new(int32_t cap) {
-  return (GsEnv){ .names = (const char**)(malloc(((int64_t)(cap) * 8))), .vals = (GsVal*)(malloc(((int64_t)(cap) * 32))), .n = 0, .cap = cap };
+  return (GsEnv){ .names = (const char**)(flow_mem_malloc(((int64_t)(cap) * 8))), .vals = (GsVal*)(flow_mem_malloc(((int64_t)(cap) * 32))), .n = 0, .cap = cap };
 }
 
 GsEnv gs_env_copy(GsEnv* e) {
@@ -8536,8 +8641,8 @@ void gs_env_set(GsEnv* e, const char* name, GsVal v) {
 }
   if ((e[0]).n >= (e[0]).cap) {
   int32_t ncap = (((e[0]).cap * 2) + 8);
-  const char** nn = (const char**)((const char**)(malloc(((int64_t)(ncap) * 8))));
-  GsVal* nv = (GsVal*)((GsVal*)(malloc(((int64_t)(ncap) * 32))));
+  const char** nn = (const char**)((const char**)(flow_mem_malloc(((int64_t)(ncap) * 8))));
+  GsVal* nv = (GsVal*)((GsVal*)(flow_mem_malloc(((int64_t)(ncap) * 32))));
   int32_t i = 0;
   while (i < (e[0]).n) {
   nn[i] = (e[0]).names[i];
@@ -8611,9 +8716,9 @@ void gs_push_tok(GsCtx* c, int32_t kind, double num, const char* text) {
 void gs_tokenize(GsCtx* c, const char* text) {
   int32_t n = gs_len(text);
   int32_t cap = (n + 4);
-  { __typeof__((c[0]).toks_kind) __flowc_st1444 = (int32_t*)(malloc(((int64_t)(cap) * 4))); (c[0]).toks_kind = __flowc_st1444; }
-  { __typeof__((c[0]).toks_num) __flowc_st1458 = (double*)(malloc(((int64_t)(cap) * 8))); (c[0]).toks_num = __flowc_st1458; }
-  { __typeof__((c[0]).toks_text) __flowc_st1472 = (const char**)(malloc(((int64_t)(cap) * 8))); (c[0]).toks_text = __flowc_st1472; }
+  { __typeof__((c[0]).toks_kind) __flowc_st1444 = (int32_t*)(flow_mem_malloc(((int64_t)(cap) * 4))); (c[0]).toks_kind = __flowc_st1444; }
+  { __typeof__((c[0]).toks_num) __flowc_st1458 = (double*)(flow_mem_malloc(((int64_t)(cap) * 8))); (c[0]).toks_num = __flowc_st1458; }
+  { __typeof__((c[0]).toks_text) __flowc_st1472 = (const char**)(flow_mem_malloc(((int64_t)(cap) * 8))); (c[0]).toks_text = __flowc_st1472; }
   (c[0]).ntok = 0;
   (c[0]).tpos = 0;
   uint8_t* p = (uint8_t*)(text);
@@ -8683,7 +8788,7 @@ void gs_tokenize(GsCtx* c, const char* text) {
 int32_t gs_node(GsCtx* c, int32_t kind) {
   if ((c[0]).nnode >= (c[0]).capnode) {
   int32_t ncap = (((c[0]).capnode * 2) + 64);
-  GsNode* nb = (GsNode*)((GsNode*)(malloc(((int64_t)(ncap) * 56))));
+  GsNode* nb = (GsNode*)((GsNode*)(flow_mem_malloc(((int64_t)(ncap) * 56))));
   int32_t i = 0;
   while (i < (c[0]).nnode) {
   nb[i] = (c[0]).nodes[i];
@@ -8743,7 +8848,7 @@ int32_t gs_parse_atom(GsCtx* c) {
   (c[0]).tpos = ((c[0]).tpos + 1);
   if (gs_eq(gs_peek_op(c), "(") == 1) {
   (c[0]).tpos = ((c[0]).tpos + 1);
-  int32_t* args = (int32_t*)((int32_t*)(malloc(((int64_t)(((c[0]).ntok + 1)) * 4))));
+  int32_t* args = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(((c[0]).ntok + 1)) * 4))));
   int32_t na = 0;
   if (gs_eq(gs_peek_op(c), ")") == 0) {
   { __typeof__(args[na]) __flowc_st2303 = gs_parse_expr(c); args[na] = __flowc_st2303; }
@@ -8877,8 +8982,8 @@ int32_t gs_parse(GsCtx* c, const char* text) {
 }
   if ((c[0]).ncache >= (c[0]).capcache) {
   int32_t ncap = (((c[0]).capcache * 2) + 32);
-  const char** nk = (const char**)((const char**)(malloc(((int64_t)(ncap) * 8))));
-  int32_t* nv = (int32_t*)((int32_t*)(malloc(((int64_t)(ncap) * 4))));
+  const char** nk = (const char**)((const char**)(flow_mem_malloc(((int64_t)(ncap) * 8))));
+  int32_t* nv = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(ncap) * 4))));
   int32_t j = 0;
   while (j < (c[0]).ncache) {
   nk[j] = (c[0]).cache_keys[j];
@@ -9056,7 +9161,7 @@ GsVal gs_eval(GsCtx* c, GsEnv* env, int32_t id) {
   return (env[0]).vals[at];
 }
   if ((node).kind == 3) {
-  GsVal* vals = (GsVal*)((GsVal*)(malloc(((int64_t)(((node).nargs + 1)) * 32))));
+  GsVal* vals = (GsVal*)((GsVal*)(flow_mem_malloc(((int64_t)(((node).nargs + 1)) * 32))));
   int32_t i = 0;
   while (i < (node).nargs) {
   { __typeof__(vals[i]) __flowc_st3681 = gs_eval(c, env, (node).args[i]); vals[i] = __flowc_st3681; }
@@ -9289,7 +9394,7 @@ void gs_cmd_plot(GsCtx* c, GsEnv* env, const char* text_in) {
 }
   const char* lo_s = gs_sub(range, 0, to_at);
   const char* rest = gs_sub(range, (to_at + 4), gs_len(range));
-  const char** parts = (const char**)((const char**)(malloc(((int64_t)((gs_len(rest) + 2)) * 8))));
+  const char** parts = (const char**)((const char**)(flow_mem_malloc(((int64_t)((gs_len(rest) + 2)) * 8))));
   int32_t np = gs_split_ws(rest, parts, (gs_len(rest) + 1));
   const char* hi_s = "";
   if (np > 0) {
@@ -9307,8 +9412,8 @@ void gs_cmd_plot(GsCtx* c, GsEnv* env, const char* text_in) {
   k = (k + 1);
 }
 }
-  int32_t* vs = (int32_t*)((int32_t*)(malloc(8)));
-  int32_t* ve = (int32_t*)((int32_t*)(malloc(8)));
+  int32_t* vs = (int32_t*)((int32_t*)(flow_mem_malloc(8)));
+  int32_t* ve = (int32_t*)((int32_t*)(flow_mem_malloc(8)));
   int32_t ki = 0;
   while (ki < 4) {
   const char* key = "color";
@@ -9341,7 +9446,7 @@ void gs_cmd_plot(GsCtx* c, GsEnv* env, const char* text_in) {
 }
   ki = (ki + 1);
 }
-  const char** rest2 = (const char**)((const char**)(malloc(8)));
+  const char** rest2 = (const char**)((const char**)(flow_mem_malloc(8)));
   if (gs_take_dash(text, rest2) == 1) {
   dash = 1;
   text = rest2[0];
@@ -9352,8 +9457,8 @@ void gs_cmd_plot(GsCtx* c, GsEnv* env, const char* text_in) {
 }
   int32_t ns = (int32_t)(samples);
   int32_t cap = (ns + 2);
-  double* xs = (double*)((double*)(malloc(((int64_t)(cap) * 8))));
-  double* ys = (double*)((double*)(malloc(((int64_t)(cap) * 8))));
+  double* xs = (double*)((double*)(flow_mem_malloc(((int64_t)(cap) * 8))));
+  double* ys = (double*)((double*)(flow_mem_malloc(((int64_t)(cap) * 8))));
   int32_t n = gs_sample(c, env, root, lo, hi, ns, xs, ys);
   gs_math_to_pixel(c, xs, ys, n);
   if ((c[0]).err != 0) {
@@ -9460,10 +9565,10 @@ void gs_cmd_fill(GsCtx* c, GsEnv* env, const char* text) {
   if ((c[0]).err != 0) {
   return;
 }
-  double* xs1 = (double*)((double*)(malloc((82 * 8))));
-  double* ys1 = (double*)((double*)(malloc((82 * 8))));
-  double* xs2 = (double*)((double*)(malloc((82 * 8))));
-  double* ys2 = (double*)((double*)(malloc((82 * 8))));
+  double* xs1 = (double*)((double*)(flow_mem_malloc((82 * 8))));
+  double* ys1 = (double*)((double*)(flow_mem_malloc((82 * 8))));
+  double* xs2 = (double*)((double*)(flow_mem_malloc((82 * 8))));
+  double* ys2 = (double*)((double*)(flow_mem_malloc((82 * 8))));
   int32_t n1 = gs_sample(c, env, r1, lo, hi, 80, xs1, ys1);
   gs_math_to_pixel(c, xs1, ys1, n1);
   int32_t n2 = gs_sample(c, env, r2, lo, hi, 80, xs2, ys2);
@@ -9508,8 +9613,8 @@ void gs_cmd_fill(GsCtx* c, GsEnv* env, const char* text) {
   opacity = ((double)(v) / 100.0);
 }
 }
-  double* xs = (double*)((double*)(malloc(((int64_t)(((n1 + n2) + 1)) * 8))));
-  double* ys = (double*)((double*)(malloc(((int64_t)(((n1 + n2) + 1)) * 8))));
+  double* xs = (double*)((double*)(flow_mem_malloc(((int64_t)(((n1 + n2) + 1)) * 8))));
+  double* ys = (double*)((double*)(flow_mem_malloc(((int64_t)(((n1 + n2) + 1)) * 8))));
   int32_t k = 0;
   while (k < n1) {
   xs[k] = xs1[k];
@@ -9607,7 +9712,7 @@ void gs_exec_line(GsCtx* c, GsEnv* env, const char* line) {
   return;
 }
   if (gs_starts(line, "size ") == 1) {
-  const char** parts = (const char**)((const char**)(malloc(((int64_t)((n + 2)) * 8))));
+  const char** parts = (const char**)((const char**)(flow_mem_malloc(((int64_t)((n + 2)) * 8))));
   int32_t np = gs_split_ws(gs_sub(line, 5, n), parts, (n + 1));
   if (np < 2) {
   gs_fail(c, "size w h");
@@ -9618,7 +9723,7 @@ void gs_exec_line(GsCtx* c, GsEnv* env, const char* line) {
   return;
 }
   if (gs_starts(line, "axes ") == 1) {
-  const char** parts = (const char**)((const char**)(malloc(((int64_t)((n + 2)) * 8))));
+  const char** parts = (const char**)((const char**)(flow_mem_malloc(((int64_t)((n + 2)) * 8))));
   int32_t np = gs_split_ws(gs_sub(line, 5, n), parts, (n + 1));
   if (np < 7) {
   gs_fail(c, "axes ox oy scale xmin xmax ymin ymax");
@@ -9669,7 +9774,7 @@ void gs_exec_block(GsCtx* c, GsEnv* env, const char* header, const char** body, 
   if (rp >= 0) {
   plist = gs_sub(after, 0, rp);
 }
-  const char** params = (const char**)((const char**)(malloc(((int64_t)((gs_len(plist) + 2)) * 8))));
+  const char** params = (const char**)((const char**)(flow_mem_malloc(((int64_t)((gs_len(plist) + 2)) * 8))));
   int32_t np = 0;
   int32_t pn = gs_len(plist);
   uint8_t* pp = (uint8_t*)(plist);
@@ -9688,7 +9793,7 @@ void gs_exec_block(GsCtx* c, GsEnv* env, const char* header, const char** body, 
 }
   if ((c[0]).nfn >= (c[0]).capfn) {
   int32_t ncap = (((c[0]).capfn * 2) + 8);
-  GsFn* nb = (GsFn*)((GsFn*)(malloc(((int64_t)(ncap) * 64))));
+  GsFn* nb = (GsFn*)((GsFn*)(flow_mem_malloc(((int64_t)(ncap) * 64))));
   int32_t j = 0;
   while (j < (c[0]).nfn) {
   nb[j] = (c[0]).fns[j];
@@ -9762,7 +9867,7 @@ void gs_run_lines(GsCtx* c, GsEnv* env, const char** lines, int32_t n) {
   if (gs_len(raw) > 0 && rp[0] != 35) {
   if (gs_ends_with_char(raw, 123) == 1) {
   const char* header = gs_strip(gs_sub(raw, 0, (gs_len(raw) - 1)));
-  const char** body = (const char**)((const char**)(malloc(((int64_t)(((n - i) + 1)) * 8))));
+  const char** body = (const char**)((const char**)(flow_mem_malloc(((int64_t)(((n - i) + 1)) * 8))));
   int32_t nb = 0;
   int32_t depth = 1;
   while (i < n && depth > 0) {
@@ -9786,7 +9891,7 @@ void gs_run_lines(GsCtx* c, GsEnv* env, const char** lines, int32_t n) {
 const char** gs_lines(const char* text, int32_t* out_n) {
   int32_t n = gs_len(text);
   uint8_t* p = (uint8_t*)(text);
-  const char** lines = (const char**)((const char**)(malloc(((int64_t)((n + 2)) * 8))));
+  const char** lines = (const char**)((const char**)(flow_mem_malloc(((int64_t)((n + 2)) * 8))));
   int32_t c = 0;
   int32_t s = 0;
   int32_t i = 0;
@@ -9811,9 +9916,9 @@ const char** gs_lines(const char* text, int32_t* out_n) {
 
 FlowcGeomDiagram flowc_geom_run_script(const char* source) {
   FlowcGeomDiagram g = flowc_geom_new("Scripted figure");
-  GsCtx c = (GsCtx){ .g = (&g), .fns = (GsFn*)(malloc((8 * 64))), .nfn = 0, .capfn = 8, .nodes = (GsNode*)(malloc((256 * 56))), .nnode = 0, .capnode = 256, .cache_keys = (const char**)(malloc((64 * 8))), .cache_vals = (int32_t*)(malloc((64 * 4))), .ncache = 0, .capcache = 64, .err = 0, .toks_kind = NULL, .toks_num = NULL, .toks_text = NULL, .ntok = 0, .tpos = 0 };
+  GsCtx c = (GsCtx){ .g = (&g), .fns = (GsFn*)(flow_mem_malloc((8 * 64))), .nfn = 0, .capfn = 8, .nodes = (GsNode*)(flow_mem_malloc((256 * 56))), .nnode = 0, .capnode = 256, .cache_keys = (const char**)(flow_mem_malloc((64 * 8))), .cache_vals = (int32_t*)(flow_mem_malloc((64 * 4))), .ncache = 0, .capcache = 64, .err = 0, .toks_kind = NULL, .toks_num = NULL, .toks_text = NULL, .ntok = 0, .tpos = 0 };
   GsEnv env = gs_default_env();
-  int32_t* cnt = (int32_t*)((int32_t*)(malloc(8)));
+  int32_t* cnt = (int32_t*)((int32_t*)(flow_mem_malloc(8)));
   const char** lines = (const char**)(gs_lines(source, cnt));
   gs_run_lines((&c), (&env), lines, cnt[0]);
   if ((c).err != 0) {
@@ -9828,7 +9933,7 @@ const char* gs_read(const char* path) {
   return "";
 }
   int32_t cap = ((int32_t)(size) + 1);
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)((cap + 1))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)((cap + 1))));
   int32_t n = flowc_read_file(path, buf, cap);
   if (n < 0) {
   n = 0;
@@ -9884,7 +9989,7 @@ FlowcGeomDiagram flowc_geom_for_theorem(const char* claim_path, const char* diag
 const char* gs_lower(const char* s) {
   int32_t n = gs_len(s);
   uint8_t* p = (uint8_t*)(s);
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)((n + 1))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)((n + 1))));
   int32_t i = 0;
   while (i < n) {
   uint8_t ch = p[i];
@@ -10753,12 +10858,12 @@ int32_t flowc_strncpy_span(uint8_t* dst, uint8_t* src, int32_t start, int32_t en
 const char* flowc_strdup(const char* s) {
   uint8_t* sp = (uint8_t*)((uint8_t*)(s));
   int32_t len = (int32_t)(strlen(sp));
-  uint8_t* buf = (uint8_t*)(malloc((len + 1)));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((len + 1)));
   if (buf == NULL) {
   return (const char*)("");
 }
   if (len > 0) {
-  uint8_t* _m = (uint8_t*)(memcpy(buf, sp, (int64_t)(len)));
+  uint8_t* _m = (uint8_t*)(flow_mem_memcpy(buf, sp, (int64_t)(len)));
 }
   buf[len] = 0;
   return (const char*)(buf);
@@ -10854,12 +10959,12 @@ bool bb_is_alpha(uint8_t c);
 bool bb_is_word(uint8_t c);
 bool bb_span_eq(uint8_t* a, int32_t a_s, int32_t a_e, uint8_t* b, int32_t b_s, int32_t b_e);
 ByteBuf* bb_new(int32_t cap) {
-  ByteBuf* b = (ByteBuf*)((ByteBuf*)(malloc(24)));
+  ByteBuf* b = (ByteBuf*)((ByteBuf*)(flow_mem_malloc(24)));
   int32_t c = cap;
   if (c < 16) {
   c = 16;
 }
-  { __typeof__((b[0]).p) __flowc_st70 = (uint8_t*)(malloc((int64_t)((c + 1)))); (b[0]).p = __flowc_st70; }
+  { __typeof__((b[0]).p) __flowc_st70 = (uint8_t*)(flow_mem_malloc((int64_t)((c + 1)))); (b[0]).p = __flowc_st70; }
   (b[0]).len = 0;
   (b[0]).cap = c;
   (b[0]).err = 0;
@@ -10877,9 +10982,9 @@ void bb_free(ByteBuf* b) {
   return;
 }
   if ((b[0]).p != NULL) {
-  free((void*)((b[0]).p));
+  flow_mem_free((void*)((b[0]).p));
 }
-  free((void*)(b));
+  flow_mem_free((void*)(b));
 }
 
 bool bb_reserve(ByteBuf* b, int32_t extra) {
@@ -10891,7 +10996,7 @@ bool bb_reserve(ByteBuf* b, int32_t extra) {
   if (ncap < need) {
   ncap = need;
 }
-  uint8_t* np = (uint8_t*)((uint8_t*)(realloc((void*)((b[0]).p), (int64_t)((ncap + 1)))));
+  uint8_t* np = (uint8_t*)((uint8_t*)(flow_mem_realloc((void*)((b[0]).p), (int64_t)((ncap + 1)))));
   if (np == NULL) {
   (b[0]).err = 1;
   return 0;
@@ -10988,7 +11093,7 @@ const char* bb_cstr(ByteBuf* b) {
 }
 
 const char* bb_str(ByteBuf* b) {
-  uint8_t* out = (uint8_t*)((uint8_t*)(malloc((int64_t)(((b[0]).len + 1)))));
+  uint8_t* out = (uint8_t*)((uint8_t*)(flow_mem_malloc((int64_t)(((b[0]).len + 1)))));
   int32_t i = 0;
   while (i < (b[0]).len) {
   out[i] = (b[0]).p[i];
@@ -11290,7 +11395,7 @@ void sh_pad(ByteBuf* w, int32_t indent) {
 }
 
 int32_t* sh_ints(int32_t n) {
-  return (int32_t*)(malloc(((int64_t)((n + 4)) * 4)));
+  return (int32_t*)(flow_mem_malloc(((int64_t)((n + 4)) * 4)));
 }
 
 void sh_pool_add(ShCtx* c, const char* s) {
@@ -11320,9 +11425,9 @@ void sh_pool_add_set(ShCtx* c, const char* a, const char* b, const char* d, cons
 }
 
 ShCtx* flowc_shader_ctx_new(uint8_t* src, int32_t n) {
-  ShCtx* c = (ShCtx*)((ShCtx*)(malloc(512)));
+  ShCtx* c = (ShCtx*)((ShCtx*)(flow_mem_malloc(512)));
   int32_t cap = (n + 8);
-  { __typeof__((c[0]).p) __flowc_st576 = malloc((int64_t)((n + 512))); (c[0]).p = __flowc_st576; }
+  { __typeof__((c[0]).p) __flowc_st576 = flow_mem_malloc((int64_t)((n + 512))); (c[0]).p = __flowc_st576; }
   int32_t i = 0;
   while (i < n) {
   (c[0]).p[i] = src[i];
@@ -11380,39 +11485,39 @@ ShCtx* flowc_shader_ctx_new(uint8_t* src, int32_t n) {
 }
 
 void flowc_shader_ctx_free(ShCtx* c) {
-  free((c[0]).p);
+  flow_mem_free((c[0]).p);
   flowc_shader_buf_free((c[0]).msg);
-  free((uint8_t*)((c[0]).tk));
-  free((uint8_t*)((c[0]).ts));
-  free((uint8_t*)((c[0]).te));
-  free((uint8_t*)((c[0]).nk));
-  free((uint8_t*)((c[0]).na));
-  free((uint8_t*)((c[0]).nb));
-  free((uint8_t*)((c[0]).nc));
-  free((uint8_t*)((c[0]).nx));
-  free((uint8_t*)((c[0]).s1));
-  free((uint8_t*)((c[0]).e1));
-  free((uint8_t*)((c[0]).nf));
-  free((uint8_t*)((c[0]).ys));
-  free((uint8_t*)((c[0]).ye));
-  free((uint8_t*)((c[0]).vs));
-  free((uint8_t*)((c[0]).ve));
-  free((uint8_t*)((c[0]).vt));
-  free((uint8_t*)((c[0]).fns));
-  free((uint8_t*)((c[0]).fne));
-  free((uint8_t*)((c[0]).fbs));
-  free((uint8_t*)((c[0]).fbe));
-  free((uint8_t*)((c[0]).frt));
-  free((uint8_t*)((c[0]).fp0));
-  free((uint8_t*)((c[0]).fpn));
-  free((uint8_t*)((c[0]).pas));
-  free((uint8_t*)((c[0]).pae));
-  free((uint8_t*)((c[0]).pat));
-  free((uint8_t*)((c[0]).fls));
-  free((uint8_t*)((c[0]).fle));
-  free((uint8_t*)((c[0]).flbs));
-  free((uint8_t*)((c[0]).flbe));
-  free((uint8_t*)(c));
+  flow_mem_free((uint8_t*)((c[0]).tk));
+  flow_mem_free((uint8_t*)((c[0]).ts));
+  flow_mem_free((uint8_t*)((c[0]).te));
+  flow_mem_free((uint8_t*)((c[0]).nk));
+  flow_mem_free((uint8_t*)((c[0]).na));
+  flow_mem_free((uint8_t*)((c[0]).nb));
+  flow_mem_free((uint8_t*)((c[0]).nc));
+  flow_mem_free((uint8_t*)((c[0]).nx));
+  flow_mem_free((uint8_t*)((c[0]).s1));
+  flow_mem_free((uint8_t*)((c[0]).e1));
+  flow_mem_free((uint8_t*)((c[0]).nf));
+  flow_mem_free((uint8_t*)((c[0]).ys));
+  flow_mem_free((uint8_t*)((c[0]).ye));
+  flow_mem_free((uint8_t*)((c[0]).vs));
+  flow_mem_free((uint8_t*)((c[0]).ve));
+  flow_mem_free((uint8_t*)((c[0]).vt));
+  flow_mem_free((uint8_t*)((c[0]).fns));
+  flow_mem_free((uint8_t*)((c[0]).fne));
+  flow_mem_free((uint8_t*)((c[0]).fbs));
+  flow_mem_free((uint8_t*)((c[0]).fbe));
+  flow_mem_free((uint8_t*)((c[0]).frt));
+  flow_mem_free((uint8_t*)((c[0]).fp0));
+  flow_mem_free((uint8_t*)((c[0]).fpn));
+  flow_mem_free((uint8_t*)((c[0]).pas));
+  flow_mem_free((uint8_t*)((c[0]).pae));
+  flow_mem_free((uint8_t*)((c[0]).pat));
+  flow_mem_free((uint8_t*)((c[0]).fls));
+  flow_mem_free((uint8_t*)((c[0]).fle));
+  flow_mem_free((uint8_t*)((c[0]).flbs));
+  flow_mem_free((uint8_t*)((c[0]).flbe));
+  flow_mem_free((uint8_t*)(c));
 }
 
 int32_t flowc_shader_ctx_err(ShCtx* c) {
@@ -11710,7 +11815,7 @@ int32_t sh_parse_params(ShCtx* c, int32_t s, int32_t e) {
   se[1] = e;
   sh_strip(p, se);
   if (se[0] == se[1]) {
-  free((uint8_t*)(se));
+  flow_mem_free((uint8_t*)(se));
   return 0;
 }
   int32_t rs = se[0];
@@ -11755,7 +11860,7 @@ int32_t sh_parse_params(ShCtx* c, int32_t s, int32_t e) {
 }
   a = (b + 1);
 }
-  free((uint8_t*)(se));
+  flow_mem_free((uint8_t*)(se));
   return rc;
 }
 
@@ -11839,7 +11944,7 @@ int32_t flowc_shader_extract(ShCtx* c) {
   rse[1] = hf[5];
   sh_strip(p, rse);
   { __typeof__((c[0]).frt[k]) __flowc_st3134 = sh_ty_span(c, rse[0], rse[1]); (c[0]).frt[k] = __flowc_st3134; }
-  free((uint8_t*)(rse));
+  flow_mem_free((uint8_t*)(rse));
   (c[0]).nfn = (k + 1);
 }
 } else {
@@ -11861,8 +11966,8 @@ int32_t flowc_shader_extract(ShCtx* c) {
 }
 }
 }
-  free((uint8_t*)(hf));
-  free((uint8_t*)(hs));
+  flow_mem_free((uint8_t*)(hf));
+  flow_mem_free((uint8_t*)(hs));
   (c[0]).ybase = (c[0]).ny;
   return rc;
 }
@@ -11884,7 +11989,7 @@ int32_t flowc_shader_is_module(uint8_t* p, int32_t n) {
 }
   i = (i + 1);
 }
-  free((uint8_t*)(hs));
+  flow_mem_free((uint8_t*)(hs));
   return found;
 }
 
@@ -13052,8 +13157,8 @@ void sh_emit_call(ShCtx* c, ByteBuf* w, int32_t x) {
   bb_putc(w, 41);
 }
 }
-  free((uint8_t*)(ars));
-  free((uint8_t*)(ae));
+  flow_mem_free((uint8_t*)(ars));
+  flow_mem_free((uint8_t*)(ae));
   flowc_shader_buf_free(args);
 }
 
@@ -13602,22 +13707,22 @@ FlowcOverloadTable flowc_overload_table_init(uint8_t* src, int32_t cap) {
   if (cap <= 0) {
   return (FlowcOverloadTable){ .src = src, .ns = NULL, .ne = NULL, .arity = NULL, .decl = NULL, .len = 0, .cap = 0, .err = 1 };
 }
-  uint8_t* raw_ns = (uint8_t*)(malloc(((int64_t)(cap) * 4)));
-  uint8_t* raw_ne = (uint8_t*)(malloc(((int64_t)(cap) * 4)));
-  uint8_t* raw_arity = (uint8_t*)(malloc(((int64_t)(cap) * 4)));
-  uint8_t* raw_decl = (uint8_t*)(malloc(((int64_t)(cap) * 4)));
+  uint8_t* raw_ns = (uint8_t*)(flow_mem_malloc(((int64_t)(cap) * 4)));
+  uint8_t* raw_ne = (uint8_t*)(flow_mem_malloc(((int64_t)(cap) * 4)));
+  uint8_t* raw_arity = (uint8_t*)(flow_mem_malloc(((int64_t)(cap) * 4)));
+  uint8_t* raw_decl = (uint8_t*)(flow_mem_malloc(((int64_t)(cap) * 4)));
   if (raw_ns == NULL || raw_ne == NULL || raw_arity == NULL || raw_decl == NULL) {
   if (raw_ns != NULL) {
-  free(raw_ns);
+  flow_mem_free(raw_ns);
 }
   if (raw_ne != NULL) {
-  free(raw_ne);
+  flow_mem_free(raw_ne);
 }
   if (raw_arity != NULL) {
-  free(raw_arity);
+  flow_mem_free(raw_arity);
 }
   if (raw_decl != NULL) {
-  free(raw_decl);
+  flow_mem_free(raw_decl);
 }
   return (FlowcOverloadTable){ .src = src, .ns = NULL, .ne = NULL, .arity = NULL, .decl = NULL, .len = 0, .cap = 0, .err = 1 };
 }
@@ -13626,19 +13731,19 @@ FlowcOverloadTable flowc_overload_table_init(uint8_t* src, int32_t cap) {
 
 void flowc_overload_table_free(FlowcOverloadTable* table) {
   if ((table[0]).ns != NULL) {
-  free((table[0]).ns);
+  flow_mem_free((table[0]).ns);
   (table[0]).ns = NULL;
 }
   if ((table[0]).ne != NULL) {
-  free((table[0]).ne);
+  flow_mem_free((table[0]).ne);
   (table[0]).ne = NULL;
 }
   if ((table[0]).arity != NULL) {
-  free((table[0]).arity);
+  flow_mem_free((table[0]).arity);
   (table[0]).arity = NULL;
 }
   if ((table[0]).decl != NULL) {
-  free((table[0]).decl);
+  flow_mem_free((table[0]).decl);
   (table[0]).decl = NULL;
 }
   (table[0]).len = 0;
@@ -13884,7 +13989,7 @@ const char* sem_s_slice(const char* s, int32_t start, int32_t end) {
   if (n < 0) {
   n = 0;
 }
-  uint8_t* out = (uint8_t*)((uint8_t*)(malloc((int64_t)((n + 1)))));
+  uint8_t* out = (uint8_t*)((uint8_t*)(flow_mem_malloc((int64_t)((n + 1)))));
   uint8_t* p = (uint8_t*)((uint8_t*)(s));
   int32_t i = 0;
   while (i < n) {
@@ -13958,7 +14063,7 @@ const char* sem_s_itoa(int64_t v) {
   if (v == 0) {
   return "0";
 }
-  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc(24)));
+  uint8_t* buf = (uint8_t*)((uint8_t*)(flow_mem_malloc(24)));
   int64_t n = v;
   bool neg = 0;
   if (n < 0) {
@@ -14012,17 +14117,17 @@ const char* sem_s_strip(const char* s) {
 }
 
 SemIntVec* sem_iv_new() {
-  SemIntVec* v = (SemIntVec*)((SemIntVec*)(malloc(16)));
+  SemIntVec* v = (SemIntVec*)((SemIntVec*)(flow_mem_malloc(16)));
   v->cap = 8;
   v->len = 0;
-  { __typeof__(v->data) __flowc_st747 = (int32_t*)(malloc(32)); v->data = __flowc_st747; }
+  { __typeof__(v->data) __flowc_st747 = (int32_t*)(flow_mem_malloc(32)); v->data = __flowc_st747; }
   return v;
 }
 
 void sem_iv_push(SemIntVec* v, int32_t x) {
   if (v->len >= v->cap) {
   v->cap = (v->cap * 2);
-  { __typeof__(v->data) __flowc_st787 = (int32_t*)(realloc((void*)(v->data), ((int64_t)(v->cap) * 4))); v->data = __flowc_st787; }
+  { __typeof__(v->data) __flowc_st787 = (int32_t*)(flow_mem_realloc((void*)(v->data), ((int64_t)(v->cap) * 4))); v->data = __flowc_st787; }
 }
   v->data[v->len] = x;
   v->len = (v->len + 1);
@@ -14044,17 +14149,17 @@ bool sem_iv_has(SemIntVec* v, int32_t x) {
 }
 
 SemStrVec* sem_sv_new() {
-  SemStrVec* v = (SemStrVec*)((SemStrVec*)(malloc(16)));
+  SemStrVec* v = (SemStrVec*)((SemStrVec*)(flow_mem_malloc(16)));
   v->cap = 8;
   v->len = 0;
-  { __typeof__(v->data) __flowc_st894 = (const char**)(malloc(64)); v->data = __flowc_st894; }
+  { __typeof__(v->data) __flowc_st894 = (const char**)(flow_mem_malloc(64)); v->data = __flowc_st894; }
   return v;
 }
 
 void sem_sv_push(SemStrVec* v, const char* s) {
   if (v->len >= v->cap) {
   v->cap = (v->cap * 2);
-  { __typeof__(v->data) __flowc_st934 = (const char**)(realloc((void*)(v->data), ((int64_t)(v->cap) * 8))); v->data = __flowc_st934; }
+  { __typeof__(v->data) __flowc_st934 = (const char**)(flow_mem_realloc((void*)(v->data), ((int64_t)(v->cap) * 8))); v->data = __flowc_st934; }
 }
   v->data[v->len] = s;
   v->len = (v->len + 1);
@@ -14124,11 +14229,11 @@ SemStrVec* sem_s_split(const char* s, int32_t sep) {
 }
 
 SemStrMap* sem_sm_new() {
-  SemStrMap* m = (SemStrMap*)((SemStrMap*)(malloc(24)));
+  SemStrMap* m = (SemStrMap*)((SemStrMap*)(flow_mem_malloc(24)));
   m->cap = 64;
   m->count = 0;
-  { __typeof__(m->keys) __flowc_st1246 = (const char**)(malloc((64 * 8))); m->keys = __flowc_st1246; }
-  { __typeof__(m->vals) __flowc_st1256 = (int32_t*)(malloc((64 * 4))); m->vals = __flowc_st1256; }
+  { __typeof__(m->keys) __flowc_st1246 = (const char**)(flow_mem_malloc((64 * 8))); m->keys = __flowc_st1246; }
+  { __typeof__(m->vals) __flowc_st1256 = (int32_t*)(flow_mem_malloc((64 * 4))); m->vals = __flowc_st1256; }
   int32_t i = 0;
   while (i < 64) {
   m->keys[i] = NULL;
@@ -14164,8 +14269,8 @@ void sem_sm_grow(SemStrMap* m) {
   int32_t* old_vals = (int32_t*)(m->vals);
   int32_t old_cap = m->cap;
   m->cap = (old_cap * 2);
-  { __typeof__(m->keys) __flowc_st1409 = (const char**)(malloc(((int64_t)(m->cap) * 8))); m->keys = __flowc_st1409; }
-  { __typeof__(m->vals) __flowc_st1422 = (int32_t*)(malloc(((int64_t)(m->cap) * 4))); m->vals = __flowc_st1422; }
+  { __typeof__(m->keys) __flowc_st1409 = (const char**)(flow_mem_malloc(((int64_t)(m->cap) * 8))); m->keys = __flowc_st1409; }
+  { __typeof__(m->vals) __flowc_st1422 = (int32_t*)(flow_mem_malloc(((int64_t)(m->cap) * 4))); m->vals = __flowc_st1422; }
   int32_t i = 0;
   while (i < m->cap) {
   m->keys[i] = NULL;
@@ -14208,17 +14313,17 @@ void sem_sm_put(SemStrMap* m, const char* key, int32_t val) {
 }
 
 SemPtrVec* sem_pv_new() {
-  SemPtrVec* v = (SemPtrVec*)((SemPtrVec*)(malloc(16)));
+  SemPtrVec* v = (SemPtrVec*)((SemPtrVec*)(flow_mem_malloc(16)));
   v->cap = 8;
   v->len = 0;
-  { __typeof__(v->data) __flowc_st1650 = (void**)(malloc(64)); v->data = __flowc_st1650; }
+  { __typeof__(v->data) __flowc_st1650 = (void**)(flow_mem_malloc(64)); v->data = __flowc_st1650; }
   return v;
 }
 
 void sem_pv_push(SemPtrVec* v, void* x) {
   if (v->len >= v->cap) {
   v->cap = (v->cap * 2);
-  { __typeof__(v->data) __flowc_st1692 = (void**)(realloc((void*)(v->data), ((int64_t)(v->cap) * 8))); v->data = __flowc_st1692; }
+  { __typeof__(v->data) __flowc_st1692 = (void**)(flow_mem_realloc((void*)(v->data), ((int64_t)(v->cap) * 8))); v->data = __flowc_st1692; }
 }
   v->data[v->len] = x;
   v->len = (v->len + 1);
@@ -14388,28 +14493,28 @@ void sem_pt_add_effect(SemTys* t, int32_t id, const char* e);
 int32_t sem_pt_neffects(SemTys* t, int32_t id);
 int32_t sem_pt_copy(SemTys* t, int32_t id, const char* name);
 SemTys* sem_tys_new() {
-  SemTys* t = (SemTys*)((SemTys*)(malloc(256)));
+  SemTys* t = (SemTys*)((SemTys*)(flow_mem_malloc(256)));
   t->cap = 1024;
   t->len = 0;
-  { __typeof__(t->kind) __flowc_st205 = (int32_t*)(malloc(4096)); t->kind = __flowc_st205; }
-  { __typeof__(t->name) __flowc_st213 = (const char**)(malloc(8192)); t->name = __flowc_st213; }
-  { __typeof__(t->elem) __flowc_st221 = (int32_t*)(malloc(4096)); t->elem = __flowc_st221; }
-  { __typeof__(t->base) __flowc_st229 = (int32_t*)(malloc(4096)); t->base = __flowc_st229; }
-  { __typeof__(t->size) __flowc_st237 = (int32_t*)(malloc(4096)); t->size = __flowc_st237; }
-  { __typeof__(t->ret) __flowc_st245 = (int32_t*)(malloc(4096)); t->ret = __flowc_st245; }
-  { __typeof__(t->params) __flowc_st254 = (SemIntVec**)(malloc(8192)); t->params = __flowc_st254; }
-  { __typeof__(t->effects) __flowc_st263 = (SemStrVec**)(malloc(8192)); t->effects = __flowc_st263; }
-  { __typeof__(t->dims) __flowc_st272 = (SemIntVec**)(malloc(8192)); t->dims = __flowc_st272; }
+  { __typeof__(t->kind) __flowc_st205 = (int32_t*)(flow_mem_malloc(4096)); t->kind = __flowc_st205; }
+  { __typeof__(t->name) __flowc_st213 = (const char**)(flow_mem_malloc(8192)); t->name = __flowc_st213; }
+  { __typeof__(t->elem) __flowc_st221 = (int32_t*)(flow_mem_malloc(4096)); t->elem = __flowc_st221; }
+  { __typeof__(t->base) __flowc_st229 = (int32_t*)(flow_mem_malloc(4096)); t->base = __flowc_st229; }
+  { __typeof__(t->size) __flowc_st237 = (int32_t*)(flow_mem_malloc(4096)); t->size = __flowc_st237; }
+  { __typeof__(t->ret) __flowc_st245 = (int32_t*)(flow_mem_malloc(4096)); t->ret = __flowc_st245; }
+  { __typeof__(t->params) __flowc_st254 = (SemIntVec**)(flow_mem_malloc(8192)); t->params = __flowc_st254; }
+  { __typeof__(t->effects) __flowc_st263 = (SemStrVec**)(flow_mem_malloc(8192)); t->effects = __flowc_st263; }
+  { __typeof__(t->dims) __flowc_st272 = (SemIntVec**)(flow_mem_malloc(8192)); t->dims = __flowc_st272; }
   t->pt_capacity = 1024;
   t->pt_len = 0;
-  { __typeof__(t->pt_name) __flowc_st288 = (const char**)(malloc(8192)); t->pt_name = __flowc_st288; }
-  { __typeof__(t->pt_ptr) __flowc_st296 = (int32_t*)(malloc(4096)); t->pt_ptr = __flowc_st296; }
-  { __typeof__(t->pt_cap) __flowc_st304 = (int32_t*)(malloc(4096)); t->pt_cap = __flowc_st304; }
-  { __typeof__(t->pt_cfn) __flowc_st312 = (int32_t*)(malloc(4096)); t->pt_cfn = __flowc_st312; }
-  { __typeof__(t->pt_size) __flowc_st320 = (int32_t*)(malloc(4096)); t->pt_size = __flowc_st320; }
-  { __typeof__(t->pt_elem) __flowc_st328 = (int32_t*)(malloc(4096)); t->pt_elem = __flowc_st328; }
-  { __typeof__(t->pt_args) __flowc_st337 = (SemIntVec**)(malloc(8192)); t->pt_args = __flowc_st337; }
-  { __typeof__(t->pt_effects) __flowc_st346 = (SemStrVec**)(malloc(8192)); t->pt_effects = __flowc_st346; }
+  { __typeof__(t->pt_name) __flowc_st288 = (const char**)(flow_mem_malloc(8192)); t->pt_name = __flowc_st288; }
+  { __typeof__(t->pt_ptr) __flowc_st296 = (int32_t*)(flow_mem_malloc(4096)); t->pt_ptr = __flowc_st296; }
+  { __typeof__(t->pt_cap) __flowc_st304 = (int32_t*)(flow_mem_malloc(4096)); t->pt_cap = __flowc_st304; }
+  { __typeof__(t->pt_cfn) __flowc_st312 = (int32_t*)(flow_mem_malloc(4096)); t->pt_cfn = __flowc_st312; }
+  { __typeof__(t->pt_size) __flowc_st320 = (int32_t*)(flow_mem_malloc(4096)); t->pt_size = __flowc_st320; }
+  { __typeof__(t->pt_elem) __flowc_st328 = (int32_t*)(flow_mem_malloc(4096)); t->pt_elem = __flowc_st328; }
+  { __typeof__(t->pt_args) __flowc_st337 = (SemIntVec**)(flow_mem_malloc(8192)); t->pt_args = __flowc_st337; }
+  { __typeof__(t->pt_effects) __flowc_st346 = (SemStrVec**)(flow_mem_malloc(8192)); t->pt_effects = __flowc_st346; }
   return t;
 }
 
@@ -14417,15 +14522,15 @@ void sem_ty_grow(SemTys* t) {
   t->cap = (t->cap * 2);
   int64_t n4 = ((int64_t)(t->cap) * 4);
   int64_t n8 = ((int64_t)(t->cap) * 8);
-  { __typeof__(t->kind) __flowc_st390 = (int32_t*)(realloc((void*)(t->kind), n4)); t->kind = __flowc_st390; }
-  { __typeof__(t->name) __flowc_st403 = (const char**)(realloc((void*)(t->name), n8)); t->name = __flowc_st403; }
-  { __typeof__(t->elem) __flowc_st416 = (int32_t*)(realloc((void*)(t->elem), n4)); t->elem = __flowc_st416; }
-  { __typeof__(t->base) __flowc_st429 = (int32_t*)(realloc((void*)(t->base), n4)); t->base = __flowc_st429; }
-  { __typeof__(t->size) __flowc_st442 = (int32_t*)(realloc((void*)(t->size), n4)); t->size = __flowc_st442; }
-  { __typeof__(t->ret) __flowc_st455 = (int32_t*)(realloc((void*)(t->ret), n4)); t->ret = __flowc_st455; }
-  { __typeof__(t->params) __flowc_st469 = (SemIntVec**)(realloc((void*)(t->params), n8)); t->params = __flowc_st469; }
-  { __typeof__(t->effects) __flowc_st483 = (SemStrVec**)(realloc((void*)(t->effects), n8)); t->effects = __flowc_st483; }
-  { __typeof__(t->dims) __flowc_st497 = (SemIntVec**)(realloc((void*)(t->dims), n8)); t->dims = __flowc_st497; }
+  { __typeof__(t->kind) __flowc_st390 = (int32_t*)(flow_mem_realloc((void*)(t->kind), n4)); t->kind = __flowc_st390; }
+  { __typeof__(t->name) __flowc_st403 = (const char**)(flow_mem_realloc((void*)(t->name), n8)); t->name = __flowc_st403; }
+  { __typeof__(t->elem) __flowc_st416 = (int32_t*)(flow_mem_realloc((void*)(t->elem), n4)); t->elem = __flowc_st416; }
+  { __typeof__(t->base) __flowc_st429 = (int32_t*)(flow_mem_realloc((void*)(t->base), n4)); t->base = __flowc_st429; }
+  { __typeof__(t->size) __flowc_st442 = (int32_t*)(flow_mem_realloc((void*)(t->size), n4)); t->size = __flowc_st442; }
+  { __typeof__(t->ret) __flowc_st455 = (int32_t*)(flow_mem_realloc((void*)(t->ret), n4)); t->ret = __flowc_st455; }
+  { __typeof__(t->params) __flowc_st469 = (SemIntVec**)(flow_mem_realloc((void*)(t->params), n8)); t->params = __flowc_st469; }
+  { __typeof__(t->effects) __flowc_st483 = (SemStrVec**)(flow_mem_realloc((void*)(t->effects), n8)); t->effects = __flowc_st483; }
+  { __typeof__(t->dims) __flowc_st497 = (SemIntVec**)(flow_mem_realloc((void*)(t->dims), n8)); t->dims = __flowc_st497; }
 }
 
 int32_t sem_ty_mk(SemTys* t, int32_t kind) {
@@ -14886,14 +14991,14 @@ void sem_pt_grow(SemTys* t) {
   t->pt_capacity = (t->pt_capacity * 2);
   int64_t n4 = ((int64_t)(t->pt_capacity) * 4);
   int64_t n8 = ((int64_t)(t->pt_capacity) * 8);
-  { __typeof__(t->pt_name) __flowc_st2151 = (const char**)(realloc((void*)(t->pt_name), n8)); t->pt_name = __flowc_st2151; }
-  { __typeof__(t->pt_ptr) __flowc_st2164 = (int32_t*)(realloc((void*)(t->pt_ptr), n4)); t->pt_ptr = __flowc_st2164; }
-  { __typeof__(t->pt_cap) __flowc_st2177 = (int32_t*)(realloc((void*)(t->pt_cap), n4)); t->pt_cap = __flowc_st2177; }
-  { __typeof__(t->pt_cfn) __flowc_st2190 = (int32_t*)(realloc((void*)(t->pt_cfn), n4)); t->pt_cfn = __flowc_st2190; }
-  { __typeof__(t->pt_size) __flowc_st2203 = (int32_t*)(realloc((void*)(t->pt_size), n4)); t->pt_size = __flowc_st2203; }
-  { __typeof__(t->pt_elem) __flowc_st2216 = (int32_t*)(realloc((void*)(t->pt_elem), n4)); t->pt_elem = __flowc_st2216; }
-  { __typeof__(t->pt_args) __flowc_st2230 = (SemIntVec**)(realloc((void*)(t->pt_args), n8)); t->pt_args = __flowc_st2230; }
-  { __typeof__(t->pt_effects) __flowc_st2244 = (SemStrVec**)(realloc((void*)(t->pt_effects), n8)); t->pt_effects = __flowc_st2244; }
+  { __typeof__(t->pt_name) __flowc_st2151 = (const char**)(flow_mem_realloc((void*)(t->pt_name), n8)); t->pt_name = __flowc_st2151; }
+  { __typeof__(t->pt_ptr) __flowc_st2164 = (int32_t*)(flow_mem_realloc((void*)(t->pt_ptr), n4)); t->pt_ptr = __flowc_st2164; }
+  { __typeof__(t->pt_cap) __flowc_st2177 = (int32_t*)(flow_mem_realloc((void*)(t->pt_cap), n4)); t->pt_cap = __flowc_st2177; }
+  { __typeof__(t->pt_cfn) __flowc_st2190 = (int32_t*)(flow_mem_realloc((void*)(t->pt_cfn), n4)); t->pt_cfn = __flowc_st2190; }
+  { __typeof__(t->pt_size) __flowc_st2203 = (int32_t*)(flow_mem_realloc((void*)(t->pt_size), n4)); t->pt_size = __flowc_st2203; }
+  { __typeof__(t->pt_elem) __flowc_st2216 = (int32_t*)(flow_mem_realloc((void*)(t->pt_elem), n4)); t->pt_elem = __flowc_st2216; }
+  { __typeof__(t->pt_args) __flowc_st2230 = (SemIntVec**)(flow_mem_realloc((void*)(t->pt_args), n8)); t->pt_args = __flowc_st2230; }
+  { __typeof__(t->pt_effects) __flowc_st2244 = (SemStrVec**)(flow_mem_realloc((void*)(t->pt_effects), n8)); t->pt_effects = __flowc_st2244; }
 }
 
 int32_t sem_pt_mk(SemTys* t, const char* name) {
@@ -15267,7 +15372,7 @@ bool sem_target_item_ok(const char* item);
 const char* sem_validate_target_spec(const char* spec);
 void sem_attribute_errors(Sem* c, const char* fn_name, int32_t start, int32_t n);
 Sem* sem_new(bool strict) {
-  Sem* c = (Sem*)((Sem*)(malloc(8192)));
+  Sem* c = (Sem*)((Sem*)(flow_mem_malloc(8192)));
   { __typeof__(c->t) __flowc_st668 = sem_tys_new(); c->t = __flowc_st668; }
   c->strict = strict;
   c->check_effect_rows = 1;
@@ -15289,10 +15394,10 @@ Sem* sem_new(bool strict) {
   c->check_effect_rows = 0;
 }
   c->nm = 0;
-  { __typeof__(c->m_ar) __flowc_st760 = (AstArena*)(malloc((64 * 24))); c->m_ar = __flowc_st760; }
-  { __typeof__(c->m_root) __flowc_st770 = (int32_t*)(malloc((64 * 4))); c->m_root = __flowc_st770; }
-  { __typeof__(c->m_src) __flowc_st781 = (uint8_t**)(malloc((64 * 8))); c->m_src = __flowc_st781; }
-  { __typeof__(c->m_path) __flowc_st791 = (const char**)(malloc((64 * 8))); c->m_path = __flowc_st791; }
+  { __typeof__(c->m_ar) __flowc_st760 = (AstArena*)(flow_mem_malloc((64 * 24))); c->m_ar = __flowc_st760; }
+  { __typeof__(c->m_root) __flowc_st770 = (int32_t*)(flow_mem_malloc((64 * 4))); c->m_root = __flowc_st770; }
+  { __typeof__(c->m_src) __flowc_st781 = (uint8_t**)(flow_mem_malloc((64 * 8))); c->m_src = __flowc_st781; }
+  { __typeof__(c->m_path) __flowc_st791 = (const char**)(flow_mem_malloc((64 * 8))); c->m_path = __flowc_st791; }
   { __typeof__(c->m_lines) __flowc_st795 = sem_pv_new(); c->m_lines = __flowc_st795; }
   { __typeof__(c->m_rows) __flowc_st799 = sem_pv_new(); c->m_rows = __flowc_st799; }
   c->cm = (0 - 1);
@@ -18283,13 +18388,13 @@ int32_t fx_contains(uint8_t* m, int32_t n, const char* lit) {
 }
 
 int32_t fx_parse(uint8_t* p, int32_t* ls, int32_t* le, int32_t nlines, int32_t* keep, int32_t* rec, FxBuf* err) {
-  int32_t* caps = (int32_t*)((int32_t*)(malloc(64)));
-  int32_t* se = (int32_t*)((int32_t*)(malloc(16)));
-  int32_t* cnt = (int32_t*)((int32_t*)(malloc(16)));
-  int32_t* bs = (int32_t*)((int32_t*)(malloc(((int64_t)((nlines + 1)) * 4))));
-  int32_t* be = (int32_t*)((int32_t*)(malloc(((int64_t)((nlines + 1)) * 4))));
-  int32_t* its = (int32_t*)((int32_t*)(malloc(((int64_t)((nlines + 1)) * 4))));
-  int32_t* ite = (int32_t*)((int32_t*)(malloc(((int64_t)((nlines + 1)) * 4))));
+  int32_t* caps = (int32_t*)((int32_t*)(flow_mem_malloc(64)));
+  int32_t* se = (int32_t*)((int32_t*)(flow_mem_malloc(16)));
+  int32_t* cnt = (int32_t*)((int32_t*)(flow_mem_malloc(16)));
+  int32_t* bs = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((nlines + 1)) * 4))));
+  int32_t* be = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((nlines + 1)) * 4))));
+  int32_t* its = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((nlines + 1)) * 4))));
+  int32_t* ite = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((nlines + 1)) * 4))));
   int32_t nf = 0;
   int32_t rc = 0;
   int32_t i = 0;
@@ -18494,13 +18599,13 @@ int32_t fx_parse(uint8_t* p, int32_t* ls, int32_t* le, int32_t nlines, int32_t* 
   f = (f + 1);
 }
 }
-  free((uint8_t*)(caps));
-  free((uint8_t*)(se));
-  free((uint8_t*)(cnt));
-  free((uint8_t*)(bs));
-  free((uint8_t*)(be));
-  free((uint8_t*)(its));
-  free((uint8_t*)(ite));
+  flow_mem_free((uint8_t*)(caps));
+  flow_mem_free((uint8_t*)(se));
+  flow_mem_free((uint8_t*)(cnt));
+  flow_mem_free((uint8_t*)(bs));
+  flow_mem_free((uint8_t*)(be));
+  flow_mem_free((uint8_t*)(its));
+  flow_mem_free((uint8_t*)(ite));
   if (rc != 0) {
   return (0 - 1);
 }
@@ -18515,10 +18620,10 @@ int32_t flowc_field_expand(uint8_t* p, int32_t n, FxBuf* out, FxBuf* err) {
 }
   return (out[0]).len;
 }
-  int32_t* ls = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 2)) * 4))));
-  int32_t* le = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 2)) * 4))));
-  int32_t* keep = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 2)) * 4))));
-  int32_t* rec = (int32_t*)((int32_t*)(malloc(((int64_t)((FX_MAX_FIELDS * FX_REC)) * 4))));
+  int32_t* ls = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((n + 2)) * 4))));
+  int32_t* le = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((n + 2)) * 4))));
+  int32_t* keep = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((n + 2)) * 4))));
+  int32_t* rec = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((FX_MAX_FIELDS * FX_REC)) * 4))));
   int32_t nlines = fx_split_lines(p, n, ls, le);
   int32_t nf = fx_parse(p, ls, le, nlines, keep, rec, err);
   int32_t rc = 0;
@@ -18526,9 +18631,9 @@ int32_t flowc_field_expand(uint8_t* p, int32_t n, FxBuf* out, FxBuf* err) {
   rc = (0 - 1);
 } else {
   int32_t mcap = (n + 64);
-  FxBuf mw = (FxBuf){ .buf = malloc((int64_t)((mcap + 1))), .cap = mcap, .len = 0, .err = 0 };
+  FxBuf mw = (FxBuf){ .buf = flow_mem_malloc((int64_t)((mcap + 1))), .cap = mcap, .len = 0, .err = 0 };
   if (nf > 0) {
-  FxBuf sw = (FxBuf){ .buf = malloc((int64_t)((mcap + 1))), .cap = mcap, .len = 0, .err = 0 };
+  FxBuf sw = (FxBuf){ .buf = flow_mem_malloc((int64_t)((mcap + 1))), .cap = mcap, .len = 0, .err = 0 };
   int32_t first0 = 1;
   int32_t j0 = 0;
   while (j0 < nlines) {
@@ -18545,7 +18650,7 @@ int32_t flowc_field_expand(uint8_t* p, int32_t n, FxBuf* out, FxBuf* err) {
   fx_puts((&mw), "import \"stdlib/dynamics/pde.flow\"\n");
 }
   fx_put_span((&mw), (sw).buf, 0, (sw).len);
-  free((sw).buf);
+  flow_mem_free((sw).buf);
 } else {
   int32_t first = 1;
   int32_t j = 0;
@@ -18581,17 +18686,17 @@ int32_t flowc_field_expand(uint8_t* p, int32_t n, FxBuf* out, FxBuf* err) {
   fx_put_span(out, (mw).buf, at, (mw).len);
 }
 }
-  free((mw).buf);
+  flow_mem_free((mw).buf);
   if ((out[0]).err != 0) {
   rc = (0 - 2);
 } else {
   rc = (out[0]).len;
 }
 }
-  free((uint8_t*)(ls));
-  free((uint8_t*)(le));
-  free((uint8_t*)(keep));
-  free((uint8_t*)(rec));
+  flow_mem_free((uint8_t*)(ls));
+  flow_mem_free((uint8_t*)(le));
+  flow_mem_free((uint8_t*)(keep));
+  flow_mem_free((uint8_t*)(rec));
   return rc;
 }
 
@@ -18603,8 +18708,8 @@ int32_t flowc_field_expand_in_place(uint8_t* buf, int32_t n, int32_t cap) {
   return n;
 }
   int32_t ocap = ((n * 2) + 65536);
-  FxBuf ow = (FxBuf){ .buf = malloc((int64_t)((ocap + 1))), .cap = ocap, .len = 0, .err = 0 };
-  FxBuf ew = (FxBuf){ .buf = malloc(1024), .cap = 1023, .len = 0, .err = 0 };
+  FxBuf ow = (FxBuf){ .buf = flow_mem_malloc((int64_t)((ocap + 1))), .cap = ocap, .len = 0, .err = 0 };
+  FxBuf ew = (FxBuf){ .buf = flow_mem_malloc(1024), .cap = 1023, .len = 0, .err = 0 };
   int32_t rc = flowc_field_expand(buf, n, (&ow), (&ew));
   if (rc < 0) {
   if (rc == (0 - 2)) {
@@ -18612,21 +18717,21 @@ int32_t flowc_field_expand_in_place(uint8_t* buf, int32_t n, int32_t cap) {
 } else {
   const char* head = "flowc field: ";
   uint8_t* hp = (uint8_t*)(head);
-  FxBuf line = (FxBuf){ .buf = malloc(1100), .cap = 1099, .len = 0, .err = 0 };
+  FxBuf line = (FxBuf){ .buf = flow_mem_malloc(1100), .cap = 1099, .len = 0, .err = 0 };
   fx_put_span((&line), hp, 0, 13);
   fx_put_span((&line), (ew).buf, 0, (ew).len);
   (line).buf[(line).len] = 0;
   puts((const char*)((line).buf));
-  free((line).buf);
+  flow_mem_free((line).buf);
 }
-  free((ow).buf);
-  free((ew).buf);
+  flow_mem_free((ow).buf);
+  flow_mem_free((ew).buf);
   return (0 - 1);
 }
   if (rc >= cap) {
   puts("flowc field: expanded source exceeds the source buffer");
-  free((ow).buf);
-  free((ew).buf);
+  flow_mem_free((ow).buf);
+  flow_mem_free((ew).buf);
   return (0 - 1);
 }
   int32_t k = 0;
@@ -18635,8 +18740,8 @@ int32_t flowc_field_expand_in_place(uint8_t* buf, int32_t n, int32_t cap) {
   k = (k + 1);
 }
   buf[rc] = 0;
-  free((ow).buf);
-  free((ew).buf);
+  flow_mem_free((ow).buf);
+  flow_mem_free((ew).buf);
   return rc;
 }
 
@@ -18951,8 +19056,8 @@ const char* flowc_strip_comments(const char* line) {
   return "";
 }
   int32_t len = (end - start);
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)((len + 1))));
-  memcpy(buf, (p + start), (int64_t)(len));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)((len + 1))));
+  flow_mem_memcpy(buf, (p + start), (int64_t)(len));
   buf[len] = 0;
   return (const char*)(buf);
 }
@@ -18973,8 +19078,8 @@ const char* flowc_strip_dynamics_namespace(const char* line) {
   int32_t n = (int32_t)(strlen(stripped));
   int32_t len = (n - skip);
   uint8_t* p = (uint8_t*)((uint8_t*)(stripped));
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)((len + 1))));
-  memcpy(buf, (p + skip), (int64_t)(len));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)((len + 1))));
+  flow_mem_memcpy(buf, (p + skip), (int64_t)(len));
   buf[len] = 0;
   return (const char*)(buf);
 }
@@ -19281,15 +19386,15 @@ int32_t dy_match(uint8_t* p, int32_t s, int32_t e, const char* pat, int32_t* cap
 }
 
 int32_t* dy_i32s(int32_t n) {
-  return (int32_t*)(malloc(((int64_t)((n + 1)) * 4)));
+  return (int32_t*)(flow_mem_malloc(((int64_t)((n + 1)) * 4)));
 }
 
 int64_t* dy_i64s(int32_t n) {
-  return (int64_t*)(malloc(((int64_t)((n + 1)) * 8)));
+  return (int64_t*)(flow_mem_malloc(((int64_t)((n + 1)) * 8)));
 }
 
 double* dy_f64s(int32_t n) {
-  return (double*)(malloc(((int64_t)((n + 1)) * 8)));
+  return (double*)(flow_mem_malloc(((int64_t)((n + 1)) * 8)));
 }
 
 int32_t dy_name(DyC* c, uint8_t* p, int32_t s, int32_t e) {
@@ -19331,7 +19436,7 @@ void dy_pn(ByteBuf* b, DyC* c, int32_t off) {
 int32_t dy_fpush(DyC* c, double v) {
   if ((c[0]).fnum >= (c[0]).fcap) {
   int32_t ncap = (((c[0]).fcap * 2) + 64);
-  { __typeof__((c[0]).fp) __flowc_st1955 = (double*)(realloc((uint8_t*)((c[0]).fp), ((int64_t)((ncap + 1)) * 8))); (c[0]).fp = __flowc_st1955; }
+  { __typeof__((c[0]).fp) __flowc_st1955 = (double*)(flow_mem_realloc((uint8_t*)((c[0]).fp), ((int64_t)((ncap + 1)) * 8))); (c[0]).fp = __flowc_st1955; }
   (c[0]).fcap = ncap;
 }
   (c[0]).fp[(c[0]).fnum] = v;
@@ -19342,9 +19447,9 @@ int32_t dy_fpush(DyC* c, double v) {
 int32_t dy_bd(DyC* c, int32_t kind, int32_t var, int32_t hz) {
   if ((c[0]).nbd >= (c[0]).bdcap) {
   int32_t ncap = (((c[0]).bdcap * 2) + 64);
-  { __typeof__((c[0]).bd_kind) __flowc_st2046 = (int32_t*)(realloc((uint8_t*)((c[0]).bd_kind), ((int64_t)((ncap + 1)) * 4))); (c[0]).bd_kind = __flowc_st2046; }
-  { __typeof__((c[0]).bd_var) __flowc_st2069 = (int32_t*)(realloc((uint8_t*)((c[0]).bd_var), ((int64_t)((ncap + 1)) * 4))); (c[0]).bd_var = __flowc_st2069; }
-  { __typeof__((c[0]).bd_hz) __flowc_st2092 = (int32_t*)(realloc((uint8_t*)((c[0]).bd_hz), ((int64_t)((ncap + 1)) * 4))); (c[0]).bd_hz = __flowc_st2092; }
+  { __typeof__((c[0]).bd_kind) __flowc_st2046 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).bd_kind), ((int64_t)((ncap + 1)) * 4))); (c[0]).bd_kind = __flowc_st2046; }
+  { __typeof__((c[0]).bd_var) __flowc_st2069 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).bd_var), ((int64_t)((ncap + 1)) * 4))); (c[0]).bd_var = __flowc_st2069; }
+  { __typeof__((c[0]).bd_hz) __flowc_st2092 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).bd_hz), ((int64_t)((ncap + 1)) * 4))); (c[0]).bd_hz = __flowc_st2092; }
   (c[0]).bdcap = ncap;
 }
   (c[0]).bd_kind[(c[0]).nbd] = kind;
@@ -19357,7 +19462,7 @@ int32_t dy_bd(DyC* c, int32_t kind, int32_t var, int32_t hz) {
 int32_t dy_gl(DyC* c, int32_t off) {
   if ((c[0]).ngl >= (c[0]).glcap) {
   int32_t ncap = (((c[0]).glcap * 2) + 64);
-  { __typeof__((c[0]).gl) __flowc_st2201 = (int32_t*)(realloc((uint8_t*)((c[0]).gl), ((int64_t)((ncap + 1)) * 4))); (c[0]).gl = __flowc_st2201; }
+  { __typeof__((c[0]).gl) __flowc_st2201 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).gl), ((int64_t)((ncap + 1)) * 4))); (c[0]).gl = __flowc_st2201; }
   (c[0]).glcap = ncap;
 }
   (c[0]).gl[(c[0]).ngl] = off;
@@ -19368,8 +19473,8 @@ int32_t dy_gl(DyC* c, int32_t off) {
 int32_t dy_at(DyC* c, int32_t name, double v) {
   if ((c[0]).nat >= (c[0]).atcap) {
   int32_t ncap = (((c[0]).atcap * 2) + 64);
-  { __typeof__((c[0]).at_name) __flowc_st2290 = (int32_t*)(realloc((uint8_t*)((c[0]).at_name), ((int64_t)((ncap + 1)) * 4))); (c[0]).at_name = __flowc_st2290; }
-  { __typeof__((c[0]).at_val) __flowc_st2313 = (double*)(realloc((uint8_t*)((c[0]).at_val), ((int64_t)((ncap + 1)) * 8))); (c[0]).at_val = __flowc_st2313; }
+  { __typeof__((c[0]).at_name) __flowc_st2290 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).at_name), ((int64_t)((ncap + 1)) * 4))); (c[0]).at_name = __flowc_st2290; }
+  { __typeof__((c[0]).at_val) __flowc_st2313 = (double*)(flow_mem_realloc((uint8_t*)((c[0]).at_val), ((int64_t)((ncap + 1)) * 8))); (c[0]).at_val = __flowc_st2313; }
   (c[0]).atcap = ncap;
 }
   (c[0]).at_name[(c[0]).nat] = name;
@@ -19572,7 +19677,7 @@ double dy_float(DyC* c, uint8_t* p, int32_t s0, int32_t e0) {
   double z = 0.0;
   return (z / z);
 }
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)(((e - s) + 2))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)(((e - s) + 2))));
   int32_t q = 0;
   int32_t t = s;
   while (t < e) {
@@ -19584,16 +19689,16 @@ double dy_float(DyC* c, uint8_t* p, int32_t s0, int32_t e0) {
 }
   buf[q] = 0;
   double v = strtod((const char*)(buf), NULL);
-  free(buf);
+  flow_mem_free(buf);
   return v;
 }
 
 int64_t dy_bits(double x) {
-  double* tmp = (double*)((double*)(malloc(8)));
+  double* tmp = (double*)((double*)(flow_mem_malloc(8)));
   tmp[0] = x;
   int64_t* ip = (int64_t*)((int64_t*)(tmp));
   int64_t b = ip[0];
-  free((uint8_t*)(tmp));
+  flow_mem_free((uint8_t*)(tmp));
   return b;
 }
 
@@ -19607,7 +19712,7 @@ int32_t dy_exact(double x, uint8_t* dig, int32_t* dp) {
   mant = (frac + 4503599627370496);
   e2 = ((int32_t)(ex) - 1075);
 }
-  int64_t* limbs = (int64_t*)((int64_t*)(malloc(1024)));
+  int64_t* limbs = (int64_t*)((int64_t*)(flow_mem_malloc(1024)));
   int32_t nl = 0;
   int64_t m = mant;
   while (m > 0) {
@@ -19639,7 +19744,7 @@ int32_t dy_exact(double x, uint8_t* dig, int32_t* dp) {
 }
   int32_t nd = 0;
   int64_t top = limbs[(nl - 1)];
-  uint8_t* tmpd = (uint8_t*)(malloc(16));
+  uint8_t* tmpd = (uint8_t*)(flow_mem_malloc(16));
   int32_t tn = 0;
   while (top > 0) {
   tmpd[tn] = (uint8_t)((48 + (top % 10)));
@@ -19663,8 +19768,8 @@ int32_t dy_exact(double x, uint8_t* dig, int32_t* dp) {
   nd = (nd + 9);
   li = (li - 1);
 }
-  free(tmpd);
-  free((uint8_t*)(limbs));
+  flow_mem_free(tmpd);
+  flow_mem_free((uint8_t*)(limbs));
   if (e2 < 0) {
   dp[0] = (nd + e2);
 } else {
@@ -19774,8 +19879,8 @@ void dy_g17(ByteBuf* b, double v) {
   if (a < 0.0) {
   a = (0.0 - a);
 }
-  uint8_t* dig = (uint8_t*)(malloc(1200));
-  uint8_t* r = (uint8_t*)(malloc(32));
+  uint8_t* dig = (uint8_t*)(flow_mem_malloc(1200));
+  uint8_t* r = (uint8_t*)(flow_mem_malloc(32));
   int32_t* dp = (int32_t*)(dy_i32s(1));
   int32_t nd = dy_exact(a, dig, dp);
   dy_round(dig, nd, 17, r, dp);
@@ -19810,9 +19915,9 @@ void dy_g17(ByteBuf* b, double v) {
   bb_putc(b, 101);
   dy_exp10(b, x);
 }
-  free(dig);
-  free(r);
-  free((uint8_t*)(dp));
+  flow_mem_free(dig);
+  flow_mem_free(r);
+  flow_mem_free((uint8_t*)(dp));
 }
 
 void dy_repr(ByteBuf* b, double v) {
@@ -19823,8 +19928,8 @@ void dy_repr(ByteBuf* b, double v) {
   if (a < 0.0) {
   a = (0.0 - a);
 }
-  uint8_t* dig = (uint8_t*)(malloc(1200));
-  uint8_t* r = (uint8_t*)(malloc(32));
+  uint8_t* dig = (uint8_t*)(flow_mem_malloc(1200));
+  uint8_t* r = (uint8_t*)(flow_mem_malloc(32));
   int32_t* dp = (int32_t*)(dy_i32s(1));
   int32_t nd = dy_exact(a, dig, dp);
   int32_t exact_dp = dp[0];
@@ -19882,11 +19987,11 @@ void dy_repr(ByteBuf* b, double v) {
   bb_putc(b, 101);
   dy_exp10(b, x);
 }
-  free(dig);
-  free(r);
-  free((uint8_t*)(dp));
-  free((chk[0]).p);
-  free((uint8_t*)(chk));
+  flow_mem_free(dig);
+  flow_mem_free(r);
+  flow_mem_free((uint8_t*)(dp));
+  flow_mem_free((chk[0]).p);
+  flow_mem_free((uint8_t*)(chk));
 }
 
 void dy_flow_f64(ByteBuf* b, double v) {
@@ -19904,13 +20009,13 @@ void dy_flow_f64(ByteBuf* b, double v) {
   if (dy_find((t[0]).p, 0, (t[0]).len, 101) < 0 && dy_find((t[0]).p, 0, (t[0]).len, 69) < 0 && dy_find((t[0]).p, 0, (t[0]).len, 46) < 0) {
   bb_puts(b, ".0");
 }
-  free((t[0]).p);
-  free((uint8_t*)(t));
+  flow_mem_free((t[0]).p);
+  flow_mem_free((uint8_t*)(t));
 }
 
 Dp* dy_prog_new(int32_t cap0) {
   int32_t cap = (cap0 + 8);
-  Dp* g = (Dp*)((Dp*)(malloc(2048)));
+  Dp* g = (Dp*)((Dp*)(flow_mem_malloc(2048)));
   (g[0]).cap = cap;
   (g[0]).nsy = 0;
   { __typeof__((g[0]).sy_name) __flowc_st4952 = dy_i32s(cap); (g[0]).sy_name = __flowc_st4952; }
@@ -20287,12 +20392,12 @@ int32_t dy_block(uint8_t* p, int32_t* ls, int32_t* le, int32_t nl, int32_t start
 }
 }
   if (depth <= 0 && i > start) {
-  free((uint8_t*)(se));
+  flow_mem_free((uint8_t*)(se));
   return (i + 1);
 }
   i = (i + 1);
 }
-  free((uint8_t*)(se));
+  flow_mem_free((uint8_t*)(se));
   return i;
 }
 
@@ -20321,7 +20426,7 @@ int32_t dy_block_keep(uint8_t* p, int32_t* ls, int32_t* le, int32_t nl, int32_t 
   nb[0] = (nb[0] + 1);
 }
 } else {
-  free((uint8_t*)(se));
+  flow_mem_free((uint8_t*)(se));
   return (i + 1);
 }
 } else {
@@ -20351,13 +20456,13 @@ int32_t dy_block_keep(uint8_t* p, int32_t* ls, int32_t* le, int32_t nl, int32_t 
   be[nb[0]] = se[1];
   nb[0] = (nb[0] + 1);
 }
-  free((uint8_t*)(se));
+  flow_mem_free((uint8_t*)(se));
   return (i + 1);
 }
 }
   i = (i + 1);
 }
-  free((uint8_t*)(se));
+  flow_mem_free((uint8_t*)(se));
   return i;
 }
 
@@ -20370,15 +20475,15 @@ int32_t dy_floats(DyC* c, uint8_t* p, int32_t s, int32_t e, int32_t* f0) {
   while (k < n) {
   double v = dy_float(c, p, ws[k], we[k]);
   if ((c[0]).err != 0) {
-  free((uint8_t*)(ws));
-  free((uint8_t*)(we));
+  flow_mem_free((uint8_t*)(ws));
+  flow_mem_free((uint8_t*)(we));
   return 0;
 }
   dy_fpush(c, v);
   k = (k + 1);
 }
-  free((uint8_t*)(ws));
-  free((uint8_t*)(we));
+  flow_mem_free((uint8_t*)(ws));
+  flow_mem_free((uint8_t*)(we));
   return n;
 }
 
@@ -20429,8 +20534,8 @@ void dy_parse_nmp(DyC* c, uint8_t* p, int32_t s, int32_t e, int64_t* nv, int64_t
   k2 = (k2 + 1);
 }
 }
-  free((uint8_t*)(ws));
-  free((uint8_t*)(we));
+  flow_mem_free((uint8_t*)(ws));
+  flow_mem_free((uint8_t*)(we));
 }
 
 int64_t dy_int_part(DyC* c, uint8_t* p, int32_t s, int32_t e, int32_t k) {
@@ -20443,8 +20548,8 @@ int64_t dy_int_part(DyC* c, uint8_t* p, int32_t s, int32_t e, int32_t k) {
 } else {
   v = dy_int(c, p, ws[k], we[k]);
 }
-  free((uint8_t*)(ws));
-  free((uint8_t*)(we));
+  flow_mem_free((uint8_t*)(ws));
+  flow_mem_free((uint8_t*)(we));
   return v;
 }
 
@@ -20458,8 +20563,8 @@ double dy_float_part(DyC* c, uint8_t* p, int32_t s, int32_t e, int32_t k) {
 } else {
   v = dy_float(c, p, ws[k], we[k]);
 }
-  free((uint8_t*)(ws));
-  free((uint8_t*)(we));
+  flow_mem_free((uint8_t*)(ws));
+  flow_mem_free((uint8_t*)(we));
   return v;
 }
 
@@ -20473,8 +20578,8 @@ int32_t dy_name_part(DyC* c, uint8_t* p, int32_t s, int32_t e, int32_t k) {
 } else {
   v = dy_name(c, p, ws[k], we[k]);
 }
-  free((uint8_t*)(ws));
-  free((uint8_t*)(we));
+  flow_mem_free((uint8_t*)(ws));
+  flow_mem_free((uint8_t*)(we));
   return v;
 }
 
@@ -20486,7 +20591,7 @@ void dy_parse_at(DyC* c, uint8_t* p, int32_t s0, int32_t e0, Dp* g, int32_t r) {
   (g[0]).rp_at0[r] = (c[0]).nat;
   (g[0]).rp_atn[r] = 0;
   if (se[0] >= se[1]) {
-  free((uint8_t*)(se));
+  flow_mem_free((uint8_t*)(se));
   return;
 }
   int32_t k = se[0];
@@ -20507,8 +20612,8 @@ void dy_parse_at(DyC* c, uint8_t* p, int32_t s0, int32_t e0, Dp* g, int32_t r) {
   bb_puts(m, "invalid `at` binding '");
   bb_put_span(m, p, pa[0], pa[1]);
   bb_puts(m, "' in represent linear; expected name: value");
-  free((uint8_t*)(pa));
-  free((uint8_t*)(se));
+  flow_mem_free((uint8_t*)(pa));
+  flow_mem_free((uint8_t*)(se));
   return;
 }
   int32_t* nm = (int32_t*)(dy_i32s(2));
@@ -20550,10 +20655,10 @@ void dy_parse_at(DyC* c, uint8_t* p, int32_t s0, int32_t e0, Dp* g, int32_t r) {
   (g[0]).rp_atn[r] = ((g[0]).rp_atn[r] + 1);
 }
 }
-  free((uint8_t*)(pa));
+  flow_mem_free((uint8_t*)(pa));
   k = (j + 1);
 }
-  free((uint8_t*)(se));
+  flow_mem_free((uint8_t*)(se));
 }
 
 int32_t dy_name_list(DyC* c, uint8_t* p, int32_t s0, int32_t e0) {
@@ -20831,17 +20936,17 @@ int32_t dy_rep_head(uint8_t* p, int32_t s, int32_t e, int32_t* caps) {
   if (a >= 0) {
   caps[2] = sub[0];
   caps[3] = sub[1];
-  free((uint8_t*)(sub));
+  flow_mem_free((uint8_t*)(sub));
   return 1;
 }
   int32_t b = dy_match(p, k, e, "^@~{", sub);
   if (b >= 0) {
   caps[2] = sub[0];
   caps[3] = sub[1];
-  free((uint8_t*)(sub));
+  flow_mem_free((uint8_t*)(sub));
   return 1;
 }
-  free((uint8_t*)(sub));
+  flow_mem_free((uint8_t*)(sub));
   if (dy_match(p, k, e, "~{", sub) >= 0) {
   return 1;
 }
@@ -22978,7 +23083,7 @@ int32_t flowc_dynamics_has_dsl(uint8_t* p, int32_t n) {
 }
   i = (i + 1);
 }
-  free((uint8_t*)(caps));
+  flow_mem_free((uint8_t*)(caps));
   return r;
 }
 
@@ -22995,8 +23100,8 @@ void dy_prepend(ByteBuf* b, const char* lit) {
   bb_put_span(t, (b[0]).p, 0, (b[0]).len);
   (b[0]).len = 0;
   bb_put_span(b, (t[0]).p, 0, (t[0]).len);
-  free((t[0]).p);
-  free((uint8_t*)(t));
+  flow_mem_free((t[0]).p);
+  flow_mem_free((uint8_t*)(t));
 }
 
 int32_t dy_find_main_call(uint8_t* p, int32_t n) {
@@ -23129,7 +23234,7 @@ int32_t dy_expand(DyC* c, uint8_t* p, int32_t n, ByteBuf* out) {
 }
 
 DyC* dy_ctx_new(int32_t n) {
-  DyC* c = (DyC*)((DyC*)(malloc(256)));
+  DyC* c = (DyC*)((DyC*)(flow_mem_malloc(256)));
   (c[0]).err = 0;
   { __typeof__((c[0]).msg) __flowc_st22382 = bb_new(256); (c[0]).msg = __flowc_st22382; }
   { __typeof__((c[0]).nm) __flowc_st22391 = bb_new((n + 256)); (c[0]).nm = __flowc_st22391; }
@@ -24398,7 +24503,7 @@ int32_t fb_lex(Fb* c) {
   int32_t i = 0;
   int32_t line = 1;
   int32_t col = 1;
-  int32_t* box = (int32_t*)((int32_t*)(malloc(8)));
+  int32_t* box = (int32_t*)((int32_t*)(flow_mem_malloc(8)));
   int32_t rc = 0;
   while (i < n && rc == 0) {
   uint8_t ch = p[i];
@@ -24436,7 +24541,7 @@ int32_t fb_lex(Fb* c) {
 }
 }
   fb_add_tok(c, TK_EOF, 0, n, n, line, col);
-  free((uint8_t*)(box));
+  flow_mem_free((uint8_t*)(box));
   return rc;
 }
 
@@ -24776,15 +24881,15 @@ int32_t fb_node(Fb* c, int32_t kind, int32_t tok) {
   if (id >= (c[0]).ncap) {
   int32_t ncap = (((c[0]).ncap * 2) + 64);
   int64_t bytes = ((int64_t)(ncap) * 4);
-  { __typeof__((c[0]).nk) __flowc_st4839 = (int32_t*)(realloc((uint8_t*)((c[0]).nk), bytes)); (c[0]).nk = __flowc_st4839; }
-  { __typeof__((c[0]).nop) __flowc_st4856 = (int32_t*)(realloc((uint8_t*)((c[0]).nop), bytes)); (c[0]).nop = __flowc_st4856; }
-  { __typeof__((c[0]).ntok) __flowc_st4873 = (int32_t*)(realloc((uint8_t*)((c[0]).ntok), bytes)); (c[0]).ntok = __flowc_st4873; }
-  { __typeof__((c[0]).na) __flowc_st4890 = (int32_t*)(realloc((uint8_t*)((c[0]).na), bytes)); (c[0]).na = __flowc_st4890; }
-  { __typeof__((c[0]).nb) __flowc_st4907 = (int32_t*)(realloc((uint8_t*)((c[0]).nb), bytes)); (c[0]).nb = __flowc_st4907; }
-  { __typeof__((c[0]).nc) __flowc_st4924 = (int32_t*)(realloc((uint8_t*)((c[0]).nc), bytes)); (c[0]).nc = __flowc_st4924; }
-  { __typeof__((c[0]).nx) __flowc_st4941 = (int32_t*)(realloc((uint8_t*)((c[0]).nx), bytes)); (c[0]).nx = __flowc_st4941; }
-  { __typeof__((c[0]).nfs) __flowc_st4958 = (int32_t*)(realloc((uint8_t*)((c[0]).nfs), bytes)); (c[0]).nfs = __flowc_st4958; }
-  { __typeof__((c[0]).nfe) __flowc_st4975 = (int32_t*)(realloc((uint8_t*)((c[0]).nfe), bytes)); (c[0]).nfe = __flowc_st4975; }
+  { __typeof__((c[0]).nk) __flowc_st4839 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).nk), bytes)); (c[0]).nk = __flowc_st4839; }
+  { __typeof__((c[0]).nop) __flowc_st4856 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).nop), bytes)); (c[0]).nop = __flowc_st4856; }
+  { __typeof__((c[0]).ntok) __flowc_st4873 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).ntok), bytes)); (c[0]).ntok = __flowc_st4873; }
+  { __typeof__((c[0]).na) __flowc_st4890 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).na), bytes)); (c[0]).na = __flowc_st4890; }
+  { __typeof__((c[0]).nb) __flowc_st4907 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).nb), bytes)); (c[0]).nb = __flowc_st4907; }
+  { __typeof__((c[0]).nc) __flowc_st4924 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).nc), bytes)); (c[0]).nc = __flowc_st4924; }
+  { __typeof__((c[0]).nx) __flowc_st4941 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).nx), bytes)); (c[0]).nx = __flowc_st4941; }
+  { __typeof__((c[0]).nfs) __flowc_st4958 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).nfs), bytes)); (c[0]).nfs = __flowc_st4958; }
+  { __typeof__((c[0]).nfe) __flowc_st4975 = (int32_t*)(flow_mem_realloc((uint8_t*)((c[0]).nfe), bytes)); (c[0]).nfe = __flowc_st4975; }
   (c[0]).ncap = ncap;
 }
   (c[0]).nk[id] = kind;
@@ -26526,8 +26631,8 @@ int32_t fb_parse_solver(Fb* c, int32_t f) {
 }
   int32_t have_dt = 0;
   int32_t method = (0 - 1);
-  int64_t* nsbox = (int64_t*)((int64_t*)(malloc(8)));
-  int32_t* txbox = (int32_t*)((int32_t*)(malloc(4)));
+  int64_t* nsbox = (int64_t*)((int64_t*)(flow_mem_malloc(8)));
+  int32_t* txbox = (int32_t*)((int32_t*)(flow_mem_malloc(4)));
   ByteBuf* wb = (ByteBuf*)(bb_new(64));
   bb_puts(wb, "the solver dt of flow '");
   fb_put_fname(wb, c, f);
@@ -26589,8 +26694,8 @@ int32_t fb_parse_solver(Fb* c, int32_t f) {
 }
 }
 }
-  free((uint8_t*)(nsbox));
-  free((uint8_t*)(txbox));
+  flow_mem_free((uint8_t*)(nsbox));
+  flow_mem_free((uint8_t*)(txbox));
   if (rc < 0) {
   return (0 - 1);
 }
@@ -26721,8 +26826,8 @@ int32_t fb_parse_flow_item(Fb* c, int32_t f) {
   bb_puts(wb, "'");
   int32_t where_s = fb_intern_buf(c, wb);
   bb_free(wb);
-  int64_t* nsbox = (int64_t*)((int64_t*)(malloc(8)));
-  int32_t* txbox = (int32_t*)((int32_t*)(malloc(4)));
+  int64_t* nsbox = (int64_t*)((int64_t*)(flow_mem_malloc(8)));
+  int32_t* txbox = (int32_t*)((int32_t*)(flow_mem_malloc(4)));
   int32_t drc = fb_parse_duration(c, where_s, nsbox, txbox);
   int32_t ev = (c[0]).ney;
   if (drc == 0) {
@@ -26732,8 +26837,8 @@ int32_t fb_parse_flow_item(Fb* c, int32_t f) {
   (c[0]).ey_line[ev] = (c[0]).tl[t];
   (c[0]).ney = (ev + 1);
 }
-  free((uint8_t*)(nsbox));
-  free((uint8_t*)(txbox));
+  flow_mem_free((uint8_t*)(nsbox));
+  flow_mem_free((uint8_t*)(txbox));
   if (drc < 0) {
   return (0 - 1);
 }
@@ -27071,17 +27176,17 @@ int32_t fb_check_pure(Fb* c, int32_t x, int32_t f, int32_t where_s, int32_t line
 }
   return 0;
 }
-  int32_t* kids = (int32_t*)((int32_t*)(malloc(256)));
+  int32_t* kids = (int32_t*)((int32_t*)(flow_mem_malloc(256)));
   int32_t nk = fb_children(c, x, kids);
   int32_t i = 0;
   while (i < nk) {
   if (fb_check_pure(c, kids[i], f, where_s, line) < 0) {
-  free((uint8_t*)(kids));
+  flow_mem_free((uint8_t*)(kids));
   return (0 - 1);
 }
   i = (i + 1);
 }
-  free((uint8_t*)(kids));
+  flow_mem_free((uint8_t*)(kids));
   return 0;
 }
 
@@ -27123,17 +27228,17 @@ int32_t fb_check_threshold(Fb* c, int32_t x, int32_t f, int32_t w) {
   return (0 - 1);
 }
   if (k == N_BIN || k == N_UN || k == N_CAST) {
-  int32_t* kids = (int32_t*)((int32_t*)(malloc(256)));
+  int32_t* kids = (int32_t*)((int32_t*)(flow_mem_malloc(256)));
   int32_t nk = fb_children(c, x, kids);
   int32_t i = 0;
   while (i < nk) {
   if (fb_check_threshold(c, kids[i], f, w) < 0) {
-  free((uint8_t*)(kids));
+  flow_mem_free((uint8_t*)(kids));
   return (0 - 1);
 }
   i = (i + 1);
 }
-  free((uint8_t*)(kids));
+  flow_mem_free((uint8_t*)(kids));
   return 0;
 }
   ByteBuf* m2 = (ByteBuf*)(fb_verr(c, (c[0]).wh_line[w]));
@@ -27196,7 +27301,7 @@ int32_t fb_refs_inputs(Fb* c, int32_t x, int32_t f) {
 }
   return 0;
 }
-  int32_t* kids = (int32_t*)((int32_t*)(malloc(256)));
+  int32_t* kids = (int32_t*)((int32_t*)(flow_mem_malloc(256)));
   int32_t nk = fb_children(c, x, kids);
   int32_t i = 0;
   int32_t r = 0;
@@ -27204,7 +27309,7 @@ int32_t fb_refs_inputs(Fb* c, int32_t x, int32_t f) {
   r = fb_refs_inputs(c, kids[i], f);
   i = (i + 1);
 }
-  free((uint8_t*)(kids));
+  flow_mem_free((uint8_t*)(kids));
   return r;
 }
 
@@ -27244,7 +27349,7 @@ void fb_put_sorted_params(Fb* c, ByteBuf* b, int32_t sf) {
   bb_puts(b, "(none)");
   return;
 }
-  int32_t* used = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 1)) * 4))));
+  int32_t* used = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((n + 1)) * 4))));
   int32_t i = 0;
   while (i < n) {
   used[i] = 0;
@@ -27275,11 +27380,11 @@ void fb_put_sorted_params(Fb* c, ByteBuf* b, int32_t sf) {
   bb_puts(b, (const char*)(fb_s(c, (c[0]).mm_name[fb_nth_member(c, sf, MK_PARAM, best)])));
   k = (k + 1);
 }
-  free((uint8_t*)(used));
+  flow_mem_free((uint8_t*)(used));
 }
 
 int32_t fb_expand_pipelines(Fb* c, int32_t f) {
-  int32_t* stages = (int32_t*)((int32_t*)(malloc(4096)));
+  int32_t* stages = (int32_t*)((int32_t*)(flow_mem_malloc(4096)));
   int32_t nouts = fb_count_members(c, f, MK_OUTPUT);
   int32_t oi = 0;
   while (oi < nouts) {
@@ -27304,7 +27409,7 @@ int32_t fb_expand_pipelines(Fb* c, int32_t f) {
   bb_puts(m, "' names '");
   bb_puts(m, (const char*)(fb_s(c, sname)));
   bb_puts(m, "', which is not a flow");
-  free((uint8_t*)(stages));
+  flow_mem_free((uint8_t*)(stages));
   return (0 - 1);
 }
   stages[(ns * 2)] = sf;
@@ -27323,7 +27428,7 @@ int32_t fb_expand_pipelines(Fb* c, int32_t f) {
   bb_puts(m2, "' of '");
   fb_put_fname(m2, c, f);
   bb_puts(m2, "' takes only the piped value");
-  free((uint8_t*)(stages));
+  flow_mem_free((uint8_t*)(stages));
   return (0 - 1);
 }
   stages[(ns * 2)] = cf;
@@ -27354,7 +27459,7 @@ int32_t fb_expand_pipelines(Fb* c, int32_t f) {
   bb_puts(m3, "' of '");
   fb_put_fname(m3, c, f);
   bb_puts(m3, "' must start from a port (an input/state, or `child.port`)");
-  free((uint8_t*)(stages));
+  flow_mem_free((uint8_t*)(stages));
   return (0 - 1);
 }
   int32_t prev_m = src_m;
@@ -27386,7 +27491,7 @@ int32_t fb_expand_pipelines(Fb* c, int32_t f) {
   ByteBuf* h = (ByteBuf*)(fb_err_hint(c));
   bb_puts(h, "stage overrides set `param` fields; declared params are: ");
   fb_put_sorted_params(c, h, sf2);
-  free((uint8_t*)(stages));
+  flow_mem_free((uint8_t*)(stages));
   return (0 - 1);
 }
   pk = (c[0]).nx[pk];
@@ -27396,12 +27501,12 @@ int32_t fb_expand_pipelines(Fb* c, int32_t f) {
   (c[0]).mm_params[ch] = params;
   int32_t in_port = fb_single_port(c, sf2, MK_INPUT, "input", line);
   if (in_port < 0) {
-  free((uint8_t*)(stages));
+  flow_mem_free((uint8_t*)(stages));
   return (0 - 1);
 }
   int32_t out_port = fb_single_port(c, sf2, MK_OUTPUT, "output", line);
   if (out_port < 0) {
-  free((uint8_t*)(stages));
+  flow_mem_free((uint8_t*)(stages));
   return (0 - 1);
 }
   fb_add_conn(c, f, prev_m, prev_p, child_name, (c[0]).mm_name[in_port], line);
@@ -27414,7 +27519,7 @@ int32_t fb_expand_pipelines(Fb* c, int32_t f) {
 }
   oi = (oi + 1);
 }
-  free((uint8_t*)(stages));
+  flow_mem_free((uint8_t*)(stages));
   return 0;
 }
 
@@ -27855,10 +27960,10 @@ int32_t fb_check_loops(Fb* c, int32_t f) {
   if (n == 0) {
   return 0;
 }
-  int32_t* state = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 1)) * 4))));
-  int32_t* stack = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 1)) * 4))));
-  int32_t* sp = (int32_t*)((int32_t*)(malloc(4)));
-  int32_t* cyc = (int32_t*)((int32_t*)(malloc(8)));
+  int32_t* state = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((n + 1)) * 4))));
+  int32_t* stack = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((n + 1)) * 4))));
+  int32_t* sp = (int32_t*)((int32_t*)(flow_mem_malloc(4)));
+  int32_t* cyc = (int32_t*)((int32_t*)(flow_mem_malloc(8)));
   int32_t k = 0;
   while (k < n) {
   state[k] = 0;
@@ -27925,10 +28030,10 @@ int32_t fb_check_loops(Fb* c, int32_t f) {
   bb_puts(fb_err_hint(c), "break the loop with a state (or an output mapped from a state); Modelica-style algebraic solvers are out of scope");
   rc = (0 - 1);
 }
-  free((uint8_t*)(state));
-  free((uint8_t*)(stack));
-  free((uint8_t*)(sp));
-  free((uint8_t*)(cyc));
+  flow_mem_free((uint8_t*)(state));
+  flow_mem_free((uint8_t*)(stack));
+  flow_mem_free((uint8_t*)(sp));
+  flow_mem_free((uint8_t*)(cyc));
   return rc;
 }
 
@@ -29158,8 +29263,8 @@ void fb_emit_event(Fb* c, ByteBuf* b, int32_t f, int32_t k) {
 
 int32_t fb_topo_children(Fb* c, int32_t f, int32_t* order) {
   int32_t n = fb_count_members(c, f, MK_CHILD);
-  int32_t* indeg = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 1)) * 4))));
-  int32_t* done = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 1)) * 4))));
+  int32_t* indeg = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((n + 1)) * 4))));
+  int32_t* done = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((n + 1)) * 4))));
   int32_t k = 0;
   while (k < n) {
   indeg[k] = 0;
@@ -29214,8 +29319,8 @@ int32_t fb_topo_children(Fb* c, int32_t f, int32_t* order) {
   k = (k + 1);
 }
 }
-  free((uint8_t*)(indeg));
-  free((uint8_t*)(done));
+  flow_mem_free((uint8_t*)(indeg));
+  flow_mem_free((uint8_t*)(done));
   return n;
 }
 
@@ -29224,7 +29329,7 @@ void fb_emit_child_steps(Fb* c, ByteBuf* b, int32_t f) {
   if (n == 0) {
   return;
 }
-  int32_t* order = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 1)) * 4))));
+  int32_t* order = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((n + 1)) * 4))));
   fb_topo_children(c, f, order);
   int32_t k = 0;
   while (k < n) {
@@ -29254,7 +29359,7 @@ void fb_emit_child_steps(Fb* c, ByteBuf* b, int32_t f) {
   bb_puts(b, ", dt); ");
   k = (k + 1);
 }
-  free((uint8_t*)(order));
+  flow_mem_free((uint8_t*)(order));
 }
 
 int32_t fb_count_clauses(Fb* c, int32_t f) {
@@ -29540,11 +29645,11 @@ void fb_lower_flow(Fb* c, int32_t f) {
 }
 
 int32_t* fb_alloc_i32(int32_t n) {
-  return (int32_t*)(malloc(((int64_t)((n + 1)) * 4)));
+  return (int32_t*)(flow_mem_malloc(((int64_t)((n + 1)) * 4)));
 }
 
 Fb* fb_ctx_new(uint8_t* src, int32_t n) {
-  Fb* c = (Fb*)((Fb*)(malloc(4096)));
+  Fb* c = (Fb*)((Fb*)(flow_mem_malloc(4096)));
   (c[0]).src = src;
   (c[0]).n = n;
   int32_t tcap = (n + 2);
@@ -29575,7 +29680,7 @@ Fb* fb_ctx_new(uint8_t* src, int32_t n) {
   { __typeof__((c[0]).f_start) __flowc_st27913 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_start = __flowc_st27913; }
   { __typeof__((c[0]).f_end) __flowc_st27920 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_end = __flowc_st27920; }
   { __typeof__((c[0]).f_solver) __flowc_st27927 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_solver = __flowc_st27927; }
-  { __typeof__((c[0]).f_dt_ns) __flowc_st27943 = (int64_t*)(malloc(((int64_t)((FB_MAX_FLOWS + 1)) * 8))); (c[0]).f_dt_ns = __flowc_st27943; }
+  { __typeof__((c[0]).f_dt_ns) __flowc_st27943 = (int64_t*)(flow_mem_malloc(((int64_t)((FB_MAX_FLOWS + 1)) * 8))); (c[0]).f_dt_ns = __flowc_st27943; }
   { __typeof__((c[0]).f_dt_text) __flowc_st27950 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_dt_text = __flowc_st27950; }
   { __typeof__((c[0]).f_method) __flowc_st27957 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_method = __flowc_st27957; }
   { __typeof__((c[0]).f_solver_line) __flowc_st27964 = fb_alloc_i32(FB_MAX_FLOWS); (c[0]).f_solver_line = __flowc_st27964; }
@@ -29607,7 +29712,7 @@ Fb* fb_ctx_new(uint8_t* src, int32_t n) {
   { __typeof__((c[0]).wh_line) __flowc_st28142 = fb_alloc_i32(icap); (c[0]).wh_line = __flowc_st28142; }
   (c[0]).ney = 0;
   { __typeof__((c[0]).ey_flow) __flowc_st28155 = fb_alloc_i32(icap); (c[0]).ey_flow = __flowc_st28155; }
-  { __typeof__((c[0]).ey_ns) __flowc_st28171 = (int64_t*)(malloc(((int64_t)((icap + 1)) * 8))); (c[0]).ey_ns = __flowc_st28171; }
+  { __typeof__((c[0]).ey_ns) __flowc_st28171 = (int64_t*)(flow_mem_malloc(((int64_t)((icap + 1)) * 8))); (c[0]).ey_ns = __flowc_st28171; }
   { __typeof__((c[0]).ey_text) __flowc_st28178 = fb_alloc_i32(icap); (c[0]).ey_text = __flowc_st28178; }
   { __typeof__((c[0]).ey_line) __flowc_st28185 = fb_alloc_i32(icap); (c[0]).ey_line = __flowc_st28185; }
   (c[0]).nbc = 0;
@@ -29648,27 +29753,27 @@ Fb* fb_ctx_new(uint8_t* src, int32_t n) {
 }
 
 void fb_ctx_free(Fb* c) {
-  free((uint8_t*)((c[0]).tk));
-  free((uint8_t*)((c[0]).top));
-  free((uint8_t*)((c[0]).ts));
-  free((uint8_t*)((c[0]).te));
-  free((uint8_t*)((c[0]).tl));
-  free((uint8_t*)((c[0]).tc));
-  free((uint8_t*)((c[0]).tvar));
-  free((uint8_t*)((c[0]).nk));
-  free((uint8_t*)((c[0]).nop));
-  free((uint8_t*)((c[0]).ntok));
-  free((uint8_t*)((c[0]).na));
-  free((uint8_t*)((c[0]).nb));
-  free((uint8_t*)((c[0]).nc));
-  free((uint8_t*)((c[0]).nx));
-  free((uint8_t*)((c[0]).nfs));
-  free((uint8_t*)((c[0]).nfe));
+  flow_mem_free((uint8_t*)((c[0]).tk));
+  flow_mem_free((uint8_t*)((c[0]).top));
+  flow_mem_free((uint8_t*)((c[0]).ts));
+  flow_mem_free((uint8_t*)((c[0]).te));
+  flow_mem_free((uint8_t*)((c[0]).tl));
+  flow_mem_free((uint8_t*)((c[0]).tc));
+  flow_mem_free((uint8_t*)((c[0]).tvar));
+  flow_mem_free((uint8_t*)((c[0]).nk));
+  flow_mem_free((uint8_t*)((c[0]).nop));
+  flow_mem_free((uint8_t*)((c[0]).ntok));
+  flow_mem_free((uint8_t*)((c[0]).na));
+  flow_mem_free((uint8_t*)((c[0]).nb));
+  flow_mem_free((uint8_t*)((c[0]).nc));
+  flow_mem_free((uint8_t*)((c[0]).nx));
+  flow_mem_free((uint8_t*)((c[0]).nfs));
+  flow_mem_free((uint8_t*)((c[0]).nfe));
   bb_free((c[0]).nm);
   bb_free((c[0]).emsg);
   bb_free((c[0]).ehint);
   bb_free((c[0]).out);
-  free((uint8_t*)(c));
+  flow_mem_free((uint8_t*)(c));
 }
 
 int32_t fb_decl_name(Fb* c, int32_t t) {
@@ -29822,7 +29927,7 @@ int32_t fb_expand(Fb* c) {
   int32_t* flows = (int32_t*)(fb_alloc_i32(FB_MAX_FLOWS));
   int32_t nfl = fb_scan(c, flows);
   if (nfl == 0) {
-  free((uint8_t*)(flows));
+  flow_mem_free((uint8_t*)(flows));
   return 0;
 }
   int32_t f = 0;
@@ -29834,12 +29939,12 @@ int32_t fb_expand(Fb* c) {
   (c[0]).pos = flows[f];
   (c[0]).nf = (f + 1);
   if (fb_parse_flow(c, f) < 0) {
-  free((uint8_t*)(flows));
+  flow_mem_free((uint8_t*)(flows));
   return (0 - 1);
 }
   f = (f + 1);
 }
-  free((uint8_t*)(flows));
+  flow_mem_free((uint8_t*)(flows));
   f = 0;
   while (f < nfl) {
   int32_t g = 0;
@@ -36413,9 +36518,9 @@ const char* pdg_sub(const char* s, int32_t a, int32_t b) {
   if (hi <= lo) {
   return "";
 }
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)(((hi - lo) + 1))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)(((hi - lo) + 1))));
   uint8_t* p = (uint8_t*)(s);
-  memcpy(buf, (p + lo), (int64_t)((hi - lo)));
+  flow_mem_memcpy(buf, (p + lo), (int64_t)((hi - lo)));
   buf[(hi - lo)] = 0;
   return (const char*)(buf);
 }
@@ -36555,7 +36660,7 @@ const char* pdg_replace(const char* s, const char* needle, const char* repl) {
 const char* pdg_lower(const char* s) {
   int32_t n = pdg_len(s);
   uint8_t* p = (uint8_t*)(s);
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)((n + 1))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)((n + 1))));
   int32_t i = 0;
   while (i < n) {
   uint8_t c = p[i];
@@ -36574,14 +36679,14 @@ const char* pdg_itoa(int32_t v) {
   if (v == 0) {
   return "0";
 }
-  uint8_t* buf = (uint8_t*)(malloc(16));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc(16));
   int32_t x = v;
   int32_t neg = 0;
   if (x < 0) {
   neg = 1;
   x = (0 - x);
 }
-  uint8_t* tmp = (uint8_t*)(malloc(16));
+  uint8_t* tmp = (uint8_t*)(flow_mem_malloc(16));
   int32_t k = 0;
   while (x > 0) {
   tmp[k] = ((x % 10) + 48);
@@ -36609,8 +36714,8 @@ const char* pdg_upper_first(const char* s) {
 }
   uint8_t* p = (uint8_t*)(s);
   if (p[0] >= 97 && p[0] <= 122) {
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)((n + 1))));
-  memcpy(buf, p, (int64_t)((n + 1)));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)((n + 1))));
+  flow_mem_memcpy(buf, p, (int64_t)((n + 1)));
   buf[0] = (p[0] - 32);
   return (const char*)(buf);
 }
@@ -36624,8 +36729,8 @@ const char* pdg_lower_first(const char* s) {
 }
   uint8_t* p = (uint8_t*)(s);
   if (p[0] >= 65 && p[0] <= 90) {
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)((n + 1))));
-  memcpy(buf, p, (int64_t)((n + 1)));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)((n + 1))));
+  flow_mem_memcpy(buf, p, (int64_t)((n + 1)));
   buf[0] = (p[0] + 32);
   return (const char*)(buf);
 }
@@ -36648,7 +36753,7 @@ const char* pdg_rstrip_dots(const char* s) {
 const char* pdg_collapse_ws(const char* s) {
   int32_t n = pdg_len(s);
   uint8_t* p = (uint8_t*)(s);
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)((n + 1))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)((n + 1))));
   int32_t o = 0;
   int32_t i = 0;
   while (i < n) {
@@ -36791,7 +36896,7 @@ void pdg_meta_set(PdgThm* t, const char* key, const char* val) {
 void pdg_push_step(PdgDoc* d, int32_t kind, const char* text, const char* detail) {
   if ((d[0]).nstep >= (d[0]).cap_step) {
   int32_t ncap = (((d[0]).cap_step * 2) + 16);
-  PdgStep* nb = (PdgStep*)((PdgStep*)(malloc(((int64_t)(ncap) * 24))));
+  PdgStep* nb = (PdgStep*)((PdgStep*)(flow_mem_malloc(((int64_t)(ncap) * 24))));
   int32_t i = 0;
   while (i < (d[0]).nstep) {
   nb[i] = (d[0]).steps[i];
@@ -36959,12 +37064,12 @@ const char* pdg_let_line(const char* line) {
 
 const char* pdg_parse_steps(PdgDoc* d, const char* body) {
   int32_t cap = pdg_count_lines(body);
-  int32_t* starts = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
-  int32_t* ends = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t* starts = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(cap) * 4))));
+  int32_t* ends = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(cap) * 4))));
   int32_t nl = pdg_split_lines(body, starts, ends, cap);
   const char* claim = "";
-  int32_t* cs = (int32_t*)((int32_t*)(malloc(8)));
-  int32_t* ok = (int32_t*)((int32_t*)(malloc(8)));
+  int32_t* cs = (int32_t*)((int32_t*)(flow_mem_malloc(8)));
+  int32_t* ok = (int32_t*)((int32_t*)(flow_mem_malloc(8)));
   int32_t li = 0;
   while (li < nl) {
   const char* line = pdg_strip(pdg_sub(body, starts[li], ends[li]));
@@ -37145,7 +37250,7 @@ int32_t pdg_brace_body(const char* text, int32_t open, const char** body_out) {
 int32_t pdg_push_thm(PdgDoc* d) {
   if ((d[0]).nthm >= (d[0]).cap_thm) {
   int32_t ncap = (((d[0]).cap_thm * 2) + 8);
-  PdgThm* nb = (PdgThm*)((PdgThm*)(malloc(((int64_t)(ncap) * 112))));
+  PdgThm* nb = (PdgThm*)((PdgThm*)(flow_mem_malloc(((int64_t)(ncap) * 112))));
   int32_t i = 0;
   while (i < (d[0]).nthm) {
   nb[i] = (d[0]).thms[i];
@@ -37174,12 +37279,12 @@ int32_t pdg_push_thm(PdgDoc* d) {
 }
 
 PdgDoc flowc_proof_parse_text(const char* text) {
-  PdgDoc d = (PdgDoc){ .modname = "", .means = "", .from_source = "", .tier = "", .thms = (PdgThm*)(malloc((8 * 112))), .nthm = 0, .cap_thm = 8, .steps = (PdgStep*)(malloc((64 * 24))), .nstep = 0, .cap_step = 64 };
-  const char** key = (const char**)((const char**)(malloc(16)));
-  const char** val = (const char**)((const char**)(malloc(16)));
+  PdgDoc d = (PdgDoc){ .modname = "", .means = "", .from_source = "", .tier = "", .thms = (PdgThm*)(flow_mem_malloc((8 * 112))), .nthm = 0, .cap_thm = 8, .steps = (PdgStep*)(flow_mem_malloc((64 * 24))), .nstep = 0, .cap_step = 64 };
+  const char** key = (const char**)((const char**)(flow_mem_malloc(16)));
+  const char** val = (const char**)((const char**)(flow_mem_malloc(16)));
   int32_t cap = pdg_count_lines(text);
-  int32_t* starts = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
-  int32_t* ends = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t* starts = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(cap) * 4))));
+  int32_t* ends = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(cap) * 4))));
   int32_t nl = pdg_split_lines(text, starts, ends, cap);
   int32_t li = 0;
   int32_t more = 1;
@@ -37202,16 +37307,16 @@ PdgDoc flowc_proof_parse_text(const char* text) {
   more = 0;
 }
 }
-  int32_t* m = (int32_t*)((int32_t*)(malloc(32)));
-  const char** body = (const char**)((const char**)(malloc(16)));
+  int32_t* m = (int32_t*)((int32_t*)(flow_mem_malloc(32)));
+  const char** body = (const char**)((const char**)(flow_mem_malloc(16)));
   int32_t n = pdg_len(text);
   int32_t pos = 0;
   while (pos < n && pdg_theorem_search(text, pos, m) == 1) {
   int32_t k = pdg_push_thm((&d));
   const char* pre = pdg_sub(text, 0, m[0]);
   int32_t pcap = pdg_count_lines(pre);
-  int32_t* ps = (int32_t*)((int32_t*)(malloc(((int64_t)(pcap) * 4))));
-  int32_t* pe = (int32_t*)((int32_t*)(malloc(((int64_t)(pcap) * 4))));
+  int32_t* ps = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(pcap) * 4))));
+  int32_t* pe = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(pcap) * 4))));
   int32_t pn = pdg_split_lines(pre, ps, pe, pcap);
   int32_t first_meta = pn;
   int32_t j = (pn - 1);
@@ -37268,13 +37373,13 @@ int32_t pdg_hash(const char* s) {
 
 PdgMap flowc_pdg_map_new(int32_t cap) {
   int32_t nslots = ((cap * 2) + 1);
-  int32_t* slots = (int32_t*)((int32_t*)(malloc(((int64_t)(nslots) * 4))));
+  int32_t* slots = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(nslots) * 4))));
   int32_t i = 0;
   while (i < nslots) {
   slots[i] = (0 - 1);
   i = (i + 1);
 }
-  return (PdgMap){ .keys = (const char**)(malloc(((int64_t)(cap) * 8))), .vals = (const char**)(malloc(((int64_t)(cap) * 8))), .n = 0, .cap = cap, .slots = slots, .nslots = nslots };
+  return (PdgMap){ .keys = (const char**)(flow_mem_malloc(((int64_t)(cap) * 8))), .vals = (const char**)(flow_mem_malloc(((int64_t)(cap) * 8))), .n = 0, .cap = cap, .slots = slots, .nslots = nslots };
 }
 
 int32_t pdg_map_find(PdgMap* m, const char* key) {
@@ -37371,7 +37476,7 @@ const char* flowc_proof_read(const char* path) {
   return "";
 }
   int32_t cap = ((int32_t)(size) + 1);
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)((cap + 1))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)((cap + 1))));
   int32_t n = flowc_read_file(path, buf, cap);
   if (n < 0) {
   buf[0] = 0;
@@ -37383,21 +37488,21 @@ const char* flowc_proof_read(const char* path) {
 
 const char** pdg_list_flow(const char* root, int32_t* out_n) {
   int32_t cap = 4194304;
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)(cap)));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)(cap)));
   const char* cmd = __flowc_str_concatn(5, "if [ -d '", root, "' ]; then find '", root, "' -name '*.flow' -type f | tr '/' '\\001' | LC_ALL=C sort | tr '\\001' '/'; fi");
   int32_t n = flowc_io_popen_read(cmd, buf, (cap - 1));
   int32_t count = 0;
   if (n <= 0) {
   out_n[0] = 0;
-  return (const char**)(malloc(8));
+  return (const char**)(flow_mem_malloc(8));
 }
   buf[n] = 0;
   const char* text = (const char*)(buf);
   int32_t lc = pdg_count_lines(text);
-  int32_t* starts = (int32_t*)((int32_t*)(malloc(((int64_t)(lc) * 4))));
-  int32_t* ends = (int32_t*)((int32_t*)(malloc(((int64_t)(lc) * 4))));
+  int32_t* starts = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(lc) * 4))));
+  int32_t* ends = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(lc) * 4))));
   int32_t nl = pdg_split_lines(text, starts, ends, lc);
-  const char** files = (const char**)((const char**)(malloc(((int64_t)((nl + 1)) * 8))));
+  const char** files = (const char**)((const char**)(flow_mem_malloc(((int64_t)((nl + 1)) * 8))));
   int32_t i = 0;
   while (i < nl) {
   if (ends[i] > starts[i]) {
@@ -37413,7 +37518,7 @@ const char** pdg_list_flow(const char* root, int32_t* out_n) {
 PdgMap flowc_proof_global_tiers(const char* root) {
   PdgMap idx = flowc_pdg_map_new(4096);
   PdgMap tiers = flowc_pdg_map_new(2048);
-  int32_t* cnt = (int32_t*)((int32_t*)(malloc(8)));
+  int32_t* cnt = (int32_t*)((int32_t*)(flow_mem_malloc(8)));
   int32_t r = 0;
   while (r < 2) {
   const char* dir = __flowc_str_concat(root, "/lib/verify");
@@ -37482,7 +37587,7 @@ PdgMap pdg_merged_tiers(PdgMap* global, PdgDoc* d) {
 
 const char* pdg_circled(int32_t n) {
   if (n >= 1 && n <= 20) {
-  uint8_t* buf = (uint8_t*)(malloc(4));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc(4));
   int32_t cp = ((9312 + n) - 1);
   buf[0] = (224 + (cp / 4096));
   buf[1] = (128 + ((cp / 64) % 64));
@@ -37543,9 +37648,9 @@ const char* pdg_join_labels(const char** labels, int32_t n) {
 }
 
 const char* pdg_fmt_refs(int32_t* nums, int32_t n) {
-  int32_t* u = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 1)) * 4))));
+  int32_t* u = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((n + 1)) * 4))));
   int32_t m = pdg_sorted_unique(nums, n, u);
-  const char** labels = (const char**)((const char**)(malloc(((int64_t)((m + 1)) * 8))));
+  const char** labels = (const char**)((const char**)(flow_mem_malloc(((int64_t)((m + 1)) * 8))));
   int32_t i = 0;
   while (i < m) {
   { __typeof__(labels[i]) __flowc_st5689 = __flowc_str_concat("step ", pdg_itoa(u[i])); labels[i] = __flowc_st5689; }
@@ -37816,7 +37921,7 @@ const char* pdg_sub_word(const char* s, const char* name, const char* value) {
 }
 
 const char* pdg_premise_latex(const char* ref, const char* args, const char* claim_expr, const char* params) {
-  const char** vals = (const char**)((const char**)(malloc(((int64_t)((pdg_count_commas(args) + 2)) * 8))));
+  const char** vals = (const char**)((const char**)(flow_mem_malloc(((int64_t)((pdg_count_commas(args) + 2)) * 8))));
   FlowcClaimAddress addr = flowc_claim_try_parse(ref);
   if ((addr).ok == 1) {
   const char* tmpl = pdg_premise_template(addr);
@@ -37832,7 +37937,7 @@ const char* pdg_premise_latex(const char* ref, const char* args, const char* cla
 }
 }
   if (pdg_len(claim_expr) > 0 && pdg_len(params) > 0) {
-  const char** names = (const char**)((const char**)(malloc(((int64_t)((pdg_count_commas(params) + 2)) * 8))));
+  const char** names = (const char**)((const char**)(flow_mem_malloc(((int64_t)((pdg_count_commas(params) + 2)) * 8))));
   int32_t nn = 0;
   int32_t np = pdg_len(params);
   uint8_t* pp = (uint8_t*)(params);
@@ -38092,7 +38197,7 @@ void pdg_add_line(PdgLine* lines, int32_t* n, int32_t number, const char* englis
   (lines[k]).english = english;
   (lines[k]).math = math;
   (lines[k]).is_goal = 0;
-  int32_t* r = (int32_t*)((int32_t*)(malloc(((int64_t)((nrefs + 1)) * 4))));
+  int32_t* r = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((nrefs + 1)) * 4))));
   int32_t i = 0;
   while (i < nrefs) {
   r[i] = refs[i];
@@ -38152,15 +38257,15 @@ int32_t pdg_is_case_analysis(PdgDoc* d, PdgThm* t) {
 }
 
 int32_t* pdg_one(int32_t v) {
-  int32_t* r = (int32_t*)((int32_t*)(malloc(8)));
+  int32_t* r = (int32_t*)((int32_t*)(flow_mem_malloc(8)));
   r[0] = v;
   return r;
 }
 
 int32_t pdg_tutorial(PdgDoc* d, PdgThm* t, PdgMap* tiers, PdgMap* cat, PdgLine* lines) {
-  int32_t* nl = (int32_t*)((int32_t*)(malloc(8)));
+  int32_t* nl = (int32_t*)((int32_t*)(flow_mem_malloc(8)));
   nl[0] = 0;
-  int32_t* none = (int32_t*)((int32_t*)(malloc(8)));
+  int32_t* none = (int32_t*)((int32_t*)(flow_mem_malloc(8)));
   (lines[0]).number = 0;
   { __typeof__((lines[0]).english) __flowc_st8422 = pdg_claim_sentence(t); (lines[0]).english = __flowc_st8422; }
   { __typeof__((lines[0]).math) __flowc_st8429 = pdg_claim_math_latex(t); (lines[0]).math = __flowc_st8429; }
@@ -38197,7 +38302,7 @@ int32_t pdg_tutorial(PdgDoc* d, PdgThm* t, PdgMap* tiers, PdgMap* cat, PdgLine* 
   int32_t in_base = induction;
   int32_t seen_else = 0;
   int32_t cap = ((t[0]).nsteps + 8);
-  int32_t* pending = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t* pending = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(cap) * 4))));
   int32_t npending = 0;
   int32_t therefore_count = 0;
   int32_t total_therefore = 0;
@@ -38209,14 +38314,14 @@ int32_t pdg_tutorial(PdgDoc* d, PdgThm* t, PdgMap* tiers, PdgMap* cat, PdgLine* 
   i0 = (i0 + 1);
 }
   int32_t current_case_step = (0 - 1);
-  int32_t* case_open = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t* case_open = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(cap) * 4))));
   int32_t ncase_open = 0;
   int32_t inductive_step_num = 0;
   int32_t base_case_step_num = 0;
   int32_t split_step_num = 0;
   int32_t meta_cap = ((cap * 2) + 8);
-  const char** meta_ref = (const char**)((const char**)(malloc(((int64_t)(meta_cap) * 8))));
-  int32_t* meta_has = (int32_t*)((int32_t*)(malloc(((int64_t)(meta_cap) * 4))));
+  const char** meta_ref = (const char**)((const char**)(flow_mem_malloc(((int64_t)(meta_cap) * 8))));
+  int32_t* meta_has = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(meta_cap) * 4))));
   int32_t z = 0;
   while (z < meta_cap) {
   meta_has[z] = 0;
@@ -38225,10 +38330,10 @@ int32_t pdg_tutorial(PdgDoc* d, PdgThm* t, PdgMap* tiers, PdgMap* cat, PdgLine* 
   if (case_analysis == 1 && nl[0] > 0 && (lines[(nl[0] - 1)]).is_goal == 0) {
   split_step_num = (lines[(nl[0] - 1)]).number;
 }
-  int32_t* premise = (int32_t*)((int32_t*)(malloc((((int64_t)(cap) * 4) + 8))));
-  const char** prem_labels = (const char**)((const char**)(malloc((((int64_t)(cap) * 8) + 8))));
-  const char** prem_claims = (const char**)((const char**)(malloc((((int64_t)(cap) * 8) + 8))));
-  int32_t* uniq = (int32_t*)((int32_t*)(malloc((((int64_t)(cap) * 4) + 8))));
+  int32_t* premise = (int32_t*)((int32_t*)(flow_mem_malloc((((int64_t)(cap) * 4) + 8))));
+  const char** prem_labels = (const char**)((const char**)(flow_mem_malloc((((int64_t)(cap) * 8) + 8))));
+  const char** prem_claims = (const char**)((const char**)(flow_mem_malloc((((int64_t)(cap) * 8) + 8))));
+  int32_t* uniq = (int32_t*)((int32_t*)(flow_mem_malloc((((int64_t)(cap) * 4) + 8))));
   int32_t si = 0;
   while (si < (t[0]).nsteps) {
   PdgStep st = (d[0]).steps[((t[0]).step0 + si)];
@@ -38436,7 +38541,7 @@ const char* pdg_render_thm_md(PdgDoc* d, PdgThm* t, PdgMap* tiers) {
   if (pdg_len((t[0]).from_source) > 0) {
   out = __flowc_str_concatn(4, out, "*Source: ", (t[0]).from_source, "*\n\n");
 }
-  const char** needs = (const char**)((const char**)(malloc(((int64_t)((pdg_count_commas((t[0]).needs) + 2)) * 8))));
+  const char** needs = (const char**)((const char**)(flow_mem_malloc(((int64_t)((pdg_count_commas((t[0]).needs) + 2)) * 8))));
   int32_t nn = pdg_needs((t[0]).needs, needs);
   if (nn > 0) {
   const char* s = "";
@@ -38450,7 +38555,7 @@ const char* pdg_render_thm_md(PdgDoc* d, PdgThm* t, PdgMap* tiers) {
 }
   out = __flowc_str_concatn(4, out, "*Built on: ", s, "*\n\n");
 }
-  PdgLine* lines = (PdgLine*)((PdgLine*)(malloc(((int64_t)(pdg_lines_cap(t)) * 48))));
+  PdgLine* lines = (PdgLine*)((PdgLine*)(flow_mem_malloc(((int64_t)(pdg_lines_cap(t)) * 48))));
   PdgMap none = flowc_pdg_map_new(4);
   int32_t n = pdg_tutorial(d, t, tiers, (&none), lines);
   if (n > 0 && (lines[0]).is_goal == 1) {
@@ -38550,7 +38655,7 @@ const char* pdg_render_thm_tex(PdgDoc* d, PdgThm* t, PdgMap* tiers, PdgMap* cat,
   if (pdg_len((t[0]).from_source) > 0) {
   out = __flowc_str_concatn(4, out, "\\smallskip\\noindent\\textit{Source: ", pdg_latex_escape((t[0]).from_source), "}\\par\n");
 }
-  const char** needs = (const char**)((const char**)(malloc(((int64_t)((pdg_count_commas((t[0]).needs) + 2)) * 8))));
+  const char** needs = (const char**)((const char**)(flow_mem_malloc(((int64_t)((pdg_count_commas((t[0]).needs) + 2)) * 8))));
   int32_t nn = pdg_needs((t[0]).needs, needs);
   if ((cat[0]).n > 0 && nn > 0) {
   const char* s = "";
@@ -38571,7 +38676,7 @@ const char* pdg_render_thm_tex(PdgDoc* d, PdgThm* t, PdgMap* tiers, PdgMap* cat,
 }
   out = __flowc_str_concatn(4, out, "\\smallskip\\noindent\\textit{Built on: ", s, "}\\par\n");
 }
-  PdgLine* lines = (PdgLine*)((PdgLine*)(malloc(((int64_t)(pdg_lines_cap(t)) * 48))));
+  PdgLine* lines = (PdgLine*)((PdgLine*)(flow_mem_malloc(((int64_t)(pdg_lines_cap(t)) * 48))));
   int32_t n = pdg_tutorial(d, t, tiers, cat, lines);
   if (n > 0 && (lines[0]).is_goal == 1) {
   out = __flowc_str_concat(out, "\\medskip\n");
@@ -38750,14 +38855,14 @@ int32_t flowc_proof_write_artifacts(const char* path, const char* out_dir, int32
   if (verbose == 2) {
   printf("%s\n  -> %s\n  -> %s\n", path, md_path, tex_path);
   const char* cmd = __flowc_str_concatn(7, "cd '", out_dir, "' 2>/dev/null && { ls -1 -- '", stem, "'*.proof.svg 2>/dev/null | LC_ALL=C sort; ls -1 -- '", stem, "'*.proof-diagram.tex 2>/dev/null | LC_ALL=C sort; }");
-  uint8_t* buf = (uint8_t*)(malloc(1048576));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc(1048576));
   int32_t got = flowc_io_popen_read(cmd, buf, 1048575);
   if (got > 0) {
   buf[got] = 0;
   const char* listing = (const char*)(buf);
   int32_t cap = pdg_count_lines(listing);
-  int32_t* ls = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
-  int32_t* le = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t* ls = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(cap) * 4))));
+  int32_t* le = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(cap) * 4))));
   int32_t nl = pdg_split_lines(listing, ls, le, cap);
   int32_t j = 0;
   while (j < nl) {
@@ -38797,16 +38902,16 @@ int32_t flowc_proof_doc_mode() {
   const char* out = pdg_env("FLOWC_PROOF_OUT");
   int32_t mirror = pdg_len(pdg_env("FLOWC_PROOF_MIRROR"));
   int32_t tree = pdg_len(pdg_env("FLOWC_PROOF_TREE"));
-  const char** files = (const char**)((const char**)(malloc(16)));
+  const char** files = (const char**)((const char**)(flow_mem_malloc(16)));
   int32_t nf = 0;
   const char* list = pdg_env("FLOWC_PROOF_LIST");
   if (pdg_len(list) > 0) {
   const char* text = flowc_proof_read(list);
   int32_t cap = pdg_count_lines(text);
-  int32_t* starts = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
-  int32_t* ends = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t* starts = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(cap) * 4))));
+  int32_t* ends = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(cap) * 4))));
   int32_t nl = pdg_split_lines(text, starts, ends, cap);
-  files = (const char**)(malloc(((int64_t)((nl + 1)) * 8)));
+  files = (const char**)(flow_mem_malloc(((int64_t)((nl + 1)) * 8)));
   int32_t i = 0;
   while (i < nl) {
   const char* f = pdg_strip(pdg_sub(text, starts[i], ends[i]));
@@ -38886,8 +38991,8 @@ int32_t pdg_expand_manifest(const char* root, const char* dir, const char** out,
   if (flowc_io_file_size(mf) >= 0) {
   const char* text = flowc_proof_read(mf);
   int32_t cap = pdg_count_lines(text);
-  int32_t* starts = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
-  int32_t* ends = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t* starts = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(cap) * 4))));
+  int32_t* ends = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(cap) * 4))));
   int32_t nl = pdg_split_lines(text, starts, ends, cap);
   int32_t i = 0;
   while (i < nl) {
@@ -38900,7 +39005,7 @@ int32_t pdg_expand_manifest(const char* root, const char* dir, const char** out,
 }
   return count;
 }
-  uint8_t* buf = (uint8_t*)(malloc(1048576));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc(1048576));
   const char* cmd = __flowc_str_concatn(5, "cd '", root, "/", dir, "' 2>/dev/null && ls prop-*.flow 2>/dev/null | LC_ALL=C sort");
   int32_t got = flowc_io_popen_read(cmd, buf, 1048575);
   if (got <= 0) {
@@ -38909,8 +39014,8 @@ int32_t pdg_expand_manifest(const char* root, const char* dir, const char** out,
   buf[got] = 0;
   const char* text = (const char*)(buf);
   int32_t cap = pdg_count_lines(text);
-  int32_t* starts = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
-  int32_t* ends = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t* starts = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(cap) * 4))));
+  int32_t* ends = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(cap) * 4))));
   int32_t nl = pdg_split_lines(text, starts, ends, cap);
   int32_t i = 0;
   while (i < nl) {
@@ -38931,8 +39036,8 @@ int32_t pdg_read_book(const char* root, const char* manifest, const char** part_
 }
   const char* text = flowc_proof_read(manifest);
   int32_t cap = pdg_count_lines(text);
-  int32_t* starts = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
-  int32_t* ends = (int32_t*)((int32_t*)(malloc(((int64_t)(cap) * 4))));
+  int32_t* starts = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(cap) * 4))));
+  int32_t* ends = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(cap) * 4))));
   int32_t nl = pdg_split_lines(text, starts, ends, cap);
   int32_t np = 0;
   int32_t nf = 0;
@@ -39051,10 +39156,10 @@ int32_t flowc_proof_book_mode() {
   if (pdg_len(manifest) == 0) {
   manifest = __flowc_str_concat(root, "/tools/doc/proof_book.txt");
 }
-  const char** part_id = (const char**)((const char**)(malloc((64 * 8))));
-  const char** part_title = (const char**)((const char**)(malloc((64 * 8))));
-  int32_t* part_start = (int32_t*)((int32_t*)(malloc((65 * 4))));
-  const char** all_files = (const char**)((const char**)(malloc((16384 * 8))));
+  const char** part_id = (const char**)((const char**)(flow_mem_malloc((64 * 8))));
+  const char** part_title = (const char**)((const char**)(flow_mem_malloc((64 * 8))));
+  int32_t* part_start = (int32_t*)((int32_t*)(flow_mem_malloc((65 * 4))));
+  const char** all_files = (const char**)((const char**)(flow_mem_malloc((16384 * 8))));
   int32_t nparts = pdg_read_book(root, manifest, part_id, part_title, part_start, all_files);
   if (nparts < 0) {
   return 1;
@@ -39078,8 +39183,8 @@ int32_t flowc_proof_book_mode() {
 }
 }
 }
-  const char** files = (const char**)((const char**)(malloc((16384 * 8))));
-  int32_t* doc_part = (int32_t*)((int32_t*)(malloc((16384 * 4))));
+  const char** files = (const char**)((const char**)(flow_mem_malloc((16384 * 8))));
+  int32_t* doc_part = (int32_t*)((int32_t*)(flow_mem_malloc((16384 * 4))));
   int32_t nf = 0;
   int32_t p = 0;
   while (p < nparts) {
@@ -39095,7 +39200,7 @@ int32_t flowc_proof_book_mode() {
   p = (p + 1);
 }
   PdgMap global = flowc_proof_global_tiers(root);
-  PdgDoc* docs = (PdgDoc*)((PdgDoc*)(malloc(((int64_t)((nf + 1)) * 80))));
+  PdgDoc* docs = (PdgDoc*)((PdgDoc*)(flow_mem_malloc(((int64_t)((nf + 1)) * 80))));
   int32_t counter = 1;
   int32_t i = 0;
   while (i < nf) {
@@ -39141,7 +39246,7 @@ int32_t flowc_proof_book_mode() {
 const char* pdg_hex4(int32_t v) {
   const char* digits = "0123456789abcdef";
   uint8_t* dp = (uint8_t*)(digits);
-  uint8_t* buf = (uint8_t*)(malloc(8));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc(8));
   buf[0] = dp[((v / 4096) % 16)];
   buf[1] = dp[((v / 256) % 16)];
   buf[2] = dp[((v / 16) % 16)];
@@ -39296,7 +39401,7 @@ void pdg_activate(PdgLine* lines, int32_t n, const char** keys, const char** val
 }
   i = (i + 1);
 }
-  int32_t* starts = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 1)) * 4))));
+  int32_t* starts = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((n + 1)) * 4))));
   int32_t ns = 0;
   i = 0;
   while (i < n) {
@@ -39306,7 +39411,7 @@ void pdg_activate(PdgLine* lines, int32_t n, const char** keys, const char** val
 }
   i = (i + 1);
 }
-  int32_t* sorted = (int32_t*)((int32_t*)(malloc(((int64_t)((ns + 1)) * 4))));
+  int32_t* sorted = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((ns + 1)) * 4))));
   int32_t m = pdg_sorted_unique(starts, ns, sorted);
   int32_t k = 0;
   while (k < m) {
@@ -39375,9 +39480,9 @@ int32_t pdg_kernel(const char* path, const char* root, const char** keys, const 
   PdgMap tiers = pdg_merged_tiers((&global), (&d));
   PdgMap none = flowc_pdg_map_new(4);
   PdgThm* t = (PdgThm*)((&(d).thms[0]));
-  PdgLine* lines = (PdgLine*)((PdgLine*)(malloc(((int64_t)(pdg_lines_cap(t)) * 48))));
+  PdgLine* lines = (PdgLine*)((PdgLine*)(flow_mem_malloc(((int64_t)(pdg_lines_cap(t)) * 48))));
   int32_t n = pdg_tutorial((&d), t, (&tiers), (&none), lines);
-  int32_t* active = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 1)) * 4))));
+  int32_t* active = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((n + 1)) * 4))));
   pdg_activate(lines, n, keys, vals, ninst, active);
   FlowcClaimAddress addr = flowc_claim_try_parse((t[0]).claim_path);
   const char* display = (t[0]).claim_path;
@@ -39385,7 +39490,7 @@ int32_t pdg_kernel(const char* path, const char* root, const char** keys, const 
   display = flowc_addr_coordinate_display(addr);
 }
   const char* js = __flowc_str_concatn(5, "{\n  \"claim\": ", pdg_json_str((t[0]).claim_path), ",\n  \"claim_display\": ", pdg_json_str(display), ",\n  \"parameters\": ");
-  const char** names = (const char**)((const char**)(malloc(((int64_t)((pdg_count_commas((t[0]).params) + 2)) * 8))));
+  const char** names = (const char**)((const char**)(flow_mem_malloc(((int64_t)((pdg_count_commas((t[0]).params) + 2)) * 8))));
   int32_t nn = pdg_param_names((t[0]).params, names);
   if (nn == 0) {
   js = __flowc_str_concat(js, "[]");
@@ -39531,10 +39636,10 @@ int32_t flowc_proof_kernel_mode() {
 }
   const char* params = pdg_env("FLOWC_KERNEL_PARAMS");
   int32_t cap = pdg_count_lines(params);
-  const char** keys = (const char**)((const char**)(malloc(((int64_t)((cap + 1)) * 8))));
-  const char** vals = (const char**)((const char**)(malloc(((int64_t)((cap + 1)) * 8))));
-  int32_t* starts = (int32_t*)((int32_t*)(malloc(((int64_t)((cap + 1)) * 4))));
-  int32_t* ends = (int32_t*)((int32_t*)(malloc(((int64_t)((cap + 1)) * 4))));
+  const char** keys = (const char**)((const char**)(flow_mem_malloc(((int64_t)((cap + 1)) * 8))));
+  const char** vals = (const char**)((const char**)(flow_mem_malloc(((int64_t)((cap + 1)) * 8))));
+  int32_t* starts = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((cap + 1)) * 4))));
+  int32_t* ends = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((cap + 1)) * 4))));
   int32_t nl = pdg_split_lines(params, starts, ends, cap);
   int32_t ninst = 0;
   int32_t i = 0;
@@ -39562,8 +39667,8 @@ int32_t flowc_proof_kernel_mode() {
 }
   i = (i + 1);
 }
-  const char** js = (const char**)((const char**)(malloc(16)));
-  const char** dot = (const char**)((const char**)(malloc(16)));
+  const char** js = (const char**)((const char**)(flow_mem_malloc(16)));
+  const char** dot = (const char**)((const char**)(flow_mem_malloc(16)));
   if (pdg_kernel(path, root, keys, vals, ninst, js, dot) != 0) {
   return 1;
 }
@@ -39591,7 +39696,7 @@ int32_t flowc_proof_kernel_mode() {
 
 PdgMap pdg_scan_index(const char* root, PdgDoc* docs, const char** paths, int32_t* ndocs) {
   PdgMap idx = flowc_pdg_map_new(8192);
-  int32_t* cnt = (int32_t*)((int32_t*)(malloc(8)));
+  int32_t* cnt = (int32_t*)((int32_t*)(flow_mem_malloc(8)));
   int32_t nd = 0;
   int32_t r = 0;
   while (r < 2) {
@@ -39643,7 +39748,7 @@ int32_t pdg_ends_with(const char* s, const char* suffix) {
 }
 
 const char* pdg_join_list(const char* raw) {
-  const char** items = (const char**)((const char**)(malloc(((int64_t)((pdg_count_commas(raw) + 2)) * 8))));
+  const char** items = (const char**)((const char**)(flow_mem_malloc(((int64_t)((pdg_count_commas(raw) + 2)) * 8))));
   int32_t n = pdg_needs(raw, items);
   const char* s = "";
   int32_t i = 0;
@@ -39662,7 +39767,7 @@ const char* pdg_abspath(const char* path) {
   if (pdg_len(path) > 0 && p[0] == 47) {
   return path;
 }
-  uint8_t* buf = (uint8_t*)(malloc(4096));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc(4096));
   int32_t n = flowc_io_popen_read("pwd", buf, 4095);
   if (n <= 0) {
   return path;
@@ -39741,7 +39846,7 @@ const char* pdg_fingerprint(const char* expr) {
   s = pdg_replace(s, "==", "=");
   int32_t m = pdg_len(s);
   uint8_t* q = (uint8_t*)(s);
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)((m + 1))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)((m + 1))));
   int32_t o = 0;
   int32_t z = 0;
   while (z < m) {
@@ -39771,11 +39876,11 @@ int32_t flowc_proof_know_mode() {
   if (pdg_len(root) == 0) {
   root = ".";
 }
-  PdgDoc* docs = (PdgDoc*)((PdgDoc*)(malloc((8192 * 80))));
-  const char** paths = (const char**)((const char**)(malloc((8192 * 8))));
-  int32_t* nd = (int32_t*)((int32_t*)(malloc(8)));
+  PdgDoc* docs = (PdgDoc*)((PdgDoc*)(flow_mem_malloc((8192 * 80))));
+  const char** paths = (const char**)((const char**)(flow_mem_malloc((8192 * 8))));
+  int32_t* nd = (int32_t*)((int32_t*)(flow_mem_malloc(8)));
   if (pdg_len(pdg_env("FLOWC_KNOW_LINT")) > 0) {
-  int32_t* cnt = (int32_t*)((int32_t*)(malloc(8)));
+  int32_t* cnt = (int32_t*)((int32_t*)(flow_mem_malloc(8)));
   PdgMap seen = flowc_pdg_map_new(4096);
   int32_t nerr = 0;
   int32_t r = 0;
@@ -41121,7 +41226,7 @@ int32_t mlg_assemble(Mlg* m, uint8_t* body, int32_t body_len, uint8_t* dst, int3
 int32_t flowc_mlirgen_emit(AstArena arena, int32_t root, uint8_t* src, int32_t src_len, int32_t src_cap, uint8_t* out, int32_t out_cap);
 int32_t flowc_mlirgen_emit_modules(AstArena arena, int32_t root, uint8_t* src, int32_t src_len, int32_t src_cap, int32_t* mod_start, int32_t nmods, uint8_t* mod_names, int32_t mod_stride, uint8_t* out, int32_t out_cap);
 int32_t* mlg_alloc_i32(int32_t n) {
-  uint8_t* raw = (uint8_t*)(malloc(((int64_t)(n) * 4)));
+  uint8_t* raw = (uint8_t*)(flow_mem_malloc(((int64_t)(n) * 4)));
   int32_t* p = (int32_t*)(raw);
   int32_t i = 0;
   while (i < n) {
@@ -42584,7 +42689,7 @@ int32_t mlg_intern_src(Mlg* m, int32_t id, int32_t nl) {
   return mlg_intern(m, ((m[0]).src + s), (e - s));
 }
   int32_t n = (e - s);
-  uint8_t* tmp = (uint8_t*)(malloc((int64_t)((n + 4))));
+  uint8_t* tmp = (uint8_t*)(flow_mem_malloc((int64_t)((n + 4))));
   int32_t i = 0;
   while (i < (n - 1)) {
   tmp[i] = (m[0]).src[(s + i)];
@@ -42594,7 +42699,7 @@ int32_t mlg_intern_src(Mlg* m, int32_t id, int32_t nl) {
   tmp[n] = 110;
   tmp[(n + 1)] = 34;
   int32_t k = mlg_intern(m, tmp, (n + 2));
-  free(tmp);
+  flow_mem_free(tmp);
   return k;
 }
 
@@ -43532,7 +43637,7 @@ void mlg_name_tests(Mlg* m, int32_t root) {
   if (mlg_kind(m, d) == AST_FN && (m[0]).src[mlg_ns(m, d)] == 34) {
   int32_t s = (mlg_ns(m, d) + 1);
   int32_t t = (mlg_ne(m, d) - 1);
-  uint8_t* buf = (uint8_t*)(malloc(1024));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc(1024));
   int32_t n = 0;
   uint8_t* pre = (uint8_t*)("test_");
   while (n < 5) {
@@ -43558,7 +43663,7 @@ void mlg_name_tests(Mlg* m, int32_t root) {
 }
 }
   int32_t ns = mlg_xput(m, buf, n);
-  free(buf);
+  flow_mem_free(buf);
   uint8_t* bt = (uint8_t*)("bool");
   int32_t bs = mlg_xput(m, bt, 4);
   if (ns >= 0 && bs >= 0) {
@@ -44405,7 +44510,7 @@ void mlg_put_float_text(Mlg* m, int32_t e, int32_t t, int32_t neg) {
   mlg_span(m, s, end0);
   return;
 }
-  uint8_t* tmp = (uint8_t*)(malloc(1024));
+  uint8_t* tmp = (uint8_t*)(flow_mem_malloc(1024));
   int32_t j = 0;
   if (neg == 1) {
   tmp[0] = 45;
@@ -44427,7 +44532,7 @@ void mlg_put_float_text(Mlg* m, int32_t e, int32_t t, int32_t neg) {
   mlg_putc(m, tmp[q]);
   q = (q + 1);
 }
-  free(tmp);
+  flow_mem_free(tmp);
 }
 
 int32_t mlg_emit_float_lit(Mlg* m, int32_t e) {
@@ -44742,7 +44847,7 @@ void mlg_emit_print_value(Mlg* m, int32_t arg, int32_t nl) {
 }
 }
 }
-  uint8_t* buf = (uint8_t*)(malloc(16));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc(16));
   uint8_t* fp = (uint8_t*)(fmt);
   int32_t fl = (int32_t)(strlen(fmt));
   buf[0] = 34;
@@ -44759,7 +44864,7 @@ void mlg_emit_print_value(Mlg* m, int32_t arg, int32_t nl) {
 }
   buf[n] = 34;
   int32_t fk = mlg_intern(m, buf, (n + 1));
-  free(buf);
+  flow_mem_free(buf);
   int32_t fv = mlg_emit_addressof_str(m, fk);
   mlg_emit_printf(m, fv, cv, ct);
 }
@@ -45627,7 +45732,7 @@ int32_t mlg_emit_array_ctor(Mlg* m, int32_t e) {
   k = (k + 1);
 }
   uint8_t* raw = (uint8_t*)(vals);
-  free(raw);
+  flow_mem_free(raw);
   return b;
 }
 
@@ -49726,7 +49831,7 @@ int32_t mlg_emit_callback_closure(Mlg* m, int32_t k) {
   uint8_t* saved_out = (uint8_t*)((m[0]).out);
   int32_t saved_len = (m[0]).len;
   int32_t saved_cap = (m[0]).cap;
-  uint8_t* buf = (uint8_t*)(malloc(65536));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc(65536));
   (m[0]).out = buf;
   (m[0]).len = 0;
   (m[0]).cap = 65536;
@@ -49781,7 +49886,7 @@ int32_t mlg_emit_callback_closure(Mlg* m, int32_t k) {
   (m[0]).len = saved_len;
   (m[0]).cap = saved_cap;
   int32_t nl = mlg_append_side((m[0]).cb_buf, (m[0]).cb_len, buf, blen);
-  free(buf);
+  flow_mem_free(buf);
   if (nl < 0) {
   mlg_refuse(m, f, "callback adapters past the side buffer");
   return V_NONE;
@@ -50083,7 +50188,7 @@ int32_t mlg_emit_lambda(Mlg* m, int32_t f) {
   saved_al[i] = (m[0]).a_llarr[i];
   i = (i + 1);
 }
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)(MLG_SIDE_CAP)));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)(MLG_SIDE_CAP)));
   (m[0]).out = buf;
   (m[0]).len = 0;
   (m[0]).cap = MLG_SIDE_CAP;
@@ -50183,11 +50288,11 @@ int32_t mlg_emit_lambda(Mlg* m, int32_t f) {
   mlg_free_i32(saved_au);
   mlg_free_i32(saved_al);
   if (overflow != 0) {
-  free(buf);
+  flow_mem_free(buf);
   return V_NONE;
 }
   int32_t nl = mlg_append_side((m[0]).lam_buf, (m[0]).lam_len, buf, body_len);
-  free(buf);
+  flow_mem_free(buf);
   if (nl < 0) {
   mlg_refuse(m, f, "lifted lambdas past the side buffer");
   return V_NONE;
@@ -50745,7 +50850,7 @@ int32_t mlg_emit_memref_lit(Mlg* m, int32_t e, int32_t hint) {
   j = (j + 1);
 }
   uint8_t* raw = (uint8_t*)(vals);
-  free(raw);
+  flow_mem_free(raw);
   return p;
 }
   if (want >= 0 && n > want) {
@@ -50781,7 +50886,7 @@ int32_t mlg_emit_memref_lit(Mlg* m, int32_t e, int32_t hint) {
   k = (k + 1);
 }
   uint8_t* raw2 = (uint8_t*)(vals);
-  free(raw2);
+  flow_mem_free(raw2);
   return a;
 }
 
@@ -50858,14 +50963,14 @@ int32_t mlg_emit_array_lit(Mlg* m, int32_t e, int32_t la) {
   j = (j + 1);
 }
   uint8_t* raw = (uint8_t*)(vals);
-  free(raw);
+  flow_mem_free(raw);
   return p;
 }
 
 int32_t mlg_synth_named(Mlg* m, int32_t kind, uint8_t* text, int32_t n);
 int32_t mlg_synth_call(Mlg* m, int32_t ns, int32_t ne, const char* suffix, int32_t args) {
   int32_t sl = (int32_t)(strlen(suffix));
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)((((ne - ns) + sl) + 2))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)((((ne - ns) + sl) + 2))));
   int32_t n = 0;
   while (n < (ne - ns)) {
   buf[n] = (m[0]).src[(ns + n)];
@@ -50879,7 +50984,7 @@ int32_t mlg_synth_call(Mlg* m, int32_t ns, int32_t ne, const char* suffix, int32
   j = (j + 1);
 }
   int32_t c = mlg_synth_named(m, AST_CALL, buf, n);
-  free(buf);
+  flow_mem_free(buf);
   if (c == AST_NONE) {
   return AST_NONE;
 }
@@ -51506,7 +51611,7 @@ int32_t* mlg_names_new() {
 
 void mlg_free_i32(int32_t* p) {
   uint8_t* raw = (uint8_t*)(p);
-  free(raw);
+  flow_mem_free(raw);
 }
 
 int32_t mlg_names_add(Mlg* m, int32_t* buf, int32_t n, int32_t ns, int32_t ne) {
@@ -52273,10 +52378,10 @@ void mlg_emit_while(Mlg* m, int32_t st) {
   int32_t cur = mlg_load(m, cnt, MT_I32);
   int32_t bv = mlg_const_int(m, bound, MT_I32);
   int32_t over = mlg_emit_cmpi(m, "sge", cur, bv, MT_I32);
-  uint8_t* msg = (uint8_t*)(malloc(96));
+  uint8_t* msg = (uint8_t*)(flow_mem_malloc(96));
   snprintf(msg, 96, "\"while exceeded @max_iterations(%d)\"", bound);
   mlg_emit_fault_if(m, over, (const char*)(msg));
-  free(msg);
+  flow_mem_free(msg);
   int32_t one = mlg_const_int(m, 1, MT_I32);
   int32_t nx = mlg_new_val(m, MT_I32);
   mlg_line(m);
@@ -52572,7 +52677,7 @@ int32_t mlg_emit_list_pattern(Mlg* m, int32_t arm, int32_t scrut, int32_t val, i
 }
   int32_t l = mlg_add_local(m, mlg_ns(m, tmp), mlg_ne(m, tmp), val_t, mlg_expr_ft(m, scrut), val);
   { __typeof__((m[0]).l_llarr[l]) __flowc_st53430 = mlg_vllarr(m, val); (m[0]).l_llarr[l] = __flowc_st53430; }
-  uint8_t* digits = (uint8_t*)(malloc(16));
+  uint8_t* digits = (uint8_t*)(flow_mem_malloc(16));
   int32_t* conds = (int32_t*)(mlg_alloc_i32(64));
   int32_t nconds = 0;
   int32_t cond = V_NONE;
@@ -52660,7 +52765,7 @@ int32_t mlg_emit_list_pattern(Mlg* m, int32_t arm, int32_t scrut, int32_t val, i
 }
   pass = (pass + 1);
 }
-  free(digits);
+  flow_mem_free(digits);
   mlg_free_i32(conds);
   return cond;
 }
@@ -54278,10 +54383,10 @@ void mlg_emit_stmt(Mlg* m, int32_t st) {
   mlg_v(m, t);
   mlg_s(m, " : i1");
   mlg_nl(m);
-  uint8_t* msg = (uint8_t*)(malloc(64));
+  uint8_t* msg = (uint8_t*)(flow_mem_malloc(64));
   int32_t ml = snprintf(msg, 64, "\"expect failed (line %d)\"", mlg_node_line(m, st));
   int32_t k2 = mlg_intern(m, msg, ml);
-  free(msg);
+  flow_mem_free(msg);
   mlg_hp_use(m, HP_PANIC);
   mlg_line(m);
   mlg_s(m, "scf.if ");
@@ -54410,7 +54515,7 @@ void mlg_emit_defers(Mlg* m, int32_t lo, int32_t hi) {
 
 void mlg_capture_return_defers(Mlg* m) {
   if ((m[0]).rdf != NULL) {
-  free((m[0]).rdf);
+  flow_mem_free((m[0]).rdf);
   (m[0]).rdf = NULL;
 }
   (m[0]).rdf_len = 0;
@@ -54421,7 +54526,7 @@ void mlg_capture_return_defers(Mlg* m) {
   int32_t mark_line = (m[0]).last_line;
   mlg_emit_defers(m, 0, (m[0]).ndf);
   int32_t n = ((m[0]).len - mark);
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)((n + 1))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)((n + 1))));
   int32_t i = 0;
   while (i < n) {
   buf[i] = (m[0]).out[(mark + i)];
@@ -54442,7 +54547,7 @@ void mlg_paste_return_defers(Mlg* m) {
   mlg_putc(m, (m[0]).rdf[i]);
   i = (i + 1);
 }
-  free((m[0]).rdf);
+  flow_mem_free((m[0]).rdf);
   (m[0]).rdf = NULL;
   (m[0]).rdf_len = 0;
 }
@@ -55598,7 +55703,7 @@ void mlg_add_enum(Mlg* m, int32_t d) {
 }
   int32_t vs = mlg_ns(m, v);
   int32_t vl = (mlg_ne(m, v) - vs);
-  uint8_t* tmp = (uint8_t*)(malloc((int64_t)((vl + 8))));
+  uint8_t* tmp = (uint8_t*)(flow_mem_malloc((int64_t)((vl + 8))));
   int32_t q = 0;
   while (q < vl) {
   tmp[q] = (m[0]).src[(vs + q)];
@@ -55611,7 +55716,7 @@ void mlg_add_enum(Mlg* m, int32_t d) {
   r = (r + 1);
 }
   int32_t fname = mlg_xput(m, tmp, (vl + 6));
-  free(tmp);
+  flow_mem_free(tmp);
   if (fname < 0) {
   return;
 }
@@ -55844,7 +55949,7 @@ double mlg_const_eval_f(Mlg* m, int32_t e, int32_t* ok, int32_t depth) {
   if (k == AST_FLOAT) {
   int32_t s = mlg_ns(m, e);
   int32_t t = mlg_ne(m, e);
-  uint8_t* tmp = (uint8_t*)(malloc(128));
+  uint8_t* tmp = (uint8_t*)(flow_mem_malloc(128));
   int32_t j = 0;
   int32_t q = s;
   while (q < t && j < 120) {
@@ -55856,7 +55961,7 @@ double mlg_const_eval_f(Mlg* m, int32_t e, int32_t* ok, int32_t depth) {
 }
   tmp[j] = 0;
   double x = strtod(tmp, NULL);
-  free(tmp);
+  flow_mem_free(tmp);
   return x;
 }
   if (k == AST_INT) {
@@ -55946,14 +56051,14 @@ int64_t mlg_wrap_int(int64_t v, int32_t t) {
 }
 
 void mlg_put_f64(Mlg* m, double x) {
-  uint8_t* tmp = (uint8_t*)(malloc(64));
+  uint8_t* tmp = (uint8_t*)(flow_mem_malloc(64));
   int32_t n = snprintf(tmp, 64, "%.17e", x);
   int32_t q = 0;
   while (q < n) {
   mlg_putc(m, tmp[q]);
   q = (q + 1);
 }
-  free(tmp);
+  flow_mem_free(tmp);
 }
 
 int32_t mlg_static_struct_lit(Mlg* m, int32_t e, int32_t t);
@@ -56293,7 +56398,7 @@ void mlg_add_const(Mlg* m, int32_t d) {
 
 int32_t mlg_synth_fn2(Mlg* m, int32_t a0, int32_t a1, int32_t b0, int32_t b1, int32_t params, int32_t ret, int32_t body, int32_t at) {
   int32_t n = (((a1 - a0) + 1) + (b1 - b0));
-  uint8_t* tmp = (uint8_t*)(malloc((int64_t)((n + 1))));
+  uint8_t* tmp = (uint8_t*)(flow_mem_malloc((int64_t)((n + 1))));
   int32_t i = 0;
   while (i < (a1 - a0)) {
   tmp[i] = (m[0]).src[(a0 + i)];
@@ -56306,7 +56411,7 @@ int32_t mlg_synth_fn2(Mlg* m, int32_t a0, int32_t a1, int32_t b0, int32_t b1, in
   j = (j + 1);
 }
   int32_t s = mlg_xput(m, tmp, n);
-  free(tmp);
+  flow_mem_free(tmp);
   if (s < 0) {
   return AST_NONE;
 }
@@ -57060,7 +57165,7 @@ void mn_type_str(Mlg* m, int32_t t, uint8_t* buf, int32_t* len) {
   if (first == 0) {
   mn_puts(buf, len, "__");
 }
-  uint8_t* nb = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  uint8_t* nb = (uint8_t*)(flow_mem_malloc((int64_t)(MN_NAME)));
   int32_t nl = 0;
   mn_py_name(m, t, nb, (&nl));
   mn_puts(buf, len, "N");
@@ -57071,7 +57176,7 @@ void mn_type_str(Mlg* m, int32_t t, uint8_t* buf, int32_t* len) {
   mn_put(buf, len, nb[i]);
   i = (i + 1);
 }
-  free(nb);
+  flow_mem_free(nb);
   int32_t a = (((m[0]).arena).nodes[t]).a;
   int32_t size = 0;
   if (mn_is_arr(m, t) == 1 || mn_is_span(m, t) == 1) {
@@ -57175,7 +57280,7 @@ int32_t mn_gs_ntp(Mlg* m, Mono* mo, int32_t g) {
 }
 
 int32_t mn_request(Mlg* m, Mono* mo, int32_t kind, int32_t g, int32_t* targs, int32_t n) {
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)(MN_NAME)));
   int32_t bl = 0;
   int32_t d = ((kind == 0) ? ((mo[0]).gs[g]) : ((mo[0]).gf[g]));
   mn_put_span(m, buf, (&bl), mlg_ns(m, d), mlg_ne(m, d));
@@ -57212,19 +57317,19 @@ int32_t mn_request(Mlg* m, Mono* mo, int32_t kind, int32_t g, int32_t* targs, in
   (mo[0]).fr_arg[k] = base;
   (mo[0]).fr_nargs[k] = n;
 }
-  free(buf);
+  flow_mem_free(buf);
   return k;
 }
   k = (k + 1);
 }
   if (cnt >= MN_MAX) {
   mlg_refuse(m, d, "too many generic instantiations");
-  free(buf);
+  flow_mem_free(buf);
   return (0 - 1);
 }
   int32_t s = 0;
   int32_t e = mn_intern(m, buf, bl, (&s));
-  free(buf);
+  flow_mem_free(buf);
   int32_t base2 = (mo[0]).nargs;
   i = 0;
   while (i < n && (mo[0]).nargs < MN_ARGS) {
@@ -57297,11 +57402,11 @@ void mn_scan_type(Mlg* m, Mono* mo, int32_t t, int32_t fg, int32_t sg) {
 }
   int32_t a = (((m[0]).arena).nodes[t]).a;
   if (mn_is_app(m, t) == 1) {
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)(MN_NAME)));
   int32_t bl = 0;
   mn_py_name(m, t, buf, (&bl));
   int32_t g = mn_gs_of_base(m, mo, buf, bl);
-  free(buf);
+  flow_mem_free(buf);
   if (g >= 0) {
   int32_t all = 1;
   int32_t* targs = (int32_t*)(mlg_alloc_i32(16));
@@ -57340,7 +57445,7 @@ void mn_call_name(Mlg* m, int32_t e, uint8_t* buf, int32_t* len) {
 
 int32_t mn_expr_type(Mlg* m, int32_t e) {
   int32_t k = mlg_kind(m, e);
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)(MN_NAME)));
   int32_t bl = 0;
   int32_t r = AST_NONE;
   if (k == AST_INT) {
@@ -57373,7 +57478,7 @@ int32_t mn_expr_type(Mlg* m, int32_t e) {
   r = mn_flat_buf(m, buf, bl);
 }
 }
-  free(buf);
+  flow_mem_free(buf);
   return r;
 }
 
@@ -57619,7 +57724,7 @@ int32_t mn_map_get(Mlg* m, int32_t* tps, int32_t ntp, int32_t* targs, int32_t s,
 }
 
 int32_t mn_rewrite_mangled(Mlg* m, int32_t* tps, int32_t ntp, int32_t* targs, uint8_t* buf, int32_t n, uint8_t* out, int32_t* olen) {
-  uint8_t* cur = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  uint8_t* cur = (uint8_t*)(flow_mem_malloc((int64_t)(MN_NAME)));
   int32_t cl = 0;
   int32_t i = 0;
   while (i < n) {
@@ -57643,9 +57748,9 @@ int32_t mn_rewrite_mangled(Mlg* m, int32_t* tps, int32_t ntp, int32_t* targs, ui
 }
   used[pick] = 1;
   done = (done + 1);
-  uint8_t* nxt = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  uint8_t* nxt = (uint8_t*)(flow_mem_malloc((int64_t)(MN_NAME)));
   int32_t nl = 0;
-  uint8_t* cname = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  uint8_t* cname = (uint8_t*)(flow_mem_malloc((int64_t)(MN_NAME)));
   int32_t cnl = 0;
   mn_py_name(m, targs[pick], cname, (&cnl));
   int32_t s0 = 0;
@@ -57689,8 +57794,8 @@ int32_t mn_rewrite_mangled(Mlg* m, int32_t* tps, int32_t ntp, int32_t* targs, ui
   z = (z + 1);
 }
   cl = nl;
-  free(nxt);
-  free(cname);
+  flow_mem_free(nxt);
+  flow_mem_free(cname);
 }
   mlg_free_i32(used);
   int32_t changed = 0;
@@ -57711,7 +57816,7 @@ int32_t mn_rewrite_mangled(Mlg* m, int32_t* tps, int32_t ntp, int32_t* targs, ui
   v = (v + 1);
 }
   olen[0] = cl;
-  free(cur);
+  flow_mem_free(cur);
   return changed;
 }
 
@@ -57737,13 +57842,13 @@ int32_t mn_subst_type(Mlg* m, Mono* mo, int32_t t, int32_t* tps, int32_t ntp, in
   return c;
 }
 }
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)(MN_NAME)));
   int32_t bl = 0;
   mn_py_name(m, t, buf, (&bl));
-  uint8_t* rw = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  uint8_t* rw = (uint8_t*)(flow_mem_malloc((int64_t)(MN_NAME)));
   int32_t rl = 0;
   int32_t changed = mn_rewrite_mangled(m, tps, ntp, targs, buf, bl, rw, (&rl));
-  free(buf);
+  flow_mem_free(buf);
   if (changed == 1) {
   int32_t g = mn_gs_of_base(m, mo, rw, rl);
   int32_t has_us = 0;
@@ -57762,7 +57867,7 @@ int32_t mn_subst_type(Mlg* m, Mono* mo, int32_t t, int32_t* tps, int32_t ntp, in
   if (parts >= np) {
   int32_t r = mn_request(m, mo, 0, g, tmp, np);
   mlg_free_i32(tmp);
-  free(rw);
+  flow_mem_free(rw);
   if (r < 0) {
   return t;
 }
@@ -57772,20 +57877,20 @@ int32_t mn_subst_type(Mlg* m, Mono* mo, int32_t t, int32_t* tps, int32_t ntp, in
 }
   if (a == AST_NONE) {
   int32_t fl = mn_flat_buf(m, rw, rl);
-  free(rw);
+  flow_mem_free(rw);
   return fl;
 }
-  free(rw);
+  flow_mem_free(rw);
   return mn_type_like(m, t, mn_subst_chain(m, mo, a, tps, ntp, targs));
 }
-  free(rw);
+  flow_mem_free(rw);
   if (mn_is_app(m, t) == 1) {
   int32_t na = mn_subst_chain(m, mo, a, tps, ntp, targs);
-  uint8_t* buf2 = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  uint8_t* buf2 = (uint8_t*)(flow_mem_malloc((int64_t)(MN_NAME)));
   int32_t b2 = 0;
   mn_py_name(m, t, buf2, (&b2));
   int32_t g2 = mn_gs_of_base(m, mo, buf2, b2);
-  free(buf2);
+  flow_mem_free(buf2);
   if (g2 >= 0) {
   int32_t* targs2 = (int32_t*)(mlg_alloc_i32(16));
   int32_t n2 = 0;
@@ -57869,14 +57974,14 @@ int32_t mn_subst_expr(Mlg* m, Mono* mo, int32_t e, int32_t* tps, int32_t ntp, in
   done = (done + 1);
   if ((t - s) > pl && (m[0]).src[((t - pl) - 1)] == 95 && mlg_span_eq(m, (t - pl), t, tps[(2 * pick)], tps[((2 * pick) + 1)]) == 1) {
   hit = 1;
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)(MN_NAME)));
   int32_t bl = 0;
   mn_put_span(m, buf, (&bl), s, ((t - pl) - 1));
   mn_put(buf, (&bl), 95);
   mn_py_name(m, targs[pick], buf, (&bl));
   int32_t ns = 0;
   int32_t ne = mn_intern(m, buf, bl, (&ns));
-  free(buf);
+  flow_mem_free(buf);
   (((m[0]).arena).nodes[c]).name_start = ns;
   (((m[0]).arena).nodes[c]).name_end = ne;
   (((m[0]).arena).nodes[c]).start = ns;
@@ -58268,7 +58373,7 @@ int32_t mn_rewrite_type(Mlg* m, Mono* mo, int32_t t) {
 }
   int32_t a = (((m[0]).arena).nodes[t]).a;
   if (mn_is_app(m, t) == 1) {
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)(MN_NAME)));
   int32_t bl = 0;
   mn_py_name(m, t, buf, (&bl));
   int32_t g = mn_gs_of_base(m, mo, buf, bl);
@@ -58283,10 +58388,10 @@ int32_t mn_rewrite_type(Mlg* m, Mono* mo, int32_t t) {
   x = (((m[0]).arena).nodes[x]).next;
 }
   int32_t r = mn_flat_buf(m, buf, nl);
-  free(buf);
+  flow_mem_free(buf);
   return r;
 }
-  free(buf);
+  flow_mem_free(buf);
 }
   if (a != AST_NONE && (mn_is_ptr(m, t) == 1 || mn_is_arr(m, t) == 1 || mn_is_vec(m, t) == 1 || mn_is_span(m, t) == 1)) {
   int32_t na = mn_rewrite_type(m, mo, a);
@@ -58441,7 +58546,7 @@ void mn_parser_names(Mlg* m) {
   int32_t e = (((m[0]).arena).nodes[i]).name_end;
   int32_t is_ctor = ((k == AST_CALL && mlg_span_is(m, s, e, "array") == 1) ? (1) : (0));
   if (is_ctor == 0 && (k == AST_STRUCT_LIT || (((m[0]).arena).nodes[i]).ival == 0)) {
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)(MN_NAME)));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)(MN_NAME)));
   int32_t bl = 0;
   mn_put_span(m, buf, (&bl), s, e);
   int32_t x = b;
@@ -58452,7 +58557,7 @@ void mn_parser_names(Mlg* m) {
 }
   int32_t ns = 0;
   int32_t ne = mn_intern(m, buf, bl, (&ns));
-  free(buf);
+  flow_mem_free(buf);
   int32_t was_start = (((((m[0]).arena).nodes[i]).start == s) ? (1) : (0));
   (((m[0]).arena).nodes[i]).name_start = ns;
   (((m[0]).arena).nodes[i]).name_end = ne;
@@ -58650,7 +58755,7 @@ int32_t mlg_mono(Mlg* m, int32_t root) {
 }
 
 int32_t mfk_xname(Mlg* m, const char* prefix, int32_t n, int32_t* out_e) {
-  uint8_t* buf = (uint8_t*)(malloc(64));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc(64));
   uint8_t* pp = (uint8_t*)(prefix);
   int32_t k = 0;
   while (pp[k] != 0) {
@@ -58661,7 +58766,7 @@ int32_t mfk_xname(Mlg* m, const char* prefix, int32_t n, int32_t* out_e) {
   mn_put_int(buf, (int32_t*)((&len[0])), n);
   int32_t s = mlg_xput(m, buf, len[0]);
   out_e[0] = (s + len[0]);
-  free(buf);
+  flow_mem_free(buf);
   return s;
 }
 
@@ -59240,7 +59345,7 @@ int64_t mrs_psum(int64_t* p) {
 int64_t mrs_fold(Mlg* m, int32_t e, int32_t* ok) {
   int32_t kind = (((m[0]).arena).nodes[e]).ival;
   int32_t a = (((m[0]).arena).nodes[e]).a;
-  int64_t* vals = (int64_t*)((int64_t*)(malloc(64)));
+  int64_t* vals = (int64_t*)((int64_t*)(flow_mem_malloc(64)));
   int32_t n = 0;
   int32_t x = a;
   while (x != AST_NONE && n < 6) {
@@ -59248,9 +59353,9 @@ int64_t mrs_fold(Mlg* m, int32_t e, int32_t* ok) {
   n = (n + 1);
   x = (((m[0]).arena).nodes[x]).next;
 }
-  int64_t* pa = (int64_t*)((int64_t*)(malloc(24)));
-  int64_t* pb = (int64_t*)((int64_t*)(malloc(24)));
-  int64_t* pc = (int64_t*)((int64_t*)(malloc(24)));
+  int64_t* pa = (int64_t*)((int64_t*)(flow_mem_malloc(24)));
+  int64_t* pb = (int64_t*)((int64_t*)(flow_mem_malloc(24)));
+  int64_t* pc = (int64_t*)((int64_t*)(flow_mem_malloc(24)));
   int64_t total = 0;
   if (ok[0] == 1) {
   mrs_normalize(vals[0], vals[1], vals[2], pa);
@@ -59277,10 +59382,10 @@ int64_t mrs_fold(Mlg* m, int32_t e, int32_t* ok) {
 }
 }
 }
-  free((uint8_t*)(vals));
-  free((uint8_t*)(pa));
-  free((uint8_t*)(pb));
-  free((uint8_t*)(pc));
+  flow_mem_free((uint8_t*)(vals));
+  flow_mem_free((uint8_t*)(pa));
+  flow_mem_free((uint8_t*)(pb));
+  flow_mem_free((uint8_t*)(pc));
   return total;
 }
 
@@ -61024,7 +61129,7 @@ int32_t mlg_write_cembed(Mlg* m, int32_t root) {
 }
   const char* pre = "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include <stdint.h>\n#include <stdbool.h>\n#include <stddef.h>\n";
   int32_t pl = (int32_t)(strlen(pre));
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)(((total + pl) + 16))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)(((total + pl) + 16))));
   uint8_t* prp = (uint8_t*)(pre);
   int32_t n = 0;
   while (n < pl) {
@@ -61066,7 +61171,7 @@ int32_t mlg_write_cembed(Mlg* m, int32_t root) {
   item = (((m[0]).arena).nodes[item]).next;
 }
   int32_t rc = flowc_write_file(path, buf, n);
-  free(buf);
+  flow_mem_free(buf);
   if (rc != 0) {
   puts("flowc mlir: cannot write FLOWC_CEMBED_OUT");
   return (0 - 1);
@@ -61152,8 +61257,8 @@ int32_t flowc_mlirgen_emit_modules(AstArena arena, int32_t root, uint8_t* src, i
 }
   pi = (pi + 1);
 }
-  uint8_t* body = (uint8_t*)(malloc((int64_t)(out_cap)));
-  Mlg mg = (Mlg){ .arena = arena, .src = src, .out = body, .cap = out_cap, .len = 0, .err = 0, .why = "", .why_node = AST_NONE, .last_line = 0, .ind = 1, .nval = 0, .vt = mlg_alloc_i32(MLG_VAL_CAP), .vu = mlg_alloc_i32(MLG_VAL_CAP), .at = mlg_alloc_i32(MLG_MAX_ARGS), .au = mlg_alloc_i32(MLG_MAX_ARGS), .nlabel = 0, .pool = malloc((int64_t)(MLG_POOL_CAP)), .pool_len = 0, .s_off = mlg_alloc_i32(MLG_MAX_STRS), .s_len = mlg_alloc_i32(MLG_MAX_STRS), .nstr = 0, .needs_printf = 0, .st_node = mlg_alloc_i32(MLG_MAX_STRUCTS), .nst = 0, .sugar = (0 - 1), .la_elem = mlg_alloc_i32(MLG_MAX_ARRS), .la_n = mlg_alloc_i32(MLG_MAX_ARRS), .nla = 0, .mr_elem = mlg_alloc_i32(MLG_MAX_ARRS), .mr_n = mlg_alloc_i32(MLG_MAX_ARRS), .nmr = 0, .fn_node = mlg_alloc_i32(MLG_MAX_FNS), .fn_ext = mlg_alloc_i32(MLG_MAX_FNS), .fn_ovl = mlg_alloc_i32(MLG_MAX_FNS), .nfn = 0, .declared = mlg_alloc_i32(MLG_MAX_FNS), .l_ns = mlg_alloc_i32(MLG_MAX_LOCALS), .l_ne = mlg_alloc_i32(MLG_MAX_LOCALS), .l_mt = mlg_alloc_i32(MLG_MAX_LOCALS), .l_ft = mlg_alloc_i32(MLG_MAX_LOCALS), .l_ssa = mlg_alloc_i32(MLG_MAX_LOCALS), .l_alloca = mlg_alloc_i32(MLG_MAX_LOCALS), .l_llarr = mlg_alloc_i32(MLG_MAX_LOCALS), .nloc = 0, .ret_mt = MT_VOID, .ret_ft = AST_NONE, .inside_scf_for = 0, .lp_region = mlg_alloc_i32(MLG_MAX_LOOPS), .lp_header = mlg_alloc_i32(MLG_MAX_LOOPS), .lp_end = mlg_alloc_i32(MLG_MAX_LOOPS), .lp_iv = mlg_alloc_i32(MLG_MAX_LOOPS), .lp_step = mlg_alloc_i32(MLG_MAX_LOOPS), .lp_df = mlg_alloc_i32(MLG_MAX_LOOPS), .nlp = 0, .v_llarr = mlg_alloc_i32(MLG_VAL_CAP), .a_llarr = mlg_alloc_i32(MLG_MAX_ARGS), .c_node = mlg_alloc_i32(MLG_MAX_FNS), .nconst = 0, .lp_carry = mlg_alloc_i32((MLG_MAX_LOOPS * MLG_MAX_MERGE)), .lp_ncarry = mlg_alloc_i32(MLG_MAX_LOOPS), .df = mlg_alloc_i32(MLG_MAX_DEFERS), .ndf = 0, .dscope = mlg_alloc_i32(MLG_MAX_DEFERS), .ndscope = 0, .rdf = NULL, .rdf_len = 0, .en_node = mlg_alloc_i32(MLG_MAX_ENUMS), .en_st = mlg_alloc_i32(MLG_MAX_ENUMS), .nen = 0, .st_enum = mlg_alloc_i32(MLG_MAX_STRUCTS), .xsrc = (src_len + 1), .xsrc_end = src_cap, .mod_start = mod_start, .nmods = nmods, .mod_names = mod_names, .mod_stride = mod_stride, .sv_node = mlg_alloc_i32(MLG_MAX_FNS), .nsv = 0, .span_st = (0 - 1), .sp_elem = mlg_alloc_i32(MLG_MAX_FNS), .sp_node = mlg_alloc_i32(MLG_MAX_FNS), .nsp = 0, .i64_ft = AST_NONE, .sft = mlg_alloc_i32(8), .clo_st = (0 - 1), .lam_buf = malloc((int64_t)(MLG_SIDE_CAP)), .lam_len = 0, .cb_buf = malloc((int64_t)(MLG_SIDE_CAP)), .cb_len = 0, .cb_fn = mlg_alloc_i32(MLG_MAX_FNS), .ncb = 0, .nlambda = 0, .env_val = (0 - 1), .lc_need = 0, .hp_need = 0, .chk = (0 - 1), .lit_want = (0 - 1), .uk_ns = mlg_alloc_i32(MLG_MAX_UK), .uk_ne = mlg_alloc_i32(MLG_MAX_UK), .uk_np = mlg_alloc_i32(MLG_MAX_UK), .uk_rt = mlg_alloc_i32(MLG_MAX_UK), .uk_pt = mlg_alloc_i32((MLG_MAX_UK * 16)), .nuk = 0, .ef_node = mlg_alloc_i32(MLG_MAX_ENUMS), .nef = 0, .cap_node = mlg_alloc_i32(MLG_MAX_ENUMS), .ncap = 0, .hs_ef = mlg_alloc_i32(MLG_MAX_DEFERS), .hs_cap = mlg_alloc_i32(MLG_MAX_DEFERS), .nhs = 0, .mc_e = mlg_alloc_i32(MLG_MAX_LOCALS), .mc_t = mlg_alloc_i32(MLG_MAX_LOCALS), .nmc = 0, .dropf = mlg_alloc_i32(MLG_MAX_FNS), .ndropf = 0, .gpuf = mlg_alloc_i32(MLG_MAX_FNS), .ngpuf = 0, .gpu_ssa = 0, .al_node = mlg_alloc_i32(MLG_MAX_FNS), .nal = 0, .al_depth = 0, .vraw = mlg_alloc_i32(MLG_VAL_CAP), .rawbuf = malloc((int64_t)(MLG_RAW_CAP)), .rawlen = 0, .vtx = mlg_alloc_i32(MLG_VAL_CAP), .vtxi = mlg_alloc_i32(MLG_VAL_CAP), .vc_elem = mlg_alloc_i32(MLG_MAX_ARRS), .vc_n = mlg_alloc_i32(MLG_MAX_ARRS), .nvc = 0, .fk_root = AST_NONE, .fk_mod = 0 };
+  uint8_t* body = (uint8_t*)(flow_mem_malloc((int64_t)(out_cap)));
+  Mlg mg = (Mlg){ .arena = arena, .src = src, .out = body, .cap = out_cap, .len = 0, .err = 0, .why = "", .why_node = AST_NONE, .last_line = 0, .ind = 1, .nval = 0, .vt = mlg_alloc_i32(MLG_VAL_CAP), .vu = mlg_alloc_i32(MLG_VAL_CAP), .at = mlg_alloc_i32(MLG_MAX_ARGS), .au = mlg_alloc_i32(MLG_MAX_ARGS), .nlabel = 0, .pool = flow_mem_malloc((int64_t)(MLG_POOL_CAP)), .pool_len = 0, .s_off = mlg_alloc_i32(MLG_MAX_STRS), .s_len = mlg_alloc_i32(MLG_MAX_STRS), .nstr = 0, .needs_printf = 0, .st_node = mlg_alloc_i32(MLG_MAX_STRUCTS), .nst = 0, .sugar = (0 - 1), .la_elem = mlg_alloc_i32(MLG_MAX_ARRS), .la_n = mlg_alloc_i32(MLG_MAX_ARRS), .nla = 0, .mr_elem = mlg_alloc_i32(MLG_MAX_ARRS), .mr_n = mlg_alloc_i32(MLG_MAX_ARRS), .nmr = 0, .fn_node = mlg_alloc_i32(MLG_MAX_FNS), .fn_ext = mlg_alloc_i32(MLG_MAX_FNS), .fn_ovl = mlg_alloc_i32(MLG_MAX_FNS), .nfn = 0, .declared = mlg_alloc_i32(MLG_MAX_FNS), .l_ns = mlg_alloc_i32(MLG_MAX_LOCALS), .l_ne = mlg_alloc_i32(MLG_MAX_LOCALS), .l_mt = mlg_alloc_i32(MLG_MAX_LOCALS), .l_ft = mlg_alloc_i32(MLG_MAX_LOCALS), .l_ssa = mlg_alloc_i32(MLG_MAX_LOCALS), .l_alloca = mlg_alloc_i32(MLG_MAX_LOCALS), .l_llarr = mlg_alloc_i32(MLG_MAX_LOCALS), .nloc = 0, .ret_mt = MT_VOID, .ret_ft = AST_NONE, .inside_scf_for = 0, .lp_region = mlg_alloc_i32(MLG_MAX_LOOPS), .lp_header = mlg_alloc_i32(MLG_MAX_LOOPS), .lp_end = mlg_alloc_i32(MLG_MAX_LOOPS), .lp_iv = mlg_alloc_i32(MLG_MAX_LOOPS), .lp_step = mlg_alloc_i32(MLG_MAX_LOOPS), .lp_df = mlg_alloc_i32(MLG_MAX_LOOPS), .nlp = 0, .v_llarr = mlg_alloc_i32(MLG_VAL_CAP), .a_llarr = mlg_alloc_i32(MLG_MAX_ARGS), .c_node = mlg_alloc_i32(MLG_MAX_FNS), .nconst = 0, .lp_carry = mlg_alloc_i32((MLG_MAX_LOOPS * MLG_MAX_MERGE)), .lp_ncarry = mlg_alloc_i32(MLG_MAX_LOOPS), .df = mlg_alloc_i32(MLG_MAX_DEFERS), .ndf = 0, .dscope = mlg_alloc_i32(MLG_MAX_DEFERS), .ndscope = 0, .rdf = NULL, .rdf_len = 0, .en_node = mlg_alloc_i32(MLG_MAX_ENUMS), .en_st = mlg_alloc_i32(MLG_MAX_ENUMS), .nen = 0, .st_enum = mlg_alloc_i32(MLG_MAX_STRUCTS), .xsrc = (src_len + 1), .xsrc_end = src_cap, .mod_start = mod_start, .nmods = nmods, .mod_names = mod_names, .mod_stride = mod_stride, .sv_node = mlg_alloc_i32(MLG_MAX_FNS), .nsv = 0, .span_st = (0 - 1), .sp_elem = mlg_alloc_i32(MLG_MAX_FNS), .sp_node = mlg_alloc_i32(MLG_MAX_FNS), .nsp = 0, .i64_ft = AST_NONE, .sft = mlg_alloc_i32(8), .clo_st = (0 - 1), .lam_buf = flow_mem_malloc((int64_t)(MLG_SIDE_CAP)), .lam_len = 0, .cb_buf = flow_mem_malloc((int64_t)(MLG_SIDE_CAP)), .cb_len = 0, .cb_fn = mlg_alloc_i32(MLG_MAX_FNS), .ncb = 0, .nlambda = 0, .env_val = (0 - 1), .lc_need = 0, .hp_need = 0, .chk = (0 - 1), .lit_want = (0 - 1), .uk_ns = mlg_alloc_i32(MLG_MAX_UK), .uk_ne = mlg_alloc_i32(MLG_MAX_UK), .uk_np = mlg_alloc_i32(MLG_MAX_UK), .uk_rt = mlg_alloc_i32(MLG_MAX_UK), .uk_pt = mlg_alloc_i32((MLG_MAX_UK * 16)), .nuk = 0, .ef_node = mlg_alloc_i32(MLG_MAX_ENUMS), .nef = 0, .cap_node = mlg_alloc_i32(MLG_MAX_ENUMS), .ncap = 0, .hs_ef = mlg_alloc_i32(MLG_MAX_DEFERS), .hs_cap = mlg_alloc_i32(MLG_MAX_DEFERS), .nhs = 0, .mc_e = mlg_alloc_i32(MLG_MAX_LOCALS), .mc_t = mlg_alloc_i32(MLG_MAX_LOCALS), .nmc = 0, .dropf = mlg_alloc_i32(MLG_MAX_FNS), .ndropf = 0, .gpuf = mlg_alloc_i32(MLG_MAX_FNS), .ngpuf = 0, .gpu_ssa = 0, .al_node = mlg_alloc_i32(MLG_MAX_FNS), .nal = 0, .al_depth = 0, .vraw = mlg_alloc_i32(MLG_VAL_CAP), .rawbuf = flow_mem_malloc((int64_t)(MLG_RAW_CAP)), .rawlen = 0, .vtx = mlg_alloc_i32(MLG_VAL_CAP), .vtxi = mlg_alloc_i32(MLG_VAL_CAP), .vc_elem = mlg_alloc_i32(MLG_MAX_ARRS), .vc_n = mlg_alloc_i32(MLG_MAX_ARRS), .nvc = 0, .fk_root = AST_NONE, .fk_mod = 0 };
   Mlg* m = (Mlg*)((&mg));
   mlg_mark_pipe_calls(m);
   mlg_desugar_forks(m, root);
@@ -61191,15 +61296,15 @@ int32_t flowc_mlirgen_emit_modules(AstArena arena, int32_t root, uint8_t* src, i
   printf("flowc mlir: unsupported: %s at line %d\n", (mg).why, mlg_node_line(m, (mg).why_node));
 }
 }
-  free(body);
-  free((mg).pool);
+  flow_mem_free(body);
+  flow_mem_free((mg).pool);
   return n;
 }
 
 
 int32_t flowc_bpf_gen_compile(const char* in_path, const char* out_path, const char* optimize);
 int32_t flowc_bpf_gen_compile(const char* in_path, const char* out_path, const char* optimize) {
-  uint8_t* cmd = (uint8_t*)(malloc(4096));
+  uint8_t* cmd = (uint8_t*)(flow_mem_malloc(4096));
   if (cmd == NULL) {
   return 1;
 }
@@ -61207,24 +61312,24 @@ int32_t flowc_bpf_gen_compile(const char* in_path, const char* out_path, const c
   int32_t rc1 = flowc_io_system((const char*)(cmd));
   if (rc1 != 0) {
   puts("error: Flow -> LLVM IR lowering failed");
-  free(cmd);
+  flow_mem_free(cmd);
   return 1;
 }
   const char* tmp_path = "build/flow_bpf_tmp.ll";
   int64_t sz = flowc_io_file_size(tmp_path);
   if (sz <= 0) {
-  free(cmd);
+  flow_mem_free(cmd);
   return 1;
 }
-  uint8_t* ir_buf = (uint8_t*)(malloc((sz + 1)));
+  uint8_t* ir_buf = (uint8_t*)(flow_mem_malloc((sz + 1)));
   int32_t nread = flowc_read_file(tmp_path, ir_buf, (int32_t)(sz));
   if (nread < 0) {
-  free(ir_buf);
-  free(cmd);
+  flow_mem_free(ir_buf);
+  flow_mem_free(cmd);
   return 1;
 }
   ir_buf[nread] = 0;
-  uint8_t* out_buf = (uint8_t*)(malloc((sz + 1024)));
+  uint8_t* out_buf = (uint8_t*)(flow_mem_malloc((sz + 1024)));
   int32_t out_len = 0;
   int32_t _s_out = sprintf(out_buf, (uint8_t*)("target datalayout = \"e-m:e-p:64:64-i64:64-i128:128-n32:64-S128\"\ntarget triple = \"bpfel\"\n"), (uint8_t*)(""), (uint8_t*)(""), (uint8_t*)(""));
   out_len = flowc_strlen((const char*)(out_buf));
@@ -61238,22 +61343,22 @@ int32_t flowc_bpf_gen_compile(const char* in_path, const char* out_path, const c
   int32_t is_dl = flowc_span_starts_with(ir_buf, i, end, (uint8_t*)("target datalayout ="));
   int32_t is_tt = flowc_span_starts_with(ir_buf, i, end, (uint8_t*)("target triple ="));
   if (is_dl == 0 && is_tt == 0) {
-  uint8_t* _m = (uint8_t*)(memcpy((out_buf + out_len), (ir_buf + i), (int64_t)((end - i))));
+  uint8_t* _m = (uint8_t*)(flow_mem_memcpy((out_buf + out_len), (ir_buf + i), (int64_t)((end - i))));
   out_len = (out_len + (end - i));
 }
   i = end;
 }
   int32_t _w = flowc_write_file(tmp_path, out_buf, out_len);
-  free(ir_buf);
-  free(out_buf);
+  flow_mem_free(ir_buf);
+  flow_mem_free(out_buf);
   int32_t _s2 = sprintf(cmd, (uint8_t*)("clang -target bpfel -O%s -x ir -c -o %s build/flow_bpf_tmp.ll"), (uint8_t*)(optimize), (uint8_t*)(out_path), (uint8_t*)(""));
   int32_t rc2 = flowc_io_system((const char*)(cmd));
   if (rc2 != 0) {
   puts("error: LLVM IR -> eBPF compilation failed");
-  free(cmd);
+  flow_mem_free(cmd);
   return 1;
 }
-  free(cmd);
+  flow_mem_free(cmd);
   return 0;
 }
 
@@ -61526,11 +61631,11 @@ int32_t flowc_shader_mode(const char* mode, const char* in_path, const char* out
   return 1;
 }
   int32_t cap = ((int32_t)(fsize) + 256);
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)((cap + 1))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)((cap + 1))));
   int32_t n = flowc_read_file(in_path, buf, cap);
   if (n < 0) {
   se_error("cannot read ", in_path);
-  free(buf);
+  flow_mem_free(buf);
   return 1;
 }
   buf[n] = 0;
@@ -61544,11 +61649,11 @@ int32_t flowc_shader_mode(const char* mode, const char* in_path, const char* out
   xrc = 1;
 }
 }
-  free(buf);
+  flow_mem_free(buf);
   return xrc;
 }
   ShCtx* c = (ShCtx*)(flowc_shader_ctx_new(buf, n));
-  free(buf);
+  flow_mem_free(buf);
   if (flowc_shader_extract(c) != 0) {
   se_ctx_error(c);
   flowc_shader_ctx_free(c);
@@ -62231,42 +62336,42 @@ int32_t flowc_rt_summary_collect(AstArena arena, int32_t root, uint8_t* src, uin
   if (((arena).nodes[root]).kind != AST_PROGRAM) {
   return len;
 }
-  uint8_t* raw_ns = (uint8_t*)(malloc((int64_t)((RT_MAX_FN * 4))));
-  uint8_t* raw_ne = (uint8_t*)(malloc((int64_t)((RT_MAX_FN * 4))));
-  uint8_t* raw_bits = (uint8_t*)(malloc((int64_t)((RT_MAX_FN * 4))));
-  uint8_t* raw_dom = (uint8_t*)(malloc((int64_t)((RT_MAX_FN * 4))));
-  uint8_t* raw_ps = (uint8_t*)(malloc((int64_t)((RT_MAX_FN * 4))));
-  uint8_t* raw_pe = (uint8_t*)(malloc((int64_t)((RT_MAX_FN * 4))));
-  uint8_t* raw_nc = (uint8_t*)(malloc((int64_t)((RT_MAX_FN * 4))));
-  uint8_t* raw_cs = (uint8_t*)(malloc((int64_t)(((RT_MAX_FN * RT_MAX_CALLS) * 4))));
-  uint8_t* raw_ce = (uint8_t*)(malloc((int64_t)(((RT_MAX_FN * RT_MAX_CALLS) * 4))));
+  uint8_t* raw_ns = (uint8_t*)(flow_mem_malloc((int64_t)((RT_MAX_FN * 4))));
+  uint8_t* raw_ne = (uint8_t*)(flow_mem_malloc((int64_t)((RT_MAX_FN * 4))));
+  uint8_t* raw_bits = (uint8_t*)(flow_mem_malloc((int64_t)((RT_MAX_FN * 4))));
+  uint8_t* raw_dom = (uint8_t*)(flow_mem_malloc((int64_t)((RT_MAX_FN * 4))));
+  uint8_t* raw_ps = (uint8_t*)(flow_mem_malloc((int64_t)((RT_MAX_FN * 4))));
+  uint8_t* raw_pe = (uint8_t*)(flow_mem_malloc((int64_t)((RT_MAX_FN * 4))));
+  uint8_t* raw_nc = (uint8_t*)(flow_mem_malloc((int64_t)((RT_MAX_FN * 4))));
+  uint8_t* raw_cs = (uint8_t*)(flow_mem_malloc((int64_t)(((RT_MAX_FN * RT_MAX_CALLS) * 4))));
+  uint8_t* raw_ce = (uint8_t*)(flow_mem_malloc((int64_t)(((RT_MAX_FN * RT_MAX_CALLS) * 4))));
   if (raw_ns == NULL || raw_ne == NULL || raw_bits == NULL || raw_dom == NULL || raw_ps == NULL || raw_pe == NULL || raw_nc == NULL || raw_cs == NULL || raw_ce == NULL) {
   if (raw_ns != NULL) {
-  free(raw_ns);
+  flow_mem_free(raw_ns);
 }
   if (raw_ne != NULL) {
-  free(raw_ne);
+  flow_mem_free(raw_ne);
 }
   if (raw_bits != NULL) {
-  free(raw_bits);
+  flow_mem_free(raw_bits);
 }
   if (raw_dom != NULL) {
-  free(raw_dom);
+  flow_mem_free(raw_dom);
 }
   if (raw_ps != NULL) {
-  free(raw_ps);
+  flow_mem_free(raw_ps);
 }
   if (raw_pe != NULL) {
-  free(raw_pe);
+  flow_mem_free(raw_pe);
 }
   if (raw_nc != NULL) {
-  free(raw_nc);
+  flow_mem_free(raw_nc);
 }
   if (raw_cs != NULL) {
-  free(raw_cs);
+  flow_mem_free(raw_cs);
 }
   if (raw_ce != NULL) {
-  free(raw_ce);
+  flow_mem_free(raw_ce);
 }
   return len;
 }
@@ -62341,15 +62446,15 @@ int32_t flowc_rt_summary_collect(AstArena arena, int32_t root, uint8_t* src, uin
   n = rt_put_one(buf, cap, n, src, ns[k], ne[k], bits[k], domain[k], ps[k], pe[k]);
   k = (k + 1);
 }
-  free(raw_ns);
-  free(raw_ne);
-  free(raw_bits);
-  free(raw_dom);
-  free(raw_ps);
-  free(raw_pe);
-  free(raw_nc);
-  free(raw_cs);
-  free(raw_ce);
+  flow_mem_free(raw_ns);
+  flow_mem_free(raw_ne);
+  flow_mem_free(raw_bits);
+  flow_mem_free(raw_dom);
+  flow_mem_free(raw_ps);
+  flow_mem_free(raw_pe);
+  flow_mem_free(raw_nc);
+  flow_mem_free(raw_cs);
+  flow_mem_free(raw_ce);
   return n;
 }
 
@@ -62703,7 +62808,7 @@ int64_t ss_parse_int(uint8_t* src, int32_t s0, int32_t e0) {
 
 double ss_parse_float(uint8_t* src, int32_t s0, int32_t e0) {
   int32_t n = (e0 - s0);
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)((n + 1))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)((n + 1))));
   if (buf == NULL) {
   return 0.0;
 }
@@ -62718,7 +62823,7 @@ double ss_parse_float(uint8_t* src, int32_t s0, int32_t e0) {
 }
   buf[j] = 0;
   double v = strtod(buf, NULL);
-  free(buf);
+  flow_mem_free(buf);
   return v;
 }
 
@@ -62777,8 +62882,8 @@ int32_t ss_literal_fact(SortSites* s, int32_t let_id) {
   ss_known_set(s, ns, ne, 0, 0, 0, 0);
   return 1;
 }
-  double* fvals = (double*)((double*)(malloc(((int64_t)(count) * 8))));
-  int64_t* ivals = (int64_t*)((int64_t*)(malloc(((int64_t)(count) * 8))));
+  double* fvals = (double*)((double*)(flow_mem_malloc(((int64_t)(count) * 8))));
+  int64_t* ivals = (int64_t*)((int64_t*)(flow_mem_malloc(((int64_t)(count) * 8))));
   if (fvals == NULL || ivals == NULL) {
   return 0;
 }
@@ -62790,8 +62895,8 @@ int32_t ss_literal_fact(SortSites* s, int32_t let_id) {
   while (ss_valid(s, e) == 1) {
   int32_t r = ss_numeric(s, e, (&iv[0]), (&fv[0]));
   if (r == 0) {
-  free((uint8_t*)(fvals));
-  free((uint8_t*)(ivals));
+  flow_mem_free((uint8_t*)(fvals));
+  flow_mem_free((uint8_t*)(ivals));
   return 0;
 }
   if (r == 2) {
@@ -62812,8 +62917,8 @@ int32_t ss_literal_fact(SortSites* s, int32_t let_id) {
   lo = (kr).lo;
   hi = (kr).hi;
 }
-  free((uint8_t*)(fvals));
-  free((uint8_t*)(ivals));
+  flow_mem_free((uint8_t*)(fvals));
+  flow_mem_free((uint8_t*)(ivals));
   ss_known_set(s, ns, ne, order, has, lo, hi);
   return 1;
 }
@@ -62881,7 +62986,7 @@ void ss_function(SortSites* s, int32_t fn) {
 
 int32_t flowc_sort_sites_hints(AstArena arena, uint8_t* src, int32_t* order, int32_t* has_range, int64_t* lo, int64_t* hi) {
   int64_t cap = (int64_t)(SS_KNOWN_CAP);
-  SortSites s = (SortSites){ .arena = arena, .src = src, .order = order, .has_range = has_range, .lo = lo, .hi = hi, .kn_start = (int32_t*)(malloc((cap * 4))), .kn_end = (int32_t*)(malloc((cap * 4))), .kn_order = (int32_t*)(malloc((cap * 4))), .kn_has = (int32_t*)(malloc((cap * 4))), .kn_lo = (int64_t*)(malloc((cap * 8))), .kn_hi = (int64_t*)(malloc((cap * 8))), .kn_len = 0, .mut_start = (int32_t*)(malloc((cap * 4))), .mut_end = (int32_t*)(malloc((cap * 4))), .mut_len = 0 };
+  SortSites s = (SortSites){ .arena = arena, .src = src, .order = order, .has_range = has_range, .lo = lo, .hi = hi, .kn_start = (int32_t*)(flow_mem_malloc((cap * 4))), .kn_end = (int32_t*)(flow_mem_malloc((cap * 4))), .kn_order = (int32_t*)(flow_mem_malloc((cap * 4))), .kn_has = (int32_t*)(flow_mem_malloc((cap * 4))), .kn_lo = (int64_t*)(flow_mem_malloc((cap * 8))), .kn_hi = (int64_t*)(flow_mem_malloc((cap * 8))), .kn_len = 0, .mut_start = (int32_t*)(flow_mem_malloc((cap * 4))), .mut_end = (int32_t*)(flow_mem_malloc((cap * 4))), .mut_len = 0 };
   if ((s).kn_start == NULL || (s).kn_end == NULL || (s).kn_order == NULL || (s).kn_has == NULL || (s).kn_lo == NULL || (s).kn_hi == NULL || (s).mut_start == NULL || (s).mut_end == NULL) {
   return (0 - 1);
 }
@@ -62892,14 +62997,14 @@ int32_t flowc_sort_sites_hints(AstArena arena, uint8_t* src, int32_t* order, int
 }
   i = (i + 1);
 }
-  free((uint8_t*)((s).kn_start));
-  free((uint8_t*)((s).kn_end));
-  free((uint8_t*)((s).kn_order));
-  free((uint8_t*)((s).kn_has));
-  free((uint8_t*)((s).kn_lo));
-  free((uint8_t*)((s).kn_hi));
-  free((uint8_t*)((s).mut_start));
-  free((uint8_t*)((s).mut_end));
+  flow_mem_free((uint8_t*)((s).kn_start));
+  flow_mem_free((uint8_t*)((s).kn_end));
+  flow_mem_free((uint8_t*)((s).kn_order));
+  flow_mem_free((uint8_t*)((s).kn_has));
+  flow_mem_free((uint8_t*)((s).kn_lo));
+  flow_mem_free((uint8_t*)((s).kn_hi));
+  flow_mem_free((uint8_t*)((s).mut_start));
+  flow_mem_free((uint8_t*)((s).mut_end));
   return 0;
 }
 
@@ -63051,7 +63156,7 @@ int32_t ch_scan(const char* cmd, SemStrMap* names, bool defines) {
   if (fp == NULL) {
   return 0;
 }
-  uint8_t* buf = (uint8_t*)((uint8_t*)(malloc(8192)));
+  uint8_t* buf = (uint8_t*)((uint8_t*)(flow_mem_malloc(8192)));
   int32_t total = 0;
   while (fgets(buf, 8192, fp) != NULL) {
   int32_t n = sem_s_len((const char*)(buf));
@@ -63516,6 +63621,8 @@ void flowc_cgen_emit_eff_call(CgenBuf* w, AstArena arena, uint8_t* src, int32_t 
 void flowc_cgen_emit_handle(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id);
 int32_t flowc_cgen_lambda_has_caps(CgenBuf* w, int32_t lam_id);
 int32_t flowc_cgen_library_mode();
+void flowc_cgen_emit_mem_profile(CgenBuf* w);
+int32_t flowc_cgen_emit_mem_name(CgenBuf* w, uint8_t* src, int32_t ns, int32_t ne);
 int32_t flowc_cgen_export_sep(int32_t c);
 int32_t flowc_cgen_export_name_end(uint8_t* list, int32_t s);
 int32_t flowc_cgen_export_same(uint8_t* list, int32_t a, int32_t b, int32_t n);
@@ -68181,11 +68288,11 @@ void flowc_cgen_plan_init(CgenBuf* w, AstArena arena, uint8_t* src) {
   return;
 }
   int32_t n = (arena).len;
-  { __typeof__((w[0]).plan_order) __flowc_st21661 = (int32_t*)(malloc((n * 4))); (w[0]).plan_order = __flowc_st21661; }
-  { __typeof__((w[0]).plan_has) __flowc_st21673 = (int32_t*)(malloc((n * 4))); (w[0]).plan_has = __flowc_st21673; }
-  { __typeof__((w[0]).plan_seen) __flowc_st21685 = (int32_t*)(malloc((n * 4))); (w[0]).plan_seen = __flowc_st21685; }
-  { __typeof__((w[0]).plan_lo) __flowc_st21697 = (int64_t*)(malloc((n * 8))); (w[0]).plan_lo = __flowc_st21697; }
-  { __typeof__((w[0]).plan_hi) __flowc_st21709 = (int64_t*)(malloc((n * 8))); (w[0]).plan_hi = __flowc_st21709; }
+  { __typeof__((w[0]).plan_order) __flowc_st21661 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_order = __flowc_st21661; }
+  { __typeof__((w[0]).plan_has) __flowc_st21673 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_has = __flowc_st21673; }
+  { __typeof__((w[0]).plan_seen) __flowc_st21685 = (int32_t*)(flow_mem_malloc((n * 4))); (w[0]).plan_seen = __flowc_st21685; }
+  { __typeof__((w[0]).plan_lo) __flowc_st21697 = (int64_t*)(flow_mem_malloc((n * 8))); (w[0]).plan_lo = __flowc_st21697; }
+  { __typeof__((w[0]).plan_hi) __flowc_st21709 = (int64_t*)(flow_mem_malloc((n * 8))); (w[0]).plan_hi = __flowc_st21709; }
   if ((w[0]).plan_order == NULL || (w[0]).plan_has == NULL || (w[0]).plan_seen == NULL || (w[0]).plan_lo == NULL || (w[0]).plan_hi == NULL) {
   (w[0]).plan_order = NULL;
   (w[0]).plan_has = NULL;
@@ -68640,7 +68747,7 @@ void flowc_cgen_sort_body_bottom_up(CgenBuf* w, AstArena arena, uint8_t* src, in
   flowc_cgen_put_i32(w, n);
   flowc_cgen_puts(w, "]; ");
 } else {
-  flowc_cgen_puts(w, "if (__flowc_sn > 1) { __typeof__(__flowc_sa[0])* __flowc_sb = malloc(sizeof(__flowc_sa[0]) * (size_t)__flowc_sn); ");
+  flowc_cgen_puts(w, "if (__flowc_sn > 1) { __typeof__(__flowc_sa[0])* __flowc_sb = flow_mem_malloc(sizeof(__flowc_sa[0]) * (size_t)__flowc_sn); ");
 }
   flowc_cgen_puts(w, "for (int32_t __flowc_sw = 1; __flowc_sw < __flowc_sn; __flowc_sw *= 2) { for (int32_t __flowc_slo = 0; __flowc_slo < __flowc_sn; __flowc_slo += 2 * __flowc_sw) { int32_t __flowc_smid = __flowc_slo + __flowc_sw; if (__flowc_smid > __flowc_sn) { __flowc_smid = __flowc_sn; } int32_t __flowc_shi = __flowc_slo + 2 * __flowc_sw; if (__flowc_shi > __flowc_sn) { __flowc_shi = __flowc_sn; } int32_t __flowc_si = __flowc_slo, __flowc_sj = __flowc_smid, __flowc_sk = __flowc_slo; while (__flowc_si < __flowc_smid && __flowc_sj < __flowc_shi) { if ((");
   flowc_cgen_sort_cmp(w, arena, src, id, "__flowc_sa[__flowc_sj]", "__flowc_sa[__flowc_si]");
@@ -68648,7 +68755,7 @@ void flowc_cgen_sort_body_bottom_up(CgenBuf* w, AstArena arena, uint8_t* src, in
   if (n > 0) {
   flowc_cgen_puts(w, "} ");
 } else {
-  flowc_cgen_puts(w, "free(__flowc_sb); } ");
+  flowc_cgen_puts(w, "flow_mem_free(__flowc_sb); } ");
 }
 }
 
@@ -68890,7 +68997,7 @@ void flowc_cgen_emit_heap_closure(CgenBuf* w, AstArena arena, uint8_t* src, int3
   flowc_cgen_put_i32(w, lam_id);
   flowc_cgen_puts(w, "_env* __flowc_fe = (lambda_");
   flowc_cgen_put_i32(w, lam_id);
-  flowc_cgen_puts(w, "_env*)malloc(sizeof(lambda_");
+  flowc_cgen_puts(w, "_env*)flow_mem_malloc(sizeof(lambda_");
   flowc_cgen_put_i32(w, lam_id);
   flowc_cgen_puts(w, "_env)); *__flowc_fe = ");
   if (var == AST_NONE) {
@@ -70659,7 +70766,7 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   if (((arena).nodes[id]).b != AST_NONE && ((arena).nodes[id]).a != AST_NONE && ((arena).nodes[((arena).nodes[id]).a]).next == AST_NONE && ((arena).nodes[((arena).nodes[id]).b]).next == AST_NONE && flowc_cgen_span_is(src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end, "array") == 1 && flowc_cgen_find_fn(arena, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end) == AST_NONE) {
   flowc_cgen_puts(w, "((");
   flowc_cgen_emit_type(w, arena, src, ((arena).nodes[id]).b);
-  flowc_cgen_puts(w, "*)calloc(");
+  flowc_cgen_puts(w, "*)flow_mem_calloc(");
   flowc_cgen_emit_expr(w, arena, src, ((arena).nodes[id]).a);
   flowc_cgen_puts(w, ", sizeof(");
   flowc_cgen_emit_type(w, arena, src, ((arena).nodes[id]).b);
@@ -70789,8 +70896,10 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   if (is_f32_math == 1 || is_c64_math == 1) {
   suppress_libc_prefix = 1;
 }
+  int32_t user_libc = 0;
   if (suppress_libc_prefix == 0 && flowc_cgen_is_libc_fn(arena, src, id) == 1 && flowc_cgen_call_user_libc(w, arena, src, id, fn_id) == 1) {
   flowc_cgen_puts(w, "__flowc_libc_");
+  user_libc = 1;
 }
   if (is_f32_math == 1 && flowc_cgen_span_is(src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end, "abs") == 1) {
   flowc_cgen_puts(w, "fabsf");
@@ -70894,7 +71003,13 @@ void flowc_cgen_emit_expr_inner(CgenBuf* w, AstArena arena, uint8_t* src, int32_
   if (is_c64_math == 1 && flowc_cgen_span_is(src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end, "carg") == 1) {
   flowc_cgen_puts(w, "cargf");
 } else {
+  if (user_libc == 1) {
   flowc_cgen_put_ident(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+} else {
+  if (flowc_cgen_emit_mem_name(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end) == 0) {
+  flowc_cgen_put_ident(w, src, ((arena).nodes[id]).name_start, ((arena).nodes[id]).name_end);
+}
+}
 }
 }
 }
@@ -71250,7 +71365,7 @@ void flowc_cgen_emit_defers_to(CgenBuf* w, AstArena arena, uint8_t* src, int32_t
 
 void flowc_cgen_emit_scoped_stmts(CgenBuf* w, AstArena arena, uint8_t* src, int32_t first) {
   if ((w[0]).defer_ids == NULL) {
-  uint8_t* raw = (uint8_t*)(malloc(1024));
+  uint8_t* raw = (uint8_t*)(flow_mem_malloc(1024));
   (w[0]).defer_ids = raw;
   (w[0]).defer_len = 0;
 }
@@ -75159,7 +75274,7 @@ void flowc_cgen_emit_handle(CgenBuf* w, AstArena arena, uint8_t* src, int32_t id
 }
 }
   if ((w[0]).handle_ids == NULL) {
-  uint8_t* raw = (uint8_t*)(malloc((FLOWC_HANDLE_MAX * 4)));
+  uint8_t* raw = (uint8_t*)(flow_mem_malloc((FLOWC_HANDLE_MAX * 4)));
   (w[0]).handle_ids = raw;
 }
   if ((w[0]).handle_len < FLOWC_HANDLE_MAX) {
@@ -75204,6 +75319,122 @@ int32_t flowc_cgen_library_mode() {
   return 0;
 }
   if (v[0] == 49 && v[1] == 0) {
+  return 1;
+}
+  return 0;
+}
+
+void flowc_cgen_emit_mem_profile(CgenBuf* w) {
+  flowc_cgen_puts(w, "#include <sys/resource.h>\n");
+  flowc_cgen_puts(w, "#ifndef FLOWC_MEM_PROFILE\n#define FLOWC_MEM_PROFILE\n");
+  flowc_cgen_puts(w, "static int flow_mem_profile_on = 0;\n");
+  flowc_cgen_puts(w, "static int flow_mem_inited = 0;\n");
+  flowc_cgen_puts(w, "static int flow_mem_report_set = 0;\n");
+  flowc_cgen_puts(w, "static unsigned long long flow_mem_alloc_count = 0ULL;\n");
+  flowc_cgen_puts(w, "static unsigned long long flow_mem_alloc_bytes = 0ULL;\n");
+  flowc_cgen_puts(w, "static unsigned long long flow_mem_temp_bytes = 0ULL;\n");
+  flowc_cgen_puts(w, "static unsigned long long flow_mem_copy_bytes = 0ULL;\n");
+  flowc_cgen_puts(w, "static long long flow_mem_live_bytes = 0;\n");
+  flowc_cgen_puts(w, "static long long flow_mem_peak_live = 0;\n");
+  flowc_cgen_puts(w, "#define FLOW_MEM_MAP 1024\n");
+  flowc_cgen_puts(w, "static void* flow_mem_ptrs[FLOW_MEM_MAP];\n");
+  flowc_cgen_puts(w, "static size_t flow_mem_sz[FLOW_MEM_MAP];\n");
+  flowc_cgen_puts(w, "static inline void flow_mem_map_put(void* p, size_t n) {\n");
+  flowc_cgen_puts(w, "  int i; if (!flow_mem_profile_on || p == 0) return;\n");
+  flowc_cgen_puts(w, "  for (i = 0; i < FLOW_MEM_MAP; i++) { if (flow_mem_ptrs[i] == 0) { flow_mem_ptrs[i] = p; flow_mem_sz[i] = n; return; } }\n");
+  flowc_cgen_puts(w, "}\n");
+  flowc_cgen_puts(w, "static inline size_t flow_mem_map_take(void* p) {\n");
+  flowc_cgen_puts(w, "  int i; if (!flow_mem_profile_on || p == 0) return 0;\n");
+  flowc_cgen_puts(w, "  for (i = 0; i < FLOW_MEM_MAP; i++) { if (flow_mem_ptrs[i] == p) { size_t n = flow_mem_sz[i]; flow_mem_ptrs[i] = 0; return n; } }\n");
+  flowc_cgen_puts(w, "  return 0;\n}\n");
+  flowc_cgen_puts(w, "static void flow_mem_profile_init(void);\n");
+  flowc_cgen_puts(w, "static inline void flow_mem_note_alloc(size_t n) {\n");
+  flowc_cgen_puts(w, "  if (!flow_mem_inited) flow_mem_profile_init();\n");
+  flowc_cgen_puts(w, "  if (!flow_mem_profile_on) return;\n");
+  flowc_cgen_puts(w, "  flow_mem_alloc_count++; flow_mem_alloc_bytes += (unsigned long long)n;\n");
+  flowc_cgen_puts(w, "  flow_mem_live_bytes += (long long)n;\n");
+  flowc_cgen_puts(w, "  if (flow_mem_live_bytes > flow_mem_peak_live) flow_mem_peak_live = flow_mem_live_bytes;\n}\n");
+  flowc_cgen_puts(w, "static inline void flow_mem_note_free(size_t n) {\n");
+  flowc_cgen_puts(w, "  if (!flow_mem_profile_on) return;\n");
+  flowc_cgen_puts(w, "  flow_mem_live_bytes -= (long long)n; if (flow_mem_live_bytes < 0) flow_mem_live_bytes = 0;\n}\n");
+  flowc_cgen_puts(w, "static inline void flow_mem_note_temp(size_t n) {\n");
+  flowc_cgen_puts(w, "  if (!flow_mem_inited) flow_mem_profile_init();\n");
+  flowc_cgen_puts(w, "  if (!flow_mem_profile_on) return;\n");
+  flowc_cgen_puts(w, "  flow_mem_temp_bytes += (unsigned long long)n;\n}\n");
+  flowc_cgen_puts(w, "static inline void flow_mem_note_copy(size_t n) {\n");
+  flowc_cgen_puts(w, "  if (!flow_mem_inited) flow_mem_profile_init();\n");
+  flowc_cgen_puts(w, "  if (!flow_mem_profile_on) return;\n");
+  flowc_cgen_puts(w, "  flow_mem_copy_bytes += (unsigned long long)n;\n}\n");
+  flowc_cgen_puts(w, "static inline void* flow_mem_malloc(size_t n) {\n");
+  flowc_cgen_puts(w, "  void* p = malloc(n); if (p) { flow_mem_note_alloc(n); flow_mem_map_put(p, n); } return p;\n}\n");
+  flowc_cgen_puts(w, "static inline void* flow_mem_calloc(size_t c, size_t s) {\n");
+  flowc_cgen_puts(w, "  void* p = calloc(c, s); if (p) { size_t n = c * s; flow_mem_note_alloc(n); flow_mem_map_put(p, n); } return p;\n}\n");
+  flowc_cgen_puts(w, "static inline void* flow_mem_realloc(void* p, size_t n) {\n");
+  flowc_cgen_puts(w, "  size_t old = flow_mem_map_take(p); void* q = realloc(p, n);\n");
+  flowc_cgen_puts(w, "  if (q) { if (old) flow_mem_note_free(old); flow_mem_note_alloc(n); flow_mem_map_put(q, n); }\n");
+  flowc_cgen_puts(w, "  else if (old) flow_mem_map_put(p, old); return q;\n}\n");
+  flowc_cgen_puts(w, "static inline void flow_mem_free(void* p) {\n");
+  flowc_cgen_puts(w, "  size_t n; if (p == 0) return; n = flow_mem_map_take(p); if (n) flow_mem_note_free(n); free(p);\n}\n");
+  flowc_cgen_puts(w, "static inline void* flow_mem_memcpy(void* d, const void* s, size_t n) {\n");
+  flowc_cgen_puts(w, "  flow_mem_note_copy(n); return memcpy(d, s, n);\n}\n");
+  flowc_cgen_puts(w, "static void flow_mem_report(void) {\n");
+  flowc_cgen_puts(w, "  FILE* fp; const char* path; struct rusage ru; long long peak_rss_kb;\n");
+  flowc_cgen_puts(w, "  if (!flow_mem_profile_on) return;\n");
+  flowc_cgen_puts(w, "  peak_rss_kb = 0; if (getrusage(0, &ru) == 0) {\n");
+  flowc_cgen_puts(w, "#if defined(__APPLE__)\n");
+  flowc_cgen_puts(w, "    peak_rss_kb = (long long)ru.ru_maxrss / 1024;\n");
+  flowc_cgen_puts(w, "#else\n");
+  flowc_cgen_puts(w, "    peak_rss_kb = (long long)ru.ru_maxrss;\n");
+  flowc_cgen_puts(w, "#endif\n  }\n");
+  flowc_cgen_puts(w, "  path = getenv(\"FLOW_MEM_PROFILE_OUT\"); fp = stderr;\n");
+  flowc_cgen_puts(w, "  if (path != 0 && path[0] != 0) { FILE* out = fopen(path, \"w\"); if (out) fp = out; }\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"\\n=== Flow memory profile (#740) ===\\n\");\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"heap allocations      : %llu\\n\", flow_mem_alloc_count);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"heap bytes requested  : %llu\\n\", flow_mem_alloc_bytes);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"peak live heap (bytes): %lld\\n\", flow_mem_peak_live);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"peak RSS (kB)         : %lld\\n\", peak_rss_kb);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"temp lifetime bytes   : %llu\\n\", flow_mem_temp_bytes);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"copy volume (bytes)   : %llu\\n\", flow_mem_copy_bytes);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"stack/arena promotion : (deferred, needs #669)\\n\");\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"copy volume by site   : (deferred, needs #669)\\n\");\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"==================================\\n\");\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"allocations: %llu\\n\", flow_mem_alloc_count);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"heap_bytes: %llu\\n\", flow_mem_alloc_bytes);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"peak_live_heap: %lld\\n\", flow_mem_peak_live);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"peak_rss_kb: %lld\\n\", peak_rss_kb);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"temp_bytes: %llu\\n\", flow_mem_temp_bytes);\n");
+  flowc_cgen_puts(w, "  fprintf(fp, \"copies: %llu\\n\", flow_mem_copy_bytes);\n");
+  flowc_cgen_puts(w, "  if (fp != stderr) fclose(fp);\n}\n");
+  flowc_cgen_puts(w, "static void flow_mem_profile_init(void) {\n");
+  flowc_cgen_puts(w, "  const char* e; if (flow_mem_inited) return; flow_mem_inited = 1;\n");
+  flowc_cgen_puts(w, "  e = getenv(\"FLOW_MEM_PROFILE\");\n");
+  flowc_cgen_puts(w, "  flow_mem_profile_on = (e != 0 && e[0] != 0 && !(e[0] == '0' && e[1] == 0));\n");
+  flowc_cgen_puts(w, "  if (flow_mem_profile_on && !flow_mem_report_set) { flow_mem_report_set = 1; atexit(flow_mem_report); }\n}\n");
+  flowc_cgen_puts(w, "#if defined(__GNUC__)\n");
+  flowc_cgen_puts(w, "__attribute__((constructor)) static void flow_mem_profile_ctor(void) { flow_mem_profile_init(); }\n");
+  flowc_cgen_puts(w, "#endif\n");
+  flowc_cgen_puts(w, "#endif\n");
+}
+
+int32_t flowc_cgen_emit_mem_name(CgenBuf* w, uint8_t* src, int32_t ns, int32_t ne) {
+  if (flowc_cgen_span_is(src, ns, ne, "malloc") == 1) {
+  flowc_cgen_puts(w, "flow_mem_malloc");
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "calloc") == 1) {
+  flowc_cgen_puts(w, "flow_mem_calloc");
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "realloc") == 1) {
+  flowc_cgen_puts(w, "flow_mem_realloc");
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "free") == 1) {
+  flowc_cgen_puts(w, "flow_mem_free");
+  return 1;
+}
+  if (flowc_cgen_span_is(src, ns, ne, "memcpy") == 1) {
+  flowc_cgen_puts(w, "flow_mem_memcpy");
   return 1;
 }
   return 0;
@@ -75512,7 +75743,7 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   (w).sigs_len = sigs_len;
   (w).root = root;
   int32_t eff_cap = 262144;
-  uint8_t* eff_buf = (uint8_t*)(malloc(eff_cap));
+  uint8_t* eff_buf = (uint8_t*)(flow_mem_malloc(eff_cap));
   if (eff_buf != NULL) {
   (w).eff = eff_buf;
   (w).eff_len = flowc_eff_copy_entries(sigs, sigs_len, eff_buf, eff_cap, 0);
@@ -75587,13 +75818,15 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_puts((&w), "typedef float complex c64;\n");
   flowc_cgen_puts((&w), "typedef double complex c128;\n");
   flowc_cgen_putc((&w), 10);
+  flowc_cgen_emit_mem_profile((&w));
   flowc_cgen_puts((&w), "static inline const char* __flowc_str_concat(const char* a, const char* b) {\n");
   flowc_cgen_puts((&w), "  size_t la; size_t lb; char* r;\n");
   flowc_cgen_puts((&w), "  if (a == 0) { a = \"\"; }\n");
   flowc_cgen_puts((&w), "  if (b == 0) { b = \"\"; }\n");
   flowc_cgen_puts((&w), "  la = strlen(a); lb = strlen(b);\n");
-  flowc_cgen_puts((&w), "  r = (char*)malloc(la + lb + 1);\n");
+  flowc_cgen_puts((&w), "  r = (char*)flow_mem_malloc(la + lb + 1);\n");
   flowc_cgen_puts((&w), "  if (r == 0) { return \"\"; }\n");
+  flowc_cgen_puts((&w), "  flow_mem_note_temp(la + lb + 1); flow_mem_note_copy(la + lb);\n");
   flowc_cgen_puts((&w), "  memcpy(r, a, la); memcpy(r + la, b, lb); r[la + lb] = 0;\n");
   flowc_cgen_puts((&w), "  return r;\n");
   flowc_cgen_puts((&w), "}\n");
@@ -75603,8 +75836,9 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_puts((&w), "  va_start(ap, n);\n");
   flowc_cgen_puts((&w), "  for (i = 0; i < n; i++) { s = va_arg(ap, const char*); if (s != 0) { total += strlen(s); } }\n");
   flowc_cgen_puts((&w), "  va_end(ap);\n");
-  flowc_cgen_puts((&w), "  r = (char*)malloc(total + 1);\n");
+  flowc_cgen_puts((&w), "  r = (char*)flow_mem_malloc(total + 1);\n");
   flowc_cgen_puts((&w), "  if (r == 0) { return \"\"; }\n");
+  flowc_cgen_puts((&w), "  flow_mem_note_temp(total + 1); flow_mem_note_copy(total);\n");
   flowc_cgen_puts((&w), "  off = 0;\n");
   flowc_cgen_puts((&w), "  va_start(ap, n);\n");
   flowc_cgen_puts((&w), "  for (i = 0; i < n; i++) {\n");
@@ -75658,16 +75892,16 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_puts((&w), "  return __flowc_range_sum(s1, e1, d1) + __flowc_range_sum(s2, e2, d2) - __flowc_range_sum_isect(s1, e1, d1, s2, e2, d2);\n");
   flowc_cgen_puts((&w), "}\n");
   flowc_cgen_puts((&w), "static inline const char* __flowc_str_of_i64(int64_t v) {\n");
-  flowc_cgen_puts((&w), "  char* r = (char*)malloc(32); if (r == 0) { return \"\"; }\n");
-  flowc_cgen_puts((&w), "  snprintf(r, 32, \"%lld\", (long long)v); return r;\n");
+  flowc_cgen_puts((&w), "  char* r = (char*)flow_mem_malloc(32); if (r == 0) { return \"\"; }\n");
+  flowc_cgen_puts((&w), "  flow_mem_note_temp(32); snprintf(r, 32, \"%lld\", (long long)v); return r;\n");
   flowc_cgen_puts((&w), "}\n");
   flowc_cgen_puts((&w), "static inline const char* __flowc_str_of_u64(uint64_t v) {\n");
-  flowc_cgen_puts((&w), "  char* r = (char*)malloc(32); if (r == 0) { return \"\"; }\n");
-  flowc_cgen_puts((&w), "  snprintf(r, 32, \"%llu\", (unsigned long long)v); return r;\n");
+  flowc_cgen_puts((&w), "  char* r = (char*)flow_mem_malloc(32); if (r == 0) { return \"\"; }\n");
+  flowc_cgen_puts((&w), "  flow_mem_note_temp(32); snprintf(r, 32, \"%llu\", (unsigned long long)v); return r;\n");
   flowc_cgen_puts((&w), "}\n");
   flowc_cgen_puts((&w), "static inline const char* __flowc_str_of_f64(double v) {\n");
-  flowc_cgen_puts((&w), "  char* r = (char*)malloc(64); if (r == 0) { return \"\"; }\n");
-  flowc_cgen_puts((&w), "  snprintf(r, 64, \"%f\", v); return r;\n");
+  flowc_cgen_puts((&w), "  char* r = (char*)flow_mem_malloc(64); if (r == 0) { return \"\"; }\n");
+  flowc_cgen_puts((&w), "  flow_mem_note_temp(64); snprintf(r, 64, \"%f\", v); return r;\n");
   flowc_cgen_puts((&w), "}\n");
   flowc_cgen_putc((&w), 10);
   flowc_cgen_puts((&w), "#define __flow_in_arr(arr, val) __extension__ ({ \\\n");
@@ -75737,7 +75971,7 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   flowc_cgen_puts((&w), "static int flowc_cmp_f32(const void* a, const void* b) { float x = *(const float*)a; float y = *(const float*)b; if (x != x) return 1; if (y != y) return -1; return (x > y) - (x < y); }\n");
   flowc_cgen_puts((&w), "static int32_t flowc_sort_dispatch(void* a, int32_t n, int32_t sz, int32_t desc) { if (sz == 1) qsort(a, n, 1, flowc_cmp_u8); else if (sz == 4) qsort(a, n, 4, flowc_cmp_i32); else if (sz == 8) qsort(a, n, 8, flowc_cmp_f64); else qsort(a, n, sz, flowc_cmp_i32); if (desc) { int32_t i = 0, j = n - 1; while (i < j) { char tmp[8]; memcpy(tmp, (char*)a + i * sz, sz); memcpy((char*)a + i * sz, (char*)a + j * sz, sz); memcpy((char*)a + j * sz, tmp, sz); i++; j--; } } return 0; }\n");
   flowc_cgen_puts((&w), "static int32_t flowc_find_i32(int32_t* a, int32_t n, int32_t target) { for (int32_t i = 0; i < n; i++) { if (a[i] == target) return i; } return -1; }\n");
-  flowc_cgen_puts((&w), "static int32_t flowc_sort_struct(void* a, int32_t n, int32_t sz, int32_t desc) { char* base = (char*)a; char* tmp = (char*)malloc(sz); for (int32_t i = 1; i < n; i++) { memcpy(tmp, base + i * sz, sz); int32_t j = i; while (j > 0) { int32_t cmp = *(int32_t*)(base + (j-1) * sz) - *(int32_t*)tmp; if (desc ? (cmp <= 0) : (cmp > 0)) { memcpy(base + j * sz, base + (j-1) * sz, sz); j--; } else break; } memcpy(base + j * sz, tmp, sz); } free(tmp); return 0; }\n");
+  flowc_cgen_puts((&w), "static int32_t flowc_sort_struct(void* a, int32_t n, int32_t sz, int32_t desc) { char* base = (char*)a; char* tmp = (char*)flow_mem_malloc(sz); for (int32_t i = 1; i < n; i++) { memcpy(tmp, base + i * sz, sz); int32_t j = i; while (j > 0) { int32_t cmp = *(int32_t*)(base + (j-1) * sz) - *(int32_t*)tmp; if (desc ? (cmp <= 0) : (cmp > 0)) { memcpy(base + j * sz, base + (j-1) * sz, sz); j--; } else break; } memcpy(base + j * sz, tmp, sz); } flow_mem_free(tmp); return 0; }\n");
   flowc_cgen_puts((&w), "#endif\n");
   flowc_cgen_putc((&w), 10);
 }
@@ -75845,7 +76079,7 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
   item = ((arena).nodes[item]).next;
 }
   flowc_cgen_emit_fat_typedefs((&w), arena, src, 0);
-  uint8_t* st_done = (uint8_t*)(malloc(((arena).len + 1)));
+  uint8_t* st_done = (uint8_t*)(flow_mem_malloc(((arena).len + 1)));
   int32_t sdi = 0;
   while (sdi < (arena).len) {
   st_done[sdi] = 0;
@@ -75881,7 +76115,7 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
 }
 }
 }
-  free(st_done);
+  flow_mem_free(st_done);
   item = ((arena).nodes[root]).a;
   while (item != AST_NONE) {
   int32_t en = flowc_cgen_unwrap(arena, item, AST_ENUM);
@@ -76274,7 +76508,7 @@ int32_t flowc_cgen_emit_sigs(AstArena arena, int32_t root, uint8_t* src, uint8_t
 }
   flowc_cgen_emit_export_aliases((&w), arena, src, root);
   if ((w).eff != NULL) {
-  free((w).eff);
+  flow_mem_free((w).eff);
 }
   if ((w).err != 0) {
   return (0 - 1);
@@ -82331,22 +82565,22 @@ FlowcOverloadCallScratch flowc_overload_call_scratch_init(int32_t cap) {
   if (cap <= 0) {
   return (FlowcOverloadCallScratch){ .rows = NULL, .ident_types = NULL, .known = NULL, .literal_flags = NULL, .cap = 0, .err = 1 };
 }
-  uint8_t* rows_raw = (uint8_t*)(malloc(((int64_t)(cap) * FLOWC_OVERLOAD_CALL_TYPE_CAP)));
-  uint8_t* ident_raw = (uint8_t*)(malloc(((int64_t)(cap) * 4)));
-  uint8_t* known_raw = (uint8_t*)(malloc(((int64_t)(cap) * 4)));
-  uint8_t* literal_raw = (uint8_t*)(malloc(((int64_t)(cap) * 4)));
+  uint8_t* rows_raw = (uint8_t*)(flow_mem_malloc(((int64_t)(cap) * FLOWC_OVERLOAD_CALL_TYPE_CAP)));
+  uint8_t* ident_raw = (uint8_t*)(flow_mem_malloc(((int64_t)(cap) * 4)));
+  uint8_t* known_raw = (uint8_t*)(flow_mem_malloc(((int64_t)(cap) * 4)));
+  uint8_t* literal_raw = (uint8_t*)(flow_mem_malloc(((int64_t)(cap) * 4)));
   if (rows_raw == NULL || ident_raw == NULL || known_raw == NULL || literal_raw == NULL) {
   if (rows_raw != NULL) {
-  free(rows_raw);
+  flow_mem_free(rows_raw);
 }
   if (ident_raw != NULL) {
-  free(ident_raw);
+  flow_mem_free(ident_raw);
 }
   if (known_raw != NULL) {
-  free(known_raw);
+  flow_mem_free(known_raw);
 }
   if (literal_raw != NULL) {
-  free(literal_raw);
+  flow_mem_free(literal_raw);
 }
   return (FlowcOverloadCallScratch){ .rows = NULL, .ident_types = NULL, .known = NULL, .literal_flags = NULL, .cap = 0, .err = 1 };
 }
@@ -82355,19 +82589,19 @@ FlowcOverloadCallScratch flowc_overload_call_scratch_init(int32_t cap) {
 
 void flowc_overload_call_scratch_free(FlowcOverloadCallScratch* scratch) {
   if ((scratch[0]).rows != NULL) {
-  free((scratch[0]).rows);
+  flow_mem_free((scratch[0]).rows);
   (scratch[0]).rows = NULL;
 }
   if ((scratch[0]).ident_types != NULL) {
-  free((scratch[0]).ident_types);
+  flow_mem_free((scratch[0]).ident_types);
   (scratch[0]).ident_types = NULL;
 }
   if ((scratch[0]).known != NULL) {
-  free((scratch[0]).known);
+  flow_mem_free((scratch[0]).known);
   (scratch[0]).known = NULL;
 }
   if ((scratch[0]).literal_flags != NULL) {
-  free((scratch[0]).literal_flags);
+  flow_mem_free((scratch[0]).literal_flags);
   (scratch[0]).literal_flags = NULL;
 }
   (scratch[0]).cap = 0;
@@ -82799,7 +83033,7 @@ void flowc_tc_note(TcCtx* ctx, const char* label, int32_t start, int32_t end) {
   if (n > 120) {
   n = 120;
 }
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)((n + 1))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)((n + 1))));
   if (buf == NULL) {
   return;
 }
@@ -82811,7 +83045,7 @@ void flowc_tc_note(TcCtx* ctx, const char* label, int32_t start, int32_t end) {
   buf[n] = 0;
   const char* s = (const char*)(buf);
   puts(s);
-  free(buf);
+  flow_mem_free(buf);
 }
 
 void flowc_tc_push_mark(TcCtx* ctx) {
@@ -84756,44 +84990,44 @@ TcCtx flowc_tc_init(uint8_t* src) {
   int32_t overload_arg_cap = 128;
   FlowcOverloadTable overloads = flowc_overload_table_init(src, ncap);
   FlowcOverloadCallScratch overload_scratch = flowc_overload_call_scratch_init(overload_arg_cap);
-  uint8_t* raw_ns = (uint8_t*)(malloc(((int64_t)(ncap) * 4)));
-  uint8_t* raw_ne = (uint8_t*)(malloc(((int64_t)(ncap) * 4)));
-  uint8_t* raw_nk = (uint8_t*)(malloc(((int64_t)(ncap) * 4)));
-  uint8_t* raw_na = (uint8_t*)(malloc(((int64_t)(ncap) * 4)));
-  uint8_t* raw_mk = (uint8_t*)(malloc(((int64_t)(mcap) * 4)));
-  uint8_t* raw_seed = (uint8_t*)(malloc((int64_t)(seed_cap)));
+  uint8_t* raw_ns = (uint8_t*)(flow_mem_malloc(((int64_t)(ncap) * 4)));
+  uint8_t* raw_ne = (uint8_t*)(flow_mem_malloc(((int64_t)(ncap) * 4)));
+  uint8_t* raw_nk = (uint8_t*)(flow_mem_malloc(((int64_t)(ncap) * 4)));
+  uint8_t* raw_na = (uint8_t*)(flow_mem_malloc(((int64_t)(ncap) * 4)));
+  uint8_t* raw_mk = (uint8_t*)(flow_mem_malloc(((int64_t)(mcap) * 4)));
+  uint8_t* raw_seed = (uint8_t*)(flow_mem_malloc((int64_t)(seed_cap)));
   int32_t eff_cap = 262144;
   int32_t hcap = 256;
-  uint8_t* raw_eff = (uint8_t*)(malloc((int64_t)(eff_cap)));
-  uint8_t* raw_hs = (uint8_t*)(malloc(((int64_t)(hcap) * 4)));
-  uint8_t* raw_he = (uint8_t*)(malloc(((int64_t)(hcap) * 4)));
+  uint8_t* raw_eff = (uint8_t*)(flow_mem_malloc((int64_t)(eff_cap)));
+  uint8_t* raw_hs = (uint8_t*)(flow_mem_malloc(((int64_t)(hcap) * 4)));
+  uint8_t* raw_he = (uint8_t*)(flow_mem_malloc(((int64_t)(hcap) * 4)));
   if (raw_ns == NULL || raw_ne == NULL || raw_nk == NULL || raw_na == NULL || raw_mk == NULL || raw_seed == NULL || raw_eff == NULL || raw_hs == NULL || raw_he == NULL || (overloads).err != 0 || (overload_scratch).err != 0) {
   if (raw_ns != NULL) {
-  free(raw_ns);
+  flow_mem_free(raw_ns);
 }
   if (raw_ne != NULL) {
-  free(raw_ne);
+  flow_mem_free(raw_ne);
 }
   if (raw_nk != NULL) {
-  free(raw_nk);
+  flow_mem_free(raw_nk);
 }
   if (raw_na != NULL) {
-  free(raw_na);
+  flow_mem_free(raw_na);
 }
   if (raw_mk != NULL) {
-  free(raw_mk);
+  flow_mem_free(raw_mk);
 }
   if (raw_seed != NULL) {
-  free(raw_seed);
+  flow_mem_free(raw_seed);
 }
   if (raw_eff != NULL) {
-  free(raw_eff);
+  flow_mem_free(raw_eff);
 }
   if (raw_hs != NULL) {
-  free(raw_hs);
+  flow_mem_free(raw_hs);
 }
   if (raw_he != NULL) {
-  free(raw_he);
+  flow_mem_free(raw_he);
 }
   flowc_overload_table_free((&overloads));
   flowc_overload_call_scratch_free((&overload_scratch));
@@ -84827,39 +85061,39 @@ TcCtx flowc_tc_init(uint8_t* src) {
 
 void flowc_tc_free(TcCtx* ctx) {
   if ((ctx[0]).ns != NULL) {
-  free((ctx[0]).ns);
+  flow_mem_free((ctx[0]).ns);
   (ctx[0]).ns = NULL;
 }
   if ((ctx[0]).ne != NULL) {
-  free((ctx[0]).ne);
+  flow_mem_free((ctx[0]).ne);
   (ctx[0]).ne = NULL;
 }
   if ((ctx[0]).nk != NULL) {
-  free((ctx[0]).nk);
+  flow_mem_free((ctx[0]).nk);
   (ctx[0]).nk = NULL;
 }
   if ((ctx[0]).na != NULL) {
-  free((ctx[0]).na);
+  flow_mem_free((ctx[0]).na);
   (ctx[0]).na = NULL;
 }
   if ((ctx[0]).marks != NULL) {
-  free((ctx[0]).marks);
+  flow_mem_free((ctx[0]).marks);
   (ctx[0]).marks = NULL;
 }
   if ((ctx[0]).seed_buf != NULL) {
-  free((ctx[0]).seed_buf);
+  flow_mem_free((ctx[0]).seed_buf);
   (ctx[0]).seed_buf = NULL;
 }
   if ((ctx[0]).eff != NULL) {
-  free((ctx[0]).eff);
+  flow_mem_free((ctx[0]).eff);
   (ctx[0]).eff = NULL;
 }
   if ((ctx[0]).hs_s != NULL) {
-  free((ctx[0]).hs_s);
+  flow_mem_free((ctx[0]).hs_s);
   (ctx[0]).hs_s = NULL;
 }
   if ((ctx[0]).hs_e != NULL) {
-  free((ctx[0]).hs_e);
+  flow_mem_free((ctx[0]).hs_e);
   (ctx[0]).hs_e = NULL;
 }
   flowc_overload_table_free((&(ctx[0]).overloads));
@@ -85125,22 +85359,22 @@ UCtx ut_init(uint8_t* src) {
   int32_t ucap = 256;
   int32_t vcap = 4096;
   int32_t acap = 1024;
-  return (UCtx){ .src = src, .u_ns = (int32_t*)(malloc(((int64_t)(ucap) * 4))), .u_ne = (int32_t*)(malloc(((int64_t)(ucap) * 4))), .u_dims = (int64_t*)(malloc(((int64_t)(ucap) * 8))), .u_ok = (int32_t*)(malloc(((int64_t)(ucap) * 4))), .u_rad = (int32_t*)(malloc(((int64_t)(ucap) * 4))), .u_len = 0, .u_cap = ucap, .base = (int32_t*)(malloc(((int64_t)(ucap) * 4))), .nbase = 0, .v_ns = (int32_t*)(malloc(((int64_t)(vcap) * 4))), .v_ne = (int32_t*)(malloc(((int64_t)(vcap) * 4))), .v_ty = (UTy*)(malloc(((int64_t)(vcap) * UT_TY_BYTES))), .v_len = 0, .v_cap = vcap, .marks = (int32_t*)(malloc((1024 * 4))), .m_len = 0, .m_cap = 1024, .args = (UTy*)(malloc(((int64_t)(acap) * UT_TY_BYTES))), .a_len = 0, .a_cap = acap, .mb = malloc(1024), .mb_len = 0, .mb_cap = 1024, .cur_fn = AST_NONE, .err = 0 };
+  return (UCtx){ .src = src, .u_ns = (int32_t*)(flow_mem_malloc(((int64_t)(ucap) * 4))), .u_ne = (int32_t*)(flow_mem_malloc(((int64_t)(ucap) * 4))), .u_dims = (int64_t*)(flow_mem_malloc(((int64_t)(ucap) * 8))), .u_ok = (int32_t*)(flow_mem_malloc(((int64_t)(ucap) * 4))), .u_rad = (int32_t*)(flow_mem_malloc(((int64_t)(ucap) * 4))), .u_len = 0, .u_cap = ucap, .base = (int32_t*)(flow_mem_malloc(((int64_t)(ucap) * 4))), .nbase = 0, .v_ns = (int32_t*)(flow_mem_malloc(((int64_t)(vcap) * 4))), .v_ne = (int32_t*)(flow_mem_malloc(((int64_t)(vcap) * 4))), .v_ty = (UTy*)(flow_mem_malloc(((int64_t)(vcap) * UT_TY_BYTES))), .v_len = 0, .v_cap = vcap, .marks = (int32_t*)(flow_mem_malloc((1024 * 4))), .m_len = 0, .m_cap = 1024, .args = (UTy*)(flow_mem_malloc(((int64_t)(acap) * UT_TY_BYTES))), .a_len = 0, .a_cap = acap, .mb = flow_mem_malloc(1024), .mb_len = 0, .mb_cap = 1024, .cur_fn = AST_NONE, .err = 0 };
 }
 
 void ut_free(UCtx* u) {
-  free((uint8_t*)((u[0]).u_ns));
-  free((uint8_t*)((u[0]).u_ne));
-  free((uint8_t*)((u[0]).u_dims));
-  free((uint8_t*)((u[0]).u_ok));
-  free((uint8_t*)((u[0]).u_rad));
-  free((uint8_t*)((u[0]).base));
-  free((uint8_t*)((u[0]).v_ns));
-  free((uint8_t*)((u[0]).v_ne));
-  free((uint8_t*)((u[0]).v_ty));
-  free((uint8_t*)((u[0]).marks));
-  free((uint8_t*)((u[0]).args));
-  free((u[0]).mb);
+  flow_mem_free((uint8_t*)((u[0]).u_ns));
+  flow_mem_free((uint8_t*)((u[0]).u_ne));
+  flow_mem_free((uint8_t*)((u[0]).u_dims));
+  flow_mem_free((uint8_t*)((u[0]).u_ok));
+  flow_mem_free((uint8_t*)((u[0]).u_rad));
+  flow_mem_free((uint8_t*)((u[0]).base));
+  flow_mem_free((uint8_t*)((u[0]).v_ns));
+  flow_mem_free((uint8_t*)((u[0]).v_ne));
+  flow_mem_free((uint8_t*)((u[0]).v_ty));
+  flow_mem_free((uint8_t*)((u[0]).marks));
+  flow_mem_free((uint8_t*)((u[0]).args));
+  flow_mem_free((u[0]).mb);
 }
 
 void ut_mb_reset(UCtx* u) {
@@ -86789,15 +87023,15 @@ int32_t flowc_resolve_find_path(uint8_t* store, int32_t n, int32_t row_cap, uint
   uint8_t* other = (uint8_t*)(flowc_resolve_abspath((store + (i * row_cap))));
   if (other != NULL) {
   int32_t same = flowc_resolve_cstr_eq(other, abs);
-  free(other);
+  flow_mem_free(other);
   if (same == 1) {
-  free(abs);
+  flow_mem_free(abs);
   return i;
 }
 }
   i = (i + 1);
 }
-  free(abs);
+  flow_mem_free(abs);
   return (0 - 1);
 }
 
@@ -86813,7 +87047,7 @@ uint8_t* flowc_resolve_abspath(uint8_t* path) {
 }
   pre = ((int32_t)(strlen(cwd)) + 1);
 }
-  uint8_t* out = (uint8_t*)(malloc((int64_t)(((pre + n) + 1))));
+  uint8_t* out = (uint8_t*)(flow_mem_malloc((int64_t)(((pre + n) + 1))));
   int32_t o = 0;
   if (pre > 0) {
   while (o < (pre - 1)) {
@@ -87001,7 +87235,7 @@ int32_t flowc_impl_expand_in_place(uint8_t* src, int32_t n, int32_t cap) {
   if (found == 0) {
   return n;
 }
-  uint8_t* out = (uint8_t*)(malloc((int64_t)(cap)));
+  uint8_t* out = (uint8_t*)(flow_mem_malloc((int64_t)(cap)));
   if (out == NULL) {
   return n;
 }
@@ -87163,7 +87397,7 @@ int32_t flowc_impl_expand_in_place(uint8_t* src, int32_t n, int32_t cap) {
 }
 }
   if (o < 0) {
-  free(out);
+  flow_mem_free(out);
   puts("flowc: impl expansion overflowed the source buffer");
   return (0 - 1);
 }
@@ -87173,7 +87407,7 @@ int32_t flowc_impl_expand_in_place(uint8_t* src, int32_t n, int32_t cap) {
   z = (z + 1);
 }
   src[o] = 0;
-  free(out);
+  flow_mem_free(out);
   return o;
 }
 
@@ -87533,10 +87767,10 @@ int32_t flowc_mono_lit_expand_in_place(uint8_t* src, int32_t n, int32_t cap) {
   return n;
 }
   AstArena arena = (p).arena;
-  uint8_t* pool = (uint8_t*)(malloc((int64_t)(MLI_POOL_CAP)));
-  int32_t* edit_pos = (int32_t*)((int32_t*)(malloc(((int64_t)(MLI_MAX_EDITS) * 4))));
-  int32_t* edit_s = (int32_t*)((int32_t*)(malloc(((int64_t)(MLI_MAX_EDITS) * 4))));
-  int32_t* edit_e = (int32_t*)((int32_t*)(malloc(((int64_t)(MLI_MAX_EDITS) * 4))));
+  uint8_t* pool = (uint8_t*)(flow_mem_malloc((int64_t)(MLI_POOL_CAP)));
+  int32_t* edit_pos = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(MLI_MAX_EDITS) * 4))));
+  int32_t* edit_s = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(MLI_MAX_EDITS) * 4))));
+  int32_t* edit_e = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)(MLI_MAX_EDITS) * 4))));
   if (pool == NULL || edit_pos == NULL || edit_s == NULL || edit_e == NULL) {
   flowc_parser_free(p);
   return n;
@@ -87568,7 +87802,7 @@ int32_t flowc_mono_lit_expand_in_place(uint8_t* src, int32_t n, int32_t cap) {
   if (((n + grow) + 1) > cap) {
   result = (0 - 1);
 } else {
-  uint8_t* out = (uint8_t*)(malloc((int64_t)(((n + grow) + 1))));
+  uint8_t* out = (uint8_t*)(flow_mem_malloc((int64_t)(((n + grow) + 1))));
   if (out == NULL) {
   result = (0 - 1);
 } else {
@@ -87613,15 +87847,15 @@ int32_t flowc_mono_lit_expand_in_place(uint8_t* src, int32_t n, int32_t cap) {
   z = (z + 1);
 }
   src[o] = 0;
-  free(out);
+  flow_mem_free(out);
   result = o;
 }
 }
 }
-  free(pool);
-  free((uint8_t*)(edit_pos));
-  free((uint8_t*)(edit_s));
-  free((uint8_t*)(edit_e));
+  flow_mem_free(pool);
+  flow_mem_free((uint8_t*)(edit_pos));
+  flow_mem_free((uint8_t*)(edit_s));
+  flow_mem_free((uint8_t*)(edit_e));
   return result;
 }
 
@@ -87895,7 +88129,7 @@ int32_t flowc_resolve_dotted_any(uint8_t* src, int32_t s, int32_t e, const char*
 
 int32_t flowc_resolve_claim_domain_path(uint8_t* import_span_src, int32_t s, int32_t e, const char* search_dir, uint8_t* out_path, int32_t out_path_cap) {
   int32_t n = (e - s);
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)((n + 1))));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)((n + 1))));
   if (buf == NULL) {
   return (0 - 1);
 }
@@ -87920,11 +88154,11 @@ int32_t flowc_resolve_claim_domain_path(uint8_t* import_span_src, int32_t s, int
 }
   buf[o] = 0;
   if (had_slash == 0 || o == 0) {
-  free(buf);
+  flow_mem_free(buf);
   return (0 - 1);
 }
   int32_t r = flowc_resolve_dotted_path(buf, 0, o, search_dir, out_path, out_path_cap);
-  free(buf);
+  flow_mem_free(buf);
   return r;
 }
 
@@ -87944,8 +88178,8 @@ int32_t flowc_resolve_put(uint8_t* out, int32_t o, int32_t cap, const char* s) {
 }
 
 int32_t flowc_resolve_project_root(const char* entry_path, uint8_t* out, int32_t cap) {
-  uint8_t* dir = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
-  uint8_t* cand = (uint8_t*)(malloc((int64_t)((FLOWC_RESOLVE_PATH_CAP + 16))));
+  uint8_t* dir = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  uint8_t* cand = (uint8_t*)(flow_mem_malloc((int64_t)((FLOWC_RESOLVE_PATH_CAP + 16))));
   int32_t dlen = flowc_resolve_dirname(entry_path, dir, FLOWC_RESOLVE_PATH_CAP);
   out[0] = 0;
   int32_t found = 0;
@@ -87980,19 +88214,19 @@ int32_t flowc_resolve_project_root(const char* entry_path, uint8_t* out, int32_t
   dlen = flowc_resolve_put(dir, dlen, FLOWC_RESOLVE_PATH_CAP, "/..");
   ups = (ups + 1);
 } else {
-  uint8_t* parent = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  uint8_t* parent = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
   dlen = flowc_resolve_dirname((const char*)(dir), parent, FLOWC_RESOLVE_PATH_CAP);
   if (dlen > 0) {
   dlen = flowc_resolve_copy_cstr((const char*)(parent), dir, FLOWC_RESOLVE_PATH_CAP);
 }
-  free(parent);
+  flow_mem_free(parent);
 }
 }
 }
 }
 }
-  free(cand);
-  free(dir);
+  flow_mem_free(cand);
+  flow_mem_free(dir);
   return found;
 }
 
@@ -88229,34 +88463,34 @@ int32_t flowc_resolve_package_path(uint8_t* src, int32_t name_start, int32_t nam
   if ((first_end - name_start) == 3 && src[name_start] == 115 && src[(name_start + 1)] == 116 && src[(name_start + 2)] == 100) {
   return (0 - 1);
 }
-  uint8_t* tpath = (uint8_t*)(malloc((int64_t)((FLOWC_RESOLVE_PATH_CAP + 16))));
+  uint8_t* tpath = (uint8_t*)(flow_mem_malloc((int64_t)((FLOWC_RESOLVE_PATH_CAP + 16))));
   int32_t o = flowc_resolve_put(tpath, 0, (FLOWC_RESOLVE_PATH_CAP + 16), project_root);
   if (o >= 0) {
   o = flowc_resolve_put(tpath, o, (FLOWC_RESOLVE_PATH_CAP + 16), "/flow.toml");
 }
   if (o < 0) {
-  free(tpath);
+  flow_mem_free(tpath);
   return (0 - 1);
 }
-  uint8_t* toml = (uint8_t*)(malloc(65536));
+  uint8_t* toml = (uint8_t*)(flow_mem_malloc(65536));
   int32_t n = flowc_read_file((const char*)(tpath), toml, 65535);
-  free(tpath);
+  flow_mem_free(tpath);
   if (n <= 0) {
-  free(toml);
+  flow_mem_free(toml);
   return (0 - 1);
 }
   toml[n] = 0;
   int32_t declared = flowc_resolve_toml_declares(toml, n, "dependencies", src, name_start, first_end);
   int32_t is_path = flowc_resolve_toml_declares(toml, n, "paths", src, name_start, first_end);
   if (is_path == 1) {
-  uint8_t* pval = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  uint8_t* pval = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
   int32_t plen = flowc_resolve_toml_string_value(toml, n, "paths", src, name_start, first_end, pval, FLOWC_RESOLVE_PATH_CAP);
-  free(toml);
+  flow_mem_free(toml);
   if (plen <= 0 || first_end >= name_end) {
-  free(pval);
+  flow_mem_free(pval);
   return (0 - 1);
 }
-  uint8_t* proot = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  uint8_t* proot = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
   int32_t q = flowc_resolve_put(proot, 0, FLOWC_RESOLVE_PATH_CAP, project_root);
   if (q >= 0) {
   q = flowc_resolve_put(proot, q, FLOWC_RESOLVE_PATH_CAP, "/");
@@ -88264,7 +88498,7 @@ int32_t flowc_resolve_package_path(uint8_t* src, int32_t name_start, int32_t nam
   if (q >= 0) {
   q = flowc_resolve_put(proot, q, FLOWC_RESOLVE_PATH_CAP, (const char*)(pval));
 }
-  free(pval);
+  flow_mem_free(pval);
   int32_t presult = (0 - 2);
   if (q >= 0) {
   int32_t rest0 = (first_end + 1);
@@ -88282,13 +88516,13 @@ int32_t flowc_resolve_package_path(uint8_t* src, int32_t name_start, int32_t nam
 }
 }
 }
-  free(proot);
+  flow_mem_free(proot);
   if (presult < 0) {
   return (0 - 1);
 }
   return presult;
 }
-  free(toml);
+  flow_mem_free(toml);
   if (declared == 0) {
   return (0 - 1);
 }
@@ -88296,8 +88530,8 @@ int32_t flowc_resolve_package_path(uint8_t* src, int32_t name_start, int32_t nam
   puts("flowc: a package import needs a module, e.g. import name.lib");
   return (0 - 2);
 }
-  uint8_t* pkg_root = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
-  uint8_t* pkg_src = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  uint8_t* pkg_root = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  uint8_t* pkg_src = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
   int32_t r = flowc_resolve_put(pkg_root, 0, FLOWC_RESOLVE_PATH_CAP, project_root);
   if (r >= 0) {
   r = flowc_resolve_put(pkg_root, r, FLOWC_RESOLVE_PATH_CAP, "/flow_packages/");
@@ -88340,8 +88574,8 @@ int32_t flowc_resolve_package_path(uint8_t* src, int32_t name_start, int32_t nam
   pass = (pass + 1);
 }
 }
-  free(pkg_src);
-  free(pkg_root);
+  flow_mem_free(pkg_src);
+  flow_mem_free(pkg_root);
   if (result < 0) {
   puts("flowc: package import not found under flow_packages/ (run `flow sync`)");
 }
@@ -88391,8 +88625,8 @@ int32_t flowc_resolve_dirname(const char* path, uint8_t* out, int32_t out_cap) {
 }
 
 int32_t flowc_resolve_normalize(uint8_t* p, int32_t n) {
-  int32_t* pre = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 2)) * 4))));
-  int32_t* dots = (int32_t*)((int32_t*)(malloc(((int64_t)((n + 2)) * 4))));
+  int32_t* pre = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((n + 2)) * 4))));
+  int32_t* dots = (int32_t*)((int32_t*)(flow_mem_malloc(((int64_t)((n + 2)) * 4))));
   int32_t nseg = 0;
   int32_t o = 0;
   int32_t i = 0;
@@ -88435,8 +88669,8 @@ int32_t flowc_resolve_normalize(uint8_t* p, int32_t n) {
   i = (j + 1);
 }
   p[o] = 0;
-  free((uint8_t*)(pre));
-  free((uint8_t*)(dots));
+  flow_mem_free((uint8_t*)(pre));
+  flow_mem_free((uint8_t*)(dots));
   return o;
 }
 
@@ -88493,18 +88727,18 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, con
   if (n < 0) {
   return (0 - 1);
 }
-  uint8_t* src = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_SRC_CAP)));
-  uint8_t* imp_path = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
-  uint8_t* mod_dir = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  uint8_t* src = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_SRC_CAP)));
+  uint8_t* imp_path = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  uint8_t* mod_dir = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
   if (src == NULL || imp_path == NULL || mod_dir == NULL) {
   if (src != NULL) {
-  free(src);
+  flow_mem_free(src);
 }
   if (imp_path != NULL) {
-  free(imp_path);
+  flow_mem_free(imp_path);
 }
   if (mod_dir != NULL) {
-  free(mod_dir);
+  flow_mem_free(mod_dir);
 }
   return (0 - 1);
 }
@@ -88520,9 +88754,9 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, con
   int32_t nsrc = flowc_resolve_read_source(mpath, src, (FLOWC_RESOLVE_SRC_CAP - 1));
   if (nsrc <= 0) {
   puts("flowc gather: read failed");
-  free(mod_dir);
-  free(imp_path);
-  free(src);
+  flow_mem_free(mod_dir);
+  flow_mem_free(imp_path);
+  flow_mem_free(src);
   return (0 - 1);
 }
   src[nsrc] = 0;
@@ -88536,9 +88770,9 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, con
   if (root < 0 || (p).err != 0) {
   flowc_parser_print_error(p, mpath);
   flowc_parser_free(p);
-  free(mod_dir);
-  free(imp_path);
-  free(src);
+  flow_mem_free(mod_dir);
+  flow_mem_free(imp_path);
+  flow_mem_free(src);
   return (0 - 1);
 }
   int32_t ii = 0;
@@ -88547,9 +88781,9 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, con
   if ((((p).arena).nodes[ii]).ival == 2 && flowc_resolve_unsafe_import(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, mod_search) == 1) {
   flowc_resolve_unsafe_import_error(mpath, src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end);
   flowc_parser_free(p);
-  free(mod_dir);
-  free(imp_path);
-  free(src);
+  flow_mem_free(mod_dir);
+  flow_mem_free(imp_path);
+  flow_mem_free(src);
   return (0 - 1);
 }
   int32_t plen = flowc_resolve_import_at(src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end, (((p).arena).nodes[ii]).ival, mod_search, search_dir, project_root, imp_path);
@@ -88559,18 +88793,18 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, con
   flowc_resolve_import_error(mpath, src, (((p).arena).nodes[ii]).name_start, (((p).arena).nodes[ii]).name_end);
 }
   flowc_parser_free(p);
-  free(mod_dir);
-  free(imp_path);
-  free(src);
+  flow_mem_free(mod_dir);
+  flow_mem_free(imp_path);
+  flow_mem_free(src);
   return (0 - 1);
 }
   const char* dep = (const char*)(imp_path);
   int32_t n2 = flowc_resolve_append_path(path_store, n, dep);
   if (n2 < 0) {
   flowc_parser_free(p);
-  free(mod_dir);
-  free(imp_path);
-  free(src);
+  flow_mem_free(mod_dir);
+  flow_mem_free(imp_path);
+  flow_mem_free(src);
   return (0 - 1);
 }
   n = n2;
@@ -88581,9 +88815,9 @@ int32_t flowc_resolve_gather(const char* entry_path, const char* search_dir, con
   flowc_parser_free(p);
   qi = (qi + 1);
 }
-  free(mod_dir);
-  free(imp_path);
-  free(src);
+  flow_mem_free(mod_dir);
+  flow_mem_free(imp_path);
+  flow_mem_free(src);
   return n;
 }
 
@@ -88656,7 +88890,7 @@ int32_t flowc_parse_cached(Parser* p, uint8_t* src, int32_t nsrc) {
 }
   uint64_t content_hash = flowc_den_hash_bytes(src, 0, nsrc);
   uint64_t cache_key = flowc_den_mix(salt, content_hash);
-  uint8_t* cache_dir = (uint8_t*)(malloc(512));
+  uint8_t* cache_dir = (uint8_t*)(flow_mem_malloc(512));
   int32_t clen = 0;
   const char* home = getenv("HOME");
   if ((uint8_t*)(home) != NULL) {
@@ -88677,7 +88911,7 @@ int32_t flowc_parse_cached(Parser* p, uint8_t* src, int32_t nsrc) {
 }
 }
   if (clen == 0) {
-  free(cache_dir);
+  flow_mem_free(cache_dir);
   return flowc_parse_program(p);
 }
   cache_dir[clen] = 47;
@@ -88699,7 +88933,7 @@ int32_t flowc_parse_cached(Parser* p, uint8_t* src, int32_t nsrc) {
   ((p[0]).arena).len = ast_len;
   ((p[0]).cur).start = nsrc;
   flowc_io_fclose(fp);
-  free(cache_dir);
+  flow_mem_free(cache_dir);
   return root;
 }
 }
@@ -88717,23 +88951,23 @@ int32_t flowc_parse_cached(Parser* p, uint8_t* src, int32_t nsrc) {
   int32_t _c2 = flowc_io_fclose(fpo);
 }
 }
-  free(cache_dir);
+  flow_mem_free(cache_dir);
   return root;
 }
 
 int32_t flowc_resolve_topo(uint8_t* all_store, int32_t all_n, const char* search_dir, const char* project_root, uint8_t* out_store) {
-  uint8_t* src = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_SRC_CAP)));
-  uint8_t* imp_path = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
-  uint8_t* placed = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_MAX_MODS)));
+  uint8_t* src = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_SRC_CAP)));
+  uint8_t* imp_path = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  uint8_t* placed = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_MAX_MODS)));
   if (src == NULL || imp_path == NULL || placed == NULL) {
   if (src != NULL) {
-  free(src);
+  flow_mem_free(src);
 }
   if (imp_path != NULL) {
-  free(imp_path);
+  flow_mem_free(imp_path);
 }
   if (placed != NULL) {
-  free(placed);
+  flow_mem_free(placed);
 }
   return (0 - 1);
 }
@@ -88753,9 +88987,9 @@ int32_t flowc_resolve_topo(uint8_t* all_store, int32_t all_n, const char* search
   if (flowc_resolve_deps_ready(mpath, search_dir, project_root, all_store, all_n, out_store, out_n, src, imp_path) == 1) {
   int32_t n2 = flowc_resolve_append_path(out_store, out_n, mpath);
   if (n2 < 0) {
-  free(placed);
-  free(imp_path);
-  free(src);
+  flow_mem_free(placed);
+  flow_mem_free(imp_path);
+  flow_mem_free(src);
   return (0 - 1);
 }
   out_n = n2;
@@ -88766,15 +89000,15 @@ int32_t flowc_resolve_topo(uint8_t* all_store, int32_t all_n, const char* search
   i = (i + 1);
 }
   if (progress == 0) {
-  free(placed);
-  free(imp_path);
-  free(src);
+  flow_mem_free(placed);
+  flow_mem_free(imp_path);
+  flow_mem_free(src);
   return (0 - 1);
 }
 }
-  free(placed);
-  free(imp_path);
-  free(src);
+  flow_mem_free(placed);
+  flow_mem_free(imp_path);
+  flow_mem_free(src);
   return out_n;
 }
 
@@ -88815,7 +89049,7 @@ int32_t flowc_resolve_add_templates(AstArena arena, int32_t root, uint8_t* src, 
 }
 
 int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, int32_t flags, uint8_t* sigs, int32_t sigcap, int32_t* siglen, uint8_t* tpl, int32_t tpl_cap, int32_t* tpl_len) {
-  uint8_t* src = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_SRC_CAP)));
+  uint8_t* src = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_SRC_CAP)));
   if (src == NULL) {
   return (0 - 1);
 }
@@ -88826,7 +89060,7 @@ int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, 
 }
   int32_t own = flowc_resolve_read_source(path, src, (FLOWC_RESOLVE_SRC_CAP - 1));
   if (own <= 0) {
-  free(src);
+  flow_mem_free(src);
   return (0 - 1);
 }
   int32_t nsrc = own;
@@ -88843,7 +89077,7 @@ int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, 
   int32_t root = flowc_parse_cached((&p), src, nsrc);
   if (root < 0 || (p).err != 0) {
   flowc_parser_free(p);
-  free(src);
+  flow_mem_free(src);
   return (0 - 1);
 }
   if (tpl != NULL) {
@@ -88857,12 +89091,12 @@ int32_t flowc_resolve_emit_one(const char* path, uint8_t* out, int32_t out_cap, 
   { __typeof__(siglen[0]) __flowc_st11271 = flowc_eff_collect((p).arena, root, src, sigs, sigcap, siglen[0]); siglen[0] = __flowc_st11271; }
 }
   flowc_parser_free(p);
-  free(src);
+  flow_mem_free(src);
   return n;
 }
 
 int32_t flowc_resolve_list_fns(const char* path, int32_t mi, uint8_t* buf, int32_t cap, int32_t len) {
-  uint8_t* src = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_SRC_CAP)));
+  uint8_t* src = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_SRC_CAP)));
   if (src == NULL) {
   return (0 - 1);
 }
@@ -88873,7 +89107,7 @@ int32_t flowc_resolve_list_fns(const char* path, int32_t mi, uint8_t* buf, int32
 }
   int32_t nsrc = flowc_read_file(path, src, (FLOWC_RESOLVE_SRC_CAP - 1));
   if (nsrc <= 0) {
-  free(src);
+  flow_mem_free(src);
   return (0 - 1);
 }
   src[nsrc] = 0;
@@ -88881,7 +89115,7 @@ int32_t flowc_resolve_list_fns(const char* path, int32_t mi, uint8_t* buf, int32
   int32_t root = flowc_parse_cached((&p), src, nsrc);
   if (root < 0 || (p).err != 0) {
   flowc_parser_free(p);
-  free(src);
+  flow_mem_free(src);
   return (0 - 1);
 }
   int32_t n = len;
@@ -88919,7 +89153,7 @@ int32_t flowc_resolve_list_fns(const char* path, int32_t mi, uint8_t* buf, int32
   item = (((p).arena).nodes[item]).next;
 }
   flowc_parser_free(p);
-  free(src);
+  flow_mem_free(src);
   return n;
 }
 
@@ -89055,16 +89289,16 @@ int32_t flowc_bundle_semcheck(uint8_t* all_store, int32_t all_n, const char* sea
   counts[0] = 0;
   counts[1] = 0;
   int32_t max_deps = 64;
-  uint8_t** srcs = (uint8_t**)((uint8_t**)(malloc((int64_t)((all_n * 8)))));
-  AstArena* arenas = (AstArena*)((AstArena*)(malloc((int64_t)((all_n * 24)))));
-  int32_t* roots = (int32_t*)((int32_t*)(malloc((int64_t)((all_n * 4)))));
-  int32_t* deps = (int32_t*)((int32_t*)(malloc((int64_t)(((all_n * max_deps) * 4)))));
-  int32_t* ndeps = (int32_t*)((int32_t*)(malloc((int64_t)((all_n * 4)))));
-  int32_t* state = (int32_t*)((int32_t*)(malloc((int64_t)((all_n * 4)))));
-  int32_t* order = (int32_t*)((int32_t*)(malloc((int64_t)((all_n * 4)))));
-  uint8_t* tmp = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_SRC_CAP)));
-  uint8_t* imp_path = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
-  uint8_t* mod_dir = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  uint8_t** srcs = (uint8_t**)((uint8_t**)(flow_mem_malloc((int64_t)((all_n * 8)))));
+  AstArena* arenas = (AstArena*)((AstArena*)(flow_mem_malloc((int64_t)((all_n * 24)))));
+  int32_t* roots = (int32_t*)((int32_t*)(flow_mem_malloc((int64_t)((all_n * 4)))));
+  int32_t* deps = (int32_t*)((int32_t*)(flow_mem_malloc((int64_t)(((all_n * max_deps) * 4)))));
+  int32_t* ndeps = (int32_t*)((int32_t*)(flow_mem_malloc((int64_t)((all_n * 4)))));
+  int32_t* state = (int32_t*)((int32_t*)(flow_mem_malloc((int64_t)((all_n * 4)))));
+  int32_t* order = (int32_t*)((int32_t*)(flow_mem_malloc((int64_t)((all_n * 4)))));
+  uint8_t* tmp = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_SRC_CAP)));
+  uint8_t* imp_path = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  uint8_t* mod_dir = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
   int32_t i = 0;
   while (i < all_n) {
   const char* mpath = (const char*)((all_store + (i * FLOWC_RESOLVE_PATH_CAP)));
@@ -89077,7 +89311,7 @@ int32_t flowc_bundle_semcheck(uint8_t* all_store, int32_t all_n, const char* sea
   if (nsrc < 0) {
   return 1;
 }
-  uint8_t* own = (uint8_t*)(malloc((int64_t)((nsrc + 1))));
+  uint8_t* own = (uint8_t*)(flow_mem_malloc((int64_t)((nsrc + 1))));
   zi = 0;
   while (zi < nsrc) {
   own[zi] = tmp[zi];
@@ -89152,7 +89386,7 @@ int32_t flowc_bundle_typecheck(const char* entry_path, const char* search_dir) {
 
 int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_dir, int32_t* fatal_out) {
   fatal_out[0] = 1;
-  uint8_t* path_store = (uint8_t*)(malloc((int64_t)((FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP))));
+  uint8_t* path_store = (uint8_t*)(flow_mem_malloc((int64_t)((FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP))));
   if (path_store == NULL) {
   return 1;
 }
@@ -89162,18 +89396,18 @@ int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_
   path_store[zi] = 0;
   zi = (zi + 1);
 }
-  uint8_t* proj_buf = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  uint8_t* proj_buf = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
   int32_t _proj_len = flowc_resolve_project_root(entry_path, proj_buf, FLOWC_RESOLVE_PATH_CAP);
   const char* project_root = (const char*)(proj_buf);
   int32_t nmods = flowc_resolve_gather(entry_path, search_dir, project_root, path_store);
   if (nmods <= 0) {
   puts("flowc bundle tc: gather failed");
-  free(path_store);
+  flow_mem_free(path_store);
   return 1;
 }
-  uint8_t* order_store = (uint8_t*)(malloc((int64_t)((FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP))));
+  uint8_t* order_store = (uint8_t*)(flow_mem_malloc((int64_t)((FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP))));
   if (order_store == NULL) {
-  free(path_store);
+  flow_mem_free(path_store);
   return 1;
 }
   zi = 0;
@@ -89184,8 +89418,8 @@ int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_
   int32_t norder = flowc_resolve_topo(path_store, nmods, search_dir, project_root, order_store);
   if (norder <= 0) {
   puts("flowc bundle tc: topo failed");
-  free(order_store);
-  free(path_store);
+  flow_mem_free(order_store);
+  flow_mem_free(path_store);
   return 1;
 }
   uint8_t* no_src = (uint8_t*)(NULL);
@@ -89193,15 +89427,15 @@ int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_
   (ctx).lenient = 1;
   (ctx).sem_on = 1;
   if ((ctx).ns == NULL) {
-  free(order_store);
-  free(path_store);
+  flow_mem_free(order_store);
+  flow_mem_free(path_store);
   return 1;
 }
-  uint8_t* src = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_SRC_CAP)));
+  uint8_t* src = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_SRC_CAP)));
   if (src == NULL) {
   flowc_tc_free((&ctx));
-  free(order_store);
-  free(path_store);
+  flow_mem_free(order_store);
+  flow_mem_free(path_store);
   return 1;
 }
   int32_t total_err = 0;
@@ -89218,10 +89452,10 @@ int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_
   int32_t nsrc = flowc_resolve_read_source(mpath, src, (FLOWC_RESOLVE_SRC_CAP - 1));
   if (nsrc <= 0) {
   puts("flowc bundle tc: read failed");
-  free(src);
+  flow_mem_free(src);
   flowc_tc_free((&ctx));
-  free(order_store);
-  free(path_store);
+  flow_mem_free(order_store);
+  flow_mem_free(path_store);
   return 1;
 }
   src[nsrc] = 0;
@@ -89230,10 +89464,10 @@ int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_
   if (root < 0 || (p).err != 0) {
   flowc_parser_print_error(p, mpath);
   flowc_parser_free(p);
-  free(src);
+  flow_mem_free(src);
   flowc_tc_free((&ctx));
-  free(order_store);
-  free(path_store);
+  flow_mem_free(order_store);
+  flow_mem_free(path_store);
   return 1;
 }
   flowc_tc_reset_module((&ctx), src);
@@ -89257,19 +89491,19 @@ int32_t flowc_bundle_typecheck_fatal(const char* entry_path, const char* search_
 }
   total_err = (total_err + sc[0]);
   ctx_fatal = (ctx_fatal + sc[1]);
-  free(src);
+  flow_mem_free(src);
   flowc_tc_free((&ctx));
-  free(order_store);
-  free(path_store);
+  flow_mem_free(order_store);
+  flow_mem_free(path_store);
   fatal_out[0] = ctx_fatal;
   return total_err;
 }
 
 int32_t flowc_semcheck_imports(const char* entry_path, int32_t* counts) {
   int32_t psz = (FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP);
-  uint8_t* path_store = (uint8_t*)(calloc((int64_t)(psz), 1));
-  uint8_t* dir_buf = (uint8_t*)(calloc((int64_t)(FLOWC_RESOLVE_PATH_CAP), 1));
-  uint8_t* proj_buf = (uint8_t*)(calloc((int64_t)(FLOWC_RESOLVE_PATH_CAP), 1));
+  uint8_t* path_store = (uint8_t*)(flow_mem_calloc((int64_t)(psz), 1));
+  uint8_t* dir_buf = (uint8_t*)(flow_mem_calloc((int64_t)(FLOWC_RESOLVE_PATH_CAP), 1));
+  uint8_t* proj_buf = (uint8_t*)(flow_mem_calloc((int64_t)(FLOWC_RESOLVE_PATH_CAP), 1));
   if (path_store == NULL || dir_buf == NULL || proj_buf == NULL) {
   return 1;
 }
@@ -89289,14 +89523,14 @@ int32_t flowc_semcheck_imports(const char* entry_path, int32_t* counts) {
   if (nmods > 0) {
   rc = flowc_bundle_semcheck(path_store, nmods, search_dir, project_root, counts);
 }
-  free(proj_buf);
-  free(dir_buf);
-  free(path_store);
+  flow_mem_free(proj_buf);
+  flow_mem_free(dir_buf);
+  flow_mem_free(path_store);
   return rc;
 }
 
 int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_t* out, int32_t out_cap) {
-  uint8_t* path_store = (uint8_t*)(malloc((int64_t)((FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP))));
+  uint8_t* path_store = (uint8_t*)(flow_mem_malloc((int64_t)((FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP))));
   if (path_store == NULL) {
   return (0 - 1);
 }
@@ -89306,17 +89540,17 @@ int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_
   path_store[zi] = 0;
   zi = (zi + 1);
 }
-  uint8_t* proj_buf = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
+  uint8_t* proj_buf = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_PATH_CAP)));
   int32_t _proj_len = flowc_resolve_project_root(entry_path, proj_buf, FLOWC_RESOLVE_PATH_CAP);
   const char* project_root = (const char*)(proj_buf);
   int32_t nmods = flowc_resolve_gather(entry_path, search_dir, project_root, path_store);
   if (nmods <= 0) {
-  free(path_store);
+  flow_mem_free(path_store);
   return (0 - 1);
 }
-  uint8_t* order_store = (uint8_t*)(malloc((int64_t)((FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP))));
+  uint8_t* order_store = (uint8_t*)(flow_mem_malloc((int64_t)((FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP))));
   if (order_store == NULL) {
-  free(path_store);
+  flow_mem_free(path_store);
   return (0 - 1);
 }
   zi = 0;
@@ -89326,14 +89560,14 @@ int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_
 }
   int32_t norder = flowc_resolve_topo(path_store, nmods, search_dir, project_root, order_store);
   if (norder <= 0) {
-  free(order_store);
-  free(path_store);
+  flow_mem_free(order_store);
+  flow_mem_free(path_store);
   return (0 - 1);
 }
-  uint8_t* sigs = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_SIG_CAP)));
+  uint8_t* sigs = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_SIG_CAP)));
   if (sigs == NULL) {
-  free(order_store);
-  free(path_store);
+  flow_mem_free(order_store);
+  flow_mem_free(path_store);
   return (0 - 1);
 }
   zi = 0;
@@ -89342,11 +89576,11 @@ int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_
   zi = (zi + 1);
 }
   int32_t siglen = 0;
-  uint8_t* fns = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_FNS_CAP)));
+  uint8_t* fns = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_FNS_CAP)));
   if (fns == NULL) {
-  free(sigs);
-  free(order_store);
-  free(path_store);
+  flow_mem_free(sigs);
+  flow_mem_free(order_store);
+  flow_mem_free(path_store);
   return (0 - 1);
 }
   int32_t fnlen = 0;
@@ -89360,7 +89594,7 @@ int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_
 }
   li = (li + 1);
 }
-  uint8_t* tpl = (uint8_t*)(malloc((int64_t)(FLOWC_RESOLVE_TPL_CAP)));
+  uint8_t* tpl = (uint8_t*)(flow_mem_malloc((int64_t)(FLOWC_RESOLVE_TPL_CAP)));
   int32_t tpl_len = 0;
   if (tpl != NULL) {
   tpl[0] = 0;
@@ -89378,28 +89612,28 @@ int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_
   first = 0;
   int32_t ndef = flowc_resolve_emit_renames(fns, fnlen, mi, 0, (out + written), (out_cap - written));
   if (ndef < 0) {
-  free(fns);
-  free(sigs);
-  free(order_store);
-  free(path_store);
+  flow_mem_free(fns);
+  flow_mem_free(sigs);
+  flow_mem_free(order_store);
+  flow_mem_free(path_store);
   return (0 - 1);
 }
   written = (written + ndef);
   uint8_t* dest = (uint8_t*)((out + written));
   int32_t rem = (out_cap - written);
   if (rem <= 0) {
-  free(fns);
-  free(sigs);
-  free(order_store);
-  free(path_store);
+  flow_mem_free(fns);
+  flow_mem_free(sigs);
+  flow_mem_free(order_store);
+  flow_mem_free(path_store);
   return (0 - 1);
 }
   int32_t n = flowc_resolve_emit_one(mpath, dest, rem, flags, sigs, FLOWC_RESOLVE_SIG_CAP, (&siglen), tpl, FLOWC_RESOLVE_TPL_CAP, (&tpl_len));
   if (n < 0) {
-  free(fns);
-  free(sigs);
-  free(order_store);
-  free(path_store);
+  flow_mem_free(fns);
+  flow_mem_free(sigs);
+  flow_mem_free(order_store);
+  flow_mem_free(path_store);
   return (0 - 1);
 }
   written = (written + n);
@@ -89409,10 +89643,10 @@ int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_
 }
   int32_t nundef = flowc_resolve_emit_renames(fns, fnlen, mi, 1, (out + written), (out_cap - written));
   if (nundef < 0) {
-  free(fns);
-  free(sigs);
-  free(order_store);
-  free(path_store);
+  flow_mem_free(fns);
+  flow_mem_free(sigs);
+  flow_mem_free(order_store);
+  flow_mem_free(path_store);
   return (0 - 1);
 }
   written = (written + nundef);
@@ -89423,12 +89657,12 @@ int32_t flowc_bundle_emit(const char* entry_path, const char* search_dir, uint8_
   written = (written + nmiss);
 }
   if (tpl != NULL) {
-  free(tpl);
+  flow_mem_free(tpl);
 }
-  free(fns);
-  free(sigs);
-  free(order_store);
-  free(path_store);
+  flow_mem_free(fns);
+  flow_mem_free(sigs);
+  flow_mem_free(order_store);
+  flow_mem_free(path_store);
   return written;
 }
 
@@ -89499,7 +89733,7 @@ int32_t mb_env_is(const char* name, const char* want) {
 }
 
 int32_t* mb_alloc_i32(int32_t n) {
-  uint8_t* raw = (uint8_t*)(malloc(((int64_t)(n) * 4)));
+  uint8_t* raw = (uint8_t*)(flow_mem_malloc(((int64_t)(n) * 4)));
   int32_t* p = (int32_t*)(raw);
   int32_t i = 0;
   while (i < n) {
@@ -89571,7 +89805,7 @@ int32_t mb_module(MlirBundle* b, uint8_t* p) {
 }
 
 int32_t mb_realpath(const char* p, uint8_t* out) {
-  uint8_t* raw = (uint8_t*)(malloc((int64_t)((MB_PATH * 2))));
+  uint8_t* raw = (uint8_t*)(flow_mem_malloc((int64_t)((MB_PATH * 2))));
   mb_zero(raw, (MB_PATH * 2));
   uint8_t* pp = (uint8_t*)(p);
   int32_t o = 0;
@@ -89579,7 +89813,7 @@ int32_t mb_realpath(const char* p, uint8_t* out) {
   const char* cwd = getenv("PWD");
   uint8_t* cp = (uint8_t*)(cwd);
   if (cp == NULL || cp[0] != 47) {
-  free(raw);
+  flow_mem_free(raw);
   return 0;
 }
   o = mb_put(raw, 0, (MB_PATH * 2), cp, mb_cstr_len(cp));
@@ -89587,7 +89821,7 @@ int32_t mb_realpath(const char* p, uint8_t* out) {
 }
   o = mb_put(raw, o, (MB_PATH * 2), pp, mb_cstr_len(pp));
   if (o < 0) {
-  free(raw);
+  flow_mem_free(raw);
   return 0;
 }
   int32_t w = 0;
@@ -89614,7 +89848,7 @@ int32_t mb_realpath(const char* p, uint8_t* out) {
 } else {
   if (n > 0) {
   if (((w + n) + 2) >= MB_PATH) {
-  free(raw);
+  flow_mem_free(raw);
   return 0;
 }
   out[w] = 47;
@@ -89633,7 +89867,7 @@ int32_t mb_realpath(const char* p, uint8_t* out) {
   w = 1;
 }
   out[w] = 0;
-  free(raw);
+  flow_mem_free(raw);
   return 1;
 }
 
@@ -89728,7 +89962,7 @@ int32_t mb_toml_value(MlirBundle* b, const char* table, uint8_t* key, int32_t kn
 }
 
 int32_t mb_try_parts(uint8_t* root, uint8_t* src, int32_t* ps, int32_t* pe, int32_t first, int32_t np, uint8_t* out) {
-  uint8_t* cand = (uint8_t*)(malloc((int64_t)(MB_PATH)));
+  uint8_t* cand = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
   int32_t o = mb_put(cand, 0, MB_PATH, root, mb_cstr_len(root));
   int32_t i = first;
   while (i < (first + np)) {
@@ -89749,7 +89983,7 @@ int32_t mb_try_parts(uint8_t* root, uint8_t* src, int32_t* ps, int32_t* pe, int3
   ok = mb_try(cand, out);
 }
 }
-  free(cand);
+  flow_mem_free(cand);
   return ok;
 }
 
@@ -89760,7 +89994,7 @@ int32_t mb_resolve(MlirBundle* b, AstArena arena, uint8_t* src, int32_t imp, uin
   if (((arena).nodes[imp]).b != AST_NONE) {
   return 0;
 }
-  uint8_t* cand = (uint8_t*)(malloc((int64_t)(MB_PATH)));
+  uint8_t* cand = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
   int32_t ok = 0;
   if (form == 2) {
   s = (s + 1);
@@ -89777,7 +90011,7 @@ int32_t mb_resolve(MlirBundle* b, AstArena arena, uint8_t* src, int32_t imp, uin
   q = (q + 1);
 }
   if (bad == 0) {
-  uint8_t* file = (uint8_t*)(malloc((int64_t)(MB_PATH)));
+  uint8_t* file = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
   int32_t fo = mb_put(file, 0, MB_PATH, (src + s), (e - s));
   int32_t has_ext = 0;
   if (fo >= 5 && file[(fo - 5)] == 46 && file[(fo - 4)] == 102 && file[(fo - 3)] == 108 && file[(fo - 2)] == 111 && file[(fo - 1)] == 119) {
@@ -89799,21 +90033,21 @@ int32_t mb_resolve(MlirBundle* b, AstArena arena, uint8_t* src, int32_t imp, uin
   ok = 1;
 }
   if (ok == 0) {
-  uint8_t* pk = (uint8_t*)(malloc((int64_t)(MB_PATH)));
+  uint8_t* pk = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
   int32_t po = mb_put(pk, 0, MB_PATH, (b[0]).compiler_root, mb_cstr_len((b[0]).compiler_root));
   mb_puts(pk, po, MB_PATH, "/packages");
   if (mb_join(cand, pk, file, fo) == 1 && mb_try(cand, out) == 1) {
   ok = 1;
 }
-  free(pk);
+  flow_mem_free(pk);
 }
   if (ok == 0 && mb_join(cand, (b[0]).project_root, file, fo) == 1 && mb_try(cand, out) == 1) {
   ok = 1;
 }
 }
-  free(file);
+  flow_mem_free(file);
 }
-  free(cand);
+  flow_mem_free(cand);
   return ok;
 }
   int32_t* ps = (int32_t*)(mb_alloc_i32(64));
@@ -89841,7 +90075,7 @@ int32_t mb_resolve(MlirBundle* b, AstArena arena, uint8_t* src, int32_t imp, uin
   j = (j + 1);
 }
   if (np == 0) {
-  free(cand);
+  flow_mem_free(cand);
   return 0;
 }
   if (form == 1) {
@@ -89850,12 +90084,12 @@ int32_t mb_resolve(MlirBundle* b, AstArena arena, uint8_t* src, int32_t imp, uin
   ok = mb_try_parts(base_dir, src, ps, pe, 0, k, out);
   k = (k - 1);
 }
-  free(cand);
+  flow_mem_free(cand);
   return ok;
 }
   uint8_t* key = (uint8_t*)((src + ps[0]));
   int32_t kn = (pe[0] - ps[0]);
-  uint8_t* val = (uint8_t*)(malloc((int64_t)(MB_PATH)));
+  uint8_t* val = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
   uint8_t* root_a = (uint8_t*)(NULL);
   int32_t first_a = 1;
   uint8_t* root_b = (uint8_t*)(NULL);
@@ -89866,23 +90100,23 @@ int32_t mb_resolve(MlirBundle* b, AstArena arena, uint8_t* src, int32_t imp, uin
   root_a = (b[0]).stdlib_root;
 } else {
   if (mb_toml_value(b, "paths", key, kn, val, MB_PATH) == 1) {
-  uint8_t* pv = (uint8_t*)(malloc((int64_t)(MB_PATH)));
+  uint8_t* pv = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
   if (mb_join(pv, (b[0]).project_root, val, mb_cstr_len(val)) == 1) {
   root_a = pv;
 }
 } else {
   if (mb_toml_value(b, "dependencies", key, kn, val, MB_PATH) == 1) {
   uint8_t* fp = (uint8_t*)("flow_packages");
-  uint8_t* pkd = (uint8_t*)(malloc((int64_t)(MB_PATH)));
-  uint8_t* pk = (uint8_t*)(malloc((int64_t)(MB_PATH)));
-  uint8_t* pks = (uint8_t*)(malloc((int64_t)(MB_PATH)));
+  uint8_t* pkd = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
+  uint8_t* pk = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
+  uint8_t* pks = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
   uint8_t* sp = (uint8_t*)("src");
   if (mb_join(pkd, (b[0]).project_root, fp, 13) == 1 && mb_join(pk, pkd, key, kn) == 1 && mb_join(pks, pk, sp, 3) == 1) {
   root_a = pks;
   root_b = pk;
   first_b = 1;
 }
-  free(pkd);
+  flow_mem_free(pkd);
 } else {
   if (kn == 6 && key[0] == 115 && key[1] == 116 && key[2] == 100 && key[3] == 108 && key[4] == 105 && key[5] == 98) {
   root_a = (b[0]).stdlib_root;
@@ -89911,8 +90145,8 @@ int32_t mb_resolve(MlirBundle* b, AstArena arena, uint8_t* src, int32_t imp, uin
   ok = mb_try_parts(root_c, src, ps, pe, first_c, k4, out);
   k4 = (k4 - 1);
 }
-  free(val);
-  free(cand);
+  flow_mem_free(val);
+  flow_mem_free(cand);
   return ok;
 }
 
@@ -89922,20 +90156,20 @@ void mb_visit(MlirBundle* b, int32_t k) {
 }
   (b[0]).state[k] = 1;
   const char* path = (const char*)(((b[0]).paths + (k * MB_PATH)));
-  uint8_t* src = (uint8_t*)(malloc((int64_t)(MB_SRC_CAP)));
+  uint8_t* src = (uint8_t*)(flow_mem_malloc((int64_t)(MB_SRC_CAP)));
   mb_zero(src, MB_SRC_CAP);
   int32_t n = flowc_read_file(path, src, (MB_SRC_CAP - 1));
   if (n <= 0) {
   printf("flowc mlir: cannot read %s\n", path);
   (b[0]).err = 1;
-  free(src);
+  flow_mem_free(src);
   return;
 }
   src[n] = 0;
   n = flowc_expand_for_mlir_in_place(src, n, MB_SRC_CAP);
   if (n < 0) {
   (b[0]).err = 1;
-  free(src);
+  flow_mem_free(src);
   return;
 }
   Parser p = flowc_parser_new(src, n, MB_AST_CAP);
@@ -89945,13 +90179,13 @@ void mb_visit(MlirBundle* b, int32_t k) {
   flowc_parser_print_error(p, path);
   flowc_parser_free(p);
   (b[0]).err = 1;
-  free(src);
+  flow_mem_free(src);
   return;
 }
-  uint8_t* dir = (uint8_t*)(malloc((int64_t)(MB_PATH)));
+  uint8_t* dir = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
   mb_zero(dir, MB_PATH);
   flowc_resolve_dirname(path, dir, MB_PATH);
-  uint8_t* dep = (uint8_t*)(malloc((int64_t)(MB_PATH)));
+  uint8_t* dep = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
   int32_t item = (((p).arena).nodes[root]).a;
   while (item != AST_NONE && (b[0]).err == 0) {
   if ((((p).arena).nodes[item]).kind == AST_IMPORT) {
@@ -89976,8 +90210,8 @@ void mb_visit(MlirBundle* b, int32_t k) {
 }
   item = (((p).arena).nodes[item]).next;
 }
-  free(dep);
-  free(dir);
+  flow_mem_free(dep);
+  flow_mem_free(dir);
   flowc_parser_free(p);
   if ((b[0]).err == 0) {
   if ((b[0]).norder >= MB_MAX_MODS) {
@@ -89996,22 +90230,22 @@ void mb_visit(MlirBundle* b, int32_t k) {
 }
 }
 }
-  free(src);
+  flow_mem_free(src);
   (b[0]).state[k] = 2;
 }
 
 int32_t flowc_mlir_wants_modules(const char* in_path) {
-  uint8_t* src = (uint8_t*)(malloc((int64_t)(MB_SRC_CAP)));
+  uint8_t* src = (uint8_t*)(flow_mem_malloc((int64_t)(MB_SRC_CAP)));
   mb_zero(src, MB_SRC_CAP);
   int32_t n = flowc_read_file(in_path, src, (MB_SRC_CAP - 1));
   if (n <= 0) {
-  free(src);
+  flow_mem_free(src);
   return 0;
 }
   src[n] = 0;
   n = flowc_expand_for_mlir_in_place(src, n, MB_SRC_CAP);
   if (n < 0) {
-  free(src);
+  flow_mem_free(src);
   return 0;
 }
   Parser p = flowc_parser_new(src, n, MB_AST_CAP);
@@ -90027,7 +90261,7 @@ int32_t flowc_mlir_wants_modules(const char* in_path) {
 }
 }
   flowc_parser_free(p);
-  free(src);
+  flow_mem_free(src);
   return found;
 }
 
@@ -90039,7 +90273,7 @@ int32_t mb_typecheck(MlirBundle* b, int32_t* fatal_out) {
   if ((ctx).ns == NULL) {
   return 1;
 }
-  uint8_t* src = (uint8_t*)(malloc((int64_t)(MB_SRC_CAP)));
+  uint8_t* src = (uint8_t*)(flow_mem_malloc((int64_t)(MB_SRC_CAP)));
   int32_t total = 0;
   int32_t i = 0;
   while (i < (b[0]).norder) {
@@ -90053,7 +90287,7 @@ int32_t mb_typecheck(MlirBundle* b, int32_t* fatal_out) {
   if (root < 0 || (p).err != 0) {
   flowc_parser_print_error(p, mpath);
   flowc_parser_free(p);
-  free(src);
+  flow_mem_free(src);
   flowc_tc_free((&ctx));
   return 1;
 }
@@ -90065,14 +90299,14 @@ int32_t mb_typecheck(MlirBundle* b, int32_t* fatal_out) {
   flowc_parser_free(p);
   i = (i + 1);
 }
-  free(src);
+  flow_mem_free(src);
   fatal_out[0] = (ctx).fatal;
   flowc_tc_free((&ctx));
   return total;
 }
 
 int32_t flowc_mlir_emit_program(const char* in_path, uint8_t* out, int32_t out_cap, int32_t typecheck) {
-  MlirBundle mb = (MlirBundle){ .paths = malloc((int64_t)((MB_MAX_MODS * MB_PATH))), .n = 0, .state = mb_alloc_i32(MB_MAX_MODS), .all = malloc((int64_t)(MB_ALL_CAP)), .all_len = 0, .order = mb_alloc_i32(MB_MAX_MODS), .starts = mb_alloc_i32((MB_MAX_MODS + 1)), .norder = 0, .project_root = malloc((int64_t)(MB_PATH)), .stdlib_root = malloc((int64_t)(MB_PATH)), .compiler_root = malloc((int64_t)(MB_PATH)), .toml = malloc((int64_t)(MB_SRC_CAP)), .toml_len = 0, .err = 0 };
+  MlirBundle mb = (MlirBundle){ .paths = flow_mem_malloc((int64_t)((MB_MAX_MODS * MB_PATH))), .n = 0, .state = mb_alloc_i32(MB_MAX_MODS), .all = flow_mem_malloc((int64_t)(MB_ALL_CAP)), .all_len = 0, .order = mb_alloc_i32(MB_MAX_MODS), .starts = mb_alloc_i32((MB_MAX_MODS + 1)), .norder = 0, .project_root = flow_mem_malloc((int64_t)(MB_PATH)), .stdlib_root = flow_mem_malloc((int64_t)(MB_PATH)), .compiler_root = flow_mem_malloc((int64_t)(MB_PATH)), .toml = flow_mem_malloc((int64_t)(MB_SRC_CAP)), .toml_len = 0, .err = 0 };
   MlirBundle* b = (MlirBundle*)((&mb));
   mb_zero((mb).all, MB_ALL_CAP);
   mb_zero((mb).project_root, MB_PATH);
@@ -90087,7 +90321,7 @@ int32_t flowc_mlir_emit_program(const char* in_path, uint8_t* out, int32_t out_c
   if (mb_realpath(croot, (mb).compiler_root) == 0) {
   mb_puts((mb).compiler_root, 0, MB_PATH, croot);
 }
-  uint8_t* pr = (uint8_t*)(malloc((int64_t)(MB_PATH)));
+  uint8_t* pr = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
   mb_zero(pr, MB_PATH);
   if (flowc_resolve_project_root(in_path, pr, MB_PATH) <= 0) {
   puts("flowc mlir: unsupported: imports without a flow.toml above the program at line 0");
@@ -90097,19 +90331,19 @@ int32_t flowc_mlir_emit_program(const char* in_path, uint8_t* out, int32_t out_c
   if (mb_realpath(prs, (mb).project_root) == 0) {
   mb_put((mb).project_root, 0, MB_PATH, pr, mb_cstr_len(pr));
 }
-  free(pr);
-  uint8_t* tp = (uint8_t*)(malloc((int64_t)(MB_PATH)));
+  flow_mem_free(pr);
+  uint8_t* tp = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
   int32_t tpo = mb_put(tp, 0, MB_PATH, (mb).project_root, mb_cstr_len((mb).project_root));
   mb_puts(tp, tpo, MB_PATH, "/flow.toml");
   const char* tps = (const char*)(tp);
   int32_t tn = flowc_read_file(tps, (mb).toml, (MB_SRC_CAP - 1));
-  free(tp);
+  flow_mem_free(tp);
   if (tn > 0) {
   (mb).toml_len = tn;
 }
-  uint8_t* sv = (uint8_t*)(malloc((int64_t)(MB_PATH)));
+  uint8_t* sv = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
   uint8_t* stdlib_key = (uint8_t*)("stdlib");
-  uint8_t* cand = (uint8_t*)(malloc((int64_t)(MB_PATH)));
+  uint8_t* cand = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
   int32_t have = 0;
   if (mb_toml_value(b, "paths", stdlib_key, 6, sv, MB_PATH) == 1) {
   have = mb_join(cand, (mb).project_root, sv, mb_cstr_len(sv));
@@ -90124,16 +90358,16 @@ int32_t flowc_mlir_emit_program(const char* in_path, uint8_t* out, int32_t out_c
   uint8_t* libs2 = (uint8_t*)("lib/stdlib");
   mb_join((mb).stdlib_root, (mb).compiler_root, libs2, 10);
 }
-  free(cand);
-  free(sv);
-  uint8_t* rootp = (uint8_t*)(malloc((int64_t)(MB_PATH)));
+  flow_mem_free(cand);
+  flow_mem_free(sv);
+  uint8_t* rootp = (uint8_t*)(flow_mem_malloc((int64_t)(MB_PATH)));
   mb_zero(rootp, MB_PATH);
   if (mb_realpath(in_path, rootp) == 0) {
   puts("flowc emit: read FLOWC_IN failed");
   return (0 - 1);
 }
   int32_t rk = mb_module(b, rootp);
-  free(rootp);
+  flow_mem_free(rootp);
   mb_visit(b, rk);
   if ((mb).err != 0) {
   return (0 - 1);
@@ -90161,7 +90395,7 @@ int32_t flowc_mlir_emit_program(const char* in_path, uint8_t* out, int32_t out_c
   return (0 - 1);
 }
   (mb).starts[(mb).norder] = (mb).all_len;
-  uint8_t* names = (uint8_t*)(malloc((int64_t)((MB_MAX_MODS * MB_PATH))));
+  uint8_t* names = (uint8_t*)(flow_mem_malloc((int64_t)((MB_MAX_MODS * MB_PATH))));
   int32_t i = 0;
   while (i < (mb).norder) {
   uint8_t* src_name = (uint8_t*)(((mb).paths + ((mb).order[i] * MB_PATH)));
@@ -90170,7 +90404,7 @@ int32_t flowc_mlir_emit_program(const char* in_path, uint8_t* out, int32_t out_c
 }
   int32_t n = flowc_mlirgen_emit_modules((p).arena, root, (mb).all, (mb).all_len, MB_ALL_CAP, (mb).starts, (mb).norder, names, MB_PATH, out, out_cap);
   flowc_parser_free(p);
-  free(names);
+  flow_mem_free(names);
   return n;
 }
 
@@ -90335,7 +90569,7 @@ int32_t flowc_expand_only_mode(const char* in_path, const char* out_path) {
   return 1;
 }
   int32_t src_cap = (((int32_t)(fsize) * 4) + 65536);
-  uint8_t* src = (uint8_t*)(malloc((int64_t)(src_cap)));
+  uint8_t* src = (uint8_t*)(flow_mem_malloc((int64_t)(src_cap)));
   if (src == NULL) {
   puts("flowc expand: malloc src failed");
   return 1;
@@ -90343,13 +90577,13 @@ int32_t flowc_expand_only_mode(const char* in_path, const char* out_path) {
   int32_t nsrc = flowc_read_file(in_path, src, (src_cap - 1));
   if (nsrc < 0) {
   puts("flowc expand: read FLOWC_IN failed");
-  free(src);
+  flow_mem_free(src);
   return 1;
 }
   src[nsrc] = 0;
   nsrc = flowc_expand_stages_in_place(src, nsrc, src_cap, flowc_expand_only_stages());
   if (nsrc < 0) {
-  free(src);
+  flow_mem_free(src);
   return 1;
 }
   int32_t rc = 0;
@@ -90362,7 +90596,7 @@ int32_t flowc_expand_only_mode(const char* in_path, const char* out_path) {
   src[nsrc] = 0;
   puts((const char*)(src));
 }
-  free(src);
+  flow_mem_free(src);
   return rc;
 }
 
@@ -90439,7 +90673,7 @@ int32_t flowc_emit_mode() {
   if (flowc_want_mlir() == 1) {
   out_cap = 268435456;
 }
-  uint8_t* out = (uint8_t*)(malloc((int64_t)(out_cap)));
+  uint8_t* out = (uint8_t*)(flow_mem_malloc((int64_t)(out_cap)));
   if (out == NULL) {
   puts("flowc emit: malloc out failed");
   return 1;
@@ -90463,16 +90697,16 @@ int32_t flowc_emit_mode() {
   if (mlir_modules == 1) {
   nout = flowc_mlir_emit_program(in_path, out, out_cap, flowc_want_typecheck());
   if (nout <= 0) {
-  free(out);
+  flow_mem_free(out);
   return 1;
 }
 } else {
   if (flowc_env_set("FLOWC_BUNDLE") == 1) {
   const char* search_dir = "compiler/src";
-  uint8_t* dir_buf = (uint8_t*)(malloc(256));
+  uint8_t* dir_buf = (uint8_t*)(flow_mem_malloc(256));
   if (dir_buf == NULL) {
   puts("flowc emit: malloc dir failed");
-  free(out);
+  flow_mem_free(out);
   return 1;
 }
   zi = 0;
@@ -90494,30 +90728,30 @@ int32_t flowc_emit_mode() {
   if (tc_errs > 0 && flowc_tc_lenient_ok(tc_errs, bfatal[0]) == 0) {
   puts("flowc emit: bundle typecheck failed");
   printf("flowc emit: tc_errs=%d\n", tc_errs);
-  free(dir_buf);
-  free(out);
+  flow_mem_free(dir_buf);
+  flow_mem_free(out);
   return 1;
 }
 }
   if (flowc_env_eq("FLOWC_CHECK_ONLY", "1") == 1) {
   puts("flowc: type check passed");
-  free(dir_buf);
-  free(out);
+  flow_mem_free(dir_buf);
+  flow_mem_free(out);
   return 0;
 }
   nout = flowc_bundle_emit(in_path, search_dir, out, out_cap);
-  free(dir_buf);
+  flow_mem_free(dir_buf);
   if (nout <= 0) {
   puts("flowc emit: bundle emit failed");
-  free(out);
+  flow_mem_free(out);
   return 1;
 }
 } else {
   int32_t src_cap = 1048576;
-  uint8_t* src = (uint8_t*)(malloc((int64_t)(src_cap)));
+  uint8_t* src = (uint8_t*)(flow_mem_malloc((int64_t)(src_cap)));
   if (src == NULL) {
   puts("flowc emit: malloc src failed");
-  free(out);
+  flow_mem_free(out);
   return 1;
 }
   zi = 0;
@@ -90528,8 +90762,8 @@ int32_t flowc_emit_mode() {
   int32_t nsrc = flowc_read_file(in_path, src, (src_cap - 1));
   if (nsrc < 0) {
   puts("flowc emit: read FLOWC_IN failed");
-  free(src);
-  free(out);
+  flow_mem_free(src);
+  flow_mem_free(out);
   return 1;
 }
   src[nsrc] = 0;
@@ -90539,8 +90773,8 @@ int32_t flowc_emit_mode() {
   nsrc = flowc_expand_all_in_place(src, nsrc, src_cap);
 }
   if (nsrc < 0) {
-  free(src);
-  free(out);
+  flow_mem_free(src);
+  flow_mem_free(out);
   return 1;
 }
   Parser p = flowc_parser_new(src, nsrc, 262144);
@@ -90550,8 +90784,8 @@ int32_t flowc_emit_mode() {
   flowc_parser_print_error(p, in_path);
   printf("flowc emit: arena_len=%d\n", ((p).arena).len);
   flowc_parser_free(p);
-  free(src);
-  free(out);
+  flow_mem_free(src);
+  flow_mem_free(out);
   return 1;
 }
   if (flowc_want_typecheck() == 1) {
@@ -90575,24 +90809,24 @@ int32_t flowc_emit_mode() {
   puts("flowc emit: typecheck failed");
   printf("flowc emit: tc_errs=%d\n", tc_errs);
   flowc_parser_free(p);
-  free(src);
-  free(out);
+  flow_mem_free(src);
+  flow_mem_free(out);
   return 1;
 }
   if (flowc_env_eq("FLOWC_CHECK_ONLY", "1") == 1) {
   puts("flowc: type check passed");
   flowc_parser_free(p);
-  free(src);
-  free(out);
+  flow_mem_free(src);
+  flow_mem_free(out);
   return 0;
 }
 }
   if (want_mlir == 1) {
   nout = flowc_mlirgen_emit((p).arena, root, src, nsrc, src_cap, out, out_cap);
   if (nout <= 0) {
-  free(out);
+  flow_mem_free(out);
   flowc_parser_free(p);
-  free(src);
+  flow_mem_free(src);
   return 1;
 }
 } else {
@@ -90600,24 +90834,24 @@ int32_t flowc_emit_mode() {
   nout = flowc_jsgen_emit((p).arena, root, src, out, out_cap);
   if (nout <= 0) {
   puts("flowc emit: jsgen failed");
-  free(out);
+  flow_mem_free(out);
   flowc_parser_free(p);
-  free(src);
+  flow_mem_free(src);
   return 1;
 }
 } else {
   nout = flowc_cgen_emit((p).arena, root, src, out, out_cap);
   if (nout <= 0) {
   puts("flowc emit: cgen failed");
-  free(out);
+  flow_mem_free(out);
   flowc_parser_free(p);
-  free(src);
+  flow_mem_free(src);
   return 1;
 }
 }
 }
   flowc_parser_free(p);
-  free(src);
+  flow_mem_free(src);
 }
 }
   if (want_mlir == 0 && flowc_env_set("FLOWC_BACKEND") == 0) {
@@ -90636,13 +90870,13 @@ int32_t flowc_emit_mode() {
 }
   puts((const char*)(out));
 }
-  free(out);
+  flow_mem_free(out);
   return rc;
 }
 
 int32_t flowc_fmt_mode(const char* in_path, int32_t dump) {
   int32_t src_cap = 8388608;
-  uint8_t* src = (uint8_t*)(malloc((int64_t)(src_cap)));
+  uint8_t* src = (uint8_t*)(flow_mem_malloc((int64_t)(src_cap)));
   if (src == NULL) {
   puts("flowc fmt: malloc src failed");
   return 1;
@@ -90650,7 +90884,7 @@ int32_t flowc_fmt_mode(const char* in_path, int32_t dump) {
   int32_t nsrc = flowc_read_file(in_path, src, (src_cap - 1));
   if (nsrc < 0) {
   puts("flowc fmt: read FLOWC_IN failed");
-  free(src);
+  flow_mem_free(src);
   return 1;
 }
   src[nsrc] = 0;
@@ -90660,16 +90894,16 @@ int32_t flowc_fmt_mode(const char* in_path, int32_t dump) {
   if (root < 0 || (p).err != 0) {
   flowc_parser_print_error(p, in_path);
   flowc_parser_free(p);
-  free(src);
+  flow_mem_free(src);
   return 1;
 }
   flowc_parser_free(p);
 }
   int32_t out_cap = ((nsrc * 4) + 65536);
-  uint8_t* out = (uint8_t*)(malloc((int64_t)(out_cap)));
+  uint8_t* out = (uint8_t*)(flow_mem_malloc((int64_t)(out_cap)));
   if (out == NULL) {
   puts("flowc fmt: malloc out failed");
-  free(src);
+  flow_mem_free(src);
   return 1;
 }
   int32_t nout = 0;
@@ -90678,10 +90912,10 @@ int32_t flowc_fmt_mode(const char* in_path, int32_t dump) {
 } else {
   nout = flowc_fmt_source(src, nsrc, out, out_cap);
 }
-  free(src);
+  flow_mem_free(src);
   if (nout < 0) {
   puts("flowc fmt: output overflow");
-  free(out);
+  flow_mem_free(out);
   return 1;
 }
   int32_t rc = 0;
@@ -90693,14 +90927,14 @@ int32_t flowc_fmt_mode(const char* in_path, int32_t dump) {
   puts("flowc fmt: write failed");
   rc = 1;
 }
-  free(out);
+  flow_mem_free(out);
   return rc;
 }
 
 int32_t flowc_parse_only_mode() {
   const char* in_path = getenv("FLOWC_IN");
   int32_t src_cap = 8388608;
-  uint8_t* src = (uint8_t*)(malloc((int64_t)(src_cap)));
+  uint8_t* src = (uint8_t*)(flow_mem_malloc((int64_t)(src_cap)));
   if (src == NULL) {
   puts("flowc parse: malloc src failed");
   return 2;
@@ -90708,7 +90942,7 @@ int32_t flowc_parse_only_mode() {
   int32_t nsrc = flowc_read_file(in_path, src, (src_cap - 1));
   if (nsrc < 0) {
   puts("flowc parse: read FLOWC_IN failed");
-  free(src);
+  flow_mem_free(src);
   return 2;
 }
   src[nsrc] = 0;
@@ -90722,7 +90956,7 @@ int32_t flowc_parse_only_mode() {
   puts("ok");
 }
   flowc_parser_free(p);
-  free(src);
+  flow_mem_free(src);
   return rc;
 }
 
@@ -91060,8 +91294,8 @@ int32_t test_cgen_for() {
   if ((p).err != 0) {
   ok = 0;
 }
-  int32_t cap = 32768;
-  uint8_t* bp = (uint8_t*)(malloc((int64_t)(cap)));
+  int32_t cap = 65536;
+  uint8_t* bp = (uint8_t*)(flow_mem_malloc((int64_t)(cap)));
   if (bp == NULL) {
   puts("cgen_for: malloc failed");
   flowc_parser_free(p);
@@ -91092,7 +91326,7 @@ int32_t test_cgen_for() {
   if (flowc_bytes_contains(bp, n, "__flowc_up_") == 1) {
   ok = 0;
 }
-  free(bp);
+  flow_mem_free(bp);
   flowc_parser_free(p);
   return ok;
 }
@@ -91113,8 +91347,8 @@ int32_t test_cgen_logic() {
   if ((p).err != 0) {
   ok = 0;
 }
-  int32_t cap = 32768;
-  uint8_t* bp = (uint8_t*)(malloc((int64_t)(cap)));
+  int32_t cap = 65536;
+  uint8_t* bp = (uint8_t*)(flow_mem_malloc((int64_t)(cap)));
   if (bp == NULL) {
   puts("cgen_logic: malloc failed");
   flowc_parser_free(p);
@@ -91136,7 +91370,7 @@ int32_t test_cgen_logic() {
   if (flowc_bytes_contains(bp, n, "||") == 0) {
   ok = 0;
 }
-  free(bp);
+  flow_mem_free(bp);
   flowc_parser_free(p);
   return ok;
 }
@@ -91157,8 +91391,8 @@ int32_t test_cgen_string() {
   if ((p).err != 0) {
   ok = 0;
 }
-  int32_t cap = 32768;
-  uint8_t* bp = (uint8_t*)(malloc((int64_t)(cap)));
+  int32_t cap = 65536;
+  uint8_t* bp = (uint8_t*)(flow_mem_malloc((int64_t)(cap)));
   if (bp == NULL) {
   puts("cgen_string: malloc failed");
   flowc_parser_free(p);
@@ -91177,7 +91411,7 @@ int32_t test_cgen_string() {
   if (flowc_bytes_contains(bp, n, "\"hi\"") == 0) {
   ok = 0;
 }
-  free(bp);
+  flow_mem_free(bp);
   flowc_parser_free(p);
   return ok;
 }
@@ -91198,8 +91432,8 @@ int32_t test_cgen_emit() {
   if ((p).err != 0) {
   ok = 0;
 }
-  int32_t cap = 32768;
-  uint8_t* bp = (uint8_t*)(malloc((int64_t)(cap)));
+  int32_t cap = 65536;
+  uint8_t* bp = (uint8_t*)(flow_mem_malloc((int64_t)(cap)));
   if (bp == NULL) {
   puts("cgen: malloc failed");
   flowc_parser_free(p);
@@ -91230,13 +91464,19 @@ int32_t test_cgen_emit() {
   if (flowc_bytes_contains(bp, n, "if (") == 0) {
   ok = 0;
 }
+  if (flowc_bytes_contains(bp, n, "flow_mem_profile_init") == 0) {
+  ok = 0;
+}
+  if (flowc_bytes_contains(bp, n, "FLOW_MEM_PROFILE") == 0) {
+  ok = 0;
+}
   if (n > 0 && n < cap) {
   bp[n] = 0;
   puts("--- cgen output ---");
   puts((const char*)(bp));
   puts("--- end cgen ---");
 }
-  free(bp);
+  flow_mem_free(bp);
   flowc_parser_free(p);
   return ok;
 }
@@ -91244,7 +91484,7 @@ int32_t test_cgen_emit() {
 int32_t test_parse_fixture_file() {
   const char* path = "compiler/fixtures/hello_subset.flow";
   int32_t cap = 4096;
-  uint8_t* bp = (uint8_t*)(malloc((int64_t)(cap)));
+  uint8_t* bp = (uint8_t*)(flow_mem_malloc((int64_t)(cap)));
   if (bp == NULL) {
   puts("fixture: malloc failed");
   return 0;
@@ -91258,7 +91498,7 @@ int32_t test_parse_fixture_file() {
   printf("fixture_bytes=%d\n", n);
   if (n <= 0) {
   puts("fixture: open/read failed (cwd must be repo root)");
-  free(bp);
+  flow_mem_free(bp);
   return 0;
 }
   bp[n] = 0;
@@ -91319,7 +91559,7 @@ int32_t test_parse_fixture_file() {
   ok = 0;
 }
   flowc_parser_free(p);
-  free(bp);
+  flow_mem_free(bp);
   return ok;
 }
 
@@ -91525,8 +91765,8 @@ int32_t test_cgen_const() {
   if ((p).err != 0) {
   ok = 0;
 }
-  int32_t cap = 32768;
-  uint8_t* bp = (uint8_t*)(malloc((int64_t)(cap)));
+  int32_t cap = 65536;
+  uint8_t* bp = (uint8_t*)(flow_mem_malloc((int64_t)(cap)));
   if (bp == NULL) {
   puts("cgen_const: malloc failed");
   flowc_parser_free(p);
@@ -91557,7 +91797,7 @@ int32_t test_cgen_const() {
   if (flowc_bytes_contains(bp, n, "5") == 0) {
   ok = 0;
 }
-  free(bp);
+  flow_mem_free(bp);
   flowc_parser_free(p);
   return ok;
 }
@@ -91578,8 +91818,8 @@ int32_t test_cgen_struct() {
   if ((p).err != 0) {
   ok = 0;
 }
-  int32_t cap = 32768;
-  uint8_t* bp = (uint8_t*)(malloc((int64_t)(cap)));
+  int32_t cap = 65536;
+  uint8_t* bp = (uint8_t*)(flow_mem_malloc((int64_t)(cap)));
   if (bp == NULL) {
   puts("cgen_struct: malloc failed");
   flowc_parser_free(p);
@@ -91613,7 +91853,7 @@ int32_t test_cgen_struct() {
   if (flowc_bytes_contains(bp, n, ".y = ") == 0) {
   ok = 0;
 }
-  free(bp);
+  flow_mem_free(bp);
   flowc_parser_free(p);
   return ok;
 }
@@ -91630,8 +91870,8 @@ int32_t test_cgen_ptr() {
   if ((p).err != 0) {
   ok = 0;
 }
-  int32_t cap = 32768;
-  uint8_t* bp = (uint8_t*)(malloc((int64_t)(cap)));
+  int32_t cap = 65536;
+  uint8_t* bp = (uint8_t*)(flow_mem_malloc((int64_t)(cap)));
   if (bp == NULL) {
   puts("cgen_ptr: malloc failed");
   flowc_parser_free(p);
@@ -91653,7 +91893,7 @@ int32_t test_cgen_ptr() {
   if (flowc_bytes_contains(bp, n, "p[0]") == 0) {
   ok = 0;
 }
-  free(bp);
+  flow_mem_free(bp);
   flowc_parser_free(p);
   return ok;
 }
@@ -91727,8 +91967,8 @@ int32_t test_cgen_cast() {
   if ((p).err != 0) {
   ok = 0;
 }
-  int32_t cap = 32768;
-  uint8_t* bp = (uint8_t*)(malloc((int64_t)(cap)));
+  int32_t cap = 65536;
+  uint8_t* bp = (uint8_t*)(flow_mem_malloc((int64_t)(cap)));
   if (bp == NULL) {
   puts("cgen_cast: malloc failed");
   flowc_parser_free(p);
@@ -91750,7 +91990,7 @@ int32_t test_cgen_cast() {
   if (flowc_bytes_contains(bp, n, ")(") == 0) {
   ok = 0;
 }
-  free(bp);
+  flow_mem_free(bp);
   flowc_parser_free(p);
   return ok;
 }
@@ -91767,8 +92007,8 @@ int32_t test_cgen_void() {
   if ((p).err != 0) {
   ok = 0;
 }
-  int32_t cap = 32768;
-  uint8_t* bp = (uint8_t*)(malloc((int64_t)(cap)));
+  int32_t cap = 65536;
+  uint8_t* bp = (uint8_t*)(flow_mem_malloc((int64_t)(cap)));
   if (bp == NULL) {
   puts("cgen_void: malloc failed");
   flowc_parser_free(p);
@@ -91787,7 +92027,7 @@ int32_t test_cgen_void() {
   if (flowc_bytes_contains(bp, n, "void g") == 0) {
   ok = 0;
 }
-  free(bp);
+  flow_mem_free(bp);
   flowc_parser_free(p);
   return ok;
 }
@@ -91809,7 +92049,7 @@ int32_t test_jsgen_emit() {
   ok = 0;
 }
   int32_t cap = 2048;
-  uint8_t* bp = (uint8_t*)(malloc((int64_t)(cap)));
+  uint8_t* bp = (uint8_t*)(flow_mem_malloc((int64_t)(cap)));
   if (bp == NULL) {
   puts("jsgen: malloc failed");
   flowc_parser_free(p);
@@ -91846,7 +92086,7 @@ int32_t test_jsgen_emit() {
   puts((const char*)(bp));
   puts("--- end jsgen ---");
 }
-  free(bp);
+  flow_mem_free(bp);
   flowc_parser_free(p);
   return ok;
 }
@@ -92054,7 +92294,7 @@ int32_t test_typecheck_bad_field() {
 int32_t test_resolve_sibling() {
   uint8_t span[6] = { 46, 116, 111, 107, 101, 110 };
   uint8_t* sp = (uint8_t*)(span);
-  uint8_t* out = (uint8_t*)(malloc(256));
+  uint8_t* out = (uint8_t*)(flow_mem_malloc(256));
   if (out == NULL) {
   puts("resolve_sibling: malloc failed");
   return 0;
@@ -92073,7 +92313,7 @@ int32_t test_resolve_sibling() {
   if (flowc_bytes_contains(out, n, "compiler/src/token.flow") == 0) {
   ok = 0;
 }
-  free(out);
+  flow_mem_free(out);
   return ok;
 }
 
@@ -92105,7 +92345,7 @@ int32_t test_rt_summary() {
   return 0;
 }
   int32_t cap = 4096;
-  uint8_t* buf = (uint8_t*)(malloc((int64_t)(cap)));
+  uint8_t* buf = (uint8_t*)(flow_mem_malloc((int64_t)(cap)));
   if (buf == NULL) {
   flowc_parser_free(p);
   return 0;
@@ -92157,7 +92397,7 @@ int32_t test_rt_summary() {
   ok = 0;
 }
   printf("rt_summary_n=%d helper_bits=%d process_bits=%d tick_dom=%d ok=%d\n", n, hbits, pbits, flowc_rt_summary_domain(buf, toff), ok);
-  free(buf);
+  flow_mem_free(buf);
   flowc_parser_free(p);
   return ok;
 }
@@ -92174,7 +92414,7 @@ int32_t test_bundle_typecheck() {
 
 int32_t test_bundle_emit() {
   int32_t out_cap = 65536;
-  uint8_t* out = (uint8_t*)(malloc((int64_t)(out_cap)));
+  uint8_t* out = (uint8_t*)(flow_mem_malloc((int64_t)(out_cap)));
   if (out == NULL) {
   puts("bundle_emit: malloc failed");
   return 0;
@@ -92226,7 +92466,7 @@ int32_t test_bundle_emit() {
   if (count != 1) {
   ok = 0;
 }
-  free(out);
+  flow_mem_free(out);
   return ok;
 }
 
@@ -92247,7 +92487,7 @@ int32_t test_fmt_emit() {
   ok = 0;
 }
   int32_t cap = 1024;
-  uint8_t* bp = (uint8_t*)(malloc((int64_t)(cap)));
+  uint8_t* bp = (uint8_t*)(flow_mem_malloc((int64_t)(cap)));
   if (bp == NULL) {
   puts("fmt_emit: malloc failed");
   flowc_parser_free(p);
@@ -92284,7 +92524,7 @@ int32_t test_fmt_emit() {
   if (flowc_bytes_contains(bp, n, "}") == 0) {
   ok = 0;
 }
-  free(bp);
+  flow_mem_free(bp);
   flowc_parser_free(p);
   return ok;
 }
@@ -92340,8 +92580,8 @@ int32_t test_cgen_match() {
   if ((p).err != 0) {
   ok = 0;
 }
-  int32_t cap = 32768;
-  uint8_t* bp = (uint8_t*)(malloc((int64_t)(cap)));
+  int32_t cap = 65536;
+  uint8_t* bp = (uint8_t*)(flow_mem_malloc((int64_t)(cap)));
   if (bp == NULL) {
   puts("cgen_match: malloc failed");
   flowc_parser_free(p);
@@ -92369,7 +92609,7 @@ int32_t test_cgen_match() {
   if (flowc_bytes_contains(bp, n, "int32_t n = __flowc_match;") == 0) {
   ok = 0;
 }
-  free(bp);
+  flow_mem_free(bp);
   flowc_parser_free(p);
   return ok;
 }
