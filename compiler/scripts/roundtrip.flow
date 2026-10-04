@@ -373,8 +373,10 @@ function main() -> i32 {
     # The type checker (sem_*, the port of the Python checker) and strutil,
     # which resolve calls.
     compile_module(host, "strutil", "")
+    compile_module(host, "version", "")
+    compile_module(host, "denotation", "token ast lexer")
     compile_module(host, "sem_util", "")
-    hdrs(hdr, "strutil sem_util")
+    hdrs(hdr, "strutil version denotation sem_util")
     compile_module(host, "sem_types", "sem_util")
     hdrs(hdr, "sem_types")
     compile_module(host, "sem_cheader", "sem_util")
@@ -386,7 +388,7 @@ function main() -> i32 {
 
     compile_module(host, "pipeline_fusion", "ast")
     hdrs(hdr, "pipeline_fusion")
-    compile_module(host, "resolve", "token ast lexer parser fileio field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl effects sort_plans cgen overload_table overload_call typecheck strutil sem_util sem_types sem_model sem_check pipeline_fusion")
+    compile_module(host, "resolve", "token ast lexer parser fileio denotation version field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl effects sort_plans cgen overload_table overload_call typecheck strutil sem_util sem_types sem_model sem_check pipeline_fusion")
     let rs: ptr<ProcStrs> = sl_of3("flowc_bundle_emit", "flowc_bundle_typecheck", "flowc_resolve_sibling_path")
     sl_push(rs, "flowc_resolve_dirname")
     module_needs("resolve", rs)
