@@ -13,6 +13,7 @@ Detailed documentation for the Flow programming language.
 | [Spans](spans.md) | Borrowed `{pointer, length}` views over contiguous storage |
 | [Lifetime domains](lifetime-domains.md) | `callback` / `frame` / `session` / `application` |
 | [Region inference](region-inference.md) | Local non-aliasing proofs, `memcpy` vs `memmove` |
+| [FFI buffer ABI](ffi-buffer.md) | Zero-copy pointer/span/array handoff; borrowed vs owned |
 | [Functions](functions.md) | Function definitions and calling |
 | [Variables](variables.md) | Variables, mutability, scope |
 | [Dynamics DSL](dynamics-dsl.md) | `dsys` / `analyze` / LQR expanders |

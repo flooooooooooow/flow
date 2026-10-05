@@ -24,7 +24,7 @@ All notable changes to FLOW will be documented in this file.
   overlapping pointer arguments; `FLOWC_REGION_REPORT=1` writes per-binding
   remarks (#694).
 - flowc emits C `restrict` and MLIR `{llvm.noalias}` for pointer parameters and locals only when a fail-closed provenance certificate proves disjointness: distinct local arrays, non-overlapping constant slices, and internal functions whose every call site is proven. Overlapping views, a buffer passed twice, exported/`@flow_api` functions, and pointers copied from parameters stay aliasable (#731).
-- FFI: Zero-copy contiguous buffer ABI (`ffi_buffer_handoff`), boundary instrumentation, and benchmarks. (#737)
+- FFI: Zero-copy contiguous buffer ABI (`FlowFfiBuffer` in `runtime/flow_ffi_buffer.h`, Flow `FFIBuffer`), borrowed vs owned lifetime, fail-closed layout checks that never silently copy, a pointer-identity lang test, and a microbenchmark identity row. (#737)
 
 ### Type checker diagnostics
 
