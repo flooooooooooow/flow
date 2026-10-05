@@ -1,0 +1,26 @@
+# Vectorization / load-hoist improvement when a noalias proof exists (#731, #733).
+# Distinct arrays at an internal call get restrict; the hot for-loop also
+# gets portable SIMD hints. The aliasing kernel must stay unqualified.
+
+function scale_into(dst: ptr<f32>, src: ptr<f32>, n: i32) -> void {
+    for i in 0 to n step 1 {
+        dst[i] = src[i] * 2.0
+    }
+}
+
+function scale_alias(dst: ptr<f32>, src: ptr<f32>, n: i32) -> void {
+    for i in 0 to n step 1 {
+        dst[i] = src[i] * 2.0
+    }
+}
+
+function main() -> i32 {
+    let mut a: array<f32, 8> = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+    let mut b: array<f32, 8> = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    scale_into(a, b, 8)
+    scale_alias(a, a, 8)
+    if a[0] != 2.0 {
+        return 1
+    }
+    return 0
+}

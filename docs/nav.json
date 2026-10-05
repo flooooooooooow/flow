@@ -549,6 +549,10 @@
           "path": "language/spans.md"
         },
         {
+          "label": "Proven restrict / noalias",
+          "path": "language/noalias.md"
+        },
+        {
           "label": "Ranges and Range Algebra",
           "path": "language/ranges.md"
         },

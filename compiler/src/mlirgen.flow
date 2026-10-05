@@ -26,7 +26,14 @@ import .type_id {
     flowc_type_transport_safe, FLOWC_TID_FAMILY, FLOWC_TID_SCHEMA,
     FLOWC_TID_TRANSPORT, FLOWC_TID_ALIGNOF, FLOWC_TID_NONE
 }
-import .noalias { flowc_noalias_param_restrict, flowc_noalias_local_restrict }
+import .noalias {
+    flowc_noalias_param_restrict,
+    flowc_noalias_param_restrict_clone,
+    flowc_noalias_local_restrict,
+    flowc_noalias_fn_needs_clone,
+    flowc_noalias_call_use_clone,
+    flowc_noalias_span_data_restrict
+}
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_BANG,
@@ -306,7 +313,9 @@ export struct Mlg {
     nvc: i32,
     # the fork desugaring's program root and current module
     fk_root: i32,
-    fk_mod: i32
+    fk_mod: i32,
+    # 1 while emitting `__flowc_na_<name>` (#731 mixed-site clone).
+    na_clone: i32
 }
 
 function mlg_alloc_i32(n: i32) -> ptr<i32> {
@@ -5528,6 +5537,9 @@ function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
         mlg_s(m, "llvm.call @")
     } else {
         mlg_s(m, "func.call @")
+    }
+    if flowc_noalias_call_use_clone(m[0].arena, m[0].src, e) == 1 {
+        mlg_s(m, "__flowc_na_")
     }
     mlg_put_fn_sym(m, k)
     mlg_s(m, "(")
@@ -14095,6 +14107,9 @@ function mlg_emit_function(m: ptr<Mlg>, f: i32) {
     }
     mlg_line(m)
     mlg_s(m, "func.func @")
+    if m[0].na_clone == 1 {
+        mlg_s(m, "__flowc_na_")
+    }
     if fk >= 0 {
         mlg_put_fn_sym(m, fk)
     } else {
@@ -14115,8 +14130,16 @@ function mlg_emit_function(m: ptr<Mlg>, f: i32) {
         mlg_v(m, 0 - 1 - i)
         mlg_s(m, ": ")
         mlg_put_type(m, pt)
-        if pt == MT_PTR and flowc_noalias_param_restrict(m[0].arena, m[0].src, f, p) == 1 {
-            mlg_s(m, " {llvm.noalias}")
+        if pt == MT_PTR {
+            let mut na_r: i32 = 0
+            if m[0].na_clone == 1 {
+                na_r = flowc_noalias_param_restrict_clone(m[0].arena, m[0].src, f, p)
+            } else {
+                na_r = flowc_noalias_param_restrict(m[0].arena, m[0].src, f, p)
+            }
+            if na_r == 1 {
+                mlg_s(m, " {llvm.noalias}")
+            }
         }
         m[0].at[i] = pt
         m[0].au[i] = mlg_ft_unsigned(m, m[0].arena.nodes[p].a)
@@ -14133,6 +14156,17 @@ function mlg_emit_function(m: ptr<Mlg>, f: i32) {
     mlg_s(m, " {")
     mlg_nl(m)
     m[0].ind = m[0].ind + 1
+    p = params
+    while p != AST_NONE {
+        if flowc_noalias_span_data_restrict(m[0].arena, m[0].src, f, p, m[0].na_clone) == 1 {
+            mlg_line(m)
+            mlg_s(m, "// flowc.noalias ")
+            mlg_span(m, mlg_ns(m, p), mlg_ne(m, p))
+            mlg_s(m, ".data")
+            mlg_nl(m)
+        }
+        p = m[0].arena.nodes[p].next
+    }
     # Parameters, with struct values copied into allocas (Python prologue).
     p = params
     i = 0
@@ -20103,6 +20137,11 @@ function mlg_emit_decls(m: ptr<Mlg>, root: i32) {
             let fk: i32 = mlg_fn_entry_of(m, d)
             if fk >= 0 and mlg_item_dropped(m, item) == 0 and mlg_off_cpu(m, item) == 0 and mlg_libc_mode(m, fk) != 1 {
                 mlg_emit_function(m, d)
+                if flowc_noalias_fn_needs_clone(m[0].arena, m[0].src, d) == 1 {
+                    m[0].na_clone = 1
+                    mlg_emit_function(m, d)
+                    m[0].na_clone = 0
+                }
             }
         }
         if k == AST_CONST {
@@ -20605,7 +20644,7 @@ export function flowc_mlirgen_emit_modules(arena: AstArena, root: i32, src: ptr<
         vraw: mlg_alloc_i32(MLG_VAL_CAP), rawbuf: malloc(MLG_RAW_CAP as i64), rawlen: 0,
         vtx: mlg_alloc_i32(MLG_VAL_CAP), vtxi: mlg_alloc_i32(MLG_VAL_CAP),
         vc_elem: mlg_alloc_i32(MLG_MAX_ARRS), vc_n: mlg_alloc_i32(MLG_MAX_ARRS), nvc: 0,
-        fk_root: AST_NONE, fk_mod: 0
+        fk_root: AST_NONE, fk_mod: 0, na_clone: 0
     }
     let m: ptr<Mlg> = &mg
     mlg_mark_pipe_calls(m)

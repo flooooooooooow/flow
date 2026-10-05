@@ -1,0 +1,26 @@
+# Mixed call sites must keep sequential semantics on the aliasable path
+# and the same result on the proven-disjoint clone (#731).
+
+function mix_add(dst: ptr<i32>, src: ptr<i32>, n: i32) -> void {
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = dst[i] + src[i]
+        i = i + 1
+    }
+}
+
+function main() -> i32 {
+    let mut a: array<i32, 4> = [1, 2, 3, 4]
+    let mut b: array<i32, 4> = [5, 6, 7, 8]
+    mix_add(a, b, 4)
+    if a[0] != 6 { return 1 }
+    if a[1] != 8 { return 2 }
+    if a[2] != 10 { return 3 }
+    if a[3] != 12 { return 4 }
+    mix_add(a, a, 4)
+    if a[0] != 12 { return 5 }
+    if a[1] != 16 { return 6 }
+    if a[2] != 20 { return 7 }
+    if a[3] != 24 { return 8 }
+    return 0
+}

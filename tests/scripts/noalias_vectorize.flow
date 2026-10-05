@@ -1,0 +1,104 @@
+# Structural vectorization / load-hoist improvement when restrict exists
+# (#731 remaining slice, #733 monotone certificates).
+#
+# Do not hash assembly. Compare C shape (restrict + vectorize hints) and,
+# when clang is present, optimization remarks for the proven kernel.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+
+function host_path() -> string {
+    let host_cmd: ptr<ProcCmd> = t_cmd(sl_of3("./flow", "tool", "compiler/scripts/flowc_host.flow"))
+    if t_run(host_cmd) != 0 {
+        return ""
+    }
+    let raw: string = read_text(t_out())
+    let n: i32 = s_len(raw)
+    if n > 0 and s_ends(raw, "\n") {
+        return s_slice(raw, 0, n - 1)
+    }
+    return raw
+}
+
+function emit_c(src: string, out_path: string) -> i32 {
+    let host: string = host_path()
+    if s_len(host) == 0 {
+        outln("flowc_host failed:")
+        outln(read_text(t_err()))
+        return 1
+    }
+    let c: ptr<ProcCmd> = t_cmd(sl_of1(host))
+    cmd_env(c, "FLOWC_IN", src)
+    cmd_env(c, "FLOWC_OUT", out_path)
+    return t_run(c)
+}
+
+function check_c_shape() -> i32 {
+    let out_path: string = t_tmp() + "/noalias_vectorize.c"
+    if emit_c("tests/cgen/noalias_vectorize.flow", out_path) != 0 {
+        outln("emit failed:")
+        outln(read_text(t_err()))
+        return T_FAIL
+    }
+    let text: string = read_text(out_path)
+    if not a_contains(text, "float* restrict dst") {
+        outln("expected restrict on proven-disjoint scale_into dst")
+        return T_FAIL
+    }
+    if not a_contains(text, "float* restrict src") {
+        outln("expected restrict on proven-disjoint scale_into src")
+        return T_FAIL
+    }
+    if not a_contains(text, "vectorize(enable)") {
+        outln("expected clang loop vectorize hint on the restrict kernel")
+        return T_FAIL
+    }
+    if a_contains(text, "scale_alias(float* restrict") {
+        outln("scale_alias must stay aliasable")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_clang_remarks() -> i32 {
+    if t_need("clang") != T_PASS {
+        return T_SKIP
+    }
+    let out_path: string = t_tmp() + "/noalias_vectorize.c"
+    if not exists(out_path) {
+        if emit_c("tests/cgen/noalias_vectorize.flow", out_path) != 0 {
+            return T_FAIL
+        }
+    }
+    let obj: string = t_tmp() + "/noalias_vectorize.o"
+    let argv: ptr<ProcStrs> = sl_of1("clang")
+    sl_push(argv, "-O3")
+    sl_push(argv, "-Rpass=loop-vectorize")
+    sl_push(argv, "-Rpass-missed=loop-vectorize")
+    sl_push(argv, "-c")
+    sl_push(argv, out_path)
+    sl_push(argv, "-o")
+    sl_push(argv, obj)
+    let rc: i32 = t_run(t_cmd(argv))
+    let remarks: string = read_text(t_err()) + read_text(t_out())
+    if rc != 0 and s_len(remarks) == 0 {
+        outln("clang -O3 failed with no remarks")
+        return T_FAIL
+    }
+    if s_contains(remarks, "vectorized") or s_contains(remarks, "vectorize") {
+        return T_PASS
+    }
+    outln("clang produced no vectorize remarks; C shape still has restrict + hints")
+    outln(remarks)
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("noalias_vectorize")
+    t_start()
+    t_end("c_shape", check_c_shape())
+    t_start()
+    t_end("clang_remarks", check_clang_remarks())
+    t_done()
+    return 0
+}

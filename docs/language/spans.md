@@ -304,6 +304,12 @@ version.
 Example: [examples/basics/spans.flow](../../examples/basics/spans.flow) ·
 Tests: `tests/lang/test_spans.flow`, `tests/unit/test_spans.py`
 
+When flowc can prove two span arguments do not overlap, generated C
+extracts restrict-qualified `.data` temporaries so the vectorizer sees
+the disjointness. The span value itself stays a struct. See
+[noalias.md](noalias.md).
+
 Related: [types.md](types.md) ·
 [lifetime-domains.md](lifetime-domains.md) ·
+[noalias.md](noalias.md) ·
 [LANGUAGE_SPEC](../LANGUAGE_SPEC.md)
