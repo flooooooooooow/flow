@@ -1,0 +1,730 @@
+# @module flowc.noalias
+# @means  Provenance-certified restrict / LLVM noalias emission (#731).
+#
+# Soundness boundary (fail closed; a wrong restrict is undefined behaviour):
+#
+#   A view is (kind, root, offset, length, known). Unknown provenance never
+#   certifies disjointness. Two parameters may alias (the caller can pass the
+#   same buffer twice). A local array/struct/scalar is fresh frame storage
+#   and is disjoint from every parameter. Two LOCAL views of distinct roots
+#   are disjoint. Same-root views are disjoint only when both intervals are
+#   known and the half-open ranges [off, off+len) do not overlap.
+#
+#   Function-parameter restrict / {llvm.noalias} is emitted only for an
+#   internal (non-exported, non-main, non-@flow_api) function that is not
+#   address-taken, has a single definition, has at least one call site in
+#   this translation unit, and whose pointer parameters are pairwise
+#   disjoint at every reachable call. A proof at one call site never
+#   annotates a shared / exported function.
+#
+#   Local-pointer restrict is emitted only for a ptr-typed let whose view
+#   is a known LOCAL, is disjoint from every other pointer/span binding in
+#   the function, and is the unique access path to that root (the root
+#   name is not used outside this let's initializer).
+#
+#   span<T> is tracked as a view so overlapping slices fail closed, but a
+#   span parameter is a struct in C and is not itself qualified.
+#
+#   Gaps left for later slices: interprocedural specialization clones,
+#   restrict on span `.data` temporaries, provenance through struct fields
+#   other than `.data`, and laundering calls (those erase provenance).
+
+import .token { TOK_PLUS, TOK_MINUS, TOK_AMP }
+import .ast {
+    AstArena, AST_NONE,
+    AST_PROGRAM, AST_FN, AST_PARAM, AST_LET, AST_RETURN,
+    AST_BINOP, AST_CALL, AST_IDENT, AST_INT, AST_TYPE,
+    AST_FIELD_ACCESS, AST_INDEX, AST_CAST, AST_ARRAY_LIT,
+    AST_UNARY, AST_ASSIGN, AST_EXPORT, AST_ATTR, AST_STRUCT_LIT,
+    AST_TYPE_FIXED_ARRAY
+}
+
+extern {
+    function strlen(s: string) -> i64
+}
+
+export const NA_UNKNOWN: i32 = 0
+export const NA_LOCAL: i32 = 1
+export const NA_PARAM: i32 = 2
+
+export struct NoaliasView {
+    kind: i32,
+    root: i32,
+    off: i32,
+    len: i32,
+    known: i32
+}
+
+function na_unknown() -> NoaliasView {
+    return NoaliasView { kind: NA_UNKNOWN, root: AST_NONE, off: 0, len: 0 - 1, known: 0 }
+}
+
+function na_local(root: i32, off: i32, len: i32) -> NoaliasView {
+    if root == AST_NONE {
+        return na_unknown()
+    }
+    return NoaliasView { kind: NA_LOCAL, root: root, off: off, len: len, known: 1 }
+}
+
+function na_span_eq(src: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i32 {
+    if a1 - a0 != b1 - b0 {
+        return 0
+    }
+    let n: i32 = a1 - a0
+    let mut i: i32 = 0
+    while i < n {
+        if src[a0 + i] != src[b0 + i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function na_span_is(src: ptr<u8>, start: i32, end: i32, lit: string) -> i32 {
+    let p: ptr<u8> = lit
+    let n: i32 = strlen(lit) as i32
+    if end - start != n {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < n {
+        if src[start + i] != p[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function na_in_fn(arena: AstArena, fn: i32, id: i32) -> i32 {
+    if fn == AST_NONE or id == AST_NONE {
+        return 0
+    }
+    if id < 0 or id >= arena.len {
+        return 0
+    }
+    let pos: i32 = arena.nodes[id].start
+    if pos >= arena.nodes[fn].start and pos < arena.nodes[fn].end {
+        return 1
+    }
+    return 0
+}
+
+export function flowc_noalias_ty_is_ptr(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    if ty == AST_NONE or ty < 0 or ty >= arena.len {
+        return 0
+    }
+    if arena.nodes[ty].kind != AST_TYPE {
+        return 0
+    }
+    let ns: i32 = arena.nodes[ty].name_start
+    let ne: i32 = arena.nodes[ty].name_end
+    if na_span_is(src, ns, ne, "ptr") == 1 {
+        return 1
+    }
+    if ne - ns > 7 and na_span_is(src, ns, ns + 7, "memref_") == 1 {
+        return 1
+    }
+    if ne - ns > 6 and na_span_is(src, ns, ns + 6, "array_") == 1 {
+        return 1
+    }
+    return 0
+}
+
+function na_ty_is_span(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    if ty == AST_NONE or ty < 0 or ty >= arena.len {
+        return 0
+    }
+    if arena.nodes[ty].kind != AST_TYPE {
+        return 0
+    }
+    return na_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "span")
+}
+
+function na_ty_is_array(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    if ty == AST_NONE or ty < 0 or ty >= arena.len {
+        return 0
+    }
+    if arena.nodes[ty].kind != AST_TYPE {
+        return 0
+    }
+    if arena.nodes[ty].c == AST_TYPE_FIXED_ARRAY {
+        return 1
+    }
+    return na_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "array")
+}
+
+function na_ty_ptr_like(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    if flowc_noalias_ty_is_ptr(arena, src, ty) == 1 {
+        return 1
+    }
+    return na_ty_is_span(arena, src, ty)
+}
+
+function na_array_len(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    if na_ty_is_array(arena, src, ty) == 0 {
+        return 0 - 1
+    }
+    if arena.nodes[ty].ival > 0 {
+        return arena.nodes[ty].ival
+    }
+    return 0 - 1
+}
+
+function na_const_int(arena: AstArena, expr: i32) -> i32 {
+    if expr == AST_NONE or expr < 0 or expr >= arena.len {
+        return 0 - 2147483647
+    }
+    if arena.nodes[expr].kind == AST_INT {
+        return arena.nodes[expr].ival
+    }
+    if arena.nodes[expr].kind == AST_UNARY and arena.nodes[expr].ival == TOK_MINUS {
+        let inner: i32 = arena.nodes[expr].a
+        if inner != AST_NONE and inner >= 0 and inner < arena.len {
+            if arena.nodes[inner].kind == AST_INT {
+                return 0 - arena.nodes[inner].ival
+            }
+        }
+    }
+    return 0 - 2147483647
+}
+
+function na_is_const_int(arena: AstArena, expr: i32) -> i32 {
+    if na_const_int(arena, expr) == 0 - 2147483647 {
+        if expr != AST_NONE and expr >= 0 and expr < arena.len {
+            if arena.nodes[expr].kind == AST_INT and arena.nodes[expr].ival == 0 - 2147483647 {
+                return 1
+            }
+        }
+        return 0
+    }
+    return 1
+}
+
+function na_fn_is_exported(arena: AstArena, fn: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_EXPORT and arena.nodes[i].a == fn {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+function na_fn_has_flow_api(arena: AstArena, src: ptr<u8>, fn: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_ATTR and arena.nodes[i].b == fn {
+            if na_span_is(src, arena.nodes[i].name_start, arena.nodes[i].name_end, "flow_api") == 1 {
+                return 1
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+function na_fn_name_is_main(arena: AstArena, src: ptr<u8>, fn: i32) -> i32 {
+    return na_span_is(src, arena.nodes[fn].name_start, arena.nodes[fn].name_end, "main")
+}
+
+function na_count_fns_named(arena: AstArena, src: ptr<u8>, ns: i32, ne: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_FN {
+            if na_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                n = n + 1
+            }
+        }
+        i = i + 1
+    }
+    return n
+}
+
+function na_fn_name_escaped(arena: AstArena, src: ptr<u8>, fn: i32) -> i32 {
+    let ns: i32 = arena.nodes[fn].name_start
+    let ne: i32 = arena.nodes[fn].name_end
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_IDENT {
+            if na_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                return 1
+            }
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+function na_binding_unstable(arena: AstArena, src: ptr<u8>, fn: i32, ns: i32, ne: i32) -> i32 {
+    let mut decls: i32 = 0
+    let mut i: i32 = 0
+    while i < arena.len {
+        if na_in_fn(arena, fn, i) == 1 {
+            if arena.nodes[i].kind == AST_LET {
+                if na_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                    decls = decls + 1
+                }
+            }
+            if arena.nodes[i].kind == AST_ASSIGN {
+                let lhs: i32 = arena.nodes[i].a
+                if lhs != AST_NONE and lhs >= 0 and lhs < arena.len {
+                    if arena.nodes[lhs].kind == AST_IDENT {
+                        if na_span_eq(src, ns, ne, arena.nodes[lhs].name_start, arena.nodes[lhs].name_end) == 1 {
+                            return 1
+                        }
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    if decls > 1 {
+        return 1
+    }
+    return 0
+}
+
+function na_find_binding(arena: AstArena, src: ptr<u8>, fn: i32, use: i32) -> i32 {
+    if fn == AST_NONE or use == AST_NONE {
+        return AST_NONE
+    }
+    let ns: i32 = arena.nodes[use].name_start
+    let ne: i32 = arena.nodes[use].name_end
+    let use_pos: i32 = arena.nodes[use].name_start
+    let mut best: i32 = AST_NONE
+    let mut prm: i32 = arena.nodes[fn].a
+    while prm != AST_NONE {
+        if arena.nodes[prm].kind == AST_PARAM {
+            if na_span_eq(src, ns, ne, arena.nodes[prm].name_start, arena.nodes[prm].name_end) == 1 {
+                best = prm
+            }
+        }
+        prm = arena.nodes[prm].next
+    }
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_LET and na_in_fn(arena, fn, i) == 1 {
+            if arena.nodes[i].end <= use_pos {
+                if na_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                    if best == AST_NONE or arena.nodes[i].start >= arena.nodes[best].start {
+                        best = i
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return best
+}
+
+function na_view_of_expr(arena: AstArena, src: ptr<u8>, fn: i32, expr: i32, depth: i32) -> NoaliasView
+function na_view_of_binding(arena: AstArena, src: ptr<u8>, fn: i32, bind: i32, depth: i32) -> NoaliasView
+
+function na_view_of_binding(arena: AstArena, src: ptr<u8>, fn: i32, bind: i32, depth: i32) -> NoaliasView {
+    if bind == AST_NONE or bind < 0 or bind >= arena.len or depth > 32 {
+        return na_unknown()
+    }
+    if na_binding_unstable(arena, src, fn, arena.nodes[bind].name_start, arena.nodes[bind].name_end) == 1 {
+        return na_unknown()
+    }
+    if arena.nodes[bind].kind == AST_PARAM {
+        return NoaliasView { kind: NA_PARAM, root: bind, off: 0, len: 0 - 1, known: 0 }
+    }
+    if arena.nodes[bind].kind != AST_LET {
+        return na_unknown()
+    }
+    let ty: i32 = arena.nodes[bind].a
+    let alen: i32 = na_array_len(arena, src, ty)
+    if alen > 0 {
+        return na_local(bind, 0, alen)
+    }
+    if na_ty_is_array(arena, src, ty) == 1 {
+        return na_local(bind, 0, 0 - 1)
+    }
+    if ty != AST_NONE and arena.nodes[ty].kind == AST_TYPE {
+        if flowc_noalias_ty_is_ptr(arena, src, ty) == 0 and na_ty_is_span(arena, src, ty) == 0 {
+            if arena.nodes[ty].ival != 0 - 1 and arena.nodes[ty].ival != 0 - 2 {
+                return na_local(bind, 0, 1)
+            }
+        }
+    }
+    let init: i32 = arena.nodes[bind].b
+    if init == AST_NONE {
+        if flowc_noalias_ty_is_ptr(arena, src, ty) == 1 or na_ty_is_span(arena, src, ty) == 1 {
+            return na_unknown()
+        }
+        return na_local(bind, 0, 1)
+    }
+    if arena.nodes[init].kind == AST_ARRAY_LIT or arena.nodes[init].kind == AST_STRUCT_LIT {
+        if alen > 0 {
+            return na_local(bind, 0, alen)
+        }
+        return na_local(bind, 0, 0 - 1)
+    }
+    return na_view_of_expr(arena, src, fn, init, depth + 1)
+}
+
+function na_view_of_expr(arena: AstArena, src: ptr<u8>, fn: i32, expr: i32, depth: i32) -> NoaliasView {
+    if expr == AST_NONE or expr < 0 or expr >= arena.len or depth > 32 {
+        return na_unknown()
+    }
+    let k: i32 = arena.nodes[expr].kind
+    if k == AST_IDENT {
+        let bind: i32 = na_find_binding(arena, src, fn, expr)
+        return na_view_of_binding(arena, src, fn, bind, depth + 1)
+    }
+    if k == AST_CAST {
+        return na_view_of_expr(arena, src, fn, arena.nodes[expr].a, depth + 1)
+    }
+    if k == AST_UNARY and arena.nodes[expr].ival == TOK_AMP {
+        return na_view_of_expr(arena, src, fn, arena.nodes[expr].a, depth + 1)
+    }
+    if k == AST_FIELD_ACCESS {
+        if na_span_is(src, arena.nodes[expr].name_start, arena.nodes[expr].name_end, "data") == 1 {
+            return na_view_of_expr(arena, src, fn, arena.nodes[expr].a, depth + 1)
+        }
+        return na_unknown()
+    }
+    if k == AST_INDEX {
+        let base: NoaliasView = na_view_of_expr(arena, src, fn, arena.nodes[expr].a, depth + 1)
+        if base.known == 0 {
+            return na_unknown()
+        }
+        let start_e: i32 = arena.nodes[expr].b
+        if na_is_const_int(arena, start_e) == 0 {
+            return na_unknown()
+        }
+        let start_v: i32 = na_const_int(arena, start_e)
+        if start_v < 0 {
+            return na_unknown()
+        }
+        let new_off: i32 = base.off + start_v
+        if arena.nodes[expr].ival == 1 {
+            let end_e: i32 = arena.nodes[expr].c
+            if end_e == AST_NONE {
+                if base.len < 0 {
+                    return na_unknown()
+                }
+                let rest: i32 = base.len - start_v
+                if rest < 0 {
+                    return na_unknown()
+                }
+                return NoaliasView { kind: base.kind, root: base.root, off: new_off, len: rest, known: 1 }
+            }
+            if na_is_const_int(arena, end_e) == 0 {
+                return na_unknown()
+            }
+            let end_v: i32 = na_const_int(arena, end_e)
+            if end_v < start_v {
+                return na_unknown()
+            }
+            return NoaliasView { kind: base.kind, root: base.root, off: new_off, len: end_v - start_v, known: 1 }
+        }
+        if base.len < 0 {
+            return NoaliasView { kind: base.kind, root: base.root, off: new_off, len: 0 - 1, known: 1 }
+        }
+        let rest2: i32 = base.len - start_v
+        if rest2 < 0 {
+            return na_unknown()
+        }
+        return NoaliasView { kind: base.kind, root: base.root, off: new_off, len: rest2, known: 1 }
+    }
+    if k == AST_BINOP and arena.nodes[expr].ival == TOK_PLUS {
+        let lhs: NoaliasView = na_view_of_expr(arena, src, fn, arena.nodes[expr].a, depth + 1)
+        if lhs.known == 0 {
+            return na_unknown()
+        }
+        let rhs: i32 = arena.nodes[expr].b
+        if na_is_const_int(arena, rhs) == 0 {
+            return na_unknown()
+        }
+        let add: i32 = na_const_int(arena, rhs)
+        if add < 0 {
+            return na_unknown()
+        }
+        let new_off: i32 = lhs.off + add
+        if lhs.len < 0 {
+            return NoaliasView { kind: lhs.kind, root: lhs.root, off: new_off, len: 0 - 1, known: 1 }
+        }
+        let rest: i32 = lhs.len - add
+        if rest < 0 {
+            return na_unknown()
+        }
+        return NoaliasView { kind: lhs.kind, root: lhs.root, off: new_off, len: rest, known: 1 }
+    }
+    return na_unknown()
+}
+
+export function flowc_noalias_views_disjoint(a: NoaliasView, b: NoaliasView) -> i32 {
+    if a.known == 0 or b.known == 0 {
+        return 0
+    }
+    if a.kind == NA_UNKNOWN or b.kind == NA_UNKNOWN {
+        return 0
+    }
+    if a.kind == NA_PARAM and b.kind == NA_PARAM {
+        return 0
+    }
+    if a.kind == NA_LOCAL and b.kind == NA_PARAM {
+        return 1
+    }
+    if a.kind == NA_PARAM and b.kind == NA_LOCAL {
+        return 1
+    }
+    if a.kind == NA_LOCAL and b.kind == NA_LOCAL {
+        if a.root != b.root {
+            return 1
+        }
+        if a.len < 0 or b.len < 0 {
+            return 0
+        }
+        if a.off + a.len <= b.off {
+            return 1
+        }
+        if b.off + b.len <= a.off {
+            return 1
+        }
+        return 0
+    }
+    return 0
+}
+
+function na_fn_of_node(arena: AstArena, id: i32) -> i32 {
+    if id == AST_NONE {
+        return AST_NONE
+    }
+    let pos: i32 = arena.nodes[id].start
+    let mut best: i32 = AST_NONE
+    let mut best_span: i32 = 2147483647
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_FN {
+            if pos >= arena.nodes[i].start and pos < arena.nodes[i].end {
+                let sp: i32 = arena.nodes[i].end - arena.nodes[i].start
+                if sp < best_span {
+                    best = i
+                    best_span = sp
+                }
+            }
+        }
+        i = i + 1
+    }
+    return best
+}
+
+function na_call_name_matches(arena: AstArena, src: ptr<u8>, call: i32, fn: i32) -> i32 {
+    if arena.nodes[call].kind != AST_CALL {
+        return 0
+    }
+    return na_span_eq(src, arena.nodes[call].name_start, arena.nodes[call].name_end, arena.nodes[fn].name_start, arena.nodes[fn].name_end)
+}
+
+function na_arg_at(arena: AstArena, first: i32, idx: i32) -> i32 {
+    let mut a: i32 = first
+    let mut i: i32 = 0
+    while a != AST_NONE {
+        if i == idx {
+            return a
+        }
+        i = i + 1
+        a = arena.nodes[a].next
+    }
+    return AST_NONE
+}
+
+function na_param_index(arena: AstArena, fn: i32, param: i32) -> i32 {
+    let mut p: i32 = arena.nodes[fn].a
+    let mut i: i32 = 0
+    while p != AST_NONE {
+        if p == param {
+            return i
+        }
+        i = i + 1
+        p = arena.nodes[p].next
+    }
+    return 0 - 1
+}
+
+function na_count_ptr_params(arena: AstArena, src: ptr<u8>, fn: i32) -> i32 {
+    let mut n: i32 = 0
+    let mut p: i32 = arena.nodes[fn].a
+    while p != AST_NONE {
+        if na_ty_ptr_like(arena, src, arena.nodes[p].a) == 1 {
+            n = n + 1
+        }
+        p = arena.nodes[p].next
+    }
+    return n
+}
+
+function na_call_args_disjoint(arena: AstArena, src: ptr<u8>, fn: i32, call: i32, param: i32) -> i32 {
+    let caller: i32 = na_fn_of_node(arena, call)
+    if caller == AST_NONE {
+        return 0
+    }
+    let idx: i32 = na_param_index(arena, fn, param)
+    if idx < 0 {
+        return 0
+    }
+    let arg_i: i32 = na_arg_at(arena, arena.nodes[call].a, idx)
+    if arg_i == AST_NONE {
+        return 0
+    }
+    let vi: NoaliasView = na_view_of_expr(arena, src, caller, arg_i, 0)
+    let mut p: i32 = arena.nodes[fn].a
+    let mut j: i32 = 0
+    let mut saw_other: i32 = 0
+    while p != AST_NONE {
+        if p != param and na_ty_ptr_like(arena, src, arena.nodes[p].a) == 1 {
+            let arg_j: i32 = na_arg_at(arena, arena.nodes[call].a, j)
+            if arg_j == AST_NONE {
+                return 0
+            }
+            let vj: NoaliasView = na_view_of_expr(arena, src, caller, arg_j, 0)
+            if flowc_noalias_views_disjoint(vi, vj) == 0 {
+                return 0
+            }
+            saw_other = 1
+        }
+        j = j + 1
+        p = arena.nodes[p].next
+    }
+    return saw_other
+}
+
+# 1 when this pointer parameter of `fn` may carry restrict / llvm.noalias.
+export function flowc_noalias_param_restrict(arena: AstArena, src: ptr<u8>, fn: i32, param: i32) -> i32 {
+    if fn == AST_NONE or param == AST_NONE or fn < 0 or fn >= arena.len {
+        return 0
+    }
+    if arena.nodes[fn].kind != AST_FN or arena.nodes[fn].c == AST_NONE {
+        return 0
+    }
+    if flowc_noalias_ty_is_ptr(arena, src, arena.nodes[param].a) == 0 {
+        return 0
+    }
+    if na_fn_name_is_main(arena, src, fn) == 1 {
+        return 0
+    }
+    if na_fn_is_exported(arena, fn) == 1 {
+        return 0
+    }
+    if na_fn_has_flow_api(arena, src, fn) == 1 {
+        return 0
+    }
+    if na_count_fns_named(arena, src, arena.nodes[fn].name_start, arena.nodes[fn].name_end) != 1 {
+        return 0
+    }
+    if na_fn_name_escaped(arena, src, fn) == 1 {
+        return 0
+    }
+    if na_count_ptr_params(arena, src, fn) < 2 {
+        return 0
+    }
+    let mut calls: i32 = 0
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_CALL {
+            if na_call_name_matches(arena, src, i, fn) == 1 {
+                calls = calls + 1
+                if na_call_args_disjoint(arena, src, fn, i, param) == 0 {
+                    return 0
+                }
+            }
+        }
+        i = i + 1
+    }
+    if calls == 0 {
+        return 0
+    }
+    return 1
+}
+
+function na_ident_in_tree(arena: AstArena, src: ptr<u8>, node: i32, ns: i32, ne: i32, depth: i32) -> i32 {
+    if node == AST_NONE or node < 0 or node >= arena.len or depth > 48 {
+        return 0
+    }
+    if arena.nodes[node].kind == AST_IDENT {
+        if na_span_eq(src, ns, ne, arena.nodes[node].name_start, arena.nodes[node].name_end) == 1 {
+            return 1
+        }
+    }
+    if na_ident_in_tree(arena, src, arena.nodes[node].a, ns, ne, depth + 1) == 1 {
+        return 1
+    }
+    if na_ident_in_tree(arena, src, arena.nodes[node].b, ns, ne, depth + 1) == 1 {
+        return 1
+    }
+    if na_ident_in_tree(arena, src, arena.nodes[node].c, ns, ne, depth + 1) == 1 {
+        return 1
+    }
+    return na_ident_in_tree(arena, src, arena.nodes[node].next, ns, ne, depth + 1)
+}
+
+function na_unique_access_path(arena: AstArena, src: ptr<u8>, fn: i32, let_id: i32, root: i32) -> i32 {
+    if root == AST_NONE or root == let_id {
+        return 1
+    }
+    let ns: i32 = arena.nodes[root].name_start
+    let ne: i32 = arena.nodes[root].name_end
+    let init: i32 = arena.nodes[let_id].b
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_IDENT and na_in_fn(arena, fn, i) == 1 {
+            if na_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                if init == AST_NONE or na_ident_in_tree(arena, src, init, ns, ne, 0) == 0 {
+                    return 0
+                }
+                if arena.nodes[i].start < arena.nodes[init].start or arena.nodes[i].start >= arena.nodes[init].end {
+                    return 0
+                }
+            }
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+# 1 when this pointer-typed local let may carry restrict / llvm.noalias.
+export function flowc_noalias_local_restrict(arena: AstArena, src: ptr<u8>, fn: i32, let_id: i32) -> i32 {
+    if fn == AST_NONE or let_id == AST_NONE or fn < 0 or let_id < 0 {
+        return 0
+    }
+    if fn >= arena.len or let_id >= arena.len {
+        return 0
+    }
+    if arena.nodes[let_id].kind != AST_LET {
+        return 0
+    }
+    if flowc_noalias_ty_is_ptr(arena, src, arena.nodes[let_id].a) == 0 {
+        return 0
+    }
+    let view: NoaliasView = na_view_of_binding(arena, src, fn, let_id, 0)
+    if view.known == 0 or view.kind != NA_LOCAL {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < arena.len {
+        if i != let_id and na_in_fn(arena, fn, i) == 1 {
+            let mut ok: i32 = 0
+            if arena.nodes[i].kind == AST_LET or arena.nodes[i].kind == AST_PARAM {
+                ok = 1
+            }
+            if ok == 1 {
+                let ty: i32 = arena.nodes[i].a
+                if na_ty_ptr_like(arena, src, ty) == 1 {
+                    let other: NoaliasView = na_view_of_binding(arena, src, fn, i, 0)
+                    if flowc_noalias_views_disjoint(view, other) == 0 {
+                        return 0
+                    }
+                }
+            }
+        }
+        i = i + 1
+    }
+    return na_unique_access_path(arena, src, fn, let_id, view.root)
+}

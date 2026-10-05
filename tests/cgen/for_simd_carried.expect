@@ -1,0 +1,7 @@
+# Not OpenMP-safe: clang hint only.
++ #if defined(__clang__)
++ #pragma clang loop vectorize(enable) interleave(enable)
+- #pragma omp simd
+- #pragma GCC ivdep
+- memmove
+exit 0

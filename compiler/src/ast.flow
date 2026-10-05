@@ -134,8 +134,9 @@ export const AST_MODULE: i32 = 95
 # AST_RECORD_UPDATE: marker for `Name { ..base, f: v }` (b = the AST_STRUCT_LIT,
 #   whose c holds the base expression). cgen and the MLIR emitter lower it.
 export const AST_RECORD_UPDATE: i32 = 96
+export const AST_GPU_FRAME: i32 = 97
 # Last parse-only kind; keep flowc_ast_first_unsupported in step.
-export const AST_PARSE_ONLY_LAST: i32 = 96
+export const AST_PARSE_ONLY_LAST: i32 = 97
 
 export const PIPE_BLOCK_FORK: i32 = 1
 export const PIPE_BLOCK_STAGE: i32 = 2
@@ -381,6 +382,7 @@ export function flowc_ast_unsupported_label(kind: i32) -> string {
     if kind == AST_SORT_BY { return "sort by keys / with entropy / order" }
     if kind == AST_MODULE { return "module block" }
     if kind == AST_RECORD_UPDATE { return "record update Name { ..base }" }
+    if kind == AST_GPU_FRAME { return "gpu frame block" }
     return ""
 }
 
@@ -394,6 +396,7 @@ export function flowc_ast_parse_only_lowered(arena: AstArena, i: i32) -> i32 {
     if k == AST_TRY { return 1 }
     if k == AST_VECTOR_LIT { return 1 }
     if k == AST_MODULE { return 1 }
+    if k == AST_GPU_FRAME { return 1 }
     # Effect rows and capability types are lowered (#675).
     if k == AST_EFFECT_ROW { return 1 }
     if k == AST_CAPABILITY_TYPE { return 1 }

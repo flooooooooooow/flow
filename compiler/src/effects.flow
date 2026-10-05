@@ -10,6 +10,7 @@
 #   @E.op    -> "<arity>|<ret>|<p1>,<p2>,..."         operation op of E
 #   #C       -> "<E1>,<E2>,...|<m1>,<m2>,..."         capability C
 #   !f       -> "<E1>,<E2>,..."                       `with` row of function f
+#   $f       -> "<bits>|<domain>|<prov>"              RT/lifetime summary (#765)
 #
 # <ret> and <pN> are the Flow source text of the declared types ("void" when an
 # operation declares no return type).

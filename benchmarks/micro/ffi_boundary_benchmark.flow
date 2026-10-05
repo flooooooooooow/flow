@@ -1,0 +1,129 @@
+# Benchmark for FFI boundary overhead
+# Compares scalar calls, batched calls, and large zero-copy buffer handoffs.
+
+import "benchmarks/bench_tools.flow"
+import "registry/packages/ffi/src/buffer_handoff.flow"
+import "registry/packages/ffi/src/lib.flow"
+
+@cEmbed("
+#include <stdint.h>
+int64_t flow_ffi_sizeof_ptr(void) { return sizeof(void*); }
+__attribute__((noinline)) int64_t ffi_bench_scalar_impl(int64_t v) { return v + 1; }
+__attribute__((noinline)) int64_t ffi_bench_batch_impl(int64_t* ptr, int64_t n) {
+    int64_t sum = 0;
+    for (int64_t i = 0; i < n; i++) { sum += ptr[i]; }
+    return sum;
+}
+")
+
+extern {
+    function ffi_bench_scalar_impl(v: i64) -> i64
+    function ffi_bench_batch_impl(ptr: ptr<i64>, n: i64) -> i64
+}
+
+function bench_scalar_calls(iters: i32) -> i64 {
+    let mut sum: i64 = 0
+    let start: i64 = bench_now_us()
+    for i in 0 to iters {
+        sum = sum + ffi_bench_scalar_impl(i as i64)
+    }
+    let elapsed: i64 = bench_now_us() - start
+    # Prevent optimization by printing sum
+    print(" (sum="); print(bench_fixed(sum as f64, 0)); print(") ")
+    return elapsed
+}
+
+function bench_batched_calls(iters: i32, batch_size: i32) -> i64 {
+    let buf: ptr<i8> = ffi_alloc((batch_size as i64) * 8)
+    let p: ptr<i64> = buf as ptr<i64>
+    for i in 0 to batch_size {
+        p[i] = i as i64
+    }
+
+    let start: i64 = bench_now_us()
+    let mut sum: i64 = 0
+    let outer: i32 = iters / batch_size
+    for i in 0 to outer {
+        sum = sum + ffi_bench_batch_impl(p, batch_size as i64)
+    }
+    let elapsed: i64 = bench_now_us() - start
+    print(" (sum="); print(bench_fixed(sum as f64, 0)); print(") ")
+    ffi_free(buf)
+    return elapsed
+}
+
+function prove_zero_copy_handoff() -> i32 {
+    let n: i32 = 1024
+    let raw: ptr<i8> = ffi_alloc((n as i64) * 8)
+    if (raw as i64) == 0 {
+        print("zero-copy handoff pointer identity: FAIL (alloc)\n")
+        return 1
+    }
+    let have: FFILayout = ffi_layout_contiguous(8, 8)
+    let handoff: FFIHandoff = ffi_buffer_try_borrow(raw as ptr<void>, n as i64, have, have)
+    if handoff.status != FFI_OK {
+        print("zero-copy handoff pointer identity: FAIL (status)\n")
+        ffi_free(raw)
+        return 1
+    }
+    if ffi_buffer_addr(handoff.buf) != (raw as i64) {
+        print("zero-copy handoff pointer identity: FAIL (copied)\n")
+        ffi_free(raw)
+        return 1
+    }
+    print("zero-copy handoff pointer identity: PASS (copied_bytes=0)\n")
+    ffi_free(raw)
+    return 0
+}
+
+function bench_large_buffer(size: i32) -> i64 {
+    let buf: ptr<i8> = ffi_alloc((size as i64) * 8)
+    let p: ptr<i64> = buf as ptr<i64>
+    for i in 0 to size {
+        p[i] = i as i64
+    }
+
+    # Simulate a zero-copy handoff using the new ABI
+    let handoff: FFIBuffer = ffi_buffer_borrowed(buf as ptr<void>, size as i64, 8)
+
+    let start: i64 = bench_now_us()
+    let mut sum: i64 = 0
+    # Process the entire large buffer a few times
+    for i in 0 to 10 {
+        sum = sum + ffi_bench_batch_impl(handoff.data as ptr<i64>, handoff.len)
+    }
+    let elapsed: i64 = bench_now_us() - start
+    print(" (sum="); print(bench_fixed(sum as f64, 0)); print(") ")
+
+    ffi_free(buf)
+    return elapsed / 10
+}
+
+function main() -> i32 {
+    let identity: i32 = prove_zero_copy_handoff()
+    if identity != 0 {
+        return identity
+    }
+
+    let iters: i32 = 10000000
+
+    print("Benchmarking FFI overhead:\n")
+
+    print("Scalar calls (N="); print(bench_fixed(iters as f64, 0)); print("):");
+    let scalar_time: i64 = bench_scalar_calls(iters)
+    let s1: string = bench_fixed(scalar_time as f64 / 1000.0, 3)
+    print(" "); print(s1); print(" ms\n")
+
+    print("Batched calls (N="); print(bench_fixed(iters as f64, 0)); print(", batch=1000):");
+    let batch_time: i64 = bench_batched_calls(iters, 1000)
+    let s2: string = bench_fixed(batch_time as f64 / 1000.0, 3)
+    print(" "); print(s2); print(" ms\n")
+
+    let large_size: i32 = 10000000
+    print("Large zero-copy buffer (N="); print(bench_fixed(large_size as f64, 0)); print("):");
+    let large_time: i64 = bench_large_buffer(large_size)
+    let s3: string = bench_fixed(large_time as f64 / 1000.0, 3)
+    print(" "); print(s3); print(" ms\n")
+
+    return 0
+}

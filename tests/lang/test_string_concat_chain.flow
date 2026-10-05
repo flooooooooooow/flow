@@ -1,0 +1,46 @@
+# Multi-part string `+` joins in one allocation (#747).
+# A chain of four already-string operands must equal the pairwise result
+# and keep every byte, including a 64-byte helper return.
+# Exit 0 on success; a nonzero exit identifies the failing check.
+
+extern {
+    function strlen(s: string) -> i64
+    function strcmp(a: string, b: string) -> i32
+}
+
+function long_piece() -> string {
+    return "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ!!"
+}
+
+function build4(a: string, b: string, c: string, d: string) -> string {
+    return a + b + c + d
+}
+
+function main() -> i32 {
+    let s: string = build4("w", "x", "y", "z")
+    if strcmp(s, "wxyz") != 0 {
+        return 1
+    }
+    if strlen(s) != 4 {
+        return 2
+    }
+
+    let wrapped: string = "[" + long_piece() + "]"
+    if strlen(wrapped) != 66 {
+        return 3
+    }
+    if strcmp(wrapped, "[abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ!!]") != 0 {
+        return 4
+    }
+
+    # Pairwise still works, and a mixed numeric chain keeps formatting.
+    let two: string = "ab" + "cd"
+    if strcmp(two, "abcd") != 0 {
+        return 5
+    }
+    let mixed: string = "n=" + 42 + "!"
+    if strcmp(mixed, "n=42!") != 0 {
+        return 6
+    }
+    return 0
+}

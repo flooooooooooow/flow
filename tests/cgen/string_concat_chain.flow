@@ -1,0 +1,22 @@
+# A four-part pure-string chain lowers to one __flowc_str_concatn call.
+# Two-part joins and mixed numeric chains keep pairwise __flowc_str_concat.
+
+function build4(a: string, b: string, c: string, d: string) -> string {
+    return a + b + c + d
+}
+
+function pair(a: string, b: string) -> string {
+    return a + b
+}
+
+function mixed() -> string {
+    return "n=" + 1 + "!"
+}
+
+function main() -> i32 {
+    let s: string = build4("w", "x", "y", "z")
+    println(s)
+    println(pair("ab", "cd"))
+    println(mixed())
+    return 0
+}

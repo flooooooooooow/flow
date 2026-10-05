@@ -1,0 +1,40 @@
+# Integer parse/format over a CSV-like buffer without per-token heap (#747).
+# The same digits Python's int() accepts; overflow and junk would fail.
+
+import std.string { ParseI64, str_parse_i64_at, str_format_i64 }
+
+function main() -> i32 {
+    let text: string = "10,20,30,40,50,60,70,80,90,100,250,350,450,550,999,-1,-42,0,7,2147483647"
+    let mut checksum: i64 = 0
+    let mut iter: i32 = 0
+    let mut buf: array<u8, 32> = []
+    while iter < 20000 {
+        let mut pos: i32 = 0
+        let p: ptr<u8> = text as ptr<u8>
+        while p[pos] != 0 {
+            let r: ParseI64 = str_parse_i64_at(text, pos)
+            if r.ok == false {
+                return 1
+            }
+            checksum = checksum + r.value
+            let w: i32 = str_format_i64(&buf[0], 32, r.value)
+            if w < 1 {
+                return 2
+            }
+            checksum = checksum + (w as i64)
+            pos = r.end
+            if p[pos] == 44 {
+                pos = pos + 1
+            } elif p[pos] == 0 {
+                break
+            } else {
+                return 3
+            }
+        }
+        iter = iter + 1
+    }
+    if checksum != 42949736260000 {
+        return 4
+    }
+    return 0
+}

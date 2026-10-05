@@ -1,0 +1,15 @@
+# expect: RT-safety violation: 'indirect_caller' is marked '@rt_safe' but makes an unresolved dynamic call (forbidden on an RT-safe path because its safety cannot be proven; see docs/library/rt-safety.md)
+@rt_safe
+function safe_fn(x: i32) -> i32 {
+    return x * 2
+}
+
+@rt_safe
+function indirect_caller() {
+    let f1: (i32) -> i32 = safe_fn
+    let y: i32 = f1(42)
+}
+
+function main() -> i32 {
+    return 0
+}

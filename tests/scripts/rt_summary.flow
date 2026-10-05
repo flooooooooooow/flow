@@ -1,0 +1,94 @@
+# Cross-module @rt_safe / @lifetime summaries (#765). The type checker
+# must consult the imported compact effect/lifetime contract, keep a
+# call-chain explanation, and still accept a frame/callback-safe import.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcCmd, ProcStrs, proc_env }
+
+function check_only(src: string) -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3(t_root() + "/flow", "tool", "compiler/scripts/flowc_emit.flow")
+    sl_push(argv, "--strict")
+    sl_push2(argv, src, t_tmp() + "/out.c")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    proc_env(c, "FLOWC_CHECK_ONLY", "1")
+    return t_run(c)
+}
+
+function log_text() -> string {
+    return read_text(t_out()) + read_text(t_err())
+}
+
+function check_imported_alloc_is_rejected() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    if check_only("compiler/fixtures/rt_summary/rt_safe_caller.flow") == 0 {
+        outln("expected @rt_safe caller of imported malloc helper to fail")
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let log: string = log_text()
+    if not a_contains(log, "RT-safety violation") {
+        return T_FAIL
+    }
+    if not a_contains(log, "heap_touch") {
+        return T_FAIL
+    }
+    if not a_contains(log, "malloc") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_imported_session_domain_is_rejected() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    if check_only("compiler/fixtures/rt_summary/callback_caller.flow") == 0 {
+        outln("expected callback caller of imported session function to fail")
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let log: string = log_text()
+    if not a_contains(log, "lifetime domain violation") {
+        return T_FAIL
+    }
+    if not a_contains(log, "reload_preset") {
+        return T_FAIL
+    }
+    if not a_contains(log, "session") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_imported_safe_helper_is_accepted() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    if check_only("compiler/fixtures/rt_summary/ok_callback.flow") != 0 {
+        outln("expected @rt_safe caller of imported stack helper to pass")
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("rt_summary")
+    t_start()
+    t_end("imported_alloc_is_rejected", check_imported_alloc_is_rejected())
+    t_start()
+    t_end("imported_session_domain_is_rejected", check_imported_session_domain_is_rejected())
+    t_start()
+    t_end("imported_safe_helper_is_accepted", check_imported_safe_helper_is_accepted())
+    t_done()
+    return 0
+}

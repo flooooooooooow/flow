@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 from pygments import lex
@@ -39,6 +40,26 @@ def main() -> None:
     for path in REAL_SOURCES:
         assert path.is_file(), f"missing representative Flow source: {path}"
         assert_no_error_tokens(path.read_text(), str(path.relative_to(REPO_ROOT)))
+
+    print("Testing entire corpus for regression check...")
+    files = list(REPO_ROOT.glob('**/*.flow'))
+    files = [f for f in files if "third_party" not in str(f) and ".venv" not in str(f)]
+    failed = 0
+    for path in files:
+        try:
+            source = path.read_text()
+            errors = [(token, value) for token, value in lex(source, FlowLexer()) if token is Error]
+            if errors:
+                print(f"FAIL: {path.relative_to(REPO_ROOT)}")
+                print(f"  Errors: {errors[:5]}")
+                failed += 1
+        except Exception as e:
+            print(f"ERROR reading/lexing {path.relative_to(REPO_ROOT)}: {e}")
+            failed += 1
+
+    if failed:
+        print(f"\n{failed} files failed.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

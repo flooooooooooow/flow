@@ -1,0 +1,338 @@
+# @module flowc.profile
+# @means  Opt-in per-phase compile timings for #735.
+#
+# Off unless FLOWC_PROFILE is set to a truthy value. `json` prints one
+# `[flow-profile] {...}` line on stderr; any other truthy value also prints
+# a short text table. FLOW_PROFILE is already the safety-profile switch
+# (safety/flight), so this surface is FLOWC_PROFILE.
+#
+# Phases match the #735 list as far as the current pipeline can split them
+# without a rewrite. monomorphize and lowering stay in the report with 0 ms
+# until those passes are timed on their own; they currently run inside
+# codegen. external_compile and process_launch are measured by
+# tools/compile_bench, not here.
+
+import .fileio { flowc_read_file }
+
+@cEmbed("#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#define FLOWC_PROF_N 8
+static int64_t flowc_prof_ns[FLOWC_PROF_N];
+static int64_t flowc_prof_process_start;
+static int32_t flowc_prof_ast;
+static int32_t flowc_prof_loc;
+static int32_t flowc_prof_mode_cache;
+static int32_t flowc_prof_mode_ready;
+static int32_t flowc_prof_startup_done;
+static int64_t flowc_prof_now_ns_c(void) {
+  struct timespec ts;
+  if (clock_gettime(CLOCK_MONOTONIC_RAW, &ts) != 0) {
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
+      return 0;
+    }
+  }
+  return (int64_t)ts.tv_sec * 1000000000LL + (int64_t)ts.tv_nsec;
+}
+#ifdef __GNUC__
+__attribute__((constructor))
+static void flowc_prof_ctor(void) {
+  flowc_prof_process_start = flowc_prof_now_ns_c();
+}
+#endif
+static int32_t flowc_prof_mode_c(void) {
+  const char *v;
+  if (flowc_prof_mode_ready) {
+    return flowc_prof_mode_cache;
+  }
+  flowc_prof_mode_ready = 1;
+  v = getenv(\"FLOWC_PROFILE\");
+  if (v == 0 || v[0] == 0 || v[0] == '0') {
+    flowc_prof_mode_cache = 0;
+    return 0;
+  }
+  if ((v[0] == 'f' || v[0] == 'F') && (v[1] == 'a' || v[1] == 'A')) {
+    flowc_prof_mode_cache = 0;
+    return 0;
+  }
+  if ((v[0] == 'o' || v[0] == 'O') && (v[1] == 'f' || v[1] == 'F')) {
+    flowc_prof_mode_cache = 0;
+    return 0;
+  }
+  if ((v[0] == 'n' || v[0] == 'N') && (v[1] == 'o' || v[1] == 'O')) {
+    flowc_prof_mode_cache = 0;
+    return 0;
+  }
+  if ((v[0] == 'j' || v[0] == 'J')) {
+    flowc_prof_mode_cache = 2;
+    return 2;
+  }
+  flowc_prof_mode_cache = 1;
+  return 1;
+}
+int32_t flowc_prof_mode_raw(void) { return flowc_prof_mode_c(); }
+int64_t flowc_prof_now_raw(void) { return flowc_prof_now_ns_c(); }
+void flowc_prof_add_raw(int32_t id, int64_t ns) {
+  if (flowc_prof_mode_c() == 0) { return; }
+  if (id < 0 || id >= FLOWC_PROF_N) { return; }
+  if (ns < 0) { ns = 0; }
+  flowc_prof_ns[id] += ns;
+}
+int64_t flowc_prof_get_raw(int32_t id) {
+  if (id < 0 || id >= FLOWC_PROF_N) { return 0; }
+  return flowc_prof_ns[id];
+}
+void flowc_prof_add_ast_raw(int32_t n) {
+  if (n > 0) { flowc_prof_ast += n; }
+}
+void flowc_prof_set_loc_raw(int32_t n) {
+  if (n > 0) { flowc_prof_loc = n; }
+}
+int32_t flowc_prof_ast_raw(void) { return flowc_prof_ast; }
+int32_t flowc_prof_loc_raw(void) { return flowc_prof_loc; }
+void flowc_prof_mark_startup_raw(void) {
+  int64_t now;
+  if (flowc_prof_mode_c() == 0 || flowc_prof_startup_done) { return; }
+  now = flowc_prof_now_ns_c();
+  if (flowc_prof_process_start == 0) {
+    flowc_prof_process_start = now;
+  }
+  flowc_prof_ns[0] += now - flowc_prof_process_start;
+  if (flowc_prof_ns[0] < 0) { flowc_prof_ns[0] = 0; }
+  flowc_prof_startup_done = 1;
+}
+void flowc_prof_write_line_raw(const char *s) {
+  fputs(s, stderr);
+  fputc(10, stderr);
+}
+")
+
+extern {
+    function flowc_prof_mode_raw() -> i32
+    function flowc_prof_now_raw() -> i64
+    function flowc_prof_add_raw(id: i32, ns: i64)
+    function flowc_prof_get_raw(id: i32) -> i64
+    function flowc_prof_add_ast_raw(n: i32)
+    function flowc_prof_set_loc_raw(n: i32)
+    function flowc_prof_ast_raw() -> i32
+    function flowc_prof_loc_raw() -> i32
+    function flowc_prof_mark_startup_raw()
+    function flowc_prof_write_line_raw(s: string)
+    function malloc(size: i64) -> ptr<u8>
+    function snprintf(buf: ptr<u8>, size: i64, fmt: string, ...) -> i32
+    function strlen(s: string) -> i64
+    function getenv(name: string) -> string
+}
+
+# Canonical phase ids. Keep in sync with flowc_prof_name.
+export const FLOWC_PROF_STARTUP: i32 = 0
+export const FLOWC_PROF_SOURCE_READ: i32 = 1
+export const FLOWC_PROF_PARSE: i32 = 2
+export const FLOWC_PROF_IMPORT: i32 = 3
+export const FLOWC_PROF_TYPECHECK: i32 = 4
+export const FLOWC_PROF_MONO: i32 = 5
+export const FLOWC_PROF_LOWERING: i32 = 6
+export const FLOWC_PROF_CODEGEN: i32 = 7
+
+export function flowc_prof_enabled() -> i32 {
+    if flowc_prof_mode_raw() == 0 {
+        return 0
+    }
+    return 1
+}
+
+export function flowc_prof_span_begin() -> i64 {
+    if flowc_prof_mode_raw() == 0 {
+        return 0 - 1
+    }
+    return flowc_prof_now_raw()
+}
+
+export function flowc_prof_span_end(id: i32, start: i64) {
+    if start < 0 {
+        return
+    }
+    flowc_prof_add_raw(id, flowc_prof_now_raw() - start)
+}
+
+export function flowc_prof_mark_startup() {
+    flowc_prof_mark_startup_raw()
+}
+
+export function flowc_prof_add_ast(n: i32) {
+    flowc_prof_add_ast_raw(n)
+}
+
+export function flowc_prof_set_loc(n: i32) {
+    flowc_prof_set_loc_raw(n)
+}
+
+# Count newlines in a byte buffer (same as compile_bench).
+export function flowc_prof_count_loc(src: ptr<u8>, n: i32) -> i32 {
+    let mut lines: i32 = 0
+    let mut i: i32 = 0
+    while i < n {
+        if src[i] == 10 {
+            lines = lines + 1
+        }
+        i = i + 1
+    }
+    if n > 0 and src[n - 1] != 10 {
+        lines = lines + 1
+    }
+    return lines
+}
+
+# Entry-file LOC. First call wins so bundle deps do not replace it.
+export function flowc_prof_note_path(path: string) {
+    if flowc_prof_mode_raw() == 0 {
+        return
+    }
+    if flowc_prof_loc_raw() > 0 {
+        return
+    }
+    if path as ptr<u8> == null {
+        return
+    }
+    let cap: i32 = 1048576
+    let src: ptr<u8> = malloc(cap as i64)
+    if src == null {
+        return
+    }
+    let n: i32 = flowc_read_file(path, src, cap - 1)
+    if n > 0 {
+        flowc_prof_set_loc_raw(flowc_prof_count_loc(src, n))
+    }
+}
+
+export function flowc_prof_note_source(src: ptr<u8>, n: i32, ast: i32) {
+    if flowc_prof_mode_raw() == 0 {
+        return
+    }
+    if ast > 0 {
+        flowc_prof_add_ast_raw(ast)
+    }
+}
+
+function flowc_prof_name(id: i32) -> string {
+    if id == 0 { return "startup" }
+    if id == 1 { return "source_read" }
+    if id == 2 { return "parse" }
+    if id == 3 { return "import_resolution" }
+    if id == 4 { return "typecheck" }
+    if id == 5 { return "monomorphize" }
+    if id == 6 { return "lowering" }
+    if id == 7 { return "codegen" }
+    return "other"
+}
+
+function flowc_prof_i64_str(v: i64) -> string {
+    let b: ptr<u8> = malloc(32)
+    let _n: i32 = snprintf(b, 32, "%lld", v)
+    return b as string
+}
+
+function flowc_prof_ns_to_ms(ns: i64) -> i64 {
+    if ns <= 0 {
+        return 0
+    }
+    return (ns + 500000) / 1000000
+}
+
+function flowc_prof_ns_to_us(ns: i64) -> i64 {
+    if ns <= 0 {
+        return 0
+    }
+    return (ns + 500) / 1000
+}
+
+function flowc_prof_total_ns() -> i64 {
+    let mut t: i64 = 0
+    let mut i: i32 = 0
+    while i < 8 {
+        t = t + flowc_prof_get_raw(i)
+        i = i + 1
+    }
+    return t
+}
+
+# JSON object for the report. Caller owns the buffer.
+export function flowc_prof_format_json(buf: ptr<u8>, cap: i32) -> i32 {
+    let mut loc: i64 = flowc_prof_loc_raw() as i64
+    let ast: i64 = flowc_prof_ast_raw() as i64
+    let total_ns: i64 = flowc_prof_total_ns()
+    let total_ms: i64 = flowc_prof_ns_to_ms(total_ns)
+    let startup_ms: i64 = flowc_prof_ns_to_ms(flowc_prof_get_raw(0))
+    let mut loc_s: i64 = 0
+    let mut ast_s: i64 = 0
+    if total_ms > 0 {
+        loc_s = (loc * 1000) / total_ms
+        ast_s = (ast * 1000) / total_ms
+    }
+    let mut n: i32 = snprintf(buf, cap as i64, "{\"schema\": \"flow-compile-profile/1\"")
+    n = n + snprintf(buf + n, (cap - n) as i64, ", \"phases\": [")
+    let mut i: i32 = 0
+    while i < 8 {
+        if i > 0 {
+            n = n + snprintf(buf + n, (cap - n) as i64, ", ")
+        }
+        n = n + snprintf(buf + n, (cap - n) as i64, "{\"name\": \"%s\", \"ms\": %lld, \"us\": %lld}", flowc_prof_name(i), flowc_prof_ns_to_ms(flowc_prof_get_raw(i)), flowc_prof_ns_to_us(flowc_prof_get_raw(i)))
+        i = i + 1
+    }
+    n = n + snprintf(buf + n, (cap - n) as i64, "], \"source_loc\": %lld, \"ast_nodes\": %lld", loc, ast)
+    n = n + snprintf(buf + n, (cap - n) as i64, ", \"total_ms\": %lld, \"startup_ms\": %lld", total_ms, startup_ms)
+    n = n + snprintf(buf + n, (cap - n) as i64, ", \"loc_per_s\": %lld, \"ast_nodes_per_s\": %lld}", loc_s, ast_s)
+    if n < cap {
+        buf[n] = 0
+    }
+    return n
+}
+
+function flowc_prof_write_line(s: string) {
+    flowc_prof_write_line_raw(s)
+}
+
+export function flowc_prof_emit() {
+    let mode: i32 = flowc_prof_mode_raw()
+    if mode == 0 {
+        return
+    }
+    let buf: ptr<u8> = malloc(2048)
+    if buf == null {
+        return
+    }
+    let n: i32 = flowc_prof_format_json(buf, 2048)
+    if n <= 0 {
+        return
+    }
+    if mode == 1 {
+        flowc_prof_write_line("Compile profile (per-phase wall time):")
+        let total_ns: i64 = flowc_prof_total_ns()
+        let mut i: i32 = 0
+        while i < 8 {
+            let ns: i64 = flowc_prof_get_raw(i)
+            let ms: i64 = flowc_prof_ns_to_ms(ns)
+            let mut pct: i64 = 0
+            if total_ns > 0 {
+                pct = (ns * 100) / total_ns
+            }
+            let line: ptr<u8> = malloc(96)
+            let _ln: i32 = snprintf(line, 96, "  %-18s %6lld ms  %3lld%%", flowc_prof_name(i), ms, pct)
+            flowc_prof_write_line(line as string)
+            i = i + 1
+        }
+        let tot: ptr<u8> = malloc(64)
+        let _tn: i32 = snprintf(tot, 64, "  %-18s %6lld ms", "total", flowc_prof_ns_to_ms(total_ns))
+        flowc_prof_write_line(tot as string)
+    }
+    let marker: ptr<u8> = malloc(2080)
+    let _mn: i32 = snprintf(marker, 2080, "[flow-profile] %s", buf as string)
+    flowc_prof_write_line(marker as string)
+}
+
+# Used by the compiler selftest: the JSON schema is stable even with empty timings.
+export function flowc_prof_selftest_format(buf: ptr<u8>, cap: i32) -> i32 {
+    return flowc_prof_format_json(buf, cap)
+}

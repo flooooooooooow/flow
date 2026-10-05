@@ -39,8 +39,12 @@ supports attributes on `function` declarations.
   `arena_create`, `arena_destroy`) are a type error.
 - **Transitive** calls are also caught: if an `@rt_safe` function calls a
   helper that (however indirectly) calls one of the names above, that's a
-  type error too. The checker builds a whole-module call graph and reports
-  the first heap-touching call in the chain.
+  type error too. The checker builds a call graph and reports the first
+  heap-touching call in the chain. Across modules it consults a compact
+  effect/lifetime summary for each public function (callback-safe /
+  frame-safe, may allocate/free, may block/lock, may do device/file/network
+  I/O, declared lifetime domain) and keeps one provenance edge per newly
+  introduced bit so the diagnostic still names the call chain (#765).
 - Bump allocation from an *already-created* arena is allowed: `arena_alloc`,
   `arena_alloc_i32`, `arena_alloc_f32`, `arena_reset`, `arena_used`, and
   `arena_remaining` never call `malloc`/`free` themselves, so they stay
@@ -58,11 +62,13 @@ supports attributes on `function` declarations.
 - Method calls (`obj.method(...)`) aren't checked against the heap-name
   list, only plain function calls. This is no issue for `memory.flow` today
   since it exposes free functions and no methods.
-- `extern` C calls other than the malloc family aren't assumed to allocate
-  (e.g. a hypothetical `extern` audio driver call could allocate internally
-  without the checker knowing).
-- Device/file/network calls (`audio_device_open`, syscalls, GPU submit) are
-  still policy-only and are not name-checked.
+- `extern` C calls that are not on the known unsafe-name list carry an
+  `unknown` summary bit rather than an empty contract. This slice still
+  rejects only the known names, so a hypothetical driver `extern` can
+  allocate internally without a hard error.
+- Device/file/network calls on the known-name list (`audio_device_open`,
+  `fopen`, GPU submit, …) are recorded as I/O on the summary and rejected
+  from `@rt_safe` / `callback`.
 - No enforcement for unbounded loops or unbounded `printf`: those remain a
   review-time concern.
 - **Locks are compile-time checked:** `pthread_mutex_lock` /

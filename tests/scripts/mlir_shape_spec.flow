@@ -1,0 +1,50 @@
+import "tools/flow_cli/sys.flow"
+import "tools/flow_cli/shape_specializer.flow"
+import "tests/scripts/harness.flow"
+
+function check_specialize_replaces_memref() -> i32 {
+    let mlir: string = "module {\n  func.func @tensor_matmul(%a: memref<?xf32>) {\n    func.return\n  }\n}\n"
+    let out: string = specialize_mlir_shapes(mlir, "tensor_matmul", "memref<?xf32>", "memref<1024xf32>")
+    if not a_contains(out, "memref<1024xf32>") { return T_FAIL }
+    if a_contains(out, "memref<?xf32>") { return T_FAIL }
+    return T_PASS
+}
+
+function check_emit_accepts_shape_spec() -> i32 {
+    let program: string = t_tmp() + "/test_program.flow"
+    let out_mlir: string = t_tmp() + "/test_program.mlir"
+    let _w1: bool = write_text(program, "function main() -> i32 { return 0 }\n")
+
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--jit")
+    sl_push(argv, "--shape-spec=memref<?xf32>=memref<1024xf32>")
+    sl_push2(argv, program, out_mlir)
+    if t_run_argv(argv) != 0 { return T_FAIL }
+    if not a_exists(out_mlir) { return T_FAIL }
+    if not a_file_contains(out_mlir, "func.func @main") { return T_FAIL }
+    return T_PASS
+}
+
+function check_shape_spec_flag() -> i32 {
+    let need: i32 = t_need("mlir-opt mlir-translate clang")
+    if need != T_PASS { return need }
+    let program: string = t_tmp() + "/test_program.flow"
+    let _w1: bool = write_text(program, "function main() -> i32 { return 0 }\n")
+
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "jit", program)
+    sl_push(argv, "--shape-spec=memref<?xf32>=memref<1024xf32>")
+
+    if t_run_argv(argv) != 0 { return T_FAIL }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("mlir_shape_spec")
+    t_start()
+    t_end("specialize_replaces_memref", check_specialize_replaces_memref())
+    t_start()
+    t_end("emit_accepts_shape_spec", check_emit_accepts_shape_spec())
+    t_start()
+    t_end("accepts_shape_spec_flag", check_shape_spec_flag())
+    t_done()
+    return 0
+}

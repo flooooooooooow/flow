@@ -1,0 +1,122 @@
+# Structural MLIR noalias metadata for the #731 first slice.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+
+function host_path() -> string {
+    let host_cmd: ptr<ProcCmd> = t_cmd(sl_of3("./flow", "tool", "compiler/scripts/flowc_host.flow"))
+    if t_run(host_cmd) != 0 {
+        return ""
+    }
+    let raw: string = read_text(t_out())
+    let n: i32 = s_len(raw)
+    if n > 0 and s_ends(raw, "\n") {
+        return s_slice(raw, 0, n - 1)
+    }
+    return raw
+}
+
+function emit_mlir(src: string, out_path: string) -> i32 {
+    let host: string = host_path()
+    if s_len(host) == 0 {
+        outln("flowc_host failed:")
+        outln(read_text(t_err()))
+        return 1
+    }
+    let c: ptr<ProcCmd> = t_cmd(sl_of1(host))
+    cmd_env(c, "FLOWC_EMIT", "mlir")
+    cmd_env(c, "FLOWC_TYPECHECK", "1")
+    cmd_env(c, "FLOWC_LENIENT", "1")
+    cmd_env(c, "FLOWC_IN", src)
+    cmd_env(c, "FLOWC_OUT", out_path)
+    return t_run(c)
+}
+
+function check_distinct_arrays_get_noalias() -> i32 {
+    let out_path: string = t_tmp() + "/noalias.mlir"
+    if emit_mlir("tests/cgen/noalias_restrict.flow", out_path) != 0 {
+        outln("flow mlir failed:")
+        outln(read_text(t_err()))
+        return T_FAIL
+    }
+    if not exists(out_path) {
+        outln("flow mlir did not write " + out_path)
+        return T_FAIL
+    }
+    let text: string = read_text(out_path)
+    if not a_contains(text, "{llvm.noalias}") {
+        outln("expected {llvm.noalias} on proven-disjoint pointer params")
+        return T_FAIL
+    }
+    if not a_contains(text, "func.func @add_into") {
+        outln("missing add_into")
+        return T_FAIL
+    }
+    if not a_contains(text, "func.func @span_add") {
+        outln("missing span_add")
+        return T_FAIL
+    }
+    if not a_contains(text, "// flowc.noalias pa") {
+        outln("expected local noalias remark for pa")
+        return T_FAIL
+    }
+    if not a_contains(text, "// flowc.noalias pb") {
+        outln("expected local noalias remark for pb")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_negative_cases_stay_aliasable() -> i32 {
+    let out_path: string = t_tmp() + "/noalias.mlir"
+    if not exists(out_path) {
+        if emit_mlir("tests/cgen/noalias_restrict.flow", out_path) != 0 {
+            return T_FAIL
+        }
+    }
+    let text: string = read_text(out_path)
+    if a_contains(text, "func.func @alias_copy") == false {
+        outln("missing alias_copy")
+        return T_FAIL
+    }
+    if a_contains(text, "func.func @overlap_copy") == false {
+        outln("missing overlap_copy")
+        return T_FAIL
+    }
+    if a_contains(text, "func.func @exported_add") == false {
+        outln("missing exported_add")
+        return T_FAIL
+    }
+    let mut i: i32 = 0
+    let lines: ptr<ProcStrs> = s_lines(text)
+    while i < sl_len(lines) {
+        let line: string = sl_get(lines, i)
+        if s_contains(line, "@alias_copy") and s_contains(line, "llvm.noalias") {
+            outln("alias_copy must not carry llvm.noalias")
+            return T_FAIL
+        }
+        if s_contains(line, "@overlap_copy") and s_contains(line, "llvm.noalias") {
+            outln("overlap_copy must not carry llvm.noalias")
+            return T_FAIL
+        }
+        if s_contains(line, "@exported_add") and s_contains(line, "llvm.noalias") {
+            outln("exported_add must not carry llvm.noalias")
+            return T_FAIL
+        }
+        if s_contains(line, "flowc.noalias q") {
+            outln("parameter-derived local q must not be noalias")
+            return T_FAIL
+        }
+        i = i + 1
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("noalias_mlir")
+    t_start()
+    t_end("distinct_arrays", check_distinct_arrays_get_noalias())
+    t_end("negative_aliasable", check_negative_cases_stay_aliasable())
+    t_done()
+    return 0
+}

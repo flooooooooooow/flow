@@ -1,0 +1,5 @@
+# Frame-safe imported helper: stack math only.
+
+export function mix(a: i32, b: i32) -> i32 {
+    return a + b
+}

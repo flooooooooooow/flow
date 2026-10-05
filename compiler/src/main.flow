@@ -10,6 +10,7 @@ import .token {
 }
 import .lexer { flowc_lexer_new, flowc_lexer_next }
 import .ast {
+    AstArena,
     AST_FN, AST_LET, AST_RETURN, AST_IF, AST_FOR, AST_STRUCT, AST_FIELD, AST_EXTERN,
     AST_IMPORT, AST_EXPORT, AST_FIELD_ACCESS, AST_INDEX, AST_STRUCT_LIT,
     AST_BREAK, AST_CONTINUE, AST_STRING, AST_CONST, AST_CAST, AST_ASSIGN, AST_TYPE, AST_NONE,
@@ -30,11 +31,27 @@ import .wasm_gen { flowc_wasm_gen_compile }
 import .bpf_gen { flowc_bpf_gen_compile }
 import .shader_emit { flowc_shader_mode }
 import .typecheck { flowc_typecheck, flowc_typecheck_fatal, flowc_typecheck_fatal_sem }
+import .rt_summary {
+    FLOWC_RT_ALLOC, FLOWC_RT_BLOCK, FLOWC_RT_DOM_CALLBACK, FLOWC_RT_DOM_NONE,
+    FLOWC_RT_UNKNOWN, flowc_rt_is_callback_safe, flowc_rt_is_frame_safe,
+    flowc_rt_name_bits, flowc_rt_summary_bits, flowc_rt_summary_collect,
+    flowc_rt_summary_domain, flowc_rt_summary_find, flowc_rt_summary_prov,
+    flowc_rt_summary_prov_len
+}
 import .sem_check { flowc_semcheck_single }
 import .resolve {
     flowc_resolve_sibling_path, flowc_bundle_emit, flowc_bundle_typecheck, flowc_bundle_typecheck_fatal,
     flowc_resolve_dirname, flowc_expand_all_in_place, flowc_expand_stages_in_place,
     flowc_semcheck_imports, flowc_expand_for_mlir_in_place
+}
+import .type_id {
+    flowc_type_family_id, flowc_type_schema_id, flowc_type_transport_safe,
+    flowc_type_id_hash_selftest
+}
+import .profile {
+    flowc_prof_span_begin, flowc_prof_span_end, flowc_prof_mark_startup,
+    flowc_prof_note_source, flowc_prof_note_path, flowc_prof_emit, flowc_prof_selftest_format,
+    FLOWC_PROF_SOURCE_READ, FLOWC_PROF_PARSE, FLOWC_PROF_TYPECHECK, FLOWC_PROF_CODEGEN
 }
 
 extern {
@@ -248,7 +265,16 @@ function flowc_explain_end() {
 # else cgen (C).
 # FLOWC_BUNDLE=1 → flowc_bundle_emit (entry + relative imports, one C TU).
 # Returns 0 on success, 1 on failure. Does not run self-tests.
+# FLOWC_PROFILE=1|json: per-phase timings on stderr (#735).
 function flowc_emit_mode() -> i32 {
+    flowc_prof_mark_startup()
+    flowc_prof_note_path(getenv("FLOWC_IN"))
+    let rc: i32 = flowc_emit_body()
+    flowc_prof_emit()
+    return rc
+}
+
+function flowc_emit_body() -> i32 {
     let in_path: string = getenv("FLOWC_IN")
     let out_path: string = getenv("FLOWC_OUT")
 
@@ -382,7 +408,9 @@ function flowc_emit_mode() -> i32 {
             src[zi] = 0
             zi = zi + 1
         }
+        let t_read: i64 = flowc_prof_span_begin()
         let mut nsrc: i32 = flowc_read_file(in_path, src, src_cap - 1)
+        flowc_prof_span_end(FLOWC_PROF_SOURCE_READ, t_read)
         # An empty file is an empty program, as on the Python host.
         if nsrc < 0 {
             puts("flowc emit: read FLOWC_IN failed")
@@ -393,12 +421,14 @@ function flowc_emit_mode() -> i32 {
         src[nsrc] = 0
 
         # DSLs expand before parse, as the Python host does.
+        let t_parse: i64 = flowc_prof_span_begin()
         if want_mlir == 1 {
             nsrc = flowc_expand_for_mlir_in_place(src, nsrc, src_cap)
         } else {
             nsrc = flowc_expand_all_in_place(src, nsrc, src_cap)
         }
         if nsrc < 0 {
+            flowc_prof_span_end(FLOWC_PROF_PARSE, t_parse)
             free(src)
             free(out)
             return 1
@@ -407,6 +437,10 @@ function flowc_emit_mode() -> i32 {
         # Modules like ast.flow need a large arena (nested index/field assigns).
         let mut p: Parser = flowc_parser_new(src, nsrc, 262144)
         let root: i32 = flowc_parse_program(&p)
+        flowc_prof_span_end(FLOWC_PROF_PARSE, t_parse)
+        if root >= 0 and p.err == 0 {
+            flowc_prof_note_source(src, nsrc, p.arena.len)
+        }
         if root < 0 or p.err != 0 {
             puts("flowc emit: parse failed")
             flowc_parser_print_error(p, in_path)
@@ -422,6 +456,7 @@ function flowc_emit_mode() -> i32 {
         if flowc_want_typecheck() == 1 {
             # The semantic check (the Python host's type checker) sees the
             # program before pipeline fusion rewrites it.
+            let t_tc: i64 = flowc_prof_span_begin()
             let sem: array<i32, 2> = [0, 0]
             # A module with imports is checked with them resolved.
             let mut sem_done: bool = false
@@ -440,6 +475,7 @@ function flowc_emit_mode() -> i32 {
             let sfatal: array<i32, 1> = [0]
             let tc_errs: i32 = flowc_typecheck_fatal_sem(p.arena, root, src, getenv("FLOWC_IN"), &sfatal[0] as ptr<i32>, 1) + sem[0]
             sfatal[0] = sfatal[0] + sem[1]
+            flowc_prof_span_end(FLOWC_PROF_TYPECHECK, t_tc)
             if tc_errs > 0 and flowc_tc_lenient_ok(tc_errs, sfatal[0]) == 0 {
                 puts("flowc emit: typecheck failed")
                 printf("flowc emit: tc_errs=%d\n", tc_errs)
@@ -457,8 +493,10 @@ function flowc_emit_mode() -> i32 {
             }
         }
 
+        let t_gen: i64 = flowc_prof_span_begin()
         if want_mlir == 1 {
             nout = flowc_mlirgen_emit(p.arena, root, src, nsrc, src_cap, out, out_cap)
+            flowc_prof_span_end(FLOWC_PROF_CODEGEN, t_gen)
             if nout <= 0 {
                 free(out)
                 flowc_parser_free(p)
@@ -468,6 +506,7 @@ function flowc_emit_mode() -> i32 {
         } else {
             if flowc_env_eq("FLOWC_BACKEND", "js") == 1 {
                 nout = flowc_jsgen_emit(p.arena, root, src, out, out_cap)
+                flowc_prof_span_end(FLOWC_PROF_CODEGEN, t_gen)
                 if nout <= 0 {
                     puts("flowc emit: jsgen failed")
                     free(out)
@@ -477,6 +516,7 @@ function flowc_emit_mode() -> i32 {
                 }
             } else {
                 nout = flowc_cgen_emit(p.arena, root, src, out, out_cap)
+                flowc_prof_span_end(FLOWC_PROF_CODEGEN, t_gen)
                 if nout <= 0 {
                     puts("flowc emit: cgen failed")
                     free(out)
@@ -579,32 +619,42 @@ function flowc_fmt_mode(in_path: string, dump: i32) -> i32 {
 # `ok <path>` and returns 0, or prints `<path>:<line>:<col>: parse error: ...`
 # and returns 1. Used by compiler/scripts/parse_coverage.flow.
 function flowc_parse_only_mode() -> i32 {
+    flowc_prof_mark_startup()
     let in_path: string = getenv("FLOWC_IN")
+    flowc_prof_note_path(in_path)
     let src_cap: i32 = 8388608
     let src: ptr<u8> = malloc(src_cap as i64)
     if src == null {
         puts("flowc parse: malloc src failed")
+        flowc_prof_emit()
         return 2
     }
+    let t_read: i64 = flowc_prof_span_begin()
     let nsrc: i32 = flowc_read_file(in_path, src, src_cap - 1)
+    flowc_prof_span_end(FLOWC_PROF_SOURCE_READ, t_read)
     if nsrc < 0 {
         puts("flowc parse: read FLOWC_IN failed")
         free(src)
+        flowc_prof_emit()
         return 2
     }
     src[nsrc] = 0
     # One node per source byte is more than any Flow program needs.
+    let t_parse: i64 = flowc_prof_span_begin()
     let mut p: Parser = flowc_parser_new(src, nsrc, nsrc + 4096)
     let root: i32 = flowc_parse_program(&p)
+    flowc_prof_span_end(FLOWC_PROF_PARSE, t_parse)
     let mut rc: i32 = 0
     if root < 0 or p.err != 0 {
         flowc_parser_print_error(p, in_path)
         rc = 1
     } else {
+        flowc_prof_note_source(src, nsrc, p.arena.len)
         puts("ok")
     }
     flowc_parser_free(p)
     free(src)
+    flowc_prof_emit()
     return rc
 }
 
@@ -960,7 +1010,7 @@ function test_cgen_for() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 32768
+    let cap: i32 = 65536
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_for: malloc failed")
@@ -1016,7 +1066,7 @@ function test_cgen_logic() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 32768
+    let cap: i32 = 65536
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_logic: malloc failed")
@@ -1062,7 +1112,7 @@ function test_cgen_string() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 32768
+    let cap: i32 = 65536
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_string: malloc failed")
@@ -1114,7 +1164,7 @@ function test_cgen_emit() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 32768
+    let cap: i32 = 65536
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen: malloc failed")
@@ -1135,6 +1185,8 @@ function test_cgen_emit() -> i32 {
     if flowc_bytes_contains(bp, n, "return") == 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "#include <stdint.h>") == 0 { ok = 0 }
     if flowc_bytes_contains(bp, n, "if (") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "flow_mem_profile_init") == 0 { ok = 0 }
+    if flowc_bytes_contains(bp, n, "FLOW_MEM_PROFILE") == 0 { ok = 0 }
 
     if n > 0 and n < cap {
         bp[n] = 0
@@ -1432,7 +1484,7 @@ function test_cgen_const() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 32768
+    let cap: i32 = 65536
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_const: malloc failed")
@@ -1491,7 +1543,7 @@ function test_cgen_struct() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 32768
+    let cap: i32 = 65536
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_struct: malloc failed")
@@ -1536,7 +1588,7 @@ function test_cgen_ptr() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 32768
+    let cap: i32 = 65536
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_ptr: malloc failed")
@@ -1655,7 +1707,7 @@ function test_cgen_cast() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 32768
+    let cap: i32 = 65536
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_cast: malloc failed")
@@ -1696,7 +1748,7 @@ function test_cgen_void() -> i32 {
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
 
-    let cap: i32 = 32768
+    let cap: i32 = 65536
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_void: malloc failed")
@@ -2084,6 +2136,73 @@ function test_resolve_sibling() -> i32 {
     return ok
 }
 
+# Compact RT/lifetime summaries: name bits, worklist, imported-leaf consult.
+function test_rt_summary() -> i32 {
+    let mut ok: i32 = 1
+    if flowc_rt_name_bits("malloc") != FLOWC_RT_ALLOC { ok = 0 }
+    if flowc_rt_name_bits("mutex_lock") != FLOWC_RT_BLOCK { ok = 0 }
+    if flowc_rt_is_callback_safe(FLOWC_RT_ALLOC) != 0 { ok = 0 }
+    if flowc_rt_is_frame_safe(FLOWC_RT_BLOCK) != 1 { ok = 0 }
+    if flowc_rt_is_callback_safe(FLOWC_RT_UNKNOWN) != 0 { ok = 0 }
+    # helper calls malloc; process (@rt_safe) calls helper. The worklist
+    # must put ALLOC on both, with one provenance edge to the callee.
+    let src: string = "function helper() -> i32 {\n    return malloc(8)\n}\n@rt_safe\nfunction process() -> i32 {\n    return helper()\n}\n@lifetime(callback)\nfunction tick() -> i32 {\n    return process()\n}\n"
+    let sp: ptr<u8> = src
+    let nsrc: i32 = strlen(src) as i32
+    let mut p: Parser = flowc_parser_new(sp, nsrc, 512)
+    let root: i32 = flowc_parse_program(&p)
+    if root < 0 or p.err != 0 {
+        printf("rt_summary_parse=%d\n", p.err)
+        flowc_parser_free(p)
+        return 0
+    }
+    let cap: i32 = 4096
+    let buf: ptr<u8> = malloc(cap as i64)
+    if buf == null {
+        flowc_parser_free(p)
+        return 0
+    }
+    let mut zi: i32 = 0
+    while zi < cap {
+        buf[zi] = 0
+        zi = zi + 1
+    }
+    let n: i32 = flowc_rt_summary_collect(p.arena, root, sp, buf, cap, 0)
+    let mut hs: i32 = 0
+    while hs < nsrc and (sp[hs] != 104 or sp[hs + 1] != 101) {
+        hs = hs + 1
+    }
+    # "helper" starts at the first function name.
+    let he: i32 = hs + 6
+    let hoff: i32 = flowc_rt_summary_find(buf, n, sp, hs, he)
+    let hbits: i32 = flowc_rt_summary_bits(buf, hoff)
+    if hoff < 0 or (hbits & FLOWC_RT_ALLOC) == 0 { ok = 0 }
+    let mut ps: i32 = hs
+    while ps < nsrc and (sp[ps] != 112 or sp[ps + 1] != 114 or sp[ps + 2] != 111) {
+        ps = ps + 1
+    }
+    let pe: i32 = ps + 7
+    let poff: i32 = flowc_rt_summary_find(buf, n, sp, ps, pe)
+    let pbits: i32 = flowc_rt_summary_bits(buf, poff)
+    if poff < 0 or (pbits & FLOWC_RT_ALLOC) == 0 { ok = 0 }
+    if flowc_rt_summary_domain(buf, poff) != FLOWC_RT_DOM_NONE { ok = 0 }
+    let pprov: i32 = flowc_rt_summary_prov(buf, poff)
+    let plen: i32 = flowc_rt_summary_prov_len(buf, pprov)
+    if plen != 6 { ok = 0 }
+    let mut ts: i32 = ps
+    while ts < nsrc and (sp[ts] != 116 or sp[ts + 1] != 105 or sp[ts + 2] != 99 or sp[ts + 3] != 107) {
+        ts = ts + 1
+    }
+    let te: i32 = ts + 4
+    let toff: i32 = flowc_rt_summary_find(buf, n, sp, ts, te)
+    if toff < 0 or flowc_rt_summary_domain(buf, toff) != FLOWC_RT_DOM_CALLBACK { ok = 0 }
+    if toff < 0 or (flowc_rt_summary_bits(buf, toff) & FLOWC_RT_ALLOC) == 0 { ok = 0 }
+    printf("rt_summary_n=%d helper_bits=%d process_bits=%d tick_dom=%d ok=%d\n", n, hbits, pbits, flowc_rt_summary_domain(buf, toff), ok)
+    free(buf)
+    flowc_parser_free(p)
+    return ok
+}
+
 # Stage-A bundle typecheck: bundle_tc_ok → 0 errs.
 # Bundle mode is lenient for cross-module calls, so we only check the ok case.
 function test_bundle_typecheck() -> i32 {
@@ -2272,7 +2391,7 @@ function test_cgen_match() -> i32 {
     let mut ok: i32 = 1
     if root < 0 { ok = 0 }
     if p.err != 0 { ok = 0 }
-    let cap: i32 = 32768
+    let cap: i32 = 65536
     let bp: ptr<u8> = malloc(cap as i64)
     if bp == null {
         puts("cgen_match: malloc failed")
@@ -2383,6 +2502,100 @@ function test_typecheck_match_catchall() -> i32 {
     return ok
 }
 
+function test_type_id_find_type(arena: AstArena, src: ptr<u8>, lit: string) -> i32 {
+    let p: ptr<u8> = lit
+    let mut n: i32 = 0
+    while p[n] != 0 {
+        n = n + 1
+    }
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == AST_TYPE {
+            let ns: i32 = arena.nodes[i].name_start
+            let ne: i32 = arena.nodes[i].name_end
+            if ne - ns == n {
+                let mut k: i32 = 0
+                while k < n and src[ns + k] == p[k] {
+                    k = k + 1
+                }
+                if k == n {
+                    return i
+                }
+            }
+        }
+        i = i + 1
+    }
+    return AST_NONE
+}
+
+# family/schema IDs are deterministic, distinct across types, and independent
+# of C lowering. TransportSafe admits only fixed-width payloads (#775).
+function test_type_id() -> i32 {
+    if flowc_type_id_hash_selftest() != 1 {
+        return 0
+    }
+    let src: string = "struct Point { x: f32, y: f32 }\nstruct Named { x: f32, y: f32, tag: i32 }\nfunction f(a: Point, b: Point, c: Named, d: i32, e: ptr<i32>) -> i32 { return 0 }\n"
+    let sp: ptr<u8> = src
+    let len: i32 = strlen(src) as i32
+    let mut p: Parser = flowc_parser_new(sp, len, 256)
+    let root: i32 = flowc_parse_program(&p)
+    let mut ok: i32 = 1
+    if root < 0 { ok = 0 }
+    if p.err != 0 { ok = 0 }
+    let pt: i32 = test_type_id_find_type(p.arena, sp, "Point")
+    let nm: i32 = test_type_id_find_type(p.arena, sp, "Named")
+    let i32t: i32 = test_type_id_find_type(p.arena, sp, "i32")
+    let ptrt: i32 = test_type_id_find_type(p.arena, sp, "ptr")
+    if pt == AST_NONE or nm == AST_NONE or i32t == AST_NONE or ptrt == AST_NONE {
+        ok = 0
+    }
+    if ok == 1 {
+        let fa: u64 = flowc_type_family_id(p.arena, sp, pt)
+        let fb: u64 = flowc_type_family_id(p.arena, sp, pt)
+        let sa: u64 = flowc_type_schema_id(p.arena, sp, pt)
+        let sb: u64 = flowc_type_schema_id(p.arena, sp, pt)
+        let fn: u64 = flowc_type_family_id(p.arena, sp, nm)
+        let sn: u64 = flowc_type_schema_id(p.arena, sp, nm)
+        let fi: u64 = flowc_type_family_id(p.arena, sp, i32t)
+        if fa == (0 as u64) { ok = 0 }
+        if fa != fb { ok = 0 }
+        if sa != sb { ok = 0 }
+        if fa == fn { ok = 0 }
+        if sa == sn { ok = 0 }
+        if fa == fi { ok = 0 }
+        if flowc_type_transport_safe(p.arena, sp, pt) != 1 { ok = 0 }
+        if flowc_type_transport_safe(p.arena, sp, i32t) != 1 { ok = 0 }
+        if flowc_type_transport_safe(p.arena, sp, ptrt) != 0 { ok = 0 }
+    }
+    flowc_parser_free(p)
+    return ok
+}
+
+# FLOWC_PROFILE JSON schema is stable even with empty timings.
+function test_profile_report() -> i32 {
+    let buf: ptr<u8> = malloc(2048)
+    if buf == null {
+        return 0
+    }
+    let n: i32 = flowc_prof_selftest_format(buf, 2048)
+    if n < 40 {
+        return 0
+    }
+    if flowc_bytes_contains(buf, n, "flow-compile-profile/1") == 0 {
+        return 0
+    }
+    if flowc_bytes_contains(buf, n, "\"name\": \"parse\"") == 0 {
+        return 0
+    }
+    if flowc_bytes_contains(buf, n, "\"name\": \"typecheck\"") == 0 {
+        return 0
+    }
+    if flowc_bytes_contains(buf, n, "\"name\": \"codegen\"") == 0 {
+        return 0
+    }
+    return 1
+}
+
 function main() -> i32 {
     if flowc_env_set("FLOWC_PROOF_DOC") == 1 {
         return flowc_proof_doc_mode()
@@ -2479,7 +2692,13 @@ function main() -> i32 {
     printf("bundle_tc_ok=%d\n", bundle_tc_ok)
     let bundle_ok: i32 = test_bundle_emit()
     printf("bundle_ok=%d\n", bundle_ok)
-    if lex_ok == 1 and parse_ok == 1 and for_ok == 1 and struct_ok == 1 and extern_ok == 1 and ie_ok == 1 and bare_ok == 1 and fixture_ok == 1 and ty_ok == 1 and fi_ok == 1 and lit_ok == 1 and bc_ok == 1 and str_ok == 1 and const_ok == 1 and cgen_ok == 1 and for_cgen_ok == 1 and logic_ok == 1 and string_cgen_ok == 1 and cgen_const_ok == 1 and cgen_struct_ok == 1 and cgen_ptr_ok == 1 and cast_ok == 1 and idx_as_ok == 1 and cgen_cast_ok == 1 and cgen_void_ok == 1 and jsgen_ok == 1 and tc_ok == 1 and tc_bad == 1 and tc_av == 1 and tc_dl == 1 and tc_dc == 1 and tc_au == 1 and tc_bo == 1 and tc_bf == 1 and match_ok == 1 and cgen_match_ok == 1 and tc_mc == 1 and elif_ok == 1 and fmt_ok == 1 and resolve_ok == 1 and bundle_tc_ok == 1 and bundle_ok == 1 {
+    let type_id_ok: i32 = test_type_id()
+    printf("type_id_ok=%d\n", type_id_ok)
+    let rt_sum_ok: i32 = test_rt_summary()
+    printf("rt_summary_ok=%d\n", rt_sum_ok)
+    let profile_ok: i32 = test_profile_report()
+    printf("profile_ok=%d\n", profile_ok)
+    if lex_ok == 1 and parse_ok == 1 and for_ok == 1 and struct_ok == 1 and extern_ok == 1 and ie_ok == 1 and bare_ok == 1 and fixture_ok == 1 and ty_ok == 1 and fi_ok == 1 and lit_ok == 1 and bc_ok == 1 and str_ok == 1 and const_ok == 1 and cgen_ok == 1 and for_cgen_ok == 1 and logic_ok == 1 and string_cgen_ok == 1 and cgen_const_ok == 1 and cgen_struct_ok == 1 and cgen_ptr_ok == 1 and cast_ok == 1 and idx_as_ok == 1 and cgen_cast_ok == 1 and cgen_void_ok == 1 and jsgen_ok == 1 and tc_ok == 1 and tc_bad == 1 and tc_av == 1 and tc_dl == 1 and tc_dc == 1 and tc_au == 1 and tc_bo == 1 and tc_bf == 1 and match_ok == 1 and cgen_match_ok == 1 and tc_mc == 1 and elif_ok == 1 and fmt_ok == 1 and resolve_ok == 1 and bundle_tc_ok == 1 and bundle_ok == 1 and type_id_ok == 1 and rt_sum_ok == 1 and profile_ok == 1 {
         puts("flowc: PASS")
         return 0
     }

@@ -1,0 +1,8 @@
++ __flowc_str_concatn(4, a, b, c, d)
++ __flowc_str_concat(a, b)
++ __flowc_str_concat(__flowc_str_concat("n=",
+- ("w" +
+exit 0
+stdout wxyz
+stdout abcd
+stdout n=1!

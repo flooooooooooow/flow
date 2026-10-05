@@ -1,0 +1,21 @@
+# expect: RT-safety violation: 'unsafe_fn' is bound to an rt_safe contract but calls 'malloc', which is forbidden on an RT-safe path
+@rt_safe
+function safe_fn(x: i32) -> i32 {
+    return x * 2
+}
+
+function unsafe_fn(x: i32) -> i32 {
+    let p: ptr<void> = malloc(8)
+    free(p)
+    return x
+}
+
+@rt_safe
+function indirect_caller() {
+    let f1: (i32) -> i32 with rt_safe = unsafe_fn
+    let y: i32 = f1(42)
+}
+
+function main() -> i32 {
+    return 0
+}

@@ -3,6 +3,11 @@
 # benchmarks/baselines/python/cross_harness when python3 is available, then
 # writes one JSON file of timings and can compare it with an earlier one.
 #
+# Each measured command runs with FLOW_MEM_PROFILE=1 and
+# FLOW_MEM_PROFILE_OUT pointing at a temp file so the #740 runtime
+# profiler can fill allocations, heap_bytes, peak_live_heap, temp_bytes,
+# copies and peak RSS without rewriting the workload sources.
+#
 # Run it as `./flow tool bench_harness`, which passes the repository root
 # in FLOW_REPO_ROOT.
 #
@@ -33,6 +38,7 @@ import .bench { bn_fixed, bn_py_repr, bn_median, bn_min, bn_run, bn_code, bn_out
 extern {
     function malloc(size: i64) -> ptr<void>
     function getenv(name: string) -> string
+    function setenv(name: string, value: string, overwrite: i32) -> i32
     function chdir(path: string) -> i32
     function clock_gettime(clk: i32, ts: ptr<i64>) -> i32
     function localtime_r(t: ptr<i64>, tm: ptr<u8>) -> ptr<u8>
@@ -425,6 +431,9 @@ struct Metrics {
     rss: ptr<f64>
     allocs: ptr<f64>
     copies: ptr<f64>
+    heap_bytes: ptr<f64>
+    peak_live: ptr<f64>
+    temp_bytes: ptr<f64>
     n: i32
     failed: bool
 }
@@ -438,14 +447,18 @@ function run_in(cwd: string, argv: ptr<StrList>) -> ptr<BenchRun> {
 }
 
 function measure(cmd: ptr<StrList>, repeats: i32, memory: bool, flavour: i32, cwd: string) -> ptr<Metrics> {
-    let m: ptr<Metrics> = malloc(64) as ptr<Metrics>
+    let m: ptr<Metrics> = malloc(128) as ptr<Metrics>
     m[0].times = malloc(((repeats + 1) as i64) * 8) as ptr<f64>
     m[0].rss = malloc(((repeats + 1) as i64) * 8) as ptr<f64>
     m[0].allocs = malloc(((repeats + 1) as i64) * 8) as ptr<f64>
     m[0].copies = malloc(((repeats + 1) as i64) * 8) as ptr<f64>
+    m[0].heap_bytes = malloc(((repeats + 1) as i64) * 8) as ptr<f64>
+    m[0].peak_live = malloc(((repeats + 1) as i64) * 8) as ptr<f64>
+    m[0].temp_bytes = malloc(((repeats + 1) as i64) * 8) as ptr<f64>
     m[0].n = repeats
     m[0].failed = false
     let report: string = ft_join(root(), "build/benchmarks/time_out.txt")
+    let mem_out: string = ft_join(root(), "build/benchmarks/mem_profile.txt")
     let full: ptr<StrList> = ft_list_new()
     if memory and flavour != TIME_NONE {
         ft_list_push(full, "/usr/bin/time")
@@ -466,9 +479,17 @@ function measure(cmd: ptr<StrList>, repeats: i32, memory: bool, flavour: i32, cw
     let rss: ptr<f64> = m[0].rss
     let allocs: ptr<f64> = m[0].allocs
     let copies: ptr<f64> = m[0].copies
+    let heap_bytes: ptr<f64> = m[0].heap_bytes
+    let peak_live: ptr<f64> = m[0].peak_live
+    let temp_bytes: ptr<f64> = m[0].temp_bytes
     let mut k: i32 = 0
     while k < repeats {
+        let _rm0: i32 = pr_run("rm -f " + pr_quote(mem_out))
+        let _e1: i32 = setenv("FLOW_MEM_PROFILE", "1", 1)
+        let _e2: i32 = setenv("FLOW_MEM_PROFILE_OUT", mem_out, 1)
         let r: ptr<BenchRun> = run_in(cwd, full)
+        let _e3: i32 = setenv("FLOW_MEM_PROFILE", "", 1)
+        let _e4: i32 = setenv("FLOW_MEM_PROFILE_OUT", "", 1)
         if bn_code(r) != 0 {
             m[0].failed = true
         }
@@ -478,8 +499,26 @@ function measure(cmd: ptr<StrList>, repeats: i32, memory: bool, flavour: i32, cw
             rss[k] = peak_rss_kb(ft_read_file(report), flavour)
             let _rm: i32 = pr_run("rm -f " + pr_quote(report))
         }
+        let prof: string = ft_read_file(mem_out)
         allocs[k] = counter(bn_out(r), "allocations")
         copies[k] = counter(bn_out(r), "copies")
+        heap_bytes[k] = 0.0
+        peak_live[k] = 0.0
+        temp_bytes[k] = 0.0
+        if prof as ptr<u8> != null and ft_len(prof) > 0 {
+            let pa: f64 = counter(prof, "allocations")
+            let pc: f64 = counter(prof, "copies")
+            if pa > 0.0 or pc > 0.0 or counter(prof, "heap_bytes") > 0.0 {
+                allocs[k] = pa
+                copies[k] = pc
+            }
+            heap_bytes[k] = counter(prof, "heap_bytes")
+            peak_live[k] = counter(prof, "peak_live_heap")
+            temp_bytes[k] = counter(prof, "temp_bytes")
+            if rss[k] == 0.0 {
+                rss[k] = counter(prof, "peak_rss_kb")
+            }
+        }
         k = k + 1
     }
     return m
@@ -506,8 +545,11 @@ function metrics_json(m: ptr<Metrics>, memory: bool, ind: string) -> string {
     o = o + ind + "  \"p95\": " + bn_py_repr(percentile(m[0].times, n, 0.95)) + ",\n"
     o = o + ind + "  \"dispersion\": " + bn_py_repr(stdev(m[0].times, n)) + ",\n"
     o = o + ind + "  \"allocations\": " + int_median_json(m[0].allocs, n) + ",\n"
-    o = o + ind + "  \"copies\": " + int_median_json(m[0].copies, n)
-    if memory {
+    o = o + ind + "  \"copies\": " + int_median_json(m[0].copies, n) + ",\n"
+    o = o + ind + "  \"heap_bytes\": " + int_median_json(m[0].heap_bytes, n) + ",\n"
+    o = o + ind + "  \"peak_live_heap\": " + int_median_json(m[0].peak_live, n) + ",\n"
+    o = o + ind + "  \"temp_bytes\": " + int_median_json(m[0].temp_bytes, n)
+    if memory or bn_median(m[0].rss, n) > 0.0 {
         o = o + ",\n" + ind + "  \"median_rss_kb\": " + int_median_json(m[0].rss, n)
     }
     return o + "\n" + ind + "}"

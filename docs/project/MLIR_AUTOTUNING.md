@@ -34,3 +34,17 @@ backend that produced them:
 Accepted targets are `cpu`, `gpu`, `nvptx`, and `amdgpu`. The generated module
 records `flow.tune_target` and `flow.tune_strategy`. Candidate measurements can
 therefore be grouped by target before a schedule is selected.
+
+## PMU feedback
+
+The benchmark accepts an optional Linux `perf stat` event:
+
+```bash
+./flow tool benchmarks/micro/transform_tuning_benchmark.flow \
+  --pmu-event=cache-misses
+```
+
+Supported events are `cycles`, `instructions`, `cache-misses`, `branches`, and
+`branch-misses`. The benchmark keeps wall-clock timing when `perf` is absent,
+the event is unavailable, or the kernel denies PMU access. The selected metric
+is printed with the event name so reports remain comparable across runs.

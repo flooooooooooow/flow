@@ -1,0 +1,169 @@
+# End-to-end proof for the #740 opt-in runtime memory profiler: a program
+# that allocates is silent with FLOW_MEM_PROFILE unset, and writes a
+# parseable report when it is set.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcCmd, ProcStrs }
+
+function emit_and_build(src: string, c_out: string, bin: string) -> i32 {
+    let emit: ptr<ProcStrs> = sl_of3(t_root() + "/flow", "tool", "compiler/scripts/flowc_emit.flow")
+    sl_push2(emit, src, c_out)
+    if t_run_argv(emit) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let cc: string = env_or("CC", "cc")
+    let ccv: ptr<ProcStrs> = sl_of3(cc, "-std=c11", "-D_DEFAULT_SOURCE")
+    sl_extend(ccv, s_words("-w -O0 -o"))
+    sl_push2(ccv, bin, c_out)
+    sl_push(ccv, "-lm")
+    if t_run_argv(ccv) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_emitted_prelude() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    let src: string = t_tmp() + "/prog.flow"
+    let c_out: string = t_tmp() + "/prog.c"
+    let _w: bool = write_text(src, "extern { function malloc(size: i64) -> ptr<u8>\nfunction free(p: ptr<u8>) -> void }\nfunction main() -> i32 {\n    let p: ptr<u8> = malloc(64)\n    if p == null { return 1 }\n    p[0] = 1 as u8\n    free(p)\n    return 0\n}\n")
+    let emit: ptr<ProcStrs> = sl_of3(t_root() + "/flow", "tool", "compiler/scripts/flowc_emit.flow")
+    sl_push2(emit, src, c_out)
+    if t_run_argv(emit) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let ctext: string = read_text(c_out)
+    if not a_contains(ctext, "flow_mem_profile_init") {
+        return T_FAIL
+    }
+    if not a_contains(ctext, "flow_mem_malloc") {
+        return T_FAIL
+    }
+    if not a_contains(ctext, "(deferred, needs #669)") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_silent_when_unset() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    let src: string = t_tmp() + "/prog.flow"
+    let c_out: string = t_tmp() + "/prog.c"
+    let bin: string = t_tmp() + "/prog"
+    let _w: bool = write_text(src, "extern { function malloc(size: i64) -> ptr<u8>\nfunction free(p: ptr<u8>) -> void }\nfunction main() -> i32 {\n    let p: ptr<u8> = malloc(64)\n    if p == null { return 1 }\n    p[0] = 1 as u8\n    free(p)\n    return 0\n}\n")
+    let built: i32 = emit_and_build(src, c_out, bin)
+    if built != T_PASS {
+        return built
+    }
+    let run: ptr<ProcCmd> = cmd(sl_of1(bin))
+    cmd_env(run, "FLOW_MEM_PROFILE", "")
+    if t_run(run) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_not_contains(read_text(t_err()), "Flow memory profile") {
+        return T_FAIL
+    }
+    if not a_not_contains(read_text(t_out()), "allocations:") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_report_when_set() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    let src: string = t_tmp() + "/prog.flow"
+    let c_out: string = t_tmp() + "/prog.c"
+    let bin: string = t_tmp() + "/prog"
+    let outp: string = t_tmp() + "/mem.txt"
+    let _w: bool = write_text(src, "extern { function malloc(size: i64) -> ptr<u8>\nfunction free(p: ptr<u8>) -> void }\nfunction main() -> i32 {\n    let p: ptr<u8> = malloc(64)\n    if p == null { return 1 }\n    p[0] = 1 as u8\n    free(p)\n    return 0\n}\n")
+    let built: i32 = emit_and_build(src, c_out, bin)
+    if built != T_PASS {
+        return built
+    }
+    let run: ptr<ProcCmd> = cmd(sl_of1(bin))
+    cmd_env(run, "FLOW_MEM_PROFILE", "1")
+    cmd_env(run, "FLOW_MEM_PROFILE_OUT", outp)
+    if t_run(run) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let report: string = read_text(outp)
+    if not a_contains(report, "=== Flow memory profile (#740) ===") {
+        return T_FAIL
+    }
+    if not a_contains(report, "allocations: 1") {
+        return T_FAIL
+    }
+    if not a_contains(report, "heap_bytes: 64") {
+        return T_FAIL
+    }
+    if not a_contains(report, "peak_live_heap: 64") {
+        return T_FAIL
+    }
+    if not a_contains(report, "peak_rss_kb:") {
+        return T_FAIL
+    }
+    if not a_contains(report, "(deferred, needs #669)") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_off_when_zero() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    let src: string = t_tmp() + "/prog.flow"
+    let c_out: string = t_tmp() + "/prog.c"
+    let bin: string = t_tmp() + "/prog"
+    let _w: bool = write_text(src, "extern { function malloc(size: i64) -> ptr<u8>\nfunction free(p: ptr<u8>) -> void }\nfunction main() -> i32 {\n    let p: ptr<u8> = malloc(64)\n    if p == null { return 1 }\n    free(p)\n    return 0\n}\n")
+    let built: i32 = emit_and_build(src, c_out, bin)
+    if built != T_PASS {
+        return built
+    }
+    let run: ptr<ProcCmd> = cmd(sl_of1(bin))
+    cmd_env(run, "FLOW_MEM_PROFILE", "0")
+    if t_run(run) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_not_contains(read_text(t_err()), "Flow memory profile") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("mem_profile")
+    t_start()
+    t_end("emitted_prelude", check_emitted_prelude())
+    t_start()
+    t_end("silent_when_unset", check_silent_when_unset())
+    t_start()
+    t_end("report_when_set", check_report_when_set())
+    t_start()
+    t_end("off_when_zero", check_off_when_zero())
+    t_done()
+    return 0
+}

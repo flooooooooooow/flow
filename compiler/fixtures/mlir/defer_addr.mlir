@@ -127,6 +127,7 @@ func.call @bump(%v71) : (!llvm.ptr) -> ()
 %v80 = llvm.mlir.constant(1 : i64) : i64
 %v81 = llvm.alloca %v80 x i32 : (i64) -> !llvm.ptr
 llvm.store %v79, %v81 : i32, !llvm.ptr
+// flowc.noalias py
 %v82 = arith.constant 0 : i32
 %v83 = arith.extsi %v82 : i32 to i64
 %v84 = llvm.getelementptr %v81[%v83] : (!llvm.ptr, i64) -> !llvm.ptr, i32

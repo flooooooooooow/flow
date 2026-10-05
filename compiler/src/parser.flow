@@ -32,7 +32,7 @@ import .ast {
     AST_FLOW_DECL, AST_FLOW_ITEM, AST_LAYOUT, AST_PIPE_BLOCK, AST_HANDLE, AST_EFFECT_ROW, AST_MATCH_ARM_EXT,
     AST_FIXED_ARRAY_TYPE, AST_CAPABILITY_TYPE, AST_TRY, AST_VECTOR_LIT,
     AST_SORT_BY, AST_MODULE, AST_SORT_DESC, AST_SORT_UNIQUE, AST_SORT_UNSTABLE,
-    AST_SORT_ADAPTIVE, AST_SORT_GENERAL, AST_CALL_PIPE_FIND, AST_RECORD_UPDATE,
+    AST_SORT_ADAPTIVE, AST_SORT_GENERAL, AST_CALL_PIPE_FIND, AST_RECORD_UPDATE, AST_GPU_FRAME,
     AST_EFFECT, AST_CAPABILITY, AST_EFFECT_OP, AST_CAP_METHOD, AST_TYPE_CAPABILITY,
     AST_ATTR, AST_ATTR_EXPORTED, AST_ATTR_HAS_ARGS,
     PIPE_BLOCK_FORK, PIPE_BLOCK_STAGE, PIPE_BLOCK_CHOOSE,
@@ -2719,9 +2719,17 @@ function flowc_parse_stmt_inner(p: ptr<Parser>) -> i32 {
     if flowc_parser_ident_is(p[0], "handle") == 1 and nx.kind == TOK_IDENT {
         return flowc_parse_handle(p)
     }
+
     if flowc_parser_at_layout(p[0]) == 1 {
         return flowc_parse_layout(p)
     }
+    if flowc_parser_ident_is(p[0], "gpu") == 1 and flowc_parser_next_is_ident(p[0]) == 1 {
+        let nx: Token = flowc_parser_peek(p[0], 1)
+        if flowc_parser_span_is(p[0], nx.start, nx.end, "frame") == 1 {
+            return flowc_parse_gpu_frame(p)
+        }
+    }
+
     # `expect expr` → AST_UNARY with ival=KW_EXPECT; cgen lowers to assert-like check
     if flowc_parser_check_kw(p[0], KW_EXPECT) == 1 {
         let start: i32 = p[0].cur.start
@@ -4127,6 +4135,35 @@ function flowc_parser_at_layout(p: Parser) -> i32 {
 
 # ui_layout|ui_row|ui_column|ui_stack|ui_grid [(args)] { body }. Parse-only:
 # AST_LAYOUT with name_* = the layout word, a = arg chain, b = body block.
+
+# gpu frame { body }. Parse-only:
+# AST_GPU_FRAME with name_* = "gpu", a = AST_NONE, b = body block.
+export function flowc_parse_gpu_frame(p: ptr<Parser>) -> i32 {
+    let start: i32 = p[0].cur.start
+    let ns: i32 = p[0].cur.start
+    let ne: i32 = p[0].cur.end
+    flowc_parser_advance(p)
+    if flowc_parser_ident_is(p[0], "frame") == 0 {
+        flowc_parser_fail(p)
+        return AST_NONE
+    }
+    flowc_parser_advance(p)
+
+    let b: i32 = flowc_parse_block(p)
+    if b == AST_NONE {
+        return AST_NONE
+    }
+    let id: i32 = flowc_ast_alloc(&p[0].arena, AST_GPU_FRAME, start, p[0].cur.start)
+    if id == AST_NONE {
+        flowc_parser_fail(p)
+        return AST_NONE
+    }
+    p[0].arena.nodes[id].name_start = ns
+    p[0].arena.nodes[id].name_end = ne
+    p[0].arena.nodes[id].b = b
+    return id
+}
+
 export function flowc_parse_layout(p: ptr<Parser>) -> i32 {
     let start: i32 = p[0].cur.start
     let ws: i32 = p[0].cur.start
