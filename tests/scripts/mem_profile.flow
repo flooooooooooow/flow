@@ -1,6 +1,7 @@
 # End-to-end proof for the #740 opt-in runtime memory profiler: a program
 # that allocates is silent with FLOW_MEM_PROFILE unset, and writes a
-# parseable report when it is set.
+# parseable report when it is set. Also covers stack/arena promotion,
+# per-site attribution, the hashed live-block map, and MLIR wrappers.
 
 import "tools/flow_cli/sys.flow"
 import "tests/scripts/harness.flow"
@@ -27,6 +28,19 @@ function emit_and_build(src: string, c_out: string, bin: string) -> i32 {
     return T_PASS
 }
 
+function host_path() -> string {
+    let host_cmd: ptr<ProcCmd> = t_cmd(sl_of3("./flow", "tool", "compiler/scripts/flowc_host.flow"))
+    if t_run(host_cmd) != 0 {
+        return ""
+    }
+    let raw: string = read_text(t_out())
+    let n: i32 = s_len(raw)
+    if n > 0 and s_ends(raw, "\n") {
+        return s_slice(raw, 0, n - 1)
+    }
+    return raw
+}
+
 function check_emitted_prelude() -> i32 {
     let need: i32 = t_need_cc()
     if need != T_PASS {
@@ -49,7 +63,22 @@ function check_emitted_prelude() -> i32 {
     if not a_contains(ctext, "flow_mem_malloc") {
         return T_FAIL
     }
-    if not a_contains(ctext, "(deferred, needs #669)") {
+    if not a_contains(ctext, "flow_mem_hash") {
+        return T_FAIL
+    }
+    if not a_contains(ctext, "flow_mem_note_stack") {
+        return T_FAIL
+    }
+    if not a_contains(ctext, "flow_mem_note_arena") {
+        return T_FAIL
+    }
+    if not a_contains(ctext, "FLOW_MEM_NSITE") {
+        return T_FAIL
+    }
+    if not a_contains(ctext, "live_map_overflow") {
+        return T_FAIL
+    }
+    if a_contains(ctext, "(deferred, needs #669)") {
         return T_FAIL
     }
     return T_PASS
@@ -125,7 +154,16 @@ function check_report_when_set() -> i32 {
     if not a_contains(report, "copy_count:") {
         return T_FAIL
     }
-    if not a_contains(report, "(deferred, needs #669)") {
+    if not a_contains(report, "site_heap: 64") {
+        return T_FAIL
+    }
+    if not a_contains(report, "promotion_bytes: 0") {
+        return T_FAIL
+    }
+    if not a_contains(report, "live_map_overflow: 0") {
+        return T_FAIL
+    }
+    if a_contains(report, "(deferred, needs #669)") {
         return T_FAIL
     }
     return T_PASS
@@ -157,6 +195,115 @@ function check_off_when_zero() -> i32 {
     return T_PASS
 }
 
+function check_stack_and_concat_sites() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    let src: string = t_tmp() + "/prog.flow"
+    let c_out: string = t_tmp() + "/prog.c"
+    let bin: string = t_tmp() + "/prog"
+    let outp: string = t_tmp() + "/mem.txt"
+    let _w: bool = write_text(src, "function main() -> i32 {\n    let xs: array<i32, 4> = [1, 2, 3, 4]\n    let s: string = \"ab\" + \"cd\"\n    if xs[0] != 1 { return 1 }\n    if s == \"abcd\" { return 0 }\n    return 2\n}\n")
+    let built: i32 = emit_and_build(src, c_out, bin)
+    if built != T_PASS {
+        return built
+    }
+    let ctext: string = read_text(c_out)
+    if not a_contains(ctext, "flow_mem_note_stack(sizeof(xs))") {
+        return T_FAIL
+    }
+    if not a_contains(ctext, "FLOW_MEM_SITE_CONCAT") {
+        return T_FAIL
+    }
+    let run: ptr<ProcCmd> = cmd(sl_of1(bin))
+    cmd_env(run, "FLOW_MEM_PROFILE", "1")
+    cmd_env(run, "FLOW_MEM_PROFILE_OUT", outp)
+    if t_run(run) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let report: string = read_text(outp)
+    if not a_contains(report, "stack_bytes: 16") {
+        return T_FAIL
+    }
+    if not a_contains(report, "site_concat:") {
+        return T_FAIL
+    }
+    if not a_contains(report, "site_stack: 16") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_arena_bytes() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    let src: string = t_tmp() + "/prog.flow"
+    let c_out: string = t_tmp() + "/prog.c"
+    let bin: string = t_tmp() + "/prog"
+    let outp: string = t_tmp() + "/mem.txt"
+    let _w: bool = write_text(src, "import \"stdlib/memory.flow\"\nfunction main() -> i32 {\n    let mut arena: Arena = arena_create(4096)\n    let xs: ptr<i32> = arena_alloc_i32(&arena, 3)\n    if xs == null {\n        arena_destroy(&arena)\n        return 1\n    }\n    xs[0] = 1\n    arena_destroy(&arena)\n    return 0\n}\n")
+    let built: i32 = emit_and_build(src, c_out, bin)
+    if built != T_PASS {
+        return built
+    }
+    let run: ptr<ProcCmd> = cmd(sl_of1(bin))
+    cmd_env(run, "FLOW_MEM_PROFILE", "1")
+    cmd_env(run, "FLOW_MEM_PROFILE_OUT", outp)
+    if t_run(run) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let report: string = read_text(outp)
+    if not a_contains(report, "arena_bytes: 16") {
+        return T_FAIL
+    }
+    if not a_contains(report, "site_arena: 16") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_mlir_wrappers() -> i32 {
+    let host: string = host_path()
+    if s_len(host) == 0 {
+        return T_FAIL
+    }
+    let src: string = t_tmp() + "/prog.flow"
+    let out_path: string = t_tmp() + "/prog.mlir"
+    let _w: bool = write_text(src, "extern { function malloc(size: i64) -> ptr<u8>\nfunction free(p: ptr<u8>) -> void }\nfunction main() -> i32 {\n    let p: ptr<u8> = malloc(32)\n    if p == null { return 1 }\n    let s: string = \"hi\" + \"!\"\n    free(p)\n    if s == \"hi!\" { return 0 }\n    return 2\n}\n")
+    let c: ptr<ProcCmd> = t_cmd(sl_of1(host))
+    cmd_env(c, "FLOWC_EMIT", "mlir")
+    cmd_env(c, "FLOWC_TYPECHECK", "1")
+    cmd_env(c, "FLOWC_LENIENT", "1")
+    cmd_env(c, "FLOWC_IN", src)
+    cmd_env(c, "FLOWC_OUT", out_path)
+    if t_run(c) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let text: string = read_text(out_path)
+    if not a_contains(text, "flow_mem_malloc") {
+        return T_FAIL
+    }
+    if not a_contains(text, "flow_mem_profile_init") {
+        return T_FAIL
+    }
+    if not a_contains(text, "func.call @flow_mem_malloc") {
+        return T_FAIL
+    }
+    if not a_contains(text, "flow_mem_note_stack") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
 function main() -> i32 {
     t_begin("mem_profile")
     t_start()
@@ -167,6 +314,12 @@ function main() -> i32 {
     t_end("report_when_set", check_report_when_set())
     t_start()
     t_end("off_when_zero", check_off_when_zero())
+    t_start()
+    t_end("stack_and_concat_sites", check_stack_and_concat_sites())
+    t_start()
+    t_end("arena_bytes", check_arena_bytes())
+    t_start()
+    t_end("mlir_wrappers", check_mlir_wrappers())
     t_done()
     return 0
 }
