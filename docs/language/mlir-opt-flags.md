@@ -250,28 +250,46 @@ The command golden covers both forms:
 ./flow tool tests/mlir_commands/run.flow --only mlir_tensor_scalars
 ```
 
-## AoSoA storage padding
+## AoSoA layout, padding, and swizzle
 
-Set `FLOWC_MLIR_AOSOA_PAD=N` to add `N` storage elements to each field array
-created by the opt-in AoSoA lowering. Source-level array extents and indexing
-remain unchanged. Values from 1 through 64 are accepted. The default is zero.
+The MLIR emitter rewrites a fixed `Particle` array to a struct-of-arrays
+(`Particle_SoA_<N>`) so each field is a dense `memref`. That is the AoSoA
+canonicalization. Two opt-in transforms then sit on that layout:
 
-```bash
-FLOWC_MLIR_AOSOA_PAD=1 ./flow mlir compiler/fixtures/mlir/aosoa_padding.flow --lenient
-```
-
-Use `--aosoa-pad-auto` with `flow flow-to-mlir` to add one storage element only
-for power-of-two logical extents. Irregular extents keep their original
-storage size.
+Conflict padding adds extra storage elements so power-of-two (or bank-aligned)
+extents do not share a cache set or GPU shared-memory bank. Source-level
+extents and indexing stay the same.
 
 ```bash
+./flow flow-to-mlir --aosoa-pad compiler/fixtures/mlir_opt/aosoa_padding.flow /tmp/aosoa.mlir
 ./flow flow-to-mlir --aosoa-pad-auto compiler/fixtures/mlir_opt/aosoa_padding.flow /tmp/aosoa.mlir
+./flow flow-to-mlir --aosoa-bank-count=3 compiler/fixtures/mlir_opt/aosoa_non_power.flow /tmp/aosoa.mlir
 ```
 
-Set `FLOWC_MLIR_AOSOA_SWIZZLE=N` to xor each generated field index with that
-index shifted by `log2(N)`. `N` must be a power of two from 2 through 32.
-The rewrite applies this only to power-of-two logical extents, which keeps the
-mapping within the source array for irregular extents. The default is zero.
+`--aosoa-pad` adds one storage element. `--aosoa-pad-auto` adds one element
+only when the logical extent is a power of two. `--aosoa-bank-count=N` (1
+through 128) also enables auto-padding and pads any extent that is a multiple
+of `N`. The same knobs exist as `FLOWC_MLIR_AOSOA_PAD` (1 through 64),
+`FLOWC_MLIR_AOSOA_AUTO_PAD=1`, and `FLOWC_MLIR_AOSOA_BANK_COUNT`.
+
+Index swizzle xors each generated field index with that index shifted by
+`log2(W)`. `W` must be a power of two from 2 through 32. The rewrite applies
+only to power-of-two logical extents, which keeps the mapping inside the
+source array for irregular extents.
+
+```bash
+./flow flow-to-mlir --aosoa-swizzle compiler/fixtures/mlir_opt/aosoa_padding.flow /tmp/aosoa.mlir
+./flow flow-to-mlir --aosoa-swizzle --aosoa-swizzle-width=8 compiler/fixtures/mlir_opt/aosoa_padding.flow /tmp/aosoa.mlir
+./flow mlir --lenient --aosoa-swizzle-width=8 compiler/fixtures/mlir_opt/aosoa_padding.flow
+```
+
+`--aosoa-swizzle` defaults to width 4. `--aosoa-swizzle-width=N` enables
+swizzle and sets `W`. `FLOWC_MLIR_AOSOA_SWIZZLE=N` is the generator-side form.
+
+Current scope: the rewrite is the `Particle` fixture used by the MLIR
+optimizer tests. It pads and swizzles the 1D field arrays that lowering
+emits. General 2D/3D memref stride maps, and AoSoA for arbitrary struct
+types, are not implemented.
 
 > `affine-super-vectorize` and `affine-loop-fusion` still need affine loops,
 > which the generator does not emit; they remain soft no-ops.
