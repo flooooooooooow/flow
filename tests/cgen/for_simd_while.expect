@@ -1,6 +1,6 @@
-# Counted whiles become for loops; copies become memmove (#739).
+# Counted whiles become for loops so SIMD hints apply (#739).
+# Overlapping while-copies stay elementwise (memmove would change them).
 + for (; i < (n); i = i + 1)
-+ memmove((void*)
 + #pragma omp simd reduction(+:
 - while (i < n)
 exit 0

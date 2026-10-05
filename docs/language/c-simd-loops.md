@@ -15,7 +15,7 @@ Parent issue: [#739](https://github.com/flooooooooooow/flow/issues/739)
 |---|---|
 | `for i in 0 to n { y[i] = ... }` with a straight-line body | `#pragma omp simd` (with `reduction` when the body is `acc = acc ⊕ expr`) when `_OPENMP` is defined; otherwise clang `loop vectorize` or GCC `ivdep` |
 | Unit-stride `dst[i] = src[i]` on pointers, arrays, or spans | `memmove` of `(hi - lo) * sizeof(element)`; spans go through `.data`. Runtime checks, when enabled, become one range test rather than a per-index loop |
-| Counted `while i < n { ...; i = i + 1 }` | The same C `for` as the equivalent `for i in i to n`, including SIMD hints and `memmove` copies. `continue` and `@max_iterations` keep the `while` |
+| Counted `while i < n { ...; i = i + 1 }` | The same C `for` as the equivalent counted loop, including SIMD hints. `continue` and `@max_iterations` keep the `while`. Overlapping while-copies stay elementwise so they keep loop order |
 | Clip / min / max `if` / `else` stores to the same `base[i]` | A C ternary (`?:`), which the auto-vectorizer treats as a select. An `if` without `else` keeps the branch, since the select would read `base[i]` when the guard is false. Arbitrary predicate reductions stay scalar |
 | Recognized f32/f64 kernels (fill, scale, axpy, add, sum, dot) | GCC/clang `vector_size(16)` strip-mined loops behind `FLOWC_HAS_V128`, plus a scalar tail |
 
