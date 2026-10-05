@@ -14,8 +14,10 @@ different clock:
 |---|---|---|
 | `callback` | one audio block or one render callback | stack locals, caller-provided buffers |
 | `frame` | one frame of a loop | a bump arena, reset wholesale at the frame boundary |
+| `request` | one HTTP, RPC, or event request | per-request heap or a request arena |
 | `session` | one document, one stream, one connection | pooled or resettable region |
 | `application` | the whole process run | module statics, long-lived heap |
+| `persistent` | durable store that outlives this process run | files, mmap, a database handle |
 
 "Stack vs heap" describes where the allocator put the bytes. A lifetime domain
 describes when the bytes stop being valid, which is the thing the programmer
@@ -34,17 +36,19 @@ kernel-sized: annotations plus checking, no ownership lattice.
 ## The domain order
 
 ```text
-callback  <  frame  <  session  <  application
+callback  <  frame  <  request  <  session  <  application  <  persistent
 ```
 
 Read `<` as "lives no longer than". A `callback` value is dead by the time the
 next block starts. An `application` value is alive until the process exits.
+`request` sits between a frame and a session: one inbound HTTP, RPC, or event
+is longer than a render frame and shorter than the connection that produced
+it. `persistent` is longer than this process run, so a persistent static may
+not hold an application-domain pointer.
+
 The single rule the whole design rests on:
 
 > A longer-lived domain may not hold a reference to a shorter-lived one.
-
-Axiom §7 also names `request` and `persistent`. They are not implemented; see
-[Future work](#future-work).
 
 ## Declaring a domain
 
@@ -62,6 +66,17 @@ function process_block(state: ptr<FilterState>, n: i32) -> void {
 ```flow
 @lifetime(application)
 let mut cache: span<f32> = null
+```
+
+`request` and `persistent` use the same attribute. A request handler may
+allocate; a persistent static is the longest-lived storage:
+
+```flow-pseudocode
+@lifetime(request)
+function handle(id: i32) -> i32 { return id }
+
+@lifetime(persistent)
+let mut hits: i32 = 0
 ```
 
 Those are the only two places a domain is written in v0. This is the
@@ -192,7 +207,8 @@ both `callback` and `frame`, because none of them reaches `malloc`.
 The two domains differ in exactly one place: a lock. `frame` permits
 `mutex_lock`; `callback` does not.
 
-`session` and `application` place no allocation restriction.
+`request`, `session`, `application` and `persistent` place no allocation
+restriction. A request handler may `malloc`; a frame or callback may not.
 
 ### LD4: a domain may not call into a longer-lived domain
 
@@ -374,7 +390,7 @@ error: lifetime domain violation: 'process_block' is in the `frame` domain but
 | Escape through a call, closure or heap | ❌ not checked, by design in v0 |
 | Domain of arena-allocated memory | ✅ |
 | Domains on parameters / in types | ❌ |
-| `request` / `persistent` domains | ❌ |
+| `request` / `persistent` domains | ✅ |
 | `domain frame { ... }` blocks | ❌ |
 | Domains in the MLIR / JS / Python backends | n/a: the annotation is checked, then erased |
 | Cross-module summaries for public functions | ✅ first slice (#765): bitset + domain + one provenance edge |
@@ -385,7 +401,6 @@ same C as the unannotated function.
 
 ## Future work
 
-- `request` and `persistent` domains from Axiom §7.
 - `domain frame { ... }` blocks that imply `frame_begin` / `frame_end`.
 - Domains on parameters and in types (`ptr<f32> @ frame`), which is what would
   close the escape-through-a-call gap.
@@ -398,7 +413,10 @@ same C as the unannotated function.
 ## Related
 
 [rt-safety.md](../library/rt-safety.md) · [memory.md](../library/memory.md) ·
-[spans.md](spans.md) · [LANGUAGE_SPEC §8.4](../LANGUAGE_SPEC.md#84-lifetime-domains)
+[spans.md](spans.md) ·
+[request and persistent](lifetime-request-persistent.md) ·
+[LANGUAGE_SPEC §8.4](../LANGUAGE_SPEC.md#84-lifetime-domains)
 
-Tests: `tests/unit/test_lifetime_domains.py`,
-`tests/lang/test_lifetime_domains.flow`
+Tests: `tests/lang/test_lifetime_domains.flow`,
+`tests/lang/test_lifetime_request_persistent.flow`,
+`compiler/fixtures/typecheck_rules/domain_*.flow`

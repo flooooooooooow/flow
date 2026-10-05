@@ -1,4 +1,4 @@
-# expect: Attribute '@lifetime' on 'f' takes exactly one domain: callback, frame, session, application
+# expect: Attribute '@lifetime' on 'f' takes exactly one domain: callback, frame, request, session, application, persistent
 @lifetime(frame, session)
 function f() -> i32 {
     return 1

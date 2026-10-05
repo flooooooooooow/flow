@@ -1,0 +1,14 @@
+# expect: lifetime domain violation: 'handle' is in the `request` domain but calls 'reload', which is in the `session` domain (a shorter-lived domain may not call into a longer-lived one; see docs/language/lifetime-domains.md)
+@lifetime(session)
+function reload() -> i32 {
+    return 1
+}
+
+@lifetime(request)
+function handle() -> i32 {
+    return reload()
+}
+
+function main() -> i32 {
+    return handle()
+}

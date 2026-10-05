@@ -1093,10 +1093,11 @@ Example: `tests/runtime/test_pointers.flow`.
 
 Where a value lives is a second question from where the allocator put it. A
 lifetime domain names how long it lives. Full description:
-[lifetime-domains.md](language/lifetime-domains.md).
+[lifetime-domains.md](language/lifetime-domains.md). Axiom §7 `request` and
+`persistent` names: [lifetime-request-persistent.md](language/lifetime-request-persistent.md).
 
 ```text
-callback  <  frame  <  session  <  application
+callback  <  frame  <  request  <  session  <  application  <  persistent
 ```
 
 `@lifetime(D)` goes on a function, where it declares the domain the frame runs
@@ -1142,8 +1143,8 @@ memory; domains on parameters or in types. Cross-module calls consult a
 compact effect/lifetime summary for each public function (#765); see
 [lifetime-domains.md](language/lifetime-domains.md).
 
-**Status:** ✅ C-backend type checker. Tests: `tests/unit/test_lifetime_domains.py`,
-`tests/lang/test_lifetime_domains.flow`. Example:
+**Status:** ✅ C-backend type checker. Tests: `tests/lang/test_lifetime_domains.flow`,
+`tests/lang/test_lifetime_request_persistent.flow`. Example:
 `examples/audio/lifetime_domains.flow`.
 
 ---

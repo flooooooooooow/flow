@@ -1,0 +1,14 @@
+# expect: lifetime domain violation: 'tick' is in the `callback` domain but calls 'handle', which is in the `request` domain (a shorter-lived domain may not call into a longer-lived one; see docs/language/lifetime-domains.md)
+@lifetime(request)
+function handle() -> i32 {
+    return 1
+}
+
+@lifetime(callback)
+function tick() -> i32 {
+    return handle()
+}
+
+function main() -> i32 {
+    return tick()
+}

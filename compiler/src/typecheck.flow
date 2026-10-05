@@ -29,6 +29,7 @@ import .effects {
 import .rt_summary {
     FLOWC_RT_DOM_CALLBACK, FLOWC_RT_DOM_FRAME, FLOWC_RT_DOM_NONE,
     flowc_rt_forbidden, flowc_rt_fn_domain, flowc_rt_fn_has_attr,
+    flowc_rt_domain_name,
     flowc_rt_summary_bits, flowc_rt_summary_collect, flowc_rt_summary_domain,
     flowc_rt_summary_find, flowc_rt_summary_prov, flowc_rt_summary_prov_len,
     flowc_rt_bit_name
@@ -884,21 +885,11 @@ function flowc_tc_rt_consult_call(ctx: ptr<TcCtx>, arena: AstArena, call: i32) {
                 flowc_eff_diag_s("lifetime domain violation: '")
                 flowc_eff_diag_span(src, arena.nodes[fn].name_start, arena.nodes[fn].name_end)
                 flowc_eff_diag_s("' is in the `")
-                if need == FLOWC_RT_DOM_CALLBACK {
-                    flowc_eff_diag_s("callback")
-                } else {
-                    flowc_eff_diag_s("frame")
-                }
+                flowc_eff_diag_s(flowc_rt_domain_name(need))
                 flowc_eff_diag_s("` domain but calls '")
                 flowc_eff_diag_span(src, ns, ne)
                 flowc_eff_diag_s("', which is in the `")
-                if cal_dom == FLOWC_RT_DOM_FRAME {
-                    flowc_eff_diag_s("frame")
-                } elif cal_dom == FLOWC_RT_DOM_SESSION {
-                    flowc_eff_diag_s("session")
-                } else {
-                    flowc_eff_diag_s("application")
-                }
+                flowc_eff_diag_s(flowc_rt_domain_name(cal_dom))
                 flowc_eff_diag_s("` domain (a shorter-lived domain may not call into a longer-lived one; see docs/language/lifetime-domains.md)")
                 flowc_eff_diag_end()
             }

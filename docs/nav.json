@@ -557,6 +557,10 @@
           "path": "language/lifetime-domains.md"
         },
         {
+          "label": "Request and Persistent Domains",
+          "path": "language/lifetime-request-persistent.md"
+        },
+        {
           "label": "Effects Showcase",
           "path": "effects-showcase.md"
         },

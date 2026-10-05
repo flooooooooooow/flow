@@ -1,0 +1,19 @@
+# expect: ok
+extern {
+    function malloc(size: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+@lifetime(request)
+function handle(n: i32) -> i32 {
+    let raw: ptr<void> = malloc(8)
+    if raw == null {
+        return 0
+    }
+    free(raw)
+    return n
+}
+
+function main() -> i32 {
+    return handle(1)
+}

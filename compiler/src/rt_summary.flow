@@ -10,8 +10,8 @@
 #   8  IO       may do device / file / network I/O
 #   16 UNKNOWN  unprovable imported or extern callable
 #
-# domain is the declared @lifetime rank, or 4 when unannotated:
-#   0 callback < 1 frame < 2 session < 3 application
+# domain is the declared @lifetime rank, or 6 when unannotated:
+#   0 callback < 1 frame < 2 request < 3 session < 4 application < 5 persistent
 #
 # prov is one provenance edge: the callee that first introduced a new
 # forbidden bit, so diagnostics can keep a call-chain explanation.
@@ -44,9 +44,11 @@ export const FLOWC_RT_UNKNOWN: i32 = 16
 
 export const FLOWC_RT_DOM_CALLBACK: i32 = 0
 export const FLOWC_RT_DOM_FRAME: i32 = 1
-export const FLOWC_RT_DOM_SESSION: i32 = 2
-export const FLOWC_RT_DOM_APPLICATION: i32 = 3
-export const FLOWC_RT_DOM_NONE: i32 = 4
+export const FLOWC_RT_DOM_REQUEST: i32 = 2
+export const FLOWC_RT_DOM_SESSION: i32 = 3
+export const FLOWC_RT_DOM_APPLICATION: i32 = 4
+export const FLOWC_RT_DOM_PERSISTENT: i32 = 5
+export const FLOWC_RT_DOM_NONE: i32 = 6
 
 const RT_MAX_FN: i32 = 256
 const RT_MAX_CALLS: i32 = 48
@@ -193,16 +195,20 @@ export function flowc_rt_is_frame_safe(bits: i32) -> i32 {
 export function flowc_rt_domain_name(d: i32) -> string {
     if d == FLOWC_RT_DOM_CALLBACK { return "callback" }
     if d == FLOWC_RT_DOM_FRAME { return "frame" }
+    if d == FLOWC_RT_DOM_REQUEST { return "request" }
     if d == FLOWC_RT_DOM_SESSION { return "session" }
     if d == FLOWC_RT_DOM_APPLICATION { return "application" }
+    if d == FLOWC_RT_DOM_PERSISTENT { return "persistent" }
     return ""
 }
 
 export function flowc_rt_domain_of_span(src: ptr<u8>, s: i32, e: i32) -> i32 {
     if rt_span_is(src, s, e, "callback") == 1 { return FLOWC_RT_DOM_CALLBACK }
     if rt_span_is(src, s, e, "frame") == 1 { return FLOWC_RT_DOM_FRAME }
+    if rt_span_is(src, s, e, "request") == 1 { return FLOWC_RT_DOM_REQUEST }
     if rt_span_is(src, s, e, "session") == 1 { return FLOWC_RT_DOM_SESSION }
     if rt_span_is(src, s, e, "application") == 1 { return FLOWC_RT_DOM_APPLICATION }
+    if rt_span_is(src, s, e, "persistent") == 1 { return FLOWC_RT_DOM_PERSISTENT }
     return FLOWC_RT_DOM_NONE
 }
 
