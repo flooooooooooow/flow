@@ -186,6 +186,7 @@
     "stdlib:gpu_kernels": "language/wasm-crossings.md",
     "stdlib:gpu_memory": "library/gpu-memory.md",
     "stdlib:gpu_sim": "library/stdlib-api.md",
+    "stdlib:gpu_tensor": "library/gpu-tensor.md",
     "stdlib:gramian": "language/dynamics-dsl.md",
     "stdlib:graph": "library/audio.md",
     "stdlib:graph_bus": "library/stdlib-api.md",
