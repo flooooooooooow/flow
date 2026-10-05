@@ -775,6 +775,10 @@
           "path": "language/flow-run.md"
         },
         {
+          "label": "Compiled-program cold start",
+          "path": "language/cold-start.md"
+        },
+        {
           "label": "Debugging",
           "path": "language/debugging.md"
         },

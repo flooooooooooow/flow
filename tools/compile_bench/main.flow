@@ -17,9 +17,11 @@
 # per program plus, after the stock set, a summary that names the top
 # fixed and scaling costs. Fields: program, loc, emit_ms, cc_ms, run_ms,
 # total_ms, cold_total_ms, warm_total_ms, reps, loc_per_emit_s, and when
-# present profile (the [flow-profile] object) plus phase_*_ms. With
-# --python-code, each row also reports the matching `python3 -c` minimum
-# as python_ms and run_vs_python_x100.
+# present profile (the [flow-profile] object) plus phase_*_ms, and
+# bin_bytes of the linked program. With --python-code, each row also
+# reports the matching `python3 -c` minimum as python_ms and
+# run_vs_python_x100. #746 uses those fields as the machine-readable
+# cold-start comparison against equivalent Python invocations.
 #
 # Exit codes: 0 pass, 1 a stage failed, 2 bad arguments or setup.
 
@@ -376,6 +378,9 @@ function main() -> i32 {
             if run_min >= 0 and python_min > 0 {
                 line = line + ", \"run_vs_python_x100\": " + i64_str(run_min * 100 / python_min)
             }
+        }
+        if cc_min >= 0 and exists(out_bin) {
+            line = line + ", \"bin_bytes\": " + i64_str(file_size(out_bin))
         }
         line = line + ", \"reps\": " + i64_str(repeat as i64)
         if loc > 0 and emit_min > 0 {

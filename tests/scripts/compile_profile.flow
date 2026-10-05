@@ -1,5 +1,6 @@
 # Proof for the #735 first slice: FLOWC_PROFILE JSON from a self-hosted
 # flowc (no Python), and compile_bench rows that carry those phases.
+# --python-code without a value is the #746 argument-error path.
 
 import "tools/flow_cli/sys.flow"
 import "tests/scripts/harness.flow"
@@ -123,6 +124,29 @@ function check_compile_bench() -> i32 {
     if not a_contains(out, "\"phase_codegen_ms\"") {
         return T_FAIL
     }
+    if not a_contains(out, "\"bin_bytes\"") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_python_code_arg() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "compile_bench")
+    sl_push(argv, "--python-code")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    let rc: i32 = t_run(c)
+    if not a_eq_int(rc, 2, "compile_bench --python-code exit") {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let err: string = read_text(t_err()) + read_text(t_out())
+    if not a_contains(err, "compile_bench: --python-code needs source text") {
+        return T_FAIL
+    }
     return T_PASS
 }
 
@@ -142,6 +166,8 @@ function main() -> i32 {
     t_end("off_by_default", check_off_by_default())
     t_start()
     t_end("compile_bench_phases", check_compile_bench())
+    t_start()
+    t_end("python_code_arg", check_python_code_arg())
     t_start()
     t_end("no_python", check_no_python())
     t_done()
