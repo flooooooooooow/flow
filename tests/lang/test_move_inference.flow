@@ -1,0 +1,132 @@
+# Value semantics for compiler-inferred last-use moves (#696).
+#
+# Last-use record updates may mutate a uniquely owned base in generated C.
+# The caller's copy must stay unchanged, a later mention of the base must
+# still see the original fields, a loop must not observe a previous
+# iteration's mutation, and taking the address of the base must keep the
+# copy. Exit 0 on success; a nonzero exit identifies the failing check.
+
+struct Point {
+    x: i32,
+    y: i32,
+    z: i32
+}
+
+function consume(p: Point) -> i32 {
+    return p.x + p.y + p.z
+}
+
+function bump_return(p: Point) -> Point {
+    return Point { ..p, x: 5 }
+}
+
+function shift_reads_base(p: Point) -> Point {
+    return Point { ..p, x: p.y, y: p.x }
+}
+
+function arg_last_use(p: Point) -> i32 {
+    return consume(Point { ..p, x: 9 })
+}
+
+function arg_used_after(p: Point) -> i32 {
+    let n: i32 = consume(Point { ..p, x: 8 })
+    if p.x != 1 or p.y != 2 or p.z != 3 {
+        return 0 - 1
+    }
+    return n
+}
+
+function branched_arg(p: Point, c: i32) -> i32 {
+    if c == 1 {
+        return consume(Point { ..p, x: 7 })
+    }
+    return p.x + p.y
+}
+
+function looped(p: Point, n: i32) -> i32 {
+    let mut i: i32 = 0
+    let mut s: i32 = 0
+    while i < n {
+        s = s + consume(Point { ..p, x: i })
+        i = i + 1
+    }
+    return s + p.x
+}
+
+function addr_taken(p: Point) -> i32 {
+    let q: ptr<Point> = &p
+    let n: i32 = consume(Point { ..p, x: 4 })
+    if q[0].x != 1 or q[0].y != 2 {
+        return 0 - 1
+    }
+    return n
+}
+
+function keep_let(p: Point) -> i32 {
+    let q: Point = Point { ..p, x: 6 }
+    if p.x != 1 or q.x != 6 or q.y != 2 or q.z != 3 {
+        return 0 - 1
+    }
+    return p.x + q.x
+}
+
+function earlier_read_then_move(p: Point) -> Point {
+    let n: i32 = p.x
+    return Point { ..p, x: n + 4 }
+}
+
+function main() -> i32 {
+    let p: Point = Point { x: 1, y: 2, z: 3 }
+    let b: Point = bump_return(p)
+    if b.x != 5 or b.y != 2 or b.z != 3 {
+        return 1
+    }
+    if p.x != 1 {
+        return 2
+    }
+    let s: Point = shift_reads_base(p)
+    if s.x != 2 or s.y != 1 or s.z != 3 {
+        return 3
+    }
+    if p.x != 1 or p.y != 2 {
+        return 4
+    }
+    if arg_last_use(p) != 14 {
+        return 5
+    }
+    if p.x != 1 {
+        return 6
+    }
+    let after: i32 = arg_used_after(p)
+    if after != 13 {
+        return 7
+    }
+    if branched_arg(p, 1) != 12 {
+        return 8
+    }
+    if branched_arg(p, 0) != 3 {
+        return 9
+    }
+    if looped(p, 3) != 19 {
+        return 10
+    }
+    if p.x != 1 {
+        return 11
+    }
+    let a: i32 = addr_taken(p)
+    if a != 9 {
+        return 12
+    }
+    let k: i32 = keep_let(p)
+    if k != 7 {
+        return 13
+    }
+    let m: Point = earlier_read_then_move(p)
+    if m.x != 5 or m.y != 2 or m.z != 3 {
+        return 14
+    }
+    if p.x != 1 or p.y != 2 or p.z != 3 {
+        return 15
+    }
+    return 0
+}

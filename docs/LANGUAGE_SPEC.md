@@ -1066,6 +1066,15 @@ cost.
 - Arrays: Pass by reference (pointer semantics)
 - Strings: Immutable, pass by pointer
 
+Assignment and by-value calls copy. The C backend may treat a last use of
+a uniquely owned function-scoped `let` or by-value parameter as a **move**
+and elide the intermediate copy of a record update (`Name { ..p, f: v }`).
+There is no `move` keyword; a later mention, a loop that can iterate, an
+address-taken binding, a capture, or an update that reads the base keeps
+the copy. Copy-on-write and implicit sharing are not inferred. Full rules:
+[value-semantics.md](language/value-semantics.md). Destination-passing of
+record updates into a `let`, assignment, or returned local is #732.
+
 ### 8.2 Stack vs Heap
 
 | Type | Allocation |

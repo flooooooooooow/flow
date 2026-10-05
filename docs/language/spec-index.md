@@ -18,7 +18,7 @@ Navigable table of contents for the full [LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md)
 | [5. Statements](../LANGUAGE_SPEC.md#5-statements) | [If](../LANGUAGE_SPEC.md#52-if-statement) · [While](../LANGUAGE_SPEC.md#53-while-loop) · [For](../LANGUAGE_SPEC.md#54-for-loop) · [Concurrency](../LANGUAGE_SPEC.md#56-concurrency-language--stdlib) | [Syntax](syntax.md) · [Ranges](ranges.md) · [Concurrency vs Go](concurrency-vs-go.md) |
 | [6. Effect System](../LANGUAGE_SPEC.md#6-effect-system) | [Effect](../LANGUAGE_SPEC.md#61-effect-declaration) · [Capability](../LANGUAGE_SPEC.md#62-capability-declaration) · [Handle](../LANGUAGE_SPEC.md#63-handle-statement) | [Effects Showcase](../effects-showcase.md) · [Async via Effects](async-effects.md) |
 | [7. Module System](../LANGUAGE_SPEC.md#7-module-system) | [Import](../LANGUAGE_SPEC.md#71-import-declaration) · [Export](../LANGUAGE_SPEC.md#72-export-declaration) · [Re-export](../LANGUAGE_SPEC.md#73-re-export-declaration) · [Resolution](../LANGUAGE_SPEC.md#74-module-resolution) · [`module` blocks](../LANGUAGE_SPEC.md#75-module-blocks) | [Modules](modules.md) · [Namespacing](modules-namespacing.md) |
-| [8. Memory Model](../LANGUAGE_SPEC.md#8-memory-model) | [Value semantics](../LANGUAGE_SPEC.md#81-value-semantics) · [Pointers](../LANGUAGE_SPEC.md#83-pointer-operations) | [Memory (stdlib)](../library/memory.md) |
+| [8. Memory Model](../LANGUAGE_SPEC.md#8-memory-model) | [Value semantics](../LANGUAGE_SPEC.md#81-value-semantics) · [Pointers](../LANGUAGE_SPEC.md#83-pointer-operations) | [Value Semantics](value-semantics.md) · [Memory (stdlib)](../library/memory.md) |
 | [9. Compilation Targets](../LANGUAGE_SPEC.md#9-compilation-targets) | [C](../LANGUAGE_SPEC.md#91-c-backend) · [MLIR](../LANGUAGE_SPEC.md#92-mlir-backend) · [Wasm](../LANGUAGE_SPEC.md#93-webassembly) · [JIT](../LANGUAGE_SPEC.md#94-jit-execution) | [MLIR opt flags](mlir-opt-flags.md) · [Wasm](wasm.md) |
 | [10. Domain / DSL Surfaces](../LANGUAGE_SPEC.md#10-domain--dsl-surfaces) | [flow / evolves](../LANGUAGE_SPEC.md#101-flow--evolves-as--representation) · [Dynamics / LQR](../LANGUAGE_SPEC.md#102-dynamics--analyze--lqr) · [Field PDE](../LANGUAGE_SPEC.md#103-field--boundary--laplacian-pde) · [Shaders](../LANGUAGE_SPEC.md#104-fill-shaders) · [Graphics](../LANGUAGE_SPEC.md#105-native-graphics) · [GPU memory](../LANGUAGE_SPEC.md#106-gpu-memory-stdlib) | [Dynamics DSL](dynamics-dsl.md) · [North-star](../vision/north-star.md) · [Pattern adoption](../project/pattern-adoption.md) |
 
@@ -32,6 +32,7 @@ Navigable table of contents for the full [LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md)
 
 | Page | Topic |
 |------|-------|
+| [Value semantics](value-semantics.md) | Last-use moves; no `move` keyword |
 | [Formal EBNF](../grammar.ebnf) | Machine-readable grammar |
 | [Dynamics DSL](dynamics-dsl.md) | `dsys` / `analyze` / LQR expanders |
 | [Declarative ordering](ordering.md) | `\|> sort` / `sortBy` |
@@ -42,7 +43,6 @@ Navigable table of contents for the full [LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md)
 | [Shaders](shaders.md) | Fill-shader surface language |
 | [GPU memory](../library/gpu-memory.md) | Unified GPU buffers (Metal) |
 | [RT-safety](../library/rt-safety.md) | `@rt_safe` |
-| [FFI buffer ABI](ffi-buffer.md) | Zero-copy pointer/span/array handoff |
 | [Async via Effects](async-effects.md) | FiberAsync / ThreadedAsync / NetpollAsyncIO |
 | [Concurrency vs Go](concurrency-vs-go.md) | Channels, fibers, OpenMP, benches |
 | [Replacing Go](replace-go.md) | Scorecard for Go-shaped workloads |

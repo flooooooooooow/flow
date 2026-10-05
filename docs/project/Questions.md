@@ -11,6 +11,32 @@ Format:
 
 ## Open Questions
 
+### 2026-10-05: Last-use moves without a `move` keyword or COW
+
+**Context:** Issue #696 asks for value semantics with compiler-inferred
+move defaults: last uses of unique bindings become moves, and
+copy-on-write or sharing when safety is established. Sibling #732 covers
+destination-passing / NRVO of aggregates. A `move` keyword, use-after-move
+errors, and implicit COW are all language-design choices.
+
+**Options:**
+1. Conservative lowering only: no new syntax; last use of a uniquely
+   owned function-scoped `let` or by-value parameter may elide the
+   intermediate copy of a record update. Non-last uses stay copies.
+   Sharing stays explicit (`ptr` / `span`). No COW. No use-after-move
+   diagnostic, because a move is applied only when the binding is dead.
+2. Add a `move` expression and use-after-move errors (Rust-like).
+3. Infer copy-on-write / implicit sharing for large buffers when the
+   compiler can prove all writers are unique.
+
+**Recommendation:** Option 1 for this slice. Option 2 is a public syntax
+and ownership-contract change. Option 3 changes observable aliasing and
+needs a separate design. Recorded while implementing #696.
+
+**Status:** Open (Option 1 implemented 2026-10-05)
+
+---
+
 ### 2026-08-06: Lifetime domains: annotation-only or `domain` blocks in v0?
 
 **Context:** Issue #148 asks for `callback` / `frame` / `session` /
