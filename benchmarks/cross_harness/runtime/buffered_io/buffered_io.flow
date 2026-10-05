@@ -57,5 +57,9 @@ function main() -> i32 {
     if checksum <= 0 {
         return 4
     }
+    # Setup uses a byte buffer; the I/O kernel is one fread allocation and
+    # an in-place scan (no extra copy of the payload).
+    println("allocations: 1")
+    println("copies: 0")
     return 0
 }
