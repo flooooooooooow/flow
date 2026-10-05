@@ -26,7 +26,7 @@ this page covers the subset below. See also [memory.md](memory.md),
 
 Mathematical helpers in `lib/stdlib/math.flow` (mostly **`f32`**).
 Bare C `math.h` names (`sin`, `cos`, `floor`, …) are also available via the
-C backend as FFI/passthrough. Those are **not** the same as the Flow exports
+C backend as FFI/passthrough — those are **not** the same as the Flow exports
 below.
 
 ### Arithmetic
@@ -496,7 +496,7 @@ Algebraic-effect async surface (`lib/stdlib/async.flow`). Full honesty notes:
 ## autodiff.flow
 
 Automatic differentiation library (`lib/stdlib/autodiff.flow`).
-**Library AD rather than a compiler pass.** See [autodiff.md](autodiff.md).
+**Library AD, not a compiler pass** — see [autodiff.md](autodiff.md).
 
 ### Dual Numbers
 
@@ -516,7 +516,7 @@ struct Dual { val: f32, grad: f32 }
 | `dual_val` / `dual_grad` | `(Dual) -> f32` | Accessors |
 
 Overloaded `add` / `sub` / `mul` / `neg` and helpers (`sigmoid`, `ln`, …)
-are also exported. See the source for the full list. GPU elementwise
+are also exported — see the source for the full list. GPU elementwise
 backward kernels: `lib/stdlib/gpu_gradients.flow`.
 
 ---
@@ -534,9 +534,5 @@ one file can be open at a time. See spec section 10.7.
 | `gif_add_frame_rgb` | `(ptr<u8>, i32, i32) -> i32` | Add one RGB24 row-major frame (dims must match `gif_begin`) |
 | `gif_end` | `() -> i32` | Write trailer, close file |
 | `gif_map_rgb` | `(i32, i32, i32) -> i32` | Nearest palette index for a 24-bit color |
-| `gif_begin_palette` | `(string, i32, i32, ptr<u8>, i32) -> i32` | Open path with your own palette of 1..256 RGB triples; LZW code size follows the palette size |
-| `gif_add_frame_indexed` | `(ptr<u8>, i32, i32, i32, i32, i32, i32, i32, i32, i32) -> i32` | Add a frame of palette indices: canvas w, h; stored rectangle x, y, w, h; delay (cs); disposal; transparent index or -1 |
 
 All functions return 0 on success. Example: `examples/graphics/gif_writer.flow`.
-`scripts/tools/lib/gifclip.flow` uses the indexed calls to turn recorded
-frames into a GIF (median-cut palette, optional Floyd-Steinberg dither).

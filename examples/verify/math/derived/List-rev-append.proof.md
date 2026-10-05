@@ -2,9 +2,9 @@
 
 *Reverse distributes over append.*
 
-**Source.** church: https://en.wikipedia.org/wiki/List_(abstract_data_type)
+**Source.** church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
 
-## Derived fact 1: rev(xs ++ ys) = rev(ys) ++ rev(xs)
+## Derived fact 1 — rev(xs ++ ys) = rev(ys) ++ rev(xs)
 
 **Coordinate.** List · reverse · reverse distributes over append · **Derived fact**
 

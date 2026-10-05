@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  The squares on the sides of a right triangle are positive.
-# @from   euclid: Elements, Book I, Proposition 47
+# @from   euclid — Elements, Book I, Proposition 47
 # @tier   derived
 
 # @means  a squared is greater than zero.

@@ -2,9 +2,9 @@
 
 *All three interior angles of a triangle are positive.*
 
-**Source.** euclid: Elements, Book I, Proposition 32
+**Source.** euclid — Elements, Book I, Proposition 32
 
-## Derived fact 1: angle A, angle B, and angle C are each greater than zero
+## Derived fact 1 — angle A, angle B, and angle C are each greater than zero
 
 **Coordinate.** the Euclidean plane · triangle · all interior angles are positive · **Derived fact**
 

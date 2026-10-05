@@ -1,47 +1,51 @@
 # Flow Packaging & Distribution
 
-This directory contains packaging definitions maintained with the Flow source tree. A definition being present here does not mean the package has been published to an external package registry.
+This directory contains official package definitions and build specifications for installing Flow across various package managers and operating systems.
 
-## Published channel
+## Available Packaging Targets
 
-### Homebrew (macOS / Linux)
+### 1. Homebrew (macOS / Linux)
+- Location: `packaging/homebrew/Formula/flow.rb`
+- Repository: `flooooooooooow/homebrew-flow`
+- Installation:
+  ```bash
+  brew tap flooooooooooow/flow
+  brew install flow
+  ```
 
-Homebrew is the currently published package-manager channel:
+### 2. Nix / NixOS
+- Locations: `packaging/nix/default.nix`, `packaging/nix/flake.nix`
+- Installation via Nix Flakes:
+  ```bash
+  nix run github:flooooooooooow/flow
+  ```
+- Installation via nix-env / legacy Nix:
+  ```bash
+  nix-env -f packaging/nix/default.nix -i
+  ```
 
-```bash
-brew tap flooooooooooow/flow
-brew install flow
-```
+### 3. Debian / Ubuntu (APT)
+- Location: `packaging/deb/`
+- Build package:
+  ```bash
+  cd packaging/deb && dpkg-buildpackage -us -uc -b
+  ```
+- Installation:
+  ```bash
+  sudo dpkg -i flow_1.0.2-1_amd64.deb
+  sudo apt-get install -f
+  ```
 
-The tap is maintained in `flooooooooooow/homebrew-flow`.
+### 4. Arch Linux (pacman / AUR)
+- Location: `packaging/arch/PKGBUILD`
+- Build & Install:
+  ```bash
+  cd packaging/arch && makepkg -si
+  ```
 
-## Build-from-checkout specifications
-
-### Nix / NixOS
-
-`packaging/nix/default.nix` and `packaging/nix/flake.nix` build the current checkout rather than fetching a guessed release tag or placeholder hash:
-
-```bash
-nix build ./packaging/nix#flow
-./result/bin/flow version
-```
-
-This is a repository-local flake specification. It is not a claim that Flow has been accepted into nixpkgs.
-
-### Debian / Ubuntu
-
-`packaging/deb/` contains Debian metadata for building a package from the current checkout:
-
-```bash
-./flow tool build_deb
-```
-
-The tool prints the path of the generated `.deb`. This repository does not currently advertise an APT repository.
-
-## Deferred channels
-
-Arch/AUR packaging is deferred until a stable versioned source artifact exists that a PKGBUILD can verify reproducibly.
-
-Windows/Scoop packaging is deferred until Flow has a supported Windows release artifact. Do not publish a Scoop manifest that points at source archives or placeholder hashes.
-
-External package-manager documentation should be promoted to the published section only after that channel is actually installable and verified.
+### 5. Windows Scoop
+- Location: `packaging/scoop/flow.json`
+- Installation:
+  ```bash
+  scoop install https://raw.githubusercontent.com/flooooooooooow/flow/main/packaging/scoop/flow.json
+  ```

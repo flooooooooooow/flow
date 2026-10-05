@@ -2,9 +2,9 @@
 
 *Adding on the left preserves less-or-equal order.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Monotonic_function
+**Source.** peano — https://en.wikipedia.org/wiki/Monotonic_function
 
-## Derived fact 1: a <= b implies c + a <= c + b
+## Derived fact 1 — a <= b implies c + a <= c + b
 
 **Coordinate.** the natural numbers · order · adding on the left preserves order · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that adding on the left preserves order for order on the natural numbers. |  |  |
-| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose a <= b. |  |  |
 | ④ | We invoke the derived fact governing addition on the natural numbers: you can swap the order when you add (instantiated for c, a). | ④ | $c + a = a + c$ |
 | ⑤ | We invoke the derived fact governing order on the natural numbers: less-or-equal is transitive, for order on the natural numbers (instantiated for c + a, c + b, c + b). |  |  |

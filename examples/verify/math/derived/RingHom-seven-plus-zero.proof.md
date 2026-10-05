@@ -2,9 +2,9 @@
 
 *Seven plus zero maps to seven under a ring homomorphism.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.3
+**Source.** dummit-foote — *Abstract Algebra*, §7.3
 
-## Derived fact 1: f(7 + 0) = 7
+## Derived fact 1 — f(7 + 0) = 7
 
 **Coordinate.** RingHom · preservation · seven plus zero maps to seven · **Derived fact**
 

@@ -17,5 +17,5 @@
 <text x="410.0" y="276.0" text-anchor="middle" font-weight="bold">B</text>
 <circle cx="230.0" cy="70.0" r="4.5" fill="#2c3e50"/>
 <text x="230.0" y="90.0" text-anchor="middle" font-weight="bold">C</text>
-<text x="240" y="344" text-anchor="middle" font-size="13" fill="#555">Triangle ABC: the three interior angles α, β, and γ sum to two right angles.</text>
+<text x="240" y="344" text-anchor="middle" font-size="13" fill="#555">Triangle ABC — the three interior angles α, β, and γ sum to two right angles.</text>
 </svg>

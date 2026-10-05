@@ -1,5 +1,5 @@
 # Test for dsl_detect.flow port of DSL detection functions.
-# Run with: ./flow run tests/lang/test_dsl_detect.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_dsl_detect.flow
 # Exit 0 on success.
 
 import "compiler/src/dsl_detect.flow"

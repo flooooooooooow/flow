@@ -1,3 +1,0 @@
-Resolving modules...
-Parsed 2 functions, 1 structs, 0 effects, 0 capabilities
-Python generation error: struct 'Vec2' cannot cross the Python boundary. flow python exports functions over i32, i64, u32, u64, f32, f64, bool and string.

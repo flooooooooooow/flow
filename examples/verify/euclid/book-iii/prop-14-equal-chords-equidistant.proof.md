@@ -2,13 +2,13 @@
 
 *In equal circles equal straight lines are equally distant from the centers, and conversely.*
 
-**Source.** euclid: Elements, Book III, Proposition 14
+**Source.** euclid — Elements, Book III, Proposition 14
 
-## Derived fact 1: In equal circles equal straight lines are equally distant from the centers, and conversely
+## Derived fact 1 — In equal circles equal straight lines are equally distant from the centers, and conversely
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 14: equal chords are equally distant from the center · **Derived fact**
 
-*Source: euclid: Elements, Book III, Proposition 14*
+*Source: euclid — Elements, Book III, Proposition 14*
 
 *Built on: proposition 2: a perpendicular from the center bisects the chord, for Euclid Book III on the Euclidean plane*
 

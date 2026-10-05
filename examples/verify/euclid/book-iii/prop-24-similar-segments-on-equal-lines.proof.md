@@ -2,13 +2,13 @@
 
 *Similar segments of circles on equal straight lines are equal to one another.*
 
-**Source.** euclid: Elements, Book III, Proposition 24
+**Source.** euclid — Elements, Book III, Proposition 24
 
-## Derived fact 1: Similar segments of circles on equal straight lines are equal to one another
+## Derived fact 1 — Similar segments of circles on equal straight lines are equal to one another
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 24: similar segments on equal straight lines are equal · **Derived fact**
 
-*Source: euclid: Elements, Book III, Proposition 24*
+*Source: euclid — Elements, Book III, Proposition 24*
 
 *Built on: proposition 23: two unequal similar segments cannot stand on the same side of a line, for Euclid Book III on the Euclidean plane*
 

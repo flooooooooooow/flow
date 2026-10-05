@@ -1,7 +1,7 @@
-# Package consumer with a path dependency on ../hello_lib
+# Package consumer — path dependency on ../hello_lib
 #
 # From this directory:
-#   ../../../flow sync
+#   PYTHONPATH=../../../src python3 -m flow.package install
 #   cd ../../.. && ./flow run examples/packages/use_hello_lib/src/main.flow
 #
 # Or after install, from repo root:

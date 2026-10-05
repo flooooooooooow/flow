@@ -1,2 +1,0 @@
-Error: 'never' clause in flow 'Osc' must be a boolean expression at line 3
-write a comparison or logical expression, e.g. 'x < 1.0'

@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-iii
 # @means  In a circle the angle at the center is double the angle at the circumference when the angles stand on the same arc.
-# @from   euclid: Elements, Book III, Proposition 20
+# @from   euclid — Elements, Book III, Proposition 20
 # @tier   derived
 # @needs  «Geometry» «Euclid Book I» «Proposition 32: exterior angle equals sum of remote interior angles»
 

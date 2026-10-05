@@ -1,2 +1,0 @@
-Error: Unexpected statement in 'when' body of flow 'Osc' at line 5, column 9
-'when' bodies contain resets in this version: 'x becomes expr'

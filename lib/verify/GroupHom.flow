@@ -1,6 +1,6 @@
 # @module verify.GroupHom
 # @means  Group homomorphism axioms.
-# @from   dummit-foote: *Abstract Algebra*, §1.6
+# @from   dummit-foote — *Abstract Algebra*, §1.6
 # @tier   definitions-only
 
 # @means  A homomorphism sends the identity to the identity.

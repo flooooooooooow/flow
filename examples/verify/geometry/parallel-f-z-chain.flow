@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  F-angles and Z-angles chain together on parallel lines.
-# @from   euclid: Elements, Book I, Proposition 29
+# @from   euclid — Elements, Book I, Proposition 29
 # @tier   derived
 
 # @means  f-angle alpha equals z-angle beta.

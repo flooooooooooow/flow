@@ -2,9 +2,9 @@
 
 *Thirty plus one is thirty-one.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 30 + 1 = 31
+## Derived fact 1 — 30 + 1 = 31
 
 **Coordinate.** the natural numbers · addition · thirty plus one is thirty one · **Derived fact**
 

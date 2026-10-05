@@ -1,9 +1,0 @@
-# Escapes are kept as C escapes, and concat goes through the runtime helper.
-+ "node [shape=box, style=\"filled\"];"
-+ "a\"b\"c"
-+ __flowc_str_concat("hello\"world", " test\"test")
-exit 0
-stdout node [shape=box, style="filled"];
-stdout a"b"c
-stdout hello"world test"test
-stdout path\to\file

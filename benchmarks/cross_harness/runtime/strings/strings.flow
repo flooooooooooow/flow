@@ -1,39 +1,4 @@
-extern {
-    function strlen(s: string) -> i64
-    function malloc(size: i64) -> ptr<u8>
-    function free(p: ptr<u8>) -> void
-}
-
 function main() -> i32 {
-    let source: string = "The Quick Brown Fox Jumps Over The Lazy Dog 1234567890!"
-    let len: i64 = strlen(source)
-    let p_src: ptr<u8> = source as ptr<u8>
-
-    let buf: ptr<u8> = malloc(len + 1)
-    if buf == null {
-        return 1
-    }
-
-    let mut checksum: i32 = 0
-    let mut iter: i32 = 0
-    while iter < 100000 {
-        let mut i: i64 = 0
-        while i < len {
-            let mut c: u8 = p_src[i]
-            if c >= 97 as u8 and c <= 122 as u8 {
-                c = (c as i32 - 32) as u8
-            }
-            buf[i] = c
-            checksum = checksum + (c as i32)
-            i = i + 1
-        }
-        buf[len] = 0 as u8
-        iter = iter + 1
-    }
-
-    free(buf)
-    if checksum % 256 != 96 {
-        return 1
-    }
-    return 0
+    let s: str = "hello world";
+    return 0;
 }

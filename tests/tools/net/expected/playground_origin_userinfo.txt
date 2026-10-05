@@ -1,7 +1,0 @@
-HTTP/1.0 200 OK
-Content-Type: application/json; charset=utf-8
-Access-Control-Allow-Origin: http://evil.com@localhost:80
-Access-Control-Allow-Methods: POST, OPTIONS, GET
-Access-Control-Allow-Headers: Content-Type
-
-{"ok": true, "service": "flow-playground-compile", "run": true, "targets": ["native", "c", "wasm"], "max_source_bytes": 65536, "pyodide": "/pyodide"}

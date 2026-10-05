@@ -106,7 +106,7 @@ The intended payoff is less local metaprogramming and less framework-specific gl
 
 C++ wins today on ecosystem depth, vendor SDK support, mature debuggers and profilers, template metaprogramming breadth, standard-library coverage, game engines, GUI frameworks, embedded vendor support and the sheer amount of production code already written in it.
 
-Flow's bar is therefore not merely "fewer characters than C++." It is whether a complete system can carry the same intent with fewer user-defined abstractions and less incidental machinery.
+Flow's bar is therefore not merely “fewer characters than C++.” It is whether a complete system can carry the same intent with fewer user-defined abstractions and less incidental machinery.
 
 ## See also
 

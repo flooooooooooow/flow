@@ -1,5 +1,5 @@
 # Test combining enums, structs, defer, and file I/O.
-# Run with: ./flow run tests/lang/test_integration.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_integration.flow
 
 import "compiler/src/fileio.flow"
 

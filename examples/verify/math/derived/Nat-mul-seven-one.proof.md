@@ -4,7 +4,7 @@
 
 **Source.** Nat mul seven one
 
-## Derived fact 1: Seven times one is seven
+## Derived fact 1 — Seven times one is seven
 
 **Coordinate.** the natural numbers · mul · seven one · **Derived fact**
 

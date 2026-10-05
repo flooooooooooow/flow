@@ -1,16 +1,16 @@
 # Flow Performance Baselines
 
-Date: 2026-10-02
-OS: Darwin
-Arch: arm64
-Cores: 14
-Flow Version: 2.0.0
-Git SHA: 5a6704dffb03f159edb43991a0add1e243f2e0c8
-Host: Python 3.9.6
+Date: 2026-09-12
+OS: Linux
+Arch: x86_64
+Cores: 4
+Flow Version: 1.0.2
+Git SHA: 06bb3e1caacb107f3fa66a16334c3a2b824b65dc
+Host: Python 3.12.13
 Flags: `clang -O3 -march=native -lm`
 
 | Benchmark | Median (s) | Min (s) | Max (s) | Result |
 |---|---|---|---|---|
-| numeric | 0.005674 | 0.002715 | 0.011101 | 833.250000 |
-| string_io | 0.026587 | 0.026016 | 0.031720 | 60005 |
-| startup | 0.001904 | 0.001529 | 0.008490 | 0 |
+| numeric | 0.003666 | 0.003491 | 0.003965 | 833.250000 |
+| string_io | 0.270966 | 0.265416 | 0.681268 | 60005 |
+| startup | 0.002247 | 0.002110 | 0.002584 | 0 |

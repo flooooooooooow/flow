@@ -21,7 +21,7 @@ function ten_steps() -> f64 {
 For Euler, midpoint, RK4, and closed-form error comparisons run:
 
 ```bash
-./flow run examples/numerical/ode_solver.flow
+FLOW_HOST=python ./flow run examples/numerical/ode_solver.flow
 ```
 
 ## 2. Declare the evolution directly
@@ -111,7 +111,7 @@ closed controlled_plant with k1 k2 {
 The complete model → analyse → control → certify example is:
 
 ```bash
-./flow run examples/evolution/spring_mass_control.flow
+FLOW_HOST=python ./flow run examples/evolution/spring_mass_control.flow
 ```
 
 ## 6. LQR
@@ -138,8 +138,8 @@ analyze lqr_plant {
 ```
 
 ```bash
-./flow run examples/evolution/spring_mass_lqr.flow
-./flow run examples/evolution/chain4_lqr.flow
+FLOW_HOST=python ./flow run examples/evolution/spring_mass_lqr.flow
+FLOW_HOST=python ./flow run examples/evolution/chain4_lqr.flow
 ```
 
 ## 7. Nonlinear systems
@@ -147,8 +147,8 @@ analyze lqr_plant {
 For nonlinear flows use language-level evolution or `stdlib/dynamics/attractor.flow`. The Lorenz examples provide both a numerical and visual validation path:
 
 ```bash
-./flow run examples/dynamics/lorenz_attractor.flow
-./flow gfx examples/evolution/lorenz_gfx.flow
+FLOW_HOST=python ./flow run examples/dynamics/lorenz_attractor.flow
+FLOW_HOST=python ./flow gfx examples/evolution/lorenz_gfx.flow
 ```
 
 ## Next

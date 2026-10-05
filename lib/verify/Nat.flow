@@ -1,6 +1,6 @@
 # @module verify.Nat
 # @means  Peano definitions for addition on natural numbers.
-# @from   peano: https://en.wikipedia.org/wiki/Peano_axioms
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
 # @tier   definitions-only
 
 # @means  Adding zero on the left gives the other number.  (0 + 7 = 7)

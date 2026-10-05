@@ -2,13 +2,13 @@
 
 *If from the center of a circle a perpendicular is drawn to a chord, it bisects the chord.*
 
-**Source.** euclid: Elements, Book III, Proposition 16
+**Source.** euclid — Elements, Book III, Proposition 16
 
-## Derived fact 1: If from the center of a circle a perpendicular is drawn to a chord, it bisects the chord
+## Derived fact 1 — If from the center of a circle a perpendicular is drawn to a chord, it bisects the chord
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 16: the perpendicular from the center to a chord bisects it · **Derived fact**
 
-*Source: euclid: Elements, Book III, Proposition 16*
+*Source: euclid — Elements, Book III, Proposition 16*
 
 *Built on: proposition 2: a perpendicular from the center bisects the chord, for Euclid Book III on the Euclidean plane*
 

@@ -13,7 +13,7 @@
 #   R reseed   P pause   Esc quit
 #
 # Run (headless, gated):
-#   ./flow record examples/procgen/heightmap_fbm.flow \
+#   FLOW_HOST=python ./flow record examples/procgen/heightmap_fbm.flow \
 #       --frames 4 --out /tmp/pg_heightmap_fbm
 # Run (windowed):
 #   ./flow gfx examples/procgen/heightmap_fbm.flow

@@ -135,7 +135,7 @@ workload number.
 ## Reproduce
 
 ```bash
-./flow tool bench_publish
+./benchmarks/run_publish.sh
 ```
 
 This regenerates benchmarks/RESULTS.md in place. A full run takes

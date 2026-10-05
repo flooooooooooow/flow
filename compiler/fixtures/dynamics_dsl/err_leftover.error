@@ -1,2 +1,0 @@
-dynamics { ... } block may only contain dynamics DSL constructs; leftover:
-let x: i32 = 1

@@ -2,9 +2,9 @@
 
 *Integer arithmetic definitions extending the natural numbers.*
 
-**Source.** landau: *Foundations of Analysis*, Ch. 1
+**Source.** landau — *Foundations of Analysis*, Ch. 1
 
-## Definition 1: Adding zero on the left leaves an integer unchanged
+## Definition 1 — Adding zero on the left leaves an integer unchanged
 
 **Coordinate.** the integers · addition · zero is the left identity · **Definition**
 
@@ -16,12 +16,12 @@
 
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
-| ① | We stipulate zero is the left identity for addition on the integers. This is a definition rather than a derived fact. |  |  |
+| ① | We stipulate zero is the left identity for addition on the integers — this is a definition, not a derived fact. |  |  |
 | ② | This follows directly from the definition: 0 plus m equals m. Hence proven. | ② | $0 + m = m$ |
 
 `the integers · addition · zero is the left identity`
 
-## Definition 2: Adding zero on the right leaves an integer unchanged
+## Definition 2 — Adding zero on the right leaves an integer unchanged
 
 **Coordinate.** the integers · addition · zero is the right identity · **Definition**
 
@@ -33,12 +33,12 @@
 
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
-| ① | We stipulate zero is the right identity for addition on the integers. This is a definition rather than a derived fact. |  |  |
+| ① | We stipulate zero is the right identity for addition on the integers — this is a definition, not a derived fact. |  |  |
 | ② | This follows directly from the definition: m plus 0 equals m. Hence proven. | ② | $m + 0 = m$ |
 
 `the integers · addition · zero is the right identity`
 
-## Derived fact 3: Negating twice returns the original integer
+## Derived fact 3 — Negating twice returns the original integer
 
 **Coordinate.** the integers · negation · double negation returns the value · **Derived fact**
 

@@ -2,9 +2,9 @@
 
 *One is the right multiplicative identity for rationals.*
 
-**Source.** landau: *Foundations of Analysis*
+**Source.** landau — *Foundations of Analysis*
 
-## Derived fact 1: q * 1 = q
+## Derived fact 1 — q * 1 = q
 
 **Coordinate.** Rat · multiplication · one is the right identity · **Derived fact**
 

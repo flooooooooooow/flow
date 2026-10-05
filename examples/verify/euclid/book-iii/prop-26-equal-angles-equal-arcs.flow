@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-iii
 # @means  In equal circles equal angles at the centers or circumferences stand on equal circumferences.
-# @from   euclid: Elements, Book III, Proposition 26
+# @from   euclid — Elements, Book III, Proposition 26
 # @tier   derived
 # @needs  «Geometry» «Euclid Book III» «Proposition 20: the central angle is double the inscribed angle on the same arc»
 

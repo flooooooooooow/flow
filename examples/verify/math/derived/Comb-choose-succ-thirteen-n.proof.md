@@ -2,9 +2,9 @@
 
 *Choosing thirteen from a successor set.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: choose(succ(n), 13) = choose(n, 12) + choose(n, 13)
+## Derived fact 1 — choose(succ(n), 13) = choose(n, 12) + choose(n, 13)
 
 **Coordinate.** Comb · choose · choosing thirteen from a successor derived · **Derived fact**
 

@@ -2,13 +2,13 @@
 
 *On equal straight lines similar and similarly situated rectilineal figures are equal to one another.*
 
-**Source.** euclid: Elements, Book VI, Proposition 28
+**Source.** euclid — Elements, Book VI, Proposition 28
 
-## Derived fact 1: On equal straight lines similar and similarly situated rectilineal figures are equal to one another
+## Derived fact 1 — On equal straight lines similar and similarly situated rectilineal figures are equal to one another
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 28: similar and similarly situated figures on equal straight lines are equal · **Derived fact**
 
-*Source: euclid: Elements, Book VI, Proposition 28*
+*Source: euclid — Elements, Book VI, Proposition 28*
 
 *Built on: proposition 26: similar parallelograms are in duplicate ratio of homologous sides, for Euclid Book VI on the Euclidean plane*
 

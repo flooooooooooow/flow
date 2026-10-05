@@ -2,9 +2,9 @@
 
 *Alternate and F-angles are equal after chain closure.*
 
-**Source.** euclid: Elements, Book I, Proposition 29
+**Source.** euclid — Elements, Book I, Proposition 29
 
-## Derived fact 1: alternate alpha equals f-angle beta after closure
+## Derived fact 1 — alternate alpha equals f-angle beta after closure
 
 **Coordinate.** the Euclidean plane · parallel lines · alternate equals f after closure · **Derived fact**
 

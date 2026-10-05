@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 export function findFlowRepoRoot(start: string | undefined): string | undefined {
     let dir = start;
     for (let i = 0; i < 12 && dir; i++) {
-        const candidate = path.join(dir, 'tools', 'lsp', 'main.flow');
+        const candidate = path.join(dir, 'src', 'flow', 'lsp_server.py');
         if (fs.existsSync(candidate)) {
             return dir;
         }

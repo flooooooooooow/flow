@@ -1,6 +1,0 @@
-# expect: slice end bound must be an integer, got bool
-function main() -> i32 {
-    let mut xs: array<i32, 4> = [1, 2, 3, 4]
-    let s: span<i32> = xs[0..true]
-    return 0
-}

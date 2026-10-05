@@ -58,7 +58,7 @@ function main() -> i32 {
 The allocation owner arranges exactly one release after the final use. A `defer` is useful for structured cleanup.
 
 ```bash
-./flow run examples/systems/manual_memory.flow
+FLOW_HOST=python ./flow run examples/systems/manual_memory.flow
 ```
 
 ## 10.4 Spans

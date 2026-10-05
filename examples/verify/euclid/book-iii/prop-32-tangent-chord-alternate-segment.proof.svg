@@ -33,5 +33,5 @@
 <text x="200.0" y="106.0" text-anchor="middle" font-weight="bold">X</text>
 <circle cx="260.0" cy="260.0" r="4.5" fill="#2c3e50"/>
 <text x="260.0" y="246.0" text-anchor="middle" font-weight="bold">Y</text>
-<text x="240" y="344" text-anchor="middle" font-size="13" fill="#555">Parallel lines cut by a transversal: alternate interior angles are equal.</text>
+<text x="240" y="344" text-anchor="middle" font-size="13" fill="#555">Parallel lines cut by a transversal — alternate interior angles are equal.</text>
 </svg>

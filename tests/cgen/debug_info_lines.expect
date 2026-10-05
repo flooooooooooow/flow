@@ -1,8 +1,0 @@
-env FLOWC_DEBUG_INFO=1
-~ #line [0-9]+ ".*debug_info_lines.flow"
-# The let and the return in each body get their own mapping.
-~ #line 3 "
-~ #line 4 "
-~ #line 8 "
-~ #line 9 "
-exit 3

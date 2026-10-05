@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Zero plus one is one for integers.
-# @from   landau: *Foundations of Analysis*, Ch. 1
+# @from   landau — *Foundations of Analysis*, Ch. 1
 # @tier   derived
 
 # @means  0 + 1 = 1.

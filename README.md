@@ -24,7 +24,7 @@
   <a href="https://github.com/flooooooooooow/flow/actions/workflows/ci.yml"><img src="https://github.com/flooooooooooow/flow/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://flooooooooooow.github.io/flow/"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-0A7EA4" alt="Docs"></a>
   <a href="https://github.com/flooooooooooow/flow/releases"><img src="https://img.shields.io/github/v/release/flooooooooooow/flow?include_prereleases&sort=semver" alt="Release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Proprietary-1f6feb.svg" alt="License: Proprietary"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
   <a href="https://discord.gg/YK7VaHy24T"><img src="https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
@@ -35,16 +35,16 @@
   <a href="tests"><img src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fraw.githubusercontent.com%2Fflooooooooooow%2Fflow%2Fmain%2Fdocs%2Fgenerated%2Frepository-stats.json&query=%24.badges.tests&label=tests&color=2da44e" alt="Tests"></a>
 </p>
 
-Flow is a statically typed, compiled systems language built around one idea: you describe how a system evolves through time, and that description is the program. The production path is the self-hosted `flowc` compiler with a portable C backend. Algebraic effects, dynamics and control DSLs, verification, advanced stdlib domains, and alternate backends ship as explicitly Experimental surfaces until they are promoted.
+Flow is a statically typed, compiled systems language. Flow 1.0 freezes a deliberately small production core around the self-hosted `flowc` compiler and portable C backend; algebraic effects, dynamics/control DSLs, verification, advanced stdlib domains and alternate backends continue to ship as explicitly Experimental surfaces until they are promoted.
 
 | | |
 |--|--|
-| Version | 2.0.0 |
+| Version | 1.0.2 |
 | Install | `brew tap flooooooooooow/flow && brew install flow` |
-| License | [Proprietary](LICENSE) from 2.0.0; [MIT](LICENSE-1.x-MIT) through 1.0.2 |
+| License | [MIT](LICENSE) |
 | Cite | [CITATION.cff](CITATION.cff) |
 
-The compatibility promise is defined in [STABILITY.md](STABILITY.md). Linux x86-64 and macOS arm64 are the Tier-1 platforms; every published release is qualified from the exact tag before GitHub Release publication.
+Flow 1.0's compatibility promise is defined in [STABILITY.md](STABILITY.md). Linux x86-64 and macOS arm64 are the initial Tier-1 platforms; every published `v1.*` release is qualified from the exact tag before GitHub Release publication.
 
 ## Quickstart
 
@@ -122,7 +122,7 @@ cd flow
 ./flow run examples/basics/hello_world.flow
 ```
 
-The compiler needs a conforming C11 toolchain and nothing else: flowc builds from checked-in C. The MLIR backend also needs `mlir-opt` and `mlir-translate` (LLVM). The canonical 1.0 execution host is the C toolchain.
+The production compiler path requires a conforming C11 toolchain. Python 3.9+ is retained for the reference/bootstrap compiler and development tooling, not as the canonical 1.0 execution host.
 
 Optional: `./flow install` puts `flow` on your PATH (`~/.local/bin`).
 
@@ -280,7 +280,7 @@ extern {
 | [Vision](VISION.md) | Why Flow exists |
 | [Roadmap](ROADMAP.md) | Near-term work |
 | [Changelog](docs/project/CHANGELOG.md) | Version history |
-| [Self-hosting](docs/project/self-hosting.md) | `flowc` in [`compiler/`](compiler/) |
+| [Self-hosting](docs/project/self-hosting.md) | Stage-A `flowc` in [`compiler/`](compiler/) |
 | [Security](SECURITY.md) · [Conduct](CODE_OF_CONDUCT.md) · [Governance](GOVERNANCE.md) | Project policy |
 
 Site: [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/)
@@ -292,7 +292,8 @@ Site: [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/)
 | Path | Contents |
 |------|----------|
 | [`flow`](flow) | CLI entry point |
-| [`compiler/`](compiler/) | `flowc`, the self-hosted compiler |
+| [`src/flow/`](src/flow/) | Python-host compiler (parser, type checker, C/MLIR/Metal backends) |
+| [`compiler/`](compiler/) | Self-hosted Stage-A `flowc` |
 | [`lib/stdlib/`](lib/stdlib/) | Standard library |
 | [`runtime/`](runtime/) | Native runtime (graphics, audio, recording) |
 | [`examples/`](examples/) | Domain demos and verify corpus |
@@ -307,67 +308,72 @@ Site: [flooooooooooow.github.io/flow](https://flooooooooooow.github.io/flow/)
 
 ## Self-hosting status
 
-The self-hosted compiler (`compiler/src/`, written in Flow) is the only C
-compiler. `./flow run`, `compile`, `test`, `gfx` and the other C commands all
-use it. It compiles itself end to end: three
+The self-hosted compiler (`compiler/src/`, written in Flow) is the default host
+for `./flow run` and `./flow compile`. It compiles itself end to end: three
 consecutive generation fixed-points are byte-identical, and a clean checkout
 needs no Python to build a working compiler.
 
-The Python C backend is retired. On the repository corpus flowc matches it on
-1037 of 1053 programs with `main()` and builds 6 that it could not
-([report](compiler/corpus_parity/report.txt)). `FLOW_HOST=python` now stops
-with an error. The MLIR backend is Flow too: `compiler/src/mlirgen.flow`
-writes the MLIR text and shell scripts drive mlir-opt, mlir-translate and
-clang, so `flow mlir`, `mlir-run` and `jit` run without Python. The Python
-compiler package `src/flow` is deleted. `flow python` still calls setuptools
-to build the wheel. See
-[docs/project/self-hosting.md](docs/project/self-hosting.md) and
-[compiler/README.md](compiler/README.md).
+The bootstrap language suite (`tests/lang/`, 90 `.flow` files) is the
+regression target for self-hosted parity. Current result, run with
+`FLOWC_IN`/`FLOWC_OUT` environment variables:
+
+```
+pass=79  fail=11
+```
+
+The 11 failures fall into five categories:
+
+| Category | Tests | Root cause |
+|----------|-------|------------|
+| DSL parse failures | `test_effects`, `test_hybrid_events`, `test_time_blocks` | `effect`, `capability`, `flow`, `state`, `solver`, `evolves`, `every` keywords are not parsed |
+| Generic monomorphization | `test_generics`, `test_generic_channels` | Parser accepts generic syntax but the monomorphizer is missing; `struct Box<T>` emits `T value` instead of a concrete type |
+| Overload resolution | `test_unsigned_ints` | Type checker rejects duplicate function names; overload selection is not implemented |
+| Closure snapshot semantics | `test_closures` | Captured variables are hoisted to globals without snapshotting the value at closure creation time |
+| Stdlib codegen | `test_gif_encoder`, `test_fir_opts` | LZW encoder emits a variable used as a function call; FIR inline-pure bonus constant gets a float-to-int truncation |
+| External C headers | `test_c_import_julia`, `test_c_import_python` | System headers for Julia and Python embedding are not available in the test environment |
+
+The Python-host compiler (`src/flow/`, 46,695 lines) remains the full language
+surface: generics, effects, MLIR, GPU, DSLs, and all advanced type checking.
+The self-hosted compiler (`compiler/src/`, 10,863 lines) covers the subset
+needed to compile itself plus a growing set of language features. See
+[docs/project/self-hosting.md](docs/project/self-hosting.md) for the full plan
+and [compiler/README.md](compiler/README.md) for the supported syntax list.
 
 ---
 
 ## Build and develop
 
 ```bash
-./flow run <file>              # Compile and run with flowc
+./flow run <file>              # Compile and run (default host: flowc)
 ./flow compile <file>          # Compile only → build/
+FLOW_HOST=python ./flow run <file>   # Full Python-host language surface
 ./flow test                    # Test suite (strict by default)
 ./flow test --strict --tier2   # + transpile / clang compile checks
 ./flow fmt <file>              # Format
 ./flow repl                    # Interactive mode
-./flow lsp                     # Language server (native, tools/lsp/main.flow; ./flow-lsp runs it too)
+./flow lsp                     # Language server
 ./flow gfx <file>              # Compile and run with graphics
 ./flow mlir <file>             # Emit MLIR (requires LLVM/MLIR tools)
 ```
 
-`FLOWC_BIN=<path>` picks a flowc binary. `./flow tool compiler/scripts/flowc_emit.flow IN.flow OUT.c` writes C only.
+Host switch: `FLOW_HOST=flowc|python|auto` (default `flowc` for `run` / `compile`).
 
 ```bash
 # Fuzz the compiler
-./flow tool tests/fuzz/run.flow --seconds 30
+python3 tests/fuzz/run_fuzz.py --seconds 30
 
 # Regenerate examples compile-status table
-./flow tool verify_examples
+python3 scripts/verify_examples.py
 ```
 
 ### Editor support
 
 ```bash
-./flow tool scripts/publish_vscode_extension.flow --install
+./scripts/publish_vscode_extension.sh --install
 # Or: cursor --install-extension quilio.flow-language
 ```
 
 Extension source: `third_party/integrations/vscode/flow-language/`.
-
-Other editor/tooling integrations:
-
-- Vim / Neovim filetype, syntax and `flow lsp` bootstrap: `third_party/integrations/vim-flow/`
-- Helix language-server configuration: `third_party/integrations/helix/`
-- Zed integration handoff: `third_party/integrations/zed/`
-- Tree-sitter grammar and highlight queries: `third_party/integrations/tree-sitter-flow/`
-- Pygments lexer plugin: `third_party/integrations/pygments-flow/`
-
-External recognition status and upstream acceptance criteria: [docs/project/ecosystem-recognition.md](docs/project/ecosystem-recognition.md).
 
 ### Python wheels from Flow
 
@@ -403,7 +409,7 @@ Counted from tracked files by CI so the numbers match the tree.
 | **Verify corpus** | 1,078 | 18,715 |
 | **Tests (`.py` + `.flow`)** | 455 | 48,539 |
 | **Application programs** | 8 | 1,537 |
-| **Registry packages** | 19 | - |
+| **Registry packages** | 19 | — |
 | **Documentation pages** | 173 | 39,462 |
 
 <details>
@@ -426,14 +432,14 @@ Counted from tracked files by CI so the numbers match the tree.
 
 </details>
 
-*Generated by CI from tracked files at `8cd159414c4a`. Proof documents: 1,080. [Raw JSON](docs/generated/repository-stats.json) · [Flow counter](scripts/tools/repo_stats/main.flow).*
+*Generated by CI from tracked files at `8cd159414c4a`. Proof documents: 1,080. [Raw JSON](docs/generated/repository-stats.json) · [Flow counter](scripts/tools/repo_stats/main.flow) · [Python fallback](scripts/update_repo_stats.py).*
 <!-- repo-stats:end -->
 
 ---
 
 ## Contributing
 
-Flow is built with humans directing design and agents writing a lot of the code. See [CONTRIBUTING.md](CONTRIBUTING.md) for decision authority, the [agentic loop](docs/project/agentic-loop.md) for how autonomous work moves through the repo, and the [repository structure contract](docs/project/repository-structure.md) for canonical ownership.
+Flow is built with humans directing design and agents writing a lot of the code. See [CONTRIBUTING.md](CONTRIBUTING.md) for decision authority and how to land changes.
 
 Priorities: [ROADMAP.md](ROADMAP.md) · [docs/NEXT.md](docs/NEXT.md).
 
@@ -441,13 +447,7 @@ Priorities: [ROADMAP.md](ROADMAP.md) · [docs/NEXT.md](docs/NEXT.md).
 
 ## License
 
-Version 2.0.0 and later are proprietary. All rights reserved. See
-[LICENSE](LICENSE).
-
-Version 1.0.2 and all earlier versions remain available under the MIT License.
-See [LICENSE-1.x-MIT](LICENSE-1.x-MIT).
-
-For licensing inquiries, contact abhishek.shivakumar@gmail.com.
+MIT. See [LICENSE](LICENSE).
 
 ---
 

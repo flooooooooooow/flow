@@ -2,13 +2,13 @@
 
 *A straight line falling on parallel straight lines makes alternate angles equal.*
 
-**Source.** euclid: Elements, Book I, Proposition 29
+**Source.** euclid — Elements, Book I, Proposition 29
 
-## Derived fact 1: A straight line falling on parallel straight lines makes alternate angles equal
+## Derived fact 1 — A straight line falling on parallel straight lines makes alternate angles equal
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 29: alternate angles are equal when a transversal crosses parallels · **Derived fact**
 
-*Source: euclid: Elements, Book I, Proposition 29*
+*Source: euclid — Elements, Book I, Proposition 29*
 
 *Built on: proposition 14: lines with interior angles less than two right angles meet, for Book I of the Elements in on the Euclidean plane, proposition 15: vertical angles are equal, for Book I of the Elements in on the Euclidean plane*
 

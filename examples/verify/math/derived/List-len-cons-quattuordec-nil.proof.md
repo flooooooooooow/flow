@@ -2,9 +2,9 @@
 
 *Quattuordecuple cons ending in nil has length fourteen.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len of fourteen cons ending in nil equals 14
+## Derived fact 1 — len of fourteen cons ending in nil equals 14
 
 **Coordinate.** List · length · quattuordecuple cons nil has length fourteen · **Derived fact**
 

@@ -1,6 +1,0 @@
-# expect: 'LIMIT' is not a function
-const LIMIT: i32 = 3
-
-function main() -> i32 {
-    return LIMIT(1)
-}

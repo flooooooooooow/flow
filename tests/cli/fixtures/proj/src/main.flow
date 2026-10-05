@@ -1,4 +1,0 @@
-function main() -> i32 {
-    println("project main")
-    return 0
-}

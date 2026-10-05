@@ -2,9 +2,9 @@
 
 *Equal rationals can be subtracted from the left.*
 
-**Source.** landau: *Foundations of Analysis*
+**Source.** landau — *Foundations of Analysis*
 
-## Derived fact 1: r + p = r + q implies p = q
+## Derived fact 1 — r + p = r + q implies p = q
 
 **Coordinate.** Rat · addition · left cancellation holds · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that left cancellation holds for addition on Rat. |  |  |
-| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose r + p  equals  r + q. |  |  |
 | ④ | We invoke the derived fact governing addition on Rat: right cancellation holds, for addition on Rat (instantiated for p, q, r). |  |  |
 | ⑤ | We invoke the derived fact governing addition on Rat: order does not matter, for addition on Rat (instantiated for r, p). |  |  |

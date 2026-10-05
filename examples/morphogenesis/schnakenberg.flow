@@ -36,7 +36,7 @@
 #   J. Schnakenberg, J. Theor. Biol. 81:389-400 (1979).
 #
 # Run (headless, gated):
-#   ./flow record examples/morphogenesis/schnakenberg.flow \
+#   FLOW_HOST=python ./flow record examples/morphogenesis/schnakenberg.flow \
 #       --frames 4 --out /tmp/rec_schnakenberg
 # Run (windowed):
 #   ./flow gfx examples/morphogenesis/schnakenberg.flow

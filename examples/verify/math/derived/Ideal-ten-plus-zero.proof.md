@@ -2,9 +2,9 @@
 
 *Ten plus zero is ten in an ideal witness.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.1
+**Source.** dummit-foote — *Abstract Algebra*, §7.1
 
-## Derived fact 1: 10 + 0 = 10 in an ideal
+## Derived fact 1 — 10 + 0 = 10 in an ideal
 
 **Coordinate.** Ideal · addition · ten plus zero in ideal · **Derived fact**
 

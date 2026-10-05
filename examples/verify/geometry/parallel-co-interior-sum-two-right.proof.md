@@ -2,9 +2,9 @@
 
 *Co-interior angles on parallel lines sum to two right angles.*
 
-**Source.** euclid: Elements, Book I, Proposition 29
+**Source.** euclid — Elements, Book I, Proposition 29
 
-## Derived fact 1: co-interior alpha plus beta equals two right angles
+## Derived fact 1 — co-interior alpha plus beta equals two right angles
 
 **Coordinate.** the Euclidean plane · parallel lines · co-interior angles sum to two right · **Derived fact**
 

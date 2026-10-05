@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-v
 # @means  If a first is to a second as a third is to a fourth, and the third is to a fourth as a fifth is to a sixth, the first is to the sixth as the third is to the eighth.
-# @from   euclid: Elements, Book V, Proposition 23
+# @from   euclid — Elements, Book V, Proposition 23
 # @tier   derived
 # @needs  «Geometry» «Euclid Book V» «Proposition 19: ex aequali proportion in the second form», «Geometry» «Euclid Book V» «Proposition 20: perturbed proportion implies ex aequali»
 

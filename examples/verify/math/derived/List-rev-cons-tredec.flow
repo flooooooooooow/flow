@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Reversing a tredecuple cons list.
-# @from   church: https://en.wikipedia.org/wiki/Reverse_(list)
+# @from   church — https://en.wikipedia.org/wiki/Reverse_(list)
 # @tier   derived
 
 # @means  rev of thirteen cons ending in nil reverses element order.

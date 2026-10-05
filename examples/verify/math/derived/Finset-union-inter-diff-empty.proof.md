@@ -2,9 +2,9 @@
 
 *Union intersect difference with empty is the intersection.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: ((s ∪ t) ∩ s) \ empty = (s ∪ t) ∩ s
+## Derived fact 1 — ((s ∪ t) ∩ s) \ empty = (s ∪ t) ∩ s
 
 **Coordinate.** Finset · difference · union intersect diff empty derived · **Derived fact**
 

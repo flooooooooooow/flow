@@ -1,32 +1,21 @@
-Flow Programming Language
+MIT License
 
-Copyright (c) 2025-2026 Abhishek Shivakumar. All rights reserved.
+Copyright (c) 2025–2026 Flow Language contributors
 
-This license applies to Flow version 2.0.0 and all later versions.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-Version 1.0.2 and all earlier versions were released under the MIT License and
-remain available under those terms. See LICENSE-1.x-MIT. Rights already granted
-under the MIT License for those versions are not affected by this license.
-
-The software as of version 2.0.0 and later, including its source code,
-documentation, and all associated files (the "Software"), is proprietary and
-confidential. The Software is the exclusive property of Abhishek Shivakumar
-("the Owner").
-
-No license or right, express or implied, is granted to any person or entity to
-use, copy, modify, merge, publish, distribute, sublicense, sell, or create
-derivative works of the Software, in whole or in part, without the prior written
-permission of the Owner.
-
-Unauthorized copying, distribution, modification, public display, or public
-performance of the Software, by any means, is strictly prohibited and may
-violate applicable law.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-OWNER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-For licensing inquiries, contact: abhishek.shivakumar@gmail.com
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

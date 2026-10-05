@@ -1,9 +1,0 @@
-[92m✓ Created flow.toml[0m
-[92m✓ Created src/main.flow[0m
-[92m✓ Created .gitignore[0m
-
-[1mProject 'demo' initialized![0m
-
-Next steps:
-  [94mcd demo[0m
-  [94mflow run src/main.flow[0m

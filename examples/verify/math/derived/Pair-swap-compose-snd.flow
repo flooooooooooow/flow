@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Swapping twice restores the second projection.
-# @from   church: https://en.wikipedia.org/wiki/Product_type
+# @from   church — https://en.wikipedia.org/wiki/Product_type
 # @tier   derived
 
 # @means  snd(swap(swap(pair(a, b)))) = b.

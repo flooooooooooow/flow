@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Join above meet is preserved under transitivity.
-# @from   davey-priestley: *Introduction to Lattices and Order*
+# @from   davey-priestley — *Introduction to Lattices and Order*
 # @tier   derived
 
 # @means  If meet(a, b) <= c and join(a, b) >= c then join(a, b) >= meet(a, b).

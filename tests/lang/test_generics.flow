@@ -6,8 +6,10 @@
 # the same signature on demand, so explicit instantiations are checked and
 # these programs are strict-clean.
 #
-# The inferred generic struct literal, `let b: Box<i32> = Box { value: 42 }`,
-# is covered by tests/lang/test_generic_struct_infer.flow (#954, #1042).
+# Still unsupported, and therefore absent below: the *inferred* generic struct
+# literal, `let b: Box<i32> = Box { value: 42 }`. Strict mode reports
+# "field 'value' expects T, got i32" because the literal carries no type
+# argument. Written as `Box<i32> { value: 42 }` it checks and runs.
 #
 # Supersedes (behavioral parts of):
 #   tests/unit/test_c_generator_abi.py::test_e2e_generic_box_after_mono

@@ -1,8 +1,0 @@
-
-        function f(b: bool) -> i32 {
-            match b {
-                true => { return 1 }
-            }
-            return -1
-        }
-        

@@ -2,9 +2,9 @@
 
 *Difference of a set with itself is empty.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: s \ s = empty
+## Derived fact 1 — s \ s = empty
 
 **Coordinate.** Finset · difference · difference with self is empty · **Derived fact**
 

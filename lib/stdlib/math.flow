@@ -30,7 +30,7 @@ export function divide(a: f32, b: f32) -> f32 {
 }
 
 # Integer-power via repeated multiply; supports negative exponents as reciprocal.
-# Exponent is treated as a whole number (loop count) rather than a general real power.
+# Exponent is treated as a whole number (loop count), not a general real power.
 export function power(base: f32, exponent: f32) -> f32 {
     if exponent == 0.0 {
         return 1.0

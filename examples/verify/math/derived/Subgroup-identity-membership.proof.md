@@ -2,9 +2,9 @@
 
 *Every subgroup contains the group identity.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §2.2
+**Source.** dummit-foote — *Abstract Algebra*, §2.2
 
-## Derived fact 1: 1 in H for every subgroup H
+## Derived fact 1 — 1 in H for every subgroup H
 
 **Coordinate.** Subgroup · membership · subgroups contain the identity · **Derived fact**
 

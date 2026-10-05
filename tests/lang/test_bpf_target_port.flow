@@ -1,5 +1,5 @@
 # Test for compiler/src/bpf_target.flow.
-# Run with: ./flow run tests/lang/test_bpf_target_port.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_bpf_target_port.flow
 
 import "compiler/src/bpf_target.flow"
 

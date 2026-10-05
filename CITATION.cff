@@ -7,9 +7,9 @@ authors:
     given-names: Abhishek
 repository-code: "https://github.com/flooooooooooow/flow"
 url: "https://flooooooooooow.github.io/flow/"
-license: LicenseRef-Proprietary
-version: 2.0.0
-date-released: "2026-09-27"
+license: MIT
+version: 1.0.2
+date-released: "2026-08-24"
 keywords:
   - programming-language
   - algebraic-effects

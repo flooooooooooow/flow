@@ -2,9 +2,9 @@
 
 *Twenty-two plus zero is twenty-two in an ideal witness.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.1
+**Source.** dummit-foote — *Abstract Algebra*, §7.1
 
-## Derived fact 1: 22 + 0 = 22 in an ideal
+## Derived fact 1 — 22 + 0 = 22 in an ideal
 
 **Coordinate.** Ideal · addition · twenty two plus zero in ideal · **Derived fact**
 

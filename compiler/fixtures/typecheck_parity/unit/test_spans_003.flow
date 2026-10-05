@@ -1,8 +1,0 @@
-
-        function total(values: span<f32>) -> f32 { return values[0] }
-        function main() -> i32 {
-            let p: ptr<f32> = null
-            let t: f32 = total(p)
-            return 0
-        }
-        

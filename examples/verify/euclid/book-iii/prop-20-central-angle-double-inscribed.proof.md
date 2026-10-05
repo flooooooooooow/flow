@@ -2,13 +2,13 @@
 
 *In a circle the angle at the center is double the angle at the circumference when the angles stand on the same arc.*
 
-**Source.** euclid: Elements, Book III, Proposition 20
+**Source.** euclid — Elements, Book III, Proposition 20
 
-## Derived fact 1: In a circle the angle at the center is double the angle at the circumference when the angles stand on the same arc
+## Derived fact 1 — In a circle the angle at the center is double the angle at the circumference when the angles stand on the same arc
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 20: the central angle is double the inscribed angle on the same arc · **Derived fact**
 
-*Source: euclid: Elements, Book III, Proposition 20*
+*Source: euclid — Elements, Book III, Proposition 20*
 
 *Built on: proposition 32: exterior angle equals sum of remote interior angles, for Book I of the Elements in on the Euclidean plane*
 

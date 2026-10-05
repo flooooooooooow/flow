@@ -2,9 +2,9 @@
 
 *Twenty-eight plus one is twenty-nine.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 28 + 1 = 29
+## Derived fact 1 — 28 + 1 = 29
 
 **Coordinate.** the natural numbers · addition · twenty eight plus one is twenty nine · **Derived fact**
 

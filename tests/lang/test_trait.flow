@@ -2,7 +2,7 @@
 # The Python compiler handles full trait/impl semantics.
 # The self-hosted parser skips them so files containing traits
 # can still be parsed without errors.
-# Run with: ./flow run tests/lang/test_trait.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_trait.flow
 
 extern {
     function puts(s: string) -> i32

@@ -1,3 +1,0 @@
-shader fill dark {
-    let u = uv.x
-}

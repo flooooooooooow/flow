@@ -2,9 +2,9 @@
 
 *An inscribed angle on a minor arc is acute.*
 
-**Source.** euclid: Elements, Book III, Proposition 20
+**Source.** euclid — Elements, Book III, Proposition 20
 
-## Derived fact 1: angle APB is less than one right angle on minor arc AB
+## Derived fact 1 — angle APB is less than one right angle on minor arc AB
 
 **Coordinate.** the Euclidean plane · circle · inscribed on minor arc is acute · **Derived fact**
 

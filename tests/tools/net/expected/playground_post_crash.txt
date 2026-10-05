@@ -1,7 +1,0 @@
-HTTP/1.0 422 Unprocessable Entity
-Content-Type: application/json; charset=utf-8
-Access-Control-Allow-Origin: http://127.0.0.1:8777
-Access-Control-Allow-Methods: POST, OPTIONS, GET
-Access-Control-Allow-Headers: Content-Type
-
-{"ok": false, "mode": "native-local", "exit_code": -6, "stdout": "", "stderr": "", "c_preview": "<C>"}

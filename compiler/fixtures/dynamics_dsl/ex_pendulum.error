@@ -1,1 +1,0 @@
-represent linear for 'Pendulum': linearization coefficients required (operating point at {'angle': 0.0, 'velocity': 0.0} was given, but automatic Jacobian linearization is not yet implemented); supply explicit A (and optional B/C) matrices in the represent linear block, e.g. `A 0.0 1.0 -9.81 0.0`

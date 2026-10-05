@@ -2,13 +2,13 @@
 
 *If a first is to a second as a third is to a fourth, any equimultiples of them are in the same ratio.*
 
-**Source.** euclid: Elements, Book V, Proposition 4
+**Source.** euclid — Elements, Book V, Proposition 4
 
-## Derived fact 1: If a first is to a second as a third is to a fourth, any equimultiples of them are in the same ratio
+## Derived fact 1 — If a first is to a second as a third is to a fourth, any equimultiples of them are in the same ratio
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 4: equimultiples preserve proportion · **Derived fact**
 
-*Source: euclid: Elements, Book V, Proposition 4*
+*Source: euclid — Elements, Book V, Proposition 4*
 
 *Built on: proposition 1: equimultiples of equimultiples are equimultiple of the originals, for Euclid Book V on the Euclidean plane*
 

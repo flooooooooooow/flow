@@ -2,13 +2,13 @@
 
 *If ABCD is a parallelogram and BE is a parallelogram about the diameter, the complement CD is such that the whole is to the complement as the other about the diameter is to CD.*
 
-**Source.** euclid: Elements, Book VI, Proposition 32
+**Source.** euclid — Elements, Book VI, Proposition 32
 
-## Derived fact 1: If ABCD is a parallelogram and BE is a parallelogram about the diameter, the complement CD is such that the whole is to the complement as the other about the diameter is to CD
+## Derived fact 1 — If ABCD is a parallelogram and BE is a parallelogram about the diameter, the complement CD is such that the whole is to the complement as the other about the diameter is to CD
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 32: complements with an applied parallelogram relate by duplicate ratio · **Derived fact**
 
-*Source: euclid: Elements, Book VI, Proposition 32*
+*Source: euclid — Elements, Book VI, Proposition 32*
 
 *Built on: proposition 24: parallelograms about a diameter are similar to the whole and to one another, for Euclid Book VI on the Euclidean plane, proposition 31: similar parallelograms are as the duplicate ratio of homologous sides, for Euclid Book VI on the Euclidean plane*
 

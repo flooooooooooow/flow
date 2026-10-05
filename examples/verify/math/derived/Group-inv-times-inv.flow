@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Inverse times inverse gives identity in a group.
-# @from   dummit-foote: *Abstract Algebra*, §1.1
+# @from   dummit-foote — *Abstract Algebra*, §1.1
 # @tier   derived
 
 # @means  inv(a) * inv(a) = 1 when a * inv(a) = 1.

@@ -2,13 +2,13 @@
 
 *If four magnitudes are proportional, they are also proportional alternando.*
 
-**Source.** euclid: Elements, Book V, Proposition 7
+**Source.** euclid — Elements, Book V, Proposition 7
 
-## Derived fact 1: If four magnitudes are proportional, they are also proportional alternando
+## Derived fact 1 — If four magnitudes are proportional, they are also proportional alternando
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 7: proportional magnitudes satisfy alternando · **Derived fact**
 
-*Source: euclid: Elements, Book V, Proposition 7*
+*Source: euclid — Elements, Book V, Proposition 7*
 
 *Built on: proposition 4: equimultiples preserve proportion, for Euclid Book V on the Euclidean plane, proposition 6: magnitudes with the same ratio to a third are proportional to one another, for Euclid Book V on the Euclidean plane*
 

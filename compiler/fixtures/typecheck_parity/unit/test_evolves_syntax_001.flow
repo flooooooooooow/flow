@@ -1,9 +1,0 @@
-
-function main() -> i32 {
-    let state: f64 = 1.0
-    let evolves: f64 = state * 2.0
-    if evolves > 1.0 {
-        return 0
-    }
-    return 1
-}

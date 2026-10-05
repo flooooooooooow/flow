@@ -2,9 +2,9 @@
 
 *Dual meet join absorption witness.*
 
-**Source.** davey-priestley: *Introduction to Lattices and Order*
+**Source.** davey-priestley — *Introduction to Lattices and Order*
 
-## Derived fact 1: meet(b, join(b, a)) = meet(b, a)
+## Derived fact 1 — meet(b, join(b, a)) = meet(b, a)
 
 **Coordinate.** Order · lattice · dual meet absorbs join witness · **Derived fact**
 

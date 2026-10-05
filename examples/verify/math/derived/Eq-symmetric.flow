@@ -1,10 +1,10 @@
 # @module examples.verify.math.derived
 # @means  If two naturals are equal, the equality reads either way.
-# @from   leibniz: https://en.wikipedia.org/wiki/Identity_(mathematics)#Equality
+# @from   leibniz — https://en.wikipedia.org/wiki/Identity_(mathematics)#Equality
 # @tier   derived
 
 # @means  Equality reverses: from x = y we obtain y = x.
-# @from   leibniz: https://en.wikipedia.org/wiki/Symmetric_relation
+# @from   leibniz — https://en.wikipedia.org/wiki/Symmetric_relation
 # @tier   derived
 # @needs  «Eq» «equality» «everything equals itself»
 

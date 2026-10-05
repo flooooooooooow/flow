@@ -1,2 +1,0 @@
-[0;34mℹ️  Generating GPU shaders from @ROOT@/tests/gpu/programs/bad_import.flow (metal)...[0m
-Error: error: could not resolve import '.lib.does_not_exist'

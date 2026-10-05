@@ -2,9 +2,9 @@
 
 *Intersection distributes over union against empty.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: (a ∪ b) ∩ empty = empty
+## Derived fact 1 — (a ∪ b) ∩ empty = empty
 
 **Coordinate.** Finset · intersection · intersection with empty after union annihilates · **Derived fact**
 

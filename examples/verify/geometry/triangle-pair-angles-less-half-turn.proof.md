@@ -2,9 +2,9 @@
 
 *Any pair of triangle angles sums to less than half a turn.*
 
-**Source.** euclid: Elements, Book I, Proposition 17
+**Source.** euclid — Elements, Book I, Proposition 17
 
-## Derived fact 1: angle A plus angle B is less than two right angles
+## Derived fact 1 — angle A plus angle B is less than two right angles
 
 **Coordinate.** the Euclidean plane · triangle · pair angles less half turn · **Derived fact**
 

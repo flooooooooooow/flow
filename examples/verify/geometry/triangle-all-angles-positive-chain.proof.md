@@ -2,9 +2,9 @@
 
 *All three triangle angles are positive, chained witness.*
 
-**Source.** euclid: Elements, Book I, Proposition 32
+**Source.** euclid — Elements, Book I, Proposition 32
 
-## Derived fact 1: angles A, B, and C are each greater than zero
+## Derived fact 1 — angles A, B, and C are each greater than zero
 
 **Coordinate.** the Euclidean plane · triangle · all angles positive chain · **Derived fact**
 

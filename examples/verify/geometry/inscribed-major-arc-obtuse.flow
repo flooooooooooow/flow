@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  An inscribed angle on a major arc exceeds one right angle.
-# @from   euclid: Elements, Book III, Proposition 20
+# @from   euclid — Elements, Book III, Proposition 20
 # @tier   derived
 
 # @means  angle APB exceeds one right angle on major arc AB.

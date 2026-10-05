@@ -1,6 +1,6 @@
 # @module verify.Subgroup
 # @means  Subgroup axioms as a subset closed under multiplication and inverses.
-# @from   dummit-foote: *Abstract Algebra*, §2.2
+# @from   dummit-foote — *Abstract Algebra*, §2.2
 # @tier   definitions-only
 
 # @means  A subgroup contains the group identity.

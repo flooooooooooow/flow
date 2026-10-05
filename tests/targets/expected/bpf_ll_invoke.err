@@ -1,1 +1,0 @@
-error: bpfel does not support exception/unwind IR construct: invoke

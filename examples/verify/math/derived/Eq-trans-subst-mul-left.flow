@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Transitive equality preserves left multiplication.
-# @from   leibniz: https://en.wikipedia.org/wiki/Substitution_(logic)
+# @from   leibniz — https://en.wikipedia.org/wiki/Substitution_(logic)
 # @tier   derived
 
 # @means  If a = b and b = c then d * a = d * c.

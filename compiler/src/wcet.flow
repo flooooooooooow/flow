@@ -1,8 +1,9 @@
 # @module flowc.wcet
-# @means  WCET analysis tables: type size lookup and statement
-#         cost model, from the retired wcet_analysis.py. The analysis
-#         itself (`flow analyze --wcet --stack-depth`) is
-#         tools/analyze/main.flow.
+# @means  WCET analysis helpers: type size lookup and statement
+#         cost model. Port of pure lookup functions from
+#         wcet_analysis.py. The Python original parses the AST and
+#         collects function info; this port exposes the type size
+#         and cost model lookups.
 
 extern {
     function strcmp(a: string, b: string) -> i32

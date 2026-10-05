@@ -1,8 +1,0 @@
-@gpu
-function k(n: i32) -> void {
-    let v: vec = 0
-}
-
-@lifetime(callback)
-function cb() -> void {
-}

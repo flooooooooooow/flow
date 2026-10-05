@@ -2,9 +2,9 @@
 
 *Ring homomorphisms send zero to zero.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.3
+**Source.** dummit-foote — *Abstract Algebra*, §7.3
 
-## Derived fact 1: f(0) = 0
+## Derived fact 1 — f(0) = 0
 
 **Coordinate.** RingHom · zero · zero maps to zero · **Derived fact**
 

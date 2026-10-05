@@ -2,13 +2,13 @@
 
 *If one magnitude is the same multiple of another that a part subtracted is of a part subtracted, the remainder is the same multiple of the remainder.*
 
-**Source.** euclid: Elements, Book V, Proposition 5
+**Source.** euclid — Elements, Book V, Proposition 5
 
-## Derived fact 1: If one magnitude is the same multiple of another that a part subtracted is of a part subtracted, the remainder is the same multiple of the remainder
+## Derived fact 1 — If one magnitude is the same multiple of another that a part subtracted is of a part subtracted, the remainder is the same multiple of the remainder
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 5: the remainder is the same multiple of the remainder · **Derived fact**
 
-*Source: euclid: Elements, Book V, Proposition 5*
+*Source: euclid — Elements, Book V, Proposition 5*
 
 *Built on: proposition 3: the difference of equimultiples is an equimultiple of the difference, for Euclid Book V on the Euclidean plane*
 

@@ -1,6 +1,0 @@
-# expect: Unary '-' requires numeric type, got string
-function main() -> i32 {
-    let s: string = "a"
-    let t: string = -s
-    return 0
-}

@@ -1,7 +1,0 @@
-
-        function boom(n: i32) -> i32 {
-            if n <= 0 { return 0 }
-            return boom(n - 1)
-        }
-        function main() -> i32 { return boom(3) }
-        

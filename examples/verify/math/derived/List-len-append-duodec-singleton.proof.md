@@ -2,9 +2,9 @@
 
 *Appending twelve singletons gives length twelve.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len of twelve appended singletons equals 12
+## Derived fact 1 — len of twelve appended singletons equals 12
 
 **Coordinate.** List · length · append of twelve singletons has length twelve · **Derived fact**
 

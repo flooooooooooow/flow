@@ -2,9 +2,9 @@
 
 *Five plus zero is five in an ideal witness.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.1
+**Source.** dummit-foote — *Abstract Algebra*, §7.1
 
-## Derived fact 1: 5 + 0 = 5 in an ideal
+## Derived fact 1 — 5 + 0 = 5 in an ideal
 
 **Coordinate.** Ideal · addition · five plus zero in ideal · **Derived fact**
 

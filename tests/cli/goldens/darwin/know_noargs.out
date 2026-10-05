@@ -1,3 +1,0 @@
-usage: flow know [-h] [--lint-duplicates] [path]
-
-Look up a Flow Claim Path, e.g. Nat/+.zero-right or verify.Nat/+.zero-right

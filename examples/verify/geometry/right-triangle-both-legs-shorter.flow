@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  Both legs of a right triangle are shorter than the hypotenuse.
-# @from   euclid: Elements, Book I, Proposition 47
+# @from   euclid — Elements, Book I, Proposition 47
 # @tier   derived
 
 # @means  b < c when a < c in a right triangle.

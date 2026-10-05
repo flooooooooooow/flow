@@ -2,9 +2,9 @@
 
 *Reverse preserves length of a quindecuple cons list.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len(rev(quindecuple cons ending in nil)) = 15
+## Derived fact 1 — len(rev(quindecuple cons ending in nil)) = 15
 
 **Coordinate.** List · length · reverse of quindecuple cons has length fifteen · **Derived fact**
 

@@ -12,13 +12,13 @@ an hour. Later problems may take several sessions and need a platform runtime.
 List the challenge identifiers:
 
 ```bash
-./flow tool challenge_check list
+python3 challenges/flow-specific/check.py list
 ```
 
 Check one file:
 
 ```bash
-./flow tool challenge_check check F01 answer.flow
+python3 challenges/flow-specific/check.py check F01 answer.flow
 ```
 
 The checker performs two tests:
@@ -34,7 +34,7 @@ exit status decides whether the run passed.
 Target-specific challenges can be checked without launching their runtime:
 
 ```bash
-./flow tool challenge_check check F33 kernel.flow --syntax-only
+python3 challenges/flow-specific/check.py check F33 kernel.flow --syntax-only
 ```
 
 The machine-readable rules are stored in
@@ -67,7 +67,7 @@ clamp the result to `[0, 100]`.
 - Forbidden shortcut: writing the whole calculation as nested calls.
 - Pass: test raw values below, inside, and above the accepted range. Return a
   different nonzero code for each failed case.
-- Check: `./flow tool challenge_check check F01 answer.flow`
+- Check: `python3 challenges/flow-specific/check.py check F01 answer.flow`
 
 ### F02. Forked Statistics `**`
 
@@ -133,7 +133,7 @@ function.
   the input boundary.
 - Forbidden shortcut: aliases made with `type`.
 - Pass: both valid lookups return the expected records. Keep one rejected call
-  in a separate `.rejected.flow` note. The submitted file leaves it out.
+  in a separate `.rejected.flow` note, not in the submitted file.
 - Check: use challenge `F07`.
 
 ### F08. Dimensional Flight Plan `**`

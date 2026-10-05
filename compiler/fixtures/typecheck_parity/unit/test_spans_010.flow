@@ -1,4 +1,0 @@
-
-            function head(values: span<i32>) -> span<i32> { return values[0..2] }
-            function main() -> i32 { return 0 }
-            

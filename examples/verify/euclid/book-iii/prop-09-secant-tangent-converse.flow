@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-iii
 # @means  If from a point outside a circle two straight lines are drawn, one cutting the circle and one meeting it, and the rectangle on the whole and the exterior segment equals the square on the other, then the other is tangent.
-# @from   euclid: Elements, Book III, Proposition 9
+# @from   euclid — Elements, Book III, Proposition 9
 # @tier   derived
 # @needs  «Geometry» «Euclid Book III» «Proposition 8: the rectangle on a secant and its exterior segment equals the square on the tangent»
 

@@ -2,9 +2,9 @@
 
 *The apex median equals the apex angle bisector in an isosceles triangle.*
 
-**Source.** euclid: Elements, Book I, Proposition 5
+**Source.** euclid — Elements, Book I, Proposition 5
 
-## Derived fact 1: apex median coincides with apex bisector
+## Derived fact 1 — apex median coincides with apex bisector
 
 **Coordinate.** the Euclidean plane · isosceles triangle · median equals bisector at apex · **Derived fact**
 

@@ -1,5 +1,0 @@
-# expect: Variable 'w' is annotated with unknown type 'Widget', which is not declared in this scope
-function main() -> i32 {
-    let w: Widget = 1
-    return 0
-}

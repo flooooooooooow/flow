@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  Two interior angles determine the third in a triangle.
-# @from   euclid: Elements, Book I, Proposition 32
+# @from   euclid — Elements, Book I, Proposition 32
 # @tier   derived
 
 # @means  angle C equals two right angles minus angle A minus angle B.

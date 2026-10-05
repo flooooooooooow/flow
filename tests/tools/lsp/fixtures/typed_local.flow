@@ -1,5 +1,0 @@
-function main() -> i32 {
-    let n: i32 = 1
-    let m: i32 = n + 2
-    return m
-}

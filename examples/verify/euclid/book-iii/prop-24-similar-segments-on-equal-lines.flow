@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-iii
 # @means  Similar segments of circles on equal straight lines are equal to one another.
-# @from   euclid: Elements, Book III, Proposition 24
+# @from   euclid — Elements, Book III, Proposition 24
 # @tier   derived
 # @needs  «Geometry» «Euclid Book III» «Proposition 23: two unequal similar segments cannot stand on the same side of a line»
 

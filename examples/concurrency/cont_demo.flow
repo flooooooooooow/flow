@@ -1,4 +1,3 @@
-# effects-mode: permissive
 # One-shot C delimited-continuation scaffold demo.
 # Flow AST frames still cannot suspend mid-function; this proves the
 # runtime hook (flow_reset / flow_shift / flow_cont_resume) is linked.

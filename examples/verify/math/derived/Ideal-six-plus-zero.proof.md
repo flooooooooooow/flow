@@ -2,9 +2,9 @@
 
 *Six plus zero is six in an ideal witness.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.1
+**Source.** dummit-foote — *Abstract Algebra*, §7.1
 
-## Derived fact 1: 6 + 0 = 6 in an ideal
+## Derived fact 1 — 6 + 0 = 6 in an ideal
 
 **Coordinate.** Ideal · addition · six plus zero in ideal · **Derived fact**
 

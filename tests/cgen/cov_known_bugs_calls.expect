@@ -1,6 +1,0 @@
-+ abs((0 - 5))
-- abs_i32
-+ is_null(NULL)
-+ get_count(&reader)
-+ helper(4, (GPU){ 0 })
-exit 0

@@ -1,4 +1,0 @@
-# expect: Left shift of a negative value is undefined (MISRA Rule 12.2 / CERT INT34-C)
-function main() -> i32 {
-    return -1 << 2
-}

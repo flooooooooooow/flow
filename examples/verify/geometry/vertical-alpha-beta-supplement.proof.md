@@ -2,9 +2,9 @@
 
 *Alpha and beta form a supplementary pair on intersecting lines.*
 
-**Source.** euclid: Elements, Book I, Proposition 13
+**Source.** euclid — Elements, Book I, Proposition 13
 
-## Derived fact 1: angle alpha plus angle beta equals two right angles
+## Derived fact 1 — angle alpha plus angle beta equals two right angles
 
 **Coordinate.** the Euclidean plane · intersecting lines · alpha beta supplementary · **Derived fact**
 

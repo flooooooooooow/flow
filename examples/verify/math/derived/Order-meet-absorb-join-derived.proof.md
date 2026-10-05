@@ -2,9 +2,9 @@
 
 *Meet absorbs into join in a lattice witness.*
 
-**Source.** davey-priestley: *Introduction to Lattices and Order*
+**Source.** davey-priestley — *Introduction to Lattices and Order*
 
-## Derived fact 1: meet(a, join(a, b)) = meet(a, b)
+## Derived fact 1 — meet(a, join(a, b)) = meet(a, b)
 
 **Coordinate.** Order · lattice · meet absorbs join derived · **Derived fact**
 

@@ -7,7 +7,7 @@
 
 A span is a borrowed view over contiguous elements. It never owns its data,
 never allocates, and never outlives the storage it points at. The design goal
-is that **callers never write `span(...)`**. Any contiguous value borrows
+is that **callers never write `span(...)`** — any contiguous value borrows
 into a span automatically, while element type, extent, mutability, and
 lifetime stay visible to the compiler.
 
@@ -17,11 +17,6 @@ Without spans, a function that works over a run of floats has to pick one of
 these, and each one is wrong in a different way:
 
 ```flow
-struct Vec {
-    data: ptr<f32>,
-    len: i32
-}
-
 function analyse(samples: ptr<f32>, n: i32) -> f32   # length can lie
 function analyse(samples: array<f32, 512>) -> f32    # one extent only
 function analyse(samples: Vec) -> f32                # forces a container
@@ -136,7 +131,7 @@ Three sources borrow; everything else is an error:
 | `array<T, N>` variable | `{ arr, N }` |
 | slice `a[i..j]` | `{ &a[i], j - i }` |
 | another span of the same element | passed through |
-| `ptr<T>` | rejected: a pointer has no length |
+| `ptr<T>` | rejected — a pointer has no length |
 
 ```text
 error: cannot borrow ptr<f32> into span<f32> for parameter 'values' of
@@ -181,7 +176,7 @@ error: span outlives borrowed storage `local` at line 3, column 5
 The same check rejects assigning such a view to a module static, which
 outlives every frame.
 
-**What this catches, and what it does not.** This is a scope-local check rather than
+**What this catches, and what it does not.** This is a scope-local check, not
 region inference. It catches a `return` of a local array or of a span local
 that borrows one, transitively through slice expressions, and the same value
 assigned to a module static. It does **not** track borrows through struct
@@ -287,14 +282,14 @@ total_span_const_i32(((flow_span_const_i32){ .data = (const int32_t*)(((xs)) + (
 | `.len` and `len(s)` | ✅ C backend |
 | Element read / write through a span | ✅ write requires `span<mut T>` |
 | Pointer arguments rejected (no length) | ✅ |
-| Escape checking (`span outlives borrowed storage`) | ⚠️ direct cases only; see [Lifetime](#lifetime) |
+| Escape checking (`span outlives borrowed storage`) | ⚠️ direct cases only — see [Lifetime](#lifetime) |
 | Spans in the MLIR / JS / Python backends | ❌ C backend only |
 | Bare `span` with full inference | ❌ layer 2 |
 | `span<mut>` / `span<const>` without an element type | ❌ layer 2 |
 | Dependent extents (`span<mut, source.extent>`) | ❌ layer 2 |
 | `span<number>` and other trait-shaped element constraints | ❌ layer 2 |
 | Span methods (`fill`, `reduce`, iteration) | ❌ layer 2 |
-| Spans as struct fields | ⚠️ compiles, but no escape checking: avoid |
+| Spans as struct fields | ⚠️ compiles, but no escape checking — avoid |
 
 The four layer-2 spellings (`span`, `span<mut>` / `span<const>`,
 `span<number>`, `span<mut, source.extent>`, plus `span[N]`) are rejected at

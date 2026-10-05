@@ -2,9 +2,9 @@
 
 *Two equal radii sum to a diameter through their endpoints.*
 
-**Source.** euclid: Elements, Book I, Definition 15
+**Source.** euclid — Elements, Book I, Definition 15
 
-## Derived fact 1: radius OA plus radius OB equals diameter AB
+## Derived fact 1 — radius OA plus radius OB equals diameter AB
 
 **Coordinate.** the Euclidean plane · circle · two radii sum to diameter · **Derived fact**
 

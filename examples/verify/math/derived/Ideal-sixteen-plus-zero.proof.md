@@ -2,9 +2,9 @@
 
 *Sixteen plus zero is sixteen in an ideal witness.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.1
+**Source.** dummit-foote — *Abstract Algebra*, §7.1
 
-## Derived fact 1: 16 + 0 = 16 in an ideal
+## Derived fact 1 — 16 + 0 = 16 in an ideal
 
 **Coordinate.** Ideal · addition · sixteen plus zero in ideal · **Derived fact**
 

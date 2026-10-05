@@ -2,13 +2,13 @@
 
 *If through the center a straight line bisects a central angle, it also bisects the chord and is perpendicular to it.*
 
-**Source.** euclid: Elements, Book III, Proposition 3
+**Source.** euclid — Elements, Book III, Proposition 3
 
-## Derived fact 1: If through the center a straight line bisects a central angle, it also bisects the chord and is perpendicular to it
+## Derived fact 1 — If through the center a straight line bisects a central angle, it also bisects the chord and is perpendicular to it
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 3: a central angle bisector bisects the chord · **Derived fact**
 
-*Source: euclid: Elements, Book III, Proposition 3*
+*Source: euclid — Elements, Book III, Proposition 3*
 
 *Built on: proposition 2: a perpendicular from the center bisects the chord, for Euclid Book III on the Euclidean plane*
 

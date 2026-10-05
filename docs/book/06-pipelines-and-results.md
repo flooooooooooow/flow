@@ -1,9 +1,9 @@
 # 6. Pipelines and explicit results
 
-Run the examples with flowc:
+Run the examples with the Python compiler host:
 
 ```bash
-./flow run file.flow
+FLOW_HOST=python ./flow run file.flow
 ```
 
 ## 6.1 Forward composition
@@ -43,7 +43,7 @@ is equivalent to:
 let result: i32 = double(increment(5))
 ```
 
-A pipeline changes the notation. The order of evaluation stays the same. It reads well
+A pipeline changes the notation, not the order of evaluation. It reads well
 when a value passes through several functions in sequence.
 
 ## 6.2 Argument placement
@@ -146,7 +146,7 @@ Source:
 [`examples/book/06_pipeline_result.flow`](../../examples/book/06_pipeline_result.flow)
 
 ```bash
-./flow run examples/book/06_pipeline_result.flow
+FLOW_HOST=python ./flow run examples/book/06_pipeline_result.flow
 ```
 
 ```text

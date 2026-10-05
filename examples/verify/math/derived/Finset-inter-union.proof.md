@@ -2,9 +2,9 @@
 
 *Intersection distributes over union on the left.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: a ∩ (b ∪ c) = (a ∩ b) ∪ (a ∩ c)
+## Derived fact 1 — a ∩ (b ∪ c) = (a ∩ b) ∪ (a ∩ c)
 
 **Coordinate.** Finset · intersection · left distribution over union holds · **Derived fact**
 

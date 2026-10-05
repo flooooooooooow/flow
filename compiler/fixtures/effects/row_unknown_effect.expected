@@ -1,3 +1,0 @@
-reject
-Function 'greet' declares unknown effect 'Nope' in its `with` row
-Call to 'greet' from 'main' requires effect(s) Nope: handle them or declare `with Nope` on the caller

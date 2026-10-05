@@ -36,7 +36,7 @@ $(FRAG_SPV): shaders/scene.frag
 	$(SHADER_COMPILER) -V $< -o $@
 
 run: all
-	cd ../../.. && ./flow demo vulkan advanced
+	./run.sh
 
 clean:
 	rm -f $(TARGET) $(VERT_SPV) $(FRAG_SPV)

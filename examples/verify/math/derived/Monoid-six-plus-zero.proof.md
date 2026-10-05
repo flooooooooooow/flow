@@ -2,9 +2,9 @@
 
 *Six plus zero is six in a monoid witness.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §1.1
+**Source.** dummit-foote — *Abstract Algebra*, §1.1
 
-## Derived fact 1: 6 + 0 = 6
+## Derived fact 1 — 6 + 0 = 6
 
 **Coordinate.** Monoid · addition · six plus zero is six · **Derived fact**
 

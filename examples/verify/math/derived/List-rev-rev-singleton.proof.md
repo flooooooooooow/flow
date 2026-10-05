@@ -2,9 +2,9 @@
 
 *Double reverse fixes a singleton list.*
 
-**Source.** church: https://en.wikipedia.org/wiki/List_(abstract_data_type)
+**Source.** church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
 
-## Derived fact 1: rev(rev(cons(x, nil))) = cons(x, nil)
+## Derived fact 1 — rev(rev(cons(x, nil))) = cons(x, nil)
 
 **Coordinate.** List · reverse · double reverse fixes singletons · **Derived fact**
 

@@ -2,9 +2,9 @@
 
 *Two is less than or equal to itself.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Total_order
+**Source.** peano — https://en.wikipedia.org/wiki/Total_order
 
-## Derived fact 1: 2 <= 2
+## Derived fact 1 — 2 <= 2
 
 **Coordinate.** the natural numbers · order · two is below itself · **Derived fact**
 

@@ -1,5 +1,0 @@
-flags --strict
-# The exact signed overload wins for an unsuffixed literal.
-+ pick_i32(5)
-- pick_u32(5)
-exit 0

@@ -12,7 +12,7 @@
 # The copy that refills the working array sits inside the timed region, so the
 # first line printed is a copy-only loop. Subtract it from every other row.
 #
-# Run it with ./flow tool benchmarks/ordering/run.flow.
+# Run it with benchmarks/ordering/run.sh.
 
 extern {
     function clock() -> i64

@@ -1,4 +1,4 @@
-# Pattern Adoption: Less Code, Cooler Surfaces
+# Pattern Adoption — Less Code, Cooler Surfaces
 
 > Companion to [ROADMAP.md](../../ROADMAP.md) (repo root) and the GitHub `[roadmap]` / `[patterns *]` issues.
 > Goal: where Flow already has (or almost has) a distinctive pattern, **use it** in
@@ -11,7 +11,7 @@ Last updated: 2026-08-05.
 
 ## Thesis
 
-Flow's differentiator is **evolution + analysis as syntax**. Hand-rolled RK4,
+Flow’s differentiator is **evolution + analysis as syntax**. Hand-rolled RK4,
 `mat_get`/`mat_set` nests, and `dense_backward` in showcase programs undermine that
 story. Adoption first; new sugar second.
 
@@ -30,7 +30,7 @@ story. Adoption first; new sugar second.
 
 ---
 
-## P0: Adoption & small stdlib
+## P0 — Adoption & small stdlib
 
 ### 1. Canonicalize evolution demos
 
@@ -40,7 +40,7 @@ siblings already show the shipped pattern.
 **Target:**
 - README / `examples/README.md` / `examples/STATUS.md` point at `*_evolves` /
   `*_rk4` / `*_always` as the teaching path.
-- Hand ODE files become "how it lowers" (comment banner + link). They stop being the first hit.
+- Hand ODE files become “how it lowers” (comment banner + link), not the first hit.
 - No new syntax required.
 
 **Exit:** Tourist path (`examples/evolution/`) leads with declarative files; hand
@@ -64,7 +64,7 @@ while frame < MAX {
 }
 ```
 
-**Sketch A: callback (no new syntax):**
+**Sketch A — callback (no new syntax):**
 
 ```flow-pseudocode
 # lib/stdlib/gfx.flow
@@ -82,7 +82,7 @@ int flow_gfx_run(void *ctx, int max_frames);
 
 with Flow demos implementing `function flow_gfx_frame(g: Gfx, frame: i32) -> i32`.
 
-**Sketch B: block sugar (later card):**
+**Sketch B — block sugar (later card):**
 
 ```flow-pseudocode
 gfx_run(g, max_frames: 2000) {
@@ -138,7 +138,7 @@ flow Lorenz {
 
 ---
 
-## P1: Honesty & API polish
+## P1 — Honesty & API polish
 
 ### 4. Linalg → `blas.flow`
 
@@ -147,7 +147,7 @@ flow Lorenz {
 `blas_demo.flow` already exercises gemm/solve.
 
 **Exit:** Primary linalg tourist examples call BLAS; index loops only in
-"from scratch" files. ✅ (`lu_decomposition.flow` → `solve`/`lu_factor`;
+“from scratch” files. ✅ (`lu_decomposition.flow` → `solve`/`lu_factor`;
 hand Doolittle → `lu_decomposition_pedagogical.flow`)
 
 ---
@@ -156,7 +156,7 @@ hand Doolittle → `lu_decomposition_pedagogical.flow`)
 
 **Shipped:** Tourist `examples/ml/models/mlp_xor.flow` trains via
 `net2x2x1_grads_xor_autogen` (`nn_autogen.flow` + checked-in
-`scripts/tools/grad` output). Hand `dense_backward` lives in
+`flow_grad_flow.py` output). Hand `dense_backward` lives in
 `mlp_xor_from_scratch.flow`. Docs: AD is **stdlib + codegen today**;
 compiler `loss.grad` remains a later card (#161).
 
@@ -176,11 +176,11 @@ ship `json_validate` / `json_get_i32`; typed `Result_*` decode is follow-on.
 
 ---
 
-## P2: New language / analysis surfaces
+## P2 — New language / analysis surfaces
 
 ### 7. Dynamics DSL / LQR beyond n=2
 
-**Shipped MVP:** `lib/stdlib/dynamics/lqr.flow`:
+**Shipped MVP:** `lib/stdlib/dynamics/lqr.flow` —
 `dlqr_diag_q_scalar_u` / `lqr_diag_q` for n≤8, scalar input. Cartpole
 `cartpole_lqr_gains` is a thin wrapper (no private Riccati loop).
 
@@ -211,9 +211,7 @@ analyze plant {
 `laplacian_1d_at`, `heat_euler_step_1d`). Tourist
 `examples/evolution/heat_diffusion.flow` steps via the helper.
 
-**Also shipped:** Stage-1 grammar expander, written in Flow
-([`compiler/src/field_dsl.flow`](../../compiler/src/field_dsl.flow)) and run by flowc
-before parse:
+**Also shipped:** Stage-1 grammar expander (`field_dsl.py`):
 ```flow-pseudocode
 field T : f64[32] on Line
 T evolves as laplacian(T)
@@ -271,8 +269,8 @@ an alias of `state_step`.
 
 ## References
 
-- [VISION.md](../../VISION.md): evolution thesis
-- [north-star.md](../vision/north-star.md): shipped `flow` / `evolves` / `when` / `connect` cards
-- [dynamics-dsl.md](../language/dynamics-dsl.md): `dsys` / `analyze`
+- [VISION.md](../../VISION.md) — evolution thesis
+- [north-star.md](../vision/north-star.md) — shipped `flow` / `evolves` / `when` / `connect` cards
+- [dynamics-dsl.md](../language/dynamics-dsl.md) — `dsys` / `analyze`
 - Examples: `examples/evolution/pendulum_evolves.flow`, `lorenz_gfx.flow`,
   `spring_mass_control.flow`, `apps/cartpole/`

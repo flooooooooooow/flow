@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Double reverse restores a tredecuple cons list.
-# @from   church: https://en.wikipedia.org/wiki/Reverse_(list)
+# @from   church — https://en.wikipedia.org/wiki/Reverse_(list)
 # @tier   derived
 
 # @means  rev(rev(tredecuple cons with tail xs)) = tredecuple cons with tail xs.

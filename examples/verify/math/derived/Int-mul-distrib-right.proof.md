@@ -2,9 +2,9 @@
 
 *Integer multiplication distributes over addition on the right.*
 
-**Source.** landau: *Foundations of Analysis*, Ch. 1
+**Source.** landau — *Foundations of Analysis*, Ch. 1
 
-## Derived fact 1: (b + c) * a = b * a + c * a
+## Derived fact 1 — (b + c) * a = b * a + c * a
 
 **Coordinate.** the integers · multiplication · right distribution over addition holds · **Derived fact**
 

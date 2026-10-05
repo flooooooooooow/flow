@@ -1,2 +1,0 @@
-# A parse error at `else if` points to `elif` (#986).
-reject note: Flow spells `else if` as `elif`

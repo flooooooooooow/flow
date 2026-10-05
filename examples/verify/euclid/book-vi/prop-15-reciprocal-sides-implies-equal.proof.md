@@ -2,13 +2,13 @@
 
 *Equiangular parallelograms in which the sides about the equal angles are reciprocally proportional are equal.*
 
-**Source.** euclid: Elements, Book VI, Proposition 15
+**Source.** euclid — Elements, Book VI, Proposition 15
 
-## Derived fact 1: Equiangular parallelograms in which the sides about the equal angles are reciprocally proportional are equal
+## Derived fact 1 — Equiangular parallelograms in which the sides about the equal angles are reciprocally proportional are equal
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 15: equiangular parallelograms with reciprocal sides are equal · **Derived fact**
 
-*Source: euclid: Elements, Book VI, Proposition 15*
+*Source: euclid — Elements, Book VI, Proposition 15*
 
 *Built on: proposition 14: equal equiangular parallelograms have reciprocally proportional sides, for Euclid Book VI on the Euclidean plane*
 

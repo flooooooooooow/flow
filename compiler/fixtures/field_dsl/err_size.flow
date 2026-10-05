@@ -1,2 +1,0 @@
-field T : f64[01] on Line
-function main() -> i32 { return 0 }

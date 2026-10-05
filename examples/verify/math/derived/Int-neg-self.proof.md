@@ -2,9 +2,9 @@
 
 *Adding an element to its negation yields zero.*
 
-**Source.** landau: *Foundations of Analysis*, Ch. 1
+**Source.** landau — *Foundations of Analysis*, Ch. 1
 
-## Derived fact 1: m + (-m) = 0
+## Derived fact 1 — m + (-m) = 0
 
 **Coordinate.** the integers · addition · adding the negation yields zero · **Derived fact**
 

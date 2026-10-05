@@ -201,10 +201,7 @@ function flowc_metal_emit_expr(w: ptr<MetalGenBuf>, arena: AstArena, src: ptr<u8
         elif op == TOK_TILDE { flowc_metal_puts(w, "~") }
         elif op == TOK_AMP { flowc_metal_puts(w, "&") }
         elif op == TOK_STAR { flowc_metal_puts(w, "*") }
-        # The operand gets its own parentheses (#1017): `-(-x)` is not `--x`.
-        flowc_metal_puts(w, "(")
         flowc_metal_emit_expr(w, arena, src, arena.nodes[id].a)
-        flowc_metal_puts(w, ")")
     } elif kind == AST_CALL {
         let name_start: i32 = arena.nodes[id].name_start
         let name_end: i32 = arena.nodes[id].name_end

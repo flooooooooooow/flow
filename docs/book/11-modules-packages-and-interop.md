@@ -77,12 +77,12 @@ An extern declaration gives Flow a signature for a symbol supplied by C or the p
 
 ## 11.6 C headers and embedded C
 
-flowc supports `@cImport(...)`, `@cInclude(...)`, `extern type`, and `@cEmbed(...)`. These features require real header/native context, so their authoritative executable examples are the tests rather than isolated fragments:
+The Python compiler host supports `@cImport(...)`, `@cInclude(...)`, `extern type`, and `@cEmbed(...)`. These features require real header/native context, so their authoritative executable examples are the tests rather than isolated fragments:
 
 ```bash
-./flow run tests/lang/test_c_import_auto.flow
-./flow run tests/lang/test_extern_type.flow
-./flow run tests/lang/test_c_embed.flow
+FLOW_HOST=python ./flow run tests/lang/test_c_import_auto.flow
+FLOW_HOST=python ./flow run tests/lang/test_extern_type.flow
+FLOW_HOST=python ./flow run tests/lang/test_c_embed.flow
 ```
 
 `@cEmbed` is an explicit unsafe escape hatch and should remain small and separately reviewed.
@@ -92,8 +92,8 @@ flowc supports `@cImport(...)`, `@cInclude(...)`, `extern type`, and `@cEmbed(..
 Flow closures use ordinary function types such as `(i32) -> i32`. Raw C callbacks use `cfn(...) -> ...`. The dynamic-loading and `qsort` examples exercise the complete ABI context:
 
 ```bash
-./flow run tests/lang/test_dlopen.flow
-./flow run tests/lang/test_qsort.flow
+FLOW_HOST=python ./flow run tests/lang/test_dlopen.flow
+FLOW_HOST=python ./flow run tests/lang/test_qsort.flow
 ```
 
 ## 11.8 Stable exports
@@ -107,11 +107,10 @@ function add_api(a: i32, b: i32) -> i32 {
 }
 ```
 
-flowc emits every exported function under its plain name. It can also emit
-versioned ABI aliases when compiling a library:
+The CLI can also emit ABI aliases when transpiling a library:
 
 ```bash
-./flow tool compiler/scripts/flowc_emit.flow --library --export add --export scale library.flow build/library.c
+./flow transpile library.flow --c --export add scale --module-name signal -o build/library.c
 ```
 
 ## 11.9 Native project sources

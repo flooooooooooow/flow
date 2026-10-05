@@ -1,0 +1,19 @@
+# Stage-A match: or-patterns are NOT supported — emit must fail with a clear
+# diagnostic (roundtrip asserts the message and that no C is written).
+#
+# This fixture used to use a struct pattern. Struct patterns now lower for
+# real (`Point(a, b)` destructures to field reads), so the negative case moved
+# to an or-pattern, which the parser still rejects.
+
+function main() -> i32 {
+    let v: i32 = 1
+    match v {
+        1 | 2 => {
+            return 0
+        }
+        _ => {
+            return 1
+        }
+    }
+    return 0
+}

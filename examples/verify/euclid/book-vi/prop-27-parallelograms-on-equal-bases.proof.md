@@ -2,13 +2,13 @@
 
 *Parallelograms on equal bases and in the same parallels are equal to one another.*
 
-**Source.** euclid: Elements, Book VI, Proposition 27
+**Source.** euclid — Elements, Book VI, Proposition 27
 
-## Derived fact 1: Parallelograms on equal bases and in the same parallels are equal to one another
+## Derived fact 1 — Parallelograms on equal bases and in the same parallels are equal to one another
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 27: parallelograms on equal bases and in same parallels are equal · **Derived fact**
 
-*Source: euclid: Elements, Book VI, Proposition 27*
+*Source: euclid — Elements, Book VI, Proposition 27*
 
 *Built on: proposition 36: parallelograms on equal bases and between same parallels are equal, for Book I of the Elements in on the Euclidean plane*
 

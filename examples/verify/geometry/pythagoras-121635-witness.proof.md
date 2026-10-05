@@ -2,9 +2,9 @@
 
 *The 12-16-20 triangle satisfies the Pythagorean relation.*
 
-**Source.** euclid: Elements, Book I, Proposition 47
+**Source.** euclid — Elements, Book I, Proposition 47
 
-## Derived fact 1: 20 squared equals 12 squared plus 16 squared
+## Derived fact 1 — 20 squared equals 12 squared plus 16 squared
 
 **Coordinate.** the Euclidean plane · right triangle · twelve sixteen twenty satisfies Pythagoras · **Derived fact**
 

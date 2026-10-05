@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-iv
 # @means  To construct an isosceles triangle having each of the angles at the base double the remaining one.
-# @from   euclid: Elements, Book IV, Proposition 10
+# @from   euclid — Elements, Book IV, Proposition 10
 # @tier   derived
 # @needs  «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence», «Geometry» «Euclid Book III» «Proposition 32: the angle between tangent and chord equals the angle in the alternate segment»
 

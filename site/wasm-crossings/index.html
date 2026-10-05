@@ -56,15 +56,15 @@ in a real browser.
 open http://127.0.0.1:8000/wasm-crossings/
 
 # crossing 3 needs the echo relay running first
-./flow tool ws_echo_relay --port 9505
+python3 scripts/ws_echo_relay.py --port 9505
 
 # rebuilding
 ./flow wasm examples/wasm/parallel_sum.flow --threads --workers 8
 ./flow gpu examples/wasm/gpu_vector_add.flow --wgsl
 ./flow wasm examples/wasm/fs_counter.flow --fs idbfs
-./flow tool wasm_crossings sockets
-./flow tool wasm_crossings python
-./flow tool wasm_crossings fs</pre>
+python3 wasm/flow_wasm_sockets.py
+python3 wasm/flow_wasm_python.py
+python3 wasm/flow_wasm_fs.py</pre>
 </div>
 
 <h2>Notes that apply to all of them</h2>
@@ -83,7 +83,7 @@ open http://127.0.0.1:8000/wasm-crossings/
 
 <footer>
 Mechanism and full measurements: <code>docs/language/wasm-crossings.md</code>.
-Builder: <code>./flow tool wasm_crossings</code>.
+Builders: <code>wasm/flow_wasm_*.py</code>.
 </footer>
 
 </main>

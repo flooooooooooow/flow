@@ -1,5 +1,0 @@
-# Pinned when the Python type checker was deleted.
-# The ported checker (compiler/src/sem_check.flow) reports it first, in
-# the Python checker's words.
-flags --strict
-reject Function 'f' returns i32 but should return void

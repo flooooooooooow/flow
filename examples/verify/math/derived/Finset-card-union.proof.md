@@ -4,7 +4,7 @@
 
 **Source.** graham-knuth-patashnik
 
-## Derived fact 1: card(a ∪ b) ≤ card(a) + card(b)
+## Derived fact 1 — card(a ∪ b) ≤ card(a) + card(b)
 
 **Coordinate.** Finset · cardinality · union size is at most the sum · **Derived fact**
 

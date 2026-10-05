@@ -2,13 +2,13 @@
 
 *In a circle straight lines equidistant from the center are equal, and conversely.*
 
-**Source.** euclid: Elements, Book III, Proposition 15
+**Source.** euclid — Elements, Book III, Proposition 15
 
-## Derived fact 1: In a circle straight lines equidistant from the center are equal, and conversely
+## Derived fact 1 — In a circle straight lines equidistant from the center are equal, and conversely
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 15: chords equidistant from the center are equal · **Derived fact**
 
-*Source: euclid: Elements, Book III, Proposition 15*
+*Source: euclid — Elements, Book III, Proposition 15*
 
 *Built on: proposition 14: equal chords are equally distant from the center, for Euclid Book III on the Euclidean plane*
 

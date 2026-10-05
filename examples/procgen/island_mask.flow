@@ -13,7 +13,7 @@
 #   R reseed   P pause   Esc quit
 #
 # Run (headless, gated):
-#   ./flow record examples/procgen/island_mask.flow \
+#   FLOW_HOST=python ./flow record examples/procgen/island_mask.flow \
 #       --frames 4 --out /tmp/pg_island_mask
 # Run (windowed):
 #   ./flow gfx examples/procgen/island_mask.flow

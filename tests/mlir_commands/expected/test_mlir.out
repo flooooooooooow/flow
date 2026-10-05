@@ -1,5 +1,0 @@
-✅ ✓ tests/mlir/affine_loop.flow
-✅ ✓ tests/mlir/basic_arith.flow
-✅ ✓ tests/core/hello_world.flow
-✅ ✓ tests/core/fibonacci.flow
-✅ ✓ tests/core/loops.flow

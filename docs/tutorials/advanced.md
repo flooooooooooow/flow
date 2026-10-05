@@ -37,9 +37,9 @@ For nested replacement, multiple handlers, and strict effect rows, use [`example
 Autodiff types and functions live in imported modules, so the complete executable examples are the best reference:
 
 ```bash
-./flow run examples/ml/autodiff/dual_ops.flow
-./flow run examples/ml/autodiff/autodiff_benchmark.flow
-./flow run examples/ml/tape_mul.flow
+FLOW_HOST=python ./flow run examples/ml/autodiff/dual_ops.flow
+FLOW_HOST=python ./flow run examples/ml/autodiff/autodiff_benchmark.flow
+FLOW_HOST=python ./flow run examples/ml/tape_mul.flow
 ```
 
 Forward mode carries primal and tangent values. Reverse mode records a tape and propagates adjoints. Check gradients against finite differences or an analytic derivative before relying on them.
@@ -84,8 +84,8 @@ C is the primary portable native path. MLIR supports a substantial but not ident
 Native modules must be imported in complete programs so types, constants, and link requirements are visible. The repository's POSIX examples are the executable reference:
 
 ```bash
-./flow run examples/systems/posix_file_io.flow
-./flow run examples/systems/process_info.flow
+FLOW_HOST=python ./flow run examples/systems/posix_file_io.flow
+FLOW_HOST=python ./flow run examples/systems/process_info.flow
 ```
 
 When wrapping C directly, keep the extern surface small and verify ABI types, ownership, lifetime, and link flags.

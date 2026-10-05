@@ -1,5 +1,5 @@
 # Test for @cImport with math.h and string.h.
-# Run with: ./flow run tests/lang/test_c_import_math.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_import_math.flow
 # Exit 0 on success.
 
 @cImport("math.h")

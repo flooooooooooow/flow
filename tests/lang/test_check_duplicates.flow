@@ -1,5 +1,5 @@
 # Test for is_duplicate_claim in claim_path.flow.
-# Run with: ./flow run tests/lang/test_check_duplicates.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_check_duplicates.flow
 # Exit 0 on success.
 
 import "compiler/src/claim_path.flow"

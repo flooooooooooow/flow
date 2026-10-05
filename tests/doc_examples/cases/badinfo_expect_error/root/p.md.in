@@ -1,9 +1,0 @@
-# Bad info
-
-```flow
-function main() -> i32 { return 0 }
-```
-
-```flow expect_error
-function main() -> i32 { return 0 }
-```

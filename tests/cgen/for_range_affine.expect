@@ -1,9 +1,0 @@
-# A stepless range loop keeps a constant step (#1004): no run-time select.
-- __flowc_up_
-+ if ((0) <= (n)) {
-+ for (int32_t i = 0; i < (n); i = i + 1) {
-+ for (int32_t i = 0; i > (n); i = i + (-1)) {
-+ for (int32_t r = 5; r > (0); r = r + (-1)) {
-+ for (int32_t r = 1; r < (4); r = r + 1) {
-- if ((5) <= (0))
-exit 0

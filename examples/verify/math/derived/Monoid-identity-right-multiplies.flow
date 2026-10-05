@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  The identity acts as a right multiplier in a monoid.
-# @from   dummit-foote: *Abstract Algebra*, §1.1
+# @from   dummit-foote — *Abstract Algebra*, §1.1
 # @tier   derived
 
 # @means  m * 1 = m.

@@ -1,3 +1,0 @@
-# 2.0 rad/s and -9.81 rad/s^2 over ten 100 ms Euler steps.
-exit 0
-stdout 2.000 -9.810

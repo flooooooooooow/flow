@@ -2,9 +2,9 @@
 
 *Eight plus zero maps to eight under a ring homomorphism.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.3
+**Source.** dummit-foote — *Abstract Algebra*, §7.3
 
-## Derived fact 1: f(8 + 0) = 8
+## Derived fact 1 — f(8 + 0) = 8
 
 **Coordinate.** RingHom · preservation · eight plus zero maps to eight · **Derived fact**
 

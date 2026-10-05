@@ -1,1 +1,0 @@
-Error: call to 'puts' in 'x evolves as' of flow 'Osc' cannot be proven pure; only C math functions and non-extern functions defined in the same file are allowed here (v1) at line 7

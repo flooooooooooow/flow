@@ -2,9 +2,9 @@
 
 *An exterior angle equals the sum of the two remote interior angles.*
 
-**Source.** euclid: Elements, Book I, Proposition 32
+**Source.** euclid — Elements, Book I, Proposition 32
 
-## Derived fact 1: exterior angle at C equals angle A plus angle B
+## Derived fact 1 — exterior angle at C equals angle A plus angle B
 
 **Coordinate.** the Euclidean plane · triangle · exterior angle equals remote interior sum · **Derived fact**
 

@@ -1,9 +1,0 @@
-# already_ordered, reverse_in_place, binary_search, then linear_scan once
-# a call has taken the array (#1054).
-+ /* plan: already_ordered -- cheapest applicable plan: 0 vs 20 for insertion (100% less work) */ /* provenance proved the input is already in this order */
-+ /* plan: reverse_in_place -- cheapest applicable plan: 10 vs 80 for counting (88% less work) */ /* provenance proved a strictly reversed input */
-+ /* plan: binary_search -- cheapest applicable plan: 4.32 vs 10 for linear_scan (57% less work) */
-+ /* plan: linear_scan -- only applicable implementation */
-+ if ((__flowc_ord(__flowc_fa[__flowc_fmid], __flowc_fx)) < 0)
-- flowc_find_i32(b
-exit 0

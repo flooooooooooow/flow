@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-vi
 # @means  If three straight lines are proportional, the rectangle contained by the extremes equals the square on the mean.
-# @from   euclid: Elements, Book VI, Proposition 17
+# @from   euclid — Elements, Book VI, Proposition 17
 # @tier   derived
 # @needs  «Geometry» «Euclid Book VI» «Proposition 16: four proportional lines give equal rectangles on extremes and means»
 

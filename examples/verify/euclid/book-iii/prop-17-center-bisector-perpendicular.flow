@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-iii
 # @means  If from the center of a circle a straight line bisects a chord, it is perpendicular to the chord.
-# @from   euclid: Elements, Book III, Proposition 17
+# @from   euclid — Elements, Book III, Proposition 17
 # @tier   derived
 # @needs  «Geometry» «Euclid Book III» «Proposition 3: a central angle bisector bisects the chord»
 

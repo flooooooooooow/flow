@@ -2,9 +2,9 @@
 
 *Zero is less than or equal to itself.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Total_order
+**Source.** peano — https://en.wikipedia.org/wiki/Total_order
 
-## Derived fact 1: 0 <= 0
+## Derived fact 1 — 0 <= 0
 
 **Coordinate.** the natural numbers · order · zero is below itself · **Derived fact**
 

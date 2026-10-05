@@ -2,9 +2,9 @@
 
 *Twenty-four times one is twenty-four.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 24 * 1 = 24
+## Derived fact 1 — 24 * 1 = 24
 
 **Coordinate.** the natural numbers · multiplication · twenty four times one is twenty four · **Derived fact**
 

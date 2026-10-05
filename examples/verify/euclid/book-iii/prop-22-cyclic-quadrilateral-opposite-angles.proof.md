@@ -2,13 +2,13 @@
 
 *The opposite angles of quadrilaterals in circles equal two right angles.*
 
-**Source.** euclid: Elements, Book III, Proposition 22
+**Source.** euclid — Elements, Book III, Proposition 22
 
-## Derived fact 1: The opposite angles of quadrilaterals in circles equal two right angles
+## Derived fact 1 — The opposite angles of quadrilaterals in circles equal two right angles
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 22: opposite angles of a cyclic quadrilateral sum to two right angles · **Derived fact**
 
-*Source: euclid: Elements, Book III, Proposition 22*
+*Source: euclid — Elements, Book III, Proposition 22*
 
 *Built on: proposition 21: angles in the same segment are equal, for Euclid Book III on the Euclidean plane, proposition 13: adjacent angles on a straight line sum to two right angles, for Book I of the Elements in on the Euclidean plane*
 

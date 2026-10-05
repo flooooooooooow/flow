@@ -1,3 +1,0 @@
-flow Osc {
-    state x : i32 = 1
-}

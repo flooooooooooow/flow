@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  Alpha and beta form a supplementary pair on intersecting lines.
-# @from   euclid: Elements, Book I, Proposition 13
+# @from   euclid — Elements, Book I, Proposition 13
 # @tier   derived
 
 # @means  angle alpha plus angle beta equals two right angles.

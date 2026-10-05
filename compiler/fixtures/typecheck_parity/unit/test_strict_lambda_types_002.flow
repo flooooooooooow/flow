@@ -1,7 +1,0 @@
-
-function main() -> i32 {
-    let a: i32 = 10
-    let f = |x: i32| -> i32 { return x + a }
-    let r: i32 = f(5)
-    return r
-}

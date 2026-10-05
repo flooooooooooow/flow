@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Proportional magnitudes satisfy alternando.
-# @from   euclid: Elements, Book V, Proposition 7
+# @from   euclid — Elements, Book V, Proposition 7
 # @tier   derived
 
 # @means  a:b = c:d implies a:c = b:d.

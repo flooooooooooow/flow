@@ -38,7 +38,7 @@
 #   A. M. Turing, Phil. Trans. R. Soc. B 237:37-72 (1952).
 #
 # Run (headless, gated):
-#   ./flow record examples/morphogenesis/gierer_meinhardt.flow \
+#   FLOW_HOST=python ./flow record examples/morphogenesis/gierer_meinhardt.flow \
 #       --frames 4 --out /tmp/rec_gierer_meinhardt
 # Run (windowed):
 #   ./flow gfx examples/morphogenesis/gierer_meinhardt.flow

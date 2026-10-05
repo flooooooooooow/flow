@@ -1,6 +1,6 @@
 # @module verify.Order
 # @means  Lattice laws for meet and join on a partial order.
-# @from   davey-priestley: *Introduction to Lattices and Order*
+# @from   davey-priestley — *Introduction to Lattices and Order*
 # @tier   definitions-only
 
 # @means  Meet is commutative: a ∧ b = b ∧ a.

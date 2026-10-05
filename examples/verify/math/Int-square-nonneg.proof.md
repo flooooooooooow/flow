@@ -2,13 +2,13 @@
 
 *Squaring any integer gives zero or a positive number.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.4 (ordered rings)
+**Source.** dummit-foote — *Abstract Algebra*, §7.4 (ordered rings)
 
-## Derived fact 1: Squaring any integer gives zero or a positive number
+## Derived fact 1 — Squaring any integer gives zero or a positive number
 
 **Coordinate.** the integers · multiplication · squaring never yields a negative · **Derived fact**
 
-*Source: dummit-foote: *Abstract Algebra*, §7.4 (ordered rings)*
+*Source: dummit-foote — *Abstract Algebra*, §7.4 (ordered rings)*
 
 > **Goal.** Squaring any integer gives zero or a positive number
 >

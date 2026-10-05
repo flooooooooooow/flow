@@ -2,9 +2,9 @@
 
 *Twenty-five plus one is twenty-six.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 25 + 1 = 26
+## Derived fact 1 — 25 + 1 = 26
 
 **Coordinate.** the natural numbers · addition · twenty five plus one is twenty six · **Derived fact**
 

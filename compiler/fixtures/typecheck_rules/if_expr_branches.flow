@@ -1,6 +1,0 @@
-# expect: if-expression branches must have the same type, got i32 and string
-function main() -> i32 {
-    let x: i32 = 1
-    let y: i32 = if x > 0 { 1 } else { "no" }
-    return y
-}

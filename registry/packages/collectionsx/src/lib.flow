@@ -45,7 +45,7 @@ export function vec_i32_get(v: VecI32, index: i32) -> i32 {
 
 function vec_i32_grow(v: ptr<VecI32>) -> void {
     let old_cap: i32 = v[0].capacity
-    let mut new_cap: i32 = old_cap * 2
+    let new_cap: i32 = old_cap * 2
     if new_cap < 4 {
         new_cap = 4
     }

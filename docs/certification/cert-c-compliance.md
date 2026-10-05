@@ -8,7 +8,7 @@
 | ERR33-C | Detect/handle errors | PARTIAL | Fault handlers; null checks in #288 |
 | MEM05-C | Avoid large recursive stacks | PARTIAL | Recursion reject under safety (#271) |
 | DCL31-C | Declare before use | PARTIAL | Prototypes + `#283` `-Werror=implicit-function-declaration` |
-| API02-C | Functions validate args | OPEN | - |
+| API02-C | Functions validate args | OPEN | — |
 | FIO30-C | Exclude user input from format | DEVIATION | Generated format strings are compiler-fixed literals |
 
 ## Related

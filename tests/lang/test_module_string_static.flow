@@ -1,7 +1,0 @@
-let mut ROOT: string = ""
-
-function main() -> i32 {
-    ROOT = "flow"
-    if ROOT == "flow" { return 0 }
-    return 1
-}

@@ -1,4 +1,0 @@
-~ for \(int32_t __flowc_step_[0-9]+ = \(s\), i = a; \(__flowc_step_[0-9]+ > 0\) \? i < \(b\) : i > \(b\); i \+= __flowc_step_[0-9]+\)
-+ for (int32_t k = 0; k < n; k = k + 2) {
-+ for (int32_t j = n; j > 0; j = j + (-2)) {
-exit 10

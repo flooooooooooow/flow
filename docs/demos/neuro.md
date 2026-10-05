@@ -4,7 +4,7 @@ Fifteen simulations of spiking dynamics written in Flow. Every clip below is
 recorded from the real compiled program through the headless recorder. Every
 program also measures the thing it is demonstrating, prints the measurement
 beside the published value, and returns a nonzero exit code if the comparison
-fails, so these are regression tests that happen to draw pictures.
+fails — so these are regression tests that happen to draw pictures.
 
 This is the second domain of [the Example Atlas](../project/example-atlas.md),
 after [morphogenesis](morphogenesis.md). Continuous models are declared as
@@ -35,7 +35,7 @@ Record one headlessly, no display needed:
 Regenerate every GIF on this page:
 
 ```bash
-./flow tool record_demos --group neuro
+python3 scripts/record_demos.py --group neuro
 ```
 
 `./flow run` does not link a graphics backend, so it cannot build these; use
@@ -74,7 +74,7 @@ recorded.
 
 `runtime/gfx_record.c` plus `lib/runtime/gfx_record.flow` implement the same API
 as the windowed backends, drawing into an off-screen buffer and writing each
-presented frame as a PPM. `./flow tool record_demos` then assembles the frames
+presented frame as a PPM. `scripts/record_demos.py` then assembles the frames
 into the GIFs on this page with nearest-neighbour downscaling and a shared
 palette, the same path used for the morphogenesis gallery.
 

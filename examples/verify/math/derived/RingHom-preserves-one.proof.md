@@ -2,9 +2,9 @@
 
 *Ring homomorphisms send one to one.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.3
+**Source.** dummit-foote — *Abstract Algebra*, §7.3
 
-## Derived fact 1: f(1) = 1
+## Derived fact 1 — f(1) = 1
 
 **Coordinate.** RingHom · multiplication · one maps to one · **Derived fact**
 

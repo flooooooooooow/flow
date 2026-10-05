@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  An inscribed angle on a minor arc is acute.
-# @from   euclid: Elements, Book III, Proposition 20
+# @from   euclid — Elements, Book III, Proposition 20
 # @tier   derived
 
 # @means  angle APB is less than one right angle on minor arc AB.

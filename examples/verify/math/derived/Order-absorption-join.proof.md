@@ -2,9 +2,9 @@
 
 *Join absorbs meet on the lattice order.*
 
-**Source.** davey-priestley: *Introduction to Lattices and Order*
+**Source.** davey-priestley — *Introduction to Lattices and Order*
 
-## Derived fact 1: a ∨ (a ∧ b) = a
+## Derived fact 1 — a ∨ (a ∧ b) = a
 
 **Coordinate.** Order · join · join absorbs meet · **Derived fact**
 

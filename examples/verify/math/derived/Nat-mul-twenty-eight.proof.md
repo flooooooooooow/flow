@@ -2,9 +2,9 @@
 
 *Twenty-seven times one is twenty-seven.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 27 * 1 = 27
+## Derived fact 1 — 27 * 1 = 27
 
 **Coordinate.** the natural numbers · multiplication · twenty seven times one is twenty seven · **Derived fact**
 

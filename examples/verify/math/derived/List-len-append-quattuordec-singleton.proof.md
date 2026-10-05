@@ -2,9 +2,9 @@
 
 *Appending fourteen singletons gives length fourteen.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len of fourteen appended singletons equals 14
+## Derived fact 1 — len of fourteen appended singletons equals 14
 
 **Coordinate.** List · length · append of fourteen singletons has length fourteen · **Derived fact**
 

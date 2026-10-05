@@ -2,9 +2,9 @@
 
 *Quintuple swap returns the original pair.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Product_type
+**Source.** church — https://en.wikipedia.org/wiki/Product_type
 
-## Derived fact 1: swap(swap(swap(swap(swap(pair(a, b)))))) = pair(a, b)
+## Derived fact 1 — swap(swap(swap(swap(swap(pair(a, b)))))) = pair(a, b)
 
 **Coordinate.** Pair · swap · quintuple swap returns pair · **Derived fact**
 

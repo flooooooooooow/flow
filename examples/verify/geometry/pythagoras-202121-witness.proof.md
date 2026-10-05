@@ -2,9 +2,9 @@
 
 *The 20-21-29 triangle satisfies the Pythagorean relation.*
 
-**Source.** euclid: Elements, Book I, Proposition 47
+**Source.** euclid — Elements, Book I, Proposition 47
 
-## Derived fact 1: 29 squared equals 20 squared plus 21 squared
+## Derived fact 1 — 29 squared equals 20 squared plus 21 squared
 
 **Coordinate.** the Euclidean plane · right triangle · twenty twenty one twenty nine satisfies Pythagoras · **Derived fact**
 

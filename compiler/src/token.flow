@@ -50,9 +50,6 @@ export const TOK_SLASH_EQ: i32 = 45
 export const TOK_PERCENT_EQ: i32 = 46
 export const TOK_IN: i32 = 47
 export const TOK_PIPELINE: i32 = 48
-# A claim reference: `«Domain» «operation» «facet»` or `Domain/op.facet`.
-export const TOK_CLAIM: i32 = 49
-export const TOK_QUESTION: i32 = 50
 
 export const KW_LET: i32 = 1
 export const KW_FUNCTION: i32 = 2

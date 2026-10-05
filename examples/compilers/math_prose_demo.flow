@@ -29,7 +29,7 @@ function main() -> i32 {
 
     let open: string = flowc_tier_opening_mathematical("definition", addr)
     printf("tier: %s\n", open)
-    if strcmp(open, "We stipulate zero is the left identity for addition on the natural numbers. This is a definition rather than a derived fact.") != 0 {
+    if strcmp(open, "We stipulate zero is the left identity for addition on the natural numbers — this is a definition, not a derived fact.") != 0 {
         printf("%s\n", "FAIL: tier_opening")
         failed = 1
     }

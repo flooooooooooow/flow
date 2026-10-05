@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Left and right inverses coincide in a group.
-# @from   dummit-foote: *Abstract Algebra*, §1.1
+# @from   dummit-foote — *Abstract Algebra*, §1.1
 # @tier   derived
 
 # @means  If h * g = 1 and g * inv(g) = 1 then h = inv(g).

@@ -2,13 +2,13 @@
 
 *If the square on one side equals the sum of squares on the other two, the angle between them is right.*
 
-**Source.** euclid: Elements, Book I, Proposition 48
+**Source.** euclid — Elements, Book I, Proposition 48
 
-## Derived fact 1: If the square on one side equals the sum of squares on the other two, the angle between them is right
+## Derived fact 1 — If the square on one side equals the sum of squares on the other two, the angle between them is right
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 48: square sum implies a right angle · **Derived fact**
 
-*Source: euclid: Elements, Book I, Proposition 48*
+*Source: euclid — Elements, Book I, Proposition 48*
 
 *Built on: proposition 47: square on hypotenuse equals sum of squares on legs, for Book I of the Elements in on the Euclidean plane, proposition 8: side-side-side angle equality, for Book I of the Elements in on the Euclidean plane*
 

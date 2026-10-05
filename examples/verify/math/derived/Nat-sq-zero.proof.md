@@ -2,9 +2,9 @@
 
 *Squaring zero gives zero.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Square_(algebra)
+**Source.** peano — https://en.wikipedia.org/wiki/Square_(algebra)
 
-## Derived fact 1: sq(0) = 0
+## Derived fact 1 — sq(0) = 0
 
 **Coordinate.** the natural numbers · square · squaring zero gives zero · **Derived fact**
 

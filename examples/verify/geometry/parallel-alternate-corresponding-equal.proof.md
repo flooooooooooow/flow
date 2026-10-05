@@ -2,9 +2,9 @@
 
 *Alternate and corresponding angles are equal on parallel lines.*
 
-**Source.** euclid: Elements, Book I, Proposition 29
+**Source.** euclid — Elements, Book I, Proposition 29
 
-## Derived fact 1: alternate alpha equals corresponding beta
+## Derived fact 1 — alternate alpha equals corresponding beta
 
 **Coordinate.** the Euclidean plane · parallel lines · alternate corresponding equal · **Derived fact**
 

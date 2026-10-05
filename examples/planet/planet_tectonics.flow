@@ -7,7 +7,7 @@
 #   1 PLATES   2 BOUNDARIES
 #   Esc quit
 #
-# Run: ./flow gfx examples/planet/planet_tectonics.flow
+# Run: FLOW_HOST=python ./flow gfx examples/planet/planet_tectonics.flow
 
 import "stdlib/gfx.flow"
 import "stdlib/text.flow"

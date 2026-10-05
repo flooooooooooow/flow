@@ -2,9 +2,9 @@
 
 *Union with the empty set on the left changes nothing.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: empty ∪ s = s
+## Derived fact 1 — empty ∪ s = s
 
 **Coordinate.** Finset · union · empty on the left gives the set · **Derived fact**
 

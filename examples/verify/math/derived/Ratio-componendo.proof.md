@@ -2,9 +2,9 @@
 
 *Proportional magnitudes satisfy componendo.*
 
-**Source.** euclid: Elements, Book V, Proposition 11
+**Source.** euclid — Elements, Book V, Proposition 11
 
-## Derived fact 1: a:b = c:d implies (a+b):b = (c+d):d
+## Derived fact 1 — a:b = c:d implies (a+b):b = (c+d):d
 
 **Coordinate.** Ratio · proportion · componendo holds · **Derived fact**
 

@@ -2,9 +2,9 @@
 
 *Appending thirteen singletons gives length thirteen.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len of thirteen appended singletons equals 13
+## Derived fact 1 — len of thirteen appended singletons equals 13
 
 **Coordinate.** List · length · append of thirteen singletons has length thirteen · **Derived fact**
 

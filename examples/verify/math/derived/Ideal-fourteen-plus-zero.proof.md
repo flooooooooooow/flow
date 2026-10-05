@@ -2,9 +2,9 @@
 
 *Fourteen plus zero is fourteen in an ideal witness.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.1
+**Source.** dummit-foote — *Abstract Algebra*, §7.1
 
-## Derived fact 1: 14 + 0 = 14 in an ideal
+## Derived fact 1 — 14 + 0 = 14 in an ideal
 
 **Coordinate.** Ideal · addition · fourteen plus zero in ideal · **Derived fact**
 

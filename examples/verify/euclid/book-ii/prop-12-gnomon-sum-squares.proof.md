@@ -2,13 +2,13 @@
 
 *To apply a gnomon equal to the excess of one square over another in a parallelogram.*
 
-**Source.** euclid: Elements, Book II, Proposition 12
+**Source.** euclid — Elements, Book II, Proposition 12
 
-## Derived fact 1: To apply a gnomon equal to the excess of one square over another in a parallelogram
+## Derived fact 1 — To apply a gnomon equal to the excess of one square over another in a parallelogram
 
 **Coordinate.** the Euclidean plane · Euclid Book II · Proposition 12: a gnomon equals the excess of two squares · **Derived fact**
 
-*Source: euclid: Elements, Book II, Proposition 12*
+*Source: euclid — Elements, Book II, Proposition 12*
 
 *Built on: proposition 11: a gnomon equals the rectangle by the segments, for Euclid Book II on the Euclidean plane, proposition 4: the square on the whole equals the squares on the parts plus twice their rectangle, for Euclid Book II on the Euclidean plane*
 

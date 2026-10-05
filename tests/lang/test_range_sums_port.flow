@@ -1,5 +1,5 @@
 # Tests for compiler/src/range_sums.flow.
-# Run with: ./flow run tests/lang/test_range_sums_port.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_range_sums_port.flow
 
 import "compiler/src/range_sums.flow"
 

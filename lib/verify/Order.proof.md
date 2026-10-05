@@ -2,9 +2,9 @@
 
 *Lattice laws for meet and join on a partial order.*
 
-**Source.** davey-priestley: *Introduction to Lattices and Order*
+**Source.** davey-priestley — *Introduction to Lattices and Order*
 
-## Derived fact 1: Meet is commutative: a ∧ b = b ∧ a
+## Derived fact 1 — Meet is commutative: a ∧ b = b ∧ a
 
 **Coordinate.** Order · meet · order does not matter · **Derived fact**
 
@@ -21,7 +21,7 @@
 
 `Order · meet · order does not matter`
 
-## Derived fact 2: Join is commutative: a ∨ b = b ∨ a
+## Derived fact 2 — Join is commutative: a ∨ b = b ∨ a
 
 **Coordinate.** Order · join · order does not matter · **Derived fact**
 
@@ -38,7 +38,7 @@
 
 `Order · join · order does not matter`
 
-## Derived fact 3: Meet associates: (a ∧ b) ∧ c = a ∧ (b ∧ c)
+## Derived fact 3 — Meet associates: (a ∧ b) ∧ c = a ∧ (b ∧ c)
 
 **Coordinate.** Order · meet · parentheses do not matter · **Derived fact**
 

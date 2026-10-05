@@ -2,13 +2,13 @@
 
 *In any triangle, the greater angle is subtended by the greater side.*
 
-**Source.** euclid: Elements, Book I, Proposition 19
+**Source.** euclid — Elements, Book I, Proposition 19
 
-## Derived fact 1: In any triangle, the greater angle is subtended by the greater side
+## Derived fact 1 — In any triangle, the greater angle is subtended by the greater side
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 19: the greater angle is opposite the greater side · **Derived fact**
 
-*Source: euclid: Elements, Book I, Proposition 19*
+*Source: euclid — Elements, Book I, Proposition 19*
 
 *Built on: proposition 18: the greater side subtends the greater angle, for Book I of the Elements in on the Euclidean plane*
 

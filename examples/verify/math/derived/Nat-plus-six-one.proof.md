@@ -2,9 +2,9 @@
 
 *Six plus one is seven for natural numbers.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 6 + 1 = 7
+## Derived fact 1 — 6 + 1 = 7
 
 **Coordinate.** the natural numbers · addition · six plus one is seven · **Derived fact**
 

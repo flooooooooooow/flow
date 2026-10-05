@@ -2,9 +2,9 @@
 
 *The inverse of a product reverses the factors.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §1.1
+**Source.** dummit-foote — *Abstract Algebra*, §1.1
 
-## Derived fact 1: inv(a * b) = inv(b) * inv(a)
+## Derived fact 1 — inv(a * b) = inv(b) * inv(a)
 
 **Coordinate.** Group · inverse · product inverses reverse order · **Derived fact**
 

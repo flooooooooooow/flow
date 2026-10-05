@@ -2,9 +2,9 @@
 
 *Sixteen plus zero maps to sixteen under a ring homomorphism.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.3
+**Source.** dummit-foote — *Abstract Algebra*, §7.3
 
-## Derived fact 1: f(16 + 0) = 16
+## Derived fact 1 — f(16 + 0) = 16
 
 **Coordinate.** RingHom · preservation · sixteen plus zero maps to sixteen · **Derived fact**
 

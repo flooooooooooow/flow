@@ -2,9 +2,9 @@
 
 *One is the right multiplicative identity for integers.*
 
-**Source.** landau: *Foundations of Analysis*, Ch. 1
+**Source.** landau — *Foundations of Analysis*, Ch. 1
 
-## Derived fact 1: m * 1 = m
+## Derived fact 1 — m * 1 = m
 
 **Coordinate.** the integers · multiplication · one is the right identity · **Derived fact**
 

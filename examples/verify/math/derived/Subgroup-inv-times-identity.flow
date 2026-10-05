@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  The inverse of the identity times the identity stays in a subgroup.
-# @from   dummit-foote: *Abstract Algebra*, §2.2
+# @from   dummit-foote — *Abstract Algebra*, §2.2
 # @tier   derived
 
 # @means  inv(1) * 1 in H for every subgroup H.

@@ -1,3 +1,0 @@
-[0;34mℹ️  Generating GPU shaders from @ROOT@/examples/gpu/vgpu/depth_estimation.flow (wgsl)...[0m
-Generated WGSL shader: @ROOT@/build/wgsl/estimator.wgsl
-Generated 1 GPU shader(s)

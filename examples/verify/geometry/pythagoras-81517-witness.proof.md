@@ -2,9 +2,9 @@
 
 *The 8-15-17 triangle satisfies the Pythagorean relation.*
 
-**Source.** euclid: Elements, Book I, Proposition 47
+**Source.** euclid — Elements, Book I, Proposition 47
 
-## Derived fact 1: 17 squared equals 8 squared plus 15 squared
+## Derived fact 1 — 17 squared equals 8 squared plus 15 squared
 
 **Coordinate.** the Euclidean plane · right triangle · eight fifteen seventeen satisfies Pythagoras · **Derived fact**
 

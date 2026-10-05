@@ -1,2 +1,0 @@
-usage: flow bpf [-h] -o OUTPUT [--target {bpfel}] [--entry ENTRY] [--section SECTION] [--license LICENSE] [-O {0,1,2,3}] input
-flow bpf: error: the following arguments are required: input, -o/--output

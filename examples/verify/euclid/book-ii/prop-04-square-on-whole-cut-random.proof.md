@@ -2,13 +2,13 @@
 
 *If a straight line is cut at random, the square on the whole equals the squares on the segments together with twice the rectangle contained by the segments.*
 
-**Source.** euclid: Elements, Book II, Proposition 4
+**Source.** euclid — Elements, Book II, Proposition 4
 
-## Derived fact 1: If a straight line is cut at random, the square on the whole equals the squares on the segments together with twice the rectangle contained by the segments
+## Derived fact 1 — If a straight line is cut at random, the square on the whole equals the squares on the segments together with twice the rectangle contained by the segments
 
 **Coordinate.** the Euclidean plane · Euclid Book II · Proposition 4: the square on the whole equals the squares on the parts plus twice their rectangle · **Derived fact**
 
-*Source: euclid: Elements, Book II, Proposition 4*
+*Source: euclid — Elements, Book II, Proposition 4*
 
 *Built on: proposition 2: the rectangle by the whole and one part equals the parts plus a square, for Euclid Book II on the Euclidean plane, proposition 3: the rectangle by the whole and the other part equals the parts plus a square, for Euclid Book II on the Euclidean plane*
 

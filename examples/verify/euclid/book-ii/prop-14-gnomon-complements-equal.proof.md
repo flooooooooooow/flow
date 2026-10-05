@@ -2,13 +2,13 @@
 
 *The complements of the parallelograms about the diameter of a gnomon are equal to one another.*
 
-**Source.** euclid: Elements, Book II, Proposition 14
+**Source.** euclid — Elements, Book II, Proposition 14
 
-## Derived fact 1: The complements of the parallelograms about the diameter of a gnomon are equal to one another
+## Derived fact 1 — The complements of the parallelograms about the diameter of a gnomon are equal to one another
 
 **Coordinate.** the Euclidean plane · Euclid Book II · Proposition 14: the complements about the diameter of a gnomon are equal · **Derived fact**
 
-*Source: euclid: Elements, Book II, Proposition 14*
+*Source: euclid — Elements, Book II, Proposition 14*
 
 *Built on: proposition 34: complements of parallelograms about the diameter are equal, for Book I of the Elements in on the Euclidean plane, proposition 11: a gnomon equals the rectangle by the segments, for Euclid Book II on the Euclidean plane*
 

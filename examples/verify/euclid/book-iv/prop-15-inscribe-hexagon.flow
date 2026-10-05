@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-iv
 # @means  In a given circle to inscribe a regular hexagon.
-# @from   euclid: Elements, Book IV, Proposition 15
+# @from   euclid — Elements, Book IV, Proposition 15
 # @tier   derived
 # @needs  «Geometry» «Euclid Book IV» «Proposition 14: in a circle to inscribe a regular polygon», «Geometry» «Euclid Book I» «Proposition 1: equilateral triangle on a segment»
 

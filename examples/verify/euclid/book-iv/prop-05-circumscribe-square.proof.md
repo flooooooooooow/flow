@@ -2,13 +2,13 @@
 
 *About a given circle to circumscribe a square.*
 
-**Source.** euclid: Elements, Book IV, Proposition 5
+**Source.** euclid — Elements, Book IV, Proposition 5
 
-## Derived fact 1: About a given circle to circumscribe a square
+## Derived fact 1 — About a given circle to circumscribe a square
 
 **Coordinate.** the Euclidean plane · Euclid Book IV · Proposition 5: about a circle to circumscribe a square · **Derived fact**
 
-*Source: euclid: Elements, Book IV, Proposition 5*
+*Source: euclid — Elements, Book IV, Proposition 5*
 
 *Built on: proposition 4: in a circle to inscribe a square, for Euclid Book IV on the Euclidean plane, proposition 35: tangents drawn from a point to a circle are equal, for Euclid Book III on the Euclidean plane*
 

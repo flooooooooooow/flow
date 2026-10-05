@@ -1,6 +1,0 @@
-# expect: Module static 'xs' array initializer has 3 elements but the type declares 2
-let mut xs: array<i32, 2> = [1, 2, 3]
-
-function main() -> i32 {
-    return 0
-}

@@ -1,8 +1,8 @@
 # Evolution Suite
 
 Thirty-four programs about systems that change over time. This is the suite
-that carries Flow's founding thesis directly: the dynamics are *declared*
-rather than hand-integrated.
+that carries Flow's founding thesis directly: the dynamics are *declared*,
+not hand-integrated.
 
 ```flow
 flow Pendulum {

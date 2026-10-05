@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Octuple cons ending in nil has length eight.
-# @from   church: https://en.wikipedia.org/wiki/Length_of_a_list
+# @from   church — https://en.wikipedia.org/wiki/Length_of_a_list
 # @tier   derived
 
 # @means  len(cons(a, cons(b, cons(c, cons(d, cons(e, cons(f, cons(g, cons(h, nil)))))))) = 8.

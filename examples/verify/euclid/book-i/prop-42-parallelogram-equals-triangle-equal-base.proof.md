@@ -2,13 +2,13 @@
 
 *A parallelogram on an equal base and between the same parallels equals the triangle on that base.*
 
-**Source.** euclid: Elements, Book I, Proposition 42
+**Source.** euclid — Elements, Book I, Proposition 42
 
-## Derived fact 1: A parallelogram on an equal base and between the same parallels equals the triangle on that base
+## Derived fact 1 — A parallelogram on an equal base and between the same parallels equals the triangle on that base
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 42: a parallelogram equals a triangle on an equal base · **Derived fact**
 
-*Source: euclid: Elements, Book I, Proposition 42*
+*Source: euclid — Elements, Book I, Proposition 42*
 
 *Built on: proposition 41: a parallelogram equals a triangle on the same base, for Book I of the Elements in on the Euclidean plane*
 

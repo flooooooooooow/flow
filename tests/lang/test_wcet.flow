@@ -1,5 +1,5 @@
 # Test for wcet.flow port of wcet_analysis.py helpers.
-# Run with: ./flow run tests/lang/test_wcet.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_wcet.flow
 # Exit 0 on success.
 
 import "compiler/src/wcet.flow"

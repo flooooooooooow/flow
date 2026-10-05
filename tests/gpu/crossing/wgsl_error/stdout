@@ -1,2 +1,0 @@
-Flow @gpu -> WGSL: tests/gpu/programs/wgsl_err_cast.flow
-  wrote site/wasm-crossings/gpu-gate/first_ok.wgsl

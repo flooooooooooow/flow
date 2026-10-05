@@ -2,9 +2,9 @@
 
 *Appending three singletons gives length three.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len(cons(a, nil) ++ cons(b, nil) ++ cons(c, nil)) = 3
+## Derived fact 1 — len(cons(a, nil) ++ cons(b, nil) ++ cons(c, nil)) = 3
 
 **Coordinate.** List · length · append of three singletons has length three · **Derived fact**
 

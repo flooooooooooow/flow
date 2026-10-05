@@ -2,9 +2,9 @@
 
 *Nine plus zero maps to nine under a ring homomorphism.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.3
+**Source.** dummit-foote — *Abstract Algebra*, §7.3
 
-## Derived fact 1: f(9 + 0) = 9
+## Derived fact 1 — f(9 + 0) = 9
 
 **Coordinate.** RingHom · preservation · nine plus zero maps to nine · **Derived fact**
 

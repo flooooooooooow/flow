@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-ii
 # @means  To apply a gnomon equal to a given rectangle in a parallelogram about a given straight line.
-# @from   euclid: Elements, Book II, Proposition 11
+# @from   euclid — Elements, Book II, Proposition 11
 # @tier   derived
 # @needs  «Geometry» «Euclid Book I» «Proposition 34: complements of parallelograms about the diameter are equal», «Geometry» «Euclid Book II» «Proposition 1: the rectangle by two lines equals the sum over segments»
 

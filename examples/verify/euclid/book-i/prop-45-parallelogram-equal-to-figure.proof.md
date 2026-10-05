@@ -2,13 +2,13 @@
 
 *To construct a parallelogram equal to a given rectilineal figure in a given angle.*
 
-**Source.** euclid: Elements, Book I, Proposition 45
+**Source.** euclid — Elements, Book I, Proposition 45
 
-## Derived fact 1: To construct a parallelogram equal to a given rectilineal figure in a given angle
+## Derived fact 1 — To construct a parallelogram equal to a given rectilineal figure in a given angle
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 45: construct a parallelogram equal to a rectilinear figure · **Derived fact**
 
-*Source: euclid: Elements, Book I, Proposition 45*
+*Source: euclid — Elements, Book I, Proposition 45*
 
 *Built on: proposition 44: apply a parallelogram equal to a triangle to a line, for Book I of the Elements in on the Euclidean plane*
 

@@ -1,6 +1,0 @@
-[0;34mℹ️  Compiling <ROOT>/examples/basics/mouse_probe.flow (headless recorder)...[0m
-[0;34mℹ️  flowc emit via <ROOT>/compiler/build/flowc_bootstrap[0m
-[0;32m✅ FLOW → C: mouse_probe.record.c[0m
-[0;32m✅ FLOW → C: runtime_flow/gfx_record.c[0m
-[0;32m✅ Built: <ROOT>/build/mouse_probe.record[0m
-[0;34mℹ️  Recording...[0m

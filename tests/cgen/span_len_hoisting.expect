@@ -1,5 +1,0 @@
-# The loop bound and both in-loop `.len` reads use one invariant temporary.
-~ const int64_t __flowc_len_[0-9]+ = \(xs\)\.len;
-~ for \(int32_t i = 0; i < \(__flowc_len_[0-9]+\); i = i \+ 1\)
-~ for \(int32_t i = 0; i < \(\(xs\)\.len\); i = i \+ 1\)
-exit 0

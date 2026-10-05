@@ -1,1 +1,0 @@
-analyze c lqr: Q has 2 entries but -> lists 1 gains (need one gain per state)

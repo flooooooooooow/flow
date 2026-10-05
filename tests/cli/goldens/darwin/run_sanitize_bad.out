@@ -1,4 +1,0 @@
-[0;34mℹ️  Compiling tests/cli/fixtures/hello.flow (host=flowc)...[0m
-[0;34mℹ️  flowc emit via <ROOT>/compiler/build/flowc_bootstrap[0m
-[0;32m✅ FLOW → C: hello.c[0m
-[0;31m❌ Unknown sanitizer 'bogus' (expected ub,asan,tsan)[0m

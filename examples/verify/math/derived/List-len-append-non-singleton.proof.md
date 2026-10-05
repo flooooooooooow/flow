@@ -2,9 +2,9 @@
 
 *Appending nine singletons gives length nine.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len of nine appended singletons equals 9
+## Derived fact 1 — len of nine appended singletons equals 9
 
 **Coordinate.** List · length · append of nine singletons has length nine · **Derived fact**
 

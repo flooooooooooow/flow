@@ -1,8 +1,0 @@
-Pure computation	runs	Runs today	Arithmetic, arrays, structs, strings, printf. Straight Flow to C to wasm32 with nothing else linked in.
-gfx graphics and keyboard	runs	Runs today	runtime/gfx_wasm.c paints the framebuffer onto a canvas and maps DOM key events to the macOS keycodes the programs already use.
-Threads and channels	runs	Runs today	digits_mlp_parallel and parallel_sum run on real Emscripten pthreads over SharedArrayBuffer and Web Workers. SharedArrayBuffer needs a cross-origin-isolated page, so open those cards in a tab and let their service worker reload once.
-Sockets and HTTP	wip	In progress	Emscripten's WebSocket-backed POSIX socket bridge (-lwebsocket.js / PROXY_POSIX_SOCKETS). Not built here.
-GPU kernels	wip	In progress	WebGPU, with WGSL generated from the same @gpu AST that already emits Metal. Not built here.
-Embedded CPython	wip	In progress	Pyodide, which is CPython itself compiled to WebAssembly. Not built here.
-File I/O	wip	In progress	Emscripten's MEMFS and IDBFS filesystems. Not wired into these pages.
-Audio	none	Not attempted	The miniaudio and Metal audio backends have no browser counterpart here yet; WebAudio would be the route.

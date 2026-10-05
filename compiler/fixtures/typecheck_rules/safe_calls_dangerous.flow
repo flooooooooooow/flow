@@ -1,9 +1,0 @@
-# expect: Safety boundary violation: 'checked' is marked '@safe' but calls dangerous FFI 'system'
-@safe
-function checked() -> i32 {
-    return system("ls")
-}
-
-function main() -> i32 {
-    return 0
-}

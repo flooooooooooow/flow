@@ -1,5 +1,5 @@
 # Test for the generic premise instantiation in proof_sub.flow.
-# Run with: ./flow run tests/lang/test_proof_sub_gen.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_proof_sub_gen.flow
 # Exit 0 on success.
 
 import "compiler/src/proof_sub.flow"

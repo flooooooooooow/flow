@@ -2,9 +2,9 @@
 
 *Eighteen plus zero is eighteen in a monoid witness.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §1.1
+**Source.** dummit-foote — *Abstract Algebra*, §1.1
 
-## Derived fact 1: 18 + 0 = 18
+## Derived fact 1 — 18 + 0 = 18
 
 **Coordinate.** Monoid · addition · eighteen plus zero is eighteen · **Derived fact**
 

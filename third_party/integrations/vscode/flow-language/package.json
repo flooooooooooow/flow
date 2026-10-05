@@ -260,17 +260,17 @@
         "flow.lspPath": {
           "type": "string",
           "default": "",
-          "description": "Optional path to a FLOW language server executable. When empty, runs `flow lsp` from the Flow checkout (the native server in tools/lsp)."
+          "description": "Optional path to a dedicated FLOW LSP binary. When empty, uses python3 -m flow.lsp_server."
         },
         "flow.pythonPath": {
           "type": "string",
           "default": "python3",
-          "description": "Python used by the debug adapter's transpile step."
+          "description": "Python used to launch flow.lsp_server when flow.lspPath is empty."
         },
         "flow.repoPath": {
           "type": "string",
           "default": "",
-          "description": "Path to a Flow language checkout, used to find `flow` for the language server, run, compile and debug. Auto-detected from the workspace when possible."
+          "description": "Path to a Flow language checkout (adds <repo>/src to PYTHONPATH). Auto-detected from the workspace when possible."
         }
       }
     }
@@ -284,12 +284,12 @@
     "publish:ovsx": "ovsx publish --no-dependencies"
   },
   "devDependencies": {
-    "@types/node": "^26.6.3",
-    "@types/vscode": "^1.138.0",
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.125.0",
     "@vscode/vsce": "^3.0.0",
     "typescript": "^7.0.2"
   },
   "dependencies": {
-    "vscode-languageclient": "^10.1.2"
+    "vscode-languageclient": "^10.1.0"
   }
 }

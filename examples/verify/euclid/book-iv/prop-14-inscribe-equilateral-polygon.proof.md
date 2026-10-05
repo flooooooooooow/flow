@@ -2,13 +2,13 @@
 
 *In a given circle to inscribe a rectilineal figure equilateral and equiangular.*
 
-**Source.** euclid: Elements, Book IV, Proposition 14
+**Source.** euclid — Elements, Book IV, Proposition 14
 
-## Derived fact 1: In a given circle to inscribe a rectilineal figure equilateral and equiangular
+## Derived fact 1 — In a given circle to inscribe a rectilineal figure equilateral and equiangular
 
 **Coordinate.** the Euclidean plane · Euclid Book IV · Proposition 14: in a circle to inscribe a regular polygon · **Derived fact**
 
-*Source: euclid: Elements, Book IV, Proposition 14*
+*Source: euclid — Elements, Book IV, Proposition 14*
 
 *Built on: proposition 9: in a circle to inscribe a regular pentagon, for Euclid Book IV on the Euclidean plane, proposition 26: in equal circles equal angles stand on equal arcs, for Euclid Book III on the Euclidean plane*
 

@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-vi
 # @means  If two triangles are equiangular, they have one angle equal and the sides about equal angles proportional.
-# @from   euclid: Elements, Book VI, Proposition 7
+# @from   euclid — Elements, Book VI, Proposition 7
 # @tier   derived
 # @needs  «Geometry» «Euclid Book VI» «Proposition 6: one equal angle and proportional including sides imply equiangular triangles»
 

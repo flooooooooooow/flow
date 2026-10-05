@@ -2,13 +2,13 @@
 
 *If from a point outside a circle a secant and a tangent are drawn, the rectangle on the whole secant and the exterior segment equals the square on the tangent.*
 
-**Source.** euclid: Elements, Book III, Proposition 8
+**Source.** euclid — Elements, Book III, Proposition 8
 
-## Derived fact 1: If from a point outside a circle a secant and a tangent are drawn, the rectangle on the whole secant and the exterior segment equals the square on the tangent
+## Derived fact 1 — If from a point outside a circle a secant and a tangent are drawn, the rectangle on the whole secant and the exterior segment equals the square on the tangent
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 8: the rectangle on a secant and its exterior segment equals the square on the tangent · **Derived fact**
 
-*Source: euclid: Elements, Book III, Proposition 8*
+*Source: euclid — Elements, Book III, Proposition 8*
 
 *Built on: proposition 7: the square on a half-diameter exceeds the square on a line to an interior point, for Euclid Book III on the Euclidean plane*
 

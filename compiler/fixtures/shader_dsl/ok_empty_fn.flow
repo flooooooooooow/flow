@@ -1,6 +1,0 @@
-fn nothing(x: f32) -> f32 {
-}
-
-shader fill empty_fn {
-    color = vec4(nothing(1.0))
-}

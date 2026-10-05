@@ -2,9 +2,9 @@
 
 *Decuple cons ending in nil has length ten.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len of ten cons ending in nil equals 10
+## Derived fact 1 — len of ten cons ending in nil equals 10
 
 **Coordinate.** List · length · decuple cons nil has length ten · **Derived fact**
 

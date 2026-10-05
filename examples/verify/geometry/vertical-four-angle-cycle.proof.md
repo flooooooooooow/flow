@@ -2,9 +2,9 @@
 
 *Four vertical angles around intersecting lines cycle by equality.*
 
-**Source.** euclid: Elements, Book I, Proposition 15
+**Source.** euclid — Elements, Book I, Proposition 15
 
-## Derived fact 1: angle alpha prime equals angle alpha across the cycle
+## Derived fact 1 — angle alpha prime equals angle alpha across the cycle
 
 **Coordinate.** the Euclidean plane · intersecting lines · four vertical angles cycle equally · **Derived fact**
 

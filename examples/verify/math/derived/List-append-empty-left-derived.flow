@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Empty list appended on the left changes nothing.
-# @from   church: https://en.wikipedia.org/wiki/List_(abstract_data_type)
+# @from   church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
 # @tier   derived
 
 # @means  nil ++ xs = xs.

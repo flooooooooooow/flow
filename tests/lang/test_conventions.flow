@@ -1,5 +1,5 @@
 # Test for conventions.flow port of conventions.py (#415).
-# Run with: ./flow run tests/lang/test_conventions.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_conventions.flow
 # Exit 0 on success.
 
 import "compiler/src/conventions.flow"

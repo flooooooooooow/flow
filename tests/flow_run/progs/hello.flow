@@ -1,4 +1,0 @@
-function main() -> i32 {
-    println("hello from flow")
-    return 0
-}

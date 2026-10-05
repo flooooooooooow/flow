@@ -1,4 +1,0 @@
-dynamics {
-    # a comment
-    horizon h finite 3
-}

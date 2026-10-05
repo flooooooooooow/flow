@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-iii
 # @means  If two straight lines from a point touch a circle, the straight lines are equal.
-# @from   euclid: Elements, Book III, Proposition 35
+# @from   euclid — Elements, Book III, Proposition 35
 # @tier   derived
 # @needs  «Geometry» «Euclid Book III» «Proposition 8: the rectangle on a secant and its exterior segment equals the square on the tangent»
 

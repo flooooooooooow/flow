@@ -1,1 +1,0 @@
-error: a WGSL compute entry point returns nothing; write results to a buffer

@@ -2,13 +2,13 @@
 
 *If from a point on the base of a triangle a line is drawn meeting the sides and the subtriangles are similar to the whole, the angle at the base is right.*
 
-**Source.** euclid: Elements, Book VI, Proposition 9
+**Source.** euclid — Elements, Book VI, Proposition 9
 
-## Derived fact 1: If from a point on the base of a triangle a line is drawn meeting the sides and the subtriangles are similar to the whole, the angle at the base is right
+## Derived fact 1 — If from a point on the base of a triangle a line is drawn meeting the sides and the subtriangles are similar to the whole, the angle at the base is right
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 9: similar subtriangles sharing an acute angle imply a right triangle · **Derived fact**
 
-*Source: euclid: Elements, Book VI, Proposition 9*
+*Source: euclid — Elements, Book VI, Proposition 9*
 
 *Built on: proposition 8: in a right triangle the altitude to the hypotenuse gives similar subtriangles, for Euclid Book VI on the Euclidean plane*
 

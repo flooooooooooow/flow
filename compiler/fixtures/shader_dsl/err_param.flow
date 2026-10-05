@@ -1,7 +1,0 @@
-fn f(x) -> f32 {
-    return x
-}
-
-shader fill p {
-    color = vec4(1.0)
-}

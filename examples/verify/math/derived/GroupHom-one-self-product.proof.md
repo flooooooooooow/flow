@@ -2,9 +2,9 @@
 
 *A group homomorphism preserves the identity product.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §1.6
+**Source.** dummit-foote — *Abstract Algebra*, §1.6
 
-## Derived fact 1: f(1) * f(1) = f(1)
+## Derived fact 1 — f(1) * f(1) = f(1)
 
 **Coordinate.** GroupHom · identity · the identity image multiplies to itself · **Derived fact**
 

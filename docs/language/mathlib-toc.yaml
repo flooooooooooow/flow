@@ -97,6 +97,7 @@ book_parts:
     current_theorems: 48
     bundle_key: EUCLID_BOOK_I_BUNDLE
     example_roots: [examples/verify/euclid/book-i/]
+    generator: tools/generate_euclid_book_i.py
 
   - title: "Book II — Euclid (areas)"
     phase: 3
@@ -104,6 +105,7 @@ book_parts:
     current_theorems: 14
     bundle_key: EUCLID_BOOK_II_BUNDLE
     example_roots: [examples/verify/euclid/book-ii/]
+    generator: tools/generate_euclid_book_ii.py
 
   - title: "Book III — Euclid (circles)"
     phase: 3
@@ -111,6 +113,7 @@ book_parts:
     current_theorems: 37
     bundle_key: EUCLID_BOOK_III_BUNDLE
     example_roots: [examples/verify/euclid/book-iii/]
+    generator: tools/generate_euclid_book_iii.py
 
   - title: "Book IV — Euclid (polygons)"
     phase: 3
@@ -118,6 +121,7 @@ book_parts:
     current_theorems: 16
     bundle_key: EUCLID_BOOK_IV_BUNDLE
     example_roots: [examples/verify/euclid/book-iv/]
+    generator: tools/generate_euclid_book_iv.py
 
   - title: "Book V — Euclid (proportion)"
     phase: 3
@@ -125,6 +129,7 @@ book_parts:
     current_theorems: 25
     bundle_key: EUCLID_BOOK_V_BUNDLE
     example_roots: [examples/verify/euclid/book-v/]
+    generator: tools/generate_euclid_book_v.py
 
   - title: "Book VI — Euclid (similar figures)"
     phase: 3
@@ -132,6 +137,7 @@ book_parts:
     current_theorems: 33
     bundle_key: EUCLID_BOOK_VI_BUNDLE
     example_roots: [examples/verify/euclid/book-vi/]
+    generator: tools/generate_euclid_book_vi.py
 
   - title: "Geometry — Derived Lemmas"
     phase: 3

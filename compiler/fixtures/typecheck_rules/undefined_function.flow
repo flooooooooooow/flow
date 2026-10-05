@@ -1,4 +1,0 @@
-# expect: Undefined function 'nope'
-function main() -> i32 {
-    return nope(1)
-}

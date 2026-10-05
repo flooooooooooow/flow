@@ -2,13 +2,13 @@
 
 *Triangles on equal bases and in the same parallels are equal.*
 
-**Source.** euclid: Elements, Book I, Proposition 28
+**Source.** euclid — Elements, Book I, Proposition 28
 
-## Derived fact 1: Triangles on equal bases and in the same parallels are equal
+## Derived fact 1 — Triangles on equal bases and in the same parallels are equal
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 28: triangles on equal bases and parallels are equal · **Derived fact**
 
-*Source: euclid: Elements, Book I, Proposition 28*
+*Source: euclid — Elements, Book I, Proposition 28*
 
 *Built on: proposition 27: a triangle is half a parallelogram on same base, for Book I of the Elements in on the Euclidean plane*
 

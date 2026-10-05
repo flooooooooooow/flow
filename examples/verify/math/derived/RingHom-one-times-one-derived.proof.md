@@ -2,9 +2,9 @@
 
 *One times one maps to one under a ring homomorphism.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.3
+**Source.** dummit-foote — *Abstract Algebra*, §7.3
 
-## Derived fact 1: f(1 * 1) = 1
+## Derived fact 1 — f(1 * 1) = 1
 
 **Coordinate.** RingHom · preservation · one times one maps to one derived · **Derived fact**
 

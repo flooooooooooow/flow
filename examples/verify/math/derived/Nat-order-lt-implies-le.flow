@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Strict less implies less-or-equal on naturals.
-# @from   peano: https://en.wikipedia.org/wiki/Total_order
+# @from   peano — https://en.wikipedia.org/wiki/Total_order
 # @tier   derived
 
 # @means  a < b implies a <= b.

@@ -32,7 +32,7 @@
 #   G. I. Sivashinsky, Acta Astronaut. 4:1177-1206 (1977).
 #
 # Run (headless, gated):
-#   ./flow record examples/morphogenesis/kuramoto_sivashinsky.flow \
+#   FLOW_HOST=python ./flow record examples/morphogenesis/kuramoto_sivashinsky.flow \
 #       --frames 4 --out /tmp/rec_kuramoto_sivashinsky
 # Run (windowed):
 #   ./flow gfx examples/morphogenesis/kuramoto_sivashinsky.flow

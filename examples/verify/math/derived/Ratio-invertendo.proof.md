@@ -2,9 +2,9 @@
 
 *Proportional magnitudes satisfy invertendo.*
 
-**Source.** euclid: Elements, Book V, Proposition 10
+**Source.** euclid — Elements, Book V, Proposition 10
 
-## Derived fact 1: a:b = c:d implies b:a = d:c
+## Derived fact 1 — a:b = c:d implies b:a = d:c
 
 **Coordinate.** Ratio · proportion · invertendo holds · **Derived fact**
 

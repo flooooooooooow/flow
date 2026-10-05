@@ -205,7 +205,7 @@ function carrier() -> Hertz {
 }
 ```
 
-Incompatible unit arithmetic is a compile-time error and should be shown as an explicit negative test rather than as supposedly runnable code.
+Incompatible unit arithmetic is a compile-time error and should be shown as an explicit negative test, not as supposedly runnable code.
 
 ## RF aliases
 

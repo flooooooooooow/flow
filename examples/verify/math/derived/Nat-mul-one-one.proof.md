@@ -2,9 +2,9 @@
 
 *One times one is one via the squared identity.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 1 * 1 = 1
+## Derived fact 1 — 1 * 1 = 1
 
 **Coordinate.** the natural numbers · multiplication · one squared is one · **Derived fact**
 

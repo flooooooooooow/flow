@@ -1,5 +1,0 @@
-# Ported from tests/unit/test_c_generator_abi.py.
-+ puts("hi");
-- flow_puts
-exit 0
-stdout hi

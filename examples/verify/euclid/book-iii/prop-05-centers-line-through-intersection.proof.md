@@ -2,13 +2,13 @@
 
 *If two circles cut one another, the straight line joining their centers passes through the point of intersection.*
 
-**Source.** euclid: Elements, Book III, Proposition 5
+**Source.** euclid — Elements, Book III, Proposition 5
 
-## Derived fact 1: If two circles cut one another, the straight line joining their centers passes through the point of intersection
+## Derived fact 1 — If two circles cut one another, the straight line joining their centers passes through the point of intersection
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 5: the line joining centers passes through the intersection · **Derived fact**
 
-*Source: euclid: Elements, Book III, Proposition 5*
+*Source: euclid — Elements, Book III, Proposition 5*
 
 *Built on: proposition 4: chords not through the center do not bisect each other, for Euclid Book III on the Euclidean plane*
 

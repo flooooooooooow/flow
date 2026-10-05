@@ -2,13 +2,13 @@
 
 *Multiplication commutes on natural numbers.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: a * b = b * a
+## Derived fact 1 — a * b = b * a
 
 **Coordinate.** the natural numbers · multiplication · order does not matter · **Derived fact**
 
-*Source: peano/induction: Gries & Schneider, Ch. 3*
+*Source: peano/induction — Gries & Schneider, Ch. 3*
 
 *Built on: zero is the left annihilator, for multiplication on the natural numbers, zero is the right annihilator, for multiplication on the natural numbers, successor on the right distributes, for multiplication on the natural numbers, you can swap the order when you add*
 

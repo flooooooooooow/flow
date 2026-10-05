@@ -1,2 +1,0 @@
-Error: 'a.nope' in flow 'B' is not a port of 'A' at line 11
-connect sources must be an output or state of 'A'

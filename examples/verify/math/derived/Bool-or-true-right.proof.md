@@ -2,9 +2,9 @@
 
 *True is absorbing for disjunction on the right.*
 
-**Source.** boole: https://en.wikipedia.org/wiki/Boolean_algebra
+**Source.** boole — https://en.wikipedia.org/wiki/Boolean_algebra
 
-## Derived fact 1: a or true = true
+## Derived fact 1 — a or true = true
 
 **Coordinate.** boolean truth values · disjunction · true is absorbing on the right · **Derived fact**
 

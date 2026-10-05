@@ -2,9 +2,9 @@
 
 *Proportional magnitudes satisfy dividendo.*
 
-**Source.** euclid: Elements, Book V, Proposition 12
+**Source.** euclid — Elements, Book V, Proposition 12
 
-## Derived fact 1: a:b = c:d implies (a-b):b = (c-d):d
+## Derived fact 1 — a:b = c:d implies (a-b):b = (c-d):d
 
 **Coordinate.** Ratio · proportion · dividendo holds · **Derived fact**
 

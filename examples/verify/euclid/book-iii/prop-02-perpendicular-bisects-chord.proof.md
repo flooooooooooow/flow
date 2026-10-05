@@ -2,13 +2,13 @@
 
 *If a straight line through the center of a circle cuts a chord at right angles, it bisects the chord and the central angles.*
 
-**Source.** euclid: Elements, Book III, Proposition 2
+**Source.** euclid — Elements, Book III, Proposition 2
 
-## Derived fact 1: If a straight line through the center of a circle cuts a chord at right angles, it bisects the chord and the central angles
+## Derived fact 1 — If a straight line through the center of a circle cuts a chord at right angles, it bisects the chord and the central angles
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 2: a perpendicular from the center bisects the chord · **Derived fact**
 
-*Source: euclid: Elements, Book III, Proposition 2*
+*Source: euclid — Elements, Book III, Proposition 2*
 
 *Built on: proposition 10: bisect a given segment, for Book I of the Elements in on the Euclidean plane*
 

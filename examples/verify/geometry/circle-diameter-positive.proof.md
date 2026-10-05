@@ -2,9 +2,9 @@
 
 *A circle diameter is positive.*
 
-**Source.** euclid: Elements, Book I, Definition 15
+**Source.** euclid — Elements, Book I, Definition 15
 
-## Derived fact 1: diameter AB is greater than zero
+## Derived fact 1 — diameter AB is greater than zero
 
 **Coordinate.** the Euclidean plane · circle · diameter is positive · **Derived fact**
 

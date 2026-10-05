@@ -1,5 +1,0 @@
-# A (T) -> R type lowers to a fat pointer typedef: code pointer plus env.
-+ typedef struct { int32_t (*fn)(void*, int32_t); void* env; } fn_i32__i32;
-+ .env =
-+ add_n.fn(add_n.env, 10)
-exit 15

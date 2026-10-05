@@ -2,9 +2,9 @@
 
 *Septendecuple cons ending in nil has length seventeen.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len of seventeen cons ending in nil equals 17
+## Derived fact 1 — len of seventeen cons ending in nil equals 17
 
 **Coordinate.** List · length · septendecuple cons nil has length seventeen · **Derived fact**
 

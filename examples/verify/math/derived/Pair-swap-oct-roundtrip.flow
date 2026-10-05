@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Octuple swap returns the original pair.
-# @from   church: https://en.wikipedia.org/wiki/Product_type
+# @from   church — https://en.wikipedia.org/wiki/Product_type
 # @tier   derived
 
 # @means  eight nested swaps on a pair returns the pair.

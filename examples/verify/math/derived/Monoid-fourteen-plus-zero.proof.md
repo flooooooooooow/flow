@@ -2,9 +2,9 @@
 
 *Fourteen plus zero is fourteen in a monoid witness.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §1.1
+**Source.** dummit-foote — *Abstract Algebra*, §1.1
 
-## Derived fact 1: 14 + 0 = 14
+## Derived fact 1 — 14 + 0 = 14
 
 **Coordinate.** Monoid · addition · fourteen plus zero is fourteen · **Derived fact**
 

@@ -1,2 +1,0 @@
-Error: 'when y reaches' in flow 'Osc' requires 'y' to be a declared state at line 4
-declare 'state y : f64 = 0.0' or fix the name

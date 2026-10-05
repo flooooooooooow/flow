@@ -2,9 +2,9 @@
 
 *A ring homomorphism sends zero times one to zero.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.3
+**Source.** dummit-foote — *Abstract Algebra*, §7.3
 
-## Derived fact 1: f(0) * 1 = 0
+## Derived fact 1 — f(0) * 1 = 0
 
 **Coordinate.** RingHom · multiplication · zero times one maps to zero · **Derived fact**
 

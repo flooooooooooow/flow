@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Meet of meet and join is idempotent on the left.
-# @from   davey-priestley: *Introduction to Lattices and Order*
+# @from   davey-priestley — *Introduction to Lattices and Order*
 # @tier   derived
 
 # @means  meet(meet(a, b), join(a, b)) = meet(a, b).

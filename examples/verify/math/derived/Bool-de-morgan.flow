@@ -1,10 +1,10 @@
 # @module examples.verify.math.derived
 # @means  De Morgan law linking negation with conjunction and disjunction.
-# @from   boole: https://en.wikipedia.org/wiki/De_Morgan%27s_laws
+# @from   boole — https://en.wikipedia.org/wiki/De_Morgan%27s_laws
 # @tier   derived
 
 # @means  ¬(a ∧ b) = (¬a) ∨ (¬b).
-# @from   boole: https://en.wikipedia.org/wiki/De_Morgan%27s_laws
+# @from   boole — https://en.wikipedia.org/wiki/De_Morgan%27s_laws
 # @tier   derived
 # @needs  «Bool» «negation» «double negation returns the value»
 

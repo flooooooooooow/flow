@@ -4,7 +4,7 @@
 
 **Source.** Ideal one times one
 
-## Derived fact 1: One times one is one in an ideal witness
+## Derived fact 1 — One times one is one in an ideal witness
 
 **Coordinate.** Ideal · one · times one · **Derived fact**
 

@@ -247,7 +247,7 @@ export function xp_onset_sd_us() -> f64 {
 }
 
 # Worst absolute onset error seen since the last reset. This is the number a
-# reviewer should be shown, rather than the mean.
+# reviewer should be shown, not the mean.
 export function xp_onset_worst_us() -> f64 {
     return xp_on_worst
 }
@@ -528,7 +528,7 @@ export function xp_cell(pos: i32) -> i32 {
 
 # Split the trial list into n equal blocks. Returns false if the trial count
 # does not divide evenly, because a ragged last block quietly unbalances a
-# design and that should be an error rather than a rounding.
+# design and that should be an error, not a rounding.
 export function xp_blocks(n: i32) -> bool {
     if n < 1 or xp_ntrial < 1 {
         return false
@@ -923,7 +923,7 @@ let mut xp_csv: ptr<void> = null
 let mut xp_csv_rows: i32 = 0
 
 # Create the directory a path lives in, walking each `/`-separated prefix so
-# it behaves like `mkdir -p`. An existing directory counts as success.
+# it behaves like `mkdir -p`. An existing directory is success, not an error.
 #
 # This calls mkdir(2) rather than shelling out: the transpiler emits a
 # prototype for every extern, and a `system` prototype collides with the one

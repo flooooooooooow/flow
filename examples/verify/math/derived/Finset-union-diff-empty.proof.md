@@ -2,9 +2,9 @@
 
 *Union difference with empty is the union.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: (s ∪ t) \ empty = s ∪ t
+## Derived fact 1 — (s ∪ t) \ empty = s ∪ t
 
 **Coordinate.** Finset · difference · union diff empty is union · **Derived fact**
 

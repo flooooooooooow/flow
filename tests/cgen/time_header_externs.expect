@@ -1,6 +1,0 @@
-# <time.h> owns the prototypes for localtime_r and strftime, so flowc does
-# not emit its own (they would clash on the parameter types).
-+ #include <time.h>
-- localtime_r(
-- strftime(
-exit 0

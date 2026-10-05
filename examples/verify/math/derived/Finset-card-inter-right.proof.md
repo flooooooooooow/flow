@@ -2,9 +2,9 @@
 
 *Cardinality of an intersection is at most the right operand.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: card(a ∩ b) ≤ card(b)
+## Derived fact 1 — card(a ∩ b) ≤ card(b)
 
 **Coordinate.** Finset · cardinality · intersection size is at most the right factor · **Derived fact**
 

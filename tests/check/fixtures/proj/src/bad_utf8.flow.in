@@ -1,4 +1,0 @@
-function bad() -> i32 {
-    let mut s: i32 = 1 # ÿş
-    return s
-}

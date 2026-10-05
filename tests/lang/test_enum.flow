@@ -1,7 +1,7 @@
 # Test for enum parsing and C-style enum code generation.
 # Tests that the self-hosted parser recognizes enum declarations
 # and the bootstrap compiler generates C typedef enum.
-# Run with: ./flow run tests/lang/test_enum.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_enum.flow
 # Also testable with bootstrap: compiler/bootstrap/flowc_stage_a
 
 extern {

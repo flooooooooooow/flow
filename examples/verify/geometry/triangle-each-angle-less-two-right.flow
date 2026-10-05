@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  Each interior angle of a triangle is less than two right angles.
-# @from   euclid: Elements, Book I, Proposition 17
+# @from   euclid — Elements, Book I, Proposition 17
 # @tier   derived
 
 # @means  angle A is less than two right angles.

@@ -7,26 +7,11 @@ import .ast {
     AST_IF, AST_WHILE, AST_FOR, AST_BINOP, AST_UNARY, AST_CALL, AST_IDENT,
     AST_INT, AST_BOOL, AST_STRING, AST_FLOAT, AST_ASSIGN, AST_EXPR_STMT,
     AST_FIELD_ACCESS, AST_INDEX, AST_STRUCT_LIT, AST_CAST, AST_ARRAY_LIT,
-    AST_CONST, AST_EXPORT, AST_IMPORT, AST_EXTERN, AST_C_IMPORT, AST_TYPE, AST_STRUCT, AST_FIELD,
+    AST_CONST, AST_EXPORT, AST_IMPORT, AST_EXTERN, AST_TYPE, AST_STRUCT, AST_FIELD,
     AST_BREAK, AST_CONTINUE, AST_MATCH, AST_MATCH_ARM,
-    AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_TYPE_ALIAS, AST_SHADER, AST_IDENT_SORT_MOD, AST_MATCH_ARM_EXT, AST_LAYOUT, AST_PIPE_BLOCK, PIPE_BLOCK_CHOOSE, AST_IDENT_FORK_SRC, AST_SORT_BY, AST_TRY, AST_VECTOR_LIT,
-    AST_HANDLE, AST_CAPABILITY, AST_CAP_METHOD, AST_TYPE_CAPABILITY,
-    AST_ATTR, AST_ATTR_HAS_ARGS,
-    flowc_ast_chain_len, flowc_ast_reject_unsupported, flowc_ast_reject_unsupported_but, flowc_ast_enum_of_const, AST_RECORD_UPDATE
+    AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_SHADER,
+    flowc_ast_chain_len
 }
-import .attributes {
-    flowc_attr_args_from_span, flowc_attr_span_is, flowc_is_known_attr,
-    flowc_attr_takes_args, flowc_validate_target_spec
-}
-import .effects {
-    FLOWC_EFF_EFFECT, FLOWC_EFF_CAP, FLOWC_EFF_ROW,
-    flowc_eff_collect, flowc_eff_find, flowc_eff_field_int, flowc_eff_item,
-    flowc_eff_item_len, flowc_eff_item_is, flowc_eff_item_is_lit,
-    flowc_eff_is_effect, flowc_eff_is_cap, flowc_eff_row_of,
-    flowc_eff_diag_begin, flowc_eff_diag_s, flowc_eff_diag_span,
-    flowc_eff_diag_buf, flowc_eff_diag_int, flowc_eff_diag_end
-}
-import .proof_lower { flowc_proof_erase }
 import .overload_table {
     FlowcOverloadTable,
     flowc_overload_table_init,
@@ -55,7 +40,7 @@ extern {
     function free(p: ptr<u8>) -> void
     function strlen(s: string) -> i64
     function puts(s: string) -> i32
-    function printf(fmt: string, ...) -> i32
+    function printf(fmt: string, val: i32) -> i32
     function getenv(name: string) -> string
 }
 
@@ -81,9 +66,6 @@ export struct TcCtx {
     loop_depth: i32,
     has_extern: i32,
     lenient: i32,
-    # Errors the Python host reports even under --lenient (a capability used
-    # as a value, a construct Stage-A cannot lower).
-    fatal: i32,
     seed_buf: ptr<u8>,
     seed_cap: i32,
     seed_len: i32,
@@ -91,28 +73,7 @@ export struct TcCtx {
     overloads: FlowcOverloadTable,
     overload_scratch: FlowcOverloadCallScratch,
     # Optional source path for diagnostics (may be empty).
-    path: string,
-    # Effect table (see effects.flow): dependency entries in [0, eff_seed_len),
-    # the module being checked after them.
-    eff: ptr<u8>,
-    eff_len: i32,
-    eff_cap: i32,
-    eff_seed_len: i32,
-    # Effects handled at the current point: the enclosing function's `with`
-    # row, then one entry per effect of each enclosing `handle`. Name spans in src.
-    hs_s: ptr<i32>,
-    hs_e: ptr<i32>,
-    hlen: i32,
-    hcap: i32,
-    # Function or capability method being checked, else AST_NONE.
-    cur_fn: i32,
-    # Stable effect rows are checked by default. FLOWC_PERMISSIVE_EFFECTS=1
-    # restores the legacy permissive path.
-    strict_effects: i32,
-    # 1 when the semantic checker (sem_check.flow) ran on this program: the
-    # checks it makes with the Python host's rules and messages are left to
-    # it, and this pass keeps only what C generation needs on top of them.
-    sem_on: i32
+    path: string
 }
 
 function flowc_tc_span_eq(src: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i32 {
@@ -361,62 +322,6 @@ function flowc_tc_struct_has_field(arena: AstArena, src: ptr<u8>, st: i32, fs: i
     return 0
 }
 
-function flowc_tc_is_complex_builtin(src: ptr<u8>, start: i32, end: i32) -> i32 {
-    if flowc_tc_span_is(src, start, end, "c64") == 1 { return 1 }
-    if flowc_tc_span_is(src, start, end, "c128") == 1 { return 1 }
-    if flowc_tc_span_is(src, start, end, "creal") == 1 { return 1 }
-    if flowc_tc_span_is(src, start, end, "cimag") == 1 { return 1 }
-    if flowc_tc_span_is(src, start, end, "cabs") == 1 { return 1 }
-    if flowc_tc_span_is(src, start, end, "carg") == 1 { return 1 }
-    if flowc_tc_span_is(src, start, end, "conj") == 1 { return 1 }
-    if flowc_tc_span_is(src, start, end, "cexp") == 1 { return 1 }
-    if flowc_tc_span_is(src, start, end, "clog") == 1 { return 1 }
-    if flowc_tc_span_is(src, start, end, "csqrt") == 1 { return 1 }
-    if flowc_tc_span_is(src, start, end, "cpow") == 1 { return 1 }
-    return 0
-}
-
-# 1 when the span equals one of the space-separated words in `list`.
-function flowc_tc_span_in_words(src: ptr<u8>, start: i32, end: i32, list: string) -> i32 {
-    let p: ptr<u8> = list
-    let n: i32 = strlen(list) as i32
-    let len: i32 = end - start
-    let mut i: i32 = 0
-    while i < n {
-        let mut j: i32 = i
-        while j < n and p[j] != 32 {
-            j = j + 1
-        }
-        if j - i == len {
-            let mut k: i32 = 0
-            while k < len and p[i + k] == src[start + k] {
-                k = k + 1
-            }
-            if k == len {
-                return 1
-            }
-        }
-        i = j + 1
-    }
-    return 0
-}
-
-# Functions the Python checker knows without a declaration
-# (TypeChecker.BUILTIN_FUNCTIONS in src/flow/type_checker.py): the C
-# library the generated C includes, libm, and the Flow runtime names (#1006).
-function flowc_tc_is_libc_builtin(src: ptr<u8>, start: i32, end: i32) -> i32 {
-    if flowc_tc_span_in_words(src, start, end, "printf sprintf fprintf scanf sscanf malloc calloc realloc free memcpy memset memmove memcmp strlen strcpy strcat strcmp strncpy strncmp exit abort flow_panic atexit fopen fclose fread fwrite fgets fputs putchar rand srand time clock get_current_time") == 1 {
-        return 1
-    }
-    if flowc_tc_span_in_words(src, start, end, "sin cos tan asin acos atan atan2 sinh cosh tanh asinh acosh atanh exp exp2 expm1 log log2 log10 log1p pow sqrt cbrt hypot ceil floor round trunc fabs fmod fmin fmax fdim sigmoid") == 1 {
-        return 1
-    }
-    if flowc_tc_span_in_words(src, start, end, "alloc dealloc array_length length array gpu_thread_id gpu_block_id gpu_sync metal_create_buffer metal_execute metal_get_result emit query insert read write") == 1 {
-        return 1
-    }
-    return 0
-}
-
 function flowc_tc_lookup_fn(ctx: TcCtx, start: i32, end: i32) -> i32 {
     # Intrinsics: println, print, puts — always available.
     if flowc_tc_span_is(ctx.src, start, end, "println") == 1 {
@@ -428,32 +333,10 @@ function flowc_tc_lookup_fn(ctx: TcCtx, start: i32, end: i32) -> i32 {
     if flowc_tc_span_is(ctx.src, start, end, "puts") == 1 {
         return 1
     }
-    # The trap a flow `always`/`never` block lowers to (cgen intrinsic).
-    if flowc_tc_span_is(ctx.src, start, end, "flow_panic") == 1 {
-        return 1
-    }
-    # C formatted I/O, builtins on the Python host too (its BUILTIN_FUNCTIONS).
-    if flowc_tc_span_is(ctx.src, start, end, "printf") == 1 { return 1 }
-    if flowc_tc_span_is(ctx.src, start, end, "fprintf") == 1 { return 1 }
-    if flowc_tc_span_is(ctx.src, start, end, "sprintf") == 1 { return 1 }
-    if flowc_tc_span_is(ctx.src, start, end, "scanf") == 1 { return 1 }
-    if flowc_tc_span_is(ctx.src, start, end, "sscanf") == 1 { return 1 }
     if flowc_tc_span_is(ctx.src, start, end, "sort") == 1 {
         return 1
     }
     if flowc_tc_span_is(ctx.src, start, end, "sortBy") == 1 {
-        return 1
-    }
-    # sum(a..b step s) range sum.
-    if flowc_tc_span_is(ctx.src, start, end, "sum") == 1 {
-        return 1
-    }
-    # sizeof<T>() (#952).
-    if flowc_tc_span_is(ctx.src, start, end, "sizeof") == 1 {
-        return 1
-    }
-    # Complex constructors and <complex.h> functions (#942).
-    if flowc_tc_is_complex_builtin(ctx.src, start, end) == 1 {
         return 1
     }
     if flowc_tc_span_is(ctx.src, start, end, "len") == 1 {
@@ -525,7 +408,7 @@ function flowc_tc_lookup_fn(ctx: TcCtx, start: i32, end: i32) -> i32 {
             }
         }
     }
-    return flowc_tc_is_libc_builtin(ctx.src, start, end)
+    return 0
 }
 
 # Known fn arity, or -1 if missing / imported (arity not tracked).
@@ -543,20 +426,6 @@ function flowc_tc_lookup_fn_arity(ctx: TcCtx, start: i32, end: i32) -> i32 {
         }
     }
     return -1
-}
-
-# 1 when some function entry named [start, end) takes n parameters.
-function flowc_tc_fn_has_arity(ctx: TcCtx, start: i32, end: i32, n: i32) -> i32 {
-    let mut i: i32 = ctx.nlen
-    while i > 0 {
-        i = i - 1
-        if ctx.nk[i] == 1 and ctx.na[i] == n {
-            if flowc_tc_name_eq(ctx, start, end, i) == 1 {
-                return 1
-            }
-        }
-    }
-    return 0
 }
 
 function flowc_tc_unwrap_fn(arena: AstArena, item: i32) -> i32 {
@@ -637,666 +506,6 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32)
 function flowc_tc_check_stmt(ctx: ptr<TcCtx>, arena: AstArena, id: i32)
 function flowc_tc_check_block(ctx: ptr<TcCtx>, arena: AstArena, id: i32)
 
-# Bind the names a match pattern introduces: a bare name (unless `_` or an
-# enum variant constant at the top), the name arguments of a struct pattern
-# `P(a, Q(b), 0)`, and the name elements of a list pattern `[x, 1]`.
-function flowc_tc_bind_pattern(ctx: ptr<TcCtx>, arena: AstArena, pat: i32, top: i32) {
-    if pat == AST_NONE {
-        return
-    }
-    let k: i32 = arena.nodes[pat].kind
-    let ns: i32 = arena.nodes[pat].name_start
-    let ne: i32 = arena.nodes[pat].name_end
-    if k == AST_IDENT {
-        if ne - ns == 1 and ctx[0].src[ns] == 95 {
-            return
-        }
-        if top == 1 and flowc_ast_enum_of_const(arena, ctx[0].src, ns, ne) != AST_NONE {
-            return
-        }
-        flowc_tc_bind(ctx, ns, ne, 0, -1)
-        return
-    }
-    if k == AST_CALL or k == AST_ARRAY_LIT {
-        let mut arg: i32 = arena.nodes[pat].a
-        while arg != AST_NONE {
-            flowc_tc_bind_pattern(ctx, arena, arg, 0)
-            arg = arena.nodes[arg].next
-        }
-    }
-}
-
-# 1 when `v` is a call to a function of this program with a declared return
-# type, the only fork value whose type fork_records._infer_field_type knows.
-function flowc_tc_fork_type_known(ctx: ptr<TcCtx>, arena: AstArena, v: i32) -> i32 {
-    if v == AST_NONE or arena.nodes[v].kind != AST_CALL {
-        return 0
-    }
-    let mut i: i32 = 0
-    while i < arena.len {
-        if arena.nodes[i].kind == AST_FN and arena.nodes[i].b != AST_NONE {
-            if flowc_tc_span_eq(ctx[0].src, arena.nodes[i].name_start, arena.nodes[i].name_end, arena.nodes[v].name_start, arena.nodes[v].name_end) == 1 {
-                return 1
-            }
-        }
-        i = i + 1
-    }
-    return 0
-}
-
-# Line of byte offset `pos` in the module source.
-function flowc_tc_line_of(ctx: ptr<TcCtx>, pos: i32) -> i32 {
-    let mut line: i32 = 1
-    let mut i: i32 = 0
-    while i < pos and ctx[0].src[i] != 0 {
-        if ctx[0].src[i] == 10 {
-            line = line + 1
-        }
-        i = i + 1
-    }
-    return line
-}
-
-# 1 when fn `fn` carries an attribute spelled `lit`.
-function flowc_tc_fn_has_attr(ctx: ptr<TcCtx>, arena: AstArena, fn: i32, lit: string) -> i32 {
-    let mut i: i32 = 0
-    while i < fn {
-        if arena.nodes[i].kind == AST_ATTR and arena.nodes[i].b == fn {
-            if flowc_attr_span_is(ctx[0].src, arena.nodes[i].name_start, arena.nodes[i].name_end, lit) == 1 {
-                return 1
-            }
-        }
-        i = i + 1
-    }
-    return 0
-}
-
-# Function attributes (#1028). Port of `attribute_errors` in
-# src/flow/attributes.py for the checks the C backend depends on: an
-# unknown attribute, arguments on one that takes none, a missing or
-# malformed @target spec, and @noinline with @inline or @always_inline.
-# Errors, so --lenient downgrades them as the Python host did.
-function flowc_tc_check_attrs(ctx: ptr<TcCtx>, arena: AstArena) {
-    let src: ptr<u8> = ctx[0].src
-    let mut i: i32 = 0
-    while i < arena.len {
-        if arena.nodes[i].kind == AST_ATTR and arena.nodes[i].b != AST_NONE {
-            let fn: i32 = arena.nodes[i].b
-            let fl: i32 = arena.nodes[fn].name_end - arena.nodes[fn].name_start
-            let fp: ptr<u8> = src + arena.nodes[fn].name_start
-            let name: string = flowc_attr_args_from_span(src, arena.nodes[i].name_start, arena.nodes[i].name_end)
-            let line: i32 = flowc_tc_line_of(ctx, arena.nodes[i].name_start)
-            let mut args: string = ""
-            if (arena.nodes[i].ival & AST_ATTR_HAS_ARGS) != 0 {
-                args = flowc_attr_args_from_span(src, arena.nodes[i].start, arena.nodes[i].end)
-            }
-            if flowc_is_known_attr(name) == 0 {
-                printf("line %d: Unknown attribute '@%s' on function '%.*s'\n", line, name, fl, fp)
-                flowc_tc_err(ctx)
-            } elif strlen(args) > 0 and flowc_attr_takes_args(name) == 0 {
-                printf("line %d: Attribute '@%s' on function '%.*s' takes no arguments\n", line, name, fl, fp)
-                flowc_tc_err(ctx)
-            } elif flowc_attr_span_is(src, arena.nodes[i].name_start, arena.nodes[i].name_end, "target") == 1 {
-                if strlen(args) == 0 {
-                    printf("line %d: Attribute '@target' on function '%.*s' requires a target string, e.g. @target(\"avx2\")\n", line, fl, fp)
-                    flowc_tc_err(ctx)
-                } elif flowc_validate_target_spec(args) == 0 {
-                    printf("line %d: @target(\"%s\") is not a valid target spec; expected forms are 'avx2', '+avx2', '-sse', 'no-sse', 'arch=haswell' or 'tune=native' (on function '%.*s')\n", line, args, fl, fp)
-                    flowc_tc_err(ctx)
-                }
-            } elif flowc_attr_span_is(src, arena.nodes[i].name_start, arena.nodes[i].name_end, "noinline") == 1 {
-                if flowc_tc_fn_has_attr(ctx, arena, fn, "inline") == 1 or flowc_tc_fn_has_attr(ctx, arena, fn, "always_inline") == 1 {
-                    printf("line %d: Function '%.*s' cannot be both '@noinline' and '@inline'/'@always_inline'\n", line, fl, fp)
-                    flowc_tc_err(ctx)
-                }
-            }
-        }
-        i = i + 1
-    }
-}
-
-# Fork / choose block (#996). Rejects what src/flow/fork_records.py rejects,
-# with its messages: an anonymous record field or a choose whose type is
-# not a known call's return type.
-function flowc_tc_check_pipe_block(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
-    flowc_tc_check_expr(ctx, arena, arena.nodes[id].a)
-    let items: i32 = arena.nodes[id].b
-    if arena.nodes[id].ival == PIPE_BLOCK_CHOOSE {
-        flowc_tc_check_expr(ctx, arena, arena.nodes[id].c)
-        let mut known: i32 = 0
-        let mut arm: i32 = items
-        while arm != AST_NONE {
-            flowc_tc_check_expr(ctx, arena, arena.nodes[arm].b)
-            known = known + flowc_tc_fork_type_known(ctx, arena, arena.nodes[arm].b)
-            arm = arena.nodes[arm].next
-        }
-        if known == 0 {
-            printf("cannot infer the result type of the `choose` at line %d: its arms must end in a function whose return type is known\n", flowc_tc_line_of(ctx, arena.nodes[id].start))
-            flowc_tc_err(ctx)
-        }
-        return
-    }
-    let mut anon: i32 = 0
-    if arena.nodes[id].name_end == arena.nodes[id].name_start {
-        anon = 1
-    }
-    let mut f: i32 = items
-    while f != AST_NONE {
-        flowc_tc_check_expr(ctx, arena, arena.nodes[f].a)
-        if anon == 1 and flowc_tc_fork_type_known(ctx, arena, arena.nodes[f].a) == 0 {
-            printf("cannot infer the type of fork field '%.*s' (line %d): an anonymous fork record's fields must end in a function whose return type is known. Name the record instead: `source |> RecordName { ... }`\n", arena.nodes[f].name_end - arena.nodes[f].name_start, ctx[0].src + arena.nodes[f].name_start, flowc_tc_line_of(ctx, arena.nodes[id].start))
-            flowc_tc_err(ctx)
-        }
-        f = arena.nodes[f].next
-    }
-}
-
-# --- algebraic effects (#675) ------------------------------------------------
-# The effect checks of the Python host's type checker, with its messages.
-
-# Start an effect diagnostic at source offset `pos`; count the error.
-function flowc_tc_eff_begin(ctx: ptr<TcCtx>, pos: i32) {
-    flowc_tc_err(ctx)
-    flowc_eff_diag_begin(ctx[0].path, ctx[0].src, pos)
-}
-
-# 1 if effect src[s..e] is handled here (enclosing handle or `with` row).
-function flowc_tc_eff_active(ctx: TcCtx, s: i32, e: i32) -> i32 {
-    let mut i: i32 = 0
-    while i < ctx.hlen {
-        if flowc_tc_span_eq(ctx.src, s, e, ctx.hs_s[i], ctx.hs_e[i]) == 1 {
-            return 1
-        }
-        i = i + 1
-    }
-    return 0
-}
-
-function flowc_tc_eff_push(ctx: ptr<TcCtx>, s: i32, e: i32) {
-    if ctx[0].hlen < ctx[0].hcap {
-        ctx[0].hs_s[ctx[0].hlen] = s
-        ctx[0].hs_e[ctx[0].hlen] = e
-        ctx[0].hlen = ctx[0].hlen + 1
-    }
-}
-
-# Name of the function being checked, printed as ` in 'f'` (or ` from 'f'`).
-function flowc_tc_eff_where(ctx: ptr<TcCtx>, arena: AstArena, word: string) {
-    let fn: i32 = ctx[0].cur_fn
-    if fn == AST_NONE {
-        return
-    }
-    if arena.nodes[fn].name_end <= arena.nodes[fn].name_start {
-        return
-    }
-    flowc_eff_diag_s(" ")
-    flowc_eff_diag_s(word)
-    flowc_eff_diag_s(" '")
-    flowc_eff_diag_span(ctx[0].src, arena.nodes[fn].name_start, arena.nodes[fn].name_end)
-    flowc_eff_diag_s("'")
-}
-
-# Python type name of a literal argument, or "" when not a literal.
-function flowc_tc_eff_lit_type(arena: AstArena, id: i32) -> string {
-    let k: i32 = arena.nodes[id].kind
-    if k == AST_STRING { return "string" }
-    if k == AST_INT { return "i32" }
-    if k == AST_FLOAT { return "f64" }
-    if k == AST_BOOL { return "bool" }
-    return ""
-}
-
-# 0 string, 1 number, 2 bool, -1 other, for a type spelled in the table.
-function flowc_tc_eff_type_class(buf: ptr<u8>, p: i32) -> i32 {
-    if flowc_eff_item_is_lit(buf, p, "string") == 1 { return 0 }
-    if flowc_eff_item_is_lit(buf, p, "bool") == 1 { return 2 }
-    if flowc_eff_item_is_lit(buf, p, "i8") == 1 { return 1 }
-    if flowc_eff_item_is_lit(buf, p, "i16") == 1 { return 1 }
-    if flowc_eff_item_is_lit(buf, p, "i32") == 1 { return 1 }
-    if flowc_eff_item_is_lit(buf, p, "i64") == 1 { return 1 }
-    if flowc_eff_item_is_lit(buf, p, "u8") == 1 { return 1 }
-    if flowc_eff_item_is_lit(buf, p, "u16") == 1 { return 1 }
-    if flowc_eff_item_is_lit(buf, p, "u32") == 1 { return 1 }
-    if flowc_eff_item_is_lit(buf, p, "u64") == 1 { return 1 }
-    if flowc_eff_item_is_lit(buf, p, "f32") == 1 { return 1 }
-    if flowc_eff_item_is_lit(buf, p, "f64") == 1 { return 1 }
-    return 0 - 1
-}
-
-function flowc_tc_eff_lit_class(t: string) -> i32 {
-    let p: ptr<u8> = t as ptr<u8>
-    if p[0] == 115 { return 0 }
-    if p[0] == 98 { return 2 }
-    if p[0] == 0 { return 0 - 1 }
-    return 1
-}
-
-# Effect named by the receiver of `recv.op(...)`, as a span in out[0..1].
-# The receiver is an effect, or a value typed `capability E` or `E`.
-function flowc_tc_eff_receiver(ctx: ptr<TcCtx>, arena: AstArena, call: i32, out: ptr<i32>) -> i32 {
-    let recv: i32 = arena.nodes[call].a
-    if recv == AST_NONE {
-        return 0
-    }
-    if arena.nodes[recv].kind != AST_IDENT {
-        return 0
-    }
-    let rs: i32 = arena.nodes[recv].name_start
-    let re: i32 = arena.nodes[recv].name_end
-    if ctx[0].src[re] != 46 {
-        return 0
-    }
-    if flowc_eff_is_effect(ctx[0].eff, ctx[0].eff_len, ctx[0].src, rs, re) == 1 {
-        out[0] = rs
-        out[1] = re
-        return 1
-    }
-    let ty: i32 = flowc_tc_lookup_val_type(ctx[0], rs, re)
-    if ty == AST_NONE or ty < 0 {
-        return 0
-    }
-    if arena.nodes[ty].kind != AST_TYPE {
-        return 0
-    }
-    let ts: i32 = arena.nodes[ty].name_start
-    let te: i32 = arena.nodes[ty].name_end
-    if arena.nodes[ty].c == AST_TYPE_CAPABILITY or flowc_eff_is_effect(ctx[0].eff, ctx[0].eff_len, ctx[0].src, ts, te) == 1 {
-        out[0] = ts
-        out[1] = te
-        return 1
-    }
-    return 0
-}
-
-# `E.op(args)`: the operation exists, arity and literal argument types
-# match, and under FLOWC_STRICT_EFFECTS=1 some handler covers E.
-function flowc_tc_eff_check_call(ctx: ptr<TcCtx>, arena: AstArena, call: i32, es: i32, ee: i32) {
-    let src: ptr<u8> = ctx[0].src
-    let os: i32 = arena.nodes[call].name_start
-    let oe: i32 = arena.nodes[call].name_end
-    let first_arg: i32 = arena.nodes[arena.nodes[call].a].next
-    let nargs: i32 = flowc_ast_chain_len(arena, first_arg)
-    let mut arg: i32 = first_arg
-    while arg != AST_NONE {
-        flowc_tc_check_expr(ctx, arena, arg)
-        arg = arena.nodes[arg].next
-    }
-    if flowc_eff_is_effect(ctx[0].eff, ctx[0].eff_len, src, es, ee) == 0 {
-        flowc_tc_eff_begin(ctx, os)
-        flowc_eff_diag_s("Unknown effect '")
-        flowc_eff_diag_span(src, es, ee)
-        flowc_eff_diag_s("'")
-        flowc_eff_diag_end()
-        return
-    }
-    let off: i32 = flowc_eff_find(ctx[0].eff, ctx[0].eff_len, FLOWC_EFF_EFFECT, src, es, ee, os, oe)
-    if off < 0 {
-        flowc_tc_eff_begin(ctx, os)
-        flowc_eff_diag_s("Effect '")
-        flowc_eff_diag_span(src, es, ee)
-        flowc_eff_diag_s("' has no operation '")
-        flowc_eff_diag_span(src, os, oe)
-        flowc_eff_diag_s("'")
-        flowc_eff_diag_end()
-        return
-    }
-    let arity: i32 = flowc_eff_field_int(ctx[0].eff, off, 0)
-    if arity != nargs {
-        flowc_tc_eff_begin(ctx, os)
-        flowc_eff_diag_s("Effect operation '")
-        flowc_eff_diag_span(src, es, ee)
-        flowc_eff_diag_s(".")
-        flowc_eff_diag_span(src, os, oe)
-        flowc_eff_diag_s("' expects ")
-        flowc_eff_diag_int(arity)
-        flowc_eff_diag_s(" argument(s), got ")
-        flowc_eff_diag_int(nargs)
-        flowc_eff_diag_end()
-        return
-    }
-    let mut idx: i32 = 0
-    arg = first_arg
-    while arg != AST_NONE {
-        let got: string = flowc_tc_eff_lit_type(arena, arg)
-        let pt: i32 = flowc_eff_item(ctx[0].eff, off, 2, idx)
-        if pt >= 0 {
-            let want: i32 = flowc_tc_eff_type_class(ctx[0].eff, pt)
-            let have: i32 = flowc_tc_eff_lit_class(got)
-            if want >= 0 and have >= 0 and want != have {
-                flowc_tc_eff_begin(ctx, arena.nodes[arg].start)
-                flowc_eff_diag_s("Effect operation '")
-                flowc_eff_diag_span(src, es, ee)
-                flowc_eff_diag_s(".")
-                flowc_eff_diag_span(src, os, oe)
-                flowc_eff_diag_s("' argument ")
-                flowc_eff_diag_int(idx + 1)
-                flowc_eff_diag_s(" expects ")
-                flowc_eff_diag_buf(ctx[0].eff, pt, flowc_eff_item_len(ctx[0].eff, pt))
-                flowc_eff_diag_s(", got ")
-                flowc_eff_diag_s(got)
-                flowc_eff_diag_end()
-            }
-        }
-        idx = idx + 1
-        arg = arena.nodes[arg].next
-    }
-    if ctx[0].strict_effects == 1 and flowc_tc_eff_active(ctx[0], es, ee) == 0 {
-        flowc_tc_eff_begin(ctx, os)
-        flowc_eff_diag_s("Unhandled effect '")
-        flowc_eff_diag_span(src, es, ee)
-        flowc_eff_diag_s(".")
-        flowc_eff_diag_span(src, os, oe)
-        flowc_eff_diag_s("'")
-        flowc_tc_eff_where(ctx, arena, "in")
-        flowc_eff_diag_s(": wrap in `handle ")
-        flowc_eff_diag_span(src, es, ee)
-        flowc_eff_diag_s(" with ...`, declare `with ")
-        flowc_eff_diag_span(src, es, ee)
-        flowc_eff_diag_s("` on the function, or omit --strict-effects to allow zero defaults")
-        flowc_eff_diag_end()
-    }
-}
-
-# A call to an unknown name that is an operation of a handled effect:
-# the Python host asks for the qualified form. 1 if reported.
-function flowc_tc_eff_unqualified(ctx: ptr<TcCtx>, arena: AstArena, call: i32) -> i32 {
-    let src: ptr<u8> = ctx[0].src
-    let ns: i32 = arena.nodes[call].name_start
-    let ne: i32 = arena.nodes[call].name_end
-    let mut i: i32 = 0
-    while i < ctx[0].hlen {
-        let es: i32 = ctx[0].hs_s[i]
-        let ee: i32 = ctx[0].hs_e[i]
-        if flowc_eff_find(ctx[0].eff, ctx[0].eff_len, FLOWC_EFF_EFFECT, src, es, ee, ns, ne) >= 0 {
-            flowc_tc_eff_begin(ctx, ns)
-            flowc_eff_diag_s("effect operation '")
-            flowc_eff_diag_span(src, ns, ne)
-            flowc_eff_diag_s("' must be called as '")
-            flowc_eff_diag_span(src, es, ee)
-            flowc_eff_diag_s(".")
-            flowc_eff_diag_span(src, ns, ne)
-            flowc_eff_diag_s("'")
-            flowc_eff_diag_end()
-            return 1
-        }
-        i = i + 1
-    }
-    return 0
-}
-
-# Under FLOWC_STRICT_EFFECTS=1, a call to a function (or a value of function
-# type) with a `with` row needs every effect of the row handled here.
-function flowc_tc_eff_check_row_call(ctx: ptr<TcCtx>, arena: AstArena, call: i32) {
-    if ctx[0].strict_effects == 0 {
-        return
-    }
-    let src: ptr<u8> = ctx[0].src
-    let ns: i32 = arena.nodes[call].name_start
-    let ne: i32 = arena.nodes[call].name_end
-    # Missing effect names, NUL-separated, then printed in sorted order.
-    let names: array<u8, 1024> = []
-    let mut nlen: i32 = 0
-    let mut count: i32 = 0
-    let off: i32 = flowc_eff_find(ctx[0].eff, ctx[0].eff_len, FLOWC_EFF_ROW, src, ns, ne, 0 - 1, 0 - 1)
-    if off >= 0 {
-        let mut idx: i32 = 0
-        let mut p: i32 = flowc_eff_item(ctx[0].eff, off, 0, 0)
-        while p >= 0 {
-            let plen: i32 = flowc_eff_item_len(ctx[0].eff, p)
-            # Handled? Compare against the handler stack spans.
-            let mut handled: i32 = 0
-            let mut h: i32 = 0
-            while h < ctx[0].hlen {
-                if flowc_eff_item_is(ctx[0].eff, p, src, ctx[0].hs_s[h], ctx[0].hs_e[h]) == 1 {
-                    handled = 1
-                }
-                h = h + 1
-            }
-            if handled == 0 and nlen + plen + 1 < 1024 {
-                let mut j: i32 = 0
-                while j < plen {
-                    names[nlen + j] = ctx[0].eff[p + j]
-                    j = j + 1
-                }
-                names[nlen + plen] = 0
-                nlen = nlen + plen + 1
-                count = count + 1
-            }
-            idx = idx + 1
-            p = flowc_eff_item(ctx[0].eff, off, 0, idx)
-        }
-    }
-    # A local value of function type carries the row on its type.
-    let vty: i32 = flowc_tc_lookup_val_type(ctx[0], ns, ne)
-    if vty != AST_NONE and vty >= 0 {
-        let row: i32 = flowc_eff_row_of(arena, vty)
-        if row != AST_NONE {
-            let mut en: i32 = arena.nodes[row].a
-            while en != AST_NONE {
-                let es: i32 = arena.nodes[en].name_start
-                let ee: i32 = arena.nodes[en].name_end
-                if flowc_tc_eff_active(ctx[0], es, ee) == 0 and nlen + (ee - es) + 1 < 1024 {
-                    let mut j: i32 = 0
-                    while j < ee - es {
-                        names[nlen + j] = src[es + j]
-                        j = j + 1
-                    }
-                    names[nlen + ee - es] = 0
-                    nlen = nlen + (ee - es) + 1
-                    count = count + 1
-                }
-                en = arena.nodes[en].next
-            }
-        }
-    }
-    if count == 0 {
-        return
-    }
-    flowc_tc_eff_begin(ctx, ns)
-    flowc_eff_diag_s("Call to '")
-    flowc_eff_diag_span(src, ns, ne)
-    flowc_eff_diag_s("'")
-    flowc_tc_eff_where(ctx, arena, "from")
-    flowc_eff_diag_s(" requires effect(s) ")
-    flowc_tc_eff_print_sorted(&names[0], nlen)
-    flowc_eff_diag_s(": handle them or declare `with ")
-    flowc_tc_eff_print_sorted(&names[0], nlen)
-    flowc_eff_diag_s("` on the caller")
-    flowc_eff_diag_end()
-}
-
-# Byte-wise compare of NUL-terminated names at a and b: <0, 0, >0.
-function flowc_tc_eff_cmp(names: ptr<u8>, a: i32, b: i32) -> i32 {
-    let mut i: i32 = 0
-    while names[a + i] != 0 and names[a + i] == names[b + i] {
-        i = i + 1
-    }
-    let ca: i32 = names[a + i]
-    let cb: i32 = names[b + i]
-    return ca - cb
-}
-
-# Print the distinct NUL-separated names in [0, nlen) sorted, ", "-joined.
-function flowc_tc_eff_print_sorted(names: ptr<u8>, nlen: i32) {
-    let mut last: i32 = 0 - 1
-    let mut first: i32 = 1
-    let mut more: i32 = 1
-    while more == 1 {
-        # Smallest name greater than the last one printed.
-        let mut best: i32 = 0 - 1
-        let mut p: i32 = 0
-        while p < nlen {
-            let mut bigger: i32 = 1
-            if last >= 0 {
-                if flowc_tc_eff_cmp(names, p, last) <= 0 {
-                    bigger = 0
-                }
-            }
-            if bigger == 1 {
-                if best < 0 {
-                    best = p
-                } elif flowc_tc_eff_cmp(names, p, best) < 0 {
-                    best = p
-                }
-            }
-            while names[p] != 0 {
-                p = p + 1
-            }
-            p = p + 1
-        }
-        if best < 0 {
-            more = 0
-        } else {
-            if first == 0 {
-                flowc_eff_diag_s(", ")
-            }
-            first = 0
-            let mut k: i32 = 0
-            while names[best + k] != 0 {
-                k = k + 1
-            }
-            flowc_eff_diag_buf(names, best, k)
-            last = best
-        }
-    }
-}
-
-# `handle E1, E2 with H1, H2 { body }`.
-function flowc_tc_eff_check_handle(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
-    let src: ptr<u8> = ctx[0].src
-    let ne: i32 = flowc_ast_chain_len(arena, arena.nodes[id].b)
-    let nh: i32 = flowc_ast_chain_len(arena, arena.nodes[id].c)
-    if nh != 1 and nh != ne {
-        flowc_tc_eff_begin(ctx, arena.nodes[id].start)
-        flowc_eff_diag_s("handle expects 1 handler or the same count as effects; got ")
-        flowc_eff_diag_int(ne)
-        flowc_eff_diag_s(" effects and ")
-        flowc_eff_diag_int(nh)
-        flowc_eff_diag_s(" handlers")
-        flowc_eff_diag_end()
-    }
-    let saved: i32 = ctx[0].hlen
-    let mut en: i32 = arena.nodes[id].b
-    while en != AST_NONE {
-        let es: i32 = arena.nodes[en].name_start
-        let ee: i32 = arena.nodes[en].name_end
-        if flowc_eff_is_effect(ctx[0].eff, ctx[0].eff_len, src, es, ee) == 0 {
-            flowc_tc_eff_begin(ctx, es)
-            flowc_eff_diag_s("Unknown effect '")
-            flowc_eff_diag_span(src, es, ee)
-            flowc_eff_diag_s("' in handle statement")
-            flowc_eff_diag_end()
-        } else {
-            flowc_tc_eff_push(ctx, es, ee)
-        }
-        en = arena.nodes[en].next
-    }
-    flowc_tc_check_block(ctx, arena, arena.nodes[id].a)
-    ctx[0].hlen = saved
-}
-
-# Every effect in a top-level function's `with` row must exist.
-function flowc_tc_check_rows(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
-    let src: ptr<u8> = ctx[0].src
-    let mut item: i32 = arena.nodes[root].a
-    while item != AST_NONE {
-        let fn: i32 = flowc_tc_unwrap_fn(arena, item)
-        if fn != AST_NONE {
-            let row: i32 = flowc_eff_row_of(arena, fn)
-            if row != AST_NONE {
-                let mut en: i32 = arena.nodes[row].a
-                while en != AST_NONE {
-                    let es: i32 = arena.nodes[en].name_start
-                    let ee: i32 = arena.nodes[en].name_end
-                    if flowc_eff_is_effect(ctx[0].eff, ctx[0].eff_len, src, es, ee) == 0 {
-                        flowc_tc_eff_begin(ctx, es)
-                        flowc_eff_diag_s("Function '")
-                        flowc_eff_diag_span(src, arena.nodes[fn].name_start, arena.nodes[fn].name_end)
-                        flowc_eff_diag_s("' declares unknown effect '")
-                        flowc_eff_diag_span(src, es, ee)
-                        flowc_eff_diag_s("' in its `with` row")
-                        flowc_eff_diag_end()
-                    }
-                    en = arena.nodes[en].next
-                }
-            }
-        }
-        item = arena.nodes[item].next
-    }
-}
-
-# `f(x)` for `f(x, gpu: GPU, fft: capability FFT)` inside a handle of GPU and
-# FFT: the trailing capability parameters come from the handlers.
-function flowc_tc_eff_implicit_ok(ctx: ptr<TcCtx>, arena: AstArena, call: i32, nargs: i32) -> i32 {
-    let src: ptr<u8> = ctx[0].src
-    let ns: i32 = arena.nodes[call].name_start
-    let ne: i32 = arena.nodes[call].name_end
-    let mut i: i32 = 0
-    while i < arena.len {
-        if arena.nodes[i].kind == AST_FN and flowc_tc_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
-            let mut prm: i32 = arena.nodes[i].a
-            let mut k: i32 = 0
-            while k < nargs and prm != AST_NONE {
-                prm = arena.nodes[prm].next
-                k = k + 1
-            }
-            if prm == AST_NONE {
-                return 0
-            }
-            while prm != AST_NONE {
-                let ty: i32 = arena.nodes[prm].a
-                if ty == AST_NONE or arena.nodes[ty].kind != AST_TYPE {
-                    return 0
-                }
-                let ts: i32 = arena.nodes[ty].name_start
-                let te: i32 = arena.nodes[ty].name_end
-                if flowc_eff_is_effect(ctx[0].eff, ctx[0].eff_len, src, ts, te) == 0 {
-                    return 0
-                }
-                if flowc_tc_eff_active(ctx[0], ts, te) == 0 {
-                    return 0
-                }
-                prm = arena.nodes[prm].next
-            }
-            return 1
-        }
-        i = i + 1
-    }
-    return 0
-}
-
-# Check one function-shaped body (a function or a capability method): bind
-# its parameters, seed the handled set with its `with` row, check the block.
-function flowc_tc_check_body(ctx: ptr<TcCtx>, arena: AstArena, fn: i32) {
-    let body: i32 = arena.nodes[fn].c
-    if body == AST_NONE {
-        return
-    }
-    flowc_tc_push_mark(ctx)
-    let mut param: i32 = arena.nodes[fn].a
-    while param != AST_NONE {
-        let pty: i32 = arena.nodes[param].a
-        flowc_tc_bind_value(ctx, arena.nodes[param].name_start, arena.nodes[param].name_end, pty)
-        param = arena.nodes[param].next
-    }
-    ctx[0].cur_fn = fn
-    ctx[0].hlen = 0
-    let row: i32 = flowc_eff_row_of(arena, fn)
-    if row != AST_NONE {
-        let mut en: i32 = arena.nodes[row].a
-        while en != AST_NONE {
-            flowc_tc_eff_push(ctx, arena.nodes[en].name_start, arena.nodes[en].name_end)
-            en = arena.nodes[en].next
-        }
-    }
-    ctx[0].cur_ret = arena.nodes[fn].b
-    flowc_tc_check_block(ctx, arena, body)
-    ctx[0].cur_ret = AST_NONE
-    ctx[0].cur_fn = AST_NONE
-    ctx[0].hlen = 0
-    flowc_tc_pop_mark(ctx)
-}
-
 function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
     if id == AST_NONE {
         return
@@ -1317,58 +526,18 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         flowc_tc_pop_mark(ctx)
         return
     }
-    if kind == AST_PIPE_BLOCK {
-        flowc_tc_check_pipe_block(ctx, arena, id)
-        return
-    }
-    if kind == AST_TRY {
-        flowc_tc_check_expr(ctx, arena, arena.nodes[id].a)
-        return
-    }
-    # Inner link of a chained assignment `a = b = 1` (#1036).
-    if kind == AST_ASSIGN {
-        flowc_tc_check_stmt(ctx, arena, id)
-        return
-    }
-    if kind == AST_VECTOR_LIT {
-        let mut el: i32 = arena.nodes[id].a
-        while el != AST_NONE {
-            flowc_tc_check_expr(ctx, arena, el)
-            el = arena.nodes[el].next
-        }
-        return
-    }
-    if kind == AST_SORT_BY {
-        # Keys name fields of the element type; only the array is an expression.
-        flowc_tc_check_expr(ctx, arena, arena.nodes[id].a)
-        return
-    }
     if kind == AST_IDENT {
         let ns: i32 = arena.nodes[id].name_start
         let ne: i32 = arena.nodes[id].name_end
-        # The piped value in a fork branch or choose arm.
-        if arena.nodes[id].ival == AST_IDENT_FORK_SRC { return }
         # Sort DSL modifiers used as identifiers in pipe expressions.
-        if arena.nodes[id].ival == AST_IDENT_SORT_MOD { return }
-        # The implicit UI layout state pointer is a builtin global.
-        if flowc_tc_span_is(ctx[0].src, ns, ne, "_ui_state") == 1 { return }
-        # `return void` in a void function (cgen emits a bare return).
-        if flowc_tc_span_is(ctx[0].src, ns, ne, "void") == 1 { return }
-        if ctx[0].sem_on == 1 { return }
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "descending") == 1 { return }
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "ascending") == 1 { return }
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "unique") == 1 { return }
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "adaptive") == 1 { return }
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "general") == 1 { return }
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "asc") == 1 { return }
+        if flowc_tc_span_is(ctx[0].src, ns, ne, "desc") == 1 { return }
         if flowc_tc_lookup(ctx[0], ns, ne) == 0 {
-            # A capability is a handler, not a value (fatal on the Python
-            # host too, lenient or not).
-            if flowc_eff_is_cap(ctx[0].eff, ctx[0].eff_len, ctx[0].src, ns, ne) == 1 {
-                flowc_tc_eff_begin(ctx, ns)
-                ctx[0].fatal = ctx[0].fatal + 1
-                flowc_eff_diag_s("Capability '")
-                flowc_eff_diag_span(ctx[0].src, ns, ne)
-                flowc_eff_diag_s("' is not a value and cannot be passed as an argument. Install it for the call instead: handle <Effect> with ")
-                flowc_eff_diag_span(ctx[0].src, ns, ne)
-                flowc_eff_diag_s(" { ... }")
-                flowc_eff_diag_end()
-                return
-            }
             # extern { ... } bodies are brace-skipped — allow unknown idents
             # (e.g. function pointers declared in extern blocks).
             if ctx[0].has_extern == 0 {
@@ -1382,31 +551,6 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         let ns: i32 = arena.nodes[id].name_start
         let ne: i32 = arena.nodes[id].name_end
         let nargs: i32 = flowc_ast_chain_len(arena, arena.nodes[id].a)
-        # `E.op(args)` on an effect or a capability-typed value.
-        let espan: array<i32, 2> = []
-        if ctx[0].sem_on == 1 {
-            let mut sarg: i32 = arena.nodes[id].a
-            while sarg != AST_NONE {
-                flowc_tc_check_expr(ctx, arena, sarg)
-                sarg = arena.nodes[sarg].next
-            }
-            return
-        }
-        if flowc_tc_eff_receiver(ctx, arena, id, &espan[0]) == 1 {
-            flowc_tc_eff_check_call(ctx, arena, id, espan[0], espan[1])
-            return
-        }
-        flowc_tc_eff_check_row_call(ctx, arena, id)
-        if flowc_tc_lookup_fn(ctx[0], ns, ne) == 0 and flowc_tc_lookup(ctx[0], ns, ne) == 0 {
-            if flowc_tc_eff_unqualified(ctx, arena, id) == 1 {
-                let mut uarg: i32 = arena.nodes[id].a
-                while uarg != AST_NONE {
-                    flowc_tc_check_expr(ctx, arena, uarg)
-                    uarg = arena.nodes[uarg].next
-                }
-                return
-            }
-        }
         if flowc_tc_lookup_fn(ctx[0], ns, ne) == 0 {
             # GPU built-ins
             let mut is_gpu_builtin: i32 = 0
@@ -1423,9 +567,6 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
             elif flowc_tc_span_is(ctx[0].src, ns, ne, "gpu_block_size") == 1 { is_gpu_builtin = 1 }
             elif flowc_tc_span_is(ctx[0].src, ns, ne, "gpu_sync") == 1 { is_gpu_builtin = 1 }
             elif flowc_tc_span_is(ctx[0].src, ns, ne, "gpu_barrier") == 1 { is_gpu_builtin = 1 }
-            # UI layout intrinsics (Python c_generator lowers them inline).
-            elif flowc_tc_span_is(ctx[0].src, ns, ne, "ui_layout_bind") == 1 { is_gpu_builtin = 1 }
-            elif flowc_tc_span_is(ctx[0].src, ns, ne, "i32_to_f32") == 1 { is_gpu_builtin = 1 }
 
             # Check if it's a bound local variable (e.g. a lambda function pointer).
             if flowc_tc_lookup(ctx[0], ns, ne) == 0 and is_gpu_builtin == 0 {
@@ -1436,15 +577,7 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
                 }
             }
         } else {
-            let mut local_candidates: i32 = flowc_overload_table_count(ctx[0].overloads, ns, ne, nargs)
-            # An explicit instantiation `f<T>(args)` names its instance; its
-            # parameters are typed by type parameters, which a concrete
-            # argument never spells. The Python checker instantiates first
-            # and checks the instance (#1007). Without type args, a generic
-            # call still reports "no matching overload" as it does there.
-            if arena.nodes[id].b != AST_NONE {
-                local_candidates = 0
-            }
+            let local_candidates: i32 = flowc_overload_table_count(ctx[0].overloads, ns, ne, nargs)
             if local_candidates > 0 {
                 if flowc_overload_call_prepare(&ctx[0].overload_scratch, nargs) >= 0 {
                     let mut typed_arg: i32 = arena.nodes[id].a
@@ -1484,11 +617,7 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
             } else {
                 let arity: i32 = flowc_tc_lookup_fn_arity(ctx[0], ns, ne)
                 if arity >= 0 {
-                    if nargs < arity and flowc_tc_eff_implicit_ok(ctx, arena, id, nargs) == 1 {
-                        let unused_implicit: i32 = 0
-                    } elif nargs != arity and flowc_tc_fn_has_arity(ctx[0], ns, ne, nargs) == 0 {
-                        # An imported overload set seeds one entry per
-                        # overload; any of them may take nargs (#1044).
+                    if nargs != arity {
                         flowc_tc_note(ctx, "flowc tc: arity mismatch", ns, ne)
                         flowc_tc_err(ctx)
                     }
@@ -1515,7 +644,7 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         let base: i32 = arena.nodes[id].a
         flowc_tc_check_expr(ctx, arena, base)
         # Optional: known struct type + unknown field name.
-        if ctx[0].sem_on == 0 and base != AST_NONE and arena.nodes[base].kind == AST_IDENT {
+        if base != AST_NONE and arena.nodes[base].kind == AST_IDENT {
             let ty: i32 = flowc_tc_lookup_val_type(ctx[0], arena.nodes[base].name_start, arena.nodes[base].name_end)
             let st: i32 = flowc_tc_find_struct(arena, ctx[0].src, ty)
             if st != AST_NONE {
@@ -1559,9 +688,6 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
             flowc_tc_check_expr(ctx, arena, el)
             el = arena.nodes[el].next
         }
-        if arena.nodes[id].b != AST_NONE {
-            flowc_tc_check_expr(ctx, arena, arena.nodes[id].b)
-        }
         return
     }
 }
@@ -1597,31 +723,19 @@ function flowc_tc_check_stmt(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
     if kind == AST_RETURN {
         let val: i32 = arena.nodes[id].a
         let is_void: i32 = flowc_tc_is_void_ret(arena, ctx[0].src, ctx[0].cur_ret)
-        # `return void` is a bare return, as on the Python host.
-        let mut bare: i32 = 0
         if val == AST_NONE {
-            bare = 1
-        } elif arena.nodes[val].kind == AST_IDENT and flowc_tc_span_is(ctx[0].src, arena.nodes[val].name_start, arena.nodes[val].name_end, "void") == 1 {
-            bare = 1
-        }
-        if ctx[0].sem_on == 1 {
-            flowc_tc_check_expr(ctx, arena, val)
-        } elif bare == 1 {
             # Bare `return` only ok in void / omitted-return functions.
             if is_void == 0 {
-                flowc_tc_note(ctx, "flowc tc: return without a value in a function that returns one", arena.nodes[id].start, arena.nodes[id].start)
                 flowc_tc_err(ctx)
             }
         } else {
             # Value return illegal in void functions.
             if is_void == 1 {
-                flowc_tc_note(ctx, "flowc tc: return with a value in a void function", arena.nodes[id].start, arena.nodes[id].start)
                 flowc_tc_err(ctx)
             }
             flowc_tc_check_expr(ctx, arena, val)
             if flowc_tc_is_i32_type(arena, ctx[0].src, ctx[0].cur_ret) == 1 {
                 if flowc_tc_obvious_non_i32(arena, val) == 1 {
-                    flowc_tc_note(ctx, "flowc tc: returns a non-i32 value from an i32 function", arena.nodes[id].start, arena.nodes[id].start)
                     flowc_tc_err(ctx)
                 }
             }
@@ -1632,17 +746,6 @@ function flowc_tc_check_stmt(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         flowc_tc_check_expr(ctx, arena, arena.nodes[id].a)
         flowc_tc_check_block(ctx, arena, arena.nodes[id].b)
         flowc_tc_check_block(ctx, arena, arena.nodes[id].c)
-        return
-    }
-    if kind == AST_LAYOUT {
-        # ui_row(args) { body }: args and body check as written; the
-        # begin/end calls are synthesized by cgen (Python _check_statement).
-        let mut arg: i32 = arena.nodes[id].a
-        while arg != AST_NONE {
-            flowc_tc_check_expr(ctx, arena, arg)
-            arg = arena.nodes[arg].next
-        }
-        flowc_tc_check_block(ctx, arena, arena.nodes[id].b)
         return
     }
     if kind == AST_WHILE {
@@ -1670,19 +773,6 @@ function flowc_tc_check_stmt(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         # The C generator handles the lowering based on the first arm's pattern kind.
         let mut arm: i32 = arena.nodes[id].b
         while arm != AST_NONE {
-            if arena.nodes[arm].kind == AST_MATCH_ARM_EXT {
-                # Or-pattern / guard / nested arm: the names the first
-                # alternative binds are in scope for the guard and the body.
-                flowc_tc_push_mark(ctx)
-                flowc_tc_bind_pattern(ctx, arena, arena.nodes[arm].a, 1)
-                if arena.nodes[arm].c != AST_NONE {
-                    flowc_tc_check_expr(ctx, arena, arena.nodes[arm].c)
-                }
-                flowc_tc_check_block(ctx, arena, arena.nodes[arm].b)
-                flowc_tc_pop_mark(ctx)
-                arm = arena.nodes[arm].next
-                continue
-            }
             # Wildcard / binding arm is a catch-all — must be the last arm.
             if (arena.nodes[arm].ival == 1 or arena.nodes[arm].ival == 2) and arena.nodes[arm].next != AST_NONE {
                 flowc_tc_note(ctx, "flowc tc: catch-all match arm must be last", arena.nodes[arm].start, arena.nodes[arm].end)
@@ -1722,7 +812,7 @@ function flowc_tc_check_stmt(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         if lhs != AST_NONE and arena.nodes[lhs].kind == AST_IDENT {
             let ns: i32 = arena.nodes[lhs].name_start
             let ne: i32 = arena.nodes[lhs].name_end
-            if ctx[0].sem_on == 0 and flowc_tc_lookup(ctx[0], ns, ne) == 0 {
+            if flowc_tc_lookup(ctx[0], ns, ne) == 0 {
                 flowc_tc_err(ctx)
             }
         } else {
@@ -1755,35 +845,14 @@ function flowc_tc_check_stmt(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         flowc_tc_check_block(ctx, arena, id)
         return
     }
-    if kind == AST_HANDLE {
-        if ctx[0].sem_on == 1 {
-            flowc_tc_check_block(ctx, arena, arena.nodes[id].a)
-            return
-        }
-        flowc_tc_eff_check_handle(ctx, arena, id)
-        return
-    }
 }
 
 function flowc_tc_collect_globals(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
     let mut item: i32 = arena.nodes[root].a
     while item != AST_NONE {
         let kind: i32 = arena.nodes[item].kind
-        # An @cImport header declares functions the checker does not parse
-        # (the Python host reads them from the header): allow them as an
-        # extern block's are allowed.
-        if kind == AST_EXTERN or kind == AST_C_IMPORT {
-            ctx[0].has_extern = 1
-        }
-        # extern const NAME: T (#1075) binds a typed C constant.
         if kind == AST_EXTERN {
-            let mut xc: i32 = arena.nodes[item].a
-            while xc != AST_NONE {
-                if arena.nodes[xc].kind == AST_CONST {
-                    flowc_tc_bind_value(ctx, arena.nodes[xc].name_start, arena.nodes[xc].name_end, arena.nodes[xc].a)
-                }
-                xc = arena.nodes[xc].next
-            }
+            ctx[0].has_extern = 1
         }
         if kind == AST_CONST {
             let ty: i32 = arena.nodes[item].a
@@ -1833,14 +902,8 @@ function flowc_tc_collect_globals(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
                             # If parameter types are identical, it's a real error.
                             let params_same: i32 = flowc_tc_params_eq(arena, ctx[0].src, fn, pfn)
                             if params_same == 1 {
-                                # Two C definitions of one symbol. The Python
-                                # checker kept both as overloads and clang
-                                # then rejected the redefinition.
-                                flowc_tc_eff_begin(ctx, ns)
-                                flowc_eff_diag_s("function '")
-                                flowc_eff_diag_span(ctx[0].src, ns, ne)
-                                flowc_eff_diag_s("' is defined twice with the same parameter types")
-                                flowc_eff_diag_end()
+                                flowc_tc_note(ctx, "flowc tc: duplicate function with same signature", ns, ne)
+                                flowc_tc_err(ctx)
                             }
                         }
                     }
@@ -1859,18 +922,19 @@ function flowc_tc_check_fns(ctx: ptr<TcCtx>, arena: AstArena, root: i32) {
     while item != AST_NONE {
         let fn: i32 = flowc_tc_unwrap_fn(arena, item)
         if fn != AST_NONE and arena.nodes[fn].ival == 0 {
-            flowc_tc_check_body(ctx, arena, fn)
-        }
-        # Capability methods are checked like functions.
-        let mut cp: i32 = item
-        if arena.nodes[cp].kind == AST_EXPORT {
-            cp = arena.nodes[cp].a
-        }
-        if cp != AST_NONE and arena.nodes[cp].kind == AST_CAPABILITY {
-            let mut m: i32 = arena.nodes[cp].b
-            while m != AST_NONE {
-                flowc_tc_check_body(ctx, arena, m)
-                m = arena.nodes[m].next
+            let body: i32 = arena.nodes[fn].c
+            if body != AST_NONE {
+                flowc_tc_push_mark(ctx)
+                let mut param: i32 = arena.nodes[fn].a
+                while param != AST_NONE {
+                    let pty: i32 = arena.nodes[param].a
+                    flowc_tc_bind_value(ctx, arena.nodes[param].name_start, arena.nodes[param].name_end, pty)
+                    param = arena.nodes[param].next
+                }
+                ctx[0].cur_ret = arena.nodes[fn].b
+                flowc_tc_check_block(ctx, arena, body)
+                ctx[0].cur_ret = AST_NONE
+                flowc_tc_pop_mark(ctx)
             }
         }
         # Const init may reference other consts / fns.
@@ -1962,13 +1026,8 @@ function flowc_tc_seed_bind_enum_variant(ctx: ptr<TcCtx>, src: ptr<u8>, ens: i32
     ctx[0].seed_nlen = ctx[0].nlen
 }
 
-# Register a dependency PROGRAM's top-level symbols into ctx seed table.
-# Visibility matches the Python host (module_resolver.py puts every
-# declaration of an imported module into the program): every const is a
-# value and every function, exported or not, is fn+arity. `export` marks a
-# module's public API; it does not hide the rest from a bundle. When two
-# modules define a private function with the same name, each module's own
-# calls reach its own definition (#950 renames the later one in C).
+# Register export symbols from a dependency PROGRAM into ctx seed table.
+# export const (ival==1) → value; export function → fn+arity.
 # export struct: not seeded yet — Stage-A does not validate annotation type names
 # (let t: Token), and field/struct-lit checks only scan the local arena for
 # AST_STRUCT. Seeding nk=0 would not wire find_struct across modules.
@@ -1979,32 +1038,20 @@ export function flowc_tc_seed_export(ctx: ptr<TcCtx>, dep_arena: AstArena, dep_r
     if dep_arena.nodes[dep_root].kind != AST_PROGRAM {
         return
     }
-    # Effects, capabilities and `with` rows travel in the effect table.
-    ctx[0].eff_len = ctx[0].eff_seed_len
-    ctx[0].eff_len = flowc_eff_collect(dep_arena, dep_root, dep_src, ctx[0].eff, ctx[0].eff_cap, ctx[0].eff_len)
-    ctx[0].eff_seed_len = ctx[0].eff_len
     let mut item: i32 = dep_arena.nodes[dep_root].a
     while item != AST_NONE {
         let kind: i32 = dep_arena.nodes[item].kind
         if kind == AST_CONST {
-            # Value binding; type node id not portable across arenas → -1.
-            flowc_tc_seed_bind(
-                ctx,
-                dep_src,
-                dep_arena.nodes[item].name_start,
-                dep_arena.nodes[item].name_end,
-                0,
-                -1
-            )
-        }
-        # A plain `function` is visible to importers too, as on the Python
-        # host (#988). An imported module's `main` is its own entry point.
-        if kind == AST_FN {
-            let fns: i32 = dep_arena.nodes[item].name_start
-            let fne: i32 = dep_arena.nodes[item].name_end
-            if fne > fns and flowc_tc_span_is(dep_src, fns, fne, "main") == 0 {
-                let farity: i32 = flowc_ast_chain_len(dep_arena, dep_arena.nodes[item].a)
-                flowc_tc_seed_bind(ctx, dep_src, fns, fne, 1, farity)
+            if dep_arena.nodes[item].ival == 1 {
+                # Value binding; type node id not portable across arenas → -1.
+                flowc_tc_seed_bind(
+                    ctx,
+                    dep_src,
+                    dep_arena.nodes[item].name_start,
+                    dep_arena.nodes[item].name_end,
+                    0,
+                    -1
+                )
             }
         }
         if kind == AST_LET {
@@ -2016,26 +1063,6 @@ export function flowc_tc_seed_export(ctx: ptr<TcCtx>, dep_arena: AstArena, dep_r
                 0,
                 -1
             )
-        }
-        # A C function declared in an imported module's extern block is
-        # callable from the importer, as on the Python host, where the module
-        # resolver merges the declarations. Arity is left unchecked (-1): a
-        # variadic signature loses its `...` in the AST.
-        if kind == AST_EXTERN {
-            let mut ext: i32 = dep_arena.nodes[item].a
-            while ext != AST_NONE {
-                if dep_arena.nodes[ext].kind == AST_FN {
-                    let ens: i32 = dep_arena.nodes[ext].name_start
-                    let ene: i32 = dep_arena.nodes[ext].name_end
-                    if ene > ens {
-                        flowc_tc_seed_bind(ctx, dep_src, ens, ene, 1, -1)
-                    }
-                }
-                if dep_arena.nodes[ext].kind == AST_CONST {
-                    flowc_tc_seed_bind(ctx, dep_src, dep_arena.nodes[ext].name_start, dep_arena.nodes[ext].name_end, 0, -1)
-                }
-                ext = dep_arena.nodes[ext].next
-            }
         }
         if kind == AST_EXPORT {
             let inner: i32 = dep_arena.nodes[item].a
@@ -2055,9 +1082,9 @@ export function flowc_tc_seed_export(ctx: ptr<TcCtx>, dep_arena: AstArena, dep_r
 export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
     # Bundle-checking `main.flow` seeds every frontend export then binds
     # main's own symbols — 512 was too small (silent tc_errs=1).
-    let ncap: i32 = 8192
+    let ncap: i32 = 4096
     let mcap: i32 = 128
-    let seed_cap: i32 = 131072
+    let seed_cap: i32 = 32768
     let overload_arg_cap: i32 = 128
     let mut overloads: FlowcOverloadTable = flowc_overload_table_init(src, ncap)
     let mut overload_scratch: FlowcOverloadCallScratch = flowc_overload_call_scratch_init(overload_arg_cap)
@@ -2067,12 +1094,7 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
     let raw_na: ptr<u8> = malloc((ncap as i64) * 4)
     let raw_mk: ptr<u8> = malloc((mcap as i64) * 4)
     let raw_seed: ptr<u8> = malloc(seed_cap as i64)
-    let eff_cap: i32 = 262144
-    let hcap: i32 = 256
-    let raw_eff: ptr<u8> = malloc(eff_cap as i64)
-    let raw_hs: ptr<u8> = malloc((hcap as i64) * 4)
-    let raw_he: ptr<u8> = malloc((hcap as i64) * 4)
-    if raw_ns == null or raw_ne == null or raw_nk == null or raw_na == null or raw_mk == null or raw_seed == null or raw_eff == null or raw_hs == null or raw_he == null or overloads.err != 0 or overload_scratch.err != 0 {
+    if raw_ns == null or raw_ne == null or raw_nk == null or raw_na == null or raw_mk == null or raw_seed == null or overloads.err != 0 or overload_scratch.err != 0 {
         if raw_ns != null {
             free(raw_ns)
         }
@@ -2090,15 +1112,6 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
         }
         if raw_seed != null {
             free(raw_seed)
-        }
-        if raw_eff != null {
-            free(raw_eff)
-        }
-        if raw_hs != null {
-            free(raw_hs)
-        }
-        if raw_he != null {
-            free(raw_he)
         }
         flowc_overload_table_free(&overloads)
         flowc_overload_call_scratch_free(&overload_scratch)
@@ -2118,25 +1131,13 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
             loop_depth: 0,
             has_extern: 0,
             lenient: 0,
-            fatal: 0,
             seed_buf: null,
             seed_cap: 0,
             seed_len: 0,
             seed_nlen: 0,
             overloads: overloads,
             overload_scratch: overload_scratch,
-            path: "",
-            eff: null,
-            eff_len: 0,
-            eff_cap: 0,
-            eff_seed_len: 0,
-            hs_s: null,
-            hs_e: null,
-            hlen: 0,
-            hcap: 0,
-            cur_fn: AST_NONE,
-            strict_effects: 0,
-            sem_on: 0
+            path: ""
         }
     }
     let mut zi: i32 = 0
@@ -2149,19 +1150,6 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
     let nk: ptr<i32> = raw_nk
     let na: ptr<i32> = raw_na
     let marks: ptr<i32> = raw_mk
-    let hs_s: ptr<i32> = raw_hs
-    let hs_e: ptr<i32> = raw_he
-    let mut strict_effects: i32 = 1
-    let se: string = getenv("FLOWC_STRICT_EFFECTS")
-    let sep: ptr<u8> = se as ptr<u8>
-    if sep != null and sep[0] == 49 {
-        strict_effects = 1
-    }
-    let pe: string = getenv("FLOWC_PERMISSIVE_EFFECTS")
-    let pep: ptr<u8> = pe as ptr<u8>
-    if pep != null and pep[0] == 49 {
-        strict_effects = 0
-    }
     return TcCtx {
         src: src,
         ns: ns,
@@ -2178,25 +1166,13 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
         loop_depth: 0,
         has_extern: 0,
         lenient: 0,
-        fatal: 0,
         seed_buf: raw_seed,
         seed_cap: seed_cap,
         seed_len: 0,
         seed_nlen: 0,
         overloads: overloads,
         overload_scratch: overload_scratch,
-        path: "",
-        eff: raw_eff,
-        eff_len: 0,
-        eff_cap: eff_cap,
-        eff_seed_len: 0,
-        hs_s: hs_s,
-        hs_e: hs_e,
-        hlen: 0,
-        hcap: hcap,
-        cur_fn: AST_NONE,
-        strict_effects: strict_effects,
-        sem_on: 0
+        path: ""
     }
 }
 
@@ -2225,18 +1201,6 @@ export function flowc_tc_free(ctx: ptr<TcCtx>) {
         free(ctx[0].seed_buf)
         ctx[0].seed_buf = null
     }
-    if ctx[0].eff != null {
-        free(ctx[0].eff)
-        ctx[0].eff = null
-    }
-    if ctx[0].hs_s != null {
-        free(ctx[0].hs_s)
-        ctx[0].hs_s = null
-    }
-    if ctx[0].hs_e != null {
-        free(ctx[0].hs_e)
-        ctx[0].hs_e = null
-    }
     flowc_overload_table_free(&ctx[0].overloads)
     flowc_overload_call_scratch_free(&ctx[0].overload_scratch)
 }
@@ -2250,9 +1214,6 @@ export function flowc_tc_reset_module(ctx: ptr<TcCtx>, src: ptr<u8>) {
     ctx[0].cur_ret = AST_NONE
     ctx[0].loop_depth = 0
     ctx[0].has_extern = 0
-    ctx[0].eff_len = ctx[0].eff_seed_len
-    ctx[0].hlen = 0
-    ctx[0].cur_fn = AST_NONE
     flowc_overload_registry_reset(&ctx[0].overloads, src)
 }
 
@@ -2260,1632 +1221,22 @@ export function flowc_tc_set_path(ctx: ptr<TcCtx>, path: string) {
     ctx[0].path = path
 }
 
-# ---------------------------------------------------------------------------
-# Units of measure (#1008). The dimension checks of src/flow/type_checker.py
-# (_register_unit, _check_dimensioned_op, _can_cast, _can_coerce and the
-# DIMENSIONLESS_MATH rule), with its messages. A `unit` declaration lowers to
-# `typedef double Name`; this pass gives each expression a small type (a
-# primitive, a unit with a dimension vector, or unknown) and reports what the
-# Python checker reports. An unknown type never produces an error, so a gap
-# here can only accept a program the Python checker would reject.
-#
-# A dimension vector is packed into an i64: 12 base units of 5 signed bits
-# each, indexed by base-unit declaration order, so equal vectors are equal
-# integers and trailing zeros need no normalization.
-# ---------------------------------------------------------------------------
-
-const UT_UNKNOWN: i32 = 0
-const UT_NUM: i32 = 1
-const UT_UNIT: i32 = 2
-const UT_OTHER: i32 = 3
-const UT_STRUCT: i32 = 4
-const UT_SEQ: i32 = 5
-
-const UP_I8: i32 = 1
-const UP_I16: i32 = 2
-const UP_I32: i32 = 3
-const UP_I64: i32 = 4
-const UP_U8: i32 = 5
-const UP_U16: i32 = 6
-const UP_U32: i32 = 7
-const UP_U64: i32 = 8
-const UP_F32: i32 = 9
-const UP_F64: i32 = 10
-const UP_BOOL: i32 = 11
-const UP_STRING: i32 = 12
-const UP_I128: i32 = 13
-const UP_U128: i32 = 14
-
-# Token kinds from token.flow (typecheck.flow does not import the lexer).
-const UT_TOK_EQEQ: i32 = 18
-const UT_TOK_NE: i32 = 19
-const UT_TOK_LT: i32 = 20
-const UT_TOK_LE: i32 = 21
-const UT_TOK_GT: i32 = 22
-const UT_TOK_GE: i32 = 23
-const UT_TOK_PLUS: i32 = 24
-const UT_TOK_MINUS: i32 = 25
-const UT_TOK_STAR: i32 = 26
-const UT_TOK_SLASH: i32 = 27
-const UT_TOK_AMPAMP: i32 = 28
-const UT_TOK_BARBAR: i32 = 29
-const UT_TOK_BANG: i32 = 30
-const UT_TOK_AMP: i32 = 32
-const UT_TOK_PERCENT: i32 = 33
-const UT_TOK_BAR: i32 = 38
-const UT_TOK_CARET: i32 = 39
-const UT_TOK_SHL: i32 = 40
-const UT_TOK_SHR: i32 = 41
-const UT_TOK_IN: i32 = 47
-const UT_KW_DBG: i32 = 37
-
-const UT_SLOTS: i32 = 12
-const UT_TY_BYTES: i64 = 64
-
-# tag: UT_*. dims: packed vector (UT_UNIT). prim: UP_* (UT_NUM, UT_OTHER).
-# ns..ne: the type's name in the source (a declared unit or alias); empty
-# for an anonymous dimension. node: struct decl (UT_STRUCT) or element type
-# node (UT_SEQ).
-struct UTy {
-    tag: i32,
-    dims: i64,
-    prim: i32,
-    ns: i32,
-    ne: i32,
-    radian: i32,
-    node: i32
-}
-
-struct UCtx {
-    src: ptr<u8>,
-    u_ns: ptr<i32>,
-    u_ne: ptr<i32>,
-    u_dims: ptr<i64>,
-    u_ok: ptr<i32>,
-    u_rad: ptr<i32>,
-    u_len: i32,
-    u_cap: i32,
-    base: ptr<i32>,
-    nbase: i32,
-    v_ns: ptr<i32>,
-    v_ne: ptr<i32>,
-    v_ty: ptr<UTy>,
-    v_len: i32,
-    v_cap: i32,
-    marks: ptr<i32>,
-    m_len: i32,
-    m_cap: i32,
-    args: ptr<UTy>,
-    a_len: i32,
-    a_cap: i32,
-    mb: ptr<u8>,
-    mb_len: i32,
-    mb_cap: i32,
-    cur_fn: i32,
-    err: i32
-}
-
-function ut_unknown() -> UTy {
-    return UTy { tag: UT_UNKNOWN, dims: 0, prim: 0, ns: 0, ne: 0, radian: 0, node: AST_NONE }
-}
-
-function ut_prim(p: i32) -> UTy {
-    let mut tag: i32 = UT_NUM
-    if p == UP_BOOL or p == UP_STRING {
-        tag = UT_OTHER
-    }
-    return UTy { tag: tag, dims: 0, prim: p, ns: 0, ne: 0, radian: 0, node: AST_NONE }
-}
-
-function ut_unit_ty(dims: i64, ns: i32, ne: i32, radian: i32) -> UTy {
-    return UTy { tag: UT_UNIT, dims: dims, prim: 0, ns: ns, ne: ne, radian: radian, node: AST_NONE }
-}
-
-function ut_node_ty(tag: i32, node: i32) -> UTy {
-    return UTy { tag: tag, dims: 0, prim: 0, ns: 0, ne: 0, radian: 0, node: node }
-}
-
-function ut_is_float(p: i32) -> i32 {
-    if p == UP_F32 or p == UP_F64 {
-        return 1
-    }
-    return 0
-}
-
-# Rank in the Python checker's integer widening order.
-function ut_int_rank(p: i32) -> i32 {
-    if p == UP_I8 { return 0 }
-    if p == UP_U8 { return 1 }
-    if p == UP_I16 { return 2 }
-    if p == UP_U16 { return 3 }
-    if p == UP_I32 { return 4 }
-    if p == UP_U32 { return 5 }
-    if p == UP_I64 { return 6 }
-    if p == UP_U64 { return 7 }
-    if p == UP_I128 { return 8 }
-    if p == UP_U128 { return 9 }
-    return 0
-}
-
-function ut_rank_prim(r: i32) -> i32 {
-    if r == 0 { return UP_I8 }
-    if r == 1 { return UP_U8 }
-    if r == 2 { return UP_I16 }
-    if r == 3 { return UP_U16 }
-    if r == 4 { return UP_I32 }
-    if r == 5 { return UP_U32 }
-    if r == 6 { return UP_I64 }
-    if r == 7 { return UP_U64 }
-    if r == 8 { return UP_I128 }
-    return UP_U128
-}
-
-# _numeric_common_type for two primitive numerics.
-function ut_common(a: i32, b: i32) -> i32 {
-    if ut_is_float(a) == 1 or ut_is_float(b) == 1 {
-        if a == UP_F64 or b == UP_F64 {
-            return UP_F64
-        }
-        return UP_F32
-    }
-    let ra: i32 = ut_int_rank(a)
-    let rb: i32 = ut_int_rank(b)
-    if ra > rb {
-        return ut_rank_prim(ra)
-    }
-    return ut_rank_prim(rb)
-}
-
-function ut_prim_name(p: i32) -> string {
-    if p == UP_I8 { return "i8" }
-    if p == UP_I16 { return "i16" }
-    if p == UP_I32 { return "i32" }
-    if p == UP_I64 { return "i64" }
-    if p == UP_U8 { return "u8" }
-    if p == UP_U16 { return "u16" }
-    if p == UP_U32 { return "u32" }
-    if p == UP_U64 { return "u64" }
-    if p == UP_F32 { return "f32" }
-    if p == UP_F64 { return "f64" }
-    if p == UP_BOOL { return "bool" }
-    if p == UP_STRING { return "string" }
-    if p == UP_I128 { return "i128" }
-    if p == UP_U128 { return "u128" }
-    return "unknown"
-}
-
-function ut_prim_of_span(src: ptr<u8>, s: i32, e: i32) -> i32 {
-    if flowc_tc_span_is(src, s, e, "i8") == 1 { return UP_I8 }
-    if flowc_tc_span_is(src, s, e, "i16") == 1 { return UP_I16 }
-    if flowc_tc_span_is(src, s, e, "i32") == 1 { return UP_I32 }
-    if flowc_tc_span_is(src, s, e, "i64") == 1 { return UP_I64 }
-    if flowc_tc_span_is(src, s, e, "u8") == 1 { return UP_U8 }
-    if flowc_tc_span_is(src, s, e, "u16") == 1 { return UP_U16 }
-    if flowc_tc_span_is(src, s, e, "u32") == 1 { return UP_U32 }
-    if flowc_tc_span_is(src, s, e, "u64") == 1 { return UP_U64 }
-    if flowc_tc_span_is(src, s, e, "f32") == 1 { return UP_F32 }
-    if flowc_tc_span_is(src, s, e, "f64") == 1 { return UP_F64 }
-    if flowc_tc_span_is(src, s, e, "bool") == 1 { return UP_BOOL }
-    if flowc_tc_span_is(src, s, e, "string") == 1 { return UP_STRING }
-    if flowc_tc_span_is(src, s, e, "i128") == 1 { return UP_I128 }
-    if flowc_tc_span_is(src, s, e, "u128") == 1 { return UP_U128 }
-    return 0
-}
-
-# ---- packed dimension vectors ----
-
-function ut_dim_get(d: i64, k: i32) -> i32 {
-    let sh: i64 = (k * 5) as i64
-    let v: i32 = ((d >> sh) & 31) as i32
-    if v >= 16 {
-        return v - 32
-    }
-    return v
-}
-
-function ut_dim_set(d: i64, k: i32, v: i32) -> i64 {
-    let sh: i64 = (k * 5) as i64
-    let mask: i64 = 31
-    let slot: i64 = mask << sh
-    let cleared: i64 = d - (d & slot)
-    let bits: i64 = ((v & 31) as i64) << sh
-    return cleared | bits
-}
-
-# Component-wise a + sign * b (TypeChecker._combine_dims).
-function ut_dim_combine(a: i64, b: i64, sign: i32) -> i64 {
-    let mut r: i64 = 0
-    let mut k: i32 = 0
-    while k < UT_SLOTS {
-        r = ut_dim_set(r, k, ut_dim_get(a, k) + sign * ut_dim_get(b, k))
-        k = k + 1
-    }
-    return r
-}
-
-function ut_dim_scale(a: i64, e: i32) -> i64 {
-    let mut r: i64 = 0
-    let mut k: i32 = 0
-    while k < UT_SLOTS {
-        r = ut_dim_set(r, k, ut_dim_get(a, k) * e)
-        k = k + 1
-    }
-    return r
-}
-
-# ---- context ----
-
-function ut_init(src: ptr<u8>) -> UCtx {
-    let ucap: i32 = 256
-    let vcap: i32 = 4096
-    let acap: i32 = 1024
-    return UCtx {
-        src: src,
-        u_ns: malloc((ucap as i64) * 4) as ptr<i32>,
-        u_ne: malloc((ucap as i64) * 4) as ptr<i32>,
-        u_dims: malloc((ucap as i64) * 8) as ptr<i64>,
-        u_ok: malloc((ucap as i64) * 4) as ptr<i32>,
-        u_rad: malloc((ucap as i64) * 4) as ptr<i32>,
-        u_len: 0,
-        u_cap: ucap,
-        base: malloc((ucap as i64) * 4) as ptr<i32>,
-        nbase: 0,
-        v_ns: malloc((vcap as i64) * 4) as ptr<i32>,
-        v_ne: malloc((vcap as i64) * 4) as ptr<i32>,
-        v_ty: malloc((vcap as i64) * UT_TY_BYTES) as ptr<UTy>,
-        v_len: 0,
-        v_cap: vcap,
-        marks: malloc(1024 * 4) as ptr<i32>,
-        m_len: 0,
-        m_cap: 1024,
-        args: malloc((acap as i64) * UT_TY_BYTES) as ptr<UTy>,
-        a_len: 0,
-        a_cap: acap,
-        mb: malloc(1024),
-        mb_len: 0,
-        mb_cap: 1024,
-        cur_fn: AST_NONE,
-        err: 0
-    }
-}
-
-function ut_free(u: ptr<UCtx>) {
-    free(u[0].u_ns as ptr<u8>)
-    free(u[0].u_ne as ptr<u8>)
-    free(u[0].u_dims as ptr<u8>)
-    free(u[0].u_ok as ptr<u8>)
-    free(u[0].u_rad as ptr<u8>)
-    free(u[0].base as ptr<u8>)
-    free(u[0].v_ns as ptr<u8>)
-    free(u[0].v_ne as ptr<u8>)
-    free(u[0].v_ty as ptr<u8>)
-    free(u[0].marks as ptr<u8>)
-    free(u[0].args as ptr<u8>)
-    free(u[0].mb)
-}
-
-# ---- message buffer ----
-
-function ut_mb_reset(u: ptr<UCtx>) {
-    u[0].mb_len = 0
-    u[0].mb[0] = 0
-}
-
-function ut_mb_byte(u: ptr<UCtx>, c: u8) {
-    if u[0].mb_len + 1 >= u[0].mb_cap {
-        return
-    }
-    u[0].mb[u[0].mb_len] = c
-    u[0].mb_len = u[0].mb_len + 1
-    u[0].mb[u[0].mb_len] = 0
-}
-
-function ut_mb_str(u: ptr<UCtx>, s: string) {
-    let p: ptr<u8> = s
-    let mut i: i32 = 0
-    while p[i] != 0 {
-        ut_mb_byte(u, p[i])
-        i = i + 1
-    }
-}
-
-function ut_mb_span(u: ptr<UCtx>, s: i32, e: i32) {
-    let mut i: i32 = s
-    while i < e {
-        ut_mb_byte(u, u[0].src[i])
-        i = i + 1
-    }
-}
-
-function ut_mb_int(u: ptr<UCtx>, n: i32) {
-    if n < 0 {
-        ut_mb_byte(u, 45)
-        ut_mb_int(u, 0 - n)
-        return
-    }
-    if n >= 10 {
-        ut_mb_int(u, n / 10)
-    }
-    ut_mb_byte(u, (48 + n % 10) as u8)
-}
-
-# Print the message and count it.
-function ut_mb_emit(u: ptr<UCtx>) {
-    printf("%s\n", u[0].mb as string)
-    u[0].err = u[0].err + 1
-}
-
-function ut_line_of(u: ptr<UCtx>, pos: i32) -> i32 {
-    let mut line: i32 = 1
-    let mut i: i32 = 0
-    while i < pos and u[0].src[i] != 0 {
-        if u[0].src[i] == 10 {
-            line = line + 1
-        }
-        i = i + 1
-    }
-    return line
-}
-
-# `line N: ` prefix.
-function ut_mb_loc(u: ptr<UCtx>, pos: i32) {
-    ut_mb_str(u, "line ")
-    ut_mb_int(u, ut_line_of(u, pos))
-    ut_mb_str(u, ": ")
-}
-
-# ---- unit table ----
-
-function ut_find_unit(u: ptr<UCtx>, s: i32, e: i32) -> i32 {
-    let mut i: i32 = 0
-    while i < u[0].u_len {
-        if flowc_tc_span_eq(u[0].src, s, e, u[0].u_ns[i], u[0].u_ne[i]) == 1 {
-            return i
-        }
-        i = i + 1
-    }
-    return 0 - 1
-}
-
-# The first declared unit with these (non-empty) dimensions: unit_canonical.
-function ut_canonical(u: ptr<UCtx>, dims: i64) -> i32 {
-    if dims == 0 {
-        return 0 - 1
-    }
-    let mut i: i32 = 0
-    while i < u[0].u_len {
-        if u[0].u_ok[i] == 1 and u[0].u_dims[i] == dims {
-            return i
-        }
-        i = i + 1
-    }
-    return 0 - 1
-}
-
-function ut_mb_base(u: ptr<UCtx>, k: i32, mag: i32)
-
-# Printable name of a type (SemanticType.__str__, _format_dims).
-function ut_mb_ty(u: ptr<UCtx>, t: UTy) {
-    if t.tag == UT_NUM or t.tag == UT_OTHER {
-        ut_mb_str(u, ut_prim_name(t.prim))
-        return
-    }
-    if t.tag != UT_UNIT {
-        ut_mb_str(u, "unknown")
-        return
-    }
-    if t.ne > t.ns {
-        ut_mb_span(u, t.ns, t.ne)
-        return
-    }
-    let c: i32 = ut_canonical(u, t.dims)
-    if c >= 0 {
-        ut_mb_span(u, u[0].u_ns[c], u[0].u_ne[c])
-        return
-    }
-    # Meter*Kilogram/Second^2; an empty numerator prints as 1.
-    let mut any_num: i32 = 0
-    let mut k: i32 = 0
-    while k < UT_SLOTS {
-        let ex: i32 = ut_dim_get(t.dims, k)
-        if ex > 0 {
-            if any_num == 1 {
-                ut_mb_byte(u, 42)
-            }
-            any_num = 1
-            ut_mb_base(u, k, ex)
-        }
-        k = k + 1
-    }
-    if any_num == 0 {
-        ut_mb_byte(u, 49)
-    }
-    k = 0
-    while k < UT_SLOTS {
-        let ex: i32 = ut_dim_get(t.dims, k)
-        if ex < 0 {
-            ut_mb_byte(u, 47)
-            ut_mb_base(u, k, 0 - ex)
-        }
-        k = k + 1
-    }
-}
-
-function ut_mb_base(u: ptr<UCtx>, k: i32, mag: i32) {
-    if k < u[0].nbase {
-        let b: i32 = u[0].base[k]
-        ut_mb_span(u, u[0].u_ns[b], u[0].u_ne[b])
-    } else {
-        ut_mb_str(u, "dim")
-        ut_mb_int(u, k)
-    }
-    if mag != 1 {
-        ut_mb_byte(u, 94)
-        ut_mb_int(u, mag)
-    }
-}
-
-function ut_is_space(c: u8) -> i32 {
-    if c == 32 or c == 9 or c == 13 or c == 10 {
-        return 1
-    }
-    return 0
-}
-
-function ut_is_ident_start(c: u8) -> i32 {
-    if (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95 {
-        return 1
-    }
-    return 0
-}
-
-function ut_is_ident_char(c: u8) -> i32 {
-    if ut_is_ident_start(c) == 1 or (c >= 48 and c <= 57) {
-        return 1
-    }
-    return 0
-}
-
-# Skip spaces and `#` comments inside [i, end).
-function ut_skip_ws(src: ptr<u8>, i: i32, end: i32) -> i32 {
-    let mut j: i32 = i
-    while j < end {
-        if ut_is_space(src[j]) == 1 {
-            j = j + 1
-        } elif src[j] == 35 {
-            while j < end and src[j] != 10 {
-                j = j + 1
-            }
-        } else {
-            return j
-        }
-    }
-    return j
-}
-
-# Register one `unit` declaration (TypeChecker._register_unit). The AST
-# keeps only the name, so the right-hand side is read from the source:
-# factor (("*" | "/") factor)*, factor := IDENT ("^" ["-"] INT)? | 1.
-function ut_register_unit(u: ptr<UCtx>, arena: AstArena, d: i32) {
-    let src: ptr<u8> = u[0].src
-    let ns: i32 = arena.nodes[d].name_start
-    let ne: i32 = arena.nodes[d].name_end
-    let start: i32 = arena.nodes[d].start
-    let end: i32 = arena.nodes[d].end
-    if ut_find_unit(u, ns, ne) >= 0 {
-        ut_mb_reset(u)
-        ut_mb_loc(u, start)
-        ut_mb_str(u, "unit '")
-        ut_mb_span(u, ns, ne)
-        ut_mb_str(u, "' is already declared")
-        ut_mb_emit(u)
-        return
-    }
-    if u[0].u_len >= u[0].u_cap {
-        return
-    }
-    let mut dims: i64 = 0
-    let mut ok: i32 = 1
-    let mut i: i32 = ut_skip_ws(src, ne, end)
-    if i < end and src[i] == 61 {
-        i = i + 1
-        let mut sign: i32 = 1
-        let mut more: i32 = 1
-        while more == 1 {
-            i = ut_skip_ws(src, i, end)
-            if i < end and src[i] >= 48 and src[i] <= 57 {
-                while i < end and src[i] >= 48 and src[i] <= 57 {
-                    i = i + 1
-                }
-            } elif i < end and ut_is_ident_start(src[i]) == 1 {
-                let fs: i32 = i
-                while i < end and ut_is_ident_char(src[i]) == 1 {
-                    i = i + 1
-                }
-                let fe: i32 = i
-                let mut ex: i32 = 1
-                let j: i32 = ut_skip_ws(src, i, end)
-                if j < end and src[j] == 94 {
-                    i = ut_skip_ws(src, j + 1, end)
-                    let mut neg: i32 = 0
-                    if i < end and src[i] == 45 {
-                        neg = 1
-                        i = ut_skip_ws(src, i + 1, end)
-                    }
-                    ex = 0
-                    while i < end and src[i] >= 48 and src[i] <= 57 {
-                        ex = ex * 10 + (src[i] - 48) as i32
-                        i = i + 1
-                    }
-                    if neg == 1 {
-                        ex = 0 - ex
-                    }
-                }
-                let fu: i32 = ut_find_unit(u, fs, fe)
-                if fu < 0 {
-                    ut_mb_reset(u)
-                    ut_mb_loc(u, start)
-                    ut_mb_str(u, "unknown unit '")
-                    ut_mb_span(u, fs, fe)
-                    ut_mb_str(u, "' in declaration of '")
-                    ut_mb_span(u, ns, ne)
-                    ut_mb_str(u, "' (units must be declared before use)")
-                    ut_mb_emit(u)
-                } elif u[0].u_ok[fu] == 0 {
-                    ok = 0
-                } else {
-                    dims = ut_dim_combine(dims, ut_dim_scale(u[0].u_dims[fu], sign * ex), 1)
-                }
-            } else {
-                more = 0
-            }
-            if more == 1 {
-                i = ut_skip_ws(src, i, end)
-                if i < end and src[i] == 42 {
-                    sign = 1
-                    i = i + 1
-                } elif i < end and src[i] == 47 {
-                    sign = 0 - 1
-                    i = i + 1
-                } else {
-                    more = 0
-                }
-            }
-        }
-    } else {
-        # A new base dimension: the next index in declaration order.
-        let index: i32 = u[0].nbase
-        if index < u[0].u_cap {
-            u[0].base[index] = u[0].u_len
-            u[0].nbase = index + 1
-        }
-        if index < UT_SLOTS {
-            dims = ut_dim_set(0, index, 1)
-        } else {
-            ok = 0
-        }
-    }
-    let k: i32 = u[0].u_len
-    u[0].u_ns[k] = ns
-    u[0].u_ne[k] = ne
-    u[0].u_dims[k] = dims
-    u[0].u_ok[k] = ok
-    u[0].u_rad[k] = flowc_tc_span_is(src, ns, ne, "Radian")
-    u[0].u_len = k + 1
-}
-
-# A unit declaration: AST_TYPE_ALIAS with no base type, spelled `unit`.
-function ut_is_unit_decl(arena: AstArena, src: ptr<u8>, d: i32) -> i32 {
-    if d == AST_NONE or arena.nodes[d].kind != AST_TYPE_ALIAS or arena.nodes[d].a != AST_NONE {
-        return 0
-    }
-    let s: i32 = arena.nodes[d].start
-    return flowc_tc_span_is(src, s, s + 4, "unit")
-}
-
-function ut_unwrap_export(arena: AstArena, item: i32) -> i32 {
-    if item != AST_NONE and arena.nodes[item].kind == AST_EXPORT {
-        return arena.nodes[item].a
-    }
-    return item
-}
-
-# `distinct type X = T` parses as a type alias that starts at `type`.
-function ut_alias_is_distinct(src: ptr<u8>, start: i32) -> i32 {
-    let mut i: i32 = start - 1
-    while i >= 0 and ut_is_space(src[i]) == 1 {
-        i = i - 1
-    }
-    if i < 7 {
-        return 0
-    }
-    return flowc_tc_span_is(src, i - 7, i + 1, "distinct")
-}
-
-# ---- declared types ----
-
-function ut_of_type_depth(u: ptr<UCtx>, arena: AstArena, ty: i32, depth: i32) -> UTy {
-    if ty == AST_NONE or depth > 16 {
-        return ut_unknown()
-    }
-    if arena.nodes[ty].kind != AST_TYPE {
-        return ut_unknown()
-    }
-    let src: ptr<u8> = u[0].src
-    let ns: i32 = arena.nodes[ty].name_start
-    let ne: i32 = arena.nodes[ty].name_end
-    let inner: i32 = arena.nodes[ty].a
-    if ne <= ns {
-        if inner != AST_NONE {
-            return ut_node_ty(UT_SEQ, inner)
-        }
-        return ut_unknown()
-    }
-    if inner != AST_NONE {
-        if flowc_tc_span_is(src, ns, ne, "ptr") == 1 {
-            let pointee: UTy = ut_of_type_depth(u, arena, inner, depth + 1)
-            if pointee.tag == UT_STRUCT {
-                return pointee
-            }
-            return ut_node_ty(UT_SEQ, inner)
-        }
-        if flowc_tc_span_is(src, ns, ne, "array") == 1 or flowc_tc_span_is(src, ns, ne, "span") == 1 {
-            return ut_node_ty(UT_SEQ, inner)
-        }
-        return ut_unknown()
-    }
-    let p: i32 = ut_prim_of_span(src, ns, ne)
-    if p != 0 {
-        return ut_prim(p)
-    }
-    let un: i32 = ut_find_unit(u, ns, ne)
-    if un >= 0 {
-        if u[0].u_ok[un] == 0 {
-            return ut_unknown()
-        }
-        return ut_unit_ty(u[0].u_dims[un], u[0].u_ns[un], u[0].u_ne[un], u[0].u_rad[un])
-    }
-    let mut i: i32 = 0
-    while i < arena.len {
-        let k: i32 = arena.nodes[i].kind
-        if k == AST_TYPE_ALIAS and arena.nodes[i].a != AST_NONE {
-            if flowc_tc_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
-                # A type alias is transparent: an alias of a unit keeps the
-                # dimension under its own name. A distinct type has none.
-                if ut_alias_is_distinct(src, arena.nodes[i].start) == 1 {
-                    return ut_unknown()
-                }
-                let base: UTy = ut_of_type_depth(u, arena, arena.nodes[i].a, depth + 1)
-                if base.tag != UT_UNIT {
-                    return ut_unknown()
-                }
-                return ut_unit_ty(base.dims, arena.nodes[i].name_start, arena.nodes[i].name_end, base.radian)
-            }
-        }
-        if k == AST_STRUCT and arena.nodes[i].b == AST_NONE {
-            if flowc_tc_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
-                return ut_node_ty(UT_STRUCT, i)
-            }
-        }
-        i = i + 1
-    }
-    return ut_unknown()
-}
-
-function ut_of_type(u: ptr<UCtx>, arena: AstArena, ty: i32) -> UTy {
-    return ut_of_type_depth(u, arena, ty, 0)
-}
-
-# 1 when `actual` cannot stand where `expected` is declared because of a
-# dimension (the unit branch of _can_coerce / _is_compatible). Unknown
-# types and non-scalar values are never reported.
-function ut_dims_mismatch(actual: UTy, expected: UTy) -> i32 {
-    let mut ad: i32 = 0
-    if actual.tag == UT_UNIT {
-        ad = 1
-    }
-    let mut ed: i32 = 0
-    if expected.tag == UT_UNIT {
-        ed = 1
-    }
-    if ad == 1 and ed == 1 {
-        if actual.dims != expected.dims {
-            return 1
-        }
-        return 0
-    }
-    if ad == 1 {
-        if expected.tag == UT_NUM or expected.tag == UT_OTHER {
-            return 1
-        }
-        return 0
-    }
-    if ed == 1 {
-        if actual.tag == UT_NUM or actual.tag == UT_OTHER {
-            return 1
-        }
-    }
-    return 0
-}
-
-# ---- scopes ----
-
-function ut_push(u: ptr<UCtx>) {
-    if u[0].m_len < u[0].m_cap {
-        u[0].marks[u[0].m_len] = u[0].v_len
-        u[0].m_len = u[0].m_len + 1
-    }
-}
-
-function ut_pop(u: ptr<UCtx>) {
-    if u[0].m_len > 0 {
-        u[0].m_len = u[0].m_len - 1
-        u[0].v_len = u[0].marks[u[0].m_len]
-    }
-}
-
-function ut_bind(u: ptr<UCtx>, s: i32, e: i32, t: UTy) {
-    if u[0].v_len >= u[0].v_cap {
-        return
-    }
-    let i: i32 = u[0].v_len
-    u[0].v_ns[i] = s
-    u[0].v_ne[i] = e
-    u[0].v_ty[i] = t
-    u[0].v_len = i + 1
-}
-
-function ut_lookup(u: ptr<UCtx>, s: i32, e: i32) -> UTy {
-    let mut i: i32 = u[0].v_len
-    while i > 0 {
-        i = i - 1
-        if flowc_tc_span_eq(u[0].src, s, e, u[0].v_ns[i], u[0].v_ne[i]) == 1 {
-            return u[0].v_ty[i]
-        }
-    }
-    return ut_unknown()
-}
-
-function ut_expr(u: ptr<UCtx>, arena: AstArena, id: i32) -> UTy
-function ut_stmt(u: ptr<UCtx>, arena: AstArena, id: i32)
-function ut_block(u: ptr<UCtx>, arena: AstArena, id: i32)
-
-function ut_op_name(op: i32) -> string {
-    if op == UT_TOK_PLUS { return "+" }
-    if op == UT_TOK_MINUS { return "-" }
-    if op == UT_TOK_STAR { return "*" }
-    if op == UT_TOK_SLASH { return "/" }
-    if op == UT_TOK_PERCENT { return "%" }
-    if op == UT_TOK_EQEQ { return "==" }
-    if op == UT_TOK_NE { return "!=" }
-    if op == UT_TOK_LT { return "<" }
-    if op == UT_TOK_LE { return "<=" }
-    if op == UT_TOK_GT { return ">" }
-    if op == UT_TOK_GE { return ">=" }
-    if op == UT_TOK_IN { return "in" }
-    if op == UT_TOK_AMPAMP { return "&&" }
-    if op == UT_TOK_BARBAR { return "||" }
-    if op == UT_TOK_AMP { return "&" }
-    if op == UT_TOK_BAR { return "|" }
-    if op == UT_TOK_CARET { return "^" }
-    if op == UT_TOK_SHL { return "<<" }
-    if op == UT_TOK_SHR { return ">>" }
-    return "?"
-}
-
-function ut_is_compare(op: i32) -> i32 {
-    if op == UT_TOK_EQEQ or op == UT_TOK_NE or op == UT_TOK_LT or op == UT_TOK_LE or op == UT_TOK_GT or op == UT_TOK_GE or op == UT_TOK_IN {
-        return 1
-    }
-    return 0
-}
-
-function ut_is_arith(op: i32) -> i32 {
-    if op == UT_TOK_PLUS or op == UT_TOK_MINUS or op == UT_TOK_STAR or op == UT_TOK_SLASH or op == UT_TOK_PERCENT {
-        return 1
-    }
-    return 0
-}
-
-# The Python parser records a line on comparisons and on + - * / %, but not
-# on the + - * / % a compound assignment desugars to. Here a written
-# operator's node spans its token; a compound one starts at the target.
-function ut_op_has_line(u: ptr<UCtx>, arena: AstArena, id: i32, op: i32) -> i32 {
-    let s: i32 = arena.nodes[id].start
-    if arena.nodes[id].end <= s {
-        return 0
-    }
-    if ut_is_compare(op) == 1 {
-        return 1
-    }
-    if ut_is_arith(op) == 0 {
-        return 0
-    }
-    let c: u8 = u[0].src[s]
-    if c == 43 or c == 45 or c == 42 or c == 47 or c == 37 {
-        return 1
-    }
-    return 0
-}
-
-# _unit_result_type: the canonical declared unit, else an anonymous
-# dimension, else f64 when everything cancels.
-function ut_result_of_dims(u: ptr<UCtx>, dims: i64) -> UTy {
-    if dims == 0 {
-        return ut_prim(UP_F64)
-    }
-    let c: i32 = ut_canonical(u, dims)
-    if c >= 0 {
-        return ut_unit_ty(dims, u[0].u_ns[c], u[0].u_ne[c], u[0].u_rad[c])
-    }
-    return ut_unit_ty(dims, 0, 0, 0)
-}
-
-function ut_is_scalar(t: UTy) -> i32 {
-    if t.tag == UT_NUM or t.tag == UT_OTHER or t.tag == UT_UNIT {
-        return 1
-    }
-    return 0
-}
-
-function ut_binop(u: ptr<UCtx>, arena: AstArena, id: i32) -> UTy {
-    let l: UTy = ut_expr(u, arena, arena.nodes[id].a)
-    let r: UTy = ut_expr(u, arena, arena.nodes[id].b)
-    let op: i32 = arena.nodes[id].ival
-    let mut logical: i32 = 0
-    if ut_is_compare(op) == 1 or op == UT_TOK_AMPAMP or op == UT_TOK_BARBAR {
-        logical = 1
-    }
-    let l_scalar: i32 = ut_is_scalar(l)
-    let r_scalar: i32 = ut_is_scalar(r)
-    if l_scalar == 0 or r_scalar == 0 {
-        if logical == 1 {
-            return ut_prim(UP_BOOL)
-        }
-        if l_scalar == 1 {
-            return l
-        }
-        if r_scalar == 1 {
-            return r
-        }
-        return ut_unknown()
-    }
-    # String concatenation.
-    if op == UT_TOK_PLUS and (l.prim == UP_STRING or r.prim == UP_STRING) {
-        return ut_prim(UP_STRING)
-    }
-    if l.tag == UT_UNIT or r.tag == UT_UNIT {
-        let pos: i32 = arena.nodes[id].start
-        let has_line: i32 = ut_op_has_line(u, arena, id, op)
-        if op == UT_TOK_STAR or op == UT_TOK_SLASH {
-            if l.tag == UT_OTHER or r.tag == UT_OTHER {
-                return ut_unknown()
-            }
-            let mut sign: i32 = 1
-            if op == UT_TOK_SLASH {
-                sign = 0 - 1
-            }
-            return ut_result_of_dims(u, ut_dim_combine(l.dims, r.dims, sign))
-        }
-        let mut both: i32 = 0
-        if l.tag == UT_UNIT and r.tag == UT_UNIT {
-            both = 1
-        }
-        let mut same: i32 = 0
-        if both == 1 and l.dims == r.dims {
-            same = 1
-        }
-        if op == UT_TOK_PLUS or op == UT_TOK_MINUS or op == UT_TOK_PERCENT {
-            if same == 0 {
-                ut_mb_reset(u)
-                if has_line == 1 {
-                    ut_mb_loc(u, pos)
-                }
-                ut_mb_str(u, "dimensional error: ")
-                ut_mb_ty(u, l)
-                ut_mb_byte(u, 32)
-                ut_mb_str(u, ut_op_name(op))
-                ut_mb_byte(u, 32)
-                ut_mb_ty(u, r)
-                if both == 0 {
-                    ut_mb_str(u, " (a dimensionless value needs an explicit cast, e.g. `x as ")
-                    if l.tag == UT_UNIT {
-                        ut_mb_ty(u, l)
-                    } else {
-                        ut_mb_ty(u, r)
-                    }
-                    ut_mb_str(u, "`)")
-                } else {
-                    ut_mb_str(u, " (operands of '")
-                    ut_mb_str(u, ut_op_name(op))
-                    ut_mb_str(u, "' must have the same dimension)")
-                }
-                ut_mb_emit(u)
-            }
-            if l.tag == UT_UNIT {
-                return l
-            }
-            return r
-        }
-        if ut_is_compare(op) == 1 {
-            if same == 0 {
-                ut_mb_reset(u)
-                if has_line == 1 {
-                    ut_mb_loc(u, pos)
-                }
-                ut_mb_str(u, "dimensional error: ")
-                ut_mb_ty(u, l)
-                ut_mb_byte(u, 32)
-                ut_mb_str(u, ut_op_name(op))
-                ut_mb_byte(u, 32)
-                ut_mb_ty(u, r)
-                ut_mb_str(u, " (comparison requires both operands to have the same dimension)")
-                ut_mb_emit(u)
-            }
-            return ut_prim(UP_BOOL)
-        }
-        # Logical, bitwise and shift operators have no dimensional meaning.
-        ut_mb_reset(u)
-        if has_line == 1 {
-            ut_mb_loc(u, pos)
-        }
-        ut_mb_str(u, "dimensional error: operator '")
-        ut_mb_str(u, ut_op_name(op))
-        ut_mb_str(u, "' is not defined for unit types (")
-        ut_mb_ty(u, l)
-        ut_mb_byte(u, 32)
-        ut_mb_str(u, ut_op_name(op))
-        ut_mb_byte(u, 32)
-        ut_mb_ty(u, r)
-        ut_mb_str(u, ")")
-        ut_mb_emit(u)
-        if l.tag == UT_UNIT {
-            return l
-        }
-        return r
-    }
-    if logical == 1 {
-        return ut_prim(UP_BOOL)
-    }
-    if l.tag == UT_NUM and r.tag == UT_NUM {
-        return ut_prim(ut_common(l.prim, r.prim))
-    }
-    return l
-}
-
-# _can_cast for casts that involve a unit: numeric into a unit, a unit back
-# to a numeric, unit to unit only with equal dimensions.
-function ut_cast(u: ptr<UCtx>, arena: AstArena, id: i32) -> UTy {
-    let s: UTy = ut_expr(u, arena, arena.nodes[id].a)
-    let t: UTy = ut_of_type(u, arena, arena.nodes[id].b)
-    let mut bad: i32 = 0
-    if s.tag == UT_UNIT and t.tag == UT_UNIT {
-        if s.dims != t.dims {
-            bad = 1
-        }
-    } elif t.tag == UT_UNIT {
-        if s.tag == UT_OTHER {
-            bad = 1
-        }
-    } elif s.tag == UT_UNIT {
-        if t.tag == UT_OTHER {
-            bad = 1
-        }
-    }
-    if bad == 1 {
-        ut_mb_reset(u)
-        ut_mb_str(u, "Cannot cast ")
-        ut_mb_ty(u, s)
-        ut_mb_str(u, " to ")
-        ut_mb_ty(u, t)
-        ut_mb_emit(u)
-    }
-    return t
-}
-
-# Transcendental functions take a dimensionless or Radian argument.
-function ut_is_dimensionless_math(src: ptr<u8>, s: i32, e: i32) -> i32 {
-    return flowc_tc_span_in_words(src, s, e, "sin cos tan asin acos atan atan2 sinh cosh tanh exp log log2 log10")
-}
-
-# Return kind of a BUILTIN_FUNCTIONS entry that has a scalar type.
-function ut_builtin_ret(src: ptr<u8>, s: i32, e: i32) -> UTy {
-    if flowc_tc_span_in_words(src, s, e, "sin cos tan asin acos atan atan2 sinh cosh tanh asinh acosh atanh exp exp2 expm1 log log2 log10 log1p pow sqrt cbrt hypot ceil floor round trunc fabs fmod fmin fmax fdim sigmoid") == 1 {
-        return ut_prim(UP_F32)
-    }
-    if flowc_tc_span_in_words(src, s, e, "printf sprintf fprintf scanf sscanf memcmp strcmp strncmp atexit fclose fread fwrite fputs putchar rand array_length length gpu_thread_id gpu_block_id") == 1 {
-        return ut_prim(UP_I32)
-    }
-    if flowc_tc_span_is(src, s, e, "strlen") == 1 {
-        return ut_prim(UP_U64)
-    }
-    if flowc_tc_span_in_words(src, s, e, "len time clock") == 1 {
-        return ut_prim(UP_I64)
-    }
-    if flowc_tc_span_in_words(src, s, e, "get_current_time creal cimag cabs carg") == 1 {
-        return ut_prim(UP_F64)
-    }
-    if flowc_tc_span_is(src, s, e, "read") == 1 {
-        return ut_prim(UP_STRING)
-    }
-    return ut_unknown()
-}
-
-function ut_call(u: ptr<UCtx>, arena: AstArena, id: i32) -> UTy {
-    let src: ptr<u8> = u[0].src
-    let ns: i32 = arena.nodes[id].name_start
-    let ne: i32 = arena.nodes[id].name_end
-    # Evaluate the arguments once, onto the argument stack.
-    let base: i32 = u[0].a_len
-    let mut nargs: i32 = 0
-    let mut any_dims: i32 = 0
-    let mut arg: i32 = arena.nodes[id].a
-    while arg != AST_NONE {
-        let at: UTy = ut_expr(u, arena, arg)
-        if at.tag == UT_UNIT {
-            any_dims = 1
-        }
-        if base + nargs < u[0].a_cap {
-            u[0].args[base + nargs] = at
-        }
-        nargs = nargs + 1
-        u[0].a_len = base + nargs
-        arg = arena.nodes[arg].next
-    }
-    let mut result: UTy = ut_unknown()
-    let mut done: i32 = 0
-    if nargs > 0 and any_dims == 1 and ut_is_dimensionless_math(src, ns, ne) == 1 {
-        let mut i: i32 = 0
-        while i < nargs and base + i < u[0].a_cap {
-            let at: UTy = u[0].args[base + i]
-            if at.tag == UT_UNIT and at.radian == 0 {
-                ut_mb_reset(u)
-                ut_mb_str(u, "dimensional error: ")
-                ut_mb_span(u, ns, ne)
-                ut_mb_str(u, "() requires a dimensionless or Radian argument, got ")
-                ut_mb_ty(u, at)
-                ut_mb_emit(u)
-            }
-            i = i + 1
-        }
-        result = ut_prim(UP_F64)
-        done = 1
-    }
-    if done == 0 and ne > ns {
-        # Declarations of this name (functions, externs; not lambdas).
-        let mut count: i32 = 0
-        let mut fn: i32 = AST_NONE
-        let mut i: i32 = 0
-        while i < arena.len {
-            if arena.nodes[i].kind == AST_FN and arena.nodes[i].name_start >= 0 {
-                if flowc_tc_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
-                    count = count + 1
-                    if fn == AST_NONE {
-                        fn = i
-                    }
-                }
-            }
-            i = i + 1
-        }
-        if count == 0 {
-            result = ut_builtin_ret(src, ns, ne)
-        } elif count == 1 and arena.nodes[fn].ival == 0 {
-            if arena.nodes[fn].c != AST_NONE and arena.nodes[id].b == AST_NONE and flowc_ast_chain_len(arena, arena.nodes[fn].a) == nargs {
-                let mut bad: i32 = 0
-                let mut unknown: i32 = 0
-                let mut param: i32 = arena.nodes[fn].a
-                let mut k: i32 = 0
-                while param != AST_NONE and base + k < u[0].a_cap {
-                    let at: UTy = u[0].args[base + k]
-                    if at.tag != UT_NUM and at.tag != UT_OTHER and at.tag != UT_UNIT {
-                        unknown = 1
-                    }
-                    if ut_dims_mismatch(at, ut_of_type(u, arena, arena.nodes[param].a)) == 1 {
-                        bad = 1
-                    }
-                    param = arena.nodes[param].next
-                    k = k + 1
-                }
-                if bad == 1 and unknown == 0 {
-                    ut_mb_reset(u)
-                    ut_mb_str(u, "No matching overload for function '")
-                    ut_mb_span(u, ns, ne)
-                    ut_mb_str(u, "' with arguments (")
-                    k = 0
-                    while k < nargs {
-                        if k > 0 {
-                            ut_mb_str(u, ", ")
-                        }
-                        ut_mb_ty(u, u[0].args[base + k])
-                        k = k + 1
-                    }
-                    ut_mb_str(u, ")")
-                    ut_mb_emit(u)
-                }
-            }
-            result = ut_of_type(u, arena, arena.nodes[fn].b)
-        }
-    }
-    u[0].a_len = base
-    return result
-}
-
-function ut_struct_lit(u: ptr<UCtx>, arena: AstArena, id: i32) -> UTy {
-    let src: ptr<u8> = u[0].src
-    let mut st: i32 = AST_NONE
-    if arena.nodes[id].b == AST_NONE {
-        st = flowc_tc_find_struct_by_name(arena, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
-        if st != AST_NONE and arena.nodes[st].b != AST_NONE {
-            st = AST_NONE
-        }
-    }
-    let mut field: i32 = arena.nodes[id].a
-    while field != AST_NONE {
-        let vt: UTy = ut_expr(u, arena, arena.nodes[field].a)
-        if st != AST_NONE {
-            let mut f: i32 = arena.nodes[st].a
-            while f != AST_NONE {
-                if flowc_tc_span_eq(src, arena.nodes[field].name_start, arena.nodes[field].name_end, arena.nodes[f].name_start, arena.nodes[f].name_end) == 1 {
-                    let ft: UTy = ut_of_type(u, arena, arena.nodes[f].a)
-                    if ut_dims_mismatch(vt, ft) == 1 {
-                        ut_mb_reset(u)
-                        ut_mb_str(u, "Struct '")
-                        ut_mb_span(u, arena.nodes[st].name_start, arena.nodes[st].name_end)
-                        ut_mb_str(u, "' field '")
-                        ut_mb_span(u, arena.nodes[f].name_start, arena.nodes[f].name_end)
-                        ut_mb_str(u, "' expects ")
-                        ut_mb_ty(u, ft)
-                        ut_mb_str(u, ", got ")
-                        ut_mb_ty(u, vt)
-                        ut_mb_emit(u)
-                    }
-                }
-                f = arena.nodes[f].next
-            }
-        }
-        field = arena.nodes[field].next
-    }
-    if st != AST_NONE {
-        return ut_node_ty(UT_STRUCT, st)
-    }
-    return ut_unknown()
-}
-
-function ut_field(u: ptr<UCtx>, arena: AstArena, id: i32) -> UTy {
-    let src: ptr<u8> = u[0].src
-    let b: UTy = ut_expr(u, arena, arena.nodes[id].a)
-    let fs: i32 = arena.nodes[id].name_start
-    let fe: i32 = arena.nodes[id].name_end
-    if b.tag == UT_STRUCT {
-        let mut f: i32 = arena.nodes[b.node].a
-        while f != AST_NONE {
-            if flowc_tc_span_eq(src, fs, fe, arena.nodes[f].name_start, arena.nodes[f].name_end) == 1 {
-                return ut_of_type(u, arena, arena.nodes[f].a)
-            }
-            f = arena.nodes[f].next
-        }
-        return ut_unknown()
-    }
-    if b.tag == UT_SEQ and flowc_tc_span_is(src, fs, fe, "len") == 1 {
-        return ut_prim(UP_I64)
-    }
-    return ut_unknown()
-}
-
-function ut_expr(u: ptr<UCtx>, arena: AstArena, id: i32) -> UTy {
-    if id == AST_NONE {
-        return ut_unknown()
-    }
-    let kind: i32 = arena.nodes[id].kind
-    if kind == AST_INT {
-        return ut_prim(UP_I32)
-    }
-    if kind == AST_FLOAT {
-        return ut_prim(UP_F32)
-    }
-    if kind == AST_BOOL {
-        return ut_prim(UP_BOOL)
-    }
-    if kind == AST_STRING {
-        return ut_prim(UP_STRING)
-    }
-    if kind == AST_IDENT {
-        return ut_lookup(u, arena.nodes[id].name_start, arena.nodes[id].name_end)
-    }
-    # Inner link of a chained assignment `a = b = 1` (#1036): the value is
-    # the one stored in the target.
-    if kind == AST_ASSIGN {
-        ut_stmt(u, arena, id)
-        return ut_expr(u, arena, arena.nodes[id].a)
-    }
-    if kind == AST_CAST {
-        return ut_cast(u, arena, id)
-    }
-    if kind == AST_BINOP {
-        return ut_binop(u, arena, id)
-    }
-    if kind == AST_UNARY {
-        let o: UTy = ut_expr(u, arena, arena.nodes[id].a)
-        let op: i32 = arena.nodes[id].ival
-        if op == UT_TOK_MINUS or op == UT_KW_DBG {
-            return o
-        }
-        if op == UT_TOK_BANG {
-            return ut_prim(UP_BOOL)
-        }
-        return ut_unknown()
-    }
-    if kind == AST_CALL {
-        return ut_call(u, arena, id)
-    }
-    if kind == AST_FIELD_ACCESS {
-        return ut_field(u, arena, id)
-    }
-    if kind == AST_INDEX {
-        let b: UTy = ut_expr(u, arena, arena.nodes[id].a)
-        ut_expr(u, arena, arena.nodes[id].b)
-        if b.tag == UT_OTHER and b.prim == UP_STRING and arena.nodes[id].ival == 0 {
-            return ut_prim(UP_U8)
-        }
-        if b.tag == UT_SEQ and arena.nodes[id].ival == 0 {
-            return ut_of_type(u, arena, b.node)
-        }
-        return ut_unknown()
-    }
-    if kind == AST_IF_EXPR {
-        ut_expr(u, arena, arena.nodes[id].a)
-        let t: UTy = ut_expr(u, arena, arena.nodes[id].b)
-        ut_expr(u, arena, arena.nodes[id].c)
-        return t
-    }
-    if kind == AST_STRUCT_LIT {
-        return ut_struct_lit(u, arena, id)
-    }
-    if kind == AST_ARRAY_LIT or kind == AST_VECTOR_LIT {
-        let mut el: i32 = arena.nodes[id].a
-        while el != AST_NONE {
-            ut_expr(u, arena, el)
-            el = arena.nodes[el].next
-        }
-        return ut_unknown()
-    }
-    if kind == AST_TRY {
-        ut_expr(u, arena, arena.nodes[id].a)
-        return ut_unknown()
-    }
-    if kind == AST_FN {
-        # A lambda: its parameters, its own return type.
-        let saved: i32 = u[0].cur_fn
-        u[0].cur_fn = id
-        ut_push(u)
-        let mut param: i32 = arena.nodes[id].a
-        while param != AST_NONE {
-            ut_bind(u, arena.nodes[param].name_start, arena.nodes[param].name_end, ut_of_type(u, arena, arena.nodes[param].a))
-            param = arena.nodes[param].next
-        }
-        ut_block(u, arena, arena.nodes[id].c)
-        ut_pop(u)
-        u[0].cur_fn = saved
-        return ut_unknown()
-    }
-    return ut_unknown()
-}
-
-function ut_block(u: ptr<UCtx>, arena: AstArena, id: i32) {
-    if id == AST_NONE {
-        return
-    }
-    if arena.nodes[id].kind != AST_BLOCK {
-        ut_stmt(u, arena, id)
-        return
-    }
-    ut_push(u)
-    let mut st: i32 = arena.nodes[id].a
-    while st != AST_NONE {
-        ut_stmt(u, arena, st)
-        st = arena.nodes[st].next
-    }
-    ut_pop(u)
-}
-
-# Names a match pattern binds, as unknown (see flowc_tc_bind_pattern).
-function ut_bind_pattern(u: ptr<UCtx>, arena: AstArena, pat: i32) {
-    if pat == AST_NONE {
-        return
-    }
-    let k: i32 = arena.nodes[pat].kind
-    if k == AST_IDENT {
-        ut_bind(u, arena.nodes[pat].name_start, arena.nodes[pat].name_end, ut_unknown())
-        return
-    }
-    if k == AST_CALL or k == AST_ARRAY_LIT {
-        let mut arg: i32 = arena.nodes[pat].a
-        while arg != AST_NONE {
-            ut_bind_pattern(u, arena, arg)
-            arg = arena.nodes[arg].next
-        }
-    }
-}
-
-# `x: T = value` where T carries or the value carries a dimension.
-function ut_report_coerce(u: ptr<UCtx>, what: string, ns: i32, ne: i32, mid: string, first: UTy, tail: string, second: UTy) {
-    ut_mb_reset(u)
-    ut_mb_str(u, what)
-    ut_mb_span(u, ns, ne)
-    ut_mb_str(u, mid)
-    ut_mb_ty(u, first)
-    ut_mb_str(u, tail)
-    ut_mb_ty(u, second)
-    ut_mb_emit(u)
-}
-
-function ut_stmt(u: ptr<UCtx>, arena: AstArena, id: i32) {
-    if id == AST_NONE {
-        return
-    }
-    let src: ptr<u8> = u[0].src
-    let kind: i32 = arena.nodes[id].kind
-    if kind == AST_LET {
-        let it: UTy = ut_expr(u, arena, arena.nodes[id].b)
-        let ann: i32 = arena.nodes[id].a
-        let ns: i32 = arena.nodes[id].name_start
-        let ne: i32 = arena.nodes[id].name_end
-        let mut has_ann: i32 = 0
-        if ann != AST_NONE and arena.nodes[ann].kind == AST_TYPE {
-            has_ann = 1
-            if flowc_tc_span_is(src, arena.nodes[ann].name_start, arena.nodes[ann].name_end, "auto") == 1 {
-                has_ann = 0
-            }
-        }
-        if has_ann == 1 {
-            let at: UTy = ut_of_type(u, arena, ann)
-            if arena.nodes[id].b != AST_NONE and ut_dims_mismatch(it, at) == 1 {
-                ut_report_coerce(u, "Variable '", ns, ne, "' initialized with ", it, " but annotated as ", at)
-            }
-            ut_bind(u, ns, ne, at)
-        } else {
-            ut_bind(u, ns, ne, it)
-        }
-        return
-    }
-    if kind == AST_RETURN {
-        let t: UTy = ut_expr(u, arena, arena.nodes[id].a)
-        let fn: i32 = u[0].cur_fn
-        if arena.nodes[id].a != AST_NONE and fn != AST_NONE and arena.nodes[fn].name_start >= 0 {
-            let rt: UTy = ut_of_type(u, arena, arena.nodes[fn].b)
-            if ut_dims_mismatch(t, rt) == 1 {
-                ut_report_coerce(u, "Function '", arena.nodes[fn].name_start, arena.nodes[fn].name_end, "' returns ", t, " but should return ", rt)
-            }
-        }
-        return
-    }
-    if kind == AST_IF {
-        ut_expr(u, arena, arena.nodes[id].a)
-        ut_block(u, arena, arena.nodes[id].b)
-        ut_block(u, arena, arena.nodes[id].c)
-        return
-    }
-    if kind == AST_WHILE {
-        ut_expr(u, arena, arena.nodes[id].a)
-        ut_block(u, arena, arena.nodes[id].b)
-        return
-    }
-    if kind == AST_FOR {
-        ut_expr(u, arena, arena.nodes[id].a)
-        ut_expr(u, arena, arena.nodes[id].b)
-        ut_push(u)
-        # A range loop's variable is i32 (_check_for_stmt).
-        let mut iv: UTy = ut_unknown()
-        if arena.nodes[id].b != AST_NONE {
-            iv = ut_prim(UP_I32)
-        }
-        ut_bind(u, arena.nodes[id].name_start, arena.nodes[id].name_end, iv)
-        ut_block(u, arena, arena.nodes[id].c)
-        ut_pop(u)
-        return
-    }
-    if kind == AST_MATCH {
-        ut_expr(u, arena, arena.nodes[id].a)
-        let mut arm: i32 = arena.nodes[id].b
-        while arm != AST_NONE {
-            ut_push(u)
-            if arena.nodes[arm].kind == AST_MATCH_ARM_EXT {
-                ut_bind_pattern(u, arena, arena.nodes[arm].a)
-                if arena.nodes[arm].c != AST_NONE {
-                    ut_expr(u, arena, arena.nodes[arm].c)
-                }
-            } else {
-                if arena.nodes[arm].ival == 2 {
-                    ut_bind(u, arena.nodes[arm].name_start, arena.nodes[arm].name_end, ut_unknown())
-                }
-                if arena.nodes[arm].ival == 5 or arena.nodes[arm].ival == 6 {
-                    let mut b: i32 = arena.nodes[arm].a
-                    while b != AST_NONE {
-                        ut_bind(u, arena.nodes[b].name_start, arena.nodes[b].name_end, ut_unknown())
-                        b = arena.nodes[b].next
-                    }
-                }
-            }
-            ut_block(u, arena, arena.nodes[arm].b)
-            ut_pop(u)
-            arm = arena.nodes[arm].next
-        }
-        return
-    }
-    if kind == AST_ASSIGN {
-        let lhs: i32 = arena.nodes[id].a
-        let vt: UTy = ut_expr(u, arena, arena.nodes[id].b)
-        if lhs != AST_NONE and arena.nodes[lhs].kind == AST_IDENT {
-            let ns: i32 = arena.nodes[lhs].name_start
-            let ne: i32 = arena.nodes[lhs].name_end
-            let tt: UTy = ut_lookup(u, ns, ne)
-            if ut_dims_mismatch(vt, tt) == 1 {
-                ut_mb_reset(u)
-                ut_mb_str(u, "Cannot assign ")
-                ut_mb_ty(u, vt)
-                ut_mb_str(u, " to variable '")
-                ut_mb_span(u, ns, ne)
-                ut_mb_str(u, "' of type ")
-                ut_mb_ty(u, tt)
-                ut_mb_emit(u)
-            }
-        } else {
-            ut_expr(u, arena, lhs)
-        }
-        return
-    }
-    if kind == AST_EXPR_STMT or kind == AST_DEFER {
-        let e: i32 = arena.nodes[id].a
-        if e != AST_NONE and arena.nodes[e].kind == AST_BLOCK {
-            ut_block(u, arena, e)
-        } else {
-            ut_expr(u, arena, e)
-        }
-        return
-    }
-    if kind == AST_IF_EXPR {
-        ut_expr(u, arena, id)
-        return
-    }
-    if kind == AST_LAYOUT {
-        let mut arg: i32 = arena.nodes[id].a
-        while arg != AST_NONE {
-            ut_expr(u, arena, arg)
-            arg = arena.nodes[arg].next
-        }
-        ut_block(u, arena, arena.nodes[id].b)
-        return
-    }
-    if kind == AST_BLOCK {
-        ut_block(u, arena, id)
-        return
-    }
-}
-
-# Globals: consts and module statics, with their declared types.
-function ut_check_global(u: ptr<UCtx>, arena: AstArena, d: i32, what: string) {
-    let at: UTy = ut_of_type(u, arena, arena.nodes[d].a)
-    if arena.nodes[d].b == AST_NONE or arena.nodes[d].a == AST_NONE {
-        return
-    }
-    let it: UTy = ut_expr(u, arena, arena.nodes[d].b)
-    if ut_dims_mismatch(it, at) == 1 {
-        ut_report_coerce(u, what, arena.nodes[d].name_start, arena.nodes[d].name_end, "' has type ", it, " but should be ", at)
-    }
-}
-
-# Units-of-measure check for one module. Returns the number of errors,
-# printed with the Python checker's wording. A module without a `unit`
-# declaration returns at once.
-export function flowc_units_check(arena: AstArena, src: ptr<u8>, root: i32) -> i32 {
-    if root == AST_NONE or arena.nodes[root].kind != AST_PROGRAM {
-        return 0
-    }
-    let mut any: i32 = 0
-    let mut item: i32 = arena.nodes[root].a
-    while item != AST_NONE {
-        if ut_is_unit_decl(arena, src, ut_unwrap_export(arena, item)) == 1 {
-            any = 1
-        }
-        item = arena.nodes[item].next
-    }
-    if any == 0 {
-        return 0
-    }
-    let mut u: UCtx = ut_init(src)
-    if u.u_ns == null or u.v_ty == null or u.args == null or u.mb == null {
-        return 0
-    }
-    item = arena.nodes[root].a
-    while item != AST_NONE {
-        let d: i32 = ut_unwrap_export(arena, item)
-        if ut_is_unit_decl(arena, src, d) == 1 {
-            ut_register_unit(&u, arena, d)
-        }
-        item = arena.nodes[item].next
-    }
-    # Globals first, so a function may use a const declared after it.
-    item = arena.nodes[root].a
-    while item != AST_NONE {
-        let d: i32 = ut_unwrap_export(arena, item)
-        if d != AST_NONE and (arena.nodes[d].kind == AST_CONST or arena.nodes[d].kind == AST_LET) {
-            ut_bind(&u, arena.nodes[d].name_start, arena.nodes[d].name_end, ut_of_type(&u, arena, arena.nodes[d].a))
-        }
-        item = arena.nodes[item].next
-    }
-    item = arena.nodes[root].a
-    while item != AST_NONE {
-        let d: i32 = ut_unwrap_export(arena, item)
-        if d != AST_NONE {
-            let k: i32 = arena.nodes[d].kind
-            if k == AST_CONST {
-                ut_check_global(&u, arena, d, "Const '")
-            } elif k == AST_LET {
-                ut_check_global(&u, arena, d, "Module static '")
-            } elif k == AST_FN and arena.nodes[d].ival == 0 and arena.nodes[d].c != AST_NONE {
-                u.cur_fn = d
-                ut_push(&u)
-                let mut param: i32 = arena.nodes[d].a
-                while param != AST_NONE {
-                    ut_bind(&u, arena.nodes[param].name_start, arena.nodes[param].name_end, ut_of_type(&u, arena, arena.nodes[param].a))
-                    param = arena.nodes[param].next
-                }
-                ut_block(&u, arena, arena.nodes[d].c)
-                ut_pop(&u)
-                u.cur_fn = AST_NONE
-            }
-        }
-        item = arena.nodes[item].next
-    }
-    let errs: i32 = u.err
-    ut_free(&u)
-    return errs
-}
-
 # collect_globals + check_fns; returns error count for this module (ctx.err).
 export function flowc_tc_check_program(ctx: ptr<TcCtx>, arena: AstArena, root: i32) -> i32 {
     if root == AST_NONE or root < 0 {
         flowc_tc_err(ctx)
-        ctx[0].fatal = ctx[0].fatal + 1
         return ctx[0].err
     }
     if arena.nodes[root].kind != AST_PROGRAM {
         flowc_tc_err(ctx)
-        ctx[0].fatal = ctx[0].fatal + 1
-        return ctx[0].err
-    }
-    # A parse-only construct (theorem, flow block, guarded match arm, ...)
-    # has no Stage-A meaning to check; say so before name errors pile up.
-    let mut who: string = "flowc tc"
-    let path_p: ptr<u8> = ctx[0].path as ptr<u8>
-    if path_p != null and path_p[0] != 0 {
-        who = ctx[0].path
-    }
-    flowc_proof_erase(arena, root)
-    if flowc_ast_reject_unsupported_but(arena, ctx[0].src, who, AST_RECORD_UPDATE) != 0 {
-        flowc_tc_err(ctx)
-        ctx[0].fatal = ctx[0].fatal + 1
         return ctx[0].err
     }
     flowc_overload_registry_reset(&ctx[0].overloads, ctx[0].src)
     if flowc_overload_registry_collect(&ctx[0].overloads, arena, root) < 0 {
         flowc_tc_err(ctx)
-        ctx[0].fatal = ctx[0].fatal + 1
     }
-    # This module's own effects join the table for the duration of the check.
-    ctx[0].eff_len = flowc_eff_collect(arena, root, ctx[0].src, ctx[0].eff, ctx[0].eff_cap, ctx[0].eff_seed_len)
     flowc_tc_collect_globals(ctx, arena, root)
-    if ctx[0].sem_on == 0 {
-        flowc_tc_check_rows(ctx, arena, root)
-    }
-    if ctx[0].sem_on == 0 {
-        flowc_tc_check_attrs(ctx, arena)
-    }
     flowc_tc_check_fns(ctx, arena, root)
-    if ctx[0].sem_on == 0 {
-        ctx[0].err = ctx[0].err + flowc_units_check(arena, ctx[0].src, root)
-    }
-    ctx[0].eff_len = ctx[0].eff_seed_len
     return ctx[0].err
 }
 
@@ -3893,20 +1244,6 @@ export function flowc_tc_check_program(ctx: ptr<TcCtx>, arena: AstArena, root: i
 # Returns error count (0 = ok). Needs `src` for name spans.
 # `path` is printed in diagnostics when non-empty (may be null).
 export function flowc_typecheck_ex(arena: AstArena, root: i32, src: ptr<u8>, path: string) -> i32 {
-    let fatal: array<i32, 1> = [0]
-    return flowc_typecheck_fatal(arena, root, src, path, &fatal[0] as ptr<i32>)
-}
-
-# As flowc_typecheck_ex; also writes the count of errors that stay errors
-# under lenient checking (see TcCtx.fatal) to fatal_out[0].
-export function flowc_typecheck_fatal(arena: AstArena, root: i32, src: ptr<u8>, path: string, fatal_out: ptr<i32>) -> i32 {
-    return flowc_typecheck_fatal_sem(arena, root, src, path, fatal_out, 0)
-}
-
-# As flowc_typecheck_fatal; sem_on = 1 when the semantic checker already
-# checked the program (see TcCtx.sem_on).
-export function flowc_typecheck_fatal_sem(arena: AstArena, root: i32, src: ptr<u8>, path: string, fatal_out: ptr<i32>, sem_on: i32) -> i32 {
-    fatal_out[0] = 1
     if root == AST_NONE or root < 0 {
         return 1
     }
@@ -3921,12 +1258,10 @@ export function flowc_typecheck_fatal_sem(arena: AstArena, root: i32, src: ptr<u
     if path as ptr<u8> != null {
         ctx.path = path
     }
-    ctx.sem_on = sem_on
 
     flowc_tc_check_program(&ctx, arena, root)
 
     let errs: i32 = ctx.err
-    fatal_out[0] = ctx.fatal
     flowc_tc_free(&ctx)
     return errs
 }

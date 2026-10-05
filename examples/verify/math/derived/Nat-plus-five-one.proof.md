@@ -2,9 +2,9 @@
 
 *Five plus one is six for natural numbers.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 5 + 1 = 6
+## Derived fact 1 — 5 + 1 = 6
 
 **Coordinate.** the natural numbers · addition · five plus one is six · **Derived fact**
 

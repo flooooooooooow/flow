@@ -2,9 +2,9 @@
 
 *Any point on a semicircle gives a right inscribed angle.*
 
-**Source.** euclid: Elements, Book III, Proposition 31
+**Source.** euclid — Elements, Book III, Proposition 31
 
-## Derived fact 1: angle ACB is one right angle for C on semicircle AB
+## Derived fact 1 — angle ACB is one right angle for C on semicircle AB
 
 **Coordinate.** the Euclidean plane · circle · inscribed on semicircle is right · **Derived fact**
 

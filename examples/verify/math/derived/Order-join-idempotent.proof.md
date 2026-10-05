@@ -2,9 +2,9 @@
 
 *Join is idempotent on the lattice order.*
 
-**Source.** davey-priestley: *Introduction to Lattices and Order*
+**Source.** davey-priestley — *Introduction to Lattices and Order*
 
-## Derived fact 1: a ∨ a = a
+## Derived fact 1 — a ∨ a = a
 
 **Coordinate.** Order · join · repeating does not change the value · **Derived fact**
 

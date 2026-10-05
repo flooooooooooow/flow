@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-i
 # @means  If two straight lines cut one another, the vertical angles are equal.
-# @from   euclid: Elements, Book I, Proposition 15
+# @from   euclid — Elements, Book I, Proposition 15
 # @tier   derived
 # @needs  «Geometry» «Euclid Book I» «Proposition 13: adjacent angles on a straight line sum to two right angles»
 

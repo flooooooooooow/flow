@@ -2,13 +2,13 @@
 
 *Parallelograms on equal bases and in the same parallels equal one another.*
 
-**Source.** euclid: Elements, Book I, Proposition 34
+**Source.** euclid — Elements, Book I, Proposition 34
 
-## Derived fact 1: Parallelograms on equal bases and in the same parallels equal one another
+## Derived fact 1 — Parallelograms on equal bases and in the same parallels equal one another
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 34: parallelograms on equal bases between parallels are equal · **Derived fact**
 
-*Source: euclid: Elements, Book I, Proposition 34*
+*Source: euclid — Elements, Book I, Proposition 34*
 
 *Built on: proposition 26: equal parallelograms on equal bases between parallels, for Book I of the Elements in on the Euclidean plane*
 

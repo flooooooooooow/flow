@@ -4,7 +4,7 @@
 
 **Source.** Ring one right identity
 
-## Derived fact 1: One is the right multiplicative identity in a ring
+## Derived fact 1 — One is the right multiplicative identity in a ring
 
 **Coordinate.** Ring · one · right identity · **Derived fact**
 

@@ -1,10 +1,10 @@
 # @module examples.verify.math.derived
 # @means  Multiplying on the left preserves less-or-equal order.
-# @from   peano: https://en.wikipedia.org/wiki/Monotonic_function
+# @from   peano — https://en.wikipedia.org/wiki/Monotonic_function
 # @tier   derived
 
 # @means  If a ≤ b then c * a ≤ c * b.
-# @from   peano/induction: Gries & Schneider, Ch. 3
+# @from   peano/induction — Gries & Schneider, Ch. 3
 # @tier   derived
 # @needs  «Nat» «multiplication» «zero is the left annihilator», «Nat» «multiplication» «successor on the right distributes», «Nat» «addition» «adding on the right preserves order»
 

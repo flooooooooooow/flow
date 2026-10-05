@@ -2,13 +2,13 @@
 
 *If one of two straight lines is cut into segments, the rectangle by the whole pair equals the sum of rectangles by the uncut line and each segment.*
 
-**Source.** euclid: Elements, Book II, Proposition 1
+**Source.** euclid — Elements, Book II, Proposition 1
 
-## Derived fact 1: If one of two straight lines is cut into segments, the rectangle by the whole pair equals the sum of rectangles by the uncut line and each segment
+## Derived fact 1 — If one of two straight lines is cut into segments, the rectangle by the whole pair equals the sum of rectangles by the uncut line and each segment
 
 **Coordinate.** the Euclidean plane · Euclid Book II · Proposition 1: the rectangle by two lines equals the sum over segments · **Derived fact**
 
-*Source: euclid: Elements, Book II, Proposition 1*
+*Source: euclid — Elements, Book II, Proposition 1*
 
 *Built on: proposition 34: complements of parallelograms about the diameter are equal, for Book I of the Elements in on the Euclidean plane*
 

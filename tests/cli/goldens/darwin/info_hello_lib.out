@@ -1,7 +1,0 @@
-[1mhello_lib[0m
-  description: Sample Flow package for registry demos (greet / add)
-  license:     MIT
-  homepage:    https://github.com/flooooooooooow/flow/tree/main/registry/packages/hello_lib
-  versions:
-    0.1.0  →  registry/packages/hello_lib
-  latest:      0.1.0

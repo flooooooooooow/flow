@@ -1,5 +1,5 @@
 # Test for fir_route.flow port of fir_route.py.
-# Run with: ./flow run tests/lang/test_fir_route.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_fir_route.flow
 # Exit 0 on success.
 
 import "compiler/src/fir_route.flow"

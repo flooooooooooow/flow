@@ -2,13 +2,13 @@
 
 *If a first is to a second as a third is to a fourth, and the third is to a sixth as the fourth is to a fifth, the first is to the fifth as the second is to the sixth.*
 
-**Source.** euclid: Elements, Book V, Proposition 20
+**Source.** euclid — Elements, Book V, Proposition 20
 
-## Derived fact 1: If a first is to a second as a third is to a fourth, and the third is to a sixth as the fourth is to a fifth, the first is to the fifth as the second is to the sixth
+## Derived fact 1 — If a first is to a second as a third is to a fourth, and the third is to a sixth as the fourth is to a fifth, the first is to the fifth as the second is to the sixth
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 20: perturbed proportion implies ex aequali · **Derived fact**
 
-*Source: euclid: Elements, Book V, Proposition 20*
+*Source: euclid — Elements, Book V, Proposition 20*
 
 *Built on: proposition 19: ex aequali proportion in the second form, for Euclid Book V on the Euclidean plane*
 

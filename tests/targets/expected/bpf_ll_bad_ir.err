@@ -1,4 +1,0 @@
-error: bpfel object emission failed: <stdin>:4:11: error: use of undefined value '%nope'
-    4 |   ret i32 %nope
-      |           ^
-1 error generated.

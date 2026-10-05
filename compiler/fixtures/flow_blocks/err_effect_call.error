@@ -1,2 +1,0 @@
-Error: effect call in 'x evolves as' of flow 'Osc'; dynamics expressions must be pure at line 3
-lift effectful work out of the flow body

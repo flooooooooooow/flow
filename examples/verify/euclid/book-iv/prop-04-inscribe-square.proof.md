@@ -2,13 +2,13 @@
 
 *In a given circle to inscribe a square.*
 
-**Source.** euclid: Elements, Book IV, Proposition 4
+**Source.** euclid — Elements, Book IV, Proposition 4
 
-## Derived fact 1: In a given circle to inscribe a square
+## Derived fact 1 — In a given circle to inscribe a square
 
 **Coordinate.** the Euclidean plane · Euclid Book IV · Proposition 4: in a circle to inscribe a square · **Derived fact**
 
-*Source: euclid: Elements, Book IV, Proposition 4*
+*Source: euclid — Elements, Book IV, Proposition 4*
 
 *Built on: proposition 11: erect a perpendicular at a point on a line, for Book I of the Elements in on the Euclidean plane, proposition 2: a perpendicular from the center bisects the chord, for Euclid Book III on the Euclidean plane*
 

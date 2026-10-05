@@ -23,7 +23,7 @@
 #   1 h2=0.25   2 h2=0.50   3 h2=0.75
 #   R reseed   P pause   Esc quit
 #
-# Run: ./flow record examples/evoleco/breeders_equation.flow --frames 4
+# Run: FLOW_HOST=python ./flow record examples/evoleco/breeders_equation.flow --frames 4
 
 import "stdlib/gfx.flow"
 import "stdlib/text.flow"

@@ -2,9 +2,9 @@
 
 *The 9-12-15 triangle satisfies the Pythagorean relation.*
 
-**Source.** euclid: Elements, Book I, Proposition 47
+**Source.** euclid — Elements, Book I, Proposition 47
 
-## Derived fact 1: 15 squared equals 9 squared plus 12 squared
+## Derived fact 1 — 15 squared equals 9 squared plus 12 squared
 
 **Coordinate.** the Euclidean plane · right triangle · nine twelve fifteen satisfies Pythagoras · **Derived fact**
 

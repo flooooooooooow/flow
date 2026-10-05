@@ -2,9 +2,9 @@
 
 *Angle C in a triangle is positive.*
 
-**Source.** euclid: Elements, Book I, Proposition 32
+**Source.** euclid — Elements, Book I, Proposition 32
 
-## Derived fact 1: angle C is greater than zero
+## Derived fact 1 — angle C is greater than zero
 
 **Coordinate.** the Euclidean plane · triangle · angle C is positive witness · **Derived fact**
 

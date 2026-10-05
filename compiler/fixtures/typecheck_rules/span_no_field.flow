@@ -1,8 +1,0 @@
-# expect: span has no field 'size'; a span exposes `.len`, `.data` and element access `[i]`
-function first(xs: span<i32>) -> i32 {
-    return xs.size
-}
-
-function main() -> i32 {
-    return 0
-}

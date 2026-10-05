@@ -2,9 +2,9 @@
 
 *Meet is bounded above by its left argument.*
 
-**Source.** davey-priestley: *Introduction to Lattices and Order*
+**Source.** davey-priestley — *Introduction to Lattices and Order*
 
-## Derived fact 1: meet(a, b) <= a
+## Derived fact 1 — meet(a, b) <= a
 
 **Coordinate.** Order · meet · meet is below the left argument · **Derived fact**
 

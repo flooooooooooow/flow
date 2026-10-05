@@ -2,9 +2,9 @@
 
 *Reverse preserves length of a quattuordecuple cons list.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len(rev(quattuordecuple cons ending in nil)) = 14
+## Derived fact 1 — len(rev(quattuordecuple cons ending in nil)) = 14
 
 **Coordinate.** List · length · reverse of quattuordecuple cons has length fourteen · **Derived fact**
 

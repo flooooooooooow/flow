@@ -1,5 +1,5 @@
 # Test for for-loop step support.
-# Run with: ./flow run tests/lang/test_for_step.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_for_step.flow
 
 extern {
     function puts(s: string) -> i32

@@ -1,1 +1,0 @@
-Error: unknown solver method 'verlet' in flow 'Osc'; valid methods: euler, rk4 at line 3

@@ -2,9 +2,9 @@
 
 *Triple cons ending in nil has length three.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len(cons(a, cons(b, cons(c, nil)))) = 3
+## Derived fact 1 — len(cons(a, cons(b, cons(c, nil)))) = 3
 
 **Coordinate.** List · length · triple cons nil has length three · **Derived fact**
 

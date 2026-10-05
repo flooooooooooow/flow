@@ -1,9 +1,0 @@
-flow Long {
-    state x : f64 = 1.0
-    state y : f64 = 2.0
-    x evolves as
-        -x
-        + y * 0.5
-    y evolves as (x -
-        y) # trailing
-}

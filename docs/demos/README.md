@@ -45,7 +45,7 @@ into `games/` as well so the games directory covers every game.
 The eight software-3D examples in `examples/threed/` have clips at
 `docs/demos/threed/<name>.gif`. Those are recorded directly with
 `./flow record <program> --frames 90 --gif <path> --width 360 --keys <script>`
-rather than through `flow tool record_demos`; the key script for each is in the table
+rather than through `record_demos.py`; the key script for each is in the table
 in [examples/threed/README.md](../../examples/threed/README.md).
 
 ## Two real recording paths
@@ -61,15 +61,15 @@ SSH and in CI.
 Regenerate the CPU galleries with:
 
 ```bash
-./flow tool record_demos                      # all registered gfx demos
-./flow tool record_demos frogger              # just one
-./flow tool record_demos --group morphogenesis # one gallery
-./flow tool record_demos --group neuro        # neuron atlas
-./flow tool record_demos --group evoleco      # evolution / ecology
-./flow tool record_demos --group planet       # cubesphere planet
-./flow tool record_demos --group procgen      # procedural generation
-./flow tool record_demos --group numerical    # FMM and friends
-./flow tool record_demos --check              # missing GIFs + sizes
+python3 scripts/record_demos.py                       # all registered gfx demos
+python3 scripts/record_demos.py frogger               # just one
+python3 scripts/record_demos.py --group morphogenesis # one gallery
+python3 scripts/record_demos.py --group neuro         # neuron atlas
+python3 scripts/record_demos.py --group evoleco       # evolution / ecology
+python3 scripts/record_demos.py --group planet        # cubesphere planet
+python3 scripts/record_demos.py --group procgen       # procedural generation
+python3 scripts/record_demos.py --group numerical     # FMM and friends
+python3 scripts/record_demos.py --check               # missing GIFs + sizes
 ```
 
 ### FSL / Metal recordings
@@ -82,10 +82,10 @@ time, so scheduling jitter cannot change the captured animation.
 
 ```bash
 # All 64 photoreal shader entries
-./flow tool shader_record --group photoreal
+python3 scripts/record_shader_gallery.py --group photoreal
 
 # One material study
-./flow tool shader_record --name photoreal_gold
+python3 scripts/record_shader_gallery.py --name photoreal_gold
 
 # Rebuild and validate the generated Wiki page
 python3 scripts/build_shader_gallery.py
@@ -130,7 +130,7 @@ over frame numbers, where `flow_gfx_key_down` reports the key as held:
 
 That holds Right (124) for frames 24–27, Up (126) for 48–51, then Down (125) for
 70–95. A single frame can be written `40:49`. Keycodes are the macOS virtual
-keycodes the programs already use; see `lib/stdlib/gfx.flow`.
+keycodes the programs already use — see `lib/stdlib/gfx.flow`.
 
 Two things to keep in mind when writing a script:
 
@@ -141,7 +141,7 @@ Two things to keep in mind when writing a script:
 
 ## Adding a demo or gallery
 
-For a CPU demo, add an entry to `build_table` in `scripts/tools/record_demos/main.flow` with the
+For a CPU demo, add an entry to `DEMOS` in `scripts/record_demos.py` with the
 program path, frame budget and, if interactive, a key script. Frame count,
 `skip`, duration and scale should keep the clip readable without turning the
 Wiki into an asset dump.

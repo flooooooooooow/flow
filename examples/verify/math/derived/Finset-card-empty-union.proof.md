@@ -2,9 +2,9 @@
 
 *The empty set unioned on the left has cardinality zero.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: card(empty ∪ s) <= card(s)
+## Derived fact 1 — card(empty ∪ s) <= card(s)
 
 **Coordinate.** Finset · cardinality · empty left union has bounded size · **Derived fact**
 

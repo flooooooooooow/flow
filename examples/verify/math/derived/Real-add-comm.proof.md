@@ -2,9 +2,9 @@
 
 *Real addition commutes.*
 
-**Source.** landau: *Foundations of Analysis*
+**Source.** landau — *Foundations of Analysis*
 
-## Derived fact 1: x + y = y + x
+## Derived fact 1 — x + y = y + x
 
 **Coordinate.** the real numbers · addition · order does not matter · **Derived fact**
 

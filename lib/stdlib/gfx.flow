@@ -76,7 +76,7 @@ export function gfx_text(g: Gfx, x: i32, y: i32, text: string, size: i32,
 
 # Blit a packed RGB8 buffer (w*h*3 bytes, row-major) at (x, y).
 #
-# Per-pixel fields (particle sands, software rasterizers, image filters)
+# Per-pixel fields — particle sands, software rasterizers, image filters —
 # should build a buffer and blit it once per frame. A fill_rect per pixel is
 # tens of thousands of calls a frame and will not keep up.
 export function gfx_blit_rgb(g: Gfx, x: i32, y: i32, w: i32, h: i32, src: ptr<u8>) -> void {

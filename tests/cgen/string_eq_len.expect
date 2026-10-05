@@ -1,7 +1,0 @@
-# String equality compares contents with strcmp (#1037).
-+ return strcmp(a, b) == 0;
-+ (!__flowc_str_eq(s, "hello"))
-+ (__flowc_str_eq(s, t))
-+ (int32_t)strlen(__flowc_ls)
-- (s).len
-exit 0

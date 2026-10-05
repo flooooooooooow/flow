@@ -18,8 +18,8 @@ Near-term path: **Flow → C|MLIR → emcc (Emscripten) → .wasm + JS**.
 ./flow wasm examples/wasm/hello_wasm.flow --backend=mlir --out build/wasm/hello_mlir
 
 # Documented CI-safe hello script (skips cleanly without emcc)
-./flow tool scripts/build_wasm_hello.flow
-# Optional: FLOW_WASM_FROM_FLOW=1 ./flow tool scripts/build_wasm_hello.flow
+./scripts/build_wasm_hello.sh
+# Optional: FLOW_WASM_FROM_FLOW=1 ./scripts/build_wasm_hello.sh
 ```
 
 See [docs/language/wasm.md](../../docs/language/wasm.md) and `wasm/wasm_demo/`.

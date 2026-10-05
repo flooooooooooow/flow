@@ -1,4 +1,0 @@
-# fn ghost(x: f32) -> f32 { return x }
-shader fill ghostly {
-    color = vec4(ghost(1.0))
-}

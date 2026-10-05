@@ -1,5 +1,5 @@
 # Test for the tier_opening_plain and morphism_gloss additions to claim_path.flow.
-# Run with: ./flow run tests/lang/test_claim_path_tier.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_claim_path_tier.flow
 # Exit 0 on success.
 
 import "compiler/src/claim_path.flow"

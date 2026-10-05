@@ -160,13 +160,11 @@ normal deprecation/major-version process.
 
 ## Formatter compatibility
 
-`flow fmt` remains Experimental in Flow 1.0, so its layout is outside the 1.x
-compatibility promise and may still change. The formatter is flowc's token-stream pass
-(`compiler/src/fmt.flow`): it rewrites whitespace only and keeps every token and comment.
-`compiler/scripts/fmt_check.flow` checks, over every tracked `.flow` file flowc parses, that
-the token and comment stream is unchanged, that formatting is idempotent, and that files
-which compile emit the same C before and after formatting. Promotion is a separate
-decision about freezing the layout.
+`flow fmt` remains Experimental in Flow 1.0. The current formatter does not yet
+round-trip the full Stable grammar, so it is deliberately outside the 1.x compatibility
+promise rather than being frozen prematurely. Promotion requires deterministic and
+idempotent formatting across the Stable corpus, parse/format/parse meaning preservation,
+and proof that formatting does not drop declarations or alter program semantics.
 
 ## Deprecation policy
 

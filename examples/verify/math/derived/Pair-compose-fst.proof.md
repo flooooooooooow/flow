@@ -2,9 +2,9 @@
 
 *First projection commutes with pairing of projections.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Product_type
+**Source.** church — https://en.wikipedia.org/wiki/Product_type
 
-## Derived fact 1: fst(pair(fst(p), snd(p))) = fst(p)
+## Derived fact 1 — fst(pair(fst(p), snd(p))) = fst(p)
 
 **Coordinate.** Pair · first projection · first projection factors through pairing · **Derived fact**
 

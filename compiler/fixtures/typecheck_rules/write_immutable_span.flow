@@ -1,8 +1,0 @@
-# expect: cannot write through `values`: span<i32> is an immutable view (declare it span<mut i32>)
-function clear(values: span<i32>) {
-    values[0] = 0
-}
-
-function main() -> i32 {
-    return 0
-}

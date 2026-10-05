@@ -2,9 +2,9 @@
 
 *Nine plus zero is nine in a monoid witness.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §1.1
+**Source.** dummit-foote — *Abstract Algebra*, §1.1
 
-## Derived fact 1: 9 + 0 = 9
+## Derived fact 1 — 9 + 0 = 9
 
 **Coordinate.** Monoid · addition · nine plus zero is nine · **Derived fact**
 

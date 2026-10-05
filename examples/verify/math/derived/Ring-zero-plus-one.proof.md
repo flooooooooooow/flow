@@ -2,9 +2,9 @@
 
 *Zero plus one is one in a ring.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.1
+**Source.** dummit-foote — *Abstract Algebra*, §7.1
 
-## Derived fact 1: 0 + 1 = 1
+## Derived fact 1 — 0 + 1 = 1
 
 **Coordinate.** Ring · addition · zero plus one is one · **Derived fact**
 

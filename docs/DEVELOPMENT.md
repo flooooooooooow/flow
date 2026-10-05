@@ -2,7 +2,7 @@
 
 This document provides detailed information for FLOW language developers.
 
-## Architecture Overview
+## 🏗️ Architecture Overview
 
 ### Compiler Pipeline
 
@@ -14,28 +14,22 @@ FLOW Source → Parser → AST → C Backend → C Code → clang → Executable
 
 ### Core Components
 
-The compiler is flowc, written in Flow under `compiler/src/` and built from
-the checked-in C in `compiler/bootstrap/`. See
-[compiler/README.md](../compiler/README.md).
+#### Parser (`src/flow/parser.py`)
+- **Tokenizer**: Regex-based tokenization with named groups
+- **Parser**: Recursive descent parser for all language constructs
+- **AST Nodes**: Dataclasses for syntax tree representation
 
-#### Parser (`compiler/src/lexer.flow`, `parser.flow`)
-- **Lexer**: streaming tokenizer
-- **Parser**: recursive descent into an AST arena (`ast.flow`); nesting
-  deeper than `FLOWC_PARSE_MAX_DEPTH` is a parse error
+#### C Backend (`src/flow/c_generator.py`)
+- **Type System**: Maps FLOW types to C types
+- **Struct Support**: Generates C structs with proper field ordering
+- **Expression Generation**: Handles all expression types including field access
 
-#### C Backend (`compiler/src/cgen.flow`)
-- **Type System**: maps Flow types to C types
-- **Checks**: `typecheck.flow` runs first; `--strict` makes every type error fatal
+#### MLIR Backend (`src/flow/mlir_generator.py`)
+- **Dialect Generation**: Emits MLIR func, arith, and cf dialects
+- **Type Mapping**: Converts FLOW types to MLIR types
+- **SSA Form**: Generates proper MLIR SSA values
 
-#### MLIR Backend (`compiler/src/mlirgen.flow`)
-- **Text emission**: `FLOWC_EMIT=mlir` writes func, arith, scf, cf, llvm,
-  memref, vector and gpu dialect text
-- **Lowering**: `flow mlir-lower`, `flow mlir-optimize` and
-  `flow mlir-spirv` (tools/flow_cli/mlir_tools.flow) drive mlir-opt and
-  mlir-translate
-- Design and parity record: [MLIR in Flow](design/mlir-in-flow.md)
-
-#### WebAssembly Target (`flow wasm32`, `scripts/tools/llvm_target`)
+#### WebAssembly Target (`src/flow/wasm_compiler.py`)
 - **Freestanding wasm32**: Lowers MLIR to LLVM IR and links it with
   `clang --target=wasm32-unknown-unknown`, skipping the C backend and Emscripten
 - **Export Validation**: Checks requested exports against the symbols defined in
@@ -45,7 +39,7 @@ the checked-in C in `compiler/bootstrap/`. See
 - Documented in [WebAssembly](language/wasm.md); exercised by
   `.github/workflows/wasm32.yml`
 
-## Language Implementation
+## 🔧 Language Implementation
 
 ### Adding New Language Features
 
@@ -127,7 +121,7 @@ raise SyntaxError(f"Unexpected token: {self.current_token.type}")
 raise NotImplementedError(f"Unsupported expression: {type(expr)}")
 ```
 
-## Testing Strategy
+## 🧪 Testing Strategy
 
 ### Test Categories
 
@@ -140,7 +134,7 @@ python3 -m flow.transpiler examples/new_feature.flow
 #### 2. Generation Tests
 Verify output code quality:
 ```bash
-./flow tool compiler/scripts/flowc_emit.flow examples/new_feature.flow /tmp/test.c
+python3 -m flow.transpiler --c examples/new_feature.flow -o /tmp/test.c
 ```
 
 #### 3. Runtime Tests
@@ -154,45 +148,28 @@ Verify program execution:
 - **`examples/`**: Standard programs, algorithms, OOP patterns
 - **`tests/`**: Compiler features, language demos, edge cases
 
-## File Organization
+## 📁 File Organization
 
 ### Source Layout
 ```
-compiler/
-├── src/                 # flowc, in Flow (lexer, parser, typecheck, cgen, mlirgen, ...)
-├── bootstrap/           # flowc_stage_a.c, the checked-in C that builds flowc
-├── scripts/             # build, parity and MLIR lowering scripts
-└── fixtures/            # compiler fixtures and parity goldens
+src/flow/
+├── __init__.py          # Package initialization
+├── transpiler.py        # Main CLI interface
+├── parser.py            # Tokenizer and parser
+├── c_generator.py       # C code generation
+└── mlir_generator.py    # MLIR generation
 ```
-
-### The `flow` command
-
-`./flow` is a short POSIX sh stub. The command line itself is a Flow
-program, [`tools/flow_cli`](../tools/flow_cli/main.flow): argument parsing,
-the command table, the flowc and tool builds, C flags and sanitizers, the
-runtime archive and the link steps. On first use the stub builds flowc from
-`compiler/bootstrap/flowc_stage_a.c` with `cc`, compiles `tools/flow_cli` with
-it into `build/cli/flow`, and execs that binary. It rebuilds when a CLI source
-or the bootstrap C changes. A read-only install caches both binaries under
-`$XDG_CACHE_HOME/flow` (or `~/.cache/flow`) instead.
-
-The CLI starts external programs (cc, clang, mlir-opt, emcc, git, find)
-through `std.process` with argument vectors, so no shell parses them.
-`tests/cli/run.flow` (`./flow tool tests/cli/run.flow`) pins its behaviour: stdout, stderr, exit code and files
-written for every subcommand and its error paths, per OS, against goldens
-recorded from the bash driver it replaced.
 
 ### Build Artifacts
 ```
 build/
-├── cli/flow             # The flow command line, built by ./flow
 ├── *.c                  # Generated C code
 ├── *.mlir               # Generated MLIR
 ├── *.o                  # Object files
 └── *                    # Executables
 ```
 
-## Development Workflow
+## 🔄 Development Workflow
 
 ### Making Changes
 1. Identify component to modify
@@ -216,11 +193,6 @@ Files under `build/` and `.freebuff/` are skipped. With no `avoid` patterns
 declared it prints that and exits 0, so it is safe to run in any project. The
 exit code is non-zero when a file matches, which makes it usable as a gate.
 
-`--idioms` adds the idiom hints (FIDIOM001, a `let mut` never reassigned;
-FIDIOM002, a return that rebuilds one value field by field), and
-`--format=json` prints them as JSON. The command is the Flow program
-`tools/check/main.flow`; `./flow tool tests/check/run.flow` checks its goldens.
-
 ### Debugging Tips
 
 #### Parser Issues
@@ -238,7 +210,7 @@ FIDIOM002, a return that rebuilds one value field by field), and
 - Use debugger on C code
 - Check exit codes
 
-## Performance Considerations
+## 🚀 Performance Considerations
 
 ### Parser Performance
 - Regex compilation is cached
@@ -250,7 +222,7 @@ FIDIOM002, a return that rebuilds one value field by field), and
 - Minimal type inference overhead
 - Linear traversal of AST
 
-## Future Extensions
+## 🔮 Future Extensions
 
 ### Language Features
 - Arrays and pointers
@@ -270,23 +242,26 @@ FIDIOM002, a return that rebuilds one value field by field), and
 
 ## Compiler torture suite (C-grade)
 
-Aim: regression coverage comparable to a C compiler suite: sema rejection,
+Aim: regression coverage comparable to a C compiler suite — sema rejection,
 middle-end specialization, C ABI contracts, backend parity, executable pins.
 
 | Layer | Where | How to run |
 |-------|-------|------------|
-| Sema rejections and C lowering | `tests/cgen/*.flow` + `.expect` | `./flow tool tests/cgen/run.flow` |
-| Language programs | `tests/lang/*.flow` | `./flow test-lang` |
-| Stable conformance | `tests/conformance/` | `./flow tool tests/conformance/run.flow` |
-| MLIR text and runs | `compiler/fixtures/mlir/` | `./flow tool compiler/scripts/parity_mlir.flow` |
-| MLIR commands | `tests/mlir_commands/` | `./flow tool tests/mlir_commands/run.flow` |
+| Sema matrix | `tests/unit/test_type_checker.py` | `pytest` |
+| Monomorphize | `tests/unit/test_monomorphize.py` | `pytest` |
+| C ABI / lowering | `tests/unit/test_c_generator_abi.py` | `pytest` |
+| C ↔ MLIR parity | `tests/unit/test_backend_parity.py` | `pytest` (MLIR tools for parity half) |
+| Nesting torture | `tests/unit/test_torture_nesting.py` | `pytest` |
+| Pipeline smoke | `tests/unit/test_compiler_pipeline.py` | `pytest` |
 | Runtime exit-code | `tests/runtime/test_*_ops.flow` etc. | `./flow test-runtime` |
-| LSP JSON-RPC | `tests/tools/lsp/sessions/*.lsp` | `tests/tools/lsp/run.flow` (native server, no Python) |
-| Fuzz | `tests/fuzz/` | `./flow tool tests/fuzz/run.flow` |
+| LSP JSON-RPC | `tests/integration/test_lsp_server.py` | `pytest` (wraps `scripts/test_lsp_server.py`) |
+| Fuzz | `tests/fuzz/` | `python3 tests/fuzz/run_fuzz.py` |
 | Tier-2 transpile | git-tracked `tests/**/*.flow` | `./flow test --tier2` |
 
+Shared helpers: `tests/unit/compiler_helpers.py`.
+
 Pytest only collects **git-tracked** files under `tests/` unless
-`FLOW_PYTEST_ALL=1`. `git add` new modules so CI sees them.
+`FLOW_PYTEST_ALL=1` — `git add` new modules so CI sees them.
 
 ### Strict vs lenient (wired 2026-08-04)
 
@@ -325,13 +300,12 @@ corpus keeps compiling while unit tests pin strict behavior.
   propagates SSA updates for parent locals (shallow scope copy was dropping
   loop-carried values after nested `while` replaced symbol entries).
 - Parity suite covers nested while / array mutate; pins in
-  `compiler/fixtures/mlir/`. Clang link failures in `test-runtime`
+  `tests/unit/test_mlir_while_cf.py`. Clang link failures in `test-runtime`
   print a short error snippet without `--verbose`.
 
 ### Phase 5 notes
 
-- The MLIR emitter (`compiler/src/mlirgen.flow`, once
-  `src/flow/mlir_canonicalize.py`) runs two AST rewrites ahead of MLIR
+- `src/flow/mlir_canonicalize.py` runs two AST rewrites ahead of MLIR
   generation. Both came out of compiling Doom through the MLIR backend.
 - Counted-loop rotation (#473): `while true { P; if c == 0 { break }; S }`
   becomes `P; while c != 0 { S; P }`. The exit test moves to the loop latch, so
@@ -347,7 +321,7 @@ corpus keeps compiling while unit tests pin strict behavior.
   `tests/integration/test_counted_loop_rotation.py` compiles each loop shape
   before and after rotation through the C backend and compares what it returns.
 
-## References
+## 📚 References
 
 - [MLIR Documentation](https://mlir.llvm.org/)
 - [LLVM IR Reference](https://llvm.org/docs/LangRef.html)

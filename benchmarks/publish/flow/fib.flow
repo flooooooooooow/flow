@@ -5,15 +5,15 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #include <time.h>
-/* Monotonic clock in nanoseconds. clock_gettime(CLOCK_MONOTONIC) is POSIX
-   and works on Linux and on macOS 10.12 and later. */
-static int64_t bench_now_ns(void) {
+#ifndef __APPLE__
+static uint64_t clock_gettime_nsec_np(int clock_id) {
     struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (int64_t)ts.tv_sec * 1000000000LL + (int64_t)ts.tv_nsec;
-}")
+    clock_gettime(clock_id, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
+}
+#endif")
 extern {
-    function bench_now_ns() -> i64
+    function clock_gettime_nsec_np(clock_id: i32) -> i64
     function printf(fmt: string, val: f64) -> i32
 }
 
@@ -25,9 +25,9 @@ function fib(n: i32) -> i64 {
 }
 
 function main() -> i32 {
-    let t0: i64 = bench_now_ns()
+    let t0: i64 = clock_gettime_nsec_np(6)
     let result: i64 = fib(35)
-    let t1: i64 = bench_now_ns()
+    let t1: i64 = clock_gettime_nsec_np(6)
     let secs: f64 = (t1 - t0) / 1000000000.0
     print("result ")
     println(result)

@@ -2,13 +2,13 @@
 
 *If a straight line touches a circle, the perpendicular from the point of contact to the center is perpendicular to the tangent.*
 
-**Source.** euclid: Elements, Book III, Proposition 19
+**Source.** euclid — Elements, Book III, Proposition 19
 
-## Derived fact 1: If a straight line touches a circle, the perpendicular from the point of contact to the center is perpendicular to the tangent
+## Derived fact 1 — If a straight line touches a circle, the perpendicular from the point of contact to the center is perpendicular to the tangent
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 19: the tangent is perpendicular to the diameter at the point of contact · **Derived fact**
 
-*Source: euclid: Elements, Book III, Proposition 19*
+*Source: euclid — Elements, Book III, Proposition 19*
 
 *Built on: proposition 18: exterior rectangle condition characterizes tangents, for Euclid Book III on the Euclidean plane*
 

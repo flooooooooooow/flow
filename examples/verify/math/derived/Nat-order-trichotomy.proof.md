@@ -2,13 +2,13 @@
 
 *Any two naturals are comparable by less-or-equal in one direction.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Trichotomy_(mathematics)
+**Source.** peano — https://en.wikipedia.org/wiki/Trichotomy_(mathematics)
 
-## Derived fact 1: For all a and b, either a ≤ b or b ≤ a
+## Derived fact 1 — For all a and b, either a ≤ b or b ≤ a
 
 **Coordinate.** the natural numbers · order · one side is less than or equal to the other · **Derived fact**
 
-*Source: peano/induction: Gries & Schneider, Ch. 3*
+*Source: peano/induction — Gries & Schneider, Ch. 3*
 
 *Built on: less-or-equal is reflexive, for order on the natural numbers, less-or-equal is transitive, for order on the natural numbers, every number is below its successor, for order on the natural numbers*
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that one side is less than or equal to the other for order on the natural numbers. |  |  |
-| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose a  equals  b. |  |  |
 | ④ | We invoke the derived fact governing order on the natural numbers: less-or-equal is reflexive, for order on the natural numbers (instantiated for a). |  |  |
 | ⑤ | From step 3 and step 4, this implies a is at most b in this case. | ⑤ | $a \le b$ |

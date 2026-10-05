@@ -1,4 +1,3 @@
-# ACTIONS-INTENDED: public repository; qualifies and publishes releases.
 name: Release
 
 on:
@@ -43,34 +42,42 @@ jobs:
       - name: Verify tag version matches the source tree
         shell: bash
         run: |
-          ./flow tool sync_version --check
-          actual="$(head -n 1 VERSION)"
-          if [ "$actual" != "${FLOW_RELEASE_TAG#v}" ]; then
-            echo "tag $FLOW_RELEASE_TAG does not match VERSION ($actual)" >&2
-            exit 1
-          fi
-          echo "version contract: $actual"
+          python3 scripts/sync_version.py --check
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          tag = os.environ['FLOW_RELEASE_TAG']
+          expected = tag.removeprefix('v')
+          ns = {}
+          exec(Path('src/flow/version.py').read_text(), ns)
+          actual = ns['__version__']
+          if actual != expected:
+              raise SystemExit(f'tag {tag} does not match src/flow/version.py ({actual})')
+          print(f'version contract: {actual}')
+          PY
         env:
           FLOW_RELEASE_TAG: ${{ steps.tag.outputs.name }}
 
       - name: Require complete 1.x stability classification
         if: startsWith(steps.tag.outputs.name, 'v1.')
-        run: ./flow tool stability_manifest --require-complete
+        run: python3 scripts/check_stability_manifest.py --require-complete
 
       - name: Require zero ordinary documentation debt for 1.x
         if: startsWith(steps.tag.outputs.name, 'v1.')
-        run: ./flow tool doc_examples strict
+        run: python3 scripts/check_doc_examples_strict.py
 
       - name: Run permanent Stable conformance corpus
-        run: ./flow tool tests/conformance/run.flow
+        run: python3 -m pytest tests/conformance -q
 
       - name: Fuzz release compiler front end
         if: startsWith(steps.tag.outputs.name, 'v1.')
         env:
           FLOW_FUZZ_SECONDS: '60'
-        run: ./flow tool tests/fuzz/run.flow --seconds "$FLOW_FUZZ_SECONDS" --seed 1000
+        run: python3 tests/fuzz/run_fuzz.py --target all --seed 1000
 
       - name: Strict Flow corpus
+        env:
+          PYTHONPATH: src
         run: |
           chmod +x ./flow compiler/scripts/*.sh
           ./flow test --tier2 --strict
@@ -79,7 +86,7 @@ jobs:
         run: ./compiler/scripts/bootstrap_from_c.sh
 
       - name: Audit self-host compiler sources
-        run: ./flow tool compiler/scripts/selfcompile_audit.flow
+        run: ./compiler/scripts/selfcompile_audit.sh
 
       - name: Compile and execute Stable program with flowc
         env:
@@ -95,7 +102,7 @@ jobs:
       - name: Build distributable flowc archive
         env:
           FLOWC_VERSION: ${{ steps.tag.outputs.name }}
-        run: ./flow tool compiler/scripts/package_flowc.flow
+        run: ./compiler/scripts/package_flowc.sh
 
       - name: Unpack release compiler archive
         shell: bash
@@ -174,7 +181,7 @@ jobs:
           SHA="$(sha256sum "flow-${TAG}.tar.gz" | awk '{print $1}')"
           git fetch origin main
           git switch -C release-homebrew origin/main
-          ./flow tool sync_version --homebrew --sha256 "$SHA"
+          python3 scripts/sync_version.py --homebrew --sha256 "$SHA"
           if git diff --quiet -- packaging/homebrew/Formula/flow.rb; then
             echo "Homebrew formula already matches $TAG"
             exit 0

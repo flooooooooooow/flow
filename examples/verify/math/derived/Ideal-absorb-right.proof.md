@@ -2,9 +2,9 @@
 
 *Ideals absorb multiplication on the right.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.3
+**Source.** dummit-foote — *Abstract Algebra*, §7.3
 
-## Derived fact 1: If a in I then a * r in I
+## Derived fact 1 — If a in I then a * r in I
 
 **Coordinate.** Ideal · multiplication · absorbs ring elements on the right · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that absorbs ring elements on the right for multiplication on Ideal. |  |  |
-| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose a in I. |  |  |
 | ④ | We invoke the derived fact governing multiplication on Ideal: absorbs ring elements on the left, for multiplication on Ideal (instantiated for I, r, a). |  |  |
 | ⑤ | We invoke the definitional clause governing multiplication on Ring: one is the left identity, for multiplication on Ring (instantiated for a). |  |  |

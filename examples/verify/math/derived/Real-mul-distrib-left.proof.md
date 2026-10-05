@@ -2,9 +2,9 @@
 
 *Real multiplication distributes over addition on the left.*
 
-**Source.** landau: *Foundations of Analysis*
+**Source.** landau — *Foundations of Analysis*
 
-## Derived fact 1: x * (y + z) = x * y + x * z
+## Derived fact 1 — x * (y + z) = x * y + x * z
 
 **Coordinate.** the real numbers · multiplication · left distribution over addition holds · **Derived fact**
 

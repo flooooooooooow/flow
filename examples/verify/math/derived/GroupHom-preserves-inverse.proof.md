@@ -2,9 +2,9 @@
 
 *Group homomorphisms preserve inverses.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §1.6
+**Source.** dummit-foote — *Abstract Algebra*, §1.6
 
-## Derived fact 1: f(inv(g)) = inv(f(g))
+## Derived fact 1 — f(inv(g)) = inv(f(g))
 
 **Coordinate.** GroupHom · inverse · inverses map to inverses · **Derived fact**
 

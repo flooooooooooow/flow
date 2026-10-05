@@ -2,7 +2,7 @@
 
 > **Purpose.** Every example here exists to demonstrate one claim: that a
 > system which *evolves through time* is better expressed in Flow than in the
-> Python/MATLAB/C toolchain it replaces. Each one must be honest about that:
+> Python/MATLAB/C toolchain it replaces. Each one must be honest about that —
 > a demo that is merely pretty proves nothing.
 
 ## The argument
@@ -10,7 +10,7 @@
 Three properties of Flow do the work, and every example should exercise at
 least one of them visibly:
 
-**1. The dynamics are declared rather than hand-integrated.** A `flow` block states
+**1. The dynamics are declared, not hand-integrated.** A `flow` block states
 what a quantity *is* and how it changes; the integrator is generated:
 
 ```flow
@@ -28,7 +28,7 @@ flow Neuron {
 }
 ```
 
-The reset is a first-class hybrid event rather than an `if` buried in a loop. The
+The reset is a first-class hybrid event, not an `if` buried in a loop. The
 same source lowers to C and to MLIR.
 
 **2. The cost model is visible.** No hidden allocation, no interpreter, no
@@ -59,7 +59,7 @@ proof.
 
 Counts are targets. Shipped counts update as work lands.
 
-### 1. Morphogenesis and pattern formation: 20 shipped
+### 1. Morphogenesis and pattern formation — 20 shipped
 
 Reaction-diffusion (Gray-Scott, Turing spots and stripes, Belousov, Swift-
 Hohenberg, Cahn-Hilliard, anisotropic diffusion), growth and aggregation
@@ -69,7 +69,7 @@ biological pattern (Physarum, cell sorting, somitogenesis).
 
 **Status: complete.** `examples/morphogenesis/` · [gallery](../demos/morphogenesis.md)
 
-### 2. Neuron and network simulation: 15 shipped
+### 2. Neuron and network simulation — 15 shipped
 
 | # | Example | Evidence it carries | Measured |
 |---|---|---|---|
@@ -98,9 +98,9 @@ naming the first check that failed. Because they all draw, the gating run is
 against the headless recorder and passes the program's exit status through.
 Recorded clips for all fifteen live in the
 [neuron gallery](../demos/neuro.md); regenerate with
-`./flow tool record_demos --group neuro`.
+`python3 scripts/record_demos.py --group neuro`.
 
-### 3. Circuit simulation: 12 shipped
+### 3. Circuit simulation — 12 shipped
 
 | # | Example | Evidence it carries |
 |---|---|---|
@@ -116,7 +116,7 @@ Recorded clips for all fifteen live in the
 | 10 | `transmission_line` | Six loads from near short to near open, reflection within 2.1e-3 of (ZL-Z0)/(ZL+Z0) |
 | 11 | `chua` | Largest Lyapunov exponent 0.4316 by two methods agreeing to 5.3e-6, at three step sizes; volume contracts at -3.8155 |
 | 12 | `pll` | Phase error, relaxation rate and capture time against the separable integral, to 1e-11, 1.2e-4 and 2.9e-5; lock range K |
-| - | `netlist_demo` | A SPICE-subset front end feeding the same solver: three decks, checked to 1.9e-6, 1.1e-14 and 1.7e-16 |
+| — | `netlist_demo` | A SPICE-subset front end feeding the same solver: three decks, checked to 1.9e-6, 1.1e-14 and 1.7e-16 |
 
 **Status: complete.** `examples/circuits/` · solver
 [`lib/stdlib/circuit.flow`](../../lib/stdlib/circuit.flow) · netlist front end
@@ -127,7 +127,7 @@ code on the number it printed, so none of them is a windowed demo and none
 carries a GIF. Where a picture earns its place it is drawn in ASCII to stdout,
 as `chua` does with its attractor.
 
-### 4. Diffusion, transport and fields: 12 planned
+### 4. Diffusion, transport and fields — 12 planned
 
 Heat (1D/2D/3D, anisotropic, with sources), advection-diffusion with
 upwinding, Fick's laws with a moving boundary (Stefan problem), Darcy flow
@@ -137,7 +137,7 @@ boundaries, Schrödinger evolution (norm conservation as the check),
 Fokker-Planck, percolation with a measured critical threshold, level-set
 front propagation, lattice Boltzmann.
 
-### 5. Physics and mechanics: 12 planned (+ 1 FMM shipped)
+### 5. Physics and mechanics — 12 planned (+ 1 FMM shipped)
 
 | # | Example | Evidence it carries | Measured |
 |---|---|---|---|
@@ -152,9 +152,9 @@ soft-body FEM, granular packing, orbital mechanics with a Hohmann transfer,
 gyroscopic precession, coupled oscillators and synchronization (Kuramoto),
 elastic collisions with restitution, projectile with drag vs the analytic
 vacuum case, inverted pendulum on a cart (already shipped as the cart-pole
-flagship; extend it).
+flagship — extend it).
 
-### 6. Chemistry and biology: 25 shipped (evoleco) + planned kinetics
+### 6. Chemistry and biology — 25 shipped (evoleco) + planned kinetics
 
 | # | Example | Evidence it carries |
 |---|---|---|
@@ -192,7 +192,7 @@ enzyme kinetics, gene regulatory networks (repressilator, toggle switch),
 protein folding on a lattice, chemotaxis, ecosystem food webs. Text
 companions for predator-prey and SIR already live in `examples/evolution/`.
 
-### 6b. Procedural worlds: 7 shipped (planet)
+### 6b. Procedural worlds — 7 shipped (planet)
 
 Cubesphere planet pipeline: equiangular grid, tectonics, elevation, stream-
 power erosion, climate, biomes, hydrology. Companion noise / WFC demos live
@@ -212,7 +212,7 @@ under `examples/procgen/` (see section 7).
 `examples/planet/` · [gallery](../demos/planet.md) ·
 [`lib/stdlib/planet.flow`](../../lib/stdlib/planet.flow)
 
-### 7. Procedural generation: 8 shipped
+### 7. Procedural generation — 8 shipped
 
 | # | Example | Evidence it carries |
 |---|---|---|
@@ -228,7 +228,7 @@ under `examples/procgen/` (see section 7).
 **Status: complete.** `examples/procgen/` · [gallery](../demos/procgen.md) ·
 [`lib/stdlib/procgen.flow`](../../lib/stdlib/procgen.flow)
 
-### 8. Control and estimation: 10 planned
+### 8. Control and estimation — 10 planned
 
 PID with tuning comparison, LQR (already used in cart-pole), Kalman and
 extended Kalman filters (estimation error vs Cramér-Rao), particle filter,
@@ -236,7 +236,7 @@ model-predictive control, adaptive control, sliding-mode control, system
 identification from data, observability and controllability analysis
 (`sense on` already ships), robust control margins.
 
-### 9. Signals, audio and imaging: 9 planned
+### 9. Signals, audio and imaging — 9 planned
 
 FFT and spectrogram, digital filter design and response, resonant filters,
 physical modelling synthesis (Karplus-Strong, waveguides), room acoustics

@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Join absorbs meet as a derived lattice law.
-# @from   davey-priestley: *Introduction to Lattices and Order*
+# @from   davey-priestley — *Introduction to Lattices and Order*
 # @tier   derived
 
 # @means  join(a, meet(a, b)) = a.

@@ -1,4 +1,0 @@
-horizon h finite 10
-function main() -> i32 {
-    return 0
-}

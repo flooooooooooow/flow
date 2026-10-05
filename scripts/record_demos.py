@@ -1,0 +1,1340 @@
+#!/usr/bin/env python3
+"""Record docs/demos/*.gif by running the real Flow programs headlessly.
+
+Each demo is compiled with `./flow record`, which links the program against
+runtime/gfx_record.c instead of a windowing backend. The program then draws
+into an off-screen buffer and writes every presented frame as a PPM, so the
+resulting GIF is genuine output from the compiled Flow program rather than a
+re-creation of it. No display is required, which means this also works in CI.
+
+  python3 scripts/record_demos.py            # all demos
+  python3 scripts/record_demos.py lorenz     # one demo
+  python3 scripts/record_demos.py --group morphogenesis
+  python3 scripts/record_demos.py --group neuro
+  python3 scripts/record_demos.py --group evoleco
+  python3 scripts/record_demos.py --group planet
+  python3 scripts/record_demos.py --group procgen
+  python3 scripts/record_demos.py --group numerical
+
+Naming contract: every game in examples/games/ has a GIF at
+docs/demos/games/<name>.gif, every example in examples/morphogenesis/ has
+one at docs/demos/morphogenesis/<name>.gif, every example in
+examples/neuro/ has one at docs/demos/neuro/<name>.gif, every example
+in examples/evoleco/ has one at docs/demos/evoleco/<name>.gif, every
+example in examples/planet/ has one at docs/demos/planet/<name>.gif,
+every example in examples/procgen/ has one at docs/demos/procgen/<name>.gif,
+and numerical clips live at docs/demos/numerical/<name>.gif.
+The three original demos (lorenz, tetris, 2048) also keep their GIFs directly
+in docs/demos/; tetris.gif and 2048.gif are copied into docs/demos/games/
+so the games directory is complete.
+
+Interactive demos are driven by `flow record --keys`, a list of
+`first-last:keycode` windows over frame numbers (see runtime/gfx_record.c).
+Because the recorder and every game are fully deterministic (fixed RNG seeds,
+frame-counted input), several of the longer scripts below were derived by
+simulating the game's exact integer logic offline and searching for input that
+plays well; the frame windows encode that play. Requires Pillow.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from PIL import Image
+
+ROOT = Path(__file__).resolve().parent.parent
+OUT_DIR = ROOT / "docs" / "demos"
+GAMES_DIR = OUT_DIR / "games"
+MORPH_DIR = OUT_DIR / "morphogenesis"
+NEURO_DIR = OUT_DIR / "neuro"
+EVOECO_DIR = OUT_DIR / "evoleco"
+PLANET_DIR = OUT_DIR / "planet"
+PROCGEN_DIR = OUT_DIR / "procgen"
+NUMERICAL_DIR = OUT_DIR / "numerical"
+
+# macOS virtual keycodes, matching lib/stdlib/gfx.flow.
+KEY_LEFT, KEY_RIGHT, KEY_DOWN, KEY_UP = 123, 124, 125, 126
+KEY_SPACE = 49
+KEY_F = 3       # minesweeper: flag
+KEY_N = 45      # chetris: skip chess move
+L, R, D, U, SP = KEY_LEFT, KEY_RIGHT, KEY_DOWN, KEY_UP, KEY_SPACE
+
+
+def hold(frame: int, key: int, length: int = 3) -> str:
+    """A key held from `frame` for `length` frames."""
+    return f"{frame}-{frame + length - 1}:{key}"
+
+
+def taps(seq: list[tuple[int, int]], length: int = 2) -> str:
+    """Short presses: one `length`-frame window per (frame, key) pair.
+
+    Games do edge detection, so each press needs its own window with a gap
+    before the same key is pressed again.
+    """
+    return ",".join(hold(f, k, length) for f, k in seq)
+
+
+class Tapper:
+    """Builds an edge-press schedule while tracking the current frame."""
+
+    def __init__(self, frame: int, gap: int = 7):
+        self.frame = frame
+        self.gap = gap
+        self.seq: list[tuple[int, int]] = []
+
+    def tap(self, *keys: int, gap: int | None = None) -> "Tapper":
+        for k in keys:
+            self.seq.append((self.frame, k))
+            self.frame += gap if gap is not None else self.gap
+        return self
+
+    def wait(self, frames: int) -> "Tapper":
+        self.frame += frames
+        return self
+
+    def keys(self) -> str:
+        return taps(self.seq)
+
+
+def tetris_script() -> str:
+    """A scripted playthrough: nudge sideways, rotate, then hard-drop.
+
+    The natural fall delay is 48 frames per cell, far too slow to watch, so the
+    demo leans on hard drops to keep pieces landing every couple of seconds.
+    """
+    windows: list[str] = []
+    frame = 12
+    moves = [
+        (KEY_LEFT, 2), (KEY_UP, 1),
+        (KEY_RIGHT, 3), (KEY_UP, 1),
+        (KEY_LEFT, 3),
+        (KEY_RIGHT, 1), (KEY_UP, 2),
+        (KEY_LEFT, 4),
+        (KEY_RIGHT, 2), (KEY_UP, 1),
+        (KEY_LEFT, 1),
+    ]
+    for key, repeats in moves:
+        for _ in range(repeats):
+            windows.append(hold(frame, key))
+            frame += 7  # gap so the game's edge detection sees a fresh press
+        windows.append(hold(frame, KEY_SPACE))
+        frame += 12
+    return ",".join(windows)
+
+
+def g2048_script() -> str:
+    windows: list[str] = []
+    frame = 10
+    for key in [KEY_LEFT, KEY_DOWN, KEY_RIGHT, KEY_DOWN, KEY_LEFT, KEY_UP,
+                KEY_RIGHT, KEY_DOWN, KEY_LEFT, KEY_DOWN, KEY_RIGHT, KEY_UP,
+                KEY_LEFT, KEY_DOWN, KEY_RIGHT, KEY_DOWN]:
+        windows.append(hold(frame, key))
+        frame += 14
+    return ",".join(windows)
+
+
+# ---------------------------------------------------------------------------
+# Scripts derived by simulating the game's exact deterministic logic offline
+# (same RNG constants, same integer math, same frame ordering). Each string
+# is a fixed flight plan the real game then follows on record.
+# ---------------------------------------------------------------------------
+
+# Snake: start, then steer along greedily planned paths that eat 5 foods.
+SNAKE_KEYS = (
+    "8-9:49,12-14:126,21-23:123,66-68:126,111-113:124,237-239:125,"
+    "273-275:124,291-293:126,335-337:123,415-417:125,447-449:123,"
+    "463-465:125,519-521:124"
+)
+
+# Flappy: flap timings that thread the bird through the first pipes.
+FLAPPY_KEYS = (
+    "8:49,19:49,30:49,41:49,52:49,79:49,106:49,133:49,160:49,187:49,214:49,"
+    "241:49,291:49,317:49,344:49,385:49,411:49,438:49,465:49,476:49,487:49,"
+    "498:49,509:49,520:49,531:49,555:49"
+)
+
+# Pong: paddle holds that return every serve; the whole clip is one rally.
+PONG_KEYS = (
+    "8:49,184-187:126,249-250:126,300-301:126,351-352:126,376-385:125,"
+    "559-585:126,595-597:125,605-607:125,615-617:125"
+)
+
+# Breakout: the paddle shadows the ball; no life is lost in the clip.
+BREAKOUT_KEYS = (
+    "8:49,81-82:123,95-96:123,109-110:123,123-124:123,137-138:123,"
+    "151-152:123,166-167:123,180-181:123,194-195:123,208-209:123,"
+    "222-223:123,236-237:123,251-252:123,265-266:123,449-450:123"
+)
+
+# Frogger: a searched hop plan that crosses road and river into a home slot
+# twice, riding logs on the way.
+FROGGER_KEYS = (
+    "8-9:49,36-37:126,44-45:123,52-53:126,60-61:126,68-69:123,76-77:126,"
+    "84-85:124,92-93:126,100-101:126,108-109:124,116-117:124,124-125:124,"
+    "132-133:124,140-141:126,148-149:126,156-157:126,164-165:123,172-173:126,"
+    "180-181:126,188-189:126,196-197:124,204-205:126,212-213:124,220-221:123,"
+    "228-229:126,236-237:126,244-245:126,252-253:124,260-261:126,268-269:126,"
+    "276-277:126,284-285:126,292-293:123,300-301:124,308-309:123,316-317:126,"
+    "324-325:123,332-333:124,340-341:126,348-349:126,356-357:126"
+)
+
+# Jumper: steering holds from a bounce-by-bounce search; climbs the tower
+# without ever falling off the bottom.
+JUMPER_KEYS = (
+    "8:49,8-22:124,28-40:123,42-71:124,76-108:123,113-126:124,256-269:123,"
+    "274-287:124,302-340:123,345-359:124,369-372:123,386-421:124,424-457:123,"
+    "462-479:123,485-496:124,500-518:123,522-568:124,573-578:124,583-596:123"
+)
+
+# Icy Tower: build speed on the full-width ground floor, bounce off the right
+# wall, keep the speed by switching to left, then jump on frame 34. That jump
+# leaves at max horizontal speed and clears six floors, which opens the combo.
+ICY_TOWER_KEYS = "2:49,4-31:124,32-90:123,34:49"
+
+# Lane racer: lane changes that dodge every car (with a few scenic weaves).
+LANE_RACER_KEYS = (
+    "8-9:49,70-71:124,150-151:124,208-209:123,314-315:124,394-395:123,"
+    "402-403:123,482-483:124,490-491:124,547-548:123"
+)
+
+# Simon: watches each playback, then echoes the pad sequence for 5 rounds
+# (the sequence is fixed by the game's RNG seed).
+SIMON_KEYS = (
+    "89:123,204:123,213:125,354:123,363:125,372:124,535:123,544:125,553:124,"
+    "562:126,743:123,752:125,761:124,770:126,779:123"
+)
+
+# Othello: six human moves placed on legal cells, timed around the flip
+# animations and the AI's replies.
+OTHELLO_KEYS = (
+    "6-7:49,80-81:126,85-86:126,90-91:49,164-165:123,169-170:123,174-175:125,"
+    "179-180:125,184-185:49,268-269:124,273-274:124,278-279:124,283-284:124,"
+    "288-289:124,293-294:49,372-373:125,377-378:125,382-383:49,471-472:123,"
+    "476-477:123,481-482:49"
+)
+
+# Match-3: seven valid swaps (cursor, select, swap) with cascade timing.
+MATCH3_KEYS = (
+    "8-9:125,13-14:49,18-19:124,50-51:123,55-56:125,60-61:49,65-66:124,"
+    "97-98:49,102-103:125,134-135:126,139-140:126,144-145:49,149-150:125,"
+    "181-182:123,186-187:49,191-192:125,223-224:126,228-229:49,233-234:124,"
+    "265-266:126,270-271:126,275-276:49,280-281:125"
+)
+
+# Minesweeper: opening click floods a large region, then flags three known
+# mines, reveals eight safe cells, and ends on a deliberate wrong click so
+# the lose state (all mines shown) plays out.
+MINESWEEPER_KEYS = (
+    "9-10:123,15-16:125,21-22:124,27-28:126,33-34:49,47-48:123,53-54:123,"
+    "59-60:125,65-66:3,77-78:124,83-84:126,89-90:126,95-96:126,101-102:126,"
+    "107-108:3,119-120:123,125-126:125,131-132:3,143-144:126,149-150:49,"
+    "161-162:126,167-168:49,179-180:123,185-186:126,191-192:49,203-204:126,"
+    "209-210:49,221-222:126,227-228:49,239-240:126,245-246:49,257-258:123,"
+    "263-264:49,275-276:123,281-282:49,293-294:123,299-300:125,315-316:49"
+)
+
+
+# ---------------------------------------------------------------------------
+# Hand-built scripts for turn-based games (no timers to race against).
+# ---------------------------------------------------------------------------
+
+def checkers_script() -> str:
+    """Seven-move opening for both hotseat players with three forced jumps.
+
+    Cursor starts on red's man at (2,5); every move is `navigate, select,
+    navigate, place`. The jumps arise naturally from the forced-capture rule.
+    """
+    t = Tapper(12)
+    moves = [
+        # (nav to piece, nav to target)
+        ([], [R, U]),                # red  (2,5) -> (3,4)
+        ([R, R, U, U], [L, D]),      # slate (5,2) -> (4,3)
+        ([L, D], [R, R, U, U]),      # red  (3,4) x (4,3) -> (5,2)
+        ([L, U], [R, R, D, D]),      # slate (4,1) x (5,2) -> (6,3)
+        ([D, D], [L, U]),            # red  (6,5) -> (5,4)
+        ([L, L, U, U], [R, D]),      # slate (3,2) -> (4,3)
+        ([R, D], [L, L, U, U]),      # red  (5,4) x (4,3) -> (3,2)
+    ]
+    for nav_piece, nav_target in moves:
+        t.tap(*nav_piece)
+        t.tap(SP)
+        t.tap(*nav_target)
+        t.tap(SP)
+        t.wait(10)
+    return t.keys()
+
+
+def sokoban_script() -> str:
+    """Pushes every box home across all five levels, ending on the victory
+    screen. Between levels the game shows a 60-frame LEVEL DONE banner."""
+    levels = [
+        [R, R],                       # L1: one straight push
+        [L, R, D, L],                 # L2: two boxes left
+        [R, R, R],                    # L3: through the gap
+        [U, D, R, R, R],              # L4: one up, one right
+        [U, D, L, U, D, R, R, U],     # L5: three boxes up
+    ]
+    t = Tapper(12, gap=9)
+    for i, presses in enumerate(levels):
+        t.tap(*presses)
+        if i < len(levels) - 1:
+            t.wait(66)  # LEVEL DONE banner, then the next level loads
+    return t.keys()
+
+
+def hanoi_script() -> str:
+    """Selects 3 disks on the title screen and plays the optimal 7-move
+    solve. Each drop runs a 14-frame animation before input resumes."""
+    solve = [(0, 2), (0, 1), (2, 1), (0, 2), (1, 0), (1, 2), (0, 2)]
+    t = Tapper(10)
+    t.tap(L)        # 4 -> 3 disks
+    t.tap(SP)       # start
+    t.wait(6)
+    cursor = 0
+    for src, dst in solve:
+        while cursor != src:
+            t.tap(R if src > cursor else L)
+            cursor += 1 if src > cursor else -1
+        t.tap(SP)   # pick up
+        while cursor != dst:
+            t.tap(R if dst > cursor else L)
+            cursor += 1 if dst > cursor else -1
+        t.tap(SP)   # drop
+        t.wait(22)  # drop animation + a beat
+    return t.keys()
+
+
+def chetris_script() -> str:
+    """Chess + Tetris turns for both players: place a tetromino (soft drops,
+    Space locks), then move that player's king, four times over."""
+    t = Tapper(12, gap=6)
+    turns = [
+        # (tetromino moves, chess cursor to piece, chess cursor to target)
+        ([L, L, U] + [D] * 6, [D, D, D], [U]),       # white: king e1 up
+        ([R, R] + [D] * 6, [U, U, U, U], [D]),       # black: king e8 down
+        ([L] + [D] * 6, [D, D], [L]),                # white: king sidesteps
+        ([R, R, R] + [D] * 6, None, None),           # black: skips chess (N)
+    ]
+    for tetro, nav_piece, nav_target in turns:
+        t.tap(*tetro)
+        t.tap(SP)       # lock the tetromino -> chess phase
+        t.wait(8)
+        if nav_piece is None:
+            t.tap(KEY_N)
+        else:
+            t.tap(*nav_piece)
+            t.tap(SP)   # select
+            t.tap(*nav_target)
+            t.tap(SP)   # move
+        t.wait(10)
+    return t.keys()
+
+
+def lightsout_script() -> str:
+    """Cursor walk pressing cells; every press toggles a plus-shape."""
+    t = Tapper(14, gap=8)
+    plan = [
+        ([], SP), ([L], SP), ([U], SP), ([R, R], SP), ([D, D], SP),
+        ([L, L], SP), ([U, R], SP), ([R, D], SP),
+    ]
+    for nav, press in plan:
+        t.tap(*nav)
+        t.tap(press)
+        t.wait(18)
+    return t.keys()
+
+
+def connect4_script() -> str:
+    """Six human drops with pauses for the falling-disc animation and the
+    AI's reply (the AI thinks for 24 frames, then its disc falls)."""
+    t = Tapper(12)
+    drops = [[], [L], [R, R], [], [L], [R]]
+    for nav in drops:
+        t.tap(*nav)
+        t.tap(SP)
+        t.wait(80)  # our disc falls, AI thinks, AI disc falls
+    return t.keys()
+
+
+def maze_chase_script() -> str:
+    """Held-key steering through the maze: bottom corridor to the power
+    pellet, up the left wall to the second pellet, then across the top.
+    Direction changes overlap on purpose; a wanted turn only happens where
+    the maze opens, so early presses are safe."""
+    return ",".join([
+        hold(8, SP, 2),
+        "10-95:123",    # left along the bottom row to the power pellet
+        "96-190:126",   # up the left corridor, eating the corner pellet
+        "187-236:124",  # right along the top row
+        "237-254:125",  # down the col-8 alley
+        "255-345:124",  # right along row 3
+    ])
+
+
+def invaders_script() -> str:
+    """Strafe under the alien grid, firing whenever the last shot lands."""
+    parts = [hold(8, SP, 2)]
+    # movement: sweep left, right, left, right, left
+    for a, b, k in [(24, 78, L), (100, 168, R), (190, 248, L),
+                    (270, 338, R), (360, 420, L), (440, 480, R)]:
+        parts.append(f"{a}-{b}:{k}")
+    # fire: one bullet may be alive at a time; tap steadily
+    for f in range(18, 500, 26):
+        parts.append(hold(f, SP, 2))
+    return ",".join(parts)
+
+
+def asteroids_script() -> str:
+    """Rotate-thrust-fire loops. Space is held for long stretches; the game
+    autofires on a cooldown while it is down."""
+    parts = [hold(8, SP, 2), "20-200:49", "230-430:49", "460-520:49"]
+    moves = [
+        (24, 48, L), (56, 72, U), (90, 112, L), (120, 136, U),
+        (160, 186, R), (194, 210, U), (240, 268, L), (276, 292, U),
+        (320, 348, R), (356, 372, U), (400, 428, L), (436, 452, U),
+        (470, 500, R),
+    ]
+    for a, b, k in moves:
+        parts.append(f"{a}-{b}:{k}")
+    return ",".join(parts)
+
+
+def missile_script() -> str:
+    """Sweeps the crosshair across the sky, firing interceptors that blossom
+    into blast rings over the incoming missiles."""
+    parts = [hold(8, SP, 2)]
+    sweeps = [
+        (20, 52, [L, U]), (66, 66, [SP]),
+        (90, 140, [R]), (150, 150, [SP]),
+        (170, 210, [L, D]), (220, 220, [SP]),
+        (240, 280, [R, U]), (290, 290, [SP]),
+        (310, 350, [L]), (356, 356, [SP]),
+        (380, 410, [R, D]), (416, 416, [SP]),
+    ]
+    for a, b, keys in sweeps:
+        for k in keys:
+            if k == SP:
+                parts.append(hold(a, SP, 2))
+            else:
+                parts.append(f"{a}-{b}:{k}")
+    return ",".join(parts)
+
+
+def falling_sand_script() -> str:
+    """Draws with the keyboard pen. Sand first, then the pen walks down into
+    the oil pool, the brush is widened twice, and fire is laid into the oil;
+    once it has taken hold the pen climbs back up and pours water on it.
+
+    The pen accelerates while a direction is held (2 px/frame for six frames,
+    then 4, then 6), so the two travel windows below are sized to land on the
+    oil pool at y=132 and to climb back to y=98.
+    """
+    return ",".join([
+        "2-18:49",      # paint sand from the start position
+        "8-18:124",     # sweep the stroke right
+        "22-23:23",     # 5 -> fire
+        "24-45:125",    # walk the pen down into the oil pool
+        "47:30",        # ] widen the brush
+        "50:30",        # ] again, radius 8
+        "52-70:49",     # light the oil
+        "74-75:20",     # 3 -> water
+        "76-86:126",    # climb back above the fire
+        "88-104:49",    # pour water onto it: steam
+    ])
+
+
+@dataclass
+class Demo:
+    name: str
+    program: str
+    caption: str
+    frames: int = 240
+    skip: int = 1
+    duration_ms: int = 60
+    scale: float = 1.0
+    keys: str = ""
+    trim_leading: int = 0
+    # Crop away margins the program never draws into, so the subject fills the
+    # clip. Simulations in particular tend to use a fraction of their window.
+    crop: bool = False
+    colors: int = 64
+    # LANCZOS suits the games, whose art is drawn at window resolution. A
+    # simulation drawn as a grid of N x N pixel blocks is better off with
+    # NEAREST: interpolation smears every block edge into a gradient, which
+    # both softens the picture and roughly doubles the encoded size, because
+    # the GIF can no longer reuse runs of identical pixels.
+    resample: int = Image.LANCZOS
+    env: dict[str, str] = field(default_factory=dict)
+    # Where the GIF goes, relative to docs/demos/.
+    subdir: str = "games"
+    # Legacy demos keep a copy at docs/demos/<name>.gif too.
+    also_root: bool = False
+
+
+def game(name: str, keys: str, frames: int, caption: str, scale: float,
+         skip: int = 2, duration_ms: int = 33, colors: int = 64) -> Demo:
+    return Demo(
+        name=name,
+        program=f"examples/games/{name}_gfx.flow",
+        caption=caption,
+        frames=frames,
+        skip=skip,
+        duration_ms=duration_ms,
+        scale=scale,
+        keys=keys,
+        colors=colors,
+    )
+
+
+def morph(name: str, frames: int, skip: int, caption: str,
+          duration_ms: int = 60, colors: int = 64,
+          scale: float = 0.86, keys: str = "") -> Demo:
+    """A morphogenesis clip: no input, one full formation, then loop.
+
+    Every example draws into the same 512x592 window, so one scale suits all
+    of them (0.86 -> 440 px wide). `frames` and `skip` are the two knobs that
+    matter: the product has to cover the whole of the formation and stop
+    before an example that restarts itself begins its second run.
+    """
+    return Demo(
+        name=name,
+        program=f"examples/morphogenesis/{name}.flow",
+        caption=caption,
+        frames=frames,
+        skip=skip,
+        duration_ms=duration_ms,
+        scale=scale,
+        colors=colors,
+        keys=keys,
+        subdir="morphogenesis",
+        resample=Image.NEAREST,
+    )
+
+
+DEMOS: list[Demo] = [
+    Demo(
+        name="lorenz",
+        program="examples/evolution/lorenz_gfx.flow",
+        caption="Lorenz attractor — `flow` block with an RK4 solver, stepped per frame",
+        # The trajectory needs ~30 time units to visit both lobes, and the demo
+        # advances 0.015 per frame, so a short recording only ever shows one wing.
+        frames=2000,
+        skip=10,
+        duration_ms=55,
+        scale=0.65,
+        crop=True,
+        colors=32,
+        subdir="",
+    ),
+    Demo(
+        name="tetris",
+        program="examples/games/tetris_gfx.flow",
+        caption="Tetris — full game loop, scripted input, native gfx backend",
+        frames=320,
+        skip=3,
+        duration_ms=80,
+        scale=0.6,
+        keys=tetris_script(),
+        subdir="",
+        also_root=True,
+    ),
+    Demo(
+        name="2048",
+        program="examples/games/2048_gfx.flow",
+        caption="2048 — grid logic and tile merging",
+        frames=260,
+        skip=3,
+        duration_ms=90,
+        scale=0.65,
+        keys=g2048_script(),
+        subdir="",
+        also_root=True,
+    ),
+    # ---- action ----
+    game("snake", SNAKE_KEYS, 560,
+         "Snake — planned path eats five foods", 0.6),
+    game("pong", PONG_KEYS, 620,
+         "Pong — one long rally against the tracking AI", 0.6),
+    game("breakout", BREAKOUT_KEYS, 640,
+         "Breakout — the paddle shadows the ball through the brick wall", 0.68),
+    game("asteroids", asteroids_script(), 540,
+         "Asteroids — rotate, thrust, autofire through the first wave", 0.5,
+         skip=3, duration_ms=50, colors=32),
+    game("invaders", invaders_script(), 500,
+         "Space Invaders — strafing under the marching grid", 0.58,
+         skip=3, duration_ms=45, colors=32),
+    game("flappy", FLAPPY_KEYS, 560,
+         "Flappy — flap timings that thread the pipes", 0.67,
+         skip=4, duration_ms=65, colors=32),
+    game("frogger", FROGGER_KEYS, 430,
+         "Frogger — road, river, and two home slots", 0.63,
+         skip=4, duration_ms=65, colors=40),
+    game("missile", missile_script(), 460,
+         "Missile Command — interceptors and blast rings", 0.65),
+    game("maze_chase", maze_chase_script(), 400,
+         "Maze Chase — pellet run past three ghost AIs", 0.68),
+    game("lane_racer", LANE_RACER_KEYS, 560,
+         "Lane Racer — weaving through traffic without a scratch", 0.67,
+         skip=4, duration_ms=60, colors=40),
+    game("jumper", JUMPER_KEYS, 620,
+         "Jumper — searched steering climbs the platform tower", 0.75),
+    game("icy_tower", ICY_TOWER_KEYS, 90,
+         "Icy Tower — speed built on the ground floor, a wall bounce, "
+         "then a six-floor leap into a combo", 0.715,
+         skip=2, duration_ms=50, colors=48),
+    # ---- puzzle ----
+    game("minesweeper", MINESWEEPER_KEYS, 400,
+         "Minesweeper — flood reveal, flags, and one fatal click", 0.68),
+    game("sokoban", sokoban_script(), 540,
+         "Sokoban — all five levels solved", 0.75),
+    game("match3", MATCH3_KEYS, 380,
+         "Match-3 — seven swaps with cascade chains", 0.8),
+    game("lightsout", lightsout_script(), 300,
+         "Lights Out — plus-shaped toggles chasing the dark", 0.72),
+    game("hanoi", hanoi_script(), 440,
+         "Tower of Hanoi — the optimal 7-move solve on 3 disks", 0.65),
+    game("simon", SIMON_KEYS, 800,
+         "Simon — five echoed rounds, straight from the seeded sequence", 0.6,
+         skip=3, duration_ms=45),
+    # ---- board ----
+    game("connect4", connect4_script(), 520,
+         "Connect Four — six drops against the blocking AI", 0.7),
+    game("othello", OTHELLO_KEYS, 660,
+         "Othello — legal placements and flip animations against the AI", 0.6),
+    game("checkers", checkers_script(), 460,
+         "Checkers — hotseat opening with three forced jumps", 0.6),
+    game("chetris", chetris_script(), 560,
+         "Chetris — tetromino locks and king moves, turn by turn", 0.6),
+    # ---- sandbox ----
+    Demo(
+        name="falling_sand",
+        program="examples/games/falling_sand_gfx.flow",
+        caption="The Falling Sand Game — a sand stroke, then oil set alight "
+                "and doused with water",
+        frames=120,
+        skip=1,
+        duration_ms=55,
+        scale=1.0,
+        keys=falling_sand_script(),
+        colors=40,
+        # One simulated cell per pixel: interpolating would smear the grain.
+        resample=Image.NEAREST,
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Morphogenesis. These take no input at all, so the tuning is entirely in the
+# frame budget: the clip has to start before the pattern exists and end after
+# it does. Several examples finish, hold, and then reseed themselves; for
+# those the budget stops inside the hold so the loop point is the finished
+# form rather than a restart mid-clip. The per-clip numbers below were read
+# off a change-over-time curve of the recorded frames (mean absolute pixel
+# difference against frame 0 and against the previous frame).
+# ---------------------------------------------------------------------------
+
+MORPH_DEMOS: list[Demo] = [
+    # ---- reaction-diffusion and continuous fields ----
+    # Every cell of the field changes every frame in this group, so the GIF
+    # cannot reuse anything between frames: the budget is roughly 14 KB per
+    # kept frame at 16 colours. Hence ~50 kept frames, held longer on screen.
+    morph("gray_scott", 240, 4,
+          "Gray-Scott — a seeded blob divides into a field of solitons",
+          duration_ms=80, colors=12),
+    morph("brusselator", 152, 4,
+          "Brusselator — noise becomes a hexagonal lattice at the predicted lambda",
+          duration_ms=100, colors=12),
+    morph("turing_spots", 200, 4,
+          "Turing spots — noise resolves into a hexagonal lattice of peaks",
+          duration_ms=80, colors=24),
+    morph("turing_stripes", 240, 4,
+          "Turing stripes — the same system, saturated, so ridges form",
+          duration_ms=80, colors=12),
+    morph("belousov", 320, 10,
+          "Belousov-Zhabotinsky — four broken waves wind into spirals",
+          duration_ms=120, colors=10),
+    morph("swift_hohenberg", 400, 8,
+          "Swift-Hohenberg — one wavelength survives and anneals into rolls",
+          duration_ms=80, colors=12),
+    morph("cahn_hilliard", 800, 20,
+          "Cahn-Hilliard — a quenched mixture unmixes and coarsens",
+          duration_ms=95, colors=12),
+    # heat_morph rethrows its noise every 200 steps; stop inside the first.
+    morph("heat_morph", 200, 4,
+          "Perona-Malik diffusion — noise dissolves, boundaries sharpen",
+          duration_ms=80, colors=24),
+    # ---- growth and aggregation ----
+    # This group only redraws near the growth front, so the encoder stores a
+    # few hundred changed pixels per frame and the clips can run long.
+    # dla finishes near frame 140 and holds 120 frames before reseeding.
+    morph("dla", 180, 2,
+          "Diffusion-limited aggregation — a dendrite grows from one seed",
+          duration_ms=55, colors=48),
+    # eden fills the dish by frame ~180, then holds.
+    morph("eden_growth", 200, 3,
+          "Eden growth — a compact colony with a rough KPZ front",
+          duration_ms=65, colors=24),
+    # The midrib is up by frame ~80; the rest of the budget is the crown
+    # filling in with higher-order veins, which is the half worth watching.
+    morph("branching_vessels", 330, 3,
+          "Space colonization — a midrib forks into leaf venation",
+          duration_ms=55, colors=48),
+    # the plant is fully revealed by frame ~104 and restarts at ~240.
+    morph("lsystem_plant", 130, 1,
+          "L-system plant — a turtle walks a longer prefix each frame",
+          duration_ms=50, colors=48),
+    # the tree finishes growing around frame 56 and then only the wind moves,
+    # which redraws every branch, so this one is priced like a field.
+    morph("lsystem_tree", 200, 5,
+          "L-system tree — seven levels of 3D branching, then wind",
+          duration_ms=90, colors=16),
+    # coral tops out near frame 76 and restarts at ~180.
+    morph("coral_ballistic", 110, 1,
+          "Ballistic deposition — shadowing grows porous coral columns",
+          duration_ms=50, colors=32),
+    # ---- cellular and discrete ----
+    morph("cyclic_ca", 210, 7,
+          "Cyclic CA — noise, then debris, then a tiling of spiral cores",
+          duration_ms=120, colors=10),
+    morph("life_variants", 400, 12,
+          "Life variants — a soup thins into gliders and still lifes",
+          duration_ms=110, colors=12),
+    # the crystal stops growing near frame 60 and restarts at ~168.
+    morph("hexagonal_ca", 110, 1,
+          "Reiter snowflake — six-fold dendrites off one frozen cell",
+          duration_ms=50, colors=48),
+    # wfc completes near frame 100 and restarts at ~240.
+    morph("wfc_growth", 130, 1,
+          "Wave function collapse — a circuit resolves out of possibility",
+          duration_ms=50, colors=48),
+    # ---- biological pattern ----
+    morph("slime_mold", 500, 12,
+          "Physarum agents — a trail map becomes a transport network",
+          duration_ms=100, colors=12),
+    morph("cell_sorting", 600, 8,
+          "Differential adhesion — a 50/50 mixture sorts into layers",
+          duration_ms=70, colors=16),
+    # one full head-to-tail axis; the embryo restarts around frame 200.
+    morph("somite_clock", 180, 2,
+          "Clock and wavefront — equal somites laid down one at a time",
+          duration_ms=60, colors=48),
+    # ---- wave-2 continuous / discrete / agent ----
+    morph("gierer_meinhardt", 160, 4,
+          "Gierer-Meinhardt — activator-inhibitor spots at the predicted wavelength",
+          duration_ms=100, colors=12),
+    morph("schnakenberg", 160, 4,
+          "Schnakenberg — cubic autocatalysis selecting a Turing wavelength",
+          duration_ms=100, colors=12),
+    morph("fitzhugh_waves", 160, 4,
+          "FitzHugh waves — broken fronts wind into rotating spiral tips",
+          duration_ms=100, colors=12),
+    morph("kuramoto_sivashinsky", 160, 4,
+          "Kuramoto-Sivashinsky — 1D spatiotemporal chaos as a space-time plot",
+          duration_ms=80, colors=16),
+    morph("allen_cahn", 160, 4,
+          "Allen-Cahn — a circular droplet shrinks under mean-curvature flow",
+          duration_ms=100, colors=12),
+    morph("mycelium", 160, 2,
+          "Mycelium — hyphal length grows under nutrient depletion",
+          duration_ms=60, colors=24),
+    morph("phase_field_dendrite", 160, 3,
+          "Phase-field dendrite — six-fold anisotropy selects primary arms",
+          duration_ms=80, colors=16),
+    morph("bz_3d_slice", 160, 3,
+          "BZ 3D slice — a scroll wave revealed as a marching z-cut",
+          duration_ms=80, colors=12),
+    morph("laplacian_growth", 160, 2,
+          "Laplacian growth — dielectric breakdown with D from Rg scaling",
+          duration_ms=55, colors=32),
+    morph("viscous_fingering", 160, 2,
+          "Viscous fingering — a Saffman-Taylor finger at half the channel",
+          duration_ms=55, colors=24),
+    morph("bone_remodelling", 200, 4,
+          "Bone remodelling — trabeculae align with load (Wolff)",
+          duration_ms=70, colors=24),
+    morph("turing_hex_ca", 160, 2,
+          "Turing hex CA — Young activator-inhibitor on a triangular lattice",
+          duration_ms=70, colors=16),
+    morph("flocking_patterns", 120, 5,
+          "Vicsek flocking — order parameter collapses with noise",
+          duration_ms=80, colors=8),
+    morph("sandpile", 120, 4,
+          "Abelian sandpile — avalanche sizes on a power law",
+          duration_ms=70, colors=12),
+    morph("schelling_segregation", 200, 4,
+          "Schelling — mild preference produces strong segregation",
+          duration_ms=70, colors=16),
+    morph("voronoi_growth", 160, 4,
+          "Johnson-Mehl — nucleation and growth with an Avrami exponent",
+          duration_ms=70, colors=16),
+    morph("ant_pheromone", 200, 4,
+          "Ant pheromone — the short bridge wins by stigmergy",
+          duration_ms=70, colors=24),
+    morph("crack_propagation", 200, 4,
+          "Random fuse crack — disorder lengthens the failure path",
+          duration_ms=70, colors=24),
+    morph("river_erosion", 160, 8,
+          "Stream-power rivers — drainage basins obey Hack's law",
+          duration_ms=90, colors=12),
+]
+DEMOS += MORPH_DEMOS
+
+
+def neuro(name: str, frames: int, skip: int, caption: str,
+          duration_ms: int = 70, colors: int = 40,
+          scale: float = 0.55, keys: str = "") -> Demo:
+    """A neuro-atlas clip: evidence panels that animate themselves.
+
+    Every example draws into a ~900x660 HUD window and auto-cycles its
+    presets, so no input script is required. Scale 0.55 lands near 500 px
+    wide, matching the morphogenesis gallery cards.
+    """
+    return Demo(
+        name=name,
+        program=f"examples/neuro/{name}.flow",
+        caption=caption,
+        frames=frames,
+        skip=skip,
+        duration_ms=duration_ms,
+        scale=scale,
+        colors=colors,
+        keys=keys,
+        subdir="neuro",
+        resample=Image.NEAREST,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Neuron and network atlas. Measurements gate the exit code before the window
+# opens; the clip itself is the live HUD the program draws after that pass.
+# Frame budgets are short because most examples auto-advance a preset every
+# few dozen frames — long enough to see the dynamics, short enough that the
+# headless verification still dominates the wall time.
+# ---------------------------------------------------------------------------
+
+NEURO_DEMOS: list[Demo] = [
+    # ---- single-cell dynamics ----
+    neuro("hodgkin_huxley", 120, 2,
+          "Hodgkin-Huxley — spike shape and type-II onset vs the 1952 paper",
+          duration_ms=70, colors=40),
+    # Auto-advances the highlight across all 20 panels every 4 frames; two
+    # full tours so the highlight motion is obvious in the GIF.
+    neuro("izhikevich_zoo", 180, 1,
+          "Izhikevich zoo — twenty firing regimes from one pair of equations",
+          duration_ms=55, colors=40),
+    neuro("lif_fi_curve", 100, 2,
+          "Leaky integrate-and-fire — measured F-I curve against its closed form",
+          duration_ms=70, colors=32, scale=0.6),
+    neuro("fitzhugh_nagumo", 180, 2,
+          "FitzHugh-Nagumo — nullclines, Hopf window, and the limit cycle",
+          duration_ms=60, colors=40),
+    neuro("morris_lecar", 200, 2,
+          "Morris-Lecar — Hopf and fold currents found by bisection on tr J",
+          duration_ms=60, colors=40),
+    # ---- cable and compartments ----
+    neuro("cable_equation", 200, 2,
+          "Cable equation — attenuation vs the analytic length constant",
+          duration_ms=60, colors=40),
+    neuro("multicompartment", 200, 2,
+          "Multicompartment — a backpropagating action potential along a dendrite",
+          duration_ms=60, colors=40),
+    # ---- synapses and networks ----
+    neuro("stdp_window", 180, 2,
+          "STDP — the canonical asymmetric pairing window, parts in 1e14",
+          duration_ms=70, colors=32),
+    neuro("balanced_network", 90, 2,
+          "Balanced E/I — 12500 LIF neurons in the asynchronous irregular state",
+          duration_ms=80, colors=32),
+    neuro("ring_attractor", 160, 2,
+          "Ring attractor — a bump that remembers and tracks a moving cue",
+          duration_ms=60, colors=40),
+    # Hopfield auto-advances a retrieval demo every 30 frames; keep enough
+    # of the sequence that the pattern visibly settles.
+    neuro("hopfield", 280, 2,
+          "Hopfield — capacity against the 0.138 N bound, energy never rises",
+          duration_ms=55, colors=32),
+    neuro("wta_circuit", 240, 2,
+          "Winner-take-all — selection latency vs contrast, R^2 near 1",
+          duration_ms=55, colors=40),
+    neuro("cpg_gait", 120, 2,
+          "CPG gait — four quadruped gaits phase-locked from coupled oscillators",
+          duration_ms=70, colors=40),
+    neuro("orientation_tuning", 100, 2,
+          "Retina to V1 — orientation tuning from untuned inputs",
+          duration_ms=70, colors=40),
+    neuro("reservoir", 100, 2,
+          "Reservoir — echo-state memory capacity against Jaeger's bound N",
+          duration_ms=70, colors=40),
+]
+
+DEMOS += NEURO_DEMOS
+
+
+def evoeco(name: str, frames: int, skip: int, caption: str,
+           duration_ms: int = 70, colors: int = 32,
+           scale: float = 0.55, keys: str = "") -> Demo:
+    """An evolutionary-biology / ecology clip.
+
+    Same 512x592 window as morphogenesis. Measurements gate before the
+    window opens; FLOW_HOST=python is required for the full language.
+    """
+    return Demo(
+        name=name,
+        program=f"examples/evoleco/{name}.flow",
+        caption=caption,
+        frames=frames,
+        skip=skip,
+        duration_ms=duration_ms,
+        scale=scale,
+        colors=colors,
+        keys=keys,
+        subdir="evoleco",
+        resample=Image.NEAREST,
+        env={"FLOW_HOST": "python"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Evolutionary biology and ecology. Population-genetics programs measure
+# closed forms before the window opens; evolutionary games and ecology
+# companions do the same, then draw the live lattice or phase portrait.
+# ---------------------------------------------------------------------------
+
+EVOECO_DEMOS: list[Demo] = [
+    # ---- population genetics ----
+    evoeco("wright_fisher", 120, 2,
+           "Wright-Fisher — H_t = H_0 (1-1/(2N))^t and absorption at 4 N ln 2",
+           duration_ms=70, colors=24),
+    evoeco("hardy_weinberg", 200, 1,
+           "Hardy-Weinberg — genotype frequencies recover p^2 : 2pq : q^2",
+           duration_ms=55, colors=32),
+    evoeco("selection_locus", 140, 2,
+           "Viability selection — allele frequency follows the discrete logistic",
+           duration_ms=70, colors=24),
+    evoeco("mutation_selection", 140, 2,
+           "Mutation-selection balance — equilibrium at p* = u/s",
+           duration_ms=70, colors=24),
+    evoeco("bottleneck", 140, 2,
+           "Bottleneck — heterozygosity loss matches the product over Nt",
+           duration_ms=70, colors=24),
+    evoeco("island_migration", 160, 2,
+           "Island model — Fst settles near 1/(1 + 4 N m K/(K-1))",
+           duration_ms=70, colors=24),
+    evoeco("moran_process", 120, 2,
+           "Moran process — neutral fixation probability is 1/N; selective rho gated",
+           duration_ms=70, colors=24),
+    # ---- evolutionary dynamics and games ----
+    evoeco("fitness_landscape", 120, 2,
+           "NK fitness landscape — adaptive walks climb to a local peak",
+           duration_ms=70, colors=24),
+    evoeco("quasispecies", 240, 1,
+           "Quasispecies — master sequence collapses past the error threshold",
+           duration_ms=55, colors=32),
+    evoeco("hawk_dove", 140, 2,
+           "Hawk-Dove — mixed ESS at V/C with an invader assay",
+           duration_ms=70, colors=24),
+    evoeco("spatial_pd", 160, 2,
+           "Spatial PD — cooperation persists where mean-field dies",
+           duration_ms=60, colors=16),
+    evoeco("rock_paper_scissors", 160, 2,
+           "Spatial RPS — cyclic chasing; coexistence against well-mixed death",
+           duration_ms=60, colors=16),
+    evoeco("replicator_dynamics", 140, 2,
+           "Replicator dynamics — simplex trajectory to the Nash rest point",
+           duration_ms=70, colors=24),
+    # ---- ecology (visual companions) ----
+    evoeco("lotka_volterra_gfx", 160, 2,
+           "Lotka-Volterra — orbits and a conserved first integral",
+           duration_ms=55, colors=16),
+    evoeco("sir_spatial", 160, 2,
+           "Spatial SIR — lattice attack rate vs final-size at R0_eff",
+           duration_ms=60, colors=16),
+    # ---- extended evolutionary genetics / eco-evo ----
+    evoeco("mullers_ratchet", 180, 2,
+           "Muller ratchet — irreversible deleterious clicks vs Haigh scale",
+           duration_ms=70, colors=24),
+    evoeco("clonal_interference", 180, 2,
+           "Clonal interference — competing beneficials; weaker clone suppressed",
+           duration_ms=70, colors=24),
+    evoeco("hitchhiking", 180, 2,
+           "Hitchhiking — selective sweep carves a diversity trough",
+           duration_ms=70, colors=24),
+    evoeco("breeders_equation", 160, 2,
+           "Breeder equation — response R = h^2 S under truncation",
+           duration_ms=65, colors=24),
+    evoeco("allee_effect", 180, 1,
+           "Allee effect — extinction below threshold A, growth to K above",
+           duration_ms=55, colors=24),
+    evoeco("hamilton_rule", 180, 2,
+           "Hamilton rule — spatial relatedness sustains cooperation when rB > C",
+           duration_ms=60, colors=16),
+    evoeco("red_queen", 180, 2,
+           "Red Queen — matching-alleles host-parasite oscillations",
+           duration_ms=55, colors=24),
+    evoeco("metapopulation", 180, 2,
+           "Metapopulation — Levins occupancy at p* = 1 - e/c",
+           duration_ms=70, colors=24),
+    evoeco("competitive_lv", 180, 2,
+           "Competitive LV — coexistence vs R* exclusion by mutual invasibility",
+           duration_ms=55, colors=24),
+    evoeco("runaway_selection", 160, 2,
+           "Runaway selection — Lande-Kirkpatrick trait-preference coevolution",
+           duration_ms=65, colors=24),
+]
+
+DEMOS += EVOECO_DEMOS
+
+
+def planet(name: str, frames: int, skip: int, caption: str,
+           duration_ms: int = 70, colors: int = 48,
+           scale: float = 0.55, keys: str = "") -> Demo:
+    """A cubesphere planet pipeline clip.
+
+    Same 512x592 window as morphogenesis / evoleco. Measurements gate before
+    the window opens. FLOW_HOST=python is required for the full language.
+    """
+    return Demo(
+        name=name,
+        program=f"examples/planet/{name}.flow",
+        caption=caption,
+        frames=frames,
+        skip=skip,
+        duration_ms=duration_ms,
+        scale=scale,
+        colors=colors,
+        keys=keys,
+        subdir="planet",
+        resample=Image.NEAREST,
+        env={"FLOW_HOST": "python"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Cubesphere planet pipeline. Each program gates a stage measurement before
+# opening the window, then draws an equirect map or shaded globe.
+# ---------------------------------------------------------------------------
+
+PLANET_DEMOS: list[Demo] = [
+    planet("planet_evidence", 210, 1,
+           "Planet evidence — solid angle, distortion, land, Hack, rain shadow",
+           duration_ms=55, colors=48),
+    planet("planet_tectonics", 80, 2,
+           "Planet tectonics — Euler-pole plates and boundary classes",
+           duration_ms=70, colors=40),
+    planet("planet_elevation", 220, 2,
+           "Planet elevation — hypsometric curve and land-fraction sea cut",
+           duration_ms=55, colors=40),
+    planet("planet_erosion", 100, 2,
+           "Planet erosion — stream power and Hack's law on drainage",
+           duration_ms=60, colors=40),
+    planet("planet_climate", 80, 2,
+           "Planet climate — temp/precip maps and orographic rain shadow",
+           duration_ms=70, colors=40),
+    planet("planet_biomes", 60, 2,
+           "Planet biomes — Whittaker classification on the cubesphere",
+           duration_ms=80, colors=32),
+    planet("planet_spin", 90, 3,
+           "Planet spin — shaded globe; regenerate(seed) elev checksum",
+           duration_ms=70, colors=48),
+]
+
+DEMOS += PLANET_DEMOS
+
+
+def procgen(name: str, frames: int, skip: int, caption: str,
+            duration_ms: int = 70, colors: int = 32,
+            scale: float = 0.55, keys: str = "") -> Demo:
+    """A procedural-generation clip.
+
+    Same 512x592 window as morphogenesis / evoleco. Measurements gate before
+    the window opens. FLOW_HOST=python is required for the full language.
+    """
+    return Demo(
+        name=name,
+        program=f"examples/procgen/{name}.flow",
+        caption=caption,
+        frames=frames,
+        skip=skip,
+        duration_ms=duration_ms,
+        scale=scale,
+        colors=colors,
+        keys=keys,
+        subdir="procgen",
+        resample=Image.NEAREST,
+        env={"FLOW_HOST": "python"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Procedural generation. Noise atlas through tile maps; each program gates a
+# measurement before the window opens, then draws the live field.
+# ---------------------------------------------------------------------------
+
+PROCGEN_DEMOS: list[Demo] = [
+    procgen("noise_atlas", 80, 3,
+            "Noise atlas — value / gradient / fBm / ridged / warped side by side",
+            duration_ms=70, colors=16),
+    procgen("heightmap_fbm", 200, 1,
+            "Heightmap fBm — fractal height with sea cut and contours",
+            duration_ms=55, colors=32),
+    procgen("domain_warp", 200, 1,
+            "Domain warp — plain vs warped; deterministic + field-diff gate",
+            duration_ms=55, colors=24),
+    procgen("cave_worms", 90, 3,
+            "Cave worms — 3D density slices with porosity in band",
+            duration_ms=60, colors=16),
+    procgen("wfc_dungeon", 200, 2,
+            "WFC dungeon — 16-tile pipe corridors; full collapse, sockets agree",
+            duration_ms=55, colors=16),
+    procgen("voronoi_sites", 200, 1,
+            "Voronoi sites — Worley regions; mean sites per region = 1",
+            duration_ms=55, colors=40),
+    procgen("island_mask", 200, 1,
+            "Island mask — radial falloff * fBm; single landmass",
+            duration_ms=55, colors=24),
+    procgen("tile_map", 200, 1,
+            "Tile map — height + moisture biomes; fractions sum to 1",
+            duration_ms=55, colors=24),
+]
+
+DEMOS += PROCGEN_DEMOS
+
+
+def numerical(name: str, frames: int, skip: int, caption: str,
+              duration_ms: int = 70, colors: int = 40,
+              scale: float = 0.86, keys: str = "") -> Demo:
+    """A numerical-methods clip (FMM and friends).
+
+    Same 512x592 window as morphogenesis / procgen. Measurements gate before
+    the window opens. FLOW_HOST=python is required for the full language.
+    """
+    return Demo(
+        name=name,
+        program=f"examples/numerical/{name}.flow",
+        caption=caption,
+        frames=frames,
+        skip=skip,
+        duration_ms=duration_ms,
+        scale=scale,
+        colors=colors,
+        keys=keys,
+        subdir="numerical",
+        resample=Image.NEAREST,
+        env={"FLOW_HOST": "python"},
+    )
+
+
+NUMERICAL_DEMOS: list[Demo] = [
+    numerical("fmm_adaptive", 180, 2,
+              "Adaptive FMM — Carrier-Greengard-Rokhlin 1988; gated vs direct",
+              duration_ms=70, colors=32),
+]
+
+DEMOS += NUMERICAL_DEMOS
+
+
+def last_scripted_frame(keys: str) -> int:
+    if not keys:
+        return 0
+    return max(int(w.split(":")[0].split("-")[-1]) for w in keys.split(","))
+
+
+def warn_about_pacing(demo: Demo) -> None:
+    """The frame budget and the input script have to line up or the clip drags."""
+    end = last_scripted_frame(demo.keys)
+    if not end:
+        return
+    if end > demo.frames:
+        print(f"  ! input script runs to frame {end} but the budget stops at "
+              f"{demo.frames}; the last moves will never be played")
+    elif demo.frames - end > demo.frames * 0.35:
+        print(f"  ! input script ends at frame {end} of {demo.frames}; "
+              f"the clip will sit idle for the remainder")
+
+
+def record(demo: Demo, frame_dir: Path) -> int:
+    env = dict(os.environ)
+    env.update(demo.env)
+
+    cmd = ["./flow", "record", demo.program,
+           "--frames", str(demo.frames),
+           "--skip", str(demo.skip),
+           "--out", str(frame_dir)]
+    if demo.keys:
+        cmd += ["--keys", demo.keys]
+
+    print(f"  running {demo.program} …")
+    result = subprocess.run(
+        cmd, cwd=ROOT, env=env, text=True, capture_output=True, timeout=1800,
+    )
+    if result.returncode != 0:
+        sys.stderr.write(result.stdout[-2000:])
+        sys.stderr.write(result.stderr[-2000:])
+        raise SystemExit(f"recording failed for {demo.name}")
+    for line in result.stderr.splitlines():
+        if line.startswith("[gfx-record]"):
+            print(f"  {line}")
+    return len(list(frame_dir.glob("*.ppm")))
+
+
+def content_box(paths: list[Path], pad: int = 12) -> tuple[int, int, int, int] | None:
+    """Union of the drawn area across every frame, padded, or None if uniform.
+
+    The background colour is taken from a corner pixel, which the demos never
+    draw over.
+    """
+    box: tuple[int, int, int, int] | None = None
+    width = height = 0
+    for p in paths:
+        img = Image.open(p).convert("RGB")
+        width, height = img.size
+        bg = img.getpixel((0, 0))
+        mask = Image.new("L", img.size)
+        # Raw RGB bytes rather than getdata(), which Pillow 14 removes.
+        raw, bg_bytes = img.tobytes(), bytes(bg)
+        mask.putdata(
+            [0 if raw[i : i + 3] == bg_bytes else 255 for i in range(0, len(raw), 3)]
+        )
+        found = mask.getbbox()
+        if not found:
+            continue
+        box = found if box is None else (
+            min(box[0], found[0]), min(box[1], found[1]),
+            max(box[2], found[2]), max(box[3], found[3]),
+        )
+    if not box:
+        return None
+    return (
+        max(0, box[0] - pad), max(0, box[1] - pad),
+        min(width, box[2] + pad), min(height, box[3] + pad),
+    )
+
+
+def out_path(demo: Demo) -> Path:
+    base = OUT_DIR / demo.subdir if demo.subdir else OUT_DIR
+    return base / f"{demo.name}.gif"
+
+
+def encode(demo: Demo, frame_dir: Path) -> Path:
+    paths = sorted(frame_dir.glob("frame_*.ppm"))[demo.trim_leading:]
+    if not paths:
+        raise SystemExit(f"no frames captured for {demo.name}")
+
+    box = content_box(paths) if demo.crop else None
+    if box:
+        print(f"  cropping to drawn area {box[2] - box[0]}x{box[3] - box[1]}")
+
+    frames: list[Image.Image] = []
+    for p in paths:
+        img = Image.open(p).convert("RGB")
+        if box:
+            img = img.crop(box)
+        if demo.scale != 1.0:
+            w = max(1, int(img.width * demo.scale))
+            h = max(1, int(img.height * demo.scale))
+            img = img.resize((w, h), demo.resample)
+        frames.append(img)
+
+    # One global palette for the whole clip. Quantizing frames independently
+    # gives each its own palette, which forces full-frame rewrites and
+    # balloons the file; a shared palette lets the encoder store only the
+    # pixels that actually changed.
+    sample_idx = range(0, len(frames), max(1, len(frames) // 8))
+    strip = Image.new("RGB", (frames[0].width, frames[0].height * len(list(sample_idx))))
+    for row, i in enumerate(sample_idx):
+        strip.paste(frames[i], (0, row * frames[0].height))
+    palette = strip.quantize(colors=demo.colors, method=Image.MEDIANCUT)
+    images = [f.quantize(palette=palette, dither=Image.Dither.NONE)
+              for f in frames]
+
+    out = out_path(demo)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    images[0].save(
+        out,
+        save_all=True,
+        append_images=images[1:],
+        duration=demo.duration_ms,
+        loop=0,
+        optimize=True,
+        # Leaving each frame in place lets Pillow store only the pixels that
+        # changed, which roughly halves the file. Safe here because every demo
+        # redraws its whole window each frame, so nothing ghosts.
+        disposal=1,
+    )
+    if demo.also_root:
+        # tetris/2048 live at docs/demos/ for the README, and the games dir
+        # carries a copy so docs/demos/games/ covers every game.
+        copy = GAMES_DIR / out.name
+        copy.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(out, copy)
+    return out
+
+
+def all_outputs() -> list[Path]:
+    paths = [out_path(d) for d in DEMOS]
+    paths += [GAMES_DIR / f"{d.name}.gif" for d in DEMOS if d.also_root]
+    return paths
+
+
+def check() -> int:
+    missing = [p for p in all_outputs() if not p.exists()]
+    for path in sorted(all_outputs()):
+        if path.exists():
+            print(f"  ok       {path.relative_to(ROOT)} "
+                  f"({path.stat().st_size / 1024:.0f} KB)")
+        else:
+            print(f"  MISSING  {path.relative_to(ROOT)}")
+    return 1 if missing else 0
+
+
+def main(argv: list[str]) -> int:
+    args = argv[1:]
+    if "--check" in args:
+        return check()
+
+    if "--group" in args:
+        i = args.index("--group")
+        group = args[i + 1] if i + 1 < len(args) else ""
+        del args[i:i + 2]
+        args += [d.name for d in DEMOS if d.subdir == group]
+        if not args:
+            raise SystemExit(f"no demo in group {group!r}; "
+                             f"have {sorted({d.subdir or 'root' for d in DEMOS})}")
+
+    wanted = set(args)
+    selected = [d for d in DEMOS if not wanted or d.name in wanted]
+    if not selected:
+        raise SystemExit(f"no demo matches {sorted(wanted)}; have {[d.name for d in DEMOS]}")
+
+    sizes: list[tuple[str, float]] = []
+    for demo in selected:
+        print(f"[{demo.name}] {demo.caption}")
+        warn_about_pacing(demo)
+        tmp = Path(tempfile.mkdtemp(prefix=f"flow-frames-{demo.name}-"))
+        try:
+            captured = record(demo, tmp)
+            print(f"  captured {captured} frame(s)")
+            out = encode(demo, tmp)
+            size_kb = out.stat().st_size / 1024
+            sizes.append((demo.name, size_kb))
+            print(f"  wrote {out.relative_to(ROOT)} ({size_kb:.0f} KB)\n")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+    if len(sizes) > 1:
+        print("size table:")
+        for name, kb in sorted(sizes, key=lambda s: -s[1]):
+            flag = "  OVER 1MB" if kb > 1024 else ("  over 500KB" if kb > 500 else "")
+            print(f"  {name:<12} {kb:7.0f} KB{flag}")
+        print(f"  {'total':<12} {sum(kb for _, kb in sizes):7.0f} KB")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

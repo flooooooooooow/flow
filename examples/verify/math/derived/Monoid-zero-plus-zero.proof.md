@@ -2,9 +2,9 @@
 
 *Zero plus zero is zero in a monoid witness.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §1.1
+**Source.** dummit-foote — *Abstract Algebra*, §1.1
 
-## Derived fact 1: 0 + 0 = 0
+## Derived fact 1 — 0 + 0 = 0
 
 **Coordinate.** Monoid · addition · zero plus zero is zero · **Derived fact**
 

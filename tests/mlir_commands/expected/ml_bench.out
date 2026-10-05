@@ -1,7 +1,0 @@
-MLIR Tensor Benchmark
-=====================
-matmul 64x64 sum checkpoint
-65396.410156
-matmul 128x128 sum checkpoint
-523201.312500
-done

@@ -2,9 +2,9 @@
 
 *Parallel angle chains close back to alternate angles.*
 
-**Source.** euclid: Elements, Book I, Proposition 29
+**Source.** euclid — Elements, Book I, Proposition 29
 
-## Derived fact 1: f-angle beta equals alternate alpha after full chain closure
+## Derived fact 1 — f-angle beta equals alternate alpha after full chain closure
 
 **Coordinate.** the Euclidean plane · parallel lines · angle chain closure · **Derived fact**
 

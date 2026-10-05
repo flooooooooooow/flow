@@ -1,8 +1,0 @@
-flow Tank {
-    input q_in : f64
-    state h : f64 = 1.0
-    param area : f64 = 2.0
-    output q_out : f64 = sqrt(h) * 0.5
-    output level : f32 = (h / area) as f32
-    h evolves as (q_in - q_out) / area
-}

@@ -2,9 +2,9 @@
 
 *Each co-interior angle is less than two right angles.*
 
-**Source.** euclid: Elements, Book I, Proposition 29
+**Source.** euclid — Elements, Book I, Proposition 29
 
-## Derived fact 1: co-interior alpha is less than two right angles
+## Derived fact 1 — co-interior alpha is less than two right angles
 
 **Coordinate.** the Euclidean plane · parallel lines · co-interior angle less than two right · **Derived fact**
 

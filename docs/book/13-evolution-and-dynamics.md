@@ -124,7 +124,7 @@ The energy-ledger demonstration compares simulated apexes, flight times,
 energy loss, and the Zeno horizon with closed forms:
 
 ```bash
-./flow run examples/evolution/bouncing_ball_energy.flow
+FLOW_HOST=python ./flow run examples/evolution/bouncing_ball_energy.flow
 ```
 
 ## 13.6 Invariants
@@ -140,7 +140,7 @@ always {
 violation; it is not a proof over every real time between numeric samples.
 
 ```bash
-./flow run examples/evolution/pendulum_always.flow
+FLOW_HOST=python ./flow run examples/evolution/pendulum_always.flow
 ```
 
 ## 13.7 Flow composition
@@ -163,7 +163,7 @@ is rejected or needs an algebraic-loop solver, which is not supplied.
 Unconnected child inputs are assigned by the embedder.
 
 ```bash
-./flow run examples/evolution/robot_connect.flow
+FLOW_HOST=python ./flow run examples/evolution/robot_connect.flow
 ```
 
 ## 13.8 Representations
@@ -190,7 +190,7 @@ The coefficients must currently be supplied. Automatic Jacobian evaluation at
 an equilibrium is not implemented.
 
 ```bash
-./flow run examples/evolution/pendulum_represent_linear.flow
+FLOW_HOST=python ./flow run examples/evolution/pendulum_represent_linear.flow
 ```
 
 ## 13.9 State-space systems
@@ -234,8 +234,8 @@ analyze plant ga k1 k2 over rollout -> report { full }
 ```
 
 ```bash
-./flow run examples/dynamics/ga_dsys_syntax.flow
-./flow run examples/evolution/spring_mass_lqr.flow
+FLOW_HOST=python ./flow run examples/dynamics/ga_dsys_syntax.flow
+FLOW_HOST=python ./flow run examples/evolution/spring_mass_lqr.flow
 ```
 
 The [dynamics tutorial](../tutorials/dynamics.md) lists the available examples
@@ -255,10 +255,10 @@ satisfy its stability condition; the demonstration uses `r = 0.4` with the
 common `r <= 0.5` bound.
 
 ```bash
-./flow run examples/evolution/heat_diffusion.flow
+FLOW_HOST=python ./flow run examples/evolution/heat_diffusion.flow
 ```
 
-Fields are numerical grids rather than symbolic PDE proofs. Model validation must
+Fields are numerical grids, not symbolic PDE proofs. Model validation must
 still cover grid resolution, boundary consistency, truncation error,
 stability, and convergence.
 

@@ -9,7 +9,7 @@ extern {
     function getenv(name: string) -> ptr<u8>
     function malloc(size: i64) -> ptr<void>
     function free(p: ptr<void>) -> void
-    function snprintf(buf: string, cap: i64, fmt: string, ...) -> i32
+    function snprintf(buf: string, cap: i64, fmt: string) -> i32
     function fopen(path: string, mode: string) -> ptr<void>
     function fprintf(f: ptr<void>, fmt: string) -> i32
     function fwrite(p: ptr<void>, size: i64, n: i64, f: ptr<void>) -> i64

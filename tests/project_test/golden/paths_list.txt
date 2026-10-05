@@ -1,7 +1,0 @@
-exit=0
---- stdout
-integration/i.flow
-unit/u.flow::unit ok
-
-2 test case(s)
---- stderr

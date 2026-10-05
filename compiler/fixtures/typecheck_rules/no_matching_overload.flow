@@ -1,8 +1,0 @@
-# expect: No matching overload for function 'twice' with arguments (string)
-function twice(x: i32) -> i32 {
-    return x * 2
-}
-
-function main() -> i32 {
-    return twice("two")
-}

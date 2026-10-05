@@ -1,8 +1,0 @@
-# @lifetime(domain) is a check only. It emits no C of its own, and every
-# domain compiles to the same code.
-- lifetime
-- callback
-- session
-- application
-+ int32_t process(
-exit 0

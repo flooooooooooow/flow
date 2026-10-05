@@ -2,9 +2,9 @@
 
 *Interior alternate angles chain to corresponding angles.*
 
-**Source.** euclid: Elements, Book I, Proposition 29
+**Source.** euclid — Elements, Book I, Proposition 29
 
-## Derived fact 1: interior alternate alpha equals corresponding beta
+## Derived fact 1 — interior alternate alpha equals corresponding beta
 
 **Coordinate.** the Euclidean plane · parallel lines · interior alternate chains to corresponding · **Derived fact**
 

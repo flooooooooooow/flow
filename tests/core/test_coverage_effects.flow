@@ -1,4 +1,3 @@
-# effects-mode: permissive
 # Zero-cost effect substitution coverage: multi-effect handle statements,
 # handle blocks inside loops and conditionals, a capability serving two
 # effects, nested handles of different effects, and effect calls in

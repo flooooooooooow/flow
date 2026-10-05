@@ -1,6 +1,0 @@
-
-        function main() -> i32 {
-            let unit = 5
-            return unit - 5
-        }
-        

@@ -1,6 +1,0 @@
-# expect: Module static 'n' initializer must be a compile-time constant literal
-let mut n: i32 = 1 + 1
-
-function main() -> i32 {
-    return 0
-}

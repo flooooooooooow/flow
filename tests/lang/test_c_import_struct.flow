@@ -1,6 +1,6 @@
 # Test for @cImport with complex struct headers.
 # Tests stat() from sys/stat.h which uses a struct stat.
-# Run with: ./flow run tests/lang/test_c_import_struct.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_import_struct.flow
 # Exit 0 on success.
 
 @cImport("sys/stat.h")

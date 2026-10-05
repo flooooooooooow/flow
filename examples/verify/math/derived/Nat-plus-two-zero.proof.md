@@ -2,9 +2,9 @@
 
 *Two plus zero is two for natural numbers.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 2 + 0 = 2
+## Derived fact 1 — 2 + 0 = 2
 
 **Coordinate.** the natural numbers · addition · two plus zero is two · **Derived fact**
 

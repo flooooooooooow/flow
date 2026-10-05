@@ -4,7 +4,7 @@
 #   ./flow run --backend=mlir examples/wasm/hello_wasm.flow     # native (MLIR)
 #   ./flow wasm examples/wasm/hello_wasm.flow --backend=c       # browser (C)
 #   ./flow wasm examples/wasm/hello_wasm.flow --backend=mlir    # browser (MLIR)
-#   ./flow tool scripts/build_wasm_hello.flow                               # CI-safe; skips without emcc
+#   ./scripts/build_wasm_hello.sh                               # CI-safe; skips without emcc
 #
 # emcc is not required for Flow→C/MLIR. See examples/wasm/README.md and docs/language/wasm.md.
 

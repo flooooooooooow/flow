@@ -2,9 +2,9 @@
 
 *Corresponding and Z-angles chain on parallel lines.*
 
-**Source.** euclid: Elements, Book I, Proposition 29
+**Source.** euclid — Elements, Book I, Proposition 29
 
-## Derived fact 1: corresponding alpha equals z-angle beta
+## Derived fact 1 — corresponding alpha equals z-angle beta
 
 **Coordinate.** the Euclidean plane · parallel lines · corresponding and z angles chain · **Derived fact**
 

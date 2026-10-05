@@ -2,9 +2,9 @@
 
 *An exterior angle strictly exceeds the sum of remote interiors when angles are positive.*
 
-**Source.** euclid: Elements, Book I, Proposition 16
+**Source.** euclid — Elements, Book I, Proposition 16
 
-## Derived fact 1: exterior at C exceeds angle A when angle B is positive
+## Derived fact 1 — exterior at C exceeds angle A when angle B is positive
 
 **Coordinate.** the Euclidean plane · triangle · exterior sum strict with positive angles · **Derived fact**
 

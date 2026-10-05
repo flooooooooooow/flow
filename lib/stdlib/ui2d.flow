@@ -1,7 +1,7 @@
 # UI2D: tiny immediate-mode 2D drawing on SDL2
 #
-# This is "graphics library written in FLOW": rectangles + a built-in bitmap
-# font for digits so we don't depend on SDL_ttf.
+# This is “graphics library written in FLOW”: rectangles + a built-in bitmap
+# font for digits so we don’t depend on SDL_ttf.
 
 import "stdlib/sdl2.flow"
 

@@ -1,4 +1,0 @@
-shader fill w {
-    let a = mod(1.0)
-    color = vec4(a)
-}

@@ -1,8 +1,0 @@
-[0;34mℹ️  Running FLOW language tests (tests/lang/, strict)...[0m
-[0;34mℹ️  flowc: <ROOT>/compiler/build/flowc_bootstrap[0m
-[0;31m❌ ✗ tests/cli/fixtures/hang.flow (timed out after 1s; killed its process group; limit: --timeout=SECONDS or FLOW_TEST_TIMEOUT)[0m
-----------------------------------------
-[0;31m❌ Language test failures: 1/1[0m
-
-Failed files:
-  - tests/cli/fixtures/hang.flow (timeout 1s)

@@ -17,5 +17,5 @@
 <text x="380.0" y="186.0" text-anchor="middle" font-weight="bold">B</text>
 <circle cx="240.0" cy="70.0" r="4.5" fill="#2c3e50"/>
 <text x="240.0" y="90.0" text-anchor="middle" font-weight="bold">C</text>
-<text x="240" y="344" text-anchor="middle" font-size="13" fill="#555">Angle in a semicircle: when AB is a diameter, the inscribed angle at C is a right angle.</text>
+<text x="240" y="344" text-anchor="middle" font-size="13" fill="#555">Angle in a semicircle — when AB is a diameter, the inscribed angle at C is a right angle.</text>
 </svg>

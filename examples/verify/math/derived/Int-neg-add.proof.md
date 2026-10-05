@@ -2,9 +2,9 @@
 
 *Negation distributes over integer addition.*
 
-**Source.** landau: *Foundations of Analysis*, Ch. 1
+**Source.** landau — *Foundations of Analysis*, Ch. 1
 
-## Derived fact 1: -(a + b) = (-a) + (-b)
+## Derived fact 1 — -(a + b) = (-a) + (-b)
 
 **Coordinate.** the integers · negation · negation distributes over addition · **Derived fact**
 

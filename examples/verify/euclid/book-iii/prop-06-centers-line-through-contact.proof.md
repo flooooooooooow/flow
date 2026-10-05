@@ -2,13 +2,13 @@
 
 *If two circles touch one another, the straight line joining their centers passes through the point of contact.*
 
-**Source.** euclid: Elements, Book III, Proposition 6
+**Source.** euclid — Elements, Book III, Proposition 6
 
-## Derived fact 1: If two circles touch one another, the straight line joining their centers passes through the point of contact
+## Derived fact 1 — If two circles touch one another, the straight line joining their centers passes through the point of contact
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 6: the line joining centers passes through the point of contact · **Derived fact**
 
-*Source: euclid: Elements, Book III, Proposition 6*
+*Source: euclid — Elements, Book III, Proposition 6*
 
 *Built on: proposition 5: the line joining centers passes through the intersection, for Euclid Book III on the Euclidean plane*
 

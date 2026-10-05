@@ -1,1 +1,0 @@
-Flow @gpu -> WGSL: tests/gpu/programs/no_gpu.flow

@@ -2,9 +2,9 @@
 
 *Ideals absorb multiplication by ring elements.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.3
+**Source.** dummit-foote — *Abstract Algebra*, §7.3
 
-## Derived fact 1: If a in I and r in R then r * a in I
+## Derived fact 1 — If a in I and r in R then r * a in I
 
 **Coordinate.** Ideal · multiplication · absorbs ring elements on the left · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that absorbs ring elements on the left for multiplication on Ideal. |  |  |
-| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose a in I. |  |  |
 | ④ | We invoke the definitional clause governing membership on Ideal: zero lies in every ideal, for membership on Ideal (instantiated for I). |  |  |
 | ⑤ | We invoke the definitional clause governing multiplication on Ring: left distribution over addition holds, for multiplication on Ring (instantiated for r, a, 0). |  |  |

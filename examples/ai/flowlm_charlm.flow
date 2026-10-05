@@ -1,4 +1,4 @@
-# flowlm: train a character language model from scratch, in Flow.
+# flowlm — train a character language model from scratch, in Flow.
 #
 # Single file, no dependencies beyond libc. It fits a character vocabulary on
 # an embedded 5 KB corpus, checks every analytic gradient against finite
@@ -6,7 +6,7 @@
 # samples from it at three temperatures.
 #
 # Run:
-#   ./flow run examples/ai/flowlm_charlm.flow
+#   FLOW_HOST=python ./flow run examples/ai/flowlm_charlm.flow
 #
 # Exit code 0 means the gradient check passed and the held-out loss came in
 # under the gate printed at the end. Roughly a minute on a laptop CPU at -O0.
@@ -127,7 +127,7 @@ function show_sample(prompt: ptr<i32>, prompt_len: i32, out: ptr<i32>,
 
 function main() -> i32 {
     println("")
-    println("flowlm: a character language model written in Flow")
+    println("flowlm — a character language model written in Flow")
     rule()
 
     # ---------------------------------------------------------------- corpus
@@ -220,7 +220,7 @@ function main() -> i32 {
     let gc_ok: bool = flm_gradcheck(true)
     println("")
     if !gc_ok {
-        println("GRADIENT CHECK FAILED: refusing to report a training curve")
+        println("GRADIENT CHECK FAILED — refusing to report a training curve")
         return 1
     }
     print("gradient check: PASS (worst ")

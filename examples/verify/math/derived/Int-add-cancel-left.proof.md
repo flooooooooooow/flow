@@ -2,9 +2,9 @@
 
 *Equal integers can be subtracted from the left of both sides.*
 
-**Source.** landau: *Foundations of Analysis*, Ch. 1
+**Source.** landau — *Foundations of Analysis*, Ch. 1
 
-## Derived fact 1: c + a = c + b implies a = b
+## Derived fact 1 — c + a = c + b implies a = b
 
 **Coordinate.** the integers · addition · left cancellation holds · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that left cancellation holds for addition on the integers. |  |  |
-| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose c + a  equals  c + b. |  |  |
 | ④ | We invoke the derived fact governing addition on the integers: right cancellation holds, for addition on the integers (instantiated for a, b, c). |  |  |
 | ⑤ | We invoke the derived fact governing addition on the integers: order does not matter, for addition on the integers (instantiated for c, a). |  |  |

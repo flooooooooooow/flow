@@ -2,9 +2,9 @@
 
 *An exterior angle exceeds the maximum remote interior angle.*
 
-**Source.** euclid: Elements, Book I, Proposition 16
+**Source.** euclid — Elements, Book I, Proposition 16
 
-## Derived fact 1: exterior at C exceeds angle B when angle C is positive
+## Derived fact 1 — exterior at C exceeds angle B when angle C is positive
 
 **Coordinate.** the Euclidean plane · triangle · exterior exceeds max remote interior · **Derived fact**
 

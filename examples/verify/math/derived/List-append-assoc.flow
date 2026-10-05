@@ -1,10 +1,10 @@
 # @module examples.verify.math.derived
 # @means  List append associates.
-# @from   church: https://en.wikipedia.org/wiki/Associative_property
+# @from   church — https://en.wikipedia.org/wiki/Associative_property
 # @tier   derived
 
 # @means  (xs ++ ys) ++ zs = xs ++ (ys ++ zs).
-# @from   church/induction: standard list induction
+# @from   church/induction — standard list induction
 # @tier   derived
 # @needs  «List» «append» «empty is the left identity», «List» «append» «singleton prepends the head»
 

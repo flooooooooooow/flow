@@ -2,9 +2,9 @@
 
 *False is absorbing for conjunction on the left.*
 
-**Source.** boole: https://en.wikipedia.org/wiki/Boolean_algebra
+**Source.** boole — https://en.wikipedia.org/wiki/Boolean_algebra
 
-## Derived fact 1: false and a = false
+## Derived fact 1 — false and a = false
 
 **Coordinate.** boolean truth values · conjunction · false is absorbing on the left · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that false is absorbing on the left for conjunction on boolean truth values. |  |  |
-| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
 | ③ | We invoke the derived fact governing conjunction on boolean truth values: order does not matter, for conjunction on boolean truth values (instantiated for false, a). |  |  |
 | ④ | Case 1 (see step 2): suppose a holds. |  |  |
 | ⑤ | From step 4, this implies the conjunction of false and a equals false in this case. | ⑤ | $\mathsf{false} \land a = \mathsf{false}$ |

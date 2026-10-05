@@ -2,9 +2,9 @@
 
 *Negating zero yields zero.*
 
-**Source.** landau: *Foundations of Analysis*, Ch. 1
+**Source.** landau — *Foundations of Analysis*, Ch. 1
 
-## Derived fact 1: -0 = 0
+## Derived fact 1 — -0 = 0
 
 **Coordinate.** the integers · negation · negating zero yields zero · **Derived fact**
 

@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  Reflection across the apex median fixes the apex.
-# @from   euclid: Elements, Book I, Proposition 5
+# @from   euclid — Elements, Book I, Proposition 5
 # @tier   derived
 
 # @means  apex A is fixed by reflection across apex median.

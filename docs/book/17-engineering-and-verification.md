@@ -22,7 +22,7 @@ module, effect, DSL, and runtime work.
 Strict compilation turns type and effect findings into failures:
 
 ```bash
-./flow tool compiler/scripts/flowc_emit.flow --strict program.flow build/program.c
+FLOW_HOST=python ./flow transpile program.flow --c --strict -o build/program.c
 ```
 
 A good diagnostic names the source location, the failed rule, the actual and
@@ -67,7 +67,7 @@ The repository includes VS Code language, theme, and extension packaging under
 ./flow test-runtime              # compile and execute runtime tests
 ./flow test-lang                 # strict language programs
 ./flow test-mlir
-./flow test-scripts
+./flow test-python
 ./flow test-interop
 ./flow test-gpu
 ./flow test-matmul
@@ -146,7 +146,8 @@ selection:
 ```
 
 The report lists candidate plans, applicability failures, costs, constraints,
-and the selected implementation. It covers sorting and search today.
+and the selected implementation. The report is most useful for sorting,
+search, matrix operations, and reductions.
 
 ## 17.11 FIR-G
 
@@ -156,8 +157,8 @@ and the selected implementation. It covers sorting and search today.
 ```
 
 FIR-G exposes a graph representation and analyses used for routes,
-dependencies, calibration, and optimisation work. FIR-G is compiler analysis
-rather than ordinary source syntax.
+dependencies, calibration, and optimisation work. FIR-G is compiler analysis,
+not ordinary source syntax.
 
 ## 17.12 Reproducible builds
 
@@ -190,8 +191,8 @@ logic, arithmetic, data structures, circuits, transforms, and Euclid material.
 Theorem syntax and tooling are partial and intentionally ahead of the core
 parser/checker in parts of the corpus. A `.proof.md` document may be a formal
 artefact, a stepped derivation, or a scaffold awaiting checker support. Do not
-equate "present in the proof catalog" with "machine-checked by the current
-kernel".
+equate “present in the proof catalog” with “machine-checked by the current
+kernel”.
 
 The authoritative distinctions are:
 
@@ -221,7 +222,7 @@ No row implies the rows beneath it automatically.
 
 1. Give each failing branch of a program a distinct exit code.
 2. Run AddressSanitizer on a deliberately out-of-bounds pointer example.
-3. Compare the generated C for a sort before and after supplying an ordering hint.
+3. Compare an explain report before and after supplying an ordering hint.
 4. Classify one repository proof by its actual checker status.
 
 Next: [A complete instrument](18-a-complete-instrument.md).

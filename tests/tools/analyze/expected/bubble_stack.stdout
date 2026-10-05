@@ -1,7 +1,0 @@
-Stack depth analysis: examples/basics/bubble_sort.flow
-============================================================
-Function                                  Max depth Chain
-------------------------------------------------------------
-main                                           48 bytes  main → bubble_sort_demo
-bubble_sort_demo                               44 bytes  bubble_sort_demo
-

@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  The identity image is a right unit under a homomorphism.
-# @from   dummit-foote: *Abstract Algebra*, §1.6
+# @from   dummit-foote — *Abstract Algebra*, §1.6
 # @tier   derived
 
 # @means  f(1) * f(1) = f(1).

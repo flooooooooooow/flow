@@ -2,9 +2,9 @@
 
 *A radius equals half a diameter.*
 
-**Source.** euclid: Elements, Book I, Definition 15
+**Source.** euclid — Elements, Book I, Definition 15
 
-## Derived fact 1: radius OA equals half of diameter AB
+## Derived fact 1 — radius OA equals half of diameter AB
 
 **Coordinate.** the Euclidean plane · circle · radius equals half diameter · **Derived fact**
 

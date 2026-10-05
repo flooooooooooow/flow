@@ -2,13 +2,13 @@
 
 *If the rectangle contained by the first and third equals the square on the second, the three straight lines are proportional.*
 
-**Source.** euclid: Elements, Book VI, Proposition 18
+**Source.** euclid — Elements, Book VI, Proposition 18
 
-## Derived fact 1: If the rectangle contained by the first and third equals the square on the second, the three straight lines are proportional
+## Derived fact 1 — If the rectangle contained by the first and third equals the square on the second, the three straight lines are proportional
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 18: rectangle on extremes equal to square on mean implies three lines proportional · **Derived fact**
 
-*Source: euclid: Elements, Book VI, Proposition 18*
+*Source: euclid — Elements, Book VI, Proposition 18*
 
 *Built on: proposition 17: three proportional lines give rectangle on extremes equal to square on mean, for Euclid Book VI on the Euclidean plane*
 

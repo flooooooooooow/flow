@@ -1,5 +1,5 @@
 # Test for geometry_diagram.flow port of geometry_diagram.py.
-# Run with: ./flow run tests/lang/test_geometry_diagram.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_geometry_diagram.flow
 # Exit 0 on success.
 
 import "compiler/src/geometry_diagram.flow"

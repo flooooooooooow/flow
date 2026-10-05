@@ -60,7 +60,7 @@ A Python numerical or ML project often looks wonderfully small at the call site 
 
 Flow is aiming at a different kind of compression: keep the high-level description and the low-level implementation in one language so the readable surface is also the deployable implementation.
 
-That matters most for DSP, simulations, kernels, embedded work and other places where "just use a Python library" eventually crosses into native code.
+That matters most for DSP, simulations, kernels, embedded work and other places where “just use a Python library” eventually crosses into native code.
 
 ## Where Python still wins
 

@@ -2,13 +2,13 @@
 
 *To draw a straight line at right angles to a given straight line from a given point on it.*
 
-**Source.** euclid: Elements, Book I, Proposition 11
+**Source.** euclid — Elements, Book I, Proposition 11
 
-## Derived fact 1: To draw a straight line at right angles to a given straight line from a given point on it
+## Derived fact 1 — To draw a straight line at right angles to a given straight line from a given point on it
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 11: erect a perpendicular at a point on a line · **Derived fact**
 
-*Source: euclid: Elements, Book I, Proposition 11*
+*Source: euclid — Elements, Book I, Proposition 11*
 
 *Built on: proposition 1: equilateral triangle on a segment, for Book I of the Elements in on the Euclidean plane, proposition 4: side-angle-side congruence, for Book I of the Elements in on the Euclidean plane, proposition 8: side-side-side angle equality, for Book I of the Elements in on the Euclidean plane*
 

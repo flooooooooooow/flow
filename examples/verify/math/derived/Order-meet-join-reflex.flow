@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Meet below join is reflexive on equal arguments.
-# @from   davey-priestley: *Introduction to Lattices and Order*
+# @from   davey-priestley — *Introduction to Lattices and Order*
 # @tier   derived
 
 # @means  meet(a, a) <= join(a, a).

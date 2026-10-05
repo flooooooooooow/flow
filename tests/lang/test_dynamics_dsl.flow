@@ -1,5 +1,5 @@
 # Test for dynamics_dsl.flow port of dynamics_dsl.py.
-# Run with: ./flow run tests/lang/test_dynamics_dsl.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_dynamics_dsl.flow
 # Exit 0 on success.
 
 import "compiler/src/dynamics_dsl.flow"

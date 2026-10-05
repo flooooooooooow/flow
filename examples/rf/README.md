@@ -14,8 +14,8 @@ RF and software-defined radio applications.
 ## Running
 
 ```bash
-./flow run examples/rf/dft.flow
-./flow run examples/rf/iq_mixer.flow
+FLOW_HOST=python ./flow run examples/rf/dft.flow
+FLOW_HOST=python ./flow run examples/rf/iq_mixer.flow
 ```
 
 ## Complex types

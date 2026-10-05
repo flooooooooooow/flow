@@ -21,7 +21,7 @@
 #   1 EXCESS HET   2 DEFICIENT HET   3 PURE HOM   R reseed   P pause   Esc quit
 #
 # Run (headless, gated):
-#   ./flow record examples/evoleco/hardy_weinberg.flow \
+#   FLOW_HOST=python ./flow record examples/evoleco/hardy_weinberg.flow \
 #       --frames 4 --out /tmp/eco_hardy_weinberg
 # Run (windowed):
 #   ./flow gfx examples/evoleco/hardy_weinberg.flow

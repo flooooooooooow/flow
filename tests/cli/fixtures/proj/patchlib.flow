@@ -1,4 +1,0 @@
-# A patch library for `flow patch`: functions, no main.
-function gain(x: f64) -> f64 {
-    return x * 0.5
-}

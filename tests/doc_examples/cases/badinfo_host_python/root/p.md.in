@@ -1,9 +1,0 @@
-# Bad info
-
-```flow
-function main() -> i32 { return 0 }
-```
-
-```flow host=python
-function main() -> i32 { return 0 }
-```

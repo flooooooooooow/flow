@@ -1,8 +1,0 @@
-extern {
-    function rand() -> i32
-}
-
-flow Osc {
-    state x : f64 = 1.0
-    x evolves as rand() as f64
-}

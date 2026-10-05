@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  The square on a leg is less than the square on the hypotenuse.
-# @from   euclid: Elements, Book I, Proposition 47
+# @from   euclid — Elements, Book I, Proposition 47
 # @tier   derived
 
 # @means  a squared is less than c squared.

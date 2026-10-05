@@ -7,7 +7,7 @@ beyond it.
 
 ## Definition of parity
 
-Parity is evidence. A screenshot claim is not enough. Every imported case records fixed
+Parity is evidence, not a screenshot claim. Every imported case records fixed
 inputs and produces either a deterministic image or deterministic numerical output.
 The harness compares Flow against the upstream reference. Exact pixel equality is
 the default for simple fragment cases. Cases whose result is legitimately sensitive
@@ -146,7 +146,7 @@ GpuModule
     ComputePass(...)
 ```
 
-This should be an IR/data model rather than new syntax by itself. FSL and normal Flow can
+This should be an IR/data model, not new syntax by itself. FSL and normal Flow can
 both lower into it. Backend emitters then map the same resource layout to Metal,
 WGSL/WebGPU and later SPIR-V/Vulkan.
 

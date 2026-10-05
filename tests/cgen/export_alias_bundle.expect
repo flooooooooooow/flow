@@ -1,5 +1,0 @@
-flags --export subtract --export twice --export nothere
-+ __attribute__((visibility("default"))) float flow_export_subtract(float a, float b) { return subtract(a, b); }
-+ __attribute__((visibility("default"))) float flow_export_twice(float x) { return twice(x); }
-+ /* --export nothere: not found in this TU */
-exit 0

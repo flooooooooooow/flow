@@ -2,13 +2,13 @@
 
 *The complements of parallelograms about the diameter are equal.*
 
-**Source.** euclid: Elements, Book I, Proposition 43
+**Source.** euclid — Elements, Book I, Proposition 43
 
-## Derived fact 1: The complements of parallelograms about the diameter are equal
+## Derived fact 1 — The complements of parallelograms about the diameter are equal
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 43: complements of parallelograms about a diameter are equal · **Derived fact**
 
-*Source: euclid: Elements, Book I, Proposition 43*
+*Source: euclid — Elements, Book I, Proposition 43*
 
 *Built on: proposition 33: parallelograms about a diameter are equal, for Book I of the Elements in on the Euclidean plane*
 

@@ -1,4 +1,0 @@
-+ __flowc_str_concat
-- ("hello, " +
-exit 0
-stdout hello, flow!

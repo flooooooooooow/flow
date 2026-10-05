@@ -2,9 +2,9 @@
 
 *Union with the empty set on the right preserves cardinality.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: card(s ∪ empty) = card(s)
+## Derived fact 1 — card(s ∪ empty) = card(s)
 
 **Coordinate.** Finset · cardinality · union with empty on the right preserves size · **Derived fact**
 

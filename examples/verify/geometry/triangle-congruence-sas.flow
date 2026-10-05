@@ -1,5 +1,5 @@
 # @means  Two triangles with two sides and the included angle equal are congruent.
-# @from   euclid: Elements, Book I, Proposition 4
+# @from   euclid — Elements, Book I, Proposition 4
 # @tier   axiom
 # @diagram triangle-congruence-sas
 

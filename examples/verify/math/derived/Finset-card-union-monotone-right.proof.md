@@ -2,9 +2,9 @@
 
 *Cardinality is monotone under union on the right.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: card(b) <= card(a ∪ b)
+## Derived fact 1 — card(b) <= card(a ∪ b)
 
 **Coordinate.** Finset · cardinality · size is monotone under union on the right · **Derived fact**
 

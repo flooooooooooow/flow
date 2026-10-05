@@ -11,7 +11,7 @@ function main() -> i32 {
     }
     print_line("")
 
-    let ctx0: PythonContext = python_begin(".", "./examples/interop/python")
+    let ctx0: PythonContext = python_begin(".", "./examples/interop")
     if !ctx0.ok {
         print_line(python_last_error())
         return ctx0.error

@@ -2,9 +2,9 @@
 
 *Double reverse restores a duodecuple cons list.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Reverse_(list)
+**Source.** church — https://en.wikipedia.org/wiki/Reverse_(list)
 
-## Derived fact 1: rev(rev(duodecuple cons with tail xs)) = duodecuple cons with tail xs
+## Derived fact 1 — rev(rev(duodecuple cons with tail xs)) = duodecuple cons with tail xs
 
 **Coordinate.** List · reverse · double reverse of duodecuple cons · **Derived fact**
 

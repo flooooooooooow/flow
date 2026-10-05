@@ -2,9 +2,9 @@
 
 *Twenty-two plus one is twenty-three.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 22 + 1 = 23
+## Derived fact 1 — 22 + 1 = 23
 
 **Coordinate.** the natural numbers · addition · twenty two plus one is twenty three · **Derived fact**
 

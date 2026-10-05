@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-v
 # @means  If a first is to a second as a third is to a fourth, and a fifth is to a sixth as the third is to a fourth, the sum of the first and fifth is to the second as the sum of the third and seventh is to the fourth.
-# @from   euclid: Elements, Book V, Proposition 21
+# @from   euclid — Elements, Book V, Proposition 21
 # @tier   derived
 # @needs  «Geometry» «Euclid Book V» «Proposition 11: proportional magnitudes satisfy componendo», «Geometry» «Euclid Book V» «Proposition 19: ex aequali proportion in the second form»
 

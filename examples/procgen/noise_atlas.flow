@@ -17,7 +17,7 @@
 #   R reseed   P pause    Esc quit
 #
 # Run (headless, gated):
-#   ./flow record examples/procgen/noise_atlas.flow \
+#   FLOW_HOST=python ./flow record examples/procgen/noise_atlas.flow \
 #       --frames 4 --out /tmp/pg_noise_atlas
 # Run (windowed):
 #   ./flow gfx examples/procgen/noise_atlas.flow

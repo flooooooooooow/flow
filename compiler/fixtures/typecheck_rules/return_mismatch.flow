@@ -1,8 +1,0 @@
-# expect: Function 'name' returns string but should return i32
-function name() -> i32 {
-    return "flow"
-}
-
-function main() -> i32 {
-    return 0
-}

@@ -4,7 +4,7 @@
 
 **Source.** Nat plus seven one
 
-## Derived fact 1: Seven plus one is eight
+## Derived fact 1 — Seven plus one is eight
 
 **Coordinate.** the natural numbers · plus · seven one · **Derived fact**
 

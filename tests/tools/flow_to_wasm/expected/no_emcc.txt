@@ -1,9 +1,0 @@
-🔨 Converting hello.flow to WebAssembly...
-📝 Generated: WORK/cwd/out/no_emcc/hello.c
-⚠️  Emscripten not installed - C file only
-📄 Generated: WORK/cwd/out/no_emcc/hello.html
-✅ Successfully converted hello.flow
-
-🎉 Done! Open the HTML file in your browser.
---- exit 0
---- emcc

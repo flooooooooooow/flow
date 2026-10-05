@@ -11,7 +11,7 @@ accept.
 ## Compiling a program
 
 ```bash
-./flow bpf tests/fixtures/bpf/socket_filter.flow \
+PYTHONPATH=src python3 -m flow.bpf_target tests/fixtures/bpf/socket_filter.flow \
   --target bpfel \
   --entry socket_filter \
   --section socket \
@@ -31,11 +31,6 @@ accept.
 
 The input may be a `.flow` file or LLVM IR (`.ll`), which is useful when
 inspecting what the pipeline produced before the BPF stage.
-
-`flow bpf` runs the Flow program in `scripts/tools/llvm_target`. A Flow source reaches LLVM IR through
-`flow flow-to-llvm`: the flowc MLIR emitter and `flow mlir-lower`,
-the path `flow compile --backend=mlir` takes. A program the emitter does not
-cover yet falls back to the Python MLIR generator with a warning.
 
 A minimal program is an exported function taking the program context:
 
@@ -81,7 +76,8 @@ this means BPF programs work on the stack and on context pointers, within the
 
 ## Entry point naming
 
-The MLIR path emits the definition under the plain Flow name. It looks for `flow_export_<entry>` first and falls back to `<entry>`.
+The target lowers with `--llvm`, so the definition in the IR carries the plain
+Flow name. It looks for `flow_export_<entry>` first and falls back to `<entry>`.
 
 That order matters. The C backend emits both a mangled definition and a visible
 `flow_export_<name>` alias for `--export`, so when both are present the alias is
@@ -108,13 +104,11 @@ rather than trusting the exit code: `llvm-readelf` must report a BPF machine
 type, and `llvm-objdump` must show the named program section and the `license`
 section.
 
-`./flow tool compiler/scripts/parity_targets.flow bpf` covers the ABI header, the
-forbidden-symbol, unwind and dynamic-alloca checks, the metadata decoration and
-every usage error. It compares exit status, message and object bytes with the
-goldens in `tests/targets`.
+Unit coverage for the ABI contract, the forbidden-symbol check and the metadata
+decoration lives in `tests/unit/test_bpf_target.py`.
 
 ## Related
 
-- [WebAssembly](wasm.md): the other freestanding target, with the same
+- [WebAssembly](wasm.md) — the other freestanding target, with the same
   toolchain caveat
-- [MLIR opt flags](mlir-opt-flags.md): the optimizer this path runs through
+- [MLIR opt flags](mlir-opt-flags.md) — the optimizer this path runs through

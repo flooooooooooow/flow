@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  The sum of two angles equals the triangle sum minus the third.
-# @from   euclid: Elements, Book I, Proposition 32
+# @from   euclid — Elements, Book I, Proposition 32
 # @tier   derived
 
 # @means  angle A plus angle B equals two right angles minus angle C.

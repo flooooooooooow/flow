@@ -2,9 +2,9 @@
 
 *Vertical angles come in equal pairs across intersecting lines.*
 
-**Source.** euclid: Elements, Book I, Proposition 15
+**Source.** euclid — Elements, Book I, Proposition 15
 
-## Derived fact 1: angle beta prime equals angle beta
+## Derived fact 1 — angle beta prime equals angle beta
 
 **Coordinate.** the Euclidean plane · intersecting lines · vertical angles form equal pairs · **Derived fact**
 

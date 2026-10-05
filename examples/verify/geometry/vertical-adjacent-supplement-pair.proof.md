@@ -2,9 +2,9 @@
 
 *Adjacent vertical pairs are supplementary.*
 
-**Source.** euclid: Elements, Book I, Proposition 13
+**Source.** euclid — Elements, Book I, Proposition 13
 
-## Derived fact 1: angle alpha plus angle beta prime equals two right angles
+## Derived fact 1 — angle alpha plus angle beta prime equals two right angles
 
 **Coordinate.** the Euclidean plane · intersecting lines · adjacent vertical pairs supplementary · **Derived fact**
 

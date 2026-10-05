@@ -2,9 +2,9 @@
 
 *One is the left multiplicative identity in a ring.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.1
+**Source.** dummit-foote — *Abstract Algebra*, §7.1
 
-## Derived fact 1: 1 * r = r
+## Derived fact 1 — 1 * r = r
 
 **Coordinate.** Ring · multiplication · one is the left multiplicative identity · **Derived fact**
 

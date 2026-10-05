@@ -1,9 +1,0 @@
-# expect: Effect 'Log' has no operation 'warn'
-effect Log {
-    info(msg: string) -> void
-}
-
-function main() -> i32 {
-    Log.warn("hi")
-    return 0
-}

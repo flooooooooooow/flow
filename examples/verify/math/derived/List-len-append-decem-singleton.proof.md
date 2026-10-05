@@ -2,9 +2,9 @@
 
 *Appending ten singletons gives length ten.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len of ten appended singletons equals 10
+## Derived fact 1 — len of ten appended singletons equals 10
 
 **Coordinate.** List · length · append of ten singletons has length ten · **Derived fact**
 

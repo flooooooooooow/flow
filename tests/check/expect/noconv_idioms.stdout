@@ -1,2 +1,0 @@
-  Suggested fix: let unused
-ROOT/one.flow:1:4: hint: [FIDIOM001] Unnecessary 'mut' declaration - Variable 'unused' is declared 'mut' but is never reassigned. Remove 'mut' to make it immutable.

@@ -1,5 +1,0 @@
-# Exits 3, so `flow run` reports a nonzero status.
-function main() -> i32 {
-    println("about to exit 3")
-    return 3
-}

@@ -2,9 +2,9 @@
 
 *Union with itself leaves a finite set unchanged.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: s ∪ s = s
+## Derived fact 1 — s ∪ s = s
 
 **Coordinate.** Finset · union · repeating does not change the set · **Derived fact**
 

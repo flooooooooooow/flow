@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Equal reals can be subtracted from both sides.
-# @from   landau: *Foundations of Analysis*
+# @from   landau — *Foundations of Analysis*
 # @tier   derived
 
 # @means  x + z = y + z implies x = y.

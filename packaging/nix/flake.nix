@@ -15,8 +15,8 @@
         let
           pkgs = nixpkgsFor.${system};
         in {
-          default = pkgs.callPackage ./default.nix { src = ../..; };
-          flow = pkgs.callPackage ./default.nix { src = ../..; };
+          default = pkgs.callPackage ./default.nix {};
+          flow = pkgs.callPackage ./default.nix {};
         });
 
       apps = forAllSystems (system: {

@@ -2,9 +2,9 @@
 
 *An inscribed angle on a major arc exceeds one right angle.*
 
-**Source.** euclid: Elements, Book III, Proposition 20
+**Source.** euclid — Elements, Book III, Proposition 20
 
-## Derived fact 1: angle APB exceeds one right angle on major arc AB
+## Derived fact 1 — angle APB exceeds one right angle on major arc AB
 
 **Coordinate.** the Euclidean plane · circle · inscribed on major arc is obtuse · **Derived fact**
 

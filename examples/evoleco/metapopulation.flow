@@ -22,7 +22,7 @@
 #   1 e/c=0.25   2 e/c=0.50   3 e/c=0.75
 #   R reseed   P pause   Esc quit
 #
-# Run: ./flow record examples/evoleco/metapopulation.flow --frames 4
+# Run: FLOW_HOST=python ./flow record examples/evoleco/metapopulation.flow --frames 4
 
 import "stdlib/gfx.flow"
 import "stdlib/text.flow"

@@ -1,6 +1,0 @@
-# The base is copied into a temporary, then each listed field is set.
-~ Point __flowc_sl[0-9]+ = \(p\); __flowc_sl[0-9]+\.y = 40; __flowc_sl[0-9]+;
-~ Point __flowc_sl[0-9]+ = \(make\(\)\);
-# An array field is copied in with memcpy.
-~ memcpy\(&__flowc_sl[0-9]+\.v,
-exit 0

@@ -2,13 +2,13 @@
 
 *If a first is to a second as a third is to a fourth, and the third is to a fourth as a fifth is to a sixth, the first is to the sixth as the third is to the eighth.*
 
-**Source.** euclid: Elements, Book V, Proposition 23
+**Source.** euclid — Elements, Book V, Proposition 23
 
-## Derived fact 1: If a first is to a second as a third is to a fourth, and the third is to a fourth as a fifth is to a sixth, the first is to the sixth as the third is to the eighth
+## Derived fact 1 — If a first is to a second as a third is to a fourth, and the third is to a fourth as a fifth is to a sixth, the first is to the sixth as the third is to the eighth
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 23: chained proportion yields ex aequali · **Derived fact**
 
-*Source: euclid: Elements, Book V, Proposition 23*
+*Source: euclid — Elements, Book V, Proposition 23*
 
 *Built on: proposition 19: ex aequali proportion in the second form, for Euclid Book V on the Euclidean plane, proposition 20: perturbed proportion implies ex aequali, for Euclid Book V on the Euclidean plane*
 

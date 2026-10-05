@@ -4,7 +4,7 @@
 
 **Source.** Finset union self card bound
 
-## Derived fact 1: Union with self does not increase cardinality
+## Derived fact 1 — Union with self does not increase cardinality
 
 **Coordinate.** Finset · union · self card bound derived · **Derived fact**
 

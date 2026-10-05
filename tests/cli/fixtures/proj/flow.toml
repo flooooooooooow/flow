@@ -1,6 +1,0 @@
-[package]
-name = "cli_golden_proj"
-version = "0.1.0"
-entry = "src/main.flow"
-
-[dependencies]

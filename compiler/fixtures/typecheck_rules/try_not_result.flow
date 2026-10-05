@@ -1,6 +1,0 @@
-# expect: Try operator '?' requires Result type, got i32
-function main() -> i32 {
-    let x: i32 = 1
-    let y: i32 = x?
-    return y
-}

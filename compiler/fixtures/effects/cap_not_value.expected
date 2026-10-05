@@ -1,2 +1,0 @@
-reject
-Capability 'Console' is not a value and cannot be passed as an argument. Install it for the call instead: handle <Effect> with Console { ... }

@@ -5,34 +5,8 @@
 #
 # Invoked by: ./flow install
 
-import std.process { proc_sh, proc_status, proc_which, proc_getenv }
+import "stdlib/process.flow"
 import "stdlib/sys_info.flow"
-
-extern {
-    function puts(s: string) -> i32
-    function strcmp(a: string, b: string) -> i32
-}
-
-function flow_puts(s: string) -> void {
-    let _p: i32 = puts(s)
-}
-
-# A shell command line with its output passed through; the exit code.
-function run_cmd(cmd: string) -> i32 {
-    return proc_status(proc_sh(cmd))
-}
-
-function have_cmd(name: string) -> bool {
-    return strcmp(proc_which(name), "") != 0
-}
-
-function env_is(name: string, want: string) -> bool {
-    return strcmp(proc_getenv(name), want) == 0
-}
-
-function str_eq(a: string, b: string) -> bool {
-    return strcmp(a, b) == 0
-}
 
 function say(msg: string) -> void {
     flow_puts(msg)
@@ -153,7 +127,7 @@ function ensure_gfx_deps() -> i32 {
         ok("macOS gfx uses Cocoa (no SDL2 required)")
         return 0
     }
-    let mut rc: i32 = 0
+    let rc: i32 = 0
     if ensure("pkg-config", "pkg-config", false) != 0 {
         rc = 1
     }
@@ -165,7 +139,7 @@ function ensure_gfx_deps() -> i32 {
         }
     }
     info("SDL2 missing — installing (needed for gfx / window on this OS)")
-    let mut code: i32 = 1
+    let code: i32 = 1
     let pm: string = pkg_manager()
     if str_eq(pm, "brew") {
         code = install_pkg("sdl2")

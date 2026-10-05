@@ -1,5 +1,0 @@
-[0;34mℹ️  Generating GPU shaders from @ROOT@/examples/gpu/vector_add_gpu.flow (metal)...[0m
-✅ Generated Metal shader: @ROOT@/build/gpu/vector_add.metal
-✅ Generated Metal shader: @ROOT@/build/gpu/vector_scale.metal
-✅ Generated Metal shader: @ROOT@/build/gpu/vector_saxpy.metal
-Generated 3 GPU shader(s)

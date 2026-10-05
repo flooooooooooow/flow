@@ -2,9 +2,9 @@
 
 *Choosing all items from n gives exactly one subset.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: choose(n, n) = 1
+## Derived fact 1 — choose(n, n) = 1
 
 **Coordinate.** Comb · choose · choosing all gives one · **Derived fact**
 

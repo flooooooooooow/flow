@@ -123,7 +123,7 @@ recorded, so `--frames 4` prints exactly the same numbers as `--frames 900`.
 Or regenerate the whole gallery at once:
 
 ```flow-pseudocode
-./flow tool record_demos --group neuro
+python3 scripts/record_demos.py --group neuro
 ```
 
 The GIFs land in [`docs/demos/neuro/`](../../docs/demos/neuro.md).

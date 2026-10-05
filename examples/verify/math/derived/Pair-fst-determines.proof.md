@@ -2,9 +2,9 @@
 
 *First projection determines the first component.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Product_type
+**Source.** church — https://en.wikipedia.org/wiki/Product_type
 
-## Derived fact 1: fst(pair(a, b)) = a
+## Derived fact 1 — fst(pair(a, b)) = a
 
 **Coordinate.** Pair · first projection · first component determines · **Derived fact**
 

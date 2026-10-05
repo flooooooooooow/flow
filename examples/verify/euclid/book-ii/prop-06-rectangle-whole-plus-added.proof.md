@@ -2,13 +2,13 @@
 
 *If a straight line is bisected and a straight line is added in a straight line, the rectangle by the whole with the added line and the added line together with the square on the half equals the square on the line made of the half and the added line.*
 
-**Source.** euclid: Elements, Book II, Proposition 6
+**Source.** euclid — Elements, Book II, Proposition 6
 
-## Derived fact 1: If a straight line is bisected and a straight line is added in a straight line, the rectangle by the whole with the added line and the added line together with the square on the half equals the square on the line made of the half and the added line
+## Derived fact 1 — If a straight line is bisected and a straight line is added in a straight line, the rectangle by the whole with the added line and the added line together with the square on the half equals the square on the line made of the half and the added line
 
 **Coordinate.** the Euclidean plane · Euclid Book II · Proposition 6: the rectangle by the whole with an added line plus the square on the half equals a square · **Derived fact**
 
-*Source: euclid: Elements, Book II, Proposition 6*
+*Source: euclid — Elements, Book II, Proposition 6*
 
 *Built on: proposition 4: the square on the whole equals the squares on the parts plus twice their rectangle, for Euclid Book II on the Euclidean plane*
 

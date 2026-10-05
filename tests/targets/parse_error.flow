@@ -1,3 +1,0 @@
-export function broken( -> i32 {
-    return 1
-}

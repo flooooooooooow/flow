@@ -1,23 +1,23 @@
-# Tiny Pointers: arXiv:2111.12800 (Bender, Conway, Farach-Colton, Kuszmaul,
-# Tagliavini): implemented in Flow.
+# Tiny Pointers — arXiv:2111.12800 (Bender, Conway, Farach-Colton, Kuszmaul,
+# Tagliavini) — implemented in Flow.
 #
 # A dereference table lets n "users" (keys) each own one slot in a shared
 # value array. A naive implementation hands each user a log n-bit pointer.
 # The paper's key insight: because the key and the pointer are *both* known
 # at dereference time, the pointer itself only needs to encode the slot
-# within a hash-derived bucket: o(log n) bits total.
+# within a hash-derived bucket — o(log n) bits total.
 #
 # This example implements the paper's optimal FIXED-SIZE construction
 # (Theorem 1, size O(log log log n + log δ^-1)):
 #
-#   Primary table  : a load-balancing table: hash the key into one of
+#   Primary table   — a load-balancing table: hash the key into one of
 #                     m/b buckets of b slots, return the slot index. Fails
 #                     (overflows) on a ~δ² fraction of allocations.
-#   Secondary table: a power-of-two-choices table at sparse load factor:
+#   Secondary table — a power-of-two-choices table at sparse load factor:
 #                     hash into TWO buckets, place in the one with more
 #                     free slots; the pointer stores 1 bit of choice + the
 #                     slot. Absorbs the primary's overflow w.h.p.
-#   Tiny pointer   : 1 bit (which table) + log b bits (slot in bucket).
+#   Tiny pointer    — 1 bit (which table) + log b bits (slot in bucket).
 #
 # Concrete instance: n = 65536 slots (log n = 16 bits), δ = 1/4, so
 # b = 32 for the primary and b = 8 for the secondary:
@@ -25,7 +25,7 @@
 #     tiny pointer = 6 bits   vs   raw pointer = 16 bits   (62% fewer bits)
 #
 # On top of the dereference table we implement the paper's THIRD
-# application: a space-efficient STABLE dictionary (Theorem 8): the
+# application — a space-efficient STABLE dictionary (Theorem 8): the
 # dictionary's value array is replaced by an array of tiny pointers into
 # the dereference table, so a value's position never changes after insert
 # (referential integrity), at O(log v) extra bits per value.
@@ -36,11 +36,11 @@
 # exponential (Pr[size ≥ ℓ] ≤ 2^(−2^Ω(ℓ))). Phase 5 loads 49152 keys
 # naturally (~98% get 3-bit pointers); Phase 6 forces an adversarial
 # cascade of 20 keys into one container (found by offline bit-exact hash
-# search) that drills to level 3 and engages the overflow arrays: and
+# search) that drills to level 3 and engages the overflow arrays — and
 # still never exceeds an 11-bit pointer. The empirical size distribution
 # is checked against the theoretical tail bound.
 #
-# Phase 7-8 implement the paper's FIRST application: RELAXED RETRIEVAL
+# Phase 7-8 implement the paper's FIRST application — RELAXED RETRIEVAL
 # (Theorem 6, Section 6.2). Classic dynamic retrieval provably costs
 # Ω(log log n) metadata bits per value. Relax the contract: Insert(x, y)
 # returns an O(1)-expected hint r the user keeps, and Query(x, r) / Delete(x, r)
@@ -49,26 +49,26 @@
 # that slot. H's keys come from the tiny universe [2n], so H costs nv + O(n)
 # bits (log C(2n,n) = O(n) by Stirling). Phase 7 measures the hint-size
 # distribution against the Ω(log log n) lower bound; Phase 8 churns with
-# tombstoned deletes, forces adversarial hints, and rebuilds H: all hints
+# tombstoned deletes, forces adversarial hints, and rebuilds H — all hints
 # survive untouched. Phase 8b sweeps the THEOREM 6 TRADEOFF: r = 1..4 levels
 # of indirection in the dereference table give O(r)-time insertions/deletions
-# against nv + O(n log⁽ʳ⁾ n) bits: the retriever (level-0 slot code) costs
+# against nv + O(n log⁽ʳ⁾ n) bits — the retriever (level-0 slot code) costs
 # w₀ = ⌈log⁽ʳ⁾ n⌉ bits (15 → 4 → 2 → 1 at n = 2^14) while the worst-case
 # cascade descends all r levels.
 #
-# Phase 9-10 implement the paper's SECOND application: SUCCINCT ROTATION-
+# Phase 9-10 implement the paper's SECOND application — SUCCINCT ROTATION-
 # BASED BINARY SEARCH TREES (Theorem 7, Section 6.3). Each node stores its
 # key/value plus two tiny retrievers (r₁ for the left child keyed on x◦0, r₂
 # for the right child keyed on x◦1); the dereference table's store IS the node
 # array, so a child is read in O(1) by dereferencing the retriever. A rotation
-# rewrites only 2-3 store slots: nodes and retrievers never move: so the
+# rewrites only 2-3 store slots — nodes and retrievers never move — so the
 # structure stays nk + O(n) bits while rotations remain constant-time.
 # Phase 9 builds an AVL tree from 16384 SORTED keys (maximal rotations) and
 # verifies order, balance, and that every retriever/slot/position is intact;
 # Phase 10 storms 20000 random rotations and shows in-order order is preserved
 # with zero pointer movement.
 #
-# Phase 11 implements the paper's FOURTH application: VARIABLE-SIZE VALUE
+# Phase 11 implements the paper's FOURTH application — VARIABLE-SIZE VALUE
 # DICTIONARIES (Theorem 9, Section 6.5). Any dictionary designed for uniform-
 # size values can store arbitrary-length values (up to O(1) machine words):
 # each v-bit value lives in size class ⌈log₂ v⌉, whose slots are exactly
@@ -88,7 +88,7 @@
 # key side runs the same r-levels-of-indirection chain, so 128/256-bit keys
 # live in a compact key arena behind a 5-bit p₁ held in an 8-bit base holder
 # slot (flag bit 7 = chained key), and the base pointer stays 8 bits for every
-# key size: the key analogue of Phase 15's base-pointer independence. The
+# key size — the key analogue of Phase 15's base-pointer independence. The
 # measured combined space is reported against BOTH uniform baselines: 64+64
 # (the old caps) and 256+64 (the new caps).
 #
@@ -102,12 +102,12 @@
 # (Section 6.1, part of Theorem 9's proof): the class storage grows/shrinks
 # incrementally at a fixed per-op budget (RV_BUDGET = 16 values migrated +
 # RV_SCAN = 64 registry entries per op) with an epoch cursor and a second,
-# destination generation: the worst single op drops from 143,363 work units
+# destination generation — the worst single op drops from 143,363 work units
 # (the naive Θ(live) trigger-op copy) to 81.
 #
 # Phase 15 implements the paper's r-LEVELS OF INDIRECTION chain (Theorem 9's
-# proof, Section 6.5): a k-bit value is stored at the end of a linked list , 
-# 'value k bits ← p₁ of O(log k) bits ← … ← base pointer of O(log⁽ʳ⁾ n) bits' , 
+# proof, Section 6.5): a k-bit value is stored at the end of a linked list —
+# 'value k bits ← p₁ of O(log k) bits ← … ← base pointer of O(log⁽ʳ⁾ n) bits' —
 # lifting the v ≤ 64 cap. 128/256-bit values live in a level-1 arena behind a
 # 5-bit p₁ held in an 8-bit base slot, and the base pointer stays 8 bits for
 # EVERY value size (the paper's base-pointer independence). Space is measured
@@ -115,23 +115,23 @@
 #
 # Phase 15 (r = 3 extension) inserts the paper's O(log log k) MIDDLE pointer:
 # values up to 2^32 bits flow through base(8 bits) → p₂(6 bits) → p₁(5 bits)
-# → value: a three-level chain. The value words live in a shared pool behind
+# → value — a three-level chain. The value words live in a shared pool behind
 # the 5-bit p₁; p₁ lives in a level-2 table behind the 6-bit p₂; the 8-bit
-# base slot holds p₂. Every level's pointer stays CONSTANT as v grows: the
-# base never changes from its 8 bits: and the chain's per-big-value overhead
+# base slot holds p₂. Every level's pointer stays CONSTANT as v grows — the
+# base never changes from its 8 bits — and the chain's per-big-value overhead
 # rises from 13 bits (r=2: 8-bit holder + 5-bit p₁) to 19 bits (r=3: 8-bit
 # holder + 6-bit p₂ + 5-bit p₁) while the value cap lifts from 256 bits to
 # 2^32 bits.
 #
-# Phase 16 implements the paper's FINAL application: the OPTIMAL INTERNAL-
+# Phase 16 implements the paper's FINAL application — the OPTIMAL INTERNAL-
 # MEMORY STASH (Theorem 10, Section 6.6). External memory is a dereference
 # table with load factor 1 − ε (ε = 3/4): ST_NB buckets × ST_B slots, and each
-# key's bucket is IMPLICIT: a pure two-choice hash of the key. The internal
+# key's bucket is IMPLICIT — a pure two-choice hash of the key. The internal
 # stash therefore stores only the intra-bucket address per key: 1 choice bit +
 # log₂(ST_B) slot bits = a 4-bit tiny pointer = Θ(log ε⁻¹), never
 # log₂((1+ε)m) = 15 bits (the naive full-address stash). Stash lookup is the
 # adaptive filter of Bender et al.: keys are binned by their hash quotient
-# (the bin index IS the quotient: stored nowhere), every entry carries a
+# (the bin index IS the quotient — stored nowhere), every entry carries a
 # PREFIX-FREE fingerprint whose length grows only enough to separate bin-mates
 # (the paper's adaptivity bits, O(m) total), and Query(k) finds its entry in
 # O(1) expected RAM steps then reads external memory EXACTLY ONCE. Inserts and
@@ -141,7 +141,7 @@
 #
 # Everything is self-verifying: every allocation is checked by re-running
 # Dereference(key, pointer) and comparing against the recorded position and
-# value. Run with:  ./flow run examples/systems/tiny_pointers.flow
+# value. Run with:  FLOW_HOST=python ./flow run examples/systems/tiny_pointers.flow
 
 extern {
     function malloc(size: i64) -> ptr<u8>
@@ -150,7 +150,7 @@ extern {
     function printf(fmt: string, val: f64) -> i32
 }
 
-# Wall-clock (monotonic) nanosecond counter: powers the benchmark block.
+# Wall-clock (monotonic) nanosecond counter — powers the benchmark block.
 function now_ns() -> i64 {
     return flow_rt_monotonic_ns()
 }
@@ -168,7 +168,7 @@ const N_SLOTS: i32 = 65536        # total slots in the dereference table
 const LOG_N: i32 = 16             # bits in a raw pointer (log2 N_SLOTS)
 const DELTA_NUM: i32 = 1          # δ = 1/4
 const DELTA_DEN: i32 = 4
-const MAX_LIVE: i32 = 49152       # (1 - δ)·n: load factor 0.75
+const MAX_LIVE: i32 = 49152       # (1 - δ)·n — load factor 0.75
 
 const P_SLOTS: i32 = 57344        # primary size  (1 - δ/2)·n
 const P_BUCKET: i32 = 32          # b_primary = Θ(δ^-2 log δ^-1) ≈ 32
@@ -203,17 +203,18 @@ function hash_u32(x: i32, salt: i32) -> i32 {
 
 # xorshift32 PRNG. Deterministic per seed, so the whole demo is reproducible.
 function rng_next(state: ptr<i32>) -> i32 {
-    # Keep the bit generator unsigned. Signed left shifts become invalid when
-    # the high bit is set, which occurs during the scaled churn benchmark.
-    let mut x: u32 = state[0] as u32
+    let mut x: i32 = state[0]
     if x == 0 {
-        x = 2463534242 as u32
+        x = 2463534242
     }
     x = x ^ (x << 13)
     x = x ^ (x >> 17)
     x = x ^ (x << 5)
-    state[0] = x as i32
-    return (x & 2147483647) as i32
+    state[0] = x
+    if x < 0 {
+        x = 0 - x
+    }
+    return x
 }
 
 # Distinct keys via modular multiplication: key_i = i·11469 mod 2^24.
@@ -227,8 +228,8 @@ function distinct_key(i: i32) -> i32 {
 # ============================================================================
 
 struct PrimaryTable {
-    counts: ptr<i32>,   # P_BUCKETS: occupied count per bucket
-    bitmap: ptr<i32>    # P_BUCKETS: one 32-bit word per bucket
+    counts: ptr<i32>,   # P_BUCKETS — occupied count per bucket
+    bitmap: ptr<i32>    # P_BUCKETS — one 32-bit word per bucket
 }
 
 struct SecondaryTable {
@@ -346,7 +347,7 @@ function tp_dereference(pr: PrimaryTable, sec: SecondaryTable, key: i32, tp: i32
 }
 
 # Free a slot, clearing the bucket bitmap. The key is needed to find the
-# bucket: exactly as in the paper's Free(k, p).
+# bucket — exactly as in the paper's Free(k, p).
 function tp_free(pr: PrimaryTable, sec: SecondaryTable, key: i32, tp: i32) {
     if (tp & TP_TABLE_BIT) == 0 {
         let b: i32 = hash_u32(key, 1) % P_BUCKETS
@@ -560,13 +561,13 @@ function dmap_lookup(m: ptr<DMap>, key: i32) -> i32 {
     return -1
 }
 
-# NOTE: no dmap_delete: open addressing needs tombstones for safe deletion,
+# NOTE: no dmap_delete — open addressing needs tombstones for safe deletion,
 # and the demo only ever inserts + rebuilds. The paper's stable-dictionary
 # transformation only requires Insert/Lookup/rebuild to preserve tiny pointers.
 
 # Rebuild the map from scratch (simulates any dictionary-internal movement:
 # resize, rehash, compaction). Allocates brand-new arrays with a different
-# hash seed and swaps them in: tiny pointers are copied verbatim, so this
+# hash seed and swaps them in — tiny pointers are copied verbatim, so this
 # proves they survive a full reallocation.
 function dmap_rebuild(m: ptr<DMap>) -> i32 {
     let mut moved: i32 = 0
@@ -622,12 +623,12 @@ function dmap_rebuild(m: ptr<DMap>) -> i32 {
 }
 
 # ============================================================================
-# Theorem 2: VARIABLE-SIZE tiny pointers (paper Section 4, Proposition 1)
+# Theorem 2 — VARIABLE-SIZE tiny pointers (paper Section 4, Proposition 1)
 #
 # The fixed-size construction caps every pointer at O(log log log n + log δ⁻¹)
 # bits. Variable-size pointers break the log log log n barrier entirely:
 # Theorem 2 gives pointers of O(1 + log δ⁻¹) EXPECTED bits, with a doubly-
-# exponential concentration bound: Pr[size ≥ ℓ] ≤ 2^(−2^Ω(ℓ)).
+# exponential concentration bound — Pr[size ≥ ℓ] ≤ 2^(−2^Ω(ℓ)).
 #
 # Construction (each of the n/log n CONTAINERS is an independent mini-table):
 #   • hash key → one of n/log n containers; each holds at most s = c·log n keys;
@@ -635,7 +636,7 @@ function dmap_rebuild(m: ptr<DMap>) -> i32 {
 #     sᵢ = s/2ⁱ buckets of b slots each (b = 2 here);
 #   • Lᵢ = #values stored in levels ≥ i (tables + overflow arrays); the
 #     deterministic invariant Lᵢ ≤ sᵢ holds at all times;
-#   • Allocate: descend i = 0, 1, …: try level-i table; on bucket-full, recurse
+#   • Allocate: descend i = 0, 1, … — try level-i table; on bucket-full, recurse
 #     to level i+1 only if Lᵢ₊₁ < sᵢ₊₁, else place in level-i OVERFLOW ARRAY
 #     (sᵢ slots; can never fill because Lᵢ ≤ sᵢ).
 #
@@ -643,7 +644,7 @@ function dmap_rebuild(m: ptr<DMap>) -> i32 {
 #   • table slot at level i:  Elias-γ(i+1)  +  1 table-bit  +  ⌈log₂b⌉ slot-bits
 #                             = O(log i) bits;
 #   • overflow slot at level i: Elias-γ(log₂s − i) + 1 + ⌈log₂ sᵢ⌉ = O(log sᵢ).
-#   (Elias-γ(x) = 2⌊log₂x⌋+1 bits: a real prefix code, so these ARE the bit
+#   (Elias-γ(x) = 2⌊log₂x⌋+1 bits — a real prefix code, so these ARE the bit
 #   lengths a concrete implementation would store.)
 #
 # Tail bound from the paper: Pr[level ≥ i] ≤ 1/bⁱ, and Pr[overflow at i] ≤
@@ -653,16 +654,16 @@ function dmap_rebuild(m: ptr<DMap>) -> i32 {
 #
 # Concrete instance: n = 65536, log n = 16, containers = 4096, s = 32, b = 2,
 # levels = 5, sᵢ = 32, 16, 8, 4, 2. Each container is 186 slots:
-#   tables:   L0: 0-63   L1: 64-95   L2: 96-111  L3: 112-119  L4: 120-123
-#   overflow: O0: 124-155 O1: 156-171 O2: 172-179 O3: 180-183 O4: 184-185
+#   tables:   L0: 0–63   L1: 64–95   L2: 96–111  L3: 112–119  L4: 120–123
+#   overflow: O0: 124–155 O1: 156–171 O2: 172–179 O3: 180–183 O4: 184–185
 #
 # Phase 5 (natural): 49152 uniform keys → ~98% get 3-bit pointers, ~2% get
-# 5-bit, ~nothing deeper: the tail is invisible at this scale.
+# 5-bit, ~nothing deeper — the tail is invisible at this scale.
 # Phase 6 (adversarial): 20 keys that hash to the SAME container AND the same
 # level-0 bucket (found by offline bit-exact search) force a cascade down the
 # levels; overflow arrays engage when Lᵢ₊₁ reaches sᵢ₊₁. Even under this
 # worst case every pointer still dereferences correctly and sizes reach only
-# 10-11 bits: versus 16 bits for a raw pointer.
+# 10–11 bits — versus 16 bits for a raw pointer.
 
 const V_N_CONTAINERS: i32 = 4096      # n / log n
 const V_S: i32 = 32                   # container capacity s = 2·log n
@@ -670,17 +671,17 @@ const V_B: i32 = 2                    # bucket slots
 const V_LEVELS: i32 = 5               # log₂ s
 const V_SLOTS_PER_CTR: i32 = 186      # tables 124 + overflow 62
 const V_MAX_LIVE: i32 = 49152         # keys loaded; matches phase 1's count. Note:
-#   Proposition 1 only promises Ω(1) load factor: here 49152/(4096·186) ≈ 6.5%.
+#   Proposition 1 only promises Ω(1) load factor — here 49152/(4096·186) ≈ 6.5%.
 #   Theorem 2's 1 − δ load factor comes from the paper's primary/secondary
 #   reduction (this construction is the δn/2-slot secondary), not from this
 #   standalone mini-table.
 
 const R_MAX_LIVE: i32 = 49152       # relaxed-retrieval demo capacity (keys)
-const RH_CAP: i32 = 131072          # H capacity: load ≤ 0.375 at 49152 keys
+const RH_CAP: i32 = 131072          # H capacity — load ≤ 0.375 at 49152 keys
 const CHURN_OPS: i32 = 30000        # Phase 2/3 dynamic churn op counts
 const R_CHURN_OPS: i32 = 20000      # Phase 8 relaxed-retrieval churn op counts
 
-# --- Phase 8b: Theorem 6 tradeoff: r levels of indirection (paper §6.2) ---
+# --- Phase 8b: Theorem 6 tradeoff — r levels of indirection (paper §6.2) ---
 const RR_N: i32 = 16384            # keys per r-run (2^14; universe 2n = 2^15)
 const RR_CHURN: i32 = 8000          # timed insert/delete ops per r-run
 const RR_ADV: i32 = 64              # adversarial keys forced into one bucket chain
@@ -689,7 +690,7 @@ const RR_ADV: i32 = 64              # adversarial keys forced into one bucket ch
 
 const BST_N: i32 = 16384            # BST nodes: keys 0..BST_N-1 inserted in order
 const BST_STORM: i32 = 20000        # random rotations after the AVL build
-const BST_NULL: i32 = -2            # null edge: must differ from the table's
+const BST_NULL: i32 = -2            # null edge — must differ from the table's
 #   free marker -1, so a null child never looks like a free table slot
 
 const VD_CLASSES: i32 = 7        # value size classes j = 0..6 → slots of 1,2,4,8,16,32,64 bits
@@ -707,7 +708,7 @@ const KDK_CONTROL_BIG: i32 = 1024  # uniform 256+64-bit control (fixed, not scal
 const RV_CLASSES: i32 = 7        # same size classes as the VDTable
 const RV_VB: i32 = 8             # slots per bucket
 const RV_B0: i32 = 512           # initial buckets per class (grows ×2, shrinks ÷2)
-const RV_B_MIN: i32 = 512        # shrink floor: never halve below this
+const RV_B_MIN: i32 = 512        # shrink floor — never halve below this
 const RV_BUDGET: i32 = 16        # values migrated per op (deamortized budget)
 const RV_SCAN: i32 = 64          # registry entries examined per op
 const RV_LOAD: i32 = 30000       # keys in the initial load (≈ 3 resize grows)
@@ -718,7 +719,7 @@ const RV_RELOAD: i32 = 25000     # reload after drain (grow-after-shrink)
 # --- Phase 15: r-levels of indirection (paper Theorem 9 proof, Section 6.5) --
 const RL_KEYS: i32 = 12288       # keys in the r-levels dictionary
 const RL_CHURN: i32 = 4000       # churn ops after the load
-const RL_ARENA_B: i32 = 2048     # level-1 arena buckets per class: shared by
+const RL_ARENA_B: i32 = 2048     # level-1 arena buckets per class — shared by
 #   Phase 15's VALUE arena and Phase 12's KEY arena. Sized to the BIG-KEY
 #   population of Phase 12 (≈10% of 49152 pairs = ≈4900 chained keys over 2
 #   classes ≈ 1.7/bucket at 2048), NOT to either key space: the arena is the
@@ -741,10 +742,10 @@ const ST_M: i32 = 8192        # keys in the stash (external load = m)
 const ST_NB: i32 = 4096       # external buckets (two-choice placement)
 const ST_B: i32 = 8           # slots per bucket → 4m external slots, load 1/4
 const ST_EXT: i32 = 32768     # ST_NB × ST_B = 4m slots; the proof's dereference
-#   table has load factor 1 − ε = 1/4 (ε = 3/4): the intro's (1+ε)m is the
+#   table has load factor 1 − ε = 1/4 (ε = 3/4) — the intro's (1+ε)m is the
 #   loose framing; the tiny pointer Θ(log ε⁻¹) is what the demo measures
 const ST_BINS: i32 = 2048     # stash quotient bins (avg m/ST_BINS = 4 per bin)
-const ST_Q_BITS: i32 = 11     # log2(ST_BINS): quotient width; rest = h >> Q_BITS
+const ST_Q_BITS: i32 = 11     # log2(ST_BINS) — quotient width; rest = h >> Q_BITS
 const ST_C1_SALT: i32 = 8     # first candidate bucket (implicit, never stored)
 const ST_C2_SALT: i32 = 9     # second candidate bucket (implicit, never stored)
 const ST_Q_SALT: i32 = 7      # quotient + fingerprint rest (implicit, never stored)
@@ -1018,7 +1019,7 @@ function elias_bits(x: i32) -> i32 {
     return 2 * lg + 1
 }
 
-# floor(log₂ x) for x ≥ 1: used for the AVL height bound at any n.
+# floor(log₂ x) for x ≥ 1 — used for the AVL height bound at any n.
 function log2i(x: i32) -> i32 {
     let mut lg: i32 = 0
     let mut v: i32 = x >> 1
@@ -1124,32 +1125,32 @@ function vtail_report(reg: ptr<Registry>) -> i32 {
 }
 
 # ============================================================================
-# Theorem 6: RELAXED RETRIEVAL (paper Section 6.2, Theorem 6)
+# Theorem 6 — RELAXED RETRIEVAL (paper Section 6.2, Theorem 6)
 #
 # Classic dynamic retrieval (Insert/Delete/Query on k-bit keys with v-bit
-# values) provably costs Ω(log log n) metadata bits per value: even for
+# values) provably costs Ω(log log n) metadata bits per value — even for
 # v = 1. Relax the contract: Insert(x, y) returns an O(1)-expected hint r;
 # Query(x, r) and Delete(x, r) present both. The hint is just a variable-size
 # tiny pointer, and the pair (x, r) does NOT have to encode the position of y:
 # a small auxiliary structure helps recover it.
 #
 # Construction: reuse the Theorem-2 dereference table but treat its store as
-# unused: 'we need not even allocate space for it'. Allocate(x) → hint r;
+# unused — 'we need not even allocate space for it'. Allocate(x) → hint r;
 # s_x = Dereference(x, r) is a slot UNIQUE to x. The value y is stored in a
 # hash table H keyed by slot: Query(x,r) = H[s_x], Delete(x,r) = H[s_x] + Free.
 # H's keys come from the tiny universe [2n], so log C(2n,n) = O(n) bits by
-# Stirling's approximation: H costs nv + O(n) total. H is pure auxiliary
+# Stirling's approximation — H costs nv + O(n) total. H is pure auxiliary
 # metadata: it may rehash, move, or be rebuilt; hints never care.
 #
 # Phase 7 loads 49152 keys and measures the hint-size distribution against the
 # Ω(log log n) = 4-bit lower bound at n = 2^16. Phase 8 churns (tombstoned
-# deletes: deletion is part of the API), forces 20 adversarial hints through
+# deletes — deletion is part of the API), forces 20 adversarial hints through
 # one container, then REBUILDS H with a new seed: every hint must survive.
 # ============================================================================
 
 struct RHash {
-    key: ptr<i32>,    # RH_CAP: slot numbers (-1 empty)
-    val: ptr<i32>,    # RH_CAP: v-bit values
+    key: ptr<i32>,    # RH_CAP — slot numbers (-1 empty)
+    val: ptr<i32>,    # RH_CAP — v-bit values
     state: ptr<i32>,  # 0 empty, 1 occupied, 2 tombstone
     seed: ptr<i32>
 }
@@ -1186,7 +1187,7 @@ function rhash_destroy(h: RHash) {
 # Find `slot` in H. Returns: 0 ≤ idx < RH_CAP if found; RH_CAP if the table
 # is full; otherwise 0 - idx - 1 where idx is the insertion point (first
 # tombstone, else first empty slot, in the probe chain). Lookups must NOT stop
-# at tombstones: only at empty slots.
+# at tombstones — only at empty slots.
 function rhash_find(h: ptr<RHash>, slot: i32) -> i32 {
     let seed: i32 = h[0].seed[0]
     let mut idx: i32 = hash_u32(slot, seed) % RH_CAP
@@ -1342,7 +1343,7 @@ function rhash_count(h: ptr<RHash>) -> i32 {
 
 # Insert(x, y): allocate a slot, hand the tiny pointer to the USER as the
 # hint r, and store (s_x, y) in H. The dereference table's store is never
-# read: we only use the uniqueness of the slot it hands out.
+# read — we only use the uniqueness of the slot it hands out.
 function rreg_insert(reg: ptr<Registry>, vt: ptr<VarTable>, h: ptr<RHash>,
                      key: i32, value: i32) -> i32 {
     let idx: i32 = reg[0].next_idx[0]
@@ -1352,8 +1353,8 @@ function rreg_insert(reg: ptr<Registry>, vt: ptr<VarTable>, h: ptr<RHash>,
     let mut pos: i32 = 0
     # Paper precondition: every Insert is on a key x not already in S. The
     # registry never deduplicates, so duplicate keys would simply get their
-    # own slot + H cell (each entry verifies independently: still correct).
-    let tp: i32 = vtp_allocate(vt, key, 1, &pos)   # store unused: marker 1
+    # own slot + H cell (each entry verifies independently — still correct).
+    let tp: i32 = vtp_allocate(vt, key, 1, &pos)   # store unused — marker 1
     if tp < 0 {
         return 0
     }
@@ -1395,7 +1396,7 @@ function rreg_delete_random(reg: ptr<Registry>, vt: ptr<VarTable>, h: ptr<RHash>
 }
 
 # Evict every live key that hashes to container `cid`, deleting its slot
-# from BOTH the dereference table (vtp_free) and H (rhash_delete): the
+# from BOTH the dereference table (vtp_free) and H (rhash_delete) — the
 # auxiliary structure must never hold an entry whose key is gone.
 function rreg_evict_container(reg: ptr<Registry>, vt: ptr<VarTable>, h: ptr<RHash>,
                               cid: i32) -> i32 {
@@ -1423,7 +1424,7 @@ function rreg_evict_container(reg: ptr<Registry>, vt: ptr<VarTable>, h: ptr<RHas
 
 # Verify EVERY live key: Query(x, r) = H[Dereference(x, r)] must return the
 # recorded value. dups_out counts lookup failures caused by two keys sharing
-# a slot (uniqueness is the whole construction: it must be zero).
+# a slot (uniqueness is the whole construction — it must be zero).
 function rreg_verify(reg: ptr<Registry>, vt: ptr<VarTable>, h: ptr<RHash>,
                      dups_out: ptr<i32>) -> i32 {
     let mut errors: i32 = 0
@@ -1447,7 +1448,7 @@ function rreg_verify(reg: ptr<Registry>, vt: ptr<VarTable>, h: ptr<RHash>,
 }
 
 # ============================================================================
-# Phase 8b: Theorem 6 TRADEOFF: r levels of indirection (paper Section 6.2)
+# Phase 8b — Theorem 6 TRADEOFF: r levels of indirection (paper Section 6.2)
 #
 # Theorem 6 promises the tradeoff curve: with r levels of indirection,
 # insertions/deletions take O(r) time and the total space is nv + O(n log⁽ʳ⁾ n)
@@ -1455,16 +1456,16 @@ function rreg_verify(reg: ptr<Registry>, vt: ptr<VarTable>, h: ptr<RHash>,
 # dereference table is an r-level chain of keyed buckets, and measures BOTH
 # sides of the curve:
 #
-#   · TIME: Insert(x) descends level 0 → 1 → … until a bucket has room;
+#   · TIME — Insert(x) descends level 0 → 1 → … until a bucket has room;
 #     Delete(x, r) descends to the retriever's level. Worst case (every level
 #     a single bucket, adversarial placement) the descent walks all r levels:
-#     O(r) per insertion/deletion. Expected case stays O(1): overflows are
-#     rare at load 1/2: and that is measured too.
-#   · SPACE: the level-0 bucket capacity is 2^⌈log⁽ʳ⁾ n⌉, so the retriever
-#     (the base slot code the user holds) costs w₀ = ⌈log⁽ʳ⁾ n⌉ bits: the
+#     O(r) per insertion/deletion. Expected case stays O(1) — overflows are
+#     rare at load 1/2 — and that is measured too.
+#   · SPACE — the level-0 bucket capacity is 2^⌈log⁽ʳ⁾ n⌉, so the retriever
+#     (the base slot code the user holds) costs w₀ = ⌈log⁽ʳ⁾ n⌉ bits — the
 #     "O(n log⁽ʳ⁾ n)" term. Measured at n = 2^14: w₀ = 15 → 4 → 2 → 1 bits/key
 #     for r = 1..4 (r = 1 is the paper's (1 + log n)-bit slot number over the
-#     [2n] universe: the spendthrift end), while the values cost nv
+#     [2n] universe — the spendthrift end), while the values cost nv
 #     untouched. Deeper levels hold exponentially larger buckets
 #     (2^w₀, 2^2w₀, …, up to the full 2^(1+log n) value universe), so the
 #     chain telescopes: Σᵢ wᵢ = 1 + log n exactly.
@@ -1473,10 +1474,10 @@ function rreg_verify(reg: ptr<Registry>, vt: ptr<VarTable>, h: ptr<RHash>,
 # buckets of Bᵢ = 2^wᵢ slots, wᵢ = 2^i·w₀ (i < r−1) and w_{r−1} = the
 # remainder. Natural run: n keys over 2n slots/level (load 1/2). Adversarial
 # run: NBᵢ = 1 at every level, so all RR_ADV keys collide at every level and
-# cascade to the deepest bucket: the measured O(r) worst case.
+# cascade to the deepest bucket — the measured O(r) worst case.
 #
 # Values live in the level-(r−1) buckets (the nv bits); intermediate entries
-# are keyed with full-key compare and EXACT-slot retrievers (no tombstones , 
+# are keyed with full-key compare and EXACT-slot retrievers (no tombstones —
 # the retriever names the precise slot, so delete is a single clear).
 
 struct RrChain {
@@ -1486,7 +1487,7 @@ struct RrChain {
     nb: ptr<i32>,     # per-level bucket counts (4)
     bw: ptr<i32>,     # per-level bucket widths w_i (4): B_i = 2^w_i
     r: i32,
-    fp: i32           # salt base: bucket = hash(key, fp + level) % nb[level]
+    fp: i32           # salt base — bucket = hash(key, fp + level) % nb[level]
 }
 
 # ceil(log2 x) for x ≥ 1.
@@ -1528,7 +1529,7 @@ function rr_chain_create(r: i32, log2n: i32, single_bucket: i32) -> RrChain {
         if i < r - 1 {
             wi = w0 << i                # w0, 2w0, 4w0, … (exponentially larger)
         } else {
-            wi = log2n - sum            # remainder: chain telescopes to 1 + log n
+            wi = log2n - sum            # remainder — chain telescopes to 1 + log n
             if wi < 1 {
                 wi = 1
             }
@@ -1569,21 +1570,21 @@ function rr_chain_destroy(c: RrChain) {
 }
 
 # First slot index of `key`'s bucket at `level` (bucket id is hash-derived,
-# exactly like the container id in the Theorem-2 table: never stored).
+# exactly like the container id in the Theorem-2 table — never stored).
 function rr_bucket_base(c: ptr<RrChain>, level: i32, key: i32) -> i32 {
     let b: i32 = hash_u32(key, c[0].fp + level) % c[0].nb[level]
     return c[0].off[level] + (b << c[0].bw[level])
 }
 
 # Insert (x, y): descend levels until a bucket has room. The retriever is the
-# (level, slot) pair: level in bits 16-17, slot in bits 0-15. Returns the
+# (level, slot) pair — level in bits 16-17, slot in bits 0-15. Returns the
 # descent depth (level landed, 0-based), or -1 if every bucket is full.
 function rr_insert(c: ptr<RrChain>, reg: ptr<Registry>, key: i32, value: i32) -> i32 {
     let mut level: i32 = 0
     while level < c[0].r {
         let base: i32 = rr_bucket_base(c, level, key)
         let bsz: i32 = 1 << c[0].bw[level]
-        # probe cyclically from a hash-derived start: expected 2 probes at
+        # probe cyclically from a hash-derived start — expected 2 probes at
         # load 1/2 regardless of bucket size (the paper's O(1)-expected case).
         let start: i32 = hash_u32(key, c[0].fp + 40 + level) % bsz
         let mut k: i32 = 0
@@ -1592,7 +1593,7 @@ function rr_insert(c: ptr<RrChain>, reg: ptr<Registry>, key: i32, value: i32) ->
             let idx: i32 = base + s
             if c[0].key[idx] == key {
                 # re-insert: refresh the value in place (the registry entry is
-                # untouched: the demo only ever inserts FRESH distinct keys,
+                # untouched — the demo only ever inserts FRESH distinct keys,
                 # so this path is just a safety net for generality)
                 c[0].val[idx] = value
                 return level
@@ -1623,7 +1624,7 @@ function rr_insert(c: ptr<RrChain>, reg: ptr<Registry>, key: i32, value: i32) ->
 }
 
 # Query/Dereference(x, r): the bucket is recomputed from the key, the retriever
-# names the exact slot inside it: one probe, O(1) expected.
+# names the exact slot inside it — one probe, O(1) expected.
 function rr_deref(c: ptr<RrChain>, key: i32, retriever: i32) -> i32 {
     let level: i32 = (retriever >> 16) & 3
     let s: i32 = retriever & 0xFFFF
@@ -1634,7 +1635,7 @@ function rr_deref(c: ptr<RrChain>, key: i32, retriever: i32) -> i32 {
     return -1
 }
 
-# Delete(x, r): clear the exact slot: no tombstone needed.
+# Delete(x, r): clear the exact slot — no tombstone needed.
 function rr_delete(c: ptr<RrChain>, key: i32, retriever: i32) {
     let level: i32 = (retriever >> 16) & 3
     let s: i32 = retriever & 0xFFFF
@@ -1675,25 +1676,25 @@ function rr_bits(c: ptr<RrChain>, retriever: i32) -> i32 {
 }
 
 # ============================================================================
-# Theorem 7: SUCCINCT ROTATION-BASED BINARY SEARCH TREES (paper Section 6.3)
+# Theorem 7 — SUCCINCT ROTATION-BASED BINARY SEARCH TREES (paper Section 6.3)
 #
 # There are at most 4ⁿ ordered binary trees on n nodes, so a tree's pointer
 # structure fits in O(n) bits. Classic succinct-tree encodings support leaf
-# insert/delete, but NOT rotations: and AVL / red-black / splay trees live
+# insert/delete, but NOT rotations — and AVL / red-black / splay trees live
 # on rotations. Theorem 7 removes that gap: make the child pointers tiny.
 #
 # Construction (black-box over Theorem 6): each node stores key/value plus two
-# tiny RETRIEVERS: r₁ for the left child keyed on x◦0, r₂ for the right child
+# tiny RETRIEVERS — r₁ for the left child keyed on x◦0, r₂ for the right child
 # keyed on x◦1. The relaxed-retrieval store becomes the node array: the slot
 # Dereference(x◦c, r_c) holds the child's index. Navigation = one query = O(1).
 # Adding/removing an edge (x, z) = one store overwrite = O(r) (constant here).
-# A ROTATION rewrites only the 2-3 touched edges: no node moves, and: the key
-# point: no retriever ever changes. The tree structure therefore stays
+# A ROTATION rewrites only the 2-3 touched edges: no node moves, and — the key
+# point — no retriever ever changes. The tree structure therefore stays
 # na + nb + O(n) bits (distinct keys give na = Ω(n log n), so the tree is
 # succinct), while rotations remain constant-time.
 #
-# Phase 9 builds an AVL tree from 16384 keys inserted IN ORDER: the worst
-# case that forces maximal rotation: with children reached only through
+# Phase 9 builds an AVL tree from 16384 keys inserted IN ORDER — the worst
+# case that forces maximal rotation — with children reached only through
 # tiny retrievers; every retriever, slot and node position is verified, and
 # the pointer size (≈6 bits/node vs 32 bits raw) is measured.
 # Phase 10 storms the tree with 20000 random rotations: rotations preserve
@@ -1701,16 +1702,16 @@ function rr_bits(c: ptr<RrChain>, retriever: i32) -> i32 {
 # ============================================================================
 
 struct BSTree {
-    key: ptr<i32>,   # BST_N: key of node i (also its fixed array position)
-    val: ptr<i32>,   # BST_N: value of node i
-    lh: ptr<i32>,    # BST_N: left-child TINY RETRIEVER (key x◦0)
-    rh: ptr<i32>,    # BST_N: right-child TINY RETRIEVER (key x◦1)
-    lc: ptr<i32>,    # BST_N: recorded left child index (BST_NULL = none)
-    rc: ptr<i32>,    # BST_N: recorded right child index
-    ls: ptr<i32>,    # BST_N: recorded left-edge SLOT (retriever integrity)
-    rs: ptr<i32>,    # BST_N: recorded right-edge SLOT
-    hgt: ptr<i32>,   # BST_N: AVL height of the subtree rooted at node i
-    n: ptr<i32>,     # node count: positions are append-only, never move
+    key: ptr<i32>,   # BST_N — key of node i (also its fixed array position)
+    val: ptr<i32>,   # BST_N — value of node i
+    lh: ptr<i32>,    # BST_N — left-child TINY RETRIEVER (key x◦0)
+    rh: ptr<i32>,    # BST_N — right-child TINY RETRIEVER (key x◦1)
+    lc: ptr<i32>,    # BST_N — recorded left child index (BST_NULL = none)
+    rc: ptr<i32>,    # BST_N — recorded right child index
+    ls: ptr<i32>,    # BST_N — recorded left-edge SLOT (retriever integrity)
+    rs: ptr<i32>,    # BST_N — recorded right-edge SLOT
+    hgt: ptr<i32>,   # BST_N — AVL height of the subtree rooted at node i
+    n: ptr<i32>,     # node count — positions are append-only, never move
     rot: ptr<i32>    # rotation counter (both phases)
 }
 
@@ -1772,7 +1773,7 @@ function bstree_destroy(t: BSTree) {
     free(t.rot)
 }
 
-# Child index of node nidx on side (0=left, 1=right): the ONLY way to
+# Child index of node nidx on side (0=left, 1=right) — the ONLY way to
 # navigate: dereference the tiny retriever to its slot, read the node array.
 function bst_child(t: ptr<BSTree>, vt: ptr<VarTable>, nidx: i32, side: i32) -> i32 {
     let key2: i32 = (t[0].key[nidx] << 1) | side
@@ -1785,7 +1786,7 @@ function bst_child(t: ptr<BSTree>, vt: ptr<VarTable>, nidx: i32, side: i32) -> i
 }
 
 # Set the edge (nidx, side) → child. ONE O(1) store overwrite; the retriever
-# and the slot never change: this is what keeps the structure O(n) bits.
+# and the slot never change — this is what keeps the structure O(n) bits.
 function bst_set_child(t: ptr<BSTree>, vt: ptr<VarTable>, nidx: i32, side: i32, child: i32) {
     let key2: i32 = (t[0].key[nidx] << 1) | side
     let mut tp: i32 = t[0].lh[nidx]
@@ -1854,7 +1855,7 @@ function bst_balance(t: ptr<BSTree>, vt: ptr<VarTable>, nidx: i32) -> i32 {
     let hl: i32 = bst_height(t, bst_child(t, vt, nidx, 0))
     let hr: i32 = bst_height(t, bst_child(t, vt, nidx, 1))
     if hl - hr > 1 {
-        # left-heavy: LR case: rotate the left child left first
+        # left-heavy: LR case — rotate the left child left first
         let lc_: i32 = bst_child(t, vt, nidx, 0)
         let lc_hl: i32 = bst_height(t, bst_child(t, vt, lc_, 0))
         let lc_hr: i32 = bst_height(t, bst_child(t, vt, lc_, 1))
@@ -1881,7 +1882,7 @@ function bst_balance(t: ptr<BSTree>, vt: ptr<VarTable>, nidx: i32) -> i32 {
 }
 
 # Create a new node: append at position n (positions NEVER move) and allocate
-# two tiny retrievers: one per edge: with the store seeded to BST_NULL.
+# two tiny retrievers — one per edge — with the store seeded to BST_NULL.
 function bst_node_new(t: ptr<BSTree>, vt: ptr<VarTable>, key: i32, value: i32) -> i32 {
     let idx: i32 = t[0].n[0]
     if idx >= BST_N {
@@ -1912,7 +1913,7 @@ function bst_node_new(t: ptr<BSTree>, vt: ptr<VarTable>, key: i32, value: i32) -
 }
 
 # Recursive AVL insert. Returns the new subtree root. Sorted insert order is
-# the worst case for a plain BST: AVL rotations keep the height O(log n).
+# the worst case for a plain BST — AVL rotations keep the height O(log n).
 function bst_insert_avl(t: ptr<BSTree>, vt: ptr<VarTable>, root: i32,
                         key: i32, value: i32) -> i32 {
     if root == BST_NULL {
@@ -1932,7 +1933,7 @@ function bst_insert_avl(t: ptr<BSTree>, vt: ptr<VarTable>, root: i32,
 # (side=1); re-link the parent edge on the way back up. Returns new subtree
 # root. Rotating a node with no child on that side is a no-op.
 # Precondition (paper's model): every key is present, so the recursion never
-# bottoms out at BST_NULL while searching: an absent key would null an edge.
+# bottoms out at BST_NULL while searching — an absent key would null an edge.
 function bst_rotate_key(t: ptr<BSTree>, vt: ptr<VarTable>, root: i32,
                         key: i32, side: i32) -> i32 {
     if root == BST_NULL {
@@ -2033,7 +2034,7 @@ function bst_ptr_check(t: ptr<BSTree>, vt: ptr<VarTable>) -> i32 {
 # ============================================================================
 
 # ============================================================================
-# Theorem 9: VARIABLE-SIZE VALUE DICTIONARIES (paper Section 6.5)
+# Theorem 9 — VARIABLE-SIZE VALUE DICTIONARIES (paper Section 6.5)
 #
 # Black-box transform: any key-value dictionary designed to store uniform-size
 # values can store ARBITRARY-LENGTH values (up to O(1) machine words) with
@@ -2044,7 +2045,7 @@ function bst_ptr_check(t: ptr<BSTree>, vt: ptr<VarTable>) -> i32 {
 # j = ⌈log₂ v⌉; class j has its own dereference-table storage whose slots are
 # exactly 2^j bits. The key hashes to a bucket inside the class (two choices,
 # pick the lighter), and the tiny pointer packs (class, choice, slot) in
-# ⌈log₂ classes⌉ + 1 + ⌈log₂ b⌉ = 7 bits: O(log v) for v ≤ 64. A uniform
+# ⌈log₂ classes⌉ + 1 + ⌈log₂ b⌉ = 7 bits — O(log v) for v ≤ 64. A uniform
 # 64-bit dictionary would pay 64 bits for EVERY value; here a v-bit value pays
 # 2^⌈log v⌉ (rounded payload) + 7 (pointer). Phase 11 itself fixes v ≤ 64 (2
 # machine words) and measures the size-class space bound directly; the paper's
@@ -2274,7 +2275,7 @@ function vd_make_value(state: ptr<i32>, key: i32, bits_out: ptr<i32>) -> i64 {
 function banner5() {
     println("")
     println("╔══════════════════════════════════════════════════════════════════════╗")
-    println("║  Theorem 9: VARIABLE-SIZE VALUE DICTIONARIES                        ║")
+    println("║  Theorem 9 — VARIABLE-SIZE VALUE DICTIONARIES                        ║")
     println("║  Σ(vᵢ + O(log vᵢ)) bits for arbitrary-length values                  ║")
     println("╚══════════════════════════════════════════════════════════════════════╝")
     println("")
@@ -2282,8 +2283,8 @@ function banner5() {
     println("to support ARBITRARY-LENGTH values with constant time overhead and an")
     println("additional log⁽ʳ⁾ n + O(log vᵢ) bits per vᵢ-bit value (Theorem 9).")
     println("")
-    println("Construction: values are grouped into SIZE CLASSES: a v-bit value")
-    println("lives in class ⌈log₂ v⌉, whose slots are 2^⌈log v⌉ bits: and each")
+    println("Construction: values are grouped into SIZE CLASSES — a v-bit value")
+    println("lives in class ⌈log₂ v⌉, whose slots are 2^⌈log v⌉ bits — and each")
     println("class owns its own dereference-table storage, keyed on the key like")
     println("every other tiny-pointer table. The key finds the class bucket; the")
     println("tiny pointer (class + choice + slot, O(log v) bits) names the slot.")
@@ -2291,7 +2292,7 @@ function banner5() {
 }
 
 # ============================================================================
-# Theorem 9's keys analogue (Section 6.5 remark): VARIABLE-SIZE KEYS
+# Theorem 9's keys analogue (Section 6.5 remark) — VARIABLE-SIZE KEYS
 #
 # The paper states Theorem 9 for "a key-value dictionary … designed to store
 # fixed-length keys" and remarks that the same techniques work without
@@ -2318,7 +2319,7 @@ function banner5() {
 function banner6() {
     println("")
     println("╔══════════════════════════════════════════════════════════════════════╗")
-    println("║  Theorem 9 (keys analogue): VARIABLE-SIZE KEY DICTIONARIES          ║")
+    println("║  Theorem 9 (keys analogue) — VARIABLE-SIZE KEY DICTIONARIES          ║")
     println("║  Σ(kᵢ + O(log kᵢ)) bits for arbitrary-length keys                    ║")
     println("╚══════════════════════════════════════════════════════════════════════╝")
     println("")
@@ -2328,17 +2329,17 @@ function banner6() {
     println("bit slots, so the key array also costs Σ(2^⌈log kᵢ⌉ + O(log kᵢ)) instead")
     println("of a uniform 64-bit slot per key.")
     println("")
-    println("Phase 12 stores BOTH sides of each pair size-classed: a KEY table and")
-    println("a VALUE table keyed on the same logical key: and reports the combined")
+    println("Phase 12 stores BOTH sides of each pair size-classed — a KEY table and")
+    println("a VALUE table keyed on the same logical key — and reports the combined")
     println("key+value space versus a uniform 64+64-bit baseline.")
     println("")
 }
 
 # ============================================================================
-# Section 5: THE LOWER BOUNDS (Theorems 3-5)
+# Section 5 — THE LOWER BOUNDS (Theorems 3–5)
 #
 # Everything above is an UPPER bound (a construction). Section 5 proves these
-# constructions are asymptotically optimal: no scheme can beat them:
+# constructions are asymptotically optimal — no scheme can beat them:
 #
 #   Theorem 3 (variable-size pointers): expected size s = Ω(log δ⁻¹). At
 #     δ = 1/4 that is log₂4 = 2 bits; the demo's variable pointers average
@@ -2350,17 +2351,17 @@ function banner6() {
 #     of m balls d random bin choices leaves a fullest bin of Ω((log log m)/d).
 #     This is the engine of Theorem 4: with s-bit pointers each key has only
 #     d = 2^s choices, so the fullest bin cannot be pushed below
-#     Ω((log log m)/2^s): but a dereference table must keep every bin at O(1)
+#     Ω((log log m)/2^s) — but a dereference table must keep every bin at O(1)
 #     (each bin maps to n/m slots), forcing 2^s = Ω(log log n), i.e.
 #     s = Ω(log log log n).
 #
 # Phase 13 demonstrates all three empirically:
-#   A. Simulate the Theorem-5 process (least-loaded placement: the BEST
+#   A. Simulate the Theorem-5 process (least-loaded placement — the BEST
 #      rule) and verify the fullest bin obeys F(s)·2^s ≥ log₂log₂m at every
-#      pointer budget s: the Ω((log log m)/d) floor, measured;
+#      pointer budget s — the Ω((log log m)/d) floor, measured;
 #   B. Mask the live 6-bit pointers to s bits and count the FORCED
 #      dereference collisions (unique slots stop being nameable): 0 at s = 6,
-#      thousands below it: the scheme provably cannot spend fewer bits;
+#      thousands below it — the scheme provably cannot spend fewer bits;
 #   C. Re-measure the live variable-size pointer mean against the Theorem-3
 #      floor log₂δ⁻¹.
 # ============================================================================
@@ -2368,7 +2369,7 @@ function banner6() {
 const LB_S_MAX: i32 = 6          # pointer budgets s = 0..6 swept in Part A
 
 # Place m balls into m bins, each ball choosing the least-loaded of d = 2^s
-# bins (the BEST possible sequential rule: Theorem 5 lower-bounds even this).
+# bins (the BEST possible sequential rule — Theorem 5 lower-bounds even this).
 # Returns the fullest bin. `bins` must be zeroed by the caller.
 function lb_place(bins: ptr<i32>, m: i32, d: i32) -> i32 {
     let mut maxl: i32 = 0
@@ -2395,7 +2396,7 @@ function lb_place(bins: ptr<i32>, m: i32, d: i32) -> i32 {
 }
 
 # Count keys whose pointer, truncated to s bits, dereferences to a slot
-# already claimed by another key (a FORCED collision: uniqueness broken).
+# already claimed by another key (a FORCED collision — uniqueness broken).
 # At s = 6 (the real width) this is 0; below it, the scheme cannot name
 # distinct slots.
 function lb_mask_collisions(reg: ptr<Registry>, pr: PrimaryTable, sec: SecondaryTable,
@@ -2428,17 +2429,17 @@ function lb_mask_collisions(reg: ptr<Registry>, pr: PrimaryTable, sec: Secondary
 function banner7() {
     println("")
     println("╔══════════════════════════════════════════════════════════════════════╗")
-    println("║  Section 5: THE LOWER BOUNDS (Theorems 3-5)                         ║")
+    println("║  Section 5 — THE LOWER BOUNDS (Theorems 3-5)                         ║")
     println("║  no scheme can beat the floors the constructions achieve             ║")
     println("╚══════════════════════════════════════════════════════════════════════╝")
     println("")
     println("Theorems 1-2 are upper bounds. Section 5 closes the loop: ANY tiny-")
     println("pointer scheme must spend at least:")
-    println("  Theorem 3 (variable-size):  s = Ω(log δ⁻¹)  : 2 bits at δ = 1/4")
+    println("  Theorem 3 (variable-size):  s = Ω(log δ⁻¹)   — 2 bits at δ = 1/4")
     println("  Theorem 4 (fixed-size):     s = Ω(log log log n + log δ⁻¹)")
-    println("                             : 4 bits at n = 2^16, δ = 1/4")
+    println("                              — 4 bits at n = 2^16, δ = 1/4")
     println("  Theorem 5 (balls-and-bins): fullest bin Ω((log log m)/2^s) under ANY")
-    println("    rule: with s-bit pointers each key has only 2^s choices, and the")
+    println("    rule — with s-bit pointers each key has only 2^s choices, and the")
     println("    paper proves even the best placement rule cannot dodge the floor.")
     println("")
     println("Phase 13 measures all three: the Theorem-5 floor directly (Part A),")
@@ -2448,7 +2449,7 @@ function banner7() {
 }
 
 # ============================================================================
-# Phase 14: DEAMORTIZED DYNAMIC RESIZING (paper Section 6.1, Theorem 4 proof)
+# Phase 14 — DEAMORTIZED DYNAMIC RESIZING (paper Section 6.1, Theorem 4 proof)
 # ============================================================================
 # The Theorem-9 construction keeps each dereference table at a load factor of
 # 1 - O(1/j'), which forces the tables to change size as the live count
@@ -2462,7 +2463,7 @@ function banner7() {
 # storage: a two-generation RVTable whose per-class bucket arrays double
 # (grow) or halve (shrink), with the migration from the old generation to the
 # new one running in the background at a fixed per-operation budget:
-#   · the op that crosses a load threshold starts a transition: O(1): it
+#   · the op that crosses a load threshold starts a transition — O(1): it
 #     allocates the new generation (the zeroing of its bitmap/count words is
 #     itself part of the budget);
 #   · every subsequent op zeroes RV_BUDGET words of the new generation and
@@ -2470,15 +2471,15 @@ function banner7() {
 #     values (rewriting their tiny pointers to the new generation, exactly
 #     the job of the paper's per-zone pointer lists);
 #   · when the sweep completes, the old generation is freed and the epoch
-#     flips: every live pointer now reads the new generation.
-# The tiny pointer gains one generation bit (8 bits total): the paper's
+#     flips — every live pointer now reads the new generation.
+# The tiny pointer gains one generation bit (8 bits total) — the paper's
 # "add Θ(log k) bits to each tiny pointer to indicate which dereference
 # table is being pointed into".
 #
 # The demo runs the SAME workload (initial load, churn, drain, reload) twice:
-#   (1) naive one-shot resizing: the triggering op copies every live value
+#   (1) naive one-shot resizing — the triggering op copies every live value
 #       at once, the textbook Θ(m) worst case;
-#   (2) deamortized resizing: every op does O(1) work.
+#   (2) deamortized resizing — every op does O(1) work.
 # It reports the worst-case per-op cost in both: work units (a deterministic
 # count of words zeroed + values migrated) and wall-clock nanoseconds.
 # ============================================================================
@@ -2581,7 +2582,7 @@ function rv_gen(tp: i32) -> i32 {
 }
 
 # Recompute the absolute slot from key + pointer, reading the generation the
-# pointer names (epoch-independent: every live pointer names its own array).
+# pointer names (epoch-independent — every live pointer names its own array).
 function rv_deref(rvt: ptr<RVTable>, key: i32, tp: i32) -> i32 {
     let pa: i32 = rv_gen(tp)
     let j: i32 = (tp >> 4) & 7
@@ -2641,7 +2642,7 @@ function rv_free(rvt: ptr<RVTable>, key: i32, tp: i32) {
 }
 
 # Start a transition: allocate the destination generation at 2× (grow) or ½×
-# (shrink) the source's bucket count. O(1): the new arrays are NOT zeroed
+# (shrink) the source's bucket count. O(1) — the new arrays are NOT zeroed
 # here; that happens incrementally in rv_advance before any copy touches them.
 function rv_start_transition(rvt: ptr<RVTable>, kind: i32) -> i32 {
     let src: i32 = rvt[0].epoch
@@ -2699,12 +2700,12 @@ function rv_finish(rvt: ptr<RVTable>, src: i32) {
 }
 
 # Grow when the live count passes 7·B, shrink when it drops below 3.5·B. The
-# bounds are set for the demo's size distribution: the busiest class holds
-# ≤ 35% of values: AND for the deamortized transition itself, because inserts
+# bounds are set for the demo's size distribution — the busiest class holds
+# ≤ 35% of values — AND for the deamortized transition itself, because inserts
 # keep going into the SOURCE generation while the background copy drains it:
 # the source's busiest class sits at 0.35·(7·B) = 2.45·B slots/bucket at the
 # trigger, and the transition (zeroing + copy at RV_BUDGET per op) can add at
-# most ≈ 1.3·B more live values before it completes: so the class never
+# most ≈ 1.3·B more live values before it completes — so the class never
 # exceeds ≈ 2.9 slots/bucket, far below the 8-slot ceiling under
 # power-of-two-choices. The shrink floor 3.5·B is the post-shrink grow point
 # (7·(B/2) = 3.5·B), so a shrink can never immediately re-trigger a grow.
@@ -2752,7 +2753,7 @@ function rv_advance(rvt: ptr<RVTable>, reg: ptr<Registry>, vb: ptr<i32>) -> i32 
     # 2. migrate up to RV_BUDGET live values still in the source generation,
     #    examining at most RV_SCAN registry entries (the paper's per-zone
     #    pointer lists; here the registry sweep plays that role). The sweep is
-    #    bounded by the registry high-water mark next_idx: never REG_SIZE , 
+    #    bounded by the registry high-water mark next_idx — never REG_SIZE —
     #    because mid-transition inserts land at fresh slots that the cursor
     #    must still reach; sweeping past next_idx would strand them in the
     #    freed generation (their gen-bit pointers would dangle).
@@ -2773,7 +2774,7 @@ function rv_advance(rvt: ptr<RVTable>, reg: ptr<Registry>, vb: ptr<i32>) -> i32 
             if tp < 0 {
                 return -1
             }
-            # the source slot is abandoned the moment the value is migrated , 
+            # the source slot is abandoned the moment the value is migrated —
             # free it so the source generation's buckets keep only live
             # occupants (otherwise abandoned slots accumulate and inflate the
             # source bucket counts past the 8-slot ceiling mid-transition)
@@ -2790,7 +2791,7 @@ function rv_advance(rvt: ptr<RVTable>, reg: ptr<Registry>, vb: ptr<i32>) -> i32 
     return work
 }
 
-# The naive baseline: finish a transition in one op: zero the whole
+# The naive baseline: finish a transition in one op — zero the whole
 # destination and reinsert every live value. Returns work units; -1 overflow.
 function rv_complete_now(rvt: ptr<RVTable>, reg: ptr<Registry>, vb: ptr<i32>) -> i32 {
     if rvt[0].phase == 0 {
@@ -2833,7 +2834,7 @@ function rv_complete_now(rvt: ptr<RVTable>, reg: ptr<Registry>, vb: ptr<i32>) ->
     return work
 }
 
-# Registry ops for the resizable table: mirror the vdreg_* ops, always
+# Registry ops for the resizable table — mirror the vdreg_* ops, always
 # inserting into the epoch (canonical) generation. New values keep their
 # pointers in the epoch generation during a transition; the background
 # migration moves them to the destination before the epoch flips.
@@ -2905,7 +2906,7 @@ function rvreg_verify(rvt: ptr<RVTable>, reg: ptr<Registry>, vv: ptr<i64>,
 
 # Per-generation bucket invariant: no bucket over RV_VB slots. During an
 # in-flight transition only the ZEROED prefix of the destination generation is
-# valid: the incremental rebuild zeroes it RV_BUDGET words per op, so the
+# valid — the incremental rebuild zeroes it RV_BUDGET words per op, so the
 # unbuilt tail is uninitialized heap (never a real overfull bucket; the
 # allocator's find_free_bit ceiling is what actually bounds every live slot).
 # Scope the scan to rvt[0].zero for the destination while phase != 0.
@@ -3036,7 +3037,7 @@ function rv_run_workload(rvt: ptr<RVTable>, reg: ptr<Registry>, vv: ptr<i64>,
     }
     errs[0] = errs[0] + rvreg_verify(rvt, reg, vv, vb)
     errs[0] = errs[0] + rvtable_check(rvt)
-    # ---- drain (delete-heavy: the 3 shrinks) ----
+    # ---- drain (delete-heavy — the 3 shrinks) ----
     let mut di: i32 = 0
     while di < RV_DRAIN {
         let op0: i64 = now_ns()
@@ -3135,31 +3136,31 @@ function rv_run_workload(rvt: ptr<RVTable>, reg: ptr<Registry>, vv: ptr<i64>,
 }
 
 # ============================================================================
-# Theorem 9 (proof): r-LEVELS OF INDIRECTION (paper Section 6.5)
+# Theorem 9 (proof) — r-LEVELS OF INDIRECTION (paper Section 6.5)
 #
 # The size-class table caps values at O(1) machine words because its class
 # slots are sized to the VALUE: a 200-bit value would need a 256-bit slot in
 # the base table, and the base class tag would have to grow with the max
 # value size. The paper's fix: store every value at the end of a linked list
-# of length O(1): 'value k bits ← p₁ of size O(log k) bits ← p₂ of size
+# of length O(1) — 'value k bits ← p₁ of size O(log k) bits ← p₂ of size
 # O(log log k) bits ← … ← base pointer of size O(log⁽ʳ⁾ n) bits', where each
 # pointer is exponentially larger than the one it points at.
 #
 # Phase 15 lifts the v ≤ 64 cap with r = 2 levels:
-#   • values ≤ 64 bits : stored DIRECTLY in the base VDTable (classes 0-6),
+#   • values ≤ 64 bits  — stored DIRECTLY in the base VDTable (classes 0-6),
 #     exactly as Phase 11; the base pointer is (flag 0 + class + choice + slot);
-#   • values of 65-256 bits: stored in the LEVEL-1 ARENA (a compact
+#   • values of 65-256 bits — stored in the LEVEL-1 ARENA (a compact
 #     power-of-two-choices table with 128-bit and 256-bit classes, keyed on
 #     the key like every other tiny-pointer table); the base pointer (flag 1)
 #     names an 8-bit slot in base class RL_PTR_CLASS holding p₁ = 5 bits:
 #     (1 arena-class bit + 1 choice bit + 3 slot bits) = O(log 256);
-#   • the base pointer NEVER grows with the value size: 8 bits for v = 1..256
-#    : the paper's 'base pointer … is O(log⁽ʳ⁾ n) bits', and the base table's
+#   • the base pointer NEVER grows with the value size — 8 bits for v = 1..256
+#     — the paper's 'base pointer … is O(log⁽ʳ⁾ n) bits', and the base table's
 #     geometry is independent of value size; only the compact arena grows.
 #
 # Pointer metadata (the paper's O(j) extra bits): bit 7 of the base pointer
 # says 'points at another pointer vs a final value' (a); the class bits say
-# the size of the thing pointed at (b): class j for direct values, the
+# the size of the thing pointed at (b) — class j for direct values, the
 # holder class + p₁'s arena-class bit for chained values.
 #
 # Space accounting (per live key, Phase-11 convention):
@@ -3169,7 +3170,7 @@ function rv_run_workload(rvt: ptr<RVTable>, reg: ptr<Registry>, vv: ptr<i64>,
 #                                   ones in the arena) + 13 per BIG value
 #                                   (8-bit holder slot + 5-bit p₁)
 # The 13 bits/value on big values only is exactly the paper's O(log v)
-# per-value pointer overhead (Eq. 4): the price of one level of indirection.
+# per-value pointer overhead (Eq. 4) — the price of one level of indirection.
 
 struct RLTable {
     bm: ptr<i32>,    # 2 × RL_ARENA_B occupancy words (classes 0,1)
@@ -3461,12 +3462,12 @@ function rl_make_words(state: ptr<i32>, key: i32, bits_out: ptr<i32>,
 }
 
 # ============================================================================
-# Phase 12 key chain: VARIABLE-SIZE KEYS through the r-levels chain
+# Phase 12 key chain — VARIABLE-SIZE KEYS through the r-levels chain
 # (Theorem 9's keys analogue, applied to the KEY array exactly as Phase 15
 # applies it to values: keys of 65-256 bits live in a compact KEY ARENA behind
 # a 5-bit p₁ held in an 8-bit base class-3 holder slot, flag bit 7 = chained;
 # keys ≤ 64 bits store directly in the base key VDTable. The base pointer
-# stays 8 bits for EVERY key size: the keys analogue of Phase 15's
+# stays 8 bits for EVERY key size — the keys analogue of Phase 15's
 # base-pointer independence.)
 #
 # Registry arrays per pair: reg.tp/reg.pos = key base pointer/position,
@@ -3673,7 +3674,7 @@ function kchreg_verify(reg: ptr<Registry>, kvt: ptr<VDTable>, krlt: ptr<RLTable>
     return errors
 }
 
-# Key-side arena invariant (bucket occupancy ≤ VD_VB): the base key table's
+# Key-side arena invariant (bucket occupancy ≤ VD_VB) — the base key table's
 # invariants are covered by vdtable_check.
 function kchtable_check(krlt: ptr<RLTable>) -> i32 {
     return rltable_check(krlt)
@@ -3693,17 +3694,17 @@ function kchtable_check(krlt: ptr<RLTable>) -> i32 {
 #
 # Concrete instance:
 #   • base pointer = 8 bits, UNCHANGED: flag(1) + class(3) + choice(1) + slot(3)
-#    : the class-3 base slot now holds p₂ instead of p₁. The base never grows
+#     — the class-3 base slot now holds p₂ instead of p₁. The base never grows
 #     with the value size, even for v = 2^32 bits (the paper's base-pointer
 #     independence: O(log⁽³⁾ n), constant in k).
-#   • p₂ = 6 bits = class(1) + choice(1) + slot(4): points into the LEVEL-2
+#   • p₂ = 6 bits = class(1) + choice(1) + slot(4) — points into the LEVEL-2
 #     table (2 classes × RL3_P2_B buckets × 16 slots) that holds the 5-bit p₁.
-#   • p₁ = 5 bits = class(1) + choice(1) + slot(3): points into the LEVEL-1
+#   • p₁ = 5 bits = class(1) + choice(1) + slot(3) — points into the LEVEL-1
 #     ARENA (2 classes × RL3_ARENA_B buckets × 8 slots); the arena slot names
 #     an offset into a SHARED WORD POOL, so a slot holds a value of ANY width
 #     (up to 2^32 bits in the design; the demo stores up to 2^20 to stay fast).
 #   • measured pointer hierarchy: 8 → 6 → 5 bits (base → p₂ → p₁), with the
-#     base CONSTANT: the chain's per-big-value cost rises from r=2's 13 bits
+#     base CONSTANT — the chain's per-big-value cost rises from r=2's 13 bits
 #     (8-bit holder + 5-bit p₁) to r=3's 19 bits (8-bit holder + 6-bit p₂ +
 #     5-bit p₁) while the value cap lifts from 256 bits to 2^32 bits. These
 #     widths are GEOMETRY CONSTANTS (class + choice + slot bits of each table),
@@ -3717,16 +3718,16 @@ function kchtable_check(krlt: ptr<RLTable>) -> i32 {
 struct R3Arena {
     bm: ptr<i32>,     # 2 × RL3_ARENA_B occupancy words (8 bits used)
     ct: ptr<i32>,     # 2 × RL3_ARENA_B per-bucket counts
-    soff: ptr<i32>,   # 2 × RL3_ARENA_B × 8 slots: word offset into the pool
+    soff: ptr<i32>,   # 2 × RL3_ARENA_B × 8 slots — word offset into the pool
     pool: ptr<i64>,   # RL3_POOL_WORDS shared value storage (bump-allocated:
-                      #   freed words are NOT reclaimed: the demo's churn is
+                      #   freed words are NOT reclaimed — the demo's churn is
     fill: ptr<i32>    #   sized so the bump never exhausts RL3_POOL_WORDS)
 }
 
 struct R3P2 {
     bm: ptr<i32>,     # 2 × RL3_P2_B occupancy words (16 bits used)
     ct: ptr<i32>,     # 2 × RL3_P2_B per-bucket counts
-    p1: ptr<i32>      # 2 × RL3_P2_B × 16 slots: the 5-bit p₁ (-1 = free)
+    p1: ptr<i32>      # 2 × RL3_P2_B × 16 slots — the 5-bit p₁ (-1 = free)
 }
 
 function r3a_create() -> R3Arena {
@@ -3803,7 +3804,7 @@ function r3_word(key: i32, w: i32) -> i64 {
 }
 
 # Value-size draw (per key). ~10% of keys get a CHAINED value (65..2^20 bits;
-# the class-1 'huge' ones go up to 2^20: the design supports 2^32, the demo
+# the class-1 'huge' ones go up to 2^20 — the design supports 2^32, the demo
 # stops at 2^20 to stay fast); the rest are direct (1..64 bits).
 function r3_draw(state: ptr<i32>, key: i32, words: ptr<i64>,
                  wcnt_out: ptr<i32>, bits_out: ptr<i32>) {
@@ -3869,7 +3870,7 @@ function r3_arena_alloc(a: ptr<R3Arena>, key: i32, cls: i32, words: ptr<i64>,
     return (cls << 4) | (choice << 3) | slot
 }
 
-# Absolute slot index (into soff) named by p₁: the key supplies the bucket.
+# Absolute slot index (into soff) named by p₁ — the key supplies the bucket.
 function r3_arena_sidx(a: ptr<R3Arena>, key: i32, p1: i32) -> i32 {
     let cls: i32 = (p1 >> 4) & 1
     let choice: i32 = (p1 >> 3) & 1
@@ -4129,34 +4130,34 @@ function r3_table_check(reg: ptr<Registry>, base: ptr<VDTable>, p2t: ptr<R3P2>,
 # The paper's final application: a small INTERNAL stash that tells you where
 # each element of a large EXTERNAL structure resides. External memory is a
 # dereference table with load factor 1 − ε (ε = 3/4 here): ST_NB buckets of
-# ST_B slots, and each key's bucket is IMPLICIT: a pure two-choice hash of
+# ST_B slots, and each key's bucket is IMPLICIT — a pure two-choice hash of
 # the key (ST_C1_SALT / ST_C2_SALT). The stash entry therefore only stores the
 # intra-bucket address: 1 choice bit + ⌈log₂ ST_B⌉ slot bits = a 4-bit tiny
 # pointer = Θ(log ε⁻¹), NOT log₂((1+ε)m) = 15 bits (the naive full-address
 # stash). The tiny pointer never grows with the external array size.
 #
 # Stash lookup is the adaptive filter of Bender et al. [12]: keys are binned
-# by their hash QUOTIENT (bin index = quotient, stored nowhere: the filter's
+# by their hash QUOTIENT (bin index = quotient, stored nowhere — the filter's
 # implicit-quotient trick), and each entry carries a PREFIX-FREE fingerprint
 # (top `len` bits of the 20-bit rest) whose length grows only enough to
-# separate bin-mates: the paper's adaptivity bits, O(m) total. The invariant:
+# separate bin-mates — the paper's adaptivity bits, O(m) total. The invariant:
 # for any two entries a, b in one bin, common-prefix(restₐ, rest_b) <
 # min(lenₐ, len_b), maintained by a fixpoint on insert (O(1) amortized, the
 # paper's 'the filter will sometimes change the lengths of O(1) fingerprints').
 # Query(k) scans k's bin for the UNIQUE fingerprint that is a prefix of h(k)
-# (at most one can match: two prefixes of the same string are prefixes of
-# each other): exact, O(1) expected RAM: then reads external memory exactly
+# (at most one can match — two prefixes of the same string are prefixes of
+# each other) — exact, O(1) expected RAM — then reads external memory exactly
 # once. Deletes never break the invariant. Positions are permanent once placed
 # (page-table stability): external slots are never moved, only freed.
 # ============================================================================
 
 struct STStash {
     ext: ptr<i32>,        # ST_EXT external slots (-1 = free)
-    bin_head: ptr<i32>,   # ST_BINS: head of each bin's entry list
-    ent_next: ptr<i32>,   # REG_SIZE: next entry in the same bin
-    ent_rest: ptr<i32>,   # REG_SIZE: full fingerprint rest per entry
-    ent_len: ptr<i32>,    # REG_SIZE: prefix-free fingerprint length (adaptivity)
-    ent_ptr: ptr<i32>,    # REG_SIZE: 4-bit tiny pointer (1 choice + 3 slot)
+    bin_head: ptr<i32>,   # ST_BINS — head of each bin's entry list
+    ent_next: ptr<i32>,   # REG_SIZE — next entry in the same bin
+    ent_rest: ptr<i32>,   # REG_SIZE — full fingerprint rest per entry
+    ent_len: ptr<i32>,    # REG_SIZE — prefix-free fingerprint length (adaptivity)
+    ent_ptr: ptr<i32>,    # REG_SIZE — 4-bit tiny pointer (1 choice + 3 slot)
     reads: ptr<i32>       # external-memory reads (single-access claim)
 }
 
@@ -4261,11 +4262,11 @@ function st_place(st: ptr<STStash>, key: i32, value: i32) -> i32 {
 
 # Restore the prefix-free invariant in a whole bin (the paper's adaptivity):
 # repeatedly extend the shorter fingerprint of any colliding PAIR until no pair
-# shares ≥ min(len) bits. Pair-wise, not just new-vs-mates: extending one
+# shares ≥ min(len) bits. Pair-wise, not just new-vs-mates — extending one
 # entry can break another pair, and the fixpoint must catch that. The bin is
 # tiny (avg m/ST_BINS ≈ 4 entries), so the O(b²) scan is constant expected.
 # Returns 0 only on a true fingerprint collision (two identical rests, which
-# the demo's key set never produces: the 31-bit salted hash is injective on
+# the demo's key set never produces — the 31-bit salted hash is injective on
 # the 2^24-key domain).
 function st_fp_fix(st: ptr<STStash>, bin: i32) -> i32 {
     let w: i32 = 31 - ST_Q_BITS
@@ -4400,7 +4401,7 @@ function st_delete_random(reg: ptr<Registry>, st: ptr<STStash>, state: ptr<i32>)
     let idx: i32 = reg[0].live_list[j]
     let key: i32 = reg[0].key[idx]
     let pos: i32 = reg[0].pos[idx]
-    st[0].ext[pos] = -1                      # free the slot: others never move
+    st[0].ext[pos] = -1                      # free the slot — others never move
     let hq: i32 = hash_u32(key, ST_Q_SALT)
     let bin: i32 = hq & (ST_BINS - 1)
     st_unlink(st, bin, idx)
@@ -4486,20 +4487,20 @@ function sttable_check(reg: ptr<Registry>, st: ptr<STStash>) -> i32 {
 function banner10() {
     println("")
     println("╔══════════════════════════════════════════════════════════════════════╗")
-    println("║  Theorem 10: OPTIMAL INTERNAL-MEMORY STASH                          ║")
+    println("║  Theorem 10 — OPTIMAL INTERNAL-MEMORY STASH                          ║")
     println("║  where each element lives, from O(m log ε⁻¹) internal bits           ║")
     println("╚══════════════════════════════════════════════════════════════════════╝")
     println("")
     println("The paper's final application: a small INTERNAL stash that locates every")
     println("element of a large EXTERNAL structure. External memory is a dereference")
     println("table with load factor 1 − ε (ε = 3/4): 4096 buckets × 8 slots, and each")
-    println("key's bucket is IMPLICIT: a pure two-choice hash of the key. The stash")
+    println("key's bucket is IMPLICIT — a pure two-choice hash of the key. The stash")
     println("entry stores only the intra-bucket address: 1 choice bit + 3 slot bits =")
-    println("a 4-bit tiny pointer = Θ(log ε⁻¹): never log₂((1+ε)m) = 15 bits, the")
+    println("a 4-bit tiny pointer = Θ(log ε⁻¹) — never log₂((1+ε)m) = 15 bits, the")
     println("naive full-address stash. The 4 pointer bits never grow with the array.")
     println("")
     println("Lookup is the adaptive filter of Bender et al.: keys are binned by their")
-    println("hash quotient (the bin index IS the quotient: stored nowhere), and each")
+    println("hash quotient (the bin index IS the quotient — stored nowhere), and each")
     println("entry's fingerprint grows only enough to separate bin-mates (adaptivity")
     println("bits, O(m) total). Query(k) finds its entry in O(1) expected RAM steps")
     println("and reads external memory exactly once; inserts/deletes are O(1) expected;")
@@ -4510,7 +4511,7 @@ function banner10() {
 function banner9() {
     println("")
     println("╔══════════════════════════════════════════════════════════════════════╗")
-    println("║  Theorem 9 (proof): r-LEVELS OF INDIRECTION                         ║")
+    println("║  Theorem 9 (proof) — r-LEVELS OF INDIRECTION                         ║")
     println("║  base pointer O(log⁽ʳ⁾ n) · p₁ = O(log k) · value = k bits           ║")
     println("╚══════════════════════════════════════════════════════════════════════╝")
     println("")
@@ -4520,12 +4521,12 @@ function banner9() {
     println("list of length O(1)': value k bits ← p₁ of O(log k) bits ← … ← base")
     println("pointer of O(log⁽ʳ⁾ n) bits. Phase 15 lifts the v ≤ 64 cap with r = 2")
     println("levels: 128/256-bit values live in the level-1 arena behind a 5-bit")
-    println("p₁ (O(log 256)) held in an 8-bit base slot: and the base pointer")
+    println("p₁ (O(log 256)) held in an 8-bit base slot — and the base pointer")
     println("stays 8 bits for EVERY value size, never growing with v.")
     println("")
     println("The r = 3 extension inserts the O(log log k) MIDDLE pointer p₂: values")
     println("up to 2^32 bits flow through base(8) → p₂(6) → p₁(5) → value words.")
-    println("The base stays 8 bits even for a 2^32-bit value: the chain's pointer")
+    println("The base stays 8 bits even for a 2^32-bit value — the chain's pointer")
     println("widths (8 → 6 → 5) are ALL constant in v; only the word count grows.")
     println("")
 }
@@ -4533,12 +4534,12 @@ function banner9() {
 function banner8() {
     println("")
     println("╔══════════════════════════════════════════════════════════════════════╗")
-    println("║  Section 6.1: DEAMORTIZED DYNAMIC RESIZING                          ║")
+    println("║  Section 6.1 — DEAMORTIZED DYNAMIC RESIZING                          ║")
     println("║  no single insert ever copies Θ(m) values                            ║")
     println("╚══════════════════════════════════════════════════════════════════════╝")
     println("")
     println("The Theorem-9 dictionary must resize its dereference tables as the live")
-    println("count changes: naively that is a Θ(m) copy on the triggering op. The")
+    println("count changes — naively that is a Θ(m) copy on the triggering op. The")
     println("paper's zone-aggregated resizing spreads each rebuild over the following")
     println("operations ('the time needed to rebuild a component of size s is Θ(s),")
     println("so the dynamic resizing of Bi can be deamortized to take O(1) time per")
@@ -4547,7 +4548,7 @@ function banner8() {
     println("into the new one at a fixed per-op budget (RV_BUDGET = 16 values).")
     println("")
     println("Phase 14 runs the SAME workload (load 30k → churn → drain → reload, 12")
-    println("resize transitions) twice: naive one-shot resizing vs deamortized , ")
+    println("resize transitions) twice — naive one-shot resizing vs deamortized —")
     println("and compares the worst-case per-operation cost of each.")
     println("")
 }
@@ -4555,8 +4556,8 @@ function banner8() {
 function banner() {
     println("")
     println("╔══════════════════════════════════════════════════════════════════════╗")
-    println("║  Tiny Pointers :  arXiv:2111.12800  (Bender · Conway · Farach-      ║")
-    println("║  Colton · Kuszmaul · Tagliavini) :  implemented in Flow             ║")
+    println("║  Tiny Pointers  —  arXiv:2111.12800  (Bender · Conway · Farach-      ║")
+    println("║  Colton · Kuszmaul · Tagliavini)  —  implemented in Flow             ║")
     println("╚══════════════════════════════════════════════════════════════════════╝")
     println("")
     println("A dereference table lets each key own one slot in a shared value array.")
@@ -4591,12 +4592,12 @@ function report_sizes() {
     print(LOG_N)
     println(" bits   (log₂ n)")
     println("  → 10 bits saved per pointer (62%), constant-time operations w.h.p.")
-    println("  theory bound:  Θ(log log log n + log δ⁻¹) ≈ Θ(2 + 2) bits: achieved 6")
+    println("  theory bound:  Θ(log log log n + log δ⁻¹) ≈ Θ(2 + 2) bits — achieved 6")
     println("")
 }
 
 # The paper's abstract promises two pointer results and five applications.
-# This map links each to the phase(s) that measure it: the same table as the
+# This map links each to the phase(s) that measure it — the same table as the
 # 'Abstract-claim coverage' sections of docs/library/tiny-pointers.md and
 # docs/library/tiny-pointers-variable-values.md, so a terminal run
 # self-links to the doc sections.
@@ -4605,17 +4606,17 @@ function coverage_map() {
     println("Abstract-claim coverage  (arXiv:2111.12800 → phase · doc section)")
     println("──────────────────────────────────────────────────────────────────")
     println("  pointer results:")
-    println("    · fixed-size Θ(log log log n + log k) bits   → Theorem 1 (Phases 1-4)")
-    println("    · variable-size Θ(log k) expected bits       → Theorem 2 (Phases 5-6)")
+    println("    · fixed-size Θ(log log log n + log k) bits   → Theorem 1 (Phases 1–4)")
+    println("    · variable-size Θ(log k) expected bits       → Theorem 2 (Phases 5–6)")
     println("  applications:")
     println("    ① relaxed retrieval nv + O(n log⁽ʳ⁾ n), O(1)-expected hints, O(r) insert/delete")
-    println("        → Theorem 6 (Phases 7-8, 8b)  ·  §6.2")
-    println("    ② succinct rotation-based BSTs               → Theorem 7 (Phases 9-10)  ·  §6.3")
-    println("    ③ stable fixed-capacity dicts, 1 + o(1)      → Theorem 8 (Phases 3-4)  ·  §6.4")
+    println("        → Theorem 6 (Phases 7–8, 8b)  ·  §6.2")
+    println("    ② succinct rotation-based BSTs               → Theorem 7 (Phases 9–10)  ·  §6.3")
+    println("    ③ stable fixed-capacity dicts, 1 + o(1)      → Theorem 8 (Phases 3–4)  ·  §6.4")
     println("    ④ arbitrary-size values, log⁽ʳ⁾ n + O(log j) → Theorem 9 (Phases 11/12/14/15)  ·  §6.5")
     println("        (deep dive: docs/library/tiny-pointers-variable-values.md)")
     println("    ⑤ optimal internal-memory stash O(n log ε⁻¹) → Theorem 10 (Phase 16)  ·  §6.6")
-    println("  (Theorems 3-5 are lower bounds / intermediate steps, not constructions.)")
+    println("  (Theorems 3–5 are lower bounds / intermediate steps, not constructions.)")
     println("  full theorem table: docs/library/tiny-pointers.md")
     println("──────────────────────────────────────────────────────────────────")
     println("")
@@ -4624,13 +4625,13 @@ function coverage_map() {
 function banner2() {
     println("")
     println("╔══════════════════════════════════════════════════════════════════════╗")
-    println("║  Theorem 2: VARIABLE-SIZE tiny pointers                             ║")
+    println("║  Theorem 2 — VARIABLE-SIZE tiny pointers                             ║")
     println("║  O(1 + log δ⁻¹) EXPECTED bits  ·  Pr[size ≥ ℓ] ≤ 2^(−2^Ω(ℓ))         ║")
     println("╚══════════════════════════════════════════════════════════════════════╝")
     println("")
     println("Fixed-size pointers are stuck at Θ(log log log n + log δ⁻¹) bits. By")
     println("letting pointer size vary, Theorem 2 removes the log log log n term:")
-    println("expected size O(1 + log δ⁻¹), and the tail is DOUBLY exponential: a")
+    println("expected size O(1 + log δ⁻¹), and the tail is DOUBLY exponential — a")
     println("pointer of size ℓ occurs with probability ≤ 2^(−2^Ω(ℓ)).")
     println("")
     println("Construction (paper §4, Prop 1):  n/log n containers × log₂ s levels.")
@@ -4640,7 +4641,7 @@ function banner2() {
     println("  to level i+1 only while Lᵢ₊₁ < sᵢ₊₁, else to level i's overflow array.")
     println("")
     println("  concrete instance:  n = 65536  ·  4096 containers  ·  s = 32  ·  b = 2")
-    println("  levels 0-4:  sᵢ = 32, 16, 8, 4, 2 buckets   (186 slots / container)")
+    println("  levels 0–4:  sᵢ = 32, 16, 8, 4, 2 buckets   (186 slots / container)")
     println("")
     println("  pointer sizes (self-delimiting encoding, real bit lengths):")
     println("    table slot, level i:      Elias-γ(i+1) + 1 + ⌈log₂b⌉   = O(log i)")
@@ -4651,20 +4652,20 @@ function banner2() {
 function banner3() {
     println("")
     println("╔══════════════════════════════════════════════════════════════════════╗")
-    println("║  Theorem 6: RELAXED RETRIEVAL (tiny retrievers)                     ║")
+    println("║  Theorem 6 — RELAXED RETRIEVAL (tiny retrievers)                     ║")
     println("║  O(1)-expected hints beat the Ω(log log n) retrieval lower bound     ║")
     println("╚══════════════════════════════════════════════════════════════════════╝")
     println("")
     println("Classic dynamic retrieval (Insert/Delete/Query on k-bit keys with v-bit")
-    println("values) provably needs Ω(log log n) metadata bits per value: even for")
+    println("values) provably needs Ω(log log n) metadata bits per value — even for")
     println("v = 1. Relax the contract: Insert returns a hint r the user keeps, and")
     println("Query(x, r) / Delete(x, r) present both. Hints are then just the")
-    println("variable-size tiny pointers of Theorem 2: O(1) EXPECTED bits.")
+    println("variable-size tiny pointers of Theorem 2 — O(1) EXPECTED bits.")
     println("")
     println("Construction: Allocate(x) → p; s_x = Dereference(x, p) is a slot UNIQUE")
     println("to x, and the dereference table's store is never read ('we need not even")
     println("allocate space for it'). Store (s_x, y) in hash table H whose keys live")
-    println("in the tiny universe [2n]: log C(2n,n) = O(n) bits by Stirling, so H")
+    println("in the tiny universe [2n] — log C(2n,n) = O(n) bits by Stirling, so H")
     println("costs nv + O(n) total. Query = H[s_x]; Delete = H[s_x] + Free(x, p).")
     println("")
 }
@@ -4672,16 +4673,16 @@ function banner3() {
 function banner4() {
     println("")
     println("╔══════════════════════════════════════════════════════════════════════╗")
-    println("║  Theorem 7: SUCCINCT ROTATION-BASED BINARY SEARCH TREES             ║")
+    println("║  Theorem 7 — SUCCINCT ROTATION-BASED BINARY SEARCH TREES             ║")
     println("║  child pointers = O(1)-bit tiny retrievers · rotations stay O(1)     ║")
     println("╚══════════════════════════════════════════════════════════════════════╝")
     println("")
     println("There are at most 4ⁿ ordered binary trees on n nodes, so the pointer")
-    println("structure fits in O(n) bits: yet classic succinct trees cannot do")
+    println("structure fits in O(n) bits — yet classic succinct trees cannot do")
     println("ROTATIONS, and rotation-based trees (AVL, red-black, splay) live on")
     println("them. Theorem 7 fixes this: each child pointer is a tiny retriever")
     println("(Theorem 6) keyed on x◦0 / x◦1 whose slot in the node array holds the")
-    println("child. A rotation rewrites only 2-3 edge slots in O(1) time: no node")
+    println("child. A rotation rewrites only 2-3 edge slots in O(1) time — no node")
     println("moves, no retriever changes. Tree structure: nk + O(n) bits total.")
     println("")
 }
@@ -4732,7 +4733,7 @@ function main() -> i32 {
 
     # ---- phase 1: bulk load to load factor 0.75 ----------------------------
     println("────────────────────────────────────────────────────────────────────────")
-    print("Phase 1: bulk load: ")
+    print("Phase 1 — bulk load: ")
     print(MAX_LIVE)
     println(" distinct keys to load factor 0.75")
     t0 = now_ns()
@@ -4790,7 +4791,7 @@ function main() -> i32 {
 
     # ---- phase 2: dynamic churn (insert/delete) ----------------------------
     println("────────────────────────────────────────────────────────────────────────")
-    print("Phase 2: dynamic churn: ")
+    print("Phase 2 — dynamic churn: ")
     print(CHURN_OPS)
     println(" random insert/delete ops")
     t0 = now_ns()
@@ -4831,7 +4832,7 @@ function main() -> i32 {
 
     # ---- phase 3: stability (referential integrity) ------------------------
     println("────────────────────────────────────────────────────────────────────────")
-    println("Phase 3: stability: values must never move (Theorem 8)")
+    println("Phase 3 — stability: values must never move (Theorem 8)")
     t0 = now_ns()
     # Snapshot the positions of the first 8 live keys by registry index.
     let mut pinned: array<i32, 8> = [-1]
@@ -4928,7 +4929,7 @@ function main() -> i32 {
 
     # ---- phase 4: stable dictionary demo -----------------------------------
     println("────────────────────────────────────────────────────────────────────────")
-    println("Phase 4: stable dictionary (Theorem 8): map key → tiny pointer")
+    println("Phase 4 — stable dictionary (Theorem 8): map key → tiny pointer")
     println("  value array replaced by tiny pointers into the dereference table;")
     println("  a full map rehash (reallocation) cannot invalidate any value.")
     t0 = now_ns()
@@ -5005,10 +5006,10 @@ function main() -> i32 {
     println("")
     t4 = now_ns() - t0
 
-    # ---- phase 5: Theorem 2: variable-size tiny pointers -------------------
+    # ---- phase 5: Theorem 2 — variable-size tiny pointers -------------------
     banner2()
     println("────────────────────────────────────────────────────────────────────────")
-    print("Phase 5: natural load: ")
+    print("Phase 5 — natural load: ")
     print(V_MAX_LIVE)
     print(" uniform keys into ")
     print(V_N_CONTAINERS)
@@ -5067,9 +5068,9 @@ function main() -> i32 {
 
     # ---- phase 6: adversarial cascade --------------------------------------
     println("────────────────────────────────────────────────────────────────────────")
-    println("Phase 6: adversarial cascade: 20 keys forced into ONE container")
+    println("Phase 6 — adversarial cascade: 20 keys forced into ONE container")
     println("  (offline bit-exact search found keys sharing container 5, level-0")
-    println("  bucket 3, and: nested: the same level-1/2/3 buckets)")
+    println("  bucket 3, and — nested — the same level-1/2/3 buckets)")
     t0 = now_ns()
     # evict container 5's natural occupants so we own it
     let evicted: i32 = vreg_evict_container(vrp, vtp, 5)
@@ -5145,9 +5146,9 @@ function main() -> i32 {
     # ---- phase 7: relaxed retrieval (Theorem 6) ----------------------------
     banner3()
     println("────────────────────────────────────────────────────────────────────────")
-    println("Phase 7: relaxed retrieval: Insert(x,y) → O(1)-expected hint r")
+    println("Phase 7 — relaxed retrieval: Insert(x,y) → O(1)-expected hint r")
     println("  the dereference table is used ONLY for the unique slot it hands")
-    println("  out: its store is never read (paper: 'we need not even allocate")
+    println("  out — its store is never read (paper: 'we need not even allocate")
     println("  space for it'). Values live in hash table H keyed on the slot.")
     t0 = now_ns()
     let mut rvt: VarTable = vtable_create()
@@ -5212,12 +5213,12 @@ function main() -> i32 {
 
     # ---- phase 8: churn + tombstoned deletes + auxiliary rebuild -----------
     println("────────────────────────────────────────────────────────────────────────")
-    print("Phase 8: churn + rebuild: ")
+    print("Phase 8 — churn + rebuild: ")
     print(R_CHURN_OPS)
     println(" ops, then H rebuilds in place")
     t0 = now_ns()
     println("  Delete(x, r) tombstones slot s_x in H and frees the table slot;")
-    println("  H then REBUILDS with a new seed: hints name slots, not H cells,")
+    println("  H then REBUILDS with a new seed — hints name slots, not H cells,")
     println("  so every hint must survive untouched.")
     let ev2: i32 = rreg_evict_container(rrp, rvtp, rhp, 5)
     print("  evicted ")
@@ -5284,11 +5285,11 @@ function main() -> i32 {
     println("")
     t8 = now_ns() - t0
 
-    # ---- phase 8b: Theorem 6 tradeoff: r levels of indirection ------------
+    # ---- phase 8b: Theorem 6 tradeoff — r levels of indirection ------------
     println("────────────────────────────────────────────────────────────────────────")
-    println("Phase 8b: Theorem 6 TRADEOFF: r levels of indirection (paper §6.2)")
+    println("Phase 8b — Theorem 6 TRADEOFF: r levels of indirection (paper §6.2)")
     println("  sweep r = 1..4: the retriever (level-0 slot code) costs w₀ = ⌈log⁽ʳ⁾ n⌉")
-    println("  bits: the O(n log⁽ʳ⁾ n) space term: while insert/delete descend up")
+    println("  bits — the O(n log⁽ʳ⁾ n) space term — while insert/delete descend up")
     println("  to r bucket levels: the O(r)-time side of the tradeoff curve.")
     t0 = now_ns()
     let mut rr_ok: i32 = 1
@@ -5371,9 +5372,9 @@ function main() -> i32 {
         let tD: i64 = now_ns()
         let rr_after: i32 = rr_verify(rrcp, rrrp, &rr_dups)
         let rr_per_op: f64 = ((tD - tC) as f64) / (RR_CHURN as f64)
-        # adversarial worst case: every level a single bucket: all keys
+        # adversarial worst case: every level a single bucket — all keys
         # collide at every level and cascade to the deepest bucket (O(r)).
-        # (single-bucket mode mallocs the full level tables: degenerate but
+        # (single-bucket mode mallocs the full level tables — degenerate but
         # harmless: r=1 alone is a 2^15-slot table for 64 keys, freed below)
         let mut rca: RrChain = rr_chain_create(r, log2n, 1)
         let rcap: ptr<RrChain> = &rca
@@ -5455,7 +5456,7 @@ function main() -> i32 {
     # ---- phase 9: succinct rotation-based BST (Theorem 7) ------------------
     banner4()
     println("────────────────────────────────────────────────────────────────────────")
-    print("Phase 9: AVL tree from ")
+    print("Phase 9 — AVL tree from ")
     print(BST_N)
     println(" SORTED keys (the worst case for a plain")
     t0 = now_ns()
@@ -5485,7 +5486,7 @@ function main() -> i32 {
     let vchk: i32 = vtable_check(bvtp)
     print("  inserted ")
     print(BST_N)
-    print(" sorted keys: height ")
+    print(" sorted keys — height ")
     print(hgt_root)
     print(" (AVL bound ≈ ")
     print(2 * log2i(BST_N) + 1)
@@ -5522,7 +5523,7 @@ function main() -> i32 {
     println(" bits for a raw BST (2n log n)")
     print("  rotations during AVL build: ")
     print(bt.rot[0])
-    println(": all constant-time edge overwrites")
+    println(" — all constant-time edge overwrites")
     # average search depth via tiny-pointer navigation (values verified too,
     # so the b-bit value array is exercised, not just the pointers)
     let mut depth_sum: i32 = 0
@@ -5564,17 +5565,17 @@ function main() -> i32 {
     print(val_err)
     println("")
     println("  nodes never move: key i lives at array position i; retrievers never")
-    println("  change: rotations rewrite only the 2-3 touched store slots.")
+    println("  change — rotations rewrite only the 2-3 touched store slots.")
     println("")
     t9 = now_ns() - t0
 
     # ---- phase 10: rotation storm ------------------------------------------
     println("────────────────────────────────────────────────────────────────────────")
-    print("Phase 10: rotation storm: ")
+    print("Phase 10 — rotation storm: ")
     print(BST_STORM)
     println(" random rotations at random nodes")
     t0 = now_ns()
-    println("  rotations preserve in-order order by definition: the storm churns")
+    println("  rotations preserve in-order order by definition — the storm churns")
     println("  the tree shape without ever moving a node or rewriting a retriever.")
     let mut att: i32 = 0
     let rot_before: i32 = bt.rot[0]
@@ -5602,14 +5603,14 @@ function main() -> i32 {
     println("")
     print("  pointer integrity: ")
     print(perr2)
-    println("  : retrievers, slots and node positions all untouched ✓")
+    println("   — retrievers, slots and node positions all untouched ✓")
     println("")
     t10 = now_ns() - t0
 
     # ---- phase 11: variable-size value dictionaries (Theorem 9) -----------
     banner5()
     println("────────────────────────────────────────────────────────────────────────")
-    print("Phase 11: variable-size value dictionaries: ")
+    print("Phase 11 — variable-size value dictionaries: ")
     print(VD_MAX_KEYS)
     println(" keys, skewed value sizes (Theorem 9)")
     println("  each v-bit value lives in size class ⌈log₂ v⌉; class j has its own")
@@ -5704,7 +5705,7 @@ function main() -> i32 {
         }
         ops = ops + 1
     }
-    # uniform 64-bit control: every value max-size: the bound becomes tight
+    # uniform 64-bit control: every value max-size — the bound becomes tight
     let mut ui: i32 = 0
     while ui < 8192 {
         let key: i32 = distinct_key(next_key)
@@ -5741,7 +5742,7 @@ function main() -> i32 {
     print(vd_live2)
     print(" live · ")
     print(vd_mean2)
-    println(" bits/value: skewed values stay ≈ their size, only max-size")
+    println(" bits/value — skewed values stay ≈ their size, only max-size")
     println("  values pay the full 64 bits (the bound is tight when all values")
     println("  are large, exactly as the paper predicts).")
     println("")
@@ -5750,16 +5751,16 @@ function main() -> i32 {
     # ---- phase 12: variable-size keys + values combined (Thm 9 keys analogue)
     banner6()
     println("────────────────────────────────────────────────────────────────────────")
-    print("Phase 12: variable-size key + value dictionaries: ")
+    print("Phase 12 — variable-size key + value dictionaries: ")
     print(KD_MAX_KEYS)
     println(" pairs, skewed key and value sizes")
     println("  keys AND values are size-classed (Theorem 9's remark applied to the")
     println("  key array): a k-bit key lives in class ⌈log₂ k⌉ (2^⌈log k⌉-bit slots),")
-    println("  a v-bit value in class ⌈log₂ v⌉: the pair costs Σ(2^⌈log kᵢ⌉ + 2^⌈log vᵢ⌉")
+    println("  a v-bit value in class ⌈log₂ v⌉ — the pair costs Σ(2^⌈log kᵢ⌉ + 2^⌈log vᵢ⌉")
     println("  + O(log kᵢ) + O(log vᵢ)) instead of a uniform 64+64-bit slot.")
     println("  Keys of 65-256 bits additionally go through the r-levels chain (the")
     println("  Phase-15 value chain mirrored on the KEY side): the key lives in a")
-    println("  compact key arena behind a 5-bit p₁, held in an 8-bit base slot , ")
+    println("  compact key arena behind a 5-bit p₁, held in an 8-bit base slot —")
     println("  the base pointer stays 8 bits for EVERY key size.")
     t0 = now_ns()
     let mut kvt: VDTable = vdtable_create()
@@ -5861,7 +5862,7 @@ function main() -> i32 {
     print(kd_chained)
     print(" of ")
     print(KD_MAX_KEYS)
-    println(": the base pointer stays 8 bits for every key size")
+    println(" — the base pointer stays 8 bits for every key size")
     # combined key+value space accounting: chained keys pay the 8-bit holder +
     # 5-bit p₁ (13 bits) and the arena slot's 128/256-bit cap, like Phase 15
     let mut kd_kpayload: i32 = 0
@@ -5940,8 +5941,8 @@ function main() -> i32 {
         }
         ops = ops + 1
     }
-    # uniform 64+64 control (direct: both sides max-size: both direct bounds
-    # become tight) + uniform 256+64 control (chained keys at max size: the
+    # uniform 64+64 control (direct: both sides max-size — both direct bounds
+    # become tight) + uniform 256+64 control (chained keys at max size — the
     # key-chain bound becomes tight)
     let mut kui: i32 = 0
     while kui < KD_CONTROL {
@@ -6020,7 +6021,7 @@ function main() -> i32 {
     print(kd_live2)
     print(" live pairs · ")
     print(kd_mean2)
-    println(" bits/pair: skewed keys+values stay ≈ their sizes, only the")
+    println(" bits/pair — skewed keys+values stay ≈ their sizes, only the")
     println("  uniform 64+64 control pays the full 128 bits and the uniform")
     println("  256+64 control pays 320 (the chained-key bound tightens exactly")
     println("  as the paper predicts).")
@@ -6030,14 +6031,14 @@ function main() -> i32 {
     # ---- phase 13: the lower bounds (Theorems 3-5) -------------------------
     banner7()
     t0 = now_ns()
-    # Part A: Theorem 5 (Vöcking): ANY sequential rule that gives m balls
+    # Part A — Theorem 5 (Vöcking): ANY sequential rule that gives m balls
     # d = 2^s random bin choices leaves a fullest bin of Ω((log log m)/d).
-    # Simulate least-loaded placement: the BEST possible rule: at every
+    # Simulate least-loaded placement — the BEST possible rule — at every
     # pointer budget s, and verify F(s)·2^s ≥ log₂log₂m on every row.
     let lb_m: i32 = N_SLOTS        # m = 65536 balls into 65536 bins
     let bins_raw: ptr<i32> = malloc(lb_m * 4)
     let bins: ptr<i32> = bins_raw
-    # log₂log₂m = log₂(LOG_N): derive it so the floor tracks n in the bench
+    # log₂log₂m = log₂(LOG_N) — derive it so the floor tracks n in the bench
     let mut lb_lg: i32 = LOG_N
     let mut lb_floor: i32 = 0
     while lb_lg > 1 {
@@ -6045,7 +6046,7 @@ function main() -> i32 {
         lb_floor = lb_floor + 1
     }
     let mut lb_a_ok: i32 = 1
-    print("  Part A: Theorem 5 floor: m = ")
+    print("  Part A — Theorem 5 floor: m = ")
     print(lb_m)
     println(" balls into m bins, least-loaded of d = 2^s (the best rule)")
     let mut lb_s: i32 = 0
@@ -6078,13 +6079,13 @@ function main() -> i32 {
         lb_s = lb_s + 1
     }
     print("    F shrinks only logarithmically (7,4,2,2,2,2,2): doubling d")
-    println("  saves < 1 load: the Ω((log log m)/d) floor, measured.")
+    println("  saves < 1 load — the Ω((log log m)/d) floor, measured.")
     println("")
-    # Part B: Theorem 4 (fixed-size): s = Ω(log log log n + log δ⁻¹). At
+    # Part B — Theorem 4 (fixed-size): s = Ω(log log log n + log δ⁻¹). At
     # n = 2^16, δ = 1/4 the floor is 4 bits; the live pointer is 6. Mask the
-    # real pointer to s bits and count the FORCED dereference collisions , 
+    # real pointer to s bits and count the FORCED dereference collisions —
     # every bit below the real width breaks uniqueness on this very table.
-    print("  Part B: Theorem 4: mask the live ")
+    print("  Part B — Theorem 4: mask the live ")
     print(TP_BITS)
     println("-bit pointer to s bits, count forced collisions")
     let mut lb_b_ok: i32 = 1
@@ -6117,7 +6118,7 @@ function main() -> i32 {
     println("    the scheme provably cannot spend fewer than the floor:")
     println("    even 5 bits collides on thousands of keys.")
     println("")
-    # Part C: Theorem 3 (variable-size): expected pointer size Ω(log δ⁻¹).
+    # Part C — Theorem 3 (variable-size): expected pointer size Ω(log δ⁻¹).
     # The live variable-size registry (Phase 2) keeps its pointers at the
     # measured mean; log₂δ⁻¹ = log₂4 = 2 bits is the floor.
     let mut lb_sum: i32 = 0
@@ -6138,13 +6139,13 @@ function main() -> i32 {
     }
     let lb_mean: f32 = (lb_sum as f32) / (lb_live as f32)
     let mut lb_c_ok: i32 = 1
-    print("  Part C: Theorem 3: live variable-size mean ")
+    print("  Part C — Theorem 3: live variable-size mean ")
     print(lb_mean)
     print(" bits over ")
     print(lb_live)
     println(" pointers vs floor log₂δ⁻¹ = 2")
     if lb_mean >= 2.0 {
-        println("    ✓  at/above the floor: the scheme cannot beat it")
+        println("    ✓  at/above the floor — the scheme cannot beat it")
     } else {
         println("    ✗  below the floor")
         lb_c_ok = 0
@@ -6156,7 +6157,7 @@ function main() -> i32 {
     # ---- phase 14: deamortized dynamic resizing (paper Section 6.1) --------
     banner8()
     println("────────────────────────────────────────────────────────────────────────")
-    print("Phase 14: deamortized dynamic resizing: ")
+    print("Phase 14 — deamortized dynamic resizing: ")
     print(RV_LOAD)
     print(" load + ")
     print(RV_CHURN)
@@ -6217,13 +6218,13 @@ function main() -> i32 {
     print(n_max_work)
     print(" → ")
     print(d_max_work)
-    print(" work units: the naive trigger op pays Θ(live) in one shot; the")
+    print(" work units — the naive trigger op pays Θ(live) in one shot; the")
     println("")
     print("  deamortized op caps at RV_BUDGET + RV_SCAN + 2 = ")
     print(RV_BUDGET + RV_SCAN + 2)
     print(" (measured worst ")
     print(d_max_work)
-    println(": the resize cost is fully spread, as Section 6.1 requires).")
+    println(" — the resize cost is fully spread, as Section 6.1 requires).")
     println("")
     let mut rv_ok: i32 = 1
     if n_errs != 0 {
@@ -6243,12 +6244,12 @@ function main() -> i32 {
     # ---- phase 15: r-levels of indirection (paper Theorem 9 proof, §6.5) ---
     banner9()
     println("────────────────────────────────────────────────────────────────────────")
-    print("Phase 15: r-levels of indirection: ")
+    print("Phase 15 — r-levels of indirection: ")
     print(RL_KEYS)
     println(" keys, values up to 256 bits (Theorem 9 proof)")
     println("  values ≤ 64 bits store directly in the size-class base table; values")
-    println("  of 65-256 bits live in the level-1 arena behind a 5-bit p₁ = O(log k)")
-    println("  held in an 8-bit base slot: the base pointer never grows with v.")
+    println("  of 65–256 bits live in the level-1 arena behind a 5-bit p₁ = O(log k)")
+    println("  held in an 8-bit base slot — the base pointer never grows with v.")
     t0 = now_ns()
     let mut rlbase: VDTable = vdtable_create()
     let rlbp: ptr<VDTable> = &rlbase
@@ -6408,14 +6409,14 @@ function main() -> i32 {
     print(rl_b128)
     print(" × 128-bit, ")
     print(rl_b256)
-    print(" × 256-bit): r-levels ")
+    print(" × 256-bit) — r-levels ")
     print(rl_used)
     print(" bits = ")
     print(rl_mean)
     println(" bits/value")
     print("    vs single-level size-classed: ")
     print(rl_single)
-    println(" bits (base pointer + payload: a 256-bit value would need a")
+    println(" bits (base pointer + payload — a 256-bit value would need a")
     print("    256-bit base slot and a growing class tag)")
     println("")
     print("    vs uniform 256-bit: ")
@@ -6426,13 +6427,13 @@ function main() -> i32 {
     print((100.0 * (rl_uniform as f32 - rl_single as f32)) / (rl_uniform as f32))
     println("% (single-level)")
     print("  the chain's second level costs 13 bits/value (8-bit holder + 5-bit")
-    println("  p₁) on big values only: the paper's O(log v) per-value pointer")
-    print("  overhead: and the base pointer itself never grows (8 bits for")
+    println("  p₁) on big values only — the paper's O(log v) per-value pointer")
+    print("  overhead — and the base pointer itself never grows (8 bits for")
     println("  v = 1..256), so the base table's geometry is independent of value")
     println("  size (the paper's 'base pointer … is O(log⁽ʳ⁾ n) bits').")
     println("")
 
-    # ---- phase 15b: r = 3: the O(log log k) middle pointer p₂ -------------
+    # ---- phase 15b: r = 3 — the O(log log k) middle pointer p₂ -------------
     println("  ── r = 3: base(8) → p₂(6) → p₁(5) → value, up to 2^32 bits ────────")
     print("  ")
     print(RL3_KEYS)
@@ -6571,7 +6572,7 @@ function main() -> i32 {
     }
     print("  space: ")
     print(r3_live)
-    print(" live: r=3 chain ")
+    print(" live — r=3 chain ")
     print(r3_used)
     print(" bits = ")
     print(r3_mean)
@@ -6580,7 +6581,7 @@ function main() -> i32 {
     print(" bits per BIG value: 8-bit holder + 6-bit p₂ + 5-bit p₁, vs r=2's 13)")
     println("")
     print("    pointer hierarchy: base 8 bits (never grows with v, even at 2^32)")
-    println("    → p₂ 6 bits → p₁ 5 bits: all three CONSTANT in v; only the")
+    println("    → p₂ 6 bits → p₁ 5 bits — all three CONSTANT in v; only the")
     print("    word count grows. ")
     print(r3_ghuge)
     print(" values > 2^16 bits; uniform-sized-to-max ")
@@ -6594,7 +6595,7 @@ function main() -> i32 {
     # ---- phase 16: optimal internal-memory stash (paper Theorem 10, §6.6) ---
     banner10()
     println("────────────────────────────────────────────────────────────────────────")
-    print("Phase 16: optimal internal-memory stash: ")
+    print("Phase 16 — optimal internal-memory stash: ")
     print(ST_M)
     print(" keys in a ")
     print(ST_EXT)
@@ -6652,7 +6653,7 @@ function main() -> i32 {
     print(ST_QUERIES)
     print(" random queries): external reads = ")
     print(st_reads)
-    print(" (one per query: the paper's single-access claim), errors ")
+    print(" (one per query — the paper's single-access claim), errors ")
     print(st_storm_errs)
     println("")
     # churn: 55% insert / 45% delete, with periodic re-verification
@@ -6737,18 +6738,18 @@ function main() -> i32 {
     }
     print("  space: ")
     print(st_live)
-    print(" live: stash ")
+    print(" live — stash ")
     print(st_stash_bits)
     print(" bits = ")
     print(st_mean)    print("  bits/key (4-bit pointer + ")
     print(st_adapt_mean)
-    print(" adaptivity: the paper's O(m log ε⁻¹) = O(m), independent of the")
+    print(" adaptivity — the paper's O(m log ε⁻¹) = O(m), independent of the")
     println(" external array size: the 4 pointer bits never grow with it)")
     print("    vs naive full-address stash: ")
     print(st_naive_bits)
     print(" bits = 15/key  →  ")
     print((100.0 * (st_naive_bits as f32 - st_stash_bits as f32)) / (st_naive_bits as f32))
-    println("% saved (Gonnet-Larson's O(n log ε⁻¹) beats a full-address O(n log m))")
+    println("% saved (Gonnet–Larson's O(n log ε⁻¹) beats a full-address O(n log m))")
     println("")
     t16 = now_ns() - t0
 
@@ -6941,35 +6942,35 @@ function main() -> i32 {
         all_ok = 0
     }
     if all_ok == 1 {
-        println("PASS: every allocation, dereference and stability check verified.")
+        println("PASS — every allocation, dereference and stability check verified.")
         println("Theorems 1 + 2 + 6 + 7 + 8 + 9, rebuilt from scratch in Flow:")
         println("  · fixed-size tiny pointers:   6 bits  vs 16-bit raw pointer")
         println("  · variable-size tiny pointers: ~3 bits expected (O(1 + log δ⁻¹)),")
         println("    doubly-exponential tail Pr[size ≥ ℓ] ≤ 2^(−2^Ω(ℓ)) confirmed")
         println("  · stable dictionary: values never move, even across rehash")
         println("  · relaxed retrieval: O(1)-expected hints beat the Ω(log log n)")
-        println("    dynamic-retrieval lower bound: H rebuild leaves hints valid")
-        println("  · Theorem 6 tradeoff: r = 1..4 levels of indirection: the")
+        println("    dynamic-retrieval lower bound — H rebuild leaves hints valid")
+        println("  · Theorem 6 tradeoff: r = 1..4 levels of indirection — the")
         println("    retriever (the O(n log⁽ʳ⁾ n) term) shrinks 15 → 4 → 2 → 1")
         println("    bits/key while the worst-case cascade depth grows 1 → 4")
         println("    levels with r; expected per-op stays O(1) (Phase 8b)")
         println("  · succinct rotation-based BST: children are O(1)-bit tiny")
         println("    retrievers; rotations stay constant-time (Theorem 7)")
         println("  · variable-size value dictionaries: Σ(2^⌈log vᵢ⌉ + O(log vᵢ))")
-        println("    bits per key: a uniform 64-bit dictionary becomes arbitrary-")
+        println("    bits per key — a uniform 64-bit dictionary becomes arbitrary-")
         println("    length, bound tight when values are uniform-max (Theorem 9)")
         println("  · variable-size KEY dictionaries (Thm 9 analogue): keys cost")
-        println("    Σ(2^⌈log kᵢ⌉ + O(log kᵢ)) too: skew on both sides of each pair")
+        println("    Σ(2^⌈log kᵢ⌉ + O(log kᵢ)) too — skew on both sides of each pair")
         println("    (Phase 12)")
         println("  · lower bounds: ANY scheme pays Ω(log log log n + log δ⁻¹)")
-        println("    bits fixed / Ω(log δ⁻¹) variable: measured: the Theorem-5")
+        println("    bits fixed / Ω(log δ⁻¹) variable — measured: the Theorem-5")
         println("    fullest-bin floor holds at every budget s, the variable mean")
         println("    sits at/above log₂δ⁻¹, and every bit below 6 forces")
         println("    dereference collisions on this very table (Phase 13)")
     println("  · deamortized dynamic resizing: the Θ(m) resize copy is spread over")
-    println("    the following ops: worst per-op work caps at RV_BUDGET + RV_SCAN")
+    println("    the following ops — worst per-op work caps at RV_BUDGET + RV_SCAN")
     println("    units vs Θ(live) for one-shot resizing, same workload (Phase 14)")
-    println("  · r-levels of indirection: the v ≤ 64 cap is lifted: 128/256-bit")
+    println("  · r-levels of indirection: the v ≤ 64 cap is lifted — 128/256-bit")
     println("    values live behind a 5-bit p₁ = O(log k) in an 8-bit base slot,")
     println("    and the base pointer stays 8 bits for every value size (Phase 15)")
     println("  · optimal internal-memory stash: the bucket is implicit (two-choice")
@@ -6979,10 +6980,10 @@ function main() -> i32 {
     println("    bits vs m·log₂(4m) for a naive full-address stash (Phase 16)")
     println("  · r=3 r-levels chain: the O(log log k) middle pointer p₂ lifts the")
     println("    value cap from 256 bits to 2^32 bits through base(8) → p₂(6) →")
-    println("    p₁(5) → value; every pointer width is CONSTANT in v: the base")
+    println("    p₁(5) → value; every pointer width is CONSTANT in v — the base")
     println("    never grows, only the word count does (Phase 15 extension)")
     } else {
-        println("FAIL: see above.")
+        println("FAIL — see above.")
     }
     println("")
 

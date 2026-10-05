@@ -1,5 +1,5 @@
 # Test for lsp_ordering.flow port of ordering_hover.
-# Run with: ./flow run tests/lang/test_lsp_ordering.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_lsp_ordering.flow
 # Exit 0 on success.
 
 import "compiler/src/lsp_ordering.flow"

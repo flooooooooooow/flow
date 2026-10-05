@@ -144,3 +144,6 @@ function main() -> i32 {
     return 0
 }
 ```
+
+The self-hosted `flowc` front end does not parse `sum(range)` yet. Programs
+using it need the Python host: `FLOW_HOST=python ./flow run program.flow`.

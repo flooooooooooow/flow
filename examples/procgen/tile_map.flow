@@ -19,7 +19,7 @@
 #   R reseed   P pause   Esc quit
 #
 # Run (headless, gated):
-#   ./flow record examples/procgen/tile_map.flow \
+#   FLOW_HOST=python ./flow record examples/procgen/tile_map.flow \
 #       --frames 4 --out /tmp/pg_tile_map
 # Run (windowed):
 #   ./flow gfx examples/procgen/tile_map.flow

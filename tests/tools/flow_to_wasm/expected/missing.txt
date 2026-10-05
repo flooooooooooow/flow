@@ -1,3 +1,0 @@
-❌ File not found: nope.flow
---- exit 1
---- emcc

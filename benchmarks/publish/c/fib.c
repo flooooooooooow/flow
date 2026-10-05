@@ -3,13 +3,13 @@
 #endif
 #include <time.h>
 #include <stdint.h>
-/* Monotonic clock in nanoseconds. clock_gettime(CLOCK_MONOTONIC) is POSIX
-   and works on Linux and on macOS 10.12 and later. */
-static uint64_t bench_now_ns(void) {
+#ifndef __APPLE__
+static uint64_t clock_gettime_nsec_np(int clock_id) {
     struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (uint64_t)ts.tv_sec * 1000000000LL + (uint64_t)ts.tv_nsec;
+    clock_gettime(clock_id, &ts);
+    return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 }
+#endif
 /* Naive recursive Fibonacci. Same algorithm and size as fib.flow. */
 #include <stdio.h>
 #include <stdint.h>
@@ -21,9 +21,9 @@ static int64_t fib(int n) {
 }
 
 int main(void) {
-    uint64_t t0 = bench_now_ns();
+    uint64_t t0 = clock_gettime_nsec_np(CLOCK_MONOTONIC);
     int64_t result = fib(35);
-    uint64_t t1 = bench_now_ns();
+    uint64_t t1 = clock_gettime_nsec_np(CLOCK_MONOTONIC);
     double secs = (t1 - t0) / 1e9;
     printf("result %lld\n", (long long)result);
     printf("seconds %.9f\n", secs);

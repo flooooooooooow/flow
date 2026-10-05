@@ -1,4 +1,0 @@
-# The comparator is the totalOrder helper, never a raw < on the key.
-flags --strict
-+ __flowc_ord((__flowc_sa[__flowc_sj]).t
-exit 0

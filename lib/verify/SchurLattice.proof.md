@@ -1,10 +1,10 @@
 # verify.SchurLattice
 
-*Schur-lattice all-pass synthesis: finite controllability route.*
+*Schur–lattice all-pass synthesis: finite controllability route.*
 
 **Source.** Gray–Markel lattice filters; Schur/Levinson stability disk.
 
-## Theorem 1: Reflection in the stability disk
+## Theorem 1 — Reflection in the stability disk
 
 **Coordinate.** SchurLattice · reflection · bounded coefficient · **Theorem**
 
@@ -15,7 +15,7 @@
 | ① | Clamp checks reject $k \ge 0.999$ and $k \le -0.999$. | | |
 | ② | Hence bounded reflections lie in $(-1,1)$. | ② | $|k| < 1$ |
 
-## Theorem 2: Givens energy preservation
+## Theorem 2 — Givens energy preservation
 
 **Coordinate.** SchurLattice · Givens · orthogonal composition · **Theorem**
 
@@ -26,7 +26,7 @@
 | ① | `givens_energy_preserved` tests $c^2+s^2 \approx 1$. | | |
 | ② | Matches Lean `givens₂_orthogonal`. | ② | $GG^\top = I$ |
 
-## Theorem 3: Finite controllability observer map
+## Theorem 3 — Finite controllability observer map
 
 **Coordinate.** SchurLattice · controllability · observer lift · **Theorem**
 

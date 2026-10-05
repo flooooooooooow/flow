@@ -1,5 +1,5 @@
 {
-  "generated_by": "./flow tool wasm_build gallery",
+  "generated_by": "scripts/build_wasm_gallery.py",
   "examples": 161,
   "built": 161,
   "failed": 0,
@@ -1818,7 +1818,7 @@
       "category": "learning",
       "source": "examples/ml/digits_mlp_metal.flow",
       "summary": "Metal GPU status check for the digits MLP: what runs on the GPU today",
-      "note": "The Metal GPU is CPU-emulated on wasm: buffers are plain memory and flow_gpu_mul_f32 runs an elementwise CPU loop, so the relu-gate correctness check runs and passes, but the 'gpu ms' timing rows measure a CPU loop rather than a GPU dispatch.",
+      "note": "The Metal GPU is CPU-emulated on wasm: buffers are plain memory and flow_gpu_mul_f32 runs an elementwise CPU loop, so the relu-gate correctness check runs and passes, but the 'gpu ms' timing rows measure a CPU loop, not a GPU dispatch.",
       "status": "ok",
       "gfx": false,
       "wasm_bytes": 20603,

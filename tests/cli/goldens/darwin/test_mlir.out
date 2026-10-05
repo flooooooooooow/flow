@@ -1,7 +1,0 @@
-[0;34mℹ️  Running MLIR verification tests...[0m
-[0;32m✅ ✓ tests/mlir/basic_arith.flow[0m
-[0;32m✅ ✓ tests/core/hello_world.flow[0m
-[0;32m✅ ✓ tests/core/fibonacci.flow[0m
-[0;32m✅ ✓ tests/core/loops.flow[0m
-----------------------------------------
-[0;34mℹ️  MLIR tests: 4 passed, 0 failed, 0 skipped (of 4)[0m

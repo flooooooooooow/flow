@@ -1,0 +1,56 @@
+name: Finalize Flow 1.0.1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - src/flow/version.py
+      - .github/workflows/finalize-flow-1.0.1.yml
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  finalize:
+    if: github.repository == 'flooooooooooow/flow'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Verify the 1.0.1 release tree
+        shell: bash
+        run: |
+          python3 scripts/sync_version.py --check
+          python3 scripts/check_changelog.py
+          test "$(PYTHONPATH=src python3 - <<'PY'
+          from flow.version import __version__
+          print(__version__)
+          PY
+          )" = "1.0.1"
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          grep -q '^## \[1\.0\.1\] - 2026-08-23$' docs/project/CHANGELOG.md
+
+      - name: Create immutable Flow 1.0.1 tag
+        id: tag
+        shell: bash
+        run: |
+          if git ls-remote --exit-code --tags origin refs/tags/v1.0.1 >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "v1.0.1 already exists; leaving it immutable"
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a v1.0.1 "${GITHUB_SHA}" -m 'Flow 1.0.1'
+          git push origin refs/tags/v1.0.1
+          echo "exists=false" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch exact-tag release qualification and publication
+        if: steps.tag.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release.yml --ref main -f tag=v1.0.1

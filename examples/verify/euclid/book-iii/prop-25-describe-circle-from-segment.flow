@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-iii
 # @means  Given a segment of a circle, to describe the complete circle of which it is a part.
-# @from   euclid: Elements, Book III, Proposition 25
+# @from   euclid — Elements, Book III, Proposition 25
 # @tier   derived
 # @needs  «Geometry» «Euclid Book III» «Proposition 21: angles in the same segment are equal», «Geometry» «Euclid Book I» «Proposition 9: bisect a given angle»
 

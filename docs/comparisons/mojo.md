@@ -8,7 +8,7 @@ Mojo and Flow both want high-level code to survive all the way down to fast nati
 
 ## The short version
 
-Mojo is a direct competitor for performance-sensitive AI and numerical work. Flow's strongest differentiator is not "Python syntax but faster"; it is making concepts such as effects, evolution, DSP and target behavior part of the language rather than expecting libraries to provide all of the semantic structure.
+Mojo is a direct competitor for performance-sensitive AI and numerical work. Flow's strongest differentiator is not “Python syntax but faster”; it is making concepts such as effects, evolution, DSP and target behavior part of the language rather than expecting libraries to provide all of the semantic structure.
 
 ## Example: a model as a declaration
 
@@ -58,13 +58,13 @@ fn main():
     print(system.value)
 ```
 
-The Mojo implementation is readable and close to Python. Flow encodes an additional layer of meaning: the compiler sees state, parameters and the evolution law as such, beyond fields and a method.
+The Mojo implementation is readable and close to Python. Flow encodes an additional layer of meaning: the compiler sees state, parameters and the evolution law as such, not merely as fields and a method.
 
 ## Different kinds of expressiveness
 
 Mojo's expressiveness is especially strong in compile-time metaprogramming, SIMD/GPU kernels, parameterization and Python-adjacent numerical code. Flow's intended advantage is semantic compression across a broader systems program: effects and capabilities, dynamics, audio/DSP surfaces, native interop and multiple lowering targets can share one language model.
 
-That means a useful Flow-vs-Mojo comparison should eventually include complete kernels and applications rather than syntax screenshots. This page deliberately avoids performance claims that are not backed by equivalent measurements.
+That means a useful Flow-vs-Mojo comparison should eventually include complete kernels and applications, not syntax screenshots. This page deliberately avoids performance claims that are not backed by equivalent measurements.
 
 ## Where Mojo still wins
 

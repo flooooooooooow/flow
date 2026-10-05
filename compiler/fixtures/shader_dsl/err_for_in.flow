@@ -1,3 +1,0 @@
-shader fill f {
-    for i of 0 to 3 { color = vec4(1.0) }
-}

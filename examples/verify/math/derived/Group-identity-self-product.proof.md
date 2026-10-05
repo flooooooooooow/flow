@@ -2,9 +2,9 @@
 
 *The identity multiplies to itself.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §1.1
+**Source.** dummit-foote — *Abstract Algebra*, §1.1
 
-## Derived fact 1: 1 * 1 = 1
+## Derived fact 1 — 1 * 1 = 1
 
 **Coordinate.** Group · multiplication · identity times identity is identity · **Derived fact**
 

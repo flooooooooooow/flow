@@ -2,9 +2,9 @@
 
 *Thirteen plus zero is thirteen in an ideal witness.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.1
+**Source.** dummit-foote — *Abstract Algebra*, §7.1
 
-## Derived fact 1: 13 + 0 = 13 in an ideal
+## Derived fact 1 — 13 + 0 = 13 in an ideal
 
 **Coordinate.** Ideal · addition · thirteen plus zero in ideal · **Derived fact**
 

@@ -2,9 +2,9 @@
 
 *Double reverse restores a quintuple cons list.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Reverse_(list)
+**Source.** church — https://en.wikipedia.org/wiki/Reverse_(list)
 
-## Derived fact 1: rev(rev(cons(a, cons(b, cons(c, cons(d, cons(e, xs))))))) = cons(a, cons(b, cons(c, cons(d, cons(e, xs)))))
+## Derived fact 1 — rev(rev(cons(a, cons(b, cons(c, cons(d, cons(e, xs))))))) = cons(a, cons(b, cons(c, cons(d, cons(e, xs)))))
 
 **Coordinate.** List · reverse · double reverse of quintuple cons · **Derived fact**
 

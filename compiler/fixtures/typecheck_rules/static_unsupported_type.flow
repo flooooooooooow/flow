@@ -1,6 +1,0 @@
-# expect: ok
-let mut s: string = "x"
-
-function main() -> i32 {
-    return 0
-}

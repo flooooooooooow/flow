@@ -1,4 +1,0 @@
-# From tests/unit/test_decorator_arguments.py::test_the_bound_survives_monomorphization_and_reaches_the_c_backend
-+ while exceeded @max_iterations(1000)
-~ if \(__flowc_iter_[0-9]+ >= 1000\)
-exit 0

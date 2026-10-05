@@ -2,9 +2,9 @@
 
 *One plus one is two in a ring witness.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.1
+**Source.** dummit-foote — *Abstract Algebra*, §7.1
 
-## Derived fact 1: 1 + 1 = 2
+## Derived fact 1 — 1 + 1 = 2
 
 **Coordinate.** Ring · addition · one plus one derived · **Derived fact**
 

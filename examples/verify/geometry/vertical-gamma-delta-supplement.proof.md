@@ -2,9 +2,9 @@
 
 *Angles gamma and delta at intersecting lines are supplementary.*
 
-**Source.** euclid: Elements, Book I, Proposition 13
+**Source.** euclid — Elements, Book I, Proposition 13
 
-## Derived fact 1: gamma plus delta equals two right angles
+## Derived fact 1 — gamma plus delta equals two right angles
 
 **Coordinate.** the Euclidean plane · intersecting lines · gamma delta supplementary · **Derived fact**
 

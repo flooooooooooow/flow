@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Join is bounded below by its right argument.
-# @from   davey-priestley: *Introduction to Lattices and Order*
+# @from   davey-priestley — *Introduction to Lattices and Order*
 # @tier   derived
 
 # @means  b <= join(a, b).

@@ -1,6 +1,0 @@
-# expect: Cannot assign string to variable 'y' of type i32
-function main() -> i32 {
-    let mut y: i32 = 3
-    y = "four"
-    return y
-}

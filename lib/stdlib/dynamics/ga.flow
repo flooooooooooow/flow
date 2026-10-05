@@ -28,11 +28,10 @@ function ga_rollout_cost(sys: DynamicalSystem, k1: f64, k2: f64, steps: i32) -> 
 
 # Deterministic pseudo-random in [0,1) from integer seed.
 function ga_hash(seed: i32) -> f64 {
-    # Unsigned arithmetic wraps by definition, so the hash is the same on
-    # every host and C compiler; the i32 form overflowed (undefined in C).
-    let s: u32 = (seed as u32) * (1103515245 as u32) + (12345 as u32)
-    let v: u32 = s / (65536 as u32)
-    return ((v % (1000 as u32)) as f64) / 1000.0
+    let s: i32 = seed * 1103515245 + 12345
+    let mut v: i32 = s / 65536
+    if v < 0 { v = 0 - v }
+    return (v % 1000) / 1000.0
 }
 
 # Mutate value by ±scale uniform noise.

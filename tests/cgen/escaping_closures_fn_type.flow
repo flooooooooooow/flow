@@ -1,6 +1,0 @@
-# A local annotated with a function type holds a capturing closure.
-function main() -> i32 {
-    let n: i32 = 5
-    let add_n: (i32) -> i32 = |x: i32| -> i32 { return x + n }
-    return add_n(10)
-}

@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-ii
 # @means  The complements of the parallelograms about the diameter of a gnomon are equal to one another.
-# @from   euclid: Elements, Book II, Proposition 14
+# @from   euclid — Elements, Book II, Proposition 14
 # @tier   derived
 # @needs  «Geometry» «Euclid Book I» «Proposition 34: complements of parallelograms about the diameter are equal», «Geometry» «Euclid Book II» «Proposition 11: a gnomon equals the rectangle by the segments»
 

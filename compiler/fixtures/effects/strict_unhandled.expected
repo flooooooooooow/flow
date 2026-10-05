@@ -1,2 +1,0 @@
-reject
-Unhandled effect 'Log.info' in 'main': wrap in `handle Log with ...`, declare `with Log` on the function, or omit --strict-effects to allow zero defaults

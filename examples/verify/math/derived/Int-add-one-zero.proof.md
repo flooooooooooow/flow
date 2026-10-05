@@ -2,9 +2,9 @@
 
 *One plus zero is one for integers.*
 
-**Source.** landau: *Foundations of Analysis*, Ch. 1
+**Source.** landau — *Foundations of Analysis*, Ch. 1
 
-## Derived fact 1: 1 + 0 = 1
+## Derived fact 1 — 1 + 0 = 1
 
 **Coordinate.** the integers · addition · one plus zero is one · **Derived fact**
 

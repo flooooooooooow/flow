@@ -1,2 +1,0 @@
-Error: Unexpected item in flow 'M' body at line 10, column 46
-flow bodies contain member declarations ('state|input|output|param name : type [= expr]'), nested flow members ('plant : Motor'), dynamics ('x evolves as expr'), events ('when x reaches expr { x becomes expr }'), discrete blocks ('every 10 ms { x becomes expr }'), composition ('connect { a.out -> b.in }'), invariants ('always { expr }' / 'never { expr }'), semantic contracts ('recognize { numerical realtime }'), and settings ('solver { dt 1 ms }')

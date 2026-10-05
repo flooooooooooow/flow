@@ -1,4 +1,3 @@
-# effects-mode: permissive
 # Delimited continuation scaffold — shift/resume demo
 # Run: ./flow run examples/concurrency/cont_scaffold.flow
 

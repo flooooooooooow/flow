@@ -20,4 +20,4 @@ FLOW CLI:
 ./flow vulkan-demo-advanced
 ```
 
-`flow demo vulkan advanced` sets `VK_ICD_FILENAMES` and `VK_LAYER_PATH` for Homebrew installs.
+`run.sh` sets `VK_ICD_FILENAMES` and `VK_LAYER_PATH` for Homebrew installs.

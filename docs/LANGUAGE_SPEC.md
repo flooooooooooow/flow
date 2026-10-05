@@ -1,14 +1,14 @@
 # FLOW Language Specification
 
-> **Version**: 2.0.0
-> **Last Updated**: 2026-09-27
+> **Version**: 1.0.2
+> **Last Updated**: 2026-08-24
 
 ## Overview
 
 FLOW is a statically-typed, systems programming language with first-class support for:
 - **Algebraic effects** for modular side-effect handling
-- **Evolution / dynamics DSLs** (`flow` / `evolves as`, units of measure, `field` PDE, `analyze` LQR): see [§10](#10-domain--dsl-surfaces)
-- **Native graphics** (macOS Metal/Cocoa; Linux/Windows SDL2) and **fill shaders** (`shader fill`): see [graphics.md](language/graphics.md) / [shaders.md](language/shaders.md)
+- **Evolution / dynamics DSLs** (`flow` / `evolves as`, units of measure, `field` PDE, `analyze` LQR) — see [§10](#10-domain--dsl-surfaces)
+- **Native graphics** (macOS Metal/Cocoa; Linux/Windows SDL2) and **fill shaders** (`shader fill`) — see [graphics.md](language/graphics.md) / [shaders.md](language/shaders.md)
 - **GPU memory helpers** via Metal on macOS (stdlib); CUDA/OpenCL are **not** shipping
 - **Automatic differentiation** as library dual/reverse helpers (see [autodiff.md](library/autodiff.md))
 - **WebAssembly** via Flow→C→Emscripten (see [wasm.md](language/wasm.md))
@@ -17,7 +17,7 @@ FLOW is a statically-typed, systems programming language with first-class suppor
 
 ### Commands
 ```bash
-flow run <file.flow>      # Compile and run with flowc
+flow run <file.flow>      # Compile and run (default host: flowc; escape: FLOW_HOST=python)
 flow compile <file.flow>  # Compile to executable
 flow fmt <file.flow>      # Format source code
 flow test                 # Run all tests
@@ -29,7 +29,7 @@ flow debug <file.flow>    # Launch with debugger (#line maps)
 
 ---
 
-> **AUTHORITATIVE REFERENCE**: This document is the single source of truth for the FLOW language.
+> **AUTHORITATIVE REFERENCE** — This document is the single source of truth for the FLOW language.
 > All other documentation references this spec. Features marked ✅ are implemented, ⚠️ are partial, ❌ are planned.
 > Focused pages under [docs/language/](language/) are preferred for learning; this file owns status matrices and edge cases.
 
@@ -79,7 +79,7 @@ flow debug <file.flow>    # Launch with debugger (#line maps)
 | `match` | ⚠️ | Pattern Matching (literals, structs, guards, `\|` alternation, nested literal fields; real exhaustiveness checking for `bool` and enum/ADT variants via path/const patterns, minimal stub for integers) |
 | `default` | ✅ | Pattern Matching |
 | `mut` | ✅ | Mutability (`let mut`) |
-| `to` | ✅ | Range (`for i in 0 to n`), preferred over `..` |
+| `to` | ✅ | Range (`for i in 0 to n`) — preferred over `..` |
 | `break` | ✅ | Control Flow |
 | `continue` | ✅ | Control Flow |
 | `defer` | ✅ | Control Flow (run on scope exit) |
@@ -99,9 +99,9 @@ flow debug <file.flow>    # Launch with debugger (#line maps)
 | `always_inline` | ✅ | Emits `__attribute__((always_inline))` plus the inline specifier (§3.6) |
 | `target` | ✅ | Emits `__attribute__((target("…")))`; the string's shape is checked, its meaning is the C compiler's (§3.6) |
 | `module` | ⚠️ | `module X { ... }` is parsed, then flattened: the block name is discarded and the inner declarations become globals. Two blocks declaring the same name emit duplicate C. Accepts 7 declaration forms; `import` inside a block is never resolved. See [modules-namespacing.md](language/modules-namespacing.md) |
-| `theorem` / `assume` / `therefore` | ⚠️ | Verification surface (`flow-verify` / design; see [verification.md](language/verification.md)) |
+| `theorem` / `assume` / `therefore` | ⚠️ | Verification surface (`flow-verify` / design — see [verification.md](language/verification.md)) |
 | `unit` | ✅ | Units of measure (§2.6) |
-| `flow` | ✅ | Evolution block (§10.1), contextual keyword |
+| `flow` | ✅ | Evolution block (§10.1) — contextual keyword |
 | `ui_layout` / `ui_row` / `ui_column` / `ui_stack` / `ui_grid` | ⚠️ | UI layout sugar (parsed; host-dependent) |
 
 ### 1.2 Operators
@@ -126,7 +126,7 @@ flow debug <file.flow>    # Launch with debugger (#line maps)
 | `=` | Assignment | ✅ |
 | `to` | Range keyword | ✅ (canonical `for` range) |
 | `..` | Range | ✅ (accepted alias of `to`) |
-| `\|>` | Pipe | ✅ (declarative ordering, §4.5) |
+| `\|>` | Pipe | ✅ (declarative ordering — §4.5) |
 | `&` / `*` | Address-of / deref | ✅ (unary; see §8.3) |
 | `->` | Type Arrow | ✅ |
 | `=>` | Match Arrow | ✅ |
@@ -213,10 +213,10 @@ Rationale, alternatives considered, and the implementation are in
 | Pointer | `ptr<T>` | ✅ |
 | Struct | `struct Name { ... }` | ✅ |
 | Vector (SIMD) | `vec<T, N>` | ⚠️ (parsed, limited codegen) |
-| Span (immutable view) | `span<T>`, `&[T]` | ✅ concrete element types: [spans.md](language/spans.md) |
+| Span (immutable view) | `span<T>`, `&[T]` | ✅ concrete element types — [spans.md](language/spans.md) |
 | Span (mutable view) | `span<mut T>`, `&mut [T]` | ✅ concrete element types |
 | Span (static extent) | `span<T, N>`, `&[T; N]` | ✅ length checked at the call site |
-| Span (inferred) | `span`, `span<mut>`, `span<number>` | ❌ layer 2: parser reports "not yet implemented" |
+| Span (inferred) | `span`, `span<mut>`, `span<number>` | ❌ layer 2 — parser reports "not yet implemented" |
 
 ### 2.3 Type Syntax
 
@@ -292,7 +292,7 @@ let v: Velocity = d / t
 - Bare `unit Name` declares a base dimension; `unit Name = expr` derives via `*`, `/`, and integer `^`.
 - Literals take a unit with `as`. Addition/subtraction require matching dimensions; `*`/`/` compose them.
 - `Radian` may pass through trig builtins as dimensionless.
-- Focused write-up: [types.md: Units](language/types.md); example: `examples/evolution/units_kinematics.flow`; design: [north-star.md](vision/north-star.md).
+- Focused write-up: [types.md — Units](language/types.md); example: `examples/evolution/units_kinematics.flow`; design: [north-star.md](vision/north-star.md).
 
 ---
 
@@ -335,17 +335,13 @@ function shared_path() -> void { ... }
 function release_only() -> void { ... }
 ```
 
-A guard lists modes. The function is part of the build when at least one of
-them is active, and is dropped before type checking otherwise. A function
-without a guard is always kept. The modes are:
-- `compile` (always active)
-- `c` (active for a C build) or `mlir` (active for an MLIR build)
-- `jit`, `hot`, `interp` (active only when named with `FLOWC_MODE`)
+Modes are resolved by the transpiler:
+- `compile` (default)
+- `jit`
+- `hot`
+- `mlir`, `c`
 
-A C build therefore keeps `@only(compile)`, `@only(c)` and `@guard(jit, c)`
-and drops `@only(jit)` and `@hot`. Two definitions of one function under
-different guards compile to a single function. Set `FLOWC_MODE=hot` (the
-old `--mode hot`) to add one more mode.
+Use `--mode` in the CLI to override mode detection when needed.
 
 ### 3.2 Variable Declaration
 
@@ -442,10 +438,7 @@ struct Rectangle {
 
 **Grammar:**
 ```
-extern_decl := 'extern' STRING? '{' extern_item* '}'
-           | 'extern' 'const' extern_const
-extern_item := function_signature | 'type' IDENTIFIER | 'const' extern_const
-extern_const := IDENTIFIER ':' type ('=' STRING)?
+extern_decl := 'extern' STRING? '{' function_signature* '}'
 function_signature := 'function' IDENTIFIER '(' parameters? ')' ('->' type)?
 ```
 
@@ -459,38 +452,12 @@ extern "C" {
 }
 ```
 
-**C constants.** `const NAME: T` in an extern block declares a C macro or
-constant with a Flow type. It emits nothing: the name reaches the C
-compiler as written, so its value is the one in this platform's headers
-(`SIGCHLD` is 20 on macOS and 17 on Linux). `const NAME: T = "expr"` binds
-`NAME` to a C expression the C compiler evaluates, which is how a program
-reads struct sizes and field offsets. The header must be included, through
-`@cImport`, `@cInclude`, `@cEmbed` or a module such as `std.os`.
-
-```flow-pseudocode
-@cEmbed("#include <stddef.h>
-#include <netinet/in.h>")
-
-extern {
-    const SIGINT: i32
-    const SOCKADDR_IN_SIZE: i64 = "(int64_t)sizeof(struct sockaddr_in)"
-    const SIN_PORT_OFFSET: i64 = "(int64_t)offsetof(struct sockaddr_in, sin_port)"
-}
-
-extern const EAGAIN: i32
-```
-
-`std.os` declares the common signal and errno constants this way, and
-reads `errno` and installs signal handlers through a small runtime shim.
-See [library/os.md](library/os.md).
-
 ### 3.6 Attributes
 
 An attribute is written `@name` or `@name(arg, …)` immediately before a
 `function` declaration. Several may be stacked. The full vocabulary lives in
-`compiler/src/attributes.flow`. A name outside it is a type error, so a
-misspelled attribute gets reported. Under `--lenient` it is a warning and
-the attribute is ignored; it never reaches the C.
+`src/flow/attributes.py`. A name outside it is a type error, so a misspelled
+attribute gets reported.
 
 ```flow-pseudocode
 @always_inline
@@ -501,7 +468,7 @@ function dot4(a: ptr<f32>, b: ptr<f32>) -> f32 { ... }
 | Attribute | Status | Notes |
 |-----------|--------|-------|
 | `@only` / `@guard` | ✅ | Build-mode guards (§3.1.1) |
-| `@rt_safe` | ✅ | Real-time safety annotation; see [rt-safety.md](library/rt-safety.md) |
+| `@rt_safe` | ✅ | Real-time safety annotation — see [rt-safety.md](library/rt-safety.md) |
 | `@flow_api` | ✅ | Keep the plain, unmangled name for a stable C ABI |
 | `@gpu` | ✅ | Device code generation |
 | `@inline` | ✅ | Inline hint (below) |
@@ -516,10 +483,10 @@ forward declaration and the definition, so the two always agree.
 
 | Flow | Emitted C |
 |------|-----------|
-| `@inline` | `static inline int32_t add(int32_t a, int32_t b)` |
-| `@noinline` | `__attribute__((noinline)) int32_t sub(int32_t a, int32_t b)` |
-| `@always_inline` | `__attribute__((always_inline)) static inline int32_t mul(int32_t a, int32_t b)` |
-| `@target("crypto")` | `__attribute__((target("crypto"))) int32_t bump(int32_t a)` |
+| `@inline` | `static inline int32_t add_i32_i32(int32_t a, int32_t b)` |
+| `@noinline` | `__attribute__((noinline)) int32_t sub_i32_i32(int32_t a, int32_t b)` |
+| `@always_inline` | `__attribute__((always_inline)) static inline int32_t mul_i32_i32(int32_t a, int32_t b)` |
+| `@target("crypto")` | `__attribute__((target("crypto"))) int32_t bump_i32(int32_t a)` |
 
 Caveats worth knowing before you reach for them:
 
@@ -527,9 +494,9 @@ Caveats worth knowing before you reach for them:
   at `-O2` a small function is usually inlined with or without the attribute.
 - **`@inline` and `@always_inline` add `static`.** That is what makes the
   inline definition self-contained. Some symbols have to stay visible to
-  another object file: `main`, an `export function` and a `@flow_api`
-  function. For those the backend emits C99 `extern inline`, which keeps the
-  external definition and the hint.
+  another object file: `main`, an `export function`, a `@flow_api` function,
+  and anything in a `--library` build. For those the backend emits C99
+  `extern inline`, which keeps the external definition and the hint.
 - **`@always_inline` is honored at every optimization level,** including
   `-O0`. If the compiler cannot inline the call, it reports an error.
 - **`@always_inline` combined with `@target(…)` usually fails to build.** A
@@ -537,8 +504,7 @@ Caveats worth knowing before you reach for them:
   and clang says so. Flow emits both attributes as written and lets the C
   compiler make the call.
 - **`@noinline` cannot be combined with `@inline` or `@always_inline`;** the
-  type checker rejects the pair. Under `--lenient` it warns and `@noinline`
-  wins.
+  type checker rejects the pair.
 - **`@target` is platform-specific and unverified at compile time.** Flow
   checks only the string's shape: comma-separated items, each a bare feature
   (`avx2`, `crypto`), a signed feature (`+avx2`, `-sse`, `no-sse`) or a
@@ -546,8 +512,7 @@ Caveats worth knowing before you reach for them:
   `branch-protection=standard`). Whether those features exist is decided by the
   host C compiler for the machine it is targeting. Clang warns on an
   unrecognized feature and ignores it, so an x86 target string still compiles
-  on arm64 and does nothing there. A string of any other shape is a type
-  error, and it never reaches the C, even under `--lenient`.
+  on arm64 and does nothing there.
 - **Attributes on `extern` and forward declarations are dropped.** There is no
   body in that translation unit, so an inline specifier would promise a
   definition the backend never emits.
@@ -663,8 +628,7 @@ let i  = xs |> find(target)     # index of the first match, or -1
 ```
 
 These name an intent. The compiler picks the implementation from a registry
-of lowerings with cost models and applicability predicates
-(`compiler/src/sort_plans.flow`).
+of lowerings with cost models and applicability predicates.
 
 | Surface | Meaning | Status |
 |---------|---------|--------|
@@ -675,7 +639,7 @@ of lowerings with cost models and applicability predicates
 | `adaptive`, `general` | Shift the run estimate; pin the general plan | ✅ |
 | `stable` / `unstable` | Parsed; every plan is stable today, so `unstable` buys nothing | ⚠️ |
 | `with entropy`, `parallel`, `gpu`, `simd`, `compact`, … | Parsed, no specialization | ⚠️ |
-| `flow explain` (`FLOWC_EXPLAIN=1`) | Print the plan, the costs, and every failed constraint | ✅ |
+| `--explain` / `flow explain` | Print the plan, the costs, and every failed constraint | ✅ |
 
 ### 4.6 If-expressions
 
@@ -693,7 +657,7 @@ See [ordering.md](language/ordering.md),
 [explainable-compilation.md](language/explainable-compilation.md), and
 `examples/basics/declarative_sort.flow`.
 
-**Related (library, not core syntax):** Dual / Tensor arithmetic overloads (`+ - * /`, scale, add_scalar) are implemented in the C generator + stdlib. See pattern-adoption notes and `examples/ml/autodiff/tensor_ops.flow`.
+**Related (library, not core syntax):** Dual / Tensor arithmetic overloads (`+ - * /`, scale, add_scalar) are implemented in the C generator + stdlib — see pattern-adoption notes and `examples/ml/autodiff/tensor_ops.flow`.
 
 ---
 
@@ -912,12 +876,13 @@ function_decl := 'function' IDENTIFIER '(' parameters? ')' '->' type
                  ('with' IDENTIFIER (',' IDENTIFIER)*)? block
 ```
 
-**Status:** ✅ Implemented in Stable mode. Use `FLOWC_PERMISSIVE_EFFECTS=1`
-for the legacy permissive compiler path.
+**Status:** ✅ Implemented (enforced under `--strict-effects` or
+`FLOW_STRICT_EFFECTS=1`)
 
 A `with E1, E2` clause declares effects the function may perform. The body may
 use those effects without a local `handle`. Callers must cover the row via an
-enclosing `handle` or their own `with` clause. First-class types carry the same clause:
+enclosing `handle` or their own `with` clause. Soft zero defaults remain when
+`--strict-effects` is omitted. First-class types carry the same clause:
 `(string) -> void with Log`. See `examples/effects/effect_rows.flow` and
 [effects-showcase.md](effects-showcase.md).
 
@@ -998,7 +963,7 @@ export greet
 reexport_decl := 'export' 'import' module_path ('{' symbols '}')?
 ```
 
-**Status:** ✅ Implemented (`tests/lang/test_reexport.flow`)
+**Status:** ✅ Implemented (Python host)
 
 `export import M` makes every symbol `M` exports an export of the current file
 as well. `export import M { a, b }` forwards only the named symbols, which must
@@ -1166,7 +1131,7 @@ memory; domains on parameters or in types.
 
 ### 9.3 WebAssembly
 
-**Status:** ✅ Via Emscripten (C or MLIR CPU backends); see [language/wasm.md](language/wasm.md)
+**Status:** ✅ Via Emscripten — C or MLIR CPU backends — see [language/wasm.md](language/wasm.md)
 
 - Paths: Flow → C → `emcc`, or Flow → MLIR → LLVM IR → `emcc`
   (`./flow wasm --backend=c|mlir`, default `c`)
@@ -1196,7 +1161,7 @@ memory; domains on parameters or in types.
 
 ## 10. Domain / DSL Surfaces
 
-These are first-class language / pre-parse surfaces shipped alongside the core grammar. Status is for `flowc`, the only C compiler, unless noted (see [self-hosting.md](project/self-hosting.md)).
+These are first-class language / pre-parse surfaces shipped alongside the core grammar. Status is relative to the Python host (`FLOW_HOST=python`) unless noted. Stage-A `flowc` covers a subset (see [self-hosting.md](project/self-hosting.md)).
 
 ### 10.1 `flow` / `evolves as` / representation
 
@@ -1219,7 +1184,7 @@ Legacy `dsys` / `dynamics { }` and vision-form `analyze plant { lqr { Q… R… 
 
 ### 10.3 `field` / `boundary` / Laplacian PDE
 
-**Status:** ✅ (Stage-1 expander in [`compiler/src/field_dsl.flow`](../compiler/src/field_dsl.flow), run by flowc before parse)
+**Status:** ✅ (Stage-1 expander in `field_dsl.py`)
 
 `field` / `boundary` / `evolves as laplacian` → `T_field_step` helpers. Heat demo and pattern-adoption #163.
 
@@ -1238,7 +1203,7 @@ Legacy `dsys` / `dynamics { }` and vision-form `analyze plant { lqr { Q… R… 
 
 ### 10.6 GPU memory (stdlib)
 
-**Status:** ✅ Metal path; stub elsewhere: [gpu-memory.md](library/gpu-memory.md)
+**Status:** ✅ Metal path; stub elsewhere — [gpu-memory.md](library/gpu-memory.md)
 
 CUDA/OpenCL backends are **not** shipping.
 
@@ -1280,9 +1245,8 @@ function main() -> i32 {
 ```
 
 - Example: `examples/graphics/gif_writer.flow` (24-frame animation)
-- Tests: `tests/lang/test_gif_encoder.flow`, `tests/scripts/gif_flow_encoder.flow`
-  (`scripts/tools/gif_check`, a GIF89a reader in Flow, decodes the output as
-  ground truth)
+- Tests: `tests/lang/test_gif_encoder.flow`, `tests/unit/test_gif_flow_encoder.py`
+  (Pillow decodes the output as ground truth)
 
 ---
 
@@ -1415,4 +1379,4 @@ two backends disagree on that one shape.
 ---
 
 *Last updated: 2026-08-06*
-*Version: 2.0.0*
+*Version: 1.0.2*

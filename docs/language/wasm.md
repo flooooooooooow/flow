@@ -5,7 +5,7 @@ self-hosted Flow-in-WASM compiler.
 
 There are two routes to a `.wasm`, and they are for different jobs. `./flow
 wasm` goes through Emscripten and gives you a whole page: libc, a filesystem, a
-canvas, JS glue. `./flow wasm32` goes through MLIR and LLVM
+canvas, JS glue. `python -m flow.wasm_compiler` goes through MLIR and LLVM
 straight to a freestanding module with no libc and no glue, for embedding in a
 host that already has its own runtime. The Emscripten route is the rest of this
 page; the direct one is [its own section](#direct-wasm32-no-emscripten).
@@ -19,7 +19,7 @@ target can do today.
 
 ```bash
 ./flow wasm examples/games/snake_gfx.flow --out build/wasm/snake
-./flow tool wasm_build gallery              # all of them, into site/wasm/
+python3 scripts/build_wasm_gallery.py        # all of them, into site/wasm/
 ```
 
 `./flow wasm` writes a `.wasm`, its `.js` loader and a runnable `index.html`.
@@ -105,17 +105,17 @@ Playground (local compile API):
 #             Browser transpile → http://127.0.0.1:8765/pyodide  (Pyodide Flow→C)
 ```
 
-Smoke test (skips cleanly if `emcc` is missing, CI-safe, exit 0):
+Smoke test (skips cleanly if `emcc` is missing — CI-safe, exit 0):
 
 ```bash
-./flow tool scripts/build_wasm_hello.flow
+./scripts/build_wasm_hello.sh
 ```
 
 With a working Emscripten on `PATH` (prefer official emsdk; needs Python ≥ 3.10):
 
 ```bash
 source ~/emsdk/emsdk_env.sh   # or your emsdk path
-./flow tool scripts/build_wasm_hello.flow
+./scripts/build_wasm_hello.sh
 python3 -m http.server 8765 --directory build/wasm_hello
 # open http://localhost:8765/hello.html
 ```
@@ -123,7 +123,7 @@ python3 -m http.server 8765 --directory build/wasm_hello
 Optional: compile Flow-transpiled C instead of the harness:
 
 ```bash
-FLOW_WASM_FROM_FLOW=1 ./flow tool scripts/build_wasm_hello.flow
+FLOW_WASM_FROM_FLOW=1 ./scripts/build_wasm_hello.sh
 ```
 
 Manual end-to-end without the script:
@@ -135,22 +135,21 @@ emcc build/hello_world.c -o build/wasm_hello/hello.js \
   -s EXPORTED_RUNTIME_METHODS="['ccall','cwrap']"
 ```
 
-See also the older helper `./flow tool flow_to_wasm`
-(`./flow wasm --legacy`) and `wasm/wasm_examples/`. Those are the browser gallery;
-`build_wasm_hello.flow` is the documented minimal path for issue #121.
+See also older helpers under `scripts/build_wasm.sh`, `wasm/flow_to_wasm.py`, and
+`wasm/flow_wasm.py` / `wasm/wasm_examples/` — those are the browser gallery;
+`build_wasm_hello.sh` is the documented minimal path for issue #121.
 
 ## Direct wasm32 (no Emscripten)
 
-`./flow wasm32` (the Flow program in `scripts/tools/llvm_target`) compiles a Flow file, or LLVM IR in a `.ll` file,
-to a freestanding wasm32 module without going near the C backend or
-Emscripten:
+`src/flow/wasm_compiler.py` compiles a Flow file to a freestanding wasm32
+module without going near the C backend or Emscripten:
 
 ```text
 Flow source  →  MLIR  →  LLVM IR (wasm32)  →  clang --target=wasm32-unknown-unknown  →  .wasm
 ```
 
 ```bash
-./flow wasm32 tests/fixtures/wasm/main_42.flow \
+PYTHONPATH=src python3 -m flow.wasm_compiler tests/fixtures/wasm/main_42.flow \
   -o build/main_42.wasm --export answer -O O2
 ```
 
@@ -163,12 +162,6 @@ Flow source  →  MLIR  →  LLVM IR (wasm32)  →  clang --target=wasm32-unknow
 Names passed to `--export` are checked against the symbols actually defined in
 the generated LLVM IR before clang runs, so a typo fails with the list of
 symbols that do exist rather than with a linker error.
-
-A Flow source reaches LLVM IR through `flow flow-to-llvm
---wasm32`: the flowc MLIR emitter and `flow mlir-lower`. The emitter has no
-ILP32 `size_t` option, so a program that declares external functions, or one
-the emitter does not cover yet (such as `alloc_sum.flow` with its unsized
-array), is lowered by the Python MLIR generator instead.
 
 The module is linked `-nostdlib --no-entry --allow-undefined --export-memory`.
 Linear memory is exported, so a host reads and writes arguments through it:
@@ -233,20 +226,19 @@ just building it:
 | `main_42.flow` | Node instantiates the module and `answer()` returns 42 |
 | `sum_pair.flow` | Two `f32` values written into exported linear memory sum to 3.75 |
 | `alloc_sum.flow` | Imports exactly `env.malloc`; 32 calls each return 3.75 and linear memory grows |
-| `alloc_sum.flow` | `./flow tool tests/wasm/compare_native_wasm.flow` compares the wasm result against the same function compiled natively through MLIR |
+| `alloc_sum.flow` | `tests/wasm/compare_native_wasm.py` compares the wasm result against the same function compiled natively through MLIR |
 
-`./flow tool compiler/scripts/parity_targets.flow wasm32` covers the export validation
-(quoted symbol names included), the clang command and the usage errors against
-the goldens in `tests/targets`.
+Unit coverage for the export validation and the clang command lives in
+`tests/unit/test_wasm_compiler.py`.
 
 ## What works today
 
-- ✅ Direct wasm32 modules with no Emscripten and no libc, executed under Node in CI (`./flow wasm32`)
+- ✅ Direct wasm32 modules with no Emscripten and no libc, executed under Node in CI (`python -m flow.wasm_compiler`)
 - ✅ C backend output is valid input for `emcc` for small programs (`main` returning `i32`, stdio)
 - ✅ Checked-in harness + optional script for a hello artifact (`wasm/hello_harness.c`)
-- ✅ Playground **Run (native local)**: loopback API that runs real Flow→C on the machine ([#132](https://github.com/flooooooooooow/flow/issues/132))
-- ✅ Playground **Run (WASM local)**: same API with `target: "wasm"` (needs `emcc` + `node`)
-- ✅ **Browser transpile**: Pyodide loads `flow.parser` / `flow.c_generator` from `/flow-src/` (`docs/playground/pyodide.html`)
+- ✅ Playground **Run (native local)** — loopback API that runs real Flow→C on the machine ([#132](https://github.com/flooooooooooow/flow/issues/132))
+- ✅ Playground **Run (WASM local)** — same API with `target: "wasm"` (needs `emcc` + `node`)
+- ✅ **Browser transpile** — Pyodide loads `flow.parser` / `flow.c_generator` from `/flow-src/` (`docs/playground/pyodide.html`)
 - ⚠️ Larger programs (effects handlers, graphics, heavy libc) may need extra `emcc` flags / stubs
 - ❌ No clang/emcc compiled into the browser tab (Pyodide is transpile-only)
 
@@ -257,12 +249,12 @@ the goldens in `tests/targets`.
 | Full clang-in-browser execution | Needs WASI toolchain in-tab; Pyodide covers Flow→C only |
 | libc under direct wasm32 | The freestanding target links nothing; `printf` and friends need a WASI shim or Emscripten |
 
-Roadmap row: [ROADMAP.md](../../ROADMAP.md): **WASM target** is partial ✅ via C→Emscripten, direct MLIR→LLVM→wasm32, and playground WASM/Pyodide.
+Roadmap row: [ROADMAP.md](../../ROADMAP.md) — **WASM target** is partial ✅ via C→Emscripten, direct MLIR→LLVM→wasm32, and playground WASM/Pyodide.
 
 ## Related docs
 
-- Direct wasm32 CI: [`.github/workflows/wasm32.yml`](https://github.com/flooooooooooow/flow/blob/main/.github/workflows/wasm32.yml)
-- Threads, GPU, sockets, files, CPython in the browser: [wasm-crossings.md](wasm-crossings.md)
-- Language Spec §9.3 WebAssembly: [LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md)
-- Wiki Phase 3 playground row: [wiki-roadmap.md](../wiki-roadmap.md)
-- Playground UI: [playground/index.html](../playground/index.html)
+- Direct wasm32 CI — [`.github/workflows/wasm32.yml`](https://github.com/flooooooooooow/flow/blob/main/.github/workflows/wasm32.yml)
+- Threads, GPU, sockets, files, CPython in the browser — [wasm-crossings.md](wasm-crossings.md)
+- Language Spec §9.3 WebAssembly — [LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md)
+- Wiki Phase 3 playground row — [wiki-roadmap.md](../wiki-roadmap.md)
+- Playground UI — [playground/index.html](../playground/index.html)

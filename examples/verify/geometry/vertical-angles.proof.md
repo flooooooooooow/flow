@@ -2,13 +2,13 @@
 
 *Vertical angles formed by intersecting lines are equal.*
 
-**Source.** euclid: Elements, Book I, Proposition 15
+**Source.** euclid — Elements, Book I, Proposition 15
 
-## Derived fact 1: Vertical angles formed by intersecting lines are equal
+## Derived fact 1 — Vertical angles formed by intersecting lines are equal
 
 **Coordinate.** the Euclidean plane · intersecting lines · vertical angles are equal · **Derived fact**
 
-*Source: euclid: Elements, Book I, Proposition 15*
+*Source: euclid — Elements, Book I, Proposition 15*
 
 > **Goal.** Vertical angles formed by intersecting lines are equal
 >

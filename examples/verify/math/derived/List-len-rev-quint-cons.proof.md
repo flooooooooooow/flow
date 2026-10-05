@@ -2,9 +2,9 @@
 
 *Reverse preserves length of a quintuple cons list.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len(rev(cons(a, cons(b, cons(c, cons(d, cons(e, nil))))))) = 5
+## Derived fact 1 — len(rev(cons(a, cons(b, cons(c, cons(d, cons(e, nil))))))) = 5
 
 **Coordinate.** List · length · reverse of quintuple cons has length five · **Derived fact**
 

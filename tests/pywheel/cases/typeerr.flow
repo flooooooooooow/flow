@@ -1,9 +1,0 @@
-# A type error stops generation before any output file is written.
-
-function bad(x: i32) -> i32 {
-    return "not a number"
-}
-
-function main() -> i32 {
-    return bad(1)
-}

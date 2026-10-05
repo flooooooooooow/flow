@@ -22,5 +22,5 @@
 <text x="420.0" y="100.0" text-anchor="middle" font-weight="bold">C</text>
 <circle cx="60.0" cy="280.0" r="4.5" fill="#2c3e50"/>
 <text x="60.0" y="266.0" text-anchor="middle" font-weight="bold">D</text>
-<text x="240" y="344" text-anchor="middle" font-size="13" fill="#555">Intersecting lines: vertical angles α and α′ are equal, as are β and β′.</text>
+<text x="240" y="344" text-anchor="middle" font-size="13" fill="#555">Intersecting lines — vertical angles α and α′ are equal, as are β and β′.</text>
 </svg>

@@ -2,13 +2,13 @@
 
 *To apply a gnomon equal to a given rectangle in a parallelogram about a given straight line.*
 
-**Source.** euclid: Elements, Book II, Proposition 11
+**Source.** euclid — Elements, Book II, Proposition 11
 
-## Derived fact 1: To apply a gnomon equal to a given rectangle in a parallelogram about a given straight line
+## Derived fact 1 — To apply a gnomon equal to a given rectangle in a parallelogram about a given straight line
 
 **Coordinate.** the Euclidean plane · Euclid Book II · Proposition 11: a gnomon equals the rectangle by the segments · **Derived fact**
 
-*Source: euclid: Elements, Book II, Proposition 11*
+*Source: euclid — Elements, Book II, Proposition 11*
 
 *Built on: proposition 34: complements of parallelograms about the diameter are equal, for Book I of the Elements in on the Euclidean plane, proposition 1: the rectangle by two lines equals the sum over segments, for Euclid Book II on the Euclidean plane*
 

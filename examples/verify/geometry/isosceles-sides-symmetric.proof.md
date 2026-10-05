@@ -2,9 +2,9 @@
 
 *Equal sides in an isosceles triangle are symmetric about the apex median.*
 
-**Source.** euclid: Elements, Book I, Proposition 5
+**Source.** euclid — Elements, Book I, Proposition 5
 
-## Derived fact 1: side AB equals reflect of side AC across apex median
+## Derived fact 1 — side AB equals reflect of side AC across apex median
 
 **Coordinate.** the Euclidean plane · isosceles triangle · equal sides symmetric about apex median · **Derived fact**
 

@@ -1,2 +1,0 @@
-Error: 'always' block in flow 'Osc' needs at least one boolean expression at line 4, column 1
-write 'always { x < 1.0 }' or remove the block

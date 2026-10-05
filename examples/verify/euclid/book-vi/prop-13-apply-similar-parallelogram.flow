@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-vi
 # @means  To a given straight line to apply a parallelogram equal to a given rectilineal figure and similar to a given parallelogram.
-# @from   euclid: Elements, Book VI, Proposition 13
+# @from   euclid — Elements, Book VI, Proposition 13
 # @tier   derived
 # @needs  «Geometry» «Euclid Book VI» «Proposition 12: to apply a parallelogram equal to a figure and exceeding by a similar parallelogram»
 

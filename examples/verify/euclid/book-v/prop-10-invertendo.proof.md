@@ -2,13 +2,13 @@
 
 *If four magnitudes are proportional, they are also proportional inversely.*
 
-**Source.** euclid: Elements, Book V, Proposition 10
+**Source.** euclid — Elements, Book V, Proposition 10
 
-## Derived fact 1: If four magnitudes are proportional, they are also proportional inversely
+## Derived fact 1 — If four magnitudes are proportional, they are also proportional inversely
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 10: proportional magnitudes satisfy invertendo · **Derived fact**
 
-*Source: euclid: Elements, Book V, Proposition 10*
+*Source: euclid — Elements, Book V, Proposition 10*
 
 *Built on: proposition 7: proportional magnitudes satisfy alternando, for Euclid Book V on the Euclidean plane*
 

@@ -2,9 +2,9 @@
 
 *Ring homomorphism axioms.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.3
+**Source.** dummit-foote — *Abstract Algebra*, §7.3
 
-## Definition 1: A ring homomorphism preserves addition
+## Definition 1 — A ring homomorphism preserves addition
 
 **Coordinate.** RingHom · addition · sums map to sums · **Definition**
 
@@ -16,12 +16,12 @@
 
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
-| ① | We stipulate sums map to sums for addition on RingHom. This is a definition rather than a derived fact. |  |  |
+| ① | We stipulate sums map to sums for addition on RingHom — this is a definition, not a derived fact. |  |  |
 | ② | This follows directly from the definition: f(a plus b) equals f(a) plus f(b). Hence proven. | ② | $f(a + b) = f(a) + f(b)$ |
 
 `RingHom · addition · sums map to sums`
 
-## Definition 2: A ring homomorphism preserves multiplication
+## Definition 2 — A ring homomorphism preserves multiplication
 
 **Coordinate.** RingHom · multiplication · products map to products · **Definition**
 
@@ -33,7 +33,7 @@
 
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
-| ① | We stipulate products map to products for multiplication on RingHom. This is a definition rather than a derived fact. |  |  |
+| ① | We stipulate products map to products for multiplication on RingHom — this is a definition, not a derived fact. |  |  |
 | ② | This follows directly from the definition: f(a times b) equals f(a) times f(b). Hence proven. | ② | $f(a \cdot b) = f(a) * f(b)$ |
 
 `RingHom · multiplication · products map to products`

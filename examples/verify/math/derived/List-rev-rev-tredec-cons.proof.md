@@ -2,9 +2,9 @@
 
 *Double reverse restores a tredecuple cons list.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Reverse_(list)
+**Source.** church — https://en.wikipedia.org/wiki/Reverse_(list)
 
-## Derived fact 1: rev(rev(tredecuple cons with tail xs)) = tredecuple cons with tail xs
+## Derived fact 1 — rev(rev(tredecuple cons with tail xs)) = tredecuple cons with tail xs
 
 **Coordinate.** List · reverse · double reverse of tredecuple cons · **Derived fact**
 

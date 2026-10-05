@@ -1,6 +1,0 @@
-+ (bodies[0]).mass
-+ ((bodies[0]).pos).x
-+ get_mass(bodies[0])
-- bodies[0]->
-exit 0
-stdout PASS

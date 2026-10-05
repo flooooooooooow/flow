@@ -1,6 +1,0 @@
-# expect: Declarative find requires a sized array, got i32
-function main() -> i32 {
-    let x: i32 = 3
-    let i: i32 = x |> find(3)
-    return 0
-}

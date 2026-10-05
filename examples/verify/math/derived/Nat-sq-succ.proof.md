@@ -2,9 +2,9 @@
 
 *Squaring a successor expands by self-multiplication.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Square_(algebra)
+**Source.** peano — https://en.wikipedia.org/wiki/Square_(algebra)
 
-## Derived fact 1: sq(succ(n)) = succ(n) * succ(n)
+## Derived fact 1 — sq(succ(n)) = succ(n) * succ(n)
 
 **Coordinate.** the natural numbers · square · successor squares by self multiplication · **Derived fact**
 

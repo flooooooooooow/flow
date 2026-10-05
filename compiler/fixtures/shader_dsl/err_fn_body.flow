@@ -1,7 +1,0 @@
-fn bad(x: f32) -> f32 {
-    return (x
-}
-
-shader fill b {
-    color = vec4(1.0)
-}

@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Dual join-above-meet commutes in arguments.
-# @from   davey-priestley: *Introduction to Lattices and Order*
+# @from   davey-priestley — *Introduction to Lattices and Order*
 # @tier   derived
 
 # @means  join(a, b) >= meet(b, a) via dual commutativity.

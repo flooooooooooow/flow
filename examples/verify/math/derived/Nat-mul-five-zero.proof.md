@@ -2,9 +2,9 @@
 
 *Five times zero is zero for natural numbers.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 5 * 0 = 0
+## Derived fact 1 — 5 * 0 = 0
 
 **Coordinate.** the natural numbers · multiplication · five times zero is zero · **Derived fact**
 

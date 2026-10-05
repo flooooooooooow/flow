@@ -2,13 +2,13 @@
 
 *If magnitudes are proportional ex aequali, the first is to the last as the first of the others is to the last of the others.*
 
-**Source.** euclid: Elements, Book V, Proposition 18
+**Source.** euclid — Elements, Book V, Proposition 18
 
-## Derived fact 1: If magnitudes are proportional ex aequali, the first is to the last as the first of the others is to the last of the others
+## Derived fact 1 — If magnitudes are proportional ex aequali, the first is to the last as the first of the others is to the last of the others
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 18: ex aequali proportion from three magnitudes · **Derived fact**
 
-*Source: euclid: Elements, Book V, Proposition 18*
+*Source: euclid — Elements, Book V, Proposition 18*
 
 *Built on: proposition 7: proportional magnitudes satisfy alternando, for Euclid Book V on the Euclidean plane, proposition 15: a part has the same ratio to its part as the whole to its whole, for Euclid Book V on the Euclidean plane*
 

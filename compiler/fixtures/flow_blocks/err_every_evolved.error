@@ -1,2 +1,0 @@
-Error: state 'x' in flow 'Osc' has both an 'evolves' declaration and a 'becomes' update in an 'every' block; a state is continuous or discrete at line 5
-reset 'x' from a 'when x reaches ...' event, or drop its 'evolves' declaration

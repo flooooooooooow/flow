@@ -2,9 +2,9 @@
 
 *Opposite vertical angles are supplementary with their adjacent partners.*
 
-**Source.** euclid: Elements, Book I, Proposition 15
+**Source.** euclid — Elements, Book I, Proposition 15
 
-## Derived fact 1: angle alpha plus angle beta equals two right angles
+## Derived fact 1 — angle alpha plus angle beta equals two right angles
 
 **Coordinate.** the Euclidean plane · intersecting lines · opposite vertical supplement pair · **Derived fact**
 

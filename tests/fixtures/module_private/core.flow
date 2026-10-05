@@ -1,6 +1,0 @@
-# Calls a non-exported function of the module it imports (#988).
-import "tests/fixtures/module_private/linalg.flow"
-
-function core_step(x: i32) -> i32 {
-    return scale2(x) + LINALG_ONE
-}

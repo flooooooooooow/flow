@@ -1,9 +1,0 @@
-# expect: safety profile requires '@unsafe' on extern declaration 'getpid' (MISRA/CERT FFI boundary; see docs/language/safety-profiles.md)
-# env: FLOW_PROFILE=safety
-extern {
-    function getpid() -> i32
-}
-
-function main() -> i32 {
-    return 0
-}

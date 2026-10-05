@@ -1,8 +1,0 @@
-# expect: Unknown trait bound 'Printable' on type parameter 'T'
-function show<T: Printable>(x: T) -> i32 {
-    return 0
-}
-
-function main() -> i32 {
-    return 0
-}

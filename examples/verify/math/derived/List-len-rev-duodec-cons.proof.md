@@ -2,9 +2,9 @@
 
 *Reverse preserves length of a duodecuple cons list.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len(rev(duodecuple cons ending in nil)) = 12
+## Derived fact 1 — len(rev(duodecuple cons ending in nil)) = 12
 
 **Coordinate.** List · length · reverse of duodecuple cons has length twelve · **Derived fact**
 

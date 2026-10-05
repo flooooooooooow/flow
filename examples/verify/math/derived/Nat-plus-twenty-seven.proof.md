@@ -2,9 +2,9 @@
 
 *Twenty-six plus one is twenty-seven.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 26 + 1 = 27
+## Derived fact 1 — 26 + 1 = 27
 
 **Coordinate.** the natural numbers · addition · twenty six plus one is twenty seven · **Derived fact**
 

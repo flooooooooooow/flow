@@ -2,9 +2,9 @@
 
 *Second projection determines the second component.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Product_type
+**Source.** church — https://en.wikipedia.org/wiki/Product_type
 
-## Derived fact 1: snd(pair(a, b)) = b
+## Derived fact 1 — snd(pair(a, b)) = b
 
 **Coordinate.** Pair · pairing · second projection determines component · **Derived fact**
 

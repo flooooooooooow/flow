@@ -2,9 +2,9 @@
 
 *Real addition associates.*
 
-**Source.** landau: *Foundations of Analysis*
+**Source.** landau — *Foundations of Analysis*
 
-## Derived fact 1: (x + y) + z = x + (y + z)
+## Derived fact 1 — (x + y) + z = x + (y + z)
 
 **Coordinate.** the real numbers · addition · parentheses do not matter · **Derived fact**
 

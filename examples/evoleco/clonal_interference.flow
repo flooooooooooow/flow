@@ -26,7 +26,7 @@
 #   1 equal s   2 A fitter   3 B fitter
 #   R reseed   P pause   Esc quit
 #
-# Run: ./flow record examples/evoleco/clonal_interference.flow --frames 4
+# Run: FLOW_HOST=python ./flow record examples/evoleco/clonal_interference.flow --frames 4
 
 import "stdlib/gfx.flow"
 import "stdlib/text.flow"

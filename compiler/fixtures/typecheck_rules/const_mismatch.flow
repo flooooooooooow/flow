@@ -1,6 +1,0 @@
-# expect: Const 'LIMIT' has type string but should be i32
-const LIMIT: i32 = "ten"
-
-function main() -> i32 {
-    return 0
-}

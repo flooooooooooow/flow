@@ -1,9 +1,0 @@
-FIR-G: funcs=1 blocks=16 ops=30 values=15 operands=9 types=2
-call ops: 0
-reachable: main
-dead: (none)
-applied: const_fold folded=1; dce removed=1; inline applied=3; dead_elim removed=1 (branchy)
-call graph:
-effects / pure:
-  main: effects=0x0000 pure=True
-device: requested=cpu chosen=cpu

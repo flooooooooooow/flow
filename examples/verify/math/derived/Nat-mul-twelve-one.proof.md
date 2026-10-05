@@ -2,9 +2,9 @@
 
 *Twelve times one is twelve.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 12 * 1 = 12
+## Derived fact 1 — 12 * 1 = 12
 
 **Coordinate.** the natural numbers · multiplication · twelve times one is twelve · **Derived fact**
 

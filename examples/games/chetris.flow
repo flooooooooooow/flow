@@ -430,9 +430,8 @@ function clear_row(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>, y: i32)
 }
 
 function drop_rows_above(blocks: ptr<i32>, pieces: ptr<i32>, colors: ptr<i32>, cleared_y: i32) {
-    # Move all rows above cleared_y down by 1. The end is exclusive, so run
-    # to -1 to reach the top row, which becomes empty (#1035).
-    for y in cleared_y to -1 step -1 {
+    # Move all rows above cleared_y down by 1
+    for y in cleared_y to 0 step -1 {
         for x in 0 to BOARD_WIDTH {
             if y > 0 {
                 let above_idx: i32 = board_idx(x, y - 1)

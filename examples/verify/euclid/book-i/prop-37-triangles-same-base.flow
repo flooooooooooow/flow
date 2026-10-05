@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-i
 # @means  Triangles on the same base and in the same parallels are equal.
-# @from   euclid: Elements, Book I, Proposition 37
+# @from   euclid — Elements, Book I, Proposition 37
 # @tier   derived
 # @needs  «Geometry» «Euclid Book I» «Proposition 27: a triangle is half a parallelogram on same base»
 

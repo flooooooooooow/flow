@@ -1,2 +1,0 @@
-Error: nested flow member 'plant' in flow 'Osc' has type 'Motor', which is not a flow in this file at line 3
-declare the child with 'flow ChildName { ... }' first

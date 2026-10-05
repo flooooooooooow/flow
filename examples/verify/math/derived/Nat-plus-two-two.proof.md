@@ -2,9 +2,9 @@
 
 *Two plus two is four for natural numbers.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 2 + 2 = 4
+## Derived fact 1 — 2 + 2 = 4
 
 **Coordinate.** the natural numbers · addition · two plus two is four · **Derived fact**
 

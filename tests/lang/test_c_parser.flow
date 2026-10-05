@@ -1,6 +1,6 @@
 # Test for the Flow-native C header parser (c_parser.flow).
 # Calls flowc_cparser_preprocess and flowc_cparser_parse on stdlib.h.
-# Run with: ./flow run tests/lang/test_c_parser.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_parser.flow
 # Exit 0 on success.
 
 import "compiler/src/c_parser.flow"

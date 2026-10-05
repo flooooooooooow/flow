@@ -1,15 +1,15 @@
-# FLOW WebAssembly Build System
+# 🚀 FLOW WebAssembly Build System
 
 Compile FLOW programs to WebAssembly for browser execution.
 
 ## Quick Start
 
 ```bash
-# Convert a single file (same as ./flow wasm --legacy FILE)
-./flow tool flow_to_wasm examples/basics/fibonacci.flow
+# Convert a single file
+python wasm/flow_to_wasm.py examples/fibonacci.flow
 
-# Convert the example list
-./flow tool flow_to_wasm --all
+# Convert all examples
+python wasm/flow_to_wasm.py --all
 
 # Open in browser
 open wasm/wasm_examples/index.html
@@ -25,8 +25,8 @@ FLOW Source → C Code → WebAssembly → Browser
 
 ## Requirements
 
-- **A C compiler** (`cc`) - Builds the Stage-A compiler and the converter, a Flow
-  program in `scripts/tools/flow_to_wasm`, on first use
+- **Python 3.8+** - For the converter script
+- **Clang** - For C code verification
 - **Emscripten** (optional) - For actual WASM compilation
 
 ### Installing Emscripten
@@ -82,6 +82,10 @@ If you don't have Emscripten installed:
 
 ```
 wasm/
+├── flow_to_wasm.py      # Main converter script
+├── flow_wasm.py         # Flow → C → Emscripten compiler
+├── wasm_build_system.py # Batch build system
+├── demo_wasm_build.py   # Demo builder
 ├── hello_harness.c      # Minimal emcc smoke harness
 ├── README.md            # This file
 └── wasm_examples/       # Browser gallery (HTML + generated C)
@@ -89,29 +93,20 @@ wasm/
 
 ## Usage Examples
 
-The converter is `./flow tool flow_to_wasm`, the Flow program
-`scripts/tools/flow_to_wasm/main.flow`. Page text lives in
-`scripts/tools/flow_to_wasm/assets`. `tests/tools/flow_to_wasm/run.flow` checks
-it against goldens recorded from the Python converter it replaced.
-
 ### Single File
 ```bash
-./flow tool flow_to_wasm examples/basics/hello_world.flow
+python wasm/flow_to_wasm.py examples/effects_working.flow
 ```
 
 ### Custom Output Directory
 ```bash
-./flow tool flow_to_wasm examples/basics/fibonacci.flow ./my_output
+python wasm/flow_to_wasm.py examples/fibonacci.flow ./my_output
 ```
 
 ### All Examples
 ```bash
-./flow tool flow_to_wasm --all
+python wasm/flow_to_wasm.py --all
 ```
-
-`--all` converts the fixed list `examples/{fibonacci,factorial,gcd,...}.flow`
-and writes `wasm/wasm_examples/index.html`, linking every listed page present
-in that directory.
 
 ## Serving Locally
 
@@ -127,6 +122,9 @@ python -m http.server 8000
 
 ### "Emscripten not found"
 Install Emscripten or use the generated C files directly.
+
+### "Module not found: flow"
+Run from project root: `python wasm/flow_to_wasm.py ...`
 
 ### WASM won't load in browser
 - Check browser console for errors

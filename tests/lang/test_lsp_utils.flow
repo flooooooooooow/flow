@@ -1,5 +1,5 @@
 # Test for lsp_utils.flow port of lsp_server.py helpers.
-# Run with: ./flow run tests/lang/test_lsp_utils.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_lsp_utils.flow
 # Exit 0 on success.
 
 import "compiler/src/lsp_utils.flow"

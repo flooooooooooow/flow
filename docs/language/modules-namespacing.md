@@ -117,7 +117,7 @@ the worst of both arrangements.
 
 `parse_module` accepts `import`, so this parses:
 
-```flow expect-error
+```flow
 module m {
     import .alpha
 
@@ -216,7 +216,7 @@ mangling so an overloaded namespaced function becomes `audio__gain_i32`. The
 mangling has to be applied in every emitter that writes a function or type
 name: `src/flow/c_generator.py` (3657 lines), `src/flow/mlir_generator.py`
 (4325), `src/flow/js_generator.py`, `src/flow/python_generator.py`,
-`compiler/src/shader_dsl.flow`, `src/flow/metal_codegen.py`, plus
+`src/flow/shader_codegen.py`, `src/flow/metal_codegen.py`, plus
 `src/flow/monomorphize.py` (991) which synthesises new names for generic
 instantiations, and `src/flow/overload.py` whose `_mangle_name` must compose
 rather than compete with it. `src/flow/type_checker.py` (2763) keys its

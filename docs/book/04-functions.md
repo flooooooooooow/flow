@@ -109,7 +109,7 @@ function main() -> i32 {
 Source: [`examples/book/04_functions.flow`](../../examples/book/04_functions.flow)
 
 ```bash
-./flow run examples/book/04_functions.flow
+FLOW_HOST=python ./flow run examples/book/04_functions.flow
 ```
 
 ## 4.4 Recursion

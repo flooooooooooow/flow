@@ -2,9 +2,9 @@
 
 *Full transversal angle equality chain for parallel lines.*
 
-**Source.** euclid: Elements, Book I, Proposition 29
+**Source.** euclid — Elements, Book I, Proposition 29
 
-## Derived fact 1: alternate, corresponding, z, and f angles all equal pairwise
+## Derived fact 1 — alternate, corresponding, z, and f angles all equal pairwise
 
 **Coordinate.** the Euclidean plane · parallel lines · full transversal angle chain · **Derived fact**
 

@@ -2,9 +2,9 @@
 
 *One times one is one in a monoid.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §1.1
+**Source.** dummit-foote — *Abstract Algebra*, §1.1
 
-## Derived fact 1: 1 * 1 = 1
+## Derived fact 1 — 1 * 1 = 1
 
 **Coordinate.** Monoid · multiplication · one times one is one · **Derived fact**
 

@@ -1,4 +1,0 @@
-$ flow build
-[91mNo flow.toml found. Run 'flow init' first.[0m
-[exit 0]
-== files

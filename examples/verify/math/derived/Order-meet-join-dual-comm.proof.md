@@ -2,9 +2,9 @@
 
 *Dual meet-below-join commutes in arguments.*
 
-**Source.** davey-priestley: *Introduction to Lattices and Order*
+**Source.** davey-priestley — *Introduction to Lattices and Order*
 
-## Derived fact 1: meet(a, b) <= join(b, a) via dual commutativity
+## Derived fact 1 — meet(a, b) <= join(b, a) via dual commutativity
 
 **Coordinate.** Order · lattice · meet below join dual commutes · **Derived fact**
 

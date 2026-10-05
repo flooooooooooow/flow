@@ -1,1 +1,0 @@
-error: bpfel cannot depend on userspace runtime symbol '_Unwind_'

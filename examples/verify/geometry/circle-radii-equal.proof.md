@@ -2,13 +2,13 @@
 
 *All radii of a circle from the centre to the circumference are equal.*
 
-**Source.** euclid: Elements, Book I, Definition 15
+**Source.** euclid — Elements, Book I, Definition 15
 
-## Definition 1: All radii of a circle from the centre to the circumference are equal
+## Definition 1 — All radii of a circle from the centre to the circumference are equal
 
 **Coordinate.** the Euclidean plane · circle · radii from the centre are equal · **Definition**
 
-*Source: euclid: Elements, Book I, Definition 15*
+*Source: euclid — Elements, Book I, Definition 15*
 
 > **Goal.** All radii of a circle from the centre to the circumference are equal
 >
@@ -20,7 +20,7 @@
 
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
-| ① | We stipulate radii from the centre are equal for circles in the Euclidean plane. This is a definition rather than a derived fact. |  |  |
+| ① | We stipulate radii from the centre are equal for circles in the Euclidean plane — this is a definition, not a derived fact. |  |  |
 | ② | This follows directly from the definition: radius OA equals radius OB. Hence proven. | ② | $OA = OB$ |
 
 `the Euclidean plane · circle · radii from the centre are equal`

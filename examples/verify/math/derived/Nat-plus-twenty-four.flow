@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Twenty-three plus one is twenty-four.
-# @from   peano: https://en.wikipedia.org/wiki/Peano_axioms
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
 # @tier   derived
 
 # @means  23 + 1 = 24.

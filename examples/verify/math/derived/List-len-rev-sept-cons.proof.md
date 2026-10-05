@@ -2,9 +2,9 @@
 
 *Reverse preserves length of a septuple cons list.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len(rev(septuple cons ending in nil)) = 7
+## Derived fact 1 — len(rev(septuple cons ending in nil)) = 7
 
 **Coordinate.** List · length · reverse of septuple cons has length seven · **Derived fact**
 

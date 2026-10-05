@@ -2,9 +2,9 @@
 
 *F-angles and Z-angles chain together on parallel lines.*
 
-**Source.** euclid: Elements, Book I, Proposition 29
+**Source.** euclid — Elements, Book I, Proposition 29
 
-## Derived fact 1: f-angle alpha equals z-angle beta
+## Derived fact 1 — f-angle alpha equals z-angle beta
 
 **Coordinate.** the Euclidean plane · parallel lines · f and z angles chain · **Derived fact**
 

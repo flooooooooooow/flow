@@ -2,9 +2,9 @@
 
 *Appending eight singletons gives length eight.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len of eight appended singletons equals 8
+## Derived fact 1 — len of eight appended singletons equals 8
 
 **Coordinate.** List · length · append of eight singletons has length eight · **Derived fact**
 

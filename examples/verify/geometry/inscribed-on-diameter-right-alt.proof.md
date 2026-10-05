@@ -2,9 +2,9 @@
 
 *An inscribed angle on a diameter is right, alternate witness.*
 
-**Source.** euclid: Elements, Book III, Proposition 31
+**Source.** euclid — Elements, Book III, Proposition 31
 
-## Derived fact 1: angle APB equals one right angle on diameter AB
+## Derived fact 1 — angle APB equals one right angle on diameter AB
 
 **Coordinate.** the Euclidean plane · circle · inscribed on diameter right alt · **Derived fact**
 

@@ -2,9 +2,9 @@
 
 *Join with itself returns the argument.*
 
-**Source.** davey-priestley: *Introduction to Lattices and Order*
+**Source.** davey-priestley — *Introduction to Lattices and Order*
 
-## Derived fact 1: join(a, a) = a
+## Derived fact 1 — join(a, a) = a
 
 **Coordinate.** Order · join · join with itself equals the argument · **Derived fact**
 

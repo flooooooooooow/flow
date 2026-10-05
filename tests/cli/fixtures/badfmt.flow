@@ -1,5 +1,0 @@
-# Formatting input: the spacing below is off on purpose.
-function main() -> i32 {
-    let   x: i32 = 1
-      return x - 1
-}

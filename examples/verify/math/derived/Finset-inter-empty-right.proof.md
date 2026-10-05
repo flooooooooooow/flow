@@ -2,9 +2,9 @@
 
 *Intersection with the empty set on the right yields empty.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: s ∩ empty = empty
+## Derived fact 1 — s ∩ empty = empty
 
 **Coordinate.** Finset · intersection · empty on the right gives empty · **Derived fact**
 

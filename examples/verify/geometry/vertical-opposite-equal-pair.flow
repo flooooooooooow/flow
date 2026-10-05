@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  Opposite vertical angles form an equal pair.
-# @from   euclid: Elements, Book I, Proposition 15
+# @from   euclid — Elements, Book I, Proposition 15
 # @tier   derived
 
 # @means  angle beta equals angle beta prime.

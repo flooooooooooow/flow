@@ -1,9 +1,0 @@
-# c64 is C float complex; IQ and IQSample are typedefs of it.
-# Signal<Hz1000> is monomorphized to a struct.
-flags --strict
-+ #include <complex.h>
-+ typedef float complex c64;
-+ typedef c64 IQ;
-+ typedef c64 IQSample;
-+ typedef struct Signal_Hz1000 {
-exit 0

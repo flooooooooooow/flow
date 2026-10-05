@@ -2,9 +2,9 @@
 
 *An exterior angle equals remote interiors plus the adjacent interior decomposition.*
 
-**Source.** euclid: Elements, Book I, Proposition 32
+**Source.** euclid — Elements, Book I, Proposition 32
 
-## Derived fact 1: exterior at C equals angle A plus angle B by remote sum
+## Derived fact 1 — exterior at C equals angle A plus angle B by remote sum
 
 **Coordinate.** the Euclidean plane · triangle · exterior remote sum decomposition · **Derived fact**
 

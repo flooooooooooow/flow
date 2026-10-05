@@ -2,13 +2,13 @@
 
 *Given a segment of a circle, to describe the complete circle of which it is a part.*
 
-**Source.** euclid: Elements, Book III, Proposition 25
+**Source.** euclid — Elements, Book III, Proposition 25
 
-## Derived fact 1: Given a segment of a circle, to describe the complete circle of which it is a part
+## Derived fact 1 — Given a segment of a circle, to describe the complete circle of which it is a part
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 25: to describe the circle of which a given segment is part · **Derived fact**
 
-*Source: euclid: Elements, Book III, Proposition 25*
+*Source: euclid — Elements, Book III, Proposition 25*
 
 *Built on: proposition 21: angles in the same segment are equal, for Euclid Book III on the Euclidean plane, proposition 9: bisect a given angle, for Book I of the Elements in on the Euclidean plane*
 

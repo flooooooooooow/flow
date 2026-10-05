@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-i
 # @means  Equal triangles on equal bases are in the same parallels.
-# @from   euclid: Elements, Book I, Proposition 40
+# @from   euclid — Elements, Book I, Proposition 40
 # @tier   derived
 # @needs  «Geometry» «Euclid Book I» «Proposition 38: triangles on equal bases and parallels are equal»
 

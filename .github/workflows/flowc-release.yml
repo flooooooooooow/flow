@@ -1,4 +1,3 @@
-# ACTIONS-INTENDED: public repository; builds the flowc release archives.
 name: flowc release
 
 # Publishes the self-hosted Flow compiler as a downloadable archive.
@@ -54,15 +53,15 @@ jobs:
         run: ./compiler/scripts/bootstrap_from_c.sh --verify
 
       - name: Every compiler/src module compiles under flowc
-        run: ./flow tool compiler/scripts/selfcompile_audit.flow
+        run: ./compiler/scripts/selfcompile_audit.sh
 
       - name: Three consecutive generation fixed-points
-        run: ./flow tool compiler/scripts/self_host_full.flow
+        run: ./compiler/scripts/self_host_full.sh
 
       - name: Package
         env:
           FLOWC_VERSION: ${{ steps.ver.outputs.name }}
-        run: ./flow tool compiler/scripts/package_flowc.flow
+        run: ./compiler/scripts/package_flowc.sh
 
       - name: Unpack and use the archive as a user would
         run: |
@@ -110,7 +109,7 @@ jobs:
           generate_release_notes: true
           body: |
             Self-hosted Flow compiler (Stage-A), built from
-            `compiler/bootstrap/flowc_stage_a.c`: the compiler emitted by
+            `compiler/bootstrap/flowc_stage_a.c` — the compiler emitted by
             itself as a single C translation unit.
 
             Each archive was checked three generations deep: flowc compiles

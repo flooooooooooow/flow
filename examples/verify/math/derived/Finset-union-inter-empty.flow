@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Union then intersecting with empty yields empty.
-# @from   graham-knuth-patashnik: *Concrete Mathematics*
+# @from   graham-knuth-patashnik — *Concrete Mathematics*
 # @tier   derived
 
 # @means  (a ∪ b) ∩ empty = empty.

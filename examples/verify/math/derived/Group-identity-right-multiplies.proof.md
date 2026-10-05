@@ -2,9 +2,9 @@
 
 *The identity acts as a right multiplier.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §1.1
+**Source.** dummit-foote — *Abstract Algebra*, §1.1
 
-## Derived fact 1: g * 1 = g
+## Derived fact 1 — g * 1 = g
 
 **Coordinate.** Group · identity · identity multiplies on the right · **Derived fact**
 

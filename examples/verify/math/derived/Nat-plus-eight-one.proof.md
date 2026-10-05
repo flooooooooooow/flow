@@ -2,9 +2,9 @@
 
 *Eight plus one is nine.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 8 + 1 = 9
+## Derived fact 1 — 8 + 1 = 9
 
 **Coordinate.** the natural numbers · addition · eight plus one is nine · **Derived fact**
 

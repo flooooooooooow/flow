@@ -12,28 +12,39 @@ brew install flow
 flow version
 ```
 
-### Packaging development
+### Nix / NixOS
 
-The repository also carries packaging definitions under `packaging/`. These are
-build-from-checkout specifications, not claims that Flow is published in those
-external package repositories.
-
-From a source checkout, the Nix package can be built with:
-
+Run directly using Flakes:
 ```bash
-nix build ./packaging/nix#flow
-./result/bin/flow version
+nix run github:flooooooooooow/flow
+```
+Or install into your Nix profile from `packaging/nix/default.nix`:
+```bash
+nix-env -f packaging/nix/default.nix -i
 ```
 
-A Debian package can be built from the same checkout with:
+### Debian / Ubuntu (APT)
 
+Build and install the `.deb` package:
 ```bash
-./flow tool build_deb
+cd packaging/deb && dpkg-buildpackage -us -uc -b
+sudo dpkg -i ../flow_1.0.2-1_amd64.deb
 ```
 
-Arch/AUR and Windows/Scoop publication are deferred until Flow has the matching
-supported release artifacts. See [Packaging and distribution](../packaging/README.md)
-for status.
+### Arch Linux (pacman / AUR)
+
+Build and install via PKGBUILD:
+```bash
+cd packaging/arch
+makepkg -si
+```
+
+### Windows (Scoop)
+
+Install using Scoop:
+```bash
+scoop install https://raw.githubusercontent.com/flooooooooooow/flow/main/packaging/scoop/flow.json
+```
 
 ### From source
 
@@ -43,7 +54,7 @@ cd flow
 ./flow version
 ```
 
-The requirement is Clang or GCC. `flow run` and `flow compile` use `flowc`, the self-hosted compiler, which `./flow` builds from checked-in C on first use. Python 3.9+ is needed only for the MLIR backend (`--backend=mlir`) and for the wheel build step of `flow python`.
+Requirements are Clang or GCC and Python 3.9+ for the full compiler host. `flow run` and `flow compile` default to the self-hosted Stage-A `flowc`; the examples below use `FLOW_HOST=python` because they intentionally exercise the full language surface, including `println` and `flow` evolution blocks.
 
 If you installed from source, replace `flow` with `./flow` in the commands below.
 
@@ -72,7 +83,7 @@ function main() -> i32 {
 Run it:
 
 ```bash
-flow run hello.flow
+FLOW_HOST=python flow run hello.flow
 ```
 
 You now have a Flow source file compiled through the Flow frontend, emitted as C, compiled to a native executable, and run.
@@ -107,7 +118,7 @@ function main() -> i32 {
 ```
 
 ```bash
-flow run basics.flow
+FLOW_HOST=python flow run basics.flow
 ```
 
 ## 4. Functions and structs
@@ -132,7 +143,7 @@ function main() -> i32 {
 ```
 
 ```bash
-flow run point.flow
+FLOW_HOST=python flow run point.flow
 ```
 
 ## 5. The Flow part: describe evolution directly
@@ -160,7 +171,7 @@ function main() -> i32 {
 ```
 
 ```bash
-flow run decay.flow
+FLOW_HOST=python flow run decay.flow
 ```
 
 The `flow` declaration is the model. The compiler generates the state representation and `Decay_step`; your program only decides when to advance it.
@@ -168,16 +179,16 @@ The `flow` declaration is the model. The compiler generates the state representa
 For a larger shipped example:
 
 ```bash
-flow run examples/evolution/pendulum_evolves.flow
+FLOW_HOST=python flow run examples/evolution/pendulum_evolves.flow
 ```
 
 ## 6. Useful commands
 
 ```bash
 flow version
-flow run file.flow
-flow compile file.flow
-flow test
+FLOW_HOST=python flow run file.flow
+FLOW_HOST=python flow compile file.flow
+FLOW_HOST=python flow test
 flow fmt file.flow
 ```
 
@@ -200,4 +211,4 @@ New to programming entirely? [Start here](start-here.md) gives a slower terminal
 
 If `flow` is not found after a source checkout, use `./flow`. If Clang/GCC is missing, install Xcode Command Line Tools on macOS with `xcode-select --install`, or `build-essential` on Debian/Ubuntu.
 
-`FLOW_HOST=python` is retired. If an old command or shell profile sets it, `./flow` stops with an error. Remove the setting and run the command again.
+If a full-language example reports a Stage-A subset error, make sure the command begins with `FLOW_HOST=python`.

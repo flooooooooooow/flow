@@ -1,10 +1,10 @@
 # @module examples.verify.math.derived
 # @means  Less-or-equal is characterized by adding a natural on the right.
-# @from   peano: https://en.wikipedia.org/wiki/Total_order
+# @from   peano — https://en.wikipedia.org/wiki/Total_order
 # @tier   derived
 
 # @means  a ≤ b if and only if there exists k with a + k = b (forward: addition witness).
-# @from   peano: Landau, *Foundations of Analysis*
+# @from   peano — Landau, *Foundations of Analysis*
 # @tier   derived
 # @needs  «Nat» «addition» «adding on the right preserves order»
 

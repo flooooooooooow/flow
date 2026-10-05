@@ -2,13 +2,13 @@
 
 *Given two unequal straight lines, to cut off from the greater a part equal to the less.*
 
-**Source.** euclid: Elements, Book I, Proposition 3
+**Source.** euclid — Elements, Book I, Proposition 3
 
-## Derived fact 1: Given two unequal straight lines, to cut off from the greater a part equal to the less
+## Derived fact 1 — Given two unequal straight lines, to cut off from the greater a part equal to the less
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 3: cut a segment equal to a smaller segment · **Derived fact**
 
-*Source: euclid: Elements, Book I, Proposition 3*
+*Source: euclid — Elements, Book I, Proposition 3*
 
 *Built on: proposition 1: equilateral triangle on a segment, for Book I of the Elements in on the Euclidean plane, proposition 2: a segment equal to a given segment, for Book I of the Elements in on the Euclidean plane*
 

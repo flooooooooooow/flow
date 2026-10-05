@@ -1,6 +1,6 @@
 # Test for @cImport with pthread.h.
 # Creates a thread, passes an argument, joins, and verifies the result.
-# Run with: ./flow run tests/lang/test_pthread.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_pthread.flow
 # Exit 0 on success.
 
 @cImport("pthread.h")

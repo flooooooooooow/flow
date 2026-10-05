@@ -1,4 +1,4 @@
-# Flow Plugins: Schur Lattice in Native Audio
+# Flow Plugins — Schur Lattice in Native Audio
 
 Two audio plugins for macOS, built with JUCE 8: **Schur Phase** and **Phase Align**. Both are native implementations of the many-pole Schur-lattice all-pass filter that the Flow project develops across the whole stack. This is the "juce rewrite" step: what began as research math and Flow code now runs in a DAW as real VST3/AU/Standalone plugins.
 
@@ -32,7 +32,7 @@ The same lattice all-pass appears in four places, all derived from one design:
 | Research | `docs/research/schur_lattice_allpass/` | arXiv paper, perturbation framing |
 | Proof | `docs/formal/SchurLatticeAllpass/` | Lean 4 proofs (Schur recursion, Givens, colligation) |
 | Flow stdlib | `lib/stdlib/audio/lattice_allpass.flow`, `lib/stdlib/dynamics/schur_lattice.flow` | the language's own implementation |
-| Reference | `./flow tool lattice_allpass demo` | Flow verification + WAV output (`scripts/tools/lattice_allpass`) |
+| Reference | `scripts/tools/audio/lattice_allpass_audio_demo.py` | Python verification + WAV output |
 | **Native** | `apps/plugins/` (this tree) | JUCE VST3/AU/Standalone |
 
 The plugin DSP is a port of the Flow stdlib design into C++. `SchurLatticeDSP.cpp` carries the math; the plugins add the DAW plumbing (parameters, presets, UI).
@@ -47,10 +47,10 @@ The coefficients `k_i` are reflection coefficients obtained by **Schur step-down
 
 `SchurLatticeDSP.cpp` provides:
 
-- `designFromPoles` / `schurStepDown`: pole product to reflections, O(n) per rebuild
-- `processSample`: the cascade, per-sample modulation of `k_i`
-- `fillModulatedK`: LFO wobble with per-section phase, stereo offset
-- `computeResponse`: magnitude, wrapped phase, exact group delay, and the dry+wet comb (what the ear actually hears at a given mix) for the visualiser
+- `designFromPoles` / `schurStepDown` — pole product to reflections, O(n) per rebuild
+- `processSample` — the cascade, per-sample modulation of `k_i`
+- `fillModulatedK` — LFO wobble with per-section phase, stereo offset
+- `computeResponse` — magnitude, wrapped phase, exact group delay, and the dry+wet comb (what the ear actually hears at a given mix) for the visualiser
 
 The engine is deliberately free of JUCE dependencies. `tests/dsp_test.cpp` compiles against `SchurLatticeDSP.{h,cpp}` alone and checks the properties a production all-pass must hold:
 

@@ -2,9 +2,9 @@
 
 *Composing swap twice is the identity on pairs.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Product_type
+**Source.** church — https://en.wikipedia.org/wiki/Product_type
 
-## Derived fact 1: swap(swap(pair(a, b))) = pair(a, b)
+## Derived fact 1 — swap(swap(pair(a, b))) = pair(a, b)
 
 **Coordinate.** Pair · swap · compose swap twice is identity · **Derived fact**
 

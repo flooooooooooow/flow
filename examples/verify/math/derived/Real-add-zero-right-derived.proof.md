@@ -2,9 +2,9 @@
 
 *Zero on the right is an additive identity for reals.*
 
-**Source.** landau: *Foundations of Analysis*
+**Source.** landau — *Foundations of Analysis*
 
-## Derived fact 1: x + 0 = x
+## Derived fact 1 — x + 0 = x
 
 **Coordinate.** the real numbers · addition · zero on the right gives the value · **Derived fact**
 

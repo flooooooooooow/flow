@@ -1,5 +1,0 @@
-# Ported from tests/unit/test_arena.py (the C-shape checks on arena_alloc
-# and arena_reset), now checked by running the arena.
-+ void* arena_alloc(Arena* arena, int64_t size) {
-+ void arena_reset(Arena* arena) {
-exit 0

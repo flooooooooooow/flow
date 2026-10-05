@@ -2,13 +2,13 @@
 
 *Magnitudes which have the same ratio to the same magnitude are equal in ratio to one another.*
 
-**Source.** euclid: Elements, Book V, Proposition 6
+**Source.** euclid — Elements, Book V, Proposition 6
 
-## Derived fact 1: Magnitudes which have the same ratio to the same magnitude are equal in ratio to one another
+## Derived fact 1 — Magnitudes which have the same ratio to the same magnitude are equal in ratio to one another
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 6: magnitudes with the same ratio to a third are proportional to one another · **Derived fact**
 
-*Source: euclid: Elements, Book V, Proposition 6*
+*Source: euclid — Elements, Book V, Proposition 6*
 
 *Built on: proposition 4: equimultiples preserve proportion, for Euclid Book V on the Euclidean plane*
 

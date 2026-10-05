@@ -1,3 +1,0 @@
-function pick(sort: i32) -> i32 {
-    return sort
-}

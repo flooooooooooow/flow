@@ -1,5 +1,5 @@
 # Test for attributes.flow port of attributes.py.
-# Run with: ./flow run tests/lang/test_attributes.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_attributes.flow
 # Exit 0 on success.
 
 import "compiler/src/attributes.flow"

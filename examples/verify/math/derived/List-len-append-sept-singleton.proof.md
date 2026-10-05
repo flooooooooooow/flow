@@ -2,9 +2,9 @@
 
 *Appending seven singletons gives length seven.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len of seven appended singletons equals 7
+## Derived fact 1 — len of seven appended singletons equals 7
 
 **Coordinate.** List · length · append of seven singletons has length seven · **Derived fact**
 

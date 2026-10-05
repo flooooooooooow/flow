@@ -1,6 +1,0 @@
-function main() -> i32 {
-    match x {
-        default => 0
-    }
-    return 0
-}

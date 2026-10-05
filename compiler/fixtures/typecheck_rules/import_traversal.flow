@@ -1,6 +1,0 @@
-# expect: Unsafe import path: ../typecheck_ok.flow
-import "../typecheck_ok.flow"
-
-function main() -> i32 {
-    return 0
-}

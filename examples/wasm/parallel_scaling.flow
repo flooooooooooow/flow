@@ -1,13 +1,13 @@
 # Coarse-grained Monte Carlo pi, timed at 2, 4 and 8 pthread workers.
 #
-#   ./flow run examples/wasm/parallel_scaling.flow
+#   FLOW_HOST=python ./flow run examples/wasm/parallel_scaling.flow
 #
 # One build, one page: the program partitions N samples into w disjoint
 # shards and runs a timed pass for w = 2, 4 and 8. Each shard seeds its own
 # LCG and writes only its own hit-count slot, so threaded runs are race-free.
 # Because a different shard count is a different random sample, every worker
 # count is timed against its OWN serial baseline (same decomposition, run on
-# one thread): the serial == threaded determinism check is per row. The
+# one thread) — the serial == threaded determinism check is per row. The
 # grain is deliberately coarse (millions of samples per shard) because the
 # browser proxies every spawn/join through the main thread at ~1 ms a call
 # (see examples/wasm/parallel_sum.flow).
@@ -70,7 +70,7 @@ function shard_body(s: i32, ctx: ptr<void>) -> void {
 }
 
 # Sum hit counts in fixed shard order. The last pass set cur_shards, so only
-# the slots it wrote are counted: a stale slot can never leak in.
+# the slots it wrote are counted — a stale slot can never leak in.
 function total_hits() -> i32 {
     let mut t: i32 = 0
     for s in 0 to cur_shards {

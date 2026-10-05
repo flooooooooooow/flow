@@ -2,9 +2,9 @@
 
 *One plus zero is one in a monoid witness.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §1.1
+**Source.** dummit-foote — *Abstract Algebra*, §1.1
 
-## Derived fact 1: 1 + 0 = 1
+## Derived fact 1 — 1 + 0 = 1
 
 **Coordinate.** Monoid · addition · one plus zero is one · **Derived fact**
 

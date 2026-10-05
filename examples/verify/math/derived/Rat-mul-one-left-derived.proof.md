@@ -2,9 +2,9 @@
 
 *One is the left multiplicative identity for rationals.*
 
-**Source.** landau: *Foundations of Analysis*
+**Source.** landau — *Foundations of Analysis*
 
-## Derived fact 1: 1 * q = q
+## Derived fact 1 — 1 * q = q
 
 **Coordinate.** Rat · multiplication · one on the left gives the value · **Derived fact**
 

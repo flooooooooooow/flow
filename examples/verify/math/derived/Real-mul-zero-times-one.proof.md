@@ -2,9 +2,9 @@
 
 *Zero times one is zero for reals via left annihilation.*
 
-**Source.** landau: *Foundations of Analysis*
+**Source.** landau — *Foundations of Analysis*
 
-## Derived fact 1: 0 * 1 = 0
+## Derived fact 1 — 0 * 1 = 0
 
 **Coordinate.** the real numbers · multiplication · zero times one is zero derived · **Derived fact**
 

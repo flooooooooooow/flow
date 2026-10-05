@@ -69,7 +69,7 @@ backend represents a capturing closure as a function pointer plus an
 environment; escaping environments are copied to heap storage.
 
 ```bash
-./flow run tests/lang/test_closures.flow
+FLOW_HOST=python ./flow run tests/lang/test_closures.flow
 ```
 
 The MLIR backend does not implement capturing closures.
@@ -107,7 +107,7 @@ Source:
 [`examples/book/11_closure_snapshot.flow`](../../examples/book/11_closure_snapshot.flow)
 
 ```bash
-./flow run examples/book/11_closure_snapshot.flow
+FLOW_HOST=python ./flow run examples/book/11_closure_snapshot.flow
 ```
 
 ```text
@@ -162,9 +162,7 @@ match samples {
 Literal, Boolean, enum, float, string, struct, list, binding, wildcard,
 alternation, and guarded patterns are implemented. Exhaustiveness analysis is
 substantial for Boolean and enum variants and deliberately limited for open
-integer domains. A match that misses a case compiles with a warning such as
-`warning: Non-exhaustive match: bool patterns do not cover both ...`.
-See
+integer domains. See
 [`tests/lang/test_match_patterns.flow`](../../tests/lang/test_match_patterns.flow).
 
 One backend edge remains: `break` inside a C-lowered match arm can leave the C
@@ -228,12 +226,18 @@ values |> sort unique
 let position: i32 = values |> find(target)
 ```
 
-The source states the required result. flowc lowers every `sort` to a stable
-insertion sort. The retired Python C backend chose among registered plans with
-a cost model and ordering hints, and `flow explain` printed that choice.
-flowc has no plan selector yet, so `flow explain` stops with an error.
-`stable`, `unstable`, and the GPU, SIMD, entropy, and compact ordering
-modifiers parse without specialised implementations.
+The source states the required result. The compiler chooses among registered
+plans using applicability constraints, ordering hints, scratch-space
+requirements, and a cost model. Hints can permit a no-op, reversal, counting
+sort, or binary search. `stable` and `unstable` parse, but current plans are all stable.
+GPU, SIMD, entropy, and compact ordering modifiers parse without specialised
+implementations.
+
+Inspect a decision:
+
+```bash
+./flow explain examples/basics/declarative_sort.flow
+```
 
 ## 9.10 Fork and choose pipelines
 
@@ -284,9 +288,9 @@ let result = input
 Run the complete demonstrations:
 
 ```bash
-./flow run examples/basics/pipeline_fork.flow
-./flow run examples/basics/pipeline_fork_inferred.flow
-./flow run examples/basics/pipeline_choose.flow
+FLOW_HOST=python ./flow run examples/basics/pipeline_fork.flow
+FLOW_HOST=python ./flow run examples/basics/pipeline_fork_inferred.flow
+FLOW_HOST=python ./flow run examples/basics/pipeline_choose.flow
 ```
 
 ## Exercises
@@ -294,6 +298,7 @@ Run the complete demonstrations:
 1. Pack four Boolean settings into an integer and recover each setting.
 2. Use a guarded match to classify negative, small, and large values.
 3. Write a closure that captures two coefficients of a linear function.
-4. Sort an already sorted array and a reversed one, and time both.
+4. Compare the plan selected for sorted and unsorted integer data with
+   `flow explain`.
 
 Next: [Memory, spans, and lifetime domains](10-memory-and-lifetimes.md).

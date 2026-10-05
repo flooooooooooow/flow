@@ -1,4 +1,0 @@
-function f() -> i32 {
-    let mut unused: i32 = 1
-    return unused
-}

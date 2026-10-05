@@ -2,9 +2,9 @@
 
 *Adding a successor on the right steps the sum by one.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: a + succ(b) = succ(a + b)
+## Derived fact 1 — a + succ(b) = succ(a + b)
 
 **Coordinate.** the natural numbers · addition · successor on the right via commutativity · **Derived fact**
 

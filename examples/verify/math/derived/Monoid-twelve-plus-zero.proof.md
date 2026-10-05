@@ -2,9 +2,9 @@
 
 *Twelve plus zero is twelve in a monoid witness.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §1.1
+**Source.** dummit-foote — *Abstract Algebra*, §1.1
 
-## Derived fact 1: 12 + 0 = 12
+## Derived fact 1 — 12 + 0 = 12
 
 **Coordinate.** Monoid · addition · twelve plus zero is twelve · **Derived fact**
 

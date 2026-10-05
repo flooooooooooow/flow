@@ -401,7 +401,7 @@ function _resolve_path(src: string, path: string) -> i32 {
 export function json_validate(src: string) -> i32 {
     let data: ptr<u8> = src
     let len: i32 = strlen(src) as i32
-    let mut end: i32 = _json_skip_value(data, 0, len)
+    let end: i32 = _json_skip_value(data, 0, len)
     if end < 0 {
         return JSON_ERR
     }

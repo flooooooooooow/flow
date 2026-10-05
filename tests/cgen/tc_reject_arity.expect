@@ -1,6 +1,0 @@
-# Pinned when the Python type checker was deleted: its arity check lives in
-# compiler/src/typecheck.flow.
-# The ported checker (compiler/src/sem_check.flow) reports it first, in
-# the Python checker's words.
-flags --strict
-reject No matching overload for function 'f'

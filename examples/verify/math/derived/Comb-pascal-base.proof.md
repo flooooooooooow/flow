@@ -2,9 +2,9 @@
 
 *Pascal recurrence at the top edge gives one.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: choose(n, n) = 1 via Pascal at the diagonal
+## Derived fact 1 — choose(n, n) = 1 via Pascal at the diagonal
 
 **Coordinate.** Comb · choose · Pascal recurrence closes on the diagonal · **Derived fact**
 

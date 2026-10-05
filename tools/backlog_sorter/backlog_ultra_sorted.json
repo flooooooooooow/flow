@@ -1,0 +1,740 @@
+[
+  {
+    "rank": 1,
+    "title": "Record Tetris demo GIF",
+    "category": "Immediate Priorities (This Week)",
+    "final_score": 3.382820809070236,
+    "confidence": 0.33338541870133087,
+    "consensus_level": "weak",
+    "scores": {
+      "core": 3.7547169811320753,
+      "extended": 3.312499999999999,
+      "specialized": 3.0532544378698225,
+      "persona": 3.322368421052632
+    },
+    "top_supporters": [
+      "UserExperienceAgent",
+      "SystemsProgrammerAgent",
+      "MomentumAgent"
+    ],
+    "top_detractors": [
+      "DocumentationAgent",
+      "DevOpsEngineerAgent",
+      "TechnicalDebtAgent"
+    ],
+    "persona_breakdown": {
+      "CompilerEngineerAgent": 2,
+      "ProductManagerAgent": 5,
+      "MLResearcherAgent": 2,
+      "SkepticalEngineerAgent": 5,
+      "AudioEngineerAgent": 2,
+      "VCInvestorAgent": 4,
+      "NewcomerDeveloperAgent": 5,
+      "OpenSourceMaintainerAgent": 4,
+      "LanguageDesignerAgent": 2,
+      "SystemsProgrammerAgent": 5,
+      "GameDeveloperAgent": 5,
+      "TechWriterAgent": 4,
+      "SecurityEngineerAgent": 2,
+      "DevOpsEngineerAgent": 2,
+      "EmbeddedDeveloperAgent": 2
+    }
+  },
+  {
+    "rank": 2,
+    "title": "Benchmark vs C comparison",
+    "category": "Short Term (This Month)",
+    "final_score": 3.2291221802412697,
+    "confidence": 0.37262949543351986,
+    "consensus_level": "weak",
+    "scores": {
+      "core": 3.4528301886792456,
+      "extended": 3.3125,
+      "specialized": 2.8994082840236683,
+      "persona": 3.223684210526315
+    },
+    "top_supporters": [
+      "SystemsProgrammerAgent",
+      "UserExperienceAgent",
+      "StrategicAlignmentAgent"
+    ],
+    "top_detractors": [
+      "DocumentationAgent",
+      "DevOpsEngineerAgent",
+      "TechnicalDebtAgent"
+    ],
+    "persona_breakdown": {
+      "NewcomerDeveloperAgent": 4,
+      "GameDeveloperAgent": 2,
+      "SystemsProgrammerAgent": 5,
+      "CompilerEngineerAgent": 2,
+      "AudioEngineerAgent": 2,
+      "ProductManagerAgent": 4,
+      "MLResearcherAgent": 4,
+      "SkepticalEngineerAgent": 5,
+      "VCInvestorAgent": 5,
+      "OpenSourceMaintainerAgent": 2,
+      "LanguageDesignerAgent": 2,
+      "TechWriterAgent": 4,
+      "SecurityEngineerAgent": 2,
+      "DevOpsEngineerAgent": 2,
+      "EmbeddedDeveloperAgent": 5
+    }
+  },
+  {
+    "rank": 3,
+    "title": "Cross-platform graphics (Linux)",
+    "category": "Short Term (This Month)",
+    "final_score": 3.146352602786412,
+    "confidence": 0.4138312956153324,
+    "consensus_level": "moderate",
+    "scores": {
+      "core": 3.5283018867924527,
+      "extended": 3.1249999999999996,
+      "specialized": 2.798816568047337,
+      "persona": 3.0526315789473686
+    },
+    "top_supporters": [
+      "BlockerDetectionAgent",
+      "PriorityAgent",
+      "SystemsProgrammerAgent"
+    ],
+    "top_detractors": [
+      "DocumentationAgent",
+      "TechWriterAgent",
+      "TechnicalDebtAgent"
+    ],
+    "persona_breakdown": {
+      "LanguageDesignerAgent": 2,
+      "SystemsProgrammerAgent": 5,
+      "OpenSourceMaintainerAgent": 2,
+      "VCInvestorAgent": 5,
+      "SkepticalEngineerAgent": 3,
+      "MLResearcherAgent": 2,
+      "ProductManagerAgent": 5,
+      "AudioEngineerAgent": 2,
+      "CompilerEngineerAgent": 2,
+      "NewcomerDeveloperAgent": 4,
+      "GameDeveloperAgent": 5,
+      "TechWriterAgent": 2,
+      "SecurityEngineerAgent": 2,
+      "DevOpsEngineerAgent": 4,
+      "EmbeddedDeveloperAgent": 2
+    }
+  },
+  {
+    "rank": 4,
+    "title": "Windows graphics support",
+    "category": "Medium Term (This Quarter)",
+    "final_score": 3.125092290358026,
+    "confidence": 0.3939111038799673,
+    "consensus_level": "weak",
+    "scores": {
+      "core": 3.6037735849056607,
+      "extended": 3.1249999999999996,
+      "specialized": 2.7218934911242605,
+      "persona": 2.953947368421052
+    },
+    "top_supporters": [
+      "BlockerDetectionAgent",
+      "PriorityAgent",
+      "SystemsProgrammerAgent"
+    ],
+    "top_detractors": [
+      "TechnicalDebtAgent",
+      "VCInvestorAgent",
+      "EffortAgent"
+    ],
+    "persona_breakdown": {
+      "VCInvestorAgent": 2,
+      "OpenSourceMaintainerAgent": 2,
+      "LanguageDesignerAgent": 2,
+      "GameDeveloperAgent": 5,
+      "AudioEngineerAgent": 2,
+      "SystemsProgrammerAgent": 5,
+      "CompilerEngineerAgent": 2,
+      "ProductManagerAgent": 5,
+      "NewcomerDeveloperAgent": 4,
+      "SkepticalEngineerAgent": 3,
+      "MLResearcherAgent": 2,
+      "TechWriterAgent": 2,
+      "SecurityEngineerAgent": 2,
+      "DevOpsEngineerAgent": 4,
+      "EmbeddedDeveloperAgent": 2
+    }
+  },
+  {
+    "rank": 5,
+    "title": "WASM target",
+    "category": "Medium Term (This Quarter)",
+    "final_score": 3.1101980294741542,
+    "confidence": 0.3530117852696233,
+    "consensus_level": "weak",
+    "scores": {
+      "core": 3.5849056603773586,
+      "extended": 3.0,
+      "specialized": 2.863905325443786,
+      "persona": 2.8749999999999996
+    },
+    "top_supporters": [
+      "BlockerDetectionAgent",
+      "ImpactAgent",
+      "PriorityAgent"
+    ],
+    "top_detractors": [
+      "TechnicalDebtAgent",
+      "EffortAgent",
+      "RiskAgent"
+    ],
+    "persona_breakdown": {
+      "SkepticalEngineerAgent": 3,
+      "VCInvestorAgent": 5,
+      "OpenSourceMaintainerAgent": 2,
+      "SystemsProgrammerAgent": 2,
+      "LanguageDesignerAgent": 2,
+      "GameDeveloperAgent": 4,
+      "MLResearcherAgent": 4,
+      "CompilerEngineerAgent": 2,
+      "AudioEngineerAgent": 2,
+      "ProductManagerAgent": 4,
+      "NewcomerDeveloperAgent": 4,
+      "TechWriterAgent": 2,
+      "SecurityEngineerAgent": 2,
+      "DevOpsEngineerAgent": 5,
+      "EmbeddedDeveloperAgent": 2
+    }
+  },
+  {
+    "rank": 6,
+    "title": "Implement closure environment capture (automatic captures, not just explicit `self`)",
+    "category": "2.4 Closures (Full)",
+    "final_score": 3.0182724748261185,
+    "confidence": 0.4278603754327096,
+    "consensus_level": "moderate",
+    "scores": {
+      "core": 3.0,
+      "extended": 2.4583333333333335,
+      "specialized": 3.2366863905325443,
+      "persona": 3.2697368421052637
+    },
+    "top_supporters": [
+      "StrategicAlignmentAgent",
+      "SystemsProgrammerAgent",
+      "AudioDSPAgent"
+    ],
+    "top_detractors": [
+      "TechWriterAgent",
+      "TechnicalDebtAgent",
+      "VCInvestorAgent"
+    ],
+    "persona_breakdown": {
+      "ProductManagerAgent": 3,
+      "NewcomerDeveloperAgent": 3,
+      "SkepticalEngineerAgent": 3,
+      "SystemsProgrammerAgent": 5,
+      "VCInvestorAgent": 2,
+      "OpenSourceMaintainerAgent": 5,
+      "AudioEngineerAgent": 2,
+      "LanguageDesignerAgent": 4,
+      "MLResearcherAgent": 2,
+      "GameDeveloperAgent": 2,
+      "CompilerEngineerAgent": 4,
+      "TechWriterAgent": 2,
+      "SecurityEngineerAgent": 2,
+      "DevOpsEngineerAgent": 5,
+      "EmbeddedDeveloperAgent": 5
+    }
+  },
+  {
+    "rank": 7,
+    "title": "GPU autodiff",
+    "category": "Medium Term (This Quarter)",
+    "final_score": 2.9623814144185965,
+    "confidence": 0.3627451451734557,
+    "consensus_level": "weak",
+    "scores": {
+      "core": 3.018867924528302,
+      "extended": 2.375,
+      "specialized": 3.1360946745562135,
+      "persona": 3.1907894736842106
+    },
+    "top_supporters": [
+      "DifferentiatorAgent",
+      "ImpactAgent",
+      "LanguageDesignerAgent"
+    ],
+    "top_detractors": [
+      "TechnicalDebtAgent",
+      "EffortAgent",
+      "RiskAgent"
+    ],
+    "persona_breakdown": {
+      "ProductManagerAgent": 3,
+      "NewcomerDeveloperAgent": 4,
+      "SkepticalEngineerAgent": 3,
+      "VCInvestorAgent": 5,
+      "SystemsProgrammerAgent": 2,
+      "OpenSourceMaintainerAgent": 2,
+      "AudioEngineerAgent": 4,
+      "LanguageDesignerAgent": 5,
+      "MLResearcherAgent": 5,
+      "GameDeveloperAgent": 5,
+      "CompilerEngineerAgent": 2,
+      "TechWriterAgent": 2,
+      "SecurityEngineerAgent": 2,
+      "DevOpsEngineerAgent": 2,
+      "EmbeddedDeveloperAgent": 2
+    }
+  },
+  {
+    "rank": 8,
+    "title": "Debugger",
+    "category": "Next",
+    "final_score": 2.9480362683111707,
+    "confidence": 0.4878049687863032,
+    "consensus_level": "moderate",
+    "scores": {
+      "core": 3.5283018867924527,
+      "extended": 2.75,
+      "specialized": 2.562130177514793,
+      "persona": 2.7960526315789473
+    },
+    "top_supporters": [
+      "SafetyAgent",
+      "UserExperienceAgent",
+      "PriorityAgent"
+    ],
+    "top_detractors": [
+      "TechWriterAgent",
+      "TechnicalDebtAgent",
+      "VCInvestorAgent"
+    ],
+    "persona_breakdown": {
+      "GameDeveloperAgent": 2,
+      "CompilerEngineerAgent": 4,
+      "NewcomerDeveloperAgent": 3,
+      "ProductManagerAgent": 5,
+      "SystemsProgrammerAgent": 4,
+      "SkepticalEngineerAgent": 5,
+      "VCInvestorAgent": 2,
+      "AudioEngineerAgent": 2,
+      "OpenSourceMaintainerAgent": 2,
+      "MLResearcherAgent": 2,
+      "LanguageDesignerAgent": 2,
+      "TechWriterAgent": 2,
+      "SecurityEngineerAgent": 2,
+      "DevOpsEngineerAgent": 2,
+      "EmbeddedDeveloperAgent": 2
+    }
+  },
+  {
+    "rank": 9,
+    "title": "RT-safety policy (no-alloc audio thread)",
+    "category": "Short Term (This Month)",
+    "final_score": 2.8705679694799127,
+    "confidence": 0.41489851307657755,
+    "consensus_level": "moderate",
+    "scores": {
+      "core": 3.0,
+      "extended": 2.0,
+      "specialized": 2.946745562130178,
+      "persona": 3.3355263157894735
+    },
+    "top_supporters": [
+      "SafetyAgent",
+      "AudioEngineerAgent",
+      "SecurityEngineerAgent"
+    ],
+    "top_detractors": [
+      "TechWriterAgent",
+      "TechnicalDebtAgent",
+      "VCInvestorAgent"
+    ],
+    "persona_breakdown": {
+      "LanguageDesignerAgent": 2,
+      "GameDeveloperAgent": 2,
+      "CompilerEngineerAgent": 2,
+      "ProductManagerAgent": 4,
+      "AudioEngineerAgent": 5,
+      "SystemsProgrammerAgent": 5,
+      "SkepticalEngineerAgent": 5,
+      "NewcomerDeveloperAgent": 3,
+      "VCInvestorAgent": 2,
+      "MLResearcherAgent": 2,
+      "OpenSourceMaintainerAgent": 2,
+      "TechWriterAgent": 2,
+      "SecurityEngineerAgent": 5,
+      "DevOpsEngineerAgent": 2,
+      "EmbeddedDeveloperAgent": 5
+    }
+  },
+  {
+    "rank": 10,
+    "title": "Loop vectorization",
+    "category": "4.1 MLIR Optimization",
+    "final_score": 2.837117850098619,
+    "confidence": 0.5230303992915271,
+    "consensus_level": "moderate",
+    "scores": {
+      "core": 3.0,
+      "extended": 2.4583333333333335,
+      "specialized": 2.6568047337278107,
+      "persona": 3.125
+    },
+    "top_supporters": [
+      "CompilerEngineerAgent",
+      "SystemsProgrammerAgent",
+      "DifferentiatorAgent"
+    ],
+    "top_detractors": [
+      "TechWriterAgent",
+      "TechnicalDebtAgent",
+      "VCInvestorAgent"
+    ],
+    "persona_breakdown": {
+      "CompilerEngineerAgent": 5,
+      "ProductManagerAgent": 3,
+      "NewcomerDeveloperAgent": 3,
+      "SkepticalEngineerAgent": 3,
+      "SystemsProgrammerAgent": 5,
+      "VCInvestorAgent": 2,
+      "OpenSourceMaintainerAgent": 2,
+      "AudioEngineerAgent": 4,
+      "LanguageDesignerAgent": 2,
+      "MLResearcherAgent": 4,
+      "GameDeveloperAgent": 4,
+      "TechWriterAgent": 2,
+      "SecurityEngineerAgent": 2,
+      "DevOpsEngineerAgent": 2,
+      "EmbeddedDeveloperAgent": 2
+    }
+  },
+  {
+    "rank": 11,
+    "title": "Self-hosting components",
+    "category": "Medium Term (This Quarter)",
+    "final_score": 2.8368300961318114,
+    "confidence": 0.37763053577477,
+    "consensus_level": "weak",
+    "scores": {
+      "core": 3.207547169811321,
+      "extended": 2.562500000000001,
+      "specialized": 2.63905325443787,
+      "persona": 2.8092105263157894
+    },
+    "top_supporters": [
+      "ImpactAgent",
+      "PriorityAgent",
+      "LanguageDesignerAgent"
+    ],
+    "top_detractors": [
+      "VCInvestorAgent",
+      "EffortAgent",
+      "RiskAgent"
+    ],
+    "persona_breakdown": {
+      "VCInvestorAgent": 2,
+      "AudioEngineerAgent": 2,
+      "NewcomerDeveloperAgent": 3,
+      "OpenSourceMaintainerAgent": 2,
+      "LanguageDesignerAgent": 5,
+      "GameDeveloperAgent": 2,
+      "MLResearcherAgent": 2,
+      "CompilerEngineerAgent": 2,
+      "ProductManagerAgent": 3,
+      "SystemsProgrammerAgent": 5,
+      "SkepticalEngineerAgent": 5,
+      "TechWriterAgent": 2,
+      "SecurityEngineerAgent": 2,
+      "DevOpsEngineerAgent": 2,
+      "EmbeddedDeveloperAgent": 2
+    }
+  },
+  {
+    "rank": 12,
+    "title": "Function inlining",
+    "category": "4.1 MLIR Optimization",
+    "final_score": 2.6808970466106095,
+    "confidence": 0.5555902791342207,
+    "consensus_level": "moderate",
+    "scores": {
+      "core": 3.0,
+      "extended": 2.4583333333333335,
+      "specialized": 2.479289940828403,
+      "persona": 2.677631578947368
+    },
+    "top_supporters": [
+      "CompilerEngineerAgent",
+      "SystemsProgrammerAgent",
+      "PriorityAgent"
+    ],
+    "top_detractors": [
+      "TechWriterAgent",
+      "TechnicalDebtAgent",
+      "VCInvestorAgent"
+    ],
+    "persona_breakdown": {
+      "CompilerEngineerAgent": 5,
+      "ProductManagerAgent": 3,
+      "NewcomerDeveloperAgent": 3,
+      "SkepticalEngineerAgent": 3,
+      "SystemsProgrammerAgent": 5,
+      "VCInvestorAgent": 2,
+      "OpenSourceMaintainerAgent": 2,
+      "AudioEngineerAgent": 2,
+      "LanguageDesignerAgent": 2,
+      "MLResearcherAgent": 2,
+      "GameDeveloperAgent": 2,
+      "TechWriterAgent": 2,
+      "SecurityEngineerAgent": 2,
+      "DevOpsEngineerAgent": 2,
+      "EmbeddedDeveloperAgent": 2
+    }
+  },
+  {
+    "rank": 13,
+    "title": "Real-world projects",
+    "category": "Next",
+    "final_score": 2.6724560105886015,
+    "confidence": 0.5283009433971698,
+    "consensus_level": "moderate",
+    "scores": {
+      "core": 3.0,
+      "extended": 2.5624999999999996,
+      "specialized": 2.467455621301775,
+      "persona": 2.5723684210526314
+    },
+    "top_supporters": [
+      "SystemsProgrammerAgent",
+      "SkepticalEngineerAgent",
+      "PriorityAgent"
+    ],
+    "top_detractors": [
+      "TechWriterAgent",
+      "TechnicalDebtAgent",
+      "VCInvestorAgent"
+    ],
+    "persona_breakdown": {
+      "LanguageDesignerAgent": 2,
+      "GameDeveloperAgent": 2,
+      "NewcomerDeveloperAgent": 3,
+      "CompilerEngineerAgent": 2,
+      "ProductManagerAgent": 3,
+      "SystemsProgrammerAgent": 5,
+      "SkepticalEngineerAgent": 5,
+      "VCInvestorAgent": 2,
+      "AudioEngineerAgent": 2,
+      "OpenSourceMaintainerAgent": 2,
+      "MLResearcherAgent": 2,
+      "TechWriterAgent": 2,
+      "SecurityEngineerAgent": 2,
+      "DevOpsEngineerAgent": 2,
+      "EmbeddedDeveloperAgent": 2
+    }
+  },
+  {
+    "rank": 14,
+    "title": "Consider subdirs by purpose",
+    "category": "Repository Cleanup",
+    "final_score": 2.61688336966677,
+    "confidence": 0.5405506012627723,
+    "consensus_level": "moderate",
+    "scores": {
+      "core": 3.0,
+      "extended": 2.375,
+      "specialized": 2.3491124260355027,
+      "persona": 2.6184210526315783
+    },
+    "top_supporters": [
+      "SystemsProgrammerAgent",
+      "OpenSourceMaintainerAgent",
+      "InteropAgent"
+    ],
+    "top_detractors": [
+      "DevOpsEngineerAgent",
+      "TechWriterAgent",
+      "VCInvestorAgent"
+    ],
+    "persona_breakdown": {
+      "OpenSourceMaintainerAgent": 5,
+      "NewcomerDeveloperAgent": 3,
+      "LanguageDesignerAgent": 2,
+      "SystemsProgrammerAgent": 5,
+      "GameDeveloperAgent": 2,
+      "MLResearcherAgent": 2,
+      "CompilerEngineerAgent": 2,
+      "ProductManagerAgent": 3,
+      "AudioEngineerAgent": 2,
+      "SkepticalEngineerAgent": 3,
+      "VCInvestorAgent": 2,
+      "TechWriterAgent": 2,
+      "SecurityEngineerAgent": 2,
+      "DevOpsEngineerAgent": 2,
+      "EmbeddedDeveloperAgent": 2
+    }
+  },
+  {
+    "rank": 15,
+    "title": "Consider flattening",
+    "category": "Repository Cleanup",
+    "final_score": 2.61688336966677,
+    "confidence": 0.5405506012627724,
+    "consensus_level": "moderate",
+    "scores": {
+      "core": 3.0,
+      "extended": 2.375,
+      "specialized": 2.3491124260355023,
+      "persona": 2.618421052631579
+    },
+    "top_supporters": [
+      "SystemsProgrammerAgent",
+      "OpenSourceMaintainerAgent",
+      "InteropAgent"
+    ],
+    "top_detractors": [
+      "DevOpsEngineerAgent",
+      "TechWriterAgent",
+      "VCInvestorAgent"
+    ],
+    "persona_breakdown": {
+      "OpenSourceMaintainerAgent": 5,
+      "NewcomerDeveloperAgent": 3,
+      "LanguageDesignerAgent": 2,
+      "GameDeveloperAgent": 2,
+      "CompilerEngineerAgent": 2,
+      "SystemsProgrammerAgent": 5,
+      "MLResearcherAgent": 2,
+      "ProductManagerAgent": 3,
+      "AudioEngineerAgent": 2,
+      "SkepticalEngineerAgent": 3,
+      "VCInvestorAgent": 2,
+      "TechWriterAgent": 2,
+      "SecurityEngineerAgent": 2,
+      "DevOpsEngineerAgent": 2,
+      "EmbeddedDeveloperAgent": 2
+    }
+  },
+  {
+    "rank": 16,
+    "title": "Async primitives",
+    "category": "Next",
+    "final_score": 2.5865188502964456,
+    "confidence": 0.5397011840119508,
+    "consensus_level": "moderate",
+    "scores": {
+      "core": 2.9811320754716983,
+      "extended": 2.0,
+      "specialized": 2.550295857988165,
+      "persona": 2.618421052631579
+    },
+    "top_supporters": [
+      "SystemsProgrammerAgent",
+      "ImpactAgent",
+      "InteropAgent"
+    ],
+    "top_detractors": [
+      "TechnicalDebtAgent",
+      "VCInvestorAgent",
+      "RiskAgent"
+    ],
+    "persona_breakdown": {
+      "GameDeveloperAgent": 2,
+      "CompilerEngineerAgent": 2,
+      "NewcomerDeveloperAgent": 3,
+      "ProductManagerAgent": 3,
+      "SkepticalEngineerAgent": 3,
+      "SystemsProgrammerAgent": 5,
+      "VCInvestorAgent": 2,
+      "OpenSourceMaintainerAgent": 2,
+      "AudioEngineerAgent": 2,
+      "LanguageDesignerAgent": 2,
+      "MLResearcherAgent": 2,
+      "TechWriterAgent": 2,
+      "SecurityEngineerAgent": 2,
+      "DevOpsEngineerAgent": 2,
+      "EmbeddedDeveloperAgent": 5
+    }
+  },
+  {
+    "rank": 17,
+    "title": "Constant propagation",
+    "category": "4.1 MLIR Optimization",
+    "final_score": 2.5862718000622857,
+    "confidence": 0.5677095883552357,
+    "consensus_level": "moderate",
+    "scores": {
+      "core": 3.0,
+      "extended": 2.0,
+      "specialized": 2.4674556213017755,
+      "persona": 2.677631578947368
+    },
+    "top_supporters": [
+      "CompilerEngineerAgent",
+      "SystemsProgrammerAgent",
+      "PriorityAgent"
+    ],
+    "top_detractors": [
+      "TechWriterAgent",
+      "TechnicalDebtAgent",
+      "VCInvestorAgent"
+    ],
+    "persona_breakdown": {
+      "CompilerEngineerAgent": 5,
+      "NewcomerDeveloperAgent": 3,
+      "ProductManagerAgent": 3,
+      "SkepticalEngineerAgent": 3,
+      "SystemsProgrammerAgent": 5,
+      "VCInvestorAgent": 2,
+      "OpenSourceMaintainerAgent": 2,
+      "AudioEngineerAgent": 2,
+      "LanguageDesignerAgent": 2,
+      "MLResearcherAgent": 2,
+      "GameDeveloperAgent": 2,
+      "TechWriterAgent": 2,
+      "SecurityEngineerAgent": 2,
+      "DevOpsEngineerAgent": 2,
+      "EmbeddedDeveloperAgent": 2
+    }
+  },
+  {
+    "rank": 18,
+    "title": "Dead code elimination",
+    "category": "4.1 MLIR Optimization",
+    "final_score": 2.5566860012457173,
+    "confidence": 0.5816699867329622,
+    "consensus_level": "moderate",
+    "scores": {
+      "core": 3.0,
+      "extended": 2.0,
+      "specialized": 2.3491124260355023,
+      "persona": 2.677631578947368
+    },
+    "top_supporters": [
+      "CompilerEngineerAgent",
+      "SystemsProgrammerAgent",
+      "PriorityAgent"
+    ],
+    "top_detractors": [
+      "TechWriterAgent",
+      "TechnicalDebtAgent",
+      "VCInvestorAgent"
+    ],
+    "persona_breakdown": {
+      "CompilerEngineerAgent": 5,
+      "ProductManagerAgent": 3,
+      "NewcomerDeveloperAgent": 3,
+      "SkepticalEngineerAgent": 3,
+      "SystemsProgrammerAgent": 5,
+      "VCInvestorAgent": 2,
+      "OpenSourceMaintainerAgent": 2,
+      "AudioEngineerAgent": 2,
+      "LanguageDesignerAgent": 2,
+      "MLResearcherAgent": 2,
+      "GameDeveloperAgent": 2,
+      "TechWriterAgent": 2,
+      "SecurityEngineerAgent": 2,
+      "DevOpsEngineerAgent": 2,
+      "EmbeddedDeveloperAgent": 2
+    }
+  }
+]

@@ -15,9 +15,9 @@ Flow uses annotated semantic-version tags and GitHub Releases.
 3. Run:
    ```bash
    ./flow test --strict --tier2
-   ./flow tool compiler/scripts/roundtrip.flow
-   ./flow tool build_wiki
-   ./flow tool wiki_links
+   ./compiler/scripts/roundtrip.sh
+   python3 scripts/build_wiki.py
+   python3 scripts/check_wiki_links.py
    ```
 4. Merge the release PR and require green `CI`.
 
@@ -43,7 +43,7 @@ After the release workflow succeeds:
 1. Download/read `SHA256SUMS.txt`.
 2. Update `packaging/homebrew/Formula/flow.rb`.
 3. Test the formula locally.
-4. Run `./flow tool packaging/homebrew/sync-tap.flow`.
+4. Run `packaging/homebrew/sync-tap.sh`.
 
 ## After release
 

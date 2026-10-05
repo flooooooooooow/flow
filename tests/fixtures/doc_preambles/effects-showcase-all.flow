@@ -1,4 +1,3 @@
-# effects-mode: permissive
 # Effects, capabilities and helpers declared across docs/effects-showcase.md.
 #
 # The page introduces each of these once and then shows how they are used.
@@ -75,7 +74,22 @@ capability WallClock {
     },
 }
 
-# TestBackend is left out: the page block that installs it declares it itself.
+capability TestBackend {
+    effect Inventory, Notify,
+
+    function stock_of(sku: i32) -> i32 {
+        return 99
+    },
+
+    function reserve(sku: i32, qty: i32) -> i32 {
+        return 42
+    },
+
+    function send(recipient: string, msg: string) -> void {
+        let r: string = recipient
+        printf("captured notification for %s\n", r)
+    },
+}
 
 capability OpsLogger {
     effect Log,
@@ -101,7 +115,15 @@ capability TestConfig {
     },
 }
 
-# NullLogger is left out: the page block that installs it declares it itself.
+capability NullLogger {
+    effect Log,
+
+    function info(msg: string) -> void {
+    },
+
+    function warn(msg: string) -> void {
+    },
+}
 
 capability UnitCounter {
     effect Counter,
@@ -155,65 +177,11 @@ capability SyncAsync {
     },
 }
 
-# The page names these handlers without declaring them. The first three
-# come from examples/effects/showcase.flow, the database pair from
-# examples/effects/dependency_injection.flow.
-capability SilentLogger {
-    effect Log,
-    function info(msg: string) -> void {
-    },
-    function warn(msg: string) -> void {
-    },
-}
-
-capability WarehouseInventory {
-    effect Inventory,
-    function stock_of(sku: i32) -> i32 {
-        if sku == 1001 {
-            return 8
-        }
-        return 0
-    },
-    function reserve(sku: i32, qty: i32) -> i32 {
-        return 500000 + sku
-    },
-}
-
-capability TestNotifier {
-    effect Notify,
-    function send(recipient: string, msg: string) -> void {
-        let r: string = recipient
-        printf("captured notification for %s\n", r)
-    },
-}
-
-capability ProductionDB {
-    effect Database,
-    function query(sql: string) -> string {
-        return "John Doe"
-    },
-    function execute(sql: string) -> i32 {
-        return 1
-    },
-}
-
-capability MockDBOk {
-    effect Database,
-    function query(sql: string) -> string {
-        return "Test User"
-    },
-    function execute(sql: string) -> i32 {
-        return 1
-    },
-}
-
 function work() -> void with Log {
     Log.info("hello")
 }
 
-# The page's `main` is renamed here. The blocks that use this preamble
-# bring their own `main`, or the checker wraps them in one.
-function clock_default_demo() -> i32 {
+function main() -> i32 {
     let t: i32 = Clock.now()
     printf("%d\n", t)   # 0 when no Clock handler is installed
     return 0

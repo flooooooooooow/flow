@@ -1,8 +1,0 @@
-[0;34mℹ️  Compiling tests/cli/fixtures/hello.flow (debug)...[0m
-[0;34mℹ️  flowc emit via <ROOT>/compiler/build/flowc_bootstrap[0m
-[0;32m✅ FLOW to C (debug): hello.debug.c[0m
-[0;32m✅ Built debug binary: <ROOT>/build/hello.debug[0m
-[0;34mℹ️  Source maps: #line → <ROOT>/tests/cli/fixtures/hello.flow (statement-level)[0m
-[0;34mℹ️  C mapping file: <ROOT>/build/hello.debug.c[0m
-[0;34mℹ️  Skipping debugger launch (--no-launch). Run manually:[0m
-[0;34mℹ️    lldb "<ROOT>/build/hello.debug"[0m

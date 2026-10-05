@@ -20,5 +20,4 @@ FLOW CLI:
 ./flow vulkan-demo-advanced
 ```
 
-`flow demo vulkan advanced` sets `VK_ICD_FILENAMES` and `VK_LAYER_PATH` for Homebrew installs.
-This directory is a copy of `demos/vulkan_scene`; `make run` here runs that demo.
+`run.sh` sets `VK_ICD_FILENAMES` and `VK_LAYER_PATH` for Homebrew installs.

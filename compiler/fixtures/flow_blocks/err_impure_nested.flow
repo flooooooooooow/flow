@@ -1,8 +1,0 @@
-function g(a: f64) -> f64 {
-    return a
-}
-
-flow Osc {
-    state x : f64 = 1.0
-    x evolves as g(sin(x) + puts(x))
-}

@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  False conjoined with itself is false.
-# @from   boole: https://en.wikipedia.org/wiki/Boolean_algebra
+# @from   boole — https://en.wikipedia.org/wiki/Boolean_algebra
 # @tier   derived
 
 # @means  false and false = false.

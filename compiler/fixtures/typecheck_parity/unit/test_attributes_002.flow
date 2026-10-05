@@ -1,5 +1,0 @@
-
-@fastcall
-function f() -> i32 {
-    return 0
-}

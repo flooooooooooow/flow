@@ -1,5 +1,0 @@
-[0;34mℹ️  Generating GPU shaders from @ROOT@/lib/stdlib/gpu_kernels.flow (wgsl)...[0m
-Generated WGSL shader: @ROOT@/build/wgsl/gpu_vector_add.wgsl
-Generated WGSL shader: @ROOT@/build/wgsl/gpu_scale.wgsl
-Generated WGSL shader: @ROOT@/build/wgsl/gpu_matmul_row.wgsl
-Generated 3 GPU shader(s)

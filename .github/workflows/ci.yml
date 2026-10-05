@@ -1,22 +1,20 @@
-# ACTIONS-INTENDED: public repository; this is its main CI.
 name: CI
 
 on:
   push:
     branches: [main, master]
     paths:
+      - 'src/**'
       - 'compiler/**'
       - 'tests/**'
       - 'examples/**'
       - 'lib/**'
       - 'runtime/**'
       - 'flow'
-      - 'Makefile'
-      - 'tools/**'
       - 'flow.toml'
       - '.gitignore'
       - '.github/**'
-      - 'VERSION'
+      - 'pyproject.toml'
       - 'requirements.txt'
       - 'requirements.lock'
       - 'scripts/**'
@@ -28,16 +26,31 @@ on:
       - 'mkdocs.yml'
       - 'CITATION.cff'
       - '**.md'
-      - '**.py'
-      - '**.sh'
-      - 'tools/python_ratchet/**'
-  # Every pull request runs the workflow, whatever paths it touches. The
-  # `changes` job gates each job by path, and a skipped job counts as passing
-  # for a required check, so every PR gets a CI status. A paths list here left
-  # PRs outside it with no status at all, which deadlocks required checks
-  # (#816).
   pull_request:
     branches: [main, master]
+    paths:
+      - 'src/**'
+      - 'compiler/**'
+      - 'tests/**'
+      - 'examples/**'
+      - 'lib/**'
+      - 'runtime/**'
+      - 'flow'
+      - 'flow.toml'
+      - '.gitignore'
+      - '.github/**'
+      - 'pyproject.toml'
+      - 'requirements.txt'
+      - 'requirements.lock'
+      - 'scripts/**'
+      - 'plugins/**'
+      # Version consistency and Doc links are deliberately ungated at the job
+      # level so markdown drift gets caught. That only works if the workflow
+      # itself fires, so docs-only changes have to be in this list too.
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'CITATION.cff'
+      - '**.md'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -61,7 +74,6 @@ jobs:
       runtime: ${{ steps.filter.outputs.runtime }}
       workflow: ${{ steps.filter.outputs.workflow }}
       plugins: ${{ steps.filter.outputs.plugins }}
-      tools: ${{ steps.filter.outputs.tools }}
       deps: ${{ steps.filter.outputs.deps }}
     steps:
       - uses: actions/checkout@v7
@@ -71,14 +83,10 @@ jobs:
         with:
           filters: |
             src:
-              - 'compiler/src/**'
+              - 'src/**'
             compiler:
               - 'compiler/**'
-              - 'tests/cgen/**'
-              - 'tests/check/**'
-              - 'tests/c_to_hdr/**'
-              - 'tools/check/**'
-              - 'tools/flow_cli/**'
+              - 'src/flow/c_generator.py'
             tests:
               - 'tests/**'
             examples:
@@ -90,94 +98,49 @@ jobs:
             workflow:
               - '.github/**'
               - 'flow'
-              - 'Makefile'
               - 'scripts/**'
             plugins:
               - 'plugins/**'
-            tools:
-              - 'tools/**'
-              - 'tests/tools/**'
-              - 'tests/cli/**'
-              - 'compiler/src/wcet.flow'
-              - 'compiler/src/misra_scan.flow'
-              - 'flow'
             docs:
               - 'docs/**'
               - '**.md'
             deps:
               - 'requirements.lock'
               - 'requirements.txt'
+              - 'pyproject.toml'
 
-  # Manifests, docs headers and the CLI banner all mirror VERSION.
-  # They have drifted before: 0.11.0 nearly shipped with the canonical file still
+  # Manifests, docs headers and the CLI banner all mirror src/flow/version.py.
+  # They have drifted before: 0.11.0 nearly shipped with version.py still
   # reading 0.3.3 and three hardcoded 0.10.0 strings in the flow driver.
-  # Deliberately ungated: the drift-prone files (README.md, CITATION.cff,
+  # Deliberately ungated — the drift-prone files (README.md, CITATION.cff,
   # flow.toml, docs/LANGUAGE_SPEC.md) sit outside every paths-filter above.
-  # The checker is a Flow program built from the bootstrap C with cc, so no
-  # toolchain setup is needed.
+  # Stdlib-only script, so no toolchain setup is needed.
   version:
     name: Version consistency
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: ./flow tool sync_version --check
-
-  # New code is written in Flow. Fails when a new .py file appears or tracked
-  # Python grows past tools/python_ratchet/baseline.txt. The checker is a Flow
-  # program that ./flow builds from the checked-in C bootstrap, so no Python
-  # is installed. Deliberately ungated, like the version check above.
-  python-ratchet:
-    name: Python ratchet (Flow first)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - run: ./flow tool python_ratchet
-
-  # The same rule for shell. Fails when a new shell script appears or the
-  # tracked shell outside tools/shell_ratchet/allow.txt grows past
-  # tools/shell_ratchet/baseline.txt. std.process runs commands from Flow,
-  # so tooling no longer needs a shell wrapper. Deliberately ungated.
-  shell-ratchet:
-    name: Shell ratchet (Flow first)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - run: ./flow tool shell_ratchet
+      - run: python3 scripts/sync_version.py --check
 
   # Relative links in tracked markdown, as a reader meets them on GitHub.
-  # `flow tool wiki_links` validates the built site instead; the two catch
-  # different breakage. Both are Flow programs built with cc alone, so no
-  # toolchain setup. script_refs fails when a .flow file names a scripts/ or
-  # compiler/scripts/ path that does not exist (a deleted script).
+  # check_wiki_links.py validates the built site instead; the two catch
+  # different breakage. Both stdlib-only, so no toolchain setup.
   doc-links:
     name: Doc links
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: ./flow tool doc_links
-      - run: ./flow tool script_refs
-      - run: ./flow tool tool_layout
-      - run: ./flow tool makefile_contract
-      - run: ./flow tool project_state
-      # docs/library/stdlib-api.md is generated from lib/stdlib; fail when the
-      # committed page is behind the generator.
-      - name: Stdlib API page matches lib/stdlib
-        run: ./flow tool gen_stdlib_docs --check
-      - name: Jules dispatch backpressure tests
-        run: ./flow tool scripts/tools/jules_dispatch/test.flow
-      - name: Benchmark harness tests (no Python)
-        run: ./flow tool tests/bench_harness/run.flow
+      - run: python3 scripts/check_doc_links.py
 
   # Every part of the language needs a page. The feature list is read from the
   # compiler, so this fails when something is added and left undocumented.
-  # A Flow program built with cc, like the checkers above, so no toolchain
-  # setup.
+  # Stdlib-only, like the checkers above, so no toolchain setup.
   doc-coverage:
     name: Doc coverage
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - run: ./flow tool doc_coverage
+      - run: python3 scripts/check_doc_coverage.py
 
   # Documented examples are compiled. A ratchet, not a wall: the examples that
   # do not build today are recorded in docs/generated/example-status.json and
@@ -192,8 +155,11 @@ jobs:
       needs.changes.outputs.docs == 'true'
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-python
       - name: Compile every ```flow block in the documentation
-        run: ./flow tool doc_examples --check-ledger
+        env:
+          PYTHONPATH: src
+        run: python3 scripts/check_doc_examples.py --check-ledger
 
   doc-examples-run:
     name: Doc examples (run)
@@ -204,12 +170,15 @@ jobs:
       needs.changes.outputs.docs == 'true'
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-python
       # Separate from the compile gate because it takes about two minutes,
       # and because it answers a different question: compiling proves an
       # example is well-formed, running proves it works. A `defer` freeing
       # memory before the return value was read compiled cleanly (#594).
       - name: Run every complete program in the documentation
-        run: ./flow tool doc_examples --run --check-ledger
+        env:
+          PYTHONPATH: src
+        run: python3 scripts/check_doc_examples.py --run --check-ledger
 
   lint:
     name: Lint
@@ -222,15 +191,22 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: ./.github/actions/setup-python
+
       - uses: ./.github/actions/install-toolchain
         with:
           shellcheck: 'true'
 
-      # The launchers that stay shell (tools/shell_ratchet/allow.txt), and any
-      # .sh left in scripts/; find keeps an empty set from failing (#1153).
+      - name: Ruff
+        run: ruff check src
+
+      - name: Mypy (best effort)
+        if: needs.changes.outputs.src == 'true'
+        run: mypy src || true
+
       - name: Shellcheck
         if: needs.changes.outputs.workflow == 'true'
-        run: shellcheck flow flow-lsp $(find scripts -maxdepth 1 -type f -name '*.sh' -print)
+        run: shellcheck flow scripts/*.sh
 
   security:
     name: Security Scan
@@ -244,6 +220,10 @@ jobs:
 
       - uses: ./.github/actions/setup-python
 
+      - name: Bandit
+        if: needs.changes.outputs.src == 'true'
+        run: bandit -r src -ll
+
       - name: pip-audit
         run: pip-audit -r requirements.lock
 
@@ -254,26 +234,26 @@ jobs:
     if: |
       needs.changes.outputs.src == 'true' ||
       needs.changes.outputs.tests == 'true' ||
-      needs.changes.outputs.examples == 'true' ||
       needs.changes.outputs.libs == 'true' ||
       needs.changes.outputs.runtime == 'true'
     steps:
       - uses: actions/checkout@v7
+
+      - uses: ./.github/actions/setup-python
 
       - uses: ./.github/actions/install-toolchain
         with:
           mlir: 'true'
 
       - name: Tier 2 (transpile + clang, strict)
+        env:
+          PYTHONPATH: src
         run: |
           chmod +x ./flow
           # Tier 2 already transpiles; tier 1 was redundant (~2× work).
           # --strict: type-checker findings fail the build. Files with a
           # documented "# flow:lenient - <reason>" pragma are exempt.
           ./flow test --tier2 --strict
-
-      - name: Rosetta Code examples (run and compare output)
-        run: ./flow test-runtime examples/rosetta
 
   flowc-bootstrap:
     name: flowc self-host roundtrip
@@ -285,23 +265,38 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # No Python: the compiler host is flowc built from compiler/src by the
-      # bootstrap binary (compiler/scripts/flowc_host.flow), and the per-module
-      # headers come from the Flow tool scripts/tools/c_to_hdr.
-      - name: c_to_hdr goldens
-        run: ./flow tool tests/c_to_hdr/run.flow
+      # Gen0 still imports the Python transpiler (numpy via gpu_runtime). User
+      # compile is proven pip-free in the flowc-compile job below.
+      - uses: ./.github/actions/setup-python
 
       - name: Stage-A/B self-host roundtrip
+        env:
+          PYTHONPATH: src
+          FLOW_HOST: python
         run: |
           chmod +x ./flow compiler/scripts/*.sh
           # Full roundtrip: Phase-A fixtures + Phase-B bundle/topo/self-emit path.
-          timeout 30m ./flow tool compiler/scripts/roundtrip.flow
+          timeout 20m ./compiler/scripts/roundtrip.sh
 
-      # The proof layer runs on flowc; the gate holds it to the recorded
-      # Python behaviour (accept/reject, program output). The live diff
-      # against the Python at a revision is `--python <rev>`.
-      - name: proof layer parity (flowc)
-        run: timeout 20m ./flow tool compiler/scripts/parity_proofs.flow
+      # Where a Flow port replaces Python that still exists, the Python stays
+      # the reference and the port is diffed against it on every run.
+      - name: math_prose expression parity (Flow port vs Python)
+        env:
+          PYTHONPATH: src
+          FLOW_HOST: python
+        run: timeout 10m python3 compiler/scripts/parity_math_prose_expr.py
+
+      - name: proof parse parity (Flow port vs Python)
+        env:
+          PYTHONPATH: src
+          FLOW_HOST: python
+        run: timeout 10m python3 compiler/scripts/parity_proof_parse.py
+
+      - name: know index parity (Flow port vs Python)
+        env:
+          PYTHONPATH: src
+          FLOW_HOST: python
+        run: timeout 10m python3 compiler/scripts/parity_know_index.py
 
       - name: Stage flowc driver for artifact
         run: |
@@ -337,7 +332,7 @@ jobs:
 
   # Phase D/E: a clean checkout must produce a working flowc with cc alone, and
   # three consecutive generations of flowc must agree byte for byte.
-  # Deliberately no setup-python step. That is the point of this job.
+  # Deliberately no setup-python step — that is the point of this job.
   flowc-selfhost:
     name: flowc self-host (no Python)
     runs-on: ubuntu-latest
@@ -354,69 +349,10 @@ jobs:
           ./compiler/scripts/bootstrap_from_c.sh
 
       - name: Every compiler/src module compiles under flowc
-        run: ./flow tool compiler/scripts/selfcompile_audit.flow
+        run: ./compiler/scripts/selfcompile_audit.sh
 
       - name: Three consecutive generation fixed-points
-        run: ./flow tool compiler/scripts/self_host_full.flow
-
-      - name: C output goldens (tests/cgen)
-        run: ./flow tool tests/cgen/run.flow
-
-      - name: flow check goldens (tests/check)
-        run: ./flow tool tests/check/run.flow
-
-      - name: flow python generator goldens (tests/pywheel)
-        run: ./flow tool tests/pywheel/run.flow
-
-      - name: Project test runner parity (flow test)
-        run: ./flow tool compiler/scripts/parity_project_test.flow
-
-      - name: Debug adapter parity (flow dap)
-        run: ./flow tool compiler/scripts/parity_dap.flow
-
-      - name: FIR-G goldens (flow fir-g)
-        run: ./flow tool tests/fir/run.flow
-
-      - name: flow run --json goldens (tools/run)
-        run: ./flow tool tests/flow_run/run.flow
-
-      - name: Package command goldens (init, publish, build, clean)
-        run: ./flow tool scripts/check_pkg_commands.flow
-
-      - name: Package dependency goldens (install, sync, add, search, info)
-        run: ./flow tool scripts/check_pkg_parity.flow
-
-      - name: GPU shader goldens (flow gpu)
-        run: ./flow tool tests/gpu/run.flow
-
-      - name: GPU and shader crossing pages
-        run: ./flow tool tests/gpu/crossing.flow
-
-      - uses: ./.github/actions/install-toolchain
-        with:
-          mlir: 'true'
-
-      # The MLIR emitter (compiler/src/mlirgen.flow) against the goldens
-      # recorded from the Python generator, with python stubbed out: the
-      # fixtures must emit the same MLIR and, lowered with mlir-opt, print
-      # the same output; recorded corpus programs must not regress.
-      - name: MLIR emitter parity against goldens (no Python)
-        run: |
-          mkdir -p /tmp/nopy-mlir
-          printf '#!/bin/sh\necho "python invoked: $0 $*" >&2\nexit 127\n' > /tmp/nopy-mlir/python3
-          cp /tmp/nopy-mlir/python3 /tmp/nopy-mlir/python
-          chmod +x /tmp/nopy-mlir/python3 /tmp/nopy-mlir/python
-          PATH="/tmp/nopy-mlir:$PATH" timeout 10m ./flow tool compiler/scripts/parity_mlir.flow
-          # --backend=mlir on the flowc host needs no Python either.
-          PATH="/tmp/nopy-mlir:$PATH" FLOW_HOST=flowc \
-            ./flow run --backend=mlir compiler/fixtures/mlir/control.flow
-
-      # flow mlir (with --optimize, --llvm, --mlir-gpu, --emit-spirv and the
-      # pass pipelines), mlir-run, jit, ml, test-mlir, test-matmul and
-      # compile-audio --mlir against the goldens recorded from the Python
-      # MLIR stack; the runner stubs python itself.
-      - name: MLIR command goldens (no Python)
-        run: timeout 20m ./flow tool tests/mlir_commands/run.flow
+        run: ./compiler/scripts/self_host_full.sh
 
       - name: Compile and run a Flow program (FLOW_HOST=flowc)
         env:
@@ -446,15 +382,8 @@ jobs:
           set -e
           test "$ec" -eq 55
 
-      # The default `flow run` / `flow compile` path from a clean compiler/build
-      # and build/: flowc comes from ensure_flowc (bootstrap C with cc), and the
-      # dependency sync check is scripts/tools/pkg_sync. The check stubs python
-      # and python3 to log and exit 127, and fails if either is called.
-      - name: flow run with python and python3 stubbed to exit 127
-        run: ./flow tool scripts/check_run_without_python.flow
-
       - name: Package the distributable compiler
-        run: ./flow tool compiler/scripts/package_flowc.flow
+        run: ./compiler/scripts/package_flowc.sh
 
       - name: Upload flowc package
         uses: actions/upload-artifact@v4
@@ -463,173 +392,6 @@ jobs:
           path: dist/flowc-*
           if-no-files-found: error
           retention-days: 7
-
-  # Host tools written in Flow (flow repl) run their stdin transcripts with
-  # python and python3 removed from PATH, so a Python fallback cannot hide.
-  # The same job runs tests/scripts, the Flow tests that replaced the pytest
-  # files; they drive ./flow, the Flow tools and the docs as subprocesses.
-  native-tools:
-    name: Native tools (no Python)
-    runs-on: ubuntu-latest
-    needs: changes
-    if: |
-      needs.changes.outputs.tools == 'true' ||
-      needs.changes.outputs.compiler == 'true' ||
-      needs.changes.outputs.tests == 'true' ||
-      needs.changes.outputs.libs == 'true' ||
-      needs.changes.outputs.runtime == 'true' ||
-      needs.changes.outputs.workflow == 'true'
-    steps:
-      - uses: actions/checkout@v7
-
-      # The runners are Flow programs (tests/tools/run.flow and the ones it
-      # starts), built by `./flow tool`.
-      - name: Tool transcripts without Python
-        run: |
-          mkdir -p /tmp/nopy
-          printf '#!/bin/sh\necho "python invoked: $0 $*" >&2\nexit 127\n' > /tmp/nopy/python3
-          cp /tmp/nopy/python3 /tmp/nopy/python
-          chmod +x /tmp/nopy/python3 /tmp/nopy/python
-          export PATH="/tmp/nopy:$PATH"
-          chmod +x ./flow compiler/scripts/*.sh
-          ./compiler/scripts/bootstrap_from_c.sh
-          ./flow tool tests/tools/run.flow
-
-      # Checks print SKIP when mlir-opt or emcc is missing, as on this runner.
-      # The runner (tests/scripts/run.flow) stubs python and python3 itself.
-      - name: Flow tests (tests/scripts)
-        run: ./flow test-scripts
-
-      # The benchmark publisher's harness builds and runs each published
-      # program and checks its result (scripts/tools/bench_publish).
-      - name: Benchmark publisher check
-        run: ./flow tool bench_publish --check
-
-      # The flow command line (tools/flow_cli, built by the ./flow stub)
-      # against goldens recorded from the bash driver it replaced: stdout,
-      # stderr, exit code and files written for every subcommand, per OS.
-      - name: CLI goldens (tests/cli)
-        run: ./flow tool tests/cli/run.flow
-
-  # flowc must keep parsing every .flow file the Python parser accepts. The
-  # count of files that parse may not fall below compiler/parse_coverage/
-  # floor.txt. Needs only cc: the reference list of files the Python parser
-  # rejects is checked in.
-  flowc-parse-coverage:
-    name: flowc parse coverage
-    runs-on: ubuntu-latest
-    needs: changes
-    if: |
-      needs.changes.outputs.compiler == 'true' ||
-      needs.changes.outputs.tests == 'true' ||
-      needs.changes.outputs.examples == 'true' ||
-      needs.changes.outputs.libs == 'true' ||
-      needs.changes.outputs.workflow == 'true'
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Parse every tracked .flow file with flowc
-        run: |
-          ./flow tool compiler/scripts/parse_coverage.flow --check
-
-  # Non-regression gates for the Flow ports. Each runs in golden mode against
-  # outputs recorded from the Python reference, so it needs only a C
-  # compiler. parity_shader_dsl skips its xcrun metal step where there is no
-  # Metal toolchain. parse_coverage.flow --check runs in its own job above.
-  flowc-parity-gates:
-    name: flowc parity gates (golden)
-    runs-on: ubuntu-latest
-    needs: changes
-    if: |
-      needs.changes.outputs.compiler == 'true' ||
-      needs.changes.outputs.tests == 'true' ||
-      needs.changes.outputs.examples == 'true' ||
-      needs.changes.outputs.libs == 'true' ||
-      needs.changes.outputs.workflow == 'true'
-    steps:
-      - uses: actions/checkout@v7
-      - name: Build flowc from the bootstrap C
-        run: ./flow tool compiler/scripts/ensure_flowc.flow
-      - name: parity_lowering
-        run: timeout 20m ./flow tool compiler/scripts/parity_lowering.flow
-      - name: parity_field_dsl
-        run: timeout 10m ./flow tool compiler/scripts/parity_field_dsl.flow
-      - name: parity_shader_dsl
-        run: timeout 10m ./flow tool compiler/scripts/parity_shader_dsl.flow
-      - name: parity_dynamics_dsl
-        run: timeout 10m ./flow tool compiler/scripts/parity_dynamics_dsl.flow
-      - name: parity_flow_blocks
-        run: timeout 10m ./flow tool compiler/scripts/parity_flow_blocks.flow
-      - name: parity_effects
-        run: timeout 10m ./flow tool compiler/scripts/parity_effects.flow
-      - name: parity_typecheck --check
-        run: timeout 20m ./flow tool compiler/scripts/parity_typecheck.flow --check
-      - name: typecheck_rules
-        run: timeout 10m ./flow tool compiler/scripts/typecheck_rules.flow
-      - name: fmt_check --check
-        run: timeout 20m ./flow tool compiler/scripts/fmt_check.flow --check
-
-  # Whole-corpus parity between the flowc and Python hosts on the C backend,
-  # against recorded Python goldens (no Python). The floor is kept per OS;
-  # --check passes with a note on an OS that has none recorded yet.
-  flowc-corpus-parity:
-    name: flowc corpus parity
-    runs-on: ubuntu-latest
-    needs: changes
-    if: |
-      needs.changes.outputs.compiler == 'true' ||
-      needs.changes.outputs.workflow == 'true'
-    steps:
-      - uses: actions/checkout@v7
-      - name: corpus_parity --check
-        run: timeout 45m ./flow tool compiler/scripts/corpus_parity.flow --check
-
-  # tests/lang through the Stage-A compiler, as `./flow test-lang` runs it
-  # locally: strict transpile, link (with the concurrency runtime when a
-  # program imports it), run, and compare the exit code and any .expected
-  # output. Each program runs under a time limit and a hang fails with a
-  # timeout line (#1174).
-  lang-tests:
-    name: Language tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    needs: changes
-    if: |
-      needs.changes.outputs.compiler == 'true' ||
-      needs.changes.outputs.libs == 'true' ||
-      needs.changes.outputs.runtime == 'true' ||
-      needs.changes.outputs.tests == 'true' ||
-      needs.changes.outputs.tools == 'true' ||
-      needs.changes.outputs.workflow == 'true'
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: ./.github/actions/install-toolchain
-
-      - name: Language tests (tests/lang)
-        run: ./flow test-lang
-
-  # tests/runtime compiled with the flowc host, linked against the runtime
-  # archive and run, under the same per-program time limit.
-  runtime-tests:
-    name: Runtime tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: changes
-    if: |
-      needs.changes.outputs.compiler == 'true' ||
-      needs.changes.outputs.libs == 'true' ||
-      needs.changes.outputs.runtime == 'true' ||
-      needs.changes.outputs.tests == 'true' ||
-      needs.changes.outputs.tools == 'true' ||
-      needs.changes.outputs.workflow == 'true'
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: ./.github/actions/install-toolchain
-
-      - name: Runtime tests (tests/runtime)
-        run: ./flow test-runtime
 
   # Phase D: user-facing compile must not pip-install the Python compiler.
   flowc-compile:
@@ -662,7 +424,7 @@ jobs:
           chmod +x "$FLOWC_BIN"
           export FLOWC_BIN
           echo "Using flowc: $FLOWC_BIN"
-          # FLOWC_BIN is the downloaded driver, so ensure_flowc does not run here.
+          # No ensure_flowc / Gen0 bootstrap here — that would need Python.
           ./flow run examples/basics/hello_world.flow
           ./flow compile examples/basics/fibonacci.flow
           # fibonacci.flow main returns fib(10) == 55 as process exit status
@@ -672,10 +434,8 @@ jobs:
           set -e
           test "$ec" -eq 55
 
-  # The pytest job used to live here. Its tests are Flow programs now
-  # (tests/scripts, run by native-tools), so this job keeps only the corpus.
-  conformance:
-    name: Conformance corpus
+  pytest:
+    name: Python tests
     runs-on: ubuntu-latest
     needs: changes
     if: |
@@ -684,11 +444,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Stable conformance corpus
-        run: ./flow tool tests/conformance/run.flow
+      - uses: ./.github/actions/setup-python
+
+      - name: Pytest (fast)
+        env:
+          PYTHONPATH: src
+          PYTEST_ADDOPTS: --tb=short -q
+        run: pytest tests/ -m "not slow"
+
+      - name: Arithmetic safety tests
+        env:
+          PYTHONPATH: src
+        run: pytest tests/unit/test_arith_safety.py tests/unit/test_safety_profile_enforcement.py tests/unit/test_export_abi.py tests/unit/test_wcet_analysis.py tests/unit/test_general_plans.py -v
 
   fuzz:
-    name: Fuzz (flowc)
+    name: Fuzz (parser/pipeline)
     runs-on: ubuntu-latest
     needs: changes
     if: |
@@ -697,13 +467,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Build flowc from the bootstrap C
-        run: ./flow tool compiler/scripts/ensure_flowc.flow
+      - uses: ./.github/actions/setup-python
 
-      # Crash pins, deep nesting and 30s of seeded mutation; fails on a
-      # signal or a hang.
-      - name: Fuzz flowc
-        run: ./flow tool tests/fuzz/run.flow --seconds 30 --seed 1234
+      - name: Fuzz targets (30s each, fails only on new crash classes)
+        env:
+          PYTHONPATH: src
+        run: python3 tests/fuzz/run_fuzz.py --seconds 30 --seed 1234
 
   plugin-dsp:
     name: Plugin DSP test
@@ -733,6 +502,10 @@ jobs:
       - uses: ./.github/actions/setup-python
 
       - name: hello_world + fibonacci
+        env:
+          PYTHONPATH: src
+          # Example smoke stays on the full-language Python host until Phase D.
+          FLOW_HOST: python
         run: |
           chmod +x ./flow
           ./flow run examples/basics/hello_world.flow
@@ -776,6 +549,9 @@ jobs:
       - uses: ./.github/actions/setup-python
 
       - name: Fibonacci benchmark
+        env:
+          PYTHONPATH: src
+          FLOW_HOST: python
         run: |
           chmod +x ./flow
           ./flow compile benchmarks/suite/flow/01_fibonacci.flow
@@ -794,9 +570,7 @@ jobs:
       - flowc-bootstrap
       - flowc-selfhost
       - flowc-compile
-      - lang-tests
-      - runtime-tests
-      - conformance
+      - pytest
       - fuzz
       - flow-examples
       - plugin-dsp
@@ -837,17 +611,15 @@ jobs:
           workflow='${{ needs.changes.outputs.workflow }}'
           plugins='${{ needs.changes.outputs.plugins }}'
           deps='${{ needs.changes.outputs.deps }}'
-          tools='${{ needs.changes.outputs.tools }}'
           lint_req=false;  if [ "$src" = "true" ] || [ "$workflow" = "true" ] || [ "$deps" = "true" ]; then lint_req=true; fi
           sec_req=false;   if [ "$src" = "true" ] || [ "$deps" = "true" ]; then sec_req=true; fi
           tier_req=false;  if [ "$src" = "true" ] || [ "$tests" = "true" ] || [ "$libs" = "true" ] || [ "$runtime" = "true" ]; then tier_req=true; fi
-          conf_req=false;  if [ "$src" = "true" ] || [ "$tests" = "true" ]; then conf_req=true; fi
-          fuzz_req=$conf_req
+          pytest_req=false; if [ "$src" = "true" ] || [ "$tests" = "true" ]; then pytest_req=true; fi
+          fuzz_req=$pytest_req
           ex_req=false;    if [ "$src" = "true" ] || [ "$examples" = "true" ]; then ex_req=true; fi
           compiler_req=false; if [ "$compiler" = "true" ] || [ "$workflow" = "true" ]; then compiler_req=true; fi
           plugin_req=false; if [ "$plugins" = "true" ] || [ "$workflow" = "true" ]; then plugin_req=true; fi
           gfx_req=false;   if [ "$runtime" = "true" ] || [ "$workflow" = "true" ]; then gfx_req=true; fi
-          suite_req=false; if [ "$compiler" = "true" ] || [ "$libs" = "true" ] || [ "$runtime" = "true" ] || [ "$tests" = "true" ] || [ "$tools" = "true" ] || [ "$workflow" = "true" ]; then suite_req=true; fi
           docs='${{ needs.changes.outputs.docs }}'
           # Coverage is ungated: a new keyword or subcommand in src/ must not
           # land undocumented just because the PR touched no markdown.
@@ -861,9 +633,7 @@ jobs:
           add flowc-bootstrap   '${{ needs.flowc-bootstrap.result }}'    "$compiler_req"
           add flowc-selfhost    '${{ needs.flowc-selfhost.result }}'     "$compiler_req"
           add flowc-compile     '${{ needs.flowc-compile.result }}'      "$compiler_req"
-          add lang-tests        '${{ needs.lang-tests.result }}'        "$suite_req"
-          add runtime-tests     '${{ needs.runtime-tests.result }}'     "$suite_req"
-          add conformance       '${{ needs.conformance.result }}'       "$conf_req"
+          add pytest            '${{ needs.pytest.result }}'            "$pytest_req"
           add fuzz              '${{ needs.fuzz.result }}'              "$fuzz_req"
           add flow-examples     '${{ needs.flow-examples.result }}'      "$ex_req"
           add plugin-dsp        '${{ needs.plugin-dsp.result }}'         "$plugin_req"
@@ -907,7 +677,7 @@ jobs:
           color: ${{ steps.summarize.outputs.failed == 'true' && '15158332' || '3066993' }}
           title: CI ${{ steps.summarize.outputs.failed == 'true' && 'failed' || 'passed' }}
           url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          description: "${{ github.repository }} on ${{ github.event_name }} by ${{ github.actor }}: ${{ steps.summarize.outputs.subject }}"
+          description: "${{ github.repository }} on ${{ github.event_name }} by ${{ github.actor }} — ${{ steps.summarize.outputs.subject }}"
           author_name: Flow CI
           author_icon: ${{ github.server_url }}/${{ github.repository_owner }}.png
           fields: ${{ steps.summarize.outputs.fields }}

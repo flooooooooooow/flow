@@ -2,9 +2,9 @@
 
 *Eighteen plus zero is eighteen in an ideal witness.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.1
+**Source.** dummit-foote — *Abstract Algebra*, §7.1
 
-## Derived fact 1: 18 + 0 = 18 in an ideal
+## Derived fact 1 — 18 + 0 = 18 in an ideal
 
 **Coordinate.** Ideal · addition · eighteen plus zero in ideal · **Derived fact**
 

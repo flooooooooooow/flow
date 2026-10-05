@@ -1,5 +1,0 @@
-represent linear P {
-    n 2 m 1 p 1
-    A 1 0 0 1
-    C 1 2 3
-}

@@ -2,9 +2,9 @@
 
 *Seventeen plus zero maps to seventeen under a ring homomorphism.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.3
+**Source.** dummit-foote — *Abstract Algebra*, §7.3
 
-## Derived fact 1: f(17 + 0) = 17
+## Derived fact 1 — f(17 + 0) = 17
 
 **Coordinate.** RingHom · preservation · seventeen plus zero maps to seventeen · **Derived fact**
 

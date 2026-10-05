@@ -2,13 +2,13 @@
 
 *In equal circles (or equiangular parallelograms with equal angles), halves have to one another the duplicate ratio of the homologous sides.*
 
-**Source.** euclid: Elements, Book VI, Proposition 33
+**Source.** euclid — Elements, Book VI, Proposition 33
 
-## Derived fact 1: In equal circles (or equiangular parallelograms with equal angles), halves have to one another the duplicate ratio of the homologous sides
+## Derived fact 1 — In equal circles (or equiangular parallelograms with equal angles), halves have to one another the duplicate ratio of the homologous sides
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 33: halves of equiangular parallelograms have ratio duplicate of homologous sides · **Derived fact**
 
-*Source: euclid: Elements, Book VI, Proposition 33*
+*Source: euclid — Elements, Book VI, Proposition 33*
 
 *Built on: proposition 31: similar parallelograms are as the duplicate ratio of homologous sides, for Euclid Book VI on the Euclidean plane, proposition 15: equiangular parallelograms with reciprocal sides are equal, for Euclid Book VI on the Euclidean plane*
 

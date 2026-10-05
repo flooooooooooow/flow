@@ -1,8 +1,0 @@
-# expect: Dangerous FFI 'system' must be declared under '@unsafe extern' (CERT / #276)
-extern {
-    function system(cmd: string) -> i32
-}
-
-function main() -> i32 {
-    return 0
-}

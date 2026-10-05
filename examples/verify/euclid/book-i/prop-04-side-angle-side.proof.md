@@ -2,13 +2,13 @@
 
 *If two triangles have two sides and the included angle equal, the triangles are congruent.*
 
-**Source.** euclid: Elements, Book I, Proposition 4
+**Source.** euclid — Elements, Book I, Proposition 4
 
-## Axiom 1: If two triangles have two sides and the included angle equal, the triangles are congruent
+## Axiom 1 — If two triangles have two sides and the included angle equal, the triangles are congruent
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 4: side-angle-side congruence · **Axiom**
 
-*Source: euclid: Elements, Book I, Proposition 4*
+*Source: euclid — Elements, Book I, Proposition 4*
 
 > **Goal.** If two triangles have two sides and the included angle equal, the triangles are congruent
 >
@@ -20,7 +20,7 @@
 
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
-| ① | We accept proposition 4: side-angle-side congruence for Book I of the Elements in the Euclidean plane without proof. This is an ontological commitment rather than a lemma. |  |  |
+| ① | We accept proposition 4: side-angle-side congruence for Book I of the Elements in the Euclidean plane without proof — an ontological commitment, not a lemma. |  |  |
 | ② | We invoke the derived fact: segment_AB == segment_DE. |  |  |
 | ③ | We invoke the derived fact: segment_AC == segment_DF. |  |  |
 | ④ | We invoke the derived fact: angle_BAC == angle_EDF. |  |  |

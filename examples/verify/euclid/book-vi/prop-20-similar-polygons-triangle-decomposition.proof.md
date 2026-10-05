@@ -2,13 +2,13 @@
 
 *Similar polygons may be divided into the same number of similar triangles corresponding in order and proportion.*
 
-**Source.** euclid: Elements, Book VI, Proposition 20
+**Source.** euclid — Elements, Book VI, Proposition 20
 
-## Derived fact 1: Similar polygons may be divided into the same number of similar triangles corresponding in order and proportion
+## Derived fact 1 — Similar polygons may be divided into the same number of similar triangles corresponding in order and proportion
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 20: similar polygons are divided into the same number of similar triangles · **Derived fact**
 
-*Source: euclid: Elements, Book VI, Proposition 20*
+*Source: euclid — Elements, Book VI, Proposition 20*
 
 *Built on: proposition 19: similar rectilineal figures are in duplicate ratio of corresponding sides, for Euclid Book VI on the Euclidean plane*
 

@@ -2,13 +2,13 @@
 
 *If two triangles have one angle equal and the sides about the equal angles proportional, the triangles are equiangular.*
 
-**Source.** euclid: Elements, Book VI, Proposition 6
+**Source.** euclid — Elements, Book VI, Proposition 6
 
-## Derived fact 1: If two triangles have one angle equal and the sides about the equal angles proportional, the triangles are equiangular
+## Derived fact 1 — If two triangles have one angle equal and the sides about the equal angles proportional, the triangles are equiangular
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 6: one equal angle and proportional including sides imply equiangular triangles · **Derived fact**
 
-*Source: euclid: Elements, Book VI, Proposition 6*
+*Source: euclid — Elements, Book VI, Proposition 6*
 
 *Built on: proposition 4: equiangular triangles have proportional corresponding sides, for Euclid Book VI on the Euclidean plane, proposition 5: triangles with proportional sides are equiangular, for Euclid Book VI on the Euclidean plane*
 

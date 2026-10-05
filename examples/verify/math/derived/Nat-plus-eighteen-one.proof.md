@@ -2,9 +2,9 @@
 
 *Eighteen plus one is nineteen.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 18 + 1 = 19
+## Derived fact 1 — 18 + 1 = 19
 
 **Coordinate.** the natural numbers · addition · eighteen plus one is nineteen · **Derived fact**
 

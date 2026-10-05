@@ -1,2 +1,0 @@
-  MLIR:     ./flow mlir <file.flow> [--optimize] [--llvm] [--mlir-gpu] [--emit-spirv] [-o OUT]
-  C:        ./flow compile <file.flow>, or ./flow tool compiler/scripts/flowc_emit.flow <in.flow> <out.c>

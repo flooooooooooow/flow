@@ -2,9 +2,9 @@
 
 *The sum of two angles equals the triangle sum minus the third.*
 
-**Source.** euclid: Elements, Book I, Proposition 32
+**Source.** euclid — Elements, Book I, Proposition 32
 
-## Derived fact 1: angle A plus angle B equals two right angles minus angle C
+## Derived fact 1 — angle A plus angle B equals two right angles minus angle C
 
 **Coordinate.** the Euclidean plane · triangle · sum of two angles is total minus third · **Derived fact**
 

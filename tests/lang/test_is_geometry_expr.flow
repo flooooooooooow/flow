@@ -1,5 +1,5 @@
 # Test for is_geometry_expr in math_prose.flow.
-# Run with: ./flow run tests/lang/test_is_geometry_expr.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_is_geometry_expr.flow
 # Exit 0 on success.
 
 import "compiler/src/math_prose.flow"

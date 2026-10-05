@@ -1,3 +1,0 @@
-flow Osc {
-    state x : f64 = now()
-}

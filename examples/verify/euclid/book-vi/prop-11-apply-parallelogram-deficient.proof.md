@@ -2,13 +2,13 @@
 
 *To a given straight line to apply a parallelogram equal to a given rectilineal figure and deficient by a parallelogram similar to a given one.*
 
-**Source.** euclid: Elements, Book VI, Proposition 11
+**Source.** euclid — Elements, Book VI, Proposition 11
 
-## Derived fact 1: To a given straight line to apply a parallelogram equal to a given rectilineal figure and deficient by a parallelogram similar to a given one
+## Derived fact 1 — To a given straight line to apply a parallelogram equal to a given rectilineal figure and deficient by a parallelogram similar to a given one
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 11: to apply a parallelogram equal to a figure and deficient by a similar parallelogram · **Derived fact**
 
-*Source: euclid: Elements, Book VI, Proposition 11*
+*Source: euclid — Elements, Book VI, Proposition 11*
 
 *Built on: proposition 10: to cut off a prescribed part from a given straight line, for Euclid Book VI on the Euclidean plane, proposition 44: apply a parallelogram equal to a triangle to a line, for Book I of the Elements in on the Euclidean plane*
 

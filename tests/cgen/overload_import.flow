@@ -1,9 +1,0 @@
-# Calls to overloads defined in another module use their mangled names.
-import "tests/fixtures/overload_import/shapes.flow"
-
-function main() -> i32 {
-    let a: f64 = area(2.0)
-    let b: i32 = area(3, 4)
-    let c: i32 = show(1.5)
-    return b + c - 112
-}

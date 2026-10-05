@@ -1,9 +1,0 @@
-# expect: Match guard must be bool, got i32
-function main() -> i32 {
-    let x: i32 = 1
-    match x {
-        n if 1 => { return n }
-        _ => { return 0 }
-    }
-    return 0
-}

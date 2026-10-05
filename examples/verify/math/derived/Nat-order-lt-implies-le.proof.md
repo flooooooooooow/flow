@@ -2,9 +2,9 @@
 
 *Strict less implies less-or-equal on naturals.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Total_order
+**Source.** peano — https://en.wikipedia.org/wiki/Total_order
 
-## Derived fact 1: a < b implies a <= b
+## Derived fact 1 — a < b implies a <= b
 
 **Coordinate.** the natural numbers · order · strict below implies below or equal · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that strict below implies below or equal for order on the natural numbers. |  |  |
-| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose a < b. |  |  |
 | ④ | We invoke the derived fact governing order on the natural numbers: less-or-equal is reflexive, for order on the natural numbers (instantiated for a). |  |  |
 | ⑤ | We invoke the derived fact governing order on the natural numbers: every number is below its successor, for order on the natural numbers (instantiated for a). |  |  |

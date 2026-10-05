@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Twenty-two plus zero is twenty-two in an ideal witness.
-# @from   dummit-foote: *Abstract Algebra*, §7.1
+# @from   dummit-foote — *Abstract Algebra*, §7.1
 # @tier   derived
 
 # @means  22 + 0 = 22 in an ideal.

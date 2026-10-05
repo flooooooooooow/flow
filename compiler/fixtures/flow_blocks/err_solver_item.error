@@ -1,2 +1,0 @@
-Error: Unexpected item in 'solver' block of flow 'Osc' at line 3, column 14
-solver blocks contain 'dt <duration>' and 'method euler' or 'method rk4'

@@ -1,6 +1,0 @@
-# From tests/unit/test_connect_composition.py::test_robot_feedback_order
-+ (self->plant).voltage = (self->controller).command;
-+ (self->controller).feedback = (self->plant).speed_out;
-+ Motor_step((&self->plant), dt);
-+ Controller_step((&self->controller), dt);
-exit 0

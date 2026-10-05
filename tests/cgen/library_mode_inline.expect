@@ -1,5 +1,0 @@
-flags --library
-+ extern inline int32_t twice(int32_t a) {
-+ __attribute__((always_inline)) extern inline int32_t thrice(int32_t a) {
-- static inline int32_t twice
-- static inline int32_t thrice

@@ -2,9 +2,9 @@
 
 *Eleven times one is eleven.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 11 * 1 = 11
+## Derived fact 1 — 11 * 1 = 11
 
 **Coordinate.** the natural numbers · multiplication · eleven times one is eleven · **Derived fact**
 

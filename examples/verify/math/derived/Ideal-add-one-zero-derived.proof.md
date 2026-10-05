@@ -2,9 +2,9 @@
 
 *One plus zero stays in an ideal witness.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.1
+**Source.** dummit-foote — *Abstract Algebra*, §7.1
 
-## Derived fact 1: 1 + 0 = 1 in an ideal
+## Derived fact 1 — 1 + 0 = 1 in an ideal
 
 **Coordinate.** Ideal · addition · one plus zero in ideal · **Derived fact**
 

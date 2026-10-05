@@ -2,9 +2,9 @@
 
 *Join above meet via right transitivity witness.*
 
-**Source.** davey-priestley: *Introduction to Lattices and Order*
+**Source.** davey-priestley — *Introduction to Lattices and Order*
 
-## Derived fact 1: join(a, b) >= meet(b, a)
+## Derived fact 1 — join(a, b) >= meet(b, a)
 
 **Coordinate.** Order · lattice · join above meet via right transitivity · **Derived fact**
 

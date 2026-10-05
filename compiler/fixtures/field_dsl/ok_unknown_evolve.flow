@@ -1,4 +1,0 @@
-field T : f64[8] on Line
-S evolves as laplacian(S)
-T evolves as e2 * laplacian(T)
-function main() -> i32 { return 0 }

@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  The identity to the thirtieth stays in a subgroup.
-# @from   dummit-foote: *Abstract Algebra*, §2.2
+# @from   dummit-foote — *Abstract Algebra*, §2.2
 # @tier   derived
 
 # @means  If identity to the twenty-ninth in H then identity to the thirtieth in H.

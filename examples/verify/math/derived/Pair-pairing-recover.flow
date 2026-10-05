@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Pairing projections recovers the original pair.
-# @from   church: https://en.wikipedia.org/wiki/Product_type
+# @from   church — https://en.wikipedia.org/wiki/Product_type
 # @tier   derived
 
 # @means  pair(a, b) = pair(fst(pair(a, b)), snd(pair(a, b))).

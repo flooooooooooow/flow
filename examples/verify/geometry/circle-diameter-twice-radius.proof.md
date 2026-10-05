@@ -2,9 +2,9 @@
 
 *A diameter equals twice a radius.*
 
-**Source.** euclid: Elements, Book I, Definition 15
+**Source.** euclid — Elements, Book I, Definition 15
 
-## Derived fact 1: diameter AB equals radius OA plus radius OB
+## Derived fact 1 — diameter AB equals radius OA plus radius OB
 
 **Coordinate.** the Euclidean plane · circle · diameter equals two radii · **Derived fact**
 

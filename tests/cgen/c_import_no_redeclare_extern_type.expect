@@ -1,4 +1,0 @@
-# Ported from tests/unit/test_c_import_no_redeclare.py.
-+ typedef struct MyHandle MyHandle;
-exit 0
-stdout ok

@@ -2,9 +2,9 @@
 
 *Join with itself is above the argument.*
 
-**Source.** davey-priestley: *Introduction to Lattices and Order*
+**Source.** davey-priestley — *Introduction to Lattices and Order*
 
-## Derived fact 1: a <= join(a, a)
+## Derived fact 1 — a <= join(a, a)
 
 **Coordinate.** Order · join · join with itself is above the argument derived · **Derived fact**
 

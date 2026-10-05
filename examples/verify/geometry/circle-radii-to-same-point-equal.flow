@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  Two radii to the same point on the circumference are equal.
-# @from   euclid: Elements, Book I, Definition 15
+# @from   euclid — Elements, Book I, Definition 15
 # @tier   derived
 
 # @means  OA equals OC for points A and C on the circle.

@@ -1,9 +1,0 @@
-FIR-G: funcs=1 blocks=1 ops=31 values=26 operands=20 types=6
-call ops: 6
-reachable: main
-dead: (none)
-call graph:
-effects / pure:
-  main: effects=0x0008 pure=False
-device: requested=cpu chosen=cpu
-opt candidates: total=0 by_kind={}

@@ -1,5 +1,0 @@
-[94mBuilding cli_golden_proj with native support...[0m
-[94mRunning: clang -g -O0 <WORK>/run_native_proj/build/cli_golden_proj.c -o <WORK>/run_native_proj/build/cli_golden_proj[0m
-[92m✓ Built cli_golden_proj[0m
-[94mRunning cli_golden_proj...[0m
-project main

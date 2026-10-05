@@ -1,8 +1,0 @@
-# `general` pins bottom_up_merge, and 70000 i32 put its buffer over the
-# 256 KiB scratch budget, so no plan is left. The Python host refused the
-# program with this message; flowc does the same (#1054).
-function main() -> i32 {
-    let mut xs: array<i32, 70000> = [0]
-    xs |> sort general
-    return 0
-}

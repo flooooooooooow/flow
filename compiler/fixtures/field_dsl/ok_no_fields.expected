@@ -1,8 +1,0 @@
-struct S {
-    field: i32
-}
-
-  field x: i32
-function main() -> i32 {
-    return 0
-}

@@ -2,9 +2,9 @@
 
 *One times one is one for reals.*
 
-**Source.** landau: *Foundations of Analysis*
+**Source.** landau — *Foundations of Analysis*
 
-## Derived fact 1: 1 * 1 = 1
+## Derived fact 1 — 1 * 1 = 1
 
 **Coordinate.** the real numbers · multiplication · one times one is one · **Derived fact**
 

@@ -1,9 +1,0 @@
-# expect: Cannot assign string to variable 'a' of type i32
-# A chained assignment has the type of its value (#1036), so the outer
-# target sees the string. Python typed the inner assignment unknown.
-function main() -> i32 {
-    let mut a: i32 = 0
-    let mut s: string = ""
-    a = s = "x"
-    return a
-}

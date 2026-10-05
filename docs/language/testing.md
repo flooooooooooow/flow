@@ -222,4 +222,4 @@ The runner intentionally starts with a small durable semantic core. Natural exte
 - compiler-native test enumeration so the temporary source-isolation transform can disappear;
 - parallel execution once compiler/build artifact isolation is fully namespaced.
 
-Those additions should extend `flow test` instead of creating competing test commands.
+Those additions should extend `flow test`, not create competing test commands.

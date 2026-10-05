@@ -1,2 +1,0 @@
-Error: algebraic loop in connect of flow 'B' through combinational outputs: a -> b -> c -> a at line 12
-break the loop with a state (or an output mapped from a state); Modelica-style algebraic solvers are out of scope

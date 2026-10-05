@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Meet is bounded above by its right argument.
-# @from   davey-priestley: *Introduction to Lattices and Order*
+# @from   davey-priestley — *Introduction to Lattices and Order*
 # @tier   derived
 
 # @means  meet(a, b) <= b.

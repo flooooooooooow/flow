@@ -1,8 +1,0 @@
-# @max_iterations(N) on a while loop reaches the C as a bound counter that
-# aborts with a diagnostic when the loop runs past N iterations.
-function main() -> i32 {
-    let mut i: i32 = 0
-    @max_iterations(1000)
-    while i < 10 { i = i + 1 }
-    return i - 10
-}

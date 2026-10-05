@@ -3,8 +3,8 @@
 #         Port of the token detection and hover lookup from
 #         src/flow/lsp_syntax.py. The Python original includes markdown
 #         hover strings; this port exposes the token detection logic
-#         and a compact hover gloss. The full markdown catalog lives in
-#         tools/lsp/catalog.flow.
+#         and a compact hover gloss. Full markdown hover stays in Python
+#         for the LSP server.
 
 extern {
     function strcmp(a: string, b: string) -> i32
@@ -107,7 +107,7 @@ export function flowc_syntax_token_at_position(line_text: string, col: i32) -> s
 # ── Hover gloss ──────────────────────────────────────────────────
 
 # Compact one-line hover gloss for a syntax token.
-# The full markdown hover lives in tools/lsp/catalog.flow.
+# Full markdown hover stays in the Python LSP server.
 export function flowc_syntax_hover_gloss(token: string) -> string {
     if strcmp(token, "|>") == 0 { return "pipe / pipeline operator" }
     if strcmp(token, "->") == 0 { return "function return type arrow" }

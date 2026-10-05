@@ -2,13 +2,13 @@
 
 *Near the origin, sin(x) agrees with each successive Maclaurin partial sum.*
 
-**Source.** brook taylor: https://en.wikipedia.org/wiki/Taylor_series
+**Source.** brook taylor — https://en.wikipedia.org/wiki/Taylor_series
 
-## Derived fact 1: Near the origin, sin(x) agrees with each successive Maclaurin partial sum
+## Derived fact 1 — Near the origin, sin(x) agrees with each successive Maclaurin partial sum
 
 **Coordinate.** real analysis · Taylor series · sin equals its Maclaurin series near zero · **Derived fact**
 
-*Source: brook taylor: https://en.wikipedia.org/wiki/Taylor_series*
+*Source: brook taylor — https://en.wikipedia.org/wiki/Taylor_series*
 
 *Built on: the derivatives of sine at zero follow the alternating pattern of the Maclaurin series*
 

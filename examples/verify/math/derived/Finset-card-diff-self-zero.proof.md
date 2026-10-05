@@ -2,9 +2,9 @@
 
 *Self-difference has cardinality zero.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: card(s \ s) = 0
+## Derived fact 1 — card(s \ s) = 0
 
 **Coordinate.** Finset · cardinality · self difference has card zero · **Derived fact**
 

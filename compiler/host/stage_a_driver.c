@@ -13,8 +13,8 @@
 #include "flowc_frontend.h"
 
 enum {
-    FLOWC_SRC_CAP = 1048576,
-    FLOWC_OUT_CAP = 4194304,
+    FLOWC_SRC_CAP = 262144,
+    FLOWC_OUT_CAP = 1048576,
     FLOWC_AST_CAP = 262144
 };
 

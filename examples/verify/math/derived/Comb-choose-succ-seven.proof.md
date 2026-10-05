@@ -2,9 +2,9 @@
 
 *Choosing seven from a successor set.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: choose(succ(n), 7) = choose(n, 6) + choose(n, 7)
+## Derived fact 1 — choose(succ(n), 7) = choose(n, 6) + choose(n, 7)
 
 **Coordinate.** Comb · choose · choosing seven from a successor · **Derived fact**
 

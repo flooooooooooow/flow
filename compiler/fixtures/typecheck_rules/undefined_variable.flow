@@ -1,4 +1,0 @@
-# expect: Undefined variable 'ghost'
-function main() -> i32 {
-    return ghost
-}

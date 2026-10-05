@@ -2,13 +2,13 @@
 
 *Equal parallelograms which are on equal bases and on the same side are also in the same parallels.*
 
-**Source.** euclid: Elements, Book VI, Proposition 30
+**Source.** euclid — Elements, Book VI, Proposition 30
 
-## Derived fact 1: Equal parallelograms which are on equal bases and on the same side are also in the same parallels
+## Derived fact 1 — Equal parallelograms which are on equal bases and on the same side are also in the same parallels
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 30: equal parallelograms on equal bases are in the same parallels · **Derived fact**
 
-*Source: euclid: Elements, Book VI, Proposition 30*
+*Source: euclid — Elements, Book VI, Proposition 30*
 
 *Built on: proposition 29: equal parallelograms on the same base are in the same parallels, for Euclid Book VI on the Euclidean plane*
 

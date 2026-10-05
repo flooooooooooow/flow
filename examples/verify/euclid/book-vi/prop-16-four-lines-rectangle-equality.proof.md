@@ -2,13 +2,13 @@
 
 *If four straight lines are proportional, the rectangle contained by the extremes equals the rectangle contained by the means.*
 
-**Source.** euclid: Elements, Book VI, Proposition 16
+**Source.** euclid — Elements, Book VI, Proposition 16
 
-## Derived fact 1: If four straight lines are proportional, the rectangle contained by the extremes equals the rectangle contained by the means
+## Derived fact 1 — If four straight lines are proportional, the rectangle contained by the extremes equals the rectangle contained by the means
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 16: four proportional lines give equal rectangles on extremes and means · **Derived fact**
 
-*Source: euclid: Elements, Book VI, Proposition 16*
+*Source: euclid — Elements, Book VI, Proposition 16*
 
 *Built on: proposition 16: composition holds with alternando, for Euclid Book V on the Euclidean plane, proposition 14: equal equiangular parallelograms have reciprocally proportional sides, for Euclid Book VI on the Euclidean plane*
 

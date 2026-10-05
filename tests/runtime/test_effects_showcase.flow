@@ -1,4 +1,3 @@
-# effects-mode: permissive
 # Runtime test: effect-system showcase invariants
 # Guards the behaviours demonstrated by examples/effects/showcase.flow:
 #   1. Swapping handlers changes business outcomes with unchanged logic

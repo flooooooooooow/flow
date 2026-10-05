@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Proportional magnitudes satisfy invertendo.
-# @from   euclid: Elements, Book V, Proposition 10
+# @from   euclid — Elements, Book V, Proposition 10
 # @tier   derived
 
 # @means  a:b = c:d implies b:a = d:c.

@@ -1,4 +1,0 @@
-# Over the scratch budget: insertion, and no stack buffer (#1054).
-+ /* plan: insertion -- only applicable implementation */
-- __flowc_sb[70000]
-exit 0

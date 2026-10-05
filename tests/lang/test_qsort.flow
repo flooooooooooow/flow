@@ -1,6 +1,6 @@
 # Test for cfn callback pattern with qsort.
 # Uses @cEmbed to provide a C comparator and calls qsort through @cImport.
-# Run with: ./flow run tests/lang/test_qsort.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_qsort.flow
 # Exit 0 on success.
 
 @cImport("stdlib.h")

@@ -42,7 +42,7 @@ const vscode = __importStar(require("vscode"));
 function findFlowRepoRoot(start) {
     let dir = start;
     for (let i = 0; i < 12 && dir; i++) {
-        const candidate = path.join(dir, 'tools', 'lsp', 'main.flow');
+        const candidate = path.join(dir, 'src', 'flow', 'lsp_server.py');
         if (fs.existsSync(candidate)) {
             return dir;
         }

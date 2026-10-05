@@ -1,3 +1,0 @@
-[0;31m❌ Usage: flow fir-g <program.flow> [--json] [--device=…] [--bench] [--opts][0m
-[0;34mℹ️         flow fir-g --calibrate [--thresholds PATH] [--json][0m
-[0;34mℹ️  Docs: docs/project/fir-g.md[0m

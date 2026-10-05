@@ -2,9 +2,9 @@
 
 *Empty on the left in intersection has cardinality zero.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: card(empty ∩ s) = 0
+## Derived fact 1 — card(empty ∩ s) = 0
 
 **Coordinate.** Finset · cardinality · empty left intersection has size zero · **Derived fact**
 

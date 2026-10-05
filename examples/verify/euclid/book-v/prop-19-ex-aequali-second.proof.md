@@ -2,13 +2,13 @@
 
 *If a first is to a second as a third is to a fourth, and the third is to a fifth as the fourth is to a sixth, the first is to the fifth as the third is to the sixth.*
 
-**Source.** euclid: Elements, Book V, Proposition 19
+**Source.** euclid — Elements, Book V, Proposition 19
 
-## Derived fact 1: If a first is to a second as a third is to a fourth, and the third is to a fifth as the fourth is to a sixth, the first is to the fifth as the third is to the sixth
+## Derived fact 1 — If a first is to a second as a third is to a fourth, and the third is to a fifth as the fourth is to a sixth, the first is to the fifth as the third is to the sixth
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 19: ex aequali proportion in the second form · **Derived fact**
 
-*Source: euclid: Elements, Book V, Proposition 19*
+*Source: euclid — Elements, Book V, Proposition 19*
 
 *Built on: proposition 18: ex aequali proportion from three magnitudes, for Euclid Book V on the Euclidean plane*
 

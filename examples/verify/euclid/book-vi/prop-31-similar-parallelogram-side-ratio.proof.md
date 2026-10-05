@@ -2,13 +2,13 @@
 
 *Similar parallelograms are to one another in the duplicate ratio of the homologous sides.*
 
-**Source.** euclid: Elements, Book VI, Proposition 31
+**Source.** euclid — Elements, Book VI, Proposition 31
 
-## Derived fact 1: Similar parallelograms are to one another in the duplicate ratio of the homologous sides
+## Derived fact 1 — Similar parallelograms are to one another in the duplicate ratio of the homologous sides
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 31: similar parallelograms are as the duplicate ratio of homologous sides · **Derived fact**
 
-*Source: euclid: Elements, Book VI, Proposition 31*
+*Source: euclid — Elements, Book VI, Proposition 31*
 
 *Built on: proposition 26: similar parallelograms are in duplicate ratio of homologous sides, for Euclid Book VI on the Euclidean plane*
 

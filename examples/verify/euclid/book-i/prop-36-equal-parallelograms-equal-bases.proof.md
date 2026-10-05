@@ -2,13 +2,13 @@
 
 *Equal parallelograms on equal bases are in the same parallels.*
 
-**Source.** euclid: Elements, Book I, Proposition 36
+**Source.** euclid — Elements, Book I, Proposition 36
 
-## Derived fact 1: Equal parallelograms on equal bases are in the same parallels
+## Derived fact 1 — Equal parallelograms on equal bases are in the same parallels
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 36: equal parallelograms on equal bases lie between parallels · **Derived fact**
 
-*Source: euclid: Elements, Book I, Proposition 36*
+*Source: euclid — Elements, Book I, Proposition 36*
 
 *Built on: proposition 34: parallelograms on equal bases between parallels are equal, for Book I of the Elements in on the Euclidean plane*
 

@@ -1,9 +1,0 @@
-# expect: Unknown effect 'Nope'
-function greet(c: capability Nope) -> i32 {
-    c.say("hi")
-    return 0
-}
-
-function main() -> i32 {
-    return 0
-}

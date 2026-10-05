@@ -2,9 +2,9 @@
 
 *An exterior angle exceeds the smaller remote interior angle.*
 
-**Source.** euclid: Elements, Book I, Proposition 16
+**Source.** euclid — Elements, Book I, Proposition 16
 
-## Derived fact 1: exterior at C exceeds the minimum of angle A and angle B
+## Derived fact 1 — exterior at C exceeds the minimum of angle A and angle B
 
 **Coordinate.** the Euclidean plane · triangle · exterior exceeds min remote interior · **Derived fact**
 

@@ -1,4 +1,3 @@
-# effects-mode: permissive
 # State Effects: Policy Effects with Explicitly-Threaded State
 # Shows how effects can swap the *policy* driving a stateful loop without
 # the caller's business logic knowing which policy is installed.

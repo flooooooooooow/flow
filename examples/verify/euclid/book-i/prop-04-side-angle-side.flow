@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-i
 # @means  If two triangles have two sides and the included angle equal, the triangles are congruent.
-# @from   euclid: Elements, Book I, Proposition 4
+# @from   euclid — Elements, Book I, Proposition 4
 # @tier   axiom
 
 theorem «Geometry» «Euclid Book I» «Proposition 4: side-angle-side congruence» () {

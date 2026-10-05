@@ -2,13 +2,13 @@
 
 *About a given rectilineal figure to circumscribe a circle.*
 
-**Source.** euclid: Elements, Book IV, Proposition 13
+**Source.** euclid — Elements, Book IV, Proposition 13
 
-## Derived fact 1: About a given rectilineal figure to circumscribe a circle
+## Derived fact 1 — About a given rectilineal figure to circumscribe a circle
 
 **Coordinate.** the Euclidean plane · Euclid Book IV · Proposition 13: about a given triangle to circumscribe a circle · **Derived fact**
 
-*Source: euclid: Elements, Book IV, Proposition 13*
+*Source: euclid — Elements, Book IV, Proposition 13*
 
 *Built on: proposition 10: bisect a given segment, for Book I of the Elements in on the Euclidean plane, proposition 17: the bisector from the center to a chord is perpendicular, for Euclid Book III on the Euclidean plane*
 

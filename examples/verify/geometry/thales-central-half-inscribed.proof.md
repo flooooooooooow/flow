@@ -2,9 +2,9 @@
 
 *Half the central angle on a diameter gives the inscribed angle.*
 
-**Source.** euclid: Elements, Book III, Propositions 20 and 31
+**Source.** euclid — Elements, Book III, Propositions 20 and 31
 
-## Derived fact 1: half of angle AOB equals angle ACB
+## Derived fact 1 — half of angle AOB equals angle ACB
 
 **Coordinate.** the Euclidean plane · circle · half central on diameter gives inscribed · **Derived fact**
 

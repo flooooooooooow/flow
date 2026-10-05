@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  False on the right is a disjunctive identity.
-# @from   boole: https://en.wikipedia.org/wiki/Boolean_algebra
+# @from   boole — https://en.wikipedia.org/wiki/Boolean_algebra
 # @tier   derived
 
 # @means  a or false = a.

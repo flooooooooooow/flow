@@ -2,13 +2,13 @@
 
 *The interior angles of a triangle sum to two right angles.*
 
-**Source.** euclid: Elements, Book I, Proposition 32
+**Source.** euclid — Elements, Book I, Proposition 32
 
-## Derived fact 1: The interior angles of a triangle sum to two right angles
+## Derived fact 1 — The interior angles of a triangle sum to two right angles
 
 **Coordinate.** the Euclidean plane · triangle · interior angles sum to two right angles · **Derived fact**
 
-*Source: euclid: Elements, Book I, Proposition 32*
+*Source: euclid — Elements, Book I, Proposition 32*
 
 *Built on: alternate interior angles are equal when parallel lines meet a transversal*
 

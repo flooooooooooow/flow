@@ -76,9 +76,6 @@ function ov_span_element_start(type_name: string) -> i32 {
     if ov_starts_with(type_name, "span_const_" as ptr<u8>) == 1 {
         return 11
     }
-    if ov_starts_with(type_name, "span_mut_" as ptr<u8>) == 1 {
-        return 9
-    }
     if ov_starts_with(type_name, "span_" as ptr<u8>) == 1 {
         return 5
     }
@@ -167,12 +164,6 @@ export function flowc_overload_types_compatible(expected: string, actual: string
     if actual_array_start >= 0 {
         if ov_starts_with(expected, "ptr_" as ptr<u8>) == 1 {
             if ov_tail_equal(expected, 4, actual, actual_array_start) == 1 {
-                return 1
-            }
-        }
-        # memref_T is a pointer to T, as on the Python host.
-        if ov_starts_with(expected, "memref_" as ptr<u8>) == 1 {
-            if ov_tail_equal(expected, 7, actual, actual_array_start) == 1 {
                 return 1
             }
         }

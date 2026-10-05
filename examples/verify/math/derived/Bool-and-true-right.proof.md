@@ -2,9 +2,9 @@
 
 *True on the right is a conjunctive identity.*
 
-**Source.** boole: https://en.wikipedia.org/wiki/Boolean_algebra
+**Source.** boole — https://en.wikipedia.org/wiki/Boolean_algebra
 
-## Derived fact 1: a and true = a
+## Derived fact 1 — a and true = a
 
 **Coordinate.** boolean truth values · conjunction · true is the right identity from the left · **Derived fact**
 

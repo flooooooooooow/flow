@@ -1,6 +1,0 @@
-# expect: Module static 'view' of span type must be initialized to null
-let mut view: span<i32> = 0
-
-function main() -> i32 {
-    return 0
-}

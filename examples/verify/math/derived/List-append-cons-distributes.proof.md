@@ -2,9 +2,9 @@
 
 *Cons distributes over list append.*
 
-**Source.** church: https://en.wikipedia.org/wiki/List_(abstract_data_type)
+**Source.** church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
 
-## Derived fact 1: cons(x, xs) ++ ys = cons(x, xs ++ ys)
+## Derived fact 1 — cons(x, xs) ++ ys = cons(x, xs ++ ys)
 
 **Coordinate.** List · append · cons distributes over append · **Derived fact**
 

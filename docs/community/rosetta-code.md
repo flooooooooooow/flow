@@ -176,8 +176,6 @@ Before copying a snippet to Rosetta Code, save it as a temporary `.flow` file an
 
 The corresponding repository examples and tutorial material should remain the source of truth for syntax.
 
-Eleven more tasks, each with its expected output, live in [`examples/rosetta/`](../../examples/rosetta/README.md). CI runs them with `./flow test-runtime examples/rosetta`.
-
 ## Suggested next tasks
 
 After the starter set, add tasks that show Flow rather than merely proving basic syntax: Euler method, Runge-Kutta method, numerical integration, producer-consumer, matrix multiplication, FFT/DFT, cellular automata, state-machine tasks, and other dynamical or systems-oriented examples.

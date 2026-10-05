@@ -1,5 +1,0 @@
-# Function types inside generic declarations get no typedef (#1047).
-- fn_T__U
-- fn_A__i32
-+ } fn_i32__i32;
-exit 0

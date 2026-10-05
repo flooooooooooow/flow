@@ -1,5 +1,0 @@
-[conventions]
-avoid = [
-  { pattern = "abc", reason = "inline table" },
-  { pattern = "x+y", workaround = 3 },
-]

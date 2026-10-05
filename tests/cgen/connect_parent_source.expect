@@ -1,4 +1,0 @@
-# From tests/unit/test_connect_composition.py::test_parent_source_copies_from_self_field
-+ (self->g).x = self->signal;
-+ Gain_step((&self->g), dt);
-exit 0

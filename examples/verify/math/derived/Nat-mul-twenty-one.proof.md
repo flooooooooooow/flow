@@ -2,9 +2,9 @@
 
 *Twenty times one is twenty.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 20 * 1 = 20
+## Derived fact 1 — 20 * 1 = 20
 
 **Coordinate.** the natural numbers · multiplication · twenty times one is twenty · **Derived fact**
 

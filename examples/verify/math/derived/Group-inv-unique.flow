@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Inverses in a group are unique.
-# @from   dummit-foote: *Abstract Algebra*, §1.1
+# @from   dummit-foote — *Abstract Algebra*, §1.1
 # @tier   derived
 
 # @means  If h * g = 1 and g * k = 1 then h = k.

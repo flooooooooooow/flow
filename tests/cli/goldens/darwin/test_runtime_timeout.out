@@ -1,7 +1,0 @@
-[0;34mℹ️  Running FLOW runtime tests...[0m
-[0;31m❌ ✗ tests/cli/fixtures/hang.flow (timed out after 1s; killed its process group; limit: --timeout=SECONDS or FLOW_TEST_TIMEOUT)[0m
-----------------------------------------
-[0;31m❌ Runtime test failures: 1/1[0m
-
-Failed files:
-  - tests/cli/fixtures/hang.flow (timeout 1s)

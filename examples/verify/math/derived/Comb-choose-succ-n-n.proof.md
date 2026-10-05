@@ -2,9 +2,9 @@
 
 *Choosing all items from a successor set gives one.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: choose(succ(n), succ(n)) = 1
+## Derived fact 1 — choose(succ(n), succ(n)) = 1
 
 **Coordinate.** Comb · choose · choosing all from a successor · **Derived fact**
 

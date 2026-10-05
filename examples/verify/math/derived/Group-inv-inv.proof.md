@@ -2,9 +2,9 @@
 
 *The inverse of an inverse returns the original element.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §1.1
+**Source.** dummit-foote — *Abstract Algebra*, §1.1
 
-## Derived fact 1: inv(inv(g)) = g
+## Derived fact 1 — inv(inv(g)) = g
 
 **Coordinate.** Group · inverse · double inverse returns the element · **Derived fact**
 

@@ -1,4 +1,0 @@
-function main() -> f32 {
-    let answer: f32 = 1.0
-    return an
-}

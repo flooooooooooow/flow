@@ -1,6 +1,6 @@
 # Test for flowc_cparser_gen_externs.
 # Preprocesses math.h, parses declarations, generates Flow externs.
-# Run with: ./flow run tests/lang/test_c_gen_externs.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_gen_externs.flow
 # Exit 0 on success.
 
 import "compiler/src/c_parser.flow"

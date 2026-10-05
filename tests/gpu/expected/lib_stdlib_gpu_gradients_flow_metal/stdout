@@ -1,6 +1,0 @@
-[0;34mℹ️  Generating GPU shaders from @ROOT@/lib/stdlib/gpu_gradients.flow (metal)...[0m
-✅ Generated Metal shader: @ROOT@/build/gpu/gpu_mse_grad.metal
-✅ Generated Metal shader: @ROOT@/build/gpu/gpu_relu_grad.metal
-✅ Generated Metal shader: @ROOT@/build/gpu/gpu_sigmoid_grad.metal
-✅ Generated Metal shader: @ROOT@/build/gpu/gpu_scale_grad.metal
-Generated 4 GPU shader(s)

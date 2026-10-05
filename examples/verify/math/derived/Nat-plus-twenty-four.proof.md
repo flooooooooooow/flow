@@ -2,9 +2,9 @@
 
 *Twenty-three plus one is twenty-four.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 23 + 1 = 24
+## Derived fact 1 — 23 + 1 = 24
 
 **Coordinate.** the natural numbers · addition · twenty three plus one is twenty four · **Derived fact**
 

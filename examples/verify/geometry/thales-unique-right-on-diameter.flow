@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  The right angle on a diameter is unique up to the semicircle choice.
-# @from   euclid: Elements, Book III, Proposition 31
+# @from   euclid — Elements, Book III, Proposition 31
 # @tier   derived
 
 # @means  angle ACB equals one right angle for C on the semicircle.

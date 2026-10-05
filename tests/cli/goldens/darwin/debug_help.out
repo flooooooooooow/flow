@@ -1,4 +1,0 @@
-Usage: flow debug <program.flow> [--break N|--break main] [--no-launch]
-  --break N     Break at Flow source line N (LLDB/GDB)
-  --break main  Break at main (default)
-  --no-launch   Build only; print paths and exit

@@ -2,13 +2,13 @@
 
 *In a triangle, an exterior angle equals the sum of the two remote interior angles.*
 
-**Source.** euclid: Elements, Book I, Proposition 32
+**Source.** euclid — Elements, Book I, Proposition 32
 
-## Derived fact 1: In a triangle, an exterior angle equals the sum of the two remote interior angles
+## Derived fact 1 — In a triangle, an exterior angle equals the sum of the two remote interior angles
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 32: an exterior angle equals the sum of remote interior angles · **Derived fact**
 
-*Source: euclid: Elements, Book I, Proposition 32*
+*Source: euclid — Elements, Book I, Proposition 32*
 
 *Built on: proposition 29: alternate angles are equal when a transversal crosses parallels, for Book I of the Elements in on the Euclidean plane, proposition 31: interior angles on one side sum to two right angles, for Book I of the Elements in on the Euclidean plane*
 

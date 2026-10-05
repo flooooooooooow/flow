@@ -1,8 +1,0 @@
-# expect: Function 'make' is declared to return unknown type 'Widget', which is not declared in this scope
-function make() -> Widget {
-    return 1
-}
-
-function main() -> i32 {
-    return 0
-}

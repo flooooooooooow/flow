@@ -2,9 +2,9 @@
 
 *Every ideal contains the ring zero.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.3
+**Source.** dummit-foote — *Abstract Algebra*, §7.3
 
-## Derived fact 1: 0 in I for every ideal I
+## Derived fact 1 — 0 in I for every ideal I
 
 **Coordinate.** Ideal · membership · ideals contain zero · **Derived fact**
 

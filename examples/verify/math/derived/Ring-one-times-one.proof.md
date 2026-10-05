@@ -2,9 +2,9 @@
 
 *One times one is one in a ring.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.1
+**Source.** dummit-foote — *Abstract Algebra*, §7.1
 
-## Derived fact 1: 1 * 1 = 1
+## Derived fact 1 — 1 * 1 = 1
 
 **Coordinate.** Ring · multiplication · one times one is one · **Derived fact**
 

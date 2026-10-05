@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  The 20-21-29 triangle satisfies the Pythagorean relation.
-# @from   euclid: Elements, Book I, Proposition 47
+# @from   euclid — Elements, Book I, Proposition 47
 # @tier   derived
 
 # @means  29 squared equals 20 squared plus 21 squared.

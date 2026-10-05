@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  Base angles are symmetric about the apex median.
-# @from   euclid: Elements, Book I, Proposition 5
+# @from   euclid — Elements, Book I, Proposition 5
 # @tier   derived
 
 # @means  angle at B equals reflect of angle at C across apex median.

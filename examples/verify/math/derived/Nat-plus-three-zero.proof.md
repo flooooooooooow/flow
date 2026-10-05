@@ -2,9 +2,9 @@
 
 *Three plus zero is three for natural numbers.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 3 + 0 = 3
+## Derived fact 1 — 3 + 0 = 3
 
 **Coordinate.** the natural numbers · addition · three plus zero is three · **Derived fact**
 

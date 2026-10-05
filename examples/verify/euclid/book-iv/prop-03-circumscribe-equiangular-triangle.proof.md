@@ -2,13 +2,13 @@
 
 *About a given circle to circumscribe a triangle equiangular to a given triangle.*
 
-**Source.** euclid: Elements, Book IV, Proposition 3
+**Source.** euclid — Elements, Book IV, Proposition 3
 
-## Derived fact 1: About a given circle to circumscribe a triangle equiangular to a given triangle
+## Derived fact 1 — About a given circle to circumscribe a triangle equiangular to a given triangle
 
 **Coordinate.** the Euclidean plane · Euclid Book IV · Proposition 3: about a circle to circumscribe a triangle equiangular to a given triangle · **Derived fact**
 
-*Source: euclid: Elements, Book IV, Proposition 3*
+*Source: euclid — Elements, Book IV, Proposition 3*
 
 *Built on: proposition 2: in a circle to inscribe a triangle equiangular to a given triangle, for Euclid Book IV on the Euclidean plane, proposition 19: the tangent is perpendicular to the diameter at the point of contact, for Euclid Book III on the Euclidean plane*
 

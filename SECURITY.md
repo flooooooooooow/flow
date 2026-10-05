@@ -30,7 +30,7 @@ serious failure. Such changes must be called out prominently in release notes.
 
 Please report via one of:
 
-1. **GitHub Security Advisories**: [Report a vulnerability](https://github.com/flooooooooooow/flow/security/advisories/new) on this repository
+1. **GitHub Security Advisories** — [Report a vulnerability](https://github.com/flooooooooooow/flow/security/advisories/new) on this repository
 2. Email the maintainer listed on the GitHub org / profile if advisories are unavailable
 
 Include:
@@ -70,7 +70,7 @@ deliberately compiles and executes the supplied program with the invoking
 user's privileges; it is **not a sandbox**. Likewise, `extern`, raw pointers and
 other native FFI facilities are trusted-code boundaries and can perform
 arbitrary process-visible actions. The local playground/native compile server
-is development tooling. It is not a remote multi-tenant execution sandbox.
+is development tooling, not a remote multi-tenant execution sandbox.
 
 | Surface | 1.0 security position |
 | --- | --- |
@@ -78,7 +78,7 @@ is development tooling. It is not a remote multi-tenant execution sandbox.
 | Stable subprocesses | Compiler/tool invocations use argument vectors rather than shell interpolation. Repository tests reject `shell=True`, `os.system` and `os.popen` under `src/flow`. |
 | Temporary build state | Stable Python tooling uses race-resistant temporary APIs. `tempfile.mktemp` is forbidden under `src/flow`. |
 | Module imports | Stable local resolution stays inside the selected project, stdlib and package roots. Legacy string imports reject absolute, home-relative and parent-traversing paths. |
-| `flow run` | Native execution boundary; it is not sandboxed. Program exit status is propagated once execution begins. |
+| `flow run` | Native execution boundary, not sandboxed. Program exit status is propagated once execution begins. |
 | FFI / `extern` | Trusted native boundary, outside safe-source containment guarantees. |
 | Package/dependency acquisition | Dependency source and extraction semantics remain Experimental until integrity, symlink and root-containment rules are qualified. |
 | Release artifacts | Built from a clean checkout, freshness-checked, checksummed, unpacked and exercised before publication. Provenance/signing work is tracked by #652. |

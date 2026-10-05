@@ -1,10 +1,10 @@
 # WebAssembly Gallery
 
-158 Flow examples compiled to WebAssembly, every one of them runnable in a
+158 Flow examples compiled to WebAssembly — every one of them runnable in a
 browser. Every one is the unedited source from this repository, put through
 Flow → C → `emcc`.
 
-**[Open the live gallery](../wasm/index.html)**. The pages below only run
+**[Open the live gallery](../wasm/index.html)** — the pages below only run
 there. This markdown page cannot host WebAssembly; the wiki renders it as
 text, so the gallery is a separate static site under `/wasm/`.
 
@@ -68,7 +68,7 @@ else in the gallery built and is listed as such, which is a weaker claim.
 | `ga_flappy` | Neuroevolution ran to completion with `PASS: evolved policy clears >= 10 more pipes than random`, `main returned 0` |
 | `blas_demo` | Benchmarked 256/512 gemms at 0.7/2.1 GFLOPS and 100/500 solves with `info=0`, `Done!`, `main returned 0` |
 | `lu_decomposition` | `x = [1.000000, 1.000000, 1.000000]`, `max |Ax-b| = 0.00e+00`, `OK: solve + lu_factor via BLAS/LAPACK`, `main returned 0` |
-| `async_primitives` | All three backends ran, and the FiberAsync section printed a strict round-robin trace (`T100:0 T101:0 T102:0 T100:1 …`): three cooperative fibers suspending mid-body on `async_delay`, `join` summing to 3039, `main returned 0` |
+| `async_primitives` | All three backends ran, and the FiberAsync section printed a strict round-robin trace (`T100:0 T101:0 T102:0 T100:1 …`) — three cooperative fibers suspending mid-body on `async_delay`, `join` summing to 3039, `main returned 0` |
 | `runtime_sha256` | Flow's own SHA-256 implementation ran in the browser: `crypto runtime ok` against the known empty-string digest, exit 0; the card notes that random bytes come from WebCrypto's CSPRNG |
 | `digits_mlp_metal` | The Metal API ran CPU-emulated (backend reports `cpu-emulated (wasm)`): the relu backward gate verified `GPU == CPU` on 8000 elements and all four elementwise benches matched the CPU reference, `PASS`, `main returned 0`; the card notes the timing rows are CPU loops, not GPU dispatches |
 
@@ -105,7 +105,7 @@ and say plainly that it is not built here.
 | Pure computation | **Runs today** | Arithmetic, arrays, structs, strings, printf. Flow → C → wasm32 with nothing else linked in. |
 | gfx graphics and keyboard | **Runs today** | `runtime/gfx_wasm.c` paints the framebuffer onto a canvas and maps DOM key events to macOS keycodes. |
 | Threads and channels | **Runs today** | `digits_mlp_parallel`, `parallel_sum` and `parallel_scaling` run on real Emscripten pthreads over SharedArrayBuffer and Web Workers. The browser blocks SAB unless the page is cross-origin isolated, so those pages ship a COI service worker: open the card in a tab and it reloads once, isolated. |
-| Fibers | **Runs today** | `async_primitives` runs main and its tasks as stackful cooperative fibers (`runtime/fiber_wasm.c` over the Emscripten fiber API, which is Asyncify stack switching, the wasm analogue of the native `flow_fctx_*.S` asm context switch). M:1 on one JS thread, `flow_fiber_*` API intact: spawn/yield/park/unpark/run/run_until and fiber-aware `async_delay`. Pages build with `-sASYNCIFY`. |
+| Fibers | **Runs today** | `async_primitives` runs main and its tasks as stackful cooperative fibers (`runtime/fiber_wasm.c` over the Emscripten fiber API, which is Asyncify stack switching — the wasm analogue of the native `flow_fctx_*.S` asm context switch). M:1 on one JS thread, `flow_fiber_*` API intact: spawn/yield/park/unpark/run/run_until and fiber-aware `async_delay`. Pages build with `-sASYNCIFY`. |
 | Sockets and HTTP | In progress | Emscripten's WebSocket-backed POSIX socket bridge (`-lwebsocket.js` / `PROXY_POSIX_SOCKETS`). |
 | GPU kernels | In progress | WebGPU, with WGSL generated from the same `@gpu` AST that already emits Metal. |
 | Embedded CPython | In progress | Pyodide, which is CPython itself compiled to WebAssembly. |
@@ -117,13 +117,13 @@ and say plainly that it is not built here.
 The last holdout was `digits_mlp_metal.flow`: its Metal API has no browser
 counterpart, so `flow_gpu_*` are CPU-emulated on wasm (unified buffers become
 plain `malloc`'d memory, `flow_gpu_mul_f32` an elementwise CPU loop). The
-example's correctness gate still runs (the relu backward `dh = da · mask`
-verifies `GPU == CPU`), and its card carries a `.degrade` note saying the
-"gpu ms" rows measure a CPU loop rather than a dispatch.
+example's correctness gate still runs — the relu backward `dh = da · mask`
+verifies `GPU == CPU` — and its card carries a `.degrade` note saying the
+"gpu ms" rows measure a CPU loop, not a dispatch.
 
 Nine examples used to fail and now build:
 
-- `arena_frame.flow` and `manual_memory.flow` hit a real C-backend bug: the
+- `arena_frame.flow` and `manual_memory.flow` hit a real C-backend bug — the
   monomorphizer synthesized a second `sizeof_i32` next to the stdlib's concrete
   one, so the generated C redefined the symbol. The monomorphizer now resolves
   a generic specialization to an existing concrete declaration instead of
@@ -152,7 +152,7 @@ Nine examples used to fail and now build:
   Chrome, with a measured ~0.4 ms floor for 8 empty spawn+join round trips.
 - `tape_mul.flow` runs the real reverse-mode AD tape: `lib/runtime/tape.flow`
   (pure Flow, replacing the deleted `runtime/flow_tape.c`) compiles in as a
-  library TU via the new `extra_flow_runtime` build option, the wasm analogue
+  library TU via the new `extra_flow_runtime` build option — the wasm analogue
   of the native launcher's `flow_runtime_flow_sources()`. It was previously
   mislabelled a "native runtime module"; the fix is a module-resolution
   plumbing fix, not a stub, and the page computes `dz/dx = 4`, `dz/dy = 3`
@@ -164,7 +164,7 @@ Nine examples used to fail and now build:
   unmangled while the definition was mangled (`undefined symbol fly`). The
   fallback now discovers unknown arg types up front; the example was broken
   natively too and now runs everywhere with its own PASS gate.
-- `blas_demo.flow` and `lu_decomposition.flow` get `runtime/blas_wasm.c`, a
+- `blas_demo.flow` and `lu_decomposition.flow` get `runtime/blas_wasm.c` — a
   plain, numerically correct shim for exactly the routines the stdlib calls
   (daxpy/dcopy/ddot/dnrm2/dscal/dgemv/dgemm + dgesv_/dgetrf_, linked via
   `extra_c`), matching Accelerate's semantics including column-major LAPACK.
@@ -177,29 +177,29 @@ Nine examples used to fail and now build:
   emscripten's `clock_t` is `i32`, so the import got a `signature_mismatch`
   stub that threw `unreachable` the first time a page timed something
   (blas_demo's first benchmark, falling_sand's FPS loop, ...). They now
-  declare `-> i32`; µs-scale values fit i32 on both platforms.
+  declare `-> i32` — µs-scale values fit i32 on both platforms.
 - `parallel_scaling.flow` is the third threaded card: one build, one page, and
   the program itself times the same Monte Carlo pi work partitioned over 2, 4
   and 8 workers, each worker count timed against its own serial baseline
   (different shard counts are different random samples). The measured curve in
-  Chrome is ~3.8× → ~7.5× → ~15×, roughly linear scaling, monotone by the
+  Chrome is ~3.8× → ~7.5× → ~15× — roughly linear scaling, monotone by the
   example's own PASS gate.
 - `async_primitives.flow` was the last "host-bound" failure that wasn't. The
   fiber runtime is pure Flow + portable C; only the context switch was native
-  assembly. The wasm page gets `runtime/fiber_wasm.c`, the `flow_fiber_*`
+  assembly. The wasm page gets `runtime/fiber_wasm.c` — the `flow_fiber_*`
   API on the Emscripten fiber API (Asyncify stack switching; wasm cannot
   hand-switch the stack pointer and plain `setjmp`/`longjmp` cannot move
-  between stacks, so this is the supported setjmp/longjmp-family primitive),
+  between stacks, so this is the supported setjmp/longjmp-family primitive) —
   plus `lib/runtime/fiber_async.flow` via `extra_flow_runtime` and
   `runtime/flow_rt_fiber_async.c`. The example grew a FiberAsync section that
   registers three Flow task bodies and proves real interleaving: a strict
   round-robin trace, `join(100..102) = 3039`, on M:1 at `async_set_maxprocs(1)`.
-  Building it also surfaced a latent C-backend gap: skip-listed POSIX
+  Building it also surfaced a latent C-backend gap — skip-listed POSIX
   externs like `usleep` were never declared because the generated C did not
-  include `<unistd.h>`, which the transpiler now does when such an extern is
+  include `<unistd.h>` — which the transpiler now does when such an extern is
   present (async_primitives was the first program to call one).
 - `runtime_sha256.flow` was a stub candidate until it turned out that
-  `lib/runtime/crypto.flow` is pure Flow, SHA-256 included, with no externs.
+  `lib/runtime/crypto.flow` is pure Flow — SHA-256 included, with no externs.
   The page links it as a library TU, so Flow's own hashing implementation runs
   in the browser and verifies the known empty-string digest. The only
   host-bound piece is the OS CSPRNG: `runtime/crypto_wasm.c` provides

@@ -2,9 +2,9 @@
 
 *Order axioms and basic lemmas on natural numbers.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Total_order
+**Source.** peano — https://en.wikipedia.org/wiki/Total_order
 
-## Derived fact 1: Every natural is less than or equal to itself
+## Derived fact 1 — Every natural is less than or equal to itself
 
 **Coordinate.** the natural numbers · order · less-or-equal is reflexive · **Derived fact**
 
@@ -21,7 +21,7 @@
 
 `the natural numbers · order · less-or-equal is reflexive`
 
-## Derived fact 2: If a ≤ b and b ≤ a, then a = b
+## Derived fact 2 — If a ≤ b and b ≤ a, then a = b
 
 **Coordinate.** the natural numbers · order · less-or-equal is antisymmetric · **Derived fact**
 
@@ -36,7 +36,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that less-or-equal is antisymmetric for order on the natural numbers. |  |  |
-| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose a <= b. |  |  |
 | ④ | Case 2 (see step 2): suppose b <= a. |  |  |
 | ⑤ | We invoke the derived fact governing addition on the natural numbers: left cancellation holds, for addition on the natural numbers (instantiated for a, 0, 0). |  |  |
@@ -52,7 +52,7 @@
 
 `the natural numbers · order · less-or-equal is antisymmetric`
 
-## Derived fact 3: If a ≤ b and b ≤ c, then a ≤ c
+## Derived fact 3 — If a ≤ b and b ≤ c, then a ≤ c
 
 **Coordinate.** the natural numbers · order · less-or-equal is transitive · **Derived fact**
 
@@ -65,7 +65,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that less-or-equal is transitive for order on the natural numbers. |  |  |
-| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose a <= b. |  |  |
 | ④ | Case 2 (see step 2): suppose b <= c. |  |  |
 | ⑤ | From step 4, this implies a is at most c. Together with the other cases (step 3 and step 4), the goal is discharged. Hence proven. | ⑤ | $a \le c$ |
@@ -80,7 +80,7 @@
 
 `the natural numbers · order · less-or-equal is transitive`
 
-## Derived fact 4: Every natural is strictly less than its successor
+## Derived fact 4 — Every natural is strictly less than its successor
 
 **Coordinate.** the natural numbers · order · every number is below its successor · **Derived fact**
 

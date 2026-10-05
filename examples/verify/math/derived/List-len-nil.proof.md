@@ -2,9 +2,9 @@
 
 *The empty list has length zero.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len(nil) = 0
+## Derived fact 1 — len(nil) = 0
 
 **Coordinate.** List · length · the empty list has length zero · **Derived fact**
 

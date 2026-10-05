@@ -1,6 +1,0 @@
-# expect: Module static 'flag' has type i32 but should be bool
-let mut flag: bool = 1
-
-function main() -> i32 {
-    return 0
-}

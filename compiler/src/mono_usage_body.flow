@@ -7,7 +7,7 @@ import .ast {
     AST_BLOCK, AST_LET, AST_CONST, AST_RETURN, AST_ASSIGN,
     AST_IF, AST_WHILE, AST_FOR, AST_EXPR_STMT, AST_DEFER, AST_MATCH,
     AST_BINOP, AST_UNARY, AST_CALL, AST_FIELD_ACCESS, AST_INDEX, AST_CAST,
-    AST_STRUCT_LIT, AST_ARRAY_LIT, AST_IF_EXPR, AST_MATCH_ARM, AST_MATCH_ARM_EXT, AST_LAYOUT
+    AST_STRUCT_LIT, AST_ARRAY_LIT, AST_IF_EXPR, AST_MATCH_ARM
 }
 import .mono_defs { FlowcMonoDefs }
 import .mono_requests { FlowcMonoRequests }
@@ -229,18 +229,8 @@ function mono_usage_body_stmt(
         }
         let mut arm: i32 = arena.nodes[id].b
         while arm != AST_NONE {
-            if arm < 0 or arm >= arena.len {
+            if arm < 0 or arm >= arena.len or arena.nodes[arm].kind != AST_MATCH_ARM {
                 return 0 - 1
-            }
-            if arena.nodes[arm].kind != AST_MATCH_ARM and arena.nodes[arm].kind != AST_MATCH_ARM_EXT {
-                return 0 - 1
-            }
-            if arena.nodes[arm].kind == AST_MATCH_ARM_EXT and arena.nodes[arm].c != AST_NONE {
-                let g: i32 = mono_usage_body_expr(requests, defs, arena, src, arena.nodes[arm].c)
-                if g < 0 {
-                    return 0 - 1
-                }
-                found = found + g
             }
             let n: i32 = mono_usage_body_block(
                 requests, defs, arena, src, arena.nodes[arm].b
@@ -256,18 +246,6 @@ function mono_usage_body_stmt(
 
     if kind == AST_BLOCK {
         return mono_usage_body_block(requests, defs, arena, src, id)
-    }
-
-    if kind == AST_LAYOUT {
-        let args: i32 = mono_usage_body_expr_chain(requests, defs, arena, src, arena.nodes[id].a)
-        if args < 0 {
-            return 0 - 1
-        }
-        let body: i32 = mono_usage_body_block(requests, defs, arena, src, arena.nodes[id].b)
-        if body < 0 {
-            return 0 - 1
-        }
-        return args + body
     }
 
     return mono_usage_body_expr(requests, defs, arena, src, id)

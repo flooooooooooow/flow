@@ -2,9 +2,9 @@
 
 *Eight plus zero is eight in a monoid witness.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §1.1
+**Source.** dummit-foote — *Abstract Algebra*, §1.1
 
-## Derived fact 1: 8 + 0 = 8
+## Derived fact 1 — 8 + 0 = 8
 
 **Coordinate.** Monoid · addition · eight plus zero is eight · **Derived fact**
 

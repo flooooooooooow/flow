@@ -1,6 +1,0 @@
-flow Tiny { state x : f64 = 1.0 }
-
-function main() -> i32 {
-    let t: Tiny = Tiny_new()
-    return 0
-}

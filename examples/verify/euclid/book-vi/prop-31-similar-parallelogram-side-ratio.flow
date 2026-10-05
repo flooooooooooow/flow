@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-vi
 # @means  Similar parallelograms are to one another in the duplicate ratio of the homologous sides.
-# @from   euclid: Elements, Book VI, Proposition 31
+# @from   euclid — Elements, Book VI, Proposition 31
 # @tier   derived
 # @needs  «Geometry» «Euclid Book VI» «Proposition 26: similar parallelograms are in duplicate ratio of homologous sides»
 

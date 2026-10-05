@@ -117,8 +117,8 @@ replacement of the production host.
         (\texttt{flowc}).
   \item A description of the portable C backend's effect-handler lowering
         (handler vtables, dynamic scoping, capability installation).
-  \item A characterization of surface-language expanders as architecture
-        rather than ad hoc string rewriting.
+  \item A characterization of surface-language expanders as architecture,
+        not ad hoc string rewriting.
   \item Documentation of the self-hosting bootstrap ladder and its current
         fixed-point evidence.
 \end{enumerate}
@@ -127,8 +127,8 @@ replacement of the production host.
 We do not claim a formal semantics for the full language, nor do we present
 new algorithmic results in parsing or optimization. Performance numbers cited
 from the repository's benchmark suite are measurements of emitted C versus
-hand-written C under matched flags; they are context for the architecture
-rather than the primary claim of this paper.
+hand-written C under matched flags; they are context for the architecture,
+not the primary claim of this paper.
 
 \section{Design goals and constraints}
 \label{sec:goals}
@@ -378,7 +378,7 @@ device I/O, HTTP natives in registry packages---are linked as separate runtime
 objects. The CLI selects which runtime objects to include based on imports and
 command mode (\texttt{flow run}, \texttt{flow gfx}, \texttt{flow audio},
 \ldots). The architectural invariant is that the \emph{language} backend remains
-C; platform capability arrives as libraries rather than as a second IR.
+C; platform capability arrives as libraries, not as a second IR.
 
 \section{Secondary backends and special paths}
 \label{sec:secondary}
@@ -616,8 +616,8 @@ The architecture described here corresponds to the open-source repository
 ./flow compile examples/effects/showcase.flow
 
 # Stage-A roundtrip / self-host smokes (from repo root)
-./flow tool compiler/scripts/roundtrip.flow
-./flow tool compiler/scripts/stage_a_self_emit_g2.flow
+./compiler/scripts/roundtrip.sh
+./compiler/scripts/stage_a_self_emit_g2.sh
 
 # Dynamics surface
 ./flow run examples/dynamics/ga_dsys_syntax.flow

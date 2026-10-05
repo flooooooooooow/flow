@@ -1,6 +1,0 @@
-
-function main() -> i32 {
-    let arr: array<u8, 8> = []
-    let s: string = arr
-    return 0
-}

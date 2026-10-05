@@ -2,9 +2,9 @@
 
 *Difference with empty leaves cardinality unchanged.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: card(s \ empty) = card(s)
+## Derived fact 1 — card(s \ empty) = card(s)
 
 **Coordinate.** Finset · cardinality · difference with empty preserves cardinality · **Derived fact**
 

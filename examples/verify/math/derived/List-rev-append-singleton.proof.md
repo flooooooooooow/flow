@@ -4,7 +4,7 @@
 
 **Source.** List reverse cons
 
-## Derived fact 1: Reversing a singleton list is that singleton
+## Derived fact 1 — Reversing a singleton list is that singleton
 
 **Coordinate.** List · reverse · append singleton · **Derived fact**
 

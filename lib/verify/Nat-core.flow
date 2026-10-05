@@ -1,6 +1,6 @@
 # @module verify.Nat-core
 # @means  Peano predecessor and successor structural laws.
-# @from   peano: https://en.wikipedia.org/wiki/Peano_axioms
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
 # @tier   definitions-only
 
 # @means  Taking predecessor after successor returns the same number.  pred(succ(n)) = n
@@ -26,7 +26,7 @@ theorem «Nat» «successor» «successor undoes predecessor away from zero» (n
 }
 
 # @means  If two successors match, the originals match.  succ(m) = succ(n) → m = n
-# @from   peano: https://en.wikipedia.org/wiki/Injective_function
+# @from   peano — https://en.wikipedia.org/wiki/Injective_function
 # @tier   derived
 # @needs  «Nat» «predecessor» «predecessor undoes successor»
 

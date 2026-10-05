@@ -1,4 +1,0 @@
-# Does not parse: flowc must reject it.
-function main( -> i32 {
-    return 0
-}

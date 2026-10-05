@@ -59,7 +59,7 @@ Run every command from the repository root.
 | 10 | `transmission_line` | 32 pi sections, six loads from near short to near open | the reflection read off the input node before and after the round trip is right to **2.1e-3** absolute; one-way delay **9.722 ns** | `Gamma = (ZL - Z0)/(ZL + Z0)` and `td = N sqrt(LC) = 10 ns` | `./flow run examples/circuits/transmission_line.flow` |
 | 11 | `chua` | the double scroll as three `evolves as` lines | the largest Lyapunov exponent is positive at **0.4316** after Richardson extrapolation, from two methods agreeing to **5.3e-6**; volume contracts at **-3.8155** | the two exponents must agree, the two Richardson extrapolates must agree, and the average divergence must equal `f(1.2286) + (1-f)(-5.4571)` | `./flow run examples/circuits/chua.flow` |
 | 12 | `pll` | phase-error model, first order and with a lag filter | steady phase error to **1.0e-11**, relaxation rate to **1.2e-4**, capture time to **2.9e-5**; lock range **6284.30 rad/s** against K; the filtered loop holds K and captures **0.626 K** | `arcsin(dw/K)`, `sqrt(K^2 - dw^2)`, the separable integral `(1/s) ln[u1(u2-U)/(u2(u1-U))]`, and the lock range K | `./flow run examples/circuits/pll.flow` |
-| - | `netlist_demo` | three SPICE decks parsed off disk | the front end feeds the same solver: transient to **1.9e-6**, DC sweep to **1.1e-14**, operating point to **1.7e-16** | the analytic RLC step, bisection on Shockley, and 18/7 V and 12/7 V worked out in the deck's own comment header | `./flow run examples/circuits/netlist_demo.flow` |
+| — | `netlist_demo` | three SPICE decks parsed off disk | the front end feeds the same solver: transient to **1.9e-6**, DC sweep to **1.1e-14**, operating point to **1.7e-16** | the analytic RLC step, bisection on Shockley, and 18/7 V and 12/7 V worked out in the deck's own comment header | `./flow run examples/circuits/netlist_demo.flow` |
 
 ## Cost, measured on the machine that ran them
 
@@ -114,7 +114,7 @@ budget is off before it starts.
 
 [`lib/stdlib/spice.flow`](../../lib/stdlib/spice.flow) is the netlist front
 end. What it reads and what it does not are both listed by name in its header;
-unsupported cards are counted rather than silently dropped.
+unsupported cards are counted, not silently dropped.
 
 ## What is not done here
 

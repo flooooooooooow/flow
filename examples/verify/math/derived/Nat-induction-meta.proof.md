@@ -2,13 +2,13 @@
 
 *Induction on Nat is justified by the Peano structure.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Mathematical_induction
+**Source.** peano — https://en.wikipedia.org/wiki/Mathematical_induction
 
-## Theorem 1: If P(0) and P(n) implies P(succ(n)), then P holds for all n
+## Theorem 1 — If P(0) and P(n) implies P(succ(n)), then P holds for all n
 
 **Coordinate.** the natural numbers · induction · the induction principle is sound · **Theorem**
 
-*Source: peano: Gries & Schneider, Ch. 3*
+*Source: peano — Gries & Schneider, Ch. 3*
 
 *Built on: every number is zero or a successor, for cases on the natural numbers, successor is injective, for successor on the natural numbers*
 

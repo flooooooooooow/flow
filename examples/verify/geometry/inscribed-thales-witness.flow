@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  An inscribed angle on a diameter is a right angle.
-# @from   euclid: Elements, Book III, Propositions 20 and 31
+# @from   euclid — Elements, Book III, Propositions 20 and 31
 # @tier   derived
 
 # @means  angle APB inscribed on diameter AB is one right angle.

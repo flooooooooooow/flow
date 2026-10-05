@@ -2,9 +2,9 @@
 
 *Transitive equality preserves left multiplication.*
 
-**Source.** leibniz: https://en.wikipedia.org/wiki/Substitution_(logic)
+**Source.** leibniz — https://en.wikipedia.org/wiki/Substitution_(logic)
 
-## Derived fact 1: If a = b and b = c then d * a = d * c
+## Derived fact 1 — If a = b and b = c then d * a = d * c
 
 **Coordinate.** equality · equality · transitive substitution on multiplication on the left · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that transitive substitution on multiplication on the left for equality on equality. |  |  |
-| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose a  equals  b. |  |  |
 | ④ | Case 2 (see step 2): suppose b  equals  c. |  |  |
 | ⑤ | We invoke the derived fact governing equality on equality: equal terms multiply the same on the left, for equality on equality (instantiated for a, b, d). |  |  |

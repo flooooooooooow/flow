@@ -2,13 +2,13 @@
 
 *To place at a given point a straight line equal to a given straight line.*
 
-**Source.** euclid: Elements, Book I, Proposition 2
+**Source.** euclid — Elements, Book I, Proposition 2
 
-## Axiom 1: To place at a given point a straight line equal to a given straight line
+## Axiom 1 — To place at a given point a straight line equal to a given straight line
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 2: a segment equal to a given segment · **Axiom**
 
-*Source: euclid: Elements, Book I, Proposition 2*
+*Source: euclid — Elements, Book I, Proposition 2*
 
 > **Goal.** To place at a given point a straight line equal to a given straight line
 >
@@ -16,7 +16,7 @@
 
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
-| ① | We accept proposition 2: a segment equal to a given segment for Book I of the Elements in the Euclidean plane without proof. This is an ontological commitment rather than a lemma. |  |  |
+| ① | We accept proposition 2: a segment equal to a given segment for Book I of the Elements in the Euclidean plane without proof — an ontological commitment, not a lemma. |  |  |
 | ② | Let L = line_through_A_and_D. |  |  |
 | ③ | Let equilateral_ADE = triangle_on_AD_by_Proposition_1. |  |  |
 | ④ | Let circle_center_D_radius_BC = circle_at_D_with_radius_BC. |  |  |

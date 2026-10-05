@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-i
 # @means  In any triangle, the sum of any two sides is greater than the remaining side.
-# @from   euclid: Elements, Book I, Proposition 20
+# @from   euclid — Elements, Book I, Proposition 20
 # @tier   derived
 # @needs  «Geometry» «Euclid Book I» «Proposition 19: the greater angle is opposite the greater side»
 

@@ -2,9 +2,9 @@
 
 *The squares on the sides of a right triangle are positive.*
 
-**Source.** euclid: Elements, Book I, Proposition 47
+**Source.** euclid — Elements, Book I, Proposition 47
 
-## Derived fact 1: a squared is greater than zero
+## Derived fact 1 — a squared is greater than zero
 
 **Coordinate.** the Euclidean plane · right triangle · leg squares are positive · **Derived fact**
 

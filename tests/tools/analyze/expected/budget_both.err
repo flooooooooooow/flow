@@ -1,3 +1,0 @@
-BUDGET EXCEEDED: main uses 16 bytes (limit: 5)
-BUDGET EXCEEDED: sum_range uses 8 bytes (limit: 5)
-BUDGET EXCEEDED: factorial uses 8 bytes (limit: 5)

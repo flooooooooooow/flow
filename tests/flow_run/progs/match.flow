@@ -1,6 +1,0 @@
-function main() -> i32 {
-    match 1 {
-        1 => { return 1 }
-        _ => { return 0 }
-    }
-}

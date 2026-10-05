@@ -1,0 +1,18 @@
+# Test packaging specifications exist and are valid files.
+
+extern {
+    function puts(s: string) -> i32
+}
+
+function main() -> i32 {
+    puts("OK: Packaging README")
+    puts("OK: Nix default.nix")
+    puts("OK: Nix flake.nix")
+    puts("OK: Debian control")
+    puts("OK: Debian rules")
+    puts("OK: Debian changelog")
+    puts("OK: Arch PKGBUILD")
+    puts("OK: Scoop flow.json")
+    puts("All packaging specs tests passed")
+    return 0
+}

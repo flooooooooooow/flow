@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FLOW Playground: Syntax Explorer</title>
+    <title>FLOW Playground — Syntax Explorer</title>
     <style>
         :root {
             --bg-primary: #0d1117;
@@ -468,11 +468,11 @@
     <div class="notice" id="notice">
         <strong>Three ways to run.</strong>
         <strong>Check Syntax</strong> is editor lint only.
-        <strong>Run (browser)</strong> uses the tutorial interpreter (<code>flow-compile.js</code>) rather than native code.
+        <strong>Run (browser)</strong> uses the tutorial interpreter (<code>flow-compile.js</code>) — not native.
         <strong>Run (native local)</strong> talks to a loopback compile API
-        (<code>./flow tool playground_server</code>, or <code>./flow playground</code>) that uses the real Flow→C toolchain (#132).
+        (<code>python3 scripts/playground_compile_server.py</code>) that uses the real Flow→C toolchain (#132).
         <strong>WASM hello</strong> loads a local emscripten artifact when present
-        (<code>./flow wasm</code> / <code>./flow tool scripts/build_wasm_hello.flow</code> →
+        (<code>./flow wasm</code> / <code>scripts/build_wasm_hello.sh</code> →
         <code>build/wasm_hello/hello.html</code>). Full in-browser Flow compiler remains deferred (#121).
         Tutorials:
         <a href="../tutorials/index.html" style="color: var(--accent)">Interactive Tutorials</a>;
@@ -1075,7 +1075,7 @@ function main() -> i32 {
                 outputEl.textContent =
                     'No problems found by the basic checks.\n\n' +
                     'Note: these are lightweight editor checks (comment style, ranges, balanced ' +
-                    'brackets). Only the real compiler is authoritative: run this program with ' +
+                    'brackets). Only the real compiler is authoritative — run this program with ' +
                     './flow run (see below).';
                 statusDot.className = 'status-dot success';
                 statusText.textContent = 'Looks OK';
@@ -1177,7 +1177,7 @@ function main() -> i32 {
                         return;
                     }
                 } catch (e) {
-                    /* server not running: fine */
+                    /* server not running — fine */
                 }
             }
         }
@@ -1229,7 +1229,7 @@ function main() -> i32 {
                         window.open(href, '_blank', 'noopener');
                         outputEl.className = 'output-content success';
                         outputEl.textContent =
-                            'Opened ' + href + '\n\nBuild with:\n  ./flow tool scripts/build_wasm_hello.flow\n  ./flow wasm examples/basics/hello_world.flow';
+                            'Opened ' + href + '\n\nBuild with:\n  ./scripts/build_wasm_hello.sh\n  ./flow wasm examples/basics/hello_world.flow';
                         return;
                     }
                 } catch (e) { /* try next */ }
@@ -1238,7 +1238,7 @@ function main() -> i32 {
             outputEl.textContent =
                 'No build/wasm_hello/hello.html found.\n\n' +
                 'From the repo root (needs emcc):\n' +
-                '  ./flow tool scripts/build_wasm_hello.flow\n' +
+                '  ./scripts/build_wasm_hello.sh\n' +
                 '  python3 -m http.server 8765 --directory build/wasm_hello\n\n' +
                 'Native-local Run still uses the real Flow→C toolchain on localhost.';
         }
@@ -1257,9 +1257,9 @@ function main() -> i32 {
                 outputEl.textContent =
                     'Native compile API not reachable on 127.0.0.1:8765.\n\n' +
                     'Start it from the repo root:\n' +
-                    '  ./flow tool playground_server\n\n' +
+                    '  python3 scripts/playground_compile_server.py\n\n' +
                     'It binds loopback only, caps source size, and times out subprocesses.\n' +
-                    'See scripts/tools/playground_server/main.flow for security notes.';
+                    'See scripts/playground_compile_server.py for security notes.';
                 statusDot.className = 'status-dot error';
                 statusText.textContent = 'No compile API';
                 return;
@@ -1304,7 +1304,7 @@ function main() -> i32 {
                 outputEl.className = 'output-content error';
                 outputEl.textContent =
                     'Native compile request failed: ' + (e && e.message ? e.message : e) +
-                    '\n\nIs ./flow tool playground_server still running?';
+                    '\n\nIs python3 scripts/playground_compile_server.py still running?';
                 statusDot.className = 'status-dot error';
                 statusText.textContent = 'Native error';
             }
@@ -1357,7 +1357,7 @@ function main() -> i32 {
             const outputEl = document.getElementById('output');
             const hint = browserEngineAvailable()
                 ? 'Click "Check Syntax" for lint checks, or "Run (browser)" for interpreter output (not native).'
-                : 'Click "Check Syntax" for basic lint checks (comment style, ranges, balanced braces). These are lightweight editor checks: only the real compiler is authoritative.';
+                : 'Click "Check Syntax" for basic lint checks (comment style, ranges, balanced braces). These are lightweight editor checks — only the real compiler is authoritative.';
             outputEl.textContent = hint;
             outputEl.className = 'output-content';
             document.getElementById('outputPanelLabel').textContent = 'Output';

@@ -2,9 +2,9 @@
 
 *Swapping exchanges the first projection.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Product_type
+**Source.** church — https://en.wikipedia.org/wiki/Product_type
 
-## Derived fact 1: fst(swap(pair(a, b))) = b
+## Derived fact 1 — fst(swap(pair(a, b))) = b
 
 **Coordinate.** Pair · swap · swap exchanges the first projection · **Derived fact**
 

@@ -1,9 +1,0 @@
-# Importing stdlib/math.flow and calling sin emits the libm name (#590).
-# From tests/integration/test_stdlib_c_declarations.py.
-import "stdlib/math.flow"
-
-function main() -> i32 {
-    let x = sin(3.14159 / 2.0)
-    printf("sin(pi/2) = %f\n", x)
-    return 0
-}

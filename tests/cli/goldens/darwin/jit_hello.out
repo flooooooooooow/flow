@@ -1,4 +1,0 @@
-[0;34mℹ️  JIT compiling tests/cli/fixtures/hello.flow...[0m
-🔥 JIT compiling hello.flow...
-hello from the cli goldens
-✅ JIT finished with exit code: 0

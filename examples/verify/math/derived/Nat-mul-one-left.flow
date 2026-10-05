@@ -1,10 +1,10 @@
 # @module examples.verify.math.derived
 # @means  One is the left multiplicative identity.
-# @from   peano: https://en.wikipedia.org/wiki/Peano_axioms
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
 # @tier   derived
 
 # @means  succ(0) * m = m, i.e. 1 * m = m.
-# @from   peano/induction: Gries & Schneider, Ch. 3
+# @from   peano/induction — Gries & Schneider, Ch. 3
 # @tier   derived
 # @needs  «Nat» «multiplication» «zero is the right annihilator», «Nat» «multiplication» «successor on the right distributes», «Nat» «addition» «zero is the left identity», «Nat» «addition» «successor on the left steps the sum»
 

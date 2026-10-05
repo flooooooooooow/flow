@@ -2,13 +2,13 @@
 
 *Equiangular parallelograms have to one another the ratio compounded of the ratios of their sides.*
 
-**Source.** euclid: Elements, Book VI, Proposition 23
+**Source.** euclid — Elements, Book VI, Proposition 23
 
-## Derived fact 1: Equiangular parallelograms have to one another the ratio compounded of the ratios of their sides
+## Derived fact 1 — Equiangular parallelograms have to one another the ratio compounded of the ratios of their sides
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 23: equiangular parallelograms have ratio compounded of side ratios · **Derived fact**
 
-*Source: euclid: Elements, Book VI, Proposition 23*
+*Source: euclid — Elements, Book VI, Proposition 23*
 
 *Built on: proposition 14: equal equiangular parallelograms have reciprocally proportional sides, for Euclid Book VI on the Euclidean plane, proposition 23: chained proportion yields ex aequali, for Euclid Book V on the Euclidean plane*
 

@@ -2,9 +2,9 @@
 
 *Fifteen plus zero is fifteen in a monoid witness.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §1.1
+**Source.** dummit-foote — *Abstract Algebra*, §1.1
 
-## Derived fact 1: 15 + 0 = 15
+## Derived fact 1 — 15 + 0 = 15
 
 **Coordinate.** Monoid · addition · fifteen plus zero is fifteen · **Derived fact**
 

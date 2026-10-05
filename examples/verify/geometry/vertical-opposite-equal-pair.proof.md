@@ -2,9 +2,9 @@
 
 *Opposite vertical angles form an equal pair.*
 
-**Source.** euclid: Elements, Book I, Proposition 15
+**Source.** euclid — Elements, Book I, Proposition 15
 
-## Derived fact 1: angle beta equals angle beta prime
+## Derived fact 1 — angle beta equals angle beta prime
 
 **Coordinate.** the Euclidean plane · intersecting lines · opposite vertical angles equal pair · **Derived fact**
 

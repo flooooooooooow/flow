@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Zero times one is zero for reals.
-# @from   landau: *Foundations of Analysis*
+# @from   landau — *Foundations of Analysis*
 # @tier   derived
 
 # @means  0 * 1 = 0.

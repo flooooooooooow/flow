@@ -2,9 +2,9 @@
 
 *The interior angle sum equals half a full turn.*
 
-**Source.** euclid: Elements, Book I, Proposition 32
+**Source.** euclid — Elements, Book I, Proposition 32
 
-## Derived fact 1: angle A plus angle B plus angle C equals two right angles
+## Derived fact 1 — angle A plus angle B plus angle C equals two right angles
 
 **Coordinate.** the Euclidean plane · triangle · interior sum equals half turn · **Derived fact**
 

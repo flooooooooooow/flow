@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Homomorphisms send inverse products to one.
-# @from   dummit-foote: *Abstract Algebra*, §1.6
+# @from   dummit-foote — *Abstract Algebra*, §1.6
 # @tier   derived
 
 # @means  f(g) * f(inv(g)) = 1.

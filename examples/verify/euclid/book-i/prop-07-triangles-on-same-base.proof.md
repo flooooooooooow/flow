@@ -2,13 +2,13 @@
 
 *On the same base and on the same side, equal-sided triangles cannot have distinct vertices.*
 
-**Source.** euclid: Elements, Book I, Proposition 7
+**Source.** euclid — Elements, Book I, Proposition 7
 
-## Derived fact 1: On the same base and on the same side, equal-sided triangles cannot have distinct vertices
+## Derived fact 1 — On the same base and on the same side, equal-sided triangles cannot have distinct vertices
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 7: two triangles on the same base cannot meet above it · **Derived fact**
 
-*Source: euclid: Elements, Book I, Proposition 7*
+*Source: euclid — Elements, Book I, Proposition 7*
 
 *Built on: proposition 4: side-angle-side congruence, for Book I of the Elements in on the Euclidean plane, proposition 5: base angles of an isosceles triangle are equal, for Book I of the Elements in on the Euclidean plane*
 

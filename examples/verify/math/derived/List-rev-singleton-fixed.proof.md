@@ -2,9 +2,9 @@
 
 *A singleton list is fixed by reverse.*
 
-**Source.** church: https://en.wikipedia.org/wiki/List_(abstract_data_type)
+**Source.** church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
 
-## Derived fact 1: rev(cons(x, nil)) = cons(x, nil)
+## Derived fact 1 — rev(cons(x, nil)) = cons(x, nil)
 
 **Coordinate.** List · reverse · singleton reverse is identity · **Derived fact**
 

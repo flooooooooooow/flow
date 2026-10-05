@@ -1,4 +1,4 @@
-// Generated from Flow @gpu function `gpu_saxpy` by tools/gpu/main.flow
+// Generated from Flow @gpu function `gpu_saxpy` by src/flow/wgsl_codegen.py
 const WORKGROUP_SIZE: i32 = 64;
 
 @group(0) @binding(0) var<storage, read> a: array<f32>;

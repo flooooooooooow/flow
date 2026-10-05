@@ -2,9 +2,9 @@
 
 *Corresponding angles are equal when parallel lines meet a transversal.*
 
-**Source.** euclid: Elements, Book I, Proposition 29
+**Source.** euclid — Elements, Book I, Proposition 29
 
-## Derived fact 1: corresponding angle alpha equals corresponding angle beta
+## Derived fact 1 — corresponding angle alpha equals corresponding angle beta
 
 **Coordinate.** the Euclidean plane · parallel lines · corresponding angles are equal · **Derived fact**
 

@@ -11,14 +11,15 @@ Flow is a classic front end with multiple back ends:
 1. **Parser** (`src/flow/parser.py`) lexes and parses `.flow` source into an AST.
 2. **Type checking** (`src/flow/type_checker.py`) performs semantic checks and type inference in a mostly conventional static type system.
 3. **Lowering** chooses a backend:
-   - **C generator**: flowc (`compiler/src/cgen.flow`), the only C compiler and the default CPU path (`./flow run`, portable Clang/GCC). The Python `c_generator.py` is retired.
-   - **MLIR generator** (`src/flow/mlir_generator.py`): co-equal CPU path via `--backend=mlir` / `FLOW_CPU_BACKEND=mlir`, plus `mlir` / `mlir-run` / `jit`.
-   - **Metal and WGSL codegen** (`tools/gpu/main.flow`, `flow gpu [--wgsl]`): the `@gpu` kernel path; fill shaders go through flowc (`compiler/src/shader_dsl.flow`).
-   - **MLIR GPU + SPIR-V** (`src/flow/mlir_gpu_codegen.py`, `src/flow/mlir_spirv.py`): parallel cross-platform compute emit (`--mlir-gpu --emit-spirv`).
+   - **C generator** (`src/flow/c_generator.py`) — default CPU path (`./flow run`, portable Clang/GCC).
+   - **MLIR generator** (`src/flow/mlir_generator.py`) — co-equal CPU path via `--backend=mlir` / `FLOW_CPU_BACKEND=mlir`, plus `mlir` / `mlir-run` / `jit`.
+   - **Metal codegen** (`src/flow/metal_codegen.py`) — primary macOS `@gpu` / fill-shader path.
+   - **WGSL codegen** (`src/flow/wgsl_codegen.py`) — WebGPU emit.
+   - **MLIR GPU + SPIR-V** (`src/flow/mlir_gpu_codegen.py`, `src/flow/mlir_spirv.py`) — parallel cross-platform compute emit (`--mlir-gpu --emit-spirv`).
 
-The CLI (`flow`, the Flow program in `tools/flow_cli`) orchestrates these flows. CPU default remains **C**; MLIR links the same Flow runtime objects when used via `--backend=mlir` or `mlir-run`. GPU: Metal stays primary on Darwin; SPIR-V is emit-only until a Vulkan/MoltenVK loader lands.
+The CLI (`flow` bash script and `src/flow/transpiler.py`) orchestrates these flows. CPU default remains **C**; MLIR links the same Flow runtime objects when used via `--backend=mlir` or `mlir-run`. GPU: Metal stays primary on Darwin; SPIR-V is emit-only until a Vulkan/MoltenVK loader lands.
 
-**WebAssembly:** `./flow wasm` accepts the same `--backend=c|mlir` switch. C path is Flow→C→emcc; MLIR path is Flow→MLIR→LLVM IR→emcc (browser stubs only, no Metal). See [docs/language/wasm.md](../language/wasm.md).
+**WebAssembly:** `./flow wasm` accepts the same `--backend=c|mlir` switch. C path is Flow→C→emcc; MLIR path is Flow→MLIR→LLVM IR→emcc (browser stubs only — no Metal). See [docs/language/wasm.md](../language/wasm.md).
 
 ## 2. Language Surface and Type System
 
@@ -60,7 +61,7 @@ This is a design choice: the language enforces a separation between what a progr
 
 ## 4. Automatic Differentiation as a Language Feature
 
-Autodiff is built into the standard library and language ecosystem rather than bolted on as a separate tool. It is used for machine learning and optimization workloads. This reflects a core intent: Flow is a language for numerical programming where gradients are a first-class concern.
+Autodiff is built into the standard library and language ecosystem, not bolted on as a separate tool. It is used for machine learning and optimization workloads. This reflects a core intent: Flow is a language for numerical programming where gradients are a first-class concern.
 
 ## 5. MLIR: Why It Exists Here
 
@@ -85,7 +86,7 @@ The compiler emits C with standard library calls and a small runtime layer. This
 
 ## 7. Runtime, Stdlib, and Concurrency
 
-Flow is not "just a compiler." It includes a small runtime and native support:
+Flow is not “just a compiler.” It includes a small runtime and native support:
 
 - `runtime/` includes a macOS graphics backend (`gfx_macos.m`).
 - The standard library exposes memory, math, concurrency, and system modules.
@@ -96,7 +97,7 @@ primitives backed by pthreads and atomics. Mutexes and rwlocks store opaque back
 storage and call into `pthread_*`, and spinlocks/once/waitgroups use atomic operations.
 Channels allocate real buffers and initialize a lock for coordination.
 
-There is an explicit path for real-world integration beyond toy programs.
+There is an explicit path for real-world integration, not just toy programs.
 
 ## 8. Tooling and Developer Experience
 
@@ -109,7 +110,7 @@ The project ships with:
 - **Guarded builds**: decorators like `@only("hot")` or `@compile` allow
   selectively including declarations in hot-reload, JIT, or full compile modes
 
-This is significant: it signals a commitment to a usable language rather than a research-only artifact.
+This is significant: it signals a commitment to a usable language, not a research-only artifact.
 
 ## 9. Project Status (Feb 2026)
 
@@ -120,7 +121,7 @@ frontier rather than the audit cleanup.
 
 ## 10. Summary: The Approach in One Line
 
-Flow is a small, statically typed language with algebraic effects and autodiff, compiled through a straightforward AST pipeline into either C or MLIR, backed by a minimal runtime and real tooling. The "MLIR-based language" label is accurate, but incomplete; the real design is about preserving explicit semantics while giving multiple lowering targets.
+Flow is a small, statically typed language with algebraic effects and autodiff, compiled through a straightforward AST pipeline into either C or MLIR, backed by a minimal runtime and real tooling. The “MLIR-based language” label is accurate, but incomplete; the real design is about preserving explicit semantics while giving multiple lowering targets.
 
 In other words: the interesting part is not that MLIR is used, but that the language is built to make multiple backends possible without changing the semantics.
 

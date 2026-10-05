@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Pairing is determined by its components.
-# @from   church: https://en.wikipedia.org/wiki/Product_type
+# @from   church — https://en.wikipedia.org/wiki/Product_type
 # @tier   derived
 
 # @means  pair(a, b) determines a and b.

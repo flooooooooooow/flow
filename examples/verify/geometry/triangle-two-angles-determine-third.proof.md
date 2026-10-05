@@ -2,9 +2,9 @@
 
 *Two interior angles determine the third in a triangle.*
 
-**Source.** euclid: Elements, Book I, Proposition 32
+**Source.** euclid — Elements, Book I, Proposition 32
 
-## Derived fact 1: angle C equals two right angles minus angle A minus angle B
+## Derived fact 1 — angle C equals two right angles minus angle A minus angle B
 
 **Coordinate.** the Euclidean plane · triangle · two angles determine the third · **Derived fact**
 

@@ -55,7 +55,7 @@ function process(name: string) -> void with BookLog {
 With strict effects enabled, callers must either install the effect or include it in their own row.
 
 ```bash
-./flow run examples/effects/effect_rows.flow
+FLOW_STRICT_EFFECTS=1 FLOW_HOST=python ./flow run examples/effects/effect_rows.flow
 ```
 
 ## 12.3 Swappable policy
@@ -79,8 +79,8 @@ The C backend uses OpenMP when available and otherwise preserves a correct seria
 `lib/stdlib/concurrent.flow` supplies pthread-backed channels, mutexes, condition variables, semaphores, one-time initialization, thread spawn/join, `WaitGroup`, and small `select` helpers. Because these examples depend on the imported library and native runtime, use the checked-in complete programs:
 
 ```bash
-./flow run examples/concurrency/channels.flow
-./flow run examples/concurrency/select.flow
+FLOW_HOST=python ./flow run examples/concurrency/channels.flow
+FLOW_HOST=python ./flow run examples/concurrency/select.flow
 ```
 
 ## 12.6 Asynchronous effects
@@ -88,7 +88,7 @@ The C backend uses OpenMP when available and otherwise preserves a correct seria
 The async standard library exposes an `Async` effect with several handler implementations. A complete self-contained example is kept in the repository:
 
 ```bash
-./flow run examples/effects/async_effects.flow
+FLOW_HOST=python ./flow run examples/effects/async_effects.flow
 ```
 
 Available policies include deterministic simulated execution, OS-thread execution, fibers, blocking I/O, and netpoll-backed I/O. The active handler changes policy without changing the operation that requests the effect.

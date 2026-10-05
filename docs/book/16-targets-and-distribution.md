@@ -9,18 +9,16 @@ before using closures, units, spans, effects, statics, SIMD, or a domain DSL.
 ```bash
 ./flow run program.flow
 ./flow compile program.flow
-./flow tool compiler/scripts/flowc_emit.flow program.flow build/program.c
+./flow transpile program.flow --c -o build/program.c
 ```
 
 The default build emits C11, invokes the platform compiler, and links an
 executable. The generated translation unit is inspectable and works with
 native debuggers, sanitizers, static scanners, and existing libraries.
 
-The C compiler is `flowc`, the self-hosted compiler. It is the only C
-compiler: the Python C backend is retired, and `FLOW_HOST=python` stops with
-an error. `FLOWC_BIN=<path>` selects a particular flowc binary.
-`flowc_emit.flow` writes C only; `--strict` makes every type error fatal and
-`--no-checks` leaves out the runtime checks.
+Use `FLOW_HOST=flowc` for the self-hosted Stage-A compiler,
+`FLOW_HOST=python` for the full language, and `FLOW_HOST=auto` for a
+self-hosted attempt followed by a Python-host fallback.
 
 ## 16.2 MLIR backend
 
@@ -70,8 +68,8 @@ function development_probe() -> void {
 ```
 
 The usual build runs Flow through C and then Emscripten. The output directory contains a
-module and runnable page. The build exports `main`; `ccall` and `cwrap` are
-available to JavaScript.
+module and runnable page. Stable `flow_export_...` aliases expose selected
+functions to JavaScript.
 
 Preload files and choose a filesystem:
 
@@ -119,14 +117,14 @@ which functions and structs have compatible signatures.
 For a C or JavaScript consumer, generate named exports:
 
 ```bash
-./flow tool compiler/scripts/flowc_emit.flow --library \
-    --export add --export process \
-    library.flow build/signal.c
+./flow transpile library.flow --c --library \
+    --export add process \
+    --module-name signal \
+    -o build/signal.c
 ```
 
-External consumers call versioned `flow_export_` aliases. `--library` leaves
-out `main` and the runtime checks and keeps plain C names with external
-linkage. See docs/language/export-abi.md. Pointers,
+External consumers call versioned `flow_export_` aliases. `@flow_api` keeps a
+specific plain symbol when source-level ABI control is appropriate. Pointers,
 struct layout, ownership, alignment, calling convention, and error reporting
 must be documented at every boundary.
 
@@ -164,8 +162,8 @@ does not test parity with the native backends.
 
 | Requirement | Preferred target |
 |---|---|
-| broadest language coverage | C backend (flowc) |
-| bootstrap build | flowc from `compiler/bootstrap/flowc_stage_a.c` |
+| broadest language coverage | Python-hosted C backend |
+| bootstrap/core build | self-hosted Stage A to C |
 | inspectable portable native output | C backend |
 | MLIR optimisation or in-memory execution | MLIR/JIT |
 | browser delivery | WebAssembly |
@@ -178,7 +176,7 @@ does not test parity with the native backends.
 
 1. Compile one core program through C and MLIR and compare exit status.
 2. Inspect the generated C for a struct and one overloaded function.
-3. Call a two-argument function of a WebAssembly build from JavaScript with `cwrap`.
+3. Export a two-argument function to WebAssembly with a stable alias.
 4. List every feature used by a proposed application and select a compatible
    backend before implementation.
 

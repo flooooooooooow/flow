@@ -9,11 +9,7 @@
 #
 # Runtime check: `snprintf(buf, 64, "x=%d sum=%d", 3, 40)` must write exactly
 # 10 bytes ("x=3 sum=40"); the write count depends on the varargs surviving
-# to libc.
-#
-# Supersedes (behavioral parts of):
-#   tests/unit/test_variadic_externs.py::test_runtime_varargs_reach_libc
-# Exit 0 on success; a nonzero exit identifies the failing check.
+# to libc. Exit 0 on success; a nonzero exit identifies the failing check.
 
 extern {
     function malloc(size: i64) -> ptr<u8>

@@ -2,13 +2,13 @@
 
 *One circle cannot touch another at more than one point.*
 
-**Source.** euclid: Elements, Book III, Proposition 10
+**Source.** euclid — Elements, Book III, Proposition 10
 
-## Derived fact 1: One circle cannot touch another at more than one point
+## Derived fact 1 — One circle cannot touch another at more than one point
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 10: one circle cannot touch another at more than one point · **Derived fact**
 
-*Source: euclid: Elements, Book III, Proposition 10*
+*Source: euclid — Elements, Book III, Proposition 10*
 
 *Built on: proposition 6: the line joining centers passes through the point of contact, for Euclid Book III on the Euclidean plane*
 

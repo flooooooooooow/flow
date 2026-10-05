@@ -2,9 +2,9 @@
 
 *Self-intersection is empty when intersected with empty.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: (s ∩ s) ∩ empty = empty
+## Derived fact 1 — (s ∩ s) ∩ empty = empty
 
 **Coordinate.** Finset · intersection · self intersect empty derived · **Derived fact**
 

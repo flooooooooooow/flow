@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  A radius equals half a diameter.
-# @from   euclid: Elements, Book I, Definition 15
+# @from   euclid — Elements, Book I, Definition 15
 # @tier   derived
 
 # @means  radius OA equals half of diameter AB.

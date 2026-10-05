@@ -1,1 +1,0 @@
-Error: connection source 'o' in flow 'B' is a output; a parent source must be an input or state at line 12

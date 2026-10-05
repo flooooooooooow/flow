@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Proportional magnitudes satisfy componendo and dividendo.
-# @from   euclid: Elements, Book V, Proposition 13
+# @from   euclid — Elements, Book V, Proposition 13
 # @tier   derived
 
 # @means  a:b = c:d implies (a+b):(a-b) = (c+d):(c-d).

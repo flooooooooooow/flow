@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-v
 # @means  If one magnitude is the same multiple of another that a part subtracted is of a part subtracted, the remainder is the same multiple of the remainder.
-# @from   euclid: Elements, Book V, Proposition 5
+# @from   euclid — Elements, Book V, Proposition 5
 # @tier   derived
 # @needs  «Geometry» «Euclid Book V» «Proposition 3: the difference of equimultiples is an equimultiple of the difference»
 

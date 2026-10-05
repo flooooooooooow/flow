@@ -2,9 +2,9 @@
 
 *Zero times zero is zero for integers.*
 
-**Source.** landau: *Foundations of Analysis*, Ch. 1
+**Source.** landau — *Foundations of Analysis*, Ch. 1
 
-## Derived fact 1: 0 * 0 = 0
+## Derived fact 1 — 0 * 0 = 0
 
 **Coordinate.** the integers · multiplication · zero times zero is zero · **Derived fact**
 

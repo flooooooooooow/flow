@@ -68,23 +68,7 @@ Installed packages land in `flow_packages/<name>/` and are pinned in `flow.lock`
 | `./flow publish` | Register this package in the local index |
 | `./flow build` | Build the project |
 
-`./flow pkg <subcommand>` takes the same subcommands.
-
-Every package command is written in Flow: `add`, `sync` (and its alias
-`install`), `search`, `info`, `init`, `publish`, `build`, `build-native`,
-`run-native`, `clean` and the install step of `flow run`. The code is
-[`compiler/src/pkg.flow`](../../compiler/src/pkg.flow), built by the `flow` command line
-with the Stage-A compiler. They need no Python. git, curl, tar and cp run
-through std.process with an argument vector; builds run flowc and clang.
-`./flow tool scripts/check_pkg_parity.flow` checks stdout, `flow.lock` and
-`flow_packages/` against goldens in `tests/pkg_parity`, and
-`./flow tool scripts/check_pkg_commands.flow` checks the other commands
-against `tests/pkg_commands`. Both sets were recorded once the Flow package
-manager matched the Python one it replaced.
-
-flowc resolves `import name.module` for a package listed in `[dependencies]`
-from `flow_packages/name/src/module.flow`, then `flow_packages/name/module.flow`,
-the same rule the Python module resolver uses.
+Also: `./flow pkg <subcommand>` → `python -m flow.package …`.
 
 `./flow sync` installs **project dependencies** when `flow.toml` exists.
 `flow run` performs the same synchronization automatically when a project has
@@ -115,8 +99,8 @@ Bundled index: [`registry/index.json`](../../registry/index.json)
 
 A version entry is either:
 
-- **`path`**: a repo-relative (or absolute) directory with its own `flow.toml`
-- **`git`** (+ optional `tag` / `rev` / `branch`): cloned into `flow_packages/`
+- **`path`** — repo-relative (or absolute) directory with its own `flow.toml`
+- **`git`** (+ optional `tag` / `rev` / `branch`) — cloned into `flow_packages/`
 
 ### Overrides
 
@@ -140,7 +124,7 @@ cd my_package        # has flow.toml with name + version
 ```
 
 This updates `registry/index.json` (or `FLOW_REGISTRY_PATH`). There is **no**
-account/API server yet. Sharing means committing the index change or opening a
+account/API server yet — sharing means committing the index change or opening a
 PR against the Flow repo (or hosting your own index JSON behind
 `FLOW_REGISTRY_URL`).
 

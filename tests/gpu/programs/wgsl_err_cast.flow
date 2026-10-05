@@ -1,9 +1,0 @@
-@gpu
-function first_ok(a: ptr<f32>) -> void {
-    a[0] = 1.0
-}
-
-@gpu
-function k(a: ptr<f32>, n: i32) -> void {
-    a[0] = n as f32
-}

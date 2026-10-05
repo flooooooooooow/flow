@@ -2,13 +2,13 @@
 
 *Multiplication distributes over addition on the right.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Distributive_property
+**Source.** peano — https://en.wikipedia.org/wiki/Distributive_property
 
-## Derived fact 1: a * (b + c) = a * b + a * c
+## Derived fact 1 — a * (b + c) = a * b + a * c
 
 **Coordinate.** the natural numbers · multiplication · distributes over addition on the right · **Derived fact**
 
-*Source: peano/induction: Gries & Schneider, Ch. 3*
+*Source: peano/induction — Gries & Schneider, Ch. 3*
 
 *Built on: zero is the right annihilator, for multiplication on the natural numbers, successor on the right distributes, for multiplication on the natural numbers, adding one more on the right bumps the sum by one*
 

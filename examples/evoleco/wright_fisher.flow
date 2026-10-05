@@ -29,7 +29,7 @@
 #   1 N=20   2 N=40   3 N=80   R reseed   P pause   Esc quit
 #
 # Run (headless, gated):
-#   ./flow record examples/evoleco/wright_fisher.flow \
+#   FLOW_HOST=python ./flow record examples/evoleco/wright_fisher.flow \
 #       --frames 4 --out /tmp/eco_wright_fisher
 # Run (windowed):
 #   ./flow gfx examples/evoleco/wright_fisher.flow

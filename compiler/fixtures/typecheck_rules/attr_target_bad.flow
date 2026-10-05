@@ -1,9 +1,0 @@
-# expect: @target("avx2,!!") component '!!' is not a valid target feature; expected forms are 'avx2', '+avx2', '-sse', 'no-sse', 'arch=haswell' or 'tune=native' (on function 'f')
-@target("avx2,!!")
-function f() -> i32 {
-    return 1
-}
-
-function main() -> i32 {
-    return f()
-}

@@ -1,1 +1,0 @@
-Error: state 'x' has two 'becomes' resets in one 'when' body of flow 'Osc'; resets in an event apply simultaneously, so each state has one writer at line 6

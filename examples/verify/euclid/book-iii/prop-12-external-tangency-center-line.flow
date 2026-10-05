@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-iii
 # @means  If two circles touch externally, the straight line joining their centers passes through the point of contact.
-# @from   euclid: Elements, Book III, Proposition 12
+# @from   euclid — Elements, Book III, Proposition 12
 # @tier   derived
 # @needs  «Geometry» «Euclid Book III» «Proposition 6: the line joining centers passes through the point of contact»
 

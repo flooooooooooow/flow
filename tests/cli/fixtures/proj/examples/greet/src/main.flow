@@ -1,4 +1,0 @@
-function main() -> i32 {
-    println("greetings from an example")
-    return 0
-}

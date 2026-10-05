@@ -2,9 +2,9 @@
 
 *A ring homomorphism squares the unity.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.3
+**Source.** dummit-foote — *Abstract Algebra*, §7.3
 
-## Derived fact 1: f(1) * f(1) = 1
+## Derived fact 1 — f(1) * f(1) = 1
 
 **Coordinate.** RingHom · multiplication · one squared maps to one · **Derived fact**
 

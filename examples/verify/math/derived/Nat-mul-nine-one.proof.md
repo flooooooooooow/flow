@@ -2,9 +2,9 @@
 
 *Nine times one is nine.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 9 * 1 = 9
+## Derived fact 1 — 9 * 1 = 9
 
 **Coordinate.** the natural numbers · multiplication · nine times one is nine · **Derived fact**
 

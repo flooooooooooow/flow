@@ -2,9 +2,9 @@
 
 *One times zero is zero for reals.*
 
-**Source.** landau: *Foundations of Analysis*
+**Source.** landau — *Foundations of Analysis*
 
-## Derived fact 1: 1 * 0 = 0
+## Derived fact 1 — 1 * 0 = 0
 
 **Coordinate.** the real numbers · multiplication · one times zero is zero · **Derived fact**
 

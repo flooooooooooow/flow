@@ -73,33 +73,6 @@ static _Thread_local int32_t g_current = -1;
 static _Thread_local flow_fctx g_sched_fctx;
 static _Thread_local int g_worker_id = 0; /* which deque this OS thread owns */
 
-/* A fiber that yields on one worker thread can resume on another. Inside one
- * function the compiler treats a thread-local's address as fixed and reuses
- * it after a call, so code on a fiber stack that touched these variables
- * directly would, after a yield, read or write the previous thread's copy
- * (#1174: fiber_entry read the old thread's g_current, saw -1 and paused
- * forever). Every access goes through an out-of-line accessor; the empty
- * volatile asm keeps the compiler from proving two calls return the same
- * address. */
-static __attribute__((noinline)) int32_t *tls_current(void) {
-    int32_t *p = &g_current;
-    __asm__ volatile("" : "+r"(p));
-    return p;
-}
-static __attribute__((noinline)) flow_fctx *tls_sched_fctx(void) {
-    flow_fctx *p = &g_sched_fctx;
-    __asm__ volatile("" : "+r"(p));
-    return p;
-}
-static __attribute__((noinline)) int *tls_worker_id(void) {
-    int *p = &g_worker_id;
-    __asm__ volatile("" : "+r"(p));
-    return p;
-}
-#define CUR_FIBER (*tls_current())
-#define SCHED_FCTX (tls_sched_fctx())
-#define WORKER_ID (*tls_worker_id())
-
 static int g_inited = 0;
 static int g_stop = 0;
 static int32_t g_maxprocs = 0; /* 0 = unset → detect */
@@ -195,7 +168,7 @@ static void wake_workers(void) {
 
 /* Enqueue a fiber already marked READY. Never nests with g_run_mu. */
 static void ready_enqueue(int32_t id) {
-    int q = WORKER_ID;
+    int q = g_worker_id;
     if (q < 0 || q >= g_nqueues) {
         q = (int)(g_spawn_rr++ % (unsigned)g_nqueues);
     }
@@ -231,7 +204,7 @@ static void ready_push(int32_t id) {
 
 /* Pop local or steal. Updates stats. May block briefly on empty. */
 static int32_t ready_take(void) {
-    int me = WORKER_ID;
+    int me = g_worker_id;
     if (me < 0 || me >= g_nqueues) me = 0;
 
     steal_deque *local = &g_deques[me];
@@ -260,14 +233,14 @@ static int32_t ready_take(void) {
 
 static void fiber_entry(void *unused) {
     (void)unused;
-    int32_t id = CUR_FIBER;
+    int32_t id = g_current;
     flow_fiber *f = &g_fibers[id];
     f->fn(f->arg);
     flow_fiber_asm_done();
 }
 
 void flow_fiber_asm_done(void) {
-    int32_t id = CUR_FIBER;
+    int32_t id = g_current;
     if (id >= 0) {
         /* EXITING: stack/ctx still live until the hosting worker's swap returns */
         g_fibers[id].status = FIBER_EXITING;
@@ -275,20 +248,20 @@ void flow_fiber_asm_done(void) {
         g_active_fibers--;
         pthread_cond_broadcast(&g_run_cv);
         pthread_mutex_unlock(&g_run_mu);
-        CUR_FIBER = -1;
-        flow_fctx_swap(&g_fibers[id].ctx, SCHED_FCTX);
+        g_current = -1;
+        flow_fctx_swap(&g_fibers[id].ctx, &g_sched_fctx);
     }
     for (;;) pause();
 }
 
 static void run_one(int32_t id) {
-    CUR_FIBER = id;
+    g_current = id;
     /* Already claimed READY→RUNNING in ready_take (or handoff path). */
     if (g_fibers[id].status != FIBER_RUNNING) {
         g_fibers[id].status = FIBER_RUNNING;
     }
-    flow_fctx_swap(SCHED_FCTX, &g_fibers[id].ctx);
-    CUR_FIBER = -1;
+    flow_fctx_swap(&g_sched_fctx, &g_fibers[id].ctx);
+    g_current = -1;
     /* Only now is the fiber stack idle and the slot reusable. */
     if (g_fibers[id].status == FIBER_EXITING) {
         g_fibers[id].status = FIBER_DONE;
@@ -324,7 +297,7 @@ typedef struct {
 
 static void *worker_main(void *arg) {
     worker_arg *wa = (worker_arg *)arg;
-    WORKER_ID = wa ? wa->worker_id : 1;
+    g_worker_id = wa ? wa->worker_id : 1;
     free(wa);
     for (;;) {
         int32_t id = ready_take();
@@ -353,7 +326,7 @@ static void start_workers(void) {
     if (extra < 0) extra = 0;
     g_workers_live = 0;
     g_stop = 0;
-    WORKER_ID = 0;
+    g_worker_id = 0;
     for (int i = 0; i < extra; i++) {
         worker_arg *wa = (worker_arg *)malloc(sizeof(*wa));
         if (!wa) continue;
@@ -450,7 +423,7 @@ int32_t flow_fiber_spawn(flow_fiber_fn fn, void *arg) {
 }
 
 static void schedule_loop(int32_t until_id) {
-    WORKER_ID = 0;
+    g_worker_id = 0;
     for (;;) {
         if (until_id >= 0 && g_fibers[until_id].status == FIBER_DONE) break;
         if (until_id < 0 && g_active_fibers <= 0 && !any_work()) break;
@@ -495,18 +468,18 @@ void flow_fiber_run_until(int32_t id) {
 }
 
 void flow_fiber_yield(void) {
-    if (CUR_FIBER < 0) return;
-    int32_t self = CUR_FIBER;
+    if (g_current < 0) return;
+    int32_t self = g_current;
     /* Mark READY but do not enqueue until run_one observes the saved ctx. */
     g_fibers[self].status = FIBER_READY;
-    flow_fctx_swap(&g_fibers[self].ctx, SCHED_FCTX);
+    flow_fctx_swap(&g_fibers[self].ctx, &g_sched_fctx);
 }
 
 void flow_fiber_park(void) {
-    if (CUR_FIBER < 0) return;
-    int32_t self = CUR_FIBER;
+    if (g_current < 0) return;
+    int32_t self = g_current;
     g_fibers[self].status = FIBER_PARKED;
-    flow_fctx_swap(&g_fibers[self].ctx, SCHED_FCTX);
+    flow_fctx_swap(&g_fibers[self].ctx, &g_sched_fctx);
 }
 
 void flow_fiber_unpark(int32_t id) {
@@ -519,22 +492,22 @@ void flow_fiber_unpark(int32_t id) {
 }
 
 int32_t flow_fiber_current_id(void) {
-    return CUR_FIBER;
+    return g_current;
 }
 
 int flow_fiber_prepare_park(void) {
-    if (CUR_FIBER < 0) return 0;
-    g_fibers[CUR_FIBER].status = FIBER_PARKED;
+    if (g_current < 0) return 0;
+    g_fibers[g_current].status = FIBER_PARKED;
     return 1;
 }
 
 void flow_fiber_finish_park(void) {
-    int32_t self = CUR_FIBER;
+    int32_t self = g_current;
     if (self < 0) return;
     /* Unpark raced: claim READY→RUNNING and continue; deque slot is stale. */
     if (claim_ready(self)) return;
     if (g_fibers[self].status == FIBER_RUNNING) return;
-    flow_fctx_swap(&g_fibers[self].ctx, SCHED_FCTX);
+    flow_fctx_swap(&g_fibers[self].ctx, &g_sched_fctx);
 }
 
 /* ---- fiber channel ----------------------------------------------------- */
@@ -567,7 +540,7 @@ static void fchan_destroy(flow_fchan *ch) {
 }
 
 static void fiber_park_or_handoff(int32_t handoff) {
-    int32_t self = CUR_FIBER;
+    int32_t self = g_current;
     g_fibers[self].status = FIBER_PARKED;
     /* Symmetric transfer only safe on M:1 (same OS thread). */
     if (flow_fiber_maxprocs() == 1 && handoff >= 0 &&
@@ -579,13 +552,13 @@ static void fiber_park_or_handoff(int32_t handoff) {
         } else {
             g_fibers[handoff].status = FIBER_RUNNING;
         }
-        CUR_FIBER = handoff;
+        g_current = handoff;
         g_fibers[handoff].status = FIBER_RUNNING;
         flow_fctx_swap(&g_fibers[self].ctx, &g_fibers[handoff].ctx);
         return;
     }
     if (handoff >= 0) flow_fiber_unpark(handoff);
-    flow_fctx_swap(&g_fibers[self].ctx, SCHED_FCTX);
+    flow_fctx_swap(&g_fibers[self].ctx, &g_sched_fctx);
 }
 
 static void fchan_send(flow_fchan *ch, int32_t v) {
@@ -606,7 +579,7 @@ static void fchan_send(flow_fchan *ch, int32_t v) {
             return;
         }
         int32_t waiter = ch->recv_wait;
-        ch->send_wait = CUR_FIBER;
+        ch->send_wait = g_current;
         ch->recv_wait = -1;
         pthread_mutex_unlock(&ch->mu);
         fiber_park_or_handoff(waiter);
@@ -631,7 +604,7 @@ static int fchan_recv(flow_fchan *ch, int32_t *out) {
             return 0;
         }
         int32_t waiter = ch->send_wait;
-        ch->recv_wait = CUR_FIBER;
+        ch->recv_wait = g_current;
         ch->send_wait = -1;
         pthread_mutex_unlock(&ch->mu);
         fiber_park_or_handoff(waiter);
@@ -771,7 +744,7 @@ static void main_fiber_entry(void *arg) {
 int32_t flow_fiber_run_main(flow_main_fn fn) {
     if (!fn) return 0;
     /* Already on a fiber (nested): just call through. */
-    if (CUR_FIBER >= 0) return fn();
+    if (g_current >= 0) return fn();
     flow_fiber_init();
     g_main_fn = fn;
     g_main_result = 0;

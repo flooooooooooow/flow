@@ -1,2 +1,0 @@
-Error: param 'k' in flow 'Osc' needs a default value at line 3
-write 'param k : f64 = 1.0'

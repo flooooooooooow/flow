@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  An exterior angle exceeds the maximum remote interior angle.
-# @from   euclid: Elements, Book I, Proposition 16
+# @from   euclid — Elements, Book I, Proposition 16
 # @tier   derived
 
 # @means  exterior at C exceeds angle B when angle C is positive.

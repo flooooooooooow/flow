@@ -2,9 +2,9 @@
 
 *Reversing a singleton preserves length one.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len(rev(cons(x, nil))) = succ(0)
+## Derived fact 1 — len(rev(cons(x, nil))) = succ(0)
 
 **Coordinate.** List · length · reverse of singleton has length one · **Derived fact**
 

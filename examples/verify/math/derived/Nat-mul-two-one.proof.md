@@ -2,9 +2,9 @@
 
 *Two times one is two for natural numbers.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 2 * 1 = 2
+## Derived fact 1 — 2 * 1 = 2
 
 **Coordinate.** the natural numbers · multiplication · two times one is two · **Derived fact**
 

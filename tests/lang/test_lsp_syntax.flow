@@ -1,5 +1,5 @@
 # Test for lsp_syntax.flow port of lsp_syntax.py.
-# Run with: ./flow run tests/lang/test_lsp_syntax.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_lsp_syntax.flow
 # Exit 0 on success.
 
 import "compiler/src/lsp_syntax.flow"

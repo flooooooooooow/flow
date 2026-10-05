@@ -2,9 +2,9 @@
 
 *Supplementary adjacent angles with vertical pairs yield equal vertical angles.*
 
-**Source.** euclid: Elements, Book I, Proposition 15
+**Source.** euclid — Elements, Book I, Proposition 15
 
-## Derived fact 1: angle alpha equals angle alpha prime
+## Derived fact 1 — angle alpha equals angle alpha prime
 
 **Coordinate.** the Euclidean plane · intersecting lines · supplementary yields equal vertical angles · **Derived fact**
 

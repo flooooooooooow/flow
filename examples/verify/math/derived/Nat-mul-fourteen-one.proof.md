@@ -2,9 +2,9 @@
 
 *Fourteen times one is fourteen.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 14 * 1 = 14
+## Derived fact 1 — 14 * 1 = 14
 
 **Coordinate.** the natural numbers · multiplication · fourteen times one is fourteen · **Derived fact**
 

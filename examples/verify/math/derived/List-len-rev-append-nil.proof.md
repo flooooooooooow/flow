@@ -2,9 +2,9 @@
 
 *Reverse length is preserved after right-empty append.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len(rev(xs ++ nil)) = len(xs)
+## Derived fact 1 — len(rev(xs ++ nil)) = len(xs)
 
 **Coordinate.** List · length · reverse after right empty append preserves length · **Derived fact**
 

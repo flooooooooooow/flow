@@ -81,27 +81,16 @@ export function flowc_claim_path_parse(text: string) -> FlowcClaimPath {
     }
 }
 
-# tier.strip().lower(), then the definitions-only aliases.
-export function flowc_claim_path_normalize_tier(raw: string) -> string {
-    let n: i32 = strlen(raw) as i32
-    let p: ptr<u8> = raw
-    let mut a: i32 = 0
-    while a < n and (p[a] == 32 or p[a] == 9 or p[a] == 10 or p[a] == 13) { a = a + 1 }
-    let mut b: i32 = n
-    while b > a and (p[b - 1] == 32 or p[b - 1] == 9 or p[b - 1] == 10 or p[b - 1] == 13) { b = b - 1 }
-    let buf: ptr<u8> = malloc((b - a + 1) as i64)
-    let mut i: i32 = 0
-    while a + i < b {
-        let c: u8 = p[a + i]
-        if c >= 65 and c <= 90 {
-            buf[i] = c + 32
-        } else {
-            buf[i] = c
-        }
-        i = i + 1
+export function flowc_claim_path_normalize_tier(tier: string) -> string {
+    if strcmp(tier, "definition") == 0 {
+        return "definition"
     }
-    buf[i] = 0
-    let tier: string = buf as string
+    if strcmp(tier, "axiom") == 0 {
+        return "axiom"
+    }
+    if strcmp(tier, "derived") == 0 {
+        return "derived"
+    }
     if strcmp(tier, "definitions-only") == 0 {
         return "definition"
     }
@@ -181,7 +170,7 @@ export function flowc_claim_fingerprint(expr: string) -> string {
 }
 
 export function flowc_claim_fingerprint_key(carrier: string, structure: string, fp: string) -> string {
-    # carrier/structure#fp: fixed phrases for smoke tests
+    # carrier/structure#fp — fixed phrases for smoke tests
     if strcmp(carrier, "Nat") == 0 and strcmp(structure, "addition") == 0 {
         if strcmp(fp, "0+n=n") == 0 {
             return "Nat/addition#0+n=n"
@@ -269,21 +258,21 @@ export function flowc_tier_opening_plain(tier: string, path: FlowcClaimPath) -> 
             s = str_append(s, addr.structure)
             s = str_append(s, " on ")
             s = str_append(s, addr.carrier)
-            s = str_append(s, ". This is a definition rather than a derived fact.")
+            s = str_append(s, ". This is a definition.")
             return s
         }
         let mut s: string = "We stipulate how "
         s = str_append(s, gloss)
         s = str_append(s, " behaves on ")
         s = str_append(s, path.domain)
-        s = str_append(s, ". This is a definition rather than a derived fact.")
+        s = str_append(s, ". This is a definition.")
         return s
     }
 
     if strcmp(t, "axiom") == 0 {
         let mut s: string = "We accept this axiom on "
         s = str_append(s, path.domain)
-        s = str_append(s, " without proof. It is an ontological commitment rather than a lemma.")
+        s = str_append(s, " without proof. It is an ontological commitment.")
         return s
     }
 

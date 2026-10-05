@@ -2,9 +2,9 @@
 
 *Zero plus one is one for reals.*
 
-**Source.** landau: *Foundations of Analysis*
+**Source.** landau — *Foundations of Analysis*
 
-## Derived fact 1: 0 + 1 = 1
+## Derived fact 1 — 0 + 1 = 1
 
 **Coordinate.** the real numbers · addition · zero plus one is one · **Derived fact**
 

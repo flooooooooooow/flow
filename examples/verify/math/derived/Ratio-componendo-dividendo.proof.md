@@ -2,9 +2,9 @@
 
 *Proportional magnitudes satisfy componendo and dividendo.*
 
-**Source.** euclid: Elements, Book V, Proposition 13
+**Source.** euclid — Elements, Book V, Proposition 13
 
-## Derived fact 1: a:b = c:d implies (a+b):(a-b) = (c+d):(c-d)
+## Derived fact 1 — a:b = c:d implies (a+b):(a-b) = (c+d):(c-d)
 
 **Coordinate.** Ratio · proportion · componendo and dividendo hold · **Derived fact**
 

@@ -25,10 +25,10 @@ Recorded clips live in the
 ## Running them
 
 ```bash
-./flow gfx examples/procgen/noise_atlas.flow
-./flow record examples/procgen/noise_atlas.flow \
+FLOW_HOST=python ./flow gfx examples/procgen/noise_atlas.flow
+FLOW_HOST=python ./flow record examples/procgen/noise_atlas.flow \
   --frames 4 --out /tmp/pg_noise_atlas
-./flow tool record_demos --group procgen
+python3 scripts/record_demos.py --group procgen
 ```
 
 Every example labels itself on screen (title, parameters, live measurement).

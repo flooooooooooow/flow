@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  An exterior angle strictly exceeds the sum of remote interiors when angles are positive.
-# @from   euclid: Elements, Book I, Proposition 16
+# @from   euclid — Elements, Book I, Proposition 16
 # @tier   derived
 
 # @means  exterior at C exceeds angle A when angle B is positive.

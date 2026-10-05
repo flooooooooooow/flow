@@ -4,7 +4,7 @@
 
 **Source.** Subgroup identity hept
 
-## Derived fact 1: The subgroup identity is seven in this witness
+## Derived fact 1 — The subgroup identity is seven in this witness
 
 **Coordinate.** Subgroup · identity · hept · **Derived fact**
 

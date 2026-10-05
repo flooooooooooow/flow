@@ -1,6 +1,6 @@
 # @module verify.RingHom
 # @means  Ring homomorphism axioms.
-# @from   dummit-foote: *Abstract Algebra*, §7.3
+# @from   dummit-foote — *Abstract Algebra*, §7.3
 # @tier   definitions-only
 
 # @means  A ring homomorphism preserves addition.

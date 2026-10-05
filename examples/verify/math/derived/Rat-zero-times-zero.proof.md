@@ -2,9 +2,9 @@
 
 *Zero times zero is zero for rationals.*
 
-**Source.** landau: *Foundations of Analysis*
+**Source.** landau — *Foundations of Analysis*
 
-## Derived fact 1: 0 * 0 = 0
+## Derived fact 1 — 0 * 0 = 0
 
 **Coordinate.** Rat · multiplication · zero times zero is zero · **Derived fact**
 

@@ -2,9 +2,9 @@
 
 *Ten plus zero maps to ten under a ring homomorphism.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.3
+**Source.** dummit-foote — *Abstract Algebra*, §7.3
 
-## Derived fact 1: f(10 + 0) = 10
+## Derived fact 1 — f(10 + 0) = 10
 
 **Coordinate.** RingHom · preservation · ten plus zero maps to ten · **Derived fact**
 

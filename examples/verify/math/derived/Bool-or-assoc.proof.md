@@ -2,13 +2,13 @@
 
 *Disjunction associates: regrouping ors does not change the result.*
 
-**Source.** boole: https://en.wikipedia.org/wiki/Associative_property
+**Source.** boole — https://en.wikipedia.org/wiki/Associative_property
 
-## Derived fact 1: (a ∨ b) ∨ c = a ∨ (b ∨ c)
+## Derived fact 1 — (a ∨ b) ∨ c = a ∨ (b ∨ c)
 
 **Coordinate.** boolean truth values · disjunction · parentheses do not matter · **Derived fact**
 
-*Source: boole: https://en.wikipedia.org/wiki/Boolean_algebra*
+*Source: boole — https://en.wikipedia.org/wiki/Boolean_algebra*
 
 *Built on: order does not matter for "or"*
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that parentheses do not matter for disjunction on boolean truth values. |  |  |
-| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose a holds. |  |  |
 | ④ | From step 3, this implies (the disjunction of a and b) or c equals a or (the disjunction of b and c) in this case. | ④ | $(a \lor b) \lor c = a \lor (b \lor c)$ |
 | ⑤ | Case 2 (see step 2): suppose b holds. |  |  |

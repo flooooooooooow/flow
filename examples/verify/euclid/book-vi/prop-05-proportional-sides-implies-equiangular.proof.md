@@ -2,13 +2,13 @@
 
 *If the sides of two triangles are proportional, the triangles are equiangular and have equal angles.*
 
-**Source.** euclid: Elements, Book VI, Proposition 5
+**Source.** euclid — Elements, Book VI, Proposition 5
 
-## Derived fact 1: If the sides of two triangles are proportional, the triangles are equiangular and have equal angles
+## Derived fact 1 — If the sides of two triangles are proportional, the triangles are equiangular and have equal angles
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 5: triangles with proportional sides are equiangular · **Derived fact**
 
-*Source: euclid: Elements, Book VI, Proposition 5*
+*Source: euclid — Elements, Book VI, Proposition 5*
 
 *Built on: proposition 4: equiangular triangles have proportional corresponding sides, for Euclid Book VI on the Euclidean plane*
 

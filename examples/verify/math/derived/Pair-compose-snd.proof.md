@@ -2,9 +2,9 @@
 
 *Second projection commutes with pairing of projections.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Product_type
+**Source.** church — https://en.wikipedia.org/wiki/Product_type
 
-## Derived fact 1: snd(pair(fst(p), snd(p))) = snd(p)
+## Derived fact 1 — snd(pair(fst(p), snd(p))) = snd(p)
 
 **Coordinate.** Pair · second projection · second projection factors through pairing · **Derived fact**
 

@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  False is absorbing for conjunction on the left.
-# @from   boole: https://en.wikipedia.org/wiki/Boolean_algebra
+# @from   boole — https://en.wikipedia.org/wiki/Boolean_algebra
 # @tier   derived
 
 # @means  false and a = false.

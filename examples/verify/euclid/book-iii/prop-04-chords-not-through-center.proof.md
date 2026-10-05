@@ -2,13 +2,13 @@
 
 *In a circle, two chords that do not both pass through the center do not bisect each other.*
 
-**Source.** euclid: Elements, Book III, Proposition 4
+**Source.** euclid — Elements, Book III, Proposition 4
 
-## Derived fact 1: In a circle, two chords that do not both pass through the center do not bisect each other
+## Derived fact 1 — In a circle, two chords that do not both pass through the center do not bisect each other
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 4: chords not through the center do not bisect each other · **Derived fact**
 
-*Source: euclid: Elements, Book III, Proposition 4*
+*Source: euclid — Elements, Book III, Proposition 4*
 
 *Built on: proposition 2: a perpendicular from the center bisects the chord, for Euclid Book III on the Euclidean plane*
 

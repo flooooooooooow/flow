@@ -1,8 +1,0 @@
-# Two fields, one without a boundary (defaults to 0.0), no main().
-field A : f64[4] on Line
-field B : f64[10] on Line
-B evolves as k*laplacian(B)
-A evolves as laplacian(A)
-boundary B { left = -1.0  right = 1e-3 }
-
-const K: i32 = 3

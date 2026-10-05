@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Zero plus one stays in an ideal when zero is present.
-# @from   dummit-foote: *Abstract Algebra*, §7.3
+# @from   dummit-foote — *Abstract Algebra*, §7.3
 # @tier   derived
 
 # @means  If 0 in I then 0 + 1 in I.

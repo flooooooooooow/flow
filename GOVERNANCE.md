@@ -1,8 +1,6 @@
 # Governance
 
-Flow version 2.0.0 and later are proprietary. All rights reserved. See the
-[LICENSE](LICENSE) for terms. Version 1.0.2 and earlier remain available under
-the MIT License ([LICENSE-1.x-MIT](LICENSE-1.x-MIT)).
+Flow is an open-source programming language under the MIT license.
 
 ## Decision authority
 
@@ -14,7 +12,7 @@ the MIT License ([LICENSE-1.x-MIT](LICENSE-1.x-MIT)).
 | Releases & version tags | Maintainer |
 
 Design questions that need a human call are logged in
-[`docs/project/Questions.md`](docs/project/Questions.md).
+[`Questions.md`](Questions.md).
 
 ## Roadmap
 

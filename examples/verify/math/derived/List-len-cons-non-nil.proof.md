@@ -2,9 +2,9 @@
 
 *Nonuple cons ending in nil has length nine.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len of nine cons ending in nil equals 9
+## Derived fact 1 — len of nine cons ending in nil equals 9
 
 **Coordinate.** List · length · nonuple cons nil has length nine · **Derived fact**
 

@@ -29,7 +29,7 @@
 #   3 ABOVE     u = 1.4 u_c     master collapses
 #   R reseed   P pause   Esc quit
 #
-# Run: ./flow record examples/evoleco/quasispecies.flow --frames 4
+# Run: FLOW_HOST=python ./flow record examples/evoleco/quasispecies.flow --frames 4
 
 import "stdlib/gfx.flow"
 import "stdlib/text.flow"

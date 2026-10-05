@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Thirty-one times one is thirty-one.
-# @from   peano: https://en.wikipedia.org/wiki/Peano_axioms
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
 # @tier   derived
 
 # @means  31 * 1 = 31.

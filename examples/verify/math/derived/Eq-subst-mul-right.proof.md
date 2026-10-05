@@ -2,13 +2,13 @@
 
 *Equal factors stay equal when multiplied on the right.*
 
-**Source.** leibniz: https://en.wikipedia.org/wiki/Substitution_(logic)
+**Source.** leibniz — https://en.wikipedia.org/wiki/Substitution_(logic)
 
-## Derived fact 1: From a = b we deduce a * c = b * c
+## Derived fact 1 — From a = b we deduce a * c = b * c
 
 **Coordinate.** equality · equality · equal terms multiply the same on the right · **Derived fact**
 
-*Source: peano/induction: Gries & Schneider, Ch. 3*
+*Source: peano/induction — Gries & Schneider, Ch. 3*
 
 *Built on: zero is the right annihilator, for multiplication on the natural numbers, successor on the right distributes, for multiplication on the natural numbers*
 

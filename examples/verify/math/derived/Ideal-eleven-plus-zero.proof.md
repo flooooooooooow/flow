@@ -2,9 +2,9 @@
 
 *Eleven plus zero is eleven in an ideal witness.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.1
+**Source.** dummit-foote — *Abstract Algebra*, §7.1
 
-## Derived fact 1: 11 + 0 = 11 in an ideal
+## Derived fact 1 — 11 + 0 = 11 in an ideal
 
 **Coordinate.** Ideal · addition · eleven plus zero in ideal · **Derived fact**
 

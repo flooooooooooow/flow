@@ -1,6 +1,0 @@
-# #1029
-+ int32_t pick()
-- 111
-- reload_hook
-- 222
-exit 7

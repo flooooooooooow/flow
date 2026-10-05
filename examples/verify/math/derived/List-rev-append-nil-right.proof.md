@@ -2,9 +2,9 @@
 
 *Reversing a right-empty append changes nothing.*
 
-**Source.** church: https://en.wikipedia.org/wiki/List_(abstract_data_type)
+**Source.** church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
 
-## Derived fact 1: rev(xs ++ nil) = rev(xs)
+## Derived fact 1 — rev(xs ++ nil) = rev(xs)
 
 **Coordinate.** List · reverse · reverse of append with empty is reverse · **Derived fact**
 

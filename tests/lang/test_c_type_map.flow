@@ -1,6 +1,6 @@
 # Test for flowc_cparser_c_type_to_flow.
 # Verifies C type strings are correctly converted to Flow type strings.
-# Run with: ./flow run tests/lang/test_c_type_map.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_type_map.flow
 # Exit 0 on success.
 
 import "compiler/src/c_parser.flow"

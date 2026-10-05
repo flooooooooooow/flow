@@ -2,9 +2,9 @@
 
 *Zero on the left is an additive identity for naturals.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 0 + n = n
+## Derived fact 1 — 0 + n = n
 
 **Coordinate.** the natural numbers · addition · zero on the left gives the value · **Derived fact**
 

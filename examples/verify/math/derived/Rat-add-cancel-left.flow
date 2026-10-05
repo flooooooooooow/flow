@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Equal rationals can be subtracted from the left.
-# @from   landau: *Foundations of Analysis*
+# @from   landau — *Foundations of Analysis*
 # @tier   derived
 
 # @means  r + p = r + q implies p = q.

@@ -1,6 +1,0 @@
-# Module statics are file-scope C statics with constant initializers.
-+ static int32_t counter = 0;
-+ static int32_t table[4] = { 1, 2, 3, 4 };
-~ static float zeros\[8\] = \{
-+ static int32_t* head = NULL;
-exit 7

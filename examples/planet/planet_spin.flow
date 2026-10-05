@@ -7,7 +7,7 @@
 #   1 ELEV   2 BIOME
 #   Esc quit
 #
-# Run: ./flow gfx examples/planet/planet_spin.flow
+# Run: FLOW_HOST=python ./flow gfx examples/planet/planet_spin.flow
 
 import "stdlib/gfx.flow"
 import "stdlib/text.flow"

@@ -1,4 +1,0 @@
-exit=2
---- stdout
---- stderr
-flow test: [test].paths must be a string or array of strings

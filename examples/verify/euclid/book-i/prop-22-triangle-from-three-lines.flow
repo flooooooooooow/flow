@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-i
 # @means  To construct a triangle from three straight lines, each less than the sum of the other two.
-# @from   euclid: Elements, Book I, Proposition 22
+# @from   euclid — Elements, Book I, Proposition 22
 # @tier   derived
 # @needs  «Geometry» «Euclid Book I» «Proposition 1: equilateral triangle on a segment», «Geometry» «Euclid Book I» «Proposition 20: the sum of two sides exceeds the third»
 

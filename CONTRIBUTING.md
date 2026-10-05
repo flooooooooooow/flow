@@ -1,25 +1,5 @@
 # Contributing to Flow
 
-## Write it in Flow
-
-New code is written in Flow, including tools, scripts and tests. CI fails when
-a new `.py` file appears or tracked Python grows. See the "Flow first" section
-of [AGENTS.md](AGENTS.md).
-
-## Canonical agent workflow
-
-Coding agents follow [the Flow Agentic Loop](docs/project/agentic-loop.md)
-and [the repository structure contract](docs/project/repository-structure.md).
-`AGENTS.md` is the short operational entry point. GitHub issues, pull
-requests, CI and `ROADMAP.md` are live state. Contributor documents must not
-carry changing test counts, active-agent lists or current failure snapshots.
-
-The loop optimizes for verified merged work. Session and pull-request volume
-are not goals. An agent checks for overlapping work before implementation and
-again before opening a pull request.
-
----
-
 ## Agentic Pair Programming Guidelines
 
 Flow is developed through **human-AI collaboration**. This document defines how that works.
@@ -102,11 +82,10 @@ Should compile to C switch statements where possible."
 
 ### AI Response Patterns
 
-1. **Before implementation**: Check for overlapping work and establish the relevant baseline
-2. **For design changes**: Surface the decision before implementation; scoped approved work may proceed autonomously
-3. **During implementation**: Keep the change focused and preserve verification evidence
-4. **After completion**: Re-check overlap, run the relevant gates, and record the evidence in the pull request
-5. **When blocked**: Record the blocker in GitHub so it survives the session
+1. **Before major changes**: State plan, get approval
+2. **During implementation**: Update todos, show progress
+3. **After completion**: Summarize what changed, verify it works
+4. **When stuck**: Explain the blocker, propose alternatives
 
 ---
 
@@ -116,8 +95,6 @@ Should compile to C switch statements where possible."
 
 - [ ] Compile without errors (`./flow compile`)
 - [ ] Pass existing tests (`./flow test`)
-- [ ] After editing `compiler/src/`, regenerate the bootstrap C with
-  `./compiler/scripts/bootstrap_from_c.sh --regen` (needs only `cc`; see AGENTS.md)
 - [ ] Include new tests for new features
 - [ ] Follow existing code style
 - [ ] Update documentation if behavior changes
@@ -138,8 +115,8 @@ Should compile to C switch statements where possible."
 
 ### Code Blocks in Documentation
 
-CI compiles every ` ```flow ` block in every tracked markdown file with flowc
-(`./flow tool doc_examples`). A block that neither compiles nor carries a
+CI compiles every ` ```flow ` block in every tracked markdown file
+(`scripts/check_doc_examples.py`). A block that neither compiles nor carries a
 reason is a build failure, and the unverified count can only go down.
 
 A block does not need a `main`. The checker wraps a bare fragment in one and
@@ -178,8 +155,8 @@ is a keyword, while the linked file kept the name that parses.
 ### Starting a Session
 
 1. **Context Recovery**
-   - Read ROADMAP.md, recent changes, open issues, and open pull requests
-   - Confirm the requested outcome and whether it is already in flight
+   - AI reads ROADMAP.md, recent changes
+   - Human states current goal
    
 2. **Scope Agreement**
    - Define what "done" looks like
@@ -346,16 +323,14 @@ New roadmap items should include:
 ## Roadmap Sync
 
 Open items in `ROADMAP.md` mirror to GitHub issues (label `roadmap`) so the
-tracker stays visible on GitHub. Two tools handle it:
+tracker stays visible on GitHub. Two scripts handle it:
 
-- `./flow tool roadmap_sync` creates a GitHub issue for every open item: the
-  🔲 and `partial` statuses, unchecked `- [ ]` checkboxes, numbered
-  🔲 items, and the curated known-gaps list. When an item is marked
-  done in `ROADMAP.md`, it closes the issue and checks the
-  `docs/project/issues-checklist.md` line. Rewording an item updates the
-  existing issue instead of creating a duplicate. The logic is the Flow
-  program in `scripts/tools/roadmap_sync`.
-- `./flow tool issues_sync` round-trips state between `docs/project/issues-checklist.md`
+- `scripts/sync_roadmap.py` — creates a GitHub issue for every open item
+  (🔲 status, `partial` status, unchecked `- [ ]` checkboxes, numbered 🔲
+  items, and the curated `KNOWN_GAPS` list). When an item is marked done in
+  `ROADMAP.md`, it closes the issue and checks the `docs/project/issues-checklist.md` line.
+  Rewording an item updates the existing issue instead of creating a duplicate.
+- `scripts/sync_issues.sh` — rounds trip state between `docs/project/issues-checklist.md`
   and GitHub (closes issues checked locally, checks items closed on GitHub).
 
 Run it after editing `ROADMAP.md`:

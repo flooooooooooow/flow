@@ -1,6 +1,0 @@
-# sum(A | B) over two literal stepped ranges uses the closed-form union
-# helper. From tests/integration/test_range_algebra.py.
-function main() -> i32 {
-    printf("%d\n", sum(0..1000 step 3 | 0..1000 step 5))
-    return 0
-}

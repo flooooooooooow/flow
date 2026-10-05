@@ -51,8 +51,7 @@ function line_starts_with(src: string, line_start: i32, prefix: string) -> i32 {
         i = i + 1
         j = j + 1
     }
-    if j == pl { return 1 }
-    return 0
+    return j == pl
 }
 
 # Check if a line starts with optional "dyn." or "dynamics." namespace
@@ -93,8 +92,7 @@ function line_starts_with_ns(src: string, line_start: i32, prefix: string) -> i3
         i = i + 1
         j = j + 1
     }
-    if j == pl { return 1 }
-    return 0
+    return j == pl
 }
 
 # ── Field DSL detection ──────────────────────────────────────────

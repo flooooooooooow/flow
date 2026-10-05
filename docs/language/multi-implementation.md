@@ -8,16 +8,15 @@ satisfies the constraints at the call site.
 
 Three pieces:
 
-1. **Facts** (`PlanFacts` in `compiler/src/sort_plans.flow`): what the
-   compiler knows at one site. Element count, type, ordering provenance,
-   policies.
-2. **Implementation**: one lowering. Declares an applicability check, a cost
-   model, and a scratch claim.
-3. **Selector** (`flowc_plan_select`): runs every implementation for the
-   construct, picks the cheapest applicable one, and records why every other
-   candidate lost.
+1. **Facts** (`plan_selector.py`): what the compiler knows at one site.
+   Element count, type, ordering provenance, constraints.
+2. **Implementation** (`plan_selector.py`): one lowering. Declares an
+   applicability predicate, a cost model, and a scratch claim.
+3. **Registry** (`ordering_plans.py`, `general_plans.py`): each construct
+   registers its implementations. The selector picks the cheapest
+   applicable one and records why every other candidate lost.
 
-The record is the point. `flow explain` prints it verbatim.
+The record is the point. `--explain` prints it verbatim.
 
 ## Constructs
 
@@ -33,8 +32,7 @@ ordering provenance proves the array is ascending.
 
 ### matmul
 
-Cost models only (`compiler/src/general_plans.flow`); no lowering consults
-them yet. Two lowerings:
+Two lowerings:
 
 | Implementation | When it wins | Scratch |
 |---------------|-------------|---------|
@@ -45,7 +43,7 @@ them yet. Two lowerings:
 
 ### reduce
 
-Cost models only, as for matmul. Two lowerings:
+Two lowerings:
 
 | Implementation | When it wins | Scratch |
 |---------------|-------------|---------|
@@ -66,9 +64,9 @@ require(scratch <= 8192)   # same, explicit name
 require(latency < 1000)    # reject implementations with cost > 1000
 ```
 
-Parsed by `compiler/src/constraints.flow`. Becomes the fact
-`require_memory_bytes = 4096`, which the matmul and reduce applicability
-checks read.
+Parsed by `src/flow/constraints.py`. Becomes entries in the Facts data
+dict: `require_memory_bytes = 4096`. Implementations check these in their
+applicability predicates.
 
 ### prefer (soft)
 
@@ -94,24 +92,21 @@ The attribute form is the target syntax:
 let result = xs |> reduce(sum)
 ```
 
-The parser is in `compiler/src/constraints.flow`. It is not yet wired into
-the compiler, and neither was the Python original. Sort and search take no
-`require` / `prefer` today; their constraints are the policies `general`,
-`adaptive`, `unique` and `unstable`, and the scratch budget. Wiring the
-attribute form is a follow-up once the cost IR has real units.
+The parser is in `constraints.py`. It is not yet wired into the compiler.
+Today the compiler builds Facts programmatically. Wiring the attribute
+form is a follow-up once the cost IR has real units.
 
 ## Adding a new construct
 
-1. Add the plan codes, checks, costs and scratch claims to
-   `compiler/src/sort_plans.flow` (or a sibling module).
-2. Build the facts at the call site in cgen.
-3. Call `flowc_plan_select` and emit the C body for the chosen plan.
-4. Pass the report buffer when `FLOWC_EXPLAIN=1` so `flow explain` prints
-   the record.
+1. Create implementations in a new `*_plans.py` module.
+2. Register each with `register(Implementation(...))`.
+3. Add facts at the call site in the C generator (or MLIR generator).
+4. Call `select(facts, location, detail)` and use `sel.chosen` to pick
+   the C body.
+5. Append the `Selection` to `self._selections` so `--explain` prints it.
 
-See `flowc_cgen_emit_sort_by` and `flowc_cgen_emit_pipe_find` in
-`compiler/src/cgen.flow` for the sort/search example, and
-`compiler/src/general_plans.flow` for the matmul/reduce cost models.
+See `ordering_plans.py` for the sort/search example. See
+`general_plans.py` for the matmul/reduce example.
 
 ## Cost model
 

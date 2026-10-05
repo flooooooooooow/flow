@@ -1,7 +1,0 @@
-$ flow_pkg install
-[exit 0]
-== stdout
-[91mNo flow.toml found. Run 'flow init' first.[0m
-== flow.toml
-== flow.lock
-== flow_packages

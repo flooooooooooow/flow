@@ -1,6 +1,0 @@
-# expect: Cannot cast ptr<i32> to string
-function main() -> i32 {
-    let p: ptr<i32> = null
-    let s: string = p as string
-    return 0
-}

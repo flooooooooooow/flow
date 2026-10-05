@@ -1,3 +1,0 @@
-[0;34mℹ️  Generating GPU shaders from @ROOT@/tests/tools/lsp/fixtures/attr.flow (metal)...[0m
-✅ Generated Metal shader: @ROOT@/build/gpu/k.metal
-Generated 1 GPU shader(s)

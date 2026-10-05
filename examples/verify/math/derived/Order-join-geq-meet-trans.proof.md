@@ -2,9 +2,9 @@
 
 *Join above meet is preserved under transitivity.*
 
-**Source.** davey-priestley: *Introduction to Lattices and Order*
+**Source.** davey-priestley — *Introduction to Lattices and Order*
 
-## Derived fact 1: If meet(a, b) <= c and join(a, b) >= c then join(a, b) >= meet(a, b)
+## Derived fact 1 — If meet(a, b) <= c and join(a, b) >= c then join(a, b) >= meet(a, b)
 
 **Coordinate.** Order · lattice · join above meet via transitivity · **Derived fact**
 

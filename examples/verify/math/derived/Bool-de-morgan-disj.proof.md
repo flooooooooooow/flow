@@ -2,9 +2,9 @@
 
 *De Morgan law for disjunction and conjunction.*
 
-**Source.** boole: https://en.wikipedia.org/wiki/De_Morgan%27s_laws
+**Source.** boole — https://en.wikipedia.org/wiki/De_Morgan%27s_laws
 
-## Derived fact 1: ¬(a ∨ b) = (¬a) ∧ (¬b)
+## Derived fact 1 — ¬(a ∨ b) = (¬a) ∧ (¬b)
 
 **Coordinate.** boolean truth values · negation · de Morgan for disjunction and conjunction · **Derived fact**
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that de Morgan for disjunction and conjunction for negation on boolean truth values. |  |  |
-| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose a holds. |  |  |
 | ④ | Case 2 (see step 2): suppose b holds. |  |  |
 | ⑤ | From step 4, this implies !(the disjunction of a and b) equals (!a) and (!b) in this case. | ⑤ | $!(a \lor b) = (!a) \land (!b)$ |

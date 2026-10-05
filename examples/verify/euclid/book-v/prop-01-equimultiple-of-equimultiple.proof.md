@@ -2,13 +2,13 @@
 
 *If any number of magnitudes are equimultiples of as many others, each of each, whatever multiple one is of one, that multiple the sum is of the sum.*
 
-**Source.** euclid: Elements, Book V, Proposition 1
+**Source.** euclid — Elements, Book V, Proposition 1
 
-## Derived fact 1: If any number of magnitudes are equimultiples of as many others, each of each, whatever multiple one is of one, that multiple the sum is of the sum
+## Derived fact 1 — If any number of magnitudes are equimultiples of as many others, each of each, whatever multiple one is of one, that multiple the sum is of the sum
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 1: equimultiples of equimultiples are equimultiple of the originals · **Derived fact**
 
-*Source: euclid: Elements, Book V, Proposition 1*
+*Source: euclid — Elements, Book V, Proposition 1*
 
 > **Goal.** If any number of magnitudes are equimultiples of as many others, each of each, whatever multiple one is of one, that multiple the sum is of the sum
 >

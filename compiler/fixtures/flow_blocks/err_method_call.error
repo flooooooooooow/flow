@@ -1,1 +1,0 @@
-Error: method call in 'x evolves as' of flow 'Osc'; dynamics expressions must be pure plain calls in this version at line 3

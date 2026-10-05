@@ -1,30 +1,21 @@
-# ACTIONS-INTENDED: public repository; its CI runs on GitHub Actions.
 name: bpfel backend
 
 on:
   push:
     paths:
-      - 'scripts/tools/llvm_target/**'
-      - 'scripts/tools/lib/**'
-      - 'tools/flow_cli/**'
-      - 'compiler/scripts/parity_targets.flow'
-      - 'compiler/scripts/gate_lib.flow'
-      - 'compiler/src/mlirgen.flow'
-      - 'compiler/bootstrap/flowc_stage_a.c'
-      - 'tests/targets/**'
+      - 'src/flow/bpf_target.py'
+      - 'src/flow/mlir_generator.py'
+      - 'src/flow/transpiler.py'
+      - 'tests/unit/test_bpf_target.py'
       - 'tests/fixtures/bpf/**'
       - '.github/actions/install-toolchain/action.yml'
       - '.github/workflows/bpf.yml'
   pull_request:
     paths:
-      - 'scripts/tools/llvm_target/**'
-      - 'scripts/tools/lib/**'
-      - 'tools/flow_cli/**'
-      - 'compiler/scripts/parity_targets.flow'
-      - 'compiler/scripts/gate_lib.flow'
-      - 'compiler/src/mlirgen.flow'
-      - 'compiler/bootstrap/flowc_stage_a.c'
-      - 'tests/targets/**'
+      - 'src/flow/bpf_target.py'
+      - 'src/flow/mlir_generator.py'
+      - 'src/flow/transpiler.py'
+      - 'tests/unit/test_bpf_target.py'
       - 'tests/fixtures/bpf/**'
       - '.github/actions/install-toolchain/action.yml'
       - '.github/workflows/bpf.yml'
@@ -38,6 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-python
       - uses: ./.github/actions/install-toolchain
         with:
           mlir: 'true'
@@ -47,10 +39,10 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends llvm-18
 
-      # The goldens hold Homebrew LLVM 22 object bytes; this runner's LLVM
-      # differs, so the gate checks exit statuses and messages only.
-      - name: Run the bpf target parity cases
-        run: ./flow tool compiler/scripts/parity_targets.flow bpf --portable
+      - name: Run BPF target unit tests
+        env:
+          PYTHONPATH: src
+        run: python -m pytest -q tests/unit/test_bpf_target.py
 
       - name: Verify LLVM BPF backend is available
         run: |
@@ -59,8 +51,10 @@ jobs:
           command -v llvm-objdump-18
 
       - name: Compile Flow through MLIR and LLVM to eBPF ELF
+        env:
+          PYTHONPATH: src
         run: |
-          ./flow bpf tests/fixtures/bpf/answer.flow \
+          python -m flow.bpf_target tests/fixtures/bpf/answer.flow \
             --target bpfel \
             -O 2 \
             -o /tmp/answer.bpf.o
@@ -71,8 +65,10 @@ jobs:
           llvm-objdump-18 -h /tmp/answer.bpf.o | tee /tmp/answer.sections.txt
 
       - name: Compile Flow socket-filter program with BPF metadata
+        env:
+          PYTHONPATH: src
         run: |
-          ./flow bpf tests/fixtures/bpf/socket_filter.flow \
+          python -m flow.bpf_target tests/fixtures/bpf/socket_filter.flow \
             --target bpfel \
             --entry socket_filter \
             --section socket \
@@ -88,6 +84,8 @@ jobs:
           grep -E '[[:space:]]license[[:space:]]' /tmp/socket-filter.sections.txt
 
       - name: Reject userspace-runtime LLVM IR
+        env:
+          PYTHONPATH: src
         run: |
           cat >/tmp/invalid.ll <<'EOF'
           declare ptr @malloc(i64)
@@ -96,7 +94,7 @@ jobs:
             ret i32 0
           }
           EOF
-          if ./flow bpf /tmp/invalid.ll -o /tmp/invalid.o 2>/tmp/reject.log; then
+          if python -m flow.bpf_target /tmp/invalid.ll -o /tmp/invalid.o 2>/tmp/reject.log; then
             echo 'bpfel unexpectedly accepted malloc dependency' >&2
             exit 1
           fi

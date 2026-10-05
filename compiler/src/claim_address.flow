@@ -15,10 +15,6 @@ const FLOWC_CLAIM_GUIL_OPEN1: i32 = 171
 const FLOWC_CLAIM_GUIL_CLOSE0: i32 = 194
 const FLOWC_CLAIM_GUIL_CLOSE1: i32 = 187
 
-function flowc_claim_carrier_math(raw: string) -> string
-function flowc_claim_structure_math(raw: string) -> string
-function flowc_claim_law_phrase(law: string) -> string
-
 export struct FlowcClaimAddress {
     carrier: string,
     structure: string,
@@ -651,7 +647,7 @@ export function flowc_claim_address_phrase(addr: FlowcClaimAddress) -> string {
     # Bool / disjunction
     if strcmp(addr.carrier, "Bool") == 0 and strcmp(addr.structure, "disjunction") == 0 {
         if strcmp(addr.law, "order does not matter") == 0 {
-            return "order does not matter for \"or\""
+            return "order does not matter for or"
         }
     }
     # Int / multiplication
@@ -720,67 +716,6 @@ export function flowc_claim_address_phrase(addr: FlowcClaimAddress) -> string {
             return "the derivatives of sine at zero follow the alternating pattern of the Maclaurin series"
         }
     }
-    # Fallback: addr_prose (math_prose.py), inlined because math_prose
-    # imports this module.
-    return flowc_claim_law_phrase(addr.law) + ", for " + flowc_claim_structure_math(addr.structure) + " on " + flowc_claim_carrier_math(addr.carrier)
-}
-
-# The CARRIER_MATHEMATICAL / STRUCTURE_MATHEMATICAL tables of math_prose.py,
-# for the address_phrase fallback. flowc_carrier_mathematical and
-# flowc_structure_mathematical in math_prose.flow delegate here.
-export function flowc_claim_carrier_math(raw: string) -> string {
-    let name: string = flowc_claim_strip(raw)
-    if strcmp(name, "Nat") == 0 { return "the natural numbers" }
-    if strcmp(name, "Bool") == 0 { return "boolean truth values" }
-    if strcmp(name, "Int") == 0 { return "the integers" }
-    if strcmp(name, "Eq") == 0 { return "equality" }
-    if strcmp(name, "Geometry") == 0 { return "the Euclidean plane" }
-    if strcmp(name, "Analysis") == 0 { return "real analysis" }
-    if strcmp(name, "Real") == 0 { return "the real numbers" }
-    if strcmp(name, "bool") == 0 { return "boolean truth values" }
-    if strcmp(name, "i32") == 0 { return "the integers" }
-    if strcmp(name, "i64") == 0 { return "the integers" }
-    return name
-}
-
-export function flowc_claim_structure_math(raw: string) -> string {
-    let name: string = flowc_claim_strip(raw)
-    if strcmp(name, "addition") == 0 { return "addition" }
-    if strcmp(name, "multiplication") == 0 { return "multiplication" }
-    if strcmp(name, "disjunction") == 0 { return "disjunction" }
-    if strcmp(name, "conjunction") == 0 { return "conjunction" }
-    if strcmp(name, "equality") == 0 { return "equality" }
-    if strcmp(name, "output") == 0 { return "output" }
-    if strcmp(name, "fifo") == 0 { return "first-in-first-out ordering" }
-    if strcmp(name, "vectorization") == 0 { return "vectorization" }
-    if strcmp(name, "fusion") == 0 { return "loop fusion" }
-    if strcmp(name, "triangle") == 0 { return "triangles in" }
-    if strcmp(name, "isosceles triangle") == 0 { return "isosceles triangles in" }
-    if strcmp(name, "intersecting lines") == 0 { return "intersecting lines in" }
-    if strcmp(name, "right triangle") == 0 { return "right triangles in" }
-    if strcmp(name, "parallel lines") == 0 { return "parallel lines in" }
-    if strcmp(name, "triangle congruence") == 0 { return "triangle congruence in" }
-    if strcmp(name, "circle") == 0 { return "circles in" }
-    if strcmp(name, "Euclid Book I") == 0 { return "Book I of the Elements in" }
-    return name
-}
-
-# law_phrase: the first character lowercased, or "the stated law".
-export function flowc_claim_law_phrase(law: string) -> string {
-    let n: i32 = strlen(law) as i32
-    if n == 0 {
-        return "the stated law"
-    }
-    let p: ptr<u8> = law
-    if p[0] >= 65 and p[0] <= 90 {
-        let buf: ptr<u8> = malloc((n + 1) as i64)
-        let mut i: i32 = 0
-        while i <= n {
-            buf[i] = p[i]
-            i = i + 1
-        }
-        buf[0] = p[0] + 32
-        return buf as string
-    }
-    return law
+    # Fallback: use the display string
+    return flowc_claim_display(addr)
 }

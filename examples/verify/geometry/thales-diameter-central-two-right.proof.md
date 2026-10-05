@@ -2,9 +2,9 @@
 
 *A diameter subtends a central angle of two right angles.*
 
-**Source.** euclid: Elements, Book III, Proposition 31
+**Source.** euclid — Elements, Book III, Proposition 31
 
-## Derived fact 1: angle AOB equals two right angles for diameter AB
+## Derived fact 1 — angle AOB equals two right angles for diameter AB
 
 **Coordinate.** the Euclidean plane · circle · diameter subtends central two right · **Derived fact**
 

@@ -1,8 +1,0 @@
-
-        function fill(values: span<mut i32>) { values[0] = 1 }
-        function main() -> i32 {
-            let samples: array<i32, 4> = [0, 0, 0, 0]
-            fill(samples)
-            return 0
-        }
-        

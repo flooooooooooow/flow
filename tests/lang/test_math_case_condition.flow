@@ -1,5 +1,5 @@
 # Test for mathematical_case_condition in math_prose.flow.
-# Run with: ./flow run tests/lang/test_math_case_condition.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_math_case_condition.flow
 # Exit 0 on success.
 
 import "compiler/src/math_prose.flow"

@@ -1,4 +1,0 @@
-# The explain report equals the Python host's --explain text (#1054), except
-# the closing cost note, which is split into two sentences.
-explain explain_elif_facts.explain
-exit 0

@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-vi
 # @means  To a given straight line to apply a parallelogram equal to a given rectilineal figure and deficient by a parallelogram similar to a given one.
-# @from   euclid: Elements, Book VI, Proposition 11
+# @from   euclid — Elements, Book VI, Proposition 11
 # @tier   derived
 # @needs  «Geometry» «Euclid Book VI» «Proposition 10: to cut off a prescribed part from a given straight line», «Geometry» «Euclid Book I» «Proposition 44: apply a parallelogram equal to a triangle to a line»
 

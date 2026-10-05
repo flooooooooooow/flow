@@ -1,9 +1,0 @@
-# expect: Match pattern i32 incompatible with value type string
-function main() -> i32 {
-    let s: string = "a"
-    match s {
-        1 => { return 1 }
-        _ => { return 0 }
-    }
-    return 0
-}

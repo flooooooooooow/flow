@@ -2,13 +2,13 @@
 
 *If four magnitudes are proportional, the sum of the first and third is to the third as the sum of the second and fourth is to the fourth.*
 
-**Source.** euclid: Elements, Book V, Proposition 16
+**Source.** euclid — Elements, Book V, Proposition 16
 
-## Derived fact 1: If four magnitudes are proportional, the sum of the first and third is to the third as the sum of the second and fourth is to the fourth
+## Derived fact 1 — If four magnitudes are proportional, the sum of the first and third is to the third as the sum of the second and fourth is to the fourth
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 16: composition holds with alternando · **Derived fact**
 
-*Source: euclid: Elements, Book V, Proposition 16*
+*Source: euclid — Elements, Book V, Proposition 16*
 
 *Built on: proposition 7: proportional magnitudes satisfy alternando, for Euclid Book V on the Euclidean plane, proposition 11: proportional magnitudes satisfy componendo, for Euclid Book V on the Euclidean plane*
 

@@ -2,9 +2,9 @@
 
 *The identity acts as a right multiplier in a monoid.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §1.1
+**Source.** dummit-foote — *Abstract Algebra*, §1.1
 
-## Derived fact 1: m * 1 = m
+## Derived fact 1 — m * 1 = m
 
 **Coordinate.** Monoid · identity · identity multiplies on the right · **Derived fact**
 

@@ -2,9 +2,9 @@
 
 *Choosing one item from n gives n possibilities.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: choose(n, 1) = n
+## Derived fact 1 — choose(n, 1) = n
 
 **Coordinate.** Comb · choose · choosing one gives the count · **Derived fact**
 

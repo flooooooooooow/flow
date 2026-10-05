@@ -2,9 +2,9 @@
 
 *The second interior angle of a triangle is positive.*
 
-**Source.** euclid: Elements, Book I, Proposition 32
+**Source.** euclid — Elements, Book I, Proposition 32
 
-## Derived fact 1: angle B is greater than zero
+## Derived fact 1 — angle B is greater than zero
 
 **Coordinate.** the Euclidean plane · triangle · second interior angle is positive · **Derived fact**
 

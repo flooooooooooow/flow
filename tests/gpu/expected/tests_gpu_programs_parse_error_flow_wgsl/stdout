@@ -1,2 +1,0 @@
-[0;34mℹ️  Generating GPU shaders from @ROOT@/tests/gpu/programs/parse_error.flow (wgsl)...[0m
-Error: error: @ROOT@/tests/gpu/programs/parse_error.flow:2:24: parse error

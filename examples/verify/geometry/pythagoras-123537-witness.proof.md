@@ -2,9 +2,9 @@
 
 *The 12-35-37 triangle satisfies the Pythagorean relation.*
 
-**Source.** euclid: Elements, Book I, Proposition 47
+**Source.** euclid — Elements, Book I, Proposition 47
 
-## Derived fact 1: 37 squared equals 12 squared plus 35 squared
+## Derived fact 1 — 37 squared equals 12 squared plus 35 squared
 
 **Coordinate.** the Euclidean plane · right triangle · twelve thirty five thirty seven satisfies Pythagoras · **Derived fact**
 

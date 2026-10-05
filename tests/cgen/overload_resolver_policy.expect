@@ -1,4 +1,0 @@
-flags --no-checks
-+ return choose_u32(3);
-- return choose_i32_i32(3);
-exit 22

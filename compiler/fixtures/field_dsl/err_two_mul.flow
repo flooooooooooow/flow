@@ -1,3 +1,0 @@
-field T : f64[8] on Line
-T evolves as 2 * laplacian(T) * 3
-function main() -> i32 { return 0 }

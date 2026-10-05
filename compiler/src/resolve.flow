@@ -9,26 +9,13 @@
 # flowc_bundle_typecheck: deps-first check with growing seed of dep exports.
 
 import .ast {
-    AST_IMPORT, AST_FN, AST_EXPORT, AST_STRUCT, AST_NONE, AstArena,
-    AST_PARAM, AST_LET, AST_FIELD, AST_STRUCT_LIT, AST_TYPE, AST_INT,
-    AST_FLOAT, AST_STRING, AST_BOOL, AST_CAST, AST_CALL, AST_IDENT,
-    AST_UNARY, AST_CONST
+    AST_IMPORT
 }
-import .token { TOK_MINUS }
 import .parser {
-    flowc_parser_new, flowc_parser_free, flowc_parse_program, flowc_parser_print_error, Parser
+    flowc_parser_new, flowc_parser_free, flowc_parse_program, Parser
 }
 import .fileio { flowc_read_file, flowc_io_exists }
-import .field_dsl { flowc_field_expand_in_place }
-import .dynamics_dsl { flowc_dynamics_expand_in_place }
-import .flow_blocks { flowc_flow_blocks_expand_in_place }
-import .pipeline_fusion { flowc_fuse_pipelines }
-import .shader_dsl { flowc_shader_expand_in_place }
-import .cgen { flowc_cgen_emit_sigs, flowc_cgen_collect_sigs, flowc_cgen_export_missing }
-import .effects { flowc_eff_collect }
-import .strutil { flowc_strdup }
-import .sem_model { Sem, sem_new, sem_add_module }
-import .sem_check { sem_build_module, sem_check_program, sem_report, sem_error_count, sem_fatal_count }
+import .cgen { flowc_cgen_emit_sigs, flowc_cgen_collect_sigs }
 import .typecheck {
     TcCtx,
     flowc_tc_init, flowc_tc_free, flowc_tc_reset_module,
@@ -37,162 +24,17 @@ import .typecheck {
 
 extern {
     function malloc(size: i64) -> ptr<u8>
-    function calloc(n: i64, size: i64) -> ptr<u8>
     function free(p: ptr<u8>) -> void
     function strlen(s: string) -> i64
     function puts(s: string) -> i32
     function printf(fmt: string, val: i32) -> i32
-    function setenv(name: string, value: string, overwrite: i32) -> i32
-    function putchar(c: i32) -> i32
-    function getenv(name: string) -> string
 }
 
-# `flowc gather: <module>: cannot resolve import <text>`: an import no search
-# path finds.
-function flowc_resolve_import_error(mpath: string, src: ptr<u8>, s: i32, e: i32) {
-    let mp: ptr<u8> = mpath
-    let n: i32 = strlen(mpath) as i32
-    let pre: string = "flowc gather: "
-    let pp: ptr<u8> = pre
-    let mut i: i32 = 0
-    while pp[i] != 0 {
-        putchar(pp[i] as i32)
-        i = i + 1
-    }
-    i = 0
-    while i < n {
-        putchar(mp[i] as i32)
-        i = i + 1
-    }
-    let mid: string = ": cannot resolve import "
-    let mdp: ptr<u8> = mid
-    i = 0
-    while mdp[i] != 0 {
-        putchar(mdp[i] as i32)
-        i = i + 1
-    }
-    i = s
-    while i < e {
-        putchar(src[i] as i32)
-        i = i + 1
-    }
-    putchar(10)
-}
-
-function flowc_resolve_putstr(s: string) {
-    let p: ptr<u8> = s
-    let mut i: i32 = 0
-    while p[i] != 0 {
-        putchar(p[i] as i32)
-        i = i + 1
-    }
-}
-
-# 1 when the directory `d` is a module directory of the Flow distribution:
-# lib/stdlib or lib/runtime, spelled relative or absolute.
-function flowc_resolve_is_dist_dir(d: string) -> i32 {
-    let p: ptr<u8> = d as ptr<u8>
-    if p == null {
-        return 0
-    }
-    let n: i32 = strlen(d) as i32
-    let mut i: i32 = 0
-    while i + 10 <= n {
-        if i == 0 or p[i - 1] == 47 {
-            if p[i] == 108 and p[i + 1] == 105 and p[i + 2] == 98 and p[i + 3] == 47 {
-                # "lib/" then "stdlib" or "runtime", then the end or a `/`.
-                let mut k: i32 = i + 4
-                let mut ok: i32 = 0
-                if k + 6 <= n and p[k] == 115 and p[k + 1] == 116 and p[k + 2] == 100 and p[k + 3] == 108 and p[k + 4] == 105 and p[k + 5] == 98 {
-                    k = k + 6
-                    ok = 1
-                } elif k + 7 <= n and p[k] == 114 and p[k + 1] == 117 and p[k + 2] == 110 and p[k + 3] == 116 and p[k + 4] == 105 and p[k + 5] == 109 and p[k + 6] == 101 {
-                    k = k + 7
-                    ok = 1
-                }
-                if ok == 1 and (k == n or p[k] == 47) {
-                    return 1
-                }
-            }
-        }
-        i = i + 1
-    }
-    return 0
-}
-
-# ModuleResolver._resolve_legacy_import_path: a string import may not be an
-# absolute path, start with `~`, or hold a `..` component. The Python host
-# refused it before looking for the file. `s`/`e` span the quoted path.
-# Modules of the Flow distribution itself (lib/stdlib, lib/runtime) may use
-# `..`: std.bytebuf reaches the compiler's byte buffer as
-# ../../compiler/src/bytebuf.flow, and the resolver folds the path to one
-# spelling (flowc_resolve_normalize). `mod_dir` is the importing module's
-# directory.
-function flowc_resolve_unsafe_import(src: ptr<u8>, s0: i32, e0: i32, mod_dir: string) -> i32 {
-    let mut s: i32 = s0
-    let mut e: i32 = e0
-    if s < e and src[s] == 34 {
-        s = s + 1
-    }
-    if e > s and src[e - 1] == 34 {
-        e = e - 1
-    }
-    if e <= s {
-        return 0
-    }
-    if src[s] == 47 or src[s] == 126 {
-        return 1
-    }
-    if flowc_resolve_is_dist_dir(mod_dir) == 1 {
-        return 0
-    }
-    let mut seg: i32 = s
-    let mut i: i32 = s
-    while i <= e {
-        if i == e or src[i] == 47 {
-            if i - seg == 2 and src[seg] == 46 and src[seg + 1] == 46 {
-                return 1
-            }
-            seg = i + 1
-        }
-        i = i + 1
-    }
-    return 0
-}
-
-# `<module>:<line>:<col>: error: Unsafe import path: <path>`, the Python
-# host's message, at the quoted path.
-function flowc_resolve_unsafe_import_error(mpath: string, src: ptr<u8>, s: i32, e: i32) {
-    let mut line: i32 = 1
-    let mut col: i32 = 1
-    let mut i: i32 = 0
-    while i < s and src[i] != 0 {
-        if src[i] == 10 {
-            line = line + 1
-            col = 1
-        } else {
-            col = col + 1
-        }
-        i = i + 1
-    }
-    flowc_resolve_putstr(mpath)
-    printf(":%d", line)
-    printf(":%d: error: Unsafe import path: ", col)
-    i = s + 1
-    while i < e - 1 {
-        putchar(src[i] as i32)
-        i = i + 1
-    }
-    putchar(10)
-}
-
-const FLOWC_RESOLVE_MAX_MODS: i32 = 128
+const FLOWC_RESOLVE_MAX_MODS: i32 = 32
 const FLOWC_RESOLVE_PATH_CAP: i32 = 256
-const FLOWC_RESOLVE_SRC_CAP: i32 = 1048576
+const FLOWC_RESOLVE_SRC_CAP: i32 = 262144
 const FLOWC_RESOLVE_AST_CAP: i32 = 262144
-const FLOWC_RESOLVE_SIG_CAP: i32 = 1048576
-const FLOWC_RESOLVE_FNS_CAP: i32 = 262144
-const FLOWC_RESOLVE_TPL_CAP: i32 = 262144
+const FLOWC_RESOLVE_SIG_CAP: i32 = 65536
 
 # Copy NUL-terminated `s` into `dst` (cap includes NUL). Returns length, or -1.
 function flowc_resolve_copy_cstr(s: string, dst: ptr<u8>, cap: i32) -> i32 {
@@ -237,898 +79,7 @@ function flowc_resolve_find_path(store: ptr<u8>, n: i32, row_cap: i32, path: ptr
         }
         i = i + 1
     }
-    # One file may be spelled absolute in one import and relative in
-    # another (a program given by absolute path importing a stdlib module
-    # that imports a compiler module). Compare them as absolute paths.
-    let abs: ptr<u8> = flowc_resolve_abspath(path)
-    if abs == null {
-        return 0 - 1
-    }
-    i = 0
-    while i < n {
-        let other: ptr<u8> = flowc_resolve_abspath(store + (i * row_cap))
-        if other != null {
-            let same: i32 = flowc_resolve_cstr_eq(other, abs)
-            free(other)
-            if same == 1 {
-                free(abs)
-                return i
-            }
-        }
-        i = i + 1
-    }
-    free(abs)
     return 0 - 1
-}
-
-# `path` made absolute against $PWD, the working directory the shell gave
-# flowc (getcwd would pull unistd.h into the C, as mlir_bundle notes), then
-# normalized. A fresh buffer, or null when PWD is unusable.
-function flowc_resolve_abspath(path: ptr<u8>) -> ptr<u8> {
-    let n: i32 = strlen(path as string) as i32
-    let mut pre: i32 = 0
-    let mut cp: ptr<u8> = null
-    if n == 0 or path[0] != 47 {
-        let cwd: string = getenv("PWD")
-        cp = cwd
-        if cp == null or cp[0] != 47 {
-            return null
-        }
-        pre = (strlen(cwd) as i32) + 1
-    }
-    let out: ptr<u8> = malloc((pre + n + 1) as i64)
-    let mut o: i32 = 0
-    if pre > 0 {
-        while o < pre - 1 {
-            out[o] = cp[o]
-            o = o + 1
-        }
-        out[o] = 47
-        o = o + 1
-    }
-    let mut k: i32 = 0
-    while k < n {
-        out[o + k] = path[k]
-        k = k + 1
-    }
-    out[o + n] = 0
-    let _l: i32 = flowc_resolve_normalize(out, o + n)
-    return out
-}
-
-# The source expansions flowc runs before parse, in the Python host's
-# order: a fill-shader (FSL) module becomes its host stub, then the Field
-# DSL, then the dynamics DSL (module_resolver.py), then `flow` blocks
-# (parser.py). `stages` is a mask: 1 field, 2 dynamics, 4 flow blocks,
-# 8 shader stub. Returns the new length, or -1 after printing the
-# diagnostic.
-export function flowc_expand_stages_in_place(src: ptr<u8>, n: i32, cap: i32, stages: i32) -> i32 {
-    let mut m: i32 = n
-    if m >= 0 and (stages & 8) != 0 {
-        m = flowc_shader_expand_in_place(src, m, cap)
-    }
-    if m >= 0 and (stages & 1) != 0 {
-        m = flowc_field_expand_in_place(src, m, cap)
-    }
-    if m >= 0 and (stages & 2) != 0 {
-        m = flowc_dynamics_expand_in_place(src, m, cap)
-    }
-    if m >= 0 and (stages & 4) != 0 {
-        m = flowc_flow_blocks_expand_in_place(src, m, cap)
-    }
-    return m
-}
-
-# Every source expansion, for the compile paths.
-export function flowc_expand_all_in_place(src: ptr<u8>, n: i32, cap: i32) -> i32 {
-    let m: i32 = flowc_expand_stages_in_place(src, n, cap, 15)
-    if m < 0 {
-        return m
-    }
-    let m2: i32 = flowc_impl_expand_in_place(src, m, cap)
-    if m2 < 0 {
-        return m2
-    }
-    return flowc_mono_lit_expand_in_place(src, m2, cap)
-}
-
-# The expansions the MLIR path runs: every DSL, but neither impl blocks
-# (Python's MLIR generator emits nothing for them) nor the generic struct
-# literal inference, which Python's MLIR path never had (a bare
-# `Box { .. }` stays bare there).
-export function flowc_expand_for_mlir_in_place(src: ptr<u8>, n: i32, cap: i32) -> i32 {
-    let m: i32 = flowc_expand_stages_in_place(src, n, cap, 15)
-    if m < 0 {
-        return m
-    }
-    return flowc_append_range_helpers(src, m, cap)
-}
-
-# The range-sum helpers of src/flow/range_sums.py (HELPER_SOURCE, then
-# SET_HELPER_SOURCE), which Python's parser appends to a module whose
-# sum(range) needs a runtime call. The MLIR emitter keeps the ones Python
-# would have appended and drops the rest.
-const FLOWC_RANGE_HELPERS: string = "\nfunction __flow_sum_range(start: i32, limit: i32, step: i32) -> i32 {\n    if step == 0 {\n        return 0\n    }\n    let mut count: i32 = 0\n    if step > 0 {\n        if start >= limit {\n            return 0\n        }\n        count = (limit - start + step - 1) / step\n    } else {\n        if start <= limit {\n            return 0\n        }\n        count = (start - limit + (0 - step) - 1) / (0 - step)\n    }\n    let endpoints: i32 = 2 * start + (count - 1) * step\n    if count % 2 == 0 {\n        return (count / 2) * endpoints\n    }\n    return count * (endpoints / 2)\n}\nfunction __flow_range_gcd(a: i64, b: i64) -> i64 {\n    let mut x: i64 = a\n    let mut y: i64 = b\n    if x < 0 { x = 0 - x }\n    if y < 0 { y = 0 - y }\n    while y != 0 {\n        let t: i64 = x % y\n        x = y\n        y = t\n    }\n    return x\n}\n\nfunction __flow_range_modinv(a: i64, m: i64) -> i64 {\n    if m <= 1 {\n        return 0\n    }\n    let mut old_r: i64 = a % m\n    if old_r < 0 {\n        old_r = old_r + m\n    }\n    let mut r: i64 = m\n    let mut old_s: i64 = 1\n    let mut s: i64 = 0\n    while r != 0 {\n        let q: i64 = old_r / r\n        let next_r: i64 = old_r - q * r\n        old_r = r\n        r = next_r\n        let next_s: i64 = old_s - q * s\n        old_s = s\n        s = next_s\n    }\n    let mut inv: i64 = old_s % m\n    if inv < 0 {\n        inv = inv + m\n    }\n    return inv\n}\n\nfunction __flow_range_count(start: i64, limit: i64, stride: i64) -> i64 {\n    if stride == 0 {\n        return 0\n    }\n    if stride > 0 {\n        if start >= limit {\n            return 0\n        }\n        return (limit - start + stride - 1) / stride\n    }\n    let up: i64 = 0 - stride\n    if start <= limit {\n        return 0\n    }\n    return (start - limit + up - 1) / up\n}\n\nfunction __flow_progression_sum(first: i64, count: i64, stride: i64) -> i64 {\n    if count <= 0 {\n        return 0\n    }\n    let endpoints: i64 = 2 * first + (count - 1) * stride\n    if count % 2 == 0 {\n        return (count / 2) * endpoints\n    }\n    return count * (endpoints / 2)\n}\n\nfunction __flow_sum_range_isect(sa: i32, ea: i32, pa: i32, sb: i32, eb: i32, pb: i32) -> i32 {\n    let count_a: i64 = __flow_range_count(sa as i64, ea as i64, pa as i64)\n    let count_b: i64 = __flow_range_count(sb as i64, eb as i64, pb as i64)\n    if count_a <= 0 {\n        return 0\n    }\n    if count_b <= 0 {\n        return 0\n    }\n\n    let mut first_a: i64 = sa as i64\n    let mut step_a: i64 = pa as i64\n    if step_a < 0 {\n        first_a = first_a + (count_a - 1) * step_a\n        step_a = 0 - step_a\n    }\n    let mut first_b: i64 = sb as i64\n    let mut step_b: i64 = pb as i64\n    if step_b < 0 {\n        first_b = first_b + (count_b - 1) * step_b\n        step_b = 0 - step_b\n    }\n\n    let common: i64 = __flow_range_gcd(step_a, step_b)\n    let offset: i64 = first_b - first_a\n    if offset % common != 0 {\n        return 0\n    }\n\n    let modulus: i64 = step_b / common\n    let step: i64 = step_a * modulus\n    let mut index: i64 = 0\n    if modulus > 1 {\n        let inverse: i64 = __flow_range_modinv((step_a / common) % modulus, modulus)\n        let mut scaled: i64 = (offset / common) % modulus\n        if scaled < 0 {\n            scaled = scaled + modulus\n        }\n        index = (scaled * inverse) % modulus\n    }\n    let mut value: i64 = first_a + index * step_a\n\n    let mut low: i64 = first_a\n    if first_b > low {\n        low = first_b\n    }\n    let mut high: i64 = first_a + (count_a - 1) * step_a\n    let last_b: i64 = first_b + (count_b - 1) * step_b\n    if last_b < high {\n        high = last_b\n    }\n\n    if value < low {\n        let gap: i64 = low - value\n        value = value + ((gap + step - 1) / step) * step\n    }\n    if value > high {\n        return 0\n    }\n\n    let count: i64 = (high - value) / step + 1\n    return __flow_progression_sum(value, count, step) as i32\n}\n\nfunction __flow_sum_range_union(sa: i32, ea: i32, pa: i32, sb: i32, eb: i32, pb: i32) -> i32 {\n    let only_a: i32 = __flow_sum_range(sa, ea, pa)\n    let only_b: i32 = __flow_sum_range(sb, eb, pb)\n    let both: i32 = __flow_sum_range_isect(sa, ea, pa, sb, eb, pb)\n    return only_a + only_b - both\n}\n"
-
-# 1 when src[0, n) holds `sum(` with a `..` inside its parentheses.
-function flowc_has_range_sum(src: ptr<u8>, n: i32) -> i32 {
-    let mut i: i32 = 0
-    while i + 4 < n {
-        if src[i] == 115 and src[i + 1] == 117 and src[i + 2] == 109 and src[i + 3] == 40 {
-            let mut ok: i32 = 1
-            if i > 0 {
-                let c: i32 = src[i - 1] as i32
-                if (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or (c >= 48 and c <= 57) or c == 95 {
-                    ok = 0
-                }
-            }
-            if ok == 1 {
-                let mut depth: i32 = 1
-                let mut j: i32 = i + 4
-                while j + 1 < n and depth > 0 {
-                    if src[j] == 40 { depth = depth + 1 }
-                    if src[j] == 41 { depth = depth - 1 }
-                    if depth == 1 and src[j] == 46 and src[j + 1] == 46 {
-                        return 1
-                    }
-                    j = j + 1
-                }
-            }
-        }
-        i = i + 1
-    }
-    return 0
-}
-
-function flowc_append_range_helpers(src: ptr<u8>, n: i32, cap: i32) -> i32 {
-    if flowc_has_range_sum(src, n) == 0 {
-        return n
-    }
-    let h: ptr<u8> = FLOWC_RANGE_HELPERS
-    let mut k: i32 = 0
-    while h[k] != 0 {
-        k = k + 1
-    }
-    if n + k + 1 >= cap {
-        return n
-    }
-    let mut i: i32 = 0
-    while i < k {
-        src[n + i] = h[i]
-        i = i + 1
-    }
-    src[n + k] = 0
-    return n + k
-}
-
-# --- impl blocks -----------------------------------------------------------
-# `impl Trait for Type { function m(self, a: A) -> R { ... } }` defines the
-# top-level function `Type_Trait_m(self: Type, a: A) -> R`, as the Python
-# host's c_generator does (a bare `self` is typed as the implementing type).
-# The rewrite keeps every line where it was: the `impl ... {` header and its
-# closing `}` become blanks, and each method is renamed in place.
-
-function flowc_impl_is_ident(c: i32) -> i32 {
-    if (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or (c >= 48 and c <= 57) or c == 95 {
-        return 1
-    }
-    return 0
-}
-
-function flowc_impl_skip_ws(src: ptr<u8>, i: i32, n: i32) -> i32 {
-    let mut k: i32 = i
-    while k < n and (src[k] == 32 or src[k] == 9 or src[k] == 13 or src[k] == 10) {
-        k = k + 1
-    }
-    return k
-}
-
-# End of the identifier starting at i (i itself when there is none).
-function flowc_impl_ident_end(src: ptr<u8>, i: i32, n: i32) -> i32 {
-    let mut k: i32 = i
-    while k < n and flowc_impl_is_ident(src[k] as i32) == 1 {
-        k = k + 1
-    }
-    return k
-}
-
-# 1 when src[i..) spells the keyword `kw` followed by a non-identifier byte.
-function flowc_impl_at_kw(src: ptr<u8>, i: i32, n: i32, kw: string) -> i32 {
-    let kp: ptr<u8> = kw as ptr<u8>
-    let mut j: i32 = 0
-    while kp[j] != 0 {
-        if i + j >= n or src[i + j] != kp[j] {
-            return 0
-        }
-        j = j + 1
-    }
-    if i + j < n and flowc_impl_is_ident(src[i + j] as i32) == 1 {
-        return 0
-    }
-    return 1
-}
-
-function flowc_impl_put(out: ptr<u8>, o: i32, cap: i32, c: u8) -> i32 {
-    if o < 0 or o + 1 >= cap {
-        return 0 - 1
-    }
-    out[o] = c
-    return o + 1
-}
-
-function flowc_impl_put_span(out: ptr<u8>, o: i32, cap: i32, src: ptr<u8>, s: i32, e: i32) -> i32 {
-    let mut k: i32 = o
-    let mut i: i32 = s
-    while i < e and k >= 0 {
-        k = flowc_impl_put(out, k, cap, src[i])
-        i = i + 1
-    }
-    return k
-}
-
-export function flowc_impl_expand_in_place(src: ptr<u8>, n: i32, cap: i32) -> i32 {
-    # Nothing to do unless some line starts with `impl`.
-    let mut found: i32 = 0
-    let mut i: i32 = 0
-    let mut bol: i32 = 1
-    while i < n and found == 0 {
-        let c: i32 = src[i] as i32
-        if bol == 1 and flowc_impl_at_kw(src, i, n, "impl") == 1 {
-            found = 1
-        }
-        if c == 10 {
-            bol = 1
-        } else {
-            if c != 32 and c != 9 {
-                bol = 0
-            }
-        }
-        i = i + 1
-    }
-    if found == 0 {
-        return n
-    }
-    let out: ptr<u8> = malloc(cap as i64)
-    if out == null {
-        return n
-    }
-    let mut o: i32 = 0
-    i = 0
-    bol = 1
-    while i < n and o >= 0 {
-        let c: i32 = src[i] as i32
-        # Comments and strings are copied as they are.
-        if c == 35 {
-            while i < n and src[i] != 10 {
-                o = flowc_impl_put(out, o, cap, src[i])
-                i = i + 1
-            }
-            continue
-        }
-        if c == 34 {
-            o = flowc_impl_put(out, o, cap, src[i])
-            i = i + 1
-            while i < n and src[i] != 34 and src[i] != 10 {
-                if src[i] == 92 and i + 1 < n {
-                    o = flowc_impl_put(out, o, cap, src[i])
-                    i = i + 1
-                }
-                o = flowc_impl_put(out, o, cap, src[i])
-                i = i + 1
-            }
-            if i < n {
-                o = flowc_impl_put(out, o, cap, src[i])
-                i = i + 1
-            }
-            bol = 0
-            continue
-        }
-        let mut done: i32 = 0
-        if bol == 1 and flowc_impl_at_kw(src, i, n, "impl") == 1 {
-            # impl Trait for Type {
-            let ts: i32 = flowc_impl_skip_ws(src, i + 4, n)
-            let te: i32 = flowc_impl_ident_end(src, ts, n)
-            let fs: i32 = flowc_impl_skip_ws(src, te, n)
-            if te > ts and flowc_impl_at_kw(src, fs, n, "for") == 1 {
-                let ys: i32 = flowc_impl_skip_ws(src, fs + 3, n)
-                let ye: i32 = flowc_impl_ident_end(src, ys, n)
-                let lb: i32 = flowc_impl_skip_ws(src, ye, n)
-                if ye > ys and lb < n and src[lb] == 123 {
-                    # A one-line header becomes the comment `#mpl Trait for
-                    # Type {`, same length, which the semantic checker
-                    # (sem_check.flow) reads back to know the methods below
-                    # it came from an impl. A header over several lines is
-                    # blanked, keeping its newlines.
-                    let mut one_line: i32 = 1
-                    let mut h: i32 = i
-                    while h <= lb {
-                        if src[h] == 10 {
-                            one_line = 0
-                        }
-                        h = h + 1
-                    }
-                    h = i
-                    while h <= lb {
-                        if src[h] == 10 {
-                            o = flowc_impl_put(out, o, cap, 10)
-                        } elif one_line == 1 and h == i {
-                            o = flowc_impl_put(out, o, cap, 35)
-                        } elif one_line == 1 {
-                            o = flowc_impl_put(out, o, cap, src[h])
-                        } else {
-                            o = flowc_impl_put(out, o, cap, 32)
-                        }
-                        h = h + 1
-                    }
-                    # The body, depth 1 inside the impl braces.
-                    let mut k: i32 = lb + 1
-                    let mut depth: i32 = 1
-                    while k < n and depth > 0 and o >= 0 {
-                        let d: i32 = src[k] as i32
-                        if d == 35 {
-                            while k < n and src[k] != 10 {
-                                o = flowc_impl_put(out, o, cap, src[k])
-                                k = k + 1
-                            }
-                            continue
-                        }
-                        if d == 34 {
-                            o = flowc_impl_put(out, o, cap, src[k])
-                            k = k + 1
-                            while k < n and src[k] != 34 and src[k] != 10 {
-                                if src[k] == 92 and k + 1 < n {
-                                    o = flowc_impl_put(out, o, cap, src[k])
-                                    k = k + 1
-                                }
-                                o = flowc_impl_put(out, o, cap, src[k])
-                                k = k + 1
-                            }
-                            if k < n {
-                                o = flowc_impl_put(out, o, cap, src[k])
-                                k = k + 1
-                            }
-                            continue
-                        }
-                        if d == 123 {
-                            depth = depth + 1
-                        }
-                        if d == 125 {
-                            depth = depth - 1
-                            if depth == 0 {
-                                o = flowc_impl_put(out, o, cap, 32)
-                                k = k + 1
-                                continue
-                            }
-                        }
-                        let mut prev_ident: i32 = 0
-                        if k > 0 {
-                            prev_ident = flowc_impl_is_ident(src[k - 1] as i32)
-                        }
-                        if depth == 1 and prev_ident == 0 and flowc_impl_at_kw(src, k, n, "function") == 1 {
-                            # function NAME(  ->  function Type_Trait_NAME(
-                            let ns: i32 = flowc_impl_skip_ws(src, k + 8, n)
-                            let ne: i32 = flowc_impl_ident_end(src, ns, n)
-                            o = flowc_impl_put_span(out, o, cap, src, k, ns)
-                            o = flowc_impl_put_span(out, o, cap, src, ys, ye)
-                            o = flowc_impl_put(out, o, cap, 95)
-                            o = flowc_impl_put_span(out, o, cap, src, ts, te)
-                            o = flowc_impl_put(out, o, cap, 95)
-                            o = flowc_impl_put_span(out, o, cap, src, ns, ne)
-                            k = ne
-                            let lp: i32 = flowc_impl_skip_ws(src, k, n)
-                            if lp < n and src[lp] == 40 {
-                                o = flowc_impl_put_span(out, o, cap, src, k, lp + 1)
-                                k = lp + 1
-                                # A bare `self` is typed as the implementing type.
-                                let ss: i32 = flowc_impl_skip_ws(src, k, n)
-                                if flowc_impl_at_kw(src, ss, n, "self") == 1 {
-                                    let after: i32 = flowc_impl_skip_ws(src, ss + 4, n)
-                                    if after < n and (src[after] == 44 or src[after] == 41) {
-                                        o = flowc_impl_put_span(out, o, cap, src, k, ss + 4)
-                                        o = flowc_impl_put(out, o, cap, 58)
-                                        o = flowc_impl_put(out, o, cap, 32)
-                                        o = flowc_impl_put_span(out, o, cap, src, ys, ye)
-                                        k = ss + 4
-                                    }
-                                }
-                            }
-                            continue
-                        }
-                        o = flowc_impl_put(out, o, cap, src[k])
-                        k = k + 1
-                    }
-                    i = k
-                    bol = 0
-                    done = 1
-                }
-            }
-        }
-        if done == 0 {
-            o = flowc_impl_put(out, o, cap, src[i])
-            if c == 10 {
-                bol = 1
-            } else {
-                if c != 32 and c != 9 {
-                    bol = 0
-                }
-            }
-            i = i + 1
-        }
-    }
-    if o < 0 {
-        free(out)
-        puts("flowc: impl expansion overflowed the source buffer")
-        return 0 - 1
-    }
-    let mut z: i32 = 0
-    while z < o {
-        src[z] = out[z]
-        z = z + 1
-    }
-    src[o] = 0
-    free(out)
-    return o
-}
-
-# Read a bundle module and expand its DSLs before it is parsed, so every
-# pass over the module (gather, topo, typecheck, emit) sees the same
-# source. Returns the byte count, or -1 on I/O or DSL error.
-function flowc_resolve_read_source(path: string, src: ptr<u8>, cap: i32) -> i32 {
-    let n: i32 = flowc_read_file(path, src, cap)
-    if n <= 0 {
-        return n
-    }
-    return flowc_expand_all_in_place(src, n, cap)
-}
-
-# --- generic struct literals (#1042, #954) ---------------------------------
-# Source expansion that spells out the type arguments of a generic struct
-# literal written without them.
-#
-# `Box { value: 1.5 }` for `struct Box<T> { value: T }` becomes
-# `Box<f64> { value: 1.5 }` before the program is parsed for good, so the
-# type checker, the monomorphizer and the C generator all see the explicit
-# form they already handle. The type arguments come from, in order:
-#
-#   1. the annotation of the `let` the literal initialises
-#      (`let b: Box<i32> = Box { value: 42 }`);
-#   2. the values of the fields whose declared type is a bare type
-#      parameter: a literal (i32, f64, string, bool), a cast, a struct
-#      literal of a plain struct, a call to a function of the module, or a
-#      name declared earlier in the same function (a parameter, a `let`,
-#      or a module constant).
-#
-# A literal whose type arguments are not all found this way is left as it
-# is. Only generic structs declared in the same module are considered. The
-# rewrite inserts text on the literal's own line, so line numbers stay put.
-
-const MLI_MAX_EDITS: i32 = 1024
-const MLI_POOL_CAP: i32 = 65536
-
-function mli_is_ident(c: i32) -> i32 {
-    if (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or (c >= 48 and c <= 57) or c == 95 {
-        return 1
-    }
-    return 0
-}
-
-function mli_span_eq(src: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i32 {
-    if a1 - a0 != b1 - b0 or a1 <= a0 {
-        return 0
-    }
-    let mut i: i32 = 0
-    while i < a1 - a0 {
-        if src[a0 + i] != src[b0 + i] {
-            return 0
-        }
-        i = i + 1
-    }
-    return 1
-}
-
-# 1 when some line declares `struct Name<`: the only sources worth parsing.
-function mli_has_generic_struct(src: ptr<u8>, n: i32) -> i32 {
-    let mut i: i32 = 0
-    while i + 7 < n {
-        if src[i] == 115 and src[i + 1] == 116 and src[i + 2] == 114 and src[i + 3] == 117 and src[i + 4] == 99 and src[i + 5] == 116 and (src[i + 6] == 32 or src[i + 6] == 9) {
-            let mut before: i32 = 0
-            if i > 0 {
-                before = mli_is_ident(src[i - 1] as i32)
-            }
-            if before == 0 {
-                let mut k: i32 = i + 6
-                while k < n and (src[k] == 32 or src[k] == 9) {
-                    k = k + 1
-                }
-                let s: i32 = k
-                while k < n and mli_is_ident(src[k] as i32) == 1 {
-                    k = k + 1
-                }
-                while k < n and (src[k] == 32 or src[k] == 9) {
-                    k = k + 1
-                }
-                if k > s and k < n and src[k] == 60 {
-                    return 1
-                }
-            }
-        }
-        i = i + 1
-    }
-    return 0
-}
-
-# A plain named type node: no type arguments, no array size, no fn type.
-function mli_plain_type(arena: AstArena, ty: i32) -> i32 {
-    if ty == AST_NONE or ty < 0 or ty >= arena.len {
-        return 0
-    }
-    if arena.nodes[ty].kind != AST_TYPE or arena.nodes[ty].a != AST_NONE or arena.nodes[ty].ival != 0 or arena.nodes[ty].c != AST_NONE {
-        return 0
-    }
-    if arena.nodes[ty].name_end <= arena.nodes[ty].name_start {
-        return 0
-    }
-    return 1
-}
-
-function mli_find_struct(arena: AstArena, src: ptr<u8>, ns: i32, ne: i32) -> i32 {
-    let mut i: i32 = 0
-    while i < arena.len {
-        if arena.nodes[i].kind == AST_STRUCT and mli_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
-            return i
-        }
-        i = i + 1
-    }
-    return AST_NONE
-}
-
-# The outermost function whose body holds position `pos`, else AST_NONE.
-function mli_enclosing_fn(arena: AstArena, pos: i32) -> i32 {
-    let mut best: i32 = AST_NONE
-    let mut i: i32 = 0
-    while i < arena.len {
-        if arena.nodes[i].kind == AST_FN and arena.nodes[i].c != AST_NONE and arena.nodes[i].start <= pos and pos < arena.nodes[i].end {
-            if best == AST_NONE or arena.nodes[i].start < arena.nodes[best].start {
-                best = i
-            }
-        }
-        i = i + 1
-    }
-    return best
-}
-
-# The parameter or `let` named [ns, ne) declared last before `pos` inside
-# function `fn`, else a module constant of that name, else AST_NONE.
-function mli_find_decl(arena: AstArena, src: ptr<u8>, fn: i32, ns: i32, ne: i32, pos: i32) -> i32 {
-    let mut best: i32 = AST_NONE
-    if fn != AST_NONE {
-        let lo: i32 = arena.nodes[fn].start
-        let mut i: i32 = 0
-        while i < arena.len {
-            let k: i32 = arena.nodes[i].kind
-            if (k == AST_LET or k == AST_PARAM) and arena.nodes[i].start >= lo and arena.nodes[i].start < pos {
-                if mli_span_eq(src, ns, ne, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
-                    if best == AST_NONE or arena.nodes[i].start > arena.nodes[best].start {
-                        best = i
-                    }
-                }
-            }
-            i = i + 1
-        }
-    }
-    if best != AST_NONE {
-        return best
-    }
-    let mut j: i32 = 0
-    while j < arena.len {
-        if arena.nodes[j].kind == AST_CONST and mli_span_eq(src, ns, ne, arena.nodes[j].name_start, arena.nodes[j].name_end) == 1 {
-            return j
-        }
-        j = j + 1
-    }
-    return AST_NONE
-}
-
-# Append `lit` to pool[len..); returns the new length or -1 when full.
-function mli_pool_str(pool: ptr<u8>, len: i32, lit: string) -> i32 {
-    let lp: ptr<u8> = lit as ptr<u8>
-    let mut o: i32 = len
-    let mut i: i32 = 0
-    while lp[i] != 0 {
-        if o < 0 or o + 1 >= MLI_POOL_CAP {
-            return 0 - 1
-        }
-        pool[o] = lp[i]
-        o = o + 1
-        i = i + 1
-    }
-    return o
-}
-
-function mli_pool_span(pool: ptr<u8>, len: i32, src: ptr<u8>, s: i32, e: i32) -> i32 {
-    let mut o: i32 = len
-    let mut i: i32 = s
-    while i < e {
-        if o < 0 or o + 1 >= MLI_POOL_CAP {
-            return 0 - 1
-        }
-        pool[o] = src[i]
-        o = o + 1
-        i = i + 1
-    }
-    return o
-}
-
-# Append the type name of expression `e` (inside function `fn`) to the pool.
-# Returns the new pool length, or -1 when the type is not known here.
-function mli_expr_type(arena: AstArena, src: ptr<u8>, fn: i32, e: i32, pool: ptr<u8>, len: i32, depth: i32) -> i32 {
-    if e == AST_NONE or e < 0 or e >= arena.len or depth > 6 or len < 0 {
-        return 0 - 1
-    }
-    let k: i32 = arena.nodes[e].kind
-    if k == AST_INT {
-        return mli_pool_str(pool, len, "i32")
-    }
-    if k == AST_FLOAT {
-        # A float literal is a C double, as `let x = 1.5` is.
-        return mli_pool_str(pool, len, "f64")
-    }
-    if k == AST_STRING {
-        return mli_pool_str(pool, len, "string")
-    }
-    if k == AST_BOOL {
-        return mli_pool_str(pool, len, "bool")
-    }
-    if k == AST_UNARY and arena.nodes[e].ival == TOK_MINUS {
-        return mli_expr_type(arena, src, fn, arena.nodes[e].a, pool, len, depth + 1)
-    }
-    if k == AST_CAST {
-        let ty: i32 = arena.nodes[e].b
-        if mli_plain_type(arena, ty) == 1 {
-            return mli_pool_span(pool, len, src, arena.nodes[ty].name_start, arena.nodes[ty].name_end)
-        }
-        return 0 - 1
-    }
-    if k == AST_STRUCT_LIT {
-        let st: i32 = mli_find_struct(arena, src, arena.nodes[e].name_start, arena.nodes[e].name_end)
-        if st != AST_NONE and arena.nodes[st].b == AST_NONE and arena.nodes[e].b == AST_NONE {
-            return mli_pool_span(pool, len, src, arena.nodes[e].name_start, arena.nodes[e].name_end)
-        }
-        return 0 - 1
-    }
-    if k == AST_CALL {
-        if arena.nodes[e].b != AST_NONE {
-            return 0 - 1
-        }
-        let mut found: i32 = AST_NONE
-        let mut count: i32 = 0
-        let mut i: i32 = 0
-        while i < arena.len {
-            if arena.nodes[i].kind == AST_FN and arena.nodes[i].name_start >= 0 and mli_span_eq(src, arena.nodes[e].name_start, arena.nodes[e].name_end, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
-                found = i
-                count = count + 1
-            }
-            i = i + 1
-        }
-        if count == 1 and arena.nodes[found].ival == 0 and mli_plain_type(arena, arena.nodes[found].b) == 1 {
-            let rt: i32 = arena.nodes[found].b
-            return mli_pool_span(pool, len, src, arena.nodes[rt].name_start, arena.nodes[rt].name_end)
-        }
-        return 0 - 1
-    }
-    if k == AST_IDENT {
-        let decl: i32 = mli_find_decl(arena, src, fn, arena.nodes[e].name_start, arena.nodes[e].name_end, arena.nodes[e].start)
-        if decl == AST_NONE {
-            return 0 - 1
-        }
-        let mut ty: i32 = arena.nodes[decl].a
-        if arena.nodes[decl].kind == AST_PARAM and ty == AST_NONE {
-            ty = arena.nodes[decl].b
-        }
-        if ty != AST_NONE {
-            if mli_plain_type(arena, ty) == 1 {
-                return mli_pool_span(pool, len, src, arena.nodes[ty].name_start, arena.nodes[ty].name_end)
-            }
-            return 0 - 1
-        }
-        if arena.nodes[decl].kind == AST_LET {
-            return mli_expr_type(arena, src, fn, arena.nodes[decl].b, pool, len, depth + 1)
-        }
-        return 0 - 1
-    }
-    return 0 - 1
-}
-
-# The `let` whose initialiser is `lit`, else AST_NONE.
-function mli_let_of(arena: AstArena, lit: i32) -> i32 {
-    let mut i: i32 = 0
-    while i < arena.len {
-        if arena.nodes[i].kind == AST_LET and arena.nodes[i].b == lit {
-            return i
-        }
-        i = i + 1
-    }
-    return AST_NONE
-}
-
-# Append `<T0, T1>` for literal `lit` of generic struct `st` to the pool.
-# Returns the new length, or -1 when some type argument is not known.
-function mli_infer_args(arena: AstArena, src: ptr<u8>, st: i32, lit: i32, pool: ptr<u8>, len: i32) -> i32 {
-    let mut o: i32 = mli_pool_str(pool, len, "<")
-    # 1. The annotation of the `let` this literal initialises.
-    let decl: i32 = mli_let_of(arena, lit)
-    if decl != AST_NONE {
-        let ann: i32 = arena.nodes[decl].a
-        if ann != AST_NONE and arena.nodes[ann].kind == AST_TYPE and arena.nodes[ann].a != AST_NONE and arena.nodes[ann].ival == 0 and mli_span_eq(src, arena.nodes[ann].name_start, arena.nodes[ann].name_end, arena.nodes[lit].name_start, arena.nodes[lit].name_end) == 1 {
-            let mut ok: i32 = 1
-            let mut ta: i32 = arena.nodes[ann].a
-            let mut tp: i32 = arena.nodes[st].b
-            let mut first: i32 = 1
-            let mut o2: i32 = o
-            while ta != AST_NONE and tp != AST_NONE and ok == 1 {
-                if mli_plain_type(arena, ta) == 0 {
-                    ok = 0
-                } else {
-                    if first == 0 {
-                        o2 = mli_pool_str(pool, o2, ", ")
-                    }
-                    first = 0
-                    o2 = mli_pool_span(pool, o2, src, arena.nodes[ta].name_start, arena.nodes[ta].name_end)
-                }
-                ta = arena.nodes[ta].next
-                tp = arena.nodes[tp].next
-            }
-            if ok == 1 and ta == AST_NONE and tp == AST_NONE and o2 >= 0 {
-                return mli_pool_str(pool, o2, ">")
-            }
-        }
-    }
-    # 2. The values of the fields typed by a bare type parameter.
-    let fn: i32 = mli_enclosing_fn(arena, arena.nodes[lit].start)
-    let mut tp: i32 = arena.nodes[st].b
-    let mut first: i32 = 1
-    while tp != AST_NONE {
-        if o < 0 {
-            return 0 - 1
-        }
-        let mut got: i32 = 0
-        let mut f: i32 = arena.nodes[st].a
-        while f != AST_NONE and got == 0 {
-            let fty: i32 = arena.nodes[f].a
-            if arena.nodes[f].kind == AST_FIELD and mli_plain_type(arena, fty) == 1 and mli_span_eq(src, arena.nodes[fty].name_start, arena.nodes[fty].name_end, arena.nodes[tp].name_start, arena.nodes[tp].name_end) == 1 {
-                let mut lf: i32 = arena.nodes[lit].a
-                while lf != AST_NONE and got == 0 {
-                    if mli_span_eq(src, arena.nodes[lf].name_start, arena.nodes[lf].name_end, arena.nodes[f].name_start, arena.nodes[f].name_end) == 1 {
-                        let mut o3: i32 = o
-                        if first == 0 {
-                            o3 = mli_pool_str(pool, o3, ", ")
-                        }
-                        o3 = mli_expr_type(arena, src, fn, arena.nodes[lf].a, pool, o3, 0)
-                        if o3 >= 0 {
-                            o = o3
-                            got = 1
-                        }
-                    }
-                    lf = arena.nodes[lf].next
-                }
-            }
-            f = arena.nodes[f].next
-        }
-        if got == 0 {
-            return 0 - 1
-        }
-        first = 0
-        tp = arena.nodes[tp].next
-    }
-    return mli_pool_str(pool, o, ">")
-}
-
-# Spell out the inferred type arguments of bare generic struct literals in
-# src[0, n). Returns the new length (n when nothing changes), or -1 when the
-# result does not fit in `cap` bytes.
-function flowc_mono_lit_expand_in_place(src: ptr<u8>, n: i32, cap: i32) -> i32 {
-    if n <= 0 or mli_has_generic_struct(src, n) == 0 {
-        return n
-    }
-    let mut p: Parser = flowc_parser_new(src, n, n * 2 + 4096)
-    let root: i32 = flowc_parse_program(&p)
-    if root < 0 or p.err != 0 {
-        # The real parse reports the error.
-        flowc_parser_free(p)
-        return n
-    }
-    let arena: AstArena = p.arena
-    let pool: ptr<u8> = malloc(MLI_POOL_CAP as i64)
-    let edit_pos: ptr<i32> = malloc((MLI_MAX_EDITS as i64) * 4) as ptr<i32>
-    let edit_s: ptr<i32> = malloc((MLI_MAX_EDITS as i64) * 4) as ptr<i32>
-    let edit_e: ptr<i32> = malloc((MLI_MAX_EDITS as i64) * 4) as ptr<i32>
-    if pool == null or edit_pos == null or edit_s == null or edit_e == null {
-        flowc_parser_free(p)
-        return n
-    }
-    let mut nedits: i32 = 0
-    let mut plen: i32 = 0
-    let mut grow: i32 = 0
-    let mut i: i32 = 0
-    while i < arena.len and nedits < MLI_MAX_EDITS {
-        if arena.nodes[i].kind == AST_STRUCT_LIT and arena.nodes[i].b == AST_NONE {
-            let st: i32 = mli_find_struct(arena, src, arena.nodes[i].name_start, arena.nodes[i].name_end)
-            if st != AST_NONE and arena.nodes[st].b != AST_NONE {
-                let o: i32 = mli_infer_args(arena, src, st, i, pool, plen)
-                if o > plen {
-                    edit_pos[nedits] = arena.nodes[i].name_end
-                    edit_s[nedits] = plen
-                    edit_e[nedits] = o
-                    grow = grow + (o - plen)
-                    nedits = nedits + 1
-                    plen = o
-                }
-            }
-        }
-        i = i + 1
-    }
-    flowc_parser_free(p)
-    let mut result: i32 = n
-    if nedits > 0 {
-        if n + grow + 1 > cap {
-            result = 0 - 1
-        } else {
-            let out: ptr<u8> = malloc((n + grow + 1) as i64)
-            if out == null {
-                result = 0 - 1
-            } else {
-                # Apply the edits in source order.
-                let mut o: i32 = 0
-                let mut s: i32 = 0
-                let mut done: i32 = 0
-                while done < nedits {
-                    let mut pick: i32 = 0 - 1
-                    let mut j: i32 = 0
-                    while j < nedits {
-                        if edit_pos[j] >= s and (pick < 0 or edit_pos[j] < edit_pos[pick]) {
-                            pick = j
-                        }
-                        j = j + 1
-                    }
-                    if pick < 0 {
-                        done = nedits
-                    } else {
-                        while s < edit_pos[pick] {
-                            out[o] = src[s]
-                            o = o + 1
-                            s = s + 1
-                        }
-                        let mut q: i32 = edit_s[pick]
-                        while q < edit_e[pick] {
-                            out[o] = pool[q]
-                            o = o + 1
-                            q = q + 1
-                        }
-                        edit_pos[pick] = 0 - 1
-                        done = done + 1
-                    }
-                }
-                while s < n {
-                    out[o] = src[s]
-                    o = o + 1
-                    s = s + 1
-                }
-                let mut z: i32 = 0
-                while z < o {
-                    src[z] = out[z]
-                    z = z + 1
-                }
-                src[o] = 0
-                free(out)
-                result = o
-            }
-        }
-    }
-    free(pool)
-    free(edit_pos as ptr<u8>)
-    free(edit_s as ptr<u8>)
-    free(edit_e as ptr<u8>)
-    return result
 }
 
 # Map import span to a filesystem path under search_dir.
@@ -1191,18 +142,6 @@ export function flowc_resolve_sibling_path(
         out_path[total] = 0
         if flowc_io_exists(out_path as string) == 1 {
             return total
-        }
-        # `import "stdlib/vec"` names lib/stdlib/vec.flow.
-        if total + 6 <= out_path_cap {
-            out_path[total] = 46
-            out_path[total + 1] = 102
-            out_path[total + 2] = 108
-            out_path[total + 3] = 111
-            out_path[total + 4] = 119
-            out_path[total + 5] = 0
-            if flowc_io_exists(out_path as string) == 1 {
-                return total + 5
-            }
         }
         return 0 - 1
     } else {
@@ -1275,10 +214,6 @@ export function flowc_resolve_sibling_path(
     let mut ni: i32 = 0
     while ni < namelen {
         out_path[o] = import_span_src[s + ni]
-        # `.a.b` is the sibling module a/b.flow.
-        if import_span_src[name_start] == 46 and import_span_src[s + ni] == 46 {
-            out_path[o] = 47
-        }
         o = o + 1
         ni = ni + 1
     }
@@ -1300,15 +235,6 @@ export function flowc_resolve_sibling_path(
     }
     return 0 - 1
 }
-
-function flowc_resolve_claim_domain_path(
-    import_span_src: ptr<u8>,
-    s: i32,
-    e: i32,
-    search_dir: string,
-    out_path: ptr<u8>,
-    out_path_cap: i32
-) -> i32
 
 # Resolve a dotted module import (e.g. stdlib.gif) to a file path.
 # Converts dots to slashes and appends .flow. Tries search_dir first, then lib/.
@@ -1404,568 +330,7 @@ export function flowc_resolve_dotted_path(
     if flowc_io_exists(out_path as string) == 1 {
         return o
     }
-    return flowc_resolve_claim_domain_path(import_span_src, s, e, search_dir, out_path, out_path_cap)
-}
-
-# A dotted import as the Python resolver reads it: against the importing
-# module's directory, then the search dir (and lib/), and when neither has
-# the file, with the last segment taken as a symbol (`import a.b.sym` names
-# `sym` in a/b.flow).
-function flowc_resolve_dotted_any(
-    src: ptr<u8>,
-    s: i32,
-    e: i32,
-    mod_search: string,
-    search_dir: string,
-    out_path: ptr<u8>,
-    out_path_cap: i32
-) -> i32 {
-    let mut end: i32 = e
-    let mut tries: i32 = 0
-    while tries < 2 {
-        let r: i32 = flowc_resolve_dotted_path(src, s, end, mod_search, out_path, out_path_cap)
-        if r >= 0 {
-            return r
-        }
-        let r2: i32 = flowc_resolve_dotted_path(src, s, end, search_dir, out_path, out_path_cap)
-        if r2 >= 0 {
-            return r2
-        }
-        # A bare stdlib module name (`import concurrent`) and the `std.`
-        # prefix (`import std.concurrent`) resolve in lib/stdlib, as in the
-        # Python resolver (#1038).
-        let mut ss: i32 = s
-        if end - s > 4 and src[s] == 115 and src[s + 1] == 116 and src[s + 2] == 100 and src[s + 3] == 46 {
-            ss = s + 4
-        }
-        let r3: i32 = flowc_resolve_dotted_path(src, ss, end, "lib/stdlib", out_path, out_path_cap)
-        if r3 >= 0 {
-            return r3
-        }
-        # Drop the last `.segment` and try once more.
-        let mut k: i32 = end - 1
-        while k > s and src[k] != 46 {
-            k = k - 1
-        }
-        if k <= s {
-            return 0 - 1
-        }
-        end = k
-        tries = tries + 1
-    }
     return 0 - 1
-}
-
-# A claim-path segment such as `Nat/+` names a morphism of the domain module
-# `Nat`. As in the Python resolver, when no file matches the literal path,
-# drop each `/...` up to the end of its segment and try again, so
-# `verify.Nat/+` resolves to lib/verify/Nat.flow. Returns -1 if the path has
-# no `/` or the domain module does not exist either.
-function flowc_resolve_claim_domain_path(
-    import_span_src: ptr<u8>,
-    s: i32,
-    e: i32,
-    search_dir: string,
-    out_path: ptr<u8>,
-    out_path_cap: i32
-) -> i32 {
-    let n: i32 = e - s
-    let buf: ptr<u8> = malloc((n + 1) as i64)
-    if buf == null {
-        return 0 - 1
-    }
-    let mut o: i32 = 0
-    let mut skipping: i32 = 0
-    let mut had_slash: i32 = 0
-    let mut i: i32 = s
-    while i < e {
-        let c: u8 = import_span_src[i]
-        if c == 47 {
-            skipping = 1
-            had_slash = 1
-        }
-        if c == 46 {
-            skipping = 0
-        }
-        if skipping == 0 {
-            buf[o] = c
-            o = o + 1
-        }
-        i = i + 1
-    }
-    buf[o] = 0
-    if had_slash == 0 or o == 0 {
-        free(buf)
-        return 0 - 1
-    }
-    let r: i32 = flowc_resolve_dotted_path(buf, 0, o, search_dir, out_path, out_path_cap)
-    free(buf)
-    return r
-}
-
-# ---------------------------------------------------------------------------
-# Registry package imports: `import json.lib` -> flow_packages/json/...
-#
-# Same rules as the Python host's module resolver: the project is the nearest
-# flow.toml above the entry file; a dotted import whose first segment is a key
-# of that manifest's [dependencies] (and not of [paths], and not `std`)
-# resolves under <project>/flow_packages/<name>/src, then
-# <project>/flow_packages/<name>, trying the longest module prefix first
-# (`import json.lib.parse` may name the symbol `parse` of lib.flow). A declared
-# package that is not installed is an error, not a fallback.
-# ---------------------------------------------------------------------------
-
-# Append bytes of s into out at o (cap includes NUL). Returns new o, or -1.
-function flowc_resolve_put(out: ptr<u8>, o: i32, cap: i32, s: string) -> i32 {
-    let p: ptr<u8> = s
-    let n: i32 = strlen(s) as i32
-    if o + n + 1 > cap {
-        return 0 - 1
-    }
-    let mut i: i32 = 0
-    while i < n {
-        out[o + i] = p[i]
-        i = i + 1
-    }
-    out[o + n] = 0
-    return o + n
-}
-
-# Directory of the nearest flow.toml above entry_path, written into out.
-# Returns its length, or 0 when there is none. Relative entries walk up to
-# ".", then "..", "../..", as the working directory's parents.
-export function flowc_resolve_project_root(entry_path: string, out: ptr<u8>, cap: i32) -> i32 {
-    let dir: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
-    let cand: ptr<u8> = malloc((FLOWC_RESOLVE_PATH_CAP + 16) as i64)
-    let mut dlen: i32 = flowc_resolve_dirname(entry_path, dir, FLOWC_RESOLVE_PATH_CAP)
-    out[0] = 0
-    let mut found: i32 = 0
-    let mut ups: i32 = 0
-    while dlen > 0 and ups < 64 {
-        let mut o: i32 = flowc_resolve_put(cand, 0, FLOWC_RESOLVE_PATH_CAP + 16, dir as string)
-        if o >= 0 {
-            o = flowc_resolve_put(cand, o, FLOWC_RESOLVE_PATH_CAP + 16, "/flow.toml")
-        }
-        if o >= 0 and flowc_io_exists(cand as string) == 1 {
-            found = flowc_resolve_copy_cstr(dir as string, out, cap)
-            if found < 0 {
-                found = 0
-            }
-            dlen = 0
-        } else {
-            # "/" is the top of an absolute path.
-            if dlen == 1 and dir[0] == 47 {
-                dlen = 0
-            } else {
-                let is_dot: i32 = flowc_resolve_cstr_eq(dir, "." as ptr<u8>)
-                let mut last_is_dotdot: i32 = 0
-                if dlen >= 2 and dir[dlen - 1] == 46 and dir[dlen - 2] == 46 {
-                    if dlen == 2 or dir[dlen - 3] == 47 {
-                        last_is_dotdot = 1
-                    }
-                }
-                if is_dot == 1 {
-                    dlen = flowc_resolve_copy_cstr("..", dir, FLOWC_RESOLVE_PATH_CAP)
-                    ups = ups + 1
-                } else {
-                    if last_is_dotdot == 1 {
-                        dlen = flowc_resolve_put(dir, dlen, FLOWC_RESOLVE_PATH_CAP, "/..")
-                        ups = ups + 1
-                    } else {
-                        let parent: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
-                        dlen = flowc_resolve_dirname(dir as string, parent, FLOWC_RESOLVE_PATH_CAP)
-                        if dlen > 0 {
-                            dlen = flowc_resolve_copy_cstr(parent as string, dir, FLOWC_RESOLVE_PATH_CAP)
-                        }
-                        free(parent)
-                    }
-                }
-            }
-        }
-    }
-    free(cand)
-    free(dir)
-    return found
-}
-
-function flowc_resolve_is_space(c: i32) -> i32 {
-    if c == 32 or c == 9 or c == 13 {
-        return 1
-    }
-    return 0
-}
-
-function flowc_resolve_bare_key(c: i32) -> i32 {
-    if (c >= 97 and c <= 122) or (c >= 65 and c <= 90) or (c >= 48 and c <= 57) or c == 95 or c == 45 {
-        return 1
-    }
-    return 0
-}
-
-# True (1) when bytes [a, b) of x equal bytes [c, d) of y.
-function flowc_resolve_span_eq(x: ptr<u8>, a: i32, b: i32, y: ptr<u8>, c: i32, d: i32) -> i32 {
-    if b - a != d - c {
-        return 0
-    }
-    let mut i: i32 = 0
-    while i < b - a {
-        if x[a + i] != y[c + i] {
-            return 0
-        }
-        i = i + 1
-    }
-    return 1
-}
-
-# Read one TOML key segment at p[i] (bare or "quoted"); writes its span into
-# span[0..1] and returns the index after it, or -1.
-function flowc_resolve_toml_key(p: ptr<u8>, i: i32, e: i32, span: ptr<i32>) -> i32 {
-    if i < e and (p[i] == 34 or p[i] == 39) {
-        let q: u8 = p[i]
-        let mut k: i32 = i + 1
-        while k < e and p[k] != q {
-            k = k + 1
-        }
-        if k >= e {
-            return 0 - 1
-        }
-        span[0] = i + 1
-        span[1] = k
-        return k + 1
-    }
-    let mut k: i32 = i
-    while k < e and flowc_resolve_bare_key(p[k] as i32) == 1 {
-        k = k + 1
-    }
-    if k == i {
-        return 0 - 1
-    }
-    span[0] = i
-    span[1] = k
-    return k
-}
-
-# 1 when the manifest text declares `name` (bytes [ns, ne) of nsrc) as a key
-# of table `table` (a [table] section key, a dotted `name.x = ...` key in it,
-# or a [table.name] header).
-export function flowc_resolve_toml_declares(toml: ptr<u8>, n: i32, table: string, nsrc: ptr<u8>, ns: i32, ne: i32) -> i32 {
-    let tp: ptr<u8> = table
-    let tn: i32 = strlen(table) as i32
-    let span: array<i32, 2> = [0, 0]
-    let mut in_table: i32 = 0
-    let mut pos: i32 = 0
-    while pos < n {
-        let mut eol: i32 = pos
-        while eol < n and toml[eol] != 10 {
-            eol = eol + 1
-        }
-        let mut s: i32 = pos
-        while s < eol and flowc_resolve_is_space(toml[s] as i32) == 1 {
-            s = s + 1
-        }
-        pos = eol + 1
-        if s >= eol or toml[s] == 35 {
-            continue
-        }
-        if toml[s] == 91 {
-            in_table = 0
-            let mut k: i32 = s + 1
-            if k < eol and toml[k] == 91 {
-                continue
-            }
-            while k < eol and flowc_resolve_is_space(toml[k] as i32) == 1 {
-                k = k + 1
-            }
-            let k2: i32 = flowc_resolve_toml_key(toml, k, eol, &span[0] as ptr<i32>)
-            if k2 < 0 {
-                continue
-            }
-            if flowc_resolve_span_eq(toml, span[0], span[1], tp, 0, tn) == 1 {
-                let mut k3: i32 = k2
-                while k3 < eol and flowc_resolve_is_space(toml[k3] as i32) == 1 {
-                    k3 = k3 + 1
-                }
-                if k3 < eol and toml[k3] == 93 {
-                    in_table = 1
-                } else {
-                    if k3 < eol and toml[k3] == 46 {
-                        k3 = k3 + 1
-                        while k3 < eol and flowc_resolve_is_space(toml[k3] as i32) == 1 {
-                            k3 = k3 + 1
-                        }
-                        let k4: i32 = flowc_resolve_toml_key(toml, k3, eol, &span[0] as ptr<i32>)
-                        if k4 >= 0 and flowc_resolve_span_eq(toml, span[0], span[1], nsrc, ns, ne) == 1 {
-                            return 1
-                        }
-                    }
-                }
-            }
-            continue
-        }
-        if in_table == 1 {
-            let k5: i32 = flowc_resolve_toml_key(toml, s, eol, &span[0] as ptr<i32>)
-            if k5 >= 0 and flowc_resolve_span_eq(toml, span[0], span[1], nsrc, ns, ne) == 1 {
-                let mut k6: i32 = k5
-                while k6 < eol and flowc_resolve_is_space(toml[k6] as i32) == 1 {
-                    k6 = k6 + 1
-                }
-                if k6 < eol and (toml[k6] == 61 or toml[k6] == 46) {
-                    return 1
-                }
-            }
-        }
-    }
-    return 0
-}
-
-# The string value of `name = "value"` (bytes [ns, ne) of nsrc name the key)
-# in table `table`, copied into out. Returns its length, or -1.
-export function flowc_resolve_toml_string_value(toml: ptr<u8>, n: i32, table: string, nsrc: ptr<u8>, ns: i32, ne: i32, out: ptr<u8>, cap: i32) -> i32 {
-    let tp: ptr<u8> = table
-    let tn: i32 = strlen(table) as i32
-    let span: array<i32, 2> = [0, 0]
-    let mut in_table: i32 = 0
-    let mut pos: i32 = 0
-    while pos < n {
-        let mut eol: i32 = pos
-        while eol < n and toml[eol] != 10 {
-            eol = eol + 1
-        }
-        let mut s: i32 = pos
-        while s < eol and flowc_resolve_is_space(toml[s] as i32) == 1 {
-            s = s + 1
-        }
-        pos = eol + 1
-        if s >= eol or toml[s] == 35 {
-            continue
-        }
-        if toml[s] == 91 {
-            in_table = 0
-            let mut k: i32 = s + 1
-            while k < eol and flowc_resolve_is_space(toml[k] as i32) == 1 {
-                k = k + 1
-            }
-            let k2: i32 = flowc_resolve_toml_key(toml, k, eol, &span[0] as ptr<i32>)
-            if k2 >= 0 and flowc_resolve_span_eq(toml, span[0], span[1], tp, 0, tn) == 1 {
-                let mut k3: i32 = k2
-                while k3 < eol and flowc_resolve_is_space(toml[k3] as i32) == 1 {
-                    k3 = k3 + 1
-                }
-                if k3 < eol and toml[k3] == 93 {
-                    in_table = 1
-                }
-            }
-            continue
-        }
-        if in_table == 1 {
-            let k5: i32 = flowc_resolve_toml_key(toml, s, eol, &span[0] as ptr<i32>)
-            if k5 >= 0 and flowc_resolve_span_eq(toml, span[0], span[1], nsrc, ns, ne) == 1 {
-                let mut k6: i32 = k5
-                while k6 < eol and flowc_resolve_is_space(toml[k6] as i32) == 1 {
-                    k6 = k6 + 1
-                }
-                if k6 < eol and toml[k6] == 61 {
-                    k6 = k6 + 1
-                    while k6 < eol and flowc_resolve_is_space(toml[k6] as i32) == 1 {
-                        k6 = k6 + 1
-                    }
-                    if k6 < eol and (toml[k6] == 34 or toml[k6] == 39) {
-                        let q: u8 = toml[k6]
-                        let mut k7: i32 = k6 + 1
-                        let mut o: i32 = 0
-                        while k7 < eol and toml[k7] != q and o + 1 < cap {
-                            out[o] = toml[k7]
-                            o = o + 1
-                            k7 = k7 + 1
-                        }
-                        out[o] = 0
-                        if k7 < eol and toml[k7] == q {
-                            return o
-                        }
-                    }
-                }
-            }
-        }
-    }
-    return 0 - 1
-}
-
-# Try root/<segments [s, e) of src as a path>.flow. Returns length or -1.
-function flowc_resolve_try_under(root: string, src: ptr<u8>, s: i32, e: i32, out: ptr<u8>, cap: i32) -> i32 {
-    let mut o: i32 = flowc_resolve_put(out, 0, cap, root)
-    if o < 0 or o + (e - s) + 7 > cap {
-        return 0 - 1
-    }
-    out[o] = 47
-    o = o + 1
-    let mut i: i32 = s
-    while i < e {
-        if src[i] == 46 {
-            out[o] = 47
-        } else {
-            out[o] = src[i]
-        }
-        o = o + 1
-        i = i + 1
-    }
-    out[o] = 0
-    o = flowc_resolve_put(out, o, cap, ".flow")
-    if o < 0 {
-        return 0 - 1
-    }
-    if flowc_io_exists(out as string) == 1 {
-        return o
-    }
-    return 0 - 1
-}
-
-# Resolve a dotted import against the project's flow_packages/.
-# Returns the path length; -1 when the first segment is not a declared
-# dependency (the caller falls back to the other rules); -2 when it is one
-# but no file matches.
-export function flowc_resolve_package_path(
-    src: ptr<u8>,
-    name_start: i32,
-    name_end: i32,
-    project_root: string,
-    out_path: ptr<u8>,
-    out_path_cap: i32
-) -> i32 {
-    if strlen(project_root) == 0 or name_end <= name_start {
-        return 0 - 1
-    }
-    let mut first_end: i32 = name_start
-    while first_end < name_end and src[first_end] != 46 {
-        first_end = first_end + 1
-    }
-    if first_end - name_start == 3 and src[name_start] == 115 and src[name_start + 1] == 116 and src[name_start + 2] == 100 {
-        return 0 - 1
-    }
-    let tpath: ptr<u8> = malloc((FLOWC_RESOLVE_PATH_CAP + 16) as i64)
-    let mut o: i32 = flowc_resolve_put(tpath, 0, FLOWC_RESOLVE_PATH_CAP + 16, project_root)
-    if o >= 0 {
-        o = flowc_resolve_put(tpath, o, FLOWC_RESOLVE_PATH_CAP + 16, "/flow.toml")
-    }
-    if o < 0 {
-        free(tpath)
-        return 0 - 1
-    }
-    let toml: ptr<u8> = malloc(65536)
-    let n: i32 = flowc_read_file(tpath as string, toml, 65535)
-    free(tpath)
-    if n <= 0 {
-        free(toml)
-        return 0 - 1
-    }
-    toml[n] = 0
-    let declared: i32 = flowc_resolve_toml_declares(toml, n, "dependencies", src, name_start, first_end)
-    let is_path: i32 = flowc_resolve_toml_declares(toml, n, "paths", src, name_start, first_end)
-    # A [paths] key maps the first segment to a directory under the project:
-    # `json = "../../registry/packages/json/src"` resolves `import json.lib`
-    # to that directory's lib.flow, as the Python host's module resolver does.
-    if is_path == 1 {
-        let pval: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
-        let plen: i32 = flowc_resolve_toml_string_value(toml, n, "paths", src, name_start, first_end, pval, FLOWC_RESOLVE_PATH_CAP)
-        free(toml)
-        if plen <= 0 or first_end >= name_end {
-            free(pval)
-            return 0 - 1
-        }
-        let proot: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
-        let mut q: i32 = flowc_resolve_put(proot, 0, FLOWC_RESOLVE_PATH_CAP, project_root)
-        if q >= 0 {
-            q = flowc_resolve_put(proot, q, FLOWC_RESOLVE_PATH_CAP, "/")
-        }
-        if q >= 0 {
-            q = flowc_resolve_put(proot, q, FLOWC_RESOLVE_PATH_CAP, pval as string)
-        }
-        free(pval)
-        let mut presult: i32 = 0 - 2
-        if q >= 0 {
-            let rest0: i32 = first_end + 1
-            let mut pend: i32 = name_end
-            while pend > rest0 and presult < 0 {
-                let got0: i32 = flowc_resolve_try_under(proot as string, src, rest0, pend, out_path, out_path_cap)
-                if got0 >= 0 {
-                    presult = got0
-                } else {
-                    let mut k0: i32 = pend - 1
-                    while k0 > rest0 and src[k0] != 46 {
-                        k0 = k0 - 1
-                    }
-                    pend = k0
-                }
-            }
-        }
-        free(proot)
-        # Not found under the [paths] directory: the other rules still try
-        # (a claim path such as `verify.Nat/+` resolves to its domain
-        # module there).
-        if presult < 0 {
-            return 0 - 1
-        }
-        return presult
-    }
-    free(toml)
-    if declared == 0 {
-        return 0 - 1
-    }
-    # Import of the package name alone names no module.
-    if first_end >= name_end {
-        puts("flowc: a package import needs a module, e.g. import name.lib")
-        return 0 - 2
-    }
-    let pkg_root: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
-    let pkg_src: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
-    let mut r: i32 = flowc_resolve_put(pkg_root, 0, FLOWC_RESOLVE_PATH_CAP, project_root)
-    if r >= 0 {
-        r = flowc_resolve_put(pkg_root, r, FLOWC_RESOLVE_PATH_CAP, "/flow_packages/")
-    }
-    let mut fi: i32 = name_start
-    while r >= 0 and fi < first_end and r + 2 < FLOWC_RESOLVE_PATH_CAP {
-        pkg_root[r] = src[fi]
-        r = r + 1
-        fi = fi + 1
-    }
-    if r >= 0 {
-        pkg_root[r] = 0
-    }
-    let mut r2: i32 = flowc_resolve_copy_cstr(pkg_root as string, pkg_src, FLOWC_RESOLVE_PATH_CAP)
-    if r2 >= 0 {
-        r2 = flowc_resolve_put(pkg_src, r2, FLOWC_RESOLVE_PATH_CAP, "/src")
-    }
-    let mut result: i32 = 0 - 2
-    if r >= 0 and r2 >= 0 {
-        let rest_start: i32 = first_end + 1
-        let mut pass: i32 = 0
-        while pass < 2 and result < 0 {
-            let mut root: string = pkg_src as string
-            if pass == 1 {
-                root = pkg_root as string
-            }
-            # Longest module prefix first: a.b.c, then a.b, then a.
-            let mut end: i32 = name_end
-            while end > rest_start and result < 0 {
-                let got: i32 = flowc_resolve_try_under(root, src, rest_start, end, out_path, out_path_cap)
-                if got >= 0 {
-                    result = got
-                } else {
-                    let mut k: i32 = end - 1
-                    while k > rest_start and src[k] != 46 {
-                        k = k - 1
-                    }
-                    end = k
-                }
-            }
-            pass = pass + 1
-        }
-    }
-    free(pkg_src)
-    free(pkg_root)
-    if result < 0 {
-        puts("flowc: package import not found under flow_packages/ (run `flow sync`)")
-    }
-    return result
 }
 
 # Directory of a path (strip last `/component`). Writes into out; returns len or -1.
@@ -2012,122 +377,6 @@ export function flowc_resolve_dirname(path: string, out: ptr<u8>, out_cap: i32) 
 }
 
 # Append unique path to store. Returns new length, or -1 on overflow / copy fail.
-# The file an AST_IMPORT of form `form` (0 dotted/package, 1 `.sibling`,
-# 2 "path") spelled by src[s..e) names, written to imp_path. Returns the
-# path length, -1 when no search path finds it, another negative value on
-# any other failure, and -3 for a form that names no file.
-# Drop `.` segments and fold `name/..` pairs in the NUL-terminated path
-# p[0 .. n), in place; returns the new length. A leading `..` and the
-# leading `/` of an absolute path stay. One file then has one spelling, so
-# `lib/stdlib/../../compiler/src/bytebuf.flow` and
-# `compiler/src/bytebuf.flow` load as one module.
-function flowc_resolve_normalize(p: ptr<u8>, n: i32) -> i32 {
-    # For each kept segment: the output length before it (its separator
-    # excluded), and whether it is itself `..`.
-    let pre: ptr<i32> = malloc(((n + 2) as i64) * 4) as ptr<i32>
-    let dots: ptr<i32> = malloc(((n + 2) as i64) * 4) as ptr<i32>
-    let mut nseg: i32 = 0
-    let mut o: i32 = 0
-    let mut i: i32 = 0
-    if n > 0 and p[0] == 47 {
-        o = 1
-        i = 1
-    }
-    let root: i32 = o
-    while i < n {
-        let mut j: i32 = i
-        while j < n and p[j] != 47 {
-            j = j + 1
-        }
-        let len: i32 = j - i
-        let is_dotdot: bool = len == 2 and p[i] == 46 and p[i + 1] == 46
-        if len == 0 or (len == 1 and p[i] == 46) {
-            # empty or `.`: drop
-        } elif is_dotdot and nseg > 0 and dots[nseg - 1] == 0 {
-            # `name/..`: remove the previous segment.
-            nseg = nseg - 1
-            o = pre[nseg]
-        } else {
-            pre[nseg] = o
-            dots[nseg] = 0
-            if is_dotdot {
-                dots[nseg] = 1
-            }
-            nseg = nseg + 1
-            if o > root {
-                p[o] = 47
-                o = o + 1
-            }
-            let mut k: i32 = 0
-            while k < len {
-                p[o + k] = p[i + k]
-                k = k + 1
-            }
-            o = o + len
-        }
-        i = j + 1
-    }
-    p[o] = 0
-    free(pre as ptr<u8>)
-    free(dots as ptr<u8>)
-    return o
-}
-
-function flowc_resolve_import_at(
-    src: ptr<u8>,
-    s: i32,
-    e: i32,
-    form: i32,
-    mod_search: string,
-    search_dir: string,
-    project_root: string,
-    imp_path: ptr<u8>
-) -> i32 {
-    let plen: i32 = flowc_resolve_import_at_raw(src, s, e, form, mod_search, search_dir, project_root, imp_path)
-    if plen > 0 {
-        return flowc_resolve_normalize(imp_path, plen)
-    }
-    return plen
-}
-
-function flowc_resolve_import_at_raw(
-    src: ptr<u8>,
-    s: i32,
-    e: i32,
-    form: i32,
-    mod_search: string,
-    search_dir: string,
-    project_root: string,
-    imp_path: ptr<u8>
-) -> i32 {
-    if form == 1 or form == 2 {
-        let mut plen: i32 = flowc_resolve_sibling_path(src, s, e, mod_search, imp_path, FLOWC_RESOLVE_PATH_CAP)
-        if plen < 0 and mod_search != search_dir {
-            plen = flowc_resolve_sibling_path(src, s, e, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP)
-        }
-        # A bare stdlib module name (`import "io.flow"`,
-        # `import "lib/stdlib/nn.flow"`) resolves in lib/stdlib, as on the
-        # Python host.
-        if plen < 0 {
-            plen = flowc_resolve_sibling_path(src, s, e, "lib/stdlib", imp_path, FLOWC_RESOLVE_PATH_CAP)
-        }
-        if plen < 0 {
-            return 0 - 1
-        }
-        # flowc_resolve_import_at normalizes the path, so `m/../x/c.flow` and
-        # `x/c.flow` are one module (#1073).
-        return plen
-    }
-    if form == 0 {
-        let mut plen2: i32 = flowc_resolve_package_path(src, s, e, project_root, imp_path, FLOWC_RESOLVE_PATH_CAP)
-        if plen2 == 0 - 1 {
-            plen2 = flowc_resolve_dotted_any(src, s, e, mod_search, search_dir, imp_path, FLOWC_RESOLVE_PATH_CAP)
-        }
-        return plen2
-    }
-    return 0 - 3
-}
-
 function flowc_resolve_append_path(store: ptr<u8>, n: i32, path: string) -> i32 {
     let path_p: ptr<u8> = path
     if flowc_resolve_find_path(store, n, FLOWC_RESOLVE_PATH_CAP, path_p) >= 0 {
@@ -2149,7 +398,6 @@ function flowc_resolve_append_path(store: ptr<u8>, n: i32, path: string) -> i32 
 function flowc_resolve_gather(
     entry_path: string,
     search_dir: string,
-    project_root: string,
     path_store: ptr<u8>
 ) -> i32 {
     let mut n: i32 = flowc_resolve_append_path(path_store, 0, entry_path)
@@ -2176,14 +424,14 @@ function flowc_resolve_gather(
     let mut qi: i32 = 0
     while qi < n {
         let slot: ptr<u8> = path_store + (qi * FLOWC_RESOLVE_PATH_CAP)
-        let mpath: string = slot as string
+        let mpath: string = slot
 
         let mut zi: i32 = 0
         while zi < FLOWC_RESOLVE_SRC_CAP {
             src[zi] = 0
             zi = zi + 1
         }
-        let nsrc: i32 = flowc_resolve_read_source(mpath, src, FLOWC_RESOLVE_SRC_CAP - 1)
+        let nsrc: i32 = flowc_read_file(mpath, src, FLOWC_RESOLVE_SRC_CAP - 1)
         if nsrc <= 0 {
             puts("flowc gather: read failed")
             free(mod_dir)
@@ -2194,7 +442,7 @@ function flowc_resolve_gather(
         src[nsrc] = 0
 
         let mod_dlen: i32 = flowc_resolve_dirname(mpath, mod_dir, FLOWC_RESOLVE_PATH_CAP)
-        let mut mod_search: string = search_dir
+        let mod_search: string = search_dir
         if mod_dlen > 0 {
             mod_search = mod_dir as string
         }
@@ -2202,7 +450,8 @@ function flowc_resolve_gather(
         let mut p: Parser = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP)
         let root: i32 = flowc_parse_program(&p)
         if root < 0 or p.err != 0 {
-            flowc_parser_print_error(p, mpath)
+            puts("flowc gather: parse failed")
+            printf("flowc gather: nsrc=%d\n", nsrc)
             flowc_parser_free(p)
             free(mod_dir)
             free(imp_path)
@@ -2213,27 +462,61 @@ function flowc_resolve_gather(
         let mut ii: i32 = 0
         while ii < p.arena.len {
             if p.arena.nodes[ii].kind == AST_IMPORT {
-                if p.arena.nodes[ii].ival == 2 and flowc_resolve_unsafe_import(src, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end, mod_search) == 1 {
-                    flowc_resolve_unsafe_import_error(mpath, src, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end)
-                    flowc_parser_free(p)
-                    free(mod_dir)
-                    free(imp_path)
-                    free(src)
-                    return 0 - 1
-                }
-                let plen: i32 = flowc_resolve_import_at(src, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end, p.arena.nodes[ii].ival, mod_search, search_dir, project_root, imp_path)
-                if plen != 0 - 3 {
+                let form: i32 = p.arena.nodes[ii].ival
+                if form == 1 or form == 2 {
+                    let mut plen: i32 = flowc_resolve_sibling_path(
+                        src,
+                        p.arena.nodes[ii].name_start,
+                        p.arena.nodes[ii].name_end,
+                        mod_search,
+                        imp_path,
+                        FLOWC_RESOLVE_PATH_CAP
+                    )
+                    if plen < 0 and mod_search != search_dir {
+                        plen = flowc_resolve_sibling_path(
+                            src,
+                            p.arena.nodes[ii].name_start,
+                            p.arena.nodes[ii].name_end,
+                            search_dir,
+                            imp_path,
+                            FLOWC_RESOLVE_PATH_CAP
+                        )
+                    }
                     if plen < 0 {
-                        if plen == 0 - 1 {
-                            flowc_resolve_import_error(mpath, src, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end)
-                        }
                         flowc_parser_free(p)
                         free(mod_dir)
                         free(imp_path)
                         free(src)
                         return 0 - 1
                     }
-                    let dep: string = imp_path as string
+                    let dep: string = imp_path
+                    let n2: i32 = flowc_resolve_append_path(path_store, n, dep)
+                    if n2 < 0 {
+                        flowc_parser_free(p)
+                        free(mod_dir)
+                        free(imp_path)
+                        free(src)
+                        return 0 - 1
+                    }
+                    n = n2
+                }
+                if form == 0 {
+                    let plen: i32 = flowc_resolve_dotted_path(
+                        src,
+                        p.arena.nodes[ii].name_start,
+                        p.arena.nodes[ii].name_end,
+                        search_dir,
+                        imp_path,
+                        FLOWC_RESOLVE_PATH_CAP
+                    )
+                    if plen < 0 {
+                        flowc_parser_free(p)
+                        free(mod_dir)
+                        free(imp_path)
+                        free(src)
+                        return 0 - 1
+                    }
+                    let dep: string = imp_path
                     let n2: i32 = flowc_resolve_append_path(path_store, n, dep)
                     if n2 < 0 {
                         flowc_parser_free(p)
@@ -2263,7 +546,6 @@ function flowc_resolve_gather(
 function flowc_resolve_deps_ready(
     path: string,
     search_dir: string,
-    project_root: string,
     all_store: ptr<u8>,
     all_n: i32,
     out_store: ptr<u8>,
@@ -2276,7 +558,7 @@ function flowc_resolve_deps_ready(
         src[zi] = 0
         zi = zi + 1
     }
-    let nsrc: i32 = flowc_resolve_read_source(path, src, FLOWC_RESOLVE_SRC_CAP - 1)
+    let nsrc: i32 = flowc_read_file(path, src, FLOWC_RESOLVE_SRC_CAP - 1)
     if nsrc <= 0 {
         return 0
     }
@@ -2284,7 +566,7 @@ function flowc_resolve_deps_ready(
 
     let mod_dir_buf: array<u8, 1024> = [0]
     let mod_dlen: i32 = flowc_resolve_dirname(path, &mod_dir_buf[0] as ptr<u8>, 1024)
-    let mut mod_search: string = search_dir
+    let mod_search: string = search_dir
     if mod_dlen > 0 {
         mod_search = &mod_dir_buf[0] as string
     }
@@ -2298,13 +580,51 @@ function flowc_resolve_deps_ready(
     let mut ii: i32 = 0
     while ii < p.arena.len {
         if p.arena.nodes[ii].kind == AST_IMPORT {
-            let plen: i32 = flowc_resolve_import_at(src, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end, p.arena.nodes[ii].ival, mod_search, search_dir, project_root, imp_path)
-            if plen != 0 - 3 {
+            let form: i32 = p.arena.nodes[ii].ival
+            if form == 1 or form == 2 {
+                let mut plen: i32 = flowc_resolve_sibling_path(
+                    src,
+                    p.arena.nodes[ii].name_start,
+                    p.arena.nodes[ii].name_end,
+                    mod_search,
+                    imp_path,
+                    FLOWC_RESOLVE_PATH_CAP
+                )
+                if plen < 0 and mod_search != search_dir {
+                    plen = flowc_resolve_sibling_path(
+                        src,
+                        p.arena.nodes[ii].name_start,
+                        p.arena.nodes[ii].name_end,
+                        search_dir,
+                        imp_path,
+                        FLOWC_RESOLVE_PATH_CAP
+                    )
+                }
                 if plen < 0 {
                     flowc_parser_free(p)
                     return 0
                 }
                 # Only care about deps that are part of this bundle.
+                if flowc_resolve_find_path(all_store, all_n, FLOWC_RESOLVE_PATH_CAP, imp_path) >= 0 {
+                    if flowc_resolve_find_path(out_store, out_n, FLOWC_RESOLVE_PATH_CAP, imp_path) < 0 {
+                        flowc_parser_free(p)
+                        return 0
+                    }
+                }
+            }
+            if form == 0 {
+                let plen: i32 = flowc_resolve_dotted_path(
+                    src,
+                    p.arena.nodes[ii].name_start,
+                    p.arena.nodes[ii].name_end,
+                    search_dir,
+                    imp_path,
+                    FLOWC_RESOLVE_PATH_CAP
+                )
+                if plen < 0 {
+                    flowc_parser_free(p)
+                    return 0
+                }
                 if flowc_resolve_find_path(all_store, all_n, FLOWC_RESOLVE_PATH_CAP, imp_path) >= 0 {
                     if flowc_resolve_find_path(out_store, out_n, FLOWC_RESOLVE_PATH_CAP, imp_path) < 0 {
                         flowc_parser_free(p)
@@ -2325,7 +645,6 @@ function flowc_resolve_topo(
     all_store: ptr<u8>,
     all_n: i32,
     search_dir: string,
-    project_root: string,
     out_store: ptr<u8>
 ) -> i32 {
     let src: ptr<u8> = malloc(FLOWC_RESOLVE_SRC_CAP as i64)
@@ -2355,9 +674,9 @@ function flowc_resolve_topo(
         while i < all_n {
             if placed[i] == 0 {
                 let slot: ptr<u8> = all_store + (i * FLOWC_RESOLVE_PATH_CAP)
-                let mpath: string = slot as string
+                let mpath: string = slot
                 if flowc_resolve_deps_ready(
-                    mpath, search_dir, project_root, all_store, all_n, out_store, out_n, src, imp_path
+                    mpath, search_dir, all_store, all_n, out_store, out_n, src, imp_path
                 ) == 1 {
                     let n2: i32 = flowc_resolve_append_path(out_store, out_n, mpath)
                     if n2 < 0 {
@@ -2390,49 +709,6 @@ function flowc_resolve_topo(
 # flags forwarded to flowc_cgen_emit_sigs. `sigs` is the growing cross-module
 # return-type table (deps emitted first); `siglen` is read and updated in place
 # so a later module can type `let x = dep_fn(...)` with no annotation.
-# Generic templates across modules. A module's generic structs and
-# functions (`struct Chan<T>`, `function channel_new<T>`) are monomorphized
-# where they are used, which may be a later module of the bundle. Their
-# source text is kept in `tpl` as modules are emitted and appended to every
-# later module's source, so its monomorphizer sees the templates; the cgen
-# guards each instantiation so two modules using `Chan<i32>` define it once.
-# The Python host sees one merged program, so this matches it.
-function flowc_resolve_add_templates(arena: AstArena, root: i32, src: ptr<u8>, own_len: i32, tpl: ptr<u8>, tpl_cap: i32, tpl_len: i32) -> i32 {
-    let mut n: i32 = tpl_len
-    let mut item: i32 = arena.nodes[root].a
-    while item != AST_NONE {
-        let mut d: i32 = item
-        if arena.nodes[d].kind == AST_EXPORT and arena.nodes[d].a != AST_NONE {
-            d = arena.nodes[d].a
-        }
-        let k: i32 = arena.nodes[d].kind
-        let mut is_tpl: i32 = 0
-        if k == AST_FN and arena.nodes[d].ival > 0 and arena.nodes[d].c != AST_NONE {
-            is_tpl = 1
-        }
-        if k == AST_STRUCT and arena.nodes[d].b != AST_NONE {
-            is_tpl = 1
-        }
-        let s: i32 = arena.nodes[d].start
-        let e: i32 = arena.nodes[d].end
-        if is_tpl == 1 and s >= 0 and e > s and e <= own_len and n + (e - s) + 2 < tpl_cap {
-            tpl[n] = 10
-            n = n + 1
-            let mut i: i32 = s
-            while i < e {
-                tpl[n] = src[i]
-                n = n + 1
-                i = i + 1
-            }
-            tpl[n] = 10
-            n = n + 1
-            tpl[n] = 0
-        }
-        item = arena.nodes[item].next
-    }
-    return n
-}
-
 function flowc_resolve_emit_one(
     path: string,
     out: ptr<u8>,
@@ -2440,74 +716,8 @@ function flowc_resolve_emit_one(
     flags: i32,
     sigs: ptr<u8>,
     sigcap: i32,
-    siglen: ptr<i32>,
-    tpl: ptr<u8>,
-    tpl_cap: i32,
-    tpl_len: ptr<i32>
+    siglen: ptr<i32>
 ) -> i32 {
-    let src: ptr<u8> = malloc(FLOWC_RESOLVE_SRC_CAP as i64)
-    if src == null {
-        return 0 - 1
-    }
-    let mut zi: i32 = 0
-    while zi < FLOWC_RESOLVE_SRC_CAP {
-        src[zi] = 0
-        zi = zi + 1
-    }
-    let own: i32 = flowc_resolve_read_source(path, src, FLOWC_RESOLVE_SRC_CAP - 1)
-    if own <= 0 {
-        free(src)
-        return 0 - 1
-    }
-    let mut nsrc: i32 = own
-    # Earlier modules' generic templates, for this module's instantiations.
-    if tpl != null and tpl_len[0] > 0 and nsrc + tpl_len[0] < FLOWC_RESOLVE_SRC_CAP - 1 {
-        let mut ti: i32 = 0
-        while ti < tpl_len[0] {
-            src[nsrc + ti] = tpl[ti]
-            ti = ti + 1
-        }
-        nsrc = nsrc + tpl_len[0]
-    }
-    src[nsrc] = 0
-
-    let mut p: Parser = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP)
-    let root: i32 = flowc_parse_program(&p)
-    if root < 0 or p.err != 0 {
-        flowc_parser_free(p)
-        free(src)
-        return 0 - 1
-    }
-
-    if tpl != null {
-        tpl_len[0] = flowc_resolve_add_templates(p.arena, root, src, own, tpl, tpl_cap, tpl_len[0])
-    }
-    flowc_fuse_pipelines(&p.arena, src)
-    # The file this module's #line directives name (FLOWC_DEBUG_INFO=1).
-    let _setf: i32 = setenv("FLOWC_CGEN_FILE", path, 1)
-    let mut n: i32 = flowc_cgen_emit_sigs(p.arena, root, src, out, out_cap, flags, sigs, siglen[0])
-    if sigs != null {
-        siglen[0] = flowc_cgen_collect_sigs(p.arena, root, src, sigs, sigcap, siglen[0])
-        # Effects, capabilities and `with` rows for later modules (#675).
-        siglen[0] = flowc_eff_collect(p.arena, root, src, sigs, sigcap, siglen[0])
-    }
-    flowc_parser_free(p)
-    free(src)
-    return n
-}
-
-# --- private function collisions (#950) -----------------------------------
-# Two modules may each define a private function with the same name. In one
-# C TU that is a redefinition. Before emitting, every module's top-level
-# function definitions are listed as entries `[module][exported] name NUL`.
-# A private definition is renamed with a `#define name __flowc_m<i>_name`
-# around its module's C when the same name is exported by another module
-# or defined privately by an earlier one; so one definition always keeps
-# its name, and a bundle without collisions emits exactly as before.
-
-# Append top-level function definitions of the module at `path`. Returns
-# the new length, or -1 on a read or parse failure.
-function flowc_resolve_list_fns(path: string, mi: i32, buf: ptr<u8>, cap: i32, len: i32) -> i32 {
     let src: ptr<u8> = malloc(FLOWC_RESOLVE_SRC_CAP as i64)
     if src == null {
         return 0 - 1
@@ -2523,6 +733,7 @@ function flowc_resolve_list_fns(path: string, mi: i32, buf: ptr<u8>, cap: i32, l
         return 0 - 1
     }
     src[nsrc] = 0
+
     let mut p: Parser = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP)
     let root: i32 = flowc_parse_program(&p)
     if root < 0 or p.err != 0 {
@@ -2530,313 +741,20 @@ function flowc_resolve_list_fns(path: string, mi: i32, buf: ptr<u8>, cap: i32, l
         free(src)
         return 0 - 1
     }
-    let mut n: i32 = len
-    let mut item: i32 = p.arena.nodes[root].a
-    while item != 0 - 1 {
-        let mut fn: i32 = 0 - 1
-        let mut exported: i32 = 0
-        if p.arena.nodes[item].kind == AST_FN {
-            fn = item
-        }
-        if p.arena.nodes[item].kind == AST_EXPORT {
-            let inner: i32 = p.arena.nodes[item].a
-            if inner != 0 - 1 and p.arena.nodes[inner].kind == AST_FN {
-                fn = inner
-                exported = 1
-            }
-        }
-        # Definitions only: a body, not generic (ival 0), a real name.
-        if fn != 0 - 1 and p.arena.nodes[fn].c != 0 - 1 and p.arena.nodes[fn].ival == 0 {
-            let ns: i32 = p.arena.nodes[fn].name_start
-            let ne: i32 = p.arena.nodes[fn].name_end
-            if ns >= 0 and ne > ns and n + (ne - ns) + 3 < cap {
-                buf[n] = mi
-                buf[n + 1] = exported
-                n = n + 2
-                let mut k: i32 = ns
-                while k < ne {
-                    buf[n] = src[k]
-                    n = n + 1
-                    k = k + 1
-                }
-                buf[n] = 0
-                n = n + 1
-            }
-        }
-        item = p.arena.nodes[item].next
+
+    let mut n: i32 = flowc_cgen_emit_sigs(p.arena, root, src, out, out_cap, flags, sigs, siglen[0])
+    if sigs != null {
+        siglen[0] = flowc_cgen_collect_sigs(p.arena, root, src, sigs, sigcap, siglen[0])
     }
     flowc_parser_free(p)
     free(src)
     return n
 }
 
-# 1 if the NUL-terminated names at buf+a and buf+b are equal.
-function flowc_resolve_name_eq(buf: ptr<u8>, a: i32, b: i32) -> i32 {
-    let mut i: i32 = 0
-    while buf[a + i] != 0 and buf[b + i] != 0 {
-        if buf[a + i] != buf[b + i] {
-            return 0
-        }
-        i = i + 1
-    }
-    if buf[a + i] == buf[b + i] {
-        return 1
-    }
-    return 0
-}
-
-# Offset of the entry after the one at `e`.
-function flowc_resolve_next_entry(buf: ptr<u8>, e: i32) -> i32 {
-    let mut i: i32 = e + 2
-    while buf[i] != 0 {
-        i = i + 1
-    }
-    return i + 1
-}
-
-# 1 if the private entry at `e` must be renamed (see above).
-function flowc_resolve_needs_rename(buf: ptr<u8>, len: i32, e: i32) -> i32 {
-    if buf[e + 1] != 0 {
-        return 0
-    }
-    let mi: i32 = buf[e]
-    # `main`: the entry module comes last (deps first), and its main is the
-    # program's. An imported module's own main steps aside, as on the Python
-    # host, which drops it.
-    if buf[e + 2] == 109 and buf[e + 3] == 97 and buf[e + 4] == 105 and buf[e + 5] == 110 and buf[e + 6] == 0 {
-        let mut m: i32 = 0
-        while m < len {
-            if buf[m] > mi and flowc_resolve_name_eq(buf, m + 2, e + 2) == 1 {
-                return 1
-            }
-            m = flowc_resolve_next_entry(buf, m)
-        }
-        return 0
-    }
-    let mut o: i32 = 0
-    while o < len {
-        let om: i32 = buf[o]
-        if om != mi and flowc_resolve_name_eq(buf, o + 2, e + 2) == 1 {
-            if buf[o + 1] != 0 or om < mi {
-                return 1
-            }
-        }
-        o = flowc_resolve_next_entry(buf, o)
-    }
-    return 0
-}
-
-# Write `#define name __flowc_m<mi>_name` (undef == 0) or `#undef name`
-# (undef == 1) for each renamed private function of module `mi`. Returns
-# bytes written, or -1 if `out` is too small.
-function flowc_resolve_emit_renames(buf: ptr<u8>, len: i32, mi: i32, undef: i32, out: ptr<u8>, cap: i32) -> i32 {
-    let mut n: i32 = 0
-    let mut e: i32 = 0
-    while e < len {
-        let em: i32 = buf[e]
-        if em == mi and flowc_resolve_needs_rename(buf, len, e) == 1 {
-            let mut nl: i32 = 0
-            while buf[e + 2 + nl] != 0 {
-                nl = nl + 1
-            }
-            if n + 2 * nl + 48 >= cap {
-                return 0 - 1
-            }
-            let mut head: string = "#define "
-            if undef == 1 {
-                head = "#undef "
-            }
-            let hp: ptr<u8> = head
-            let mut k: i32 = 0
-            while hp[k] != 0 {
-                out[n] = hp[k]
-                n = n + 1
-                k = k + 1
-            }
-            k = 0
-            while k < nl {
-                out[n] = buf[e + 2 + k]
-                n = n + 1
-                k = k + 1
-            }
-            if undef == 0 {
-                let mid: string = " __flowc_m"
-                let mp: ptr<u8> = mid
-                k = 0
-                while mp[k] != 0 {
-                    out[n] = mp[k]
-                    n = n + 1
-                    k = k + 1
-                }
-                if mi >= 10 {
-                    out[n] = 48 + mi / 10
-                    n = n + 1
-                }
-                out[n] = 48 + mi % 10
-                n = n + 1
-                out[n] = 95
-                n = n + 1
-                k = 0
-                while k < nl {
-                    out[n] = buf[e + 2 + k]
-                    n = n + 1
-                    k = k + 1
-                }
-            }
-            out[n] = 10
-            n = n + 1
-        }
-        e = flowc_resolve_next_entry(buf, e)
-    }
-    return n
-}
-
 # Cross-file Stage-A typecheck for a bundle.
 # Gather BFS (entry first); check deps-first with a growing seed of exports
 # from already-checked modules. Returns total error count (0 = ok), or 1 on I/O/parse fail.
-# ---------------------------------------------------------------------------
-# The semantic check of a bundle (sem_check.flow): the modules the Python
-# host's ModuleResolver would load, in its order (each module after the
-# modules it imports, visited in import order), checked as one program.
-# counts[0] gets the error count, counts[1] the errors that stay fatal
-# under FLOWC_LENIENT=1.
-# ---------------------------------------------------------------------------
-
-function flowc_semcheck_visit(
-    i: i32,
-    deps: ptr<i32>,
-    ndeps: ptr<i32>,
-    max_deps: i32,
-    state: ptr<i32>,
-    order: ptr<i32>,
-    norder: i32
-) -> i32 {
-    state[i] = 1
-    let mut n: i32 = norder
-    let mut k: i32 = 0
-    while k < ndeps[i] {
-        let d: i32 = deps[i * max_deps + k]
-        if state[d] == 0 {
-            n = flowc_semcheck_visit(d, deps, ndeps, max_deps, state, order, n)
-        }
-        k = k + 1
-    }
-    state[i] = 2
-    order[n] = i
-    return n + 1
-}
-
-function flowc_bundle_semcheck(
-    all_store: ptr<u8>,
-    all_n: i32,
-    search_dir: string,
-    project_root: string,
-    counts: ptr<i32>
-) -> i32 {
-    counts[0] = 0
-    counts[1] = 0
-    let max_deps: i32 = 64
-    let srcs: ptr<ptr<u8>> = malloc((all_n * 8) as i64) as ptr<ptr<u8>>
-    let arenas: ptr<AstArena> = malloc((all_n * 24) as i64) as ptr<AstArena>
-    let roots: ptr<i32> = malloc((all_n * 4) as i64) as ptr<i32>
-    let deps: ptr<i32> = malloc((all_n * max_deps * 4) as i64) as ptr<i32>
-    let ndeps: ptr<i32> = malloc((all_n * 4) as i64) as ptr<i32>
-    let state: ptr<i32> = malloc((all_n * 4) as i64) as ptr<i32>
-    let order: ptr<i32> = malloc((all_n * 4) as i64) as ptr<i32>
-    let tmp: ptr<u8> = malloc(FLOWC_RESOLVE_SRC_CAP as i64)
-    let imp_path: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
-    let mod_dir: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
-    let mut i: i32 = 0
-    while i < all_n {
-        let mpath: string = (all_store + (i * FLOWC_RESOLVE_PATH_CAP)) as string
-        let mut zi: i32 = 0
-        while zi < FLOWC_RESOLVE_SRC_CAP {
-            tmp[zi] = 0
-            zi = zi + 1
-        }
-        let nsrc: i32 = flowc_resolve_read_source(mpath, tmp, FLOWC_RESOLVE_SRC_CAP - 1)
-        if nsrc < 0 {
-            return 1
-        }
-        let own: ptr<u8> = malloc((nsrc + 1) as i64)
-        zi = 0
-        while zi < nsrc {
-            own[zi] = tmp[zi]
-            zi = zi + 1
-        }
-        own[nsrc] = 0
-        srcs[i] = own
-        let mut cap: i32 = nsrc + 4096
-        let mut p: Parser = flowc_parser_new(own, nsrc, cap)
-        let root: i32 = flowc_parse_program(&p)
-        if root < 0 or p.err != 0 {
-            return 1
-        }
-        arenas[i] = p.arena
-        roots[i] = root
-        ndeps[i] = 0
-        state[i] = 0
-        let mod_dlen: i32 = flowc_resolve_dirname(mpath, mod_dir, FLOWC_RESOLVE_PATH_CAP)
-        let mut mod_search: string = search_dir
-        if mod_dlen > 0 {
-            mod_search = mod_dir as string
-        }
-        let mut ii: i32 = 0
-        while ii < p.arena.len {
-            if p.arena.nodes[ii].kind == AST_IMPORT {
-                let plen: i32 = flowc_resolve_import_at(own, p.arena.nodes[ii].name_start, p.arena.nodes[ii].name_end, p.arena.nodes[ii].ival, mod_search, search_dir, project_root, imp_path)
-                if plen >= 0 {
-                    let d: i32 = flowc_resolve_find_path(all_store, all_n, FLOWC_RESOLVE_PATH_CAP, imp_path)
-                    if d >= 0 and ndeps[i] < max_deps {
-                        deps[i * max_deps + ndeps[i]] = d
-                        ndeps[i] = ndeps[i] + 1
-                    }
-                }
-            }
-            ii = ii + 1
-        }
-        i = i + 1
-    }
-    let norder: i32 = flowc_semcheck_visit(0, deps, ndeps, max_deps, state, order, 0)
-    let c: ptr<Sem> = sem_new(flowc_resolve_strict())
-    i = 0
-    while i < norder {
-        let k: i32 = order[i]
-        let mpath2: string = (all_store + (k * FLOWC_RESOLVE_PATH_CAP)) as string
-        let m: i32 = sem_add_module(c, arenas[k], roots[k], srcs[k], flowc_strdup(mpath2))
-        sem_build_module(c, m, k == 0)
-        i = i + 1
-    }
-    sem_check_program(c)
-    sem_report(c)
-    counts[0] = sem_error_count(c)
-    counts[1] = sem_fatal_count(c)
-    return 0
-}
-
-# Strict checking unless FLOWC_LENIENT=1 (the Python host's --lenient).
-function flowc_resolve_strict() -> bool {
-    let v: string = getenv("FLOWC_LENIENT")
-    if v as ptr<u8> == null {
-        return true
-    }
-    let p: ptr<u8> = v as ptr<u8>
-    if p[0] == 49 and p[1] == 0 {
-        return false
-    }
-    return true
-}
-
 export function flowc_bundle_typecheck(entry_path: string, search_dir: string) -> i32 {
-    let fatal: array<i32, 1> = [0]
-    return flowc_bundle_typecheck_fatal(entry_path, search_dir, &fatal[0] as ptr<i32>)
-}
-
-# As flowc_bundle_typecheck; also writes the count of errors that stay
-# errors under lenient checking (TcCtx.fatal, or a module that does not
-# read or parse) to fatal_out[0].
-export function flowc_bundle_typecheck_fatal(entry_path: string, search_dir: string, fatal_out: ptr<i32>) -> i32 {
-    fatal_out[0] = 1
     let path_store: ptr<u8> = malloc((FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP) as i64)
     if path_store == null {
         return 1
@@ -2848,11 +766,7 @@ export function flowc_bundle_typecheck_fatal(entry_path: string, search_dir: str
         zi = zi + 1
     }
 
-    # Nearest flow.toml above the entry: where registry packages resolve.
-    let proj_buf: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
-    let _proj_len: i32 = flowc_resolve_project_root(entry_path, proj_buf, FLOWC_RESOLVE_PATH_CAP)
-    let project_root: string = proj_buf as string
-    let nmods: i32 = flowc_resolve_gather(entry_path, search_dir, project_root, path_store)
+    let nmods: i32 = flowc_resolve_gather(entry_path, search_dir, path_store)
     if nmods <= 0 {
         puts("flowc bundle tc: gather failed")
         free(path_store)
@@ -2869,7 +783,7 @@ export function flowc_bundle_typecheck_fatal(entry_path: string, search_dir: str
         order_store[zi] = 0
         zi = zi + 1
     }
-    let norder: i32 = flowc_resolve_topo(path_store, nmods, search_dir, project_root, order_store)
+    let norder: i32 = flowc_resolve_topo(path_store, nmods, search_dir, order_store)
     if norder <= 0 {
         puts("flowc bundle tc: topo failed")
         free(order_store)
@@ -2881,7 +795,6 @@ export function flowc_bundle_typecheck_fatal(entry_path: string, search_dir: str
     let no_src: ptr<u8> = null
     let mut ctx: TcCtx = flowc_tc_init(no_src)
     ctx.lenient = 1
-    ctx.sem_on = 1
     if ctx.ns == null {
         free(order_store)
         free(path_store)
@@ -2897,19 +810,18 @@ export function flowc_bundle_typecheck_fatal(entry_path: string, search_dir: str
     }
 
     let mut total_err: i32 = 0
-    let mut ctx_fatal: i32 = 0
     # Deps-first topo order (shared imports before dependents).
     let mut mi: i32 = 0
     while mi < norder {
         let slot: ptr<u8> = order_store + (mi * FLOWC_RESOLVE_PATH_CAP)
-        let mpath: string = slot as string
+        let mpath: string = slot
 
         zi = 0
         while zi < FLOWC_RESOLVE_SRC_CAP {
             src[zi] = 0
             zi = zi + 1
         }
-        let nsrc: i32 = flowc_resolve_read_source(mpath, src, FLOWC_RESOLVE_SRC_CAP - 1)
+        let nsrc: i32 = flowc_read_file(mpath, src, FLOWC_RESOLVE_SRC_CAP - 1)
         if nsrc <= 0 {
             puts("flowc bundle tc: read failed")
             free(src)
@@ -2923,7 +835,8 @@ export function flowc_bundle_typecheck_fatal(entry_path: string, search_dir: str
         let mut p: Parser = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP)
         let root: i32 = flowc_parse_program(&p)
         if root < 0 or p.err != 0 {
-            flowc_parser_print_error(p, mpath)
+            puts("flowc bundle tc: parse failed")
+            printf("flowc bundle tc: nsrc=%d\n", nsrc)
             flowc_parser_free(p)
             free(src)
             flowc_tc_free(&ctx)
@@ -2949,55 +862,11 @@ export function flowc_bundle_typecheck_fatal(entry_path: string, search_dir: str
         mi = mi + 1
     }
 
-    ctx_fatal = ctx.fatal
-    # The semantic check (the Python host's type checker) over the bundle.
-    let sc: array<i32, 2> = [0, 0]
-    if flowc_bundle_semcheck(path_store, nmods, search_dir, project_root, &sc[0] as ptr<i32>) != 0 {
-        ctx_fatal = ctx_fatal + 1
-        total_err = total_err + 1
-    }
-    total_err = total_err + sc[0]
-    ctx_fatal = ctx_fatal + sc[1]
     free(src)
     flowc_tc_free(&ctx)
     free(order_store)
     free(path_store)
-    fatal_out[0] = ctx_fatal
     return total_err
-}
-
-# The semantic check of a module compiled on its own whose imports the
-# emitter leaves out (roundtrip.flow builds the compiler one object per
-# module this way). The imports resolve as in bundle mode, so imported
-# names are known, as they were on the Python host. counts[0] = errors,
-# counts[1] = the errors that stop the compile. Returns 1 when the imports
-# do not resolve; the caller then checks the module alone.
-export function flowc_semcheck_imports(entry_path: string, counts: ptr<i32>) -> i32 {
-    let psz: i32 = FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP
-    let path_store: ptr<u8> = calloc(psz as i64, 1)
-    let dir_buf: ptr<u8> = calloc(FLOWC_RESOLVE_PATH_CAP as i64, 1)
-    let proj_buf: ptr<u8> = calloc(FLOWC_RESOLVE_PATH_CAP as i64, 1)
-    if path_store == null or dir_buf == null or proj_buf == null {
-        return 1
-    }
-    let mut search_dir: string = "."
-    let fd: string = getenv("FLOWC_DIR")
-    if fd as ptr<u8> != null {
-        search_dir = fd
-    } elif flowc_resolve_dirname(entry_path, dir_buf, FLOWC_RESOLVE_PATH_CAP) > 0 {
-        search_dir = dir_buf as string
-    }
-    let _proj_len: i32 = flowc_resolve_project_root(entry_path, proj_buf, FLOWC_RESOLVE_PATH_CAP)
-    let project_root: string = proj_buf as string
-    let nmods: i32 = flowc_resolve_gather(entry_path, search_dir, project_root, path_store)
-    let mut rc: i32 = 1
-    if nmods > 0 {
-        rc = flowc_bundle_semcheck(path_store, nmods, search_dir, project_root, counts)
-    }
-    free(proj_buf)
-    free(dir_buf)
-    free(path_store)
-    return rc
 }
 
 # Resolve entry + relative/string imports, emit concatenated C (deps then entry).
@@ -3020,11 +889,7 @@ export function flowc_bundle_emit(
         zi = zi + 1
     }
 
-    # Nearest flow.toml above the entry: where registry packages resolve.
-    let proj_buf: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
-    let _proj_len: i32 = flowc_resolve_project_root(entry_path, proj_buf, FLOWC_RESOLVE_PATH_CAP)
-    let project_root: string = proj_buf as string
-    let nmods: i32 = flowc_resolve_gather(entry_path, search_dir, project_root, path_store)
+    let nmods: i32 = flowc_resolve_gather(entry_path, search_dir, path_store)
     if nmods <= 0 {
         free(path_store)
         return 0 - 1
@@ -3040,7 +905,7 @@ export function flowc_bundle_emit(
         order_store[zi] = 0
         zi = zi + 1
     }
-    let norder: i32 = flowc_resolve_topo(path_store, nmods, search_dir, project_root, order_store)
+    let norder: i32 = flowc_resolve_topo(path_store, nmods, search_dir, order_store)
     if norder <= 0 {
         free(order_store)
         free(path_store)
@@ -3061,66 +926,27 @@ export function flowc_bundle_emit(
     }
     let mut siglen: i32 = 0
 
-    # Top-level function definitions of every module, for rename decisions.
-    let fns: ptr<u8> = malloc(FLOWC_RESOLVE_FNS_CAP as i64)
-    if fns == null {
-        free(sigs)
-        free(order_store)
-        free(path_store)
-        return 0 - 1
-    }
-    let mut fnlen: i32 = 0
-    let mut li: i32 = 0
-    while li < norder {
-        let lslot: ptr<u8> = order_store + (li * FLOWC_RESOLVE_PATH_CAP)
-        let lpath: string = lslot as string
-        let nl: i32 = flowc_resolve_list_fns(lpath, li, fns, FLOWC_RESOLVE_FNS_CAP, fnlen)
-        if nl >= 0 {
-            fnlen = nl
-        }
-        li = li + 1
-    }
-
-    # Generic templates of the modules emitted so far.
-    let tpl: ptr<u8> = malloc(FLOWC_RESOLVE_TPL_CAP as i64)
-    let mut tpl_len: i32 = 0
-    if tpl != null {
-        tpl[0] = 0
-    }
-
     let mut written: i32 = 0
     let mut mi: i32 = 0
     let mut first: i32 = 1
     while mi < norder {
         let slot: ptr<u8> = order_store + (mi * FLOWC_RESOLVE_PATH_CAP)
-        let mpath: string = slot as string
+        let mpath: string = slot
         let mut flags: i32 = 0
         if first == 0 {
             flags = 1
         }
         first = 0
-        let ndef: i32 = flowc_resolve_emit_renames(fns, fnlen, mi, 0, out + written, out_cap - written)
-        if ndef < 0 {
-            free(fns)
-            free(sigs)
-            free(order_store)
-            free(path_store)
-            return 0 - 1
-        }
-        written = written + ndef
         let dest: ptr<u8> = out + written
         let rem: i32 = out_cap - written
         if rem <= 0 {
-            free(fns)
             free(sigs)
             free(order_store)
             free(path_store)
             return 0 - 1
         }
-        let mut n: i32 = flowc_resolve_emit_one(mpath, dest, rem, flags, sigs, FLOWC_RESOLVE_SIG_CAP, &siglen, tpl, FLOWC_RESOLVE_TPL_CAP, &tpl_len)
-        # A module may emit no C at all (one that holds only theorems).
-        if n < 0 {
-            free(fns)
+        let mut n: i32 = flowc_resolve_emit_one(mpath, dest, rem, flags, sigs, FLOWC_RESOLVE_SIG_CAP, &siglen)
+        if n <= 0 {
             free(sigs)
             free(order_store)
             free(path_store)
@@ -3131,27 +957,9 @@ export function flowc_bundle_emit(
             out[written] = 10
             written = written + 1
         }
-        let nundef: i32 = flowc_resolve_emit_renames(fns, fnlen, mi, 1, out + written, out_cap - written)
-        if nundef < 0 {
-            free(fns)
-            free(sigs)
-            free(order_store)
-            free(path_store)
-            return 0 - 1
-        }
-        written = written + nundef
         mi = mi + 1
     }
-    # --export names no module defined (#1030).
-    let nmiss: i32 = flowc_cgen_export_missing(sigs, siglen, out + written, out_cap - written)
-    if nmiss > 0 {
-        written = written + nmiss
-    }
 
-    if tpl != null {
-        free(tpl)
-    }
-    free(fns)
     free(sigs)
     free(order_store)
     free(path_store)

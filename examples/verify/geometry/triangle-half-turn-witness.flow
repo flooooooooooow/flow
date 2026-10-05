@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  Half-turn interior sum witness for triangles.
-# @from   euclid: Elements, Book I, Proposition 32
+# @from   euclid — Elements, Book I, Proposition 32
 # @tier   derived
 
 # @means  two right angles equals angle A plus angle B plus angle C.

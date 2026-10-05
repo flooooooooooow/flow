@@ -2,9 +2,9 @@
 
 *Complete transversal chain links all parallel angle witnesses.*
 
-**Source.** euclid: Elements, Book I, Proposition 29
+**Source.** euclid — Elements, Book I, Proposition 29
 
-## Derived fact 1: alternate alpha equals f-angle beta via full chain
+## Derived fact 1 — alternate alpha equals f-angle beta via full chain
 
 **Coordinate.** the Euclidean plane · parallel lines · complete transversal chain · **Derived fact**
 

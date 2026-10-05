@@ -1,5 +1,0 @@
-# expect: Invalid escape sequence: \x
-function main() -> i32 {
-    let s: string = "not hex: \xZZ"
-    return 0
-}

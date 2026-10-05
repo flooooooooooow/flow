@@ -1,1 +1,0 @@
-builtin.module(one-shot-bufferize{bufferize-function-boundaries=1},inline,func.func(canonicalize,cse,sccp,mem2reg,loop-invariant-code-motion,gpu-async-region),symbol-dce,canonicalize)

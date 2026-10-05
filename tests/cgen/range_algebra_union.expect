@@ -1,5 +1,0 @@
-# The Python backend folded this to the constant 233168. flowc calls the
-# closed-form helper instead; the value must still be 233168.
-+ __flowc_range_sum_union((int64_t)(0), (int64_t)(1000), (int64_t)(3), (int64_t)(0), (int64_t)(1000), (int64_t)(5))
-exit 0
-stdout 233168

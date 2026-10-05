@@ -2,13 +2,13 @@
 
 *If four magnitudes are proportional, they are proportional by composition and division.*
 
-**Source.** euclid: Elements, Book V, Proposition 13
+**Source.** euclid — Elements, Book V, Proposition 13
 
-## Derived fact 1: If four magnitudes are proportional, they are proportional by composition and division
+## Derived fact 1 — If four magnitudes are proportional, they are proportional by composition and division
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 13: proportional magnitudes satisfy componendo and dividendo · **Derived fact**
 
-*Source: euclid: Elements, Book V, Proposition 13*
+*Source: euclid — Elements, Book V, Proposition 13*
 
 *Built on: proposition 11: proportional magnitudes satisfy componendo, for Euclid Book V on the Euclidean plane, proposition 12: proportional magnitudes satisfy dividendo, for Euclid Book V on the Euclidean plane*
 

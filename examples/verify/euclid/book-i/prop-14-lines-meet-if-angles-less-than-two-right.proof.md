@@ -2,13 +2,13 @@
 
 *If two lines produce interior angles less than two right angles, the lines meet if produced.*
 
-**Source.** euclid: Elements, Book I, Proposition 14
+**Source.** euclid — Elements, Book I, Proposition 14
 
-## Axiom 1: If two lines produce interior angles less than two right angles, the lines meet if produced
+## Axiom 1 — If two lines produce interior angles less than two right angles, the lines meet if produced
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 14: lines with interior angles less than two right angles meet · **Axiom**
 
-*Source: euclid: Elements, Book I, Proposition 14*
+*Source: euclid — Elements, Book I, Proposition 14*
 
 > **Goal.** If two lines produce interior angles less than two right angles, the lines meet if produced
 >
@@ -20,7 +20,7 @@
 
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
-| ① | We accept proposition 14: lines with interior angles less than two right angles meet for Book I of the Elements in the Euclidean plane without proof. This is an ontological commitment rather than a lemma. |  |  |
+| ① | We accept proposition 14: lines with interior angles less than two right angles meet for Book I of the Elements in the Euclidean plane without proof — an ontological commitment, not a lemma. |  |  |
 | ② | We invoke the derived fact: lines_AB_and_CD_are_not_parallel. |  |  |
 | ③ | We invoke the derived fact: interior_angles_on_one_side_sum_to_less_than_two_right_angles. |  |  |
 | ④ | We invoke the derived fact: Postulate 5: lines meeting that condition meet when produced. |  |  |

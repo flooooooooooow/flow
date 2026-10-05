@@ -2,13 +2,13 @@
 
 *If a first is to a second as a third is to a fourth, and a fifth is to a sixth as the third is to a fourth, the sum of the first and fifth is to the second as the sum of the third and seventh is to the fourth.*
 
-**Source.** euclid: Elements, Book V, Proposition 21
+**Source.** euclid — Elements, Book V, Proposition 21
 
-## Derived fact 1: If a first is to a second as a third is to a fourth, and a fifth is to a sixth as the third is to a fourth, the sum of the first and fifth is to the second as the sum of the third and seventh is to the fourth
+## Derived fact 1 — If a first is to a second as a third is to a fourth, and a fifth is to a sixth as the third is to a fourth, the sum of the first and fifth is to the second as the sum of the third and seventh is to the fourth
 
 **Coordinate.** the Euclidean plane · Euclid Book V · Proposition 21: ex aequali from three linked ratios · **Derived fact**
 
-*Source: euclid: Elements, Book V, Proposition 21*
+*Source: euclid — Elements, Book V, Proposition 21*
 
 *Built on: proposition 11: proportional magnitudes satisfy componendo, for Euclid Book V on the Euclidean plane, proposition 19: ex aequali proportion in the second form, for Euclid Book V on the Euclidean plane*
 

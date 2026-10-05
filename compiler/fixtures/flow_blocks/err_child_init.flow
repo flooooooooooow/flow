@@ -1,6 +1,0 @@
-flow A {
-    state x : f64 = 0.0
-}
-flow B {
-    a : A = 3.0
-}

@@ -2,13 +2,13 @@
 
 *In equiangular triangles the sides about the equal angles are proportional, and those are corresponding sides which subtend the equal angles.*
 
-**Source.** euclid: Elements, Book VI, Proposition 4
+**Source.** euclid — Elements, Book VI, Proposition 4
 
-## Derived fact 1: In equiangular triangles the sides about the equal angles are proportional, and those are corresponding sides which subtend the equal angles
+## Derived fact 1 — In equiangular triangles the sides about the equal angles are proportional, and those are corresponding sides which subtend the equal angles
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 4: equiangular triangles have proportional corresponding sides · **Derived fact**
 
-*Source: euclid: Elements, Book VI, Proposition 4*
+*Source: euclid — Elements, Book VI, Proposition 4*
 
 *Built on: proposition 2: a line parallel to a triangle side cuts the other sides proportionally, for Euclid Book VI on the Euclidean plane, proposition 4: side-angle-side congruence, for Book I of the Elements in on the Euclidean plane*
 

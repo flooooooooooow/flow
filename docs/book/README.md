@@ -12,14 +12,16 @@ the Flow repository.
 
 ## Compiler convention
 
-Every example in this book runs on one compiler, `flowc`, the self-hosted
-compiler written in Flow:
+Flow v0.11.1 has two compiler hosts:
 
-| Compiler | Invocation | Use in this book |
+| Host | Invocation | Use in this book |
 |---|---|---|
-| flowc | `./flow run file.flow` | The full language, including pipelines and evolution blocks |
+| Self-hosted Stage A | `./flow run file.flow` | Core syntax, functions, control flow, arrays, and structs |
+| Python host | `FLOW_HOST=python ./flow run file.flow` | The full language, including pipelines and evolution blocks |
 
-Earlier editions had a second, Python-hosted C compiler. It is retired.
+The host requirement is printed beside each example. A program that requires
+the Python host is still a Flow program. Only the compiler implementation is
+different. The Python host accepts more of the language.
 
 ## Coverage contract
 
@@ -110,9 +112,9 @@ runner's coloured status lines and retain only program output.
 - `T` denotes a type.
 - `x: T` means that `x` has type `T`.
 - `[a, b)` denotes a half-open interval: it contains `a` and excludes `b`.
-- "Lowering" means translating a higher-level Flow construct into a simpler
+- “Lowering” means translating a higher-level Flow construct into a simpler
   intermediate form before code generation.
-- "State" means a value retained from one update to the next.
+- “State” means a value retained from one update to the next.
 
 The language reference defines the grammar and edge cases. The book explains
 the language in order and provides working programs.

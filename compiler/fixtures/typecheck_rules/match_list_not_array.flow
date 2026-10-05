@@ -1,9 +1,0 @@
-# expect: List pattern ListPattern(elements=[Variable(name='a'), Variable(name='b')]) requires an array value, got i32
-function main() -> i32 {
-    let x: i32 = 1
-    match x {
-        [a, b] => { return a }
-        _ => { return 0 }
-    }
-    return 0
-}

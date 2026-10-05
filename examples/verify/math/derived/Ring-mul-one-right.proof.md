@@ -2,9 +2,9 @@
 
 *One is the right multiplicative identity in a ring.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.1
+**Source.** dummit-foote — *Abstract Algebra*, §7.1
 
-## Derived fact 1: r * 1 = r
+## Derived fact 1 — r * 1 = r
 
 **Coordinate.** Ring · multiplication · one is the right identity · **Derived fact**
 

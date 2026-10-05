@@ -2,13 +2,13 @@
 
 *To a given straight line to apply a parallelogram equal to a given triangle in a given angle.*
 
-**Source.** euclid: Elements, Book I, Proposition 44
+**Source.** euclid — Elements, Book I, Proposition 44
 
-## Derived fact 1: To a given straight line to apply a parallelogram equal to a given triangle in a given angle
+## Derived fact 1 — To a given straight line to apply a parallelogram equal to a given triangle in a given angle
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 44: apply a parallelogram equal to a triangle to a line · **Derived fact**
 
-*Source: euclid: Elements, Book I, Proposition 44*
+*Source: euclid — Elements, Book I, Proposition 44*
 
 *Built on: proposition 23: copy a given angle onto a line at a point, for Book I of the Elements in on the Euclidean plane, proposition 42: a parallelogram equals a triangle on an equal base, for Book I of the Elements in on the Euclidean plane*
 

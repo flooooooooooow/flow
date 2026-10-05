@@ -1,4 +1,0 @@
-function main() -> i32 {
-    let n: i32 = "hello"
-    return 0
-}

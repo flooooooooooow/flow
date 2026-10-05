@@ -2,9 +2,9 @@
 
 *Integer multiplication associates.*
 
-**Source.** landau: *Foundations of Analysis*, Ch. 1
+**Source.** landau — *Foundations of Analysis*, Ch. 1
 
-## Derived fact 1: (a * b) * c = a * (b * c)
+## Derived fact 1 — (a * b) * c = a * (b * c)
 
 **Coordinate.** the integers · multiplication · parentheses do not matter · **Derived fact**
 

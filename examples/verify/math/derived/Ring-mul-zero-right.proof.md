@@ -2,9 +2,9 @@
 
 *Zero on the right annihilates ring multiplication.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.1
+**Source.** dummit-foote — *Abstract Algebra*, §7.1
 
-## Derived fact 1: r * 0 = 0
+## Derived fact 1 — r * 0 = 0
 
 **Coordinate.** Ring · multiplication · zero on the right gives zero · **Derived fact**
 

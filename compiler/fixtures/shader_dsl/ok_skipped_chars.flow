@@ -1,4 +1,0 @@
-shader fill skip {
-    let a = 1.0 @ [ ] " & | $
-    color = vec4(a)   # a comment
-}

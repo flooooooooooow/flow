@@ -1,6 +1,0 @@
-@gpu
-function k(a: ptr<i32>, n: i32) -> void {
-    while n > 0 {
-        break
-    }
-}

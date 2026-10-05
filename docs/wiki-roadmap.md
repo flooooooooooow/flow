@@ -5,7 +5,7 @@
 
 ---
 
-## Current state (Phase 0-1, shipped)
+## Current state (Phase 0–1 — shipped)
 
 | Item | Status |
 |------|--------|
@@ -16,7 +16,7 @@
 | Third-party `flow-verify` section (1000+ proofs) | ✅ |
 | Euclid book index pages (auto-generated) | ✅ |
 | Build script (`scripts/build_wiki.py`) | ✅ |
-| Deploy script (`./flow tool deploy_wiki`) | ✅ build-only (VPS behind `FLOW_WIKI_VPS=1`) |
+| Deploy script (`scripts/deploy_wiki.py`) | ✅ build-only (VPS behind `FLOW_WIKI_VPS=1`) |
 | Version dropdown + changelog | ✅ |
 | GitHub Pages deploy (`wiki.yml`) | ✅ |
 | VPS live deploy (`/flow/` + `/transpile/`) | ❌ disabled |
@@ -32,7 +32,7 @@
 
 ---
 
-## Phase 2: Reference completeness (in progress)
+## Phase 2 — Reference completeness (in progress)
 
 **Goal:** Every language feature has a reference page; nothing lives only in README.
 
@@ -51,18 +51,18 @@
 
 ---
 
-## Phase 3: Interactive & searchable (2-4 months)
+## Phase 3 — Interactive & searchable (2–4 months)
 
 | Task | Notes |
 |------|-------|
-| Pagefind wiki search | ✅ | `./flow tool build_wiki --pagefind` after wiki build when node/npx present; ⌘K uses Pagefind with `search-index.json` fallback |
-| Playground: compile via WASM or API | partial ✅ | browser interpreter + **Run (native local)** via `./flow tool playground_server` (#132); next: emscripten hello artifact (`./flow tool scripts/build_wasm_hello.flow`, [language/wasm.md](language/wasm.md)); in-browser Flow compiler still deferred (#121) |
-| Proof graph visualization | ✅ partial: module-level `import` graph (`third-party/proof-graph.md`, `scripts/build_wiki.py::build_proof_graph`); per-theorem Claim Path edges still open |
+| Pagefind wiki search | ✅ | `scripts/build_pagefind.sh` after wiki build when node/npx present; ⌘K uses Pagefind with `search-index.json` fallback |
+| Playground: compile via WASM or API | partial ✅ | browser interpreter + **Run (native local)** via `scripts/playground_compile_server.py` (#132); next: emscripten hello artifact (`scripts/build_wasm_hello.sh`, [language/wasm.md](language/wasm.md)); in-browser Flow compiler still deferred (#121) |
+| Proof graph visualization | ✅ partial — module-level `import` graph (`third-party/proof-graph.md`, `scripts/build_wiki.py::build_proof_graph`); per-theorem Claim Path edges still open |
 | Dark/light theme toggle | ✅ Header **Theme** button; `localStorage` key `flow-wiki-theme` |
 
 ---
 
-## Phase 4: Platform (6+ months)
+## Phase 4 — Platform (6+ months)
 
 | Task | Notes |
 |------|-------|
@@ -103,12 +103,12 @@ The **language** roadmap (`ROADMAP.md`) tracks compiler features. The **wiki** r
 1. Edit markdown under `docs/`
 2. Run `python3 scripts/gen_stdlib_docs.py` (if touching stdlib)
 3. Run `python3 scripts/build_wiki.py` (also runs Pagefind if `node`/`npx` are available)
-4. Optional re-index only: `./flow tool build_wiki --pagefind`
-5. Preview: `./flow tool wiki_browser serve build/wiki 8777`
-6. Browser checks: serve on port 8899 (`./flow tool wiki_browser serve`), then run `./flow tool wiki_browser verify` and `./flow tool wiki_browser contrast`. Production deploys from `main` via GitHub Pages
+4. Optional re-index only: `./scripts/build_pagefind.sh`
+5. Preview: `cd build/wiki && python3 -m http.server 8777`
+6. Preview: `cd build/wiki && python3 -m http.server 8777` — production deploys from `main` via GitHub Pages
 
 ### Releases / changelog
 
 1. Update `docs/project/CHANGELOG.md` with a new `## [X.Y.Z] - YYYY-MM-DD` heading.
-2. Rebuild. The wiki serves that file as `project/CHANGELOG.md` and regenerates `releases.md` + `versions.json` from it.
+2. Rebuild — the wiki serves that file as `project/CHANGELOG.md` and regenerates `releases.md` + `versions.json` from it.
 3. Deploy when you want the live site to pick up the new version.

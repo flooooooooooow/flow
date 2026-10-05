@@ -1,7 +1,0 @@
-# A returned nested array is one struct returned by value (#573).
-# From tests/integration/test_array_return.py.
-+ __flowc_arr_i32_3_4 build(int32_t root) {
-+ __flowc_arr_i32_3_4 from_rows(int32_t root) {
-exit 0
-stdout built 10 14 31
-stdout joined 1 11 13

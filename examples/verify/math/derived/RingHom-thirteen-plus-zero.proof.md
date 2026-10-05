@@ -2,9 +2,9 @@
 
 *Thirteen plus zero maps to thirteen under a ring homomorphism.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §7.3
+**Source.** dummit-foote — *Abstract Algebra*, §7.3
 
-## Derived fact 1: f(13 + 0) = 13
+## Derived fact 1 — f(13 + 0) = 13
 
 **Coordinate.** RingHom · preservation · thirteen plus zero maps to thirteen · **Derived fact**
 

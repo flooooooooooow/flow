@@ -1,15 +1,15 @@
 # Appendix B. Feature coverage index
 
-The index lists the public features in Flow v0.11.1. "Full" means that the
-feature works with the stated compiler and backend. "Partial" marks an
-important limit. "Target" requires a platform or external toolchain. "Planned"
+The index lists the public features in Flow v0.11.1. “Full” means that the
+feature works with the stated compiler and backend. “Partial” marks an
+important limit. “Target” requires a platform or external toolchain. “Planned”
 means that the syntax or design is not implemented.
 
 ## Lexical rules and operators
 
 | Feature | Status | Book location |
 |---|---|---|
-| identifiers, whitespace, braces, statements | Full | Chapters 1-3 |
+| identifiers, whitespace, braces, statements | Full | Chapters 1–3 |
 | `#` line comments | Full; C and block comments unsupported | Chapter 1 |
 | decimal and hexadecimal integers | Full | Chapters 2, 8 |
 | binary integer literals | Planned; not lexed | Appendix A |
@@ -21,7 +21,7 @@ means that the syntax or design is not implemented.
 | bitwise <code>&amp; &#124; ^ ~ &lt;&lt; &gt;&gt;</code> | Full | Chapter 9 |
 | assignment `=` | Full | Chapter 2 |
 | ranges `to`, `..`, `step` | Full | Chapters 3, 9 |
-| pipeline <code>&#124;&gt;</code> and placeholder `_` | Full | Chapters 6, 9 |
+| pipeline <code>&#124;&gt;</code> and placeholder `_` | Full with Python host | Chapters 6, 9 |
 | address-of `&` and dereference `*` | Full with C backend | Chapter 10 |
 | type arrow `->`, match arrow `=>` | Full | Chapters 4, 9 |
 | effect scope `::` / effect call spelling | Full with parser-specific spellings | Chapter 12 |
@@ -47,11 +47,11 @@ means that the syntax or design is not implemented.
 | span sugar `&[T]`, `&mut [T]`, `&[T;N]` | Full | Chapter 10 |
 | inferred/bare spans | Planned | Chapter 8 |
 | function and closure types | Full with C backend | Chapters 4, 9 |
-| raw C function pointers `cfn(...) -> R` | Full with C backend | Chapter 11 |
+| raw C function pointers `cfn(...) -> R` | Python host with C backend | Chapter 11 |
 | transparent aliases | Full | Chapter 8 |
 | nominal `distinct type` | Full | Chapter 8 |
 | explicit `as` casts | Full | Chapters 2, 8 |
-| units and dimensional checking | Full with C backend | Chapters 8, 13 |
+| units and dimensional checking | Python host with C backend | Chapters 8, 13 |
 | generic structs and functions | Full with explicit instantiation; inference gap | Chapter 8 |
 | function overload resolution and mangling | Full | Chapters 8, 11 |
 | traits and `impl` | Partial semantics | Chapter 8 |
@@ -62,7 +62,7 @@ means that the syntax or design is not implemented.
 | Feature | Status | Book location |
 |---|---|---|
 | functions and typed parameters/results | Full | Chapter 4 |
-| build guards `@only`, `@guard`, `@compile` | Full with C backend: flowc drops a function whose modes are all off (`FLOWC_MODE` adds one) | Chapters 8, 16 |
+| build guards `@only`, `@guard`, `@compile` | Full Python host | Chapters 8, 16 |
 | local `let`, inference, `let mut` | Full | Chapter 2 |
 | `const` | Full | Chapter 8 |
 | top-level mutable statics | C target; MLIR gap | Chapter 8 |
@@ -70,9 +70,9 @@ means that the syntax or design is not implemented.
 | enums | Full with C backend | Chapter 8 |
 | traits and implementations | Partial | Chapter 8 |
 | `extern` and variadic externs | Full with C backend | Chapter 11 |
-| `@cImport` | Full with C backend | Chapter 11 |
-| `@cInclude` and opaque `extern type` | Full with C backend | Chapter 11 |
-| `@cEmbed` raw C | Full with C backend | Chapter 11 |
+| `@cImport` | Python host with C backend | Chapter 11 |
+| `@cInclude` and opaque `extern type` | Python host with C backend | Chapter 11 |
+| `@cEmbed` raw C | Python-hosted C escape hatch | Chapter 11 |
 | `@inline`, `@always_inline`, `@noinline` | C target | Chapter 8 |
 | `@target` | Target-dependent C attribute | Chapter 8 |
 | `@flow_api` | C ABI | Chapters 8, 11 |
@@ -88,7 +88,7 @@ means that the syntax or design is not implemented.
 
 | Feature | Status | Book location |
 |---|---|---|
-| literals, variables, calls, field/index access | Full | Chapters 2-5 |
+| literals, variables, calls, field/index access | Full | Chapters 2–5 |
 | unary and binary expressions | Full | Chapters 2, 9 |
 | struct and array construction | Full | Chapter 5 |
 | closures and by-value capture | C target; MLIR gap | Chapter 9 |
@@ -110,13 +110,13 @@ means that the syntax or design is not implemented.
 
 | Feature | Status | Book location |
 |---|---|---|
-| ordinary call pipelines | Full | Chapter 6 |
-| placeholder argument placement | Full | Chapter 6 |
-| named and inferred fork records | Full | Chapter 9 |
-| `choose` pipeline stage | Full | Chapter 9 |
-| `sort`, descending, unique | Full with C backend | Chapter 9 |
-| `sortBy` field ordering | Full with C backend | Chapter 9 |
-| `find` | Full with C backend | Chapter 9 |
+| ordinary call pipelines | Full Python host | Chapter 6 |
+| placeholder argument placement | Full Python host | Chapter 6 |
+| named and inferred fork records | Full Python host | Chapter 9 |
+| `choose` pipeline stage | Full Python host | Chapter 9 |
+| `sort`, descending, unique | Full with Python host and C backend | Chapter 9 |
+| `sortBy` field ordering | Full with Python host and C backend | Chapter 9 |
+| `find` | Full with Python host and C backend | Chapter 9 |
 | sort/search plan selection | Full | Chapters 9, 17 |
 | ordering hints and cost constraints | Full | Chapters 9, 17 |
 | stable/unstable modifier distinction | Partial; all plans currently stable | Chapter 9 |
@@ -130,8 +130,8 @@ means that the syntax or design is not implemented.
 | capabilities | Full, stateless | Chapter 12 |
 | nested and multiple handlers | Full with C backend | Chapter 12 |
 | dynamic handler restoration | Full with C backend | Chapter 12 |
-| effect rows | Full in Stable mode | Chapter 12 |
-| zero/no-op unhandled compatibility | Explicit permissive mode | Chapter 12 |
+| effect rows | Full under strict-effects mode | Chapter 12 |
+| zero/no-op unhandled compatibility | Full default; strict mode available | Chapter 12 |
 | pthread threads, mutex, condvar, semaphore, once | Native target | Chapter 12 |
 | WaitGroup | Native target | Chapter 12 |
 | buffered channels and close | Native target | Chapter 12 |
@@ -150,10 +150,10 @@ means that the syntax or design is not implemented.
 
 | Feature | Status | Book location |
 |---|---|---|
-| logical imports and selected symbols | Full | Chapter 11 |
-| aliases and sibling imports | Partial: sibling imports work; flowc does not parse `import M as name` | Chapter 11 |
+| logical imports and selected symbols | Full Python host | Chapter 11 |
+| aliases and sibling imports | Full Python host | Chapter 11 |
 | exports and export lists | Full | Chapter 11 |
-| re-export | Full | Chapter 11 |
+| re-export | Python host; self-hosted gap | Chapter 11 |
 | module resolution via `[paths]` | Full | Chapter 11 |
 | `module` blocks | Partial; flattened, not namespaces | Chapter 11 |
 | `flow.toml` project builds | Full | Chapter 11 |
@@ -161,16 +161,16 @@ means that the syntax or design is not implemented.
 | version requirements and lock file | Direct-dependency support | Chapter 11 |
 | hosted publish/accounts/yank service | Planned | Chapter 11 |
 | native project sources and libraries | Full; target-dependent | Chapter 11 |
-| stable C/WASM export aliases | Planned: flowc emits exported functions under their plain names | Chapter 11 |
+| stable C/WASM export aliases | Full with C backend | Chapter 11 |
 | Python wheels | Target-dependent; type restrictions | Chapters 11, 16 |
 
 ## Evolution and dynamics
 
 | Feature | Status | Book location |
 |---|---|---|
-| `flow`, state, parameters | Full with C backend | Chapters 7, 13 |
-| inputs and outputs | Full with C backend | Chapter 13 |
-| `evolves as` derivatives | Full with C backend | Chapters 7, 13 |
+| `flow`, state, parameters | Full with Python host and C backend | Chapters 7, 13 |
+| inputs and outputs | Full with Python host and C backend | Chapter 13 |
+| `evolves as` derivatives | Full with Python host and C backend | Chapters 7, 13 |
 | Euler and RK4 solver selection | Full | Chapters 7, 13 |
 | time units in solver declarations | Full in the evolution expander | Chapter 13 |
 | sampled `every` / `becomes` | Full in the evolution expander | Chapter 13 |
@@ -222,8 +222,8 @@ means that the syntax or design is not implemented.
 
 | Feature | Status | Book location |
 |---|---|---|
-| self-hosted compiler (flowc) | The only C compiler | Chapters 1, 16 |
-| Python-hosted C compiler | Retired | Chapters 1, 16 |
+| self-hosted Stage-A compiler | Core subset | Chapters 1, 16 |
+| Python-hosted compiler | Broadest feature support | Chapters 1, 16 |
 | C backend | Primary | Chapter 16 |
 | MLIR backend | Partial parity | Chapter 16 |
 | JIT | MLIR toolchain | Chapter 16 |
@@ -238,7 +238,7 @@ means that the syntax or design is not implemented.
 | safety profile | Full C profile | Chapter 17 |
 | MISRA/CERT scans | Modelled-rule scanners | Chapter 17 |
 | WCET/stack analysis | Partial static analysis | Chapter 17 |
-| explainable plan selection | Full for sort and search | Chapter 17 |
+| explainable plan selection | Full selected constructs | Chapter 17 |
 | FIR-G graph and analyses | Compiler tool | Chapter 17 |
 | reproducible-build guidance | Process/tooling | Chapter 17 |
 | theorem and claim syntax | Partial | Chapter 17 |

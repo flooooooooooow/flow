@@ -2,13 +2,13 @@
 
 *In a given circle to inscribe a rectangle.*
 
-**Source.** euclid: Elements, Book IV, Proposition 7
+**Source.** euclid — Elements, Book IV, Proposition 7
 
-## Derived fact 1: In a given circle to inscribe a rectangle
+## Derived fact 1 — In a given circle to inscribe a rectangle
 
 **Coordinate.** the Euclidean plane · Euclid Book IV · Proposition 7: in a circle to inscribe a rectangle · **Derived fact**
 
-*Source: euclid: Elements, Book IV, Proposition 7*
+*Source: euclid — Elements, Book IV, Proposition 7*
 
 *Built on: proposition 4: in a circle to inscribe a square, for Euclid Book IV on the Euclidean plane, proposition 31: interior angles on one side sum to two right angles, for Book I of the Elements in on the Euclidean plane*
 

@@ -1,9 +1,0 @@
-error: Flow to LLVM IR compilation failed
-stderr:
-Resolving modules...
-Error resolving modules: Error: Expected TokenType.IDENTIFIER, got TokenType.ARROW at line 1, column 25
-
-     1 | export function broken( -> i32 {
-       |                         ^
-
-  Hint: Expected a name (identifier) here. Names must start with a letter or underscore.

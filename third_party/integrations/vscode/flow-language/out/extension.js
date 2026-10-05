@@ -55,14 +55,17 @@ function resolveServerOptions() {
             options: { env },
         };
     }
-    // The native server (tools/lsp/main.flow), started as `flow lsp`. The
-    // launcher builds it with the Stage-A compiler on first use.
+    const python = (config.get('pythonPath') || 'python3').trim();
     const repoPath = (0, paths_1.resolveRepoPath)();
+    if (repoPath) {
+        const src = path.join(repoPath, 'src');
+        env.PYTHONPATH = env.PYTHONPATH ? `${src}${path.delimiter}${env.PYTHONPATH}` : src;
+    }
     return {
-        command: (0, paths_1.resolveFlowBinary)(repoPath),
-        args: ['lsp'],
+        command: python,
+        args: ['-m', 'flow.lsp_server'],
         transport: node_1.TransportKind.stdio,
-        options: { env, cwd: repoPath || undefined },
+        options: { env },
     };
 }
 function clientOptions() {
@@ -84,7 +87,7 @@ async function startClient() {
     client = new node_1.LanguageClient('flowLanguageServer', 'FLOW Language Server', resolveServerOptions(), clientOptions());
     try {
         await client.start();
-        setStatus('$(check) Flow LSP', 'FLOW language server running. Click to restart.');
+        setStatus('$(check) Flow LSP', 'FLOW language server running — click to restart');
     }
     catch (err) {
         setStatus('$(warning) Flow LSP off', String(err));

@@ -2,13 +2,13 @@
 
 *To a given straight line to apply a parallelogram equal to a given rectilineal figure and similar to a given parallelogram.*
 
-**Source.** euclid: Elements, Book VI, Proposition 13
+**Source.** euclid — Elements, Book VI, Proposition 13
 
-## Derived fact 1: To a given straight line to apply a parallelogram equal to a given rectilineal figure and similar to a given parallelogram
+## Derived fact 1 — To a given straight line to apply a parallelogram equal to a given rectilineal figure and similar to a given parallelogram
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 13: to apply to a line a parallelogram equal to a figure and similar to another · **Derived fact**
 
-*Source: euclid: Elements, Book VI, Proposition 13*
+*Source: euclid — Elements, Book VI, Proposition 13*
 
 *Built on: proposition 12: to apply a parallelogram equal to a figure and exceeding by a similar parallelogram, for Euclid Book VI on the Euclidean plane*
 

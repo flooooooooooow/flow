@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-vi
 # @means  Given a straight line, to cut off a prescribed part from it.
-# @from   euclid: Elements, Book VI, Proposition 10
+# @from   euclid — Elements, Book VI, Proposition 10
 # @tier   derived
 # @needs  «Geometry» «Euclid Book VI» «Proposition 1: triangles and parallelograms of the same height are as their bases», «Geometry» «Euclid Book I» «Proposition 3: cut a segment equal to a smaller segment»
 

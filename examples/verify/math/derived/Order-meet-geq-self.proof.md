@@ -2,9 +2,9 @@
 
 *Meet is at most each argument.*
 
-**Source.** davey-priestley: *Introduction to Lattices and Order*
+**Source.** davey-priestley — *Introduction to Lattices and Order*
 
-## Derived fact 1: meet(a, b) <= a
+## Derived fact 1 — meet(a, b) <= a
 
 **Coordinate.** Order · meet · meet is at most the left argument · **Derived fact**
 

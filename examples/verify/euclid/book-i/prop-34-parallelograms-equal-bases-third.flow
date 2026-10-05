@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-i
 # @means  Parallelograms on equal bases and in the same parallels equal one another.
-# @from   euclid: Elements, Book I, Proposition 34
+# @from   euclid — Elements, Book I, Proposition 34
 # @tier   derived
 # @needs  «Geometry» «Euclid Book I» «Proposition 26: equal parallelograms on equal bases between parallels»
 

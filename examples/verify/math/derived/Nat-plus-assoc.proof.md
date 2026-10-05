@@ -2,13 +2,13 @@
 
 *Addition associates: parentheses on the left can move to the right.*
 
-**Source.** landau: *Foundations of Analysis*, Ch. 1
+**Source.** landau — *Foundations of Analysis*, Ch. 1
 
-## Derived fact 1: (a + b) + c = a + (b + c)
+## Derived fact 1 — (a + b) + c = a + (b + c)
 
 **Coordinate.** the natural numbers · addition · parentheses do not matter · **Derived fact**
 
-*Source: peano/induction: Gries & Schneider, Ch. 3*
+*Source: peano/induction — Gries & Schneider, Ch. 3*
 
 *Built on: adding zero on the left does not change the number, successor on the left steps the sum, for addition on the natural numbers*
 

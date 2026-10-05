@@ -2,13 +2,13 @@
 
 *Given a straight line, to cut off a prescribed part from it.*
 
-**Source.** euclid: Elements, Book VI, Proposition 10
+**Source.** euclid — Elements, Book VI, Proposition 10
 
-## Derived fact 1: Given a straight line, to cut off a prescribed part from it
+## Derived fact 1 — Given a straight line, to cut off a prescribed part from it
 
 **Coordinate.** the Euclidean plane · Euclid Book VI · Proposition 10: to cut off a prescribed part from a given straight line · **Derived fact**
 
-*Source: euclid: Elements, Book VI, Proposition 10*
+*Source: euclid — Elements, Book VI, Proposition 10*
 
 *Built on: proposition 1: triangles and parallelograms of the same height are as their bases, for Euclid Book VI on the Euclidean plane, proposition 3: cut a segment equal to a smaller segment, for Book I of the Elements in on the Euclidean plane*
 

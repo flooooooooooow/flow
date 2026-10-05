@@ -1,9 +1,0 @@
-field W : f64[6] on Line
-W evolves as laplacian(W)
-boundary W { left = 0.0  right = 0.0 }
-const SWALLOWED: i32 = 1
-const KEPT: i32 = 2
-
-function main() -> i32 {
-    return KEPT
-}

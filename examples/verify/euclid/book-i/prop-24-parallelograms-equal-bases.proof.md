@@ -2,13 +2,13 @@
 
 *Parallelograms on equal bases and in the same parallels are equal.*
 
-**Source.** euclid: Elements, Book I, Proposition 24
+**Source.** euclid — Elements, Book I, Proposition 24
 
-## Derived fact 1: Parallelograms on equal bases and in the same parallels are equal
+## Derived fact 1 — Parallelograms on equal bases and in the same parallels are equal
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 24: parallelograms on equal bases and parallels are equal · **Derived fact**
 
-*Source: euclid: Elements, Book I, Proposition 24*
+*Source: euclid — Elements, Book I, Proposition 24*
 
 *Built on: proposition 4: side-angle-side congruence, for Book I of the Elements in on the Euclidean plane, proposition 14: lines with interior angles less than two right angles meet, for Book I of the Elements in on the Euclidean plane*
 

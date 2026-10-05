@@ -2,9 +2,9 @@
 
 *Length increases by one under cons.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len(cons(x, xs)) = succ(len(xs))
+## Derived fact 1 — len(cons(x, xs)) = succ(len(xs))
 
 **Coordinate.** List · length · cons increases length by one · **Derived fact**
 

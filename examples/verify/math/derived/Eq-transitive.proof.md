@@ -2,13 +2,13 @@
 
 *Equalities chain: x = y and y = z imply x = z.*
 
-**Source.** leibniz: https://en.wikipedia.org/wiki/Transitive_relation
+**Source.** leibniz — https://en.wikipedia.org/wiki/Transitive_relation
 
-## Derived fact 1: If x equals y and y equals z, then x equals z
+## Derived fact 1 — If x equals y and y equals z, then x equals z
 
 **Coordinate.** equality · equality · equality chains · **Derived fact**
 
-*Source: leibniz: https://en.wikipedia.org/wiki/Transitive_relation*
+*Source: leibniz — https://en.wikipedia.org/wiki/Transitive_relation*
 
 *Built on: anything is always equal to itself*
 
@@ -19,7 +19,7 @@
 | | **Proof** | | **Math** |
 |:---:|:---|:---:|:---|
 | ① | We prove that equality chains for equality on equality. |  |  |
-| ② | We split into exhaustive cases. The claim must hold in each one. |  |  |
+| ② | We split into exhaustive cases — the claim must hold in each one. |  |  |
 | ③ | Case 1 (see step 2): suppose x  equals  y. |  |  |
 | ④ | Case 2 (see step 2): suppose y  equals  z. |  |  |
 | ⑤ | We invoke the axiom governing equality on equality: anything is always equal to itself (instantiated for x). | ⑤ | $x = x$ |

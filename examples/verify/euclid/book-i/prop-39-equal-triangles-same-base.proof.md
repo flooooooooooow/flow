@@ -2,13 +2,13 @@
 
 *Equal triangles on the same base are in the same parallels.*
 
-**Source.** euclid: Elements, Book I, Proposition 39
+**Source.** euclid — Elements, Book I, Proposition 39
 
-## Derived fact 1: Equal triangles on the same base are in the same parallels
+## Derived fact 1 — Equal triangles on the same base are in the same parallels
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 39: equal triangles on the same base lie between parallels · **Derived fact**
 
-*Source: euclid: Elements, Book I, Proposition 39*
+*Source: euclid — Elements, Book I, Proposition 39*
 
 *Built on: proposition 37: triangles on the same base and parallels are equal, for Book I of the Elements in on the Euclidean plane*
 

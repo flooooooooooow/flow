@@ -1,9 +1,8 @@
-# ACTIONS-INTENDED: public repository; its CI runs on GitHub Actions.
 name: Version Bump
 
 # Two ways in:
-#   * push a v* tag: the tree is bumped to match the tag after the fact
-#   * run manually with a version: for bumping ahead of tagging
+#   * push a v* tag — the tree is bumped to match the tag after the fact
+#   * run manually with a version — for bumping ahead of tagging
 #
 # main is protected, so this opens a PR rather than pushing directly. Same
 # approach as the repository-stats workflow.
@@ -90,10 +89,10 @@ jobs:
           if [[ '${{ steps.brew.outputs.enabled }}' == 'true' ]]; then
             ARGS+=(--sha256-from-release)
           fi
-          ./flow tool sync_version "${ARGS[@]}"
+          python3 scripts/sync_version.py "${ARGS[@]}"
 
       - name: Verify the result is self-consistent
-        run: ./flow tool sync_version --check
+        run: python3 scripts/sync_version.py --check
 
       - name: Open or update the bump PR
         env:
@@ -120,7 +119,7 @@ jobs:
             exit 0
           fi
 
-          BODY="Automated sync of every version reference to \`$VERSION\`, from the canonical value in \`VERSION\`."
+          BODY="Automated sync of every version reference to \`$VERSION\`, from the canonical value in \`src/flow/version.py\`."
           if [[ '${{ steps.brew.outputs.enabled }}' == 'true' ]]; then
             BODY="$BODY"$'\n\n'"The Homebrew formula was bumped with a digest computed from the published release tarball."
           else

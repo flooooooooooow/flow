@@ -1,44 +1,22 @@
-## Intent
+## Summary
 
-Linked issue or roadmap item:
+- What changed?
+- Why is this the right change for Flow?
 
-What changed, and why is this the smallest useful change?
+## Validation
 
-## Overlap check
-
-- [ ] I searched open pull requests and recent commits for overlapping work.
-- [ ] This does not duplicate another active implementation, or the relationship is explained below.
-
-Overlap / dependency notes:
-
-## Evidence
-
-Baseline before this change:
-
-Targeted proof that exercises the changed behaviour:
-
-Why that proof would detect the old failure or regression:
-
-Repository gate(s) run:
-
-Generated/bootstrap state, if any:
-
-## Risk
-
-Compatibility, performance, security, lifetime, backend, or release implications:
-
-- [ ] No unresolved language/API design decision is being implemented implicitly.
-- [ ] No unrelated generated artifacts or local state are included.
-- [ ] Docs changed when user-visible behaviour or syntax changed.
-- [ ] `docs/project/Questions.md` updated if this needs a language-design decision.
+- [ ] `./flow test --strict --tier2`
+- [ ] Relevant example runs (`./flow run …`)
+- [ ] Docs updated when behavior or syntax changed
+- [ ] `Questions.md` updated if this requires a language-design decision
 
 ## Compatibility
 
-- [ ] No user-visible compatibility change.
-- [ ] Compatibility change is documented in `docs/project/CHANGELOG.md`.
+- [ ] No user-visible compatibility change
+- [ ] Compatibility change documented in `docs/project/CHANGELOG.md`
 
-## Agent handoff
+## Checklist
 
-Agent/provider/session, when applicable:
-
-Any remaining blocker is recorded in GitHub rather than only in local/session state:
+- [ ] The change is focused and reviewable
+- [ ] No generated build artifacts or secrets are included
+- [ ] New syntax has parser, type-checker, codegen, and regression coverage

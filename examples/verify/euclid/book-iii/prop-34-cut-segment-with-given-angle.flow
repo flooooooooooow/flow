@@ -1,6 +1,6 @@
 # @module examples.verify.euclid.book-iii
 # @means  To cut off from a circle a segment containing an angle equal to a given rectilineal angle.
-# @from   euclid: Elements, Book III, Proposition 34
+# @from   euclid — Elements, Book III, Proposition 34
 # @tier   derived
 # @needs  «Geometry» «Euclid Book III» «Proposition 33: to construct on a given straight line a segment similar to a given segment»
 

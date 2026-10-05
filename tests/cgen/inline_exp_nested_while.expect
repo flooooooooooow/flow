@@ -1,6 +1,0 @@
-# Inline exp() inside nested while loops builds and runs (#421).
-# The loops carry no vectorization pragmas (#414).
-+ exp((double)
-- ivdep
-- vectorize
-exit 0

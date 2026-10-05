@@ -2,9 +2,9 @@
 
 *Equal alternate angles imply equal corresponding angles.*
 
-**Source.** euclid: Elements, Book I, Proposition 29
+**Source.** euclid — Elements, Book I, Proposition 29
 
-## Derived fact 1: corresponding angles equal when alternate angles equal
+## Derived fact 1 — corresponding angles equal when alternate angles equal
 
 **Coordinate.** the Euclidean plane · parallel lines · alternate equal implies corresponding equal · **Derived fact**
 

@@ -4,7 +4,7 @@
 
 **Source.** graham-knuth-patashnik
 
-## Derived fact 1: (a ∪ b) ∪ c = a ∪ (b ∪ c)
+## Derived fact 1 — (a ∪ b) ∪ c = a ∪ (b ∪ c)
 
 **Coordinate.** Finset · union · parentheses do not matter · **Derived fact**
 

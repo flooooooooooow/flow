@@ -2,9 +2,9 @@
 
 *Reversing a two-element cons list swaps endpoints.*
 
-**Source.** church: https://en.wikipedia.org/wiki/List_(abstract_data_type)
+**Source.** church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
 
-## Derived fact 1: rev(cons(x, cons(y, nil))) = cons(y, cons(x, nil))
+## Derived fact 1 — rev(cons(x, cons(y, nil))) = cons(y, cons(x, nil))
 
 **Coordinate.** List · reverse · reverse of pair cons swaps endpoints · **Derived fact**
 

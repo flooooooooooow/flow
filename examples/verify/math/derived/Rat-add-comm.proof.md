@@ -2,9 +2,9 @@
 
 *Rational addition commutes.*
 
-**Source.** landau: *Foundations of Analysis*
+**Source.** landau — *Foundations of Analysis*
 
-## Derived fact 1: p + q = q + p for rationals
+## Derived fact 1 — p + q = q + p for rationals
 
 **Coordinate.** Rat · addition · order does not matter · **Derived fact**
 

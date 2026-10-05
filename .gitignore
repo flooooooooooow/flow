@@ -3,7 +3,6 @@ build/
 *.o
 *.exe
 *.out
-!compiler/fixtures/flow_blocks/*.out
 *.mlir
 *.ll
 *.bc
@@ -100,8 +99,7 @@ lake-packages/
 docs/research/**/*.out
 
 # Claude Code workspace (agent worktrees, local settings)
-.claude/*
-!.claude/settings.json
+.claude/
 
 # Local tool caches
 .ruff_cache/
@@ -117,7 +115,7 @@ dist/
 # Regenerable WASM binaries (HTML/.flow sources stay tracked)
 **/*.wasm
 # ...except the published gallery, which is the deployed artifact itself.
-# Rebuild with: ./flow tool wasm_build gallery
+# Rebuild with: python3 scripts/build_wasm_gallery.py
 !site/wasm/**/*.wasm
 
 # JUCE plugins — local build outputs and compiled test binaries
@@ -147,10 +145,3 @@ btree_test.db
 /test.txt
 /out.gif
 .flow_cache/
-
-# Parity goldens are source, not build output.
-!compiler/fixtures/mlir/*.mlir
-!compiler/fixtures/mlir/*.out
-!tests/mlir_commands/expected/*.mlir
-!tests/mlir_commands/expected/*.out
-!tests/cli/goldens/**/*.out

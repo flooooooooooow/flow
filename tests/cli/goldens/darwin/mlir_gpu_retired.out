@@ -1,1 +1,0 @@
-[0;31m❌ flow mlir: --gpu (the Python CUDA/OpenCL integration) is retired; use --mlir-gpu, flow gpu, or --gpu on flow run[0m

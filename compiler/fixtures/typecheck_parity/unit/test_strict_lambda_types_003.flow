@@ -1,7 +1,0 @@
-
-function want_i32(v: i32) -> i32 { return v }
-function main() -> i32 {
-    let f = |x: i32| -> i32 { return x * 2 }
-    let r: i32 = want_i32(f(3))
-    return r
-}

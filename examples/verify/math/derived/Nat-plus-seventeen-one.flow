@@ -1,6 +1,6 @@
 # @module examples.verify.math.derived
 # @means  Seventeen plus one is eighteen.
-# @from   peano: https://en.wikipedia.org/wiki/Peano_axioms
+# @from   peano — https://en.wikipedia.org/wiki/Peano_axioms
 # @tier   derived
 
 # @means  17 + 1 = 18.

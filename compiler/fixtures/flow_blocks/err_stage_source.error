@@ -1,2 +1,0 @@
-Error: flow 'G' declares no state at line 1
-add at least one 'state name : f64 = value' declaration, or nest child flows ('plant : Motor') for a composite

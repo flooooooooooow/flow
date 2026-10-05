@@ -1,9 +1,0 @@
-# expect: Attribute '@target' on function 'f' requires a target string, e.g. @target("avx2")
-@target()
-function f() -> i32 {
-    return 1
-}
-
-function main() -> i32 {
-    return f()
-}

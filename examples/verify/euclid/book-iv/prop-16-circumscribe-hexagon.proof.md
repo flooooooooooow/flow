@@ -2,13 +2,13 @@
 
 *About a given circle to circumscribe a regular hexagon.*
 
-**Source.** euclid: Elements, Book IV, Proposition 16
+**Source.** euclid — Elements, Book IV, Proposition 16
 
-## Derived fact 1: About a given circle to circumscribe a regular hexagon
+## Derived fact 1 — About a given circle to circumscribe a regular hexagon
 
 **Coordinate.** the Euclidean plane · Euclid Book IV · Proposition 16: about a circle to circumscribe a regular hexagon · **Derived fact**
 
-*Source: euclid: Elements, Book IV, Proposition 16*
+*Source: euclid — Elements, Book IV, Proposition 16*
 
 *Built on: proposition 15: in a circle to inscribe a regular hexagon, for Euclid Book IV on the Euclidean plane, proposition 35: tangents drawn from a point to a circle are equal, for Euclid Book III on the Euclidean plane*
 

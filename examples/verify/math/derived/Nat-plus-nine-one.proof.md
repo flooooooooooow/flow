@@ -2,9 +2,9 @@
 
 *Nine plus one is ten.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 9 + 1 = 10
+## Derived fact 1 — 9 + 1 = 10
 
 **Coordinate.** the natural numbers · addition · nine plus one is ten · **Derived fact**
 

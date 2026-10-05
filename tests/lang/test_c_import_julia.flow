@@ -1,6 +1,6 @@
 # Test for @cImport with Julia C API.
 # Imports julia.h and calls jl_init / jl_eval_string / jl_atexit.
-# Run with: ./flow run tests/lang/test_c_import_julia.flow
+# Run with: FLOW_HOST=python ./flow run tests/lang/test_c_import_julia.flow
 # Exit 0 on success.
 
 @cImport("julia/julia.h")

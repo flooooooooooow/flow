@@ -1,4 +1,0 @@
-function main() -> i32 {
-    println("exiting with 42")
-    return 42
-}

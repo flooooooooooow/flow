@@ -2,9 +2,9 @@
 
 *Zero on the left annihilates rational multiplication.*
 
-**Source.** landau: *Foundations of Analysis*
+**Source.** landau — *Foundations of Analysis*
 
-## Derived fact 1: 0 * q = 0
+## Derived fact 1 — 0 * q = 0
 
 **Coordinate.** Rat · multiplication · zero on the left gives zero · **Derived fact**
 

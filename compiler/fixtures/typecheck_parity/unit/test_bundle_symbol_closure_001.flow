@@ -1,3 +1,0 @@
-
-export function helper() -> i32 { return 42; }
-    

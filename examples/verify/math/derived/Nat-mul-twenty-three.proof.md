@@ -2,9 +2,9 @@
 
 *Twenty-two times one is twenty-two.*
 
-**Source.** peano: https://en.wikipedia.org/wiki/Peano_axioms
+**Source.** peano — https://en.wikipedia.org/wiki/Peano_axioms
 
-## Derived fact 1: 22 * 1 = 22
+## Derived fact 1 — 22 * 1 = 22
 
 **Coordinate.** the natural numbers · multiplication · twenty two times one is twenty two · **Derived fact**
 

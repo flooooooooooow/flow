@@ -1,5 +1,0 @@
-
-        function matrix4(values: span<f32, 16>) { }
-        function forward(values: span<f32>) { matrix4(values) }
-        function main() -> i32 { return 0 }
-        

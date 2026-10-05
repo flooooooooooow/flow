@@ -2,9 +2,9 @@
 
 *The apex angle bisector meets the base at its midpoint.*
 
-**Source.** euclid: Elements, Book I, Proposition 5
+**Source.** euclid — Elements, Book I, Proposition 5
 
-## Derived fact 1: midpoint of BC lies on the apex bisector
+## Derived fact 1 — midpoint of BC lies on the apex bisector
 
 **Coordinate.** the Euclidean plane · isosceles triangle · apex bisector meets base at midpoint · **Derived fact**
 

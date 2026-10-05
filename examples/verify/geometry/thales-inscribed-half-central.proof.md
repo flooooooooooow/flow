@@ -2,9 +2,9 @@
 
 *Thales configuration gives inscribed angle half the central angle.*
 
-**Source.** euclid: Elements, Book III, Propositions 20 and 31
+**Source.** euclid — Elements, Book III, Propositions 20 and 31
 
-## Derived fact 1: angle ACB equals half of angle AOB on diameter AB
+## Derived fact 1 — angle ACB equals half of angle AOB on diameter AB
 
 **Coordinate.** the Euclidean plane · circle · Thales inscribed is half central · **Derived fact**
 

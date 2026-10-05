@@ -2,9 +2,9 @@
 
 *Zero times one is zero in a monoid witness.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §1.1
+**Source.** dummit-foote — *Abstract Algebra*, §1.1
 
-## Derived fact 1: 0 * 1 = 0
+## Derived fact 1 — 0 * 1 = 0
 
 **Coordinate.** Monoid · multiplication · zero times one is zero · **Derived fact**
 

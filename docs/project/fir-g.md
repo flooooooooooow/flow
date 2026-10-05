@@ -1,16 +1,16 @@
 # FIR-G: Heterogeneous Program-Graph Compiler
 
-Flow's production path today is **AST → C | MLIR** (dual CPU) with Metal/WGSL/SPIR-V
+Flow’s production path today is **AST → C | MLIR** (dual CPU) with Metal/WGSL/SPIR-V
 GPU emit. That remains. This document describes the **next IR layer** that sits
 between semantic AST and backend lowering: a dense-ID, columnar **program graph**.
 
 ## Goal
 
 A compiler that reasons about a program as a **whole graph**, not only by walking
-heap AST nodes one instruction at a time, with CPU, GPU (MLX), and learned models
+heap AST nodes one instruction at a time — with CPU, GPU (MLX), and learned models
 each used only where they have a structural advantage.
 
-This is **not** "run LLVM on the GPU." Expensive global reasoning becomes explicitly
+This is **not** “run LLVM on the GPU.” Expensive global reasoning becomes explicitly
 parallel over bulk arrays.
 
 ## Correctness vs profitability (absolute rule)
@@ -21,10 +21,9 @@ parallel over bulk arrays.
 | Profitability (inline? unroll? device?) | Heuristics now; learned models later |
 
 ML/GPU may **propose** and **score**. They never replace typechecking or semantic
-validation. Opt candidates are proposals only. They do not rewrite IR yet.
-The Flow tool runs every analysis on the CPU. The NumPy and MLX bulk paths
-of the retired Python tool are gone, so `--device numpy|mlx` reports that
-the backend is not available.
+validation. Bulk MLX/NumPy paths must match the CPU oracle bit-for-bit
+(`tests/unit/test_fir_mlx_oracle.py`). Opt candidates are proposals only
+(`fir_opts.py`) — they do not rewrite IR yet.
 
 ## Three IR levels
 
@@ -115,10 +114,13 @@ Each stage is useful alone. Do not block on ML.
 | Artifact | Path |
 |----------|------|
 | Design | this file |
-| Store, analyses, opt candidates | `tools/fir/graph.flow`, `compiler/src/fir_analysis.flow` |
-| Graphify, monomorphization | `tools/fir/lower.flow`, `tools/fir/mono.flow`, `tools/fir/ranges.flow` |
-| CLI, routing, calibration | `tools/fir/main.flow` (`./flow fir-g …`) |
-| Tests | `./flow tool tests/fir/run.flow` (goldens from the retired Python tool), `tests/lang/test_fir_*.flow` |
+| Store + graphify | `src/flow/fir_g.py`, `src/flow/fir_graphify.py` |
+| CPU analyses | `src/flow/fir_analysis.py` |
+| Bulk MLX/NumPy | `src/flow/fir_mlx.py` |
+| Measured routing | `src/flow/fir_route.py` |
+| Opt candidates | `src/flow/fir_opts.py` |
+| CLI dump | `./flow fir-g …` |
+| Tests | `tests/unit/test_fir_g.py`, `test_fir_mlx_oracle.py`, `test_fir_route_opts.py` |
 
 **Out of scope still:** applying opts to IR, beam search, replacing C/MLIR emitters,
 dominators, full alias analysis, putting MLX in the trusted correctness core.
@@ -134,4 +136,4 @@ Parse → typecheck → monomorphize
 ```
 
 FIR-G does not retire C or MLIR. It prepares whole-program reasoning that can
-later *drive* those backends' optimisation policies.
+later *drive* those backends’ optimisation policies.

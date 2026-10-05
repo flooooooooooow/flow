@@ -2,9 +2,9 @@
 
 *The interior angle sum is less than one full turn.*
 
-**Source.** euclid: Elements, Book I, Proposition 32
+**Source.** euclid — Elements, Book I, Proposition 32
 
-## Derived fact 1: angle A plus angle B plus angle C is less than four right angles
+## Derived fact 1 — angle A plus angle B plus angle C is less than four right angles
 
 **Coordinate.** the Euclidean plane · triangle · interior sum less than one full turn · **Derived fact**
 

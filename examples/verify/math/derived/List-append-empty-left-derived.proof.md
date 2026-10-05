@@ -2,9 +2,9 @@
 
 *Empty list appended on the left changes nothing.*
 
-**Source.** church: https://en.wikipedia.org/wiki/List_(abstract_data_type)
+**Source.** church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
 
-## Derived fact 1: nil ++ xs = xs
+## Derived fact 1 — nil ++ xs = xs
 
 **Coordinate.** List · append · empty on the left gives the list · **Derived fact**
 

@@ -2,9 +2,9 @@
 
 *Reversing a cons prepends the head to the reversed tail.*
 
-**Source.** church: https://en.wikipedia.org/wiki/List_(abstract_data_type)
+**Source.** church — https://en.wikipedia.org/wiki/List_(abstract_data_type)
 
-## Derived fact 1: rev(cons(x, xs)) = rev(xs) ++ cons(x, nil)
+## Derived fact 1 — rev(cons(x, xs)) = rev(xs) ++ cons(x, nil)
 
 **Coordinate.** List · reverse · reverse of cons appends reversed tail · **Derived fact**
 

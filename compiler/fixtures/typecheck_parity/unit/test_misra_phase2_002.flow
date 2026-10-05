@@ -1,7 +1,0 @@
-
-    @unsafe
-    extern {
-        function memcpy(dst: ptr<void>, src: ptr<void>, n: i64) -> ptr<void>
-    }
-    function main() -> i32 { return 0 }
-    

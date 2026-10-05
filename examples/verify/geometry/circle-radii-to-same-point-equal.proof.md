@@ -2,9 +2,9 @@
 
 *Two radii to the same point on the circumference are equal.*
 
-**Source.** euclid: Elements, Book I, Definition 15
+**Source.** euclid — Elements, Book I, Definition 15
 
-## Derived fact 1: OA equals OC for points A and C on the circle
+## Derived fact 1 — OA equals OC for points A and C on the circle
 
 **Coordinate.** the Euclidean plane · circle · radii to circumference points are equal · **Derived fact**
 

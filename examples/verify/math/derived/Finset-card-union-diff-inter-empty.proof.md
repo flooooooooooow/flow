@@ -2,9 +2,9 @@
 
 *Union difference intersection empty has bounded cardinality.*
 
-**Source.** graham-knuth-patashnik: *Concrete Mathematics*
+**Source.** graham-knuth-patashnik — *Concrete Mathematics*
 
-## Derived fact 1: card((s ∪ t) \ (s ∩ t)) <= card(s ∪ t)
+## Derived fact 1 — card((s ∪ t) \ (s ∩ t)) <= card(s ∪ t)
 
 **Coordinate.** Finset · cardinality · union diff inter empty card bound · **Derived fact**
 

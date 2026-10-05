@@ -2,9 +2,9 @@
 
 *Reverse preserves length of a tredecuple cons list.*
 
-**Source.** church: https://en.wikipedia.org/wiki/Length_of_a_list
+**Source.** church — https://en.wikipedia.org/wiki/Length_of_a_list
 
-## Derived fact 1: len(rev(tredecuple cons ending in nil)) = 13
+## Derived fact 1 — len(rev(tredecuple cons ending in nil)) = 13
 
 **Coordinate.** List · length · reverse of tredecuple cons has length thirteen · **Derived fact**
 

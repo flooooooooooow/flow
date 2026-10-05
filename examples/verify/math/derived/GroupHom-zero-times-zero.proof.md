@@ -2,9 +2,9 @@
 
 *Zero times zero maps to zero under a group homomorphism.*
 
-**Source.** dummit-foote: *Abstract Algebra*, §3.1
+**Source.** dummit-foote — *Abstract Algebra*, §3.1
 
-## Derived fact 1: f(0 * 0) = 0
+## Derived fact 1 — f(0 * 0) = 0
 
 **Coordinate.** GroupHom · preservation · zero times zero maps to identity · **Derived fact**
 

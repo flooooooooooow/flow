@@ -9,13 +9,13 @@ GPU experiments. This page is not a promise of Metal/CUDA/OpenCL product parity.
 |----------|--------------|--------|--------------------|
 | **macOS** | `runtime/gfx_macos.m` | ✅ Working | Cocoa window, software RGBA8 framebuffer, poll/keys, clear/fill_rect/present |
 | **Linux** | `runtime/gfx_linux.c` | ✅ SDL2 (stub fallback) | Real window + RGBA texture when SDL2 headers present; `-DFLOW_GFX_STUB` keeps the old null-init stub |
-| **Windows** | `runtime/gfx_windows.c` | ✅ partial: SDL2 shared with Linux; stub CI on Windows | Same SDL2 path as Linux (`gfx_sdl_impl.inc`); `FLOW_GFX_STUB` smoke on `windows-latest` CI; full SDL2 window path still needs a real Windows + SDL2 run |
+| **Windows** | `runtime/gfx_windows.c` | ✅ partial — SDL2 shared with Linux; stub CI on Windows | Same SDL2 path as Linux (`gfx_sdl_impl.inc`); `FLOW_GFX_STUB` smoke on `windows-latest` CI; full SDL2 window path still needs a real Windows + SDL2 run |
 
 | Related path | Status | Notes |
 |--------------|--------|-------|
-| Metal (Apple GPU compute / audio helpers) | Partial | Separate from `gfx.flow`; see `runtime/audio_gpu_metal.m` and GPU examples; not a full shader pipeline product |
-| Vulkan sample bridges | Experimental | `runtime/vulkan_flow_*_bridge.cpp`: demos, separate from the stdlib 2D API |
-| CUDA / OpenCL "auto backend" | ❌ Not shipping | Older aspirational docs; do not rely on this |
+| Metal (Apple GPU compute / audio helpers) | Partial | Separate from `gfx.flow` — see `runtime/audio_gpu_metal.m` and GPU examples; not a full shader pipeline product |
+| Vulkan sample bridges | Experimental | `runtime/vulkan_flow_*_bridge.cpp` — demos, not the stdlib 2D API |
+| CUDA / OpenCL “auto backend” | ❌ Not shipping | Older aspirational docs; do not rely on this |
 
 Cross-platform graphics (Linux ✅, Windows ✅ partial) is tracked in
 [ROADMAP.md](../../ROADMAP.md).
@@ -66,13 +66,13 @@ clang -O2 build/tetris_gfx.c runtime/gfx_linux.c \
 ./flow gfx examples/games/tetris_gfx.flow
 ```
 
-`./flow`'s native gfx path links `gfx_linux.c` + SDL2 on Linux hosts.
+`./flow`’s native gfx path links `gfx_linux.c` + SDL2 on Linux hosts.
 Keycodes are mapped to the macOS virtual codes in `gfx.flow` (A/S/D/W/R/arrows/Esc).
 
 ## Windows build
 
 `gfx_windows.c` is a thin driver that shares its entire SDL2 implementation
-with Linux via `runtime/gfx_sdl_impl.inc`: same buffer layout, same keycode
+with Linux via `runtime/gfx_sdl_impl.inc` — same buffer layout, same keycode
 map, same ABI. CI compiles and runs the stub path on `windows-latest`
 (`runtime/tests/gfx_stub_smoke.c` + `-DFLOW_GFX_STUB`). A full SDL2 window
 smoke on Windows agents is still outstanding.
@@ -95,7 +95,7 @@ clang-cl build/tetris_gfx.c runtime\gfx_windows.c /I C:\SDL2\include ^
 Still open: real Windows CI/hardware smoke test, richer key map, xvfb-style
 headless smoke for Linux CI.
 
-## What's done / left (Linux + Windows)
+## What’s done / left (Linux + Windows)
 
 - [x] SDL2 window + streaming RGBA32 texture (same buffer layout as macOS)
 - [x] Full `flow_gfx_*` ABI parity
@@ -108,14 +108,14 @@ headless smoke for Linux CI.
 ## GPU / Metal notes
 
 - Prefer treating Metal and Vulkan as **optional native runtimes**, not as the
-  default "graphics" story for demos and games.
+  default “graphics” story for demos and games.
 - For games and tutorials, target `gfx.flow` + software fill (macOS Cocoa;
   Linux/Windows via SDL2 when headers are present, stub otherwise).
 - Do not assume automatic Metal/CUDA/OpenCL selection from Flow source.
 
 ## Related
 
-- [runtime/README.md](../../runtime/README.md): native backends map
-- [Effects Showcase](../effects-showcase.md): unrelated, but shows how Flow prefers
+- [runtime/README.md](../../runtime/README.md) — native backends map
+- [Effects Showcase](../effects-showcase.md) — unrelated, but shows how Flow prefers
   explicit capabilities over hidden runtimes
-- [ROADMAP.md](../../ROADMAP.md): current platform and graphics priorities
+- [docs/NEXT.md](../NEXT.md) — Priority 5 cross-platform graphics bullets

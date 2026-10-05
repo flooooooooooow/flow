@@ -1,6 +1,0 @@
-# expect: Module static 'xs' array initializer must contain only compile-time constant literals
-let mut xs: array<i32, 2> = [1, 1 + 1]
-
-function main() -> i32 {
-    return 0
-}

@@ -2,13 +2,13 @@
 
 *In equal circles equal chords subtend equal angles at the center, and equal central angles subtend equal chords.*
 
-**Source.** euclid: Elements, Book III, Proposition 1
+**Source.** euclid — Elements, Book III, Proposition 1
 
-## Derived fact 1: In equal circles equal chords subtend equal angles at the center, and equal central angles subtend equal chords
+## Derived fact 1 — In equal circles equal chords subtend equal angles at the center, and equal central angles subtend equal chords
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 1: equal chords subtend equal angles at the center · **Derived fact**
 
-*Source: euclid: Elements, Book III, Proposition 1*
+*Source: euclid — Elements, Book III, Proposition 1*
 
 > **Goal.** In equal circles equal chords subtend equal angles at the center, and equal central angles subtend equal chords
 >

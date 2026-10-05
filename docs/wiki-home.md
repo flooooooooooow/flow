@@ -1,7 +1,7 @@
 <div class="wiki-hero">
 
 <h1 class="wiki-hero-brand">Flow</h1>
-<p class="wiki-hero-eyebrow">v2.0.0 · systems through time</p>
+<p class="wiki-hero-eyebrow">v1.0.2 · systems through time</p>
 
 <p class="wiki-hero-title">Write with effects.<br>Compile like C.</p>
 
@@ -180,7 +180,7 @@ flow Pendulum {
 
 <div class="wiki-showcase-item">
 <p class="wiki-showcase-label">Built-in autodiff</p>
-<p class="wiki-showcase-desc">Forward mode with dual numbers built into the language rather than a bolted-on library.</p>
+<p class="wiki-showcase-desc">Forward mode with dual numbers in the language, not a bolted-on library.</p>
 
 ```flow-pseudocode
 function quadratic(x: Dual, a: f32, b: f32, c: f32) -> Dual {
@@ -201,7 +201,7 @@ let q: Dual = quadratic(x, 2.0, 3.0, 1.0)
 
 ## See Flow moving
 
-This is the curated **showcase**. The full example bank is larger. Each tile opens a proper gallery. GIFs are recordings of compiled Flow output: CPU `gfx` galleries use the headless framebuffer, while FSL shader GIFs come from the offscreen Metal renderer.
+This is the curated **showcase**, not the whole example bank. Each tile opens a proper gallery. GIFs are recordings of compiled Flow output: CPU `gfx` galleries use the headless framebuffer, while FSL shader GIFs come from the offscreen Metal renderer.
 
 <div class="demo-showcase-grid">
 
@@ -279,8 +279,8 @@ Everyday commands:
 
 | | |
 |---|---|
-| Version | 2.0.0 · [changelog](project/CHANGELOG.md) |
-| License | Proprietary (MIT through 1.0.2) |
+| Version | 1.0.2 · [changelog](project/CHANGELOG.md) |
+| License | MIT |
 | Source | [github.com/flooooooooooow/flow](https://github.com/flooooooooooow/flow) |
 | Community | [Discord](https://discord.gg/YK7VaHy24T) · [Discussions](https://github.com/flooooooooooow/flow/discussions) |
 | Optional proofs | [flow-verify](third-party/flow-verify.md) (third-party, not required to use Flow) |

@@ -1,6 +1,6 @@
 # @module verify.Monoid
 # @means  Monoid axioms for an associative operation with identity.
-# @from   dummit-foote: *Abstract Algebra*, §1.1
+# @from   dummit-foote — *Abstract Algebra*, §1.1
 # @tier   definitions-only
 
 # @means  Monoid multiplication associates.

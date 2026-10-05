@@ -2,13 +2,13 @@
 
 *On the same straight line and on the same side of it there cannot be constructed two similar unequal segments of circles.*
 
-**Source.** euclid: Elements, Book III, Proposition 23
+**Source.** euclid — Elements, Book III, Proposition 23
 
-## Derived fact 1: On the same straight line and on the same side of it there cannot be constructed two similar unequal segments of circles
+## Derived fact 1 — On the same straight line and on the same side of it there cannot be constructed two similar unequal segments of circles
 
 **Coordinate.** the Euclidean plane · Euclid Book III · Proposition 23: two unequal similar segments cannot stand on the same side of a line · **Derived fact**
 
-*Source: euclid: Elements, Book III, Proposition 23*
+*Source: euclid — Elements, Book III, Proposition 23*
 
 *Built on: proposition 21: angles in the same segment are equal, for Euclid Book III on the Euclidean plane*
 

@@ -1,8 +1,0 @@
-struct Tank { h: f64, q_in: f64, q_out: f64, level: f32, area: f64 }
-@flow_api function Tank_new() -> Tank { let mut __self: Tank = Tank { h: 0.0, q_in: 0.0, q_out: 0.0, level: 0.0, area: 0.0 }; Tank_init(&__self); return __self; }
-@flow_api function Tank_init(self: ptr<Tank>) -> void { self.area = 2.0; self.q_in = 0.0; self.h = 1.0; Tank_outputs(self); }
-@flow_api function Tank_derivs(self: ptr<Tank>, d_h: ptr<f64>) -> void { d_h[0] = (self.q_in - self.q_out) / self.area; }
-@flow_api function Tank_step(self: ptr<Tank>, dt: f64) -> void { let mut d_h: f64 = 0.0; Tank_derivs(self, &d_h); self.h = self.h + d_h * dt; Tank_outputs(self); }
-@flow_api function Tank_default_dt() -> f64 { return 0.001; }
-@flow_api function Tank_outputs(self: ptr<Tank>) -> void { self.q_out = sqrt(self.h) * 0.5; self.level = (self.h / self.area) as f32; }
-

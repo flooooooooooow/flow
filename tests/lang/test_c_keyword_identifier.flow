@@ -1,6 +1,0 @@
-# Regression: C keywords remain valid Flow identifiers after C lowering.
-
-function main() -> i32 {
-    let asm: i32 = 3
-    return asm - 3
-}

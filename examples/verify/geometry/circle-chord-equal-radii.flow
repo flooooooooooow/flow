@@ -1,6 +1,6 @@
 # @module examples.verify.geometry
 # @means  A chord through the centre has endpoints equidistant from the centre.
-# @from   euclid: Elements, Book III, Proposition 1
+# @from   euclid — Elements, Book III, Proposition 1
 # @tier   derived
 
 # @means  chord endpoints are radii from centre.

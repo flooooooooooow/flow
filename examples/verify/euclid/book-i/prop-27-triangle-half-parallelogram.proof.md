@@ -2,13 +2,13 @@
 
 *A triangle on the same base and between the same parallels equals half the parallelogram.*
 
-**Source.** euclid: Elements, Book I, Proposition 27
+**Source.** euclid — Elements, Book I, Proposition 27
 
-## Derived fact 1: A triangle on the same base and between the same parallels equals half the parallelogram
+## Derived fact 1 — A triangle on the same base and between the same parallels equals half the parallelogram
 
 **Coordinate.** the Euclidean plane · Euclid Book I · Proposition 27: a triangle is half a parallelogram on same base · **Derived fact**
 
-*Source: euclid: Elements, Book I, Proposition 27*
+*Source: euclid — Elements, Book I, Proposition 27*
 
 *Built on: proposition 25: parallelograms on the same base and parallels are equal, for Book I of the Elements in on the Euclidean plane, proposition 4: side-angle-side congruence, for Book I of the Elements in on the Euclidean plane*
 

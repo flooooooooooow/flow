@@ -2,9 +2,9 @@
 
 *Meet absorbs join as a derived lattice law.*
 
-**Source.** davey-priestley: *Introduction to Lattices and Order*
+**Source.** davey-priestley — *Introduction to Lattices and Order*
 
-## Derived fact 1: meet(a, join(a, b)) = a
+## Derived fact 1 — meet(a, join(a, b)) = a
 
 **Coordinate.** Order · meet · meet absorbs join derived · **Derived fact**
 

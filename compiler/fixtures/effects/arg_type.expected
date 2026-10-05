@@ -1,3 +1,0 @@
-reject
-Effect operation 'Log.info' argument 1 expects string, got i32
-Effect operation 'Log.metric' argument 2 expects i32, got string

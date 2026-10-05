@@ -4,11 +4,10 @@
 	dh $@
 
 override_dh_auto_build:
-	# Flow self-hosts from the checked-in C bootstrap on first invocation.
+	# Source distribution contains driver script, runtime, and stdlib
 
 override_dh_auto_install:
 	mkdir -p debian/flow/usr/bin debian/flow/usr/lib/flow
-	cp -r compiler lib runtime tools scripts registry debian/flow/usr/lib/flow/
-	cp flow flow.toml VERSION debian/flow/usr/lib/flow/
-	chmod 755 debian/flow/usr/lib/flow/flow
-	ln -s /usr/lib/flow/flow debian/flow/usr/bin/flow
+	cp -r src lib runtime compiler debian/flow/usr/lib/flow/
+	cp flow debian/flow/usr/bin/flow
+	chmod 755 debian/flow/usr/bin/flow

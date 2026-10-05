@@ -1,4 +1,3 @@
-# effects-mode: permissive
 # Runtime test: effects-based async primitives (stdlib async.flow)
 # Pins SimulatedAsync join formula + BlockingAsyncIO poll/sleep stubs.
 # Returns 0 if all pass, non-zero otherwise.

@@ -19,7 +19,7 @@
 #   1 below A (extinct)   2 above A (persist)   3 near K
 #   R reseed   P pause   Esc quit
 #
-# Run: ./flow record examples/evoleco/allee_effect.flow --frames 4
+# Run: FLOW_HOST=python ./flow record examples/evoleco/allee_effect.flow --frames 4
 
 import "stdlib/gfx.flow"
 import "stdlib/text.flow"
