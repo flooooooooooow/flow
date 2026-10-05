@@ -80,7 +80,7 @@ Inferred from its allocation site. Nothing else.
 | a module static | its `@lifetime(...)`, defaulting to `application` |
 | a `const` | `application` |
 | memory from `malloc` / `alloc_*` | `application` (it is yours until you free it) |
-| memory from `arena_alloc` / `frame_alloc_*` | the arena's own domain, which v0 does not track |
+| memory from `arena_alloc` / `frame_alloc_*` | the arena instance's declared domain when that instance is a module static; otherwise the writing function's domain (the v0 writer-domain rule) |
 
 An unannotated function has no domain, so no domain rule fires inside it. The
 whole feature is opt-in; adding `@lifetime(...)` to one function does not
@@ -117,6 +117,42 @@ error: lifetime domain escape: `scratch` lives in the `callback` domain but is
 The storage is named, both domains are named, and the position is the
 assignment. Compare the span diagnostic it generalises: `span outlives
 borrowed storage \`local\``.
+
+When the stored value is memory bumped from a *module-static* arena
+(`arena_alloc` / `frame_alloc_*`, argument written `arena` or `&arena`),
+the pointer carries that arena's own declared `@lifetime(D)` rather than
+the writing function's domain. The rule is provable from the arena
+declaration alone, so it fires even from a function that declares no
+domain. An unannotated static arena defaults to `application` and never
+outlives a target. An arena reached only through a parameter or a local
+keeps the writer-domain rule above. That is how a frame or session arena
+is stopped from escaping past the reset that ends its domain.
+
+Module statics are `ptr<Arena>` / `ptr<FrameArena>` today (value-typed
+struct statics are not representable); both `arena` and `&arena` name the
+same instance when the static is the arena record itself:
+
+```flow expect-error
+@lifetime(frame)
+let mut fa: ptr<Arena> = null
+
+@lifetime(application)
+let mut cache: ptr<void> = null
+
+function build() -> void {
+    cache = arena_alloc(fa, 64)
+}
+```
+
+```text
+error: lifetime domain escape: `fa` lives in the `frame` domain but is
+       stored in `cache`, which lives in the `application` domain (a
+       longer-lived domain may not hold a reference to a shorter-lived
+       one) at line 12, column 5
+```
+
+`malloc` / `alloc_*` are unchanged: they have no arena instance, so they
+stay `application` and this rule does not apply to them.
 
 ### LD2: a domain function may not return a reference into its own frame
 
@@ -230,9 +266,15 @@ checked. None of it is partially checked.
 - **Escape through a closure environment**, a function pointer, or dynamic
   dispatch. The `@rt_safe` call graph is over direct named calls only, and LD3
   and LD4 inherit that.
+- **Use after `arena_reset` / `frame_begin` in the same function.** A
+  pointer produced before a reset of the same arena is not invalidated
+  by the reset call. The checker stops the pointer escaping into a
+  longer-lived static (the domain boundary *is* the reset boundary);
+  intra-function use-after-reset is not tracked.
 - **Escape through the heap.** `*p = &local` where `p` is `malloc`'d is
   application-domain storage receiving a callback-domain reference, and is not
-  caught.
+  caught. A module-static arena stored into a longer-lived static *is*
+  caught (LD1 plus #690); a `malloc`'d cell is not an arena instance.
 - **Pointer laundering.** Casts, integer round-trips, and pointer arithmetic
   that leaves the tracked expression shapes (variable, slice, address-of,
   field/index under address-of).
@@ -372,7 +414,7 @@ error: lifetime domain violation: 'process_block' is in the `frame` domain but
 | `FrameArena` bump API in the stdlib | ✅ `lib/stdlib/memory.flow` |
 | LD1 escape into a struct field of a longer-lived static | ✅ |
 | Escape through a call, closure or heap | ❌ not checked, by design in v0 |
-| Domain of arena-allocated memory | ✅ |
+| Domain of arena-allocated memory | ✅ module-static `arena_alloc` / `frame_alloc_*` carry the arena's `@lifetime` (#690) |
 | Domains on parameters / in types | ❌ |
 | `request` / `persistent` domains | ❌ |
 | `domain frame { ... }` blocks | ❌ |
@@ -400,5 +442,6 @@ same C as the unannotated function.
 [rt-safety.md](../library/rt-safety.md) · [memory.md](../library/memory.md) ·
 [spans.md](spans.md) · [LANGUAGE_SPEC §8.4](../LANGUAGE_SPEC.md#84-lifetime-domains)
 
-Tests: `tests/unit/test_lifetime_domains.py`,
-`tests/lang/test_lifetime_domains.flow`
+Tests: `compiler/fixtures/typecheck_rules/domain_*.flow`,
+`tests/lang/test_lifetime_domains.flow`,
+`tests/lang/test_arena_domains.flow`

@@ -1,0 +1,25 @@
+# expect: lifetime domain escape: `a` lives in the `frame` domain but is stored in `cache`, which lives in the `application` domain (a longer-lived domain may not hold a reference to a shorter-lived one) at line 20, column 5
+struct Arena {
+    buffer: ptr<i8>,
+    capacity: i64,
+    offset: i64
+}
+
+function arena_alloc(a: ptr<Arena>, size: i64) -> ptr<void> {
+    let off: i64 = a[0].offset
+    let base: ptr<i8> = a[0].buffer
+    a[0].offset = off + size
+    return base + off
+}
+
+@lifetime(application)
+let mut cache: ptr<void> = null
+
+@lifetime(frame)
+function build(a: ptr<Arena>) -> void {
+    cache = arena_alloc(a, 64)
+}
+
+function main() -> i32 {
+    return 0
+}
