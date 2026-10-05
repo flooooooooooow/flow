@@ -215,10 +215,11 @@ and `--convert-vector-to-llvm` before `--convert-func-to-llvm`; without both,
 ## Affine loop lowering
 
 Static counted loops can use `affine.for` when the generator is asked to emit
-the affine dialect:
+the affine dialect. `flow flow-to-mlir` and `flow mlir` accept `--affine`:
 
 ```bash
-FLOWC_MLIR_AFFINE=1 ./flow flow-to-mlir tests/mlir/affine_loop.flow /tmp/affine.mlir
+./flow flow-to-mlir --affine tests/mlir/affine_loop.flow /tmp/affine.mlir
+./flow mlir --affine tests/mlir/affine_loop.flow
 ```
 
 The first slice covers positive constant steps, integer or dynamic bounds, and
@@ -226,12 +227,18 @@ bodies with no loop-carried values or control-flow exits. The default remains
 `scf.for`. This keeps existing MLIR goldens stable while affine fusion and
 tiling are introduced incrementally.
 
-Zero-based loops can use nested affine loops with a requested tile size:
+Zero-based loops can use nested affine loops with `--tile-size` (inner tile,
+2 through 64) and `--tile-l2-size` (outer tile, 2 through 128). Either flag
+implies `--affine`:
 
 ```bash
-FLOWC_MLIR_AFFINE=1 FLOWC_MLIR_TILE=4 \
-  ./flow flow-to-mlir tests/mlir/affine_loop.flow /tmp/tiled.mlir
+./flow flow-to-mlir --tile-size 4 --tile-l2-size 8 \
+  tests/mlir/affine_loop.flow /tmp/tiled.mlir
 ```
+
+The same controls are `FLOWC_MLIR_AFFINE`, `FLOWC_MLIR_TILE`, and
+`FLOWC_MLIR_TILE_L2` when the command line does not set them. Command-line
+values win over inherited environment variables.
 
 The inner loop carries the original induction value. The final tile uses an
 affine minimum, so dynamic and partial extents remain in the tiled path. Loops

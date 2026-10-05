@@ -192,7 +192,7 @@ function env_restore(name: string, old: string) {
     }
 }
 
-function valid_positive_bounded(s: string, hi: i32) -> bool {
+function valid_positive_bounded(s: string, lo: i32, hi: i32) -> bool {
     if s_len(s) == 0 { return false }
     let mut n: i32 = 0
     let mut i: i32 = 0
@@ -203,7 +203,7 @@ function valid_positive_bounded(s: string, hi: i32) -> bool {
         n = n * 10 + c - 48
         i = i + 1
     }
-    return n > 0
+    return n >= lo
 }
 
 # Emit IN.flow as MLIR into OUT. `args` are flow-to-mlir's arguments.
@@ -242,6 +242,10 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
         } elif s_starts(a, "--tile-size=") {
             affine = true
             tile_size = s_from(a, 12)
+            if s_len(tile_size) == 0 {
+                errln("flow_to_mlir: --tile-size requires a value")
+                return 2
+            }
         } elif s_eq(a, "--tile-l2-size") {
             if i + 1 >= sl_len(args) {
                 errln("flow_to_mlir: --tile-l2-size requires a value")
@@ -253,6 +257,10 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
         } elif s_starts(a, "--tile-l2-size=") {
             affine = true
             tile_l2_size = s_from(a, 15)
+            if s_len(tile_l2_size) == 0 {
+                errln("flow_to_mlir: --tile-l2-size requires a value")
+                return 2
+            }
         } elif s_eq(a, "--register-tiles") {
             register_tiles = true
         } elif s_starts(a, "--register-tile-target=") {
@@ -279,6 +287,14 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
     }
     if sl_len(args) - i != 2 {
         errln("usage: flow flow-to-mlir [--gpu] [--wasm32] [--affine] [--tile-size N] [--tile-l2-size N] [--register-tiles] [--register-tile-target TARGET] [--register-tile-max-lanes N] [--aosoa-pad] [--aosoa-pad-auto] [--aosoa-swizzle] [--jit] [--lenient] IN.flow OUT.mlir")
+        return 2
+    }
+    if s_len(tile_size) > 0 and not valid_positive_bounded(tile_size, 2, 64) {
+        errln("flow_to_mlir: --tile-size must be a positive integer from 2 through 64")
+        return 2
+    }
+    if s_len(tile_l2_size) > 0 and not valid_positive_bounded(tile_l2_size, 2, 128) {
+        errln("flow_to_mlir: --tile-l2-size must be a positive integer from 2 through 128")
         return 2
     }
     let input: string = sl_get(args, i)
@@ -308,20 +324,18 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
     }
     if affine {
         cmd_env(c, "FLOWC_MLIR_AFFINE", "1")
+    } elif env_isset("FLOWC_MLIR_AFFINE") {
+        cmd_env(c, "FLOWC_MLIR_AFFINE", env("FLOWC_MLIR_AFFINE"))
     }
     if s_len(tile_size) > 0 {
-        if not valid_positive_bounded(tile_size, 64) {
-            errln("flow_to_mlir: --tile-size must be a positive integer from 2 through 64")
-            return 2
-        }
         cmd_env(c, "FLOWC_MLIR_TILE", tile_size)
+    } elif env_isset("FLOWC_MLIR_TILE") {
+        cmd_env(c, "FLOWC_MLIR_TILE", env("FLOWC_MLIR_TILE"))
     }
     if s_len(tile_l2_size) > 0 {
-        if not valid_positive_bounded(tile_l2_size, 128) {
-            errln("flow_to_mlir: --tile-l2-size must be a positive integer from 2 through 128")
-            return 2
-        }
         cmd_env(c, "FLOWC_MLIR_TILE_L2", tile_l2_size)
+    } elif env_isset("FLOWC_MLIR_TILE_L2") {
+        cmd_env(c, "FLOWC_MLIR_TILE_L2", env("FLOWC_MLIR_TILE_L2"))
     }
     if register_tiles {
         cmd_env(c, "FLOWC_MLIR_REGISTER_TILES", "1")
@@ -348,13 +362,7 @@ export function flow_emit_mlir(args: ptr<ProcStrs>) -> i32 {
         cmd_env(c, "FLOWC_LENIENT", "1")
     }
     # Forward generator-side opt-in transforms when flow mlir invokes the
-    # compiler through flow-to-mlir.
-    if env_isset("FLOWC_MLIR_AFFINE") {
-        cmd_env(c, "FLOWC_MLIR_AFFINE", env("FLOWC_MLIR_AFFINE"))
-    }
-    if env_isset("FLOWC_MLIR_TILE") {
-        cmd_env(c, "FLOWC_MLIR_TILE", env("FLOWC_MLIR_TILE"))
-    }
+    # compiler through flow-to-mlir. Affine CLI flags already won above.
     if env_isset("FLOWC_MLIR_AOSOA_PAD") {
         cmd_env(c, "FLOWC_MLIR_AOSOA_PAD", env("FLOWC_MLIR_AOSOA_PAD"))
     }
