@@ -11831,9 +11831,11 @@ export function flowc_cgen_library_mode() -> i32 {
 
 # Opt-in runtime memory profiler (#740). Dormant unless FLOW_MEM_PROFILE is
 # set when the program starts: one predictable branch per routed allocation
-# and no output otherwise. Reports heap count/bytes, peak live heap, peak
-# RSS, compiler-temp bytes and copy volume. Stack/arena promotion and
-# per-site copy attribution stay labelled deferred (need #669).
+# and no output otherwise. Init is lazy on the first routed allocation so
+# a program that never allocates pays no constructor (#746). Reports heap
+# count/bytes, peak live heap, peak RSS, compiler-temp bytes and copy
+# volume. Stack/arena promotion and per-site copy attribution stay labelled
+# deferred (need #669).
 function flowc_cgen_emit_mem_profile(w: ptr<CgenBuf>) {
     flowc_cgen_puts(w, "#include <sys/resource.h>\n")
     flowc_cgen_puts(w, "#ifndef FLOWC_MEM_PROFILE\n#define FLOWC_MEM_PROFILE\n")
@@ -11920,9 +11922,6 @@ function flowc_cgen_emit_mem_profile(w: ptr<CgenBuf>) {
     flowc_cgen_puts(w, "  e = getenv(\"FLOW_MEM_PROFILE\");\n")
     flowc_cgen_puts(w, "  flow_mem_profile_on = (e != 0 && e[0] != 0 && !(e[0] == '0' && e[1] == 0));\n")
     flowc_cgen_puts(w, "  if (flow_mem_profile_on && !flow_mem_report_set) { flow_mem_report_set = 1; atexit(flow_mem_report); }\n}\n")
-    flowc_cgen_puts(w, "#if defined(__GNUC__)\n")
-    flowc_cgen_puts(w, "__attribute__((constructor)) static void flow_mem_profile_ctor(void) { flow_mem_profile_init(); }\n")
-    flowc_cgen_puts(w, "#endif\n")
     flowc_cgen_puts(w, "#endif\n")
 }
 
