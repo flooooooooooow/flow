@@ -3625,7 +3625,7 @@ function sem_check_assignment(c: ptr<Sem>, s: i32) -> i32 {
                 let reported: bool = sem_domain_escape_to_static(c, s, value, base, tt)
                 if reported == false and sem_is_reference_type(c, tt) {
                     let origin: string = sem_local_borrow_origin(c, value)
-                    if origin as ptr<u8> != null and sem_sm_has(c.static_names, origin) == false {
+                    if origin as ptr<u8> != null and sem_sv_has(c.local_storage, origin) {
                         sem_err(c, "span outlives borrowed storage `" + origin + "`" + sem_location_suffix(c, s))
                     }
                 }
@@ -3651,7 +3651,7 @@ function sem_check_assignment(c: ptr<Sem>, s: i32) -> i32 {
     let reported2: bool = sem_domain_escape_to_static(c, s, value, target, st)
     if reported2 == false and sem_is_reference_type(c, st) and sem_sm_has(c.static_names, target) {
         let origin2: string = sem_local_borrow_origin(c, value)
-        if origin2 as ptr<u8> != null and sem_sm_has(c.static_names, origin2) == false {
+        if origin2 as ptr<u8> != null and sem_sv_has(c.local_storage, origin2) {
             sem_err(c, "span outlives borrowed storage `" + origin2 + "`" + sem_location_suffix(c, s))
         }
     }

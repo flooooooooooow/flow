@@ -1,4 +1,4 @@
-# expect: lifetime domain escape: `fa` lives in the `frame` domain but is stored in `cache`, which lives in the `application` domain (a longer-lived domain may not hold a reference to a shorter-lived one) at line 24, column 5
+# expect: lifetime domain escape: `fa` lives in the `frame` domain but is stored in `cache`, which lives in the `application` domain (a longer-lived domain may not hold a reference to a shorter-lived one) at line 23, column 5
 struct Arena {
     buffer: ptr<i8>,
     capacity: i64,
