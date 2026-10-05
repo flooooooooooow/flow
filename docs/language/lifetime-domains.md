@@ -398,7 +398,8 @@ same C as the unannotated function.
 ## Related
 
 [rt-safety.md](../library/rt-safety.md) · [memory.md](../library/memory.md) ·
-[spans.md](spans.md) · [LANGUAGE_SPEC §8.4](../LANGUAGE_SPEC.md#84-lifetime-domains)
+[spans.md](spans.md) · [region-inference.md](region-inference.md) ·
+[LANGUAGE_SPEC §8.4](../LANGUAGE_SPEC.md#84-lifetime-domains)
 
 Tests: `tests/unit/test_lifetime_domains.py`,
 `tests/lang/test_lifetime_domains.flow`

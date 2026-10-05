@@ -1,0 +1,17 @@
+env FLOWC_REGION_REPORT=1
+# Distinct local arrays: the analysis assigns distinct LOCAL regions.
++ /* region[local]: `a` */
++ /* region[local]: `b` */
+# Pointers into those arrays inherit the root region.
++ /* region[local]: `pa` */
++ /* region[local]: `pb` */
+# Proven disjoint: the aliasing barrier is memcpy, not memmove.
++ /* region: disjoint */
++ memcpy((void*)(&(
+# Parameters may alias: keep memmove.
++ /* region: unproven */
++ memmove((void*)(&(
+# Shared-region locals are not unique restrict candidates.
+- /* region[restrict-candidate]: `pa` */
+- /* region[restrict-candidate]: `pb` */
+exit 0

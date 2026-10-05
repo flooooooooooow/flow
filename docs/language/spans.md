@@ -181,8 +181,10 @@ error: span outlives borrowed storage `local` at line 3, column 5
 The same check rejects assigning such a view to a module static, which
 outlives every frame.
 
-**What this catches, and what it does not.** This is a scope-local check rather than
-region inference. It catches a `return` of a local array or of a span local
+**What this catches, and what it does not.** This is a scope-local check.
+[Local region inference](region-inference.md) is the separate pass that
+proves two names in one function occupy disjoint storage. The span check
+catches a `return` of a local array or of a span local
 that borrows one, transitively through slice expressions, and the same value
 assigned to a module static. It does **not** track borrows through struct
 fields, closure environments, function calls that launder a view, or pointers

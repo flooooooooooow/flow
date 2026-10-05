@@ -1146,6 +1146,25 @@ compact effect/lifetime summary for each public function (#765); see
 `tests/lang/test_lifetime_domains.flow`. Example:
 `examples/audio/lifetime_domains.flow`.
 
+### 8.5 Local Region Inference
+
+Bindings in one function body are assigned an abstract region (`LOCAL`,
+`PARAM`, or `UNKNOWN`). Distinct owned locals occupy distinct storage, so
+references rooted at different locals are proven disjoint; a fresh local is
+also disjoint from every parameter. Two parameters, a reassigned binding, a
+call result, and two views of the same identity may alias. The analysis is
+fail closed and annotation-free.
+
+Proven-disjoint unit-stride copies lower to `memcpy` instead of `memmove`.
+`FLOWC_REGION_CHECK=1` diagnoses overlapping pointer/span arguments at a
+call; `FLOWC_REGION_REPORT=1` writes per-binding remarks into the C.
+Restrict emission that consumes the same proofs is issue #731.
+
+Full description: [region-inference.md](language/region-inference.md).
+
+**Status:** ✅ flowc, C backend. Tests: `tests/lang/test_region_inference.flow`,
+`tests/cgen/region_inference.flow`, `tests/cgen/region_unproven.flow`.
+
 ---
 
 ## 9. Compilation Targets
@@ -1381,6 +1400,7 @@ Methods in `src/flow/c_generator.py` and their coverage:
 | Spans (`span<T>` / `&[T]`, concrete elements) | ✅ | ✅ | ❌ | ✅ |
 | Spans (bare `span`, trait-shaped, dependent extents) | ❌ | ❌ | ❌ | ✅ (documented gap) |
 | Lifetime domains (`@lifetime(...)`, 4 rules) | ✅ | ✅ (erased) | ✅ (erased) | ✅ |
+| Local region inference (non-aliasing proofs) | ✅ | ✅ (`memcpy` when proven) | ❌ | ✅ |
 | If/Else | ✅ | ✅ | ✅ | ✅ |
 | While | ✅ | ✅ | ✅ | ✅ |
 | For (`to` / `..` / `step`) | ✅ | ✅ | ✅ | ✅ |

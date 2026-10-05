@@ -1,0 +1,3 @@
+env FLOWC_REGION_CHECK=1
+flags --strict
+reject cannot prove that arguments of 'take' do not alias
