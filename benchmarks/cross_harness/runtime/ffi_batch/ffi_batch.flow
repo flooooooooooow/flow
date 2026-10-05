@@ -1,0 +1,43 @@
+# #728 row: batched pointer crossing (issue #737).
+
+@cEmbed("
+#include <stdint.h>
+#include <stdlib.h>
+__attribute__((noinline)) int64_t ffi_h_batch(int64_t *ptr, int64_t n) {
+    int64_t sum = 0;
+    int64_t i;
+    for (i = 0; i < n; i++) { sum += ptr[i]; }
+    return sum;
+}
+")
+
+extern {
+    function ffi_h_batch(ptr: ptr<i64>, n: i64) -> i64
+    function malloc(size: i64) -> ptr<i8>
+    function free(p: ptr<i8>) -> void
+}
+
+function main() -> i32 {
+    let n: i32 = 4096
+    let raw: ptr<i8> = malloc((n as i64) * 8)
+    if (raw as i64) == 0 {
+        return 1
+    }
+    let p: ptr<i64> = raw as ptr<i64>
+    let mut i: i32 = 0
+    while i < n {
+        p[i] = i as i64
+        i = i + 1
+    }
+    let mut sum: i64 = 0
+    let mut r: i32 = 0
+    while r < 64 {
+        sum = sum + ffi_h_batch(p, n as i64)
+        r = r + 1
+    }
+    free(raw)
+    if sum <= 0 {
+        return 1
+    }
+    return 0
+}
