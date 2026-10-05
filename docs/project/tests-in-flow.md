@@ -258,7 +258,7 @@ tests/scripts, run by `./flow test-scripts` (tests/scripts/run.flow).
 | test_sema_lenient_escape.py | c | lenient-mode diagnostics |
 | test_shader_codegen_wgsl.py | b | WGSL source text |
 | test_shader_dsl.py | b | Metal source generated from the shader DSL |
-| test_shape_specialization.py | c | shape specialization internals |
+| tests/scripts/mlir_shape_spec.flow | c | shape specialization flag; now a Flow test in tests/scripts |
 | tests/scripts/size_regression.flow | c | binary size check; now a Flow test in tests/scripts |
 | test_sort_expr.py | b | sort lowering asserted on generated C |
 | test_span_data_field.py | c | span typechecking |

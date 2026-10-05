@@ -2,19 +2,24 @@
 #
 # #735 asks for a machine-readable view of compile-to-result cost: flowc
 # emit, the C toolchain, and the program run, for tiny/medium/large
-# programs. The in-compiler phase timers are a separate change; this tool
-# times the three stages as processes and reports the minimum of N
-# repetitions as JSON, plus source lines per emit second.
+# programs. When the compiler under test understands FLOWC_PROFILE=json
+# it also reports per-phase timings (parse, import resolution, typecheck,
+# codegen, plus the still-zero monomorphize/lowering slots).
 #
 #   ./flow tool compile_bench                 three stock programs, 5 reps
 #   ./flow tool compile_bench --repeat 3 prog.flow ...
+#   ./flow tool compile_bench --host          current compiler/src via flowc_host
+#   ./flow tool compile_bench --compiler PATH
 #   ./flow tool compile_bench --python-code 'print("Hello, world!")' hello.flow
 #
-# The compiler under test is the bootstrap binary, rebuilt from the
+# The default compiler is the bootstrap binary, rebuilt from the
 # checked-in bootstrap C when missing or older. Output is one JSON object
-# per program: {"program","loc","emit_ms","cc_ms","run_ms","total_ms",
-# "reps","loc_per_emit_s"}. With --python-code, each row also reports the
-# matching `python3 -c` minimum as "python_ms" and "run_vs_python_x100".
+# per program plus, after the stock set, a summary that names the top
+# fixed and scaling costs. Fields: program, loc, emit_ms, cc_ms, run_ms,
+# total_ms, cold_total_ms, warm_total_ms, reps, loc_per_emit_s, and when
+# present profile (the [flow-profile] object) plus phase_*_ms. With
+# --python-code, each row also reports the matching `python3 -c` minimum
+# as python_ms and run_vs_python_x100.
 #
 # Exit codes: 0 pass, 1 a stage failed, 2 bad arguments or setup.
 
@@ -56,6 +61,33 @@ function env_kv(c: ptr<ProcCmd>, kv: string) {
     proc_env(c, s_slice(kv, 0, e), s_from(kv, e + 1))
 }
 
+function extract_profile(err: string) -> string {
+    let marker: string = "[flow-profile] "
+    let i: i32 = s_find(err, marker, 0)
+    if i < 0 {
+        return ""
+    }
+    let start: i32 = i + s_len(marker)
+    let mut end: i32 = s_find(err, "\n", start)
+    if end < 0 {
+        end = s_len(err)
+    }
+    return s_slice(err, start, end)
+}
+
+function phase_ms(profile: string, name: string) -> i64 {
+    if s_len(profile) == 0 {
+        return 0 - 1
+    }
+    let key: string = "\"name\": \"" + name + "\", \"ms\": "
+    let i: i32 = s_find(profile, key, 0)
+    if i < 0 {
+        return 0 - 1
+    }
+    let p: i32 = i + s_len(key)
+    return s_atoi(s_from(profile, p), 0) as i64
+}
+
 # Run argv with env pairs applied; elapsed ms, or -1 on nonzero exit.
 function timed_ms(argv: ptr<ProcStrs>, env: ptr<ProcStrs>) -> i64 {
     return timed_ms_rc(argv, env, true)
@@ -78,12 +110,55 @@ function timed_ms_rc(argv: ptr<ProcStrs>, env: ptr<ProcStrs>, strict: bool) -> i
     return r.elapsed_ms
 }
 
+# Like timed_ms, but captures stderr so a [flow-profile] line can be read.
+function timed_emit(argv: ptr<ProcStrs>, env: ptr<ProcStrs>, err_path: string) -> i64 {
+    let c: ptr<ProcCmd> = cmd(argv)
+    let mut i: i32 = 0
+    while i < proc_strs_len(env) {
+        env_kv(c, proc_strs_get(env, i))
+        i = i + 1
+    }
+    cmd_quiet_out(c)
+    cmd_capture_err(c)
+    let r: ptr<ProcResult> = proc_run(c)
+    let _w: bool = write_text(err_path, r.stderr)
+    if r.timed_out or s_len(r.error) > 0 or r.exit_code != 0 {
+        return 0 - 1
+    }
+    return r.elapsed_ms
+}
+
+function append_phase(line: string, profile: string, name: string) -> string {
+    let ms: i64 = phase_ms(profile, name)
+    if ms < 0 {
+        return line
+    }
+    return line + ", \"phase_" + name + "_ms\": " + i64_str(ms)
+}
+
+function resolve_host(root: string) -> string {
+    let a: ptr<ProcStrs> = proc_strs_new()
+    proc_strs_push(a, root + "/flow")
+    proc_strs_push(a, "tool")
+    proc_strs_push(a, "compiler/scripts/flowc_host.flow")
+    let c: ptr<ProcCmd> = cmd(a)
+    let out: string = capture(c)
+    if last_status() != 0 {
+        errln("compile_bench: flowc_host failed")
+        return ""
+    }
+    return out
+}
+
 function main() -> i32 {
     let root: string = proc_getenv("FLOW_REPO_ROOT")
     let work: string = root + "/build/compile_bench"
     let mut repeat: i32 = 5
+    let mut want_host: bool = false
+    let mut compiler: string = ""
     let mut python_code: string = ""
     let progs: ptr<ProcStrs> = proc_strs_new()
+    let mut stock: bool = true
 
     let mut i: i32 = 1
     while i < proc_argc() {
@@ -99,6 +174,15 @@ function main() -> i32 {
                 errln("compile_bench: --repeat must be >= 1")
                 return 2
             }
+        } elif s_eq(a, "--host") {
+            want_host = true
+        } elif s_eq(a, "--compiler") {
+            i = i + 1
+            if i >= proc_argc() {
+                errln("compile_bench: --compiler needs a path")
+                return 2
+            }
+            compiler = proc_argv(i)
         } elif s_eq(a, "--python-code") {
             i = i + 1
             if i >= proc_argc() {
@@ -108,6 +192,7 @@ function main() -> i32 {
             python_code = proc_argv(i)
         } else {
             proc_strs_push(progs, a)
+            stock = false
         }
         i = i + 1
     }
@@ -115,6 +200,7 @@ function main() -> i32 {
         proc_strs_push(progs, "examples/basics/hello_world.flow")
         proc_strs_push(progs, "examples/basics/fibonacci.flow")
         proc_strs_push(progs, "compiler/src/main.flow")
+        stock = true
     }
 
     if not mkdir_p(work) {
@@ -122,27 +208,37 @@ function main() -> i32 {
         return 2
     }
 
-    # The Stage-A compiler under test: the checked-in bootstrap C, rebuilt
-    # when the binary is missing or older than it.
-    let boot: string = work + "/flowc_bootstrap"
-    let bootsrc: string = root + "/compiler/bootstrap/flowc_stage_a.c"
-    if not exists(boot) or newer(bootsrc, boot) {
-        let cb: ptr<ProcCmd> = proc_cmd("cc")
-        proc_arg(cb, "-O2")
-        proc_arg(cb, "-o")
-        proc_arg(cb, boot)
-        proc_arg(cb, bootsrc)
-        proc_arg(cb, "-lm")
-        let br: ptr<ProcResult> = proc_run(cb)
-        if br.exit_code != 0 {
-            errln("compile_bench: cc could not build flowc_bootstrap")
-            errln(br.stderr)
+    let mut boot: string = compiler
+    if s_len(boot) == 0 and want_host {
+        boot = resolve_host(root)
+        if s_len(boot) == 0 {
             return 2
+        }
+    }
+    if s_len(boot) == 0 {
+        # The Stage-A compiler under test: the checked-in bootstrap C, rebuilt
+        # when the binary is missing or older than it.
+        boot = work + "/flowc_bootstrap"
+        let bootsrc: string = root + "/compiler/bootstrap/flowc_stage_a.c"
+        if not exists(boot) or newer(bootsrc, boot) {
+            let cb: ptr<ProcCmd> = proc_cmd("cc")
+            proc_arg(cb, "-O2")
+            proc_arg(cb, "-o")
+            proc_arg(cb, boot)
+            proc_arg(cb, bootsrc)
+            proc_arg(cb, "-lm")
+            let br: ptr<ProcResult> = proc_run(cb)
+            if br.exit_code != 0 {
+                errln("compile_bench: cc could not build flowc_bootstrap")
+                errln(br.stderr)
+                return 2
+            }
         }
     }
 
     let out_c: string = work + "/p.c"
     let out_bin: string = work + "/p"
+    let err_path: string = work + "/emit.err"
     let no_env: ptr<ProcStrs> = proc_strs_new()
 
     let mut python_min: i64 = 0 - 1
@@ -177,6 +273,16 @@ function main() -> i32 {
     proc_strs_push(cc_a, out_c)
     proc_strs_push(cc_a, "-lm")
 
+    let names: ptr<ProcStrs> = proc_strs_new()
+    let locs: ptr<ProcStrs> = proc_strs_new()
+    let totals: ptr<ProcStrs> = proc_strs_new()
+    let emits: ptr<ProcStrs> = proc_strs_new()
+    let ccs: ptr<ProcStrs> = proc_strs_new()
+    let parses: ptr<ProcStrs> = proc_strs_new()
+    let tcs: ptr<ProcStrs> = proc_strs_new()
+    let gens: ptr<ProcStrs> = proc_strs_new()
+    let startups: ptr<ProcStrs> = proc_strs_new()
+
     let mut rc: i32 = 0
     i = 0
     while i < proc_strs_len(progs) {
@@ -197,25 +303,49 @@ function main() -> i32 {
         proc_strs_push(emit_env2, "FLOWC_DIR=" + root)
         proc_strs_push(emit_env2, "FLOWC_OUT=" + out_c)
         proc_strs_push(emit_env2, "FLOWC_IN=" + path)
+        proc_strs_push(emit_env2, "FLOWC_PROFILE=json")
         let emit_a: ptr<ProcStrs> = argv_to_strs(boot)
         let run_a: ptr<ProcStrs> = argv_to_strs(out_bin)
 
         let mut emit_min: i64 = 0 - 1
         let mut cc_min: i64 = 0 - 1
         let mut run_min: i64 = 0 - 1
+        let mut cold_emit: i64 = 0 - 1
+        let mut cold_cc: i64 = 0 - 1
+        let mut cold_run: i64 = 0 - 1
+        let mut warm_profile: string = ""
+        let mut cold_profile: string = ""
         let mut r: i32 = 0
         while r < repeat {
-            let e: i64 = timed_ms(emit_a, emit_env2)
-            if e >= 0 and (emit_min < 0 or e < emit_min) {
-                emit_min = e
+            let e: i64 = timed_emit(emit_a, emit_env2, err_path)
+            let prof: string = extract_profile(read_text(err_path))
+            if e >= 0 {
+                if cold_emit < 0 {
+                    cold_emit = e
+                    cold_profile = prof
+                }
+                if emit_min < 0 or e < emit_min {
+                    emit_min = e
+                    warm_profile = prof
+                }
             }
             let ct: i64 = timed_ms(cc_a, no_env)
-            if ct >= 0 and (cc_min < 0 or ct < cc_min) {
-                cc_min = ct
+            if ct >= 0 {
+                if cold_cc < 0 {
+                    cold_cc = ct
+                }
+                if cc_min < 0 or ct < cc_min {
+                    cc_min = ct
+                }
             }
             let rn: i64 = timed_ms_rc(run_a, no_env, false)
-            if rn >= 0 and (run_min < 0 or rn < run_min) {
-                run_min = rn
+            if rn >= 0 {
+                if cold_run < 0 {
+                    cold_run = rn
+                }
+                if run_min < 0 or rn < run_min {
+                    run_min = rn
+                }
             }
             r = r + 1
         }
@@ -230,11 +360,17 @@ function main() -> i32 {
         if run_min >= 0 {
             total = total + run_min
         }
+        let mut cold_total: i64 = cold_emit + cold_cc
+        if cold_run >= 0 {
+            cold_total = cold_total + cold_run
+        }
         let mut line: string = "{\"program\": \"" + p + "\", \"loc\": " + i64_str(loc)
         line = line + ", \"emit_ms\": " + i64_str(emit_min)
         line = line + ", \"cc_ms\": " + i64_str(cc_min)
         line = line + ", \"run_ms\": " + i64_str(run_min)
         line = line + ", \"total_ms\": " + i64_str(total)
+        line = line + ", \"cold_total_ms\": " + i64_str(cold_total)
+        line = line + ", \"warm_total_ms\": " + i64_str(total)
         if python_min >= 0 {
             line = line + ", \"python_ms\": " + i64_str(python_min)
             if run_min >= 0 and python_min > 0 {
@@ -245,10 +381,133 @@ function main() -> i32 {
         if loc > 0 and emit_min > 0 {
             line = line + ", \"loc_per_emit_s\": " + i64_str((loc * 1000) / emit_min)
         }
+        if s_len(warm_profile) > 0 {
+            line = line + ", \"profile\": " + warm_profile
+            line = append_phase(line, warm_profile, "startup")
+            line = append_phase(line, warm_profile, "source_read")
+            line = append_phase(line, warm_profile, "parse")
+            line = append_phase(line, warm_profile, "import_resolution")
+            line = append_phase(line, warm_profile, "typecheck")
+            line = append_phase(line, warm_profile, "codegen")
+        }
+        if s_len(cold_profile) > 0 and not s_eq(cold_profile, warm_profile) {
+            line = line + ", \"cold_profile\": " + cold_profile
+        }
         line = line + "}"
         outln(line)
+
+        proc_strs_push(names, p)
+        proc_strs_push(locs, i64_str(loc))
+        proc_strs_push(totals, i64_str(total))
+        proc_strs_push(emits, i64_str(emit_min))
+        proc_strs_push(ccs, i64_str(cc_min))
+        proc_strs_push(parses, i64_str(phase_ms(warm_profile, "parse")))
+        proc_strs_push(tcs, i64_str(phase_ms(warm_profile, "typecheck")))
+        proc_strs_push(gens, i64_str(phase_ms(warm_profile, "codegen")))
+        proc_strs_push(startups, i64_str(phase_ms(warm_profile, "startup")))
+    }
+
+    if stock and proc_strs_len(names) >= 2 {
+        print_summary(names, locs, totals, emits, ccs, parses, tcs, gens, startups)
     }
     return rc
+}
+
+function s_to_i64(s: string) -> i64 {
+    return s_atoi(s, 0) as i64
+}
+
+function abs_i64(v: i64) -> i64 {
+    if v < 0 {
+        return 0 - v
+    }
+    return v
+}
+
+# Name the phase whose time changes least vs most with program size.
+function print_summary(
+    names: ptr<ProcStrs>,
+    locs: ptr<ProcStrs>,
+    totals: ptr<ProcStrs>,
+    emits: ptr<ProcStrs>,
+    ccs: ptr<ProcStrs>,
+    parses: ptr<ProcStrs>,
+    tcs: ptr<ProcStrs>,
+    gens: ptr<ProcStrs>,
+    startups: ptr<ProcStrs>
+) {
+    let n: i32 = proc_strs_len(names)
+    let last: i32 = n - 1
+    let loc0: i64 = s_to_i64(proc_strs_get(locs, 0))
+    let locn: i64 = s_to_i64(proc_strs_get(locs, last))
+    let mut dloc: i64 = locn - loc0
+    if dloc < 1 {
+        dloc = 1
+    }
+
+    let keys: ptr<ProcStrs> = proc_strs_new()
+    let tiny: ptr<ProcStrs> = proc_strs_new()
+    let large: ptr<ProcStrs> = proc_strs_new()
+    proc_strs_push(keys, "total")
+    proc_strs_push(tiny, proc_strs_get(totals, 0))
+    proc_strs_push(large, proc_strs_get(totals, last))
+    proc_strs_push(keys, "emit")
+    proc_strs_push(tiny, proc_strs_get(emits, 0))
+    proc_strs_push(large, proc_strs_get(emits, last))
+    proc_strs_push(keys, "cc")
+    proc_strs_push(tiny, proc_strs_get(ccs, 0))
+    proc_strs_push(large, proc_strs_get(ccs, last))
+    proc_strs_push(keys, "parse")
+    proc_strs_push(tiny, proc_strs_get(parses, 0))
+    proc_strs_push(large, proc_strs_get(parses, last))
+    proc_strs_push(keys, "typecheck")
+    proc_strs_push(tiny, proc_strs_get(tcs, 0))
+    proc_strs_push(large, proc_strs_get(tcs, last))
+    proc_strs_push(keys, "codegen")
+    proc_strs_push(tiny, proc_strs_get(gens, 0))
+    proc_strs_push(large, proc_strs_get(gens, last))
+    proc_strs_push(keys, "startup")
+    proc_strs_push(tiny, proc_strs_get(startups, 0))
+    proc_strs_push(large, proc_strs_get(startups, last))
+
+    let mut top_fixed: string = "cc"
+    let mut top_scale: string = "emit"
+    let mut best_rel: i64 = 1000000
+    let mut best_delta: i64 = 0 - 1
+    let mut k: i32 = 0
+    while k < proc_strs_len(keys) {
+        let a: i64 = s_to_i64(proc_strs_get(tiny, k))
+        let b: i64 = s_to_i64(proc_strs_get(large, k))
+        if a >= 0 and b >= 0 {
+            let mut mx: i64 = b
+            if a > mx {
+                mx = a
+            }
+            if mx > 0 {
+                let rel: i64 = (abs_i64(b - a) * 1000) / mx
+                if rel < best_rel {
+                    best_rel = rel
+                    top_fixed = proc_strs_get(keys, k)
+                }
+            }
+            let delta: i64 = (b - a) * 1000 / dloc
+            if delta > best_delta {
+                best_delta = delta
+                top_scale = proc_strs_get(keys, k)
+            }
+        }
+        k = k + 1
+    }
+
+    let mut line: string = "{\"summary\": true"
+    line = line + ", \"hello_program\": \"" + proc_strs_get(names, 0) + "\""
+    line = line + ", \"hello_total_ms\": " + proc_strs_get(totals, 0)
+    line = line + ", \"large_program\": \"" + proc_strs_get(names, last) + "\""
+    line = line + ", \"large_total_ms\": " + proc_strs_get(totals, last)
+    line = line + ", \"top_fixed\": \"" + top_fixed + "\""
+    line = line + ", \"top_scaling\": \"" + top_scale + "\""
+    line = line + ", \"schema\": \"flow-compile-profile/1\"}"
+    outln(line)
 }
 
 function argv_to_strs(a: string) -> ptr<ProcStrs> {

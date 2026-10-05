@@ -1,6 +1,7 @@
-# A stepped for loop with a straight-line body gets the vectorize hints the
-# Python host emitted (#113, #414, #1031): lets, assignments and math calls
-# such as sqrt. for_vectorize_pragma_skip has the loops that stay unhinted.
+# A stepped for loop with a straight-line body gets portable SIMD hints
+# (#113, #414, #1031, #739): OpenMP simd, else clang / GCC. Lets,
+# assignments and math calls such as sqrt qualify.
+# for_vectorize_pragma_skip has the loops that stay unhinted.
 
 extern { function sqrt(x: f64) -> f64 }
 

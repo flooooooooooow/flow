@@ -21,6 +21,12 @@
 
 import .fileio { flowc_write_file }
 import .proof_lower { flowc_proof_erase }
+import .type_id {
+    flowc_type_id_builtin_kind, flowc_type_family_id, flowc_type_schema_id,
+    flowc_type_transport_safe, FLOWC_TID_FAMILY, FLOWC_TID_SCHEMA,
+    FLOWC_TID_TRANSPORT, FLOWC_TID_ALIGNOF, FLOWC_TID_NONE
+}
+import .noalias { flowc_noalias_param_restrict, flowc_noalias_local_restrict }
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_BANG,
@@ -40,7 +46,7 @@ import .ast {
     AST_MATCH_ARM, AST_MATCH_ARM_EXT, AST_ENUM_VARIANT,
     AST_ERROR, AST_THEOREM, AST_CLAIM_REF,
     AST_TYPE_FIXED_ARRAY, AST_TYPE_CAPABILITY, AST_TYPE_SPAN_MUTABLE,
-    flowc_ast_reject_unsupported_but, AST_RECORD_UPDATE, AST_ATTR, AST_LAYOUT,
+    flowc_ast_reject_unsupported_but, AST_RECORD_UPDATE, AST_GPU_FRAME, AST_ATTR, AST_LAYOUT,
     AST_PIPE_BLOCK, PIPE_BLOCK_FORK, PIPE_BLOCK_CHOOSE, AST_IDENT_FORK_SRC, AST_VECTOR_LIT,
     AST_SORT_BY, AST_CALL_PIPE_FIND
 }
@@ -4272,6 +4278,113 @@ function mlg_emit_sizeof(m: ptr<Mlg>, t: i32) -> i32 {
     return r
 }
 
+function mlg_put_u64_hex(m: ptr<Mlg>, val: u64) {
+    let hex: array<u8, 16> = [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102]
+    let mut digits: array<u8, 16> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let mut v: u64 = val
+    let mut n: i32 = 0
+    if v == 0 {
+        mlg_putc(m, 48)
+        return
+    }
+    while v > 0 {
+        digits[n] = hex[(v & 15) as i32]
+        v = v >> 4
+        n = n + 1
+    }
+    let mut i: i32 = n
+    while i > 0 {
+        i = i - 1
+        mlg_putc(m, digits[i])
+    }
+}
+
+function mlg_const_u64(m: ptr<Mlg>, val: u64) -> i32 {
+    let r: i32 = mlg_new_val(m, MT_I64)
+    mlg_line(m)
+    mlg_v(m, r)
+    mlg_s(m, " = llvm.mlir.constant(0x")
+    mlg_put_u64_hex(m, val)
+    mlg_s(m, " : i64) : i64")
+    mlg_nl(m)
+    return r
+}
+
+function mlg_alignof_ty(m: ptr<Mlg>, ty: i32) -> i64 {
+    if ty == AST_NONE or ty < 0 or ty >= m[0].arena.len {
+        return 1
+    }
+    if m[0].arena.nodes[ty].kind != AST_TYPE {
+        return 1
+    }
+    let ns: i32 = m[0].arena.nodes[ty].name_start
+    let ne: i32 = m[0].arena.nodes[ty].name_end
+    if mlg_span_is(m, ns, ne, "i8") == 1 or mlg_span_is(m, ns, ne, "u8") == 1 or mlg_span_is(m, ns, ne, "bool") == 1 {
+        return 1
+    }
+    if mlg_span_is(m, ns, ne, "i16") == 1 or mlg_span_is(m, ns, ne, "u16") == 1 {
+        return 2
+    }
+    if mlg_span_is(m, ns, ne, "i32") == 1 or mlg_span_is(m, ns, ne, "u32") == 1 or mlg_span_is(m, ns, ne, "f32") == 1 {
+        return 4
+    }
+    if mlg_span_is(m, ns, ne, "i64") == 1 or mlg_span_is(m, ns, ne, "u64") == 1 or mlg_span_is(m, ns, ne, "f64") == 1 or mlg_span_is(m, ns, ne, "c64") == 1 {
+        return 8
+    }
+    if mlg_span_is(m, ns, ne, "i128") == 1 or mlg_span_is(m, ns, ne, "u128") == 1 or mlg_span_is(m, ns, ne, "c128") == 1 {
+        return 16
+    }
+    if mlg_span_is(m, ns, ne, "ptr") == 1 or mlg_span_is(m, ns, ne, "string") == 1 {
+        return 8
+    }
+    if mlg_span_is(m, ns, ne, "array") == 1 or m[0].arena.nodes[ty].c == AST_TYPE_FIXED_ARRAY {
+        return mlg_alignof_ty(m, m[0].arena.nodes[ty].a)
+    }
+    let k: i32 = mlg_struct_index(m, ns, ne)
+    if k >= 0 {
+        let st: i32 = m[0].st_node[k]
+        let mut best: i64 = 1
+        let mut f: i32 = m[0].arena.nodes[st].a
+        while f != AST_NONE {
+            if m[0].arena.nodes[f].kind == AST_FIELD {
+                let a: i64 = mlg_alignof_ty(m, m[0].arena.nodes[f].a)
+                if a > best {
+                    best = a
+                }
+            }
+            f = m[0].arena.nodes[f].next
+        }
+        return best
+    }
+    return 1
+}
+
+# type_family_id / type_schema_id / type_transport_safe / alignof<T>() (#775).
+# Identity is the same u64 the C backend emits; alignof is host ABI.
+function mlg_emit_type_meta(m: ptr<Mlg>, e: i32) -> i32 {
+    let ty: i32 = m[0].arena.nodes[e].b
+    if ty == AST_NONE {
+        return V_NONE
+    }
+    let kind: i32 = flowc_type_id_builtin_kind(m[0].src, mlg_ns(m, e), mlg_ne(m, e))
+    if kind == FLOWC_TID_NONE {
+        return V_NONE
+    }
+    if kind == FLOWC_TID_FAMILY {
+        return mlg_const_u64(m, flowc_type_family_id(m[0].arena, m[0].src, ty))
+    }
+    if kind == FLOWC_TID_SCHEMA {
+        return mlg_const_u64(m, flowc_type_schema_id(m[0].arena, m[0].src, ty))
+    }
+    if kind == FLOWC_TID_TRANSPORT {
+        return mlg_const_int(m, flowc_type_transport_safe(m[0].arena, m[0].src, ty), MT_I1)
+    }
+    if kind == FLOWC_TID_ALIGNOF {
+        return mlg_const_int(m, mlg_alignof_ty(m, ty) as i32, MT_I64)
+    }
+    return V_NONE
+}
+
 # The signature noted for undeclared callee src[ns..ne], or -1.
 function mlg_uk_find(m: ptr<Mlg>, ns: i32, ne: i32) -> i32 {
     let mut i: i32 = 0
@@ -5144,6 +5257,10 @@ function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
         if szt != MT_NONE {
             return mlg_emit_sizeof(m, szt)
         }
+        let tmv: i32 = mlg_emit_type_meta(m, e)
+        if tmv != V_NONE {
+            return tmv
+        }
         if mlg_span_is(m, ns, ne, "flow_panic") == 1 and mlg_chain_len(m, m[0].arena.nodes[e].a) == 1 {
             # The trap an invariant lowers to: the message on stderr, exit 1.
             let pm: i32 = mlg_emit_str_operand(m, m[0].arena.nodes[e].a)
@@ -5159,8 +5276,82 @@ function mlg_emit_call(m: ptr<Mlg>, e: i32, want_value: i32) -> i32 {
         # doubles, whatever the argument type).
         return mlg_emit_unknown_call(m, e, want_value)
     }
+    if k >= 0 and m[0].fn_ext[k] == 1 {
+        let nargs2: i32 = mlg_chain_len(m, m[0].arena.nodes[e].a)
+        if nargs2 == 1 {
+            let mut math_name: string = ""
+            if mlg_span_is(m, ns, ne, "exp") == 1 { math_name = "math.exp" }
+            elif mlg_span_is(m, ns, ne, "exp2") == 1 { math_name = "math.exp2" }
+            elif mlg_span_is(m, ns, ne, "log") == 1 { math_name = "math.log" }
+            elif mlg_span_is(m, ns, ne, "log2") == 1 { math_name = "math.log2" }
+            elif mlg_span_is(m, ns, ne, "log10") == 1 { math_name = "math.log10" }
+            elif mlg_span_is(m, ns, ne, "sqrt") == 1 { math_name = "math.sqrt" }
+            elif mlg_span_is(m, ns, ne, "cbrt") == 1 { math_name = "math.cbrt" }
+            elif mlg_span_is(m, ns, ne, "sin") == 1 { math_name = "math.sin" }
+            elif mlg_span_is(m, ns, ne, "cos") == 1 { math_name = "math.cos" }
+            elif mlg_span_is(m, ns, ne, "tan") == 1 { math_name = "math.tan" }
+            elif mlg_span_is(m, ns, ne, "asin") == 1 { math_name = "math.asin" }
+            elif mlg_span_is(m, ns, ne, "acos") == 1 { math_name = "math.acos" }
+            elif mlg_span_is(m, ns, ne, "atan") == 1 { math_name = "math.atan" }
+            elif mlg_span_is(m, ns, ne, "sinh") == 1 { math_name = "math.sinh" }
+            elif mlg_span_is(m, ns, ne, "cosh") == 1 { math_name = "math.cosh" }
+            elif mlg_span_is(m, ns, ne, "tanh") == 1 { math_name = "math.tanh" }
+            elif mlg_span_is(m, ns, ne, "fabs") == 1 { math_name = "math.absf" }
+            elif mlg_span_is(m, ns, ne, "floor") == 1 { math_name = "math.floor" }
+            elif mlg_span_is(m, ns, ne, "ceil") == 1 { math_name = "math.ceil" }
+            elif mlg_span_is(m, ns, ne, "round") == 1 { math_name = "math.round" }
+            elif mlg_span_is(m, ns, ne, "trunc") == 1 { math_name = "math.trunc" }
+            if strlen(math_name) > 0 {
+                let an1: i32 = mlg_chain_at(m, m[0].arena.nodes[e].a, 0)
+                let mut v: i32 = mlg_emit_expr(m, an1)
+                let vt: i32 = mlg_val_mt(m, v, an1)
+                if mlg_is_float_mt(vt) == 1 {
+                    let r: i32 = mlg_new_val(m, vt)
+                    mlg_line(m)
+                    mlg_v(m, r)
+                    mlg_s(m, " = ")
+                    mlg_s(m, math_name)
+                    mlg_s(m, " ")
+                    mlg_v(m, v)
+                    mlg_s(m, " : ")
+                    mlg_put_type(m, vt)
+                    mlg_nl(m)
+                    return r
+                }
+            }
+        } elif nargs2 == 2 {
+            let mut math_name2: string = ""
+            if mlg_span_is(m, ns, ne, "pow") == 1 { math_name2 = "math.powf" }
+            elif mlg_span_is(m, ns, ne, "atan2") == 1 { math_name2 = "math.atan2" }
+            elif mlg_span_is(m, ns, ne, "copysign") == 1 { math_name2 = "math.copysign" }
+            if strlen(math_name2) > 0 {
+                let an1: i32 = mlg_chain_at(m, m[0].arena.nodes[e].a, 0)
+                let an2: i32 = mlg_chain_at(m, m[0].arena.nodes[e].a, 1)
+                let v1: i32 = mlg_emit_expr(m, an1)
+                let v2: i32 = mlg_emit_expr(m, an2)
+                let vt1: i32 = mlg_val_mt(m, v1, an1)
+                let vt2: i32 = mlg_val_mt(m, v2, an2)
+                if mlg_is_float_mt(vt1) == 1 and vt1 == vt2 {
+                    let r: i32 = mlg_new_val(m, vt1)
+                    mlg_line(m)
+                    mlg_v(m, r)
+                    mlg_s(m, " = ")
+                    mlg_s(m, math_name2)
+                    mlg_s(m, " ")
+                    mlg_v(m, v1)
+                    mlg_s(m, ", ")
+                    mlg_v(m, v2)
+                    mlg_s(m, " : ")
+                    mlg_put_type(m, vt1)
+                    mlg_nl(m)
+                    return r
+                }
+            }
+        }
+    }
     let fnode: i32 = m[0].fn_node[k]
     if m[0].fn_ext[k] == 0 and m[0].arena.nodes[e].a == AST_NONE {
+
         let acc: i32 = mlg_accessor_target(m, fnode)
         if acc != AST_NONE {
             return mlg_emit_expr(m, acc)
@@ -9872,6 +10063,29 @@ function mlg_emit_layout(m: ptr<Mlg>, st: i32) {
     mlg_emit_call(m, ec, 0)
 }
 
+function mlg_fn_of_node(m: ptr<Mlg>, id: i32) -> i32 {
+    if id == AST_NONE {
+        return AST_NONE
+    }
+    let pos: i32 = m[0].arena.nodes[id].start
+    let mut best: i32 = AST_NONE
+    let mut best_span: i32 = 2147483647
+    let mut i: i32 = 0
+    while i < m[0].arena.len {
+        if mlg_kind(m, i) == AST_FN {
+            if pos >= m[0].arena.nodes[i].start and pos < m[0].arena.nodes[i].end {
+                let sp: i32 = m[0].arena.nodes[i].end - m[0].arena.nodes[i].start
+                if sp < best_span {
+                    best = i
+                    best_span = sp
+                }
+            }
+        }
+        i = i + 1
+    }
+    return best
+}
+
 # Python generate_var_decl without an initializer: an undefined SSA value,
 # never an alloca (even for `let mut`), so assignments rebind it.
 function mlg_emit_let_uninit(m: ptr<Mlg>, st: i32, ty: i32) {
@@ -10058,6 +10272,15 @@ function mlg_emit_let(m: ptr<Mlg>, st: i32) {
     let tag: i32 = mlg_vllarr(m, v)
     if tag != 0 {
         m[0].l_llarr[l] = tag
+    }
+    if vt == MT_PTR {
+        let fn: i32 = mlg_fn_of_node(m, st)
+        if fn != AST_NONE and flowc_noalias_local_restrict(m[0].arena, m[0].src, fn, st) == 1 {
+            mlg_line(m)
+            mlg_s(m, "// flowc.noalias ")
+            mlg_span(m, mlg_ns(m, st), mlg_ne(m, st))
+            mlg_nl(m)
+        }
     }
 }
 
@@ -13892,6 +14115,9 @@ function mlg_emit_function(m: ptr<Mlg>, f: i32) {
         mlg_v(m, 0 - 1 - i)
         mlg_s(m, ": ")
         mlg_put_type(m, pt)
+        if pt == MT_PTR and flowc_noalias_param_restrict(m[0].arena, m[0].src, f, p) == 1 {
+            mlg_s(m, " {llvm.noalias}")
+        }
         m[0].at[i] = pt
         m[0].au[i] = mlg_ft_unsigned(m, m[0].arena.nodes[p].a)
         m[0].a_llarr[i] = 0
@@ -18734,6 +18960,13 @@ function mlg_aosoa_swizzle() -> i32 {
     return shift
 }
 
+# FLOWC_MLIR_AOSOA_BANK_COUNT selects the conflict domain used by automatic
+# padding. A positive count pads any extent that is an exact multiple of the
+# target's bank or cache-set width. Zero keeps the power-of-two heuristic.
+function mlg_aosoa_bank_count() -> i32 {
+    return mlg_env_bounded_positive(getenv("FLOWC_MLIR_AOSOA_BANK_COUNT"), 1, 128)
+}
+
 function mao_swizzle_index(m: ptr<Mlg>, e: i32, shift: i32, extent: i32) -> i32 {
     if e == AST_NONE or e < 0 or shift <= 0 or extent <= 0 {
         return e
@@ -18759,16 +18992,17 @@ function mao_swizzle_index(m: ptr<Mlg>, e: i32, shift: i32, extent: i32) -> i32 
     return out
 }
 
-function mao_conflict_pad(n: i32, pad: i32, auto_pad: i32) -> i32 {
+function mao_conflict_pad(n: i32, pad: i32, auto_pad: i32, banks: i32) -> i32 {
     if pad > 0 { return pad }
     if auto_pad == 0 or n <= 0 { return 0 }
+    if banks > 0 and n % banks == 0 { return 1 }
     let mut power: i32 = 1
     while power < n { power = power * 2 }
     if power == n { return 1 }
     return 0
 }
 
-function mao_soa(m: ptr<Mlg>, st: i32, n: i32, pad: i32, auto_pad: i32, made: ptr<i32>, nmade: ptr<i32>) -> i32 {
+function mao_soa(m: ptr<Mlg>, st: i32, n: i32, pad: i32, auto_pad: i32, banks: i32, made: ptr<i32>, nmade: ptr<i32>) -> i32 {
     let mut i: i32 = 0
     while i < nmade[0] {
         let s: i32 = made[i]
@@ -18788,7 +19022,7 @@ function mao_soa(m: ptr<Mlg>, st: i32, n: i32, pad: i32, auto_pad: i32, made: pt
     let arr_s: i32 = mlg_xput(m, arr_lit, 5)
     let mut fh: i32 = AST_NONE
     let mut ft: i32 = AST_NONE
-    let extra: i32 = mao_conflict_pad(n, pad, auto_pad)
+    let extra: i32 = mao_conflict_pad(n, pad, auto_pad, banks)
     let mut f: i32 = m[0].arena.nodes[st].a
     while f != AST_NONE {
         let at: i32 = mlg_new_node(m, AST_TYPE, arr_s)
@@ -18815,7 +19049,7 @@ function mao_soa(m: ptr<Mlg>, st: i32, n: i32, pad: i32, auto_pad: i32, made: pt
     return sd
 }
 
-function mao_block(m: ptr<Mlg>, blk: i32, st: i32, pad: i32, auto_pad: i32, swizzle: i32, vars: ptr<i32>, extents: ptr<i32>, nv: ptr<i32>, made: ptr<i32>, nmade: ptr<i32>) {
+function mao_block(m: ptr<Mlg>, blk: i32, st: i32, pad: i32, auto_pad: i32, banks: i32, swizzle: i32, vars: ptr<i32>, extents: ptr<i32>, nv: ptr<i32>, made: ptr<i32>, nmade: ptr<i32>) {
     if blk == AST_NONE or blk < 0 or mlg_kind(m, blk) != AST_BLOCK {
         return
     }
@@ -18824,7 +19058,7 @@ function mao_block(m: ptr<Mlg>, blk: i32, st: i32, pad: i32, auto_pad: i32, swiz
         let k: i32 = mlg_kind(m, s)
         if k == AST_LET and mao_is_target(m, m[0].arena.nodes[s].a) == 1 {
             let n: i32 = m[0].arena.nodes[m[0].arena.nodes[s].a].ival
-            let sd: i32 = mao_soa(m, st, n, pad, auto_pad, made, nmade)
+            let sd: i32 = mao_soa(m, st, n, pad, auto_pad, banks, made, nmade)
             let ty: i32 = mn_flat(m, mlg_ns(m, sd), mlg_ne(m, sd))
             m[0].arena.nodes[s].a = ty
             if nv[0] < 64 {
@@ -18836,21 +19070,21 @@ function mao_block(m: ptr<Mlg>, blk: i32, st: i32, pad: i32, auto_pad: i32, swiz
             if k == AST_IF or k == AST_WHILE or k == AST_FOR or k == AST_BLOCK or k == AST_HANDLE or k == AST_MATCH {
                 if k == AST_IF or k == AST_WHILE {
                     m[0].arena.nodes[s].a = mao_expr(m, m[0].arena.nodes[s].a, st, swizzle, vars, extents, nv[0])
-                    mao_block(m, m[0].arena.nodes[s].b, st, pad, auto_pad, swizzle, vars, extents, nv, made, nmade)
+                    mao_block(m, m[0].arena.nodes[s].b, st, pad, auto_pad, banks, swizzle, vars, extents, nv, made, nmade)
                     if k == AST_IF {
-                        mao_block(m, m[0].arena.nodes[s].c, st, pad, auto_pad, swizzle, vars, extents, nv, made, nmade)
+                        mao_block(m, m[0].arena.nodes[s].c, st, pad, auto_pad, banks, swizzle, vars, extents, nv, made, nmade)
                     }
                 }
                 if k == AST_FOR {
                     m[0].arena.nodes[s].a = mao_expr(m, m[0].arena.nodes[s].a, st, swizzle, vars, extents, nv[0])
                     m[0].arena.nodes[s].b = mao_expr(m, m[0].arena.nodes[s].b, st, swizzle, vars, extents, nv[0])
-                    mao_block(m, m[0].arena.nodes[s].c, st, pad, auto_pad, swizzle, vars, extents, nv, made, nmade)
+                    mao_block(m, m[0].arena.nodes[s].c, st, pad, auto_pad, banks, swizzle, vars, extents, nv, made, nmade)
                 }
                 if k == AST_BLOCK {
-                    mao_block(m, s, st, pad, auto_pad, swizzle, vars, extents, nv, made, nmade)
+                    mao_block(m, s, st, pad, auto_pad, banks, swizzle, vars, extents, nv, made, nmade)
                 }
                 if k == AST_HANDLE {
-                    mao_block(m, m[0].arena.nodes[s].a, st, pad, auto_pad, swizzle, vars, extents, nv, made, nmade)
+                    mao_block(m, m[0].arena.nodes[s].a, st, pad, auto_pad, banks, swizzle, vars, extents, nv, made, nmade)
                 }
                 if k == AST_MATCH {
                     m[0].arena.nodes[s].a = mao_expr(m, m[0].arena.nodes[s].a, st, swizzle, vars, extents, nv[0])
@@ -18891,6 +19125,7 @@ function mlg_aosoa(m: ptr<Mlg>, root: i32) {
     let pad: i32 = mlg_aosoa_pad()
     let auto_pad: i32 = mlg_aosoa_auto_pad()
     let swizzle: i32 = mlg_aosoa_swizzle()
+    let banks: i32 = mlg_aosoa_bank_count()
     if pad < 0 {
         mlg_refuse(m, root, "FLOWC_MLIR_AOSOA_PAD must be a positive integer")
         return
@@ -18903,11 +19138,15 @@ function mlg_aosoa(m: ptr<Mlg>, root: i32) {
         mlg_refuse(m, root, "FLOWC_MLIR_AOSOA_SWIZZLE must be a power of two")
         return
     }
+    if banks < 0 {
+        mlg_refuse(m, root, "FLOWC_MLIR_AOSOA_BANK_COUNT must be a positive integer")
+        return
+    }
     item = m[0].arena.nodes[root].a
     while item != AST_NONE {
         let d2: i32 = mlg_unwrap(m, item)
         if mlg_kind(m, d2) == AST_FN {
-            mao_block(m, m[0].arena.nodes[d2].c, st, pad, auto_pad, swizzle, vars, extents, &nv[0] as ptr<i32>, made, &nmade[0] as ptr<i32>)
+            mao_block(m, m[0].arena.nodes[d2].c, st, pad, auto_pad, banks, swizzle, vars, extents, &nv[0] as ptr<i32>, made, &nmade[0] as ptr<i32>)
         }
         item = m[0].arena.nodes[item].next
     }

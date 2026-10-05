@@ -12,7 +12,7 @@ import .ast {
     AST_DEFER, AST_ENUM, AST_IF_EXPR, AST_TYPE_ALIAS, AST_SHADER, AST_IDENT_SORT_MOD, AST_MATCH_ARM_EXT, AST_LAYOUT, AST_PIPE_BLOCK, PIPE_BLOCK_CHOOSE, AST_IDENT_FORK_SRC, AST_SORT_BY, AST_TRY, AST_VECTOR_LIT,
     AST_HANDLE, AST_CAPABILITY, AST_CAP_METHOD, AST_TYPE_CAPABILITY,
     AST_ATTR, AST_ATTR_HAS_ARGS,
-    flowc_ast_chain_len, flowc_ast_reject_unsupported, flowc_ast_reject_unsupported_but, flowc_ast_enum_of_const, AST_RECORD_UPDATE
+    flowc_ast_chain_len, flowc_ast_reject_unsupported, flowc_ast_reject_unsupported_but, flowc_ast_enum_of_const, AST_RECORD_UPDATE, AST_GPU_FRAME
 }
 import .attributes {
     flowc_attr_args_from_span, flowc_attr_span_is, flowc_is_known_attr,
@@ -25,6 +25,13 @@ import .effects {
     flowc_eff_is_effect, flowc_eff_is_cap, flowc_eff_row_of,
     flowc_eff_diag_begin, flowc_eff_diag_s, flowc_eff_diag_span,
     flowc_eff_diag_buf, flowc_eff_diag_int, flowc_eff_diag_end
+}
+import .rt_summary {
+    FLOWC_RT_DOM_CALLBACK, FLOWC_RT_DOM_FRAME, FLOWC_RT_DOM_NONE,
+    flowc_rt_forbidden, flowc_rt_fn_domain, flowc_rt_fn_has_attr,
+    flowc_rt_summary_bits, flowc_rt_summary_collect, flowc_rt_summary_domain,
+    flowc_rt_summary_find, flowc_rt_summary_prov, flowc_rt_summary_prov_len,
+    flowc_rt_bit_name
 }
 import .proof_lower { flowc_proof_erase }
 import .overload_table {
@@ -93,7 +100,8 @@ export struct TcCtx {
     # Optional source path for diagnostics (may be empty).
     path: string,
     # Effect table (see effects.flow): dependency entries in [0, eff_seed_len),
-    # the module being checked after them.
+    # the module being checked after them. `$fname` RT/lifetime summaries
+    # ride in the same buffer (#765).
     eff: ptr<u8>,
     eff_len: i32,
     eff_cap: i32,
@@ -450,6 +458,19 @@ function flowc_tc_lookup_fn(ctx: TcCtx, start: i32, end: i32) -> i32 {
     }
     # sizeof<T>() (#952).
     if flowc_tc_span_is(ctx.src, start, end, "sizeof") == 1 {
+        return 1
+    }
+    # Stable type identity and target layout (#775).
+    if flowc_tc_span_is(ctx.src, start, end, "alignof") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "type_family_id") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "type_schema_id") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(ctx.src, start, end, "type_transport_safe") == 1 {
         return 1
     }
     # Complex constructors and <complex.h> functions (#942).
@@ -821,6 +842,117 @@ function flowc_tc_eff_push(ctx: ptr<TcCtx>, s: i32, e: i32) {
 }
 
 # Name of the function being checked, printed as ` in 'f'` (or ` from 'f'`).
+# Consult an imported or previously collected `$fname` summary when the
+# current function is @rt_safe or in the callback/frame domain (#765).
+# Stage-A only reports these when the semantic checker is not already
+# walking every module body (sem_on == 0); bundle typecheck leaves the
+# same check to sem_check.flow so diagnostics are not duplicated.
+function flowc_tc_rt_consult_call(ctx: ptr<TcCtx>, arena: AstArena, call: i32) {
+    if ctx[0].sem_on == 1 {
+        return
+    }
+    let fn: i32 = ctx[0].cur_fn
+    if fn == AST_NONE or fn < 0 {
+        return
+    }
+    let src: ptr<u8> = ctx[0].src
+    let mut need: i32 = 0 - 1
+    if flowc_rt_fn_has_attr(arena, src, fn, "rt_safe") == 1 {
+        need = FLOWC_RT_DOM_CALLBACK
+    } else {
+        let domain: i32 = flowc_rt_fn_domain(arena, src, fn)
+        if domain == FLOWC_RT_DOM_CALLBACK or domain == FLOWC_RT_DOM_FRAME {
+            need = domain
+        }
+    }
+    if need < 0 {
+        return
+    }
+    let ns: i32 = arena.nodes[call].name_start
+    let ne: i32 = arena.nodes[call].name_end
+    let off: i32 = flowc_rt_summary_find(ctx[0].eff, ctx[0].eff_len, src, ns, ne)
+    if off < 0 {
+        return
+    }
+    let bits: i32 = flowc_rt_summary_bits(ctx[0].eff, off)
+    let bad: i32 = flowc_rt_forbidden(need, bits)
+    if bad == 0 {
+        let cal_dom: i32 = flowc_rt_summary_domain(ctx[0].eff, off)
+        if need == FLOWC_RT_DOM_CALLBACK or need == FLOWC_RT_DOM_FRAME {
+            if cal_dom != FLOWC_RT_DOM_NONE and cal_dom > need {
+                flowc_tc_eff_begin(ctx, ns)
+                flowc_eff_diag_s("lifetime domain violation: '")
+                flowc_eff_diag_span(src, arena.nodes[fn].name_start, arena.nodes[fn].name_end)
+                flowc_eff_diag_s("' is in the `")
+                if need == FLOWC_RT_DOM_CALLBACK {
+                    flowc_eff_diag_s("callback")
+                } else {
+                    flowc_eff_diag_s("frame")
+                }
+                flowc_eff_diag_s("` domain but calls '")
+                flowc_eff_diag_span(src, ns, ne)
+                flowc_eff_diag_s("', which is in the `")
+                if cal_dom == FLOWC_RT_DOM_FRAME {
+                    flowc_eff_diag_s("frame")
+                } elif cal_dom == FLOWC_RT_DOM_SESSION {
+                    flowc_eff_diag_s("session")
+                } else {
+                    flowc_eff_diag_s("application")
+                }
+                flowc_eff_diag_s("` domain (a shorter-lived domain may not call into a longer-lived one; see docs/language/lifetime-domains.md)")
+                flowc_eff_diag_end()
+            }
+        }
+        return
+    }
+    let mut marked: string = "is marked '@rt_safe'"
+    let mut doc: string = "docs/library/rt-safety.md"
+    if flowc_rt_fn_has_attr(arena, src, fn, "rt_safe") == 0 {
+        marked = "is in the `callback` lifetime domain, which forbids allocation,"
+        doc = "docs/language/lifetime-domains.md"
+        if need == FLOWC_RT_DOM_FRAME {
+            flowc_tc_eff_begin(ctx, ns)
+            flowc_eff_diag_s("lifetime domain violation: '")
+            flowc_eff_diag_span(src, arena.nodes[fn].name_start, arena.nodes[fn].name_end)
+            flowc_eff_diag_s("' is in the `frame` domain but calls '")
+            flowc_eff_diag_span(src, ns, ne)
+            flowc_eff_diag_s("', which allocates or frees heap memory")
+            let poff: i32 = flowc_rt_summary_prov(ctx[0].eff, off)
+            let plen: i32 = flowc_rt_summary_prov_len(ctx[0].eff, poff)
+            if plen > 0 and flowc_tc_span_eq2(src, ns, ne, ctx[0].eff, poff, poff + plen) == 0 {
+                flowc_eff_diag_s(" because it calls '")
+                flowc_eff_diag_buf(ctx[0].eff, poff, plen)
+                flowc_eff_diag_s("'")
+            }
+            flowc_eff_diag_s(". Frame-domain code allocates by bumping a frame arena (frame_alloc_*); see docs/language/lifetime-domains.md")
+            flowc_eff_diag_end()
+            return
+        }
+    }
+    flowc_tc_eff_begin(ctx, ns)
+    flowc_eff_diag_s("RT-safety violation: '")
+    flowc_eff_diag_span(src, arena.nodes[fn].name_start, arena.nodes[fn].name_end)
+    flowc_eff_diag_s("' ")
+    flowc_eff_diag_s(marked)
+    flowc_eff_diag_s(" but calls '")
+    flowc_eff_diag_span(src, ns, ne)
+    flowc_eff_diag_s("'")
+    let poff2: i32 = flowc_rt_summary_prov(ctx[0].eff, off)
+    let plen2: i32 = flowc_rt_summary_prov_len(ctx[0].eff, poff2)
+    if plen2 > 0 and flowc_tc_span_eq2(src, ns, ne, ctx[0].eff, poff2, poff2 + plen2) == 0 {
+        flowc_eff_diag_s(", which is not RT-safe because it calls '")
+        flowc_eff_diag_buf(ctx[0].eff, poff2, plen2)
+        flowc_eff_diag_s("' (forbidden on an RT-safe path; see ")
+        flowc_eff_diag_s(doc)
+        flowc_eff_diag_s(")")
+    } else {
+        flowc_eff_diag_s(", which is forbidden on an RT-safe path (heap, device/file I/O, GPU, or blocking lock; see ")
+        flowc_eff_diag_s(doc)
+        flowc_eff_diag_s(")")
+    }
+    flowc_eff_diag_end()
+}
+
 function flowc_tc_eff_where(ctx: ptr<TcCtx>, arena: AstArena, word: string) {
     let fn: i32 = ctx[0].cur_fn
     if fn == AST_NONE {
@@ -1045,6 +1177,23 @@ function flowc_tc_eff_check_row_call(ctx: ptr<TcCtx>, arena: AstArena, call: i32
             let plen: i32 = flowc_eff_item_len(ctx[0].eff, p)
             # Handled? Compare against the handler stack spans.
             let mut handled: i32 = 0
+
+            # `rt_safe` is checked in sem_check.flow
+            if plen == 7 {
+                let mut is_rt_safe: bool = true
+                let rt_safe_str: ptr<u8> = "rt_safe" as ptr<u8>
+                let mut c_idx: i32 = 0
+                while c_idx < 7 {
+                    if ctx[0].eff[p + c_idx] != rt_safe_str[c_idx] {
+                        is_rt_safe = false
+                    }
+                    c_idx = c_idx + 1
+                }
+                if is_rt_safe {
+                    handled = 1
+                }
+            }
+
             let mut h: i32 = 0
             while h < ctx[0].hlen {
                 if flowc_eff_item_is(ctx[0].eff, p, src, ctx[0].hs_s[h], ctx[0].hs_e[h]) == 1 {
@@ -1075,15 +1224,18 @@ function flowc_tc_eff_check_row_call(ctx: ptr<TcCtx>, arena: AstArena, call: i32
             while en != AST_NONE {
                 let es: i32 = arena.nodes[en].name_start
                 let ee: i32 = arena.nodes[en].name_end
-                if flowc_tc_eff_active(ctx[0], es, ee) == 0 and nlen + (ee - es) + 1 < 1024 {
-                    let mut j: i32 = 0
-                    while j < ee - es {
-                        names[nlen + j] = src[es + j]
-                        j = j + 1
+                # Skip the special `rt_safe` contract check here since it's enforced by sem_check.
+                if flowc_tc_span_is(src, es, ee, "rt_safe") == 0 {
+                    if flowc_tc_eff_active(ctx[0], es, ee) == 0 and nlen + (ee - es) + 1 < 1024 {
+                        let mut j: i32 = 0
+                        while j < ee - es {
+                            names[nlen + j] = src[es + j]
+                            j = j + 1
+                        }
+                        names[nlen + ee - es] = 0
+                        nlen = nlen + (ee - es) + 1
+                        count = count + 1
                     }
-                    names[nlen + ee - es] = 0
-                    nlen = nlen + (ee - es) + 1
-                    count = count + 1
                 }
                 en = arena.nodes[en].next
             }
@@ -1382,6 +1534,7 @@ function flowc_tc_check_expr(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         let ns: i32 = arena.nodes[id].name_start
         let ne: i32 = arena.nodes[id].name_end
         let nargs: i32 = flowc_ast_chain_len(arena, arena.nodes[id].a)
+        flowc_tc_rt_consult_call(ctx, arena, id)
         # `E.op(args)` on an effect or a capability-typed value.
         let espan: array<i32, 2> = []
         if ctx[0].sem_on == 1 {
@@ -1632,6 +1785,10 @@ function flowc_tc_check_stmt(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
         flowc_tc_check_expr(ctx, arena, arena.nodes[id].a)
         flowc_tc_check_block(ctx, arena, arena.nodes[id].b)
         flowc_tc_check_block(ctx, arena, arena.nodes[id].c)
+        return
+    }
+    if kind == AST_GPU_FRAME {
+        flowc_tc_check_block(ctx, arena, arena.nodes[id].b)
         return
     }
     if kind == AST_LAYOUT {
@@ -1979,9 +2136,12 @@ export function flowc_tc_seed_export(ctx: ptr<TcCtx>, dep_arena: AstArena, dep_r
     if dep_arena.nodes[dep_root].kind != AST_PROGRAM {
         return
     }
-    # Effects, capabilities and `with` rows travel in the effect table.
+    # Effects, capabilities, `with` rows and RT/lifetime summaries travel
+    # in the effect table. Imported `$fname` summaries are leaves for the
+    # module being collected (#765).
     ctx[0].eff_len = ctx[0].eff_seed_len
     ctx[0].eff_len = flowc_eff_collect(dep_arena, dep_root, dep_src, ctx[0].eff, ctx[0].eff_cap, ctx[0].eff_len)
+    ctx[0].eff_len = flowc_rt_summary_collect(dep_arena, dep_root, dep_src, ctx[0].eff, ctx[0].eff_cap, ctx[0].eff_len)
     ctx[0].eff_seed_len = ctx[0].eff_len
     let mut item: i32 = dep_arena.nodes[dep_root].a
     while item != AST_NONE {
@@ -3299,7 +3459,16 @@ function ut_builtin_ret(src: ptr<u8>, s: i32, e: i32) -> UTy {
     if flowc_tc_span_is(src, s, e, "strlen") == 1 {
         return ut_prim(UP_U64)
     }
-    if flowc_tc_span_in_words(src, s, e, "len time clock") == 1 {
+    if flowc_tc_span_is(src, s, e, "type_family_id") == 1 {
+        return ut_prim(UP_U64)
+    }
+    if flowc_tc_span_is(src, s, e, "type_schema_id") == 1 {
+        return ut_prim(UP_U64)
+    }
+    if flowc_tc_span_is(src, s, e, "type_transport_safe") == 1 {
+        return ut_prim(UP_BOOL)
+    }
+    if flowc_tc_span_in_words(src, s, e, "sizeof alignof len time clock") == 1 {
         return ut_prim(UP_I64)
     }
     if flowc_tc_span_in_words(src, s, e, "get_current_time creal cimag cabs carg") == 1 {
@@ -3747,6 +3916,10 @@ function ut_stmt(u: ptr<UCtx>, arena: AstArena, id: i32) {
         ut_expr(u, arena, id)
         return
     }
+    if kind == AST_GPU_FRAME {
+        ut_block(u, arena, arena.nodes[id].b)
+        return
+    }
     if kind == AST_LAYOUT {
         let mut arg: i32 = arena.nodes[id].a
         while arg != AST_NONE {
@@ -3872,8 +4045,10 @@ export function flowc_tc_check_program(ctx: ptr<TcCtx>, arena: AstArena, root: i
         flowc_tc_err(ctx)
         ctx[0].fatal = ctx[0].fatal + 1
     }
-    # This module's own effects join the table for the duration of the check.
+    # This module's own effects and RT/lifetime summaries join the table
+    # for the duration of the check. Imported `$` entries stay leaves.
     ctx[0].eff_len = flowc_eff_collect(arena, root, ctx[0].src, ctx[0].eff, ctx[0].eff_cap, ctx[0].eff_seed_len)
+    ctx[0].eff_len = flowc_rt_summary_collect(arena, root, ctx[0].src, ctx[0].eff, ctx[0].eff_cap, ctx[0].eff_len)
     flowc_tc_collect_globals(ctx, arena, root)
     if ctx[0].sem_on == 0 {
         flowc_tc_check_rows(ctx, arena, root)

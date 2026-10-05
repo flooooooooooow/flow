@@ -283,7 +283,7 @@ export function string_smoke(src: string, default_out: string, need: ptr<ProcStr
 # The frontend objects in link order (the `cc -r` that makes
 # flowc_frontend*.o).
 export function frontend_modules() -> ptr<ProcStrs> {
-    return s_words("token ast lexer parser fileio field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl effects proof_lower attributes ordering_hints sort_plans sort_sites cgen overload overload_table type_name expr_type overload_args overload_select overload_registry overload_call typecheck strutil sem_util sem_types sem_cheader sem_model sem_check pipeline_fusion resolve")
+    return s_words("token ast lexer parser fileio version denotation field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl effects proof_lower attributes ordering_hints sort_plans sort_sites type_id noalias cgen overload overload_table type_name expr_type overload_args overload_select overload_registry overload_call rt_summary typecheck strutil sem_util sem_types sem_cheader sem_model sem_check pipeline_fusion profile resolve")
 }
 
 # Symbols the linked frontend has to provide.
@@ -293,7 +293,7 @@ export function frontend_symbols() -> ptr<ProcStrs> {
 
 # The headers the Flow driver (driver.flow) is compiled against.
 export function driver_headers() -> ptr<ProcStrs> {
-    return s_words("token ast lexer parser fileio field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl sort_plans cgen overload_table overload_call typecheck resolve")
+    return s_words("token ast lexer parser fileio version denotation field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl sort_plans cgen overload_table overload_call typecheck resolve")
 }
 
 # The self-emit order (stage_a_self_emit and its gen2 twin), one step per
@@ -331,7 +331,11 @@ export function self_emit_plan() -> ptr<ProcStrs> {
     sl_push(p, "E parser token ast lexer attributes")
     sl_push(p, "E proof_lower ast")
     sl_push(p, "H proof_lower")
-    sl_push(p, "E cgen token ast effects proof_lower attributes sort_plans sort_sites")
+    sl_push(p, "E type_id ast")
+    sl_push(p, "H type_id")
+    sl_push(p, "E noalias token ast")
+    sl_push(p, "H noalias")
+    sl_push(p, "E cgen token ast effects proof_lower attributes sort_plans sort_sites type_id noalias")
     sl_push(p, "E overload")
     sl_push(p, "E overload_table")
     sl_push(p, "E type_name ast")
@@ -348,14 +352,20 @@ export function self_emit_plan() -> ptr<ProcStrs> {
     sl_push(p, "H overload_registry")
     sl_push(p, "E overload_call ast overload_table overload_args overload_select")
     sl_push(p, "H overload_call")
-    sl_push(p, "E typecheck ast attributes effects proof_lower overload_table overload_call overload_registry overload_select")
+    sl_push(p, "E rt_summary ast effects")
+    sl_push(p, "H rt_summary")
+    sl_push(p, "E typecheck ast attributes effects proof_lower overload_table overload_call overload_registry overload_select rt_summary")
     sl_push(p, "H parser")
     sl_push(p, "H fileio")
     sl_push(p, "H cgen")
     sl_push(p, "H typecheck")
     sl_push(p, "E strutil")
+    sl_push(p, "E version")
+    sl_push(p, "E denotation token ast lexer")
     sl_push(p, "E sem_util")
     sl_push(p, "H strutil")
+    sl_push(p, "H version")
+    sl_push(p, "H denotation")
     sl_push(p, "H sem_util")
     sl_push(p, "E sem_types sem_util")
     sl_push(p, "H sem_types")
@@ -363,11 +373,13 @@ export function self_emit_plan() -> ptr<ProcStrs> {
     sl_push(p, "H sem_cheader")
     sl_push(p, "E sem_model token ast lexer sem_util sem_types")
     sl_push(p, "H sem_model")
-    sl_push(p, "E sem_check token ast lexer parser sem_util sem_types sem_model sem_cheader")
+    sl_push(p, "E sem_check token ast lexer parser sem_util sem_types sem_model sem_cheader rt_summary")
     sl_push(p, "H sem_check")
     sl_push(p, "E pipeline_fusion ast")
     sl_push(p, "H pipeline_fusion")
-    sl_push(p, "E resolve token ast lexer parser fileio field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl effects sort_plans cgen overload_table overload_call typecheck strutil sem_util sem_types sem_model sem_check pipeline_fusion")
+    sl_push(p, "E profile fileio")
+    sl_push(p, "H profile")
+    sl_push(p, "E resolve token ast lexer parser fileio version denotation field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl effects sort_plans cgen overload_table overload_call typecheck strutil sem_util sem_types sem_model sem_check pipeline_fusion profile")
     return p
 }
 

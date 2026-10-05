@@ -6,7 +6,7 @@ import "tools/flow_cli/sys.flow"
 import "tools/flow_cli/toolchain.flow"
 import "tools/flow_cli/tool.flow"
 import "tools/flow_cli/mlir_tools.flow"
-import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg, proc_input }
+import std.process { ProcCmd, ProcResult, ProcStrs, proc_arg, proc_input, proc_now_ms }
 import std.os { os_signal_watch, os_signal_take, SIGINT, SIGTERM }
 
 # ---------------------------------------------------------------------------
@@ -1081,6 +1081,7 @@ export function generate_mlir(args: ptr<ProcStrs>) -> i32 {
     let mut wasm32: bool = false
     let mut llvm: bool = false
     let mut jit: bool = false
+    let mut shape_spec: string = ""
     let mut spirv_out: string = ""
     let mut out_path: string = ""
     let opt_flags: ptr<ProcStrs> = sl_new()
@@ -1119,6 +1120,8 @@ export function generate_mlir(args: ptr<ProcStrs>) -> i32 {
             wasm32 = true
         } elif s_eq(a, "--llvm") {
             llvm = true
+        } elif s_starts(a, "--shape-spec=") {
+            shape_spec = s_from(a, 13)
         } elif s_eq(a, "--jit") or s_eq(a, "--hot-reload") {
             jit = true
         } elif s_eq(a, "-o") or s_eq(a, "--output") {
@@ -1158,7 +1161,7 @@ export function generate_mlir(args: ptr<ProcStrs>) -> i32 {
         cli_exit(1)
     }
     if jit {
-        return run_flow_jit(program)
+        return run_flow_jit(program, shape_spec)
     }
     let basename: string = path_stem(program, ".flow")
     let build_dir: string = build_root()
@@ -1179,6 +1182,9 @@ export function generate_mlir(args: ptr<ProcStrs>) -> i32 {
     }
     if wasm32 {
         sl_push(emit_flags, "--wasm32")
+    }
+    if s_len(shape_spec) > 0 {
+        sl_push(emit_flags, "--shape-spec=" + shape_spec)
     }
     sl_push2(emit_flags, program, mlir_file)
     if flow_emit_mlir(emit_flags) != 0 {
@@ -1230,44 +1236,142 @@ export function generate_mlir(args: ptr<ProcStrs>) -> i32 {
     return 0
 }
 
+export struct JITPhaseTimings {
+    emit_ms: i64,
+    optimize_ms: i64,
+    lower_ms: i64,
+    link_ms: i64,
+    run_ms: i64,
+}
+
 # flow jit PROGRAM: emit, optimize, lower, link and run natively.
-export function run_flow_jit(program: string) -> i32 {
+export function run_flow_jit(program: string, shape_spec: string) -> i32 {
     let name: string = path_basename(program)
     let raw: bool = s_eq(env_or("FLOW_JIT_RAW", "0"), "1")
-    if not raw {
-        outln("🔥 JIT compiling " + name + "...")
+
+    let cache_dir: string = env_or("XDG_CACHE_HOME", env("HOME") + "/.cache") + "/flow/jit"
+    mkdir_p_or_exit(cache_dir)
+    let key: string = cksum_key(sl_of1(program))
+    let cached_exe: string = cache_dir + "/" + key + "_" + name + ".exe"
+
+    # A shape spec changes the emitted MLIR, so do not reuse a cache entry
+    # keyed only on the source file.
+    let is_cached: bool = s_len(shape_spec) == 0 and is_exec(cached_exe) and not deps_newer(program, path_dirname(program), cached_exe)
+    let mut timings: JITPhaseTimings = JITPhaseTimings { emit_ms: 0, optimize_ms: 0, lower_ms: 0, link_ms: 0, run_ms: 0 }
+
+    let mut rc: i32 = 0
+    if is_cached {
+        if not raw {
+            outln("🔥 JIT running cached " + name + "...")
+        }
+        let timeout_s: string = env_or("FLOW_JIT_TIMEOUT", "300")
+        let has_timeout: bool = have("timeout")
+        let mut rargv: ptr<ProcStrs> = sl_of1(cached_exe)
+        if has_timeout {
+            rargv = sl_of3("timeout", timeout_s, cached_exe)
+        }
+        let pc: ptr<ProcCmd> = cmd(rargv)
+        let t4: i64 = proc_now_ms()
+        rc = run(pc)
+        timings.run_ms = proc_now_ms() - t4
+
+        if rc == 124 and has_timeout {
+            outln("❌ JIT execution timed out after " + timeout_s + "s")
+            rc = 0 - 1
+        } elif rc > 128 {
+            rc = 128 - rc
+        }
+
+        if not jit_is_crash(rc) {
+            if not raw {
+                if rc != 0 {
+                    outln("❌ JIT finished with exit code: " + s_itoa(rc))
+                } else {
+                    outln("✅ JIT finished with exit code: 0")
+                }
+            }
+        } else {
+            outln("❌ JIT crashed (exit " + s_itoa(rc) + "): a fault in the native code")
+        }
+    } else {
+        if not raw {
+            outln("🔥 JIT compiling " + name + "...")
+        }
+        let work: string = mktemp_dir(tmp_base() + "/flow_jit_XXXXXX")
+        if s_len(work) == 0 {
+            return 1
+        }
+        rc = flow_jit_once(program, work, cached_exe, &timings, shape_spec)
+        rm_rf(work)
     }
-    let work: string = mktemp_dir(tmp_base() + "/flow_jit_XXXXXX")
-    if s_len(work) == 0 {
+
+    if not raw {
+        outln("== timings ==")
+        if not is_cached {
+            outln("  emit:     " + s_itoa(timings.emit_ms as i32) + " ms")
+            outln("  optimize: " + s_itoa(timings.optimize_ms as i32) + " ms")
+            outln("  lower:    " + s_itoa(timings.lower_ms as i32) + " ms")
+            outln("  link:     " + s_itoa(timings.link_ms as i32) + " ms")
+        } else {
+            outln("  (warm cache, compilation skipped)")
+        }
+        outln("  run:      " + s_itoa(timings.run_ms as i32) + " ms")
+    }
+
+    if s_eq(env_or("FLOW_JIT_RAW", "0"), "1") {
+        return rc & 255
+    }
+    if rc != 0 {
         return 1
     }
-    let rc: i32 = flow_jit_once(program, work)
-    rm_rf(work)
-    return rc
+    return 0
 }
 
 function jit_is_crash(code: i32) -> bool {
     return code < 0 or code == 134 or code == 138 or code == 139
 }
 
-function flow_jit_once(program: string, work: string) -> i32 {
+function flow_jit_once(program: string, work: string, cached_exe: string, timings: ptr<JITPhaseTimings>, shape_spec: string) -> i32 {
     sink_push(SINK_FD, SINK_BUF)
-    let erc: i32 = flow_emit_mlir(sl_of3("--jit", program, work + "/jit_module.mlir"))
+    let t0: i64 = proc_now_ms()
+    let eargs: ptr<ProcStrs> = sl_of1("--jit")
+    if s_len(shape_spec) > 0 {
+        let mut spec: string = shape_spec
+        if s_starts(spec, "--shape-spec=") {
+            spec = s_from(spec, 13)
+        }
+        sl_push(eargs, "--shape-spec=" + spec)
+    }
+    sl_push2(eargs, program, work + "/jit_module.mlir")
+    let erc: i32 = flow_emit_mlir(eargs)
+    timings[0].emit_ms = proc_now_ms() - t0
     let _eo: string = sink_pop()
     if erc != 0 {
         errs(sink_err())
         outln("❌ JIT error: MLIR generation failed for " + path_basename(program))
         return 1
     }
-    let o: ptr<ProcStrs> = sl_of2("--opt-level", "O2")
+
+    let is_small: bool = file_size(program) < 4096
+    let o: ptr<ProcStrs> = sl_new()
+    if is_small {
+        sl_push2(o, "--opt-level", "O0")
+    } else {
+        sl_push2(o, "--opt-level", "O2")
+    }
     sl_push2(o, work + "/jit_module.mlir", work + "/jit_module.mlir")
+
+    let t1: i64 = proc_now_ms()
     if mlir_optimize(o) != 0 {
         errln("MLIR optimization failed")
         return 1
     }
+    timings[0].optimize_ms = proc_now_ms() - t1
     let mut ok: bool = true
     sink_push(SINK_FD, SINK_BUF)
+    let t2: i64 = proc_now_ms()
     let lrc: i32 = mlir_lower(sl_of2(work + "/jit_module.mlir", work + "/jit_module.ll"))
+    timings[0].lower_ms = proc_now_ms() - t2
     let _lo: string = sink_pop()
     if lrc != 0 {
         outln("MLIR lowering (mlir-opt) failed: " + s_chomp_all(sink_err()))
@@ -1321,10 +1425,12 @@ function flow_jit_once(program: string, work: string) -> i32 {
             sl_push(a, "-lm")
             let cc: ptr<ProcCmd> = cmd(a)
             cmd_no_stdin(cc)
+            let t3: i64 = proc_now_ms()
             if run_err_to_file(cc, work + "/cc.err") != 0 {
                 outln("LLVM executable build failed: " + s_chomp_all(read_text(work + "/cc.err")))
                 continue
             }
+            timings[0].link_ms = proc_now_ms() - t3
             let has_timeout: bool = have("timeout")
             let mut rargv: ptr<ProcStrs> = sl_of1(exe)
             if has_timeout {
@@ -1332,7 +1438,9 @@ function flow_jit_once(program: string, work: string) -> i32 {
             }
             let rc: ptr<ProcCmd> = cmd(rargv)
             cmd_no_stdin(rc)
+            let t4: i64 = proc_now_ms()
             let mut code: i32 = run(rc)
+            timings[0].run_ms = proc_now_ms() - t4
             if code == 124 and has_timeout {
                 outln("❌ JIT execution timed out after " + timeout_s + "s")
                 code = 0 - 1
@@ -1341,6 +1449,8 @@ function flow_jit_once(program: string, work: string) -> i32 {
             }
             result = s_itoa(code)
             if not jit_is_crash(code) {
+                let _cp: bool = copy_file(exe, cached_exe)
+                let _sm: bool = set_mode(cached_exe, 493) # 0755
                 break
             }
             if idx < n {
@@ -1361,17 +1471,16 @@ function flow_jit_once(program: string, work: string) -> i32 {
         outln("❌ JIT crashed (exit " + result + "): a fault in the native code")
         outln("   Usually arm64 aggregate-return stack aliasing in MLIR codegen.")
         outln("   ASAN retry should have run automatically; unset FLOW_JIT_ASAN=0 to prefer ASAN.")
-        return 1
+        return code
     }
-    if s_eq(env_or("FLOW_JIT_RAW", "0"), "1") {
-        return code & 255
+    if not s_eq(env_or("FLOW_JIT_RAW", "0"), "1") {
+        if code != 0 {
+            outln("❌ JIT finished with exit code: " + result)
+        } else {
+            outln("✅ JIT finished with exit code: " + result)
+        }
     }
-    if code != 0 {
-        outln("❌ JIT finished with exit code: " + result)
-        return 1
-    }
-    outln("✅ JIT finished with exit code: " + result)
-    return 0
+    return code
 }
 
 # Lower MLIR to an object with mlir-opt | mlir-translate | llc and link it

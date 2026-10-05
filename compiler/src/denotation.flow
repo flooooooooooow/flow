@@ -91,7 +91,7 @@ function flowc_den_span_is(
     return 0
 }
 
-function flowc_den_hash_bytes(
+export function flowc_den_hash_bytes(
     src: ptr<u8>,
     start: i32,
     end: i32

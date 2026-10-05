@@ -140,12 +140,24 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
                 ft_errln("mlir_static_memory: --sizes expects a,b,c")
                 return 2
             }
+        } elif ft_eq(arg, "--sizes") {
+            ft_errln("mlir_static_memory: --sizes requires a value")
+            return 2
         } elif ft_starts(arg, "--target=") {
             target = ft_from(arg, 9)
+        } elif ft_eq(arg, "--target") {
+            ft_errln("mlir_static_memory: --target requires a value")
+            return 2
         } elif ft_starts(arg, "--memory-space=") {
             space = ft_from(arg, 15)
+        } elif ft_eq(arg, "--memory-space") {
+            ft_errln("mlir_static_memory: --memory-space requires a value")
+            return 2
         } elif ft_starts(arg, "--alignment=") {
             alignment = parse_num(ft_from(arg, 12))
+        } elif ft_eq(arg, "--alignment") {
+            ft_errln("mlir_static_memory: --alignment requires a value")
+            return 2
         }
         i = i + 1
     }

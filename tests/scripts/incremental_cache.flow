@@ -1,0 +1,67 @@
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+
+function run_test() -> i32 {
+    let dir: string = mktemp_dir(env_or("TMPDIR", "/tmp") + "/flow-inc-test.XXXXXX")
+    if s_len(dir) == 0 {
+        return 1
+    }
+
+    let leaf: string = dir + "/leaf.flow"
+    let app: string = dir + "/app.flow"
+    let _w1: bool = write_text(leaf, "export function helper() -> i32 { return 42; }\n")
+    let _w2: bool = write_text(app, "import .leaf\nfunction main() -> i32 { return helper(); }\n")
+
+    let root: string = env_or("FLOW_REPO_ROOT", cwd_logical())
+    let flow_bin: string = root + "/flow"
+
+    env_set("FLOW_CACHE_SALT", "test1")
+
+    let c1: ptr<ProcStrs> = sl_of3(flow_bin, "run", app)
+    let res1: ptr<ProcResult> = run_result(cmd(c1))
+    let r1: i32 = res1.exit_code
+    if r1 != 42 {
+        println("FAIL: expected 42 from first compile, got " + s_itoa(r1))
+        rm_rf(dir)
+        return 1
+    }
+
+    # Modify leaf
+    let _w3: bool = write_text(leaf, "export function helper() -> i32 { return 99; }\n")
+
+    let c2: ptr<ProcStrs> = sl_of3(flow_bin, "run", app)
+    let res2: ptr<ProcResult> = run_result(cmd(c2))
+    let r2: i32 = res2.exit_code
+    if r2 != 99 {
+        println("FAIL: expected 99 from second compile, got " + s_itoa(r2))
+        rm_rf(dir)
+        return 1
+    }
+
+    env_set("FLOW_CACHE_SALT", "test2")
+
+    let _w4: bool = write_text(leaf, "export function helper() -> i32 { return 100; }\n")
+    let c3: ptr<ProcStrs> = sl_of3(flow_bin, "run", app)
+    let res3: ptr<ProcResult> = run_result(cmd(c3))
+    let r3: i32 = res3.exit_code
+    if r3 != 100 {
+        println("FAIL: expected 100 from third compile, got " + s_itoa(r3))
+        rm_rf(dir)
+        return 1
+    }
+
+    rm_rf(dir)
+    return 0
+}
+
+function main() -> i32 {
+    let root: string = env_or("FLOW_REPO_ROOT", cwd_logical())
+    let _cd: bool = proc_chdir(root)
+    let r: i32 = run_test()
+    if r == 0 {
+        outln("PASS incremental_cache")
+    } else {
+        outln("FAIL incremental_cache")
+    }
+    return r
+}

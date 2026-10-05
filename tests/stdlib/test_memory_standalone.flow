@@ -194,12 +194,8 @@ function test_error_handling() -> bool {
         return false
     }
     free(zero_ptr)
-    
-    let free_result: i32 = free(0)
-    if free_result != 0 {
-        print("FAIL: free(null) incorrect")
-        return false
-    }
+    # io.flow now declares libc free as void; a null pointer is a no-op.
+    free(0)
     
     let realloc_ptr: i32 = realloc(0, 100)
     if realloc_ptr != 1100 {

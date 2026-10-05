@@ -1,0 +1,10 @@
+import .ok_helper { mix }
+
+@rt_safe
+function process(n: i32) -> i32 {
+    return mix(n, 1)
+}
+
+function main() -> i32 {
+    return process(2)
+}

@@ -1,0 +1,591 @@
+# @module flowc.type_id
+# @means  Target-independent type family/schema identity and TransportSafe (#775).
+#
+# Libraries (flow-audio endpoints, versioned patch state) need a compiler-
+# defined description of an ordinary Flow type that does not depend on
+# C / MLIR / Wasm lowering and does not require string reflection on an
+# RT path. One scalar cannot be both semantic identity and an ABI certificate:
+# a pointer-bearing struct has the same Flow schema on native64 and wasm32
+# but different size, alignment and field offsets.
+#
+# Scheme v1 therefore exposes three levels, plus a conservative predicate:
+#
+#   family_id  — nominal family (public name / constructor), for API identity
+#                and migration routing across schema revisions
+#   schema_id  — FNV-1a 64 of a canonical target-independent public schema
+#                (field names and order, semantic field types, extents,
+#                enum variants, generic args). No C/MLIR/Wasm layout.
+#   AbiLayout  — target sizeof / alignof (existing sizeof<T>(), new alignof<T>())
+#   TransportSafe(T) — fixed-width scalars, fixed arrays, and structs of those;
+#                      pointers, spans, strings, extern/fn types are rejected
+#
+# Canonical strings are versioned (`v1;...`) so a later digest can change
+# without silently reusing old keys. IDs are compile-time u64 constants.
+
+import .ast {
+    AstArena, AST_NONE, AST_TYPE, AST_STRUCT, AST_FIELD,
+    AST_ENUM, AST_ENUM_VARIANT, AST_TYPE_ALIAS, AST_EXTERN_TYPE,
+    AST_TYPE_FIXED_ARRAY, AST_TYPE_SPAN_MUTABLE
+}
+
+export const FLOWC_TYPE_ID_SCHEME: i32 = 1
+
+export const FLOWC_TID_NONE: i32 = 0
+export const FLOWC_TID_FAMILY: i32 = 1
+export const FLOWC_TID_SCHEMA: i32 = 2
+export const FLOWC_TID_TRANSPORT: i32 = 3
+export const FLOWC_TID_ALIGNOF: i32 = 4
+
+const TID_FNV_OFFSET: u64 = 1469598103934665603
+const TID_FNV_PRIME: u64 = 1099511628211
+const TID_MAX_DEPTH: i32 = 16
+
+function tid_span_is(src: ptr<u8>, start: i32, end: i32, lit: string) -> i32 {
+    if src == null or end <= start {
+        return 0
+    }
+    let p: ptr<u8> = lit
+    let mut n: i32 = 0
+    while p[n] != 0 {
+        n = n + 1
+    }
+    if end - start != n {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < n {
+        if src[start + i] != p[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function tid_span_eq(src: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i32 {
+    if a1 - a0 != b1 - b0 {
+        return 0
+    }
+    let mut i: i32 = 0
+    let n: i32 = a1 - a0
+    while i < n {
+        if src[a0 + i] != src[b0 + i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+function tid_find_kind(arena: AstArena, src: ptr<u8>, start: i32, end: i32, kind: i32) -> i32 {
+    if end <= start {
+        return AST_NONE
+    }
+    let mut i: i32 = 0
+    while i < arena.len {
+        if arena.nodes[i].kind == kind {
+            if tid_span_eq(src, start, end, arena.nodes[i].name_start, arena.nodes[i].name_end) == 1 {
+                return i
+            }
+        }
+        i = i + 1
+    }
+    return AST_NONE
+}
+
+function tid_is_array(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    if ty == AST_NONE or arena.nodes[ty].kind != AST_TYPE {
+        return 0
+    }
+    if arena.nodes[ty].c == AST_TYPE_FIXED_ARRAY {
+        return 1
+    }
+    return tid_span_is(src, arena.nodes[ty].name_start, arena.nodes[ty].name_end, "array")
+}
+
+function tid_is_span(src: ptr<u8>, ty_ns: i32, ty_ne: i32) -> i32 {
+    if tid_span_is(src, ty_ns, ty_ne, "span") == 1 {
+        return 1
+    }
+    if ty_ne > ty_ns and src[ty_ns] == 38 {
+        return 1
+    }
+    return 0
+}
+
+function tid_alias_is_distinct(src: ptr<u8>, start: i32) -> i32 {
+    if src == null or start < 8 {
+        return 0
+    }
+    let mut i: i32 = start
+    while i > 0 and (src[i - 1] == 32 or src[i - 1] == 9 or src[i - 1] == 10 or src[i - 1] == 13) {
+        i = i - 1
+    }
+    if i < 8 {
+        return 0
+    }
+    return tid_span_is(src, i - 8, i, "distinct")
+}
+
+function tid_h_init() -> u64 {
+    return TID_FNV_OFFSET
+}
+
+function tid_h_byte(h: u64, b: i32) -> u64 {
+    return (h ^ (b as u64)) * TID_FNV_PRIME
+}
+
+function tid_h_lit(h: u64, lit: string) -> u64 {
+    let p: ptr<u8> = lit
+    let mut i: i32 = 0
+    let mut acc: u64 = h
+    while p[i] != 0 {
+        acc = tid_h_byte(acc, p[i] as i32)
+        i = i + 1
+    }
+    return acc
+}
+
+function tid_h_span(h: u64, src: ptr<u8>, start: i32, end: i32) -> u64 {
+    if src == null or end <= start {
+        return h
+    }
+    let mut acc: u64 = h
+    let mut i: i32 = start
+    while i < end {
+        acc = tid_h_byte(acc, src[i] as i32)
+        i = i + 1
+    }
+    return acc
+}
+
+function tid_h_i32(h: u64, value: i32) -> u64 {
+    if value < 0 {
+        return tid_h_byte(h, 45)
+    }
+    if value == 0 {
+        return tid_h_byte(h, 48)
+    }
+    let mut digits: array<u8, 16> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let mut n: i32 = 0
+    let mut v: i32 = value
+    while v > 0 {
+        digits[n] = ((v % 10) + 48) as u8
+        n = n + 1
+        v = v / 10
+    }
+    let mut acc: u64 = h
+    let mut i: i32 = n
+    while i > 0 {
+        i = i - 1
+        acc = tid_h_byte(acc, digits[i] as i32)
+    }
+    return acc
+}
+
+function tid_seen_push(starts: ptr<i32>, ends: ptr<i32>, n: i32, ns: i32, ne: i32) -> i32 {
+    if n < 0 or n >= TID_MAX_DEPTH {
+        return n
+    }
+    starts[n] = ns
+    ends[n] = ne
+    return n + 1
+}
+
+function tid_seen_has(src: ptr<u8>, starts: ptr<i32>, ends: ptr<i32>, n: i32, ns: i32, ne: i32) -> i32 {
+    let mut i: i32 = 0
+    while i < n {
+        if tid_span_eq(src, ns, ne, starts[i], ends[i]) == 1 {
+            return 1
+        }
+        i = i + 1
+    }
+    return 0
+}
+
+function tid_is_prim(src: ptr<u8>, ns: i32, ne: i32) -> i32 {
+    if tid_span_is(src, ns, ne, "i8") == 1 { return 1 }
+    if tid_span_is(src, ns, ne, "i16") == 1 { return 1 }
+    if tid_span_is(src, ns, ne, "i32") == 1 { return 1 }
+    if tid_span_is(src, ns, ne, "i64") == 1 { return 1 }
+    if tid_span_is(src, ns, ne, "i128") == 1 { return 1 }
+    if tid_span_is(src, ns, ne, "u8") == 1 { return 1 }
+    if tid_span_is(src, ns, ne, "u16") == 1 { return 1 }
+    if tid_span_is(src, ns, ne, "u32") == 1 { return 1 }
+    if tid_span_is(src, ns, ne, "u64") == 1 { return 1 }
+    if tid_span_is(src, ns, ne, "u128") == 1 { return 1 }
+    if tid_span_is(src, ns, ne, "f32") == 1 { return 1 }
+    if tid_span_is(src, ns, ne, "f64") == 1 { return 1 }
+    if tid_span_is(src, ns, ne, "c64") == 1 { return 1 }
+    if tid_span_is(src, ns, ne, "c128") == 1 { return 1 }
+    if tid_span_is(src, ns, ne, "bool") == 1 { return 1 }
+    return 0
+}
+
+function tid_is_fixed_scalar(src: ptr<u8>, ns: i32, ne: i32) -> i32 {
+    return tid_is_prim(src, ns, ne)
+}
+
+function tid_hash_schema_at(
+    h: u64,
+    arena: AstArena,
+    src: ptr<u8>,
+    ty: i32,
+    starts: ptr<i32>,
+    ends: ptr<i32>,
+    seen: i32,
+    depth: i32,
+    expand: i32
+) -> u64
+
+function tid_hash_family_at(
+    h: u64,
+    arena: AstArena,
+    src: ptr<u8>,
+    ty: i32,
+    depth: i32
+) -> u64
+
+function tid_hash_type_args(
+    h: u64,
+    arena: AstArena,
+    src: ptr<u8>,
+    first: i32,
+    starts: ptr<i32>,
+    ends: ptr<i32>,
+    seen: i32,
+    depth: i32,
+    expand: i32
+) -> u64 {
+    if first == AST_NONE {
+        return h
+    }
+    let mut acc: u64 = tid_h_byte(h, 60)
+    let mut arg: i32 = first
+    let mut more: i32 = 0
+    while arg != AST_NONE {
+        if more == 1 {
+            acc = tid_h_byte(acc, 44)
+        }
+        acc = tid_hash_schema_at(acc, arena, src, arg, starts, ends, seen, depth + 1, expand)
+        more = 1
+        arg = arena.nodes[arg].next
+    }
+    return tid_h_byte(acc, 62)
+}
+
+function tid_hash_struct_fields(
+    h: u64,
+    arena: AstArena,
+    src: ptr<u8>,
+    st: i32,
+    starts: ptr<i32>,
+    ends: ptr<i32>,
+    seen: i32,
+    depth: i32
+) -> u64 {
+    let mut acc: u64 = tid_h_byte(h, 123)
+    let mut field: i32 = arena.nodes[st].a
+    while field != AST_NONE {
+        if arena.nodes[field].kind == AST_FIELD {
+            acc = tid_h_span(acc, src, arena.nodes[field].name_start, arena.nodes[field].name_end)
+            acc = tid_h_byte(acc, 58)
+            acc = tid_hash_schema_at(acc, arena, src, arena.nodes[field].a, starts, ends, seen, depth + 1, 1)
+            acc = tid_h_byte(acc, 59)
+        }
+        field = arena.nodes[field].next
+    }
+    return tid_h_byte(acc, 125)
+}
+
+function tid_hash_enum_variants(
+    h: u64,
+    arena: AstArena,
+    src: ptr<u8>,
+    en: i32
+) -> u64 {
+    let mut acc: u64 = tid_h_byte(h, 123)
+    let mut v: i32 = arena.nodes[en].a
+    while v != AST_NONE {
+        if arena.nodes[v].kind == AST_ENUM_VARIANT {
+            acc = tid_h_span(acc, src, arena.nodes[v].name_start, arena.nodes[v].name_end)
+            acc = tid_h_byte(acc, 59)
+        }
+        v = arena.nodes[v].next
+    }
+    return tid_h_byte(acc, 125)
+}
+
+function tid_hash_schema_at(
+    h: u64,
+    arena: AstArena,
+    src: ptr<u8>,
+    ty: i32,
+    starts: ptr<i32>,
+    ends: ptr<i32>,
+    seen: i32,
+    depth: i32,
+    expand: i32
+) -> u64 {
+    if depth >= TID_MAX_DEPTH or ty == AST_NONE or ty < 0 or ty >= arena.len {
+        return tid_h_lit(h, "?")
+    }
+    if arena.nodes[ty].kind != AST_TYPE {
+        return tid_h_lit(h, "?")
+    }
+    let ns: i32 = arena.nodes[ty].name_start
+    let ne: i32 = arena.nodes[ty].name_end
+    let inner: i32 = arena.nodes[ty].a
+
+    if tid_span_is(src, ns, ne, "ptr") == 1 {
+        let mut acc: u64 = tid_h_lit(h, "ptr")
+        return tid_hash_type_args(acc, arena, src, inner, starts, ends, seen, depth, expand)
+    }
+    if tid_is_array(arena, src, ty) == 1 {
+        let mut acc: u64 = tid_h_lit(h, "array")
+        acc = tid_h_byte(acc, 60)
+        acc = tid_hash_schema_at(acc, arena, src, inner, starts, ends, seen, depth + 1, expand)
+        if arena.nodes[ty].ival > 0 {
+            acc = tid_h_byte(acc, 44)
+            acc = tid_h_i32(acc, arena.nodes[ty].ival)
+        }
+        return tid_h_byte(acc, 62)
+    }
+    if tid_is_span(src, ns, ne) == 1 {
+        let mut acc: u64 = tid_h_lit(h, "span")
+        if arena.nodes[ty].c == AST_TYPE_SPAN_MUTABLE {
+            acc = tid_h_lit(acc, "_mut")
+        }
+        return tid_hash_type_args(acc, arena, src, inner, starts, ends, seen, depth, expand)
+    }
+    if tid_is_prim(src, ns, ne) == 1 or tid_span_is(src, ns, ne, "string") == 1 or tid_span_is(src, ns, ne, "void") == 1 {
+        return tid_h_span(h, src, ns, ne)
+    }
+
+    if inner != AST_NONE {
+        let mut acc: u64 = tid_h_lit(h, "app;")
+        acc = tid_h_span(acc, src, ns, ne)
+        return tid_hash_type_args(acc, arena, src, inner, starts, ends, seen, depth, 0)
+    }
+
+    let st: i32 = tid_find_kind(arena, src, ns, ne, AST_STRUCT)
+    if st != AST_NONE {
+        let mut acc: u64 = tid_h_lit(h, "struct;")
+        acc = tid_h_span(acc, src, ns, ne)
+        if expand == 1 and tid_seen_has(src, starts, ends, seen, ns, ne) == 0 {
+            let nseen: i32 = tid_seen_push(starts, ends, seen, ns, ne)
+            return tid_hash_struct_fields(acc, arena, src, st, starts, ends, nseen, depth)
+        }
+        return acc
+    }
+    let en: i32 = tid_find_kind(arena, src, ns, ne, AST_ENUM)
+    if en != AST_NONE {
+        let mut acc: u64 = tid_h_lit(h, "enum;")
+        acc = tid_h_span(acc, src, ns, ne)
+        if expand == 1 {
+            acc = tid_hash_enum_variants(acc, arena, src, en)
+        }
+        return acc
+    }
+    let al: i32 = tid_find_kind(arena, src, ns, ne, AST_TYPE_ALIAS)
+    if al != AST_NONE {
+        if tid_alias_is_distinct(src, arena.nodes[al].start) == 1 {
+            let mut acc: u64 = tid_h_lit(h, "distinct;")
+            acc = tid_h_span(acc, src, ns, ne)
+            acc = tid_h_byte(acc, 61)
+            if arena.nodes[al].a != AST_NONE {
+                acc = tid_hash_schema_at(acc, arena, src, arena.nodes[al].a, starts, ends, seen, depth + 1, expand)
+            }
+            return acc
+        }
+        if arena.nodes[al].a != AST_NONE {
+            return tid_hash_schema_at(h, arena, src, arena.nodes[al].a, starts, ends, seen, depth + 1, expand)
+        }
+        let mut acc: u64 = tid_h_lit(h, "unit;")
+        return tid_h_span(acc, src, ns, ne)
+    }
+    let ext: i32 = tid_find_kind(arena, src, ns, ne, AST_EXTERN_TYPE)
+    if ext != AST_NONE {
+        let mut acc: u64 = tid_h_lit(h, "extern;")
+        return tid_h_span(acc, src, ns, ne)
+    }
+    return tid_h_span(h, src, ns, ne)
+}
+
+function tid_hash_family_at(
+    h: u64,
+    arena: AstArena,
+    src: ptr<u8>,
+    ty: i32,
+    depth: i32
+) -> u64 {
+    if depth >= TID_MAX_DEPTH or ty == AST_NONE or ty < 0 or ty >= arena.len {
+        return tid_h_lit(h, "?")
+    }
+    if arena.nodes[ty].kind != AST_TYPE {
+        return tid_h_lit(h, "?")
+    }
+    let ns: i32 = arena.nodes[ty].name_start
+    let ne: i32 = arena.nodes[ty].name_end
+    let inner: i32 = arena.nodes[ty].a
+
+    if tid_span_is(src, ns, ne, "ptr") == 1 {
+        let mut acc: u64 = tid_h_lit(h, "ptr")
+        if inner != AST_NONE {
+            acc = tid_h_byte(acc, 60)
+            acc = tid_hash_family_at(acc, arena, src, inner, depth + 1)
+            acc = tid_h_byte(acc, 62)
+        }
+        return acc
+    }
+    if tid_is_array(arena, src, ty) == 1 {
+        let mut acc: u64 = tid_h_lit(h, "array")
+        acc = tid_h_byte(acc, 60)
+        acc = tid_hash_family_at(acc, arena, src, inner, depth + 1)
+        if arena.nodes[ty].ival > 0 {
+            acc = tid_h_byte(acc, 44)
+            acc = tid_h_i32(acc, arena.nodes[ty].ival)
+        }
+        return tid_h_byte(acc, 62)
+    }
+    if tid_is_span(src, ns, ne) == 1 {
+        let mut acc: u64 = tid_h_lit(h, "span")
+        if arena.nodes[ty].c == AST_TYPE_SPAN_MUTABLE {
+            acc = tid_h_lit(acc, "_mut")
+        }
+        if inner != AST_NONE {
+            acc = tid_h_byte(acc, 60)
+            acc = tid_hash_family_at(acc, arena, src, inner, depth + 1)
+            acc = tid_h_byte(acc, 62)
+        }
+        return acc
+    }
+
+    let al: i32 = tid_find_kind(arena, src, ns, ne, AST_TYPE_ALIAS)
+    if al != AST_NONE and tid_alias_is_distinct(src, arena.nodes[al].start) == 0 and arena.nodes[al].a != AST_NONE {
+        return tid_hash_family_at(h, arena, src, arena.nodes[al].a, depth + 1)
+    }
+
+    let mut acc: u64 = tid_h_span(h, src, ns, ne)
+    if inner != AST_NONE {
+        acc = tid_h_byte(acc, 60)
+        let mut arg: i32 = inner
+        let mut more: i32 = 0
+        while arg != AST_NONE {
+            if more == 1 {
+                acc = tid_h_byte(acc, 44)
+            }
+            acc = tid_hash_family_at(acc, arena, src, arg, depth + 1)
+            more = 1
+            arg = arena.nodes[arg].next
+        }
+        acc = tid_h_byte(acc, 62)
+    }
+    return acc
+}
+
+function tid_transport_at(arena: AstArena, src: ptr<u8>, ty: i32, depth: i32) -> i32 {
+    if depth >= TID_MAX_DEPTH or ty == AST_NONE or ty < 0 or ty >= arena.len {
+        return 0
+    }
+    if arena.nodes[ty].kind != AST_TYPE {
+        return 0
+    }
+    let ns: i32 = arena.nodes[ty].name_start
+    let ne: i32 = arena.nodes[ty].name_end
+    let inner: i32 = arena.nodes[ty].a
+    if tid_span_is(src, ns, ne, "ptr") == 1 {
+        return 0
+    }
+    if tid_is_span(src, ns, ne) == 1 {
+        return 0
+    }
+    if tid_span_is(src, ns, ne, "string") == 1 or tid_span_is(src, ns, ne, "void") == 1 {
+        return 0
+    }
+    if tid_is_array(arena, src, ty) == 1 {
+        if arena.nodes[ty].ival <= 0 {
+            return 0
+        }
+        return tid_transport_at(arena, src, inner, depth + 1)
+    }
+    if tid_is_fixed_scalar(src, ns, ne) == 1 {
+        return 1
+    }
+    if inner != AST_NONE {
+        return 0
+    }
+    let st: i32 = tid_find_kind(arena, src, ns, ne, AST_STRUCT)
+    if st != AST_NONE {
+        let mut field: i32 = arena.nodes[st].a
+        while field != AST_NONE {
+            if arena.nodes[field].kind == AST_FIELD {
+                if tid_transport_at(arena, src, arena.nodes[field].a, depth + 1) == 0 {
+                    return 0
+                }
+            }
+            field = arena.nodes[field].next
+        }
+        return 1
+    }
+    let al: i32 = tid_find_kind(arena, src, ns, ne, AST_TYPE_ALIAS)
+    if al != AST_NONE {
+        if arena.nodes[al].a != AST_NONE {
+            return tid_transport_at(arena, src, arena.nodes[al].a, depth + 1)
+        }
+        return 1
+    }
+    return 0
+}
+
+export function flowc_type_id_builtin_kind(src: ptr<u8>, start: i32, end: i32) -> i32 {
+    if tid_span_is(src, start, end, "type_family_id") == 1 {
+        return FLOWC_TID_FAMILY
+    }
+    if tid_span_is(src, start, end, "type_schema_id") == 1 {
+        return FLOWC_TID_SCHEMA
+    }
+    if tid_span_is(src, start, end, "type_transport_safe") == 1 {
+        return FLOWC_TID_TRANSPORT
+    }
+    if tid_span_is(src, start, end, "alignof") == 1 {
+        return FLOWC_TID_ALIGNOF
+    }
+    return FLOWC_TID_NONE
+}
+
+export function flowc_type_family_id(arena: AstArena, src: ptr<u8>, ty: i32) -> u64 {
+    let h: u64 = tid_h_lit(tid_h_init(), "v1;fam;")
+    return tid_hash_family_at(h, arena, src, ty, 0)
+}
+
+export function flowc_type_schema_id(arena: AstArena, src: ptr<u8>, ty: i32) -> u64 {
+    let starts: array<i32, 16> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let ends: array<i32, 16> = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let h: u64 = tid_h_lit(tid_h_init(), "v1;sch;")
+    return tid_hash_schema_at(h, arena, src, ty, &starts[0], &ends[0], 0, 0, 1)
+}
+
+export function flowc_type_transport_safe(arena: AstArena, src: ptr<u8>, ty: i32) -> i32 {
+    return tid_transport_at(arena, src, ty, 0)
+}
+
+export function flowc_type_id_fnv_lit(lit: string) -> u64 {
+    return tid_h_lit(tid_h_init(), lit)
+}
+
+export function flowc_type_id_hash_selftest() -> i32 {
+    let a: u64 = flowc_type_id_fnv_lit("v1;sch;i32")
+    let b: u64 = flowc_type_id_fnv_lit("v1;sch;i32")
+    let c: u64 = flowc_type_id_fnv_lit("v1;sch;i64")
+    if a == (0 as u64) {
+        return 0
+    }
+    if a != b {
+        return 0
+    }
+    if a == c {
+        return 0
+    }
+    return 1
+}

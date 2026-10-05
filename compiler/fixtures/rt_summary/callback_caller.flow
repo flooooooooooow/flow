@@ -1,0 +1,10 @@
+import .session_helper { reload_preset }
+
+@lifetime(callback)
+function process(n: i32) -> i32 {
+    return reload_preset(n)
+}
+
+function main() -> i32 {
+    return process(1)
+}

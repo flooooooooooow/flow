@@ -56,6 +56,29 @@ function check_auto_padding_leaves_irregular_extent() -> i32 {
     return T_PASS
 }
 
+function check_bank_padding_targets_irregular_extent() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-pad-auto")
+    sl_push(argv, "compiler/fixtures/mlir_opt/aosoa_non_power.flow")
+    sl_push(argv, t_tmp() + "/aosoa-bank.mlir")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    cmd_env(c, "FLOWC_MLIR_AOSOA_BANK_COUNT", "3")
+    if t_run(c) != 0 { return T_FAIL }
+    let output: string = read_text(t_tmp() + "/aosoa-bank.mlir")
+    if not a_contains(output, "memref<4xf32>") { return T_FAIL }
+    return T_PASS
+}
+
+function check_bank_padding_rejects_invalid_value() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-pad-auto")
+    sl_push(argv, "compiler/fixtures/mlir_opt/aosoa_non_power.flow")
+    sl_push(argv, t_tmp() + "/aosoa-invalid-bank.mlir")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    cmd_env(c, "FLOWC_MLIR_AOSOA_BANK_COUNT", "0")
+    if t_run(c) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "FLOWC_MLIR_AOSOA_BANK_COUNT must be a positive integer") { return T_FAIL }
+    return T_PASS
+}
+
 function check_padding_rejects_malformed_value() -> i32 {
     let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-pad")
     sl_push(argv, "compiler/fixtures/mlir_opt/aosoa_padding.flow")
@@ -113,6 +136,8 @@ function main() -> i32 {
     t_end("padding_adds_storage", check_padding_adds_storage())
     t_end("auto_padding_targets_power_of_two", check_auto_padding_targets_power_of_two())
     t_end("auto_padding_leaves_irregular_extent", check_auto_padding_leaves_irregular_extent())
+    t_end("bank_padding_targets_irregular_extent", check_bank_padding_targets_irregular_extent())
+    t_end("bank_padding_rejects_invalid_value", check_bank_padding_rejects_invalid_value())
     t_start()
     t_end("padding_rejects_malformed_value", check_padding_rejects_malformed_value())
     t_start()

@@ -217,15 +217,16 @@ function main() -> i32 {
     run_case(host, "stage_a_token_consts", 29)
     need("compiler/build/stage_a_token_consts.c", "const int32_t", "FAIL stage_a_token_consts: const emit missing (expected const int32_t; AST_CONST=31)")
     refuse("compiler/build/stage_a_token_consts.c", "static const int32_t", "FAIL stage_a_token_consts: export const should be non-static")
-    # String `+` is concatenation (__flowc_str_concat), not pointer arithmetic.
+    # String `+` is concatenation, not pointer arithmetic. A three-part
+    # pure-string chain is one __flowc_str_concatn call (#747).
     run_case(host, "stage_a_strcat", 42)
-    if not has("compiler/build/stage_a_strcat.c", "__flowc_str_concat(__flowc_str_concat(\"hello, \", name), \"!\")") {
-        errln("FAIL stage_a_strcat: expected nested __flowc_str_concat for the literal chain")
+    if not has("compiler/build/stage_a_strcat.c", "__flowc_str_concatn(3, \"hello, \", name, \"!\")") {
+        errln("FAIL stage_a_strcat: expected one-pass __flowc_str_concatn for the literal chain")
         show_matches("compiler/build/stage_a_strcat.c", "hello")
         cli_exit(1)
     }
     refuse("compiler/build/stage_a_strcat.c", "(\"hello, \" + ", "FAIL stage_a_strcat: string operands emitted as C addition")
-    need("compiler/build/stage_a_strcat.c", "const char* joined = __flowc_str_concat", "FAIL stage_a_strcat: inferred let over a concat should be const char*")
+    need("compiler/build/stage_a_strcat.c", "const char* joined = __flowc_str_concatn", "FAIL stage_a_strcat: inferred let over a concat should be const char*")
 
     # Inferred `let` (no `: Type`): struct-returning call, cast, struct literal.
     run_case(host, "stage_a_infer_struct", 42)
@@ -335,8 +336,16 @@ function main() -> i32 {
     compile_module(host, "proof_lower", "ast")
     hdrs(hdr, "proof_lower")
 
-    # Sixth module: cgen.flow (imports token/ast; extern gives string.h).
-    compile_module(host, "cgen", "token ast effects proof_lower attributes sort_plans sort_sites")
+    # Type family/schema identity used by cgen builtins (#775).
+    compile_module(host, "type_id", "ast")
+    hdrs(hdr, "type_id")
+
+    # Proven noalias / restrict certificate used by cgen (#731).
+    compile_module(host, "noalias", "token ast")
+    hdrs(hdr, "noalias")
+
+    # Sixth module: cgen.flow (imports token/ast/type_id/noalias; extern gives string.h).
+    compile_module(host, "cgen", "token ast effects proof_lower attributes sort_plans sort_sites type_id noalias")
     let cg: ptr<ProcStrs> = sl_of3("flowc_cgen_emit", "flowc_cgen_emit_ex", "typedef struct CgenBuf")
     sl_push2(cg, "#include <string.h>", " % ")
     module_needs("cgen", cg)
@@ -360,8 +369,12 @@ function main() -> i32 {
     compile_module(host, "overload_call", "ast overload_table overload_args overload_select")
     hdrs(hdr, "overload_call")
 
+    # Cross-module RT/lifetime summaries consulted by typecheck (#765).
+    compile_module(host, "rt_summary", "ast effects")
+    hdrs(hdr, "rt_summary")
+
     # Seventh module: typecheck.flow (imports ast and the overload modules).
-    compile_module(host, "typecheck", "ast attributes effects proof_lower overload_table overload_call overload_registry overload_select")
+    compile_module(host, "typecheck", "ast attributes effects proof_lower overload_table overload_call overload_registry overload_select rt_summary")
     let tc: ptr<ProcStrs> = sl_of3("flowc_typecheck", "flowc_tc_init", "flowc_tc_seed_export")
     sl_push(tc, "flowc_tc_check_program")
     sl_push2(tc, "typedef struct TcCtx", "seed_nlen")
@@ -373,20 +386,25 @@ function main() -> i32 {
     # The type checker (sem_*, the port of the Python checker) and strutil,
     # which resolve calls.
     compile_module(host, "strutil", "")
+    compile_module(host, "version", "")
+    compile_module(host, "denotation", "token ast lexer")
     compile_module(host, "sem_util", "")
-    hdrs(hdr, "strutil sem_util")
+    hdrs(hdr, "strutil version denotation sem_util")
     compile_module(host, "sem_types", "sem_util")
     hdrs(hdr, "sem_types")
     compile_module(host, "sem_cheader", "sem_util")
     hdrs(hdr, "sem_cheader")
     compile_module(host, "sem_model", "token ast lexer sem_util sem_types")
     hdrs(hdr, "sem_model")
-    compile_module(host, "sem_check", "token ast lexer parser sem_util sem_types sem_model sem_cheader")
+    compile_module(host, "sem_check", "token ast lexer parser sem_util sem_types sem_model sem_cheader rt_summary")
     hdrs(hdr, "sem_check")
 
     compile_module(host, "pipeline_fusion", "ast")
     hdrs(hdr, "pipeline_fusion")
-    compile_module(host, "resolve", "token ast lexer parser fileio field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl effects sort_plans cgen overload_table overload_call typecheck strutil sem_util sem_types sem_model sem_check pipeline_fusion")
+    # Opt-in phase timers (#735): resolve records import/parse/codegen spans.
+    compile_module(host, "profile", "fileio")
+    hdrs(hdr, "profile")
+    compile_module(host, "resolve", "token ast lexer parser fileio denotation version field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl effects sort_plans cgen overload_table overload_call typecheck strutil sem_util sem_types sem_model sem_check pipeline_fusion profile")
     let rs: ptr<ProcStrs> = sl_of3("flowc_bundle_emit", "flowc_bundle_typecheck", "flowc_resolve_sibling_path")
     sl_push(rs, "flowc_resolve_dirname")
     module_needs("resolve", rs)

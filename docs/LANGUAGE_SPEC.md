@@ -626,6 +626,15 @@ Enums (`enum`), traits (`trait` / `impl`), and `flow` / `unit` declarations are 
 | `min` | `(a: T, b: T) -> T` | ✅ |
 | `max` | `(a: T, b: T) -> T` | ✅ |
 | `sum` | `(range) -> i32` | ✅ |
+| `sizeof` | `<T>() -> i64` | ✅ target ABI size |
+| `alignof` | `<T>() -> i64` | ✅ target ABI alignment |
+| `type_family_id` | `<T>() -> u64` | ✅ nominal family identity (#775) |
+| `type_schema_id` | `<T>() -> u64` | ✅ target-independent schema digest (#775) |
+| `type_transport_safe` | `<T>() -> bool` | ✅ conservative cross-target payload predicate (#775) |
+
+`sizeof<T>()` and `alignof<T>()` are the target ABI. `type_family_id<T>()` and
+`type_schema_id<T>()` are compile-time `u64` constants derived from the Flow
+type, independent of C/MLIR/Wasm lowering; see [types.md](language/types.md).
 
 `sum` takes a range rather than a value: `sum(0..1000 step 3)`. It applies the
 closed form for an arithmetic progression, so it does not iterate. Inside
@@ -1129,7 +1138,9 @@ same C.
 
 **Not checked** (documented rather than half-enforced): escape through a call,
 a struct field, a closure, or heap storage; the domain of arena-allocated
-memory; domains on parameters or in types.
+memory; domains on parameters or in types. Cross-module calls consult a
+compact effect/lifetime summary for each public function (#765); see
+[lifetime-domains.md](language/lifetime-domains.md).
 
 **Status:** ✅ C-backend type checker. Tests: `tests/unit/test_lifetime_domains.py`,
 `tests/lang/test_lifetime_domains.flow`. Example:
