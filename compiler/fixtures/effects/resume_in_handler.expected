@@ -1,0 +1,2 @@
+reject
+Capability methods are tail-resumptive: 'resume' cannot abort, retry, or invoke a multi-shot continuation (see docs/language/effects-continuations.md)

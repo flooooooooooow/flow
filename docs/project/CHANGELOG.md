@@ -4,6 +4,11 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+- Effects (#564): handlers are the 1.0 tail-resumptive model. A capability
+  method is an ordinary call that returns to the operation site; `resume` and
+  `resume_multi` in a handler are rejected. Abort, retry, and multi-shot
+  continuation capture stay reserved. Spec:
+  [effects-continuations.md](../language/effects-continuations.md).
 - flowc: opt-in `FLOWC_PROFILE=1|json` writes per-phase compile timings (`[flow-profile]` JSON) for parse, import resolution, typecheck and codegen. `./flow tool compile_bench` records cold/warm compile-to-result and names the top fixed vs scaling cost. (#735)
 - Strings / I/O (#747, first slice): a pure-string `+` chain of three or more parts lowers to one `__flowc_str_concatn` allocation instead of nested pairwise joins. `std.string` parses and formats integers on the caller's buffer with explicit overflow/junk errors; `std.io` reads and writes files with `fread`/`fwrite` of a known size. Cross-harness rows: `runtime_string_concat`, `runtime_parse_format`, `runtime_buffered_io`, and the existing `cold_file_transform` now uses the buffered path.
 - Type checker: public functions emit a compact RT-safety / lifetime-domain

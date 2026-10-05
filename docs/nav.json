@@ -561,6 +561,10 @@
           "path": "effects-showcase.md"
         },
         {
+          "label": "Effect Continuations",
+          "path": "language/effects-continuations.md"
+        },
+        {
           "label": "Async via Effects",
           "path": "language/async-effects.md"
         },

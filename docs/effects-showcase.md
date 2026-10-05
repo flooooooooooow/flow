@@ -636,9 +636,12 @@ lenient mode, with a message pointing at `handle`. Install named capability bloc
 `handle ... with ...` instead. The older examples were rewritten to this supported form in
 issue #119; see issue #561.
 
-**Handlers do not expose general resumable continuations.** An operation returns to its call site.
-A handler cannot abort the whole computation, replay it, or resume it multiple times.
-Model retry/timeout as explicit policy effects, as the runnable examples do. See [research/rfc_effects_continuations.md](research/rfc_effects_continuations.md).
+**Handlers are tail-resumptive.** An operation returns to its call site. A
+handler cannot abort the whole computation, replay it, or resume it multiple
+times. The type checker rejects `resume` / `resume_multi` inside a capability
+method. Model retry/timeout as explicit policy effects, as the runnable
+examples do. See [language/effects-continuations.md](language/effects-continuations.md)
+and [research/rfc_effects_continuations.md](research/rfc_effects_continuations.md).
 
 **Capability method type inference has a known printing gap.** Some capability method parameters
 need a typed local before `print`/`println`; the runnable examples use `printf` or an explicitly
