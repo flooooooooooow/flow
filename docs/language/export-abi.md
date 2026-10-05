@@ -65,3 +65,7 @@ The export prefix `flow_export_` is version 1 of the ABI. Future breaking
 changes will use a new prefix (e.g. `flow_export2_`). The `--module-name`
 flag does not affect the prefix; it is reserved for Emscripten MODULARIZE
 and Python package naming.
+
+Buffer arguments that are already contiguous should use the
+[zero-copy FFI buffer ABI](ffi-buffer.md) rather than copying into a packed
+scratch buffer.

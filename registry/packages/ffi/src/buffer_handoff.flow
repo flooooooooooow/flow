@@ -1,28 +1,139 @@
-# ffi_buffer_handoff — zero-copy ABI for contiguous data
+# ffi_buffer_handoff — zero-copy ABI for contiguous pointer/span/array data
 #
-# Rules for buffer lifetime and ownership across the FFI boundary:
-# - Owned Buffer (`ffi_buffer_owned`): The receiver takes responsibility for freeing the buffer using the provided deallocator callback.
-# - Borrowed Buffer (`ffi_buffer_borrowed`): The sender retains ownership. The receiver MUST NOT use the buffer after the function call returns. No copies are made.
-# - Safe Fallback: If layouts are incompatible or unaligned, a fallback copy must be made manually by the user, but the ABI types here guarantee a single contiguous representation.
+# C layout: runtime/flow_ffi_buffer.h (`FlowFfiBuffer` / `FlowFfiLayout`).
+# Contract: docs/language/ffi-buffer.md
 #
-# Break-even guidance for batching:
-# Calling across FFI has a baseline overhead. For O(1) buffer handoffs, the overhead is fixed regardless of buffer size. Small operations (e.g., < 1000 elements) may see FFI overhead dominate, while batching operations on large buffers effectively amortizes this cost to zero.
+# Lifetime:
+# - Borrowed (`FFI_OWN_BORROWED`): sender keeps the storage. Receiver must
+#   not free it or retain it after the call returns.
+# - Owned (`FFI_OWN_OWNED`): receiver frees `data` through `dealloc`.
+#
+# try_borrow / try_own are O(1) pointer handoffs. They return a nonzero
+# status and an empty buffer when the layout is incompatible. They never
+# copy payload bytes. Use `ffi_buffer_copy_explicit` only when a caller
+# opts in to an O(n) fallback.
+
+export const FFI_BUFFER_ABI_VERSION: i32 = 1
+
+export const FFI_OWN_BORROWED: i32 = 0
+export const FFI_OWN_OWNED: i32 = 1
+
+export const FFI_OK: i32 = 0
+export const FFI_ERR_NULL: i32 = 1
+export const FFI_ERR_BAD_LEN: i32 = 2
+export const FFI_ERR_BAD_SIZE: i32 = 3
+export const FFI_ERR_BAD_ALIGN: i32 = 4
+export const FFI_ERR_STRIDE: i32 = 5
+export const FFI_ERR_INCOMPATIBLE: i32 = 6
+
+export struct FFILayout {
+    item_size: i64,
+    stride: i64,
+    item_align: i32,
+    reserved: i32
+}
 
 export struct FFIBuffer {
     data: ptr<void>,
     len: i64,
     item_size: i64,
+    item_align: i32,
     ownership: i32,
-    deallocator: ptr<void>
+    dealloc: ptr<void>,
+    dealloc_ctx: ptr<void>
 }
 
+export struct FFIHandoff {
+    status: i32,
+    buf: FFIBuffer
+}
+
+export function ffi_layout_contiguous(item_size: i64, item_align: i32) -> FFILayout {
+    return FFILayout {
+        item_size: item_size,
+        stride: item_size,
+        item_align: item_align,
+        reserved: 0
+    }
+}
+
+export function ffi_buffer_empty() -> FFIBuffer {
+    return FFIBuffer {
+        data: 0 as ptr<void>,
+        len: 0,
+        item_size: 0,
+        item_align: 0,
+        ownership: 0,
+        dealloc: 0 as ptr<void>,
+        dealloc_ctx: 0 as ptr<void>
+    }
+}
+
+export function ffi_buffer_nbytes(buf: FFIBuffer) -> i64 {
+    if buf.len <= 0 or buf.item_size <= 0 {
+        return 0
+    }
+    return buf.len * buf.item_size
+}
+
+export function ffi_buffer_addr(buf: FFIBuffer) -> i64 {
+    return buf.data as i64
+}
+
+function ffi_align_ok(align: i32) -> bool {
+    if align <= 1 {
+        return true
+    }
+    return (align & (align - 1)) == 0
+}
+
+function ffi_ptr_aligned(data: ptr<void>, align: i32) -> bool {
+    if align <= 1 {
+        return true
+    }
+    let addr: i64 = data as i64
+    let mask: i64 = (align as i64) - 1
+    return (addr & mask) == 0
+}
+
+export function ffi_layout_compatible(data: ptr<void>, len: i64, have: FFILayout, want: FFILayout) -> i32 {
+    if len < 0 {
+        return FFI_ERR_BAD_LEN
+    }
+    if want.item_size <= 0 or have.item_size <= 0 {
+        return FFI_ERR_BAD_SIZE
+    }
+    if ffi_align_ok(want.item_align) == false or ffi_align_ok(have.item_align) == false {
+        return FFI_ERR_BAD_ALIGN
+    }
+    if want.stride != want.item_size or have.stride != have.item_size {
+        return FFI_ERR_STRIDE
+    }
+    if have.item_size != want.item_size {
+        return FFI_ERR_INCOMPATIBLE
+    }
+    if len > 0 {
+        if (data as i64) == 0 {
+            return FFI_ERR_NULL
+        }
+        if ffi_ptr_aligned(data, want.item_align) == false {
+            return FFI_ERR_BAD_ALIGN
+        }
+    }
+    return FFI_OK
+}
+
+# Unchecked constructors for a layout the caller already proved compatible.
+# item_align defaults to 1 (byte). No copy.
 export function ffi_buffer_borrowed(data: ptr<void>, len: i64, item_size: i64) -> FFIBuffer {
     return FFIBuffer {
         data: data,
         len: len,
         item_size: item_size,
+        item_align: 1,
         ownership: 0,
-        deallocator: 0 as ptr<void>
+        dealloc: 0 as ptr<void>,
+        dealloc_ctx: 0 as ptr<void>
     }
 }
 
@@ -31,9 +142,74 @@ export function ffi_buffer_owned(data: ptr<void>, len: i64, item_size: i64, deal
         data: data,
         len: len,
         item_size: item_size,
+        item_align: 1,
         ownership: 1,
-        deallocator: deallocator
+        dealloc: deallocator,
+        dealloc_ctx: 0 as ptr<void>
     }
+}
+
+export function ffi_buffer_try_borrow(data: ptr<void>, len: i64, have: FFILayout, want: FFILayout) -> FFIHandoff {
+    let st: i32 = ffi_layout_compatible(data, len, have, want)
+    if st != FFI_OK {
+        return FFIHandoff { status: st, buf: ffi_buffer_empty() }
+    }
+    return FFIHandoff {
+        status: FFI_OK,
+        buf: FFIBuffer {
+            data: data,
+            len: len,
+            item_size: want.item_size,
+            item_align: want.item_align,
+            ownership: 0,
+            dealloc: 0 as ptr<void>,
+            dealloc_ctx: 0 as ptr<void>
+        }
+    }
+}
+
+export function ffi_buffer_try_own(data: ptr<void>, len: i64, have: FFILayout, want: FFILayout, dealloc: ptr<void>, dealloc_ctx: ptr<void>) -> FFIHandoff {
+    let st: i32 = ffi_layout_compatible(data, len, have, want)
+    if st != FFI_OK {
+        return FFIHandoff { status: st, buf: ffi_buffer_empty() }
+    }
+    return FFIHandoff {
+        status: FFI_OK,
+        buf: FFIBuffer {
+            data: data,
+            len: len,
+            item_size: want.item_size,
+            item_align: want.item_align,
+            ownership: 1,
+            dealloc: dealloc,
+            dealloc_ctx: dealloc_ctx
+        }
+    }
+}
+
+# Named O(n) fallback. try_borrow / try_own never call this.
+export function ffi_buffer_copy_explicit(dst: ptr<void>, src: ptr<void>, nbytes: i64) -> i32 {
+    if nbytes < 0 {
+        return FFI_ERR_BAD_LEN
+    }
+    if nbytes == 0 {
+        return FFI_OK
+    }
+    if (dst as i64) == 0 or (src as i64) == 0 {
+        return FFI_ERR_NULL
+    }
+    if nbytes > 2147483647 {
+        return FFI_ERR_BAD_LEN
+    }
+    let d: ptr<i8> = dst as ptr<i8>
+    let s: ptr<i8> = src as ptr<i8>
+    let n: i32 = nbytes as i32
+    let mut i: i32 = 0
+    while i < n {
+        d[i] = s[i]
+        i = i + 1
+    }
+    return FFI_OK
 }
 
 # ---------------------------------------------------------
