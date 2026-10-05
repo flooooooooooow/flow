@@ -16,13 +16,22 @@ struct Arena {
 }
 
 function arena_alloc(a: ptr<Arena>, size: i64) -> ptr<void> {
+    if a == null {
+        return null
+    }
     let off: i64 = a[0].offset
     let base: ptr<i8> = a[0].buffer
+    if base == null {
+        return null
+    }
     a[0].offset = off + size
     return base + off
 }
 
 function arena_reset(a: ptr<Arena>) -> void {
+    if a == null {
+        return
+    }
     a[0].offset = 0
 }
 
@@ -61,12 +70,6 @@ function from_param(a: ptr<Arena>) -> ptr<void> {
 }
 
 function main() -> i32 {
-    let mut app_storage: Arena = Arena { buffer: null, capacity: 0, offset: 0 }
-    let mut sess_storage: Arena = Arena { buffer: null, capacity: 0, offset: 0 }
-    let mut frame_storage: Arena = Arena { buffer: null, capacity: 0, offset: 0 }
-    app_arena = &app_storage
-    sess_arena = &sess_storage
-    frame_arena = &frame_storage
     store_application()
     store_session()
     bump_frame_local()
