@@ -146,15 +146,37 @@ function check_rejects_missing_option_values() -> i32 {
     sl_push(argv4, "--alignment")
     if t_run(t_cmd(argv4)) == 0 { return T_FAIL }
     if not a_contains(read_text(t_err()), "--alignment requires a value") { return T_FAIL }
+
+    let argv5: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_static_memory/main.flow")
+    sl_push(argv5, "--lifetimes")
+    if t_run(t_cmd(argv5)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--lifetimes requires a value") { return T_FAIL }
     return T_PASS
 }
 
 function check_configurable_lifetimes() -> i32 {
     let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_static_memory/main.flow")
-    sl_push(argv, "--lifetimes=0:1,2:3,1:2")
+    sl_push(argv, "--lifetimes=0:1,2:3,4:5")
     if t_run(t_cmd(argv)) != 0 { return T_FAIL }
     let output: string = read_text(t_out())
-    if not a_contains(output, "flow.static_buffer_lifetimes = \"0:1,2:3,1:2\"") { return T_FAIL }
+    if not a_contains(output, "flow.static_buffer_lifetimes = \"0:1,2:3,4:5\"") { return T_FAIL }
+    if not a_contains(output, "flow.static_arena_bytes = 64") { return T_FAIL }
+    if not a_contains(output, "flow.static_buffer_offsets = \"0,0,0\"") { return T_FAIL }
+    if not a_contains(output, "flow.static_buffer_interference = \"\"") { return T_FAIL }
+    if not a_contains(output, "%arena = memref.alloca() : memref<64xi8>") { return T_FAIL }
+    return T_PASS
+}
+
+function check_overlapping_lifetimes_do_not_reuse() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_static_memory/main.flow")
+    sl_push(argv, "--lifetimes=0:5,0:5,0:5")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "flow.static_buffer_lifetimes = \"0:5,0:5,0:5\"") { return T_FAIL }
+    if not a_contains(output, "flow.static_arena_bytes = 144") { return T_FAIL }
+    if not a_contains(output, "flow.static_buffer_offsets = \"0,64,96\"") { return T_FAIL }
+    if not a_contains(output, "flow.static_buffer_interference = \"0:1,0:2,1:2\"") { return T_FAIL }
+    if not a_contains(output, "%arena = memref.alloca() : memref<144xi8>") { return T_FAIL }
     return T_PASS
 }
 
@@ -162,6 +184,11 @@ function check_rejects_invalid_lifetimes() -> i32 {
     let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_static_memory/main.flow")
     sl_push(argv, "--lifetimes=0:1,3:2,1:2")
     if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--lifetimes expects") { return T_FAIL }
+
+    let argv2: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_static_memory/main.flow")
+    sl_push(argv2, "--lifetimes=0:1,2:3")
+    if t_run(t_cmd(argv2)) == 0 { return T_FAIL }
     if not a_contains(read_text(t_err()), "--lifetimes expects") { return T_FAIL }
     return T_PASS
 }
@@ -183,6 +210,7 @@ function main() -> i32 {
     t_end("non_positive_sizes_rejected", check_rejects_non_positive_sizes())
     t_end("missing_option_values", check_rejects_missing_option_values())
     t_end("configurable_lifetimes", check_configurable_lifetimes())
+    t_end("overlapping_lifetimes_no_reuse", check_overlapping_lifetimes_do_not_reuse())
     t_end("invalid_lifetimes_rejected", check_rejects_invalid_lifetimes())
     t_done()
     return 0
