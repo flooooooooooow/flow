@@ -43,7 +43,7 @@ cf.cond_br %v7, ^b2, ^b3
 %v9 = llvm.extractvalue %v1[0] : !llvm.struct<(!llvm.array<4 x f32>, !llvm.array<4 x f32>)>
 %v10 = llvm.load %v4 : !llvm.ptr -> i32
 %v11 = llvm.load %v4 : !llvm.ptr -> i32
-%v12 = arith.constant 0 : i32
+%v12 = arith.constant 2 : i32
 %v13 = arith.constant 32 : i32
 %v14 = arith.cmpi uge, %v12, %v13 : i32
 scf.if %v14 {
@@ -59,7 +59,7 @@ memref.store %v19, %v9[%v18] : memref<4xf32>
 %v21 = llvm.extractvalue %v1[1] : !llvm.struct<(!llvm.array<4 x f32>, !llvm.array<4 x f32>)>
 %v22 = llvm.load %v4 : !llvm.ptr -> i32
 %v23 = llvm.load %v4 : !llvm.ptr -> i32
-%v24 = arith.constant 0 : i32
+%v24 = arith.constant 2 : i32
 %v25 = arith.constant 32 : i32
 %v26 = arith.cmpi uge, %v24, %v25 : i32
 scf.if %v26 {
