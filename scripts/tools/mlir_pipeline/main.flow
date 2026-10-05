@@ -250,15 +250,18 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
     while i < argc {
         let a: string = argv[i] as string
         let mut lv: string = ""
+        let mut saw_level: bool = false
         if ft_eq(a, "--opt-level") {
             if i + 1 >= argc {
                 ft_errln("mlir_pipeline: --opt-level requires a value")
                 return 2
             }
             lv = argv[i + 1] as string
+            saw_level = true
             i = i + 1
         } elif ft_starts(a, "--opt-level=") {
             lv = ft_from(a, 12)
+            saw_level = true
         } elif ft_eq(a, "--no-vectorization") {
             f.vectorization = false
         } elif ft_eq(a, "--loop-fusion") {
@@ -433,7 +436,11 @@ function main(argc: i32, argv: ptr<ptr<u8>>) -> i32 {
             }
             f.async_target = target_id
         }
-        if ft_len(lv) > 0 {
+        if saw_level {
+            if ft_len(lv) == 0 {
+                ft_errln("mlir_pipeline: --opt-level requires a value")
+                return 2
+            }
             let n: i32 = level_of(lv)
             if n < 0 {
                 ft_errln("mlir_pipeline: --opt-level: invalid choice: '" + lv + "' (choose from 'O0', 'O1', 'O2', 'O3')")
