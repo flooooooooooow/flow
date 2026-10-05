@@ -564,13 +564,15 @@ function print_summary(
     bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(hello, "parse", s_to_i64(proc_strs_get(parses, 0)), hello_emit, "emit"))
     bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(hello, "codegen", s_to_i64(proc_strs_get(gens, 0)), hello_emit, "emit"))
     bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(hello, "incremental_cache", s_to_i64(proc_strs_get(caches, 0)), hello_emit, "emit"))
-    bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(large_name, "cc", s_to_i64(proc_strs_get(ccs, last)), large_total, "compile_to_result"))
-    bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(large_name, "emit", large_emit, large_total, "compile_to_result"))
-    bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(large_name, "codegen", s_to_i64(proc_strs_get(gens, last)), large_emit, "emit"))
-    bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(large_name, "typecheck", s_to_i64(proc_strs_get(tcs, last)), large_emit, "emit"))
-    bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(large_name, "monomorphize", s_to_i64(proc_strs_get(monos, last)), large_emit, "emit"))
-    bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(large_name, "lowering", s_to_i64(proc_strs_get(lows, last)), large_emit, "emit"))
-    bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(large_name, "incremental_cache", s_to_i64(proc_strs_get(caches, last)), large_emit, "emit"))
+    if last > 0 {
+        bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(large_name, "cc", s_to_i64(proc_strs_get(ccs, last)), large_total, "compile_to_result"))
+        bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(large_name, "emit", large_emit, large_total, "compile_to_result"))
+        bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(large_name, "codegen", s_to_i64(proc_strs_get(gens, last)), large_emit, "emit"))
+        bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(large_name, "typecheck", s_to_i64(proc_strs_get(tcs, last)), large_emit, "emit"))
+        bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(large_name, "monomorphize", s_to_i64(proc_strs_get(monos, last)), large_emit, "emit"))
+        bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(large_name, "lowering", s_to_i64(proc_strs_get(lows, last)), large_emit, "emit"))
+        bottlenecks = append_bottleneck(bottlenecks, bottleneck_item(large_name, "incremental_cache", s_to_i64(proc_strs_get(caches, last)), large_emit, "emit"))
+    }
 
     let mut line: string = "{\"summary\": true"
     line = line + ", \"hello_program\": \"" + hello + "\""
