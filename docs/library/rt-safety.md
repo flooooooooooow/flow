@@ -30,7 +30,7 @@ function process_block(state: ptr<FilterState>, block_size: i32) -> void {
 `@only(...)`) rather than a comment pragma, since the parser already
 supports attributes on `function` declarations.
 
-**What's checked today** (`src/flow/type_checker.py`):
+**What's checked today** (flowc):
 
 - Direct calls to `malloc`, `calloc`, `realloc`, `free` (and the generic
   `alloc`/`dealloc` builtins) from an `@rt_safe` function are a type error.
@@ -45,6 +45,14 @@ supports attributes on `function` declarations.
   frame-safe, may allocate/free, may block/lock, may do device/file/network
   I/O, declared lifetime domain) and keeps one provenance edge per newly
   introduced bit so the diagnostic still names the call chain (#765).
+- **Indirect callables** used from `@rt_safe` / `@lifetime(callback)` must
+  carry a proven `with rt_safe` contract, or they are rejected as an
+  unresolved dynamic call. Binding a named function or a closure to
+  `(T) -> R with rt_safe` verifies that callable's call graph. Closures are
+  also checked for unproven function-typed captures and for pointer/span
+  captures of locals that would escape the creating frame. Diagnostics name
+  the indirect callable and the unsafe operation it can reach. The contract
+  is compile-time metadata and is erased before codegen (#766).
 - Bump allocation from an *already-created* arena is allowed: `arena_alloc`,
   `arena_alloc_i32`, `arena_alloc_f32`, `arena_reset`, `arena_used`, and
   `arena_remaining` never call `malloc`/`free` themselves, so they stay
@@ -57,11 +65,13 @@ supports attributes on `function` declarations.
 
 **Known gaps** (not yet enforced; still a coding policy for these):
 
-- Calls through function pointers / closures aren't traced, only direct
-  named calls.
-- Method calls (`obj.method(...)`) aren't checked against the heap-name
-  list, only plain function calls. This is no issue for `memory.flow` today
-  since it exposes free functions and no methods.
+- Trait / interface method dispatch used from callback-safe code does not
+  yet carry a checkable RT contract. Each implementation would need
+  `κ_impl ⊆ κ_trait`; that slice is future work on top of the function-pointer
+  and closure checker (#766).
+- Method calls (`obj.method(...)`) that are not a proven `with rt_safe`
+  function value are treated as unresolved dynamic calls. This is no issue
+  for `memory.flow` today since it exposes free functions and no methods.
 - `extern` C calls that are not on the known unsafe-name list carry an
   `unknown` summary bit rather than an empty contract. This slice still
   rejects only the known names, so a hypothetical driver `extern` can

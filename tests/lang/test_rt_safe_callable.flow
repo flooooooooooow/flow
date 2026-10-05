@@ -1,0 +1,50 @@
+# First-slice RT-safe callable contracts (#766).
+# A callback-safe higher-order function accepts a proven-safe named
+# function and a proven-safe closure, including a scalar capture.
+
+@rt_safe
+function apply_i32(f: (i32) -> i32 with rt_safe, x: i32) -> i32 {
+    return f(x)
+}
+
+@rt_safe
+function safe_double(x: i32) -> i32 {
+    return x * 2
+}
+
+@rt_safe
+function check_named() -> i32 {
+    return apply_i32(safe_double, 21)
+}
+
+@rt_safe
+function check_closure() -> i32 {
+    return apply_i32(|x: i32| -> i32 { return x + 1 }, 41)
+}
+
+@rt_safe
+function check_capture() -> i32 {
+    let k: i32 = 3
+    return apply_i32(|x: i32| -> i32 { return x * k }, 14)
+}
+
+@lifetime(callback)
+function check_callback_domain() -> i32 {
+    return apply_i32(safe_double, 21)
+}
+
+function main() -> i32 {
+    if check_named() != 42 {
+        return 1
+    }
+    if check_closure() != 42 {
+        return 2
+    }
+    if check_capture() != 42 {
+        return 3
+    }
+    if check_callback_domain() != 42 {
+        return 4
+    }
+    return 0
+}

@@ -209,6 +209,15 @@ export struct Sem {
     rt_sum_prov: ptr<SemStrMap>,
     rt_binding_target: ptr<SemStrVec>,
     rt_binding_fn: ptr<SemStrVec>,
+    # Closures bound to an rt_safe callable contract (#766): synthetic
+    # names, AST-node keys, and captures that are unproven callables or
+    # escaping local references. Compile-time only; erased before codegen.
+    closure_count: i32,
+    closure_by_key: ptr<SemStrMap>,
+    closure_names: ptr<SemStrVec>,
+    rt_cap_fn: ptr<SemStrVec>,
+    rt_cap_name: ptr<SemStrVec>,
+    rt_cap_kind: ptr<SemIntVec>,
     dom_site_fn: ptr<SemStrVec>,
     dom_site_name: ptr<SemStrVec>,
     esc_static: ptr<SemStrMap>,
@@ -393,6 +402,12 @@ export function sem_new(strict: bool) -> ptr<Sem> {
     c.rt_sum_prov = sem_sm_new()
     c.rt_binding_target = sem_sv_new()
     c.rt_binding_fn = sem_sv_new()
+    c.closure_count = 0
+    c.closure_by_key = sem_sm_new()
+    c.closure_names = sem_sv_new()
+    c.rt_cap_fn = sem_sv_new()
+    c.rt_cap_name = sem_sv_new()
+    c.rt_cap_kind = sem_iv_new()
     c.dom_site_fn = sem_sv_new()
     c.dom_site_name = sem_sv_new()
     c.esc_static = sem_sm_new()

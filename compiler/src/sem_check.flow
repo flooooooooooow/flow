@@ -3243,9 +3243,111 @@ function sem_check_try(c: ptr<Sem>, e: i32) -> i32 {
     return sem_tmk(c, TK_VOID)
 }
 
+# A lambda is a compile-time callable with its own RT summary. Calls in
+# the body are attributed to a synthetic `<closure#N>` name so a later
+# `with rt_safe` binding can prove or reject the closure. The name is
+# checker metadata only; codegen never sees it (#766).
+function sem_register_closure(c: ptr<Sem>, e: i32) -> string {
+    c.closure_count = c.closure_count + 1
+    let name: string = "<closure#" + sem_s_itoa(c.closure_count as i64) + ">"
+    sem_sm_put(c.closure_by_key, sem_node_key(c, e), sem_sv_len(c.closure_names))
+    sem_sv_push(c.closure_names, name)
+    return name
+}
+
+function sem_closure_name_of(c: ptr<Sem>, e: i32) -> string {
+    if e < 0 {
+        return null as string
+    }
+    let idx: i32 = sem_sm_get(c.closure_by_key, sem_node_key(c, e))
+    if idx < 0 {
+        return null as string
+    }
+    return sem_sv_get(c.closure_names, idx)
+}
+
+function sem_is_closure_name(name: string) -> bool {
+    return sem_s_starts(name, "<closure#")
+}
+
+# Capture kinds stored in rt_cap_kind: 1 = unproven callable, 2 = escaping local.
+
+function sem_lambda_local(c: ptr<Sem>, name: string, mark: i32) -> bool {
+    let mut i: i32 = sem_sv_len(c.ls_name) - 1
+    while i >= mark {
+        if sem_s_eq(sem_sv_get(c.ls_name, i), name) {
+            return true
+        }
+        i = i - 1
+    }
+    return false
+}
+
+function sem_note_lambda_capture(c: ptr<Sem>, name: string, cname: string, mark: i32) {
+    if name as ptr<u8> == null or sem_s_len(name) == 0 or sem_s_eq(name, "null") {
+        return
+    }
+    if sem_lambda_local(c, name, mark) {
+        return
+    }
+    let s: i32 = sem_lookup(c, name)
+    if s < 0 {
+        return
+    }
+    let sk: i32 = sem_sym_kind(c, s)
+    if sk == SK_FUNCTION or sk == SK_CONST or sk == SK_TYPE {
+        return
+    }
+    let ty: i32 = sem_sym_type(c, s)
+    let mut kind: i32 = 0
+    if sem_tkind(c, ty) == TK_FUNCTION and sem_function_type_has_effect(c, ty, "rt_safe") == false {
+        kind = 1
+    } elif sem_is_reference_type(c, ty) and sem_sv_has(c.local_storage, name) {
+        kind = 2
+    }
+    if kind == 0 {
+        return
+    }
+    let mut i: i32 = 0
+    while i < sem_sv_len(c.rt_cap_fn) {
+        if sem_s_eq(sem_sv_get(c.rt_cap_fn, i), cname) and sem_s_eq(sem_sv_get(c.rt_cap_name, i), name) {
+            return
+        }
+        i = i + 1
+    }
+    sem_sv_push(c.rt_cap_fn, cname)
+    sem_sv_push(c.rt_cap_name, name)
+    sem_iv_push(c.rt_cap_kind, kind)
+}
+
+function sem_walk_lambda_captures(c: ptr<Sem>, e: i32, cname: string, mark: i32) {
+    if e < 0 {
+        return
+    }
+    let k: i32 = sem_nk(c, e)
+    if k == AST_FN {
+        return
+    }
+    if k == AST_IDENT or k == AST_CALL {
+        sem_note_lambda_capture(c, sem_nname(c, e), cname, mark)
+    }
+    sem_walk_lambda_captures(c, sem_na(c, e), cname, mark)
+    sem_walk_lambda_captures(c, sem_nb(c, e), cname, mark)
+    sem_walk_lambda_captures(c, sem_ncc(c, e), cname, mark)
+    sem_walk_lambda_captures(c, sem_nnext(c, e), cname, mark)
+}
+
 function sem_check_lambda(c: ptr<Sem>, e: i32) -> i32 {
     let tys: ptr<SemTys> = c.t
+    let cname: string = sem_register_closure(c, e)
+    let prev_fn: string = c.current_function_name
+    let prev_rt: string = c.current_rt_safe_fn
+    let prev_rt_dom: bool = c.rt_safe_from_domain
     sem_push_scope(c)
+    let mark: i32 = sem_sv_len(c.ls_name)
+    c.current_function_name = cname
+    c.current_rt_safe_fn = null
+    c.rt_safe_from_domain = false
     let f: i32 = sem_ty_mk(c.t, TK_FUNCTION)
     let mut p: i32 = sem_na(c, e)
     while p != AST_NONE {
@@ -3264,7 +3366,11 @@ function sem_check_lambda(c: ptr<Sem>, e: i32) -> i32 {
     c.return_sink = sem_iv_new()
     sem_check_block(c, sem_ncc(c, e))
     c.return_sink = saved_sink
+    sem_walk_lambda_captures(c, sem_ncc(c, e), cname, mark)
     sem_pop_scope(c)
+    c.current_function_name = prev_fn
+    c.current_rt_safe_fn = prev_rt
+    c.rt_safe_from_domain = prev_rt_dom
     if sem_nb(c, e) != AST_NONE {
         tys.ret[f] = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e)))
     } else {
@@ -3650,8 +3756,8 @@ function sem_function_type_has_effect(c: ptr<Sem>, ty: i32, eff_name: string) ->
 }
 
 # A conversion to an rt_safe callable type must preserve a previously proven
-# contract, or bind a concrete named function whose whole call graph can be
-# verified after declaration checking.
+# contract, bind a concrete named function, or bind a checked closure whose
+# whole call graph and captures can be verified after declaration checking.
 function sem_record_rt_safe_binding(c: ptr<Sem>, expr: i32, actual: i32, expected: i32) {
     if sem_function_type_has_effect(c, expected, "rt_safe") == false {
         return
@@ -3668,6 +3774,14 @@ function sem_record_rt_safe_binding(c: ptr<Sem>, expr: i32, actual: i32, expecte
         if sym >= 0 and sem_sym_kind(c, sym) == SK_FUNCTION {
             sem_sv_push(c.rt_binding_target, sem_tstr(c, expected))
             sem_sv_push(c.rt_binding_fn, name)
+            return
+        }
+    }
+    if expr >= 0 and sem_nk(c, expr) == AST_FN {
+        let cname: string = sem_closure_name_of(c, expr)
+        if cname as ptr<u8> != null {
+            sem_sv_push(c.rt_binding_target, sem_tstr(c, expected))
+            sem_sv_push(c.rt_binding_fn, cname)
             return
         }
     }
@@ -5106,6 +5220,41 @@ function sem_unsafe_reason(c: ptr<Sem>, frame: bool, m: ptr<SemStrMap>, name: st
     return sem_sv_get(c.reason_pool, k)
 }
 
+function sem_rt_root_unsafe(c: ptr<Sem>, name: string) -> string {
+    let mut cur: string = name
+    let mut guard: i32 = 0
+    while guard < 8 {
+        if sem_s_eq(cur, "__unresolved_dynamic_call") or sem_is_rt_heap_name(cur) or sem_is_rt_other_name(cur) {
+            return cur
+        }
+        let nxt: string = sem_unsafe_reason(c, false, c.rt_unsafe_reason, cur)
+        if nxt as ptr<u8> == null or sem_s_eq(nxt, cur) {
+            return cur
+        }
+        cur = nxt
+        guard = guard + 1
+    }
+    return cur
+}
+
+function sem_closure_capture_error(c: ptr<Sem>, cname: string) -> string {
+    let mut i: i32 = 0
+    while i < sem_sv_len(c.rt_cap_fn) {
+        if sem_s_eq(sem_sv_get(c.rt_cap_fn, i), cname) {
+            let cap: string = sem_sv_get(c.rt_cap_name, i)
+            let kind: i32 = sem_iv_get(c.rt_cap_kind, i)
+            if kind == 1 {
+                return "RT-safety violation: closure bound to an rt_safe contract captures '" + cap + "', which has no proven RT-safe summary"
+            }
+            if kind == 2 {
+                return "RT-safety violation: closure bound to an rt_safe contract captures local '" + cap + "', which would escape its stack frame"
+            }
+        }
+        i = i + 1
+    }
+    return null as string
+}
+
 function sem_verify_rt_safe_bindings(c: ptr<Sem>) {
     let seen: ptr<SemStrVec> = sem_sv_new()
     let mut i: i32 = 0
@@ -5117,13 +5266,29 @@ function sem_verify_rt_safe_bindings(c: ptr<Sem>) {
             sem_sv_push(seen, key)
             if sem_s_eq(fnm, "<anonymous function>") {
                 sem_err(c, "RT-safety violation: an anonymous function is bound to an rt_safe contract but its RT safety cannot be proven")
+            } elif sem_is_closure_name(fnm) {
+                let cap_err: string = sem_closure_capture_error(c, fnm)
+                if cap_err as ptr<u8> != null {
+                    sem_err(c, cap_err)
+                } else {
+                    let reason: string = sem_unsafe_reason(c, false, c.rt_unsafe_reason, fnm)
+                    if reason as ptr<u8> != null {
+                        if sem_s_eq(reason, "__unresolved_dynamic_call") {
+                            sem_err(c, "RT-safety violation: closure bound to an rt_safe contract makes an unresolved dynamic call (forbidden on an RT-safe path because its safety cannot be proven; see docs/library/rt-safety.md)")
+                        } else {
+                            let op: string = sem_rt_root_unsafe(c, reason)
+                            sem_err(c, "RT-safety violation: closure bound to an rt_safe contract can reach '" + op + "', which is forbidden on an RT-safe path")
+                        }
+                    }
+                }
             } else {
                 let reason: string = sem_unsafe_reason(c, false, c.rt_unsafe_reason, fnm)
                 if reason as ptr<u8> != null {
                     if sem_s_eq(reason, fnm) {
                         sem_err(c, "RT-safety violation: '" + fnm + "' is bound to an rt_safe contract but calls '" + fnm + "', which is forbidden on an RT-safe path")
                     } else {
-                        sem_err(c, "RT-safety violation: '" + fnm + "' is bound to an rt_safe contract but calls '" + reason + "', which is forbidden on an RT-safe path")
+                        let op: string = sem_rt_root_unsafe(c, reason)
+                        sem_err(c, "RT-safety violation: '" + fnm + "' is bound to an rt_safe contract but calls '" + op + "', which is forbidden on an RT-safe path")
                     }
                 }
             }

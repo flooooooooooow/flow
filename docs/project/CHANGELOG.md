@@ -44,6 +44,14 @@ All notable changes to FLOW will be documented in this file.
   wherever the instance lives. The annotation is erased before codegen.
   See [domain-fields.md](../language/domain-fields.md).
 - Type identity (#775, remaining slice): `@schema_revision(N)` on structs/enums/aliases feeds `type_schema_id` without changing `type_family_id`. `type_member_count` / `type_member_table` expose the public field description. `type_sizeof_*` / `type_alignof_*` / `type_layout_*` are native64 and wasm32 ABI certificates (pointer width 8 vs 4). See [type-identity.md](../language/type-identity.md).
+- Type checker: function-pointer and closure values used from `@rt_safe` /
+  `@lifetime(callback)` must carry a proven `with rt_safe` contract or are
+  rejected conservatively. Binding a named function or a closure to that
+  contract verifies the callee's RT summary; closures are also checked for
+  unproven function-typed captures and escaping local pointer/span captures.
+  Diagnostics name the indirect callable and the unsafe op it can reach.
+  The contract is compile-time only and erased before codegen. Trait-method
+  contracts remain a gap (#766).
 - flowc: opt-in `FLOWC_PROFILE=1|json` writes per-phase compile timings (`[flow-profile]` JSON) for parse, import resolution, typecheck and codegen. `./flow tool compile_bench` records cold/warm compile-to-result and names the top fixed vs scaling cost. (#735)
 - flowc: opt-in `FLOWC_PROFILE=1|json` writes per-phase compile timings (`[flow-profile]` JSON) for parse, import resolution, typecheck, monomorphize, lowering, codegen and incremental AST-cache hits. `./flow tool compile_bench` records cold/warm compile-to-result, a Tier-1 matrix row, and >10% bottleneck follow-ups. (#735)
 - Strings / I/O (#747, first slice): a pure-string `+` chain of three or more parts lowers to one `__flowc_str_concatn` allocation instead of nested pairwise joins. `std.string` parses and formats integers on the caller's buffer with explicit overflow/junk errors; `std.io` reads and writes files with `fread`/`fwrite` of a known size. Cross-harness rows: `runtime_string_concat`, `runtime_parse_format`, `runtime_buffered_io`, and the existing `cold_file_transform` now uses the buffered path.

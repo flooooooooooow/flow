@@ -1,0 +1,12 @@
+# expect: RT-safety violation: closure bound to an rt_safe contract captures local 'p', which would escape its stack frame
+@rt_safe
+function process() -> i32 {
+    let mut x: i32 = 1
+    let p: ptr<i32> = &x
+    let f: (i32) -> i32 with rt_safe = |n: i32| -> i32 { return p[0] + n }
+    return f(1)
+}
+
+function main() -> i32 {
+    return 0
+}

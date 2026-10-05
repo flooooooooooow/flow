@@ -660,6 +660,12 @@ time (snapshot semantics). The C backend lowers capturing lambdas to a
 `{ fn, env }` closure struct; non-capturing lambdas remain C function
 pointers.
 
+A function-pointer or closure type may carry a compile-time `with rt_safe`
+contract. `@rt_safe` / `@lifetime(callback)` code may call through that
+type only when the bound function or closure is proven callback-safe (no
+forbidden ops, no unproven/escaping captures). The contract is erased
+before codegen; trait-method contracts are not in this slice (#766).
+
 ```flow
 let n: i32 = 5
 let add_n: (i32) -> i32 = |x: i32| -> i32 { return x + n }
