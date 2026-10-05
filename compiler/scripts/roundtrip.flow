@@ -340,8 +340,12 @@ function main() -> i32 {
     compile_module(host, "type_id", "ast")
     hdrs(hdr, "type_id")
 
-    # Sixth module: cgen.flow (imports token/ast/type_id; extern gives string.h).
-    compile_module(host, "cgen", "token ast effects proof_lower attributes sort_plans sort_sites type_id")
+    # Proven noalias / restrict certificate used by cgen (#731).
+    compile_module(host, "noalias", "token ast")
+    hdrs(hdr, "noalias")
+
+    # Sixth module: cgen.flow (imports token/ast/type_id/noalias; extern gives string.h).
+    compile_module(host, "cgen", "token ast effects proof_lower attributes sort_plans sort_sites type_id noalias")
     let cg: ptr<ProcStrs> = sl_of3("flowc_cgen_emit", "flowc_cgen_emit_ex", "typedef struct CgenBuf")
     sl_push2(cg, "#include <string.h>", " % ")
     module_needs("cgen", cg)

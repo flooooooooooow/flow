@@ -152,6 +152,7 @@ func.call @__flow_fault(%v75) : (!llvm.ptr) -> ()
 %v83 = llvm.mlir.constant(1 : i64) : i64
 %v84 = llvm.alloca %v83 x i32 : (i64) -> !llvm.ptr
 llvm.store %v82, %v84 : i32, !llvm.ptr
+// flowc.noalias py
 %v85 = arith.constant 0 : i32
 %v86 = arith.extsi %v85 : i32 to i64
 %v87 = llvm.getelementptr %v84[%v86] : (!llvm.ptr, i64) -> !llvm.ptr, i32

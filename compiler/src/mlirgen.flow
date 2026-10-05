@@ -26,6 +26,7 @@ import .type_id {
     flowc_type_transport_safe, FLOWC_TID_FAMILY, FLOWC_TID_SCHEMA,
     FLOWC_TID_TRANSPORT, FLOWC_TID_ALIGNOF, FLOWC_TID_NONE
 }
+import .noalias { flowc_noalias_param_restrict, flowc_noalias_local_restrict }
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_BANG,
@@ -10062,6 +10063,29 @@ function mlg_emit_layout(m: ptr<Mlg>, st: i32) {
     mlg_emit_call(m, ec, 0)
 }
 
+function mlg_fn_of_node(m: ptr<Mlg>, id: i32) -> i32 {
+    if id == AST_NONE {
+        return AST_NONE
+    }
+    let pos: i32 = m[0].arena.nodes[id].start
+    let mut best: i32 = AST_NONE
+    let mut best_span: i32 = 2147483647
+    let mut i: i32 = 0
+    while i < m[0].arena.len {
+        if mlg_kind(m, i) == AST_FN {
+            if pos >= m[0].arena.nodes[i].start and pos < m[0].arena.nodes[i].end {
+                let sp: i32 = m[0].arena.nodes[i].end - m[0].arena.nodes[i].start
+                if sp < best_span {
+                    best = i
+                    best_span = sp
+                }
+            }
+        }
+        i = i + 1
+    }
+    return best
+}
+
 # Python generate_var_decl without an initializer: an undefined SSA value,
 # never an alloca (even for `let mut`), so assignments rebind it.
 function mlg_emit_let_uninit(m: ptr<Mlg>, st: i32, ty: i32) {
@@ -10248,6 +10272,15 @@ function mlg_emit_let(m: ptr<Mlg>, st: i32) {
     let tag: i32 = mlg_vllarr(m, v)
     if tag != 0 {
         m[0].l_llarr[l] = tag
+    }
+    if vt == MT_PTR {
+        let fn: i32 = mlg_fn_of_node(m, st)
+        if fn != AST_NONE and flowc_noalias_local_restrict(m[0].arena, m[0].src, fn, st) == 1 {
+            mlg_line(m)
+            mlg_s(m, "// flowc.noalias ")
+            mlg_span(m, mlg_ns(m, st), mlg_ne(m, st))
+            mlg_nl(m)
+        }
     }
 }
 
@@ -14082,6 +14115,9 @@ function mlg_emit_function(m: ptr<Mlg>, f: i32) {
         mlg_v(m, 0 - 1 - i)
         mlg_s(m, ": ")
         mlg_put_type(m, pt)
+        if pt == MT_PTR and flowc_noalias_param_restrict(m[0].arena, m[0].src, f, p) == 1 {
+            mlg_s(m, " {llvm.noalias}")
+        }
         m[0].at[i] = pt
         m[0].au[i] = mlg_ft_unsigned(m, m[0].arena.nodes[p].a)
         m[0].a_llarr[i] = 0

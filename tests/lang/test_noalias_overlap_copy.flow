@@ -1,0 +1,21 @@
+# Sequential overlapping forward copy must stay [1,1,1,1].
+# A false noalias / restrict assumption on dst/src permits snapshotting
+# the source and producing [1,1,2,3] (#731).
+
+function overlap_copy(dst: ptr<i32>, src: ptr<i32>, n: i32) -> void {
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = src[i]
+        i = i + 1
+    }
+}
+
+function main() -> i32 {
+    let mut x: array<i32, 4> = [1, 2, 3, 4]
+    overlap_copy(&x[1], &x[0], 3)
+    if x[0] != 1 { return 1 }
+    if x[1] != 1 { return 2 }
+    if x[2] != 1 { return 3 }
+    if x[3] != 1 { return 4 }
+    return 0
+}

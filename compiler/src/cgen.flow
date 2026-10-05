@@ -41,6 +41,11 @@ import .type_id {
     flowc_type_transport_safe, FLOWC_TID_FAMILY, FLOWC_TID_SCHEMA,
     FLOWC_TID_TRANSPORT
 }
+import .noalias {
+    flowc_noalias_param_restrict,
+    flowc_noalias_local_restrict,
+    flowc_noalias_ty_is_ptr
+}
 import .token {
     TOK_EQEQ, TOK_NE, TOK_LT, TOK_GT, TOK_LE, TOK_GE,
     TOK_PLUS, TOK_MINUS, TOK_STAR, TOK_SLASH, TOK_PERCENT, TOK_BANG, TOK_AMP,
@@ -9546,6 +9551,11 @@ function flowc_cgen_emit_stmt(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id
                 flowc_cgen_emit_type(w, arena, src, ty)
             }
         }
+        if flowc_noalias_ty_is_ptr(arena, src, ty) == 1 {
+            if flowc_noalias_local_restrict(arena, src, w[0].cur_fn, id) == 1 {
+                flowc_cgen_puts(w, " restrict")
+            }
+        }
         flowc_cgen_putc(w, 32)
         flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
         if arr_n > 0 {
@@ -10280,6 +10290,11 @@ function flowc_cgen_emit_param(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, i
         }
     }
     flowc_cgen_emit_type(w, arena, src, ty)
+    if flowc_noalias_ty_is_ptr(arena, src, ty) == 1 {
+        if flowc_noalias_param_restrict(arena, src, w[0].cur_fn, id) == 1 {
+            flowc_cgen_puts(w, " restrict")
+        }
+    }
     flowc_cgen_putc(w, 32)
     flowc_cgen_put_span(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
 }
@@ -10818,6 +10833,8 @@ function flowc_cgen_emit_fn_proto(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
         flowc_cgen_put_ident(w, src, arena.nodes[id].name_start, arena.nodes[id].name_end)
     }
     flowc_cgen_putc(w, 40)
+    let saved_fn: i32 = w[0].cur_fn
+    w[0].cur_fn = id
     let mut param: i32 = arena.nodes[id].a
     let mut first: i32 = 1
     while param != AST_NONE {
@@ -10828,6 +10845,7 @@ function flowc_cgen_emit_fn_proto(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>
         flowc_cgen_emit_param(w, arena, src, param)
         param = arena.nodes[param].next
     }
+    w[0].cur_fn = saved_fn
     flowc_cgen_puts(w, ");\n")
 }
 
