@@ -1,0 +1,337 @@
+# Dry-run evidence for `./flow tool qualify_release`.
+#
+# The tool must qualify a commit, write archives and checksums, and record
+# an RC promotion without tagging or publishing.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcCmd, ProcResult, proc_arg, proc_stdout, proc_stderr, PROC_CAPTURE }
+
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+struct Qual {
+    bin: string,
+    err: string
+}
+
+let mut QUAL: ptr<Qual> = null
+
+function build_qual() {
+    let k: ptr<Qual> = malloc(16) as ptr<Qual>
+    k.bin = ""
+    k.err = ""
+    if have("cc") or have("clang") {
+        let c: ptr<ProcCmd> = cmd(sl_of3("./flow", "tool", "--path"))
+        proc_arg(c, "qualify_release")
+        proc_stdout(c, PROC_CAPTURE)
+        proc_stderr(c, PROC_CAPTURE)
+        let r: ptr<ProcResult> = run_result(c)
+        if r.exit_code == 0 {
+            k.bin = s_chomp_all(r.stdout)
+        } else {
+            k.err = s_chomp_all(r.stderr)
+        }
+    }
+    QUAL = k
+}
+
+function need_qual() -> i32 {
+    let need: i32 = t_need_cc()
+    if need != T_PASS {
+        return need
+    }
+    let k: ptr<Qual> = QUAL
+    if s_len(k.bin) == 0 {
+        outln("flow tool qualify_release failed: " + k.err)
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function qual_cmd(args: ptr<ProcStrs>) -> ptr<ProcStrs> {
+    let k: ptr<Qual> = QUAL
+    let argv: ptr<ProcStrs> = sl_of1(k.bin)
+    sl_extend(argv, args)
+    return argv
+}
+
+function git_tags() -> string {
+    let c: ptr<ProcCmd> = cmd(sl_of2("git", "tag"))
+    proc_stdout(c, PROC_CAPTURE)
+    proc_stderr(c, PROC_CAPTURE)
+    let r: ptr<ProcResult> = run_result(c)
+    return r.stdout
+}
+
+function check_help() -> i32 {
+    let n: i32 = need_qual()
+    if n != T_PASS {
+        return n
+    }
+    if t_run_argv(qual_cmd(sl_of1("--help"))) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_out()), "never tags") {
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_out()), "--dry-run") {
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_out()), "--promote-rc") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_publish_refused() -> i32 {
+    let n: i32 = need_qual()
+    if n != T_PASS {
+        return n
+    }
+    let before: string = git_tags()
+    if t_run_argv(qual_cmd(sl_of1("--publish"))) != 2 {
+        outln("expected exit 2 from --publish, got " + s_itoa(t_rc()))
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_err()), "refused") {
+        return T_FAIL
+    }
+    if not a_eq(git_tags(), before, "git tags after --publish") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_formula_ok() -> i32 {
+    let n: i32 = need_qual()
+    if n != T_PASS {
+        return n
+    }
+    if t_run_argv(qual_cmd(sl_of1("--check-formula"))) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_out()), "formula.structural: pass") {
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_out()), "formula.sha256:") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_formula_requires_path() -> i32 {
+    let n: i32 = need_qual()
+    if n != T_PASS {
+        return n
+    }
+    if t_run_argv(qual_cmd(sl_of2("--check-formula", "--formula"))) != 1 {
+        outln("expected --formula without a path to fail")
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_err()), "expects a value") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_broken_formula_reports_sha() -> i32 {
+    let n: i32 = need_qual()
+    if n != T_PASS {
+        return n
+    }
+    let path: string = t_tmp() + "/missing-sha.rb"
+    let _w: bool = write_text(path, "class Flow < Formula\n  url \"https://example.invalid/flow-v1.0.0.tar.gz\"\n  version \"1.0.0\"\nend\n")
+    let args: ptr<ProcStrs> = sl_of3("--check-formula", "--formula", path)
+    if t_run_argv(qual_cmd(args)) != 1 {
+        outln("expected missing sha256 to fail")
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_err()), "sha256") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_artifacts_dry_run() -> i32 {
+    let n: i32 = need_qual()
+    if n != T_PASS {
+        return n
+    }
+    if t_need("git") != T_PASS {
+        return T_SKIP
+    }
+    let out: string = t_tmp() + "/qual"
+    let args: ptr<ProcStrs> = sl_of3("--dry-run", "--artifacts-only", "--out")
+    sl_push(args, out)
+    if t_run_argv(qual_cmd(args)) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let log: string = read_text(t_out())
+    if not a_contains(log, "published=false") {
+        return T_FAIL
+    }
+    if not a_file_contains(out + "/qualification.json", "\"published\": false") {
+        return T_FAIL
+    }
+    if not a_file_contains(out + "/qualification.txt", "published: false") {
+        return T_FAIL
+    }
+    if not a_file_contains(out + "/qualification.txt", "tagged: false") {
+        return T_FAIL
+    }
+    if not a_exists(out + "/SHA256SUMS.txt") {
+        return T_FAIL
+    }
+    let sums: string = read_text(out + "/SHA256SUMS.txt")
+    if not a_contains(sums, "flow-v") or not a_contains(sums, ".tar.gz") {
+        return T_FAIL
+    }
+    if not a_contains(sums, ".zip") {
+        return T_FAIL
+    }
+    if not a_file_contains(out + "/qualification.json", "\"tarball_sha256\"") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_promote_rc_does_not_tag() -> i32 {
+    let n: i32 = need_qual()
+    if n != T_PASS {
+        return n
+    }
+    if t_need("git") != T_PASS {
+        return T_SKIP
+    }
+    let before: string = git_tags()
+    let out: string = t_tmp() + "/rc"
+    let args: ptr<ProcStrs> = sl_of3("--dry-run", "--artifacts-only", "--promote-rc")
+    sl_push(args, "--rc-number")
+    sl_push(args, "1")
+    sl_push(args, "--out")
+    sl_push(args, out)
+    if t_run_argv(qual_cmd(args)) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_eq(git_tags(), before, "git tags after --promote-rc") {
+        return T_FAIL
+    }
+    if not a_exists(out + "/rc-promotion.txt") {
+        return T_FAIL
+    }
+    if not a_file_contains(out + "/rc-promotion.txt", "published: false") {
+        return T_FAIL
+    }
+    if not a_file_contains(out + "/rc-promotion.txt", "tagged: false") {
+        return T_FAIL
+    }
+    if not a_file_contains(out + "/rc-promotion.txt", "-rc.1") {
+        return T_FAIL
+    }
+    if not a_file_contains(out + "/qualification.json", "\"promotion\": \"rc\"") {
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_out()), "not tagged") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_print_tag_command() -> i32 {
+    let n: i32 = need_qual()
+    if n != T_PASS {
+        return n
+    }
+    if t_need("git") != T_PASS {
+        return T_SKIP
+    }
+    let before: string = git_tags()
+    if t_run_argv(qual_cmd(sl_of1("--print-tag-command"))) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_out()), "git tag -a v") {
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_out()), "never tags") {
+        return T_FAIL
+    }
+    if not a_eq(git_tags(), before, "git tags after --print-tag-command") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_releasing_docs_point_at_the_tool() -> i32 {
+    let text: string = read_text(t_root() + "/docs/project/RELEASING.md")
+    if not a_contains(text, "./flow tool qualify_release") {
+        return T_FAIL
+    }
+    if not a_contains(text, "never tags") and not a_contains(text, "does not publish") {
+        outln("RELEASING.md must say qualification does not publish")
+        return T_FAIL
+    }
+    let q: string = read_text(t_root() + "/docs/project/release-qualification.md")
+    if not a_contains(q, "commit/tag") {
+        return T_FAIL
+    }
+    if not a_contains(q, "--promote-rc") {
+        return T_FAIL
+    }
+    if not a_contains(q, "SHA-256") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("qualify_release")
+    build_qual()
+
+    t_start()
+    t_end("help", check_help())
+
+    t_start()
+    t_end("publish_refused", check_publish_refused())
+
+    t_start()
+    t_end("formula_ok", check_formula_ok())
+
+    t_start()
+    t_end("formula_requires_path", check_formula_requires_path())
+
+    t_start()
+    t_end("formula_missing_sha256", check_broken_formula_reports_sha())
+
+    t_start()
+    t_end("artifacts_dry_run", check_artifacts_dry_run())
+
+    t_start()
+    t_end("promote_rc_does_not_tag", check_promote_rc_does_not_tag())
+
+    t_start()
+    t_end("print_tag_command", check_print_tag_command())
+
+    t_start()
+    t_end("releasing_docs", check_releasing_docs_point_at_the_tool())
+
+    t_done()
+    return 0
+}
