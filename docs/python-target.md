@@ -177,5 +177,7 @@ function dont_export() -> void { }
 
 - Structs, pointers and arrays do not cross the boundary yet
 - Async effects don't map to Python async
-- No NumPy array integration (future)
+- No NumPy array integration in `flow python`. Zero-copy arrays use the
+  [C buffer ABI](language/ffi-buffer.md) through ctypes / PEP 3118; see
+  the [boundary audit](language/ffi-boundary-audit.md)
 - macOS/Linux only (Windows future)
