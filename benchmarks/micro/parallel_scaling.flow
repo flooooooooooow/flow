@@ -102,11 +102,11 @@ function best_parallel(data: ptr<i32>, parts: i32) -> i64 {
 
 # serial_us / (parallel_us * parts) as a percent. 0 when the parallel
 # sample is not positive, so a sub-millisecond host cannot crash the run.
-function efficiency_x100(serial: i64, parallel: i64, parts: i64) -> i64 {
-    if parallel <= 0 or parts <= 0 {
+function efficiency_x100(serial: i64, par_us: i64, parts: i64) -> i64 {
+    if par_us <= 0 or parts <= 0 {
         return 0
     }
-    return serial * 100 / (parallel * parts)
+    return serial * 100 / (par_us * parts)
 }
 
 function us_to_ms(us: i64) -> i64 {
