@@ -19,6 +19,7 @@ Welcome to the Flow programming language documentation!
 - [Overview](language/overview.md) - Language philosophy and features
 - [Syntax](language/syntax.md) - Lexical structure and grammar
 - [Types](language/types.md) - Type system
+- [FFI buffer ABI](language/ffi-buffer.md) - Zero-copy pointer/span/array handoff
 - [Functions](language/functions.md) - Function definitions
 - [Variables](language/variables.md) - Variables and mutability
 - [Graphics](language/graphics.md) - Native graphics API

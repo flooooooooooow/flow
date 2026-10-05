@@ -16,7 +16,7 @@ All notable changes to FLOW will be documented in this file.
   `unknown` bit; this slice still rejects only the known unsafe names.
 - Runtime: opt-in memory profiler (`FLOW_MEM_PROFILE` / `FLOW_MEM_PROFILE_OUT`) reports heap count/bytes, peak live heap, peak RSS, compiler-temp bytes and copy volume. The #728 harness records those fields without workload source rewrites. (#740)
 - flowc emits C `restrict` and MLIR `{llvm.noalias}` for pointer parameters and locals only when a fail-closed provenance certificate proves disjointness: distinct local arrays, non-overlapping constant slices, and internal functions whose every call site is proven. Overlapping views, a buffer passed twice, exported/`@flow_api` functions, and pointers copied from parameters stay aliasable (#731).
-- FFI: Zero-copy contiguous buffer ABI (`ffi_buffer_handoff`), boundary instrumentation, and benchmarks. (#737)
+- FFI: Zero-copy contiguous buffer ABI (`FlowFfiBuffer` in `runtime/flow_ffi_buffer.h`, Flow `FFIBuffer`), borrowed vs owned lifetime, fail-closed layout checks that never silently copy, a pointer-identity lang test, and a microbenchmark identity row. (#737)
 
 ### Type checker diagnostics
 
