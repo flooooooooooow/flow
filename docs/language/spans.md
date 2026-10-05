@@ -304,6 +304,10 @@ version.
 Example: [examples/basics/spans.flow](../../examples/basics/spans.flow) ·
 Tests: `tests/lang/test_spans.flow`, `tests/unit/test_spans.py`
 
+A span is already a `{pointer, length}` view. Crossing into C with that
+shape uses the [zero-copy FFI buffer ABI](ffi-buffer.md); do not pack the
+elements into a second buffer when the layout already matches.
+
 Related: [types.md](types.md) ·
 [lifetime-domains.md](lifetime-domains.md) ·
 [LANGUAGE_SPEC](../LANGUAGE_SPEC.md)
