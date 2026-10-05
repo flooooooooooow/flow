@@ -1,0 +1,97 @@
+# Open-addressed i64 map: insert then lookup (#745).
+# Same linear-probe algorithm and mix hash as the native twin and stdlib.
+
+extern {
+    function calloc(n: i64, s: i64) -> ptr<void>
+    function free(p: ptr<void>) -> void
+}
+
+function hash_i64(k: i64) -> i32 {
+    let mut h: u32 = (k as i32) as u32
+    h = h ^ (h >> 16)
+    h = h * 0x7feb352d
+    h = h ^ (h >> 15)
+    h = h * 0x846ca68b
+    h = h ^ (h >> 16)
+    return (h & 0x7FFFFFFF) as i32
+}
+
+function main() -> i32 {
+    let n: i32 = 4096
+    let cap: i32 = 8192
+    let keys: ptr<i64> = calloc(cap as i64, 8) as ptr<i64>
+    let values: ptr<i64> = calloc(cap as i64, 8) as ptr<i64>
+    let occupied: ptr<i32> = calloc(cap as i64, 4) as ptr<i32>
+    if keys == null or values == null or occupied == null {
+        return 1
+    }
+
+    let mut i: i32 = 0
+    while i < n {
+        let key: i64 = i as i64
+        let value: i64 = (i as i64) * 3
+        let mut slot: i32 = hash_i64(key) % cap
+        let mut probes: i32 = 0
+        while probes < cap {
+            if occupied[slot] == 0 {
+                keys[slot] = key
+                values[slot] = value
+                occupied[slot] = 1
+                break
+            }
+            if occupied[slot] == 1 {
+                if keys[slot] == key {
+                    values[slot] = value
+                    break
+                }
+            }
+            slot = slot + 1
+            if slot >= cap {
+                slot = 0
+            }
+            probes = probes + 1
+        }
+        if probes >= cap {
+            return 2
+        }
+        i = i + 1
+    }
+
+    let mut checksum: i64 = 0
+    i = 0
+    while i < n {
+        let key: i64 = i as i64
+        let mut slot: i32 = hash_i64(key) % cap
+        let mut found: i64 = 0 - 1
+        let mut probes: i32 = 0
+        while probes < cap {
+            if occupied[slot] == 0 {
+                break
+            }
+            if occupied[slot] == 1 {
+                if keys[slot] == key {
+                    found = values[slot]
+                    break
+                }
+            }
+            slot = slot + 1
+            if slot >= cap {
+                slot = 0
+            }
+            probes = probes + 1
+        }
+        if found < 0 {
+            return 3
+        }
+        checksum = checksum + found
+        i = i + 1
+    }
+
+    free(keys as ptr<void>)
+    free(values as ptr<void>)
+    free(occupied as ptr<void>)
+    if checksum != 25159680 {
+        return 4
+    }
+    return 0
+}

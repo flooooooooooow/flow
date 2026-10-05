@@ -1,3 +1,49 @@
+# Common reductions over a dense integer buffer (#745).
+# Sum, min, max and sum-of-squares; same work as the native and Python twins.
+
+extern {
+    function malloc(size: i64) -> ptr<i64>
+    function free(p: ptr<i64>) -> void
+}
+
 function main() -> i32 {
-    return 0;
+    let n: i32 = 4096
+    let xs: ptr<i64> = malloc((n as i64) * 8)
+    if xs == null {
+        return 1
+    }
+    let mut i: i32 = 0
+    while i < n {
+        xs[i] = (i as i64) * 17 + 3
+        i = i + 1
+    }
+
+    let mut sum: i64 = 0
+    let mut sumsq: i64 = 0
+    let mut mn: i64 = xs[0]
+    let mut mx: i64 = xs[0]
+    i = 0
+    while i < n {
+        let v: i64 = xs[i]
+        sum = sum + v
+        sumsq = sumsq + v * v
+        if v < mn {
+            mn = v
+        }
+        if v > mx {
+            mx = v
+        }
+        i = i + 1
+    }
+    free(xs)
+    if sum != 142583808 {
+        return 2
+    }
+    if mn != 3 or mx != 69618 {
+        return 3
+    }
+    if sumsq != 6618407614464 {
+        return 4
+    }
+    return 0
 }

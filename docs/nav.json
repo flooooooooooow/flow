@@ -869,6 +869,10 @@
           "path": "project/compile-profile.md"
         },
         {
+          "label": "Runtime Primitive Attribution",
+          "path": "project/runtime-primitive-attribution.md"
+        },
+        {
           "label": "Contributing",
           "path": "project/CONTRIBUTING.md"
         },

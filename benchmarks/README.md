@@ -39,6 +39,19 @@ benchmarks/
 
 ## Memory instrumentation
 
+Runtime primitive attribution (#745) lives under
+`baselines/native/cross_harness/runtime/`. Every runtime workload has a
+hand-written C twin compiled with the same `clang -O3 -march=native -lm`
+flags as generated Flow C. The harness records `flow_vs_python`,
+`flow_vs_native` and `python_vs_native`. See
+[docs/project/runtime-primitive-attribution.md](../docs/project/runtime-primitive-attribution.md).
+
+```bash
+./flow tool bench_harness --check-runtime-natives
+./flow tool bench_harness --smoke --out /tmp/flow-runtime-attr.json
+./flow tool bench_harness --eval-tax /tmp/flow-runtime-attr.json
+```
+
 `./flow tool bench_harness` sets `FLOW_MEM_PROFILE=1` on every subject.
 Compiled Flow programs then write heap count/bytes, peak live heap, peak
 RSS, compiler-temp bytes and copy volume into the schema (issue #740).
