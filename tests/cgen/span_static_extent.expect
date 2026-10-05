@@ -1,6 +1,6 @@
 env FLOWC_CHECKS=1
-+ xs.data[i]
-- ((int64_t)(
++ xs.data[0]
++ xs.data[3]
 - span index
 - flow_fault_handler("span index out of bounds")
-exit 15
+exit 0
