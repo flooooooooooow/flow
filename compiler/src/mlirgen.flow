@@ -7553,12 +7553,233 @@ function mlg_try_fma(m: ptr<Mlg>, e: i32) -> i32 {
     return res
 }
 
+# 1 when `id` is a string `+` (one operand is already a string, or a
+# nested concat). Used to flatten mixed `"x=" + n + " y=" + m` chains.
+function mlg_is_concat_node(m: ptr<Mlg>, id: i32) -> i32 {
+    if id == AST_NONE {
+        return 0
+    }
+    if m[0].arena.nodes[id].kind != AST_BINOP {
+        return 0
+    }
+    if m[0].arena.nodes[id].ival != TOK_PLUS {
+        return 0
+    }
+    if mlg_expr_is_string(m, m[0].arena.nodes[id].a) == 1 {
+        return 1
+    }
+    return mlg_expr_is_string(m, m[0].arena.nodes[id].b)
+}
+
+# Flatten a string `+` chain into `out[0 .. n)` left to right. Returns n
+# when n > 2; otherwise 0 so the caller keeps the pairwise helper.
+function mlg_flatten_concat(m: ptr<Mlg>, id: i32, out: ptr<i32>, out_cap: i32) -> i32 {
+    let mut stack: array<i32, 64> = []
+    let mut sp: i32 = 1
+    stack[0] = id
+    let mut n: i32 = 0
+    while sp > 0 {
+        sp = sp - 1
+        let cur: i32 = stack[sp]
+        if mlg_is_concat_node(m, cur) == 1 {
+            if sp + 2 > 64 {
+                return 0
+            }
+            stack[sp] = m[0].arena.nodes[cur].b
+            sp = sp + 1
+            stack[sp] = m[0].arena.nodes[cur].a
+            sp = sp + 1
+        } else {
+            if n >= out_cap {
+                return 0
+            }
+            out[n] = cur
+            n = n + 1
+        }
+    }
+    if n > 2 {
+        return n
+    }
+    return 0
+}
+
+# A pointer operand as a non-null C string: null becomes "".
+function mlg_str_or_empty(m: ptr<Mlg>, p: i32) -> i32 {
+    mlg_intern_lit(m, "\"\"")
+    let empty: i32 = mlg_emit_addressof_str(m, mlg_intern_lit(m, "\"\""))
+    let z: i32 = mlg_new_val(m, MT_PTR)
+    mlg_line(m)
+    mlg_v(m, z)
+    mlg_s(m, " = llvm.mlir.zero : !llvm.ptr")
+    mlg_nl(m)
+    let isn: i32 = mlg_new_val(m, MT_I1)
+    mlg_line(m)
+    mlg_v(m, isn)
+    mlg_s(m, " = llvm.icmp \"eq\" ")
+    mlg_v(m, p)
+    mlg_s(m, ", ")
+    mlg_v(m, z)
+    mlg_s(m, " : !llvm.ptr")
+    mlg_nl(m)
+    let r: i32 = mlg_new_val(m, MT_PTR)
+    mlg_line(m)
+    mlg_v(m, r)
+    mlg_s(m, " = arith.select ")
+    mlg_v(m, isn)
+    mlg_s(m, ", ")
+    mlg_v(m, empty)
+    mlg_s(m, ", ")
+    mlg_v(m, p)
+    mlg_s(m, " : !llvm.ptr")
+    mlg_nl(m)
+    return r
+}
+
+function mlg_sz_mt(m: ptr<Mlg>) -> i32 {
+    if mlg_st32(m) == 1 {
+        return MT_I32
+    }
+    return MT_I64
+}
+
+# strlen(p) as the target size_t.
+function mlg_emit_strlen_sz(m: ptr<Mlg>, p: i32) -> i32 {
+    mlg_lc_use(m, LC_STRLEN)
+    let t: i32 = mlg_sz_mt(m)
+    let r: i32 = mlg_new_val(m, t)
+    mlg_line(m)
+    mlg_v(m, r)
+    mlg_s(m, " = func.call @strlen(")
+    mlg_v(m, p)
+    mlg_s(m, ") : (!llvm.ptr) -> ")
+    mlg_put_type(m, t)
+    mlg_nl(m)
+    return r
+}
+
+# One-allocation join of n already-string operands, matching C concatn.
+function mlg_emit_str_concatn(m: ptr<Mlg>, leaves: ptr<i32>, n: i32) -> i32 {
+    mlg_lc_use(m, LC_STRLEN | LC_MALLOC | LC_MEMCPY)
+    mlg_intern_lit(m, "\"\"")
+    let sz: i32 = mlg_sz_mt(m)
+    let mut parts: array<i32, 32> = []
+    let mut lens: array<i32, 32> = []
+    let mut i: i32 = 0
+    while i < n {
+        parts[i] = mlg_str_or_empty(m, mlg_emit_str_operand(m, leaves[i]))
+        lens[i] = mlg_emit_strlen_sz(m, parts[i])
+        i = i + 1
+    }
+    let mut total: i32 = lens[0]
+    i = 1
+    while i < n {
+        let s: i32 = mlg_new_val(m, sz)
+        mlg_line(m)
+        mlg_v(m, s)
+        mlg_s(m, " = arith.addi ")
+        mlg_v(m, total)
+        mlg_s(m, ", ")
+        mlg_v(m, lens[i])
+        mlg_s(m, " : ")
+        mlg_put_type(m, sz)
+        mlg_nl(m)
+        total = s
+        i = i + 1
+    }
+    let one: i32 = mlg_const_int(m, 1, sz)
+    let nbytes: i32 = mlg_new_val(m, sz)
+    mlg_line(m)
+    mlg_v(m, nbytes)
+    mlg_s(m, " = arith.addi ")
+    mlg_v(m, total)
+    mlg_s(m, ", ")
+    mlg_v(m, one)
+    mlg_s(m, " : ")
+    mlg_put_type(m, sz)
+    mlg_nl(m)
+    let r: i32 = mlg_new_val(m, MT_PTR)
+    mlg_line(m)
+    mlg_v(m, r)
+    mlg_s(m, " = func.call @malloc(")
+    mlg_v(m, nbytes)
+    mlg_s(m, ") : (")
+    mlg_put_type(m, sz)
+    mlg_s(m, ") -> !llvm.ptr")
+    mlg_nl(m)
+    let mut off: i32 = mlg_const_int(m, 0, sz)
+    i = 0
+    while i < n {
+        let dst: i32 = mlg_new_val(m, MT_PTR)
+        mlg_line(m)
+        mlg_v(m, dst)
+        mlg_s(m, " = llvm.getelementptr ")
+        mlg_v(m, r)
+        mlg_s(m, "[")
+        mlg_v(m, off)
+        mlg_s(m, "] : (!llvm.ptr, ")
+        mlg_put_type(m, sz)
+        mlg_s(m, ") -> !llvm.ptr, i8")
+        mlg_nl(m)
+        let cpy: i32 = mlg_new_val(m, MT_PTR)
+        mlg_line(m)
+        mlg_v(m, cpy)
+        mlg_s(m, " = func.call @memcpy(")
+        mlg_v(m, dst)
+        mlg_s(m, ", ")
+        mlg_v(m, parts[i])
+        mlg_s(m, ", ")
+        mlg_v(m, lens[i])
+        mlg_s(m, ") : (!llvm.ptr, !llvm.ptr, ")
+        mlg_put_type(m, sz)
+        mlg_s(m, ") -> !llvm.ptr")
+        mlg_nl(m)
+        let next: i32 = mlg_new_val(m, sz)
+        mlg_line(m)
+        mlg_v(m, next)
+        mlg_s(m, " = arith.addi ")
+        mlg_v(m, off)
+        mlg_s(m, ", ")
+        mlg_v(m, lens[i])
+        mlg_s(m, " : ")
+        mlg_put_type(m, sz)
+        mlg_nl(m)
+        off = next
+        i = i + 1
+    }
+    let term: i32 = mlg_new_val(m, MT_PTR)
+    mlg_line(m)
+    mlg_v(m, term)
+    mlg_s(m, " = llvm.getelementptr ")
+    mlg_v(m, r)
+    mlg_s(m, "[")
+    mlg_v(m, off)
+    mlg_s(m, "] : (!llvm.ptr, ")
+    mlg_put_type(m, sz)
+    mlg_s(m, ") -> !llvm.ptr, i8")
+    mlg_nl(m)
+    let z8: i32 = mlg_const_int(m, 0, MT_I8)
+    mlg_line(m)
+    mlg_s(m, "llvm.store ")
+    mlg_v(m, z8)
+    mlg_s(m, ", ")
+    mlg_v(m, term)
+    mlg_s(m, " : i8, !llvm.ptr")
+    mlg_nl(m)
+    return r
+}
+
 function mlg_emit_binop(m: ptr<Mlg>, e: i32) -> i32 {
     let op: i32 = m[0].arena.nodes[e].ival
     let l: i32 = m[0].arena.nodes[e].a
     let r: i32 = m[0].arena.nodes[e].b
     if op == TOK_PLUS and (mlg_expr_is_string(m, l) == 1 or mlg_expr_is_string(m, r) == 1) {
-        # String `+`: a new string, as the C backend's __flowc_str_concat.
+        # String `+`: pairwise __flow_str_concat, or one-allocation strcat
+        # for a chain of three or more parts (C's __flowc_str_concatn).
+        let mut leaves: array<i32, 32> = []
+        let n: i32 = mlg_flatten_concat(m, e, &leaves[0], 32)
+        if n > 2 {
+            return mlg_emit_str_concatn(m, &leaves[0], n)
+        }
         let sl: i32 = mlg_emit_str_operand(m, l)
         let sr: i32 = mlg_emit_str_operand(m, r)
         mlg_hp_use(m, HP_CONCAT)

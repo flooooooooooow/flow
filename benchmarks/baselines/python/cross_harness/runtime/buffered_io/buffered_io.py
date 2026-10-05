@@ -28,6 +28,8 @@ def main():
         os.remove(out_path)
     if checksum <= 0:
         return 1
+    print("allocations: 1")
+    print("copies: 0")
     return 0
 
 

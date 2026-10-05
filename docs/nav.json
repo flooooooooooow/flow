@@ -673,6 +673,10 @@
           "path": "library/stdlib-reference.md"
         },
         {
+          "label": "Strings and text I/O",
+          "path": "library/strings.md"
+        },
+        {
           "label": "API (generated)",
           "path": "library/stdlib-api.md"
         },

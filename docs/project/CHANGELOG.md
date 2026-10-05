@@ -4,6 +4,7 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+- Strings / I/O (#747): mixed `"x=" + n + " y=" + m` chains lower to one `__flowc_str_concatn` (C) or one malloc plus per-part memcpy (MLIR). `std.string` has `str_parse_f64` / `str_utf8_valid`; `std.io` has `io_read_text` (fail-closed UTF-8). Encoding policy: `docs/library/strings.md`. Cross-harness rows print `allocations:` / `copies:`.
 - flowc: opt-in `FLOWC_PROFILE=1|json` writes per-phase compile timings (`[flow-profile]` JSON) for parse, import resolution, typecheck and codegen. `./flow tool compile_bench` records cold/warm compile-to-result and names the top fixed vs scaling cost. (#735)
 - Strings / I/O (#747, first slice): a pure-string `+` chain of three or more parts lowers to one `__flowc_str_concatn` allocation instead of nested pairwise joins. `std.string` parses and formats integers on the caller's buffer with explicit overflow/junk errors; `std.io` reads and writes files with `fread`/`fwrite` of a known size. Cross-harness rows: `runtime_string_concat`, `runtime_parse_format`, `runtime_buffered_io`, and the existing `cold_file_transform` now uses the buffered path.
 - Type checker: public functions emit a compact RT-safety / lifetime-domain

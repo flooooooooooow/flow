@@ -1,5 +1,5 @@
 # A four-part pure-string chain lowers to one __flowc_str_concatn call.
-# Two-part joins and mixed numeric chains keep pairwise __flowc_str_concat.
+# Two-part joins stay pairwise. Mixed numeric chains also use concatn.
 
 function build4(a: string, b: string, c: string, d: string) -> string {
     return a + b + c + d

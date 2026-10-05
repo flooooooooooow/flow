@@ -2475,19 +2475,19 @@ function flowc_cgen_write_lit_type(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
 
 # --- string concatenation -------------------------------------------------
 # `a + b` is C addition unless an operand is a string, in which case Stage-A
-# lowers it to __flowc_str_concat (emitted in the preamble). A pure-string
-# chain of three or more parts (`a + b + c + d`) is one __flowc_str_concatn
-# call: one length pass, one allocation, each part copied once (#747). Nested
-# pairwise joins would allocate n-1 buffers and recopy every prefix.
-# Detection is syntactic and deliberately conservative: a string literal, a
-# `+` chain that already contains one, a cast to `string`, or a call to a
-# function declared `-> string` (this module's arena first, then the bundle
-# signature table). Two string values with no literal and no call between
-# them are still emitted as `+` and rejected by the C compiler: a loud
-# failure, never wrong output. Chains that stringify a numeric operand keep
-# the nested pairwise path: each __flowc_str_of_* result is a heap string
-# today, but the pairwise copy is the conservative lifetime if that helper
-# later uses a reused stack buffer.
+# lowers it to __flowc_str_concat (emitted in the preamble). A chain of three
+# or more parts (`a + b + c + d`, or `"x=" + n + " y=" + m`) is one
+# __flowc_str_concatn call: one length pass, one allocation, each part copied
+# once (#747). Nested pairwise joins would allocate n-1 buffers and recopy
+# every prefix. Numeric and bool leaves go through __flowc_str_of_* (or
+# "true"/"false") before the join; those helpers return heap strings that
+# stay live until concatn copies them. Detection is syntactic and
+# deliberately conservative: a string literal, a `+` chain that already
+# contains one, a cast to `string`, or a call to a function declared
+# `-> string` (this module's arena first, then the bundle signature table).
+# Two string values with no literal and no call between them are still
+# emitted as `+` and rejected by the C compiler: a loud failure, never
+# wrong output.
 
 # 1 when `ty` is a span: `span<T>`, or the nameless `&[T]` / `&mut [T]` the
 # parser records as an element type with no name. A span is a struct in C, so
@@ -3050,16 +3050,15 @@ function flowc_cgen_is_concat_node(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8
     return flowc_cgen_is_str_concat(w, arena, src, id)
 }
 
-# Flatten a pure-string concat chain into `out[0 .. n)` in left-to-right
-# order. Returns n when n > 2 and every leaf is already a string; otherwise
+# Flatten a string `+` chain into `out[0 .. n)` in left-to-right order.
+# Returns n when n > 2 (pure-string or mixed numeric/bool leaves); otherwise
 # 0, and the caller keeps the nested pairwise join. Bounded and iterative
 # so a long chain cannot recurse (#271).
-function flowc_cgen_flatten_pure_concat(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32, out: ptr<i32>, out_cap: i32) -> i32 {
+function flowc_cgen_flatten_concat(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32, out: ptr<i32>, out_cap: i32) -> i32 {
     let mut stack: array<i32, 64> = []
     let mut sp: i32 = 1
     stack[0] = id
     let mut n: i32 = 0
-    let mut all_str: i32 = 1
     while sp > 0 {
         sp = sp - 1
         let cur: i32 = stack[sp]
@@ -3077,12 +3076,9 @@ function flowc_cgen_flatten_pure_concat(w: ptr<CgenBuf>, arena: AstArena, src: p
             }
             out[n] = cur
             n = n + 1
-            if flowc_cgen_expr_is_string(w, arena, src, cur) == 0 {
-                all_str = 0
-            }
         }
     }
-    if all_str == 1 and n > 2 {
+    if n > 2 {
         return n
     }
     return 0
@@ -3406,12 +3402,12 @@ function flowc_cgen_emit_concat_operand(w: ptr<CgenBuf>, arena: AstArena, src: p
 }
 
 # Emit a string `+` as one N-way join, or a pairwise join when the chain is
-# two parts or contains a stringified non-string leaf.
+# only two parts.
 function flowc_cgen_emit_str_concat(w: ptr<CgenBuf>, arena: AstArena, src: ptr<u8>, id: i32) {
     let mut leaves: array<i32, 32> = []
-    let n: i32 = flowc_cgen_flatten_pure_concat(w, arena, src, id, &leaves[0], 32)
+    let n: i32 = flowc_cgen_flatten_concat(w, arena, src, id, &leaves[0], 32)
     if n > 2 {
-        flowc_cgen_perf_remark(w, arena, src, id, "str_concatn", "pure-string chain joined in one allocation", 1)
+        flowc_cgen_perf_remark(w, arena, src, id, "str_concatn", "string chain joined in one allocation", 1)
         flowc_cgen_puts(w, "__flowc_str_concatn(")
         flowc_cgen_put_i32(w, n)
         let mut i: i32 = 0

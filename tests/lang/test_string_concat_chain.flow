@@ -33,7 +33,7 @@ function main() -> i32 {
         return 4
     }
 
-    # Pairwise still works, and a mixed numeric chain keeps formatting.
+    # Pairwise still works, and a mixed numeric chain is one join.
     let two: string = "ab" + "cd"
     if strcmp(two, "abcd") != 0 {
         return 5
@@ -41,6 +41,12 @@ function main() -> i32 {
     let mixed: string = "n=" + 42 + "!"
     if strcmp(mixed, "n=42!") != 0 {
         return 6
+    }
+    let n: i32 = 3
+    let m: i32 = 4
+    let pair: string = "x=" + n + " y=" + m
+    if strcmp(pair, "x=3 y=4") != 0 {
+        return 7
     }
     return 0
 }

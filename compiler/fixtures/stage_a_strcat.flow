@@ -29,5 +29,10 @@ function main() -> i32 {
     if strcmp(msg, "hello, flow!") != 0 {
         return 4
     }
+    let n: i32 = 7
+    let mixed: string = "n=" + n + "!"
+    if strcmp(mixed, "n=7!") != 0 {
+        return 5
+    }
     return 42
 }

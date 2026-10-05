@@ -2,8 +2,9 @@
 #
 # Linear scans stay on the caller's buffer: parse, format and line walking
 # do not allocate per character or per token. Concatenation of two strings
-# is `a + b` (or `concat`); a pure-string chain of three or more parts is
-# joined in one allocation by the compiler (#747).
+# is `a + b` (or `concat`); a chain of three or more parts, including mixed
+# `"x=" + n + " y=" + m`, is joined in one allocation by the compiler (#747).
+# Encoding policy: docs/library/strings.md.
 
 extern {
     function snprintf(buf: ptr<i8>, size: i64, fmt: string, val: i32) -> i32
@@ -11,6 +12,7 @@ extern {
     function strcmp(a: string, b: string) -> i32
     function malloc(size: i64) -> ptr<void>
     function free(p: ptr<void>) -> void
+    function strtod(s: string, end: ptr<void>) -> f64
 }
 
 # sprintf and strcpy write without a bound. The type checker requires the
@@ -244,4 +246,313 @@ export function str_format_i64(buf: ptr<u8>, cap: i32, v: i64) -> i32 {
 
 export function str_format_i32(buf: ptr<u8>, cap: i32, v: i32) -> i32 {
     return str_format_i64(buf, cap, v as i64)
+}
+
+# Result of parsing a decimal float from a byte string.
+# `ok` is false when the text is not a valid f64 (empty, junk, a lone
+# sign/dot/exponent). `end` is the first byte not consumed.
+export struct ParseF64 {
+    value: f64,
+    ok: bool,
+    end: i32
+}
+
+function str_fail_f64(end: i32) -> ParseF64 {
+    return ParseF64 { value: 0.0, ok: false, end: end }
+}
+
+function str_ascii_lower(c: u8) -> u8 {
+    if c >= 65 and c <= 90 {
+        return (c + 32) as u8
+    }
+    return c
+}
+
+# Case-insensitive ASCII match of `lit` at `s[i]`. Returns the matched
+# length, or 0.
+function str_match_ci(s: string, i: i32, n: i32, lit: string) -> i32 {
+    let p: ptr<u8> = s as ptr<u8>
+    let q: ptr<u8> = lit as ptr<u8>
+    let ln: i32 = strlen(lit) as i32
+    if i + ln > n {
+        return 0
+    }
+    let mut k: i32 = 0
+    while k < ln {
+        if str_ascii_lower(p[i + k]) != q[k] {
+            return 0
+        }
+        k = k + 1
+    }
+    return ln
+}
+
+# 10^e for e >= 0 by binary exponentiation. Values that overflow f64 become
+# inf, matching Python float() on a huge exponent.
+function str_pow10(e: i32) -> f64 {
+    let mut p: f64 = 1.0
+    let mut b: f64 = 10.0
+    let mut n: i32 = e
+    while n > 0 {
+        if n % 2 == 1 {
+            p = p * b
+        }
+        b = b * b
+        n = n / 2
+    }
+    return p
+}
+
+# Parse one decimal float token starting at `start`, like Python float()
+# on ASCII: optional sign, digits with an optional fraction, optional
+# exponent, or inf/infinity/nan (case-insensitive). Underscores between
+# digits are accepted. Hex floats are rejected. No heap allocation on the
+# common path; more than 15 significant digits fall back to strtod on a
+# stack copy so rounding matches CPython.
+export function str_parse_f64_at(s: string, start: i32) -> ParseF64 {
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = start
+    if i < 0 {
+        i = 0
+    }
+    while i < n and str_is_ascii_ws(p[i]) {
+        i = i + 1
+    }
+    if i >= n {
+        return str_fail_f64(i)
+    }
+    let mut neg: bool = false
+    if p[i] == 45 {
+        neg = true
+        i = i + 1
+    } elif p[i] == 43 {
+        i = i + 1
+    }
+    if i >= n {
+        return str_fail_f64(i)
+    }
+
+    let mut inf_l: i32 = str_match_ci(s, i, n, "infinity")
+    if inf_l == 0 {
+        inf_l = str_match_ci(s, i, n, "inf")
+    }
+    if inf_l > 0 {
+        let mut v: f64 = strtod("inf", null)
+        if neg {
+            v = 0.0 - v
+        }
+        return ParseF64 { value: v, ok: true, end: i + inf_l }
+    }
+    if str_match_ci(s, i, n, "nan") > 0 {
+        return ParseF64 { value: strtod("nan", null), ok: true, end: i + 3 }
+    }
+
+    # Hex floats are a Python float() extra; this slice rejects them.
+    if i + 1 < n and p[i] == 48 and (p[i + 1] == 120 or p[i + 1] == 88) {
+        return str_fail_f64(i)
+    }
+
+    let tok0: i32 = i
+    let mut digits: i32 = 0
+    let mut saw_dot: bool = false
+    let mut frac_n: i32 = 0
+    let mut int_v: f64 = 0.0
+    let mut frac_v: f64 = 0.0
+    let mut hard: bool = false
+
+    while i < n {
+        if p[i] == 46 {
+            if saw_dot {
+                break
+            }
+            saw_dot = true
+            i = i + 1
+        } elif str_is_ascii_digit(p[i]) {
+            let d: f64 = ((p[i] as i64) - 48) as f64
+            if saw_dot {
+                frac_v = frac_v * 10.0 + d
+                frac_n = frac_n + 1
+            } else {
+                int_v = int_v * 10.0 + d
+            }
+            digits = digits + 1
+            if digits > 15 {
+                hard = true
+            }
+            i = i + 1
+        } elif p[i] == 95 {
+            # Python float() allows _ between digits, not at the edge.
+            if i + 1 >= n or str_is_ascii_digit(p[i + 1]) == false {
+                break
+            }
+            if digits == 0 and saw_dot == false {
+                return str_fail_f64(i)
+            }
+            i = i + 1
+        } else {
+            break
+        }
+    }
+    if digits == 0 {
+        return str_fail_f64(i)
+    }
+
+    let mut exp_v: i32 = 0
+    let mut exp_neg: bool = false
+    if i < n and (p[i] == 101 or p[i] == 69) {
+        let epos: i32 = i
+        i = i + 1
+        if i < n and p[i] == 45 {
+            exp_neg = true
+            i = i + 1
+        } elif i < n and p[i] == 43 {
+            i = i + 1
+        }
+        if i >= n or str_is_ascii_digit(p[i]) == false {
+            return str_fail_f64(epos)
+        }
+        while i < n and str_is_ascii_digit(p[i]) {
+            let d: i32 = (p[i] as i32) - 48
+            if exp_v > 100000000 {
+                exp_v = 100000000
+            } else {
+                exp_v = exp_v * 10 + d
+            }
+            i = i + 1
+        }
+        if exp_v > 400 {
+            hard = true
+        }
+    }
+
+    if hard {
+        let mut buf: array<u8, 64> = []
+        let tn: i32 = i - tok0
+        if tn <= 0 or tn >= 63 {
+            return str_fail_f64(i)
+        }
+        let mut k: i32 = 0
+        while k < tn {
+            buf[k] = p[tok0 + k]
+            k = k + 1
+        }
+        buf[tn] = 0
+        let mut v2: f64 = strtod((&buf[0]) as string, null)
+        if neg {
+            v2 = 0.0 - v2
+        }
+        return ParseF64 { value: v2, ok: true, end: i }
+    }
+
+    let mut value: f64 = int_v
+    if frac_n > 0 {
+        value = value + frac_v / str_pow10(frac_n)
+    }
+    if exp_v > 0 {
+        let p10: f64 = str_pow10(exp_v)
+        if exp_neg {
+            value = value / p10
+        } else {
+            value = value * p10
+        }
+    }
+    if neg {
+        value = 0.0 - value
+    }
+    return ParseF64 { value: value, ok: true, end: i }
+}
+
+# Parse `s` as a whole, like Python float() on ASCII: leading and trailing
+# whitespace allowed, anything else is an error.
+export function str_parse_f64(s: string) -> ParseF64 {
+    let r: ParseF64 = str_parse_f64_at(s, 0)
+    if r.ok == false {
+        return r
+    }
+    let n: i32 = strlen(s) as i32
+    let p: ptr<u8> = s as ptr<u8>
+    let mut i: i32 = r.end
+    while i < n and str_is_ascii_ws(p[i]) {
+        i = i + 1
+    }
+    if i != n {
+        return ParseF64 { value: 0.0, ok: false, end: r.end }
+    }
+    return ParseF64 { value: r.value, ok: true, end: i }
+}
+
+# Byte length of the well-formed UTF-8 sequence at `s[i]`, or 0 when the
+# bytes there are not valid UTF-8. Rejects overlong encodings, surrogates
+# and values above U+10FFFF. Does not allocate.
+export function str_utf8_next(s: string, i: i32) -> i32 {
+    let n: i32 = strlen(s) as i32
+    if i < 0 or i >= n {
+        return 0
+    }
+    let p: ptr<u8> = s as ptr<u8>
+    let c: i32 = p[i] as i32
+    if c < 128 {
+        return 1
+    }
+    let mut need: i32 = 0
+    let mut lo: i32 = 128
+    let mut hi: i32 = 191
+    if c >= 194 and c <= 223 {
+        need = 1
+    } elif c == 224 {
+        need = 2
+        lo = 160
+    } elif c >= 225 and c <= 236 {
+        need = 2
+    } elif c == 237 {
+        need = 2
+        hi = 159
+    } elif c >= 238 and c <= 239 {
+        need = 2
+    } elif c == 240 {
+        need = 3
+        lo = 144
+    } elif c >= 241 and c <= 243 {
+        need = 3
+    } elif c == 244 {
+        need = 3
+        hi = 143
+    } else {
+        return 0
+    }
+    let mut k: i32 = 1
+    while k <= need {
+        if i + k >= n {
+            return 0
+        }
+        let b: i32 = p[i + k] as i32
+        if k == 1 {
+            if b < lo or b > hi {
+                return 0
+            }
+        } elif b < 128 or b > 191 {
+            return 0
+        }
+        k = k + 1
+    }
+    return need + 1
+}
+
+# True when `s` is well-formed UTF-8 (including the empty string).
+# Linear scan; no heap. Invalid bytes fail closed.
+export function str_utf8_valid(s: string) -> bool {
+    if s as ptr<u8> == null {
+        return true
+    }
+    let n: i32 = strlen(s) as i32
+    let mut i: i32 = 0
+    while i < n {
+        let l: i32 = str_utf8_next(s, i)
+        if l == 0 {
+            return false
+        }
+        i = i + l
+    }
+    return true
 }

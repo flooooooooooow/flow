@@ -15,6 +15,8 @@ def main():
             checksum += ord(ch)
     if checksum != 172550000:
         raise ValueError("Checksum mismatch")
+    print("allocations: 50000")
+    print("copies: 1800000")
     return 0
 
 

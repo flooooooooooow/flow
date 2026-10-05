@@ -33,6 +33,7 @@ Welcome to the Flow programming language documentation!
 - [Autodiff](library/autodiff.md) - Automatic differentiation
 - [Audio DSP](library/audio.md) - Real-time audio DSP utilities
 - [Memory](library/memory.md) - Memory management
+- [Strings and text I/O](library/strings.md) - Concat, parse/format, UTF-8 policy
 
 ## Third-Party Libraries
 

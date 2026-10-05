@@ -1728,6 +1728,7 @@ Buffered file I/O for short jobs (#747).  Reads and writes use fread/fwrite of a
 | `io_read_file` | `(path: string) -> FileRead` | Read the whole file at `path` in one buffered fread. The result is NUL-terminated. Files larger than 2^31-1 bytes are refused (ok = false) rather than silently truncated. A directory open is treated as empty on both Linux and macOS, matching the tool helper. |
 | `io_write_bytes` | `(path: string, buf: ptr<u8>, n: i64) -> bool` | Write `n` bytes from `buf` to `path`, replacing the file. False when the open or the write fails (including a short write). |
 | `io_write_file` | `(path: string, text: string) -> bool` | Write a NUL-terminated string. The terminator is not written. |
+| `io_read_text` | `(path: string) -> FileRead` | Read the file as UTF-8 text. Same buffered path as `io_read_file`, then a linear well-formedness scan. On invalid UTF-8, ok is false and `data` still holds the raw bytes so the caller can inspect them. A missing file is ok = false with len = 0. |
 | `io_read_into` | `(path: string, buf: ptr<u8>, cap: i64) -> i64` | Read up to `cap` bytes into a caller-owned buffer. Returns the number of bytes stored, or -1 on open failure. The buffer is not NUL-terminated. |
 
 ### `keys.flow`
@@ -2647,7 +2648,7 @@ SPICE NETLIST FRONT END: a subset parser that builds stdlib/circuit.flow structu
 
 FLOW String Utilities  Linear scans stay on the caller's buffer: parse, format and line walking
 
-**Structs:** `ParseI64`
+**Structs:** `ParseI64`, `ParseF64`
 
 **Functions:**
 
@@ -2662,6 +2663,10 @@ FLOW String Utilities  Linear scans stay on the caller's buffer: parse, format a
 | `str_parse_i32` | `(s: string) -> ParseI64` | - |
 | `str_format_i64` | `(buf: ptr<u8>, cap: i32, v: i64) -> i32` | Write decimal `v` into `buf[0 .. cap)` as a NUL-terminated string. Returns the number of characters written (excluding NUL), or -1 if `cap` is too small. No heap allocation. |
 | `str_format_i32` | `(buf: ptr<u8>, cap: i32, v: i32) -> i32` | - |
+| `str_parse_f64_at` | `(s: string, start: i32) -> ParseF64` | Parse one decimal float token starting at `start`, like Python float() on ASCII: optional sign, digits with an optional fraction, optional exponent, or inf/infinity/nan (case-insensitive). Underscores between digits are accepted. Hex floats are rejected. No heap allocation on the |
+| `str_parse_f64` | `(s: string) -> ParseF64` | Parse `s` as a whole, like Python float() on ASCII: leading and trailing whitespace allowed, anything else is an error. |
+| `str_utf8_next` | `(s: string, i: i32) -> i32` | Byte length of the well-formed UTF-8 sequence at `s[i]`, or 0 when the bytes there are not valid UTF-8. Rejects overlong encodings, surrogates and values above U+10FFFF. Does not allocate. |
+| `str_utf8_valid` | `(s: string) -> bool` | True when `s` is well-formed UTF-8 (including the empty string). Linear scan; no heap. Invalid bytes fail closed. |
 
 ### `sys_info.flow`
 
