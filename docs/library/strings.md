@@ -10,8 +10,8 @@ encoding and allocation contract for short-job text work (#747).
 or more parts is one allocation:
 
 ```flow
-let s: string = a + b + c + d
-let t: string = "x=" + n + " y=" + m
+let s: string = "a" + "b" + "c" + "d"
+let n = 1; let m = 2; let t: string = "x=" + n + " y=" + m
 ```
 
 The C backend emits `__flowc_str_concatn`. The MLIR backend emits one
