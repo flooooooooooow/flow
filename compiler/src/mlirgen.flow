@@ -3051,8 +3051,9 @@ function mlg_register_tile_intrinsics_enabled() -> i32 {
     return 0
 }
 
-# Emit one hardware-shaped register tile. The operation stays in the vector
-# dialect so targets can select AMX, SME, or a GPU matrix instruction later.
+# Emit one hardware-shaped register tile. The default is vector.outerproduct.
+# FLOWC_MLIR_REGISTER_TILE_INTRINSICS=1 with a non-generic target emits the
+# AMX, SME, or NVVM intrinsic as a generic MLIR operation instead.
 function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
     if mlg_register_tiles_enabled() == 0 {
         mlg_refuse(m, e, "register-tile lowering requires FLOWC_MLIR_REGISTER_TILES=1")

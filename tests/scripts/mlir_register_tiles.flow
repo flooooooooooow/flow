@@ -111,6 +111,21 @@ function check_target_intrinsic_lowering() -> i32 {
     return T_PASS
 }
 
+function check_flow_mlir_cli_intrinsics() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "mlir", "--register-tiles")
+    sl_push(argv, "--register-tile-intrinsics")
+    sl_push(argv, "--register-tile-target=sme")
+    sl_push(argv, "--lenient")
+    sl_push(argv, "compiler/fixtures/mlir_opt/register_tile_nested.flow")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    if t_run(c) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "\"arm_sme.outerproduct\"") { return T_FAIL }
+    if a_contains(output, "vector.outerproduct") { return T_FAIL }
+    if not a_contains(output, "flow.register_tile_target = \"sme\"") { return T_FAIL }
+    return T_PASS
+}
+
 function check_rejects_unknown_target() -> i32 {
     let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--register-tiles")
     sl_push(argv, "compiler/fixtures/mlir_opt/register_tile_nested.flow")
@@ -165,6 +180,7 @@ function main() -> i32 {
     t_end("cli_target_selection", check_cli_target_selection())
     t_end("target_lowering_families", check_target_lowering_families())
     t_end("target_intrinsic_lowering", check_target_intrinsic_lowering())
+    t_end("flow_mlir_cli_intrinsics", check_flow_mlir_cli_intrinsics())
     t_start()
     t_end("invalid_target", check_rejects_unknown_target())
     t_start()
