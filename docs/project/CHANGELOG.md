@@ -54,6 +54,14 @@ All notable changes to FLOW will be documented in this file.
   contracts remain a gap (#766).
 - flowc: remaining #732 copy elision. Single-module functions that return a named struct use a hidden `T* __flowc_sret` destination-passing ABI; bundles keep the C return type and construct into a callee-local sret slot. Same-storage record updates run overwrite-dependence certification (acyclic slot graphs write in topological order; cyclic cases such as a field swap keep a temporary). Compiler-emitted aggregate copies increment `copy_count` in the #740 profile, and the #728 harness records that metric. The MLIR emitter skips a second field-by-field materialize on record-update lets and returns.
 - Strings / I/O (#747): mixed `"x=" + n + " y=" + m` chains lower to one `__flowc_str_concatn` (C) or one malloc plus per-part memcpy (MLIR). `std.string` has `str_parse_f64` / `str_utf8_valid`; `std.io` has `io_read_text` (fail-closed UTF-8). Encoding policy: `docs/library/strings.md`. Cross-harness rows print `allocations:` / `copies:`.
+- Type checker (#765, remaining slice): `@rt_safe` / `@lifetime(callback)`
+  reject `unknown` effect summaries except for a known-safe extern
+  allow-list; uniquely resolved `impl` methods join the RT call graph;
+  LD1 also rejects stores through `malloc` / `alloc_*` and through a
+  field of a longer-lived static; imported summaries are cached under a
+  refinement key so a dependency whose public contract shrinks does not
+  invalidate a previously accepted client. See
+  `docs/language/rt-summaries.md`. Closures stay with #766 / PR #1348.
 - flowc: opt-in `FLOWC_PROFILE=1|json` writes per-phase compile timings (`[flow-profile]` JSON) for parse, import resolution, typecheck and codegen. `./flow tool compile_bench` records cold/warm compile-to-result and names the top fixed vs scaling cost. (#735)
 - flowc: opt-in `FLOWC_PROFILE=1|json` writes per-phase compile timings (`[flow-profile]` JSON) for parse, import resolution, typecheck, monomorphize, lowering, codegen and incremental AST-cache hits. `./flow tool compile_bench` records cold/warm compile-to-result, a Tier-1 matrix row, and >10% bottleneck follow-ups. (#735)
 - Strings / I/O (#747, first slice): a pure-string `+` chain of three or more parts lowers to one `__flowc_str_concatn` allocation instead of nested pairwise joins. `std.string` parses and formats integers on the caller's buffer with explicit overflow/junk errors; `std.io` reads and writes files with `fread`/`fwrite` of a known size. Cross-harness rows: `runtime_string_concat`, `runtime_parse_format`, `runtime_buffered_io`, and the existing `cold_file_transform` now uses the buffered path.
@@ -64,8 +72,9 @@ All notable changes to FLOW will be documented in this file.
   as a leaf during type checking and keep one provenance edge per newly
   introduced bit so cross-module diagnostics still name the call chain
   (#765). Summaries are erased before codegen. Unprovable externs carry an
-  `unknown` bit; this slice still rejects only the known unsafe names.
-- Runtime: opt-in memory profiler (`FLOW_MEM_PROFILE` / `FLOW_MEM_PROFILE_OUT`) reports heap count/bytes, peak live heap, peak RSS, compiler-temp bytes, copy volume, stack/arena promotion, per-site attribution and live-map overflow. The C and MLIR backends both emit `flow_mem_*` wrappers. The #728 harness records the original fields without workload source rewrites. (#740)
+  `unknown` bit and are rejected from `@rt_safe` / `callback` unless the
+  name is on the known-safe allow-list.
+- Runtime: opt-in memory profiler (`FLOW_MEM_PROFILE` / `FLOW_MEM_PROFILE_OUT`) reports heap count/bytes, peak live heap, peak RSS, compiler-temp bytes and copy volume. The #728 harness records those fields without workload source rewrites. (#740)
 - flowc infers abstract storage regions inside a function body and proves a
   conservative set of non-aliasing facts with no annotations: distinct owned
   locals, and a fresh local versus any parameter. Pointer arithmetic inherits

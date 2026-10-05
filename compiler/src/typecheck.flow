@@ -28,11 +28,12 @@ import .effects {
 }
 import .rt_summary {
     FLOWC_RT_DOM_CALLBACK, FLOWC_RT_DOM_FRAME, FLOWC_RT_DOM_NONE,
+    flowc_rt_cache_load, flowc_rt_cache_reusable, flowc_rt_cache_store,
     flowc_rt_forbidden, flowc_rt_fn_domain, flowc_rt_fn_has_attr,
     flowc_rt_domain_name,
     flowc_rt_summary_bits, flowc_rt_summary_collect, flowc_rt_summary_domain,
     flowc_rt_summary_find, flowc_rt_summary_prov, flowc_rt_summary_prov_len,
-    flowc_rt_bit_name
+    flowc_rt_unknown_only, flowc_rt_bit_name
 }
 import .proof_lower { flowc_proof_erase }
 import .overload_table {
@@ -121,7 +122,10 @@ export struct TcCtx {
     # 1 when the semantic checker (sem_check.flow) ran on this program: the
     # checks it makes with the Python host's rules and messages are left to
     # it, and this pass keeps only what C generation needs on top of them.
-    sem_on: i32
+    sem_on: i32,
+    # 1 when imported `$` summaries refine the snapshot that last accepted
+    # this source, so Stage-A RT consult can be skipped (#765 cache).
+    rt_cache_hit: i32
 }
 
 function flowc_tc_span_eq(src: ptr<u8>, a0: i32, a1: i32, b0: i32, b1: i32) -> i32 {
@@ -883,6 +887,9 @@ function flowc_tc_rt_consult_call(ctx: ptr<TcCtx>, arena: AstArena, call: i32) {
     if ctx[0].sem_on == 1 {
         return
     }
+    if ctx[0].rt_cache_hit == 1 {
+        return
+    }
     let fn: i32 = ctx[0].cur_fn
     if fn == AST_NONE or fn < 0 {
         return
@@ -961,7 +968,19 @@ function flowc_tc_rt_consult_call(ctx: ptr<TcCtx>, arena: AstArena, call: i32) {
     flowc_eff_diag_s("'")
     let poff2: i32 = flowc_rt_summary_prov(ctx[0].eff, off)
     let plen2: i32 = flowc_rt_summary_prov_len(ctx[0].eff, poff2)
-    if plen2 > 0 and flowc_tc_span_eq2(src, ns, ne, ctx[0].eff, poff2, poff2 + plen2) == 0 {
+    if flowc_rt_unknown_only(bits) == 1 {
+        if plen2 > 0 and flowc_tc_span_eq2(src, ns, ne, ctx[0].eff, poff2, poff2 + plen2) == 0 {
+            flowc_eff_diag_s(", which is not RT-safe because it calls '")
+            flowc_eff_diag_buf(ctx[0].eff, poff2, plen2)
+            flowc_eff_diag_s("' (unknown effect summary; see ")
+            flowc_eff_diag_s(doc)
+            flowc_eff_diag_s(")")
+        } else {
+            flowc_eff_diag_s(", which has an unknown effect summary (unprovable extern; see ")
+            flowc_eff_diag_s(doc)
+            flowc_eff_diag_s(")")
+        }
+    } elif plen2 > 0 and flowc_tc_span_eq2(src, ns, ne, ctx[0].eff, poff2, poff2 + plen2) == 0 {
         flowc_eff_diag_s(", which is not RT-safe because it calls '")
         flowc_eff_diag_buf(ctx[0].eff, poff2, plen2)
         flowc_eff_diag_s("' (forbidden on an RT-safe path; see ")
@@ -2360,7 +2379,8 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
             hcap: 0,
             cur_fn: AST_NONE,
             strict_effects: 0,
-            sem_on: 0
+            sem_on: 0,
+            rt_cache_hit: 0
         }
     }
     let mut zi: i32 = 0
@@ -2420,7 +2440,8 @@ export function flowc_tc_init(src: ptr<u8>) -> TcCtx {
         hcap: hcap,
         cur_fn: AST_NONE,
         strict_effects: strict_effects,
-        sem_on: 0
+        sem_on: 0,
+        rt_cache_hit: 0
     }
 }
 
@@ -4094,6 +4115,72 @@ export function flowc_units_check(arena: AstArena, src: ptr<u8>, root: i32) -> i
     return errs
 }
 
+# Summary-keyed incremental cache (#765): if this source was previously
+# accepted under a contract that the current import summaries refine,
+# Stage-A RT consult can be skipped. The key is a hash of the client
+# source so a body edit still rechecks.
+function flowc_tc_src_key(src: ptr<u8>, out: ptr<u8>) {
+    let mut h: u64 = 765
+    if src != null {
+        let n: i32 = strlen(src as string) as i32
+        let mut i: i32 = 0
+        while i < n {
+            h = h * 131 + (src[i] as u64)
+            i = i + 1
+        }
+    }
+    let hex: ptr<u8> = "0123456789abcdef"
+    let mut v: u64 = h
+    let mut k: i32 = 0
+    while k < 16 {
+        out[15 - k] = hex[(v & 15) as i32]
+        v = v >> 4
+        k = k + 1
+    }
+    out[16] = 0
+}
+
+function flowc_tc_rt_cache_probe(ctx: ptr<TcCtx>) {
+    ctx[0].rt_cache_hit = 0
+    if ctx[0].src == null or ctx[0].eff == null {
+        return
+    }
+    let key: ptr<u8> = malloc(24)
+    if key == null {
+        return
+    }
+    flowc_tc_src_key(ctx[0].src, key)
+    let old: ptr<u8> = malloc(ctx[0].eff_cap as i64)
+    if old == null {
+        free(key)
+        return
+    }
+    let n: i32 = flowc_rt_cache_load(key as string, old, ctx[0].eff_cap)
+    if n >= 0 {
+        if flowc_rt_cache_reusable(old, n, ctx[0].eff, ctx[0].eff_seed_len) == 1 {
+            ctx[0].rt_cache_hit = 1
+        }
+    }
+    free(old)
+    free(key)
+}
+
+function flowc_tc_rt_cache_save(ctx: ptr<TcCtx>) {
+    if ctx[0].src == null or ctx[0].eff == null {
+        return
+    }
+    if ctx[0].err != 0 {
+        return
+    }
+    let key: ptr<u8> = malloc(24)
+    if key == null {
+        return
+    }
+    flowc_tc_src_key(ctx[0].src, key)
+    let _s: i32 = flowc_rt_cache_store(key as string, ctx[0].eff, ctx[0].eff_seed_len)
+    free(key)
+}
+
 # collect_globals + check_fns; returns error count for this module (ctx.err).
 export function flowc_tc_check_program(ctx: ptr<TcCtx>, arena: AstArena, root: i32) -> i32 {
     if root == AST_NONE or root < 0 {
@@ -4128,6 +4215,7 @@ export function flowc_tc_check_program(ctx: ptr<TcCtx>, arena: AstArena, root: i
     # for the duration of the check. Imported `$` entries stay leaves.
     ctx[0].eff_len = flowc_eff_collect(arena, root, ctx[0].src, ctx[0].eff, ctx[0].eff_cap, ctx[0].eff_seed_len)
     ctx[0].eff_len = flowc_rt_summary_collect(arena, root, ctx[0].src, ctx[0].eff, ctx[0].eff_cap, ctx[0].eff_len)
+    flowc_tc_rt_cache_probe(ctx)
     flowc_tc_collect_globals(ctx, arena, root)
     if ctx[0].sem_on == 0 {
         flowc_tc_check_rows(ctx, arena, root)
@@ -4140,6 +4228,7 @@ export function flowc_tc_check_program(ctx: ptr<TcCtx>, arena: AstArena, root: i
         ctx[0].err = ctx[0].err + flowc_units_check(arena, ctx[0].src, root)
     }
     ctx[0].eff_len = ctx[0].eff_seed_len
+    flowc_tc_rt_cache_save(ctx)
     return ctx[0].err
 }
 

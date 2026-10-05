@@ -1,0 +1,9 @@
+# Imported unprovable extern. Callers under @rt_safe must reject it.
+
+extern {
+    function driver_read(n: i32) -> i32
+}
+
+export function poke(n: i32) -> i32 {
+    return driver_read(n)
+}

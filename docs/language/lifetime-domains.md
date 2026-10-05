@@ -335,38 +335,27 @@ checked. None of it is partially checked.
   struct outlives the writing frame. Copying a previously-filled local struct
   onto a longer-lived location without a literal on the right-hand side is
   also not tracked.
-- **Escape through a closure environment**, a function pointer, or dynamic
-  dispatch, except when the callable is bound to a `with rt_safe` contract
-  (#766). That binding walks the closure body and rejects an unproven
-  function-typed capture or a pointer/span capture of a local. Trait-method
-  dispatch is not yet contracted. The `@rt_safe` call graph of a bare
-  function-typed value without that contract is still rejected conservatively
-  as an unresolved dynamic call.
+- **Escape through a call, a closure environment**, a function pointer, or
+  dynamic dispatch. Passing a callback-local pointer into a helper that stores
+  it is not followed. The `@rt_safe` call graph is over direct named calls and
+  uniquely resolved `impl` methods. LD3 and LD4 inherit that. Closures with
+  `with rt_safe` contracts are checked as described in #766.
 - **Use after `arena_reset` / `frame_begin` in the same function.** A
   pointer produced before a reset of the same arena is not invalidated
   by the reset call. The checker stops the pointer escaping into a
   longer-lived static (the domain boundary *is* the reset boundary);
   intra-function use-after-reset is not tracked.
-- **Escape through the heap.** `*p = &local` where `p` is `malloc`'d is
-  application-domain storage receiving a callback-domain reference, and is not
-  caught. A module-static arena stored into a longer-lived static *is*
-  caught (LD1 plus #690); a `malloc`'d cell is not an arena instance.
+- **Escape through the heap, beyond direct stores.** A store through a local
+  that holds a `malloc` / `alloc_*` result (or a cast of one) is checked as a
+  store into the `application` domain (#765). A heap cell reached any other way
+  (a parameter, a field, a call result) is not. A module-static arena stored
+  into a longer-lived static is caught (LD1 plus #690).
 - **Pointer laundering.** Casts, integer round-trips, and pointer arithmetic
   that leaves the tracked expression shapes (variable, slice, address-of,
   field/index under address-of).
-- **Extern functions.** An `extern` C call is assumed to have no domain. A
-  known RT-unsafe name (heap, lock, device/file I/O) is recorded on its
-  compact summary; any other extern carries an explicit `unknown` bit
-  rather than an empty summary. This slice still rejects only the known
-  unsafe names from `@rt_safe` / `callback`, matching the previous
-  allow-list. Tightening `unknown` is future work.
-- **Cross-module domains.** Public functions emit a compact effect/lifetime
-  summary (`$fname` in the module effect table): callback-safe / frame-safe
-  bits, may allocate/free, may block/lock, may do device/file/network I/O,
-  declared lifetime domain, and one provenance edge per newly introduced
-  bit. Importers consult that summary as a leaf during type checking
-  ([#765](https://github.com/flooooooooooow/flow/issues/765)). The
-  annotation is still erased before codegen.
+- **Unresolved trait dispatch.** A uniquely resolved `impl` method is in
+  the `@rt_safe` graph; an ambiguous or dynamic method call is rejected
+  conservatively rather than given a trait-level contract.
 
 ## Interaction with spans
 
@@ -492,14 +481,15 @@ error: lifetime domain violation: 'process_block' is in the `frame` domain but
 | `FrameArena` bump API in the stdlib | ✅ `lib/stdlib/memory.flow` |
 | LD1 escape into a struct field or collection of a longer-lived static | ✅ [domain-fields.md](domain-fields.md) |
 | LD5 `@lifetime(D)` on a struct field | ✅ [domain-fields.md](domain-fields.md) |
-| Escape through a call, closure or heap | ❌ not checked, by design in v0 |
+| Escape through a `malloc` / `alloc_*` store | ✅ direct cases (#765) |
+| Escape through a call or closure | ❌ not checked, by design in v0 |
 | Domain of arena-allocated memory | ✅ module-static `arena_alloc` / `frame_alloc_*` carry the arena's `@lifetime` (#690) |
 | Domains on parameters / in types | ❌ |
 | `request` / `persistent` domains | ✅ |
 | `domain frame { ... }` blocks | ❌ |
 | Domains in the MLIR / JS / Python backends | n/a: the annotation is checked, then erased |
 | Cross-module summaries for public functions | ✅ first slice (#765): bitset + domain + one provenance edge |
-| Cross-module `unknown` externs rejected from `@rt_safe` | ❌ recorded on the summary; not yet a hard error |
+| Cross-module `unknown` externs rejected from `@rt_safe` | ✅ known-safe allow-list; otherwise a hard error |
 
 The annotation leaves no trace in generated code. Every domain lowers to the
 same C as the unannotated function.
@@ -510,8 +500,6 @@ same C as the unannotated function.
 - Domains on parameters and in types (`ptr<f32> @ frame`), which is what would
   close the escape-through-a-call gap.
 
-- Reject the `unknown` summary bit from `@rt_safe` / `callback` once
-  a known-safe extern allow-list exists.
 - Lowering defaults: choosing stack, arena or heap automatically from the
   domain rather than from the call the programmer wrote.
 

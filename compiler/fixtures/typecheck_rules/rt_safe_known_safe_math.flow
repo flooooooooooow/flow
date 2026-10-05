@@ -1,0 +1,17 @@
+# expect: ok
+extern {
+    function sinf(x: f32) -> f32
+}
+
+@rt_safe
+function process(x: f32) -> f32 {
+    return sinf(x)
+}
+
+function main() -> i32 {
+    let y: f32 = process(0.0)
+    if y != y {
+        return 1
+    }
+    return 0
+}

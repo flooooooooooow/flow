@@ -1,0 +1,13 @@
+# expect: RT-safety violation: 'process' is marked '@rt_safe' but calls 'driver_read', which has an unknown effect summary (unprovable extern; see docs/library/rt-safety.md)
+extern {
+    function driver_read(n: i32) -> i32
+}
+
+@rt_safe
+function process(n: i32) -> i32 {
+    return driver_read(n)
+}
+
+function main() -> i32 {
+    return process(1)
+}

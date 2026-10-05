@@ -1,0 +1,25 @@
+# expect: RT-safety violation: 'render' is marked '@rt_safe' but calls 'S_S_tick', which is not RT-safe because it calls 'malloc' (forbidden on an RT-safe path; see docs/library/rt-safety.md)
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+struct S {
+    x: i32
+}
+
+impl S for S {
+    function tick(self: S) -> i32 {
+        let p: ptr<void> = malloc(8)
+        return self.x
+    }
+}
+
+@rt_safe
+function render(s: S) -> i32 {
+    return s.tick()
+}
+
+function main() -> i32 {
+    let s: S = S { x: 1 }
+    return render(s)
+}

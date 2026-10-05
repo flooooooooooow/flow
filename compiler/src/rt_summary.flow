@@ -32,6 +32,12 @@ extern {
     function malloc(size: i64) -> ptr<u8>
     function free(p: ptr<u8>)
     function printf(fmt: string, ...) -> i32
+    function getenv(name: string) -> string
+    function fopen(path: string, mode: string) -> ptr<void>
+    function fclose(fp: ptr<void>) -> i32
+    function fread(buf: ptr<u8>, size: i32, n: i32, fp: ptr<void>) -> i32
+    function fwrite(buf: ptr<u8>, size: i32, n: i32, fp: ptr<void>) -> i32
+    function mkdir(path: string, mode: i32) -> i32
 }
 
 export const FLOWC_RT_SUM: i32 = 36
@@ -173,9 +179,144 @@ export function flowc_rt_name_bits(name: string) -> i32 {
     return flowc_rt_span_bits(name as ptr<u8>, 0, strlen(name) as i32)
 }
 
+function rt_span_starts(src: ptr<u8>, s: i32, e: i32, lit: string) -> i32 {
+    let p: ptr<u8> = lit
+    let n: i32 = strlen(lit) as i32
+    if e - s < n {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < n {
+        if src[s + i] != p[i] {
+            return 0
+        }
+        i = i + 1
+    }
+    return 1
+}
+
+# `list` is `|name|name|...|` so strlen sees the whole table.
+function rt_span_in_list(src: ptr<u8>, s: i32, e: i32, list: string) -> i32 {
+    let p: ptr<u8> = list
+    let n: i32 = strlen(list) as i32
+    let mut i: i32 = 0
+    while i < n {
+        if p[i] == 124 {
+            i = i + 1
+            continue
+        }
+        let mut j: i32 = i
+        while j < n and p[j] != 124 {
+            j = j + 1
+        }
+        if j - i == e - s {
+            let mut hit: i32 = 1
+            let mut k: i32 = 0
+            while k < e - s and hit == 1 {
+                if src[s + k] != p[i + k] {
+                    hit = 0
+                }
+                k = k + 1
+            }
+            if hit == 1 {
+                return 1
+            }
+        }
+        i = j
+    }
+    return 0
+}
+
+# i32_to_f32 / f64_to_i64 and the rest of the numeric conversion family.
+function rt_is_numeric_conv(src: ptr<u8>, s: i32, e: i32) -> i32 {
+    let mut to: i32 = 0 - 1
+    let mut i: i32 = s
+    while i + 3 < e {
+        if src[i] == 95 and src[i + 1] == 116 and src[i + 2] == 111 and src[i + 3] == 95 {
+            to = i
+        }
+        i = i + 1
+    }
+    if to < 0 {
+        return 0
+    }
+    if rt_is_type_token(src, s, to) == 0 {
+        return 0
+    }
+    return rt_is_type_token(src, to + 4, e)
+}
+
+function rt_is_type_token(src: ptr<u8>, s: i32, e: i32) -> i32 {
+    if e - s < 2 or e - s > 4 {
+        return 0
+    }
+    let c0: i32 = src[s]
+    if c0 != 105 and c0 != 117 and c0 != 102 and c0 != 99 {
+        return 0
+    }
+    if e - s == 2 {
+        return src[s + 1] == 56
+    }
+    if src[s + 1] == 49 and src[s + 2] == 54 and e - s == 3 {
+        return 1
+    }
+    if src[s + 1] == 51 and src[s + 2] == 50 and e - s == 3 {
+        return 1
+    }
+    if src[s + 1] == 54 and src[s + 2] == 52 and e - s == 3 {
+        return 1
+    }
+    if src[s + 1] == 49 and src[s + 2] == 50 and src[s + 3] == 56 and e - s == 4 {
+        return 1
+    }
+    return 0
+}
+
+# Proven-safe externs: math, atomics, bounded copies, numeric conversions,
+# and the print family that existing @rt_safe tests already accept. Anything
+# else that is not a known may-effect is UNKNOWN (#765).
+export function flowc_rt_known_safe_span(src: ptr<u8>, s: i32, e: i32) -> i32 {
+    if e <= s {
+        return 0
+    }
+    if rt_span_starts(src, s, e, "flow_atomic_") == 1 {
+        return 1
+    }
+    if rt_span_starts(src, s, e, "__atomic_") == 1 {
+        return 1
+    }
+    if rt_is_numeric_conv(src, s, e) == 1 {
+        return 1
+    }
+    if rt_span_in_list(src, s, e, "|sin|cos|tan|asin|acos|atan|atan2|sinh|cosh|tanh|sqrt|cbrt|exp|exp2|log|log2|log10|pow|fabs|abs|floor|ceil|round|trunc|fmod|fmin|fmax|copysign|hypot|sinf|cosf|tanf|asinf|acosf|atanf|atan2f|sinhf|coshf|tanhf|sqrtf|cbrtf|expf|exp2f|logf|log2f|log10f|powf|fabsf|floorf|ceilf|roundf|truncf|fmodf|fminf|fmaxf|copysignf|hypotf|memcpy|memmove|memset|memcmp|strlen|printf|puts|print|println|eprint|eprintln|arena_alloc|arena_alloc_i32|arena_alloc_f32|arena_reset|arena_used|arena_remaining|frame_begin|frame_end|frame_high_water|frame_count|frame_alloc|frame_alloc_i32|frame_alloc_f32|frame_alloc_f64|") == 1 {
+        return 1
+    }
+    return 0
+}
+
+export function flowc_rt_known_safe(name: string) -> i32 {
+    if name as ptr<u8> == null {
+        return 0
+    }
+    return flowc_rt_known_safe_span(name as ptr<u8>, 0, strlen(name) as i32)
+}
+
 # Known may-effects that today's @rt_safe / callback domain already reject.
 export function flowc_rt_known_unsafe(bits: i32) -> i32 {
     return bits & (FLOWC_RT_ALLOC + FLOWC_RT_FREE + FLOWC_RT_BLOCK + FLOWC_RT_IO)
+}
+
+export function flowc_rt_unknown_only(bits: i32) -> i32 {
+    if bits < 0 {
+        return 0
+    }
+    if (bits & FLOWC_RT_UNKNOWN) == 0 {
+        return 0
+    }
+    if flowc_rt_known_unsafe(bits) != 0 {
+        return 0
+    }
+    return 1
 }
 
 export function flowc_rt_is_callback_safe(bits: i32) -> i32 {
@@ -334,6 +475,40 @@ function rt_local_index(src: ptr<u8>, ns: ptr<i32>, ne: ptr<i32>, nfn: i32, s: i
     return 0 - 1
 }
 
+# Unique local function whose name ends with `_<method>`. Closes the
+# Stage-A method-call hole without walking types (#765 / not #766 HOF).
+function rt_method_index(src: ptr<u8>, ns: ptr<i32>, ne: ptr<i32>, nfn: i32, s: i32, e: i32) -> i32 {
+    let mlen: i32 = e - s
+    if mlen <= 0 {
+        return 0 - 1
+    }
+    let mut found: i32 = 0 - 1
+    let mut i: i32 = 0
+    while i < nfn {
+        let nlen: i32 = ne[i] - ns[i]
+        if nlen > mlen + 1 {
+            if src[ns[i] + nlen - mlen - 1] == 95 {
+                let mut hit: i32 = 1
+                let mut j: i32 = 0
+                while j < mlen and hit == 1 {
+                    if src[ns[i] + nlen - mlen + j] != src[s + j] {
+                        hit = 0
+                    }
+                    j = j + 1
+                }
+                if hit == 1 {
+                    if found >= 0 {
+                        return 0 - 1
+                    }
+                    found = i
+                }
+            }
+        }
+        i = i + 1
+    }
+    return found
+}
+
 # Value offset of `$src[s..e]`, else -1. Last match wins.
 export function flowc_rt_summary_find(buf: ptr<u8>, len: i32, src: ptr<u8>, s: i32, e: i32) -> i32 {
     return flowc_eff_find(buf, len, FLOWC_RT_SUM, src, s, e, 0 - 1, 0 - 1)
@@ -417,6 +592,8 @@ function rt_add_fn(arena: AstArena, src: ptr<u8>, fn: i32, is_extern: i32, ns: p
             bits[nfn] = direct
             ps[nfn] = ns[nfn]
             pe[nfn] = ne[nfn]
+        } elif flowc_rt_known_safe_span(src, ns[nfn], ne[nfn]) == 1 {
+            bits[nfn] = 0
         } else {
             bits[nfn] = FLOWC_RT_UNKNOWN
             ps[nfn] = ns[nfn]
@@ -521,9 +698,14 @@ export function flowc_rt_summary_collect(arena: AstArena, root: i32, src: ptr<u8
                 if loc >= 0 {
                     add = bits[loc]
                 } else {
-                    let off: i32 = flowc_rt_summary_find(buf, len, src, cs[j], ce[j])
-                    if off >= 0 {
-                        add = flowc_rt_summary_bits(buf, off)
+                    let meth: i32 = rt_method_index(src, ns, ne, nfn, cs[j], ce[j])
+                    if meth >= 0 {
+                        add = bits[meth]
+                    } else {
+                        let off: i32 = flowc_rt_summary_find(buf, len, src, cs[j], ce[j])
+                        if off >= 0 {
+                            add = flowc_rt_summary_bits(buf, off)
+                        }
                     }
                 }
                 if add != 0 and (bits[i] & add) != add {
@@ -558,11 +740,295 @@ export function flowc_rt_summary_collect(arena: AstArena, root: i32, src: ptr<u8
 }
 
 # Bits that a caller in `need` (0 = @rt_safe/callback, 1 = frame) forbids.
+# @rt_safe / callback now reject UNKNOWN once the known-safe allow-list
+# exists (#765). Frame still forbids only heap create/destroy.
 export function flowc_rt_forbidden(need: i32, bits: i32) -> i32 {
     if need == FLOWC_RT_DOM_FRAME {
         return bits & (FLOWC_RT_ALLOC + FLOWC_RT_FREE)
     }
-    return flowc_rt_known_unsafe(bits)
+    return bits & (FLOWC_RT_ALLOC + FLOWC_RT_FREE + FLOWC_RT_BLOCK + FLOWC_RT_IO + FLOWC_RT_UNKNOWN)
+}
+
+# Refinement (#765): effects_new ⊆ effects_old and domain_new <= domain_old.
+# An unannotated (NONE) contract only refines another NONE: declaring a
+# domain can start LD4 failures. A declared domain may move shorter, not
+# longer.
+export function flowc_rt_refines(new_bits: i32, new_dom: i32, old_bits: i32, old_dom: i32) -> i32 {
+    if (new_bits | old_bits) != old_bits {
+        return 0
+    }
+    if old_dom == FLOWC_RT_DOM_NONE {
+        if new_dom == FLOWC_RT_DOM_NONE {
+            return 1
+        }
+        return 0
+    }
+    if new_dom == FLOWC_RT_DOM_NONE {
+        return 0
+    }
+    if new_dom <= old_dom {
+        return 1
+    }
+    return 0
+}
+
+function rt_entry_next(buf: ptr<u8>, len: i32, p: i32) -> i32 {
+    let mut i: i32 = p
+    while i < len and buf[i] != 0 {
+        i = i + 1
+    }
+    i = i + 1
+    while i < len and buf[i] != 0 {
+        i = i + 1
+    }
+    return i + 1
+}
+
+# 1 when every `$` name in `old` is still present in `new` and refined.
+export function flowc_rt_summaries_refine(new_buf: ptr<u8>, new_len: i32, old_buf: ptr<u8>, old_len: i32) -> i32 {
+    if old_buf == null or old_len <= 0 {
+        return 1
+    }
+    if new_buf == null {
+        return 0
+    }
+    let mut p: i32 = 0
+    while p < old_len {
+        if old_buf[p] != FLOWC_RT_SUM {
+            p = rt_entry_next(old_buf, old_len, p)
+            continue
+        }
+        let ns: i32 = p + 1
+        let mut ne: i32 = ns
+        while ne < old_len and old_buf[ne] != 0 {
+            ne = ne + 1
+        }
+        let off_old: i32 = ne + 1
+        let off_new: i32 = flowc_rt_summary_find(new_buf, new_len, old_buf, ns, ne)
+        if off_new < 0 {
+            return 0
+        }
+        let nb: i32 = flowc_rt_summary_bits(new_buf, off_new)
+        let nd: i32 = flowc_rt_summary_domain(new_buf, off_new)
+        let ob: i32 = flowc_rt_summary_bits(old_buf, off_old)
+        let od: i32 = flowc_rt_summary_domain(old_buf, off_old)
+        if flowc_rt_refines(nb, nd, ob, od) == 0 {
+            return 0
+        }
+        p = rt_entry_next(old_buf, old_len, p)
+    }
+    return 1
+}
+
+# Mix-64 of public `$` rows (name + bits + domain). Provenance is diagnostic
+# and is not part of the invalidation key.
+export function flowc_rt_summary_fingerprint(buf: ptr<u8>, len: i32) -> u64 {
+    let mut h: u64 = 765
+    if buf == null {
+        return h
+    }
+    let mut p: i32 = 0
+    while p < len {
+        if buf[p] != FLOWC_RT_SUM {
+            p = rt_entry_next(buf, len, p)
+            continue
+        }
+        let ns: i32 = p + 1
+        let mut ne: i32 = ns
+        while ne < len and buf[ne] != 0 {
+            ne = ne + 1
+        }
+        let off: i32 = ne + 1
+        let mut i: i32 = ns
+        while i < ne {
+            h = h * 131 + (buf[i] as u64)
+            i = i + 1
+        }
+        h = h * 131 + (flowc_rt_summary_bits(buf, off) as u64)
+        h = h * 131 + (flowc_rt_summary_domain(buf, off) as u64)
+        p = rt_entry_next(buf, len, p)
+    }
+    return h
+}
+
+function rt_hex16(v: u64, buf: ptr<u8>) {
+    let hex: ptr<u8> = "0123456789abcdef"
+    let mut i: i32 = 0
+    let mut val: u64 = v
+    while i < 16 {
+        buf[15 - i] = hex[(val & 15) as i32]
+        val = val >> 4
+        i = i + 1
+    }
+    buf[16] = 0
+}
+
+function rt_cache_dir(out: ptr<u8>, cap: i32) -> i32 {
+    let env: string = getenv("FLOWC_RT_CACHE_DIR")
+    if env as ptr<u8> != null and strlen(env) > 0 {
+        let n: i32 = strlen(env) as i32
+        if n + 1 >= cap {
+            return 0
+        }
+        let p: ptr<u8> = env
+        let mut i: i32 = 0
+        while i < n {
+            out[i] = p[i]
+            i = i + 1
+        }
+        out[n] = 0
+        return n
+    }
+    let home: string = getenv("HOME")
+    if home as ptr<u8> == null {
+        return 0
+    }
+    let h: ptr<u8> = home
+    let hn: i32 = strlen(home) as i32
+    let suf: string = "/.cache/flow/rt"
+    let sn: i32 = strlen(suf) as i32
+    if hn + sn + 1 >= cap {
+        return 0
+    }
+    let mut i: i32 = 0
+    while i < hn {
+        out[i] = h[i]
+        i = i + 1
+    }
+    let s: ptr<u8> = suf
+    let mut j: i32 = 0
+    while j < sn {
+        out[hn + j] = s[j]
+        j = j + 1
+    }
+    out[hn + sn] = 0
+    return hn + sn
+}
+
+function rt_mkdir_p(path: ptr<u8>, n: i32) {
+    let mut i: i32 = 1
+    while i < n {
+        if path[i] == 47 {
+            path[i] = 0
+            let _m: i32 = mkdir(path as string, 493)
+            path[i] = 47
+        }
+        i = i + 1
+    }
+    let _m2: i32 = mkdir(path as string, 493)
+}
+
+# Store a summary snapshot under `key` (caller-chosen identity, e.g. a
+# source hash). Returns 0 on success.
+export function flowc_rt_cache_store(key: string, buf: ptr<u8>, len: i32) -> i32 {
+    if key as ptr<u8> == null or buf == null or len < 0 {
+        return 0 - 1
+    }
+    let dir: ptr<u8> = malloc(512)
+    if dir == null {
+        return 0 - 1
+    }
+    let dlen: i32 = rt_cache_dir(dir, 480)
+    if dlen <= 0 {
+        free(dir)
+        return 0 - 1
+    }
+    rt_mkdir_p(dir, dlen)
+    if dlen + 1 + (strlen(key) as i32) + 5 >= 512 {
+        free(dir)
+        return 0 - 1
+    }
+    dir[dlen] = 47
+    let k: ptr<u8> = key
+    let kn: i32 = strlen(key) as i32
+    let mut i: i32 = 0
+    while i < kn {
+        dir[dlen + 1 + i] = k[i]
+        i = i + 1
+    }
+    dir[dlen + 1 + kn] = 46
+    dir[dlen + 2 + kn] = 115
+    dir[dlen + 3 + kn] = 117
+    dir[dlen + 4 + kn] = 109
+    dir[dlen + 5 + kn] = 0
+    let fp: ptr<void> = fopen(dir as string, "wb")
+    free(dir)
+    if fp == null {
+        return 0 - 1
+    }
+    let mut hdr: array<i32, 2> = [765, len]
+    let _w1: i32 = fwrite(&hdr[0] as ptr<u8>, 4, 2, fp)
+    if len > 0 {
+        let _w2: i32 = fwrite(buf, 1, len, fp)
+    }
+    let _c: i32 = fclose(fp)
+    return 0
+}
+
+# Load a snapshot previously stored under `key`. Returns byte length, or -1.
+export function flowc_rt_cache_load(key: string, buf: ptr<u8>, cap: i32) -> i32 {
+    if key as ptr<u8> == null or buf == null or cap <= 0 {
+        return 0 - 1
+    }
+    let dir: ptr<u8> = malloc(512)
+    if dir == null {
+        return 0 - 1
+    }
+    let dlen: i32 = rt_cache_dir(dir, 480)
+    if dlen <= 0 {
+        free(dir)
+        return 0 - 1
+    }
+    if dlen + 1 + (strlen(key) as i32) + 5 >= 512 {
+        free(dir)
+        return 0 - 1
+    }
+    dir[dlen] = 47
+    let k: ptr<u8> = key
+    let kn: i32 = strlen(key) as i32
+    let mut i: i32 = 0
+    while i < kn {
+        dir[dlen + 1 + i] = k[i]
+        i = i + 1
+    }
+    dir[dlen + 1 + kn] = 46
+    dir[dlen + 2 + kn] = 115
+    dir[dlen + 3 + kn] = 117
+    dir[dlen + 4 + kn] = 109
+    dir[dlen + 5 + kn] = 0
+    let fp: ptr<void> = fopen(dir as string, "rb")
+    free(dir)
+    if fp == null {
+        return 0 - 1
+    }
+    let mut hdr: array<i32, 2> = [0, 0]
+    if fread(&hdr[0] as ptr<u8>, 4, 2, fp) != 2 or hdr[0] != 765 {
+        let _c0: i32 = fclose(fp)
+        return 0 - 1
+    }
+    let n: i32 = hdr[1]
+    if n < 0 or n > cap {
+        let _c1: i32 = fclose(fp)
+        return 0 - 1
+    }
+    if n > 0 {
+        if fread(buf, 1, n, fp) != n {
+            let _c2: i32 = fclose(fp)
+            return 0 - 1
+        }
+    }
+    let _c: i32 = fclose(fp)
+    return n
+}
+
+# A previously accepted client stays accepted when the new import
+# contract refines the stored one.
+export function flowc_rt_cache_reusable(old_buf: ptr<u8>, old_len: i32, new_buf: ptr<u8>, new_len: i32) -> i32 {
+    return flowc_rt_summaries_refine(new_buf, new_len, old_buf, old_len)
+}
+
+export function flowc_rt_fingerprint_hex(buf: ptr<u8>, len: i32, out: ptr<u8>) {
+    rt_hex16(flowc_rt_summary_fingerprint(buf, len), out)
 }
 
 # Human label for the first set bit in `bits` (for diagnostics).
