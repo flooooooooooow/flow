@@ -1076,7 +1076,10 @@ export function generate_mlir(args: ptr<ProcStrs>) -> i32 {
     let mut gpu: bool = false
     let mut register_tiles: bool = false
     let mut aosoa_pad: bool = false
+    let mut aosoa_pad_auto: bool = false
+    let mut aosoa_bank_count: string = ""
     let mut aosoa_swizzle: bool = false
+    let mut aosoa_swizzle_width: string = ""
     let mut spirv: bool = false
     let mut wasm32: bool = false
     let mut llvm: bool = false
@@ -1109,8 +1112,32 @@ export function generate_mlir(args: ptr<ProcStrs>) -> i32 {
             register_tiles = true
         } elif s_eq(a, "--aosoa-pad") {
             aosoa_pad = true
+        } elif s_eq(a, "--aosoa-pad-auto") {
+            aosoa_pad_auto = true
+        } elif s_eq(a, "--aosoa-bank-count") {
+            if i + 1 >= n {
+                error("flow mlir: --aosoa-bank-count requires a value")
+                cli_exit(2)
+            }
+            aosoa_pad_auto = true
+            aosoa_bank_count = sl_get(args, i + 1)
+            i = i + 1
+        } elif s_starts(a, "--aosoa-bank-count=") {
+            aosoa_pad_auto = true
+            aosoa_bank_count = s_from(a, 19)
         } elif s_eq(a, "--aosoa-swizzle") {
             aosoa_swizzle = true
+        } elif s_eq(a, "--aosoa-swizzle-width") {
+            if i + 1 >= n {
+                error("flow mlir: --aosoa-swizzle-width requires a value")
+                cli_exit(2)
+            }
+            aosoa_swizzle = true
+            aosoa_swizzle_width = sl_get(args, i + 1)
+            i = i + 1
+        } elif s_starts(a, "--aosoa-swizzle-width=") {
+            aosoa_swizzle = true
+            aosoa_swizzle_width = s_from(a, 22)
         } elif s_eq(a, "--emit-spirv") {
             spirv = true
         } elif s_eq(a, "--spirv-out") {
@@ -1177,8 +1204,17 @@ export function generate_mlir(args: ptr<ProcStrs>) -> i32 {
     if aosoa_pad {
         sl_push(emit_flags, "--aosoa-pad")
     }
+    if aosoa_pad_auto {
+        sl_push(emit_flags, "--aosoa-pad-auto")
+    }
+    if s_len(aosoa_bank_count) > 0 {
+        sl_push(emit_flags, "--aosoa-bank-count=" + aosoa_bank_count)
+    }
     if aosoa_swizzle {
         sl_push(emit_flags, "--aosoa-swizzle")
+        if s_len(aosoa_swizzle_width) > 0 {
+            sl_push(emit_flags, "--aosoa-swizzle-width=" + aosoa_swizzle_width)
+        }
     }
     if wasm32 {
         sl_push(emit_flags, "--wasm32")
