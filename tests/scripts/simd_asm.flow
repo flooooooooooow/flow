@@ -87,6 +87,26 @@ function has_arm_simd(text: string) -> bool {
     return false
 }
 
+function cc_s(cc: string, march: string, c_out: string, s_out: string) -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3(cc, "-std=c11", "-D_DEFAULT_SOURCE")
+    sl_push(argv, "-w")
+    sl_push(argv, "-O3")
+    sl_push(argv, march)
+    sl_push(argv, "-S")
+    sl_push2(argv, "-o", s_out)
+    sl_push(argv, c_out)
+    return t_run(t_cmd(argv))
+}
+
+function emit_or_fail(c_out: string) -> i32 {
+    if emit_kernels(c_out) != 0 {
+        outln("flowc_emit failed")
+        t_cat(t_err())
+        return T_FAIL
+    }
+    return T_PASS
+}
+
 function check_tier1_assembly() -> i32 {
     if t_need_cc() != T_PASS {
         return T_SKIP
@@ -97,21 +117,11 @@ function check_tier1_assembly() -> i32 {
         return T_SKIP
     }
     let c_out: string = t_tmp() + "/kernels.c"
-    if emit_kernels(c_out) != 0 {
-        outln("flowc_emit failed")
-        t_cat(t_err())
+    if emit_or_fail(c_out) != T_PASS {
         return T_FAIL
     }
     let s_out: string = t_tmp() + "/kernels.s"
-    let cc: string = env_or("CC", "cc")
-    let argv: ptr<ProcStrs> = sl_of3(cc, "-std=c11", "-D_DEFAULT_SOURCE")
-    sl_push(argv, "-w")
-    sl_push(argv, "-O3")
-    sl_push(argv, "-march=native")
-    sl_push(argv, "-S")
-    sl_push2(argv, "-o", s_out)
-    sl_push(argv, c_out)
-    if t_run(t_cmd(argv)) != 0 {
+    if cc_s(env_or("CC", "cc"), "-march=native", c_out, s_out) != 0 {
         outln("cc -S failed")
         t_cat(t_err())
         return T_FAIL
@@ -133,12 +143,68 @@ function check_tier1_assembly() -> i32 {
     return T_PASS
 }
 
+# When a cross GCC is on PATH, prove the other Tier-1 ISA as well so an
+# x86-64 host still has arm64 SIMD evidence (and vice versa).
+function check_arm64_cross_assembly() -> i32 {
+    if is_arm64(uname_m()) {
+        return t_skip("native arm64 already covered")
+    }
+    if t_need("aarch64-linux-gnu-gcc") != T_PASS {
+        return T_SKIP
+    }
+    let c_out: string = t_tmp() + "/kernels.c"
+    if emit_or_fail(c_out) != T_PASS {
+        return T_FAIL
+    }
+    let s_out: string = t_tmp() + "/kernels.s"
+    if cc_s("aarch64-linux-gnu-gcc", "-march=armv8-a", c_out, s_out) != 0 {
+        outln("aarch64-linux-gnu-gcc -S failed")
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not has_arm_simd(read_text(s_out)) {
+        outln("arm64 cross assembly has no 128-bit SIMD ops")
+        t_cat(s_out)
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_x86_cross_assembly() -> i32 {
+    if is_x86(uname_m()) {
+        return t_skip("native x86-64 already covered")
+    }
+    if t_need("x86_64-linux-gnu-gcc") != T_PASS {
+        return T_SKIP
+    }
+    let c_out: string = t_tmp() + "/kernels.c"
+    if emit_or_fail(c_out) != T_PASS {
+        return T_FAIL
+    }
+    let s_out: string = t_tmp() + "/kernels.s"
+    if cc_s("x86_64-linux-gnu-gcc", "-msse2", c_out, s_out) != 0 {
+        outln("x86_64-linux-gnu-gcc -S failed")
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not has_x86_simd(read_text(s_out)) {
+        outln("x86-64 cross assembly has no 128-bit SIMD ops")
+        t_cat(s_out)
+        return T_FAIL
+    }
+    return T_PASS
+}
+
 function main() -> i32 {
     t_begin("simd_asm")
     t_start()
     t_end("generated_vector_types", check_generated_vector_types())
     t_start()
     t_end("tier1_assembly", check_tier1_assembly())
+    t_start()
+    t_end("arm64_cross_assembly", check_arm64_cross_assembly())
+    t_start()
+    t_end("x86_cross_assembly", check_x86_cross_assembly())
     t_done()
     return 0
 }

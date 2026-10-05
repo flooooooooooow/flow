@@ -41,6 +41,8 @@ not have.
 Generated-C goldens live under `tests/cgen/for_simd_*.flow`. Tier-1 assembly
 is `./flow tool tests/scripts/simd_asm.flow`: it compiles the hot-loop kernels
 with `cc -O3 -march=native -S` and requires 128-bit SIMD ops (`xmm`/`addps` on
-x86-64, `.4s`/`fadd`/`fmla` on arm64). Other hosts skip.
+x86-64, `.4s`/`fadd`/`fmla` on arm64). When `aarch64-linux-gnu-gcc` or
+`x86_64-linux-gnu-gcc` is on PATH, the other ISA is compiled the same way so
+one host can still produce both listings. Other hosts skip.
 
 The MLIR backend is not required to avoid a scalar deficit on these forms.
