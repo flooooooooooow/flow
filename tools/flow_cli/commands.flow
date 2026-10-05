@@ -906,7 +906,7 @@ export function cmd_ml(args: ptr<ProcStrs>) -> i32 {
     if s_eq(sub, "test") {
         check_deps()
         info("Running ML tensor tests...")
-        let tests: ptr<ProcStrs> = s_words("tests/stdlib/test_tensor.flow tests/stdlib/test_ml_autograd.flow tests/stdlib/test_matmul_backward.flow tests/stdlib/test_ml_nn.flow tests/stdlib/test_dense_backward.flow tests/stdlib/test_mlp2_backward.flow tests/stdlib/test_ml_opt.flow examples/ml/models/mlp_xor.flow examples/ml/models/mlp_xor_adam.flow")
+        let tests: ptr<ProcStrs> = s_words("tests/stdlib/test_tensor.flow tests/stdlib/test_gpu_tensor.flow tests/stdlib/test_gpu_model.flow tests/stdlib/test_ml_autograd.flow tests/stdlib/test_matmul_backward.flow tests/stdlib/test_ml_nn.flow tests/stdlib/test_dense_backward.flow tests/stdlib/test_mlp2_backward.flow tests/stdlib/test_ml_opt.flow examples/ml/models/mlp_xor.flow examples/ml/models/mlp_xor_adam.flow")
         let mut i: i32 = 0
         while i < sl_len(tests) {
             let t: string = root() + "/" + sl_get(tests, i)

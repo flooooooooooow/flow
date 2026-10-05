@@ -1,0 +1,154 @@
+# Model execution on shared GpuTensor storage, with a host Tensor reference.
+import "stdlib/gpu_tensor.flow"
+import "stdlib/tensor.flow"
+
+function cpu_mlp(input: Tensor, w1: Tensor, w2: Tensor) -> Tensor {
+    let norm: Tensor = tensor_zeros(input.dim0, input.dim1, 1, 1)
+    let mut i: i32 = 0
+    while i < input.size {
+        norm.data[i] = input.data[i] / 255.0
+        i = i + 1
+    }
+    let h: Tensor = tensor_matmul(norm, w1)
+    let hr: Tensor = tensor_relu(h)
+    let logits: Tensor = tensor_matmul(hr, w2)
+    let out: Tensor = tensor_relu(logits)
+    tensor_free(norm)
+    tensor_free(h)
+    tensor_free(hr)
+    tensor_free(logits)
+    return out
+}
+
+function check_linear_shape_reject() -> i32 {
+    let inp: GpuTensor = gpu_tensor_alloc_f32(1, 4, 1, 1)
+    let w: GpuTensor = gpu_tensor_alloc_f32(3, 2, 1, 1)
+    let out: GpuTensor = gpu_tensor_alloc_f32(1, 2, 1, 1)
+    if gpu_tensor_linear(out, inp, w) != 2 { return 1 }
+    gpu_tensor_free(inp)
+    gpu_tensor_free(w)
+    gpu_tensor_free(out)
+    return 0
+}
+
+function check_mnist_like_interop() -> i32 {
+    let input_dim: i32 = 16
+    let hidden: i32 = 8
+    let classes: i32 = 4
+
+    let raw_h: Tensor = tensor_fill(1, input_dim, 1, 1, 128.0)
+    let w1_h: Tensor = tensor_fill(input_dim, hidden, 1, 1, 0.01)
+    let w2_h: Tensor = tensor_fill(hidden, classes, 1, 1, 0.05)
+
+    let raw: GpuTensor = gpu_tensor_from_host(raw_h)
+    let norm: GpuTensor = gpu_tensor_alloc_f32(1, input_dim, 1, 1)
+    let w1: GpuTensor = gpu_tensor_from_host(w1_h)
+    let h1: GpuTensor = gpu_tensor_alloc_f32(1, hidden, 1, 1)
+    let w2: GpuTensor = gpu_tensor_from_host(w2_h)
+    let logits: GpuTensor = gpu_tensor_alloc_f32(1, classes, 1, 1)
+    let probs: GpuTensor = gpu_tensor_alloc_f32(1, classes, 1, 1)
+
+    let p_norm: ptr<f32> = gpu_tensor_ptr(norm)
+    let p_probs: ptr<f32> = gpu_tensor_ptr(probs)
+
+    if gpu_tensor_normalize(raw, norm, 255.0) != 0 { return 1 }
+    if gpu_tensor_ptr(norm) != p_norm { return 2 }
+    if gpu_tensor_linear(h1, norm, w1) != 0 { return 3 }
+    if gpu_tensor_relu(h1, h1) != 0 { return 4 }
+    if gpu_tensor_linear(logits, h1, w2) != 0 { return 5 }
+    if gpu_tensor_relu(logits, probs) != 0 { return 6 }
+    if gpu_tensor_ptr(probs) != p_probs { return 7 }
+
+    let cpu: Tensor = cpu_mlp(raw_h, w1_h, w2_h)
+    let gpu_host: Tensor = gpu_tensor_to_host(probs)
+    let mut i: i32 = 0
+    while i < classes {
+        let mut d: f32 = gpu_host.data[i] - cpu.data[i]
+        if d < 0.0 { d = 0.0 - d }
+        if d > 0.0001 { return 8 }
+        i = i + 1
+    }
+    if gpu_tensor_argmax(probs) != tensor_argmax(cpu) { return 9 }
+
+    tensor_free(raw_h)
+    tensor_free(w1_h)
+    tensor_free(w2_h)
+    tensor_free(cpu)
+    tensor_free(gpu_host)
+    gpu_tensor_free(raw)
+    gpu_tensor_free(norm)
+    gpu_tensor_free(w1)
+    gpu_tensor_free(h1)
+    gpu_tensor_free(w2)
+    gpu_tensor_free(logits)
+    gpu_tensor_free(probs)
+    return 0
+}
+
+function check_depth_like_interop() -> i32 {
+    let n: i32 = 8
+    let img_h: Tensor = tensor_fill(1, n, 1, 1, 0.5)
+    let w_h: Tensor = tensor_fill(n, n, 1, 1, 0.02)
+
+    let img: GpuTensor = gpu_tensor_from_host(img_h)
+    let feat: GpuTensor = gpu_tensor_alloc_f32(1, n, 1, 1)
+    let w: GpuTensor = gpu_tensor_from_host(w_h)
+    let depth: GpuTensor = gpu_tensor_alloc_f32(1, n, 1, 1)
+    let color: GpuTensor = gpu_tensor_alloc_f32(1, n, 1, 1)
+    let p_feat: ptr<f32> = gpu_tensor_ptr(feat)
+    let p_color: ptr<f32> = gpu_tensor_ptr(color)
+
+    if gpu_tensor_scale_bias(img, feat, 0.8, 0.1) != 0 { return 1 }
+    if gpu_tensor_ptr(feat) != p_feat { return 2 }
+    if gpu_tensor_linear(depth, feat, w) != 0 { return 3 }
+    if gpu_tensor_invert01(depth, color) != 0 { return 4 }
+    if gpu_tensor_ptr(color) != p_color { return 5 }
+
+    let feat_c: Tensor = tensor_zeros(1, n, 1, 1)
+    let mut i: i32 = 0
+    while i < n {
+        feat_c.data[i] = img_h.data[i] * 0.8 + 0.1
+        i = i + 1
+    }
+    let raw_d: Tensor = tensor_matmul(feat_c, w_h)
+    let color_c: Tensor = tensor_zeros(1, n, 1, 1)
+    i = 0
+    while i < n {
+        let mut v: f32 = raw_d.data[i]
+        if v < 0.0 { v = 0.0 }
+        if v > 1.0 { v = 1.0 }
+        color_c.data[i] = 1.0 - v
+        i = i + 1
+    }
+    let gpu_host: Tensor = gpu_tensor_to_host(color)
+    i = 0
+    while i < n {
+        let mut d: f32 = gpu_host.data[i] - color_c.data[i]
+        if d < 0.0 { d = 0.0 - d }
+        if d > 0.0001 { return 6 }
+        i = i + 1
+    }
+
+    tensor_free(img_h)
+    tensor_free(w_h)
+    tensor_free(feat_c)
+    tensor_free(raw_d)
+    tensor_free(color_c)
+    tensor_free(gpu_host)
+    gpu_tensor_free(img)
+    gpu_tensor_free(feat)
+    gpu_tensor_free(w)
+    gpu_tensor_free(depth)
+    gpu_tensor_free(color)
+    return 0
+}
+
+function main() -> i32 {
+    let r1: i32 = check_linear_shape_reject()
+    if r1 != 0 { return 10 + r1 }
+    let r2: i32 = check_mnist_like_interop()
+    if r2 != 0 { return 20 + r2 }
+    let r3: i32 = check_depth_like_interop()
+    if r3 != 0 { return 30 + r3 }
+    return 0
+}

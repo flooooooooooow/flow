@@ -14,6 +14,49 @@ function err(s: string) {
     t_write_fd(2, s as ptr<u8>, t_len(s))
 }
 
+function expected_matches(stdout: string, path: string) -> bool {
+    if t_len(path) == 0 {
+        return true
+    }
+    if not t_file_exists(path) {
+        err("missing expected file " + path + "\n")
+        return false
+    }
+    let exp: string = t_read_file(path)
+    let lines: TList = t_split_lines(exp)
+    let mut i: i32 = 0
+    while i < lines.len {
+        let line: string = t_strip(tl_get(&lines, i))
+        if t_len(line) > 0 and not t_contains(stdout, line) {
+            err("expected line missing from stdout: " + line + "\n")
+            return false
+        }
+        i = i + 1
+    }
+    return true
+}
+
+function emit_gpu_shaders(source: string, backend: string, out_path: string, err_path: string) -> i32 {
+    let args: TList = tl_new()
+    tl_push(&args, "./flow")
+    tl_push(&args, "gpu")
+    if t_eq(backend, "webgpu") {
+        tl_push(&args, "--wgsl")
+    }
+    tl_push(&args, source)
+    let p: Proc = spawn(&args, cwd(), "", out_path, err_path, 120.0)
+    return p.code
+}
+
+function run_flow_program(source: string, out_path: string, err_path: string) -> i32 {
+    let args: TList = tl_new()
+    tl_push(&args, "./flow")
+    tl_push(&args, "run")
+    tl_push(&args, source)
+    let p: Proc = spawn(&args, cwd(), "", out_path, err_path, 180.0)
+    return p.code
+}
+
 function run_vgpu_suite(backends: TList) -> i32 {
     let manifest_path: string = "examples/gpu/vgpu/manifest.json"
     let src: string = t_read_file(manifest_path)
@@ -45,6 +88,11 @@ function run_vgpu_suite(backends: TList) -> i32 {
         let backends_id: i32 = json_get(j, cid, "backends")
         let comparison_id: i32 = json_get(j, cid, "comparison")
         let fill_id: i32 = json_get(j, cid, "fill")
+        let expected_id: i32 = json_get(j, cid, "expected")
+        let mut expected_path: string = ""
+        if expected_id >= 0 {
+            expected_path = json_str(j, expected_id)
+        }
 
         let mut supported_backends: TList = tl_new()
         let mut bid: i32 = json_first(j, backends_id)
@@ -104,7 +152,22 @@ function run_vgpu_suite(backends: TList) -> i32 {
                         out("CASE " + id + " [" + b + "] TOLERANCE\n")
                     }
                 } else {
-                    out("CASE " + id + " [" + b + "] NUMERICAL\n")
+                    let emit_out: string = t_cat3("build/vgpu_", id, "_emit.out")
+                    let emit_err: string = t_cat3("build/vgpu_", id, "_emit.err")
+                    if emit_gpu_shaders(source, b, emit_out, emit_err) != 0 {
+                        out("CASE " + id + " [" + b + "] FAIL (shader)\n")
+                        all_ok = false
+                    } elif run_flow_program(source, out_path, err_path) != 0 {
+                        out("CASE " + id + " [" + b + "] FAIL (run)\n")
+                        all_ok = false
+                    } elif not expected_matches(t_read_file(out_path), expected_path) {
+                        out("CASE " + id + " [" + b + "] FAIL (expected)\n")
+                        all_ok = false
+                    } elif t_eq(mode, "numerical") {
+                        out("CASE " + id + " [" + b + "] NUMERICAL\n")
+                    } else {
+                        out("CASE " + id + " [" + b + "] NUMERICAL\n")
+                    }
                 }
             }
             bidx = bidx + 1

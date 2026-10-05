@@ -1,12 +1,144 @@
 import "stdlib/tensor.flow"
+import "stdlib/gpu_memory.flow"
+import "stdlib/gpu_tensor.flow"
 
-# vgpu compatibility case: MNIST classifier execution
+# vgpu compatibility case: MNIST classifier on shared GPU tensor resources.
+#
+# Preprocess and postprocess are ordinary @gpu kernels. The dense layers are
+# the same GpuTensor storage those kernels consume — no host Tensor copy
+# between stages. `flow gpu` / `flow gpu --wgsl` emit the kernels for Metal
+# and WebGPU; `main` runs the resource-backed model and a host reference.
 
 @gpu
-function classifier(input: ptr<f32>, output: ptr<f32>) {
-    # Basic placeholder for the mnist classifier
+function mnist_preprocess(raw: ptr<f32>, norm: ptr<f32>, n: i32) -> void {
+    let i: i32 = gpu_thread_id()
+    if i < n {
+        norm[i] = raw[i] / 255.0
+    }
 }
 
-function main() {
-    print("mnist stub")
+@gpu
+function mnist_dense_layer(input: ptr<f32>, weights: ptr<f32>, output: ptr<f32>, M: i32, K: i32, N: i32) -> void {
+    let row: i32 = gpu_thread_id()
+    if row < M {
+        for col in 0 to N {
+            let mut acc: f32 = 0.0
+            for k in 0 to K {
+                acc = acc + input[row * K + k] * weights[k * N + col]
+            }
+            output[row * N + col] = acc
+        }
+    }
+}
+
+@gpu
+function mnist_postprocess(logits: ptr<f32>, probs: ptr<f32>, n: i32) -> void {
+    let i: i32 = gpu_thread_id()
+    if i < n {
+        let val: f32 = logits[i]
+        if val > 0.0 {
+            probs[i] = val
+        } else {
+            probs[i] = 0.0
+        }
+    }
+}
+
+function mnist_cpu(input: Tensor, w1: Tensor, w2: Tensor) -> Tensor {
+    let norm: Tensor = tensor_zeros(1, input.size, 1, 1)
+    let mut i: i32 = 0
+    while i < input.size {
+        norm.data[i] = input.data[i] / 255.0
+        i = i + 1
+    }
+    let h1: Tensor = tensor_matmul(norm, w1)
+    let h1r: Tensor = tensor_relu(h1)
+    let logits: Tensor = tensor_matmul(h1r, w2)
+    let probs: Tensor = tensor_relu(logits)
+    tensor_free(norm)
+    tensor_free(h1)
+    tensor_free(h1r)
+    tensor_free(logits)
+    return probs
+}
+
+function main() -> i32 {
+    let input_dim: i32 = 784
+    let hidden_dim: i32 = 16
+    let num_classes: i32 = 10
+
+    let raw_h: Tensor = tensor_fill(1, input_dim, 1, 1, 128.0)
+    let w1_h: Tensor = tensor_fill(input_dim, hidden_dim, 1, 1, 0.01)
+    let w2_h: Tensor = tensor_fill(hidden_dim, num_classes, 1, 1, 0.05)
+
+    let raw: GpuTensor = gpu_tensor_from_host(raw_h)
+    let norm: GpuTensor = gpu_tensor_alloc_f32(1, input_dim, 1, 1)
+    let w1: GpuTensor = gpu_tensor_from_host(w1_h)
+    let h1: GpuTensor = gpu_tensor_alloc_f32(1, hidden_dim, 1, 1)
+    let w2: GpuTensor = gpu_tensor_from_host(w2_h)
+    let logits: GpuTensor = gpu_tensor_alloc_f32(1, num_classes, 1, 1)
+    let probs: GpuTensor = gpu_tensor_alloc_f32(1, num_classes, 1, 1)
+
+    if gpu_tensor_is_empty(raw) or gpu_tensor_is_empty(probs) {
+        println("vgpu mnist")
+        println("alloc failed")
+        return 1
+    }
+    if gpu_tensor_require(raw, GPU_DTYPE_F32, 1, input_dim, 1, 1) != 0 {
+        return 2
+    }
+    if gpu_tensor_require(w1, GPU_DTYPE_F32, input_dim, hidden_dim, 1, 1) != 0 {
+        return 3
+    }
+
+    let p_norm: ptr<f32> = gpu_tensor_ptr(norm)
+    let p_probs: ptr<f32> = gpu_tensor_ptr(probs)
+
+    # Pre @gpu kernel, then model, then post @gpu kernel — same pointers.
+    if gpu_tensor_normalize(raw, norm, 255.0) != 0 { return 4 }
+    mnist_preprocess(gpu_tensor_ptr(raw), gpu_tensor_ptr(norm), input_dim)
+    if gpu_tensor_linear(h1, norm, w1) != 0 { return 5 }
+    if gpu_tensor_relu(h1, h1) != 0 { return 6 }
+    if gpu_tensor_linear(logits, h1, w2) != 0 { return 7 }
+    if gpu_tensor_relu(logits, probs) != 0 { return 8 }
+    mnist_postprocess(gpu_tensor_ptr(logits), gpu_tensor_ptr(probs), num_classes)
+
+    if gpu_tensor_ptr(norm) != p_norm { return 9 }
+    if gpu_tensor_ptr(probs) != p_probs { return 10 }
+
+    let cpu: Tensor = mnist_cpu(raw_h, w1_h, w2_h)
+    let gpu_host: Tensor = gpu_tensor_to_host(probs)
+    let mut ok: i32 = 1
+    let mut i: i32 = 0
+    while i < num_classes {
+        let mut d: f32 = gpu_host.data[i] - cpu.data[i]
+        if d < 0.0 { d = 0.0 - d }
+        if d > 0.0001 { ok = 0 }
+        i = i + 1
+    }
+
+    println("vgpu mnist")
+    println(gpu_backend_name())
+    print("class ")
+    println(gpu_tensor_argmax(probs))
+    print("match ")
+    println(ok)
+
+    tensor_free(raw_h)
+    tensor_free(w1_h)
+    tensor_free(w2_h)
+    tensor_free(cpu)
+    tensor_free(gpu_host)
+    gpu_tensor_free(raw)
+    gpu_tensor_free(norm)
+    gpu_tensor_free(w1)
+    gpu_tensor_free(h1)
+    gpu_tensor_free(w2)
+    gpu_tensor_free(logits)
+    gpu_tensor_free(probs)
+
+    if ok != 1 {
+        return 11
+    }
+    return 0
 }

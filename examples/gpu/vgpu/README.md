@@ -45,6 +45,8 @@ compositing. `compareRgba` then provides an exact byte comparison primitive.
 | Case | Flow source | Metal | WGSL | Reference comparison |
 | --- | --- | --- | --- | --- |
 | Gradient | `gradient.flow` | source-ready | offscreen renderer ready | upstream reference bytes pending |
+| MNIST | `mnist.flow` | `@gpu` emit | `@gpu` emit | host-Tensor vs `GpuTensor` numerical |
+| Depth | `depth_estimation.flow` | `@gpu` emit | `@gpu` emit | host-Tensor vs `GpuTensor` numerical |
 
 The next tranche should deliberately exercise missing capabilities instead of
 adding only fragment effects: textures/samplers, vertex and index buffers,
@@ -76,3 +78,13 @@ python3 -m http.server -d build/webgpu-shader 8000
 The generated WebGPU entry points are `flow_shader_vertex` and
 `vgpu_gradient_frag`. The suite parameters used for reference comparisons live in
 `manifest.json`.
+
+MNIST and depth estimation use `stdlib/gpu_tensor.flow`: the same `GpuBuffer`
+resources as `@gpu` kernels, with a host-Tensor reference comparison.
+
+```bash
+./flow run examples/gpu/vgpu/mnist.flow
+./flow gpu examples/gpu/vgpu/mnist.flow
+./flow gpu --wgsl examples/gpu/vgpu/mnist.flow
+./flow gpu test --suite vgpu --all-backends
+```

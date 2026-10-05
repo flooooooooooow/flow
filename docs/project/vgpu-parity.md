@@ -110,6 +110,11 @@ Connect Flow tensor/model types to the same GPU resource model rather than creat
 an inference-only runtime. The user-facing model should permit ordinary Flow kernels
 before/after imported model execution without copies when the backend allows it.
 
+Library surface: `stdlib/gpu_tensor.flow` (`GpuTensor` over `GpuBuffer`,
+`gpu_tensor_require` / `gpu_tensor_layout` for shape/dtype/access checks,
+`gpu_tensor_linear` and elementwise ops on that storage). Docs:
+[GPU tensors](../library/gpu-tensor.md).
+
 Representative compatibility cases: MNIST classifier and depth estimation.
 
 ### P4: backend-independent compatibility runner

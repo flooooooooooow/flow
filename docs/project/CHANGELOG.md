@@ -4,6 +4,7 @@ All notable changes to FLOW will be documented in this file.
 
 ## Unreleased
 
+- GPU tensors (#814): `stdlib/gpu_tensor.flow` wraps the shared `GpuBuffer` resource with shape/dtype/access so model execution and ordinary `@gpu` kernels use the same storage. Unified backends are zero-copy; private buffers and the stub expose explicit upload/download. The vgpu MNIST and depth-estimation cases run a host-Tensor reference against that path and emit Metal + WGSL from the same source.
 - flowc: opt-in `FLOWC_PROFILE=1|json` writes per-phase compile timings (`[flow-profile]` JSON) for parse, import resolution, typecheck and codegen. `./flow tool compile_bench` records cold/warm compile-to-result and names the top fixed vs scaling cost. (#735)
 - Strings / I/O (#747, first slice): a pure-string `+` chain of three or more parts lowers to one `__flowc_str_concatn` allocation instead of nested pairwise joins. `std.string` parses and formats integers on the caller's buffer with explicit overflow/junk errors; `std.io` reads and writes files with `fread`/`fwrite` of a known size. Cross-harness rows: `runtime_string_concat`, `runtime_parse_format`, `runtime_buffered_io`, and the existing `cold_file_transform` now uses the buffered path.
 - Type checker: public functions emit a compact RT-safety / lifetime-domain

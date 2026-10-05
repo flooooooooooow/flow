@@ -66,6 +66,8 @@ Linked automatically by `flow run` / `flow debug`.
 
 Flags include `GPU_MEM_DEFAULT`, `GPU_MEM_SHARED`, and `GPU_MEM_PRIVATE`.
 
+Shaped tensor views over these buffers live in [`gpu-tensor.md`](gpu-tensor.md).
+
 The full checked round-trip is [`examples/gpu/gpu_memory_roundtrip.flow`](../../examples/gpu/gpu_memory_roundtrip.flow).
 
 Runtime implementation: `runtime/gpu_memory.h`, `runtime/gpu_metal.m`, and `runtime/gpu_memory_stub.c`.
