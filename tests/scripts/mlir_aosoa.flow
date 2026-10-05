@@ -215,8 +215,8 @@ function check_flow_mlir_accepts_swizzle_width() -> i32 {
     let c: ptr<ProcCmd> = t_cmd(argv)
     cmd_env(c, "FLOW_BUILD_ROOT", t_tmp() + "/build")
     let rc: i32 = t_run(c)
-    let err: string = read_text(t_err())
-    if s_contains(err, "unknown option") { return T_FAIL }
+    let log: string = read_text(t_out()) + read_text(t_err())
+    if s_contains(log, "unknown option") { return T_FAIL }
     let mlir: string = t_tmp() + "/build/aosoa_padding.mlir"
     if is_file(mlir) {
         let output: string = read_text(mlir)
@@ -224,7 +224,7 @@ function check_flow_mlir_accepts_swizzle_width() -> i32 {
         if not a_contains(output, "arith.shrsi") { return T_FAIL }
         return T_PASS
     }
-    if rc != 0 and s_contains(err, "MLIR tools not found") {
+    if rc != 0 and s_contains(log, "MLIR tools not found") {
         return T_PASS
     }
     return T_FAIL
