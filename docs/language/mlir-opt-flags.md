@@ -72,6 +72,12 @@ register-sized vector schedule:
   --strategy=hierarchical_vector --tiles=64,64,64 --inner-tiles=8,8,4
 ```
 
+`--strategy=unroll` tiles, then unrolls the innermost loop with
+`--unroll-factor` (2–16). `--print-cost` reports the analytic score used by
+`--metric=cost-model` and by `--search=genetic|bayesian` on the measurement
+harness. The autotuning CLI, cost model, and PMU events are documented in
+[MLIR Autotuning](mlir-autotuning.md).
+
 Affine tiling is opt-in and requires a positive tile size:
 
 ```bash

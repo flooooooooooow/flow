@@ -291,6 +291,140 @@ function check_benchmark_rejects_missing_pmu_event() -> i32 {
     return T_PASS
 }
 
+function check_unroll_schedule() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv, "--strategy=unroll")
+    sl_push(argv, "--tiles=32,32,8")
+    sl_push(argv, "--unroll-factor=4")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "flow.tune_strategy = \"unroll\"") { return T_FAIL }
+    if not a_contains(output, "flow.tune_unroll_factor = \"4\"") { return T_FAIL }
+    if not a_contains(output, "transform.loop.unroll %loops#2 {factor = 4}") { return T_FAIL }
+    if not a_contains(output, "tile_using_for") { return T_FAIL }
+    return T_PASS
+}
+
+function check_unroll_rejects_invalid_factor() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv, "--strategy=unroll")
+    sl_push(argv, "--unroll-factor=1")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--unroll-factor expects an integer from two to sixteen") { return T_FAIL }
+    return T_PASS
+}
+
+function check_print_cost_ranks_reuse() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv, "--print-cost")
+    sl_push(argv, "--tiles=32,16,8")
+    sl_push(argv, "--extent=128")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let good: string = read_text(t_out())
+    if not a_contains(good, "218") { return T_FAIL }
+    if a_contains(good, "module") { return T_FAIL }
+
+    let argv2: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv2, "--print-cost")
+    sl_push(argv2, "--tiles=8,8,8")
+    sl_push(argv2, "--extent=128")
+    if t_run(t_cmd(argv2)) != 0 { return T_FAIL }
+    let poor: string = read_text(t_out())
+    if not a_contains(poor, "975") { return T_FAIL }
+    return T_PASS
+}
+
+function check_print_cost_rejects_missing_extent() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "scripts/tools/mlir_tune/main.flow")
+    sl_push(argv, "--print-cost")
+    sl_push(argv, "--extent")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--extent requires a value") { return T_FAIL }
+    return T_PASS
+}
+
+function check_benchmark_cost_model() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "benchmarks/micro/transform_tuning_benchmark.flow")
+    sl_push(argv, "--candidates=8,8,8;16,16,8;32,16,8;64,32,16")
+    sl_push(argv, "--metric=cost-model")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "Successfully selected best tile schedule: 32,16,8") { return T_FAIL }
+    if not a_contains(output, "Best cost-model score:") { return T_FAIL }
+    if not a_contains(output, "analytic cost model") { return T_FAIL }
+    return T_PASS
+}
+
+function check_benchmark_bayesian_search() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "benchmarks/micro/transform_tuning_benchmark.flow")
+    sl_push(argv, "--candidates=8,8,8;16,16,8;32,16,8;64,32,16")
+    sl_push(argv, "--metric=cost-model")
+    sl_push(argv, "--search=bayesian")
+    sl_push(argv, "--evals=4")
+    sl_push(argv, "--seed=1")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "Search algorithm: bayesian") { return T_FAIL }
+    if not a_contains(output, "Search evaluations: 4") { return T_FAIL }
+    if not a_contains(output, "Successfully selected best tile schedule: 32,16,8") { return T_FAIL }
+    return T_PASS
+}
+
+function check_benchmark_genetic_search() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "benchmarks/micro/transform_tuning_benchmark.flow")
+    sl_push(argv, "--candidates=8,8,8;16,16,8;32,16,8;64,32,16")
+    sl_push(argv, "--metric=cost-model")
+    sl_push(argv, "--search=genetic")
+    sl_push(argv, "--evals=8")
+    sl_push(argv, "--seed=1")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_out())
+    if not a_contains(output, "Search algorithm: genetic") { return T_FAIL }
+    if not a_contains(output, "Successfully selected best tile schedule: 32,16,8") { return T_FAIL }
+    return T_PASS
+}
+
+function check_benchmark_rejects_invalid_search() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "benchmarks/micro/transform_tuning_benchmark.flow")
+    sl_push(argv, "--search=random")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--search must be one of 'genetic', 'bayesian'") { return T_FAIL }
+    return T_PASS
+}
+
+function check_benchmark_rejects_missing_search() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "benchmarks/micro/transform_tuning_benchmark.flow")
+    sl_push(argv, "--search")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--search requires a value") { return T_FAIL }
+    return T_PASS
+}
+
+function check_benchmark_rejects_invalid_metric() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "benchmarks/micro/transform_tuning_benchmark.flow")
+    sl_push(argv, "--metric=flops")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--metric must be one of 'runtime', 'cost-model'") { return T_FAIL }
+    return T_PASS
+}
+
+function check_benchmark_rejects_cost_model_with_pmu() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "benchmarks/micro/transform_tuning_benchmark.flow")
+    sl_push(argv, "--metric=cost-model")
+    sl_push(argv, "--pmu-event=ipc")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "cannot be combined with --pmu-event") { return T_FAIL }
+    return T_PASS
+}
+
+function check_benchmark_rejects_invalid_evals() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "benchmarks/micro/transform_tuning_benchmark.flow")
+    sl_push(argv, "--evals=0")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--evals expects an integer from one to sixty-four") { return T_FAIL }
+    return T_PASS
+}
+
 function main() -> i32 {
     t_begin("mlir_tune")
     t_start()
@@ -331,6 +465,20 @@ function main() -> i32 {
     t_end("benchmark_missing_values", check_benchmark_rejects_missing_values())
     t_end("benchmark_invalid_pmu_event", check_benchmark_rejects_invalid_pmu_event())
     t_end("benchmark_missing_pmu_event", check_benchmark_rejects_missing_pmu_event())
+    t_start()
+    t_end("unroll_schedule", check_unroll_schedule())
+    t_end("invalid_unroll", check_unroll_rejects_invalid_factor())
+    t_end("print_cost", check_print_cost_ranks_reuse())
+    t_end("missing_extent", check_print_cost_rejects_missing_extent())
+    t_start()
+    t_end("benchmark_cost_model", check_benchmark_cost_model())
+    t_end("benchmark_bayesian_search", check_benchmark_bayesian_search())
+    t_end("benchmark_genetic_search", check_benchmark_genetic_search())
+    t_end("benchmark_invalid_search", check_benchmark_rejects_invalid_search())
+    t_end("benchmark_missing_search", check_benchmark_rejects_missing_search())
+    t_end("benchmark_invalid_metric", check_benchmark_rejects_invalid_metric())
+    t_end("benchmark_cost_model_pmu", check_benchmark_rejects_cost_model_with_pmu())
+    t_end("benchmark_invalid_evals", check_benchmark_rejects_invalid_evals())
     t_done()
     return 0
 }
