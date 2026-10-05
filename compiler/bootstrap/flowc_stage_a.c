@@ -78182,6 +78182,10 @@ bool sem_is_method_call(Sem* c, int32_t e);
 bool sem_is_function_call(Sem* c, int32_t e);
 const char* sem_borrow_root_name(Sem* c, int32_t e);
 const char* sem_call_name(Sem* c, int32_t e);
+bool sem_is_arena_alloc_name(const char* nm);
+const char* sem_alloc_arena_arg_name(Sem* c, int32_t arg);
+bool sem_arg_is_module_static(Sem* c, const char* name);
+const char* sem_arena_instance_name(Sem* c, int32_t value);
 const char* sem_span_origin_get(Sem* c, const char* name);
 const char* sem_local_borrow_origin(Sem* c, int32_t e);
 const char* sem_domain_borrow_root(Sem* c, int32_t e);
@@ -79285,6 +79289,58 @@ const char* sem_call_name(Sem* c, int32_t e) {
   return nm;
 }
 
+bool sem_is_arena_alloc_name(const char* nm) {
+  return sem_s_starts(nm, "arena_alloc") || sem_s_starts(nm, "frame_alloc");
+}
+
+const char* sem_alloc_arena_arg_name(Sem* c, int32_t arg) {
+  if (arg < 0 || arg == AST_NONE) {
+  return (const char*)(NULL);
+}
+  int32_t e = arg;
+  if (sem_is_unary_op(c, e, TOK_AMP)) {
+  e = sem_na(c, e);
+}
+  return sem_borrow_root_name(c, e);
+}
+
+bool sem_arg_is_module_static(Sem* c, const char* name) {
+  if ((uint8_t*)(name) == NULL) {
+  return 0;
+}
+  if (sem_sm_has(c->static_names, name) == 0) {
+  return 0;
+}
+  int32_t s = sem_lookup(c, name);
+  if (s < 0) {
+  return 1;
+}
+  return s == sem_sm_get(c->g_scope, name);
+}
+
+const char* sem_arena_instance_name(Sem* c, int32_t value) {
+  if (value < 0) {
+  return (const char*)(NULL);
+}
+  if (sem_is_function_call(c, value)) {
+  if (sem_is_arena_alloc_name(sem_nname(c, value)) == 0) {
+  return (const char*)(NULL);
+}
+  const char* name = sem_alloc_arena_arg_name(c, sem_na(c, value));
+  if (sem_arg_is_module_static(c, name)) {
+  return name;
+}
+  return (const char*)(NULL);
+}
+  if (sem_is_variable(c, value)) {
+  const char* origin = sem_span_origin_get(c, sem_nname(c, value));
+  if ((uint8_t*)(origin) != NULL && sem_sm_has(c->static_names, origin)) {
+  return origin;
+}
+}
+  return (const char*)(NULL);
+}
+
 const char* sem_span_origin_get(Sem* c, const char* name) {
   int32_t k = sem_sm_get(c->span_origin, name);
   if (k < 0) {
@@ -79299,12 +79355,8 @@ const char* sem_local_borrow_origin(Sem* c, int32_t e) {
   return (const char*)(NULL);
 }
   if (sem_is_function_call(c, e)) {
-  const char* nm = sem_nname(c, e);
-  if (sem_s_starts(nm, "arena_alloc") || sem_s_starts(nm, "frame_alloc")) {
-  if (sem_na(c, e) != AST_NONE) {
-  return sem_borrow_root_name(c, sem_na(c, e));
-}
-  return (const char*)(NULL);
+  if (sem_is_arena_alloc_name(sem_nname(c, e))) {
+  return sem_alloc_arena_arg_name(c, sem_na(c, e));
 }
   return (const char*)(NULL);
 }
@@ -79351,12 +79403,8 @@ const char* sem_domain_borrow_root(Sem* c, int32_t e) {
   return (const char*)(NULL);
 }
   if (sem_is_function_call(c, e)) {
-  const char* nm = sem_nname(c, e);
-  if (sem_s_starts(nm, "arena_alloc") || sem_s_starts(nm, "frame_alloc")) {
-  if (sem_na(c, e) != AST_NONE) {
-  return sem_borrow_root_name(c, sem_na(c, e));
-}
-  return (const char*)(NULL);
+  if (sem_is_arena_alloc_name(sem_nname(c, e))) {
+  return sem_alloc_arena_arg_name(c, sem_na(c, e));
 }
   return (const char*)(NULL);
 }
@@ -79456,13 +79504,26 @@ bool sem_domain_escape_to_static(Sem* c, int32_t stmt, int32_t value, const char
   sem_sm_put(c->esc_static, __flowc_str_concatn(3, c->current_function_name, "\x01", sem_s_itoa((int64_t)(pi))), 1);
 }
 }
-  if (c->current_domain < 0 || sem_sm_has(c->static_names, target) == 0) {
+  if (sem_sm_has(c->static_names, target) == 0) {
   return 0;
 }
   if (sem_is_reference_type(c, target_type) == 0) {
   return 0;
 }
   int32_t td = sem_static_domain(c, target);
+  const char* arena = sem_arena_instance_name(c, value);
+  if ((uint8_t*)(arena) != NULL) {
+  int32_t ad = sem_static_domain(c, arena);
+  if (td > ad) {
+  sem_sm_put(c->domain_reported, sem_node_key(c, stmt), 1);
+  sem_err(c, __flowc_str_concatn(10, "lifetime domain escape: `", arena, "` lives in the `", sem_domain_name(ad), "` domain but is stored in `", target, "`, which lives in the `", sem_domain_name(td), "` domain (a longer-lived domain may not hold a reference to a shorter-lived one)", sem_location_suffix(c, stmt)));
+  return 1;
+}
+  return 0;
+}
+  if (c->current_domain < 0) {
+  return 0;
+}
   if (td <= c->current_domain) {
   return 0;
 }
@@ -81288,7 +81349,7 @@ int32_t sem_check_slice_expr(Sem* c, int32_t e) {
 }
   int32_t sp = sem_ty_named(c->t, TK_SPAN, __flowc_str_concat(prefix, sem_tstr(c, el)));
   tys->elem[sp] = el;
-  { __typeof__(tys->size[sp]) __flowc_st13821 = sem_static_length(c, e); tys->size[sp] = __flowc_st13821; }
+  { __typeof__(tys->size[sp]) __flowc_st14029 = sem_static_length(c, e); tys->size[sp] = __flowc_st14029; }
   return sp;
 }
 
@@ -81362,14 +81423,14 @@ int32_t sem_check_lambda(Sem* c, int32_t e) {
   p = sem_nnext(c, p);
 }
   SemIntVec* saved_sink = (SemIntVec*)(c->return_sink);
-  { __typeof__(c->return_sink) __flowc_st14170 = sem_iv_new(); c->return_sink = __flowc_st14170; }
+  { __typeof__(c->return_sink) __flowc_st14378 = sem_iv_new(); c->return_sink = __flowc_st14378; }
   sem_check_block(c, sem_ncc(c, e));
   c->return_sink = saved_sink;
   sem_pop_scope(c);
   if (sem_nb(c, e) != AST_NONE) {
-  { __typeof__(tys->ret[f]) __flowc_st14200 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e))); tys->ret[f] = __flowc_st14200; }
+  { __typeof__(tys->ret[f]) __flowc_st14408 = sem_parse_type(c, sem_pt_of_ast(c, sem_nb(c, e))); tys->ret[f] = __flowc_st14408; }
 } else {
-  { __typeof__(tys->ret[f]) __flowc_st14209 = sem_tmk(c, TK_VOID); tys->ret[f] = __flowc_st14209; }
+  { __typeof__(tys->ret[f]) __flowc_st14417 = sem_tmk(c, TK_VOID); tys->ret[f] = __flowc_st14417; }
 }
   return f;
 }
@@ -81881,7 +81942,7 @@ int32_t sem_check_assignment(Sem* c, int32_t s) {
   bool reported = sem_domain_escape_to_static(c, s, value, base, tt);
   if (reported == 0 && sem_is_reference_type(c, tt)) {
   const char* origin = sem_local_borrow_origin(c, value);
-  if ((uint8_t*)(origin) != NULL) {
+  if ((uint8_t*)(origin) != NULL && sem_sv_has(c->local_storage, origin)) {
   sem_err(c, __flowc_str_concatn(4, "span outlives borrowed storage `", origin, "`", sem_location_suffix(c, s)));
 }
 }
@@ -81907,7 +81968,7 @@ int32_t sem_check_assignment(Sem* c, int32_t s) {
   bool reported2 = sem_domain_escape_to_static(c, s, value, target, st);
   if (reported2 == 0 && sem_is_reference_type(c, st) && sem_sm_has(c->static_names, target)) {
   const char* origin2 = sem_local_borrow_origin(c, value);
-  if ((uint8_t*)(origin2) != NULL) {
+  if ((uint8_t*)(origin2) != NULL && sem_sv_has(c->local_storage, origin2)) {
   sem_err(c, __flowc_str_concatn(4, "span outlives borrowed storage `", origin2, "`", sem_location_suffix(c, s)));
 }
 }
@@ -82731,9 +82792,9 @@ void sem_check_function(Sem* c, int32_t fi) {
   SemStrVec* prev_storage = (SemStrVec*)(c->local_storage);
   SemStrMap* prev_origin = (SemStrMap*)(c->span_origin);
   int32_t prev_ret = c->current_return_type;
-  { __typeof__(c->local_storage) __flowc_st20017 = sem_sv_new(); c->local_storage = __flowc_st20017; }
-  { __typeof__(c->span_origin) __flowc_st20021 = sem_sm_new(); c->span_origin = __flowc_st20021; }
-  { __typeof__(c->current_return_type) __flowc_st20030 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); c->current_return_type = __flowc_st20030; }
+  { __typeof__(c->local_storage) __flowc_st20235 = sem_sv_new(); c->local_storage = __flowc_st20235; }
+  { __typeof__(c->span_origin) __flowc_st20239 = sem_sm_new(); c->span_origin = __flowc_st20239; }
+  { __typeof__(c->current_return_type) __flowc_st20248 = sem_parse_type(c, sem_iv_get(c->fi_ret, fi)); c->current_return_type = __flowc_st20248; }
   i = 0;
   while (i < sem_fi_nparams(c, fi)) {
   int32_t pt = sem_parse_type(c, sem_fi_param_type(c, fi, i));
@@ -82741,7 +82802,7 @@ void sem_check_function(Sem* c, int32_t fi) {
   i = (i + 1);
 }
   SemIntVec* prev_sink = (SemIntVec*)(c->return_sink);
-  { __typeof__(c->return_sink) __flowc_st20073 = sem_iv_new(); c->return_sink = __flowc_st20073; }
+  { __typeof__(c->return_sink) __flowc_st20291 = sem_iv_new(); c->return_sink = __flowc_st20291; }
   sem_check_block(c, sem_iv_get(c->fi_body, fi));
   SemIntVec* returns = (SemIntVec*)(c->return_sink);
   c->return_sink = prev_sink;
