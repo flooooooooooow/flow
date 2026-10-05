@@ -1,4 +1,6 @@
 # ACTIONS-INTENDED: public repository; qualifies and publishes releases.
+# RC tags (*-rc*) and workflow_dispatch qualify_only skip the publish job.
+# Dry-run qualification without contents:write is release-qualify.yml.
 name: Release
 
 on:
@@ -10,6 +12,10 @@ on:
       tag:
         description: 'Tag to build a release for (e.g. v1.0.0)'
         required: true
+      qualify_only:
+        description: 'Qualify without publishing a GitHub Release or Homebrew update'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -131,6 +137,10 @@ jobs:
   release:
     name: Publish qualified release
     needs: qualify
+    if: >-
+      ${{ !inputs.qualify_only &&
+          !contains(github.ref_name, '-rc') &&
+          !contains(inputs.tag, '-rc') }}
     runs-on: ubuntu-latest
     steps:
       - name: Resolve tag
