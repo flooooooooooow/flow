@@ -105,3 +105,4 @@ audio_loopback out compile-audio examples/audio/loopback_effects.flow --mlir
 audio_gpu_gain out compile-audio examples/audio/gpu_gain_demo.flow --mlir
 mlir_tensor_scalars mlir compiler/fixtures/mlir_opt/tensor_scalars.flow --lenient
 mlir_tensor_boundary mlir compiler/fixtures/mlir_opt/tensor_boundary.flow --lenient
+mlir_tensor_hot_loop mlir compiler/fixtures/mlir_opt/tensor_hot_loop.flow --lenient

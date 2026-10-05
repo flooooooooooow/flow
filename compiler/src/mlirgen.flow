@@ -748,6 +748,23 @@ function mlg_is_tensor_type_mt(t: i32) -> i32 {
     return 0
 }
 
+# 1 when a local of type `mt` is stored through llvm.alloca. Tensor dialect
+# values are never alloca-backed: they keep value semantics so a mutable
+# binding can be an scf.for iter_arg and One-Shot Bufferization can choose
+# in-place reuse after alias analysis.
+function mlg_uses_alloca_storage(m: ptr<Mlg>, mt: i32, is_mut: i32) -> i32 {
+    if mlg_is_tensor_type_mt(mt) == 1 {
+        return 0
+    }
+    if mlg_is_struct_mt(mt) == 1 and mlg_st32(m) == 0 {
+        return 1
+    }
+    if is_mut == 1 and mlg_is_memref_mt(mt) == 0 {
+        return 1
+    }
+    return 0
+}
+
 function mlg_is_float_mt(t: i32) -> i32 {
     if t == MT_F32 or t == MT_F64 {
         return 1
@@ -10314,8 +10331,10 @@ function mlg_emit_let(m: ptr<Mlg>, st: i32) {
     let l: i32 = mlg_add_local(m, mlg_ns(m, st), mlg_ne(m, st), vt, ty, v)
     let is_mut: i32 = m[0].arena.nodes[st].ival
     # Python _uses_alloca_storage: aggregates always, except under wasm32
-    # (flow#467); mutable non-memref locals too.
-    if (mlg_is_struct_mt(mt) == 1 and mlg_st32(m) == 0) or (is_mut == 1 and mlg_is_memref_mt(mt) == 0) {
+    # (flow#467); mutable non-memref locals too. Tensor dialect values stay
+    # SSA even when mutable so counted loops can carry them as iter_args and
+    # One-Shot Bufferization can reuse destinations in place (#664).
+    if mlg_uses_alloca_storage(m, mt, is_mut) == 1 {
         m[0].l_alloca[l] = mlg_alloca_store(m, v, mt)
     }
     let tag: i32 = mlg_vllarr(m, v)
