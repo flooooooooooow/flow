@@ -15,13 +15,13 @@ do not treat stored timings from another machine as a regression.
 |---|---|---|
 | Function calls | `runtime/calls` | 1e6 direct calls |
 | Loops / branches | `runtime/loops` | 1e6 increment |
-| Arrays / spans | `runtime/arrays` | fill 1000 `i32`s |
+| Arrays / spans | `runtime/arrays` | 10000 fills of 1000 `i32`s |
 | Strings | `runtime/strings` | ASCII upper-case copy |
 | String concat | `runtime/string_concat` | eight-part join, 50k rows |
 | Parse / format | `runtime/parse_format` | integer scan + format |
 | Buffered I/O | `runtime/buffered_io` | one read, in-place scan, one write |
 | Structs | `runtime/structs` | one `Point` record |
-| Allocation / free | `runtime/allocation` | 1000 × 64-byte malloc/free |
+| Allocation / free | `runtime/allocation` | 50000 × 64-byte malloc/free |
 | Hash / map | `runtime/hashmap` | open-addressed insert + lookup |
 | Sorting / search | `runtime/sorting` | heapsort + binary search |
 | Reductions | `runtime/numerical` | sum / min / max / sum-of-squares |
@@ -85,13 +85,19 @@ The 5% tax bar applies to rows that do enough work to be timed:
 - `runtime_string_concat`, `runtime_parse_format`, `runtime_buffered_io`
 - `runtime_allocation`, `runtime_hashmap`, `runtime_sorting`, `runtime_numerical`
 
-`runtime_arrays` and `runtime_structs` stay in the suite for coverage but
-are too small for a stable tax reading.
+`runtime_structs` stays in the suite for coverage but is too small for a
+stable tax reading.
+
+The #740 memory profiler is enabled only on the memory suite so a runtime
+`flow_vs_native` ratio is not the wrapper tax.
 
 ## Remaining gaps
 
 - `hashmap_string_i32` create/len only; no insert/get.
 - No CPython twin for `runtime_hashmap` (new `.py` files are refused).
-- `runtime_structs` / `runtime_arrays` are coverage rows, not tax rows.
-- Any measured `tax` on a promoted row should become its own child issue
-  rather than being folded into a headline geometric mean.
+- `runtime_structs` is a coverage row, not a tax row.
+- `runtime_string_concat` still heaps every `+` chain; matching C can keep
+  the 36-byte result on the stack. That headroom needs a compiler
+  short-string / stack-concat slice, not a suite average.
+- Any other measured `tax` on a promoted row should become its own child
+  issue rather than being folded into a headline geometric mean.

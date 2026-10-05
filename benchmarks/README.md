@@ -52,10 +52,11 @@ flags as generated Flow C. The harness records `flow_vs_python`,
 ./flow tool bench_harness --eval-tax /tmp/flow-runtime-attr.json
 ```
 
-`./flow tool bench_harness` sets `FLOW_MEM_PROFILE=1` on every subject.
+`./flow tool bench_harness` sets `FLOW_MEM_PROFILE=1` on the memory suite
+so runtime `flow_vs_native` ratios are not the #740 wrapper tax.
 Compiled Flow programs then write heap count/bytes, peak live heap, peak
-RSS, compiler-temp bytes and copy volume into the schema (issue #740).
-No workload source rewrite is required. See [docs/library/memory.md](../docs/library/memory.md).
+RSS, compiler-temp bytes and copy volume into the schema. No workload
+source rewrite is required. See [docs/library/memory.md](../docs/library/memory.md).
 
 ## Running Benchmarks
 
