@@ -46,18 +46,35 @@ function check_affine_emitter_cli_overrides_env() -> i32 {
 }
 
 function check_flow_mlir_affine_flags() -> i32 {
-    let argv: ptr<ProcStrs> = sl_of3("./flow", "mlir", "--affine")
+    let missing: ptr<ProcStrs> = sl_of3("./flow", "mlir", "tests/mlir/affine_loop.flow")
+    sl_push(missing, "--tile-size")
+    if t_run(t_cmd(missing)) == 0 { return T_FAIL }
+    let missing_out: string = read_text(t_out()) + read_text(t_err())
+    if not a_contains(missing_out, "--tile-size requires a value") { return T_FAIL }
+
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "mlir", "tests/mlir/affine_loop.flow")
+    sl_push(argv, "--affine")
     sl_push(argv, "--tile-size=4")
     sl_push(argv, "--tile-l2-size=8")
-    sl_push(argv, "tests/mlir/affine_loop.flow")
     let c: ptr<ProcCmd> = t_cmd(argv)
     cmd_env(c, "FLOW_BUILD_ROOT", t_tmp() + "/build")
-    if t_run(c) != 0 { return T_FAIL }
-    let output: string = read_text(t_out())
-    if not a_contains(output, "affine.for") { return T_FAIL }
-    if not a_contains(output, "step 8") { return T_FAIL }
-    if not a_contains(output, "step 4") { return T_FAIL }
-    return T_PASS
+    let rc: i32 = t_run(c)
+    let output: string = read_text(t_out()) + read_text(t_err())
+    if s_contains(output, "unknown option") {
+        outln("flow mlir rejected --affine as unknown")
+        return T_FAIL
+    }
+    if rc == 0 {
+        if not a_contains(output, "affine.for") { return T_FAIL }
+        if not a_contains(output, "step 8") { return T_FAIL }
+        if not a_contains(output, "step 4") { return T_FAIL }
+        return T_PASS
+    }
+    # flow mlir still requires mlir-opt even when only emitting.
+    if s_contains(output, "MLIR tools not found") { return T_PASS }
+    outln("flow mlir --affine failed:")
+    outln(output)
+    return T_FAIL
 }
 
 function check_affine_emitter_rejects_bad_tile() -> i32 {

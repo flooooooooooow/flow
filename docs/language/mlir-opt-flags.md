@@ -219,7 +219,7 @@ the affine dialect. `flow flow-to-mlir` and `flow mlir` accept `--affine`:
 
 ```bash
 ./flow flow-to-mlir --affine tests/mlir/affine_loop.flow /tmp/affine.mlir
-./flow mlir --affine tests/mlir/affine_loop.flow
+./flow mlir tests/mlir/affine_loop.flow --affine
 ```
 
 The first slice covers positive constant steps, integer or dynamic bounds, and
