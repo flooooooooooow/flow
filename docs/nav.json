@@ -849,6 +849,10 @@
           "path": "project/RELEASING.md"
         },
         {
+          "label": "Release Qualification",
+          "path": "project/release-qualification.md"
+        },
+        {
           "label": "Package Registry",
           "path": "project/package-registry.md"
         },
