@@ -255,7 +255,10 @@ function rt_is_type_token(src: ptr<u8>, s: i32, e: i32) -> i32 {
         return 0
     }
     if e - s == 2 {
-        return src[s + 1] == 56
+        if src[s + 1] == 56 {
+            return 1
+        }
+        return 0
     }
     if src[s + 1] == 49 and src[s + 2] == 54 and e - s == 3 {
         return 1
@@ -266,7 +269,7 @@ function rt_is_type_token(src: ptr<u8>, s: i32, e: i32) -> i32 {
     if src[s + 1] == 54 and src[s + 2] == 52 and e - s == 3 {
         return 1
     }
-    if src[s + 1] == 49 and src[s + 2] == 50 and src[s + 3] == 56 and e - s == 4 {
+    if e - s == 4 and src[s + 1] == 49 and src[s + 2] == 50 and src[s + 3] == 56 {
         return 1
     }
     return 0
