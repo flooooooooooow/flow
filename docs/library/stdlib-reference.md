@@ -3,7 +3,7 @@
 Core API reference for commonly used standard library modules.
 There are ~48 top-level modules under `lib/stdlib/` (plus audio/, ui/, …);
 this page covers the subset below. See also [memory.md](memory.md),
-[gpu-memory.md](gpu-memory.md), [autodiff.md](autodiff.md),
+[gpu-memory.md](gpu-memory.md), [gpu-graph.md](gpu-graph.md), [autodiff.md](autodiff.md),
 [rt-safety.md](rt-safety.md), and [async-effects.md](../language/async-effects.md).
 
 ## Table of Contents

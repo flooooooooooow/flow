@@ -74,6 +74,14 @@ The shipped GPU generator targets Metal. CUDA and OpenCL backends are not claime
 
 `stdlib/gpu_memory.flow` wraps Metal buffers and copies. The lifecycle is: create the runtime, allocate/wrap buffers, upload input, dispatch, synchronize where required, download results, then destroy buffers and runtime. Unified memory can reduce copies but does not remove ordering or lifetime requirements.
 
+## 15.6.1 Render/compute graph
+
+`stdlib/gpu_graph.flow` is a backend-independent pass graph: storage
+buffers and storage textures, ping-pong pairs, transient resources,
+dispatch dimensions, workgroup memory and hazard checks. The same graph
+emits Metal and WGSL. Sampled textures, samplers and geometry types are
+a separate surface and are not defined here. See [GPU graph](../library/gpu-graph.md).
+
 ## 15.7 WebGPU and WGSL
 
 Flow can generate WGSL for supported browser GPU crossings. WGSL binding/layout rules differ from Metal, so kernels may require backend-specific adjustments.

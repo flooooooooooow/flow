@@ -2,7 +2,7 @@
 
 > Auto-generated from `lib/stdlib/` by `./flow tool gen_stdlib_docs`. Per-function docs come from `#` comments immediately above each `export function`.
 
-**115** modules scanned.
+**116** modules scanned.
 
 ## Modules
 
@@ -1653,6 +1653,95 @@ GIF89a animated encoder, pure Flow. Writes an infinite-loop animation with a fix
 GPU gradient kernels (manual reverse-mode building blocks)  These are elementwise backward kernels for ML training on GPU, not a
 
 *No `export` items found (internal / extern-only module).*
+
+### `gpu_graph.flow`
+
+Typed render/compute graph (issue #812)  Backend-independent IR for multi-pass GPU programs: storage buffers,
+
+**Structs:** `GpuDim3`, `GpuGraphResource`, `GpuBinding`, `GpuPass`, `GpuPingPong`, `GpuDep`, `GpuGraph`, `GpuGraphError`
+
+**Constants:**
+
+- `GPU_RES_STORAGE_BUFFER: i32`
+- `GPU_RES_STORAGE_TEXTURE: i32`
+- `GPU_ACCESS_READ: i32`
+- `GPU_ACCESS_WRITE: i32`
+- `GPU_ACCESS_READ_WRITE: i32`
+- `GPU_LIFE_PERSISTENT: i32`
+- `GPU_LIFE_TRANSIENT: i32`
+- `GPU_GRAPH_FMT_NONE: i32`
+- `GPU_GRAPH_FMT_R32FLOAT: i32`
+- `GPU_GRAPH_FMT_RG32FLOAT: i32`
+- `GPU_GRAPH_FMT_RGBA16FLOAT: i32`
+- `GPU_GRAPH_FMT_RGBA8UNORM: i32`
+- `GPU_DIM_BUFFER: i32`
+- `GPU_DIM_1D: i32`
+- `GPU_DIM_2D: i32`
+- `GPU_DIM_3D: i32`
+- `GPU_PASS_COMPUTE: i32`
+- `GPU_PASS_RENDER: i32`
+- `GPU_HAZARD_STRICT: i32`
+- `GPU_HAZARD_ALLOW_FEEDBACK: i32`
+- `GPU_GRAPH_OK: i32`
+- `GPU_GRAPH_ERR_CONFLICTING_BINDING: i32`
+- `GPU_GRAPH_ERR_SAME_PASS_RW: i32`
+- `GPU_GRAPH_ERR_PINGPONG_ALIAS: i32`
+- `GPU_GRAPH_ERR_BAD_ACCESS: i32`
+- `GPU_GRAPH_ERR_WORKGROUP: i32`
+- `GPU_GRAPH_ERR_FULL: i32`
+- `GPU_GRAPH_ERR_UNKNOWN_RESOURCE: i32`
+- `GPU_GRAPH_ERR_TRANSIENT: i32`
+- `GPU_GRAPH_ERR_BARRIER: i32`
+- `GPU_GRAPH_MAX_RESOURCES: i32`
+- `GPU_GRAPH_MAX_PASSES: i32`
+- `GPU_GRAPH_MAX_BINDINGS: i32`
+- `GPU_GRAPH_MAX_PINGPONG: i32`
+- `GPU_GRAPH_MAX_DEPS: i32`
+- `GPU_GRAPH_MAX_WG_THREADS: i32`
+- `GPU_GRAPH_MAX_WG_BYTES: i32`
+
+**Functions:**
+
+| Name | Signature | Docs |
+|------|-----------|------|
+| `gpu_dim3` | `(x: i32, y: i32, z: i32) -> GpuDim3` | - |
+| `gpu_dim3_1` | `(x: i32) -> GpuDim3` | - |
+| `gpu_graph_ok` | `() -> GpuGraphError` | - |
+| `gpu_graph_error_name` | `(code: i32) -> string` | - |
+| `gpu_graph_new` | `() -> GpuGraph` | - |
+| `gpu_access_has_read` | `(usage: i32) -> bool` | - |
+| `gpu_access_has_write` | `(usage: i32) -> bool` | - |
+| `gpu_graph_physical` | `(g: GpuGraph, resource_id: i32) -> i32` | - |
+| `gpu_graph_pingpong_read_id` | `(g: GpuGraph, pp_id: i32) -> i32` | - |
+| `gpu_graph_pingpong_write_id` | `(g: GpuGraph, pp_id: i32) -> i32` | - |
+| `gpu_graph_add_storage_buffer` | `(g: ptr<GpuGraph>, name: string, usage: i32, lifetime: i32, bytes: i32) -> i32` | - |
+| `gpu_graph_add_storage_texture` | `(g: ptr<GpuGraph>, name: string, usage: i32, lifetime: i32, format: i32, dim: i32, width: i32, height: i32, depth: i32) -> i32` | - |
+| `gpu_graph_add_pingpong` | `(g: ptr<GpuGraph>, name: string, a: i32, b: i32) -> i32` | - |
+| `gpu_graph_pingpong_swap` | `(g: ptr<GpuGraph>, pp_id: i32) -> i32` | - |
+| `gpu_graph_add_compute` | `(g: ptr<GpuGraph>, name: string, workgroup: GpuDim3, dispatch: GpuDim3, workgroup_bytes: i32, barrier: i32) -> i32` | - |
+| `gpu_graph_add_render` | `(g: ptr<GpuGraph>, name: string, draw_count: i32) -> i32` | - |
+| `gpu_graph_set_iterations` | `(g: ptr<GpuGraph>, pass_id: i32, iterations: i32) -> i32` | - |
+| `gpu_graph_set_feedback` | `(g: ptr<GpuGraph>, pass_id: i32) -> i32` | - |
+| `gpu_graph_set_hazard_mode` | `(g: ptr<GpuGraph>, mode: i32) -> void` | - |
+| `gpu_graph_bind` | `(g: ptr<GpuGraph>, pass_id: i32, resource_id: i32, usage: i32, slot: i32) -> i32` | - |
+| `gpu_graph_bind_pingpong` | `(g: ptr<GpuGraph>, pass_id: i32, pp_id: i32, read_slot: i32, write_slot: i32) -> i32` | - |
+| `gpu_graph_derive_deps` | `(g: ptr<GpuGraph>) -> void` | - |
+| `gpu_graph_has_dep` | `(g: GpuGraph, from_pass: i32, to_pass: i32) -> bool` | - |
+| `gpu_graph_validate` | `(g: ptr<GpuGraph>) -> GpuGraphError` | - |
+| `gpu_graph_access_name` | `(usage: i32) -> string` | - |
+| `gpu_graph_format_wgsl` | `(format: i32) -> string` | - |
+| `gpu_graph_dim_wgsl` | `(dim: i32) -> string` | - |
+| `gpu_graph_dim_metal` | `(dim: i32) -> string` | - |
+| `gpu_graph_metal_access` | `(usage: i32) -> string` | - |
+| `gpu_graph_wgsl_binding_at` | `(res: GpuGraphResource, slot: i32, usage: i32) -> string` | - |
+| `gpu_graph_metal_binding_at` | `(res: GpuGraphResource, slot: i32, usage: i32) -> string` | - |
+| `gpu_graph_wgsl_workgroup` | `(wg: GpuDim3) -> string` | - |
+| `gpu_graph_emit_wgsl_pass` | `(g: GpuGraph, pass_id: i32) -> string` | - |
+| `gpu_graph_emit_metal_pass` | `(g: GpuGraph, pass_id: i32) -> string` | - |
+| `gpu_graph_same_source_both_backends` | `(g: GpuGraph) -> bool` | Same Flow graph lowers to both backends; used by the vgpu fluid and FFT-ocean families so Metal and WebGPU share one resource/pass layout. |
+| `gpu_graph_vgpu_fluid` | `() -> GpuGraph` | vgpu interactive-fluid family: advect, curl, vorticity, divergence, pressure (Jacobi ping-pong), project, advect-dye, display. |
+| `gpu_graph_vgpu_fft_ocean` | `() -> GpuGraph` | vgpu FFT-ocean family: Phillips spectrum, Stockham IFFT with workgroup memory/barriers, displacement, normals/foam, present. |
+| `gpu_graph_vgpu_fft_ocean_surface` | `() -> GpuGraph` | FFT-ocean surface family shares the compute graph and presents a grid. |
 
 ### `gpu_kernels.flow`
 

@@ -41,6 +41,7 @@ Navigable table of contents for the full [LANGUAGE_SPEC.md](../LANGUAGE_SPEC.md)
 | [Graphics](graphics.md) | Native 2D graphics + platform matrix |
 | [Shaders](shaders.md) | Fill-shader surface language |
 | [GPU memory](../library/gpu-memory.md) | Unified GPU buffers (Metal) |
+| [GPU graph](../library/gpu-graph.md) | Render/compute graph, storage textures, hazard checks |
 | [RT-safety](../library/rt-safety.md) | `@rt_safe` |
 | [Async via Effects](async-effects.md) | FiberAsync / ThreadedAsync / NetpollAsyncIO |
 | [Concurrency vs Go](concurrency-vs-go.md) | Channels, fibers, OpenMP, benches |

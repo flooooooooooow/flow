@@ -1253,6 +1253,10 @@ Legacy `dsys` / `dynamics { }` and vision-form `analyze plant { lqr { Q… R… 
 
 CUDA/OpenCL backends are **not** shipping.
 
+The render/compute graph IR (storage textures/buffers, ping-pong, hazards)
+is a stdlib data model, not new syntax: [gpu-graph.md](library/gpu-graph.md).
+`gpu frame { ... }` remains parse-only.
+
 ### 10.7 Recording and GIF output
 
 **Status:** ✅ (headless recorder + pure-Flow stdlib encoder)

@@ -2590,7 +2590,7 @@ offline verification.
 | Area | Modules |
 |---|---|
 | Graphics | `gfx`, `font`, `gif`, `sdl2` |
-| GPU | `gpu_memory`, `gpu_sim`, `gpu_kernels`, `gpu_gradients` |
+| GPU | `gpu_memory`, `gpu_graph`, `gpu_sim`, `gpu_kernels`, `gpu_gradients` |
 | 3D | `render3d` |
 | UI | `ui`, `ui2d`, `ui_layout` |
 | Vulkan | `vulkan`, `vulkan_abi_renderer`, `vulkan_renderer` |

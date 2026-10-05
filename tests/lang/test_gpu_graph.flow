@@ -1,0 +1,308 @@
+# Typed render/compute graph: hazards, aliases, derived deps, dual emit.
+# A new regression here must fail on a graph that skips the check.
+
+import "stdlib/gpu_graph.flow"
+
+extern {
+    function strlen(s: string) -> i64
+}
+
+function str_has(hay: string, needle: string) -> bool {
+    let n: i32 = strlen(hay) as i32
+    let m: i32 = strlen(needle) as i32
+    if m == 0 {
+        return true
+    }
+    if m > n {
+        return false
+    }
+    let hp: ptr<u8> = hay as ptr<u8>
+    let np: ptr<u8> = needle as ptr<u8>
+    let mut i: i32 = 0
+    while i <= n - m {
+        let mut ok: bool = true
+        let mut j: i32 = 0
+        while j < m {
+            if hp[i + j] != np[j] {
+                ok = false
+            }
+            j = j + 1
+        }
+        if ok {
+            return true
+        }
+        i = i + 1
+    }
+    return false
+}
+
+function expect_ok(e: GpuGraphError, n: i32) -> i32 {
+    if e.code != GPU_GRAPH_OK {
+        return n
+    }
+    return 0
+}
+
+function main() -> i32 {
+    # 1. Valid two-pass compute chain derives a write->read dependency.
+    let mut g: GpuGraph = gpu_graph_new()
+    let gp: ptr<GpuGraph> = &g
+    let buf_a: i32 = gpu_graph_add_storage_buffer(gp, "src", GPU_ACCESS_READ_WRITE, GPU_LIFE_PERSISTENT, 64)
+    let buf_b: i32 = gpu_graph_add_storage_buffer(gp, "dst", GPU_ACCESS_READ_WRITE, GPU_LIFE_PERSISTENT, 64)
+    let p0: i32 = gpu_graph_add_compute(gp, "produce", gpu_dim3_1(64), gpu_dim3_1(1), 0, 0)
+    let p1: i32 = gpu_graph_add_compute(gp, "consume", gpu_dim3_1(64), gpu_dim3_1(1), 0, 0)
+    if gpu_graph_bind(gp, p0, buf_a, GPU_ACCESS_READ, 0) < 0 {
+        return 1
+    }
+    if gpu_graph_bind(gp, p0, buf_b, GPU_ACCESS_WRITE, 1) < 0 {
+        return 2
+    }
+    if gpu_graph_bind(gp, p1, buf_b, GPU_ACCESS_READ, 0) < 0 {
+        return 3
+    }
+    let e0: GpuGraphError = gpu_graph_validate(gp)
+    if expect_ok(e0, 4) != 0 {
+        return 4
+    }
+    if !gpu_graph_has_dep(g, p0, p1) {
+        return 5
+    }
+    if gpu_graph_has_dep(g, p1, p0) {
+        return 6
+    }
+
+    # 2. Same-pass read/write of one physical resource is rejected.
+    let mut bad: GpuGraph = gpu_graph_new()
+    let bp: ptr<GpuGraph> = &bad
+    let t: i32 = gpu_graph_add_storage_texture(bp, "field", GPU_ACCESS_READ_WRITE, GPU_LIFE_PERSISTENT, GPU_GRAPH_FMT_RGBA16FLOAT, GPU_DIM_2D, 8, 8, 1)
+    let rw: i32 = gpu_graph_add_compute(bp, "rw", gpu_dim3(8, 8, 1), gpu_dim3(8, 8, 1), 0, 0)
+    if gpu_graph_bind(bp, rw, t, GPU_ACCESS_READ, 0) < 0 {
+        return 7
+    }
+    if gpu_graph_bind(bp, rw, t, GPU_ACCESS_WRITE, 1) < 0 {
+        return 8
+    }
+    let e1: GpuGraphError = gpu_graph_validate(bp)
+    if e1.code != GPU_GRAPH_ERR_SAME_PASS_RW {
+        return 9
+    }
+    if gpu_graph_error_name(e1.code) != "same_pass_rw" {
+        return 10
+    }
+
+    # 3. Explicit feedback mode allows the same-pass R/W.
+    if gpu_graph_set_feedback(bp, rw) != 0 {
+        return 11
+    }
+    let e2: GpuGraphError = gpu_graph_validate(bp)
+    if expect_ok(e2, 12) != 0 {
+        return 12
+    }
+
+    # 4. Conflicting bindings on one slot are rejected.
+    let mut clash: GpuGraph = gpu_graph_new()
+    let cp: ptr<GpuGraph> = &clash
+    let c0: i32 = gpu_graph_add_storage_buffer(cp, "a", GPU_ACCESS_READ, GPU_LIFE_PERSISTENT, 16)
+    let c1: i32 = gpu_graph_add_storage_buffer(cp, "b", GPU_ACCESS_READ, GPU_LIFE_PERSISTENT, 16)
+    let cpass: i32 = gpu_graph_add_compute(cp, "clash", gpu_dim3_1(8), gpu_dim3_1(1), 0, 0)
+    if gpu_graph_bind(cp, cpass, c0, GPU_ACCESS_READ, 0) < 0 {
+        return 13
+    }
+    if gpu_graph_bind(cp, cpass, c1, GPU_ACCESS_READ, 0) < 0 {
+        return 14
+    }
+    let e3: GpuGraphError = gpu_graph_validate(cp)
+    if e3.code != GPU_GRAPH_ERR_CONFLICTING_BINDING {
+        return 15
+    }
+
+    # 5. Write-only resource cannot be bound as read.
+    let mut acc: GpuGraph = gpu_graph_new()
+    let ap: ptr<GpuGraph> = &acc
+    let wo: i32 = gpu_graph_add_storage_texture(ap, "dst", GPU_ACCESS_WRITE, GPU_LIFE_PERSISTENT, GPU_GRAPH_FMT_R32FLOAT, GPU_DIM_2D, 4, 4, 1)
+    let apass: i32 = gpu_graph_add_compute(ap, "bad_read", gpu_dim3(4, 4, 1), gpu_dim3(4, 4, 1), 0, 0)
+    if gpu_graph_bind(ap, apass, wo, GPU_ACCESS_READ, 0) < 0 {
+        return 16
+    }
+    let e4: GpuGraphError = gpu_graph_validate(ap)
+    if e4.code != GPU_GRAPH_ERR_BAD_ACCESS {
+        return 17
+    }
+
+    # 6. Ping-pong swap flips the physical read/write ids.
+    let mut ppg: GpuGraph = gpu_graph_new()
+    let pp: ptr<GpuGraph> = &ppg
+    let pa: i32 = gpu_graph_add_storage_texture(pp, "p_a", GPU_ACCESS_READ_WRITE, GPU_LIFE_PERSISTENT, GPU_GRAPH_FMT_R32FLOAT, GPU_DIM_2D, 4, 4, 1)
+    let pb: i32 = gpu_graph_add_storage_texture(pp, "p_b", GPU_ACCESS_READ_WRITE, GPU_LIFE_PERSISTENT, GPU_GRAPH_FMT_R32FLOAT, GPU_DIM_2D, 4, 4, 1)
+    let pair: i32 = gpu_graph_add_pingpong(pp, "pressure", pa, pb)
+    if gpu_graph_pingpong_read_id(ppg, pair) != pa {
+        return 18
+    }
+    if gpu_graph_pingpong_write_id(ppg, pair) != pb {
+        return 19
+    }
+    if gpu_graph_pingpong_swap(pp, pair) != 1 {
+        return 20
+    }
+    if gpu_graph_pingpong_read_id(ppg, pair) != pb {
+        return 21
+    }
+    if gpu_graph_pingpong_write_id(ppg, pair) != pa {
+        return 22
+    }
+
+    # 7. Ping-pong of the same physical resource is refused at construction.
+    if gpu_graph_add_pingpong(pp, "alias", pa, pa) != 0 - 1 {
+        return 23
+    }
+
+    # 8. Workgroup memory without a barrier is rejected.
+    let mut wg: GpuGraph = gpu_graph_new()
+    let wp: ptr<GpuGraph> = &wg
+    let wb: i32 = gpu_graph_add_storage_buffer(wp, "s", GPU_ACCESS_READ_WRITE, GPU_LIFE_PERSISTENT, 32)
+    let wpass: i32 = gpu_graph_add_compute(wp, "ifft", gpu_dim3_1(64), gpu_dim3_1(1), 4096, 0)
+    if gpu_graph_bind(wp, wpass, wb, GPU_ACCESS_READ_WRITE, 0) < 0 {
+        return 24
+    }
+    let e5: GpuGraphError = gpu_graph_validate(wp)
+    if e5.code != GPU_GRAPH_ERR_BARRIER {
+        return 25
+    }
+    wg.passes[wpass].barrier = 1
+    let e6: GpuGraphError = gpu_graph_validate(wp)
+    if expect_ok(e6, 26) != 0 {
+        return 26
+    }
+
+    # 9. Workgroup size over the backend limit is rejected.
+    let mut big: GpuGraph = gpu_graph_new()
+    let bgp: ptr<GpuGraph> = &big
+    let bb: i32 = gpu_graph_add_storage_buffer(bgp, "s", GPU_ACCESS_WRITE, GPU_LIFE_PERSISTENT, 8)
+    let bpass: i32 = gpu_graph_add_compute(bgp, "too_wide", gpu_dim3(32, 16, 1), gpu_dim3_1(1), 0, 0)
+    if gpu_graph_bind(bgp, bpass, bb, GPU_ACCESS_WRITE, 0) < 0 {
+        return 27
+    }
+    let e7: GpuGraphError = gpu_graph_validate(bgp)
+    if e7.code != GPU_GRAPH_ERR_WORKGROUP {
+        return 28
+    }
+
+    # 10. Transient read-before-write is rejected.
+    let mut tr: GpuGraph = gpu_graph_new()
+    let tp: ptr<GpuGraph> = &tr
+    let tmp: i32 = gpu_graph_add_storage_texture(tp, "scratch", GPU_ACCESS_READ_WRITE, GPU_LIFE_TRANSIENT, GPU_GRAPH_FMT_R32FLOAT, GPU_DIM_2D, 4, 4, 1)
+    let tread: i32 = gpu_graph_add_compute(tp, "use", gpu_dim3(4, 4, 1), gpu_dim3(4, 4, 1), 0, 0)
+    if gpu_graph_bind(tp, tread, tmp, GPU_ACCESS_READ, 0) < 0 {
+        return 29
+    }
+    let e8: GpuGraphError = gpu_graph_validate(tp)
+    if e8.code != GPU_GRAPH_ERR_TRANSIENT {
+        return 30
+    }
+
+    # 11. Fluid family validates, derives deps, emits both backends.
+    let mut fluid: GpuGraph = gpu_graph_vgpu_fluid()
+    let fp: ptr<GpuGraph> = &fluid
+    let fe: GpuGraphError = gpu_graph_validate(fp)
+    if expect_ok(fe, 31) != 0 {
+        return 31
+    }
+    if fluid.pass_count != 8 {
+        return 32
+    }
+    if fluid.resource_count != 8 {
+        return 33
+    }
+    if fluid.pingpong_count != 3 {
+        return 34
+    }
+    if fluid.passes[4].iterations != 20 {
+        return 35
+    }
+    if !gpu_graph_has_dep(fluid, 0, 1) {
+        return 36
+    }
+    if !gpu_graph_has_dep(fluid, 3, 4) {
+        return 37
+    }
+    if !gpu_graph_has_dep(fluid, 6, 7) {
+        return 38
+    }
+    if !gpu_graph_same_source_both_backends(fluid) {
+        return 39
+    }
+    let fw: string = gpu_graph_emit_wgsl_pass(fluid, 0)
+    if !str_has(fw, "texture_storage_2d<rgba16float, read>") {
+        return 40
+    }
+    if !str_has(fw, "texture_storage_2d<rgba16float, write>") {
+        return 41
+    }
+    if !str_has(fw, "@workgroup_size(8, 8, 1)") {
+        return 42
+    }
+    let fm: string = gpu_graph_emit_metal_pass(fluid, 0)
+    if !str_has(fm, "texture2d<float, access::read>") {
+        return 43
+    }
+    if !str_has(fm, "texture2d<float, access::write>") {
+        return 44
+    }
+    if !str_has(fm, "kernel void advect_velocity") {
+        return 45
+    }
+
+    # 12. FFT-ocean family: storage buffers, workgroup memory, barrier.
+    let mut ocean: GpuGraph = gpu_graph_vgpu_fft_ocean()
+    let op: ptr<GpuGraph> = &ocean
+    let oe: GpuGraphError = gpu_graph_validate(op)
+    if expect_ok(oe, 46) != 0 {
+        return 46
+    }
+    if ocean.passes[2].workgroup_bytes != 4096 {
+        return 47
+    }
+    if ocean.passes[2].barrier != 1 {
+        return 48
+    }
+    if ocean.passes[2].workgroup.x != 256 {
+        return 49
+    }
+    if ocean.passes[2].iterations != 6 {
+        return 50
+    }
+    if !gpu_graph_same_source_both_backends(ocean) {
+        return 51
+    }
+    let ow: string = gpu_graph_emit_wgsl_pass(ocean, 2)
+    if !str_has(ow, "var<storage, read>") {
+        return 52
+    }
+    if !str_has(ow, "var<storage, write>") {
+        return 53
+    }
+    if !str_has(ow, "@workgroup_size(256, 1, 1)") {
+        return 54
+    }
+    let om: string = gpu_graph_emit_metal_pass(ocean, 2)
+    if !str_has(om, "device float* spectrum") {
+        return 55
+    }
+    let surf: GpuGraph = gpu_graph_vgpu_fft_ocean_surface()
+    if surf.passes[surf.pass_count - 1].name != "surface" {
+        return 56
+    }
+
+    # 13. Binding line helpers stay exact for both backends.
+    let res: GpuGraphResource = fluid.resources[0]
+    let line: string = gpu_graph_wgsl_binding_at(res, 0, GPU_ACCESS_READ)
+    if line != "@group(0) @binding(0) var vel_a: texture_storage_2d<rgba16float, read>;" {
+        return 57
+    }
+    let mline: string = gpu_graph_metal_binding_at(res, 1, GPU_ACCESS_WRITE)
+    if mline != "texture2d<float, access::write> vel_a [[texture(1)]]" {
+        return 58
+    }
+
+    return 0
+}
