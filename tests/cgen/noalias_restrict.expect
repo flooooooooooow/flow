@@ -23,7 +23,9 @@
 - restrict q
 + int32_t* q =
 # Mixed call sites: the shared function stays aliasable.
-- mix_add(int32_t* restrict
+# (Do not use the substring `mix_add(int32_t* restrict`: the clone name
+# `__flowc_na_mix_add` contains that.)
+- int32_t mix_add(int32_t* restrict
 + int32_t mix_add(int32_t* dst, int32_t* src, int32_t n);
 # Proven calls of that function use the specialized clone.
 + __flowc_na_mix_add(int32_t* restrict dst, int32_t* restrict src, int32_t n)
