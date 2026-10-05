@@ -129,6 +129,107 @@ function check_padding_and_swizzle_compose() -> i32 {
     return T_PASS
 }
 
+function check_target_swizzle_width() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-swizzle")
+    sl_push(argv, "--aosoa-swizzle-width=8")
+    sl_push(argv, "compiler/fixtures/mlir_opt/aosoa_padding.flow")
+    sl_push(argv, t_tmp() + "/aosoa-shift.mlir")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_tmp() + "/aosoa-shift.mlir")
+    if not a_contains(output, "arith.constant 3 : i32") { return T_FAIL }
+    if not a_contains(output, "arith.shrsi") { return T_FAIL }
+    if not a_contains(output, "arith.xori") { return T_FAIL }
+    return T_PASS
+}
+
+function check_target_swizzle_width_32() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-swizzle-width=32")
+    sl_push(argv, "compiler/fixtures/mlir_opt/aosoa_padding.flow")
+    sl_push(argv, t_tmp() + "/aosoa-shift-32.mlir")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_tmp() + "/aosoa-shift-32.mlir")
+    if not a_contains(output, "arith.constant 5 : i32") { return T_FAIL }
+    if not a_contains(output, "arith.shrsi") { return T_FAIL }
+    return T_PASS
+}
+
+function check_default_swizzle_width() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-swizzle")
+    sl_push(argv, "compiler/fixtures/mlir_opt/aosoa_padding.flow")
+    sl_push(argv, t_tmp() + "/aosoa-shift-default.mlir")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_tmp() + "/aosoa-shift-default.mlir")
+    if not a_contains(output, "arith.constant 2 : i32") { return T_FAIL }
+    if not a_contains(output, "arith.shrsi") { return T_FAIL }
+    return T_PASS
+}
+
+function check_target_swizzle_width_rejects_invalid() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-swizzle-width=3")
+    sl_push(argv, "compiler/fixtures/mlir_opt/aosoa_padding.flow")
+    sl_push(argv, t_tmp() + "/aosoa-invalid-shift.mlir")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--aosoa-swizzle-width must be a power of two") { return T_FAIL }
+    return T_PASS
+}
+
+function check_target_swizzle_width_rejects_one() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-swizzle-width=1")
+    sl_push(argv, "compiler/fixtures/mlir_opt/aosoa_padding.flow")
+    sl_push(argv, t_tmp() + "/aosoa-invalid-one.mlir")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--aosoa-swizzle-width must be a power of two") { return T_FAIL }
+    return T_PASS
+}
+
+function check_target_swizzle_width_requires_value() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-swizzle-width")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--aosoa-swizzle-width requires a value") { return T_FAIL }
+    return T_PASS
+}
+
+function check_bank_count_cli() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-bank-count=3")
+    sl_push(argv, "compiler/fixtures/mlir_opt/aosoa_non_power.flow")
+    sl_push(argv, t_tmp() + "/aosoa-bank-cli.mlir")
+    if t_run(t_cmd(argv)) != 0 { return T_FAIL }
+    let output: string = read_text(t_tmp() + "/aosoa-bank-cli.mlir")
+    if not a_contains(output, "memref<4xf32>") { return T_FAIL }
+    return T_PASS
+}
+
+function check_bank_count_cli_rejects_invalid() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "flow-to-mlir", "--aosoa-bank-count=0")
+    sl_push(argv, "compiler/fixtures/mlir_opt/aosoa_non_power.flow")
+    sl_push(argv, t_tmp() + "/aosoa-invalid-bank-cli.mlir")
+    if t_run(t_cmd(argv)) == 0 { return T_FAIL }
+    if not a_contains(read_text(t_err()), "--aosoa-bank-count must be an integer") { return T_FAIL }
+    return T_PASS
+}
+
+function check_flow_mlir_accepts_swizzle_width() -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "mlir", "compiler/fixtures/mlir_opt/aosoa_padding.flow")
+    sl_push(argv, "--lenient")
+    sl_push(argv, "--aosoa-swizzle-width=8")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    cmd_env(c, "FLOW_BUILD_ROOT", t_tmp() + "/build")
+    let rc: i32 = t_run(c)
+    let log: string = read_text(t_out()) + read_text(t_err())
+    if s_contains(log, "unknown option") { return T_FAIL }
+    let mlir: string = t_tmp() + "/build/aosoa_padding.mlir"
+    if is_file(mlir) {
+        let output: string = read_text(mlir)
+        if not a_contains(output, "arith.constant 3 : i32") { return T_FAIL }
+        if not a_contains(output, "arith.shrsi") { return T_FAIL }
+        return T_PASS
+    }
+    if rc != 0 and s_contains(log, "MLIR tools not found") {
+        return T_PASS
+    }
+    return T_FAIL
+}
+
 function main() -> i32 {
     t_begin("mlir_aosoa")
     t_start()
@@ -146,6 +247,24 @@ function main() -> i32 {
     t_end("power_of_two_swizzle", check_power_of_two_swizzle())
     t_start()
     t_end("padding_and_swizzle_compose", check_padding_and_swizzle_compose())
+    t_start()
+    t_end("target_swizzle_width", check_target_swizzle_width())
+    t_start()
+    t_end("target_swizzle_width_32", check_target_swizzle_width_32())
+    t_start()
+    t_end("default_swizzle_width", check_default_swizzle_width())
+    t_start()
+    t_end("target_swizzle_width_invalid", check_target_swizzle_width_rejects_invalid())
+    t_start()
+    t_end("target_swizzle_width_one", check_target_swizzle_width_rejects_one())
+    t_start()
+    t_end("target_swizzle_width_missing", check_target_swizzle_width_requires_value())
+    t_start()
+    t_end("bank_count_cli", check_bank_count_cli())
+    t_start()
+    t_end("bank_count_cli_invalid", check_bank_count_cli_rejects_invalid())
+    t_start()
+    t_end("flow_mlir_swizzle_width", check_flow_mlir_accepts_swizzle_width())
     t_done()
     return 0
 }
