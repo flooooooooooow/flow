@@ -38,7 +38,7 @@ import .typecheck {
 }
 import .profile {
     flowc_prof_span_begin, flowc_prof_span_end, flowc_prof_note_source,
-    flowc_prof_carve, flowc_prof_ns,
+    flowc_prof_carve, flowc_prof_phase_ns,
     FLOWC_PROF_SOURCE_READ, FLOWC_PROF_PARSE, FLOWC_PROF_IMPORT,
     FLOWC_PROF_TYPECHECK, FLOWC_PROF_MONO, FLOWC_PROF_LOWERING,
     FLOWC_PROF_CODEGEN, FLOWC_PROF_CACHE
@@ -2609,8 +2609,8 @@ function flowc_resolve_emit_one(
     flowc_fuse_pipelines(&p.arena, src)
     # The file this module's #line directives name (FLOWC_DEBUG_INFO=1).
     let _setf: i32 = setenv("FLOWC_CGEN_FILE", path, 1)
-    let m0: i64 = flowc_prof_ns(FLOWC_PROF_MONO)
-    let l0: i64 = flowc_prof_ns(FLOWC_PROF_LOWERING)
+    let m0: i64 = flowc_prof_phase_ns(FLOWC_PROF_MONO)
+    let l0: i64 = flowc_prof_phase_ns(FLOWC_PROF_LOWERING)
     let t_gen: i64 = flowc_prof_span_begin()
     let mut n: i32 = flowc_cgen_emit_sigs(p.arena, root, src, out, out_cap, flags, sigs, siglen[0])
     flowc_prof_span_end(FLOWC_PROF_CODEGEN, t_gen)

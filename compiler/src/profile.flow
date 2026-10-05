@@ -170,7 +170,7 @@ export function flowc_prof_span_end(id: i32, start: i64) {
 
 # Subtract nested phase time from an outer bucket so mono/lowering are
 # not also counted as codegen when the caller wraps the whole emit.
-export function flowc_prof_ns(id: i32) -> i64 {
+export function flowc_prof_phase_ns(id: i32) -> i64 {
     return flowc_prof_get_raw(id)
 }
 
