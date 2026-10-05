@@ -1,0 +1,37 @@
+# Counted `while i < n { ...; i = i + 1 }` rotates to a C for so the
+# #739 SIMD hints and memmove copy lowering apply (#739).
+
+function sum_w(x: ptr<f32>, n: i32) -> f32 {
+    let mut s: f32 = 0.0
+    let mut i: i32 = 0
+    while i < n {
+        s = s + x[i]
+        i = i + 1
+    }
+    return s
+}
+
+function copy_w(dst: ptr<i32>, src: ptr<i32>, n: i32) -> void {
+    let mut i: i32 = 0
+    while i < n {
+        dst[i] = src[i]
+        i = i + 1
+    }
+}
+
+function main() -> i32 {
+    let mut x: [f32; 4] = [1.0, 2.0, 3.0, 4.0]
+    if sum_w(&x[0], 4) != 10.0 {
+        return 1
+    }
+    let mut dst: [i32; 4] = [0, 0, 0, 0]
+    let src: [i32; 4] = [5, 6, 7, 8]
+    copy_w(&dst[0], &src[0], 4)
+    if dst[0] != 5 {
+        return 2
+    }
+    if dst[3] != 8 {
+        return 3
+    }
+    return 0
+}

@@ -1,6 +1,8 @@
 # Inline exp() inside nested while loops builds and runs (#421).
-# The loops carry no vectorization pragmas (#414).
+# Counted `while i < N { ...; i = i + 1 }` rotates to a C for (#739).
 + exp((double)
-- ivdep
-- vectorize
++ for (; k < (10); k = k + 1)
++ for (; i < (10); i = i + 1)
+- while (k < 10)
+- while (i < 10)
 exit 0

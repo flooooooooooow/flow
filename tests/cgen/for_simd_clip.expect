@@ -1,0 +1,6 @@
+# Clip if/else becomes a ternary; the loop is SIMD-hinted (#739).
++ ) ? (
++ #pragma clang loop vectorize(enable) interleave(enable)
++ #pragma omp simd
+- if (v < lo)
+exit 0

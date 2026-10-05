@@ -1,0 +1,143 @@
+# Tier-1 x86-64 / arm64 assembly evidence for the #739 C SIMD kernels.
+# The generated C carries GCC/clang vector_size loops; compiling them at
+# -O3 must produce 128-bit SIMD ops on the two production CPU targets.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcCmd, ProcStrs }
+
+function is_x86(m: string) -> bool {
+    return s_eq(m, "x86_64") or s_eq(m, "amd64") or s_eq(m, "x86-64")
+}
+
+function is_arm64(m: string) -> bool {
+    return s_eq(m, "aarch64") or s_eq(m, "arm64")
+}
+
+function emit_kernels(c_out: string) -> i32 {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "compiler/scripts/flowc_emit.flow")
+    sl_push2(argv, t_root() + "/tests/cgen/for_simd_hot_loops.flow", c_out)
+    return t_run(t_cmd(argv))
+}
+
+function check_generated_vector_types() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    let c_out: string = t_tmp() + "/kernels.c"
+    if emit_kernels(c_out) != 0 {
+        outln("flowc_emit failed")
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let ctext: string = read_text(c_out)
+    if not a_contains(ctext, "FLOWC_HAS_V128") {
+        return T_FAIL
+    }
+    if not a_contains(ctext, "vector_size(16)") {
+        return T_FAIL
+    }
+    if not a_contains(ctext, "flowc_v4f32") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function has_x86_simd(asm: string) -> bool {
+    if s_contains(asm, "xmm") {
+        return true
+    }
+    if s_contains(asm, "ymm") {
+        return true
+    }
+    if s_contains(asm, "addps") {
+        return true
+    }
+    if s_contains(asm, "mulps") {
+        return true
+    }
+    if s_contains(asm, "addpd") {
+        return true
+    }
+    if s_contains(asm, "vadd") {
+        return true
+    }
+    return false
+}
+
+function has_arm_simd(asm: string) -> bool {
+    if s_contains(asm, ".4s") {
+        return true
+    }
+    if s_contains(asm, ".2d") {
+        return true
+    }
+    if s_contains(asm, "ld1") {
+        return true
+    }
+    if s_contains(asm, "fmla") {
+        return true
+    }
+    if s_contains(asm, "fadd") {
+        return true
+    }
+    if s_contains(asm, "fmul") {
+        return true
+    }
+    return false
+}
+
+function check_tier1_assembly() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    let m: string = uname_m()
+    if not is_x86(m) and not is_arm64(m) {
+        outln("not a Tier-1 CPU (" + m + ")")
+        return T_SKIP
+    }
+    let c_out: string = t_tmp() + "/kernels.c"
+    if emit_kernels(c_out) != 0 {
+        outln("flowc_emit failed")
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let s_out: string = t_tmp() + "/kernels.s"
+    let cc: string = env_or("CC", "cc")
+    let argv: ptr<ProcStrs> = sl_of3(cc, "-std=c11", "-O3")
+    sl_push(argv, "-march=native")
+    sl_push(argv, "-S")
+    sl_push2(argv, "-o", s_out)
+    sl_push(argv, c_out)
+    sl_push(argv, "-lm")
+    if t_run(t_cmd(argv)) != 0 {
+        outln("cc -S failed")
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let asm: string = read_text(s_out)
+    if is_x86(m) {
+        if not has_x86_simd(asm) {
+            outln("x86-64 assembly has no 128-bit SIMD ops")
+            t_cat(s_out)
+            return T_FAIL
+        }
+        return T_PASS
+    }
+    if not has_arm_simd(asm) {
+        outln("arm64 assembly has no 128-bit SIMD ops")
+        t_cat(s_out)
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("simd_asm")
+    t_start()
+    t_end("generated_vector_types", check_generated_vector_types())
+    t_start()
+    t_end("tier1_assembly", check_tier1_assembly())
+    t_done()
+    return 0
+}
