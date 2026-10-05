@@ -643,6 +643,10 @@
           "path": "language/export-abi.md"
         },
         {
+          "label": "FFI Buffer ABI",
+          "path": "language/ffi-buffer.md"
+        },
+        {
           "label": "C Function Pointers",
           "path": "language/c-fnptr-call.md"
         }

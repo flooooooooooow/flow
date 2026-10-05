@@ -11,6 +11,7 @@ Detailed documentation for the Flow programming language.
 | [Syntax](syntax.md) | Lexical structure, operators, grammar |
 | [Types](types.md) | Type system and primitive types |
 | [Spans](spans.md) | Borrowed `{pointer, length}` views over contiguous storage |
+| [FFI buffer ABI](ffi-buffer.md) | Zero-copy pointer/span/array handoff; borrowed vs owned |
 | [Functions](functions.md) | Function definitions and calling |
 | [Variables](variables.md) | Variables, mutability, scope |
 | [Dynamics DSL](dynamics-dsl.md) | `dsys` / `analyze` / LQR expanders |
