@@ -27,6 +27,7 @@ benchmarks/
 ├── baselines/python/        # CPython and NumPy subjects for every comparison
 ├── micro/                    # Micro-benchmarks
 │   ├── fft_benchmark.flow   # Fast Fourier Transform
+│   ├── ffi_boundary_benchmark.flow  # FFI scalar / batched / buffer timings
 │   ├── mandelbrot_benchmark.flow  # Fractal computation
 │   ├── matmul_benchmark.flow     # Matrix multiplication
 │   ├── nbody_benchmark.flow      # N-body simulation
@@ -53,6 +54,7 @@ No workload source rewrite is required. See [docs/library/memory.md](../docs/lib
 # Run individual benchmarks
 ./flow run benchmarks/micro/sort_benchmark.flow
 ./flow run benchmarks/micro/matmul_benchmark.flow
+./flow run benchmarks/micro/parallel_scaling.flow
 ```
 
 ### What Each Benchmark Measures
