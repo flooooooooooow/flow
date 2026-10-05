@@ -127,7 +127,7 @@ function check_unsupported() -> i32 {
 
 function check_gradient_exact() -> i32 {
     let argv: ptr<ProcStrs> = gpu_test(sl_of2("--suite", "vgpu"))
-    sl_push2(argv, "--all-backends")
+    sl_push(argv, "--all-backends")
     sl_push2(argv, "--case", "gradient")
     if t_run_argv(argv) != 0 {
         t_cat(t_out())
