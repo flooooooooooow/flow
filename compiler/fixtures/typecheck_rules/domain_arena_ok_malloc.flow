@@ -1,0 +1,16 @@
+# expect: ok
+extern {
+    function malloc(size: i64) -> ptr<void>
+}
+
+@lifetime(application)
+let mut cache: ptr<void> = null
+
+@lifetime(session)
+function build() -> void {
+    cache = malloc(64)
+}
+
+function main() -> i32 {
+    return 0
+}
