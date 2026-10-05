@@ -397,7 +397,10 @@ function main() -> i32 {
 
     compile_module(host, "pipeline_fusion", "ast")
     hdrs(hdr, "pipeline_fusion")
-    compile_module(host, "resolve", "token ast lexer parser fileio denotation version field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl effects sort_plans cgen overload_table overload_call typecheck strutil sem_util sem_types sem_model sem_check pipeline_fusion")
+    # Opt-in phase timers (#735): resolve records import/parse/codegen spans.
+    compile_module(host, "profile", "fileio")
+    hdrs(hdr, "profile")
+    compile_module(host, "resolve", "token ast lexer parser fileio denotation version field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl effects sort_plans cgen overload_table overload_call typecheck strutil sem_util sem_types sem_model sem_check pipeline_fusion profile")
     let rs: ptr<ProcStrs> = sl_of3("flowc_bundle_emit", "flowc_bundle_typecheck", "flowc_resolve_sibling_path")
     sl_push(rs, "flowc_resolve_dirname")
     module_needs("resolve", rs)

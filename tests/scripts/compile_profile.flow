@@ -1,0 +1,149 @@
+# Proof for the #735 first slice: FLOWC_PROFILE JSON from a self-hosted
+# flowc (no Python), and compile_bench rows that carry those phases.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+import std.process { ProcCmd, proc_env }
+
+function host_bin() -> string {
+    let c: ptr<ProcCmd> = t_cmd(sl_of3("./flow", "tool", "compiler/scripts/flowc_host.flow"))
+    let _r: i32 = t_run(c)
+    if t_rc() != 0 {
+        return ""
+    }
+    return s_chomp_all(read_text(t_out()))
+}
+
+function check_profile_json() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    let host: string = host_bin()
+    if s_len(host) == 0 or not is_file(host) {
+        outln("flowc_host did not print a binary")
+        return T_FAIL
+    }
+    let out_c: string = t_tmp() + "/hello.c"
+    let c: ptr<ProcCmd> = t_cmd(sl_of1(host))
+    proc_env(c, "FLOWC_IN", t_root() + "/examples/basics/hello_world.flow")
+    proc_env(c, "FLOWC_OUT", out_c)
+    proc_env(c, "FLOWC_BUNDLE", "1")
+    proc_env(c, "FLOWC_DIR", t_root())
+    proc_env(c, "FLOWC_PROFILE", "json")
+    if t_run(c) != 0 {
+        outln("flowc emit failed")
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let err: string = read_text(t_err())
+    if not a_contains(err, "[flow-profile] ") {
+        return T_FAIL
+    }
+    if not a_contains(err, "flow-compile-profile/1") {
+        return T_FAIL
+    }
+    if not a_contains(err, "\"name\": \"parse\"") {
+        return T_FAIL
+    }
+    if not a_contains(err, "\"name\": \"import_resolution\"") {
+        return T_FAIL
+    }
+    if not a_contains(err, "\"name\": \"typecheck\"") {
+        return T_FAIL
+    }
+    if not a_contains(err, "\"name\": \"codegen\"") {
+        return T_FAIL
+    }
+    if not a_exists(out_c) {
+        outln("no C output")
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_off_by_default() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    let host: string = host_bin()
+    if s_len(host) == 0 {
+        return T_FAIL
+    }
+    let c: ptr<ProcCmd> = t_cmd(sl_of1(host))
+    proc_env(c, "FLOWC_IN", t_root() + "/examples/basics/hello_world.flow")
+    proc_env(c, "FLOWC_OUT", t_tmp() + "/hello.c")
+    proc_env(c, "FLOWC_BUNDLE", "1")
+    proc_env(c, "FLOWC_DIR", t_root())
+    if t_run(c) != 0 {
+        return T_FAIL
+    }
+    if not a_not_contains(read_text(t_err()), "[flow-profile]") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_compile_bench() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    let host: string = host_bin()
+    if s_len(host) == 0 {
+        return T_FAIL
+    }
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "tool", "compile_bench")
+    sl_push(argv, "--compiler")
+    sl_push(argv, host)
+    sl_push(argv, "--repeat")
+    sl_push(argv, "2")
+    sl_push(argv, "examples/basics/hello_world.flow")
+    let c: ptr<ProcCmd> = t_cmd(argv)
+    if t_run(c) != 0 {
+        outln("compile_bench failed")
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let out: string = read_text(t_out())
+    if not a_contains(out, "\"program\": \"examples/basics/hello_world.flow\"") {
+        return T_FAIL
+    }
+    if not a_contains(out, "\"cold_total_ms\"") {
+        return T_FAIL
+    }
+    if not a_contains(out, "\"warm_total_ms\"") {
+        return T_FAIL
+    }
+    if not a_contains(out, "flow-compile-profile/1") {
+        return T_FAIL
+    }
+    if not a_contains(out, "\"phase_parse_ms\"") {
+        return T_FAIL
+    }
+    if not a_contains(out, "\"phase_codegen_ms\"") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_no_python() -> i32 {
+    if have("python") or have("python3") {
+        # tests/scripts/run.flow stubs these to exit 127; they still "exist".
+        return T_PASS
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("compile_profile")
+    t_start()
+    t_end("profile_json", check_profile_json())
+    t_start()
+    t_end("off_by_default", check_off_by_default())
+    t_start()
+    t_end("compile_bench_phases", check_compile_bench())
+    t_start()
+    t_end("no_python", check_no_python())
+    t_done()
+    return 0
+}

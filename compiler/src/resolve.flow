@@ -36,6 +36,11 @@ import .typecheck {
     flowc_tc_init, flowc_tc_free, flowc_tc_reset_module,
     flowc_tc_set_path, flowc_tc_seed_export, flowc_tc_check_program
 }
+import .profile {
+    flowc_prof_span_begin, flowc_prof_span_end, flowc_prof_note_source,
+    FLOWC_PROF_SOURCE_READ, FLOWC_PROF_PARSE, FLOWC_PROF_IMPORT,
+    FLOWC_PROF_TYPECHECK, FLOWC_PROF_CODEGEN
+}
 
 extern {
     function malloc(size: i64) -> ptr<u8>
@@ -2558,7 +2563,9 @@ function flowc_resolve_emit_one(
         src[zi] = 0
         zi = zi + 1
     }
+    let t_read: i64 = flowc_prof_span_begin()
     let own: i32 = flowc_resolve_read_source(path, src, FLOWC_RESOLVE_SRC_CAP - 1)
+    flowc_prof_span_end(FLOWC_PROF_SOURCE_READ, t_read)
     if own <= 0 {
         free(src)
         return 0 - 1
@@ -2575,13 +2582,16 @@ function flowc_resolve_emit_one(
     }
     src[nsrc] = 0
 
+    let t_parse: i64 = flowc_prof_span_begin()
     let mut p: Parser = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP)
     let root: i32 = flowc_parse_cached(&p, src, nsrc)
+    flowc_prof_span_end(FLOWC_PROF_PARSE, t_parse)
     if root < 0 or p.err != 0 {
         flowc_parser_free(p)
         free(src)
         return 0 - 1
     }
+    flowc_prof_note_source(src, nsrc, p.arena.len)
 
     if tpl != null {
         tpl_len[0] = flowc_resolve_add_templates(p.arena, root, src, own, tpl, tpl_cap, tpl_len[0])
@@ -2589,7 +2599,9 @@ function flowc_resolve_emit_one(
     flowc_fuse_pipelines(&p.arena, src)
     # The file this module's #line directives name (FLOWC_DEBUG_INFO=1).
     let _setf: i32 = setenv("FLOWC_CGEN_FILE", path, 1)
+    let t_gen: i64 = flowc_prof_span_begin()
     let mut n: i32 = flowc_cgen_emit_sigs(p.arena, root, src, out, out_cap, flags, sigs, siglen[0])
+    flowc_prof_span_end(FLOWC_PROF_CODEGEN, t_gen)
     if sigs != null {
         siglen[0] = flowc_cgen_collect_sigs(p.arena, root, src, sigs, sigcap, siglen[0])
         # Effects, capabilities and `with` rows for later modules (#675).
@@ -2956,8 +2968,10 @@ export function flowc_bundle_typecheck_fatal(entry_path: string, search_dir: str
     let proj_buf: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
     let _proj_len: i32 = flowc_resolve_project_root(entry_path, proj_buf, FLOWC_RESOLVE_PATH_CAP)
     let project_root: string = proj_buf as string
+    let t_imp: i64 = flowc_prof_span_begin()
     let nmods: i32 = flowc_resolve_gather(entry_path, search_dir, project_root, path_store)
     if nmods <= 0 {
+        flowc_prof_span_end(FLOWC_PROF_IMPORT, t_imp)
         puts("flowc bundle tc: gather failed")
         free(path_store)
         return 1
@@ -2965,6 +2979,7 @@ export function flowc_bundle_typecheck_fatal(entry_path: string, search_dir: str
 
     let order_store: ptr<u8> = malloc((FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP) as i64)
     if order_store == null {
+        flowc_prof_span_end(FLOWC_PROF_IMPORT, t_imp)
         free(path_store)
         return 1
     }
@@ -2974,6 +2989,7 @@ export function flowc_bundle_typecheck_fatal(entry_path: string, search_dir: str
         zi = zi + 1
     }
     let norder: i32 = flowc_resolve_topo(path_store, nmods, search_dir, project_root, order_store)
+    flowc_prof_span_end(FLOWC_PROF_IMPORT, t_imp)
     if norder <= 0 {
         puts("flowc bundle tc: topo failed")
         free(order_store)
@@ -3013,7 +3029,9 @@ export function flowc_bundle_typecheck_fatal(entry_path: string, search_dir: str
             src[zi] = 0
             zi = zi + 1
         }
+        let t_read: i64 = flowc_prof_span_begin()
         let nsrc: i32 = flowc_resolve_read_source(mpath, src, FLOWC_RESOLVE_SRC_CAP - 1)
+        flowc_prof_span_end(FLOWC_PROF_SOURCE_READ, t_read)
         if nsrc <= 0 {
             puts("flowc bundle tc: read failed")
             free(src)
@@ -3024,8 +3042,10 @@ export function flowc_bundle_typecheck_fatal(entry_path: string, search_dir: str
         }
         src[nsrc] = 0
 
+        let t_parse: i64 = flowc_prof_span_begin()
         let mut p: Parser = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP)
         let root: i32 = flowc_parse_program(&p)
+        flowc_prof_span_end(FLOWC_PROF_PARSE, t_parse)
         if root < 0 or p.err != 0 {
             flowc_parser_print_error(p, mpath)
             flowc_parser_free(p)
@@ -3035,10 +3055,13 @@ export function flowc_bundle_typecheck_fatal(entry_path: string, search_dir: str
             free(path_store)
             return 1
         }
+        flowc_prof_note_source(src, nsrc, p.arena.len)
 
+        let t_tc: i64 = flowc_prof_span_begin()
         flowc_tc_reset_module(&ctx, src)
         flowc_tc_set_path(&ctx, mpath)
         let errs: i32 = flowc_tc_check_program(&ctx, p.arena, root)
+        flowc_prof_span_end(FLOWC_PROF_TYPECHECK, t_tc)
         if errs > 0 {
             puts("flowc bundle tc: module check failed")
             printf("flowc bundle tc: module_errs=%d\n", errs)
@@ -3055,11 +3078,13 @@ export function flowc_bundle_typecheck_fatal(entry_path: string, search_dir: str
 
     ctx_fatal = ctx.fatal
     # The semantic check (the Python host's type checker) over the bundle.
+    let t_sem: i64 = flowc_prof_span_begin()
     let sc: array<i32, 2> = [0, 0]
     if flowc_bundle_semcheck(path_store, nmods, search_dir, project_root, &sc[0] as ptr<i32>) != 0 {
         ctx_fatal = ctx_fatal + 1
         total_err = total_err + 1
     }
+    flowc_prof_span_end(FLOWC_PROF_TYPECHECK, t_sem)
     total_err = total_err + sc[0]
     ctx_fatal = ctx_fatal + sc[1]
     free(src)
@@ -3128,14 +3153,17 @@ export function flowc_bundle_emit(
     let proj_buf: ptr<u8> = malloc(FLOWC_RESOLVE_PATH_CAP as i64)
     let _proj_len: i32 = flowc_resolve_project_root(entry_path, proj_buf, FLOWC_RESOLVE_PATH_CAP)
     let project_root: string = proj_buf as string
+    let t_imp: i64 = flowc_prof_span_begin()
     let nmods: i32 = flowc_resolve_gather(entry_path, search_dir, project_root, path_store)
     if nmods <= 0 {
+        flowc_prof_span_end(FLOWC_PROF_IMPORT, t_imp)
         free(path_store)
         return 0 - 1
     }
 
     let order_store: ptr<u8> = malloc((FLOWC_RESOLVE_MAX_MODS * FLOWC_RESOLVE_PATH_CAP) as i64)
     if order_store == null {
+        flowc_prof_span_end(FLOWC_PROF_IMPORT, t_imp)
         free(path_store)
         return 0 - 1
     }
@@ -3145,6 +3173,7 @@ export function flowc_bundle_emit(
         zi = zi + 1
     }
     let norder: i32 = flowc_resolve_topo(path_store, nmods, search_dir, project_root, order_store)
+    flowc_prof_span_end(FLOWC_PROF_IMPORT, t_imp)
     if norder <= 0 {
         free(order_store)
         free(path_store)

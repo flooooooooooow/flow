@@ -283,7 +283,7 @@ export function string_smoke(src: string, default_out: string, need: ptr<ProcStr
 # The frontend objects in link order (the `cc -r` that makes
 # flowc_frontend*.o).
 export function frontend_modules() -> ptr<ProcStrs> {
-    return s_words("token ast lexer parser fileio version denotation field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl effects proof_lower attributes ordering_hints sort_plans sort_sites type_id cgen overload overload_table type_name expr_type overload_args overload_select overload_registry overload_call rt_summary typecheck strutil sem_util sem_types sem_cheader sem_model sem_check pipeline_fusion resolve")
+    return s_words("token ast lexer parser fileio version denotation field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl effects proof_lower attributes ordering_hints sort_plans sort_sites type_id cgen overload overload_table type_name expr_type overload_args overload_select overload_registry overload_call rt_summary typecheck strutil sem_util sem_types sem_cheader sem_model sem_check pipeline_fusion profile resolve")
 }
 
 # Symbols the linked frontend has to provide.
@@ -375,7 +375,9 @@ export function self_emit_plan() -> ptr<ProcStrs> {
     sl_push(p, "H sem_check")
     sl_push(p, "E pipeline_fusion ast")
     sl_push(p, "H pipeline_fusion")
-    sl_push(p, "E resolve token ast lexer parser fileio version denotation field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl effects sort_plans cgen overload_table overload_call typecheck strutil sem_util sem_types sem_model sem_check pipeline_fusion")
+    sl_push(p, "E profile fileio")
+    sl_push(p, "H profile")
+    sl_push(p, "E resolve token ast lexer parser fileio version denotation field_dsl bytebuf dynamics_dsl flow_blocks shader_dsl effects sort_plans cgen overload_table overload_call typecheck strutil sem_util sem_types sem_model sem_check pipeline_fusion profile")
     return p
 }
 
