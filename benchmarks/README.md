@@ -63,7 +63,7 @@ No workload source rewrite is required. See [docs/library/memory.md](../docs/lib
 | `nbody` | N-body gravitational simulation | M interactions/sec |
 | `fft` | Cooley-Tukey FFT | GFLOPS |
 | `sort` | Quicksort, heapsort, insertion sort | Time (ms) |
-| `ffi_boundary_benchmark` | FFI boundary zero-copy buffer handoff vs scalar and batched copies | Time (ms) |
+| `ffi_boundary_benchmark` | FFI boundary: pointer-identity row (copied_bytes=0) plus scalar / batched / large-buffer timings | Time (ms) |
 
 ## Performance Targets
 
