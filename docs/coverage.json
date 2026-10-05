@@ -183,6 +183,7 @@
     "stdlib:gif": "demos/morphogenesis.md",
     "stdlib:gpu": "tutorials/ml-on-macbook.md",
     "stdlib:gpu_gradients": "library/stdlib-reference.md",
+    "stdlib:gpu_graph": "library/gpu-graph.md",
     "stdlib:gpu_kernels": "language/wasm-crossings.md",
     "stdlib:gpu_memory": "library/gpu-memory.md",
     "stdlib:gpu_sim": "library/stdlib-api.md",
