@@ -65,6 +65,28 @@ extern {
     function atoi(s: string) -> i32
     function write(fd: i32, buf: string, n: i64) -> i64
     function snprintf(buf: ptr<u8>, n: i64, fmt: string, ...) -> i32
+    function flowc_prof_mode_raw() -> i32
+    function flowc_prof_now_raw() -> i64
+    function flowc_prof_add_raw(id: i32, ns: i64)
+}
+
+# FLOWC_PROF_MONO / FLOWC_PROF_LOWERING. Kept numeric so cgen does not
+# import profile.flow (self-emit plan and frontend link order stay put).
+const CGEN_PROF_MONO: i32 = 5
+const CGEN_PROF_LOWERING: i32 = 6
+
+function flowc_cgen_prof_begin() -> i64 {
+    if flowc_prof_mode_raw() == 0 {
+        return 0 - 1
+    }
+    return flowc_prof_now_raw()
+}
+
+function flowc_cgen_prof_end(id: i32, start: i64) {
+    if start < 0 {
+        return
+    }
+    flowc_prof_add_raw(id, flowc_prof_now_raw() - start)
 }
 
 # Fixed-buffer writer for C text.
@@ -12274,11 +12296,14 @@ export function flowc_cgen_emit_sigs(
     if arena.nodes[root].kind != AST_PROGRAM {
         return 0 - 1
     }
+    let t_low: i64 = flowc_cgen_prof_begin()
     flowc_proof_erase(arena, root)
     # Record update lowers here (flowc_cgen_emit_expr); the rest refuse.
     if flowc_ast_reject_unsupported_but(arena, src, "flowc cgen", AST_RECORD_UPDATE) != 0 {
+        flowc_cgen_prof_end(CGEN_PROF_LOWERING, t_low)
         return 0 - 1
     }
+    flowc_cgen_prof_end(CGEN_PROF_LOWERING, t_low)
     let mut w: CgenBuf = flowc_cgen_buf_init(out, out_cap)
     w.sigs = sigs
     w.sigs_len = sigs_len
@@ -12348,7 +12373,9 @@ export function flowc_cgen_emit_sigs(
         }
     }
     # Ordering provenance for `|> sort` / `|> find` plan selection.
+    let t_plan: i64 = flowc_cgen_prof_begin()
     flowc_cgen_plan_init(&w, arena, src)
+    flowc_cgen_prof_end(CGEN_PROF_LOWERING, t_plan)
     # bit0 without requiring Stage-A bitwise operators during self-parse.
     if (flags % 2) == 0 {
         flowc_cgen_puts(&w, "#include <stdint.h>\n")
@@ -12830,7 +12857,9 @@ while item != AST_NONE {
 
     # Pass 1.6: monomorphization: emit specialized generic structs and functions.
     # Scan all AST nodes for type-arg instantiations and emit specialized C.
+    let t_mono: i64 = flowc_cgen_prof_begin()
     flowc_cgen_emit_mono(&w, arena, src, root)
+    flowc_cgen_prof_end(CGEN_PROF_MONO, t_mono)
 
     # Pass 1.65: the remaining closure typedefs, after the types they name.
     flowc_cgen_emit_fat_typedefs(&w, arena, src, 1)
