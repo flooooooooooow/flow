@@ -438,14 +438,14 @@ function append_bottleneck(list: string, item: string) -> string {
 }
 
 function tier1_slot(os: string, arch: string) -> string {
-    let linux: bool = s_eq(os, "Linux") or s_eq(os, "linux")
-    let darwin: bool = s_eq(os, "Darwin") or s_eq(os, "darwin")
+    let is_linux: bool = s_eq(os, "Linux") or s_eq(os, "linux")
+    let is_darwin: bool = s_eq(os, "Darwin") or s_eq(os, "darwin")
     let x64: bool = s_eq(arch, "x86_64") or s_eq(arch, "amd64")
     let arm: bool = s_eq(arch, "arm64") or s_eq(arch, "aarch64")
-    if linux and x64 {
+    if is_linux and x64 {
         return "linux-x86_64"
     }
-    if darwin and arm {
+    if is_darwin and arm {
         return "macos-arm64"
     }
     return "other"
