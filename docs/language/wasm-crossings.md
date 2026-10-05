@@ -189,6 +189,7 @@ no vendor compiler in between, so adding a shading language costs one file.
 ```
 ./flow gpu lib/stdlib/gpu_kernels.flow           # Metal, as before
 ./flow gpu lib/stdlib/gpu_kernels.flow --wgsl    # WGSL, same AST
+./flow gpu test --suite vgpu --all-backends      # exact-pixel / numerical corpus
 ```
 
 `./flow tool wasm_crossings gpu` builds the demo. It takes one Flow file and produces

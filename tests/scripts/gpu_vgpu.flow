@@ -1,0 +1,210 @@
+# vgpu exact-pixel / numerical conformance (#813).
+#
+# Drives `./flow gpu test` (tools/gpu_test) through the shared scripts harness.
+
+import "tools/flow_cli/sys.flow"
+import "tests/scripts/harness.flow"
+
+function gpu_test(args: ptr<ProcStrs>) -> ptr<ProcStrs> {
+    let argv: ptr<ProcStrs> = sl_of3("./flow", "gpu", "test")
+    sl_extend(argv, args)
+    return argv
+}
+
+function out_text() -> string {
+    return read_text(t_out())
+}
+
+function check_selftest() -> i32 {
+    if t_run_argv(gpu_test(sl_of1("--selftest"))) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_contains(out_text(), "SELFTEST PASS") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_exact_ok() -> i32 {
+    let argv: ptr<ProcStrs> = gpu_test(sl_of2("--suite", "vgpu"))
+    sl_push2(argv, "--backend", "webgpu")
+    sl_push2(argv, "--manifest", "tests/gpu/vgpu/exact_ok/manifest.json")
+    if t_run_argv(argv) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let o: string = out_text()
+    if not a_contains(o, "CASE exact_ok [webgpu] EXACT") {
+        return T_FAIL
+    }
+    if not a_contains(o, "maxError=0") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_exact_fail_exits_nonzero() -> i32 {
+    let argv: ptr<ProcStrs> = gpu_test(sl_of2("--suite", "vgpu"))
+    sl_push2(argv, "--backend", "webgpu")
+    sl_push2(argv, "--manifest", "tests/gpu/vgpu/exact_fail/manifest.json")
+    let rc: i32 = t_run_argv(argv)
+    if rc == 0 {
+        outln("expected non-zero exit on RGBA mismatch")
+        t_cat(t_out())
+        return T_FAIL
+    }
+    if not a_contains(out_text(), "CASE exact_fail [webgpu] FAIL") {
+        return T_FAIL
+    }
+    if not a_contains(out_text(), "maxError=1") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_tolerance() -> i32 {
+    let argv: ptr<ProcStrs> = gpu_test(sl_of2("--suite", "vgpu"))
+    sl_push2(argv, "--backend", "webgpu")
+    sl_push2(argv, "--manifest", "tests/gpu/vgpu/tolerance_ok/manifest.json")
+    if t_run_argv(argv) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_contains(out_text(), "CASE tol_ok [webgpu] TOLERANCE") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_numerical_ok() -> i32 {
+    let argv: ptr<ProcStrs> = gpu_test(sl_of2("--suite", "vgpu"))
+    sl_push2(argv, "--backend", "webgpu")
+    sl_push2(argv, "--manifest", "tests/gpu/vgpu/numerical_ok/manifest.json")
+    if t_run_argv(argv) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_contains(out_text(), "CASE num_ok [webgpu] NUMERICAL") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_numerical_fail() -> i32 {
+    let argv: ptr<ProcStrs> = gpu_test(sl_of2("--suite", "vgpu"))
+    sl_push2(argv, "--backend", "webgpu")
+    sl_push2(argv, "--manifest", "tests/gpu/vgpu/numerical_fail/manifest.json")
+    if t_run_argv(argv) == 0 {
+        outln("expected non-zero exit on numerical mismatch")
+        t_cat(t_out())
+        return T_FAIL
+    }
+    if not a_contains(out_text(), "CASE num_fail [webgpu] FAIL") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_unsupported() -> i32 {
+    let argv: ptr<ProcStrs> = gpu_test(sl_of2("--suite", "vgpu"))
+    sl_push2(argv, "--backend", "metal")
+    sl_push2(argv, "--manifest", "tests/gpu/vgpu/unsupported/manifest.json")
+    if t_run_argv(argv) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_contains(out_text(), "CASE blocked [metal] UNSUPPORTED") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_gradient_exact() -> i32 {
+    let argv: ptr<ProcStrs> = gpu_test(sl_of2("--suite", "vgpu"))
+    sl_push2(argv, "--all-backends")
+    sl_push2(argv, "--case", "gradient")
+    if t_run_argv(argv) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let o: string = out_text()
+    if not a_contains(o, "CASE gradient [metal] EXACT") {
+        return T_FAIL
+    }
+    if not a_contains(o, "CASE gradient [webgpu] EXACT") {
+        return T_FAIL
+    }
+    if not a_contains(o, "w=160") {
+        return T_FAIL
+    }
+    if not a_contains(o, "h=90") {
+        return T_FAIL
+    }
+    if not a_contains(o, "maxError=0") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_mnist_unsupported() -> i32 {
+    let argv: ptr<ProcStrs> = gpu_test(sl_of2("--suite", "vgpu"))
+    sl_push2(argv, "--backend", "webgpu")
+    sl_push2(argv, "--case", "mnist")
+    if t_run_argv(argv) != 0 {
+        t_cat(t_out())
+        t_cat(t_err())
+        return T_FAIL
+    }
+    if not a_contains(out_text(), "CASE mnist [webgpu] UNSUPPORTED") {
+        return T_FAIL
+    }
+    if not a_contains(out_text(), "reason=tensor-model-execution") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_usage() -> i32 {
+    if t_run_argv(gpu_test(sl_new())) == 0 {
+        outln("expected usage error")
+        return T_FAIL
+    }
+    if not a_contains(read_text(t_err()), "Usage: flow gpu test --suite vgpu") {
+        t_cat(t_err())
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function main() -> i32 {
+    t_begin("gpu_vgpu")
+    t_start()
+    t_end("selftest", check_selftest())
+    t_start()
+    t_end("exact_ok", check_exact_ok())
+    t_start()
+    t_end("exact_fail", check_exact_fail_exits_nonzero())
+    t_start()
+    t_end("tolerance", check_tolerance())
+    t_start()
+    t_end("numerical_ok", check_numerical_ok())
+    t_start()
+    t_end("numerical_fail", check_numerical_fail())
+    t_start()
+    t_end("unsupported", check_unsupported())
+    t_start()
+    t_end("usage", check_usage())
+    t_start()
+    t_end("gradient_exact", check_gradient_exact())
+    t_start()
+    t_end("mnist_unsupported", check_mnist_unsupported())
+    t_done()
+    return 0
+}

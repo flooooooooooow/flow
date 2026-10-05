@@ -771,6 +771,10 @@
           "path": "DEVELOPMENT.md"
         },
         {
+          "label": "vgpu conformance",
+          "path": "gpu/vgpu-conformance.md"
+        },
+        {
           "label": "Running Flow",
           "path": "language/flow-run.md"
         },
