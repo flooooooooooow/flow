@@ -67,7 +67,7 @@ static const char *kGpuGradMetalSource =
     "kernel void gemm_f32(device float* out [[buffer(0)]],\n"
     "                     const device float* input [[buffer(1)]],\n"
     "                     const device float* weights [[buffer(2)]],\n"
-    "                     constant uint3& dims [[buffer(3)]],\n"
+    "                     constant uint4& dims [[buffer(3)]],\n"
     "                     uint gid [[thread_position_in_grid]]) {\n"
     "    uint m = dims.x, k = dims.y, n = dims.z;\n"
     "    if (gid >= m * n) return;\n"
@@ -485,7 +485,7 @@ int flow_gpu_gemm_f32(void *out_gpu, void *input_gpu, void *weights_gpu,
         if (!cmd) return -1;
         id<MTLComputeCommandEncoder> enc = [cmd computeCommandEncoder];
         if (!enc) return -1;
-        uint32_t dims[3] = {(uint32_t)m, (uint32_t)k, (uint32_t)n};
+        uint32_t dims[4] = {(uint32_t)m, (uint32_t)k, (uint32_t)n, 0};
         [enc setComputePipelineState:g_gemmPSO];
         [enc setBuffer:dst offset:0 atIndex:0];
         [enc setBuffer:lhs offset:0 atIndex:1];
