@@ -51,7 +51,9 @@ import .type_id {
 import .profile {
     flowc_prof_span_begin, flowc_prof_span_end, flowc_prof_mark_startup,
     flowc_prof_note_source, flowc_prof_note_path, flowc_prof_emit, flowc_prof_selftest_format,
-    FLOWC_PROF_SOURCE_READ, FLOWC_PROF_PARSE, FLOWC_PROF_TYPECHECK, FLOWC_PROF_CODEGEN
+    flowc_prof_carve, flowc_prof_phase_ns,
+    FLOWC_PROF_SOURCE_READ, FLOWC_PROF_PARSE, FLOWC_PROF_TYPECHECK,
+    FLOWC_PROF_MONO, FLOWC_PROF_LOWERING, FLOWC_PROF_CODEGEN
 }
 import .region {
     flowc_region_of_binding, flowc_region_disjoint_regs, flowc_region_restrict_candidate,
@@ -519,8 +521,11 @@ function flowc_emit_body() -> i32 {
                     return 1
                 }
             } else {
+                let m0: i64 = flowc_prof_phase_ns(FLOWC_PROF_MONO)
+                let l0: i64 = flowc_prof_phase_ns(FLOWC_PROF_LOWERING)
                 nout = flowc_cgen_emit(p.arena, root, src, out, out_cap)
                 flowc_prof_span_end(FLOWC_PROF_CODEGEN, t_gen)
+                flowc_prof_carve(FLOWC_PROF_CODEGEN, FLOWC_PROF_MONO, m0, FLOWC_PROF_LOWERING, l0)
                 if nout <= 0 {
                     puts("flowc emit: cgen failed")
                     free(out)
@@ -2812,6 +2817,15 @@ function test_profile_report() -> i32 {
         return 0
     }
     if flowc_bytes_contains(buf, n, "\"name\": \"codegen\"") == 0 {
+        return 0
+    }
+    if flowc_bytes_contains(buf, n, "\"name\": \"monomorphize\"") == 0 {
+        return 0
+    }
+    if flowc_bytes_contains(buf, n, "\"name\": \"lowering\"") == 0 {
+        return 0
+    }
+    if flowc_bytes_contains(buf, n, "\"name\": \"incremental_cache\"") == 0 {
         return 0
     }
     return 1

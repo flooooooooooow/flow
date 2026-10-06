@@ -16,7 +16,8 @@ FLOW Source → Parser → AST → C Backend → C Code → clang → Executable
 
 The compiler is flowc, written in Flow under `compiler/src/` and built from
 the checked-in C in `compiler/bootstrap/`. See
-[compiler/README.md](../compiler/README.md).
+[compiler/README.md](../compiler/README.md). Per-phase compile timings:
+[Compile profile](project/compile-profile.md).
 
 #### Parser (`compiler/src/lexer.flow`, `parser.flow`)
 - **Lexer**: streaming tokenizer

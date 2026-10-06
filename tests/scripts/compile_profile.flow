@@ -1,5 +1,6 @@
-# Proof for the #735 first slice: FLOWC_PROFILE JSON from a self-hosted
-# flowc (no Python), and compile_bench rows that carry those phases.
+# Proof for #735: FLOWC_PROFILE JSON from a self-hosted flowc (no Python),
+# split monomorphize/lowering, incremental_cache row, and compile_bench
+# Tier-1 matrix / >10% bottleneck follow-ups.
 
 import "tools/flow_cli/sys.flow"
 import "tests/scripts/harness.flow"
@@ -52,6 +53,15 @@ function check_profile_json() -> i32 {
         return T_FAIL
     }
     if not a_contains(err, "\"name\": \"codegen\"") {
+        return T_FAIL
+    }
+    if not a_contains(err, "\"name\": \"monomorphize\"") {
+        return T_FAIL
+    }
+    if not a_contains(err, "\"name\": \"lowering\"") {
+        return T_FAIL
+    }
+    if not a_contains(err, "\"name\": \"incremental_cache\"") {
         return T_FAIL
     }
     if not a_exists(out_c) {
@@ -123,6 +133,80 @@ function check_compile_bench() -> i32 {
     if not a_contains(out, "\"phase_codegen_ms\"") {
         return T_FAIL
     }
+    if not a_contains(out, "\"phase_monomorphize_ms\"") {
+        return T_FAIL
+    }
+    if not a_contains(out, "\"phase_lowering_ms\"") {
+        return T_FAIL
+    }
+    if not a_contains(out, "\"phase_incremental_cache_ms\"") {
+        return T_FAIL
+    }
+    if not a_contains(out, "\"matrix\": true") {
+        return T_FAIL
+    }
+    if not a_contains(out, "flow-compile-profile-matrix/1") {
+        return T_FAIL
+    }
+    if not a_contains(out, "\"tier1_slot\"") {
+        return T_FAIL
+    }
+    if not a_contains(out, "\"bottlenecks\"") {
+        return T_FAIL
+    }
+    if not a_contains(out, "\"followup\"") {
+        return T_FAIL
+    }
+    return T_PASS
+}
+
+function check_split_and_cache() -> i32 {
+    if t_need_cc() != T_PASS {
+        return T_SKIP
+    }
+    let host: string = host_bin()
+    if s_len(host) == 0 or not is_file(host) {
+        return T_FAIL
+    }
+    let salt: string = "735-cache-" + t_tmp()
+    let out_c: string = t_tmp() + "/cache.c"
+    let c1: ptr<ProcCmd> = t_cmd(sl_of1(host))
+    proc_env(c1, "FLOWC_IN", t_root() + "/examples/basics/hello_world.flow")
+    proc_env(c1, "FLOWC_OUT", out_c)
+    proc_env(c1, "FLOWC_BUNDLE", "1")
+    proc_env(c1, "FLOWC_DIR", t_root())
+    proc_env(c1, "FLOWC_PROFILE", "json")
+    proc_env(c1, "FLOW_CACHE_SALT", salt)
+    if t_run(c1) != 0 {
+        outln("first cache emit failed")
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let c2: ptr<ProcCmd> = t_cmd(sl_of1(host))
+    proc_env(c2, "FLOWC_IN", t_root() + "/examples/basics/hello_world.flow")
+    proc_env(c2, "FLOWC_OUT", out_c)
+    proc_env(c2, "FLOWC_BUNDLE", "1")
+    proc_env(c2, "FLOWC_DIR", t_root())
+    proc_env(c2, "FLOWC_PROFILE", "json")
+    proc_env(c2, "FLOW_CACHE_SALT", salt)
+    if t_run(c2) != 0 {
+        outln("second cache emit failed")
+        t_cat(t_err())
+        return T_FAIL
+    }
+    let err: string = read_text(t_err())
+    if not a_contains(err, "\"name\": \"incremental_cache\"") {
+        return T_FAIL
+    }
+    if not a_contains(err, "\"name\": \"monomorphize\"") {
+        return T_FAIL
+    }
+    if not a_contains(err, "\"name\": \"lowering\"") {
+        return T_FAIL
+    }
+    if not a_contains(err, "\"name\": \"codegen\"") {
+        return T_FAIL
+    }
     return T_PASS
 }
 
@@ -142,6 +226,8 @@ function main() -> i32 {
     t_end("off_by_default", check_off_by_default())
     t_start()
     t_end("compile_bench_phases", check_compile_bench())
+    t_start()
+    t_end("split_and_cache", check_split_and_cache())
     t_start()
     t_end("no_python", check_no_python())
     t_done()
