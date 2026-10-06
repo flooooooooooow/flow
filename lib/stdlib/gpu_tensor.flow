@@ -91,7 +91,14 @@ export function gpu_tensor_numel(d0: i32, d1: i32, d2: i32, d3: i32) -> i32 {
     if d0 <= 0 or d1 <= 0 or d2 <= 0 or d3 <= 0 {
         return 0
     }
-    return d0 * d1 * d2 * d3
+    let mut n: i64 = d0 as i64
+    if (d1 as i64) > 2147483647 / n { return 0 }
+    n = n * (d1 as i64)
+    if (d2 as i64) > 2147483647 / n { return 0 }
+    n = n * (d2 as i64)
+    if (d3 as i64) > 2147483647 / n { return 0 }
+    n = n * (d3 as i64)
+    return n as i32
 }
 
 # Layout snapshot of a live tensor (shape, dtype, access, kind).
@@ -242,7 +249,15 @@ export function gpu_tensor_from_buffer(buf: GpuBuffer, dtype: i32, d0: i32, d1: 
     } else {
         data = malloc(required)
         owns_host = 1
-        gpu_tensor_zero(data, required)
+        if data == null {
+            return gpu_tensor_empty()
+        }
+        # A view of an existing private device buffer must see its contents,
+        # not a freshly zeroed and misleading host staging allocation.
+        if gpu_copy_d2h_f32(data, buf, required) != 0 {
+            free(data)
+            return gpu_tensor_empty()
+        }
     }
     if data == null {
         return gpu_tensor_empty()
@@ -435,6 +450,7 @@ export function gpu_tensor_compatible(a: GpuTensor, b: GpuTensor) -> bool {
 export function gpu_tensor_can_bind(gt: GpuTensor, dtype: i32, access: i32) -> bool {
     if gpu_tensor_is_empty(gt) { return false }
     if gt.dtype != dtype { return false }
+    if access <= 0 or access > GPU_ACCESS_READ_WRITE { return false }
     if (gt.access & access) != access { return false }
     return true
 }
@@ -468,12 +484,18 @@ export function gpu_tensor_normalize(src: GpuTensor, dst: GpuTensor, scale: f32)
     if scale == 0.0 {
         return 0 - 1
     }
+    if src.zero_copy == 1 and dst.zero_copy == 1 and
+       not gpu_is_null(src.buffer) and not gpu_is_null(dst.buffer) {
+        let gpu_rc: i32 = flow_gpu_scale_bias_f32(dst.buffer.device,
+            src.buffer.device, 1.0 / scale, 0.0, src.size as i64)
+        if gpu_rc == 0 { return 0 }
+    }
     let mut i: i32 = 0
     while i < src.size {
         dst.data[i] = src.data[i] / scale
         i = i + 1
     }
-    return 0
+    return gpu_tensor_upload(dst)
 }
 
 # dst[i] = src[i] * scale + bias.
@@ -484,12 +506,18 @@ export function gpu_tensor_scale_bias(src: GpuTensor, dst: GpuTensor, scale: f32
     if src.size != dst.size or src.dtype != GPU_DTYPE_F32 or dst.dtype != GPU_DTYPE_F32 {
         return 0 - 1
     }
+    if src.zero_copy == 1 and dst.zero_copy == 1 and
+       not gpu_is_null(src.buffer) and not gpu_is_null(dst.buffer) {
+        let gpu_rc: i32 = flow_gpu_scale_bias_f32(dst.buffer.device,
+            src.buffer.device, scale, bias, src.size as i64)
+        if gpu_rc == 0 { return 0 }
+    }
     let mut i: i32 = 0
     while i < src.size {
         dst.data[i] = src.data[i] * scale + bias
         i = i + 1
     }
-    return 0
+    return gpu_tensor_upload(dst)
 }
 
 # dst[i] = max(0, src[i]).
@@ -499,6 +527,12 @@ export function gpu_tensor_relu(src: GpuTensor, dst: GpuTensor) -> i32 {
     }
     if src.size != dst.size or src.dtype != GPU_DTYPE_F32 or dst.dtype != GPU_DTYPE_F32 {
         return 0 - 1
+    }
+    if src.zero_copy == 1 and dst.zero_copy == 1 and
+       not gpu_is_null(src.buffer) and not gpu_is_null(dst.buffer) {
+        let gpu_rc: i32 = flow_gpu_relu_f32(dst.buffer.device,
+            src.buffer.device, src.size as i64)
+        if gpu_rc == 0 { return 0 }
     }
     let mut i: i32 = 0
     while i < src.size {
@@ -510,7 +544,7 @@ export function gpu_tensor_relu(src: GpuTensor, dst: GpuTensor) -> i32 {
         }
         i = i + 1
     }
-    return 0
+    return gpu_tensor_upload(dst)
 }
 
 # dst[i] = clamp(src[i], 0, 1).
@@ -569,6 +603,13 @@ export function gpu_tensor_linear(out: GpuTensor, inp: GpuTensor, weight: GpuTen
     let M: i32 = inp.dim0
     let K: i32 = inp.dim1
     let N: i32 = weight.dim1
+    if out.zero_copy == 1 and inp.zero_copy == 1 and weight.zero_copy == 1 and
+       not gpu_is_null(out.buffer) and not gpu_is_null(inp.buffer) and
+       not gpu_is_null(weight.buffer) {
+        let gpu_rc: i32 = flow_gpu_gemm_f32(out.buffer.device,
+            inp.buffer.device, weight.buffer.device, M as i64, K as i64, N as i64)
+        if gpu_rc == 0 { return 0 }
+    }
     let mut i: i32 = 0
     while i < M {
         let mut j: i32 = 0
@@ -584,7 +625,7 @@ export function gpu_tensor_linear(out: GpuTensor, inp: GpuTensor, weight: GpuTen
         }
         i = i + 1
     }
-    return 0
+    return gpu_tensor_upload(out)
 }
 
 # Maximum |a[i] - b[i]| for equal-shape f32 tensors.
