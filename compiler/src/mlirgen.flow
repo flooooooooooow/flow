@@ -3042,8 +3042,18 @@ function mlg_register_tile_lowering(target: string) -> string {
     return "vector.outerproduct"
 }
 
-# Emit one hardware-shaped register tile. The operation stays in the vector
-# dialect so targets can select AMX, SME, or a GPU matrix instruction later.
+function mlg_register_tile_intrinsics_enabled() -> i32 {
+    let v: string = getenv("FLOWC_MLIR_REGISTER_TILE_INTRINSICS")
+    let p: ptr<u8> = v
+    if p != null and p[0] == 49 and p[1] == 0 {
+        return 1
+    }
+    return 0
+}
+
+# Emit one hardware-shaped register tile. The default is vector.outerproduct.
+# FLOWC_MLIR_REGISTER_TILE_INTRINSICS=1 with a non-generic target emits the
+# AMX, SME, or NVVM intrinsic as a generic MLIR operation instead.
 function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
     if mlg_register_tiles_enabled() == 0 {
         mlg_refuse(m, e, "register-tile lowering requires FLOWC_MLIR_REGISTER_TILES=1")
@@ -3097,24 +3107,51 @@ function mlg_emit_register_tile_outer_product(m: ptr<Mlg>, e: i32) -> i32 {
     mlg_s(m, "\n")
     mlg_line(m)
     mlg_v(m, r)
-    mlg_s(m, " = vector.outerproduct ")
-    mlg_v(m, av)
-    mlg_s(m, ", ")
-    mlg_v(m, bv)
-    mlg_s(m, " : ")
-    mlg_put_type(m, at)
-    mlg_s(m, ", ")
-    mlg_put_type(m, bt)
-    if target != "generic" {
-        mlg_s(m, " {flow.register_tile_target = \"")
-        mlg_s(m, target)
-        mlg_s(m, "\", flow.register_tile_lowering = \"")
+    if target != "generic" and mlg_register_tile_intrinsics_enabled() == 1 {
+        mlg_s(m, " = \"")
         mlg_s(m, mlg_register_tile_lowering(target))
-        mlg_s(m, "\", flow.register_tile_lanes = ")
-        mlg_i(m, tile_lanes)
-        mlg_s(m, ", flow.register_tile_max_lanes = ")
-        mlg_i(m, cap)
-        mlg_s(m, "}")
+        mlg_s(m, "\"(")
+        mlg_v(m, av)
+        mlg_s(m, ", ")
+        mlg_v(m, bv)
+        mlg_s(m, ")")
+        if target != "generic" {
+            mlg_s(m, " {flow.register_tile_target = \"")
+            mlg_s(m, target)
+            mlg_s(m, "\", flow.register_tile_lowering = \"")
+            mlg_s(m, mlg_register_tile_lowering(target))
+            mlg_s(m, "\", flow.register_tile_lanes = ")
+            mlg_i(m, tile_lanes)
+            mlg_s(m, ", flow.register_tile_max_lanes = ")
+            mlg_i(m, cap)
+            mlg_s(m, "}")
+        }
+        mlg_s(m, " : (")
+        mlg_put_type(m, at)
+        mlg_s(m, ", ")
+        mlg_put_type(m, bt)
+        mlg_s(m, ") -> ")
+        mlg_put_type(m, rt)
+    } else {
+        mlg_s(m, " = vector.outerproduct ")
+        mlg_v(m, av)
+        mlg_s(m, ", ")
+        mlg_v(m, bv)
+        mlg_s(m, " : ")
+        mlg_put_type(m, at)
+        mlg_s(m, ", ")
+        mlg_put_type(m, bt)
+        if target != "generic" {
+            mlg_s(m, " {flow.register_tile_target = \"")
+            mlg_s(m, target)
+            mlg_s(m, "\", flow.register_tile_lowering = \"")
+            mlg_s(m, mlg_register_tile_lowering(target))
+            mlg_s(m, "\", flow.register_tile_lanes = ")
+            mlg_i(m, tile_lanes)
+            mlg_s(m, ", flow.register_tile_max_lanes = ")
+            mlg_i(m, cap)
+            mlg_s(m, "}")
+        }
     }
     mlg_nl(m)
     return r
@@ -18955,7 +18992,7 @@ function mlg_aosoa_swizzle() -> i32 {
         shift = shift + 1
     }
     if w != n {
-        return 0
+        return 0 - 1
     }
     return shift
 }
@@ -18979,7 +19016,17 @@ function mao_swizzle_index(m: ptr<Mlg>, e: i32, shift: i32, extent: i32) -> i32 
         return e
     }
     let ec: i32 = mn_copy(m, e)
-    let sh: i32 = mlg_new_node(m, AST_INT, m[0].arena.nodes[e].start)
+    # Integer literals are read from the source span, not ival. A bare
+    # AST_INT with ival=shift therefore emitted `arith.constant 0`.
+    let mut digits: ptr<u8> = "1"
+    if shift == 2 { digits = "2" }
+    if shift == 3 { digits = "3" }
+    if shift == 4 { digits = "4" }
+    if shift == 5 { digits = "5" }
+    let sh: i32 = mlg_synth_named(m, AST_INT, digits, 1)
+    if sh == AST_NONE {
+        return e
+    }
     m[0].arena.nodes[sh].ival = shift
     let hi: i32 = mlg_new_node(m, AST_BINOP, m[0].arena.nodes[e].start)
     m[0].arena.nodes[hi].ival = TOK_SHR
