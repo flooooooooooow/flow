@@ -1,0 +1,16 @@
+# expect: Capability methods are tail-resumptive: 'resume' cannot abort, retry, or invoke a multi-shot continuation (see docs/language/effects-continuations.md)
+effect Probe {
+    mark(x: i32) -> i32,
+}
+
+capability Replay {
+    effect Probe,
+    function mark(x: i32) -> i32 {
+        resume(x)
+        return x
+    },
+}
+
+function main() -> i32 {
+    return 0
+}

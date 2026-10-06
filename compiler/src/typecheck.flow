@@ -1417,12 +1417,54 @@ function flowc_tc_eff_implicit_ok(ctx: ptr<TcCtx>, arena: AstArena, call: i32, n
     return 0
 }
 
+# Reserved continuation forms in a capability method (#564). Handlers are
+# tail-resumptive: returning from the method resumes the call site once.
+function flowc_tc_cap_is_resume(src: ptr<u8>, start: i32, end: i32) -> i32 {
+    if flowc_tc_span_is(src, start, end, "resume") == 1 {
+        return 1
+    }
+    if flowc_tc_span_is(src, start, end, "resume_multi") == 1 {
+        return 1
+    }
+    return 0
+}
+
+function flowc_tc_cap_resume_diag(ctx: ptr<TcCtx>, start: i32, end: i32) {
+    flowc_tc_eff_begin(ctx, start)
+    ctx[0].fatal = ctx[0].fatal + 1
+    flowc_eff_diag_s("Capability methods are tail-resumptive: '")
+    flowc_eff_diag_span(ctx[0].src, start, end)
+    flowc_eff_diag_s("' cannot abort, retry, or invoke a multi-shot continuation (see docs/language/effects-continuations.md)")
+    flowc_eff_diag_end()
+}
+
+function flowc_tc_cap_scan_resume(ctx: ptr<TcCtx>, arena: AstArena, id: i32) {
+    if id == AST_NONE {
+        return
+    }
+    let kind: i32 = arena.nodes[id].kind
+    if kind == AST_CALL or kind == AST_IDENT {
+        let ns: i32 = arena.nodes[id].name_start
+        let ne: i32 = arena.nodes[id].name_end
+        if flowc_tc_cap_is_resume(ctx[0].src, ns, ne) == 1 {
+            flowc_tc_cap_resume_diag(ctx, ns, ne)
+        }
+    }
+    flowc_tc_cap_scan_resume(ctx, arena, arena.nodes[id].a)
+    flowc_tc_cap_scan_resume(ctx, arena, arena.nodes[id].b)
+    flowc_tc_cap_scan_resume(ctx, arena, arena.nodes[id].c)
+    flowc_tc_cap_scan_resume(ctx, arena, arena.nodes[id].next)
+}
+
 # Check one function-shaped body (a function or a capability method): bind
 # its parameters, seed the handled set with its `with` row, check the block.
 function flowc_tc_check_body(ctx: ptr<TcCtx>, arena: AstArena, fn: i32) {
     let body: i32 = arena.nodes[fn].c
     if body == AST_NONE {
         return
+    }
+    if arena.nodes[fn].kind == AST_CAP_METHOD {
+        flowc_tc_cap_scan_resume(ctx, arena, body)
     }
     flowc_tc_push_mark(ctx)
     let mut param: i32 = arena.nodes[fn].a

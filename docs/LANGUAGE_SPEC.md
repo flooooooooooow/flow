@@ -949,6 +949,26 @@ Effects are implemented via vtable-based runtime dispatch:
 3. `handle` blocks save/restore the handler pointer
 4. Effect calls dispatch through the current handler's vtable
 
+### 6.5 Tail-resumptive handlers
+
+**Status:** ✅ 1.0 rule. Abort, retry, and multi-shot continuation capture
+are reserved / future (`stability/surfaces.json` id `effects-multishot`).
+
+A capability method is an ordinary function. Returning from it resumes the
+effect call site exactly once (tail resumption). The method cannot:
+
+- **Abort** the enclosing `handle` block (decline to resume)
+- **Retry** the continuation with different state
+- **Multi-shot** resume the same continuation more than once
+
+`resume` and `resume_multi` are therefore not continuation operators inside
+a capability method. The type checker rejects them with a diagnostic that
+points at [effects-continuations.md](language/effects-continuations.md).
+
+Model cancellation with an explicit `Result` or status code, and retry with
+a loop in the caller plus a policy effect. Those patterns are the supported
+encodings; see the cookbook in [effects-showcase.md](effects-showcase.md).
+
 ---
 
 ## 7. Module System
