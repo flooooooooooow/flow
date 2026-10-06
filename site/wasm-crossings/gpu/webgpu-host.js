@@ -50,88 +50,141 @@ function packParams(kernel, scalars) {
  * Returns {outputs: {name: Float32Array}, ms}
  */
 export async function runKernel(device, kernel, code, inputs, scalars, count) {
+    // Validate before allocating. The same host is used for standalone
+    // @gpu kernels and IR-generated compute-graph passes.
+    if (!device || !device.queue || typeof device.createComputePipeline !== "function" ||
+        !Number.isSafeInteger(count) || count < 1 || !kernel ||
+        !Array.isArray(kernel.buffers) || !Array.isArray(kernel.params) ||
+        !Number.isSafeInteger(kernel.workgroupSize) || kernel.workgroupSize < 1 ||
+        typeof code !== "string" || !code.trim()) {
+        throw new TypeError("invalid Flow WebGPU compute dispatch");
+    }
+    const bytes = count * 4;
+    const bindingLimit = device?.limits?.maxStorageBufferBindingSize ?? 134217728;
+    const bufferLimit = device?.limits?.maxBufferSize ?? 268435456;
+    const groupLimit = device?.limits?.maxComputeWorkgroupsPerDimension ?? 65535;
+    const groupSizeLimit = device?.limits?.maxComputeInvocationsPerWorkgroup ?? 256;
+    if (bytes > bufferLimit || bytes > bindingLimit ||
+        kernel.workgroupSize > groupSizeLimit ||
+        Math.ceil(count/kernel.workgroupSize) > groupLimit) {
+        throw new RangeError("Flow WebGPU dispatch exceeds device limits");
+    }
+    const seen = new Set();
+    for (const b of kernel.buffers) {
+        if (!b || typeof b.name !== "string" ||
+            !/^[A-Za-z_][A-Za-z0-9_]*$/.test(b.name) ||
+            !Number.isSafeInteger(b.binding) || b.binding < 0 ||
+            seen.has(b.binding) ||
+            !["read","write","read_write"].includes(b.access)) {
+            throw new TypeError("invalid Flow GPU buffer reflection");
+        }
+        seen.add(b.binding);
+        if (b.access === "read" &&
+            (!(inputs?.[b.name] instanceof Float32Array) ||
+             inputs[b.name].length !== count)) {
+            throw new TypeError("Flow GPU input must match dispatch extent: "+b.name);
+        }
+    }
+    if (kernel.params.length &&
+        (!Number.isSafeInteger(kernel.paramsBinding) ||
+         kernel.paramsBinding < 0 || seen.has(kernel.paramsBinding))) {
+        throw new TypeError("invalid Flow GPU parameter binding");
+    }
+
     const module = device.createShaderModule({ code, label: kernel.kernel });
     await assertShaderCompiles(module, kernel.kernel);
 
-    const bytes = count * 4;
     const gpuBuffers = {};
     const entries = [];
     const readbackNames = [];
-
-    for (const b of kernel.buffers) {
-        if (b.access === "read") {
-            const buffer = device.createBuffer({
-                size: bytes,
-                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-                label: b.name,
-            });
-            device.queue.writeBuffer(buffer, 0, inputs[b.name]);
-            gpuBuffers[b.name] = buffer;
-        } else {
-            gpuBuffers[b.name] = device.createBuffer({
-                size: bytes,
-                usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST,
-                label: b.name,
-            });
-            readbackNames.push(b.name);
-        }
-        entries.push({ binding: b.binding, resource: { buffer: gpuBuffers[b.name] } });
-    }
-
-    let paramsBuffer = null;
-    if (kernel.paramsBinding !== null && kernel.params.length) {
-        paramsBuffer = device.createBuffer({
-            size: kernel.paramsBytes,
-            usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-            label: "params",
-        });
-        device.queue.writeBuffer(paramsBuffer, 0, packParams(kernel, scalars));
-        entries.push({ binding: kernel.paramsBinding, resource: { buffer: paramsBuffer } });
-    }
-
-    const pipeline = device.createComputePipeline({
-        layout: "auto",
-        compute: { module, entryPoint: kernel.entryPoint },
-    });
-    const bindGroup = device.createBindGroup({
-        layout: pipeline.getBindGroupLayout(0),
-        entries,
-    });
-
     const staging = {};
-    for (const name of readbackNames) {
-        staging[name] = device.createBuffer({
-            size: bytes,
-            usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    const owned = [];
+    const mapped = [];
+    const now = () => typeof performance === "object"
+        ? performance.now() : Date.now();
+    try {
+        for (const b of kernel.buffers) {
+            if (b.access === "read") {
+                const buffer = device.createBuffer({
+                    size: bytes,
+                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+                    label: b.name,
+                });
+                owned.push(buffer);
+                device.queue.writeBuffer(buffer, 0, inputs[b.name]);
+                gpuBuffers[b.name] = buffer;
+            } else {
+                gpuBuffers[b.name] = device.createBuffer({
+                    size: bytes,
+                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC |
+                        GPUBufferUsage.COPY_DST,
+                    label: b.name,
+                });
+                owned.push(gpuBuffers[b.name]);
+                readbackNames.push(b.name);
+            }
+            entries.push({ binding: b.binding, resource: { buffer: gpuBuffers[b.name] } });
+        }
+
+        if (kernel.paramsBinding !== null && kernel.params.length) {
+            const paramsBuffer = device.createBuffer({
+                size: kernel.paramsBytes,
+                usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+                label: "params",
+            });
+            owned.push(paramsBuffer);
+            device.queue.writeBuffer(paramsBuffer, 0, packParams(kernel, scalars));
+            entries.push({ binding: kernel.paramsBinding, resource: { buffer: paramsBuffer } });
+        }
+
+        const pipeline = device.createComputePipeline({
+            layout: "auto",
+            compute: { module, entryPoint: kernel.entryPoint },
         });
+        const bindGroup = device.createBindGroup({
+            layout: pipeline.getBindGroupLayout(0),
+            entries,
+        });
+
+        for (const name of readbackNames) {
+            staging[name] = device.createBuffer({
+                size: bytes,
+                usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+            });
+            owned.push(staging[name]);
+        }
+
+        const t0 = now();
+        const encoder = device.createCommandEncoder();
+        const pass = encoder.beginComputePass();
+        pass.setPipeline(pipeline);
+        pass.setBindGroup(0, bindGroup);
+        pass.dispatchWorkgroups(Math.ceil(count / kernel.workgroupSize));
+        pass.end();
+        for (const name of readbackNames) {
+            encoder.copyBufferToBuffer(gpuBuffers[name], 0, staging[name], 0, bytes);
+        }
+        device.queue.submit([encoder.finish()]);
+        await device.queue.onSubmittedWorkDone();
+        const ms = now() - t0;
+
+        const outputs = {};
+        for (const name of readbackNames) {
+            await staging[name].mapAsync(GPUMapMode.READ);
+            mapped.push(staging[name]);
+            outputs[name] = new Float32Array(staging[name].getMappedRange().slice(0));
+            staging[name].unmap();
+            mapped.pop();
+        }
+        return { outputs, ms };
+    } finally {
+        for (const buffer of mapped) {
+            try { buffer.unmap(); } catch {}
+        }
+        for (const buffer of owned) {
+            try { buffer.destroy(); } catch {}
+        }
     }
-
-    const t0 = performance.now();
-    const encoder = device.createCommandEncoder();
-    const pass = encoder.beginComputePass();
-    pass.setPipeline(pipeline);
-    pass.setBindGroup(0, bindGroup);
-    pass.dispatchWorkgroups(Math.ceil(count / kernel.workgroupSize));
-    pass.end();
-    for (const name of readbackNames) {
-        encoder.copyBufferToBuffer(gpuBuffers[name], 0, staging[name], 0, bytes);
-    }
-    device.queue.submit([encoder.finish()]);
-    await device.queue.onSubmittedWorkDone();
-    const ms = performance.now() - t0;
-
-    const outputs = {};
-    for (const name of readbackNames) {
-        await staging[name].mapAsync(GPUMapMode.READ);
-        outputs[name] = new Float32Array(staging[name].getMappedRange().slice(0));
-        staging[name].unmap();
-    }
-
-    for (const b of Object.values(gpuBuffers)) b.destroy();
-    for (const b of Object.values(staging)) b.destroy();
-    if (paramsBuffer) paramsBuffer.destroy();
-
-    return { outputs, ms };
 }
 
 /**
