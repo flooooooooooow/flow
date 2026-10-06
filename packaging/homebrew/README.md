@@ -29,20 +29,39 @@ Users run: `brew tap flooooooooooow/flow` → clones `homebrew-flow`.
 
 | Install | When |
 |---------|------|
-| `brew install …` | Stable **v0.8.0** release archive + verified SHA256. |
+| `brew install …` | Last published release archive + verified SHA256 (see `Formula/flow.rb`). |
 | `brew install --HEAD …` | Builds from `main`. |
+
+### Validate the in-repo formula (no tap push)
+
+```bash
+./flow tool qualify_release --check-formula
+```
+
+That check exits 0 only when `url`, `sha256` (64 hex digits) and `version`
+agree. It does not download the tarball and does not publish. After a real
+non-RC GitHub Release exists, install from a clean checkout:
+
+```bash
+brew style ./packaging/homebrew/Formula/flow.rb
+brew audit --strict --offline ./packaging/homebrew/Formula/flow.rb
+brew install --build-from-source ./packaging/homebrew/Formula/flow.rb
+```
 
 ### Updating the stable formula
 
-After cutting a new release:
+After cutting a new **non-RC** release:
 
 1. Wait for `.github/workflows/release.yml` to attach the release archive.
 2. Read the SHA256 from the attached `SHA256SUMS.txt`:
    ```bash
    gh release download vX.Y.Z -R flooooooooooow/flow -p SHA256SUMS.txt
    ```
-3. Update `url`, `sha256`, and `version` in `Formula/flow.rb`.
-4. Sync the tap (below).
+3. Apply that exact digest (do not guess):
+   ```bash
+   ./flow tool sync_version --homebrew --sha256 <digest>
+   ```
+4. Re-run `--check-formula`, then sync the tap (below).
 
 ## Publishing / updating the tap
 

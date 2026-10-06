@@ -1,0 +1,12 @@
+{
+  "suite": "vgpu",
+  "cases": [
+    {
+      "id": "tol_ok",
+      "actual": "tests/gpu/vgpu/tolerance_ok/act.hex",
+      "reference": "tests/gpu/vgpu/tolerance_ok/ref.hex",
+      "comparison": { "mode": "tolerance", "channelTolerance": 2 },
+      "backends": ["webgpu"]
+    }
+  ]
+}

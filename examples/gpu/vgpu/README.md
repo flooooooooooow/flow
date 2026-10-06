@@ -44,14 +44,32 @@ compositing. `compareRgba` then provides an exact byte comparison primitive.
 
 | Case | Flow source | Metal | WGSL | Reference comparison |
 | --- | --- | --- | --- | --- |
-| Gradient | `gradient.flow` | source-ready | offscreen renderer ready | upstream reference bytes pending |
+| Gradient | `gradient.flow` | emit + exact-pixel | emit + exact-pixel | captured `rgba8unorm` at 160×90, `time=0` |
+| MNIST | `mnist.flow` | source stub | source stub | `UNSUPPORTED` (`tensor-model-execution`) |
+| Depth | `depth_estimation.flow` | source stub | source stub | `UNSUPPORTED` (`tensor-model-execution`) |
 
 The next tranche should deliberately exercise missing capabilities instead of
 adding only fragment effects: textures/samplers, vertex and index buffers,
 instancing, storage textures, multi-pass compute, depth/stencil, cubemaps,
 workgroup memory/barriers, and tensor/model execution.
 
-## Run the first case
+## Run the suite
+
+The compatibility command is the conformance runner, not a visual gallery:
+
+```bash
+./flow gpu test --suite vgpu --all-backends
+```
+
+That prints `EXACT` / `TOLERANCE` / `NUMERICAL` / `UNSUPPORTED` / `FAIL` per
+case and backend, with dimensions, inputs and max error. It exits non-zero on
+unexpected `FAIL`. Docs: [vgpu conformance](../../../docs/gpu/vgpu-conformance.md).
+
+Capture (rewrite frozen references; not the ordinary shader window):
+
+```bash
+./flow gpu test --suite vgpu --backend webgpu --case gradient --capture-reference
+```
 
 Metal uses the existing FSL command:
 
@@ -75,4 +93,4 @@ python3 -m http.server -d build/webgpu-shader 8000
 
 The generated WebGPU entry points are `flow_shader_vertex` and
 `vgpu_gradient_frag`. The suite parameters used for reference comparisons live in
-`manifest.json`.
+`manifest.json`. The captured gradient bytes live in `refs/`.

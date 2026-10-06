@@ -38,8 +38,10 @@ import .typecheck {
 }
 import .profile {
     flowc_prof_span_begin, flowc_prof_span_end, flowc_prof_note_source,
+    flowc_prof_carve, flowc_prof_phase_ns,
     FLOWC_PROF_SOURCE_READ, FLOWC_PROF_PARSE, FLOWC_PROF_IMPORT,
-    FLOWC_PROF_TYPECHECK, FLOWC_PROF_CODEGEN
+    FLOWC_PROF_TYPECHECK, FLOWC_PROF_MONO, FLOWC_PROF_LOWERING,
+    FLOWC_PROF_CODEGEN, FLOWC_PROF_CACHE
 }
 
 extern {
@@ -2503,7 +2505,10 @@ function flowc_parse_cached(
     let mut clen: i32 = flowc_ast_cache_dir(cache_dir, 512)
     if clen <= 0 {
         free(cache_dir)
-        return flowc_parse_program(p)
+        let t_parse: i64 = flowc_prof_span_begin()
+        let root0: i32 = flowc_parse_program(p)
+        flowc_prof_span_end(FLOWC_PROF_PARSE, t_parse)
+        return root0
     }
 
     cache_dir[clen] = 47
@@ -2515,6 +2520,8 @@ function flowc_parse_cached(
 
     let cache_file: string = cache_dir as string
 
+    # Try reading. Hits (and the miss probe) are incremental_cache, not parse.
+    let t_cache: i64 = flowc_prof_span_begin()
     let fp: ptr<void> = flowc_io_fopen(cache_file, "rb")
     if fp != null {
         let mut header: array<i32, 5> = [0, 0, 0, 0, 0]
@@ -2528,6 +2535,7 @@ function flowc_parse_cached(
                         p[0].cur.start = nsrc
                         flowc_io_fclose(fp)
                         free(cache_dir)
+                        flowc_prof_span_end(FLOWC_PROF_CACHE, t_cache)
                         return root
                     }
                 }
@@ -2535,8 +2543,11 @@ function flowc_parse_cached(
         }
         flowc_io_fclose(fp)
     }
+    flowc_prof_span_end(FLOWC_PROF_CACHE, t_cache)
 
+    let t_parse_miss: i64 = flowc_prof_span_begin()
     let root: i32 = flowc_parse_program(p)
+    flowc_prof_span_end(FLOWC_PROF_PARSE, t_parse_miss)
     if root >= 0 and p[0].err == 0 {
         let fpo: ptr<void> = flowc_io_fopen(cache_file, "wb")
         if fpo != null {
@@ -2713,8 +2724,8 @@ function flowc_resolve_emit_one(
 
     let t_parse: i64 = flowc_prof_span_begin()
     let mut p: Parser = flowc_parser_new(src, nsrc, FLOWC_RESOLVE_AST_CAP)
-    let root: i32 = flowc_parse_cached(&p, src, nsrc)
     flowc_prof_span_end(FLOWC_PROF_PARSE, t_parse)
+    let root: i32 = flowc_parse_cached(&p, src, nsrc)
     if root < 0 or p.err != 0 {
         flowc_parser_free(p)
         free(src)
@@ -2728,9 +2739,12 @@ function flowc_resolve_emit_one(
     flowc_fuse_pipelines(&p.arena, src)
     # The file this module's #line directives name (FLOWC_DEBUG_INFO=1).
     let _setf: i32 = setenv("FLOWC_CGEN_FILE", path, 1)
+    let m0: i64 = flowc_prof_phase_ns(FLOWC_PROF_MONO)
+    let l0: i64 = flowc_prof_phase_ns(FLOWC_PROF_LOWERING)
     let t_gen: i64 = flowc_prof_span_begin()
     let mut n: i32 = flowc_cgen_emit_sigs(p.arena, root, src, out, out_cap, flags, sigs, siglen[0])
     flowc_prof_span_end(FLOWC_PROF_CODEGEN, t_gen)
+    flowc_prof_carve(FLOWC_PROF_CODEGEN, FLOWC_PROF_MONO, m0, FLOWC_PROF_LOWERING, l0)
     if sigs != null {
         siglen[0] = flowc_cgen_collect_sigs(p.arena, root, src, sigs, sigcap, siglen[0])
         # Effects, capabilities and `with` rows for later modules (#675).

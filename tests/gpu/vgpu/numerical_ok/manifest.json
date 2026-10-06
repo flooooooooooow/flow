@@ -1,0 +1,12 @@
+{
+  "suite": "vgpu",
+  "cases": [
+    {
+      "id": "num_ok",
+      "actual": "tests/gpu/vgpu/numerical_ok/act.hex",
+      "reference": "tests/gpu/vgpu/numerical_ok/ref.hex",
+      "comparison": { "mode": "numerical", "maxAbs": 0.0 },
+      "backends": ["webgpu"]
+    }
+  ]
+}

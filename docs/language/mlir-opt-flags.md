@@ -12,6 +12,8 @@ When compiling with the MLIR backend (`--mlir`), pass `--optimize` to run
 | `--opt-level O2` (default) | O1 + inline, sccp, mem2reg, LICM, affine-loop-fusion |
 | `--opt-level O3` | O2 + affine-super-vectorize |
 
+A bare `--opt-level` or empty `--opt-level=` is rejected. The accepted values are `O0`, `O1`, `O2`, and `O3`.
+
 ## Toggles
 
 Disable individual passes (level gates still apply):
@@ -72,6 +74,12 @@ register-sized vector schedule:
   --strategy=hierarchical_vector --tiles=64,64,64 --inner-tiles=8,8,4
 ```
 
+`--strategy=unroll` tiles, then unrolls the innermost loop with
+`--unroll-factor` (2–16). `--print-cost` reports the analytic score used by
+`--metric=cost-model` and by `--search=genetic|bayesian` on the measurement
+harness. The autotuning CLI, cost model, and PMU events are documented in
+[MLIR Autotuning](mlir-autotuning.md).
+
 Affine tiling is opt-in and requires a positive tile size:
 
 ```bash
@@ -97,14 +105,21 @@ It converts eligible affine loops to one-dimensional `affine.parallel` loops.
 The pass stays opt-in because dependence analysis determines which loops are
 safe to parallelize.
 
+Use `--enable-affine-interchange` to add the opt-in `affine-loop-interchange`
+pass. It reorders eligible nested affine loops when dependence analysis shows
+the permutation is safe. The default pipeline does not include the pass; it
+stays opt-in because interchange changes locality and is not always
+profitable. The transform is O2-gated, matching the other affine nest passes.
+
 Use `--enable-affine-tiling --affine-tile-sizes 64,32,8` for hierarchical
 tiling. Two through four positive sizes up to 4096 are accepted. The matching
 affine tiling passes are emitted in the listed order.
 
 ## Async copy capability gate
 
-Loop pipelining and multi-buffering remain opt-in. Multi-buffering defaults to
-two buffers. Set `--multi-buffering-factor N` for a multiplier from 2 through
+Loop pipelining and multi-buffering remain opt-in for ordinary pipelines.
+Async copy supplies both supporting passes when they are omitted. It uses two
+buffers by default. Set `--multi-buffering-factor N` for a multiplier from 2 through
 8. The GPU async-region pass
 also requires an explicit target capability:
 
@@ -114,7 +129,9 @@ also requires an explicit target capability:
 ```
 
 Accepted targets are `gpu`, `nvptx` and `amdgpu`. The target flag adds
-`gpu-async-region` to the function pipeline. A CPU pipeline does not acquire
+`gpu-async-region` to the function pipeline. Async copy also adds
+`test-multi-buffering{multiplier=2}` and `test-scf-pipelining` when callers do
+not request those passes. A CPU pipeline does not acquire
 an async-copy pass implicitly. The current gate marks GPU regions async. It
 does not synthesize `nvgpu.device_async_copy` operations or claim a hardware
 copy engine is available. Those lowerings need target-specific IR and a
@@ -163,6 +180,13 @@ Pass `--alignment=N` to choose a power-of-two arena alignment from 1 through
 4096 bytes. The selected value is applied to every planned buffer and recorded
 as `flow.static_arena_alignment`.
 
+Pass `--lifetimes=start:end,start:end,start:end` to supply three validated live
+ranges in planner buffer order. Each range is a pair of non-negative integers
+with `end >= start`. The planner reuses arena offsets for buffers whose ranges
+do not overlap and records the resulting interference graph. Omitting the flag
+keeps the default ranges `0:2,3:5,1:4`. A bare `--lifetimes` or a malformed
+list is rejected.
+
 The module also records `flow.static_buffer_lifetimes` as comma-separated
 `start:end` operation ranges and `flow.static_buffer_offsets` as comma-separated
 arena offsets. It records `flow.static_buffer_interference` as comma-separated
@@ -172,8 +196,8 @@ buffer order.
 ## Register tiles
 
 `--register-tiles` enables the opt-in `register_tile_outer_product(a, b)`
-intrinsic. For vector operands it emits `vector.outerproduct`, preserving the
-tile shape for later AMX, SME, or GPU target selection.
+intrinsic. For vector operands it emits `vector.outerproduct` by default,
+preserving the tile shape for later AMX, SME, or GPU target selection.
 
 The default lane budget is 256 scalar lanes. Set
 `FLOWC_MLIR_REGISTER_TILE_MAX_LANES` to a smaller target budget when a tile
@@ -182,16 +206,21 @@ must fit a particular register file. The emitter records both
 outer-product operation for downstream register-pressure analysis.
 
 Set `FLOWC_MLIR_REGISTER_TILE_TARGET` to `amx`, `sme`, or `nvvm` to attach the
-hardware selection metadata used by a later target lowering. The emitter also
-records the target intrinsic family: `amx.tile_mulf`, `arm_sme.outerproduct`,
-or `nvvm.wgmma`. The default is `generic`, which keeps
-`vector.outerproduct`.
+hardware selection metadata. The emitter also records the target intrinsic
+family: `amx.tile_mulf`, `arm_sme.outerproduct`, or `nvvm.wgmma`. The default
+is `generic`, which keeps `vector.outerproduct`.
+
+Pass `--register-tile-intrinsics` (or `FLOWC_MLIR_REGISTER_TILE_INTRINSICS=1`)
+with a non-generic target to emit that hardware operation as a generic MLIR
+op instead of `vector.outerproduct`. The default stays `vector.outerproduct`
+so existing pipelines keep working.
 
 The same selection is available on the command line with
 `--register-tile-target=TARGET` and `--register-tile-max-lanes=N`.
 
 ```bash
-./flow mlir compiler/fixtures/mlir/register_tile_probe.flow --register-tiles
+./flow mlir compiler/fixtures/mlir_opt/register_tile_nested.flow --register-tiles
+./flow mlir compiler/fixtures/mlir_opt/register_tile_nested.flow --register-tiles --register-tile-intrinsics --register-tile-target=amx
 ```
 
 ## Generator-side vectorization
@@ -250,28 +279,46 @@ The command golden covers both forms:
 ./flow tool tests/mlir_commands/run.flow --only mlir_tensor_scalars
 ```
 
-## AoSoA storage padding
+## AoSoA layout, padding, and swizzle
 
-Set `FLOWC_MLIR_AOSOA_PAD=N` to add `N` storage elements to each field array
-created by the opt-in AoSoA lowering. Source-level array extents and indexing
-remain unchanged. Values from 1 through 64 are accepted. The default is zero.
+The MLIR emitter rewrites a fixed `Particle` array to a struct-of-arrays
+(`Particle_SoA_<N>`) so each field is a dense `memref`. That is the AoSoA
+canonicalization. Two opt-in transforms then sit on that layout:
 
-```bash
-FLOWC_MLIR_AOSOA_PAD=1 ./flow mlir compiler/fixtures/mlir/aosoa_padding.flow --lenient
-```
-
-Use `--aosoa-pad-auto` with `flow flow-to-mlir` to add one storage element only
-for power-of-two logical extents. Irregular extents keep their original
-storage size.
+Conflict padding adds extra storage elements so power-of-two (or bank-aligned)
+extents do not share a cache set or GPU shared-memory bank. Source-level
+extents and indexing stay the same.
 
 ```bash
+./flow flow-to-mlir --aosoa-pad compiler/fixtures/mlir_opt/aosoa_padding.flow /tmp/aosoa.mlir
 ./flow flow-to-mlir --aosoa-pad-auto compiler/fixtures/mlir_opt/aosoa_padding.flow /tmp/aosoa.mlir
+./flow flow-to-mlir --aosoa-bank-count=3 compiler/fixtures/mlir_opt/aosoa_non_power.flow /tmp/aosoa.mlir
 ```
 
-Set `FLOWC_MLIR_AOSOA_SWIZZLE=N` to xor each generated field index with that
-index shifted by `log2(N)`. `N` must be a power of two from 2 through 32.
-The rewrite applies this only to power-of-two logical extents, which keeps the
-mapping within the source array for irregular extents. The default is zero.
+`--aosoa-pad` adds one storage element. `--aosoa-pad-auto` adds one element
+only when the logical extent is a power of two. `--aosoa-bank-count=N` (1
+through 128) also enables auto-padding and pads any extent that is a multiple
+of `N`. The same knobs exist as `FLOWC_MLIR_AOSOA_PAD` (1 through 64),
+`FLOWC_MLIR_AOSOA_AUTO_PAD=1`, and `FLOWC_MLIR_AOSOA_BANK_COUNT`.
+
+Index swizzle xors each generated field index with that index shifted by
+`log2(W)`. `W` must be a power of two from 2 through 32. The rewrite applies
+only to power-of-two logical extents, which keeps the mapping inside the
+source array for irregular extents.
+
+```bash
+./flow flow-to-mlir --aosoa-swizzle compiler/fixtures/mlir_opt/aosoa_padding.flow /tmp/aosoa.mlir
+./flow flow-to-mlir --aosoa-swizzle --aosoa-swizzle-width=8 compiler/fixtures/mlir_opt/aosoa_padding.flow /tmp/aosoa.mlir
+./flow mlir --lenient --aosoa-swizzle-width=8 compiler/fixtures/mlir_opt/aosoa_padding.flow
+```
+
+`--aosoa-swizzle` defaults to width 4. `--aosoa-swizzle-width=N` enables
+swizzle and sets `W`. `FLOWC_MLIR_AOSOA_SWIZZLE=N` is the generator-side form.
+
+Current scope: the rewrite is the `Particle` fixture used by the MLIR
+optimizer tests. It pads and swizzles the 1D field arrays that lowering
+emits. General 2D/3D memref stride maps, and AoSoA for arbitrary struct
+types, are not implemented.
 
 > `affine-super-vectorize` and `affine-loop-fusion` still need affine loops,
 > which the generator does not emit; they remain soft no-ops.

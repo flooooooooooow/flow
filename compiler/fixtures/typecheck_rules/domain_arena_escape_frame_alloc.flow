@@ -1,0 +1,28 @@
+# expect: lifetime domain escape: `fa` lives in the `frame` domain but is stored in `cache`, which lives in the `application` domain (a longer-lived domain may not hold a reference to a shorter-lived one) at line 23, column 5
+struct FrameArena {
+    buffer: ptr<i8>,
+    capacity: i64,
+    offset: i64
+}
+
+function frame_alloc_f32(f: ptr<FrameArena>, count: i64) -> ptr<f32> {
+    let off: i64 = f[0].offset
+    let base: ptr<i8> = f[0].buffer
+    f[0].offset = off + count * 4
+    let out: ptr<void> = base + off
+    return out
+}
+
+@lifetime(frame)
+let mut fa: ptr<FrameArena> = null
+
+@lifetime(application)
+let mut cache: ptr<f32> = null
+
+function build() -> void {
+    cache = frame_alloc_f32(fa, 16)
+}
+
+function main() -> i32 {
+    return 0
+}
