@@ -43,7 +43,7 @@ jobs:
           fi
 
   repair-history:
-    if: ${{ github.event_name == 'push' && github.event.head_commit.message == 'chore: repair contributor attribution and add guard' }}
+    if: github.event_name == 'push'
     needs: attribution-guard
     runs-on: ubuntu-latest
     permissions:
@@ -62,14 +62,18 @@ jobs:
           set -euo pipefail
 
           git checkout -B main "$GITHUB_SHA"
-          git merge-base --is-ancestor "$BAD_SHA" main
 
-          count="$(git log "$BAD_SHA^..main" --format='%ae%n%ce%n%B' | grep -F -c "$FORBIDDEN_EMAIL" || true)"
+          count="$(git log main --format='%ae%n%ce%n%B' | grep -F -c "$FORBIDDEN_EMAIL" || true)"
+          if [[ "$count" == "0" ]]; then
+            echo "No bad attribution remains; nothing to repair."
+            exit 0
+          fi
           if [[ "$count" != "1" ]]; then
-            echo "::error::Expected exactly one bad attribution in the rewrite range, found $count."
+            echo "::error::Expected exactly one bad attribution in main history, found $count."
             exit 1
           fi
 
+          git merge-base --is-ancestor "$BAD_SHA" main
           base_sha="$(git rev-parse "$BAD_SHA^")"
 
           export FILTER_BRANCH_SQUELCH_WARNING=1
