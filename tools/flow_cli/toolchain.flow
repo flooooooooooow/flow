@@ -1081,6 +1081,45 @@ export function flow_pkg_native_link_args(program: string, cc: string) -> ptr<Pr
     return args
 }
 
+# True for "1" / "true" / "on" / "yes", any case.
+function env_on(name: string) -> bool {
+    let v: string = s_lower(env(name))
+    return s_eq(v, "1") or s_eq(v, "true") or s_eq(v, "on") or s_eq(v, "yes")
+}
+
+# Cold-start link trimming (#746). Optional frameworks (Python3, Metal,
+# Foundation, OpenSSL) stay off the tiny-program load list unless a symbol
+# from them is actually reached. FLOW_NO_LINK_TRIM=1 and sanitizer builds
+# keep the historical full link.
+function link_trim_enabled() -> bool {
+    if env_on("FLOW_NO_LINK_TRIM") {
+        return false
+    }
+    if s_eq(TC_SAN_UB, "1") or s_eq(TC_SAN_A, "1") or s_eq(TC_SAN_T, "1") {
+        return false
+    }
+    if s_len(env("FLOW_SANITIZE")) > 0 {
+        return false
+    }
+    return true
+}
+
+# Compiler flags, the program TU, native objects and the runtime archive:
+# shared by the probe link and the full link.
+function link_cc_base(cc: string, opt: string, inc: ptr<ProcStrs>, native: ptr<ProcStrs>, c_file: string, exe_file: string) -> ptr<ProcStrs> {
+    let a: ptr<ProcStrs> = sl_of1(cc)
+    sl_extend(a, COLLECTED_CFLAGS)
+    sl_push(a, opt)
+    sl_extend(a, CONC_CFLAGS)
+    sl_push(a, "-I" + TC_ROOT + "/runtime")
+    sl_extend(a, inc)
+    sl_push2(a, "-o", exe_file)
+    sl_push(a, c_file)
+    sl_extend(a, native)
+    sl_push(a, TC_RT_ARCHIVE)
+    return a
+}
+
 # Link generated C with the runtime archive. Status.
 export function flowc_link_c(c_file: string, exe_file: string, program: string) -> i32 {
     collect_cflags()
@@ -1119,16 +1158,30 @@ export function flowc_link_c(c_file: string, exe_file: string, program: string) 
         error("C compilation/linking failed (flowc host): no runtime archive")
         return 1
     }
-    let a: ptr<ProcStrs> = sl_of1(cc)
-    sl_extend(a, COLLECTED_CFLAGS)
-    sl_push(a, opt)
-    sl_extend(a, CONC_CFLAGS)
-    sl_push(a, "-I" + TC_ROOT + "/runtime")
-    sl_extend(a, inc)
-    sl_push2(a, "-o", exe_file)
-    sl_push(a, c_file)
-    sl_extend(a, native)
-    sl_push(a, TC_RT_ARCHIVE)
+
+    # Probe link (#746): drop Metal/Foundation/OpenSSL load commands (and
+    # Darwin CoreFoundation) and dead-strip. Unused archive members stay
+    # unreferenced. If a needed symbol is missing, fall back to the full
+    # link so GPU/Python/crypto programs are unchanged.
+    if link_trim_enabled() {
+        let probe: ptr<ProcStrs> = link_cc_base(cc, opt, inc, native, c_file, exe_file)
+        sl_push(probe, "-pthread")
+        if s_eq(uname_s(), "Darwin") {
+            sl_push(probe, "-Wl,-dead_strip")
+        } else {
+            sl_push(probe, "-Wl,--as-needed")
+        }
+        sl_extend(probe, COLLECTED_LDFLAGS)
+        sl_push(probe, "-lm")
+        let pc: ptr<ProcCmd> = cmd(probe)
+        cmd_quiet(pc)
+        cmd_no_stdin(pc)
+        if run_err_to_file(pc, exe_file + ".link_trim.err") == 0 {
+            return 0
+        }
+    }
+
+    let a: ptr<ProcStrs> = link_cc_base(cc, opt, inc, native, c_file, exe_file)
     sl_extend(a, GPU_LDFLAGS)
     sl_extend(a, CONC_LDFLAGS)
     sl_extend(a, COLLECTED_LDFLAGS)

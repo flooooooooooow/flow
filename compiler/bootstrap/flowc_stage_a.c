@@ -116,9 +116,6 @@ static void flow_mem_profile_init(void) {
   flow_mem_profile_on = (e != 0 && e[0] != 0 && !(e[0] == '0' && e[1] == 0));
   if (flow_mem_profile_on && !flow_mem_report_set) { flow_mem_report_set = 1; atexit(flow_mem_report); }
 }
-#if defined(__GNUC__)
-__attribute__((constructor)) static void flow_mem_profile_ctor(void) { flow_mem_profile_init(); }
-#endif
 #endif
 static inline const char* __flowc_str_concat(const char* a, const char* b) {
   size_t la; size_t lb; char* r;
@@ -77564,9 +77561,6 @@ void flowc_cgen_emit_mem_profile(CgenBuf* w) {
   flowc_cgen_puts(w, "  e = getenv(\"FLOW_MEM_PROFILE\");\n");
   flowc_cgen_puts(w, "  flow_mem_profile_on = (e != 0 && e[0] != 0 && !(e[0] == '0' && e[1] == 0));\n");
   flowc_cgen_puts(w, "  if (flow_mem_profile_on && !flow_mem_report_set) { flow_mem_report_set = 1; atexit(flow_mem_report); }\n}\n");
-  flowc_cgen_puts(w, "#if defined(__GNUC__)\n");
-  flowc_cgen_puts(w, "__attribute__((constructor)) static void flow_mem_profile_ctor(void) { flow_mem_profile_init(); }\n");
-  flowc_cgen_puts(w, "#endif\n");
   flowc_cgen_puts(w, "#endif\n");
 }
 
