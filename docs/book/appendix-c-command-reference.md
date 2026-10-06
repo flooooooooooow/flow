@@ -11,7 +11,7 @@ leading `./`.
 | `flow run FILE --backend=mlir` | compile and run through MLIR |
 | `flow compile FILE` | build an executable without running it |
 | `flow transpile FILE ARGS...` | invoke advanced transpiler options |
-| `flow mlir FILE` | emit MLIR; accepts optimisation flags |
+| `flow mlir FILE` | emit MLIR; accepts `--affine`, `--tile-size N`, `--tile-l2-size N`, and optimisation flags |
 | `flow mlir-run FILE` | compile and run through MLIR |
 | `flow jit FILE` | JIT through MLIR/LLVM |
 | `flow python FILE` | generate a CPython wheel |
@@ -143,7 +143,7 @@ a single step.
 
 | Command | Purpose |
 |---|---|
-| `flow flow-to-mlir [--gpu] [--wasm32] [--jit] [--lenient] IN.flow OUT.mlir` | emit MLIR with flowc (`FLOWC_EMIT=mlir`); @cEmbed C goes to `OUT.mlir.c` |
+| `flow flow-to-mlir [--gpu] [--wasm32] [--affine] [--tile-size N] [--tile-l2-size N] [--jit] [--lenient] IN.flow OUT.mlir` | emit MLIR with flowc (`FLOWC_EMIT=mlir`); @cEmbed C goes to `OUT.mlir.c` |
 | `flow flow-to-llvm [--wasm32] [--optimize OLEVEL] IN.flow OUT.ll` | `flow-to-mlir`, then `mlir-lower` |
 | `flow mlir-lower IN.mlir OUT.ll` | lower to LLVM IR with mlir-opt and mlir-translate; `--tools` prints their paths |
 | `flow mlir-optimize [FLAGS] [--opt-report] IN.mlir OUT.mlir` | run the `--optimize` pass pipeline; `--print-pass-pipeline` prints it |
