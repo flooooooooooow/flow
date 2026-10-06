@@ -1,0 +1,12 @@
+{
+  "suite": "vgpu",
+  "cases": [
+    {
+      "id": "exact_fail",
+      "actual": "tests/gpu/vgpu/exact_fail/act.hex",
+      "reference": "tests/gpu/vgpu/exact_fail/ref.hex",
+      "comparison": { "mode": "exact-rgba8" },
+      "backends": ["webgpu"]
+    }
+  ]
+}

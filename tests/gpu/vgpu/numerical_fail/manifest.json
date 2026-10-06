@@ -1,0 +1,12 @@
+{
+  "suite": "vgpu",
+  "cases": [
+    {
+      "id": "num_fail",
+      "actual": "tests/gpu/vgpu/numerical_fail/act.hex",
+      "reference": "tests/gpu/vgpu/numerical_fail/ref.hex",
+      "comparison": { "mode": "numerical", "maxAbs": 0.1 },
+      "backends": ["webgpu"]
+    }
+  ]
+}

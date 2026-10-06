@@ -6,6 +6,15 @@ All notable changes to FLOW will be documented in this file.
 
 - MLIR tuner: analytic cost model, genetic and Bayesian search over tile schedules, `unroll` transform strategy, and IPC / stalled-cycle PMU events (#668)
 - Release qualification: `./flow tool qualify_release` writes source archives, SHA-256 sums and an RC-promotion record for an exact commit without tagging or publishing. `--check-formula` validates the in-repo Homebrew formula; `--publish` is refused. Hosted dry-run is `.github/workflows/release-qualify.yml`; `release.yml` no longer publishes RC tags (`-rc`) or `qualify_only` dispatches. (#652)
+- GPU: `flow gpu test --suite vgpu [--backend … | --all-backends]` is a real
+  exact-pixel / tolerance / numerical conformance runner. It reads
+  `examples/gpu/vgpu/manifest.json`, compiles each fill, compares against
+  captured `rgba8unorm` or f32 references with the WebGPU host's `compareRgba`
+  contract, records backend/dimensions/inputs/max error/verdict, and exits
+  non-zero on unexpected `FAIL`. `--capture-reference` rewrites frozen refs
+  independently of shader windows. The gradient case is byte-for-byte against
+  the captured upstream image; MNIST/depth report `UNSUPPORTED` until tensor
+  execution lands. (#813)
 - flowc: opt-in `FLOWC_PROFILE=1|json` writes per-phase compile timings (`[flow-profile]` JSON) for parse, import resolution, typecheck and codegen. `./flow tool compile_bench` records cold/warm compile-to-result and names the top fixed vs scaling cost. (#735)
 - flowc: opt-in `FLOWC_PROFILE=1|json` writes per-phase compile timings (`[flow-profile]` JSON) for parse, import resolution, typecheck, monomorphize, lowering, codegen and incremental AST-cache hits. `./flow tool compile_bench` records cold/warm compile-to-result, a Tier-1 matrix row, and >10% bottleneck follow-ups. (#735)
 - Strings / I/O (#747, first slice): a pure-string `+` chain of three or more parts lowers to one `__flowc_str_concatn` allocation instead of nested pairwise joins. `std.string` parses and formats integers on the caller's buffer with explicit overflow/junk errors; `std.io` reads and writes files with `fread`/`fwrite` of a known size. Cross-harness rows: `runtime_string_concat`, `runtime_parse_format`, `runtime_buffered_io`, and the existing `cold_file_transform` now uses the buffered path.
